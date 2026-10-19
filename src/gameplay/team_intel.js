@@ -39,12 +39,16 @@ const TeamIntel = (() => {
     time = 0;
   }
 
+  // Radar lắp thêm (trang bị 'radar') trên xe không phải trinh sát
+  const eqRadar = u => typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar');
   function hasRadar(u) {
-    if (!u || u.isDead || u.tankType !== 'SCOUT') return false;
+    if (!u || u.isDead) return false;
+    if (u.tankType !== 'SCOUT') return eqRadar(u);
     if (u.dmg && u.dmg.lost && u.dmg.lost.has('sensor')) return false;   // cụm radar bị bắn bay
     return true;
   }
   function radarRange(u) {
+    if (eqRadar(u)) return Equipment.EQ_RADAR_RANGE || 600;
     return u.reconRadius || RADAR_RANGE;
   }
   function sightRange(u) {
@@ -185,6 +189,9 @@ const TeamIntel = (() => {
       // Tia quét vừa đi qua hướng mục tiêu (hoặc mục tiêu sát bên xe)
       let rel = bearing(u, e) - prev;
       if (rel < 0) rel += TWO_PI;
+      // máy gây nhiễu: cứ 2 vòng quét chỉ bắt được 1 (vết radar chập chờn)
+      const jam = typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(e, 'jammer') && d >= 40;
+      if (jam && (Math.floor(time * RADAR_RPS) + (e.id | 0)) % 2) continue;
       if (rel <= step + 1e-4 || d < 40) {
         const c = u.radarContacts.get(e.id) || {};
         c.x = e.x; c.z = e.z; c.t = time; c.inBush = !!e.isInBush; c.unit = e;
@@ -217,7 +224,7 @@ const TeamIntel = (() => {
     // Người chơi: mục tiêu đang khóa là mục tiêu báo cáo
     if (player) player.intelLock = player.isDead ? null : (lockedTarget || null);
     for (const u of units) {
-      if (u.tankType !== 'SCOUT') continue;
+      if (u.tankType !== 'SCOUT' && !eqRadar(u)) continue;
       if (u.isDead) { u.intelLock = null; if (u.radarContacts) u.radarContacts.clear(); continue; }
       // Xe từ máy khác: radar chỉ để quay ăng-ten cho đẹp, báo cáo do máy chủ quản gửi sang
       updateRadar(u, units, dt);

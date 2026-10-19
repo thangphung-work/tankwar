@@ -1397,9 +1397,9 @@ class SPGUnit3D {
     // 3. Tiến trình nạp đạn
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
-      if (this.reloadTimer === 0 && this.isPlayer && window.soundEngine) {
-        if (window.soundEngine.playReload) window.soundEngine.playReload(this.tankType, 'end');
-        else window.soundEngine.playReloadDone();
+      // Tiếng nạp đạn chạy suốt quá trình nạp, khóa nòng đóng đúng lúc sẵn sàng
+      if (this.isPlayer && window.soundEngine && window.soundEngine.updateReload) {
+        window.soundEngine.updateReload(this.tankType, this.reloadTimer, this.reloadDuration);
       }
     }
 
@@ -2756,11 +2756,12 @@ class SPGUnit3D {
     // Nếu đang trong thời gian nạp lại băng đạn (hết đạn)
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
+      // Tiếng thay băng chạy suốt quá trình nạp (mở nắp, thay hộp, luồn dây đạn, lên đạn)
+      if (this.isPlayer && window.soundEngine && window.soundEngine.updateReload) {
+        window.soundEngine.updateReload(this.tankType, this.reloadTimer, this.reloadDuration);
+      }
       if (this.reloadTimer <= 0) {
         this.gatlingMag = this.gatlingMagMax;
-        if (this.isPlayer && window.soundEngine && window.soundEngine.playReload) {
-          window.soundEngine.playReload(this.tankType, 'end');
-        }
       }
       // Nòng quay hãm chậm dần về 0 khi đang nạp đạn
       this.spinUpTime = Math.max(0, this.spinUpTime - dt * 2.5);
@@ -2791,7 +2792,6 @@ class SPGUnit3D {
           if (this.gatlingMag <= 0) {
             // Hết đạn: Chuyển sang thời gian nạp lại băng đạn
             this.reloadTimer = this.reloadDuration;
-            if (this.isPlayer && window.soundEngine && window.soundEngine.playReload) window.soundEngine.playReload(this.tankType, 'start');
             break;
           }
         }

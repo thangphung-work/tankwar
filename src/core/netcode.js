@@ -915,7 +915,8 @@
         this.net.send('@match', {
           mapType: T ? T.mapType : '', seed: T ? (T.seed >>> 0) : 0,
           layout: (typeof MapGen !== 'undefined' && MapGen.getLayout) ? MapGen.getLayout() : 'CLASSIC',
-          roster: this.byNetId.map((u, i) => ({ i, team: u.team, type: u.tankType, peer: u === game.player ? this.net.myId : (u.peerId || null) }))
+          roster: this.byNetId.map((u, i) => ({ i, team: u.team, type: u.tankType, peer: u === game.player ? this.net.myId : (u.peerId || null),
+            rd: (typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar')) ? 1 : 0 }))   // radar lắp thêm: máy chủ mở rộng tầm nhìn
         });
       } catch (e) {}
       console.log(`[NET] Đồng bộ trận đấu (${net.mode}) | máy ${net.myId} | chủ phòng ${net.hostId} | ${this.byNetId.length} xe`);

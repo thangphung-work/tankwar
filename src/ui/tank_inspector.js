@@ -288,17 +288,13 @@ class TankInspector {
       <div class="ti-modal">
         <header class="ti-header">
           <button id="ti-close-btn" class="ti-close-btn" title="Quay lại [ESC]"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
-          <div class="ti-title-box"><h2 class="ti-main-title">THÔNG TIN XE TĂNG</h2><span class="ti-title-badge">XEM CHI TIẾT, NÂNG CẤP VÀ TÙY CHỈNH XE TĂNG</span></div>
+          <div class="ti-title-box"><h2 class="ti-main-title">THÔNG TIN XE TĂNG</h2><span class="ti-title-badge">XEM CHI TIẾT VÀ CHỌN TRANG BỊ CHO XE</span></div>
           <div class="ti-header-actions">
-            <div class="ti-currency"><span><i class="ti ti-diamond" aria-hidden="true"></i></span><b>125,430</b><button><i class="ti ti-plus" aria-hidden="true"></i></button></div>
-            <div class="ti-currency gold"><span><i class="ti ti-diamond-filled" aria-hidden="true"></i></span><b>3,260</b><button><i class="ti ti-plus" aria-hidden="true"></i></button></div>
             <div class="ti-profile"><img src="assets/commander_avatar.jpg" alt="Chỉ huy"><span><b class="ti-profile-name">Chưa đăng nhập</b><small class="ti-profile-rank"></small></span><i><i class="ti ti-settings" aria-hidden="true"></i></i></div>
           </div>
         </header>
         <div class="ti-body">
-          <nav class="ti-side-nav">
-            <button class="active"><span><i class="ti ti-info-square" aria-hidden="true"></i></span> THÔNG TIN</button><button><span><i class="ti ti-hammer" aria-hidden="true"></i></span> NÂNG CẤP</button><button><span><i class="ti ti-palette" aria-hidden="true"></i></span> SƠN / SKIN</button><button><span><i class="ti ti-settings" aria-hidden="true"></i></span> TRANG BỊ</button><button><span><i class="ti ti-history" aria-hidden="true"></i></span> LỊCH SỬ</button>
-          </nav>
+          <nav class="ti-side-nav eqp" aria-label="Chọn trang bị"></nav>
           <section class="ti-viewport-container" id="ti-vehicle-stage">
             <canvas id="ti-canvas"></canvas>
             <div class="ti-class-tabs">
@@ -873,7 +869,7 @@ class TankInspector {
     if (!document.getElementById('tank-inspector-overlay')) {
       this.createDomElements();
       this.bindEvents();
-      if (window.ArmoryUI) ArmoryUI.attach(this);   // tab NÂNG CẤP / TRANG BỊ / LỊCH SỬ + ví Bạc
+      if (window.ArmoryUI) ArmoryUI.attach(this);   // bảng chọn trang bị cột trái (giáp / đạn / phụ kiện)
     }
     const overlay = document.getElementById('tank-inspector-overlay');
     if (!overlay) return;

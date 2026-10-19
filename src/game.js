@@ -813,7 +813,9 @@ class ArtilleryGame3D {
       if (S.id !== T.id) { S.id = T.id; S.p = 0; }
       if (!this.missileCanSee(P, T)) { S.state = 'blind'; S.p = 0; }
       else {
-        S.p = Math.min(1, S.p + dt / 0.8);
+        // máy gây nhiễu trên xe địch: đầu dò mất gấp đôi thời gian mới khóa được
+        const jam = typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(T, 'jammer');
+        S.p = Math.min(1, S.p + dt / (jam ? 1.6 : 0.8));
         S.state = S.p >= 1 ? 'locked' : 'seeking';
       }
     }

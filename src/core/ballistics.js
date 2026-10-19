@@ -571,6 +571,8 @@ class BallisticsSystem3D {
             G.lastT = s.timeAlive;
           } else if (G.lastT === undefined) G.lastT = s.timeAlive;
           G.point = { x: target.x, y: ty, z: target.z };
+          // Máy gây nhiễu trên xe mục tiêu: đầu dò bám chập chờn (điểm ngắm dao động quanh xe, xem bên dưới)
+          G.jam = typeof Equipment !== 'undefined' && Equipment.has ? Equipment.has(target, 'jammer') : false;
         }
       } else if (G.targetId && target && target.isDead) {
         G.targetId = null;   // mục tiêu đã bị diệt: lao vào chỗ xác xe
@@ -582,6 +584,8 @@ class BallisticsSystem3D {
       // Dẫn đón đầu theo vận tốc mục tiêu (đơn vị / giây mô phỏng)
       const tgo = dh / Math.max(1, newSp);
       let ax = P.x + (G.tvx || 0) * tgo, az = P.z + (G.tvz || 0) * tgo;
+      // bị gây nhiễu: điểm ngắm lắc ~3 m quanh xe (tất định theo thời gian bay -> mọi máy cùng đường bay), chỉ ~5 m cuối mới bám lại
+      if (G.jam) { const ph = s.timeAlive * 2.3, k = Math.min(1, dh / 40); ax += Math.sin(ph) * 26 * k; az += Math.cos(ph * 0.77) * 26 * k; }
       // Bay cao hơn đường ngắm một chút, hạ thấp dần khi tới gần (lao thẳng vào thân xe)
       const ay = P.y + Math.min(26, dh * 0.04);
       const hx = ax - s.x, hz = az - s.z, hl = Math.hypot(hx, hz) || 1;

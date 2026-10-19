@@ -1405,67 +1405,327 @@ class SoundEngine {
     this.burst(out, t + 0.22, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1200, Q: 1.2, gain: 0.25, attack: 0.001, dur: 0.05 });
   }
 
-  // Nạp đạn theo đúng cơ cấu từng loại vũ khí (âm thanh cơ khí tạo từ nhiễu lọc, không dùng âm "bíp" tổng hợp)
-  // stage: 'start' (hết đạn, bắt đầu nạp) | 'end' (nạp xong, khóa nòng)
+  // ---------------------------------------------------------------------------
+  // NẠP ĐẠN: chuỗi thao tác cơ khí chạy theo ĐÚNG đồng hồ nạp của xe
+  // (trước đây mọi tiếng dồn vào 0,3 s lúc nạp xong, còn cả quãng chờ thì im lặng).
+  // Mỗi bước là một "cue": { f } = tỉ lệ thời gian nạp tính từ lúc bắn, { before } = số giây TRƯỚC lúc sẵn sàng.
+  // Tiếng khóa nòng đóng rơi đúng khoảnh khắc pháo sẵn sàng bắn.
+  // ---------------------------------------------------------------------------
+
+  // Khoang tháp pháo: hộp thép kín ~2 m -> phản xạ sớm 2-9 ms tạo màu "trong lòng xe", không phải hồi âm ngoài trời
+  reloadCabin() {
+    if (this.cabinBus) return this.cabinBus;
+    const ctx = this.ctx;
+    const input = ctx.createGain();
+    input.connect(this.weaponBus);
+    // phản xạ chỉ tô màu dải trung - cao (dải trầm cộng đồng pha sẽ phồng tiếng đập lên vài dB)
+    const refl = ctx.createBiquadFilter();
+    refl.type = 'highpass';
+    refl.frequency.value = 450;
+    input.connect(refl);
+    for (const [d, g] of [[0.0023, 0.3], [0.0041, 0.22], [0.0087, 0.15]]) {
+      const dl = ctx.createDelay(0.05);
+      dl.delayTime.value = d;
+      const gg = ctx.createGain();
+      gg.gain.value = g;
+      refl.connect(dl);
+      dl.connect(gg);
+      gg.connect(this.weaponBus);
+    }
+    // vòng phản xạ qua lại giữa 2 vách thép (hồi tiếp nhẹ, vách hút bớt cao tần)
+    const fb = ctx.createDelay(0.05);
+    fb.delayTime.value = 0.0061;
+    const fbLp = ctx.createBiquadFilter();
+    fbLp.type = 'lowpass';
+    fbLp.frequency.value = 3200;
+    const fbG = ctx.createGain();
+    fbG.gain.value = 0.36;
+    const fbOut = ctx.createGain();
+    fbOut.gain.value = 0.3;
+    refl.connect(fb);
+    fb.connect(fbLp);
+    fbLp.connect(fbG);
+    fbG.connect(fb);
+    fbLp.connect(fbOut);
+    fbOut.connect(this.weaponBus);
+    this.cabinBus = input;
+    return input;
+  }
+
+  // Bộ "đồ nghề" âm thanh cơ khí cho một lần nạp (một kênh phát chung, đặt đúng phía người nạp đạn)
+  reloadKit(tankType) {
+    const ctx = this.ctx;
+    const inside = tankType !== 'SCOUT';   // súng máy trinh sát nằm ngoài nóc xe
+    // xe tăng: người nạp đạn ngồi bên TRÁI pháo; pháo tự hành / 6 nòng: máy nạp phía sau-phải
+    const pan = tankType === 'ALL_ROUNDER' ? -0.3 : tankType === 'SCOUT' ? 0.05 : 0.18;
+    const out = this.voice({ bus: inside ? this.reloadCabin() : this.weaponBus, gain: 0.6, pan, wet: inside ? 0.015 : 0.07 });
+    const P = this.pinkNoiseBuffer, B = this.brownNoiseBuffer;
+    const rnd = (a) => 1 + (Math.random() - 0.5) * a;
+    // Nhiễu có đường bao giữ (attack - hold - release) cho tiếng kéo dài: trượt, thủy lực, mô-tơ
+    const bed = (t, o) => {
+      const src = ctx.createBufferSource();
+      src.buffer = o.buffer || P;
+      const f = ctx.createBiquadFilter();
+      f.type = o.filter || 'bandpass';
+      f.frequency.setValueAtTime(o.freq, t);
+      if (o.freqEnd) f.frequency.exponentialRampToValueAtTime(o.freqEnd, t + o.dur);
+      f.Q.value = o.Q !== undefined ? o.Q : 1;
+      const g = ctx.createGain();
+      const a = Math.min(o.attack !== undefined ? o.attack : 0.02, o.dur * 0.5);
+      const r = Math.min(o.release !== undefined ? o.release : 0.04, o.dur * 0.5);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(o.gain, t + a);
+      g.gain.setValueAtTime(o.gain, t + o.dur - r);
+      g.gain.linearRampToValueAtTime(0.0001, t + o.dur);
+      src.connect(f);
+      f.connect(g);
+      g.connect(out);
+      const off = Math.random() * Math.max(0, src.buffer.duration - o.dur - 0.1);
+      src.start(t, off);
+      src.stop(t + o.dur + 0.05);
+    };
+    return {
+      // Khối thép va nhau: lực đập trầm (theo khối lượng) + tiếng gõ đanh + các mode cộng hưởng bất hòa tắt dần
+      clank: (t, { f0 = 600, mass = 0.5, g = 0.2, ring = 0.3, bright = 1 } = {}) => {
+        this.burst(out, t, { buffer: B, filter: 'lowpass', freq: 140 + 280 * (1 - mass), drive: 1.6, gain: g * (1 + mass * 2.2), attack: 0.0008, dur: 0.05 + mass * 0.1 });
+        this.burst(out, t, { buffer: P, filter: 'bandpass', freq: f0 * 1.6, Q: 1.4, gain: g * 0.7, attack: 0.0005, dur: 0.03 });
+        this.burst(out, t, { filter: 'bandpass', freq: Math.min(7500, f0 * 4 * bright), Q: 1, gain: g * 0.45 * bright, attack: 0.0003, dur: 0.012 });
+        if (ring > 0) this.metal(out, t + 0.001, { f0: f0 * rnd(0.06), ratios: [1, 2.32, 3.87, 5.95], decay: ring, gain: g * 0.3, click: 0 });
+      },
+      // Vật nặng mềm (vỏ liều phóng cháy được, đạn đặt lên khay lót): "thụp" đục, không ngân
+      thud: (t, g = 0.12, f = 240) => {
+        this.burst(out, t, { buffer: B, filter: 'lowpass', freq: f, drive: 1.4, gain: g * 2.2, attack: 0.002, dur: 0.09 });
+        this.burst(out, t, { buffer: P, filter: 'bandpass', freq: f * 2.6, Q: 0.9, gain: g * 0.45, attack: 0.002, dur: 0.05 });
+      },
+      // Lẫy lò xo: 2 tiếng tách cách nhau 7-15 ms (nhả rồi sập) — đặc trưng của chốt cơ khí thật
+      latch: (t, f = 2400, g = 0.1) => {
+        const d = 0.007 + Math.random() * 0.008;
+        this.burst(out, t, { filter: 'bandpass', freq: f * rnd(0.12), Q: 2.5, gain: g * 0.5, attack: 0.0003, dur: 0.01 });
+        this.burst(out, t + d, { filter: 'bandpass', freq: f * 0.8 * rnd(0.12), Q: 2, gain: g, attack: 0.0003, dur: 0.018 });
+        this.metal(out, t + d, { f0: f * 0.55, ratios: [1, 2.7], decay: 0.06, gain: g * 0.2, click: 0 });
+      },
+      // Kim loại trượt trên kim loại: tiếng rít ma sát dải hẹp + chuỗi tiếng vấp "lạch" ngẫu nhiên (stick-slip)
+      scrape: (t, dur, f0, f1, g, grit = 1) => {
+        bed(t, { freq: f0, freqEnd: f1, Q: 3, gain: g, attack: Math.min(0.03, dur * 0.3), release: dur * 0.3, dur });
+        bed(t, { buffer: B, filter: 'lowpass', freq: f0 * 0.4, gain: g * 1.2, attack: dur * 0.2, release: dur * 0.3, dur });
+        for (let x = Math.random() * 0.02; x < dur && grit > 0; x += 0.012 + Math.random() * 0.03 / grit) {
+          this.burst(out, t + x, { filter: 'bandpass', freq: (f0 + (f1 - f0) * x / dur) * (2.2 + Math.random()), Q: 3, gain: g * grit * (0.25 + Math.random() * 0.45), attack: 0.0003, dur: 0.006 });
+        }
+      },
+      // Dây đạn / xích đẩy chạy: chuỗi tiếng lách cách mắt xích, nhanh dần (acc > 1) hoặc đều
+      chain: (t, dur, f, g, { gap = 0.03, acc = 1, ring = 0 } = {}) => {
+        let x = 0, step = gap;
+        while (x < dur) {
+          const v = g * (0.55 + Math.random() * 0.45);
+          this.burst(out, t + x, { buffer: P, filter: 'bandpass', freq: f * rnd(0.35), Q: 2.4, gain: v, attack: 0.0004, dur: 0.016 });
+          this.burst(out, t + x, { filter: 'highpass', freq: f * 2, gain: v * 0.35, attack: 0.0002, dur: 0.005 });
+          if (ring && Math.random() < 0.3) this.metal(out, t + x, { f0: ring * rnd(0.3), ratios: [1, 2.71], decay: 0.08, gain: v * 0.25, click: 0 });
+          x += step * (0.6 + Math.random() * 0.8);
+          step = Math.max(0.012, step / acc);
+        }
+      },
+      // Mô-tơ điện / servo: tiếng rên cuộn dây (răng cưa qua lọc) + tiếng chổi than, lên - xuống tốc
+      motor: (t, dur, f0, f1, g) => {
+        this.tone(out, t, { type: 'sawtooth', freq: f0, freqEnd: f1, sweep: dur, filter: 'lowpass', filterFreq: 1200, Q: 1.5, gain: g, attack: Math.min(0.07, dur * 0.3), hold: dur * 0.75, dur: dur * 0.25 });
+        this.tone(out, t, { type: 'sine', freq: f0 * 2, freqEnd: f1 * 2, sweep: dur, gain: g * 0.35, attack: Math.min(0.07, dur * 0.3), hold: dur * 0.75, dur: dur * 0.25 });
+        bed(t, { freq: (f0 + f1) * 3, freqEnd: f1 * 6, Q: 2, gain: g * 0.6, attack: dur * 0.3, release: dur * 0.3, dur });
+      },
+      // Thủy lực: tiếng dầu xì qua van + bơm rền trầm
+      hydraulic: (t, dur, g) => {
+        bed(t, { freq: 2300 * rnd(0.1), freqEnd: 1700, Q: 1.3, gain: g, attack: 0.03, release: dur * 0.4, dur });
+        bed(t, { buffer: B, filter: 'lowpass', freq: 170, Q: 0.8, gain: g * 1.4, attack: 0.05, release: dur * 0.4, dur });
+      }
+    };
+  }
+
+  // Kịch bản nạp đạn từng dòng xe (đồng hồ game: xe tăng 2,5 s, pháo tự hành 3 s, thay băng 4 s; xe hỏng nạp chậm thì giãn theo)
+  reloadCues(tankType) {
+    if (tankType === 'ARTILLERY') {
+      // Pháo tự hành 155mm, máy nạp tự động (kiểu PzH 2000 / Archer). Khóa nòng mở + quạt hút khói đã có trong playCannonFire.
+      return [
+        { f: 0.36, play: (k, t) => {   // tay nạp thủy lực mở khóa, xoay ra ổ đạn
+          k.latch(t, 2200, 0.08);
+          k.hydraulic(t + 0.03, 0.45, 0.05);
+          k.motor(t + 0.03, 0.45, 120, 190, 0.02);
+          k.clank(t + 0.47, { f0: 300, mass: 0.6, g: 0.12, ring: 0.25 });
+        } },
+        { f: 0.55, play: (k, t) => {   // quả đạn 43 kg rơi vào khay nạp
+          k.scrape(t, 0.09, 400, 300, 0.05, 0.6);
+          k.clank(t + 0.08, { f0: 220, mass: 1, g: 0.17, ring: 0.35 });
+        } },
+        { before: 1.15, play: (k, t) => {   // xích đẩy đạn lao tới, đai dẫn hướng cắm vào rãnh xoắn "KẲNG"
+          k.motor(t, 0.34, 300, 900, 0.035);
+          k.chain(t, 0.32, 1400, 0.06, { gap: 0.045, acc: 1.12 });
+          k.clank(t + 0.32, { f0: 480, mass: 0.8, g: 0.2, ring: 0.6, bright: 1.3 });
+        } },
+        { before: 0.72, play: (k, t) => {   // xích đẩy rút về
+          k.motor(t, 0.22, 700, 300, 0.025);
+          k.chain(t, 0.2, 1200, 0.035, { gap: 0.02 });
+        } },
+        { before: 0.5, play: (k, t) => {   // 2 khối liều phóng được đẩy vào sau đạn: "thụp - thụp" đục
+          k.scrape(t, 0.12, 900, 1300, 0.025, 0.4);
+          k.thud(t + 0.04, 0.11, 230);
+          k.thud(t + 0.17, 0.1, 250);
+        } },
+        { before: 0.04, play: (k, t) => {   // khối khóa nòng trượt lên đóng sập + nạp hạt lửa + rơ-le sẵn sàng
+          k.hydraulic(Math.max(this.ctx.currentTime, t - 0.06), 0.12, 0.04);
+          k.scrape(t, 0.04, 800, 1300, 0.04, 0.5);
+          k.clank(t + 0.04, { f0: 300, mass: 1, g: 0.24, ring: 0.6 });
+          k.latch(t + 0.16, 2800, 0.07);
+          k.latch(t + 0.27, 3400, 0.035);
+        } }
+      ];
+    }
+    if (tankType === 'GATLING') {
+      // Pháo 30mm: thay thùng đạn dây 300 viên. Mô-tơ quay nòng hãm dần đã do updateGatlingMotor phát.
+      return [
+        { f: 0, play: (k, t) => {   // khóa nòng giữ lùi, chốt hãm cụm nòng
+          k.clank(t + 0.05, { f0: 900, mass: 0.3, g: 0.12, ring: 0.2 });
+          k.latch(t + 0.18, 2000, 0.07);
+        } },
+        { f: 0.08, play: (k, t) => {   // mở 2 lẫy nắp thùng đạn bọc giáp, nắp bản lề rít rồi tì vào chặn
+          k.latch(t, 2000, 0.09);
+          k.latch(t + 0.13, 1900, 0.09);
+          k.scrape(t + 0.2, 0.2, 1600, 2300, 0.02, 0.3);
+          k.clank(t + 0.4, { f0: 700, mass: 0.4, g: 0.12, ring: 0.3 });
+        } },
+        { f: 0.2, play: (k, t) => k.chain(t, 0.36, 1300, 0.05, { gap: 0.03, ring: 1500 }) },   // rút đuôi dây đạn cũ
+        { f: 0.32, play: (k, t) => {   // thùng đạn mới (nặng) trượt vào khay, tì cữ, khóa
+          k.scrape(t, 0.34, 300, 430, 0.07, 0.8);
+          k.clank(t + 0.35, { f0: 260, mass: 0.9, g: 0.2, ring: 0.25 });
+          k.latch(t + 0.52, 2200, 0.08);
+        } },
+        { f: 0.5, play: (k, t) => {   // luồn đầu dây đạn vào máng tiếp đạn
+          k.chain(t, 0.45, 1200, 0.055, { gap: 0.026, ring: 1400 });
+          k.latch(t + 0.48, 2500, 0.06);
+        } },
+        { f: 0.66, play: (k, t) => {   // đóng sập nắp, cài 2 lẫy
+          k.clank(t, { f0: 650, mass: 0.5, g: 0.16, ring: 0.3 });
+          k.latch(t + 0.13, 2000, 0.08);
+          k.latch(t + 0.24, 1900, 0.08);
+        } },
+        { before: 0.78, play: (k, t) => {   // mô-tơ tiếp đạn kéo dây đạn chạy đều trong máng
+          k.motor(t, 0.52, 300, 900, 0.035);
+          k.chain(t + 0.05, 0.45, 1500, 0.045, { gap: 0.024 });
+        } },
+        { before: 0.03, play: (k, t) => {   // viên đầu vào buồng, khóa nòng đóng
+          k.clank(t + 0.03, { f0: 1000, mass: 0.4, g: 0.16, ring: 0.25 });
+          k.latch(t + 0.14, 3000, 0.04);
+        } }
+      ];
+    }
+    if (tankType === 'SCOUT') {
+      // Súng máy 12.7mm trên nóc: thay hộp 100 viên, lên đạn tay 2 lần như súng thật
+      const charge = (k, t) => {   // kéo tay lên đạn (lò xo nén, rít cao dần) tới cữ sau
+        k.scrape(t, 0.14, 1100, 2600, 0.06, 1.2);
+        k.clank(t + 0.15, { f0: 1400, mass: 0.3, g: 0.13, ring: 0.2 });
+      };
+      const slam = (k, t) => {   // nhả tay: bệ khóa nòng lao về đóng sập
+        k.scrape(t, 0.03, 2400, 1600, 0.05, 0.5);
+        k.clank(t + 0.03, { f0: 1100, mass: 0.45, g: 0.16, ring: 0.3 });
+      };
+      return [
+        { f: 0, play: (k, t) => {   // ấn lẫy, nắp hộp khóa nòng bật lên tì vào chặn
+          k.latch(t, 2600, 0.1);
+          k.scrape(t + 0.02, 0.06, 2000, 2800, 0.03, 0.5);
+          k.clank(t + 0.09, { f0: 1300, mass: 0.2, g: 0.1, ring: 0.25 });
+        } },
+        { f: 0.06, play: (k, t) => k.chain(t, 0.22, 2200, 0.04, { gap: 0.028, ring: 3000 }) },   // rút mắt xích còn sót
+        { f: 0.15, play: (k, t) => {   // mở 2 lẫy hộp rỗng, nhấc ra, đặt xuống nóc xe kêu "bộp" rỗng
+          k.latch(t, 2300, 0.08);
+          k.latch(t + 0.1, 2200, 0.08);
+          k.scrape(t + 0.16, 0.14, 700, 900, 0.03, 0.6);
+          k.clank(t + 0.34, { f0: 520, mass: 0.3, g: 0.1, ring: 0.4 });
+        } },
+        { f: 0.33, play: (k, t) => {   // hộp đầy ~16 kg đặt vào giá, cài lẫy
+          k.scrape(t, 0.12, 400, 600, 0.04, 0.7);
+          k.clank(t + 0.12, { f0: 450, mass: 0.7, g: 0.16, ring: 0.2 });
+          k.latch(t + 0.28, 2400, 0.08);
+        } },
+        { f: 0.47, play: (k, t) => {   // bật nắp hộp đạn, kéo dây đạn ra
+          k.latch(t, 2600, 0.07);
+          k.scrape(t + 0.04, 0.12, 1400, 1900, 0.015, 0.3);
+          k.chain(t + 0.2, 0.3, 1900, 0.05, { gap: 0.026, ring: 2800 });
+        } },
+        { f: 0.6, play: (k, t) => {   // đặt viên đầu vào khay tiếp đạn, đập nắp xuống
+          k.clank(t, { f0: 1600, mass: 0.15, g: 0.05, ring: 0.15 });
+          k.clank(t + 0.16, { f0: 1200, mass: 0.4, g: 0.2, ring: 0.3 });
+          k.latch(t + 0.17, 2800, 0.06);
+        } },
+        { before: 1.2, play: charge },
+        { before: 0.75, play: slam },
+        { before: 0.6, play: charge },
+        { before: 0.03, play: slam }
+      ];
+    }
+    // Xe tăng 120mm, người nạp đạn: khóa nòng mở + đế vỏ đạn rơi đã có trong playCannonFire (0,75 / 0,95 s)
+    return [
+      { f: 0.4, play: (k, t) => {   // gạt công tắc gối, cửa chống nổ khoang đạn trượt mở bằng thủy lực
+        k.latch(t, 2400, 0.07);
+        k.hydraulic(t + 0.02, 0.26, 0.045);
+        k.scrape(t + 0.03, 0.22, 300, 420, 0.05, 0.6);
+        k.clank(t + 0.25, { f0: 260, mass: 0.7, g: 0.14, ring: 0.25 });
+      } },
+      { f: 0.52, play: (k, t) => {   // rút quả đạn khỏi ống chứa: vỏ cháy được miết vào ống, đáy thép chạm mép
+        k.scrape(t, 0.3, 700, 1150, 0.05, 0.9);
+        k.clank(t + 0.3, { f0: 1500, mass: 0.1, g: 0.05, ring: 0.12 });
+      } },
+      { f: 0.66, play: (k, t) => {   // cửa chống nổ đóng sập
+        k.hydraulic(t, 0.2, 0.04);
+        k.scrape(t + 0.01, 0.2, 420, 300, 0.05, 0.6);
+        k.clank(t + 0.21, { f0: 240, mass: 0.85, g: 0.17, ring: 0.3 });
+      } },
+      { before: 0.62, play: (k, t) => {   // đặt đạn lên khay sau khóa nòng
+        k.thud(t, 0.09, 260);
+        k.scrape(t + 0.02, 0.08, 900, 700, 0.025, 0.5);
+      } },
+      { before: 0.36, play: (k, t) => {   // đấm đạn vào buồng: trượt nhanh dần, đáy đạn chạm buồng "thộc"
+        k.scrape(t, 0.25, 600, 1700, 0.07, 1);
+        k.clank(t + 0.26, { f0: 420, mass: 0.7, g: 0.14, ring: 0.12 });
+      } },
+      { before: 0.035, play: (k, t) => {   // khối khóa nòng bật lên đóng sập "CHÁNG", gạt an toàn, rơ-le sẵn sàng
+        k.scrape(t, 0.035, 900, 1400, 0.05, 0.5);
+        k.clank(t + 0.035, { f0: 330, mass: 1, g: 0.22, ring: 0.55, bright: 1.2 });
+        k.latch(t + 0.13, 2600, 0.07);
+        k.latch(t + 0.2, 3300, 0.035);
+      } }
+    ];
+  }
+
+  // Gọi mỗi khung hình khi xe của người chơi đang nạp (remaining = thời gian nạp còn lại, total = tổng thời gian nạp).
+  // Hẹn trước tối đa 60 ms bằng đồng hồ âm thanh nên tiếng đúng nhịp, không giật theo khung hình.
+  updateReload(tankType, remaining, total) {
+    if (!this.ready() || !(total > 0)) return;
+    let r = this._reload;
+    if (!r || r.type !== tankType || remaining > r.last + 1e-4) {
+      r = this._reload = { type: tankType, cues: this.reloadCues(tankType), done: [], kit: null, last: remaining };
+    }
+    r.last = remaining;
+    const elapsed = total - Math.max(0, remaining);
+    const now = this.ctx.currentTime;
+    r.cues.forEach((c, i) => {
+      if (r.done[i]) return;
+      const at = c.f !== undefined ? c.f * total : Math.max(0, total - c.before);
+      if (at - elapsed > 0.06 && remaining > 0) return;
+      r.done[i] = true;
+      if (at < elapsed - 0.3) return;   // đã qua từ lâu (khung hình bị khựng) — bỏ, không phát dồn
+      if (!r.kit) r.kit = this.reloadKit(tankType);
+      c.play(r.kit, now + Math.max(0, at - elapsed));
+    });
+  }
+
+  // Tương thích cũ (phòng thử xe): phát nửa đầu ('start') hoặc nửa cuối ('end') của chuỗi nạp ngay lập tức
   playReload(tankType = 'ALL_ROUNDER', stage = 'end') {
     if (!this.ready()) return;
-    const t = this.ctx.currentTime;
-    const out = this.voice({ bus: this.weaponBus, gain: 0.6, wet: 0.06 });
-    // Chốt / lẫy kim loại sập: tiếng "cạch" ngắn + thân thép rung trầm
-    const clack = (tt, f, g) => {
-      this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f, Q: 1.8, gain: g, attack: 0.0006, dur: 0.035 });
-      this.burst(out, tt, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, gain: g * 1.6, attack: 0.001, dur: 0.07 });
-    };
-    // Dải đạn khớp nối chạy qua máng: chuỗi tiếng lách cách dày, tắt dần
-    const rattle = (tt, dur, f, g) => {
-      let x = 0;
-      while (x < dur) {
-        this.burst(out, tt + x, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f * (0.85 + Math.random() * 0.3), Q: 2.2, gain: g * (0.5 + Math.random() * 0.5) * (1 - x / dur * 0.5), attack: 0.0005, dur: 0.018 });
-        x += 0.022 + Math.random() * 0.03;
-      }
-    };
-    // Mô-tơ servo điện: tiếng rít nhiễu dải hẹp quét tần số
-    const servo = (tt, dur, f0, f1, g) => this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f0, freqEnd: f1, sweep: dur, Q: 9, gain: g, attack: dur * 0.25, dur });
-    // Trượt kim loại (tay khóa nòng / cần đẩy đạn)
-    const slide = (tt, dur, f0, f1, g) => this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f0, freqEnd: f1, sweep: dur, Q: 2.5, gain: g, attack: 0.004, dur });
-    if (tankType === 'GATLING') {
-      if (stage === 'start') {
-        // Hết đạn: mô-tơ hãm, mở chốt thùng đạn bọc giáp, thay hộp tiếp đạn
-        servo(t, 0.5, 900, 300, 0.05);
-        clack(t + 0.35, 1400, 0.16);
-        this.burst(out, t + 0.6, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 200, gain: 0.35, attack: 0.002, dur: 0.16 });   // hộp đạn nặng tì vào khay
-        rattle(t + 0.7, 0.55, 1100, 0.07);
-      } else {
-        // Dải đạn vào máng, đóng chốt, servo quay nòng đưa viên đầu vào buồng
-        rattle(t, 0.25, 1200, 0.07);
-        clack(t + 0.28, 1600, 0.2);
-        servo(t + 0.4, 0.45, 300, 1100, 0.06);
-        clack(t + 0.82, 1100, 0.12);
-      }
-    } else if (tankType === 'SCOUT') {
-      if (stage === 'start') {
-        // Bật lẫy nắp súng máy, nắp bật lên, vỏ băng rỗng rơi
-        clack(t, 2200, 0.14);
-        slide(t + 0.04, 0.09, 1800, 2600, 0.05);
-        rattle(t + 0.25, 0.22, 1700, 0.05);
-      } else {
-        // Đặt băng mới, đập nắp xuống, kéo tay khóa nòng ra sau rồi nhả bật về (2 lần)
-        rattle(t, 0.18, 1500, 0.05);
-        clack(t + 0.22, 1700, 0.22);
-        for (const k of [0.55, 1.0]) {
-          slide(t + k, 0.11, 1200, 2400, 0.08);
-          clack(t + k + 0.14, 2000, 0.2);
-        }
-      }
-    } else {
-      // Pháo chính: cần đẩy đạn đưa đạn vào buồng nòng rồi khối khóa nòng thép đóng nặng nề
-      const heavy = tankType === 'ARTILLERY';
-      if (heavy) servo(t, 0.55, 250, 650, 0.05);
-      slide(t + (heavy ? 0.1 : 0), heavy ? 0.4 : 0.22, 500, 900, 0.09);
-      const tc = t + (heavy ? 0.55 : 0.27);
-      this.burst(out, tc, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, drive: 2, gain: 0.6, attack: 0.001, dur: 0.14 });
-      clack(tc, heavy ? 900 : 1200, 0.22);
-    }
+    const total = (tankType === 'GATLING' || tankType === 'SCOUT') ? 4 : tankType === 'ARTILLERY' ? 3 : 2.5;
+    const cues = this.reloadCues(tankType)
+      .map(c => ({ at: c.f !== undefined ? c.f * total : total - c.before, play: c.play }))
+      .filter(c => (stage === 'start') === (c.at < total * 0.5));
+    if (!cues.length) return;
+    const t0 = Math.min(...cues.map(c => c.at));
+    const kit = this.reloadKit(tankType);
+    const now = this.ctx.currentTime;
+    for (const c of cues) c.play(kit, now + c.at - t0);
   }
 
   // Nòng 6 nòng nguội lại: chỉ còn tiếng rơ-le điện khẽ + xì hơi nóng tắt dần (không có tiếng nạp đạn)
@@ -1718,33 +1978,46 @@ class SoundEngine {
       hp2.type = 'highpass';
       hp2.frequency.value = 45;
       hp2.Q.value = 0.6;
+      // Cắt dải trên ~2 kHz: máy diesel nghe qua thân xe là tiếng gầm trầm-trung; để nguyên dải 1-4 kHz rung theo nhịp nổ
+      // (55-180 Hz, đúng cao độ giọng người) thì tai nghe thành tiếng "è è" kèn kazoo / còi rè
+      const lpOut = ctx.createBiquadFilter();
+      lpOut.type = 'lowpass';
+      lpOut.frequency.value = 1800;
+      lpOut.Q.value = 0.5;
+      // "ngực" của tiếng máy: nhấn dải 90-160 Hz — vùng loa / tai nghe thường vẫn phát được, nghe ra sức nặng khối máy
+      const chest = ctx.createBiquadFilter();
+      chest.type = 'peaking';
+      chest.frequency.value = 120;
+      chest.Q.value = 0.8;
+      chest.gain.value = 5;
       eout.connect(hp1);
       hp1.connect(hp2);
-      hp2.connect(out);
+      hp2.connect(chest);
+      chest.connect(lpOut);
+      lpOut.connect(out);
       e.hp1 = hp1;
       e.hp2 = hp2;
 
-      // Nhịp nổ xi-lanh: răng cưa qua méo bão hòa -> lọc thông thấp theo tải
+      // Đồng hồ nhịp nổ xi-lanh (răng cưa): KHÔNG phát trực tiếp — chỉ tạo xung phụt ống xả / gõ kim phun.
+      // Phát thẳng răng cưa (đủ mọi họa âm, đều tăm tắp) nghe thành tiếng "è è" như kèn
       e.fire = ctx.createOscillator();
       e.fire.type = 'sawtooth';
       e.fire.frequency.value = 28;
       e.crank = ctx.createOscillator();
       e.crank.type = 'sine';
       e.crank.frequency.value = 27;
-      const crankAmt = ctx.createGain();
-      crankAmt.gain.value = 0.45;
-      const shaper = ctx.createWaveShaper();
-      shaper.curve = this.getShaper(3);
+      // 2 tầng thông thấp không cộng hưởng cho thân tiếng máy (bậc trục khuỷu bên dưới)
       e.engineFilter = ctx.createBiquadFilter();
       e.engineFilter.type = 'lowpass';
       e.engineFilter.frequency.value = 380;
-      e.engineFilter.Q.value = 1.2;
+      e.engineFilter.Q.value = 0.7;
+      e.engineFilter2 = ctx.createBiquadFilter();
+      e.engineFilter2.type = 'lowpass';
+      e.engineFilter2.frequency.value = 380;
+      e.engineFilter2.Q.value = 0.5;
+      e.engineFilter.connect(e.engineFilter2);
       e.engineGain = ctx.createGain();
       e.engineGain.gain.value = 0.0;
-      e.fire.connect(shaper);
-      e.crank.connect(crankAmt);
-      crankAmt.connect(shaper);
-      shaper.connect(e.engineFilter);
 
       // Máy thật không nổ đều tuyệt đối: mỗi xi-lanh, mỗi lần phun hơi khác nhau -> vòng tua chao nhẹ ngẫu nhiên
       // và biên độ từng nhát nổ dao động. Dùng nhiễu lọc chậm (không tuần hoàn, nên không thành tiếng "phạch phạch" trực thăng)
@@ -1777,7 +2050,43 @@ class SoundEngine {
       rough.connect(roughF);
       roughF.connect(roughDepth);
       roughDepth.connect(engAm.gain);
-      e.engineFilter.connect(engAm);
+      // Thân tiếng máy: các BẬC của trục khuỷu (0.5, 1, 1.5, 2, 3, 4 × tần số nổ) bằng sóng sin tròn, mỗi bậc to nhỏ
+      // chậm ngẫu nhiên. Răng cưa (đủ mọi họa âm, đều tăm tắp) nghe thành tiếng "è è" kèn; nhiễu dải hẹp điều biên theo
+      // nhịp nổ nghe thành "rè rè" loa rè. Bậc nửa (0.5) cho tiếng "lục bục" lệch nhịp đặc trưng của máy nhiều xi-lanh
+      const ORD = [[0.5, 0.3], [1, 1], [1.5, 0.35], [2, 0.6], [3, 0.3], [4, 0.14]];
+      e.orders = [];
+      const bank = ctx.createGain();
+      bank.gain.value = 0.5;
+      ORD.forEach(([k, a], i) => {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = 60 * k;
+        const jg = ctx.createGain();
+        jg.gain.value = k;
+        e.jitterDepth.connect(jg);
+        jg.connect(o.frequency);
+        const g = ctx.createGain();
+        g.gain.value = a;
+        const n = ctx.createBufferSource();
+        n.buffer = this.pinkNoiseBuffer;
+        n.loop = true;
+        n.playbackRate.value = 0.71 + i * 0.13;
+        const nf = ctx.createBiquadFilter();
+        nf.type = 'lowpass';
+        nf.frequency.value = 3 + i * 1.3;
+        const nd = ctx.createGain();
+        nd.gain.value = a * 7;
+        n.connect(nf);
+        nf.connect(nd);
+        nd.connect(g.gain);
+        o.connect(g);
+        g.connect(bank);
+        o.start();
+        n.start(0, i * 0.37);
+        e.orders.push({ o, k });
+      });
+      bank.connect(e.engineFilter);
+      e.engineFilter2.connect(engAm);
       engAm.connect(e.engineGain);
       e.engineGain.connect(eout);
 
@@ -1794,13 +2103,13 @@ class SoundEngine {
       comb.loop = true;
       const combF = ctx.createBiquadFilter();
       combF.type = 'bandpass';
-      combF.frequency.value = 650;
-      combF.Q.value = 0.7;
+      combF.frequency.value = 450;
+      combF.Q.value = 0.5;
       e.combFilter = combF;
       e.combAm = ctx.createGain();
       e.combAm.gain.value = 0.5;
       e.combLfoDepth = ctx.createGain();
-      e.combLfoDepth.gain.value = 0.18;
+      e.combLfoDepth.gain.value = 0.08;
       e.fire.connect(e.combLfoDepth);
       e.combLfoDepth.connect(e.combAm.gain);
       e.combGain = ctx.createGain();
@@ -1822,12 +2131,20 @@ class SoundEngine {
       const clkAm = ctx.createGain();
       clkAm.gain.value = 0;
       pulseShape.connect(clkAm.gain);
+      // mỗi nhát gõ to nhỏ ngẫu nhiên (có nhát gần như mất): gõ đều tăm tắp từng nhịp nổ chính là thứ tạo tiếng "è è"
+      const clkRnd = ctx.createGain();
+      clkRnd.gain.value = 0.45;
+      const clkRndDepth = ctx.createGain();
+      clkRndDepth.gain.value = 9;
+      roughF.connect(clkRndDepth);
+      clkRndDepth.connect(clkRnd.gain);
       e.clatterGain = ctx.createGain();
       e.clatterGain.gain.value = 0;
       e.clatterFilter = clkF;
       clk.connect(clkF);
       clkF.connect(clkAm);
-      clkAm.connect(e.clatterGain);
+      clkAm.connect(clkRnd);
+      clkRnd.connect(e.clatterGain);
       e.clatterGain.connect(eout);
 
       // Turbo rít nhẹ theo vòng tua
@@ -1846,14 +2163,34 @@ class SoundEngine {
       const exhF = ctx.createBiquadFilter();
       exhF.type = 'lowpass';
       exhF.frequency.value = 340;
+      exhF.Q.value = 0.6;
+      e.exhaustFilter = exhF;
       const exhAm = ctx.createGain();
-      exhAm.gain.value = 0.35;
-      pulseShape.connect(exhAm.gain);
+      exhAm.gain.value = 0.6;
+      // Xung nổ được LÀM MỀM (lọc thông thấp theo nhịp nổ) trước khi điều biên: đóng/mở nhiễu gần 100% bằng xung cạnh sắc
+      // ở 50-150 Hz đúng là vùng tai nghe thành độ "nhám / rè rè" mạnh nhất; nhịp mềm thì thành tiếng gầm "ùng ục"
+      e.pulseSmooth = ctx.createBiquadFilter();
+      e.pulseSmooth.type = 'lowpass';
+      e.pulseSmooth.frequency.value = 90;
+      e.pulseSmooth.Q.value = 0.5;
+      const pulseAmt = ctx.createGain();
+      pulseAmt.gain.value = 1.2;
+      pulseShape.connect(e.pulseSmooth);
+      e.pulseSmooth.connect(pulseAmt);
+      pulseAmt.connect(exhAm.gain);
+      // mỗi nhát phụt mạnh yếu khác nhau -> tiếng gầm "ùng ục" thô ráp chứ không thành một nốt nhạc đều
+      const exhRnd = ctx.createGain();
+      exhRnd.gain.value = 0.6;
+      const exhRndDepth = ctx.createGain();
+      exhRndDepth.gain.value = 3;
+      roughF.connect(exhRndDepth);
+      exhRndDepth.connect(exhRnd.gain);
       e.exhaustGain = ctx.createGain();
       e.exhaustGain.gain.value = 0;
       exh.connect(exhF);
       exhF.connect(exhAm);
-      exhAm.connect(e.exhaustGain);
+      exhAm.connect(exhRnd);
+      exhRnd.connect(e.exhaustGain);
       e.exhaustGain.connect(eout);
 
       // Xích sắt lách cách: nhiễu dải cao điều biên bằng 2 nhịp lệch nhau (2 dải xích)
@@ -1989,31 +2326,36 @@ class SoundEngine {
     // Tần số nổ thật: V12 (xích) ~55 Hz không tải -> ~180 Hz; diesel 6 máy xe tải 6x6 ~32 -> 112 Hz; xe 4x4 ~38 -> 130 Hz
     const fireHz = truck ? 32 + rpm * 80 : wheeled ? 38 + rpm * 92 : 55 + rpm * 125;
     e.fire.frequency.setTargetAtTime(fireHz, t, tc);
+    if (e.orders) e.orders.forEach(r => r.o.frequency.setTargetAtTime(fireHz * r.k, t, tc));
     e.crank.frequency.setTargetAtTime(fireHz * 0.5, t, tc);
     // Máy hư: mất tiếng gằn cao (nghẹt), tiếng cháy nổ thô và ống xả to hơn (khói đen phụt)
     const choke = dmg >= 2 ? 0.55 : dmg === 1 ? 0.8 : 1;
-    e.engineFilter.frequency.setTargetAtTime((420 + rpm * 750 + (heavy ? 200 : 0)) * choke * (truck ? 0.85 : 1), t, tc);
+    const engLp = fireHz * 3.2 * (heavy ? 1.15 : 1) * choke;
+    e.engineFilter.frequency.setTargetAtTime(engLp, t, tc);
+    if (e.engineFilter2) e.engineFilter2.frequency.setTargetAtTime(engLp * 1.2, t, tc);
     // Cắt luôn tần số nổ gốc (và mọi thứ dưới nó): loa chỉ phát nó thành tiếng ù, còn tai vẫn "nghe ra" nhịp máy trầm
     // qua các họa âm phía trên (âm gốc ảo) — máy nghe dày, chắc mà không ù
     if (e.hp1) {
-      e.hp1.frequency.setTargetAtTime(Math.max(60, fireHz * 1.45), t, tc);
-      e.hp2.frequency.setTargetAtTime(Math.max(55, fireHz * 1.25), t, tc);
+      e.hp1.frequency.setTargetAtTime(Math.max(48, fireHz * 0.8), t, tc);
+      e.hp2.frequency.setTargetAtTime(38, t, tc);
     }
-    const eg = (0.022 + rpm * 0.05) * (heavy ? 1.25 : 1) * (truck ? 1.15 : 1);
+    const eg = (0.02 + rpm * 0.03) * (heavy ? 1.25 : 1) * (truck ? 1.15 : 1);
     e.engineGain.gain.setTargetAtTime(eg, t, tc);
     e.combGain.gain.setTargetAtTime((0.08 + rpm * 0.18) * (1 + dmg * 0.35), t, tc);
-    if (e.combFilter) e.combFilter.frequency.setTargetAtTime(500 + rpm * 900, t, tc);
+    if (e.combFilter) e.combFilter.frequency.setTargetAtTime(220 + rpm * 420, t, tc);
     e.turbo.frequency.setTargetAtTime(1500 + rpm * 2800, t, 0.3);
     // Turbo hỏng: tiếng rít mất hẳn
     e.turboGain.gain.setTargetAtTime(dmg >= 2 ? 0 : Math.max(0, rpm - 0.3) * (isBoost ? 0.02 : 0.011), t, 0.3);
-    e.exhaustGain.gain.setTargetAtTime((0.08 + rpm * 0.22) * (1 + dmg * 0.3), t, tc);
+    e.exhaustGain.gain.setTargetAtTime((0.07 + rpm * 0.14) * (1 + dmg * 0.3), t, tc);
+    if (e.exhaustFilter) e.exhaustFilter.frequency.setTargetAtTime((300 + rpm * 500) * choke, t, tc);
+    if (e.pulseSmooth) e.pulseSmooth.frequency.setTargetAtTime(fireHz * 1.1, t, tc);
     // Độ lệch nhịp nổ: không tải chao rõ (máy "lục bục"), vòng tua cao đều hơn; máy hư chao mạnh
     // cao độ máy chỉ chao rất nhẹ (~±1% lúc không tải); chao mạnh nghe như băng cát-xét nhão / còi méo
     if (e.jitterDepth) e.jitterDepth.gain.setTargetAtTime(fireHz * 0.15 * Math.max(0, 1 - (rpm - 0.15) * 2.2) + (dmg ? fireHz * 0.12 * dmg : 0), t, tc);
     if (e.roughDepth) e.roughDepth.gain.setTargetAtTime(3.5 * Math.max(0.3, 1 - (rpm - 0.15) * 1.6) * (1 + dmg * 0.5), t, tc);
     // Tiếng gõ kim phun diesel: rõ khi không tải, cao độ nhích lên theo vòng tua
     if (e.clatterGain) {
-      e.clatterGain.gain.setTargetAtTime((0.3 + rpm * 0.15) * (truck ? 1.2 : 1), t, tc);
+      e.clatterGain.gain.setTargetAtTime((0.09 + rpm * 0.04) * (truck ? 1.2 : 1), t, tc);
       e.clatterFilter.frequency.setTargetAtTime(1300 + rpm * 900, t, tc);
     }
     // Đứng chờ lâu: tiếng máy lùi dần về nền (tai quen tiếng máy, như kíp lái ngồi trong xe); nhấn ga là trở lại ngay

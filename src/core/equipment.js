@@ -14,7 +14,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   const TANKS = ['ALL_ROUNDER', 'GATLING', 'ARTILLERY', 'SCOUT'];
   const ALL = TANKS;
-  const SLOTS = 3;
+  const SLOTS = 4;   // = tổng số ô các nhóm (2 giáp + 2 phụ kiện)
   const START_SILVER = 3000;
 
   // ---------------------------------------------------------------------------
@@ -23,50 +23,61 @@
   // speed / accel: hệ số nhân tốc độ tối đa / gia tốc (giáp nặng làm xe chậm đi)
   const MODULES = {
     era: {
-      name: 'Giáp phản ứng nổ', icon: 'bolt', price: 3200, tanks: ['ALL_ROUNDER', 'GATLING', 'SCOUT'], speed: 0.97,
+      name: 'Giáp phản ứng nổ', icon: 'bolt', cat: 'armor', adv: true, price: 3200, tanks: ['ALL_ROUNDER', 'GATLING', 'SCOUT'], speed: 0.97,
       desc: 'Gạch nổ phủ mũi, sườn và tháp. Mỗi viên gạch kích nổ chặn gần hết một phát đạn nổ lõm / RPG, giảm sức xuyên đạn xuyên giáp. Gạch đã nổ thì mất.'
     },
     slat: {
-      name: 'Giáp lồng chống RPG', icon: 'grid-dots', price: 1800, tanks: ALL, speed: 0.98,
+      name: 'Giáp lồng chống RPG', icon: 'grid-dots', cat: 'armor', price: 1800, tanks: ALL, speed: 0.98,
       desc: 'Lồng thép quanh sườn sau và đuôi xe. Bóp méo đầu đạn RPG trước khi nổ (chặn ~6/10 phát RPG, ~1/4 tên lửa).'
     },
     applique: {
-      name: 'Tấm giáp tăng cường', icon: 'shield', price: 3800, tanks: ALL, speed: 0.94, accel: 0.94,
+      name: 'Tấm giáp tăng cường', icon: 'shield', cat: 'armor', adv: true, price: 3800, tanks: ALL, speed: 0.94, accel: 0.94,
       desc: 'Giáp composite gắn thêm ở sườn và má tháp: giáp sườn dày thêm ~45%, mũi ~20%. Xe nặng hơn, chậm hơn một chút.'
     },
     spall: {
-      name: 'Lớp lót chống mảnh', icon: 'layers-subtract', price: 2800, tanks: ALL,
+      name: 'Lớp lót chống mảnh', icon: 'layers-subtract', cat: 'armor', price: 2800, tanks: ALL,
       desc: 'Lớp sợi aramid trong khoang: khi bị bắn thủng, mảnh vỡ gây ít sát thương hơn (-15%), kho đạn khó bị kích nổ hơn.'
     },
     aps: {
-      name: 'Hệ thống đánh chặn chủ động', icon: 'radar', price: 7000, tanks: ['ALL_ROUNDER', 'GATLING'],
+      name: 'Hệ thống đánh chặn chủ động', icon: 'shield-bolt', cat: 'gear', adv: true, price: 7000, tanks: ['ALL_ROUNDER', 'GATLING'],
       desc: 'Radar + đạn đánh chặn trên nóc tháp tự bắn hạ RPG và tên lửa chống tăng bay tới (2 lần mỗi lần xuất kích). Radar bị bắn hỏng thì ngừng hoạt động.'
     },
     smoke: {
-      name: 'Ống phóng lựu khói', icon: 'cloud', price: 1500, tanks: ALL,
+      name: 'Ống phóng lựu khói', icon: 'cloud', cat: 'gear', price: 1500, tanks: ALL,
       desc: 'Phím G: phóng màn khói dày trước mũi xe, che khuất tầm nhìn của địch ~14 giây (2 lần mỗi lần xuất kích).'
     },
     camo: {
-      name: 'Lưới ngụy trang', icon: 'leaf', price: 1600, tanks: ALL,
+      name: 'Lưới ngụy trang', icon: 'leaf', cat: 'gear', price: 1600, tanks: ALL,
       desc: 'Khi đứng yên hoặc chạy chậm, địch phải tới gần hơn ~25% mới phát hiện được xe bạn.'
     },
     fireext: {
-      name: 'Bình chữa cháy tự động', icon: 'fire-extinguisher', price: 1200, tanks: ALL,
+      name: 'Bình chữa cháy tự động', icon: 'fire-extinguisher', cat: 'gear', price: 1200, tanks: ALL,
       desc: 'Dập lửa trên xe nhanh gấp 2,5 lần, cháy do đạn cháy gây sát thương giảm một nửa.'
     },
     turbo: {
-      name: 'Động cơ tăng áp', icon: 'engine', price: 3000, tanks: ALL, speed: 1.08, accel: 1.15,
+      name: 'Động cơ tăng áp', icon: 'engine', cat: 'gear', adv: true, price: 3000, tanks: ALL, speed: 1.08, accel: 1.15,
       desc: 'Tăng áp & chỉnh hộp số: tốc độ tối đa +8%, tăng tốc nhanh hơn 15%.'
+    },
+    radar: {
+      name: 'Radar dò tìm', icon: 'radar-2', cat: 'gear', adv: true, price: 5000, tanks: ['ALL_ROUNDER', 'GATLING', 'ARTILLERY'],
+      desc: 'Radar nhỏ trên nóc tháp quét quanh xe: bắt được xe địch trong bán kính ~75 m kể cả khi núp bụi, hiện chấm trên bản đồ. Xe trinh sát đã có radar riêng.'
+    },
+    jammer: {
+      name: 'Máy gây nhiễu', icon: 'antenna-bars-off', cat: 'gear', adv: true, price: 5000, tanks: ALL,
+      desc: 'Phát nhiễu điện tử: đầu dò tên lửa địch mất gấp đôi thời gian mới khóa được bạn, tên lửa đang bay dễ lệch hướng, radar địch bắt bạn chập chờn.'
     }
   };
+  // Nhóm trong bảng chọn trang bị & số ô tối đa mỗi nhóm (đạn cao cấp không chiếm ô)
+  const CATS = { armor: { name: 'GIÁP', icon: 'shield-half-filled', slots: 2 }, ammo: { name: 'ĐẠN', icon: 'bullet', slots: 0 }, gear: { name: 'PHỤ KIỆN', icon: 'cpu', slots: 2 } };
+  const EQ_RADAR_RANGE = 600;   // radar lắp thêm (xe trinh sát: 950)
 
   // Đạn cao cấp: mua 1 lần cho 1 xe, luôn dùng. pen: hệ số độ xuyên; splash: hệ số sát thương nổ lan; tandem: đầu nổ kép
   const PREMIUM = {
-    ap_du: { tank: 'ALL_ROUNDER', ammo: 'AP', name: 'Đạn xuyên lõi hợp kim nặng', icon: 'arrow-big-right-lines', price: 4500, pen: 1.22, desc: 'Đạn xuyên giáp xuyên sâu hơn 22%, ít mất sức xuyên khi bắn xa.' },
-    heat_tandem: { tank: 'ALL_ROUNDER', ammo: 'NORMAL', name: 'Đạn nổ lõm 2 tầng', icon: 'flame', price: 3500, pen: 1.1, tandem: true, desc: 'Đạn thường có đầu nổ mồi phá gạch giáp nổ trước, xuyên thêm 10%.' },
-    apds30: { tank: 'GATLING', ammo: 'GATLING_BULLET', name: 'Đạn 30mm xuyên dưới cỡ', icon: 'arrow-big-right-lines', price: 3800, pen: 1.36, desc: 'Đạn 30mm lõi tungsten: xuyên sâu hơn 36%, đục thủng sườn xe tăng nhanh hơn.' },
-    slap127: { tank: 'SCOUT', ammo: 'SCOUT_BULLET', name: 'Đạn 12.7mm SLAP', icon: 'arrow-big-right-lines', price: 2600, pen: 1.6, desc: 'Đạn 12.7mm xuyên dưới cỡ có đai nhựa: xuyên sâu gấp 1,6 lần.' },
-    he_frag: { tank: 'ARTILLERY', ammo: 'HE', name: 'Lựu đạn mảnh định sẵn', icon: 'atom-2', price: 3500, splash: 1.15, desc: 'Vỏ đạn 155mm khía rãnh tạo mảnh đều: sát thương nổ lan +15%.' }
+    ap_du: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'AP', name: 'Đạn xuyên lõi hợp kim nặng', icon: 'arrow-big-right-lines', price: 4500, pen: 1.22, desc: 'Đạn xuyên giáp xuyên sâu hơn 22%, ít mất sức xuyên khi bắn xa.' },
+    heat_tandem: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'NORMAL', name: 'Đạn nổ lõm 2 tầng', icon: 'flame', price: 3500, pen: 1.1, tandem: true, desc: 'Đạn thường có đầu nổ mồi phá gạch giáp nổ trước, xuyên thêm 10%.' },
+    apds30: { tank: 'GATLING', cat: 'ammo', adv: true, ammo: 'GATLING_BULLET', name: 'Đạn 30mm xuyên dưới cỡ', icon: 'arrow-big-right-lines', price: 3800, pen: 1.36, desc: 'Đạn 30mm lõi tungsten: xuyên sâu hơn 36%, đục thủng sườn xe tăng nhanh hơn.' },
+    slap127: { tank: 'SCOUT', cat: 'ammo', adv: true, ammo: 'SCOUT_BULLET', name: 'Đạn 12.7mm SLAP', icon: 'arrow-big-right-lines', price: 2600, pen: 1.6, desc: 'Đạn 12.7mm xuyên dưới cỡ có đai nhựa: xuyên sâu gấp 1,6 lần.' },
+    he_frag: { tank: 'ARTILLERY', cat: 'ammo', adv: true, ammo: 'HE', name: 'Lựu đạn mảnh định sẵn', icon: 'atom-2', price: 3500, splash: 1.15, desc: 'Vỏ đạn 155mm khía rãnh tạo mảnh đều: sát thương nổ lan +15%.' }
   };
 
   // Đạn mang thêm (tiêu hao): giá 1 viên, bán theo gói `pack` viên, tối đa `max` viên mang thêm mỗi lần xuất kích
@@ -86,6 +97,9 @@
     const p = PREMIUM[id];
     return !!(p && p.tank === tank);
   }
+  // Đồ cơ bản: chọn lắp miễn phí; đồ nâng cao (adv): phải nhận trước (xem quảng cáo), máy chủ lưu vào kho 'owned'
+  function isFree(id) { const it = MODULES[id] || PREMIUM[id]; return !!it && !it.adv; }
+  function catOf(id) { const it = MODULES[id] || PREMIUM[id]; return it ? it.cat : null; }
   function priceOf(id) {
     return (MODULES[id] && MODULES[id].price) || (PREMIUM[id] && PREMIUM[id].price) || 0;
   }
@@ -96,7 +110,10 @@
     if (!kit || typeof kit !== 'object' || !TANKS.includes(tank)) return out;
     for (const id of Array.isArray(kit.m) ? kit.m : []) {
       if (out.m.length >= SLOTS) break;
-      if (MODULES[id] && compatible(id, tank) && !out.m.includes(id)) out.m.push(id);
+      if (!MODULES[id] || !compatible(id, tank) || out.m.includes(id)) continue;
+      const c = MODULES[id].cat;
+      if (out.m.filter(x => MODULES[x].cat === c).length >= ((CATS[c] && CATS[c].slots) || 0)) continue;   // nhóm đã đủ ô
+      out.m.push(id);
     }
     for (const id of Array.isArray(kit.p) ? kit.p : []) if (PREMIUM[id] && PREMIUM[id].tank === tank && !out.p.includes(id)) out.p.push(id);
     const shop = AMMO_SHOP[tank] || {};
@@ -121,7 +138,7 @@
     return Math.round(250 + (result === 'win' ? 300 : result === 'draw' ? 150 : 0) + kills * 90 + damage * 30 + Math.min(durSec, 900) / 3);
   }
 
-  const API = { TANKS, SLOTS, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, BASE_AMMO, AMMO_PROP, compatible, priceOf, sanitize, botKit, silverFor };
+  const API = { TANKS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, BASE_AMMO, AMMO_PROP, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================

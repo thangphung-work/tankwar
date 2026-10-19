@@ -199,7 +199,8 @@
 .mm-commander-profile .acc-xpbar { margin-top: 3px; }
 /* dòng 4: Bạc · trận thắng · hạ gục */
 .cmd-meta { display: flex; align-items: center; gap: 12px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--lb-line, rgba(200, 210, 192, 0.13)); }
-.cmd-meta .acc-silver { margin-top: 0; }
+.cmd-meta .acc-silver { margin-top: 0; font: 700 11px var(--font-mono, monospace); color: var(--lb-accent-2); white-space: nowrap; }
+.cmd-meta .acc-silver .ti { font-size: 13px; color: var(--lb-accent); }
 .cmd-stat { display: inline-flex; align-items: center; gap: 4px; font: 11px var(--font-mono, monospace); color: var(--lb-text, #dfe4d9); white-space: nowrap; }
 .cmd-stat .ti { color: var(--lb-dim); font-size: 13px; }
 .mm-commander-profile .commander-avatar-box { width: 52px; height: 52px; }
@@ -987,4 +988,9 @@
   .mm-class-card .card-img-frame { height: 70px; flex: none; }
   .hdr-subheading { display: none; }
   .mm-action-launch-btn { min-width: 0; }
+}
+
+@media (max-width: 1280px) {
+  .commander-info { width: 220px; }
+  .cmd-meta .cmd-stat:last-child { display: none; }
 }

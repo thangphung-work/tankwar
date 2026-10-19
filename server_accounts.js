@@ -26,6 +26,8 @@
  *   POST /api/match-result  { result, kills, deaths, damage, shots, tankType, mapType, durationSec, ammoUsed? } -> { profile, gained, silver }
  *   POST /api/shop/buy      { tank, item } (mô-đun / đạn cao cấp) | { tank, ammo, packs } (đạn mang thêm) -> { profile }
  *   POST /api/loadout       { tank, m: [mô-đun], a: { loại đạn: số viên mang thêm } } -> { profile }
+ *   POST /api/ad/start      { tank, item } (đồ nâng cao) -> { token, sec }: bắt đầu xem quảng cáo
+ *   POST /api/shop/claim    { tank, item, token } -> { profile }: xem đủ thời lượng thì nhận đồ (lưu vào owned, tự lắp nếu còn ô)
  *
  * CỬA HÀNG (danh mục & giá ở src/core/equipment.js, dùng chung với trò chơi): tiền "Bạc" nhận sau mỗi trận,
  *   tài khoản mới được tặng Equipment.START_SILVER. Mua bán ghi trong 1 giao dịch (trừ tiền chỉ khi đủ tiền).
@@ -338,6 +340,8 @@ function publicProfile(u) {
 }
 
 // Thành tích trận mạng do máy chủ tự đếm (server_auth.js gọi): giới hạn số máy khách tự báo khi lưu kết quả
+const adPending = new Map();   // userId -> { tank, id, token, at }: phiên xem quảng cáo đang chạy (nhận đồ nâng cao)
+const AD_SEC = 15;             // thời lượng quảng cáo tối thiểu (giây)
 const online = new Map();   // userId -> { mk (mã trận), kills, deaths, damage, at }
 function noteOnline(userId, matchKey, kills, deaths, damage) {
   const now = Date.now();
@@ -386,10 +390,10 @@ function cleanName(s) {
   return t.length >= 2 ? t : null;
 }
 
-// Bộ trang bị hợp lệ: chỉ mô-đun đã mua, lắp được trên xe, tối đa Equipment.SLOTS ô
+// Bộ trang bị hợp lệ: đồ cơ bản (miễn phí) hoặc đồ nâng cao đã nhận / đã mua, lắp được trên xe, đủ ô từng nhóm
 function cleanLoadout(userId, tank, b) {
   const k = Equipment.sanitize({ m: b && b.m, a: b && b.a }, tank);
-  k.m = k.m.filter(id => Q.ownedHas.get(userId, tank, id));
+  k.m = k.m.filter(id => Equipment.isFree(id) || Q.ownedHas.get(userId, tank, id));
   delete k.p;
   return k;
 }
@@ -510,6 +514,40 @@ async function handle(req, res) {
         return true;
       });
       if (!ok) return send(res, 402, { error: 'Không đủ Bạc' });
+      return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
+    }
+    // ---- NHẬN ĐỒ NÂNG CAO BẰNG XEM QUẢNG CÁO ----
+    // 1) /api/ad/start { tank, item } -> { token, sec }: máy chủ ghi lúc bắt đầu xem
+    // 2) /api/shop/claim { tank, item, token }: chỉ nhận khi đã qua đủ thời lượng quảng cáo kể từ lúc bắt đầu
+    // (khi gắn mạng quảng cáo thật: thay bước 2 bằng xác minh phía máy chủ của nhà cung cấp quảng cáo)
+    if (url === '/api/ad/start' || url === '/api/shop/claim') {
+      const tank = String(b.tank || ''), id = String(b.item || '');
+      if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
+      const it = Equipment.MODULES[id] || Equipment.PREMIUM[id];
+      if (!it || !it.adv || !Equipment.compatible(id, tank)) return send(res, 400, { error: 'Món này không cần nhận / xe này không lắp được' });
+      if (Q.ownedHas.get(u.id, tank, id)) return send(res, 409, { error: 'Bạn đã có món này cho xe này rồi' });
+      const now = Date.now();
+      if (url === '/api/ad/start') {
+        const token = crypto.randomBytes(12).toString('hex');
+        adPending.set(u.id, { tank, id, token, at: now });
+        return send(res, 200, { token, sec: AD_SEC });
+      }
+      const p = adPending.get(u.id);
+      if (!p || p.token !== String(b.token || '') || p.tank !== tank || p.id !== id) return send(res, 400, { error: 'Phiên xem quảng cáo không hợp lệ, thử lại' });
+      if (now - p.at < (AD_SEC - 1.5) * 1000) return send(res, 400, { error: 'Chưa xem hết quảng cáo' });
+      if (now - p.at > 15 * 60e3) { adPending.delete(u.id); return send(res, 400, { error: 'Phiên xem quảng cáo đã hết hạn' }); }
+      adPending.delete(u.id);
+      tx(() => {
+        Q.addOwned.run(u.id, tank, id, now);
+        Q.addPurchase.run(u.id, now, tank, id, 1, 0);
+        // mô-đun vừa nhận: tự lắp nếu nhóm còn ô trống
+        if (Equipment.MODULES[id]) {
+          let cur = {};
+          try { cur = JSON.parse((Q.loadoutGet.get(u.id, tank) || {}).data || '{}'); } catch (e) {}
+          const k = cleanLoadout(u.id, tank, Object.assign({}, cur, { m: (cur.m || []).concat([id]) }));
+          Q.setLoadout.run(u.id, tank, JSON.stringify(k));
+        }
+      });
       return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
     }
     if (url === '/api/loadout') {

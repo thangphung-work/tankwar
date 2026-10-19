@@ -185,8 +185,20 @@ const Account = (() => {
   // KHO TRANG BỊ
   // ---------------------------------------------------------------------------
   /** Bộ trang bị mang vào trận của xe `tank`: { kit, stock } (kit đã kiểm tra, số đạn mang thêm không quá kho) */
+  // Chưa đăng nhập / chơi ngoại tuyến: đồ cơ bản (miễn phí) chọn lưu ngay trên máy này
+  const GUEST_KEY = 'spg_guest_loadout';
+  function guestLoadouts() { try { return JSON.parse(localStorage.getItem(GUEST_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function loadoutOf(tank) {
+    if (profile && profile.armory) return (profile.armory.loadouts && profile.armory.loadouts[tank]) || { m: [], a: {} };
+    const g = guestLoadouts()[tank] || { m: [] };
+    return { m: (g.m || []).filter(id => typeof Equipment !== 'undefined' && Equipment.isFree(id)), a: {} };
+  }
   function kitFor(tank) {
     const A = profile && profile.armory;
+    if (!A && typeof Equipment !== 'undefined') {
+      const lo = loadoutOf(tank);
+      return { kit: lo.m.length ? Equipment.sanitize({ m: lo.m, p: [], a: {} }, tank) : null, stock: {} };
+    }
     if (!A || typeof Equipment === 'undefined') return { kit: null, stock: {} };
     const lo = (A.loadouts && A.loadouts[tank]) || { m: [], a: {} };
     const stock = Object.assign({}, (A.stock && A.stock[tank]) || {});
@@ -210,7 +222,22 @@ const Account = (() => {
     armoryChanged();
     return r.profile;
   }
+  // Nhận đồ nâng cao bằng xem quảng cáo: adStart -> (xem hết quảng cáo) -> claim
+  async function adStart(tank, item) { return api('ad/start', { tank, item }); }
+  async function claim(tank, item, token) {
+    const r = await api('shop/claim', { tank, item, token });
+    setProfile(r.profile, false);
+    armoryChanged();
+    return r.profile;
+  }
   async function setLoadout(tank, m, a) {
+    if (!profile) {
+      const g = guestLoadouts();
+      g[tank] = { m: (m || []).filter(id => Equipment.isFree(id)) };
+      try { localStorage.setItem(GUEST_KEY, JSON.stringify(g)); } catch (e) {}
+      armoryChanged();
+      return null;
+    }
     const r = await api('loadout', { tank, m, a });
     setProfile(r.profile, false);
     armoryChanged();
@@ -364,6 +391,6 @@ const Account = (() => {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
-  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, owns, buy, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
+  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, adStart, claim, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
 })();
 window.Account = Account;
