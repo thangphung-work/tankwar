@@ -36,7 +36,10 @@
     MAX_LAG_COMP_MS: 400,          // Bù trễ đạn tối đa
     DAMAGE_GUARD_MS: 1500,         // Sau sự kiện sát thương, tạm bỏ qua máu/giáp ERA trong gói trạng thái
     RESPAWN_CONFIRM_MS: 1000,      // Gói "còn sống" phải mới hơn thời điểm chết ít nhất 1s mới hồi sinh bản sao
-    WORLD_SYNC_MS: 1000            // Chủ phòng gửi gió + vòng bo mỗi giây
+    WORLD_SYNC_MS: 1000,           // Chủ phòng gửi gió + vòng bo mỗi giây
+    MATCH_SYNC_MS: 500,            // Chủ phòng gửi đồng hồ trận, tỉ số, cờ cứ điểm 2 lần / giây
+    ENV_SUM_MS: 5000,              // Chủ phòng gửi "dấu vân tay" trạng thái công trình / cây mỗi 5 giây
+    STALE_MS: 450                  // Bản sao không có gói mới quá lâu: vị trí chỉ là phỏng đoán -> không tính trúng đạn
   };
 
   // ==========================================
@@ -188,6 +191,11 @@
       }
     }
 
+    // Mã đăng nhập tài khoản (nếu có) -> máy chủ tự ghi thành tích trận mạng cho đúng tài khoản
+    _accountToken() {
+      try { return localStorage.getItem('spg_account_token') || undefined; } catch (e) { return undefined; }
+    }
+
     // Gửi tới mọi thành viên khác trong phòng
     send(type, data) {
       this._sendRaw({ t: type, d: data === undefined ? null : data });
@@ -235,7 +243,7 @@
       this.peers.clear();
       if (this.mode === 'ws') {
         this._sendRaw({ t: '@leave', d: null });
-        this._sendRaw({ t: '@join', d: { room: this.roomBase, name: this.name } });
+        this._sendRaw({ t: '@join', d: { room: this.roomBase, name: this.name, tok: this._accountToken() } });
       } else if (this.mode === 'bc') {
         this._bcClose();
         this._bcRoomIndex = 1;
@@ -290,6 +298,7 @@
         return;
       }
       this.ws = ws;
+      ws.binaryType = 'arraybuffer';   // gói trạng thái xe gom theo nhịp của máy chủ là nhị phân (net_codec.js)
       // Lưu ý: game dựng địa hình đồng bộ rất nặng ngay lúc tải trang -> bộ hẹn giờ có thể chạy TRƯỚC onopen
       // dù kết nối đã mở. Vì vậy kiểm tra readyState; còn đang kết nối thì chờ thêm (tối đa 3 lượt) rồi mới bỏ cuộc.
       let waits = 0;
@@ -311,7 +320,7 @@
         clearTimeout(failTimer);
         this._trace('ws open');
         this.mode = 'ws';
-        this._sendRaw({ t: '@join', d: { room: this.roomBase, name: this.name } });
+        this._sendRaw({ t: '@join', d: { room: this.roomBase, name: this.name, tok: this._accountToken() } });
       };
       ws.onmessage = (ev) => this._onWsMessage(ev.data);
       ws.onerror = () => {};
@@ -341,6 +350,14 @@
     }
 
     _onWsMessage(raw) {
+      if (typeof raw !== 'string') {
+        // Gói nhị phân từ máy chủ: trạng thái các xe trong 1 nhịp (đã kiểm tra chủ quyền & lọc tầm nhìn)
+        this.stats.recv++;
+        this.stats.bytesIn += raw.byteLength || 0;
+        const snap = typeof NetCodec !== 'undefined' ? NetCodec.decode(raw) : null;
+        if (snap) this._emit('SNAP', snap, '@server');
+        return;
+      }
       let msg = null;
       try { msg = JSON.parse(raw); } catch (e) { return; }
       if (!msg || typeof msg.t !== 'string') return;
@@ -845,6 +862,11 @@
       this.worldAcc = 0;
       this.pendingFires = [];
       this.pendingDamage = new Map();
+      this.pendingParts = new Set();   // xe vừa bị máy này bắn trúng -> gửi trạng thái hư hại bộ phận
+      this.lastParts = {};             // bản tóm tắt bộ phận đã gửi gần nhất theo xe
+      this.matchAcc = 0;
+      this.envAcc = 0;
+      this.envMismatch = 0;
       this._impactDepth = 0;
       this._applyingRemote = false;
       this._applyingRemoteFire = false;
@@ -863,17 +885,30 @@
 
       const sub = (type, fn) => this._unsubs.push(net.on(type, fn));
       sub('REMOTE_UNIT_SYNC', (d, from) => this.onUnitSync(d, from));
+      // chỉ nhận gói gom nhịp do chính máy chủ phát (gói nhị phân), không nhận tin cùng tên do máy khác chuyển tiếp
+      sub('SNAP', (d, from) => { if (from === '@server') this.onSnap(d); });
       sub('REMOTE_FIRE_EVENT', (d, from) => this.onRemoteFire(d, from));
       sub('DAMAGE', (d, from) => this.onDamage(d, from));
       sub('WORLD', (d, from) => this.onWorld(d, from));
       sub('SPOT', (d, from) => this.onSpot(d, from));
+      sub('SMOKE', (d, from) => this.onSmoke(d, from));
+      sub('LOCK', (d, from) => this.onLock(d, from));
       sub('ENV_HIT', (d, from) => this.onEnvHit(d, from));
+      sub('PARTS', (d, from) => this.onParts(d, from));
+      sub('MATCH', (d, from) => this.onMatch(d, from));
+      sub('SUPPLY', (d, from) => { if (from === this.net.hostId && !this.net.isHost && game.supplyManager && game.supplyManager.onNet) game.supplyManager.onNet(d); });
+      sub('ENVSUM', (d, from) => this.onEnvSum(d, from));
+      sub('ENVSTATE', (d, from) => this.onEnvState(d, from));
+      sub('ENVFIX', (d, from) => this.onEnvFix(d, from));
       sub('$peer_join', () => { this.forceKeyframe = true; });
       sub('$peer_leave', () => { this.refreshOwnership(); this.forceKeyframe = true; });
       sub('$host', () => { this.refreshOwnership(); this.forceKeyframe = true; });
 
       game.netSync = this;
       if (typeof window !== 'undefined') window.netSync = this;
+      // Mốc bắt đầu trận theo đồng hồ chung (đã đồng bộ với máy chủ) -> mọi máy cùng đồng hồ trận
+      game.matchStartNet = this.net.now() - (Date.now() - (game.matchStartTime || Date.now()));
+      this.wrapMatchEnd(game);
       // Khai báo trận cho máy chủ (lọc tầm nhìn chống hack nhìn xuyên, kiểm tra sát thương / tốc độ)
       try {
         const T = game.terrain;
@@ -1022,6 +1057,7 @@
     }
 
     flushDamage(onlyVictim) {
+      this.flushFires();   // tin "bắn" phải đi trước tin sát thương (máy chủ đối chiếu phát bắn thật)
       if (!this.pendingDamage.size) return;
       const done = [];
       this.pendingDamage.forEach((p, key) => {
@@ -1204,6 +1240,7 @@
       if (ammo === 'ANTI_TANK_MISSILE') {
         if (typeof unit.fireAntiTank !== 'function') return null;
         unit.antiTankCooldown = 0;
+        unit.missileAmmoCount = Math.max(1, unit.missileAmmoCount || 0);
         return unit.fireAntiTank(ballistics, radar);
       }
       if (typeof unit.fire !== 'function') return null;
@@ -1213,7 +1250,6 @@
       if (ammo === 'CLUSTER') { unit.selectedAmmo = 'CLUSTER'; unit.clusterAmmoCount = Math.max(1, unit.clusterAmmoCount || 0); }
       else if (ammo === 'AP') { unit.selectedAmmo = 'AP'; unit.apAmmoCount = Math.max(1, unit.apAmmoCount || 0); }
       else if (ammo === 'HE') { unit.selectedAmmo = 'HE'; unit.heAmmoCount = Math.max(1, unit.heAmmoCount || 0); }
-      else if (ammo === 'RPG') { unit.selectedAmmo = 'RPG'; unit.rpgAmmoCount = Math.max(1, unit.rpgAmmoCount || 0); }
       else unit.selectedAmmo = 'NORMAL';
       let shell = null;
       try {
@@ -1286,6 +1322,26 @@
       }
     }
 
+    // Gói gom theo nhịp của máy chủ (nhị phân): nhiều xe của nhiều chủ quyền trong 1 gói; máy chủ đã xác thực chủ quyền
+    onSnap(d) {
+      if (!d || !d.u) return;
+      const now = this.net.now();
+      for (const e of d.u) {
+        const idx = e.i, unit = this.byNetId[idx];
+        if (!unit || this.owns(unit)) continue;
+        if (e.hid) { unit._netHidden = true; continue; }
+        unit._netHidden = false;
+        const base = this.known[idx];
+        if (!base && !e.full) continue;
+        const q = e.full ? Object.assign({}, e.q) : Object.assign({}, base, e.q);
+        this.known[idx] = q;
+        let ts = e.ts;
+        if (typeof ts !== 'number' || Math.abs(now - ts) > 1500) ts = now - (this.net.latency || 0);
+        this.applyFlags(unit, q, ts);
+        this.buffers[idx].push({ t: ts, x: q.x / 10, z: q.z / 10, b: q.b / 1000, a: q.a / 10, e: q.e / 10, s: q.s / 10 });
+      }
+    }
+
     applyFlags(unit, q, ts) {
       const now = this.net.now();
       const guard = unit._netLastDmgAt && (now - unit._netLastDmgAt < NET_CONFIG.DAMAGE_GUARD_MS);
@@ -1323,8 +1379,6 @@
       }
       this.buffers[unit.netId].clear();
       unit._netDeathAt = 0;
-      const teamName = unit.team === 'BLUE' ? 'PHE XANH' : 'PHE ĐỎ';
-      if (typeof game.addCombatLog === 'function') game.addCombatLog(`[[refresh]] [${teamName}] ${unit.name} đã tái xuất kích ở vị trí mới trên bản đồ! (Khiên bảo vệ 3s)`, 'tip');
       if (typeof game.updateAliveCount === 'function') game.updateAliveCount();
       if (typeof game.updateTeamScoreUI === 'function') game.updateTeamScoreUI();
     }
@@ -1369,9 +1423,11 @@
     // máy khác áp đúng sự kiện đó (tường vỡ / nhà sập / hố bom giống hệt nhau trên mọi máy)
     sendEnvHit(d) {
       if (this.detached || !d) return;
+      this.flushFires();
       const q = v => Math.round(v * 10) / 10;
       const m = { x: q(d.x), y: q(d.y), z: q(d.z), a: d.a, h: d.h ? 1 : 0, t: d.t, s: d.s >>> 0, dx: q(d.dx), dy: q(d.dy), dz: q(d.dz), os: d.os ? 1 : 0 };
       if (typeof d.nx === 'number') { m.nx = Math.round(d.nx * 100) / 100; m.nz = Math.round(d.nz * 100) / 100; }   // pháp tuyến tường bê tông (vết đạn)
+      if (typeof d.ny === 'number') m.ny = Math.round(d.ny * 100) / 100;                                              // trúng sàn / mái nhà
       this.net.send('ENV_HIT', m);
     }
 
@@ -1386,6 +1442,22 @@
       this.net.send('SPOT', { s: spotter.netId, t: target.netId });
     }
 
+    // Màn khói (trang bị): máy điều khiển xe phóng -> mọi máy dựng cùng đám khói (che tầm nhìn như nhau)
+    sendSmoke(unit, r) {
+      if (this.detached || !unit || unit.netId === undefined || !r) return;
+      this.net.send('SMOKE', { i: unit.netId, x: r.x, z: r.z, a: r.a });
+    }
+    onSmoke(d, from) {
+      if (this.detached || !d) return;
+      const u = this.byNetId[d.i];
+      if (!u || u.isDead || this.ownerOf(u) !== from) return;
+      if (![d.x, d.z, d.a].every(Number.isFinite)) return;
+      if (typeof global.Equipment !== 'undefined' && global.Equipment.deploySmoke) {
+        if (u.smokeLeft > 0) u.smokeLeft--;
+        global.Equipment.deploySmoke(this.game, u, { x: d.x, z: d.z, a: d.a });
+      }
+    }
+
     onSpot(d, from) {
       if (this.detached || !d) return;
       const spotter = this.byNetId[d.s], target = this.byNetId[d.t];
@@ -1393,6 +1465,33 @@
       // Chỉ nhận báo cáo từ máy đang điều khiển xe trinh sát đó
       if (this.ownerOf(spotter) !== from) return;
       if (typeof global.TeamIntel !== 'undefined') global.TeamIntel.report(spotter, target, true);
+    }
+
+    // Trạng thái khóa mục tiêu (tia laser đo xa / dẫn tên lửa chiếu vào xe địch): gửi khi đổi + nhắc lại mỗi 1.5 s
+    // để máy của xe bị khóa hiện cảnh báo. m: 1 = khóa súng, 2 = khóa tên lửa
+    sendLocks() {
+      if (this.detached) return;
+      const now = Date.now();
+      if (!this._lockSent) this._lockSent = new Map();
+      this.byNetId.forEach((u, idx) => {
+        if (!u || !this.owns(u)) return;
+        const L = u._lockOn;
+        const T = L && now - L.at < 3500 ? this.byNetId.find(v => v && v.id === L.id) : null;
+        const key = T && !u.isDead ? T.netId + ':' + L.m : '';
+        const prev = this._lockSent.get(idx);
+        if (!prev && !key) return;
+        if (prev && prev.key === key && (!key || now - prev.t < 1500)) return;
+        this._lockSent.set(idx, { key, t: now });
+        this.net.send('LOCK', key ? { i: idx, t: T.netId, m: L.m } : { i: idx, t: -1, m: 0 });
+      });
+    }
+
+    onLock(d, from) {
+      if (this.detached || !d) return;
+      const u = this.byNetId[d.i];
+      if (!u || this.owns(u) || this.ownerOf(u) !== from) return;   // chỉ máy điều khiển xe đó được báo
+      const T = d.t >= 0 ? this.byNetId[d.t] : null;
+      u._lockOn = T ? { id: T.id, m: d.m === 2 ? 2 : 1, at: Date.now() } : null;
     }
 
     onWorld(d, from) {
@@ -1432,6 +1531,8 @@
         this.tickCount++;
         this.sendStates();
         this.flushDamage();
+        this.flushParts();   // sau gói sát thương (máy chủ cần thấy phát trúng trước khi nhận hư hại bộ phận)
+        this.sendLocks();
       }
       if (this.net.isHost) {
         this.worldAcc += dt * 1000;
@@ -1439,6 +1540,10 @@
           this.worldAcc = 0;
           this.sendWorld();
         }
+        this.matchAcc += dt * 1000;
+        if (this.matchAcc >= NET_CONFIG.MATCH_SYNC_MS) { this.matchAcc = 0; if (!this.game.isGameOver) this.sendMatch(); }
+        this.envAcc += dt * 1000;
+        if (this.envAcc >= NET_CONFIG.ENV_SUM_MS) { this.envAcc = 0; this.sendEnvSum(); }
       }
 
       const now = this.net.now();
@@ -1462,10 +1567,16 @@
     postUpdate(dt) {
       if (this.detached) return;
       const now = this.net.now();
-      this.byNetId.forEach((u) => {
+      this.byNetId.forEach((u, idx) => {
         if (!u) return;
-        if (u.isDead && !u._netWasDead) u._netDeathAt = now;
+        if (u.isDead && !u._netWasDead) { u._netDeathAt = now; this.lastParts[idx] = undefined; }
+        if (!u.isDead && u._netWasDead) u._partsEpoch = now;   // đời xe mới: bỏ gói hư hại của đời trước
         u._netWasDead = u.isDead;
+        if (u._netProxy && !u.isDead) {
+          const sn = this.buffers[idx] && this.buffers[idx].snaps;
+          const last = sn && sn.length ? sn[sn.length - 1].t : 0;
+          u._netStale = !last || now - last > NET_CONFIG.STALE_MS;
+        } else u._netStale = false;
         if (!u._netProxy || u.isDead || !u._netVis) return;
         const vis = u._netVis;
         u.x = vis.x;
@@ -1488,6 +1599,144 @@
           }
         }
       }
+    }
+
+    // ---------- HƯ HẠI BỘ PHẬN (máy có quyền với phát bắn gửi trạng thái, máy khác áp theo) ----------
+    queueParts(u) {
+      if (u && u.netId !== undefined && !u.isDead) this.pendingParts.add(u);
+    }
+    flushParts() {
+      this.flushFires();
+      if (!this.pendingParts.size || typeof VehicleDamage === 'undefined' || !VehicleDamage.digest) { this.pendingParts.clear(); return; }
+      for (const u of this.pendingParts) {
+        if (u.isDead) continue;
+        const dg = VehicleDamage.digest(u), key = JSON.stringify(dg);
+        if (this.lastParts[u.netId] === key) continue;
+        this.lastParts[u.netId] = key;
+        this.net.send('PARTS', { v: u.netId, s: dg, ts: Math.round(this.net.now()) });
+      }
+      this.pendingParts.clear();
+    }
+    onParts(d, from) {
+      if (this.detached || !d || typeof VehicleDamage === 'undefined' || !VehicleDamage.applyDigest) return;
+      const unit = this.byNetId[d.v];
+      if (!unit || unit.isDead || !d.s) return;
+      // gói của đời xe trước (trước khi hồi sinh) đến muộn: bỏ
+      if (typeof d.ts === 'number' && unit._partsEpoch && d.ts < unit._partsEpoch) return;
+      const fx = this.game.effectsManager && this.game.effectsManager.fx;
+      const events = VehicleDamage.applyDigest(unit, d.s, fx, this.owns(unit));
+      // trạng thái đã hội tụ: lần sau máy này bắn trúng sẽ gửi đúng phần chênh
+      this.lastParts[d.v] = JSON.stringify(VehicleDamage.digest(unit));
+      if (events.length && typeof this.game.reportVehicleDamage === 'function') this.game.reportVehicleDamage(unit, null, events);
+    }
+
+    // ---------- TRẬN ĐẤU: CHỦ PHÒNG LÀ NƠI DUY NHẤT QUYẾT ĐỊNH ĐỒNG HỒ, TỈ SỐ, CỜ CỨ ĐIỂM, KẾT QUẢ ----------
+    isMatchAuthority() { return !!this.net.isHost; }
+    matchState(end) {
+      const g = this.game, d = {
+        st: Math.round(g.matchStartNet || this.net.now()),
+        k: [g.blueKills || 0, g.redKills || 0, g.blueDeaths || 0, g.redDeaths || 0]
+      };
+      const set = g.terrain && g.terrain.strongholdSet;
+      if (set && set.items) {
+        set.remoteCapture = false;   // máy này đang là chủ phòng (kể cả vừa được bầu lại): tự quyết định đổi chủ cờ
+        d.sh = set.items.map(K => [K.id, Math.round((K.capture || 0) * 10) / 10, K.owner || '']);
+      }
+      const cpm = g.capturePointsManager;
+      if (cpm && cpm.netState) d.cp = cpm.netState();   // đồng hồ giữ cứ điểm (thắng khi giữ đủ 60 s)
+      if (end) d.end = end;
+      return d;
+    }
+    sendMatch(end) {
+      if (this.detached || !this.net.isHost) return;
+      this.net.send('MATCH', this.matchState(end));
+    }
+    onMatch(d, from) {
+      if (this.detached || !d || this.net.isHost || from !== this.net.hostId) return;
+      const g = this.game;
+      if (typeof d.st === 'number') {
+        g.matchStartNet = d.st;
+        g.matchStartTime = Date.now() - (this.net.now() - d.st);
+      }
+      if (Array.isArray(d.k)) {
+        [g.blueKills, g.redKills, g.blueDeaths, g.redDeaths] = d.k;
+        if (typeof g.updateTeamScoreUI === 'function') g.updateTeamScoreUI();
+      }
+      const set = g.terrain && g.terrain.strongholdSet;
+      if (set && Array.isArray(d.sh) && set.applyCaptureState) set.applyCaptureState(d.sh);
+      if (Array.isArray(d.cp) && g.capturePointsManager && g.capturePointsManager.applyNetState) g.capturePointsManager.applyNetState(d.cp);
+      if (d.end && !g.isGameOver) {
+        g._netEndFromHost = true;
+        try {
+          if (d.end.r === 'capture' && typeof g.finishMatchByCapture === 'function') g.finishMatchByCapture(d.end.w, d.end.cp);
+          else if (typeof g.finishMatchByTime === 'function') g.finishMatchByTime();
+        } finally { g._netEndFromHost = false; }
+      }
+    }
+    // Chủ phòng kết thúc trận -> phát kết quả ngay (máy khác không tự kết thúc theo đồng hồ riêng)
+    wrapMatchEnd(g) {
+      if (!g || g._netEndWrapped) return;
+      g._netEndWrapped = true;
+      const wrap = (name, endOf) => {
+        const orig = g[name];
+        if (typeof orig !== 'function') return;
+        g[name] = function (...args) {
+          const ns = g.netSync;
+          // máy không phải chủ phòng: chỉ kết thúc khi chủ phòng báo (trừ khi mất chủ phòng quá lâu — xem game.js)
+          if (ns && !ns.detached && !ns.net.isHost && !g._netEndFromHost && !g._netEndFallback) return;
+          const was = this.isGameOver;
+          const out = orig.apply(this, args);
+          if (!was && this.isGameOver && ns && !ns.detached && ns.net.isHost) ns.sendMatch(endOf.apply(this, args));
+          return out;
+        };
+      };
+      wrap('finishMatchByTime', () => ({ r: 'time' }));
+      wrap('finishMatchByCapture', (w, cp) => ({ r: 'capture', w, cp }));
+    }
+
+    // ---------- CÔNG TRÌNH / CÂY: DẤU VÂN TAY TRẠNG THÁI & SỬA LỆCH (phá hủy chỉ cộng dồn -> lấy hợp) ----------
+    envState() {
+      const T = this.game.terrain;
+      return T && T.envStateString ? T.envStateString() : '';
+    }
+    static hash(str) {
+      let h = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+      return h >>> 0;
+    }
+    sendEnvSum() {
+      if (this.detached || !this.net.isHost) return;
+      const st = this.envState();
+      if (st) this.net.send('ENVSUM', { h: NetGameSync.hash(st) });
+    }
+    onEnvSum(d, from) {
+      if (this.detached || !d || this.net.isHost || from !== this.net.hostId) return;
+      const st = this.envState();
+      if (!st) return;
+      if (NetGameSync.hash(st) === d.h) { this.envMismatch = 0; return; }
+      // lệch 2 lần liên tiếp (loại trừ sự kiện đang trên đường truyền) -> gửi trạng thái của mình cho chủ phòng gộp
+      if (++this.envMismatch >= 2) {
+        this.envMismatch = 0;
+        this.net.sendTo(this.net.hostId, 'ENVSTATE', { s: st });
+      }
+    }
+    onEnvState(d, from) {
+      if (this.detached || !d || !this.net.isHost || typeof d.s !== 'string' || d.s.length > 200000) return;
+      const T = this.game.terrain;
+      if (!T || !T.applyEnvState) return;
+      T.applyEnvState(d.s, this.game.effectsManager && this.game.effectsManager.fx);
+      this.net.send('ENVFIX', { s: this.envState() });   // phát bản hợp nhất cho mọi máy
+    }
+    onEnvFix(d, from) {
+      if (this.detached || !d || this.net.isHost || from !== this.net.hostId || typeof d.s !== 'string') return;
+      const T = this.game.terrain;
+      if (T && T.applyEnvState) T.applyEnvState(d.s, this.game.effectsManager && this.game.effectsManager.fx);
+      this.envMismatch = 0;
+    }
+
+    // ---------- HÒM TIẾP TẾ (chủ phòng quyết định) ----------
+    sendSupply(d) {
+      if (!this.detached && this.net.isHost) this.net.send('SUPPLY', d);
     }
 
     getStats() {

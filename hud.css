@@ -5,15 +5,15 @@
    ========================================================================== */
 
 :root {
-  --hx-bg: rgba(6, 10, 14, 0.72);
-  --hx-line: rgba(160, 200, 220, 0.18);
-  --hx-text: #e6eef2;
-  --hx-muted: #8297a5;
-  --hx-dim: #55697a;
-  --hx-blue: #3cc8ff;
-  --hx-red: #ff4d4d;
-  --hx-amber: #ffb020;
-  --hx-green: #5cf08a;
+  --hx-bg: rgba(10, 13, 12, 0.76);
+  --hx-line: var(--tc-line-2);
+  --hx-text: var(--tc-text);
+  --hx-muted: var(--tc-dim);
+  --hx-dim: var(--tc-faint);
+  --hx-blue: var(--tc-blue);
+  --hx-red: var(--tc-red);
+  --hx-amber: var(--tc-accent);
+  --hx-green: var(--tc-ok);
   --hx-gap: 14px;
 }
 
@@ -31,12 +31,12 @@
   pointer-events: auto;
   cursor: pointer;
   border: 1px solid var(--hx-line);
-  background: #0a1015;
+  background: #0f110e;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
 .hx-map canvas { display: block; width: 100%; height: 100%; opacity: 0.95; }
-.hx-map:hover { border-color: rgba(160, 200, 220, 0.45); }
+.hx-map:hover { border-color: rgba(190, 196, 184, 0.45); }
 
 .hx-map-n,
 .hx-map-key {
@@ -55,7 +55,7 @@
   right: 4px;
   padding: 2px 4px;
   color: var(--hx-text);
-  background: rgba(6, 10, 14, 0.75);
+  background: rgba(9, 11, 9, 0.75);
   border: 1px solid var(--hx-line);
   text-shadow: none;
 }
@@ -81,7 +81,7 @@
   font-size: 11px;
   line-height: 1.3;
   color: var(--hx-text);
-  background: linear-gradient(90deg, rgba(6, 10, 14, 0.7), rgba(6, 10, 14, 0));
+  background: linear-gradient(90deg, rgba(9, 11, 9, 0.7), rgba(9, 11, 9, 0));
   border-left: 2px solid var(--hx-muted);
   text-shadow: 0 1px 2px #000;
   transition: opacity 0.35s ease, max-height 0.35s ease, padding 0.35s ease;
@@ -91,9 +91,10 @@
 .hx-log .log-entry.out { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
 .hx-log .log-entry.system { border-left-color: var(--hx-blue); }
 .hx-log .log-entry.tip { border-left-color: var(--hx-green); }
-.hx-log .log-entry.alert { border-left-color: var(--hx-amber); color: #ffe4b0; }
+.hx-log .log-entry.alert { border-left-color: var(--hx-amber); color: #efc680; }
 .hx-log .log-entry.defeat { border-left-color: var(--hx-red); color: #ffcaca; }
 .hx-log .log-entry.victory { border-left-color: var(--hx-blue); color: #cdf2ff; }
+.hx-log .log-entry.feed { border-left-color: rgba(255,255,255,0.25); color: rgba(238, 239, 236, 0.72); font-size: 0.92em; }
 
 /* --------------------------------------------------------------------------
    TỶ SỐ · ĐỒNG HỒ · CỨ ĐIỂM (TRÊN GIỮA)
@@ -167,7 +168,7 @@
 .hx-cps { display: flex; gap: 10px; }
 
 .hx-cps .cp-card {
-  --cp: #aebbc4;
+  --cp: #b9bfb3;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -197,12 +198,12 @@
   z-index: -1;
   transform: rotate(45deg);
   border: 1.5px solid var(--cp);
-  background: rgba(6, 10, 14, 0.7);
+  background: rgba(9, 11, 9, 0.7);
 }
 .hx-cps .cp-card.blue-owned .hx-cp-mark::before,
 .hx-cps .cp-card.red-owned .hx-cp-mark::before { background: var(--cp); }
 .hx-cps .cp-card.blue-owned .hx-cp-mark,
-.hx-cps .cp-card.red-owned .hx-cp-mark { color: #061018; text-shadow: none; }
+.hx-cps .cp-card.red-owned .hx-cp-mark { color: #0e100d; text-shadow: none; }
 .hx-cps .cp-card.disputed .hx-cp-mark { animation: hx-blink 0.8s infinite; }
 .hx-cps .cp-card.winning-soon .hx-cp-mark::before { animation: hx-cp-win 0.6s infinite alternate; }
 
@@ -258,6 +259,42 @@
 }
 .hx-alerts .stealth-banner.revealed { color: #ffd6d6; background: rgba(60, 10, 10, 0.8); border-color: rgba(255, 77, 77, 0.5); }
 
+/* Bị khóa mục tiêu (vàng) / bị tên lửa khóa hoặc tên lửa lao tới (đỏ nhấp nháy) */
+.hx-alerts .lock-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #efc680;
+  background: rgba(60, 40, 6, 0.8);
+  border: 1px solid rgba(230, 167, 57, 0.6);
+}
+.hx-alerts .lock-warning.missile {
+  color: #fff;
+  background: rgba(150, 14, 14, 0.85);
+  border-color: rgba(255, 77, 77, 0.8);
+  animation: hx-alarm 0.25s infinite alternate;
+}
+
+.threat-arrows { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+.threat-arrow {
+  position: absolute;
+  left: -9px;
+  top: -8px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 16px solid var(--hx-amber);
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
+  opacity: 0.9;
+}
+.threat-arrow.mlock { border-bottom-color: var(--hx-red); animation: hx-blink 0.5s infinite; }
+.threat-arrow.missile { border-bottom-color: var(--hx-red); border-bottom-width: 22px; animation: hx-blink 0.2s infinite; }
+
 .stealth-pulse-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; animation: hx-blink 1s infinite; }
 .stealth-pulse-dot.green { background: var(--hx-green); }
 .stealth-pulse-dot.red { background: var(--hx-red); }
@@ -294,7 +331,7 @@
   white-space: nowrap;
   color: var(--hx-muted);
   border: 1px solid currentColor;
-  background: rgba(6, 10, 14, 0.7);
+  background: rgba(9, 11, 9, 0.7);
 }
 
 .hx-bar {
@@ -361,7 +398,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(90deg, transparent calc(100% - 2px), rgba(6, 10, 14, 0.9) calc(100% - 2px));
+  background-image: linear-gradient(90deg, transparent calc(100% - 2px), rgba(9, 11, 9, 0.9) calc(100% - 2px));
   background-size: 10% 100%;
 }
 
@@ -376,7 +413,7 @@
 .hx-ammo { display: flex; }
 
 .hx-ammo .ammo-tab {
-  --ammo: #e6eef2;
+  --ammo: #eceeea;
   position: relative;
   width: 64px;
   display: flex;
@@ -509,10 +546,10 @@
 .hx-target.locked .hx-target-hp { visibility: visible; }
 
 /* Đã neo điểm ngắm trên mặt đất */
-.hx-target.anchored { background: rgba(255, 176, 32, 0.1); }
+.hx-target.anchored { background: rgba(230, 167, 57, 0.1); }
 .hx-target.anchored .hx-reticle { color: var(--hx-amber); }
 .hx-target.anchored #target-lock-text { color: #fff; }
-.hx-target.anchored #target-lock-sub { color: #ffd98a; }
+.hx-target.anchored #target-lock-sub { color: #efc680; }
 
 .hx-range {
   flex: none;
@@ -543,7 +580,7 @@
   width: 300px;
   padding: 14px 18px;
   text-align: center;
-  background: rgba(10, 14, 18, 0.88);
+  background: rgba(13, 15, 13, 0.88);
   border-top: 2px solid var(--hx-red);
 }
 .hx-respawn-title { font-size: 14px; font-weight: 700; letter-spacing: 1.4px; color: #ffcaca; }

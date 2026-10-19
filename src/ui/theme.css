@@ -1,0 +1,35 @@
+/* ==========================================================================
+   BẢNG MÀU CHUNG — PHONG CÁCH BÀN TÁC CHIẾN
+   Nạp TRƯỚC mọi file giao diện khác. Sảnh, xem xe, HUD, bản đồ, menu đều
+   lấy màu từ đây: than chì + viền mảnh + nhấn hổ phách; xanh/đỏ chỉ cho phe.
+   ========================================================================== */
+:root {
+  --tc-bg: #0a0d0c;
+  --tc-bg-2: #0f1312;
+  --tc-panel: rgba(12, 16, 15, 0.84);
+  --tc-panel-2: rgba(18, 23, 21, 0.92);
+  --tc-line: rgba(200, 210, 192, 0.13);
+  --tc-line-2: rgba(200, 210, 192, 0.26);
+  --tc-text: #dfe4d9;
+  --tc-bright: #f1f4ec;
+  --tc-dim: #8d978b;
+  --tc-faint: #5c665c;
+  --tc-accent: #e7a63a;
+  --tc-accent-2: #f5c46b;
+  --tc-accent-soft: rgba(231, 166, 58, 0.14);
+  --tc-ok: #8fc46f;
+  --tc-blue: #5fb0dc;
+  --tc-red: #e0675c;
+  --tc-danger: #d9534a;
+
+  --font-tech: 'Chakra Petch', sans-serif;
+  /* JetBrains Mono có đủ dấu tiếng Việt (Share Tech Mono thì không -> chữ bị lẫn font) */
+  --font-mono: 'JetBrains Mono', 'Chakra Petch', monospace;
+}
+
+/* Thanh cuộn mảnh cùng tông */
+* { scrollbar-width: thin; scrollbar-color: var(--tc-line-2) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--tc-line-2); }
+::-webkit-scrollbar-thumb:hover { background: var(--tc-dim); }

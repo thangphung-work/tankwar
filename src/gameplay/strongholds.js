@@ -713,6 +713,22 @@ const Strongholds = (() => {
       F.cloth.position.y = F.bottom + (F.top - F.bottom) * k;
     }
     // Xe đang đứng trong vùng chiếm (khoang + dốc ra vào)
+    // Trạng thái cờ do chủ phòng gửi: [[id, tiến độ -100..100, chủ 'BLUE' | 'RED' | '']]
+    applyCaptureState(list) {
+      this.remoteCapture = true;
+      for (const [id, cap, own] of list) {
+        const K = this.items.find(k => k.id === id);
+        if (!K) continue;
+        K.capture = Math.max(-100, Math.min(100, Number(cap) || 0));
+        const owner = own || null;
+        if (owner !== K.owner) {
+          const old = K.owner;
+          K.owner = owner;
+          if (this.onCapture) this.onCapture(K, owner, old);
+        }
+      }
+    }
+
     inCaptureZone(K, x, z) {
       const L = this.local(K, x, z), af = Math.abs(L.f);
       return af < S.RAMP_END + 10 && Math.abs(L.r) < cutHalf(af) + 6;
@@ -740,6 +756,8 @@ const Strongholds = (() => {
         if (K.capture >= 100) owner = 'BLUE';
         else if (K.capture <= -100) owner = 'RED';
         else if ((owner === 'BLUE' && K.capture <= 0) || (owner === 'RED' && K.capture >= 0)) owner = null;
+        // Chơi mạng, máy không phải chủ phòng: cờ vẫn kéo mượt tại chỗ nhưng ĐỔI CHỦ chỉ theo chủ phòng (applyCaptureState)
+        if (this.remoteCapture) owner = K.owner;
         if (owner !== K.owner) {
           const old = K.owner;
           K.owner = owner;

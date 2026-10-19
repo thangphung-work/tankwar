@@ -292,7 +292,7 @@ class TankInspector {
           <div class="ti-header-actions">
             <div class="ti-currency"><span><i class="ti ti-diamond" aria-hidden="true"></i></span><b>125,430</b><button><i class="ti ti-plus" aria-hidden="true"></i></button></div>
             <div class="ti-currency gold"><span><i class="ti ti-diamond-filled" aria-hidden="true"></i></span><b>3,260</b><button><i class="ti ti-plus" aria-hidden="true"></i></button></div>
-            <div class="ti-profile"><img src="assets/commander_avatar.jpg" alt="Chỉ huy"><span><b>PháoThủBãoĐen</b><small>Trung úy Cấp 3</small></span><i><i class="ti ti-settings" aria-hidden="true"></i></i></div>
+            <div class="ti-profile"><img src="assets/commander_avatar.jpg" alt="Chỉ huy"><span><b class="ti-profile-name">Chưa đăng nhập</b><small class="ti-profile-rank"></small></span><i><i class="ti ti-settings" aria-hidden="true"></i></i></div>
           </div>
         </header>
         <div class="ti-body">
@@ -381,7 +381,7 @@ class TankInspector {
     this.scene.add(dirLightMain);
 
     // Đèn viền phản xạ sau lưng (Rim Light) làm nổi bật đường nét kim loại
-    const rimLight = new THREE.DirectionalLight(0x6bcfff, 0.72);
+    const rimLight = new THREE.DirectionalLight(0xd9cfb4, 0.62);
     rimLight.position.set(-80, 50, -70);
     this.scene.add(rimLight);
 
@@ -395,8 +395,8 @@ class TankInspector {
     // Đĩa kim loại chính
     const discGeo = new THREE.CylinderGeometry(55, 58, 3.5, 48);
     const discMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      roughness: 0.35,
+      color: 0x161b18,
+      roughness: 0.55,
       metalness: 0.85
     });
     const discMesh = new THREE.Mesh(discGeo, discMat);
@@ -408,7 +408,7 @@ class TankInspector {
     const ringGeo = new THREE.RingGeometry(46, 48.5, 48);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x00e5ff,
+      color: 0xe7a63a,
       side: THREE.DoubleSide
     });
     const ringMesh = new THREE.Mesh(ringGeo, ringMat);
@@ -416,7 +416,7 @@ class TankInspector {
     this.platformGroup.add(ringMesh);
 
     // Lưới grid chiến thuật phát sáng nhẹ dưới chân xe
-    const gridHelper = new THREE.GridHelper(90, 18, 0x00e5ff, 0x1e293b);
+    const gridHelper = new THREE.GridHelper(90, 18, 0x8d978b, 0x2a302b);
     gridHelper.position.y = 0.1;
     this.platformGroup.add(gridHelper);
 
@@ -518,7 +518,7 @@ class TankInspector {
     this.testFiring = false;
     // Phòng xem: đạn đặc biệt không giới hạn để thử thoải mái
     const u = this.activeUnit;
-    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.rpgAmmoCount = 9999;
+    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.missileAmmoCount = 9999;
     this.pendingImpacts = [];
     this.renderAmmoTestChips();
 
@@ -529,6 +529,8 @@ class TankInspector {
 
     // Cập nhật thông số kỹ thuật bên phải
     this.updateSpecPanel(tankType);
+    // Lắp bộ trang bị đang dùng lên xe xem trước + vẽ lại trang cửa hàng / trang bị
+    if (window.ArmoryUI) ArmoryUI.onTankLoaded(this, tankType);
   }
 
   // Cập nhật nội dung bảng thông số kỹ thuật
@@ -676,7 +678,9 @@ class TankInspector {
       };
       this.testRadar = { registerShot() {} };
     }
-    const rapid = (u.tankType === 'GATLING' || u.tankType === 'SCOUT') && u.selectedAmmo !== 'RPG';
+    const rapid = (u.tankType === 'GATLING' || u.tankType === 'SCOUT') && u.selectedAmmo !== 'ANTI_TANK_MISSILE';
+    // Phòng xem: ống phóng nạp lại nhanh (1.2 s) để bắn thử liên tục
+    if (u.antiTankCooldown > 0) u.antiTankCooldown = Math.max(0, Math.min(u.antiTankCooldown, 1.2) - dt);
     if (rapid) {
       u.updateGatling(dt, !!this.testFiring, this.testBallistics, this.testRadar);
     } else {
@@ -730,7 +734,7 @@ class TankInspector {
     if (!box || !u) return;
     const labels = {
       NORMAL: 'THƯỜNG', AP: 'XUYÊN GIÁP', HE: 'NỔ MẠNH', CLUSTER: 'ĐẠN CHÙM',
-      GATLING_BULLET: '30MM', SCOUT_BULLET: 'SÚNG MÁY', INCENDIARY: 'ĐẠN CHÁY', RPG: 'RPG'
+      GATLING_BULLET: '30MM', SCOUT_BULLET: 'SÚNG MÁY', INCENDIARY: 'ĐẠN CHÁY', ANTI_TANK_MISSILE: 'TÊN LỬA'
     };
     const list = u.availableAmmos || ['NORMAL'];
     if (!list.includes(u.selectedAmmo)) u.selectedAmmo = list[0];
@@ -869,12 +873,19 @@ class TankInspector {
     if (!document.getElementById('tank-inspector-overlay')) {
       this.createDomElements();
       this.bindEvents();
+      if (window.ArmoryUI) ArmoryUI.attach(this);   // tab NÂNG CẤP / TRANG BỊ / LỊCH SỬ + ví Bạc
     }
     const overlay = document.getElementById('tank-inspector-overlay');
     if (!overlay) return;
 
     this.isOpen = true;
     overlay.classList.remove('hidden');
+
+    // Hồ sơ góc trên: lấy đúng như góc sảnh (tên tài khoản, hoặc "Chưa đăng nhập")
+    const srcName = document.getElementById('mm-display-name'), srcRank = document.querySelector('.mm-commander-profile .rank-text');
+    const nameEl = overlay.querySelector('.ti-profile-name'), rankEl = overlay.querySelector('.ti-profile-rank');
+    if (nameEl && srcName) nameEl.textContent = srcName.textContent;
+    if (rankEl && srcRank) rankEl.textContent = srcRank.textContent;
 
     this.initThreeScene();
 

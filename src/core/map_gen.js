@@ -23,7 +23,7 @@ const MapGen = (() => {
     { id: 'B', x: 0, z: -340, angle: Math.PI / 2, hill: 96 },
     { id: 'C', x: 620, z: 220, angle: Math.PI, hill: 58 }
   ];
-  let layout = 'CLASSIC';   // 'CLASSIC' | 'STRONGHOLDS'
+  let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
 
   // ---------------------------------------------------------------------------
   // NGẪU NHIÊN CÓ SEED + NHIỄU GRADIENT 2D
@@ -552,9 +552,9 @@ const MapGen = (() => {
             const [bx, bz] = tf((a0 + a1) / 2, (b0 + b1) / 2);
             if (!clearOfKeys(bx, bz, Math.max(w, d) * 0.5) || !freeOf(bx, bz, Math.max(w, d) * 0.5)) continue;
             const tall = Math.hypot(bx, bz) < 900 ? rng() < 0.55 : rng() < 0.3;
-            const floors = tall ? Math.floor(R(5, 11)) : Math.floor(R(2, 5));
+            const floors = tall ? Math.floor(R(4, 8)) : Math.floor(R(2, 5));   // tầng ~3 m: 4-7 tầng ~12-21 m
             const kind = rng() < 0.12 ? 'ruin' : (tall ? 'office' : (rng() < 0.5 ? 'apartment' : 'shop'));
-            buildings.push({ x: bx, z: bz, w: Math.min(w, 120), d: Math.min(d, 120), floors, angle: -g.rot, kind });
+            buildings.push({ x: bx, z: bz, w: Math.min(w, 200), d: Math.min(d, 200), floors, angle: -g.rot, kind });
             occupied.push({ x: bx, z: bz, r: Math.max(w, d) * 0.5 });
           }
         }
@@ -596,15 +596,15 @@ const MapGen = (() => {
         const i0 = Math.floor(R(0.15, 0.85) * rd.pts.length);
         const p = rd.pts[i0];
         if (!clearOfKeys(p[0], p[1], 120) || !freeOf(p[0], p[1], 150) || isWater(p[0], p[1])) continue;
-        const span = R(150, 280);
+        const span = R(220, 380);   // nhà thật to hơn -> làng trải dài hơn
         let placed = 0;
-        for (let d = -span; d <= span; d += R(52, 78)) {
+        for (let d = -span; d <= span; d += R(100, 140)) {
           const st = along(rd, i0, d);
           if (!st) continue;
           const nx = -st.tz, nz = st.tx;
           for (const sd of [1, -1]) {
             if (rng() > 0.78) continue;
-            const w = R(26, 42), dd = R(22, 34), off = rd.width / 2 + R(14, 24) + dd / 2;
+            const w = R(64, 96), dd = R(52, 76), off = rd.width / 2 + R(14, 24) + dd / 2;
             const x = st.x + nx * sd * off, z = st.z + nz * sd * off;
             if (!roadClear(x, z, dd * 0.5 + 2) || !freeOf(x, z, Math.max(w, dd) * 0.55) || isWater(x, z) || slopeAt(x, z) > 0.28 || !clearOfKeys(x, z, 30)) continue;
             const ang = Math.atan2(nx * sd, nz * sd);   // nhà quay mặt ra đường
@@ -613,7 +613,7 @@ const MapGen = (() => {
             placed++;
             // vườn rào phía sau nhà
             if (rng() < 0.7) {
-              const gd = R(26, 44), gw = w / 2 + R(4, 12), go = off + dd / 2 + 4 + gd / 2;
+              const gd = R(40, 64), gw = w / 2 + R(4, 12), go = off + dd / 2 + 4 + gd / 2;
               const gx = st.x + nx * sd * go, gz = st.z + nz * sd * go;
               if (freeOf(gx, gz, Math.max(gw, gd / 2)) && !isWater(gx, gz) && roadClear(gx, gz, gd / 2) && clearOfKeys(gx, gz, 20)) {
                 fenceRect(gx, gz, st.tx * sd, st.tz * sd, gw, gd / 2, fenceKind, true);
@@ -654,10 +654,10 @@ const MapGen = (() => {
       for (const side of [1, -1]) {
         for (let k = 0; k < 3; k++) {
           const x = R(-700, 700), z = side * R(1240, 1420);
-          const w = R(60, 90), d = R(40, 55);
-          if (!freeOf(x, z, 60) || !roadClear(x, z, 40)) continue;
+          const w = R(130, 180), d = R(90, 120);
+          if (!freeOf(x, z, 110) || !roadClear(x, z, 70)) continue;
           buildings.push({ x, z, w, d, floors: 1, angle: 0, kind: 'hangar' });
-          occupied.push({ x, z, r: 60 });
+          occupied.push({ x, z, r: 110 });
         }
       }
     }

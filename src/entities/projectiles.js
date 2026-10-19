@@ -229,13 +229,15 @@
     return L;
   }
 
-  function smallRound(group, kind) {
+  // tracer = false: viên thường trong băng đạn (không có vệt sáng; băng đạn thật cứ vài viên mới có 1 viên vạch đường)
+  function smallRound(group, kind, tracer = true) {
     const scout = kind === 'SCOUT_BULLET';
     const r = scout ? 0.32 : 0.42;
     const L = scout ? 2.4 : 3.2;
     const key = scout ? 's' : 'g';
     mesh(shellBodyGeo('round' + key, r, L), kind === 'INCENDIARY' ? M.red() : M.yellow(), group);
     mesh(ring('roundband' + key, r * 1.05, L * 0.1), M.copper(), group, [0, -L * 0.3, 0]);
+    if (!tracer) return L;
     if (kind === 'INCENDIARY') {
       // Đạn cháy: hỗn hợp cháy + vạch đường cháy mạnh -> vệt dài hơn, đỏ rực, lõi sáng gắt
       addTracer(group, 26, 2.8, 0xff3414, 'incendiary', -L / 2);
@@ -271,7 +273,7 @@
         case 'ANTI_TANK_MISSILE': L = missile(g); break;
         case 'GATLING_BULLET':
         case 'SCOUT_BULLET':
-        case 'INCENDIARY': L = smallRound(g, ammoType); break;
+        case 'INCENDIARY': L = smallRound(g, ammoType, opts.tracer !== false); break;
         case 'HE':
         case 'CLUSTER': L = artilleryShell(g, opts, ammoType); break;
         default: L = artilleryShell(g, opts, 'NORMAL');

@@ -19,7 +19,7 @@ class ArtilleryGame3D {
       6000
     );
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: !(window.GameMenu && GameMenu.wantAntialias() === false) });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
@@ -425,12 +425,15 @@ class ArtilleryGame3D {
     // (trả về null khi chơi độc lập / file:// -> hành vi y như cũ)
     this.netSync = (typeof NetGameSync !== 'undefined' && this.matchmaking && this.matchmaking.net)
       ? NetGameSync.attach(this, this.matchmaking.net, slots) : null;
+    if (this.netSync) this.startBackgroundTicker();
 
     const meSlot = slots.find(s => s.peerId === myPeerId);
     const myName = meSlot ? meSlot.name : 'CHỈ HUY LIÊN MINH';
 
+    this._playerDeaths = 0;
     this.addCombatLog(`[[rocket]] XUẤT TRẬN THÀNH CÔNG! Chào mừng ${myName} vào chiến địa!`, 'tip');
-    this.addCombatLog('[[swords]] Đại chiến 10 vs 10: chiếm cứ điểm A, B, C để giành chiến thắng!', 'system');
+    this.addCombatLog('[[swords]] Chiếm và giữ 1 cứ điểm A, B hoặc C đủ 60 giây để thắng — hoặc hạ nhiều địch hơn khi hết giờ', 'system');
+    if (window.GameMenu && GameMenu.maybeShowFirstHint) GameMenu.maybeShowFirstHint();
   }
 
   // Khởi tạo các xe pháo 3D theo danh sách các vị trí đã ghép trận
@@ -485,6 +488,15 @@ class ArtilleryGame3D {
       });
       unit.spawnX = cfg.x;
       unit.spawnZ = cfg.z;
+      // Trang bị mua thêm: xe của mình lấy từ tài khoản (kho đạn thật), người chơi khác gửi kèm slot,
+      // xe do máy điều khiển nhận bộ ngẫu nhiên theo hạt giống chung (mọi máy giống nhau)
+      if (typeof Equipment !== 'undefined') {
+        let kit = null, eqOpts = null;
+        if (isMe && window.Account && Account.kitFor) { const k = Account.kitFor(assignedTankType); kit = k.kit; eqOpts = { local: true, stock: k.stock }; }
+        else if (slot.isHuman) kit = slot.kit || null;
+        else kit = Equipment.botKit(assignedTankType, ArtilleryGame3D.seededRandom((seed ^ (idx * 0x9e3779b1)) >>> 0));
+        Equipment.equip(unit, kit, eqOpts);
+      }
 
       if (isMe) {
         this.player = unit;
@@ -554,7 +566,8 @@ class ArtilleryGame3D {
    * rng: hàm [0,1) — khi xuất trận dùng hạt giống chung để mọi máy giống nhau; hồi sinh dùng Math.random.
    * others: các xe cần né (mặc định toàn bộ xe đang sống). Trả về { x, z, bodyAngle } (thân xe hướng vào giữa trận).
    */
-  pickRandomSpawn(team, rng = Math.random, others = null) {
+  pickRandomSpawn(team, rng = Math.random, others = null, opts = null) {
+    const nearTeam = !!(opts && opts.nearTeam);   // hồi sinh: gần đồng đội (dễ định hướng, cùng tiến lên), vẫn xa địch
     const H = this.worldWidth / 2;
     const lim = H - 220;
     // Vòng an toàn: vòng nhỏ hơn giữa vòng bo hiện tại và vòng sắp co (khi vòng co đã định sẵn theo cứ điểm)
@@ -580,9 +593,10 @@ class ArtilleryGame3D {
         if (u.team === team) { if (d < dFriend) dFriend = d; } else if (d < dEnemy) dEnemy = d;
       }
       if (Math.min(dFriend, dEnemy) < 80) continue;
-      const score = Math.min(dEnemy, ENEMY_OK) + Math.min(dFriend, FRIEND_OK) * 0.35 + rng() * 30;
+      let score = Math.min(dEnemy, ENEMY_OK) + Math.min(dFriend, FRIEND_OK) * 0.35 + rng() * 30;
+      if (nearTeam && dFriend < Infinity) score -= Math.max(0, dFriend - 420) * 0.9;
       if (score > bestScore) { bestScore = score; best = { x, z }; }
-      if (dEnemy >= ENEMY_OK && dFriend >= FRIEND_OK && i >= 12) break;
+      if (dEnemy >= ENEMY_OK && dFriend >= FRIEND_OK && (!nearTeam || dFriend <= 420) && i >= 12) break;
     }
     if (!best) {
       // Bản đồ quá chật: lùi về một điểm theo phe
@@ -615,11 +629,8 @@ class ArtilleryGame3D {
         this.triggerPlayerFire();
       }
 
-      // Phím F: Khai hỏa đạn chống tăng của xe trinh sát
-      if (e.code === 'KeyF') {
-        e.preventDefault();
-        this.triggerPlayerAntiTank();
-      }
+      // Phím G: phóng lựu đạn khói (trang bị mua thêm)
+      if (e.code === 'KeyG' && !e.repeat) this.triggerPlayerSmoke();
 
       // Phím Tab: Tự động khóa mục tiêu hoặc chuyển đổi sang xe địch tiếp theo
       if (e.code === 'Tab') {
@@ -642,6 +653,12 @@ class ArtilleryGame3D {
     window.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;
     });
+
+    // Rời cửa sổ (Alt-Tab, mở tab khác) khi đang giữ phím: trình duyệt không gửi keyup -> nhả hết phím,
+    // tránh xe tự chạy / súng tự xả khi quay lại
+    const releaseAll = () => { this.keys = {}; this.isPointerFiring = false; };
+    window.addEventListener('blur', releaseAll);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
 
     // 🖱️ NHẤP CHUỘT TRÊN MÀN HÌNH 3D ĐỂ TỰ ĐỘNG KHÓA MỤC TIÊU (SMART AUTO-AIM)
     const raycaster = new THREE.Raycaster();
@@ -730,29 +747,173 @@ class ArtilleryGame3D {
     });
   }
 
-  // Khai hỏa tên lửa / đạn chống tăng của xe trinh sát
+  // Phóng tên lửa dẫn hướng của xe trinh sát (ô đạn 3 + Space): chỉ khi đầu dò đã khóa chắc
+  // một xe địch mà kíp xe đang nhìn thấy
   triggerPlayerAntiTank() {
-    if (!this.player || this.player.isDead) return;
-    if (this.player.tankType !== 'SCOUT') return;
-
-    if (this.player.antiTankCooldown > 0) {
-      this.addCombatLog(`[[alert-triangle]] Đạn chống tăng đang nạp lại! Còn ${this.player.antiTankCooldown.toFixed(1)}s`, 'alert');
+    const P = this.player;
+    if (!P || P.isDead || P.tankType !== 'SCOUT') return;
+    if ((P.missileAmmoCount || 0) <= 0) {
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      return;
+    }
+    if (P.dmg && P.dmg.rpgDisabled) {
+      this.addCombatLog('[[alert-triangle]] Ống phóng tên lửa đã bị bắn hỏng!', 'alert');
+      return;
+    }
+    if (P.antiTankCooldown > 0) {
+      this.addCombatLog(`[[hourglass]] Đang nạp tên lửa vào ống phóng, còn ${P.antiTankCooldown.toFixed(1)}s`, 'alert');
+      return;
+    }
+    const S = this._seeker || { state: 'none' };
+    if (S.state === 'none') {
+      this.addCombatLog('[[lock]] Cần khóa xe địch trước khi phóng (nhấp vào xe địch hoặc Tab)', 'alert');
+      return;
+    }
+    if (S.state === 'blind') {
+      this.addCombatLog('[[eye-off]] Không nhìn thấy mục tiêu: tên lửa chỉ phóng vào xe địch trong tầm nhìn', 'alert');
+      return;
+    }
+    if (S.state === 'seeking') {
+      this.addCombatLog('[[loader]] Đầu dò chưa khóa xong, giữ mục tiêu trong tầm nhìn thêm chút nữa', 'alert');
       return;
     }
 
-    // Tên lửa dẫn hướng: bám xe đang khóa; không khóa -> bay tới điểm đang ngắm (kíp xe giữ dấu ngắm trên điểm đó)
-    const lockT = this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null;
-    this.player.missileTarget = lockT ? { unit: lockT } : (this._aimPoint ? { point: { x: this._aimPoint.x, y: this._aimPoint.y + 7, z: this._aimPoint.z } } : null);
-    const missile = this.player.fireAntiTank(this.ballistics, this.radar);
+    const lockT = this.lockedTarget;
+    P.missileTarget = { unit: lockT };
+    const missile = P.fireAntiTank(this.ballistics, this.radar);
     if (missile) {
       if (this.matchmaking) {
         this.matchmaking.broadcastMyFire(missile);
       }
       this.cameraShake = 3;
-      this.addCombatLog(lockT
-        ? `[[rocket]] Phóng tên lửa dẫn hướng — bám ${lockT.name}! Giữ xe sống tới khi trúng (xe bị diệt = đứt điều khiển)`
-        : `[[rocket]] Phóng tên lửa dẫn hướng vào điểm đang ngắm (nhấp vào xe địch hoặc Tab để khóa — tên lửa sẽ tự bám)`, 'tip');
+      this.updateAmmoUI();
+      this.addCombatLog(`[[rocket]] Đã phóng tên lửa vào ${lockT.name}! Giữ xe sống và giữ mục tiêu trong tầm nhìn tới khi trúng`, 'tip');
     }
+  }
+
+  // Kíp xe nhìn thấy mục tiêu bằng mắt / kính ngắm (không tính vị trí đồng đội báo hay radar)
+  missileCanSee(shooter, t) {
+    if (!shooter || !t || t.isDead) return false;
+    if (typeof TeamIntel === 'undefined') return true;
+    // Phòng thử nghiệm ("luôn hiện mục tiêu"): mục tiêu đang hiện trên màn hình người chơi coi như nhìn thấy
+    if (window.STRONGHOLD_LAB && shooter.isPlayer && t.group && t.group.visible && !t.isHiddenFromPlayer) return true;
+    return TeamIntel.seesDirect(shooter, t);
+  }
+
+  // ĐẦU DÒ TÊN LỬA (xe trinh sát đang chọn ô tên lửa): 'none' chưa khóa xe · 'blind' khuất tầm nhìn
+  // · 'seeking' đang bám (~0.8 s) · 'locked' sẵn sàng phóng. Kèm tiếng đầu dò và màu khung ngắm.
+  updateMissileSeeker(dt) {
+    const P = this.player;
+    const S = this._seeker || (this._seeker = { state: 'none', p: 0, id: null, tick: 0 });
+    const active = P && !P.isDead && P.tankType === 'SCOUT' && P.selectedAmmo === 'ANTI_TANK_MISSILE';
+    const T = active && this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null;
+    const prev = S.state;
+    if (!T) { S.state = 'none'; S.p = 0; S.id = null; }
+    else {
+      if (S.id !== T.id) { S.id = T.id; S.p = 0; }
+      if (!this.missileCanSee(P, T)) { S.state = 'blind'; S.p = 0; }
+      else {
+        S.p = Math.min(1, S.p + dt / 0.8);
+        S.state = S.p >= 1 ? 'locked' : 'seeking';
+      }
+    }
+    const SE = window.soundEngine;
+    S.tick -= dt;
+    if (S.state === 'seeking' && S.tick <= 0) {
+      S.tick = 0.16;
+      if (SE && SE.playMissileSeek) SE.playMissileSeek(S.p);
+    } else if (S.state === 'locked') {
+      if (prev !== 'locked') { S.tick = 1.0; if (SE && SE.playMissileLock) SE.playMissileLock(); }
+      else if (S.tick <= 0) { S.tick = 1.0; if (SE && SE.playMissileLockHold) SE.playMissileLockHold(); }
+    }
+    if (prev === 'locked' || prev === 'seeking') {
+      if (S.state === 'blind' && SE && SE.playTargetLost) SE.playTargetLost();
+    }
+
+    // Màu khung ngắm 3D: đỏ = khóa súng thường, vàng nhấp nháy = đầu dò đang bám, xanh = tên lửa đã khóa, xám = khuất tầm nhìn
+    if (this.lockRingMesh && this.lockRingMesh.material) {
+      const c = !active || S.state === 'none' ? 0xff2233
+        : S.state === 'locked' ? 0x33ff88
+          : S.state === 'blind' ? 0x8899aa
+            : (Math.sin(Date.now() * 0.03) > 0 ? 0xffcc00 : 0xff7a00);
+      this.lockRingMesh.material.color.setHex(c);
+    }
+
+    // Báo cho máy của xe bị khóa (tia laser đo xa / dẫn tên lửa chỉ chiếu được khi tự nhìn thấy mục tiêu)
+    if (P && !P.isDead && this.lockedTarget && !this.lockedTarget.isDead && P.tankType !== 'ARTILLERY'
+      && this.missileCanSee(P, this.lockedTarget)) {
+      P._lockOn = { id: this.lockedTarget.id, m: active ? 2 : 1, at: Date.now() };
+    } else if (P) P._lockOn = null;
+  }
+
+  // CẢNH BÁO BỊ KHÓA / TÊN LỬA LAO TỚI cho người chơi: chip + mũi tên chỉ hướng + tiếng báo
+  updateThreatWarnings(dt) {
+    const P = this.player;
+    const box = document.getElementById('lock-warning');
+    const arrows = document.getElementById('threat-arrows');
+    const W = this._threatW || (this._threatW = { beep: 0, mbeep: 0, wasMissile: false });
+    const threats = [];   // { x, z, kind: 'gun' | 'mlock' | 'missile', d }
+    if (P && !P.isDead) {
+      const now = Date.now();
+      for (const u of this.units) {
+        if (!u || u.isDead || u.team === P.team || !u._lockOn) continue;
+        if (u._lockOn.id !== P.id || now - u._lockOn.at > 3500) continue;
+        threats.push({ x: u.x, z: u.z, kind: u._lockOn.m === 2 ? 'mlock' : 'gun', hidden: !!u._netHidden });
+      }
+      for (const s of (this.ballistics && this.ballistics.activeShells) || []) {
+        const G = s.guide;
+        if (!G || G.lost || G.targetId !== P.id || s.shooterTeam === P.team) continue;
+        threats.push({ x: s.x, z: s.z, kind: 'missile', d: Math.hypot(s.x - P.x, s.z - P.z) });
+      }
+    }
+    const missile = threats.filter(t => t.kind === 'missile').sort((a, b) => a.d - b.d)[0];
+    const mlock = threats.some(t => t.kind === 'mlock');
+    const gun = threats.some(t => t.kind === 'gun');
+
+    if (box) {
+      const text = missile ? '[[rocket]] TÊN LỬA ĐANG LAO TỚI! VÀO BỤI / RỪNG RẬM ĐỂ THOÁT'
+        : mlock ? '[[target-arrow]] BỊ TÊN LỬA KHÓA'
+          : gun ? '[[target-arrow]] BỊ KHÓA MỤC TIÊU' : '';
+      if (box._t !== text) {
+        box._t = text;
+        box.classList.toggle('hidden', !text);
+        box.classList.toggle('missile', !!missile || mlock);
+        if (text) UIIcons.set(box, text);
+      }
+    }
+
+    // Mũi tên quanh tâm màn hình theo hướng mối đe dọa (theo góc nhìn camera)
+    if (arrows) {
+      const list = threats.filter(t => !t.hidden).slice(0, 4);
+      while (arrows.children.length < list.length) {
+        const a = document.createElement('div');
+        a.className = 'threat-arrow';
+        arrows.appendChild(a);
+      }
+      const v = this._threatV || (this._threatV = new THREE.Vector3());
+      for (let i = 0; i < arrows.children.length; i++) {
+        const el = arrows.children[i];
+        const t = list[i];
+        if (!t) { el.style.display = 'none'; continue; }
+        v.set(t.x, P.y || 0, t.z).applyMatrix4(this.camera.matrixWorldInverse);
+        const ang = Math.atan2(v.x, -v.z);
+        el.style.display = '';
+        el.className = 'threat-arrow ' + t.kind;
+        el.style.transform = `rotate(${ang}rad) translateY(-150px)`;
+      }
+    }
+
+    // Tiếng: tên lửa lao tới (dồn dập dần khi gần) > bị khóa tên lửa > bị khóa súng
+    const SE = window.soundEngine;
+    W.beep -= dt;
+    if (missile) {
+      const urg = Math.max(0, Math.min(1, 1 - missile.d / 900));
+      if (W.beep <= 0) { W.beep = 0.45 - urg * 0.36; if (SE && SE.playMissileWarning) SE.playMissileWarning(urg); }
+      if (!W.wasMissile) this.addCombatLog('[[rocket]] Tên lửa địch đang lao tới! Vào bụi hoặc rừng rậm để kíp phóng mất dấu, hoặc hạ xe phóng để đứt điều khiển', 'alert');
+    } else if (mlock || gun) {
+      if (W.beep <= 0) { W.beep = mlock ? 0.55 : 1.3; if (SE && SE.playLockWarning) SE.playLockWarning(mlock ? 2 : 1); }
+    } else W.beep = 0;
+    W.wasMissile = !!missile;
   }
 
   // TÍNH TOÁN VÀ ĐỒNG BỘ NÒNG PHÁO KHÓA VÀO TỌA ĐỘ MỤC TIÊU
@@ -1173,6 +1334,13 @@ class ArtilleryGame3D {
   }
 
   aimStateText() {
+    const P = this.player;
+    if (P && P.tankType === 'SCOUT' && P.selectedAmmo === 'ANTI_TANK_MISSILE') {
+      const S = this._seeker || { state: 'none', p: 0 };
+      return S.state === 'locked' ? 'TÊN LỬA ĐÃ KHÓA · SPACE PHÓNG'
+        : S.state === 'seeking' ? `ĐẦU DÒ ĐANG BÁM ${Math.round(S.p * 100)}%`
+          : 'KHÔNG NHÌN THẤY · TÊN LỬA KHÔNG KHÓA ĐƯỢC';
+    }
     return this._aimState === 'on' ? 'ĐÃ NGẮM TRÚNG · SPACE BẮN'
       : this._aimState === 'blocked' ? 'KHÔNG BẮN TỚI — ĐỔI VỊ TRÍ'
         : 'ĐANG XOAY THÁP / NÒNG...';
@@ -1363,6 +1531,7 @@ class ArtilleryGame3D {
   }
 
   selectAmmoType(ammoType) {
+    if (this.hud) return this.hud.selectAmmoType(ammoType);
     if (!this.player) return;
 
     // Kiểm tra cơ số đạn nâng cao
@@ -1382,8 +1551,8 @@ class ArtilleryGame3D {
       this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy nâng cao! Súng chuyển về đạn nhỏ liên thanh cơ bản!', 'alert');
       return;
     }
-    if (ammoType === 'RPG' && (this.player.rpgAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn tên lửa RPG! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+    if (ammoType === 'ANTI_TANK_MISSILE' && (this.player.missileAmmoCount || 0) <= 0) {
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
       return;
     }
 
@@ -1399,8 +1568,8 @@ class ArtilleryGame3D {
       name = 'ĐẠN CHÙM NỔ TRÊN KHÔNG (BUNG 14 ĐẠN CON QUÉT 260M)';
     } else if (ammoType === 'INCENDIARY') {
       name = 'ĐẠN CHÁY NÂNG CAO (GÂY THIÊU ĐỐT LIÊN TỤC & LÀM CHẬM XE)';
-    } else if (ammoType === 'RPG') {
-      name = 'ĐẠN RPG CHỐNG TĂNG PHẢN LỰC (ST 2.4 // DIỆT TĂNG TẦM XA)';
+    } else if (ammoType === 'ANTI_TANK_MISSILE') {
+      name = 'TÊN LỬA CHỐNG TĂNG DẪN HƯỚNG';
     } else if (ammoType === 'GATLING_BULLET') {
       name = 'ĐẠN NHỎ LIÊN THANH (MƯA ĐẠN 6 NÒNG)';
     } else if (ammoType === 'SCOUT_BULLET') {
@@ -1445,9 +1614,9 @@ class ArtilleryGame3D {
         cardName = 'ĐẠN CHÁY';
         qtyStr = `x${this.player.incendiaryAmmoCount || 0}`;
         iconColor = '#ff4500';
-      } else if (type === 'RPG') {
-        cardName = 'ĐẠN RPG';
-        qtyStr = `x${this.player.rpgAmmoCount || 0}`;
+      } else if (type === 'ANTI_TANK_MISSILE') {
+        cardName = 'TÊN LỬA';
+        qtyStr = `x${this.player.missileAmmoCount || 0}`;
         iconColor = '#f97316';
       } else if (type === 'GATLING_BULLET' || type === 'SCOUT_BULLET') {
         cardName = 'ĐẠN NHỎ';
@@ -1509,6 +1678,11 @@ class ArtilleryGame3D {
 
   triggerPlayerFire() {
     if (!this.player || this.player.isDead) return;
+    // Xe trinh sát đang chọn ô tên lửa: Space phóng tên lửa dẫn hướng (súng máy nạp đạn không ảnh hưởng)
+    if (this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE') {
+      this.triggerPlayerAntiTank();
+      return;
+    }
 
     if (this.player.reloadTimer > 0) {
       this.addCombatLog('[[alert-triangle]] Đang trong chu kỳ nạp đạn, chưa thể khai hỏa!', 'alert');
@@ -1516,8 +1690,7 @@ class ArtilleryGame3D {
     }
 
     // 1. Xe 6 nòng & xe trinh sát: xả đạn liên thanh khi GIỮ phím Space / nút bắn (xử lý trong updateGatling)
-    const scoutRpg = this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'RPG' && this.player.rpgAmmoCount > 0;
-    if ((this.player.tankType === 'GATLING' || this.player.tankType === 'SCOUT') && !scoutRpg) {
+    if (this.player.tankType === 'GATLING' || this.player.tankType === 'SCOUT') {
       if (this.player.tankType === 'GATLING' && this.player.isOverheated) {
         this.addCombatLog('[[flame]] Cụm 6 nòng đang QUÁ NHIỆT nóng đỏ! Cần ngừng xả đạn để chờ nòng nguội bớt!', 'alert');
       }
@@ -1555,17 +1728,6 @@ class ArtilleryGame3D {
       this.cameraShake = (this.player.tankType === 'ARTILLERY') ? 5 : 3;   // giật nhẹ khi khai hỏa (trước 16-28)
       this.updateAmmoUI();
 
-      let ammoTag = 'Đạn thường';
-      if (this.player.tankType === 'ARTILLERY') {
-        if (firedShell.ammoType === 'HE') ammoTag = 'Lựu đạn nổ mạnh 155mm (ST: 2.0 trực tiếp · nổ lan 90m)';
-        else if (firedShell.ammoType === 'CLUSTER') ammoTag = 'Đạn chùm 155mm (nổ trên không)';
-        else ammoTag = 'Lựu đạn 155mm (ST: 2.0)';
-      } else {
-        if (firedShell.ammoType === 'AP') ammoTag = 'Đạn xuyên giáp APFSDS (ST: 1.8)';
-        else if (firedShell.ammoType === 'HE') ammoTag = 'Đạn nổ mạnh (ST: 1.4 · nổ lan 50m)';
-        else ammoTag = 'Đạn thường 120mm (ST: 1.0)';
-      }
-      this.addCombatLog(`Khai hỏa [${ammoTag}]! Hướng: ${this.player.azimuth.toFixed(1)}° | Góc tà: ${this.player.elevation}°`, 'tip');
     }
   }
 
@@ -1614,9 +1776,11 @@ class ArtilleryGame3D {
       fxDone = true;
     }
     const remoteShell = !!(this.netSync && this.netSync.skipShellDamage && this.netSync.skipShellDamage(shell, this.units.find(u => u.id === shell.shooterId)));
-    if (!fxDone) this.createImpactEffects(x, y, z, ammoType, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
-    // Đạn xuyên giáp đâm thủng tường / nhà: lõi urani vỡ nóng đỏ + bê tông phụt ra mặt sau
-    if (ammoType === 'AP' && !onStronghold && (hitType === 'WALL' || hitType === 'BUILDING') && fxSys && fxSys.spallCone) {
+    // Trúng nhà: pháp tuyến đúng mặt tường / sàn / mái bị chạm -> lửa, mảnh văng bật ra đúng phía
+    const bn = hitType === 'BUILDING' && shell.hitNormal && shell.hitNormal.ny !== undefined ? { x: shell.hitNormal.nx, y: shell.hitNormal.ny, z: shell.hitNormal.nz } : null;
+    if (!fxDone) this.createImpactEffects(x, y, z, ammoType, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
+    // Đạn xuyên giáp đâm thủng tường: lõi urani vỡ nóng đỏ + bê tông phụt ra mặt sau (nhà: lỗ ra ở vách bên kia do Destructibles tính)
+    if (ammoType === 'AP' && !onStronghold && hitType === 'WALL' && fxSys && fxSys.spallCone) {
       const dv = new THREE.Vector3(shell.vx || 0, shell.vy || 0, shell.vz || 0);
       if (dv.lengthSq() > 1) {
         dv.normalize();
@@ -1635,18 +1799,19 @@ class ArtilleryGame3D {
         const dir = { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 };
         // pháp tuyến mặt bê tông cứ điểm bị trúng (vết đạn tích tụ đúng mặt tường); null = mái / mặt trên
         const hn = shell.hitNormal || null;
-        const nx = hn ? hn.nx : undefined, nz = hn ? hn.nz : undefined;
-        this.applyEnvDamage({ x, y, z, a: ammoType, h: !!shell.isHeavyArty, t: hitType, s: seed, dx: dir.x, dy: dir.y, dz: dir.z, os: onStronghold ? 1 : 0, nx, nz }, false);
-        if (this.netSync && this.netSync.sendEnvHit) {
-          this.netSync.sendEnvHit({ x, y, z, a: ammoType, h: !!shell.isHeavyArty, t: hitType, s: seed, dx: dir.x, dy: dir.y, dz: dir.z, os: onStronghold ? 1 : 0, nx, nz });
-        }
+        // Làm tròn đúng như gói ENV_HIT -> máy bắn & máy nhận khoét nhà giống hệt nhau đến từng ô
+        const q1 = v => Math.round(v * 10) / 10, q2 = v => (typeof v === 'number' ? Math.round(v * 100) / 100 : undefined);
+        const ev = { x: q1(x), y: q1(y), z: q1(z), a: ammoType, h: !!shell.isHeavyArty, t: hitType, s: seed, dx: q1(dir.x), dy: q1(dir.y), dz: q1(dir.z), os: onStronghold ? 1 : 0,
+          nx: hn ? q2(hn.nx) : undefined, ny: hn ? q2(hn.ny) : undefined, nz: hn ? q2(hn.nz) : undefined };
+        this.applyEnvDamage(ev, false);
+        if (this.netSync && this.netSync.sendEnvHit) this.netSync.sendEnvHit(ev);
       }
     }
 
     // 3. Âm thanh nổ tức thì không trễ & phân loại theo cỡ đạn (HE, AP, Tên lửa, Súng máy)
     if (this.player && window.soundEngine) {
       const distToPlayer = Math.hypot(this.player.x - x, this.player.z - z);
-      window.soundEngine.playExplosionAtDistance(distToPlayer, hitType, ammoType, { x, z });
+      window.soundEngine.playExplosionAtDistance(distToPlayer, hitType, ammoType, { x, z }, { heavy: !!shell.isHeavyArty });
       // Xe mình trúng đạn: tiếng thép thân xe nghe từ trong khoang + ù tai; đạn lớn nổ sát bên cũng gây ù tai
       if (directTarget && directTarget === this.player && hitType === 'DIRECT_HIT') {
         if (window.soundEngine.playHullHit) window.soundEngine.playHullHit(ammoType);
@@ -1737,6 +1902,8 @@ class ArtilleryGame3D {
         if (unitHit && unitHit.ricochet) directDamage = Math.round(directDamage * 0.12 * 1000) / 1000;
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
       }
+      // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy
+      if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(directTarget);
 
       const res = directTarget.takeDamage(directDamage, shooter, 'DIRECT_HIT');
 
@@ -1782,7 +1949,7 @@ class ArtilleryGame3D {
     }
 
     this.units.forEach(unit => {
-      if (unit._netHidden) return;   // vị trí không rõ (máy chủ lọc tầm nhìn)
+      if (unit._netHidden || unit._netStale) return;   // vị trí không rõ (máy chủ lọc tầm nhìn / mất gói quá lâu)
       // Xác xe trong vùng nổ: tiếp tục bị xé rã (chỉ hiệu ứng, không tính điểm)
       if (unit.isDead && unit.dmg && unit.group && unit.group.visible && typeof VehicleDamage !== 'undefined') {
         if (hitType === 'DIRECT_HIT' && unit === directTarget) return;
@@ -1824,6 +1991,8 @@ class ArtilleryGame3D {
 
           // Nổ dưới nước: nước hấp thụ phần lớn mảnh văng & sóng nổ
           if (hitType === 'WATER') splashDamage *= 0.5;
+          const premSplash = typeof Equipment !== 'undefined' ? Equipment.splashMul(shooter, ammoType) : 1;   // lựu đạn mảnh định sẵn
+          splashDamage *= premSplash;
           // Cứ điểm: chỉ phần thân xe thò ra khỏi mái che mới hứng sức ép / mảnh văng
           const exposure = this.terrain && this.terrain.shelterFactor ? this.terrain.shelterFactor(unit) : 1;
           if (exposure <= 0) return;
@@ -1845,8 +2014,11 @@ class ArtilleryGame3D {
           if (typeof VehicleDamage !== 'undefined') {
             const dmgRes = VehicleDamage.onSplash(unit, { x, y, z, ammo: ammoType, heavy: !!shell.isHeavyArty, dist, radius: blastRadius, shooter, fx: fxSys });
             splashDamage = Math.round(splashDamage * dmgRes.mul * 1000) / 1000;
+            // phần cộng thêm của đạn cao cấp không vượt ngưỡng 1 phát máy chủ chấp nhận (2.6 máu)
+            if (premSplash > 1) splashDamage = Math.min(splashDamage, Math.max(2.5, splashDamage / premSplash));
             this.reportVehicleDamage(unit, shooter, dmgRes.events);
           }
+          if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(unit);
 
           const res = unit.takeDamage(splashDamage, shooter, 'SHELL');
 
@@ -1881,18 +2053,18 @@ class ArtilleryGame3D {
     if (!this.terrain || !this.terrain.damageAt) return;
     const fxSys = this.effectsManager && this.effectsManager.fx;
     const run = () => {
-      const envEvents = this.terrain.damageAt(d.x, d.y, d.z, d.a, !!d.h, fxSys, { t: d.t, nx: d.nx, nz: d.nz });
-      // Đạn xuyên động năng trúng nhà / tường: xuyên thủng, bay tiếp phá vách phía sau (tối đa ~2 lớp vách)
-      if (d.a === 'AP' && !d.os && (d.t === 'BUILDING' || d.t === 'WALL')) {
+      const envEvents = this.terrain.damageAt(d.x, d.y, d.z, d.a, !!d.h, fxSys, { t: d.t, nx: d.nx, ny: d.ny, nz: d.nz, dx: d.dx, dy: d.dy, dz: d.dz });
+      // Đạn xuyên động năng trúng tường boong-ke: xuyên thủng, bay tiếp phá vách phía sau (tối đa ~2 lớp vách).
+      // Nhà: lỗ vào + lỗ ra ở vách đối diện do BuildingSet tự dò theo hướng bay
+      if (d.a === 'AP' && !d.os && d.t === 'WALL') {
         const sp = Math.hypot(d.dx || 0, d.dy || 0, d.dz || 0);
         if (sp > 1) {
           const dx = d.dx / sp, dy = d.dy / sp, dz = d.dz / sp;
           let walls = 0;
           for (let k = 6; k <= 66 && walls < 2; k += 5) {
             const px = d.x + dx * k, py = d.y + dy * k, pz = d.z + dz * k, ov = { power: 0.7 - walls * 0.25 };
-            const ev = this.terrain.buildingSet ? this.terrain.buildingSet.damageAt(px, py, pz, d.a, false, fxSys, ov) : null;
             const ev2 = this.terrain.bunkerSet ? this.terrain.bunkerSet.damageAt(px, py, pz, d.a, false, fxSys, ov) : null;
-            if ((ev && ev.hit) || (ev2 && ev2.hit)) { walls++; k += 6; }
+            if (ev2 && ev2.hit) { walls++; k += 6; }
           }
           if (fxSys && fxSys.spallCone) fxSys.spallCone(new THREE.Vector3(d.x + dx * 4, d.y + dy * 4, d.z + dz * 4), new THREE.Vector3(dx, dy, dz), 10, {});
         }
@@ -1916,9 +2088,9 @@ class ArtilleryGame3D {
       const wr = VehicleDamage.onDirectHit(directTarget, { hit: unitHit, ammo: ammoType, heavy, fx: fxSys, dir });
       this.reportWreckDamage(directTarget, shooter, wr && wr.events);
     }
+    // Xe còn sống: chỉ chạy phần HÌNH ẢNH (móp, tia lửa); hư hại bộ phận thật do máy có quyền tính & gửi PARTS
     if (hitType === 'DIRECT_HIT' && directTarget && !directTarget.isDead && !(shooterTeam && directTarget.team === shooterTeam)) {
-      const r = VehicleDamage.onDirectHit(directTarget, { hit: unitHit, ammo: ammoType, heavy, shooter, fx: fxSys, dir });
-      this.reportVehicleDamage(directTarget, shooter, r.events);
+      VehicleDamage.visualOnly(() => VehicleDamage.onDirectHit(directTarget, { hit: unitHit, ammo: ammoType, heavy, shooter, fx: fxSys, dir }));
       return;
     }
     const R = { HE: heavy ? 135 : 75, CLUSTER: 85, CLUSTER_SUBMUNITION: 32, RPG: 45, ANTI_TANK_MISSILE: 45, AP: 9, INCENDIARY: 16, GATLING_BULLET: 10, SCOUT_BULLET: 10 }[ammoType] || (heavy ? 90 : 55);
@@ -1932,8 +2104,7 @@ class ArtilleryGame3D {
       const dist = Math.hypot(unit.x - shell.x, unit.z - shell.z);
       if (dist > R) continue;
       if (this.terrain && this.terrain.shelterFactor && this.terrain.shelterFactor(unit) <= 0) continue;
-      const r = VehicleDamage.onSplash(unit, { x: shell.x, y: shell.y, z: shell.z, ammo: ammoType, heavy, dist, radius: R, shooter, fx: fxSys });
-      this.reportVehicleDamage(unit, shooter, r.events);
+      VehicleDamage.visualOnly(() => VehicleDamage.onSplash(unit, { x: shell.x, y: shell.y, z: shell.z, ammo: ammoType, heavy, dist, radius: R, shooter, fx: fxSys }));
     }
   }
 
@@ -1986,7 +2157,10 @@ class ArtilleryGame3D {
     const penalty = this.respawnWaitPenalty || 10.0;
 
     // Cơ chế hồi sinh vô hạn lần - Phạt 10 giây mỗi lần hy sinh
-    this.addCombatLog(`[[skull]] [${teamName}] ${victim.name} bị tiêu diệt bởi ${killerName}! (+1 Điểm cho đối phương // Tái xuất sau ${penalty}s)`, 'alert');
+    // Bảng hạ gục: 1 dòng ngắn; xe người chơi liên quan thì nổi bật (đỏ khi mình bị hạ, xanh khi mình hạ địch)
+    if (victim.isPlayer) this.addCombatLog(`[[skull]] Bạn bị ${killer ? killer.name : 'vùng bo'} hạ — xuất kích lại sau ${penalty} giây`, 'defeat');
+    else if (killer && killer.isPlayer) this.addCombatLog(`[[target-arrow]] Bạn hạ ${victim.name}`, 'victory');
+    else this.addCombatLog(`[[skull]] ${killerName} hạ ${victim.name}`, 'feed');
 
     this.respawnQueue.push({
       unit: victim,
@@ -1997,6 +2171,7 @@ class ArtilleryGame3D {
 
     // Nếu xe người chơi bị bắn hạ: Bật banner đếm ngược 10 giây phạt hồi sinh
     if (victim.isPlayer) {
+      this._playerDeaths = (this._playerDeaths || 0) + 1;   // thống kê cuối trận (tài khoản)
       const respawnBanner = document.getElementById('player-respawn-banner');
       const timeValEl = document.getElementById('player-respawn-time');
       const barFillEl = document.getElementById('player-respawn-bar');
@@ -2033,7 +2208,7 @@ class ArtilleryGame3D {
 
       if (item.timer <= 0) {
         // Tái xuất kích ở vị trí ngẫu nhiên trên bản đồ (xa xe địch, trong vòng bo an toàn)
-        const sp = this.pickRandomSpawn(item.unit.team, Math.random, this.units.filter(u => u !== item.unit && !u.isDead));
+        const sp = this.pickRandomSpawn(item.unit.team, Math.random, this.units.filter(u => u !== item.unit && !u.isDead), { nearTeam: true });
         item.unit.respawn(sp.x, sp.z, sp.bodyAngle);
         item.unit.azimuth = ArtilleryGame3D.headingDeg(sp.bodyAngle);
 
@@ -2046,7 +2221,7 @@ class ArtilleryGame3D {
         }
 
         const teamName = item.isBlue ? 'PHE XANH' : 'PHE ĐỎ';
-        this.addCombatLog(`[[refresh]] [${teamName}] ${item.unit.name} đã tái xuất kích ở vị trí mới trên bản đồ! (Khiên bảo vệ 3s)`, 'tip');
+        if (item.unit.isPlayer) this.addCombatLog('[[refresh]] Đã xuất kích lại — được bảo vệ 3 giây', 'tip');
 
         this.updateAliveCount();
         this.updateTeamScoreUI();
@@ -2594,7 +2769,7 @@ class ArtilleryGame3D {
               this.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'tip');
               if (window.soundEngine) window.soundEngine.playReloadDone();
               this.updateAmmoUI();
-            } else {
+            } else if ((typeof TeamIntel === 'undefined' || !this.player || unit.team === this.player.team || TeamIntel.knows(this.player, unit))) {
               this.addCombatLog(`[[alert-triangle]] ${unit.name} ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'alert');
             }
 
@@ -2796,8 +2971,8 @@ class ArtilleryGame3D {
                   rewardMsg = '+60 VIÊN ĐẠN CHÁY NÂNG CAO!';
                 } else if (unit.tankType === 'SCOUT') {
                   unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 40;
-                  unit.rpgAmmoCount = (unit.rpgAmmoCount || 0) + 3;
-                  rewardMsg = '+40 ĐẠN CHÁY VÀ +3 ĐẠN RPG CHỐNG TĂNG!';
+                  unit.missileAmmoCount = (unit.missileAmmoCount || 0) + 3;
+                  rewardMsg = '+40 ĐẠN CHÁY VÀ +3 TÊN LỬA CHỐNG TĂNG!';
                 } else {
                   unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
                   unit.heAmmoCount = (unit.heAmmoCount || 0) + 2;
@@ -2814,7 +2989,7 @@ class ArtilleryGame3D {
                   window.soundEngine.playReloadDone();
                 }
                 this.updateAmmoUI();
-              } else {
+              } else if ((typeof TeamIntel === 'undefined' || !this.player || unit.team === this.player.team || TeamIntel.knows(this.player, unit))) {
                 this.addCombatLog(`[[alert-triangle]] ${unit.name} đã nhặt hòm tiếp tế tại [${crate.name}]`, 'alert');
               }
               break;
@@ -2836,11 +3011,38 @@ class ArtilleryGame3D {
     const now = typeof currentTime === 'number' && !isNaN(currentTime) ? currentTime : performance.now();
     const dt = Math.min(Math.max(0, (now - (this.lastTime || now)) / 1000), 0.1);
     this.lastTime = now;
+    this._lastLoopAt = performance.now();
 
-    this.update(dt);
-    this.render();
-
+    // Lên lịch khung sau TRƯỚC: một lỗi bất ngờ trong 1 khung hình không được làm chết cả vòng lặp
+    // (chơi mạng: máy đứng hẳn = lệch toàn bộ trận so với các máy khác)
     requestAnimationFrame((t) => this.loop(t));
+    try {
+      this.update(dt);
+      this.render();
+    } catch (e) {
+      this._loopErrN = (this._loopErrN || 0) + 1;
+      if (this._loopErrN <= 3 || this._loopErrN % 300 === 0) console.error('[GAME] Lỗi trong khung hình (vòng lặp vẫn chạy tiếp):', e);
+    }
+  }
+
+  // Chơi mạng: tab bị ẩn (chuyển cửa sổ / thu nhỏ) thì trình duyệt ngừng requestAnimationFrame -> nếu là chủ phòng,
+  // cả trận đứng (bot, hòm, sát thương không gửi). Bộ đếm nhịp trong Web Worker (không bị hãm như tab nền)
+  // chạy tiếp phần logic 20 lần / giây, bỏ phần vẽ.
+  startBackgroundTicker() {
+    if (this._bgTicker || typeof Worker === 'undefined' || typeof Blob === 'undefined') return;
+    try {
+      const url = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},50)'], { type: 'application/javascript' }));
+      this._bgTicker = new Worker(url);
+      this._bgTicker.onmessage = () => {
+        if (!document.hidden || !this.netSync || this.netSync.detached) return;
+        const now = performance.now();
+        if (now - (this._lastLoopAt || 0) < 150) return;   // rAF vẫn chạy: không làm gì
+        const dt = Math.min(Math.max(0, (now - (this.lastTime || now)) / 1000), 0.1);
+        this.lastTime = now;
+        this._lastLoopAt = now;
+        try { this.update(dt); } catch (e) { console.warn('[NET] Lỗi nhịp nền', e); }
+      };
+    } catch (e) { this._bgTicker = null; }
   }
 
   update(dt) {
@@ -2971,7 +3173,9 @@ class ArtilleryGame3D {
 
       // 1.1.b. ĐIỀU KHIỂN BẮN LIÊN THANH CỦA XE 6 NÒNG (GATLING) VÀ XE TRINH SÁT (SCOUT)
       if (this.player.tankType === 'GATLING' || this.player.tankType === 'SCOUT') {
-        this.player.isFiringGatling = !!(this.keys['Space'] || this.isPointerFiring);
+        // đang chọn ô tên lửa: Space chỉ để phóng tên lửa, không xả súng máy
+        const missileSel = this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE';
+        this.player.isFiringGatling = !missileSel && !!(this.keys['Space'] || this.isPointerFiring);
       }
 
       // 1.2. LÁI XE CƠ ĐỘNG: W / A / S / D
@@ -3071,6 +3275,8 @@ class ArtilleryGame3D {
     if (typeof TeamIntel !== 'undefined') {
       TeamIntel.update(dt, this.units, this.player, this.lockedTarget);
     }
+    this.updateMissileSeeker(dt);
+    this.updateThreatWarnings(dt);
     const myTeam = this.player ? this.player.team : 'BLUE';
     this.units.forEach(unit => {
       if (unit.isPlayer) return;
@@ -3109,10 +3315,17 @@ class ArtilleryGame3D {
       this.terrain.strongholdSet.updateCapture(this.units, dt);
     }
     // Cỏ 3D & đá vụn: rải lại quanh tâm vùng camera nhìn thấy
-    if (this.terrain && this.terrain.groundCover) this.terrain.groundCover.update(this.camera.position.x, this.camera.position.z - 320 * (this._camK || 1) - 60);
+    // Cài đặt đồ họa (GameMenu): bóng đổ / cỏ 3D có thể tắt cho máy yếu
+    if (this.sunLight) this.sunLight.castShadow = this.gfxShadows !== false;
+    const gc = this.terrain && this.terrain.groundCover;
+    if (gc) {
+      if (gc.group) gc.group.visible = this.gfxGrass !== false;
+      if (this.gfxGrass !== false) gc.update(this.camera.position.x, this.camera.position.z - 320 * (this._camK || 1) - 60);
+    }
 
     // Cập nhật hàng chờ hồi sinh của các xe thuộc 2 phe
     this.updateRespawnQueue(dt);
+    if (typeof Equipment !== 'undefined' && Equipment.update) Equipment.update(dt, this);
 
     // Xe mình bị hạ: máy tắt lịm, mô-tơ tháp dừng
     if (this.player && this.player.isDead && window.soundEngine && window.soundEngine.updateEngine) {
@@ -3256,6 +3469,8 @@ class ArtilleryGame3D {
 
       // Điểm nhìn cũng lọc như vị trí camera -> khung hình trượt đều, không giật khi xe xóc
       this.camera.lookAt(this.camera.position.x - shakeX, this.camera.position.y - 420 * this._camK + 10, this.camera.position.z - 320 * this._camK - shakeZ);
+      // Nhà cao tầng chắn giữa camera và xe mình: tạm cắt bỏ các tầng trên để luôn thấy xe
+      if (this.terrain && this.terrain.updateBuildingView) this.terrain.updateBuildingView(this.camera.position, P, dt);
 
       // Cập nhật vị trí ánh sáng mặt trời chiếu bám theo xe
       // Khung bóng đổ ôm vừa vùng camera nhìn thấy (trước đây cố định 1800 x 1800 quanh xe): ít vật phải vẽ vào
@@ -3498,8 +3713,15 @@ class ArtilleryGame3D {
       battleTimerEl.textContent = remainingSecs > 99 * 60 ? '∞' : `${m}:${s}`;
 
       // Hết 10 phút thi đấu: Kết thúc trận chiến và tính điểm Kills
+      // Chơi mạng: chủ phòng quyết định kết thúc (tỉ số chung); chủ phòng im lặng quá 8 s sau giờ hết thì tự kết thúc
       if (remainingSecs <= 0 && !this.isGameOver && this.isGameStarted) {
-        this.finishMatchByTime();
+        const ns = this.netSync;
+        if (ns && !ns.detached && !ns.net.isHost) {
+          const overSecs = (Date.now() - this.matchStartTime) / 1000 - (this.matchDuration || 600);
+          if (overSecs > 8) { this._netEndFallback = true; try { this.finishMatchByTime(); } finally { this._netEndFallback = false; } }
+        } else {
+          this.finishMatchByTime();
+        }
       }
     }
 
@@ -3562,6 +3784,7 @@ class ArtilleryGame3D {
         boostTag.classList.add('hidden');
       }
     }
+    this.syncEquipmentChips();
 
     const stealthBanner = document.getElementById('stealth-banner');
     const stealthOverlay = document.getElementById('stealth-camo-overlay');
@@ -3685,9 +3908,18 @@ class ArtilleryGame3D {
       chip(gatlingMagTag,
         P.reloadTimer > 0 ? `NẠP SÚNG MÁY ${P.reloadTimer.toFixed(1)}S` : `SÚNG MÁY ${P.gatlingMag}/${P.gatlingMagMax}`,
         P.reloadTimer > 0 ? '#ff4d4d' : '#5cf08a');
-      chip(scoutMissileTag,
-        P.antiTankCooldown > 0 ? `TÊN LỬA · NẠP ${P.antiTankCooldown.toFixed(1)}S` : '[F] TÊN LỬA SẴN SÀNG',
-        P.antiTankCooldown > 0 ? '#ffb020' : '#5cf08a');
+      const nM = P.missileAmmoCount || 0;
+      const sel = P.selectedAmmo === 'ANTI_TANK_MISSILE';
+      const S = this._seeker || { state: 'none', p: 0 };
+      const [mTxt, mCol] = nM <= 0 ? ['TÊN LỬA · HẾT', '#ff4d4d']
+        : (P.dmg && P.dmg.rpgDisabled) ? ['ỐNG PHÓNG HỎNG', '#ff4d4d']
+          : P.antiTankCooldown > 0 ? [`TÊN LỬA ×${nM} · NẠP ${P.antiTankCooldown.toFixed(1)}S`, '#ffb020']
+            : !sel ? [`TÊN LỬA ×${nM} · BẤM 3`, '#7d93a2']
+              : S.state === 'locked' ? [`TÊN LỬA ×${nM} · ĐÃ KHÓA · SPACE`, '#5cf08a']
+                : S.state === 'seeking' ? [`ĐANG BÁM ${Math.round(S.p * 100)}%`, '#ffd166']
+                  : S.state === 'blind' ? ['KHÔNG NHÌN THẤY MỤC TIÊU', '#ff8a7a']
+                    : ['KHÓA XE ĐỊCH ĐỂ PHÓNG', '#ffd166'];
+      chip(scoutMissileTag, mTxt, mCol);
       const radarOk = typeof TeamIntel === 'undefined' || TeamIntel.hasRadar(P);
       const rr = Math.round(P.reconRadius || 950);
       const nRep = typeof TeamIntel !== 'undefined' ? [...TeamIntel.reports.values()].filter(r => r.spotter === P).length : 0;
@@ -3798,19 +4030,22 @@ class ArtilleryGame3D {
 
     const entry = document.createElement('div');
     entry.className = `log-entry ${type}`;
+    entry._feed = type === 'feed';
     UIIcons.set(entry, text);
     logBox.appendChild(entry);
 
-    // Tự mờ dần và thu gọn sau 4 giây để giữ màn hình sạch sẽ (không để lại khoảng trống)
+    // Tự mờ dần rồi thu gọn (không để lại khoảng trống): tin chung 3 giây, tin của bạn 5 giây
     setTimeout(() => {
       entry.classList.add('out');
       setTimeout(() => {
         if (entry.parentElement) entry.remove();
       }, 400);
-    }, 4000);
+    }, entry._feed ? 3000 : 5000);
 
-    if (logBox && logBox.children && logBox.children.length > 4) {
-      logBox.removeChild(logBox.children[0]);
+    // Tối đa 4 dòng: bỏ tin chung cũ nhất trước, giữ tin liên quan trực tiếp tới người chơi
+    while (logBox.children.length > 4) {
+      const kids = Array.from(logBox.children);
+      logBox.removeChild(kids.find(k => k._feed) || kids[0]);
     }
   }
 
@@ -3860,8 +4095,8 @@ class ArtilleryGame3D {
         ctx.save();
         const owner = (cp.owner || '').toString().toUpperCase();
         let cpColor = '#ffffff';
-        if (owner === 'BLUE') cpColor = '#3cc8ff';
-        else if (owner === 'RED') cpColor = '#ff4d4d';
+        if (owner === 'BLUE') cpColor = '#5fb0dc';
+        else if (owner === 'RED') cpColor = '#e0675c';
 
         // Vòng ranh giới cứ điểm
         ctx.strokeStyle = cpColor;
@@ -3886,7 +4121,7 @@ class ArtilleryGame3D {
         // Vòng đếm thời gian giữ 60s
         if (owner === 'BLUE' || owner === 'RED') {
           const holdRatio = Math.min(1, cp.holdTimer / 60.0);
-          ctx.strokeStyle = '#ffd700';
+          ctx.strokeStyle = '#e7a63a';
           ctx.lineWidth = 1.8;
           ctx.setLineDash([]);
           ctx.beginPath();
@@ -3906,13 +4141,13 @@ class ArtilleryGame3D {
           const cz = (crate.z + this.worldDepth / 2) * scale;
           ctx.save();
           const pulse = 4.2 + Math.sin(Date.now() * 0.008 + crate.x) * 1.5;
-          ctx.strokeStyle = '#ffd700';
+          ctx.strokeStyle = '#e7a63a';
           ctx.lineWidth = 1.2;
           ctx.beginPath();
           ctx.arc(cx, cz, pulse, 0, Math.PI * 2);
           ctx.stroke();
 
-          ctx.fillStyle = '#f59e0b';
+          ctx.fillStyle = '#e7a63a';
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 1;
           ctx.fillRect(cx - 3, cz - 3, 6, 6);
@@ -3931,7 +4166,7 @@ class ArtilleryGame3D {
       const ax = (this.airdrop.x + this.worldWidth / 2) * scale;
       const az = (this.airdrop.z + this.worldDepth / 2) * scale;
       ctx.save();
-      ctx.fillStyle = '#ffcc00';
+      ctx.fillStyle = '#e7a63a';
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -3939,7 +4174,7 @@ class ArtilleryGame3D {
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#ffea79';
+      ctx.fillStyle = '#f5c46b';
       ctx.font = 'bold 8px Chakra Petch';
       ctx.textAlign = 'center';
       ctx.fillText('HÒM THẢ DÙ', ax, az - 6);
@@ -3960,7 +4195,7 @@ class ArtilleryGame3D {
     // 1. Vòng tròn bán kính tầm bắn tối đa của liều phóng hiện tại
     const maxRangeMini = (pred.maxRange / this.worldWidth) * w;
     ctx.save();
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.45)';
+    ctx.strokeStyle = 'rgba(223, 228, 217, 0.45)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -3972,7 +4207,7 @@ class ArtilleryGame3D {
     const impX = (pred.impactX + this.worldWidth / 2) * scale;
     const impZ = (pred.impactZ + this.worldDepth / 2) * scale;
 
-    ctx.strokeStyle = pred.hitType === 'WALL' ? 'rgba(255, 59, 48, 0.75)' : 'rgba(255, 183, 0, 0.75)';
+    ctx.strokeStyle = pred.hitType === 'WALL' ? 'rgba(255, 59, 48, 0.75)' : 'rgba(231, 166, 58, 0.75)';
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 2]);
     ctx.beginPath();
@@ -3982,13 +4217,13 @@ class ArtilleryGame3D {
     ctx.setLineDash([]);
 
     // 3. Tâm ngắm điểm rơi trên Minimap
-    ctx.strokeStyle = pred.hitType === 'WALL' ? '#ff3b30' : '#ffb700';
+    ctx.strokeStyle = pred.hitType === 'WALL' ? '#e0675c' : '#e7a63a';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(impX, impZ, 3.5, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.fillStyle = pred.hitType === 'WALL' ? '#ff3b30' : '#ffb700';
+    ctx.fillStyle = pred.hitType === 'WALL' ? '#e0675c' : '#e7a63a';
     ctx.beginPath();
     ctx.arc(impX, impZ, 1.5, 0, Math.PI * 2);
     ctx.fill();
@@ -4024,7 +4259,7 @@ class ArtilleryGame3D {
         if (u.isDead || u.isHiddenFromPlayer) return;
         const ux = (u.x + this.worldWidth / 2) * scale;
         const uz = (u.z + this.worldDepth / 2) * scale;
-        ctx.fillStyle = u.team === 'BLUE' ? '#00e5ff' : '#ff3b30';
+        ctx.fillStyle = u.team === 'BLUE' ? '#5fb0dc' : '#e0675c';
         ctx.beginPath();
         ctx.arc(ux, uz, u.isPlayer ? 4.5 : 3.2, 0, Math.PI * 2);
         ctx.fill();
@@ -4077,101 +4312,86 @@ class ArtilleryGame3D {
   }
 
   finishMatchByTime() {
+    if (this.isGameOver) return;
     this.isGameOver = true;
-    const modal = document.getElementById('game-over-modal');
-    const title = document.getElementById('game-over-title');
-    const sub = document.getElementById('game-over-subtitle');
-
-    if (!modal) return;
-
-    if (this.blueKills > this.redKills) {
-      if (title) {
-        title.className = 'victory-title';
-        title.textContent = 'CHIẾN THẮNG ÁP ĐẢO!';
-      }
-      if (sub) {
-        sub.textContent = `Hết thời gian 10 phút thi đấu! Phe Xanh giành chiến thắng vang dội với tỷ số ${this.blueKills} - ${this.redKills} điểm hạ gục!`;
-      }
-    } else if (this.redKills > this.blueKills) {
-      if (title) {
-        title.className = 'defeat-title';
-        title.textContent = 'PHE XANH THẤT BẠI!';
-      }
-      if (sub) {
-        sub.textContent = `Hết thời gian 10 phút thi đấu! Phe Đỏ giành chiến thắng với tỷ số ${this.redKills} - ${this.blueKills} điểm hạ gục!`;
-      }
-    } else {
-      if (title) {
-        title.className = 'draw-title';
-        title.textContent = 'BẤT PHÂN THẮNG BẠI!';
-      }
-      if (sub) {
-        sub.textContent = `Hết thời gian 10 phút thi đấu! Hai bên hòa nhau kịch tính với tỷ số ${this.blueKills} - ${this.redKills} điểm hạ gục!`;
-      }
-    }
-
-    const elapsedSecs = Math.min(this.matchDuration || 600, Math.floor((Date.now() - this.matchStartTime) / 1000));
-    const m = Math.floor(elapsedSecs / 60);
-    const s = elapsedSecs % 60;
-
-    const statShots = document.getElementById('stat-shots');
-    const statKills = document.getElementById('stat-kills');
-    const statDamage = document.getElementById('stat-damage');
-    const statTime = document.getElementById('stat-time');
-
-    if (statShots) statShots.textContent = (this.player ? this.player.shotsFired : 0).toString();
-    if (statKills) statKills.textContent = (this.player ? this.player.kills : 0).toString();
-    if (statDamage) statDamage.textContent = (this.player ? Math.round(this.player.damageDealt) : 0).toString();
-    if (statTime) statTime.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-
-    modal.classList.remove('hidden');
+    const my = this.myTeam();
+    const mine = my === 'RED' ? this.redKills : this.blueKills;
+    const theirs = my === 'RED' ? this.blueKills : this.redKills;
+    const result = mine > theirs ? 'win' : mine < theirs ? 'loss' : 'draw';
+    const sub = result === 'draw'
+      ? `Hết giờ — hai đội hòa ${mine} – ${theirs} điểm hạ gục.`
+      : `Hết giờ — ${result === 'win' ? 'đội bạn thắng' : 'đội bạn thua'} ${mine} – ${theirs} điểm hạ gục.`;
+    this.showMatchResult(result, sub);
   }
 
   finishMatchByCapture(winningTeam, cpName) {
     if (this.isGameOver) return;
     this.isGameOver = true;
+    const won = String(winningTeam).toUpperCase() === this.myTeam();
+    const where = String(cpName || 'cứ điểm').replace(/\s*\(.*\)\s*$/, '');
+    const sub = won
+      ? `Đội bạn giữ vững ${where} đủ 60 giây.`
+      : `Đội địch đã giữ ${where} đủ 60 giây.`;
+    this.addCombatLog(won ? `[[trophy]] ĐỘI BẠN THẮNG — giữ vững ${where}!` : `[[flag]] ĐỘI ĐỊCH THẮNG — họ đã giữ ${where}`, won ? 'victory' : 'defeat');
+    this.showMatchResult(won ? 'win' : 'loss', sub);
+  }
 
+  // Phím G: phóng màn khói trước mũi xe (cần trang bị Ống phóng lựu khói)
+  triggerPlayerSmoke() {
+    const P = this.player;
+    if (!P || P.isDead || !this.isGameStarted || this.isGameOver || typeof Equipment === 'undefined') return;
+    if (!Equipment.has(P, 'smoke')) {
+      this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — mua trong mục NÂNG CẤP ở sảnh', 'tip');
+      return;
+    }
+    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói (nạp lại khi xuất kích lần sau)', 'alert'); return; }
+    Equipment.triggerSmoke(this, P);
+    this.addCombatLog(`[[cloud]] Đã phóng màn khói — địch không nhìn xuyên qua được (còn ${P.smokeLeft})`, 'tip');
+    this.syncEquipmentChips();
+  }
+
+  // Ô trạng thái trang bị trên thanh dưới: khói còn lại, lượt đánh chặn
+  syncEquipmentChips() {
+    const P = this.player;
+    const host = document.getElementById('speed-boost-tag');
+    if (!host || !host.parentElement) return;
+    let el = document.getElementById('eq-chips');
+    if (!el) { el = document.createElement('span'); el.id = 'eq-chips'; el.className = 'hx-chip'; el.style.color = '#cbd5e1'; host.parentElement.appendChild(el); }
+    if (!P || P.isDead || typeof Equipment === 'undefined' || !P.kit) { UIIcons.set(el, ''); return; }
+    const parts = [];
+    if (Equipment.has(P, 'smoke')) parts.push(`[[cloud]] KHÓI ×${P.smokeLeft || 0} [G]`);
+    if (Equipment.has(P, 'aps')) parts.push(`[[radar]] ĐÁNH CHẶN ×${Equipment.apsLeft(P)}`);
+    UIIcons.set(el, parts.join('   '));
+    el.classList.toggle('hidden', !parts.length);
+  }
+
+  // Phe của người chơi trên máy này (khách vào phòng có thể ở Phe Đỏ)
+  myTeam() {
+    return this.player && this.player.team === 'RED' ? 'RED' : 'BLUE';
+  }
+
+  // Bảng kết quả cuối trận — luôn viết theo góc nhìn đội của người chơi
+  showMatchResult(result, subText) {
     const modal = document.getElementById('game-over-modal');
     const title = document.getElementById('game-over-title');
     const sub = document.getElementById('game-over-subtitle');
-
-    if (winningTeam === 'blue') {
-      if (title) {
-        title.className = 'victory-title';
-        title.textContent = 'CHIẾN THẮNG TUYỆT ĐỐI!';
-      }
-      if (sub) {
-        sub.textContent = `Phe Xanh đã làm chủ hoàn toàn chiến trường nhờ chiếm giữ thành công ${cpName} liên tục hơn 1 phút!`;
-      }
-      this.addCombatLog(`[KẾT QUẢ TRẬN ĐẤU] Phe Xanh giành chiến thắng tuyệt đối nhờ kiểm soát ${cpName} hơn 1 phút!`, 'victory');
-      if (window.soundEngine && typeof window.soundEngine.playVictoryFanfare === 'function') {
-        window.soundEngine.playVictoryFanfare();
-      }
-    } else {
-      if (title) {
-        title.className = 'defeat-title';
-        title.textContent = 'PHE XANH THẤT BẠI!';
-      }
-      if (sub) {
-        sub.textContent = `Phe Đỏ đã giành thắng lợi quyết định sau khi chiếm giữ thành công ${cpName} liên tục hơn 1 phút!`;
-      }
-      this.addCombatLog(`[KẾT QUẢ TRẬN ĐẤU] Phe Đỏ giành thắng lợi sau khi chiếm giữ ${cpName} hơn 1 phút!`, 'defeat');
-    }
+    const T = { win: ['victory-title', 'CHIẾN THẮNG!'], loss: ['defeat-title', 'THẤT BẠI'], draw: ['draw-title', 'HÒA'] }[result];
+    if (title) { title.className = T[0]; title.textContent = T[1]; }
+    if (sub) sub.textContent = subText;
+    if (result === 'win' && window.soundEngine && typeof window.soundEngine.playVictoryFanfare === 'function') window.soundEngine.playVictoryFanfare();
+    // Màn hình kết quả: nhả phím đang giữ, đóng bản đồ lớn / menu tạm dừng nếu đang mở
+    this.keys = {};
+    if (this.tacticalMap && this.tacticalMap.isOpen && this.tacticalMap.toggle) this.tacticalMap.toggle(false);
+    if (window.GameMenu && GameMenu.close) GameMenu.close();
 
     const elapsedSecs = Math.min(this.matchDuration || 600, Math.floor((Date.now() - this.matchStartTime) / 1000));
     const m = Math.floor(elapsedSecs / 60);
     const s = elapsedSecs % 60;
-
-    const statShots = document.getElementById('stat-shots');
-    const statKills = document.getElementById('stat-kills');
-    const statDamage = document.getElementById('stat-damage');
-    const statTime = document.getElementById('stat-time');
-
-    if (statShots) statShots.textContent = (this.player ? this.player.shotsFired : 0).toString();
-    if (statKills) statKills.textContent = (this.player ? this.player.kills : 0).toString();
-    if (statDamage) statDamage.textContent = (this.player ? Math.round(this.player.damageDealt) : 0).toString();
-    if (statTime) statTime.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('stat-shots', String(this.player ? this.player.shotsFired : 0));
+    set('stat-kills', String(this.player ? this.player.kills : 0));
+    set('stat-damage', String(this.player ? Math.round(this.player.damageDealt) : 0));
+    set('stat-time', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     if (modal) modal.classList.remove('hidden');
   }
 
@@ -4626,7 +4846,9 @@ class ArtilleryGame3D {
 
     this.isGameOver = false;
     this.matchStartTime = Date.now();
+    this._playerDeaths = 0;
     if (typeof TeamIntel !== 'undefined') TeamIntel.reset();
+    if (typeof Equipment !== 'undefined' && Equipment.clearSmoke) Equipment.clearSmoke();
     this.setLockedTarget(null);
     this._spotMarkers = null;   // scene sắp bị dọn sạch
     this._autoMarker = null; this.autoDrive = null;

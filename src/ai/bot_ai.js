@@ -34,8 +34,10 @@ class BotAIController {
       if (this.unit.isDead) this.pendingShot = null;
       else if (this.unit.aimAz === undefined || S.t > 4) {
         if (this.unit.tankType !== 'ARTILLERY' || this.unit.isDeployed) {
-          if (S.anti && this.unit.antiTankCooldown <= 0) {
-            this.unit.missileTarget = S.mt || null;   // tên lửa dẫn hướng bám đúng xe / điểm bot đã chọn
+          // Tên lửa dẫn hướng: như người chơi, chỉ phóng khi tự nhìn thấy xe mục tiêu lúc bóp cò
+          const mtU = S.mt && S.mt.unit;
+          if (S.anti && this.unit.antiTankCooldown <= 0 && mtU && !mtU.isDead && this.seesDirect(mtU)) {
+            this.unit.missileTarget = S.mt;
             this.unit.fireAntiTank(S.ballistics, S.radar);
           }
           else this.unit.fire(S.ballistics, S.radar);
@@ -45,6 +47,19 @@ class BotAIController {
       }
     }
     if (this.unit.evadeTimer > 0) this.unit.evadeTimer -= dt;
+
+    // Đang ngắm / khóa xe địch: tia laser đo xa (hoặc dẫn tên lửa) chiếu vào mục tiêu -> xe kia nhận cảnh báo
+    if (this.lockUnit) {
+      const L = this.lockUnit;
+      this.lockHold -= dt;
+      if (this.unit.isDead || L.isDead || this.lockHold <= 0 || !this.seesDirect(L)) {
+        this.lockUnit = null;
+        this.unit._lockOn = null;
+      } else {
+        const m = this.unit.tankType === 'SCOUT' && this.unit.antiTankCooldown <= 0 && (this.unit.missileAmmoCount || 0) > 0 ? 2 : 1;
+        this.unit._lockOn = { id: L.id, m, at: Date.now() };
+      }
+    }
 
     const zoneCenterX = zone.current.x - 1800;
     const zoneCenterZ = zone.current.y - 1800;
@@ -335,8 +350,12 @@ class BotAIController {
           const gunCap = ballistics.maxTravelFor ? ballistics.maxTravelFor(this.unit.tankType === 'GATLING' ? 'GATLING_BULLET' : 'SCOUT_BULLET', this.unit) : 700;
           const burst = (this.unit.tankType === 'SCOUT' || this.unit.tankType === 'GATLING') && distToTarget <= gunCap * 0.92;
           this.unit.isFiringGatling = false;
-          const mt = targetUnit ? { unit: targetUnit } : { point: { x: targetX, y: terrain.getElevationAt(targetX, targetZ) + 7, z: targetZ } };
-          this.pendingShot = { t: 0, anti: this.unit.tankType === 'SCOUT' && this.unit.antiTankCooldown <= 0, burst, ballistics, radar, mt };
+          // Tên lửa chỉ dùng khi đã có xe mục tiêu mà chính bot nhìn thấy (không bắn tên lửa vào điểm / vị trí đồng đội báo)
+          const seen = targetUnit && this.seesDirect(targetUnit);
+          const anti = this.unit.tankType === 'SCOUT' && this.unit.antiTankCooldown <= 0 && (this.unit.missileAmmoCount || 0) > 0 && seen;
+          const mt = anti ? { unit: targetUnit } : null;
+          this.pendingShot = { t: 0, anti, burst, ballistics, radar, mt };
+          if (seen && this.unit.tankType !== 'ARTILLERY') { this.lockUnit = targetUnit; this.lockHold = 4.5; }
 
           // Pháo tự hành đứng yên bắn tiếp, các xe khác đổi vị trí sau khi bắn
           if (this.unit.tankType !== 'ARTILLERY') {
@@ -369,6 +388,13 @@ class BotAIController {
    * Điều khiển xe di chuyển tới tọa độ mục tiêu kết hợp lực đẩy phân tán đội hình
    * Giúp xe giữ cự ly an toàn 50-70m với đồng đội, không bị dồn cục
    */
+  // Bot tự nhìn thấy xe đó (mắt / kính ngắm), không tính vị trí do đồng đội báo hay radar
+  seesDirect(t) {
+    if (!t || t.isDead) return false;
+    if (typeof TeamIntel === 'undefined') return true;
+    return TeamIntel.seesDirect(this.unit, t);
+  }
+
   driveTowards(targetX, targetZ, dt, isBoost = false, allUnits = null) {
     let dx = targetX - this.unit.x;
     let dz = targetZ - this.unit.z;

@@ -7,18 +7,17 @@
    ========================================================================== */
 
 :root {
-  --hud-bg-glass: rgba(10, 18, 28, 0.82);
-  --hud-bg-darker: rgba(6, 11, 18, 0.92);
-  --hud-border: rgba(0, 229, 255, 0.25);
-  --hud-border-solid: #1b344b;
-  --hud-cyan: #00e5ff;
-  --hud-blue-accent: #0088ff;
-  --hud-gold: #ffb700;
-  --hud-green-hp: #00ff9d;
-  --hud-red-fire: #ff3344;
-  --hud-text-muted: #8da4be;
-  --font-tech: 'Chakra Petch', sans-serif;
-  --font-mono: 'Share Tech Mono', monospace;
+  /* nối về bảng màu chung (src/ui/theme.css) */
+  --hud-bg-glass: var(--tc-panel);
+  --hud-bg-darker: var(--tc-panel-2);
+  --hud-border: var(--tc-line-2);
+  --hud-border-solid: #2a302b;
+  --hud-cyan: var(--tc-text);
+  --hud-blue-accent: var(--tc-blue);
+  --hud-gold: var(--tc-accent);
+  --hud-green-hp: var(--tc-ok);
+  --hud-red-fire: var(--tc-danger);
+  --hud-text-muted: var(--tc-dim);
 }
 
 * {
@@ -32,7 +31,7 @@ body, html {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: #121820;
+  background-color: var(--tc-bg);
   font-family: var(--font-tech);
   color: #fff;
 }
@@ -84,7 +83,7 @@ body, html {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(4, 8, 14, 0.88);
+  background: rgba(9, 10, 8, 0.88);
   backdrop-filter: blur(12px);
   z-index: 1000;
   display: flex;
@@ -101,7 +100,7 @@ body, html {
   justify-content: space-between;
   align-items: center;
   padding: 10px 24px;
-  background: rgba(8, 16, 26, 0.95);
+  background: rgba(16, 19, 15, 0.95);
   border-bottom: 1px solid var(--hud-border);
 }
 
@@ -137,7 +136,7 @@ body, html {
 
 .tool-instruction {
   font-size: 12px;
-  color: #c0d4ec;
+  color: #d6dad2;
 }
 
 .close-tac-btn {
@@ -180,7 +179,7 @@ body, html {
 .map-crosshair-info {
   position: absolute;
   pointer-events: none;
-  background: rgba(6, 12, 20, 0.9);
+  background: rgba(12, 14, 12, 0.9);
   border: 1px solid var(--hud-cyan);
   padding: 6px 10px;
   border-radius: 3px;
@@ -198,7 +197,7 @@ body, html {
 .tac-sidebar {
   flex-shrink: 0;
   width: 310px;
-  background: rgba(6, 12, 20, 0.95);
+  background: rgba(12, 14, 12, 0.95);
   border-left: 1px solid var(--hud-border);
   padding: 16px;
   display: flex;
@@ -208,15 +207,15 @@ body, html {
 }
 
 .sidebar-box {
-  background: rgba(12, 22, 34, 0.7);
-  border: 1px solid rgba(0, 229, 255, 0.15);
+  background: rgba(22, 25, 21, 0.7);
+  border: 1px solid rgba(204, 209, 199, 0.15);
   padding: 12px;
   border-radius: 4px;
 }
 
 .sidebar-box.active-calc {
   border-color: var(--hud-cyan);
-  box-shadow: 0 0 15px rgba(0, 229, 255, 0.15);
+  box-shadow: 0 0 15px rgba(204, 209, 199, 0.15);
 }
 
 .sidebar-header {
@@ -244,7 +243,7 @@ body, html {
   font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 700;
-  color: var(--hud-cyan);
+  color: var(--tc-bright);
 }
 
 .val-warn {
@@ -263,7 +262,7 @@ body, html {
 .apply-target-btn {
   width: 100%;
   margin-top: 10px;
-  background: rgba(0, 229, 255, 0.18);
+  background: rgba(204, 209, 199, 0.18);
   border: 1px solid var(--hud-cyan);
   color: #fff;
   padding: 8px 12px;
@@ -344,7 +343,7 @@ body, html {
   align-items: center;
   gap: 8px;
   font-size: 11px;
-  color: #c0d4ec;
+  color: #d6dad2;
 }
 
 .legend-color {
@@ -356,7 +355,7 @@ body, html {
 .legend-color.friendly { background: #00e5ff; }
 .legend-color.radar-area { background: rgba(255, 59, 48, 0.6); }
 .legend-color.zone-safe { background: #4cd964; }
-.legend-color.bunker { background: #64748b; }
+.legend-color.bunker { background: #78826d; }
 .legend-color.hill { background: #b45309; }
 
 /* ==========================================================================
@@ -369,7 +368,7 @@ body, html {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(6, 12, 20, 0.94);
+  background: rgba(12, 14, 12, 0.94);
   backdrop-filter: blur(14px);
   z-index: 2000;
   display: flex;
@@ -384,11 +383,13 @@ body, html {
 
 .start-card,
 .game-over-card {
-  background: rgba(10, 18, 30, 0.96);
-  border: 1px solid var(--hud-cyan);
-  box-shadow: 0 0 40px rgba(0, 229, 255, 0.25);
+  position: relative;
+  background: var(--tc-panel-2);
+  border: 1px solid var(--tc-line-2);
+  border-top: 3px solid var(--tc-accent);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   padding: 30px 36px;
-  border-radius: 8px;
+  border-radius: 0;
   max-width: 620px;
   width: 90%;
   text-align: center;
@@ -417,8 +418,8 @@ body, html {
 }
 
 .rule-box {
-  background: rgba(14, 26, 42, 0.75);
-  border: 1px solid rgba(0, 229, 255, 0.12);
+  background: rgba(27, 31, 25, 0.75);
+  border: 1px solid rgba(204, 209, 199, 0.12);
   padding: 10px;
   border-radius: 4px;
 }
@@ -431,55 +432,56 @@ body, html {
 
 .rule-box p {
   font-size: 10px;
-  color: #c0d4ec;
+  color: #d6dad2;
   line-height: 1.4;
   margin-bottom: 3px;
 }
 
 .start-btn,
 .restart-btn {
-  background: linear-gradient(135deg, #0088ff, #0055b3);
-  border: 1px solid var(--hud-cyan);
-  color: #fff;
+  background: var(--tc-accent);
+  border: 0;
+  color: var(--tc-bg);
   padding: 10px 28px;
   font-family: var(--font-tech);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 1px;
-  border-radius: 4px;
+  border-radius: 0;
   cursor: pointer;
-  box-shadow: 0 0 20px rgba(0, 136, 255, 0.5);
+  box-shadow: none;
   transition: all 0.15s ease;
 }
 
 .start-btn:hover,
 .restart-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 0 30px rgba(0, 229, 255, 0.8);
+  background: var(--tc-accent-2);
+  box-shadow: none;
 }
 
 .victory-title {
   font-size: 24px;
   font-weight: 700;
-  color: #00ff9d;
+  color: var(--tc-ok);
+  letter-spacing: 3px;
   margin-bottom: 6px;
-  text-shadow: 0 0 16px rgba(0, 255, 157, 0.7);
 }
 
 .defeat-title {
   font-size: 24px;
   font-weight: 700;
-  color: #ff3b30;
+  color: var(--tc-red);
+  letter-spacing: 3px;
   margin-bottom: 6px;
-  text-shadow: 0 0 16px rgba(255, 59, 48, 0.7);
 }
 
 .draw-title {
   font-size: 24px;
   font-weight: 700;
-  color: #ffd700;
+  color: var(--tc-accent);
+  letter-spacing: 3px;
   margin-bottom: 6px;
-  text-shadow: 0 0 16px rgba(255, 215, 0, 0.7);
 }
 
 .victory-sub {
@@ -497,7 +499,7 @@ body, html {
 }
 
 .summary-item {
-  background: rgba(14, 26, 42, 0.7);
+  background: rgba(27, 31, 25, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 8px 12px;
   border-radius: 4px;
@@ -523,22 +525,22 @@ body, html {
   margin-top: 10px;
   width: 100%;
   padding: 8px 12px;
-  background: linear-gradient(135deg, #0088ff, #0055b3);
-  border: 1px solid var(--hud-cyan);
-  color: #fff;
+  background: var(--tc-accent);
+  border: 0;
+  color: var(--tc-bg);
   font-family: var(--font-tech);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.8px;
-  border-radius: 4px;
+  border-radius: 0;
   cursor: pointer;
-  box-shadow: 0 0 12px rgba(0, 136, 255, 0.4);
+  box-shadow: none;
   transition: all 0.15s ease;
 }
 
 .apply-target-btn:hover {
-  background: linear-gradient(135deg, #00a2ff, #0070e0);
-  box-shadow: 0 0 20px rgba(0, 229, 255, 0.7);
+  background: var(--tc-accent-2);
+  box-shadow: none;
   transform: translateY(-1px);
 }
 
@@ -549,1059 +551,15 @@ body, html {
   gap: 12px;
   margin-left: auto;
   font-size: 10px;
-  color: #9cb5d4;
-  background: rgba(0, 229, 255, 0.05);
+  color: #b8beb2;
+  background: rgba(204, 209, 199, 0.05);
   padding: 3px 10px;
   border-radius: 3px;
-  border: 1px solid rgba(0, 229, 255, 0.12);
+  border: 1px solid rgba(204, 209, 199, 0.12);
 }
 
 .quick-guide-inline span b {
   color: var(--hud-cyan);
-}
-
-/* ==========================================================================
-   8. SẢNH CHỜ QUÂN SỰ TỐI THƯỢNG (MILITARY TACTICAL COMMAND LOBBY)
-   Khớp chuẩn 100% từng pixel bản vẽ mockup tác chiến quân sự của người dùng
-   ========================================================================== */
-.matchmaking-overlay {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  background: radial-gradient(circle at 50% 30%, rgba(10, 24, 48, 0.94) 0%, rgba(3, 8, 18, 0.98) 75%, #01040a 100%),
-              url('assets/clean_desert_warfare_bg.jpg') center/cover no-repeat;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  z-index: 3000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  box-sizing: border-box;
-  overflow: hidden;
-  user-select: none;
-}
-
-.matchmaking-overlay.hidden {
-  display: none !important;
-}
-
-.mm-backdrop-fx {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: 
-    radial-gradient(ellipse at 10% 20%, rgba(0, 162, 255, 0.14) 0%, transparent 45%),
-    radial-gradient(ellipse at 90% 80%, rgba(245, 158, 11, 0.1) 0%, transparent 45%),
-    repeating-linear-gradient(0deg, rgba(0, 210, 255, 0.015) 0px, rgba(0, 210, 255, 0.015) 1px, transparent 1px, transparent 3px);
-}
-
-/* Khung Viền Toàn Cảnh FULL WIDTH Chuẩn Tỉ Lệ Tác Chiến */
-.military-dashboard {
-  position: relative;
-  width: 100%;
-  max-width: 100%;
-  height: 100%;
-  max-height: 100%;
-  background: linear-gradient(180deg, rgba(8, 16, 32, 0.96) 0%, rgba(4, 9, 20, 0.98) 100%);
-  border: 0;
-  border-radius: 0;
-  box-shadow: 
-    0 0 60px rgba(0, 0, 0, 0.95),
-    0 0 30px rgba(2, 132, 199, 0.4),
-    inset 0 0 25px rgba(2, 132, 199, 0.18);
-  padding: 0 20px 12px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 8px;
-  box-sizing: border-box;
-  overflow: hidden;
-  z-index: 10;
-  animation: mm-dashboard-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes mm-dashboard-in {
-  from { opacity: 0; transform: scale(0.99); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-/* ==========================================================================
-   TẦNG HEADER: HUY HIỆU, BANNER TOÀN CẢNH & PROFILE CHỈ HUY
-   ========================================================================== */
-.mm-top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 7px 28px;
-  background: linear-gradient(90deg, rgba(7, 16, 32, 0.98) 0%, rgba(10, 24, 46, 0.85) 50%, rgba(7, 16, 32, 0.98) 100%);
-  border: 0;
-  border-bottom: 2px solid rgba(2, 132, 199, 0.65);
-  border-radius: 0;
-  flex-shrink: 0;
-  height: 96px;
-  margin: 0 -20px;
-  box-sizing: border-box;
-  position: relative;
-  overflow: hidden;
-}
-
-.mm-top-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-  z-index: 2;
-}
-
-.mm-rank-emblem {
-  width: 104px;
-  height: 76px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.8));
-  position: relative;
-}
-
-.mm-rank-emblem::before,
-.mm-rank-emblem::after { content:'';position:absolute;top:25px;width:38px;height:26px;background:linear-gradient(180deg,#d9edff,#6787a7 62%,#1c405f);filter:drop-shadow(0 0 6px rgba(83,196,255,.75)); }
-.mm-rank-emblem::before { right:61px;clip-path:polygon(100% 22%,0 0,20% 28%,2% 32%,34% 56%,18% 62%,100% 100%); }
-.mm-rank-emblem::after { left:61px;clip-path:polygon(0 22%,100% 0,80% 28%,98% 32%,66% 56%,82% 62%,0 100%); }
-
-.mm-rank-emblem svg {
-  width: 66px;
-  height: 66px;
-}
-
-.mm-brand-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mm-main-title {
-  font-family: var(--font-tech);
-  font-size: 29px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: 2px;
-  margin: 0;
-  text-shadow: 0 0 16px rgba(56, 189, 248, 0.7), 0 2px 4px rgba(0, 0, 0, 0.9);
-  line-height: 1;
-}
-
-.mm-campaign-subtitle {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 800;
-  color: #f59e0b;
-  letter-spacing: 1px;
-  text-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.sub-dot {
-  font-size: 8px;
-  color: #f59e0b;
-}
-
-/* Dải panorama chiến xa xe tăng ở giữa thanh header */
-.mm-header-panorama {
-  flex: 1;
-  height: 100%;
-  max-width: 700px;
-  margin: 0 auto;
-  background-size: cover;
-  background-position: center;
-  border-radius: 4px;
-  position: relative;
-  mask-image: linear-gradient(90deg, transparent 0%, black 15%, black 85%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 15%, black 85%, transparent 100%);
-  opacity: 0.9;
-}
-
-/* Khu vực radar và profile bên phải header */
-.mm-top-profile-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-shrink: 0;
-  z-index: 2;
-}
-
-.mm-radar-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(4, 10, 20, 0.9);
-  border: 1px solid rgba(2, 132, 199, 0.5);
-  border-radius: 24px;
-  padding: 8px 18px 8px 10px;
-  box-shadow: inset 0 0 12px rgba(2, 132, 199, 0.25);
-}
-
-.radar-lens {
-  position: relative;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  border: 1.5px solid #0284c7;
-  background: radial-gradient(circle, rgba(2, 132, 199, 0.35) 0%, rgba(2, 8, 18, 0.95) 80%);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.radar-scanner {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.9) 0deg, transparent 90deg);
-  animation: mm-radar-sweep 1.8s linear infinite;
-}
-
-@keyframes mm-radar-sweep {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.radar-dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 5px;
-  height: 5px;
-  background: #f59e0b;
-  border-radius: 50%;
-  box-shadow: 0 0 8px #f59e0b;
-}
-
-.radar-info {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
-
-.radar-lbl {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
-  color: #38bdf8;
-  letter-spacing: 0.5px;
-}
-
-.radar-time {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 900;
-  color: #fbbf24;
-  letter-spacing: 0.8px;
-}
-
-/* Profile Chỉ huy */
-.mm-commander-profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(4, 10, 20, 0.9);
-  border: 1px solid rgba(2, 132, 199, 0.5);
-  border-radius: 24px;
-  padding: 6px 14px 6px 7px;
-}
-
-.commander-avatar-box {
-  position: relative;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 2px solid #38bdf8;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.commander-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.avatar-status-badge {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 8px;
-  height: 8px;
-  background: #10b981;
-  border: 1.5px solid #040914;
-  border-radius: 50%;
-}
-
-.commander-info {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-
-.commander-name {
-  font-family: var(--font-tech);
-  font-size: 15px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: 0.6px;
-}
-
-.commander-rank {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: #fbbf24;
-  font-weight: 800;
-}
-
-.mm-gear-btn {
-  background: none;
-  border: none;
-  color: #38bdf8;
-  font-size: 17px;
-  cursor: pointer;
-  padding: 2px;
-  transition: transform 0.2s ease, color 0.2s ease;
-}
-
-.mm-gear-btn:hover {
-  transform: rotate(45deg);
-  color: #fff;
-}
-
-/* ==========================================================================
-   NỘI DUNG CHÍNH: 3 TẦNG PANEL QUÂN SỰ
-   ========================================================================== */
-.mm-main-content {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: 315px 180px minmax(0, 1fr);
-  gap: 8px;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.mm-panel-box {
-  background: linear-gradient(180deg, rgba(8, 18, 36, 0.8) 0%, rgba(4, 10, 22, 0.9) 100%);
-  border: 1.5px solid rgba(2, 132, 199, 0.38);
-  border-radius: 2px;
-  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 10px);
-  padding: 6px 12px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  overflow: hidden;
-  box-sizing: border-box;
-  box-shadow: inset 0 0 20px rgba(2, 132, 199, 0.08);
-}
-
-.mm-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  margin-bottom: 2px;
-  min-height: 34px;
-}
-
-.p-hdr-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hdr-num-badge {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 900;
-  color: #ffffff;
-  background: #0284c7;
-  border: 1px solid #38bdf8;
-  border-radius: 3px;
-  padding: 1px 6px;
-  letter-spacing: 0.6px;
-  box-shadow: 0 0 8px rgba(2, 132, 199, 0.6);
-}
-
-.hdr-heading {
-  font-family: var(--font-tech);
-  font-size: 18px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: 1.2px;
-  margin: 0;
-  text-shadow: 0 0 10px rgba(2, 132, 199, 0.6);
-}
-
-.hdr-subheading {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #38bdf8;
-  letter-spacing: 0.4px;
-  opacity: 0.95;
-}
-
-.hdr-arrow {
-  color: #38bdf8;
-  font-size: 15px;
-}
-
-/* ==========================================================================
-   TẦNG 01: CHỌN XE TĂNG XUẤT TRẬN (CAROUSEL 4 CHIẾN XA)
-   ========================================================================== */
-.mm-tank-carousel-box {
-  min-height: 0;
-  min-height: 0;
-}
-
-.mm-carousel-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  flex: 1;
-  min-height: 0;
-  position: relative;
-}
-
-.carousel-arrow {
-  width: 26px;
-  height: 60px;
-  background: rgba(6, 16, 32, 0.88);
-  border: 1.5px solid #0284c7;
-  color: #38bdf8;
-  border-radius: 5px;
-  font-size: 16px;
-  font-weight: 900;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  box-shadow: 0 0 12px rgba(2, 132, 199, 0.3);
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 8;
-}
-
-.carousel-arrow.arrow-left { left: -38px; }
-.carousel-arrow.arrow-right { right: -38px; }
-
-.carousel-arrow:hover {
-  background: #0284c7;
-  color: #ffffff;
-  box-shadow: 0 0 18px rgba(56, 189, 248, 0.9);
-  transform: translateY(-50%) scale(1.06);
-}
-
-.mm-class-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-}
-
-.mm-class-card {
-  position: relative;
-  background: linear-gradient(180deg, rgba(8, 17, 34, 0.96) 0%, rgba(4, 10, 20, 0.98) 100%);
-  border: 1.5px solid rgba(2, 132, 199, 0.35);
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-}
-
-.mm-class-card:hover {
-  border-color: #38bdf8;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(2, 132, 199, 0.45);
-  background: linear-gradient(180deg, rgba(12, 24, 46, 0.98) 0%, rgba(6, 14, 28, 0.98) 100%);
-}
-
-.mm-class-card.active {
-  border: 2px solid #00d2ff;
-  background: linear-gradient(180deg, rgba(14, 30, 56, 0.98) 0%, rgba(6, 15, 30, 0.98) 100%);
-  box-shadow: 0 0 24px rgba(0, 210, 255, 0.55), inset 0 0 16px rgba(0, 210, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-/* Huy hiệu [✓ ĐÃ CHỌN] */
-.card-badge-selected {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 900;
-  color: #ffffff;
-  background: #0284c7;
-  border: 1.5px solid #38bdf8;
-  border-radius: 3px;
-  padding: 2px 7px;
-  opacity: 0;
-  transform: scale(0.85);
-  transition: all 0.2s ease;
-  z-index: 6;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.85);
-}
-
-.mm-class-card.active .card-badge-selected {
-  opacity: 1;
-  transform: scale(1);
-}
-
-/* Khung ảnh xe tăng với nút 3D */
-.card-img-frame {
-  position: relative;
-  width: 100%;
-  height: 125px;
-  overflow: hidden;
-  background: #030712;
-  flex-shrink: 0;
-}
-
-.card-tank-photo {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
-
-.mm-class-card:hover .card-tank-photo {
-  transform: scale(1.04);
-}
-
-.btn-inspect-tank-3d {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(3, 12, 26, 0.85) !important;
-  border: 1px solid #38bdf8 !important;
-  color: #38bdf8 !important;
-  border-radius: 4px !important;
-  font-family: var(--font-mono);
-  font-size: 10.5px !important;
-  font-weight: 900;
-  padding: 2.5px 7px !important;
-  cursor: pointer;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  transition: all 0.2s ease;
-  backdrop-filter: blur(4px);
-}
-
-.btn-inspect-tank-3d:hover {
-  background: #0284c7 !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.85);
-}
-
-/* Thông tin tên, mô tả và phân đoạn thanh chỉ số */
-.card-info-pane {
-  padding: 6px 10px 8px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  flex: 1;
-  gap: 3px;
-}
-
-.card-tank-name {
-  font-family: var(--font-tech);
-  font-size: 16px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: 0.8px;
-  margin: 0;
-  line-height: 1.15;
-}
-
-.mm-class-card.active .card-tank-name {
-  color: #38bdf8;
-  text-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
-}
-
-.card-tank-desc {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: #94a3b8;
-  margin: 0;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Hàng chỉ số dạng phân đoạn (Segmented Bars) - Chiều rộng cố định gọn gàng */
-.card-spec-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 4px;
-}
-
-.spec-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.spec-label {
-  width: 78px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 800;
-  color: #64748b;
-  letter-spacing: 0.3px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-}
-
-.mm-class-card.active .spec-label {
-  color: #94a3b8;
-}
-
-.spec-segments {
-  display: flex;
-  gap: 4px;
-  width: 105px; /* Giữ phân đoạn nhỏ gọn, không bị kéo giãn */
-  flex-shrink: 0;
-}
-
-.spec-segments .seg {
-  flex: 1;
-  height: 6.5px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 1.5px;
-}
-
-.spec-segments .seg.fill {
-  background: #38bdf8;
-  box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
-}
-
-/* ==========================================================================
-   TẦNG 02: CHỌN CHIẾN ĐỊA BẢN ĐỒ (5 THẺ LANDSCAPE)
-   ========================================================================== */
-.mm-map-selector-box {
-  min-height: 0;
-  min-height: 0;
-}
-
-.mm-map-cards-row {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
-  flex: 1;
-  min-height: 0;
-}
-
-.mm-map-card {
-  position: relative;
-  background: rgba(8, 16, 30, 0.92);
-  border: 1.5px solid rgba(2, 132, 199, 0.35);
-  border-radius: 5px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: all 0.2s ease;
-}
-
-.mm-map-card:hover {
-  border-color: #38bdf8;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.4);
-}
-
-.mm-map-card.active {
-  border: 2px solid #f59e0b;
-  box-shadow: 0 0 18px rgba(245, 158, 11, 0.55), inset 0 0 10px rgba(245, 158, 11, 0.25);
-}
-
-.map-check-badge {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 900;
-  color: #050b14;
-  background: #f59e0b;
-  border-radius: 2px;
-  padding: 1px 5px;
-  opacity: 0;
-  transform: scale(0.8);
-  transition: all 0.2s ease;
-  z-index: 5;
-  box-shadow: 0 0 6px #f59e0b;
-}
-
-.mm-map-card.active .map-check-badge {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.map-thumbnail {
-  width: 100%;
-  height: clamp(58px, 8.5vh, 82px);
-  background-size: cover;
-  background-position: center;
-  flex-shrink: 0;
-}
-
-.map-meta {
-  padding: 4px 6px 5px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  justify-content: center;
-  min-height: 34px;
-}
-
-.map-title {
-  font-family: var(--font-tech);
-  font-size: 12.5px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: 0.6px;
-}
-
-.mm-map-card.active .map-title {
-  color: #fbbf24;
-}
-
-.map-desc-tag {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.tag-ico {
-  font-size: 9.5px;
-}
-
-/* ==========================================================================
-   TẦNG 03: CHIẾN DỊCH: CHIẾM CỨ ĐIỂM 10 VS 10 (TRIPTYCH 3 CỘT)
-   ========================================================================== */
-.mm-campaign-intel-box {
-  min-height: 0;
-  min-height: 0;
-}
-
-.mm-campaign-triptych {
-  display: grid;
-  grid-template-columns: 1.25fr 1.35fr 1fr;
-  gap: 10px;
-  flex: 1;
-  min-height: 0;
-}
-
-/* Cột 1: 4 Dòng Quy Tắc Tác Chiến */
-.campaign-rules-col {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-around;
-  background: rgba(5, 12, 24, 0.85);
-  border: 1.5px solid rgba(2, 132, 199, 0.3);
-  border-radius: 5px;
-  padding: 6px 12px;
-}
-
-.rule-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rule-ico {
-  font-size: 16px;
-  color: #f59e0b;
-  flex-shrink: 0;
-}
-
-.rule-text {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: #cbd5e1;
-  line-height: 1.3;
-}
-
-.rule-text strong {
-  color: #fbbf24;
-  margin-right: 5px;
-}
-
-.blue-team-tag {
-  color: #38bdf8;
-  font-weight: 800;
-}
-
-.red-team-tag {
-  color: #f87171;
-  font-weight: 800;
-}
-
-.vs-tag {
-  color: #fbbf24;
-  font-weight: 900;
-  margin: 0 3px;
-}
-
-/* Cột 2: Ảnh Banner Hero với Cứ Điểm [A], [B], [C] */
-.campaign-hero-photo-col {
-  position: relative;
-  background-size: cover;
-  background-position: center;
-  border-radius: 5px;
-  border: 1.5px solid rgba(2, 132, 199, 0.45);
-  overflow: hidden;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.85);
-}
-
-/* Cột 3: Roster Người Chơi Thực / Bot */
-.campaign-roster-status-col {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-around;
-  background: rgba(5, 12, 24, 0.85);
-  border: 1.5px solid rgba(2, 132, 199, 0.3);
-  border-radius: 5px;
-  padding: 6px 12px;
-}
-
-.roster-status-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(2, 132, 199, 0.16);
-  border: 1.5px solid rgba(2, 132, 199, 0.45);
-  border-radius: 4px;
-  padding: 5px 8px;
-}
-
-.user-ico {
-  font-size: 14px;
-  color: #38bdf8;
-}
-
-.roster-stat-txt {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 800;
-  color: #38bdf8;
-  letter-spacing: 0.3px;
-}
-
-.roster-avatar-strip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 0;
-}
-
-.avatar-pill {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-}
-
-.avatar-pill.active-player {
-  background: #0284c7;
-  border: 1.5px solid #38bdf8;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.85);
-  color: #fff;
-}
-
-.avatar-pill.bot-slot {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #64748b;
-  opacity: 0.75;
-}
-
-.avatar-more-dots {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 900;
-  margin-left: 2px;
-}
-
-/* ==========================================================================
-   TẦNG FOOTER: PHÍM TẮT & NÚT XUẤT TRẬN KHỔNG LỒ
-   ========================================================================== */
-.mm-footer-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 4px 10px 4px 14px;
-  background: linear-gradient(90deg, rgba(7, 16, 32, 0.98) 0%, rgba(9, 22, 44, 0.9) 100%);
-  border: 1.5px solid rgba(2, 132, 199, 0.4);
-  border-radius: 6px;
-  flex-shrink: 0;
-  height: 74px;
-  box-sizing: border-box;
-}
-
-.mm-shortcuts-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: #94a3b8;
-}
-
-.shortcuts-badge {
-  font-weight: 900;
-  color: #fbbf24;
-  margin-right: 2px;
-}
-
-.sc-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.sc-chip kbd {
-  background: rgba(2, 132, 199, 0.28);
-  color: #38bdf8;
-  border: 1px solid #0284c7;
-  padding: 1.5px 5px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-/* Nút Xuất Trận Ngay Khổng Lồ Màu Vàng Cam */
-.mm-action-launch-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  background: linear-gradient(135deg, #f59e0b 0%, #ea580c 50%, #c2410c 100%);
-  border: 1.5px solid #fbbf24;
-  clip-path: polygon(16px 0%, 100% 0%, calc(100% - 16px) 100%, 0% 100%);
-  color: #ffffff;
-  padding: 6px 36px 6px 30px;
-  cursor: pointer;
-  letter-spacing: 0.6px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 0 24px rgba(245, 158, 11, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
-  height: 60px;
-}
-
-.mm-action-launch-btn::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  transform: skewX(-20deg);
-  animation: mm-launch-shimmer 2.2s infinite;
-}
-
-@keyframes mm-launch-shimmer {
-  0% { left: -100%; }
-  40%, 100% { left: 200%; }
-}
-
-.mm-action-launch-btn:hover {
-  transform: translateY(-1.5px) scale(1.02);
-  box-shadow: 0 0 32px rgba(245, 158, 11, 0.95);
-  border-color: #fde047;
-}
-
-.mm-action-launch-btn:active {
-  transform: translateY(0) scale(0.99);
-}
-
-.btn-tank-symbol {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  filter: drop-shadow(0 0 6px #ffffff);
-}
-
-.btn-text-content {
-  display: flex;
-  flex-direction: column;
-  text-align: left;
-  line-height: 1.15;
-}
-
-.btn-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-bold-title {
-  font-family: var(--font-tech);
-  font-size: 16px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: 1.2px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
-}
-
-.btn-chevrons {
-  font-size: 16px;
-  font-weight: 900;
-  color: #fff;
-  letter-spacing: -2px;
-}
-
-.btn-subtext {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 800;
-  color: #fef08a;
-  letter-spacing: 0.4px;
-  opacity: 0.95;
 }
 
 /* ==========================================================================
@@ -1648,15 +606,15 @@ body, html {
 }
 
 .slot-tank-type-pill.all_rounder {
-  background: rgba(59, 130, 246, 0.18);
-  border: 1px solid rgba(59, 130, 246, 0.5);
-  color: #93c5fd;
+  background: rgba(204, 209, 199, 0.18);
+  border: 1px solid rgba(204, 209, 199, 0.5);
+  color: #ccd1c7;
 }
 
 .slot-tank-type-pill.gatling {
-  background: rgba(234, 179, 8, 0.18);
-  border: 1px solid rgba(234, 179, 8, 0.5);
-  color: #fef08a;
+  background: rgba(228, 158, 37, 0.18);
+  border: 1px solid rgba(228, 158, 37, 0.5);
+  color: #efc680;
 }
 
 .slot-tank-type-pill.artillery {
@@ -1670,42 +628,6 @@ body, html {
   border: 1px solid rgba(16, 185, 129, 0.5);
   color: #a7f3d0;
 }
-
-/* ==========================================================================
-   9. NÚT INFO & PHÒNG TRƯNG BÀY XE TĂNG 3D (TANK 3D INSPECTOR SHOWROOM)
-   ========================================================================== */
-
-/* Nút Info trên thanh trên cùng của sảnh chờ */
-.mm-top-info-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: linear-gradient(135deg, rgba(0, 229, 255, 0.22), rgba(2, 132, 199, 0.35));
-  border: 1px solid rgba(0, 229, 255, 0.65);
-  border-radius: 20px;
-  padding: 6px 14px;
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-  letter-spacing: 0.5px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 16px rgba(0, 229, 255, 0.25);
-}
-
-.mm-top-info-btn:hover {
-  background: linear-gradient(135deg, rgba(0, 229, 255, 0.4), rgba(2, 132, 199, 0.55));
-  border-color: #00e5ff;
-  transform: translateY(-1px);
-  box-shadow: 0 0 24px rgba(0, 229, 255, 0.5);
-}
-
-.mm-top-info-btn .info-icon {
-  font-size: 14px;
-}
-
-
 
 /* ==========================================================================
    MODAL PHÒNG TRƯNG BÀY XE TĂNG 3D TOÀN MÀN HÌNH
@@ -1737,7 +659,7 @@ body, html {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(3, 7, 16, 0.88);
+  background: rgba(9, 10, 9, 0.88);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -1748,10 +670,10 @@ body, html {
   max-width: 1280px;
   height: 90vh;
   max-height: 840px;
-  background: linear-gradient(180deg, rgba(10, 18, 30, 0.98) 0%, rgba(6, 11, 19, 0.99) 100%);
-  border: 1.5px solid rgba(0, 229, 255, 0.4);
-  border-radius: 14px;
-  box-shadow: 0 0 60px rgba(0, 0, 0, 0.95), 0 0 40px rgba(0, 229, 255, 0.2);
+  background: linear-gradient(180deg, rgba(19, 22, 18, 0.98) 0%, rgba(12, 14, 11, 0.99) 100%);
+  border: 1.5px solid rgba(204, 209, 199, 0.4);
+  border-radius: 0;
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.95), 0 0 40px rgba(204, 209, 199, 0.2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1764,7 +686,7 @@ body, html {
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  background: rgba(3, 7, 14, 0.85);
+  background: rgba(8, 9, 8, 0.85);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -1778,7 +700,7 @@ body, html {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 800;
-  color: #00e5ff;
+  color: #ccd1c7;
   letter-spacing: 1px;
 }
 
@@ -1802,9 +724,9 @@ body, html {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(27, 31, 26, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 4px 8px;
 }
 
@@ -1812,15 +734,15 @@ body, html {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #a6ae9e;
   margin-right: 4px;
 }
 
 .ti-camo-btn {
   background: transparent;
   border: 1px solid transparent;
-  color: #94a3b8;
-  border-radius: 5px;
+  color: #a6ae9e;
+  border-radius: 0;
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 800;
@@ -1835,10 +757,10 @@ body, html {
 }
 
 .ti-camo-btn.active[data-team="BLUE"] {
-  background: rgba(0, 229, 255, 0.2);
-  border-color: #00e5ff;
-  color: #00e5ff;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+  background: rgba(204, 209, 199, 0.2);
+  border-color: #ccd1c7;
+  color: #ccd1c7;
+  box-shadow: 0 0 10px rgba(204, 209, 199, 0.3);
 }
 
 .ti-camo-btn.active[data-team="RED"] {
@@ -1853,7 +775,7 @@ body, html {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.4);
   color: #fca5a5;
-  border-radius: 8px;
+  border-radius: 0;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 800;
@@ -1879,7 +801,7 @@ body, html {
 /* Cột trái: Viewport 3D Three.js */
 .ti-viewport-container {
   position: relative;
-  background: radial-gradient(circle at 50% 55%, rgba(14, 28, 48, 0.7) 0%, rgba(3, 7, 14, 0.95) 100%);
+  background: radial-gradient(circle at 50% 55%, rgba(29, 34, 28, 0.7) 0%, rgba(8, 9, 8, 0.95) 100%);
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -1910,9 +832,9 @@ body, html {
 }
 
 .ti-tab-btn {
-  background: rgba(8, 16, 28, 0.88);
+  background: rgba(17, 20, 16, 0.88);
   border: 1.5px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 8px 10px;
   display: flex;
   align-items: center;
@@ -1923,15 +845,15 @@ body, html {
 }
 
 .ti-tab-btn:hover {
-  border-color: rgba(0, 229, 255, 0.6);
-  background: rgba(15, 28, 48, 0.95);
+  border-color: rgba(204, 209, 199, 0.6);
+  background: rgba(30, 35, 28, 0.95);
   transform: translateY(-2px);
 }
 
 .ti-tab-btn.active {
-  border-color: #ffd700;
-  background: linear-gradient(135deg, rgba(28, 44, 70, 0.95), rgba(12, 22, 38, 0.95));
-  box-shadow: 0 0 16px rgba(255, 215, 0, 0.35);
+  border-color: var(--tc-accent);
+  background: linear-gradient(135deg, rgba(47, 54, 44, 0.95), rgba(24, 28, 22, 0.95));
+  box-shadow: 0 0 16px rgba(228, 158, 37, 0.35);
 }
 
 .ti-tab-ico {
@@ -1957,14 +879,14 @@ body, html {
 
 .ti-tab-sub {
   font-size: 9px;
-  color: #94a3b8;
+  color: #a6ae9e;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .ti-tab-btn.active .ti-tab-name {
-  color: #ffd700;
+  color: var(--tc-accent);
 }
 
 /* Gợi ý điều khiển góc nhìn */
@@ -1978,7 +900,7 @@ body, html {
   justify-content: space-between;
   font-family: var(--font-mono);
   font-size: 10px;
-  color: #64748b;
+  color: #78826d;
   z-index: 10;
 }
 
@@ -1990,9 +912,9 @@ body, html {
 }
 
 .ti-hint-toggle {
-  background: rgba(0, 229, 255, 0.15);
-  border: 1px solid rgba(0, 229, 255, 0.35);
-  color: #00e5ff;
+  background: rgba(204, 209, 199, 0.15);
+  border: 1px solid rgba(204, 209, 199, 0.35);
+  color: #ccd1c7;
   border-radius: 4px;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -2002,8 +924,8 @@ body, html {
 }
 
 .ti-hint-toggle.active {
-  background: rgba(0, 229, 255, 0.25);
-  border-color: #00e5ff;
+  background: rgba(204, 209, 199, 0.25);
+  border-color: #ccd1c7;
 }
 
 /* Cột phải: Bảng thông số & Cấu tạo */
@@ -2013,7 +935,7 @@ body, html {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  background: rgba(6, 12, 22, 0.95);
+  background: rgba(13, 15, 13, 0.95);
 }
 
 .ti-spec-header {
@@ -2026,9 +948,9 @@ body, html {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 800;
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.12);
-  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: var(--tc-accent);
+  background: rgba(228, 158, 37, 0.12);
+  border: 1px solid rgba(228, 158, 37, 0.3);
   padding: 3px 8px;
   border-radius: 4px;
   margin-bottom: 6px;
@@ -2045,7 +967,7 @@ body, html {
 
 .ti-tank-summary {
   font-size: 12px;
-  color: #94a3b8;
+  color: #a6ae9e;
   line-height: 1.5;
   margin: 0;
 }
@@ -2055,9 +977,9 @@ body, html {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: rgba(14, 23, 38, 0.6);
+  background: rgba(25, 29, 23, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 12px 14px;
 }
 
@@ -2076,11 +998,11 @@ body, html {
 }
 
 .ti-stat-name {
-  color: #cbd5e1;
+  color: #d6dad2;
 }
 
 .ti-stat-val {
-  color: #00e5ff;
+  color: #ccd1c7;
 }
 
 .ti-stat-bar-track {
@@ -2099,7 +1021,7 @@ body, html {
 }
 
 .ti-stat-bar-fill.hp {
-  background: linear-gradient(90deg, #3b82f6, #00e5ff);
+  background: linear-gradient(90deg, #ccd1c7, #ccd1c7);
 }
 
 .ti-stat-bar-fill.speed {
@@ -2107,11 +1029,11 @@ body, html {
 }
 
 .ti-stat-bar-fill.rof {
-  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+  background: linear-gradient(90deg, var(--tc-accent), var(--tc-accent));
 }
 
 .ti-stat-bar-fill.range {
-  background: linear-gradient(90deg, #8b5cf6, #c084fc);
+  background: linear-gradient(90deg, #d8b67a, #e3c99d);
 }
 
 /* Phần đặc điểm thiết kế & công nghệ */
@@ -2119,7 +1041,7 @@ body, html {
   font-family: var(--font-mono);
   font-size: 11.5px;
   font-weight: 800;
-  color: #e2e8f0;
+  color: #e9ebe7;
   margin: 0 0 10px 0;
   letter-spacing: 0.5px;
 }
@@ -2131,9 +1053,9 @@ body, html {
 }
 
 .ti-feature-card {
-  background: rgba(14, 23, 38, 0.8);
+  background: rgba(25, 29, 23, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 10px;
   display: flex;
   gap: 8px;
@@ -2154,7 +1076,7 @@ body, html {
 
 .feat-desc {
   font-size: 10px;
-  color: #94a3b8;
+  color: #a6ae9e;
   line-height: 1.35;
   margin: 0;
 }
@@ -2170,9 +1092,9 @@ body, html {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(14, 23, 38, 0.6);
+  background: rgba(25, 29, 23, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 8px 12px;
 }
 
@@ -2184,13 +1106,13 @@ body, html {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 800;
-  color: #ffd700;
+  color: var(--tc-accent);
   display: block;
 }
 
 .ammo-desc {
   font-size: 10px;
-  color: #94a3b8;
+  color: #a6ae9e;
 }
 
 /* Nút Chọn Xe Xuất Trận */
@@ -2201,10 +1123,10 @@ body, html {
 
 .ti-select-btn {
   width: 100%;
-  background: linear-gradient(135deg, #ca8a04, #eab308);
+  background: linear-gradient(135deg, var(--tc-accent), var(--tc-accent));
   border: none;
-  border-radius: 8px;
-  color: #0f172a;
+  border-radius: 0;
+  color: #1b1f1a;
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 900;
@@ -2212,72 +1134,115 @@ body, html {
   cursor: pointer;
   letter-spacing: 0.5px;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 16px rgba(234, 179, 8, 0.35);
+  box-shadow: 0 4px 16px rgba(228, 158, 37, 0.35);
 }
 
 .ti-select-btn:hover {
-  background: linear-gradient(135deg, #eab308, #facc15);
-  box-shadow: 0 6px 24px rgba(250, 204, 21, 0.5);
+  background: linear-gradient(135deg, var(--tc-accent), var(--tc-accent));
+  box-shadow: 0 6px 24px rgba(229, 160, 42, 0.5);
   transform: translateY(-2px);
 }
 
 /* Đáp ứng màn hình nhỏ (Tablet / Mobile) */
-/* Full-screen vehicle dossier — aligned to the supplied 1672x941 reference. */
-.mm-class-card .spec-segments { position:relative;display:block;width:auto;flex:1;height:8px;background:rgba(8,35,55,.9);border:1px solid rgba(34,107,145,.45);overflow:hidden; }
-.mm-class-card .spec-segments .seg,.mm-class-card .spec-segments .seg.fill { display:none; }
-.mm-class-card .spec-segments::after { content:'';display:block;height:100%;width:62%;background:linear-gradient(90deg,#24bce9,#73eaff);box-shadow:0 0 8px rgba(69,216,255,.8); }
-.mm-class-card:nth-child(1) .spec-row:nth-child(1) .spec-segments::after{width:72%}.mm-class-card:nth-child(1) .spec-row:nth-child(2) .spec-segments::after{width:45%}.mm-class-card:nth-child(1) .spec-row:nth-child(3) .spec-segments::after{width:38%}
-.mm-class-card:nth-child(2) .spec-row:nth-child(1) .spec-segments::after{width:35%}.mm-class-card:nth-child(2) .spec-row:nth-child(2) .spec-segments::after{width:68%}.mm-class-card:nth-child(2) .spec-row:nth-child(3) .spec-segments::after{width:46%}
-.mm-class-card:nth-child(3) .spec-row:nth-child(1) .spec-segments::after{width:32%}.mm-class-card:nth-child(3) .spec-row:nth-child(2) .spec-segments::after{width:55%}.mm-class-card:nth-child(3) .spec-row:nth-child(3) .spec-segments::after{width:43%}
-.mm-class-card:nth-child(4) .spec-row:nth-child(1) .spec-segments::after{width:58%}.mm-class-card:nth-child(4) .spec-row:nth-child(2) .spec-segments::after{width:48%}.mm-class-card:nth-child(4) .spec-row:nth-child(3) .spec-segments::after{width:72%}
-.campaign-intel-box .mm-campaign-triptych,.mm-campaign-triptych{position:relative;grid-template-columns:590px minmax(0,1fr)}
-.campaign-rules-col{grid-column:1}.campaign-hero-photo-col{grid-column:2;background-position:center 58%}
-.campaign-roster-status-col{position:absolute;right:10px;top:8px;width:360px;height:70px;box-sizing:border-box;padding:7px 12px;z-index:4;justify-content:space-between;background:rgba(3,17,31,.9);box-shadow:0 0 18px rgba(0,150,220,.25)}
-.roster-avatar-strip{justify-content:center}.avatar-pill{width:18px;height:18px;font-size:9px}
-.mm-action-launch-btn{min-width:410px;justify-content:center;height:62px}.btn-bold-title{font-size:20px}.btn-subtext{font-size:11px}
-
-.tank-inspector-overlay { padding: 0; background: #020913; }
-.ti-backdrop { background: #020913; backdrop-filter: none; }
-.ti-modal { width: 100vw; max-width: none; height: 100vh; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: #030b16; }
-.ti-header { height: 96px; box-sizing: border-box; padding: 0 20px; gap: 18px; background: linear-gradient(90deg,#06111f 0%,#071522 48%,#020914 100%); border-bottom: 2px solid #064d78; }
-.ti-close-btn { width: 94px; height: 72px; flex: 0 0 94px; padding: 0; color: #81d8ff; font-size: 58px; line-height: 1; background: linear-gradient(135deg,#071a2c,#06101e); border: 1px solid #0d6b9e; border-radius: 0; clip-path: polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px); }
-.ti-title-box { gap: 5px; min-width: 420px; }
-.ti-main-title { font-family: var(--font-tech); font-size: 30px; line-height: 1; letter-spacing: 1.2px; }
-.ti-title-badge { font-size: 13px; color: #19c9ff; }
+/* Hồ sơ xe toàn màn hình — cùng phong cách bàn tác chiến của sảnh (màu từ src/ui/theme.css) */
+.tank-inspector-overlay { padding: 0; background: var(--tc-bg); }
+.ti-backdrop { background: var(--tc-bg); backdrop-filter: none; }
+.ti-modal { width: 100vw; max-width: none; height: 100vh; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: var(--tc-bg); }
+.ti-header { height: 76px; box-sizing: border-box; padding: 0 18px; gap: 18px; background: var(--tc-bg-2); border-bottom: 1px solid var(--tc-line); position: relative; }
+.ti-header::after { content: ''; position: absolute; left: 0; right: 0; bottom: -5px; height: 4px; background: repeating-linear-gradient(90deg, var(--tc-line-2) 0 1px, transparent 1px 24px); opacity: .6; pointer-events: none; }
+.ti-close-btn { width: 52px; height: 52px; flex: 0 0 52px; padding: 0; color: var(--tc-text); font-size: 30px; line-height: 1; background: var(--tc-panel); border: 1px solid var(--tc-line-2); border-radius: 0; box-shadow: none; clip-path: none; transition: all .18s ease; }
+.ti-close-btn:hover { color: var(--tc-bg); background: var(--tc-text); border-color: var(--tc-text); box-shadow: none; }
+.ti-title-box { gap: 4px; min-width: 380px; }
+.ti-main-title { font-family: var(--font-tech); font-size: 21px; font-weight: 700; line-height: 1.1; letter-spacing: 4px; color: var(--tc-bright); }
+.ti-title-badge { font-family: var(--font-tech); font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: var(--tc-dim); }
 .ti-header-actions { margin-left: auto; gap: 10px; }
-.ti-currency,.ti-profile { height: 54px; display: flex; align-items: center; gap: 12px; padding: 0 10px 0 14px; color: #b9ecff; border: 1px solid #075c8d; background: rgba(2,14,28,.88); clip-path: polygon(10px 0,calc(100% - 10px) 0,100% 10px,100% calc(100% - 10px),calc(100% - 10px) 100%,10px 100%,0 calc(100% - 10px),0 10px); font: 800 18px var(--font-mono); }
-.ti-currency > span { color:#75d8ff; font-size:26px; }.ti-currency.gold,.ti-currency.gold > span { color:#ffc21c; }
-.ti-currency button { width:38px;height:38px;border:0;border-left:1px solid #086896;background:transparent;color:#18c8ff;font-size:28px;cursor:pointer; }
-.ti-profile { min-width:250px; }.ti-profile img { width:50px;height:50px;border-radius:50%;object-fit:cover;border:2px solid #20c9ff; }.ti-profile span { display:flex;flex-direction:column;gap:3px; }.ti-profile b{font:900 14px var(--font-tech);color:#fff}.ti-profile small{font:800 10px var(--font-mono);color:#f4bd19}.ti-profile i{margin-left:auto;font-style:normal;font-size:20px}
-.ti-body { grid-template-columns: 220px minmax(0, 1fr) 41.7vw; min-height:0; }
-.ti-side-nav { z-index:5; display:flex; flex-direction:column; gap:8px; padding:16px 12px; background:linear-gradient(90deg,#030b15 0%,rgba(3,12,23,.92) 80%,rgba(3,12,23,.2) 100%); }
-.ti-side-nav button { height:68px; display:flex; align-items:center; gap:18px; padding:0 20px; border:1px solid #123b58; color:#8bcff4; background:linear-gradient(135deg,rgba(5,25,44,.92),rgba(4,16,29,.9)); clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px); font:800 16px var(--font-tech); cursor:pointer; }
-.ti-side-nav button span { font-size:30px;color:#77cfff }.ti-side-nav button.active { color:#fff;border:2px solid #08c9ff;background:linear-gradient(135deg,#087db4,#064270);box-shadow:0 0 18px rgba(0,200,255,.75),inset 0 0 20px rgba(16,202,255,.28) }
-.ti-viewport-container { border-right:0; background:radial-gradient(circle at 50% 46%,rgba(24,57,82,.72) 0%,rgba(5,17,30,.96) 58%,#020914 100%); }
-#ti-canvas { opacity:1; position:absolute;inset:0;width:100%;height:100%;z-index:1; }
-.ti-viewport-container::before { content:'';position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(180deg,rgba(70,130,165,.1),transparent 32%),repeating-linear-gradient(90deg,transparent 0,transparent 118px,rgba(62,131,166,.08) 119px,transparent 120px); }
-.ti-viewport-container::after { content:'';position:absolute;left:8%;right:8%;bottom:10%;height:18%;z-index:2;pointer-events:none;background:radial-gradient(ellipse,rgba(0,213,255,.22),transparent 68%);filter:blur(12px); }
-.ti-class-tabs { left:18px;right:18px;bottom:54px;gap:6px; }.ti-tab-btn { min-width:0;border-radius:0;padding:7px 9px;background:rgba(3,14,27,.82);clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}.ti-tab-btn.active{border-color:#14d3ff;box-shadow:0 0 15px rgba(0,205,255,.45)}.ti-tab-name{font-size:10px}.ti-tab-sub{font-size:8px}
-.ti-controls-hint { left:18px;right:auto;bottom:14px;padding:8px 16px;gap:12px;justify-content:flex-start;color:#e2e8f0;background:rgba(2,8,16,.72);border:1px solid #16425d;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
-.ti-hint-toggle { display:none; }
-.ti-hint-toggle.ti-test-fire-btn { display:inline-flex;align-items:center;gap:6px;padding:6px 14px;cursor:pointer;user-select:none;touch-action:none;color:#ffd9b0;font:800 12px var(--font-tech);letter-spacing:.5px;background:linear-gradient(135deg,rgba(120,36,10,.85),rgba(60,14,4,.9));border:1px solid #ff7a2e;clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);transition:filter .12s,box-shadow .12s }
-.ti-hint-toggle.ti-test-fire-btn:hover { filter:brightness(1.2) }
-.ti-test-panel { position:absolute;top:14px;right:18px;z-index:6;display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:300px }
-.ti-ammo-test { display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end }
-.ti-lab-link { padding:4px 9px;color:#9be4ff;font:800 10px var(--font-tech);letter-spacing:.4px;text-decoration:none;background:rgba(4,22,38,.85);border:1px dashed #2a7aa3 }
-.ti-lab-link:hover { color:#fff;border-color:#5fd0ff }
-.ti-ammo-chip { padding:5px 9px;cursor:pointer;color:#cfe6f5;font:800 10px var(--font-tech);letter-spacing:.4px;background:rgba(4,22,38,.85);border:1px solid #1d5a7d;clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px) }
-.ti-ammo-chip:hover { border-color:#3fb7e8 }
-.ti-ammo-chip.active { color:#1a1206;background:linear-gradient(135deg,#ffc94a,#f39200);border-color:#ffd36b }
-.ti-hint-toggle.ti-test-fire-btn.active { color:#fff;background:linear-gradient(135deg,#ff6a00,#b31d00);box-shadow:0 0 16px rgba(255,110,20,.75) }
-.ti-spec-panel { padding:16px 18px 18px;gap:0;overflow-y:auto;background:linear-gradient(180deg,rgba(3,18,34,.98),rgba(2,10,20,.99));border-left:2px solid #07608d;box-shadow:-20px 0 50px rgba(0,0,0,.55); }
-.ti-spec-header { padding:2px 4px 14px;border:1px solid #07608d;border-bottom:0; }.ti-tank-class-badge{border:0;background:none;color:#10cfff;font-size:13px;margin:0 0 6px}.ti-name-line{display:flex;align-items:center;gap:16px}.ti-name-line>span{padding:4px 10px;background:#f7b900;color:#17202b;font:900 12px var(--font-tech);box-shadow:0 0 12px rgba(255,190,0,.45)}.ti-tank-name{font:900 38px/1 var(--font-tech);margin:0;color:#fff}.ti-role-line{margin:8px 0 6px;font-size:17px;color:#e3edf7}.ti-tank-summary{font-size:13px;line-height:1.42;color:#aabed1}
-.ti-stat-section,.ti-tech-features,.ti-ammo-system,.ti-tactical-overview { border:1px solid #07557e;border-top:0;background:rgba(2,14,27,.7); }.ti-section-title{height:36px;display:flex;align-items:center;margin:0;padding:0 12px;color:#19cfff;background:linear-gradient(90deg,rgba(0,95,145,.32),rgba(2,20,35,.1));font-size:15px}
-.ti-stat-bars-group { display:grid;grid-template-columns:1fr 1fr;gap:10px 26px;padding:12px 14px;border:0;border-radius:0;background:transparent}.ti-stat-row{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:10px}.ti-stat-label-wrap{display:contents}.ti-stat-name{font-size:12px;color:#d6e6f2}.ti-stat-val{order:3;font-size:14px;color:#fff}.ti-stat-bar-track{height:14px;border:1px solid #0874a7;border-radius:2px;background:#03101d}.ti-stat-bar-fill{border-radius:0;background:linear-gradient(90deg,#159de4,#70e9ff)!important}
-.ti-feature-cards { grid-template-columns:repeat(4,1fr);gap:6px;padding:8px }.ti-feature-card{min-width:0;height:92px;box-sizing:border-box;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:7px 5px;border-radius:0;border-color:#0a6291;background:linear-gradient(180deg,#071a2d,#030d19)}.feat-ico{font-size:25px}.feat-title{font-size:9px}.feat-desc{font-size:8px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.ti-ammo-list{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:8px}.ti-ammo-card{min-width:0;border-radius:0;padding:7px}.ammo-name{font-size:9px}.ammo-desc{font-size:8px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ti-pros-cons{display:grid;grid-template-columns:1fr 1fr;padding:10px 14px}.ti-pros-cons>div+div{border-left:1px solid #185270;padding-left:22px}.ti-pros-cons b{color:#77ed58}.ti-pros-cons>div+div b{color:#ff5252}.ti-pros-cons p{margin:6px 0 0;color:#c7d4df;font-size:11px;line-height:1.5}
-.ti-action-row{padding:8px 0 0;margin-top:0}.ti-select-btn{height:42px;border-radius:0;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);font-size:12px}
+.ti-currency,.ti-profile { height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 12px; color: var(--tc-text); border: 1px solid var(--tc-line-2); background: var(--tc-panel); clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%); font: 700 16px var(--font-mono); }
+.ti-currency > span { color: var(--tc-dim); font-size: 22px; }
+.ti-currency.gold,.ti-currency.gold > span { color: var(--tc-accent); }
+.ti-currency button { width: 34px; height: 34px; border: 0; border-left: 1px solid var(--tc-line); background: transparent; color: var(--tc-dim); font-size: 22px; cursor: pointer; }
+.ti-currency button:hover { color: var(--tc-accent); }
+.ti-profile { min-width: 230px; }
+.ti-profile img { width: 38px; height: 38px; border-radius: 0; object-fit: cover; border: 1px solid var(--tc-line-2); filter: saturate(.6); }
+.ti-profile span { display: flex; flex-direction: column; gap: 2px; }
+.ti-profile b { font: 700 14px var(--font-tech); color: var(--tc-bright); }
+.ti-profile small { font: 600 11px var(--font-tech); color: var(--tc-accent-2); }
+.ti-profile i { margin-left: auto; font-style: normal; font-size: 18px; color: var(--tc-dim); }
+.ti-body { grid-template-columns: 200px minmax(0, 1fr) 41.7vw; min-height: 0; }
+
+/* Cột menu trái */
+.ti-side-nav { z-index: 5; display: flex; flex-direction: column; gap: 6px; padding: 14px 10px; background: var(--tc-bg-2); border-right: 1px solid var(--tc-line); }
+.ti-side-nav button { height: 54px; display: flex; align-items: center; gap: 14px; padding: 0 16px; border: 1px solid var(--tc-line); color: var(--tc-dim); background: var(--tc-panel); clip-path: none; font: 700 14px var(--font-tech); letter-spacing: 1.5px; cursor: pointer; transition: all .18s ease; }
+.ti-side-nav button:hover { color: var(--tc-text); border-color: var(--tc-line-2); }
+.ti-side-nav button span { font-size: 22px; color: var(--tc-faint); }
+.ti-side-nav button.active { color: var(--tc-accent-2); border: 1px solid var(--tc-accent); background: var(--tc-accent-soft); box-shadow: inset 3px 0 0 var(--tc-accent); }
+.ti-side-nav button.active span { color: var(--tc-accent); }
+
+/* Khung 3D */
+.ti-viewport-container { border-right: 0; background: radial-gradient(ellipse at 50% 55%, #1a1f1b 0%, #0d100e 60%, var(--tc-bg) 100%); }
+#ti-canvas { opacity: 1; position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; }
+.ti-viewport-container::before { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: linear-gradient(rgba(200,210,192,.035) 1px, transparent 1px) 0 0 / 48px 48px, linear-gradient(90deg, rgba(200,210,192,.035) 1px, transparent 1px) 0 0 / 48px 48px; }
+.ti-viewport-container::after { content: ''; position: absolute; left: 8%; right: 8%; bottom: 10%; height: 18%; z-index: 2; pointer-events: none; background: radial-gradient(ellipse, rgba(231,166,58,.10), transparent 68%); filter: blur(12px); }
+.ti-class-tabs { left: 18px; right: 18px; bottom: 58px; gap: 8px; }
+.ti-tab-btn { min-width: 0; border-radius: 0; padding: 7px 10px; background: var(--tc-panel-2); border: 1px solid var(--tc-line); clip-path: none; backdrop-filter: none; }
+.ti-tab-btn:hover { border-color: var(--tc-line-2); background: var(--tc-panel-2); }
+.ti-tab-btn.active { border-color: var(--tc-accent); background: var(--tc-accent-soft); box-shadow: inset 0 3px 0 var(--tc-accent); }
+.ti-tab-ico { color: var(--tc-faint); }
+.ti-tab-btn.active .ti-tab-ico { color: var(--tc-accent); }
+.ti-tab-name { font-family: var(--font-tech); font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--tc-text); }
+.ti-tab-btn.active .ti-tab-name { color: var(--tc-accent-2); }
+.ti-tab-sub { font-size: 10px; color: var(--tc-dim); }
+.ti-controls-hint { left: 18px; right: auto; bottom: 16px; padding: 7px 14px; gap: 12px; justify-content: flex-start; font-family: var(--font-tech); font-size: 11px; color: var(--tc-dim); background: var(--tc-panel); border: 1px solid var(--tc-line); clip-path: none; }
+.ti-hint-toggle { display: none; }
+.ti-hint-toggle.ti-test-fire-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; cursor: pointer; user-select: none; touch-action: none; color: var(--tc-accent-2); font: 700 12px var(--font-tech); letter-spacing: 1px; background: var(--tc-panel-2); border: 1px solid var(--tc-accent); clip-path: none; transition: background .12s, color .12s; }
+.ti-hint-toggle.ti-test-fire-btn:hover { background: var(--tc-accent-soft); }
+.ti-hint-toggle.ti-test-fire-btn.active { color: var(--tc-bg); background: var(--tc-accent); box-shadow: none; }
+.ti-test-panel { position: absolute; top: 14px; right: 18px; z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 300px; }
+.ti-ammo-test { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.ti-lab-link { padding: 4px 9px; color: var(--tc-dim); font: 600 10px var(--font-tech); letter-spacing: .6px; text-decoration: none; background: var(--tc-panel); border: 1px dashed var(--tc-line-2); }
+.ti-lab-link:hover { color: var(--tc-text); border-color: var(--tc-dim); }
+.ti-ammo-chip { padding: 5px 10px; cursor: pointer; color: var(--tc-dim); font: 700 10px var(--font-tech); letter-spacing: .8px; background: var(--tc-panel-2); border: 1px solid var(--tc-line-2); clip-path: none; }
+.ti-ammo-chip:hover { color: var(--tc-text); border-color: var(--tc-dim); }
+.ti-ammo-chip.active { color: var(--tc-bg); background: var(--tc-text); border-color: var(--tc-text); }
+
+/* Cột thông số phải */
+.ti-spec-panel { padding: 14px 16px 16px; gap: 10px; overflow-y: auto; background: var(--tc-bg-2); border-left: 1px solid var(--tc-line); box-shadow: none; }
+.ti-spec-header { position: relative; padding: 12px 14px 14px; border: 1px solid var(--tc-line); background: var(--tc-panel); }
+.ti-spec-header::before { content: ''; position: absolute; top: -1px; left: -1px; width: 14px; height: 14px; border: solid var(--tc-accent); border-width: 2px 0 0 2px; }
+.ti-tank-class-badge { border: 0; background: none; padding: 0; color: var(--tc-accent); font: 700 11px var(--font-tech); letter-spacing: 2px; margin: 0 0 6px; }
+.ti-name-line { display: flex; align-items: center; gap: 14px; }
+.ti-name-line > span { padding: 3px 9px; background: transparent; color: var(--tc-accent); border: 1px solid rgba(231,166,58,.5); font: 700 11px var(--font-tech); letter-spacing: 1.5px; box-shadow: none; }
+.ti-tank-name { font: 700 34px/1.05 var(--font-tech); letter-spacing: 2px; margin: 0; color: var(--tc-bright); }
+.ti-role-line { margin: 8px 0 6px; font-size: 15px; color: var(--tc-text); }
+.ti-tank-summary { font-size: 13px; line-height: 1.45; color: var(--tc-dim); }
+.ti-stat-section,.ti-tech-features,.ti-ammo-system,.ti-tactical-overview { border: 1px solid var(--tc-line); background: var(--tc-panel); }
+.ti-section-title { height: 34px; display: flex; align-items: center; gap: 8px; margin: 0; padding: 0 12px; font-family: var(--font-tech); font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--tc-bright); background: transparent; border-bottom: 1px dashed var(--tc-line); }
+.ti-section-title .ti { color: var(--tc-accent); }
+.ti-stat-bars-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 26px; padding: 12px 14px; border: 0; border-radius: 0; background: transparent; }
+.ti-stat-row { display: grid; grid-template-columns: 104px 1fr 34px; align-items: center; gap: 10px; }
+.ti-stat-label-wrap { display: contents; }
+.ti-stat-name { font-family: var(--font-tech); font-size: 11px; font-weight: 600; letter-spacing: 1.2px; color: var(--tc-dim); }
+.ti-stat-val { order: 3; font-family: var(--font-mono); font-size: 13px; color: var(--tc-text); text-align: right; }
+.ti-stat-bar-track { height: 8px; border: 0; border-radius: 0; background: rgba(200,210,192,.1); }
+.ti-stat-bar-fill { border-radius: 0; background: var(--tc-text) !important; }
+.ti-feature-cards { grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px; }
+.ti-feature-card { min-width: 0; height: 92px; box-sizing: border-box; flex-direction: column; align-items: center; text-align: center; gap: 3px; padding: 8px 6px; border-radius: 0; border: 1px solid var(--tc-line); background: var(--tc-panel-2); }
+.feat-ico { font-size: 22px; color: var(--tc-accent); }
+.feat-title { font-family: var(--font-tech); font-size: 11px; font-weight: 700; color: var(--tc-text); }
+.feat-desc { font-size: 10px; line-height: 1.25; color: var(--tc-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ti-ammo-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px; }
+.ti-ammo-card { min-width: 0; border-radius: 0; padding: 7px 9px; border: 1px solid var(--tc-line); background: var(--tc-panel-2); }
+.ammo-tag { color: var(--tc-dim); }
+.ammo-name { font-family: var(--font-tech); font-size: 12px; font-weight: 700; color: var(--tc-accent-2); }
+.ammo-desc { font-size: 11px; color: var(--tc-dim); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ti-pros-cons { display: grid; grid-template-columns: 1fr 1fr; padding: 10px 14px; }
+.ti-pros-cons > div + div { border-left: 1px solid var(--tc-line); padding-left: 22px; }
+.ti-pros-cons b { font-family: var(--font-tech); letter-spacing: 1.5px; color: var(--tc-ok); }
+.ti-pros-cons > div + div b { color: var(--tc-red); }
+.ti-pros-cons p { margin: 6px 0 0; color: var(--tc-text); font-size: 12px; line-height: 1.5; }
+.ti-action-row { padding: 4px 0 0; margin-top: 0; }
+.ti-select-btn { position: relative; height: 48px; border-radius: 0; color: var(--tc-bg); background: var(--tc-accent); box-shadow: none; clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px); font: 700 15px var(--font-tech); letter-spacing: 3px; }
+.ti-select-btn::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(-45deg, rgba(0,0,0,.07) 0 8px, transparent 8px 16px); pointer-events: none; }
+.ti-select-btn:hover { background: var(--tc-accent-2); box-shadow: none; transform: none; }
 
 @media (max-width: 900px) {
   .ti-body {
@@ -2298,67 +1263,67 @@ body, html {
 /* ==========================================================================
    BẢN ĐỒ CHIẾN THUẬT (thiết kế lại): thanh công cụ, lớp hiển thị, cứ điểm, ký hiệu
    ========================================================================== */
-.tac-canvas-wrapper { background: #05080d; }
+.tac-canvas-wrapper { background: #090a08; }
 .map-crosshair-info { white-space: pre-line; line-height: 1.45; max-width: 300px; transform: translate(16px, 16px); }
 .tm-toolbar {
   position: absolute; top: 12px; left: 12px; z-index: 5;
   display: flex; flex-direction: column; gap: 4px;
 }
 .tm-toolbar button {
-  width: 34px; height: 34px; border-radius: 6px; cursor: pointer;
-  background: rgba(6, 12, 20, 0.86); color: #dff6ff; font-size: 17px; line-height: 1;
-  border: 1px solid rgba(0, 229, 255, 0.35);
+  width: 34px; height: 34px; border-radius: 0; cursor: pointer;
+  background: rgba(12, 14, 12, 0.86); color: #eff1ed; font-size: 17px; line-height: 1;
+  border: 1px solid rgba(204, 209, 199, 0.35);
 }
-.tm-toolbar button:hover { background: rgba(0, 229, 255, 0.22); border-color: var(--hud-cyan); }
-.tm-val { font-family: var(--font-mono); font-size: 12px; color: #e2f2ff; }
+.tm-toolbar button:hover { background: rgba(204, 209, 199, 0.22); border-color: var(--hud-cyan); }
+.tm-val { font-family: var(--font-mono); font-size: 12px; color: #f0f2ef; }
 .tm-pill {
-  font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 10px;
-  background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35);
+  font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 0;
+  background: rgba(166, 174, 158, 0.15); color: #d6dad2; border: 1px solid rgba(166, 174, 158, 0.35);
 }
 .tm-pill.ok { background: rgba(34, 197, 94, 0.15); color: #6ee7a0; border-color: rgba(34, 197, 94, 0.5); }
 .tm-pill.bad { background: rgba(239, 68, 68, 0.15); color: #ff8a80; border-color: rgba(239, 68, 68, 0.5); }
 .tm-layers { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .tm-layers button {
   padding: 6px 8px; border-radius: 4px; cursor: pointer; text-align: left;
-  background: rgba(12, 22, 34, 0.8); color: #7f93a8; border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(22, 25, 21, 0.8); color: #939d8a; border: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 11px; font-family: var(--font-tech);
 }
 .tm-layers button::before { content: '○ '; }
-.tm-layers button.on { color: #dff6ff; border-color: rgba(0, 229, 255, 0.45); background: rgba(0, 229, 255, 0.10); }
+.tm-layers button.on { color: #eff1ed; border-color: rgba(204, 209, 199, 0.45); background: rgba(204, 209, 199, 0.10); }
 .tm-layers button.on::before { content: '● '; color: var(--hud-cyan); }
 .tm-obj { display: grid; grid-template-columns: 24px 1fr 72px 54px; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
 .tm-obj-id {
   width: 22px; height: 22px; border-radius: 50%; border: 2px solid; display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 12px; background: rgba(8, 14, 22, 0.9);
+  font-weight: 700; font-size: 12px; background: rgba(14, 16, 13, 0.9);
 }
 .tm-obj-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .tm-obj-bar b { display: block; height: 100%; }
 .tm-obj-who { font-weight: 700; }
-.tm-obj-d { color: #8aa4bf; font-family: var(--font-mono); text-align: right; }
-.tm-legend { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #b8c9da; }
+.tm-obj-d { color: #a4ad9c; font-family: var(--font-mono); text-align: right; }
+.tm-legend { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #c9cec4; }
 .tm-ic {
   display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
   width: 14px; height: 14px; margin-right: 7px; border-radius: 50%; font-style: normal; font-size: 9px; font-weight: 700;
 }
-.tm-ic.me { background: #00e5ff; clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%); border-radius: 0; }
-.tm-ic.ally { background: #00e5ff; transform: scale(0.65); }
-.tm-ic.enemy { background: #ff3b30; transform: scale(0.65); }
-.tm-ic.radar { border: 1.5px solid #6ee7b7; border-radius: 2px; transform: scale(0.8); }
-.tm-ic.report { border: 1.5px solid #ffd60a; transform: rotate(45deg) scale(0.7); border-radius: 1px; }
+.tm-ic.me { background: #ccd1c7; clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%); border-radius: 0; }
+.tm-ic.ally { background: #4cc9f0; transform: scale(0.65); }
+.tm-ic.enemy { background: #ff4d4d; transform: scale(0.65); }
+.tm-ic.radar { border: 1.5px solid var(--tc-ok); border-radius: 2px; transform: scale(0.8); }
+.tm-ic.report { border: 1.5px solid var(--tc-accent); transform: rotate(45deg) scale(0.7); border-radius: 1px; }
 .tm-ic.ghost { border: 1px dashed #ff8c78; color: #ff8c78; }
-.tm-ic.obj { border: 2px solid #e2e8f0; color: #e2e8f0; background: #0b1420; }
-.tm-ic.range { border: 1.5px solid #00e5ff; background: rgba(0, 229, 255, 0.08); }
+.tm-ic.obj { border: 2px solid #e9ebe7; color: #e9ebe7; background: #141813; }
+.tm-ic.range { border: 1.5px solid #ccd1c7; background: rgba(204, 209, 199, 0.08); }
 .tm-ic.dead { border: 1.5px dashed #ff5a50; }
 .tm-ic.sight { border: 1px dashed rgba(255, 255, 255, 0.6); }
-.tm-ic.zone { border: 2px solid #00b0ff; }
+.tm-ic.zone { border: 2px solid #ccd1c7; }
 .tm-ic.bush { background: rgba(70, 150, 70, 0.45); border: 1px dashed rgba(120, 200, 110, 0.8); }
-.tm-ic.crate { background: #f59e0b; border-radius: 2px; transform: scale(0.75); }
+.tm-ic.crate { background: var(--tc-accent); border-radius: 2px; transform: scale(0.75); }
 
 /* Bản đồ chiến thuật TOÀN MÀN HÌNH: canvas phủ kín, tiêu đề & bảng thông tin nổi trên bản đồ */
-.tactical-map-overlay { background: #05080d; backdrop-filter: none; }
+.tactical-map-overlay { background: #090a08; backdrop-filter: none; }
 .tactical-map-overlay .tac-map-header {
   position: absolute; top: 0; left: 0; right: 0; z-index: 6; padding: 8px 16px;
-  background: linear-gradient(180deg, rgba(6, 12, 20, 0.92) 0%, rgba(6, 12, 20, 0.55) 70%, rgba(6, 12, 20, 0) 100%);
+  background: linear-gradient(180deg, rgba(12, 14, 12, 0.92) 0%, rgba(12, 14, 12, 0.55) 70%, rgba(12, 14, 12, 0) 100%);
   border-bottom: none; pointer-events: none;
 }
 .tactical-map-overlay .tac-map-header button { pointer-events: auto; }
@@ -2368,51 +1333,51 @@ body, html {
 .tactical-map-overlay .tm-toolbar { top: 64px; }
 .tactical-map-overlay .tac-sidebar {
   position: absolute; top: 58px; right: 12px; bottom: 12px; width: 300px; z-index: 6;
-  background: rgba(6, 12, 20, 0.84); border: 1px solid rgba(0, 229, 255, 0.22); border-radius: 8px;
+  background: rgba(12, 14, 12, 0.84); border: 1px solid rgba(204, 209, 199, 0.22); border-radius: 0;
   padding: 12px; gap: 10px; backdrop-filter: blur(6px);
   transition: transform 0.18s ease, opacity 0.18s ease;
 }
 .tactical-map-overlay .tac-sidebar.collapsed { transform: translateX(calc(100% + 16px)); opacity: 0; pointer-events: none; }
 .tm-panel-btn {
-  background: rgba(0, 229, 255, 0.12); border: 1px solid rgba(0, 229, 255, 0.5); color: #bff3ff;
+  background: rgba(204, 209, 199, 0.12); border: 1px solid rgba(204, 209, 199, 0.5); color: #dfe2dc;
   padding: 6px 12px; border-radius: 3px; cursor: pointer; font-family: var(--font-tech); font-size: 12px; font-weight: 700;
 }
-.tm-panel-btn:hover { background: rgba(0, 229, 255, 0.3); }
+.tm-panel-btn:hover { background: rgba(204, 209, 199, 0.3); }
 .tm-verdict {
-  margin: 2px 0 10px; padding: 9px 10px; border-radius: 6px; text-align: center;
+  margin: 2px 0 10px; padding: 9px 10px; border-radius: 0; text-align: center;
   font-family: var(--font-tech); font-size: 13px; font-weight: 700; letter-spacing: 0.3px;
-  background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(166, 174, 158, 0.12); color: #d6dad2; border: 1px solid rgba(166, 174, 158, 0.3);
 }
 .tm-verdict.ok { background: rgba(34, 197, 94, 0.16); color: #7ff0ae; border-color: rgba(34, 197, 94, 0.6); }
 .tm-verdict.bad { background: rgba(239, 68, 68, 0.16); color: #ff9a90; border-color: rgba(239, 68, 68, 0.6); }
 
 /* Bản đồ tác chiến — bản tối giản (không còn bảng bên) */
-.tactical-map-overlay { background: #070b0f; }
+.tactical-map-overlay { background: #0a0c0a; }
 .tactical-map-overlay .tac-map-header {
   padding: 10px 18px 22px;
-  background: linear-gradient(180deg, rgba(7, 11, 15, 0.9) 0%, rgba(7, 11, 15, 0) 100%);
+  background: linear-gradient(180deg, rgba(10, 12, 10, 0.9) 0%, rgba(10, 12, 10, 0) 100%);
 }
-.tactical-map-overlay .tac-title { font-family: var(--font-mono); font-size: 13px; letter-spacing: 3px; color: #cfe9f5; }
-.tactical-map-overlay .radar-dot { background: #4cc9f0; box-shadow: 0 0 8px #4cc9f0; border-radius: 0; width: 7px; height: 7px; }
+.tactical-map-overlay .tac-title { font-family: var(--font-tech); font-size: 14px; font-weight: 700; letter-spacing: 4px; color: var(--tc-bright); }
+.tactical-map-overlay .radar-dot { background: var(--tc-accent); box-shadow: none; border-radius: 0; width: 7px; height: 7px; }
 .tactical-map-overlay .close-tac-btn {
-  background: rgba(7, 11, 15, 0.7); border: 1px solid rgba(232, 241, 246, 0.35); color: #e8f1f6;
+  background: rgba(10, 12, 10, 0.7); border: 1px solid rgba(239, 240, 238, 0.35); color: #eff0ee;
   font-family: var(--font-mono); letter-spacing: 1px; border-radius: 0;
 }
 .tactical-map-overlay .close-tac-btn:hover { border-color: #ff4d4d; color: #fff; background: rgba(255, 77, 77, 0.25); }
 .tactical-map-overlay .tm-toolbar { top: 64px; left: 30px; gap: 2px; }
 .tactical-map-overlay .tm-toolbar button {
   width: 30px; height: 30px; border-radius: 0; font-size: 15px;
-  background: rgba(7, 11, 15, 0.82); color: #e8f1f6; border: 1px solid rgba(232, 241, 246, 0.25);
+  background: rgba(10, 12, 10, 0.82); color: #eff0ee; border: 1px solid rgba(239, 240, 238, 0.25);
 }
-.tactical-map-overlay .tm-toolbar button:hover { border-color: #4cc9f0; color: #4cc9f0; background: rgba(76, 201, 240, 0.12); }
+.tactical-map-overlay .tm-toolbar button:hover { border-color: #ccd1c7; color: #ccd1c7; background: rgba(204, 209, 199, 0.12); }
 .tactical-map-overlay .map-crosshair-info {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; border-radius: 0;
-  background: rgba(7, 11, 15, 0.9); border: 1px solid rgba(232, 241, 246, 0.35); padding: 4px 8px;
+  background: rgba(10, 12, 10, 0.9); border: 1px solid rgba(239, 240, 238, 0.35); padding: 4px 8px;
 }
 .tm-hint {
   position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 5; pointer-events: none;
-  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; color: rgba(232, 241, 246, 0.75);
-  background: rgba(7, 11, 15, 0.7); padding: 5px 12px; border: 1px solid rgba(232, 241, 246, 0.15);
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; color: rgba(239, 240, 238, 0.75);
+  background: rgba(10, 12, 10, 0.7); padding: 5px 12px; border: 1px solid rgba(239, 240, 238, 0.15);
   animation: tm-hint-fade 7s ease forwards;
 }
 @keyframes tm-hint-fade { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
@@ -2421,7 +1386,7 @@ body, html {
    MÀN CHỜ GHÉP TRẬN: sảnh ẩn đi, bản đồ trận đấu quay toàn cảnh bên dưới
    ========================================================================== */
 .matchmaking-overlay.mm-searching {
-  background: radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(1, 4, 10, 0.55) 100%) !important;
+  background: radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(5, 6, 5, 0.55) 100%) !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   transition: background 0.6s ease;
@@ -2449,8 +1414,8 @@ body.mm-searching #hud-overlay { visibility: hidden; }
   gap: 2px;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
 }
-.mm-sh-map-lbl { font-family: var(--font-mono); font-size: 12px; letter-spacing: 3px; color: #7dd3fc; }
-.mm-sh-map-name { font-size: 30px; font-weight: 700; letter-spacing: 3px; color: #fff; }
+.mm-sh-map-lbl { font-size: 12px; font-weight: 600; letter-spacing: 3px; color: var(--tc-dim); }
+.mm-sh-map-name { font-size: 30px; font-weight: 700; letter-spacing: 4px; color: var(--tc-bright); }
 
 .mm-sh-panel {
   position: absolute;
@@ -2463,10 +1428,10 @@ body.mm-searching #hud-overlay { visibility: hidden; }
   align-items: center;
   gap: 16px;
   padding: 14px 18px;
-  background: rgba(3, 10, 20, 0.86);
-  border: 1px solid rgba(245, 158, 11, 0.55);
-  box-shadow: 0 0 28px rgba(245, 158, 11, 0.25), inset 0 0 14px rgba(2, 132, 199, 0.18);
-  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  background: var(--tc-panel-2);
+  border: 1px solid var(--tc-line-2);
+  border-left: 3px solid var(--tc-accent);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
 }
 .mm-sh-radar {
   position: relative;
@@ -2474,30 +1439,30 @@ body.mm-searching #hud-overlay { visibility: hidden; }
   height: 52px;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 1.5px solid #0284c7;
-  background: radial-gradient(circle, rgba(2, 132, 199, 0.35) 0%, rgba(2, 8, 18, 0.95) 80%);
+  border: 1px solid var(--tc-line-2);
+  background: radial-gradient(circle, rgba(231, 166, 58, 0.18) 0%, rgba(9, 11, 9, 0.95) 80%);
   overflow: hidden;
 }
 .mm-sh-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.mm-sh-status { font-size: 16px; font-weight: 700; letter-spacing: 1px; color: #fbbf24; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mm-sh-status { font-size: 16px; font-weight: 700; letter-spacing: 1px; color: var(--tc-accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mm-sh-status.highlight-amber { color: #fdba74; }
-.mm-sh-progress { height: 6px; background: rgba(8, 35, 55, 0.9); border: 1px solid rgba(34, 107, 145, 0.5); overflow: hidden; }
-#mm-search-progress { height: 100%; width: 5%; background: linear-gradient(90deg, #f59e0b, #fde047); box-shadow: 0 0 8px rgba(245, 158, 11, 0.8); transition: width 0.3s ease; }
-.mm-sh-meta { font-family: var(--font-mono); font-size: 13px; color: #bae6fd; }
-.mm-sh-meta b { color: #fff; }
+.mm-sh-progress { height: 6px; background: rgba(200, 210, 192, 0.1); border: 0; overflow: hidden; }
+#mm-search-progress { height: 100%; width: 5%; background: linear-gradient(90deg, var(--tc-accent), var(--tc-accent-2)); box-shadow: none; transition: width 0.3s ease; }
+.mm-sh-meta { font-family: var(--font-mono); font-size: 13px; color: var(--tc-dim); }
+.mm-sh-meta b { color: var(--tc-text); }
 .mm-sh-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 .mm-sh-btn {
   font-family: var(--font-tech);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 1px;
-  color: #cbd5e1;
-  background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.5);
+  color: var(--tc-text);
+  background: transparent;
+  border: 1px solid var(--tc-line-2);
   padding: 6px 14px;
   cursor: pointer;
 }
-.mm-sh-btn:hover { color: #fff; border-color: #e2e8f0; }
+.mm-sh-btn:hover { color: var(--tc-bg); background: var(--tc-text); border-color: var(--tc-text); }
 .mm-search-hud.is-counting .mm-sh-actions { visibility: hidden; }
 
 .mm-countdown {
@@ -2509,11 +1474,11 @@ body.mm-searching #hud-overlay { visibility: hidden; }
   flex-direction: column;
   align-items: center;
   pointer-events: none;
-  text-shadow: 0 0 30px rgba(245, 158, 11, 0.8), 0 4px 12px rgba(0, 0, 0, 0.9);
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.9);
 }
-.mm-cd-num { font-size: 150px; font-weight: 700; line-height: 1; color: #fff; }
+.mm-cd-num { font-family: var(--font-mono); font-size: 150px; font-weight: 700; line-height: 1; color: var(--tc-bright); }
 .mm-cd-num.pop { animation: mm-cd-pop 0.9s ease-out; }
-.mm-cd-lbl { font-size: 18px; letter-spacing: 4px; color: #fbbf24; }
+.mm-cd-lbl { font-size: 18px; letter-spacing: 4px; color: var(--tc-accent); }
 @keyframes mm-cd-pop {
   0% { transform: scale(1.6); opacity: 0; }
   20% { transform: scale(1); opacity: 1; }

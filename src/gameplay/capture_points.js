@@ -8,76 +8,85 @@ class CapturePointsManager {
   constructor(game) {
     this.game = game;
     this.points = [];
+    this.set = null;   // bản đồ cứ điểm bê tông (terrain.strongholdSet): cờ & tiến độ chiếm do StrongholdSet tính
   }
 
   // Khởi tạo 3 cứ điểm chiến lược
   init() {
     // Dọn dẹp đồ họa cũ
-    if (this.points && this.points.length > 0) {
+    (this.points || []).forEach(cp => { if (cp.group && cp.group.parent) cp.group.parent.remove(cp.group); });
+    this.remote = false;
+    const T = this.game.terrain;
+    const set = T && T.strongholdSet && T.strongholdSet.items && T.strongholdSet.items.length ? T.strongholdSet : null;
+    this.set = set;
+    const mk = (id, x, z, extra) => Object.assign({
+      id, name: `CỨ ĐIỂM ${id}`, shortName: `CỨ ĐIỂM ${id}`, x, z, radius: 85,
+      owner: null,            // 'BLUE' | 'RED' | null
+      capTeam: null,          // phe đang kéo cờ dở (khi chưa có chủ)
+      captureProgress: 0, holdTimer: 0, holdGoal: 60, isDisputed: false, alert45Played: false
+    }, extra || {});
+
+    if (set) {
+      // 3 cứ điểm bê tông trên 3 đồi: vùng chiếm = khoang + dốc ra vào (StrongholdSet.inCaptureZone), cờ thật trên nắp hầm
+      const S = (typeof Strongholds !== 'undefined' && Strongholds.S) || {};
+      const r = (S.HB || 96) + (S.RUN || 40) * 0.7;
+      this.points = set.items.map(K => mk(K.id, K.x, K.z, { K, radius: r }));
+    } else {
+      this.points = [mk('A', -800, 0), mk('B', 0, 0), mk('C', 800, 0)];
       this.points.forEach(cp => {
-        if (cp.group && cp.group.parent) {
-          cp.group.parent.remove(cp.group);
-        }
+        cp.y = T ? T.getElevationAt(cp.x, cp.z) : 0;
+        this.createMesh(cp);
       });
     }
-
-    this.points = [
-      {
-        id: 'A',
-        name: 'CỨ ĐIỂM A (PHÍA TÂY)',
-        shortName: 'CỨ ĐIỂM A',
-        x: -800,
-        z: 0,
-        radius: 85,
-        owner: null,
-        captureProgress: 0,
-        holdTimer: 0.0,
-        holdGoal: 60.0,
-        isDisputed: false,
-        alert45Played: false
-      },
-      {
-        id: 'B',
-        name: 'CỨ ĐIỂM B (TRUNG TÂM)',
-        shortName: 'CỨ ĐIỂM B',
-        x: 0,
-        z: 0,
-        radius: 85,
-        owner: null,
-        captureProgress: 0,
-        holdTimer: 0.0,
-        holdGoal: 60.0,
-        isDisputed: false,
-        alert45Played: false
-      },
-      {
-        id: 'C',
-        name: 'CỨ ĐIỂM C (PHÍA ĐÔNG)',
-        shortName: 'CỨ ĐIỂM C',
-        x: 800,
-        z: 0,
-        radius: 85,
-        owner: null,
-        captureProgress: 0,
-        holdTimer: 0.0,
-        holdGoal: 60.0,
-        isDisputed: false,
-        alert45Played: false
-      }
-    ];
-
-    this.points.forEach(cp => {
-      const terrainHeight = this.game.terrain ? this.game.terrain.getElevationAt(cp.x, cp.z) : 0;
-      cp.y = terrainHeight;
-      this.createMesh(cp);
-    });
-
     this.updateCapturePointsUI();
     return this.points;
   }
 
   getPoints() {
     return this.points;
+  }
+
+  // Thông báo chiếm cứ điểm theo góc nhìn đội của người chơi trên máy này
+  announce(cp, kind, team) {
+    const g = this.game;
+    const mine = team === (g.myTeam ? g.myTeam() : 'BLUE');
+    const n = cp.shortName;
+    const sfx = (name) => { if (window.soundEngine && typeof window.soundEngine[name] === 'function') window.soundEngine[name](); };
+    if (kind === 'taken') {
+      if (mine) { g.addCombatLog(`[[flag]] Đội bạn đã chiếm ${n} — giữ 60 giây để thắng`, 'victory'); sfx('playTargetLockAcquired'); }
+      else { g.addCombatLog(`[[flag]] Địch đã chiếm ${n} — tới giành lại ngay!`, 'defeat'); sfx('playRadarAlert'); }
+    } else if (kind === 'lost') {
+      // team = phe vừa mất cứ điểm
+      g.addCombatLog(mine ? `[[flag-off]] Đội bạn đã mất ${n}` : `[[flag-off]] Đã hạ cờ địch tại ${n}`, mine ? 'defeat' : 'system');
+    } else if (kind === 'urgent') {
+      const left = Math.max(1, Math.ceil(cp.holdGoal - cp.holdTimer));
+      if (mine) g.addCombatLog(`[[hourglass]] Giữ ${n} thêm ${left} giây nữa là THẮNG!`, 'victory');
+      else { g.addCombatLog(`[[alert-triangle]] Địch còn ${left} giây nữa là thắng nhờ giữ ${n}!`, 'defeat'); sfx('playRadarAlert'); }
+    }
+  }
+
+  // Chủ phòng gửi đồng hồ giữ cờ cho các máy khác: [[id, giây giữ, chủ, tiến độ, phe kéo dở, tranh chấp]]
+  netState() {
+    return this.points.map(cp => [cp.id, Math.round(cp.holdTimer * 10) / 10, cp.owner || '', Math.round(cp.captureProgress), cp.capTeam || '', cp.isDisputed ? 1 : 0]);
+  }
+  applyNetState(list) {
+    if (!Array.isArray(list)) return;
+    this.remote = true;
+    for (const [id, hold, owner, prog, capTeam, disp] of list) {
+      const cp = this.points.find(p => p.id === id);
+      if (!cp) continue;
+      const own = owner || null;
+      if (own !== cp.owner) {
+        if (cp.owner) this.announce(cp, 'lost', cp.owner);
+        if (own) this.announce(cp, 'taken', own);
+        cp.alert45Played = false;
+      }
+      cp.owner = own;
+      cp.holdTimer = Number(hold) || 0;
+      cp.captureProgress = Number(prog) || 0;
+      cp.capTeam = capTeam || null;
+      cp.isDisputed = !!disp;
+    }
   }
 
   createMesh(cp) {
@@ -184,119 +193,80 @@ class CapturePointsManager {
 
   updateCapturePoints(dt, units = this.game.units) {
     if (!this.points || this.points.length === 0 || this.game.isGameOver) return;
-
     const activeUnits = Array.isArray(units) ? units : [];
-
-    const captureRate = 14.0; // Tốc độ chiếm (% mỗi giây với 1 xe)
+    const captureRate = 14.0; // Tốc độ chiếm (% mỗi giây với 1 xe) — bản đồ cũ
+    // Chơi mạng: máy khách hiển thị theo chủ phòng (applyNetState), không tự quyết đổi chủ / thắng
+    const ns = this.game.netSync;
+    const follower = !!(ns && !ns.detached && ns.net && !ns.net.isHost);
 
     this.points.forEach(cp => {
-      // 1. Tìm các xe còn sống nằm trong ranh giới cứ điểm
-      let blueInZone = 0;
-      let redInZone = 0;
-
-      activeUnits.forEach(u => {
-        if (!u.isAlive) return;
-        const dist = Math.hypot(u.x - cp.x, u.z - cp.z);
-        if (dist <= cp.radius) {
-          if (u.team === 'blue') blueInZone++;
-          else if (u.team === 'red') redInZone++;
-        }
-      });
-
-      // 2. Xử lý logic trạng thái cứ điểm
-      if (blueInZone > 0 && redInZone > 0) {
-        // Có xe cả 2 phe: Tranh chấp dữ dội, đóng băng tiến trình và thời gian giữ
-        cp.isDisputed = true;
-      } else if (blueInZone > 0) {
-        // Chỉ có Phe Xanh hiện diện
-        cp.isDisputed = false;
-        const speed = captureRate * (1 + 0.4 * (blueInZone - 1));
-
-        if (cp.owner === 'blue') {
-          // Phe Xanh đang kiểm soát: Tiến trình đầy đủ, đếm thời gian giữ
-          cp.captureProgress = 100;
-          cp.holdTimer += dt;
-        } else if (cp.owner === 'red') {
-          // Phe Xanh hạ cờ Phe Đỏ
-          cp.captureProgress -= speed * dt;
-          cp.holdTimer = 0.0;
-          cp.alert45Played = false;
-          if (cp.captureProgress <= 0) {
-            cp.owner = null;
-            cp.captureProgress = 0;
-            this.game.addCombatLog(`Phe Xanh đã vô hiệu hóa thành công ${cp.name}! Cứ điểm trở lại trạng thái Trung Lập!`, 'system');
-          }
-        } else {
-          // Cứ điểm đang Trung Lập: Kéo cờ Phe Xanh
-          cp.captureProgress += speed * dt;
-          if (cp.captureProgress >= 100) {
-            cp.captureProgress = 100;
-            cp.owner = 'blue';
-            cp.holdTimer = 0.0;
-            cp.alert45Played = false;
-            this.game.addCombatLog(`Phe Xanh đã làm chủ ${cp.name}! Cần giữ vững cứ điểm trong 1 phút để giành chiến thắng!`, 'victory');
-            if (window.soundEngine && typeof window.soundEngine.playTargetLockAcquired === 'function') {
-              window.soundEngine.playTargetLockAcquired();
-            }
-          }
-        }
-      } else if (redInZone > 0) {
-        // Chỉ có Phe Đỏ hiện diện
-        cp.isDisputed = false;
-        const speed = captureRate * (1 + 0.4 * (redInZone - 1));
-
-        if (cp.owner === 'red') {
-          cp.captureProgress = 100;
-          cp.holdTimer += dt;
-        } else if (cp.owner === 'blue') {
-          cp.captureProgress -= speed * dt;
-          cp.holdTimer = 0.0;
-          cp.alert45Played = false;
-          if (cp.captureProgress <= 0) {
-            cp.owner = null;
-            cp.captureProgress = 0;
-            this.game.addCombatLog(`Quân Địch đã vô hiệu hóa quyền kiểm soát của Phe Xanh tại ${cp.name}!`, 'defeat');
-          }
-        } else {
-          cp.captureProgress += speed * dt;
-          if (cp.captureProgress >= 100) {
-            cp.captureProgress = 100;
-            cp.owner = 'red';
-            cp.holdTimer = 0.0;
-            cp.alert45Played = false;
-            this.game.addCombatLog(`CẢNH BÁO: Quân Địch đã làm chủ ${cp.name}! Mau tiến tới ngăn chặn!`, 'defeat');
-          }
-        }
+      const prevOwner = cp.owner;
+      if (cp.K) {
+        // Cứ điểm bê tông: tiến độ cờ & chủ do StrongholdSet tính (khoang + dốc, có đồng bộ mạng)
+        const K = cp.K;
+        cp.isDisputed = !!K.contested;
+        cp.captureProgress = Math.abs(K.capture || 0);
+        cp.capTeam = (K.capture || 0) > 0.5 ? 'BLUE' : (K.capture || 0) < -0.5 ? 'RED' : null;
+        if (!follower) {
+          cp.owner = K.owner || null;
+          const enemyIn = cp.owner === 'BLUE' ? K.redIn : cp.owner === 'RED' ? K.blueIn : 0;
+          const ownIn = cp.owner === 'BLUE' ? K.blueIn : cp.owner === 'RED' ? K.redIn : 0;
+          if (!cp.owner) cp.holdTimer = 0;
+          else if (enemyIn && !ownIn) { cp.holdTimer = 0; cp.alert45Played = false; }   // địch đang hạ cờ
+          else if (!cp.isDisputed) cp.holdTimer += dt;                                     // tranh chấp: đóng băng
+        } else if (cp.owner && !cp.isDisputed) cp.holdTimer += dt;                       // nội suy giữa 2 gói của chủ phòng
       } else {
-        // Không có xe nào trong vùng
-        cp.isDisputed = false;
-        if (cp.owner) {
-          // Cứ điểm đã thuộc quyền sở hữu của một phe: Tiếp tục tích lũy thời gian giữ vững
-          cp.holdTimer += dt;
-        } else {
-          // Chưa có phe nào làm chủ: Tiến trình chiếm dở giảm dần về 0
-          if (cp.captureProgress > 0) {
-            cp.captureProgress = Math.max(0, cp.captureProgress - 8.0 * dt);
+        // Bản đồ cũ: vòng tròn bán kính 85
+        let blueIn = 0, redIn = 0;
+        for (const u of activeUnits) {
+          if (!u || u.isDead) continue;
+          if (Math.hypot(u.x - cp.x, u.z - cp.z) > cp.radius) continue;
+          if (u.team === 'BLUE') blueIn++; else if (u.team === 'RED') redIn++;
+        }
+        if (follower) {
+          if (cp.owner && !cp.isDisputed) cp.holdTimer += dt;
+        } else if (blueIn && redIn) {
+          cp.isDisputed = true;   // tranh chấp: đóng băng tiến trình và thời gian giữ
+        } else if (blueIn || redIn) {
+          cp.isDisputed = false;
+          const team = blueIn ? 'BLUE' : 'RED', n = blueIn || redIn;
+          const speed = captureRate * (1 + 0.4 * (n - 1));
+          if (cp.owner === team) { cp.captureProgress = 100; cp.holdTimer += dt; }
+          else if (cp.owner) {
+            // hạ cờ đối phương
+            cp.captureProgress -= speed * dt; cp.holdTimer = 0; cp.alert45Played = false;
+            if (cp.captureProgress <= 0) { cp.owner = null; cp.captureProgress = 0; cp.capTeam = null; }
+          } else {
+            if (cp.capTeam && cp.capTeam !== team) { cp.captureProgress -= speed * dt; if (cp.captureProgress <= 0) { cp.captureProgress = 0; cp.capTeam = team; } }
+            else { cp.capTeam = team; cp.captureProgress += speed * dt; }
+            if (cp.captureProgress >= 100) { cp.captureProgress = 100; cp.owner = team; cp.holdTimer = 0; cp.alert45Played = false; }
           }
+        } else {
+          cp.isDisputed = false;
+          if (cp.owner) cp.holdTimer += dt;
+          else if (cp.captureProgress > 0) { cp.captureProgress = Math.max(0, cp.captureProgress - 8.0 * dt); if (!cp.captureProgress) cp.capTeam = null; }
         }
       }
 
-      // 3. Cảnh báo khẩn cấp khi phe nào giữ được 45s (còn 15s là thắng trận)
+      if (!follower && cp.owner !== prevOwner) {
+        if (prevOwner) this.announce(cp, 'lost', prevOwner);
+        if (cp.owner) this.announce(cp, 'taken', cp.owner);
+        cp.holdTimer = 0;
+        cp.alert45Played = false;
+      }
+
+      // Cảnh báo khi phe nào giữ được 45s (còn 15s là thắng trận)
       if (cp.owner && cp.holdTimer >= 45.0 && !cp.alert45Played) {
         cp.alert45Played = true;
-        const remainingToWin = Math.max(1, Math.ceil(cp.holdGoal - cp.holdTimer));
-        const teamName = cp.owner === 'blue' ? 'PHE XANH' : 'PHE ĐỎ';
-        this.game.addCombatLog(`[BÁO ĐỘNG KHẨN CẤP] ${teamName} chỉ còn ${remainingToWin} giây nữa là thắng trận nhờ chiếm giữ ${cp.name}! Mau ngăn chặn!`, 'system');
-        if (window.soundEngine && typeof window.soundEngine.playRadarAlert === 'function') {
-          window.soundEngine.playRadarAlert();
-        }
+        this.announce(cp, 'urgent', cp.owner);
       }
 
-      // 4. KIỂM TRA ĐIỀU KIỆN THẮNG TRẬN KHI GIỮ QUÁ 1 PHÚT (60 GIÂY)
-      if (cp.owner && cp.holdTimer >= cp.holdGoal && !this.isGameOver) {
-        this.game.finishMatchByCapture(cp.owner, cp.name);
+      // Giữ đủ 60 giây: thắng trận (chơi mạng: chỉ chủ phòng quyết định)
+      if (!follower && cp.owner && cp.holdTimer >= cp.holdGoal && !this.game.isGameOver) {
+        this.game.finishMatchByCapture(cp.owner, cp.shortName);
         return;
       }
+      if (!cp.group) return;   // cứ điểm bê tông: không có cột cờ / vòng tròn kiểu cũ
 
       // 5. Cập nhật hiệu ứng hình ảnh 3D
       if (cp.markerMesh) {
@@ -311,11 +281,11 @@ class CapturePointsManager {
       let areaHex = 0xffffff;
       let areaOpacity = 0.08;
 
-      if (cp.owner === 'blue') {
+      if (cp.owner === 'BLUE') {
         targetHex = 0x38bdf8;
         areaHex = 0x0284c7;
         areaOpacity = 0.16;
-      } else if (cp.owner === 'red') {
+      } else if (cp.owner === 'RED') {
         targetHex = 0xef4444;
         areaHex = 0xdc2626;
         areaOpacity = 0.16;
@@ -369,14 +339,14 @@ class CapturePointsManager {
           const secs = Math.floor(cp.holdTimer);
           timerEl.textContent = cp.owner ? `GIỮ: ${secs}s/60s (ĐÓNG BĂNG)` : 'Đang tranh chấp';
         }
-      } else if (cp.owner === 'blue') {
+      } else if (cp.owner === 'BLUE') {
         cardEl.classList.add('blue-owned');
         if (flagEl) UIIcons.set(flagEl, '[[circle-filled.ic-blue]]');
         if (statusEl) statusEl.textContent = 'PHE XANH';
         const secs = Math.floor(cp.holdTimer);
         if (timerEl) timerEl.textContent = `GIỮ: ${secs}s / 60s`;
         if (cp.holdTimer >= 45.0) cardEl.classList.add('winning-soon');
-      } else if (cp.owner === 'red') {
+      } else if (cp.owner === 'RED') {
         cardEl.classList.add('red-owned');
         if (flagEl) UIIcons.set(flagEl, '[[circle-filled.ic-red]]');
         if (statusEl) statusEl.textContent = 'PHE ĐỎ';
@@ -395,11 +365,11 @@ class CapturePointsManager {
           // Nếu đã chiếm được, thanh tiến trình hiển thị tỷ lệ thời gian giữ vững (0s -> 60s)
           const holdPct = Math.min(100, (cp.holdTimer / cp.holdGoal) * 100);
           barEl.style.width = `${holdPct}%`;
-          barEl.style.backgroundColor = cp.owner === 'blue' ? '#38bdf8' : '#ef4444';
+          barEl.style.backgroundColor = cp.owner === 'BLUE' ? '#38bdf8' : '#ef4444';
         } else {
           // Khi đang trung lập hoặc đang kéo cờ
           barEl.style.width = `${cp.captureProgress}%`;
-          barEl.style.backgroundColor = '#facc15';
+          barEl.style.backgroundColor = cp.capTeam === 'BLUE' ? '#7dd3fc' : cp.capTeam === 'RED' ? '#fca5a5' : '#facc15';
         }
       }
     });

@@ -245,13 +245,17 @@ class HUDController {
       this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy nâng cao! Súng chuyển về đạn nhỏ liên thanh cơ bản!', 'alert');
       return;
     }
-    if (ammoType === 'RPG' && (this.game.player.rpgAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn tên lửa RPG! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+    if (ammoType === 'ANTI_TANK_MISSILE' && (this.game.player.missileAmmoCount || 0) <= 0) {
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
       return;
     }
 
+    const changed = this.game.player.selectedAmmo !== ammoType;
     this.game.player.selectedAmmo = ammoType;
     this.updateAmmoUI();
+    if (changed && window.soundEngine && typeof window.soundEngine.playAmmoSwitch === 'function') {
+      window.soundEngine.playAmmoSwitch(ammoType);
+    }
 
     let name = 'ĐẠN CƠ BẢN 120MM (ST 1.6)';
     if (ammoType === 'AP') {
@@ -262,8 +266,8 @@ class HUDController {
       name = 'ĐẠN CHÙM DPICM (NỔ TRÊN KHÔNG, BUNG 18 ĐẠN CON ĐÁNH VÀO NÓC GIÁP MỎNG)';
     } else if (ammoType === 'INCENDIARY') {
       name = 'ĐẠN CHÁY (ST 0.16 · THIÊU ĐỐT, CHÁY THỦNG BÌNH XĂNG XE NHẸ)';
-    } else if (ammoType === 'RPG') {
-      name = 'ĐẠN PHẢN LỰC CHỐNG TĂNG RPG (ST 2.4 · TẦM ~250M, TỰ HỦY 460M, BỊ GẠCH ERA CHẶN BỚT)';
+    } else if (ammoType === 'ANTI_TANK_MISSILE') {
+      name = 'TÊN LỬA CHỐNG TĂNG DẪN HƯỚNG (KHÓA XE ĐỊCH ĐANG NHÌN THẤY RỒI BẤM SPACE · GIỮ XE SỐNG TỚI KHI TRÚNG)';
     } else if (ammoType === 'GATLING_BULLET') {
       name = 'ĐẠN 30MM NỔ-CHÁY 6 NÒNG (TẦM ~1000M · XÉ GIÁP NHẸ, YẾU VỚI XE TĂNG)';
     } else if (ammoType === 'SCOUT_BULLET') {
@@ -289,7 +293,7 @@ class HUDController {
         case 'HE': return { name: 'NỔ MẠNH', qty: artyHe && !(p.heAmmoCount > 0) ? Infinity : (p.heAmmoCount || 0), color: '#ffb020' };
         case 'CLUSTER': return { name: 'ĐẠN CHÙM', qty: p.clusterAmmoCount || 0, color: '#5cf08a' };
         case 'INCENDIARY': return { name: 'ĐẠN CHÁY', qty: p.incendiaryAmmoCount || 0, color: '#ff6a2b' };
-        case 'RPG': return { name: 'TÊN LỬA', qty: p.rpgAmmoCount || 0, color: '#ff8c42' };
+        case 'ANTI_TANK_MISSILE': return { name: 'TÊN LỬA', qty: p.missileAmmoCount || 0, color: '#ff8c42' };
         case 'GATLING_BULLET': return { name: '30MM', qty: Infinity, color: '#ffd166' };
         case 'SCOUT_BULLET': return { name: '12.7MM', qty: Infinity, color: '#ffd166' };
         default: return { name: 'THƯỜNG', qty: Infinity, color: '#e4edf2' };
@@ -385,10 +389,10 @@ class HUDController {
     if (fireMainText) {
       if (this.game.player.selectedAmmo === 'AP') {
         fireMainText.textContent = `XUYÊN PHÁ [${this.game.player.apAmmoCount}]`;
-        fireMainText.style.color = '#38bdf8';
+        fireMainText.style.color = '#5fb0dc';
       } else if (this.game.player.selectedAmmo === 'HE') {
         fireMainText.textContent = `NỔ MẠNH [${this.game.player.heAmmoCount}]`;
-        fireMainText.style.color = '#ff5247';
+        fireMainText.style.color = '#e0675c';
       } else {
         fireMainText.textContent = 'KHAI HỎA (THƯỜNG)';
         fireMainText.style.color = '#ffffff';
@@ -399,13 +403,13 @@ class HUDController {
       if (this.game.player.reloadTimer <= 0) {
         reloadBar.style.width = '100%';
         reloadText.textContent = 'SẴN SÀNG';
-        reloadText.style.color = '#00e5ff';
+        reloadText.style.color = '#8fc46f';
         if (fireBtn) fireBtn.disabled = false;
       } else {
         const reloadPct = ((this.game.player.reloadDuration - this.game.player.reloadTimer) / this.game.player.reloadDuration) * 100;
         reloadBar.style.width = `${reloadPct}%`;
         reloadText.textContent = `${this.game.player.reloadTimer.toFixed(1)}S`;
-        reloadText.style.color = '#ffb700';
+        reloadText.style.color = '#e7a63a';
         if (fireBtn) fireBtn.disabled = true;
       }
     }
@@ -492,16 +496,16 @@ class HUDController {
     if (tankClassText) {
       if (this.game.player.tankType === 'GATLING') {
         UIIcons.set(tankClassText, '[[bolt]] 6 NÒNG CẬN CHIẾN');
-        tankClassText.style.color = '#facc15';
+        tankClassText.style.color = '#e7a63a';
       } else if (this.game.player.tankType === 'ARTILLERY') {
         UIIcons.set(tankClassText, '[[crosshair]] PHÁO CAO XẠ TỰ HÀNH');
-        tankClassText.style.color = '#f87171';
+        tankClassText.style.color = '#e0675c';
       } else if (this.game.player.tankType === 'SCOUT') {
         UIIcons.set(tankClassText, '[[radar-2]] XE TRINH SÁT');
-        tankClassText.style.color = '#10b981';
+        tankClassText.style.color = '#8fc46f';
       } else {
         UIIcons.set(tankClassText, '[[shield]] TANK ĐA DỤNG');
-        tankClassText.style.color = '#60a5fa';
+        tankClassText.style.color = '#5fb0dc';
       }
     }
 
@@ -512,23 +516,23 @@ class HUDController {
         const spinPct = Math.round((this.game.player.spinUpTime / this.game.player.spinRequired) * 100);
         if (spinPct >= 100) {
           UIIcons.set(gatlingSpinTag, '[[bolt]] 100% FULL CÔNG SUẤT!');
-          gatlingSpinTag.style.color = '#00ff9d';
+          gatlingSpinTag.style.color = '#8fc46f';
         } else if (spinPct > 0) {
           UIIcons.set(gatlingSpinTag, `[[bolt]] KHỞI ĐỘNG: ${spinPct}% (3S)`);
-          gatlingSpinTag.style.color = '#ffd700';
+          gatlingSpinTag.style.color = '#e7a63a';
         } else {
           UIIcons.set(gatlingSpinTag, '[[bolt]] GIỮ SPACE: QUAY NÒNG');
-          gatlingSpinTag.style.color = '#94a3b8';
+          gatlingSpinTag.style.color = '#8d978b';
         }
       }
       if (gatlingMagTag) {
         gatlingMagTag.classList.remove('hidden');
         if (this.game.player.reloadTimer > 0) {
           UIIcons.set(gatlingMagTag, `[[hourglass]] NẠP BĂNG: ${this.game.player.reloadTimer.toFixed(1)}S`);
-          gatlingMagTag.style.color = '#ff3b30';
+          gatlingMagTag.style.color = '#e0675c';
         } else {
           gatlingMagTag.textContent = `BĂNG: ${this.game.player.gatlingMag}/${this.game.player.gatlingMagMax}`;
-          gatlingMagTag.style.color = '#00e5ff';
+          gatlingMagTag.style.color = '#8fc46f';
         }
       }
       if (gatlingHeatTag) {
@@ -536,12 +540,12 @@ class HUDController {
         const heatPct = Math.round((this.game.player.barrelHeat || 0) * 100);
         if (this.game.player.isOverheated) {
           UIIcons.set(gatlingHeatTag, `[[flame]] QUÁ NHIỆT (${heatPct}%) ĐANG NGUỘI...`);
-          gatlingHeatTag.style.color = '#ef4444';
+          gatlingHeatTag.style.color = '#e0675c';
         } else {
           UIIcons.set(gatlingHeatTag, `[[flame]] NHIỆT NÒNG: ${heatPct}%`);
-          if (heatPct > 65) gatlingHeatTag.style.color = '#f97316';
-          else if (heatPct > 25) gatlingHeatTag.style.color = '#eab308';
-          else gatlingHeatTag.style.color = '#94a3b8';
+          if (heatPct > 65) gatlingHeatTag.style.color = '#e7a63a';
+          else if (heatPct > 25) gatlingHeatTag.style.color = '#e7a63a';
+          else gatlingHeatTag.style.color = '#8d978b';
         }
       }
       if (artyDeployTag) artyDeployTag.classList.add('hidden');
@@ -560,14 +564,14 @@ class HUDController {
         artyDeployTag.classList.remove('hidden');
         if (this.game.player.isDeployed) {
           UIIcons.set(artyDeployTag, '[[anchor]] CHÂN CHỐNG: ĐÃ HẠ (SẴN SÀNG KHAI HỎA)');
-          artyDeployTag.style.color = '#00ff9d';
+          artyDeployTag.style.color = '#8fc46f';
         } else if (this.game.player.standStillTimer > 0) {
           const pct = Math.round((this.game.player.deployProgress || 0) * 100);
           UIIcons.set(artyDeployTag, `[[anchor]] ĐANG HẠ CÀNG: ${pct}% (DỪNG 2S)...`);
-          artyDeployTag.style.color = '#facc15';
+          artyDeployTag.style.color = '#e7a63a';
         } else {
           UIIcons.set(artyDeployTag, '[[anchor]] CHƯA HẠ CÀNG: DỪNG XE 2S ĐỂ HẠ');
-          artyDeployTag.style.color = '#f87171';
+          artyDeployTag.style.color = '#e0675c';
         }
       }
 
@@ -580,26 +584,26 @@ class HUDController {
         gatlingMagTag.classList.remove('hidden');
         if (this.game.player.reloadTimer > 0) {
           UIIcons.set(gatlingMagTag, `[[hourglass]] NẠP SÚNG MÁY: ${this.game.player.reloadTimer.toFixed(1)}S`);
-          gatlingMagTag.style.color = '#ff3b30';
+          gatlingMagTag.style.color = '#e0675c';
         } else {
           gatlingMagTag.textContent = `SÚNG MÁY: ${this.game.player.gatlingMag}/${this.game.player.gatlingMagMax}`;
-          gatlingMagTag.style.color = '#10b981';
+          gatlingMagTag.style.color = '#8fc46f';
         }
       }
       if (scoutMissileTag) {
         scoutMissileTag.classList.remove('hidden');
         if (this.game.player.antiTankCooldown > 0) {
           UIIcons.set(scoutMissileTag, `[[rocket]] TÊN LỬA: NẠP ${this.game.player.antiTankCooldown.toFixed(1)}S`);
-          scoutMissileTag.style.color = '#ffb700';
+          scoutMissileTag.style.color = '#e7a63a';
         } else {
-          UIIcons.set(scoutMissileTag, `[[rocket]] [CHUỘT PHẢI / F] TÊN LỬA SẴN SÀNG!`);
-          scoutMissileTag.style.color = '#00ff9d';
+          UIIcons.set(scoutMissileTag, `[[rocket]] TÊN LỬA ×${this.game.player.missileAmmoCount || 0} · BẤM 3`);
+          scoutMissileTag.style.color = '#8fc46f';
         }
       }
       if (scoutRadarTag) {
         scoutRadarTag.classList.remove('hidden');
         UIIcons.set(scoutRadarTag, `[[radar-2]] TRINH SÁT: QUÉT 650M`);
-        scoutRadarTag.style.color = '#6ee7b7';
+        scoutRadarTag.style.color = '#8fc46f';
       }
 
     // 4. XE ĐA DỤNG (ALL-ROUNDER)
@@ -635,7 +639,7 @@ class HUDController {
       if (isFixedGatling) {
         aimGuideEl.innerHTML = `
           <span class="key-pill"><b>← / →</b>: Quay tháp pháo</span>
-          <span class="key-pill" style="color: #fb923c; border-color: rgba(249, 115, 22, 0.4);"><b>↑ / ↓</b>: Máy tính tự nâng nòng</span>
+          <span class="key-pill" style="color: #e7a63a; border-color: rgba(231, 166, 58, 0.4);"><b>↑ / ↓</b>: Máy tính tự nâng nòng</span>
           <span class="key-pill"><b>W A S D</b>: Lái xe</span>
         `;
       } else {
@@ -652,11 +656,11 @@ class HUDController {
         this.game.player.elevation = 0;
         elSlider.value = 0;
         elValEl.textContent = 'CỐ ĐỊNH 0.0°';
-        elValEl.style.color = '#fb923c';
+        elValEl.style.color = '#e7a63a';
 
         if (fireModeHint) {
           fireModeHint.textContent = '[CẬN CHIẾN // NÒNG CỐ ĐỊNH 0°]';
-          fireModeHint.style.color = '#fb923c';
+          fireModeHint.style.color = '#e7a63a';
         }
       } else {
         elSlider.value = this.game.player.elevation;
@@ -672,13 +676,13 @@ class HUDController {
           const distStr = pred ? ` // ĐIỂM RƠI: ${pred.distance}M (${pred.flightTime}S)` : '';
           if (this.game.player.elevation < 0) {
             fireModeHint.textContent = `[HẠ NÒNG ÂM]${distStr}`;
-            fireModeHint.style.color = '#00ff9d';
+            fireModeHint.style.color = '#8fc46f';
           } else if (this.game.player.elevation <= 15) {
             fireModeHint.textContent = `[BẮN THẲNG]${distStr}`;
-            fireModeHint.style.color = '#00e5ff';
+            fireModeHint.style.color = '#8fc46f';
           } else {
             fireModeHint.textContent = `[CẦU VỒNG]${distStr}`;
-            fireModeHint.style.color = '#ffb700';
+            fireModeHint.style.color = '#e7a63a';
           }
         }
       }
@@ -768,8 +772,8 @@ class HUDController {
 
         ctx.save();
         let cpColor = '#ffffff';
-        if (cp.owner === 'BLUE') cpColor = '#00e5ff';
-        else if (cp.owner === 'RED') cpColor = '#ff3b30';
+        if (cp.owner === 'BLUE') cpColor = '#5fb0dc';
+        else if (cp.owner === 'RED') cpColor = '#e0675c';
 
         // Vòng ranh giới cứ điểm
         ctx.strokeStyle = cpColor;
@@ -794,7 +798,7 @@ class HUDController {
         // Vòng đếm thời gian giữ 60s
         if (cp.owner !== 'NEUTRAL') {
           const holdRatio = Math.min(1, cp.holdTimer / 60.0);
-          ctx.strokeStyle = '#ffd700';
+          ctx.strokeStyle = '#e7a63a';
           ctx.lineWidth = 1.8;
           ctx.setLineDash([]);
           ctx.beginPath();
@@ -814,13 +818,13 @@ class HUDController {
           const cz = (crate.z + this.worldDepth / 2) * scale;
           ctx.save();
           const pulse = 4.2 + Math.sin(Date.now() * 0.008 + crate.x) * 1.5;
-          ctx.strokeStyle = '#ffd700';
+          ctx.strokeStyle = '#e7a63a';
           ctx.lineWidth = 1.2;
           ctx.beginPath();
           ctx.arc(cx, cz, pulse, 0, Math.PI * 2);
           ctx.stroke();
 
-          ctx.fillStyle = '#f59e0b';
+          ctx.fillStyle = '#e7a63a';
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 1;
           ctx.fillRect(cx - 3, cz - 3, 6, 6);
@@ -839,7 +843,7 @@ class HUDController {
       const ax = (this.game.airdrop.x + this.worldWidth / 2) * scale;
       const az = (this.game.airdrop.z + this.worldDepth / 2) * scale;
       ctx.save();
-      ctx.fillStyle = '#ffcc00';
+      ctx.fillStyle = '#e7a63a';
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -847,7 +851,7 @@ class HUDController {
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#ffea79';
+      ctx.fillStyle = '#f5c46b';
       ctx.font = 'bold 8px Chakra Petch';
       ctx.textAlign = 'center';
       ctx.fillText('HÒM THẢ DÙ', ax, az - 6);
@@ -868,7 +872,7 @@ class HUDController {
     // 1. Vòng tròn bán kính tầm bắn tối đa của liều phóng hiện tại
     const maxRangeMini = (pred.maxRange / this.worldWidth) * w;
     ctx.save();
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.45)';
+    ctx.strokeStyle = 'rgba(223, 228, 217, 0.45)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -880,7 +884,7 @@ class HUDController {
     const impX = (pred.impactX + this.worldWidth / 2) * scale;
     const impZ = (pred.impactZ + this.worldDepth / 2) * scale;
 
-    ctx.strokeStyle = pred.hitType === 'WALL' ? 'rgba(255, 59, 48, 0.75)' : 'rgba(255, 183, 0, 0.75)';
+    ctx.strokeStyle = pred.hitType === 'WALL' ? 'rgba(255, 59, 48, 0.75)' : 'rgba(231, 166, 58, 0.75)';
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 2]);
     ctx.beginPath();
@@ -890,13 +894,13 @@ class HUDController {
     ctx.setLineDash([]);
 
     // 3. Tâm ngắm điểm rơi trên Minimap
-    ctx.strokeStyle = pred.hitType === 'WALL' ? '#ff3b30' : '#ffb700';
+    ctx.strokeStyle = pred.hitType === 'WALL' ? '#e0675c' : '#e7a63a';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(impX, impZ, 3.5, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.fillStyle = pred.hitType === 'WALL' ? '#ff3b30' : '#ffb700';
+    ctx.fillStyle = pred.hitType === 'WALL' ? '#e0675c' : '#e7a63a';
     ctx.beginPath();
     ctx.arc(impX, impZ, 1.5, 0, Math.PI * 2);
     ctx.fill();
@@ -929,7 +933,7 @@ class HUDController {
       const uz = (u.z + this.worldDepth / 2) * scale;
       const isBlue = u.team === 'BLUE';
 
-      ctx.fillStyle = isBlue ? '#00e5ff' : '#ff3b30';
+      ctx.fillStyle = isBlue ? '#8fc46f' : '#e0675c';
       ctx.beginPath();
       ctx.arc(ux, uz, u.isPlayer ? 4.5 : 3.2, 0, Math.PI * 2);
       ctx.fill();
@@ -942,7 +946,7 @@ class HUDController {
 
     // Hướng nòng pháo trên Minimap
     const barrelRad = (this.game.player.azimuth * Math.PI) / 180;
-    ctx.strokeStyle = '#00e5ff';
+    ctx.strokeStyle = '#8fc46f';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(px, pz);

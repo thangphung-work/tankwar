@@ -5,6 +5,8 @@ const { exec } = require('child_process');
 const crypto = require('crypto');
 // Lọc tầm nhìn / kiểm tra sát thương & di chuyển trong trận (xem server_auth.js)
 const auth = require('./server_auth');
+// Tài khoản người chơi (đăng ký / đăng nhập / lưu hồ sơ) — xem server_accounts.js
+const accounts = require('./server_accounts');
 
 // Danh sách cổng ưu tiên
 const PORTS = process.env.PORT ? [Number(process.env.PORT)] : [3000, 8080, 8000, 5000, 8888];
@@ -25,7 +27,10 @@ const MIME_TYPES = {
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
   '.ogg': 'audio/ogg',
-  '.m4a': 'audio/mp4'
+  '.m4a': 'audio/mp4',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf'
 };
 
 const ROOT_DIR = __dirname;
@@ -46,8 +51,8 @@ function serveFile(req, res) {
 
   const filePath = path.normalize(path.join(ROOT_DIR, reqPath));
 
-  // Bảo vệ bảo mật: Không cho phép truy cập ra ngoài thư mục dự án
-  if (!filePath.startsWith(ROOT_DIR)) {
+  // Bảo vệ bảo mật: Không cho phép truy cập ra ngoài thư mục dự án, không lộ dữ liệu tài khoản (data/)
+  if (!filePath.startsWith(ROOT_DIR) || filePath.toLowerCase().startsWith(accounts.DATA_DIR.toLowerCase())) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('403 Không có quyền truy cập');
     return;
@@ -275,9 +280,11 @@ function wsBroadcast(room, obj, exceptId) {
   });
 }
 
-function wsJoinRoom(client, baseName, name) {
+function wsJoinRoom(client, baseName, name, token) {
   if (client.room) wsLeaveRoom(client);
   client.name = typeof name === 'string' ? name.slice(0, 40) : '';
+  // gắn tài khoản (nếu đã đăng nhập) -> thành tích trận mạng do máy chủ tự đếm
+  client.userId = accounts.userIdFromToken ? accounts.userIdFromToken(token) : null;
   const base = wsSanitizeRoom(baseName);
 
   // Ưu tiên phòng chờ đang mở (chưa khóa, còn chỗ) trong chuỗi base, base#2, base#3...
@@ -334,7 +341,7 @@ function wsHandleMessage(client, msg) {
   const d = (msg.d && typeof msg.d === 'object') ? msg.d : {};
   switch (msg.t) {
     case '@join':
-      wsJoinRoom(client, d.room, d.name);
+      wsJoinRoom(client, d.room, d.name, d.tok);
       return;
     case '@leave':
       wsLeaveRoom(client);
@@ -425,7 +432,10 @@ function attachWebSocket(server) {
 }
 
 function startServer(port) {
-  const server = http.createServer(serveFile);
+  const server = http.createServer((req, res) => {
+    if (String(req.url || '').startsWith('/api/')) { accounts.handle(req, res); return; }
+    serveFile(req, res);
+  });
   attachWebSocket(server);
 
   server.on('error', (err) => {

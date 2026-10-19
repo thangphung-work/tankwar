@@ -63,8 +63,12 @@ const TeamIntel = (() => {
   // Thấy trực tiếp: trong tầm nhìn và không núp bụi (xe trinh sát có radar nhìn xuyên ngụy trang trong vùng radar)
   function seesDirect(viewer, t) {
     const d = Math.hypot(t.x - viewer.x, t.z - viewer.z);
-    if (d > sightRange(viewer)) return false;
+    const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
+    // lưới ngụy trang: phải tới gần hơn mới nhận ra xe đứng yên / chạy chậm
+    if (d > sightRange(viewer) * (EQ ? EQ.camoFactor(t) : 1)) return false;
     if (inBushHidden(t)) return false;
+    // màn khói chắn giữa 2 xe: không nhìn thấy (radar trinh sát vẫn bắt được — xem radarContact)
+    if (EQ && EQ.smokeBlocks(viewer.x, viewer.z, t.x, t.z)) return false;
     const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
     if ((t.forestDens || 0) >= dense && d > FOREST_SPOT && !((t.revealTimer || 0) > 0)) return false;
     if (forestBlocked(viewer, t)) return false;

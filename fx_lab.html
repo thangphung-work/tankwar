@@ -133,21 +133,21 @@
 <div class="inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
 
 <script src="three.min.js"></script>
-<script src="src/core/audio.js?v=20261019snd8"></script>
+<script src="src/core/audio.js?v=20261019wall2"></script>
 <script src="src/entities/tank_models.js?v=20261019i"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261019i"></script>
 <script src="src/entities/tanks/mbt_halberd.js?v=20261019i"></script>
 <script src="src/entities/tanks/fsv_hailstorm.js?v=20261019i"></script>
 <script src="src/entities/tanks/spg_arbalest.js?v=20261019i"></script>
 <script src="src/entities/tanks/recon_marten.js?v=20261019i"></script>
-<script src="src/core/game_timing.js?v=20261019env1"></script>
-<script src="src/core/ballistics.js?v=20261019env1"></script>
-<script src="src/entities/projectiles.js?v=20261019i"></script>
+<script src="src/core/game_timing.js?v=20261019wall2"></script>
+<script src="src/core/ballistics.js?v=20261019bld1"></script>
+<script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
 <script src="src/entities/spg.js?v=20261019env1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261019env1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261019wall2"></script>
 <script src="src/gameplay/vehicle_damage.js?v=20261019t1"></script>
-<script src="src/gameplay/destructibles.js?v=20261019i"></script>
+<script src="src/gameplay/destructibles.js?v=20261019wall2"></script>
 <script>
 (function () {
   // ===========================================================================
@@ -740,7 +740,7 @@
   // Dùng chung lớp phá hủy với game (src/gameplay/destructibles.js): vỡ răng cưa, lỗ thủng méo, cốt thép, sập dây chuyền
   const LAB_YAW = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z);
   const wall = new Destructibles.ConcreteWall(scene, { yaw: LAB_YAW + Math.PI / 2 - Math.PI / 2, cols: 12, rows: 5 });
-  let building = new Destructibles.SingleBuilding(scene, { angle: LAB_YAW, floors: 4, w: 44, d: 36, kind: 'apartment' });
+  let building = new Destructibles.SingleBuilding(scene, { angle: LAB_YAW, floors: 4, w: 104, d: 78, kind: 'apartment' });
 
   // Xe mục tiêu (Halberd phe đỏ quay mặt về bệ phóng)
   let targetTank = new SPGUnit3D(scene, { tankType: 'ALL_ROUNDER', team: 'RED', isPlayer: false, x: 0, z: 0, bodyAngle: 0 });
@@ -1090,7 +1090,8 @@
   document.querySelectorAll('#bldRow [data-bld]').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('#bldRow [data-bld]').forEach(x => x.classList.toggle('on', x === b));
     const kind = b.dataset.bld;
-    const cfg = { apartment: { floors: 4, w: 44, d: 36 }, office: { floors: 9, w: 50, d: 44 }, mudbrick: { floors: 1, w: 30, d: 26 }, hangar: { floors: 1, w: 80, d: 50 } }[kind];
+    // kích thước thật (8 đơn vị = 1 m): chung cư 4 tầng 13 x 10 m, văn phòng 7 tầng 14 x 10.5 m, nhà đất 8 x 5.5 m, nhà kho 18 x 13.5 m
+    const cfg = { apartment: { floors: 4, w: 104, d: 78 }, office: { floors: 7, w: 112, d: 84 }, mudbrick: { floors: 1, w: 66, d: 44 }, hangar: { floors: 1, w: 144, d: 108 } }[kind];
     const vis = building.visible;
     scene.remove(building.group);
     building = new Destructibles.SingleBuilding(scene, Object.assign({ angle: LAB_YAW, kind }, cfg));
@@ -1402,8 +1403,9 @@
       return;
     }
     const onBerm = EX.berm && hit.object === EX.berm.mesh;
-    const res = fx.impactSurface(p.ammo, hit, vel, { heavy: p.heavy, noCrater: onBerm, noHoles: onBerm });
-    playBoom(hit.point, hit.hitType, p.ammo);
+    // Nhà: lỗ thủng / bóc lở / muội khoét thẳng vào hình tường -> không dán vết tạm lên mặt nhà
+    const res = fx.impactSurface(p.ammo, hit.hitType === 'BUILDING' ? Object.assign({}, hit, { object: null }) : hit, vel, { heavy: p.heavy, noCrater: onBerm, noHoles: onBerm });
+    playBoom(hit.point, hit.hitType, p.ammo, p.heavy);
     // Cảnh vật quanh điểm nổ: cây cháy / đổ, boong-ke vỡ, ụ đất lõm
     if (EX.trees && EX.trees.group.visible) EX.trees.tf.damageAt(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, fx);
     if (EX.bunker && EX.bunker.group.visible) EX.bunker.set.damageAt(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, fx);
@@ -1437,7 +1439,7 @@
       const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
       const rad = sp.radius * (p.heavy ? 1.7 : 1), pow = sp.power * (p.heavy ? 1.8 : 1) * 0.7;
       if (wall.group.visible) wall.damageAt(hit.point, rad, pow, p.ammo, fx);
-      if (building.visible) building.damageAt(hit.point, rad, pow, p.ammo, fx);
+      if (building.visible) building.damageAt(hit.point, rad, pow, p.ammo, fx, { heavy: p.heavy, hitType: hit.hitType, dir: vel });
       if (wall.group.visible || building.visible) updateHpLabel();
     }
     if (hit.hitType === 'WALL') {
@@ -1451,7 +1453,7 @@
       const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
       const rad = sp.radius * (p.heavy ? 1.6 : 1);
       const pow = sp.power * (p.heavy ? 1.75 : 1);
-      building.damageAt(hit.point, rad, pow, p.ammo, fx);
+      building.damageAt(hit.point, rad, pow, p.ammo, fx, { heavy: p.heavy, hitType: 'BUILDING', dir: vel });
       updateHpLabel();
     } else if (hit.hitType === 'DIRECT_HIT' && targetTank.isDead && typeof VehicleDamage !== 'undefined') {
       logDamage(VehicleDamage.onDirectHit(targetTank, { hit, ammo: p.ammo, heavy: p.heavy, dir: vel, fx }).events);
@@ -1529,7 +1531,7 @@
         const h = hit || { point: pos, normal: new THREE.Vector3(0, 1, 0), object: null, unit: null, hitType: 'GROUND' };
         applyHit(p, h, vel);
         // Đạn xuyên động năng xuyên thủng tường / vách nhà: còn ~65% vận tốc, bay tiếp phá vách phía sau
-        if (hit && p.ammo === 'AP' && (hit.hitType === 'BUILDING' || (hit.hitType === 'WALL' && p._pierced)) && (p.pen === undefined ? 2 : p.pen) > 0) {
+        if (hit && p.ammo === 'AP' && (hit.hitType === 'WALL' && p._pierced) && (p.pen === undefined ? 2 : p.pen) > 0) {
           p.pen = (p.pen === undefined ? 2 : p.pen) - 1;
           const dir = vel.clone().normalize();
           const exit = hit.point.clone().addScaledVector(dir, hit.hitType === 'WALL' ? 14 : 3);
@@ -1561,10 +1563,10 @@
     }
   }
 
-  function playBoom(pos, hitType, ammo) {
+  function playBoom(pos, hitType, ammo, heavy) {
     if (!state.audioReady || !window.soundEngine) return;
     const d = camera.position.distanceTo(pos);
-    soundEngine.playExplosionAtDistance(Math.max(1, d - 120), hitType, ammo);
+    soundEngine.playExplosionAtDistance(Math.max(1, d - 120), hitType, ammo, null, { heavy: !!heavy });
   }
 
   // Mô phỏng xe phóng mỗi khung hình: tự động nâng hạ nòng theo quỹ đạo đạn và mục tiêu

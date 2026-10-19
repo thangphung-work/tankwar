@@ -17,15 +17,9 @@ class MatchmakingController {
 
     // Danh tính người chơi hiện tại
     this.myPeerId = 'pilot_' + Math.random().toString(36).substring(2, 8);
-    this.defaultNames = [
-      'CHỈ HUY LIÊN MINH',
-      'CHIẾN BINH SÓI BẠC',
-      'PHÁO THỦ BÁO ĐEN',
-      'THIẾT GIÁP ĐẠI BÀNG',
-      'HỎA THẦN SA MẠC',
-      'XẠ THỦ BẮC CỰC'
-    ];
-    this.myName = this.defaultNames[Math.floor(Math.random() * this.defaultNames.length)];
+    // Chưa đăng nhập: chỉ là khách (account.js thay bằng tên hiển thị khi đăng nhập)
+    this.guestName = 'KHÁCH ' + (1000 + Math.floor(Math.random() * 9000));
+    this.myName = this.guestName;
 
     this.selectedTankType = 'ALL_ROUNDER'; // 'ALL_ROUNDER' | 'GATLING' | 'ARTILLERY'
     this.selectedMapType = 'DESERT'; // 'DESERT' | 'URBAN' | 'JUNGLE' | 'HIGHLAND' | 'RIVER_LAKE'
@@ -194,7 +188,7 @@ class MatchmakingController {
     if (this.nameInput) {
       this.nameInput.value = this.myName;
       this.nameInput.addEventListener('input', (e) => {
-        this.myName = e.target.value.trim() || 'CHIẾN BINH VÔ DANH';
+        this.myName = e.target.value.trim() || this.guestName;
         const mySlot = this.slots.find(s => s.isMe);
         if (mySlot) mySlot.name = this.myName;
         if (this.net) this.net.name = this.myName;
@@ -285,8 +279,31 @@ class MatchmakingController {
     this.net.on('$ready', () => this.onNetReady());
     this.net.on('$peer_leave', (d, id) => this.onPeerLeave(id));
     this.net.on('$host', () => this.onHostChange());
+    // Mất kết nối máy chủ: báo người chơi (trận vẫn chạy tiếp với máy điều khiển các xe khác)
+    this.net.on('$close', () => { if (window.GameMenu && GameMenu.onConnectionLost) GameMenu.onConnectionLost(); });
 
     this.net.connect();
+  }
+
+  // Bộ trang bị mua thêm của mình cho xe đang chọn (null nếu chưa đăng nhập / chưa mua gì)
+  myKit(tankType) {
+    if (!window.Account || !Account.kitFor) return null;
+    return Account.kitFor(tankType || this.selectedTankType).kit;
+  }
+  // Ghi bộ trang bị của mình vào slot của mình (chủ phòng gửi đi cùng ROOM_UPDATE / lệnh xuất trận)
+  refreshMyKit() {
+    const me = this.slots && this.slots.find(s => s.isMe);
+    if (me) me.kit = this.myKit(me.tankType || this.selectedTankType);
+  }
+  // Tài khoản vừa đổi trang bị (mua / lắp): báo phòng
+  onArmoryChanged() {
+    if (this.state === 'IN_GAME') return;
+    this.refreshMyKit();
+    if (this.isHost) this.broadcastRoomUpdate();
+    else this.sendMySlotUpdate();
+  }
+  cleanKit(kit, tankType) {
+    return (typeof Equipment !== 'undefined' && kit) ? Equipment.sanitize(kit, tankType) : null;
   }
 
   // Đang là khách trong một phòng mạng (không phải chủ phòng)
@@ -336,7 +353,8 @@ class MatchmakingController {
       this.net.sendTo(this.net.hostId, 'DISCOVER_ROOM', {
         peerId: this.myPeerId,
         name: this.myName,
-        tankType: mySlot ? mySlot.tankType : this.selectedTankType
+        tankType: mySlot ? mySlot.tankType : this.selectedTankType,
+        kit: this.myKit(mySlot ? mySlot.tankType : this.selectedTankType)
       });
       clearTimeout(this.discoverTimer);
       this.discoverTimer = setTimeout(discover, 1500);
@@ -425,6 +443,7 @@ class MatchmakingController {
     slot.name = 'ĐANG TÌM KIẾM...';
     slot.ready = false;
     slot.ping = 0;
+    slot.kit = null;
   }
 
   onPeerLeave(peerId) {
@@ -454,7 +473,8 @@ class MatchmakingController {
     const mySlot = this.slots.find(s => s.isMe);
     this.net.sendTo(this.net.hostId, 'SLOT_UPDATE', {
       name: this.myName,
-      tankType: mySlot ? mySlot.tankType : this.selectedTankType
+      tankType: mySlot ? mySlot.tankType : this.selectedTankType,
+      kit: this.myKit(mySlot ? mySlot.tankType : this.selectedTankType)
     });
   }
 
@@ -544,6 +564,7 @@ class MatchmakingController {
   // Chủ phòng phát lệnh xuất trận cho mọi máy
   sendLaunch() {
     if (!this.net || !this.net.isOnline || !this.isHost) return;
+    this.refreshMyKit();
     this.net.send('LAUNCH_GAME_NOW', {
       slots: this.slots,
       mapType: this.selectedMapType,
@@ -577,6 +598,7 @@ class MatchmakingController {
         slot.isMe = false;
         slot.name = msg.name || 'CHIẾN BINH MỚI';
         if (msg.tankType) slot.tankType = msg.tankType;
+        slot.kit = this.cleanKit(msg.kit, slot.tankType);
         slot.ready = true;
         slot.ping = Math.round(this.net.getPeerRtt(from)) || Math.floor(12 + Math.random() * 25);
         this.renderLobby();
@@ -650,6 +672,7 @@ class MatchmakingController {
         if (slot) {
           if (typeof msg.name === 'string' && msg.name.trim()) slot.name = msg.name.trim().slice(0, 40);
           if (msg.tankType) slot.tankType = msg.tankType;
+          slot.kit = this.cleanKit(msg.kit, slot.tankType);
           this.renderLobby();
           this.broadcastRoomUpdate();
         }
@@ -682,6 +705,7 @@ class MatchmakingController {
 
   broadcastRoomUpdate() {
     if (this.net && this.net.isOnline && this.isHost) {
+      this.refreshMyKit();
       this.net.send('ROOM_UPDATE', {
         slots: this.slots,
         searchTime: this.searchTime,
@@ -756,6 +780,7 @@ class MatchmakingController {
     this.spawnSeed = (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
     if (this.net && this.net.isOnline && this.isHost) {
       this.net.lockRoom(true);
+      this.refreshMyKit();
       this.net.send('START_COUNTDOWN', {
         slots: this.slots,
         mapType: this.selectedMapType,
@@ -852,7 +877,7 @@ class MatchmakingController {
     const humanCountEl = document.getElementById('mm-human-count');
 
     if (humanCountEl) {
-      humanCountEl.textContent = '10 VS 10 · 20 CHIẾN BINH MỖI TRẬN';
+      humanCountEl.textContent = '10 VS 10';
     }
 
     if (blueList) {
@@ -951,7 +976,7 @@ class MatchmakingController {
     const cfg = mapConfig[mapType] || mapConfig.DESERT;
     const overlay = this.overlay || document.getElementById('matchmaking-overlay');
     if (overlay) {
-      overlay.style.background = `linear-gradient(180deg, rgba(3, 7, 16, 0.78) 0%, rgba(2, 5, 12, 0.86) 50%, rgba(1, 3, 8, 0.94) 100%), url('${cfg.bg}') center/cover no-repeat`;
+      overlay.style.background = `linear-gradient(180deg, rgba(8, 11, 10, 0.80) 0%, rgba(6, 8, 7, 0.88) 55%, rgba(4, 5, 5, 0.95) 100%), url('${cfg.bg}') center/cover no-repeat`;
     }
 
     const campaignEl = document.querySelector('.campaign-title');

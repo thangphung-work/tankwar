@@ -33,8 +33,9 @@ const GameTiming = {
       TANK_AP: { v: 1650, k: 3.6e-5, eff: 3500, max: 0 },       // APFSDS 120mm: mất ~60 m/s mỗi km
       TANK_NORMAL: { v: 1140, k: 1.0e-4, eff: 3000, max: 0 },   // HEAT-MP 120mm
       TANK_HE: { v: 950, k: 1.1e-4, eff: 4000, max: 0 },        // HE-FRAG 120mm
-      GATLING_BULLET: { v: 1300, k: 2.2e-4, eff: 2000, max: 2000 },   // 30mm nổ-mảnh (vạch đường cháy hết)
-      INCENDIARY: { v: 1200, k: 2.4e-4, eff: 1800, max: 1800 },       // 30mm cháy
+      // 30×173 HEI-T: ~1080 m/s, còn ~800 m/s ở 1 km (đầu đạn nổ nhẹ, cản lớn hơn đạn tăng)
+      GATLING_BULLET: { v: 1080, k: 3.0e-4, eff: 2000, max: 2000 },   // 30mm nổ-mảnh (vạch đường cháy hết)
+      INCENDIARY: { v: 1050, k: 3.1e-4, eff: 1800, max: 1800 },       // 30mm cháy
       SCOUT_BULLET: { v: 890, k: 5.5e-4, eff: 1400, max: 1400 },      // 12.7mm
       SCOUT_INCENDIARY: { v: 880, k: 5.6e-4, eff: 1300, max: 1300 },  // 12.7mm xuyên-cháy
       RPG: { v: 290, k: 1.2e-3, eff: 500, max: 920, burnM: 500 },     // đạn phản lực không điều khiển, tự hủy ở 920 m

@@ -345,10 +345,10 @@ class SPGUnit3D {
       this.selectedAmmo = 'GATLING_BULLET'; // Đạn nhỏ liên thanh
       this.incendiaryAmmoCount = 80;        // Đạn cháy nâng cao, số lượng hạn chế
     } else if (this.tankType === 'SCOUT') {
-      this.availableAmmos = ['SCOUT_BULLET', 'INCENDIARY', 'RPG'];
+      this.availableAmmos = ['SCOUT_BULLET', 'INCENDIARY', 'ANTI_TANK_MISSILE'];
       this.selectedAmmo = 'SCOUT_BULLET';   // Đạn nhỏ 30mm cơ bản
       this.incendiaryAmmoCount = 45;        // Đạn cháy nâng cao
-      this.rpgAmmoCount = 4;                // Đạn RPG phản lực chống tăng
+      this.missileAmmoCount = 4;            // Tên lửa chống tăng dẫn hướng trong ống phóng trên nóc (ô đạn 3)
     } else {
       this.availableAmmos = ['NORMAL', 'AP', 'HE'];
       this.selectedAmmo = 'NORMAL';
@@ -1332,7 +1332,14 @@ class SPGUnit3D {
   }
 
   // Kích hoạt trạng thái bốc cháy khi bị trúng đạn cháy
+  // Máy châm lửa (máy có quyền với phát bắn) là máy duy nhất tính sát thương cháy -> không trừ máu 2 lần khi chơi mạng
   ignite(duration = 2.5) {
+    if (this.isDead) return;
+    this.burnTimer = Math.max(this.burnTimer || 0, duration);
+    this.burnAuth = true;
+  }
+  // Lửa do máy khác báo sang: chỉ hiện khói lửa, không tự trừ máu
+  igniteVisual(duration = 2.5) {
     if (this.isDead) return;
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
   }
@@ -1340,13 +1347,16 @@ class SPGUnit3D {
   update(dt, terrain, ballistics, radar, zone, allUnits, airdrop = null, supplyCrates = null, capturePoints = null) {
     // Xử lý trạng thái thiêu đốt khi dính đạn cháy
     if (this.burnTimer > 0) {
-      this.burnTimer = Math.max(0, this.burnTimer - dt);
+      // bình chữa cháy tự động (trang bị): lửa tắt nhanh hơn, cháy ít sát thương hơn
+      const EQ = typeof Equipment !== 'undefined' && Equipment.fireMul ? Equipment : null;
+      this.burnTimer = Math.max(0, this.burnTimer - dt * (EQ ? EQ.fireMul(this) : 1));
       this.burnDamageTimer = (this.burnDamageTimer || 0) + dt;
       if (this.burnDamageTimer >= 0.4) {
         this.burnDamageTimer = 0;
-        this.takeDamage(0.04);
+        if (this.burnAuth) this.takeDamage(0.04 * (EQ ? EQ.burnDamageMul(this) : 1), null, 'BURN');
         this.spawnExhaustPuff(true, false);
       }
+      if (this.burnTimer <= 0) this.burnAuth = false;
     }
     if (this.isDead) {
       // Cập nhật xác xe cháy bốc khói đen (hệ thống nổ mới tự lo khi đang theo dõi xe này)
@@ -2587,9 +2597,9 @@ class SPGUnit3D {
   fire(ballistics, radar) {
     if (this.reloadTimer > 0 || this.isDead) return null;
     // Xe 6 nòng & xe trinh sát không có pháo chính: xả đạn liên thanh qua updateGatling().
-    // Ngoại lệ: xe trinh sát đang chọn đạn RPG (phóng qua hàm này).
-    const scoutRpg = this.tankType === 'SCOUT' && this.selectedAmmo === 'RPG' && this.rpgAmmoCount > 0;
-    if (this.tankType === 'GATLING' || (this.tankType === 'SCOUT' && !scoutRpg)) return null;
+    // Ngoại lệ: xe trinh sát đang chọn tên lửa dẫn hướng (ô đạn 3) -> phóng từ ống phóng trên nóc.
+    if (this.tankType === 'SCOUT' && this.selectedAmmo === 'ANTI_TANK_MISSILE') return this.fireAntiTank(ballistics, radar);
+    if (this.tankType === 'GATLING' || this.tankType === 'SCOUT') return null;
     // Pháo cao xạ / pháo tự hành hạng nặng bắt buộc phải dừng xe hạ chân chống thủy lực mới được khai hỏa
     if (this.tankType === 'ARTILLERY' && !this.isDeployed) {
       return null;
@@ -2621,15 +2631,6 @@ class SPGUnit3D {
         ammoTypeToFire = 'HE';
         if (this.heAmmoCount > 0) this.heAmmoCount--;
       }
-    } else if (this.tankType === 'SCOUT' && this.selectedAmmo === 'RPG') {
-      if (this.rpgAmmoCount > 0) {
-        ammoTypeToFire = 'RPG';
-        this.rpgAmmoCount--;
-        if (this.rpgAmmoCount <= 0) this.selectedAmmo = 'SCOUT_BULLET';
-      } else {
-        this.selectedAmmo = 'SCOUT_BULLET';
-        ammoTypeToFire = 'SCOUT_BULLET';
-      }
     } else if (this.selectedAmmo === 'AP') {
       if (this.apAmmoCount > 0) {
         ammoTypeToFire = 'AP';
@@ -2649,10 +2650,7 @@ class SPGUnit3D {
     }
 
     const isSpecial = ammoTypeToFire !== 'NORMAL';
-    const rocketLaunch = this.tankType === 'SCOUT' && ammoTypeToFire === 'RPG' ? this.getLauncherWorldTransform() : null;
-    if (rocketLaunch) this._launchOverride = rocketLaunch;
     const shell = ballistics.fireShell3D(this, this.azimuth, this.elevation, this.charge, ammoTypeToFire);
-    this._launchOverride = null;
     shell.ammoType = ammoTypeToFire;
 
     // Khi nổ súng: Bị lộ vị trí trong 4.0 giây do chớp lửa và tiếng nổ lớn
@@ -2671,15 +2669,7 @@ class SPGUnit3D {
     const tipWorld = muzzle.position;
     const fireDir = muzzle.direction;
 
-    // 2. LỬA ĐẦU NÒNG, SÓNG NỔ, KHÓI CUỘN & BỤI ĐẤT BỊ THỔI TUNG (tên lửa: phụt ngược từ ống phóng)
-    if (rocketLaunch) {
-      this.spawnMissileLaunchFX(rocketLaunch);
-      this.kickRecoil(0.05);
-      this.reloadTimer = this.reloadDuration;
-      this.playMissileLaunchSound();
-      if (shell) shell.damage = 1.6;
-      return shell;
-    }
+    // 2. LỬA ĐẦU NÒNG, SÓNG NỔ, KHÓI CUỘN & BỤI ĐẤT BỊ THỔI TUNG
     this.spawnMuzzleBlast(tipWorld, fireDir);
 
     // 6. GIẬT THỤT NÒNG PHÁO CỰC MẠNH & NHÚN THÂN XE LÒ XO
@@ -2916,10 +2906,12 @@ class SPGUnit3D {
   fireAntiTank(ballistics, radar) {
     if (this.dmg && this.dmg.rpgDisabled) return null; // Ống phóng tên lửa đã bị bắn phá
     if (this.tankType !== 'SCOUT' || this.isDead) return null;
-    if (this.antiTankCooldown > 0) return null;
+    if (this.antiTankCooldown > 0 || (this.missileAmmoCount || 0) <= 0) return null;
 
-    // Kích hoạt hồi chiêu nạp lại (7.5s - hồi chậm hơn)
+    // Kíp xe nạp quả tiếp theo vào ống phóng (~15 s); hết tên lửa thì quay về súng 30mm
     this.antiTankCooldown = this.antiTankCooldownMax;
+    this.missileAmmoCount--;
+    if (this.missileAmmoCount <= 0 && this.selectedAmmo === 'ANTI_TANK_MISSILE') this.selectedAmmo = 'SCOUT_BULLET';
 
     const launch = this.getLauncherWorldTransform();
     this._launchOverride = launch;
@@ -3006,6 +2998,7 @@ class SPGUnit3D {
 
     const prevHp = this.hp;
     this.hp = Math.max(0, this.hp - amount);
+    if (amount > 0 && source !== 'BURN' && source !== 'ZONE') this._lastHitAt = performance.now();
 
     if (attacker && attacker !== this) {
       attacker.damageDealt += amount;
@@ -3091,6 +3084,8 @@ class SPGUnit3D {
     this.hp = this.maxHp;
     this.hasReactiveArmor = false;
     this.speedBoostTimer = 0;
+    this.burnTimer = 0;
+    this.burnAuth = false;
     this.isInBush = false;
     this.revealTimer = 0;
     this.isHiddenFromPlayer = false;
@@ -3114,7 +3109,11 @@ class SPGUnit3D {
       this.spinUpTime = 0;
       this.isSpinning = false;
       this.antiTankCooldown = 0;
+      this.missileAmmoCount = Math.max(this.missileAmmoCount || 0, 2);   // hồi sinh: ống phóng có ít nhất 2 quả
     }
+
+    // Trang bị mua thêm: nạp lại đạn đặc chủng (miễn phí + mua thêm), lựu đạn khói... cho lần xuất kích mới
+    if (typeof Equipment !== 'undefined' && Equipment.onRespawn) Equipment.onRespawn(this);
 
     const isBlue = this.team === 'BLUE';
     const armorColor = isBlue ? 0xeef2f7 : 0x7c3429;

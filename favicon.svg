@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Biểu tượng trang: pháo tự hành vàng nòng ngóc cao trên nền xanh quân sự sẫm -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3521"/>
+      <stop offset="1" stop-color="#10140c"/>
+    </linearGradient>
+    <linearGradient id="au" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd35c"/>
+      <stop offset="1" stop-color="#ffa400"/>
+    </linearGradient>
+  </defs>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="13" fill="url(#bg)" stroke="#ffb700" stroke-width="3"/>
+  <!-- nòng pháo dài ngóc cao + hãm lùi đầu nòng -->
+  <path d="M34 27 L53 10.5" stroke="url(#au)" stroke-width="4.2" stroke-linecap="round"/>
+  <path d="M48.6 14.3 L53.4 10.1" stroke="#ffd35c" stroke-width="6.6" stroke-linecap="butt"/>
+  <!-- tháp pháo khối hộp vát -->
+  <path d="M15 36 L18.5 25 L40 23 L47.5 29 L48 36 Z" fill="url(#au)"/>
+  <!-- thân xe -->
+  <path d="M6 44 L10 35.5 L54 35.5 L59 44 Z" fill="url(#au)"/>
+  <rect x="9" y="38.5" width="46" height="1.8" fill="#10140c" opacity=".5"/>
+  <!-- xích + bánh chịu tải -->
+  <rect x="6" y="44" width="53" height="11" rx="5.5" fill="#ffb700"/>
+  <g fill="#1a2013">
+    <circle cx="12" cy="49.5" r="3"/>
+    <circle cx="20.2" cy="49.5" r="3"/>
+    <circle cx="28.4" cy="49.5" r="3"/>
+    <circle cx="36.6" cy="49.5" r="3"/>
+    <circle cx="44.8" cy="49.5" r="3"/>
+    <circle cx="53" cy="49.5" r="3"/>
+  </g>
+</svg>

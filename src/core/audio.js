@@ -58,7 +58,7 @@ class SoundEngine {
 
     // Bus -> master -> nén keo (glue) -> giới hạn đỉnh chống vỡ tiếng -> loa
     this.masterGain = ctx.createGain();
-    this.masterGain.gain.setValueAtTime(0.9, t);
+    this.masterGain.gain.setValueAtTime(0.9 * (this.userMaster === undefined ? 1 : this.userMaster), t);
 
     this.compressor = ctx.createDynamicsCompressor();
     // Nén nhẹ để giữ dải động: tiếng nổ lớn vẫn to hơn hẳn tiếng nhỏ, xung đầu lọt qua trước khi nén (attack 10 ms).
@@ -135,7 +135,11 @@ class SoundEngine {
     weaponOut.connect(this.masterGain);
     this.vehicleBus = ctx.createGain();
     this.vehicleDuck = ctx.createGain();
-    this.vehicleBus.connect(this.vehicleDuck);
+    // âm lượng tiếng động cơ / xích do người chơi chỉnh (Cài đặt)
+    this.vehicleUser = ctx.createGain();
+    this.vehicleUser.gain.setValueAtTime(this.userEngine === undefined ? 1 : this.userEngine, t);
+    this.vehicleBus.connect(this.vehicleUser);
+    this.vehicleUser.connect(this.vehicleDuck);
     this.vehicleDuck.connect(this.masterGain);
     this.uiBus = ctx.createGain();
     this.uiBus.gain.setValueAtTime(0.75, t);
@@ -190,6 +194,16 @@ class SoundEngine {
   }
 
   // Mở bản đồ chiến thuật: tắt tiếng máy nổ / mô-tơ, giảm tiếng chiến trường
+  // Âm lượng người chơi chọn (0..1): tổng và tiếng động cơ xe. Gọi được trước khi bật âm thanh.
+  setUserVolume(master, engine) {
+    if (typeof master === 'number') this.userMaster = Math.max(0, Math.min(1, master));
+    if (typeof engine === 'number') this.userEngine = Math.max(0, Math.min(1, engine));
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (this.masterGain) this.masterGain.gain.setTargetAtTime(0.9 * (this.userMaster === undefined ? 1 : this.userMaster), t, 0.05);
+    if (this.vehicleUser) this.vehicleUser.gain.setTargetAtTime(this.userEngine === undefined ? 1 : this.userEngine, t, 0.05);
+  }
+
   setMapMuted(muted) {
     this.isMapMuted = !!muted;
     if (!this.ctx) return;
@@ -620,7 +634,8 @@ class SoundEngine {
   // ===========================================================================
   // 2. VỤ NỔ ĐẠN PHÁO / TÊN LỬA / ĐẠN CHÙM
   // ===========================================================================
-  playExplosionAtDistance(distance, hitType = 'GROUND', ammoType = 'NORMAL', pos = null) {
+  // opts.heavy: đạn pháo 155mm (~6.6 kg thuốc nổ, gấp ~2.5 lần đạn HE 120mm của xe tăng) -> nổ to, trầm, dài hơn hẳn
+  playExplosionAtDistance(distance, hitType = 'GROUND', ammoType = 'NORMAL', pos = null, opts = {}) {
     if (!this.ready()) return;
     if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY') {
       this.playGatlingImpact(distance, hitType, ammoType === 'INCENDIARY', pos, ammoType === 'SCOUT_BULLET');
@@ -632,17 +647,23 @@ class SoundEngine {
     const sp = this.spatial(distance, pos);
     const t = this.ctx.currentTime + sp.delay;
 
-    let k = 1.0;
+    // đạn tiêu chuẩn 120mm (nổ phá đa năng) mang ~2 kg thuốc nổ -> không nhỏ hơn tiếng khai hỏa quá nhiều
+    let k = ammoType === 'NORMAL' ? 1.2 : 1.0;
     if (ammoType === 'HE') k = 1.5;
     else if (ammoType === 'RPG' || ammoType === 'ANTI_TANK_MISSILE') k = 1.25;
     else if (ammoType === 'CLUSTER') k = 1.1;
     else if (ammoType === 'CLUSTER_SUBMUNITION') k = 0.45;
     const air = hitType === 'AIRBURST';
     const near = Math.max(0, 1 - distance / 900);
+    // Cỡ vụ nổ (thời lượng, độ trầm) tách khỏi mức to: đạn 155 dài & trầm hơn, thêm tầng đất rung — mức to chỉ nhích
+    // vừa phải vì đỉnh đã sát trần, tăng nữa chỉ làm méo
+    const heavy = !!(opts && opts.heavy) && ammoType === 'HE';
+    const Z = heavy ? 1.45 : 1;
+    const lvl = heavy ? 1.3 : ammoType === 'HE' ? 1.2 : ammoType === 'NORMAL' ? 1.0 : 1;
 
     // Mức đưa vào thấp có chủ đích: nếu để to, tầng cắt đỉnh / giới hạn ở đầu ra ép tiếng nổ thành một khối ồn bẹt;
     // để thấp thì xung đầu vẫn chạm đỉnh còn thân nổ tụt nhanh phía sau -> có "cú đấm" như tiếng nổ thật
-    const out = this.voice({ gain: sp.gain * 0.2, lowpass: sp.lowpass, wet: Math.min(0.95, sp.wet + 0.1), pan: sp.pan });
+    const out = this.voice({ gain: sp.gain * 0.2 * lvl, lowpass: sp.lowpass, wet: Math.min(0.95, sp.wet + 0.1), pan: sp.pan });
 
     if (!this.playSample('explosion', out, t, { gain: 1.4 * Math.min(1.3, k) })) {
       // Cấu trúc tiếng nổ thật: (1) sóng xung kích "ĐOÀNG" gắt nhất ngay ms đầu -> (2) thân nổ "BÙM" trầm dày
@@ -657,31 +678,39 @@ class SoundEngine {
       const W = this.stereoSpread(out, 0.6);
       this.snap(out, t, 1.4 * k * Math.max(0.5, bright), 7000, 5);
       // Tiếng "CHÁT" của sóng nổ: cực ngắn rồi tắt ngay (không để xì xèo)
-      this.burst(out, t, { filter: 'bandpass', freq: 2400, Q: 0.6, drive: 3, gain: 0.9 * k * bright, attack: 0.0004, dur: 0.04 });
+      this.burst(out, t, { filter: 'bandpass', freq: 2400, Q: 0.6, drive: 3, gain: 1.3 * k * bright, attack: 0.0004, dur: 0.04 });
       for (const ch of [W.L, W.R]) {
         // Sức ép nổ: dải rộng, cao tần sụt nhanh trong ~80 ms
-        this.burst(ch, t, { filter: 'lowpass', freq: 6000 * Math.min(1, bright), freqEnd: 300, sweep: 0.08, drive: 3, gain: 1.1 * k * Math.max(0.5, bright), attack: 0.0005, dur: 0.2 });
+        this.burst(ch, t, { filter: 'lowpass', freq: 6000 * Math.min(1, bright), freqEnd: 300, sweep: 0.08, drive: 3, gain: 1.1 * k * Math.max(0.5, bright), attack: 0.0005, dur: 0.2 * Z });
         // Thân nổ "BÙM": nhiễu nâu lọc trượt từ trung xuống trầm — phần chủ đạo, ít méo để giữ cú đấm
-        this.burst(ch, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: bodyF, freqEnd: 90, sweep: 0.5, drive: 2.5, gain: 1.6 * k * bodyK, attack: 0.001, dur: 0.55 * k });
+        this.burst(ch, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: bodyF, freqEnd: heavy ? 80 : 120, sweep: 0.5 * Z, drive: 2.5, gain: 1.1 * k * bodyK, attack: 0.001, dur: 0.55 * k * Z });
       }
-      // Cú đấm ngực 50-150 Hz
-      this.tone(out, t, { freq: 150, freqEnd: 55, sweep: 0.12, drive: 3, gain: 1.6 * k, attack: 0.0008, dur: 0.28 });
-      this.tone(out, t, { freq: 78, freqEnd: 42, sweep: 0.3, drive: 2, gain: (air ? 0.5 : 1.2) * k, attack: 0.002, dur: 0.4 });
+      // Thân nổ dải 150-400 Hz: phần "BÙM" mà loa nhỏ (laptop / tai nghe) vẫn phát được — thiếu lớp này tiếng nổ chỉ còn
+      // âm siêu trầm, loa thường không phát nổi nên nghe lép bép, mất uy lực
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: heavy ? 210 : 260, Q: 0.8, drive: 2, gain: 4.2 * k * bodyK, attack: 0.002, dur: 0.42 * k * Z });
+      // Cú đấm ngực 50-150 Hz (vừa phải: âm siêu trầm ăn hết khoảng trống mức to mà tai / loa nhỏ lại ít nghe thấy)
+      this.tone(out, t, { freq: 150, freqEnd: 65, sweep: 0.12 * Z, drive: 3, gain: 1.05 * k, attack: 0.0008, dur: 0.28 * Z });
+      this.tone(out, t, { freq: 72, freqEnd: 45, sweep: 0.3 * Z, drive: 2, gain: (air ? 0.4 : 0.7) * k, attack: 0.002, dur: 0.4 * Z });
       // Khối khí & đất bị hất tung: dải trung "rầm" đục, rồi phản xạ mặt đất trễ ~30 ms làm dày tiếng
-      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, Q: 0.6, drive: 2, gain: 4.0 * k * Math.min(1, bright + 0.2), attack: 0.001, dur: 0.3 });
-      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 2.5, gain: 1.0 * k, attack: 0.002, dur: 0.5 * k });
-      this.burst(out, t + 0.03, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, drive: 2, gain: 0.5 * k, attack: 0.004, dur: 0.45 * k });
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, Q: 0.6, drive: 2, gain: 4.6 * k * Math.min(1, bright + 0.2), attack: 0.001, dur: 0.3 * Z });
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 2.5, gain: 1.0 * k, attack: 0.002, dur: 0.5 * k * Z });
+      this.burst(out, t + 0.03, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, drive: 2, gain: 0.5 * k, attack: 0.004, dur: 0.45 * k * Z });
       // đất đá, mảnh vỡ bị hất tung ngay sau sóng nổ: "rắc rào" dải trung-cao
-      if (!air && dirtK > 0) this.burst(out, t + 0.006, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2200, Q: 0.5, gain: 4.0 * k * dirtK, attack: 0.003, dur: 0.45 });
+      if (!air && dirtK > 0) this.burst(out, t + 0.006, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2200, Q: 0.5, gain: 5.0 * k * dirtK, attack: 0.003, dur: 0.45 * Z });
       // không khí bị xé + đất cát phụt: nhiễu dày dải 1-3 kHz tắt nhanh — làm tiếng nổ "rõ mặt", không chỉ ục ục
-      this.burst(out, t + 0.002, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1700, Q: 0.6, drive: 1.5, gain: 4.4 * k * bright, attack: 0.001, dur: 0.22 });
+      this.burst(out, t + 0.002, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1700, Q: 0.6, drive: 1.5, gain: 5.2 * k * bright, attack: 0.001, dur: 0.22 * Z });
+      if (heavy) {
+        // 155mm: khối đất hàng tấn bị hất tung -> cú "HỰ" thứ hai trễ ~60 ms (phản xạ nền + đất đổ), đất rung trầm kéo dài
+        this.burst(out, t + 0.06, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 480, Q: 0.7, drive: 2, gain: 2.4 * k, attack: 0.004, dur: 0.45 });
+        this.burst(out, t + 0.02, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 170, drive: 2, gain: 1.1 * k, attack: 0.03, dur: 1.3 });
+      }
     }
-    if (distance < 700) this.duck(0.3 + 0.5 * (distance / 700), 1.0);
+    if (distance < 700 * Z) this.duck(0.3 + 0.5 * (distance / (700 * Z)), heavy ? 1.6 : 1.0);
 
     // Rền cuộn lan xa + tiếng dội địa hình (nhỏ hơn hẳn phát nổ chính, kéo dài)
-    const roll = this.voice({ gain: sp.gain * 0.8, lowpass: Math.min(sp.lowpass, 500), wet: 0.95, pan: sp.pan * 0.5 });
-    this.burst(roll, t + 0.08, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 260, gain: 0.32 * k, attack: 0.15, dur: 1.8 + 0.6 * k });
-    if (k >= 0.9) this.playTerrainEchoes(t, k * 0.45 * Math.sqrt(sp.gain), sp.lowpass);
+    const roll = this.voice({ gain: sp.gain * 0.8 * lvl, lowpass: Math.min(sp.lowpass, 500), wet: 0.95, pan: sp.pan * 0.5 });
+    this.burst(roll, t + 0.08, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: heavy ? 220 : 260, gain: 0.32 * k * Z, attack: 0.15, dur: (1.8 + 0.6 * k) * Z });
+    if (k >= 0.9) this.playTerrainEchoes(t, k * 0.45 * Z * Math.sqrt(sp.gain), sp.lowpass);
 
     if (hitType === 'WATER') {
       // Nổ dưới nước: tiếng nổ bị nước nuốt thành "ụp" đục, cột nước vọt lên rồi đổ ào xuống như mưa rào
@@ -697,10 +726,10 @@ class SoundEngine {
 
     // Đất đá, mảnh vụn rơi rào rào + các cục đất rơi bịch bịch sau vụ nổ gần (không có khi nổ trên vỏ xe)
     if (!air && near > 0 && hitType !== 'DIRECT_HIT' && hitType !== 'WATER') {
-      this.burst(out, t + 0.25, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 2200, gain: 0.3 * near * k, attack: 0.35, dur: 1.4 });
-      this.burst(out, t + 0.25, { buffer: this.crackleBuffer, filter: 'lowpass', freq: 1400, gain: 0.9 * near * k, attack: 0.3, dur: 1.5 });
-      for (let i = 0; i < 4; i++) {
-        this.burst(out, t + 0.35 + Math.random() * 0.9, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, gain: 0.45 * near * k, attack: 0.002, dur: 0.08 });
+      this.burst(out, t + 0.25, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 2200, gain: 0.3 * near * k * Z, attack: 0.35, dur: 1.4 * Z });
+      this.burst(out, t + 0.25, { buffer: this.crackleBuffer, filter: 'lowpass', freq: 1400, gain: 0.9 * near * k * Z, attack: 0.3, dur: 1.5 * Z });
+      for (let i = 0; i < (heavy ? 8 : 4); i++) {
+        this.burst(out, t + 0.35 + Math.random() * 0.9 * Z * Z, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, gain: 0.45 * near * k * (0.6 + Math.random() * 0.6), attack: 0.002, dur: 0.08 });
       }
     }
   }
@@ -1532,6 +1561,76 @@ class SoundEngine {
     const out = this.headset(0.8);
     this.tone(out, t, { freq: 1100, gain: 0.12, attack: 0.004, hold: 0.09, dur: 0.02 });
     this.tone(out, t + 0.13, { freq: 740, gain: 0.12, attack: 0.004, hold: 0.12, dur: 0.03 });
+  }
+
+  // Đổi loại đạn: cơ cấu thật của từng loại (âm thanh cơ khí từ nhiễu lọc)
+  //  pháo chính: khay chọn đạn trượt + chốt; súng máy: gạt bộ chọn băng; tên lửa: mô-tơ mở nắp ống phóng + chốt
+  playAmmoSwitch(ammoType = 'NORMAL') {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.voice({ bus: this.weaponBus, gain: 0.45, wet: 0.04 });
+    const clack = (tt, f, g) => {
+      this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f, Q: 1.8, gain: g, attack: 0.0006, dur: 0.03 });
+      this.burst(out, tt, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, gain: g * 1.2, attack: 0.001, dur: 0.05 });
+    };
+    if (ammoType === 'ANTI_TANK_MISSILE') {
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 380, freqEnd: 1300, sweep: 0.32, Q: 8, gain: 0.07, attack: 0.08, dur: 0.32 });
+      clack(t + 0.34, 1300, 0.16);
+      // đầu dò bật nguồn: tiếng rít điện tử khẽ qua tai nghe
+      this.tone(this.headset(0.6), t + 0.42, { type: 'sine', freq: 2400, freqEnd: 3100, sweep: 0.18, gain: 0.025, attack: 0.02, hold: 0.12, dur: 0.06 });
+    } else if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY') {
+      clack(t, 2100, 0.12);
+      clack(t + 0.07, 1500, 0.1);
+    } else {
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 600, freqEnd: 950, sweep: 0.16, Q: 2.4, gain: 0.07, attack: 0.01, dur: 0.16 });
+      clack(t + 0.18, 1100, 0.16);
+    }
+  }
+
+  // Đầu dò tên lửa đang bám mục tiêu: tiếng "gừ" ngắt quãng, cao dần khi gần khóa xong (progress 0..1)
+  playMissileSeek(progress = 0) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.headset(0.8);
+    const f = 420 + progress * 380;
+    this.tone(out, t, { type: 'sawtooth', freq: f, gain: 0.05, attack: 0.004, hold: 0.07, dur: 0.02, filter: 'lowpass', filterFreq: 1500, vibrato: 38, vibratoDepth: f * 0.06 });
+  }
+
+  // Đầu dò đã khóa chắc mục tiêu: tiếng "tít" liền, cao và sạch
+  playMissileLock() {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.headset(0.85);
+    this.tone(out, t, { type: 'square', freq: 1900, gain: 0.06, attack: 0.004, hold: 0.42, dur: 0.04, filter: 'lowpass', filterFreq: 3200 });
+  }
+
+  // Đã khóa, chờ phóng: nhắc khẽ để biết vẫn đang giữ khóa
+  playMissileLockHold() {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    this.tone(this.headset(0.6), t, { type: 'square', freq: 1900, gain: 0.03, attack: 0.003, hold: 0.06, dur: 0.02, filter: 'lowpass', filterFreq: 3200 });
+  }
+
+  // Máy báo bị chiếu laser: m = 1 khóa súng (2 tiếng trầm-cao), m = 2 tia dẫn tên lửa (3 tiếng nhanh, cao hơn)
+  playLockWarning(m = 1) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.headset(0.9);
+    if (m === 2) {
+      for (let i = 0; i < 3; i++) this.tone(out, t + i * 0.09, { type: 'square', freq: 1500, gain: 0.07, attack: 0.002, hold: 0.05, dur: 0.01, filter: 'lowpass', filterFreq: 3000 });
+    } else {
+      this.tone(out, t, { type: 'square', freq: 880, gain: 0.06, attack: 0.002, hold: 0.08, dur: 0.01, filter: 'lowpass', filterFreq: 2400 });
+      this.tone(out, t + 0.12, { type: 'square', freq: 1175, gain: 0.06, attack: 0.002, hold: 0.08, dur: 0.01, filter: 'lowpass', filterFreq: 2400 });
+    }
+  }
+
+  // Tên lửa đang lao tới: tiếng báo động chói, game gọi dồn dập dần khi tên lửa tới gần (urgency 0..1)
+  playMissileWarning(urgency = 0) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.headset(1.0);
+    const f = 1700 + urgency * 500;
+    this.tone(out, t, { type: 'square', freq: f, freqEnd: f * 0.82, sweep: 0.07, gain: 0.09, attack: 0.002, hold: 0.06, dur: 0.01, filter: 'lowpass', filterFreq: 3600 });
   }
 
   // Bộ đàm: tiếng xẹt mở kênh + tiếng bíp xác nhận + xẹt đóng kênh

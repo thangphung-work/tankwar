@@ -675,7 +675,7 @@ class BattleTerrain3D {
   update(dt, fx) {
     if (typeof GroundShader !== 'undefined') GroundShader.tick(dt);   // bóng mây trôi
     if (this.trees) this.trees.update(dt, fx);
-    if (this.buildingSet) this.buildingSet.update(dt);
+    if (this.buildingSet) this.buildingSet.update(dt, fx);
     if (this.propSet) this.propSet.update(dt, fx, this.camPos || null);
     if (this.envDamage) this.envDamage.update(dt, fx);
     if (this.waterNormal) { this.waterNormal.offset.x += dt * 0.004; this.waterNormal.offset.y += dt * 0.0025; }
@@ -687,7 +687,7 @@ class BattleTerrain3D {
     if (this.envDamage) events.push(...this.envDamage.damageAt(x, y, z, ammo, heavy, fx, info || {}));
     if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx);
     if (this.propSet) this.propSet.damageAt(x, y, z, ammo, heavy, fx);
-    if (this.buildingSet) events.push(...this.buildingSet.damageAt(x, y, z, ammo, heavy, fx));
+    if (this.buildingSet) events.push(...this.buildingSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {}));
     if (this.bunkerSet) events.push(...this.bunkerSet.damageAt(x, y, z, ammo, heavy, fx));
     return events;
   }
@@ -727,6 +727,19 @@ class BattleTerrain3D {
   }
   isProtectedPoint(x, y, z) { return this.strongholdSet ? !!this.strongholdSet.protectedAt(x, y, z) : false; }
   strongholdSegmentHit(x0, y0, z0, x1, y1, z1) { return this.strongholdSet ? this.strongholdSet.segmentHit(x0, y0, z0, x1, y1, z1) : null; }
+  // Đạn cắt mặt tường / sàn / mái nhà còn đặc (lọt qua lỗ thủng đã có): { x, y, z, nx, ny, nz, inside, part }
+  buildingSegmentHit(x0, y0, z0, x1, y1, z1) { return this.buildingSet ? this.buildingSet.segmentHit(x0, y0, z0, x1, y1, z1) : null; }
+  // Cắt tạm các tầng trên của nhà che khuất xe đang theo dõi
+  updateBuildingView(cam, focus, dt) { if (this.buildingSet) this.buildingSet.setView(cam, focus, dt); }
+  // ĐỒNG BỘ: trạng thái phá hủy nhà & cây gọn thành chuỗi (máy chủ phòng so "dấu vân tay"; lệch thì gộp hợp nhất)
+  envStateString() {
+    return (this.buildingSet && this.buildingSet.stateString ? this.buildingSet.stateString() : '') + '#' + (this.trees && this.trees.stateString ? this.trees.stateString() : '');
+  }
+  applyEnvState(str, fx) {
+    const [b, t] = String(str || '').split('#');
+    if (b && this.buildingSet && this.buildingSet.applyState) this.buildingSet.applyState(b, fx);
+    if (t && this.trees && this.trees.applyState) this.trees.applyState(t, fx);
+  }
   // Rừng rậm: mật độ tán quanh điểm (>= FOREST_DENSE là rừng rậm) & quãng xuyên rừng rậm trên đường ngắm
   forestDensityAt(x, z) { return this.trees && this.trees.densityAt ? this.trees.densityAt(x, z) : 0; }
   forestLOS(ax, az, bx, bz, limit) { return this.trees && this.trees.denseLength ? this.trees.denseLength(ax, az, bx, bz, limit || 1e9, BattleTerrain3D.FOREST_DENSE) : 0; }
@@ -799,7 +812,8 @@ class BattleTerrain3D {
   }
 
   // Va chạm đạn với vật cản (nhà, tường & mái boong-ke, đá tảng)
-  checkHorseshoeCollision(x, y, z) {
+  // skipBuildings: nhà còn đứng đã được dò chính xác theo đoạn bay (buildingSegmentHit) -> chỉ còn xét đống đổ nát
+  checkHorseshoeCollision(x, y, z, skipBuildings) {
     if (this.propSet) { const pb = this.propSet.hitTest(x, y, z); if (pb) return pb; }
     if (this.strongholdSet) {
       const c = this.strongholdSet.concreteAt(x, y, z);
@@ -808,6 +822,7 @@ class BattleTerrain3D {
     for (const b of this.buildings) {
       if (Math.abs(x - b.x) > b.radius || Math.abs(z - b.z) > b.radius) continue;
       const R = b.ref;
+      if (R && skipBuildings && !R.collapsed) continue;
       if (R) {
         // Hộp bao xoay theo hướng nhà (chính xác hơn hình trụ)
         const L = this.buildingSet.toLocal(R, x, y, z);

@@ -25,8 +25,9 @@ const EnvDamage = (() => {
     CLUSTER_SUBMUNITION: { kin: 0.1, blast: 0.35, r: 9, e: 0.5 },
     CLUSTER: { kin: 0.1, blast: 0.6, r: 18, e: 0.8 }
   };
-  // Hệ số vật liệu: [động năng, sức nổ]
-  const MAT = { rock: [0.5, 1.0], bridge: [0.35, 0.8] };
+  // Hệ số vật liệu: [động năng, sức nổ, đạn cỡ nhỏ (súng máy / 30mm chỉ làm sứt mẻ bề mặt)]
+  const MAT = { rock: [0.5, 1.0, 0.35], bridge: [0.35, 0.8, 0.1] };
+  const smallArms = (A) => A.blast < 0.1 && A.kin < 0.1;
 
   function ammoOf(ammo, heavy) {
     const a = AMMO[ammo] || AMMO.NORMAL;
@@ -277,7 +278,8 @@ const EnvDamage = (() => {
       }
     }
     damageAt(x, y, z, A, info, fx, events) {
-      const [mk, mb] = MAT.rock;
+      const [mk, mb, ms] = MAT.rock;
+      const sk = smallArms(A) ? ms : 1;
       for (const it of this.items) {
         if (!it.alive) continue;
         const dxz = Math.hypot(x - it.x, z - it.z);
@@ -287,7 +289,7 @@ const EnvDamage = (() => {
         const surf = Math.max(0, dxz - it.r * 0.85), dy = Math.max(0, y - top);
         const dist = Math.hypot(surf, dy);
         const direct = dist < 3;
-        let dmg = (direct ? A.kin * mk : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) : 0);
+        let dmg = sk * ((direct ? A.kin * mk : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) : 0));
         if (dmg <= 0.0005) continue;
         it.hp -= dmg;
         // vết mẻ / ám khói trên mặt đá, ngay phía điểm nổ
@@ -424,7 +426,8 @@ const EnvDamage = (() => {
       return null;
     }
     damageAt(x, y, z, A, info, fx, events) {
-      const [mk, mb] = MAT.bridge;
+      const [mk, mb, ms] = MAT.bridge;
+      const sk = smallArms(A) ? ms : 1;
       for (const b of this.items) {
         const L = this.local(b, x, z);
         if (Math.abs(L.across) > b.width / 2 + A.r + 4 || Math.abs(L.along) > b.length / 2 + A.r + 4) continue;
@@ -436,7 +439,7 @@ const EnvDamage = (() => {
           const dy = Math.max(0, (b.deckY - 4) - y, y - (b.deckY + 1.5));
           const dist = Math.hypot(da, dc, dy);
           const direct = dist < 2.5;
-          const dmg = (direct ? A.kin * mk : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) : 0);
+          const dmg = sk * ((direct ? A.kin * mk : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) : 0));
           if (dmg <= 0.0005) continue;
           sp.hp -= dmg;
           if (sp.hp <= 0) { this.collapse(b, sp, L.along, fx, events); continue; }

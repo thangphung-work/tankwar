@@ -16,19 +16,39 @@ class SupplyManager {
     this.initSupplyCrates();
   }
 
-  spawnAirdrop() {
+  // ĐỒNG BỘ NHIỀU NGƯỜI: chủ phòng là nơi DUY NHẤT quyết định thả dù, ai nhặt được hòm, phần thưởng, hòm xuất hiện lại;
+  // phần thưởng chỉ áp trên máy điều khiển xe nhặt được (máu / đạn / giáp của xe đó tự đồng bộ đi các máy khác)
+  get netSync() { const ns = this.game.netSync; return ns && !ns.detached ? ns : null; }
+  isAuthority() { const ns = this.netSync; return !ns || ns.net.isHost; }
+  ownsUnit(u) { const ns = this.netSync; return !ns || ns.owns(u); }
+  broadcast(d) { const ns = this.netSync; if (ns && ns.sendSupply) ns.sendSupply(d); }
+
+  // Tin từ chủ phòng
+  onNet(d) {
+    if (!d) return;
+    const unitOf = (i) => (this.netSync ? this.netSync.byNetId[i] : null);
+    if (d.e === 'drop') this.spawnAirdrop(d.x, d.z);
+    else if (d.e === 'loot') { const u = unitOf(d.u); if (u) this.collectAirdrop(u, d.r); }
+    else if (d.e === 'take') { const c = this.supplyCrates[d.c], u = unitOf(d.u); if (c && u) this.takeCrate(c, u); }
+    else if (d.e === 'respawn') { const c = this.supplyCrates[d.c]; if (c) this.respawnCrate(c); }
+  }
+
+  spawnAirdrop(px, pz) {
     if (this.airdrop) {
       if (this.airdrop.mesh) this.game.scene.remove(this.airdrop.mesh);
       this.airdrop = null;
     }
 
-    const zoneCenterX = this.game.zone.current.x - 1800;
-    const zoneCenterZ = this.game.zone.current.y - 1800;
-
-    const r = Math.random() * (this.game.zone.current.radius * 0.65);
-    const angle = Math.random() * Math.PI * 2;
-    const dropX = zoneCenterX + Math.cos(angle) * r;
-    const dropZ = zoneCenterZ + Math.sin(angle) * r;
+    let dropX = px, dropZ = pz;
+    if (typeof dropX !== 'number' || typeof dropZ !== 'number') {
+      const zoneCenterX = this.game.zone.current.x - 1800;
+      const zoneCenterZ = this.game.zone.current.y - 1800;
+      const r = Math.random() * (this.game.zone.current.radius * 0.65);
+      const angle = Math.random() * Math.PI * 2;
+      dropX = zoneCenterX + Math.cos(angle) * r;
+      dropZ = zoneCenterZ + Math.sin(angle) * r;
+      this.broadcast({ e: 'drop', x: Math.round(dropX * 10) / 10, z: Math.round(dropZ * 10) / 10 });
+    }
     const groundY = this.game.terrain.getElevationAt(dropX, dropZ);
 
     const airdropGroup = new THREE.Group();
@@ -103,6 +123,7 @@ class SupplyManager {
 
   updateAirdrop(dt) {
     if (!this.airdrop) {
+      if (!this.isAuthority()) return;   // máy khác chờ chủ phòng báo thả dù
       this.airdropTimer -= dt;
       if (this.airdropTimer <= 0) {
         this.spawnAirdrop();
@@ -134,54 +155,58 @@ class SupplyManager {
         this.spawnAirdropSmoke(drop.x, drop.groundY + 9, drop.z);
       }
 
-      // Kiểm tra xe nào nhặt được hòm
+      // Kiểm tra xe nào nhặt được hòm (chỉ chủ phòng xét; phần thưởng bốc thăm tại chủ phòng rồi báo đi)
+      if (!this.isAuthority()) return;
       for (const unit of this.game.units) {
         if (!unit.isDead) {
           const dist = Math.hypot(unit.x - drop.x, unit.z - drop.z);
           if (dist < 32) {
-            drop.collected = true;
-            this.game.scene.remove(drop.mesh);
-
-            // Ngẫu nhiên 1 trong 5 loại quà:
             // 0: Đạn Xuyên Phá (AP), 1: Đạn Nổ Mạnh (HE), 2: Giáp Phản Ứng Nổ, 3: Nâng cấp tăng máu 1 đơn vị, 4: Động cơ tăng áp tốc độ
             const lootRoll = Math.floor(Math.random() * 5);
-            let lootMsg = '';
-
-            if (lootRoll === 0) {
-              unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
-              if (unit.isPlayer) unit.selectedAmmo = 'AP';
-              lootMsg = '2 VIÊN ĐẠN XUYÊN PHÁ (BẮN PHÁT CHẾT LUÔN)!';
-            } else if (lootRoll === 1) {
-              unit.heAmmoCount = (unit.heAmmoCount || 0) + 2;
-              if (unit.isPlayer) unit.selectedAmmo = 'HE';
-              lootMsg = '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!';
-            } else if (lootRoll === 2) {
-              unit.hasReactiveArmor = true;
-              lootMsg = 'GIÁP PHẢN ỨNG NỔ (CHỊU ĐƯỢC 1 VIÊN KHÔNG MẤT MÁU)!';
-            } else if (lootRoll === 3) {
-              unit.maxHp += 1;
-              unit.hp = unit.maxHp;
-              lootMsg = `HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU LÊN ${unit.maxHp} VÀ HỒI ĐẦY MÁU)!`;
-            } else {
-              unit.speedBoostTimer = 20.0; // Tăng tốc độ di chuyển cực bốc trong 20 giây
-              lootMsg = 'ĐỘNG CƠ TĂNG ÁP TỐC ĐỘ (+65% TỐC ĐỘ DI CHUYỂN TRONG 20S)!';
-            }
-
-            if (unit.isPlayer) {
-              this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'tip');
-              if (window.soundEngine) window.soundEngine.playReloadDone();
-              this.game.updateAmmoUI();
-            } else {
-              this.game.addCombatLog(`[[alert-triangle]] ${unit.name} ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'alert');
-            }
-
-            this.airdrop = null;
-            this.airdropTimer = 22; // 22 giây sau tiếp tục thả thùng mới
+            if (unit.netId !== undefined) this.broadcast({ e: 'loot', u: unit.netId, r: lootRoll });
+            this.collectAirdrop(unit, lootRoll);
             break;
           }
         }
       }
     }
+  }
+
+  // Hòm thả dù đã có chủ: gỡ khỏi bản đồ; phần thưởng chỉ áp trên máy điều khiển xe đó
+  collectAirdrop(unit, lootRoll) {
+    const drop = this.airdrop;
+    if (!drop || drop.collected) return;
+    drop.collected = true;
+    this.game.scene.remove(drop.mesh);
+    const labels = ['2 VIÊN ĐẠN XUYÊN PHÁ (BẮN PHÁT CHẾT LUÔN)!', '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!', 'GIÁP PHẢN ỨNG NỔ (CHỊU ĐƯỢC 1 VIÊN KHÔNG MẤT MÁU)!',
+      'HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU VÀ HỒI ĐẦY MÁU)!', 'ĐỘNG CƠ TĂNG ÁP TỐC ĐỘ (+65% TỐC ĐỘ DI CHUYỂN TRONG 20S)!'];
+    let lootMsg = labels[lootRoll] || labels[0];
+    if (this.ownsUnit(unit)) {
+      if (lootRoll === 0) {
+        unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
+        if (unit.isPlayer) unit.selectedAmmo = 'AP';
+      } else if (lootRoll === 1) {
+        unit.heAmmoCount = (unit.heAmmoCount || 0) + 2;
+        if (unit.isPlayer) unit.selectedAmmo = 'HE';
+      } else if (lootRoll === 2) {
+        unit.hasReactiveArmor = true;
+      } else if (lootRoll === 3) {
+        unit.maxHp += 1;
+        unit.hp = unit.maxHp;
+        lootMsg = `HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU LÊN ${unit.maxHp} VÀ HỒI ĐẦY MÁU)!`;
+      } else {
+        unit.speedBoostTimer = 20.0; // Tăng tốc độ di chuyển cực bốc trong 20 giây
+      }
+    }
+    if (unit.isPlayer) {
+      this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'tip');
+      if (window.soundEngine) window.soundEngine.playReloadDone();
+      this.game.updateAmmoUI();
+    } else if ((typeof TeamIntel === 'undefined' || !this.game.player || unit.team === this.game.player.team || TeamIntel.knows(this.game.player, unit))) {
+      this.game.addCombatLog(`[[alert-triangle]] ${unit.name} ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'alert');
+    }
+    this.airdrop = null;
+    this.airdropTimer = 22; // 22 giây sau tiếp tục thả thùng mới
   }
 
   spawnAirdropSmoke(x, y, z) {
@@ -196,7 +221,7 @@ class SupplyManager {
     sMesh.position.set(x + (Math.random() - 0.5) * 4, y, z + (Math.random() - 0.5) * 4);
     this.game.scene.add(sMesh);
 
-    this.explosions3D.push({
+    (this.game.explosions3D || (this.game.explosions3D = [])).push({
       mesh: sMesh,
       scale: 1.0,
       alpha: 0.7,
@@ -339,67 +364,71 @@ class SupplyManager {
         crate.mesh.rotation.y += dt * 1.0;
         crate.mesh.position.y = crate.baseY + Math.sin(Date.now() * 0.003 + crate.x) * 1.5;
 
+        if (!this.isAuthority()) continue;   // chỉ chủ phòng xét ai nhặt được
         for (const unit of this.game.units) {
           if (!unit.isDead) {
             const dist = Math.hypot(unit.x - crate.x, unit.z - crate.z);
             if (dist < 28) {
-              crate.active = false;
-              crate.mesh.visible = false;
-              crate.respawnTimer = 35.0;
-
-              let rewardMsg = '';
-              if (crate.type === 'REPAIR') {
-                unit.hp = unit.maxHp;
-                unit.hasReactiveArmor = true;
-                rewardMsg = 'HỒI ĐẦY 100% MÁU & TRANG BỊ GIÁP PHẢN ỨNG NỔ!';
-              } else if (crate.type === 'AMMO' || crate.type === 'ALL') {
-                if (crate.type === 'ALL') {
-                  unit.hp = unit.maxHp;
-                  unit.hasReactiveArmor = true;
-                }
-                if (unit.tankType === 'ARTILLERY') {
-                  unit.heAmmoCount = (unit.heAmmoCount || 0) + 3;
-                  unit.clusterAmmoCount = (unit.clusterAmmoCount || 0) + 2;
-                  unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
-                  rewardMsg = 'NẠP ĐẦY ĐẠN NỔ MẠNH, ĐẠN CHÙM VÀ ĐẠN XUYÊN PHÁ!';
-                } else if (unit.tankType === 'GATLING') {
-                  unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 60;
-                  rewardMsg = '+60 VIÊN ĐẠN CHÁY NÂNG CAO!';
-                } else if (unit.tankType === 'SCOUT') {
-                  unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 40;
-                  unit.rpgAmmoCount = (unit.rpgAmmoCount || 0) + 3;
-                  rewardMsg = '+40 ĐẠN CHÁY VÀ +3 ĐẠN RPG CHỐNG TĂNG!';
-                } else {
-                  unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
-                  unit.heAmmoCount = (unit.heAmmoCount || 0) + 2;
-                  rewardMsg = '+2 ĐẠN XUYÊN PHÁ VÀ +2 ĐẠN NỔ PHÁ!';
-                }
-              } else if (crate.type === 'SPEED') {
-                unit.speedBoostTimer = 20.0;
-                rewardMsg = 'TĂNG TỐC ĐỘ DI CHUYỂN +65% TRONG 20S!';
-              }
-
-              if (unit.isPlayer) {
-                this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM HÒM TIẾP TẾ [${crate.name}]: +${rewardMsg}`, 'tip');
-                if (window.soundEngine && typeof window.soundEngine.playReloadDone === 'function') {
-                  window.soundEngine.playReloadDone();
-                }
-                this.game.updateAmmoUI();
-              } else {
-                this.game.addCombatLog(`[[alert-triangle]] ${unit.name} đã nhặt hòm tiếp tế tại [${crate.name}]`, 'alert');
-              }
+              const ci = this.supplyCrates.indexOf(crate);
+              if (unit.netId !== undefined) this.broadcast({ e: 'take', c: ci, u: unit.netId });
+              this.takeCrate(crate, unit);
               break;
             }
           }
         }
-      } else {
+      } else if (this.isAuthority()) {
         crate.respawnTimer -= dt;
         if (crate.respawnTimer <= 0) {
-          crate.active = true;
-          crate.mesh.visible = true;
-          this.game.addCombatLog(`[[package]] Hòm tiếp tế tại [${crate.name}] đã xuất hiện trở lại!`, 'system');
+          this.broadcast({ e: 'respawn', c: this.supplyCrates.indexOf(crate) });
+          this.respawnCrate(crate);
         }
       }
+    }
+  }
+
+  respawnCrate(crate) {
+    if (crate.active) return;
+    crate.active = true;
+    crate.mesh.visible = true;
+    this.game.addCombatLog(`[[package]] Hòm tiếp tế tại [${crate.name}] đã xuất hiện trở lại!`, 'system');
+  }
+
+  // Hòm mặt đất đã có chủ: ẩn & hẹn giờ xuất hiện lại; phần thưởng chỉ áp trên máy điều khiển xe đó
+  takeCrate(crate, unit) {
+    if (!crate.active) return;
+    crate.active = false;
+    crate.mesh.visible = false;
+    crate.respawnTimer = 35.0;
+    let rewardMsg = '';
+    const own = this.ownsUnit(unit);
+    if (crate.type === 'REPAIR') {
+      if (own) { unit.hp = unit.maxHp; unit.hasReactiveArmor = true; }
+      rewardMsg = 'HỒI ĐẦY 100% MÁU & TRANG BỊ GIÁP PHẢN ỨNG NỔ!';
+    } else if (crate.type === 'AMMO' || crate.type === 'ALL') {
+      if (crate.type === 'ALL' && own) { unit.hp = unit.maxHp; unit.hasReactiveArmor = true; }
+      if (unit.tankType === 'ARTILLERY') {
+        if (own) { unit.heAmmoCount = (unit.heAmmoCount || 0) + 3; unit.clusterAmmoCount = (unit.clusterAmmoCount || 0) + 2; unit.apAmmoCount = (unit.apAmmoCount || 0) + 2; }
+        rewardMsg = 'NẠP ĐẦY ĐẠN NỔ MẠNH, ĐẠN CHÙM VÀ ĐẠN XUYÊN PHÁ!';
+      } else if (unit.tankType === 'GATLING') {
+        if (own) unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 60;
+        rewardMsg = '+60 VIÊN ĐẠN CHÁY NÂNG CAO!';
+      } else if (unit.tankType === 'SCOUT') {
+        if (own) { unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 40; unit.missileAmmoCount = (unit.missileAmmoCount || 0) + 3; }
+        rewardMsg = '+40 ĐẠN CHÁY VÀ +3 TÊN LỬA CHỐNG TĂNG!';
+      } else {
+        if (own) { unit.apAmmoCount = (unit.apAmmoCount || 0) + 2; unit.heAmmoCount = (unit.heAmmoCount || 0) + 2; }
+        rewardMsg = '+2 ĐẠN XUYÊN PHÁ VÀ +2 ĐẠN NỔ PHÁ!';
+      }
+    } else if (crate.type === 'SPEED') {
+      if (own) unit.speedBoostTimer = 20.0;
+      rewardMsg = 'TĂNG TỐC ĐỘ DI CHUYỂN +65% TRONG 20S!';
+    }
+    if (unit.isPlayer) {
+      this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM HÒM TIẾP TẾ [${crate.name}]: +${rewardMsg}`, 'tip');
+      if (window.soundEngine && typeof window.soundEngine.playReloadDone === 'function') window.soundEngine.playReloadDone();
+      this.game.updateAmmoUI();
+    } else if ((typeof TeamIntel === 'undefined' || !this.game.player || unit.team === this.game.player.team || TeamIntel.knows(this.game.player, unit))) {
+      this.game.addCombatLog(`[[alert-triangle]] ${unit.name} đã nhặt hòm tiếp tế tại [${crate.name}]`, 'alert');
     }
   }
 

@@ -371,7 +371,7 @@ class TacticalMapController {
     if (this.measStart && this.measStart.fromPlayer && g.player) { this.measStart.x = g.player.x; this.measStart.z = g.player.z; this.updateMeasurements(false); }
     const W = this.cssW, Hh = this.cssH, k = this.k, half = this.worldSize / 2;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = '#070b0f';
+    ctx.fillStyle = '#0a0d0c';
     ctx.fillRect(0, 0, W, Hh);
     const o = this.worldToScreen(-half, -half), S = this.worldSize * k;
     ctx.imageSmoothingEnabled = true;
@@ -396,7 +396,7 @@ class TacticalMapController {
   drawGrid(ctx, o, S) {
     const n = 8, cellPx = S / n;
     ctx.save();
-    ctx.strokeStyle = 'rgba(180, 220, 255, 0.10)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(200, 210, 192, 0.10)'; ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 0; i <= n; i++) {
       ctx.moveTo(o.x + i * cellPx, o.y); ctx.lineTo(o.x + i * cellPx, o.y + S);
@@ -404,7 +404,7 @@ class TacticalMapController {
     }
     ctx.stroke();
     if (this.view.zoom >= 2) {
-      ctx.strokeStyle = 'rgba(180, 220, 255, 0.16)';
+      ctx.strokeStyle = 'rgba(200, 210, 192, 0.16)';
       ctx.beginPath();
       for (let i = 0; i <= n * 2; i++) for (let j = 0; j <= n * 2; j++) {
         if (i % 2 === 0 && j % 2 === 0) continue;
@@ -449,20 +449,20 @@ class TacticalMapController {
     }
     return (g.capturePoints || []).map(cp => ({
       id: cp.id, x: cp.x, z: cp.z, r: cp.radius,
-      owner: cp.owner === 'blue' ? 'BLUE' : cp.owner === 'red' ? 'RED' : null,
+      owner: cp.owner || null,
       progress: cp.owner ? (cp.holdTimer || 0) / (cp.holdGoal || 60) : (cp.captureProgress || 0) / 100,
-      team: cp.owner === 'blue' ? 'BLUE' : cp.owner === 'red' ? 'RED' : null,
+      team: cp.owner || cp.capTeam || null,
       contested: !!cp.isDisputed
     }));
   }
-  teamCol(team, a = 1) { return team === 'BLUE' ? `rgba(76, 201, 240, ${a})` : team === 'RED' ? `rgba(255, 77, 77, ${a})` : `rgba(255, 183, 3, ${a})`; }
+  teamCol(team, a = 1) { return team === 'BLUE' ? `rgba(95, 176, 220, ${a})` : team === 'RED' ? `rgba(224, 103, 92, ${a})` : `rgba(231, 166, 58, ${a})`; }
 
   drawObjectives(ctx, k) {
     const t = performance.now() / 1000;
     for (const ob of this.objectives()) {
       const p = this.worldToScreen(ob.x, ob.z);
       const R = Math.max(16, ob.r * k);
-      const col = ob.contested ? `rgba(255, 214, 10, ${0.6 + 0.4 * Math.sin(t * 8)})` : this.teamCol(ob.owner, 0.95);
+      const col = ob.contested ? `rgba(231, 166, 58, ${0.6 + 0.4 * Math.sin(t * 8)})` : this.teamCol(ob.owner, 0.95);
       ctx.save();
       ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.setLineDash([2, 5]);
       ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, Math.PI * 2); ctx.stroke();
@@ -474,7 +474,7 @@ class TacticalMapController {
       const label = 'OBJ ' + ob.id;
       ctx.font = 'bold 12px Share Tech Mono, monospace';
       const w = ctx.measureText(label).width + 14, h = 18, x = p.x - w / 2, y = Math.max(22, p.y - R - h - 6);   // không bị khuất ở mép trên khi phóng to
-      ctx.fillStyle = 'rgba(7, 11, 15, 0.88)'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(10, 13, 12, 0.88)'; ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       ctx.fillStyle = this.teamCol(ob.owner, 1); ctx.fillRect(x, y, 3, h);
       ctx.fillStyle = '#e8edf2'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -494,7 +494,7 @@ class TacticalMapController {
       const p = this.worldToScreen(c.x, c.z);
       if (p.x < -10 || p.y < -10 || p.x > this.cssW + 10 || p.y > this.cssH + 10) continue;
       // hòm tiếp tế: dấu cộng nhỏ, mờ (không lấn át đơn vị & mục tiêu)
-      ctx.strokeStyle = 'rgba(255, 183, 3, 0.65)'; ctx.lineWidth = 1.4;
+      ctx.strokeStyle = 'rgba(231, 166, 58, 0.65)'; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.moveTo(p.x - 4, p.y); ctx.lineTo(p.x + 4, p.y); ctx.moveTo(p.x, p.y - 4); ctx.lineTo(p.x, p.y + 4); ctx.stroke();
     }
     ctx.restore();
@@ -505,7 +505,7 @@ class TacticalMapController {
     if (!a || a.collected) return;
     const p = this.worldToScreen(a.x, a.z), t = performance.now() / 1000;
     ctx.save();
-    ctx.strokeStyle = '#ffb703'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#e7a63a'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(p.x, p.y, 10 + Math.sin(t * 5) * 2, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(p.x - 5, p.y + 4); ctx.lineTo(p.x, p.y - 5); ctx.lineTo(p.x + 5, p.y + 4); ctx.stroke();
     ctx.restore();
@@ -526,12 +526,12 @@ class TacticalMapController {
       ctx.stroke();
     };
     ctx.save();
-    ctx.fillStyle = 'rgba(76, 201, 240, 0.045)';
+    ctx.fillStyle = 'rgba(95, 176, 220, 0.045)';
     ctx.beginPath(); ctx.arc(s.x, s.y, R.max * k, 0, Math.PI * 2);
     if (R.min > 0) ctx.arc(s.x, s.y, R.min * k, 0, Math.PI * 2, true);
     ctx.fill();
-    ring(R.max * k, 'rgba(76, 201, 240, 0.75)');
-    this.tag(ctx, `${R.max} m`, s.x, s.y - R.max * k - 10, 'rgba(76, 201, 240, 1)');
+    ring(R.max * k, 'rgba(95, 176, 220, 0.75)');
+    this.tag(ctx, `${R.max} m`, s.x, s.y - R.max * k - 10, 'rgba(95, 176, 220, 1)');
     if (R.min > 0) {
       ring(R.min * k, 'rgba(255, 120, 90, 0.75)', [4, 4]);
       this.tag(ctx, `MIN ${R.min} m`, s.x, s.y + R.min * k + 11, 'rgba(255, 140, 110, 1)');
@@ -544,8 +544,8 @@ class TacticalMapController {
   // ---------------------------------------------------------------------------
   drawSymbol(ctx, x, y, type, opts = {}) {
     const friendly = opts.friendly;
-    const col = friendly ? '#4cc9f0' : '#ff4d4d';
-    const fill = friendly ? 'rgba(76, 201, 240, 0.28)' : 'rgba(255, 77, 77, 0.28)';
+    const col = friendly ? '#5fb0dc' : '#e0675c';
+    const fill = friendly ? 'rgba(95, 176, 220, 0.28)' : 'rgba(224, 103, 92, 0.28)';
     const s = opts.size || 9;
     ctx.save();
     ctx.translate(x, y);
@@ -603,7 +603,7 @@ class TacticalMapController {
       if (s.x < -20 || s.y < -20 || s.x > this.cssW + 20 || s.y > this.cssH + 20) continue;
       this.drawSymbol(ctx, s.x, s.y, u.tankType, { friendly: ally, uncertain: lv === 'radar' || lv === 'report' });
       if (lv === 'report') {
-        ctx.strokeStyle = 'rgba(255, 214, 10, 0.85)'; ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(231, 166, 58, 0.85)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(s.x, s.y, 17 + Math.sin(now * 6) * 1.5, 0, Math.PI * 2); ctx.stroke();
       }
       if (zoomLbl) {
@@ -632,9 +632,9 @@ class TacticalMapController {
       const imp = this.worldToScreen(pred.impactX, pred.impactZ);
       const wall = pred.hitType === 'WALL';
       ctx.save();
-      ctx.strokeStyle = wall ? 'rgba(255, 77, 77, 0.7)' : 'rgba(255, 183, 3, 0.7)'; ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = wall ? 'rgba(224, 103, 92, 0.7)' : 'rgba(231, 166, 58, 0.7)'; ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(imp.x, imp.y); ctx.stroke(); ctx.setLineDash([]);
-      ctx.strokeStyle = wall ? '#ff4d4d' : '#ffb703'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = wall ? '#e0675c' : '#e7a63a'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(imp.x, imp.y, 6, 0, Math.PI * 2);
       ctx.moveTo(imp.x - 10, imp.y); ctx.lineTo(imp.x - 6, imp.y); ctx.moveTo(imp.x + 6, imp.y); ctx.lineTo(imp.x + 10, imp.y);
       ctx.moveTo(imp.x, imp.y - 10); ctx.lineTo(imp.x, imp.y - 6); ctx.moveTo(imp.x, imp.y + 6); ctx.lineTo(imp.x, imp.y + 10);
@@ -663,7 +663,7 @@ class TacticalMapController {
     const e = this.worldToScreen(this.measEnd.x, this.measEnd.z);
     if (Math.hypot(e.x - s.x, e.y - s.y) < 4) return;
     const st = this.measStatus;
-    const col = st === 'ok' ? '#5cf29a' : st ? '#ff6b5b' : '#4cc9f0';
+    const col = st === 'ok' ? '#8fc46f' : st ? '#e0675c' : '#5fb0dc';
     ctx.save();
     ctx.strokeStyle = col; ctx.globalAlpha = 0.85; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
@@ -691,7 +691,7 @@ class TacticalMapController {
     const n = 8, cellPx = S / n;
     const top = Math.max(o.y, 0), left = Math.max(o.x, 0);
     const x0r = Math.max(0, o.x), x1r = Math.min(W, o.x + S), y0r = Math.max(0, o.y), y1r = Math.min(H, o.y + S);
-    ctx.fillStyle = 'rgba(7, 11, 15, 0.82)';
+    ctx.fillStyle = 'rgba(10, 13, 12, 0.82)';
     ctx.fillRect(x0r, top, x1r - x0r, 16);
     ctx.fillRect(left, y0r, 16, y1r - y0r);
     ctx.strokeStyle = 'rgba(200, 225, 240, 0.55)'; ctx.lineWidth = 1;
@@ -710,7 +710,7 @@ class TacticalMapController {
       if (cx > left + 16 && cx < W) ctx.fillText(String.fromCharCode(65 + i), cx, top + 7);
       if (cy > top + 16 && cy < H) ctx.fillText(String(i + 1), left + 8, cy);
     }
-    ctx.strokeStyle = 'rgba(76, 201, 240, 0.7)'; ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(95, 176, 220, 0.7)'; ctx.lineWidth = 2;
     const m = 8, Lc = 26;
     ctx.beginPath();
     ctx.moveTo(m, m + Lc); ctx.lineTo(m, m); ctx.lineTo(m + Lc, m);
@@ -730,7 +730,7 @@ class TacticalMapController {
     const nx = W - 34, ny = H - 70;
     ctx.strokeStyle = 'rgba(232, 241, 246, 0.8)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(nx, ny, 13, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = '#ff4d4d';
+    ctx.fillStyle = '#e0675c';
     ctx.beginPath(); ctx.moveTo(nx, ny - 11); ctx.lineTo(nx + 4, ny); ctx.lineTo(nx - 4, ny); ctx.closePath(); ctx.fill();
     ctx.fillStyle = 'rgba(232, 241, 246, 0.8)';
     ctx.beginPath(); ctx.moveTo(nx, ny + 11); ctx.lineTo(nx + 4, ny); ctx.lineTo(nx - 4, ny); ctx.closePath(); ctx.fill();
@@ -748,7 +748,7 @@ class TacticalMapController {
     ctx.font = font;
     const w = ctx.measureText(text).width + 12 + iconW, h = strong ? 19 : 16;
     const px = Math.max(24, Math.min(this.cssW - w - 8, x - w / 2)), py = Math.max(24, Math.min(this.cssH - h - 8, y - h / 2));
-    ctx.fillStyle = 'rgba(7, 11, 15, 0.88)'; ctx.fillRect(px, py, w, h);
+    ctx.fillStyle = 'rgba(10, 13, 12, 0.88)'; ctx.fillRect(px, py, w, h);
     ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, w - 1, h - 1);
     ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     if (glyph) {
