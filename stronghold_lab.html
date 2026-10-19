@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Thử nghiệm cứ điểm A · B · C</title>
+  <!-- Trang thử bản đồ cứ điểm: chạy đúng engine của game (index.html) ở chế độ phòng thử -->
+  <script>
+    (function () {
+      var src = new URLSearchParams(location.search);
+      var dst = new URLSearchParams();
+      dst.set('lab', 'stronghold');
+      ['map', 'seed', 'tank'].forEach(function (k) { if (src.get(k)) dst.set(k, src.get(k)); });
+      location.replace('index.html?' + dst.toString());
+    })();
+  </script>
+</head>
+<body style="background:#0b1118;color:#cfe3f5;font:14px Arial,sans-serif">
+  <p>Đang mở phòng thử nghiệm cứ điểm… Nếu trang không tự chuyển, mở <a style="color:#7fc4ff" href="index.html?lab=stronghold">index.html?lab=stronghold</a>.</p>
+</body>
+</html>

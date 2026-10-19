@@ -1,0 +1,2142 @@
+/**
+ * HỆ THỐNG HƯ HẠI THIẾT GIÁP THEO TỪNG DÒNG XE
+ * - Giáp theo cấp (nặng / trung / nhẹ / xe tải) + giáp theo hướng (mũi dày, đuôi & nóc mỏng)
+ * - Bộ phận rời bị bắn văng thành mảnh vỡ có vật lý: váy xích, module giáp, gạch ERA, lồng chống RPG,
+ *   đèn, gương, thùng đồ, ống khói, kính ngắm, ăng-ten, radar, ống phóng tên lửa...
+ * - Hỏng hóc cơ khí làm giảm chỉ số: xịt lốp (xe bánh lốp), đứt xích (xe xích), hỏng động cơ,
+ *   kẹt vòng quay tháp, hư pháo, đứt máng tiếp đạn, vỡ kính ngắm, mất radar trinh sát, hỏng thủy lực càng...
+ * Mỗi dòng xe một kiểu hỏng riêng theo cấu tạo của nó.
+ */
+const VehicleDamage = (() => {
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // Cấp giáp + hệ số sát thương theo mặt bị bắn
+  const ARMOR = {
+    ALL_ROUNDER: { cls: 'heavy', drive: 'tracks', face: { front: 0.7, side: 1.0, rear: 1.35, top: 1.25 } },
+    GATLING: { cls: 'medium', drive: 'tracks', face: { front: 0.8, side: 1.0, rear: 1.25, top: 1.2 } },
+    ARTILLERY: { cls: 'soft', drive: 'wheels', face: { front: 1.0, side: 1.05, rear: 1.1, top: 1.1 } },
+    SCOUT: { cls: 'light', drive: 'wheels', face: { front: 0.95, side: 1.0, rear: 1.1, top: 1.05 } }
+  };
+
+  // Khoang động cơ (hệ tọa độ group xe)
+  const ENGINE = {
+    ALL_ROUNDER: [0, 13.6, 21], GATLING: [4, 13, -10], ARTILLERY: [0, 15, -15], SCOUT: [0, 10.5, -14]
+  };
+
+  // Loại đạn -> nhóm xuyên phá
+  function ammoClass(ammo) {
+    if (ammo === 'SCOUT_BULLET') return 'small';
+    if (ammo === 'GATLING_BULLET' || ammo === 'INCENDIARY') return 'cannon';
+    if (ammo === 'AP') return 'kinetic';
+    if (ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE') return 'heat';
+    return 'blast';
+  }
+
+  // Hệ số sát thương: nhóm đạn x cấp giáp (đạn súng máy gần như vô hại với xe tăng chủ lực)
+  const VS = {
+    small: { heavy: 0.15, medium: 0.35, light: 1.0, soft: 1.15 },
+    cannon: { heavy: 0.2, medium: 0.6, light: 1.15, soft: 1.25 },   // 30mm gần như không xuyên giáp chính diện xe tăng
+    kinetic: { heavy: 1.0, medium: 1.05, light: 1.0, soft: 1.0 },
+    heat: { heavy: 1.0, medium: 1.0, light: 1.05, soft: 1.1 },
+    blast: { heavy: 0.3, medium: 0.5, light: 1.1, soft: 1.25 }   // sức ép / mảnh nổ gần: giáp dày gần như miễn nhiễm
+  };
+
+  // Phân loại bộ phận theo tên tag (đặt trong file model)
+  function partKind(tag) {
+    if (/^(skirt|cheek|applique|cage)/.test(tag)) return 'armor';
+    if (/^era/.test(tag)) return 'era';
+    if (/^optic/.test(tag)) return 'optic';
+    if (/^feed/.test(tag)) return 'feed';
+    if (tag === 'sensor') return 'sensor';
+    if (tag === 'atgm') return 'atgm';
+    if (tag === 'fuelTank') return 'fuel';
+    if (tag === 'ammoBoxes') return 'ammo';
+    if (tag === 'dozer' || tag === 'spareTrack' || tag === 'rcws') return 'heavyAcc';
+    return 'acc';
+  }
+
+  // Xác suất văng khi trúng TRỰC TIẾP vào bộ phận
+  const DETACH_DIRECT = {
+    acc: { small: 0.35, cannon: 0.75, kinetic: 1, heat: 1, blast: 1 },
+    armor: { small: 0, cannon: 0.12, kinetic: 0.5, heat: 0.85, blast: 0.6 },
+    era: { small: 0, cannon: 0.15, kinetic: 1, heat: 1, blast: 0.7 },
+    heavyAcc: { small: 0, cannon: 0.05, kinetic: 0.35, heat: 0.5, blast: 0.4 },
+    optic: { small: 0.25, cannon: 0.6, kinetic: 0.9, heat: 0.9, blast: 0.9 },
+    feed: { small: 0.05, cannon: 0.35, kinetic: 0.9, heat: 0.9, blast: 0.8 },
+    sensor: { small: 0.3, cannon: 0.7, kinetic: 0.9, heat: 0.9, blast: 0.9 },
+    atgm: { small: 0.08, cannon: 0.4, kinetic: 0.9, heat: 0.9, blast: 0.8 },
+    fuel: { small: 0.15, cannon: 0.45, kinetic: 1, heat: 1, blast: 1 },
+    ammo: { small: 0.05, cannon: 0.35, kinetic: 1, heat: 1, blast: 1 }
+  };
+  // Hệ số văng do sóng nổ gần (nhân với độ gần tâm nổ)
+  const DETACH_BLAST = { acc: 1, armor: 0.5, era: 0.55, heavyAcc: 0.3, optic: 0.75, feed: 0.4, sensor: 0.8, atgm: 0.5, fuel: 0.35, ammo: 0.35 };
+
+  const PART_NAME = {
+    skirt: 'VÁY XÍCH', cheek: 'MODULE GIÁP MÁ THÁP', applique: 'GIÁP TĂNG CƯỜNG MŨI', appliqueF: 'TẤM GIÁP TĂNG CƯỜNG MŨI', cageRear: 'LỒNG CHỐNG RPG ĐUÔI XE',
+    cageTurret: 'LỒNG CHỐNG RPG ĐUÔI THÁP', era: 'GẠCH GIÁP PHẢN ỨNG NỔ', opticGunner: 'KÍNH NGẮM PHÁO THỦ', opticCdr: 'KÍNH TOÀN CẢNH CHỈ HUY',
+    feed: 'MÁNG TIẾP ĐẠN', sensor: 'RADAR TRINH SÁT', atgm: 'ỐNG PHÓNG TÊN LỬA', fuelTank: 'BÌNH NHIÊN LIỆU', ammoBoxes: 'THÙNG ĐẠN TRÊN SÀN',
+    dozer: 'LƯỠI ỦI', spareTrack: 'MẮT XÍCH DỰ PHÒNG', rcws: 'TRẠM SÚNG MÁY ĐIỀU KHIỂN TỪ XA', mirror: 'GƯƠNG CHIẾU HẬU', lamp: 'CỤM ĐÈN PHA',
+    smoke: 'ỐNG PHÓNG LỰU ĐẠN KHÓI', bin: 'THÙNG ĐỒ', box: 'HỘP DỤNG CỤ', can: 'CAN NHIÊN LIỆU', cans: 'CAN NHIÊN LIỆU', rail: 'LAN CAN NÓC',
+    railRear: 'LAN CAN NÓC', stowage: 'GIỎ ĐỒ ĐUÔI THÁP', tool: 'DỤNG CỤ DÃ CHIẾN', flap: 'TẤM CHẮN BÙN', shield: 'TẤM CHẮN SÚNG MÁY',
+    travelLock: 'GIÁ KHÓA NÒNG', spare: 'BÁNH DỰ PHÒNG', generator: 'MÁY PHÁT ĐIỆN', searchlight: 'ĐÈN CHIẾU', meteo: 'CỘT KHÍ TƯỢNG'
+  };
+  function partName(tag) {
+    if (PART_NAME[tag]) return PART_NAME[tag];
+    const base = tag.replace(/[LR]?\d*$/, '').replace(/[LR]$/, '');
+    let n = PART_NAME[base] || tag.toUpperCase();
+    if (/L\d*$/.test(tag)) n += ' TRÁI';
+    else if (/R\d*$/.test(tag)) n += ' PHẢI';
+    return n;
+  }
+
+  // Âm thanh thứ cấp (nổ kho đạn, giáp bong, nổ lốp, kính vỡ...)
+  function sfx(kind, pos, k) {
+    if (pos && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(kind, pos, k || 1);
+  }
+  let FX = null;   // hệ hiệu ứng đang dùng trong lượt xử lý va chạm hiện tại
+  function sparksAt(p, n) {
+    if (!FX || !FX.fire || !p) return;
+    for (let i = 0; i < (n || 14); i++) {
+      const sp = rand(40, 140);
+      const a = Math.random() * 6.283;
+      FX.fire.add({ x: p.x, y: p.y, z: p.z, vx: Math.cos(a) * sp, vy: rand(10, 90), vz: Math.sin(a) * sp, size: rand(0.8, 1.8), grow: -0.5, drag: 0.8, grav: 110, life: rand(0.3, 0.8), alpha: 1, fadeIn: 0.005, c0: [1, 0.9, 0.6], c1: [1, 0.45, 0.12], cell: 3 });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // TRẠNG THÁI
+  // ---------------------------------------------------------------------------
+  function state(u) {
+    if (u.dmg) return u.dmg;
+    u.dmg = {
+      speed: 1, accel: 1, turn: 1, reload: 1, traverse: 1, recon: 1, spin: 1, rofInterval: 1, deploy: 1,
+      tiltP: 0, tiltR: 0, pull: 0, rpgDisabled: false,
+      lost: new Set(), flat: {}, flatAnim: {}, track: [0, 0], trackTimer: [0, 0],
+      trackWear: [0, 0], trackBreaks: [0, 0], tireWear: {}, shred: {},
+      engine: 0, ring: false, gun: false, hydraulics: false,
+      faceLoss: { front: 1, rear: 1, sideL: 1, sideR: 1, top: 1 },
+      base: null, saved: [], hiddenGroups: [], hiddenAnt: [],
+      gone: {}, bent: new Set(), fires: [], frame: 0, glassHits: 0, gunBent: null
+    };
+    const d = u.dmg;
+    d.base = {
+      baseMaxSpeed: u.baseMaxSpeed, acceleration: u.acceleration, turnRate: u.turnRate,
+      reloadDuration: u.reloadDuration, reconRadius: u.reconRadius, spinRequired: u.spinRequired,
+      antiTankCooldownMax: u.antiTankCooldownMax
+    };
+    return d;
+  }
+
+  // Tính lại chỉ số thực tế từ các hư hại hiện có
+  function recompute(u) {
+    const d = state(u), b = d.base, A = ARMOR[u.tankType] || ARMOR.ALL_ROUNDER;
+    let speed = 1, accel = 1, turn = 1;
+    if (d.engine === 1) { speed *= 0.72; accel *= 0.6; } else if (d.engine >= 2) { speed *= 0.45; accel *= 0.35; }
+    // Xích: đứt hẳn -> gần như bất động; nối tạm -> chạy chậm
+    for (let s = 0; s < 2; s++) {
+      if (d.trackTimer[s] > 0) { speed *= 0.1; turn *= 0.45; }
+      else if (d.track[s] > 0) { speed *= 0.8; turn *= 0.9; }
+      // Mắt xích / bánh tì bị đạn xả liên tục làm hư, lỏng: xe ì & lệch hướng dần
+      if (d.trackTimer[s] <= 0 && d.trackWear && d.trackWear[s] >= 1) { speed *= 0.86; turn *= 0.92; }
+    }
+    // Lốp xẹp: mỗi bánh xẹp kéo tụt tốc độ, xe lệch & kéo lái về phía bánh xẹp
+    let tiltP = 0, tiltR = 0, pull = 0;
+    const ws = u.wheelSet;
+    if (ws && A.drive === 'wheels') {
+      const n = ws.positions.length;
+      let lostL = 0, lostR = 0, lostN = 0;
+      for (const k in d.flat) {
+        const p = ws.positions[k];
+        const lost = !!d.gone[k];
+        const shred = !lost && d.shred && d.shred[k];
+        if (lost) { lostN++; if (p.x < 0) lostL++; else lostR++; }
+        // Lốp xẹp: lốp bẹp cọ sát, xe ì hẳn, khó lái; lốp nát chạy trên vành; bánh văng mất: moay-ơ cày đất
+        speed *= lost ? (n > 4 ? 0.5 : 0.32) : shred ? (n > 4 ? 0.6 : 0.42) : (n > 4 ? 0.76 : 0.62);
+        accel *= lost ? 0.55 : 0.75;
+        turn *= lost ? 0.7 : 0.85;
+        pull += Math.sign(p.x) * 0.1 * (lost ? 2 : 1);
+      }
+      void lostL; void lostR; void lostN;
+      // Độ tụt từng bánh: văng mất -> moay-ơ / gầm chạm đất (~0.85R), xẹp lốp -> ~0.22R
+      const drop = ws.positions.map((p, i) => d.gone[i] ? ws.radius * 0.85 : (d.shred && d.shred[i]) ? ws.radius * 0.4 : d.flat[i] ? ws.radius * 0.22 : 0);
+      let sL = 0, nL = 0, sR = 0, nR = 0, sF = 0, nF = 0, sB = 0, nB = 0, halfX = 1, zF = 0, zB = 0;
+      ws.positions.forEach((p, i) => {
+        if (p.x < 0) { sL += drop[i]; nL++; } else { sR += drop[i]; nR++; }
+        halfX = Math.max(halfX, Math.abs(p.x));
+      });
+      const zs = ws.positions.map(p => p.z), zMin = Math.min(...zs), zMax = Math.max(...zs);
+      ws.positions.forEach((p, i) => {
+        if (p.z < (zMin + zMax) / 2) { sF += drop[i]; nF++; zF += p.z; } else { sB += drop[i]; nB++; zB += p.z; }
+      });
+      const dL = nL ? sL / nL : 0, dR = nR ? sR / nR : 0, dF = nF ? sF / nF : 0, dB = nB ? sB / nB : 0;
+      const wb = Math.max(4, (nB ? zB / nB : 0) - (nF ? zF / nF : 0));
+      tiltR = -Math.atan((dR - dL) / (2 * halfX));
+      tiltP = -Math.atan((dF - dB) / wb);
+      d.sink = (dL + dR) / 2 * 0.5 + (dF + dB) / 2 * 0.5;
+    } else {
+      d.sink = 0;
+    }
+    // Mất 2 bánh cùng một bên (xe 4x4) hoặc mất >= 3 bánh: xe nằm ì, chỉ còn nhích được
+    if (ws && A.drive === 'wheels') {
+      const n = ws.positions.length;
+      let lostL = 0, lostR = 0, lostN = 0;
+      for (const k in d.gone) { lostN++; if (ws.positions[k].x < 0) lostL++; else lostR++; }
+      // lốp nát chạy vành tính ~60% một bánh mất
+      if (d.shred) for (const k in d.shred) if (!d.gone[k]) { lostN += 0.6; if (ws.positions[k].x < 0) lostL += 0.6; else lostR += 0.6; }
+      if ((n <= 4 && (lostL >= 1.6 || lostR >= 1.6)) || lostN >= 2.6) { speed = Math.min(speed, 0.06); turn = Math.min(turn, 0.3); d.immobile = true; }
+    }
+    // Khung gầm bị sóng nổ vặn méo: xe vẹo hẳn một bên, chạy chậm, khó lái
+    if (d.frame) { speed *= 0.85; turn *= 0.88; tiltR += d.frame * 0.035; tiltP += d.frame * 0.012; }
+    d.speed = Math.max(0.08, speed);
+    d.accel = Math.max(0.2, accel);
+    d.turn = Math.max(0.3, turn);
+    d.tiltP = tiltP; d.tiltR = tiltR; d.pull = pull;
+    d.traverse = d.ring ? 0.35 : 1;
+
+    let reload = 1, spin = 1, rofI = 1, recon = 1;
+    if (d.gun) {
+      if (u.tankType === 'GATLING') spin *= 1.9;
+      else if (u.tankType === 'SCOUT') rofI *= 1.5;
+      else reload *= 1.4;
+    }
+    if (d.lost.has('opticGunner')) reload *= 1.15;
+    if (d.lost.has('feedL')) rofI *= 1.35;
+    if (d.lost.has('feedR')) rofI *= 1.35;
+    if (d.lost.has('sensor')) recon *= 0.45;
+    d.reload = reload; d.spin = spin; d.rofInterval = rofI; d.recon = recon;
+    d.deploy = d.hydraulics ? 0.45 : 1;
+    d.rpgDisabled = d.lost.has('atgm');
+
+    if (b.baseMaxSpeed !== undefined) u.baseMaxSpeed = b.baseMaxSpeed * d.speed;
+    if (b.acceleration !== undefined) u.acceleration = b.acceleration * d.accel;
+    if (b.turnRate !== undefined) u.turnRate = b.turnRate * d.turn;
+    if (b.reloadDuration !== undefined) u.reloadDuration = b.reloadDuration * d.reload;
+    if (b.reconRadius !== undefined) u.reconRadius = b.reconRadius * d.recon;
+    if (b.spinRequired !== undefined) u.spinRequired = b.spinRequired * d.spin;
+    if (d.rpgDisabled) u.rpgAmmoCount = 0;
+    u.trackBroken = [d.trackTimer[0] > 0, d.trackTimer[1] > 0];
+  }
+
+  // ---------------------------------------------------------------------------
+  // HÌNH HỌC BỘ PHẬN
+  // ---------------------------------------------------------------------------
+  function partCenter(u, tag) {
+    u._partCenters = u._partCenters || {};
+    if (u._partCenters[tag]) return u._partCenters[tag];
+    let res = null;
+    const entries = u.partRegistry && u.partRegistry[tag];
+    if (entries && entries.length) {
+      const box = new THREE.Box3();
+      const v = new THREE.Vector3();
+      const e0 = entries[0];
+      for (const e of entries) {
+        const pos = e.mesh.geometry.attributes.position;
+        for (const [st, n] of e.ranges) {
+          for (let i = st; i < st + n; i++) box.expandByPoint(v.fromBufferAttribute(pos, i));
+        }
+      }
+      res = { mesh: e0.mesh, local: box.getCenter(new THREE.Vector3()), size: box.getSize(new THREE.Vector3()).length() };
+    } else if (u.partGroups && u.partGroups[tag]) {
+      const g = u.partGroups[tag];
+      res = { group: g, local: new THREE.Vector3(), size: 4 };
+    }
+    u._partCenters[tag] = res;
+    return res;
+  }
+
+  function partWorld(u, tag) {
+    const c = partCenter(u, tag);
+    if (!c) return null;
+    if (c.group) return c.group.getWorldPosition(new THREE.Vector3());
+    return c.mesh.localToWorld(c.local.clone());
+  }
+
+  // Tag của bộ phận chứa tam giác bị tia chạm
+  function tagAtHit(hit) {
+    if (!hit || !hit.object) return null;
+    let o = hit.object;
+    const ranges = o.userData && o.userData.partRanges;
+    if (ranges && hit.faceIndex !== undefined && hit.faceIndex !== null) {
+      const vi = hit.faceIndex * 3;
+      for (const tag in ranges) {
+        for (const [st, n] of ranges[tag]) if (vi >= st && vi < st + n) return tag;
+      }
+    }
+    // Trúng group rời (đầu kính, radar, ống phóng...)
+    while (o) {
+      if (o.userData && o.userData.partGroupTag) return o.userData.partGroupTag;
+      o = o.parent;
+    }
+    return null;
+  }
+
+  function markGroups(u) {
+    if (u._groupsMarked || !u.partGroups) return;
+    u._groupsMarked = true;
+    for (const name in u.partGroups) u.partGroups[name].userData.partGroupTag = name;
+  }
+
+  // ---------------------------------------------------------------------------
+  // MẢNH VỠ CÓ VẬT LÝ
+  // ---------------------------------------------------------------------------
+  const debrisList = [];
+  let groundProvider = null;
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+
+  function spawnDebris(u, obj, impulse) {
+    const scene = u.scene || (u.group && u.group.parent);
+    if (!scene) return;
+    // Kích thước mảnh trong hệ của chính nó -> khi nằm yên, mặt mỏng nhất úp xuống đất
+    const q0 = obj.quaternion.clone(), p0 = obj.position.clone(), s0 = obj.scale.clone();
+    obj.position.set(0, 0, 0); obj.quaternion.identity();
+    obj.updateMatrixWorld(true);
+    const dims = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+    obj.position.copy(p0); obj.quaternion.copy(q0); obj.scale.copy(s0);
+    scene.add(obj);
+    const r = obj.userData.radius || 2;
+    // Mảnh nặng (tấm giáp, bánh xe) bị hất đi rất gần, rơi cạnh xe; mảnh nhỏ nhẹ văng xa hơn — như thật
+    const vol = Math.max(0.3, dims.x * dims.y * dims.z);
+    const light = Math.max(0.22, Math.min(1, 2.4 / Math.cbrt(vol)));
+    const v = impulse.clone().multiplyScalar(0.45 * light).add(new THREE.Vector3(rand(-6, 6), rand(14, 30), rand(-6, 6)).multiplyScalar(0.5 + 0.5 * light));
+    debrisList.push({
+      u, obj, r, dims, mass: 1 / light,
+      v,
+      w: new THREE.Vector3(rand(-6, 6), rand(-6, 6), rand(-6, 6)).multiplyScalar(0.4 + 0.6 * light),
+      t: 0, rest: false, bounces: 0
+    });
+    while (debrisList.length > 160) removeDebris(0);
+  }
+
+  function removeDebris(i) {
+    const d = debrisList[i];
+    if (d.obj.parent) d.obj.parent.remove(d.obj);
+    d.obj.traverse(o => { if (o.isMesh && o.userData.ownGeo) o.geometry.dispose(); });
+    debrisList.splice(i, 1);
+  }
+
+  // Tách một bộ phận gộp trong mesh thành mảnh rời, xóa khỏi mesh gốc
+  function detachTag(u, tag, impulse) {
+    const d = state(u);
+    if (d.lost.has(tag)) return false;
+    const entries = u.partRegistry && u.partRegistry[tag];
+    const grp = u.partGroups && u.partGroups[tag];
+    if (!entries && !grp) return false;
+    d.lost.add(tag);
+    u.group.updateMatrixWorld(true);
+
+    if (entries && entries.length) {
+      const c = partCenter(u, tag);
+      const holder = new THREE.Group();
+      // Đặt holder đúng tư thế thế giới của mesh gốc tại tâm bộ phận
+      c.mesh.matrixWorld.decompose(_p, _q, _s);
+      holder.position.copy(c.mesh.localToWorld(c.local.clone()));
+      holder.quaternion.copy(_q);
+      holder.scale.copy(_s);
+      for (const e of entries) {
+        const src = e.mesh.geometry;
+        let total = 0;
+        for (const [, n] of e.ranges) total += n;
+        const g = new THREE.BufferGeometry();
+        for (const name of ['position', 'normal', 'uv', 'color']) {
+          const at = src.attributes[name];
+          if (!at) continue;
+          const isz = at.itemSize;
+          const arr = new Float32Array(total * isz);
+          let o = 0;
+          for (const [st, n] of e.ranges) { arr.set(at.array.subarray(st * isz, (st + n) * isz), o); o += n * isz; }
+          g.setAttribute(name, new THREE.BufferAttribute(arr, isz));
+        }
+        g.translate(-c.local.x, -c.local.y, -c.local.z);
+        g.computeBoundingSphere();
+        const m = new THREE.Mesh(g, e.mesh.material);
+        m.castShadow = true;
+        m.userData.ownGeo = true;
+        holder.add(m);
+        // Xóa khỏi mesh gốc: thu các đỉnh về một điểm (tam giác suy biến), lưu lại để hồi sinh
+        const pos = src.attributes.position;
+        for (const [st, n] of e.ranges) {
+          d.saved.push({ attr: pos, start: st, data: pos.array.slice(st * 3, (st + n) * 3) });
+          for (let i = st; i < st + n; i++) pos.setXYZ(i, c.local.x, c.local.y, c.local.z);
+        }
+        pos.needsUpdate = true;
+      }
+      holder.userData.radius = Math.max(0.6, c.size * 0.35);
+      spawnDebris(u, holder, impulse);
+    } else if (grp) {
+      grp.updateMatrixWorld(true);
+      const copy = grp.clone(true);
+      grp.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
+      copy.userData.radius = 1.6;
+      grp.visible = false;
+      d.hiddenGroups.push(grp);
+      spawnDebris(u, copy, impulse);
+    }
+    return true;
+  }
+
+  // Uốn cong bộ phận quanh mép gắn vào thân xe theo hướng lực đánh (méo vè, váy xích oằn, gương bẻ quặt)
+  function bendTag(u, tag, impulse) {
+    const d = state(u);
+    if (d.bent.has(tag) || d.lost.has(tag)) return false;
+    const entries = u.partRegistry && u.partRegistry[tag];
+    if (!entries || !entries.length) return false;
+    const c = partCenter(u, tag);
+    if (!c) return false;
+    d.bent.add(tag);
+    // Hướng lực trong hệ của mesh
+    const mesh = c.mesh;
+    mesh.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+    const dirL = impulse.clone().normalize().transformDirection(inv);
+    // Mép gắn: phía gần thân xe (tâm xe ~ gốc hệ mesh theo phương ngang); váy xích / chắn bùn treo từ mép trên
+    const box = new THREE.Box3(), v = new THREE.Vector3();
+    for (const e of entries) for (const [st, n] of e.ranges) for (let i = st; i < st + n; i++) box.expandByPoint(v.fromBufferAttribute(e.mesh.geometry.attributes.position, i));
+    const hang = /^(skirt|flap|cage|mirror)/.test(tag);
+    const pivot = new THREE.Vector3(
+      hang ? (c.local.x) : (Math.abs(box.min.x) < Math.abs(box.max.x) ? box.min.x : box.max.x),
+      hang ? box.max.y : box.min.y,
+      c.local.z
+    );
+    let axis = new THREE.Vector3(0, 1, 0).cross(dirL);
+    if (axis.lengthSq() < 1e-4) axis.set(0, 0, 1);
+    axis.normalize();
+    const ang = (hang ? rand(0.25, 0.55) : rand(0.12, 0.3)) * (Math.random() < 0.85 ? 1 : -1);
+    const R = new THREE.Matrix4().makeRotationAxis(axis, ang);
+    const T = new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z).multiply(R).multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+    const nm = new THREE.Matrix3().getNormalMatrix(R);
+    for (const e of entries) {
+      const pos = e.mesh.geometry.attributes.position, nor = e.mesh.geometry.attributes.normal;
+      for (const [st, n] of e.ranges) {
+        d.saved.push({ attr: pos, start: st, data: pos.array.slice(st * 3, (st + n) * 3) });
+        if (nor) d.saved.push({ attr: nor, start: st, data: nor.array.slice(st * 3, (st + n) * 3) });
+        for (let i = st; i < st + n; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(T); pos.setXYZ(i, v.x, v.y, v.z);
+          if (nor) { v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize(); nor.setXYZ(i, v.x, v.y, v.z); }
+        }
+      }
+      pos.needsUpdate = true; if (nor) nor.needsUpdate = true;
+    }
+    const wp = mesh.localToWorld(c.local.clone());
+    sparksAt(wp, 6); sfx('armorPlate', wp, 0.5);
+    return true;
+  }
+
+  // Đám cháy bám theo xe tại điểm trúng (hệ tọa độ group của xe): lỗ xuyên giáp, bình xăng, kho đạn
+  function addFire(u, worldPt, strength, life) {
+    const d = state(u);
+    if (d.fires.length >= 4) d.fires.shift();
+    const l = u.group.worldToLocal(worldPt.clone());
+    d.fires.push({ x: l.x, y: l.y, z: l.z, k: strength || 1, life: life || 20, t: 0 });
+  }
+
+  // Kính cabin bị sóng nổ / mảnh văng đánh vỡ: nứt mạng nhện cả ô kính + mảnh kính văng
+  function shatterGlass(u, origin, maxRays) {
+    if (!FX || !FX.hitUnitSurface || !FX.addSurfaceMark) return 0;
+    let n = 0;
+    const c = u.group.position.clone().add(new THREE.Vector3(0, 14, 0));
+    for (let i = 0; i < (maxRays || 6); i++) {
+      const target = c.clone().add(new THREE.Vector3(rand(-12, 12), rand(-4, 6), rand(-20, 20)).applyQuaternion(u.group.quaternion));
+      const dir = target.clone().sub(origin);
+      const len = dir.length();
+      dir.normalize();
+      const h = FX.hitUnitSurface(u, origin, dir, len + 30);
+      if (!h || !h.object.material || !h.object.material.userData || h.object.material.userData.surface !== 'glass') continue;
+      shatterAllGlass(u);
+      if (FX.fire) for (let k = 0; k < 10; k++) FX.fire.add({ x: h.point.x, y: h.point.y, z: h.point.z, vx: rand(-40, 40), vy: rand(0, 40), vz: rand(-40, 40), size: rand(0.4, 0.9), grow: 0, drag: 0.5, grav: 120, life: rand(0.5, 1.1), alpha: 0.9, fadeIn: 0.005, c0: [0.85, 0.92, 0.95], c1: [0.6, 0.7, 0.75], cell: 3 });
+      sfx('glass', h.point);
+      n++;
+    }
+    return n;
+  }
+
+  // Ăng-ten gần điểm nổ bị gãy văng
+  function breakAntennas(u, point, radius, prob, impulse) {
+    if (!u.antennaSets) return;
+    const d = state(u);
+    for (const set of u.antennaSets) {
+      set.whips.forEach((w, i) => {
+        if (w.hidden) return;
+        const wp = w.base.clone().applyMatrix4(set.parent.matrixWorld);
+        const dist = point ? wp.distanceTo(point) : 0;
+        if (point && dist > radius) return;
+        if (Math.random() > prob * (point ? (1 - dist / radius) * 0.6 + 0.4 : 1)) return;
+        set.setHidden(i, true);
+        d.hiddenAnt.push([set, i]);
+        // Mảnh ăng-ten: roi mảnh gãy văng ra
+        const g = new THREE.CylinderGeometry(w.r1, w.r0, w.len * 0.8, 4);
+        const m = new THREE.Mesh(g, set.material);
+        m.userData.ownGeo = true;
+        const holder = new THREE.Group();
+        holder.add(m);
+        holder.position.copy(wp).add(new THREE.Vector3(0, w.len * 0.4, 0));
+        holder.userData.radius = 0.3;
+        spawnDebris(u, holder, impulse.clone().multiplyScalar(0.6));
+      });
+    }
+  }
+
+  function updateDebris(dt) {
+    for (let i = debrisList.length - 1; i >= 0; i--) {
+      const D = debrisList[i];
+      D.t += dt;
+      if (D.t > 60) { removeDebris(i); continue; }
+      if (D.rest) {
+        if (D.settle && D.settle.t < 1) {
+          D.settle.t = Math.min(1, D.settle.t + dt / 0.3);
+          const k = D.settle.t * D.settle.t * (3 - 2 * D.settle.t);
+          D.obj.quaternion.copy(D.settle.q0).slerp(D.settle.q1, k);
+          D.obj.position.y = D.settle.y0 + (D.settle.y1 - D.settle.y0) * k;
+        }
+        continue;
+      }
+      D.v.y -= 110 * dt;
+      const k = Math.exp(-0.4 * dt);
+      D.v.x *= k; D.v.z *= k;
+      D.obj.position.addScaledVector(D.v, dt);
+      D.obj.rotation.x += D.w.x * dt;
+      D.obj.rotation.y += D.w.y * dt;
+      D.obj.rotation.z += D.w.z * dt;
+      const gy = groundProvider ? groundProvider(D.obj.position.x, D.obj.position.z) : 0;
+      const floor = gy + D.r * 0.45;
+      if (D.obj.position.y < floor) {
+        D.obj.position.y = floor;
+        // Tiếng rơi đập đất ở đúng lúc / đúng chỗ chạm đất (lần nảy đầu)
+        if (D.bounces === 0 && Math.abs(D.v.y) > 10) sfx('debrisLand', D.obj.position.clone(), Math.min(1.6, 0.4 + 0.25 * (D.mass || 1)));
+        D.bounces++;
+        if (Math.abs(D.v.y) < 14 || D.bounces > 3) {
+          D.rest = true;
+          // Đổ nằm xuống mặt rộng gần nhất với tư thế hiện tại (xoay tối thiểu, mượt 0.3 s) tại đúng chỗ rơi
+          const dm = D.dims;
+          const ax = (dm.x <= dm.y && dm.x <= dm.z) ? new THREE.Vector3(1, 0, 0) : (dm.z <= dm.y ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0));
+          const thin = ax.x ? dm.x * D.obj.scale.x : ax.z ? dm.z * D.obj.scale.z : dm.y * D.obj.scale.y;
+          const q0 = D.obj.quaternion.clone();
+          const aw = ax.clone().applyQuaternion(q0);
+          const up = new THREE.Vector3(0, aw.y >= 0 ? 1 : -1, 0);
+          const q1 = new THREE.Quaternion().setFromUnitVectors(aw.normalize(), up).multiply(q0);
+          D.settle = { q0, q1, y0: D.obj.position.y, y1: gy + thin * 0.5, t: 0 };
+        } else {
+          D.v.y = -D.v.y * 0.28;
+          D.v.x *= 0.45; D.v.z *= 0.45;
+          D.w.multiplyScalar(0.45);
+        }
+      }
+    }
+    // Lốp xẹp dần (xì hơi ~1.2 giây)
+    for (const u of animUnits) {
+      const d = u.dmg;
+      if (!d || !u.wheelSet) { animUnits.delete(u); continue; }
+      let busy = false;
+      for (const k in d.flatAnim) {
+        const target = d.shred && d.shred[k] ? 1.9 : 1;
+        const f = Math.min(target, d.flatAnim[k] + dt / 1.2);
+        d.flatAnim[k] = f;
+        u.wheelSet.setFlat(+k, f);
+        if (f < target) busy = true;
+      }
+      if (!busy) animUnits.delete(u);
+    }
+  }
+  const animUnits = new Set();
+
+  // ---------------------------------------------------------------------------
+  // HỎNG HÓC CƠ KHÍ
+  // ---------------------------------------------------------------------------
+  const WHEEL_NAMES_4 = ['TRƯỚC TRÁI', 'TRƯỚC PHẢI', 'SAU TRÁI', 'SAU PHẢI'];
+  const WHEEL_NAMES_6 = ['TRƯỚC TRÁI', 'TRƯỚC PHẢI', 'GIỮA TRÁI', 'GIỮA PHẢI', 'SAU TRÁI', 'SAU PHẢI'];
+
+  // Văng hẳn bánh xe (đạn nổ lõm / xuyên / nổ mạnh sát bánh): bánh bay khỏi trục, góc xe sụt xuống
+  function blowWheel(u, i, events, fx, impulse) {
+    const d = state(u);
+    const ws = u.wheelSet;
+    if (!ws || d.gone[i] || i < 0 || i >= ws.positions.length) return false;
+    if (!d.flat[i]) flatTire(u, i, [], fx, true);
+    d.gone[i] = true;
+    ws.gone[i] = 1;
+    ws.update();
+    const p = ws.positions[i];
+    const wp = (u.chassisGroup || u.group).localToWorld(new THREE.Vector3(p.x, p.y, p.z));
+    // Mảnh bánh xe nguyên khối văng ra (lấy đúng hình học bánh của xe)
+    const holder = new THREE.Group();
+    for (const im of ws.meshes) {
+      const m = new THREE.Mesh(im.geometry, im.material);
+      m.castShadow = true;
+      holder.add(m);
+    }
+    holder.position.copy(wp);
+    holder.rotation.y = (u.group.rotation.y || 0) + (p.x < 0 ? Math.PI : 0);
+    holder.userData.radius = ws.radius * 0.9;
+    const side = new THREE.Vector3(Math.sign(p.x), 0, 0).applyQuaternion(u.group.quaternion);
+    spawnDebris(u, holder, side.multiplyScalar(rand(40, 80)).add(impulse ? impulse.clone().multiplyScalar(0.4) : new THREE.Vector3()));
+    sparksAt(wp, 20);
+    sfx('tire', wp, 1.3);
+    const names = ws.positions.length > 4 ? WHEEL_NAMES_6 : WHEEL_NAMES_4;
+    events.push({ type: 'wheel', text: `VĂNG BÁNH ${names[i] || ''} — moay-ơ cày đất, xe sụt góc, chạy rất chậm` });
+    return true;
+  }
+
+  function flatTire(u, i, events, fx, silent) {
+    const d = state(u);
+    if (d.flat[i] || !u.wheelSet || i < 0 || i >= u.wheelSet.positions.length) return false;
+    d.flat[i] = true;
+    d.flatAnim[i] = d.flatAnim[i] || 0;
+    animUnits.add(u);
+    const names = u.wheelSet.positions.length > 4 ? WHEEL_NAMES_6 : WHEEL_NAMES_4;
+    // Thứ tự bánh trong model: theo trục (trước -> sau), mỗi trục trái rồi phải
+    if (!silent) events.push({ type: 'tire', text: `XỊT LỐP ${names[i] || ''} — xe lệch, kéo lái, tốc độ giảm` });
+    { const pp = u.wheelSet.positions[i]; if (!silent) sfx('tireHiss', (u.chassisGroup || u.group).localToWorld(new THREE.Vector3(pp.x, pp.y, pp.z))); }
+    if (fx && fx.smoke) {
+      const p = u.wheelSet.positions[i];
+      const wp = new THREE.Vector3(p.x, p.y, p.z);
+      (u.chassisGroup || u.group).localToWorld(wp);
+      for (let k = 0; k < 8; k++) {
+        fx.smoke.add({ x: wp.x, y: wp.y, z: wp.z, vx: rand(-14, 14), vy: rand(2, 12), vz: rand(-14, 14), size: rand(2, 3.5), grow: 6, drag: 3, life: rand(0.6, 1.2), alpha: 0.45, fadeIn: 0.02, c0: [0.75, 0.72, 0.66], cell: 2 });
+      }
+    }
+    return true;
+  }
+
+  function breakTrack(u, side, events, fx, point) {
+    const d = state(u);
+    if (d.trackTimer[side] > 0) return false;
+    d.track[side] = 1;
+    // Kíp xe nối xích tạm: lần đầu ~9 s, xích đứt lại nhiều lần thì càng lâu (thiếu mắt xích dự phòng)
+    d.trackBreaks[side] = (d.trackBreaks[side] || 0) + 1;
+    // gốc: kíp xe nối xích ~18 s, mỗi lần đứt lại thêm 8 s (thiếu mắt xích dự phòng) — nhân hệ số nhịp game
+    const ts = typeof GameTiming !== 'undefined' ? GameTiming.timerScale : 0.5;
+    d.trackTimer[side] = (18 + 8 * (d.trackBreaks[side] - 1)) * ts;
+    d.trackWear[side] = 0.6;
+    if (u.trackSystem && u.trackSystem.breakSide) {
+      const lz = point ? (u.chassisGroup || u.group).worldToLocal(point.clone()).z : 0;
+      u.trackSystem.breakSide(side, lz < 0);
+    }
+    if (point) sfx('trackSnap', point);
+    events.push({ type: 'track', text: `ĐỨT XÍCH ${side ? 'PHẢI' : 'TRÁI'} — xe gần như bất động ~${Math.round(d.trackTimer[side])} giây để nối xích` });
+    if (fx && point) {
+      if (fx.spawnSparks) fx.spawnSparks(point.x, point.y, point.z, 1.1, { sparks: 1.3 }, true, 0, 0);
+      // Vài mắt xích văng ra
+      const mat = u.hullMainMesh ? u.hullMainMesh.material : null;
+      for (let k = 0; k < 1; k++) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.6, 1.6), new THREE.MeshStandardMaterial({ color: 0x3e3b35, roughness: 0.8, metalness: 0.5 }));
+        m.userData.ownGeo = true;
+        const holder = new THREE.Group();
+        holder.add(m);
+        holder.position.copy(point).add(new THREE.Vector3(rand(-2, 2), 1, rand(-3, 3)));
+        holder.userData.radius = 0.8;
+        spawnDebris(u, holder, new THREE.Vector3(rand(-30, 30), 10, rand(-30, 30)));
+      }
+      void mat;
+    }
+    return true;
+  }
+
+  function damageEngine(u, events, severe) {
+    const d = state(u);
+    const before = d.engine;
+    d.engine = Math.min(2, d.engine + (severe ? 2 : 1));
+    if (d.engine === before) return false;
+    events.push({ type: 'engine', text: d.engine >= 2 ? 'ĐỘNG CƠ HỎNG NẶNG — bốc khói đen, xe bò chậm' : 'ĐỘNG CƠ TRÚNG ĐẠN — mất công suất, tăng tốc kém' });
+    return true;
+  }
+
+  function damageRing(u, events) {
+    const d = state(u);
+    if (d.ring || !u.turretGroup) return false;
+    d.ring = true;
+    events.push({ type: 'ring', text: 'KẸT VÒNG QUAY THÁP — tháp xoay rất chậm' });
+    return true;
+  }
+
+  function damageGun(u, events) {
+    const d = state(u);
+    if (d.gun) return false;
+    d.gun = true;
+    const bg = u.barrelGroup || u.gatlingCluster;
+    if (bg && !d.gunBent) {
+      d.gunBent = { obj: bg, rot: bg.rotation.clone() };
+      bg.rotation.x += rand(0.025, 0.06) * (Math.random() < 0.7 ? 1 : -1);
+      bg.rotation.y += rand(-0.04, 0.04);
+      const wp = bg.getWorldPosition(new THREE.Vector3());
+      sparksAt(wp, 14); sfx('armorPlate', wp, 0.8);
+    }
+    const t = u.tankType === 'GATLING' ? 'CỤM 6 NÒNG HƯ HẠI — mô-tơ quay nòng khởi động chậm'
+      : u.tankType === 'SCOUT' ? 'SÚNG MÁY HƯ HẠI — tốc độ bắn giảm'
+        : u.tankType === 'ARTILLERY' ? 'BỘ HÃM LÙI LỰU PHÁO HƯ — nạp đạn chậm' : 'PHÁO CHÍNH HƯ HẠI — nạp đạn chậm';
+    events.push({ type: 'gun', text: t });
+    return true;
+  }
+
+  // Hiệu ứng riêng khi một bộ phận đặc biệt bị phá
+  function onPartLost(u, tag, kind, events, fx, point) {
+    const name = partName(tag);
+    const sp = point || partWorld(u, tag);
+    if (kind === 'armor' || kind === 'heavyAcc') { sparksAt(sp, 18); sfx('armorPlate', sp); }
+    else if (kind === 'era') sfx('era', sp);
+    else if (kind === 'fuel') sfx('fuel', sp);
+    else if (kind === 'ammo') sfx('cookoff', sp);
+    else if (kind === 'optic' || kind === 'sensor') { sfx('glass', sp, 0.6); sfx('snap', sp); sparksAt(sp, 8); }
+    else { sfx('snap', sp); sparksAt(sp, 6); }
+    // Đám cháy tại đúng chỗ: bình xăng thủng, kho đạn nổ
+    if ((kind === 'fuel' || kind === 'ammo') && sp) addFire(u, sp, kind === 'fuel' ? 1.3 : 1.0, kind === 'fuel' ? 40 : 18);
+    if (kind === 'era') {
+      events.push({ type: 'era', text: `${name} KÍCH NỔ — chặn bớt luồng xuyên` });
+      if (fx && point) fx.spawn(point.x, point.y, point.z, 'CLUSTER_SUBMUNITION', 'DIRECT_HIT', {});
+    } else if (kind === 'armor') {
+      events.push({ type: 'armor', text: `BONG ${name} — mặt giáp đó mỏng hơn` });
+    } else if (kind === 'fuel') {
+      events.push({ type: 'fuel', text: `THỦNG ${name} — xe bốc cháy` });
+      if (typeof u.ignite === 'function') u.ignite(5.0);
+    } else if (kind === 'ammo') {
+      events.push({ type: 'ammo', text: `${name} NỔ — mất đạn dự trữ` });
+      if (fx && point) fx.spawn(point.x, point.y, point.z, 'HE', 'DIRECT_HIT', {});
+      if (u.heAmmoCount) u.heAmmoCount = Math.max(0, u.heAmmoCount - 2);
+      if (u.clusterAmmoCount) u.clusterAmmoCount = Math.max(0, u.clusterAmmoCount - 1);
+      u.takeDamage && u.takeDamage(0.25, null, 'ZONE');
+    } else if (kind === 'optic') {
+      events.push({ type: 'optic', text: tag === 'opticGunner' ? `VỠ ${name} — ngắm bắn chậm hơn` : `${name} BỊ BẮN BAY` });
+    } else if (kind === 'feed') {
+      events.push({ type: 'feed', text: `ĐỨT ${name} — tốc độ bắn giảm` });
+    } else if (kind === 'sensor') {
+      events.push({ type: 'sensor', text: `${name} BỊ PHÁ — mất radar: hết phát hiện xe núp bụi & hết báo vị trí cho đồng đội` });
+    } else if (kind === 'atgm') {
+      events.push({ type: 'atgm', text: `${name} BỊ PHÁ — mất tên lửa chống tăng` });
+    } else if (kind === 'heavyAcc') {
+      events.push({ type: 'acc', text: `VĂNG ${name}` });
+    }
+  }
+
+  // Mặt giáp bị bắn (hệ tháp nếu trúng tháp)
+  function faceOf(u, hit, onTurret) {
+    const frame = onTurret && u.turretGroup ? u.turretGroup : u.group;
+    const q = frame.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const n = hit.normal.clone().normalize().applyQuaternion(q);
+    if (n.y > 0.65) return 'top';
+    if (Math.abs(n.z) >= Math.abs(n.x)) return n.z < 0 ? 'front' : 'rear';
+    return n.x < 0 ? 'sideL' : 'sideR';
+  }
+
+  function isOnTurret(u, obj) {
+    let o = obj;
+    while (o && o !== u.group) {
+      if (o === u.turretGroup) return true;
+      o = o.parent;
+    }
+    return false;
+  }
+  function isOnGun(u, obj) {
+    let o = obj;
+    while (o && o !== u.group) {
+      if (o === u.barrelPivot || o === u.barrelGroup || o === u.gatlingCluster) return true;
+      o = o.parent;
+    }
+    return false;
+  }
+
+  function wheelIndexAt(u, hit, local) {
+    const ws = u.wheelSet;
+    if (!ws) return -1;
+    if (hit && hit.object && hit.object.isInstancedMesh && ws.meshes.includes(hit.object) && hit.instanceId !== undefined) return hit.instanceId;
+    let best = -1, bd = Infinity;
+    ws.positions.forEach((p, i) => {
+      const dd = Math.hypot(p.x - local.x, p.y - local.y, p.z - local.z);
+      if (dd < bd) { bd = dd; best = i; }
+    });
+    return bd < ws.radius + 1.6 ? best : -1;
+  }
+
+  // ---------------------------------------------------------------------------
+  // API CHÍNH
+  // ---------------------------------------------------------------------------
+  /**
+   * Trúng trực tiếp. Trả { mul, events }: mul nhân vào sát thương gốc (giáp + hướng + ERA).
+   * hit: { point, normal, object, faceIndex, instanceId } (có thể null nếu không dò được tia)
+   */
+  // Vết lõm / rách 3D thật trên vỏ thép: miếng lưới lòng chảo dùng đúng vật liệu sơn của xe, áp sát bề mặt tại điểm trúng
+  // (lưới thân xe ít đỉnh nên không bóp méo cả tấm giáp); bắn tiếp vào cùng chỗ -> lõm sâu dần, đục thủng -> mép rách lởm chởm
+  const DENT_GEO = {};
+  function dentGeo(tear) {
+    const key = tear ? 'tear' : 'dent';
+    if (DENT_GEO[key]) return DENT_GEO[key];
+    const g = new THREE.RingGeometry(0.02, 1, 20, 6);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i);
+      let r = Math.hypot(x, y);
+      const a = Math.atan2(y, x);
+      if (tear) {
+        // mép rách: bán kính lởm chởm, vành thép bị lật ngược ra ngoài
+        const j = 1 + 0.18 * Math.sin(a * 5 + 1.3) * Math.sin(a * 3 - 0.4);
+        p.setXY(i, x * j, y * j);
+        r = Math.min(1, r);
+      }
+      // Lòng hố nằm sát mặt vỏ, vành thép bị đẩy trồi lên quanh miệng (như vết đạn thật trên giáp):
+      // độ dốc lòng hố cho bóng sáng tối của chỗ lõm; rách thì vành lật cao & lởm chởm
+      const lip = r < 0.78 ? Math.pow(r / 0.78, 2.2) : Math.max(0, 1 - Math.pow((r - 0.78) / 0.22, 2));
+      const jag = tear ? 0.35 * Math.abs(Math.sin(a * 7 + 0.6)) * (r > 0.6 ? 1 : 0) : 0;
+      p.setZ(i, lip * (tear ? 0.55 : 0.3) + jag * lip);
+    }
+    g.computeVertexNormals();
+    return (DENT_GEO[key] = g);
+  }
+  function dentAt(u, mesh, point, normal, R, depth, tear) {
+    if (!mesh || !mesh.isMesh || mesh.isInstancedMesh || !normal || mesh.userData.isFxDecal) return;
+    const d = state(u);
+    d.dents = d.dents || [];
+    const key = Math.round(point.x / 2.5) + ',' + Math.round(point.y / 2.5) + ',' + Math.round(point.z / 2.5) + (tear ? 't' : '');
+    const om = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    // chỉ vỏ thép mới lõm; kính / cao su / bạt không có vết lõm kim loại
+    if (!om || (om.userData && (om.userData.surface === 'glass' || om.userData.surface === 'rubber' || om.userData.surface === 'cloth'))) return;
+    let D = d.dents.find(o => o.key === key);
+    if (!D) {
+      if (d.dents.length >= 36) return;
+      const orig = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      d.dentMats = d.dentMats || new Map();
+      let mat = d.dentMats.get(orig);
+      if (!mat) {
+        // cùng sơn / texture với vỏ xe, màu dùng chung đối tượng Color -> xe cháy đen thì vết lõm cũng đen theo
+        mat = orig.clone();
+        mat.color = orig.color;
+        mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -4;
+        d.dentMats.set(orig, mat);
+      }
+      const m = new THREE.Mesh(dentGeo(tear), mat);
+      m.userData.isFxDecal = true;   // tia dò đạn bỏ qua
+      m.castShadow = false; m.receiveShadow = true;
+      mesh.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+      m.position.copy(point.clone().addScaledVector(normal, 0.02).applyMatrix4(inv));
+      const ln = normal.clone().transformDirection(inv).normalize();
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ln);
+      m.rotateZ(Math.random() * 6.28);
+      const sc = new THREE.Vector3().setFromMatrixScale(mesh.matrixWorld);
+      m.userData.inv = 1 / Math.max(1e-3, sc.x);
+      mesh.add(m);
+      D = { key, m, R, depth: 0 };
+      d.dents.push(D);
+    }
+    D.depth = Math.min(tear ? 2.6 : 1.8, D.depth + depth);
+    D.R = Math.max(D.R, R);
+    const k = D.m.userData.inv;
+    D.m.scale.set(D.R * k, D.R * k, Math.max(0.05, D.depth) * k);
+  }
+
+  // ---------------------------------------------------------------------------
+  // BIẾN DẠNG THẬT CỦA VỎ XE: chỉnh trực tiếp đỉnh lưới (móp sâu, oằn tấm thép, bẹp nóc, xoắn khung, cong nòng)
+  // Lưới thân xe vốn ít đỉnh (tấm phẳng lớn) -> lần đầu biến dạng sẽ chia nhỏ tam giác để thép "uốn" được.
+  // Lưu hình học gốc để hồi sinh trả nguyên trạng.
+  // ---------------------------------------------------------------------------
+  const TESS_EDGE = 2.6;          // cạnh tam giác dài hơn mức này thì chia đôi (đơn vị game)
+  const TESS_MAX_TRIS = 26000;    // trần số tam giác mỗi mesh sau khi chia
+  const _dv = new THREE.Vector3(), _dp = new THREE.Vector3(), _dn = new THREE.Vector3();
+  const _ea = new THREE.Vector3(), _eb = new THREE.Vector3(), _ec = new THREE.Vector3();
+
+  // Băm vị trí -> nhiễu giả ngẫu nhiên ổn định (nếp nhăn tôn thép không đổi giữa các lần cập nhật)
+  function hash3(x, y, z) {
+    const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+    return s - Math.floor(s);
+  }
+  function wrinkle(x, y, z, f) {
+    return Math.sin(x * f + 1.7) * Math.sin(z * f * 1.3 - 0.4) * 0.6 + (hash3(Math.round(x * 2), Math.round(y * 2), Math.round(z * 2)) - 0.5) * 0.8;
+  }
+
+  function deformableMesh(u, o) {
+    if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return false;
+    if (o.userData.isFxDecal || o.userData.noDeform) return false;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    if (!m || m.isMeshBasicMaterial || m.blending === THREE.AdditiveBlending || (m.transparent && !m.depthWrite)) return false;
+    if (u.antennaSets && u.antennaSets.some(s => s.geo === o.geometry)) return false;
+    return true;
+  }
+
+  function deformMeshList(u) {
+    const root = u.chassisGroup || u.group;
+    const out = [];
+    root.traverse(o => { if (deformableMesh(u, o)) out.push(o); });
+    return out;
+  }
+
+  // Chia tam giác (cạnh dài nhất chia đôi) cho lưới không chỉ mục; khoảng đỉnh các bộ phận được ánh xạ lại tại chỗ
+  function tessellate(mesh) {
+    const geo = mesh.geometry;
+    const names = Object.keys(geo.attributes);
+    const at = names.map(n => geo.attributes[n]);
+    const isz = at.map(a => a.itemSize);
+    const pIdx = names.indexOf('position'), nIdx = names.indexOf('normal');
+    const triCount = Math.floor(geo.attributes.position.count / 3);
+    const out = names.map(() => []);
+    const newStart = new Int32Array(triCount + 1);
+    let outTris = 0;
+    const vert = (i) => at.map((a, k) => { const s = isz[k], r = new Array(s); for (let c = 0; c < s; c++) r[c] = a.array[i * s + c]; return r; });
+    const mid = (a, b) => a.map((arr, k) => { const r = arr.map((v, c) => (v + b[k][c]) * 0.5); if (k === nIdx) { const l = Math.hypot(r[0], r[1], r[2]) || 1; r[0] /= l; r[1] /= l; r[2] /= l; } return r; });
+    const d2 = (a, b) => { const p = a[pIdx], q = b[pIdx]; return (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2; };
+    const L2 = TESS_EDGE * TESS_EDGE;
+    const emit = (v) => { for (const w of v) for (let k = 0; k < names.length; k++) { const o = out[k]; for (const x of w[k]) o.push(x); } outTris++; };
+    const stack = [];
+    for (let t = 0; t < triCount; t++) {
+      newStart[t] = outTris;
+      stack.push([vert(t * 3), vert(t * 3 + 1), vert(t * 3 + 2)]);
+      while (stack.length) {
+        const tri = stack.pop();
+        const [a, b, c] = tri;
+        const ab = d2(a, b), bc = d2(b, c), ca = d2(c, a);
+        const mx = Math.max(ab, bc, ca);
+        if (mx <= L2 || outTris + stack.length > TESS_MAX_TRIS) { emit(tri); continue; }
+        if (mx === ab) { const m = mid(a, b); stack.push([a, m, c], [m, b, c]); }
+        else if (mx === bc) { const m = mid(b, c); stack.push([a, b, m], [a, m, c]); }
+        else { const m = mid(c, a); stack.push([a, b, m], [m, b, c]); }
+      }
+    }
+    newStart[triCount] = outTris;
+    const g = new THREE.BufferGeometry();
+    names.forEach((n, k) => g.setAttribute(n, new THREE.BufferAttribute(new Float32Array(out[k]), isz[k])));
+    for (const gr of geo.groups || []) g.addGroup(newStart[gr.start / 3] * 3, (newStart[Math.min(triCount, (gr.start + gr.count) / 3)] - newStart[gr.start / 3]) * 3, gr.materialIndex);
+    const ranges = mesh.userData.partRanges;
+    if (ranges) {
+      for (const tag in ranges) {
+        const arr = ranges[tag];
+        const mapped = arr.map(([st, n]) => { const s0 = newStart[Math.floor(st / 3)] * 3, s1 = newStart[Math.min(triCount, Math.floor((st + n) / 3))] * 3; return [s0, s1 - s0]; });
+        arr.length = 0;
+        for (const r of mapped) arr.push(r);   // sửa tại chỗ: partRegistry dùng chung mảng này
+      }
+    }
+    return g;
+  }
+
+  const PREPPED = new WeakMap();   // mesh -> xe đã có lưới biến dạng riêng
+  // Chuẩn bị lưới riêng cho xe này trước lần biến dạng đầu tiên (chia nhỏ tấm lớn, lưu bản gốc để hồi sinh)
+  function prepMesh(u, mesh) {
+    const d = state(u);
+    d.geoSwaps = d.geoSwaps || [];
+    if (PREPPED.get(mesh) === u) return mesh.geometry;
+    const orig = mesh.geometry;
+    const ranges = mesh.userData.partRanges;
+    const saved = { mesh, orig, ranges: ranges ? Object.fromEntries(Object.keys(ranges).map(t => [t, ranges[t].map(r => r.slice())])) : null };
+    let g;
+    if (!orig.index) {
+      orig.computeBoundingSphere();
+      g = orig.boundingSphere && orig.boundingSphere.radius > 3.5 ? tessellate(mesh) : orig.clone();
+    } else {
+      g = orig.clone();
+    }
+    g.computeBoundingSphere();
+    mesh.geometry = g;
+    PREPPED.set(mesh, u);
+    d.geoSwaps.push(saved);
+    return g;
+  }
+
+  /**
+   * Áp trường dịch chuyển lên lưới. space: hệ tọa độ mà field làm việc (u.group / nòng pháo).
+   * field(p, out) -> true nếu điểm p bị dịch (out = vector dịch trong hệ space). sphere: {c, r} (hệ space) để bỏ qua mesh ở xa.
+   */
+  function deformField(u, meshes, space, field, sphere) {
+    space.updateMatrixWorld(true);
+    const spaceInv = new THREE.Matrix4().copy(space.matrixWorld).invert();
+    const M = new THREE.Matrix4(), Mi = new THREE.Matrix4(), Mn = new THREE.Matrix3();
+    let any = false;
+    for (const mesh of meshes) {
+      if (!mesh.parent) continue;
+      mesh.updateMatrixWorld(true);
+      M.multiplyMatrices(spaceInv, mesh.matrixWorld);
+      if (sphere) {
+        const gs = mesh.geometry.boundingSphere || (mesh.geometry.computeBoundingSphere(), mesh.geometry.boundingSphere);
+        const c = gs.center.clone().applyMatrix4(M);
+        const sc = new THREE.Vector3().setFromMatrixScale(M).x || 1;
+        if (c.distanceTo(sphere.c) > sphere.r + gs.radius * sc) continue;
+      }
+      const g = prepMesh(u, mesh);
+      Mi.copy(M).invert();
+      Mn.getNormalMatrix(Mi);
+      const pos = g.attributes.position;
+      const n = pos.count;
+      const moved = new Uint8Array(n);
+      let touched = false;
+      for (let i = 0; i < n; i++) {
+        _dp.fromBufferAttribute(pos, i).applyMatrix4(M);
+        if (!field(_dp, _dv)) continue;
+        if (_dv.lengthSq() < 1e-8) continue;
+        _dp.add(_dv).applyMatrix4(Mi);
+        pos.setXYZ(i, _dp.x, _dp.y, _dp.z);
+        moved[i] = 1; touched = true;
+      }
+      // Vết lõm / vết cháy dán trên mesh dịch theo bề mặt
+      for (const ch of mesh.children) {
+        if (!ch.userData || !ch.userData.isFxDecal) continue;
+        _dp.copy(ch.position).applyMatrix4(M);
+        if (field(_dp, _dv)) { _dp.add(_dv).applyMatrix4(Mi); ch.position.copy(_dp); }
+      }
+      if (!touched) continue;
+      any = true;
+      pos.needsUpdate = true;
+      const nor = g.attributes.normal;
+      if (nor) {
+        if (g.index) g.computeVertexNormals();
+        else {
+          // Tam giác bị biến dạng: pháp tuyến phẳng theo mặt mới (tôn thép nhăn gãy góc)
+          for (let t = 0; t + 2 < n; t += 3) {
+            if (!moved[t] && !moved[t + 1] && !moved[t + 2]) continue;
+            _ea.fromBufferAttribute(pos, t); _eb.fromBufferAttribute(pos, t + 1); _ec.fromBufferAttribute(pos, t + 2);
+            _dn.subVectors(_ec, _eb).cross(_ea.clone().sub(_eb));
+            if (_dn.lengthSq() < 1e-10) continue;
+            _dn.normalize();
+            for (let k = 0; k < 3; k++) nor.setXYZ(t + k, _dn.x, _dn.y, _dn.z);
+          }
+          nor.needsUpdate = true;
+        }
+      }
+      g.computeBoundingSphere();
+      g.boundingBox = null;
+    }
+    if (any) u._partCenters = null;
+    return any;
+  }
+
+  // Hố móp sâu tại điểm trúng: tấm thép bị đẩy lõm vào trong theo hướng đạn, có nếp nhăn
+  function crumpleAt(u, worldPoint, worldDir, R, depth) {
+    if (!u || !u.group || !worldPoint || depth <= 0.01) return false;
+    const d = state(u);
+    const space = u.group;
+    space.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(space.matrixWorld).invert();
+    const c = worldPoint.clone().applyMatrix4(inv);
+    let dir = worldDir && worldDir.lengthSq() > 1e-6 ? worldDir.clone().normalize() : c.clone().setY(c.y - 8).normalize().negate();
+    dir.transformDirection(inv).normalize();
+    // Đạn bắn gần như song song bề mặt: vẫn lõm vào lòng xe (về trục giữa)
+    const toCore = new THREE.Vector3(-c.x, 9 - c.y, -c.z * 0.4).normalize();
+    dir.lerp(toCore, 0.25).normalize();
+    // Giới hạn tổng độ lõm tích lũy theo vùng (không cho vỏ xuyên qua nhau)
+    d.crushAcc = d.crushAcc || {};
+    const key = Math.round(c.x / 6) + ',' + Math.round(c.y / 6) + ',' + Math.round(c.z / 6);
+    const cap = u.isDead ? 7 : 3;
+    const room = Math.max(0, cap - (d.crushAcc[key] || 0));
+    const dep = Math.min(depth, room);
+    if (dep <= 0.02) return false;
+    d.crushAcc[key] = (d.crushAcc[key] || 0) + dep;
+    const R2 = R * R;
+    const ok = deformField(u, deformMeshList(u), space, (p, out) => {
+      const dx = p.x - c.x, dy = p.y - c.y, dz = p.z - c.z;
+      const r2 = dx * dx + dy * dy + dz * dz;
+      if (r2 >= R2) return false;
+      const t = 1 - r2 / R2;
+      const k = t * t;
+      const w = 1 + 0.35 * wrinkle(p.x, p.y, p.z, 1.9) * t;
+      out.copy(dir).multiplyScalar(dep * k * w);
+      // mép hố bị kéo xệ về tâm (tấm thép co rút quanh chỗ lõm)
+      out.x -= dx * 0.08 * k * dep / R; out.y -= dy * 0.08 * k * dep / R; out.z -= dz * 0.08 * k * dep / R;
+      return true;
+    }, { c, r: R });
+    return ok;
+  }
+
+  // Khung xe biến dạng tổng thể (hệ u.group): bẹp nóc, sụp lưng, oằn sườn, xoắn khung. amt: lượng tăng thêm (0..1)
+  function crushHull(u, amt, opts) {
+    if (!u || !u.group || amt <= 0) return false;
+    const d = state(u);
+    let meshes = deformMeshList(u);
+    // Tháp đã bị hất văng khỏi xe: không thuộc khung thân nữa
+    if (u.fxWreck && u.fxWreck.turret && u.turretGroup) meshes = meshes.filter(m => !isOnTurret(u, m));
+    if (!d.hullBox) {
+      const box = new THREE.Box3();
+      u.group.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(u.group.matrixWorld).invert();
+      const hm = u.hullMainMesh || meshes[0];
+      if (hm) {
+        hm.geometry.computeBoundingBox();
+        box.copy(hm.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, hm.matrixWorld));
+      } else box.set(new THREE.Vector3(-12, 0, -25), new THREE.Vector3(12, 16, 25));
+      d.hullBox = { x0: box.min.x, x1: box.max.x, y0: box.min.y, y1: Math.max(box.max.y, box.min.y + 6), z0: box.min.z, z1: box.max.z };
+      d.crushSeed = { twist: Math.random() < 0.5 ? -1 : 1, lean: Math.random() < 0.5 ? -1 : 1, zc: rand(-0.35, 0.35) };
+    }
+    const B = d.hullBox, S = d.crushSeed;
+    const hx = Math.max(4, (B.x1 - B.x0) / 2), hz = Math.max(6, (B.z1 - B.z0) / 2), cx = (B.x0 + B.x1) / 2, cz = (B.z0 + B.z1) / 2 + S.zc * hz * 0.5;
+    const yF = B.y0, hY = Math.max(4, B.y1 - B.y0);
+    const o = Object.assign({ roof: 1, sag: 1, sides: 1, twist: 1, bulge: 0 }, opts || {});
+    return deformField(u, meshes, u.group, (p, out) => {
+      const ny = Math.min(1.6, Math.max(0, (p.y - yF) / hY));   // 0 sàn -> 1 nóc
+      const nz = Math.max(-1.3, Math.min(1.3, (p.z - cz) / hz)), nx = Math.max(-1.3, Math.min(1.3, (p.x - cx) / hx));
+      const midZ = Math.max(0, 1 - nz * nz);                 // giữa thân võng nhiều nhất
+      const midX = Math.max(0, 1 - nx * nx * 0.7);
+      const wr = wrinkle(p.x, p.y, p.z, 0.9);
+      out.set(0, 0, 0);
+      // 1. Nóc bị ép bẹp xuống (tháp / nóc khoang lún sâu, tấm nóc nhăn nhúm)
+      if (o.roof) out.y -= amt * o.roof * hY * 0.32 * Math.pow(ny, 1.5) * (0.55 + 0.45 * midX) * (0.8 + 0.25 * wr);
+      // 2. Lưng khung gãy võng ở giữa (cả xe sụp xuống ở đoạn giữa)
+      if (o.sag) out.y -= amt * o.sag * hY * 0.18 * midZ * (0.4 + 0.6 * Math.min(1, ny + 0.3));
+      // 3. Hai sườn oằn vào trong ở phần trên, phình ra ở chân (tấm sườn gập)
+      if (o.sides) {
+        const sx = Math.sign(p.x - cx) || 1;
+        const band = Math.sin(Math.min(1, ny) * Math.PI);
+        out.x += -sx * amt * o.sides * hx * 0.16 * band * (0.6 + 0.4 * midZ) * (1 + 0.4 * wr);
+        out.x += sx * amt * o.sides * hx * 0.05 * Math.max(0, 0.35 - ny) * 3;
+      }
+      // 4. Khung xoắn vặn theo chiều dọc (mũi lệch một bên, đuôi lệch bên kia)
+      if (o.twist) {
+        const ang = amt * o.twist * 0.09 * S.twist * nz;
+        const ry = p.y - yF;
+        out.x += (p.x - cx) * (Math.cos(ang) - 1) - ry * Math.sin(ang);
+        out.y += (p.x - cx) * Math.sin(ang) + ry * (Math.cos(ang) - 1);
+        out.x += amt * o.twist * 0.6 * S.lean * ny;   // cả khối trên đổ nghiêng
+      }
+      // 5. Nổ bên trong (kho đạn / nhiên liệu): nóc & sườn bị phồng bung ra ngoài
+      if (o.bulge) {
+        const sx = Math.sign(p.x - cx) || 1;
+        const k = Math.max(0, ny - 0.45) * midZ;
+        out.y += amt * o.bulge * 2.2 * k * (0.7 + 0.5 * wr);
+        out.x += sx * amt * o.bulge * 1.4 * Math.sin(Math.min(1, ny) * Math.PI) * midZ * (0.7 + 0.5 * wr);
+      }
+      return out.lengthSq() > 1e-8;
+    });
+  }
+
+  // Nòng pháo bị cong gục: uốn hình học dọc theo chiều dài nòng (không chỉ xoay chốt)
+  function bendBarrel(u, amt) {
+    const bg = u.barrelGroup || u.gatlingCluster;
+    if (!bg || amt <= 0) return false;
+    const d = state(u);
+    const meshes = [];
+    bg.traverse(o => { if (deformableMesh(u, o)) meshes.push(o); });
+    if (!meshes.length) return false;
+    if (!d.barrelLen) {
+      let zMin = 0;
+      bg.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(bg.matrixWorld).invert();
+      for (const m of meshes) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld)); zMin = Math.min(zMin, b.min.z); }
+      d.barrelLen = Math.max(4, -zMin);
+      d.barrelBendDir = new THREE.Vector3(rand(-0.45, 0.45), -1, 0).normalize();
+    }
+    const L = d.barrelLen, s0 = Math.min(5, L * 0.2), bd = d.barrelBendDir;
+    const c = amt * L * 0.22 / ((L - s0) * (L - s0));
+    return deformField(u, meshes, bg, (p, out) => {
+      const s = -p.z - s0;
+      if (s <= 0) return false;
+      out.copy(bd).multiplyScalar(c * s * s);
+      out.z += c * s * s * 0.25;   // nòng cong thì đầu nòng co ngắn lại
+      return true;
+    });
+  }
+
+  // Các nấc biến dạng của xác xe theo lượng đạn đã hứng
+  const WRECK_STAGES = [
+    { at: 2.5, text: 'XÁC XE HƯ HẠI NẶNG — vỏ móp lõm nhiều chỗ, nòng pháo bị cong gục, khung bắt đầu võng' },
+    { at: 6, text: 'XÁC XE BIẾN DẠNG CỰC NẶNG — nóc bị ép bẹp, sườn oằn, khung xoắn vặn, tháp lệch khỏi vòng bi' },
+    { at: 12, text: 'XÁC XE BẸP DÚM — thân xe nát vụn, gần như dẹp lép xuống đất' }
+  ];
+  function sinkCapOf(u) {
+    return (ARMOR[u.tankType] || ARMOR.ALL_ROUNDER).drive === 'tracks' ? 1.8 : 4.2;
+  }
+  function wreckStageUp(u, stage, events, point) {
+    const d = state(u);
+    if (stage === 1) {
+      crushHull(u, 0.35, { roof: 0.6, sag: 1, sides: 0.6, twist: 0.5 });
+      bendBarrel(u, 0.5);
+      if (u.barrelPivot) { if (!u.barrelPivot.userData.fxBaseRot) u.barrelPivot.userData.fxBaseRot = u.barrelPivot.rotation.clone(); u.barrelPivot.rotation.x = Math.max(u.barrelPivot.rotation.x, 0) + rand(0.12, 0.3); }
+    } else if (stage === 2) {
+      crushHull(u, 0.65, { roof: 1, sag: 1, sides: 1, twist: 1 });
+      bendBarrel(u, 0.7);
+    } else if (stage === 3) {
+      crushHull(u, 0.9, { roof: 1.3, sag: 1.2, sides: 1.2, twist: 0.8 });
+      bendBarrel(u, 0.6);
+      // thân sụp sát đất, bánh / xích hết đỡ
+      if (u.trackSystem && u.trackSystem.breakSide) { for (let s = 0; s < 2; s++) if (!(u.trackBroken && u.trackBroken[s])) u.trackSystem.breakSide(s, Math.random() < 0.5); u.trackBroken = [true, true]; }
+      if (u.wheelSet) u.wheelSet.positions.forEach((p, i) => { if (!d.gone[i] && Math.random() < 0.5) blowWheel(u, i, [], FX, new THREE.Vector3(rand(-30, 30), 20, rand(-30, 30))); });
+    }
+    // Xe xích: xích vẫn tì đất nên thân chỉ lún ít; xe bánh mất bánh thì gầm đổ sát đất
+    const sinkCap = sinkCapOf(u);
+    d.sink = Math.max(d.sink || 0, Math.min((d.sink || 0) + [0, 0.5, 0.8, 1.2][stage], sinkCap));
+    applyPose(u);
+    if (point) { sparksAt(point, 24); sfx('metalCrush', point, 0.6 + stage * 0.3); }
+    events.push({ type: 'wreck', text: WRECK_STAGES[stage - 1].text, stage });
+  }
+
+  // Bắn tiếp vào xác xe: rã dần — bung nốt phụ kiện / váy xích / bánh, mảng vỏ cháy bị xé ra, khung sụp thấp dần
+  let CHAR_MAT = null;
+  function onWreckHit(u, opts) {
+    const events = [];
+    markGroups(u);
+    const d = state(u);
+    if (opts.fx) FX = opts.fx;
+    const cls = ammoClass(opts.ammo);
+    const point = opts.point || (opts.hit && opts.hit.point) || (opts.x !== undefined ? new THREE.Vector3(opts.x, opts.y, opts.z) : null);
+    if (!point) return { mul: 0, events };
+    let pw = { small: 0.035, cannon: 0.22, kinetic: 0.5, heat: 0.7, blast: opts.heavy ? 1.6 : 1 }[cls] || 0.3;
+    if (opts.splash) pw *= Math.max(0.15, 1 - (opts.dist || 0) / Math.max(1, opts.radius || 40)) * 0.7;
+    d.wreck = (d.wreck || 0) + pw;
+    u.group.updateMatrixWorld(true);
+    // Đạn nhỏ xả vào một chỗ: cộng dồn theo ô 4x4 rồi mới xé được mảng vỏ
+    const key = Math.round(point.x / 4) + ',' + Math.round(point.y / 4) + ',' + Math.round(point.z / 4);
+    d.wreckSpots = d.wreckSpots || {};
+    d.wreckSpots[key] = (d.wreckSpots[key] || 0) + pw;
+    // Vỏ xác xe lõm / rách thêm tại chỗ trúng (đạn nhỏ cũng đục dần)
+    const hitN = opts.hit && opts.hit.normal ? opts.hit.normal : null;
+    if (opts.hit && opts.hit.object && hitN) dentAt(u, opts.hit.object, point, hitN, 2.6 + pw * 6, Math.min(1.6, 0.05 + pw * 0.9), pw >= 0.5);
+    const tear = pw >= 0.2 || d.wreckSpots[key] > 1.2;
+    // Vỏ thép xác xe bị đẩy lõm thật (biến dạng lưới): đạn lớn móp sâu, đạn nhỏ dồn đủ một chỗ mới oằn
+    {
+      const inDir = opts.dir && opts.dir.lengthSq() > 1 ? opts.dir.clone() : (hitN ? hitN.clone().negate() : point.clone().sub(u.group.position).setY(0).negate());
+      if (opts.splash && !opts.dir) inDir.copy(u.group.position).add(new THREE.Vector3(0, 8, 0)).sub(point);
+      if (pw >= 0.2) crumpleAt(u, point, inDir, 5 + Math.min(1.5, pw) * 7, Math.min(3.2, 0.5 + pw * 1.6));
+      else if (tear) crumpleAt(u, point, inDir, 4.5, 0.7);
+    }
+    // Lũy tiến các nấc biến dạng toàn thân
+    d.wreckStage = d.wreckStage || 0;
+    while (d.wreckStage < WRECK_STAGES.length && d.wreck >= WRECK_STAGES[d.wreckStage].at) {
+      d.wreckStage++;
+      wreckStageUp(u, d.wreckStage, events, point);
+    }
+    if (tear && d.wreckSpots[key] > 1.2) d.wreckSpots[key] = 0;
+    if (!tear) return { mul: 0, events };
+    // Phát trúng mạnh vào xác còn tháp: hất văng tháp
+    if (pw >= 1 && FX && FX.tossTurret && u.fxWreck && !u.fxWreck.turret && Math.random() < (opts.heavy ? 0.8 : 0.45)) {
+      const dirV = opts.dir ? opts.dir.clone().normalize().multiplyScalar(40) : null;
+      if (FX.tossTurret(u, dirV, point, 0.7)) events.push({ type: 'wreck', text: 'XÁC XE TRÚNG ĐẠN NỔ MẠNH — THÁP PHÁO BỊ HẤT VĂNG' });
+    }
+    // 1. Phụ kiện / tấm giáp còn sót gần điểm trúng bị hất bay
+    const tags = Object.keys(u.partRegistry || {}).concat(Object.keys(u.partGroups || {})).filter(t => !d.lost.has(t));
+    const R = 7 + pw * 14;
+    const near = tags.map(t => ({ t, p: partWorld(u, t) })).filter(o => o.p && o.p.distanceTo(point) < R).sort((a, b) => a.p.distanceTo(point) - b.p.distanceTo(point));
+    const maxN = pw >= 1 ? 4 : pw >= 0.5 ? 2 : 1;
+    for (let i = 0; i < Math.min(maxN, near.length); i++) {
+      const o = near[i];
+      const away = o.p.clone().sub(point).normalize().multiplyScalar(30 + pw * 50).add(new THREE.Vector3(0, 15 + pw * 25, 0));
+      if (detachTag(u, o.t, away)) onPartLost(u, o.t, partKind(o.t), events, FX, o.p);
+    }
+    // 2. Bánh xe gần điểm nổ (đạn nổ / nổ lõm) văng khỏi trục
+    if (u.wheelSet && (cls === 'blast' || cls === 'heat')) {
+      const cg = u.chassisGroup || u.group;
+      u.wheelSet.positions.forEach((p, i) => {
+        if (d.gone[i]) return;
+        const wp = cg.localToWorld(new THREE.Vector3(p.x, p.y, p.z));
+        if (wp.distanceTo(point) < 10 + pw * 6 && Math.random() < 0.35 + pw * 0.3) blowWheel(u, i, events, FX, wp.clone().sub(point).normalize().multiplyScalar(45));
+      });
+    }
+    // 3. Mảng vỏ thép cháy sém bị xé khỏi thân (kích thước theo uy lực)
+    const scene = u.scene || u.group.parent;
+    d.wreckPlates = d.wreckPlates || 0;
+    if (scene && d.wreckPlates < 10 && (pw >= 0.2 || Math.random() < 0.35)) {
+      if (!CHAR_MAT) CHAR_MAT = new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.85, metalness: 0.45 });
+      const n = Math.min(10 - d.wreckPlates, pw >= 1 ? 2 : 1);
+      d.wreckPlates += n;
+      for (let i = 0; i < n; i++) {
+        const sz = 0.6 + Math.min(1, pw) * 1.6;
+        const g = new THREE.BoxGeometry(sz * rand(0.7, 1.3), rand(0.12, 0.3), sz * rand(0.5, 1.0));
+        const pa = g.attributes.position;
+        for (let k = 0; k < pa.count; k++) pa.setXYZ(k, pa.getX(k) * rand(0.7, 1.15), pa.getY(k), pa.getZ(k) * rand(0.7, 1.15));
+        g.computeVertexNormals();
+        const m = new THREE.Mesh(g, CHAR_MAT);
+        m.castShadow = true; m.userData.ownGeo = true;
+        const holder = new THREE.Group();
+        holder.add(m);
+        holder.position.copy(point);
+        holder.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+        holder.userData.radius = sz * 0.5;
+        // văng ra từ đúng chỗ bị xé, hướng ngược vào trong thân xe -> ra ngoài theo pháp tuyến mặt trúng
+        const away = (hitN ? hitN.clone().setY(Math.max(0.2, hitN.y)) : point.clone().sub(u.group.position).setY(0)).normalize().multiplyScalar(15 + pw * 35);
+        spawnDebris(u, holder, away);
+      }
+      sfx('armorPlate', point, Math.min(1.5, 0.6 + pw));
+    }
+    // 4. Khung xác xe sụp thấp dần, vặn vẹo thêm
+    if (pw >= 0.2) {
+      d.sink = Math.max(d.sink || 0, Math.min((d.sink || 0) + 0.12 * pw, sinkCapOf(u)));
+      d.tiltR += rand(-0.012, 0.012) * pw;
+      d.tiltP += rand(-0.008, 0.008) * pw;
+      applyPose(u);
+    }
+    // 5. Tích lũy đủ lớn: xác xe rã hẳn — bung hết phụ kiện, tháp lệch khỏi vòng bi
+    if (d.wreck > 6 && !d.gutted) {
+      d.gutted = true;
+      for (const t of tags) if (!d.lost.has(t)) { const wp = partWorld(u, t); if (wp && detachTag(u, t, wp.clone().sub(u.group.position).setY(0).normalize().multiplyScalar(40).add(new THREE.Vector3(0, 30, 0)))) onPartLost(u, t, partKind(t), [], FX, wp); }
+      const tg = u.turretGroup;
+      const tossed = FX && FX.tossTurret && u.fxWreck && !u.fxWreck.turret && FX.tossTurret(u, null, point, 0.6);
+      if (!tossed && tg && tg.parent && tg.visible && !(u.fxWreck && u.fxWreck.turret)) { if (!tg.userData.fxBasePos) { tg.userData.fxBasePos = tg.position.clone(); tg.userData.fxBaseRot = tg.rotation.clone(); } tg.rotation.z += rand(-0.18, 0.18); tg.rotation.x += rand(-0.1, 0.1); tg.rotation.y += rand(-0.4, 0.4); tg.position.y -= 0.8; }
+      // Thân xe móp méo nát bét: vài mảng vỏ lớn bị ép bẹp / xé toạc
+      if (FX && FX.hitUnitSurface) {
+        for (let k = 0; k < 5; k++) {
+          const ang = Math.random() * Math.PI * 2;
+          const dirR = new THREE.Vector3(Math.cos(ang), rand(-0.5, -0.1), Math.sin(ang)).normalize();
+          const from = u.group.position.clone().add(new THREE.Vector3(0, 9, 0)).addScaledVector(dirR, -60);
+          const h = FX.hitUnitSurface(u, from, dirR, 120);
+          if (h && h.object && h.normal) {
+            dentAt(u, h.object, h.point, h.normal, rand(5, 8), rand(1.2, 2.2), true);
+            crumpleAt(u, h.point, dirR, rand(8, 12), rand(1.8, 3));
+          }
+        }
+      }
+      d.sink = Math.max(d.sink || 0, Math.min((d.sink || 0) + 0.6, sinkCapOf(u)));
+      applyPose(u);
+      sfx('metalCrush', point, 0.8);
+    } else if (pw >= 0.5 && !events.length) {
+      events.push({ type: 'wreck', text: 'Xác xe bị xé thêm mảng vỏ, phụ kiện còn sót văng ra' });
+    }
+    return { mul: 0, events };
+  }
+
+  // ---------------------------------------------------------------------------
+  // MÔ HÌNH XUYÊN GIÁP: độ xuyên đạn (mm) vs giáp quy đổi (mm RHA) theo mặt, nghiêng theo góc chạm
+  // ---------------------------------------------------------------------------
+  // Giáp quy đổi từng mặt: [chống đạn động năng KE, chống nổ lõm CE] (giáp composite chống nổ lõm tốt hơn)
+  const ARMOR_MM = {
+    ALL_ROUNDER: { turretFront: [600, 900], hullFront: [500, 780], side: [90, 140], turretSide: [120, 180], rear: [45, 45], top: [40, 40] },
+    GATLING: { turretFront: [180, 230], hullFront: [200, 260], side: [45, 60], turretSide: [45, 60], rear: [30, 30], top: [25, 25] },
+    SCOUT: { turretFront: [12, 12], hullFront: [22, 22], side: [14, 14], turretSide: [10, 10], rear: [11, 11], top: [8, 8] },
+    ARTILLERY: { turretFront: [16, 16], hullFront: [12, 12], side: [8, 8], turretSide: [10, 10], rear: [8, 8], top: [6, 6] }
+  };
+  // Độ xuyên ở cự ly 0 (mm), mất xuyên theo cự ly (tỉ lệ / 1000 đơn vị bay) và kiểu tác động
+  const PEN = {
+    AP: { mm: 650, loss: 0.06, kind: 'KE', big: true },            // đạn mũi tên APFSDS 120mm
+    NORMAL: { mm: 480, loss: 0, kind: 'CE', big: true },           // đạn đa năng nổ lõm HEAT-MP
+    HE: { mm: 45, loss: 0, kind: 'HE', big: true },                // nổ phá: xé giáp mỏng, gần như vô hại với giáp dày
+    CLUSTER: { mm: 90, loss: 0, kind: 'CE', big: true },
+    CLUSTER_SUBMUNITION: { mm: 90, loss: 0, kind: 'CE', big: false },  // bom con nổ lõm: đánh nóc xe
+    RPG: { mm: 600, loss: 0, kind: 'CE', big: true },
+    ANTI_TANK_MISSILE: { mm: 1100, loss: 0, kind: 'CE', big: true, tandem: true },   // đầu nổ kép xuyên cả gạch ERA
+    GATLING_BULLET: { mm: 110, loss: 0.35, kind: 'KE', big: false }, // 30mm xuyên dưới cỡ / nổ-cháy: thủng sườn tăng ở cự ly gần
+    INCENDIARY: { mm: 40, loss: 0.35, kind: 'KE', big: false },
+    SCOUT_BULLET: { mm: 28, loss: 0.5, kind: 'KE', big: false }     // 12.7mm xuyên giáp
+  };
+  const PEN_HEAVY = { HE: { mm: 70, loss: 0, kind: 'HE', big: true }, AP: { mm: 300, loss: 0.03, kind: 'KE', big: true }, NORMAL: { mm: 70, loss: 0, kind: 'HE', big: true } };
+  // Hiệu quả sau khi xuyên theo cỡ đạn & cỡ xe: mảnh đạn nhỏ trong khoang rộng xe tăng gây ít thiệt hại hơn
+  const POSTPEN = { small: { heavy: 0.35, medium: 0.6, light: 1.0, soft: 1.1 }, big: { heavy: 1.0, medium: 1.0, light: 1.2, soft: 1.25 } };
+
+  /**
+   * Kết quả 1 phát trúng: { mul, ratio, pen, zone }
+   * mul nhân vào sát thương gốc (sát thương khi xuyên thủng). ratio = độ xuyên / giáp hiệu dụng.
+   */
+  function armorOutcome(u, opts, ctx) {
+    const A = ARMOR[u.tankType] || ARMOR.ALL_ROUNDER;
+    const T = ARMOR_MM[u.tankType] || ARMOR_MM.ALL_ROUNDER;
+    const P = (opts.heavy && PEN_HEAVY[opts.ammo]) || PEN[opts.ammo] || PEN.NORMAL;
+    const { face, onTurret, hit, dir, d } = ctx;
+    // Mặt giáp
+    const key = face === 'top' ? 'top' : face === 'rear' ? 'rear' : face === 'front' ? (onTurret ? 'turretFront' : 'hullFront') : (onTurret ? 'turretSide' : 'side');
+    const base = T[key] || T.side;
+    let armor = P.kind === 'KE' ? base[0] : base[1];
+    // Góc chạm: giáp nghiêng dày thêm 1/cos (tối đa x3.5)
+    let cosI = 0.85;
+    if (hit && hit.normal && dir) cosI = Math.abs(hit.normal.clone().normalize().dot(dir));
+    armor /= Math.max(0.285, cosI);
+    // Mặt giáp đã mất tấm giáp / váy xích: mỏng đi
+    armor /= (d.faceLoss[face] || 1);
+    // Đạn xả liên tục vào một chỗ làm giáp mỏi / rạn (giảm tối đa 45%)
+    if (ctx.fatigue) armor *= 1 - 0.45 * Math.min(1, ctx.fatigue);
+    // Độ xuyên giảm theo cự ly bay (đạn động năng)
+    let pen = P.mm;
+    if (P.loss && ctx.range) pen *= Math.max(0.2, 1 - P.loss * ctx.range / 1000);
+    const ratio = pen / Math.max(1, armor);
+    const sizeK = POSTPEN[P.big ? 'big' : 'small'][A.cls] || 1;
+    let mul, penetrated = false;
+    if (hit && hit.ricochet) {
+      mul = 0.02;                                                   // đạn sượt nảy khỏi giáp nghiêng
+    } else if (P.kind === 'HE') {
+      // Nổ phá trúng thẳng: giáp mỏng bị xé (đủ uy lực = xuyên), giáp dày chỉ chịu sức ép / mảnh vỡ trong
+      if (ratio >= 1) { mul = 1; penetrated = true; } else mul = Math.max(0.06, ratio * 0.5);
+      mul *= sizeK;
+    } else if (ratio >= 1) {
+      penetrated = true;
+      mul = sizeK;
+      // Đạn mũi tên xuyên qua xe giáp mỏng (xuyên thấu, ít mảnh vỡ hơn)
+      if (P.kind === 'KE' && P.big && ratio > 8) mul *= 0.9;
+    } else if (ratio >= 0.8) {
+      mul = sizeK * (ratio - 0.8) / 0.2 * 0.35;                   // xuyên một phần: mảnh bong mặt trong giáp
+    } else {
+      mul = P.kind === 'CE' ? 0.04 : 0.02;                         // không xuyên: chỉ chấn động
+    }
+    // Vùng trúng (chỉ có ý nghĩa khi đạn lọt vào trong)
+    let zone = 'crew';
+    if (penetrated || ratio >= 0.8) {
+      const tag = ctx.tag;
+      if (ctx.onGun) { zone = 'gun'; mul *= 0.3; }
+      else if (ctx.trackOrWheel) { zone = 'running'; mul *= 0.35; }
+      else if (tag && partKind(tag) === 'ammo') { zone = 'ammo'; mul *= 1.8; }
+      else if (onTurret && face === 'rear' && (u.tankType === 'ALL_ROUNDER' || u.tankType === 'ARTILLERY')) { zone = 'ammo'; mul *= u.tankType === 'ALL_ROUNDER' ? 1.6 : 1.8; }
+      else if (ctx.nearEngine) { zone = 'engine'; mul *= 0.8; }
+      else if (tag && (partKind(tag) === 'acc' || partKind(tag) === 'heavyAcc')) { zone = 'acc'; mul *= 0.5; }
+      else if (onTurret) { zone = 'crew'; mul *= 1.1; }
+    }
+    return { mul, ratio, pen: penetrated, zone, armor: Math.round(armor), penMm: Math.round(pen), key };
+  }
+
+  function onDirectHit(u, opts) {
+    const events = [];
+    if (u && u.group && u.isDead && u.dmg) return onWreckHit(u, opts);
+    if (!u || !u.group || u.isDead) return { mul: 1, events };
+    markGroups(u);
+    const d = state(u);
+    const A = ARMOR[u.tankType] || ARMOR.ALL_ROUNDER;
+    const cls = ammoClass(opts.ammo);
+    const fx = opts.fx || null;
+    FX = fx;
+    const hit = opts.hit;
+    const dir = opts.dir ? opts.dir.clone().normalize() : new THREE.Vector3(0, -1, 0);
+    let mul = 1;
+
+    const point = hit ? hit.point.clone() : u.group.position.clone().add(new THREE.Vector3(0, 10, 0));
+    u.group.updateMatrixWorld(true);
+    const local = (u.chassisGroup || u.group).worldToLocal(point.clone());
+    const onTurret = hit ? isOnTurret(u, hit.object) : false;
+    const onGun = hit ? isOnGun(u, hit.object) : false;
+    const face = hit ? faceOf(u, hit, onTurret) : 'side';
+
+    // Xuyên giáp: độ xuyên của đạn vs giáp mặt bị trúng (nghiêng theo góc chạm), vùng trúng, cỡ đạn vs cỡ xe
+    const tag0 = tagAtHit(hit);
+    const lp0 = u.group.worldToLocal(point.clone());
+    const eng0 = ENGINE[u.tankType] || ENGINE.ALL_ROUNDER;
+    const nearEngine = !onTurret && Math.hypot(lp0.x - eng0[0], lp0.y - eng0[1], lp0.z - eng0[2]) < 11;
+    const trackOrWheel = !onTurret && (A.drive === 'wheels' ? wheelIndexAt(u, hit, local) >= 0 : (local.y < 9.6 && Math.abs(local.x) > 8));
+    const range = opts.shooter ? Math.hypot(point.x - opts.shooter.x, point.z - opts.shooter.z) : (opts.range || 0);
+    const spotKey0 = Math.round(lp0.x / 4) + ',' + Math.round(lp0.y / 4) + ',' + Math.round(lp0.z / 4);
+    const fatigue = (cls === 'cannon' || cls === 'small') && d.spots ? (d.spots[spotKey0] || 0) / 20 : 0;
+    const AO = armorOutcome(u, opts, { face, onTurret, onGun, hit, dir, point, d, tag: tag0, nearEngine, trackOrWheel, range, fatigue });
+    mul = AO.mul;
+    d.lastOutcome = AO;
+    if (AO.zone === 'ammo' && AO.pen && opts.ammo !== 'SCOUT_BULLET') events.push({ type: 'ammoRack', text: 'TRÚNG KHO ĐẠN — sát thương cực lớn' });
+    else if (!AO.pen && AO.ratio < 0.8 && !(hit && hit.ricochet) && (cls === 'kinetic' || cls === 'heat')) events.push({ type: 'nopen', text: `KHÔNG XUYÊN GIÁP (${AO.penMm}mm < ${AO.armor}mm) — nhắm chỗ giáp mỏng hơn: sườn / đuôi / nóc` });
+
+    const impulse = dir.clone().multiplyScalar(cls === 'small' ? 25 : cls === 'cannon' ? 40 : 70);
+    const tag = tagAtHit(hit);
+    d.last = { cls, heavy: !!opts.heavy, point: point.clone() };
+
+    // Xả đạn liên thanh dồn vào cùng một chỗ: giáp bị đục dần tới khi thủng (giáp càng dày càng lâu)
+    let boredThrough = false;
+    if ((cls === 'cannon' || cls === 'small') && hit) {
+      const gl = u.group.worldToLocal(point.clone());
+      const key = Math.round(gl.x / 4) + ',' + Math.round(gl.y / 4) + ',' + Math.round(gl.z / 4);
+      d.spots = d.spots || {};
+      const n = (d.spots[key] = (d.spots[key] || 0) + 1);
+      let need = cls === 'cannon' ? { heavy: 16, medium: 7, light: 3, soft: 2 }[A.cls] : { heavy: 9999, medium: 30, light: 5, soft: 3 }[A.cls];
+      // Giáp quá dày so với cỡ đạn (vd 30mm vào giáp trước xe tăng): xả bao nhiêu cũng không đục thủng được
+      if (AO.ratio < 0.35) need = 9999;
+      // Vỏ thép bị đạn xả liên tục: lõm dần (giáp dày lõm ít), đục thủng rồi thì mảng vỏ quanh đó oằn, rách, móp cả khung
+      if (hit && hit.object && hit.normal) {
+        const per = { heavy: 0.025, medium: 0.06, light: 0.12, soft: 0.16 }[A.cls] * (cls === 'cannon' ? 1 : 0.4);
+        const cap = { heavy: 0.6, medium: 1.2, light: 1.8, soft: 2.2 }[A.cls];
+        d.dentDepth = d.dentDepth || {};
+        const cur = d.dentDepth[key] || 0;
+        if (cur < cap) { const dd = Math.min(per, cap - cur); d.dentDepth[key] = cur + dd; dentAt(u, hit.object, point, hit.normal, 3.2, dd, false); }
+        if (n === need && need < 9999) dentAt(u, hit.object, point, hit.normal, 5.5, { heavy: 0.5, medium: 1.0, light: 1.6, soft: 2 }[A.cls], true);
+      }
+      // Giai đoạn 1: vết lõm chồng chéo lan rộng, sứt mẻ lớp giáp ngoài
+      if (n === Math.ceil(need * 0.4) && need > 2 && fx && fx.addSurfaceMark && hit.object) {
+        fx.addSurfaceMark(point, hit.normal, hit.object, 'armorCrater', cls === 'cannon' ? 3.2 : 2.2, { unit: u });
+        sparksAt(point, 10);
+      }
+      // Giai đoạn 3: mảng giáp quanh chỗ bị đục vỡ bung ra (váy xích, module giáp, gạch ERA, phụ kiện gần nhất)
+      if (n === Math.ceil(need * 1.7)) {
+        let best = null, bd = 14;
+        for (const tg of Object.keys(u.partRegistry || {})) {
+          if (d.lost.has(tg)) continue;
+          const k = partKind(tg);
+          if (k !== 'armor' && k !== 'era' && k !== 'acc' && k !== 'heavyAcc') continue;
+          const wp = partWorld(u, tg);
+          const dd = wp ? wp.distanceTo(point) : 1e9;
+          if (dd < bd) { bd = dd; best = tg; }
+        }
+        if (best && detachTag(u, best, impulse.clone().multiplyScalar(1.5))) onPartLost(u, best, partKind(best), events, fx, point);
+        else if (fx && fx.addSurfaceMark && hit.object) fx.addSurfaceMark(point, hit.normal, hit.object, 'penetration', 3.6, { unit: u });
+        mul = Math.max(mul, (POSTPEN.small[A.cls] || 1) * 0.5);
+        if (A.cls !== 'heavy') addFire(u, point, 0.7, rand(8, 16));
+        events.push({ type: 'spall', text: 'MẢNG GIÁP BỊ ĐẠN LIÊN THANH ĐỤC VỠ BUNG RA' });
+      }
+      if (n >= need) {
+        boredThrough = true;
+        // Lọt vào trong: đạn nổ-cháy 30mm dễ gây cháy (xe giáp mỏng cháy ngay)
+        if (n === need && cls === 'cannon' && Math.random() < { heavy: 0.15, medium: 0.35, light: 0.6, soft: 0.7 }[A.cls]) addFire(u, point, 0.6, rand(6, 14));
+        // đục thủng: tính như đạn xuyên vào trong (theo cỡ đạn vs cỡ xe)
+        mul = Math.max(mul, POSTPEN.small[A.cls] || 1);
+        if (n === need) {
+          if (fx && fx.addSurfaceMark && hit.object) fx.addSurfaceMark(point, hit.normal, hit.object, 'penetration', cls === 'cannon' ? 2.4 : 1.6, { unit: u });
+          sparksAt(point, 16);
+          sfx('armorPlate', point, 0.7);
+          events.push({ type: 'bored', text: face === 'front' ? 'GIÁP MŨI BỊ ĐẠN XẢ LIÊN TỤC ĐỤC THỦNG' : 'GIÁP BỊ ĐẠN XẢ LIÊN TỤC ĐỤC THỦNG — đạn lọt vào bên trong' });
+        }
+      }
+    }
+
+    // 1. Bộ phận bị trúng trực tiếp
+    // Trúng kính: nặng thì vỡ toác cả ô kính
+    const hm = hit && hit.object && hit.object.material;
+    if (hm && hm.userData && hm.userData.windowGlass) {
+      // Kính cabin: đạn nhỏ thủng lỗ + rạn, trúng nhiều phát thì cả ô kính nát vụn rồi rơi hẳn; đạn lớn phá bay kính ngay
+      d.glassHits = (d.glassHits || 0) + (cls === 'small' ? 1 : cls === 'cannon' ? 2 : 6);
+      if (d.glassHits >= 6) breakOutGlass(u, fx);
+      else if (d.glassHits >= 2) shatterAllGlass(u);
+    }
+    const bendable = tag && /^(skirt|flap|rail|mirror|lamp|bin|box|smoke|shield|cage|travelLock|tool|can|cans|stowage)/.test(tag);
+    if (tag && !d.lost.has(tag) && bendable && !d.bent.has(tag) && (cls === 'cannon' || (cls === 'small' && Math.random() < 0.3) || (cls !== 'small' && Math.random() < 0.45))) {
+      // Lần trúng đầu: oằn / vặn méo, lần sau mới bị xé bay
+      if (bendTag(u, tag, impulse)) { if (/^skirt/.test(tag)) d.faceLoss[face] = Math.min(1.5, (d.faceLoss[face] || 1) * 1.05); }
+    } else if (tag && !d.lost.has(tag)) {
+      const kind = partKind(tag);
+      const p = (DETACH_DIRECT[kind] || DETACH_DIRECT.acc)[cls];
+      if (Math.random() < p && detachTag(u, tag, impulse)) {
+        onPartLost(u, tag, kind, events, fx, point);
+        if (kind === 'era') mul *= cls === 'heat' ? (PEN[opts.ammo] && PEN[opts.ammo].tandem ? 0.85 : 0.4) : 0.75;
+        if (kind === 'armor') {
+          d.faceLoss[face] = Math.min(1.5, (d.faceLoss[face] || 1) * (tag.startsWith('skirt') ? 1.12 : 1.22));
+          mul *= cls === 'heat' ? 0.6 : 0.85;   // tấm giáp / lồng hấp thụ một phần
+        }
+      }
+    }
+    // Vỏ thép bị đạn lớn đánh móp thật (biến dạng lưới): giáp dày lõm ít, xe nhẹ / xe tải móp sâu
+    if (hit && (cls === 'kinetic' || cls === 'heat' || cls === 'blast') && !(hit.ricochet && cls === 'kinetic')) {
+      const depthBy = { heavy: 0.35, medium: 0.6, light: 1.0, soft: 1.3 }[A.cls] * (cls === 'blast' ? (opts.heavy ? 1.8 : 1.1) : cls === 'heat' ? 0.9 : 1);
+      crumpleAt(u, point, dir, cls === 'blast' ? (opts.heavy ? 9 : 6.5) : 5, depthBy);
+    } else if (boredThrough && hit && Math.random() < 0.25) {
+      crumpleAt(u, point, dir, 3.5, { heavy: 0.1, medium: 0.2, light: 0.35, soft: 0.45 }[A.cls]);
+    }
+    // Ăng-ten trúng đạn / sóng nổ gần
+    if (cls !== 'small' || Math.random() < 0.15) breakAntennas(u, point, cls === 'small' ? 4 : cls === 'cannon' ? 7 : 16, cls === 'small' ? 0.5 : 0.9, impulse);
+
+    // 2. Sóng nổ (đạn nổ / nổ lõm) bóc phụ kiện quanh điểm chạm
+    if (cls === 'blast' || cls === 'heat') {
+      const R = opts.ammo === 'HE' ? (opts.heavy ? 40 : 26) : opts.ammo === 'CLUSTER_SUBMUNITION' ? 10 : cls === 'heat' ? 14 : 18;
+      stripAround(u, point, R, impulse, events, fx, 0.8);
+    }
+
+    // 3. Hỏng hóc cơ khí theo vùng trúng
+    const pen = { small: { heavy: 0, medium: 0.01, light: 0.06, soft: 0.08 }, cannon: { heavy: 0.02, medium: 0.06, light: 0.18, soft: 0.22 }, kinetic: 0.55, heat: 0.6, blast: 0.3 }[cls];
+    // hỏng hóc bên trong (động cơ, vòng tháp...) chủ yếu khi đạn thật sự lọt vào; xích / bánh / nòng ở ngoài vẫn hỏng được
+    const penK = boredThrough || AO.pen ? 1.25 : AO.ratio >= 0.8 ? 0.6 : 0.12;
+    const pPen = (typeof pen === 'number' ? pen : pen[A.cls]) * penK + (boredThrough ? 0.2 : 0);
+    if (onGun) {
+      if (Math.random() < pPen * 1.4) damageGun(u, events);
+    } else if (onTurret) {
+      if (local.y < (u.turretGroup.position.y + 2.6) && Math.random() < pPen * 0.8) damageRing(u, events);
+      else if (Math.random() < pPen * 0.35) damageGun(u, events);
+    } else {
+      const eng = ENGINE[u.tankType] || ENGINE.ALL_ROUNDER;
+      const gl = u.group.worldToLocal(point.clone());
+      const dEng = Math.hypot(gl.x - eng[0], gl.y - eng[1], gl.z - eng[2]);
+      if (dEng < 11 && Math.random() < pPen * (face === 'rear' || face === 'top' ? 1.3 : 1)) damageEngine(u, events, cls === 'heat' || cls === 'kinetic');
+      if (A.drive === 'wheels') {
+        const wi = wheelIndexAt(u, hit, local);
+        // Lốp: đạn súng máy cũng đủ làm thủng lốp (lốp có lõi chạy xẹp nhưng vẫn mất áp suất)
+        const pTire = { small: 0.35, cannon: 0.7, kinetic: 0.9, heat: 1, blast: 0.9 }[cls];
+        // Đạn nổ lõm / xuyên / nổ mạnh trúng bánh: văng hẳn bánh; đạn nhỏ chỉ thủng xẹp
+        const pBlow = { small: 0, cannon: 0.03, kinetic: 0.15, heat: 0.6, blast: opts.heavy ? 0.75 : 0.3 }[cls];
+        if (wi >= 0 && Math.random() < pBlow) blowWheel(u, wi, events, fx, impulse);
+        else if (wi >= 0 && !d.gone[wi]) {
+          // Bắn liên tục vào một lốp: xịt -> rách nát, chạy trên vành (mất gần hết khả năng cơ động)
+          d.tireWear[wi] = (d.tireWear[wi] || 0) + { small: 0.14, cannon: 0.5, kinetic: 0.8, heat: 1, blast: 0.8 }[cls];
+          if (!d.flat[wi] && (Math.random() < pTire || d.tireWear[wi] >= 0.3)) flatTire(u, wi, events, fx);
+          else if (d.flat[wi] && !d.shred[wi] && d.tireWear[wi] >= 1.6) {
+            d.shred[wi] = true;
+            animUnits.add(u);
+            const names = u.wheelSet.positions.length > 4 ? WHEEL_NAMES_6 : WHEEL_NAMES_4;
+            events.push({ type: 'tire', text: `LỐP ${names[wi] || ''} BỊ BẮN NÁT — xe chạy trên vành, gần như không cơ động nổi` });
+            sfx('tire', point, 0.8);
+          }
+        }
+        // Lựu pháo: thủy lực càng ở đuôi
+        if (u.tankType === 'ARTILLERY' && local.z > 28 && local.y < 14 && Math.random() < pPen) {
+          if (!d.hydraulics) { d.hydraulics = true; events.push({ type: 'hyd', text: 'HỆ THỦY LỰC CÀNG CHỐNG HỎNG — hạ / thu càng chậm' }); }
+        }
+      } else if (local.y < 9.6 && Math.abs(local.x) > 8) {
+        // Xích: đạn lớn có thể đứt ngay; đạn 30mm xả liên tục làm mòn gãy chốt mắt xích rồi đứt; 12.7mm gần như vô hại
+        const side = local.x < 0 ? 0 : 1;
+        const pTrack = { small: 0, cannon: 0, kinetic: 0.45, heat: 0.55, blast: 0.5 }[cls];
+        if (d.trackTimer[side] <= 0) {
+          const wBefore = d.trackWear[side] || 0;
+          d.trackWear[side] = wBefore + { small: 0.012, cannon: 0.34, kinetic: 1, heat: 1, blast: 0.8 }[cls];
+          if (wBefore < 1 && d.trackWear[side] >= 1) events.push({ type: 'track', text: `XÍCH ${side ? 'PHẢI' : 'TRÁI'} HƯ — gãy chốt, lỏng mắt xích: xe chậm & lệch` });
+          if (Math.random() < pTrack || d.trackWear[side] >= 2.2) breakTrack(u, side, events, fx, point);
+        }
+      }
+    }
+
+    // Lỗ xuyên giáp bốc cháy tại chỗ (xăng dầu, dây điện, đạn dự trữ bên trong)
+    if ((cls === 'heat' || cls === 'kinetic') && !onGun && AO.pen && Math.random() < (A.cls === 'heavy' ? 0.35 : 0.6)) addFire(u, point, cls === 'heat' ? 1.1 : 0.8, rand(10, 22));
+    if (opts.ammo === 'INCENDIARY' && Math.random() < 0.3) addFire(u, point, 0.5, rand(4, 8));
+    if (d.engine >= 2 && !d.fires.some(f => f.engine)) { const e = ENGINE[u.tankType] || ENGINE.ALL_ROUNDER; const wp = u.group.localToWorld(new THREE.Vector3(e[0], e[1], e[2])); addFire(u, wp, 1.2, 60); d.fires[d.fires.length - 1].engine = true; }
+    // Đạn nổ mạnh đánh vào gầm / sườn xe bánh lốp: vặn méo khung gầm
+    if ((cls === 'blast' || cls === 'heat') && A.drive === 'wheels' && !onTurret && local.y < 11 && Math.random() < (opts.heavy ? 0.5 : 0.2)) {
+      d.frame = Math.max(-1, Math.min(1, d.frame + (local.x < 0 ? -1 : 1) * rand(0.5, 1)));
+      if (!d.frameEv) { d.frameEv = true; events.push({ type: 'frame', text: 'KHUNG GẦM BỊ VẶN MÉO — xe vẹo, khó lái, chậm' }); }
+      sfx('armorPlate', point);
+    }
+
+    recompute(u);
+    FX = null;
+    return { mul, events };
+  }
+
+  // Bóc các bộ phận trong bán kính R quanh điểm nổ
+  function stripAround(u, point, R, impulse, events, fx, strength) {
+    if (!u.partRegistry && !u.partGroups) return;
+    markGroups(u);
+    const d = state(u);
+    const tags = Object.keys(u.partRegistry || {}).concat(Object.keys(u.partGroups || {}));
+    let n = 0;
+    for (const tag of tags) {
+      if (d.lost.has(tag) || n >= 4) continue;
+      const wp = partWorld(u, tag);
+      if (!wp) continue;
+      const dist = wp.distanceTo(point);
+      if (dist > R) continue;
+      const kind = partKind(tag);
+      const p = Math.pow(1 - dist / R, 1.2) * (DETACH_BLAST[kind] || 1) * strength;
+      if (Math.random() < p) {
+        const away = wp.clone().sub(point).normalize().multiplyScalar(60 * (1 - dist / R) + 15).add(impulse.clone().multiplyScalar(0.3));
+        if (detachTag(u, tag, away)) {
+          onPartLost(u, tag, kind, events, fx, wp);
+          n++;
+        }
+      }
+    }
+  }
+
+  /**
+   * Trúng sóng nổ / mảnh văng (không trực tiếp). Trả { mul, events }.
+   */
+  function onSplash(u, opts) {
+    const events = [];
+    if (u && u.group && u.isDead && u.dmg) return onWreckHit(u, Object.assign({ splash: true }, opts));
+    if (!u || !u.group || u.isDead) return { mul: 1, events };
+    const d = state(u);
+    const A = ARMOR[u.tankType] || ARMOR.ALL_ROUNDER;
+    const cls = ammoClass(opts.ammo);
+    const fx = opts.fx || null;
+    FX = fx;
+    const point = new THREE.Vector3(opts.x, opts.y, opts.z);
+    d.last = { cls, heavy: !!opts.heavy, point: point.clone(), splash: true };
+    // Sóng nổ / mảnh văng: giáp dày chặn tốt, xe nhẹ & xe tải bị mảnh văng xé nát
+    let mul = cls === 'heat' || cls === 'kinetic' ? VS.blast[A.cls] : VS[cls][A.cls];
+    // Nổ ngay dưới gầm / trên nóc (đạn chùm, lựu pháo) đánh vào chỗ giáp mỏng
+    if (opts.ammo === 'CLUSTER_SUBMUNITION' || opts.heavy) mul *= A.face.top;
+    const k = Math.max(0, 1 - opts.dist / Math.max(1, opts.radius));
+    const impulse = point.clone().sub(u.group.position).normalize().multiplyScalar(-40 * k);
+    u.group.updateMatrixWorld(true);
+
+    if (cls !== 'small' && cls !== 'cannon') {
+      stripAround(u, point, opts.radius * 0.75, impulse, events, fx, 0.6);
+      breakAntennas(u, point, opts.radius * 0.8, 0.7, impulse);
+      // Lốp bị mảnh văng xé / xích bị sóng nổ đánh đứt
+      if (A.drive === 'wheels' && u.wheelSet) {
+        u.wheelSet.positions.forEach((p, i) => {
+          const wp = (u.chassisGroup || u.group).localToWorld(new THREE.Vector3(p.x, p.y, p.z));
+          const dd = wp.distanceTo(point);
+          const kk = 1 - dd / (opts.radius * 0.6);
+          if (kk <= 0) return;
+          if (opts.heavy && dd < 22 && Math.random() < kk * 0.6) blowWheel(u, i, events, fx, wp.clone().sub(point).normalize().multiplyScalar(60));
+          else if (Math.random() < kk * 0.55) flatTire(u, i, events, fx);
+        });
+        // Kính cabin vỡ do sóng nổ & mảnh văng
+        if (k > 0.25) { if (shatterGlass(u, point.clone().add(new THREE.Vector3(0, 4, 0)), Math.round(2 + 4 * k)) && (k > 0.6 || opts.heavy)) breakOutGlass(u, fx); }
+        if (opts.heavy && k > 0.55 && Math.random() < 0.4) {
+          const lp = u.group.worldToLocal(point.clone());
+          d.frame = Math.max(-1, Math.min(1, d.frame + (lp.x < 0 ? 1 : -1) * rand(0.4, 0.9)));
+          if (!d.frameEv) { d.frameEv = true; events.push({ type: 'frame', text: 'KHUNG GẦM BỊ SÓNG NỔ VẶN MÉO — xe vẹo, khó lái' }); }
+        }
+      } else if (A.drive === 'tracks' && opts.dist < 22 && Math.random() < (opts.heavy ? 0.4 : 0.18) * k) {
+        const lp = u.group.worldToLocal(point.clone());
+        breakTrack(u, lp.x < 0 ? 0 : 1, events, fx, point);
+      }
+      // Mảnh văng xuyên khoang máy xe nhẹ
+      if ((A.cls === 'light' || A.cls === 'soft') && Math.random() < 0.12 * k) damageEngine(u, events, false);
+    } else if (A.drive === 'wheels' && u.wheelSet && opts.dist < 14 && Math.random() < 0.15) {
+      // Loạt đạn 30mm / súng máy rải quanh bánh
+      const lp = (u.chassisGroup || u.group).worldToLocal(point.clone());
+      const wi = wheelIndexAt(u, null, lp);
+      if (wi >= 0) flatTire(u, wi, events, fx);
+    }
+    recompute(u);
+    FX = null;
+    return { mul, events };
+  }
+
+  // Xe bị phá hủy: bung phần lớn phụ kiện, xẹp lốp
+  function onDestroyed(u, fx) {
+    if (!u || !u.group) return;
+    markGroups(u);
+    const d = state(u);
+    if (d.destroyedDone) return;
+    d.destroyedDone = true;
+    FX = fx;
+    const events = [];
+    const center = u.group.position.clone().add(new THREE.Vector3(0, 10, 0));
+    const tags = Object.keys(u.partRegistry || {}).concat(Object.keys(u.partGroups || {}));
+    for (const tag of tags) {
+      if (d.lost.has(tag)) continue;
+      const kind = partKind(tag);
+      if (kind === 'era' || Math.random() < (kind === 'acc' ? 0.55 : 0.3)) {
+        const wp = partWorld(u, tag) || center;
+        detachTag(u, tag, wp.clone().sub(center).setY(0).normalize().multiplyScalar(rand(40, 90)).add(new THREE.Vector3(0, rand(20, 50), 0)));
+      }
+    }
+    breakAntennas(u, null, 0, 0.7, new THREE.Vector3(rand(-30, 30), 40, rand(-30, 30)));
+    // Bánh xe: chỉ văng khi đòn chí mạng là nổ mạnh / nổ lõm / xuyên sát bánh; còn lại lốp xẹp (lửa cháy lốp)
+    if (u.wheelSet) {
+      const L = d.last;
+      const strong = L && (L.cls === 'heat' || L.cls === 'kinetic' || (L.cls === 'blast' && (L.heavy || !L.splash)));
+      u.wheelSet.positions.forEach((p, i) => {
+        const wp = (u.chassisGroup || u.group).localToWorld(new THREE.Vector3(p.x, p.y, p.z));
+        const dist = L ? wp.distanceTo(L.point) : 1e9;
+        if (strong && dist < 20 && Math.random() < (L.cls === 'heat' || L.heavy ? 0.75 : 0.45)) blowWheel(u, i, events, fx, wp.clone().sub(L.point).normalize().multiplyScalar(50));
+        else if (dist < 26 || Math.random() < 0.3) flatTire(u, i, events, fx, true);
+      });
+    }
+    // Xích: nổ phá huỷ luôn làm đứt xích bên gần điểm nổ (nổ mạnh / kho đạn nổ: đứt cả hai bên)
+    if (u.trackSystem && u.trackSystem.breakSide) {
+      const L = d.last;
+      let side = Math.random() < 0.5 ? 0 : 1, fwd = Math.random() < 0.5;
+      if (L && L.point) {
+        const lp = (u.chassisGroup || u.group).worldToLocal(L.point.clone());
+        side = lp.x < 0 ? 0 : 1; fwd = lp.z < 0;
+      }
+      if (!(u.trackBroken && u.trackBroken[side])) u.trackSystem.breakSide(side, fwd);
+      const strongKill = L && (L.heavy || L.cls === 'blast' || L.cls === 'heat');
+      if (strongKill && Math.random() < 0.55) u.trackSystem.breakSide(1 - side, Math.random() < 0.5);
+      u.trackBroken = [true, true];
+    }
+    // Xe nổ tung: sóng nổ trong khoang thổi bay hết kính cabin
+    if (!breakOutGlass(u, fx)) crackAllGlass(u, 2);
+    // Khung gầm / thân xe bị sức nổ vặn méo nhẹ; xác xe ngồi xuống theo các bánh còn lại
+    d.frame = (Math.random() < 0.5 ? -1 : 1) * rand(0.3, 0.6);
+    // Biến dạng thật lúc nổ tung: hố móp sâu tại điểm trúng chí mạng + nổ bên trong làm nóc / sườn phồng bung
+    const L = d.last;
+    if (L && L.point) {
+      const dirIn = u.group.position.clone().add(new THREE.Vector3(0, 9, 0)).sub(L.point);
+      crumpleAt(u, L.point, dirIn, L.heavy ? 13 : 9, L.heavy ? 2.6 : L.cls === 'heat' || L.cls === 'kinetic' ? 1.6 : 1.2);
+    }
+    const internal = u.tankType !== 'SCOUT' || Math.random() < 0.4;   // kho đạn / bình nhiên liệu nổ trong khoang
+    crushHull(u, rand(0.25, 0.4), { roof: 0, sag: 0.4, sides: 0, twist: 0.3, bulge: internal ? 1 : 0.4 });
+    recompute(u);
+    applyPose(u);
+    FX = null;
+  }
+
+  // Đặt tư thế thân xe trực tiếp (xác xe / phòng thử không chạy vòng cập nhật động lực học)
+  function applyPose(u) {
+    const d = state(u), cg = u.chassisGroup;
+    if (!cg) return;
+    if (!d.chassis0) d.chassis0 = { p: cg.position.clone(), r: cg.rotation.clone() };
+    // Bỏ phần nghiêng / sụt đã áp ở khung trước (xe đang chạy cập nhật mỗi khung) rồi áp giá trị mới
+    cg.rotation.z += d.tiltR - (d.tiltRApplied || 0);
+    cg.rotation.x += d.tiltP - (d.tiltPApplied || 0);
+    cg.position.y += (d.sinkApplied || 0) - (d.sink || 0);
+    d.tiltRApplied = d.tiltR; d.tiltPApplied = d.tiltP; d.sinkApplied = d.sink || 0;
+  }
+
+  // Kính vỡ: mặt kính chuyển sang kính an toàn rạn vỡ (nứt mạng nhện trắng mờ toàn ô kính) + mảnh kính văng
+  let SHATTER_TEX = null;
+  function shatterTex() {
+    if (SHATTER_TEX || typeof document === 'undefined') return SHATTER_TEX;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d');
+    // nền: kính sẫm (giữ nguyên độ trong / phản chiếu của kính lành)
+    g.fillStyle = '#1a2125'; g.fillRect(0, 0, 256, 256);
+    const cx0 = 70 + Math.random() * 116, cy0 = 60 + Math.random() * 120;
+    // vùng rạn vụn trắng đục quanh tâm vỡ (lớp kính an toàn vỡ thành hạt nhỏ)
+    for (let i = 0; i < 900; i++) {
+      const a = Math.random() * 6.283, r = Math.pow(Math.random(), 1.8) * 70;
+      const x = cx0 + Math.cos(a) * r, y = cy0 + Math.sin(a) * r;
+      g.fillStyle = `rgba(200,212,218,${(0.35 - r / 240) * Math.random()})`;
+      g.fillRect(x, y, 1 + Math.random() * 2.5, 1 + Math.random() * 2.5);
+    }
+    // 1 tâm vỡ chính + 1 tâm phụ nhỏ: vết nứt tỏa tia + vòng nứt gấp khúc
+    for (let cIdx = 0; cIdx < 2; cIdx++) {
+      const cx = cIdx ? 40 + Math.random() * 176 : cx0, cy = cIdx ? 40 + Math.random() * 176 : cy0;
+      g.strokeStyle = cIdx ? 'rgba(225,232,236,0.45)' : 'rgba(232,238,242,0.8)'; g.lineWidth = cIdx ? 0.8 : 1.1;
+      const rays = cIdx ? 8 : 15 + Math.floor(Math.random() * 6);
+      const ang = [];
+      for (let r = 0; r < rays; r++) {
+        let a = (r / rays) * 6.283 + Math.random() * 0.3, x = cx, y = cy;
+        ang.push(a);
+        g.beginPath(); g.moveTo(x, y);
+        const steps = (cIdx ? 3 : 7) + Math.floor(Math.random() * 6);
+        for (let k = 0; k < steps; k++) { a += (Math.random() - 0.5) * 0.35; x += Math.cos(a) * 15; y += Math.sin(a) * 15; g.lineTo(x, y); }
+        g.stroke();
+      }
+      g.lineWidth = 0.7; g.strokeStyle = 'rgba(220,230,236,0.4)';
+      for (let ring = 1; ring < (cIdx ? 3 : 5); ring++) {
+        g.beginPath();
+        for (let r = 0; r <= rays; r++) { const a = ang[r % rays], rr = ring * 17 * (0.85 + Math.random() * 0.3); const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr; r ? g.lineTo(x, y) : g.moveTo(x, y); }
+        g.stroke();
+      }
+      g.fillStyle = 'rgba(240,245,248,0.85)'; g.beginPath(); g.arc(cx, cy, 5, 0, 6.3); g.fill();
+    }
+    SHATTER_TEX = new THREE.CanvasTexture(c);
+    return SHATTER_TEX;
+  }
+  function shatterAllGlass(u) {
+    const d = state(u);
+    if (d.glassShattered) return;
+    d.glassShattered = true;
+    d.glassSaved = [];
+    const seen = new Set();
+    u.group.traverse(o => {
+      const m = o.isMesh && o.material;
+      if (!m || seen.has(m) || !m.userData || m.userData.surface !== 'glass') return;
+      if (m.color && m.color.r > 0.4) return;   // kính đèn pha / đèn hậu giữ nguyên
+      seen.add(m);
+      d.glassSaved.push({ m, map: m.map, color: m.color.clone(), rough: m.roughness, metal: m.metalness, em: m.emissive ? m.emissive.clone() : null, emI: m.emissiveIntensity });
+      m.map = shatterTex(); m.color.setHex(u.isDead ? 0x555a5c : 0xffffff); m.roughness = 0.3; m.metalness = 0.45;
+      if (m.emissive) { m.emissive.setHex(0x05090b); m.emissiveIntensity = 0.3; }
+      m.needsUpdate = true;
+      // mảnh kính văng
+      if (FX && FX.fire && o.geometry) {
+        o.geometry.computeBoundingSphere();
+        const c0 = o.localToWorld(o.geometry.boundingSphere.center.clone());
+        for (let q = 0; q < 14; q++) FX.fire.add({ x: c0.x + rand(-4, 4), y: c0.y + rand(-2, 2), z: c0.z + rand(-4, 4), vx: rand(-35, 35), vy: rand(0, 35), vz: rand(-35, 35), size: rand(0.4, 0.9), grow: 0, drag: 0.5, grav: 120, life: rand(0.5, 1.1), alpha: 0.9, fadeIn: 0.005, c0: [0.85, 0.92, 0.95], c1: [0.6, 0.7, 0.75], cell: 3 });
+      }
+    });
+    sfx('glass', u.group.position.clone().add(new THREE.Vector3(0, 14, 0)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // KÍNH VỠ HẲN: ô kính rơi mất -> nhìn thấu vào khoang lái (nội thất tối + ghế + kíp lái)
+  // Thân cabin là khối đặc nên dùng stencil: hình ô kính ghi mặt nạ, nội thất chỉ vẽ trong mặt nạ đó.
+  // ---------------------------------------------------------------------------
+  let STENCIL_REF = 0;
+  function cabinGlass(u) {
+    const cg = u.chassisGroup || u.group;
+    return cg.children.filter(o => o.isMesh && !o.isInstancedMesh && o.material && o.material.userData && o.material.userData.windowGlass);
+  }
+  function breakOutGlass(u, fx) {
+    const d = state(u);
+    if (d.glassOut) return false;
+    // chỉ xe có cabin kính (xe bánh lốp); khối kính quan sát của xe tăng chỉ rạn
+    if ((ARMOR[u.tankType] || {}).drive !== 'wheels') return false;
+    const meshes = cabinGlass(u);
+    if (!meshes.length) return false;
+    d.glassOut = true;
+    shatterAllGlass(u);
+    const ref = (STENCIL_REF = STENCIL_REF % 250 + 1);
+    const box = new THREE.Box3();
+    d.glassOutObjs = [];
+    for (const o of meshes) {
+      const pos = o.geometry.attributes.position;
+      // bỏ kính gương chiếu hậu (gắn ngoài cabin)
+      const skip = [];
+      const pr = o.userData.partRanges || {};
+      for (const t in pr) if (/^mirror/.test(t)) for (const [st, n] of pr[t]) skip.push([st, st + n]);
+      const inSkip = i => skip.some(([a, b]) => i >= a && i < b);
+      const pts = [];
+      for (let i = 0; i < pos.count; i += 3) {
+        if (inSkip(i)) continue;
+        for (let k = 0; k < 3; k++) pts.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
+      }
+      if (!pts.length) continue;
+      // mặt nạ ô cửa
+      const mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      const mask = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, stencilWrite: true, stencilRef: ref, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }));
+      mask.position.copy(o.position); mask.quaternion.copy(o.quaternion); mask.scale.copy(o.scale);
+      mask.renderOrder = 50; mask.userData.isFxDecal = true; mask.castShadow = false;
+      o.parent.add(mask);
+      d.glassOutObjs.push(mask);
+      // khung kính trống: tam giác kính bị thu về một điểm (lưu bản gốc để hồi sinh)
+      d.saved.push({ attr: pos, data: pos.array.slice(0), start: 0 });
+      for (let i = 0; i < pos.count; i += 3) {
+        if (inSkip(i)) continue;
+        for (let k = 1; k < 3; k++) pos.setXYZ(i + k, pos.getX(i), pos.getY(i), pos.getZ(i));
+      }
+      pos.needsUpdate = true;
+      mg.computeBoundingBox();
+      box.union(mg.boundingBox.clone().translate(o.position));
+    }
+    if (box.isEmpty()) return true;
+    // Nội thất: chỉ vẽ trong mặt nạ ô cửa, vẽ đè (không xét độ sâu) theo thứ tự xa -> gần
+    const cg = u.chassisGroup || u.group;
+    const g = new THREE.Group();
+    g.userData.isFxDecal = true;
+    const mat = (color, order, side) => {
+      const m = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.55), side: side || THREE.FrontSide,
+        stencilWrite: true, stencilRef: ref, stencilFunc: THREE.EqualStencilFunc,
+        stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp,
+        depthFunc: THREE.AlwaysDepth });
+      return [m, order];
+    };
+    const add = (geo, [m, order], x, y, z, rx = 0, ry = 0, rz = 0) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z); mesh.rotation.set(rx, ry, rz);
+      mesh.renderOrder = order; mesh.castShadow = false; mesh.userData.isFxDecal = true;
+      g.add(mesh);
+      return mesh;
+    };
+    const hw = Math.max(2.5, Math.max(Math.abs(box.min.x), Math.abs(box.max.x)) - 0.7);
+    const yTop = box.max.y + 0.6, yBot = box.min.y - 5;
+    const zF = box.min.z + 0.4, zB = Math.max(box.max.z, box.min.z + 10) + 1;
+    // vỏ khoang (mặt trong tối, nhìn thấy vách sau / sàn / trần)
+    add(new THREE.BoxGeometry(hw * 2, yTop - yBot, zB - zF), mat(0x141516, 51, THREE.BackSide), 0, (yTop + yBot) / 2, (zF + zB) / 2);
+    const midY = (box.min.y + box.max.y) / 2;
+    // bảng táp-lô dưới kính chắn gió
+    add(new THREE.BoxGeometry(hw * 2 - 0.4, 1.4, 2.4), mat(0x262624, 52), 0, box.min.y - 0.4, zF + 1.3);
+    const headY = midY + 0.4, torsoY = headY - 2.5, seatY = torsoY - 1.9;
+    const zHead = zF + Math.min(5.5, (zB - zF) * 0.35);
+    const crewCol = u.team === 'RED' ? 0x4a3d2a : 0x3a422b;
+    for (const s of [-1, 1]) {
+      const x = s * hw * 0.48;
+      add(new THREE.BoxGeometry(2.8, 4.2, 0.6), mat(0x202020, 52), x, seatY + 2.4, zHead + 1.8);          // lưng ghế
+      add(new THREE.BoxGeometry(2.8, 0.6, 2.6), mat(0x202020, 52), x, seatY, zHead + 0.6);                // đệm ghế
+      add(new THREE.BoxGeometry(2.6, 3.2, 1.6), mat(crewCol, 53), x, torsoY, zHead + 0.4);                // thân
+      add(new THREE.SphereGeometry(0.82, 12, 10), mat(0xb48866, 54), x, headY, zHead);                    // đầu
+      add(new THREE.SphereGeometry(0.98, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(0x3a402c, 55), x, headY + 0.15, zHead + 0.05); // mũ
+      for (const a of [-1, 1]) add(new THREE.BoxGeometry(0.55, 0.55, 2.8), mat(crewCol, 54), x + a * 1.15, torsoY + 0.6, zHead - 1.0, -0.45, 0, 0); // tay
+      if (s < 0) add(new THREE.TorusGeometry(1.05, 0.13, 6, 18), mat(0x111111, 56), x, torsoY + 1.1, zHead - 2.4, -0.5, 0, 0); // vô-lăng
+    }
+    cg.add(g);
+    d.glassOutObjs.push(g);
+    // mảnh kính vỡ rơi lả tả
+    if (FX && FX.fire) {
+      for (const o of meshes) {
+        const c0 = cg.localToWorld(box.getCenter(new THREE.Vector3()));
+        for (let q = 0; q < 28; q++) FX.fire.add({ x: c0.x + rand(-hw, hw), y: c0.y + rand(-1, 2), z: c0.z + rand(-5, 5), vx: rand(-20, 20), vy: rand(-5, 20), vz: rand(-20, 20), size: rand(0.3, 0.7), grow: 0, drag: 0.6, grav: 140, life: rand(0.5, 1.2), alpha: 0.9, fadeIn: 0.005, c0: [0.85, 0.92, 0.95], c1: [0.55, 0.62, 0.66], cell: 3 });
+        void o;
+      }
+    }
+    sfx('glass', cg.localToWorld(box.getCenter(new THREE.Vector3())), 1.2);
+    void fx;
+    return true;
+  }
+
+  // Vỡ toàn bộ kính: nứt mạng nhện trên từng ô kính (lấy tâm các tam giác mặt kính) + mảnh kính văng
+  function crackAllGlass(u, perPane) {
+    shatterAllGlass(u);
+    return;
+    if (!FX || !FX.addSurfaceMark) return;
+    u.group.updateMatrixWorld(true);
+    const v = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    u.group.traverse(o => {
+      if (!o.isMesh || o.isInstancedMesh || !o.material || !o.material.userData || o.material.userData.surface !== 'glass') return;
+      if (o.material.emissiveIntensity !== undefined && o.material.color && o.material.color.r > 0.4) return; // bỏ kính đèn pha sáng màu
+      const pos = o.geometry.attributes.position;
+      const tris = pos.count / 3;
+      const picks = Math.min(tris, 6 * perPane);
+      for (let k = 0; k < picks; k++) {
+        const t = Math.floor(Math.random() * tris) * 3;
+        a.fromBufferAttribute(pos, t); b.fromBufferAttribute(pos, t + 1); c.fromBufferAttribute(pos, t + 2);
+        const area = new THREE.Vector3().crossVectors(b.clone().sub(a), c.clone().sub(a));
+        if (area.length() < 0.6) continue;     // tam giác mép kính quá nhỏ
+        v.copy(a).add(b).add(c).divideScalar(3);
+        const n = area.normalize().transformDirection(o.matrixWorld);
+        const wp = o.localToWorld(v.clone());
+        FX.addSurfaceMark(wp, n, o, 'glassCrack', rand(4, 7), { unit: u });
+        if (FX.fire && Math.random() < 0.5) for (let q = 0; q < 6; q++) FX.fire.add({ x: wp.x, y: wp.y, z: wp.z, vx: rand(-40, 40), vy: rand(0, 40), vz: rand(-40, 40), size: rand(0.4, 0.9), grow: 0, drag: 0.5, grav: 120, life: rand(0.5, 1.1), alpha: 0.9, fadeIn: 0.005, c0: [0.85, 0.92, 0.95], c1: [0.6, 0.7, 0.75], cell: 3 });
+      }
+    });
+    sfx('glass', u.group.position.clone().add(new THREE.Vector3(0, 14, 0)));
+  }
+
+  // Hồi sinh: trả xe về nguyên vẹn
+  function reset(u) {
+    const d = u.dmg;
+    if (!d) return;
+    // Trả hình dạng vỏ trước (ảnh chụp lúc lõm lần đầu), rồi mới trả các bộ phận đã tách
+    if (d.dents) for (const D of d.dents) if (D.m.parent) D.m.parent.remove(D.m);
+    if (d.glassOutObjs) for (const o of d.glassOutObjs) if (o.parent) o.parent.remove(o);
+    // trả theo thứ tự ngược (ảnh chụp sau cùng trả trước) để bộ phận tách trước đó cũng về đúng
+    for (let i = d.saved.length - 1; i >= 0; i--) {
+      const s = d.saved[i];
+      s.attr.array.set(s.data, s.start * 3);
+      s.attr.needsUpdate = true;
+    }
+    // Trả lưới gốc (trước khi chia nhỏ / biến dạng) + khoảng đỉnh bộ phận ban đầu
+    if (d.geoSwaps) {
+      for (let i = d.geoSwaps.length - 1; i >= 0; i--) {
+        const s = d.geoSwaps[i];
+        const cur = s.mesh.geometry;
+        s.mesh.geometry = s.orig;
+        if (cur && cur !== s.orig) cur.dispose();
+        if (s.ranges && s.mesh.userData.partRanges) {
+          for (const tag in s.ranges) {
+            const arr = s.mesh.userData.partRanges[tag];
+            if (!arr) continue;
+            arr.length = 0;
+            for (const r of s.ranges[tag]) arr.push(r.slice());
+          }
+        }
+        PREPPED.delete(s.mesh);
+      }
+    }
+    u._partCenters = null;
+    for (const g of d.hiddenGroups) g.visible = true;
+    for (const [set, i] of d.hiddenAnt) set.setHidden(i, false);
+    if (u.wheelSet) u.wheelSet.resetDamage();
+    if (u.chassisGroup) { const cg = u.chassisGroup; cg.rotation.z -= d.tiltRApplied || 0; cg.rotation.x -= d.tiltPApplied || 0; cg.position.y += d.sinkApplied || 0; }
+    if (d.glassSaved) for (const g of d.glassSaved) { g.m.map = g.map; g.m.color.copy(g.color); g.m.roughness = g.rough; g.m.metalness = g.metal; if (g.em) { g.m.emissive.copy(g.em); g.m.emissiveIntensity = g.emI; } g.m.needsUpdate = true; }
+    if (d.gunBent) d.gunBent.obj.rotation.copy(d.gunBent.rot);
+    if (u.trackSystem && u.trackSystem.repairSide) { u.trackSystem.repairSide(0); u.trackSystem.repairSide(1); }
+    const b = d.base;
+    for (const k in b) if (b[k] !== undefined) u[k] = b[k];
+    u.trackBroken = [false, false];
+    u._turretYaw = undefined;
+    for (let i = debrisList.length - 1; i >= 0; i--) if (debrisList[i].u === u) removeDebris(i);
+    animUnits.delete(u);
+    u.dmg = null;
+  }
+
+  // Cập nhật mỗi khung hình: mảnh vỡ, hẹn giờ nối xích
+  function update(dt, units) {
+    updateDebris(dt);
+    if (units) {
+      for (const u of units) {
+        const d = u.dmg;
+        if (!d || u.isDead) continue;
+        let changed = false;
+        for (let s = 0; s < 2; s++) {
+          if (d.trackTimer[s] > 0) {
+            d.trackTimer[s] = Math.max(0, d.trackTimer[s] - dt);
+            if (d.trackTimer[s] === 0) { changed = true; if (u.trackSystem && u.trackSystem.repairSide) u.trackSystem.repairSide(s); }
+          }
+        }
+        for (let i = d.fires.length - 1; i >= 0; i--) { const f = d.fires[i]; f.t += dt; if (f.t > f.life) d.fires.splice(i, 1); }
+        // Tiếng lửa đang cháy trên xe (động cơ, khoang): nguồn âm liên tục, báo "còn cháy" 2 lần/giây,
+        // to theo đám cháy lớn nhất; hết lửa thì tự tắt dần
+        if (d.fires.length) {
+          d.fireSndT = (d.fireSndT || 0) - dt;
+          if (d.fireSndT <= 0) {
+            d.fireSndT = 0.5;
+            const f = d.fires.reduce((a, b) => (b.k > a.k ? b : a));
+            const fp = u.group.localToWorld(new THREE.Vector3(f.x, f.y, f.z));
+            const k = Math.min(1.3, 0.45 + 0.4 * f.k);
+            if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.fireSource) window.soundEngine.fireSource(u, fp, k);
+            else sfx('vehFire', fp, k);
+          }
+        }
+        if (changed) recompute(u);
+      }
+    }
+  }
+
+  // Tia dò từ một hướng ngẫu nhiên phía trên / bên sườn vào thân xe (phòng thử)
+  function randomSurfaceHit(u) {
+    const meshes = deformMeshList(u);
+    if (!meshes.length) return null;
+    u.group.updateMatrixWorld(true);
+    const rc = new THREE.Raycaster();
+    for (let tries = 0; tries < 8; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.cos(a), rand(-0.8, -0.15), Math.sin(a)).normalize();
+      const target = u.group.localToWorld(new THREE.Vector3(rand(-6, 6), rand(6, 12), rand(-14, 14)));
+      rc.set(target.clone().addScaledVector(dir, -80), dir);
+      const hits = rc.intersectObjects(meshes, false);
+      if (hits.length && hits[0].face) {
+        const n = hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld);
+        return { point: hits[0].point, normal: n, object: hits[0].object, dir };
+      }
+    }
+    return null;
+  }
+
+  // Thao tác hư hại có chủ đích theo bộ phận (phòng thử xe): trả danh sách sự kiện
+  function debugAction(u, action, fx) {
+    if (!u || !u.group) return [];
+    markGroups(u);
+    const d = state(u);
+    const events = [];
+    FX = fx;
+    u.group.updateMatrixWorld(true);
+    const tags = Object.keys(u.partRegistry || {}).concat(Object.keys(u.partGroups || {}));
+    const pickTag = (re) => {
+      const list = tags.filter(t => re.test(t) && !d.lost.has(t));
+      return list.length ? list[Math.floor(Math.random() * list.length)] : null;
+    };
+    const lose = (re) => {
+      const t = pickTag(re);
+      if (!t) { events.push({ type: 'none', text: 'Không còn bộ phận này để phá' }); return; }
+      const wp = partWorld(u, t) || u.group.position.clone();
+      const away = wp.clone().sub(u.group.position).setY(0).normalize().multiplyScalar(60).add(new THREE.Vector3(0, 30, 0));
+      if (detachTag(u, t, away)) onPartLost(u, t, partKind(t), events, fx, wp);
+    };
+    const wheelIdx = (filter) => {
+      const ws = u.wheelSet;
+      if (!ws) return -1;
+      const list = ws.positions.map((p, i) => i).filter(filter);
+      return list.length ? list[Math.floor(Math.random() * list.length)] : -1;
+    };
+    switch (action) {
+      case 'skirt': lose(/^skirt/); break;
+      case 'era': lose(/^era/); break;
+      case 'cage': lose(/^cage/); break;
+      case 'applique': lose(/^applique/); break;
+      case 'feed': lose(/^feed/); break;
+      case 'optic': lose(/^optic/); break;
+      case 'sensor': lose(/^sensor$/); break;
+      case 'atgm': lose(/^atgm$/); break;
+      case 'fuel': lose(/^fuelTank$/); break;
+      case 'ammo': lose(/^ammoBoxes$/); break;
+      case 'acc': lose(/^(mirror|lamp|bin|box|can|cans|rail|railRear|smoke|tool|flap|stowage|shield|travelLock|spare|generator|searchlight|meteo|rcws)/); break;
+      case 'antenna': breakAntennas(u, null, 0, 0.6, new THREE.Vector3(0, 30, 0)); events.push({ type: 'acc', text: 'Gãy văng cần ăng-ten' }); break;
+      case 'track': {
+        const side = Math.random() < 0.5 ? 0 : 1;
+        const p = (u.chassisGroup || u.group).localToWorld(new THREE.Vector3(side ? 12 : -12, 4, rand(-15, 15)));
+        breakTrack(u, side, events, fx, p);
+        break;
+      }
+      case 'tire': { const i = wheelIdx(i => !d.flat[i]); if (i >= 0) flatTire(u, i, events, fx); break; }
+      case 'wheel': { const i = wheelIdx(i => !d.gone[i]); if (i >= 0) blowWheel(u, i, events, fx); break; }
+      case 'glass':
+        if (!d.glassShattered) { crackAllGlass(u, 1); events.push({ type: 'glass', text: 'Kính cabin vỡ rạn (bấm lần nữa: kính rơi hẳn)' }); }
+        else if (breakOutGlass(u, fx)) events.push({ type: 'glass', text: 'KÍNH CABIN VỠ RƠI HẲN — lộ khoang lái & kíp lái' });
+        break;
+      case 'gun': damageGun(u, events); break;
+      case 'ring': damageRing(u, events); break;
+      case 'engine': {
+        damageEngine(u, events, true);
+        const e = ENGINE[u.tankType] || ENGINE.ALL_ROUNDER;
+        addFire(u, u.group.localToWorld(new THREE.Vector3(e[0], e[1], e[2])), 1.2, 60);
+        break;
+      }
+      case 'hyd': if (!d.hydraulics) { d.hydraulics = true; events.push({ type: 'hyd', text: 'HỆ THỦY LỰC CÀNG CHỐNG HỎNG — hạ / thu càng chậm' }); } break;
+      case 'frame': d.frame = Math.max(-1, Math.min(1, d.frame + (Math.random() < 0.5 ? -1 : 1) * 0.8)); events.push({ type: 'frame', text: 'KHUNG GẦM BỊ VẶN MÉO — xe vẹo, khó lái' }); break;
+      case 'dent': {
+        // Một phát đạn xuyên vào điểm ngẫu nhiên trên vỏ: móp lõm thật
+        const h = randomSurfaceHit(u);
+        if (h) { crumpleAt(u, h.point, h.dir, 6, 1.4); events.push({ type: 'dent', text: 'Vỏ thép bị đánh móp lõm' }); }
+        break;
+      }
+      case 'wreck': {
+        // Bắn liên tục vào xác: mỗi lần như một phát lựu pháo nổ trên vỏ -> lên dần các nấc biến dạng
+        if (!u.isDead) { events.push({ type: 'none', text: 'Xe chưa bị phá hủy' }); break; }
+        for (let k = 0; k < 3; k++) {
+          const h = randomSurfaceHit(u);
+          if (!h) break;
+          const r = onWreckHit(u, { ammo: 'HE', heavy: true, point: h.point, hit: { point: h.point, normal: h.normal, object: h.object }, dir: h.dir.clone().multiplyScalar(300), fx });
+          for (const e of r.events) events.push(e);
+        }
+        FX = fx;
+        break;
+      }
+    }
+    if (action !== 'wreck') recompute(u);   // xác xe: giữ độ sụp do biến dạng (không tính lại theo bánh)
+    // Phòng thử không chạy vòng cập nhật xe: áp độ nghiêng thân xe trực tiếp
+    applyPose(u);
+    FX = null;
+    return events;
+  }
+
+  // Danh sách hư hại hiện có (hiển thị trên HUD / kiểm định xe)
+  function summary(u) {
+    const d = u.dmg;
+    if (!d) return [];
+    const out = [];
+    if (d.engine) out.push(d.engine >= 2 ? 'Động cơ hỏng nặng' : 'Động cơ hư');
+    for (let s = 0; s < 2; s++) if (d.track[s]) out.push(`Xích ${s ? 'phải' : 'trái'} ${d.trackTimer[s] > 0 ? 'đứt' : 'nối tạm'}`);
+      else if (d.trackWear && d.trackWear[s] >= 1) out.push(`Xích ${s ? 'phải' : 'trái'} hư`);
+    if (d.shred) { const nS = Object.keys(d.shred).filter(k => !d.gone[k]).length; if (nS) out.push(`${nS} lốp nát (chạy vành)`); }
+    const nFlat = Object.keys(d.flat).length;
+    if (nFlat) out.push(`${nFlat} lốp xẹp`);
+    if (d.ring) out.push('Kẹt vòng tháp');
+    if (d.gun) out.push('Vũ khí chính hư');
+    if (d.hydraulics) out.push('Thủy lực càng hỏng');
+    const cnt = new Map();
+    for (const t of d.lost) {
+      if (partKind(t) === 'acc') continue;
+      const n = 'Mất ' + partName(t).toLowerCase();
+      cnt.set(n, (cnt.get(n) || 0) + 1);
+    }
+    for (const [n, c] of cnt) out.push(c > 1 ? `${n} ×${c}` : n);
+    return out;
+  }
+
+  return {
+    ARMOR, ammoClass, onDirectHit, onSplash, onDestroyed, reset, update, recompute, summary, state,
+    detachTag, flatTire, blowWheel, breakTrack, bendTag, sfx, debugAction,
+    crumpleAt, crushHull, bendBarrel, armorOutcome, ARMOR_MM, PEN,
+    setGroundProvider(fn) { groundProvider = fn; },
+    get debrisCount() { return debrisList.length; }
+  };
+})();
+
+if (typeof window !== 'undefined') window.VehicleDamage = VehicleDamage;

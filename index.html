@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chiến Địa Pháo Kích Tự Hành 3D - Tactical SPG Command</title>
+  <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+  <link rel="stylesheet" href="style.css?v=20261019ic1">
+  <link rel="stylesheet" href="hud.css?v=20261019aim2">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Khung Render 3D Three.js WebGL -->
+    <div id="webgl-container"></div>
+
+    <!-- Màn hình HUD Tác Chiến (Tactical Combat HUD) — tối giản, kiểu dáng ở hud.css -->
+    <div id="hud-overlay">
+
+      <!-- TRÊN TRÁI: MINIMAP (nhấp hoặc phím M để mở bản đồ lớn) -->
+      <div class="hx-map" id="aow-minimap-box" title="Bản đồ chiến thuật [M]">
+        <canvas id="aow-minimap-canvas" width="180" height="180"></canvas>
+        <span class="hx-map-n">B</span>
+        <span class="hx-map-key" id="btn-aow-menu">M</span>
+      </div>
+
+      <!-- DƯỚI MINIMAP: NHẬT KÝ CHIẾN SỰ -->
+      <div class="hx-log" id="combat-log"></div>
+
+      <!-- TRÊN GIỮA: TỶ SỐ · ĐỒNG HỒ · CỨ ĐIỂM -->
+      <div class="hx-top">
+        <div class="hx-score">
+          <span class="hx-alive blue" title="Số xe Phe Xanh còn chiến đấu"><b id="blue-units-count">10</b> XE</span>
+          <span class="hx-pts blue" id="score-blue-val" title="Điểm hạ gục Phe Xanh">0</span>
+          <span class="hx-clock" id="battle-timer" title="Thời gian còn lại">10:00</span>
+          <span class="hx-pts red" id="score-red-val" title="Điểm hạ gục Phe Đỏ">0</span>
+          <span class="hx-alive red" title="Số xe Phe Đỏ còn chiến đấu"><b id="red-units-count">10</b> XE</span>
+          <div class="hx-momentum"><i id="kill-momentum-blue" style="width: 50%;"></i><i id="kill-momentum-red" style="width: 50%;"></i></div>
+        </div>
+        <div class="hx-cps" id="capture-points-dock" title="Giữ một cứ điểm liên tục 60 giây là THẮNG NGAY">
+          <div class="cp-card neutral" id="cp-card-a">
+            <span class="hx-cp-mark">A</span>
+            <div class="hx-cp-bar"><div class="cp-bar-fill" id="cp-bar-a"></div></div>
+            <span class="hx-cp-hide" id="cp-flag-a"></span><span class="hx-cp-hide" id="cp-status-a"></span><span class="hx-cp-hide" id="cp-timer-a"></span>
+          </div>
+          <div class="cp-card neutral" id="cp-card-b">
+            <span class="hx-cp-mark">B</span>
+            <div class="hx-cp-bar"><div class="cp-bar-fill" id="cp-bar-b"></div></div>
+            <span class="hx-cp-hide" id="cp-flag-b"></span><span class="hx-cp-hide" id="cp-status-b"></span><span class="hx-cp-hide" id="cp-timer-b"></span>
+          </div>
+          <div class="cp-card neutral" id="cp-card-c">
+            <span class="hx-cp-mark">C</span>
+            <div class="hx-cp-bar"><div class="cp-bar-fill" id="cp-bar-c"></div></div>
+            <span class="hx-cp-hide" id="cp-flag-c"></span><span class="hx-cp-hide" id="cp-status-c"></span><span class="hx-cp-hide" id="cp-timer-c"></span>
+          </div>
+        </div>
+        <span id="blue-kd-val" hidden></span><span id="red-kd-val" hidden></span>
+        <span id="blue-lives-count" hidden></span><span id="red-lives-count" hidden></span>
+      </div>
+
+      <!-- CẢNH BÁO NGUY HIỂM & NGỤY TRANG (chỉ hiện khi có) -->
+      <div class="hx-alerts">
+        <div id="warning-banner" class="warning-banner hidden">
+          <div class="warning-glitch">BỊ RADAR PHẢN PHÁO KHÓA VỊ TRÍ!</div>
+          <div class="warning-sub">CƠ ĐỘNG NGAY!</div>
+        </div>
+        <div id="stealth-banner" class="stealth-banner hidden">
+          <span class="stealth-pulse-dot green"></span> ĐANG NÚP BỤI
+        </div>
+      </div>
+
+      <div id="stealth-camo-overlay" class="stealth-camo-overlay"></div>
+
+      <!-- BỊ BẮN HẠ: ĐẾM NGƯỢC TÁI XUẤT -->
+      <div id="player-respawn-banner" class="player-respawn-banner hidden">
+        <div class="hx-respawn">
+          <div class="hx-respawn-title">CHIẾN XA ĐÃ BỊ PHÁ HỦY</div>
+          <span id="player-respawn-time">10.0S</span>
+          <div class="hx-respawn-track"><div id="player-respawn-bar" style="width: 100%;"></div></div>
+          <div class="hx-respawn-foot">Tái xuất tại căn cứ · khiên bảo vệ 3 giây</div>
+        </div>
+      </div>
+
+      <!-- DƯỚI GIỮA: THANH TÁC CHIẾN DUY NHẤT -->
+      <div class="hx-dock">
+        <!-- Trạng thái riêng theo loại xe (băng đạn, nhiệt nòng, càng chống, tên lửa...) — chỉ hiện khi có -->
+        <div class="hx-chips">
+          <span id="reactive-armor-tag" class="hx-chip hidden" style="color: #3cc8ff;">GIÁP NỔ</span>
+          <span id="speed-boost-tag" class="hx-chip hidden" style="color: #ffd166;">TĂNG TỐC</span>
+          <span id="gatling-mag-tag" class="hx-chip hidden"></span>
+          <span id="gatling-spin-tag" class="hx-chip hidden"></span>
+          <span id="gatling-heat-tag" class="hx-chip hidden"></span>
+          <span id="arty-deploy-tag" class="hx-chip hidden"></span>
+          <span id="scout-missile-tag" class="hx-chip hidden"></span>
+          <span id="scout-radar-tag" class="hx-chip hidden"></span>
+        </div>
+
+        <div class="hx-bar">
+          <div class="hx-veh">
+            <div class="hx-veh-top">
+              <span id="tank-class-text">HALBERD MK.3</span>
+              <span class="hx-speed"><b id="speed-text">0 KM/H</b></span>
+            </div>
+            <div class="hx-hp-track"><div id="hp-bar" class="hx-hp-fill"></div></div>
+            <span id="hp-text" class="hx-hp-num">-- / --</span>
+          </div>
+
+          <div class="hx-ammo" id="ammo-selector"></div>
+
+          <button id="fire-btn" class="hx-fire" title="Khai hỏa [Space]">
+            <span class="fire-main-text">KHAI HỎA</span>
+            <span id="reload-text">SẴN SÀNG</span>
+            <div class="hx-fire-reload"><div id="reload-bar" class="hx-fire-reload-fill"></div></div>
+          </button>
+
+          <div class="hx-target" id="target-lock-stat-box" title="Khóa mục tiêu [Tab]">
+            <svg class="hx-reticle" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="16" cy="16" r="9"/><path d="M16 3v7M16 22v7M3 16h7M22 16h7"/>
+            </svg>
+            <div class="hx-target-info">
+              <span id="target-lock-text">CHƯA KHÓA</span>
+              <span id="target-lock-sub">[TAB] KHÓA ĐỊCH</span>
+              <div class="hx-target-hp"><div id="target-hp-bar"></div></div>
+            </div>
+            <div class="hx-range" title="Cự ly tới điểm rơi dự kiến">
+              <span>CỰ LY</span>
+              <b id="traj-dist-val">---</b>
+              <span id="traj-mode-hint" hidden></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MÀN HÌNH BẢN ĐỒ VỆ TINH TÁC CHIẾN (PHÍM M) - THIẾT KẾ ĐƠN GIẢN, TRỰC QUAN -->
+    <div id="tactical-map-modal" class="tactical-map-overlay hidden">
+      <div class="tac-map-header">
+        <div class="tac-title"><span class="radar-dot"></span><span>BẢN ĐỒ TÁC CHIẾN</span></div>
+        <div class="tac-tools"><button id="close-map-btn" class="close-tac-btn">ĐÓNG [M]</button></div>
+      </div>
+
+      <div class="tac-map-body">
+        <div class="tac-canvas-wrapper">
+          <canvas id="tactical-map-canvas"></canvas>
+          <div id="map-crosshair-info" class="map-crosshair-info hidden"></div>
+          <div class="tm-hint">NHẤP: chọn mục tiêu · NHẤP ĐÚP: ngắm · SPACE: bắn · LĂN CHUỘT: phóng to · CHUỘT PHẢI: kéo</div>
+          <div class="tm-toolbar">
+            <button id="tm-zoom-in" title="Phóng to (+)"><i class="ti ti-plus" aria-hidden="true"></i></button>
+            <button id="tm-zoom-out" title="Thu nhỏ (-)">－</button>
+            <button id="tm-focus-me" title="Về xe của bạn (F)"><i class="ti ti-crosshair" aria-hidden="true"></i></button>
+            <button id="tm-fit" title="Toàn cảnh (0)">⤢</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Màn Hình Kết Thúc Trận Đấu -->
+    <div id="game-over-modal" class="game-over-screen hidden">
+      <div class="game-over-card">
+        <div id="game-over-title" class="victory-title">CHIẾN THẮNG ÁP ĐẢO!</div>
+        <div id="game-over-subtitle" class="victory-sub">Bạn là đội pháo tự hành sống sót duy nhất trên chiến trường.</div>
+        
+        <div class="stats-summary">
+          <div class="summary-item">
+            <span class="summary-label">SỐ LƯỢT KHAI HỎA:</span>
+            <span id="stat-shots" class="summary-value">0</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">TIÊU DIỆT PHÁO ĐỊCH:</span>
+            <span id="stat-kills" class="summary-value">0</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">SÁT THƯƠNG GÂY RA:</span>
+            <span id="stat-damage" class="summary-value">0</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">THỜI GIAN TÁC CHIẾN:</span>
+            <span id="stat-time" class="summary-value">00:00</span>
+          </div>
+        </div>
+
+        <button id="restart-game-btn" class="restart-btn">TÁI XUẤT TRẬN ĐỊA MỚI</button>
+      </div>
+    </div>
+
+    <!-- MÀN HÌNH SẢNH CHỜ GHÉP TRẬN ĐẲNG CẤP CHIẾN TRANH THIẾT GIÁP (TACTICAL WAR ROOM LOBBY) -->
+    <div id="matchmaking-overlay" class="matchmaking-overlay">
+      <div class="mm-backdrop-fx"></div>
+      
+      <div class="mm-container military-dashboard">
+        
+        <!-- TẦNG HEADER: HUY HIỆU, BANNER CHIẾN TRƯỜNG & PROFILE CHỈ HUY -->
+        <header class="mm-top-bar">
+          <div class="mm-top-brand">
+            <!-- Huy hiệu quân sự bạc cánh én -->
+            <div class="mm-rank-emblem">
+              <svg viewBox="0 0 40 40" width="36" height="36">
+                <polygon points="20,2 38,12 38,28 20,38 2,28 2,12" fill="url(#silverGrad)" stroke="#38bdf8" stroke-width="1.5"/>
+                <path d="M12 18 L20 12 L28 18 L20 30 Z" fill="#0284c7" stroke="#bae6fd" stroke-width="1"/>
+                <path d="M15 22 L20 18 L25 22" fill="none" stroke="#fff" stroke-width="1.5"/>
+                <defs>
+                  <linearGradient id="silverGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#94a3b8"/>
+                    <stop offset="50%" stop-color="#cbd5e1"/>
+                    <stop offset="100%" stop-color="#475569"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <div class="mm-brand-text">
+              <h1 class="mm-main-title">TRUNG TÂM TÁC CHIẾN</h1>
+              <div class="mm-campaign-subtitle">
+                <span class="sub-dot"><i class="ti ti-point-filled" aria-hidden="true"></i></span> CHIẾN DỊCH SA MẠC LỬA // MÙA GIẢI I
+              </div>
+            </div>
+          </div>
+
+          <!-- Dải panorama chiến xa sa mạc trung tâm -->
+          <div class="mm-header-panorama" style="background-image: url('assets/header_panorama.jpg');"></div>
+
+          <!-- Profile chỉ huy -->
+          <div class="mm-top-profile-actions">
+            <!-- Profile Chỉ huy -->
+            <div class="mm-commander-profile">
+              <div class="commander-avatar-box">
+                <img src="assets/commander_avatar.jpg" alt="Chỉ huy" class="commander-avatar-img">
+                <span class="avatar-status-badge"></span>
+              </div>
+              <div class="commander-info">
+                <span class="commander-name" id="mm-display-name">PháoThủBãoĐen</span>
+                <div class="commander-rank">
+                  <span class="rank-icon"><i class="ti ti-star" aria-hidden="true"></i></span>
+                  <span class="rank-text">Trung úy Cấp 3</span>
+                </div>
+              </div>
+              <button class="mm-gear-btn" title="Cài đặt"><i class="ti ti-settings" aria-hidden="true"></i></button>
+            </div>
+          </div>
+        </header>
+
+        <!-- NỘI DUNG CHÍNH: 3 TẦNG [01] XE TĂNG -> [02] BẢN ĐỒ -> [03] CHIẾN DỊCH -->
+        <main class="mm-main-content">
+          
+          <!-- TẦNG 01: CHỌN XE TĂNG XUẤT TRẬN -->
+          <section class="mm-panel-box mm-tank-carousel-box">
+            <div class="mm-panel-header">
+              <div class="p-hdr-left">
+                <span class="hdr-num-badge">01</span>
+                <h2 class="hdr-heading">CHỌN XE TĂNG XUẤT TRẬN</h2>
+                <span class="hdr-subheading">LỰA CHỌN CHIẾN XA PHÙ HỢP VỚI CHIẾN THUẬT CỦA BẠN</span>
+              </div>
+            </div>
+
+            <div class="mm-carousel-wrapper">
+              <!-- Nút mũi tên trái -->
+              <button class="carousel-arrow arrow-left" title="Xem xe trước"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+
+              <div class="mm-class-cards-grid">
+                <!-- 1. HALBERD MK.3 (ĐANG CHỌN) -->
+                <div class="mm-class-card active" data-tank-type="ALL_ROUNDER">
+                  <div class="card-badge-selected"><i class="ti ti-check" aria-hidden="true"></i> ĐÃ CHỌN</div>
+                  <div class="card-img-frame">
+                    <img src="assets/tank_allrounder.jpg" alt="HALBERD MK.3" class="card-tank-photo" />
+                    <button class="btn-inspect-tank-3d" data-tank-type="ALL_ROUNDER" title="Xem mô hình 3D xe này">
+                      <span class="cube-ico"><i class="ti ti-cube-3d-sphere" aria-hidden="true"></i></span> 3D
+                    </button>
+                  </div>
+                  <div class="card-info-pane">
+                    <h3 class="card-tank-name">HALBERD MK.3</h3>
+                    <p class="card-tank-desc">Giáp dày kiên cố - Cân bằng công thủ toàn diện</p>
+                    <div class="card-spec-bars">
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-shield" aria-hidden="true"></i> GIÁP</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg fill"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-star" aria-hidden="true"></i> HỎA LỰC</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-bolt" aria-hidden="true"></i> CƠ ĐỘNG</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg"></span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 2. HAILSTORM R6 -->
+                <div class="mm-class-card" data-tank-type="GATLING">
+                  <div class="card-badge-selected"><i class="ti ti-check" aria-hidden="true"></i> ĐÃ CHỌN</div>
+                  <div class="card-img-frame">
+                    <img src="assets/tank_gatling.jpg" alt="HAILSTORM R6" class="card-tank-photo" />
+                    <button class="btn-inspect-tank-3d" data-tank-type="GATLING" title="Xem mô hình 3D xe này">
+                      <span class="cube-ico"><i class="ti ti-cube-3d-sphere" aria-hidden="true"></i></span> 3D
+                    </button>
+                  </div>
+                  <div class="card-info-pane">
+                    <h3 class="card-tank-name">HAILSTORM R6</h3>
+                    <p class="card-tank-desc">Tốc độ xả đạn cực đại - Bão lửa càn quét tầm gần</p>
+                    <div class="card-spec-bars">
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-shield" aria-hidden="true"></i> GIÁP</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-star" aria-hidden="true"></i> HỎA LỰC</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg fill"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-bolt" aria-hidden="true"></i> CƠ ĐỘNG</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg"></span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 3. ARBALEST 155 -->
+                <div class="mm-class-card" data-tank-type="ARTILLERY">
+                  <div class="card-badge-selected"><i class="ti ti-check" aria-hidden="true"></i> ĐÃ CHỌN</div>
+                  <div class="card-img-frame">
+                    <img src="assets/tank_artillery.jpg" alt="ARBALEST 155" class="card-tank-photo" />
+                    <button class="btn-inspect-tank-3d" data-tank-type="ARTILLERY" title="Xem mô hình 3D xe này">
+                      <span class="cube-ico"><i class="ti ti-cube-3d-sphere" aria-hidden="true"></i></span> 3D
+                    </button>
+                  </div>
+                  <div class="card-info-pane">
+                    <h3 class="card-tank-name">ARBALEST 155</h3>
+                    <p class="card-tank-desc">Đánh kích cự ly xa - Sát thương diện rộng</p>
+                    <div class="card-spec-bars">
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-shield" aria-hidden="true"></i> GIÁP</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg"></span><span class="seg"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-star" aria-hidden="true"></i> HỎA LỰC</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg fill"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-bolt" aria-hidden="true"></i> CƠ ĐỘNG</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg"></span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 4. MARTEN R4 -->
+                <div class="mm-class-card" data-tank-type="SCOUT">
+                  <div class="card-badge-selected"><i class="ti ti-check" aria-hidden="true"></i> ĐÃ CHỌN</div>
+                  <div class="card-img-frame">
+                    <img src="assets/tank_scout.jpg" alt="MARTEN R4" class="card-tank-photo" />
+                    <button class="btn-inspect-tank-3d" data-tank-type="SCOUT" title="Xem mô hình 3D xe này">
+                      <span class="cube-ico"><i class="ti ti-cube-3d-sphere" aria-hidden="true"></i></span> 3D
+                    </button>
+                  </div>
+                  <div class="card-info-pane">
+                    <h3 class="card-tank-name">MARTEN R4</h3>
+                    <p class="card-tank-desc">Di chuyển siêu tốc - Phòng thủ linh hoạt cơ động</p>
+                    <div class="card-spec-bars">
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-shield" aria-hidden="true"></i> GIÁP</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg"></span><span class="seg"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-star" aria-hidden="true"></i> HỎA LỰC</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg"></span></div>
+                      </div>
+                      <div class="spec-row">
+                        <span class="spec-label"><i class="ti ti-bolt" aria-hidden="true"></i> CƠ ĐỘNG</span>
+                        <div class="spec-segments"><span class="seg fill"></span><span class="seg fill"></span><span class="seg fill"></span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Nút mũi tên phải -->
+              <button class="carousel-arrow arrow-right" title="Xem xe tiếp theo"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </section>
+
+          <!-- TẦNG 02: CHỌN CHIẾN ĐỊA BẢN ĐỒ -->
+          <section class="mm-panel-box mm-map-selector-box">
+            <div class="mm-panel-header">
+              <div class="p-hdr-left">
+                <span class="hdr-num-badge">02</span>
+                <h2 class="hdr-heading">CHỌN CHIẾN ĐỊA BẢN ĐỒ</h2>
+                <span class="hdr-subheading">MỖI CHIẾN TRƯỜNG MANG ĐẾN TRẢI NGHIỆM CHIẾN ĐẤU KHÁC BIỆT</span>
+              </div>
+            </div>
+
+            <div class="mm-map-cards-row">
+              <!-- 1. SA MẠC LỬA (MẶC ĐỊNH CHỌN) -->
+              <div class="mm-map-card active" data-map-type="DESERT">
+                <div class="map-check-badge"><i class="ti ti-check" aria-hidden="true"></i></div>
+                <div class="map-thumbnail" style="background-image: url('assets/lobby_desert.jpg');"></div>
+                <div class="map-meta">
+                  <span class="map-title">SA MẠC LỬA</span>
+                  <span class="map-desc-tag"><span class="tag-ico"><i class="ti ti-alert-triangle" aria-hidden="true"></i></span> Địa hình: Sa mạc, đồi cát, căn cứ</span>
+                </div>
+              </div>
+
+              <!-- 2. ĐÔ THỊ ĐỔ NÁT -->
+              <div class="mm-map-card" data-map-type="URBAN">
+                <div class="map-check-badge"><i class="ti ti-check" aria-hidden="true"></i></div>
+                <div class="map-thumbnail" style="background-image: url('assets/lobby_urban.jpg');"></div>
+                <div class="map-meta">
+                  <span class="map-title">ĐÔ THỊ ĐỔ NÁT</span>
+                  <span class="map-desc-tag"><span class="tag-ico"><i class="ti ti-building-skyscraper" aria-hidden="true"></i></span> Địa hình: Thành phố, công trình</span>
+                </div>
+              </div>
+
+              <!-- 3. RỪNG RẬM -->
+              <div class="mm-map-card" data-map-type="JUNGLE">
+                <div class="map-check-badge"><i class="ti ti-check" aria-hidden="true"></i></div>
+                <div class="map-thumbnail" style="background-image: url('assets/lobby_jungle.jpg');"></div>
+                <div class="map-meta">
+                  <span class="map-title">RỪNG RẬM</span>
+                  <span class="map-desc-tag"><span class="tag-ico"><i class="ti ti-leaf" aria-hidden="true"></i></span> Địa hình: Rừng rậm, sông suối</span>
+                </div>
+              </div>
+
+              <!-- 4. CAO NGUYÊN -->
+              <div class="mm-map-card" data-map-type="HIGHLAND">
+                <div class="map-check-badge"><i class="ti ti-check" aria-hidden="true"></i></div>
+                <div class="map-thumbnail" style="background-image: url('assets/lobby_highland.jpg');"></div>
+                <div class="map-meta">
+                  <span class="map-title">CAO NGUYÊN</span>
+                  <span class="map-desc-tag"><span class="tag-ico"><i class="ti ti-mountain" aria-hidden="true"></i></span> Địa hình: Đồi núi, cao nguyên</span>
+                </div>
+              </div>
+
+              <!-- 5. SÔNG HỒ -->
+              <div class="mm-map-card" data-map-type="RIVER_LAKE">
+                <div class="map-check-badge"><i class="ti ti-check" aria-hidden="true"></i></div>
+                <div class="map-thumbnail" style="background-image: url('assets/lobby_river_lake.jpg');"></div>
+                <div class="map-meta">
+                  <span class="map-title">SÔNG HỒ</span>
+                  <span class="map-desc-tag"><span class="tag-ico"><i class="ti ti-ripple" aria-hidden="true"></i></span> Địa hình: Sông hồ, đảo nhỏ</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- TẦNG 03: CHIẾN DỊCH: CHIẾM CỨ ĐIỂM 10 VS 10 -->
+          <section class="mm-panel-box mm-campaign-intel-box">
+            <div class="mm-panel-header">
+              <div class="p-hdr-left">
+                <span class="hdr-num-badge">03</span>
+                <h2 class="hdr-heading">CHIẾN DỊCH: CHIẾM CỨ ĐIỂM 10 VS 10 <span class="hdr-arrow">››</span></h2>
+              </div>
+            </div>
+
+            <div class="mm-campaign-triptych">
+              <!-- Cột trái: 4 Mục quy tắc tác chiến -->
+              <div class="campaign-rules-col">
+                <div class="rule-line">
+                  <span class="rule-ico"><i class="ti ti-settings" aria-hidden="true"></i></span>
+                  <div class="rule-text"><strong>MỤC TIÊU</strong> Chiếm cứ điểm A, B, C để tích lũy 1,000 điểm.</div>
+                </div>
+                <div class="rule-line">
+                  <span class="rule-ico"><i class="ti ti-refresh" aria-hidden="true"></i></span>
+                  <div class="rule-text"><strong>HỒI SINH</strong> Vô hạn, xuất hiện ở vị trí ngẫu nhiên trên bản đồ sau 10 giây.</div>
+                </div>
+                <div class="rule-line">
+                  <span class="rule-ico"><i class="ti ti-users" aria-hidden="true"></i></span>
+                  <div class="rule-text"><strong>PHỐI HỢP</strong> Pháo bắn tầm xa, Chủ lực công phá, Trinh sát đoạt cờ.</div>
+                </div>
+                <div class="rule-line">
+                  <span class="rule-ico"><i class="ti ti-swords" aria-hidden="true"></i></span>
+                  <div class="rule-text">
+                    <strong>QUÂN SỐ</strong> 
+                    <span class="blue-team-tag"><i class="ti ti-square-filled ic-blue" aria-hidden="true"></i> LIÊN MINH (10 XE)</span> 
+                    <span class="vs-tag">VS</span> 
+                    <span class="red-team-tag"><i class="ti ti-square-filled ic-red" aria-hidden="true"></i> KHÁNG CHIẾN (10 XE)</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Cột giữa: Ảnh chiến trường lớn với cứ điểm A, B, C -->
+              <div class="campaign-hero-photo-col" style="background-image: url('assets/campaign_banner.jpg');"></div>
+
+              <!-- Cột phải: Khung trạng thái người chơi & 10 Avatar -->
+              <div class="campaign-roster-status-col">
+                <div class="roster-status-header">
+                  <span class="user-ico"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="roster-stat-txt" id="mm-human-count">10 VS 10 · 20 CHIẾN BINH MỖI TRẬN</span>
+                </div>
+                <div class="roster-avatar-strip">
+                  <span class="avatar-pill active-player" title="Bạn (Chỉ huy)"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-pill"><i class="ti ti-user" aria-hidden="true"></i></span>
+                  <span class="avatar-more-dots">•••</span>
+                </div>
+                <!-- Container ẩn các slot để logic JavaScript không bị ảnh hưởng -->
+                <div id="mm-blue-slots" style="display: none;"></div>
+                <div id="mm-red-slots" style="display: none;"></div>
+              </div>
+            </div>
+          </section>
+
+        </main>
+
+        <!-- TẦNG FOOTER: PHÍM TẮT & NÚT XUẤT TRẬN KHỔNG LỒ VÀNG CAM -->
+        <footer class="mm-footer-bar">
+          <div class="mm-shortcuts-box">
+            <span class="shortcuts-badge">PHÍM TẮT:</span>
+            <span class="sc-chip"><kbd>M</kbd> Mở team</span>
+            <span class="sc-chip"><kbd>W A S D</kbd> Lái xe</span>
+            <span class="sc-chip"><kbd>Chuột trái</kbd> Ngắm / khóa địch</span>
+            <span class="sc-chip"><kbd>Chuột phải</kbd> Lái tới điểm</span>
+            <span class="sc-chip"><kbd>Space</kbd> Bắn</span>
+            <span class="sc-chip"><kbd>Tab</kbd> Khóa mục tiêu</span>
+            <span class="sc-chip"><kbd>M</kbd> Mở map</span>
+            <span class="sc-chip"><kbd>X</kbd> Chọn xe</span>
+          </div>
+
+          <button id="mm-find-match-btn" class="mm-action-launch-btn">
+            <div class="btn-tank-symbol">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="#fff">
+                <path d="M20 12h-2V9h-3V7h-4v2H6v3H4c-1.1 0-2 .9-2 2v2c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2v-2c0-1.1-.9-2-2-2zm-2 4H6v-2h12v2z"/>
+              </svg>
+            </div>
+            <div class="btn-text-content">
+              <span class="btn-title-row">
+                <span class="btn-bold-title">TÌM TRẬN ĐẤU</span>
+                <span class="btn-chevrons"><i class="ti ti-chevrons-right" aria-hidden="true"></i></span>
+              </span>
+              <span class="btn-subtext">GHÉP TRẬN 10 VS 10 · CHIẾM CỨ ĐIỂM</span>
+            </div>
+          </button>
+        </footer>
+
+      </div>
+
+      <!-- MÀN CHỜ GHÉP TRẬN: bản đồ trận đấu hiển thị bên dưới, đủ người thì đếm ngược 3 giây rồi vào trận -->
+      <div id="mm-search-hud" class="mm-search-hud hidden">
+        <div class="mm-sh-map">
+          <span class="mm-sh-map-lbl">CHIẾN ĐỊA</span>
+          <span class="mm-sh-map-name" id="mm-sh-map-name">SA MẠC LỬA</span>
+        </div>
+        <div id="mm-countdown" class="mm-countdown hidden">
+          <span class="mm-cd-num" id="mm-cd-num">3</span>
+          <span class="mm-cd-lbl">CHUẨN BỊ XUẤT KÍCH</span>
+        </div>
+        <div class="mm-sh-panel">
+          <div class="mm-sh-radar"><div class="radar-scanner"></div><div class="radar-dot"></div></div>
+          <div class="mm-sh-info">
+            <span class="mm-sh-status" id="mm-status-text">ĐANG TÌM NGƯỜI CHƠI...</span>
+            <div class="mm-sh-progress"><div id="mm-search-progress"></div></div>
+            <span class="mm-sh-meta"><b id="mm-sh-count">1/20</b> chiến binh · <span id="mm-timer-val">00:00</span></span>
+          </div>
+          <div class="mm-sh-actions">
+            <button id="mm-cancel-search-btn" class="mm-sh-btn" title="Hủy tìm trận, quay lại sảnh">HỦY</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
+  <script src="src/ui/icons.js?v=20261019ic1"></script>
+  <script src="three.min.js?v=20261019i"></script>
+
+  <!-- 1. Tầng Nền Tảng Cốt Lõi (Core Systems) -->
+  <script src="src/core/audio.js?v=20261019snd8"></script>
+  <script src="src/core/map_gen.js?v=20261019f3"></script>
+  <script src="src/core/sky.js?v=20261019i"></script>
+  <script src="src/gameplay/destructibles.js?v=20261019f3"></script>
+  <script src="src/gameplay/props.js?v=20261019f3"></script>
+  <script src="src/gameplay/strongholds.js?v=20261019str2"></script>
+  <script src="src/core/game_timing.js?v=20261019env1"></script>
+  <script src="src/gameplay/env_damage.js?v=20261019env1"></script>
+  <script src="src/core/ground_shader.js?v=20261019nt1"></script>
+  <script src="src/core/ground_cover.js?v=20261019f2"></script>
+  <script src="src/core/terrain.js?v=20261019f3"></script>
+  <script src="src/entities/projectiles.js?v=20261019i"></script>
+  <script src="src/core/ballistics.js?v=20261019env1"></script>
+  <script src="src/core/radar.js?v=20261019i"></script>
+  <script src="src/core/zone.js?v=20261019i"></script>
+
+  <!-- 2. Tầng Thực Thể & Trí Tuệ Nhân Tạo (Entities & AI) -->
+  <script src="src/entities/tank_models.js?v=20261019ic1"></script>
+  <script src="src/entities/tanks/vehicle_kit.js?v=20261019i"></script>
+  <script src="src/entities/tanks/mbt_halberd.js?v=20261019i"></script>
+  <script src="src/entities/tanks/fsv_hailstorm.js?v=20261019i"></script>
+  <script src="src/entities/tanks/spg_arbalest.js?v=20261019i"></script>
+  <script src="src/entities/tanks/recon_marten.js?v=20261019i"></script>
+  <script src="src/ai/navigator.js?v=20261019i"></script>
+  <script src="src/ai/bot_ai.js?v=20261019env1"></script>
+  <script src="src/entities/spg.js?v=20261019env1"></script>
+
+  <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
+  <script src="src/gameplay/capture_points.js?v=20261019ic1"></script>
+  <script src="src/gameplay/supply_manager.js?v=20261019ic1"></script>
+  <script src="src/gameplay/explosion_fx.js?v=20261019env1"></script>
+  <script src="src/gameplay/vehicle_damage.js?v=20261019t1"></script>
+  <script src="src/gameplay/team_intel.js?v=20261019f4"></script>
+  <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
+  <script src="src/gameplay/effects_manager.js?v=20261019i"></script>
+
+  <!-- 4. Tầng Giao Diện Người Dùng (UI & Sảnh Chờ) -->
+  <script src="src/ui/hud_controller.js?v=20261019env1"></script>
+  <script src="src/ui/tactical_map.js?v=20261019env1"></script>
+  <script src="src/ui/tank_inspector.js?v=20261019env1"></script>
+  <script src="src/core/netcode.js?v=20261019env1"></script>
+  <script src="src/ui/matchmaking.js?v=20261019ic1"></script>
+
+  <!-- Phòng thử nghiệm cứ điểm (chỉ chạy khi mở index.html?lab=stronghold / stronghold_lab.html) -->
+  <script src="src/ui/stronghold_lab.js?v=20261019ic1"></script>
+  <script src="src/ui/perf_overlay.js?v=20261019i"></script>
+
+  <!-- 5. Bộ Điều Phối Trò Chơi (Main Game Engine) -->
+  <script src="src/game.js?v=20261019f4"></script>
+</body>
+</html>

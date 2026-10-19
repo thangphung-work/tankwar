@@ -1,0 +1,1563 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phòng Thử Hiệu Ứng Chiến Xa</title>
+<style>
+  :root {
+    --bg: #070d14;
+    --panel: rgba(8, 20, 36, 0.92);
+    --line: #174b6e;
+    --line-active: #14c8ff;
+    --accent: #14c8ff;
+    --hot: #ff8a2a;
+    --warn: #ffd34e;
+    --danger: #ff3e3e;
+    --text: #e2eef7;
+    --muted: #8aa7be;
+    --btn-bg: rgba(6, 28, 48, 0.9);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.4 "Segoe UI", -apple-system, Arial, sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  #view { position: fixed; inset: 0; display: block; outline: none; }
+
+  /* Bảng điều khiển góc trái */
+  .panel {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    width: 320px;
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 14px 14px 16px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    z-index: 10;
+  }
+  .panel::-webkit-scrollbar { width: 4px; }
+  .panel::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+  .header { margin-bottom: 10px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  h1 { margin: 0 0 3px; font-size: 16px; letter-spacing: 0.6px; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+  .sub { color: var(--muted); font-size: 11px; line-height: 1.35; }
+
+  h2 {
+    margin: 12px 0 5px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  h2 small { font-size: 10px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+
+  .btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    background: var(--btn-bg);
+    border: 1px solid #1c5275;
+    padding: 6px 10px;
+    font: 600 12px "Segoe UI", Arial, sans-serif;
+    border-radius: 2px;
+    transition: all 0.15s ease;
+  }
+  .btn small { display: block; color: var(--muted); font-weight: 400; font-size: 10.5px; }
+  .btn:hover { border-color: var(--line-active); background: rgba(14, 52, 85, 0.95); }
+  .btn.on {
+    background: linear-gradient(135deg, #14c8ff, #0a84b8);
+    color: #04121f;
+    border-color: #6ee3ff;
+    text-shadow: none;
+    box-shadow: 0 0 12px rgba(20, 200, 255, 0.4);
+  }
+  .btn.on small { color: #062b47; font-weight: 600; }
+
+  .btn-hot {
+    background: linear-gradient(135deg, #ff7b1a, #cc4a00);
+    color: #fff;
+    border-color: #ffa352;
+    text-align: center;
+  }
+  .btn-hot:hover { filter: brightness(1.15); box-shadow: 0 0 14px rgba(255, 123, 26, 0.5); }
+  .btn-hot.on { background: linear-gradient(135deg, #ff3b00, #8f1200); }
+
+  .row { display: flex; gap: 4px; flex-wrap: wrap; }
+  .row .btn { width: auto; flex: 1 1 auto; text-align: center; padding: 5px 6px; }
+
+  .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .action-grid .btn { text-align: center; padding: 7px 6px; }
+
+  /* Bảng HUD thông số góc phải trên */
+  .hud-top {
+    position: fixed;
+    right: 12px;
+    top: 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 10px 14px;
+    color: var(--text);
+    font-size: 11.5px;
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+    min-width: 200px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .hud-top .title { font-weight: 700; color: #fff; font-size: 13px; margin-bottom: 4px; }
+  .hud-item { display: flex; justify-content: space-between; margin: 2px 0; color: var(--muted); }
+  .hud-item b { color: var(--accent); font-weight: 600; }
+
+  /* Bảng trợ giúp phím bấm */
+  .hint {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.6;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .hint b { color: #fff; }
+
+  .nav-link {
+    display: block;
+    text-align: center;
+    padding: 7px 10px;
+    margin-bottom: 10px;
+    color: var(--accent);
+    background: rgba(14, 45, 75, 0.8);
+    border: 1px dashed var(--line-active);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 11.5px;
+    border-radius: 2px;
+    transition: all 0.2s;
+  }
+  .nav-link:hover {
+    background: rgba(20, 200, 255, 0.18);
+    color: #fff;
+    border-style: solid;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: rgba(20, 200, 255, 0.2);
+    color: var(--accent);
+  }
+
+  @media (max-width: 768px) {
+    .panel { width: calc(100% - 24px); max-height: 48%; }
+    .hud-top, .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div class="panel">
+  <a href="fx_lab.html" class="nav-link">🎯 CHUYỂN SANG: PHÒNG THỬ ĐẠN & HIỆU ỨNG NỔ →</a>
+
+  <div class="header">
+    <h1>PHÒNG THỬ HIỆU ỨNG CHIẾN XA</h1>
+    <div class="sub">Quan sát tỉ mỉ chớp lửa, khói xả ngang loa hãm lùi, giật nòng, nhún thân xe, khói ống xả và cơ cấu đặc biệt</div>
+  </div>
+
+  <h2>Dòng xe chiến đấu</h2>
+  <div class="row" id="tankRow" style="flex-direction:column;gap:3px">
+    <button class="btn on" data-tank="ARTILLERY">
+      🎯 Pháo Tự Hành Arbalest 155 <span class="badge">Có khói xả ngang</span>
+      <small>Lựu pháo 155mm · Loa hãm lùi 2 tầng · Chân chống & lưỡi càng</small>
+    </button>
+    <button class="btn" data-tank="ALL_ROUNDER">
+      🛡️ Xe Tăng Chủ Lực Halberd MK.3
+      <small>Pháo 120mm nòng trơn · Giáp nêm mũi tên · Bầu hút khói</small>
+    </button>
+    <button class="btn" data-tank="GATLING">
+      ⚡ Xe Chi Viện Hỏa Lực Hailstorm R6
+      <small>Cụm 6 nòng xoay 30mm · Gạch giáp ERA · Lưỡi ủi thủy lực</small>
+    </button>
+    <button class="btn" data-tank="SCOUT">
+      📡 Xe Trinh Sát Bọc Giáp Marten R4
+      <small>4x4 cơ động · Trạm súng máy & tên lửa · Radar ống lồng</small>
+    </button>
+  </div>
+
+  <h2>Màu sơn phe</h2>
+  <div class="row" id="teamRow">
+    <button class="btn on" data-team="BLUE">Phe Xanh Liên Minh</button>
+    <button class="btn" data-team="RED">Phe Đỏ Sa Mạc</button>
+  </div>
+
+  <h2>Hiệu ứng hỏa lực & đầu nòng</h2>
+  <button class="btn btn-hot" id="fireBtn" style="font-size:13.5px;padding:9px;margin-bottom:4px">
+    🔥 KHAI HỎA [SPACE / giữ để xả liên thanh]
+  </button>
+  <div class="action-grid">
+    <button class="btn" id="smokeBtn">💨 Xì khói nòng pháo</button>
+    <button class="btn" id="recoilBtn">💥 Giật nòng & nhún xe</button>
+    <button class="btn" id="barrelHotBtn">🌋 Nung đỏ nòng (R6)</button>
+    <button class="btn" id="autoFireBtn">🔄 Bắn tự động: TẮT</button>
+  </div>
+
+  <h2>📐 Nâng hạ nòng pháo</h2>
+  <div style="background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:8px 10px;margin-bottom:6px;border-radius:2px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11.5px">
+      <span>Góc nâng nòng: <b id="elevValLbl" style="color:var(--accent)">0.0°</b></span>
+      <span style="color:var(--muted)">Phím: ↑ / ↓</span>
+    </div>
+    <input type="range" id="elevSlider" min="-5" max="65" value="0" step="1" style="width:100%;accent-color:var(--accent);cursor:pointer;margin:4px 0 6px">
+    <div class="row" id="elevPresets">
+      <button class="btn on" data-elev="0" style="padding:4px">Ngắm 0°</button>
+      <button class="btn" data-elev="15" style="padding:4px">Tác chiến 15°</button>
+      <button class="btn" data-elev="35" style="padding:4px">Bắn xa 35°</button>
+      <button class="btn" data-elev="55" style="padding:4px">Cầu vồng 55°</button>
+    </div>
+  </div>
+
+  <h2 id="steerH2">🔄 Bẻ lái bánh xe (Xe lốp) / Rẽ hướng</h2>
+  <div id="steerBox" style="background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:8px 10px;margin-bottom:6px;border-radius:2px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11.5px">
+      <span>Góc bẻ lái: <b id="steerValLbl" style="color:var(--accent)">0.0° (Thẳng lái)</b></span>
+      <span style="color:var(--muted)">Phím: A / D</span>
+    </div>
+    <input type="range" id="steerSlider" min="-35" max="35" value="0" step="1" style="width:100%;accent-color:var(--accent);cursor:pointer;margin:4px 0 6px">
+    <div class="row" id="steerPresets">
+      <button class="btn" data-steer="-35" style="padding:4px">⬅️ Trái -35°</button>
+      <button class="btn on" data-steer="0" style="padding:4px">⬆️ Thẳng 0°</button>
+      <button class="btn" data-steer="35" style="padding:4px">➡️ Phải +35°</button>
+    </div>
+  </div>
+
+  <h2>Cơ động & khói bụi</h2>
+  <div class="action-grid">
+    <button class="btn" id="exhaustBtn">💨 Khói đen ống xả</button>
+    <button class="btn" id="driveBtn">🚜 Lăn bánh & bụi cát: TẮT</button>
+    <button class="btn" id="steerBtn">🔄 Đổi góc lái nhanh</button>
+    <button class="btn" id="boostBtn">🚀 Phun luồng tăng tốc</button>
+  </div>
+
+  <h2>⚡ Hiệu ứng & Cơ chế đặc trưng riêng</h2>
+  <div id="tankSpecialBox" style="background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:8px 10px;margin-bottom:6px;border-radius:2px">
+    <!-- Cập nhật tự động theo loại xe được chọn -->
+  </div>
+
+  <h2>Trạng thái thân xe & hư hại</h2>
+  <div class="row" id="damageRow">
+    <button class="btn on" data-hp="100">100%</button>
+    <button class="btn" data-hp="60">60% · Bốc khói</button>
+    <button class="btn" data-hp="25">25% · Bốc cháy</button>
+    <button class="btn" data-hp="0" style="color:#ff6b6b">0% · Phá hủy</button>
+  </div>
+  <div class="row" style="margin-top:4px">
+    <button class="btn" id="eraBtn" style="flex:1">💥 Kích nổ giáp ERA</button>
+    <button class="btn" id="deployBtn" style="flex:1">🏗️ Hạ / thu càng pháo</button>
+    <button class="btn" id="repairBtn" style="flex:1">💚 Sửa chữa nguyên vẹn</button>
+  </div>
+
+  <h2>🎯 Hư hại theo bộ phận (theo đúng loại xe)</h2>
+  <div class="action-grid" id="partDmgBox"></div>
+  <div id="partDmgLog" style="font-size:11px;line-height:1.45;color:var(--muted);background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:6px 8px;margin:4px 0 6px;border-radius:2px;max-height:120px;overflow:auto">Chọn bộ phận để phá — nhật ký hư hại hiện ở đây.</div>
+
+  <h2>Góc quan sát & Chiếu sáng</h2>
+  <div class="row" id="camRow">
+    <button class="btn on" data-cam="muzzle">🔍 Cận đầu nòng</button>
+    <button class="btn" data-cam="orbit">🌐 Toàn cảnh</button>
+    <button class="btn" data-cam="suspension">🚜 Cận bánh xe</button>
+    <button class="btn" data-cam="exhaust">💨 Cận đuôi xe</button>
+  </div>
+  <div class="row" style="margin-top:4px">
+    <button class="btn on" id="themeBtn" style="flex:1">☀️ Nền sáng Showroom (Dễ nhìn)</button>
+    <button class="btn" id="autoRotBtn" style="flex:1">Tự xoay: TẮT</button>
+  </div>
+
+  <h2>Tốc độ thời gian</h2>
+  <div class="row" id="speedRow">
+    <button class="btn on" data-speed="1">1x</button>
+    <button class="btn" data-speed="0.5">0.5x</button>
+    <button class="btn" data-speed="0.25">0.25x</button>
+    <button class="btn" data-speed="0.1">0.1x · Siêu chậm</button>
+  </div>
+</div>
+
+<div class="hud-top">
+  <div class="title" id="hudTitle">PHÁO TỰ HÀNH ARBALEST 155</div>
+  <div class="hud-item"><span>Cơ cấu tản giật:</span><b id="hudBrake">Loa hãm lùi 2 tầng xả ngang</b></div>
+  <div class="hud-item"><span>Khí thoát ngang:</span><b id="hudSmoke">2 luồng phản lực đối xứng</b></div>
+  <div class="hud-item"><span>Góc nâng hạ nòng:</span><b id="hudElevation">0.0°</b></div>
+  <div class="hud-item"><span>Bẻ lái bánh trước:</span><b id="hudSteer">0.0° (Thẳng lái)</b></div>
+  <div class="hud-item"><span>Trạng thái triển khai:</span><b id="hudDeploy">Hành quân (0%)</b></div>
+  <div class="hud-item"><span>Độ giật lùi nòng:</span><b id="hudRecoil">0.0 mm</b></div>
+</div>
+
+<div class="hint">
+  <b>Chuột trái kéo:</b> xoay 360° · <b>Cuộn:</b> zoom phóng to thu nhỏ<br>
+  <b>Space:</b> Khai hỏa · <b>A / D:</b> Bẻ lái bánh xe · <b>↑ / ↓:</b> Nâng hạ nòng · <b>W:</b> Lăn bánh · <b>Z:</b> Trả thẳng lái & hạ nòng
+</div>
+
+<script src="three.min.js"></script>
+<script src="src/core/audio.js?v=20261019snd8"></script>
+<script src="src/entities/tank_models.js?v=20261019i"></script>
+<script src="src/core/game_timing.js?v=20261019env1"></script>
+<script src="src/entities/tanks/vehicle_kit.js?v=20261019i"></script>
+<script src="src/entities/tanks/mbt_halberd.js?v=20261019i"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261019i"></script>
+<script src="src/entities/tanks/spg_arbalest.js?v=20261019i"></script>
+<script src="src/entities/tanks/recon_marten.js?v=20261019i"></script>
+<script src="src/entities/projectiles.js?v=20261019i"></script>
+<script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
+<script src="src/entities/spg.js?v=20261019env1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261019env1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261019t1"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  // ===========================================================================
+  // KHỞI TẠO KHÔNG GIAN 3D
+  // ===========================================================================
+  // ===========================================================================
+  // KHỞI TẠO KHÔNG GIAN 3D
+  // ===========================================================================
+  const canvas = document.getElementById('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  // MẶC ĐỊNH NỀN SÁNG SHOWROOM KỸ THUẬT QUÂN SỰ: Sáng rõ, tương phản sắc nét, quan sát tỉ mỉ từng chi tiết
+  const THEME = {
+    bright: {
+      bg: 0xd8e4ee,
+      fog: 0xd8e4ee,
+      fogDensity: 0.0011,
+      floorColor: 0xc8d5e2,
+      floorRough: 0.52,
+      floorMetal: 0.16,
+      gridCenter: 0x3d668c,
+      gridLines: 0x86a3bc,
+      ringColor: 0x0284c7,
+      hemiSky: 0xffffff,
+      hemiGround: 0x98abbc,
+      hemiInt: 1.25,
+      ambColor: 0xffffff,
+      ambInt: 0.72,
+      mainInt: 1.55,
+      rimInt: 0.88,
+      underInt: 1.35,
+      underColor: 0xf0f5fc
+    },
+    dark: {
+      bg: 0x060c14,
+      fog: 0x060c14,
+      fogDensity: 0.0018,
+      floorColor: 0x11161d,
+      floorRough: 0.85,
+      floorMetal: 0.15,
+      gridCenter: 0x1e5077,
+      gridLines: 0x0c2538,
+      ringColor: 0x14c8ff,
+      hemiSky: 0xd4e7f8,
+      hemiGround: 0x141a22,
+      hemiInt: 0.65,
+      ambColor: 0xffeedd,
+      ambInt: 0.25,
+      mainInt: 1.35,
+      rimInt: 0.85,
+      underInt: 0.7,
+      underColor: 0x0284c7
+    }
+  };
+
+  scene.background = new THREE.Color(THEME.bright.bg);
+  scene.fog = new THREE.FogExp2(THEME.bright.fog, THEME.bright.fogDensity);
+
+  // Chiếu sáng cao cấp: Ánh sáng môi trường dịu mắt + Đèn chính tạo bóng đổ mềm + Đèn viền nổi khối + Đèn chiếu rọi gầm xe
+  const hemiLight = new THREE.HemisphereLight(THEME.bright.hemiSky, THEME.bright.hemiGround, THEME.bright.hemiInt);
+  scene.add(hemiLight);
+
+  const ambLight = new THREE.AmbientLight(THEME.bright.ambColor, THEME.bright.ambInt);
+  scene.add(ambLight);
+
+  const mainLight = new THREE.DirectionalLight(0xfffaee, THEME.bright.mainInt);
+  mainLight.position.set(-80, 150, 90);
+  mainLight.castShadow = true;
+  mainLight.shadow.mapSize.set(2048, 2048);
+  Object.assign(mainLight.shadow.camera, { left: -95, right: 95, top: 95, bottom: -95, near: 10, far: 480 });
+  scene.add(mainLight);
+
+  const rimLight = new THREE.DirectionalLight(0x38bdf8, THEME.bright.rimInt);
+  rimLight.position.set(110, 70, -100);
+  scene.add(rimLight);
+
+  // Đèn chiếu rọi gầm xe & hốc bánh: rọi sáng các chi tiết giảm xóc, nhíp lá, càng sau, bánh xích không bị chìm trong bóng tối
+  const underLight = new THREE.PointLight(THEME.bright.underColor, THEME.bright.underInt, 260);
+  underLight.position.set(0, 0.6, 0);
+  scene.add(underLight);
+
+  const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 3000);
+
+  // ===========================================================================
+  // BỆ TRƯNG BÀY & NỀN SÀN KỸ THUẬT QUÂN SỰ
+  // ===========================================================================
+  const hangarGroup = new THREE.Group();
+  scene.add(hangarGroup);
+
+  // Sàn bê tông kỹ thuật có phủ bóng mờ
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: THEME.bright.floorColor,
+    roughness: THEME.bright.floorRough,
+    metalness: THEME.bright.floorMetal
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.05;
+  floor.receiveShadow = true;
+  hangarGroup.add(floor);
+
+  // Lưới tọa độ quân sự công nghệ cao
+  let gridHelper = new THREE.GridHelper(240, 48, THEME.bright.gridCenter, THEME.bright.gridLines);
+  gridHelper.position.y = 0.02;
+  hangarGroup.add(gridHelper);
+
+  // Vòng cự ly kiểm định góc quay
+  const rings = [];
+  for (const r of [35, 70, 110]) {
+    const ringMat = new THREE.MeshBasicMaterial({ color: THEME.bright.ringColor, transparent: true, opacity: 0.28, depthWrite: false });
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(r - 0.28, r + 0.28, 96),
+      ringMat
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.05;
+    hangarGroup.add(ring);
+    rings.push({ mesh: ring, mat: ringMat });
+  }
+
+  function setEnvironmentTheme(mode) {
+    state.theme = mode;
+    const t = THEME[mode] || THEME.bright;
+    scene.background.setHex(t.bg);
+    scene.fog.color.setHex(t.fog);
+    scene.fog.density = t.fogDensity;
+
+    floorMat.color.setHex(t.floorColor);
+    floorMat.roughness = t.floorRough;
+    floorMat.metalness = t.floorMetal;
+
+    hemiLight.color.setHex(t.hemiSky);
+    hemiLight.groundColor.setHex(t.hemiGround);
+    hemiLight.intensity = t.hemiInt;
+
+    ambLight.color.setHex(t.ambColor);
+    ambLight.intensity = t.ambInt;
+
+    mainLight.intensity = t.mainInt;
+    rimLight.intensity = t.rimInt;
+
+    underLight.color.setHex(t.underColor);
+    underLight.intensity = t.underInt;
+
+    hangarGroup.remove(gridHelper);
+    gridHelper.geometry.dispose(); (Array.isArray(gridHelper.material) ? gridHelper.material : [gridHelper.material]).forEach(m => m.dispose());
+    gridHelper = new THREE.GridHelper(240, 48, t.gridCenter, t.gridLines);
+    gridHelper.position.y = 0.02;
+    hangarGroup.add(gridHelper);
+
+    rings.forEach(r => r.mat.color.setHex(t.ringColor));
+
+    const btn = document.getElementById('themeBtn');
+    if (btn) {
+      btn.textContent = mode === 'bright' ? '☀️ Nền sáng Showroom (Dễ nhìn)' : '🌙 Nền tối Chiến thuật';
+      btn.classList.toggle('on', mode === 'bright');
+    }
+  }
+
+  // ===========================================================================
+  // QUẢN LÝ XE VÀ HỆ THỐNG HIỆU ỨNG
+  // ===========================================================================
+  const state = {
+    tankType: 'ARTILLERY',
+    team: 'BLUE',
+    speed: 1,
+    cam: 'muzzle',
+    firing: false,
+    autoFire: false,
+    driving: false,
+    autoRotate: false,
+    elevation: 0,
+    targetElevRad: 0,
+    steerDeg: 0,
+    steerAngle: 0,
+    audioReady: false,
+    deployed: false
+  };
+
+  const stubTerrain = {
+    mapType: 'DESERT',
+    getElevationAt: () => 0,
+    checkHorseshoeCollision: () => ({ hit: false })
+  };
+  const fx = new ExplosionFX(scene, () => stubTerrain);
+
+  const stubBallistics = {
+    wind: { direction: 0, speed: 2, vx: 1.8, vz: 0.6 },
+    fireShell3D: () => ({})
+  };
+  const stubRadar = { registerShot() {} };
+
+  let activeUnit = null;
+  const unitCache = {};
+
+  function loadUnit(type, team) {
+    const key = `${type}_${team}`;
+    if (activeUnit) {
+      if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(activeUnit);
+      activeUnit.hp = activeUnit.maxHp; activeUnit.isDead = false;
+      fx.restoreVehicle(activeUnit);
+      activeUnit.group.visible = false;
+      if (activeUnit.fxParticles) {
+        for (const p of activeUnit.fxParticles) {
+          if (p.mesh && p.mesh.parent) p.mesh.parent.remove(p.mesh);
+        }
+        activeUnit.fxParticles.length = 0;
+      }
+    }
+
+    if (unitCache[key]) {
+      activeUnit = unitCache[key];
+      activeUnit.group.visible = true;
+    } else {
+      const u = new SPGUnit3D(scene, {
+        tankType: type,
+        team: team,
+        isPlayer: true,
+        x: 0,
+        z: 0,
+        bodyAngle: 0
+      });
+      u.alwaysFX = true;
+      if (u.hpBgMesh) u.hpBgMesh.visible = false;
+      if (u.hpBarMesh) u.hpBarMesh.visible = false;
+      if (u.reactiveArmorMesh) u.reactiveArmorMesh.visible = false;
+
+      u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.rpgAmmoCount = 99999;
+      unitCache[key] = u;
+      activeUnit = u;
+    }
+
+    activeUnit.hp = activeUnit.maxHp;
+    activeUnit.isDead = false;
+    if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(activeUnit);
+    fx.restoreVehicle(activeUnit);
+    // Dọn sạch khói lửa, hố, mảnh vỡ, tên lửa đang bay của lần thử trước; trạng thái xe về 100%
+    if (fx.clear) fx.clear();
+    for (const r of activeRockets) scene.remove(r.mesh);
+    activeRockets.length = 0;
+    activeUnit._labReloading = false;
+    if (activeUnit.gatlingMagMax) activeUnit.gatlingMag = activeUnit.gatlingMagMax;
+    activeUnit.reloadTimer = 0;
+    state.deployed = false;
+    if (activeUnit.tankType === 'ARTILLERY') { activeUnit.deployProgress = 0; activeUnit.isDeployed = false; }
+    document.querySelectorAll('#damageRow .btn').forEach((b, i) => b.classList.toggle('on', i === 0));
+
+    updateHUD();
+    updateSpecialUI();
+    applyCamPreset(state.cam);
+  }
+
+  // ===========================================================================
+  // ĐIỀU KHIỂN CAMERA QUỸ ĐẠO
+  // ===========================================================================
+  const orbit = {
+    yaw: 2.1,
+    pitch: 0.35,
+    dist: 120,
+    target: new THREE.Vector3(0, 8, 0)
+  };
+
+  function applyCamPreset(preset) {
+    state.cam = preset;
+    const u = activeUnit;
+    const m = (u && typeof u.getMuzzleWorldTransform === 'function') ? u.getMuzzleWorldTransform() : { position: new THREE.Vector3(0, 14, -40) };
+
+    if (preset === 'muzzle') {
+      // Nhìn cận cảnh vào đầu nòng và loa hãm lùi
+      orbit.target.copy(m.position);
+      orbit.dist = 42;
+      orbit.pitch = 0.24;
+      orbit.yaw = 2.45;
+    } else if (preset === 'orbit') {
+      // Toàn cảnh bao quát cả xe
+      orbit.target.set(0, 10, 0);
+      orbit.dist = 115;
+      orbit.pitch = 0.32;
+      orbit.yaw = 2.1;
+    } else if (preset === 'suspension') {
+      // Nhìn ngang vào hệ thống bánh và hệ thống treo
+      orbit.target.set(0, 5, 0);
+      orbit.dist = 68;
+      orbit.pitch = 0.12;
+      orbit.yaw = 1.57;
+    } else if (preset === 'exhaust') {
+      // Nhìn vào đuôi xe, ống xả và lưỡi càng
+      orbit.target.set(0, 9, 24);
+      orbit.dist = 62;
+      orbit.pitch = 0.28;
+      orbit.yaw = 0.2;
+    }
+    updateCamera();
+  }
+
+  function updateCamera() {
+    const cp = Math.cos(orbit.pitch);
+    camera.position.set(
+      orbit.target.x + Math.sin(orbit.yaw) * cp * orbit.dist,
+      orbit.target.y + Math.sin(orbit.pitch) * orbit.dist,
+      orbit.target.z + Math.cos(orbit.yaw) * cp * orbit.dist
+    );
+    camera.lookAt(orbit.target);
+  }
+
+  let isDragging = false, lastX = 0, lastY = 0;
+  canvas.addEventListener('pointerdown', e => {
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+    initAudio();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    orbit.yaw -= dx * 0.006;
+    orbit.pitch = Math.max(0.04, Math.min(1.45, orbit.pitch + dy * 0.005));
+    lastX = e.clientX;
+    lastY = e.clientY;
+    state.autoRotate = false;
+    document.getElementById('autoRotBtn').textContent = 'Tự động xoay xe: TẮT';
+    document.getElementById('autoRotBtn').classList.remove('on');
+    updateCamera();
+  });
+  canvas.addEventListener('pointerup', () => { isDragging = false; });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    orbit.dist = Math.max(18, Math.min(320, orbit.dist * (e.deltaY > 0 ? 1.08 : 0.92)));
+    updateCamera();
+  }, { passive: false });
+
+  // ===========================================================================
+  // CÁC HÀNH ĐỘNG KÍCH HOẠT HIỆU ỨNG XE
+  // ===========================================================================
+  function triggerFire() {
+    const u = activeUnit;
+    if (!u) return;
+    initAudio();
+
+    if (u.tankType === 'GATLING') {
+      u.updateGatling(0.05, true, stubBallistics, stubRadar);
+      return;
+    }
+
+    // Nếu là pháo tự hành đang ở chế độ hành quân thì tự động cho phép nổ súng thử
+    const prevDeploy = u.isDeployed;
+    u.isDeployed = true;
+    u.reloadTimer = 0;
+    u.fire(stubBallistics, stubRadar);
+    u.isDeployed = prevDeploy;
+
+    // Rung lắc camera nhẹ tạo cảm giác uy lực phát bắn
+    orbit.pitch += (Math.random() - 0.5) * 0.015;
+    orbit.yaw += (Math.random() - 0.5) * 0.015;
+  }
+
+  function triggerBarrelSmoke() {
+    const u = activeUnit;
+    if (!u) return;
+    u.barrelSmokeTimer = 3.5;
+    for (let i = 0; i < 4; i++) {
+      u.spawnBarrelSmokePuff(stubBallistics.wind);
+    }
+  }
+
+  function triggerRecoilKick() {
+    const u = activeUnit;
+    if (!u) return;
+    u.barrelRecoil = (u.tankType === 'ARTILLERY') ? 32.0 : 20.0;
+    u.kickRecoil(1.1);
+  }
+
+  // ===========================================================================
+  // HỆ THỐNG VỎ ĐẠN 30MM & TÊN LỬA CHO HIỆU ỨNG ĐẶC TRƯNG RIÊNG
+  // ===========================================================================
+  const shellCasings = [];
+  const casingGeo = new THREE.CylinderGeometry(0.3, 0.35, 1.25, 8);
+  const casingMat = new THREE.MeshStandardMaterial({ color: 0xd6a438, metalness: 0.88, roughness: 0.25 });
+
+  function spawn30mmCasings(count = 14) {
+    const u = activeUnit;
+    if (!u) return;
+    const p = new THREE.Vector3(7.2, 13.5, -4.5);
+    u.chassisGroup ? u.chassisGroup.localToWorld(p) : u.group.localToWorld(p);
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => {
+        if (!activeUnit) return;
+        const mesh = new THREE.Mesh(casingGeo, casingMat);
+        mesh.position.copy(p).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4));
+        mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+        mesh.castShadow = true;
+        scene.add(mesh);
+        shellCasings.push({
+          mesh,
+          vx: 8 + Math.random() * 6,
+          vy: 3.5 + Math.random() * 3.5,
+          vz: -2 + Math.random() * 5,
+          rx: (Math.random() - 0.5) * 22,
+          ry: (Math.random() - 0.5) * 22,
+          life: 6.5,
+          bounces: 0
+        });
+      }, i * 40);
+    }
+  }
+
+  const activeRockets = [];
+  function triggerScoutATGM() {
+    const u = activeUnit;
+    if (!u) return;
+    initAudio();
+    const m = (typeof u.getMuzzleWorldTransform === 'function') ? u.getMuzzleWorldTransform() : { position: new THREE.Vector3(0, 14, 0), direction: new THREE.Vector3(0, 0, -1) };
+    const start = new THREE.Vector3();
+    if (u.antiTankLauncherMesh) {
+      u.antiTankLauncherMesh.getWorldPosition(start);
+    } else {
+      start.copy(m.position);
+    }
+    let dir = m.direction.clone().normalize();
+    // Phóng từ đúng miệng ống phóng tên lửa, theo trục ống
+    if (u.antiTankLauncherMesh && u.atgmTipLocal && u.atgmRearLocal) {
+      u.group.updateMatrixWorld(true);
+      const tip = u.antiTankLauncherMesh.localToWorld(u.atgmTipLocal.clone());
+      const rear = u.antiTankLauncherMesh.localToWorld(u.atgmRearLocal.clone());
+      dir = tip.clone().sub(rear).normalize();
+      start.copy(tip);
+      if (fx.missileLaunch) fx.missileLaunch(tip, dir, rear);
+    }
+    const rocketMesh = ProjectileModels.create('ANTI_TANK_MISSILE', { scale: 1.0 });
+    rocketMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    rocketMesh.position.copy(start);
+    scene.add(rocketMesh);
+
+    // Luồng khói và chớp lửa phản lực phụt ra từ đuôi ống phóng
+    if (typeof SpgFXPool !== 'undefined') {
+      for (let i = 0; i < 7; i++) {
+        const sm = SpgFXPool.acquire(scene, 'smoke', 0xd5d2cc, 0.65);
+        sm.position.copy(start).addScaledVector(dir, -2.5);
+        u.fxParticles.push({
+          mesh: sm, base: 1.8, vx: -dir.x * 14 + (Math.random() - 0.5) * 6, vy: 2 + Math.random() * 4, vz: -dir.z * 14 + (Math.random() - 0.5) * 6,
+          scale: 1.0, alpha: 0.65, growSpeed: 6.5, life: 0.95
+        });
+      }
+    }
+    if (window.soundEngine && typeof window.soundEngine.playRocketLaunch === 'function') {
+      soundEngine.playRocketLaunch();
+    } else if (window.soundEngine) {
+      soundEngine.playExplosionAtDistance(40, 'DIRECT_HIT', 'RPG');
+    }
+
+    activeRockets.push({
+      mesh: rocketMesh,
+      pos: start.clone(),
+      dir: dir.clone(),
+      speed: 160,
+      accel: 560,
+      t: 0,
+      life: 2.2
+    });
+  }
+
+  function triggerSabotShot() {
+    const u = activeUnit;
+    if (!u) return;
+    initAudio();
+    const m = (typeof u.getMuzzleWorldTransform === 'function') ? u.getMuzzleWorldTransform() : { position: new THREE.Vector3(0, 14, -28), direction: new THREE.Vector3(0, 0, -1) };
+    u.barrelRecoil = 22.0;
+    u.kickRecoil(1.2);
+    if (fx && fx.sabotDiscard) {
+      fx.sabotDiscard(m.position.x, m.position.y, m.position.z, m.direction.x * 2600, m.direction.y * 2600, m.direction.z * 2600);
+    }
+    u.fire(stubBallistics, stubRadar);
+  }
+
+  function triggerBoreEvacuatorSmoke() {
+    const u = activeUnit;
+    if (!u) return;
+    const m = (typeof u.getMuzzleWorldTransform === 'function') ? u.getMuzzleWorldTransform() : { position: new THREE.Vector3(0, 14, -40), direction: new THREE.Vector3(0, 0, -1) };
+    if (typeof SpgFXPool === 'undefined') return;
+    for (let i = 0; i < 8; i++) {
+      const sm = SpgFXPool.acquire(scene, 'smoke', 0xf0ede6, 0.45);
+      sm.position.copy(m.position).addScaledVector(m.direction, i * 1.2);
+      u.fxParticles.push({
+        mesh: sm, base: 1.6, vx: m.direction.x * (14 + Math.random() * 12), vy: 2 + Math.random() * 2, vz: m.direction.z * (14 + Math.random() * 12),
+        scale: 1.0, alpha: 0.45, growSpeed: 3.8, life: 1.4
+      });
+    }
+  }
+
+  function triggerArtyBrakeSmoke() {
+    const u = activeUnit;
+    if (!u) return;
+    const m = (typeof u.getMuzzleWorldTransform === 'function') ? u.getMuzzleWorldTransform() : { position: new THREE.Vector3(0, 14, -48), direction: new THREE.Vector3(0, 0, -1) };
+    if (typeof SpgFXPool === 'undefined') return;
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 6; i++) {
+        const sm = SpgFXPool.acquire(scene, 'smoke', 0xbaaFA4, 0.55);
+        sm.position.copy(m.position).add(new THREE.Vector3(side * 2.5, 0, 1.2));
+        u.fxParticles.push({
+          mesh: sm, base: 2.2, vx: side * (24 + Math.random() * 18), vy: 3 + Math.random() * 4, vz: 8 + Math.random() * 10,
+          scale: 1.0, alpha: 0.55, growSpeed: 7.2, life: 1.2
+        });
+      }
+    }
+  }
+
+  function triggerExhaustSmoke() {
+    const u = activeUnit;
+    if (!u) return;
+    const points = [];
+    if (u.exhaustLeft) points.push(u.exhaustLeft);
+    if (u.exhaustRight) points.push(u.exhaustRight);
+
+    if (points.length === 0) {
+      const p = new THREE.Vector3(0, 11, 28);
+      u.chassisGroup ? u.chassisGroup.localToWorld(p) : u.group.localToWorld(p);
+      spawnExhaustPuff(p);
+    } else {
+      for (const obj of points) {
+        const wp = new THREE.Vector3();
+        obj.getWorldPosition(wp);
+        spawnExhaustPuff(wp);
+      }
+    }
+  }
+
+  function spawnExhaustPuff(pos) {
+    if (typeof SpgFXPool === 'undefined') return;
+    for (let i = 0; i < 3; i++) {
+      const m = SpgFXPool.acquire(scene, 'sphere', 0x222428, 0.45);
+      m.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 1.5, Math.random() * 0.8, (Math.random() - 0.5) * 1.5));
+      activeUnit.fxParticles.push({
+        mesh: m,
+        base: 1.4,
+        vx: stubBallistics.wind.vx * 0.5 + (Math.random() - 0.5) * 4,
+        vy: 3.5 + Math.random() * 4,
+        vz: stubBallistics.wind.vz * 0.5 + 4 + Math.random() * 6,
+        scale: 1.0,
+        alpha: 0.5,
+        life: 0.85 + Math.random() * 0.5
+      });
+    }
+  }
+
+  function triggerDeployToggle() {
+    const u = activeUnit;
+    if (!u) return;
+    state.deployed = !state.deployed;
+    updateSpecialUI();
+  }
+
+  // Bộ phận có thể phá của từng loại xe (đúng cấu tạo thật của mẫu xe)
+  const PART_ACTIONS = {
+    ALL_ROUNDER: [['skirt', '🛡️ Bong tấm váy xích'], ['applique', '🧱 Bong giáp tăng cường mũi'], ['track', '⛓️ Đứt xích'], ['ring', '⚙️ Kẹt vòng quay tháp'], ['gun', '🔧 Cong nòng pháo'], ['optic', '🔭 Vỡ kính ngắm'], ['engine', '🔥 Hỏng động cơ'], ['antenna', '📡 Gãy ăng-ten'], ['acc', '🧰 Văng phụ kiện']],
+    GATLING: [['era', '💥 Nổ khối giáp ERA'], ['cage', '🕸️ Bung lồng giáp lưới'], ['feed', '🔗 Đứt máng tiếp đạn'], ['track', '⛓️ Đứt xích'], ['gun', '🔧 Kẹt / cong cụm nòng'], ['ring', '⚙️ Kẹt vòng quay tháp'], ['engine', '🔥 Hỏng động cơ'], ['antenna', '📡 Gãy ăng-ten'], ['acc', '🧰 Văng phụ kiện']],
+    SCOUT: [['tire', '🛞 Thủng xẹp lốp'], ['wheel', '💣 Văng bánh (nổ mạnh)'], ['glass', '🪟 Vỡ kính cabin'], ['sensor', '📡 Hỏng cụm radar / cảm biến'], ['atgm', '🚀 Phá ống phóng tên lửa'], ['engine', '🔥 Hỏng động cơ'], ['antenna', '📡 Gãy ăng-ten'], ['acc', '🧰 Văng phụ kiện']],
+    ARTILLERY: [['tire', '🛞 Thủng xẹp lốp'], ['wheel', '💣 Văng bánh (nổ mạnh)'], ['glass', '🪟 Vỡ kính cabin'], ['fuel', '⛽ Thủng thùng nhiên liệu'], ['ammo', '📦 Nổ hòm đạn'], ['hyd', '🛠️ Hỏng thủy lực càng'], ['frame', '🚚 Vặn méo khung gầm'], ['gun', '🔧 Cong nòng pháo'], ['ring', '⚙️ Kẹt bàn xoay pháo'], ['acc', '🧰 Văng phụ kiện']]
+  };
+  const partHistory = [];
+  function partLog(lines) {
+    const el = document.getElementById('partDmgLog');
+    if (!el) return;
+    partHistory.unshift(...(lines.length ? lines : ['(không có thay đổi — bộ phận đã hỏng hết)']));
+    partHistory.length = Math.min(partHistory.length, 30);
+    el.innerHTML = partHistory.map(t => '• ' + t).join('<br>');
+  }
+  function updatePartUI() {
+    const type = state.tankType;
+    const wheeled = type === 'SCOUT' || type === 'ARTILLERY';
+    const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+    show('barrelHotBtn', type === 'GATLING');
+    show('eraBtn', type === 'GATLING');
+    show('deployBtn', type === 'ARTILLERY');
+    show('steerH2', wheeled); show('steerBox', wheeled); show('steerBtn', wheeled);
+    const box = document.getElementById('partDmgBox');
+    if (!box) return;
+    // Chung cho mọi xe: móp vỏ thật + bắn liên tục vào xác xe (các nấc hư nặng -> biến dạng cực nặng -> bẹp dúm)
+    const common = [['dent', '🔨 Móp lõm vỏ (biến dạng thật)'], ['wreck', '💀 Bắn liên tục vào XÁC xe']];
+    box.innerHTML = (PART_ACTIONS[type] || []).concat(common).map(([k, t]) => `<button class="btn" data-part="${k}">${t}</button>`).join('');
+    const log = document.getElementById('partDmgLog');
+    partHistory.length = 0;
+    if (log) { log.textContent = 'Chọn bộ phận để phá — nhật ký hư hại hiện ở đây.'; }
+  }
+  document.getElementById('partDmgBox').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (!b || !activeUnit || typeof VehicleDamage === 'undefined') return;
+    initAudio();
+    const ev = VehicleDamage.debugAction(activeUnit, b.dataset.part, fx) || [];
+    partLog(ev.map(x => x.text));
+  });
+
+  function updateSpecialUI() {
+    updatePartUI();
+    const box = document.getElementById('tankSpecialBox');
+    if (!box) return;
+    const type = state.tankType;
+
+    if (type === 'ARTILLERY') {
+      box.innerHTML = `
+        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">🎯 ĐẶC TRƯNG: PHÁO TỰ HÀNH ARBALEST 155</div>
+        <button class="btn btn-hot" id="specArtyDeployBtn" style="margin-bottom:5px;padding:8px">
+          ${state.deployed ? '🏗️ Thu càng & chân chống (Hành quân)' : '🏗️ Hạ chân chống & cắm càng sau (Khai hỏa)'}
+        </button>
+        <div class="action-grid">
+          <button class="btn" id="specArtyBrakeSmokeBtn">💨 Xì khói ngang loa 2 tầng</button>
+          <button class="btn" id="specArtyArcElevBtn">📐 Nâng góc cầu vồng 55°</button>
+        </div>
+        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+          Loa hãm lùi xả 2 luồng phản lực khói lửa ngang ngả sau 16°, 2 chân chống thủy lực và lưỡi càng thép hộp cắm sâu xuống đất.
+        </small>
+      `;
+      document.getElementById('specArtyDeployBtn').onclick = () => { initAudio(); triggerDeployToggle(); };
+      document.getElementById('specArtyBrakeSmokeBtn').onclick = () => { initAudio(); triggerArtyBrakeSmoke(); };
+      document.getElementById('specArtyArcElevBtn').onclick = () => { initAudio(); setElevation(55); };
+    } else if (type === 'ALL_ROUNDER') {
+      box.innerHTML = `
+        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">🛡️ ĐẶC TRƯNG: XE TĂNG CHỦ LỰC HALBERD MK.3</div>
+        <button class="btn btn-hot" id="specMbtSabotBtn" style="margin-bottom:5px;padding:8px">
+          🚀 Bắn APFSDS bung 3 mảnh guốc ốp (Sabot)
+        </button>
+        <div class="action-grid">
+          <button class="btn" id="specMbtEvacSmokeBtn">💨 Xì khói bầu hút nòng trơn</button>
+          <button class="btn" id="specMbtRcwsSpinBtn">🔄 Xoay trạm súng máy nóc</button>
+        </div>
+        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+          Pháo nòng trơn L/55 có bầu hút gom khí thuốc, đạn xuyên giáp APFSDS bung tách 3 mảnh guốc ốp nhôm bay sang hai bên.
+        </small>
+      `;
+      document.getElementById('specMbtSabotBtn').onclick = () => { initAudio(); triggerSabotShot(); };
+      document.getElementById('specMbtEvacSmokeBtn').onclick = () => { initAudio(); triggerBoreEvacuatorSmoke(); };
+      document.getElementById('specMbtRcwsSpinBtn').onclick = () => {
+        initAudio();
+        if (activeUnit && activeUnit.rcwsTurret) activeUnit.rcwsTurret.rotation.y += 0.8;
+      };
+    } else if (type === 'GATLING') {
+      box.innerHTML = `
+        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">⚡ ĐẶC TRƯNG: XE CHI VIỆN HAILSTORM R6 (6 NÒNG XOAY)</div>
+        <button class="btn btn-hot" id="specGatlingBurstBtn" style="margin-bottom:5px;padding:8px">
+          ⚡ Xả liên thanh cụm 6 nòng (Mưa vỏ đạn)
+        </button>
+        <div class="action-grid">
+          <button class="btn" id="specGatlingSpinBtn">🔄 Quay nòng không tải (Spin-up)</button>
+          <button class="btn" id="specGatlingOverheatBtn">🌋 Nung đỏ rực 6 nòng</button>
+        </div>
+        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+          Cụm 6 nòng quay 38 rad/s, nòng pháo đỏ rực nhiệt độ cao, mưa vỏ đạn 30mm văng rào rào từ cửa hông nảy tanh tách trên sàn.
+        </small>
+      `;
+      document.getElementById('specGatlingBurstBtn').onclick = () => {
+        initAudio();
+        if (activeUnit) {
+          activeUnit.spinUpTime = 2.0;
+          activeUnit.isSpinning = true;
+          activeUnit.gatlingHeat = Math.min(1.0, (activeUnit.gatlingHeat || 0) + 0.35);
+          activeUnit.updateGatling(0.12, true, stubBallistics, stubRadar);
+          spawn30mmCasings(16);
+        }
+      };
+      document.getElementById('specGatlingSpinBtn').onclick = () => {
+        initAudio();
+        if (activeUnit) { activeUnit.spinUpTime = 2.5; activeUnit.isSpinning = true; }
+      };
+      document.getElementById('specGatlingOverheatBtn').onclick = () => {
+        initAudio();
+        if (activeUnit) activeUnit.gatlingHeat = 1.0;
+      };
+    } else if (type === 'SCOUT') {
+      box.innerHTML = `
+        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">📡 ĐẶC TRƯNG: XE TRINH SÁT MARTEN R4 (4x4 & TÊN LỬA)</div>
+        <button class="btn btn-hot" id="specScoutAtgmBtn" style="margin-bottom:5px;padding:8px">
+          🚀 Phóng tên lửa chống tăng ATGM (Lửa phản lực)
+        </button>
+        <div class="action-grid">
+          <button class="btn" id="specScoutMgBurstBtn">🔫 Xả súng máy hạng nặng</button>
+          <button class="btn" id="specScoutRadarSpinBtn">📡 Quay quét radar trinh sát</button>
+          <button class="btn" id="specScoutReloadBtn">🔄 Nạp đạn súng máy (thay hộp 100 viên)</button>
+        </div>
+        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+          Khung gầm 4x4 cơ động cao, bệ tên lửa chống tăng ATGM có luồng lửa phản lực phụt đuôi, súng máy 12.7mm và đĩa radar trinh sát.
+        </small>
+      `;
+      document.getElementById('specScoutAtgmBtn').onclick = () => { initAudio(); triggerScoutATGM(); };
+      document.getElementById('specScoutMgBurstBtn').onclick = () => {
+        initAudio();
+        if (activeUnit) {
+          activeUnit.gatlingShotFlash = 1.0;
+          activeUnit.updateGatling(0.08, true, stubBallistics, stubRadar);
+          spawn30mmCasings(4);
+        }
+      };
+      document.getElementById('specScoutReloadBtn').onclick = () => {
+        initAudio();
+        const u = activeUnit;
+        if (!u || u._labReloading) return;
+        u.gatlingMag = 0;
+        u.reloadTimer = u.reloadDuration || 4.2;
+        u._labReloading = true;
+        if (window.soundEngine && soundEngine.playReload) soundEngine.playReload('SCOUT', 'start');
+      };
+      document.getElementById('specScoutRadarSpinBtn').onclick = () => {
+        initAudio();
+        if (activeUnit && activeUnit.radarDish) activeUnit.radarDish.rotation.y += 1.2;
+      };
+    }
+  }
+
+  function triggerERABlast() {
+    const u = activeUnit;
+    if (!u) return;
+    if (typeof VehicleDamage !== 'undefined') {
+      const ev = VehicleDamage.debugAction(u, 'era', fx) || [];
+      if (typeof partLog === 'function') partLog(ev.map(e => e.text));
+    }
+  }
+
+  // Mô phỏng các phát trúng ngẫu nhiên (đạn nổ / 30mm / tên lửa) để thấy hư hại bộ phận tương ứng mức máu
+  function simulateHits(u, n) {
+    if (typeof VehicleDamage === 'undefined') return;
+    const ammos = ['HE', 'GATLING_BULLET', 'GATLING_BULLET', 'RPG', 'NORMAL'];
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.cos(a), -0.15 - Math.random() * 0.25, Math.sin(a)).normalize();
+      const origin = u.group.position.clone().add(new THREE.Vector3(0, 9 + Math.random() * 6, 0)).addScaledVector(dir, -80);
+      const h = fx.hitUnitSurface(u, origin, dir, 140);
+      if (!h) continue;
+      const ammo = ammos[Math.floor(Math.random() * ammos.length)];
+      const hit = Object.assign({}, h, { unit: u, hitType: 'DIRECT_HIT' });
+      fx.impactSurface(ammo, hit, dir.clone().multiplyScalar(400), {});
+      VehicleDamage.onDirectHit(u, { hit, ammo, dir, fx });
+    }
+  }
+
+  function setDamagePercent(pct) {
+    const u = activeUnit;
+    if (!u) return;
+    fx.restoreVehicle(u);
+    u.hp = (pct / 100) * u.maxHp;
+    if (pct <= 0) {
+      simulateHits(u, 3);
+      // Phát kết liễu: đạn nổ trúng sườn thân xe (bánh chỉ văng nếu ở gần điểm nổ)
+      const a = Math.random() * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.cos(a), -0.3, Math.sin(a)).normalize();
+      const origin = u.group.position.clone().add(new THREE.Vector3(0, 10, 0)).addScaledVector(dir, -80);
+      const h = fx.hitUnitSurface(u, origin, dir, 140);
+      if (h && typeof VehicleDamage !== 'undefined') {
+        const hit = Object.assign({}, h, { unit: u, hitType: 'DIRECT_HIT' });
+        VehicleDamage.onDirectHit(u, { hit, ammo: u.tankType === 'ALL_ROUNDER' ? 'RPG' : 'HE', dir, fx, heavy: false });
+      }
+      u.isDead = true;
+      fx.onVehicleDestroyed(u);
+    } else {
+      u.isDead = false;
+      if (pct < 100) simulateHits(u, Math.round((100 - pct) / 12));
+    }
+    fx.trackVehicle(u);
+  }
+
+  function repairVehicle() {
+    setDamagePercent(100);
+    document.querySelectorAll('#damageRow .btn').forEach((b, i) => b.classList.toggle('on', i === 0));
+  }
+
+  // ===========================================================================
+  // CẬP NHẬT HUD THÔNG SỐ
+  // ===========================================================================
+  function updateHUD() {
+    const u = activeUnit;
+    if (!u) return;
+    const names = {
+      ARTILLERY: 'PHÁO TỰ HÀNH BÁNH LỐP ARBALEST 155',
+      ALL_ROUNDER: 'XE TĂNG CHIẾN ĐẤU CHỦ LỰC HALBERD MK.3',
+      GATLING: 'XE CHI VIỆN HỎA LỰC HAILSTORM R6',
+      SCOUT: 'XE TRINH SÁT BỌC GIÁP NHẸ MARTEN R4'
+    };
+    document.getElementById('hudTitle').textContent = names[u.tankType] || u.tankType;
+
+    if (u.tankType === 'ARTILLERY') {
+      document.getElementById('hudBrake').textContent = 'Loa hãm lùi 2 tầng xả ngang';
+      document.getElementById('hudSmoke').textContent = '2 luồng khói xì ngang đối xứng (~16° sau)';
+      const p = Math.round(((u.deployProgress || 0) / 2) * 100);
+      document.getElementById('hudDeploy').textContent = p >= 100 ? 'Đã cắm càng hoàn tất (100%)' : (p > 0 ? `Đang hạ càng (${p}%)` : 'Hành quân (0%)');
+    } else if (u.tankType === 'ALL_ROUNDER') {
+      document.getElementById('hudBrake').textContent = 'Nòng trơn L/55 có bầu hút khói';
+      document.getElementById('hudSmoke').textContent = 'Luồng khói thẳng trục nòng';
+      document.getElementById('hudDeploy').textContent = 'Không có chân chống';
+    } else if (u.tankType === 'GATLING') {
+      document.getElementById('hudBrake').textContent = 'Khung 6 nòng xoay 30mm';
+      document.getElementById('hudSmoke').textContent = 'Bụi khói liên thanh tần số cao';
+      document.getElementById('hudDeploy').textContent = 'Lưỡi ủi thủy lực mũi xe';
+    } else {
+      document.getElementById('hudBrake').textContent = 'Loa che lửa nòng súng máy';
+      document.getElementById('hudSmoke').textContent = 'Khói súng máy & đuôi tên lửa';
+      document.getElementById('hudDeploy').textContent = 'Radar trinh sát cơ động';
+    }
+
+    const r = (u.barrelRecoil || 0).toFixed(1);
+    document.getElementById('hudRecoil').textContent = `${r} mm`;
+    document.getElementById('hudElevation').textContent = `${(state.elevation || 0).toFixed(1)}°`;
+    const sDeg = state.steerDeg || 0;
+    document.getElementById('hudSteer').textContent = sDeg === 0 ? '0.0° (Thẳng lái)' : (sDeg > 0 ? `+${sDeg.toFixed(1)}° (Phải)` : `${sDeg.toFixed(1)}° (Trái)`);
+  }
+
+  function initAudio() {
+    if (state.audioReady || !window.soundEngine) return;
+    soundEngine.init();
+    soundEngine.resume();
+    state.audioReady = true;
+  }
+
+  function setElevation(deg) {
+    state.elevation = Math.max(-5, Math.min(65, deg));
+    state.targetElevRad = (state.elevation * Math.PI) / 180;
+    const s = document.getElementById('elevSlider');
+    if (s) s.value = state.elevation;
+    const l = document.getElementById('elevValLbl');
+    if (l) l.textContent = `${state.elevation.toFixed(1)}°`;
+    document.querySelectorAll('#elevPresets .btn').forEach(b => {
+      b.classList.toggle('on', Math.abs(parseFloat(b.dataset.elev) - state.elevation) < 1.0);
+    });
+  }
+
+  function setSteer(deg) {
+    state.steerDeg = Math.max(-35, Math.min(35, deg));
+    // Trong không gian Three.js, khi xe nhìn về -Z: góc quay quanh +Y âm sẽ xoay đầu bánh sang +X (bên phải)
+    state.steerAngle = - (state.steerDeg * Math.PI / 180) * 0.95;
+    const s = document.getElementById('steerSlider');
+    if (s) s.value = state.steerDeg;
+    const l = document.getElementById('steerValLbl');
+    if (l) {
+      l.textContent = state.steerDeg === 0 ? '0.0° (Thẳng lái)' : (state.steerDeg > 0 ? `+${state.steerDeg.toFixed(1)}° (Rẽ Phải)` : `${state.steerDeg.toFixed(1)}° (Rẽ Trái)`);
+    }
+    document.querySelectorAll('#steerPresets .btn').forEach(b => {
+      b.classList.toggle('on', Math.abs(parseFloat(b.dataset.steer) - state.steerDeg) < 1.0);
+    });
+  }
+
+  // ===========================================================================
+  // GẮN SỰ KIỆN GIAO DIỆN
+  // ===========================================================================
+  const elevSlider = document.getElementById('elevSlider');
+  if (elevSlider) {
+    elevSlider.addEventListener('input', e => setElevation(parseFloat(e.target.value)));
+  }
+  document.getElementById('elevPresets').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (b && b.dataset.elev !== undefined) setElevation(parseFloat(b.dataset.elev));
+  });
+
+  const steerSlider = document.getElementById('steerSlider');
+  if (steerSlider) {
+    steerSlider.addEventListener('input', e => setSteer(parseFloat(e.target.value)));
+  }
+  document.getElementById('steerPresets').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (b && b.dataset.steer !== undefined) setSteer(parseFloat(b.dataset.steer));
+  });
+
+  document.getElementById('tankRow').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (!b) return;
+    initAudio();
+    state.tankType = b.dataset.tank;
+    document.querySelectorAll('#tankRow .btn').forEach(x => x.classList.toggle('on', x === b));
+    loadUnit(state.tankType, state.team);
+  });
+
+  document.getElementById('teamRow').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (!b) return;
+    initAudio();
+    state.team = b.dataset.team;
+    document.querySelectorAll('#teamRow .btn').forEach(x => x.classList.toggle('on', x === b));
+    loadUnit(state.tankType, state.team);
+  });
+
+  const fireBtn = document.getElementById('fireBtn');
+  fireBtn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    state.firing = true;
+    fireBtn.classList.add('on');
+    triggerFire();
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => {
+    fireBtn.addEventListener(ev, () => {
+      state.firing = false;
+      fireBtn.classList.remove('on');
+    });
+  });
+
+  document.getElementById('smokeBtn')?.addEventListener('click', () => { initAudio(); triggerBarrelSmoke(); });
+  document.getElementById('recoilBtn')?.addEventListener('click', () => { initAudio(); triggerRecoilKick(); });
+  document.getElementById('exhaustBtn')?.addEventListener('click', () => { initAudio(); triggerExhaustSmoke(); });
+  document.getElementById('eraBtn')?.addEventListener('click', () => { initAudio(); triggerERABlast(); });
+  document.getElementById('deployBtn')?.addEventListener('click', () => { initAudio(); triggerDeployToggle(); });
+  document.getElementById('repairBtn')?.addEventListener('click', () => { initAudio(); repairVehicle(); });
+
+  const driveBtn = document.getElementById('driveBtn');
+  driveBtn.addEventListener('click', () => {
+    state.driving = !state.driving;
+    driveBtn.textContent = '🚜 Lăn bánh & bụi cát: ' + (state.driving ? 'BẬT' : 'TẮT');
+    driveBtn.classList.toggle('on', state.driving);
+  });
+
+  const autoFireBtn = document.getElementById('autoFireBtn');
+  autoFireBtn.addEventListener('click', () => {
+    state.autoFire = !state.autoFire;
+    autoFireBtn.textContent = '🔄 Bắn tự động: ' + (state.autoFire ? 'BẬT' : 'TẮT');
+    autoFireBtn.classList.toggle('on', state.autoFire);
+  });
+
+  const autoRotBtn = document.getElementById('autoRotBtn');
+  autoRotBtn.addEventListener('click', () => {
+    state.autoRotate = !state.autoRotate;
+    autoRotBtn.textContent = 'Tự động xoay xe: ' + (state.autoRotate ? 'BẬT' : 'TẮT');
+    autoRotBtn.classList.toggle('on', state.autoRotate);
+  });
+
+  document.getElementById('barrelHotBtn').addEventListener('click', () => {
+    const u = activeUnit;
+    if (u && u.gatlingGlowMesh) {
+      u.gatlingHeat = 1.0;
+    }
+  });
+
+  document.getElementById('steerBtn').addEventListener('click', () => {
+    const next = state.steerDeg === 0 ? 35 : (state.steerDeg > 0 ? -35 : 0);
+    setSteer(next);
+  });
+
+  document.getElementById('boostBtn').addEventListener('click', () => {
+    triggerExhaustSmoke();
+    triggerExhaustSmoke();
+  });
+
+  document.getElementById('damageRow').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (!b) return;
+    initAudio();
+    document.querySelectorAll('#damageRow .btn').forEach(x => x.classList.toggle('on', x === b));
+    setDamagePercent(parseFloat(b.dataset.hp));
+  });
+
+  document.getElementById('camRow').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (!b) return;
+    document.querySelectorAll('#camRow .btn').forEach(x => x.classList.toggle('on', x === b));
+    applyCamPreset(b.dataset.cam);
+  });
+
+  document.getElementById('speedRow').addEventListener('click', e => {
+    const b = e.target.closest('.btn');
+    if (!b) return;
+    document.querySelectorAll('#speedRow .btn').forEach(x => x.classList.toggle('on', x === b));
+    state.speed = parseFloat(b.dataset.speed);
+  });
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      initAudio();
+      if (!e.repeat) {
+        state.firing = true;
+        fireBtn.classList.add('on');
+        triggerFire();
+      }
+    } else if (e.code === 'ArrowUp') {
+      e.preventDefault();
+      setElevation(state.elevation + 2.5);
+    } else if (e.code === 'ArrowDown') {
+      e.preventDefault();
+      setElevation(state.elevation - 2.5);
+    } else if (e.code === 'KeyA') {
+      setSteer(Math.max(-35, state.steerDeg - 7));
+    } else if (e.code === 'KeyD') {
+      if (e.shiftKey) {
+        document.getElementById('deployBtn').click();
+      } else {
+        setSteer(Math.min(35, state.steerDeg + 7));
+      }
+    } else if (e.code === 'KeyZ') {
+      setSteer(0);
+      setElevation(0);
+    } else if (e.code === 'KeyW') {
+      driveBtn.click();
+    } else if (e.code === 'KeyS') {
+      const order = [1, 0.5, 0.25, 0.1];
+      const next = order[(order.indexOf(state.speed) + 1) % order.length];
+      document.querySelector(`#speedRow [data-speed="${next}"]`).click();
+    } else if (e.code === 'KeyC') {
+      const presets = ['muzzle', 'orbit', 'suspension', 'exhaust'];
+      const next = presets[(presets.indexOf(state.cam) + 1) % presets.length];
+      document.querySelector(`#camRow [data-cam="${next}"]`).click();
+    } else if (e.code === 'KeyR') {
+      repairVehicle();
+    } else if (/^Digit[1-4]$/.test(e.code)) {
+      const idx = +e.code.slice(5) - 1;
+      const btns = document.querySelectorAll('#tankRow .btn');
+      if (btns[idx]) btns[idx].click();
+    }
+  });
+
+  window.addEventListener('keyup', e => {
+    if (e.code === 'Space') {
+      state.firing = false;
+      fireBtn.classList.remove('on');
+    }
+  });
+
+  const themeBtn = document.getElementById('themeBtn');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const next = state.theme === 'bright' ? 'dark' : 'bright';
+      setEnvironmentTheme(next);
+    });
+  }
+
+  function resize() {
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Áp dụng mặc định NỀN SÁNG SHOWROOM KỸ THUẬT QUÂN SỰ
+  setEnvironmentTheme('bright');
+
+  // Khởi tạo xe ban đầu
+  loadUnit(state.tankType, state.team);
+
+  // ===========================================================================
+  // VÒNG LẶP CHÍNH MÔ PHỎNG CHIẾN XA VÀ HIỆU ỨNG HẠT
+  // ===========================================================================
+  let lastTime = performance.now();
+  let autoTimer = 0;
+  let driveDustTimer = 0;
+
+  function animate(now) {
+    requestAnimationFrame(animate);
+    const rawDt = Math.min(0.1, (now - lastTime) / 1000);
+    lastTime = now;
+    const dt = rawDt * state.speed;
+
+    const u = activeUnit;
+    if (u) {
+      // 1. Tự động xoay xe nếu đang bật
+      if (state.autoRotate && !isDragging) {
+        orbit.yaw += dt * 0.25;
+        updateCamera();
+      }
+
+      // 2. Chế độ triển khai hạ chân chống & lưỡi càng
+      if (u.tankType === 'ARTILLERY') {
+        const targetProgress = state.deployed ? 2.0 : 0.0;
+        const curProgress = u.deployProgress || 0;
+        if (curProgress !== targetProgress) {
+          const step = (targetProgress > curProgress ? 1 : -1) * dt * 1.6;
+          u.deployProgress = Math.max(0, Math.min(2.0, curProgress + step));
+          u.isDeployed = u.deployProgress >= 1.95;
+        }
+      }
+
+      // Nâng hạ nòng pháo mượt mà theo góc người dùng điều khiển
+      if (u.barrelPivot) {
+        const targetRad = state.targetElevRad;
+        u.barrelPivot.rotation.x += (targetRad - u.barrelPivot.rotation.x) * Math.min(1, dt * 8);
+        u.elevation = (u.barrelPivot.rotation.x * 180) / Math.PI;
+      }
+
+      // 3. Xử lý bắn tự động hoặc giữ nút bắn
+      if (state.autoFire) {
+        autoTimer += dt;
+        const fireInterval = (u.tankType === 'GATLING') ? 0.08 : (u.tankType === 'ARTILLERY' ? 2.8 : 1.8);
+        if (autoTimer >= fireInterval) {
+          autoTimer = 0;
+          triggerFire();
+        }
+      }
+      if (state.firing && u.tankType === 'GATLING') {
+        u.updateGatling(dt, true, stubBallistics, stubRadar);
+      }
+
+      // 4. Giảm nạp đạn & hồi phục giật nòng
+      if (u.reloadTimer > 0) u.reloadTimer = Math.max(0, u.reloadTimer - dt);
+      if (u.barrelRecoil > 0 && u.barrelGroup) {
+        u.barrelRecoil = Math.max(0, u.barrelRecoil - dt * 38);
+        u.barrelGroup.position.z = u.barrelRecoil;
+      }
+      if (typeof u.updateRecoilRock === 'function') u.updateRecoilRock(dt);
+      if (u.chassisGroup) {
+        const d = u.dmg;
+        if (u._chassisBaseY === undefined) u._chassisBaseY = u.chassisGroup.position.y + (d && d.sinkApplied || 0);
+        u.chassisGroup.rotation.x = (u.rockPitch || 0) + (d ? d.tiltP || 0 : 0);
+        u.chassisGroup.rotation.z = (u.rockRoll || 0) + (d ? d.tiltR || 0 : 0);
+        u.chassisGroup.position.y = u._chassisBaseY - (d ? d.sink || 0 : 0) - (u.rockHeave || 0);
+        if (d) { d.tiltPApplied = d.tiltP || 0; d.tiltRApplied = d.tiltR || 0; d.sinkApplied = d.sink || 0; }
+      }
+      // Nạp đạn súng máy xe trinh sát: hết thời gian nạp -> lắp xong hộp đạn mới
+      if (u.tankType === 'SCOUT' && u.gatlingMag <= 0 && u.reloadTimer <= 0 && u._labReloading) {
+        u._labReloading = false;
+        u.gatlingMag = u.gatlingMagMax;
+        if (window.soundEngine && soundEngine.playReload) soundEngine.playReload('SCOUT', 'end');
+      }
+
+      // 5. Khói tàn nòng sau khi bắn (bao gồm xì khói ngang từ loa hãm lùi)
+      if (u.barrelSmokeTimer > 0) {
+        u.barrelSmokeTimer -= dt;
+        if (Math.random() < 0.45) u.spawnBarrelSmokePuff(stubBallistics.wind);
+      }
+
+      // 6. Mô phỏng xe chạy: bánh xe lăn, bẻ lái, vệt bụi cát phun ra từ gầm bánh
+      u.currentSteer = state.steerAngle;
+      if (u.roadWheels && u.roadWheels.length) {
+        u.roadWheels.forEach(w => {
+          if (w.userData && w.userData.steerFactor) {
+            w.rotation.y = u.currentSteer * w.userData.steerFactor;
+          }
+        });
+      }
+
+      if (state.driving) {
+        u.speed = 45;
+        driveDustTimer += dt;
+        if (driveDustTimer >= 0.04) {
+          driveDustTimer = 0;
+          if (typeof SpgFXPool !== 'undefined') {
+            for (const s of [-7.5, 7.5]) {
+              const dm = SpgFXPool.acquire(scene, 'sphere', 0x98856a, 0.28);
+              dm.position.set(u.x + s + (Math.random() - 0.5) * 2, 0.4, u.z + 18 + (Math.random() - 0.5) * 3);
+              u.fxParticles.push({
+                mesh: dm,
+                base: 1.6 + Math.random() * 1.2,
+                vx: (Math.random() - 0.5) * 6,
+                vy: 2.0 + Math.random() * 3,
+                vz: 8 + Math.random() * 8,
+                scale: 1.0,
+                alpha: 0.32,
+                life: 0.8
+              });
+            }
+          }
+        }
+      } else {
+        u.speed = 0;
+      }
+
+      // 7. Cập nhật hoạt ảnh mô hình và các hạt hiệu ứng
+      if (u.modelAnimator) u.modelAnimator.update(dt, u);
+      if (typeof u.updateFXParticles === 'function') u.updateFXParticles(dt);
+      updateHUD();
+    }
+
+    // 8. Cập nhật vật lý các vỏ đạn 30mm nảy sàn
+    for (let i = shellCasings.length - 1; i >= 0; i--) {
+      const c = shellCasings[i];
+      c.life -= dt;
+      c.vy -= 180 * dt;
+      c.mesh.position.x += c.vx * dt;
+      c.mesh.position.y += c.vy * dt;
+      c.mesh.position.z += c.vz * dt;
+      c.mesh.rotation.x += c.rx * dt;
+      c.mesh.rotation.y += c.ry * dt;
+      if (c.mesh.position.y <= 0.18) {
+        c.mesh.position.y = 0.18;
+        c.vy = -c.vy * 0.42;
+        c.vx *= 0.65;
+        c.vz *= 0.65;
+        c.rx *= 0.45;
+        c.ry *= 0.45;
+        c.bounces++;
+        if (Math.abs(c.vy) < 4) c.vy = 0;
+      }
+      if (c.life <= 0.8) {
+        c.mesh.scale.setScalar(Math.max(0.01, c.life / 0.8));
+      }
+      if (c.life <= 0) {
+        scene.remove(c.mesh);
+        c.mesh.geometry.dispose();
+        shellCasings.splice(i, 1);
+      }
+    }
+
+    // 9. Cập nhật đường bay tên lửa chống tăng ATGM
+    for (let i = activeRockets.length - 1; i >= 0; i--) {
+      const r = activeRockets[i];
+      r.t += dt;
+      r.speed += r.accel * dt;
+      r.pos.addScaledVector(r.dir, r.speed * dt);
+      r.mesh.position.copy(r.pos);
+
+      // Phụt khói và vệt lửa phản lực đuôi tên lửa
+      if (typeof SpgFXPool !== 'undefined' && Math.random() < 0.65) {
+        const sm = SpgFXPool.acquire(scene, 'smoke', 0xdedbd5, 0.55);
+        sm.position.copy(r.pos).addScaledVector(r.dir, -3.2);
+        if (activeUnit) {
+          activeUnit.fxParticles.push({
+            mesh: sm, base: 1.4, vx: (Math.random() - 0.5) * 4, vy: 1.5 + Math.random() * 2, vz: (Math.random() - 0.5) * 4,
+            scale: 1.0, alpha: 0.55, growSpeed: 5.5, life: 0.75
+          });
+        }
+      }
+
+      if (r.t >= r.life || r.pos.length() > 650 || r.pos.y < 0.5) {
+        // Tên lửa tự hủy khi hết tầm / chạm đất: nổ đầu đạn lõm thật như trong trận
+        fx.spawn(r.pos.x, Math.max(0.5, r.pos.y), r.pos.z, 'ANTI_TANK_MISSILE', r.pos.y < 2 ? 'GROUND' : 'AIRBURST', {});
+        if (window.soundEngine) soundEngine.playExplosionAtDistance(r.pos.distanceTo(camera.position), r.pos.y < 2 ? 'GROUND' : 'AIRBURST', 'ANTI_TANK_MISSILE');
+        scene.remove(r.mesh);
+        activeRockets.splice(i, 1);
+      }
+    }
+
+    fx.update(dt);
+    if (typeof VehicleDamage !== 'undefined') VehicleDamage.update(dt, []);
+    renderer.render(scene, camera);
+  }
+
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

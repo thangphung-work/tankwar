@@ -1,0 +1,1834 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phòng Thử Đạn</title>
+<style>
+  :root { --bg:#060b12; --panel:rgba(6,16,28,.88); --line:#16425d; --accent:#14c8ff; --hot:#ff8a2a; --text:#dbe8f2; --muted:#8aa3b8; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:13px/1.4 "Segoe UI",Arial,sans-serif; overflow:hidden; }
+  #view { position:fixed; inset:0; display:block; }
+  .panel { position:fixed; top:12px; left:12px; width:300px; max-height:calc(100% - 24px); overflow-y:auto; background:var(--panel); border:1px solid var(--line); padding:12px 12px 14px; backdrop-filter:blur(4px); }
+  h1 { margin:0 0 2px; font-size:16px; letter-spacing:.5px; color:#fff; }
+  .sub { color:var(--muted); font-size:11px; margin-bottom:10px; }
+  h2 { margin:12px 0 6px; font-size:11px; letter-spacing:1px; color:var(--accent); text-transform:uppercase; }
+  .ammo { display:grid; grid-template-columns:1fr; gap:4px; }
+  .btn { display:block; width:100%; text-align:left; cursor:pointer; color:var(--text); background:rgba(4,22,38,.9); border:1px solid #1d5a7d; padding:6px 9px; font:600 12px "Segoe UI",Arial,sans-serif; }
+  .btn small { display:block; color:var(--muted); font-weight:400; font-size:10.5px; }
+  .btn:hover { border-color:#3fb7e8; }
+  .btn.on { background:linear-gradient(135deg,#ffc94a,#f39200); color:#1a1206; border-color:#ffd36b; }
+  .btn.on small { color:#3b2a08; }
+  .row { display:flex; gap:4px; flex-wrap:wrap; }
+  .row .btn { width:auto; flex:1 1 auto; text-align:center; padding:5px 6px; }
+  .fire { margin-top:12px; text-align:center; font-size:15px; padding:10px; color:#fff; background:linear-gradient(135deg,#ff6a00,#b31d00); border-color:#ff9a4a; }
+  .fire:hover { filter:brightness(1.12); }
+  .fire.on { background:linear-gradient(135deg,#ff3a00,#7a1000); color:#fff; }
+  .desc { margin-top:8px; padding:8px; border-left:3px solid var(--hot); background:rgba(255,138,42,.07); color:#e9d9c6; font-size:12px; }
+  .inset { position:fixed; right:12px; bottom:12px; width:340px; height:230px; border:1px solid var(--line); background:transparent; pointer-events:none; }
+  .inset .lbl { position:absolute; left:10px; top:8px; right:10px; font:700 12px "Segoe UI",Arial,sans-serif; color:#fff; text-shadow:0 1px 3px #000; }
+  .inset .lbl span { display:block; font-weight:400; font-size:10.5px; color:var(--muted); }
+  .hint { position:fixed; right:12px; top:12px; background:var(--panel); border:1px solid var(--line); padding:8px 10px; color:var(--muted); font-size:11px; line-height:1.6; }
+  .hint b { color:var(--text); }
+  @media (max-width:760px) { .panel { width:calc(100% - 24px); max-height:45%; } .inset { width:180px; height:130px; } .hint { display:none; } }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div class="panel">
+  <a href="vehicle_fx_lab.html" class="btn" style="text-align:center;margin-bottom:10px;background:rgba(20,200,255,0.12);color:var(--accent);border:1px dashed var(--accent);text-decoration:none;display:block">🚜 CHUYỂN SANG: PHÒNG THỬ HIỆU ỨNG XE →</a>
+  <h1>PHÒNG THỬ ĐẠN & HIỆU ỨNG NỔ</h1>
+  <div class="sub">Xe thật của game khai hỏa → đạn bay theo quỹ đạo → nổ đúng như trong trận</div>
+
+  <h2>Loại đạn</h2>
+  <div class="ammo" id="ammoList"></div>
+  <div class="desc" id="ammoDesc"></div>
+
+  <h2>Mục tiêu</h2>
+  <div class="row" id="targetRow">
+    <button class="btn on" data-target="GROUND">Mặt đất</button>
+    <button class="btn" data-target="WALL">Tường bê tông</button>
+    <button class="btn" data-target="BUILDING">Tòa nhà 4 tầng</button>
+    <button class="btn" data-target="VEHICLE">Xe bọc thép</button>
+    <button class="btn" data-target="BERM">Ụ đất</button>
+    <button class="btn" data-target="TREES">Cây cối</button>
+    <button class="btn" data-target="BUNKER">Boong-ke</button>
+    <button class="btn" data-target="PIT">Hố sâu</button>
+    <button class="btn" data-target="POND">Hồ nước</button>
+  </div>
+  <div class="row cfg" data-for="BERM" style="margin-top:4px;align-items:center;gap:6px">
+    <span style="font-size:11px;color:var(--muted)">Chiều cao ụ đất</span>
+    <input type="range" id="bermH" min="4" max="26" step="1" value="10" style="flex:1">
+    <span id="bermHVal" style="font-size:11px;width:36px">10</span>
+  </div>
+  <div class="row cfg" data-for="BUILDING" id="bldRow" style="margin-top:4px">
+    <button class="btn on" data-bld="apartment">Chung cư 4 tầng</button>
+    <button class="btn" data-bld="office">Cao ốc kính</button>
+    <button class="btn" data-bld="mudbrick">Nhà đất</button>
+    <button class="btn" data-bld="hangar">Nhà kho</button>
+  </div>
+  <div class="row cfg" data-for="VEHICLE" id="vehRow" style="margin-top:4px">
+    <button class="btn on" data-veh="ALL_ROUNDER">Halberd</button>
+    <button class="btn" data-veh="GATLING">Hailstorm</button>
+    <button class="btn" data-veh="ARTILLERY">Arbalest</button>
+    <button class="btn" data-veh="SCOUT">Marten</button>
+  </div>
+  <div class="row cfg" data-for="VEHICLE" style="margin-top:4px;align-items:center;gap:6px">
+    <span style="font-size:11px;color:var(--muted);width:92px">Xoay xe mục tiêu</span>
+    <input type="range" id="yawS" min="-180" max="180" step="5" value="0" style="flex:1">
+    <span id="yawVal" style="font-size:11px;width:44px">0°</span>
+  </div>
+  <div id="dmgLog" style="margin-top:4px;font-size:10.5px;line-height:1.45;color:#ffb37a;max-height:96px;overflow:auto"></div>
+  <div class="row" style="margin-top:4px;align-items:center">
+    <span id="hpLbl" style="flex:1;color:var(--muted);font-size:11px">Mục tiêu: Mặt đất</span>
+    <button class="btn" id="reviveBtn" style="flex:0 0 auto">Dựng lại công trình / Xe</button>
+  </div>
+
+  <h2>Địa hình</h2>
+  <div class="row" id="mapRow">
+    <button class="btn on" data-map="DESERT">Sa mạc</button>
+    <button class="btn" data-map="URBAN">Đô thị</button>
+    <button class="btn" data-map="JUNGLE">Rừng</button>
+    <button class="btn" data-map="HIGHLAND">Cao nguyên</button>
+  </div>
+
+  <h2>Tốc độ thời gian</h2>
+  <div class="row" id="speedRow">
+    <button class="btn on" data-speed="1">1x</button>
+    <button class="btn" data-speed="0.5">0.5x</button>
+    <button class="btn" data-speed="0.25">0.25x</button>
+    <button class="btn" data-speed="0.1">0.1x</button>
+    <button class="btn" data-speed="0.05">0.05x</button>
+    <button class="btn" data-speed="0.02">0.02x</button>
+    <button class="btn" data-speed="0.01">0.01x</button>
+  </div>
+
+  <h2>Camera</h2>
+  <div class="row" id="camRow">
+    <button class="btn on" data-cam="wide">Toàn cảnh</button>
+    <button class="btn" data-cam="impact">Cận điểm nổ</button>
+    <button class="btn" data-cam="follow">Theo đạn</button>
+    <button class="btn" data-cam="launcher">Cận bệ phóng</button>
+  </div>
+
+  <h2>Góc nâng nòng (thử phạm vi nổ) <small>bệ phóng tự lùi / tiến tới đúng điểm rơi</small></h2>
+  <div class="row" style="align-items:center;gap:6px">
+    <input type="range" id="elevS" min="-2" max="60" step="0.5" value="-2" style="flex:1">
+    <span id="elevVal" style="font-size:11px;width:96px;white-space:nowrap">Tự ngắm</span>
+  </div>
+  <div class="row" style="margin-top:4px;align-items:center;gap:6px">
+    <span style="font-size:11px;color:var(--muted);width:64px">Hướng nòng</span>
+    <input type="range" id="aziS" min="-40" max="40" step="1" value="0" style="flex:1">
+    <span id="aziVal" style="font-size:11px;width:96px;white-space:nowrap">Thẳng mục tiêu</span>
+  </div>
+  <button class="btn fire" id="fireBtn">🔥 BẮN  [SPACE / giữ để bắn liên tục]</button>
+  <div class="row" style="margin-top:6px">
+    <button class="btn" id="autoBtn">Bắn tự động: TẮT</button>
+    <button class="btn" id="clearBtn">Dọn hố đạn</button>
+  </div>
+</div>
+
+<div class="hint"><b>Chuột trái kéo</b> xoay camera · <b>Cuộn</b> zoom<br><b>Space</b> bắn · <b>1-9</b> chọn đạn · <b>S</b> quay chậm</div>
+<div class="inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
+
+<script src="three.min.js"></script>
+<script src="src/core/audio.js?v=20261019snd8"></script>
+<script src="src/entities/tank_models.js?v=20261019i"></script>
+<script src="src/entities/tanks/vehicle_kit.js?v=20261019i"></script>
+<script src="src/entities/tanks/mbt_halberd.js?v=20261019i"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261019i"></script>
+<script src="src/entities/tanks/spg_arbalest.js?v=20261019i"></script>
+<script src="src/entities/tanks/recon_marten.js?v=20261019i"></script>
+<script src="src/core/game_timing.js?v=20261019env1"></script>
+<script src="src/core/ballistics.js?v=20261019env1"></script>
+<script src="src/entities/projectiles.js?v=20261019i"></script>
+<script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
+<script src="src/entities/spg.js?v=20261019env1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261019env1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261019t1"></script>
+<script src="src/gameplay/destructibles.js?v=20261019i"></script>
+<script>
+(function () {
+  // ===========================================================================
+  // DANH SÁCH ĐẠN: mỗi loại gắn với xe phóng thật của game
+  // ===========================================================================
+  const AMMO = [
+    { key: 'NORMAL', ammo: 'NORMAL', unit: 'ALL_ROUNDER', label: 'Đạn pháo tiêu chuẩn 120mm', who: 'Halberd MK.3', path: 'direct' },
+    { key: 'AP', ammo: 'AP', unit: 'ALL_ROUNDER', label: 'Xuyên giáp APFSDS 120mm', who: 'Halberd MK.3', path: 'direct' },
+    { key: 'HE', ammo: 'HE', unit: 'ALL_ROUNDER', label: 'Nổ mạnh HE 120mm', who: 'Halberd MK.3', path: 'direct' },
+    { key: 'HE155', ammo: 'HE', unit: 'ARTILLERY', label: 'Nổ mạnh HE 155mm', who: 'Arbalest 155 · bắn cầu vồng', path: 'arc', heavy: true },
+    { key: 'CLUSTER', ammo: 'CLUSTER', unit: 'ARTILLERY', label: 'Đạn chùm DPICM 155mm', who: 'Arbalest 155 · nổ trên không', path: 'arc', heavy: true },
+    { key: 'G30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm nổ-cháy-vạch đường', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'INC', ammo: 'INCENDIARY', unit: 'GATLING', label: 'Đạn cháy 30mm', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'MG', ammo: 'SCOUT_BULLET', unit: 'SCOUT', label: 'Đạn súng máy hạng nặng', who: 'Marten R4 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'RPG', ammo: 'RPG', unit: 'SCOUT', label: 'Tên lửa chống tăng HEAT', who: 'Marten R4', path: 'missile' }
+  ];
+
+  const state = {
+    sel: AMMO[0], target: 'GROUND', map: 'DESERT', speed: 1, cam: 'wide',
+    firing: false, auto: false, autoTimer: 0, audioReady: false, manualElev: null, manualAzi: 0
+  };
+
+  // ===========================================================================
+  // SCENE
+  // ===========================================================================
+  const canvas = document.getElementById('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.autoClear = false;
+
+  const scene = new THREE.Scene();
+  const SKY = 0x9bb0c0;
+  scene.background = new THREE.Color(SKY);
+  scene.fog = new THREE.FogExp2(SKY, 0.00065);
+  scene.add(new THREE.HemisphereLight(0xdfe9f2, 0x5a4a36, 0.55));
+  scene.add(new THREE.AmbientLight(0xfff5e4, 0.35));
+  const sun = new THREE.DirectionalLight(0xfff2dc, 1.25);
+  sun.position.set(-260, 420, 220);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0005;
+  Object.assign(sun.shadow.camera, { left: -520, right: 520, top: 520, bottom: -520, near: 10, far: 1400 });
+  scene.add(sun);
+
+  const camera = new THREE.PerspectiveCamera(42, 1, 1, 20000);
+
+  // Mặt đất có vân hạt thủ tục
+  const GROUND_COL = { DESERT: 0xb39a72, URBAN: 0x6f6e6a, JUNGLE: 0x4a5a34, HIGHLAND: 0x7d7564 };
+  function noiseTex() {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const ctx = c.getContext('2d'); const img = ctx.createImageData(256, 256);
+    for (let i = 0; i < 256 * 256; i++) {
+      const v = 200 + (Math.random() - 0.5) * 70 + Math.sin(i * 0.013) * 6;
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(160, 160);
+    return t;
+  }
+  const groundMat = new THREE.MeshStandardMaterial({ color: GROUND_COL.DESERT, map: noiseTex(), roughness: 1, metalness: 0 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  // Hố bom khoét lỗ mặt đất -> lòng chảo lõm thật sự lộ ra
+  ExplosionFX.installGroundHoles(groundMat);
+  // Vạch cự ly quanh mục tiêu
+  for (const r of [50, 100, 200]) {
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.14, depthWrite: false });
+    ExplosionFX.installGroundHoles(ringMat);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.5, r + 0.5, 96), ringMat);
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; scene.add(ring);
+  }
+
+  // Vị trí bệ phóng & mục tiêu
+  const TARGET = new THREE.Vector3(0, 0, 0);
+  const LAUNCH_DIR = new THREE.Vector3(-1, 0, 0.42).normalize();
+  const LAUNCH_DIST = { direct: 380, arc: 640, bullet: 300, missile: 420 };
+
+  // ===========================================================================
+  // HỆ THỐNG CÔNG TRÌNH PHÁ HỦY CHÂN THỰC: TƯỜNG BÊ TÔNG 60 KHỐI & TÒA NHÀ 4 TẦNG
+  // ===========================================================================
+  const concMat = new THREE.MeshStandardMaterial({ color: 0x9a9890, roughness: 0.95, metalness: 0.05, side: THREE.DoubleSide });
+  const concCrackedMat = new THREE.MeshStandardMaterial({ color: 0x6e6b65, roughness: 1.0, metalness: 0, side: THREE.DoubleSide });
+  const rebarMat = new THREE.MeshStandardMaterial({ color: 0x5a483a, roughness: 0.8, metalness: 0.7 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x3d708f, roughness: 0.15, metalness: 0.85, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.5, metalness: 0.6 });
+
+  // ---------------------------------------------------------------------------
+  // 1. TƯỜNG BÊ TÔNG PHÁ HỦY TỪNG KHỐI (MODULAR DESTRUCTIBLE WALL: 12 cột x 5 hàng = 60 khối)
+  // ---------------------------------------------------------------------------
+  class ModularDestructibleWall {
+    constructor(scene) {
+      this.group = new THREE.Group();
+      this.group.lookAt(LAUNCH_DIR.x, 0, LAUNCH_DIR.z);
+      this.group.visible = false;
+      scene.add(this.group);
+
+      this.cols = 12;
+      this.rows = 5;
+      this.blockW = 5.9;
+      this.blockH = 5.1;
+      this.blockD = 6.4;
+      this.blocks = [];
+      this.totalBlocks = this.cols * this.rows;
+
+      // Khối vụn gạch đá ở chân tường
+      this.rubbleGroup = new THREE.Group();
+      this.group.add(this.rubbleGroup);
+
+      // Kích thước khối phủ nhẹ lên nhau để kín khít 100%, triệt tiêu khe hở lọt đạn
+      const boxGeo = new THREE.BoxGeometry(this.blockW + 0.15, this.blockH + 0.15, this.blockD);
+      const capGeo = new THREE.BoxGeometry(this.blockW + 0.25, 1.8, this.blockD + 2.0);
+      const rebarGeo = new THREE.CylinderGeometry(0.18, 0.18, this.blockH * 0.9, 5);
+
+      for (let c = 0; c < this.cols; c++) {
+        this.blocks[c] = [];
+        const lx = (c - (this.cols - 1) / 2) * this.blockW;
+        for (let r = 0; r < this.rows; r++) {
+          const ly = this.blockH * 0.5 + r * this.blockH;
+
+          const mesh = new THREE.Mesh(boxGeo, concMat.clone());
+          mesh.position.set(lx, ly, 0);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          this.group.add(mesh);
+
+          // Khung cốt thép đan bên trong khối (hiện ra khi khối nứt vỡ)
+          const rebarGroup = new THREE.Group();
+          for (let k = -1; k <= 1; k++) {
+            const bar = new THREE.Mesh(rebarGeo, rebarMat);
+            bar.position.set(k * 1.5, 0, 0);
+            bar.rotation.z = (Math.random() - 0.5) * 0.2;
+            rebarGroup.add(bar);
+          }
+          rebarGroup.position.set(lx, ly, 0);
+          rebarGroup.visible = false;
+          this.group.add(rebarGroup);
+
+          // Nắp mũ trên cùng của hàng 4
+          let capMesh = null;
+          if (r === this.rows - 1) {
+            capMesh = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({ color: 0x86847c, roughness: 1 }));
+            capMesh.position.set(lx, ly + this.blockH * 0.5 + 0.9, 0);
+            capMesh.castShadow = true;
+            this.group.add(capMesh);
+          }
+
+          this.blocks[c][r] = {
+            mesh, capMesh, rebarGroup,
+            lx, ly, c, r,
+            hp: 1.0,
+            destroyed: false,
+            origPos: new THREE.Vector3(lx, ly, 0)
+          };
+        }
+      }
+    }
+
+    damageAt(worldPos, radius, power, ammoType, fxEngine) {
+      let brokenCount = 0;
+      const isKinetic = ammoType === 'AP';
+
+      for (let c = 0; c < this.cols; c++) {
+        for (let r = 0; r < this.rows; r++) {
+          const b = this.blocks[c][r];
+          if (b.destroyed) continue;
+
+          // Chuyển vị trí khối sang tọa độ thế giới
+          const bWorld = b.mesh.position.clone();
+          this.group.localToWorld(bWorld);
+          const d = worldPos.distanceTo(bWorld);
+
+          if (d <= radius) {
+            const falloff = Math.max(0, 1 - d / radius);
+            const dmg = power * (falloff * 1.4 + 0.2);
+
+            // Đạn AP: xuyên thủng ngọt khối trực diện
+            const directHit = isKinetic && d < 5.5;
+            b.hp -= directHit ? 2.5 : dmg;
+
+            if (b.hp <= 0) {
+              b.destroyed = true;
+              b.mesh.visible = false;
+              if (b.capMesh) b.capMesh.visible = false;
+              b.rebarGroup.visible = false;
+              brokenCount++;
+
+              // Văng mảnh bê tông 3D vỡ nát
+              if (fxEngine && fxEngine.hardRocks) {
+                const rockN = Math.round(4 + Math.random() * 5);
+                for (let k = 0; k < rockN; k++) {
+                  const sp = 25 + Math.random() * 65;
+                  const ang = Math.random() * Math.PI * 2;
+                  fxEngine.hardRocks.add({
+                    x: bWorld.x + (Math.random() - 0.5) * 3,
+                    y: bWorld.y + (Math.random() - 0.5) * 2,
+                    z: bWorld.z + (Math.random() - 0.5) * 3,
+                    vx: Math.cos(ang) * sp,
+                    vy: 20 + Math.random() * 50,
+                    vz: Math.sin(ang) * sp,
+                    size: 1.2 + Math.random() * 2.2,
+                    life: 5 + Math.random() * 3,
+                    c: [0.6, 0.58, 0.55]
+                  });
+                }
+              }
+
+              // Khói bụi xi măng xám mù mịt
+              if (fxEngine && fxEngine.smoke) {
+                fxEngine.smoke.add({
+                  x: bWorld.x, y: bWorld.y, z: bWorld.z,
+                  vx: (Math.random() - 0.5) * 12, vy: 8 + Math.random() * 16, vz: (Math.random() - 0.5) * 12,
+                  size: 12 + Math.random() * 8, grow: 10, drag: 1.8, grav: -1.2,
+                  life: 3.5 + Math.random() * 2, alpha: 0.65, fadeIn: 0.1,
+                  c0: [0.72, 0.71, 0.68], cell: 2
+                });
+              }
+
+              // Sinh ra đống đổ nát ở chân tường
+              this.spawnRubbleAt(b.lx, b.r);
+            } else if (b.hp < 0.65) {
+              // Rạn nứt, sứt mẻ bề mặt
+              b.mesh.material = concCrackedMat;
+              b.mesh.rotation.z = (Math.random() - 0.5) * 0.05;
+              b.mesh.rotation.y = (Math.random() - 0.5) * 0.04;
+              b.rebarGroup.visible = true;
+            }
+          }
+        }
+      }
+
+      // Kiểm tra sụp đổ trọng lực dây chuyền (các khối bên trên mất trụ đỡ)
+      this.checkCollapseChain(fxEngine);
+    }
+
+    checkCollapseChain(fxEngine) {
+      for (let r = 1; r < this.rows; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          const b = this.blocks[c][r];
+          if (b.destroyed) continue;
+
+          // Khối bên dưới đã vỡ
+          const below = this.blocks[c][r - 1];
+          if (below && below.destroyed) {
+            // Kiểm tra hai bên cạnh có còn giữ được không
+            const left = c > 0 ? this.blocks[c - 1][r] : null;
+            const right = c < this.cols - 1 ? this.blocks[c + 1][r] : null;
+            const hasSupport = (left && !left.destroyed) || (right && !right.destroyed);
+
+            // Nếu mất cả điểm tựa bên dưới và không đủ giằng hai bên -> sụp đổ!
+            if (!hasSupport || Math.random() < 0.45) {
+              b.destroyed = true;
+              b.mesh.visible = false;
+              if (b.capMesh) b.capMesh.visible = false;
+              b.rebarGroup.visible = false;
+
+              const bWorld = b.mesh.position.clone();
+              this.group.localToWorld(bWorld);
+              if (fxEngine && fxEngine.hardRocks) {
+                for (let k = 0; k < 5; k++) {
+                  fxEngine.hardRocks.add({
+                    x: bWorld.x + (Math.random() - 0.5) * 2, y: bWorld.y, z: bWorld.z + (Math.random() - 0.5) * 2,
+                    vx: (Math.random() - 0.5) * 20, vy: -10, vz: (Math.random() - 0.5) * 20,
+                    size: 1.5 + Math.random() * 2, life: 6, c: [0.6, 0.58, 0.55]
+                  });
+                }
+              }
+              this.spawnRubbleAt(b.lx, b.r);
+            }
+          }
+        }
+      }
+    }
+
+    spawnRubbleAt(lx, row) {
+      const count = 3 + Math.floor(Math.random() * 4);
+      const rubbleGeo = new THREE.DodecahedronGeometry(1.2 + Math.random() * 1.5, 0);
+      for (let i = 0; i < count; i++) {
+        const m = new THREE.Mesh(rubbleGeo, concCrackedMat);
+        m.position.set(
+          lx + (Math.random() - 0.5) * 4.5,
+          0.8 + Math.random() * 1.8,
+          (Math.random() - 0.5) * 5.5
+        );
+        m.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+        m.castShadow = true;
+        this.rubbleGroup.add(m);
+      }
+    }
+
+    getHealthRatio() {
+      let alive = 0;
+      for (let c = 0; c < this.cols; c++) {
+        for (let r = 0; r < this.rows; r++) {
+          if (!this.blocks[c][r].destroyed) alive++;
+        }
+      }
+      return alive / this.totalBlocks;
+    }
+
+    reset() {
+      for (let c = 0; c < this.cols; c++) {
+        for (let r = 0; r < this.rows; r++) {
+          const b = this.blocks[c][r];
+          b.hp = 1.0;
+          b.destroyed = false;
+          b.mesh.visible = true;
+          b.mesh.material = concMat;
+          b.mesh.rotation.set(0, 0, 0);
+          b.mesh.position.copy(b.origPos);
+          if (b.capMesh) b.capMesh.visible = true;
+          b.rebarGroup.visible = false;
+        }
+      }
+      while (this.rubbleGroup.children.length > 0) {
+        this.rubbleGroup.remove(this.rubbleGroup.children[0]);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2. TÒA NHÀ 4 TẦNG PHÁ HỦY ĐA TẦNG (DESTRUCTIBLE BUILDING: 4 TẦNG + KÍNH + ĂNG-TEN)
+  // ---------------------------------------------------------------------------
+  class DestructibleBuilding {
+    constructor(scene) {
+      this.group = new THREE.Group();
+      this.group.lookAt(LAUNCH_DIR.x, 0, LAUNCH_DIR.z);
+      this.group.visible = false;
+      scene.add(this.group);
+
+      this.width = 44;
+      this.depth = 36;
+      this.floorH = 13;
+      this.floorCount = 4;
+      this.totalH = this.floorH * this.floorCount;
+
+      this.floors = [];
+      this.windows = [];
+      this.isCollapsed = false;
+      this.rubbleGroup = new THREE.Group();
+      this.group.add(this.rubbleGroup);
+
+      // Xây từng tầng
+      for (let f = 0; f < this.floorCount; f++) {
+        const floorGroup = new THREE.Group();
+        floorGroup.position.y = f * this.floorH;
+        this.group.add(floorGroup);
+
+        const floorData = {
+          group: floorGroup,
+          index: f,
+          hp: 1.0,
+          destroyed: false,
+          parts: [],
+          windows: []
+        };
+
+        // 4 cột góc bê tông chịu lực lớn
+        const colGeo = new THREE.BoxGeometry(4.4, this.floorH, 4.4);
+        const colOffsets = [
+          [-this.width * 0.45, -this.depth * 0.45],
+          [ this.width * 0.45, -this.depth * 0.45],
+          [-this.width * 0.45,  this.depth * 0.45],
+          [ this.width * 0.45,  this.depth * 0.45]
+        ];
+        colOffsets.forEach(([cx, cz], i) => {
+          const colMesh = new THREE.Mesh(colGeo, concMat);
+          colMesh.position.set(cx, this.floorH * 0.5, cz);
+          colMesh.castShadow = true;
+          colMesh.receiveShadow = true;
+          floorGroup.add(colMesh);
+          floorData.parts.push({ mesh: colMesh, type: 'COLUMN', id: `col-${f}-${i}`, hp: 1.0 });
+        });
+
+        // Sàn bê tông
+        const slabGeo = new THREE.BoxGeometry(this.width, 1.4, this.depth);
+        const slabMesh = new THREE.Mesh(slabGeo, concMat);
+        slabMesh.position.y = this.floorH - 0.7;
+        slabMesh.castShadow = true;
+        slabMesh.receiveShadow = true;
+        floorGroup.add(slabMesh);
+        floorData.parts.push({ mesh: slabMesh, type: 'SLAB', hp: 1.0 });
+
+        // Tường mặt trước (có khoét ô cửa / chia 3 mảng: trái, giữa, phải)
+        const wallGeo = new THREE.BoxGeometry(this.width * 0.28, this.floorH * 0.85, 2.2);
+        [-this.width * 0.32, 0, this.width * 0.32].forEach((wx, i) => {
+          const wMesh = new THREE.Mesh(wallGeo, concMat);
+          wMesh.position.set(wx, this.floorH * 0.45, this.depth * 0.48);
+          wMesh.castShadow = true;
+          floorGroup.add(wMesh);
+          floorData.parts.push({ mesh: wMesh, type: 'WALL', hp: 1.0 });
+        });
+
+        // Tường hông trái, phải và tường sau
+        const sideGeo = new THREE.BoxGeometry(2.2, this.floorH * 0.85, this.depth * 0.88);
+        const leftWall = new THREE.Mesh(sideGeo, concMat);
+        leftWall.position.set(-this.width * 0.48, this.floorH * 0.45, 0);
+        leftWall.castShadow = true;
+        floorGroup.add(leftWall);
+        floorData.parts.push({ mesh: leftWall, type: 'WALL', hp: 1.0 });
+
+        const rightWall = new THREE.Mesh(sideGeo, concMat);
+        rightWall.position.set(this.width * 0.48, this.floorH * 0.45, 0);
+        rightWall.castShadow = true;
+        floorGroup.add(rightWall);
+        floorData.parts.push({ mesh: rightWall, type: 'WALL', hp: 1.0 });
+
+        // Dải cửa sổ kính phản quang tầng lầu
+        const winGeo = new THREE.BoxGeometry(this.width * 0.22, this.floorH * 0.65, 0.4);
+        [-this.width * 0.16, this.width * 0.16].forEach((gx, i) => {
+          const winMesh = new THREE.Mesh(winGeo, glassMat);
+          winMesh.position.set(gx, this.floorH * 0.45, this.depth * 0.49);
+          floorGroup.add(winMesh);
+          const winData = { mesh: winMesh, floor: f, broken: false };
+          floorData.windows.push(winData);
+          this.windows.push(winData);
+        });
+
+        this.floors.push(floorData);
+      }
+
+      // Tầng mái: Phòng thang kỹ thuật + Bồn nước + Ăng-ten
+      this.roofGroup = new THREE.Group();
+      this.roofGroup.position.y = this.totalH;
+      this.group.add(this.roofGroup);
+
+      const roofRoom = new THREE.Mesh(new THREE.BoxGeometry(16, 8, 14), roofMat);
+      roofRoom.position.set(4, 4, -4);
+      roofRoom.castShadow = true;
+      this.roofGroup.add(roofRoom);
+
+      const tankMesh = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 7, 14), metalMat);
+      tankMesh.position.set(-10, 4.5, 4);
+      tankMesh.castShadow = true;
+      this.roofGroup.add(tankMesh);
+
+      // Cột ăng-ten cao vút
+      this.antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.2, 22, 6), metalMat);
+      this.antenna.position.set(-10, 19, 4);
+      this.antenna.castShadow = true;
+      this.roofGroup.add(this.antenna);
+    }
+
+    damageAt(worldPos, radius, power, ammoType, fxEngine) {
+      if (this.isCollapsed) return;
+
+      // Xác định độ cao để tính tầng
+      const bWorld = this.group.position.clone();
+      const relY = Math.max(0, worldPos.y - bWorld.y);
+      const hitFloorIdx = Math.min(this.floorCount - 1, Math.floor(relY / this.floorH));
+
+      // 1. Phá vỡ kính cửa sổ trong bán kính sóng nổ (32m)
+      this.windows.forEach(w => {
+        if (w.broken) return;
+        const wPos = w.mesh.position.clone();
+        w.mesh.localToWorld(wPos);
+        if (worldPos.distanceTo(wPos) <= radius * 1.5 + 12) {
+          w.broken = true;
+          w.mesh.visible = false;
+          // Vụn kính lấp lánh rơi rụng
+          if (fxEngine && fxEngine.fire) {
+            for (let k = 0; k < 6; k++) {
+              fxEngine.fire.add({
+                x: wPos.x + (Math.random() - 0.5) * 3, y: wPos.y, z: wPos.z + (Math.random() - 0.5) * 2,
+                vx: (Math.random() - 0.5) * 15, vy: -15 - Math.random() * 20, vz: (Math.random() - 0.5) * 15,
+                size: 0.8 + Math.random() * 1.2, grow: -0.5, drag: 0.2, grav: 120, life: 1.2, alpha: 0.9,
+                c0: [0.75, 0.92, 1.0], c1: [0.4, 0.7, 0.9], cell: 3
+              });
+            }
+          }
+        }
+      });
+
+      // 2. Phá hủy các mảng tường / cột trụ của tầng trúng đạn
+      let damagedFloor = this.floors[hitFloorIdx];
+      let colDestroyed = 0;
+
+      damagedFloor.parts.forEach(p => {
+        const pWorld = p.mesh.position.clone();
+        damagedFloor.group.localToWorld(pWorld);
+        const dist = worldPos.distanceTo(pWorld);
+
+        if (dist <= radius) {
+          const dmg = power * (1 - dist / radius * 0.7);
+          p.hp -= dmg;
+          if (p.hp <= 0 && p.mesh.visible) {
+            p.mesh.visible = false;
+            // Văng mảnh bê tông 3D
+            if (fxEngine && fxEngine.hardRocks) {
+              const rockN = p.type === 'COLUMN' ? 10 : 6;
+              for (let k = 0; k < rockN; k++) {
+                fxEngine.hardRocks.add({
+                  x: pWorld.x + (Math.random() - 0.5) * 3, y: pWorld.y, z: pWorld.z + (Math.random() - 0.5) * 3,
+                  vx: (Math.random() - 0.5) * 45, vy: 15 + Math.random() * 45, vz: (Math.random() - 0.5) * 45,
+                  size: 1.5 + Math.random() * 2.5, life: 6, c: [0.58, 0.56, 0.54]
+                });
+              }
+            }
+          }
+        }
+      });
+
+      // Kiểm tra cột trụ tầng 1
+      const floor0 = this.floors[0];
+      const aliveCols = floor0.parts.filter(p => p.type === 'COLUMN' && p.mesh.visible).length;
+
+      // 3. ĐÁNH SẬP TOÀN BỘ TÒA NHÀ NẾU CHÂN ĐẾ (TẦNG 1) MẤT QUÁ 2 CỘT HOẶC TRÚNG ĐẠN 155MM CỰC ĐẠI
+      if (aliveCols <= 1 || (aliveCols <= 2 && power > 2.5)) {
+        this.triggerCollapse(fxEngine);
+      }
+    }
+
+    triggerCollapse(fxEngine) {
+      if (this.isCollapsed) return;
+      this.isCollapsed = true;
+
+      // Nghiêng ngả và sập các tầng xuống đất
+      this.floors.forEach((fl, idx) => {
+        fl.group.position.y = Math.max(2, idx * 3);
+        fl.group.rotation.z = (Math.random() - 0.5) * 0.22;
+        fl.group.rotation.x = 0.15 + Math.random() * 0.1;
+        fl.parts.forEach(p => { if (Math.random() < 0.6) p.mesh.visible = false; });
+      });
+      this.roofGroup.position.y = 14;
+      this.roofGroup.rotation.z = 0.28;
+      if (this.antenna) this.antenna.rotation.z = 1.3;
+
+      // Sinh ra đống đổ nát khổng lồ ở chân tòa nhà
+      const rubbleGeo = new THREE.DodecahedronGeometry(3.5, 0);
+      for (let i = 0; i < 28; i++) {
+        const m = new THREE.Mesh(rubbleGeo, concCrackedMat);
+        m.position.set(
+          (Math.random() - 0.5) * (this.width + 12),
+          1.5 + Math.random() * 5.5,
+          (Math.random() - 0.5) * (this.depth + 12)
+        );
+        m.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+        m.castShadow = true;
+        this.rubbleGroup.add(m);
+      }
+
+      // Cột khói bụi khổng lồ cuộn bốc lên bao trùm tòa nhà bị sập
+      if (fxEngine && fxEngine.smoke) {
+        for (let i = 0; i < 20; i++) {
+          fxEngine.smoke.add({
+            x: (Math.random() - 0.5) * 35, y: 4 + Math.random() * 12, z: (Math.random() - 0.5) * 30,
+            vx: (Math.random() - 0.5) * 18, vy: 14 + Math.random() * 26, vz: (Math.random() - 0.5) * 18,
+            size: 18 + Math.random() * 14, grow: 18, drag: 0.9, grav: -3.5, life: 5.5 + Math.random() * 3,
+            alpha: 0.72, fadeIn: 0.2, c0: [0.65, 0.64, 0.61], cell: 2
+          });
+        }
+      }
+    }
+
+    getHealthRatio() {
+      if (this.isCollapsed) return 0;
+      let totalParts = 0, aliveParts = 0;
+      this.floors.forEach(fl => {
+        fl.parts.forEach(p => {
+          totalParts++;
+          if (p.mesh.visible) aliveParts++;
+        });
+      });
+      return aliveParts / Math.max(1, totalParts);
+    }
+
+    reset() {
+      this.isCollapsed = false;
+      this.group.rotation.set(0, Math.atan2(-LAUNCH_DIR.x, -LAUNCH_DIR.z), 0);
+      this.floors.forEach((fl, idx) => {
+        fl.group.position.set(0, idx * this.floorH, 0);
+        fl.group.rotation.set(0, 0, 0);
+        fl.parts.forEach(p => { p.mesh.visible = true; p.hp = 1.0; });
+        fl.windows.forEach(w => { w.mesh.visible = true; w.broken = false; });
+      });
+      this.roofGroup.position.set(0, this.totalH, 0);
+      this.roofGroup.rotation.set(0, 0, 0);
+      if (this.antenna) this.antenna.rotation.set(0, 0, 0);
+      while (this.rubbleGroup.children.length > 0) {
+        this.rubbleGroup.remove(this.rubbleGroup.children[0]);
+      }
+    }
+  }
+
+  // Khởi tạo 2 công trình phá hủy
+  // Dùng chung lớp phá hủy với game (src/gameplay/destructibles.js): vỡ răng cưa, lỗ thủng méo, cốt thép, sập dây chuyền
+  const LAB_YAW = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z);
+  const wall = new Destructibles.ConcreteWall(scene, { yaw: LAB_YAW + Math.PI / 2 - Math.PI / 2, cols: 12, rows: 5 });
+  let building = new Destructibles.SingleBuilding(scene, { angle: LAB_YAW, floors: 4, w: 44, d: 36, kind: 'apartment' });
+
+  // Xe mục tiêu (Halberd phe đỏ quay mặt về bệ phóng)
+  let targetTank = new SPGUnit3D(scene, { tankType: 'ALL_ROUNDER', team: 'RED', isPlayer: false, x: 0, z: 0, bodyAngle: 0 });
+  let targetYaw = 0;   // xoay xe mục tiêu (độ) để thử đạn trúng mũi / sườn / đuôi
+  const targetBaseYaw = () => Math.atan2(-LAUNCH_DIR.x, -LAUNCH_DIR.z) + targetYaw * Math.PI / 180;
+  targetTank.group.rotation.y = targetBaseYaw();
+  targetTank.group.visible = false;
+  hideOverlays(targetTank);
+
+  // Đổi dòng xe mục tiêu để thử kiểu hư hại riêng của từng xe
+  function setTargetType(type) {
+    if (targetTank.tankType === type) return;
+    const vis = targetTank.group.visible;
+    if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(targetTank);
+    fx.restoreVehicle(targetTank);
+    scene.remove(targetTank.group);
+    targetTank = new SPGUnit3D(scene, { tankType: type, team: 'RED', isPlayer: false, x: 0, z: 0, bodyAngle: 0 });
+    targetTank.group.rotation.y = targetBaseYaw();
+    targetTank.group.visible = vis;
+    hideOverlays(targetTank);
+    document.getElementById('dmgLog').innerHTML = '';
+    updateHpLabel();
+  }
+
+  function logDamage(events) {
+    if (!events || !events.length) return;
+    const el = document.getElementById('dmgLog');
+    for (const e of events) {
+      const d = document.createElement('div');
+      d.textContent = '• ' + e.text;
+      el.prepend(d);
+    }
+    while (el.children.length > 14) el.lastChild.remove();
+  }
+
+  function hideOverlays(u) {
+    if (u.hpBgMesh) u.hpBgMesh.visible = false;
+    if (u.hpBarMesh) u.hpBarMesh.visible = false;
+    if (u.reactiveArmorMesh) u.reactiveArmorMesh.visible = false;
+  }
+
+  // Địa hình giả cho hệ thống nổ
+  const terrain = {
+    mapType: 'DESERT',
+    getElevationAt: (x, z) => labGround(x, z),
+    // Mặt nước hồ thử nghiệm (sóng nổ dưới nước chỉ lan trong hồ)
+    waterSurfaceAt: (x, z) => (EX.pond && EX.pond.water && EX.pond.water.visible && Math.hypot(x - EX.pond.info.x, z - EX.pond.info.z) < EX.pond.info.r * 0.93) ? EX.pond.water.position.y : null,
+    checkHorseshoeCollision(x, y, z) {
+      if (state.target === 'WALL' && Math.hypot(x, z) < 65) return { hit: true, obstacle: { x: -LAUNCH_DIR.x * 40, z: -LAUNCH_DIR.z * 40 }, type: 'WALL' };
+      if (state.target === 'BUILDING' && Math.hypot(x, z) < 55) return { hit: true, obstacle: { x: 0, z: 0 }, type: 'BUILDING' };
+      return { hit: false };
+    }
+  };
+  const fx = new ExplosionFX(scene, () => terrain);
+  fx.onSound = (pos, hitType, ammo) => playBoom(pos, hitType, ammo);
+  fx.unitsProvider = () => (targetTank.group.visible ? [targetTank] : []);
+
+  // ===========================================================================
+  // MỤC TIÊU MỞ RỘNG: ụ đất, cây cối, boong-ke, hố sâu, hồ nước (dùng chung lớp với game)
+  // ===========================================================================
+  const EX = { berm: null, trees: null, bunker: null, pit: null, pond: null };
+  const holesActive = [];   // { x, z, r, D } hồ / hố đang hiện
+  function labGround(x, z) {
+    let h = 0;
+    for (const p of holesActive) {
+      const d = Math.hypot(x - p.x, z - p.z);
+      if (d < p.r) { const k = d / p.r; h = Math.min(h, -p.D * (1 - k * k)); }
+    }
+    if (EX.berm && EX.berm.mesh.visible) h = Math.max(h, EX.berm.heightAt(x, z));
+    return h;
+  }
+  // Ụ đất đắp chắn đạn: lưới cao độ bị khoét lõm khi trúng đạn
+  let bermH = 10;
+  function makeBerm() {
+    const L = 96, W = 40, segL = 96, segW = 40;
+    const yaw = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z);
+    const geo = new THREE.PlaneGeometry(L, W, segL, segW);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    const base = new Float32Array(pos.count);
+    const col = new Float32Array(pos.count * 3).fill(1);
+    for (let i = 0; i < pos.count; i++) {
+      const u = pos.getX(i) / (L / 2), v = pos.getZ(i) / (W / 2);
+      // Ụ đất đắp: đỉnh bằng, hai mái dốc thoải, đầu ụ vê tròn, mặt đất lổn nhổn
+      const prof = Math.max(0, 1 - Math.pow(Math.abs(u), 5)) * Math.max(0, Math.min(1, (1 - v * v) * 1.35));
+      const h = bermH * prof + (prof > 0 ? (Math.random() - 0.5) * 0.35 : 0);
+      base[i] = h; pos.setY(i, h);
+      const tint = 0.9 + Math.random() * 0.12;
+      col[i * 3] = tint; col[i * 3 + 1] = tint * 0.97; col[i * 3 + 2] = tint * 0.93;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xb08a5c, map: groundMat.map, roughness: 1, vertexColors: true });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.y = yaw + Math.PI / 2;
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+    const inv = () => new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+    const B = {
+      mesh, base,
+      heightAt(x, z) {
+        mesh.updateMatrixWorld(true);
+        const l = new THREE.Vector3(x, 0, z).applyMatrix4(inv());
+        if (Math.abs(l.x) > L / 2 || Math.abs(l.z) > W / 2) return 0;
+        const gx = (l.x + L / 2) / L * segL, gz = (l.z + W / 2) / W * segW;
+        const ix = Math.min(segL - 1, Math.floor(gx)), iz = Math.min(segW - 1, Math.floor(gz));
+        const fx = gx - ix, fz = gz - iz, N = segL + 1;
+        const h00 = pos.getY(iz * N + ix), h10 = pos.getY(iz * N + ix + 1), h01 = pos.getY((iz + 1) * N + ix), h11 = pos.getY((iz + 1) * N + ix + 1);
+        return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+      },
+      // Đạn khoét vào ụ đất: lòng phễu lõm + gờ đất bị hất lên quanh miệng + cháy sém; đất tơi không vỡ như bê tông
+      dig(point, R, D, scorch, narrow) {
+        mesh.updateMatrixWorld(true);
+        const l = point.clone().applyMatrix4(inv());
+        const sd = Math.random() * 100;
+        // nhiễu mượt (không lởm chởm từng đỉnh): biên hố méo + đất vón cục theo mảng
+        const sn = (x, z) => Math.sin(x * 0.9 + sd) * Math.sin(z * 1.1 - sd * 0.7) * 0.5 + Math.sin(x * 2.3 + sd * 1.3) * Math.sin(z * 1.9 + sd) * 0.25;
+        // khoảng cách từ điểm nổ tới mép ụ: chỉ khoét xuống dưới mặt đất nền khi còn nằm trong lòng ụ
+        const edgeOf = (x, z) => Math.min(L / 2 - Math.abs(x), W / 2 - Math.abs(z));
+        const N = segL + 1;
+        const touched = [];
+        let minY = 0;
+        for (let i = 0; i < pos.count; i++) {
+          const x = pos.getX(i), z = pos.getZ(i);
+          const d = Math.hypot(x - l.x, z - l.z);
+          if (d > R * 1.75) continue;
+          touched.push(i);
+          const ang = Math.atan2(z - l.z, x - l.x);
+          const Rr = R * (0.85 + 0.22 * Math.sin(ang * 3 + sd) * Math.sin(ang * 2 - sd * 0.7));
+          const lump = 1 + 0.3 * sn(x, z);
+          let y = pos.getY(i);
+          if (d < Rr) {
+            const prof = narrow ? Math.pow(1 - d / Rr, 0.6) : 1 - Math.pow(d / Rr, 2);
+            const floor = edgeOf(x, z) > 6 ? -10 : 0;
+            y = Math.max(floor, y - D * prof * lump);
+            minY = Math.min(minY, y);
+          } else if (!narrow) {
+            // gờ đất bị hất quanh miệng hố: có giới hạn (không chồng thành núi khi bắn nhiều phát)
+            const t = (d - Rr) / (0.75 * R);
+            const add = D * 0.26 * Math.max(0, Math.sin(Math.min(1, t) * Math.PI)) * (1 - Math.min(1, t) * 0.5) * lump;
+            const cap = Math.max(base[i], 0) + D * 0.35 + 0.5;
+            if (y < cap) y = Math.min(cap, y + add);
+          }
+          pos.setY(i, y);
+          if ((scorch || narrow) && d < R * 1.25) {
+            // cháy sém / đất mới xới lộ lớp ẩm sẫm: pha dần về màu đất sẫm (không cộng dồn thành đen kịt)
+            const k = (scorch ? 0.35 : 0.18) * (1 - Math.min(1, d / (R * 1.25)));
+            col[i * 3] += (0.5 - col[i * 3]) * k; col[i * 3 + 1] += (0.42 - col[i * 3 + 1]) * k; col[i * 3 + 2] += (0.34 - col[i * 3 + 2]) * k;
+          }
+        }
+        // làm mượt một lượt quanh hố nổ lớn: đất tơi sụt xuống, không còn đỉnh nhọn (hố đạn nhỏ giữ nguyên lỗ rỗ)
+        const tmp = new Float32Array(narrow ? 0 : touched.length);
+        if (!narrow) {
+        touched.forEach((i, k) => {
+          const ix = i % N, iz = (i / N) | 0;
+          let sum = 0, n = 0;
+          for (const [ox, oz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const jx = ix + ox, jz = iz + oz;
+            if (jx < 0 || jz < 0 || jx > segL || jz > segW) continue;
+            sum += pos.getY(jz * N + jx); n++;
+          }
+          tmp[k] = n ? pos.getY(i) * 0.55 + (sum / n) * 0.45 : pos.getY(i);
+        });
+        touched.forEach((i, k) => pos.setY(i, tmp[k]));
+        }
+        // Cát / đất tơi không đứng vách: sụt theo góc nghỉ ~33° (chuyển đất từ chỗ cao xuống chỗ thấp, giữ khối lượng)
+        if (!narrow || R > 2) {
+          const maxDh = Math.tan(33 * Math.PI / 180) * (L / segL);
+          const reg = [];
+          const ext = R * 2.2;
+          for (let iz = 0; iz <= segW; iz++) for (let ix = 0; ix <= segL; ix++) {
+            const i = iz * N + ix;
+            if (Math.hypot(pos.getX(i) - l.x, pos.getZ(i) - l.z) < ext) reg.push(i);
+          }
+          for (let it = 0; it < 10; it++) {
+            let moved = false;
+            for (const i of reg) {
+              const ix = i % N, iz = (i / N) | 0;
+              for (const [ox, oz] of [[1, 0], [0, 1]]) {
+                const jx = ix + ox, jz = iz + oz;
+                if (jx > segL || jz > segW) continue;
+                const j = jz * N + jx;
+                const hi = pos.getY(i), hj = pos.getY(j), dh = hi - hj;
+                if (Math.abs(dh) <= maxDh) continue;
+                const m = (Math.abs(dh) - maxDh) * 0.5 * 0.9;
+                if (dh > 0) { pos.setY(i, hi - m); pos.setY(j, hj + m); } else { pos.setY(i, hi + m); pos.setY(j, hj - m); }
+                moved = true;
+              }
+            }
+            if (!moved) break;
+          }
+          // sát mép ụ không được thấp hơn mặt đất nền (tránh nhìn lọt xuống gầm qua lỗ khoét)
+          for (const i of reg) if (edgeOf(pos.getX(i), pos.getZ(i)) < 6 && pos.getY(i) < 0) pos.setY(i, 0);
+          // đáy hố sâu: đất ẩm lộ ra + khuất nắng -> sẫm dần theo độ sâu
+          for (const i of reg) {
+            const dep = Math.max(0, Math.max(base[i], 0) - pos.getY(i));
+            if (dep < 1.5) continue;
+            const k = Math.min(0.45, (dep - 1.5) * 0.06);
+            col[i * 3] += (0.42 - col[i * 3]) * k; col[i * 3 + 1] += (0.35 - col[i * 3 + 1]) * k; col[i * 3 + 2] += (0.28 - col[i * 3 + 2]) * k;
+          }
+        }
+        pos.needsUpdate = true;
+        geo.attributes.color.needsUpdate = true;
+        geo.computeVertexNormals();
+        // Hố ăn xuống dưới mặt đất nền: khoét lỗ mặt đất phẳng đúng bằng phần lòng hố (không vượt ra ngoài ụ)
+        if (minY < -0.3) {
+          let r = 0;
+          for (const i of touched) if (pos.getY(i) < -0.05) r = Math.max(r, Math.hypot(pos.getX(i) - l.x, pos.getZ(i) - l.z));
+          const old = this.holes.find(h => Math.hypot(h.x - point.x, h.z - point.z) < Math.max(h.r, r) * 0.8);
+          if (old) { ExplosionFX.removeGroundHole(old.slot); this.holes.splice(this.holes.indexOf(old), 1); r = Math.max(r, old.r); }
+          r = Math.min(r, edgeOf(l.x, l.z) - 6);
+          if (r > 1) {
+            // lỗ khoét rộng hơn phần lòng hố dưới mặt đất một chút (mép lỗ có nhiễu) -> mặt đất nền không che đáy hố
+            const slot = ExplosionFX.addGroundHole(point.x, point.z, Math.min(r * 1.2, edgeOf(l.x, l.z) - 6));
+            this.holes.push({ x: point.x, z: point.z, r, slot });
+          }
+        }
+      },
+      holes: [],
+      reset() { for (const h of this.holes) ExplosionFX.removeGroundHole(h.slot); this.holes.length = 0; for (let i = 0; i < pos.count; i++) pos.setY(i, base[i]); col.fill(1); pos.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.computeVertexNormals(); }
+    };
+    return B;
+  }
+  function makeTrees() {
+    const kinds = ['palm', 'broadleaf', 'pine', 'jungle', 'acacia', 'cypress', 'deadTree', 'cactus'];
+    const list = [];
+    for (let i = 0; i < 18; i++) {
+      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * 55;
+      list.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, kind: kinds[i % kinds.length], s: 0.8 + Math.random() * 0.45, rot: Math.random() * 6.3 });
+    }
+    const g = new THREE.Group();
+    scene.add(g);
+    const tf = new Destructibles.TreeField(g, list, () => 0);
+    return { group: g, tf };
+  }
+  function makeBunker() {
+    const g = new THREE.Group();
+    scene.add(g);
+    // Mặt hậu dày quay về phía bệ phóng (địch), cửa mở ra phía sau
+    const openAngle = Math.atan2(-LAUNCH_DIR.z, -LAUNCH_DIR.x);
+    const set = new Destructibles.BunkerSet(g, [{ x: 0, z: 0, openAngle, roofed: true }], () => 0);
+    return { group: g, set };
+  }
+  function makeHole(kind) {
+    const pond = kind === 'POND';
+    const R = pond ? 66 : 54;
+    fx.addCrater(0, 0, R, null, 1, null, 'HE', { heavy: true, persistent: true, bowlDepth: pond ? 16 : 26 });
+    const rec = fx.craters[fx.craters.length - 1];
+    const holeR = rec.holeSlot ? rec.holeSlot.r : R;
+    const info = { x: 0, z: 0, r: holeR * 1.12, D: pond ? 16 : 26 };
+    let water = null;
+    if (pond) {
+      const wm = new THREE.MeshStandardMaterial({ color: 0x2f5d66, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.88 });
+      water = new THREE.Mesh(new THREE.CircleGeometry(holeR * 1.05, 48), wm);
+      water.rotation.x = -Math.PI / 2;
+      water.position.y = -3.5;
+      water.userData.isWater = true;
+      scene.add(water);
+    }
+    return { rec, info, water };
+  }
+  function removeHole(h) {
+    if (!h) return;
+    const i = fx.craters.indexOf(h.rec);
+    if (i >= 0) fx.removeDecal(fx.craters, i);
+    if (h.water) scene.remove(h.water);
+    const k = holesActive.indexOf(h.info);
+    if (k >= 0) holesActive.splice(k, 1);
+  }
+  function showExtra(v) {
+    if (v === 'BERM' && !EX.berm) EX.berm = makeBerm();
+    if (EX.berm) EX.berm.mesh.visible = v === 'BERM';
+    if (v === 'TREES' && !EX.trees) EX.trees = makeTrees();
+    if (EX.trees) EX.trees.group.visible = v === 'TREES';
+    if (v === 'BUNKER' && !EX.bunker) EX.bunker = makeBunker();
+    if (EX.bunker) EX.bunker.group.visible = v === 'BUNKER';
+    for (const k of ['PIT', 'POND']) {
+      const key = k.toLowerCase();
+      if (v === k && !EX[key]) { EX[key] = makeHole(k); holesActive.push(EX[key].info); }
+      if (v !== k && EX[key]) { removeHole(EX[key]); EX[key] = null; }
+    }
+  }
+  function resetExtra() {
+    if (EX.berm) EX.berm.reset();
+    if (EX.trees) { scene.remove(EX.trees.group); const vis = EX.trees.group.visible; EX.trees = makeTrees(); EX.trees.group.visible = vis; }
+    if (EX.bunker) { scene.remove(EX.bunker.group); const vis = EX.bunker.group.visible; EX.bunker = makeBunker(); EX.bunker.group.visible = vis; }
+  }
+  // Nước bắn tung khi đạn rơi xuống hồ: cột nước trắng xóa, vòng bụi nước, gợn sóng loang
+  function waterSplash(pt, ammo, heavy) {
+    const big = ammo === 'HE' || ammo === 'NORMAL' || ammo === 'AP' || ammo === 'RPG' || ammo === 'CLUSTER_SUBMUNITION';
+    const k = (heavy ? 1.8 : 1) * (big ? 1 : 0.25);
+    for (let i = 0; i < Math.round(26 * k) + 4; i++) {
+      fx.smoke.add({ x: pt.x + (Math.random() - 0.5) * 6 * k, y: pt.y, z: pt.z + (Math.random() - 0.5) * 6 * k,
+        vx: (Math.random() - 0.5) * 18 * k, vy: (60 + Math.random() * 120) * Math.sqrt(k), vz: (Math.random() - 0.5) * 18 * k,
+        size: (4 + Math.random() * 6) * Math.sqrt(k), grow: 6, drag: 1.2, grav: 160, life: 1.2 + Math.random() * 1.2, alpha: 0.85, fadeIn: 0.01, c0: [0.92, 0.95, 0.97], cell: 2 });
+    }
+    for (let i = 0; i < Math.round(30 * k) + 6; i++) {
+      const a = Math.random() * 6.283, sp = (40 + Math.random() * 70) * k;
+      fx.smoke.add({ x: pt.x, y: pt.y + 1, z: pt.z, vx: Math.cos(a) * sp, vy: 10 + Math.random() * 30, vz: Math.sin(a) * sp,
+        size: 2 + Math.random() * 3, grow: 5, drag: 2, grav: 90, life: 0.8 + Math.random() * 0.8, alpha: 0.6, fadeIn: 0.01, c0: [0.85, 0.9, 0.92], cell: 2 });
+    }
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.6, 40), new THREE.MeshBasicMaterial({ color: 0xdfeef2, transparent: true, opacity: 0.6, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(pt.x, pt.y + 0.1, pt.z);
+    scene.add(ring);
+    ripples.push({ m: ring, t: 0, k });
+  }
+  const ripples = [];
+  function updateRipples(dt) {
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+      r.t += dt;
+      const s = 2 + r.t * 26 * Math.sqrt(r.k);
+      r.m.scale.set(s, s, 1);
+      r.m.material.opacity = Math.max(0, 0.6 * (1 - r.t / 2.6));
+      if (r.t > 2.6) { scene.remove(r.m); r.m.geometry.dispose(); r.m.material.dispose(); ripples.splice(i, 1); }
+    }
+  }
+  document.getElementById('yawS').addEventListener('input', e => {
+    targetYaw = +e.target.value;
+    document.getElementById('yawVal').textContent = targetYaw + '°';
+    targetTank.group.rotation.y = targetBaseYaw();
+    targetTank.group.updateMatrixWorld(true);
+  });
+  const impactMark = new THREE.Mesh(new THREE.RingGeometry(10, 12.5, 48), new THREE.MeshBasicMaterial({ color: 0xff3b2f, transparent: true, opacity: 0.85, depthWrite: false }));
+  impactMark.geometry.rotateX(-Math.PI / 2);
+  impactMark.renderOrder = 6;
+  impactMark.visible = false;
+  scene.add(impactMark);
+  document.getElementById('elevS').addEventListener('input', e => {
+    const v = +e.target.value;
+    state.manualElev = v < -1 ? null : v;
+    placeLauncher();
+    const R = state.predictedRange;
+    document.getElementById('elevVal').textContent = state.manualElev === null ? 'Tự ngắm' : v.toFixed(1) + '° · rơi ' + Math.round(R) + ' m';
+    impactMark.visible = state.manualElev !== null;
+    updateCamera && camPreset(state.cam);
+  });
+  document.getElementById('aziS').addEventListener('input', e => {
+    state.manualAzi = +e.target.value;
+    document.getElementById('aziVal').textContent = state.manualAzi === 0 ? 'Thẳng mục tiêu' : (state.manualAzi > 0 ? 'Phải ' : 'Trái ') + Math.abs(state.manualAzi) + '°';
+  });
+  document.getElementById('bermH').addEventListener('input', e => {
+    bermH = +e.target.value;
+    document.getElementById('bermHVal').textContent = bermH;
+    if (EX.berm) { const vis = EX.berm.mesh.visible; scene.remove(EX.berm.mesh); EX.berm = makeBerm(); EX.berm.mesh.visible = vis; }
+  });
+  document.querySelectorAll('#bldRow [data-bld]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#bldRow [data-bld]').forEach(x => x.classList.toggle('on', x === b));
+    const kind = b.dataset.bld;
+    const cfg = { apartment: { floors: 4, w: 44, d: 36 }, office: { floors: 9, w: 50, d: 44 }, mudbrick: { floors: 1, w: 30, d: 26 }, hangar: { floors: 1, w: 80, d: 50 } }[kind];
+    const vis = building.visible;
+    scene.remove(building.group);
+    building = new Destructibles.SingleBuilding(scene, Object.assign({ angle: LAB_YAW, kind }, cfg));
+    building.visible = vis;
+    updateHpLabel();
+  }));
+
+  function updateHpLabel() {
+    const el = document.getElementById('hpLbl');
+    if (!el) return;
+    if (state.target === 'WALL') {
+      const pct = Math.round(100 * wall.getHealthRatio());
+      el.textContent = pct === 100 ? 'Tường bê tông: 100% (Nguyên vẹn)' :
+                       pct > 65 ? `Tường bê tông: ${pct}% (Rạn nứt & sứt mẻ)` :
+                       pct > 25 ? `Tường bê tông: ${pct}% (Vỡ toác mảng lớn)` :
+                       pct > 0 ? `Tường bê tông: ${pct}% (Gần như nát vụn)` : 'Tường bê tông: ĐÃ SẬP ĐỔ HOÀN TOÀN';
+    } else if (state.target === 'BUILDING') {
+      const pct = Math.round(100 * building.getHealthRatio());
+      el.textContent = building.isCollapsed ? 'Tòa nhà: ĐÃ SẬP ĐỔ HOÀN TOÀN (Pancake Collapse)' :
+                       pct === 100 ? 'Tòa nhà: 100% (Nguyên vẹn 4 tầng)' :
+                       pct > 70 ? `Tòa nhà: ${pct}% (Vỡ kính & nứt tường ngoài)` :
+                       `Tòa nhà: ${pct}% (Vỡ toác mảng lớn kết cấu)`;
+    } else if (state.target === 'VEHICLE') {
+      const pct = Math.round(100 * Math.max(0, targetTank.hp) / targetTank.maxHp);
+      const hurt = (typeof VehicleDamage !== 'undefined') ? VehicleDamage.summary(targetTank) : [];
+      el.textContent = (targetTank.isDead ? 'Xe mục tiêu: ĐÃ BỊ PHÁ HỦY' : `Máu xe mục tiêu: ${pct}%` + (pct < 30 ? ' (đang cháy)' : pct < 60 ? ' (bốc khói)' : '')) +
+        (hurt.length ? ' · ' + hurt.join(', ') : '');
+    } else {
+      el.textContent = 'Mục tiêu: Mặt đất';
+    }
+  }
+
+  // ===========================================================================
+  // BỆ PHÓNG: XE THẬT CỦA GAME
+  // ===========================================================================
+  const launchers = {};
+  function getLauncher(type) {
+    if (launchers[type]) return launchers[type];
+    const u = new SPGUnit3D(scene, { tankType: type, team: 'BLUE', isPlayer: true, x: 0, z: 0, bodyAngle: 0 });
+    u.alwaysFX = true;
+    hideOverlays(u);
+    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.rpgAmmoCount = 99999;
+    if (type === 'ARTILLERY') { u.deployProgress = 2; u.isDeployed = true; }
+    u.group.visible = false;
+    launchers[type] = u;
+    return u;
+  }
+
+  let launcher = null;
+  function placeLauncher() {
+    const sel = state.sel;
+    Object.values(launchers).forEach(u => { u.group.visible = false; });
+    launcher = getLauncher(sel.unit);
+    const d = launchDistance(sel, launcher);
+    state.launchD = d;
+    const p = LAUNCH_DIR.clone().multiplyScalar(d);
+    launcher.x = p.x; launcher.z = p.z; launcher.y = 0;
+    launcher.group.position.set(p.x, 0, p.z);
+    launcher.bodyAngle = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z); // mũi xe (-Z) nhìn về mục tiêu
+    launcher.group.rotation.y = launcher.bodyAngle;
+    launcher.group.visible = true;
+    launcher.selectedAmmo = sel.ammo;
+    launcher.targetElev = sel.path === 'arc' ? 0.78 : 0.02;
+    if (launcher.barrelPivot) launcher.barrelPivot.rotation.x = launcher.targetElev;
+    if (launcher.modelAnimator) launcher.modelAnimator.update(0.016, launcher);
+    launcher.group.updateMatrixWorld(true);
+    if (state.manualElev !== null && state.manualElev !== undefined && launcher.barrelPivot) {
+      launcher.barrelPivot.rotation.x = state.manualElev * Math.PI / 180;
+      for (let pass = 0; pass < 2; pass++) {
+        launcher.group.updateMatrixWorld(true);
+        const imp = predictImpact(launcher, sel.ammo);
+        if (!imp) break;
+        if (pass === 0) {
+          // sai lệch dọc hướng bắn -> dời bệ phóng
+          const err = -imp.clone().dot(LAUNCH_DIR);
+          const nd = Math.max(90, Math.min(7000, d + err));
+          const np = LAUNCH_DIR.clone().multiplyScalar(nd);
+          launcher.x = np.x; launcher.z = np.z; launcher.group.position.set(np.x, 0, np.z);
+          state.launchD = nd;
+        } else if (typeof impactMark !== 'undefined') impactMark.position.set(imp.x, 0.3, imp.z);
+      }
+    }
+  }
+  // Điểm rơi dự kiến (mô phỏng đúng vật lý từ đầu nòng hiện tại, góc hướng nòng chỉnh tay đã tính)
+  function predictImpact(u, ammo) {
+    const m = u.getMuzzleWorldTransform();
+    const dir = m.direction.clone();
+    if (state.manualAzi) dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), -state.manualAzi * Math.PI / 180);
+    const P = shotParams(u, ammo, Math.asin(Math.max(-1, Math.min(1, dir.y))) * 180 / Math.PI);
+    const pos = m.position.clone(), vel = dir.multiplyScalar(P.v0);
+    for (let i = 0; i < 20000; i++) {
+      const py = pos.y;
+      stepShot(P, pos, vel, 0.01);
+      if (pos.y <= 0 && vel.y < 0) return pos.setY(0);
+      void py;
+    }
+    return null;
+  }
+
+  // ===========================================================================
+  // ĐƯỜNG ĐẠN: dùng đúng hệ số vật lý của game (sơ tốc, lực cản, trọng lực, hệ số tốc độ bay)
+  // ===========================================================================
+  const BAL = (typeof BallisticsSystem3D !== 'undefined') ? new BallisticsSystem3D(new THREE.Scene()) : null;
+  function shotParams(shooter, ammo, elevDeg) {
+    if (!BAL) return { v0: 1800, drag: 0, g: 60, k: 0, mult: 1 };
+    const direct = BAL.isDirectFireShot(ammo, elevDeg);
+    const rp = BAL.roundParams(ammo, shooter);   // số liệu thật thu nhỏ theo game_timing.js (g / cản riêng từng loại đạn)
+    return { v0: rp.v0, drag: 1, g: rp.g, k: rp.k, mult: BAL.bulletSpeedMultiplier };
+  }
+  // Một bước tích phân (dt thời gian thực) — giống hệt vòng cập nhật đạn trong game
+  function stepShot(P, pos, vel, dtReal) {
+    const n = Math.max(1, Math.ceil(dtReal / 0.008));
+    const dt = dtReal * P.mult / n;
+    for (let i = 0; i < n; i++) {
+      const f = P.k * P.drag * vel.length() * dt;
+      vel.multiplyScalar(1 - f);
+      vel.y -= P.g * dt;
+      pos.addScaledVector(vel, dt);
+    }
+  }
+  // Mô phỏng đường đạn trong mặt phẳng đứng: độ cao khi tới cự ly ngang dXZ (hoặc -Infinity nếu rơi trước)
+  function heightAtDist(shooter, ammo, elevDeg, y0, dXZ) {
+    const P = shotParams(shooter, ammo, elevDeg);
+    const e = elevDeg * Math.PI / 180;
+    const pos = new THREE.Vector3(0, y0, 0), vel = new THREE.Vector3(P.v0 * Math.cos(e), P.v0 * Math.sin(e), 0);
+    let px = 0, py = y0;
+    for (let i = 0; i < 6000; i++) {
+      px = pos.x; py = pos.y;
+      stepShot(P, pos, vel, 0.01);
+      if (pos.x >= dXZ) { const k = (dXZ - px) / Math.max(1e-6, pos.x - px); return py + (pos.y - py) * k; }
+      if (pos.y < -60) return -Infinity;
+    }
+    return -Infinity;
+  }
+  // Cự ly điểm rơi trên mặt đất phẳng khi bắn ở góc nâng elevDeg từ độ cao y0
+  function rangeAt(shooter, ammo, elevDeg, y0) {
+    const P = shotParams(shooter, ammo, elevDeg);
+    const e = elevDeg * Math.PI / 180;
+    const pos = new THREE.Vector3(0, y0, 0), vel = new THREE.Vector3(P.v0 * Math.cos(e), P.v0 * Math.sin(e), 0);
+    let px = 0, py = y0;
+    for (let i = 0; i < 12000; i++) {
+      px = pos.x; py = pos.y;
+      stepShot(P, pos, vel, 0.01);
+      if (pos.y <= 0 && vel.y < 0) return px + (pos.x - px) * (py / Math.max(1e-6, py - pos.y));
+    }
+    return pos.x;
+  }
+  // Góc nâng để đường đạn đi qua điểm ngắm: bắn thẳng lấy nghiệm thấp, cầu vồng lấy nghiệm cao
+  const elevCache = { key: '', el: 0 };
+  function solveElevation(shooter, ammo, arc, y0, dXZ, yT) {
+    const key = [shooter.tankType, ammo, arc, Math.round(y0), Math.round(dXZ), Math.round(yT)].join('|');
+    if (elevCache.key === key) return elevCache.el;
+    const f = el => heightAtDist(shooter, ammo, el, y0, dXZ) - yT;
+    let lo = null, hi = null;
+    if (arc) {
+      for (let el = 85; el >= 20; el -= 0.5) if (f(el) >= 0) { lo = el; hi = el + 0.5; break; }
+    } else {
+      for (let el = -6; el <= 45; el += 0.25) if (f(el) >= 0) { hi = el; lo = el - 0.25; break; }
+    }
+    let el = arc ? 45 : 0;
+    if (lo !== null) {
+      for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if ((f(m) >= 0) === !arc) hi = m; else lo = m; }
+      el = (lo + hi) / 2;
+    }
+    elevCache.key = key; elevCache.el = el;
+    return el;
+  }
+  // Cự ly đặt bệ phóng: chỉnh tay góc nòng -> lùi / tiến bệ phóng tới đúng điểm rơi để đạn rơi vào mục tiêu
+  function launchDistance(sel, shooter) {
+    const ammo = sel.ammo;
+    if (state.manualElev !== null && state.manualElev !== undefined) {
+      const R = rangeAt(shooter, ammo, state.manualElev, 14);
+      state.predictedRange = R;
+      return Math.max(90, Math.min(7000, R));
+    }
+    state.predictedRange = null;
+    // Hố sâu / hồ nước dưới mặt đất: bắn thẳng phải tới gần để góc đạn đủ dốc vượt qua mép bờ
+    if ((state.target === 'PIT' || state.target === 'POND') && sel.path !== 'arc') return 150;
+    if (sel.path === 'arc') return Math.max(LAUNCH_DIST.arc, Math.min(7000, rangeAt(shooter, ammo, 55, 14)));
+    return LAUNCH_DIST[sel.path];
+  }
+
+  // Đạn giả gọi từ logic bắn thật của xe -> sinh đạn bay trong phòng thử
+  const projectiles = [];
+  const stubBallistics = {
+    wind: { direction: 0, speed: 0, vx: 0, vz: 0 },
+    fireShell3D: (shooter, az, el, charge, ammoType) => { launchProjectile(shooter, ammoType || 'NORMAL'); return {}; }
+  };
+  const stubRadar = { registerShot() {} };
+
+  // Điểm ngắm: tâm mục tiêu (đạn liên thanh có độ tản). Điểm nổ thật do dò tia quyết định.
+  function aimPoint(rapid) {
+    const p = state.target === 'WALL' ? new THREE.Vector3(0, 13, 0)
+      : state.target === 'BUILDING' ? new THREE.Vector3(0, 22, 0)
+      : state.target === 'VEHICLE' ? new THREE.Vector3(0, 9.5, 0)
+      : state.target === 'BERM' ? new THREE.Vector3(0, bermH * 0.6, 0)
+      : state.target === 'TREES' ? new THREE.Vector3(0, 14, 0)
+      : state.target === 'BUNKER' ? LAUNCH_DIR.clone().multiplyScalar(40).setY(14)
+      : state.target === 'PIT' ? new THREE.Vector3(0, -18, 0)
+      : state.target === 'POND' ? new THREE.Vector3(0, -3.5, 0) : new THREE.Vector3(0, 0, 0);
+    if (rapid) {
+      const spread = state.target === 'VEHICLE' ? 12 : 20;
+      p.add(new THREE.Vector3((Math.random() - 0.5) * spread, (Math.random() - 0.5) * (spread * 0.45), (Math.random() - 0.5) * spread));
+    }
+    if (p.y < 1.0 && state.target !== 'PIT' && state.target !== 'POND') p.y = 1.0;
+    return p;
+  }
+
+  // Tốc độ bay (đơn vị game/giây, ~8 đơn vị = 1 m) — tốc độ cao xé gió uy lực, vừa kịp quan sát vệt vạch đường
+  const SPEED = { direct: 3800, ap: 4800, bullet: 3600, missile: 1400 };
+
+  function launchProjectile(shooter, ammoType) {
+    const sel = state.sel;
+    shooter.group.updateMatrixWorld(true);
+    const m = shooter._launchOverride || shooter.getMuzzleWorldTransform();
+    const start = m.position.clone();
+    const fireDir = m.direction.clone().normalize();
+
+    // Đạn súng máy / Gatling có độ rung lắc vi mô của nòng pháo
+    if (sel.rapid) {
+      fireDir.x += (Math.random() - 0.5) * 0.015;
+      fireDir.y += (Math.random() - 0.5) * 0.01;
+      fireDir.z += (Math.random() - 0.5) * 0.015;
+      fireDir.normalize();
+    }
+
+    // Sơ tốc / lực cản / trọng lực đúng như trong game, vận tốc ĐÚNG 100% THEO HƯỚNG NÒNG PHÁO
+    const elevDeg = Math.asin(Math.max(-1, Math.min(1, fireDir.y))) * 180 / Math.PI;
+    const P = shotParams(shooter, ammoType, elevDeg);
+    const v = fireDir.clone().multiplyScalar(P.v0);
+    const g = new THREE.Vector3(0, -P.g, 0);
+
+    const mesh = ProjectileModels.create(ammoType, { heavy: !!sel.heavy });
+    mesh.position.copy(start);
+    // Mũi đạn (+Y) xoay đúng theo trục nòng pháo ngay từ khung hình đầu tiên
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), fireDir);
+    scene.add(mesh);
+
+    if (ammoType === 'AP') fx.sabotDiscard(start.x, start.y, start.z, v.x, v.y, v.z);
+    projectiles.push({
+      mesh, start, v, g, t: 0, T: 60, ammo: ammoType, heavy: !!sel.heavy,
+      trail: 0, wobble: Math.random() * 6, airburst: ammoType === 'CLUSTER', prev: start.clone(),
+      numeric: true, pos: start.clone(), vel: v.clone(), P
+    });
+  }
+
+  // Dò tia đoạn đường bay giữa 2 khung hình vào mặt đất / tường / tòa nhà / xe mục tiêu
+  const ray = new THREE.Raycaster();
+  function collide(a, b) {
+    const seg = b.clone().sub(a);
+    const len = seg.length();
+    if (len < 1e-4) return null;
+    ray.set(a, seg.divideScalar(len));
+    ray.far = len;
+    const objs = [ground];
+    if (wall.group.visible) objs.push(wall.group);
+    if (building.group.visible) objs.push(building.group);
+    if (targetTank.group.visible) objs.push(targetTank.group);
+    if (EX.berm && EX.berm.mesh.visible) objs.push(EX.berm.mesh);
+    if (EX.trees && EX.trees.group.visible) objs.push(EX.trees.group);
+    if (EX.bunker && EX.bunker.group.visible) objs.push(EX.bunker.group);
+    for (const h of [EX.pit, EX.pond]) if (h) { objs.push(h.rec.group); if (h.water) objs.push(h.water); }
+    const hits = ray.intersectObjects(objs, true);
+    for (const h of hits) {
+      const o = h.object;
+      if (!o.visible || o.userData.isFxDecal || o === targetTank.hpBarMesh || o === targetTank.hpBgMesh || o === targetTank.reactiveArmorMesh) continue;
+      // Mặt đất phẳng trong vòng hố đã khoét: đạn đi tiếp xuống lòng hố / mặt nước
+      if (o === ground && holesActive.some(p => Math.hypot(h.point.x - p.x, h.point.z - p.z) < p.r * 0.85)) continue;
+      if (o === ground && EX.berm && EX.berm.mesh.visible && EX.berm.holes.some(p => Math.hypot(h.point.x - p.x, h.point.z - p.z) < p.r * 0.85)) continue;
+      if (o.userData.isWater) return { point: h.point.clone(), normal: new THREE.Vector3(0, 1, 0), object: null, unit: null, hitType: 'WATER' };
+      const mt = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (mt && (mt.blending === THREE.AdditiveBlending || mt.isMeshBasicMaterial)) continue;
+      let root = o, hitType = 'GROUND', unit = null;
+      while (root) {
+        if (root === wall.group) { hitType = 'WALL'; break; }
+        if (root === building.group) { hitType = 'BUILDING'; break; }
+        if (root === targetTank.group) { hitType = 'DIRECT_HIT'; unit = targetTank; break; }
+        if (EX.bunker && root === EX.bunker.group) { hitType = 'WALL'; break; }
+        root = root.parent;
+      }
+      const n = h.face ? h.face.normal.clone().transformDirection(o.matrixWorld) : new THREE.Vector3(0, 1, 0);
+      return { point: h.point.clone(), normal: n, object: o === ground ? null : o, unit, hitType, faceIndex: h.faceIndex, instanceId: h.instanceId };
+    }
+    return null;
+  }
+
+  // Sát thương lên xe mục tiêu (máu tối đa của Halberd)
+  // Sát thương khi XUYÊN THỦNG (đồng bộ game.js); có xuyên được không do VehicleDamage tính theo độ xuyên / giáp / góc chạm
+  const DMG = { NORMAL: 1.6, HE: 1.6, AP: 2.0, CLUSTER_SUBMUNITION: 0.5, RPG: 2.4, ANTI_TANK_MISSILE: 3.0, GATLING_BULLET: 0.1, INCENDIARY: 0.16, SCOUT_BULLET: 0.12 };
+
+  // Bán kính phá hủy và năng lượng phá hủy kết cấu theo loại đạn (đạn pháo uy lực lớn)
+  const STRUCT_POWER = {
+    NORMAL: { radius: 24, power: 1.8 },
+    HE: { radius: 38, power: 2.8 },
+    AP: { radius: 3.6, power: 4.2 },
+    CLUSTER: { radius: 32, power: 1.6 },
+    CLUSTER_SUBMUNITION: { radius: 12, power: 0.9 },
+    RPG: { radius: 20, power: 2.2 },
+    GATLING_BULLET: { radius: 3.2, power: 0.2 },
+    INCENDIARY: { radius: 3.8, power: 0.24 },
+    SCOUT_BULLET: { radius: 1.8, power: 0.09 }
+  };
+
+  const SPLASH_R = { NORMAL: 35, HE: 50, AP: 7, CLUSTER_SUBMUNITION: 25, RPG: 38, GATLING_BULLET: 10, INCENDIARY: 14, SCOUT_BULLET: 10 };
+  function applyHit(p, hit, vel) {
+    if (hit.hitType === 'WATER') {
+      fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12);
+      playBoom(hit.point, 'GROUND', p.ammo === 'GATLING_BULLET' || p.ammo === 'SCOUT_BULLET' ? p.ammo : 'CLUSTER_SUBMUNITION');
+      return;
+    }
+    const onBerm = EX.berm && hit.object === EX.berm.mesh;
+    const res = fx.impactSurface(p.ammo, hit, vel, { heavy: p.heavy, noCrater: onBerm, noHoles: onBerm });
+    playBoom(hit.point, hit.hitType, p.ammo);
+    // Cảnh vật quanh điểm nổ: cây cháy / đổ, boong-ke vỡ, ụ đất lõm
+    if (EX.trees && EX.trees.group.visible) EX.trees.tf.damageAt(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, fx);
+    if (EX.bunker && EX.bunker.group.visible) EX.bunker.set.damageAt(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, fx);
+    if (EX.berm && EX.berm.mesh.visible && hit.object === EX.berm.mesh) {
+      const A = Destructibles.ammoInfo(p.ammo, p.heavy);
+      if (p.ammo === 'AP') EX.berm.dig(hit.point, 2.4, 7.5, false, true);                       // xuyên động năng: lỗ nhỏ nhưng cắm sâu
+      else if (A.power > 0.3) EX.berm.dig(hit.point, A.radius * 0.55, A.power * 4.2, true);     // hố nổ khoét sâu
+      else EX.berm.dig(hit.point, 1.6 + A.power * 4, 0.9 + A.power * 4, false, true);         // đạn nhỏ: lỗ rỗ đất từng phát, xả nhiều thành vùng cày nát
+    }
+
+    if (hit.hitType !== 'DIRECT_HIT' && targetTank.group.visible && targetTank.isDead && typeof VehicleDamage !== 'undefined') {
+      const R = (SPLASH_R[p.ammo] || 30) * (p.heavy && p.ammo === 'HE' ? 1.8 : 1);
+      const dist = Math.hypot(hit.point.x - targetTank.group.position.x, hit.point.z - targetTank.group.position.z);
+      if (dist < R) logDamage(VehicleDamage.onSplash(targetTank, { x: hit.point.x, y: hit.point.y, z: hit.point.z, ammo: p.ammo, heavy: p.heavy, dist, radius: R, fx }).events);
+    }
+    if (hit.hitType !== 'DIRECT_HIT' && targetTank.group.visible && !targetTank.isDead && typeof VehicleDamage !== 'undefined') {
+      const R = (SPLASH_R[p.ammo] || 30) * (p.heavy && p.ammo === 'HE' ? 1.8 : 1);
+      const dist = Math.hypot(hit.point.x - targetTank.group.position.x, hit.point.z - targetTank.group.position.z);
+      if (dist < R) {
+        const r = VehicleDamage.onSplash(targetTank, { x: hit.point.x, y: hit.point.y, z: hit.point.z, ammo: p.ammo, heavy: p.heavy, dist, radius: R, fx });
+        logDamage(r.events);
+        targetTank.hp = Math.max(0, targetTank.hp - (DMG[p.ammo] || 0.5) * 0.45 * r.mul * (1 - dist / R * 0.5));
+        if (targetTank.hp <= 0) { targetTank.isDead = true; fx.onVehicleDestroyed(targetTank, vel, hit.point); }
+        fx.trackVehicle(targetTank);
+        updateHpLabel();
+      }
+    }
+
+    // Nổ trên đất / trên không sát tường hay nhà (đạn con, lựu đạn pháo rơi cạnh): sóng nổ & mảnh văng vẫn phá kết cấu
+    if (hit.hitType !== 'WALL' && hit.hitType !== 'BUILDING' && p.ammo !== 'AP') {
+      const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
+      const rad = sp.radius * (p.heavy ? 1.7 : 1), pow = sp.power * (p.heavy ? 1.8 : 1) * 0.7;
+      if (wall.group.visible) wall.damageAt(hit.point, rad, pow, p.ammo, fx);
+      if (building.visible) building.damageAt(hit.point, rad, pow, p.ammo, fx);
+      if (wall.group.visible || building.visible) updateHpLabel();
+    }
+    if (hit.hitType === 'WALL') {
+      const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
+      const rad = sp.radius * (p.heavy ? 1.7 : 1);
+      const pow = sp.power * (p.heavy ? 1.85 : 1);
+      if (wall.group.visible) { const wr = wall.damageAt(hit.point, rad, pow, p.ammo, fx); p._pierced = !!(wr && wr.pierced); }
+      else if (EX.bunker && EX.bunker.group.visible) p._pierced = !!(EX.bunker.set.S && EX.bunker.set.S.lastPierced);
+      updateHpLabel();
+    } else if (hit.hitType === 'BUILDING') {
+      const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
+      const rad = sp.radius * (p.heavy ? 1.6 : 1);
+      const pow = sp.power * (p.heavy ? 1.75 : 1);
+      building.damageAt(hit.point, rad, pow, p.ammo, fx);
+      updateHpLabel();
+    } else if (hit.hitType === 'DIRECT_HIT' && targetTank.isDead && typeof VehicleDamage !== 'undefined') {
+      logDamage(VehicleDamage.onDirectHit(targetTank, { hit, ammo: p.ammo, heavy: p.heavy, dir: vel, fx }).events);
+    } else if (hit.hitType === 'DIRECT_HIT' && !res.ricochet && !targetTank.isDead) {
+      targetTank.lastHitDir = vel.clone();
+      targetTank.lastHitPoint = hit.point.clone();
+      // Giáp theo cấp + hướng + ERA, hỏng hóc bộ phận đúng điểm chạm (cùng hệ thống với game)
+      let mul = 1;
+      if (typeof VehicleDamage !== 'undefined') {
+        const r = VehicleDamage.onDirectHit(targetTank, { hit, ammo: p.ammo, heavy: p.heavy, dir: vel, fx });
+        mul = r.mul;
+        logDamage(r.events);
+      }
+      targetTank.hp = Math.max(0, targetTank.hp - (DMG[p.ammo] || 0.5) * (p.heavy ? 1.8 : 1) * mul);
+      if (targetTank.hp <= 0) {
+        targetTank.isDead = true;
+        fx.onVehicleDestroyed(targetTank, vel, hit.point);
+      }
+      fx.trackVehicle(targetTank);
+      updateHpLabel();
+    }
+  }
+
+  function updateProjectiles(dt) {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+      const p = projectiles[i];
+      p.t += dt;
+      const t = p.t;
+      let pos, vel;
+      if (p.numeric) {
+        // Tích phân từng bước (có lực cản không khí)
+        if (p.P) stepShot(p.P, p.pos, p.vel, dt);
+        else { p.vel.addScaledVector(p.g, dt).multiplyScalar(Math.exp(-p.drag * dt)); p.pos.addScaledVector(p.vel, dt); }
+        pos = p.pos.clone(); vel = p.vel.clone();
+      } else {
+        pos = p.start.clone().addScaledVector(p.v, t).addScaledVector(p.g, 0.5 * t * t);
+        if (p.ammo === 'RPG') pos.y += Math.sin(t * 9 + p.wobble) * 0.8;
+        vel = p.v.clone().addScaledVector(p.g, t);
+      }
+
+      // Đạn chùm: kích nổ trên không tầm cao (High Airburst ~20m) rồi rải chùm bom con diện rộng
+      if (p.airburst && vel.y < 0 && pos.y <= 165) {
+        fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER', 'AIRBURST', { heavy: true });
+        playBoom(pos, 'AIRBURST', 'CLUSTER');
+        // Đạn con giữ ~80% vận tốc đạn mẹ + bị đẩy tỏa tròn quanh trục bay, dải băng ổn định cản gió mạnh
+        const subCount = 18;
+        const fwd = vel.clone().normalize();
+        let r1 = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0));
+        if (r1.lengthSq() < 1e-4) r1.set(1, 0, 0);
+        r1.normalize();
+        const r2 = new THREE.Vector3().crossVectors(r1, fwd).normalize();
+        for (let k = 0; k < subCount; k++) {
+          const a = (k / subCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.45;
+          const eject = 50 + Math.random() * 95;
+          const radial = r1.clone().multiplyScalar(Math.cos(a)).addScaledVector(r2, Math.sin(a));
+          const vv = vel.clone().multiplyScalar(0.6 + Math.random() * 0.34).addScaledVector(radial, eject);
+          vv.y -= 6;
+          const mesh = ProjectileModels.create('CLUSTER_SUBMUNITION');
+          mesh.position.copy(pos);
+          scene.add(mesh);
+          projectiles.push({
+            mesh, start: pos.clone(), v: vv, g: new THREE.Vector3(0, -240, 0), t: 0, T: 8,
+            ammo: 'CLUSTER_SUBMUNITION', heavy: false, trail: 0, airburst: false, prev: pos.clone(),
+            numeric: true, pos: pos.clone(), vel: vv.clone(), drag: 1.6
+          });
+        }
+        scene.remove(p.mesh);
+        projectiles.splice(i, 1);
+        continue;
+      }
+
+      if (EX.trees && EX.trees.group.visible) EX.trees.tf.passSegment(p.prev.x, p.prev.y, p.prev.z, pos.x, pos.y, pos.z, p.ammo, fx);
+      const hit = collide(p.prev, pos);
+      if (hit || p.t >= p.T) {
+        const h = hit || { point: pos, normal: new THREE.Vector3(0, 1, 0), object: null, unit: null, hitType: 'GROUND' };
+        applyHit(p, h, vel);
+        // Đạn xuyên động năng xuyên thủng tường / vách nhà: còn ~65% vận tốc, bay tiếp phá vách phía sau
+        if (hit && p.ammo === 'AP' && (hit.hitType === 'BUILDING' || (hit.hitType === 'WALL' && p._pierced)) && (p.pen === undefined ? 2 : p.pen) > 0) {
+          p.pen = (p.pen === undefined ? 2 : p.pen) - 1;
+          const dir = vel.clone().normalize();
+          const exit = hit.point.clone().addScaledVector(dir, hit.hitType === 'WALL' ? 14 : 3);
+          p.numeric = true; p.pos = exit.clone(); p.vel = vel.clone().multiplyScalar(0.65); p.drag = 0.05;
+          if (p.P) p.P = Object.assign({}, p.P, { drag: p.P.drag * 1.5 });
+          p.prev.copy(exit); p.T = p.t + 3;
+          p.mesh.position.copy(exit);
+          continue;
+        }
+        scene.remove(p.mesh);
+        projectiles.splice(i, 1);
+        continue;
+      }
+      p.prev.copy(pos);
+      p.mesh.position.copy(pos);
+      if (vel.lengthSq() > 1e-4) p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vel.clone().normalize());
+      if (p.ammo !== 'RPG' && p.ammo !== 'CLUSTER_SUBMUNITION') p.mesh.rotateY(p.t * 40);
+      const tail = new THREE.Vector3(0, -(p.mesh.userData.length || 10) * 0.45, 0);
+      p.mesh.localToWorld(tail);
+      if (!p.lastTail) p.lastTail = tail.clone();
+
+      const isMissile = (p.ammo === 'RPG' || p.ammo === 'ANTI_TANK_MISSILE');
+      p.trail += dt;
+      if (isMissile || p.trail >= 0.02) {
+        p.trail = 0;
+        fx.trail(tail.x, tail.y, tail.z, p.ammo, p.lastTail.x, p.lastTail.y, p.lastTail.z);
+        p.lastTail.copy(tail);
+      }
+    }
+  }
+
+  function playBoom(pos, hitType, ammo) {
+    if (!state.audioReady || !window.soundEngine) return;
+    const d = camera.position.distanceTo(pos);
+    soundEngine.playExplosionAtDistance(Math.max(1, d - 120), hitType, ammo);
+  }
+
+  // Mô phỏng xe phóng mỗi khung hình: tự động nâng hạ nòng theo quỹ đạo đạn và mục tiêu
+  function simulateLauncher(u, dt) {
+    const sel = state.sel;
+    const wantFire = state.firing || state.autoFire;
+
+    // Tự động căn chỉnh hướng xe và góc nâng hạ nòng pháo chuẩn xác theo mục tiêu
+    const aim = aimPoint(false);
+    const aimDx = aim.x - u.group.position.x;
+    const aimDz = aim.z - u.group.position.z;
+    // Thân xe quay chính diện 100% về phía mục tiêu (mũi xe -Z hướng về mục tiêu)
+    const aimYaw = Math.atan2(-aimDx, -aimDz) - (state.manualAzi || 0) * Math.PI / 180;
+    u.group.rotation.y = aimYaw;
+    u.bodyAngle = aimYaw;
+
+    const m = (typeof u.getMuzzleWorldTransform === 'function') ? u.getMuzzleWorldTransform() : { position: u.group.position.clone().add(new THREE.Vector3(0, 12, 0)) };
+    const dx = aim.x - m.position.x;
+    const dy = aim.y - m.position.y;
+    const dz = aim.z - m.position.z;
+    const distXZ = Math.hypot(dx, dz);
+
+    // Góc nâng giải đúng theo vật lý đường đạn (nghiệm thấp bắn thẳng / nghiệm cao cầu vồng)
+    const targetElevRad = solveElevation(u, sel.ammo, sel.path === 'arc', m.position.y, distXZ, aim.y) * Math.PI / 180;
+    void dx; void dy; void dz;
+
+    // Góc nâng hạ nòng pháo bám sát góc đường đạn thực tế
+    u.targetElev = state.manualElev !== null && state.manualElev !== undefined ? state.manualElev * Math.PI / 180 : Math.max(-0.1, Math.min(1.5, targetElevRad));
+    if (u.barrelPivot) {
+      u.barrelPivot.rotation.x = u.targetElev;
+      u.elevation = (u.barrelPivot.rotation.x * 180) / Math.PI;
+    }
+
+    // Khai hoả SAU khi nòng đã về đúng góc ngắm của khung hình này
+    u.group.updateMatrixWorld(true);
+    if (sel.rapid) {
+      u.updateGatling(dt, wantFire, stubBallistics, stubRadar);
+    } else {
+      if (u.reloadTimer > 0) u.reloadTimer = Math.max(0, u.reloadTimer - dt);
+      if (wantFire && u.reloadTimer <= 0) u.fire(stubBallistics, stubRadar);
+    }
+
+    if (u.barrelRecoil > 0 && u.barrelGroup) {
+      u.barrelRecoil = Math.max(0, u.barrelRecoil - dt * 38);
+      u.barrelGroup.position.z = u.barrelRecoil;
+    }
+    u.updateRecoilRock(dt);
+    if (u.chassisGroup) { u.chassisGroup.rotation.x = u.rockPitch || 0; u.chassisGroup.rotation.z = u.rockRoll || 0; if (u._chassisBaseY === undefined) u._chassisBaseY = u.chassisGroup.position.y; u.chassisGroup.position.y = u._chassisBaseY - (u.rockHeave || 0); }
+    if (u.barrelSmokeTimer > 0) { u.barrelSmokeTimer -= dt; if (Math.random() < 0.4) u.spawnBarrelSmokePuff(stubBallistics.wind); }
+    u.updateFXParticles(dt);
+    if (u.modelAnimator) u.modelAnimator.update(dt, u);
+  }
+
+  // ===========================================================================
+  // KHUNG XEM MÔ HÌNH ĐẠN (GÓC DƯỚI PHẢI)
+  // ===========================================================================
+  const insetScene = new THREE.Scene();
+  insetScene.add(new THREE.HemisphereLight(0xe8f0ff, 0x30281e, 0.8));
+  const insetKey = new THREE.DirectionalLight(0xffffff, 1.3); insetKey.position.set(3, 4, 5); insetScene.add(insetKey);
+  const insetRim = new THREE.DirectionalLight(0x8fd8ff, 0.7); insetRim.position.set(-4, 2, -3); insetScene.add(insetRim);
+  const insetCam = new THREE.PerspectiveCamera(30, 340 / 230, 0.1, 200);
+  let insetModel = null;
+  function showInsetModel() {
+    if (insetModel) insetScene.remove(insetModel);
+    const sel = state.sel;
+    insetModel = ProjectileModels.create(sel.ammo, { heavy: !!sel.heavy, scale: 1 });
+    const holder = new THREE.Group();
+    holder.add(insetModel);
+    insetModel.rotation.z = -Math.PI / 2; // nằm ngang, mũi sang phải
+    insetModel = holder;
+    insetScene.add(insetModel);
+    const L = holder.children[0].userData.length || 10;
+    insetCam.position.set(0, L * 0.35, L * 2.1);
+    insetCam.lookAt(0, 0, 0);
+    const info = ProjectileModels.info(sel.ammo);
+    document.getElementById('insetLbl').innerHTML = `${sel.label}<span>${info.name}</span>`;
+  }
+
+  // ===========================================================================
+  // CAMERA QUỸ ĐẠO CHUỘT
+  // ===========================================================================
+  const orbit = { yaw: 2.35, pitch: 0.42, dist: 560, target: new THREE.Vector3() };
+  function camPreset(name) {
+    state.cam = name;
+    const sel = state.sel;
+    if (name === 'wide') {
+      const LD = state.launchD || LAUNCH_DIST[sel.path];
+      orbit.target.copy(LAUNCH_DIR).multiplyScalar(LD * 0.5);
+      orbit.dist = LD * 1.05 + 160; orbit.pitch = 0.42; orbit.yaw = 2.2;
+    } else if (name === 'impact') {
+      orbit.target.set(0, 8, 0); orbit.dist = 190; orbit.pitch = 0.32; orbit.yaw = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z) + 0.6;
+    } else if (name === 'launcher') {
+      orbit.target.copy(LAUNCH_DIR).multiplyScalar(state.launchD || LAUNCH_DIST[sel.path]).setY(12); orbit.dist = 130; orbit.pitch = 0.25; orbit.yaw = 1.7;
+    } else {
+      orbit.dist = 90; orbit.pitch = 0.25;
+    }
+  }
+  let dragging = false, lx = 0, ly = 0;
+  canvas.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); initAudio(); });
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    orbit.yaw -= (e.clientX - lx) * 0.006;
+    orbit.pitch = Math.max(0.04, Math.min(1.45, orbit.pitch + (e.clientY - ly) * 0.005));
+    lx = e.clientX; ly = e.clientY;
+  });
+  canvas.addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); orbit.dist = Math.max(30, Math.min(9000, orbit.dist * (e.deltaY > 0 ? 1.1 : 0.9))); }, { passive: false });
+
+  function updateCamera() {
+    let tgt = orbit.target;
+    if (state.cam === 'follow' && projectiles.length) tgt = projectiles[projectiles.length - 1].mesh.position;
+    const cp = Math.cos(orbit.pitch);
+    camera.position.set(tgt.x + Math.sin(orbit.yaw) * cp * orbit.dist, tgt.y + Math.sin(orbit.pitch) * orbit.dist, tgt.z + Math.cos(orbit.yaw) * cp * orbit.dist);
+    camera.lookAt(tgt);
+  }
+
+  // ===========================================================================
+  // GIAO DIỆN
+  // ===========================================================================
+  function initAudio() {
+    if (state.audioReady || !window.soundEngine) return;
+    soundEngine.init();
+    soundEngine.resume();
+    state.audioReady = true;
+  }
+
+  const list = document.getElementById('ammoList');
+  list.innerHTML = AMMO.map((a, i) => `<button class="btn${i === 0 ? ' on' : ''}" data-i="${i}">${i + 1 <= 9 ? (i + 1) + '. ' : ''}${a.label}<small>${a.who}</small></button>`).join('');
+  function selectAmmo(i) {
+    state.sel = AMMO[i];
+    list.querySelectorAll('.btn').forEach(b => b.classList.toggle('on', +b.dataset.i === i));
+    document.getElementById('ammoDesc').textContent = ProjectileModels.info(state.sel.ammo).desc;
+    placeLauncher();
+    showInsetModel();
+    if (state.cam === 'wide' || state.cam === 'launcher') camPreset(state.cam);
+  }
+  list.addEventListener('click', e => { const b = e.target.closest('.btn'); if (b) { initAudio(); selectAmmo(+b.dataset.i); } });
+
+  function radio(rowId, attr, apply) {
+    const row = document.getElementById(rowId);
+    row.addEventListener('click', e => {
+      const b = e.target.closest('.btn');
+      if (!b) return;
+      row.querySelectorAll('.btn').forEach(x => x.classList.toggle('on', x === b));
+      apply(b.dataset[attr]);
+    });
+  }
+  radio('targetRow', 'target', v => {
+    state.target = v;
+    wall.group.visible = v === 'WALL';
+    building.group.visible = v === 'BUILDING';
+    targetTank.group.visible = v === 'VEHICLE';
+    // Chỉ hiện thông số cấu hình của đúng mục tiêu đang chọn
+    document.querySelectorAll('.cfg').forEach(el => { el.style.display = el.dataset.for === v ? '' : 'none'; });
+    showExtra(v);
+    updateHpLabel();
+  });
+  document.querySelectorAll('.cfg').forEach(el => { el.style.display = el.dataset.for === state.target ? '' : 'none'; });
+  radio('mapRow', 'map', v => { state.map = v; terrain.mapType = v; groundMat.color.setHex(GROUND_COL[v]); });
+  radio('speedRow', 'speed', v => { state.speed = parseFloat(v); });
+  radio('camRow', 'cam', v => camPreset(v));
+
+  const fireBtn = document.getElementById('fireBtn');
+  const setFiring = (on) => { state.firing = on; fireBtn.classList.toggle('on', on); };
+  fireBtn.addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); setFiring(true); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => fireBtn.addEventListener(ev, () => setFiring(false)));
+  const autoBtn = document.getElementById('autoBtn');
+  autoBtn.addEventListener('click', () => { initAudio(); state.auto = !state.auto; autoBtn.textContent = 'Bắn tự động: ' + (state.auto ? 'BẬT' : 'TẮT'); autoBtn.classList.toggle('on', state.auto); });
+  document.getElementById('clearBtn').addEventListener('click', () => fx.clear());
+  document.getElementById('reviveBtn').addEventListener('click', () => {
+    targetTank.hp = targetTank.maxHp;
+    targetTank.isDead = false;
+    if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(targetTank);
+    if (targetTank.chassisGroup) targetTank.chassisGroup.rotation.set(0, 0, 0);
+    document.getElementById('dmgLog').innerHTML = '';
+    fx.restoreVehicle(targetTank);
+    wall.reset();
+    building.reset();
+    resetExtra();
+    updateHpLabel();
+  });
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); initAudio(); if (!e.repeat) setFiring(true); }
+    else if (/^Digit[1-9]$/.test(e.code)) { const i = +e.code.slice(5) - 1; if (AMMO[i]) { initAudio(); selectAmmo(i); } }
+    else if (e.code === 'KeyS') { const order = [1, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01]; const next = order[(order.indexOf(state.speed) + 1) % order.length]; document.querySelector(`#speedRow [data-speed="${next}"]`).click(); }
+  });
+  window.addEventListener('keyup', e => { if (e.code === 'Space') setFiring(false); });
+
+  // ===========================================================================
+  // VÒNG LẶP
+  // ===========================================================================
+  function resize() {
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  let last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const rawDt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+    last = now;
+    const dt = rawDt * state.speed;
+
+    // Bắn tự động: mỗi 2.2 giây một phát (đạn liên thanh: loạt 1 giây)
+    state.autoFire = false;
+    if (state.auto) {
+      state.autoTimer += dt;
+      const period = state.sel.rapid ? 3.0 : 2.4;
+      if (state.autoTimer > period) state.autoTimer = 0;
+      state.autoFire = state.sel.rapid ? state.autoTimer < 1.0 : state.autoTimer < 0.05;
+    }
+
+    if (launcher) simulateLauncher(launcher, dt);
+    updateProjectiles(dt);
+    fx.update(dt);
+    building.update(dt);
+    if (EX.trees) EX.trees.tf.update(dt, fx);
+    updateRipples(dt);
+    if (typeof VehicleDamage !== 'undefined') {
+      VehicleDamage.update(dt, [targetTank]);
+      // Thân xe lệch theo lốp xẹp (xe mục tiêu đứng yên không chạy vòng cập nhật của game)
+      if (targetTank.dmg && targetTank.chassisGroup && !targetTank.isDead) {
+        const c = targetTank.chassisGroup.rotation;
+        c.x += (targetTank.dmg.tiltP - c.x) * Math.min(1, dt * 3);
+        c.z += (targetTank.dmg.tiltR - c.z) * Math.min(1, dt * 3);
+      }
+    }
+    if (insetModel) insetModel.rotation.y += rawDt * 0.6;
+
+    updateCamera();
+    renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+    renderer.setScissorTest(false);
+    renderer.clear();
+    renderer.render(scene, camera);
+
+    // Khung xem đạn cận cảnh
+    const el = document.getElementById('inset');
+    const r = el.getBoundingClientRect();
+    const y = window.innerHeight - r.bottom;
+    renderer.setScissorTest(true);
+    renderer.setViewport(r.left, y, r.width, r.height);
+    renderer.setScissor(r.left, y, r.width, r.height);
+    renderer.setClearColor(0x0b1622, 1);
+    renderer.clear();
+    insetCam.aspect = r.width / r.height;
+    insetCam.updateProjectionMatrix();
+    renderer.render(insetScene, insetCam);
+    renderer.setClearColor(SKY, 1);
+    renderer.setScissorTest(false);
+  }
+
+  selectAmmo(0);
+  camPreset('wide');
+  requestAnimationFrame(frame);
+  document.querySelectorAll('#vehRow [data-veh]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#vehRow [data-veh]').forEach(x => x.classList.toggle('on', x === b));
+    setTargetType(b.dataset.veh);
+  }));
+  window.__fxLab = { state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
+})();
+</script>
+</body>
+</html>
