@@ -111,8 +111,38 @@ SoundEngine.mixin(class {
     m /= slen;
     const sc = 0.046 / Math.sqrt(Math.max(1e-12, q / slen - m * m));
     for (let i = 0; i < slen; i++) sd[i] = (sd[i] - m) * sc;
-    this.fireBufs = { pink, crk, slow };
+    // tiếng "tách" rời: 64 ô 30 ms, mỗi ô một tiếng nứt sắc (vào tức thì, tắt trong 0,2-1,5 ms), đôi khi 2-3 tiếng nứt
+    // dính nhau "crk"; lẫn chút cộng hưởng tắt nhanh 2-6 kHz cho chất "tách" giòn của thớ lá / cành. Lấy từ bộ đệm nhiễu
+    // chung (cửa sổ 8-33 ms ngẫu nhiên) thì mỗi tiếng là một nhúm nhiễu lọc dải -> dày lên nghe "rè rè" như sóng radio
+    const snapLen = 0.03, snapN = 64, sl = Math.floor(sr * snapLen);
+    const snap = ctx.createBuffer(1, sl * snapN, sr);
+    const nd = snap.getChannelData(0);
+    for (let s = 0; s < snapN; s++) {
+      const o = s * sl;
+      const nc = Math.random() < 0.6 ? 1 : Math.random() < 0.75 ? 2 : 3;
+      let at = Math.floor(sr * 0.0005), amp = 1, pk = 0;
+      for (let c = 0; c < nc && at < sl; c++) {
+        const tau = sr * (0.0002 + Math.random() * 0.0013);
+        const rf = 2000 + Math.random() * 4000, rm = Math.random() * 0.35, ph = Math.random() * 6.28;
+        for (let k = 0; at + k < sl && k < tau * 7; k++) {
+          const e = Math.exp(-k / tau);
+          nd[o + at + k] += amp * e * ((Math.random() * 2 - 1) * (1 - rm) + rm * Math.sin(ph + 2 * Math.PI * rf * k / sr));
+        }
+        at += Math.floor(sr * (0.0015 + Math.random() * 0.0065));
+        amp *= 0.35 + Math.random() * 0.5;
+      }
+      for (let i = 0; i < sl; i++) pk = Math.max(pk, Math.abs(nd[o + i]));
+      for (let i = 0; i < sl; i++) nd[o + i] *= 0.9 / Math.max(1e-6, pk);
+    }
+    this.fireBufs = { pink, crk, slow, snap, snapLen, snapN };
     return this.fireBufs;
+  }
+
+  // Một tiếng "tách" sắc của vật liệu cháy nứt (bright: lá / cành nhỏ, sáng tiếng; không: mảnh lớn, đục hơn)
+  fireSnap(dest, t, gain, bright) {
+    const B = this.ensureFireBuffers();
+    const s = (Math.random() * B.snapN) | 0;
+    this.burst(dest, t, { buffer: B.snap, offset: s * B.snapLen, filter: 'highpass', freq: bright ? 900 + Math.random() * 2200 : 300 + Math.random() * 700, Q: 0.5, gain, attack: 0.0003, dur: B.snapLen * 0.9 });
   }
 
   makeFireLoop(t, opts) {
@@ -191,7 +221,8 @@ SoundEngine.mixin(class {
     lg.connect(mix);
     // 2. lách tách dày (vật liệu cháy nứt nổ) — 2 lớp lệch tốc độ phát, mật độ dâng / lắng chậm ngẫu nhiên
     // lá cháy: lách tách giòn, dải cao, dày hơn (lá & cành nhỏ quăn nổ liên tục)
-    for (const [r0, r1, fq, g] of (leaf ? [[1.1, 1.35, 4200, 4.2], [0.9, 1.1, 2600, 3.4]] : [[0.9, 1.12, 2600, 3.2], [0.66, 0.8, 1500, 2.4]])) {
+    // (lá: chỉ còn là lớp nền nhỏ — tiếng tách chính do fireSnap rời rạc lo, lớp lặp dày to quá nghe thành "rè rè")
+    for (const [r0, r1, fq, g] of (leaf ? [[1.1, 1.35, 4200, 1.4], [0.9, 1.1, 2600, 1.1]] : [[0.9, 1.12, 2600, 3.2], [0.66, 0.8, 1500, 2.4]])) {
       const c = loop(B.crk, r0, r1);
       const cf = ctx.createBiquadFilter();
       cf.type = 'bandpass';
@@ -220,15 +251,16 @@ SoundEngine.mixin(class {
     hf.type = 'highpass';
     hf.frequency.value = leaf ? 3600 : 4500;
     const hg = ctx.createGain();
-    // lá tươi: nhựa & hơi nước sôi xèo xèo (xì to, chao nhanh); lá khô xì ít
-    hg.gain.value = leaf ? (dry ? 0.45 : 1.0) : 0.2;
-    flick(leaf ? 5 : 2, leaf ? 9 : 2.4, hg.gain);
+    // lá: chỉ xì rất nhỏ — xì cao liên tục chao nhanh nghe như sóng radio "rè rè"; tiếng xèo xèo hơi nước của lá tươi
+    // đến từng đợt ngắn (scheduleFireSnaps)
+    hg.gain.value = leaf ? (dry ? 0.06 : 0.12) : 0.2;
+    flick(leaf ? 1.5 : 2, leaf ? (dry ? 0.55 : 1.1) : 2.4, hg.gain);
     hiss.connect(hf);
     hf.connect(hg);
     hg.connect(mix);
     srcs.forEach(s => s.start(t, Math.random() * s.buffer.duration));
     // tiếng "lép bép" to rời rạc: quá trình Poisson (khoảng cách ngẫu nhiên theo phân bố mũ), mỗi đám cháy một mật độ
-    return { mix, lp, out, pan, send, srcs, seen: t, d: 0, fresh: true, leaf, snapRate: leaf ? rnd(dry ? 8 : 5, dry ? 13 : 9) : rnd(1.5, 4), nextSnap: t + Math.random() * 0.3 };
+    return { mix, lp, out, pan, send, srcs, seen: t, d: 0, fresh: true, leaf, snapRate: leaf ? rnd(dry ? 22 : 14, dry ? 30 : 20) : rnd(1.5, 4), nextSnap: t + Math.random() * 0.3, dry, nextSizzle: t + rnd(0.3, 1.5) };
   }
 
   // Lên lịch các tiếng "lép bép" rời rạc cho ~0.7 s tới (gọi mỗi lần đám cháy được báo, ~2 lần/giây)
@@ -236,19 +268,28 @@ SoundEngine.mixin(class {
     const rate = F.snapRate * (0.5 + 0.5 * kk);
     if (F.nextSnap < t) F.nextSnap = t + 0.01;
     let guard = 0;
-    while (F.nextSnap < t + 0.7 && guard++ < 12) {
+    while (F.nextSnap < t + 0.7 && guard++ < 40) {
       const ts = F.nextSnap;
       const loud = Math.pow(Math.random(), 2.5);   // đa số nhỏ, thỉnh thoảng một tiếng to
       if (F.leaf) {
-        // lá / cành nhỏ nổ "tách" giòn, ngắn, dải cao; thỉnh thoảng một chùm 2-3 tiếng sát nhau (cuống lá quăn nổ)
-        const nb = Math.random() < 0.25 ? 2 + (Math.random() < 0.4 ? 1 : 0) : 1;
-        for (let b = 0; b < nb; b++) this.burst(F.mix, ts + b * (0.012 + Math.random() * 0.03), { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2200 + Math.random() * 4800, Q: 0.8 + Math.random() * 1.2, gain: 0.35 + 1.6 * loud, attack: 0.0005, dur: 0.008 + Math.random() * 0.025 });
+        // lá / cành nhỏ nứt "tách" sắc, giòn; thỉnh thoảng một chùm 2-4 tiếng sát nhau (cuống lá quăn nổ), ít khi
+        // một tiếng "cạch" đục hơn của cành to
+        const nb = Math.random() < 0.22 ? 2 + ((Math.random() * 3) | 0) : 1;
+        const lv = Math.pow(Math.random(), 3);
+        for (let b = 0; b < nb; b++) this.fireSnap(F.mix, ts + b * (0.01 + Math.random() * 0.035), (0.25 + 2.2 * lv) * (b ? 0.5 + Math.random() * 0.5 : 1), Math.random() > 0.12);
         F.nextSnap = ts - Math.log(1 - Math.random()) / rate;
         continue;
       }
       this.burst(F.mix, ts, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 1100 + Math.random() * 3400, Q: 0.7 + Math.random() * 0.9, gain: 0.5 + 2.4 * loud, attack: 0.0008, dur: 0.02 + Math.random() * 0.05 });
       if (loud > 0.5) this.burst(F.mix, ts, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 600 + Math.random() * 500, Q: 1, gain: 0.5 * loud, attack: 0.001, dur: 0.04 });
       F.nextSnap = ts - Math.log(1 - Math.random()) / rate;
+    }
+    // lá tươi: hơi nước & nhựa sôi phụt ra "xèèè" từng đợt ngắn, lúc có lúc không (lá khô hiếm khi)
+    if (F.leaf && F.nextSizzle < t + 0.7) {
+      const ts = Math.max(t, F.nextSizzle);
+      const dur = 0.25 + Math.random() * 0.7;
+      this.burst(F.mix, ts, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 4500 + Math.random() * 3500, Q: 0.9, gain: (F.dry ? 0.15 : 0.35) * (0.5 + Math.random()), attack: 0.08 + Math.random() * 0.15, dur });
+      F.nextSizzle = ts + dur + (F.dry ? 2 : 0.6) + Math.random() * (F.dry ? 5 : 2.5);
     }
   }
 
@@ -264,9 +305,7 @@ SoundEngine.mixin(class {
     const rise = 0.08 + Math.random() * 0.1;
     this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: dry ? 700 : 520, freqEnd: dry ? 1300 : 950, sweep: rise + 0.3, Q: 0.6, gain: dry ? 1.3 : 1.0, attack: rise, dur: 0.7 + Math.random() * 0.4 });
     this.burst(out, t + 0.03, { buffer: this.pinkNoiseBuffer, filter: 'highpass', freq: 3800, gain: dry ? 0.35 : 0.55, attack: 0.12, dur: 0.9 });
-    for (let i = 0, n = 4 + Math.floor(Math.random() * 5); i < n; i++) {
-      this.burst(out, t + 0.05 + Math.random() * 0.6, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2400 + Math.random() * 4200, Q: 1, gain: 0.4 + Math.random() * 0.9, attack: 0.0005, dur: 0.01 + Math.random() * 0.02 });
-    }
+    for (let i = 0, n = 6 + Math.floor(Math.random() * 6); i < n; i++) this.fireSnap(out, t + 0.05 + Math.random() * 0.6, 0.4 + 1.2 * Math.pow(Math.random(), 2), true);
   }
 
   stopFire(key, fade = 0.6) {
