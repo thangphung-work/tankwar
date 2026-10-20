@@ -2087,9 +2087,9 @@ const Destructibles = (() => {
   // (mỗi tia đại diện một chùm mảnh). Ngoài đời đạn 120mm nổ phá rỗ dày tường trong ~10-15 m, lác đác tới ~30 m;
   // lựu pháo 155mm xa hơn nữa. Đầu nổ lõm / bom con ít mảnh, tầm ngắn. Đạn chùm tách vỏ trên không: không có mảnh
   const FRAG = {
-    NORMAL: { fr: 240, rays: 70 }, HE: { fr: 280, rays: 90 },
-    RPG: { fr: 110, rays: 24 }, ANTI_TANK_MISSILE: { fr: 140, rays: 30 },
-    CLUSTER_SUBMUNITION: { fr: 90, rays: 24 }
+    NORMAL: { fr: 240, rays: 220 }, HE: { fr: 280, rays: 280 },
+    RPG: { fr: 110, rays: 60 }, ANTI_TANK_MISSILE: { fr: 140, rays: 80 },
+    CLUSTER_SUBMUNITION: { fr: 90, rays: 60 }
   };
   function fragInfo(ammo, heavy) {
     const f = FRAG[ammo];
@@ -2248,6 +2248,7 @@ const Destructibles = (() => {
         if (sm) shatterMat.normalScale.set(0.9, 0.9);
         if (key !== 'office') { facadeGrime(mat, key === 'officeB' ? 0.6 : 1); facadeGrime(shatterMat, 1); }
         this.panelKits[key] = new FractureKit(this.group, mat, cracked, counts[key], { variants: 1, shatterMat, panelGeo: reliefPanelGeo(key) });
+        this.panelKits[key].styleKey = key;   // kiểu mặt tiền -> vị trí ô cửa (RELIEF) cho vết mảnh văng
       }
       // Lưới mảng vỡ gộp cả nhà chung 1 vật liệu: nhà có tầng trệt khác tầng trên dùng atlas 2 nửa (xem atlasTex / panelGeo)
       for (const key of dmgKeys) {
@@ -2740,7 +2741,6 @@ const Destructibles = (() => {
               K.hp[k] -= P.chip * (1 - d / cR);
               lvl = Math.min(3, 1 + Math.floor((1 - Math.max(0, K.hp[k])) * 3));
             } else lvl = Math.min(3, 1 + Math.floor(2.99 * (1 - (d - Math.max(0, hR)) / Math.max(0.5, cR - Math.max(0, hR)))));
-            if (P.cap) lvl = Math.min(lvl, P.cap);   // vết nông có giới hạn (mảnh văng chỉ sứt mặt)
             if (P.inner) K.si[k] = Math.max(K.si[k], lvl); else K.so[k] = Math.max(K.so[k], lvl);
             // bóc lở cả 2 mặt / đục mãi một chỗ: thủng xuyên
             if ((P.chip && K.hp[k] <= 0) || K.so[k] + K.si[k] >= 5) { K.s[k] = 0; removed++; sx += cx; sy += cy; continue; }
@@ -3247,7 +3247,7 @@ const Destructibles = (() => {
       // có nhà nào trong tầm không (đỡ dò tia vô ích)
       if (!this.items.some(B => !B.collapsed && Math.hypot(x - B.x, z - B.z) < F.fr + Math.hypot(B.halfW, B.halfD))) return out;
       const oy = y + 2;
-      let budget = 120;
+      let budget = 300;
       for (let i = 0; i < F.rays; i++) {
         const az = rand(0, 6.283);
         const el = Math.asin(Math.pow(rand(0, 1), 1.6) * 0.82) + 0.02;
@@ -3258,7 +3258,7 @@ const Destructibles = (() => {
         const d = h.t * F.fr;
         if (d < 4) continue;   // chính mặt tường bị nổ trúng thẳng: vết nổ đã khoét riêng
         // mảnh xa mất dần sức: gần thì một chùm vết, xa chỉ lác đác
-        const n = 1 + Math.round(3 * Math.max(0, 1 - d / F.fr) * rand(0.6, 1.2));
+        const n = 1 + Math.round(1.6 * Math.max(0, 1 - d / F.fr) * rand(0.5, 1.2));
         const list = out.get(h.B) || [];
         list.push({ m: h.m, L: h.L, d, inside: h.inside, n: Math.min(n, budget) });
         out.set(h.B, list);
@@ -3267,25 +3267,48 @@ const Destructibles = (() => {
       }
       return out;
     }
-    // Vết rỗ mảnh văng: hố bóc lở nông nhỏ (đục mãi một chỗ mới thủng), kính trúng mảnh thì vỡ
+    // Điểm (hệ toạ độ nhà) trên mảng tường m có rơi vào ô cửa / cửa đi lõm của mặt tiền không (RELIEF, ảnh 128x128)
+    inOpening(B, m, L) {
+      const R = m.kit && m.kit.styleKey && RELIEF[m.kit.styleKey];
+      if (!R) return false;
+      const px = (L.x - m.lx) * m.ax + (L.z - m.lz) * m.az, py = L.y - m.ly;
+      const u = (px / B.st.bay + 0.5) * 128, v = (0.5 - py / B.FH) * 128;
+      return R.o.some(o => u > o[0] && u < o[2] && v > o[1] && v < o[3]);
+    }
+    // Vết mảnh văng: dán vết sứt nhỏ (5-20 cm) đúng chỗ chùm mảnh chạm, bỏ qua ô cửa; kính trúng mảnh thì vỡ.
+    // Không khoét lưới tường (ô lưới ~21 cm: vết hiện thành mảng bóc lở to, lại buộc dựng lại hình cả mảng tường).
+    // Tường tôn: mảnh xuyên thủng tấm tôn mỏng -> lỗ thủng thật (lỗ tối). Lưới tường không đổi -> mọi máy cùng trạng thái
     fragmentPocks(ctx, hits) {
       const { B } = ctx;
+      const layer = ctx.fx && ctx.fx.fragHoles;
+      const metal = B.st.mat === 'metal';
+      const tint = B.st.mat === 'adobe' ? [0.93, 0.8, 0.62] : B.st.mat === 'wood' ? [0.62, 0.48, 0.32] : B.st.mat === 'stone' ? [0.9, 0.88, 0.84] : [0.97, 0.95, 0.92];
       for (const h of hits) {
         const m = h.m;
         if (m.state === 'gone') continue;
         if (m.state === 'ok' && rand(0, 1) < 0.5) this.shatter(B, m, ctx);
-        // chùm mảnh tỏa rộng dần theo khoảng cách; mỗi vết chỉ là một điểm sứt nông (lưới khoét ~21 cm/ô: to hơn nữa
-        // các vết dồn lại thành mảng bóc lở 1-2 m, trông như tường bị đạn nổ trúng thẳng)
-        const spread = 3 + h.d * 0.08;
-        const cap = h.d < 60 ? 2 : 1;   // mảnh gần còn đủ sức bóc sâu hơn một chút
-        for (let k = 0; k < h.n; k++) {
-          const u = rand(-1, 1) * spread, v = rand(-1, 1) * spread * 0.8;
-          const L = { x: h.L.x + m.ax * u, y: h.L.y + v, z: h.L.z + m.az * u };
-          // bóc lở 1 mặt, không cộng dồn kiểu đục: mảnh văng không đục thủng được tường
-          const P = { hole: 0, crater: rand(0.8, 1.1), soot: 0, chip: 0, cap, stretch: 1, tx: 1, ty: 0, noise: NO_NOISE, seed: rand(0, 1000), inner: !!h.inside };
-          this.carveFace(ctx, m, L, P);
+        if (layer) {
+          // vết dán chỉ là hình (không đổi trạng thái nhà): không tiêu dãy RNG đồng bộ mạng, mà sinh số từ toạ độ điểm chạm
+          // (giống hệt nhau trên mọi máy) -> mọi người chơi thấy vết ở cùng chỗ
+          let sd = (Math.floor(h.L.x * 97) ^ Math.floor(h.L.y * 131) * 7919 ^ Math.floor(h.L.z * 173) * 104729) >>> 0;
+          const rnd = (lo, hi) => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return lo + (sd / 4294967296) * (hi - lo); };
+          // chùm mảnh tỏa rộng dần theo khoảng cách; mảnh gần to & nhiều hơn
+          const spread = 1 + h.d * 0.03, near = Math.max(0, 1 - h.d / 200);
+          const cnt = h.n;
+          const nIn = h.inside ? -1 : 1, nw = this.dirToWorld(B, m.ox * nIn, 0, m.oz * nIn);
+          for (let k = 0; k < cnt; k++) {
+            const u = rnd(-1, 1) * spread, v = rnd(-1, 1) * spread * 0.8;
+            const L = { x: h.L.x + m.ax * u, y: h.L.y + v, z: h.L.z + m.az * u };
+            if (Math.abs((L.x - m.lx) * m.ax + (L.z - m.lz) * m.az) > B.st.bay / 2 || Math.abs(L.y - m.ly) > B.FH / 2) continue;
+            if (!h.inside && this.inOpening(B, m, L)) continue;
+            if (m.mk && !this.cellSolid(B, m, L)) continue;
+            const w = this.toWorld(B, L.x, L.y, L.z);
+            const sz = metal ? rnd(0.35, 0.7) : rnd(0.8, 1.6) * (1 + 0.5 * near);
+            const sh = rnd(0.85, 1.05);
+            const col = metal ? null : new THREE.Color(tint[0] * sh, tint[1] * sh, tint[2] * sh);
+            (metal && ctx.fx.wallHoles ? ctx.fx.wallHoles : layer).add(w.x, w.y, w.z, nw.x, 0, nw.z, sz, col);
+          }
         }
-        ctx.changed = true;
       }
     }
 

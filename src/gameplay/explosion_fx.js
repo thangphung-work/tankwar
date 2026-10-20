@@ -321,8 +321,49 @@
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d');
-    const rnd = (i) => hash2(i, kind === 'wall' ? 17 : 29, 13);
-    if (kind === 'wall') {
+    const rnd = (i) => hash2(i, kind === 'wall' ? 17 : kind === 'frag' ? 41 : 29, 13);
+    if (kind === 'frag') {
+      // Vết mảnh văng găm tường: miếng vữa / bê tông bị bóc méo mó, lộ lớp vật liệu mới sáng hơn mặt sơn (nhuộm theo vật
+      // liệu bằng màu instance), lòng sứt hơi tối, tâm chỉ là hõm nhỏ (không thủng như lỗ đạn), vài vết nứt chân chim
+      const pts = [];
+      const n = 11;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + (rnd(i) - 0.5) * 0.5;
+        const r = c * (0.32 + rnd(i + 20) * 0.38);
+        pts.push([c + Math.cos(a) * r, c + Math.sin(a) * r]);
+      }
+      const poly = (k) => { ctx.beginPath(); pts.forEach(([x, y], i) => { const X = c + (x - c) * k, Y = c + (y - c) * k; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.closePath(); };
+      // quầng bụi mờ quanh vết
+      const g0 = ctx.createRadialGradient(c, c, c * 0.3, c, c, c * 0.95);
+      g0.addColorStop(0, 'rgba(120,115,108,0.28)');
+      g0.addColorStop(1, 'rgba(120,115,108,0)');
+      ctx.fillStyle = g0; ctx.fillRect(0, 0, size, size);
+      // miếng bóc: sáng (vật liệu mới lộ), mép sẫm nhẹ
+      poly(1); ctx.fillStyle = 'rgba(176,170,160,0.95)'; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(60,55,50,0.7)'; ctx.stroke();
+      // lòng sứt tối dần vào tâm (bóng đổ trong hõm: thứ làm vết đọc được từ xa)
+      const g1 = ctx.createRadialGradient(c, c, 0, c, c, c * 0.5);
+      g1.addColorStop(0, 'rgba(38,34,30,0.95)');
+      g1.addColorStop(0.6, 'rgba(80,74,68,0.6)');
+      g1.addColorStop(1, 'rgba(110,104,96,0)');
+      poly(0.75); ctx.fillStyle = g1; ctx.fill();
+      // sạn li ti
+      for (let i = 0; i < 26; i++) {
+        const a = rnd(i + 60) * Math.PI * 2, r = c * rnd(i + 90) * 0.5;
+        ctx.fillStyle = `rgba(${rnd(i + 5) < 0.5 ? '60,55,50' : '235,230,220'},${0.4 + rnd(i + 7) * 0.4})`;
+        ctx.fillRect(c + Math.cos(a) * r, c + Math.sin(a) * r, 1 + rnd(i + 3) * 2, 1 + rnd(i + 4) * 2);
+      }
+      // nứt chân chim
+      ctx.strokeStyle = 'rgba(40,36,32,0.55)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const a = rnd(i + 300) * Math.PI * 2, r0 = c * 0.55, r1 = c * (0.75 + rnd(i + 310) * 0.2);
+        ctx.beginPath();
+        ctx.moveTo(c + Math.cos(a) * r0, c + Math.sin(a) * r0);
+        ctx.lineTo(c + Math.cos(a + 0.15) * (r0 + r1) / 2, c + Math.sin(a + 0.15) * (r0 + r1) / 2);
+        ctx.lineTo(c + Math.cos(a - 0.05) * r1, c + Math.sin(a - 0.05) * r1);
+        ctx.stroke();
+      }
+    } else if (kind === 'wall') {
       const g = ctx.createRadialGradient(c, c, 2, c, c, c * 0.9);
       g.addColorStop(0, 'rgba(20,18,16,0.9)');
       g.addColorStop(0.45, 'rgba(60,56,52,0.35)');
@@ -370,6 +411,7 @@
   }
 
   // Lớp lỗ đạn: InstancedMesh vòng lặp (lỗ cũ nhất được thay khi đầy) -> hàng trăm lỗ đạn chỉ 1 lần vẽ
+  const HOLE_WHITE = new THREE.Color(1, 1, 1);
   class HoleLayer {
     constructor(scene, max, kind) {
       this.max = max;
@@ -380,6 +422,9 @@
         polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6
       });
       this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, max);
+      // lớp có màu từng vết: tạo sẵn bảng màu đủ sức chứa (setColorAt của three r128 tạo bảng theo mesh.count — lúc đó
+      // đang là 0 -> bảng rỗng, cả lớp không vẽ được)
+      if (kind === 'frag') this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3).fill(1), 3);
       this.mesh.count = 0;
       this.mesh.frustumCulled = false;
       this.mesh.renderOrder = 3;
@@ -391,7 +436,12 @@
       this._s = new THREE.Vector3();
       this._z = new THREE.Vector3(0, 0, 1);
     }
-    add(x, y, z, nx, ny, nz, size) {
+    add(x, y, z, nx, ny, nz, size, color = null) {
+      // màu nhuộm từng vết (vết mảnh văng theo vật liệu tường); lớp nào đã dùng màu thì vết không màu nhận màu trắng
+      if (this.mesh.instanceColor) {
+        this.mesh.setColorAt(this.next, color || HOLE_WHITE);
+        this.mesh.instanceColor.needsUpdate = true;
+      }
       this._q.setFromUnitVectors(this._z, new THREE.Vector3(nx, ny, nz).normalize());
       this._q2.setFromAxisAngle(this._z, Math.random() * Math.PI * 2);
       this._q.multiply(this._q2);
@@ -2919,6 +2969,7 @@
       this.sabots = [];
       this.groundHoles = new HoleLayer(scene, 500, 'ground');
       this.wallHoles = new HoleLayer(scene, 300, 'wall');
+      this.fragHoles = new HoleLayer(scene, 2400, 'frag');   // vết mảnh văng găm tường nhà (destructibles.js)
       this.craters = [];
       this.wallMarks = [];
       this.emitters = [];
@@ -4829,6 +4880,7 @@
         if (p.distanceToSquared(new THREE.Vector3(x, y, z)) < r * r) this.removeDecal(this.wallMarks, i);
       }
       if (this.wallHoles) this.wallHoles.removeNear(x, y, z, r);
+      if (this.fragHoles) this.fragHoles.removeNear(x, y, z, r);
       if (this.surfaceMarks) {
         for (let i = this.surfaceMarks.length - 1; i >= 0; i--) {
           const rec = this.surfaceMarks[i];
@@ -4963,6 +5015,7 @@
       while (this.surfaceMarks.length) this.removeSurfaceMark(0);
       this.groundHoles.clear();
       this.wallHoles.clear();
+      if (this.fragHoles) this.fragHoles.clear();
       this.smoke.update(0.001, null);
       this.signal.update(0.001, null);
       this.fire.update(0.001, null);
