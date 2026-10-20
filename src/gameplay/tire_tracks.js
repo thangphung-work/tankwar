@@ -345,7 +345,9 @@ const TireTracks = (() => {
     const a = u.bodyAngle || 0, c = Math.cos(a), s = Math.sin(a);
     const fx = -Math.sin(a), fz = -Math.cos(a);
     const sf = surfaceOf(info);
-    const gAt = terrain.getVehicleGroundAt ? (x, z) => terrain.getVehicleGroundAt(x, z, u._suspY) : (x, z) => terrain.getElevationAt(x, z);
+    // vệt xích in theo mặt nhìn thấy (trong / quanh hố bom là lòng hố & gờ đất, không phải lưới vật lý thô)
+    const gAt = u.inCrater && terrain.vehicleSurfaceAt ? (x, z) => terrain.vehicleSurfaceAt(x, z, u._suspY)
+      : terrain.getVehicleGroundAt ? (x, z) => terrain.getVehicleGroundAt(x, z, u._suspY) : (x, z) => terrain.getElevationAt(x, z);
     u._tt.forEach((L) => {
       const cfg = L.cfg;
       // vị trí điểm tiếp đất của vệt trong thế giới

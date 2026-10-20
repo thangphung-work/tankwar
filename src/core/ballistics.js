@@ -291,11 +291,15 @@ class BallisticsSystem3D {
     const cy = shell.y;
     const cz = shell.z;
 
-    if (this.fx) this.fx.spawn(cx, cy, cz, 'CLUSTER', 'AIRBURST');
+    if (this.fx) this.fx.spawn(cx, cy, cz, 'CLUSTER', 'AIRBURST', { dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 } });
     else this.createAirburstFlash(cx, cy, cz);
 
+    // Đạn mẹ tách vỏ trên không: tiếng rít lao xuống (dự đoán tới mặt đất) phải tắt ngay lúc này
+    if (shell.whistleSnd) { shell.whistleSnd.stop(); shell.whistleSnd = null; }
     if (window.soundEngine && typeof window.soundEngine.playExplosionAtDistance === 'function') {
-      const distToPlayer = (window.game && window.game.player) ? Math.hypot(window.game.player.x - cx, window.game.player.z - cz) : 500;
+      // nổ ở độ cao ~20 m: tính khoảng cách xiên tới người nghe, không chỉ khoảng cách trên mặt đất
+      const P = window.game && window.game.player;
+      const distToPlayer = P ? Math.hypot(P.x - cx, (P.y || 0) - cy, P.z - cz) : 500;
       window.soundEngine.playExplosionAtDistance(distToPlayer, 'AIRBURST', 'CLUSTER', { x: cx, z: cz });
     }
 
@@ -325,6 +329,7 @@ class BallisticsSystem3D {
 
       this.activeShells.push({
         id: Math.random().toString(36).substring(2, 9),
+        burstSeed: ((shell.burstSeed || 0) + Math.imul(this.activeShells.length + 1, 2654435761)) >>> 0,
         shooterId: shell.shooterId,
         shooterTeam: shell.shooterTeam,
         mesh: subMesh,
@@ -491,6 +496,8 @@ class BallisticsSystem3D {
 
     const shell = {
       id: Math.random().toString(36).substring(2, 9),
+      // hạt giống quyết định nổ trên tán (tree burst); gửi kèm sự kiện bắn -> máy khác nổ cùng cây, cùng chỗ
+      burstSeed: (Math.random() * 4294967296) >>> 0,
       shooterId: shooter.id,
       shooterTeam: shooter ? shooter.team : null,
       mesh: shellMesh,
@@ -706,6 +713,11 @@ class BallisticsSystem3D {
         if (s.maxTravel && s.travel > s.maxTravel) {
           if ((s.ammoType === 'RPG' || s.ammoType === 'ANTI_TANK_MISSILE') && this.fx && this.fx.spawn) {
             this.fx.spawn(s.x, s.y, s.z, 'CLUSTER_SUBMUNITION', 'AIR', {});
+            // tên lửa hết tầm tự hủy: có chớp nổ thì phải có tiếng nổ (trước đây nổ câm)
+            const P = window.game && window.game.player;
+            if (P && window.soundEngine && window.soundEngine.playExplosionAtDistance) {
+              window.soundEngine.playExplosionAtDistance(Math.hypot(P.x - s.x, (P.y || 0) - s.y, P.z - s.z), 'AIRBURST', 'CLUSTER_SUBMUNITION', { x: s.x, z: s.z });
+            }
           }
           this.removeShellMesh(s, i);
           impacted = true;
@@ -736,13 +748,42 @@ class BallisticsSystem3D {
             break;
           }
         }
-        // 0b. THÂN CÂY chặn đạn (tán lá thì đạn xuyên qua): đạn súng găm vào thân, đạn pháo / tên lửa nổ tại thân cây
-        if (veg && veg.trunkHit && s.timeAlive > 0.01) {
-          const th = veg.trunkHit(prevX, prevY, prevZ, s.x, s.y, s.z);
-          if (th) {
+        // 0b. THÂN CÂY chặn đạn: đạn súng găm vào thân, đạn pháo / tên lửa nổ tại thân cây.
+        //     TÁN CÂY: đạn ngòi nổ chạm va cành là nổ ngay trên tán (tree burst, mảnh văng mưa xuống dưới tán);
+        //     đạn không có ngòi chạm / không chạm cành thì xuyên qua tán. Lấy va chạm nào tới trước dọc đoạn bay
+        if (veg && s.timeAlive > 0.01) {
+          const th = veg.trunkHit ? veg.trunkHit(prevX, prevY, prevZ, s.x, s.y, s.z) : null;
+          let cb = null, tB = 2;
+          if (veg.crownBurst) {
+            if (!s._burstAt) {
+              if (!s._burstSeen) s._burstSeen = new Set();
+              const r = veg.crownBurst(prevX, prevY, prevZ, s.x, s.y, s.z, s.ammoType, !!s.isHeavyArty, s.burstSeed || 0, s._burstSeen);
+              if (r) s._burstAt = r;
+            }
+            const B = s._burstAt;
+            if (B) {
+              const ex = s.x - prevX, ey = s.y - prevY, ez = s.z - prevZ, L2 = ex * ex + ey * ey + ez * ez || 1;
+              const t = ((B.x - prevX) * ex + (B.y - prevY) * ey + (B.z - prevZ) * ez) / L2;
+              if (t <= 1) { cb = B; tB = t; }
+            }
+          }
+          if (th && th.t <= tB) {
             s.x = th.x; s.y = th.y; s.z = th.z;
+            // pháp tuyến mặt thân cây tại điểm chạm + cây bị trúng (hiệu ứng dằm gỗ & vết đạn dán đúng thân cây)
+            if (th.it) {
+              const nl = Math.hypot(th.x - th.it.x, th.z - th.it.z) || 1;
+              s.hitNormal = { nx: (th.x - th.it.x) / nl, ny: 0, nz: (th.z - th.it.z) / nl };
+              s.hitTree = th.it;
+            }
             this.removeShellMesh(s, i);
             if (onImpact) onImpact(s, 'TREE');
+            impacted = true;
+            break;
+          }
+          if (cb) {
+            s.x = cb.x; s.y = cb.y; s.z = cb.z;
+            this.removeShellMesh(s, i);
+            if (onImpact) onImpact(s, 'CANOPY');
             impacted = true;
             break;
           }
