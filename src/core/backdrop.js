@@ -27,10 +27,10 @@ const Backdrop = (() => {
   }
 
   // Độ cao lấy mẫu theo bước st dọc trục dày (alongX: trục x), nội suy tuyến tính giữa 2 mẫu
-  function isoSample(O, x, z, half, st, cell, alongX) {
-    if (st < cell * 1.5) return O.heightAt(x, z);
+  function isoSample(fn, x, z, half, st, cell, alongX) {
+    if (st < cell * 1.5) return fn(x, z);
     const u = alongX ? x : z, u0 = -half + Math.floor((u + half) / st) * st, t = (u - u0) / st;
-    const a = alongX ? O.heightAt(u0, z) : O.heightAt(x, u0), b = alongX ? O.heightAt(u0 + st, z) : O.heightAt(x, u0 + st);
+    const a = alongX ? fn(u0, z) : fn(x, u0), b = alongX ? fn(u0 + st, z) : fn(x, u0 + st);
     return a + (b - a) * t;
   }
 
@@ -105,7 +105,7 @@ const Backdrop = (() => {
     return geo;
   }
 
-  function buildForest(T, O, nz, seaLvl) {
+  function buildForest(T, O, nz, seaLvl, meshH) {
     const F = FOREST[T.mapType];
     if (!F) return null;
     const rnd = MapGen.mulberry32((T.seed ^ 0x3a7f11) >>> 0);
@@ -113,7 +113,7 @@ const Backdrop = (() => {
     const leaf = T.leafColors ? T.leafColors() : [0x4a5632, 0x58643a];
     const c0 = new THREE.Color(leaf[0]), c1 = new THREE.Color(leaf[1]), c = new THREE.Color();
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), sc = new THREE.Vector3();
-    const H = (x, z) => O.heightAt(x, z);
+    const H = meshH;
     for (let z = -ext; z <= ext; z += SP) for (let x = -ext; x <= ext; x += SP) {
       const px = x + (rnd() - 0.5) * SP * 0.9, pz = z + (rnd() - 0.5) * SP * 0.9, r1 = rnd(), r2 = rnd(), r3 = rnd();
       // ngoài tầm xe (xe bị giữ trong ±(nửa bản đồ - 60), chân vành núi dốc dần từ ~1550)
@@ -159,6 +159,14 @@ const Backdrop = (() => {
     const inner = i => i >= n0 && i <= n0 + S;
     const seaLvl = O.sea ? O.seaLevel : null;
 
+    // lấy mẫu một hàm (độ cao, mặt nạ rừng...) tại nút (i, j): ở dải lưới dọc cạnh bản đồ (một chiều dày, chiều kia thưa)
+    // lấy theo bước thưa ở cả hai chiều rồi nội suy -> không thành vệt sọc dọc trục
+    const iso = (fn, i, j) => {
+      const x = ax[i], z = ax[j];
+      if (inner(i) && !inner(j) && j > 0 && j < NA - 1) return isoSample(fn, x, z, half, Math.max(ax[j + 1] - ax[j], ax[j] - ax[j - 1]), cell, true);
+      if (inner(j) && !inner(i) && i > 0 && i < NA - 1) return isoSample(fn, x, z, half, Math.max(ax[i + 1] - ax[i], ax[i] - ax[i - 1]), cell, false);
+      return fn(x, z);
+    };
     // 1. ĐỘ CAO mọi nút lưới (trong bản đồ lấy đúng lưới địa hình -> pháp tuyến ở mép tính liền mạch)
     const H = new Float32Array(NA * NA);
     const edgeDelta = new Map();
@@ -175,11 +183,7 @@ const Backdrop = (() => {
         const dOut = Math.hypot(x - ax[ci], z - ax[cj]);
         // dải lưới thẳng ra từ cạnh bản đồ: một chiều dày (theo ô bản đồ), chiều kia thưa -> lấy mẫu độ cao theo
         // bước thưa ở cả hai chiều rồi nội suy (không thành vệt sọc dọc trục)
-        let hv;
-        if (inner(i) && j > 0 && j < NA - 1) hv = isoSample(O, x, z, half, Math.max(ax[j + 1] - ax[j], ax[j] - ax[j - 1]), cell, true);
-        else if (inner(j) && i > 0 && i < NA - 1) hv = isoSample(O, x, z, half, Math.max(ax[i + 1] - ax[i], ax[i] - ax[i - 1]), cell, false);
-        else hv = O.heightAt(x, z);
-        H[j * NA + i] = hv + dl * (1 - smooth(0, 400, dOut));
+        H[j * NA + i] = iso(O.heightAt, i, j) + dl * (1 - smooth(0, 400, dOut));
       }
     }
 
@@ -194,6 +198,7 @@ const Backdrop = (() => {
     const dep = O.sea ? new Float32Array(nv) : null;
     const rng = MapGen.mulberry32((T.seed ^ 0x7f0e57) >>> 0), nz = MapGen.makeNoise(rng);
     const tint = TINT[T.mapType] || null;
+    const forestN = (x, z) => MapGen.fbm(nz, x * 0.0024, z * 0.0024, 3);
     for (let j = 0; j < NA; j++) for (let i = 0; i < NA; i++) {
       const v = idx[j * NA + i];
       if (v < 0) continue;
@@ -212,7 +217,7 @@ const Backdrop = (() => {
       let r = 1, g = 1, b = 1;
       const slope = 1 - 1 / l;
       if (tint) {
-        let f = smooth(-0.08, 0.28, MapGen.fbm(nz, x * 0.0024, z * 0.0024, 3)) * (1 - smooth(0.42, 0.7, slope)) * tint.density * k;
+        let f = smooth(-0.08, 0.28, iso(forestN, i, j)) * (1 - smooth(0.42, 0.7, slope)) * tint.density * k;
         if (seaLvl !== null) f *= smooth(seaLvl + 4, seaLvl + 14, h);
         if (tint.treeline) f *= 1 - smooth(tint.treeline - 80, tint.treeline + 60, h);
         r = 1 + (tint.forest[0] - 1) * f; g = 1 + (tint.forest[1] - 1) * f; b = 1 + (tint.forest[2] - 1) * f;
@@ -294,7 +299,14 @@ const Backdrop = (() => {
       sea.renderOrder = 2;
       group.add(sea);
     }
-    const forest = buildForest(T, O, nz, seaLvl);
+    // độ cao đúng mặt lưới cảnh nền (nội suy song tuyến trên lưới không đều) -> cây đứng sát mặt đất nhìn thấy
+    const findCell = (v) => { let lo = 0, hi = NA - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ax[m] <= v) lo = m; else hi = m; } return lo; };
+    const meshH = (x, z) => {
+      const i = findCell(x), j = findCell(z), tx = (x - ax[i]) / (ax[i + 1] - ax[i]), tz = (z - ax[j]) / (ax[j + 1] - ax[j]);
+      const a = H[j * NA + i], b = H[j * NA + i + 1], c = H[(j + 1) * NA + i], d = H[(j + 1) * NA + i + 1];
+      return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
+    };
+    const forest = buildForest(T, O, nz, seaLvl, meshH);
     if (forest) group.add(forest);
     group.traverse(o => { o.matrixAutoUpdate = false; o.updateMatrix(); });
     return { group, land, sea, forest, verts: nv };

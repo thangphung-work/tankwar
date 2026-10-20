@@ -254,8 +254,10 @@ const MapGen = (() => {
         h += (smooth(0.18, 0.23, mv) * 150 + smooth(0.32, 0.36, mv) * 70) * smooth(3100, 3900, d);
       } else {
         // các dãy núi nối tiếp nhau tới chân trời
-        const rv = ridged(on, x * 0.00045 + 4, z * 0.00045, 6);
-        h += Math.pow(rv, 1.6) * 950 * smooth(3200, 4600, d);
+        // khối núi lớn nhỏ không đều: có dãy cao vút (đỉnh tuyết), có vùng đồi thấp / thung lũng rộng giữa các dãy
+        const rv = ridged(on, x * 0.00028 + 4, z * 0.00028, 6) * 0.75 + ridged(on, x * 0.0009 - 2, z * 0.0009 + 5, 4) * 0.25;
+        const amp = 300 + 1100 * smooth(-0.35, 0.45, fbm(on, x * 0.00016 + 8, z * 0.00016 - 3, 2));
+        h += Math.pow(rv, 1.8) * amp * smooth(3200, 4600, d);
       }
       return h;
     }
