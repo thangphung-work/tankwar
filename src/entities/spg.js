@@ -195,6 +195,8 @@ const vehicleTopSpeed = (tankType, fallback) => (typeof GameTiming !== 'undefine
 const WHEEL_TURN_RADIUS_M = { ARTILLERY: 10.0, SCOUT: 6.5 };
 const wheelTurnRadius = (tankType) => (WHEEL_TURN_RADIUS_M[tankType] || 0) * (typeof GameTiming !== 'undefined' ? GameTiming.UNITS_PER_M : 8);
 
+const NO_DEBRIS = [];   // danh sách đổ nát rỗng (xích tì lên mặt hố bom, không có đống gạch)
+
 class SPGUnit3D {
   constructor(scene, options = {}) {
     this.scene = scene;
@@ -1482,7 +1484,12 @@ class SPGUnit3D {
     // Tính độ cao 4 điểm tiếp xúc vệt xích xe trên mặt đất để xác định độ nghiêng dốc
     // Mặt bánh xích bám (trong cứ điểm: sàn khoang / dốc bê tông, không leo lên ụ đất)
     const refY = this._suspY !== undefined ? this._suspY : undefined;
-    const groundAt = terrain.getVehicleGroundAt ? (gx, gz) => terrain.getVehicleGroundAt(gx, gz, refY) : (gx, gz) => terrain.getElevationAt(gx, gz);
+    // Gần hố bom: xích tì lên mặt hố NHÌN THẤY (lòng hố, gờ đất) như một dải cứng -> hố nhỏ hơn thân xe thì xích bắc cầu
+    // qua, hố to thì trọng tâm qua mép là xe chúc mũi lao xuống, leo ra phải vượt được vách hố
+    const nearCrater = !!(terrain.cratersNear && terrain.vehicleSurfaceAt && terrain.cratersNear(this.x, this.z, 40));
+    const groundAt = nearCrater ? (gx, gz) => terrain.vehicleSurfaceAt(gx, gz, refY)
+      : terrain.getVehicleGroundAt ? (gx, gz) => terrain.getVehicleGroundAt(gx, gz, refY) : (gx, gz) => terrain.getElevationAt(gx, gz);
+    this.inCrater = nearCrater;
     const frontY = groundAt(this.x + forwardX * 18, this.z + forwardZ * 18);
     const rearY  = groundAt(this.x - forwardX * 18, this.z - forwardZ * 18);
     const leftY  = groundAt(this.x - rightX * 14, this.z - rightZ * 14);
@@ -1490,7 +1497,7 @@ class SPGUnit3D {
     // Đống đổ nát nhà sập / gạch vụn / gốc tường gãy thấp quanh xe: xích tì lên mặt đống (VehicleCollision.trackSupport)
     // -> thân xe nhô lên, ngóc / chúc mũi và nghiêng theo đống, qua mép bậc thì bập bênh chúc xuống
     const debris = terrain.vehicleDebris && typeof VehicleCollision !== 'undefined' ? terrain.vehicleDebris(this.x, this.z, this) : null;
-    const sup = debris ? VehicleCollision.trackSupport(this, this.x, this.z, this.bodyAngle, groundAt, debris, refY !== undefined ? refY : groundAt(this.x, this.z), this._trackSup || (this._trackSup = {})) : null;
+    const sup = (debris || nearCrater) && typeof VehicleCollision !== 'undefined' ? VehicleCollision.trackSupport(this, this.x, this.z, this.bodyAngle, groundAt, debris || NO_DEBRIS, refY !== undefined ? refY : groundAt(this.x, this.z), this._trackSup || (this._trackSup = {})) : null;
 
     // Độ dốc dọc theo mũi xe: khi frontY > rearY (lên dốc), mũi ngửa lên chuẩn xác (góc dương)
     const rawPitch = sup ? Math.atan2(sup.front - sup.rear, 36) : Math.atan2(frontY - rearY, 36);
@@ -1550,6 +1557,7 @@ class SPGUnit3D {
     // Trên đống đổ nát: dốc theo đường đỡ của xích trên mặt đống — sườn đống quá dốc so với khả năng leo thì trượt lại
     this.onDebris = !!(sup && sup.lift > 0.8);
     if (this.onDebris) grade = Math.max(grade, sup.slope * dirSign);
+    else if (sup) grade = sup.slope * dirSign;   // trong / qua hố: dốc theo đường tì của xích (vách hố)
     const climbMax = this.climbMax || 0.8;
     let slopeMult = 1;
     this.climbStall = false;
@@ -1688,9 +1696,43 @@ class SPGUnit3D {
 
     // Hệ treo: độ cao thân bám mặt đất có lọc (không giật theo từng cạnh tam giác địa hình)
     const groundTarget = groundBaseY + sinkY;
-    if (this._suspY === undefined || Math.abs(groundTarget - this._suspY) > 12) this._suspY = groundTarget;
-    else this._suspY += (groundTarget - this._suspY) * Math.min(1, dt * 12);
+    // Rơi theo trọng lực: mặt tì tụt nhanh hơn xe tự rơi (lao qua mép hố, chúi xuống vách dốc) thì xe hẫng, rơi tự do rồi
+    // đập xuống (nảy thân, máy gầm) — không trượt mượt xuống như đi thang máy. Leo lên vẫn bám mặt đất có lọc.
+    const G = 78;   // 9,8 m/s² (8 đơn vị = 1 m)
+    // tốc độ lên / xuống của chính mặt tì dưới xe (xuống dốc đều thì xe cũng đi xuống đều, không phải rơi)
+    const gv = this._gPrev !== undefined && dt > 0 ? (groundTarget - this._gPrev) / dt : 0;
+    this._gPrev = groundTarget;
+    if (this._suspY === undefined || groundTarget - this._suspY > 12 || this._suspY - groundTarget > 90) {
+      this._suspY = groundTarget; this._vy = 0; this.airborne = false;
+    } else if (this.airborne || (gv < (this._vy || 0) - G * dt - 25 && groundTarget < this._suspY - 0.6)) {
+      // mặt tì tụt nhanh hơn xe rơi tự do được -> hẫng
+      if (!this.airborne) { this.airborne = true; this._airT = 0; }
+      this._airT += dt;
+      this._vy = (this._vy || 0) - G * dt;
+      this._suspY += this._vy * dt;
+      if (this._suspY <= groundTarget) {
+        const hit = Math.max(0, gv - this._vy);   // vận tốc va so với mặt đất
+        this._suspY = groundTarget; this._vy = Math.max(gv, this._vy); this.airborne = false;
+        if (hit > 14) {
+          // chạm đất: thân xe nhún xuống theo lực va, bập bênh, xe khựng lại
+          const k = Math.min(1, hit / 90);
+          this._landK = Math.max(this._landK || 0, k); this._landT = 0;
+          this.speed *= 1 - 0.45 * k;
+          if (this.isPlayer && window.soundEngine && window.soundEngine.playCollision) window.soundEngine.playCollision(0.4 + 0.6 * k, 'obstacle');
+          if (this.isPlayer && window.game) window.game.cameraShake = Math.max(window.game.cameraShake || 0, 4 + 10 * k);
+        }
+      }
+    } else {
+      this._suspY += (groundTarget - this._suspY) * Math.min(1, dt * 12);
+      this._vy = Math.max(-200, Math.min(200, gv));
+    }
     this.y = this._suspY;
+    // nhún thân sau cú đập xuống: lún rồi bật lại tắt dần
+    if (this._landK > 0.01) {
+      this._landT += dt;
+      this._bumpY -= this._landK * 3.2 * Math.cos(this._landT * 16) * Math.exp(-this._landT * 5);
+      this._landK *= Math.exp(-dt * 3);
+    } else { this._landK = 0; this._landT = 0; }
     this.group.position.set(this.x, this.y, this.z);
 
     // Làm mượt góc nghiêng thân xe theo dốc địa hình (Hệ thống giảm xóc nhún êm ái)
@@ -3421,7 +3463,7 @@ class SPGUnit3D {
     if (this.botAI) this.botAI.assignedCampPos = null;
     this.y = 0;
     this.engineOff = false; this._floodT = 0; this._floodV = 0;   // hồi sinh: máy lành
-    this._suspY = undefined; this.yawRate = 0; this._wheelSteer = 0; this._gear = 1; this._gearHold = 0; this._wlx = undefined; this._dynPitch = this._dynRoll = 0; this._prevSpeed = undefined;
+    this._suspY = undefined; this._gPrev = undefined; this._vy = 0; this.airborne = false; this._landK = 0; this.yawRate = 0; this._wheelSteer = 0; this._gear = 1; this._gearHold = 0; this._wlx = undefined; this._dynPitch = this._dynRoll = 0; this._prevSpeed = undefined;
     this.maxHp = this.baseMaxHp;
     this.hp = this.maxHp;
     this.hasReactiveArmor = false;

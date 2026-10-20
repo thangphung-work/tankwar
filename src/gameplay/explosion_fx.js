@@ -4948,6 +4948,18 @@
       return rim === null ? g : Math.max(rim, g);
     }
     surfaceAt(x, z) { return this.craterSurfaceAt(x, z, this.groundAt(x, z)); }
+    // Có hố nào (vùng lòng hố + gờ, không tính lớp đất văng mỏng phía xa) chạm hình vuông bán kính r quanh (x, z)
+    cratersNear(x, z, r) {
+      for (let q = 0; q < this.craters.length; q++) {
+        const c = this.craters[q], s = c.surf;
+        if (!s || !c.blasts) continue;
+        for (const b of c.blasts) {
+          const e = Math.max(b.A, b.B) * 1.6 + b.shift + r;
+          if (Math.abs(x - b.x) < e && Math.abs(z - b.z) < e) return true;
+        }
+      }
+      return false;
+    }
     // Báo địa hình: mặt đất trong hình chữ nhật vừa đổi (hố mới / hố bị xoá) -> các hệ vật thể đặt lại độ cao
     groundChanged(x0, z0, x1, z1) {
       const t = this.terrainOf();

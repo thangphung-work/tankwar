@@ -1082,6 +1082,21 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     return this.getElevationAt(x, z);
   }
 
+  // Mặt đất xích / bánh THẬT SỰ tì lên: mặt nhìn thấy của hố bom (lòng hố sâu thật, gờ đất đắp), không phải lưới vật lý
+  // thô (~2 m / ô, chỉ hạ ~75% ở vài đỉnh lưới -> xe lướt trên hố như không có)
+  vehicleSurfaceAt(x, z, refY) {
+    const g = this.getVehicleGroundAt(x, z, refY);
+    const fx = this._fxSurf !== undefined ? this._fxSurf : (typeof ExplosionFX !== 'undefined' && ExplosionFX.forScene ? ExplosionFX.forScene(this.scene) : null);
+    if (fx) this._fxSurf = fx;
+    return fx && fx.craterSurfaceAt ? fx.craterSurfaceAt(x, z, g) : g;
+  }
+  // Có hố bom nào trong bán kính r quanh (x, z)
+  cratersNear(x, z, r) {
+    const fx = this._fxSurf !== undefined ? this._fxSurf : (typeof ExplosionFX !== 'undefined' && ExplosionFX.forScene ? ExplosionFX.forScene(this.scene) : null);
+    if (fx) this._fxSurf = fx;
+    return !!(fx && fx.cratersNear && fx.cratersNear(x, z, r));
+  }
+
   waterSurfaceAt(x, z) {
     if (!this.waterMesh) return null;
     if (this.groundAtRaw(x, z) >= 0.1) return null;
