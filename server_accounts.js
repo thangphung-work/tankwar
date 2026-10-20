@@ -26,6 +26,7 @@
  *   POST /api/match-result  { result, kills, deaths, damage, shots, tankType, mapType, durationSec, ammoUsed?, kdPlace? } -> { profile, gained, silver, kdPlace, kdBonus }
  *   POST /api/shop/buy      { tank, item } (mô-đun / đạn cao cấp) | { tank, ammo, n } (mua lẻ n viên; { packs } kiểu cũ vẫn nhận) -> { profile }
  *   POST /api/shop/sell     { tank, ammo, n } (trả lại n viên trong kho, hoàn đúng giá) -> { profile }
+ *   POST /api/shop/use      { tank, used: { loại đạn: số viên } } (đạn mua đã bắn trong trận, trừ kho ngay) -> { profile }
  *   POST /api/loadout       { tank, m: [mô-đun], a: { loại đạn: số viên mang thêm } } -> { profile }
  *   POST /api/ad/start      { tank, item } (đồ nâng cao) -> { token, sec }: bắt đầu xem quảng cáo
  *   POST /api/shop/claim    { tank, item, token } -> { profile }: xem đủ thời lượng thì nhận đồ (lưu vào owned, tự lắp nếu còn ô)
@@ -548,6 +549,19 @@ async function handle(req, res) {
         return true;
       });
       if (!ok) return send(res, 409, { error: 'Trong kho không còn đủ đạn để trả lại' });
+      return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
+    }
+    // đạn mua thêm đã bắn: máy khách báo mỗi lần hồi sinh / hết trận / rời trận -> trừ kho (không âm)
+    if (url === '/api/shop/use') {
+      const tank = String(b.tank || '');
+      if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
+      const used = b.used && typeof b.used === 'object' ? b.used : {};
+      tx(() => {
+        for (const ammo in Equipment.AMMO_SHOP[tank] || {}) {
+          const n = Math.round(clampN(used[ammo], 0, 5000));
+          if (n > 0) Q.useStock.run(n, u.id, tank, ammo);
+        }
+      });
       return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
     }
     // ---- NHẬN ĐỒ NÂNG CAO BẰNG XEM QUẢNG CÁO ----

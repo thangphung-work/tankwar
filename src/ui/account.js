@@ -20,10 +20,10 @@ const Account = (() => {
   function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(PROFILE_KEY); } } catch (e) {} }
   function cachedProfile() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null'); } catch (e) { return null; } }
 
-  async function api(path, body) {
+  async function api(path, body, keepalive) {
     const t = token();
     const r = await fetch('/api/' + path, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: body === undefined ? 'GET' : 'POST', keepalive: !!keepalive,
       headers: Object.assign({ 'Content-Type': 'application/json' }, t ? { Authorization: 'Bearer ' + t } : {}),
       body: body === undefined ? undefined : JSON.stringify(body)
     });
@@ -391,6 +391,10 @@ const Account = (() => {
         return out;
       };
     };
+    // rời trận / chơi lại: báo nốt số đạn đã bắn trước khi dọn xe
+    const origRestart = g.restartMatch;
+    if (typeof origRestart === 'function') g.restartMatch = function (...args) { if (this.player) flushAmmo(this.player); return origRestart.apply(this, args); };
+    addEventListener('pagehide', () => { if (g.player && g.isGameStarted) flushAmmo(g.player, true); });
     wrap('finishMatchByTime', function () {
       const my = this.player && this.player.team === 'RED' ? 'RED' : 'BLUE';
       const b = this.blueKills || 0, r = this.redKills || 0;
@@ -402,6 +406,19 @@ const Account = (() => {
       return String(winningTeam).toLowerCase() === my ? 'win' : 'loss';
     });
   }
+  // Đạn mua thêm đã bắn: trừ kho ngay khi dùng (mỗi lần hồi sinh, hết trận, rời trận, đóng trang)
+  // keepalive: request vẫn đi tiếp khi trang đang đóng
+  function flushAmmo(u, keepalive) {
+    if (!profile || typeof Equipment === 'undefined' || !Equipment.ammoDelta) return Promise.resolve();
+    if (window.strongholdLab || /[?&]lab=/.test(location.search)) return Promise.resolve();
+    if (!u || !u._eq || !u._eq.local) return Promise.resolve();
+    const used = Equipment.ammoDelta(u);
+    if (!Object.keys(used).length) return Promise.resolve();
+    return api('shop/use', { tank: u.tankType, used }, keepalive)
+      .then(r => { setProfile(r.profile, false); armoryChanged(); })
+      .catch(() => { Equipment.ammoDelta(u, used); });   // lỗi mạng: giữ lại, lần sau gửi tiếp
+  }
+
   async function reportMatch(g, result) {
     const card = $('#game-over-modal .stats-summary');
     let line = $('#acc-xp-line');
@@ -413,7 +430,8 @@ const Account = (() => {
     const mm = g.matchmaking || window.matchmakingController || {};
     if (line) line.textContent = 'Đang lưu kết quả…';
     try {
-      const ammoUsed = (typeof Equipment !== 'undefined' && Equipment.paidUsed) ? Equipment.paidUsed(P) : {};
+      await flushAmmo(P);   // trừ kho phần đạn chưa báo (đạn đã báo lúc hồi sinh không trừ lại)
+      const ammoUsed = {};
       const r = await api('match-result', { result, kills: P.kills || 0, deaths: g._playerDeaths || 0, damage: P.damageDealt || 0, shots: P.shotsFired || 0,
         tankType: P.tankType, mapType: mm.selectedMapType || (g.terrain && g.terrain.mapType), durationSec, ammoUsed, kdPlace: g._kdPlace || 0 });
       setProfile(r.profile, false);
@@ -447,6 +465,6 @@ const Account = (() => {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
-  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, sell, adStart, claim, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
+  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, sell, flushAmmo, adStart, claim, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
 })();
 window.Account = Account;

@@ -3440,8 +3440,13 @@ class SPGUnit3D {
     this.chassisRecoilPitch = 0;
     this.rockPitch = this.rockRoll = this.rockVelP = this.rockVelR = this.rockHeave = this.rockVelH = 0;
     if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(this);
-    this.apAmmoCount = 2; // Khôi phục 2 quả đạn xuyên phá khi hồi sinh
-    this.heAmmoCount = 2; // Khôi phục 2 quả đạn nổ mạnh khi hồi sinh
+    // Xe có trang bị: Equipment.onRespawn tự nạp đạn đặc chủng theo kho, cần đọc số đạn còn lại TRƯỚC khi nạp
+    // (để tính số đạn mua đã bắn) -> không nạp cứng ở đây
+    const eqAmmo = typeof Equipment !== 'undefined' && !!this._eq;
+    if (!eqAmmo) {
+      this.apAmmoCount = 2; // Khôi phục 2 quả đạn xuyên phá khi hồi sinh
+      this.heAmmoCount = 2; // Khôi phục 2 quả đạn nổ mạnh khi hồi sinh
+    }
     if (this.tankType === 'GATLING') {
       this.gatlingMag = this.gatlingMagMax;
       this.spinUpTime = 0;
@@ -3451,7 +3456,7 @@ class SPGUnit3D {
       this.spinUpTime = 0;
       this.isSpinning = false;
       this.antiTankCooldown = 0;
-      this.missileAmmoCount = Math.max(this.missileAmmoCount || 0, 2);   // hồi sinh: ống phóng có ít nhất 2 quả
+      if (!eqAmmo) this.missileAmmoCount = Math.max(this.missileAmmoCount || 0, 2);   // hồi sinh: ống phóng có ít nhất 2 quả
     }
 
     // Trang bị mua thêm: nạp lại đạn đặc chủng (miễn phí + mua thêm), lựu đạn khói... cho lần xuất kích mới

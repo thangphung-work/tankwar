@@ -22,8 +22,8 @@
   const NEIGH_R = 7.5;        // ô cách nhau < 7,5 đv (~0,9 m) mới bén trực tiếp sang nhau
   // tốc độ lửa lan (đv/s, 8 đv = 1 m) và thời gian một ô cháy từ bén tới tàn
   const SPEC = {
-    green: { v: 7.6, dur: [3.0, 4.4], toVeh: 0.05, smoke: [1.0, 1.0, 0.97], smoke1: [1.32, 1.31, 1.28] },
-    dry: { v: 12.5, dur: [1.9, 2.8], toVeh: 0.08, smoke: [0.84, 0.78, 0.7], smoke1: [1.12, 1.07, 0.98] }
+    green: { v: 8.8, dur: [3.0, 4.4], toVeh: 0.05, smoke: [1.0, 1.0, 0.97], smoke1: [1.32, 1.31, 1.28] },
+    dry: { v: 8.2, dur: [2.4, 3.4], toVeh: 0.08, smoke: [0.84, 0.78, 0.7], smoke1: [1.12, 1.07, 0.98] }
   };
   // xác suất bắt lửa của một phát trúng vào chỗ có lá (lá xanh / lá khô)
   const P_HIT = {

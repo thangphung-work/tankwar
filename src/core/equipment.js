@@ -180,7 +180,7 @@
   function equip(u, kit, opts) {
     if (!u) return;
     u.kit = sanitize(kit, u.tankType);
-    u._eq = { local: !!(opts && opts.local), stock: Object.assign({}, (opts && opts.stock) || {}), used: {}, loaded: {} };
+    u._eq = { local: !!(opts && opts.local), stock: Object.assign({}, (opts && opts.stock) || {}), used: {}, loaded: {}, reported: {} };
     // Đạn cao cấp
     u.ammoMods = {};
     for (const id of u.kit.p) { const P = PREMIUM[id]; u.ammoMods[P.ammo] = P; }
@@ -220,6 +220,8 @@
     if (!E) return;
     for (const k in E.loaded) E.used[k] = (E.used[k] || 0) + lifeUsed(u, k);
     startLife(u);
+    // đạn mua đã bắn ở lần xuất kích trước: báo máy chủ trừ kho ngay, không đợi hết trận
+    if (E.local && typeof window !== 'undefined' && window.Account && Account.flushAmmo) Account.flushAmmo(u);
   }
   /** Tổng đạn mua thêm đã tiêu trong trận (gửi máy chủ để trừ kho) */
   function paidUsed(u) {
@@ -227,6 +229,19 @@
     if (!E) return out;
     for (const k in E.loaded) { const n = (E.used[k] || 0) + lifeUsed(u, k); if (n > 0) out[k] = n; }
     for (const k in E.used) if (!(k in out) && E.used[k] > 0) out[k] = E.used[k];
+    return out;
+  }
+
+  /**
+   * Phần đạn mua thêm đã bắn nhưng chưa báo máy chủ trừ kho (chỉ xe người chơi); gọi là đánh dấu đã báo.
+   * giveBack: gửi thất bại -> trả lại phần đó để lần sau gửi tiếp.
+   */
+  function ammoDelta(u, giveBack) {
+    const E = u && u._eq, out = {};
+    if (!E || !E.local) return out;
+    if (giveBack) { for (const k in giveBack) E.reported[k] = Math.max(0, (E.reported[k] || 0) - giveBack[k]); return out; }
+    const all = paidUsed(u);
+    for (const k in all) { const n = all[k] - (E.reported[k] || 0); if (n > 0) { out[k] = n; E.reported[k] = all[k]; } }
     return out;
   }
 
@@ -472,7 +487,7 @@
   // ---- Lá ngụy trang ----
   // 'green' (rừng / đồng cỏ) | 'dry' (sa mạc: bụi khô ngả vàng ô-liu). Trong trận theo bản đồ, phòng xem theo phe.
   function foliageKind(u) {
-    if (u._foliageKind) return u._foliageKind;   // phòng thử ép loại lá
+    if (u._foliageKind === 'green' || u._foliageKind === 'dry') return u._foliageKind;   // phòng thử ép loại lá
     const g = window.game;
     if (g && u.scene && u.scene === g.scene && g.currentMapType) return g.currentMapType === 'DESERT' ? 'dry' : 'green';
     return u.team === 'RED' ? 'dry' : 'green';
@@ -1118,7 +1133,7 @@
   }
 
   return Object.assign(API, {
-    has, equip, onRespawn, paidUsed, startLife,
+    has, equip, onRespawn, paidUsed, ammoDelta, startLife,
     armorMul, eraBonus, penMul, isTandem, splashMul, spallMul, slatDefeats, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)
