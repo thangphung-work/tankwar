@@ -1704,7 +1704,7 @@ class SPGUnit3D {
     this._gPrev = groundTarget;
     if (this._suspY === undefined || groundTarget - this._suspY > 12 || this._suspY - groundTarget > 90) {
       this._suspY = groundTarget; this._vy = 0; this.airborne = false;
-    } else if (this.airborne || (!(this._gGrace > 0) && groundTarget < this._suspY + (this._vy || 0) * dt - 0.5 * G * dt * dt - 1.5)) {
+    } else if (this.airborne || (nearCrater && !(this._gGrace > 0) && groundTarget < this._suspY + (this._vy || 0) * dt - 0.5 * G * dt * dt - 1.5)) {
       // mặt tì tụt xuống dưới cả quỹ đạo rơi tự do của xe (lao qua mép hố, vách dốc đứng) -> hẫng
       if (!this.airborne) { this.airborne = true; this._airT = 0; }
       this._airT += dt;
