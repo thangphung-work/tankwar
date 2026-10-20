@@ -138,9 +138,10 @@ const ArmoryUI = (() => {
     // số Bạc đã hiện ở góc trên màn xem xe (#ti-silver) -> ở đây chỉ nhắc cách dùng + số Bạc vừa trừ / hoàn bay lên
     const silver = prof() ? `<i class="ti ti-coins"></i> Đạn đã mua tự mang theo mỗi lần xuất kích${flash && flash.cost ? `<span class="eqd-float${flash.cost < 0 ? ' up' : ''}">${flash.cost > 0 ? '−' : '+'}${fmt(Math.abs(flash.cost))} Bạc</span>` : ''}` : '<i class="ti ti-user"></i> Đăng nhập để mua đạn bằng Bạc';
     const adNote = prof() && adsOn() ? ` · <i class="ti ti-player-play"></i> Quảng cáo có thưởng: còn <b>${adsLeft()}/${Eq.AD.DAILY}</b> lượt hôm nay` : '';
-    const note = msg || (cat === 'ammo' ? silver + adNote
+    const note = msg || (cat === 'gear' ? '<i class="ti ti-keyboard"></i> Bấm <b>G</b> để phóng khói — thử ngay ở khung xe phía trên hoặc trong <b>PHÒNG THỬ ĐẠN</b>' + adNote
+      : cat === 'ammo' ? silver + adNote
       : Eq.ALL_FREE ? '<i class="ti ti-gift"></i> Mọi trang bị đều miễn phí'
-      : `<i class="ti ti-lock"></i> Đồ nâng cao: mua bằng Bạc hoặc xem quảng cáo để mở khóa vĩnh viễn${cat === 'gear' ? ' · trong trận bấm <b>G</b> phóng khói' : ''}${adNote}`);
+      : `<i class="ti ti-lock"></i> Đồ nâng cao: mua bằng Bạc hoặc xem quảng cáo để mở khóa vĩnh viễn${adNote}`);
     h += `<div class="eqd-note${msg ? ' msg' : ''}">${note}</div></div>`;
 
     // Hàng dưới: thẻ đồ

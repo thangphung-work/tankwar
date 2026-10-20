@@ -1070,9 +1070,69 @@
   // ---------------------------------------------------------------------------
   // MÀN KHÓI
   // ---------------------------------------------------------------------------
-  const smokes = [];
   const SMOKE_LIFE = 14, SMOKE_R = 42;
-  let emitAcc = 0;
+
+  /**
+   * Một "bãi khói" độc lập: danh sách đám khói + vẽ hạt + chặn tầm nhìn.
+   * Trận đấu dùng bãi chung (MAIN_SMOKE); phòng xem xe tự tạo bãi riêng để thử khói mà không lọt vào trận đang chơi.
+   */
+  function SmokeField() {
+    const smokes = [];
+    let emitAcc = 0;
+    function radius(s) {
+      if (s.t < 0) return 0;
+      const grow = Math.min(1, s.t / 2.2), fade = s.t > SMOKE_LIFE - 3 ? Math.max(0, (SMOKE_LIFE - s.t) / 3) : 1;
+      return SMOKE_R * (0.3 + 0.7 * grow) * (0.55 + 0.45 * fade);
+    }
+    // 3 đám khói xếp ngang trước mũi xe u (hoặc tại tâm at = { x, z, a }); trả về { x, z, a } để gửi mạng
+    function deploy(u, at) {
+      const a = at ? at.a : (u.bodyAngle || 0);
+      const fx = -Math.sin(a), fz = -Math.cos(a);   // mũi xe
+      const cx = at ? at.x : u.x + fx * 55, cz = at ? at.z : u.z + fz * 55;
+      for (let i = -1; i <= 1; i++) {
+        smokes.push({ x: cx + fz * i * 46, z: cz - fx * i * 46, t: -0.25 * Math.abs(i), team: u.team, src: u });
+      }
+      const S = typeof window !== 'undefined' && window.soundEngine;
+      if (S && typeof S.playMetalClank === 'function') { S.playMetalClank(0, 0.35, 260); S.playMetalClank(0.08, 0.3, 300); }
+      return { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10, a: Math.round(a * 1000) / 1000 };
+    }
+    // Đường ngắm (x1,z1)-(x2,z2) xuyên qua đám khói dày
+    function blocks(x1, z1, x2, z2) {
+      if (!smokes.length) return false;
+      const dx = x2 - x1, dz = z2 - z1, L2 = dx * dx + dz * dz || 1;
+      for (const s of smokes) {
+        if (s.t < 0.8 || s.t > SMOKE_LIFE - 1) continue;
+        const r = radius(s);
+        let k = ((s.x - x1) * dx + (s.z - z1) * dz) / L2;
+        k = Math.max(0, Math.min(1, k));
+        const px = x1 + dx * k - s.x, pz = z1 + dz * k - s.z;
+        if (px * px + pz * pz < r * r * 0.8) return true;
+      }
+      return false;
+    }
+    // Khói: hạt bay chậm, dày, lan rộng. layer = lớp hạt khói (ExplosionFX.smoke), T = địa hình (độ cao mặt đất)
+    function step(dt, layer, T) {
+      if (!smokes.length) return;
+      emitAcc += dt;
+      const emit = emitAcc >= 0.12;
+      if (emit) emitAcc = 0;
+      for (let i = smokes.length - 1; i >= 0; i--) {
+        const s = smokes[i];
+        s.t += dt;
+        if (s.t > SMOKE_LIFE) { smokes.splice(i, 1); continue; }
+        if (!emit || !layer || s.t < 0 || s.t > SMOKE_LIFE - 3.5) continue;
+        const r = radius(s), y = T ? T.getElevationAt(s.x, s.z) : 0;
+        const n = s.t < 1.5 ? 3 : 1;
+        for (let k = 0; k < n; k++) {
+          const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * r * 0.7, g = 0.78 + Math.random() * 0.1;
+          layer.add({ x: s.x + Math.cos(a) * rr, y: y + 4 + Math.random() * 8, z: s.z + Math.sin(a) * rr, vx: (Math.random() - 0.5) * 6, vy: 2 + Math.random() * 4, vz: (Math.random() - 0.5) * 6,
+            size: 16 + Math.random() * 10, grow: 4.5, drag: 0.7, grav: -0.4, life: 5 + Math.random() * 3, alpha: 0.85, fadeIn: 0.25, c0: [g, g, g * 0.98], c1: [g + 0.08, g + 0.08, g + 0.06], cell: 0, floor: false });
+        }
+      }
+    }
+    return { deploy, blocks, step, radius, clear() { smokes.length = 0; }, get count() { return smokes.length; }, LIFE: SMOKE_LIFE };
+  }
+  const MAIN_SMOKE = SmokeField();
 
   /**
    * Phóng màn khói từ xe u: 3 đám khói xếp ngang trước mũi xe (hoặc tại điểm cho trước khi nhận từ mạng).
@@ -1084,36 +1144,11 @@
       if (!(u.smokeLeft > 0)) return null;
       u.smokeLeft--;
     }
-    const a = at ? at.a : (u.bodyAngle || 0);
-    const fx = -Math.sin(a), fz = -Math.cos(a);   // mũi xe
-    const cx = at ? at.x : u.x + fx * 55, cz = at ? at.z : u.z + fz * 55;
-    for (let i = -1; i <= 1; i++) {
-      smokes.push({ x: cx + fz * i * 46, z: cz - fx * i * 46, t: -0.25 * Math.abs(i), team: u.team, src: u });
-    }
-    const S = window.soundEngine;
-    if (S && typeof S.playMetalClank === 'function') { S.playMetalClank(0, 0.35, 260); S.playMetalClank(0.08, 0.3, 300); }
-    return { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10, a: Math.round(a * 1000) / 1000 };
-  }
-  function smokeRadius(s) {
-    if (s.t < 0) return 0;
-    const grow = Math.min(1, s.t / 2.2), fade = s.t > SMOKE_LIFE - 3 ? Math.max(0, (SMOKE_LIFE - s.t) / 3) : 1;
-    return SMOKE_R * (0.3 + 0.7 * grow) * (0.55 + 0.45 * fade);
+    return MAIN_SMOKE.deploy(u, at);
   }
   // Đường ngắm (x1,z1)-(x2,z2) xuyên qua đám khói dày
-  function smokeBlocks(x1, z1, x2, z2) {
-    if (!smokes.length) return false;
-    const dx = x2 - x1, dz = z2 - z1, L2 = dx * dx + dz * dz || 1;
-    for (const s of smokes) {
-      if (s.t < 0.8 || s.t > SMOKE_LIFE - 1) continue;
-      const r = smokeRadius(s);
-      let k = ((s.x - x1) * dx + (s.z - z1) * dz) / L2;
-      k = Math.max(0, Math.min(1, k));
-      const px = x1 + dx * k - s.x, pz = z1 + dz * k - s.z;
-      if (px * px + pz * pz < r * r * 0.8) return true;
-    }
-    return false;
-  }
-  function clearSmoke() { smokes.length = 0; }
+  function smokeBlocks(x1, z1, x2, z2) { return MAIN_SMOKE.blocks(x1, z1, x2, z2); }
+  function clearSmoke() { MAIN_SMOKE.clear(); }
 
   function update(dt, game) {
     // ăng-ten radar dò tìm quay tròn (~2.4 s một vòng)
@@ -1127,27 +1162,10 @@
     }
     // lưới lá bắt lửa / cháy lan (src/gameplay/camo_fire.js)
     if (game && game.units && window.CamoFire) CamoFire.update(dt, { units: game.units, fx: game.effectsManager && game.effectsManager.fx, game });
-    if (!smokes.length && !game) return;
+    if (!MAIN_SMOKE.count && !game) return;
     // khói: hạt bay chậm, dày, lan rộng
     const fx = game && game.effectsManager && game.effectsManager.fx;
-    const layer = fx && fx.smoke;
-    const T = game && game.terrain;
-    emitAcc += dt;
-    const emit = emitAcc >= 0.12;
-    if (emit) emitAcc = 0;
-    for (let i = smokes.length - 1; i >= 0; i--) {
-      const s = smokes[i];
-      s.t += dt;
-      if (s.t > SMOKE_LIFE) { smokes.splice(i, 1); continue; }
-      if (!emit || !layer || s.t < 0 || s.t > SMOKE_LIFE - 3.5) continue;
-      const r = smokeRadius(s), y = T ? T.getElevationAt(s.x, s.z) : 0;
-      const n = s.t < 1.5 ? 3 : 1;
-      for (let k = 0; k < n; k++) {
-        const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * r * 0.7, g = 0.78 + Math.random() * 0.1;
-        layer.add({ x: s.x + Math.cos(a) * rr, y: y + 4 + Math.random() * 8, z: s.z + Math.sin(a) * rr, vx: (Math.random() - 0.5) * 6, vy: 2 + Math.random() * 4, vz: (Math.random() - 0.5) * 6,
-          size: 16 + Math.random() * 10, grow: 4.5, drag: 0.7, grav: -0.4, life: 5 + Math.random() * 3, alpha: 0.85, fadeIn: 0.25, c0: [g, g, g * 0.98], c1: [g + 0.08, g + 0.08, g + 0.06], cell: 0, floor: false });
-      }
-    }
+    MAIN_SMOKE.step(dt, fx && fx.smoke, game && game.terrain);
     // xe do máy điều khiển (máy này có quyền): vừa trúng đạn, máu thấp -> phóng khói che rút lui
     if (game && game.units) {
       const now = performance.now();
@@ -1170,7 +1188,7 @@
   return Object.assign(API, {
     has, equip, onRespawn, paidUsed, ammoDelta, startLife,
     armorMul, eraBonus, penMul, isTandem, splashMul, spallMul, slatDefeats, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul,
-    deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, update, buildVisuals, FIT,
+    deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)
     APS_CHARGES, SMOKE_CHARGES, outOfStockNote
   });
