@@ -2226,27 +2226,104 @@ const Destructibles = (() => {
       if (it.si >= 0) it.V.stump.color(it.si, c);
       if (it.capS >= 0) { this.caps.color(it.capS, c); this.caps.color(it.capT, c); }
     }
-    // Nhiệt + sóng nổ tác động lên cây quanh điểm nổ
+    // Cây che mảnh văng cho xe phía sau: thân cây (cả gốc cụt) nằm trên đường bay của mảnh hứng phần lớn mảnh, sức ép
+    // vẫn vòng qua được; tán rừng rậm nuốt bớt mảnh nhỏ theo quãng xuyên rừng. Trả hệ số sát thương còn lại (1 = không che)
+    blastShield(ex, ey, ez, ux, uy, uz) {
+      let f = 1;
+      const h = this.trunkHit(ex, ey, ez, ux, uy, uz);
+      // thân che: thân to che nhiều hơn (bán kính thân so với ~1,5 đv của thân nhỏ)
+      if (h && Math.hypot(h.x - ux, h.z - uz) > 4) f *= Math.max(0.5, 0.8 - (h.it.trunkR - 1.5) * 0.08);
+      const dense = this.denseLength(ex, ez, ux, uz, 1e9, 10);
+      if (dense > 0) f *= Math.max(0.7, 1 - dense / 600);
+      return Math.max(0.45, f);
+    }
+    // Khoảng cách 3D từ điểm nổ tới trục thân cây (cây đứng: đoạn gốc -> ngọn; cây đổ: dọc thân nằm). Nổ trên cao / nổ
+    // trong tán / nổ sát gốc đều tính đúng, không chỉ khoảng cách ngang
+    axisDist(it, x, y, z) {
+      const a = this.trunkPoint(it, 0), b = this.trunkPoint(it, 1);
+      const ex = b.x - a.x, ey = b.y - a.y, ez = b.z - a.z, L2 = ex * ex + ey * ey + ez * ez || 1;
+      const t = clamp01(((x - a.x) * ex + (y - a.y) * ey + (z - a.z) * ez) / L2);
+      return Math.hypot(a.x + ex * t - x, a.y + ey * t - y, a.z + ez * t - z);
+    }
+    // Hẹn giờ hiệu ứng theo lúc sóng xung kích lan tới (chỉ phần nhìn: lắc cây, dăm vỏ, lửa bị thổi bạt)
+    later(t, fn) { if (t < 0.008) fn(); else (this.delayed || (this.delayed = [])).push({ t, fn }); }
+
+    // Sóng nổ + mảnh văng + nhiệt tác động lên cây quanh điểm nổ
     damageAt(x, y, z, ammo, heavy, fx) {
       const A = ammoInfo(ammo, heavy);
       const blasty = A.power >= 0.5;
       // Sóng nổ lan xa hơn vùng sát thương: cây rung lắc theo khoảng cách
       const Rw = blasty ? A.radius * 5 + 20 : A.radius * 2 + 6;
       const R = A.radius * 2.2 + 6;
+      const SW = 2700;   // sóng xung kích ~340 m/s (8 đv = 1 m): cây xa lắc / đổ muộn hơn cây gần một chút
       for (const it of this.near(x, z, Rw)) {
-        const d = Math.hypot(it.x - x, it.z - z);
-        const kw = 1 - d / Rw;
-        if (!it.fallen) this.push(it, it.x - x, it.z - z, (blasty ? 0.55 : 0.08) * kw * kw * A.power);
+        const d = this.axisDist(it, x, y, z);
+        if (d > Rw) continue;
+        const dx = it.x - x, dz = it.z - z, delay = d / SW;
+        // nhà chắn giữa điểm nổ và cây: sóng nổ & mảnh văng bị chặn phần lớn
+        const sh = (this.solidHit && d > 14 && this.solidHit(x, y + 2, z, it.x, it.y + Math.min(it.trunkH, 24), it.z)) ? 0.3 : 1;
+        const kw = (1 - d / Rw) * sh;
+        if (!it.fallen) { const mag = (blasty ? 0.55 : 0.08) * kw * kw * A.power; this.later(delay, () => { if (!it.fallen) this.push(it, dx, dz, mag); }); }
         if (d > R) continue;
-        if (it.fallen && it.heat > 2) continue;
-        const k = 1 - d / R, fl = FLAM[it.kind] !== undefined ? FLAM[it.kind] : 1;
+        const k = (1 - d / R) * sh, fl = FLAM[it.kind] !== undefined ? FLAM[it.kind] : 1;
+        // cây đổ đang cháy / đã cháy: không tính nhiệt & gãy nữa, nhưng sóng nổ vẫn hất tàn lửa của nó đi
+        if (it.fallen && it.heat > 2) { if (blasty && it.state === 'burning' && k > 0.12) this.blastFire(it, x, z, k, delay, fx); continue; }
         it.heat += k * A.heat * (A.fire ? 2.2 : 1) * (heavy ? 1.5 : 1) * fl;
         // Quả cầu lửa nổ sát cây: sém mạnh; cây khô / dễ bén bắt lửa luôn, cây tươi thường chỉ sém (trúng lần nữa mới cháy)
         if (blasty && d < A.radius * 1.3) it.heat += 0.6 * k * fl;
-        // Quật đổ: sóng nổ mạnh sát gốc / trúng trực tiếp (đổ xong vẫn tiếp tục cháy)
-        if (!it.fallen && (k * A.power > 0.85 || (d < A.radius * 0.8 && A.power > 0.5))) this.fell(it, it.x - x, it.z - z, fx, { p: Math.min(1.5, k * A.power * (heavy ? 1.4 : 1)), brk: this.breakAt(it, y, d) });
+        // Cây đang cháy hứng sóng nổ: lửa bị thổi bạt, lá & cành đang cháy văng ra, tàn lửa bắn sang cây bên cạnh
+        if (blasty && it.state === 'burning' && k > 0.12) this.blastFire(it, x, z, k, delay, fx);
+        if (blasty && !it.fallen && k > 0.2) {
+          // mảnh văng ghim vào thân: vỏ cây & dăm gỗ bắn ra phía hứng nổ, thân bị băm dần (pháo kích nhiều lần -> gãy)
+          it.wear = (it.wear || 0) + k * A.power * 0.22;
+          this.later(delay, () => this.barkChips(it, x, z, k, fx));
+        }
+        // Cây cháy than giòn, dễ gãy hơn cây tươi
+        const weak = it.state === 'burnt' ? 0.45 : it.state === 'burning' ? 0.7 : 1;
+        const shred = (it.wear || 0) >= 1;
+        if (!it.fallen && (k * A.power > 0.85 * weak || (d < A.radius * 0.8 * (2 - weak) && A.power > 0.5) || shred)) {
+          const st = it.V.info.stem, direct = d < it.trunkR + 3;
+          const brk = shred && !direct ? rand(Math.min(3, st.top * 0.3), st.top * 0.6) : this.breakAt(it, y, d);
+          this.fell(it, dx, dz, fx, { p: Math.min(1.5, Math.max(0.6, k * A.power * (heavy ? 1.4 : 1))), brk, delay });
+        }
         if (blasty && k > 0.3) this.stripLeaves(it, 0.35 * k, x, y, z, fx);
         this.refreshLook(it, fx);
+      }
+    }
+    // Sóng nổ quét qua cây đang cháy
+    blastFire(it, x, z, k, delay, fx) {
+      it.blowT = Math.max(it.blowT || 0, 0.5 + 1.4 * k);   // ngọn lửa bị thổi tắt bạt đi một lúc rồi bùng lại
+      const dx = it.x - x, dz = it.z - z, L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+      // tàn lửa & cành lá đang cháy bị hất theo hướng sóng nổ: cây đứng xuôi chiều trong tầm bắt lửa thêm
+      const reach = ((it.V.info.canopy ? it.V.info.canopy.rc : 6) * it.s) * 1.6 + 30 * k;
+      for (const nb of this.near(it.x, it.z, reach)) {
+        if (nb === it || nb.state === 'burning' || nb.state === 'burnt') continue;
+        const vx = nb.x - it.x, vz = nb.z - it.z, dd = Math.hypot(vx, vz) || 1;
+        const along = (vx * ux + vz * uz) / dd;          // 1: đúng xuôi gió nổ, < 0: phía ngược lại
+        if (along < -0.2) continue;
+        const fl = FLAM[nb.kind] !== undefined ? FLAM[nb.kind] : 1;
+        nb.heat += 1.2 * k * fl * (0.4 + 0.6 * along) * (1 - 0.6 * dd / reach);
+        this.refreshLook(nb, fx);
+      }
+      if (it.ci >= 0 && !it.crownGone) this.stripLeaves(it, 0.2 * k, it.x, it.y, it.z, null);
+      if (!fx || !fx.fire) return;
+      this.later(delay, () => {
+        const n = Math.round(10 + 26 * k), sp = 25 + 50 * k;
+        for (let i = 0; i < n; i++) {
+          const p = (it.ci >= 0 && !it.crownGone) ? this.crownPoint(it, 0.8) : this.trunkPoint(it, rand(0.3, 1));
+          fx.fire.add({ x: p.x, y: p.y, z: p.z, vx: ux * sp * rand(0.5, 1.2) + rand(-8, 8), vy: rand(6, 26), vz: uz * sp * rand(0.5, 1.2) + rand(-8, 8),
+            size: rand(0.7, 2.2), grow: -0.3, drag: 0.9, grav: 22, life: rand(1.2, 2.6), alpha: 1, fadeIn: 0.01, c0: [1, 0.72, 0.3], c1: [0.8, 0.2, 0.02], cell: 3, floor: false });
+        }
+      });
+    }
+    // Mảnh văng ghim vào thân phía hứng nổ: vỏ cây & dăm gỗ bắn ra
+    barkChips(it, x, z, k, fx) {
+      if (!fx || it.fallen) return;
+      const dx = it.x - x, dz = it.z - z, L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+      const n = Math.round(1 + 3 * k), charred = it.state === 'burnt' || it.state === 'burning';
+      for (let i = 0; i < n; i++) {
+        const h = rand(1, Math.min(it.trunkH, 30));
+        chunks(fx, it.x - ux * it.trunkR, it.y + h, it.z - uz * it.trunkR, 1, 0.6, charred ? [0.13, 0.11, 0.1] : RNG() < 0.5 ? [0.42, 0.33, 0.24] : [0.72, 0.58, 0.4], 12);
       }
     }
 
@@ -2483,15 +2560,17 @@ const Destructibles = (() => {
         tab.push(Math.min(th, th1));
       }
       const dur = (tab.length - 1) * dt;
-      it.fall = { ax: uz, az: -ux, ux, uz, t: 0, dur, tab, th1, drop, dropDur, th2: rp.th1 };
+      // sóng xung kích chưa tới: chờ (o.delay) rồi mới bắt đầu đổ
+      it.fall = { ax: uz, az: -ux, ux, uz, t: -((o && o.delay) || 0), dur, tab, th1, drop, dropDur, th2: rp.th1 };
       this.falling.push(it);
       this.setPose(it, this.fallMatrix(it, uz, -ux, th));
       const P = this.pivot(it);
+      const charred = it.state === 'burnt' || it.state === 'burning';
       if (it.brk) {
-        // gãy ngang thân: dăm gỗ & vỏ cây văng ra từ vết gãy, bụi vụn gỗ
-        chunks(fx, P.x, P.y, P.z, crush ? 6 : 9, 1.1, [0.74, 0.6, 0.42], 30);
-        chunks(fx, P.x, P.y, P.z, 4, 1.4, [0.36, 0.28, 0.2], 22);
-        dustBurst(fx, P.x, P.y, P.z, 2, 5, [0.7, 0.62, 0.5]);
+        // gãy ngang thân: dăm gỗ & vỏ cây văng ra từ vết gãy, bụi vụn gỗ (thân cháy than: than vụn & tro xám)
+        chunks(fx, P.x, P.y, P.z, crush ? 6 : 9, 1.1, charred ? [0.12, 0.1, 0.09] : [0.74, 0.6, 0.42], 30);
+        chunks(fx, P.x, P.y, P.z, 4, 1.4, charred ? [0.2, 0.18, 0.16] : [0.36, 0.28, 0.2], 22);
+        dustBurst(fx, P.x, P.y, P.z, charred ? 3 : 2, 5, charred ? [0.36, 0.35, 0.34] : [0.7, 0.62, 0.5]);
       } else {
         // bật cả gốc: đất cát tung lên quanh gốc rễ
         dustBurst(fx, it.x, it.y, it.z, 3, 9, [0.6, 0.55, 0.45]);
@@ -2588,6 +2667,13 @@ const Destructibles = (() => {
       }
     }
     update(dt, fx) {
+      if (this.delayed && this.delayed.length) {
+        for (let i = this.delayed.length - 1; i >= 0; i--) {
+          const e = this.delayed[i];
+          e.t -= dt;
+          if (e.t <= 0) { this.delayed.splice(i, 1); e.fn(); }
+        }
+      }
       for (let i = this.smouldering.length - 1; i >= 0; i--) {
         const it = this.smouldering[i];
         it.smoulder -= dt;
@@ -2626,6 +2712,7 @@ const Destructibles = (() => {
         const it = this.falling[i];
         const F = it.fall;
         F.t += dt;
+        if (F.t < 0) continue;
         // góc đổ theo bảng tính sẵn; sau khi chạm đất: tán & thân nảy lên một chút rồi nằm yên
         const dd = F.dropDur || 0;
         const p = F.tab ? Math.min(1, F.t / (F.dur + dd + 0.4)) : Math.min(1, F.t / F.dur);
@@ -2670,7 +2757,9 @@ const Destructibles = (() => {
         const a = it.burnAge, Dc = it.burnDc, Dt = it.burnDt;
         const crownOn = it.ci >= 0 && !it.crownGone && Dc > 0;
         // cường độ lửa: bùng lên trong ~1,5 s, cháy to suốt lúc tán cháy, rồi chỉ còn lửa liếm thân yếu dần
-        const I = Math.min(1, a / 1.5) * (a < Dc ? 1 : Math.max(0, 0.5 * (1 - (a - Dc) / Dt)));
+        let I = Math.min(1, a / 1.5) * (a < Dc ? 1 : Math.max(0, 0.5 * (1 - (a - Dc) / Dt)));
+        // vừa bị sóng nổ thổi bạt: lửa xẹp hẳn rồi bùng trở lại
+        if (it.blowT > 0) { it.blowT -= dt; I *= 1 - 0.8 * clamp01(it.blowT / 1.2); }
         // Tiếng cây cháy: nguồn âm liên tục khi tán lá còn cháy (lá khô nổ lách tách nhiều), báo 2 lần/giây
         it.sndT = (it.sndT || 0) - dt;
         if (it.sndT <= 0 && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.fireSource) {
@@ -2770,12 +2859,13 @@ const Destructibles = (() => {
     }
     reset() {
       for (const it of this.items) {
-        it.heat = 0; it.state = 'ok'; it.fallen = false; it.crownGone = false; it.fall = null; it.leaves = 1; it.sw = null; it.swaying = false;
+        it.heat = 0; it.wear = 0; it.blowT = 0; it.state = 'ok'; it.fallen = false; it.crownGone = false; it.fall = null; it.leaves = 1; it.sw = null; it.swaying = false;
         this.applyBreak(it, 0);
         this.setBurn(it, 0, 0);
         it.V.trunk.set(it.ti, it.base); if (it.ci >= 0) it.V.crown.set(it.ci, it.base);
         this.setColor(it, it.tint);
       }
+      if (this.delayed) this.delayed.length = 0;
       this.burning.length = 0; this.falling.length = 0; this.swaying.length = 0; this.smouldering.length = 0;
       if (this._camHid) this._camHid.clear();
     }

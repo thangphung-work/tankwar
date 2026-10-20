@@ -2165,6 +2165,18 @@ class ArtilleryGame3D {
               }
             }
           }
+          // Thân cây / rừng rậm chắn đường bay mảnh văng (sức ép vẫn vòng qua): giảm bớt sát thương nổ lan
+          if (this.terrain && this.terrain.treeShield && ammoType !== 'INCENDIARY') {
+            const uy2 = (unit.y || this.terrain.getElevationAt(unit.x, unit.z)) + 6;
+            const tsh = this.terrain.treeShield(x, y + 2, z, unit.x, uy2, unit.z);
+            if (tsh < 1) {
+              splashDamage *= tsh;
+              if (unit.isPlayer && (!this._treeLogT || performance.now() - this._treeLogT > 8000)) {
+                this._treeLogT = performance.now();
+                this.addCombatLog('[[tree]] Thân cây / rừng rậm đã đỡ bớt mảnh văng!', 'tip');
+              }
+            }
+          }
           if (typeof VehicleDamage !== 'undefined') {
             const dmgRes = VehicleDamage.onSplash(unit, { x, y, z, ammo: ammoType, heavy: !!shell.isHeavyArty, dist, radius: blastRadius, shooter, fx: fxSys });
             splashDamage = Math.round(splashDamage * dmgRes.mul * 1000) / 1000;
