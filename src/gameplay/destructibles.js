@@ -2986,17 +2986,20 @@ const Destructibles = (() => {
   // Vật liệu tường: độ dày, màu mặt gãy, độ giòn (hệ số lỗ thủng), màu bụi
   const WALLMAT = {
     // chip: hệ số đạn nhỏ đục dần mỗi phát theo vật liệu (bê tông / đá chịu đục tốt, đất / gỗ / tôn thủng nhanh)
-    concrete: { T: 2.2, edge: [0.6, 0.58, 0.54], k: 1.0, chip: 0.22, dust: [0.72, 0.7, 0.66] },
-    adobe: { T: 3.2, edge: [0.68, 0.56, 0.4], k: 1.25, chip: 0.55, dust: [0.78, 0.68, 0.52] },
-    stone: { T: 3.6, edge: [0.58, 0.56, 0.52], k: 0.8, chip: 0.2, dust: [0.7, 0.68, 0.64] },
-    wood: { T: 1.4, edge: [0.48, 0.34, 0.2], k: 1.5, chip: 1.0, dust: [0.55, 0.45, 0.32] },
-    metal: { T: 0.7, edge: [0.4, 0.42, 0.4], k: 1.35, chip: 1.2, dust: [0.6, 0.6, 0.58] }
+    // kpa: áp lực nổ (kPa, tải tương đương) làm mảng tường nguyên bật tung — vách tôn kho ~10-15, gỗ ~20, gạch đất ~40,
+    //      đá ~55, tường bê tông cốt thép ~120 (xem confinedBlast)
+    concrete: { T: 2.2, edge: [0.6, 0.58, 0.54], k: 1.0, chip: 0.22, dust: [0.72, 0.7, 0.66], kpa: 120 },
+    adobe: { T: 3.2, edge: [0.68, 0.56, 0.4], k: 1.25, chip: 0.55, dust: [0.78, 0.68, 0.52], kpa: 40 },
+    stone: { T: 3.6, edge: [0.58, 0.56, 0.52], k: 0.8, chip: 0.2, dust: [0.7, 0.68, 0.64], kpa: 55 },
+    wood: { T: 1.4, edge: [0.48, 0.34, 0.2], k: 1.5, chip: 1.0, dust: [0.55, 0.45, 0.32], kpa: 18 },
+    metal: { T: 0.7, edge: [0.4, 0.42, 0.4], k: 1.35, chip: 1.2, dust: [0.6, 0.6, 0.58], kpa: 12 }
   };
   // Tác động lên nhà theo loại đạn (đơn vị thế giới, 8 = 1 m):
   //  hole: bán kính lỗ xuyên tường · crater: vành bê tông bóc lở quanh lỗ · soot: muội khói · glass: sóng nổ làm vỡ kính
   //  sp/sr: sức & bán kính phá kết cấu (cột, ô sàn, mái) · chip: đạn nhỏ đục dần từng phát · ric: ngưỡng cos góc chạm thì nảy
   //  exit: đạn động năng xuyên qua nhà, khoét lỗ ra ở vách đối diện · heat: luồng nổ lõm phụt vào trong
   // sd: sức phá KẾT CẤU mỗi phát trúng thẳng (mảng tường bền 1.0 -> nứt toác dần, cột gần điểm trúng nứt theo; xem strain / checkStructure)
+  // kg: khối lượng thuốc nổ quy TNT — nổ BÊN TRONG nhà: sóng xung kích + áp suất tích tụ trong phòng kín thổi bật vách (confinedBlast)
   const BLD = {
     SCOUT_BULLET: { hole: 0, crater: 0.9, chip: 0.34, soot: 0, glass: 1.5, sp: 0, sr: 0, kin: true, ric: 0.4, sd: 0.002 },
     GATLING_BULLET: { hole: 0, crater: 1.5, chip: 0.55, soot: 1.8, glass: 4, sp: 0.02, sr: 3, kin: true, ric: 0.36, sd: 0.004 },
@@ -3006,12 +3009,12 @@ const Destructibles = (() => {
     //  tên lửa chống tăng (đầu nổ kép): lỗ ~35 cm · đạn con DPICM: lỗ ~15 cm
     //  đạn pháo 120 mm đa năng (~1,5 kg thuốc nổ) nổ chạm: lỗ ~0,8 m · nổ mạnh 120 mm (~2,2 kg): lỗ ~1 m, vành ~1,9 m
     AP: { hole: 1.2, crater: 2.8, soot: 0, glass: 10, sp: 0.25, sr: 5, kin: true, ric: 0.24, exit: 1.7, sd: 0.12 },
-    RPG: { hole: 0.85, crater: 2.6, soot: 9, glass: 34, sp: 0.5, sr: 10, heat: true, sd: 0.14 },
-    ANTI_TANK_MISSILE: { hole: 1.4, crater: 3.8, soot: 14, glass: 55, sp: 1.0, sr: 15, heat: true, sd: 0.22 },
-    CLUSTER_SUBMUNITION: { hole: 0.6, crater: 2.2, soot: 8, glass: 28, sp: 0.5, sr: 9, heat: true, sd: 0.08 },
-    NORMAL: { hole: 3.2, crater: 6, soot: 15, glass: 60, sp: 1.1, sr: 20, sd: 0.28 },
-    CLUSTER: { hole: 2.8, crater: 5.4, soot: 14, glass: 55, sp: 1.0, sr: 20, sd: 0.24 },
-    HE: { hole: 4, crater: 7.5, soot: 21, glass: 90, sp: 1.7, sr: 28, sd: 0.34 }
+    RPG: { hole: 0.85, crater: 2.6, soot: 9, glass: 34, sp: 0.5, sr: 10, heat: true, sd: 0.14, kg: 0.4 },
+    ANTI_TANK_MISSILE: { hole: 1.4, crater: 3.8, soot: 14, glass: 55, sp: 1.0, sr: 15, heat: true, sd: 0.22, kg: 1.0 },
+    CLUSTER_SUBMUNITION: { hole: 0.6, crater: 2.2, soot: 8, glass: 28, sp: 0.5, sr: 9, heat: true, sd: 0.08, kg: 0.1 },
+    NORMAL: { hole: 3.2, crater: 6, soot: 15, glass: 60, sp: 1.1, sr: 20, sd: 0.28, kg: 1.5 },
+    CLUSTER: { hole: 2.8, crater: 5.4, soot: 14, glass: 55, sp: 1.0, sr: 20, sd: 0.24, kg: 1.5 },
+    HE: { hole: 4, crater: 7.5, soot: 21, glass: 90, sp: 1.7, sr: 28, sd: 0.34, kg: 2.2 }
   };
   // MẢNH VĂNG BAY XA của vỏ đạn nổ (đơn vị game, 8 = 1 m): fr = tầm còn đủ sức găm rỗ mặt tường, rays = số tia dò
   // (mỗi tia đại diện một chùm mảnh). Ngoài đời đạn 120mm nổ phá rỗ dày tường trong ~10-15 m, lác đác tới ~30 m;
@@ -3030,7 +3033,7 @@ const Destructibles = (() => {
     const a = BLD[ammo] || BLD.NORMAL;
     if (!heavy) return a;
     // Pháo 152/155 mm (~6,6-10 kg thuốc nổ): lỗ thủng ~1,8 m, vành bóc lở ~3 m, phá cả cột / ô sàn quanh điểm nổ
-    return Object.assign({}, a, { hole: a.hole * 1.8, crater: a.crater * 1.7, soot: a.soot * 1.6, glass: a.glass * 1.8, sp: a.sp * 2.0, sr: a.sr * 1.7, sd: a.sd * 1.6 });
+    return Object.assign({}, a, { hole: a.hole * 1.8, crater: a.crater * 1.7, soot: a.soot * 1.6, glass: a.glass * 1.8, sp: a.sp * 2.0, sr: a.sr * 1.7, sd: a.sd * 1.6, kg: (a.kg || 0) * 3.5 });
   }
   const hash3 = (x, y, s) => { const k = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return k - Math.floor(k); };
   // Nhiễu méo viền lỗ theo góc, dùng chung cho mọi mảng của cùng một phát -> lỗ liền mạch qua mép 2 mảng kề nhau
@@ -4212,7 +4215,7 @@ const Destructibles = (() => {
       let I = bldInfo(ammo, heavy);
       if (override && override.power !== undefined) {
         const k = override.power;
-        I = Object.assign({}, I, { hole: I.hole * k, crater: I.crater * Math.sqrt(k), sp: I.sp * k, glass: I.glass * Math.sqrt(k), sd: (I.sd || 0) * k });
+        I = Object.assign({}, I, { hole: I.hole * k, crater: I.crater * Math.sqrt(k), sp: I.sp * k, glass: I.glass * Math.sqrt(k), sd: (I.sd || 0) * k, kg: (I.kg || 0) * k });
       }
       const events = [];
       const dl = Math.hypot(info.dx || 0, info.dy || 0, info.dz || 0);
@@ -4236,6 +4239,9 @@ const Destructibles = (() => {
           const inBox = Math.abs(L.x) < B.halfW - B.T && Math.abs(L.z) < B.halfD - B.T && L.y > 1 && L.y < 1.5 + B.floors * B.FH;
           if (inBox) { ctx.inside = true; ctx.floor = Math.max(0, Math.min(B.floors - 1, Math.floor((L.y - 1.5) / B.FH))); }
         }
+        // Nổ BÊN TRONG nhà (đạn lọt qua mái / ô sàn / lỗ thủng rồi nổ): sóng xung kích dội vách + áp suất dồn trong tầng kín
+        // thổi bật tường ra ngoài, hất tung mái nhẹ -> nhà kho tôn / nhà gỗ tung toác, nhà bê tông thủng vách tầng đó
+        if (ctx.inside && !I.kin && I.kg > 0) this.confinedBlast(ctx, L);
         this.blastNear(ctx, L);
         if (fh) this.fragmentPocks(ctx, fh);
         if (ctx.changed) {
@@ -4552,7 +4558,7 @@ const Destructibles = (() => {
         }
         if (I.kin && !ctx.inside) continue;
         // sóng nổ làm nứt mảng tường gần (nổ trong phòng kín: cả tầng chịu ép)
-        if (!I.kin && I.sd) {
+        if (!I.kin && I.sd && !(sameRoom && ctx.confined)) {   // nổ trong tầng kín: confinedBlast đã tính cả tầng
           const rr = I.sr * (sameRoom ? 0.9 : 0.5);
           if (d3 < rr) { this.strain(ctx, m, null, I.sd * 0.45 * (1 - d3 / rr) * (sameRoom ? 1.4 : 1), null); if (m.state === 'gone') continue; }
         }
@@ -4579,6 +4585,88 @@ const Destructibles = (() => {
         }
       }
       if (vents) ctx.changed = true;
+    }
+    /**
+     * Nổ trong không gian kín (một tầng nhà; tầng trên cùng gồm cả lòng mái dốc / vòm). Mỗi mảng tường của tầng chịu tải
+     * tương đương = 30% áp suất phản xạ của sóng xung kích tại điểm gần nhất (Kinney-Graham, khoảng cách quy đổi R / kg^(1/3);
+     * sóng ngắn nên chỉ một phần đỉnh áp gây hại) + áp suất tích tụ (quasi-static ~530·(kg/V)^0.72 kPa, UFC 3-340-02), giảm
+     * theo phần vách / mái đã hở cho khí nổ thoát. Tải vượt sức chịu còn lại của mảng (WALLMAT.kpa x độ bền còn lại) ->
+     * mảng bật văng ra ngoài; chưa tới -> nứt theo tỷ lệ. Mái dốc / vòm nhẹ bị hất tung cùng cách đó.
+     * Ví dụ: đạn 120 (~2,2 kg) hay 155 (~7,7 kg) nổ trong kho tôn 20 x 13 m -> bật hết vách, kho sập; nhà gỗ / gạch đất
+     * cũng vậy. Tầng chung cư bê tông 14 x 10 m: đạn 120 chỉ nứt vách; đạn 155 bật vách gần tâm nổ, vách xa nứt toác
+     * (tầng trên cùng thường đổ cả tầng, tầng trệt cần quả thứ hai mới sập nhà).
+     */
+    confinedBlast(ctx, L) {
+      const { B, I, fx } = ctx;
+      const fl = this.structOf(B), f = Math.max(0, ctx.floor), F = fl[f];
+      if (!F) return;
+      const M = 1 / 8, bay = B.st.bay, FH = B.FH, T = B.T;
+      const y0 = 1.5 + f * FH, topFloor = f === B.floors - 1, RS = topFloor && B.roofShape;
+      const yC = RS ? RS.y0 + RS.h : y0 + FH;
+      const P = { x: L.x, y: Math.max(y0 + 0.5, Math.min(yC - 0.5, L.y)), z: L.z };
+      // thể tích khoang (m³): tầng + lòng mái (vòm: nửa elip, mái dốc: tam giác)
+      const wM = B.w * M, dM = B.d * M;
+      let V = wM * dM * FH * M;
+      if (RS) V += RS.kind === 'arched' ? wM * Math.PI * dM * RS.h * M / 4 : wM * dM * RS.h * M / 2;
+      // phần đã hở: mảng tường mất / thủng / vỡ kính, mái (ô mái bằng, mái dốc / vòm) đã mất
+      let open = 0, area = 0;
+      for (const m of F.mods) {
+        if (m.role !== 'wall') continue;
+        area += 1;
+        open += m.state === 'gone' ? 1 : m.mk ? Math.min(1, m.mk.gone / (m.mk.nx * m.mk.ny)) : m.state === 'glass' ? 0.2 : 0;
+      }
+      const tileA = bay / FH;   // diện tích một ô sàn / mái quy theo mảng tường
+      if (topFloor && B.roofMod) { const n = B.bx * B.bz * tileA; area += n; if (B.roofMod.state === 'gone') open += n; }
+      else {
+        const ceil = B.levels.find(Lv => topFloor ? Lv.role === 'roof' : Lv.role === 'slab' && Lv.f === f);
+        if (ceil) for (const t of ceil.tiles) { area += tileA; if (t.state === 'gone') open += tileA; }
+      }
+      const conf = Math.max(0.2, 1 - 1.5 * open / Math.max(1, area));
+      const qsp = 530 * Math.pow(I.kg / Math.max(1, V), 0.72) * conf;
+      const cbrt = Math.cbrt(I.kg);
+      const load = d => {
+        const Z = Math.max(0.3, d * M) / cbrt;
+        const ps = 101.3 * 808 * (1 + (Z / 4.5) ** 2) / Math.sqrt((1 + (Z / 0.048) ** 2) * (1 + (Z / 0.32) ** 2) * (1 + (Z / 1.35) ** 2));
+        const pr = 2 * ps * (7 * 101.3 + 4 * ps) / (7 * 101.3 + ps);
+        return 0.3 * pr + qsp;
+      };
+      ctx.confined = true;
+      const kpa = B.WM.kpa;
+      const blown = [];
+      for (const m of F.mods) {
+        if (m.role !== 'wall' || m.state === 'gone' || m.state === 'stub') continue;
+        const rx = P.x - m.lx, rz = P.z - m.lz;
+        const pz = rx * m.ox + rz * m.oz, px = rx * m.ax + rz * m.az, py = P.y - m.ly;
+        const d = Math.hypot(Math.max(0, Math.abs(px) - bay / 2), Math.max(0, Math.abs(py) - FH / 2), Math.max(0, Math.abs(pz) - T / 2));
+        const s = load(d) / kpa;
+        if (s < 0.04) continue;
+        ctx.changed = true;
+        const left = this.modEff(m) * m.hp0;
+        if (s >= left) blown.push({ m, s });
+        else m.hp = Math.max(0.03, m.hp - s * s / left);   // chưa tới ngưỡng: nứt theo bình phương tỷ lệ tải (kính cả tầng vỡ ở blastNear)
+      }
+      // mái dốc / vòm (ngói, tôn trên xà nhẹ): sóng nổ đội từ dưới lên, hất bay cả mái
+      const RM = B.roofMod;
+      if (topFloor && RM && RM.state !== 'gone') {
+        const s = load(Math.max(0, RS.y0 - P.y)) / (B.st.mat === 'metal' ? 15 : 20);
+        if (s >= 0.04) this.hitTile(ctx, RM, s * RM.hp0, null);
+      }
+      if (!blown.length) return;
+      // mảng tường bật văng ra ngoài: càng sát tâm nổ / tải càng dư càng văng xa
+      let cx = 0, cz = 0, nfx = 0;
+      for (const { m, s } of blown) {
+        const push = Math.min(40, 6 + 10 * (s - 1));
+        if (!this.fallMod(B, m, m.ox * 1.4, m.oz * 1.4, m.ly + rand(2, 6), rand(0, 0.06), push)) continue;
+        cx += m.lx; cz += m.lz;
+        if (nfx < 10 && !this._syncing) {
+          nfx++;
+          const w = this.toWorld(B, m.lx + m.ox * T, m.ly, m.lz + m.oz * T), o = this.dirToWorld(B, m.ox, 0, m.oz);
+          jet(fx, w.x, w.y, w.z, o.x, 0.2, o.z, 4, 3, 70 + 15 * Math.min(3, s), B.WM.edge, 0.55);
+          dustJet(fx, w.x, w.y, w.z, o.x, o.z, 2, 14, B.WM.dust, 30 + 8 * Math.min(3, s));
+        }
+      }
+      const n = blown.length;
+      this.fallFx(B, fx, cx / n, y0 + FH / 2, cz / n, Math.max(B.halfW, B.halfD) * 0.8, n, 1, null);
     }
     // Kính vỡ do sóng nổ (mảng tường còn nguyên đổi sang mặt cửa vỡ toác). inner: điểm nổ ở phía trong nhà so với mảng,
     // near: 0..1 độ gần điểm nổ. Mảnh kính (lớp mảnh kính riêng, không phải đá vụn): nổ ngoài nhà thì sóng nổ thổi phần lớn
@@ -4789,7 +4877,7 @@ const Destructibles = (() => {
       };
       settle(parts);
       let top = 0;
-      for (let pass = 0; pass < fl.length * 2 + 2; pass++) {
+      for (let pass = 0; pass < fl.length * 5 + 2; pass++) {
         top = 0;
         for (let f = fl.length - 1; f >= 0 && !top; f--) if (fl[f].mods.some(m => m.state !== 'gone')) top = f + 1;
         if (!top) break;
@@ -4834,7 +4922,8 @@ const Destructibles = (() => {
       return null;
     }
     // Mô-đun rơi xuống (hiệu ứng như lúc sập nhà): mất ngay khỏi kết cấu, rơi đoạn drop rồi biến vào bụi
-    fallMod(B, m, tx, tz, drop, delay) {
+    // push: mảng bị sóng nổ thổi bật văng xa thêm theo hướng (tx, tz) (đơn vị thế giới)
+    fallMod(B, m, tx, tz, drop, delay, push) {
       if (m.state === 'gone') return false;
       m.state = 'gone';
       m.hp = 0;
@@ -4844,7 +4933,7 @@ const Destructibles = (() => {
         return true;
       }
       if (m.kit && m.h) for (const [p, i] of m.h.extra) p.hide(i);
-      this.anim.push({ B, m, t: 0, delay, drop, tilt: { x: tx, z: tz }, spin: rand(-0.3, 0.3) });
+      this.anim.push({ B, m, t: 0, delay, drop, tilt: { x: tx, z: tz }, spin: rand(-0.3, 0.3), push: push || 0 });
       return true;
     }
     // Một mặt nhà (k) từ tầng f trở lên đổ ra ngoài + dải sàn / mái sát mặt đó
@@ -5921,7 +6010,7 @@ const Destructibles = (() => {
           k = 1;
         }
         const off = new THREE.Matrix4().compose(
-          new THREE.Vector3(A.tilt.x * k * 6, -fall, A.tilt.z * k * 6),
+          new THREE.Vector3(A.tilt.x * k * (6 + A.push), -fall, A.tilt.z * k * (6 + A.push)),
           new THREE.Quaternion().setFromEuler(new THREE.Euler(A.tilt.z * k * 0.5, A.spin * k, -A.tilt.x * k * 0.5)),
           new THREE.Vector3(1, 1 - k * 0.6, 1)
         );
