@@ -2060,11 +2060,12 @@ const Destructibles = (() => {
   const SLAB_COL = 0xc4c2bc;
   // Vật liệu tường: độ dày, màu mặt gãy, độ giòn (hệ số lỗ thủng), màu bụi
   const WALLMAT = {
-    concrete: { T: 2.2, edge: [0.6, 0.58, 0.54], k: 1.0, dust: [0.72, 0.7, 0.66] },
-    adobe: { T: 3.2, edge: [0.68, 0.56, 0.4], k: 1.25, dust: [0.78, 0.68, 0.52] },
-    stone: { T: 3.6, edge: [0.58, 0.56, 0.52], k: 0.8, dust: [0.7, 0.68, 0.64] },
-    wood: { T: 1.4, edge: [0.48, 0.34, 0.2], k: 1.5, dust: [0.55, 0.45, 0.32] },
-    metal: { T: 0.7, edge: [0.4, 0.42, 0.4], k: 1.35, dust: [0.6, 0.6, 0.58] }
+    // chip: hệ số đạn nhỏ đục dần mỗi phát theo vật liệu (bê tông / đá chịu đục tốt, đất / gỗ / tôn thủng nhanh)
+    concrete: { T: 2.2, edge: [0.6, 0.58, 0.54], k: 1.0, chip: 0.22, dust: [0.72, 0.7, 0.66] },
+    adobe: { T: 3.2, edge: [0.68, 0.56, 0.4], k: 1.25, chip: 0.55, dust: [0.78, 0.68, 0.52] },
+    stone: { T: 3.6, edge: [0.58, 0.56, 0.52], k: 0.8, chip: 0.2, dust: [0.7, 0.68, 0.64] },
+    wood: { T: 1.4, edge: [0.48, 0.34, 0.2], k: 1.5, chip: 1.0, dust: [0.55, 0.45, 0.32] },
+    metal: { T: 0.7, edge: [0.4, 0.42, 0.4], k: 1.35, chip: 1.2, dust: [0.6, 0.6, 0.58] }
   };
   // Tác động lên nhà theo loại đạn (đơn vị thế giới, 8 = 1 m):
   //  hole: bán kính lỗ xuyên tường · crater: vành bê tông bóc lở quanh lỗ · soot: muội khói · glass: sóng nổ làm vỡ kính
@@ -2075,18 +2076,22 @@ const Destructibles = (() => {
     SCOUT_BULLET: { hole: 0, crater: 0.9, chip: 0.34, soot: 0, glass: 1.5, sp: 0, sr: 0, kin: true, ric: 0.4, sd: 0.002 },
     GATLING_BULLET: { hole: 0, crater: 1.5, chip: 0.55, soot: 1.8, glass: 4, sp: 0.02, sr: 3, kin: true, ric: 0.36, sd: 0.004 },
     INCENDIARY: { hole: 0, crater: 1.3, chip: 0.4, soot: 3.5, glass: 3, sp: 0.01, sr: 3, kin: true, ric: 0.36, sd: 0.003 },
-    AP: { hole: 2.6, crater: 4.6, soot: 0, glass: 10, sp: 0.25, sr: 5, kin: true, ric: 0.24, exit: 3.6, sd: 0.16 },
-    RPG: { hole: 2.6, crater: 5.4, soot: 9, glass: 34, sp: 0.5, sr: 10, heat: true, sd: 0.2 },
-    ANTI_TANK_MISSILE: { hole: 3.6, crater: 8, soot: 14, glass: 55, sp: 1.0, sr: 15, heat: true, sd: 0.3 },
-    CLUSTER_SUBMUNITION: { hole: 2.6, crater: 5, soot: 8, glass: 28, sp: 0.5, sr: 9, heat: true, sd: 0.12 },
-    NORMAL: { hole: 6.5, crater: 10, soot: 15, glass: 60, sp: 1.1, sr: 20, sd: 0.32 },
-    CLUSTER: { hole: 6, crater: 9.5, soot: 14, glass: 55, sp: 1.0, sr: 20, sd: 0.28 },
-    HE: { hole: 10, crater: 14.5, soot: 21, glass: 90, sp: 1.7, sr: 28, sd: 0.4 }
+    // Cỡ lỗ theo thực tế trên tường bê tông ~27 cm (gạch đất / gỗ / tôn: x WM.k lớn hơn):
+    //  APFSDS: lỗ vào ~30 cm, vành bóc lở ~70 cm, mặt sau toác rộng hơn · RPG-7: lỗ ~20 cm, vành ~60 cm
+    //  tên lửa chống tăng (đầu nổ kép): lỗ ~35 cm · đạn con DPICM: lỗ ~15 cm
+    //  đạn pháo 120 mm đa năng (~1,5 kg thuốc nổ) nổ chạm: lỗ ~0,8 m · nổ mạnh 120 mm (~2,2 kg): lỗ ~1 m, vành ~1,9 m
+    AP: { hole: 1.2, crater: 2.8, soot: 0, glass: 10, sp: 0.25, sr: 5, kin: true, ric: 0.24, exit: 1.7, sd: 0.12 },
+    RPG: { hole: 0.85, crater: 2.6, soot: 9, glass: 34, sp: 0.5, sr: 10, heat: true, sd: 0.14 },
+    ANTI_TANK_MISSILE: { hole: 1.4, crater: 3.8, soot: 14, glass: 55, sp: 1.0, sr: 15, heat: true, sd: 0.22 },
+    CLUSTER_SUBMUNITION: { hole: 0.6, crater: 2.2, soot: 8, glass: 28, sp: 0.5, sr: 9, heat: true, sd: 0.08 },
+    NORMAL: { hole: 3.2, crater: 6, soot: 15, glass: 60, sp: 1.1, sr: 20, sd: 0.28 },
+    CLUSTER: { hole: 2.8, crater: 5.4, soot: 14, glass: 55, sp: 1.0, sr: 20, sd: 0.24 },
+    HE: { hole: 4, crater: 7.5, soot: 21, glass: 90, sp: 1.7, sr: 28, sd: 0.34 }
   };
   function bldInfo(ammo, heavy) {
     const a = BLD[ammo] || BLD.NORMAL;
     if (!heavy) return a;
-    // Pháo 152/155 mm: lỗ thủng 4-5 m, phá cả cột / ô sàn quanh điểm nổ
+    // Pháo 152/155 mm (~6,6-10 kg thuốc nổ): lỗ thủng ~1,8 m, vành bóc lở ~3 m, phá cả cột / ô sàn quanh điểm nổ
     return Object.assign({}, a, { hole: a.hole * 1.8, crater: a.crater * 1.7, soot: a.soot * 1.6, glass: a.glass * 1.8, sp: a.sp * 2.0, sr: a.sr * 1.7, sd: a.sd * 1.6 });
   }
   const hash3 = (x, y, s) => { const k = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return k - Math.floor(k); };
@@ -2097,6 +2102,13 @@ const Destructibles = (() => {
   }
   const NO_NOISE = () => 0;
   // Ô kính vỡ: lòng phòng tối, mảnh kính lởm chởm còn bám khung, vệt muội phía trên ô cửa
+  // Ô cửa (lỗ mở kính) trên texture mảng tường 128x128 theo kiểu mặt tường: [x, y, rộng, cao] (px, gốc trên-trái).
+  // Dùng chung cho texture kính vỡ và lưới mảng tường bị khoét (vùng ô cửa là lỗ mở, không có bê tông để bóc lở)
+  const WIN_RECTS = { office: [[6, 14, 116, 98]], adobe: [[48, 40, 32, 34]], stone: [[46, 38, 36, 40]], wood: [[40, 40, 48, 38]], metal: [], hangarDoor: [],
+    shop: [[11, 50, 106, 68]], shopB: [[8, 96, 112, 24]], officeB: [[3, 33, 39, 52], [45, 33, 39, 52], [87, 33, 41, 52]],
+    aptB: [[28, 28, 30, 74], [64, 32, 38, 46]], aptC: [[16, 30, 24, 56], [52, 30, 24, 56], [88, 30, 24, 56]],
+    tube: [[33, 26, 62, 76]], side: [], tubeB: [[29, 33, 34, 48], [65, 33, 34, 48]], apt: [[38, 34, 25, 46], [65, 34, 25, 46]] };
+  const winRects = style => WIN_RECTS[style] || WIN_RECTS.apt;
   // Cửa kính vỡ: ô cửa toang lộ phòng tối, kính còn sót ở khung là các mảnh nhọn sắc chĩa vào giữa (to nhất ở góc khung,
   // nơi kính bị kẹp chặt), mặt kính trong ngả xanh, mép sáng loé; khung sẫm muội bụi phía trên. Kèm bản đồ độ nhám riêng
   // (brokenWindowRough): mảnh kính bóng như kính, phòng tối & mặt tường vẫn nhám -> không còn trông như mảnh vữa xám đục
@@ -2106,10 +2118,7 @@ const Destructibles = (() => {
       const rc = document.createElement('canvas'); rc.width = w; rc.height = h;
       const r = rc.getContext('2d');
       r.fillStyle = 'rgb(230,230,230)'; r.fillRect(0, 0, w, h);
-      const rects = { office: [[6, 14, w - 12, h - 30]], adobe: [[48, 40, 32, 34]], stone: [[46, 38, 36, 40]], wood: [[40, 40, 48, 38]], metal: [], hangarDoor: [],
-        shop: [[11, 50, 106, 68]], shopB: [[8, 96, 112, 24]], officeB: [[3, 33, 39, 52], [45, 33, 39, 52], [87, 33, 41, 52]],
-        aptB: [[28, 28, 30, 74], [64, 32, 38, 46]], aptC: [[16, 30, 24, 56], [52, 30, 24, 56], [88, 30, 24, 56]],
-        tube: [[33, 26, 62, 76]], side: [], tubeB: [[29, 33, 34, 48], [65, 33, 34, 48]], apt: [[38, 34, 25, 46], [65, 34, 25, 46]] }[style] || [[38, 34, 25, 46], [65, 34, 25, 46]];
+      const rects = winRects(style);
       // một mảnh nhọn: chân rộng bám mép khung tại (px, py), mũi chĩa theo (dx, dy) dài L
       const shard = (px, py, dx, dy, L, bw) => {
         const tx = -dy, ty = dx, sk = rand(-0.35, 0.35);
@@ -2351,7 +2360,10 @@ const Destructibles = (() => {
         const up = Math.max(0, floors - 1 - floor);
         const hp = role === 'col' ? 2.2 * (1 + 0.1 * up) : role === 'slab' ? 2.6 : role === 'roof' ? (pool === this.slabPool ? 2.2 : 3.0) : role === 'wall' ? 1 + 0.07 * up : 1.0;
         const mod = { local: m, world, role, floor, ry: ry || 0, hp, hp0: hp, state: 'ok', c, lx, ly, lz, sx, hx: hx || sx / 2, hy: hy || sy / 2, hz: hz || sz / 2, id: B.mods.length };
-        if (pool === 'panel') { mod.side = sideNow; mod.kit = sideNow ? sideKit : floor > 0 ? kitUp : kit; mod.h = mod.kit.add('box', world, c); }
+        if (pool === 'panel') {
+          mod.side = sideNow; mod.kit = sideNow ? sideKit : floor > 0 ? kitUp : kit; mod.h = mod.kit.add('box', world, c);
+          mod.style = sideNow ? 'side' : floor > 0 && this.panelKits[P.uT] ? P.uT : P.gT;   // kiểu mặt tường (vị trí ô cửa)
+        }
         else { mod.pool = pool; mod.idx = pool.add(world, c); }
         if (role === 'wall') {
           mod.ax = Math.cos(mod.ry); mod.az = -Math.sin(mod.ry);   // trục dọc tường của mảng
@@ -2784,6 +2796,13 @@ const Destructibles = (() => {
           }
         }
       }
+      // lỗ xuyên nhỏ hơn 1 ô lưới (đạn xuyên / nổ lõm): vẫn thủng đúng ô ngay điểm chạm
+      if (P.hole > 0 && !removed) {
+        const i = Math.floor((px + bay / 2) / K.cw), j = Math.floor((py + FH / 2) / K.ch);
+        if (i >= 0 && j >= 0 && i < K.nx && j < K.ny && K.s[j * K.nx + i]) {
+          K.s[j * K.nx + i] = 0; removed = 1; sx = -bay / 2 + (i + 0.5) * K.cw; sy = -FH / 2 + (j + 0.5) * K.ch;
+        }
+      }
       let islands = 0;
       if (removed) islands = this.dropIslands(K);
       K.gone += removed + islands;
@@ -2876,6 +2895,28 @@ const Destructibles = (() => {
         V[j * W + i] = [-bay / 2 + i * cw, -FH / 2 + j * ch, sS / n + 0.62 * nz(i, j, 1), so + 0.9 * nz(i, j, 2), si + 0.9 * nz(i, j, 3),
           zf, zb, Math.min(3, so), Math.min(3, si), ns ? stt / ns / 255 : 0, 0.72 + 0.14 * (nz(i, j, 6) + 0.5), 0.9 + 0.2 * (nz(i, j, 7) + 0.5)];
       }
+      // Ô cửa sổ: trên mảng nguyên chỉ là hình vẽ trên texture, nhưng ngoài đời là LỖ MỞ trên tường (kính đã vỡ hết khi
+      // tường bị khoét). Lưới mảng vỡ coi đỉnh trong ô cửa là rỗng -> ô cửa thành lỗ thật có má cửa bê tông, nhìn xuyên vào
+      // phòng; vành bóc lở quanh lỗ đạn dừng ở mép ô cửa (trước đây phủ cả lên ô cửa thành mảng bê tông đặc).
+      // Đỉnh sát ô cửa: bỏ nhiễu độ đặc & không xô lệch -> mép ô cửa thẳng, không lởm chởm như mép vỡ
+      const wr = m.side ? [] : winRects(m.style), win = new Uint8Array(W * (ny + 1));
+      if (wr.length) {
+        for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
+          const tx = i / nx * 128, ty = (1 - j / ny) * 128;
+          if (wr.some(([x, y, rw, rh]) => tx > x && tx < x + rw && ty > y && ty < y + rh)) { win[j * W + i] = 1; V[j * W + i][2] = -0.6; }
+        }
+        for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
+          if (win[j * W + i]) continue;
+          let near = false;
+          for (let dj = -1; dj <= 1 && !near; dj++) for (let di = -1; di <= 1; di++) {
+            const ii = i + di, jj = j + dj;
+            if (ii >= 0 && jj >= 0 && ii <= nx && jj <= ny && win[jj * W + ii] === 1) { near = true; break; }
+          }
+          if (!near) continue;
+          win[j * W + i] = 2;
+          if (V[j * W + i][2] >= 0.6) V[j * W + i][2] = 1;
+        }
+      }
       // ô nguyên vẹn hẳn (cả 4 đỉnh đặc, không bóc, không muội): gộp theo hàng như cũ
       const plain = new Uint8Array(nx * ny);
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
@@ -2888,7 +2929,7 @@ const Destructibles = (() => {
       for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
         let free = true;
         for (let cj = j - 1; cj <= j; cj++) for (let ci = i - 1; ci <= i; ci++) if (ci >= 0 && cj >= 0 && ci < nx && cj < ny && plain[cj * nx + ci]) free = false;
-        if (!free) continue;
+        if (!free || win[j * W + i]) continue;
         const a = V[j * W + i];
         if (i > 0 && i < nx) a[0] += nz(i, j, 8) * 0.6 * cw;
         if (j > 0 && j < ny) a[1] += nz(i, j, 9) * 0.6 * ch;
@@ -3254,7 +3295,7 @@ const Destructibles = (() => {
         let tx = ld.x * m.ax + ld.z * m.az, ty = ld.y;
         const tl = Math.hypot(tx, ty);
         if (tl > 1e-4) { tx /= tl; ty /= tl; } else { tx = 1; ty = 0; }
-        let hole = I.hole * B.WM.k, crater = I.crater, soot = I.soot, chip = I.chip || 0, stretch = 1;
+        let hole = I.hole * B.WM.k, crater = I.crater, soot = I.soot, chip = (I.chip || 0) * (B.WM.chip || 1), stretch = 1;
         const ric = I.kin && cosI < I.ric;
         if (ric) { hole = 0; chip = chip ? chip * 0.5 : 0.35; crater *= 0.8; stretch = 2.6; soot = 0; }   // sượt: chỉ cày một rãnh bóc lở dài theo hướng bay
         else if (I.kin) stretch = Math.min(2.4, 1 / Math.max(cosI, 0.4));                                  // xuyên xiên: lỗ thuôn dài
@@ -5098,6 +5139,13 @@ const Destructibles = (() => {
     return list.length ? merge(list) : null;
   }
 
+  // Bề dày bê tông cốt thép (đơn vị game, 8 = 1 m) mỗi loại đạn nổ chạm phá thủng được trong 1 phát (BREACH) và đầu xuyên /
+  // đạn nhỏ khoan thủng được (PEN). Pháo nặng (power x1.8) phá dày hơn ~x2.3. Ước lượng theo số liệu phá vật cản thực tế:
+  // 120 mm đa năng ~25 cm, nổ mạnh 120 mm ~35 cm, 155 mm ~80 cm; RPG-7 xuyên ~0,9 m, tên lửa chống tăng ~1,7 m, APFSDS ~2 m;
+  // 12,7 mm xả dồn một chỗ khoét thủng được ~25 cm, 30 mm ~40 cm
+  const BREACH = { NORMAL: 2.0, HE: 2.8, CLUSTER: 2.2, CLUSTER_SUBMUNITION: 1.6, RPG: 1.4, ANTI_TANK_MISSILE: 2.2, AP: 0 };
+  const PEN = { AP: 16, RPG: 7, ANTI_TANK_MISSILE: 14, SCOUT_BULLET: 2, GATLING_BULLET: 3.2, INCENDIARY: 2.6 };
+
   // ===========================================================================
   // KẾT CẤU KHỐI BÊ TÔNG (tường / boong-ke): sứt mẻ -> nứt lộ thép -> vỡ còn gốc gãy -> vỡ vụn
   // ===========================================================================
@@ -5161,15 +5209,31 @@ const Destructibles = (() => {
         if (dist > R) continue;
         const direct = q === hitQ;
         const k = clamp01(1 - dist / R);
-        let dmg = power * (0.15 + 1.1 * k * k);
-        if (pierce && direct) dmg *= 1.5;
-        // đạn xuyên chỉ khoét đúng khối bị chạm: AP gần như không làm hại khối kề, đầu nổ lõm chỉ có ít thuốc nổ văng ra
-        else if (pierce && power >= 0.8) dmg *= ammo === 'AP' ? 0.05 : 0.3;
-        // đạn nhỏ chỉ sứt / đục dần mặt bê tông (12.7mm sứt mẻ, 30mm nổ-mảnh đục sâu hơn), gần như không lan sang khối bên
-        if (power < 0.3) dmg *= (power < 0.2 ? 0.3 : 0.45) * (direct ? 1 : 0.15);
+        const small = power < 0.3;
+        const pen = PEN[ammo] || 0, canBore = pen >= q.thick;
+        let dmg;
+        if (small) {
+          // đạn nhỏ chỉ sứt / đục dần mặt bê tông (12.7mm sứt mẻ, 30mm nổ-mảnh đục sâu hơn), gần như không lan sang khối bên
+          dmg = power * (0.15 + 1.1 * k * k) * (power < 0.2 ? 0.3 : 0.45) * (direct ? 1 : 0.15);
+        } else {
+          // Thuốc nổ: mỗi loại đạn nổ chạm phá thủng được bê tông cốt thép dày tới br; khối dày hơn chỉ bị bóc mất phần
+          // (br / dày)^2 mỗi phát (bắn trúng cùng chỗ nhiều phát thì cộng dồn mới thủng). Khối kề chịu nhẹ hơn hẳn theo khoảng cách
+          const A0 = AMMO[ammo] || AMMO.NORMAL;
+          const br = (BREACH[ammo] !== undefined ? BREACH[ammo] : 2) * Math.pow(power / A0.power, 1.4);
+          const rel = Math.pow(br / q.thick, 2);
+          let frac;
+          if (direct) frac = rel;
+          else { const f = clamp01(1 - dist / (br * 2 + 3)); frac = rel * 0.6 * f * f; }
+          // Đạn xuyên (APFSDS / luồng nổ lõm): phần phá chính là đầu xuyên, chỉ tác dụng lên khối bị chạm
+          if (pierce && direct) frac = Math.max(frac, 0.3 * Math.min(1, Math.pow(pen / q.thick, 2)));
+          dmg = q.hpMax * Math.min(frac, 3);
+        }
         q.hp -= dmg;
-        // Đạn xuyên (APFSDS / luồng nổ lõm) trúng thẳng khối: khoét thủng xuyên qua tường đúng chỗ chạm
-        const punch = pierce && direct && power >= 0.8;
+        // đạn nhỏ không xuyên nổi bề dày khối: chỉ rỗ / nứt mặt, không phá được khối
+        if (small && !canBore) q.hp = Math.max(q.hp, q.hpMax * 0.2);
+        // Đạn xuyên (APFSDS / luồng nổ lõm) trúng thẳng khối: khoét thủng xuyên qua tường đúng chỗ chạm — chỉ khi bề dày
+        // khối không vượt sức xuyên của đạn (RPG-7 ~0,9 m bê tông, tên lửa chống tăng ~1,7 m, APFSDS ~2 m)
+        const punch = pierce && direct && !small && canBore;
         if (punch && !q.stub && !q.bored) {
           // phát xuyên đầu tiên: lỗ thủng gọn xuyên qua khối (không gãy cụt cả khối); phát sau mới làm vỡ
           q.hp = Math.max(q.hp, 0.25);
@@ -5183,8 +5247,8 @@ const Destructibles = (() => {
         }
         else if (punch && !q.stub) this.lastPierced = true;
         else if (!q.cracked && !q.stub && q.hp < q.hpMax * 0.5) this.crackBlock(q, fx);
-        // Xả đạn liên tục vào một chỗ: đục thủng xuyên qua khối (lỗ toác lộ cốt thép)
-        else if (q.cracked && !q.stub && !q.bored && power < 0.3 && direct && q.hp < q.hpMax * (power < 0.2 ? 0.3 : 0.45)) this.boreBlock(q, fx, x, y, z, 'bullet');
+        // Xả đạn liên tục vào một chỗ: đục thủng xuyên qua khối (lỗ toác lộ cốt thép) — chỉ khi khối đủ mỏng với cỡ đạn
+        else if (q.cracked && !q.stub && !q.bored && small && canBore && direct && q.hp < q.hpMax * (power < 0.2 ? 0.3 : 0.45)) this.boreBlock(q, fx, x, y, z, 'bullet');
         else if (k > 0.2 && !q.stub) q.kit.color(q.h, q.c.clone().multiplyScalar(0.6 + 0.4 * (q.hp / q.hpMax)));
       }
       if (broke) { this.refreshShapes(); this.commit(); }
@@ -5652,6 +5716,7 @@ const Destructibles = (() => {
   // ===========================================================================
   // DÙNG CHO PHÒNG THỬ ĐẠN: 1 bức tường bê tông thẳng / 1 tòa nhà 4 tầng (cùng cơ chế với game)
   // ===========================================================================
+  const LAB_POWER = { NORMAL: 1.8, HE: 2.8, AP: 4.2, CLUSTER: 1.6, CLUSTER_SUBMUNITION: 0.9, RPG: 2.2, ANTI_TANK_MISSILE: 2.6 };
   class ConcreteWall {
     constructor(scene, opts = {}) {
       this.scene = scene;
@@ -5679,8 +5744,12 @@ const Destructibles = (() => {
     }
     get visible() { return this.group.visible; }
     set visible(v) { this._vis = v; this.group.visible = v; }
+    // power theo thang sức phá của phòng thử (fx_lab / tank_inspector: STRUCT_POWER, HE 2.8...). Đổi về thang của game
+    // (AMMO) để bề dày phá được (BREACH) đúng như trong trận: pháo nặng x1.85, nổ trên đất sát chân tường x0.7 vẫn giữ tỉ lệ
     damageAt(worldPos, radius, power, ammoType, fx) {
       const A = ammoInfo(ammoType, false);
+      const ref = LAB_POWER[ammoType];
+      if (ref && power >= 0.3) power = A.power * power / ref;
       const broke = this.S.damageSphere(worldPos.x, worldPos.y, worldPos.z, radius, power, A.pierce, fx, null, ammoType);
       return { pierced: !!this.S.lastPierced, broke };
     }
