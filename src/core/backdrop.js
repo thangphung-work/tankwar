@@ -45,6 +45,58 @@ const Backdrop = (() => {
     HIGHLAND: { pow: 1.0, pine: true, r: [5, 8], hgt: [17, 28], treeline: 430 }
   };
   const SP = 50;   // bước lưới rải khóm cây
+  // Khóm tán lá rộng: 4 khối tròn méo chồng lên nhau (u lồi lõm, không phải quả cầu nhẵn), gốc tối (bóng tán)
+  function clumpGeometry() {
+    const rng = MapGen.mulberry32(0x51ab), pos = [], nrm = [], col = [];
+    const v = new THREE.Vector3(), n = new THREE.Vector3();
+    const lobes = [[0, 0.1, 0, 1], [0.55, -0.1, 0.25, 0.7], [-0.45, -0.05, 0.4, 0.68], [0.05, -0.12, -0.6, 0.66]];
+    for (const [ox, oy, oz, r] of lobes) {
+      const g = new THREE.IcosahedronGeometry(1, 0), P = g.attributes.position;
+      // cùng một đỉnh (trùng toạ độ) nhận cùng độ lồi lõm -> khối kín, không nứt
+      const bump = new Map();
+      for (let i = 0; i < P.count; i++) {
+        v.fromBufferAttribute(P, i);
+        const key = v.x.toFixed(3) + ',' + v.y.toFixed(3) + ',' + v.z.toFixed(3);
+        if (!bump.has(key)) bump.set(key, 0.82 + rng() * 0.32);
+        const k = bump.get(key);
+        n.copy(v).normalize();
+        pos.push(ox + v.x * r * k, oy + v.y * r * k * 0.85, oz + v.z * r * k);
+        nrm.push(n.x, n.y, n.z);
+        const ao = 0.45 + 0.55 * Math.max(0, Math.min(1, (oy + v.y * r * 0.85 + 0.7) / 1.5));
+        col.push(ao, ao, ao);
+      }
+      g.dispose();
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return geo;
+  }
+  // Cây thông: 2 tầng chóp chồng lên nhau, gốc tầng dưới tối
+  function pineGeometry() {
+    const parts = [[0.15, 0.62, 1.0], [0.5, 0.5, 0.68]];
+    const pos = [], nrm = [], col = [];
+    const v = new THREE.Vector3(), n = new THREE.Vector3();
+    for (const [y0, hgt, r] of parts) {
+      const g = new THREE.ConeGeometry(r, hgt, 7, 1, true);
+      g.translate(0, y0 + hgt / 2, 0);
+      const P = g.attributes.position, N = g.attributes.normal;
+      for (let i = 0; i < P.count; i++) {
+        v.fromBufferAttribute(P, i); n.fromBufferAttribute(N, i);
+        pos.push(v.x, v.y, v.z); nrm.push(n.x, n.y, n.z);
+        const ao = 0.5 + 0.5 * Math.min(1, v.y);
+        col.push(ao, ao, ao);
+      }
+      g.dispose();
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return geo;
+  }
+
   function buildForest(T, O, nz, seaLvl) {
     const F = FOREST[T.mapType];
     if (!F) return null;
@@ -72,21 +124,13 @@ const Backdrop = (() => {
       q.setFromAxisAngle(up, r3 * 6.283);
       m4.compose(p, q, sc);
       mats.push(m4.clone());
-      c.copy(c0).lerp(c1, r2).multiplyScalar(0.72 + 0.3 * r3);
+      // tán lá dày tự che khuất nhau: tối hơn màu lá gốc
+      c.copy(c0).lerp(c1, r2).multiplyScalar(0.5 + 0.25 * r3);
       cols.push(c.r, c.g, c.b);
     }
     if (!mats.length) return null;
-    let geo;
-    if (F.pine) {
-      geo = new THREE.ConeGeometry(1, 1, 7, 1, true);
-      geo.translate(0, 0.5, 0);
-    } else {
-      // khối tán tròn nhẵn: pháp tuyến = hướng từ tâm (không lộ mặt phẳng tam giác)
-      geo = new THREE.IcosahedronGeometry(1, 1);
-      const P = geo.attributes.position, N = geo.attributes.normal;
-      for (let i = 0; i < P.count; i++) { p.fromBufferAttribute(P, i).normalize(); N.setXYZ(i, p.x, p.y, p.z); }
-    }
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
+    const geo = F.pine ? pineGeometry() : clumpGeometry();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, vertexColors: true });
     mat.onBeforeCompile = (sh) => BattleTerrain3D.applyFarFade(sh, false);
     mat.customProgramCacheKey = () => 'backdropForest';
     const mesh = new THREE.InstancedMesh(geo, mat, mats.length);
