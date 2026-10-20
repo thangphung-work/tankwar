@@ -1576,28 +1576,105 @@ const Destructibles = (() => {
     mvPosition.xy += corner * bbS;
     gl_Position = projectionMatrix * mvPosition;`;
   // Vật liệu cây: gió + nhân màu từng đỉnh (attribute tint: độ tối trong tán / gốc thân, lệch màu từng chùm lá)
-  function treeMat(mat, leafy) {
+  // mode: 'leaf' tán lá | 'trunk' thân (cây gãy: bỏ phần dưới chỗ gãy -> chỉ còn ngọn đổ) | 'stump' gốc cụt (bỏ phần trên chỗ gãy)
+  // Chỗ gãy lấy từ attribute instance 'brk' (độ cao gãy theo đơn vị cục bộ của cây, 0 = chưa gãy / bật cả gốc)
+  function brkCut(fs, mode) {
+    if (mode === 'leaf') return fs;
+    return 'varying float vBrk;\nvarying float vLY;\n' + fs.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' +
+      (mode === 'stump' ? '  if (vLY > vBrk) discard;' : '  if (vBrk > 0.0 && vLY < vBrk) discard;'));
+  }
+  function treeVS(vs, mode, tint) {
+    const leafy = mode === 'leaf';
+    vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY + (tint ? '\n  vTint = tint;' : '') + (leafy ? '' : '\n  vBrk = brk; vLY = position.y;'));
+    if (leafy) vs = 'attribute vec2 corner;\n' + vs.replace('#include <project_vertex>', TREE_PROJECT);
+    else vs = 'attribute float brk;\nvarying float vBrk;\nvarying float vLY;\n' + vs;
+    return (leafy ? '#define TREE_LEAFY\n' : '') + (tint ? 'attribute vec3 tint;\nvarying vec3 vTint;\n' : '') + 'uniform float uWind;\n' + vs;
+  }
+  function treeMat(mat, mode) {
     mat.onBeforeCompile = sh => {
       sh.uniforms.uWind = WIND;
-      let vs = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY + '\n  vTint = tint;');
-      if (leafy) vs = 'attribute vec2 corner;\n' + vs.replace('#include <project_vertex>', TREE_PROJECT);
-      sh.vertexShader = (leafy ? '#define TREE_LEAFY\n' : '') + 'attribute vec3 tint;\nvarying vec3 vTint;\nuniform float uWind;\n' + vs;
-      sh.fragmentShader = 'varying vec3 vTint;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vTint;');
+      sh.vertexShader = treeVS(sh.vertexShader, mode, true);
+      sh.fragmentShader = brkCut('varying vec3 vTint;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vTint;'), mode);
     };
-    mat.customProgramCacheKey = () => 'tree' + (leafy ? 'L' : 'T');
+    mat.customProgramCacheKey = () => 'tree_' + mode;
     return mat;
   }
-  // Bóng đổ khớp với cây đang lay + cắt theo viền lá
-  function treeDepthMat(map, leafy) {
+  // Bóng đổ khớp với cây đang lay / gãy + cắt theo viền lá
+  function treeDepthMat(map, mode) {
     const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: map || null, alphaTest: map ? 0.4 : 0 });
     m.onBeforeCompile = sh => {
       sh.uniforms.uWind = WIND;
-      let vs = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY);
-      if (leafy) vs = 'attribute vec2 corner;\n' + vs.replace('#include <project_vertex>', TREE_PROJECT);
-      sh.vertexShader = (leafy ? '#define TREE_LEAFY\n' : '') + 'uniform float uWind;\n' + vs;
+      sh.vertexShader = treeVS(sh.vertexShader, mode, false);
+      sh.fragmentShader = brkCut(sh.fragmentShader, mode);
     };
-    m.customProgramCacheKey = () => 'treeD' + (leafy ? 'L' : 'T');
+    m.customProgramCacheKey = () => 'treeD_' + mode;
     return m;
+  }
+  // Hồ sơ thân chính theo độ cao (bước 2 đv cục bộ): tâm thân (x,z) & bán kính -> đặt đúng gốc cụt / vết gãy trên thân cong
+  function stemProfile(list) {
+    const B = [];
+    let top = 0;
+    for (const g of list) {
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const y = p.getY(i), b = Math.max(0, Math.round(y / 2));
+        (B[b] || (B[b] = [])).push(p.getX(i), p.getZ(i));
+        if (y > top) top = y;
+      }
+    }
+    const prof = [];
+    let last = { x: 0, z: 0, r: 1 };
+    for (let b = 0; b < B.length; b++) {
+      const a = B[b];
+      if (a && a.length) {
+        let cx = 0, cz = 0;
+        for (let i = 0; i < a.length; i += 2) { cx += a[i]; cz += a[i + 1]; }
+        cx /= a.length / 2; cz /= a.length / 2;
+        let r = 0;
+        for (let i = 0; i < a.length; i += 2) r += Math.hypot(a[i] - cx, a[i + 1] - cz);
+        last = { x: cx, z: cz, r: Math.max(0.2, r / (a.length / 2)) };
+      }
+      prof.push(last);
+    }
+    return { top, prof };
+  }
+  const stemAt = (info, y) => { const P = info.stem.prof; return P[Math.max(0, Math.min(P.length - 1, Math.round(y / 2)))]; };
+  // Khối tán khi cây nằm: tâm (độ cao cục bộ dọc thân) & bán kính ngang -> tán chống thân lên, không lún nửa xuống đất
+  function canopyOf(geo, yMin) {
+    const p = geo.attributes.position;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      if (y < yMin) continue;
+      const x = p.getX(i), z = p.getZ(i);
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (y0 === Infinity) return null;
+    return { dc: (y0 + y1) / 2, rc: Math.max(x1 - x0, z1 - z0) / 2 };
+  }
+  // Thớ gỗ tươi lộ ra ở vết gãy: vàng nhạt, sợi dọc, vân tối lấm tấm
+  function woodTex() {
+    return canvasTex('woodBreak', 64, 64, (g, w, h) => {
+      g.fillStyle = '#9c7a52'; g.fillRect(0, 0, w, h);
+      for (let x = 0; x < w; x += 1.5) { g.fillStyle = `rgba(${RNG() < 0.6 ? '70,48,28' : '215,185,140'},${rand(0.12, 0.4)})`; g.fillRect(x, 0, 1, h); }
+      speckle(g, w, h, 120, ['rgba(90,60,30,0.35)', 'rgba(255,240,210,0.2)'], 1, 2);
+    }, true);
+  }
+  // Vết gãy tua tủa: ống thân với mép trên lởm chởm dăm gỗ + mặt gỗ gãy bên trong (đơn vị: bán kính 1, chỗ gãy ở y = 0)
+  function splinterGeo() {
+    const N = 12, g = new THREE.CylinderGeometry(1, 1, 1, N, 1, true);
+    const p = g.attributes.position;
+    const sp = [];
+    for (let i = 0; i < N; i++) sp.push(RNG() < 0.3 ? [rand(0.7, 1.2), rand(0.3, 0.6)] : [rand(0.1, 0.45), rand(0.7, 1.0)]);
+    sp.push(sp[0]);
+    for (let i = 0; i < p.count; i++) {
+      if (p.getY(i) > 0) { const c = sp[i % (N + 1)]; p.setXYZ(i, p.getX(i) * c[1], c[0], p.getZ(i) * c[1]); }
+      else p.setY(i, -0.45);
+    }
+    g.computeVertexNormals();
+    const face = new THREE.CircleGeometry(0.97, N).toNonIndexed();
+    face.rotateX(-Math.PI / 2); face.translate(0, 0.1, 0);
+    return merge([g.toNonIndexed(), face]);
   }
 
   // ---- Tán lá: lõi kín + nhiều thẻ "chùm lá" cắt alpha. Pháp tuyến hướng ra ngoài khối tán (không theo mặt từng tấm)
@@ -1730,7 +1807,7 @@ const Destructibles = (() => {
   function buildTreeVariant(kind) {
     // trả { trunk: geometry, crown: geometry|null, crownKind, barkKind, height }
     const T = [], C = [];
-    let crownKind = 'broad', height = 40, barkKind = 'oak', crownY = 1e9;
+    let crownKind = 'broad', height = 40, barkKind = 'oak', crownY = 1e9, stemN = 1;   // stemN: số mảnh đầu của T là thân chính
     // cành từ thân vươn tới từng khối tán (lộ ra qua kẽ lá như cây thật)
     const branchesTo = (clumps, from, r0) => {
       for (const c of clumps) {
@@ -1745,6 +1822,7 @@ const Destructibles = (() => {
       const lean = rand(4, 10), H = 47, N = 6;
       const P = t => [lean * t * t, H * t, 0];
       for (let i = 0; i < N; i++) limb(T, P(i / N), P((i + 1) / N), 1.5 - i * 0.07, 1.5 - (i + 1) * 0.07, { sides: 8, segs: 1, wobble: 0, flare: i === 0 ? 0.5 : 0 });
+      stemN = N;
       const top = P(1);
       limb(T, top, [top[0] + 0.4, top[1] + 3, top[2]], 1.15, 0.8, { sides: 7, segs: 1, wobble: 0 });
       for (let k = 0; k < 4; k++) { const a = k * 1.57 + rand(-0.3, 0.3); T.push(place(new THREE.SphereGeometry(0.85, 6, 4), [top[0] + Math.cos(a) * 1.3, top[1] - 0.6 + rand(-0.5, 0.5), top[2] + Math.sin(a) * 1.3])); }
@@ -1893,6 +1971,7 @@ const Destructibles = (() => {
       branchesTo(clumps, () => lerp3([0, 0, 0], top, rand(0.72, 1)), 0.7);
       clumpsOut(clumps);
     }
+    const stem = stemProfile(T.slice(0, stemN));
     const trunk = merge(T);
     trunkShade(trunk, crownY);
     let crown = null;
@@ -1901,7 +1980,10 @@ const Destructibles = (() => {
       shadeByHeight(crown, crownKind === 'frond' ? 0.85 : 0.62, 1.05);
       if (!crown.attributes.corner) crown.setAttribute('corner', new THREE.BufferAttribute(new Float32Array(crown.attributes.position.count * 2), 2));
     }
-    return { trunk, crown, crownKind, barkKind, height };
+    // khối tán khi nằm: tán lá (thẻ billboard tính từ tâm -> cộng thêm nửa thẻ) / cây không lá: cành phía trên
+    const cn = crown ? canopyOf(crown, -1e9) : canopyOf(trunk, height * 0.45);
+    if (cn && crown) cn.rc += 2;
+    return { trunk, crown, crownKind, barkKind, height, stem, canopy: cn };
   }
 
   // Cây to cao như thật (so với xe): hệ số phóng theo loại; thân cây (bán kính gốc, phần thân / chiều cao) chặn đạn
@@ -1934,25 +2016,33 @@ const Destructibles = (() => {
         const list = byKind[kind];
         const variants = [buildTreeVariant(kind), buildTreeVariant(kind)];
         const vs = variants.map(v => {
-          const trunkMat = treeMat(new THREE.MeshStandardMaterial({ map: barkTex(v.barkKind), roughness: 0.95, metalness: 0 }), false);
+          const trunkMat = treeMat(new THREE.MeshStandardMaterial({ map: barkTex(v.barkKind), roughness: 0.95, metalness: 0 }), 'trunk');
+          const stumpMat = treeMat(new THREE.MeshStandardMaterial({ map: barkTex(v.barkKind), roughness: 0.95, metalness: 0 }), 'stump');
           let crownMat = null, crownMap = null;
           if (v.crown) {
             crownMap = v.crownKind === 'frond' ? leafTex('frond') : foliageTex(v.crownKind);
             crownMat = treeMat(new THREE.MeshStandardMaterial({
               map: crownMap, alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0
-            }), true);
+            }), 'leaf');
           }
           const n = list.length;
+          // thân & gốc cụt dùng chung hình học nhưng mỗi bên 1 bộ 'brk' riêng (độ cao gãy từng cây)
+          const stumpGeo = v.trunk.clone();
+          v.trunk.setAttribute('brk', new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1));
+          stumpGeo.setAttribute('brk', new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1));
           const trunk = new Pool(this.group, v.trunk, trunkMat, n, { color: true });
-          trunk.mesh.customDepthMaterial = treeDepthMat(null, false);
+          trunk.mesh.customDepthMaterial = treeDepthMat(null, 'trunk');
           trunk.mesh.onBeforeRender = windTick;
+          const stump = new Pool(this.group, stumpGeo, stumpMat, n, { color: true });
+          stump.mesh.customDepthMaterial = treeDepthMat(null, 'stump');
+          stump.mesh.onBeforeRender = windTick;
           let crown = null;
           if (v.crown) {
             crown = new Pool(this.group, v.crown, crownMat, n, { color: true });
-            crown.mesh.customDepthMaterial = treeDepthMat(crownMap, true);
+            crown.mesh.customDepthMaterial = treeDepthMat(crownMap, 'leaf');
             crown.mesh.onBeforeRender = windTick;
           }
-          return { info: v, trunk, crown };
+          return { info: v, trunk, crown, stump };
         });
         this.kinds[kind] = vs;
         list.forEach((t, k) => {
@@ -1964,7 +2054,7 @@ const Destructibles = (() => {
           const item = {
             x: t.x, z: t.z, y: gy, kind, s, V, rot: t.rot, height: V.info.height * s,
             ti: V.trunk.add(m, tint), ci: V.crown ? V.crown.add(m, tint) : -1,
-            base: m.clone(), tint, heat: 0, state: 'ok', burnT: 0
+            base: m.clone(), tint, heat: 0, state: 'ok', burnT: 0, brk: 0, si: -1, capS: -1, capT: -1, tcol: tint
           };
           const tk = TRUNK[kind] || [1.4, 0.6];
           item.trunkR = tk[0] * s; item.trunkH = item.height * tk[1];
@@ -1977,26 +2067,33 @@ const Destructibles = (() => {
         });
         vs.forEach(V => { V.trunk.commit(); if (V.crown) V.crown.commit(); });
       }
+      // dăm gỗ tua tủa ở vết gãy: 1 ở đầu gốc cụt + 1 ở đầu khúc ngọn đổ cho mỗi cây gãy
+      this.caps = new Pool(this.group, splinterGeo(), new THREE.MeshStandardMaterial({ map: woodTex(), side: THREE.DoubleSide, roughness: 0.9, metalness: 0 }),
+        Math.max(2, trees.length * 2), { color: true });
     }
     key(x, z) { return Math.floor(x / 60) * 1000 + Math.floor(z / 60); }
 
     // ---- ĐỒNG BỘ: mỗi cây 1 ký tự (0 nguyên, B trụi lá / cháy rụi, F đã đổ) + áp hợp nhất
     stateString() {
       let s = '';
-      // cây đổ: 'a'..'p' = hướng đổ (16 hướng) để máy khác đổ cùng chiều với chủ phòng ('F' cũ: không rõ hướng)
-      for (const it of this.items) s += it.fallen ? String.fromCharCode(97 + (it.fallSec || 0)) : (it.crownGone || it.state === 'burnt') ? 'B' : '0';
+      // cây đổ: 'a'..'p' = hướng đổ (16 hướng) + 1 ký tự độ cao gãy 'A'..'Z' (A: bật cả gốc, còn lại: phần 25 chiều cao)
+      // để máy khác đổ cùng chiều & gãy cùng chỗ với chủ phòng ('F' cũ: không rõ hướng)
+      for (const it of this.items) s += it.fallen ? String.fromCharCode(97 + (it.fallSec || 0), 65 + this.brkQ(it)) : (it.crownGone || it.state === 'burnt') ? 'B' : '0';
       return s;
     }
+    brkQ(it) { return it.brk > 0 ? Math.max(1, Math.min(25, Math.round(it.brk / it.V.info.height * 25))) : 0; }
     applyState(str, fx) {
       const s = String(str || '');
+      let k = 0;
       this.items.forEach((it, i) => {
-        const c = s[i];
+        const c = s[k++];
         const sec = c ? c.charCodeAt(0) - 97 : -1;
         if (sec >= 0 && sec < 16) {
-          const a = sec * Math.PI / 8;
-          if (!it.fallen) this.fell(it, Math.cos(a), Math.sin(a), fx);
-          // đã đổ nhưng khác hướng chủ phòng: xoay lại nằm đúng hướng (không bụi / tiếng)
-          else if (it.fallSec !== sec && it.fall) this.fell(it, Math.cos(a), Math.sin(a), fx, { reorient: true });
+          const a = sec * Math.PI / 8, q = s[k] ? Math.max(0, Math.min(25, s.charCodeAt(k++) - 65)) : 0;
+          const brk = q / 25 * it.V.info.height;
+          if (!it.fallen) this.fell(it, Math.cos(a), Math.sin(a), fx, { brk });
+          // đã đổ nhưng khác hướng / chỗ gãy của chủ phòng: đặt lại cho khớp (không bụi / tiếng)
+          else if ((it.fallSec !== sec || this.brkQ(it) !== q) && it.fall) this.fell(it, Math.cos(a), Math.sin(a), fx, { reorient: true, brk });
         } else if (c === 'F' && !it.fallen) this.fell(it, Math.cos(i), Math.sin(i), fx);
         else if (c === 'B' && !it.fallen && !it.crownGone) {
           it.crownGone = true;
@@ -2044,7 +2141,7 @@ const Destructibles = (() => {
           const l = this.grid.get(gx * 1000 + gz);
           if (!l) continue;
           for (const it of l) {
-            if (it.fallen || it.x < minX - it.trunkR || it.x > maxX + it.trunkR || it.z < minZ - it.trunkR || it.z > maxZ + it.trunkR) continue;
+            if ((it.fallen && !it.brk) || it.x < minX - it.trunkR || it.x > maxX + it.trunkR || it.z < minZ - it.trunkR || it.z > maxZ + it.trunkR) continue;
             // giao đoạn bay (2D) với vòng thân; đầu đoạn đã nằm trong thân thì bỏ qua (nòng sát gốc cây)
             const dx = bx - ax, dz = bz - az, fx = ax - it.x, fz = az - it.z;
             const qa = dx * dx + dz * dz, qb = 2 * (fx * dx + fz * dz), qc = fx * fx + fz * fz - it.trunkR * it.trunkR;
@@ -2054,7 +2151,8 @@ const Destructibles = (() => {
             const t = (-qb - Math.sqrt(disc)) / (2 * qa);
             if (t < 0 || t > 1 || (best && t >= best.t)) continue;
             const y = ay + (by - ay) * t;
-            if (y < it.y - 1 || y > it.y + it.trunkH) continue;
+            // cây gãy: gốc cụt còn đứng vẫn chặn đạn
+            if (y < it.y - 1 || y > it.y + (it.fallen ? it.brk * it.s - 0.6 : it.trunkH)) continue;
             best = { t, x: ax + (bx - ax) * t, y, z: az + (bz - az) * t, it };
           }
         }
@@ -2071,8 +2169,15 @@ const Destructibles = (() => {
       return out;
     }
     setColor(it, c) {
-      it.V.trunk.color(it.ti, c);
+      this.trunkColor(it, c);
       if (it.ci >= 0) it.V.crown.color(it.ci, c);
+    }
+    // màu thân áp cả cho gốc cụt & dăm gỗ ở vết gãy (cháy sém / cháy đen cùng lúc)
+    trunkColor(it, c) {
+      it.tcol = c;
+      it.V.trunk.color(it.ti, c);
+      if (it.si >= 0) it.V.stump.color(it.si, c);
+      if (it.capS >= 0) { this.caps.color(it.capS, c); this.caps.color(it.capT, c); }
     }
     // Nhiệt + sóng nổ tác động lên cây quanh điểm nổ
     damageAt(x, y, z, ammo, heavy, fx) {
@@ -2092,10 +2197,20 @@ const Destructibles = (() => {
         // Đạn nổ mạnh sát gốc: lửa nổ bén cháy rụi cả cây
         if (blasty && d < A.radius * 1.3) it.heat = Math.max(it.heat, 1.7 + k);
         // Quật đổ: sóng nổ mạnh sát gốc / trúng trực tiếp (đổ xong vẫn tiếp tục cháy)
-        if (!it.fallen && (k * A.power > 0.85 || (d < A.radius * 0.8 && A.power > 0.5))) this.fell(it, it.x - x, it.z - z, fx, { p: Math.min(1.5, k * A.power * (heavy ? 1.4 : 1)) });
+        if (!it.fallen && (k * A.power > 0.85 || (d < A.radius * 0.8 && A.power > 0.5))) this.fell(it, it.x - x, it.z - z, fx, { p: Math.min(1.5, k * A.power * (heavy ? 1.4 : 1)), brk: this.breakAt(it, y, d) });
         if (blasty && k > 0.3) this.stripLeaves(it, 0.35 * k, x, y, z, fx);
         this.refreshLook(it, fx);
       }
+    }
+
+    // Chỗ gãy (độ cao cục bộ, 0 = bật cả gốc rễ): đạn nổ ngay vào thân -> gãy đúng chỗ trúng; nổ dưới đất gần gốc ->
+    // bật gốc hoặc gãy sát đất. Gốc cụt tối thiểu ~0,6 m, chỗ gãy không quá 85% thân chính
+    breakAt(it, y, d) {
+      const st = it.V.info.stem, lo = Math.min(3, st.top * 0.3), hi = st.top * 0.85;
+      const hy = (y - (it.y - 0.6)) / it.s;
+      if (d < it.trunkR + 3 && hy > lo) return Math.max(lo, Math.min(hi, hy + rand(-0.8, 0.8)));
+      if (RNG() < 0.35) return 0;
+      return Math.min(hi, rand(lo, lo + 5));
     }
 
     // Lực đẩy làm cây nghiêng rồi đung đưa tắt dần (lò xo + giảm chấn), cây to dao động chậm hơn
@@ -2172,7 +2287,7 @@ const Destructibles = (() => {
         it.state = 'scorched';
         const c = TREE_COLORS.scorched.clone().multiplyScalar(rand(0.85, 1.1));
         if (it.ci >= 0) it.V.crown.color(it.ci, c);
-        it.V.trunk.color(it.ti, new THREE.Color(0.5, 0.45, 0.4));
+        this.trunkColor(it, new THREE.Color(0.5, 0.45, 0.4));
       }
       void fx;
     }
@@ -2181,57 +2296,127 @@ const Destructibles = (() => {
     // một lần. Góc theo thời gian tính sẵn thành bảng để tiếng "rầm" chạm đất khớp đúng khung hình
     // Góc nằm của cây đổ theo hướng (ux, uz): thân tựa lên điểm đất cao nhất dọc đường đổ (dốc lên: nằm sớm, dốc xuống:
     // quá 90°), và dừng lại tựa vào tường / mái nhà nếu đổ vào nhà
-    restAngle(it, ux, uz) {
-      const L = Math.max(12, it.height), g0 = this.groundAt(it.x, it.z);
-      let maxA = -0.6;
+    restAngle(it, ux, uz, pivotY) {
+      const P = this.pivot(it);
+      if (pivotY !== undefined) P.y = pivotY;
+      const L = Math.max(12, it.height - it.brk * it.s), clear = it.trunkR * 0.6;
+      // thân: mỗi điểm cách chỗ gãy r phải nằm trên mặt đất tại đó (dốc lên: nằm sớm; gãy cao: khúc ngọn chúi
+      // quá 90°, đầu gãy tựa trên gốc cụt, ngọn cắm đất)
+      let th1 = Math.PI / 2 + 0.9;
       for (const f of [0.2, 0.35, 0.5, 0.65, 0.8, 1]) {
-        const r = L * f;
-        maxA = Math.max(maxA, Math.atan2(this.groundAt(it.x + ux * r, it.z + uz * r) - g0, r));
+        const r = L * f, g = this.groundAt(P.x + ux * r, P.z + uz * r) - 0.6 + clear;
+        th1 = Math.min(th1, Math.acos(Math.max(-1, Math.min(1, (g - P.y) / r))));
       }
-      let th1 = Math.max(0.35, Math.min(Math.PI / 2 + 0.6, Math.PI / 2 - 0.06 - maxA));
+      // tán: cành lá chống đỡ khúc ngọn (tán bẹp ~45%), thân nằm chếch lên chứ không đè tán lún nửa xuống đất
+      const cn = it.V.info.canopy;
+      if (cn) {
+        const D = (cn.dc - it.brk) * it.s, Rc = cn.rc * it.s;
+        if (D > 4) {
+          const g = this.groundAt(P.x + ux * D, P.z + uz * D) - 0.6;
+          th1 = Math.min(th1, Math.acos(Math.max(-1, Math.min(1, (g + Rc * 0.55 - P.y) / D))));
+        }
+      }
+      th1 = Math.max(0.35, th1);
       if (this.solidHit) {
-        const y0 = it.y - 0.6, r0 = L * 0.15;
+        const r0 = L * 0.15, r1 = L * 0.92;
         for (let th = 0.12; th < th1; th += 0.05) {
-          const sn = Math.sin(th), cs = Math.cos(th), r1 = L * 0.92;
-          if (this.solidHit(it.x + ux * r0 * sn, y0 + r0 * cs, it.z + uz * r0 * sn, it.x + ux * r1 * sn, y0 + r1 * cs, it.z + uz * r1 * sn)) { th1 = Math.max(0.1, th - 0.05); break; }
+          const sn = Math.sin(th), cs = Math.cos(th);
+          if (this.solidHit(P.x + ux * r0 * sn, P.y + r0 * cs, P.z + uz * r0 * sn, P.x + ux * r1 * sn, P.y + r1 * cs, P.z + uz * r1 * sn)) { th1 = Math.max(0.1, th - 0.05); break; }
         }
       }
       return th1;
     }
-    // Ma trận cây nghiêng góc ang theo trục nằm ngang (ax, az) quanh gốc
-    fallMatrix(it, ax, az, ang) {
-      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(ax, 0, az), ang);
-      const m = new THREE.Matrix4().makeRotationFromQuaternion(q).multiply(new THREE.Matrix4().makeRotationY(it.rot));
-      m.scale(new THREE.Vector3(it.s, it.s, it.s));
-      m.setPosition(it.x, it.y - 0.6, it.z);
-      return m;
+    // Tư thế nằm: góc + độ rơi. Khúc ngọn ngắn so với gốc cụt (không với tới đất khi còn dính bản lề thớ gỗ) thì
+    // lật ngang rồi tuột khỏi đầu gốc cụt, rơi thẳng xuống nằm trên đất cạnh gốc
+    restPose(it, ux, uz) {
+      let th1 = this.restAngle(it, ux, uz), drop = 0;
+      if (it.brk) {
+        const P = this.pivot(it), L = Math.max(12, it.height - it.brk * it.s);
+        const clear = it.trunkR * 0.6, h = P.y - (this.groundAt(P.x, P.z) - 0.6) - clear;
+        if (h > 2 && (L < h * 1.3 || th1 > Math.PI / 2 + 0.8)) { drop = h; th1 = this.restAngle(it, ux, uz, P.y - h); }
+      }
+      return { th1, drop };
     }
-    // Điểm trên thân cây ở phần u (0 gốc .. 1 ngọn) — cây đã đổ thì nằm dọc theo hướng đổ, không đứng thẳng
+    // Điểm xoay khi đổ: chỗ gãy trên thân (đúng tâm thân cong tại độ cao đó) / gốc nếu bật cả rễ
+    pivot(it) {
+      if (!it.brk) return new THREE.Vector3(it.x, it.y - 0.6, it.z);
+      const c = stemAt(it.V.info, it.brk);
+      return new THREE.Vector3(c.x, it.brk, c.z).applyMatrix4(it.base);
+    }
+    // Ma trận cây (khúc ngọn nếu gãy) nghiêng góc ang theo trục nằm ngang (ax, az) quanh điểm xoay
+    fallMatrix(it, ax, az, ang) {
+      const P = this.pivot(it);
+      const R = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(ax, 0, az), ang));
+      return new THREE.Matrix4().makeTranslation(P.x, P.y, P.z).multiply(R).multiply(new THREE.Matrix4().makeTranslation(-P.x, -P.y, -P.z)).multiply(it.base);
+    }
+    // Dăm gỗ ở vết gãy, toạ độ cục bộ của cây: đầu gốc cụt (dăm chĩa lên) / đầu khúc ngọn (lật ngược, dăm chĩa xuống)
+    capLocal(it, top) {
+      const c = stemAt(it.V.info, it.brk);
+      return new THREE.Matrix4().compose(new THREE.Vector3(c.x, it.brk, c.z),
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), top ? Math.PI : 0), new THREE.Vector3(c.r * 1.06, c.r * 1.1, c.r * 1.06));
+    }
+    // Đặt tư thế khúc ngọn / cả cây (thân + tán + dăm gỗ đầu gãy)
+    setPose(it, m, dy) {
+      if (dy) m = new THREE.Matrix4().makeTranslation(0, -dy, 0).multiply(m);
+      it.V.trunk.set(it.ti, m);
+      if (it.ci >= 0) { if (it.crownGone) it.V.crown.hide(it.ci); else it.V.crown.set(it.ci, m); }
+      if (it.brk && it.capT >= 0) this.caps.set(it.capT, m.clone().multiply(this.capLocal(it, true)));
+    }
+    // Gốc cụt đứng lại tại chỗ (theo mặt đất hiện tại)
+    placeStump(it) {
+      if (!it.brk) return;
+      it.V.stump.set(it.si, it.base);
+      this.caps.set(it.capS, it.base.clone().multiply(this.capLocal(it, false)));
+    }
+    // Áp chỗ gãy: thân bỏ phần dưới chỗ gãy, gốc cụt hiện phần dưới, dăm gỗ ở 2 đầu gãy. brk = 0: bật cả gốc (ẩn gốc cụt)
+    applyBreak(it, brk) {
+      it.brk = brk > 0 ? brk : 0;
+      const tb = it.V.trunk.mesh.geometry.attributes.brk;
+      tb.setX(it.ti, it.brk); tb.needsUpdate = true;
+      if (!it.brk) {
+        if (it.si >= 0) it.V.stump.hide(it.si);
+        if (it.capS >= 0) { this.caps.hide(it.capS); this.caps.hide(it.capT); }
+        return;
+      }
+      if (it.si < 0) it.si = it.V.stump.add(it.base, it.tcol);
+      if (it.capS < 0) { it.capS = this.caps.add(it.base, it.tcol); it.capT = this.caps.add(it.base, it.tcol); }
+      if (it.si < 0 || it.capT < 0) { it.brk = 0; tb.setX(it.ti, 0); return; }   // hết chỗ trong bể (không xảy ra): đổ cả cây
+      const sb = it.V.stump.mesh.geometry.attributes.brk;
+      sb.setX(it.si, it.brk); sb.needsUpdate = true;
+      this.trunkColor(it, it.tcol);
+      this.placeStump(it);
+    }
+    // Điểm trên thân cây ở phần u (0 gốc .. 1 ngọn) — cây đã đổ thì khúc trên chỗ gãy nằm dọc theo hướng đổ
     trunkPoint(it, u) {
-      const d = it.height * u, F = it.fall;
-      if (!it.fallen || !F) return { x: it.x, y: it.y + d, z: it.z };
-      const sn = Math.sin(F.th1), cs = Math.cos(F.th1);
-      return { x: it.x + F.ux * d * sn, y: it.y - 0.6 + d * cs + 1.5, z: it.z + F.uz * d * sn };
+      const d = it.height * u, F = it.fall, hb = it.brk * it.s;
+      if (!it.fallen || !F || d < hb) return { x: it.x, y: it.y + d, z: it.z };
+      const P = this.pivot(it);
+      P.y -= F.drop || 0;
+      const sn = Math.sin(F.th1), cs = Math.cos(F.th1), dd = d - hb;
+      return { x: P.x + F.ux * dd * sn, y: P.y + dd * cs + 1.5, z: P.z + F.uz * dd * sn };
     }
     fell(it, dx, dz, fx, o) {
       const reorient = !!(o && o.reorient);
       if (it.fallen && !reorient) return;
       it.fallen = true;
       this.reweigh(it);
+      // chỗ gãy làm tròn theo bước đồng bộ (1/25 chiều cao) -> máy chủ phòng & máy khác gãy đúng cùng một chỗ
+      const H = it.V.info.height, q = o && o.brk > 0 ? Math.max(1, Math.min(25, Math.round(o.brk / H * 25))) : 0;
+      this.applyBreak(it, q / 25 * H);
       // không có hướng đẩy (nổ ngay gốc): đổ theo hướng cố định của cây (trục quay 0 -> cây đứng nguyên)
       if (Math.hypot(dx, dz) < 1e-6) { const a0 = it.rot + 1.3; dx = Math.cos(a0); dz = Math.sin(a0); }
       const len = Math.hypot(dx, dz);
       const ux = dx / len, uz = dz / len;
       it.fallSec = ((Math.round(Math.atan2(uz, ux) / (Math.PI / 8)) % 16) + 16) % 16;
-      const L = Math.max(12, it.height), a = 1.5 * 78 / L, th1 = this.restAngle(it, ux, uz);
+      const L = Math.max(12, it.height - it.brk * it.s), a = 1.5 * 78 / L, rp = this.restPose(it, ux, uz);
+      // rơi khỏi gốc cụt: bản lề lật tới nằm ngang (theo góc nằm cuối) rồi rơi tự do
+      const th1 = rp.drop ? Math.min(rp.th1, Math.PI / 2) : rp.th1, drop = rp.drop, dropDur = drop ? Math.sqrt(2 * drop / 78) : 0;
       if (reorient) {
         // xoay lại hướng nằm cho khớp chủ phòng: đặt thẳng tư thế cuối
         const fi = this.falling.indexOf(it);
         if (fi >= 0) this.falling.splice(fi, 1);
-        it.fall = { ax: uz, az: -ux, ux, uz, t: 1, dur: 0, tab: null, th1, landed: true };
-        const m = this.fallMatrix(it, uz, -ux, th1);
-        it.V.trunk.set(it.ti, m);
-        if (it.ci >= 0) { if (it.crownGone) it.V.crown.hide(it.ci); else it.V.crown.set(it.ci, m); }
+        it.fall = { ax: uz, az: -ux, ux, uz, t: 1, dur: 0, tab: null, th1: rp.th1, drop, dropDur: 0, landed: true };
+        this.setPose(it, this.fallMatrix(it, uz, -ux, rp.th1), drop);
         return;
       }
       const crush = !!(o && o.crush);
@@ -2244,12 +2429,21 @@ const Destructibles = (() => {
         tab.push(Math.min(th, th1));
       }
       const dur = (tab.length - 1) * dt;
-      it.fall = { ax: uz, az: -ux, ux, uz, t: 0, dur, tab, th1 };
+      it.fall = { ax: uz, az: -ux, ux, uz, t: 0, dur, tab, th1, drop, dropDur, th2: rp.th1 };
       this.falling.push(it);
-      dustBurst(fx, it.x, it.y, it.z, 2, 8, [0.6, 0.55, 0.45]);
-      // thớ gỗ gãy toác ở gốc: dăm gỗ văng
-      if (it.kind !== 'cactus') chunks(fx, it.x, it.y + 3, it.z, crush ? 3 : 5, 1.3, [0.46, 0.34, 0.22], 25);
-      sfx('treeFall', it.x, it.y + 4, it.z, Math.min(1.2, it.height / 40), { dur, h: it.height, crush });
+      this.setPose(it, this.fallMatrix(it, uz, -ux, th));
+      const P = this.pivot(it);
+      if (it.brk) {
+        // gãy ngang thân: dăm gỗ & vỏ cây văng ra từ vết gãy, bụi vụn gỗ
+        chunks(fx, P.x, P.y, P.z, crush ? 6 : 9, 1.1, [0.74, 0.6, 0.42], 30);
+        chunks(fx, P.x, P.y, P.z, 4, 1.4, [0.36, 0.28, 0.2], 22);
+        dustBurst(fx, P.x, P.y, P.z, 2, 5, [0.7, 0.62, 0.5]);
+      } else {
+        // bật cả gốc: đất cát tung lên quanh gốc rễ
+        dustBurst(fx, it.x, it.y, it.z, 3, 9, [0.6, 0.55, 0.45]);
+        if (it.kind !== 'cactus') chunks(fx, it.x, it.y + 2, it.z, crush ? 4 : 6, 1.6, [0.42, 0.36, 0.28], 20);
+      }
+      sfx('treeFall', it.x, it.y + 4, it.z, Math.min(1.2, it.height / 40), { dur: dur + dropDur, h: it.height, crush });
     }
     // Camera bám đuôi góc thấp: cây đứng chắn giữa camera và xe mình (hoặc sát ống kính) tạm ẩn, ra khỏi đường nhìn thì hiện lại
     setCameraView(cam, foc) {
@@ -2319,11 +2513,12 @@ const Destructibles = (() => {
               continue;
             }
             it.y = ny;
+            it.base.setPosition(it.x, ny - 0.6, it.z);
+            this.placeStump(it);
             if (!F || this.falling.includes(it)) continue;      // đang đổ: bảng góc giữ nguyên, gốc đã hạ theo it.y
-            F.th1 = this.restAngle(it, F.ux !== undefined ? F.ux : -F.az, F.uz !== undefined ? F.uz : F.ax);
-            const m = this.fallMatrix(it, F.ax, F.az, F.th1);
-            it.V.trunk.set(it.ti, m);
-            if (it.ci >= 0 && !it.crownGone) it.V.crown.set(it.ci, m);
+            const rp = this.restPose(it, F.ux !== undefined ? F.ux : -F.az, F.uz !== undefined ? F.uz : F.ax);
+            F.th1 = F.th2 = rp.th1; F.drop = rp.drop;
+            this.setPose(it, this.fallMatrix(it, F.ax, F.az, F.th1), F.drop);
           }
         }
       }
@@ -2333,7 +2528,9 @@ const Destructibles = (() => {
       if (Math.hypot(vx, vz) < 6) return;
       for (const it of this.near(x, z, r)) {
         if (it.fallen || it.kind === 'cactus' && RNG() < 0.5) continue;
-        this.fell(it, vx, vz, fx, { crush: true, v: Math.hypot(vx, vz) });
+        // xe húc: bật gốc rễ hoặc gãy ngang tầm thân xe
+        const lo = Math.min(3, it.V.info.stem.top * 0.3);
+        this.fell(it, vx, vz, fx, { crush: true, v: Math.hypot(vx, vz), brk: RNG() < 0.5 ? 0 : rand(lo, lo + 3) });
       }
     }
     update(dt, fx) {
@@ -2373,24 +2570,41 @@ const Destructibles = (() => {
         const F = it.fall;
         F.t += dt;
         // góc đổ theo bảng tính sẵn; sau khi chạm đất: tán & thân nảy lên một chút rồi nằm yên
-        const p = F.tab ? Math.min(1, F.t / (F.dur + 0.4)) : Math.min(1, F.t / F.dur);
-        let ang;
+        const dd = F.dropDur || 0;
+        const p = F.tab ? Math.min(1, F.t / (F.dur + dd + 0.4)) : Math.min(1, F.t / F.dur);
+        let ang, dy = 0;
         if (!F.tab) ang = (Math.PI / 2 - 0.06) * p * p;
         else if (F.t < F.dur) { const u = F.t * 60, j = Math.floor(u); ang = F.tab[j] + (F.tab[Math.min(F.tab.length - 1, j + 1)] - F.tab[j]) * (u - j); }
-        else { const tb = F.t - F.dur; ang = F.th1 - (tb < 0.4 ? 0.05 * Math.sin(Math.PI * tb / 0.4) : 0); }
-        if (F.tab && !F.landed && F.t >= F.dur) {
-          F.landed = true;
-          dustBurst(fx, it.x + F.az * -it.height * 0.6, it.y, it.z + F.ax * it.height * 0.6, 3, 10, [0.62, 0.56, 0.46]);
+        else if (F.t < F.dur + dd) {
+          // tuột khỏi gốc cụt: rơi tự do, vừa rơi vừa ngả nốt về góc nằm cuối
+          const tb = F.t - F.dur, k = tb / dd;
+          dy = Math.min(F.drop, 0.5 * 78 * tb * tb); ang = F.th1 + (F.th2 - F.th1) * k * k;
+        } else {
+          const tb = F.t - F.dur - dd;
+          dy = F.drop || 0; ang = (F.th2 !== undefined ? F.th2 : F.th1) - (tb < 0.4 ? 0.05 * Math.sin(Math.PI * tb / 0.4) : 0);
         }
-        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(F.ax, 0, F.az), ang);
-        const m = new THREE.Matrix4().makeRotationFromQuaternion(q).multiply(new THREE.Matrix4().makeRotationY(it.rot));
-        m.scale(new THREE.Vector3(it.s, it.s, it.s));
-        m.setPosition(it.x, it.y - 0.6, it.z);
-        it.V.trunk.set(it.ti, m);
-        if (it.ci >= 0) { if (it.crownGone) it.V.crown.hide(it.ci); else it.V.crown.set(it.ci, m); }
+        if (F.tab && !F.landed && F.t >= F.dur + dd) {
+          if (F.th2 !== undefined) F.th1 = F.th2;
+          F.landed = true;
+          // tán đập xuống đất: bụi cuộn lên chỗ tán + lá & cành nhỏ văng tung toé, tán xơ xác bớt
+          const cp = this.trunkPoint(it, 0.7);
+          dustBurst(fx, cp.x, Math.min(cp.y, this.groundAt(cp.x, cp.z) + 4), cp.z, 3, 10, [0.62, 0.56, 0.46]);
+          if (it.ci >= 0 && !it.crownGone) {
+            this.stripLeaves(it, 0.12, cp.x, cp.y, cp.z, fx);
+            if (fx && fx.smoke) {
+              const leafC = it.state === 'ok' ? [0.3, 0.4, 0.17] : [0.45, 0.36, 0.2];
+              for (let k = 0; k < 22; k++) {
+                const tp = this.trunkPoint(it, rand(0.5, 1));
+                fx.smoke.add({ x: tp.x + rand(-7, 7) * it.s, y: tp.y + rand(0, 4), z: tp.z + rand(-7, 7) * it.s, vx: rand(-10, 10), vy: rand(4, 14), vz: rand(-10, 10),
+                  size: rand(0.6, 1.4), grow: 0, drag: 2.4, grav: 16, life: rand(1.8, 3.2), alpha: 0.95, fadeIn: 0.01, c0: leafC, cell: 2 });
+              }
+            }
+          }
+        }
+        this.setPose(it, this.fallMatrix(it, F.ax, F.az, ang), dy);
         if (p >= 1) {
           this.falling.splice(i, 1);
-          if (!F.tab) dustBurst(fx, it.x + F.az * -it.height * 0.6, it.y, it.z + F.ax * it.height * 0.6, 3, 10, [0.62, 0.56, 0.46]);
+          if (!F.tab) { const cp = this.trunkPoint(it, 0.7); dustBurst(fx, cp.x, this.groundAt(cp.x, cp.z), cp.z, 3, 10, [0.62, 0.56, 0.46]); }
         }
       }
       for (let i = this.burning.length - 1; i >= 0; i--) {
@@ -2424,7 +2638,7 @@ const Destructibles = (() => {
           if (it.ci >= 0 && !it.crownGone) { it.crownGone = true; it.V.crown.hide(it.ci); }
           it.state = 'burnt';
           this.reweigh(it);
-          it.V.trunk.color(it.ti, TREE_COLORS.charred);
+          this.trunkColor(it, TREE_COLORS.charred);
           if (!it.fallen) this.push(it, rand(-1, 1), rand(-1, 1), 0.02);
           // Thân cây cháy rụi còn âm ỉ bốc khói một lúc lâu
           it.smoulder = rand(18, 30);
@@ -2435,6 +2649,7 @@ const Destructibles = (() => {
     reset() {
       for (const it of this.items) {
         it.heat = 0; it.state = 'ok'; it.fallen = false; it.crownGone = false; it.fall = null; it.leaves = 1; it.sw = null; it.swaying = false;
+        this.applyBreak(it, 0);
         it.V.trunk.set(it.ti, it.base); if (it.ci >= 0) it.V.crown.set(it.ci, it.base);
         this.setColor(it, it.tint);
       }
