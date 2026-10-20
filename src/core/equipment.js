@@ -1085,7 +1085,8 @@
       return SMOKE_R * (0.3 + 0.7 * grow) * (0.55 + 0.45 * fade);
     }
     // 3 đám khói xếp ngang trước mũi xe u (hoặc tại tâm at = { x, z, a }); trả về { x, z, a } để gửi mạng
-    function deploy(u, at) {
+    // game (tùy chọn): để tính khoảng cách tới người chơi cho tiếng phóng khói
+    function deploy(u, at, game) {
       const a = at ? at.a : (u.bodyAngle || 0);
       const fx = -Math.sin(a), fz = -Math.cos(a);   // mũi xe
       const cx = at ? at.x : u.x + fx * 55, cz = at ? at.z : u.z + fz * 55;
@@ -1093,7 +1094,12 @@
         smokes.push({ x: cx + fz * i * 46, z: cz - fx * i * 46, t: -0.25 * Math.abs(i), team: u.team, src: u });
       }
       const S = typeof window !== 'undefined' && window.soundEngine;
-      if (S && typeof S.playMetalClank === 'function') { S.playMetalClank(0, 0.35, 260); S.playMetalClank(0.08, 0.3, 300); }
+      if (S && typeof S.playSmokeLaunch === 'function') {
+        // nghe theo khoảng cách từ xe phóng tới người chơi (xe mình: 0)
+        const me = game && game.player;
+        const d = !me || me === u ? 0 : Math.max(1, Math.hypot(u.x - me.x, u.z - me.z));
+        if (d < 2400) S.playSmokeLaunch(d, { x: u.x, z: u.z });
+      }
       return { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10, a: Math.round(a * 1000) / 1000 };
     }
     // Đường ngắm (x1,z1)-(x2,z2) xuyên qua đám khói dày
@@ -1144,7 +1150,7 @@
       if (!(u.smokeLeft > 0)) return null;
       u.smokeLeft--;
     }
-    return MAIN_SMOKE.deploy(u, at);
+    return MAIN_SMOKE.deploy(u, at, game);
   }
   // Đường ngắm (x1,z1)-(x2,z2) xuyên qua đám khói dày
   function smokeBlocks(x1, z1, x2, z2) { return MAIN_SMOKE.blocks(x1, z1, x2, z2); }

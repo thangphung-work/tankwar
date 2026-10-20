@@ -155,7 +155,7 @@
 <div class="lab-frame lab-inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
 
 <script src="three.min.js"></script>
-<script src="src/core/audio.js?v=20261020cfire11"></script>
+<script src="src/core/audio.js?v=20261020snd4"></script>
 <script src="src/core/wading_audio.js?v=20261020flood1"></script>
 <script src="src/entities/tank_models.js?v=20261019i"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261020fine1"></script>
@@ -164,16 +164,16 @@
 <script src="src/entities/tanks/spg_arbalest.js?v=20261020fine1"></script>
 <script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
 <script src="src/core/game_timing.js?v=20261019wall2"></script>
-<script src="src/core/ballistics.js?v=20261020blind1"></script>
+<script src="src/core/ballistics.js?v=20261020snd4"></script>
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
-<script src="src/entities/spg.js?v=20261020ammo1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020m5"></script>
+<script src="src/entities/spg.js?v=20261020m7"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020m7"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
 <script src="src/gameplay/vehicle_damage.js?v=20261020cfire11"></script>
-<script src="src/core/equipment.js?v=20261020ammo1"></script>
+<script src="src/core/equipment.js?v=20261020snd4"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
-<script src="src/gameplay/destructibles.js?v=20261020m5"></script>
+<script src="src/gameplay/destructibles.js?v=20261020m7"></script>
 <script>
 (function () {
   // ===========================================================================
@@ -1450,7 +1450,7 @@
   function applyHit(p, hit, vel) {
     if (hit.hitType === 'WATER') {
       fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12);
-      playBoom(hit.point, 'GROUND', p.ammo === 'GATLING_BULLET' || p.ammo === 'SCOUT_BULLET' ? p.ammo : 'CLUSTER_SUBMUNITION');
+      playBoom(hit.point, 'WATER', p.ammo, p.heavy);
       return;
     }
     const onBerm = EX.berm && hit.object === EX.berm.mesh;
@@ -1547,7 +1547,7 @@
 
       // Đạn chùm: kích nổ trên không tầm cao (High Airburst ~20m) rồi rải chùm bom con diện rộng
       if (p.airburst && vel.y < 0 && pos.y <= 165) {
-        fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER', 'AIRBURST', { heavy: true });
+        fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER', 'AIRBURST', { heavy: true, dir: { x: vel.x, y: vel.y, z: vel.z } });
         playBoom(pos, 'AIRBURST', 'CLUSTER');
         // Đạn con giữ ~80% vận tốc đạn mẹ + bị đẩy tỏa tròn quanh trục bay, dải băng ổn định cản gió mạnh
         const subCount = 18;

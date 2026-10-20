@@ -732,6 +732,7 @@ const EnvDamage = (() => {
       this.rocks.damageAt(x, y, z, A, info, fx, events);
       this.bridges.damageAt(x, y, z, A, info, fx, events);
       const SS = this.T.strongholdSet;
+      if (SS) this.fragmentScars(SS, x, y, z, ammo, heavy);
       if (SS && SS.covers(x, z, 8)) {
         if (info.t === 'WALL') this.concreteHit(x, y, z, info.nx, info.nz, ammo, A);
         else if (A.blast > 0.15 && A.r > 0) scorchMound(SS, x, y, z, Math.max(6, A.r * 0.9), A.blast);
@@ -742,6 +743,44 @@ const EnvDamage = (() => {
         if (br && Math.abs(y - br.y) < 3) this.concreteHit(x, br.y, z, 0, 0, ammo, A, true);
       }
       return events;
+    }
+
+    // Mảnh văng của quả nổ gần cứ điểm găm rỗ mặt bê tông (trước đây chỉ phát trúng thẳng mới để lại vết). Dò tia từ tâm nổ:
+    // tự đúng che chắn & mặt quay về phía nổ; mật độ thưa theo bình phương khoảng cách; cộng dồn: rỗ -> mẻ dần
+    fragmentScars(SS, x, y, z, ammo, heavy) {
+      const F0 = { NORMAL: [240, 60], HE: [280, 80], RPG: [110, 20], ANTI_TANK_MISSILE: [140, 26], CLUSTER_SUBMUNITION: [90, 20] }[ammo];
+      if (!F0) return;
+      const fr = F0[0] * (heavy ? 1.6 : 1), rays = Math.round(F0[1] * (heavy ? 1.4 : 1));
+      if (SS.near && !SS.near(x, z, fr)) return;
+      const oy = y + 2;
+      // số ngẫu nhiên sinh từ toạ độ điểm nổ (đã làm tròn như gói ENV_HIT) -> mọi máy vẽ vết ở cùng chỗ
+      let sd = (Math.floor(x * 10) * 73856093 ^ Math.floor(y * 10) * 19349663 ^ Math.floor(z * 10) * 83492791) >>> 0;
+      const rnd = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+      for (let i = 0; i < rays; i++) {
+        const az = rnd() * 6.283, el = Math.asin(Math.pow(rnd(), 1.6) * 0.82) + 0.02, ce = Math.cos(el);
+        const ex = x + Math.cos(az) * ce * fr, ey = oy + Math.sin(el) * fr, ez = z + Math.sin(az) * ce * fr;
+        // chỉ dò từng bước trong đoạn tia cắt vùng bao cứ điểm (dò cả tia ~380 đơn vị mỗi bước 2 đơn vị: ~15 ms / quả 155)
+        let t0 = 1, t1 = 0;
+        for (const K of SS.items) {
+          const R = (typeof Strongholds !== 'undefined' && Strongholds.S && Strongholds.S.REACH) || 120;
+          const dx = ex - x, dz = ez - z, fx = x - K.x, fz = z - K.z;
+          const a = dx * dx + dz * dz, b = 2 * (fx * dx + fz * dz), c = fx * fx + fz * fz - R * R;
+          const disc = b * b - 4 * a * c;
+          if (a < 1e-9 || disc < 0) continue;
+          const sq = Math.sqrt(disc), ta = (-b - sq) / (2 * a), tb = (-b + sq) / (2 * a);
+          if (tb < 0 || ta > 1) continue;
+          t0 = Math.min(t0, Math.max(0, ta)); t1 = Math.max(t1, Math.min(1, tb));
+        }
+        if (t1 <= t0) continue;
+        const P = (t) => [x + (ex - x) * t, oy + (ey - oy) * t, z + (ez - z) * t];
+        const [ax, ay, az2] = P(t0), [bx, by, bz] = P(t1);
+        const h = SS.segmentHit(ax, ay, az2, bx, by, bz);
+        if (!h || h.type !== 'WALL' || !h.normal) continue;
+        const d = Math.hypot(h.x - x, h.y - oy, h.z - z);
+        if (d < 4) continue;
+        const n = h.normal, e = 0.05 + 0.18 * Math.max(0, 1 - d / fr);
+        this.scars.hit('c', 3, h.x, h.y, h.z, n.nx || 0, n.ny || 0, n.nz || 0, e, (v) => v < 0.35 ? 'c_pock' : v < 1.3 ? 'c_chip' : 'c_spall', { e0: 0.08 });
+      }
     }
 
     // Bê tông (cứ điểm / mặt cầu): rỗ đạn -> mẻ vỡ -> bong mảng lộ cốt thép, cộng dồn theo ô 5 đơn vị

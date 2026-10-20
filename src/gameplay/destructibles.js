@@ -2602,6 +2602,19 @@ const Destructibles = (() => {
     CLUSTER: { hole: 2.8, crater: 5.4, soot: 14, glass: 55, sp: 1.0, sr: 20, sd: 0.24 },
     HE: { hole: 4, crater: 7.5, soot: 21, glass: 90, sp: 1.7, sr: 28, sd: 0.34 }
   };
+  // MẢNH VĂNG BAY XA của vỏ đạn nổ (đơn vị game, 8 = 1 m): fr = tầm còn đủ sức găm rỗ mặt tường, rays = số tia dò
+  // (mỗi tia đại diện một chùm mảnh). Ngoài đời đạn 120mm nổ phá rỗ dày tường trong ~10-15 m, lác đác tới ~30 m;
+  // lựu pháo 155mm xa hơn nữa. Đầu nổ lõm / bom con ít mảnh, tầm ngắn. Đạn chùm tách vỏ trên không: không có mảnh
+  const FRAG = {
+    NORMAL: { fr: 240, rays: 220 }, HE: { fr: 280, rays: 280 },
+    RPG: { fr: 110, rays: 60 }, ANTI_TANK_MISSILE: { fr: 140, rays: 80 },
+    CLUSTER_SUBMUNITION: { fr: 90, rays: 60 }
+  };
+  function fragInfo(ammo, heavy) {
+    const f = FRAG[ammo];
+    if (!f) return null;
+    return heavy ? { fr: f.fr * 1.6, rays: Math.round(f.rays * 1.8) } : f;
+  }
   function bldInfo(ammo, heavy) {
     const a = BLD[ammo] || BLD.NORMAL;
     if (!heavy) return a;
@@ -2805,6 +2818,7 @@ const Destructibles = (() => {
         if (sm) shatterMat.normalScale.set(0.9, 0.9);
         if (key !== 'office') { facadeGrime(mat, key === 'officeB' ? 0.6 : 1); facadeGrime(shatterMat, 1); }
         this.panelKits[key] = new FractureKit(this.group, mat, cracked, counts[key], { variants: 1, shatterMat, panelGeo: reliefPanelGeo(key) });
+        this.panelKits[key].styleKey = key;   // kiểu mặt tiền -> vị trí ô cửa (RELIEF) cho vết mảnh văng
       }
       // Lưới mảng vỡ gộp cả nhà chung 1 vật liệu: nhà có tầng trệt khác tầng trên dùng atlas 2 nửa (xem atlasTex / panelGeo)
       for (const key of dmgKeys) {
@@ -3614,6 +3628,24 @@ const Destructibles = (() => {
       return list.length ? merge(list) : null;
     }
     // Gộp hình mọi mảng tường đã trúng đạn của 1 nhà thành 1 mesh (+1 mesh cốt thép): ít draw call
+    // Tính trước hình các mảng tường vừa đổi, dừng khi hết ngân sách thời gian (ms). Trả về true nếu đã xong hết
+    prepPanels(B, budget) {
+      const t0 = performance.now();
+      for (const m of B.dmgPanels) {
+        if (m.state === 'gone' || (B.cut && this.isCutMod(B, m))) continue;
+        const key = this.panelKey(B, m);
+        if (m.geoKey === key) continue;
+        if (performance.now() - t0 > budget) return false;
+        m.geo = this.panelGeo(B, m);
+        if (m.geoVer !== m.mk.ver) {
+          if (m.bar) m.bar.dispose();
+          m.bar = B.st.rc && m.mk.gone > 0 ? this.rebarGeo(B, m) : null;
+          m.geoVer = m.mk.ver;
+        }
+        m.geoKey = key;
+      }
+      return true;
+    }
     rebuildDamage(B) {
       const parts = [], bars = [];
       for (const m of B.dmgPanels) {
@@ -3774,10 +3806,15 @@ const Destructibles = (() => {
       const dir = dl > 1e-6 ? { x: info.dx / dl, y: info.dy / dl, z: info.dz / dl } : null;
       // Trúng thẳng: dò lại đúng mặt bị chạm từ hướng bay (mọi máy cùng điểm nổ chuẩn -> cùng kết quả)
       const direct = info.t === 'BUILDING' && dir ? this.segmentHit(x - dir.x * 30, y - dir.y * 30, z - dir.z * 30, x + dir.x * 4, y + dir.y * 4, z + dir.z * 4) : null;
-      const reach = Math.max(I.glass, I.sr, I.crater * 1.5, I.soot * 1.2) + 10;
+      // Kính: vỡ chắc chắn trong bán kính I.glass, thưa dần tới ~3 lần (xem blastNear)
+      const reach = Math.max(I.glass * 3, I.sr, I.crater * 1.5, I.soot * 1.2) + 10;
+      // Mảnh văng bay xa: dò tia từ tâm nổ, tia nào chạm mặt tường trong tầm thì găm rỗ đúng chỗ đó
+      // (tự đúng che chắn, mặt quay về phía vụ nổ, mật độ thưa dần theo bình phương khoảng cách)
+      const frags = this.fragmentRays(x, y, z, ammo, heavy, info);
       for (const B of this.items) {
         if (B.collapsed) continue;
-        if (Math.hypot(x - B.x, z - B.z) > Math.hypot(B.halfW, B.halfD) + reach) continue;
+        const fh = frags.get(B);
+        if (!fh && Math.hypot(x - B.x, z - B.z) > Math.hypot(B.halfW, B.halfD) + reach) continue;
         const ctx = { B, I, fx, touched: new Set(), changed: false, inside: false, floor: -1, glassFx: 0, ammo };
         let L = this.toLocal(B, x, y, z);
         if (direct && direct.B === B) { this.directHit(ctx, direct, dir); L = direct.L; }
@@ -3787,15 +3824,94 @@ const Destructibles = (() => {
           if (inBox) { ctx.inside = true; ctx.floor = Math.max(0, Math.min(B.floors - 1, Math.floor((L.y - 1.5) / B.FH))); }
         }
         this.blastNear(ctx, L);
+        if (fh) this.fragmentPocks(ctx, fh);
         if (ctx.changed) {
           events.hit = true;
-          this.rebuildDamage(B);
+          // Dựng lại hình tường chỉ là phần hiển thị (va chạm & đồng bộ mạng dùng lưới ô). Trúng thẳng: dựng ngay cho lỗ
+          // thủng hiện tức thì; nổ gần (kính vỡ, rỗ mảnh văng, bóc lở): gom lại dựng trong update() — một loạt pháo /
+          // chùm bom con quanh một tòa nhà không còn dựng lại hình từng quả (~8-25 ms mỗi lần)
+          if (direct && direct.B === B) { B.dmgPending = false; this.rebuildDamage(B); }
+          else B.dmgPending = true;
           const ev = this.checkStructure(B, fx);
           if (ev) events.push(ev);
           this.commitAll();
         }
       }
       return events;
+    }
+
+    // Tia mảnh văng từ tâm nổ -> Map(nhà -> [{ m, L, d, inside }]). Nổ chạm đất: mảnh văng tỏa ngang là chính (nửa dưới
+    // cắm xuống đất), góc ngóc lên thưa dần. Chạy trong withSeed (rand) -> mọi máy cùng kết quả
+    fragmentRays(x, y, z, ammo, heavy, info) {
+      const out = new Map();
+      const F = fragInfo(ammo, heavy);
+      if (!F || !this.items.length) return out;
+      // có nhà nào trong tầm không (đỡ dò tia vô ích)
+      if (!this.items.some(B => !B.collapsed && Math.hypot(x - B.x, z - B.z) < F.fr + Math.hypot(B.halfW, B.halfD))) return out;
+      const oy = y + 2;
+      let budget = 300;
+      for (let i = 0; i < F.rays; i++) {
+        const az = rand(0, 6.283);
+        const el = Math.asin(Math.pow(rand(0, 1), 1.6) * 0.82) + 0.02;
+        const ce = Math.cos(el);
+        const dx = Math.cos(az) * ce, dy = Math.sin(el), dz = Math.sin(az) * ce;
+        const h = this.segmentHit(x, oy, z, x + dx * F.fr, oy + dy * F.fr, z + dz * F.fr);
+        if (!h || h.part !== 'wall') continue;
+        const d = h.t * F.fr;
+        if (d < 4) continue;   // chính mặt tường bị nổ trúng thẳng: vết nổ đã khoét riêng
+        // mảnh xa mất dần sức: gần thì một chùm vết, xa chỉ lác đác
+        const n = 1 + Math.round(1.6 * Math.max(0, 1 - d / F.fr) * rand(0.5, 1.2));
+        const list = out.get(h.B) || [];
+        list.push({ m: h.m, L: h.L, d, inside: h.inside, n: Math.min(n, budget) });
+        out.set(h.B, list);
+        budget -= n;
+        if (budget <= 0) break;
+      }
+      return out;
+    }
+    // Điểm (hệ toạ độ nhà) trên mảng tường m có rơi vào ô cửa / cửa đi lõm của mặt tiền không (RELIEF, ảnh 128x128)
+    inOpening(B, m, L) {
+      const R = m.kit && m.kit.styleKey && RELIEF[m.kit.styleKey];
+      if (!R) return false;
+      const px = (L.x - m.lx) * m.ax + (L.z - m.lz) * m.az, py = L.y - m.ly;
+      const u = (px / B.st.bay + 0.5) * 128, v = (0.5 - py / B.FH) * 128;
+      return R.o.some(o => u > o[0] && u < o[2] && v > o[1] && v < o[3]);
+    }
+    // Vết mảnh văng: dán vết sứt nhỏ (5-20 cm) đúng chỗ chùm mảnh chạm, bỏ qua ô cửa; kính trúng mảnh thì vỡ.
+    // Không khoét lưới tường (ô lưới ~21 cm: vết hiện thành mảng bóc lở to, lại buộc dựng lại hình cả mảng tường).
+    // Tường tôn: mảnh xuyên thủng tấm tôn mỏng -> lỗ thủng thật (lỗ tối). Lưới tường không đổi -> mọi máy cùng trạng thái
+    fragmentPocks(ctx, hits) {
+      const { B } = ctx;
+      const layer = ctx.fx && ctx.fx.fragHoles;
+      const metal = B.st.mat === 'metal';
+      const tint = B.st.mat === 'adobe' ? [0.93, 0.8, 0.62] : B.st.mat === 'wood' ? [0.62, 0.48, 0.32] : B.st.mat === 'stone' ? [0.9, 0.88, 0.84] : [0.97, 0.95, 0.92];
+      for (const h of hits) {
+        const m = h.m;
+        if (m.state === 'gone') continue;
+        if (m.state === 'ok' && rand(0, 1) < 0.5) this.shatter(B, m, ctx);
+        if (layer) {
+          // vết dán chỉ là hình (không đổi trạng thái nhà): không tiêu dãy RNG đồng bộ mạng, mà sinh số từ toạ độ điểm chạm
+          // (giống hệt nhau trên mọi máy) -> mọi người chơi thấy vết ở cùng chỗ
+          let sd = (Math.floor(h.L.x * 97) ^ Math.floor(h.L.y * 131) * 7919 ^ Math.floor(h.L.z * 173) * 104729) >>> 0;
+          const rnd = (lo, hi) => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return lo + (sd / 4294967296) * (hi - lo); };
+          // chùm mảnh tỏa rộng dần theo khoảng cách; mảnh gần to & nhiều hơn
+          const spread = 1 + h.d * 0.03, near = Math.max(0, 1 - h.d / 200);
+          const cnt = h.n;
+          const nIn = h.inside ? -1 : 1, nw = this.dirToWorld(B, m.ox * nIn, 0, m.oz * nIn);
+          for (let k = 0; k < cnt; k++) {
+            const u = rnd(-1, 1) * spread, v = rnd(-1, 1) * spread * 0.8;
+            const L = { x: h.L.x + m.ax * u, y: h.L.y + v, z: h.L.z + m.az * u };
+            if (Math.abs((L.x - m.lx) * m.ax + (L.z - m.lz) * m.az) > B.st.bay / 2 || Math.abs(L.y - m.ly) > B.FH / 2) continue;
+            if (!h.inside && this.inOpening(B, m, L)) continue;
+            if (m.mk && !this.cellSolid(B, m, L)) continue;
+            const w = this.toWorld(B, L.x, L.y, L.z);
+            const sz = metal ? rnd(0.35, 0.7) : rnd(0.8, 1.6) * (1 + 0.5 * near);
+            const sh = rnd(0.85, 1.05);
+            const col = metal ? null : new THREE.Color(tint[0] * sh, tint[1] * sh, tint[2] * sh);
+            (metal && ctx.fx.wallHoles ? ctx.fx.wallHoles : layer).add(w.x, w.y, w.z, nw.x, 0, nw.z, sz, col);
+          }
+        }
+      }
     }
 
     directHit(ctx, D, dir) {
@@ -4003,10 +4119,17 @@ const Destructibles = (() => {
         const d3 = Math.hypot(ex, ey, dp);
         const inner = pz < 0;                                  // điểm nổ ở phía trong nhà so với mảng này
         const sameRoom = ctx.inside && m.floor === ctx.floor;  // nổ trong phòng kín: sóng nổ dội khắp tầng
-        if (d3 > I.glass && !sameRoom) continue;
-        // kính: mảng quay về phía vụ nổ vỡ ở bán kính đầy đủ, mảng quay lưng chỉ vỡ khi rất gần
+        if (d3 > I.glass * 3 && !sameRoom) continue;
+        // kính: mảng quay về phía vụ nổ vỡ ở bán kính đầy đủ, mảng quay lưng chỉ vỡ khi rất gần.
+        // Ngoài I.glass vẫn vỡ nhưng thưa dần tới ~3 lần bán kính (kính cửa sổ vỡ ở áp suất dư chỉ ~1-7 kPa: sóng nổ của
+        // ~2 kg thuốc nổ còn làm vỡ kính cách 15-20 m; trước đây chỉ vỡ trong ~7 m rồi dừng cụt)
         const facing = inner === ctx.inside ? 1 : 0.4;
-        if ((m.state === 'ok') && (sameRoom || d3 < I.glass * facing)) this.shatter(B, m, ctx, inner, sameRoom ? 1 : 1 - d3 / (I.glass * facing));
+        const gR = I.glass * facing;
+        if (m.state === 'ok') {
+          const pG = sameRoom || d3 < gR ? 1 : d3 < gR * 3 ? Math.pow(1 - (d3 - gR) / (2 * gR), 2) : 0;
+          if (pG >= 1 || (pG > 0 && rand(0, 1) < pG)) this.shatter(B, m, ctx, inner, sameRoom ? 1 : Math.max(0, 1 - d3 / gR));
+        }
+        if (d3 > I.glass && !sameRoom) continue;
         if (sameRoom && vents < 4 && !I.kin && I.sp > 0.3 && (m.state === 'glass' || m.state === 'holed')) {
           const w = this.toWorld(B, m.lx + m.ox * T, m.ly + FH * 0.15, m.lz + m.oz * T), o = this.dirToWorld(B, m.ox, 0, m.oz);
           if (this.vents.length < 48) this.vents.push({ B, x: w.x, y: w.y, z: w.z, nx: o.x, nz: o.z, t: rand(10, 22) * Math.min(1.5, I.sp), acc: rand(0, 0.2) });
@@ -5351,6 +5474,19 @@ const Destructibles = (() => {
     update(dt, fx) {
       this.updatePiles(dt);
       this.updateCollapse(dt, fx);
+      // hình hư hại đang chờ dựng: mỗi tòa dựng lại tối đa ~4 lần / giây, mỗi khung hình tối đa 1 tòa
+      // (hình từng mảng tính rải qua nhiều khung hình, ~4 ms mỗi khung, rồi mới gộp)
+      let built = false;
+      for (const B of this.items) {
+        if (!B.dmgPending) continue;
+        B.dmgWait = (B.dmgWait || 0) + dt;
+        if (built || B.dmgWait < 0.25) continue;
+        built = true;
+        if (B.collapsed) { B.dmgPending = false; continue; }
+        if (!this.prepPanels(B, 4)) continue;
+        B.dmgPending = false; B.dmgWait = 0;
+        this.rebuildDamage(B);
+      }
       this._landN = 0;
       for (let i = this.anim.length - 1; i >= 0; i--) {
         const A = this.anim[i];
