@@ -593,6 +593,33 @@ class SoundEngine {
     }
   }
 
+  /**
+   * Tổng hợp theo mode dao động (modal synthesis) cho vật rắn bị gõ: mỗi mode là một dao động sin tắt dần theo hàm mũ,
+   * tỉ lệ tần số bất hòa đúng loại vật thể (tấm thép / thanh / vỏ rỗng), mode cao tắt nhanh hơn. Khác metal()
+   * (nhiễu lọc dải, ngân tối đa ~0,35 s): ngân được lâu như thép thật (thép đập thép ~1-2 s) và có cao độ rõ.
+   * T: thời gian tắt (-60 dB) của mode gốc; hard: độ cứng mặt va (1 = thép trên thép) -> tiếng chạm đanh hơn.
+   */
+  modal(dest, t, { f0 = 300, ratios = [1, 1.47, 2.09, 2.65, 3.4, 4.3], T = 0.3, gain = 0.3, hard = 0.5, tilt = 0.55, fall = 0.45 } = {}) {
+    const ctx = this.ctx;
+    ratios.forEach((r, i) => {
+      const f = f0 * r * (1 + (Math.random() - 0.5) * 0.03);
+      if (f > 16000) return;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const g = ctx.createGain();
+      const amp = gain / (1 + i * tilt) * (0.75 + Math.random() * 0.5);
+      const Ti = Math.max(0.03, T / (1 + i * fall) * Math.pow(f0 / f, 0.15));
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.0015);
+      g.gain.setTargetAtTime(0.0001, t + 0.0015, Ti / 6.9);
+      osc.connect(g); g.connect(dest);
+      osc.start(t); osc.stop(t + 0.0015 + Ti * 1.3 + 0.05);
+    });
+    // tiếng chạm: xung nhiễu ngắn, mặt càng cứng càng đanh và sáng
+    this.burst(dest, t, { filter: 'bandpass', freq: 1400 + 3000 * hard, Q: 0.7, gain: gain * (0.6 + 1.6 * hard), attack: 0.0003, dur: 0.012 - 0.006 * hard });
+  }
+
   // ===========================================================================
   // 1. KHAI HỎA PHÁO CHÍNH (120mm xe tăng / 155mm pháo tự hành)
   // ===========================================================================
@@ -1076,62 +1103,71 @@ class SoundEngine {
       }
       case 'debrisHit': {
         // Mảnh / phụ kiện văng ra đập xuống (mỗi lần chạm một tiếng, to theo tốc độ va, trầm theo khối lượng).
-        // opts: { mat, hull (rơi trên thép xác xe -> ngân vang, không có tiếng đất), m (khối lượng 1..4.5), first }
+        // opts: { mat, hull (rơi trên thép xác xe), m (khối lượng 1..4.5), first }
+        // Như ngoài đời: thép rơi đất = "cạch/choang" kim loại bị đất ăn ngân rất nhanh (~0,1-0,2 s) + "huỵch" đất
+        // (năng lượng ~80-300 Hz, không dồn xuống < 80 Hz vì loa thường không phát được) + đất sỏi bắn lạo xạo;
+        // thép đập thép xác xe = "CHOANG" sáng, to hơn hẳn, ngân dài 1-2 s
         const o = opts || {}, mat = o.mat || 'metal', hull = !!o.hull;
         const heavy = Math.max(0, Math.min(1, ((o.m || 1) - 1) / 3.5));
-        const kk = Math.min(1.6, k), pr = 0.85 + Math.random() * 0.3;
-        // đất lún "bịch" + bụi đất bắn (rơi trên thép thì không có)
+        const kk = Math.min(1.6, k), pr = 0.9 + Math.random() * 0.2;
+        const hard = hull ? 1 : 0.3;
+        const ringT = (dirtT, hullT) => hull ? hullT : dirtT;
         const dirt = (g, f) => {
           if (hull) return;
-          this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: f, drive: 1.6, gain: g * kk, attack: 0.002, dur: 0.05 + 0.08 * heavy });
-          this.burst(out, t + 0.004, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 520 + Math.random() * 300, Q: 0.7, gain: 0.18 * g * kk, attack: 0.003, dur: 0.06 + 0.05 * kk });
+          // "huỵch" khối đất bị nện + đất sỏi bắn lạo xạo
+          this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: f, Q: 0.9, drive: 1.4, gain: g * kk, attack: 0.002, dur: 0.06 + 0.07 * heavy });
+          this.burst(out, t + 0.003, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1500 + Math.random() * 900, Q: 0.6, gain: 0.25 * g * kk, attack: 0.002, dur: 0.05 + 0.04 * kk });
+          if (kk > 0.5) for (let i = 0; i < 3; i++) this.burst(out, t + 0.03 + Math.random() * 0.15, { filter: 'bandpass', freq: 1800 + Math.random() * 2500, Q: 3, gain: (0.04 + 0.05 * Math.random()) * g * kk, attack: 0.0005, dur: 0.01 });
         };
+        const PLATE = [1, 1.47, 2.09, 2.65, 3.4, 4.3, 5.6, 7.1, 9.0];
+        const PLATE_HI = PLATE.concat([11.3, 13.9, 17.2, 21.5, 26.8]);   // thép đập thép: mode cao bật lên rõ
+        const BAR = [1, 2.756, 5.404, 8.933];
+        const SHELL = [1, 1.18, 1.93, 2.51, 3.27, 4.1];
         switch (mat) {
           case 'plate':
-            // tấm thép dày: "huỵch" nặng, thép ngân trầm ngắn (đất ăn mất tiếng ngân; trên nóc xác xe thì "choang")
-            dirt(1.0, 170 + 110 * (1 - heavy));
-            this.metal(out, t, { f0: (120 + 140 * (1 - heavy)) * pr, ratios: [1, 1.58, 2.37, 3.61, 5.1], decay: hull ? 0.9 : 0.22, gain: (hull ? 0.5 : 0.17) * kk, click: hull ? 0.6 : 0.3 });
-            if (hull) this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, drive: 2, gain: 0.7 * kk, attack: 0.001, dur: 0.1 });
+            // tấm giáp / váy xích: thép dày, mode gốc thấp, nhiều mode dày đặc
+            dirt(1.0, 150 + 80 * (1 - heavy));
+            this.modal(out, t, { f0: (210 + 140 * (1 - heavy)) * pr, ratios: hull ? PLATE_HI : PLATE, T: ringT(0.2, 1.5), gain: (hull ? 0.4 : 0.36) * kk, hard, tilt: hull ? 0.08 : 0.25, fall: hull ? 0.15 : 0.45 });
+            if (hull) this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 300, Q: 1, drive: 1.5, gain: 0.35 * kk, attack: 0.001, dur: 0.1 });
             break;
           case 'can':
-            // vỏ rỗng (bình nhiên liệu, ống phóng): "boong" rỗng cộng hưởng
-            dirt(0.6, 300);
-            this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: (190 + 120 * (1 - heavy)) * pr, Q: 9, gain: 0.7 * kk, attack: 0.002, dur: hull ? 0.32 : 0.2 });
-            this.metal(out, t, { f0: 300 * pr, ratios: [1, 1.71, 2.93], decay: hull ? 0.5 : 0.25, gain: 0.18 * kk, click: 0.4 });
+            // vỏ rỗng (bình nhiên liệu, ống phóng): khoang rỗng cộng hưởng "boong" + vỏ thép mỏng ngân
+            dirt(0.55, 220);
+            this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: (230 + 120 * (1 - heavy)) * pr, Q: 7, gain: 0.8 * kk, attack: 0.002, dur: hull ? 0.4 : 0.25 });
+            this.modal(out, t, { f0: (320 + 160 * (1 - heavy)) * pr, ratios: SHELL, T: ringT(0.3, 1.1), gain: 0.22 * kk, hard, tilt: 0.5 });
             break;
           case 'rubber':
-            // bánh xe cao su: "bụp" trầm nảy, vành thép lạch cạch nhẹ
-            dirt(1.1, 150);
-            this.tone(out, t, { type: 'sine', freq: 85 * pr, freqEnd: 55, sweep: 0.12, gain: 0.35 * kk, attack: 0.003, dur: 0.14 });
-            this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 240, drive: 1.3, gain: 0.5 * kk, attack: 0.003, dur: 0.1 });
-            this.metal(out, t + 0.004, { f0: 230 * pr, ratios: [1, 2.3, 3.9], decay: 0.14, gain: 0.07 * kk, click: 0.15 });
+            // bánh xe: lốp nện "bụp" (~100-180 Hz, có thân, không chìm dưới 80 Hz) + cao su đập "bạch" + vành thép cạch nhẹ
+            dirt(0.7, 160);
+            this.tone(out, t, { type: 'sine', freq: 150 * pr, freqEnd: 105, sweep: 0.09, gain: 0.35 * kk, attack: 0.002, dur: 0.12 });
+            this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 520 * pr, Q: 1.2, gain: 0.5 * kk, attack: 0.001, dur: 0.045 });
+            this.modal(out, t + 0.003, { f0: 420 * pr, ratios: [1, 2.3, 3.9, 5.2], T: ringT(0.12, 0.5), gain: 0.06 * kk, hard: 0.2 });
             break;
           case 'glass':
-            // cụm kính / đèn / radar: vỏ thép "cạch" + kính vụn lách cách
-            dirt(0.45, 420);
-            this.metal(out, t, { f0: (600 + 400 * Math.random()), ratios: [1, 2.6, 4.4], decay: hull ? 0.35 : 0.12, gain: 0.16 * kk, click: 0.7 });
-            for (let i = 0; i < 2 + Math.round(3 * Math.min(1, kk)); i++) this.burst(out, t + 0.005 + Math.random() * 0.12, { filter: 'bandpass', freq: 3500 + Math.random() * 4000, Q: 8, gain: (0.05 + Math.random() * 0.06) * kk, attack: 0.0005, dur: 0.015 + Math.random() * 0.02 });
+            // cụm kính / đèn / radar: vỏ thép nhỏ "cạch" + kính vụn lách cách
+            dirt(0.4, 300);
+            this.modal(out, t, { f0: (650 + 400 * Math.random()), ratios: [1, 2.32, 3.75, 5.1], T: ringT(0.12, 0.6), gain: 0.16 * kk, hard: Math.max(hard, 0.5) });
+            for (let i = 0; i < 2 + Math.round(3 * Math.min(1, kk)); i++) this.burst(out, t + 0.005 + Math.random() * 0.12, { filter: 'bandpass', freq: 3500 + Math.random() * 4000, Q: 8, gain: (0.06 + Math.random() * 0.07) * kk, attack: 0.0005, dur: 0.015 + Math.random() * 0.02 });
             break;
           case 'link':
-            // mắt xích thép đúc: "cạch" đanh nặng + chốt lạch xạch
-            dirt(0.7, 260);
-            this.metal(out, t, { f0: 340 * pr, ratios: [1, 2.21, 3.87], decay: hull ? 0.5 : 0.18, gain: 0.3 * kk, click: 0.6 });
-            this.burst(out, t + 0.03 + Math.random() * 0.03, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, Q: 3, gain: 0.15 * kk, attack: 0.001, dur: 0.04 });
+            // mắt xích thép đúc: khối đặc nặng -> "cạch" đanh, cao độ rõ, chốt xích lạch xạch
+            dirt(0.65, 200);
+            this.modal(out, t, { f0: 480 * pr, ratios: [1, 1.9, 2.756, 4.1, 5.404], T: ringT(0.14, 0.9), gain: 0.3 * kk, hard: Math.max(hard, 0.5) });
+            this.burst(out, t + 0.03 + Math.random() * 0.03, { filter: 'bandpass', freq: 2200, Q: 3, gain: 0.12 * kk, attack: 0.0005, dur: 0.012 });
             break;
           case 'net':
             // lưới lá / giỏ vải: "phịch" mềm + lá sột soạt, không có tiếng kim loại
-            this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, gain: 0.35 * kk, attack: 0.006, dur: 0.09 });
-            this.burst(out, t + 0.01, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2200, Q: 0.6, gain: 0.18 * kk, attack: 0.01, dur: 0.18 });
+            this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 180, Q: 0.8, gain: 0.45 * kk, attack: 0.006, dur: 0.09 });
+            this.burst(out, t + 0.01, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2200, Q: 0.6, gain: 0.2 * kk, attack: 0.01, dur: 0.18 });
             break;
           case 'whip':
-            // roi ăng-ten mảnh: "tinh" mảnh cao, ngân rung
-            this.burst(out, t, { filter: 'bandpass', freq: 2800 * pr, Q: 6, gain: 0.12 * kk, attack: 0.0005, dur: 0.03 });
-            this.metal(out, t, { f0: 1300 * pr, ratios: [1, 2.76, 5.4], decay: 0.3, gain: 0.07 * kk, click: 0.3 });
+            // roi ăng-ten (thanh mảnh, nhẹ): "tinh" cao, ngân rung của thanh tự do
+            this.modal(out, t, { f0: 900 * pr, ratios: BAR, T: ringT(0.35, 0.8), gain: 0.045 * kk, hard: 0.6, tilt: 0.3 });
             break;
           default:
-            // phụ kiện thép nhỏ (hộp đồ, đèn, lan can, giá súng...): "cạch" kim loại + "bịch" đất; nhẹ thì thanh hơn
-            dirt(0.6, 260 + 200 * (1 - heavy));
-            this.metal(out, t, { f0: (380 + 520 * (1 - heavy)) * pr, ratios: [1, 2.43, 4.17, 6.2], decay: hull ? 0.55 : 0.16, gain: 0.2 * kk, click: 0.6 });
+            // phụ kiện thép nhỏ (hộp đồ, đèn, lan can, giá súng...): "cạch" kim loại, nhẹ thì cao hơn + "bịch" đất
+            dirt(0.6, 200 + 100 * (1 - heavy));
+            this.modal(out, t, { f0: (420 + 480 * (1 - heavy)) * pr, ratios: [1, 1.59, 2.14, 2.92, 3.6, 4.6], T: ringT(0.13, 0.9), gain: 0.24 * kk, hard: Math.max(hard, 0.4) });
         }
         break;
       }
