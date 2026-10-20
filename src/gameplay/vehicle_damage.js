@@ -1922,12 +1922,14 @@ const VehicleDamage = (() => {
     let zone = 'crew';
     if (penetrated || ratio >= 0.8) {
       const tag = ctx.tag;
-      if (ctx.onGun) { zone = 'gun'; mul *= 0.3; }
-      else if (ctx.trackOrWheel) { zone = 'running'; mul *= 0.35; }
+      // lựu pháo 155mm nổ trên nòng / xích / phụ kiện vẫn chỉ cách nóc khoang ~1 m: sức nổ vẫn phá nát xe
+      const hb = opts.heavy && P.kind === 'HE';
+      if (ctx.onGun) { zone = 'gun'; mul *= hb ? 0.8 : 0.3; }
+      else if (ctx.trackOrWheel) { zone = 'running'; mul *= hb ? 0.8 : 0.35; }
       else if (tag && partKind(tag) === 'ammo') { zone = 'ammo'; mul *= 1.8; }
       else if (onTurret && face === 'rear' && (u.tankType === 'ALL_ROUNDER' || u.tankType === 'ARTILLERY')) { zone = 'ammo'; mul *= u.tankType === 'ALL_ROUNDER' ? 1.6 : 1.8; }
       else if (ctx.nearEngine) { zone = 'engine'; mul *= 0.8; }
-      else if (tag && (partKind(tag) === 'acc' || partKind(tag) === 'heavyAcc')) { zone = 'acc'; mul *= 0.5; }
+      else if (tag && (partKind(tag) === 'acc' || partKind(tag) === 'heavyAcc')) { zone = 'acc'; mul *= hb ? 0.8 : 0.5; }
       else if (onTurret) { zone = 'crew'; mul *= 1.1; }
       if (EQ) mul *= EQ.spallMul(u, zone);   // lớp lót chống mảnh
     } else if (ctx.onGun || ctx.trackOrWheel) {

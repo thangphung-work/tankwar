@@ -679,7 +679,9 @@ class HUDController {
             this.game.player.azimuth, this.game.player.elevation, this.game.player.charge,
             this.game.terrain, this.game.player
           );
-          const distStr = pred ? ` // ĐIỂM RƠI: ${pred.distance}M (${pred.flightTime}S)` : '';
+          // flightTime tính theo giây mô phỏng (= giây thật x bulletSpeedMultiplier) -> đổi về giây thật
+          const fT = pred ? (pred.flightTime || 0) / ((this.ballistics && this.ballistics.bulletSpeedMultiplier) || 1) : 0;
+          const distStr = pred ? ` // ĐIỂM RƠI: ${pred.distance}M (${fT.toFixed(1)}S)` : '';
           if (this.game.player.elevation < 0) {
             fireModeHint.textContent = `[HẠ NÒNG ÂM]${distStr}`;
             fireModeHint.style.color = '#8fc46f';

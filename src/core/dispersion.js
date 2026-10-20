@@ -138,7 +138,10 @@ const Dispersion = (() => {
     const s = sigma(u, ammo, elevation);
     const cross = 2 * s.lat * dist;
     // lựu pháo cầu vồng: tầm ~ v² -> lệch dọc ≈ 2·σv·cự ly
-    const along = s.lob ? 2 * Math.hypot(2 * s.mv * dist, s.vert * dist) : cross;
+    let along = s.lob ? 2 * Math.hypot(2 * s.mv * dist, s.vert * dist) : cross;
+    // lựu pháo nâng nòng góc thấp (cầu vồng thấp > 8°): đạn rơi xiên, lệch góc nòng thành lệch tầm R·2/tan2θ
+    const el = elevation !== undefined ? elevation : (u && u.elevation);
+    if (!s.lob && u && u.tankType === 'ARTILLERY' && el > 8) along = Math.max(along, 2 * dist * Math.hypot(s.vert * 2 / Math.tan(2 * el * Math.PI / 180), 2 * s.mv));
     return { along, cross, mul: s.mul, lob: s.lob };
   }
 
