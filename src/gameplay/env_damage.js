@@ -698,7 +698,9 @@ const EnvDamage = (() => {
         // tâm cháy đen, vành đất bị hất (nâu), tích dần theo số phát
         const burn = Math.min(0.75, amount * w * w * 0.7);
         const r0 = C.getX(i), g0 = C.getY(i), b0 = C.getZ(i);
-        const tr = d < R * 0.5 ? 0.11 : 0.36, tg = d < R * 0.5 ? 0.09 : 0.27, tb = d < R * 0.5 ? 0.07 : 0.18;
+        // ụ đất dùng shader mặt đất: màu đỉnh là hệ số nhân lên màu địa hình (1 = nguyên màu) -> đích cháy là hệ số tối / ngả nâu
+        const mul = g.userData.tintMul, inner = d < R * 0.5;
+        const tr = mul ? (inner ? 0.26 : 0.64) : inner ? 0.11 : 0.36, tg = mul ? (inner ? 0.22 : 0.5) : inner ? 0.09 : 0.27, tb = mul ? (inner ? 0.2 : 0.42) : inner ? 0.07 : 0.18;
         C.setXYZ(i, r0 + (tr - r0) * burn, g0 + (tg - g0) * burn, b0 + (tb - b0) * burn);
         const ny = Math.max(g.userData.y0[i] - 3.5, P.getY(i) - amount * 1.4 * w * w);
         P.setY(i, ny);

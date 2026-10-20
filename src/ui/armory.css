@@ -156,3 +156,11 @@
 /* ví bạc ở góc sảnh (dưới quân hàm) */
 .acc-silver { margin-top: 3px; font: 800 12px var(--font-mono, monospace); color: var(--tc-accent); display: flex; align-items: center; gap: 4px; }
 .acc-xp-line b.silver { color: var(--tc-accent); }
+
+/* Quảng cáo có thưởng & vật tư sắp cạn */
+.eqd-q.ad { display: inline-flex; align-items: center; gap: 3px; color: #1a1406; background: #e8c547; border-color: #e8c547; }
+.eqd-q.ad:hover:not(:disabled) { color: #1a1406; background: #f5d76a; border-color: #f5d76a; }
+.eqd-q.ad .ti { font-size: 11px; }
+.eqd-warn { font: 700 10px var(--font-tech); letter-spacing: 1px; color: #e8c547; }
+.eqd-card.out .eqd-warn { color: #f87171; }
+.eqd-card.out .eqd-stock b { color: #f87171; }

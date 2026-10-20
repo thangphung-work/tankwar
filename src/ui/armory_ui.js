@@ -2,10 +2,10 @@
  * DẢI CHỌN TRANG BỊ (dưới khung 3D phòng xem xe, tank_inspector.js #ti-equip-dock) — thay chỗ dãy chọn xe cũ.
  *   Hàng trên: 3 nhóm + các ô đang lắp + lời nhắn. Hàng dưới: thẻ đồ cuộn ngang (bấm cả thẻ để lắp / tháo / xem QC).
  *   3 nhóm: GIÁP (giáp phản ứng nổ, giáp lồng...) · ĐẠN (đạn có sẵn + đạn cao cấp) · PHỤ KIỆN (radar, máy gây nhiễu, khói...)
- *   Đồ cơ bản: bấm là lắp (miễn phí). Đồ nâng cao (ổ khóa): xem 1 quảng cáo để nhận vĩnh viễn cho xe đó (máy chủ lưu).
- *   Mỗi nhóm có số ô giới hạn (Equipment.CATS). Mô hình 3D luôn hiện đúng bộ trang bị đang lắp.
- * Quảng cáo: nếu trang có window.AdProvider.show({ onDone, onFail }) (mạng quảng cáo thật) thì dùng, không thì phát
- * khung quảng cáo mẫu đếm ngược đủ thời lượng máy chủ yêu cầu.
+ *   Đồ cơ bản: bấm là lắp (miễn phí). Đồ nâng cao (ổ khóa): mở khóa vĩnh viễn cho xe đó bằng Bạc hoặc xem đủ số
+ *   quảng cáo (Equipment.adsToUnlock, máy chủ lưu tiến độ). Mỗi nhóm có số ô giới hạn (Equipment.CATS).
+ *   Vật tư tiêu hao (đạn đặc chủng, lựu đạn khói): mua bằng Bạc, hoặc xem quảng cáo tiếp tế (+AMMO_SHOP[..].ad viên).
+ * Quảng cáo: src/core/ads.js (AdProvider) — Google H5 Games Ads khi đã cấu hình, không thì khung quảng cáo mẫu.
  */
 const ArmoryUI = (() => {
   let insp = null, cat = 'armor', saveTimer = null, busy = false, msg = '', flash = null;   // flash: hiệu ứng số nhảy sau khi mua / trả
@@ -23,6 +23,9 @@ const ArmoryUI = (() => {
     ARTILLERY: [['NORMAL', 'Lựu đạn 155mm', 'circle-dot', 'Không giới hạn'], ['HE', 'Lựu đạn nổ mạnh 155', 'flame'], ['CLUSTER', 'Đạn chùm 155', 'atom-2']],
     SCOUT: [['SCOUT_BULLET', 'Đạn 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['RPG', 'Đạn RPG', 'rocket'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
   };
+  for (const t in STOCK_AMMO) STOCK_AMMO[t].push(['SMOKE', 'Lựu đạn khói', 'cloud']);   // vật tư của Ống phóng lựu khói
+  const adsLeft = () => (A() && A().adsLeft ? A().adsLeft() : 0);
+  const adsOn = () => !!(window.AdProvider && AdProvider.available());
 
   // ---------------------------------------------------------------------------
   // ẢNH TRANG BỊ: render sẵn từ mô hình 3D thật (equipment_thumbs.html) -> assets/equipment/<id>.webp
@@ -33,7 +36,7 @@ const ArmoryUI = (() => {
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)
   const SHORT = {
     era: 'Chặn đạn nổ lõm / RPG, giảm xuyên', slat: 'Chặn ~6/10 phát RPG ở sườn sau, đuôi', applique: 'Giáp sườn +45%, mũi +20%, nặng hơn',
-    spall: 'Mảnh vỡ trong xe −15% sát thương', aps: 'Tự bắn hạ RPG / tên lửa (2 lần)', smoke: 'Phím G: màn khói ~14 giây (2 lần)',
+    spall: 'Mảnh vỡ trong xe −15% sát thương', aps: 'Tự bắn hạ RPG / tên lửa (2 lần)', smoke: 'Phím G: màn khói ~14 giây (cần lựu đạn khói)',
     camo: 'Đứng yên: khó bị thấy & bị radar bắt', fireext: 'Dập lửa nhanh ×2,5, cháy chỉ còn ½', turbo: 'Tốc độ +8%, tăng tốc +15%',
     radar: 'Thấy xe địch quanh ~75 m, kể cả núp bụi', jammer: 'Tên lửa địch khóa chậm gấp đôi'
   };
@@ -104,8 +107,8 @@ const ArmoryUI = (() => {
     if (!Eq) { root.innerHTML = '<div class="eqd-bar"><div class="eqd-note">Thiếu dữ liệu trang bị.</div></div>'; return; }
     const lo = loadout(tank);
     const inCat = (c) => lo.m.filter(id => Eq.MODULES[id] && Eq.MODULES[id].cat === c);
-    // Số ô mỗi nhóm; chế độ mở hết (Equipment.ALL_FREE) = số món hợp với xe này
-    const capOf = (c) => Eq.ALL_FREE ? Object.keys(Eq.MODULES).filter(id => Eq.MODULES[id].cat === c && Eq.compatible(id, tank)).length : Eq.CATS[c].slots;
+    // Số ô mỗi nhóm; chế độ không giới hạn ô (Equipment.UNLIMITED_SLOTS) = số món hợp với xe này
+    const capOf = (c) => Eq.UNLIMITED_SLOTS ? Object.keys(Eq.MODULES).filter(id => Eq.MODULES[id].cat === c && Eq.compatible(id, tank)).length : Eq.CATS[c].slots;
     const C = Eq.CATS[cat], cap = capOf(cat), on = inCat(cat), full = cap && on.length >= cap;
     const keepScroll = ($('.eqd-strip', root) || {}).scrollLeft || 0, sameCat = root.dataset.cat === cat && root.dataset.tank === tank;
 
@@ -117,8 +120,8 @@ const ArmoryUI = (() => {
       h += `<button class="eqd-tab${c === cat ? ' on' : ''}" role="tab" aria-selected="${c === cat}" data-act="cat" data-item="${c}"><i class="ti ti-${K.icon}"></i><span>${K.name}</span>${badge}</button>`;
     }
     h += '</div><div class="eqd-slots">';
-    if (C.slots && Eq.ALL_FREE) {
-      // Mở hết: không còn ô giới hạn -> đếm số món đang dùng + nút trang bị / tháo cả nhóm
+    if (C.slots && Eq.UNLIMITED_SLOTS) {
+      // Không giới hạn ô -> đếm số món đang dùng + nút trang bị / tháo cả nhóm
       h += `<span class="eqd-lbl">ĐANG TRANG BỊ <b>${on.length}/${cap}</b></span>`;
       h += on.length < cap
         ? '<button class="eqp-btn" data-act="equipAll"><i class="ti ti-checks"></i> TRANG BỊ TẤT CẢ</button>'
@@ -134,9 +137,11 @@ const ArmoryUI = (() => {
     h += '</div>';
     // số Bạc đã hiện ở góc trên màn xem xe (#ti-silver) -> ở đây chỉ nhắc cách dùng + số Bạc vừa trừ / hoàn bay lên
     const silver = prof() ? `<i class="ti ti-coins"></i> Đạn đã mua tự mang theo mỗi lần xuất kích${flash && flash.cost ? `<span class="eqd-float${flash.cost < 0 ? ' up' : ''}">${flash.cost > 0 ? '−' : '+'}${fmt(Math.abs(flash.cost))} Bạc</span>` : ''}` : '<i class="ti ti-user"></i> Đăng nhập để mua đạn bằng Bạc';
-    const note = msg || (cat === 'gear' ? '<i class="ti ti-keyboard"></i> Trong trận bấm <b>G</b> để phóng khói'
-      : cat === 'ammo' ? silver
-      : Eq.ALL_FREE ? '<i class="ti ti-gift"></i> Mọi trang bị đều miễn phí' : '<i class="ti ti-lock"></i> Đồ có khóa: xem 1 quảng cáo ngắn để nhận vĩnh viễn');
+    const adNote = prof() && adsOn() ? ` · <i class="ti ti-player-play"></i> Quảng cáo có thưởng: còn <b>${adsLeft()}/${Eq.AD.DAILY}</b> lượt hôm nay` : '';
+    const note = msg || (cat === 'gear' ? '<i class="ti ti-keyboard"></i> Bấm <b>G</b> để phóng khói — thử ngay ở khung xe phía trên hoặc trong <b>PHÒNG THỬ ĐẠN</b>' + adNote
+      : cat === 'ammo' ? silver + adNote
+      : Eq.ALL_FREE ? '<i class="ti ti-gift"></i> Mọi trang bị đều miễn phí'
+      : `<i class="ti ti-lock"></i> Đồ nâng cao: mua bằng Bạc hoặc xem quảng cáo để mở khóa vĩnh viễn${adNote}`);
     h += `<div class="eqd-note${msg ? ' msg' : ''}">${note}</div></div>`;
 
     // Hàng dưới: thẻ đồ
@@ -144,25 +149,36 @@ const ArmoryUI = (() => {
     if (cat === 'ammo') {
       const shop = Eq.AMMO_SHOP[tank] || {}, P = prof(), stock = (P && P.armory && P.armory.stock && P.armory.stock[tank]) || {};
       const loginBtn = '<div class="eqd-qty"><button class="eqd-q wide" data-act="login"><i class="ti ti-login"></i> Đăng nhập để mua</button></div>';
+      const left = adsLeft();
       for (const [k, name] of STOCK_AMMO[tank] || []) {
-        const S = shop[k], img = 'ammo_' + tank + '_' + k;
+        const S = shop[k], img = k === 'SMOKE' ? 'smoke' : 'ammo_' + tank + '_' + k;
         if (!S) { h += card({ img, name, line: 'Đạn chính · không giới hạn', cls: ' on std', tip: `${name}: đạn chính, mang theo không giới hạn` }); continue; }
-        const have = stock[k] || 0, carry = Math.min(have, S.max), bump = flash && flash.k === k ? ' bump' : '';
+        const have = stock[k] || 0, free = A() && A().freeOf ? A().freeOf(tank, k) : 0, paid = Math.max(0, have - free);
+        const carry = Math.min(have, S.max), bump = flash && flash.k === k ? ' bump' : '';
+        const needGear = S.gear && !lo.m.includes(S.gear);
+        const full = have >= S.max * 10;
+        const adBtn = adsOn() ? `
+            <button class="eqd-q ad" data-act="adAmmo" data-item="${k}"${left > 0 && !full ? '' : ' disabled'} title="${full ? 'Kho đã đầy' : left > 0 ? `Xem 1 quảng cáo: +${S.ad} viên miễn phí (còn ${left} lượt hôm nay)` : 'Hết lượt quảng cáo hôm nay'}"><i class="ti ti-player-play-filled"></i>+${S.ad}</button>` : '';
         const ctl = P ? `<div class="eqd-qty">
-            <button class="eqd-q" data-act="sellAmmo" data-item="${k}"${have ? '' : ' disabled'} title="Trả lại 1 viên, hoàn ${fmt(S.price)} Bạc">−</button>
+            <button class="eqd-q" data-act="sellAmmo" data-item="${k}"${paid ? '' : ' disabled'} title="${paid ? `Trả lại 1 viên, hoàn ${fmt(S.price)} Bạc` : 'Đạn nhận từ quảng cáo không trả lại được'}">−</button>
             <button class="eqd-q add" data-act="buyAmmo" data-item="${k}" data-n="1" title="Mua 1 viên · ${fmt(S.price)} Bạc">+1</button>${S.max >= 50 ? `
-            <button class="eqd-q add" data-act="buyAmmo" data-item="${k}" data-n="10" title="Mua 10 viên · ${fmt(S.price * 10)} Bạc">+10</button>` : ''}
+            <button class="eqd-q add" data-act="buyAmmo" data-item="${k}" data-n="10" title="Mua 10 viên · ${fmt(S.price * 10)} Bạc">+10</button>` : ''}${adBtn}
             <span class="eqd-price">${fmt(S.price)} Bạc/viên</span></div>` : loginBtn;
-        h += card({ img, name, cls: have ? ' has' : '', extra: ctl,
-          line: `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · mang <b>${carry}</b>/trận`,
-          tip: `${name}: mỗi lần xuất kích tự mang tối đa ${S.max} viên (không quá số trong kho). Giá ${fmt(S.price)} Bạc / viên, trả lại được.` });
+        // cảnh báo sắp hết: kho không đủ mang đầy 1 lần xuất kích
+        const lowCls = have <= 0 ? ' out' : have < S.max ? ' low' : '';
+        const lowTxt = have <= 0 ? ' · <span class="eqd-warn">HẾT</span>' : have < S.max ? ' · <span class="eqd-warn">SẮP HẾT</span>' : '';
+        h += card({ img, name, cls: (have ? ' has' : '') + lowCls, extra: ctl,
+          line: needGear ? `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · cần lắp Ống phóng lựu khói`
+            : `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · mang <b>${carry}</b>/trận${lowTxt}`,
+          tip: `${name}: mỗi lần xuất kích tự mang tối đa ${S.max} viên (không quá số trong kho). Giá ${fmt(S.price)} Bạc / viên, trả lại được phần mua bằng Bạc.`
+            + (adsOn() ? ` Xem 1 quảng cáo: +${S.ad} viên miễn phí.` : '') + (S.gear ? ' Cần lắp Ống phóng lựu khói (nhóm PHỤ KIỆN).' : '') });
       }
       const prem = Object.keys(Eq.PREMIUM).filter(id => Eq.PREMIUM[id].tank === tank);
       if (prem.length) {
         h += '<div class="eqd-sep"><span>CAO CẤP</span></div>';
         for (const id of prem) {
           const M = Eq.PREMIUM[id], got = owns(tank, id);
-          const ctl = got ? '' : P ? `<div class="eqd-qty"><button class="eqd-q add wide" data-act="buyItem" data-item="${id}"><i class="ti ti-shopping-cart"></i> Mua · ${fmt(M.price)} Bạc</button></div>` : loginBtn;
+          const ctl = got ? '' : P ? unlockCtl(tank, id, M) : loginBtn;
           h += card({ img: 'prem_' + id, name: M.name, cls: got ? ' on' : '', extra: ctl, tag: 'CAO CẤP',
             line: got ? 'Đã có · luôn dùng' : esc(M.desc.split(/[.:]/)[0]), tip: `${M.name} — ${M.desc}` });
         }
@@ -194,13 +210,24 @@ const ArmoryUI = (() => {
     const Eq = E();
     const locked = !Eq.isFree(id) && !owns(tank, id);
     const equipped = lo.m.includes(id);
-    let act, cls = '', line = esc(SHORT[id] || M.desc);
-    if (locked) { act = 'claim'; cls = ' locked'; line = '<i class="ti ti-player-play-filled"></i> Xem quảng cáo để nhận'; }
-    else if (equipped) { act = 'unequip'; cls = ' on'; }
+    if (locked) {
+      // đồ nâng cao chưa mở khóa: mua bằng Bạc hoặc xem đủ số quảng cáo
+      const ctl = prof() ? unlockCtl(tank, id, M) : '<div class="eqd-qty"><button class="eqd-q wide" data-act="login"><i class="ti ti-login"></i> Đăng nhập để mở khóa</button></div>';
+      return card({ img: id, name: M.name, line: esc(SHORT[id] || M.desc), cls: ' locked', lock: true, tag: 'NÂNG CAO', extra: ctl,
+        tip: `${M.name} — ${M.desc}\nMở khóa vĩnh viễn cho xe này: ${fmt(M.price)} Bạc${adsOn() ? ` hoặc xem ${Eq.adsToUnlock(id)} quảng cáo` : ''}` });
+    }
+    let act, cls = '';
+    if (equipped) { act = 'unequip'; cls = ' on'; }
     else { act = 'equip'; if (full) cls = ' full'; }
-    const hint = locked ? 'Bấm để xem quảng cáo nhận' : equipped ? 'Bấm để gỡ' : full ? 'Nhóm đã đủ ô — gỡ bớt một món trước' : 'Bấm để trang bị';
-    return card({ img: id, name: M.name, line, cls, lock: locked, tag: M.adv ? 'NÂNG CAO' : '',
+    const hint = equipped ? 'Bấm để gỡ' : full ? 'Nhóm đã đủ ô — gỡ bớt một món trước' : 'Bấm để trang bị';
+    return card({ img: id, name: M.name, line: esc(SHORT[id] || M.desc), cls, tag: M.adv ? 'NÂNG CAO' : '',
       attrs: ` role="button" tabindex="0" aria-pressed="${equipped}" data-act="${act}" data-item="${id}"`, tip: `${M.name} — ${M.desc}\n${hint}` });
+  }
+  // Nút mở khóa đồ nâng cao / đạn cao cấp: [Mua · giá Bạc] [▶ quảng cáo đã xem / cần]
+  function unlockCtl(tank, id, M) {
+    const Eq = E(), need = Eq.adsToUnlock(id), got = A() && A().adProgressOf ? A().adProgressOf(tank, id) : 0, left = adsLeft();
+    const ad = adsOn() ? `<button class="eqd-q ad wide" data-act="claim" data-item="${id}"${left > 0 ? '' : ' disabled'} title="${left > 0 ? `Xem quảng cáo để mở khóa (${got}/${need}) — còn ${left} lượt hôm nay` : 'Hết lượt quảng cáo hôm nay'}"><i class="ti ti-player-play-filled"></i> ${got}/${need}</button>` : '';
+    return `<div class="eqd-qty"><button class="eqd-q add wide" data-act="buyItem" data-item="${id}" title="Mở khóa vĩnh viễn cho xe này"><i class="ti ti-shopping-cart"></i> ${fmt(M.price)} Bạc</button>${ad}</div>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -213,7 +240,8 @@ const ArmoryUI = (() => {
     if (act === 'cat') { cat = id; msg = ''; render(); return; }
     if (act === 'login') { if (Acc && Acc.showLogin) Acc.showLogin(); return; }
     if (!Eq || !Acc) return;
-    if (act === 'claim') { await claimFlow(tank, id); return; }
+    if (act === 'claim') { await adFlow(tank, { item: id }); return; }
+    if (act === 'adAmmo') { await adFlow(tank, { ammo: id }); return; }
     if (act === 'buyAmmo' || act === 'buyItem' || act === 'sellAmmo') { await buyFlow(tank, act, id, Math.max(1, +b.dataset.n || 1)); return; }
     const lo = JSON.parse(JSON.stringify(loadout(tank)));
     lo.m = lo.m || []; lo.a = lo.a || {};
@@ -256,65 +284,42 @@ const ArmoryUI = (() => {
         flash = { k: id, cost: (act === 'buyAmmo' ? 1 : -1) * n * S.price };
         msg = '';
       } else {
+        const M = itemOf(id);
         await Acc.buy(tank, { item: id });
-        flash = { k: id, cost: Eq.PREMIUM[id].price };
-        msg = `<i class="ti ti-circle-check"></i> Đã mua <b>${esc(Eq.PREMIUM[id].name)}</b> — luôn dùng từ trận tới`;
+        flash = { k: id, cost: M.price };
+        msg = `<i class="ti ti-circle-check"></i> Đã mở khóa <b>${esc(M.name)}</b>${Eq.MODULES[id] ? ' — đã tự trang bị nếu nhóm còn ô' : ' — luôn dùng từ trận tới'}`;
+        if (Eq.MODULES[id]) rebuildPreview();
       }
       if (act !== 'sellAmmo' && window.soundEngine && window.soundEngine.playReloadDone) window.soundEngine.playReloadDone();
     } catch (err) { flash = null; msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`; }
     finally { busy = false; render(); }
   }
 
-  // Nhận đồ nâng cao: cần tài khoản (máy chủ lưu đồ đã nhận) -> bắt đầu phiên -> xem quảng cáo -> nhận
-  async function claimFlow(tank, id) {
-    const Acc = A(), M = itemOf(id);
+  // Xem quảng cáo có thưởng: what = { ammo } (tiếp tế vật tư) | { item } (+1 tiến độ mở khóa đồ nâng cao)
+  async function adFlow(tank, what) {
+    const Acc = A(), Eq = E();
     if (!Acc.profile) {
       msg = Acc.online
-        ? '<i class="ti ti-user"></i> Đăng nhập để nhận đồ nâng cao (đồ đã nhận lưu theo tài khoản). <button class="eqp-btn" data-act="login"><i class="ti ti-login"></i> ĐĂNG NHẬP</button>'
-        : '<i class="ti ti-wifi-off"></i> Nhận đồ nâng cao cần mở trò chơi qua máy chủ (chạy start.bat) và đăng nhập.';
+        ? '<i class="ti ti-user"></i> Đăng nhập để nhận thưởng quảng cáo (lưu theo tài khoản). <button class="eqp-btn" data-act="login"><i class="ti ti-login"></i> ĐĂNG NHẬP</button>'
+        : '<i class="ti ti-wifi-off"></i> Quảng cáo có thưởng cần mở trò chơi qua máy chủ (chạy start.bat) và đăng nhập.';
       render(); return;
     }
+    const S = what.ammo ? (Eq.AMMO_SHOP[tank] || {})[what.ammo] : null, M = what.item ? itemOf(what.item) : null;
+    const label = S ? `+${S.ad} ${S.name}` : `Tiến độ mở khóa ${M.name}`;
     busy = true;
     try {
-      const s = await Acc.adStart(tank, id);
-      const ok = await playAd(s.sec || 15, M.name);
-      if (!ok) { msg = '<i class="ti ti-info-circle"></i> Chưa xem hết quảng cáo nên chưa nhận được.'; return; }
-      await Acc.claim(tank, id, s.token);
-      msg = `<i class="ti ti-circle-check"></i> Đã nhận <b>${esc(M.name)}</b>${E().MODULES[id] ? ' — đã tự trang bị nếu nhóm còn ô' : ' — luôn dùng từ trận tới'}`;
-      if (window.soundEngine && window.soundEngine.playReloadDone) window.soundEngine.playReloadDone();
-      if (E().MODULES[id]) rebuildPreview();
+      const r = await Acc.watchAd(tank, what, label);
+      if (r.status === 'unavailable') msg = '<i class="ti ti-info-circle"></i> Hiện chưa có quảng cáo, thử lại sau ít phút.';
+      else if (r.status !== 'done') msg = '<i class="ti ti-info-circle"></i> Chưa xem hết quảng cáo nên chưa nhận được.';
+      else {
+        const R = r.reward || {};
+        if (R.kind === 'ammo') { flash = { k: R.ammo, cost: 0 }; msg = `<i class="ti ti-circle-check"></i> Tiếp tế: <b>+${R.n} ${esc(S.name.toLowerCase())}</b> vào kho`; }
+        else if (R.unlocked) { msg = `<i class="ti ti-circle-check"></i> Đã mở khóa <b>${esc(M.name)}</b>${Eq.MODULES[what.item] ? ' — đã tự trang bị nếu nhóm còn ô' : ' — luôn dùng từ trận tới'}`; if (Eq.MODULES[what.item]) rebuildPreview(); }
+        else msg = `<i class="ti ti-player-play"></i> ${esc(M.name)}: đã xem <b>${R.progress}/${R.need}</b> quảng cáo — xem thêm ${R.need - R.progress} để mở khóa`;
+        if (window.soundEngine && window.soundEngine.playReloadDone) window.soundEngine.playReloadDone();
+      }
     } catch (err) { msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`; }
     finally { busy = false; render(); }
-  }
-
-  // Phát quảng cáo: mạng quảng cáo thật nếu có, không thì khung mẫu đếm ngược. Trả về true nếu xem hết.
-  function playAd(sec, itemName) {
-    if (window.AdProvider && typeof window.AdProvider.show === 'function') {
-      return new Promise(res => window.AdProvider.show({ onDone: () => res(true), onFail: () => res(false) }));
-    }
-    return new Promise(res => {
-      const el = document.createElement('div');
-      el.className = 'eqp-ad';
-      el.innerHTML = `<div class="eqp-ad-box"><div class="eqp-ad-top"><span><i class="ti ti-ad-2"></i> QUẢNG CÁO</span><b class="eqp-ad-left">${sec}</b></div>
-        <div class="eqp-ad-stage"><i class="ti ti-tank"></i><p>Không gian quảng cáo</p><small>Xem hết để nhận: ${esc(itemName)}</small></div>
-        <div class="eqp-ad-bar"><i></i></div>
-        <div class="eqp-ad-actions"><button class="eqp-btn" data-ad="skip">BỎ QUA</button><button class="eqp-btn ad" data-ad="done" disabled><i class="ti ti-gift"></i> NHẬN</button></div></div>`;
-      document.body.appendChild(el);
-      const t0 = performance.now(), bar = $('.eqp-ad-bar i', el), left = $('.eqp-ad-left', el), done = $('[data-ad="done"]', el);
-      const tick = setInterval(() => {
-        const k = Math.min(1, (performance.now() - t0) / (sec * 1000));
-        bar.style.width = (k * 100).toFixed(1) + '%';
-        left.textContent = Math.max(0, Math.ceil(sec * (1 - k)));
-        if (k >= 1) { clearInterval(tick); done.disabled = false; left.innerHTML = '<i class="ti ti-check"></i>'; }
-      }, 100);
-      el.addEventListener('click', ev => {
-        const b = ev.target.closest('[data-ad]');
-        if (!b || b.disabled) return;
-        clearInterval(tick);
-        el.remove();
-        res(b.dataset.ad === 'done');
-      });
-    });
   }
 
   return { attach, onTankLoaded, show, render };

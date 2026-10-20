@@ -3385,17 +3385,31 @@ class SPGUnit3D {
 
     if (attacker && attacker !== this) {
       attacker.damageDealt += amount;
-      if (!this.isPlayer) {
-        // Ghi nhớ vị trí kẻ bắn để phản pháo trả đũa
-        this.lastAttackerPos = { x: attacker.x, z: attacker.z };
-        this.aiTimer = Math.min(this.aiTimer, 0.6);
-        // Né tránh đổi hướng gấp
-        this.evadeTimer = 2.4;
-        const evadeAngle = Math.random() * Math.PI * 2;
-        this.evadeTarget = {
-          x: Math.max(-1600, Math.min(1600, this.x + Math.cos(evadeAngle) * 200)),
-          z: Math.max(-1600, Math.min(1600, this.z + Math.sin(evadeAngle) * 200))
-        };
+      if (!this.isPlayer && source !== 'BURN') {
+        // Ghi nhớ vị trí kẻ bắn để bắn trả: chỉ biết chính xác khi đang thấy / được báo vị trí kẻ đó (TeamIntel).
+        // Không thấy: chỉ đoán được hướng đạn bay tới -> vị trí phỏng chừng, sai số ~25% cự ly
+        // (trước đây bot luôn biết toạ độ chính xác kẻ bắn kể cả khi kẻ đó núp bụi / ở rất xa)
+        const known = typeof TeamIntel === 'undefined' || TeamIntel.knows(this, attacker);
+        if (known) this.lastAttackerPos = { x: attacker.x, z: attacker.z };
+        else {
+          const d = Math.hypot(attacker.x - this.x, attacker.z - this.z);
+          const err = Math.max(60, d * 0.25), ea = Math.random() * Math.PI * 2, er = Math.sqrt(Math.random()) * err;
+          this.lastAttackerPos = { x: attacker.x + Math.cos(ea) * er, z: attacker.z + Math.sin(ea) * er };
+        }
+        this.aiTimer = Math.min(this.aiTimer, known ? 0.6 : 1.4);
+        // Né tránh: chạy chéo ra xa hướng đạn tới, tối đa 1 lần / 6 s. Đang đứng giữ cứ điểm thì chỉ né ngang
+        // một đoạn ngắn (trước đây trúng đạn nào cũng chạy 200 m theo hướng ngẫu nhiên -> bỏ cứ điểm)
+        const now = performance.now();
+        if (!this._evadeAt || now - this._evadeAt > 6000) {
+          this._evadeAt = now;
+          this.evadeTimer = 2.4;
+          const away = Math.atan2(this.x - attacker.x, this.z - attacker.z) + (Math.random() < 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.6);
+          const dist = this._holdingCp ? 45 : 170;
+          this.evadeTarget = {
+            x: Math.max(-1600, Math.min(1600, this.x + Math.sin(away) * dist)),
+            z: Math.max(-1600, Math.min(1600, this.z + Math.cos(away) * dist))
+          };
+        }
       }
     }
 
@@ -3526,9 +3540,11 @@ class SPGUnit3D {
     if (this.isDead || this.isPlayer) return;
     this.evadeTimer = 2.8;
     const awayAngle = Math.atan2(this.x - shellX, this.z - shellZ) + (Math.random() - 0.5) * 0.6;
+    // đang giữ cứ điểm: né vừa đủ ra khỏi tâm nổ rồi quay lại, không bỏ cứ điểm
+    const dist = this._holdingCp ? 70 : 220;
     this.evadeTarget = {
-      x: Math.max(-1600, Math.min(1600, this.x + Math.sin(awayAngle) * 220)),
-      z: Math.max(-1600, Math.min(1600, this.z + Math.cos(awayAngle) * 220))
+      x: Math.max(-1600, Math.min(1600, this.x + Math.sin(awayAngle) * dist)),
+      z: Math.max(-1600, Math.min(1600, this.z + Math.cos(awayAngle) * dist))
     };
     this.aiState = 'evading';
   }
