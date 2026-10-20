@@ -306,8 +306,8 @@ class TankInspector {
                 <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>G</kbd> thả khói</span><span><i class="ti ti-mouse" aria-hidden="true"></i> kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
               </div>
               <div class="ti-toast" id="ti-toast" role="status"></div>
-              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><a class="ti-lab-link" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng xem mọi loại đạn bay & nổ"><i class="ti ti-flask" aria-hidden="true"></i> PHÒNG THỬ ĐẠN ↗</a><button id="ti-wall-reset-btn" class="ti-lab-link ti-wall-btn" title="Tường tự dựng lại sau 5 giây không trúng đạn"><i class="ti ti-wall" aria-hidden="true"></i> DỰNG LẠI TƯỜNG</button><button id="ti-range-enter" class="ti-range-enter" title="Mở trường bắn toàn màn hình: chọn địa hình (đồi dốc, lội nước, sa mạc, rừng & vật cản), lái thử, bắn thử với bộ trang bị đang lắp"><i class="ti ti-target-arrow" aria-hidden="true"></i> VÀO TRƯỜNG BẮN</button></div>
-              <div class="ti-range-head"><button id="ti-range-exit" class="ti-range-exit" title="Về màn thông tin xe [ESC]"><i class="ti ti-chevron-left" aria-hidden="true"></i> THOÁT</button><div class="ti-range-title"><b>TRƯỜNG BẮN</b><span id="ti-range-tank"></span></div></div>
+              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><button id="ti-range-enter" class="ti-range-enter" title="Phòng thử đạn toàn màn hình: chọn địa hình (đồi dốc, lội nước, sa mạc, rừng & vật cản), lái thử, bắn thử, thả khói với đúng xe + bộ trang bị đang lắp"><i class="ti ti-target-arrow" aria-hidden="true"></i> PHÒNG THỬ ĐẠN</button><a class="ti-lab-link ti-lab-detail" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng: quỹ đạo, tốc độ chậm, bắn vào tường / tòa nhà / xe bia / boong-ke"><i class="ti ti-flask" aria-hidden="true"></i> THỬ ĐẠN CHI TIẾT ↗</a><button id="ti-wall-reset-btn" class="ti-lab-link ti-wall-btn" title="Tường tự dựng lại sau 5 giây không trúng đạn"><i class="ti ti-wall" aria-hidden="true"></i> DỰNG LẠI TƯỜNG</button></div>
+              <div class="ti-range-head"><button id="ti-range-exit" class="ti-range-exit" title="Về màn thông tin xe [ESC]"><i class="ti ti-chevron-left" aria-hidden="true"></i> THOÁT</button><div class="ti-range-title"><b>PHÒNG THỬ ĐẠN</b><span id="ti-range-tank"></span></div></div>
             </div>
             <div class="ti-equip-dock" id="ti-equip-dock" aria-label="Chọn trang bị"></div>
           </section>
@@ -753,7 +753,7 @@ class TankInspector {
     return ProvingGround.PRESETS[id] ? id : 'hills';
   }
 
-  // TRƯỜNG BẮN: màn riêng toàn màn hình (ẩn thông tin xe + dải trang bị), chọn địa hình, lái / bắn / thả khói
+  // PHÒNG THỬ ĐẠN (trường bắn): màn riêng toàn màn hình (ẩn thông tin xe + dải trang bị), chọn địa hình, lái / bắn / thả khói
   // với đúng xe + bộ trang bị đang lắp. Thoát (nút / Esc) -> về màn thông tin xe, bãi phẳng như cũ.
   enterRangeMode() {
     if (this.rangeMode || !this.isOpen) return;
