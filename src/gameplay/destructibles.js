@@ -1583,29 +1583,66 @@ const Destructibles = (() => {
     return 'varying float vBrk;\nvarying float vLY;\n' + fs.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' +
       (mode === 'stump' ? '  if (vLY > vBrk) discard;' : '  if (vBrk > 0.0 && vLY < vBrk) discard;'));
   }
+  // Cháy: attribute instance 'burn' — tán lá: tiến độ cháy 0..1 (lá cháy loang dần theo nhiễu, mép cháy đỏ rực rồi đen);
+  // thân / gốc cụt: độ rực than hồng 0..1 trong các vết nứt vỏ (đang cháy / âm ỉ sau khi cháy)
+  const BURN_GLSL = `
+    float tHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+    float tNoise(vec3 x) {
+      vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(mix(tHash(i), tHash(i + vec3(1, 0, 0)), f.x), mix(tHash(i + vec3(0, 1, 0)), tHash(i + vec3(1, 1, 0)), f.x), f.y),
+                 mix(mix(tHash(i + vec3(0, 0, 1)), tHash(i + vec3(1, 0, 1)), f.x), mix(tHash(i + vec3(0, 1, 1)), tHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+    }
+    // > 0: lá còn, giá trị = khoảng cách tới mép cháy; < 0: đã cháy hết
+    float leafBurnD(vec3 lp, vec2 uv, float b) {
+      float n = tNoise(lp * 0.16) * 0.72 + tNoise(vec3(uv * 5.0, lp.y * 0.1)) * 0.28;
+      return n - (b * 1.2 - 0.1);
+    }
+  `;
+  const BURN_DECL = 'varying float vBurn;\nvarying vec3 vLP;\nuniform float uWind;\n' + BURN_GLSL;
   function treeVS(vs, mode, tint) {
     const leafy = mode === 'leaf';
-    vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY + (tint ? '\n  vTint = tint;' : '') + (leafy ? '' : '\n  vBrk = brk; vLY = position.y;'));
+    vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY + (tint ? '\n  vTint = tint;' : '') +
+      (leafy ? '' : '\n  vBrk = brk; vLY = position.y;') + '\n  vBurn = burn; vLP = position;');
     if (leafy) vs = 'attribute vec2 corner;\n' + vs.replace('#include <project_vertex>', TREE_PROJECT);
     else vs = 'attribute float brk;\nvarying float vBrk;\nvarying float vLY;\n' + vs;
-    return (leafy ? '#define TREE_LEAFY\n' : '') + (tint ? 'attribute vec3 tint;\nvarying vec3 vTint;\n' : '') + 'uniform float uWind;\n' + vs;
+    return (leafy ? '#define TREE_LEAFY\n' : '') + (tint ? 'attribute vec3 tint;\nvarying vec3 vTint;\n' : '') +
+      'attribute float burn;\nvarying float vBurn;\nvarying vec3 vLP;\nuniform float uWind;\n' + vs;
   }
   function treeMat(mat, mode) {
     mat.onBeforeCompile = sh => {
       sh.uniforms.uWind = WIND;
       sh.vertexShader = treeVS(sh.vertexShader, mode, true);
-      sh.fragmentShader = brkCut('varying vec3 vTint;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vTint;'), mode);
+      let fs = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vTint;' + (mode === 'leaf' ? `
+  if (vBurn > 0.0) {
+    float bd = leafBurnD(vLP, vUv, vBurn);
+    if (bd < 0.0) discard;
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.04, 0.035), (1.0 - smoothstep(0.0, 0.2, bd)) * 0.92);
+  }` : ''));
+      fs = fs.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + (mode === 'leaf' ? `
+  if (vBurn > 0.0 && vBurn < 1.0) {
+    float bd2 = leafBurnD(vLP, vUv, vBurn);
+    float fl = 0.65 + 0.35 * sin(uWind * 19.0 + vLP.x * 0.8 + vLP.z * 0.6);
+    totalEmissiveRadiance += vec3(1.0, 0.38, 0.06) * (1.0 - smoothstep(0.0, 0.06, bd2)) * 2.6 * fl;
+  }` : `
+  if (vBurn > 0.0) {
+    float cr = smoothstep(0.7, 0.84, tNoise(vLP * vec3(2.4, 0.45, 2.4)));
+    float fl = 0.7 + 0.3 * sin(uWind * 11.0 + vLP.y * 0.7);
+    totalEmissiveRadiance += vec3(1.0, 0.33, 0.05) * cr * vBurn * 2.2 * fl;
+  }`));
+      sh.fragmentShader = brkCut('varying vec3 vTint;\n' + BURN_DECL + fs, mode);
     };
     mat.customProgramCacheKey = () => 'tree_' + mode;
     return mat;
   }
-  // Bóng đổ khớp với cây đang lay / gãy + cắt theo viền lá
+  // Bóng đổ khớp với cây đang lay / gãy / cháy loang + cắt theo viền lá
   function treeDepthMat(map, mode) {
     const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: map || null, alphaTest: map ? 0.4 : 0 });
     m.onBeforeCompile = sh => {
       sh.uniforms.uWind = WIND;
       sh.vertexShader = treeVS(sh.vertexShader, mode, false);
-      sh.fragmentShader = brkCut(sh.fragmentShader, mode);
+      let fs = sh.fragmentShader;
+      if (mode === 'leaf') fs = fs.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n  if (vBurn > 0.0 && leafBurnD(vLP, vUv, vBurn) < 0.0) discard;');
+      sh.fragmentShader = brkCut(BURN_DECL + fs, mode);
     };
     m.customProgramCacheKey = () => 'treeD_' + mode;
     return m;
@@ -1879,6 +1916,11 @@ const Destructibles = (() => {
           const a = rand(0, 6.283), u = rand(0.2, 0.6), rr = RS * u;
           leafCard(C, Math.cos(a) * rr, y + 1.5 - hh * u + 0.8, Math.sin(a) * rr, sz, sz, [Math.cos(a) * 0.5, 1, Math.sin(a) * 0.5], leafVar(1));
         }
+        // mấu cành trong mỗi tầng (lộ ra khi tán cháy trụi / bị xé lá)
+        if (wi >= 1 && wi <= 5) for (let b = 0; b < 3; b++) {
+          const a = (b / 3) * 6.283 + wi * 1.1 + rand(-0.3, 0.3), rr = R * rand(0.35, 0.5);
+          limb(T, [0, y - 1, 0], [Math.cos(a) * rr, y - 1 - rr * 0.35, Math.sin(a) * rr], 0.28, 0.06, { sides: 3, segs: 1, wobble: 0 });
+        }
         // cành gốc lộ ra dưới tầng lá thấp nhất
         if (wi === 0) for (let b = 0; b < 6; b++) {
           const a = (b / 6) * 6.283 + rand(-0.25, 0.25), rr = R * rand(0.6, 0.8);
@@ -1992,6 +2034,9 @@ const Destructibles = (() => {
     palm: [1.3, 0.9], pine: [1.4, 0.85], cypress: [1.0, 0.3], cactus: [1.7, 0.9], deadTree: [1.4, 0.75],
     acacia: [1.2, 0.5], willow: [1.6, 0.5], jungle: [1.7, 0.72], broadleaf: [1.5, 0.45]
   };
+  // Độ bén lửa theo loại: cây khô / keo / thông nhựa / tàu dừa khô bén nhanh; cây lá rộng tươi, liễu ven nước, đại thụ
+  // rừng ẩm khó cháy (cần đạn cháy hoặc trúng nhiều lần); xương rồng mọng nước gần như không cháy
+  const FLAM = { deadTree: 1.6, acacia: 1.3, pine: 1.25, palm: 1.2, cypress: 1.0, broadleaf: 0.8, willow: 0.65, jungle: 0.55, cactus: 0.15 };
   // Trọng số che khuất của 1 cây (tán dày = 1; cây khô / mất tán chỉ còn thân = ít)
   const SCREEN = { cactus: 0, deadTree: 0.35 };
   const DC = 24;                 // ô lưới mật độ tán (đơn vị thế giới)
@@ -2028,8 +2073,10 @@ const Destructibles = (() => {
           const n = list.length;
           // thân & gốc cụt dùng chung hình học nhưng mỗi bên 1 bộ 'brk' riêng (độ cao gãy từng cây)
           const stumpGeo = v.trunk.clone();
-          v.trunk.setAttribute('brk', new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1));
-          stumpGeo.setAttribute('brk', new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1));
+          const inst = () => new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1);
+          v.trunk.setAttribute('brk', inst()); v.trunk.setAttribute('burn', inst());
+          stumpGeo.setAttribute('brk', inst()); stumpGeo.setAttribute('burn', inst());
+          if (v.crown) v.crown.setAttribute('burn', inst());
           const trunk = new Pool(this.group, v.trunk, trunkMat, n, { color: true });
           trunk.mesh.customDepthMaterial = treeDepthMat(null, 'trunk');
           trunk.mesh.onBeforeRender = windTick;
@@ -2192,10 +2239,10 @@ const Destructibles = (() => {
         if (!it.fallen) this.push(it, it.x - x, it.z - z, (blasty ? 0.55 : 0.08) * kw * kw * A.power);
         if (d > R) continue;
         if (it.fallen && it.heat > 2) continue;
-        const k = 1 - d / R;
-        it.heat += k * A.heat * (A.fire ? 2.2 : 1) * (heavy ? 1.5 : 1);
-        // Đạn nổ mạnh sát gốc: lửa nổ bén cháy rụi cả cây
-        if (blasty && d < A.radius * 1.3) it.heat = Math.max(it.heat, 1.7 + k);
+        const k = 1 - d / R, fl = FLAM[it.kind] !== undefined ? FLAM[it.kind] : 1;
+        it.heat += k * A.heat * (A.fire ? 2.2 : 1) * (heavy ? 1.5 : 1) * fl;
+        // Quả cầu lửa nổ sát cây: sém mạnh; cây khô / dễ bén bắt lửa luôn, cây tươi thường chỉ sém (trúng lần nữa mới cháy)
+        if (blasty && d < A.radius * 1.3) it.heat += 0.6 * k * fl;
         // Quật đổ: sóng nổ mạnh sát gốc / trúng trực tiếp (đổ xong vẫn tiếp tục cháy)
         if (!it.fallen && (k * A.power > 0.85 || (d < A.radius * 0.8 && A.power > 0.5))) this.fell(it, it.x - x, it.z - z, fx, { p: Math.min(1.5, k * A.power * (heavy ? 1.4 : 1)), brk: this.breakAt(it, y, d) });
         if (blasty && k > 0.3) this.stripLeaves(it, 0.35 * k, x, y, z, fx);
@@ -2270,9 +2317,10 @@ const Destructibles = (() => {
             const big = A.power >= 0.5;
             this.push(it, dx, dz, big ? 0.12 : 0.025);
             this.stripLeaves(it, big ? 0.28 : 0.04, px, py, pz, fx);
-            if (ammo === 'INCENDIARY') it.heat += 0.9;
-            else if (ammo === 'GATLING_BULLET') it.heat += 0.12;   // đầu đạn nổ-cháy 30mm
-            else if (ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE') it.heat += 0.5; // lửa đuôi tên lửa
+            const fl = FLAM[it.kind] !== undefined ? FLAM[it.kind] : 1;
+            if (ammo === 'INCENDIARY') it.heat += 0.9 * fl;
+            else if (ammo === 'GATLING_BULLET') it.heat += 0.12 * fl;   // đầu đạn nổ-cháy 30mm
+            else if (ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE') it.heat += 0.5 * fl; // lửa đuôi tên lửa
             this.refreshLook(it, fx);
           }
         }
@@ -2282,7 +2330,13 @@ const Destructibles = (() => {
     refreshLook(it, fx) {
       if (it.heat > 1.6 && it.state !== 'burnt') {
         // Cháy rụi: lá cháy hết, trơ thân đen
-        if (it.state !== 'burning') { it.state = 'burning'; it.burnT = rand(6, 11); this.burning.push(it); sfx('fire', it.x, it.y, it.z, 0.8); }
+        if (it.state !== 'burning') {
+          // tán bùng cháy Dc giây (cây không lá: chỉ cành & thân) rồi lửa liếm thân Dt giây
+          it.state = 'burning'; it.burnAge = 0; it.lightT = 0;
+          it.burnDc = (it.ci >= 0 && !it.crownGone) ? rand(10, 15) : 0;
+          it.burnDt = rand(8, 12) * (it.kind === 'deadTree' ? 1.4 : 1);
+          this.burning.push(it); sfx('fire', it.x, it.y, it.z, 0.8);
+        }
       } else if (it.heat > 0.55 && it.state === 'ok') {
         it.state = 'scorched';
         const c = TREE_COLORS.scorched.clone().multiplyScalar(rand(0.85, 1.1));
@@ -2537,6 +2591,9 @@ const Destructibles = (() => {
       for (let i = this.smouldering.length - 1; i >= 0; i--) {
         const it = this.smouldering[i];
         it.smoulder -= dt;
+        // than hồng trong vết nứt thân tàn dần
+        const sk = Math.max(0, it.smoulder / (it.smoulder0 || 1));
+        this.setBurn(it, null, 0.4 * sk * sk);
         if (it.smoulder <= 0) { this.smouldering.splice(i, 1); continue; }
         if (fx && fx.smoke && RNG() < dt * 3) {
           const g = rand(0.2, 0.32), tp = this.trunkPoint(it, rand(0.2, 0.6));   // cây đổ: khói bốc dọc thân nằm trên đất
@@ -2609,30 +2666,36 @@ const Destructibles = (() => {
       }
       for (let i = this.burning.length - 1; i >= 0; i--) {
         const it = this.burning[i];
-        it.burnT -= dt;
+        it.burnAge += dt;
+        const a = it.burnAge, Dc = it.burnDc, Dt = it.burnDt;
+        const crownOn = it.ci >= 0 && !it.crownGone && Dc > 0;
+        // cường độ lửa: bùng lên trong ~1,5 s, cháy to suốt lúc tán cháy, rồi chỉ còn lửa liếm thân yếu dần
+        const I = Math.min(1, a / 1.5) * (a < Dc ? 1 : Math.max(0, 0.5 * (1 - (a - Dc) / Dt)));
         // Tiếng cây cháy: nguồn âm liên tục khi tán lá còn cháy (lá khô nổ lách tách nhiều), báo 2 lần/giây
         it.sndT = (it.sndT || 0) - dt;
         if (it.sndT <= 0 && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.fireSource) {
           it.sndT = 0.5;
-          window.soundEngine.fireSource(it, { x: it.x, y: it.y, z: it.z }, it.crownGone ? 0.45 : 0.8);
+          window.soundEngine.fireSource(it, { x: it.x, y: it.y, z: it.z }, crownOn ? 0.8 : 0.45);
         }
-        // Lửa liếm tán lá + khói đen
-        if (fx && fx.fire && RNG() < dt * 9) {
-          const tp = this.trunkPoint(it, rand(0.55, 0.95)), h = tp.y - it.y;   // tán cây đổ nằm cách gốc, sát đất
-          fx.fire.add({ x: tp.x + rand(-4, 4), y: it.y + h, z: tp.z + rand(-4, 4), vx: rand(-2, 2), vy: rand(8, 16), vz: rand(-2, 2), size: rand(4, 8), grow: -2, life: rand(0.4, 0.8), alpha: 0.95, fadeIn: 0.04, c0: [1, 0.7, 0.3], c1: [0.8, 0.25, 0.05], cell: 1, floor: false });
-          fx.smoke.add({ x: tp.x, y: it.y + h + 4, z: tp.z, vx: rand(-3, 3), vy: rand(10, 18), vz: rand(-3, 3), size: rand(6, 10), grow: 7, drag: 0.6, grav: -3, life: rand(3, 5), alpha: 0.55, fadeIn: 0.2, c0: [0.1, 0.09, 0.08], c1: [0.3, 0.29, 0.28], cell: 0, floor: false });
+        if (crownOn) {
+          // lá cháy loang dần trong tán (shader), tán sẫm dần
+          const pc = clamp01(a / Dc);
+          // nhiễu tập trung quanh 0.15..0.85 -> quét ngưỡng đều trong khoảng đó để lá cháy dần đều suốt thời gian tán cháy
+          this.setBurn(it, (0.2 + 0.78 * pc) / 1.2, null);
+          it.V.crown.color(it.ci, it.tint.clone().lerp(TREE_COLORS.scorched, Math.min(1, pc * 2)).multiplyScalar(1 - 0.4 * pc));
+          if (pc >= 1) {
+            it.crownGone = true;
+            this.reweigh(it);
+            it.V.crown.hide(it.ci);
+            const cp = this.crownPoint(it, 0);
+            if (fx && fx.fire) for (let k = 0; k < 14; k++) fx.fire.add({ x: cp.x + rand(-6, 6), y: cp.y, z: cp.z + rand(-6, 6), vx: rand(-6, 6), vy: rand(-4, 10), vz: rand(-6, 6), size: rand(0.8, 1.6), grow: -0.5, drag: 0.6, grav: 30, life: rand(1, 2), alpha: 1, fadeIn: 0.01, c0: [1, 0.6, 0.2], c1: [0.6, 0.15, 0.02], cell: 3 });
+          }
         }
-        // Lá cháy dần -> mất tán
-        const prog = 1 - Math.max(0, it.burnT) / 9;
-        if (it.ci >= 0 && !it.crownGone) it.V.crown.color(it.ci, TREE_COLORS.scorched.clone().lerp(TREE_COLORS.charred, clamp01(prog * 1.4)));
-        if (prog > 0.6 && it.ci >= 0 && !it.crownGone) {
-          it.crownGone = true;
-          this.reweigh(it);
-          it.V.crown.hide(it.ci);
-          const cp = this.trunkPoint(it, 0.8);
-          if (fx && fx.fire) for (let k = 0; k < 10; k++) fx.fire.add({ x: cp.x + rand(-6, 6), y: cp.y, z: cp.z + rand(-6, 6), vx: rand(-6, 6), vy: rand(-4, 10), vz: rand(-6, 6), size: rand(0.8, 1.6), grow: -0.5, drag: 0.6, grav: 30, life: rand(1, 2), alpha: 1, fadeIn: 0.01, c0: [1, 0.6, 0.2], c1: [0.6, 0.15, 0.02], cell: 3 });
-        }
-        if (it.burnT <= 0) {
+        // thân cháy sém đen dần từ lúc bén lửa, than hồng rực trong vết nứt
+        this.trunkColor(it, it.tint.clone().lerp(TREE_COLORS.charred, clamp01(a / (Dc + Dt * 0.6))));
+        this.setBurn(it, null, 0.3 + 0.7 * I);
+        if (fx) this.emitFire(it, I, crownOn, dt, fx);
+        if (a >= Dc + Dt) {
           this.burning.splice(i, 1);
           // Cháy rụi: lá cháy sạch, trơ khung thân + cành than đen
           if (it.ci >= 0 && !it.crownGone) { it.crownGone = true; it.V.crown.hide(it.ci); }
@@ -2640,16 +2703,76 @@ const Destructibles = (() => {
           this.reweigh(it);
           this.trunkColor(it, TREE_COLORS.charred);
           if (!it.fallen) this.push(it, rand(-1, 1), rand(-1, 1), 0.02);
-          // Thân cây cháy rụi còn âm ỉ bốc khói một lúc lâu
-          it.smoulder = rand(18, 30);
+          // Thân cây cháy rụi còn âm ỉ bốc khói, than hồng tàn dần một lúc lâu
+          it.smoulder = it.smoulder0 = rand(25, 40);
           this.smouldering.push(it);
         }
+      }
+    }
+    // Tâm khối tán (cây đứng / đã đổ) + điểm ngẫu nhiên trong khối tán (spread 0..1)
+    crownPoint(it, spread) {
+      const cn = it.V.info.canopy, s = it.s;
+      const u = cn ? clamp01(cn.dc * s / it.height) : 0.75, c = this.trunkPoint(it, u);
+      if (!spread) return c;
+      const R = (cn ? cn.rc : 6) * s * spread, a = rand(0, 6.283), y = rand(-1, 1), r = Math.sqrt(1 - y * y) * Math.cbrt(rand(0.15, 1));
+      return { x: c.x + Math.cos(a) * r * R, y: c.y + y * R * (it.fallen ? 0.8 : 0.55), z: c.z + Math.sin(a) * r * R };
+    }
+    // Lửa, tàn lửa, khói & ánh lửa của 1 cây đang cháy. Nhiều cây cháy cùng lúc: chia bớt hạt để không tràn bể hạt
+    emitFire(it, I, crownOn, dt, fx) {
+      if (I <= 0.01) return;
+      const budget = Math.min(1, 5 / Math.max(1, this.burning.length)), cn = it.V.info.canopy, s = it.s;
+      const R = (cn ? cn.rc : 6) * s;
+      const n = (rate) => { const e = rate * dt; return Math.floor(e) + (RNG() < e - Math.floor(e) ? 1 : 0); };
+      if (fx.fire) {
+        // ngọn lửa: khắp khối tán khi tán cháy / dọc thân & cành khi chỉ còn thân
+        const nF = n(I * budget * (crownOn ? 40 + R * 1.6 : 16));
+        for (let k = 0; k < nF; k++) {
+          const p = crownOn ? this.crownPoint(it, 0.9) : this.trunkPoint(it, rand(0.05, it.V.info.canopy ? 0.75 : 0.95));
+          const big = crownOn ? Math.max(5, Math.min(20, R * rand(0.32, 0.58))) : rand(3, 6.5) * Math.min(1.4, s);
+          const w = rand(0.7, 1);
+          fx.fire.add({ x: p.x + (crownOn ? 0 : rand(-1.5, 1.5)), y: p.y, z: p.z + (crownOn ? 0 : rand(-1.5, 1.5)), vx: rand(-2, 2) + 2.4, vy: rand(8, 18), vz: rand(-2, 2) + 1.8,
+            size: big, grow: crownOn ? 4 : 1.5, drag: 0.8, life: rand(0.55, 1.15), alpha: 0.95, fadeIn: 0.05, c0: [1, 0.8 * w + 0.12, 0.45 * w], c1: [0.9, 0.26, 0.03], cell: 1, floor: false });
+        }
+        // tàn lửa bay lên theo khói
+        const nE = n(I * budget * (crownOn ? 10 : 4));
+        for (let k = 0; k < nE; k++) {
+          const p = crownOn ? this.crownPoint(it, 0.7) : this.trunkPoint(it, rand(0.2, 0.8));
+          fx.fire.add({ x: p.x, y: p.y, z: p.z, vx: rand(-4, 4) + 3, vy: rand(10, 26), vz: rand(-4, 4) + 2.2, size: rand(0.4, 0.8), grow: -0.2, drag: 0.7, grav: -3,
+            life: rand(1.4, 3), alpha: 1, fadeIn: 0.01, c0: [1, 0.75, 0.35], c1: [0.9, 0.25, 0.02], cell: 3, floor: false });
+        }
+      }
+      if (fx.smoke) {
+        // cột khói dày bốc lên từ đỉnh tán, cuộn to dần và ngả theo gió
+        const nS = n(I * budget * (crownOn ? 4 + R * 0.12 : 2.2));
+        for (let k = 0; k < nS; k++) {
+          const p = crownOn ? this.crownPoint(it, 0.5) : this.trunkPoint(it, rand(0.3, 0.9));
+          const g = rand(0.08, 0.16), sz = crownOn ? Math.max(6, Math.min(20, R * rand(0.45, 0.7))) : rand(4, 7);
+          fx.smoke.add({ x: p.x, y: p.y + (crownOn ? R * 0.3 : 2), z: p.z, vx: rand(-2, 2) + rand(3, 7) * 0.8, vy: rand(9, 16), vz: rand(-2, 2) + rand(3, 7) * 0.6,
+            size: sz, grow: crownOn ? 11 : 6, drag: 0.5, grav: -2.2, life: rand(5, 8), alpha: crownOn ? 0.55 : 0.4, fadeIn: 0.2,
+            c0: [g, g * 0.95, g * 0.9], c1: [g * 2.6 + 0.12, g * 2.5 + 0.12, g * 2.4 + 0.12], cell: 0, floor: false });
+        }
+      }
+      // ánh lửa hắt lên xung quanh (nhấp nháy)
+      it.lightT -= dt;
+      if (it.lightT <= 0 && fx.addLight && this.burning.length <= 6) {
+        it.lightT = 0.22;
+        const c = crownOn ? this.crownPoint(it, 0) : this.trunkPoint(it, 0.3);
+        fx.addLight(c.x, c.y, c.z, (crownOn ? 0.55 : 0.3) * I * rand(0.75, 1.1), 0.32);
+      }
+    }
+    // Ghi tiến độ cháy tán (cb, null: giữ nguyên) & độ rực than hồng của thân / gốc cụt (glow, null: giữ nguyên)
+    setBurn(it, cb, glow) {
+      if (cb !== null && it.ci >= 0) { const at = it.V.crown.mesh.geometry.attributes.burn; at.setX(it.ci, cb); at.needsUpdate = true; }
+      if (glow !== null) {
+        const at = it.V.trunk.mesh.geometry.attributes.burn; at.setX(it.ti, glow); at.needsUpdate = true;
+        if (it.si >= 0) { const bt = it.V.stump.mesh.geometry.attributes.burn; bt.setX(it.si, glow); bt.needsUpdate = true; }
       }
     }
     reset() {
       for (const it of this.items) {
         it.heat = 0; it.state = 'ok'; it.fallen = false; it.crownGone = false; it.fall = null; it.leaves = 1; it.sw = null; it.swaying = false;
         this.applyBreak(it, 0);
+        this.setBurn(it, 0, 0);
         it.V.trunk.set(it.ti, it.base); if (it.ci >= 0) it.V.crown.set(it.ci, it.base);
         this.setColor(it, it.tint);
       }
