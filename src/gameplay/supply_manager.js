@@ -162,7 +162,7 @@ class SupplyManager {
     if (!drop || drop.collected) return;
     drop.collected = true;
     this.game.scene.remove(drop.mesh);
-    const labels = ['2 VIÊN ĐẠN XUYÊN PHÁ (BẮN PHÁT CHẾT LUÔN)!', '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!', 'GIÁP PHẢN ỨNG NỔ (CHỊU ĐƯỢC 1 VIÊN KHÔNG MẤT MÁU)!',
+    const labels = ['2 VIÊN ĐẠN XUYÊN PHÁ (BẮN PHÁT CHẾT LUÔN)!', '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!', 'GIÁP PHẢN ỨNG NỔ (PHÁ HỦY 1 PHÁT RPG / ĐẠN PHÁO TRÚNG THẲNG)!',
       'HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU VÀ HỒI ĐẦY MÁU)!', 'ĐỘNG CƠ TĂNG ÁP TỐC ĐỘ (+65% TỐC ĐỘ DI CHUYỂN TRONG 20S)!'];
     let lootMsg = labels[lootRoll] || labels[0];
     if (this.ownsUnit(unit)) {

@@ -2074,7 +2074,25 @@ class ArtilleryGame3D {
       // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy
       if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(directTarget);
 
+      // Giáp phản ứng nổ nhặt từ thùng tiếp tế: phản ứng theo loại đạn như gạch giáp nổ (Equipment.eraEffect)
+      // phát đã bị chặn hết (gạch giáp nổ mua thêm, lồng thép, hệ thống đánh chặn): không đốt thêm giáp nhặt được
+      directTarget._eraIgnore = directDamage <= 0;
+      if (directTarget.hasReactiveArmor && !directTarget._eraIgnore && !(unitHit && unitHit.ricochet) && typeof Equipment !== 'undefined' && Equipment.eraEffect) {
+        const eff = Equipment.eraEffect(ammoType, !!shell.isHeavyArty, shooter);
+        if (!eff.trigger) directTarget._eraIgnore = true;          // đạn nhỏ: gạch không kích nổ, giữ nguyên giáp
+        else if (eff.mul > 0) {
+          // đạn quá mạnh (tên lửa đầu nổ kép, mũi tên xuyên giáp, lựu pháo): gạch nổ & mất nhưng chỉ giảm bớt sát thương
+          directTarget.hasReactiveArmor = false;
+          if (directTarget.reactiveArmorMesh) directTarget.reactiveArmorMesh.visible = false;
+          if (typeof directTarget.spawnReactiveArmorTriggerFX === 'function') directTarget.spawnReactiveArmorTriggerFX();
+          directDamage = Math.round(directDamage * eff.mul * 1000) / 1000;
+          directTarget._eraIgnore = true;
+          const why = eff.why === 'tandem' ? 'đầu nổ kép xuyên qua' : eff.why === 'kinetic' ? 'mũi tên xuyên giáp bị chém lệch' : 'lựu pháo quá mạnh';
+          if (directTarget.isPlayer || (shooter && shooter.isPlayer)) this.addCombatLog(`[[shield]] Giáp phản ứng nổ của ${directTarget.name} kích nổ nhưng ${why} — chỉ giảm ${Math.round((1 - eff.mul) * 100)}% sát thương`, 'alert');
+        }
+      }
       const res = directTarget.takeDamage(directDamage, shooter, 'DIRECT_HIT');
+      directTarget._eraIgnore = false;
 
       if (res.blocked) {
         this.addCombatLog(`[[shield]] GIÁP PHẢN ỨNG NỔ CỦA ${directTarget.name} ĐÃ KÍCH NỔ CẢN PHÁ ĐẠN! BẢO VỆ XE AN TOÀN KHÔNG MẤT MÁU!`, 'alert');
@@ -2193,7 +2211,10 @@ class ArtilleryGame3D {
           }
           if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(unit);
 
+          // Sức nổ lan / mảnh văng không làm giáp phản ứng nổ kích nổ (gạch chỉ phản ứng với đạn trúng thẳng)
+          unit._eraIgnore = true;
           const res = unit.takeDamage(splashDamage, shooter, 'SHELL');
+          unit._eraIgnore = false;
 
           if (res.blocked) {
             this.addCombatLog(`[[shield]] GIÁP PHẢN ỨNG NỔ CỦA ${unit.name} ĐÃ CẢN PHÁ VỤ NỔ! KHÔNG MẤT MÁU!`, 'alert');
@@ -2928,7 +2949,7 @@ class ArtilleryGame3D {
               lootMsg = '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!';
             } else if (lootRoll === 2) {
               unit.hasReactiveArmor = true;
-              lootMsg = 'GIÁP PHẢN ỨNG NỔ (CHỊU ĐƯỢC 1 VIÊN KHÔNG MẤT MÁU)!';
+              lootMsg = 'GIÁP PHẢN ỨNG NỔ (PHÁ HỦY 1 PHÁT RPG / ĐẠN PHÁO TRÚNG THẲNG)!';
             } else if (lootRoll === 3) {
               unit.maxHp += 1;
               unit.hp = unit.maxHp;

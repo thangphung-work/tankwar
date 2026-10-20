@@ -26,7 +26,7 @@
   const MODULES = {
     era: {
       name: 'Giáp phản ứng nổ', icon: 'bolt', cat: 'armor', adv: true, price: 3200, tanks: ['ALL_ROUNDER', 'GATLING', 'SCOUT'], speed: 0.97,
-      desc: 'Gạch nổ phủ mũi, sườn và tháp. Mỗi viên gạch kích nổ chặn gần hết một phát đạn nổ lõm / RPG, giảm sức xuyên đạn xuyên giáp. Gạch đã nổ thì mất.'
+      desc: 'Gạch nổ phủ mũi, sườn và tháp. Trúng gạch: phá hủy hẳn RPG, bom con, đạn pháo 120mm (không mất máu); tên lửa đầu nổ kép chỉ giảm 15%, đạn xuyên giáp giảm 40%, lựu pháo 155mm giảm 50%. Đạn súng máy / 30mm không làm gạch nổ. Mảng gạch đã nổ thì mất.'
     },
     slat: {
       name: 'Giáp lồng chống RPG', icon: 'grid-dots', cat: 'armor', price: 1800, tanks: ALL, speed: 0.98,
@@ -34,7 +34,7 @@
     },
     applique: {
       name: 'Tấm giáp tăng cường', icon: 'shield', cat: 'armor', adv: true, price: 3800, tanks: ALL, speed: 0.94, accel: 0.94,
-      desc: 'Giáp composite gắn thêm ở sườn và má tháp: giáp sườn dày thêm ~45%, mũi ~20%. Xe nặng hơn, chậm hơn một chút.'
+      desc: 'Giáp composite gắn thêm ở sườn và má tháp: sườn dày thêm ~45%, mũi ~20%. Trúng mặt có tấm giáp: súng máy chỉ còn 40% sát thương, đạn 30mm 60%, đạn nổ phá 70% và lâu bị đục thủng hơn; mảnh nổ lan giảm 15%. Xe nặng hơn, chậm hơn một chút.'
     },
     spall: {
       name: 'Lớp lót chống mảnh', icon: 'layers-subtract', cat: 'armor', price: 2800, tanks: ALL,
@@ -247,19 +247,46 @@
 
   // ---------- Hệ số dùng trong mô hình xuyên giáp (vehicle_damage.js) ----------
   // Giáp quy đổi: tấm giáp tăng cường còn trên mặt bị trúng
-  function armorMul(u, face, onTurret) {
-    if (!has(u, 'applique')) return 1;
-    if (onTurret) return (face === 'front' || face === 'sideL' || face === 'sideR') && !lost(u, 'appliqueKitT') ? 1.2 : 1;
-    if (face === 'sideL') return lost(u, 'appliqueKitL') ? 1 : 1.45;
-    if (face === 'sideR') return lost(u, 'appliqueKitR') ? 1 : 1.45;
-    if (face === 'front') return (lost(u, 'appliqueKitL') && lost(u, 'appliqueKitR')) ? 1 : 1.2;
-    return 1;
+  // ---------------------------------------------------------------------------
+  // QUY TẮC GIÁP THEO LOẠI ĐẠN (dùng chung cho mọi xe / mọi máy)
+  // ---------------------------------------------------------------------------
+  // Tấm giáp tăng cường (composite gắn ngoài) có còn che mặt bị trúng không
+  function appliqueCovers(u, face, onTurret) {
+    if (!has(u, 'applique')) return false;
+    if (onTurret) return (face === 'front' || face === 'sideL' || face === 'sideR') && !lost(u, 'appliqueKitT');
+    if (face === 'sideL') return !lost(u, 'appliqueKitL');
+    if (face === 'sideR') return !lost(u, 'appliqueKitR');
+    if (face === 'front') return !(lost(u, 'appliqueKitL') && lost(u, 'appliqueKitR'));
+    return false;
   }
-  // Gạch giáp nổ mua thêm bị trúng: cộng giáp quy đổi cho phát này (gạch kích nổ rồi văng — vehicle_damage tự tách)
-  function eraBonus(tag, kind, tandem) {
-    if (!tag || !/^eraKit/.test(tag)) return 0;
-    if (kind === 'CE') return tandem ? 60 : 450;
-    return kind === 'KE' ? 90 : 0;
+  // Giáp dày thêm trên mặt được che: sườn +45%, mũi / tháp +20% (tác dụng với mọi loại đạn qua độ xuyên)
+  function armorMul(u, face, onTurret) {
+    if (!appliqueCovers(u, face, onTurret)) return 1;
+    return !onTurret && (face === 'sideL' || face === 'sideR') ? 1.45 : 1.2;
+  }
+  // Ngoài độ dày, tấm giáp còn hấp thụ: đạn súng máy / 30mm vỡ vụn trên lớp gốm, sức nổ & mảnh của đạn nổ phá dồn
+  // vào tấm ngoài. Đạn xuyên giáp & nổ lõm chỉ bị cản bằng độ dày (đã tính ở armorMul)
+  const APPLIQUE_DIRECT = { small: 0.4, cannon: 0.6, blast: 0.7, kinetic: 1, heat: 1 };
+  const APPLIQUE_SPLASH = { small: 0.6, cannon: 0.6, blast: 0.85, kinetic: 0.85, heat: 0.85 };
+  function appliqueDamageMul(u, face, onTurret, cls) {
+    return appliqueCovers(u, face, onTurret) ? (APPLIQUE_DIRECT[cls] || 1) : 1;
+  }
+  function appliqueSplashMul(u, cls) {
+    return has(u, 'applique') ? (APPLIQUE_SPLASH[cls] || 1) : 1;
+  }
+  // Giáp phản ứng nổ (gạch mua thêm, gạch có sẵn trên xe, giáp nổ nhặt ở thùng tiếp tế) khi bị trúng thẳng:
+  //  - đạn súng máy / 30mm / đạn cháy: gạch được thiết kế KHÔNG kích nổ với đạn nhỏ -> không tác dụng, không mất
+  //  - RPG, bom con, đạn nổ phá 120mm, đạn chùm: gạch kích nổ, tấm thép văng ra phá hủy đầu đạn -> 0 sát thương
+  //  - tên lửa đầu nổ kép / đạn nổ lõm 2 tầng: đầu mồi kích nổ gạch, đầu chính vẫn xuyên -> còn 85%
+  //  - đạn xuyên giáp mũi tên: tấm thép văng chém lệch / gãy mũi tên -> còn 60%
+  //  - lựu pháo 155mm: quá mạnh, gạch chỉ đỡ được một nửa
+  // Trả { trigger: gạch có kích nổ (và mất) không, mul: phần sát thương còn lại }
+  function eraEffect(ammo, heavy, shooter) {
+    if (ammo === 'SCOUT_BULLET' || ammo === 'GATLING_BULLET' || ammo === 'INCENDIARY') return { trigger: false, mul: 1, why: 'small' };
+    if (heavy) return { trigger: true, mul: 0.5, why: 'heavy' };
+    if (ammo === 'ANTI_TANK_MISSILE' || isTandem(shooter, ammo)) return { trigger: true, mul: 0.85, why: 'tandem' };
+    if (ammo === 'AP') return { trigger: true, mul: 0.6, why: 'kinetic' };
+    return { trigger: true, mul: 0, why: 'defeat' };
   }
   function penMul(shooter, ammo) {
     const P = shooter && shooter.ammoMods && shooter.ammoMods[ammo];
@@ -1134,7 +1161,7 @@
 
   return Object.assign(API, {
     has, equip, onRespawn, paidUsed, ammoDelta, startLife,
-    armorMul, eraBonus, penMul, isTandem, splashMul, spallMul, slatDefeats, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul,
+    armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, eraEffect, penMul, isTandem, splashMul, spallMul, slatDefeats, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)
     APS_CHARGES, SMOKE_CHARGES

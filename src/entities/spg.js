@@ -3327,8 +3327,9 @@ class SPGUnit3D {
       return { blocked: true, friendlyFire: true, killed: false, prevHp: this.hp, currentHp: this.hp };
     }
 
-    // NẾU CÓ GIÁP PHẢN ỨNG NỔ: Chịu được 1 viên đạn bất kỳ mà HOÀN TOÀN KHÔNG MẤT MÁU!
-    if (this.hasReactiveArmor && (source === 'SHELL' || source === 'DIRECT_HIT')) {
+    // GIÁP PHẢN ỨNG NỔ (thùng tiếp tế): kích nổ phá hủy đầu đạn -> không mất máu. Đạn nhỏ & sức nổ lan không làm gạch
+    // kích nổ, đạn mạnh chỉ bị giảm bớt: game.js quyết theo Equipment.eraEffect rồi đặt _eraIgnore cho các phát đó
+    if (this.hasReactiveArmor && (source === 'SHELL' || source === 'DIRECT_HIT') && !this._eraIgnore) {
       this.hasReactiveArmor = false;
       if (this.reactiveArmorMesh) this.reactiveArmorMesh.visible = false;
       this.spawnReactiveArmorTriggerFX();
