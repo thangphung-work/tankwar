@@ -22,17 +22,32 @@
   const Dm = ch(38, [50, 53, 57], 3), Bb = ch(34, [50, 53, 58], 4), F = ch(41, [48, 53, 57], 4), C = ch(36, [48, 52, 55], 4);
   const Gm = ch(43, [50, 55, 58], 3), A = ch(45, [49, 52, 57], 4), Eb = ch(39, [51, 55, 58], 4);
 
+  const Dmaj = ch(38, [50, 54, 57], 4);
+
   const SONGS = {
-    // i - VI - III - VII - i - VI - iv - V : vòng hợp âm sử thi, ô nhịp cuối (La trưởng) kéo về lại Rê thứ
+    // i - VI - III - VII - iv - VI - VII - I : vòng hợp âm anh hùng, ô nhịp cuối bừng sáng lên Rê TRƯỞNG rồi quay lại Rê thứ
     lobby: {
-      bpm: 92, gain: 0.5, chords: [Dm, Bb, F, C, Dm, Bb, Gm, A],
-      // kèn đồng hát chủ đề ở đoạn cao trào: [ô nhịp, bước móc kép, nốt, độ dài (bước)]
-      melody: [[0, 0, 62, 16], [1, 0, 65, 8], [1, 8, 62, 8], [2, 0, 60, 8], [2, 8, 65, 8], [3, 0, 64, 16],
-        [4, 0, 69, 8], [4, 8, 67, 4], [4, 12, 65, 4], [5, 0, 65, 8], [5, 8, 62, 8], [6, 0, 67, 8], [6, 8, 70, 8], [7, 0, 69, 16]],
-      order: ['intro', 'build', 'full', 'break', 'build', 'full'], loopFrom: 3
+      bpm: 108, gain: 0.37, chords: [Dm, Bb, F, C, Gm, Bb, C, Dmaj],
+      // chủ đề kèn đồng: nhịp chấm dôi "ta-ta TAAA", bước nhảy quãng 5 đi lên, đỉnh câu vút lên Rê cao
+      // [ô nhịp, bước móc kép, nốt MIDI, độ dài (bước)]
+      melody: [[0, 0, 62, 3], [0, 3, 62, 1], [0, 4, 69, 8], [0, 12, 67, 2], [0, 14, 65, 2],
+        [1, 0, 65, 6], [1, 6, 67, 2], [1, 8, 65, 4], [1, 12, 62, 4],
+        [2, 0, 60, 3], [2, 3, 60, 1], [2, 4, 65, 8], [2, 12, 69, 4],
+        [3, 0, 67, 12], [3, 12, 64, 2], [3, 14, 67, 2],
+        [4, 0, 70, 6], [4, 6, 69, 2], [4, 8, 67, 4], [4, 12, 62, 4],
+        [5, 0, 65, 6], [5, 6, 67, 2], [5, 8, 70, 8],
+        [6, 0, 72, 6], [6, 6, 70, 2], [6, 8, 69, 4], [6, 12, 67, 4],
+        [7, 0, 69, 4], [7, 4, 74, 12]],
+      order: ['intro', 'build', 'full', 'full', 'break', 'build', 'full', 'full'], loopFrom: 4
     },
-    // i - i - bII - bII - i - i - VI - VII : Mi giáng (bậc II giáng, điệu Phrygian) nghe u ám, rình rập
-    battle: { bpm: 100, gain: 0.22, chords: [Dm, Dm, Eb, Eb, Dm, Dm, Bb, C] }
+    // i - VI - VII - i (hai lần, lần sau kết ở V): dồn dập, quyết liệt; mức cao nhất kèn đồng hát hiệu lệnh xung trận
+    battle: {
+      bpm: 112, gain: 0.16, chords: [Dm, Bb, C, Dm, Dm, Bb, C, A],
+      melody: [[0, 0, 62, 3], [0, 3, 62, 1], [0, 4, 69, 12], [1, 0, 70, 8], [1, 8, 69, 4], [1, 12, 65, 4],
+        [2, 0, 67, 12], [2, 12, 64, 4], [3, 0, 62, 16],
+        [4, 0, 62, 3], [4, 3, 62, 1], [4, 4, 69, 12], [5, 0, 74, 8], [5, 8, 72, 4], [5, 12, 70, 4],
+        [6, 0, 72, 8], [6, 8, 67, 8], [7, 0, 69, 16]]
+    }
   };
 
   // Dây chạy móc kép: độ lệch (nửa cung) so với nốt trầm quãng tám 3; 'm' = quãng ba của hợp âm. Nhấn nhịp 3-3-3-3-4
@@ -40,23 +55,27 @@
   const ACC = [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0];
   // Trống taiko theo mức: [bước, lực, cao độ]
   const DRUMS = {
-    1: [[0, 1, 1], [8, 0.55, 1.12]],
-    2: [[0, 1, 1], [6, 0.5, 1.15], [8, 0.85, 1], [11, 0.5, 1.15], [14, 0.4, 1.3], [15, 0.45, 1.3]],
-    3: [[0, 1, 1], [3, 0.55, 1.2], [6, 0.6, 1.2], [8, 0.9, 1], [10, 0.4, 1.35], [11, 0.6, 1.2], [12, 0.85, 1], [14, 0.6, 1.35], [15, 0.7, 1.35]]
+    1: [[0, 1, 1], [8, 0.7, 1.12]],
+    2: [[0, 1, 1], [6, 0.55, 1.15], [8, 0.9, 1], [11, 0.55, 1.15], [14, 0.5, 1.3], [15, 0.55, 1.3]],
+    3: [[0, 1.1, 1], [3, 0.6, 1.2], [6, 0.7, 1.2], [8, 1, 1], [10, 0.45, 1.35], [11, 0.65, 1.2], [12, 0.95, 1], [14, 0.65, 1.35], [15, 0.8, 1.35]]
   };
-  // Các đoạn của nhạc sảnh. pad/drone/choir/brass/piano: độ lớn từng bè; ost 1 = móc đơn, 2 = móc kép; drums: mức trống
+  // Trống quân hành (snare) mức đầy đủ: [bước, lực]
+  const MARCH = [[4, 0.75], [10, 0.35], [12, 0.8], [14, 0.4], [15, 0.55]];
+  // Các đoạn của nhạc sảnh. pad/drone/choir/piano: độ lớn từng bè; ost 1 = móc đơn, 2 = móc kép; drums: mức trống;
+  // mel: kèn đồng hát chủ đề; stab: kèn đồng nhấn hợp âm theo nhịp; swell: kèn đồng ngân dâng mỗi 2 ô nhịp;
+  // snare < 1: chỉ phách 2 & 4, = 1: trống quân hành; crash: chũm chọe đầu câu
   const SEC = {
-    intro: { pad: 0.6, drone: 1, choir: 0, ost: 0, drums: 1, brass: 0, piano: 0.8, snare: 0, padLp: 900 },
-    build: { pad: 0.75, drone: 1, choir: 0.35, ost: 1, drums: 2, brass: 0, piano: 0, snare: 0, padLp: 1400 },
-    full: { pad: 0.9, drone: 1, choir: 0.7, ost: 2, drums: 3, brass: 1, piano: 0, snare: 1, padLp: 2200 },
-    break: { pad: 0.7, drone: 0.6, choir: 1, ost: 0, drums: 0, brass: 0, piano: 1, snare: 0, padLp: 1000 }
+    intro: { pad: 0.7, drone: 1, choir: 0.3, ost: 1, drums: 1, mel: 0, stab: 0, swell: 0.8, piano: 0, snare: 0, crash: 0.6, padLp: 1200 },
+    build: { pad: 0.8, drone: 1, choir: 0.5, ost: 2, drums: 2, mel: 0.65, stab: 0, swell: 0, piano: 0, snare: 0.6, crash: 0.8, padLp: 1800 },
+    full: { pad: 0.9, drone: 1, choir: 0.9, ost: 2, drums: 3, mel: 1, stab: 0.8, swell: 0, piano: 0, snare: 1, crash: 1, padLp: 2600 },
+    break: { pad: 0.75, drone: 0.7, choir: 1, ost: 0, drums: 0, mel: 0, stab: 0, swell: 0.6, piano: 0.9, snare: 0, crash: 0, padLp: 1300 }
   };
   // Nhạc trận theo độ ác liệt 0..3 (drums 0.5 = một tiếng trống xa mỗi 2 ô nhịp)
   const BATTLE = [
-    { pad: 0.45, drone: 0.9, choir: 0, ost: 0, drums: 0.5, brass: 0, piano: 0, snare: 0, padLp: 600 },
-    { pad: 0.6, drone: 1, choir: 0, ost: 1, drums: 1, brass: 0, piano: 0, snare: 0, padLp: 900 },
-    { pad: 0.75, drone: 1, choir: 0.4, ost: 2, drums: 2, brass: 0, piano: 0, snare: 0, padLp: 1500 },
-    { pad: 0.9, drone: 1, choir: 0.6, ost: 2, drums: 3, brass: 0.8, piano: 0, snare: 1, padLp: 2200 }
+    { pad: 0.5, drone: 0.9, choir: 0, ost: 0, drums: 0.5, mel: 0, stab: 0, swell: 0, snare: 0, padLp: 700 },
+    { pad: 0.65, drone: 1, choir: 0, ost: 1, drums: 1, mel: 0, stab: 0, swell: 0.5, snare: 0, padLp: 1100 },
+    { pad: 0.8, drone: 1, choir: 0.4, ost: 2, drums: 2, mel: 0, stab: 0.5, swell: 0.7, snare: 0.6, padLp: 1800 },
+    { pad: 0.9, drone: 1, choir: 0.7, ost: 2, drums: 3, mel: 0.9, stab: 0.7, swell: 0, snare: 1, crash: 0.8, padLp: 2600 }
   ];
   const HEAT_UP = [0.2, 0.45, 0.75];   // ngưỡng lên mức 1, 2, 3
 
@@ -281,8 +300,13 @@
       if (L.pad) this._mzPad(S.out, t, c.t, barDur, L.pad, L.padLp);
       if (L.drone) this._mzDrone(S.out, t, c.b, barDur, L.drone);
       if (L.choir) this._mzChoir(S.out, t, c.t.map(m => m + 12), barDur, L.choir);
-      // kèn đồng trong trận: tiếng "phừm" dài trên nốt gốc mỗi 2 ô nhịp
-      if (S.kind === 'battle' && L.brass && S.bar % 2 === 0) this._mzBrass(S.out, t, c.b + 12, barDur * 1.9, L.brass, true);
+      // kèn đồng ngân dâng (nốt gốc + quãng năm) mỗi 2 ô nhịp
+      if (L.swell && S.bar % 2 === 0) {
+        this._mzBrass(S.out, t, c.b + 12, barDur * 1.9, L.swell, true);
+        this._mzBrass(S.out, t, c.b + 19, barDur * 1.9, L.swell * 0.7, true);
+      }
+      // chũm chọe đầu câu
+      if (L.crash && S.barIn === 0) this._mzCrash(S.out, t, L.crash);
     }
 
     _mzStep(i, t) {
@@ -303,15 +327,20 @@
         for (const p of pat) if (p[0] === s) this._mzTaiko(S.out, t, p[1] * (L.drums < 1 ? 0.6 : 1), p[2]);
       }
       if (L.snare) {
-        if (s === 4 || s === 12) this._mzSnare(S.out, t, 0.7);
-        if (S.barIn === S.def.chords.length - 1 && s >= 8) this._mzSnare(S.out, t, 0.25 + (s - 8) / 8 * 0.6);   // vê trống cuối câu
+        if (L.snare >= 1) { for (const p of MARCH) if (p[0] === s) this._mzSnare(S.out, t, p[1]); }
+        else if (s === 4 || s === 12) this._mzSnare(S.out, t, 0.7 * L.snare);
+        if (L.snare >= 1 && S.barIn === S.def.chords.length - 1 && s >= 8) this._mzSnare(S.out, t, 0.3 + (s - 8) / 8 * 0.7);   // vê trống cuối câu
+      }
+      // kèn đồng nhấn hợp âm theo nhịp 3-3-2 (phách 1, 2½, 4)
+      if (L.stab && (s === 0 || s === 6 || s === 12)) {
+        for (const m of c.t) this._mzBrass(S.out, t, m, s === 12 ? 0.32 : 0.2, L.stab * (s === 0 ? 1 : 0.8), false, 0.012);
       }
       if (L.hat && s % 2 === 0) this._mzTick16(S.out, t, s % 4 === 0 ? 1 : 0.55);
       if (L.clock && (L.clock === 2 ? s % 2 === 0 : s % 4 === 0)) this._mzClock(S.out, t, s % 8 === 0 ? 1 : 0.7);
       if (S.roll && t < S.roll.end && t >= S.roll.start) this._mzSnare(S.out, t, 0.2 + 0.8 * (t - S.roll.start) / (S.roll.end - S.roll.start));
-      // chủ đề kèn đồng (sảnh, đoạn cao trào)
-      if (L.brass && S.def.melody) {
-        for (const n of S.def.melody) if (n[0] === S.barIn && n[1] === s) this._mzBrass(S.out, t, n[2], n[3] * sd, L.brass, false);
+      // chủ đề kèn đồng
+      if (L.mel && S.def.melody) {
+        for (const n of S.def.melody) if (n[0] === S.barIn && n[1] === s) this._mzBrass(S.out, t, n[2], n[3] * sd, L.mel, false);
       }
       // piano trầm rải hợp âm
       if (L.piano) {
@@ -417,7 +446,7 @@
 
     // trống taiko lớn: mặt da "bùm" sin tụt cao độ + tiếng da đập + đuôi rền trầm
     _mzTaiko(dest, t, vel, p = 1) {
-      this.tone(dest, t, { freq: 128 * p, freqEnd: 56 * p, sweep: 0.2, gain: 0.5 * vel, attack: 0.002, dur: 0.95 });
+      this.tone(dest, t, { freq: 128 * p, freqEnd: 56 * p, sweep: 0.2, gain: 0.6 * vel, attack: 0.002, dur: 0.95 });
       this.tone(dest, t, { freq: 215 * p, freqEnd: 105 * p, sweep: 0.12, gain: 0.2 * vel, attack: 0.002, dur: 0.35 });
       this.burst(dest, t, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 2600, gain: 0.4 * vel, attack: 0.001, dur: 0.07 });
       this.burst(dest, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 320 * p, Q: 1.2, gain: 0.5 * vel, attack: 0.002, dur: 0.22 });
@@ -443,23 +472,25 @@
     }
 
     // kèn đồng (horn + trombone): răng cưa ba lớp + quãng tám dưới, lọc mở dần ("bwaaa"), méo nhẹ, rung nhẹ khi ngân
-    _mzBrass(dest, t, m, dur, lv, swell) {
+    // atk: thời gian vào tiếng (kèn nhấn ngắn ~0,01 s)
+    _mzBrass(dest, t, m, dur, lv, swell, atk) {
       const ctx = this.ctx;
       const f = ctx.createBiquadFilter();
       f.type = 'lowpass';
-      f.Q.value = 1.1;
-      const top = 700 + 1700 * lv;
-      f.frequency.setValueAtTime(220, t);
-      f.frequency.linearRampToValueAtTime(top, t + (swell ? dur * 0.55 : 0.22));
-      f.frequency.linearRampToValueAtTime(top * 0.55, t + dur);
+      f.Q.value = 1.3;
+      const top = 900 + 2600 * lv;
+      const a = swell ? dur * 0.5 : (atk || 0.06);
+      f.frequency.setValueAtTime(260, t);
+      f.frequency.linearRampToValueAtTime(top, t + (swell ? dur * 0.55 : a + 0.08));
+      f.frequency.linearRampToValueAtTime(top * 0.6, t + Math.max(dur, a + 0.1));
       const ws = ctx.createWaveShaper();
-      ws.curve = this.getShaper(1.6);
+      ws.curve = this.getShaper(2.0);
       const g = ctx.createGain();
-      const peak = 0.06 * lv;
+      const peak = 0.075 * lv;
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.linearRampToValueAtTime(peak, t + (swell ? dur * 0.5 : 0.1));
-      g.gain.setValueAtTime(peak, t + dur * 0.92);
-      g.gain.setTargetAtTime(0.0001, t + dur * 0.92, 0.18);
+      g.gain.linearRampToValueAtTime(peak, t + a);
+      g.gain.setValueAtTime(peak, t + Math.max(a, dur * 0.92));
+      g.gain.setTargetAtTime(0.0001, t + Math.max(a, dur * 0.92), dur < 0.4 ? 0.08 : 0.18);
       f.connect(ws);
       ws.connect(g);
       g.connect(dest);
@@ -526,6 +557,12 @@
       this.tone(dest, t, { freq: f * 2.003, gain: 0.035 * lv, attack: 0.003, dur: 1.4 });
       this.tone(dest, t, { type: 'triangle', freq: f * 3.01, gain: 0.012 * lv, attack: 0.002, dur: 0.5 });
       this.burst(dest, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1800, Q: 1, gain: 0.02 * lv, attack: 0.001, dur: 0.02 });
+    }
+
+    // chũm chọe lớn: nhiễu cao tần ngân dài + ánh kim
+    _mzCrash(dest, t, k) {
+      this.burst(dest, t, { filter: 'highpass', freq: 3800, gain: 0.16 * k, attack: 0.003, dur: 2.6 });
+      this.burst(dest, t, { filter: 'bandpass', freq: 6500, Q: 1.5, gain: 0.08 * k, attack: 0.002, dur: 1.6 });
     }
 
     // tiếng "ẦM" mở đoạn: trống lớn + trầm sâu
