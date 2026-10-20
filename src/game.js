@@ -3939,7 +3939,7 @@ class ArtilleryGame3D {
           stall: !!this.player.climbStall,   // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
           dead: !!this.player.engineOff      // ngập nước chết máy: tắt tiếng máy, nổ lại thì tự có tiếng đề
         });
-        // Tiếng lội nước theo độ sâu & tốc độ thật (src/core/wading_audio.js)
+        // Tiếng lội nước theo độ sâu & tốc độ thật (src/core/audio/wading.js)
         if (window.soundEngine.updateWading) {
           window.soundEngine.updateWading(this.player.waterDepth || 0, speedRatio, { stall: !!this.player.wadeStall, dead: this.player.isDead });
         }
@@ -5175,6 +5175,8 @@ class ArtilleryGame3D {
     if (title) { title.className = T[0]; title.textContent = T[1]; }
     if (sub) sub.textContent = subText;
     if (result === 'win' && window.soundEngine && typeof window.soundEngine.playVictoryFanfare === 'function') window.soundEngine.playVictoryFanfare();
+    // nhạc kết trận: dàn nhạc thắng / thua / hòa (src/core/audio/music.js)
+    if (window.soundEngine && typeof window.soundEngine.setMusicMode === 'function') window.soundEngine.setMusicMode({ win: 'victory', loss: 'defeat', draw: 'draw' }[result] || 'off');
     // Màn hình kết quả: nhả phím đang giữ, đóng bản đồ lớn / menu tạm dừng nếu đang mở
     this.keys = {};
     if (this.tacticalMap && this.tacticalMap.isOpen && this.tacticalMap.toggle) this.tacticalMap.toggle(false);
