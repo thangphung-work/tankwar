@@ -2257,7 +2257,7 @@ const Destructibles = (() => {
       // Tảng bê tông lớn vương vãi trên đống đổ nát
       this.slabChunkPool = new Pool(this.group, jitter(new THREE.BoxGeometry(1, 1, 1, 2, 1, 2), 0.25, 9), cracked, list.length * 60, { color: true });
       // Gạch đá vỡ rơi xuống chân tường chỗ bị khoét thủng
-      this.bitPool = new Pool(this.group, jitter(new THREE.DodecahedronGeometry(0.5, 0), 0.35, 5), cracked, list.length * 30 + 80, { color: true });
+      this.bitPool = new Pool(this.group, jitter(new THREE.DodecahedronGeometry(0.5, 0), 0.35, 5), cracked, list.length * 90 + 200, { color: true });
       this.initRubbleDetail(list, cracked);
       // Chi tiết mái bằng: bồn nước, cục nóng điều hòa, cột / cần ăng-ten, chảo vệ tinh (4 bể cho cả bản đồ)
       const nd = Math.max(1, decos);
@@ -3290,17 +3290,79 @@ const Destructibles = (() => {
       jet(fx, W.x, W.y, W.z, dir.x, dir.y, dir.z, Math.round(2 + 3 * s), 1.8 * s, 50, B.WM.edge, 0.5);
       dustJet(fx, W.x, W.y, W.z, N.x, N.z, Math.round(2 + 3 * s), 8 + 8 * s, B.WM.dust, 18 + 10 * s);
       dustBurst(fx, W.x, W.y, W.z, Math.round(1 + 2 * s), 10 + 8 * s, B.WM.dust);
-      // đống gạch vụn dưới chân tường phía ngoài
-      if (cells > 18 && !ctx.inside) {
-        const nb = Math.min(6, Math.round(cells / 22));
-        for (let k = 0; k < nb; k++) {
-          const off = rand(2, 9), side = rand(-1, 1) * Math.sqrt(cells) * 0.6, sz = rand(1.6, 3.4) * Math.min(1.6, s);
-          const px = W.x + N.x * off - N.z * side, pz = W.z + N.z * off + N.x * side, gy = this.groundAt(px, pz);
-          this.addGroundBit(new THREE.Matrix4().compose(new THREE.Vector3(px, gy + sz * 0.2, pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3))),
-            new THREE.Vector3(sz * 1.3, sz * 0.8, sz)), px, pz, new THREE.Color(B.WM.edge[0], B.WM.edge[1], B.WM.edge[2]).multiplyScalar(rand(0.85, 1.15)));
-        }
-      }
+      if (cells > 6) this.holeRubble(ctx, W, N, cells, vol);
       if (!this._syncing) sfx(matSnd(B), W.x, W.y, W.z, Math.min(1.2, 0.5 + s * 0.35), { h: W.y - B.y });
+    }
+    /**
+     * Đống vụn của lỗ thủng trên tường nhà, theo đúng thể tích bê tông / gạch bị khoét (~55% nằm lại, còn lại thành bụi / văng xa).
+     * Nổ áp mặt tường: sóng nổ thổi phần lớn lòng lỗ về phía sau (vào trong phòng, văng xa dần), lớp bóc lở mặt trước
+     * rơi gần chân tường phía bị bắn; đạn động năng thì chia đều hơn. Nổ trong phòng: ngược lại, phần lớn đổ ra ngoài.
+     * Mảnh trong phòng nằm trên sàn đúng tầng bị thủng (gắn vào ô sàn: ẩn khi ô sàn sập / cắt tầng, rơi theo khi nhà sập),
+     * mảnh ngoài nhà rơi xuống đất ngay dưới lỗ (lỗ càng cao rơi càng toả xa). Chia cỡ: vài mảng tường dẹt dày bằng tường,
+     * cục vừa, nhiều sạn nhỏ. Chỉ để nhìn (không đồng bộ), dùng dãy RNG riêng theo vị trí lỗ.
+     */
+    holeRubble(ctx, W, N, cells, vol) {
+      const { B, I } = ctx;
+      if (this._syncing) return;
+      withSeed(Math.floor(hash3(W.x * 0.37, W.z * 0.41, W.y * 0.29 + cells) * 4294967295) >>> 0, () => {
+        const Lw = this.toLocal(B, W.x, W.y, W.z), Nl = this.dirToLocal(B, N);
+        const nl = Math.hypot(Nl.x, Nl.z) || 1, nx = Nl.x / nl, nz = Nl.z / nl;   // pháp tuyến mặt bị nổ (cục bộ, nằm ngang)
+        const ax = -nz, az = nx;                                                    // dọc tường
+        const rest = vol * 0.55, T = B.T, f = Math.max(0, ctx.floor), R = Math.sqrt(cells) * 0.9;
+        const pFar = I.kin ? 0.5 : 0.6;
+        // phía "xa" (sau tường so với điểm nổ) là trong nhà khi nổ ngoài, là ngoài nhà khi nổ trong phòng
+        const farIn = !ctx.inside;
+        const Lv = f > 0 ? B.levels.find(L => L.role === 'slab' && L.f === f - 1) : null;
+        const yFloor = Lv ? Lv.y + Lv.th / 2 : 2.1;
+        const baseMod = B.baseMod || (B.baseMod = B.mods.find(m => m.role === 'base'));
+        const hFall = Math.max(0, W.y - this.groundAt(W.x, W.z));
+        const col = () => new THREE.Color(B.WM.edge[0], B.WM.edge[1], B.WM.edge[2]).multiplyScalar(rand(0.78, 1.08));
+        const E = new THREE.Euler(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), S = new THREE.Vector3();
+        const place = (sx, sy, sz, flat, reach) => {
+          const far = RNG() < pFar, inside = far === farIn;
+          const side = inside ? -1 : 1;                 // -1: vào trong (ngược pháp tuyến mặt ngoài), +1: ra ngoài
+          const sgn = ctx.inside ? -side : side;        // pháp tuyến N quay về phía điểm nổ
+          E.set(flat ? rand(-0.35, 0.35) : rand(0, 3), rand(0, 6.28), flat ? rand(-0.35, 0.35) : rand(0, 3));
+          Q.setFromEuler(E); S.set(sx, sy, sz);
+          const al = rand(-1, 1) * R * (far ? 0.8 : 0.6);
+          if (inside) {
+            // văng vào phòng: phía xa văng xa hơn, phía gần (nổ trong phòng) rơi sát chân tường
+            const off = (far ? T : 0) + 0.6 + rand(0, 1) * reach * (far ? 2.2 : 0.6);   // phía xa: qua hết bề dày tường
+            let lx = Lw.x + nx * sgn * off + ax * al, lz = Lw.z + nz * sgn * off + az * al;
+            lx = Math.max(-B.halfW + T + 0.8, Math.min(B.halfW - T - 0.8, lx));
+            lz = Math.max(-B.halfD + T + 0.8, Math.min(B.halfD - T - 0.8, lz));
+            const tile = Lv ? this.tileAt(B, Lv, lx, lz) : baseMod;
+            if (!tile || tile.state === 'gone') return;   // ô sàn đã thủng: mảnh rơi lọt xuống, bỏ qua
+            const local = new THREE.Matrix4().compose(V.set(lx, yFloor + sy * 0.25, lz), Q, S);
+            const world = B.base.clone().multiply(local);
+            const idx = this.bitPool.add(world, col());
+            if (idx < 0) return;
+            (tile.deco || (tile.deco = [])).push({ pool: this.bitPool, idx, local, world });
+            if (B.cut && this.isCutMod(B, tile)) this.bitPool.hide(idx);
+          } else {
+            // rơi ra ngoài: rơi từ độ cao lỗ xuống đất, càng cao toả càng xa chân tường
+            const off = (far ? T : 0) + 0.5 + rand(0, 1) * (reach * (far ? 1.6 : 0.7) + hFall * (far ? 0.3 : 0.14));
+            const lx = Lw.x + nx * sgn * off + ax * al * (1 + hFall * 0.02), lz = Lw.z + nz * sgn * off + az * al * (1 + hFall * 0.02);
+            const w = this.toWorld(B, lx, 0, lz), gy = this.groundAt(w.x, w.z);
+            this.addGroundBit(new THREE.Matrix4().compose(V.set(w.x, gy + sy * 0.22, w.z), Q, S), w.x, w.z, col());
+          }
+        };
+        const nBig = Math.min(3, 1 + Math.floor(cells / 70)), nMid = Math.min(9, 2 + Math.floor(cells / 20)), nSmall = Math.min(18, 4 + Math.floor(cells / 8));
+        // mảng tường dẹt: dày cỡ bề dày tường, diện tích lấy theo thể tích
+        for (let i = 0; i < nBig; i++) {
+          const sy = Math.min(T * 0.85, 2.4) * rand(0.7, 1), a = Math.sqrt(rest * 0.4 / nBig / sy / 0.5);
+          const sx = Math.min(B.st.bay * 0.5, a * rand(0.9, 1.3)), sz = Math.min(B.st.bay * 0.4, a * rand(0.7, 1));
+          place(sx, sy, sz, true, 3);
+        }
+        for (let i = 0; i < nMid; i++) {
+          const sc = Math.min(T * 1.4, Math.cbrt(rest * 0.35 / nMid / 0.4)) * rand(0.7, 1.3);
+          place(sc * 1.2, sc * 0.75, sc, RNG() < 0.4, 5);
+        }
+        for (let i = 0; i < nSmall; i++) {
+          const sc = Math.cbrt(rest * 0.25 / nSmall / 0.4) * rand(0.5, 1.4);
+          place(sc * 1.15, sc * 0.8, sc, false, 8);
+        }
+      });
     }
     // Ô sàn / mái / mái dốc trúng sức phá dmg; trả về true nếu vỡ
     hitTile(ctx, m, dmg, W) {
@@ -5030,6 +5092,7 @@ const Destructibles = (() => {
     damageSphere(x, y, z, R, power, pierce, fx, filter, ammo) {
       let broke = 0;
       this.lastPierced = false;
+      this._blast = { x, y, z, R };   // điểm nổ: hướng đổ / văng của mảnh vỡ
       // Khối bị đạn chạm trực tiếp: chỉ khối này bị khoét lỗ xuyên (1 viên đạn = 1 lỗ, không thủng lan sang khối kề)
       let hitQ = null, hitD = 2.5;
       for (const q of this.blocks) {
@@ -5172,9 +5235,32 @@ const Destructibles = (() => {
         q.h = this.kitK.addCustom(geo, q.m, col, kind === 'bullet');
       }
       if (fx && fx.removeMarksNear) fx.removeMarksNear(x !== undefined ? x : q.x, y !== undefined ? y : (q.y0 + q.y1) / 2, z !== undefined ? z : q.z, 2.5);
-      chunks(fx, x !== undefined ? x : q.x, y !== undefined ? y : (q.y0 + q.y1) / 2, z !== undefined ? z : q.z, 2, 1.2);
+      if (x !== undefined) this.boreDebris(q, fx, x, y, z, kind);
+      else chunks(fx, q.x, (q.y0 + q.y1) / 2, q.z, 2, 1.2);
       sfx('concrete', q.x, (q.y0 + q.y1) / 2, q.z, 0.6);
       this.commit();
+    }
+    // Mảnh vỡ của lỗ xuyên: miệng vào bóc vảy bật ngược về phía bắn, mặt sau bê tông toác phụt thành chùm theo hướng đạn
+    // (đạn động năng / nổ lõm: mặt sau văng mạnh nhất; xả đạn nhỏ: chủ yếu vụn ở miệng vào). Sạn rơi dưới chân 2 bên đúng chỗ lỗ
+    boreDebris(q, fx, x, y, z, kind) {
+      const L = this.localOf(q, x, y, z), inS = L.w >= 0 ? 1 : -1;   // mặt đạn vào: +w / -w
+      const nX = -q.az * inS, nZ = q.ax * inS;                       // hướng ra khỏi mặt vào (về phía bắn)
+      const al = L.u * q.len, ex = q.x + q.ax * al, ez = q.z + q.az * al;
+      const back = kind === 'bullet' ? 0.3 : 1;
+      const W = q.thick / 2 + 0.3;
+      jet(fx, ex + nX * W, y, ez + nZ * W, nX, 0.25, nZ, kind === 'bullet' ? 3 : 2, 1.2, 30, null, 0.6);
+      jet(fx, ex - nX * W, y, ez - nZ * W, -nX, 0.05, -nZ, Math.round(2 + 4 * back), 1.5, 45 + 40 * back, null, 0.35);
+      dustJet(fx, ex - nX * W, y, ez - nZ * W, -nX, -nZ, Math.round(1 + 2 * back), 4, [0.7, 0.69, 0.66], 12 + 16 * back);
+      const gy = q.groundY !== undefined ? q.groundY : q.y0 + 2, hF = Math.max(0, y - gy);
+      for (let i = 0, n = kind === 'bullet' ? 4 : 6; i < n; i++) {
+        const exitSide = RNG() < (kind === 'bullet' ? 0.35 : 0.7), sd = exitSide ? -1 : 1;
+        const off = W + rand(0.2, 1) * (exitSide ? 2 + 4 * back + hF * 0.25 : 1 + hF * 0.12), a = al + rand(-1.5, 1.5);
+        const s = rand(0.45, 1.1) * (exitSide ? 1 : 0.8);
+        this.rubblePool.add(new THREE.Matrix4().compose(
+          new THREE.Vector3(q.x + q.ax * a + nX * sd * off, gy + s * 0.2, q.z + q.az * a + nZ * sd * off),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3))), new THREE.Vector3(s * 1.2, s * 0.8, s)),
+          new THREE.Color(0.76, 0.74, 0.7).multiplyScalar(rand(0.74, 1.04)));
+      }
     }
     crackBlock(q, fx) {
       q.cracked = true;
@@ -5202,11 +5288,21 @@ const Destructibles = (() => {
       const gy = q.groundY !== undefined ? q.groundY : q.y0 + 2;
       const Vr = vol * 0.35, sMax = Math.min(q.len, q.thick, q.m.elements[5]) * 0.7;
       const nBig = vol > 300 ? 2 : 1, nMid = vol > 120 ? 6 : 4, nSmall = vol > 120 ? 16 : 10;
-      const side0 = RNG() < 0.5 ? 1 : -1;   // phía đống vụn đổ nhiều hơn
+      // Phía đống vụn đổ nhiều hơn: sóng nổ thổi bê tông về phía sau tường (xa điểm nổ), càng gần điểm nổ càng văng xa;
+      // khối đổ do mất chân đỡ (xa điểm nổ) thì rơi gần như thẳng xuống, chia đều 2 bên
+      let far = RNG() < 0.5 ? 1 : -1, kick = 0;
+      const Bl = this._blast;
+      if (Bl) {
+        const acr = (Bl.z - q.z) * q.ax - (Bl.x - q.x) * q.az;
+        kick = clamp01(1 - Math.hypot(Bl.x - q.x, Bl.y - yc, Bl.z - q.z) / (Bl.R + 4));
+        if (Math.abs(acr) > q.thick * 0.3) far = acr > 0 ? -1 : 1;
+        else kick *= 0.3;   // nổ ngay trên đỉnh / trong lòng tường: không có phía rõ ràng
+      }
+      const pFar = 0.5 + 0.25 * kick;
       const bumps = this.debrisBumps || (this.debrisBumps = []);
       const put = (pool, sx, sy, sz, reach, flat, bump) => {
-        const side = RNG() < 0.72 ? side0 : -side0;
-        const off = q.thick * 0.32 + rand(0, reach) * Math.max(q.thick, 4), al = rand(-0.6, 0.6) * q.len;
+        const isFar = RNG() < pFar, side = isFar ? far : -far;
+        const off = q.thick * 0.32 + rand(0, reach * (isFar ? 1 + 1.2 * kick : 1 - 0.4 * kick)) * Math.max(q.thick, 4), al = rand(-0.6, 0.6) * q.len;
         const bp = new THREE.Vector3(q.x + q.ax * al - q.az * side * off, gy + sy * (flat ? 0.3 : 0.22), q.z + q.az * al + q.ax * side * off);
         const rot = flat ? new THREE.Euler(rand(-0.4, 0.4), rand(0, 6.28), rand(-0.4, 0.4)) : new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3));
         const bi = pool.add(new THREE.Matrix4().compose(bp, new THREE.Quaternion().setFromEuler(rot), new THREE.Vector3(sx, sy, sz)),
@@ -5227,8 +5323,14 @@ const Destructibles = (() => {
       }
       const nFly = 3;
       const sFly = Math.cbrt(vol * 0.12 / nFly / 2.2);
-      chunks(fx, q.x, yc, q.z, nFly, Math.min(6, sFly * 1.6));
-      dustBurst(fx, q.x, yc, q.z, 2 + Math.min(4, Math.round(vol / 300)), 8 + Math.min(10, Math.cbrt(vol) * 0.8), [0.7, 0.69, 0.66]);
+      const dc = [0.7, 0.69, 0.66], fxX = -q.az * far, fxZ = q.ax * far;
+      if (kick > 0.1) {
+        // mảnh văng & bụi phụt theo hướng sóng nổ (ra phía sau tường), ít mảnh bóc lở bật ngược về phía điểm nổ
+        jet(fx, q.x, yc, q.z, fxX, 0.2, fxZ, nFly + 2, Math.min(6, sFly * 1.6), 35 + 55 * kick, null, 0.5);
+        jet(fx, q.x, yc, q.z, -fxX, 0.3, -fxZ, 1, Math.min(4, sFly), 25, null, 0.6);
+        dustJet(fx, q.x, yc, q.z, fxX, fxZ, 2 + Math.min(3, Math.round(vol / 300)), 8 + Math.min(10, Math.cbrt(vol) * 0.8), dc, 14 + 16 * kick);
+      } else chunks(fx, q.x, yc, q.z, nFly, Math.min(6, sFly * 1.6));
+      dustBurst(fx, q.x, yc, q.z, 2 + Math.min(4, Math.round(vol / 300)), 8 + Math.min(10, Math.cbrt(vol) * 0.8), dc);
     }
 
     breakBlock(q, fx) {
