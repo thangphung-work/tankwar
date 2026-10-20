@@ -214,7 +214,7 @@ class ArtilleryGame3D {
     try {
       if (fx.addSurfaceMark && fx.surfaceMarks) {
         const p = new THREE.Vector3(0, -5000, 0), n = new THREE.Vector3(0, 0, 1);
-        for (const kind of ['penetration', 'turretRing', 'burnGlow', 'armorCrater', 'metalHole', 'bulletDent', 'glassCrack', 'scorch', 'concreteHole']) {
+        for (const kind of ['penetration', 'turretRing', 'burnGlow', 'armorCrater', 'metalHole', 'bulletDent', 'glassCrack', 'scorch', 'concreteHole', 'steelDent', 'heiSplash', 'concretePit']) {
           const r = fx.addSurfaceMark(p, n, holder, kind, 2, { noFit: true });
           if (r) marks.push(r);
         }
@@ -1970,8 +1970,8 @@ class ArtilleryGame3D {
     }
     const remoteShell = !!(this.netSync && this.netSync.skipShellDamage && this.netSync.skipShellDamage(shell, this.units.find(u => u.id === shell.shooterId)));
     // Trúng nhà: pháp tuyến đúng mặt tường / sàn / mái bị chạm -> lửa, mảnh văng bật ra đúng phía
-    const bn = hitType === 'BUILDING' && shell.hitNormal && shell.hitNormal.ny !== undefined ? { x: shell.hitNormal.nx, y: shell.hitNormal.ny, z: shell.hitNormal.nz } : null;
-    if (!fxDone) this.createImpactEffects(x, y, z, ammoType, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
+    const bn = (hitType === 'BUILDING' || hitType === 'TREE') && shell.hitNormal && shell.hitNormal.ny !== undefined ? { x: shell.hitNormal.nx, y: shell.hitNormal.ny, z: shell.hitNormal.nz } : null;
+    if (!fxDone) this.createImpactEffects(x, y, z, ammoType, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, tree: hitType === 'TREE' ? shell.hitTree : undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
     // Đạn xuyên giáp đâm thủng tường: lõi urani vỡ nóng đỏ + bê tông phụt ra mặt sau (nhà: lỗ ra ở vách bên kia do Destructibles tính)
     if (ammoType === 'AP' && !onStronghold && hitType === 'WALL' && fxSys && fxSys.spallCone) {
       const dv = new THREE.Vector3(shell.vx || 0, shell.vy || 0, shell.vz || 0);
@@ -5374,6 +5374,9 @@ class ArtilleryGame3D {
     while (this.scene.children.length > 0) {
       this.scene.remove(this.scene.children[0]);
     }
+    // Hiệu ứng nổ dùng chung qua các trận: xoá dấu vết trận cũ (hố, vết đạn, mảnh vụn) rồi gắn lại các lớp vào cảnh mới dọn
+    const fxR = this.effectsManager && this.effectsManager.fx;
+    if (fxR) { if (fxR.clear) fxR.clear(); if (fxR.reattach) fxR.reattach(); }
 
     this.blueLives = Infinity;
     this.redLives = Infinity;

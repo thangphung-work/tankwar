@@ -120,8 +120,13 @@ const EnvDamage = (() => {
   }
 
   // ------------------------------------------------------------------ VẾT ĐẠN TÍCH TỤ
-  const POOL_CAP = { g_pock: 700, g_hei: 700, g_burn: 300, c_pock: 500, c_chip: 400, c_spall: 260, soot: 400, r_chip: 300 };
-  const BASE_SIZE = { g_pock: 2.6, g_hei: 4.6, g_burn: 5.5, c_pock: 2.4, c_chip: 4.8, c_spall: 13, soot: 18, r_chip: 5 };
+  // số vết giữ lại mỗi loại (mỗi vết là 1 ô cộng dồn ~2.5 đơn vị; đầy thì ô cũ nhất bị thay) — đủ cho cả trận xả đạn liên thanh
+  const POOL_CAP = { g_pock: 3000, g_hei: 3000, g_burn: 1200, c_pock: 2000, c_chip: 1200, c_spall: 400, soot: 600, r_chip: 800 };
+  // vết đạn trên đất (g_*): 12.7mm lỗ phễu ~5 cm + quạt cát ~30 cm; 30mm nổ-mảnh hố ~25 cm + muội & rỗ mảnh ~0,8 m (8 đơn vị = 1 m)
+  const BASE_SIZE = { g_pock: 2.6, g_hei: 6.5, g_burn: 5.5, c_pock: 2.4, c_chip: 4.8, c_spall: 13, soot: 18, r_chip: 5 };
+
+  const GROUND_MARK = { g_pock: 'pock', g_hei: 'hei', g_burn: 'burn' };
+  const DEF_TINT = [0.84, 0.79, 0.72];
 
   class Scars {
     constructor(parent) {
@@ -137,7 +142,20 @@ const EnvDamage = (() => {
       let P = this.pools[kind];
       if (P) return P;
       const cap = POOL_CAP[kind] || 300;
-      const mat = new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+      // Vết đạn trên đất: shader nhân màu đất bên dưới + nổi khối theo nắng (ExplosionFX), 4 biến thể hình dạng
+      const gm = GROUND_MARK[kind];
+      if (gm && typeof ExplosionFX !== 'undefined' && ExplosionFX.bulletMarkMesh) {
+        const im = ExplosionFX.bulletMarkMesh(gm, cap);
+        im.matrixAutoUpdate = false;
+        this.parent.add(im);
+        P = this.pools[kind] = { im, cap, next: 0, owner: new Array(cap).fill(null), pos: new Float32Array(cap * 3), mark: true };
+        return P;
+      }
+      // rỗ / mẻ bê tông do đạn: dùng texture hố mẻ bê tông tươi có pháp tuyến của ExplosionFX nếu có
+      const pit = (kind === 'c_pock' || kind === 'c_chip') && typeof ExplosionFX !== 'undefined' && ExplosionFX._pitTex ? ExplosionFX._pitTex(kind === 'c_pock' ? 'concretePit' : 'concretePitHE', 0) : null;
+      const mat = pit
+        ? new THREE.MeshStandardMaterial({ map: pit.map, normalMap: pit.normal, roughness: 0.92, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 })
+        : new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
       const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, cap);
       im.count = 0; im.frustumCulled = false; im.renderOrder = 3; im.receiveShadow = true;
       im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
@@ -166,7 +184,13 @@ const EnvDamage = (() => {
       this._m.compose(this._p, this._q, this._s);
       P.im.setMatrixAt(cell.idx, this._m);
       P.pos.set([this._p.x, this._p.y, this._p.z], cell.idx * 3);
-      this._c.setRGB(cell.shade, cell.shade, cell.shade);
+      if (P.mark) {
+        // màu đất lật theo vật liệu; càng nhiều phát dồn vào ô vết càng đậm
+        const t = cell.tint || DEF_TINT;
+        this._c.setRGB(t[0], t[1], t[2]);
+        P.im.geometry.attributes.iMark.setXY(cell.idx, cell.variant, 1 + Math.min(1.2, 0.14 * (cell.hits - 1)));
+        P.im.geometry.attributes.iMark.needsUpdate = true;
+      } else this._c.setRGB(cell.shade, cell.shade, cell.shade);
       P.im.setColorAt(cell.idx, this._c);
       P.im.instanceMatrix.needsUpdate = true;
       P.im.instanceColor.needsUpdate = true;
@@ -187,7 +211,7 @@ const EnvDamage = (() => {
       const key = cls + '|' + Math.round(x / cs) + '|' + Math.round(y / cs) + '|' + Math.round(z / cs);
       let cell = this.cells.get(key);
       if (!cell) {
-        cell = { key, kind: null, idx: undefined, e: 0, hits: 0, x, y, z, nx, ny, nz, rot: hash3(x, y, z) * 6.283 };
+        cell = { key, kind: null, idx: undefined, e: 0, hits: 0, x, y, z, nx, ny, nz, rot: hash3(x, y, z) * 6.283, variant: Math.floor(hash3(z, x, y) * 4) & 3 };
         this.cells.set(key, cell);
       } else {
         // dồn tâm vết về trung bình các phát trúng
@@ -196,6 +220,7 @@ const EnvDamage = (() => {
       }
       cell.e += energy;
       cell.hits++;
+      if (opts.tint) cell.tint = opts.tint;
       if (opts.stretch) { cell.stretch = Math.max(cell.stretch || 1, opts.stretch); cell.rot = opts.rot !== undefined ? opts.rot : cell.rot; }
       const kind = tierFn(cell.e);
       if (cell.kind && cell.kind !== kind) this.unplace(cell);
@@ -796,7 +821,7 @@ const EnvDamage = (() => {
     }
 
     // Đạn súng chạm đất (gọi từ hiệu ứng nổ, mọi máy tự vẽ): vết nhỏ theo loại đạn, cộng dồn theo ô ~2.5 đơn vị
-    groundHit(x, z, ammo, dir) {
+    groundHit(x, z, ammo, dir, tint) {
       const T = this.T;
       const y = this.surf(x, z);   // trong hố bom: vết nằm trên lòng hố nhìn thấy, không lơ lửng ở lưới vật lý
       const br = this.bridges.at(x, z);
@@ -806,10 +831,11 @@ const EnvDamage = (() => {
       const A = ammoOf(ammo, false);
       const kind = ammo === 'INCENDIARY' ? 'g_burn' : ammo === 'GATLING_BULLET' ? 'g_hei' : 'g_pock';
       // đạn bay xiên: vết kéo dài theo hướng bay
-      let opts = { e0: A.e };
+      // trục +u của vết = hướng bay trên mặt đất (vết xoay quanh pháp tuyến: trục x cục bộ -> (cos r, 0, -sin r))
+      let opts = { e0: A.e, tint };
       if (dir) {
         const fl = Math.hypot(dir.x || 0, dir.z || 0), sp = Math.hypot(fl, dir.y || 0) || 1;
-        if (fl > 0.05) opts = { e0: A.e, stretch: 1 + (fl / sp) * 0.7, rot: Math.atan2(dir.z, dir.x) };
+        if (fl > 0.05) opts = { e0: A.e, tint, stretch: 1 + (fl / sp) * (kind === 'g_pock' ? 0.8 : 0.35), rot: Math.atan2(-dir.z, dir.x) };
       }
       this.scars.hit('g', 2.5, x, y, z, n.x, n.y, n.z, A.e, () => kind, opts);
       return true;

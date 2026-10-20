@@ -943,7 +943,17 @@ const VehicleDamage = (() => {
     g.computeVertexNormals();
     return (DENT_GEO[key] = g);
   }
-  function dentAt(u, mesh, point, normal, R, depth, tear) {
+  // UV trung bình của tam giác bị trúng (hit.faceIndex) trên lưới vỏ xe
+  function faceUV(mesh, hit) {
+    const g = mesh && mesh.geometry, uv = g && g.attributes.uv;
+    if (!uv || !hit || hit.faceIndex === undefined || hit.faceIndex === null) return null;
+    const I = g.index, f = hit.faceIndex * 3;
+    if ((I ? I.count : uv.count) < f + 3) return null;
+    let x = 0, y = 0;
+    for (let k = 0; k < 3; k++) { const vi = I ? I.getX(f + k) : f + k; x += uv.getX(vi); y += uv.getY(vi); }
+    return { x: x / 3, y: y / 3 };
+  }
+  function dentAt(u, mesh, point, normal, R, depth, tear, hit = null) {
     if (!mesh || !mesh.isMesh || mesh.isInstancedMesh || !normal || mesh.userData.isFxDecal) return;
     const d = state(u);
     d.dents = d.dents || [];
@@ -968,7 +978,16 @@ const VehicleDamage = (() => {
         mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -4;
         d.dentMats.set(orig, mat);
       }
-      const m = new THREE.Mesh(dentGeo(tear), mat);
+      // UV của miếng lõm: toàn bộ lấy đúng 1 điểm UV của mặt vỏ bị trúng -> miếng lõm mang đúng màu sơn tại chỗ đó
+      // (UV vòng tròn mặc định trải cả texture lên miếng lõm -> lộ hoa văn ngụy trang / ký hiệu bị bóp méo)
+      let geo = dentGeo(tear);
+      const uv0 = faceUV(mesh, hit);
+      if (uv0) {
+        geo = geo.clone();
+        const U = geo.attributes.uv;
+        for (let i = 0; i < U.count; i++) U.setXY(i, uv0.x, uv0.y);
+      }
+      const m = new THREE.Mesh(geo, mat);
       m.userData.isFxDecal = true;   // tia dò đạn bỏ qua
       m.castShadow = false; m.receiveShadow = true;
       mesh.updateMatrixWorld(true);
@@ -1431,7 +1450,7 @@ const VehicleDamage = (() => {
     d.wreckSpots[key] = (d.wreckSpots[key] || 0) + pw;
     // Vỏ xác xe lõm / rách thêm tại chỗ trúng (đạn nhỏ cũng đục dần)
     const hitN = opts.hit && opts.hit.normal ? opts.hit.normal : null;
-    if (opts.hit && opts.hit.object && hitN) dentAt(u, opts.hit.object, point, hitN, 2.6 + pw * 6, Math.min(1.6, 0.05 + pw * 0.9), pw >= 0.5);
+    if (opts.hit && opts.hit.object && hitN) dentAt(u, opts.hit.object, point, hitN, 2.6 + pw * 6, Math.min(1.6, 0.05 + pw * 0.9), pw >= 0.5, opts.hit);
     const tear = pw >= 0.2 || d.wreckSpots[key] > 1.2;
     // Vỏ thép xác xe bị đẩy lõm thật (biến dạng lưới): đạn lớn móp sâu, đạn nhỏ dồn đủ một chỗ mới oằn
     {
@@ -1526,7 +1545,7 @@ const VehicleDamage = (() => {
           const from = u.group.position.clone().add(new THREE.Vector3(0, 9, 0)).addScaledVector(dirR, -60);
           const h = FX.hitUnitSurface(u, from, dirR, 120);
           if (h && h.object && h.normal) {
-            dentAt(u, h.object, h.point, h.normal, rand(5, 8), rand(1.2, 2.2), true);
+            dentAt(u, h.object, h.point, h.normal, rand(5, 8), rand(1.2, 2.2), true, h);
             crumpleAt(u, h.point, dirR, rand(8, 12), rand(1.8, 3));
           }
         }
@@ -1750,12 +1769,13 @@ const VehicleDamage = (() => {
         const cap = { heavy: 0.6, medium: 1.2, light: 1.8, soft: 2.2 }[A.cls];
         d.dentDepth = d.dentDepth || {};
         const cur = d.dentDepth[key] || 0;
-        if (cur < cap) { const dd = Math.min(per, cap - cur); d.dentDepth[key] = cur + dd; dentAt(u, hit.object, point, hit.normal, 3.2, dd, false); }
-        if (n === need && need < 9999) dentAt(u, hit.object, point, hit.normal, 5.5, { heavy: 0.5, medium: 1.0, light: 1.6, soft: 2 }[A.cls], true);
+        // Đạn 12.7mm / 30mm không làm oằn / rách cả mảng vỏ thép: chỉ để lỗ / hõm / muội cỡ thật (vết dán trên mặt vỏ, do
+        // ExplosionFX.impactSurface đặt). Miếng lõm 3D chỉ dành cho đạn pháo. Vẫn tính độ lõm tích luỹ cho logic đục thủng.
+        if (cur < cap) d.dentDepth[key] = cur + Math.min(per, cap - cur);
       }
       // Giai đoạn 1: vết lõm chồng chéo lan rộng, sứt mẻ lớp giáp ngoài
       if (n === Math.ceil(need * 0.4) && need > 2 && fx && fx.addSurfaceMark && hit.object) {
-        fx.addSurfaceMark(point, hit.normal, hit.object, 'armorCrater', cls === 'cannon' ? 3.2 : 2.2, { unit: u });
+        fx.addSurfaceMark(point, hit.normal, hit.object, cls === 'cannon' ? 'heiSplash' : 'steelDent', cls === 'cannon' ? 3.6 : 1.8, { unit: u });
         sparksAt(point, 10);
       }
       // Giai đoạn 3: mảng giáp quanh chỗ bị đục vỡ bung ra (váy xích, module giáp, gạch ERA, phụ kiện gần nhất)
@@ -1782,7 +1802,7 @@ const VehicleDamage = (() => {
         // đục thủng: tính như đạn xuyên vào trong (theo cỡ đạn vs cỡ xe)
         mul = Math.max(mul, POSTPEN.small[A.cls] || 1);
         if (n === need) {
-          if (fx && fx.addSurfaceMark && hit.object) fx.addSurfaceMark(point, hit.normal, hit.object, 'penetration', cls === 'cannon' ? 2.4 : 1.6, { unit: u });
+          if (fx && fx.addSurfaceMark && hit.object) fx.addSurfaceMark(point, hit.normal, hit.object, cls === 'cannon' ? 'heiHole' : 'steelHole', cls === 'cannon' ? 3.0 : 1.8, { unit: u });
           sparksAt(point, 16);
           sfx('armorPlate', point, 0.7);
           events.push({ type: 'bored', text: face === 'front' ? 'GIÁP MŨI BỊ ĐẠN XẢ LIÊN TỤC ĐỤC THỦNG' : 'GIÁP BỊ ĐẠN XẢ LIÊN TỤC ĐỤC THỦNG — đạn lọt vào bên trong' });
