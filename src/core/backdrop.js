@@ -29,6 +29,9 @@ const Backdrop = (() => {
   // Độ cao lấy mẫu theo bước st dọc trục dày (alongX: trục x), nội suy tuyến tính giữa 2 mẫu
   function isoSample(fn, x, z, half, st, cell, alongX) {
     if (st < cell * 1.5) return fn(x, z);
+    // bước làm tròn về lũy thừa 2 của ô bản đồ: các cột cùng bậc dùng chung mạng điểm mẫu, mạng bậc thô nằm gọn
+    // trong mạng bậc mịn -> các cột cạnh nhau khớp nhau (không lệch thành vệt)
+    st = cell * Math.pow(2, Math.round(Math.log2(st / cell)));
     const u = alongX ? x : z, u0 = -half + Math.floor((u + half) / st) * st, t = (u - u0) / st;
     const a = alongX ? fn(u0, z) : fn(x, u0), b = alongX ? fn(u0 + st, z) : fn(x, u0 + st);
     return a + (b - a) * t;
@@ -50,7 +53,7 @@ const Backdrop = (() => {
     JUNGLE: { pow: 0.3, r: [18, 28], squash: 0.75 },
     RIVER_LAKE: { pow: 1.0, r: [13, 21], squash: 0.8 },
     URBAN: { pow: 0.7, r: [12, 19], squash: 0.8 },
-    HIGHLAND: { pow: 1.0, pine: true, r: [5, 8], hgt: [17, 28], treeline: 430 }
+    HIGHLAND: { pow: 1.6, pine: true, r: [5, 8], hgt: [17, 28], treeline: 430 }
   };
   const SP = 50;   // bước lưới rải khóm cây
   // Khóm tán lá rộng: 4 khối tròn méo chồng lên nhau (u lồi lõm, không phải quả cầu nhẵn), gốc tối (bóng tán)
