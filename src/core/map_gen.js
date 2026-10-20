@@ -157,7 +157,13 @@ const MapGen = (() => {
         const field = smooth(-0.15, 0.35, fbm(noise, (x + ox) * 0.00055, (z + oz) * 0.00055, 3));
         let dune = Math.max(0, 1 - Math.abs(noise(u * 0.0042, v * 0.0016)));
         dune = Math.pow(dune, 2.6) * 34 * field;
-        const ripples = fbm(noise, u * 0.012, v * 0.004, 2) * 3;
+        let ripples = fbm(noise, u * 0.012, v * 0.004, 2) * 3;
+        // ngoài bản đồ (cảnh nền, lưới thưa): cồn cát lớn thay cho cồn nhỏ / gợn (tránh lấy mẫu thưa thành hoa văn lặp)
+        const dFar = smooth(2500, 3300, Math.hypot(x, z));
+        if (dFar > 0) {
+          const big = Math.pow(Math.max(0, 1 - Math.abs(noise(u * 0.0011 + 3.3, v * 0.00045))), 2.2) * 70 * (0.4 + 0.6 * field);
+          dune = lerp(dune, big, dFar); ripples *= 1 - dFar;
+        }
         const mesaN = fbm(noise2, (x - ox) * 0.0010, (z - oz) * 0.0010, 4);
         const mesa = smooth(0.30, 0.38, mesaN) * 42 + smooth(0.38, 0.6, mesaN) * 6;
         h = 6 + fbm(noise, wx * 0.0012, wz * 0.0012, 4) * 8 + dune + ripples;

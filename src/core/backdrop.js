@@ -26,6 +26,14 @@ const Backdrop = (() => {
     return { a, n0: outer.length };
   }
 
+  // Độ cao lấy mẫu theo bước st dọc trục dày (alongX: trục x), nội suy tuyến tính giữa 2 mẫu
+  function isoSample(O, x, z, half, st, cell, alongX) {
+    if (st < cell * 1.5) return O.heightAt(x, z);
+    const u = alongX ? x : z, u0 = -half + Math.floor((u + half) / st) * st, t = (u - u0) / st;
+    const a = alongX ? O.heightAt(u0, z) : O.heightAt(x, u0), b = alongX ? O.heightAt(u0 + st, z) : O.heightAt(x, u0 + st);
+    return a + (b - a) * t;
+  }
+
   // Sắc vertex color phủ lên shader mặt đất: rừng xa (mảng xanh đậm), vân đá núi bàn, đỉnh núi đá sáng
   const TINT = {
     DESERT: null,
@@ -165,7 +173,13 @@ const Backdrop = (() => {
         let dl = edgeDelta.get(key);
         if (dl === undefined) { dl = T.heightData[(cj - n0) * NG + (ci - n0)] - O.heightAt(ax[ci], ax[cj]); edgeDelta.set(key, dl); }
         const dOut = Math.hypot(x - ax[ci], z - ax[cj]);
-        H[j * NA + i] = O.heightAt(x, z) + dl * (1 - smooth(0, 400, dOut));
+        // dải lưới thẳng ra từ cạnh bản đồ: một chiều dày (theo ô bản đồ), chiều kia thưa -> lấy mẫu độ cao theo
+        // bước thưa ở cả hai chiều rồi nội suy (không thành vệt sọc dọc trục)
+        let hv;
+        if (inner(i) && j > 0 && j < NA - 1) hv = isoSample(O, x, z, half, Math.max(ax[j + 1] - ax[j], ax[j] - ax[j - 1]), cell, true);
+        else if (inner(j) && i > 0 && i < NA - 1) hv = isoSample(O, x, z, half, Math.max(ax[i + 1] - ax[i], ax[i] - ax[i - 1]), cell, false);
+        else hv = O.heightAt(x, z);
+        H[j * NA + i] = hv + dl * (1 - smooth(0, 400, dOut));
       }
     }
 
