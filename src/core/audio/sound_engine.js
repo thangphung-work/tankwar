@@ -503,6 +503,9 @@ class SoundEngine {
     const g = ctx.createGain();
     const peak = o.gain !== undefined ? o.gain : 1;
     const a = o.attack !== undefined ? o.attack : 0.001;
+    // mức nền phải im lặng: mặc định gain = 1 trước sự kiện đầu tiên -> mẫu đầu lọt ra nguyên biên độ thành tiếng "tách"
+    // (nghe rõ khi lọc thông cao)
+    g.gain.value = 0;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(peak, t + a);
     g.gain.setTargetAtTime(0.0001, t + a, o.dur / 4.5);
@@ -549,6 +552,7 @@ class SoundEngine {
     }
     const g = ctx.createGain();
     const a = o.attack !== undefined ? o.attack : 0.002;
+    g.gain.value = 0;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(o.gain, t + a);
     if (o.hold) g.gain.setValueAtTime(o.gain, t + a + o.hold);

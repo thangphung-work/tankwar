@@ -220,6 +220,7 @@
       if (M.song) this._mzStop(Math.min(1.5, fade));
       const def = SONGS[kind];
       const out = this.ctx.createGain();
+      out.gain.value = 0;
       out.gain.setValueAtTime(0.0001, t);
       out.gain.linearRampToValueAtTime(def.gain, t + fade);
       out.connect(M.bus);
@@ -370,6 +371,7 @@
       f.Q.value = 0.7;
       const g = ctx.createGain();
       const peak = 0.065 * lv;
+      g.gain.value = 0;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(peak, t + 0.7);
       g.gain.setValueAtTime(peak, t + dur);
@@ -393,6 +395,7 @@
     _mzDrone(dest, t, m, dur, lv) {
       const ctx = this.ctx;
       const g = ctx.createGain();
+      g.gain.value = 0;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(0.07 * lv, t + 0.25);
       g.gain.setValueAtTime(0.07 * lv, t + dur);
@@ -427,6 +430,7 @@
       f.frequency.setTargetAtTime(650, t + 0.02, 0.06);
       const g = ctx.createGain();
       const peak = (acc ? 0.12 : 0.08) * lv;
+      g.gain.value = 0;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(peak, t + 0.004);
       g.gain.setTargetAtTime(0.0001, t + 0.03, 0.045);
@@ -487,6 +491,7 @@
       ws.curve = this.getShaper(2.0);
       const g = ctx.createGain();
       const peak = 0.075 * lv;
+      g.gain.value = 0;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(peak, t + a);
       g.gain.setValueAtTime(peak, t + Math.max(a, dur * 0.92));
@@ -497,6 +502,7 @@
       const vib = ctx.createOscillator();
       vib.frequency.value = 5.2;
       const vd = ctx.createGain();
+      vd.gain.value = 0;
       vd.gain.setValueAtTime(0, t);
       vd.gain.linearRampToValueAtTime(7, t + Math.min(dur, 0.9));
       vib.connect(vd);
@@ -521,6 +527,7 @@
       sum.gain.value = 1;
       const g = ctx.createGain();
       const peak = 0.2 * lv;
+      g.gain.value = 0;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(peak, t + 1.0);
       g.gain.setValueAtTime(peak, t + dur);
@@ -584,6 +591,7 @@
       bp.frequency.setValueAtTime(300, t);
       bp.frequency.exponentialRampToValueAtTime(7000, t + dur);
       const g = ctx.createGain();
+      g.gain.value = 0;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.32, t + dur);
       g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.06);
@@ -602,6 +610,7 @@
       of.frequency.setValueAtTime(400, t);
       of.frequency.exponentialRampToValueAtTime(3000, t + dur);
       const og = ctx.createGain();
+      og.gain.value = 0;
       og.gain.setValueAtTime(0.0001, t);
       og.gain.exponentialRampToValueAtTime(0.06, t + dur);
       og.gain.linearRampToValueAtTime(0.0001, t + dur + 0.05);
