@@ -225,8 +225,12 @@ const MapGen = (() => {
           const fade = smooth(4500, 5300, d);
           if (OUT.far === 'karst') {
             // núi đá vôi dựng đứng nhô lên giữa biển (kiểu vịnh Hạ Long)
-            const kv = on(x * 0.0017 + 9, z * 0.0017 - 4) + 0.35 * on(x * 0.006, z * 0.006);
-            h = Math.max(h, -40 + smooth(0.3, 0.42, kv) * (190 + 170 * fbm(on, x * 0.003, z * 0.003, 2)) * fade);
+            // chỉ vài cụm (vịnh đá) chứ không rải khắp biển; mỗi khối đủ to để lưới cảnh nền xa vẫn dựng tròn trịa
+            const cm = smooth(0.12, 0.4, fbm(on, x * 0.00022 + 3, z * 0.00022 - 8, 2));
+            if (cm > 0) {
+              const kv = on(x * 0.0011 + 9, z * 0.0011 - 4) + 0.3 * on(x * 0.004, z * 0.004);
+              h = Math.max(h, -40 + smooth(0.28, 0.46, kv) * cm * (200 + 200 * fbm(on, x * 0.002, z * 0.002, 2)) * fade);
+            }
           } else {
             // vài hòn đảo xa thưa thớt, sườn thoải xuống bãi
             const iv = fbm(on, x * 0.00021 + 7, z * 0.00021 - 2, 3) + 0.25 * on(x * 0.0011, z * 0.0011);

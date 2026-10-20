@@ -35,6 +35,68 @@ const Backdrop = (() => {
     RIVER_LAKE: { forest: [0.5, 0.6, 0.42], density: 0.9 }
   };
 
+  // RỪNG XA TRANG TRÍ phủ vành núi & đồi ngoài bản đồ (cây thật của bản đồ chỉ mọc trong vùng chiến đấu):
+  // mỗi khóm là một khối tán cây đơn giản (cây lá rộng) hoặc chóp thông, rải theo đúng mặt nạ mảng rừng
+  // của vertex color cảnh nền; chỉ mọc ngoài tầm xe chạy tới, không va chạm / không chặn đạn / không đổ bóng.
+  const FOREST = {
+    JUNGLE: { pow: 0.55, r: [17, 27], squash: 0.75 },
+    RIVER_LAKE: { pow: 1.0, r: [13, 21], squash: 0.8 },
+    URBAN: { pow: 1.4, r: [11, 17], squash: 0.8 },
+    HIGHLAND: { pow: 1.0, pine: true, r: [5, 8], hgt: [17, 28], treeline: 430 }
+  };
+  const SP = 50;   // bước lưới rải khóm cây
+  function buildForest(T, O, nz, seaLvl) {
+    const F = FOREST[T.mapType];
+    if (!F) return null;
+    const rnd = MapGen.mulberry32((T.seed ^ 0x3a7f11) >>> 0);
+    const ext = 6200, mats = [], cols = [];
+    const leaf = T.leafColors ? T.leafColors() : [0x4a5632, 0x58643a];
+    const c0 = new THREE.Color(leaf[0]), c1 = new THREE.Color(leaf[1]), c = new THREE.Color();
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), sc = new THREE.Vector3();
+    const H = (x, z) => O.heightAt(x, z);
+    for (let z = -ext; z <= ext; z += SP) for (let x = -ext; x <= ext; x += SP) {
+      const px = x + (rnd() - 0.5) * SP * 0.9, pz = z + (rnd() - 0.5) * SP * 0.9, r1 = rnd(), r2 = rnd(), r3 = rnd();
+      // ngoài tầm xe (xe bị giữ trong ±(nửa bản đồ - 60), chân vành núi dốc dần từ ~1550)
+      if (Math.hypot(px, pz) < 1950) continue;
+      const fm = smooth(-0.08, 0.28, MapGen.fbm(nz, px * 0.0024, pz * 0.0024, 3));
+      if (r1 > Math.pow(fm, F.pow)) continue;
+      const h = H(px, pz);
+      if (seaLvl !== null && h < seaLvl + 7) continue;
+      if (F.treeline && h > F.treeline + (r2 - 0.5) * 120) continue;
+      const e = 8, gx = (H(px + e, pz) - H(px - e, pz)) / (2 * e), gz = (H(px, pz + e) - H(px, pz - e)) / (2 * e);
+      if (Math.hypot(gx, gz) > 0.9) continue;
+      const rr = F.r[0] + (F.r[1] - F.r[0]) * r2;
+      if (F.pine) { sc.set(rr, F.hgt[0] + (F.hgt[1] - F.hgt[0]) * r3, rr); p.set(px, h - 1, pz); }
+      else { sc.set(rr, rr * F.squash * (0.85 + 0.3 * r3), rr * (0.85 + 0.3 * r1)); p.set(px, h + sc.y * 0.35, pz); }
+      q.setFromAxisAngle(up, r3 * 6.283);
+      m4.compose(p, q, sc);
+      mats.push(m4.clone());
+      c.copy(c0).lerp(c1, r2).multiplyScalar(0.72 + 0.3 * r3);
+      cols.push(c.r, c.g, c.b);
+    }
+    if (!mats.length) return null;
+    let geo;
+    if (F.pine) {
+      geo = new THREE.ConeGeometry(1, 1, 7, 1, true);
+      geo.translate(0, 0.5, 0);
+    } else {
+      // khối tán tròn nhẵn: pháp tuyến = hướng từ tâm (không lộ mặt phẳng tam giác)
+      geo = new THREE.IcosahedronGeometry(1, 1);
+      const P = geo.attributes.position, N = geo.attributes.normal;
+      for (let i = 0; i < P.count; i++) { p.fromBufferAttribute(P, i).normalize(); N.setXYZ(i, p.x, p.y, p.z); }
+    }
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
+    mat.onBeforeCompile = (sh) => BattleTerrain3D.applyFarFade(sh, false);
+    mat.customProgramCacheKey = () => 'backdropForest';
+    const mesh = new THREE.InstancedMesh(geo, mat, mats.length);
+    for (let i = 0; i < mats.length; i++) mesh.setMatrixAt(i, mats[i]);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cols), 3);
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.name = 'backdropForest';
+    mesh.frustumCulled = false;
+    return mesh;
+  }
+
   function build(T) {
     const O = T.map && T.map.outer;
     if (!O || typeof THREE === 'undefined') return null;
@@ -173,8 +235,10 @@ const Backdrop = (() => {
       sea.renderOrder = 2;
       group.add(sea);
     }
+    const forest = buildForest(T, O, nz, seaLvl);
+    if (forest) group.add(forest);
     group.traverse(o => { o.matrixAutoUpdate = false; o.updateMatrix(); });
-    return { group, land, sea, verts: nv };
+    return { group, land, sea, forest, verts: nv };
   }
 
   return { build };
