@@ -754,9 +754,13 @@ const Strongholds = (() => {
           if (!this.inCaptureZone(K, u.x, u.z)) continue;
           if (u.team === 'BLUE') blue++; else if (u.team === 'RED') red++;
         }
-        const rate = 24;   // %/giây với 1 xe (~4 s kéo cờ lên đỉnh), 2 xe nhanh gấp rưỡi
-        if (blue && !red) K.capture = Math.min(100, K.capture + rate * (blue > 1 ? 1.5 : 1) * dt);
-        else if (red && !blue) K.capture = Math.max(-100, K.capture - rate * (red > 1 ? 1.5 : 1) * dt);
+        // Phe ĐÔNG XE HƠN trong vùng kéo cờ về phía mình (~10 s với hơn 1 xe, hơn 2+ xe nhanh gấp rưỡi);
+        // hai phe bằng số xe: đứng yên. (Trước đây có mặt cả 2 phe là đóng băng hẳn: xe 2 phe cùng nấp trong hầm
+        // bê tông, không ai bắn thủng được ai -> cứ điểm kẹt "tranh chấp" cả trận)
+        const rate = 10;
+        const net = blue - red;
+        if (net > 0) K.capture = Math.min(100, K.capture + rate * (net > 1 ? 1.5 : 1) * dt);
+        else if (net < 0) K.capture = Math.max(-100, K.capture - rate * (net < -1 ? 1.5 : 1) * dt);
         K.contested = !!(blue && red);
         K.blueIn = blue; K.redIn = red;
         let owner = K.owner;

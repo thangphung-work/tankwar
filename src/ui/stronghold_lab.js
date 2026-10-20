@@ -74,7 +74,7 @@
     g.matchDuration = 1e9;
     lab.zoneUpdate = g.zone.update.bind(g.zone);
     lab.zone = false;
-    g.zone.update = function (dt, units) { if (lab.zone) lab.zoneUpdate(dt, units); };
+    g.zone.update = function (dt, units, ox, oz) { if (lab.zone) lab.zoneUpdate(dt, units, ox, oz); };
     g.airdropTimer = 1e9;
     if (g.supplyManager) g.supplyManager.airdropTimer = 1e9;
     g.respawnWaitPenalty = 3;
