@@ -260,8 +260,13 @@ const ArmoryUI = (() => {
         flash = { k: id, cost: Eq.PREMIUM[id].price };
         msg = `<i class="ti ti-circle-check"></i> Đã mua <b>${esc(Eq.PREMIUM[id].name)}</b> — luôn dùng từ trận tới`;
       }
-      if (act !== 'sellAmmo' && window.soundEngine && window.soundEngine.playReloadDone) window.soundEngine.playReloadDone();
-    } catch (err) { flash = null; msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`; }
+      const se = window.soundEngine;
+      if (se && se.playUiPurchase) se.playUiPurchase(act === 'sellAmmo');
+      else if (act !== 'sellAmmo' && se && se.playReloadDone) se.playReloadDone();
+    } catch (err) {
+      flash = null; msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`;
+      if (window.soundEngine && window.soundEngine.playUiDenied) window.soundEngine.playUiDenied();
+    }
     finally { busy = false; render(); }
   }
 
@@ -281,7 +286,9 @@ const ArmoryUI = (() => {
       if (!ok) { msg = '<i class="ti ti-info-circle"></i> Chưa xem hết quảng cáo nên chưa nhận được.'; return; }
       await Acc.claim(tank, id, s.token);
       msg = `<i class="ti ti-circle-check"></i> Đã nhận <b>${esc(M.name)}</b>${E().MODULES[id] ? ' — đã tự trang bị nếu nhóm còn ô' : ' — luôn dùng từ trận tới'}`;
-      if (window.soundEngine && window.soundEngine.playReloadDone) window.soundEngine.playReloadDone();
+      const se = window.soundEngine;
+      if (se && se.playUiPurchase) se.playUiPurchase(false);
+      else if (se && se.playReloadDone) se.playReloadDone();
       if (E().MODULES[id]) rebuildPreview();
     } catch (err) { msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`; }
     finally { busy = false; render(); }

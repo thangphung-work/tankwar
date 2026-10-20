@@ -4,7 +4,11 @@
  * - Bấm nút: công tắc gạt "cạch"; chuyển tab: "tách" nhẹ
  * - Chọn xe: chốt khóa thép "cộp" + tiếng máy riêng từng loại xe (tăng: diesel gầm; 6 nòng: mô-tơ rít vòng tua;
  *   pháo tự hành: xi-lanh thủy lực xì + khóa nòng đóng; trinh sát: máy nhẹ rồ nhanh) + kèn đồng chớp khi nhạc bật
- * - Chọn bản đồ: tiếng giấy bản đồ phẩy + bíp radar xác nhận + trầm xa
+ * - Chọn bản đồ: tiếng giấy bản đồ phẩy + bíp radar xác nhận + âm đặc trưng chiến địa (gió cát, còi báo động,
+ *   côn trùng & chim rừng, gió núi & chim ưng, nước vỗ)
+ * - Trang bị: ngàm thép + tiếng riêng từng món (giáp nổ bắt bu lông, giáp lồng lạch cạch, tấm giáp nặng, vải kevlar,
+ *   servo đánh chặn, ống khói rỗng, lưới lá, van khí nén, tua-bin tăng áp, radar, nhiễu sóng); đủ ô -> tiếng từ chối;
+ *   mua thành công -> khóa nòng + xu bạc leng keng, thất bại -> tiếng từ chối
  * - TÌM TRẬN: cú "CHẮC" nặng như khóa nòng; HỦY: hai bíp đi xuống
  * - Mở / đóng bảng: tiếng gió lướt lên / xuống
  * Gắn bằng lắng nghe chung cả trang (event delegation) — không cần sửa từng file giao diện.
@@ -12,6 +16,105 @@
  */
 (function () {
   if (typeof SoundEngine === 'undefined') return;
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  // Âm đặc trưng từng chiến địa (phát sau tiếng xác nhận chọn bản đồ, ~1,5 s, nghe xa qua hồi âm)
+  const MAP_FX = {
+    // sa mạc: cơn gió nóng thổi cát rào rào
+    DESERT(out, t) {
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 420, freqEnd: 1150, sweep: 0.9, Q: 1.8, gain: 0.22, attack: 0.45, dur: 1.4 });
+      this.burst(out, t + 0.2, { filter: 'highpass', freq: 6000, gain: 0.05, attack: 0.4, dur: 1.2 });
+    },
+    // đô thị đổ nát: còi báo động phòng không vọng xa + gạch vụn lăn
+    URBAN(out, t) {
+      this.tone(out, t, { type: 'triangle', freq: 380, freqEnd: 720, sweep: 0.9, gain: 0.07, attack: 0.3, hold: 0.5, dur: 0.9, filter: 'lowpass', filterFreq: 1400 });
+      this.tone(out, t, { type: 'triangle', freq: 385, freqEnd: 728, sweep: 0.9, gain: 0.05, attack: 0.3, hold: 0.5, dur: 0.9, filter: 'lowpass', filterFreq: 1400 });
+      for (let i = 0; i < 5; i++) this.burst(out, t + 0.3 + i * rnd(0.08, 0.16), { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: rnd(700, 1600), Q: 2, gain: 0.05, attack: 0.001, dur: 0.04 });
+    },
+    // rừng rậm: ve sầu rỉ rả + chim hót hai tiếng
+    JUNGLE(out, t) {
+      this._uiNoiseAM(out, t, { filter: 'bandpass', freq: 4800, Q: 6, gain: 0.07, attack: 0.3, dur: 1.6, amHz: 38, amDepth: 0.9 });
+      for (const [d, f0, f1] of [[0.25, 2600, 3700], [0.36, 2700, 3800], [0.75, 1900, 1250], [0.95, 2000, 1300]]) {
+        this.tone(out, t + d, { freq: f0, freqEnd: f1, sweep: 0.08, gain: 0.03, attack: 0.005, dur: 0.1 });
+      }
+    },
+    // cao nguyên: gió núi hú + tiếng chim ưng kêu xa
+    HIGHLAND(out, t) {
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 650, freqEnd: 980, sweep: 1.2, Q: 7, gain: 0.3, attack: 0.5, dur: 1.5 });
+      this.tone(out, t + 0.35, { freq: 2700, freqEnd: 1850, sweep: 0.55, gain: 0.025, attack: 0.03, dur: 0.6, vibrato: 28, vibratoDepth: 60 });
+    },
+    // sông hồ: nước vỗ bờ óc ách + bọt nước lục bục
+    RIVER_LAKE(out, t) {
+      this._uiNoiseAM(out, t, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 900, Q: 0.7, gain: 0.2, attack: 0.25, dur: 1.5, amHz: 1.6, amDepth: 0.9 });
+      for (let i = 0; i < 5; i++) { const f = rnd(500, 900); this.tone(out, t + 0.2 + i * rnd(0.12, 0.25), { freq: f, freqEnd: f * 2.1, sweep: 0.05, gain: 0.025, attack: 0.003, dur: 0.06 }); }
+    }
+  };
+
+  // Âm riêng từng món trang bị (k = 1 khi lắp, ~0,45 khi tháo)
+  const EQUIP_FX = {
+    // giáp phản ứng nổ: từng khối gạch thép nặng bắt bu lông "cộp — cộp" + cờ lê siết
+    era(out, t, k) {
+      for (const d of [0, 0.16]) { this.metal(out, t + d, { f0: 330, ratios: [1, 2.2, 3.6], decay: 0.2, gain: 0.1 * k, click: 0.5 }); this.burst(out, t + d, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, drive: 2, gain: 0.35 * k, attack: 0.001, dur: 0.08 }); }
+      for (let i = 0; i < 4; i++) this.burst(out, t + 0.34 + i * 0.045, { filter: 'bandpass', freq: 3400, Q: 5, gain: 0.04 * k, attack: 0.0005, dur: 0.012 });
+    },
+    // giáp lồng: khung thanh sắt rung lạch cạch
+    slat(out, t, k) {
+      for (let i = 0; i < 6; i++) this.metal(out, t + i * rnd(0.03, 0.06), { f0: rnd(900, 1500), ratios: [1, 2.9, 5.1], decay: 0.12, gain: 0.04 * k, click: 0.2 });
+    },
+    // tấm giáp tăng cường: tấm thép dày đặt xuống nặng trịch, ngân trầm
+    applique(out, t, k) {
+      this.metal(out, t, { f0: 160, ratios: [1, 2.4, 3.9, 5.6], decay: 0.7, gain: 0.1 * k, click: 0.6 });
+      this.tone(out, t, { freq: 80, freqEnd: 45, sweep: 0.15, gain: 0.25 * k, attack: 0.001, dur: 0.3 });
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 260, drive: 2.5, gain: 0.3 * k, attack: 0.001, dur: 0.12 });
+    },
+    // lớp lót chống mảnh (sợi kevlar): vải sột soạt + dán khóa nhám "rẹt"
+    spall(out, t, k) {
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2600, Q: 0.8, gain: 0.1 * k, attack: 0.04, dur: 0.18 });
+      this._uiNoiseAM(out, t + 0.16, { filter: 'bandpass', freq: 3200, Q: 1.2, gain: 0.12 * k, attack: 0.01, dur: 0.22, amHz: 70, amDepth: 1 });
+    },
+    // đánh chặn chủ động: mô-tơ servo xoay bệ phóng + hai bíp hệ thống sẵn sàng
+    aps(out, t, k) {
+      this.tone(out, t, { type: 'sawtooth', freq: 180, freqEnd: 420, sweep: 0.25, gain: 0.05 * k, attack: 0.02, hold: 0.12, dur: 0.12, filter: 'bandpass', filterFreq: 900, Q: 2 });
+      this.tone(out, t + 0.32, { type: 'square', freq: 1400, gain: 0.04 * k, attack: 0.002, dur: 0.06, filter: 'lowpass', filterFreq: 3500 });
+      this.tone(out, t + 0.42, { type: 'square', freq: 1870, gain: 0.04 * k, attack: 0.002, dur: 0.09, filter: 'lowpass', filterFreq: 3500 });
+    },
+    // ống phóng lựu khói: gõ vào dãy ống rỗng "tong tong tong"
+    smoke(out, t, k) {
+      [640, 600, 560, 520].forEach((f, i) => {
+        this.tone(out, t + i * 0.07, { freq: f, freqEnd: f * 0.96, sweep: 0.1, gain: 0.12 * k, attack: 0.001, dur: 0.18 });
+        this.burst(out, t + i * 0.07, { filter: 'bandpass', freq: f * 2.7, Q: 4, gain: 0.07 * k, attack: 0.0005, dur: 0.03 });
+      });
+    },
+    // lưới ngụy trang: lưới + lá phủ lên xe sột soạt
+    camo(out, t, k) {
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3000, Q: 0.9, gain: 0.12 * k, attack: 0.08, dur: 0.5 });
+      for (let i = 0; i < 6; i++) this.burst(out, t + rnd(0, 0.45), { filter: 'bandpass', freq: rnd(2500, 5000), Q: 3, gain: 0.035 * k, attack: 0.002, dur: 0.03 });
+    },
+    // bình chữa cháy tự động: mở van "tách" + khí nén xì + kim đồng hồ áp suất "ting"
+    fireext(out, t, k) {
+      this.burst(out, t, { filter: 'bandpass', freq: 3600, Q: 4, gain: 0.06 * k, attack: 0.0005, dur: 0.015 });
+      this.burst(out, t + 0.03, { filter: 'highpass', freq: 3500, gain: 0.1 * k, attack: 0.01, dur: 0.35 });
+      this.metal(out, t + 0.42, { f0: 2100, ratios: [1, 2.7], decay: 0.4, gain: 0.03 * k, click: 0.1 });
+    },
+    // động cơ tăng áp: tua-bin rít vút lên + xả van "pssh"
+    turbo(out, t, k) {
+      this.tone(out, t, { freq: 1100, freqEnd: 4200, sweep: 0.45, gain: 0.03 * k, attack: 0.05, hold: 0.25, dur: 0.25 });
+      this.tone(out, t, { freq: 2210, freqEnd: 8400, sweep: 0.45, gain: 0.01 * k, attack: 0.05, hold: 0.25, dur: 0.2 });
+      this.burst(out, t + 0.55, { filter: 'bandpass', freq: 2600, freqEnd: 1400, sweep: 0.2, Q: 0.9, gain: 0.12 * k, attack: 0.005, dur: 0.22 });
+    },
+    // radar dò tìm: khởi động điện tử quét lên + "píng" dội lại
+    radar(out, t, k) {
+      this.tone(out, t, { type: 'sine', freq: 300, freqEnd: 1500, sweep: 0.3, gain: 0.025 * k, attack: 0.02, dur: 0.3 });
+      this.tone(out, t + 0.35, { freq: 1980, gain: 0.04 * k, attack: 0.002, dur: 0.5 });
+      this.tone(out, t + 0.6, { freq: 1980, gain: 0.012 * k, attack: 0.002, dur: 0.4 });
+    },
+    // máy gây nhiễu: nhiễu sóng rè rè + tiếng hú vô tuyến lên xuống
+    jammer(out, t, k) {
+      this._uiNoiseAM(out, t, { filter: 'bandpass', freq: 1800, Q: 0.7, gain: 0.08 * k, attack: 0.02, dur: 0.5, amHz: 23, amDepth: 0.9 });
+      this.tone(out, t, { type: 'square', freq: 700, freqEnd: 1300, sweep: 0.25, gain: 0.012 * k, attack: 0.02, hold: 0.1, dur: 0.2, vibrato: 14, vibratoDepth: 120, filter: 'lowpass', filterFreq: 2500 });
+    }
+  };
 
   SoundEngine.mixin(class {
     uiOut(gain = 1, wet = 0.06) {
@@ -63,13 +166,40 @@
       this.tone(out, t + 0.03, { freq: 120, freqEnd: 80, sweep: 0.06, gain: 0.1, attack: 0.001, dur: 0.08 });
     }
 
-    // lắp / tháo trang bị: tiếng ngàm thép khớp vào
-    playUiEquip(on = true) {
+    // lắp / tháo trang bị: ngàm thép khớp vào (tháo: nhả chốt, trượt ra) + tiếng riêng của từng món
+    playUiEquip(on = true, id = '') {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
       const out = this.uiOut(0.8, 0.08);
-      this.metal(out, t, { f0: on ? 760 : 560, ratios: [1, 2.31, 3.9], decay: 0.18, gain: 0.08, click: 0.4 });
-      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 2, gain: 0.35, attack: 0.001, dur: 0.07 });
+      if (on) {
+        this.metal(out, t, { f0: 760, ratios: [1, 2.31, 3.9], decay: 0.18, gain: 0.08, click: 0.4 });
+        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 2, gain: 0.35, attack: 0.001, dur: 0.07 });
+      } else {
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1800, freqEnd: 700, sweep: 0.15, Q: 1.5, gain: 0.08, attack: 0.01, dur: 0.15 });
+        this.metal(out, t + 0.02, { f0: 520, ratios: [1, 2.31, 3.9], decay: 0.14, gain: 0.06, click: 0.3 });
+      }
+      const fx = EQUIP_FX[id];
+      if (fx) fx.call(this, out, t + (on ? 0.06 : 0.1), on ? 1 : 0.45);
+    }
+
+    // không làm được (nhóm đã đủ ô, thiếu Bạc...): hai tiếng "è" trầm
+    playUiDenied() {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.7, 0.02);
+      for (const d of [0, 0.11]) this.tone(out, t + d, { type: 'square', freq: 155, gain: 0.08, attack: 0.003, hold: 0.06, dur: 0.05, filter: 'lowpass', filterFreq: 900 });
+    }
+
+    // mua thành công: khóa nòng nạp đạn (tiếng cũ) + xu bạc leng keng; bán lại: vài đồng xu rơi khẽ
+    playUiPurchase(sell = false) {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.7, 0.1);
+      if (!sell && this.playReloadDone) this.playReloadDone();
+      const n = sell ? 2 : 5;
+      for (let i = 0; i < n; i++) {
+        this.metal(out, t + 0.03 + i * (0.045 + Math.random() * 0.03), { f0: 2300 + Math.random() * 1400, ratios: [1, 2.62, 4.1], decay: 0.22, gain: sell ? 0.08 : 0.12, click: 0.15 });
+      }
     }
 
     // chốt khóa thép "cộp" (dùng chung khi chọn xe / xuất trận)
@@ -108,6 +238,7 @@
       const ws = ctx.createWaveShaper();
       ws.curve = this.getShaper(2.2);
       const g = ctx.createGain();
+      g.gain.value = 0;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(gain, t + 0.05);
       g.gain.setValueAtTime(gain, t + up + 0.1);
@@ -152,7 +283,7 @@
       this._uiBrassHit(t + 0.02, 0.7);
     }
 
-    playUiSelectMap() {
+    playUiSelectMap(type = '') {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
       const out = this.uiOut(0.85, 0.2);
@@ -165,6 +296,8 @@
       this.tone(out, t + 0.22, { freq: 1760, gain: 0.05, attack: 0.002, dur: 0.18 });
       this.tone(out, t + 0.42, { freq: 1760, gain: 0.015, attack: 0.002, dur: 0.15 });
       this._uiBrassHit(t + 0.04, 0.45);
+      const fx = MAP_FX[type];
+      if (fx) fx.call(this, this.uiOut(0.8, 0.35), t + 0.15);
     }
 
     // TÌM TRẬN: cú "CHẮC" nặng như khóa nòng đóng + rung sàn
@@ -186,6 +319,40 @@
       this.tone(out, t, { type: 'square', freq: 880, gain: 0.03, attack: 0.002, dur: 0.07, filter: 'lowpass', filterFreq: 2500 });
       this.tone(out, t + 0.1, { type: 'square', freq: 587, gain: 0.03, attack: 0.002, dur: 0.12, filter: 'lowpass', filterFreq: 2000 });
       this.playUiClose();
+    }
+
+    // nhiễu có lọc + điều biên theo sóng sin (côn trùng rỉ rả, nước vỗ, nhiễu sóng vô tuyến)
+    _uiNoiseAM(out, t, { buffer, filter = 'bandpass', freq, Q = 1, gain, attack = 0.1, dur, amHz, amDepth = 0.8 }) {
+      const ctx = this.ctx;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer || this.noiseBuffer;
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = filter;
+      f.frequency.value = freq;
+      f.Q.value = Q;
+      const am = ctx.createGain();
+      am.gain.value = 1 - amDepth / 2;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = amHz;
+      const ld = ctx.createGain();
+      ld.gain.value = amDepth / 2;
+      lfo.connect(ld);
+      ld.connect(am.gain);
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gain, t + attack);
+      g.gain.setValueAtTime(gain, t + Math.max(attack, dur * 0.6));
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      src.connect(f);
+      f.connect(am);
+      am.connect(g);
+      g.connect(out);
+      src.start(t, Math.random() * 1.5);
+      src.stop(t + dur + 0.05);
+      lfo.start(t);
+      lfo.stop(t + dur + 0.05);
     }
 
     // kèn đồng chớp đúng giọng nhạc nền (chỉ khi nhạc đang bật): chọn là thấy "hào hùng"
@@ -217,14 +384,18 @@
     ['.btn-inspect-tank-3d, .mm-gear-btn, #mm-open-tank-inspector-btn', () => call('playUiOpen')],
     // bấm lại thẻ đang chọn: chỉ "cạch" nhẹ
     ['.mm-class-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectTank', el.getAttribute('data-tank-type') || 'ALL_ROUNDER'); }],
-    ['.mm-map-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectMap'); }],
+    ['.mm-map-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectMap', el.getAttribute('data-map-type') || ''); }],
     ['#ti-select-this-tank-btn', () => { const i = window.tankInspector; call('playUiSelectTank', (i && i.currentTankType) || 'ALL_ROUNDER'); }],
     ['#ti-close-btn, .ti-backdrop, .acc-close, .gm-close, [data-act="close"], [data-act="resume"]', () => call('playUiClose')],
     ['.acc-tab, .ti-tab-btn, .eqd-tab, .gm-tab, [role="tab"]', () => call('playUiTab')],
-    // kho trang bị: mua / bán đã có tiếng nạp đạn riêng
-    ['[data-act="buyAmmo"], [data-act="buyItem"], [data-act="sellAmmo"], [data-act="claim"]', () => {}],
-    ['[data-act="equip"], [data-act="equipAll"]', () => call('playUiEquip', true)],
-    ['[data-act="unequip"], [data-act="unequipAll"]', () => call('playUiEquip', false)],
+    // kho trang bị: mua / bán phát tiếng khi máy chủ trả kết quả (xem armory_ui.js); đồ khóa: mở quảng cáo
+    ['[data-act="buyAmmo"], [data-act="buyItem"], [data-act="sellAmmo"]', () => {}],
+    ['[data-act="claim"]', () => call('playUiOpen')],
+    // nhóm đã đủ ô -> không lắp được
+    ['[data-act="equip"]', el => { if (el.classList.contains('full')) call('playUiDenied'); else call('playUiEquip', true, el.getAttribute('data-item') || ''); }],
+    ['[data-act="unequip"]', el => call('playUiEquip', false, el.getAttribute('data-item') || '')],
+    ['[data-act="equipAll"]', () => call('playUiEquip', true)],
+    ['[data-act="unequipAll"]', () => call('playUiEquip', false)],
     ['button, [role="button"], .mm-quick-tag, .ti-camo-btn, a.btn, label.gm-toggle', el => { if (!el.disabled) call('playUiClick'); }]
   ];
   const HOVER = '.mm-class-card, .mm-map-card, #mm-find-match-btn, button, [role="button"], [role="tab"], .mm-quick-tag';
