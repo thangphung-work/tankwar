@@ -802,7 +802,7 @@ class TankInspector {
     const cur = this.field ? this.field.id : 'flat';
     bar.innerHTML = '<span class="ti-range-lbl"><i class="ti ti-map-2" aria-hidden="true"></i> BÃI THỬ</span>' +
       ProvingGround.list().map(p => `<button class="ti-range-chip${p.id === cur ? ' active' : ''}" data-range="${p.id}" title="${p.desc}"><i class="ti ti-${p.icon}" aria-hidden="true"></i>${p.name}</button>`).join('') +
-      '<button class="ti-range-chip ti-range-home" data-range-home="1" title="Đưa xe về bệ (cả khi xe kẹt / chết máy vì ngập nước)"><i class="ti ti-home" aria-hidden="true"></i>Về bệ</button>';
+      '<button class="ti-range-chip ti-range-home" data-range-home="1" title="Đưa xe về bệ (cả khi xe kẹt / bị phá hủy vì ngập nước)"><i class="ti ti-home" aria-hidden="true"></i>Về bệ</button>';
     if (!bar._bound) {
       bar._bound = true;
       bar.addEventListener('click', (e) => {
@@ -830,8 +830,8 @@ class TankInspector {
     if ((u.waterDepth || 0) > 0.3) parts.push(`Nước sâu ${(u.waterDepth / 8).toFixed(1)} m <small>(lội tối đa ${((u.wadeMax || 14) / 8).toFixed(1)} m)</small>`);
     parts.push(`${kmh} km/h`);
     let warn = '';
-    if (u.engineOff) warn = '<i class="ti ti-engine-off"></i> CHẾT MÁY VÌ NGẬP NƯỚC — bấm “Về bệ”';
-    else if (u.wadeStall) warn = '<i class="ti ti-ripple"></i> NƯỚC QUÁ SÂU — xe không lội tiếp được';
+    if (u.isDead && u.submerged) warn = '<i class="ti ti-ripple"></i> XE CHÌM VÌ NGẬP NƯỚC — bấm “Về bệ”';
+    else if (u.submerged) warn = `<i class="ti ti-ripple"></i> NGẬP NƯỚC — mất máu dần (còn ${Math.round(100 * u.hp / (u.maxHp || 1))}%)`;
     else if (u.climbStall) warn = '<i class="ti ti-mountain"></i> DỐC QUÁ CAO — xe không leo nổi';
     const html = parts.join(' · ') + (warn ? `<div class="ti-range-warn">${warn}</div>` : '');
     if (html !== this._roHtml) { el.innerHTML = html; this._roHtml = html; }

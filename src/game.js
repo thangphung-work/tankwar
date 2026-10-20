@@ -4035,12 +4035,11 @@ class ArtilleryGame3D {
           engineDmg: D ? D.engine || 0 : 0,
           tracksBroken: D && D.trackTimer ? (D.trackTimer[0] > 0 ? 1 : 0) + (D.trackTimer[1] > 0 ? 1 : 0) : 0,
           flatTires: D ? cnt(D.flat) + cnt(D.gone) : 0,
-          stall: !!this.player.climbStall,   // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
-          dead: !!this.player.engineOff      // ngập nước chết máy: tắt tiếng máy, nổ lại thì tự có tiếng đề
+          stall: !!this.player.climbStall    // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
         });
         // Tiếng lội nước theo độ sâu & tốc độ thật (src/core/audio/wading.js)
         if (window.soundEngine.updateWading) {
-          window.soundEngine.updateWading(this.player.waterDepth || 0, speedRatio, { stall: !!this.player.wadeStall, dead: this.player.isDead });
+          window.soundEngine.updateWading(this.player.waterDepth || 0, speedRatio, { dead: this.player.isDead });
         }
         // Mô-tơ quay tháp: theo tốc độ người chơi xoay HƯỚNG NGẮM (tháp trong hệ toạ độ thế giới). Không tính phần bộ ổn định
         // quay bù khi thân xe xoay: thân xe trong game xoay tới ~166°/s nên phần bù đó làm mô-tơ rít hết cỡ mỗi lần đánh lái

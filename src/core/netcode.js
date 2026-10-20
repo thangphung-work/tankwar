@@ -836,8 +836,8 @@
   //  - Máy nhận áp dụng sự kiện DAMAGE, không tự tính sát thương cho đạn của máy khác
   // ==========================================
   const GUN_STREAM_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 }; // Đạn liên thanh: đồng bộ bằng cờ bắn
-  const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z' };
-  const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE' };
+  const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z', WATER: 'W' };
+  const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE', W: 'WATER' };
   const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16;
 
   class NetGameSync {
@@ -1019,7 +1019,7 @@
       let auth;
       if (this._impactDepth > 0) auth = true;               // Trong vụ nổ do máy này có chủ quyền
       else if (attacker) auth = this.owns(attacker);
-      else if (source === 'ZONE') auth = this.owns(unit);   // Vùng bo: máy chủ quyền của xe bị trúng
+      else if (source === 'ZONE' || source === 'WATER') auth = this.owns(unit);   // Vùng bo / ngập nước: máy chủ quyền của xe bị trúng
       else auth = true;                                     // Cháy âm ỉ: chỉ máy chủ quyền phát bắn mới châm lửa
       if (!auth) return { blocked: false, killed: false, prevHp: unit.hp, currentHp: unit.hp, netIgnored: true };
 

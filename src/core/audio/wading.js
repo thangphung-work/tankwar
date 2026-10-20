@@ -50,7 +50,7 @@
     this._wade = { out, slG, slF, hsG, hsF, guG, next: 0, bub: 0, prevDepth: 0 };
   };
 
-  // Máy ngập nước: vài nhịp nổ hụt nghẹn nước "bụp... bụp", ộc nước, xì hơi nóng, bong bóng sủi lên rồi tắt hẳn
+  // Xe ngập nước (nước tràn vào khoang máy): vài nhịp nổ hụt nghẹn nước "bụp... bụp", ộc nước, xì hơi nóng, bong bóng sủi
   SoundEngine.prototype.playEngineFlood = function () {
     if (!this.ctx || !this.brownNoiseBuffer) return;
     if (!this._wade) this.buildWading();

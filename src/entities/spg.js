@@ -1553,12 +1553,6 @@ class SPGUnit3D {
       }
     }
     this._wPrevSpd = Math.abs(this.speed);
-    // MÁY CHẾT (ngập nước): không còn lực kéo, xe chỉ trôi chậm dần rồi đứng (bỏ qua mọi lệnh ga của người / bot)
-    if (this.engineOff) {
-      this._floodV = (this._floodV || 0) * Math.exp(-dt * 4);
-      if (Math.abs(this._floodV) < 0.5) this._floodV = 0;
-      this.speed = this._floodV;
-    }
     this.currentTerrainType = terrainInfo.type;
 
     // LEO DỐC theo khả năng từng xe: dốc càng gần giới hạn càng chậm; quá giới hạn thì không leo nổi (trượt lùi nhẹ)
@@ -1609,23 +1603,15 @@ class SPGUnit3D {
     }
     void wheeledDrive;
 
-    // NƯỚC QUÁ SÂU: không lội sâu thêm được (nước tràn vào khoang máy) — vẫn lùi / quay ra chỗ nông được
-    this.wadeStall = false;
-    if (waterY !== null && waterY !== undefined) {
-      const nwY = terrain.waterSurfaceAt(nextX, nextZ);
-      const nDepth = nwY !== null && nwY !== undefined ? nwY - groundAt(nextX, nextZ) : 0;
-      if (nDepth > this.wadeMax && nDepth > wDepth) {
-        nextX = this.x; nextZ = this.z;
-        this.wadeStall = Math.abs(this.speed) > 3;
-        this.speed *= Math.exp(-dt * 4);
-      }
-    }
+    // NƯỚC QUÁ SÂU (sâu hơn wadeMax): xe vẫn lội tiếp được (chỉ còn bò, xem wadeSpeedMult) nhưng ngập -> tụt máu dần (updateSubmerged)
     if (this.isPlayer && window.game && typeof window.game.addCombatLog === 'function') {
       const now = performance.now();
-      if (this.wadeStall) {
-        if (!this._wadeLogT || now - this._wadeLogT > 4000) {
+      if (wDepth > this.wadeMax) {
+        if (!this.submerged || !this._wadeLogT || now - this._wadeLogT > 6000) {
+          // vừa ngập: tiếng nước ộc vào khoang máy
+          if (!this.submerged && window.soundEngine && window.soundEngine.playEngineFlood) window.soundEngine.playEngineFlood();
           this._wadeLogT = now;
-          window.game.addCombatLog('[[ripple]] NƯỚC QUÁ SÂU — xe không lội qua được, hãy tìm chỗ nông hơn hoặc đi qua cầu', 'alert');
+          window.game.addCombatLog('[[ripple]] XE ĐANG NGẬP NƯỚC — mất máu dần, lội ra chỗ nông hoặc đi qua cầu!', 'alert');
         }
       } else if (wDepth > this.wadeDepth && !this._wadeDeepIn) {
         if (!this._wadeLogT || now - this._wadeLogT > 8000) {
@@ -1635,7 +1621,7 @@ class SPGUnit3D {
       }
     }
     this._wadeDeepIn = wDepth > this.wadeDepth * 0.9;
-    this.updateEngineFlood(dt, wDepth);
+    this.updateSubmerged(dt, wDepth);
 
     // Giới hạn biên bản đồ
     nextX = Math.max(-terrain.width / 2 + 60, Math.min(terrain.width / 2 - 60, nextX));
@@ -1844,7 +1830,7 @@ class SPGUnit3D {
       const accel = dt > 0 && this._wadePrevV !== undefined ? (vNow - this._wadePrevV) / dt : 0;
       this._wadePrevV = vNow;
       if (wading && (this.alwaysFX || SpgFXPool.isNearView(this.x, this.z))) {
-        WadingFX.emit(this, dt, { depth: this.waterDepth, waterY: this.waterY, boost: Math.abs(this.speed) > this.baseMaxSpeed, accel, stall: this.wadeStall });
+        WadingFX.emit(this, dt, { depth: this.waterDepth, waterY: this.waterY, boost: Math.abs(this.speed) > this.baseMaxSpeed, accel });
       } else if (!wading) WadingFX.leave(this);
       WadingFX.frame();
     }
@@ -1869,7 +1855,7 @@ class SPGUnit3D {
 
     if (this.exhaustTimer > exhaustInterval) {
       this.exhaustTimer = 0;
-      if (!this.engineOff) this.spawnExhaustPuff(isBoosting, isHeavyLoad);
+      this.spawnExhaustPuff(isBoosting, isHeavyLoad);
     }
 
     // 10. HIỆU ỨNG KHÓI NÒNG BỐC LÊN SAU KHI BẮN (LINGERING BARREL SMOKE)
@@ -2536,37 +2522,25 @@ class SPGUnit3D {
   }
 
   /**
-   * NGẬP MÁY: cố đạp ga ở chỗ nước quá sâu (sâu hơn wadeMax) ~3 s thì nước tràn qua cửa hút gió, máy chết.
-   * Máy chết ~6 s rồi tự đề nổ lại (nước đã xả khỏi buồng đốt); lúc đó lùi ra chỗ nông. Thả ga / lùi ra kịp thì không sao.
+   * NGẬP NƯỚC: nước sâu hơn wadeMax tràn vào khoang -> xe tụt máu dần (càng ngập sâu càng nhanh), lội ra chỗ nông là hết.
+   * Mất ~3%/s máu tối đa ngay mép ngập, tới ~8%/s khi ngập sâu thêm 1 m. Chỉ máy chủ quyền của xe tính (nguồn WATER, netcode.js)
    */
-  updateEngineFlood(dt, wDepth) {
-    const log = (msg, type) => { if (this.isPlayer && window.game && typeof window.game.addCombatLog === 'function') window.game.addCombatLog(msg, type); };
-    if (this.engineOff) {
-      this._floodRestart -= dt;
-      if (this._floodRestart <= 0) {
-        this.engineOff = false;
-        this._floodT = 0;
-        // đề nổ lại: phụt mấy cụm khói đen dày + hơi nước
-        if (this.alwaysFX || SpgFXPool.isNearView(this.x, this.z, 900)) for (let i = 0; i < 4; i++) this.spawnExhaustPuff(false, true);
-        log('[[engine]] Máy đã nổ lại — lùi ra chỗ nông', 'tip');
-      }
-      return;
-    }
-    const pushing = this.wadeStall || (wDepth > (this.wadeMax || 14) && Math.abs(this.speed) > 3);
-    const prev = this._floodT || 0;
-    this._floodT = pushing ? prev + dt : Math.max(0, prev - dt * 0.6);
-    if (prev < 1 && this._floodT >= 1) log('[[alert-triangle]] Nước đang tràn vào máy — thả ga, lùi ra ngay!', 'alert');
-    if (this._floodT >= 3) {
-      this.engineOff = true;
-      this._floodRestart = 6;
-      this._floodV = this.speed;
-      log('[[engine-off]] MÁY NGẬP NƯỚC — xe chết máy, chờ khởi động lại...', 'alert');
-      if (this.isPlayer && window.soundEngine && window.soundEngine.playEngineFlood) window.soundEngine.playEngineFlood();
+  updateSubmerged(dt, wDepth) {
+    const M = this.wadeMax || 14;
+    this.submerged = wDepth > M;
+    if (!this.submerged) { this._drownDmg = 0; return; }
+    const k = Math.min(1, (wDepth - M) / 8);
+    this._drownDmg = (this._drownDmg || 0) + (this.maxHp || 3) * (0.03 + 0.05 * k) * dt;
+    // gộp ~0.25 s một lần trừ máu (đỡ gửi mạng từng khung hình)
+    if (this._drownDmg >= 0.05) {
+      const amt = this._drownDmg;
+      this._drownDmg = 0;
+      this.takeDamage(amt, null, 'WATER');
     }
   }
 
   // Hệ số tốc độ khi lội nước theo độ sâu: nước nông chậm vừa, tới mức lội của xe ~một nửa,
-  // quá mức lội (sát giới hạn ngập máy) chỉ còn bò
+  // quá mức lội (ngập, đang tụt máu) chỉ còn bò
   wadeSpeedMult(depth) {
     const W = this.wadeDepth || 10, M = this.wadeMax || 14;
     if (depth <= W) return 0.82 - 0.44 * Math.pow(Math.max(0, depth) / W, 1.1);
@@ -2639,7 +2613,6 @@ class SPGUnit3D {
 
   steer(inputX, inputZ, dt, isBoost = false) {
     if (this.isDead) return;
-    if (this.engineOff) { inputX = 0; inputZ = 0; isBoost = false; }   // máy chết: không ga, không lái
 
     // Hệ số gia tăng tốc độ nếu đang có Item tăng tốc độ di chuyển
     const hasSpeedItem = (this.speedBoostTimer > 0);
@@ -2789,7 +2762,6 @@ class SPGUnit3D {
   }
 
   move(forwardInput, turnInput, dt, isBoost = false) {
-    if (this.engineOff) { forwardInput = 0; turnInput = 0; isBoost = false; }   // máy chết: không ga, không lái
     if (this.isDead) return;
 
     const hasSpeedItem = (this.speedBoostTimer > 0);
@@ -3436,11 +3408,11 @@ class SPGUnit3D {
 
     const prevHp = this.hp;
     this.hp = Math.max(0, this.hp - amount);
-    if (amount > 0 && source !== 'BURN' && source !== 'ZONE') this._lastHitAt = performance.now();
+    if (amount > 0 && source !== 'BURN' && source !== 'ZONE' && source !== 'WATER') this._lastHitAt = performance.now();
 
     if (attacker && attacker !== this) {
       attacker.damageDealt += amount;
-      if (!this.isPlayer && source !== 'BURN') {
+      if (!this.isPlayer && source !== 'BURN' && source !== 'WATER') {
         // Ghi nhớ vị trí kẻ bắn để bắn trả: chỉ biết chính xác khi đang thấy / được báo vị trí kẻ đó (TeamIntel).
         // Không thấy: chỉ đoán được hướng đạn bay tới -> vị trí phỏng chừng, sai số ~25% cự ly
         // (trước đây bot luôn biết toạ độ chính xác kẻ bắn kể cả khi kẻ đó núp bụi / ở rất xa)
@@ -3533,7 +3505,7 @@ class SPGUnit3D {
     }
     if (this.botAI) this.botAI.assignedCampPos = null;
     this.y = 0;
-    this.engineOff = false; this._floodT = 0; this._floodV = 0;   // hồi sinh: máy lành
+    this.submerged = false; this._drownDmg = 0;
     this._suspY = undefined; this._gPrev = undefined; this._vy = 0; this.airborne = false; this._landK = 0; this._gGrace = 0; this.yawRate = 0; this._wheelSteer = 0; this._gear = 1; this._gearHold = 0; this._wlx = undefined; this._dynPitch = this._dynRoll = 0; this._prevSpeed = undefined;
     this.maxHp = this.baseMaxHp;
     this.hp = this.maxHp;
