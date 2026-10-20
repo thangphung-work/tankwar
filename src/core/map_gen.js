@@ -191,7 +191,8 @@ const MapGen = (() => {
     const angN = (x, z, f, o) => { const d = Math.hypot(x, z) || 1; return on(x / d * f + o, z / d * f - o * 0.7); };
     function rimRaise(x, z) {
       const d = Math.hypot(x, z);
-      const s = d - (SIZE * 0.44 + 55 * angN(x, z, 1.7, 11.3));
+      // chân vành lượn nhiều tầng (không thành vòng tròn đều)
+      const s = d - (SIZE * 0.44 + 60 * angN(x, z, 1.7, 11.3) + 32 * angN(x, z, 4.6, 3.1) + 18 * on(x * 0.004 + 2, z * 0.004));
       if (s <= 0) return 0;
       // chân vành: sườn đều dốc ~0.6 như trước, lên cao thì thoải dần về đỉnh (không còn mặt nón thẳng đuột)
       const pk = OUT.peak * (0.8 + 0.5 * fbm(on, x * 0.0005 + 3, z * 0.0005, 3));
@@ -199,22 +200,25 @@ const MapGen = (() => {
       // sống núi, yên ngựa, khe suối: gồ ghề tăng dần khi lên cao
       r *= lerp(1, 0.35 + 1.25 * ridged(on, x * 0.0013, z * 0.0013, 5), smooth(60, 700, s));
       // qua đỉnh vành thì đổ xuống phía ngoài
-      const crest = 2750 + 260 * angN(x, z, 2.3, 5.7);
+      const crest = 2750 + 260 * angN(x, z, 2.3, 5.7) + 170 * angN(x, z, 5.9, 1.9);
       return r * (1 - smooth(crest, crest + 1300, d));
     }
     function outerLand(x, z, h) {
       const d = Math.hypot(x, z);
       if (d < 2300) return h;
       if (OUT.sea) {
-        // BỜ BIỂN: chân vành núi thoải xuống dải đồng ven biển có cồn cát thấp -> bãi cát rộng dốc rất nhẹ ra mép nước
-        // -> thềm nước nông -> đáy biển sâu. Đường bờ lượn sóng (mũi đất, vịnh nhỏ), bề rộng bãi thay đổi dọc bờ.
-        const t = d - (3800 + 300 * angN(x, z, 2.9, 2.2) + 120 * on(x * 0.002 + 5, z * 0.002));   // > 0: ngoài mép nước
-        const bw = 190 + 80 * on(x * 0.0021 - 3, z * 0.0021 + 8), pw = 260;
+        // BỜ BIỂN: chân vành núi thoải xuống dải đồng ven biển có cồn cát thấp -> bãi cát dốc rất nhẹ ra mép nước
+        // -> thềm nước nông -> đáy biển sâu. Đường bờ bị bẻ cong nhiều tầng (vịnh, mũi đất, bán đảo); có đoạn bãi rộng,
+        // có đoạn núi đổ thẳng xuống biển thành vách đá không có bãi.
+        const wx = x + 750 * fbm(on, x * 0.0003 + 1.7, z * 0.0003, 3), wz = z + 750 * fbm(on, x * 0.0003, z * 0.0003 + 9.1, 3);
+        const t = Math.hypot(wx, wz) - (3750 + 380 * angN(wx, wz, 2.2, 2.2) + 210 * angN(wx, wz, 5.3, 7.7) + 90 * on(x * 0.0025 + 5, z * 0.0025));
+        const bn = fbm(on, x * 0.0011 + 4, z * 0.0011 - 1, 2) + 0.3 * on(x * 0.004, z * 0.004 + 6);
+        const bw = 18 + 340 * smooth(-0.3, 0.35, bn), pw = 50 + 280 * smooth(-0.2, 0.3, bn);
         let p;
-        if (t >= 0) p = 0.2 - 6 * smooth(0, 280, t) - 32 * smooth(200, 950, t) + fbm(on, x * 0.001, z * 0.001, 2) * 6 * smooth(300, 900, t);
+        if (t >= 0) p = 0.2 - 6 * smooth(0, 60 + bw, t) - 32 * smooth(150, 900, t) + fbm(on, x * 0.001, z * 0.001, 2) * 6 * smooth(300, 900, t);
         else if (t > -bw) p = 0.2 + 4.2 * Math.pow(-t / bw, 1.3) + on(x * 0.03, z * 0.03) * 0.15;   // bãi cát
         else p = 4.4 + 9 * smooth(-bw, -bw - pw, t) + Math.max(0, on(x * 0.012 + 2, z * 0.012)) * 4 * smooth(-bw, -bw - 80, t);   // cồn cát, đồng cỏ ven biển
-        h = lerp(h, p, smooth(-bw - pw - 550, -bw - pw, t));
+        h = lerp(h, p, smooth(-bw - pw - 120 - 450 * smooth(-0.3, 0.3, bn), -bw - pw, t) * smooth(2350, 2700, d));
         if (d > 4500) {
           const fade = smooth(4500, 5300, d);
           if (OUT.far === 'karst') {
@@ -222,9 +226,14 @@ const MapGen = (() => {
             const kv = on(x * 0.0017 + 9, z * 0.0017 - 4) + 0.35 * on(x * 0.006, z * 0.006);
             h = Math.max(h, -40 + smooth(0.3, 0.42, kv) * (190 + 170 * fbm(on, x * 0.003, z * 0.003, 2)) * fade);
           } else {
-            // đảo xa
-            const iv = ridged(on, x * 0.0003 + 7, z * 0.0003 - 2, 4);
-            h = Math.max(h, -40 + smooth(0.6, 0.88, iv) * (110 + 460 * iv) * fade);
+            // vài hòn đảo xa thưa thớt, sườn thoải xuống bãi
+            const iv = fbm(on, x * 0.00021 + 7, z * 0.00021 - 2, 3) + 0.25 * on(x * 0.0011, z * 0.0011);
+            const isl = smooth(0.3, 0.62, iv) * fade;
+            if (isl > 0) {
+              let hi = -40 + isl * (90 + 380 * ridged(on, x * 0.0009, z * 0.0009, 4));
+              hi *= 0.3 + 0.7 * smooth(1.5, 14, Math.abs(hi - 0.2));   // ven mép nước thoải ra thành bãi
+              h = Math.max(h, hi);
+            }
           }
         }
       } else if (OUT.far === 'mesa') {
@@ -277,19 +286,26 @@ const MapGen = (() => {
       const pts = [];
       const cx = (rng() < 0.5 ? -1 : 1) * (SH ? R(1120, 1220) : R(380, 420));
       const amp = R(60, 110), f1 = R(0.0016, 0.0026), ph = R(0, 6.28);
-      const riverX = z => Math.max(cx - 170, Math.min(cx + 170, cx + Math.sin(z * f1 + ph) * amp + fbm(noise, 7.3, z * 0.0012, 3) * 70));
+      // ngoài mép bản đồ (|z| > 1900) sông uốn khúc mạnh dần; trong bản đồ giữ nguyên như cũ
+      const riverX = z => {
+        const o = smooth(1900, 3300, Math.abs(z)), lim = 170 + 820 * o;
+        return Math.max(cx - lim, Math.min(cx + lim, cx + Math.sin(z * f1 + ph) * amp * (1 + 2 * o) + fbm(noise, 7.3, z * 0.0012, 3) * 70 * (1 + 3 * o) + o * 480 * Math.sin(z * 0.0008 + ph * 2)));
+      };
       for (let z = -HALF - 100; z <= HALF + 100; z += 40) pts.push([riverX(z), z]);
       river = { pts, width: R(130, 165) };
       // dòng sông kéo dài ra ngoài bản đồ, qua thung lũng xẻ vành núi rồi đổ ra biển (cảnh nền dùng chung)
       const far = [];
       for (let z = -OUTER_EXT; z <= OUTER_EXT; z += 40) far.push([riverX(z), z]);
       riverCut = (x, z, h) => {
-        if (Math.abs(x - cx) > 170 + river.width / 2 + 760) return h;
+        if (Math.abs(x - cx) > 990 + river.width / 2 + 1100) return h;
         // chỉ xét đoạn sông quanh z (các điểm cách đều 40)
-        const i0 = Math.max(0, Math.floor((z + OUTER_EXT - 800) / 40)), i1 = Math.min(far.length - 1, Math.ceil((z + OUTER_EXT + 800) / 40));
+        const i0 = Math.max(0, Math.floor((z + OUTER_EXT - 1200) / 40)), i1 = Math.min(far.length - 1, Math.ceil((z + OUTER_EXT + 1200) / 40));
         const d = distToPolyline(far.slice(i0, i1 + 1), x, z), hw = river.width / 2;
-        // vành núi hạ thấp thành thung lũng chữ V hai bên sông
-        if (d < hw + 700) h -= rimRaise(x, z) * (1 - smooth(hw + 40, hw + 700, d)) * 0.9;
+        // vành núi hạ thấp thành thung lũng rộng hai bên sông (bãi bồi ven sông, sườn thoải dần lên núi)
+        if (d < hw + 1050) {
+          const rr = rimRaise(x, z);
+          if (rr > 0) h = Math.max(Math.min(h, 7), h - rr * (1 - smooth(hw + 60, hw + 1050, d)));
+        }
         if (d < hw + 120) h = Math.min(h, d < hw ? lerp(-12, -2.5, smooth(0, hw, d)) : lerp(-2, h, smooth(hw, hw + 120, d)));
         return h;
       };

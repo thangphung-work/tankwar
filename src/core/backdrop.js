@@ -15,7 +15,7 @@ const Backdrop = (() => {
     const outer = [];
     let p = half, st = cell;
     while (p < ext) {
-      st = Math.min(460, st * 1.085);
+      st = Math.min(260, st * 1.085);
       p = ext - (p + st) < st * 0.4 ? ext : p + st;
       outer.push(p);
     }
