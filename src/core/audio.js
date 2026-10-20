@@ -813,7 +813,10 @@ class SoundEngine {
       return;
     }
     // Tiếng riêng của vật liệu bị trúng (giáp / bê tông / nhà gạch / gỗ / đá / bao cát / đất); tên lửa & RPG là đầu đạn lõm
-    this.surfaceHit(out, t, hitType, heat ? 'heat' : 'blast', k);
+    // bom con DPICM trúng xe: đầu nổ lõm nhỏ khoan qua nóc -> tiếng "chít" xé thép của luồng phụt, không phải "BOONG"
+    // của đạn nổ phá cỡ lớn đập lên vỏ xe
+    const bombOnArmor = ammoType === 'CLUSTER_SUBMUNITION' && hitType === 'DIRECT_HIT';
+    this.surfaceHit(out, t, hitType, heat || bombOnArmor ? 'heat' : 'blast', k);
 
     // Đất đá, mảnh vụn rơi rào rào + các cục đất rơi bịch bịch sau vụ nổ gần (không có khi nổ trên vỏ xe)
     if (!air && near > 0 && hitType !== 'DIRECT_HIT' && hitType !== 'WATER') {

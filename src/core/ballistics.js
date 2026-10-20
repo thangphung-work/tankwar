@@ -291,7 +291,7 @@ class BallisticsSystem3D {
     const cy = shell.y;
     const cz = shell.z;
 
-    if (this.fx) this.fx.spawn(cx, cy, cz, 'CLUSTER', 'AIRBURST');
+    if (this.fx) this.fx.spawn(cx, cy, cz, 'CLUSTER', 'AIRBURST', { dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 } });
     else this.createAirburstFlash(cx, cy, cz);
 
     // Đạn mẹ tách vỏ trên không: tiếng rít lao xuống (dự đoán tới mặt đất) phải tắt ngay lúc này
