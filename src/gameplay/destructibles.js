@@ -1552,9 +1552,12 @@ const Destructibles = (() => {
       float twPh = twP.x * 0.011 + twP.z * 0.013;
       float twH = max(position.y, 0.0);
       float twG = 0.45 + sin(uWind * 0.55 + twPh) * 0.5 + sin(uWind * 1.31 + twPh * 2.3) * 0.25;
-      vec3 twW = vec3(0.8, 0.0, 0.6) * (twG * twH * twH * 0.00032);
+      // cây nghiêng / đã đổ nằm trên đất thì không lay theo gió (chỉ cây đứng mới cong ngọn)
+      float twUp = clamp(instanceMatrix[1].y / sqrt(twS2), 0.0, 1.0);
+      twUp *= twUp * twUp;
+      vec3 twW = vec3(0.8, 0.0, 0.6) * (twG * twH * twH * 0.00032 * twUp);
       #ifdef TREE_LEAFY
-        float twF = smoothstep(4.0, 22.0, twH) * 0.2;
+        float twF = smoothstep(4.0, 22.0, twH) * (0.06 + 0.14 * twUp);
         twW += vec3(sin(uWind * 2.7 + position.x * 0.45 + twPh * 5.0), 0.5 * sin(uWind * 3.4 + position.z * 0.5 + position.y * 0.3),
           cos(uWind * 2.3 + position.z * 0.4 + twPh * 3.0)) * twF;
       #endif
