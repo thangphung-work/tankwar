@@ -1687,7 +1687,7 @@ const Destructibles = (() => {
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
     if (y0 === Infinity) return null;
-    return { dc: (y0 + y1) / 2, rc: Math.max(x1 - x0, z1 - z0) / 2 };
+    return { dc: (y0 + y1) / 2, rc: Math.max(x1 - x0, z1 - z0) / 2, ry: (y1 - y0) / 2 };
   }
   // Thớ gỗ tươi lộ ra ở vết gãy: vàng nhạt, sợi dọc, vân tối lấm tấm
   function woodTex() {
@@ -2036,6 +2036,16 @@ const Destructibles = (() => {
   };
   // Độ bén lửa theo loại: cây khô / keo / thông nhựa / tàu dừa khô bén nhanh; cây lá rộng tươi, liễu ven nước, đại thụ
   // rừng ẩm khó cháy (cần đạn cháy hoặc trúng nhiều lần); xương rồng mọng nước gần như không cháy
+  // Nổ trên tán (tree burst): ngòi nổ chạm của đạn kích nổ khi va cành trong tán. Quãng bay trung bình trong tán trước
+  // khi chạm cành đủ cứng để kích nổ (đv; 8 đv = 1 m): tên lửa / đạn 30mm ngòi nhạy nổ sớm, đạn pháo tăng nổ muộn hơn.
+  // Đạn xuyên động năng, đạn súng 12.7, đạn cháy, đạn chùm mẹ (nổ hẹn giờ) không nổ trên tán
+  const BURST_LAMBDA = { HE: 45, NORMAL: 50, RPG: 30, ANTI_TANK_MISSILE: 32, CLUSTER_SUBMUNITION: 35, GATLING_BULLET: 30 };
+  // số ngẫu nhiên 0..1 cố định theo (hạt giống phát bắn, cây, kênh) -> mọi máy cùng quyết định nổ / không nổ
+  function hash01(a, b, c) {
+    let h = (a ^ Math.imul((b + 0x9e3779b9) | 0, 0x85ebca6b) ^ Math.imul(c + 1, 0xc2b2ae35)) >>> 0;
+    h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15; h = Math.imul(h, 0x846ca68b); h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
   const FLAM = { deadTree: 1.6, acacia: 1.3, pine: 1.25, palm: 1.2, cypress: 1.0, broadleaf: 0.8, willow: 0.65, jungle: 0.55, cactus: 0.15 };
   // Trọng số che khuất của 1 cây (tán dày = 1; cây khô / mất tán chỉ còn thân = ít)
   const SCREEN = { cactus: 0, deadTree: 0.35 };
@@ -2099,7 +2109,7 @@ const Destructibles = (() => {
           const m = new THREE.Matrix4().compose(new THREE.Vector3(t.x, gy - 0.6, t.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), t.rot), new THREE.Vector3(s, s, s));
           const tint = new THREE.Color(1, 1, 1).multiplyScalar(rand(0.85, 1.08));
           const item = {
-            x: t.x, z: t.z, y: gy, kind, s, V, rot: t.rot, height: V.info.height * s,
+            idx: this.items.length, x: t.x, z: t.z, y: gy, kind, s, V, rot: t.rot, height: V.info.height * s,
             ti: V.trunk.add(m, tint), ci: V.crown ? V.crown.add(m, tint) : -1,
             base: m.clone(), tint, heat: 0, state: 'ok', burnT: 0, brk: 0, si: -1, capS: -1, capT: -1, tcol: tint
           };
@@ -2226,6 +2236,48 @@ const Destructibles = (() => {
       if (it.si >= 0) it.V.stump.color(it.si, c);
       if (it.capS >= 0) { this.caps.color(it.capS, c); this.caps.color(it.capT, c); }
     }
+    // Đạn ngòi chạm bay xuyên tán: mỗi cây quyết định 1 lần / viên đạn (seen: tập cây đã xét) theo quãng xuyên tán dọc
+    // hướng bay: P(nổ) = 1 - e^(-quãng/λ), điểm nổ lấy theo phân bố mũ trong tán. Trả điểm nổ sớm nhất { x, y, z, it, t }
+    // (t: tham số dọc đoạn a->b, có thể > 1 = nổ ở đoạn sau) hoặc null. Cây trụi lá chỉ còn cành: khó kích nổ hơn
+    crownBurst(ax, ay, az, bx, by, bz, ammo, heavy, seed, seen) {
+      const lam0 = BURST_LAMBDA[ammo];
+      if (!lam0) return null;
+      const dx = bx - ax, dy = by - ay, dz = bz - az, segL = Math.hypot(dx, dy, dz);
+      if (segL < 1e-6) return null;
+      const pad = 34, minX = Math.min(ax, bx) - pad, maxX = Math.max(ax, bx) + pad, minZ = Math.min(az, bz) - pad, maxZ = Math.max(az, bz) + pad;
+      if ((maxX - minX) > 900 || (maxZ - minZ) > 900) return null;
+      let best = null;
+      for (let gx = Math.floor(minX / 60); gx <= Math.floor(maxX / 60); gx++) {
+        for (let gz = Math.floor(minZ / 60); gz <= Math.floor(maxZ / 60); gz++) {
+          const l = this.grid.get(gx * 1000 + gz);
+          if (!l) continue;
+          for (const it of l) {
+            if (it.fallen || seen.has(it.idx)) continue;
+            const cn = it.V.info.canopy;
+            if (!cn || it.kind === 'cactus') continue;
+            const rx = cn.rc * it.s * 0.85, ry = Math.max(6, cn.ry * it.s * 0.9);
+            const cx = it.x, cy = it.y - 0.6 + cn.dc * it.s, cz = it.z;
+            if (it.x < minX - rx || it.x > maxX + rx || it.z < minZ - rx || it.z > maxZ + rx) continue;
+            // giao đoạn bay với elip khối tán (đưa về hình cầu đơn vị)
+            const px = (ax - cx) / rx, py = (ay - cy) / ry, pz = (az - cz) / rx, qx = dx / rx, qy = dy / ry, qz = dz / rx;
+            const A = qx * qx + qy * qy + qz * qz, B = 2 * (px * qx + py * qy + pz * qz), C = px * px + py * py + pz * pz - 1;
+            const disc = B * B - 4 * A * C;
+            if (disc <= 0) continue;
+            const sq = Math.sqrt(disc), t0 = (-B - sq) / (2 * A), t1 = (-B + sq) / (2 * A);
+            if (t1 < 0 || t0 > 1) continue;                     // chưa tới / đã qua khỏi tán
+            seen.add(it.idx);
+            if (t0 < 0) continue;                               // bắn ra từ trong tán (nòng nằm trong tán): bỏ qua cây này
+            const chord = (t1 - t0) * segL;
+            const lam = lam0 * (heavy ? 0.9 : 1) * ((it.ci < 0 || it.crownGone) ? 2.5 : 1);
+            const pDet = 1 - Math.exp(-chord / lam), u = hash01(seed >>> 0, it.idx, 7);
+            if (u >= pDet) continue;
+            const depth = -lam * Math.log(1 - u), t = t0 + depth / segL;
+            if (!best || t < best.t) best = { x: ax + dx * t, y: ay + dy * t, z: az + dz * t, it, t };
+          }
+        }
+      }
+      return best;
+    }
     // Cây che mảnh văng cho xe phía sau: thân cây (cả gốc cụt) nằm trên đường bay của mảnh hứng phần lớn mảnh, sức ép
     // vẫn vòng qua được; tán rừng rậm nuốt bớt mảnh nhỏ theo quãng xuyên rừng. Trả hệ số sát thương còn lại (1 = không che)
     blastShield(ex, ey, ez, ux, uy, uz) {
@@ -2281,9 +2333,13 @@ const Destructibles = (() => {
         // Cây cháy than giòn, dễ gãy hơn cây tươi
         const weak = it.state === 'burnt' ? 0.45 : it.state === 'burning' ? 0.7 : 1;
         const shred = (it.wear || 0) >= 1;
-        if (!it.fallen && (k * A.power > 0.85 * weak || (d < A.radius * 0.8 * (2 - weak) && A.power > 0.5) || shred)) {
+        // nổ ngay trong tán của cây này (tree burst): sức nổ dồn vào cành ngọn -> trụi tán, mạnh thì gãy phăng phần ngọn
+        const cn = it.V.info.canopy, inCrown = !it.fallen && cn && y > it.y + it.trunkH * 0.85 && d < cn.rc * it.s;
+        if (inCrown && blasty) this.stripLeaves(it, 0.15 + 0.35 * k, x, y, z, fx);
+        if (!it.fallen && (inCrown ? k * A.power > 1.1 * weak : (k * A.power > 0.85 * weak || (d < A.radius * 0.8 * (2 - weak) && A.power > 0.5) || shred))) {
           const st = it.V.info.stem, direct = d < it.trunkR + 3;
-          const brk = shred && !direct ? rand(Math.min(3, st.top * 0.3), st.top * 0.6) : this.breakAt(it, y, d);
+          const brk = inCrown ? Math.max(st.top * 0.5, Math.min(st.top * 0.92, (y - (it.y - 0.6)) / it.s - rand(2, 6)))
+            : shred && !direct ? rand(Math.min(3, st.top * 0.3), st.top * 0.6) : this.breakAt(it, y, d);
           this.fell(it, dx, dz, fx, { p: Math.min(1.5, Math.max(0.6, k * A.power * (heavy ? 1.4 : 1))), brk, delay });
         }
         if (blasty && k > 0.3) this.stripLeaves(it, 0.35 * k, x, y, z, fx);
@@ -2315,6 +2371,18 @@ const Destructibles = (() => {
             size: rand(0.7, 2.2), grow: -0.3, drag: 0.9, grav: 22, life: rand(1.2, 2.6), alpha: 1, fadeIn: 0.01, c0: [1, 0.72, 0.3], c1: [0.8, 0.2, 0.02], cell: 3, floor: false });
         }
       });
+    }
+    // Nổ trên tán: cành gãy, dăm gỗ & lá vụn mưa xuống quanh gốc (phần nhìn; mảnh thép do hệ nổ vẽ)
+    canopyBurstFx(x, y, z, k, fx) {
+      if (!fx) return;
+      for (let i = 0; i < 3; i++) chunks(fx, x, y, z, 4, 0.9, i === 0 ? [0.36, 0.27, 0.18] : [0.7, 0.56, 0.38], 6);
+      if (fx.smoke) {
+        for (let i = 0; i < Math.round(18 * k + 10); i++) {
+          const a = rand(0, 6.283), sp = rand(8, 30);
+          fx.smoke.add({ x: x + rand(-4, 4), y: y + rand(-3, 3), z: z + rand(-4, 4), vx: Math.cos(a) * sp, vy: rand(-14, 6), vz: Math.sin(a) * sp,
+            size: rand(0.6, 1.4), grow: 0, drag: 2, grav: 14, life: rand(2, 4), alpha: 0.95, fadeIn: 0.01, c0: RNG() < 0.7 ? [0.3, 0.4, 0.17] : [0.42, 0.33, 0.2], cell: 2 });
+        }
+      }
     }
     // Mảnh văng ghim vào thân phía hứng nổ: vỏ cây & dăm gỗ bắn ra
     barkChips(it, x, z, k, fx) {

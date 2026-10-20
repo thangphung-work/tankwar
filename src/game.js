@@ -1926,6 +1926,13 @@ class ArtilleryGame3D {
     const remoteShell = !!(this.netSync && this.netSync.skipShellDamage && this.netSync.skipShellDamage(shell, this.units.find(u => u.id === shell.shooterId)));
     // Trúng nhà: pháp tuyến đúng mặt tường / sàn / mái bị chạm -> lửa, mảnh văng bật ra đúng phía
     const bn = hitType === 'BUILDING' && shell.hitNormal && shell.hitNormal.ny !== undefined ? { x: shell.hitNormal.nx, y: shell.hitNormal.ny, z: shell.hitNormal.nz } : null;
+    // Nổ trên tán cây: hiệu ứng nổ trên không + cành gãy, dăm gỗ, lá vụn mưa xuống
+    if (!fxDone && hitType === 'CANOPY') {
+      this.createImpactEffects(x, y, z, ammoType, 'AIRBURST', { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, noCrater: true });
+      const tr = this.terrain && this.terrain.trees;
+      if (tr && tr.canopyBurstFx) tr.canopyBurstFx(x, y, z, ammoType === 'GATLING_BULLET' ? 0.3 : shell.isHeavyArty ? 1.4 : 1, fxSys);
+      fxDone = true;
+    }
     if (!fxDone) this.createImpactEffects(x, y, z, ammoType, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
     // Đạn xuyên giáp đâm thủng tường: lõi urani vỡ nóng đỏ + bê tông phụt ra mặt sau (nhà: lỗ ra ở vách bên kia do Destructibles tính)
     if (ammoType === 'AP' && !onStronghold && hitType === 'WALL' && fxSys && fxSys.spallCone) {
@@ -1965,7 +1972,7 @@ class ArtilleryGame3D {
     // 3. Âm thanh nổ tức thì không trễ & phân loại theo cỡ đạn (HE, AP, Tên lửa, Súng máy)
     if (this.player && window.soundEngine) {
       const distToPlayer = Math.hypot(this.player.x - x, this.player.z - z);
-      window.soundEngine.playExplosionAtDistance(distToPlayer, hitType, ammoType, { x, z }, { heavy: !!shell.isHeavyArty });
+      window.soundEngine.playExplosionAtDistance(distToPlayer, hitType === 'CANOPY' ? 'TREE' : hitType, ammoType, { x, z }, { heavy: !!shell.isHeavyArty });
       // Xe mình trúng đạn: tiếng thép thân xe nghe từ trong khoang + ù tai; đạn lớn nổ sát bên cũng gây ù tai
       if (directTarget && directTarget === this.player && hitType === 'DIRECT_HIT') {
         if (window.soundEngine.playHullHit) window.soundEngine.playHullHit(ammoType);
@@ -2165,8 +2172,17 @@ class ArtilleryGame3D {
               }
             }
           }
+          // Nổ trên tán: mảnh thép + dăm gỗ dội thẳng từ trên xuống, tán / thân cây không che được xe nấp ngay dưới tán
+          if (hitType === 'CANOPY') {
+            const below = Math.hypot(unit.x - x, unit.z - z);
+            if (below < 45) splashDamage *= 1.25;
+            if (unit.isPlayer && below < 60 && (!this._burstLogT || performance.now() - this._burstLogT > 8000)) {
+              this._burstLogT = performance.now();
+              this.addCombatLog('[[tree]] Đạn nổ trên tán cây: mảnh văng & dăm gỗ dội xuống từ trên đầu!', 'alert');
+            }
+          }
           // Thân cây / rừng rậm chắn đường bay mảnh văng (sức ép vẫn vòng qua): giảm bớt sát thương nổ lan
-          if (this.terrain && this.terrain.treeShield && ammoType !== 'INCENDIARY') {
+          else if (this.terrain && this.terrain.treeShield && ammoType !== 'INCENDIARY') {
             const uy2 = (unit.y || this.terrain.getElevationAt(unit.x, unit.z)) + 6;
             const tsh = this.terrain.treeShield(x, y + 2, z, unit.x, uy2, unit.z);
             if (tsh < 1) {
