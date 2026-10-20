@@ -53,7 +53,7 @@ const Backdrop = (() => {
     JUNGLE: { pow: 0.3, r: [18, 28], squash: 0.75 },
     RIVER_LAKE: { pow: 1.0, r: [13, 21], squash: 0.8 },
     URBAN: { pow: 0.7, r: [12, 19], squash: 0.8 },
-    HIGHLAND: { pow: 1.6, pine: true, r: [5, 8], hgt: [17, 28], treeline: 430 }
+    HIGHLAND: { pow: 1.6, pine: true, r: [8, 12], hgt: [26, 40], treeline: 430 }
   };
   const SP = 50;   // bước lưới rải khóm cây
   // Khóm tán lá rộng: 4 khối tròn méo chồng lên nhau (u lồi lõm, không phải quả cầu nhẵn), gốc tối (bóng tán)
