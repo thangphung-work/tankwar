@@ -120,7 +120,8 @@ const EnvDamage = (() => {
   }
 
   // ------------------------------------------------------------------ VẾT ĐẠN TÍCH TỤ
-  const POOL_CAP = { g_pock: 700, g_hei: 700, g_burn: 300, c_pock: 500, c_chip: 400, c_spall: 260, soot: 400, r_chip: 300 };
+  // số vết giữ lại mỗi loại (mỗi vết là 1 ô cộng dồn ~2.5 đơn vị; đầy thì ô cũ nhất bị thay) — đủ cho cả trận xả đạn liên thanh
+  const POOL_CAP = { g_pock: 3000, g_hei: 3000, g_burn: 1200, c_pock: 2000, c_chip: 1200, c_spall: 400, soot: 600, r_chip: 800 };
   // vết đạn trên đất (g_*): 12.7mm lỗ phễu ~5 cm + quạt cát ~30 cm; 30mm nổ-mảnh hố ~25 cm + muội & rỗ mảnh ~0,8 m (8 đơn vị = 1 m)
   const BASE_SIZE = { g_pock: 2.6, g_hei: 6.5, g_burn: 5.5, c_pock: 2.4, c_chip: 4.8, c_spall: 13, soot: 18, r_chip: 5 };
 

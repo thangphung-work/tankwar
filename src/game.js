@@ -201,7 +201,7 @@ class ArtilleryGame3D {
     try {
       if (fx.addSurfaceMark && fx.surfaceMarks) {
         const p = new THREE.Vector3(0, -5000, 0), n = new THREE.Vector3(0, 0, 1);
-        for (const kind of ['penetration', 'turretRing', 'burnGlow', 'armorCrater', 'metalHole', 'bulletDent', 'glassCrack', 'scorch', 'concreteHole']) {
+        for (const kind of ['penetration', 'turretRing', 'burnGlow', 'armorCrater', 'metalHole', 'bulletDent', 'glassCrack', 'scorch', 'concreteHole', 'steelDent', 'heiSplash', 'concretePit']) {
           const r = fx.addSurfaceMark(p, n, holder, kind, 2, { noFit: true });
           if (r) marks.push(r);
         }

@@ -776,7 +776,7 @@
   //  phía trước; 0.55: rãnh cày đạn lướt). Bề mặt y = q - 1 với q lồi -> mặt lồi.
   // ===========================================================================
   const HOLE_ARCH = { round: 0, oblique: 0.3, groove: 0.55 };
-  function buildHoleGeos(c, NR = 6, NS = 22) {
+  function buildHoleGeos(c, NR = 5, NS = 18) {
     const pos = [], ha = [], idx = [], cpos = [], cidx = [];
     const aUp = 1 + c, aDn = 1 - c;
     pos.push(c, -1, 0); ha.push(aDn);
@@ -842,6 +842,8 @@
       vec4 mv = viewMatrix * m * vec4(position, 1.0);
       vFogD = -mv.z;
       gl_Position = projectionMatrix * mv;
+      // hố ở xa (> ~140 m) chỉ còn vài điểm ảnh, vết phẳng trên đất đã đủ -> bỏ vẽ (giữ được hàng nghìn hố cả trận)
+      if (distance((m * vec4(0.0, 0.0, 0.0, 1.0)).xyz, cameraPosition) > 1100.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     }`;
   const HOLE_FRAG = `
     uniform vec3 uSun; uniform float uAmb; uniform float uSunI; uniform float uC;
@@ -883,7 +885,11 @@
       gl_FragColor = vec4(clamp(f, 0.0, 2.0) * 0.5, 1.0);
     }`;
   const CAP_VERT = `
-    void main() { gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0); }`;
+    void main() {
+      mat4 m = modelMatrix * instanceMatrix;
+      gl_Position = projectionMatrix * viewMatrix * m * vec4(position, 1.0);
+      if (distance((m * vec4(0.0, 0.0, 0.0, 1.0)).xyz, cameraPosition) > 1100.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    }`;
   const CAP_FRAG = `void main() { gl_FragColor = vec4(0.0); }`;
 
   class BulletHoleLayer {
@@ -916,7 +922,7 @@
         capIm.renderOrder = 1; bowlIm.renderOrder = 2;
         for (const im of [capIm, bowlIm]) { im.count = 0; im.frustumCulled = false; im.userData.isFxDecal = true; scene.add(im); }
         bowlIm.onBeforeRender = holeTrackLights;
-        this.L[name] = { capIm, bowlIm, next: 0, total: 0, pos: new Float32Array(cap * 2) };
+        this.L[name] = { capIm, bowlIm, next: 0, total: 0, pos: new Float32Array(cap * 2), map: new Map(), key: new Array(cap).fill(null), grow: new Float32Array(cap) };
       }
     }
     /**
@@ -925,6 +931,24 @@
      */
     add(arch, x, y, z, n, fx, fz, len, wid, depth, tint) {
       const L = this.L[arch] || this.L.round;
+      // đạn rơi trúng hố cũ: khoét hố đó rộng & sâu thêm (tối đa ~1,45 lần) thay vì đè thêm hố mới -> loạt đạn dồn một chỗ
+      // không chiếm hết chỗ giữ hố, hố trên cả bản đồ tồn tại lâu hơn
+      const cs = len < 1.6 ? 0.9 : 1.8;
+      const key = (len < 1.6 ? 's' : 'b') + Math.round(x / cs) + ',' + Math.round(z / cs);
+      const j = L.map.get(key);
+      if (j !== undefined && L.key[j] === key) {
+        const g = L.grow[j];
+        if (g < 1.45) {
+          const k = Math.min(1.45, g * 1.1) / g, kd = Math.sqrt(k);
+          L.grow[j] = g * k;
+          L.capIm.getMatrixAt(j, this._m);
+          const e = this._m.elements;
+          e[0] *= k; e[1] *= k; e[2] *= k; e[4] *= kd; e[5] *= kd; e[6] *= kd; e[8] *= k; e[9] *= k; e[10] *= k;
+          L.capIm.setMatrixAt(j, this._m);
+          L.capIm.instanceMatrix.needsUpdate = true;
+        }
+        return;
+      }
       const Y = this._y.set(n.x, n.y, n.z).normalize();
       const X = this._x.set(fx, 0, fz);
       X.addScaledVector(Y, -X.dot(Y));
@@ -941,6 +965,8 @@
       L.capIm.setMatrixAt(i, this._m);
       L.bowlIm.instanceColor.setXYZ(i, tint[0], tint[1], tint[2]);
       L.pos[i * 2] = x; L.pos[i * 2 + 1] = z;
+      if (L.key[i] && L.map.get(L.key[i]) === i) L.map.delete(L.key[i]);
+      L.key[i] = key; L.map.set(key, i); L.grow[i] = 1;
       L.next = (L.next + 1) % this.cap;
       L.total = Math.min(this.cap, L.total + 1);
       L.capIm.count = L.bowlIm.count = L.total;
@@ -955,12 +981,12 @@
         let any = false;
         for (let i = 0; i < L.total; i++) {
           const x = L.pos[i * 2], z = L.pos[i * 2 + 1];
-          if (x >= x0 && x <= x1 && z >= z0 && z <= z1) { L.capIm.setMatrixAt(i, Z); L.pos[i * 2] = 1e9; any = true; }
+          if (x >= x0 && x <= x1 && z >= z0 && z <= z1) { L.capIm.setMatrixAt(i, Z); L.pos[i * 2] = 1e9; if (L.key[i] && L.map.get(L.key[i]) === i) L.map.delete(L.key[i]); L.key[i] = null; any = true; }
         }
         if (any) L.capIm.instanceMatrix.needsUpdate = true;
       }
     }
-    clear() { for (const k in this.L) { const L = this.L[k]; L.next = 0; L.total = 0; L.capIm.count = L.bowlIm.count = 0; } }
+    clear() { for (const k in this.L) { const L = this.L[k]; L.next = 0; L.total = 0; L.capIm.count = L.bowlIm.count = 0; L.map.clear(); L.key.fill(null); } }
   }
 
   // ===========================================================================
@@ -2025,7 +2051,9 @@
           polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8
         });
       }
-      const m = new THREE.Mesh(this._markGeo, mat);
+      // vết đạn nhỏ (PIT_KINDS): gộp vào InstancedMesh theo (bộ phận mang vết, vật liệu) -> hàng nghìn vết vẫn ít lần vẽ
+      const batched = !!PIT_KINDS[kind];
+      const m = batched ? (this._markTmp || (this._markTmp = new THREE.Object3D())) : new THREE.Mesh(this._markGeo, mat);
       m.userData.isFxDecal = true;
       m.renderOrder = 4;
       const n = new THREE.Vector3(normal.x, normal.y, normal.z).normalize();
@@ -2049,18 +2077,70 @@
       m.position.copy(local);
       const sx = opts.stretch && !opts.keepWidth ? size * 0.35 : size, sy = opts.stretch ? size * opts.stretch : size;
       m.scale.set(sx / (ws.x || 1), sy / (ws.y || 1), 1);
+      if (batched) return this.addBatchedMark(parent, mat, m, opts.unit || null);
       parent.add(m);
       const rec = { mesh: m, mat, unit: opts.unit || null, t: 0, glow: (kind === 'penetration' || kind === 'turretRing') ? 2.2 : 0 };
       if (kind === 'turretRing') rec.decay = 6;   // thép quanh vòng tháp nguội dần (đỏ rực vài giây rồi sẫm lại)
       this.surfaceMarks.push(rec);
-      while (this.surfaceMarks.length > 550) this.removeSurfaceMark(0);
+      // vết lớn (mỗi vết 1 lưới + vật liệu riêng: thủng pháo, hố giáp, cháy sém...) giữ tối đa ~450, vết đạn nhỏ gộp tối đa ~4000
+      this._meshMarks = (this._meshMarks || 0) + 1;
+      if (this._meshMarks > 450) { const oi = this.surfaceMarks.findIndex(r => !r.batch); if (oi >= 0) this.removeSurfaceMark(oi); }
+      while (this.surfaceMarks.length > 4500) this.removeSurfaceMark(0);
       return rec;
+    },
+
+    addBatchedMark(parent, mat, tf, unit) {
+      const bs = parent.userData.pitBatches || (parent.userData.pitBatches = {});
+      let B = bs[mat.uuid];
+      if (!B) {
+        const cap = 64, Z = new THREE.Matrix4().makeScale(0, 0, 0);
+        const im = new THREE.InstancedMesh(this._markGeo, mat, cap);
+        for (let i = 0; i < cap; i++) im.setMatrixAt(i, Z);
+        im.renderOrder = 4; im.frustumCulled = false; im.castShadow = false; im.userData.isFxDecal = true;
+        parent.add(im);
+        B = bs[mat.uuid] = { im, cap, free: [], next: 0, owner: new Array(cap).fill(null), order: [] };
+      }
+      let slot;
+      if (B.free.length) slot = B.free.pop();
+      else if (B.next < B.cap) slot = B.next++;
+      else {
+        // bộ phận này đã đầy vết cùng loại: thay vết cũ nhất trên chính bộ phận đó
+        const oi = this.surfaceMarks.indexOf(B.owner[B.order[0]]);
+        if (oi >= 0) this.removeSurfaceMark(oi); else { B.free.push(B.order.shift()); }
+        slot = B.free.pop();
+      }
+      tf.updateMatrix();
+      B.im.setMatrixAt(slot, tf.matrix);
+      B.im.instanceMatrix.needsUpdate = true;
+      const rec = { batch: B, slot, mat, unit, t: 0, glow: 0 };
+      B.owner[slot] = rec; B.order.push(slot);
+      this.surfaceMarks.push(rec);
+      while (this.surfaceMarks.length > 4500) this.removeSurfaceMark(0);
+      return rec;
+    },
+
+    // vị trí thế giới của một vết (lưới riêng hoặc 1 ô trong InstancedMesh gộp)
+    markWorldPos(r, out) {
+      if (!r.batch) return r.mesh.getWorldPosition(out);
+      const t = this._mwp || (this._mwp = new THREE.Matrix4());
+      r.batch.im.getMatrixAt(r.slot, t);
+      r.batch.im.updateMatrixWorld(true);
+      return out.setFromMatrixPosition(t).applyMatrix4(r.batch.im.matrixWorld);
     },
 
     removeSurfaceMark(i) {
       const r = this.surfaceMarks[i];
-      if (r.mesh.parent) r.mesh.parent.remove(r.mesh);
-      if (!(r.mat.userData && r.mat.userData.shared)) r.mat.dispose();
+      if (r.batch) {
+        const B = r.batch;
+        B.im.setMatrixAt(r.slot, this._zeroM || (this._zeroM = new THREE.Matrix4().makeScale(0, 0, 0)));
+        B.im.instanceMatrix.needsUpdate = true;
+        B.owner[r.slot] = null; B.free.push(r.slot);
+        const oi = B.order.indexOf(r.slot); if (oi >= 0) B.order.splice(oi, 1);
+      } else {
+        if (r.mesh.parent) r.mesh.parent.remove(r.mesh);
+        if (!(r.mat.userData && r.mat.userData.shared)) r.mat.dispose();
+        this._meshMarks = Math.max(0, (this._meshMarks || 0) - 1);
+      }
       this.surfaceMarks.splice(i, 1);
     },
 
@@ -3675,10 +3755,10 @@
       this.shocks = new ShockLayer(scene);                     // vỏ sóng xung kích
       this.ripples = [];                                       // gợn sóng mặt nước
       this.sabots = [];
-      this.groundHoles = new GroundMarkLayer(scene, 400);   // vết đạn trên đất khi bản đồ không có EnvDamage (phòng thử)
-      this.bulletHoles = new BulletHoleLayer(scene);         // hố đạn 3D khoét vào mặt đất
-      this.wallPits = { s: new PitLayer(scene, 'concretePit', 300), he: new PitLayer(scene, 'concretePitHE', 200) };  // vết đạn tường / đá
-      this.treePits = { wood: new PitLayer(scene, 'woodHole', 160), cactus: new PitLayer(scene, 'cactusHole', 60) };   // vết đạn thân cây
+      this.groundHoles = new GroundMarkLayer(scene, 1500);   // vết đạn trên đất khi bản đồ không có EnvDamage (phòng thử)
+      this.bulletHoles = new BulletHoleLayer(scene, 1200);         // hố đạn 3D khoét vào mặt đất
+      this.wallPits = { s: new PitLayer(scene, 'concretePit', 1500), he: new PitLayer(scene, 'concretePitHE', 800) };  // vết đạn tường / đá
+      this.treePits = { wood: new PitLayer(scene, 'woodHole', 600), cactus: new PitLayer(scene, 'cactusHole', 200) };   // vết đạn thân cây
       this.wallHoles = new HoleLayer(scene, 300, 'wall');
       this.craters = [];
       this.wallMarks = [];
@@ -6021,7 +6101,7 @@
         for (let i = this.surfaceMarks.length - 1; i >= 0; i--) {
           const rec = this.surfaceMarks[i];
           if (rec.unit) continue;
-          rec.mesh.getWorldPosition(p);
+          this.markWorldPos(rec, p);
           if (Math.abs(p.x - x) < r && Math.abs(p.y - y) < r && Math.abs(p.z - z) < r) this.removeSurfaceMark(i);
         }
       }
