@@ -3308,7 +3308,7 @@ const VehicleDamage = (() => {
     ARMOR, ammoClass, onDirectHit, onSplash, onDestroyed, onDetonate, reset, update, recompute, summary, state,
     visualOnly, digest, applyDigest, addFire,
     detachTag, flatTire, blowWheel, breakTrack, bendTag, sfx, debugAction,
-    crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, armorOutcome, ARMOR_MM, PEN,
+    crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, armorOutcome, ARMOR_MM, PEN,
     setGroundProvider(fn) { groundProvider = fn; },
     get debrisCount() { return debrisList.length; }
   };

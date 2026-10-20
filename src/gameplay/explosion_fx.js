@@ -2504,8 +2504,8 @@
         else if (mode === 'burn') { if (R < 0.5) later('vent', 1, 4); else if (R < 0.7) later('det', 1, 4, 0.6); }
       } else if (type === 'ARTILLERY') {
         // Pháo tự hành bánh lốp: đạn 155 + liều phóng trong buồng pháo sau xe, cabin & máy ở đầu xe
-        if (mode === 'ammo') { K.instant = 'det'; K.tossP = 0.6; }
-        else if (mode === 'blast') { if (R < 0.55) { K.instant = 'det'; K.tossP = 0.6; } else if (R < 0.85) later('det', 2, 6, 0.4); }
+        if (mode === 'ammo') { K.instant = 'det'; K.tossP = 0.35; }
+        else if (mode === 'blast') { if (R < 0.55) { K.instant = 'det'; K.tossP = 0.35; } else if (R < 0.85) later('det', 2, 6, 0.4); }
         else if (mode === 'burn') later('det', 0.5, 3, 0.5);
         else if (mode === 'fuel') { if (R < 0.45) later('det', 4, 8, 0.4); }
         else if (R < (mode === 'engine' ? 0.3 : 0.35)) later('det', 4, 8.5, 0.5);
@@ -2642,14 +2642,16 @@
           c0: [g, g, g], c1: [g * 2.3, g * 2.2, g * 2.1], cell: 0, floor: false
         });
       }
-      this.spawnDust(ring.x, this.groundAt(ring.x, ring.z), ring.z, fb, PROFILES.HE, this.palette('GROUND'), false);
+      // nổ trong khoang kín: khí nổ thoát lên qua nóc / vòng tháp, chỉ sức ép lọt ra gầm thổi bụi (không cuốn mù cả
+      // cảnh như quả đạn HE nổ ngoài trời)
+      this.spawnDust(ring.x, this.groundAt(ring.x, ring.z), ring.z, fb * 0.45, PROFILES.HE, this.palette('GROUND'), false);
       this.launchFrags(W, ring, { ALL_ROUNDER: 12, ARTILLERY: 14, GATLING: 9, SCOUT: 6 }[type] || 10, 1, false);
       W.torch = { ph: Math.random() * 10, t0: W.t, dur: { ALL_ROUNDER: rand(2.5, 4), ARTILLERY: rand(3.5, 5), GATLING: rand(1.5, 2.5), SCOUT: rand(1, 1.8) }[type] || 2, scale: { ALL_ROUNDER: 1, ARTILLERY: 1.15, GATLING: 0.75, SCOUT: 0.55 }[type] || 1 };
       W.char = Math.max(W.char || 0, 0.5); W.charT = Math.min(W.charT || 5, 6); W.charMax = 1;
       this.applyChar(u);
       // Tháp pháo bị hất văng theo hướng đạn nổ và quán tính (pháo tự hành nặng hơn nên bay thấp & gần hơn,
       // xe trinh sát chỉ bật trạm vũ khí nhẹ). Nổ trễ: khí nổ đẩy thẳng lên, hướng đạn ít còn ý nghĩa
-      const tossK = { ARTILLERY: 1.2, SCOUT: 0.3 }[type] || 1;
+      const tossK = { ARTILLERY: 0.7, SCOUT: 0.3 }[type] || 1;
       if (u.turretGroup && Math.random() < (K.tossP || 0)) this.tossTurret(u, delayed ? null : W.impactVel, delayed ? null : W.hitPoint, tossK);
       // Vài lỗ xuyên + vết cháy trên sườn xe (mảnh văng từ trong ra)
       for (let k = 0; k < 3; k++) {
@@ -2714,6 +2716,11 @@
       const p = this.ventPoint(u, W, 0);
       this.spawnFireball(p.x, p.y + 6, p.z, 0.7, PROFILES.NORMAL, 0, 0);
       this.spawnSparks(p.x, p.y + 1, p.z, 1, { sparks: 1.6 }, true, 0, 0);
+      // tấm xả áp trên nóc hốc đạn bị áp suất thổi bật thẳng lên (mỗi miệng xả một tấm), rơi lại quanh xe
+      if (W.vent.pts && typeof VehicleDamage !== 'undefined' && VehicleDamage.spawnChunks) {
+        const up = new THREE.Vector3(0, 1, 0);
+        for (let i = 0; i < 2; i++) VehicleDamage.spawnChunks(u, this.ventPoint(u, W, i).add(new THREE.Vector3(0, 0.6, 0)), up, 1, 3.2, 180, null);
+      }
       W.char = Math.max(W.char || 0, 0.15);
       this.applyChar(u);
       if (window.soundEngine && window.soundEngine.playVehicleDestroyed) window.soundEngine.playVehicleDestroyed(u.tankType || 'ALL_ROUNDER', p, 'vent', W.vent.dur);
@@ -2737,21 +2744,25 @@
       k *= 0.8 + 0.4 * Math.random();
       for (let i = 0; i < 2; i++) {
         const p = this.ventPoint(u, W, i);
-        // cột lửa liền từ miệng tấm xả áp: hạt sinh dọc thân cột (không chỉ ở đáy) để không đứt quãng, đỉnh ~7-9 m
-        const n = Math.round(4 + 5 * k);
+        // cột lửa thuốc phóng gầm thét từ miệng tấm xả áp: lõi trắng vàng đặc ở gốc, loe & đỏ dần lên cao, đỉnh ~8-10 m
+        // (hạt to, chồng lên nhau, sinh dọc thân cột -> một khối lửa liền, không phải tia lấm tấm như pháo hoa)
+        const n = Math.round(7 + 9 * k);
         for (let j = 0; j < n; j++) {
-          const h = Math.pow(Math.random(), 1.4) * 55 * k;
+          const f = Math.pow(Math.random(), 1.5), h = f * 70 * k;
+          const w = 0.9 + 2.6 * f;
           this.fire.add({
-            x: p.x + rand(-1, 1) * (1 + h / 30), y: p.y + h, z: p.z + rand(-1, 1) * (1 + h / 30), vx: rand(-5, 5), vy: rand(70, 120) * (0.5 + 0.5 * k), vz: rand(-5, 5),
-            size: rand(3.5, 5.5) * (0.6 + 0.4 * k) * (1 + h / 60), grow: 5, drag: 2, grav: -4, life: rand(0.14, 0.28), alpha: 1, fadeIn: 0.015,
-            c0: [1, 0.78, 0.4], c1: [0.95, 0.32, 0.05], cell: 1, floor: false
+            x: p.x + rand(-1, 1) * w, y: p.y + h, z: p.z + rand(-1, 1) * w, vx: rand(-5, 5), vy: rand(90, 140) * (0.5 + 0.5 * k), vz: rand(-5, 5),
+            size: rand(5.5, 8.5) * (0.6 + 0.4 * k) * (1 + f * 1.1), grow: 7, drag: 2, grav: -4, life: rand(0.16, 0.32), alpha: 1, fadeIn: 0.015,
+            c0: f < 0.25 ? [1, 0.8, 0.45] : [1, 0.58, 0.2], c1: f < 0.55 ? [0.9, 0.26, 0.04] : [0.45, 0.1, 0.02], cell: 1, floor: false
           });
         }
-        if (Math.random() < 0.5) {
-          const g = rand(0.06, 0.12);
+        // khói đen thuốc phóng cuộn quanh nửa trên cột lửa rồi bốc thành cột
+        for (let j = 0; j < 3; j++) {
+          if (Math.random() > 0.6) continue;
+          const g = rand(0.04, 0.09);
           this.smoke.add({
-            x: p.x + rand(-2, 2), y: p.y + 50 * k + 6, z: p.z + rand(-2, 2), vx: rand(-4, 4), vy: rand(30, 45) * k + 12, vz: rand(-4, 4),
-            size: rand(6, 9), grow: 8, drag: 0.7, grav: -4, life: rand(3, 5), alpha: 0.65, fadeIn: 0.15,
+            x: p.x + rand(-4, 4), y: p.y + 70 * k * rand(0.3, 1) + 4, z: p.z + rand(-3, 3), vx: rand(-4, 4), vy: rand(30, 45) * k + 12, vz: rand(-4, 4),
+            size: rand(8, 12), grow: 9, drag: 0.7, grav: -4, life: rand(3.5, 5.5), alpha: 0.75, fadeIn: 0.15,
             c0: [g, g, g], c1: [g * 2.3, g * 2.2, g * 2.1], cell: 0, floor: false
           });
         }
@@ -3039,10 +3050,11 @@
       const blastDirX = hDirX * Math.cos(devAng) - hDirZ * Math.sin(devAng);
       const blastDirZ = hDirX * Math.sin(devAng) + hDirZ * Math.cos(devAng);
 
-      // Vận tốc ngang mạnh mẽ từ 22 đến 42 m/s để tháp pháo bay xa khỏi thân xe
+      // Vận tốc ngang 22-42 đv/s (~3-5 m/s): tháp rơi cách thân xe vài mét
       const latSpeed = rand(22, 42) * tossK;
       const worldVx = blastDirX * latSpeed + (Math.random() - 0.5) * 8;
-      const worldVy = rand(55, 85) * (0.75 + 0.25 * tossK); // Tung lên cao 20 - 45m
+      // tung lên: xe tăng ~4-9 m (8 đơn vị = 1 m, g = 78,5 đv/s²), cụm pháo nặng / trạm vũ khí nhẹ thấp hơn
+      const worldVy = rand(70, 105) * (0.7 + 0.3 * tossK);
       const worldVz = blastDirZ * latSpeed + (Math.random() - 0.5) * 8;
 
       // Chuyển vector vận tốc thế giới sang hệ local của xe (u.group)
