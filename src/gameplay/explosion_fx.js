@@ -1527,7 +1527,7 @@
             if (Math.abs(r.vy) < 12 * ROCK_VK) {
               r.resting = true;
               // Mảnh đã rơi nằm yên trên đất: lưu lại lâu (đá, bê tông vụn, mảnh kim loại vương vãi)
-              r.life = r.t + (r.restLife || rand(40, 60));
+              r.life = r.t + (r.restLife || rand(300, 480));   // nằm lại 5-8 phút (bể đầy thì mảnh nằm lâu nhất bị thay)
             } else {
               r.vy = -r.vy * 0.32;
               r.vx *= 0.55; r.vz *= 0.55;
@@ -3751,6 +3751,7 @@
       this.fire = new ParticleLayer(scene, 1400, true);
       this.rocks = new RockLayer(scene, 360, 0x7d6a52);       // đất đá (màu theo bản đồ)
       this.hardRocks = new RockLayer(scene, 200, 0x6e6c68);   // bê tông / mảnh kim loại
+      this.bits = new RockLayer(scene, 600, 0x7d6a52);        // vụn nhỏ do đạn súng (cục đất, vụn bê tông, dằm gỗ): bể riêng, không đẩy mất đất đá của đạn pháo
       this.streaks = new StreakLayer(scene, 900);              // vệt mảnh thép nóng bay
       this.shocks = new ShockLayer(scene);                     // vỏ sóng xung kích
       this.ripples = [];                                       // gợn sóng mặt nước
@@ -3764,7 +3765,7 @@
       this.wallMarks = [];
       this.emitters = [];
       this.lights = [];
-      this.maxCraters = 48;
+      this.maxCraters = 80;
       this.maxWallMarks = 40;
       this.surfaceMarks = [];
       this.vehicles = [];
@@ -4576,7 +4577,7 @@
         this.rocks.add({
           x: x + rand(-0.3, 0.3), y: y0 + 0.5, z: z + rand(-0.3, 0.3),
           vx: d[0] * sp / ROCK_VK, vy: d[1] * sp / ROCK_VK, vz: d[2] * sp / ROCK_VK,
-          size: rand(0.1, 0.26) * (big ? 1.3 : 1), life: rand(3, 4), restLife: rand(6, 14),
+          size: rand(0.1, 0.26) * (big ? 1.3 : 1), life: rand(3, 4), restLife: rand(150, 300),
           c: [base[0] * tone, base[1] * tone, base[2] * tone]
         });
       }
@@ -4754,7 +4755,7 @@
         grains(big ? 14 : 8, chip, 0.12, 0.3, 35, 95, out(0.6), 0.7, 78, [0.5, 1.0]);
         for (let i = 0, nn = nq(big ? 3 : 1.5); i < nn; i++) {
           const v = cone(out(0.6), 0.7), sp = rand(30, 60);
-          this.hardRocks.add({ x, y, z, vx: v.x * sp / ROCK_VK, vy: v.y * sp / ROCK_VK, vz: v.z * sp / ROCK_VK, size: rand(0.1, 0.24), life: 3, restLife: rand(8, 15), c: sc(chip, rand(0.85, 1.1)) });
+          this.bits.add({ x, y, z, vx: v.x * sp / ROCK_VK, vy: v.y * sp / ROCK_VK, vz: v.z * sp / ROCK_VK, size: rand(0.1, 0.24), life: 3, restLife: rand(150, 300), c: sc(chip, rand(0.85, 1.1)) });
         }
       } else if (surf === 'wood' || surf === 'cactus') {
         const cactus = surf === 'cactus';
@@ -4769,7 +4770,7 @@
           puff(big ? 3 : 2, [0.7, 0.6, 0.45], 0.8, 1.4, 4, 12, out(0.7), 0.5, [0.7, 1.3], 0.35, 2.6);
           for (let i = 0, nn = nq(big ? 2 : 1); i < nn; i++) {
             const v = cone(out(0.6), 0.6), sp = rand(25, 50);
-            this.rocks.add({ x, y, z, vx: v.x * sp / ROCK_VK, vy: v.y * sp / ROCK_VK, vz: v.z * sp / ROCK_VK, size: rand(0.08, 0.18), life: 3, restLife: rand(8, 15), c: [0.78, 0.64, 0.44] });
+            this.bits.add({ x, y, z, vx: v.x * sp / ROCK_VK, vy: v.y * sp / ROCK_VK, vz: v.z * sp / ROCK_VK, size: rand(0.08, 0.18), life: 3, restLife: rand(150, 300), c: [0.78, 0.64, 0.44] });
           }
         }
         // thân cây rung: vài chiếc lá rụng lả tả từ tán (rơi chậm, đung đưa)
@@ -5145,7 +5146,7 @@
       }
 
       this.scene.add(group);
-      this.craters.push({ group, mats, geos, t: 0, life: rand(85, 115) });
+      this.craters.push({ group, mats, geos, t: 0, life: Infinity });   // giữ cả trận; quá maxCraters thì hố cũ nhất bị lấp
       while (this.craters.length > this.maxCraters) {
         const oi = this.craters.findIndex(c => !c.persistent);
         if (oi < 0) break;
@@ -5999,6 +6000,7 @@
       const t = this.terrainOf();
       // đá vụn / cục đất đã nằm yên trong vùng: rơi xuống lòng hố mới (hoặc nổi lên khi hố bị lấp)
       this.rocks.reground(x0, z0, x1, z1, this._surfFn);
+      this.bits.reground(x0, z0, x1, z1, this._surfFn);
       this.hardRocks.reground(x0, z0, x1, z1, this._surfFn);
       if (this.bulletHoles) this.bulletHoles.removeIn(x0, z0, x1, z1);
       if (t && t.onGroundChanged) t.onGroundChanged(x0, z0, x1, z1);
@@ -6079,7 +6081,7 @@
       m.position.set(x + info.nx * 0.6, Math.max(y, this.groundAt(x, z) + size * 0.3), z + info.nz * 0.6);
       m.renderOrder = 2;
       this.scene.add(m);
-      this.wallMarks.push({ group: m, mats: [mat], geos: [geo], t: 0, life: rand(100, 140) });
+      this.wallMarks.push({ group: m, mats: [mat], geos: [geo], t: 0, life: Infinity });
       while (this.wallMarks.length > this.maxWallMarks) this.removeDecal(this.wallMarks, 0);
     }
 
@@ -6180,6 +6182,7 @@
       this.updateSurfaceMarks(dt);
       this.rocks.update(dt, this._surfFn);        // mảnh rơi nằm trên mặt NHÌN THẤY (lòng hố sâu hơn lưới vật lý)
       this.hardRocks.update(dt, this._surfFn);
+      this.bits.update(dt, this._surfFn);
       // Mảnh văng cắm xuống đất tung bụi nhỏ
       this.streaks.update(dt, this.groundAt, (x, y, z) => {
         if (Math.random() < 0.35) this.smoke.add({ x, y: y + 0.3, z, vx: rand(-4, 4), vy: rand(4, 12), vz: rand(-4, 4), size: rand(1.2, 2.4), grow: 3, drag: 2, grav: 30, life: rand(0.5, 1.0), alpha: 0.5, fadeIn: 0.02, c0: this.palette('GROUND').dust, cell: 2 });
@@ -6225,6 +6228,8 @@
       this.rocks.rocks.length = 0;
       this.hardRocks.rocks.length = 0;
       this.hardRocks.update(0.001, null);
+      this.bits.rocks.length = 0;
+      this.bits.update(0.001, null);
       if (this.streaks) this.streaks.clear();
       if (this.shocks) this.shocks.clear();
       if (this.jetBeams) { for (const b of this.jetBeams) { this.scene.remove(b.m); b.m.material.dispose(); } this.jetBeams.length = 0; }
@@ -6251,7 +6256,7 @@
      */
     reattach() {
       const add = (o) => { if (o && o.parent !== this.scene) this.scene.add(o); };
-      for (const L of [this.smoke, this.signal, this.fire, this.rocks, this.hardRocks, this.streaks, this.wallHoles]) add(L && L.mesh);
+      for (const L of [this.smoke, this.signal, this.fire, this.rocks, this.hardRocks, this.bits, this.streaks, this.wallHoles]) add(L && L.mesh);
       for (const k in this.groundHoles.layers) add(this.groundHoles.layers[k].im);
       for (const k in this.bulletHoles.L) { add(this.bulletHoles.L[k].capIm); add(this.bulletHoles.L[k].bowlIm); }
       for (const P of [this.wallPits.s, this.wallPits.he, this.treePits.wood, this.treePits.cactus]) for (const L of P.layers) add(L.im);
@@ -6265,7 +6270,7 @@
   // LỖ KHOÉT MẶT ĐẤT CHO HỐ BOM: shader mặt đất bỏ điểm ảnh trong các vòng tròn hố đang tồn tại,
   // để lưới lòng chảo (thấp hơn mặt đất) lộ ra -> hố lõm thật sự thay vì vết vẽ phẳng
   // ---------------------------------------------------------------------------
-  const MAX_HOLES = 48;
+  const MAX_HOLES = 80;   // số lỗ khoét mặt đất cùng lúc (mỗi hố pháo 1-vài lỗ); mảng uniform trong shader mặt đất
   const holeList = [];
   const holeU = { value: Array.from({ length: MAX_HOLES }, () => new THREE.Vector4(0, 0, 0, 0)) };
   const holeN = { value: 0 };
