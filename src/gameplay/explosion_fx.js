@@ -4529,9 +4529,21 @@
       };
       const cellU = S / M;
       const holeE = [];
-      for (const b of blasts.slice(-4)) {
+      // khoảng cách chuẩn hoá từ (px,pz) tới lỗ h (< 1 = trong lỗ), như holeQ trong shader
+      const qOf = (h, px, pz) => {
+        const dx = px - h.x, dz = pz - h.z, c = Math.cos(h.ang), sn = Math.sin(h.ang);
+        return Math.hypot(dx * c + dz * sn, (-dx * sn + dz * c) / h.ratio) / h.r;
+      };
+      // mỗi phát nổ một lỗ, phát mới nhất trước, tối đa OWN_HOLES lỗ / cụm; phát có lòng hố đã nằm gọn trong lỗ của phát khác thì thôi.
+      // Phát không có lỗ: mặt đất phẳng đè lên lòng hố của nó
+      for (let bi = blasts.length - 1; bi >= 0 && holeE.length < OWN_HOLES; bi--) {
+        const b = blasts[bi];
         const hx = b.x + b.fx * b.shift, hz = b.z + b.fz * b.shift;
         if (Hg(hx, hz) > -0.3) continue;
+        const covered = (px, pz) => holeE.some(h => qOf(h, px, pz) < 0.9);
+        const pa = b.A * 0.8, pb = b.B * 0.8;
+        if (covered(hx, hz) && covered(hx + b.fx * pa, hz + b.fz * pa) && covered(hx - b.fx * pa, hz - b.fz * pa) &&
+          covered(hx - b.fz * pb, hz + b.fx * pb) && covered(hx + b.fz * pb, hz - b.fx * pb)) continue;
         const rMax = Math.max(b.A, b.B) * 2.2;
         const reach = (qx, qz, ang) => {
           const ux = b.fx * Math.cos(ang) - b.fz * Math.sin(ang), uz = b.fz * Math.cos(ang) + b.fx * Math.sin(ang);
@@ -4556,6 +4568,12 @@
         const ang = ra >= rb ? Math.atan2(b.fz, b.fx) : Math.atan2(b.fz, b.fx) + Math.PI / 2;
         holeE.push({ x: qx, z: qz, r: big, ratio: small / big, ang });
       }
+      // khoảng cách chuẩn hoá tới lỗ gần nhất của cụm (< 1 = trong lỗ), như holeQ trong shader
+      const holeQ = (px, pz) => {
+        let q = 1e9;
+        for (const h of holeE) q = Math.min(q, qOf(h, px, pz));
+        return q;
+      };
       const holeC = holeE;   // (tên cũ) danh sách lỗ khoét: x, z, r = bán trục lớn, ratio, ang
 
       // ---- 2. TEXTURE MÀU + ĐỘ TRONG riêng cho cụm hố ----
@@ -4592,6 +4610,9 @@
         // gờ đất đắp dày -> đặc (gờ nửa trong suốt để lộ mặt đất bên dưới trông như vách giấy)
         let alpha = r1.inBowl > 0 || r1.fresh ? 1 : clamp01((r1.ej - 0.1 - (cnoise(px * 0.55 + 3, pz * 0.55, 12) - 0.5) * 0.5) * 2.4);
         alpha = Math.max(alpha, clamp01(sk * 1.6) * 0.85, clamp01((r1.H - 0.3) / 0.3));
+        // gần lỗ khoét: chỗ nào lưới hố nhô trên mặt đất phải đặc — nhìn xiên, tia nhìn qua gờ nửa trong suốt chui xuống dưới
+        // gờ, gặp chỗ mặt đất đã bị khoét -> lộ trời. Xa lỗ thì đất văng vẫn loang lổ như cũ
+        if (alpha < 1 && holeE.length) alpha = Math.max(alpha, clamp01((r1.H - 0.02) / 0.12) * (1 - smooth(1.7, 2.6, holeQ(px, pz))));
         const ex = Math.min(i, j, TS - 1 - i, TS - 1 - j) / (TS * 0.06);
         alpha *= clamp01(ex);
         const q = (j * TS + i) * 4;
@@ -5033,7 +5054,7 @@
   // LỖ KHOÉT MẶT ĐẤT CHO HỐ BOM: shader mặt đất bỏ điểm ảnh trong các vòng tròn hố đang tồn tại,
   // để lưới lòng chảo (thấp hơn mặt đất) lộ ra -> hố lõm thật sự thay vì vết vẽ phẳng
   // ---------------------------------------------------------------------------
-  const MAX_HOLES = 48;
+  const MAX_HOLES = 64;
   const holeList = [];
   const holeU = { value: Array.from({ length: MAX_HOLES }, () => new THREE.Vector4(0, 0, 0, 0)) };
   const holeN = { value: 0 };
@@ -5103,7 +5124,7 @@ float holeQ(vec2 p, vec4 gh) {
   //    Làm ngay trong shader vì nhìn xiên card đồ hoạ lấy bản texture thu nhỏ, độ đặc ở mép lỗ bị pha với vùng trong suốt bên ngoài
   //  - phần nằm trong lỗ của hố KHÁC thì bỏ: đất ở đó đã bị phát nổ sau hất đi, không thì thành tấm che lòng hố đó
   //  - lõi giữ điểm ảnh có độ đặc >= CRATER_CORE_ALPHA (alphaTest), viền giữ phần còn lại
-  const OWN_HOLES = 4;   // mỗi cụm hố khoét tối đa 4 lỗ (4 phát nổ mới nhất, xem buildCraterCluster)
+  const OWN_HOLES = 8;   // mỗi cụm hố khoét tối đa 8 lỗ (xem buildCraterCluster)
   const CRATER_CORE_ALPHA = 0.9;
   ExplosionFX.installCraterHoles = function (mat, holes, fringe) {
     if (!mat || mat.userData.craterHoles) return;
