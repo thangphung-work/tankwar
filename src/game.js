@@ -751,7 +751,7 @@ class ArtilleryGame3D {
       const C = this._cam;
       const S = this._sight;
       if (S) {
-        if (S.arty) S.hT = Math.max(600, Math.min(3300, S.hT * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+        if (S.arty) S.hT = Math.max(220, Math.min(800, S.hT * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));   // gần / xa điểm ngắm (không bay lên nhìn toàn bản đồ)
         else S.magT = Math.max(S.prof.magMin, Math.min(S.prof.magMax, S.magT * (e.deltaY > 0 ? 1 / 1.25 : 1.25)));
         return;
       }
@@ -985,7 +985,8 @@ class ArtilleryGame3D {
   }
 
   // TÍNH TOÁN VÀ ĐỒNG BỘ NÒNG PHÁO KHÓA VÀO TỌA ĐỘ MỤC TIÊU
-  aimPlayerAtTarget(targetX, targetZ) {
+  // quiet: chỉnh điểm ngắm liên tục (màn hình điều khiển hỏa lực của pháo) — không ghi nhật ký mỗi lần, kính ngắm đã báo trạng thái
+  aimPlayerAtTarget(targetX, targetZ, quiet = false) {
     if (!this.player || this.player.isDead) return;
     const P = this.player;
     const fixedGun = P.canElevate === false || P.tankType === 'GATLING';
@@ -1002,6 +1003,7 @@ class ArtilleryGame3D {
     if (fixedGun) P.fcsTarget = { x: targetX, z: targetZ, y: this._aimPoint.y + 8, el: sol.elevation };
     this.syncHUDControls();
     const d = sol.distance;
+    if (quiet) return;
     if (!sol.reachable && sol.blind) {
       this.addCombatLog('[[alert-triangle]] Điểm này ở ngay trước mũi xe — nòng không quay qua cabin được. Quay thân xe sang bên để bắn', 'alert');
     } else if (!sol.reachable) {
@@ -3412,7 +3414,7 @@ class ArtilleryGame3D {
   // · Xe bắn thẳng (Halberd, Hailstorm, Marten): nhìn qua kính ngắm trên nóc tháp, dọc theo nòng, phóng to bằng con lăn.
   //   Khung ngắm sáng, mảnh kiểu chiến thuật, mỗi xe một kiểu vạch. Tâm kính đặt vào điểm cần trúng
   //   (xanh: nòng đã khớp, cam: tháp đang quay, đỏ: bị chắn). Xe mình ẩn khi nhìn qua kính.
-  // · Pháo tự hành (Arbalest): BẢN ĐỒ HỎA LỰC — nhìn từ trên cao xuống, thấy diễn biến thật trong vùng bắn
+  // · Pháo tự hành (Arbalest): ĐIỀU KHIỂN HỎA LỰC — camera bay theo vào gần điểm ngắm, chỉnh cự ly / hướng bằng W A S D
   //   (vòng tầm tối thiểu / tối đa), W A S D di chuyển vùng nhìn (xe đứng yên), con lăn nâng / hạ độ cao.
   // Nhấp chuột vẫn ngắm điểm / khóa xe như thường; Space bắn; Ctrl / Esc thoát.
   // =========================================================================
@@ -3420,7 +3422,7 @@ class ArtilleryGame3D {
     switch (type) {
       case 'GATLING': return { kind: 'ring', mag: 3, magMin: 2, magMax: 6, name: 'KÍNH NGẮM 30MM' };
       case 'SCOUT': return { kind: 'box', mag: 3, magMin: 2, magMax: 8, name: 'KÍNH DẪN BẮN' };
-      case 'ARTILLERY': return { kind: 'arty', name: 'BẢN ĐỒ HỎA LỰC' };
+      case 'ARTILLERY': return { kind: 'arty', name: 'ĐIỀU KHIỂN HỎA LỰC' };
       default: return { kind: 'chevron', mag: 4, magMin: 2, magMax: 10, name: 'KÍNH NGẮM PHÁO THỦ' };
     }
   }
@@ -3445,12 +3447,16 @@ class ArtilleryGame3D {
       if (C) C.freeYaw = C.freePitch = 0;
       this._freeLook = false;
       if (S.arty) {
-        // tâm vùng nhìn: điểm đang ngắm, không thì giữa vùng bắn theo hướng nòng
+        // camera xuất phát ngay trên xe mình rồi bay theo vào điểm đang ngắm (xe đã khóa / điểm đã chọn / điểm đạn rơi
+        // theo nòng hiện tại; chưa có thì giữa vùng bắn theo hướng nòng)
         const R = this.artyRangeOf(P), mid = (R.min + R.max) / 2;
-        const A = this._aimPoint || (this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null);
-        S.cx = A ? A.x : P.x - Math.sin(tw) * mid;
-        S.cz = A ? A.z : P.z - Math.cos(tw) * mid;
-        S.hT = S.h = 2300;
+        const A = (this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null) || this._aimPoint;
+        const L = this._lastTraj;
+        S.goal = A || (L && !L.out && !L.wall && L.d >= R.min ? { x: L.x, z: L.z } : { x: P.x - Math.sin(tw) * mid, z: P.z - Math.cos(tw) * mid });
+        S.followId = A ? A.id : null;
+        S.cx = P.x - Math.sin(tw) * 60; S.cz = P.z - Math.cos(tw) * 60;
+        S.h = 160; S.hT = 520;
+        S.dirty = false; S.commitT = 0;
         for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD']) this.keys[k] = false;   // xe dừng, phím dùng để di chuyển vùng nhìn
       } else {
         P.group.traverse(o => o.layers.set(1));
@@ -3583,11 +3589,15 @@ class ArtilleryGame3D {
     if (this._sight) this._sight.ammo = P.selectedAmmo;
     el.innerHTML = '<div class="gs-vig"></div><div class="gs-frame"><i></i><i></i><i></i><i></i></div>'
       + (etched ? '<div class="gs-optic"></div>' : '')
-      + (arty ? '' : '<svg class="gs-ret' + (etched ? ' etched' : '') + '" viewBox="-100 -100 200 200">' + ret + '</svg>')
+      // pháo: dấu tâm màn hình = điểm sẽ ngắm khi thả phím W A S D
+      + (arty ? '<svg class="gs-ret" viewBox="-100 -100 200 200"><circle class="gs-m" r="6"/><circle class="gs-d" r="1"/>'
+        + '<line class="gs-l" x1="-24" y1="0" x2="-10" y2="0"/><line class="gs-l" x1="10" y1="0" x2="24" y2="0"/>'
+        + '<line class="gs-l" x1="0" y1="-24" x2="0" y2="-10"/><line class="gs-l" x1="0" y1="10" x2="0" y2="24"/></svg>'
+        : '<svg class="gs-ret' + (etched ? ' etched' : '') + '" viewBox="-100 -100 200 200">' + ret + '</svg>')
       + '<div class="gs-top"><span>' + prof.name + '</span><b class="gs-hdg">000°</b><span class="gs-mag"></span></div>'
       + '<div class="gs-side"><span>CỰ LY</span><span class="gs-big gs-range">—</span><span class="gs-state"></span><span class="gs-blast"></span></div>'
       + '<div class="gs-hint">' + (arty
-        ? 'W A S D: di chuyển vùng nhìn · Lăn chuột: cao / thấp · Nhấp: chọn điểm bắn / khóa xe · Space: bắn · Ctrl hoặc C: thoát'
+        ? 'W / S: tăng / giảm cự ly · A / D: xoay hướng bắn · Shift: nhanh · Lăn chuột: gần / xa · Nhấp: chọn điểm / khóa xe · Space: bắn · Ctrl hoặc C: thoát'
         : 'Lăn chuột: phóng to / thu nhỏ · Nhấp: ngắm điểm / khóa xe · Space: bắn · Ctrl hoặc C: thoát') + '</div>';
     this._sightMagEl = el.querySelector('.gs-mag');
     this._sightRangeEl = el.querySelector('.gs-range');
@@ -3632,25 +3642,61 @@ class ArtilleryGame3D {
     let fx, fz, px, py, pz, range = null;
 
     if (S.arty) {
-      // BẢN ĐỒ HỎA LỰC: camera trên cao nhìn xuống vùng bắn (hướng màn hình cố định theo lúc mở, không xoay theo tháp)
+      // MÀN HÌNH ĐIỀU KHIỂN HỎA LỰC: camera bay theo vào gần ĐIỂM NGẮM, nhìn chéo từ phía xe mình tới (đỉnh màn hình
+      // luôn là hướng bắn), chỉ thấy một vùng nhỏ quanh điểm ngắm — không còn nhìn toàn cảnh chiến trường từ trên cao
+      // như xem bản đồ (địch chưa phát hiện vẫn ẩn như bình thường; muốn nhìn toàn cảnh dùng bản đồ chiến thuật M).
+      // W / S: tăng / giảm cự ly · A / D: xoay hướng bắn quanh xe · thả phím: máy tính hỏa lực tự ngắm vào tâm màn hình.
       const R = this.artyRangeOf(P);
-      fx = -Math.sin(S.yaw); fz = -Math.cos(S.yaw);
-      const rx = Math.cos(S.yaw), rz = -Math.sin(S.yaw);
-      const K = S.keys, sp = S.h * (K.ShiftLeft || K.ShiftRight ? 1.0 : 0.5) * dt;
+      // điểm đã chọn / xe đã khóa thay đổi -> tâm nhìn bay tới đó
+      const tgt = this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : this._aimPoint;
+      const tid = tgt ? tgt.id : null;
+      if (tid !== S.followId) { S.followId = tid; if (tgt && tid !== S.ownAimId) S.goal = tgt; }
+      if (S.goal && S.goal === this.lockedTarget && this.lockedTarget.isDead) S.goal = null;
+      const K = S.keys, fast = K.ShiftLeft || K.ShiftRight;
       const mf = (K.KeyW ? 1 : 0) - (K.KeyS ? 1 : 0), mr = (K.KeyD ? 1 : 0) - (K.KeyA ? 1 : 0);
-      S.cx += (fx * mf + rx * mr) * sp; S.cz += (fz * mf + rz * mr) * sp;
-      // chỉ trong bán kính vùng bắn
-      const dx = S.cx - P.x, dz = S.cz - P.z, d = Math.hypot(dx, dz), dMax = R.max + 120;
-      if (d > dMax) { S.cx = P.x + dx / d * dMax; S.cz = P.z + dz / d * dMax; }
-      // và không nhìn ra ngoài mép bản đồ
-      const edge = Math.max(0, (T && T.width ? T.width : this.worldWidth) / 2 - Math.min(900, S.h * 0.45));
+      let dx = S.cx - P.x, dz = S.cz - P.z, d = Math.hypot(dx, dz);
+      if (mf || mr) {
+        // chỉnh bắn như pháo thủ: thêm / bớt cự ly dọc hướng bắn, xoay hướng quanh xe (giữ nguyên cự ly)
+        S.goal = null; S.dirty = true; S.commitT = 0.2;
+        const sp = (fast ? 2.2 : 1) * Math.max(160, S.h * 0.9) * dt;
+        const brg = d > 1 ? Math.atan2(dx, dz) : S.yaw + Math.PI;
+        const nd = Math.max(R.min * 0.25, Math.min(R.max + 60, (d > 1 ? d : 200) + mf * sp));
+        const nb = brg - mr * sp * 0.75 / Math.max(150, nd);
+        S.cx = P.x + Math.sin(nb) * nd; S.cz = P.z + Math.cos(nb) * nd;
+      } else if (S.goal) {
+        // bay theo vào điểm ngắm (xe đã khóa: bám theo xe)
+        const k = 1 - Math.exp(-dt * 3.5);
+        S.cx += (S.goal.x - S.cx) * k; S.cz += (S.goal.z - S.cz) * k;
+        if (S.goal !== this.lockedTarget && Math.hypot(S.goal.x - S.cx, S.goal.z - S.cz) < 2) S.goal = null;
+      }
+      // thả phím: ngắm luôn vào tâm màn hình (nhả khóa xe nếu đang khóa)
+      if (S.dirty && !mf && !mr) {
+        S.commitT -= dt;
+        if (S.commitT <= 0) {
+          S.dirty = false;
+          if (this.lockedTarget) this.setLockedTarget(null);
+          this.aimPlayerAtTarget(S.cx, S.cz, true);
+          S.ownAimId = S.followId = this._aimPoint ? this._aimPoint.id : null;
+        }
+      }
+      // không nhìn ra ngoài mép bản đồ
+      const edge = Math.max(0, (T && T.width ? T.width : this.worldWidth) / 2 - 40);
       S.cx = Math.max(-edge, Math.min(edge, S.cx)); S.cz = Math.max(-edge, Math.min(edge, S.cz));
+      dx = S.cx - P.x; dz = S.cz - P.z; d = Math.hypot(dx, dz);
+      // đỉnh màn hình = hướng từ xe mình tới điểm ngắm (sát xe thì giữ hướng cũ)
+      if (d > 60) {
+        const want = Math.atan2(-dx, -dz);
+        S.yaw = wrap(S.yaw + wrap(want - S.yaw) * (1 - Math.exp(-dt * 5)));
+      }
+      fx = -Math.sin(S.yaw); fz = -Math.cos(S.yaw);
       S.h += (S.hT - S.h) * (1 - Math.exp(-dt * 6));
       const gy = T ? T.getElevationAt(S.cx, S.cz) : 0;
       if (S.y === null) S.y = gy;
       S.y += (gy - S.y) * (1 - Math.exp(-dt * 4));
-      px = S.cx - fx * S.h * 0.22; pz = S.cz - fz * S.h * 0.22; py = S.y + S.h;
-      if (Math.abs(cam.fov - 60) > 0.01) { cam.fov = 60; cam.updateProjectionMatrix(); }   // ống kính góc rộng: thấy cả vùng bắn
+      // nhìn chéo ~52° từ phía sau điểm ngắm
+      px = S.cx - fx * S.h * 0.78; pz = S.cz - fz * S.h * 0.78;
+      py = Math.max(S.y + S.h, (T ? T.getElevationAt(px, pz) : 0) + 40);
+      if (Math.abs(cam.fov - 55) > 0.01) { cam.fov = 55; cam.updateProjectionMatrix(); }
       cam.position.set(px, py, pz);
       cam.lookAt(S.cx, S.y, S.cz);
       this._camYaw = S.yaw;
@@ -3658,8 +3704,8 @@ class ArtilleryGame3D {
       this.updateRangeRings(P, R, dt);
       this._viewFocus = { x: S.cx, z: S.cz };
       const fog = this.scene.fog;
-      if (fog && fog.density !== undefined) { if (fog._baseD === undefined) fog._baseD = fog.density; fog.density = fog._baseD * 0.35; }
-      const half = Math.ceil(Math.max(700, Math.min(1800, S.h * 0.75)) / 20) * 20;
+      if (fog && fog.density !== undefined) { if (fog._baseD === undefined) fog._baseD = fog.density; fog.density = fog._baseD; }
+      const half = Math.ceil(Math.max(500, Math.min(1000, S.h * 1.2)) / 20) * 20;
       const sd = this.sunDir || new THREE.Vector3(-0.42, 0.82, -0.36);
       const sc = this.sunLight.shadow.camera;
       if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
@@ -3667,8 +3713,9 @@ class ArtilleryGame3D {
       const fX = Math.round(S.cx / texel) * texel, fZ = Math.round(S.cz / texel) * texel;
       this.sunLight.position.set(fX + sd.x * 1300, S.y + sd.y * 1300, fZ + sd.z * 1300);
       this.sunLight.target.position.set(fX, S.y, fZ);
-      const dc = Math.round(Math.hypot(S.cx - P.x, S.cz - P.z));
-      range = A ? A.d : dc;
+      const dc = Math.round(d);
+      // đang chỉnh (chưa thả phím): cự ly tới tâm màn hình; không thì cự ly điểm cần trúng
+      range = S.dirty || !A ? dc : A.d;
       S.rangeNote = dc > R.max ? 'NGOÀI TẦM BẮN' : dc < R.min ? 'QUÁ GẦN — DƯỚI TẦM CẦU VỒNG' : null;
     } else {
       // KÍNH NGẮM: gắn chặt vào tháp, bám gần như tức thì, chỉ lọc rung
