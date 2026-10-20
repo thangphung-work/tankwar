@@ -1704,8 +1704,8 @@ class SPGUnit3D {
     this._gPrev = groundTarget;
     if (this._suspY === undefined || groundTarget - this._suspY > 12 || this._suspY - groundTarget > 90) {
       this._suspY = groundTarget; this._vy = 0; this.airborne = false;
-    } else if (this.airborne || (gv < (this._vy || 0) - G * dt - 25 && groundTarget < this._suspY - 0.6)) {
-      // mặt tì tụt nhanh hơn xe rơi tự do được -> hẫng
+    } else if (this.airborne || groundTarget < this._suspY + (this._vy || 0) * dt - 0.5 * G * dt * dt - 1.5) {
+      // mặt tì tụt xuống dưới cả quỹ đạo rơi tự do của xe (lao qua mép hố, vách dốc đứng) -> hẫng
       if (!this.airborne) { this.airborne = true; this._airT = 0; }
       this._airT += dt;
       this._vy = (this._vy || 0) - G * dt;
@@ -1724,7 +1724,8 @@ class SPGUnit3D {
       }
     } else {
       this._suspY += (groundTarget - this._suspY) * Math.min(1, dt * 12);
-      this._vy = Math.max(-200, Math.min(200, gv));
+      // vận tốc đứng làm mượt (xích trượt tới lui ở vách quá dốc không bị coi là rơi)
+      this._vy = (this._vy || 0) + (Math.max(-200, Math.min(200, gv)) - (this._vy || 0)) * Math.min(1, dt * 8);
     }
     this.y = this._suspY;
     // nhún thân sau cú đập xuống: lún rồi bật lại tắt dần
