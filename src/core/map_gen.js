@@ -288,8 +288,9 @@ const MapGen = (() => {
       const amp = R(60, 110), f1 = R(0.0016, 0.0026), ph = R(0, 6.28);
       // ngoài mép bản đồ (|z| > 1900) sông uốn khúc mạnh dần; trong bản đồ giữ nguyên như cũ
       const riverX = z => {
-        const o = smooth(1900, 3300, Math.abs(z)), lim = 170 + 820 * o;
-        return Math.max(cx - lim, Math.min(cx + lim, cx + Math.sin(z * f1 + ph) * amp * (1 + 2 * o) + fbm(noise, 7.3, z * 0.0012, 3) * 70 * (1 + 3 * o) + o * 480 * Math.sin(z * 0.0008 + ph * 2)));
+        const o = smooth(1900, 2900, Math.abs(z)), lim = 170 + 1100 * o;
+        return Math.max(cx - lim, Math.min(cx + lim, cx + Math.sin(z * f1 + ph) * amp * (1 + 2.5 * o) + fbm(noise, 7.3, z * 0.0012, 3) * 70 * (1 + 4 * o)
+          + o * 650 * Math.sin((Math.abs(z) - 1900) * 0.0019 + ph * 2) * Math.sign(z)));
       };
       for (let z = -HALF - 100; z <= HALF + 100; z += 40) pts.push([riverX(z), z]);
       river = { pts, width: R(130, 165) };
@@ -297,7 +298,7 @@ const MapGen = (() => {
       const far = [];
       for (let z = -OUTER_EXT; z <= OUTER_EXT; z += 40) far.push([riverX(z), z]);
       riverCut = (x, z, h) => {
-        if (Math.abs(x - cx) > 990 + river.width / 2 + 1100) return h;
+        if (Math.abs(x - cx) > 1270 + river.width / 2 + 1100) return h;
         // chỉ xét đoạn sông quanh z (các điểm cách đều 40)
         const i0 = Math.max(0, Math.floor((z + OUTER_EXT - 1200) / 40)), i1 = Math.min(far.length - 1, Math.ceil((z + OUTER_EXT + 1200) / 40));
         const d = distToPolyline(far.slice(i0, i1 + 1), x, z), hw = river.width / 2;
