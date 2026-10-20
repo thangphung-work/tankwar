@@ -168,7 +168,7 @@
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
 <script src="src/entities/spg.js?v=20261020ammo1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020srf4"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020crt1"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
 <script src="src/gameplay/vehicle_damage.js?v=20261020cfire11"></script>
 <script src="src/core/equipment.js?v=20261020ammo1"></script>
@@ -819,7 +819,7 @@
     mapType: 'DESERT',
     getElevationAt: (x, z) => labGround(x, z),
     // Mặt nước hồ thử nghiệm (sóng nổ dưới nước chỉ lan trong hồ)
-    waterSurfaceAt: (x, z) => (EX.pond && EX.pond.water && EX.pond.water.visible && Math.hypot(x - EX.pond.info.x, z - EX.pond.info.z) < EX.pond.info.r * 0.93) ? EX.pond.water.position.y : null,
+    waterSurfaceAt: (x, z) => (EX.pond && EX.pond.water && EX.pond.water.visible && holeSurface(EX.pond, x, z) < EX.pond.waterY) ? EX.pond.waterY : null,
     checkHorseshoeCollision(x, y, z) {
       if (state.target === 'WALL' && Math.hypot(x, z) < 65) return { hit: true, obstacle: { x: -LAUNCH_DIR.x * 40, z: -LAUNCH_DIR.z * 40 }, type: 'WALL' };
       if (state.target === 'BUILDING' && Math.hypot(x, z) < 55) return { hit: true, obstacle: { x: 0, z: 0 }, type: 'BUILDING' };
@@ -834,13 +834,27 @@
   // MỤC TIÊU MỞ RỘNG: ụ đất, cây cối, boong-ke, hố sâu, hồ nước (dùng chung lớp với game)
   // ===========================================================================
   const EX = { berm: null, trees: null, bunker: null, pit: null, pond: null };
-  const holesActive = [];   // { x, z, r, D } hồ / hố đang hiện
+  const holesActive = [];   // hố sâu / hồ nước đang hiện (bản ghi của makeHole)
+  // Mặt đất thật trong vùng hố sâu / hồ: đọc thẳng lưới độ cao của chính hố đã dựng -> đạn rơi, hố nổ mới, sóng nước
+  // đều nằm đúng trên mặt hố nhìn thấy (không phải một chảo parabol xấp xỉ)
+  function holeSurface(h, x, z) {
+    const s = h.rec.surf;
+    if (!s || x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) return 0;
+    const gx = Math.max(0, Math.min(s.M - 1e-4, (x - s.ox) / s.S * s.M)), gz = Math.max(0, Math.min(s.M - 1e-4, (z - s.oz) / s.S * s.M));
+    const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j, N1 = s.M + 1, G = s.Hgrid, k = j * N1 + i;
+    return (G[k] * (1 - fx) + G[k + 1] * fx) * (1 - fz) + (G[k + N1] * (1 - fx) + G[k + N1 + 1] * fx) * fz + 0.04;
+  }
+  // điểm (x, z) nằm trong lỗ khoét mặt đất của hố
+  function inHoleCut(h, x, z) {
+    return h.rec.surf && h.rec.surf.holeC.some(o => {
+      let dx = x - o.x, dz = z - o.z;
+      if (o.ratio && o.ratio < 0.995) { const c = Math.cos(o.ang), sn = Math.sin(o.ang), a = dx * c + dz * sn; dz = (-dx * sn + dz * c) / o.ratio; dx = a; }
+      return dx * dx + dz * dz < o.r * o.r;
+    });
+  }
   function labGround(x, z) {
     let h = 0;
-    for (const p of holesActive) {
-      const d = Math.hypot(x - p.x, z - p.z);
-      if (d < p.r) { const k = d / p.r; h = Math.min(h, -p.D * (1 - k * k)); }
-    }
+    for (const p of holesActive) h = Math.min(h, holeSurface(p, x, z));
     if (EX.berm && EX.berm.mesh.visible) h = Math.max(h, EX.berm.heightAt(x, z));
     return h;
   }
@@ -1016,30 +1030,195 @@
     const set = new Destructibles.BunkerSet(g, [{ x: 0, z: 0, openAngle, roofed: true }], () => 0);
     return { group: g, set };
   }
+  // Hố sâu: hố bom cỡ lớn (~15 m, sâu ~5,5 m). Hồ nước: hố bom cũ đọng nước (~26 m, nước sâu ~3,5 m) — kiểu ao hố bom
+  const HOLE_SPEC = {
+    PIT: { R: 106, depth: 44, grid: 170, tex: 1024 },
+    POND: { R: 186, depth: 36, grid: 210, tex: 1024, waterY: -7 }
+  };
   function makeHole(kind) {
-    const pond = kind === 'POND';
-    const R = pond ? 66 : 54;
-    fx.addCrater(0, 0, R, null, 1, null, 'HE', { heavy: true, persistent: true, bowlDepth: pond ? 16 : 26 });
-    const rec = fx.craters[fx.craters.length - 1];
-    const holeR = rec.holeSlot ? rec.holeSlot.r : R;
-    const info = { x: 0, z: 0, r: holeR * 1.12, D: pond ? 16 : 26 };
-    let water = null;
-    if (pond) {
-      const wm = new THREE.MeshStandardMaterial({ color: 0x2f5d66, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.88 });
-      water = new THREE.Mesh(new THREE.CircleGeometry(holeR * 1.05, 48), wm);
-      water.rotation.x = -Math.PI / 2;
-      water.position.y = -3.5;
-      water.userData.isWater = true;
-      scene.add(water);
+    const sp = HOLE_SPEC[kind];
+    const rec = fx.addCrater(0, 0, sp.R, null, 1, null, 'HE', { heavy: true, persistent: true, bowlDepth: sp.depth, gridN: sp.grid, texSize: sp.tex });
+    const h = { kind, rec, water: null, reeds: null, waterY: sp.waterY, r: rec.holeSlot ? rec.holeSlot.r : sp.R * 0.55 };
+    if (sp.waterY !== undefined) {
+      wetBanks(h);
+      h.water = makeWater(h);
+      h.reeds = makeReeds(h);
     }
-    return { rec, info, water };
+    return h;
+  }
+  // Bờ hồ: đất dưới nước sẫm & ngả xanh rêu, dải đất ẩm sẫm ngay trên mép nước, vệt cặn khô bạc màu nơi nước từng dâng.
+  // Hố bom cũ đã lâu năm: gờ & lớp đất văng bị gió cát phong hoá, bạc về màu cát xung quanh
+  function wetBanks(h) {
+    const rec = h.rec, s = rec.surf, T = rec.TS, W = h.waterY, D = rec.data;
+    const n2 = (x, z) => Math.sin(x * 0.21 + Math.sin(z * 0.13) * 2.1) * 0.5 + Math.sin(z * 0.17 - x * 0.07) * 0.5;
+    const sand = [0.56, 0.475, 0.355];   // albedo mặt đất phòng thử (màu nền x vân hạt trung bình)
+    for (let j = 0; j < T; j++) for (let i = 0; i < T; i++) {
+      const q = (j * T + i) * 4;
+      const x = s.ox + s.S * (i + 0.5) / T, z = s.oz + s.S * (j + 0.5) / T;
+      const y = holeSurface(h, x, z);
+      let r = D[q] / 255, gg = D[q + 1] / 255, b = D[q + 2] / 255;
+      const above = y - W, wob = n2(x, z) * 0.8, bank = inHoleCut(h, x, z);
+      if (above < 0) {
+        // ngập: bùn sẫm, đáy sâu phủ lớp cặn xanh rêu
+        const dp = Math.min(1, -above / 14);
+        const k = 0.5 - 0.12 * dp;
+        r = r * k * (1 - 0.3 * dp) + 0.03 * dp; gg = gg * k + 0.07 * dp; b = b * k * (1 - 0.15 * dp) + 0.03 * dp;
+      } else if (bank && above < 3.6 + wob) {
+        // dải đất ướt sát mép nước (mao dẫn ~0,5 m), sẫm nhất ngay mép
+        const t = above / (3.6 + wob), k = 0.52 + 0.4 * t * t;
+        r *= k; gg *= k * 1.01; b *= k * 0.96;
+      } else if (bank && above < 6 + wob) {
+        // vệt cặn khô: đất khô dần, một đường viền cặn bạc màu nơi mực nước cao nhất mùa mưa
+        const t = (above - 3.6 - wob) / 2.4, k = 0.92 + 0.08 * t, line = Math.max(0, 1 - Math.abs(t - 0.8) * 8) * 0.1;
+        r = r * k + line; gg = gg * k + line * 0.95; b = b * k + line * 0.82;
+      } else {
+        // phong hoá: đất văng bạc dần về màu cát, loang lổ
+        const w = 0.55 + 0.25 * Math.max(-1, Math.min(1, n2(x * 0.6 + 40, z * 0.6)));
+        r += (sand[0] - r) * w; gg += (sand[1] - gg) * w; b += (sand[2] - b) * w;
+      }
+      D[q] = Math.min(255, r * 255); D[q + 1] = Math.min(255, gg * 255); D[q + 2] = Math.min(255, b * 255);
+    }
+    rec.texs[0].needsUpdate = true;
+  }
+  // Mặt nước: màu & độ trong theo độ sâu thật của đáy hồ (nông thì thấy đáy, sâu thì xanh đục), sóng lăn tăn theo gió,
+  // phản chiếu bầu trời theo góc nhìn (Fresnel), vệt nắng lấp lánh, mép nước viền bọt nhẹ
+  function makeWater(h) {
+    const s = h.rec.surf, W = h.waterY, R = h.r * 1.02;
+    const N = 256, depth = new Uint8Array(N * N * 4);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const x = -R + 2 * R * (i + 0.5) / N, z = -R + 2 * R * (j + 0.5) / N;
+      const d = Math.max(0, Math.min(1, (W - holeSurface(h, x, z)) / 32));
+      depth[(j * N + i) * 4] = d * 255; depth[(j * N + i) * 4 + 3] = 255;
+    }
+    const dTex = new THREE.DataTexture(depth, N, N, THREE.RGBAFormat);
+    dTex.magFilter = THREE.LinearFilter; dTex.minFilter = THREE.LinearFilter; dTex.needsUpdate = true;
+    const sunDir = sun.position.clone().normalize();
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: {
+        uTime: { value: 0 }, uDepth: { value: dTex }, uR: { value: R },
+        uSun: { value: sunDir }, uSunCol: { value: new THREE.Color(0xfff2dc) },
+        uSkyHi: { value: new THREE.Color(0x7f9db8) }, uSkyLo: { value: new THREE.Color(SKY) },
+        uShallow: { value: new THREE.Color(0x77704a) }, uDeep: { value: new THREE.Color(0x203a30) },
+        uFogCol: { value: scene.fog.color }, uFogDen: { value: scene.fog.density }
+      },
+      vertexShader: `
+        varying vec3 vW; varying float vFogD;
+        void main() {
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vW = w.xyz;
+          vec4 mv = viewMatrix * w;
+          vFogD = -mv.z;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform float uTime, uR, uFogDen; uniform sampler2D uDepth;
+        uniform vec3 uSun, uSunCol, uSkyHi, uSkyLo, uShallow, uDeep, uFogCol;
+        varying vec3 vW; varying float vFogD;
+        // sóng: nhiễu giá trị trôi theo gió nhiều tầng (gợn lăn tăn không đều) + vài bó sóng dài rất nhẹ
+        float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float vnoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), u.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), u.x), u.y);
+        }
+        float wh(vec2 p, float t) {
+          float h = 0.0, a = 0.5, f = 0.09;
+          vec2 wind = vec2(0.8, 0.35);
+          for (int i = 0; i < 4; i++) {
+            h += a * vnoise(p * f + wind * t * (0.35 + 0.25 * float(i)) + float(i) * 13.7);
+            p = mat2(0.8, -0.6, 0.6, 0.8) * p;
+            a *= 0.5; f *= 2.1;
+          }
+          h += 0.05 * sin(dot(p, vec2(0.11, 0.05)) + t * 1.1) + 0.04 * sin(dot(p, vec2(-0.04, 0.13)) + t * 0.8);
+          return h;
+        }
+        vec2 waveGrad(vec2 p, float t) {
+          float e = 0.6, h0 = wh(p, t);
+          return vec2(wh(p + vec2(e, 0.0), t) - h0, wh(p + vec2(0.0, e), t) - h0) / e * 1.6;
+        }
+        void main() {
+          vec2 uv = vW.xz / (2.0 * uR) + 0.5;
+          float dep = texture2D(uDepth, uv).r;          // 0 = mép nước, 1 = sâu >= 4 m
+          vec2 gr = waveGrad(vW.xz, uTime) * (0.35 + 0.65 * smoothstep(0.0, 0.12, dep));
+          vec3 n = normalize(vec3(-gr.x, 1.0, -gr.y));
+          vec3 V = normalize(cameraPosition - vW);
+          float cosT = max(dot(n, V), 0.0);
+          float fres = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
+          vec3 R = reflect(-V, n);
+          vec3 sky = mix(uSkyLo, uSkyHi, smoothstep(0.0, 0.6, R.y));
+          // màu nước theo độ sâu (nước hố bom đục phù sa)
+          float a = 1.0 - exp(-dep * 5.0);
+          vec3 body = mix(uShallow, uDeep, a);
+          // ánh sáng khuếch tán yếu trong khối nước
+          body *= 0.75 + 0.35 * max(dot(n, uSun), 0.0);
+          vec3 col = mix(body, sky, fres);
+          float spec = pow(max(dot(R, uSun), 0.0), 220.0) * 2.2 + pow(max(dot(R, uSun), 0.0), 28.0) * 0.12;
+          col += uSunCol * spec;
+          // viền bọt / váng nhẹ sát bờ, lay động theo sóng
+          float edge = 1.0 - smoothstep(0.0, 0.035 + 0.015 * sin(vW.x * 0.35 + uTime * 0.8) * sin(vW.z * 0.31 - uTime * 0.6), dep);
+          col = mix(col, vec3(0.78, 0.76, 0.66), edge * 0.45);
+          // nông thì trong (thấy đáy bùn), sâu thì đục; góc nhìn xiên phản chiếu nhiều hơn -> đặc hơn
+          float alpha = clamp(mix(0.42, 0.93, a) + fres * 0.5, 0.0, 1.0);
+          alpha *= smoothstep(0.0, 0.006, dep);
+          float fog = 1.0 - exp(-uFogDen * uFogDen * vFogD * vFogD);
+          col = mix(col, uFogCol, fog);
+          gl_FragColor = vec4(col, alpha);
+        }`
+    });
+    const water = new THREE.Mesh(new THREE.CircleGeometry(R, 96), mat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.y = W;
+    water.renderOrder = 3;          // vẽ sau lưới hố (trong suốt) để thấy đáy qua chỗ nước nông
+    water.userData.isWater = true;
+    scene.add(water);
+    return water;
+  }
+  // Cỏ lác / sậy mọc thành khóm dọc mép nước
+  function makeReeds(h) {
+    const W = h.waterY, pts = [];
+    for (let a = 0; a < 6.283 && pts.length < 40; a += 0.05) {
+      if (Math.random() > 0.32) continue;
+      // tìm mép nước theo tia từ tâm
+      let r = h.r * 0.5;
+      while (r < h.r * 1.2 && holeSurface(h, Math.cos(a) * r, Math.sin(a) * r) < W) r += 0.5;
+      pts.push({ a, r });
+    }
+    const blade = new THREE.ConeGeometry(0.22, 1, 4, 1, true);
+    blade.translate(0, 0.5, 0);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
+    const per = 38, inst = new THREE.InstancedMesh(blade, mat, pts.length * per);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), col = new THREE.Color();
+    let n = 0;
+    for (const p of pts) {
+      const cx = Math.cos(p.a) * p.r, cz = Math.sin(p.a) * p.r, spread = 2 + Math.random() * 4;
+      for (let k = 0; k < per; k++) {
+        const ang = Math.random() * 6.283, d = Math.sqrt(Math.random()) * spread;
+        const x = cx + Math.cos(ang) * d + Math.cos(p.a) * (Math.random() - 0.6) * 3, z = cz + Math.sin(ang) * d + Math.sin(p.a) * (Math.random() - 0.6) * 3;
+        const y = holeSurface(h, x, z);
+        if (y < W - 1.2 || y > W + 3) continue;
+        const hgt = 5 + Math.random() * 9;
+        e.set((Math.random() - 0.5) * 0.5, Math.random() * 6.283, (Math.random() - 0.5) * 0.5);
+        q.setFromEuler(e); sc.set(0.7 + Math.random() * 0.6, hgt, 0.7 + Math.random() * 0.6); ps.set(x, Math.max(y, W - 0.3), z);
+        m4.compose(ps, q, sc);
+        inst.setMatrixAt(n, m4);
+        const dry = Math.random();
+        inst.setColorAt(n, col.setRGB(0.36 + dry * 0.28, 0.4 + dry * 0.16, 0.18 + dry * 0.06));
+        n++;
+      }
+    }
+    inst.count = n;
+    inst.castShadow = true;
+    inst.receiveShadow = true;
+    scene.add(inst);
+    return inst;
   }
   function removeHole(h) {
     if (!h) return;
     const i = fx.craters.indexOf(h.rec);
     if (i >= 0) fx.removeDecal(fx.craters, i);
-    if (h.water) scene.remove(h.water);
-    const k = holesActive.indexOf(h.info);
+    if (h.water) { scene.remove(h.water); h.water.geometry.dispose(); h.water.material.uniforms.uDepth.value.dispose(); h.water.material.dispose(); }
+    if (h.reeds) { scene.remove(h.reeds); h.reeds.geometry.dispose(); h.reeds.material.dispose(); }
+    const k = holesActive.indexOf(h);
     if (k >= 0) holesActive.splice(k, 1);
   }
   function showExtra(v) {
@@ -1051,7 +1230,7 @@
     if (EX.bunker) EX.bunker.group.visible = v === 'BUNKER';
     for (const k of ['PIT', 'POND']) {
       const key = k.toLowerCase();
-      if (v === k && !EX[key]) { EX[key] = makeHole(k); holesActive.push(EX[key].info); }
+      if (v === k && !EX[key]) { EX[key] = makeHole(k); holesActive.push(EX[key]); }
       if (v !== k && EX[key]) { removeHole(EX[key]); EX[key] = null; }
     }
   }
@@ -1180,8 +1359,9 @@
     const d = launchDistance(sel, launcher);
     state.launchD = d;
     const p = LAUNCH_DIR.clone().multiplyScalar(d);
-    launcher.x = p.x; launcher.z = p.z; launcher.y = 0;
-    launcher.group.position.set(p.x, 0, p.z);
+    const gy = labGround(p.x, p.z);   // đứng trên gờ / lớp đất văng quanh hố sâu, hồ nước
+    launcher.x = p.x; launcher.z = p.z; launcher.y = gy;
+    launcher.group.position.set(p.x, gy, p.z);
     launcher.bodyAngle = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z); // mũi xe (-Z) nhìn về mục tiêu
     launcher.group.rotation.y = launcher.bodyAngle;
     launcher.group.visible = true;
@@ -1201,7 +1381,8 @@
           const err = -imp.clone().dot(LAUNCH_DIR);
           const nd = Math.max(90, Math.min(7000, d + err));
           const np = LAUNCH_DIR.clone().multiplyScalar(nd);
-          launcher.x = np.x; launcher.z = np.z; launcher.group.position.set(np.x, 0, np.z);
+          const ny = labGround(np.x, np.z);
+          launcher.x = np.x; launcher.z = np.z; launcher.y = ny; launcher.group.position.set(np.x, ny, np.z);
           state.launchD = nd;
         } else if (typeof impactMark !== 'undefined') impactMark.position.set(imp.x, 0.3, imp.z);
       }
@@ -1273,15 +1454,19 @@
   }
   // Góc nâng để đường đạn đi qua điểm ngắm: bắn thẳng lấy nghiệm thấp, cầu vồng lấy nghiệm cao
   const elevCache = { key: '', el: 0 };
+  // Góc hạ nòng thấp nhất (độ). Bắn thẳng xuống lòng hố sâu / mặt hồ dưới mép bờ cần chúc nòng dốc hơn giới hạn của xe
+  // (phòng thử để xem hiệu ứng nổ, không phải giới hạn tháp pháo)
+  function depressMin() { return state.target === 'PIT' || state.target === 'POND' ? -24 : -6; }
   function solveElevation(shooter, ammo, arc, y0, dXZ, yT) {
-    const key = [shooter.tankType, ammo, arc, Math.round(y0), Math.round(dXZ), Math.round(yT)].join('|');
+    const minEl = depressMin();
+    const key = [shooter.tankType, ammo, arc, Math.round(y0), Math.round(dXZ), Math.round(yT), minEl].join('|');
     if (elevCache.key === key) return elevCache.el;
     const f = el => heightAtDist(shooter, ammo, el, y0, dXZ) - yT;
     let lo = null, hi = null;
     if (arc) {
       for (let el = 85; el >= 20; el -= 0.5) if (f(el) >= 0) { lo = el; hi = el + 0.5; break; }
     } else {
-      for (let el = -6; el <= 45; el += 0.25) if (f(el) >= 0) { hi = el; lo = el - 0.25; break; }
+      for (let el = minEl; el <= 45; el += 0.25) if (f(el) >= 0) { hi = el; lo = el - 0.25; break; }
     }
     let el = arc ? 45 : 0;
     if (lo !== null) {
@@ -1301,7 +1486,7 @@
     }
     state.predictedRange = null;
     // Hố sâu / hồ nước dưới mặt đất: bắn thẳng phải tới gần để góc đạn đủ dốc vượt qua mép bờ
-    if ((state.target === 'PIT' || state.target === 'POND') && sel.path !== 'arc') return 150;
+    if ((state.target === 'PIT' || state.target === 'POND') && sel.path !== 'arc') return HOLE_SPEC[state.target].R * 0.55 + (state.target === 'PIT' ? 16 : 30);
     if (sel.path === 'arc') return Math.max(LAUNCH_DIST.arc, Math.min(7000, rangeAt(shooter, ammo, 55, 14)));
     return LAUNCH_DIST[sel.path];
   }
@@ -1322,8 +1507,8 @@
       : state.target === 'BERM' ? new THREE.Vector3(0, bermH * 0.6, 0)
       : state.target === 'TREES' ? new THREE.Vector3(0, 14, 0)
       : state.target === 'BUNKER' ? LAUNCH_DIR.clone().multiplyScalar(40).setY(14)
-      : state.target === 'PIT' ? new THREE.Vector3(0, -18, 0)
-      : state.target === 'POND' ? new THREE.Vector3(0, -3.5, 0) : new THREE.Vector3(0, 0, 0);
+      : state.target === 'PIT' ? (state.sel.path === 'arc' ? new THREE.Vector3(0, -40, 0) : LAUNCH_DIR.clone().multiplyScalar(-HOLE_SPEC.PIT.R * 0.25).setY(-20))   // bắn thẳng: trúng vách xa
+      : state.target === 'POND' ? new THREE.Vector3(0, HOLE_SPEC.POND.waterY, 0) : new THREE.Vector3(0, 0, 0);
     if (rapid) {
       const spread = state.target === 'VEHICLE' ? 12 : 20;
       p.add(new THREE.Vector3((Math.random() - 0.5) * spread, (Math.random() - 0.5) * (spread * 0.45), (Math.random() - 0.5) * spread));
@@ -1391,7 +1576,7 @@
       const o = h.object;
       if (!o.visible || o.userData.isFxDecal || o === targetTank.hpBarMesh || o === targetTank.hpBgMesh || o === targetTank.reactiveArmorMesh) continue;
       // Mặt đất phẳng trong vòng hố đã khoét: đạn đi tiếp xuống lòng hố / mặt nước
-      if (o === ground && holesActive.some(p => Math.hypot(h.point.x - p.x, h.point.z - p.z) < p.r * 0.85)) continue;
+      if (o === ground && holesActive.some(p => inHoleCut(p, h.point.x, h.point.z))) continue;
       if (o === ground && EX.berm && EX.berm.mesh.visible && EX.berm.holes.some(p => Math.hypot(h.point.x - p.x, h.point.z - p.z) < p.r * 0.85)) continue;
       if (o.userData.isWater) return { point: h.point.clone(), normal: new THREE.Vector3(0, 1, 0), object: null, unit: null, hitType: 'WATER' };
       const mt = Array.isArray(o.material) ? o.material[0] : o.material;
@@ -1626,7 +1811,7 @@
     void dx; void dy; void dz;
 
     // Góc nâng hạ nòng pháo bám sát góc đường đạn thực tế
-    u.targetElev = state.manualElev !== null && state.manualElev !== undefined ? state.manualElev * Math.PI / 180 : Math.max(-0.1, Math.min(1.5, targetElevRad));
+    u.targetElev = state.manualElev !== null && state.manualElev !== undefined ? state.manualElev * Math.PI / 180 : Math.max(Math.min(-0.1, (depressMin() + 0.3) * Math.PI / 180), Math.min(1.5, targetElevRad));
     if (u.barrelPivot) {
       u.barrelPivot.rotation.x = u.targetElev;
       u.elevation = (u.barrelPivot.rotation.x * 180) / Math.PI;
@@ -1786,6 +1971,9 @@
     document.querySelectorAll('.cfg').forEach(el => { el.style.display = el.dataset.for === v ? '' : 'none'; });
     showExtra(v);
     updateHpLabel();
+    // hố sâu / hồ nước: xe bắn thẳng phải tới sát mép mới bắn được xuống lòng hố
+    placeLauncher();
+    if (state.cam === 'wide' || state.cam === 'launcher') camPreset(state.cam);
   });
   document.querySelectorAll('.cfg').forEach(el => { el.style.display = el.dataset.for === state.target ? '' : 'none'; });
   radio('mapRow', 'map', v => { state.map = v; terrain.mapType = v; groundMat.color.setHex(GROUND_COL[v]); });
@@ -1853,6 +2041,7 @@
     building.update(dt);
     if (EX.trees) EX.trees.tf.update(dt, fx);
     updateRipples(dt);
+    if (EX.pond && EX.pond.water) EX.pond.water.material.uniforms.uTime.value += dt;
     if (typeof VehicleDamage !== 'undefined') {
       VehicleDamage.update(dt, [targetTank]);
       if (typeof CamoFire !== 'undefined') CamoFire.update(dt, { units: [targetTank], fx });
