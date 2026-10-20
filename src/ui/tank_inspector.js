@@ -306,7 +306,8 @@ class TankInspector {
                 <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>G</kbd> thả khói</span><span><i class="ti ti-mouse" aria-hidden="true"></i> kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
               </div>
               <div class="ti-toast" id="ti-toast" role="status"></div>
-              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><a class="ti-lab-link" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng xem mọi loại đạn bay & nổ"><i class="ti ti-flask" aria-hidden="true"></i> PHÒNG THỬ ĐẠN ↗</a><button id="ti-wall-reset-btn" class="ti-lab-link ti-wall-btn" title="Tường tự dựng lại sau 5 giây không trúng đạn"><i class="ti ti-wall" aria-hidden="true"></i> DỰNG LẠI TƯỜNG</button></div>
+              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><a class="ti-lab-link" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng xem mọi loại đạn bay & nổ"><i class="ti ti-flask" aria-hidden="true"></i> PHÒNG THỬ ĐẠN ↗</a><button id="ti-wall-reset-btn" class="ti-lab-link ti-wall-btn" title="Tường tự dựng lại sau 5 giây không trúng đạn"><i class="ti ti-wall" aria-hidden="true"></i> DỰNG LẠI TƯỜNG</button><button id="ti-range-enter" class="ti-range-enter" title="Mở trường bắn toàn màn hình: chọn địa hình (đồi dốc, lội nước, sa mạc, rừng & vật cản), lái thử, bắn thử với bộ trang bị đang lắp"><i class="ti ti-target-arrow" aria-hidden="true"></i> VÀO TRƯỜNG BẮN</button></div>
+              <div class="ti-range-head"><button id="ti-range-exit" class="ti-range-exit" title="Về màn thông tin xe [ESC]"><i class="ti ti-chevron-left" aria-hidden="true"></i> THOÁT</button><div class="ti-range-title"><b>TRƯỜNG BẮN</b><span id="ti-range-tank"></span></div></div>
             </div>
             <div class="ti-equip-dock" id="ti-equip-dock" aria-label="Chọn trang bị"></div>
           </section>
@@ -741,19 +742,48 @@ class TankInspector {
   ensureField() {
     if (this.field || !this.scene || typeof ProvingGround === 'undefined') return this.field || null;
     this.field = new ProvingGround.Field(this.scene);
-    let id = 'flat';
-    try { id = localStorage.getItem('ti-range') || 'flat'; } catch (e) { /* bỏ qua */ }
-    if (!ProvingGround.PRESETS[id]) id = 'flat';
-    try { this.field.build(id); } catch (e) { console.warn('[Sân thử] Lỗi dựng bãi', id, e); this.field.build('flat'); }
+    this.field.build(this.rangeMode ? this.savedRange() : 'flat');   // màn thông tin xe: luôn bãi phẳng + tường thử
     this.renderRangeBar();
     return this.field;
   }
 
+  savedRange() {
+    let id = 'hills';
+    try { id = localStorage.getItem('ti-range') || 'hills'; } catch (e) { /* bỏ qua */ }
+    return ProvingGround.PRESETS[id] ? id : 'hills';
+  }
+
+  // TRƯỜNG BẮN: màn riêng toàn màn hình (ẩn thông tin xe + dải trang bị), chọn địa hình, lái / bắn / thả khói
+  // với đúng xe + bộ trang bị đang lắp. Thoát (nút / Esc) -> về màn thông tin xe, bãi phẳng như cũ.
+  enterRangeMode() {
+    if (this.rangeMode || !this.isOpen) return;
+    const overlay = document.getElementById('tank-inspector-overlay');
+    if (!overlay) return;
+    this.rangeMode = true;
+    overlay.classList.add('ti-range-mode');
+    const nm = document.getElementById('ti-tank-name'), tk = document.getElementById('ti-range-tank');
+    if (tk) tk.textContent = nm ? nm.textContent : '';
+    if (this.autoRotate) { this.autoRotate = false; this.syncAutoRotateBtn(); }
+    this.cameraDistance = 200; this.cameraPitch = 0.42;
+    this.setRange(this.savedRange());
+  }
+
+  exitRangeMode(opts = {}) {
+    if (!this.rangeMode) return;
+    this.rangeMode = false;
+    const overlay = document.getElementById('tank-inspector-overlay');
+    if (overlay) overlay.classList.remove('ti-range-mode');
+    const ro = document.getElementById('ti-range-readout');
+    if (ro) { ro.innerHTML = ''; this._roHtml = ''; }
+    if (!opts.closing) this.setRange('flat', { silent: true });
+    else if (this.field && this.field.id !== 'flat') { this.clearTestImpacts(); if (this.smoke) this.smoke.clear(); this.field.build('flat'); if (this.testWall) this.resetTestWall(); }
+  }
+
   // Đổi bãi thử: dựng lại mặt đất + vật thể, dọn hố / vết đạn / khói / vệt xích cũ, đưa xe về bệ
-  setRange(id) {
+  setRange(id, opts = {}) {
     if (!this.field) this.ensureField();
     if (!this.field || !ProvingGround.PRESETS[id]) return;
-    try { localStorage.setItem('ti-range', id); } catch (e) { /* bỏ qua */ }
+    if (this.rangeMode) { try { localStorage.setItem('ti-range', id); } catch (e) { /* bỏ qua */ } }
     this.clearTestImpacts();
     if (this.smoke) this.smoke.clear();
     if (this.activeUnit && typeof TireTracks !== 'undefined') TireTracks.clear(this.activeUnit);
@@ -763,7 +793,7 @@ class TankInspector {
     this.loadTankModel(this.currentTankType, this.currentTeam);
     this.renderRangeBar();
     const P = ProvingGround.PRESETS[this.field.id];
-    this.toast(`<i class="ti ti-${P.icon}"></i> Bãi thử: <b>${P.name}</b> — ${P.desc}`);
+    if (!opts.silent) this.toast(`<i class="ti ti-${P.icon}"></i> Bãi thử: <b>${P.name}</b> — ${P.desc}`);
   }
 
   renderRangeBar() {
@@ -791,7 +821,7 @@ class TankInspector {
     if (this._roT < 0.15) return;
     this._roT = 0;
     const el = document.getElementById('ti-range-readout'), u = this.activeUnit, F = this.field;
-    if (!el || !u || !F) return;
+    if (!el || !u || !F || !this.rangeMode) return;
     const info = F.infoAt(u.x, u.z);
     const slope = Math.round(Math.atan(F.slopeAt(u.x, u.z)) * 180 / Math.PI);
     const v = Math.abs(u.speed || 0) * ((u.waterDepth || 0) > 0.6 ? (u._groundMult || 1) : 1);
@@ -1247,6 +1277,7 @@ class TankInspector {
     if (overlay) {
       overlay.classList.add('hidden');
     }
+    this.exitRangeMode({ closing: true });
     this.stopTestFire();
     this.keys = {};
     this.stopTestSound();
@@ -1345,6 +1376,9 @@ class TankInspector {
     }, true);
     const wallBtn = document.getElementById('ti-wall-reset-btn');
     if (wallBtn) wallBtn.addEventListener('click', () => this.resetTestWall());
+    const rIn = document.getElementById('ti-range-enter'), rOut = document.getElementById('ti-range-exit');
+    if (rIn) rIn.addEventListener('click', () => { rIn.blur(); this.enterRangeMode(); });
+    if (rOut) rOut.addEventListener('click', () => { rOut.blur(); this.exitRangeMode(); });
 
     // Nút bật/tắt tự động xoay
     const autoRotateToggle = document.getElementById('ti-autorotate-toggle');
@@ -1464,7 +1498,8 @@ class TankInspector {
     // Phím tắt bàn phím: ESC hoặc phím I để mở/đóng
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.isOpen) {
-        this.close();
+        if (this.rangeMode) this.exitRangeMode();
+        else this.close();
       } else if ((e.key === 'i' || e.key === 'I') && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
         if (this.isOpen) {
           this.close();

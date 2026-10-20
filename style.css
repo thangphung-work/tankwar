@@ -1258,7 +1258,6 @@ body, html {
 .ti-range-chip:focus-visible { outline: 2px solid var(--tc-accent-2); outline-offset: 1px; }
 /* Mặt đất dưới xe / độ dốc / độ sâu nước / tốc độ */
 .ti-range-readout { max-width: 100%; padding: 5px 10px; font: 600 11px var(--font-tech); letter-spacing: .4px; color: var(--tc-dim); background: rgba(12, 16, 15, 0.55); border: 1px solid var(--tc-line); pointer-events: none; }
-.ti-range-readout:empty { display: none; }
 .ti-range-readout b { color: var(--tc-text); }
 .ti-range-readout small { color: var(--tc-dim); font-size: 10px; }
 .ti-range-warn { margin-top: 3px; color: #f0a54a; font-weight: 700; }
@@ -1266,6 +1265,23 @@ body, html {
 .ti-toast { position: absolute; left: 50%; top: 58px; z-index: 7; transform: translate(-50%, -6px); max-width: min(560px, calc(100% - 36px)); padding: 8px 14px; font: 600 12px var(--font-tech); line-height: 1.4; color: var(--tc-text); text-align: center; background: rgba(12, 16, 15, 0.86); border: 1px solid var(--tc-accent); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
 .ti-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .ti-toast b { color: var(--tc-accent-2); }
+/* Nút vào trường bắn (màn thông tin xe) */
+.ti-range-enter { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 12px; cursor: pointer; color: var(--tc-bg); font: 700 11px var(--font-tech); letter-spacing: 1px; background: var(--tc-accent); border: 1px solid var(--tc-accent); clip-path: none; }
+.ti-range-enter:hover { background: var(--tc-accent-2); border-color: var(--tc-accent-2); }
+/* Đầu trang trường bắn: nút thoát + tên xe (góc trên trái) */
+.ti-range-head { position: absolute; top: 14px; left: 18px; z-index: 7; align-items: stretch; gap: 0; height: 30px; }
+.ti-range-exit { display: inline-flex; align-items: center; gap: 4px; padding: 0 12px; cursor: pointer; color: var(--tc-text); font: 700 11px var(--font-tech); letter-spacing: 1px; background: var(--tc-panel-2); border: 1px solid var(--tc-line-2); clip-path: none; }
+.ti-range-exit:hover { color: var(--tc-bright); border-color: var(--tc-dim); }
+.ti-range-title { display: flex; align-items: center; gap: 10px; padding: 0 12px; font: 600 11px var(--font-tech); letter-spacing: 1px; color: var(--tc-dim); background: rgba(12, 16, 15, 0.6); border: 1px solid var(--tc-line); border-left-width: 0; }
+.ti-range-title b { color: var(--tc-accent); letter-spacing: 2px; }
+/* Ngoài trường bắn: ẩn thanh chọn bãi, ô thông tin mặt đất, đầu trang trường bắn */
+.ti-range-head, .ti-range-bar, .ti-range-readout { display: none; }
+/* TRƯỜNG BẮN: khung 3D chiếm trọn màn hình */
+.ti-range-mode .ti-header, .ti-range-mode .ti-spec-panel, .ti-range-mode .ti-equip-dock, .ti-range-mode .ti-range-enter, .ti-range-mode #ti-autorotate-toggle { display: none !important; }
+.ti-range-mode .ti-body { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) !important; }
+.ti-range-mode .ti-range-head { display: flex; }
+.ti-range-mode .ti-range-bar { display: flex; }
+.ti-range-mode .ti-range-readout:not(:empty) { display: block; }
 @media (max-width: 600px) {
   .ti-range-lbl { display: none; }
   .ti-range-chip { padding: 0 8px; }
