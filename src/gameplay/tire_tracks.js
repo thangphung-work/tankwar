@@ -255,7 +255,9 @@ const TireTracks = (() => {
     const fx = -Math.sin(a), fz = -Math.cos(a);
     const sf = surfaceOf(info);
     // Xe đang trượt ở sườn quá dốc / xích đứt bên đó: vệt quét mờ hơn
-    const gAt = terrain.getVehicleGroundAt ? (x, z) => terrain.getVehicleGroundAt(x, z, u._suspY) : (x, z) => terrain.getElevationAt(x, z);
+    // vệt xích in theo mặt nhìn thấy (trong / quanh hố bom là lòng hố & gờ đất, không phải lưới vật lý thô)
+    const gAt = u.inCrater && terrain.vehicleSurfaceAt ? (x, z) => terrain.vehicleSurfaceAt(x, z, u._suspY)
+      : terrain.getVehicleGroundAt ? (x, z) => terrain.getVehicleGroundAt(x, z, u._suspY) : (x, z) => terrain.getElevationAt(x, z);
     u._tt.forEach((L, i) => {
       // vị trí điểm tiếp đất của vệt trong thế giới
       const x = u.x + L.lx * c + L.lz * s;

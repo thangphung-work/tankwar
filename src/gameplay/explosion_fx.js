@@ -1740,7 +1740,18 @@
   // Nhiễu nhanh cho hố nổ: bảng nhiễu giá trị 64x64 tính sẵn (lặp tuần hoàn), nội suy song tuyến — dựng hố hàng chục nghìn
   // điểm ảnh mỗi lần nổ, băm số học từng điểm quá chậm (~0,1-0,3 s / hố)
   const NT = 64, NTILE = new Float32Array(NT * NT);
-  for (let j = 0; j < NT; j++) for (let i = 0; i < NT; i++) NTILE[j * NT + i] = (fbm(i / 8, j / 8, 2, 5) - 0.5) * 1.8 + 0.5;
+  // nhiễu giá trị LẶP KHÍT (lưới bọc vòng theo chu kỳ bảng) -> không có đường nối mỗi 64 đơn vị nhiễu (lộ rõ trên hố lớn)
+  const vnoiseP = (x, y, seed, P) => {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const x0 = ((xi % P) + P) % P, y0 = ((yi % P) + P) % P, x1 = (x0 + 1) % P, y1 = (y0 + 1) % P;
+    const a = hash2(x0, y0, seed), b = hash2(x1, y0, seed), c = hash2(x0, y1, seed), d = hash2(x1, y1, seed);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+  for (let j = 0; j < NT; j++) for (let i = 0; i < NT; i++) {
+    const f = (vnoiseP(i / 8, j / 8, 5, 8) * 0.5 + vnoiseP(i / 4, j / 4, 22, 16) * 0.25) / 0.75;
+    NTILE[j * NT + i] = (f - 0.5) * 1.8 + 0.5;
+  }
   const tnoise = (x, y) => {
     const xf = x - Math.floor(x), yf = y - Math.floor(y);
     const xi = Math.floor(x) & (NT - 1), yi = Math.floor(y) & (NT - 1), x1 = (xi + 1) & (NT - 1), y1 = (yi + 1) & (NT - 1);
@@ -5777,7 +5788,9 @@
         rimH: d * (kind === 'heat' ? 0.16 : kind === 'cluster' ? 0.22 : kind === 'gouge' ? 0.4 : 0.3) * (custom && opts.persistent ? 0.6 : 1),
         jet: kind === 'heat' ? spec.jet * (0.4 + 0.6 * sinT) : 0,
         seed: (Math.floor(Math.abs(x * 13.37 + z * 7.13)) % 997) + 1,
-        frag: kind === 'blast' && !custom ? 1 : kind === 'cluster' ? 0.5 : 0
+        frag: kind === 'blast' && !custom ? 1 : kind === 'cluster' ? 0.5 : 0,
+        // độ "thô" của hố: rãnh xói, vách sụt, đáy gồ ghề, gờ vón cục, lớp đất phân tầng, vết nứt (0 = chảo trơn)
+        rough: opts.rough !== undefined ? opts.rough : kind === 'gouge' ? 0.3 : 0.55
       };
       // Nổ trùng / sát hố cũ: gộp vào cụm đó (một hoặc nhiều cụm), dựng lại cả cụm theo thứ tự các phát nổ
       let blasts = [blast];
@@ -5785,7 +5798,8 @@
         for (let i = this.craters.length - 1; i >= 0; i--) {
           const c = this.craters[i];
           if (c.persistent || !c.blasts) continue;
-          const near = c.blasts.some(b => Math.hypot(b.x - x, b.z - z) < (b.A + blast.A) * 1.15);
+          // gờ hố rộng tới ~1,35 bán kính: hai hố gần hơn thế mà không gộp thì gờ / lòng hố đè nhau, lộ đường nối
+          const near = c.blasts.some(b => Math.hypot(b.x - x, b.z - z) < (b.A + blast.A) * 1.45);
           if (!near) continue;
           blasts = c.blasts.concat(blasts);
           this.removeDecal(this.craters, i, true);   // cụm mới dựng lại ngay, báo mặt đất đổi một lần
@@ -5826,15 +5840,15 @@
       const fromG = (u, v) => [cx + u * gc - v * gs, cz + u * gs + v * gc];
       const maxRa = Math.max(...blasts.map(b => b.ra));
       // ô lưới mỗi cạnh. Rãnh cày AP hẹp & sâu: lưới mịn hơn
-      const M = lastGouge ? 96 : maxRa > 8 ? 84 : maxRa > 4 ? 64 : 48;
-      const TS = maxRa > 8 ? 192 : maxRa > 4 ? 144 : 112;         // điểm ảnh texture mỗi cạnh (~1 điểm ảnh / 5-8 cm)
+      const M = opts.gridN || (lastGouge ? 96 : maxRa > 8 ? 84 : maxRa > 4 ? 64 : 48);
+      const TS = opts.texSize || (maxRa > 8 ? 192 : maxRa > 4 ? 144 : 112);         // điểm ảnh texture mỗi cạnh (~1 điểm ảnh / 5-8 cm)
 
       // ---- hàm đánh giá một phát nổ tại (x,z): trả về phần khoét (≤ 0) và phần đắp (≥ 0) + thông tin tô màu ----
       const evalBlast = (b, px, pz, out) => {
         const bx = b.x + b.fx * b.shift, bz = b.z + b.fz * b.shift;
         const dx = px - bx, dz = pz - bz;
         out.jet = 0;
-        if (dx * dx + dz * dz > b._far) { out.exc = 0; out.dep = 0; out.rho = 9; out.ca = 0; out.ej = 0; out.scorch = 0; return out; }
+        if (dx * dx + dz * dz > b._far) { out.exc = 0; out.dep = 0; out.rho = 9; out.ca = 0; out.ej = 0; out.scorch = 0; out.gul = 0; out.fan = 0; out.talus = 0; out.wall = 0; return out; }
         const a = dx * b.fx + dz * b.fz, l = -dx * b.fz + dz * b.fx;
         const an = a / (b.A * (a > 0 ? 1.12 : 0.88)), bn = l / b.B;
         let rho = Math.hypot(an, bn);
@@ -5852,6 +5866,34 @@
         let exc = 0;
         // rãnh cày AP: vách bo tròn vào mép (dốc về 0 ở mép) — rãnh hẹp & sâu, gãy dốc đột ngột ở mép thành răng cưa trên lưới
         if (rho < 1) exc = b.kind === 'gouge' ? -b.d * Math.pow(1 - rho * rho, 1.3) : -b.d * (1 - rho * rho * Math.pow(rho, 0.2));
+        let rimK = 1, rough = 0;
+        out.gul = 0; out.fan = 0; out.talus = 0; out.wall = 0;
+        if (b.rough && rho < 1.6) {
+          const R = b.rough;
+          // rãnh xói dọc vách: đất cát tuột theo những khe hẹp từ miệng xuống lưng chừng vách, đẩy thành quạt cát ở chân rãnh
+          let gf = (Math.atan2(sa, ca) / 6.2832 + 0.5) * 256, gi = Math.floor(gf);
+          gf -= gi; gi &= 255;
+          const g = b.gul[gi] + (b.gul[gi + 1] - b.gul[gi]) * gf, lo = b.gll[gi];
+          const m = smooth(lo, lo + 0.18, rho) * (1 - smooth(1.02, 1.16, rho));
+          const fan = g * Math.exp(-Math.pow((rho - lo + 0.06) / 0.11, 2));
+          if (rho < 1) exc -= g * m * b.d * 0.13 * R;
+          else rimK = 1 - g * m * 0.75 * R;
+          // khối vách sụt thành bậc / gờ lưng chừng vách ở vài đoạn
+          const sl = b.slm[ai] + (b.slm[ai + 1] - b.slm[ai]) * af;
+          if (rho < 1) {
+            exc += fan * b.d * 0.07 * R + sl * b.d * 0.1 * R * Math.exp(-Math.pow((rho - 0.64) / 0.1, 2));
+            // đáy hố gồ ghề: đất đá tuột xuống, cục đất vỡ
+            const hn = tnoise(px * b._hn + b.seed * 1.3, pz * b._hn - b.seed) - 0.5;
+            exc += hn * b.d * 0.09 * R * (1 - smooth(0.45, 0.8, rho));
+            exc = Math.min(exc, -0.02);
+          }
+          // gờ đất vón thành khối, không phải một vành đều
+          const rn = tnoise(px * b._rn - b.seed * 0.7, pz * b._rn + b.seed * 2.1) - 0.5;
+          rough = rn * b.rimH * 0.7 * R * Math.exp(-Math.pow((rho - 1.12) / 0.22, 2));
+          out.gul = g * m; out.fan = fan * (rho < 1 ? 1 : 0);
+          out.talus = Math.exp(-Math.pow((rho - 0.42) / 0.14, 2));
+          out.wall = smooth(0.38, 0.62, rho) * (1 - smooth(0.98, 1.08, rho));
+        }
         if (b.jet) {
           // lỗ luồng phụt: hẹp, sâu, kéo dài theo hướng bay khi bắn xiên
           const ja = ((px - b.x) * b.fx + (pz - b.z) * b.fz) / (b.ra * 0.2 * (1 + 2.2 * shallow));
@@ -5863,11 +5905,11 @@
         // rãnh cày AP hẹp: tính theo bán trục ngang (nhỏ) nên gờ phải rộng hơn theo rho, không thì thành sống đất sắc lẹm
         // (rộng chưa tới một ô lưới) -> vách rãnh răng cưa
         const rimW = b.kind === 'gouge' ? 1.9 : 1;
-        const rim = b.rimH * dirB * Math.exp(-Math.pow((rho - 1.02) / ((rho < 1.02 ? 0.24 : 0.48) * rimW), 2));
+        const rim = rimK * b.rimH * dirB * Math.exp(-Math.pow((rho - 1.02) / ((rho < 1.02 ? 0.24 : 0.48) * rimW), 2));
         const blanket = rho > 1 ? b.rimH * 0.35 * dirE * ray * Math.exp(-(rho - 1) / 1.1) : 0;
-        const lump = (tnoise(px * 0.4 + b.seed, pz * 0.4) - 0.5) * b.d * 0.22 * Math.exp(-(rho - 1.05) * (rho - 1.05) * 4);
+        const lump = (tnoise(px * b._ln + b.seed, pz * b._ln) - 0.5) * b.d * 0.22 * Math.exp(-(rho - 1.05) * (rho - 1.05) * 4);
         out.exc = exc;
-        out.dep = rim + blanket + lump;
+        out.dep = Math.max(0, rim + blanket + lump + rough);
         out.rho = rho; out.ca = ca;
         // tan hẳn trước biên vùng tính (~3,9 bán kính hố phía trước): bắn xiên đất văng dồn mạnh về trước, không tắt dần thì bị
         // cắt cụt ở biên thành mảng đất mép sắc như miếng dán
@@ -5877,12 +5919,39 @@
       };
       for (const b of blasts) {
         b._far = Math.pow(Math.max(b.A, b.B) * 4.3 + b.shift, 2);
+        b._ln = 0.4 / Math.max(1, b.ra / 12);   // cục đất gồ trên gờ to theo cỡ hố (hố lớn không lởm chởm gai nhọn)
+        b._hn = 32 / Math.max(4, b.ra);          // đáy gồ ghề: mảng ~1/4 bán kính hố
+        b._rn = 55 / Math.max(4, b.ra);          // gờ vón cục: khối ~1/7 bán kính hố
+        if (b.rough === undefined) b.rough = 0.55;
+        if (!b.gul) {
+          // bảng rãnh xói theo góc (256 ô): vài khe hẹp ngẫu nhiên, mỗi khe một bề rộng / độ dài; bảng vách sụt (64 ô)
+          b.gul = new Float32Array(257); b.gll = new Float32Array(257).fill(0.5); b.slm = new Float32Array(65);
+          const rnd = (k) => hash2(k, b.seed, 61);
+          const n = Math.round(7 + 9 * b.rough + rnd(1) * 5);
+          for (let q = 0; q < n; q++) {
+            const c = rnd(q * 5 + 10) * 256, w = 1.2 + rnd(q * 5 + 11) * 3.2, dep = 0.45 + rnd(q * 5 + 12) * 0.55, lo = 0.3 + rnd(q * 5 + 13) * 0.4;
+            for (let k = Math.floor(c - w * 2); k <= Math.ceil(c + w * 2); k++) {
+              const kk = ((k % 256) + 256) % 256, v = dep * Math.max(0, 1 - Math.pow((k - c) / w, 2));
+              if (v > b.gul[kk]) { b.gul[kk] = v; b.gll[kk] = lo; }
+            }
+          }
+          b.gul[256] = b.gul[0]; b.gll[256] = b.gll[0];
+          for (let k = 0; k <= 64; k++) {
+            const an = (k / 64 - 0.5) * 6.2832;
+            b.slm[k] = smooth(0.58, 0.8, cnoise(Math.cos(an) * 2.4 + b.seed * 1.9, Math.sin(an) * 2.4 + 5, b.seed + 21));
+          }
+        }
         if (b.wob) continue;
         b.wob = new Float32Array(65); b.ray = new Float32Array(65);
         for (let k = 0; k <= 64; k++) {
           const an = (k / 64 - 0.5) * 6.2832, ca = Math.cos(an), sa = Math.sin(an);
-          b.wob[k] = (cnoise(ca * 1.7 + b.seed, sa * 1.7, b.seed) - 0.5) * 0.24 + (cnoise(ca * 4.5 + b.seed, sa * 4.5 + 3, b.seed + 5) - 0.5) * 0.1;
-          b.ray[k] = 0.35 + 0.9 * Math.pow(clamp01(cnoise(ca * 3.2 + b.seed * 0.7, sa * 3.2 + 11, b.seed + 9)), 1.6);
+          const R = b.rough || 0;
+          // mép hố méo: thêm sóng góc tần số cao khi hố "thô" (miệng hố khấc, lẹm chỗ vách sụt)
+          b.wob[k] = (cnoise(ca * 1.7 + b.seed, sa * 1.7, b.seed) - 0.5) * 0.24 * (1 + 0.5 * R) + (cnoise(ca * 4.5 + b.seed, sa * 4.5 + 3, b.seed + 5) - 0.5) * 0.1 * (1 + R)
+            + (cnoise(ca * 9 + b.seed * 0.3, sa * 9 - 7, b.seed + 13) - 0.5) * 0.07 * R;
+          // tia đất văng: thêm các vệt tia hẹp toả ra (hố thô)
+          const streak = Math.pow(clamp01(cnoise(ca * 11 + b.seed * 1.1, sa * 11 + 4, b.seed + 17)), 2.2);
+          b.ray[k] = (0.35 + 0.9 * Math.pow(clamp01(cnoise(ca * 3.2 + b.seed * 0.7, sa * 3.2 + 11, b.seed + 9)), 1.6)) * (1 - 0.35 * R + 1.1 * R * streak);
         }
       }
       // độ cao tại tâm từng phát ngay trước khi nó nổ (nổ vào đáy hố cũ khoét tiếp từ đó)
@@ -5907,7 +5976,7 @@
       // ---- một lượt tính đầy đủ cho mỗi điểm: độ cao + các lớp màu ----
       const o = { exc: 0, dep: 0, rho: 0, ca: 0, ej: 0, scorch: 0, jet: 0 };
       const sample = (px, pz, res) => {
-        let H = 0, ej = 0, scorch = 0, jet = 0, fresh = 0, inBowl = 0;
+        let H = 0, ej = 0, scorch = 0, jet = 0, fresh = 0, inBowl = 0, gul = 0, fan = 0, talus = 0, wall = 0;
         for (let i = 0; i < blasts.length; i++) {
           const b = blasts[i];
           o.jet = 0;
@@ -5916,13 +5985,16 @@
             const Hc = b._hc + o.exc * b._k;
             if (Hc < H) { H = Hc; fresh = 1; ej *= 0.2; }   // mặt vừa bị khoét: đất cái mới lộ ra, lớp đất văng cũ bị hất đi
             inBowl = Math.max(inBowl, 1 - o.rho);
+            fan = Math.max(fan, o.fan); talus = Math.max(talus, o.talus); wall = Math.max(wall, o.wall);
           }
+          gul = Math.max(gul, o.gul);
           H += o.dep;
           ej = ej + o.ej * (1 - ej * 0.5);
           scorch = Math.max(scorch, o.scorch * (1 - inBowl * 0.2));
           jet = Math.max(jet, o.jet);
         }
         res.H = H; res.ej = ej; res.scorch = scorch; res.jet = jet; res.fresh = fresh; res.inBowl = inBowl;
+        res.gul = gul; res.fan = fan; res.talus = talus; res.wall = wall;
         return res;
       };
 
@@ -6019,11 +6091,27 @@
       const sub = [P.soil[0] * 0.7 + P.dark[0] * 0.3, P.soil[1] * 0.7 + P.dark[1] * 0.3, P.soil[2] * 0.7 + P.dark[2] * 0.3];
       const soot = [0.15, 0.13, 0.11];
       const r1 = {};
+      // mảng loang (đất vón, muội, tia đất văng thưa) to theo cỡ hố: hố lớn mà giữ cỡ mảng của hố nhỏ thì hoa văn lặp dày đặc
+      const nsc = Math.max(1, maxRa / 12);
+      const Rr = Math.max(...blasts.map(b => b.rough || 0));
+      // lớp đất phân tầng lộ trên vách hố (độ sâu thật dưới mặt đất, 8 đơn vị = 1 m): cát mặt sáng, đất thịt nâu đỏ,
+      // vỉa vôi / đá ong nhạt, sét chặt sẫm...
+      const LAY = [[0, [1.13, 1.1, 1.04]], [2.2, [0.97, 0.83, 0.7]], [5.4, [1.2, 1.16, 1.08]], [6.4, [0.86, 0.77, 0.68]],
+        [12, [1.1, 1.05, 0.97]], [13, [0.8, 0.74, 0.69]], [21, [0.93, 0.87, 0.79]], [29, [0.74, 0.7, 0.66]]];
+      const layTint = (z, out) => {
+        let k = 0;
+        while (k < LAY.length - 1 && z > LAY[k + 1][0]) k++;
+        const c0 = LAY[k][1], nx = LAY[k + 1];
+        const t = nx ? smooth(nx[0] - 0.5, nx[0] + 0.5, z) : 0, c1 = nx ? nx[1] : c0;
+        out[0] = c0[0] + (c1[0] - c0[0]) * t; out[1] = c0[1] + (c1[1] - c0[1]) * t; out[2] = c0[2] + (c1[2] - c0[2]) * t;
+        return out;
+      };
+      const tint = [1, 1, 1];
       for (let j = 0; j < TS; j++) for (let i = 0; i < TS; i++) {
         const [px, pz] = fromG(ox + S * (i + 0.5) / TS, oz + S * (j + 0.5) / TS);
         sample(px, pz, r1);
         const grain = 0.86 + 0.28 * cnoise(px * 1.9, pz * 1.9, 3) + (cnoise(px * 6, pz * 6, 4) - 0.5) * 0.14;
-        const clump = cnoise(px * 0.7, pz * 0.7, 6);
+        const clump = cnoise(px * 0.7 / nsc, pz * 0.7 / nsc, 6);
         // đất cái mới lộ / mới văng: sẫm & ẩm hơn mặt đất (lớp mặt khô bạc màu bị hất đi)
         let r = sub[0] * grain, g = sub[1] * grain, b = sub[2] * grain;
         // lòng hố: càng sâu càng ẩm tối (không đen kịt — ánh trời vẫn chiếu xuống đáy)
@@ -6035,13 +6123,25 @@
         const thin = r1.fresh ? 0 : clamp01(1 - r1.ej * 1.4);
         r += (P.dust[0] - r) * thin * 0.12; g += (P.dust[1] - g) * thin * 0.12; b += (P.dust[2] - b) * thin * 0.12;
         // muội thuốc nổ loang lổ quanh tâm nổ, đặc nhất ở miệng lỗ luồng phụt
-        const sk = clamp01(r1.scorch * (0.55 + 0.9 * cnoise(px * 0.9 + 7, pz * 0.9, 8)) + r1.jet * 0.75);
+        const sk = clamp01(r1.scorch * (0.55 + 0.9 * cnoise(px * 0.9 / nsc + 7, pz * 0.9 / nsc, 8)) + r1.jet * 0.75);
         r += (soot[0] - r) * sk; g += (soot[1] - g) * sk; b += (soot[2] - b) * sk;
+        if (Rr > 0 && r1.H < 0) {
+          // vách: các lớp đất phân tầng, ranh giới lượn sóng
+          const wz = -r1.H + (tnoise(px * 0.25 + 11, pz * 0.25) - 0.5) * 2.6 + (tnoise(px * 1.1, pz * 1.1 - 5) - 0.5) * 0.8;
+          layTint(wz, tint);
+          const w = r1.wall * Rr * 0.8 * (1 - sk);
+          r *= 1 + (tint[0] - 1) * w; g *= 1 + (tint[1] - 1) * w; b *= 1 + (tint[2] - 1) * w;
+          // rãnh xói sẫm & ẩm; quạt cát tơi sáng ở chân rãnh và vành cát tuột quanh chân vách
+          const gk = 1 - 0.2 * r1.gul * Rr;
+          r *= gk; g *= gk; b *= gk;
+          const sand = clamp01(r1.fan * 0.32 + r1.talus * 0.2 * (0.4 + 0.9 * cnoise(px * 0.8 + 3, pz * 0.8, 15))) * Rr * (1 - sk);
+          r += (P.dust[0] * 0.92 - r) * sand; g += (P.dust[1] * 0.92 - g) * sand; b += (P.dust[2] * 0.92 - b) * sand;
+        }
         // cục đất vón: điểm sáng tối lấm tấm
-        const v = clump > 0.72 ? 1.12 : clump < 0.24 ? 0.86 : 1;
+        const v = 1 + 0.12 * smooth(0.66, 0.78, clump) - 0.14 * (1 - smooth(0.18, 0.3, clump));
         // độ trong: lòng hố & gờ đặc; đất văng thưa dần theo tia ra ngoài, mép lưới tan hẳn vào mặt đất
         // gờ đất đắp dày -> đặc (gờ nửa trong suốt để lộ mặt đất bên dưới trông như vách giấy)
-        let alpha = r1.inBowl > 0 || r1.fresh ? 1 : clamp01((r1.ej - 0.1 - (cnoise(px * 0.55 + 3, pz * 0.55, 12) - 0.5) * 0.5) * 2.4);
+        let alpha = r1.inBowl > 0 || r1.fresh ? 1 : clamp01((r1.ej - 0.1 - (cnoise(px * 0.55 / nsc + 3, pz * 0.55 / nsc, 12) - 0.5) * 0.5) * 2.4);
         alpha = Math.max(alpha, clamp01(sk * 1.6) * 0.85, clamp01((r1.H - 0.3) / 0.3));
         // gần lỗ khoét: chỗ nào lưới hố nhô trên mặt đất phải đặc — nhìn xiên, tia nhìn qua gờ nửa trong suốt chui xuống dưới
         // gờ, gặp chỗ mặt đất đã bị khoét -> lộ trời. Xa lỗ thì đất văng vẫn loang lổ như cũ
@@ -6116,6 +6216,29 @@
           mark(rgb(lt ? P.rock : P.dark, lt ? 0.85 : 1.25), 0.35 + hash2(k, b.seed, 59) * 0.35, (g) => { g.beginPath(); g.arc(px, pz, Math.max(0.6, sz), 0, 6.283); g.fill(); });
         }
       }
+      // Vết nứt căng quanh miệng hố: chấn động làm mặt đất nứt thành những đường gãy khúc vòng quanh gờ, vài vết toả ra
+      for (const b of blasts) {
+        if (!(b.rough > 0) || b.kind === 'gouge') continue;
+        const rnd = (k) => hash2(k, b.seed, 83);
+        const n = Math.round((4 + b.ra * 0.12) * b.rough);
+        for (let k = 0; k < n; k++) {
+          const radial = rnd(k * 9) < 0.3;
+          let ang = rnd(k * 9 + 1) * 6.283, rr = (radial ? 1.05 : 1.15 + rnd(k * 9 + 2) * 0.55);
+          const len = radial ? 0.25 + rnd(k * 9 + 3) * 0.45 : 0.25 + rnd(k * 9 + 3) * 0.6;   // bán kính / radian
+          const steps = 7 + Math.floor(rnd(k * 9 + 4) * 6);
+          const lw = Math.max(0.6, (0.08 + rnd(k * 9 + 6) * 0.12) * pxPerU), pts = [];
+          for (let q = 0; q <= steps; q++) {
+            const jit = (hash2(k * 31 + q, b.seed, 89) - 0.5);
+            const a2 = ang + (radial ? jit * 0.06 : len * q / steps + jit * 0.03);
+            const r2 = (rr + (radial ? len * q / steps : jit * 0.04)) * b.ra;
+            pts.push(toTex(b.x + Math.cos(a2) * r2, b.z + Math.sin(a2) * r2));
+          }
+          mark('38,30,22', 0.22 + rnd(k * 9 + 5) * 0.22, (g) => {
+            g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
+            g.beginPath(); pts.forEach(([tx, tz], q) => q ? g.lineTo(tx, tz) : g.moveTo(tx, tz)); g.stroke();
+          });
+        }
+      }
       const tex = new THREE.CanvasTexture(cvs), texA = new THREE.CanvasTexture(cvsA);
       for (const tx of [tex, texA]) { tx.anisotropy = 4; tx.wrapS = tx.wrapT = THREE.ClampToEdgeWrapping; }
       // Hai lớp vẽ chung lưới & texture: LÕI đặc (lòng hố, gờ, đất văng dày — ghi độ sâu như vật thể đặc) + VIỀN đất văng mỏng
@@ -6184,7 +6307,7 @@
           const ang = fwd ? Math.atan2(b.fz, b.fx) + (Math.random() - 0.5) * 2 : Math.random() * 6.283;
           const rr = b.ra * (Math.random() < 0.25 ? rand(0.2, 0.6) : rand(0.95, 1.8));
           const px = b.x + Math.cos(ang) * rr, pz = b.z + Math.sin(ang) * rr;
-          const sz = b.ra * rand(0.05, 0.14);
+          const sz = Math.min(b.ra * rand(0.05, 0.14), rand(2.2, 4.8));   // cục đất ≤ ~0,6 m dù hố to cỡ nào
           const m = new THREE.Mesh(clodGeo, clodMats[(ci++) % clodMats.length]);
           m.scale.set(sz * rand(0.8, 1.3), sz * rand(0.45, 0.75), sz * rand(0.8, 1.3));
           m.position.set(px - cx, base(px, pz) + Hat(px, pz) + sz * 0.2, pz - cz);
@@ -6194,10 +6317,32 @@
           group.add(m);
         }
       }
+      // Hố thô: cục đất vỡ & đá lẫn trong đất lăn xuống đọng ở chân vách / đáy, đá văng nằm trên gờ
+      const rockMats = (Rr > 0 && P.rock) ? [0.78, 0.6].map(k => new THREE.MeshStandardMaterial({
+        color: new THREE.Color(P.rock[0] * k, P.rock[1] * k, P.rock[2] * k), roughness: 0.95, metalness: 0, flatShading: true
+      })) : [];
+      for (const b of blasts) {
+        if (!(b.rough > 0) || b.kind === 'gouge') continue;
+        const n = Math.round((2 + b.ra * 0.35) * b.rough);
+        for (let k = 0; k < n; k++) {
+          const ang = Math.random() * 6.283, onRim = Math.random() < 0.35;
+          const rr = b.ra * (onRim ? rand(1.0, 1.5) : rand(0.25, 0.6));
+          const px = b.x + Math.cos(ang) * rr, pz = b.z + Math.sin(ang) * rr;
+          const sz = Math.min(b.ra * rand(0.03, 0.1), rand(1.2, onRim ? 4 : 6.5));
+          const isRock = Math.random() < 0.45;
+          const m = new THREE.Mesh(clodGeo, isRock ? rockMats[k % rockMats.length] : clodMats[(ci++) % clodMats.length]);
+          m.scale.set(sz * rand(0.7, 1.4), sz * rand(0.5, 0.95), sz * rand(0.7, 1.4));
+          m.position.set(px - cx, base(px, pz) + Hat(px, pz) + sz * 0.12, pz - cz);   // lún một nửa vào đất
+          m.rotation.set(rand(-0.6, 0.6), rand(0, 6.28), rand(-0.6, 0.6));
+          m.castShadow = sz > 0.6;
+          m.receiveShadow = true;
+          group.add(m);
+        }
+      }
 
       this.scene.add(group);
       const rec = {
-        group, mats: [mat, matF, ...clodMats], geos: [geo], texs: [tex, texA], t: 0,
+        group, mats: [mat, matF, ...clodMats, ...rockMats], geos: [geo], texs: [tex, texA], t: 0,
         life: opts.persistent ? 1e12 : 1e9,          // hố nổ tồn tại suốt trận (cộng dồn), chỉ cũ nhất bị thay khi quá nhiều
         holeSlot: holes[0], holeSlots: holes, persistent: !!opts.persistent, blasts,
         params: { x: blasts[blasts.length - 1].x, z: blasts[blasts.length - 1].z, R: maxRa, effR: maxRa, bowlD: deepest, heavy: blasts.some(b => b.heavy) },
@@ -6243,6 +6388,18 @@
       return rim === null ? g : Math.max(rim, g);
     }
     surfaceAt(x, z) { return this.craterSurfaceAt(x, z, this.groundAt(x, z)); }
+    // Có hố nào (vùng lòng hố + gờ, không tính lớp đất văng mỏng phía xa) chạm hình vuông bán kính r quanh (x, z)
+    cratersNear(x, z, r) {
+      for (let q = 0; q < this.craters.length; q++) {
+        const c = this.craters[q], s = c.surf;
+        if (!s || !c.blasts) continue;
+        for (const b of c.blasts) {
+          const e = Math.max(b.A, b.B) * 1.6 + b.shift + r;
+          if (Math.abs(x - b.x) < e && Math.abs(z - b.z) < e) return true;
+        }
+      }
+      return false;
+    }
     // Báo địa hình: mặt đất trong hình chữ nhật vừa đổi (hố mới / hố bị xoá) -> các hệ vật thể đặt lại độ cao
     groundChanged(x0, z0, x1, z1) {
       const t = this.terrainOf();
