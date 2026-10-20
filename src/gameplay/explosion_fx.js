@@ -601,12 +601,14 @@
     }
 
     // Sóng xung kích quét qua khói / bụi cũ: đẩy bạt ra ngoài, làm loãng & tan nhanh hơn
-    blastPush(x, y, z, R, minAge = 0.2) {
+    // Đẩy khói / bụi trong bán kính R. r0..r1: chỉ đẩy hạt nằm trong vành đó (sóng xung kích gọi mỗi khung
+    // với vành mặt sóng vừa quét qua -> hạt xa bị đẩy muộn hơn, đúng lúc sóng tới)
+    blastPush(x, y, z, R, minAge = 0.2, r0 = 0, r1 = R) {
       for (const p of this.parts) {
         if (p.delay > 0 || p.t < minAge) continue;
         const dx = p.x - x, dy = p.y - y, dz = p.z - z;
         const d = Math.hypot(dx, dy, dz);
-        if (d > R || d < 1e-3) continue;
+        if (d > r1 || d > R || d < 1e-3 || (r0 > 0 && d <= r0)) continue;
         const k = 1 - d / R;
         const disp = R * 0.4 * k;                       // quãng bị đẩy (đơn vị game)
         const sp = disp * Math.max(0.6, p.drag || 0);   // vận tốc cần để lực cản dừng lại đúng quãng đó
@@ -787,15 +789,18 @@
   // ===========================================================================
   // HỒ SƠ VỤ NỔ THEO LOẠI ĐẠN
   // ===========================================================================
+  // charge: khối thuốc nổ (kg) -> cỡ sóng xung kích. Bán kính sóng thấy được ứng với khoảng cách quy đổi
+  // Z = R / W^(1/3) ~ 8 m/kg^(1/3) (áp suất dư ~15 kPa, nổ sát đất): 1,5 kg -> ~9 m, 6,6 kg -> ~15 m
+  const SHOCK_R_PER_KG3 = 8 * 8;   // 8 m/kg^(1/3) x 8 đơn vị game / m
   const PROFILES = {
-    NORMAL: { kind: 'blast', size: 1.65, fire: 1.6, dirt: 1.6, crater: 17, depth: 0.75, sparks: 1.4, linger: 0.4 },
-    HE: { kind: 'blast', size: 2.5, fire: 2.4, dirt: 2.4, crater: 26, depth: 1.3, sparks: 2.0, linger: 1.6 },
+    NORMAL: { kind: 'blast', charge: 1.5, size: 1.65, fire: 1.6, dirt: 1.6, crater: 17, depth: 0.75, sparks: 1.4, linger: 0.4 },
+    HE: { kind: 'blast', charge: 2.2, size: 2.5, fire: 2.4, dirt: 2.4, crater: 26, depth: 1.3, sparks: 2.0, linger: 1.6 },
     AP: { kind: 'kinetic', size: 0.85, fire: 0, dirt: 1.4, crater: 0, sparks: 2.0, linger: 0 },
-    CLUSTER: { kind: 'blast', size: 1.8, fire: 1.7, dirt: 1.6, crater: 18, depth: 0.85, sparks: 1.4, linger: 0.5 },
-    CLUSTER_SUBMUNITION: { kind: 'bomblet', size: 0.65, fire: 1.0, dirt: 0.8, crater: 6.5, depth: 0.4, sparks: 1.3, linger: 0 },
-    RPG: { kind: 'heat', size: 1.1, fire: 1.3, dirt: 0.7, crater: 8, depth: 0.6, sparks: 1.8, linger: 0.6 },
+    CLUSTER: { kind: 'blast', charge: 1.6, size: 1.8, fire: 1.7, dirt: 1.6, crater: 18, depth: 0.85, sparks: 1.4, linger: 0.5 },
+    CLUSTER_SUBMUNITION: { kind: 'bomblet', charge: 0.03, size: 0.65, fire: 1.0, dirt: 0.8, crater: 6.5, depth: 0.4, sparks: 1.3, linger: 0 },
+    RPG: { kind: 'heat', charge: 0.7, size: 1.1, fire: 1.3, dirt: 0.7, crater: 8, depth: 0.6, sparks: 1.8, linger: 0.6 },
     // đầu nổ lõm kép ~4-5 kg thuốc nổ (RPG-7 ~0,7 kg): chớp & khói lớn hơn hẳn RPG, hố nông (luồng phụt dồn về một điểm)
-    ANTI_TANK_MISSILE: { kind: 'heat', size: 1.9, fire: 1.8, dirt: 1.0, crater: 10, depth: 0.65, sparks: 2.4, linger: 0.5 },
+    ANTI_TANK_MISSILE: { kind: 'heat', charge: 4.5, size: 1.9, fire: 1.8, dirt: 1.0, crater: 10, depth: 0.65, sparks: 2.4, linger: 0.5 },
     GATLING_BULLET: { kind: 'bullet', size: 0.16, fire: 0.5, dirt: 0.5, crater: 0, sparks: 0.5, linger: 0, micro: true },
     SCOUT_BULLET: { kind: 'bullet', size: 0.13, fire: 0.25, dirt: 0.45, crater: 0, sparks: 0.5, linger: 0, micro: true },
     INCENDIARY: { kind: 'incendiary', size: 0.17, fire: 1.0, dirt: 0.3, crater: 0, sparks: 1.0, linger: 0.6, micro: true }
@@ -2841,56 +2846,179 @@
   }
 
   // ---------------------------------------------------------------------------
-  // SÓNG XUNG KÍCH: vỏ cầu khí nén giãn nở cực nhanh (sáng ở viền, trong suốt ở giữa)
+  // SÓNG XUNG KÍCH
+  // - Mặt sóng thật lan nhanh hơn tốc độ âm thanh rồi chậm dần về ~343 m/s nhưng KHÔNG dừng lại (chỉ yếu dần).
+  //   Thứ giãn ra rồi dừng là đám khí nổ, không phải sóng. Ở đây mặt sóng được làm chậm ~4-5 lần cho mắt kịp thấy
+  //   (sóng thật quét qua 7 m chỉ trong ~20 ms, chưa tới 2 khung hình) nhưng giữ đúng dáng: nhanh lúc đầu,
+  //   chậm dần về một tốc độ cố định rồi tắt dần khi vẫn đang lan.
+  // - Không khí khô bị nén gần như vô hình: cái mắt thấy là cảnh phía sau bị KHÚC XẠ (méo như hơi nóng), dày nhất
+  //   ở viền vỏ cầu. Vỏ cầu lấy ảnh khung hình đã vẽ rồi lệch toạ độ theo pháp tuyến. Máy yếu: vỏ mờ sáng viền.
+  // - Hình cầu đầy đủ: phần chìm dưới đất / khuất sau tường bị chính đất, tường che (thử độ sâu) -> nổ chạm đất
+  //   thấy nửa cầu, nổ trên tường thấy nửa cầu hướng ra ngoài mặt tường, trúng xe thấy gần cả cầu.
+  // - Khói / bụi cũ chỉ bị thổi bạt khi mặt sóng quét tới (kể cả đoạn sóng đã mờ hẳn, tới bán kính đẩy pushR).
   // ---------------------------------------------------------------------------
+  const SHOCK_VIS_SPEED = 700;   // tốc độ lan trung bình của phần nhìn thấy (đơn vị game/s, ~88 m/s: chậm ~4-5 lần)
+  const SHOCK_TAIL_V = 0.6;      // tốc độ cuối / (R/dur): mặt sóng chậm dần về mức này rồi giữ nguyên, không dừng
+
   class ShockLayer {
-    constructor(scene) {
+    constructor(scene, pushLayer) {
       this.scene = scene;
+      this.push = pushLayer || null;
       this.items = [];
-      this.geo = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.55);
+      this.geo = new THREE.SphereGeometry(1, 36, 18);                                              // cầu đầy đủ
+      this.capGeo = new THREE.SphereGeometry(1, 36, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);        // nửa cầu (mặt nước không che)
       this.ringGeo = new THREE.RingGeometry(0.86, 1, 48);
       this.ringGeo.rotateX(-Math.PI / 2);
+      // Uniform dùng chung mọi vỏ sóng: ảnh khung hình chụp giữa lúc vẽ + kích thước bộ đệm vẽ
+      this.uScene = { value: null };
+      this.uRes = { value: new THREE.Vector2(1, 1) };
+      this.uUse = { value: 0 };
+      this._sz = new THREE.Vector2();
+      this._org = new THREE.Vector2(0, 0);
+      this._capFrame = -1;
+      this._capRenderer = null;
+      this.noCopy = false;
+      this._capture = (renderer) => this.capture(renderer);
     }
+
+    // Có làm khúc xạ không: tắt ở mức đồ hoạ "Thấp" hoặc khi máy không chụp được khung hình
+    wantRefraction() {
+      if (this.noCopy) return false;
+      const gm = typeof window !== 'undefined' ? window.GameMenu : null;
+      const S = gm && gm.settings;
+      return !(S && S.gfx === 'low');
+    }
+
+    // Gọi ngay trước khi vẽ vỏ sóng (vật trong suốt, sau mọi vật đặc): chép khung hình đang vẽ sang kết cấu,
+    // mỗi khung một lần cho mọi vỏ sóng
+    capture(renderer) {
+      if (!this.uUse.value || this.noCopy) return;
+      if (renderer.getRenderTarget && renderer.getRenderTarget() !== null) return;   // đang vẽ vào bộ đệm khác (bản đồ nhỏ...)
+      const frame = renderer.info && renderer.info.render ? renderer.info.render.frame : -2;
+      if (frame === this._capFrame && renderer === this._capRenderer) return;
+      this._capFrame = frame; this._capRenderer = renderer;
+      try {
+        renderer.getDrawingBufferSize(this._sz);
+        const w = Math.max(1, Math.floor(this._sz.x)), h = Math.max(1, Math.floor(this._sz.y));
+        let tex = this.uScene.value;
+        if (!tex || tex.image.width !== w || tex.image.height !== h) {
+          if (tex) tex.dispose();
+          // RGB: bộ đệm màn hình không có kênh alpha (alpha: false) -> chép RGBA sẽ lỗi
+          tex = new THREE.DataTexture(null, w, h, THREE.RGBFormat);
+          tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+          tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+          tex.generateMipmaps = false;
+          tex.needsUpdate = true;   // cấp vùng nhớ GPU trước khi chép vào
+          this.uScene.value = tex;
+        }
+        this.uRes.value.set(w, h);
+        renderer.copyFramebufferToTexture(this._org, tex);
+      } catch (e) {
+        this.noCopy = true; this.uUse.value = 0;   // máy không hỗ trợ -> quay về vỏ mờ sáng viền
+      }
+    }
+
     mat() {
       return new THREE.ShaderMaterial({
         transparent: true, depthWrite: false, side: THREE.DoubleSide,
-        uniforms: { op: { value: 1 }, tint: { value: new THREE.Color(0.86, 0.84, 0.8) } },
-        vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
-        fragmentShader: 'uniform float op; uniform vec3 tint; varying vec3 vN; varying vec3 vV; void main(){ float f = 1.0 - abs(dot(vN, vV)); f = pow(f, 4.0); gl_FragColor = vec4(tint, f * op * 0.22); }'
+        uniforms: {
+          op: { value: 1 }, rad: { value: 1 }, tint: { value: new THREE.Color(0.86, 0.84, 0.8) },
+          tScene: this.uScene, res: this.uRes, useScene: this.uUse
+        },
+        vertexShader: 'varying vec3 vN; varying vec3 vV; varying float vD; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vD = max(1.0, -mv.z); gl_Position = projectionMatrix * mv; }',
+        fragmentShader: [
+          'uniform float op; uniform float rad; uniform vec3 tint; uniform sampler2D tScene; uniform vec2 res; uniform float useScene;',
+          'varying vec3 vN; varying vec3 vV; varying float vD;',
+          'void main(){',
+          '  float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));',
+          '  if (useScene < 0.5) { gl_FragColor = vec4(tint, pow(f, 4.0) * op * 0.22); return; }',
+          // Vỏ khí nén mỏng: tia nhìn đi dọc vỏ càng dài (sát viền) càng bị bẻ mạnh
+          '  float rim = pow(f, 3.0);',
+          // Độ lệch trên màn hình ~ cỡ góc nhìn của quả cầu (xa thì nhỏ), có trần để nổ sát mặt không méo quá đà
+          '  float amp = min(0.018, 0.06 * rad / vD) * op;',
+          '  vec2 uv = gl_FragCoord.xy / res;',
+          '  vec2 off = normalize(vN.xy + 1e-5) * rim * amp; off.x *= res.y / res.x;',
+          '  vec3 col = texture2D(tScene, clamp(uv - off, 0.001, 0.999)).rgb;',
+          '  col += tint * rim * op * 0.05;',   // khí nén + bụi mịn làm sáng nhẹ viền
+          '  gl_FragColor = vec4(col, smoothstep(0.0, 0.2, rim) * op);',
+          '}'
+        ].join('\n')
       });
     }
-    add(x, y, z, R, dur) {
-      const m = new THREE.Mesh(this.geo, this.mat());
+
+    /**
+     * R: bán kính phần nhìn thấy (đơn vị game). opts.ground: cao độ mặt đất dưới tâm nổ; opts.pushR: bán kính
+     * mặt sóng còn thổi bạt khói (mặc định 2,2R); opts.hemi: vẽ nửa cầu (mặt nước không che phần dưới);
+     * opts.dur: thời gian phần nhìn thấy (mặc định theo R: bán kính lớn lan lâu hơn, như sóng thật)
+     */
+    add(x, y, z, R, opts = {}) {
+      if (typeof opts === 'number') opts = { dur: opts };
+      this.uUse.value = this.wantRefraction() ? 1 : 0;
+      const dur = opts.dur || Math.max(0.06, R / SHOCK_VIS_SPEED);
+      const m = new THREE.Mesh(opts.hemi ? this.capGeo : this.geo, this.mat());
       m.position.set(x, y, z);
       m.renderOrder = 7;
+      m.scale.setScalar(0.1);
+      m.onBeforeRender = this._capture;
       this.scene.add(m);
-      const rm = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xf2e8d8, transparent: true, opacity: 0.35, depthWrite: false }));
-      rm.position.set(x, y + 0.4, z);
-      rm.renderOrder = 7;
-      this.scene.add(rm);
-      this.items.push({ m, rm, t: 0, R, dur });
+      // Vòng bụi mỏng sát đất nơi mặt sóng chạm đất (chỉ khi nổ đủ thấp)
+      const gy = opts.ground !== undefined ? opts.ground : y;
+      let rm = null;
+      if (y - gy < R * 0.5) {
+        rm = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xf2e8d8, transparent: true, opacity: 0, depthWrite: false }));
+        rm.position.set(x, gy + 0.4, z);
+        rm.renderOrder = 7;
+        rm.scale.setScalar(0.1);
+        this.scene.add(rm);
+      }
+      this.items.push({ m, rm, x, y, z, t: 0, R, dur, h: Math.max(0, y - gy), front: 0, pushR: opts.pushR !== undefined ? opts.pushR : R * 2.2 });
     }
+
+    // Bán kính mặt sóng theo p = t / dur: nhanh lúc đầu, chậm dần về SHOCK_TAIL_V * R/dur rồi lan đều (không dừng)
+    frontAt(R, p) {
+      if (p <= 1) return R * ((1 - SHOCK_TAIL_V) * (1 - Math.pow(1 - p, 3)) + SHOCK_TAIL_V * p);
+      return R * (1 + SHOCK_TAIL_V * (p - 1));
+    }
+
+    removeItem(i) {
+      const it = this.items[i];
+      if (it.m) { this.scene.remove(it.m); it.m.material.dispose(); }
+      if (it.rm) { this.scene.remove(it.rm); it.rm.material.dispose(); }
+      this.items.splice(i, 1);
+    }
+
     update(dt) {
       for (let i = this.items.length - 1; i >= 0; i--) {
         const it = this.items[i];
         it.t += dt;
         const p = it.t / it.dur;
-        if (p >= 1) {
-          this.scene.remove(it.m); this.scene.remove(it.rm);
-          it.m.material.dispose(); it.rm.material.dispose();
-          this.items.splice(i, 1);
-          continue;
+        const r = this.frontAt(it.R, p);
+        // Thổi bạt khói / bụi có sẵn đúng lúc mặt sóng quét qua (bỏ qua khói của chính vụ nổ này)
+        if (this.push && it.pushR > 0 && it.front < it.pushR) {
+          this.push.blastPush(it.x, it.y, it.z, it.pushR, it.t + 0.2, it.front, Math.min(r, it.pushR));
         }
-        // Giãn nở nhanh rồi chậm dần (sóng nổ suy giảm theo khoảng cách)
-        const r = it.R * (1 - Math.pow(1 - p, 2.2));
-        it.m.scale.setScalar(Math.max(0.1, r));
-        it.m.material.uniforms.op.value = (1 - p) * (1 - p);
-        it.m.visible = p < 0.6;
-        it.rm.scale.setScalar(Math.max(0.1, r * 1.02));
-        it.rm.material.opacity = 0.14 * (1 - p);
+        it.front = r;
+        if (p < 1) {
+          const fade = Math.pow(1 - p, 1.5);   // yếu dần khi lan ra
+          it.m.scale.setScalar(Math.max(0.1, r));
+          it.m.material.uniforms.op.value = fade;
+          it.m.material.uniforms.rad.value = r;
+          if (it.rm) {
+            // vòng giao giữa mặt cầu và mặt đất: rộng ra khi sóng lan xuống tới đất
+            const rg = Math.sqrt(Math.max(0, r * r - it.h * it.h));
+            it.rm.visible = rg > 0.5;
+            it.rm.scale.setScalar(Math.max(0.1, rg * 1.02));
+            it.rm.material.opacity = 0.14 * fade;
+          }
+        } else if (it.m) {
+          // phần nhìn thấy đã tắt; mặt sóng vẫn lan tiếp (vô hình) để thổi khói xa
+          this.scene.remove(it.m); it.m.material.dispose(); it.m = null;
+          if (it.rm) { this.scene.remove(it.rm); it.rm.material.dispose(); it.rm = null; }
+        }
+        if (p >= 1 && (!this.push || it.pushR <= 0 || r >= it.pushR)) this.removeItem(i);
       }
     }
-    clear() { for (const it of this.items) { this.scene.remove(it.m); this.scene.remove(it.rm); } this.items.length = 0; }
+    clear() { while (this.items.length) this.removeItem(this.items.length - 1); }
   }
 
   class ExplosionFX {
@@ -2907,7 +3035,7 @@
       this.rocks = new RockLayer(scene, 360, 0x7d6a52);       // đất đá (màu theo bản đồ)
       this.hardRocks = new RockLayer(scene, 200, 0x6e6c68);   // bê tông / mảnh kim loại
       this.streaks = new StreakLayer(scene, 900);              // vệt mảnh thép nóng bay
-      this.shocks = new ShockLayer(scene);                     // vỏ sóng xung kích
+      this.shocks = new ShockLayer(scene, this.smoke);         // sóng xung kích (khúc xạ + thổi bạt khói khi mặt sóng tới)
       this.ripples = [];                                       // gợn sóng mặt nước
       this.sabots = [];
       this.groundHoles = new HoleLayer(scene, 500, 'ground');
@@ -3047,10 +3175,11 @@
         this.spawnShrapnel(x, py, z, s, prof, opts, dirVec, isWall, isVehicle);
         // Sóng xung kích: vỏ khí nén giãn nở + vòng bụi bị thổi bạt sát mặt đất
         if (prof.kind === 'blast' || prof.kind === 'bomblet' || prof.kind === 'heat') {
-          const R = (prof.kind === 'bomblet' ? 22 : prof.kind === 'heat' ? 26 : 36) * s * (opts.heavy ? 1.5 : 1);
-          this.shocks.add(x, py, z, R, 0.16 + 0.03 * s);
-          this.smoke.blastPush(x, py, z, R * 2.2);
+          // Luật tỉ lệ nổ (Hopkinson-Cranz): cùng áp suất ở khoảng cách ~ khối thuốc nổ^(1/3)
+          const W = (prof.charge || 1) * (opts.heavy ? 3 : 1);   // 155mm ~6,6 kg = 3 lần HE 120mm
+          const R = SHOCK_R_PER_KG3 * Math.cbrt(W);
           const gyS = this.groundAt(x, z);
+          this.shocks.add(x, py, z, R, { ground: gyS });   // khói cũ bị thổi bạt khi mặt sóng quét tới (ShockLayer)
           if (py - gyS < R * 0.5) {
             const pal2 = this.palette(isWall ? 'WALL' : 'GROUND');
             for (let i = 0; i < 28; i++) {
@@ -4119,7 +4248,7 @@
         this.scene.add(m);
         this.ripples.push({ m, t: -w * 0.35, r0: 2 * k + 1, speed: (micro ? 10 : 34) * Math.sqrt(k), life: micro ? 1.2 : 3.2, op: micro ? 0.35 : 0.55 });
       }
-      if (!micro) { this.shocks.add(x, y, z, 30 * k, 0.25); this.smoke.blastPush(x, y, z, 50 * k); }
+      if (!micro) this.shocks.add(x, y, z, 30 * k, { ground: y, hemi: true, pushR: 50 * k });
       this.addWaterWaves(x, y, z, k, micro, shallow);
       if (this.onSound) this.onSound({ x, y, z }, 'GROUND', micro ? ammoType : 'CLUSTER_SUBMUNITION');
     }
