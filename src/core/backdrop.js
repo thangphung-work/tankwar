@@ -209,7 +209,7 @@ const Backdrop = (() => {
       }
       if (T.mapType === 'DESERT') {
         // vách núi bàn: vân đá trầm tích theo độ cao, đỉnh cao ngả đỏ gạch
-        const band = (1 + 0.1 * Math.sin(h * 0.11 + nz(x * 0.003, z * 0.003) * 1.5)) * smooth(0.3, 0.6, slope);
+        const band = 1 + 0.1 * Math.sin(h * 0.11 + nz(x * 0.003, z * 0.003) * 1.5) * smooth(0.3, 0.6, slope);
         const red = smooth(70, 190, h) * k;
         r = (1 + 0.08 * red) * (1 + (band - 1) * k); g = (1 - 0.04 * red) * (1 + (band - 1) * k); b = (1 - 0.12 * red) * (1 + (band - 1) * k);
       }
