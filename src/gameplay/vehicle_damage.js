@@ -1489,14 +1489,14 @@ const VehicleDamage = (() => {
   // Độ xuyên ở cự ly 0 (mm), mất xuyên theo cự ly (tỉ lệ / 1000 đơn vị bay) và kiểu tác động
   const PEN = {
     AP: { mm: 650, loss: 0.06, kind: 'KE', big: true },            // đạn mũi tên APFSDS 120mm
-    // đạn nổ phá tiêu chuẩn 120mm. Cân bằng game: đủ sức xé giáp sườn / đuôi xe tăng (~4 phát hạ: postK giảm sát thương
-    // sau khi xé giáp với xe tăng chủ lực), giáp trước vẫn chặn
+    // đạn nổ phá tiêu chuẩn 120mm. Cân bằng game: đủ sức xé giáp sườn / đuôi xe tăng (~4 phát hạ), giáp trước vẫn chặn
     NORMAL: { mm: 240, loss: 0, kind: 'HE', big: true, postK: { heavy: 0.7 } },
     HE: { mm: 45, loss: 0, kind: 'HE', big: true },                // nổ phá: xé giáp mỏng, gần như vô hại với giáp dày
     CLUSTER: { mm: 90, loss: 0, kind: 'CE', big: true },
     CLUSTER_SUBMUNITION: { mm: 90, loss: 0, kind: 'CE', big: false },  // bom con nổ lõm: đánh nóc xe
     RPG: { mm: 600, loss: 0, kind: 'CE', big: true },
-    ANTI_TANK_MISSILE: { mm: 1100, loss: 0, kind: 'CE', big: true, tandem: true },   // đầu nổ kép xuyên cả gạch ERA
+    // đầu nổ kép xuyên cả gạch ERA. Cân bằng game: xe tăng chủ lực chịu ~3 phát (postK), xe khác giữ nguyên
+    ANTI_TANK_MISSILE: { mm: 1100, loss: 0, kind: 'CE', big: true, tandem: true, postK: { heavy: 0.5 } },
     GATLING_BULLET: { mm: 110, loss: 0.35, kind: 'KE', big: false }, // 30mm xuyên dưới cỡ / nổ-cháy: thủng sườn tăng ở cự ly gần
     INCENDIARY: { mm: 40, loss: 0.35, kind: 'KE', big: false },
     SCOUT_BULLET: { mm: 28, loss: 0.5, kind: 'KE', big: false }     // 12.7mm xuyên giáp
@@ -1544,7 +1544,6 @@ const VehicleDamage = (() => {
       // Nổ phá trúng thẳng: giáp mỏng bị xé (đủ uy lực = xuyên), giáp dày chỉ chịu sức ép / mảnh vỡ trong
       if (ratio >= 1) { mul = 1; penetrated = true; } else mul = Math.max(0.06, ratio * 0.5);
       mul *= sizeK;
-      if (penetrated && P.postK) mul *= P.postK[A.cls] || 1;
     } else if (ratio >= 1) {
       penetrated = true;
       mul = sizeK;
@@ -1555,6 +1554,8 @@ const VehicleDamage = (() => {
     } else {
       mul = P.kind === 'CE' ? 0.04 : 0.02;                         // không xuyên: chỉ chấn động
     }
+    // Hệ số cân bằng sau khi xuyên theo cấp giáp xe (vd đạn thường / tên lửa vào xe tăng chủ lực)
+    if (penetrated && P.postK) mul *= P.postK[A.cls] || 1;
     // Vùng trúng (chỉ có ý nghĩa khi đạn lọt vào trong)
     let zone = 'crew';
     if (penetrated || ratio >= 0.8) {
