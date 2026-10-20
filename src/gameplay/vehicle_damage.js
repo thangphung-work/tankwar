@@ -444,11 +444,15 @@ const VehicleDamage = (() => {
         holder.add(m);
         // Xóa khỏi mesh gốc: thu các đỉnh về một điểm (tam giác suy biến), lưu lại để hồi sinh
         const pos = src.attributes.position;
+        const box = new THREE.Box3();
         for (const [st, n] of e.ranges) {
           d.saved.push({ attr: pos, start: st, data: pos.array.slice(st * 3, (st + n) * 3) });
-          for (let i = st; i < st + n; i++) pos.setXYZ(i, c.local.x, c.local.y, c.local.z);
+          for (let i = st; i < st + n; i++) { box.expandByPoint(_rg.fromBufferAttribute(pos, i)); pos.setXYZ(i, c.local.x, c.local.y, c.local.z); }
         }
         pos.needsUpdate = true;
+        // Vết đạn / vết cháy đang dán trên bộ phận vừa văng: không còn mặt thép bên dưới -> gỡ (thay vì lơ lửng tại chỗ cũ)
+        box.expandByScalar(0.5);
+        refitDecals(u, e.mesh, (p, out) => box.containsPoint(p) && !!out.copy(p));
       }
       holder.userData.radius = Math.max(0.6, c.size * 0.35);
       spawnDebris(u, holder, impulse, { mat: debrisMatOf(tag) });
@@ -1134,6 +1138,7 @@ const VehicleDamage = (() => {
       }
       const m = new THREE.Mesh(geo, mat);
       m.userData.isFxDecal = true;   // tia dò đạn bỏ qua
+      m.userData.lift = 0.02;        // độ nhô khỏi vỏ khi dán lại sau biến dạng (refitDecals)
       m.castShadow = false; m.receiveShadow = true;
       mesh.updateMatrixWorld(true);
       const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
@@ -1289,6 +1294,83 @@ const VehicleDamage = (() => {
     return g;
   }
 
+  // ---------------------------------------------------------------------------
+  // VẾT DÁN TRÊN VỎ (con isFxDecal của mesh: vết đạn, vết cháy, vết lõm; vết đạn nhỏ gộp trong InstancedMesh)
+  // Lưới đổi hình (móp, bẹp nóc, mất bộ phận) thì vết phải theo mặt thép mới: dò lại mặt ngay dưới vết, đặt vết
+  // sát mặt và xoay theo pháp tuyến mới. Chỗ đó không còn mặt thép (bộ phận đã văng) -> bỏ vết, không để lơ lửng.
+  // ---------------------------------------------------------------------------
+  const _fp = new THREE.Vector3(), _fv = new THREE.Vector3();
+  const _rp = new THREE.Vector3(), _rn = new THREE.Vector3(), _rg = new THREE.Vector3(), _rs = new THREE.Vector3();
+  const _rq = new THREE.Quaternion(), _rq2 = new THREE.Quaternion(), _rm = new THREE.Matrix4(), _rInv = new THREE.Matrix4();
+  const _rRay = new THREE.Raycaster(), _rZ = new THREE.Vector3(0, 0, 1), _rHit = new THREE.Vector3(), _rHn = new THREE.Vector3();
+  const DECAL_REACH = 2;   // tầm dò mặt thép quanh vết (đơn vị, cả phía ngoài lẫn phía trong vỏ)
+
+  // Mặt thép gần nhất dưới điểm p theo pháp tuyến n (hệ mesh). Trả điểm chạm + pháp tuyến mặt (hệ mesh) vào _rHit/_rHn
+  function surfaceUnder(mesh, p, n) {
+    const o = _rp.copy(p).addScaledVector(n, DECAL_REACH).applyMatrix4(mesh.matrixWorld);
+    const dir = _rn.copy(n).transformDirection(mesh.matrixWorld).negate();
+    _rRay.set(o, dir);
+    _rRay.far = DECAL_REACH * 2 * (_rs.setFromMatrixScale(mesh.matrixWorld).x || 1);
+    const h = _rRay.intersectObject(mesh, false).find(x => x.face);
+    if (!h) return false;
+    _rHit.copy(h.point).applyMatrix4(_rInv.copy(mesh.matrixWorld).invert());
+    _rHn.copy(h.face.normal).normalize();
+    if (_rHn.dot(n) < 0) _rHn.negate();
+    return true;
+  }
+
+  // Gỡ một vết khỏi vỏ (kèm sổ vết của hệ hiệu ứng để ô InstancedMesh / vật liệu được giải phóng)
+  function dropDecal(u, mesh, ch, slot, batch) {
+    const fx = FX || (typeof ExplosionFX !== 'undefined' && ExplosionFX.forScene ? ExplosionFX.forScene(u.scene) : null);
+    const list = fx && fx.surfaceMarks;
+    if (batch) {
+      const i = list ? list.indexOf(batch.owner[slot]) : -1;
+      if (i >= 0) fx.removeSurfaceMark(i);
+      else { ch.setMatrixAt(slot, _rm.makeScale(0, 0, 0)); ch.instanceMatrix.needsUpdate = true; }
+      return;
+    }
+    const i = list ? list.findIndex(r => r.mesh === ch) : -1;
+    if (i >= 0) { fx.removeSurfaceMark(i); return; }
+    mesh.remove(ch);
+    const d = state(u);
+    if (d.dents) d.dents = d.dents.filter(D => D.m !== ch);
+  }
+
+  // move(p, out): vị trí gợi ý (hệ mesh) cho vết đang ở p; false = vết không bị ảnh hưởng, giữ nguyên
+  function refitDecals(u, mesh, move) {
+    mesh.updateMatrixWorld(true);
+    const batches = mesh.userData.pitBatches ? Object.values(mesh.userData.pitBatches) : [];
+    for (const ch of mesh.children.slice()) {
+      if (!ch.userData || !ch.userData.isFxDecal) continue;
+      const lift = ch.userData.lift !== undefined ? ch.userData.lift : 0.15;
+      if (ch.isInstancedMesh) {
+        const B = batches.find(b => b.im === ch);
+        if (!B) continue;
+        let dirty = false;
+        for (const slot of B.order.slice()) {
+          ch.getMatrixAt(slot, _rm);
+          _rm.decompose(_rg, _rq, _rs);
+          const n = _rZ.clone().applyQuaternion(_rq);
+          const guess = new THREE.Vector3();
+          if (!move(_rg, guess)) continue;
+          const sc = _rs.clone();
+          if (!surfaceUnder(mesh, guess, n)) { dropDecal(u, mesh, ch, slot, B); continue; }
+          _rq2.setFromUnitVectors(n, _rHn).multiply(_rq);
+          ch.setMatrixAt(slot, _rm.compose(_rHit.addScaledVector(_rHn, lift), _rq2, sc));
+          dirty = true;
+        }
+        if (dirty) ch.instanceMatrix.needsUpdate = true;
+        continue;
+      }
+      const n = _rZ.clone().applyQuaternion(ch.quaternion);
+      const guess = new THREE.Vector3();
+      if (!move(ch.position, guess)) continue;
+      if (!surfaceUnder(mesh, guess, n)) { dropDecal(u, mesh, ch); continue; }
+      ch.quaternion.premultiply(_rq2.setFromUnitVectors(n, _rHn));
+      ch.position.copy(_rHit).addScaledVector(_rHn, lift);
+    }
+  }
+
   /**
    * Áp trường dịch chuyển lên lưới. space: hệ tọa độ mà field làm việc (u.group / nòng pháo).
    * field(p, out) -> true nếu điểm p bị dịch (out = vector dịch trong hệ space). sphere: {c, r} (hệ space) để bỏ qua mesh ở xa.
@@ -1323,12 +1405,6 @@ const VehicleDamage = (() => {
         pos.setXYZ(i, _dp.x, _dp.y, _dp.z);
         moved[i] = 1; touched = true;
       }
-      // Vết lõm / vết cháy dán trên mesh dịch theo bề mặt
-      for (const ch of mesh.children) {
-        if (!ch.userData || !ch.userData.isFxDecal) continue;
-        _dp.copy(ch.position).applyMatrix4(M);
-        if (field(_dp, _dv)) { _dp.add(_dv).applyMatrix4(Mi); ch.position.copy(_dp); }
-      }
       if (!touched) continue;
       any = true;
       pos.needsUpdate = true;
@@ -1350,6 +1426,13 @@ const VehicleDamage = (() => {
       }
       g.computeBoundingSphere();
       g.boundingBox = null;
+      // Vết đạn / vết cháy / vết lõm dán trên mesh: dò lại mặt thép mới ngay dưới vết (không lơ lửng / chìm vào vỏ)
+      refitDecals(u, mesh, (p, out) => {
+        _fp.copy(p).applyMatrix4(M);
+        if (!field(_fp, _fv) || _fv.lengthSq() < 1e-8) return false;
+        out.copy(_fp.add(_fv).applyMatrix4(Mi));
+        return true;
+      });
     }
     if (any) u._partCenters = null;
     return any;

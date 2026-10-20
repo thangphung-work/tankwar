@@ -3076,9 +3076,16 @@
       // Lỗ vòng tháp cháy đen trên thân xe (thân lộ ra khi tháp bay mất)
       const hull = u.hullMainMesh;
       if (hull) {
-        const pt = ring.clone();
-        pt.y -= 0.1;
-        this.addSurfaceMark(pt, new THREE.Vector3(0, 1, 0), hull, 'turretRing', { GATLING: 20, ARTILLERY: 19, SCOUT: 6 }[type] || 22, { unit: u });
+        // Nóc thân xác xe có thể đã bị ép bẹp / phồng (trúng đạn tiếp trước khi tháp văng): dò mặt nóc thật tại vòng tháp
+        // theo trục đứng của xe, không đặt cứng ở độ cao gốc (vết cháy lơ lửng trên nóc đã sụp)
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(u.group.getWorldQuaternion(new THREE.Quaternion()));
+        const rc = this._ringRay || (this._ringRay = new THREE.Raycaster());
+        rc.set(ring.clone().addScaledVector(up, 8), up.clone().negate());
+        rc.far = 20;
+        hull.updateMatrixWorld(true);
+        const top = rc.intersectObject(hull, false)[0];
+        const pt = top ? top.point.clone() : ring.clone().addScaledVector(up, -0.1);
+        this.addSurfaceMark(pt, up, hull, 'turretRing', { GATLING: 20, ARTILLERY: 19, SCOUT: 6 }[type] || 22, { unit: u });
         this.emitters.push({ x: pt.x, z: pt.z, y: pt.y, t: 0, dur: rand(14, 20), acc: 0, rate: 16, size: 5 });
       }
       return true;
