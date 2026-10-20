@@ -374,39 +374,52 @@ class BotAIController {
       }
     }
 
-    // ƯU TIÊN 5: Tranh chấp Hòm Tiếp Tế Rơi Dù nếu đang rơi hoặc đã tiếp đất
-    if (this.unit.tankType !== 'ARTILLERY' && airdrop && !airdrop.collected && airdrop.landed) {
-      const distToDrop = Math.hypot(airdrop.x - this.unit.x, airdrop.z - this.unit.z);
-      if (distToDrop < 650) {
-        this.driveTowards(airdrop.x, airdrop.z, dt, true, allUnits);
-      }
+    // CHỌN MỘT ĐÍCH DI CHUYỂN DUY NHẤT CHO KHUNG NÀY: các bước dưới chỉ đề xuất đích kèm mức ưu tiên, cuối hàm mới
+    // lái đúng một lần. (Trước đây mỗi bước tự gọi driveTowards -> một khung lái 2–4 lần: bot tăng tốc / quay thân
+    // nhanh gấp mấy lần người chơi, và lệnh gọi sau cùng luôn thắng nên bot bỏ dở việc chiếm cứ điểm.)
+    let goal = null;
+    const want = (x, z, boost, pri) => { if (!goal || pri > goal.pri) goal = { x, z, boost, pri }; };
+    const U = this.unit;
+    U._holdingCp = false;
+    this.objCp = null;
+
+    // ƯU TIÊN 5: Tranh chấp Hòm Tiếp Tế Rơi Dù nếu đã tiếp đất
+    if (U.tankType !== 'ARTILLERY' && airdrop && !airdrop.collected && airdrop.landed) {
+      const distToDrop = Math.hypot(airdrop.x - U.x, airdrop.z - U.z);
+      if (distToDrop < 650) want(airdrop.x, airdrop.z, true, 32);
     }
 
     // ƯU TIÊN 5b: Tranh chấp các Hòm Tiếp Tế Rải Rác ở gần
-    if (this.unit.tankType !== 'ARTILLERY' && supplyCrates && Array.isArray(supplyCrates)) {
+    if (U.tankType !== 'ARTILLERY' && supplyCrates && Array.isArray(supplyCrates)) {
       let nearestCrate = null;
-      let minCrateDist = (this.unit.hp < this.unit.maxHp * 0.7) ? 450 : 250;
+      let minCrateDist = (U.hp < U.maxHp * 0.7) ? 450 : 250;
       for (const crate of supplyCrates) {
         if (crate.active) {
-          const d = Math.hypot(crate.x - this.unit.x, crate.z - this.unit.z);
+          const d = Math.hypot(crate.x - U.x, crate.z - U.z);
           if (d < minCrateDist) {
             minCrateDist = d;
             nearestCrate = crate;
           }
         }
       }
-      if (nearestCrate) {
-        this.driveTowards(nearestCrate.x, nearestCrate.z, dt, true, allUnits);
-      }
+      if (nearestCrate) want(nearestCrate.x, nearestCrate.z, true, 30);
     }
 
-    // ƯU TIÊN 5c: TRANH CHẤP & BẢO VỆ CỨ ĐIỂM CHIẾN LƯỢC A, B, C THEO PHÂN CÔNG TÁC CHIẾN
-    if (capturePoints && Array.isArray(capturePoints) && capturePoints.length > 0 && this.unit.tankType !== 'ARTILLERY') {
+    // ƯU TIÊN 5c: TRANH CHẤP & GIỮ CỨ ĐIỂM CHIẾN LƯỢC A, B, C THEO PHÂN CÔNG TÁC CHIẾN
+    // (đồng hồ giữ cờ chỉ chạy khi có xe phe chủ đứng trong vùng -> chiếm xong phải có xe ở lại giữ)
+    if (capturePoints && Array.isArray(capturePoints) && capturePoints.length > 0 && U.tankType !== 'ARTILLERY') {
+      const set = terrain && terrain.strongholdSet;
+      const inCp = (cp, u) => (cp.K && set && set.inCaptureZone) ? set.inCaptureZone(cp.K, u.x, u.z) : Math.hypot(u.x - cp.x, u.z - cp.z) <= cp.radius;
+      const holders = (cp) => (allUnits || []).reduce((n, u) => n + (u && !u.isDead && u.team === U.team && inCp(cp, u) ? 1 : 0), 0);
+      // điểm đứng riêng của từng bot trong cứ điểm (không dồn cục vào tâm)
+      if (!this._holdOff) { const a = Math.random() * Math.PI * 2, r = 0.1 + Math.random() * 0.2; this._holdOff = { c: Math.cos(a) * r, s: Math.sin(a) * r }; }
+      const holdAt = (cp) => ({ x: cp.x + this._holdOff.c * cp.radius, z: cp.z + this._holdOff.s * cp.radius });
+
       // 1. Tình huống khẩn cấp: Địch sắp giữ đủ 60s để thắng!
       let urgentEnemyCp = null;
       let maxHoldTime = 0;
       for (const cp of capturePoints) {
-        if (cp.owner && cp.owner !== this.unit.team && cp.holdTimer > 25.0) {
+        if (cp.owner && cp.owner !== U.team && cp.holdTimer > 25.0) {
           if (cp.holdTimer > maxHoldTime) {
             maxHoldTime = cp.holdTimer;
             urgentEnemyCp = cp;
@@ -415,44 +428,62 @@ class BotAIController {
       }
 
       if (urgentEnemyCp) {
-        const distToCp = Math.hypot(urgentEnemyCp.x - this.unit.x, urgentEnemyCp.z - this.unit.z);
-        if (distToCp > urgentEnemyCp.radius * 0.6) {
-          this.driveTowards(urgentEnemyCp.x, urgentEnemyCp.z, dt, true, allUnits);
-        }
+        this.objCp = urgentEnemyCp;
+        const distToCp = Math.hypot(urgentEnemyCp.x - U.x, urgentEnemyCp.z - U.z);
+        if (distToCp > urgentEnemyCp.radius * 0.6) want(urgentEnemyCp.x, urgentEnemyCp.z, true, 50);
       } else {
-        // 2. Bình thường: Phân công chiếm cứ điểm theo dòng xe
-        let targetCp = null;
-        if (this.unit.tankType === 'SCOUT') {
-          // Xe trinh sát: Ưu tiên chiếm 2 cánh (Cứ điểm A hoặc C)
-          const flankCps = capturePoints.filter(cp => cp.owner !== this.unit.team && (cp.id === 'point-A' || cp.id === 'point-C' || Math.abs(cp.x) > 300));
-          if (flankCps.length > 0) {
-            // giữ nguyên cánh đã chọn tới khi chiếm xong (trước đây bốc lại mỗi khung hình -> xe lưỡng lự đổi hướng liên tục)
-            if (!flankCps.includes(this._flankCp)) this._flankCp = flankCps[Math.floor(Math.random() * flankCps.length)];
-            targetCp = this._flankCp;
+        // 2. Đang đứng trong cứ điểm của phe mình mà ít xe giữ: ở lại giữ cho đồng hồ chạy
+        const here = capturePoints.find(cp => cp.owner === U.team && inCp(cp, U));
+        if (here && holders(here) <= 2 && U.hp >= U.maxHp * 0.35) {
+          this.objCp = here;
+          U._holdingCp = true;
+          const h = holdAt(here);
+          if (Math.hypot(h.x - U.x, h.z - U.z) > 18) want(h.x, h.z, false, 40);
+          else want(U.x, U.z, false, 40);   // đã tới chỗ đứng: dừng lại giữ
+        } else {
+          // 3. Bình thường: Phân công chiếm cứ điểm theo dòng xe
+          let targetCp = null;
+          if (U.tankType === 'SCOUT') {
+            // Xe trinh sát: Ưu tiên chiếm 2 cánh (Cứ điểm A hoặc C)
+            const flankCps = capturePoints.filter(cp => cp.owner !== U.team && (cp.id === 'A' || cp.id === 'C' || Math.abs(cp.x) > 300));
+            if (flankCps.length > 0) {
+              // giữ nguyên cánh đã chọn tới khi chiếm xong (bốc lại mỗi khung hình -> xe lưỡng lự đổi hướng liên tục)
+              if (!flankCps.includes(this._flankCp)) this._flankCp = flankCps[Math.floor(Math.random() * flankCps.length)];
+              targetCp = this._flankCp;
+            }
+          } else if (U.tankType === 'ALL_ROUNDER') {
+            // Xe tiên phong: Ưu tiên chiếm trung tâm (Cứ điểm B)
+            targetCp = capturePoints.find(cp => cp.owner !== U.team && (cp.id === 'B' || Math.abs(cp.x) <= 300));
           }
-        } else if (this.unit.tankType === 'ALL_ROUNDER') {
-          // Xe tiên phong: Ưu tiên chiếm trung tâm (Cứ điểm B)
-          targetCp = capturePoints.find(cp => cp.owner !== this.unit.team && (cp.id === 'point-B' || Math.abs(cp.x) <= 300));
-        }
 
-        // Nếu chưa chọn được, tìm cứ điểm gần nhất chưa thuộc phe mình
-        if (!targetCp) {
-          let minCpDist = Infinity;
-          for (const cp of capturePoints) {
-            if (cp.owner !== this.unit.team) {
-              const d = Math.hypot(cp.x - this.unit.x, cp.z - this.unit.z);
-              if (d < minCpDist) {
-                minCpDist = d;
-                targetCp = cp;
+          // Chưa chọn được: cứ điểm gần nhất chưa thuộc phe mình
+          if (!targetCp) {
+            let minCpDist = Infinity;
+            for (const cp of capturePoints) {
+              if (cp.owner !== U.team) {
+                const d = Math.hypot(cp.x - U.x, cp.z - U.z);
+                if (d < minCpDist) { minCpDist = d; targetCp = cp; }
               }
             }
           }
-        }
+          // Cứ điểm phe mình đang bỏ trống (đồng hồ giữ đứng yên): xe 6 nòng / tăng chủ lực tới giữ nếu gần hơn đích tấn công;
+          // phe mình đã giữ hết thì mọi xe tới giữ cứ điểm trống gần nhất
+          let empty = null, emptyD = Infinity;
+          for (const cp of capturePoints) {
+            if (cp.owner !== U.team || holders(cp) > 0) continue;
+            const d = Math.hypot(cp.x - U.x, cp.z - U.z);
+            if (d < emptyD) { emptyD = d; empty = cp; }
+          }
+          if (empty) {
+            const tD = targetCp ? Math.hypot(targetCp.x - U.x, targetCp.z - U.z) : Infinity;
+            if (!targetCp || (U.tankType !== 'SCOUT' && emptyD < tD)) targetCp = empty;
+          }
 
-        if (targetCp) {
-          const distToCp = Math.hypot(targetCp.x - this.unit.x, targetCp.z - this.unit.z);
-          if (distToCp > targetCp.radius * 0.65) {
-            this.driveTowards(targetCp.x, targetCp.z, dt, true, allUnits);
+          if (targetCp) {
+            this.objCp = targetCp;
+            const h = targetCp.owner === U.team ? holdAt(targetCp) : { x: targetCp.x, z: targetCp.z };
+            const distToCp = Math.hypot(h.x - U.x, h.z - U.z);
+            if (distToCp > targetCp.radius * 0.65 || (targetCp.owner === U.team && distToCp > 18)) want(h.x, h.z, true, 20);
           }
         }
       }
@@ -575,13 +606,23 @@ class BotAIController {
 
           // Pháo tự hành đứng yên bắn tiếp, các xe khác đổi vị trí sau khi bắn
           if (this.unit.tankType !== 'ARTILLERY') {
-            const scootAngle = Math.random() * Math.PI * 2;
-            const scootDist = 180 + Math.random() * 200;
-            this.unit.aiShootAndScootDest = {
-              x: Math.max(-1500, Math.min(1500, this.unit.x + Math.cos(scootAngle) * scootDist)),
-              z: Math.max(-1500, Math.min(1500, this.unit.z + Math.sin(scootAngle) * scootDist))
-            };
-            this.unit.aiState = 'fleeing';
+            const O = this.objCp;
+            const nearObj = O && Math.hypot(O.x - this.unit.x, O.z - this.unit.z) < O.radius * 1.5;
+            if (nearObj) {
+              // đang ở cứ điểm: chỉ né ngang trong vùng cờ, không bỏ cứ điểm chạy đi xa
+              const a = Math.random() * Math.PI * 2, r = O.radius * (0.15 + Math.random() * 0.3);
+              this.unit.aiShootAndScootDest = { x: O.x + Math.cos(a) * r, z: O.z + Math.sin(a) * r };
+              this.unit.aiState = 'fleeing';
+            } else if (!O) {
+              const scootAngle = Math.random() * Math.PI * 2;
+              const scootDist = 180 + Math.random() * 200;
+              this.unit.aiShootAndScootDest = {
+                x: Math.max(-1500, Math.min(1500, this.unit.x + Math.cos(scootAngle) * scootDist)),
+                z: Math.max(-1500, Math.min(1500, this.unit.z + Math.sin(scootAngle) * scootDist))
+              };
+              this.unit.aiState = 'fleeing';
+            }
+            // đang trên đường tới cứ điểm: cứ chạy tiếp (đang cơ động sẵn), không rẽ ngang
           }
         }
       }
@@ -589,15 +630,22 @@ class BotAIController {
 
     // Cơ động đổi vị trí sau khi bắn cho các xe không phải pháo tự hành
     if (this.unit.tankType !== 'ARTILLERY' && this.unit.aiState === 'fleeing' && this.unit.aiShootAndScootDest) {
-      const dist = Math.hypot(this.unit.aiShootAndScootDest.x - this.unit.x, this.unit.aiShootAndScootDest.z - this.unit.z);
-      if (dist > 40) {
-        this.driveTowards(this.unit.aiShootAndScootDest.x, this.unit.aiShootAndScootDest.z, dt, false, allUnits);
-      } else {
+      const D = this.unit.aiShootAndScootDest, O = this.objCp;
+      // điểm đổi chỗ cũ (đặt lúc chưa có cứ điểm để tới) nằm xa cứ điểm đang nhắm: bỏ, không kéo bot đi lệch
+      if (O && Math.hypot(D.x - O.x, D.z - O.z) > O.radius * 1.5) {
         this.unit.aiState = 'patrol';
         this.unit.aiShootAndScootDest = null;
-        this.unit.speed = 0;
+      } else if (Math.hypot(D.x - this.unit.x, D.z - this.unit.z) > 40) want(D.x, D.z, false, 25);
+      else {
+        this.unit.aiState = 'patrol';
+        this.unit.aiShootAndScootDest = null;
       }
     }
+
+    // LÁI ĐÚNG MỘT LẦN theo đích ưu tiên cao nhất; không có việc gì thì phanh dừng
+    // (trước đây không gọi lệnh lái nào thì tốc độ giữ nguyên -> bot trôi tuột qua cứ điểm)
+    if (goal && Math.hypot(goal.x - this.unit.x, goal.z - this.unit.z) > 1) this.driveTowards(goal.x, goal.z, dt, goal.boost, allUnits);
+    else if (!(this.unit.tankType === 'ARTILLERY' && this.unit.isDeployed)) this.unit.steer(0, 0, dt);
   }
 
   /**
