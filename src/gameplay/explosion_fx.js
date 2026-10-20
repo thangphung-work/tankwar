@@ -2945,6 +2945,9 @@
       const base = this.palette(hitType);
       const t = this.terrainOf();
       const mk = (o) => Object.assign({ dustK: 1, smokeK: 0.55, linger: 1, fire: 1, wet: false }, o);
+      // tường / nhà / boong-ke / tảng đá bê tông không có gì bén lửa: không để lại lửa cháy âm ỉ dưới chân tường
+      // (trước đây mặc định fire = 1 như cỏ khô -> HE trúng tường gần như lần nào cũng để lại vài đám lửa trên cát)
+      if (hitType === 'WALL' || hitType === 'BUILDING' || hitType === 'BOULDER') return mk(Object.assign({}, base, { fire: 0.04 }));
       if (!t || hitType !== 'GROUND') return mk(base);
       const sc = (c, k) => [Math.min(1, c[0] * k), Math.min(1, c[1] * k), Math.min(1, c[2] * k)];
       const SS = t.strongholdSet;
