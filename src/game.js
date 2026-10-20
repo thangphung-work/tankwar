@@ -5677,6 +5677,9 @@ class ArtilleryGame3D {
     while (this.scene.children.length > 0) {
       this.scene.remove(this.scene.children[0]);
     }
+    // Hiệu ứng nổ dùng chung qua các trận: xoá dấu vết trận cũ (hố, vết đạn, mảnh vụn) rồi gắn lại các lớp vào cảnh mới dọn
+    const fxR = this.effectsManager && this.effectsManager.fx;
+    if (fxR) { if (fxR.clear) fxR.clear(); if (fxR.reattach) fxR.reattach(); }
 
     this.blueLives = Infinity;
     this.redLives = Infinity;

@@ -6165,6 +6165,17 @@
       this.fire.update(0.001, null);
       this.rocks.update(0.001, null);
     }
+    /**
+     * Gắn lại các lớp hiệu ứng thường trực vào cảnh (game dọn sạch scene.children khi chơi lại / rời trận -> nếu không
+     * gắn lại thì từ trận sau khói, lửa, đất đá, hố & vết đạn đều không hiện)
+     */
+    reattach() {
+      const add = (o) => { if (o && o.parent !== this.scene) this.scene.add(o); };
+      for (const L of [this.smoke, this.signal, this.fire, this.rocks, this.hardRocks, this.streaks, this.wallHoles]) add(L && L.mesh);
+      for (const k in this.groundHoles.layers) add(this.groundHoles.layers[k].im);
+      for (const k in this.bulletHoles.L) { add(this.bulletHoles.L[k].capIm); add(this.bulletHoles.L[k].bowlIm); }
+      for (const P of [this.wallPits.s, this.wallPits.he, this.treePits.wood, this.treePits.cactus]) for (const L of P.layers) add(L.im);
+    }
   }
 
   Object.assign(ExplosionFX.prototype, DamageMixin);
