@@ -168,7 +168,7 @@
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
 <script src="src/entities/spg.js?v=20261020ammo1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020crt1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020crt2"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
 <script src="src/gameplay/vehicle_damage.js?v=20261020cfire11"></script>
 <script src="src/core/equipment.js?v=20261020ammo1"></script>
@@ -1032,12 +1032,12 @@
   }
   // Hố sâu: hố bom cỡ lớn (~15 m, sâu ~5,5 m). Hồ nước: hố bom cũ đọng nước (~26 m, nước sâu ~3,5 m) — kiểu ao hố bom
   const HOLE_SPEC = {
-    PIT: { R: 106, depth: 44, grid: 170, tex: 1024 },
-    POND: { R: 186, depth: 36, grid: 210, tex: 1024, waterY: -7 }
+    PIT: { R: 106, depth: 44, grid: 200, tex: 1024, rough: 1 },
+    POND: { R: 186, depth: 36, grid: 220, tex: 1024, waterY: -7, rough: 0.7 }
   };
   function makeHole(kind) {
     const sp = HOLE_SPEC[kind];
-    const rec = fx.addCrater(0, 0, sp.R, null, 1, null, 'HE', { heavy: true, persistent: true, bowlDepth: sp.depth, gridN: sp.grid, texSize: sp.tex });
+    const rec = fx.addCrater(0, 0, sp.R, null, 1, null, 'HE', { heavy: true, persistent: true, bowlDepth: sp.depth, gridN: sp.grid, texSize: sp.tex, rough: sp.rough });
     const h = { kind, rec, water: null, reeds: null, waterY: sp.waterY, r: rec.holeSlot ? rec.holeSlot.r : sp.R * 0.55 };
     if (sp.waterY !== undefined) {
       wetBanks(h);
@@ -1486,7 +1486,7 @@
     }
     state.predictedRange = null;
     // Hố sâu / hồ nước dưới mặt đất: bắn thẳng phải tới gần để góc đạn đủ dốc vượt qua mép bờ
-    if ((state.target === 'PIT' || state.target === 'POND') && sel.path !== 'arc') return HOLE_SPEC[state.target].R * 0.55 + (state.target === 'PIT' ? 16 : 30);
+    if ((state.target === 'PIT' || state.target === 'POND') && sel.path !== 'arc') return HOLE_SPEC[state.target].R * 0.55 + 34;   // đầu xe dừng ngay sau gờ, không chìa ra miệng hố
     if (sel.path === 'arc') return Math.max(LAUNCH_DIST.arc, Math.min(7000, rangeAt(shooter, ammo, 55, 14)));
     return LAUNCH_DIST[sel.path];
   }
