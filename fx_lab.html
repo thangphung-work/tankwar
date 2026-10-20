@@ -155,8 +155,22 @@
 <div class="lab-frame lab-inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
 
 <script src="three.min.js"></script>
-<script src="src/core/audio.js?v=20261020cfire11"></script>
-<script src="src/core/wading_audio.js?v=20261020flood1"></script>
+<script src="src/core/audio/sound_engine.js?v=20261020m8"></script>
+<script src="src/core/audio/weapon_fire.js?v=20261020m8"></script>
+<script src="src/core/audio/destruction.js?v=20261020m8"></script>
+<script src="src/core/audio/impacts.js?v=20261020m8"></script>
+<script src="src/core/audio/incoming.js?v=20261020m8"></script>
+<script src="src/core/audio/cockpit_cues.js?v=20261020m8"></script>
+<script src="src/core/audio/vehicle_engine.js?v=20261020m8"></script>
+<script src="src/core/audio/vehicle_destroyed.js?v=20261020m8"></script>
+<script src="src/core/audio/other_engines.js?v=20261020m8"></script>
+<script src="src/core/audio/fire_ambience.js?v=20261020m8"></script>
+<script src="src/core/audio/turret_drives.js?v=20261020m8"></script>
+<script src="src/core/audio/gatling.js?v=20261020m8"></script>
+<script src="src/core/audio/wading.js?v=20261020m8"></script>
+<script src="src/core/audio/music.js?v=20261020m8"></script>
+<script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
+<script src="src/core/audio/ui_sounds.js?v=20261020m8"></script>
 <script src="src/entities/tank_models.js?v=20261019i"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261020fine1"></script>
 <script src="src/entities/tanks/mbt_halberd.js?v=20261020fine1"></script>
@@ -164,16 +178,16 @@
 <script src="src/entities/tanks/spg_arbalest.js?v=20261020fine1"></script>
 <script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
 <script src="src/core/game_timing.js?v=20261019wall2"></script>
-<script src="src/core/ballistics.js?v=20261020blind1"></script>
+<script src="src/core/ballistics.js?v=20261020m11"></script>
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
-<script src="src/entities/spg.js?v=20261020crt6"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020crt3"></script>
+<script src="src/entities/spg.js?v=20261020m12"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020m12"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261020cfire11"></script>
-<script src="src/core/equipment.js?v=20261020ammo1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261020m10"></script>
+<script src="src/core/equipment.js?v=20261020m10"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
-<script src="src/gameplay/destructibles.js?v=20261020cz9x"></script>
+<script src="src/gameplay/destructibles.js?v=20261020m11"></script>
 <script>
 (function () {
   // ===========================================================================
@@ -817,6 +831,8 @@
   // Địa hình giả cho hệ thống nổ
   const terrain = {
     mapType: 'DESERT',
+    // cây thử nghiệm: đạn găm thân cây tìm đúng cây để dán vết / chọn hiệu ứng theo loại cây
+    get trees() { return EX.trees && EX.trees.group.visible ? EX.trees.tf : null; },
     getElevationAt: (x, z) => labGround(x, z),
     // Mặt nước hồ thử nghiệm (sóng nổ dưới nước chỉ lan trong hồ)
     waterSurfaceAt: (x, z) => (EX.pond && EX.pond.water && EX.pond.water.visible && holeSurface(EX.pond, x, z) < EX.pond.waterY) ? EX.pond.waterY : null,
@@ -840,7 +856,8 @@
   function holeSurface(h, x, z) {
     const s = h.rec.surf;
     if (!s || x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) return 0;
-    const gx = Math.max(0, Math.min(s.M - 1e-4, (x - s.ox) / s.S * s.M)), gz = Math.max(0, Math.min(s.M - 1e-4, (z - s.oz) / s.S * s.M));
+    const lx = (x - s.cx) * s.gc + (z - s.cz) * s.gs, lz = -(x - s.cx) * s.gs + (z - s.cz) * s.gc;
+    const gx = Math.max(0, Math.min(s.M - 1e-4, (lx - s.ox) / s.S * s.M)), gz = Math.max(0, Math.min(s.M - 1e-4, (lz - s.oz) / s.S * s.M));
     const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j, N1 = s.M + 1, G = s.Hgrid, k = j * N1 + i;
     return (G[k] * (1 - fx) + G[k + 1] * fx) * (1 - fz) + (G[k + N1] * (1 - fx) + G[k + N1 + 1] * fx) * fz + 0.04;
   }
@@ -1049,12 +1066,14 @@
   // Bờ hồ: đất dưới nước sẫm & ngả xanh rêu, dải đất ẩm sẫm ngay trên mép nước, vệt cặn khô bạc màu nơi nước từng dâng.
   // Hố bom cũ đã lâu năm: gờ & lớp đất văng bị gió cát phong hoá, bạc về màu cát xung quanh
   function wetBanks(h) {
-    const rec = h.rec, s = rec.surf, T = rec.TS, W = h.waterY, D = rec.data;
+    const rec = h.rec, s = rec.surf, W = h.waterY;
+    const cvs = rec.texs[0].image, T = cvs.width, g2 = cvs.getContext('2d'), img = g2.getImageData(0, 0, T, T), D = img.data;
     const n2 = (x, z) => Math.sin(x * 0.21 + Math.sin(z * 0.13) * 2.1) * 0.5 + Math.sin(z * 0.17 - x * 0.07) * 0.5;
     const sand = [0.56, 0.475, 0.355];   // albedo mặt đất phòng thử (màu nền x vân hạt trung bình)
     for (let j = 0; j < T; j++) for (let i = 0; i < T; i++) {
       const q = (j * T + i) * 4;
-      const x = s.ox + s.S * (i + 0.5) / T, z = s.oz + s.S * (j + 0.5) / T;
+      const u = s.ox + s.S * (i + 0.5) / T, v = s.oz + s.S * (j + 0.5) / T;
+      const x = s.cx + u * s.gc - v * s.gs, z = s.cz + u * s.gs + v * s.gc;
       const y = holeSurface(h, x, z);
       let r = D[q] / 255, gg = D[q + 1] / 255, b = D[q + 2] / 255;
       const above = y - W, wob = n2(x, z) * 0.8, bank = inHoleCut(h, x, z);
@@ -1078,6 +1097,7 @@
       }
       D[q] = Math.min(255, r * 255); D[q + 1] = Math.min(255, gg * 255); D[q + 2] = Math.min(255, b * 255);
     }
+    g2.putImageData(img, 0, 0);
     rec.texs[0].needsUpdate = true;
   }
   // Mặt nước: màu & độ trong theo độ sâu thật của đáy hồ (nông thì thấy đáy, sâu thì xanh đục), sóng lăn tăn theo gió,
@@ -1587,6 +1607,7 @@
         if (root === building.group) { hitType = 'BUILDING'; break; }
         if (root === targetTank.group) { hitType = 'DIRECT_HIT'; unit = targetTank; break; }
         if (EX.bunker && root === EX.bunker.group) { hitType = 'WALL'; break; }
+        if (EX.trees && root === EX.trees.group) { hitType = 'TREE'; break; }
         root = root.parent;
       }
       const n = h.face ? h.face.normal.clone().transformDirection(o.matrixWorld) : new THREE.Vector3(0, 1, 0);
@@ -1616,7 +1637,7 @@
   function applyHit(p, hit, vel) {
     if (hit.hitType === 'WATER') {
       fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12);
-      playBoom(hit.point, 'GROUND', p.ammo === 'GATLING_BULLET' || p.ammo === 'SCOUT_BULLET' ? p.ammo : 'CLUSTER_SUBMUNITION');
+      playBoom(hit.point, 'WATER', p.ammo, p.heavy);
       return;
     }
     const onBerm = EX.berm && hit.object === EX.berm.mesh;
@@ -1713,7 +1734,7 @@
 
       // Đạn chùm: kích nổ trên không tầm cao (High Airburst ~20m) rồi rải chùm bom con diện rộng
       if (p.airburst && vel.y < 0 && pos.y <= 165) {
-        fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER', 'AIRBURST', { heavy: true });
+        fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER', 'AIRBURST', { heavy: true, dir: { x: vel.x, y: vel.y, z: vel.z } });
         playBoom(pos, 'AIRBURST', 'CLUSTER');
         // Đạn con giữ ~80% vận tốc đạn mẹ + bị đẩy tỏa tròn quanh trục bay, dải băng ổn định cản gió mạnh
         const subCount = 18;
@@ -1743,6 +1764,25 @@
       }
 
       if (EX.trees && EX.trees.group.visible) EX.trees.tf.passSegment(p.prev.x, p.prev.y, p.prev.z, pos.x, pos.y, pos.z, p.ammo, fx);
+      // Đạn ngòi chạm va cành trong tán: nổ ngay trên tán (tree burst)
+      if (EX.trees && EX.trees.group.visible && EX.trees.tf.crownBurst) {
+        const tf = EX.trees.tf;
+        if (!p._burstSeen) { p._burstSeen = new Set(); p._bs = (Math.random() * 4294967296) >>> 0; }
+        if (!p._burstAt) p._burstAt = tf.crownBurst(p.prev.x, p.prev.y, p.prev.z, pos.x, pos.y, pos.z, p.ammo, p.heavy, p._bs, p._burstSeen);
+        const B = p._burstAt;
+        if (B) {
+          const ex = pos.x - p.prev.x, ey = pos.y - p.prev.y, ez = pos.z - p.prev.z, L2 = ex * ex + ey * ey + ez * ez || 1;
+          if (((B.x - p.prev.x) * ex + (B.y - p.prev.y) * ey + (B.z - p.prev.z) * ez) / L2 <= 1) {
+            fx.spawn(B.x, B.y, B.z, p.ammo, 'AIRBURST', { heavy: p.heavy, noCrater: true, dir: vel });
+            playBoom(new THREE.Vector3(B.x, B.y, B.z), 'TREE', p.ammo, p.heavy);
+            tf.damageAt(B.x, B.y, B.z, p.ammo, p.heavy, fx);
+            tf.canopyBurstFx(B.x, B.y, B.z, p.ammo === 'GATLING_BULLET' ? 0.3 : p.heavy ? 1.4 : 1, fx);
+            scene.remove(p.mesh);
+            projectiles.splice(i, 1);
+            continue;
+          }
+        }
+      }
       const hit = collide(p.prev, pos);
       if (hit || p.t >= p.T) {
         const h = hit || { point: pos, normal: new THREE.Vector3(0, 1, 0), object: null, unit: null, hitType: 'GROUND' };
@@ -2092,7 +2132,7 @@
   }));
   document.getElementById('camoReset').addEventListener('click', rebuildTarget);
   if (!labCamo) document.querySelectorAll('#camoRow [data-camo]').forEach(x => x.classList.toggle('on', x.dataset.camo === '0'));
-  window.__fxLab = { orbit, state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
+  window.__fxLab = { collide, applyHit, wall, building, EX, ground, LAUNCH_DIR, orbit, state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
 })();
 </script>
 </body>

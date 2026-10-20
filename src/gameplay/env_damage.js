@@ -120,8 +120,13 @@ const EnvDamage = (() => {
   }
 
   // ------------------------------------------------------------------ VẾT ĐẠN TÍCH TỤ
-  const POOL_CAP = { g_pock: 700, g_hei: 700, g_burn: 300, c_pock: 500, c_chip: 400, c_spall: 260, soot: 400, r_chip: 300 };
-  const BASE_SIZE = { g_pock: 2.6, g_hei: 4.6, g_burn: 5.5, c_pock: 2.4, c_chip: 4.8, c_spall: 13, soot: 18, r_chip: 5 };
+  // số vết giữ lại mỗi loại (mỗi vết là 1 ô cộng dồn ~2.5 đơn vị; đầy thì ô cũ nhất bị thay) — đủ cho cả trận xả đạn liên thanh
+  const POOL_CAP = { g_pock: 3000, g_hei: 3000, g_burn: 1200, c_pock: 2000, c_chip: 1200, c_spall: 400, soot: 600, r_chip: 800 };
+  // vết đạn trên đất (g_*): 12.7mm lỗ phễu ~5 cm + quạt cát ~30 cm; 30mm nổ-mảnh hố ~25 cm + muội & rỗ mảnh ~0,8 m (8 đơn vị = 1 m)
+  const BASE_SIZE = { g_pock: 2.6, g_hei: 6.5, g_burn: 5.5, c_pock: 2.4, c_chip: 4.8, c_spall: 13, soot: 18, r_chip: 5 };
+
+  const GROUND_MARK = { g_pock: 'pock', g_hei: 'hei', g_burn: 'burn' };
+  const DEF_TINT = [0.84, 0.79, 0.72];
 
   class Scars {
     constructor(parent) {
@@ -137,7 +142,20 @@ const EnvDamage = (() => {
       let P = this.pools[kind];
       if (P) return P;
       const cap = POOL_CAP[kind] || 300;
-      const mat = new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+      // Vết đạn trên đất: shader nhân màu đất bên dưới + nổi khối theo nắng (ExplosionFX), 4 biến thể hình dạng
+      const gm = GROUND_MARK[kind];
+      if (gm && typeof ExplosionFX !== 'undefined' && ExplosionFX.bulletMarkMesh) {
+        const im = ExplosionFX.bulletMarkMesh(gm, cap);
+        im.matrixAutoUpdate = false;
+        this.parent.add(im);
+        P = this.pools[kind] = { im, cap, next: 0, owner: new Array(cap).fill(null), pos: new Float32Array(cap * 3), mark: true };
+        return P;
+      }
+      // rỗ / mẻ bê tông do đạn: dùng texture hố mẻ bê tông tươi có pháp tuyến của ExplosionFX nếu có
+      const pit = (kind === 'c_pock' || kind === 'c_chip') && typeof ExplosionFX !== 'undefined' && ExplosionFX._pitTex ? ExplosionFX._pitTex(kind === 'c_pock' ? 'concretePit' : 'concretePitHE', 0) : null;
+      const mat = pit
+        ? new THREE.MeshStandardMaterial({ map: pit.map, normalMap: pit.normal, roughness: 0.92, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 })
+        : new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
       const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, cap);
       im.count = 0; im.frustumCulled = false; im.renderOrder = 3; im.receiveShadow = true;
       im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
@@ -166,7 +184,13 @@ const EnvDamage = (() => {
       this._m.compose(this._p, this._q, this._s);
       P.im.setMatrixAt(cell.idx, this._m);
       P.pos.set([this._p.x, this._p.y, this._p.z], cell.idx * 3);
-      this._c.setRGB(cell.shade, cell.shade, cell.shade);
+      if (P.mark) {
+        // màu đất lật theo vật liệu; càng nhiều phát dồn vào ô vết càng đậm
+        const t = cell.tint || DEF_TINT;
+        this._c.setRGB(t[0], t[1], t[2]);
+        P.im.geometry.attributes.iMark.setXY(cell.idx, cell.variant, 1 + Math.min(1.2, 0.14 * (cell.hits - 1)));
+        P.im.geometry.attributes.iMark.needsUpdate = true;
+      } else this._c.setRGB(cell.shade, cell.shade, cell.shade);
       P.im.setColorAt(cell.idx, this._c);
       P.im.instanceMatrix.needsUpdate = true;
       P.im.instanceColor.needsUpdate = true;
@@ -187,7 +211,7 @@ const EnvDamage = (() => {
       const key = cls + '|' + Math.round(x / cs) + '|' + Math.round(y / cs) + '|' + Math.round(z / cs);
       let cell = this.cells.get(key);
       if (!cell) {
-        cell = { key, kind: null, idx: undefined, e: 0, hits: 0, x, y, z, nx, ny, nz, rot: hash3(x, y, z) * 6.283 };
+        cell = { key, kind: null, idx: undefined, e: 0, hits: 0, x, y, z, nx, ny, nz, rot: hash3(x, y, z) * 6.283, variant: Math.floor(hash3(z, x, y) * 4) & 3 };
         this.cells.set(key, cell);
       } else {
         // dồn tâm vết về trung bình các phát trúng
@@ -196,6 +220,7 @@ const EnvDamage = (() => {
       }
       cell.e += energy;
       cell.hits++;
+      if (opts.tint) cell.tint = opts.tint;
       if (opts.stretch) { cell.stretch = Math.max(cell.stretch || 1, opts.stretch); cell.rot = opts.rot !== undefined ? opts.rot : cell.rot; }
       const kind = tierFn(cell.e);
       if (cell.kind && cell.kind !== kind) this.unplace(cell);
@@ -698,7 +723,9 @@ const EnvDamage = (() => {
         // tâm cháy đen, vành đất bị hất (nâu), tích dần theo số phát
         const burn = Math.min(0.75, amount * w * w * 0.7);
         const r0 = C.getX(i), g0 = C.getY(i), b0 = C.getZ(i);
-        const tr = d < R * 0.5 ? 0.11 : 0.36, tg = d < R * 0.5 ? 0.09 : 0.27, tb = d < R * 0.5 ? 0.07 : 0.18;
+        // ụ đất dùng shader mặt đất: màu đỉnh là hệ số nhân lên màu địa hình (1 = nguyên màu) -> đích cháy là hệ số tối / ngả nâu
+        const mul = g.userData.tintMul, inner = d < R * 0.5;
+        const tr = mul ? (inner ? 0.26 : 0.64) : inner ? 0.11 : 0.36, tg = mul ? (inner ? 0.22 : 0.5) : inner ? 0.09 : 0.27, tb = mul ? (inner ? 0.2 : 0.42) : inner ? 0.07 : 0.18;
         C.setXYZ(i, r0 + (tr - r0) * burn, g0 + (tg - g0) * burn, b0 + (tb - b0) * burn);
         const ny = Math.max(g.userData.y0[i] - 3.5, P.getY(i) - amount * 1.4 * w * w);
         P.setY(i, ny);
@@ -730,6 +757,7 @@ const EnvDamage = (() => {
       this.rocks.damageAt(x, y, z, A, info, fx, events);
       this.bridges.damageAt(x, y, z, A, info, fx, events);
       const SS = this.T.strongholdSet;
+      if (SS) this.fragmentScars(SS, x, y, z, ammo, heavy);
       if (SS && SS.covers(x, z, 8)) {
         if (info.t === 'WALL') this.concreteHit(x, y, z, info.nx, info.nz, ammo, A);
         else if (A.blast > 0.15 && A.r > 0) scorchMound(SS, x, y, z, Math.max(6, A.r * 0.9), A.blast);
@@ -740,6 +768,44 @@ const EnvDamage = (() => {
         if (br && Math.abs(y - br.y) < 3) this.concreteHit(x, br.y, z, 0, 0, ammo, A, true);
       }
       return events;
+    }
+
+    // Mảnh văng của quả nổ gần cứ điểm găm rỗ mặt bê tông (trước đây chỉ phát trúng thẳng mới để lại vết). Dò tia từ tâm nổ:
+    // tự đúng che chắn & mặt quay về phía nổ; mật độ thưa theo bình phương khoảng cách; cộng dồn: rỗ -> mẻ dần
+    fragmentScars(SS, x, y, z, ammo, heavy) {
+      const F0 = { NORMAL: [240, 60], HE: [280, 80], RPG: [110, 20], ANTI_TANK_MISSILE: [140, 26], CLUSTER_SUBMUNITION: [90, 20] }[ammo];
+      if (!F0) return;
+      const fr = F0[0] * (heavy ? 1.6 : 1), rays = Math.round(F0[1] * (heavy ? 1.4 : 1));
+      if (SS.near && !SS.near(x, z, fr)) return;
+      const oy = y + 2;
+      // số ngẫu nhiên sinh từ toạ độ điểm nổ (đã làm tròn như gói ENV_HIT) -> mọi máy vẽ vết ở cùng chỗ
+      let sd = (Math.floor(x * 10) * 73856093 ^ Math.floor(y * 10) * 19349663 ^ Math.floor(z * 10) * 83492791) >>> 0;
+      const rnd = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+      for (let i = 0; i < rays; i++) {
+        const az = rnd() * 6.283, el = Math.asin(Math.pow(rnd(), 1.6) * 0.82) + 0.02, ce = Math.cos(el);
+        const ex = x + Math.cos(az) * ce * fr, ey = oy + Math.sin(el) * fr, ez = z + Math.sin(az) * ce * fr;
+        // chỉ dò từng bước trong đoạn tia cắt vùng bao cứ điểm (dò cả tia ~380 đơn vị mỗi bước 2 đơn vị: ~15 ms / quả 155)
+        let t0 = 1, t1 = 0;
+        for (const K of SS.items) {
+          const R = (typeof Strongholds !== 'undefined' && Strongholds.S && Strongholds.S.REACH) || 120;
+          const dx = ex - x, dz = ez - z, fx = x - K.x, fz = z - K.z;
+          const a = dx * dx + dz * dz, b = 2 * (fx * dx + fz * dz), c = fx * fx + fz * fz - R * R;
+          const disc = b * b - 4 * a * c;
+          if (a < 1e-9 || disc < 0) continue;
+          const sq = Math.sqrt(disc), ta = (-b - sq) / (2 * a), tb = (-b + sq) / (2 * a);
+          if (tb < 0 || ta > 1) continue;
+          t0 = Math.min(t0, Math.max(0, ta)); t1 = Math.max(t1, Math.min(1, tb));
+        }
+        if (t1 <= t0) continue;
+        const P = (t) => [x + (ex - x) * t, oy + (ey - oy) * t, z + (ez - z) * t];
+        const [ax, ay, az2] = P(t0), [bx, by, bz] = P(t1);
+        const h = SS.segmentHit(ax, ay, az2, bx, by, bz);
+        if (!h || h.type !== 'WALL' || !h.normal) continue;
+        const d = Math.hypot(h.x - x, h.y - oy, h.z - z);
+        if (d < 4) continue;
+        const n = h.normal, e = 0.05 + 0.18 * Math.max(0, 1 - d / fr);
+        this.scars.hit('c', 3, h.x, h.y, h.z, n.nx || 0, n.ny || 0, n.nz || 0, e, (v) => v < 0.35 ? 'c_pock' : v < 1.3 ? 'c_chip' : 'c_spall', { e0: 0.08 });
+      }
     }
 
     // Bê tông (cứ điểm / mặt cầu): rỗ đạn -> mẻ vỡ -> bong mảng lộ cốt thép, cộng dồn theo ô 5 đơn vị
@@ -755,7 +821,7 @@ const EnvDamage = (() => {
     }
 
     // Đạn súng chạm đất (gọi từ hiệu ứng nổ, mọi máy tự vẽ): vết nhỏ theo loại đạn, cộng dồn theo ô ~2.5 đơn vị
-    groundHit(x, z, ammo, dir) {
+    groundHit(x, z, ammo, dir, tint) {
       const T = this.T;
       const y = this.surf(x, z);   // trong hố bom: vết nằm trên lòng hố nhìn thấy, không lơ lửng ở lưới vật lý
       const br = this.bridges.at(x, z);
@@ -765,10 +831,11 @@ const EnvDamage = (() => {
       const A = ammoOf(ammo, false);
       const kind = ammo === 'INCENDIARY' ? 'g_burn' : ammo === 'GATLING_BULLET' ? 'g_hei' : 'g_pock';
       // đạn bay xiên: vết kéo dài theo hướng bay
-      let opts = { e0: A.e };
+      // trục +u của vết = hướng bay trên mặt đất (vết xoay quanh pháp tuyến: trục x cục bộ -> (cos r, 0, -sin r))
+      let opts = { e0: A.e, tint };
       if (dir) {
         const fl = Math.hypot(dir.x || 0, dir.z || 0), sp = Math.hypot(fl, dir.y || 0) || 1;
-        if (fl > 0.05) opts = { e0: A.e, stretch: 1 + (fl / sp) * 0.7, rot: Math.atan2(dir.z, dir.x) };
+        if (fl > 0.05) opts = { e0: A.e, tint, stretch: 1 + (fl / sp) * (kind === 'g_pock' ? 0.8 : 0.35), rot: Math.atan2(-dir.z, dir.x) };
       }
       this.scars.hit('g', 2.5, x, y, z, n.x, n.y, n.z, A.e, () => kind, opts);
       return true;

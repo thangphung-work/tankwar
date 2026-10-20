@@ -1162,6 +1162,7 @@
           dm: typeof s.damage === 'number' ? Math.round(s.damage * 1000) : undefined,
           h: s.isHeavyArty ? 1 : 0,
           at: s.isAntiTank ? 1 : 0,
+          bs: typeof s.burstSeed === 'number' ? s.burstSeed >>> 0 : undefined,   // hạt giống nổ trên tán
           // tên lửa dẫn hướng: xe mục tiêu (netId) hoặc điểm ngắm -> máy khác lái tên lửa giống hệt
           tg: s.guide && s.guide.targetId ? this.netIdOfUnitId(s.guide.targetId) : undefined,
           gp: s.guide && !s.guide.targetId && s.guide.point ? [Math.round(s.guide.point.x), Math.round(s.guide.point.y), Math.round(s.guide.point.z)] : undefined
@@ -1213,6 +1214,7 @@
       if (typeof d.dm === 'number') shell.damage = d.dm / 1000;
       shell.isHeavyArty = !!d.h;
       if (d.at) shell.isAntiTank = true;
+      if (typeof d.bs === 'number') shell.burstSeed = d.bs >>> 0;
       shell.x = px; shell.y = py; shell.z = pz;
       shell.vx = vx; shell.vy = vy; shell.vz = vz;
       shell.timeAlive = 0;
