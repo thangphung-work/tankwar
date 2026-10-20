@@ -2039,9 +2039,9 @@ class ArtilleryGame3D {
       // Sát thương trúng thẳng đã gồm cả sức nổ tại chỗ (xe trúng thẳng không bị cộng thêm sát thương nổ lan)
       let directDamage = 1.6;
       if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
-        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.12 : 0.1; // 12.7mm bắn chậm hơn nhưng mỗi viên mạnh hơn
+        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.12 : 0.075; // 12.7mm bắn chậm hơn nhưng mỗi viên mạnh hơn; 30mm Gatling băng 450 viên nên mỗi viên nhẹ hơn
       } else if (ammoType === 'INCENDIARY') {
-        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.14 : 0.16;
+        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.14 : 0.12;
         if (typeof directTarget.ignite === 'function') {
           directTarget.ignite(2.0);
         }
@@ -2163,7 +2163,7 @@ class ArtilleryGame3D {
           let splashDamage = 1.0;
           if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
             // 30mm nổ-mảnh văng mảnh nhỏ sát điểm chạm; 12.7mm không có thuốc nổ
-            splashDamage = (ammoType === 'SCOUT_BULLET' || (shooter && shooter.tankType === 'SCOUT')) ? 0 : 0.02;
+            splashDamage = (ammoType === 'SCOUT_BULLET' || (shooter && shooter.tankType === 'SCOUT')) ? 0 : 0.015;
           } else if (ammoType === 'INCENDIARY') {
             splashDamage = 0.08;
             if (typeof unit.ignite === 'function' && dist <= 12) unit.ignite(1.5);

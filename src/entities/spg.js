@@ -228,7 +228,7 @@ class SPGUnit3D {
       this.acceleration = this.baseMaxSpeed * 0.5;          // lực kéo lúc khởi hành; giảm dần khi xe nhanh lên (0 -> 50% ~1.2 s, 0 -> 90% ~2.6 s)
       this.turnRate = 1.7;       // rad/s tối đa khi xoay thân (~100°/s)
       this.climbMax = 1.0;       // độ dốc leo được tối đa (tan): ~45°, xích bám tốt
-      this.reloadDuration = gameTime(8.0);  // thay băng tiếp đạn 300 viên (gốc 8 s, đã rút gọn so với vài phút ngoài thực tế)
+      this.reloadDuration = gameTime(8.0);  // thay băng tiếp đạn 450 viên (gốc 8 s, đã rút gọn so với vài phút ngoài thực tế)
 
       // Thông số cụm 6 nòng xoay Gatling & Cơ chế nhiệt độ nòng
       this.spinUpTime = 0;
@@ -236,8 +236,8 @@ class SPGUnit3D {
       this.isSpinning = false;
       this.gatlingAngle = 0;
       this.gatlingRofTimer = 0;
-      this.gatlingMagMax = 300; // Băng tiếp đạn 300 viên (~10 s xả liên tục ở 1800 phát/phút)
-      this.gatlingMag = 300;
+      this.gatlingMagMax = 450; // Băng tiếp đạn 450 viên (~15 s xả liên tục ở 1800 phát/phút, vừa chạm ngưỡng quá nhiệt)
+      this.gatlingMag = 450;
       this.gatlingCluster = null;
       this.barrelHeat = 0.0;    // Nhiệt độ nòng (0.0: Nguội -> 1.0: Quá nhiệt)
       this.isOverheated = false;// Trạng thái nòng quá nhiệt chờ nguội
@@ -3113,9 +3113,9 @@ class SPGUnit3D {
           this.gatlingMag--;
           firedThisFrame = true;
 
-          // Tăng nhiệt độ nòng sau mỗi viên bắn (xả liên tục ~280-300 viên — gần hết băng — mới chạm ngưỡng quá nhiệt)
+          // Tăng nhiệt độ nòng sau mỗi viên bắn (xả liên tục ~450 viên — hết băng, ~15 s — mới chạm ngưỡng quá nhiệt)
           if (this.tankType === 'GATLING') {
-            this.barrelHeat = Math.min(1.0, (this.barrelHeat || 0) + 0.0034);
+            this.barrelHeat = Math.min(1.0, (this.barrelHeat || 0) + 0.0032);
             if (this.barrelHeat >= 1.0) {
               this.isOverheated = true;
               break;
