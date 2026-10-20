@@ -276,7 +276,8 @@
       for (let i = 0; i < n; i++) setTimeout(() => strike(t, a, small && Math.random() < 0.25, small ? 6 : 3), i * gap);
       return;
     }
-    strike(t, a, mode === 'near');
+    // phát đơn cũng tản mát quanh tâm xe (trước đây tia đạn cố định -> phát nào cũng chui đúng một lỗ)
+    strike(t, a, mode === 'near', mode === 'near' ? 0 : 3.5);
   }
 
   function fxPart(part) {

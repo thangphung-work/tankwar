@@ -184,7 +184,7 @@
 <script src="src/entities/spg.js?v=20261020m14"></script>
 <script src="src/gameplay/explosion_fx.js?v=20261020decal1"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261020decal1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261020dmg1"></script>
 <script src="src/core/equipment.js?v=20261020m14"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
 <script src="src/gameplay/destructibles.js?v=20261020leaf1"></script>
@@ -1532,6 +1532,10 @@
     if (rapid) {
       const spread = state.target === 'VEHICLE' ? 12 : 20;
       p.add(new THREE.Vector3((Math.random() - 0.5) * spread, (Math.random() - 0.5) * (spread * 0.45), (Math.random() - 0.5) * spread));
+    } else if (state.target === 'VEHICLE') {
+      // Pháo tăng cũng tản mát (độ chụm nòng + sai số ngắm, σ ~0,3 m quanh điểm ngắm): các phát không chui cùng một lỗ
+      const g = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, Math.random()))) * Math.cos(2 * Math.PI * Math.random());
+      p.add(new THREE.Vector3(g() * 2.6, g() * 1.6, g() * 2.6));
     }
     if (p.y < 1.0 && state.target !== 'PIT' && state.target !== 'POND') p.y = 1.0;
     return p;
@@ -1695,7 +1699,9 @@
       updateHpLabel();
     } else if (hit.hitType === 'DIRECT_HIT' && targetTank.isDead && typeof VehicleDamage !== 'undefined') {
       logDamage(VehicleDamage.onDirectHit(targetTank, { hit, ammo: p.ammo, heavy: p.heavy, dir: vel, fx }).events);
-    } else if (hit.hitType === 'DIRECT_HIT' && !res.ricochet && !targetTank.isDead) {
+    } else if (hit.hitType === 'DIRECT_HIT' && !targetTank.isDead) {
+      // đạn nảy khỏi giáp nghiêng: VehicleDamage tự giảm sát thương (như trong game)
+      if (res && res.ricochet) hit.ricochet = true;
       targetTank.lastHitDir = vel.clone();
       targetTank.lastHitPoint = hit.point.clone();
       // Giáp theo cấp + hướng + ERA, hỏng hóc bộ phận đúng điểm chạm (cùng hệ thống với game)
