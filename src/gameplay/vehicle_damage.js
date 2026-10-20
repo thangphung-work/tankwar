@@ -122,7 +122,9 @@ const VehicleDamage = (() => {
       lost: new Set(), flat: {}, flatAnim: {}, track: [0, 0], trackTimer: [0, 0],
       trackWear: [0, 0], trackBreaks: [0, 0], tireWear: {}, shred: {},
       engine: 0, ring: false, gun: false, hydraulics: false,
+      // mức mỏng giáp theo mặt (bộ phận giáp gốc đã mất): thân xe & tháp pháo tách riêng
       faceLoss: { front: 1, rear: 1, sideL: 1, sideR: 1, top: 1 },
+      faceLossT: { front: 1, rear: 1, sideL: 1, sideR: 1, top: 1 },
       base: null, saved: [], hiddenGroups: [], hiddenAnt: [],
       gone: {}, bent: new Set(), fires: [], frame: 0, glassHits: 0, gunBent: null
     };
@@ -764,14 +766,20 @@ const VehicleDamage = (() => {
   // Hiệu ứng riêng khi một bộ phận đặc biệt bị phá
   // remote: áp từ bản tóm tắt của máy khác -> không châm lửa (cháy do máy có quyền tính & gửi riêng);
   // own: xe của chính máy này -> trừ đạn dự trữ / sát thương nổ kho đạn ở đây (máy chủ quyền của xe)
-  // Mặt giáp mà bộ phận giáp GỐC của xe che (váy xích L/R -> sườn trái / phải; module má tháp, tấm giáp mũi -> mặt
-  // trước). Đồ mua thêm (appliqueKit: hết tác dụng qua Equipment.armorMul) & lồng thép (không phải giáp vỏ) -> null
+  // Mặt giáp mà bộ phận giáp GỐC của xe che: váy xích L/R -> sườn trái / phải thân xe; tấm giáp mũi -> mặt trước thân
+  // xe; module má tháp -> mặt trước THÁP. Đồ mua thêm (appliqueKit: hết tác dụng qua Equipment.armorMul) & lồng thép
+  // (không phải giáp vỏ) -> null. Trả { face, turret }
   function armorPartFace(tag) {
     if (/Kit/.test(tag) || /^cage/.test(tag)) return null;
-    let m = /^skirt([LR])/.exec(tag);
-    if (m) return m[1] === 'L' ? 'sideL' : 'sideR';
-    if (/^(cheek|applique)/.test(tag)) return 'front';
+    const m = /^skirt([LR])/.exec(tag);
+    if (m) return { face: m[1] === 'L' ? 'sideL' : 'sideR', turret: false };
+    if (/^cheek/.test(tag)) return { face: 'front', turret: true };
+    if (/^applique/.test(tag)) return { face: 'front', turret: false };
     return null;
+  }
+  function thinFace(d, P, k) {
+    const L = P.turret ? (d.faceLossT || (d.faceLossT = { front: 1, rear: 1, sideL: 1, sideR: 1, top: 1 })) : d.faceLoss;
+    L[P.face] = Math.min(1.5, (L[P.face] || 1) * k);
   }
 
   function onPartLost(u, tag, kind, events, fx, point, remote, own) {
@@ -779,8 +787,8 @@ const VehicleDamage = (() => {
     // Mất bộ phận giáp gốc (bị bắn trúng thẳng hay bị sức nổ lan hất văng): mặt giáp đó mỏng đi.
     // remote: lấy từ bản tóm tắt của máy có quyền — mức mỏng (FL) đã có sẵn trong bản tóm tắt
     if (kind === 'armor' && !remote) {
-      const f = armorPartFace(tag), d = state(u);
-      if (f) d.faceLoss[f] = Math.min(1.5, (d.faceLoss[f] || 1) * (tag.startsWith('skirt') ? 1.12 : 1.22));
+      const P = armorPartFace(tag);
+      if (P) thinFace(state(u), P, tag.startsWith('skirt') ? 1.12 : 1.22);
     }
     const sp = point || partWorld(u, tag);
     if (kind === 'armor' || kind === 'heavyAcc') { sparksAt(sp, 18); sfx('armorPlate', sp); }
@@ -1587,7 +1595,7 @@ const VehicleDamage = (() => {
     if (hit && hit.sloped) cosI = Math.max(cosI, 0.75);
     armor /= Math.max(0.285, cosI);
     // Mặt giáp đã mất tấm giáp / váy xích: mỏng đi
-    armor /= (d.faceLoss[face] || 1);
+    armor /= ((onTurret && d.faceLossT ? d.faceLossT : d.faceLoss)[face] || 1);
     // Trang bị mua thêm: tấm giáp tăng cường còn trên mặt này (gạch giáp nổ tính riêng ở onDirectHit — Equipment.eraEffect)
     if (EQ) armor *= EQ.armorMul(u, face, onTurret);
     // Đạn xả liên tục vào một chỗ làm giáp mỏi / rạn (giảm tối đa 45%)
@@ -1794,7 +1802,7 @@ const VehicleDamage = (() => {
     const bendable = tag && /^(skirt|flap|rail|mirror|lamp|bin|box|smoke|shield|cage|travelLock|tool|can|cans|stowage)/.test(tag);
     if (tag && !d.lost.has(tag) && bendable && !d.bent.has(tag) && (cls === 'cannon' || (cls === 'small' && Math.random() < 0.3) || (cls !== 'small' && Math.random() < 0.45))) {
       // Lần trúng đầu: oằn / vặn méo, lần sau mới bị xé bay
-      if (bendTag(u, tag, impulse)) { const bf = armorPartFace(tag); if (bf && /^skirt/.test(tag) && !VIS_ONLY) d.faceLoss[bf] = Math.min(1.5, (d.faceLoss[bf] || 1) * 1.05); }
+      if (bendTag(u, tag, impulse)) { const bf = armorPartFace(tag); if (bf && /^skirt/.test(tag) && !VIS_ONLY) thinFace(d, bf, 1.05); }
     } else if (tag && !d.lost.has(tag)) {
       const kind = partKind(tag);
       const p = (DETACH_DIRECT[kind] || DETACH_DIRECT.acc)[cls];
@@ -2528,6 +2536,7 @@ const VehicleDamage = (() => {
       TB: [d.trackBreaks[0] || 0, d.trackBreaks[1] || 0], TW: [r2(d.trackWear[0]), r2(d.trackWear[1])],
       E: d.engine || 0, R: d.ring ? 1 : 0, N: d.gun ? 1 : 0, H: d.hydraulics ? 1 : 0, Fr: r2(d.frame),
       FL: ['front', 'rear', 'sideL', 'sideR', 'top'].map(f => r2(d.faceLoss[f] || 1)),
+      FT: ['front', 'rear', 'sideL', 'sideR', 'top'].map(f => r2((d.faceLossT && d.faceLossT[f]) || 1)),
       B: u.burnAuth && u.burnTimer > 0 ? Math.round(u.burnTimer * 10) : 0,
       K: d.apsUsed || 0,
       C: typeof CamoFire !== 'undefined' ? CamoFire.netState(u) : 0   // lưới lá bắt lửa: [hạt giống, ô, gió, lúc]
@@ -2573,6 +2582,8 @@ const VehicleDamage = (() => {
       if (!d.frameEv) { d.frameEv = true; events.push({ type: 'frame', text: 'KHUNG GẦM BỊ VẶN MÉO — xe vẹo, khó lái, chậm' }); }
     }
     ['front', 'rear', 'sideL', 'sideR', 'top'].forEach((f, k) => { const v = (s.FL || [])[k] || 1; if (v > (d.faceLoss[f] || 1)) d.faceLoss[f] = v; });
+    if (!d.faceLossT) d.faceLossT = { front: 1, rear: 1, sideL: 1, sideR: 1, top: 1 };
+    ['front', 'rear', 'sideL', 'sideR', 'top'].forEach((f, k) => { const v = (s.FT || [])[k] || 1; if (v > (d.faceLossT[f] || 1)) d.faceLossT[f] = v; });
     if ((s.K || 0) > (d.apsUsed || 0)) d.apsUsed = s.K;
     // xe đang cháy (lửa do máy có quyền tính sát thương): máy này chỉ hiện khói lửa
     if (s.B > 0 && typeof u.igniteVisual === 'function') u.igniteVisual(s.B / 10);
