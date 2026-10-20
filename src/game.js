@@ -52,6 +52,7 @@ class ArtilleryGame3D {
     this.applyAtmosphereLights();
     this.ballistics = new BallisticsSystem3D(this.scene);
     this.ballistics.vegetationProvider = () => this.terrain && this.terrain.trees;
+    this.ballistics.terrainProvider = () => this.terrain;
     this.radar = new CounterBatteryRadar();
     this.zone = new BattleZone(this.worldWidth, this.worldDepth);
 
@@ -1338,7 +1339,9 @@ class ArtilleryGame3D {
     // 1. Vận tốc mục tiêu từ chuyển động thực tế (đúng cho cả bot lẫn xe của máy khác)
     const ivx = (T.x - tr.x) / dt, ivz = (T.z - tr.z) / dt;
     if (Math.hypot(ivx, ivz) < 400) {   // bỏ qua cú nhảy vị trí (hồi sinh / hiệu chỉnh mạng)
-      const k = 1 - Math.exp(-dt * 5);
+      // đạn bay càng lâu, lượng đón đầu càng nhạy với vận tốc đo được (lựu pháo bay 5-7 s: lệch 10 đv/s = lệch 60 đv) ->
+      // lọc vận tốc chậm hơn theo thời gian bay, nếu không xe địch lượn qua lại là điểm ngắm giật theo
+      const k = 1 - Math.exp(-dt * Math.min(5, 2.5 / Math.max(0.5, tr.flightT || 0)));
       tr.vx += (ivx - tr.vx) * k; tr.vz += (ivz - tr.vz) * k;
     }
     tr.x = T.x; tr.z = T.z;
@@ -1368,7 +1371,9 @@ class ArtilleryGame3D {
     // 3. Xoay tháp theo đường ngắn nhất với tốc độ quay tháp
     // Bù độ nghiêng thân xe trên dốc: nòng thật (không phải góc lệnh) phải chỉ đúng nghiệm đường đạn
     const off = P.barrelWorldOffset ? P.barrelWorldOffset() : { el: 0, az: 0 };
-    const want = (Math.atan2(aimX - P.x, -(aimZ - P.z)) * 180 / Math.PI - off.az + 360) % 360;
+    // tr.windAz: lượng xoay bù gió bạt ngang của nghiệm đường đạn (bộ giải đã tính góc nòng theo hướng đã bù —
+    // trước đây tháp vẫn chỉ thẳng vào mục tiêu nên đạn rơi lệch ngang đúng bằng độ dạt của gió)
+    const want = (Math.atan2(aimX - P.x, -(aimZ - P.z)) * 180 / Math.PI + (tr.windAz || 0) - off.az + 720) % 360;
     const diff = ((want - P.azimuth + 540) % 360) - 180;
     const step = rotSpeed * dt;
     // pháo tự hành: tháp quay vòng phía đuôi xe, không quét qua điểm mù mũi xe
@@ -1397,6 +1402,8 @@ class ArtilleryGame3D {
         tr.reachable = !!(sol && sol.reachable !== false);
         if (sol) {
           tr.el = sol.elevation;
+          const baseAz = Math.atan2(aimX - P.x, -(aimZ - P.z)) * 180 / Math.PI;
+          tr.windAz = sol.reachable !== false && typeof sol.azimuth === 'number' ? ((sol.azimuth - baseAz + 540) % 360) - 180 : 0;
           if (sol.charge) { tr.charge = sol.charge; P.charge = sol.charge; }   // lựu pháo: liều phóng theo cự ly
           tr.flightT = Math.min(30, (sol.flightTime || 0) / mult);
           if (P.tankType === 'ARTILLERY') {
@@ -2154,26 +2161,9 @@ class ArtilleryGame3D {
     }
 
     // 6. Sát thương nổ diện rộng 3D
-    let blastRadius = 55; // Mặc định cho đạn pháo 120mm tiêu chuẩn
-    if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
-      blastRadius = 10;
-    } else if (ammoType === 'INCENDIARY') {
-      blastRadius = 16;
-    } else if (ammoType === 'CLUSTER_SUBMUNITION') {
-      blastRadius = 32; // Bán kính nổ mảnh văng đạn con
-    } else if (ammoType === 'CLUSTER') {
-      blastRadius = 85;
-    } else if (ammoType === 'RPG' || ammoType === 'ANTI_TANK_MISSILE') {
-      blastRadius = 45;
-    } else if (ammoType === 'HE') {
-      blastRadius = shell.isHeavyArty ? 135 : 75; // Bán kính nổ pháo HE mở rộng tương xứng uy lực
-    } else if (ammoType === 'AP') {
-      blastRadius = 9; // Đạn xuyên động năng không có thuốc nổ: chỉ mảnh vỡ sát điểm chạm
-    } else if (shell.isHeavyArty) {
-      blastRadius = 90;
-    }
-    // Vùng lõi (đơn vị game, 8 = 1 m): trong lõi chịu trọn sức nổ, ra ngoài giảm dần theo khoảng cách
-    const blastCore = (shell.isHeavyArty && ammoType !== 'AP') ? 32 : ammoType === 'HE' ? 20 : ammoType === 'NORMAL' || ammoType === 'CLUSTER' ? 16 : blastRadius * 0.35;
+    // Bán kính nổ / vùng lõi theo loại đạn (bảng dùng chung với vòng sát thương dự kiến trên HUD — ballistics.js)
+    const BP = BallisticsSystem3D.blastProfile(ammoType, !!shell.isHeavyArty);
+    const blastRadius = BP.radius, blastCore = BP.core;
 
     this.units.forEach(unit => {
       if (unit._netHidden || unit._netStale) return;   // vị trí không rõ (máy chủ lọc tầm nhìn / mất gói quá lâu)
@@ -3513,6 +3503,7 @@ class ArtilleryGame3D {
         '#gun-sight .gs-side span{display:block}',
         '#gun-sight .gs-side .gs-big{font-size:20px;font-weight:600;color:var(--gs-c)}',
         '#gun-sight .gs-state{color:var(--gs-c);font-weight:600}',
+        '#gun-sight .gs-blast{color:#ff9a6e;font-size:11px;max-width:220px;line-height:1.35}',
         '#gun-sight .gs-hint{position:absolute;left:50%;bottom:calc(7vh + 64px);transform:translateX(-50%);font-size:11px;opacity:.8;letter-spacing:.04em;text-shadow:0 0 3px #000;white-space:nowrap}',
         '#gun-sight.arty .gs-vig{background:radial-gradient(ellipse at 50% 50%,transparent 70%,rgba(6,12,8,.22) 100%)}',
         '#gun-sight.optic .gs-vig{background:radial-gradient(circle at 50% 50%,transparent 0,transparent 46%,rgba(12,16,12,.14) 49%,rgba(12,16,12,.24) 100%)}',
@@ -3594,13 +3585,14 @@ class ArtilleryGame3D {
       + (etched ? '<div class="gs-optic"></div>' : '')
       + (arty ? '' : '<svg class="gs-ret' + (etched ? ' etched' : '') + '" viewBox="-100 -100 200 200">' + ret + '</svg>')
       + '<div class="gs-top"><span>' + prof.name + '</span><b class="gs-hdg">000°</b><span class="gs-mag"></span></div>'
-      + '<div class="gs-side"><span>CỰ LY</span><span class="gs-big gs-range">—</span><span class="gs-state"></span></div>'
+      + '<div class="gs-side"><span>CỰ LY</span><span class="gs-big gs-range">—</span><span class="gs-state"></span><span class="gs-blast"></span></div>'
       + '<div class="gs-hint">' + (arty
         ? 'W A S D: di chuyển vùng nhìn · Lăn chuột: cao / thấp · Nhấp: chọn điểm bắn / khóa xe · Space: bắn · Ctrl hoặc C: thoát'
         : 'Lăn chuột: phóng to / thu nhỏ · Nhấp: ngắm điểm / khóa xe · Space: bắn · Ctrl hoặc C: thoát') + '</div>';
     this._sightMagEl = el.querySelector('.gs-mag');
     this._sightRangeEl = el.querySelector('.gs-range');
     this._sightStateEl = el.querySelector('.gs-state');
+    this._sightBlastEl = el.querySelector('.gs-blast');
     this._sightHdgEl = el.querySelector('.gs-hdg');
     el._c = null;
     return el;
@@ -3739,8 +3731,18 @@ class ArtilleryGame3D {
       if (this._sightMagEl.textContent !== m) this._sightMagEl.textContent = m;
       const r = range !== null ? range.toLocaleString() + ' M' : '—';
       if (this._sightRangeEl.textContent !== r) this._sightRangeEl.textContent = r;
-      const sTxt = S.rangeNote || (sk === 'locked' ? 'TÊN LỬA ĐÃ KHÓA' : sk === 'seeking' ? 'ĐẦU DÒ ĐANG BÁM' : sk === 'blind' ? 'KHÔNG NHÌN THẤY MỤC TIÊU' : st === 'on' ? 'ĐÃ NGẮM TRÚNG' : st === 'covered' ? 'BỊ CHE' : (st === 'blocked' || wall) ? 'BỊ CHẮN' : st === 'slew' ? 'ĐANG XOAY THÁP' : (S.arty ? 'NHẤP ĐỂ CHỌN ĐIỂM BẮN' : ''));
+      const tr = this._lockTrack;
+      const sTxt = S.rangeNote || (tr && tr.blind && st !== 'on' ? 'TRƯỚC MŨI XE — QUAY THÂN XE' : null) || (L && L.out && st !== 'on' ? 'ĐẠN BAY RA NGOÀI BẢN ĐỒ' : null) || (sk === 'locked' ? 'TÊN LỬA ĐÃ KHÓA' : sk === 'seeking' ? 'ĐẦU DÒ ĐANG BÁM' : sk === 'blind' ? 'KHÔNG NHÌN THẤY MỤC TIÊU' : st === 'on' ? 'ĐÃ NGẮM TRÚNG' : st === 'covered' ? 'BỊ CHE' : (st === 'blocked' || wall) ? 'BỊ CHẮN' : st === 'slew' ? 'ĐANG XOAY THÁP' : (S.arty ? 'NHẤP ĐỂ CHỌN ĐIỂM BẮN' : ''));
       if (this._sightStateEl.textContent !== sTxt) this._sightStateEl.textContent = sTxt;
+      // vùng sát thương dự kiến của loại đạn đang nạp (cùng đơn vị với cự ly) + sức nổ ước tính tới xe đang khóa
+      const BI = this._blastInfo;
+      let bTxt = '';
+      if (BI) {
+        bTxt = (BI.cluster ? 'VÙNG RẢI ĐẠN CON ~' : 'VÙNG NỔ ') + BI.radius + ' M' + (BI.core ? ' · LÕI ' + BI.core + ' M' : '');
+        if (BI.hitK !== null && BI.cluster) bTxt += BI.hitK > 0 ? ' · MỤC TIÊU TRONG VÙNG RẢI' : ' · MỤC TIÊU NGOÀI VÙNG RẢI';
+        else if (BI.hitK !== null) bTxt += BI.hitK >= 0.99 ? ' · MỤC TIÊU TRONG LÕI' : BI.hitK > 0 ? ' · SỨC NỔ TỚI MỤC TIÊU ~' + Math.round(BI.hitK * 100) + '%' : ' · MỤC TIÊU NGOÀI VÙNG NỔ';
+      }
+      if (this._sightBlastEl && this._sightBlastEl.textContent !== bTxt) this._sightBlastEl.textContent = bTxt;
     }
   }
 
@@ -3822,6 +3824,19 @@ class ArtilleryGame3D {
     }
     const dist = Math.max(1, Math.hypot(at.x - P.x, at.z - P.z));
     const R = Dispersion.ring(P, dist, P.selectedAmmo, P.elevation);
+    // lựu pháo bắn cầu vồng: vùng rơi tính từ độ nhạy của chính đường đạn (khớp với các phát bắn thật rải ra);
+    // tính lại ~4 lần/giây, giữa các lần chỉ nhân theo hệ số trạng thái xe hiện tại (chạy / quay tháp / vừa bắn)
+    if (R.lob && this.ballistics.impactSpread) {
+      const C = this._spreadCalc || (this._spreadCalc = { t: 0, E: null, mul: 1 });
+      C.t -= dt;
+      if (C.t <= 0) {
+        C.t = 0.25;
+        const sg = Dispersion.sigma(P, P.selectedAmmo, P.elevation, dist);
+        C.E = this.ballistics.impactSpread(P, this.terrain, sg);
+        C.mul = sg.mul;
+      }
+      if (C.E) { const k = R.mul / (C.mul || 1); R.along = 2 * C.E.along * k; R.cross = 2 * C.E.cross * k; }
+    }
     const want = { a: Math.max(5, R.along), c: Math.max(5, R.cross) };
     const S = this._spreadR || (this._spreadR = { a: want.a, c: want.c });
     const k = Math.min(1, dt * 8);
@@ -3834,6 +3849,63 @@ class ArtilleryGame3D {
     // vòng càng to (kém chụm) càng mờ đi một chút để không che chiến trường
     this.spreadRingMat.opacity = Math.max(0.28, Math.min(0.6, 0.6 - (R.mul - 1) * 0.12));
     ring.visible = true;
+  }
+
+  // VÙNG SÁT THƯƠNG DỰ KIẾN quanh điểm rơi, theo loại đạn đang nạp (cùng bảng bán kính với sát thương thật —
+  // BallisticsSystem3D.blastProfile): vòng ngoài = bán kính nổ lan tối đa, đĩa trong = vùng lõi chịu trọn sức nổ.
+  // Đạn chùm: vùng rải đạn con (elip theo hướng bắn, tính từ điểm đạn mẹ tách vỏ) + bán kính nổ mỗi đạn con.
+  // Đang khóa xe / ngắm điểm: ước lượng sức nổ tới mục tiêu nếu đạn rơi đúng điểm dự kiến (this._blastInfo -> kính ngắm).
+  updateBlastZone(dt, at, fp = null, tgt = null) {
+    const P = this.player;
+    let Z = this._blastZone;
+    if (!at || !P || typeof BallisticsSystem3D === 'undefined' || !BallisticsSystem3D.blastProfile) {
+      if (Z) Z.visible = false;
+      this._blastInfo = null;
+      return;
+    }
+    if (!Z || Z.parent !== this.scene) {
+      Z = this._blastZone = new THREE.Group();
+      const outer = new THREE.RingGeometry(0.965, 1, 96); outer.rotateX(-Math.PI / 2);
+      const disc = new THREE.CircleGeometry(1, 64); disc.rotateX(-Math.PI / 2);
+      const mk = (geo, op) => {
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xff6a3d, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false, depthTest: false }));
+        m.renderOrder = 2; m.frustumCulled = false; Z.add(m); return m;
+      };
+      Z.userData = { outer: mk(outer, 0.55), fill: mk(disc, 0.07), core: mk(disc, 0.16) };
+      this.scene.add(Z);
+    }
+    const U = Z.userData;
+    // loại đạn sẽ bắn ra (như spg.fire): xe pháo HE / CLUSTER / AP, xe 6 nòng & trinh sát đạn liên thanh / tên lửa
+    const ammo = P.selectedAmmo || 'NORMAL', heavy = P.tankType === 'ARTILLERY';
+    const fire = heavy ? (ammo === 'CLUSTER' || ammo === 'AP' ? ammo : 'HE')
+      : P.tankType === 'GATLING' ? (ammo === 'INCENDIARY' ? 'INCENDIARY' : 'GATLING_BULLET')
+      : P.tankType === 'SCOUT' ? (ammo === 'INCENDIARY' || ammo === 'ANTI_TANK_MISSILE' ? ammo : 'SCOUT_BULLET') : ammo;
+    const BP = BallisticsSystem3D.blastProfile(fire, heavy);
+    if (BP.radius < 20 && fire !== 'CLUSTER') { Z.visible = false; this._blastInfo = null; return; }   // đạn súng: mảnh văng sát điểm chạm
+    let cx = at.x, cz = at.z, ra = BP.radius, rc = BP.radius, core = BP.core, yaw = Math.PI - (P.azimuth || 0) * Math.PI / 180;
+    if (fire === 'CLUSTER' && fp) {
+      // vùng rải đạn con (elip theo hướng bắn) + bán kính nổ mỗi đạn con
+      const SR = BallisticsSystem3D.blastProfile('CLUSTER_SUBMUNITION', heavy).radius;
+      cx = fp.x; cz = fp.z; ra = fp.along + SR; rc = fp.cross + SR; core = 0; yaw = fp.yaw;
+    }
+    const y = this.terrain ? this.terrain.getElevationAt(cx, cz) : at.y;
+    Z.position.set(cx, y + 0.8, cz);
+    Z.rotation.y = yaw;
+    U.outer.scale.set(rc, 1, ra); U.fill.scale.set(rc, 1, ra);
+    U.core.visible = core > 0;
+    if (core > 0) U.core.scale.set(core, 1, core);
+    Z.visible = true;
+    // sức nổ ước tính tới mục tiêu đang ngắm (1 = trọn sức nổ ở lõi); xe đứng ngoài vòng: 0
+    let hitK = null;
+    if (tgt && !tgt.isDead && tgt.id !== undefined && tgt !== this._aimPoint) {
+      const dx = tgt.x - cx, dz = tgt.z - cz;
+      if (fire === 'CLUSTER') {
+        // trong elip vùng rải đạn con: 1, ngoài: 0
+        const al = dx * Math.sin(yaw) + dz * Math.cos(yaw), cr = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+        hitK = (al / ra) * (al / ra) + (cr / rc) * (cr / rc) <= 1 ? 1 : 0;
+      } else hitK = this.blastFalloff(Math.hypot(dx, dz), BP.core, BP.radius);
+    }
+    this._blastInfo = { radius: Math.round(Math.max(ra, rc)), core: Math.round(core), cluster: fire === 'CLUSTER', hitK };
   }
 
   loop(currentTime) {
@@ -4414,7 +4486,19 @@ class ArtilleryGame3D {
       );
 
       if (traj && traj.points && traj.points.length > 1) {
-        this._lastTraj = { x: traj.impactPoint.x, y: traj.impactPoint.y, z: traj.impactPoint.z, d: traj.distance, wall: traj.hitType === 'WALL' };
+        const isOut = traj.hitType === 'OUT';   // đạn bay ra ngoài chiến trường: không có điểm rơi
+        // Đạn chùm: điểm rơi = tâm vùng rải đạn con (đạn mẹ tách vỏ trên không, đạn con rơi ngắn hơn) — cùng điểm bộ giải
+        // ngắm nhắm vào; vùng rải tính lại ~7 lần/giây
+        const FP = this._clusterFP || (this._clusterFP = { t: 0, F: null });
+        if (traj.burst && !isOut && this.player.selectedAmmo === 'CLUSTER' && this.ballistics.clusterFootprint) {
+          FP.t -= dt;
+          if (FP.t <= 0 || !FP.F) { FP.t = 0.15; FP.F = this.ballistics.clusterFootprint(traj.burst, this.terrain); }
+          if (FP.F) {
+            traj.impactPoint.set(FP.F.x, this.terrain.getElevationAt(FP.F.x, FP.F.z), FP.F.z);
+            traj.distance = Math.round(Math.hypot(FP.F.x - this.player.x, FP.F.z - this.player.z));
+          }
+        } else FP.F = null;
+        this._lastTraj = { x: traj.impactPoint.x, y: traj.impactPoint.y, z: traj.impactPoint.z, d: traj.distance, wall: traj.hitType === 'WALL', out: isOut };
 
         const isWall = traj.hitType === 'WALL';
         // Trạng thái ngắm so với điểm cần trúng (xe đã khóa — có đón đầu — hoặc điểm neo trên mặt đất)
@@ -4434,7 +4518,7 @@ class ArtilleryGame3D {
           // (tính cả đoạn nòng: địch sát tới mức miệng nòng đã vượt qua tâm xe địch)
           const passes = miss >= onTol && tgt === this.lockedTarget && !isWall
             && this.trajPassesUnit([new THREE.Vector3(this.player.x, (this.player.y || 0) + 22, this.player.z), ...traj.points], ax, (tgt.y || 0) + 9, az);
-          aimState = (miss < onTol || passes) ? 'on' : ((unreachable || isWall) && miss > 40 ? 'blocked' : 'slew');
+          aimState = (miss < onTol || passes) && !isOut ? 'on' : ((unreachable || isWall || isOut) && miss > 40 ? 'blocked' : 'slew');
           // Nòng đã chỉ đúng hướng mục tiêu mà đường đạn bị gò / đồi / nhà / tường / thân cây chặn trước khi tới -> BỊ CHE
           // (trước đây đạn chạm đỉnh gò ngay trước xe địch vẫn nằm trong dung sai -> báo "đã ngắm trúng")
           const Pp = this.player;
@@ -4469,10 +4553,11 @@ class ArtilleryGame3D {
           WorldMarkers.placeOnGround(this.reticle3D, this.terrain, ip.x, ip.z, ip.y, rr, 0);
           const RU = this.reticleRingMat.uniforms;
           RU.uSpin.value = (RU.uSpin.value + dt * 0.5) % 6.2832;
-          RU.uState.value = (isWall || aimState === 'blocked' || aimState === 'covered') ? 1 : 0;
+          RU.uState.value = (isWall || isOut || aimState === 'blocked' || aimState === 'covered') ? 1 : 0;
           this.reticleRingMat.color.setHex(col);
           this.reticle3D.visible = true;
           this.updateSpreadRing(dt, this.reticle3D.position, col);
+          this.updateBlastZone(dt, isOut || isWall ? null : (passAt || traj.impactPoint), FP.F, tgt);
         }
 
         const trajDistEl = domById('traj-dist-val');
@@ -4504,6 +4589,7 @@ class ArtilleryGame3D {
       if (this.trajectoryLine) this.trajectoryLine.visible = false;
       if (this.reticle3D) this.reticle3D.visible = false;
       if (this.spreadRing) this.spreadRing.visible = false;
+      this.updateBlastZone(dt, null);
     }
     this.updateAimAnchor(dt);
     this.updateDriveMarker(dt);
@@ -5419,6 +5505,7 @@ class ArtilleryGame3D {
     if (typeof ExplosionFX !== 'undefined' && ExplosionFX.clearGroundHoles) ExplosionFX.clearGroundHoles();
     this.ballistics = new BallisticsSystem3D(this.scene);
     this.ballistics.vegetationProvider = () => this.terrain && this.terrain.trees;
+    this.ballistics.terrainProvider = () => this.terrain;
     if (this.effectsManager) this.ballistics.fx = this.effectsManager.fx;
     this.radar = new CounterBatteryRadar();
     this.zone = new BattleZone(this.worldWidth, this.worldDepth);
