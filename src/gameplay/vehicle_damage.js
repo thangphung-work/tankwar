@@ -1489,7 +1489,7 @@ const VehicleDamage = (() => {
   // Độ xuyên ở cự ly 0 (mm), mất xuyên theo cự ly (tỉ lệ / 1000 đơn vị bay) và kiểu tác động
   const PEN = {
     AP: { mm: 650, loss: 0.06, kind: 'KE', big: true },            // đạn mũi tên APFSDS 120mm
-    NORMAL: { mm: 480, loss: 0, kind: 'CE', big: true },           // đạn đa năng nổ lõm HEAT-MP
+    NORMAL: { mm: 38, loss: 0, kind: 'HE', big: true },            // đạn nổ phá tiêu chuẩn 120mm (~1,5 kg thuốc nổ, ít hơn HE)
     HE: { mm: 45, loss: 0, kind: 'HE', big: true },                // nổ phá: xé giáp mỏng, gần như vô hại với giáp dày
     CLUSTER: { mm: 90, loss: 0, kind: 'CE', big: true },
     CLUSTER_SUBMUNITION: { mm: 90, loss: 0, kind: 'CE', big: false },  // bom con nổ lõm: đánh nóc xe
@@ -1500,6 +1500,8 @@ const VehicleDamage = (() => {
     SCOUT_BULLET: { mm: 28, loss: 0.5, kind: 'KE', big: false }     // 12.7mm xuyên giáp
   };
   const PEN_HEAVY = { HE: { mm: 70, loss: 0, kind: 'HE', big: true }, AP: { mm: 300, loss: 0.03, kind: 'KE', big: true }, NORMAL: { mm: 70, loss: 0, kind: 'HE', big: true } };
+  // Đạn cao cấp "nổ lõm 2 tầng" (Equipment.PREMIUM.heat_tandem) thay đạn thường bằng đạn nổ lõm thật của pháo tăng
+  const PEN_HEAT_TANDEM = { mm: 480, loss: 0, kind: 'CE', big: true, tandem: true };
   // Hiệu quả sau khi xuyên theo cỡ đạn & cỡ xe: mảnh đạn nhỏ trong khoang rộng xe tăng gây ít thiệt hại hơn
   const POSTPEN = { small: { heavy: 0.35, medium: 0.6, light: 1.0, soft: 1.1 }, big: { heavy: 1.0, medium: 1.0, light: 1.2, soft: 1.25 } };
 
@@ -1510,7 +1512,9 @@ const VehicleDamage = (() => {
   function armorOutcome(u, opts, ctx) {
     const A = ARMOR[u.tankType] || ARMOR.ALL_ROUNDER;
     const T = ARMOR_MM[u.tankType] || ARMOR_MM.ALL_ROUNDER;
-    const P = (opts.heavy && PEN_HEAVY[opts.ammo]) || PEN[opts.ammo] || PEN.NORMAL;
+    const EQ = typeof Equipment !== 'undefined' && Equipment.armorMul ? Equipment : null;
+    const heatTandem = !opts.heavy && opts.ammo === 'NORMAL' && EQ && EQ.isTandem(opts.shooter, 'NORMAL');
+    const P = heatTandem ? PEN_HEAT_TANDEM : (opts.heavy && PEN_HEAVY[opts.ammo]) || PEN[opts.ammo] || PEN.NORMAL;
     const { face, onTurret, hit, dir, d } = ctx;
     // Mặt giáp
     const key = face === 'top' ? 'top' : face === 'rear' ? 'rear' : face === 'front' ? (onTurret ? 'turretFront' : 'hullFront') : (onTurret ? 'turretSide' : 'side');
@@ -1523,7 +1527,6 @@ const VehicleDamage = (() => {
     // Mặt giáp đã mất tấm giáp / váy xích: mỏng đi
     armor /= (d.faceLoss[face] || 1);
     // Trang bị mua thêm: tấm giáp tăng cường còn trên mặt này; gạch giáp nổ bị trúng kích nổ (cộng giáp cho phát này)
-    const EQ = typeof Equipment !== 'undefined' && Equipment.armorMul ? Equipment : null;
     if (EQ) {
       armor *= EQ.armorMul(u, face, onTurret);
       if (ctx.tag && !d.lost.has(ctx.tag)) armor += EQ.eraBonus(ctx.tag, P.kind, !!P.tandem || EQ.isTandem(opts.shooter, opts.ammo));

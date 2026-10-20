@@ -1879,6 +1879,21 @@ class ArtilleryGame3D {
     }
   }
 
+  // Khoảng cách từ điểm nổ tới thân xe (3D): theo chiều ngang tính tới tâm xe, theo chiều đứng chỉ tính phần
+  // nằm ngoài chiều cao thân xe (~2 m) -> nổ sát đất cạnh xe không đổi, nổ trên mái nhà / trên cao thì xa hơn
+  blastDistance(unit, x, y, z) {
+    const base = unit.y || (this.terrain && this.terrain.getElevationAt ? this.terrain.getElevationAt(unit.x, unit.z) : 0);
+    const dy = y < base ? base - y : Math.max(0, y - (base + 16));
+    return Math.hypot(unit.x - x, unit.z - z, dy);
+  }
+
+  // Mức sát thương nổ lan còn lại theo khoảng cách: trọn vẹn trong vùng lõi, ra ngoài giảm dần ~1/r
+  // (mật độ mảnh văng & xung sức ép giảm nhanh theo khoảng cách), về 0 êm ở mép bán kính nổ
+  blastFalloff(dist, core, radius) {
+    if (dist >= radius) return 0;
+    return Math.min(1, core / Math.max(1, dist)) * (1 - Math.pow(dist / radius, 3));
+  }
+
   // Xử lý nổ đạn pháo 3D
   handleShellImpact(shell, hitType = 'GROUND', directTarget = null) {
     // Đạn đã nổ: cắt ngay tiếng rít đang lao xuống (điểm rơi thật có thể khác dự đoán)
@@ -2101,13 +2116,15 @@ class ArtilleryGame3D {
     } else if (shell.isHeavyArty) {
       blastRadius = 90;
     }
+    // Vùng lõi (đơn vị game, 8 = 1 m): trong lõi chịu trọn sức nổ, ra ngoài giảm dần theo khoảng cách
+    const blastCore = (shell.isHeavyArty && ammoType !== 'AP') ? 32 : ammoType === 'HE' ? 20 : ammoType === 'NORMAL' || ammoType === 'CLUSTER' ? 16 : blastRadius * 0.35;
 
     this.units.forEach(unit => {
       if (unit._netHidden || unit._netStale) return;   // vị trí không rõ (máy chủ lọc tầm nhìn / mất gói quá lâu)
       // Xác xe trong vùng nổ: tiếp tục bị xé rã (chỉ hiệu ứng, không tính điểm)
       if (unit.isDead && unit.dmg && unit.group && unit.group.visible && typeof VehicleDamage !== 'undefined') {
         if (hitType === 'DIRECT_HIT' && unit === directTarget) return;
-        const dW = Math.hypot(unit.x - x, unit.z - z);
+        const dW = this.blastDistance(unit, x, y, z);
         if (dW <= blastRadius) {
           const wr = VehicleDamage.onSplash(unit, { x, y, z, ammo: ammoType, heavy: !!shell.isHeavyArty, dist: dW, radius: blastRadius, fx: fxSys });
           this.reportWreckDamage(unit, shooter, wr && wr.events);
@@ -2122,9 +2139,10 @@ class ArtilleryGame3D {
           return;
         }
 
-        const dist = Math.hypot(unit.x - x, unit.z - z);
+        const dist = this.blastDistance(unit, x, y, z);
         if (dist <= blastRadius) {
-          let splashDamage = (dist <= 25) ? 1.0 : 0.5;
+          // Sát thương lớn nhất (sát điểm nổ) theo loại đạn; nhân với mức giảm theo khoảng cách ở dưới
+          let splashDamage = 1.0;
           if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
             // 30mm nổ-mảnh văng mảnh nhỏ sát điểm chạm; 12.7mm không có thuốc nổ
             splashDamage = (ammoType === 'SCOUT_BULLET' || (shooter && shooter.tankType === 'SCOUT')) ? 0 : 0.02;
@@ -2136,12 +2154,13 @@ class ArtilleryGame3D {
           } else if (ammoType === 'RPG' || ammoType === 'ANTI_TANK_MISSILE') {
             splashDamage = 1.3;
           } else if (shell.isHeavyArty) {
-            splashDamage = (dist <= 55) ? 2.2 : 1.2; // Pháo HE hạng nặng nổ lan cực mạnh
+            splashDamage = 2.2; // Pháo HE hạng nặng nổ lan cực mạnh
           } else if (ammoType === 'HE') {
-            splashDamage = (dist <= 35) ? 1.6 : 0.9;
+            splashDamage = 1.6;
           } else if (ammoType === 'AP') {
             splashDamage = 0.15;   // không thuốc nổ: chỉ mảnh vỡ / bụi kim loại cháy sát điểm chạm
           }
+          splashDamage *= this.blastFalloff(dist, blastCore, blastRadius);
 
           // Nổ dưới nước: nước hấp thụ phần lớn mảnh văng & sóng nổ
           if (hitType === 'WATER') splashDamage *= 0.5;

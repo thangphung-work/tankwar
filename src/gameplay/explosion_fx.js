@@ -686,7 +686,10 @@
     return g;
   }
 
-  const ROCK_G = 98, ROCK_VK = Math.sqrt(98 / 160);
+  // Trọng lực thật theo tỉ lệ thế giới (8 đơn vị = 1 m -> 9,81 m/s² = 78,5 đv/s², như đường đạn trong ballistics.js):
+  // tia lửa, tàn cháy, đất đá văng đều rơi theo cùng một trọng lực (trước đây 98-140, rơi nhanh gấp 1,25-1,8 lần)
+  const GRAV = 78.5;
+  const ROCK_G = GRAV, ROCK_VK = Math.sqrt(GRAV / 160);
   class RockLayer {
     constructor(scene, max, color = 0x8a7a63) {
       this.max = max;
@@ -1360,7 +1363,7 @@
           const sp = rand(80, 260);
           this.fire.add({
             x: p.x, y: p.y, z: p.z, vx: r.x * sp + rand(-30, 30), vy: r.y * sp + rand(-10, 40), vz: r.z * sp + rand(-30, 30),
-            size: rand(1, 2.2), grow: -1, drag: 0.8, grav: 120, life: rand(0.25, 0.6), alpha: 1, fadeIn: 0.005,
+            size: rand(1, 2.2), grow: -1, drag: 0.8, grav: GRAV, life: rand(0.25, 0.6), alpha: 1, fadeIn: 0.005,
             c0: [1, 0.9, 0.6], c1: [1, 0.5, 0.15], cell: 3
           });
         }
@@ -1866,7 +1869,7 @@
         const nq = 1 + ((Math.random() * 3) | 0);
         for (let q = 0; q < nq; q++) {
           const sp = rand(60, 140);
-          this.streaks.add({ x: P.x, y: P.y, z: P.z, vx: (N.x + rand(-0.6, 0.6)) * sp, vy: (N.y + rand(0.1, 0.9)) * sp, vz: (N.z + rand(-0.6, 0.6)) * sp, drag: 1.4, grav: 120, life: rand(0.18, 0.4), tail: rand(0.025, 0.045) });
+          this.streaks.add({ x: P.x, y: P.y, z: P.z, vx: (N.x + rand(-0.6, 0.6)) * sp, vy: (N.y + rand(0.1, 0.9)) * sp, vz: (N.z + rand(-0.6, 0.6)) * sp, drag: 1.4, grav: GRAV, life: rand(0.18, 0.4), tail: rand(0.025, 0.045) });
         }
       }
       if (Math.random() < 0.3) {
@@ -2633,7 +2636,7 @@
                 // đạn 30 / 12.7 nổ: đầu đạn, vỏ đạn bắn tóe thành vệt sáng
                 for (let q = 0; q < 3; q++) {
                   const a = Math.random() * Math.PI * 2, sp = rand(70, 150);
-                  this.streaks.add({ x: ring.x + jx, y: ring.y + 2, z: ring.z + jz, vx: Math.cos(a) * sp * 0.6, vy: rand(40, 140), vz: Math.sin(a) * sp * 0.6, drag: 1.4, grav: 120, life: rand(0.25, 0.5), tail: rand(0.03, 0.05) });
+                  this.streaks.add({ x: ring.x + jx, y: ring.y + 2, z: ring.z + jz, vx: Math.cos(a) * sp * 0.6, vy: rand(40, 140), vz: Math.sin(a) * sp * 0.6, drag: 1.4, grav: GRAV, life: rand(0.25, 0.5), tail: rand(0.03, 0.05) });
                 }
               }
               if (window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(small ? 'cookoffSmall' : 'cookoff', ring, small ? (type === 'GATLING' ? 0.75 : 0.55) : 0.9);
@@ -3319,7 +3322,7 @@
         this.fire.add({
           x, y: y + 1, z,
           vx: Math.cos(a) * sp * 0.8 + nx * sp * 0.6, vy: rand(30, 150) * Math.sqrt(s), vz: Math.sin(a) * sp * 0.8 + nz * sp * 0.6,
-          size: rand(1.2, 2.8), grow: -1.5, drag: 0.9, grav: 140,
+          size: rand(1.2, 2.8), grow: -1.5, drag: 0.9, grav: GRAV,
           life: rand(0.35, 0.9), alpha: 1, fadeIn: 0.01, c0: [1, 0.85, 0.5], c1: [1, 0.45, 0.15], cell: 3
         });
       }
@@ -3374,7 +3377,7 @@
         const a = Math.random() * Math.PI * 2, sp = rand(80, 200);
         this.fire.add({
           x, y, z, vx: Math.cos(a) * sp * 0.7, vy: -rand(40, 160), vz: Math.sin(a) * sp * 0.7,
-          size: rand(1.4, 2.6), grow: -1, drag: 0.6, grav: 120, life: rand(0.4, 0.9), alpha: 1, fadeIn: 0.01,
+          size: rand(1.4, 2.6), grow: -1, drag: 0.6, grav: GRAV, life: rand(0.4, 0.9), alpha: 1, fadeIn: 0.01,
           c0: [1, 0.85, 0.5], c1: [1, 0.4, 0.12], cell: 3
         });
       }
@@ -3393,7 +3396,7 @@
         this.addLight(x, y + 2, z, 0.8, 0.14);
         for (let i = 0; i < 7; i++) {
           const sp = rand(40, 110);
-          this.fire.add({ x, y, z, vx: nx * sp + rand(-25, 25), vy: rand(10, 50), vz: nz * sp + rand(-25, 25), size: rand(0.9, 1.6), grow: -0.5, drag: 1.2, grav: 120, life: rand(0.25, 0.5), alpha: 1, fadeIn: 0.004, c0: [1, 0.9, 0.6], c1: [1, 0.45, 0.1], cell: 3 });
+          this.fire.add({ x, y, z, vx: nx * sp + rand(-25, 25), vy: rand(10, 50), vz: nz * sp + rand(-25, 25), size: rand(0.9, 1.6), grow: -0.5, drag: 1.2, grav: GRAV, life: rand(0.25, 0.5), alpha: 1, fadeIn: 0.004, c0: [1, 0.9, 0.6], c1: [1, 0.45, 0.1], cell: 3 });
         }
         this.spallCone(new THREE.Vector3(x, y, z).addScaledVector(dv, 3), dv, 18, { spread: 0.35, speed: 0.8 });
         for (let i = 0; i < 4; i++) {
@@ -3505,7 +3508,7 @@
         const a = Math.random() * Math.PI * 2, sp = rand(20, 60);
         this.fire.add({
           x, y: y + 1, z, vx: Math.cos(a) * sp, vy: rand(20, 55), vz: Math.sin(a) * sp,
-          size: rand(2.5, 4.5), grow: -0.5, drag: 0.8, grav: 110, life: rand(0.8, 1.6), alpha: 1, fadeIn: 0.01,
+          size: rand(2.5, 4.5), grow: -0.5, drag: 0.8, grav: GRAV, life: rand(0.8, 1.6), alpha: 1, fadeIn: 0.01,
           c0: [1, 0.8, 0.4], c1: [1, 0.35, 0.08], cell: 1
         });
       }
@@ -3989,7 +3992,7 @@
         const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * spread;
         const dd = d.clone().addScaledVector(u, Math.cos(a) * r).addScaledVector(v, Math.sin(a) * r).normalize();
         const sp = rand(220, 520) * (opts.speed || 1);
-        this.streaks.add({ x: p.x, y: p.y, z: p.z, vx: dd.x * sp, vy: dd.y * sp, vz: dd.z * sp, drag: 1.1, grav: 90, life: rand(0.25, 0.6), tail: rand(0.03, 0.06) });
+        this.streaks.add({ x: p.x, y: p.y, z: p.z, vx: dd.x * sp, vy: dd.y * sp, vz: dd.z * sp, drag: 1.1, grav: GRAV, life: rand(0.25, 0.6), tail: rand(0.03, 0.06) });
       }
       // Chớp sáng trắng tại điểm thoát + vụn vật liệu & bụi phụt theo hướng xuyên
       this.fire.add({ x: p.x, y: p.y, z: p.z, vx: d.x * 20, vy: d.y * 20, vz: d.z * 20, size: 7, grow: 16, life: 0.07, alpha: 1, fadeIn: 0.003, c0: [1, 0.95, 0.85], cell: 3, floor: false });
