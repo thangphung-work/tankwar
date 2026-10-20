@@ -170,15 +170,29 @@ SoundEngine.mixin(class {
     // mỗi lớp: tốc độ phát & điểm bắt đầu ngẫu nhiên riêng -> các lớp không trùng nhịp lặp, mỗi đám cháy một kiểu
     const loop = (buf, r0, r1) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rnd(r0, r1); srcs.push(s); return s; };
     // nhiễu chậm điều khiển độ "phừng" của lửa (không tuần hoàn, mỗi bộ chao một đoạn khác nhau của bộ đệm 97 s)
-    const flick = (hz, depth, target) => {
+    // Độ chao bị bóp mềm (tanh) trong ±frac × giá trị gốc của target (đặt trước khi gọi flick): nhiễu chậm có lúc trôi
+    // xa 3-4σ, không chặn thì tâm tần tiếng gầm lá (~650 Hz, chao ±~180 Hz) bị kéo về gần 0 Hz -> bộ lọc để lọt hết dải
+    // trầm của nhiễu hồng, lửa phình to dần thành tiếng ù / rẹt kéo dài vài giây; độ lớn chao âm thì đảo pha, vọt to
+    if (!this._fireTanh) {
+      this._fireTanh = new Float32Array(1025);
+      for (let i = 0; i < 1025; i++) this._fireTanh[i] = Math.tanh(3 * (i / 512 - 1)) / Math.tanh(3);
+    }
+    const flick = (hz, depth, target, frac) => {
       const n = loop(B.slow, 0.8, 1.25);
       const f = ctx.createBiquadFilter();
       f.type = 'lowpass';
       f.frequency.value = hz;
+      const lim = Math.max(1e-4, frac * Math.abs(target.value));
+      const pre = ctx.createGain();
+      pre.gain.value = depth / (3 * lim);   // độ dốc đường cong ở 0 là ~3 -> chao nhỏ giữ nguyên biên độ depth × nhiễu
+      const ws = ctx.createWaveShaper();
+      ws.curve = this._fireTanh;
       const g = ctx.createGain();
-      g.gain.value = depth;
+      g.gain.value = lim;
       n.connect(f);
-      f.connect(g);
+      f.connect(pre);
+      pre.connect(ws);
+      ws.connect(g);
       g.connect(target);
     };
     const size = leaf ? rnd(0.55, 0.7) : rnd(0.85, 1.15);   // đám cháy to hơn: gầm trầm hơn; lá cháy: ngọn nhỏ, sáng tiếng
@@ -188,10 +202,10 @@ SoundEngine.mixin(class {
     rf.type = 'bandpass';
     rf.frequency.value = 420 / size;
     rf.Q.value = rnd(0.45, 0.65);
-    flick(3, 4000, rf.frequency);   // tâm tần chao ±~200 Hz
+    flick(3, 4000, rf.frequency, 0.5);   // tâm tần chao ±~200 Hz
     const ra = ctx.createGain();
     ra.gain.value = leaf ? 0.6 : 1.4;
-    flick(4, 9, ra.gain);           // độ lớn chao ±~40%
+    flick(4, 9, ra.gain, 0.8);       // độ lớn chao ±~40%
     roar.connect(rf);
     rf.connect(ra);
     ra.connect(mix);
@@ -201,10 +215,10 @@ SoundEngine.mixin(class {
     bf.type = 'bandpass';
     bf.frequency.value = 260 / size;
     bf.Q.value = 0.6;
-    flick(1.5, 1500, bf.frequency);
+    flick(1.5, 1500, bf.frequency, 0.5);
     const ba = ctx.createGain();
     ba.gain.value = leaf ? 0.3 : 1.0;
-    flick(rnd(0.9, 1.4), 14, ba.gain);
+    flick(rnd(0.9, 1.4), 14, ba.gain, 0.8);
     br.connect(bf);
     bf.connect(ba);
     ba.connect(mix);
@@ -221,8 +235,9 @@ SoundEngine.mixin(class {
     lg.connect(mix);
     // 2. lách tách dày (vật liệu cháy nứt nổ) — 2 lớp lệch tốc độ phát, mật độ dâng / lắng chậm ngẫu nhiên
     // lá cháy: lách tách giòn, dải cao, dày hơn (lá & cành nhỏ quăn nổ liên tục)
-    // (lá: chỉ còn là lớp nền nhỏ — tiếng tách chính do fireSnap rời rạc lo, lớp lặp dày to quá nghe thành "rè rè")
-    for (const [r0, r1, fq, g] of (leaf ? [[1.1, 1.35, 4200, 1.4], [0.9, 1.1, 2600, 1.1]] : [[0.9, 1.12, 2600, 3.2], [0.66, 0.8, 1500, 2.4]])) {
+    // Lá: bỏ hẳn — bộ đệm lách tách có những đoạn dày 80-500 ms (tới ~150 tiếng/giây) phát lặp thành từng tràng "rẹt rẹt";
+    // tiếng tách của lá do fireSnap rời rạc lo hết
+    for (const [r0, r1, fq, g] of (leaf ? [] : [[0.9, 1.12, 2600, 3.2], [0.66, 0.8, 1500, 2.4]])) {
       const c = loop(B.crk, r0, r1);
       const cf = ctx.createBiquadFilter();
       cf.type = 'bandpass';
@@ -230,21 +245,23 @@ SoundEngine.mixin(class {
       cf.Q.value = 0.5;
       const cg = ctx.createGain();
       cg.gain.value = g * rnd(0.8, 1.2);
-      flick(0.7, g * 9, cg.gain);   // ±~40% theo đợt cháy bùng / lắng
+      flick(0.7, g * 9, cg.gain, 0.8);   // ±~40% theo đợt cháy bùng / lắng
       c.connect(cf);
       cf.connect(cg);
       cg.connect(mix);
     }
-    // 3. tí tách trầm của mảnh lớn (than hồng, kim loại nóng co giãn)
-    const pop = loop(B.crk, 0.36, 0.45);
-    const pf = ctx.createBiquadFilter();
-    pf.type = 'lowpass';
-    pf.frequency.value = 700;
-    const pg = ctx.createGain();
-    pg.gain.value = leaf ? 0.5 : 2.2;
-    pop.connect(pf);
-    pf.connect(pg);
-    pg.connect(mix);
+    // 3. tí tách trầm của mảnh lớn (than hồng, kim loại nóng co giãn); lá không có (cùng bộ đệm, phát chậm thành "rẹt" trầm)
+    if (!leaf) {
+      const pop = loop(B.crk, 0.36, 0.45);
+      const pf = ctx.createBiquadFilter();
+      pf.type = 'lowpass';
+      pf.frequency.value = 700;
+      const pg = ctx.createGain();
+      pg.gain.value = 2.2;
+      pop.connect(pf);
+      pf.connect(pg);
+      pg.connect(mix);
+    }
     // 4. khí nóng xì (nhiễu hồng dải cao ×6 ≈ mức nhiễu trắng cũ)
     const hiss = loop(B.pink, 1.0, 1.2);
     const hf = ctx.createBiquadFilter();
@@ -254,7 +271,7 @@ SoundEngine.mixin(class {
     // lá: chỉ xì rất nhỏ — xì cao liên tục chao nhanh nghe như sóng radio "rè rè"; tiếng xèo xèo hơi nước của lá tươi
     // đến từng đợt ngắn (scheduleFireSnaps)
     hg.gain.value = leaf ? (dry ? 0.06 : 0.12) : 0.2;
-    flick(leaf ? 1.5 : 2, leaf ? (dry ? 0.55 : 1.1) : 2.4, hg.gain);
+    flick(leaf ? 1.5 : 2, leaf ? (dry ? 0.55 : 1.1) : 2.4, hg.gain, 0.8);
     hiss.connect(hf);
     hf.connect(hg);
     hg.connect(mix);
@@ -272,11 +289,13 @@ SoundEngine.mixin(class {
       const ts = F.nextSnap;
       const loud = Math.pow(Math.random(), 2.5);   // đa số nhỏ, thỉnh thoảng một tiếng to
       if (F.leaf) {
-        // lá / cành nhỏ nứt "tách" sắc, giòn; thỉnh thoảng một chùm 2-4 tiếng sát nhau (cuống lá quăn nổ), ít khi
+        // lá / cành nhỏ nứt "tách" sắc, giòn; thỉnh thoảng một chùm 2-3 tiếng sát nhau (cuống lá quăn nổ), ít khi
         // một tiếng "cạch" đục hơn của cành to
-        const nb = Math.random() < 0.22 ? 2 + ((Math.random() * 3) | 0) : 1;
+        // (các tiếng trong chùm cách nhau >= 20 ms, sát hơn thì dính thành tiếng "rẹt")
+        const nb = Math.random() < 0.18 ? 2 + (Math.random() < 0.35 ? 1 : 0) : 1;
         const lv = Math.pow(Math.random(), 3);
-        for (let b = 0; b < nb; b++) this.fireSnap(F.mix, ts + b * (0.01 + Math.random() * 0.035), (0.25 + 2.2 * lv) * (b ? 0.5 + Math.random() * 0.5 : 1), Math.random() > 0.12);
+        let tb = ts;
+        for (let b = 0; b < nb; b++, tb += 0.02 + Math.random() * 0.06) this.fireSnap(F.mix, tb, (0.4 + 3.4 * lv) * (b ? 0.5 + Math.random() * 0.5 : 1), Math.random() > 0.12);
         F.nextSnap = ts - Math.log(1 - Math.random()) / rate;
         continue;
       }
