@@ -1418,9 +1418,11 @@ class SPGUnit3D {
     const idleAmp = this.idleVibeAmp !== undefined ? this.idleVibeAmp : 0.0004;
     const idleVibe = idleAmp > 0 && !this.isDead ? Math.sin(this.idleVibeTimer) * idleAmp * Math.max(0, 1 - Math.abs(this.speed) / 5) : 0;
 
-    // 3. Tiến trình nạp đạn
-    if (this.reloadTimer > 0) {
+    // 3. Tiến trình nạp đạn pháo chính (xe 6 nòng / trinh sát nạp băng trong updateGatling — trừ ở đây nữa thì
+    // bộ đếm chạy gấp đôi, và khi nó về 0 ở đây thì updateGatling không bao giờ nạp lại băng: súng kẹt 0 viên)
+    if (this.reloadTimer > 0 && this.tankType !== 'GATLING' && this.tankType !== 'SCOUT') {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
+      if (this.isPlayer) this.updateReloadSound();
     }
 
     // 4. Xoay radar cảnh giới & chớp đèn ăng-ten
@@ -2924,6 +2926,25 @@ class SPGUnit3D {
     return { position: tipWorld, direction: dir };
   }
 
+  // Chu trình nạp đạn nghe từ trong xe (chỉ xe người chơi): khóa nòng mở lúc bắn ('open', gọi trong fire()) ->
+  // lấy đạn ra khỏi hộc / băng chuyền nạp tự động xoay ('fetch') -> đẩy đạn vào nòng, khóa nòng đóng sập ('ram'),
+  // canh để tiếng đóng khóa nòng rơi đúng lúc đồng hồ nạp đạn về 0
+  updateReloadSound() {
+    const se = window.soundEngine;
+    if (!se || !se.playReloadPhase || !this._reloadSndPhase) return;
+    const arty = this.tankType === 'ARTILLERY';
+    const ramLead = arty ? 1.05 : 0.6;
+    const elapsed = (this.reloadDuration || 0) - this.reloadTimer;
+    if (this._reloadSndPhase === 'open' && elapsed >= (arty ? 0.9 : 1.1) && this.reloadTimer > ramLead + 0.7) {
+      se.playReloadPhase(this.tankType, 'fetch');
+      this._reloadSndPhase = 'fetch';
+    }
+    if (this.reloadTimer <= ramLead) {
+      se.playReloadPhase(this.tankType, 'ram', this.reloadTimer);
+      this._reloadSndPhase = null;
+    }
+  }
+
   // ==========================================
   // KHAI HỎA: KÍCH HOẠT HIỆU ỨNG BẮN SIÊU MÃN NHÃN
   // ==========================================
@@ -3040,14 +3061,19 @@ class SPGUnit3D {
     this.shotsFired++;
 
     if (window.soundEngine) {
+      // Lựu pháo: tiếng nổ theo liều phóng đang dùng
+      const sndOpts = (this.tankType === 'ARTILLERY' && ballistics.artyChargeMulOf) ? { chargeMul: ballistics.artyChargeMulOf(this.charge) } : {};
       if (this.isPlayer) {
-        window.soundEngine.playCannonFire(this.tankType, ammoTypeToFire);
+        window.soundEngine.playCannonFire(this.tankType, ammoTypeToFire, 0, null, sndOpts);
+        // Khóa nòng bán tự động mở ra ở cuối hành trình lùi, đẩy vỏ / đáy liều ra (chu trình nạp: xem updateReloadSound)
+        if (window.soundEngine.playReloadPhase) window.soundEngine.playReloadPhase(this.tankType, 'open');
+        this._reloadSndPhase = 'open';
       } else {
         // Xe khác nã pháo: nghe theo khoảng cách & hướng tới người chơi
         const me = window.game && window.game.player;
         if (me && me !== this) {
           const d = Math.hypot(this.x - me.x, this.z - me.z);
-          if (d < 3200) window.soundEngine.playCannonFire(this.tankType, ammoTypeToFire, Math.max(1, d), { x: this.x, z: this.z });
+          if (d < 3200) window.soundEngine.playCannonFire(this.tankType, ammoTypeToFire, Math.max(1, d), { x: this.x, z: this.z }, sndOpts);
         }
       }
     }
@@ -3090,9 +3116,18 @@ class SPGUnit3D {
       }
     }
 
+    // Phòng hờ: hết thời gian nạp mà băng vẫn rỗng -> lắp băng mới
+    if (this.reloadTimer <= 0 && this.gatlingMag <= 0) this.gatlingMag = this.gatlingMagMax;
+
     // Nếu đang trong thời gian nạp lại băng đạn (hết đạn)
     if (this.reloadTimer > 0) {
+      const prevReload = this.reloadTimer;
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
+      // Tiếng lắp băng / dây đạn mới, canh để tiếng khóa cuối cùng rơi đúng lúc nạp xong
+      const magInLead = this.tankType === 'SCOUT' ? 1.3 : 1.5;
+      if (this.isPlayer && prevReload > magInLead && this.reloadTimer <= magInLead && window.soundEngine && window.soundEngine.playReloadPhase) {
+        window.soundEngine.playReloadPhase(this.tankType, 'magIn', this.reloadTimer);
+      }
       if (this.reloadTimer <= 0) {
         this.gatlingMag = this.gatlingMagMax;
       }
@@ -3125,6 +3160,7 @@ class SPGUnit3D {
           if (this.gatlingMag <= 0) {
             // Hết đạn: Chuyển sang thời gian nạp lại băng đạn
             this.reloadTimer = this.reloadDuration;
+            if (this.isPlayer && window.soundEngine && window.soundEngine.playReloadPhase) window.soundEngine.playReloadPhase(this.tankType, 'magOut');
             break;
           }
         }
@@ -3227,7 +3263,7 @@ class SPGUnit3D {
         const me = window.game && window.game.player;
         if (me && !me.isDead) {
           const d = Math.hypot(this.x - me.x, this.z - me.z);
-          if (d < 1400) window.soundEngine.playGatlingShot(this.tankType, Math.max(1, d), { x: this.x, z: this.z });
+          if (d < 1400) window.soundEngine.playGatlingShot(this.tankType, Math.max(1, d), { x: this.x, z: this.z }, this.id);
         }
       }
     }
@@ -3436,6 +3472,7 @@ class SPGUnit3D {
     this.speed = 0;
     this.invulnerableTimer = 3.0; // 3 giây khiên bảo vệ bất tử
     this.reloadTimer = 0;
+    this._reloadSndPhase = null;
     this.barrelRecoil = 0;
     this.chassisRecoilPitch = 0;
     this.rockPitch = this.rockRoll = this.rockVelP = this.rockVelR = this.rockHeave = this.rockVelH = 0;

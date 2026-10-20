@@ -2921,7 +2921,7 @@ class ArtilleryGame3D {
 
             if (unit.isPlayer) {
               this.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'tip');
-              if (window.soundEngine) window.soundEngine.playReloadDone();
+              if (window.soundEngine) (window.soundEngine.playSupplyPickup || window.soundEngine.playReloadDone).call(window.soundEngine);
               this.updateAmmoUI();
             } else if ((typeof TeamIntel === 'undefined' || !this.player || unit.team === this.player.team || TeamIntel.knows(this.player, unit))) {
               this.addCombatLog(`[[alert-triangle]] ${unit.name} ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'alert');
@@ -3139,9 +3139,7 @@ class ArtilleryGame3D {
 
               if (unit.isPlayer) {
                 this.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM HÒM TIẾP TẾ [${crate.name}]: +${rewardMsg}`, 'tip');
-                if (window.soundEngine && typeof window.soundEngine.playReloadDone === 'function') {
-                  window.soundEngine.playReloadDone();
-                }
+                if (window.soundEngine) (window.soundEngine.playSupplyPickup || window.soundEngine.playReloadDone).call(window.soundEngine);
                 this.updateAmmoUI();
               } else if ((typeof TeamIntel === 'undefined' || !this.player || unit.team === this.player.team || TeamIntel.knows(this.player, unit))) {
                 this.addCombatLog(`[[alert-triangle]] ${unit.name} đã nhặt hòm tiếp tế tại [${crate.name}]`, 'alert');
