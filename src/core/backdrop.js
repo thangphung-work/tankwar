@@ -29,7 +29,7 @@ const Backdrop = (() => {
   // Sắc vertex color phủ lên shader mặt đất: rừng xa (mảng xanh đậm), vân đá núi bàn, đỉnh núi đá sáng
   const TINT = {
     DESERT: null,
-    URBAN: { forest: [0.56, 0.64, 0.5], density: 0.75 },
+    URBAN: { forest: [0.56, 0.64, 0.5], density: 0.9, base: [0.8, 0.97, 0.68] },   // vật liệu nền đô thị xám: đồi ngoài phố ngả xanh cỏ
     JUNGLE: { forest: [0.42, 0.55, 0.38], density: 1.0 },
     HIGHLAND: { forest: [0.46, 0.53, 0.42], density: 0.8, treeline: 430 },
     RIVER_LAKE: { forest: [0.5, 0.6, 0.42], density: 0.9 }
@@ -41,7 +41,7 @@ const Backdrop = (() => {
   const FOREST = {
     JUNGLE: { pow: 0.3, r: [18, 28], squash: 0.75 },
     RIVER_LAKE: { pow: 1.0, r: [13, 21], squash: 0.8 },
-    URBAN: { pow: 1.4, r: [11, 17], squash: 0.8 },
+    URBAN: { pow: 0.7, r: [12, 19], squash: 0.8 },
     HIGHLAND: { pow: 1.0, pine: true, r: [5, 8], hgt: [17, 28], treeline: 430 }
   };
   const SP = 50;   // bước lưới rải khóm cây
@@ -202,6 +202,10 @@ const Backdrop = (() => {
         if (seaLvl !== null) f *= smooth(seaLvl + 4, seaLvl + 14, h);
         if (tint.treeline) f *= 1 - smooth(tint.treeline - 80, tint.treeline + 60, h);
         r = 1 + (tint.forest[0] - 1) * f; g = 1 + (tint.forest[1] - 1) * f; b = 1 + (tint.forest[2] - 1) * f;
+        if (tint.base) {
+          const kb = k * (seaLvl !== null ? smooth(seaLvl + 3, seaLvl + 9, h) : 1);
+          r *= 1 + (tint.base[0] - 1) * kb; g *= 1 + (tint.base[1] - 1) * kb; b *= 1 + (tint.base[2] - 1) * kb;
+        }
       }
       if (T.mapType === 'DESERT') {
         // vách núi bàn: vân đá trầm tích theo độ cao, đỉnh cao ngả đỏ gạch
