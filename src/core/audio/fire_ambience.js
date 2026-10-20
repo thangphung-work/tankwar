@@ -37,6 +37,14 @@ SoundEngine.mixin(class {
       }
       F = this.makeFireLoop(t, opts);
       this.fireLoops.set(key, F);
+      // Tự dọn lửa hết được báo: sweepFires vốn chỉ chạy trong fireSource / updateEngine — trang không có tiếng máy
+      // (fx_lab...) hoặc đám cháy cuối cùng vừa tắt thì không ai gọi nữa -> vòng lặp lửa kêu "ù ù" mãi
+      if (!this._fireSweepId) {
+        this._fireSweepId = setInterval(() => {
+          if (this.ctx) this.sweepFires(this.ctx.currentTime);
+          if (!this.fireLoops.size) { clearInterval(this._fireSweepId); this._fireSweepId = 0; }
+        }, 500);
+      }
     }
     F.seen = t;
     F.d = d;
