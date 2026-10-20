@@ -1047,6 +1047,8 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     }
     return 1;
   }
+  // Thân cây / rừng rậm giữa điểm nổ và xe: hệ số mảnh văng còn lại (1 = không che)
+  treeShield(ex, ey, ez, ux, uy, uz) { return this.trees && this.trees.blastShield ? this.trees.blastShield(ex, ey, ez, ux, uy, uz) : 1; }
   isUnderCover(x, z) { return this.bunkerSet ? !!this.bunkerSet.isUnderCover(x, z) : false; }
 
   // ---------------------------------------------------------------------------
