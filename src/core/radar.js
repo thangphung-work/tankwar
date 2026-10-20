@@ -67,14 +67,9 @@ class CounterBatteryRadar {
       }
     }
 
-    const warningBanner = document.getElementById('warning-banner');
-    if (warningBanner) {
-      if (playerIsTracked) {
-        warningBanner.classList.remove('hidden');
-      } else {
-        warningBanner.classList.add('hidden');
-      }
-    }
+    // Băng cảnh báo (#warning-banner) do game.js quản lý (đạn lao xuống / ngoài bo / bị radar khóa).
+    // Trước đây chỗ này chạy sau game.js và ẩn băng mỗi khung hình -> cảnh báo đạn lao xuống không bao giờ hiện.
+    this.playerIsTracked = playerIsTracked;
   }
 
   // Vẽ các điểm phản pháo TINH GỌN, SẠCH SẼ TRÊN BẢN ĐỒ (Không tô màu đỏ đặc, không in chữ rác mắt)
