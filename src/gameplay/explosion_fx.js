@@ -3172,7 +3172,7 @@
 
       // Hiệu ứng mảnh văng của vỏ đạn kim loại (cho đạn pháo, HE, CLUSTER, HEAT, v.v.)
       if (!prof.micro && prof.kind !== 'kinetic') {
-        this.spawnShrapnel(x, py, z, s, prof, opts, dirVec, isWall, isVehicle);
+        this.spawnShrapnel(x, py, z, s, prof, opts, dirVec, isWall, isVehicle, ammoType, nx, nz);
         // Sóng xung kích: vỏ khí nén giãn nở + vòng bụi bị thổi bạt sát mặt đất
         if (prof.kind === 'blast' || prof.kind === 'bomblet' || prof.kind === 'heat') {
           // Luật tỉ lệ nổ (Hopkinson-Cranz): cùng áp suất ở khoảng cách ~ khối thuốc nổ^(1/3)
@@ -4347,26 +4347,32 @@
     }
 
     // --- Hiệu ứng mảnh văng của vỏ đạn kim loại (mảnh thép nóng đỏ xé gió, mảnh vỏ 3D, vết găm đất) ---
-    spawnShrapnel(x, y, z, s, prof, opts, dirVec, isWall, isVehicle) {
-      const isHeavy = !!(opts.heavy || prof.kind === 'he');
+    spawnShrapnel(x, y, z, s, prof, opts, dirVec, isWall, isVehicle, ammoType = 'NORMAL', wnx = 0, wnz = 0) {
+      const isHeavy = !!(opts.heavy || prof === PROFILES.HE);
       const ground = this.groundAt(x, z);
       const pal = this.palette(isWall ? 'WALL' : 'GROUND');
+      const BP = typeof BlastPhysics !== 'undefined' ? BlastPhysics : null;
+      const bs = BP ? BP.spec(ammoType, !!opts.heavy) : null;
+      // Hướng mảnh: vành vuông góc thân đạn (side spray) khớp với cách tính sát thương (BlastPhysics.sampleSpray).
+      // Đạn rơi dốc -> vành ngang toả đều; bay là là -> hai cánh trái / phải. Đầu nổ lõm, bom con: toả gần đều.
+      const axis = bs && bs.spray && dirVec && dirVec.hasDir ? dirVec : null;
+      const pick = () => BP ? BP.sampleSpray(axis) : (() => { const a = Math.random() * 6.283, e = rand(0.08, 0.85); return { x: Math.cos(a) * Math.cos(e), y: Math.sin(e), z: Math.sin(a) * Math.cos(e) }; })();
+      const wallLen = Math.hypot(wnx, wnz);
+      // Mảnh thật bay 1-2 km/s (quét qua 30 m trong ~20 ms). Ở đây làm chậm ~5 lần như sóng xung kích nhưng vẫn
+      // nhanh hơn mặt sóng -> mảnh cắm đất TRƯỚC khi sóng tới, như ngoài đời
+      const FRAG_V = 2400;
 
-      // 1. Mảnh thép nóng đỏ rực rỡ xé gió siêu thanh (Incandescent shrapnel tracers)
+      // 1. Mảnh thép nóng đỏ xé gió (chỉ vẽ mảnh bay lên / ngang; mảnh lao xuống đất cắm ngay sát tâm nổ)
       const tracerCount = Math.round((isHeavy ? 36 : 22) * Math.pow(s, 0.7));
       for (let i = 0; i < tracerCount; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const elev = rand(0.08, 0.85); // góc văng từ sát mặt đất tới 50 độ
-        const sp = rand(160, 360) * Math.sqrt(s);
-        const cosE = Math.cos(elev);
-        const vx = Math.cos(a) * cosE * sp;
-        const vy = Math.sin(elev) * sp;
-        const vz = Math.sin(a) * cosE * sp;
-
-        // Mảnh thép nóng xé gió: vệt sáng kéo dài theo vận tốc, cắm xuống đất tung bụi
+        let t = pick();
+        if (!isVehicle && t.y < -0.12) continue;                                   // lao thẳng vào đất
+        if (isWall && wallLen > 0.1 && (t.x * wnx + t.z * wnz) / wallLen < -0.1) continue;   // lao vào tường
+        const sp = rand(0.75, 1.25) * FRAG_V;
         this.streaks.add({
           x: x + (Math.random() - 0.5) * 2, y: y + rand(0.5, 2.5), z: z + (Math.random() - 0.5) * 2,
-          vx: vx * 1.1, vy: vy * 0.9, vz: vz * 1.1, drag: 1.8, grav: rand(110, 170), life: rand(0.22, 0.5), tail: rand(0.02, 0.04)
+          vx: t.x * sp, vy: Math.max(t.y, -0.05) * sp, vz: t.z * sp,
+          drag: rand(2.2, 3.2), grav: 78, life: rand(0.18, 0.34), tail: rand(0.008, 0.016)
         });
       }
 
@@ -4391,17 +4397,21 @@
         });
       }
 
-      // 3. Vết găm đất và cột bụi mảnh văng cắm xuống địa hình xung quanh
+      // 3. Vết găm đất và cột bụi mảnh văng cắm xuống địa hình xung quanh. Mật độ ~1/r^2 (rải log theo bán kính),
+      //    hướng theo vành mảnh (đạn bay là là: hai dải bụi hai bên đường bay), cắm gần như cùng lúc
       if (!isWall && !isVehicle) {
-        const hitZoneRadius = (22 + 20 * s) * (isHeavy ? 1.4 : 1.0);
-        const groundHits = Math.round((isHeavy ? 24 : 14) * Math.pow(s, 0.5));
+        const hitZoneRadius = bs ? bs.rmax * 0.5 * (BP ? BP.U : 8) : (22 + 20 * s) * (isHeavy ? 1.4 : 1.0);
+        const rMin = 6;
+        const groundHits = Math.round((isHeavy ? 30 : 16) * Math.pow(s, 0.5));
         for (let i = 0; i < groundHits; i++) {
-          const a = Math.random() * Math.PI * 2;
-          const r = rand(10, hitZoneRadius);
-          const px = x + Math.cos(a) * r;
-          const pz = z + Math.sin(a) * r;
+          let t = pick();
+          for (let k = 0; k < 4 && Math.hypot(t.x, t.z) < Math.random(); k++) t = pick();   // mảnh dựng đứng không cắm xa
+          const hl = Math.hypot(t.x, t.z) || 1;
+          const r = rMin * Math.pow(hitZoneRadius / rMin, Math.random());
+          const px = x + t.x / hl * r;
+          const pz = z + t.z / hl * r;
           const gy = this.groundAt(px, pz);
-          const delay = r / (rand(260, 360) * Math.sqrt(s));
+          const delay = r / (FRAG_V * rand(0.75, 1.25));
 
           // Cột bụi đất li ti bốc lên tại điểm mảnh cắm
           this.smoke.add({

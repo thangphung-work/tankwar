@@ -1843,8 +1843,10 @@ const VehicleDamage = (() => {
     d.last = { cls, heavy: !!opts.heavy, point: point.clone(), splash: true, ammo: opts.ammo, at: Date.now() };
     // Sóng nổ / mảnh văng: giáp dày chặn tốt, xe nhẹ & xe tải bị mảnh văng xé nát
     let mul = cls === 'heat' || cls === 'kinetic' ? VS.blast[A.cls] : VS[cls][A.cls];
-    // Nổ ngay dưới gầm / trên nóc (đạn chùm, lựu pháo) đánh vào chỗ giáp mỏng
-    if (opts.ammo === 'CLUSTER_SUBMUNITION' || opts.heavy) mul *= A.face.top;
+    // Mặt giáp bị đánh: opts.face (tính theo vị trí tâm nổ so với hộp thân xe, BlastPhysics.hullDistance);
+    // không có -> luật cũ: đạn chùm / lựu pháo coi như đánh vào nóc mỏng
+    const faceK = opts.face ? (A.face[opts.face] || 1) : ((opts.ammo === 'CLUSTER_SUBMUNITION' || opts.heavy) ? A.face.top : 1);
+    mul *= faceK;
     const k = Math.max(0, 1 - opts.dist / Math.max(1, opts.radius));
     const impulse = point.clone().sub(u.group.position).normalize().multiplyScalar(-40 * k);
     u.group.updateMatrixWorld(true);
@@ -1887,7 +1889,7 @@ const VehicleDamage = (() => {
     }
     recompute(u);
     FX = null;
-    return { mul, events };
+    return { mul, events, armorCls: A.cls, faceK };
   }
 
   // Xe bị phá hủy. K = explosion_fx.killInfo(u): kiểu chết theo phát kết liễu.
