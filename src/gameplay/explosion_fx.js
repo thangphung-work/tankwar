@@ -6498,6 +6498,16 @@
       const k = tint ? [Math.min(1, tint[0] / 0.82), Math.min(1, tint[1] / 0.82), Math.min(1, tint[2] / 0.82)] : null;
       (he ? this.wallPits.he : this.wallPits.s).add(p, n, he ? 3.2 : 2.2, null, null, 1, k);
     }
+    // Bỏ các vết trên xe u nằm trong hộp (thế giới): khối giáp / gạch ERA vừa bung khỏi xe không để vết lơ lửng tại chỗ
+    removeUnitMarksIn(u, box) {
+      const p = new THREE.Vector3();
+      for (let i = this.surfaceMarks.length - 1; i >= 0; i--) {
+        const rec = this.surfaceMarks[i];
+        if (rec.unit !== u) continue;
+        this.markWorldPos(rec, p);
+        if (box.containsPoint(p)) this.removeSurfaceMark(i);
+      }
+    }
     removeMarksNear(x, y, z, r) {
       const p = new THREE.Vector3();
       for (let i = this.wallMarks.length - 1; i >= 0; i--) {
