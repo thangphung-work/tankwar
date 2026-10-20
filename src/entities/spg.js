@@ -1704,15 +1704,25 @@ class SPGUnit3D {
     this._gPrev = groundTarget;
     if (this._suspY === undefined || groundTarget - this._suspY > 12 || this._suspY - groundTarget > 90) {
       this._suspY = groundTarget; this._vy = 0; this.airborne = false;
-    } else if (this.airborne || groundTarget < this._suspY + (this._vy || 0) * dt - 0.5 * G * dt * dt - 1.5) {
+    } else if (this.airborne || (!(this._gGrace > 0) && groundTarget < this._suspY + (this._vy || 0) * dt - 0.5 * G * dt * dt - 1.5)) {
       // mặt tì tụt xuống dưới cả quỹ đạo rơi tự do của xe (lao qua mép hố, vách dốc đứng) -> hẫng
       if (!this.airborne) { this.airborne = true; this._airT = 0; }
       this._airT += dt;
       this._vy = (this._vy || 0) - G * dt;
       this._suspY += this._vy * dt;
-      if (this._suspY <= groundTarget) {
+      // điểm chạm sớm nhất của thân xe: đầu / đuôi / hai bên dải xích theo góc chúc & nghiêng hiện tại (qua đỉnh gờ hố,
+      // xe chúi mũi -> mũi đập vào vách trước khi tâm xe chạm mặt tì)
+      const tp = Math.tan(this.currentPitch || 0), tr = Math.tan(this.currentRoll || 0);
+      let pen = groundTarget - this._suspY;
+      for (let si = -1; si <= 1; si += 2) for (let fs = -28; fs <= 28; fs += 14) {
+        const gx = this.x + forwardX * fs + rightX * 14 * si, gz = this.z + forwardZ * fs + rightZ * 14 * si;
+        const d = groundAt(gx, gz) - (this._suspY + fs * tp + 14 * si * tr);
+        if (d > pen) pen = d;
+      }
+      if (pen >= 0) {
         const hit = Math.max(0, gv - this._vy);   // vận tốc va so với mặt đất
-        this._suspY = groundTarget; this._vy = Math.max(gv, this._vy); this.airborne = false;
+        this._suspY = Math.min(this._suspY + pen, Math.max(groundTarget, this._suspY)); this._vy = Math.max(gv, this._vy); this.airborne = false;
+        this._gGrace = 0.35;   // vừa đập xuống: thân bập bênh xuôi theo mặt tì, không coi là hẫng tiếp
         if (hit > 14) {
           // chạm đất: thân xe nhún xuống theo lực va, bập bênh, xe khựng lại
           const k = Math.min(1, hit / 90);
@@ -1723,6 +1733,7 @@ class SPGUnit3D {
         }
       }
     } else {
+      if (this._gGrace > 0) this._gGrace -= dt;
       this._suspY += (groundTarget - this._suspY) * Math.min(1, dt * 12);
       // vận tốc đứng làm mượt (xích trượt tới lui ở vách quá dốc không bị coi là rơi)
       this._vy = (this._vy || 0) + (Math.max(-200, Math.min(200, gv)) - (this._vy || 0)) * Math.min(1, dt * 8);
@@ -3464,7 +3475,7 @@ class SPGUnit3D {
     if (this.botAI) this.botAI.assignedCampPos = null;
     this.y = 0;
     this.engineOff = false; this._floodT = 0; this._floodV = 0;   // hồi sinh: máy lành
-    this._suspY = undefined; this._gPrev = undefined; this._vy = 0; this.airborne = false; this._landK = 0; this.yawRate = 0; this._wheelSteer = 0; this._gear = 1; this._gearHold = 0; this._wlx = undefined; this._dynPitch = this._dynRoll = 0; this._prevSpeed = undefined;
+    this._suspY = undefined; this._gPrev = undefined; this._vy = 0; this.airborne = false; this._landK = 0; this._gGrace = 0; this.yawRate = 0; this._wheelSteer = 0; this._gear = 1; this._gearHold = 0; this._wlx = undefined; this._dynPitch = this._dynRoll = 0; this._prevSpeed = undefined;
     this.maxHp = this.baseMaxHp;
     this.hp = this.maxHp;
     this.hasReactiveArmor = false;
