@@ -28,7 +28,10 @@ const Strongholds = (() => {
     BEAM: 6,       // dầm trần cao 0.75 m
     BEAMS_F: [-64, -32, 0, 32, 64],
     SLOT_R: 44,    // khoảng cách ngang giữa các chỗ đứng (3 xe tăng: -44 / 0 / +44)
-    SLOT_SPG: 40   // 2 pháo tự hành: -40 / +40
+    SLOT_SPG: 40,  // 2 pháo tự hành: -40 / +40
+    HAUNCH: 14,    // vát nách góc trần - tường bên 1.75 m (miệng hầm hình thang, góc trong vát 45°)
+    BEVEL: 3.5,    // vát mép trên gờ mặt tiền / mép nắp hầm
+    WING_BEVEL: 3  // vát mép trong đỉnh tường cánh
   };
   S.WO = S.WI + S.TW;
   S.CREST = S.CEIL + S.ROOF + S.COVER;
@@ -236,6 +239,40 @@ const Strongholds = (() => {
       }
       this.i.push(o, o + 1, o + 2, o, o + 2, o + 3);
     }
+    // Tứ giác quay mặt về hướng out (tự đảo thứ tự đỉnh nếu cần)
+    quadOut(a, b, c, d, uvs, col, out) {
+      const ux = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], vx = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+      const n = [ux[1] * vx[2] - ux[2] * vx[1], ux[2] * vx[0] - ux[0] * vx[2], ux[0] * vx[1] - ux[1] * vx[0]];
+      if (n[0] * out[0] + n[1] * out[1] + n[2] * out[2] >= 0) this.quad(a, b, c, d, uvs, col);
+      else this.quad(a, d, c, b, [uvs[0], uvs[3], uvs[2], uvs[1]], col);
+    }
+    /**
+     * Lăng trụ: đa giác lồi 2D đùn theo trục. axis 'r': đỉnh (f, y), đùn r0..r1; axis 'f': đỉnh (r, y), đùn f0..f1.
+     * skip: chỉ số cạnh bỏ qua (cạnh i nối đỉnh i -> i+1); caps: false = bỏ 2 mặt đầu; shade: hệ số sáng theo cạnh
+     */
+    prism(poly, axis, a0, a1, sc, skip = [], caps = true, shade = {}) {
+      const P = (q, t) => axis === 'r' ? [q[0], q[1], t] : [t, q[1], q[0]];
+      const n = poly.length;
+      const cx = poly.reduce((s, q) => s + q[0], 0) / n, cy = poly.reduce((s, q) => s + q[1], 0) / n;
+      let u = 0;
+      for (let i = 0; i < n; i++) {
+        const p = poly[i], q = poly[(i + 1) % n], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        if (!skip.includes(i)) {
+          // pháp tuyến cạnh hướng ra xa tâm đa giác
+          let ex = q[1] - p[1], ey = -(q[0] - p[0]);
+          if (ex * ((p[0] + q[0]) / 2 - cx) + ey * ((p[1] + q[1]) / 2 - cy) < 0) { ex = -ex; ey = -ey; }
+          const out = axis === 'r' ? [ex, ey, 0] : [0, ey, ex];
+          this.quadOut(P(p, a0), P(q, a0), P(q, a1), P(p, a1), [[u / sc, a0 / sc], [(u + len) / sc, a0 / sc], [(u + len) / sc, a1 / sc], [u / sc, a1 / sc]], shade[i], out);
+        }
+        u += len;
+      }
+      if (!caps) return;
+      for (const [t, sgn] of [[a0, -1], [a1, 1]]) {
+        const out = axis === 'r' ? [0, 0, sgn] : [sgn, 0, 0];
+        const uv = q => [q[0] / sc, q[1] / sc];
+        for (let i = 1; i < n - 1; i++) this.quadOut(P(poly[0], t), P(poly[i], t), P(poly[i + 1], t), P(poly[i + 1], t), [uv(poly[0]), uv(poly[i]), uv(poly[i + 1]), uv(poly[i + 1])], shade.cap, out);
+      }
+    }
     // Hộp theo hệ cục bộ (x = f, y, z = r); bỏ mặt theo cờ skip {top,bottom,fp,fn,rp,rn}
     box(f0, f1, y0, y1, r0, r1, sc, skip = {}, shade = {}) {
       const U = v => v / sc;
@@ -368,6 +405,8 @@ const Strongholds = (() => {
           // mái + dầm trần
           let ceil = S.CEIL - m;
           if (ar < S.WI) for (const bf of S.BEAMS_F) if (Math.abs(L.f - bf) < 3 + m) ceil = S.CEIL - S.BEAM - m;
+          // vát nách góc trần - tường
+          if (ar > S.WI - S.HAUNCH - m) ceil = Math.min(ceil, S.CEIL - S.HAUNCH + (S.WI - ar) - m);
           if (yy >= ceil) return { K, normal: af > S.HB - 3 ? this.dirN(K, Math.sign(L.f), 0) : null };
           // tường bên
           if (ar >= S.WI - m && af <= S.HB) return { K, normal: this.dirN(K, 0, -Math.sign(L.r)) };
@@ -568,11 +607,13 @@ const Strongholds = (() => {
       // Mái (mặt dưới = trần khoang; mặt trên bị đất phủ)
       Rf.box(-HB, HB, CEIL, CEIL + ROOF, -WO - 2, WO + 2, SC, { top: true, fp: true, fn: true }, { bottom: 0.78 });
       // Mặt tiền 2 đầu (gờ dày nhô lên khỏi lớp đất)
+      const HN = S.HAUNCH, BV = S.BEVEL;
       for (const sg of [-1, 1]) {
-        const f0 = sg > 0 ? HB - 5.5 : -HB, f1 = sg > 0 ? HB : -HB + 5.5;
-        Rf.box(f0, f1, CEIL - 0.01, TOP, -WO - 2, WO + 2, SC, { bottom: true, [sg > 0 ? 'fn' : 'fp']: true });
-        // Mép vát dưới lanh tô
-        Rf.box(sg > 0 ? HB - 1.2 : -HB, sg > 0 ? HB + 0.6 : -HB - 0.6, CEIL - 1.6, CEIL, -WI, WI, SC, { top: true }, { bottom: 0.7 });
+        // tiết diện (f, y): mặt tiền đứng, mép trên vát 45° lùi vào trong
+        const fi = sg * (HB - 5.5), fo = sg * HB;
+        Rf.prism([[fi, CEIL - 0.01], [fo, CEIL - 0.01], [fo, TOP - BV], [fo - sg * BV, TOP], [fi, TOP]], 'r', -WO - 2, WO + 2, SC, [0, 4], true, { 2: 1.08, 3: 1.04 });
+        // Mép vát dưới lanh tô (chỉ đoạn giữa 2 góc vát nách)
+        Rf.box(sg > 0 ? HB - 1.2 : -HB, sg > 0 ? HB + 0.6 : -HB - 0.6, CEIL - 1.6, CEIL, -WI + HN, WI - HN, SC, { top: true }, { bottom: 0.7 });
       }
       // Tường bên (chỉ mặt trong lộ ra)
       for (const sg of [-1, 1]) {
@@ -581,11 +622,24 @@ const Strongholds = (() => {
         // chân tường (gờ chống va)
         const k0 = sg > 0 ? WI - 1.4 : -WI, k1 = sg > 0 ? WI : -WI + 1.4;
         C.box(-HB, HB, -D - 0.5, -D + 3, k0, k1, SC, { bottom: true, fp: true, fn: true }, { top: 0.85, rn: 0.7, rp: 0.7 });
+        // Vát nách góc trần - tường (tiết diện tam giác (r, y)), lộ ra thành góc vát của miệng hầm ở 2 đầu
+        C.prism([[sg * WI, CEIL - HN], [sg * WI, CEIL + 0.01], [sg * (WI - HN), CEIL + 0.01]], 'f', -HB, HB, SC, [0, 1], true, { 2: 0.9, cap: 0.95 });
       }
       // Dầm trần
       for (const bf of S.BEAMS_F) Rf.box(bf - 3, bf + 3, CEIL - S.BEAM, CEIL + 0.1, -WI, WI, SC, { top: true, rp: true, rn: true }, { bottom: 0.7, fp: 0.75, fn: 0.75 });
       // Nắp hầm: tấm bê tông lộ trên đỉnh ụ đất (sơn chữ cứ điểm, nhìn rõ từ trên cao)
-      Rf.box(-HB + 7, HB - 7, S.CREST - 2, S.CREST + 2.2, -WI + 2, WI - 2, SC, { bottom: true }, { top: 1.08, fp: 0.9, fn: 0.9, rp: 0.9, rn: 0.9 });
+      {
+        // cạnh vát nghiêng 4 phía (khối chóp cụt dẹt)
+        const f0 = HB - 7, r0 = WI - 2, f1 = f0 - BV, r1 = r0 - BV, y0 = S.CREST - 2, y1 = S.CREST + 2.2;
+        const A = [[-f0, y0, -r0], [f0, y0, -r0], [f0, y0, r0], [-f0, y0, r0]], T = [[-f1, y1, -r1], [f1, y1, -r1], [f1, y1, r1], [-f1, y1, r1]];
+        const uvT = q => [q[0] / SC, q[2] / SC];
+        Rf.quadOut(T[0], T[1], T[2], T[3], T.map(uvT), 1.08, [0, 1, 0]);
+        for (let i = 0; i < 4; i++) {
+          const j = (i + 1) % 4, mx = (A[i][0] + A[j][0]) / 2, mz = (A[i][2] + A[j][2]) / 2;
+          const along = i % 2 === 0 ? q => q[0] : q => q[2];
+          Rf.quadOut(A[i], A[j], T[j], T[i], [[along(A[i]) / SC, 0], [along(A[j]) / SC, 0], [along(T[j]) / SC, 6 / SC], [along(T[i]) / SC, 6 / SC]], 0.95, [mx, 1, mz]);
+        }
+      }
       // Tường cánh loe (mặt trong + đỉnh + đầu tường), chạy từ mép mái ra tới chân ụ đất
       const step = 4;
       for (const sg of [-1, 1]) for (const sr of [-1, 1]) {
@@ -597,15 +651,20 @@ const Strongholds = (() => {
           const P = (q, r, y) => [sg * q, y, sr * r];
           const flip = sg * sr > 0;
           // Mặt trong
-          const A = P(a0, r0, b0), Bq = P(a1, r1, b1), Cq = P(a1, r1, t1), Dq = P(a0, r0, t0);
+          const WB = S.WING_BEVEL;
+          const A = P(a0, r0, b0), Bq = P(a1, r1, b1), Cq = P(a1, r1, t1 - WB), Dq = P(a0, r0, t0 - WB);
           const u0 = a0 / SC * 1.18, u1 = a1 / SC * 1.18;
           if (flip) C.quad(Bq, A, Dq, Cq, [[u1, b1 / SC], [u0, b0 / SC], [u0, t0 / SC], [u1, t1 / SC]], 0.9);
           else C.quad(A, Bq, Cq, Dq, [[u0, b0 / SC], [u1, b1 / SC], [u1, t1 / SC], [u0, t0 / SC]], 0.9);
           // Đỉnh tường (gờ)
+          // Mép trong vát 45° rồi tới đỉnh tường (gờ)
           const T = S.WING_T;
+          const Cb = P(a1, r1 + WB, t1), Db = P(a0, r0 + WB, t0);
+          if (flip) C.quad(Cq, Dq, Db, Cb, [[u1, 0], [u0, 0], [u0, WB * 1.41 / SC], [u1, WB * 1.41 / SC]], 0.98);
+          else C.quad(Dq, Cq, Cb, Db, [[u0, 0], [u1, 0], [u1, WB * 1.41 / SC], [u0, WB * 1.41 / SC]], 0.98);
           const E = P(a0, r0 + T, t0), F = P(a1, r1 + T, t1);
-          if (flip) C.quad(Cq, Dq, E, F, [[u1, 0], [u0, 0], [u0, T / SC], [u1, T / SC]], 1.05);
-          else C.quad(Dq, Cq, F, E, [[u0, 0], [u1, 0], [u1, T / SC], [u0, T / SC]], 1.05);
+          if (flip) C.quad(Cb, Db, E, F, [[u1, 0], [u0, 0], [u0, T / SC], [u1, T / SC]], 1.05);
+          else C.quad(Db, Cb, F, E, [[u0, 0], [u1, 0], [u1, T / SC], [u0, T / SC]], 1.05);
         }
         // Đầu tường cánh
         const ae = S.END, re = cutHalf(ae), te = 2.0, be = floorY(ae) - 2;
@@ -689,7 +748,7 @@ const Strongholds = (() => {
         roofGrp.add(m);
         K.fadeMats.push(m.material);
         // vạch sơn cảnh báo vàng đen dưới lanh tô
-        const stripe = new THREE.Mesh(new THREE.PlaneGeometry(WI * 2, 1.8), new THREE.MeshStandardMaterial({ map: hazardTex(), roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+        const stripe = new THREE.Mesh(new THREE.PlaneGeometry((WI - S.HAUNCH) * 2, 1.8), new THREE.MeshStandardMaterial({ map: hazardTex(), roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
         stripe.position.set(sg * (HB + 0.68), CEIL - 0.6, 0);
         stripe.rotation.y = sg > 0 ? Math.PI / 2 : -Math.PI / 2;
         roofGrp.add(stripe);
