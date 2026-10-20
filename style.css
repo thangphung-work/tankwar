@@ -1241,6 +1241,36 @@ body, html {
 .ti-ammo-chip { white-space: nowrap; padding: 0 11px; cursor: pointer; color: var(--tc-dim); font: 700 10px var(--font-tech); letter-spacing: .8px; background: var(--tc-panel-2); border: 1px solid var(--tc-line-2); clip-path: none; }
 .ti-ammo-chip:hover { color: var(--tc-text); border-color: var(--tc-dim); }
 .ti-ammo-chip.active { color: var(--tc-bg); background: var(--tc-text); border-color: var(--tc-text); }
+/* Chọn bãi thử (proving_ground.js): dải nút trên gợi ý điều khiển, góc dưới trái khung 3D */
+/* Góc dưới trái khung 3D: thông tin mặt đất · chọn bãi · gợi ý phím — xếp chồng, không đè nhau khi khung hẹp */
+.ti-stage-foot { position: absolute; left: 18px; right: 18px; bottom: 16px; z-index: 6; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.ti-stage-foot > * { pointer-events: auto; }
+.ti-stage-foot .ti-controls-hint { position: static; left: auto; right: auto; bottom: auto; max-width: 100%; flex-wrap: wrap; row-gap: 4px; }
+.ti-range-bar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; max-width: 100%; }
+.ti-range-bar > * { height: 28px; box-sizing: border-box; }
+.ti-range-lbl { display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; color: var(--tc-accent); font: 700 10px var(--font-tech); letter-spacing: 1.2px; background: var(--tc-panel); border: 1px solid var(--tc-line-2); border-right-width: 0; }
+.ti-range-chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 0 10px; cursor: pointer; color: var(--tc-dim); font: 700 10px var(--font-tech); letter-spacing: .8px; text-transform: uppercase; background: var(--tc-panel-2); border: 1px solid var(--tc-line-2); clip-path: none; }
+.ti-range-chip + .ti-range-chip { border-left-width: 0; }
+.ti-range-chip .ti { font-size: 13px; }
+.ti-range-chip:hover { color: var(--tc-text); }
+.ti-range-chip.active { color: var(--tc-bg); background: var(--tc-accent); border-color: var(--tc-accent); }
+.ti-range-chip.ti-range-home { margin-left: 6px; border-left-width: 1px; border-style: dashed; background: var(--tc-panel); }
+.ti-range-chip:focus-visible { outline: 2px solid var(--tc-accent-2); outline-offset: 1px; }
+/* Mặt đất dưới xe / độ dốc / độ sâu nước / tốc độ */
+.ti-range-readout { max-width: 100%; padding: 5px 10px; font: 600 11px var(--font-tech); letter-spacing: .4px; color: var(--tc-dim); background: rgba(12, 16, 15, 0.55); border: 1px solid var(--tc-line); pointer-events: none; }
+.ti-range-readout:empty { display: none; }
+.ti-range-readout b { color: var(--tc-text); }
+.ti-range-readout small { color: var(--tc-dim); font-size: 10px; }
+.ti-range-warn { margin-top: 3px; color: #f0a54a; font-weight: 700; }
+/* Thông báo ngắn giữa khung (đổi bãi, thả khói, thiếu trang bị) */
+.ti-toast { position: absolute; left: 50%; top: 58px; z-index: 7; transform: translate(-50%, -6px); max-width: min(560px, calc(100% - 36px)); padding: 8px 14px; font: 600 12px var(--font-tech); line-height: 1.4; color: var(--tc-text); text-align: center; background: rgba(12, 16, 15, 0.86); border: 1px solid var(--tc-accent); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+.ti-toast.show { opacity: 1; transform: translate(-50%, 0); }
+.ti-toast b { color: var(--tc-accent-2); }
+@media (max-width: 600px) {
+  .ti-range-lbl { display: none; }
+  .ti-range-chip { padding: 0 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .ti-toast { transition: none; } }
 
 /* Cột thông số phải */
 .ti-spec-panel { padding: 14px 16px 16px; gap: 10px; overflow-y: auto; background: var(--tc-bg-2); border-left: 1px solid var(--tc-line); box-shadow: none; }
