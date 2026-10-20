@@ -30,6 +30,7 @@
         D.alive = !P.isDead;
         D.lastSec = null;
         D.minute = false;
+        D.above = false;
         D.nextBeat = 0;
       }
       // thời gian còn lại (bỏ qua phòng thử không giới hạn)
@@ -37,7 +38,8 @@
       if (dur < 99 * 60 && g.matchStartTime) {
         const rem = dur - (Date.now() - g.matchStartTime) / 1000;
         M.final = rem <= 20 ? 2 : rem <= 60 ? 1 : 0;
-        if (rem <= 60 && rem > 50 && !D.minute) {
+        if (rem > 60) D.above = true;   // chỉ báo khi chính mình chứng kiến lúc vượt mốc (vào trận muộn thì thôi)
+        if (rem <= 60 && D.above && !D.minute) {
           D.minute = true;
           this.playOneMinuteAlarm();
           if (g.addCombatLog) { try { g.addCombatLog('[[clock]] CÒN 1 PHÚT — dồn sức cho đòn quyết định!', 'alert'); } catch (e) { /* bỏ qua */ } }
