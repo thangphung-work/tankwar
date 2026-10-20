@@ -21,7 +21,7 @@ const ArmoryUI = (() => {
     ALL_ROUNDER: [['NORMAL', 'Đạn pháo 120mm thường', 'circle-dot', 'Không giới hạn'], ['AP', 'Đạn xuyên giáp', 'arrow-big-right-lines'], ['HE', 'Đạn nổ mạnh', 'flame']],
     GATLING: [['GATLING_BULLET', 'Đạn 30mm nổ mảnh', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 30mm', 'flame']],
     ARTILLERY: [['NORMAL', 'Lựu đạn 155mm', 'circle-dot', 'Không giới hạn'], ['HE', 'Lựu đạn nổ mạnh 155', 'flame'], ['CLUSTER', 'Đạn chùm 155', 'atom-2']],
-    SCOUT: [['SCOUT_BULLET', 'Đạn 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['RPG', 'Đạn RPG', 'rocket'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
+    SCOUT: [['SCOUT_BULLET', 'Đạn 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
   };
   for (const t in STOCK_AMMO) STOCK_AMMO[t].push(['SMOKE', 'Lựu đạn khói', 'cloud']);   // vật tư của Ống phóng lựu khói
   const adsLeft = () => (A() && A().adsLeft ? A().adsLeft() : 0);
@@ -35,7 +35,7 @@ const ArmoryUI = (() => {
   const imgTag = (id, alt) => `<img class="eqd-img" src="${imgUrl(id)}" alt="${esc(alt || '')}" loading="lazy" decoding="async" draggable="false">`;
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)
   const SHORT = {
-    era: 'Chặn đạn nổ lõm / RPG, giảm xuyên', slat: 'Chặn ~6/10 phát RPG ở sườn sau, đuôi', applique: 'Giáp sườn +45%, mũi +20%, nặng hơn',
+    era: 'Chặn đạn nổ lõm / RPG, giảm xuyên', slat: 'Chặn ~1/4 tên lửa, ~6/10 bom con; giảm nổ, mảnh văng, chống bén lửa', applique: 'Giáp sườn +45%, mũi +20%, nặng hơn',
     spall: 'Mảnh vỡ trong xe −15% sát thương', aps: 'Tự bắn hạ RPG / tên lửa (2 lần)', smoke: 'Phím G: màn khói ~14 giây (cần lựu đạn khói)',
     camo: 'Đứng yên: khó bị thấy & bị radar bắt', fireext: 'Dập lửa nhanh ×2,5, cháy chỉ còn ½', turbo: 'Tốc độ +8%, tăng tốc +15%',
     radar: 'Thấy xe địch quanh ~75 m, kể cả núp bụi', jammer: 'Tên lửa địch khóa chậm gấp đôi'
@@ -159,6 +159,7 @@ const ArmoryUI = (() => {
         const full = have >= S.max * 10;
         const adBtn = adsOn() ? `
             <button class="eqd-q ad" data-act="adAmmo" data-item="${k}"${left > 0 && !full ? '' : ' disabled'} title="${full ? 'Kho đã đầy' : left > 0 ? `Xem 1 quảng cáo: +${S.ad} viên miễn phí (còn ${left} lượt hôm nay)` : 'Hết lượt quảng cáo hôm nay'}"><i class="ti ti-player-play-filled"></i>+${S.ad}</button>` : '';
+        const base = (Eq.BASE_AMMO[tank] || {})[k] || 0;   // miễn phí mỗi lần xuất kích (bắn trước đạn trong kho)
         const ctl = P ? `<div class="eqd-qty">
             <button class="eqd-q" data-act="sellAmmo" data-item="${k}"${paid ? '' : ' disabled'} title="${paid ? `Trả lại 1 viên, hoàn ${fmt(S.price)} Bạc` : 'Đạn nhận từ quảng cáo không trả lại được'}">−</button>
             <button class="eqd-q add" data-act="buyAmmo" data-item="${k}" data-n="1" title="Mua 1 viên · ${fmt(S.price)} Bạc">+1</button>${S.max >= 50 ? `
@@ -169,8 +170,8 @@ const ArmoryUI = (() => {
         const lowTxt = have <= 0 ? ' · <span class="eqd-warn">HẾT</span>' : have < S.max ? ' · <span class="eqd-warn">SẮP HẾT</span>' : '';
         h += card({ img, name, cls: (have ? ' has' : '') + lowCls, extra: ctl,
           line: needGear ? `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · cần lắp Ống phóng lựu khói`
-            : `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · mang <b>${carry}</b>/trận${lowTxt}`,
-          tip: `${name}: mỗi lần xuất kích tự mang tối đa ${S.max} viên (không quá số trong kho). Giá ${fmt(S.price)} Bạc / viên, trả lại được phần mua bằng Bạc.`
+            : `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · mang <b>${base ? base + ' + ' : ''}${carry}</b>/trận${lowTxt}`,
+          tip: `${name}: ${base ? `mỗi lần xuất kích có sẵn ${base} viên miễn phí (bắn trước), cộng thêm` : 'mỗi lần xuất kích tự mang'} tối đa ${S.max} viên (không quá số trong kho). Giá ${fmt(S.price)} Bạc / viên, trả lại được phần mua bằng Bạc.`
             + (adsOn() ? ` Xem 1 quảng cáo: +${S.ad} viên miễn phí.` : '') + (S.gear ? ' Cần lắp Ống phóng lựu khói (nhóm PHỤ KIỆN).' : '') });
       }
       const prem = Object.keys(Eq.PREMIUM).filter(id => Eq.PREMIUM[id].tank === tank);

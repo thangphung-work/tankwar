@@ -214,6 +214,7 @@ function openDb() {
     addPurchase: P('INSERT INTO purchases (user_id, at, tank, item, qty, cost) VALUES (?, ?, ?, ?, ?, ?)')
   };
   migrateLegacyJson();
+  refundRetiredAmmo();
   Q.sessionPurge.run(Date.now());
   console.log(`[ACC] SQLite ${path.basename(DB_FILE)}: ${Q.countUsers.get().n} tài khoản`);
   return true;
@@ -224,6 +225,29 @@ function tx(fn) {
   db.exec('BEGIN IMMEDIATE');
   try { const r = fn(); db.exec('COMMIT'); return r; }
   catch (e) { try { db.exec('ROLLBACK'); } catch (e2) {} throw e; }
+}
+
+// Đạn đã ngừng bán (Equipment.RETIRED_AMMO, vd RPG xe trinh sát): hoàn đúng giá số viên còn trong kho rồi xóa khỏi kho.
+// Chạy mỗi lần khởi động nhưng chỉ đụng tới kho còn > 0 viên -> không bao giờ hoàn 2 lần
+function refundRetiredAmmo() {
+  const R = Equipment.RETIRED_AMMO || {};
+  let users = 0, silver = 0;
+  tx(() => {
+    for (const tank in R) for (const ammo in R[tank]) {
+      const price = R[tank][ammo].price | 0;
+      const rows = db.prepare('SELECT user_id, n, free FROM ammo_stock WHERE tank = ? AND ammo = ? AND n > 0').all(tank, ammo);
+      for (const r of rows) {
+        // chỉ hoàn phần mua bằng Bạc (phần nhận từ quảng cáo — cột free — không hoàn)
+        const paid = Math.max(0, r.n - (r.free | 0)), refund = paid * price;
+        if (!refund) continue;
+        Q.addSilver.run(refund, r.user_id);
+        Q.addPurchase.run(r.user_id, Date.now(), tank, 'refund:' + ammo, -paid, -refund);
+        users++; silver += refund;
+      }
+      db.prepare('DELETE FROM ammo_stock WHERE tank = ? AND ammo = ?').run(tank, ammo);
+    }
+  });
+  if (users) console.log(`[ACC] Hoàn ${silver} Bạc cho ${users} kho đạn đã ngừng bán`);
 }
 
 // Nhập dữ liệu từ bản lưu JSON cũ (accounts.json) sang SQLite — chỉ 1 lần
