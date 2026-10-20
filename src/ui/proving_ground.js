@@ -3,7 +3,7 @@
  *
  * - 5 bãi: PHẲNG (trường bắn cũ) · ĐỒI DỐC · LỘI NƯỚC · SA MẠC · RỪNG & VẬT CẢN
  * - Mặt đất có độ cao + loại đất thật (cỏ, cát, bùn, sỏi, sườn đá, nước...) -> xe chạy đúng logic trong trận (spg.js):
- *   lún cát, ì bùn, leo dốc theo khả năng từng xe, lội nước (ngập sâu thì chết máy), vệt xích, bụi.
+ *   lún cát, ì bùn, leo dốc theo khả năng từng xe, lội nước (ngập sâu thì tụt máu dần), vệt xích, bụi.
  * - Vật thể rải rác dùng lại đúng lớp trong trận: cây (Destructibles.TreeField — húc đổ, bắn cháy),
  *   hàng rào / tường đá / bao cát / xác xe (Props.PropSet), đá tảng chắn xe & chắn đạn.
  * - Biển báo độ dốc / độ sâu nước để dễ đọc kết quả thử.

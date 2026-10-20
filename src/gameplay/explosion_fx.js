@@ -2476,7 +2476,7 @@
       const src = u._killSource || null;
       // Máy có quyền gọi takeDamage ngay sau onDirectHit / onSplash: phát trúng cuối CHÍNH LÀ phát kết liễu.
       // Máy khác (xe chết qua đồng bộ mạng) chỉ có phát trúng hiển thị -> coi là còn mới nếu trong vài giây
-      const fresh = !!(L && (src === 'DIRECT_HIT' || src === 'SHELL' || (src !== 'BURN' && src !== 'ZONE' && (!L.at || Date.now() - L.at < 8000))));
+      const fresh = !!(L && (src === 'DIRECT_HIT' || src === 'SHELL' || (src !== 'BURN' && src !== 'ZONE' && src !== 'WATER' && (!L.at || Date.now() - L.at < 8000))));
       let mode = 'crew';
       if (src === 'BURN' || (!fresh && d && d.fires && d.fires.length)) mode = 'burn';
       else if (fresh && L.splash) mode = (L.cls === 'blast' || L.cls === 'heat') ? 'blast' : 'crew';
