@@ -32,7 +32,10 @@ class BattleZone {
     // Điểm bắt đầu co
     this.shrinkStart = { ...this.current };
 
-    this.damagePerSecond = 20; // Sát thương ngoài bo
+    // Sát thương ngoài bo (máu / giây). Xe chỉ có 1.6–3.5 máu: 0.35/s cho ~5–10 s để chạy về vùng an toàn,
+    // mỗi pha co tăng thêm (trước đây 20/s -> ra ngoài bo là chết gần như tức thì)
+    this.damagePerSecond = 0.35;
+    this.damagePerPhase = 0.15;
     this.generateNextZone();
   }
 
@@ -76,7 +79,11 @@ class BattleZone {
     };
   }
 
-  update(dt, spgUnits) {
+  /**
+   * spgUnits: các xe (SPGUnit3D), toạ độ thế giới (tâm bản đồ ở gốc); ox / oz: độ dời sang hệ toạ độ của vòng bo
+   * (góc bản đồ ở gốc). Truyền thẳng xe thật — không sao chép mỗi khung hình.
+   */
+  update(dt, spgUnits, ox = 0, oz = 0) {
     this.timer -= dt;
 
     if (this.state === 'waiting') {
@@ -98,7 +105,7 @@ class BattleZone {
         // Hoàn tất thu hẹp, chuyển sang pha kế tiếp
         this.current = { ...this.next };
         this.phase++;
-        this.damagePerSecond += 15; // Tăng sát thương ngoài bo
+        this.damagePerSecond += this.damagePerPhase || 0.15; // Tăng sát thương ngoài bo
 
         if (this.phase <= this.maxPhases) {
           this.state = 'waiting';
@@ -115,21 +122,13 @@ class BattleZone {
     }
 
     // Gây sát thương liên tục cho các xe nằm ngoài vòng bo
-    spgUnits.forEach(unit => {
-      if (!unit.isDead) {
-        const distFromCenter = Math.hypot(unit.x - this.current.x, unit.y - this.current.y);
-        if (distFromCenter > this.current.radius) {
-          unit.takeDamage(this.damagePerSecond * dt, null, 'ZONE');
-          if (unit.isPlayer) {
-            unit.isOutsideZone = true;
-          }
-        } else {
-          if (unit.isPlayer) {
-            unit.isOutsideZone = false;
-          }
-        }
-      }
-    });
+    for (const unit of spgUnits) {
+      if (!unit || unit.isDead) continue;
+      const distFromCenter = Math.hypot(unit.x + ox - this.current.x, unit.z + oz - this.current.y);
+      const outside = distFromCenter > this.current.radius;
+      unit.isOutsideZone = outside;
+      if (outside) unit.takeDamage(this.damagePerSecond * dt, null, 'ZONE');
+    }
 
     // Cập nhật text hiển thị trên HUD
     this.updateHUD();

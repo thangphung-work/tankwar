@@ -17,6 +17,9 @@
   // Chế độ mở hết (freemium): mọi trang bị & đạn cao cấp dùng được ngay, không cần xem quảng cáo, mỗi nhóm lắp
   // được tất cả món hợp với xe. Đặt false để quay lại kiểu cũ: đồ nâng cao phải nhận, mỗi nhóm 2 ô.
   const ALL_FREE = true;
+  // Không giới hạn ô (lắp được mọi món cùng lúc): tắt -> mỗi nhóm GIÁP / PHỤ KIỆN chỉ 2 ô, phải chọn món hợp lối chơi
+  // (lắp được hết thì không còn đánh đổi, ai cũng lắp đủ mọi món). Vẫn miễn phí khi ALL_FREE.
+  const UNLIMITED_SLOTS = false;
   const START_SILVER = 3000;
 
   // ---------------------------------------------------------------------------
@@ -72,9 +75,9 @@
   // Nhóm trong bảng chọn trang bị & số ô tối đa mỗi nhóm (đạn cao cấp không chiếm ô)
   const catSize = (c) => Object.keys(MODULES).filter(id => MODULES[id].cat === c).length;
   const CATS = {
-    armor: { name: 'GIÁP', icon: 'shield-half-filled', slots: ALL_FREE ? catSize('armor') : 2 },
+    armor: { name: 'GIÁP', icon: 'shield-half-filled', slots: UNLIMITED_SLOTS ? catSize('armor') : 2 },
     ammo: { name: 'ĐẠN', icon: 'rocket', slots: 0 },
-    gear: { name: 'PHỤ KIỆN', icon: 'cpu', slots: ALL_FREE ? catSize('gear') : 2 }
+    gear: { name: 'PHỤ KIỆN', icon: 'cpu', slots: UNLIMITED_SLOTS ? catSize('gear') : 2 }
   };
   const SLOTS = CATS.armor.slots + CATS.gear.slots;   // tổng số ô các nhóm
   const EQ_RADAR_RANGE = 600;   // radar lắp thêm (xe trinh sát: 950)
@@ -136,12 +139,17 @@
     return out;
   }
 
-  // Xe do máy điều khiển: 0-2 mô-đun ngẫu nhiên theo hạt giống chung (mọi máy trong phòng ra cùng kết quả)
+  // Xe do máy điều khiển: 2-4 mô-đun ngẫu nhiên theo hạt giống chung (mọi máy trong phòng ra cùng kết quả),
+  // cùng giới hạn ô như người chơi -> trang bị bot ngang ngửa người chơi
   function botKit(tank, rnd) {
     const pool = Object.keys(MODULES).filter(id => compatible(id, tank) && id !== 'aps');
-    const n = Math.floor(rnd() * 3);
+    const n = 2 + Math.floor(rnd() * 3);
     const m = [];
-    while (m.length < n && pool.length) m.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+    while (m.length < n && pool.length) {
+      const id = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
+      const c = MODULES[id].cat;
+      if (m.filter(x => MODULES[x].cat === c).length < ((CATS[c] && CATS[c].slots) || 0)) m.push(id);
+    }
     return { m, p: [], a: Object.assign({}, BOT_AMMO[tank] || {}) };
   }
 
@@ -163,7 +171,7 @@
       .slice(0, 3);
   }
 
-  const API = { TANKS, ALL_FREE, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
+  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================

@@ -104,8 +104,8 @@ const ArmoryUI = (() => {
     if (!Eq) { root.innerHTML = '<div class="eqd-bar"><div class="eqd-note">Thiếu dữ liệu trang bị.</div></div>'; return; }
     const lo = loadout(tank);
     const inCat = (c) => lo.m.filter(id => Eq.MODULES[id] && Eq.MODULES[id].cat === c);
-    // Số ô mỗi nhóm; chế độ mở hết (Equipment.ALL_FREE) = số món hợp với xe này
-    const capOf = (c) => Eq.ALL_FREE ? Object.keys(Eq.MODULES).filter(id => Eq.MODULES[id].cat === c && Eq.compatible(id, tank)).length : Eq.CATS[c].slots;
+    // Số ô mỗi nhóm; chế độ không giới hạn ô (Equipment.UNLIMITED_SLOTS) = số món hợp với xe này
+    const capOf = (c) => Eq.UNLIMITED_SLOTS ? Object.keys(Eq.MODULES).filter(id => Eq.MODULES[id].cat === c && Eq.compatible(id, tank)).length : Eq.CATS[c].slots;
     const C = Eq.CATS[cat], cap = capOf(cat), on = inCat(cat), full = cap && on.length >= cap;
     const keepScroll = ($('.eqd-strip', root) || {}).scrollLeft || 0, sameCat = root.dataset.cat === cat && root.dataset.tank === tank;
 
@@ -117,8 +117,8 @@ const ArmoryUI = (() => {
       h += `<button class="eqd-tab${c === cat ? ' on' : ''}" role="tab" aria-selected="${c === cat}" data-act="cat" data-item="${c}"><i class="ti ti-${K.icon}"></i><span>${K.name}</span>${badge}</button>`;
     }
     h += '</div><div class="eqd-slots">';
-    if (C.slots && Eq.ALL_FREE) {
-      // Mở hết: không còn ô giới hạn -> đếm số món đang dùng + nút trang bị / tháo cả nhóm
+    if (C.slots && Eq.UNLIMITED_SLOTS) {
+      // Không giới hạn ô -> đếm số món đang dùng + nút trang bị / tháo cả nhóm
       h += `<span class="eqd-lbl">ĐANG TRANG BỊ <b>${on.length}/${cap}</b></span>`;
       h += on.length < cap
         ? '<button class="eqp-btn" data-act="equipAll"><i class="ti ti-checks"></i> TRANG BỊ TẤT CẢ</button>'
