@@ -93,8 +93,8 @@ const VehicleDamage = (() => {
   }
 
   // Âm thanh thứ cấp (nổ kho đạn, giáp bong, nổ lốp, kính vỡ...)
-  function sfx(kind, pos, k) {
-    if (pos && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(kind, pos, k || 1);
+  function sfx(kind, pos, k, o) {
+    if (pos && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(kind, pos, k || 1, o || null);
   }
   let FX = null;   // hệ hiệu ứng đang dùng trong lượt xử lý va chạm hiện tại
   // ĐỒNG BỘ NHIỀU NGƯỜI: máy không có quyền với viên đạn chỉ chạy phần HÌNH ẢNH (móp, tia lửa, kính rạn...);
@@ -293,33 +293,106 @@ const VehicleDamage = (() => {
   let groundProvider = null;
   const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 
-  function spawnDebris(u, obj, impulse) {
+  // Trọng trường của mảnh vỡ: khớp thế giới game (~8 đơn vị = 1 m, như Ballistics.gunGravity) -> rơi đúng nhịp thật
+  const DEBRIS_G = 78.5;
+  // Vật liệu mảnh: hệ số nảy (e), ma sát (mu), cản không khí (air) + kiểu tiếng va
+  const DEBRIS_MAT = {
+    plate: { e: 0.18, mu: 0.65, air: 0.02 },   // tấm giáp / váy xích / gạch ERA: thép dày, nặng
+    metal: { e: 0.28, mu: 0.55, air: 0.04 },   // phụ kiện thép nhỏ: hộp đồ, đèn, lan can, giá súng...
+    can: { e: 0.3, mu: 0.5, air: 0.05 },       // vỏ rỗng: bình nhiên liệu, ống phóng tên lửa
+    rubber: { e: 0.42, mu: 0.95, air: 0.02 },  // bánh xe cao su
+    glass: { e: 0.2, mu: 0.5, air: 0.05 },     // kính ngắm / radar
+    link: { e: 0.2, mu: 0.7, air: 0.02 },      // mắt xích
+    net: { e: 0.04, mu: 0.95, air: 0.9 },      // lưới ngụy trang / giỏ vải: rơi lả, không nảy
+    whip: { e: 0.3, mu: 0.5, air: 0.35 }       // roi ăng-ten mảnh
+  };
+  function debrisMatOf(tag) {
+    if (/^(stowage|camoKit)/.test(tag)) return 'net';
+    if (/^(lamp|mirror|searchlight)/.test(tag)) return 'glass';
+    const k = partKind(tag);
+    if (k === 'armor' || k === 'era' || k === 'heavyAcc') return 'plate';
+    if (k === 'optic' || k === 'sensor') return 'glass';
+    if (k === 'fuel' || k === 'atgm') return 'can';
+    if (k === 'camo') return 'net';
+    return 'metal';
+  }
+  const _r = new THREE.Vector3(), _n = new THREE.Vector3(), _t = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _iq = new THREE.Quaternion();
+  // Nhân vector (hệ thế giới) với nghịch đảo tensor quán tính của mảnh ở tư thế hiện tại
+  function invInertia(D, vec, out) {
+    _iq.copy(D.obj.quaternion).invert();
+    out.copy(vec).applyQuaternion(_iq).multiply(D.invI).applyQuaternion(D.obj.quaternion);
+    return out;
+  }
+
+  // opt: { mat: kiểu vật liệu (DEBRIS_MAT), round: mảnh tròn (bánh xe) -> lăn được }
+  function spawnDebris(u, obj, impulse, opt) {
     const scene = u.scene || (u.group && u.group.parent);
     if (!scene) return;
+    opt = opt || {};
     // Kích thước mảnh trong hệ của chính nó -> khi nằm yên, mặt mỏng nhất úp xuống đất
     const q0 = obj.quaternion.clone(), p0 = obj.position.clone(), s0 = obj.scale.clone();
     obj.position.set(0, 0, 0); obj.quaternion.identity();
     obj.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(obj);
-    const dims = box.getSize(new THREE.Vector3());
-    // 8 góc khối bao (hệ của mảnh, chưa nhân scale) -> xét chạm đất theo góc thấp nhất, không theo tâm
+    const dims = box.isEmpty() ? new THREE.Vector3(1, 1, 1) : box.getSize(new THREE.Vector3());
+    const com = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());   // trọng tâm (đã nhân scale)
+    // Điểm tiếp xúc (hệ của mảnh, chưa nhân scale): 8 góc khối bao; mảnh tròn (bánh xe) dùng 2 vành 12 điểm -> lăn được
     const corners = [];
-    if (!box.isEmpty()) for (let i = 0; i < 8; i++) corners.push(new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).divide(s0));
+    if (!box.isEmpty()) {
+      if (opt.round) {
+        const ax = dims.x <= dims.y && dims.x <= dims.z ? 'x' : dims.y <= dims.z ? 'y' : 'z';
+        const o1 = ax === 'x' ? 'y' : 'x', o2 = ax === 'z' ? 'y' : 'z';
+        const R = 0.5 * Math.max(dims[o1], dims[o2]), hw = 0.5 * dims[ax];
+        for (let i = 0; i < 12; i++) {
+          const a = i / 12 * Math.PI * 2;
+          for (const sd of [-1, 1]) {
+            const c = com.clone();
+            c[ax] += sd * hw; c[o1] += Math.cos(a) * R; c[o2] += Math.sin(a) * R;
+            corners.push(c.divide(s0));
+          }
+        }
+      } else {
+        for (let i = 0; i < 8; i++) corners.push(new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).divide(s0));
+      }
+    }
     obj.position.copy(p0); obj.quaternion.copy(q0); obj.scale.copy(s0);
     scene.add(obj);
+    obj.updateMatrixWorld(true);
     const r = obj.userData.radius || 2;
     // Mảnh nặng (tấm giáp, bánh xe) bị hất đi rất gần, rơi cạnh xe; mảnh nhỏ nhẹ văng xa hơn — như thật
     const vol = Math.max(0.3, dims.x * dims.y * dims.z);
     const light = Math.max(0.22, Math.min(1, 2.4 / Math.cbrt(vol)));
-    const v = impulse.clone().multiplyScalar(0.45 * light).add(new THREE.Vector3(rand(-6, 6), rand(14, 30), rand(-6, 6)).multiplyScalar(0.5 + 0.5 * light));
+    const mass = 1 / light;
+    const kick = impulse.clone().multiplyScalar(0.45 * light);
+    const v = kick.clone().add(new THREE.Vector3(rand(-6, 6), rand(14, 30), rand(-6, 6)).multiplyScalar(0.5 + 0.5 * light));
+    const mat = DEBRIS_MAT[opt.mat] ? opt.mat : 'metal';
+    // Tensor quán tính (hệ của mảnh): khối hộp đặc, bánh xe là trụ
+    const ix = dims.y * dims.y + dims.z * dims.z, iy = dims.x * dims.x + dims.z * dims.z, iz = dims.x * dims.x + dims.y * dims.y;
+    const invI = new THREE.Vector3(12 / (mass * Math.max(0.05, ix)), 12 / (mass * Math.max(0.05, iy)), 12 / (mass * Math.max(0.05, iz)));
+    const comL = com.clone();                                  // trọng tâm trong hệ mảnh (đã nhân scale)
+    const cr = corners.map(c => c.clone().multiply(s0).sub(comL));   // điểm tiếp xúc tính từ trọng tâm
+    if (!cr.length) cr.push(new THREE.Vector3(0, -r * 0.45, 0));
+    let reach = 0;
+    for (const c of cr) reach = Math.max(reach, c.length());
+    const x = comL.clone().applyQuaternion(obj.quaternion).add(obj.position);   // vị trí trọng tâm (thế giới)
     const top0 = hullTopAt(u, p0.x, p0.z, true);
-    debrisList.push({
-      u, obj, r, dims, corners, mass: 1 / light,
+    const D = {
+      u, obj, r, dims, corners, mass, mat, round: !!opt.round, invI, comL, cr, reach: Math.max(reach, 0.3), x,
       under: top0 > -Infinity && p0.y < top0,
-      v,
-      w: new THREE.Vector3(rand(-6, 6), rand(-6, 6), rand(-6, 6)).multiplyScalar(0.4 + 0.6 * light),
-      t: 0, rest: false, bounces: 0
-    });
+      v, w: new THREE.Vector3(),
+      t: 0, rest: false, bounces: 0, calm: 0, sndCd: 0, scrCd: 0
+    };
+    // Mảnh bị giật khỏi chân giá / bu-lông: chân gắn (phía thân xe, phía dưới) níu lại trong tích tắc -> lực đánh tạo
+    // mô-men lật mảnh (tấm giáp lộn nhào chậm, phụ kiện nhỏ nhẹ xoay tít), không xoay ngẫu nhiên vô cớ
+    const toHull = u.group ? u.group.position.clone().sub(x).setY(0) : new THREE.Vector3();
+    if (toHull.lengthSq() > 1e-6) toHull.normalize();
+    const lever = toHull.multiplyScalar(0.35 * Math.max(dims.x, dims.z)).add(new THREE.Vector3(rand(-0.3, 0.3) * dims.x, -0.4 * dims.y, rand(-0.3, 0.3) * dims.z));
+    const J = kick.clone().multiplyScalar(-0.7 * mass);
+    invInertia(D, lever.cross(J), D.w);
+    D.w.add(new THREE.Vector3(rand(-1.5, 1.5), rand(-1.5, 1.5), rand(-1.5, 1.5)).multiplyScalar(light));
+    const wMax = 6 + 10 * light;
+    if (D.w.length() > wMax) D.w.setLength(wMax);
+    debrisList.push(D);
     while (debrisList.length > 160) removeDebris(0);
   }
 
@@ -378,7 +451,7 @@ const VehicleDamage = (() => {
         pos.needsUpdate = true;
       }
       holder.userData.radius = Math.max(0.6, c.size * 0.35);
-      spawnDebris(u, holder, impulse);
+      spawnDebris(u, holder, impulse, { mat: debrisMatOf(tag) });
     } else if (grp) {
       grp.updateMatrixWorld(true);
       const copy = grp.clone(true);
@@ -386,7 +459,7 @@ const VehicleDamage = (() => {
       copy.userData.radius = 1.6;
       grp.visible = false;
       d.hiddenGroups.push(grp);
-      spawnDebris(u, copy, impulse);
+      spawnDebris(u, copy, impulse, { mat: debrisMatOf(tag) });
     }
     return true;
   }
@@ -487,7 +560,7 @@ const VehicleDamage = (() => {
         holder.add(m);
         holder.position.copy(wp).add(new THREE.Vector3(0, w.len * 0.4, 0));
         holder.userData.radius = 0.3;
-        spawnDebris(u, holder, impulse.clone().multiplyScalar(0.6));
+        spawnDebris(u, holder, impulse.clone().multiplyScalar(0.6), { mat: 'whip' });
       });
     }
   }
@@ -557,6 +630,73 @@ const VehicleDamage = (() => {
     return new THREE.Vector3(-(g(pos.x + e, pos.z) - g(pos.x - e, pos.z)) / (2 * e), 1, -(g(pos.x, pos.z + e) - g(pos.x, pos.z - e)) / (2 * e)).normalize();
   }
 
+  // Một bước vật lý vật rắn: trọng lực, cản không khí, xoay theo vận tốc góc (quaternion — không lắc lư kiểu góc Euler),
+  // va chạm tại từng góc với mặt đất / nóc xác xe bằng xung lực (nảy + ma sát) -> mảnh lộn, trượt, lăn, đổ nằm tự nhiên
+  function stepDebris(D, h) {
+    const M = DEBRIS_MAT[D.mat];
+    D.v.y -= DEBRIS_G * h;
+    const ka = Math.exp(-M.air * h);
+    D.v.multiplyScalar(ka);
+    D.w.multiplyScalar(Math.exp(-(0.05 + M.air) * h));
+    D.x.addScaledVector(D.v, h);
+    const q = D.obj.quaternion, w = D.w, hh = 0.5 * h;
+    const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    q.set(qx + hh * (w.x * qw + w.y * qz - w.z * qy), qy + hh * (w.y * qw + w.z * qx - w.x * qz),
+      qz + hh * (w.z * qw + w.x * qy - w.y * qx), qw + hh * (-w.x * qx - w.y * qy - w.z * qz)).normalize();
+    if (D.under) {
+      // ra khỏi hình chiếu thân, hoặc bay cao hơn nóc -> từ đây mới được tì lên nóc xác xe
+      const ht = hullTopAt(D.u, D.x.x, D.x.z, true);
+      if (ht === -Infinity || D.x.y - D.reach * 0.5 > ht) D.under = false;
+    }
+    // còn cao hơn mặt đỡ cả một tầm với -> chưa thể chạm
+    if (D.x.y - debrisFloor(D, D.x.x, D.x.z) > D.reach + 1) return null;
+    let deep = 0, hit = 0, impact = 0, onHull = false;
+    const invM = 1 / D.mass;
+    for (const c of D.cr) {
+      _r.copy(c).applyQuaternion(q);
+      const px = D.x.x + _r.x, py = D.x.y + _r.y, pz = D.x.z + _r.z;
+      const gy = groundProvider ? groundProvider(px, pz) : 0;
+      const fy = D.under ? gy : Math.max(gy, hullTopAt(D.u, px, pz));
+      const pen = fy - py;
+      if (pen <= 0) continue;
+      if (!hit) {
+        // pháp tuyến mặt đỡ (dốc địa hình / nóc xác xe phẳng)
+        if (fy > gy + 0.01 || !groundProvider) { _n.set(0, 1, 0); onHull = true; }
+        else { const e = 2, g = groundProvider; _n.set(-(g(px + e, pz) - g(px - e, pz)) / (2 * e), 1, -(g(px, pz + e) - g(px, pz - e)) / (2 * e)).normalize(); }
+      }
+      hit++;
+      if (pen > deep) deep = pen;
+      // vận tốc của chính điểm chạm = v + w × r
+      _a.copy(D.w).cross(_r).add(D.v);
+      const vn = _a.dot(_n);
+      if (vn >= 0) continue;
+      const e = -vn > 16 ? M.e * (onHull ? 1.4 : 1) : 0;   // chạm nhẹ thì không nảy (khỏi rung giật)
+      invInertia(D, _b.copy(_r).cross(_n), _b);
+      const kn = invM + _n.dot(_b.cross(_r));
+      const jn = -(1 + e) * vn / kn;
+      D.v.addScaledVector(_n, jn * invM);
+      D.w.add(invInertia(D, _b.copy(_r).cross(_n).multiplyScalar(jn), _b));
+      if (-vn > impact) impact = -vn;
+      // ma sát Coulomb tại điểm chạm: mảnh cày / trượt trên đất, bánh xe lăn
+      _a.copy(D.w).cross(_r).add(D.v);
+      _t.copy(_a).addScaledVector(_n, -_a.dot(_n));
+      const vt = _t.length();
+      if (vt > 1e-4) {
+        _t.multiplyScalar(1 / vt);
+        invInertia(D, _b.copy(_r).cross(_t), _b);
+        const kt = invM + _t.dot(_b.cross(_r));
+        const jt = Math.min(vt / kt, (onHull ? 0.6 : 1) * M.mu * jn);
+        D.v.addScaledVector(_t, -jt * invM);
+        D.w.add(invInertia(D, _b.copy(_r).cross(_t).multiplyScalar(-jt), _b));
+      }
+    }
+    if (!hit) return null;
+    D.x.y += deep * 0.9;
+    // lực cản lăn / đất lún: bánh xe lăn chậm dần, mảnh thép đang lắc thì dừng hẳn
+    D.w.multiplyScalar(Math.exp(-(D.round ? 0.5 : 0.9) * h));
+    return { impact, onHull, hits: hit };
+  }
+
   function updateDebris(dt) {
     for (let i = debrisList.length - 1; i >= 0; i--) {
       const D = debrisList[i];
@@ -573,44 +713,49 @@ const VehicleDamage = (() => {
         }
         continue;
       }
-      D.v.y -= 110 * dt;
-      const k = Math.exp(-0.4 * dt);
-      D.v.x *= k; D.v.z *= k;
-      D.obj.position.addScaledVector(D.v, dt);
-      D.obj.rotation.x += D.w.x * dt;
-      D.obj.rotation.y += D.w.y * dt;
-      D.obj.rotation.z += D.w.z * dt;
-      if (D.under) {
-        // ra khỏi hình chiếu thân, hoặc bay cao hơn nóc -> từ đây mới được tì lên nóc xác xe
-        const ht = hullTopAt(D.u, D.obj.position.x, D.obj.position.z, true);
-        if (ht === -Infinity || D.obj.position.y - D.r * 0.5 > ht) D.under = false;
+      // chia bước nhỏ (≤ 1/120 s) để va chạm góc ổn định, không xuyên đất khi rơi nhanh
+      const n = Math.min(6, Math.ceil(dt / (1 / 120)));
+      const h = dt / n;
+      let impact = 0, onHull = false, touching = false, hits = 0;
+      for (let s = 0; s < n; s++) {
+        const c = stepDebris(D, h);
+        if (!c) continue;
+        touching = true;
+        if (c.hits > hits) hits = c.hits;
+        if (c.impact > impact) { impact = c.impact; onHull = c.onHull; }
       }
-      const clear = debrisClearance(D, D.obj.quaternion, D.obj.position);
-      if (clear < 0) {
-        D.obj.position.y -= clear;
-        // Tiếng rơi đập đất ở đúng lúc / đúng chỗ chạm đất (lần nảy đầu)
-        if (D.bounces === 0 && Math.abs(D.v.y) > 10) sfx('debrisLand', D.obj.position.clone(), Math.min(1.6, 0.4 + 0.25 * (D.mass || 1)));
+      D.obj.position.copy(D.comL).applyQuaternion(D.obj.quaternion).negate().add(D.x);
+      D.sndCd -= dt; D.scrCd -= dt;
+      // Tiếng va ở đúng lúc / đúng chỗ từng lần chạm (lần nảy sau nhỏ dần theo tốc độ va), theo vật liệu mảnh
+      if (impact > 7 && D.sndCd <= 0) {
+        const k = Math.min(1.6, Math.pow(impact / 45, 1.1) * (0.55 + 0.3 * D.mass));
+        if (k > 0.06) sfx('debrisHit', D.obj.position.clone(), k, { mat: D.mat, hull: onHull, m: D.mass, first: D.bounces === 0 });
+        D.sndCd = 0.07;
         D.bounces++;
-        if (Math.abs(D.v.y) < 14 || D.bounces > 3) {
-          D.rest = true;
-          // Đổ nằm xuống mặt rộng gần nhất với tư thế hiện tại (xoay tối thiểu, mượt 0.3 s) tại đúng chỗ rơi,
-          // mặt rộng úp theo pháp tuyến mặt đất (nằm nghiêng theo dốc / nằm trên nóc xác xe)
-          const dm = D.dims;
-          const ax = (dm.x <= dm.y && dm.x <= dm.z) ? new THREE.Vector3(1, 0, 0) : (dm.z <= dm.y ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0));
-          const q0 = D.obj.quaternion.clone();
-          const aw = ax.clone().applyQuaternion(q0);
-          const n = debrisFloorNormal(D, D.obj.position);
-          const up = aw.dot(n) >= 0 ? n : n.clone().negate();
-          const q1 = new THREE.Quaternion().setFromUnitVectors(aw.normalize(), up).multiply(q0);
-          const p0 = D.obj.position.clone(), p1 = slideOffHullEdge(D, q1);
-          // độ cao nằm yên: góc thấp nhất của tư thế cuối vừa chạm (lún nhẹ) mặt đất
-          p1.y -= debrisClearance(D, q1, p1) + 0.05;
-          D.settle = { q0, q1, p0, p1, t: 0 };
-        } else {
-          D.v.y = Math.abs(D.v.y) * 0.28;   // mảnh đang lộn chạm góc khi còn bay lên: không bị giật ngược xuống
-          D.v.x *= 0.45; D.v.z *= 0.45;
-          D.w.multiplyScalar(0.45);
-        }
+      }
+      // Mảnh cày / trượt lê trên đất (bánh xe lăn thì không rít)
+      const vh = Math.hypot(D.v.x, D.v.z);
+      if (touching && !D.round && vh > 9 && D.scrCd <= 0 && impact <= 7) {
+        sfx('debrisScrape', D.obj.position.clone(), Math.min(1.2, vh / 50) * (0.5 + 0.25 * D.mass), { mat: D.mat, hull: onHull });
+        D.scrCd = 0.18;
+      }
+      // Ngủ: tì vững trên ≥ 3 điểm, gần như đứng yên một lúc -> nằm yên (vật lý đã đặt mảnh nằm đúng tư thế);
+      // đang chênh vênh trên một cạnh / đầu mút thì để nó tự đổ tiếp
+      if (touching && hits >= 3 && D.v.length() < 2.5 && D.w.length() < 0.9) D.calm += dt; else D.calm = 0;
+      if (D.calm > 0.25) { D.rest = true; continue; }
+      if (D.t > 9) {
+        // chống kẹt (trường hợp hiếm): ép nằm xuống mặt rộng gần nhất, mượt 0.3 s
+        D.rest = true;
+        const dm = D.dims;
+        const ax = (dm.x <= dm.y && dm.x <= dm.z) ? new THREE.Vector3(1, 0, 0) : (dm.z <= dm.y ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0));
+        const q0 = D.obj.quaternion.clone();
+        const aw = ax.clone().applyQuaternion(q0);
+        const nn = debrisFloorNormal(D, D.obj.position);
+        const up = aw.dot(nn) >= 0 ? nn : nn.clone().negate();
+        const q1 = D.round ? q0.clone() : new THREE.Quaternion().setFromUnitVectors(aw.normalize(), up).multiply(q0);
+        const p0 = D.obj.position.clone(), p1 = slideOffHullEdge(D, q1);
+        p1.y -= debrisClearance(D, q1, p1) + 0.05;
+        D.settle = { q0, q1, p0, p1, t: 0 };
       }
     }
     // Lốp xẹp dần (xì hơi ~1.2 giây)
@@ -659,7 +804,7 @@ const VehicleDamage = (() => {
     holder.rotation.y = (u.group.rotation.y || 0) + (p.x < 0 ? Math.PI : 0);
     holder.userData.radius = ws.radius * 0.9;
     const side = new THREE.Vector3(Math.sign(p.x), 0, 0).applyQuaternion(u.group.quaternion);
-    spawnDebris(u, holder, side.multiplyScalar(rand(40, 80)).add(impulse ? impulse.clone().multiplyScalar(0.4) : new THREE.Vector3()));
+    spawnDebris(u, holder, side.multiplyScalar(rand(40, 80)).add(impulse ? impulse.clone().multiplyScalar(0.4) : new THREE.Vector3()), { mat: 'rubber', round: true });
     sparksAt(wp, 20);
     sfx('tire', wp, 1.3);
     const names = ws.positions.length > 4 ? WHEEL_NAMES_6 : WHEEL_NAMES_4;
@@ -717,7 +862,7 @@ const VehicleDamage = (() => {
         holder.add(m);
         holder.position.copy(point).add(new THREE.Vector3(rand(-2, 2), 1, rand(-3, 3)));
         holder.userData.radius = 0.8;
-        spawnDebris(u, holder, new THREE.Vector3(rand(-30, 30), 10, rand(-30, 30)));
+        spawnDebris(u, holder, new THREE.Vector3(rand(-30, 30), 10, rand(-30, 30)), { mat: 'link' });
       }
       void mat;
     }
@@ -1518,7 +1663,7 @@ const VehicleDamage = (() => {
         holder.userData.radius = sz * 0.5;
         // văng ra từ đúng chỗ bị xé, hướng ngược vào trong thân xe -> ra ngoài theo pháp tuyến mặt trúng
         const away = (hitN ? hitN.clone().setY(Math.max(0.2, hitN.y)) : point.clone().sub(u.group.position).setY(0)).normalize().multiplyScalar(15 + pw * 35);
-        spawnDebris(u, holder, away);
+        spawnDebris(u, holder, away, { mat: 'plate' });
       }
       sfx('armorPlate', point, Math.min(1.5, 0.6 + pw));
     }

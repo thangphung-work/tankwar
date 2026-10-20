@@ -596,6 +596,33 @@ class SoundEngine {
       this.burst(dest, t, { filter: 'bandpass', freq: Math.min(9000, f0 * 6), Q: 0.8, gain: gain * click, dur: 0.012 });
     }
   }
+
+  /**
+   * Tổng hợp theo mode dao động (modal synthesis) cho vật rắn bị gõ: mỗi mode là một dao động sin tắt dần theo hàm mũ,
+   * tỉ lệ tần số bất hòa đúng loại vật thể (tấm thép / thanh / vỏ rỗng), mode cao tắt nhanh hơn. Khác metal()
+   * (nhiễu lọc dải, ngân tối đa ~0,35 s): ngân được lâu như thép thật (thép đập thép ~1-2 s) và có cao độ rõ.
+   * T: thời gian tắt (-60 dB) của mode gốc; hard: độ cứng mặt va (1 = thép trên thép) -> tiếng chạm đanh hơn.
+   */
+  modal(dest, t, { f0 = 300, ratios = [1, 1.47, 2.09, 2.65, 3.4, 4.3], T = 0.3, gain = 0.3, hard = 0.5, tilt = 0.55, fall = 0.45 } = {}) {
+    const ctx = this.ctx;
+    ratios.forEach((r, i) => {
+      const f = f0 * r * (1 + (Math.random() - 0.5) * 0.03);
+      if (f > 16000) return;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const g = ctx.createGain();
+      const amp = gain / (1 + i * tilt) * (0.75 + Math.random() * 0.5);
+      const Ti = Math.max(0.03, T / (1 + i * fall) * Math.pow(f0 / f, 0.15));
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.0015);
+      g.gain.setTargetAtTime(0.0001, t + 0.0015, Ti / 6.9);
+      osc.connect(g); g.connect(dest);
+      osc.start(t); osc.stop(t + 0.0015 + Ti * 1.3 + 0.05);
+    });
+    // tiếng chạm: xung nhiễu ngắn, mặt càng cứng càng đanh và sáng
+    this.burst(dest, t, { filter: 'bandpass', freq: 1400 + 3000 * hard, Q: 0.7, gain: gain * (0.6 + 1.6 * hard), attack: 0.0003, dur: 0.012 - 0.006 * hard });
+  }
 }
 
 // Gắn phương thức từ một lớp phụ vào SoundEngine — để mỗi nhóm âm thanh nằm ở file riêng mà vẫn viết như phương thức lớp
