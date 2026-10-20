@@ -170,6 +170,12 @@ const Backdrop = (() => {
       if (inner(j) && !inner(i) && i > 0 && i < NA - 1) return isoSample(fn, x, z, half, Math.max(ax[i + 1] - ax[i], ax[i] - ax[i - 1]), cell, false);
       return fn(x, z);
     };
+    // số ô bản đồ trong một bước lấy mẫu thưa của dải có nút thưa idx (khớp isoSample)
+    const isoK = (idx) => {
+      if (idx <= 0 || idx >= NA - 1) return 1;
+      const st = Math.max(ax[idx + 1] - ax[idx], ax[idx] - ax[idx - 1]);
+      return st < cell * 1.5 ? 1 : Math.pow(2, Math.round(Math.log2(st / cell)));
+    };
     // 1. ĐỘ CAO mọi nút lưới (trong bản đồ lấy đúng lưới địa hình -> pháp tuyến ở mép tính liền mạch)
     const H = new Float32Array(NA * NA);
     const edgeDelta = new Map();
@@ -208,7 +214,10 @@ const Backdrop = (() => {
       const x = ax[i], z = ax[j], h = H[j * NA + i];
       pos[v * 3] = x; pos[v * 3 + 1] = h; pos[v * 3 + 2] = z;
       // pháp tuyến: sai phân trung tâm trên lưới không đều
-      const i0 = Math.max(0, i - 1), i1 = Math.min(NA - 1, i + 1), j0 = Math.max(0, j - 1), j1 = Math.min(NA - 1, j + 1);
+      // dải dọc cạnh bản đồ: độ cao tuyến tính từng khúc theo bước thưa -> sai phân trên cùng bước đó cho pháp tuyến mượt
+      // (sai phân 1 ô làm sáng tối đổi đột ngột ở mỗi điểm mẫu thành vệt sọc)
+      const kx = inner(i) && !inner(j) ? isoK(j) : 1, kz = inner(j) && !inner(i) ? isoK(i) : 1;
+      const i0 = Math.max(0, i - kx), i1 = Math.min(NA - 1, i + kx), j0 = Math.max(0, j - kz), j1 = Math.min(NA - 1, j + kz);
       const dx = (H[j * NA + i1] - H[j * NA + i0]) / (ax[i1] - ax[i0]), dz = (H[j1 * NA + i] - H[j0 * NA + i]) / (ax[j1] - ax[j0]);
       const l = Math.hypot(dx, 1, dz);
       nrm[v * 3] = -dx / l; nrm[v * 3 + 1] = 1 / l; nrm[v * 3 + 2] = -dz / l;
