@@ -93,13 +93,17 @@
     ALL_ROUNDER: { AP: { name: 'Đạn xuyên giáp', price: 45, pack: 5, max: 6 }, HE: { name: 'Đạn nổ mạnh', price: 30, pack: 5, max: 6 } },
     ARTILLERY: { HE: { name: 'Lựu đạn nổ mạnh 155', price: 40, pack: 5, max: 6 }, CLUSTER: { name: 'Đạn chùm 155', price: 70, pack: 2, max: 4 } },
     GATLING: { INCENDIARY: { name: 'Đạn cháy 30mm', price: 1, pack: 50, max: 150 } },
-    SCOUT: { RPG: { name: 'Đạn RPG', price: 60, pack: 2, max: 4 }, INCENDIARY: { name: 'Đạn cháy 12.7mm', price: 1, pack: 50, max: 90 }, ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng', price: 150, pack: 1, max: 4 } }
+    SCOUT: { INCENDIARY: { name: 'Đạn cháy 12.7mm', price: 1, pack: 50, max: 90 }, ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng', price: 150, pack: 1, max: 4 } }
   };
+  // Đạn đã ngừng bán (xe không còn ô bắn loại này): máy chủ tự hoàn đúng giá cho số còn trong kho rồi xóa khỏi kho
+  // (RPG của xe trinh sát: đã thay bằng tên lửa chống tăng)
+  const RETIRED_AMMO = { SCOUT: { RPG: { price: 60 } } };
   // Đạn đặc chủng miễn phí mỗi lần xuất kích: KHÔNG CÒN — ngoài đạn chính (không giới hạn), mọi loại đạn khác phải
   // mua bằng Bạc (đạn đã mua tự mang theo tới mức tối đa mỗi lần xuất kích). Giữ đủ khóa để startLife đặt lại số đạn.
-  const BASE_AMMO = { ALL_ROUNDER: { AP: 0, HE: 0 }, ARTILLERY: { HE: 0, CLUSTER: 0 }, GATLING: { INCENDIARY: 0 }, SCOUT: { INCENDIARY: 0, RPG: 0, ANTI_TANK_MISSILE: 0 } };
+  // Đạn miễn phí mỗi lần xuất kích (cộng thêm số mua): xe trinh sát luôn có 2 tên lửa để còn đánh được xe giáp
+  const BASE_AMMO = { ALL_ROUNDER: { AP: 0, HE: 0 }, ARTILLERY: { HE: 0, CLUSTER: 0 }, GATLING: { INCENDIARY: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2 } };
   // Xe do máy điều khiển không mua sắm: mang cơ số như trước khi có cửa hàng để trận không dễ đi
-  const BOT_AMMO = { ALL_ROUNDER: { AP: 3, HE: 3 }, ARTILLERY: { HE: 4, CLUSTER: 3 }, GATLING: { INCENDIARY: 80 }, SCOUT: { INCENDIARY: 45, RPG: 4, ANTI_TANK_MISSILE: 4 } };
+  const BOT_AMMO = { ALL_ROUNDER: { AP: 3, HE: 3 }, ARTILLERY: { HE: 4, CLUSTER: 3 }, GATLING: { INCENDIARY: 80 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 2 } };   // + 2 tên lửa miễn phí = 4 như trước
   const AMMO_PROP = { AP: 'apAmmoCount', HE: 'heAmmoCount', CLUSTER: 'clusterAmmoCount', INCENDIARY: 'incendiaryAmmoCount', RPG: 'rpgAmmoCount', ANTI_TANK_MISSILE: 'missileAmmoCount' };
 
   function compatible(id, tank) {
@@ -163,7 +167,7 @@
       .slice(0, 3);
   }
 
-  const API = { TANKS, ALL_FREE, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
+  const API = { TANKS, ALL_FREE, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================

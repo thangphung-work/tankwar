@@ -21,7 +21,7 @@ const ArmoryUI = (() => {
     ALL_ROUNDER: [['NORMAL', 'Đạn pháo 120mm thường', 'circle-dot', 'Không giới hạn'], ['AP', 'Đạn xuyên giáp', 'arrow-big-right-lines'], ['HE', 'Đạn nổ mạnh', 'flame']],
     GATLING: [['GATLING_BULLET', 'Đạn 30mm nổ mảnh', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 30mm', 'flame']],
     ARTILLERY: [['NORMAL', 'Lựu đạn 155mm', 'circle-dot', 'Không giới hạn'], ['HE', 'Lựu đạn nổ mạnh 155', 'flame'], ['CLUSTER', 'Đạn chùm 155', 'atom-2']],
-    SCOUT: [['SCOUT_BULLET', 'Đạn 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['RPG', 'Đạn RPG', 'rocket'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
+    SCOUT: [['SCOUT_BULLET', 'Đạn 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
   };
 
   // ---------------------------------------------------------------------------
@@ -148,14 +148,15 @@ const ArmoryUI = (() => {
         const S = shop[k], img = 'ammo_' + tank + '_' + k;
         if (!S) { h += card({ img, name, line: 'Đạn chính · không giới hạn', cls: ' on std', tip: `${name}: đạn chính, mang theo không giới hạn` }); continue; }
         const have = stock[k] || 0, carry = Math.min(have, S.max), bump = flash && flash.k === k ? ' bump' : '';
+        const free = (Eq.BASE_AMMO[tank] || {})[k] || 0;   // miễn phí mỗi lần xuất kích (dùng trước đạn mua)
         const ctl = P ? `<div class="eqd-qty">
             <button class="eqd-q" data-act="sellAmmo" data-item="${k}"${have ? '' : ' disabled'} title="Trả lại 1 viên, hoàn ${fmt(S.price)} Bạc">−</button>
             <button class="eqd-q add" data-act="buyAmmo" data-item="${k}" data-n="1" title="Mua 1 viên · ${fmt(S.price)} Bạc">+1</button>${S.max >= 50 ? `
             <button class="eqd-q add" data-act="buyAmmo" data-item="${k}" data-n="10" title="Mua 10 viên · ${fmt(S.price * 10)} Bạc">+10</button>` : ''}
             <span class="eqd-price">${fmt(S.price)} Bạc/viên</span></div>` : loginBtn;
         h += card({ img, name, cls: have ? ' has' : '', extra: ctl,
-          line: `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · mang <b>${carry}</b>/trận`,
-          tip: `${name}: mỗi lần xuất kích tự mang tối đa ${S.max} viên (không quá số trong kho). Giá ${fmt(S.price)} Bạc / viên, trả lại được.` });
+          line: `<span class="eqd-stock${bump}">Kho <b>${have}</b></span> · mang <b>${free ? free + ' + ' : ''}${carry}</b>/trận`,
+          tip: `${name}: ${free ? `mỗi lần xuất kích có sẵn ${free} viên miễn phí (bắn trước), cộng thêm` : 'mỗi lần xuất kích tự mang'} tối đa ${S.max} viên mua (không quá số trong kho). Giá ${fmt(S.price)} Bạc / viên, trả lại được.` });
       }
       const prem = Object.keys(Eq.PREMIUM).filter(id => Eq.PREMIUM[id].tank === tank);
       if (prem.length) {
