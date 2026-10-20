@@ -1447,18 +1447,26 @@ class SPGUnit3D {
         this.standStillTimer += dt;
         // Xe dừng đỗ thì từ từ hạ càng trong 2.0 giây
         // (Trước đây chặn ở 1.5 trong khi cần >= 2.0 mới hạ càng xong -> pháo không bao giờ bắn được)
+        const prevDeploy = this.deployProgress;
         this.deployProgress = Math.min(2.0, this.deployProgress + dt * (this.dmg ? this.dmg.deploy : 1));
+        let legEvt = null;
         if (this.deployProgress >= 2.0 && !this.isDeployed) {
           this.isDeployed = true;
+          legEvt = 'set';
           if (this.isPlayer && window.soundEngine && typeof window.soundEngine.playTargetLockAcquired === 'function') {
             window.soundEngine.playTargetLockAcquired();
           }
         }
+        if (this.isPlayer && window.soundEngine && window.soundEngine.updateArtyLegs) window.soundEngine.updateArtyLegs(this.deployProgress > prevDeploy ? 1 : 0, legEvt);
       } else {
         // Xe lăn bánh di chuyển: Tự động thu càng nhanh chóng
         this.standStillTimer = 0.0;
         this.isDeployed = false;
+        const prevDeploy = this.deployProgress;
         this.deployProgress = Math.max(0.0, this.deployProgress - dt * 3.2);
+        if (this.isPlayer && window.soundEngine && window.soundEngine.updateArtyLegs) {
+          window.soundEngine.updateArtyLegs(this.deployProgress < prevDeploy ? -1 : 0, prevDeploy > 0 && this.deployProgress <= 0 ? 'stowed' : null);
+        }
       }
 
       // Điều khiển góc mở của chân chống đuôi và 2 càng sườn 3D

@@ -1056,7 +1056,12 @@
       smokes.push({ x: cx + fz * i * 46, z: cz - fx * i * 46, t: -0.25 * Math.abs(i), team: u.team, src: u });
     }
     const S = window.soundEngine;
-    if (S && typeof S.playMetalClank === 'function') { S.playMetalClank(0, 0.35, 260); S.playMetalClank(0.08, 0.3, 300); }
+    if (S && typeof S.playSmokeLaunch === 'function') {
+      // nghe theo khoảng cách từ xe phóng tới người chơi (xe mình: 0)
+      const me = game && game.player;
+      const d = !me || me === u ? 0 : Math.max(1, Math.hypot(u.x - me.x, u.z - me.z));
+      if (d < 2400) S.playSmokeLaunch(d, { x: u.x, z: u.z });
+    }
     return { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10, a: Math.round(a * 1000) / 1000 };
   }
   function smokeRadius(s) {

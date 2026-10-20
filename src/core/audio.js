@@ -730,7 +730,9 @@ class SoundEngine {
     if (ammoType === 'HE') k = 1.5;
     else if (ammoType === 'RPG') k = 1.25;
     else if (ammoType === 'ANTI_TANK_MISSILE') k = 1.45;   // đầu nổ lõm kép cỡ 152mm: ~4-5 kg thuốc nổ (RPG-7 chỉ ~0,7 kg)
-    else if (ammoType === 'CLUSTER') k = 1.1;
+    // Đạn chùm tách vỏ trên không: chỉ là liều đẩy nhỏ thổi bật đáy đạn cho bom con văng ra — "BỤP" đanh, nhỏ hơn hẳn
+    // một quả đạn nổ phá (trước đây to ngang đạn 120mm); tiếng nổ lớn là chuỗi bom con chạm đất ngay sau đó
+    else if (ammoType === 'CLUSTER') k = hitType === 'AIRBURST' ? 0.6 : 1.1;
     else if (ammoType === 'CLUSTER_SUBMUNITION') k = 0.45;
     const air = hitType === 'AIRBURST';
     const near = Math.max(0, 1 - distance / 900);
@@ -759,8 +761,11 @@ class SoundEngine {
       const W = this.stereoSpread(out, 0.6);
       // Sóng xung kích + quả cầu lửa dựng theo vật lý (synthGunshot 'blast…'): hai biến thể khác nhau cho 2 kênh trái/phải
       // lệch 0,6 ms -> vụ nổ có bề rộng. Bề mặt mềm (bao cát, nước) nuốt âm cao: lọc bớt
-      const bk = heavy ? 'blast155' : ammoType === 'HE' ? 'blast120' : ammoType === 'ANTI_TANK_MISSILE' ? 'blastATGM' : heat ? 'blastRPG' : ammoType === 'CLUSTER_SUBMUNITION' ? 'blast30' : 'blastN';
+      const bk = heavy ? 'blast155' : ammoType === 'HE' ? 'blast120' : ammoType === 'ANTI_TANK_MISSILE' ? 'blastATGM' : (heat || (ammoType === 'CLUSTER' && air)) ? 'blastRPG' : ammoType === 'CLUSTER_SUBMUNITION' ? 'blast30' : 'blastN';
       let bDest = [W.L, W.R];
+      // Bề mặt mềm (bao cát, nước) nuốt một phần năng lượng nổ, không chỉ mất âm cao: hạ cả mức. Chỉ lọc tối mà giữ nguyên
+      // mức thì sau tầng giới hạn đỉnh tiếng nổ nghẹt lại TO hơn nổ trên đất (đỉnh tròn bị ép ít hơn) — đo được +4..6 dB
+      const soak = bright < 0.8 ? 0.22 + 0.5 * bright : 1;
       if (bright < 0.8) {
         const lp = this.ctx.createBiquadFilter();
         lp.type = 'lowpass';
@@ -773,7 +778,7 @@ class SoundEngine {
         src.buffer = this.gunshotBuffer(bk);
         src.playbackRate.value = 1 + (Math.random() - 0.5) * 0.06;
         const g = this.ctx.createGain();
-        g.gain.value = 6.5 * k * Math.max(0.7, bodyK);
+        g.gain.value = 6.5 * k * Math.max(0.7, bodyK) * soak;
         src.connect(g);
         g.connect(d);
         src.start(t + c * 0.0006);
@@ -1413,7 +1418,7 @@ class SoundEngine {
       }
       case 'SANDBAG': {
         // BAO CÁT: hút năng lượng — "phập" nghẹt, không vang; cát chảy rào rào từ bao rách
-        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: bullet ? 280 : 220, drive: 2, gain: (bullet ? 0.7 : 1.1) * k, attack: 0.001, dur: bullet ? 0.06 : 0.18 });
+        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: bullet ? 280 : 220, drive: 2, gain: (bullet ? 0.7 : 0.6) * k, attack: 0.001, dur: bullet ? 0.06 : 0.18 });
         this.burst(out, t + 0.02, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1400, Q: 0.6, gain: (bullet ? 0.12 : 0.06) * k, attack: 0.08, dur: bullet ? 0.4 : 1.2 });
         if (!bullet) this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 160, gain: 0.5 * k, attack: 0.002, dur: 0.35 });
         break;
@@ -1835,6 +1840,83 @@ class SoundEngine {
   }
 
   /**
+   * Phóng lựu đạn khói từ ống phóng trên tháp: mỗi ống một tiếng "BỤP" đanh của liều phóng nhỏ (bắn điện, lệch nhau vài
+   * chục ms) -> lựu đạn bay ~50 m, ~0,6 s sau liều nổ tung khói "bụp" đục -> khói phụt xì xì. distance > 0: xe khác phóng
+   * (nhỏ dần, mất âm cao theo khoảng cách). Trước đây là 2 tiếng "cạch" kim loại, phát to như nhau dù xe ở đâu trên bản đồ.
+   */
+  playSmokeLaunch(distance = 0, pos = null, n = 3) {
+    if (!this.ready()) return;
+    const remote = distance > 0;
+    const sp = remote ? this.spatial(distance, pos) : { gain: 1, lowpass: 20000, wet: 0.3, delay: 0, pan: 0 };
+    if (sp.gain < 0.05) return;
+    const t = this.ctx.currentTime + sp.delay;
+    const out = this.voice({ bus: remote ? null : this.weaponBus, gain: sp.gain * 0.5, lowpass: sp.lowpass, wet: Math.max(0.3, sp.wet), pan: sp.pan });
+    const R = Math.random;
+    for (let i = 0; i < n; i++) {
+      const ti = t + i * (0.04 + R() * 0.05);
+      this.snap(out, ti, 0.6, 6000, 3);
+      this.burst(out, ti, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 700 + R() * 200, Q: 0.8, drive: 1.8, gain: 1.4, attack: 0.001, dur: 0.09 });
+      this.burst(out, ti, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, drive: 1.6, gain: 0.8, attack: 0.001, dur: 0.12 });
+    }
+    // lựu đạn tung khói ở phía trước xe (xa hơn -> nhỏ & tối hơn tiếng phóng)
+    const far = this.voice({ gain: sp.gain * 0.3, lowpass: Math.min(sp.lowpass, 3000), wet: Math.max(0.45, sp.wet), pan: sp.pan });
+    for (let i = 0; i < n; i++) {
+      const tb = t + 0.55 + i * 0.06 + R() * 0.12;
+      this.burst(far, tb, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 450, drive: 2, gain: 1.2, attack: 0.001, dur: 0.15 });
+      this.burst(far, tb, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1200, Q: 0.7, gain: 0.5, attack: 0.001, dur: 0.06 });
+      this.burst(far, tb + 0.05, { buffer: this.pinkNoiseBuffer, filter: 'highpass', freq: 1800, gain: 0.12, attack: 0.15, dur: 1.6 });
+    }
+  }
+
+  /**
+   * Pháo tự hành hạ / thu chân chống thủy lực (xe mình). dir: +1 đang hạ, -1 đang thu, 0 đứng yên.
+   * Bơm thủy lực gầm trầm + dầu rít qua van khi xi-lanh chạy; hạ xong: lưỡi càng cắm đất "RẦM", cả xe nhún;
+   * thu xong: chốt khóa hành trình "cạch". (Trước đây 2 giây hạ càng hoàn toàn im lặng.)
+   */
+  updateArtyLegs(dir = 0, event = null) {
+    if (!this.ctx || this.isMuted || !this.pinkNoiseBuffer) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    if (!this._legs) {
+      const out = ctx.createGain(); out.gain.value = 0; out.connect(this.vehicleBus);
+      const n = ctx.createBufferSource(); n.buffer = this.pinkNoiseBuffer; n.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 200; bp.Q.value = 1.2;
+      const ng = ctx.createGain(); ng.gain.value = 1.4;
+      n.connect(bp); bp.connect(ng); ng.connect(out);
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 95;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
+      const og = ctx.createGain(); og.gain.value = 0.35;
+      o.connect(lp); lp.connect(og); og.connect(out);
+      const h = ctx.createBufferSource(); h.buffer = this.noiseBuffer; h.loop = true;
+      const hf = ctx.createBiquadFilter(); hf.type = 'bandpass'; hf.frequency.value = 2600; hf.Q.value = 2;
+      const hg = ctx.createGain(); hg.gain.value = 0.12;
+      h.connect(hf); hf.connect(hg); hg.connect(out);
+      n.start(); o.start(); h.start(0, 0.7);
+      this._legs = { out, o, dir: 0 };
+    }
+    const L = this._legs;
+    if (dir !== L.dir) {
+      // van chuyển hướng dầu "cạch" khẽ lúc bắt đầu chạy
+      if (dir !== 0) {
+        const v = this.voice({ bus: this.vehicleBus, gain: 0.5, wet: 0.03 });
+        this.burst(v, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1300, Q: 2, gain: 0.12, attack: 0.0006, dur: 0.03 });
+      }
+      L.dir = dir;
+    }
+    L.out.gain.setTargetAtTime(dir !== 0 ? 0.05 : 0, t, dir !== 0 ? 0.08 : 0.15);
+    L.o.frequency.setTargetAtTime(dir > 0 ? 95 : 110, t, 0.1);   // thu càng: tải nhẹ hơn, bơm quay nhanh hơn chút
+    if (event === 'set') {
+      const v = this.voice({ bus: this.vehicleBus, gain: 0.7, wet: 0.08 });
+      this.burst(v, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 200, drive: 2, gain: 1.0, attack: 0.002, dur: 0.25 });
+      this.burst(v, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 1400, Q: 0.7, gain: 0.35, attack: 0.005, dur: 0.3 });   // đất sỏi bị lưỡi càng xới
+      this.metal(v, t + 0.01, { f0: 180, ratios: [1, 2.3, 3.7], decay: 0.15, gain: 0.06, click: 0.4 });
+    } else if (event === 'stowed') {
+      const v = this.voice({ bus: this.vehicleBus, gain: 0.6, wet: 0.03 });
+      this.burst(v, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, drive: 1.6, gain: 0.5, attack: 0.001, dur: 0.08 });
+      this.burst(v, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1500, Q: 2, gain: 0.15, attack: 0.0005, dur: 0.03 });
+    }
+  }
+
+  /**
    * Nhặt hòm tiếp tế: chốt hòm bật, nắp hòm mở, kíp xe chuyền thùng đạn / đồ tiếp tế vào xe (trước đây dùng tiếng
    * khóa nòng đóng — nghe như nạp đạn pháo, kể cả với xe không có pháo chính).
    */
@@ -1972,7 +2054,8 @@ class SoundEngine {
   playAmmoSwitch(ammoType = 'NORMAL') {
     if (!this.ready()) return;
     const t = this.ctx.currentTime;
-    const out = this.voice({ bus: this.weaponBus, gain: 0.45, wet: 0.04 });
+    // đủ to để nghe được trên nền tiếng máy không tải (trước đây nhỏ hơn tiếng máy ~3 dB: gần như không nghe thấy)
+    const out = this.voice({ bus: this.weaponBus, gain: 3, wet: 0.04 });
     const clack = (tt, f, g) => {
       this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f, Q: 1.8, gain: g, attack: 0.0006, dur: 0.03 });
       this.burst(out, tt, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, gain: g * 1.2, attack: 0.001, dur: 0.05 });
@@ -2484,6 +2567,8 @@ class SoundEngine {
     this.updateAmbience(t);
     this.sweepFires(t);
     const allGains = [e.engineGain, e.combGain, e.turboGain, e.exhaustGain, e.rumbleGain, e.squealGain, e.mechGain, e.airGain];
+    // bơm chân chống pháo tự hành: tắt khi xe bị hạ / đổi sang xe khác (spg.js chỉ cập nhật khi xe pháo còn sống)
+    if (this._legs && this._legs.dir !== 0 && (o.dead || type !== 'ARTILLERY')) { this._legs.dir = 0; this._legs.out.gain.setTargetAtTime(0, t, 0.15); }
     if (o.dead) {
       // Xe đã bị hạ: máy tắt lịm
       allGains.forEach(g => g && g.gain.setTargetAtTime(0, t, 0.4));
@@ -4287,7 +4372,7 @@ class SoundEngine {
     // chạm trần, đè mất mọi tiếng khác (đo được: loạt 30mm trước đây ~-4 dBFS liên tục)
     // Pháo 6 nòng của mình đi qua blastBus (bão hòa cả cụm): các phát quyện thành tiếng gầm "BRRRT" đặc
     // Súng máy 12.7mm của mình qua blastBus thường (giữ nguyên cú đấm 50-100 Hz; kênh heavy cắt trầm làm tiếng ồm "bè bè")
-    const out = this.voice({ bus: (remote || scout) ? null : this.blastBus(true), gain: sp.gain * (scout ? (remote ? 0.38 : 0.62) : remote ? 0.08 : 0.16), lowpass: remote ? sp.lowpass : scout ? 9000 : 2200,
+    const out = this.voice({ bus: (remote || scout) ? null : this.blastBus(true), gain: sp.gain * (scout ? (remote ? 0.38 : 0.62) : remote ? 0.5 : 0.16), lowpass: remote ? sp.lowpass : scout ? 9000 : 2200,
       wet: (scout && !remote) ? 0.55 : sp.wet,   // súng máy ngoài trời: tiếng dội môi trường lấp giữa các phát -> loạt đạn dày, thật
       pan: (!remote && !scout) ? (Math.random() - 0.5) * 0.25 : sp.pan });   // 6 nòng xoay: mỗi phát lệch nhẹ trái/phải -> loạt đạn rộng, dày
 
@@ -4311,13 +4396,18 @@ class SoundEngine {
         // Pháo 30mm: mỗi phát là một cú "ĐÙNG" nhỏ có thân dày 200-600 Hz, tắt nhanh trong ~40 ms để 30 phát/giây
         // vẫn tách nhịp thành tiếng xé "BRRRT" (đuôi dài làm cả loạt nhòe thành bức tường ồn).
         // Ít xì chói trên 2,5 kHz (trước đây chiếm 36% phần tai nghe thấy -> loạt đạn mỏng, "lẹt đẹt")
+        // Xe khác bắn (remote): thân trầm 30 phát/giây chồng lên nhau thành một bức tường ù ở dải 100-300 Hz, chạm tầng giới
+        // hạn đỉnh và ép mất cả phần trung -> loạt đạn 30mm ở 50 m nghe NHỎ hơn súng máy 12.7mm (đo được ~-11 dB theo tai).
+        // Nên từ xa giảm lớp trầm, đuôi ngắn lại, nhấn tiếng "xé" dải trung 0,5-2 kHz
+        const lk = remote ? 0.4 : 1;
         this.snap(out, t, 0.55, 5000 * p, 5);
-        this.burst(out, t, { filter: 'lowpass', freq: 2600 * p, freqEnd: 350, sweep: 0.03, drive: 2, gain: 0.6, attack: 0.0006, dur: remote ? 0.1 : 0.05 });
-        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 250 * p, Q: 0.8, drive: 1.6, gain: 3.2, attack: 0.0008, dur: remote ? 0.14 : 0.07 });
-        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 150 * p, Q: 0.9, drive: 1.5, gain: 2.2, attack: 0.001, dur: remote ? 0.15 : 0.065 });
-        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 560 * p, Q: 0.8, drive: 1.4, gain: 1.1, attack: 0.0006, dur: remote ? 0.1 : 0.04 });
-        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 800 * p, freqEnd: 150, sweep: 0.06, drive: 2, gain: 1.2, attack: 0.001, dur: remote ? 0.32 : 0.07 });
-        this.tone(out, t, { freq: 150 * p, freqEnd: 65, sweep: 0.04, drive: 2.5, gain: 1.1, attack: 0.001, dur: remote ? 0.2 : 0.06 });
+        this.burst(out, t, { filter: 'lowpass', freq: 2600 * p, freqEnd: 350, sweep: 0.03, drive: 2, gain: 0.6, attack: 0.0006, dur: remote ? 0.08 : 0.05 });
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 250 * p, Q: 0.8, drive: 1.6, gain: 3.2 * lk, attack: 0.0008, dur: remote ? 0.1 : 0.07 });
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 150 * p, Q: 0.9, drive: 1.5, gain: 2.2 * lk, attack: 0.001, dur: remote ? 0.1 : 0.065 });
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 560 * p, Q: 0.8, drive: 1.4, gain: remote ? 1.6 : 1.1, attack: 0.0006, dur: remote ? 0.08 : 0.04 });
+        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 800 * p, freqEnd: 150, sweep: 0.06, drive: 2, gain: 1.2 * lk, attack: 0.001, dur: remote ? 0.16 : 0.07 });
+        this.tone(out, t, { freq: 150 * p, freqEnd: 65, sweep: 0.04, drive: 2.5, gain: 1.1 * lk, attack: 0.001, dur: remote ? 0.1 : 0.06 });
+        if (remote) this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1300 * p, Q: 0.7, drive: 2, gain: 1.8, attack: 0.0006, dur: 0.06 });
       }
     }
 

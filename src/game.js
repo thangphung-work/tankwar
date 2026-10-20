@@ -4121,7 +4121,10 @@ class ArtilleryGame3D {
         if (!s.whistled && s.vy < 0 && !s.isDirectFire && s.ammoType !== 'CLUSTER_SUBMUNITION' && this.ballistics.isGunRound && this.ballistics.isGunRound(s.ammoType)) {
           const B = this.ballistics, mult = B.bulletSpeedMultiplier || 1;
           const gr = s.g !== undefined ? s.g : B.gravityFor(s.ammoType, s.isDirectFire);   // trọng lực riêng của phát bắn (lựu pháo thu nhỏ theo tỉ lệ riêng)
-          const h = s.y - (this.player.y || 0);
+          // Đạn chùm tách vỏ ở ~165 đơn vị trên mặt đất (ballistics.js): canh tiếng rít tới lúc tách vỏ, không phải lúc chạm đất
+          const h = s.ammoType === 'CLUSTER' && this.terrain
+            ? s.y - (this.terrain.getElevationAt(s.x, s.z) + 165)
+            : s.y - (this.player.y || 0);
           // y(τ) = h + vy·τ − ½·g·τ² = 0 (τ: thời gian mô phỏng, = thời gian thật × mult)
           const tau = (s.vy + Math.sqrt(s.vy * s.vy + 2 * gr * Math.max(0, h))) / gr;
           const T = tau / mult;
