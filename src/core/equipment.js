@@ -30,7 +30,7 @@
     },
     slat: {
       name: 'Giáp lồng chống RPG', icon: 'grid-dots', cat: 'armor', price: 1800, tanks: ALL, speed: 0.98,
-      desc: 'Lồng thép bắt bằng tay đỡ quanh sườn và đuôi xe (xe pháo: che cả cabin). Bóp méo đầu đạn RPG trước khi nổ (chặn ~6/10 phát RPG, ~1/4 tên lửa).'
+      desc: 'Lồng thép bắt bằng tay đỡ quanh sườn và đuôi xe (xe pháo: che cả cabin). Trúng lồng: chặn hẳn ~1/4 tên lửa và ~6/10 bom con đạn chùm; đạn nổ phá còn 75% sát thương, đạn 30mm 70%, đạn cháy 60% và không làm xe bén lửa; đạn xuyên giáp xuyên qua. Nổ gần: mảnh văng -15%, ít thủng lốp / đứt xích / văng phụ kiện hơn một nửa, đạn cháy không bén vào vỏ.'
     },
     applique: {
       name: 'Tấm giáp tăng cường', icon: 'shield', cat: 'armor', adv: true, price: 3800, tanks: ALL, speed: 0.94, accel: 0.94,
@@ -309,11 +309,33 @@
     return zone === 'ammo' ? 0.75 : 0.85;
   }
   // Lồng thép bị trúng bởi RPG / tên lửa: xác suất đầu đạn bị bóp méo, không nổ đúng cách
-  function slatDefeats(tag, ammo) {
-    if (!tag || !/^cage/.test(tag)) return false;
-    if (ammo === 'RPG') return Math.random() < 0.6;
-    if (ammo === 'ANTI_TANK_MISSILE') return Math.random() < 0.25;
-    return false;
+  // Lồng thép (nan thép cách vỏ ~0,3 m, mua thêm hoặc có sẵn trên xe) khi bị trúng thẳng:
+  //  defeat: xác suất chặn hẳn (bóp méo đầu nổ lõm / kích nổ sớm), mul: phần sát thương còn lại nếu không bị chặn hẳn,
+  //  noFire: chất cháy bắn tung trên nan, không bám được vào vỏ -> xe không bén lửa
+  const SLAT_HIT = {
+    RPG: { defeat: 0.6, mul: 1 },
+    ANTI_TANK_MISSILE: { defeat: 0.25, mul: 1 },
+    CLUSTER_SUBMUNITION: { defeat: 0.6, mul: 0.5 },    // bom con nổ lõm nhỏ
+    NORMAL: { mul: 0.75 }, HE: { mul: 0.75 }, CLUSTER: { mul: 0.75 },   // đạn nổ trên lồng, cách vỏ -> sức ép & mảnh yếu đi
+    GATLING_BULLET: { mul: 0.7 },                     // đạn 30mm nổ-mảnh kích nổ trên nan
+    INCENDIARY: { mul: 0.6, noFire: true },
+    SCOUT_BULLET: { mul: 0.9 },
+    AP: { mul: 1 }                                    // mũi tên xuyên giáp xuyên thẳng qua nan
+  };
+  const isCage = (tag) => !!tag && /^cage/.test(tag);
+  // roll = false: chỉ tra hệ số, không gieo xác suất chặn (máy chỉ vẽ hình — kết quả do máy có quyền quyết định)
+  function slatHit(tag, ammo, heavy, roll = true) {
+    if (!isCage(tag)) return null;
+    const S = SLAT_HIT[ammo] || { mul: 1 };
+    const defeated = roll && !!S.defeat && Math.random() < S.defeat;
+    return { defeated, mul: heavy ? Math.max(S.mul, 0.85) : S.mul, noFire: !!S.noFire };
+  }
+  function slatDefeats(tag, ammo) { const r = slatHit(tag, ammo, false); return !!(r && r.defeated); }
+  // Lồng thép quanh xe đỡ mảnh văng & sức ép của quả nổ gần: sát thương -15%, ít hỏng lốp / xích / phụ kiện hơn,
+  // chất cháy không bám được vào vỏ
+  function slatSplash(u, cls) {
+    if (!has(u, 'slat')) return { mul: 1, partK: 1, noFire: false };
+    return { mul: cls === 'small' || cls === 'cannon' ? 0.9 : 0.85, partK: 0.5, noFire: true };
   }
   // Hệ thống đánh chặn: còn lượt + radar chưa bị bắn hỏng
   function apsLeft(u) {
@@ -1165,7 +1187,7 @@
 
   return Object.assign(API, {
     has, equip, onRespawn, paidUsed, ammoDelta, startLife,
-    armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, eraEffect, penMul, isTandem, splashMul, spallMul, slatDefeats, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul,
+    armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, eraEffect, penMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)
     APS_CHARGES, SMOKE_CHARGES

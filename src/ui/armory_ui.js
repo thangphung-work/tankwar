@@ -32,7 +32,7 @@ const ArmoryUI = (() => {
   const imgTag = (id, alt) => `<img class="eqd-img" src="${imgUrl(id)}" alt="${esc(alt || '')}" loading="lazy" decoding="async" draggable="false">`;
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)
   const SHORT = {
-    era: 'Chặn đạn nổ lõm / RPG, giảm xuyên', slat: 'Chặn ~6/10 phát RPG ở sườn sau, đuôi', applique: 'Giáp sườn +45%, mũi +20%, nặng hơn',
+    era: 'Chặn đạn nổ lõm / RPG, giảm xuyên', slat: 'Chặn ~1/4 tên lửa, ~6/10 bom con; giảm nổ, mảnh văng, chống bén lửa', applique: 'Giáp sườn +45%, mũi +20%, nặng hơn',
     spall: 'Mảnh vỡ trong xe −15% sát thương', aps: 'Tự bắn hạ RPG / tên lửa (2 lần)', smoke: 'Phím G: màn khói ~14 giây (2 lần)',
     camo: 'Đứng yên: khó bị thấy & bị radar bắt', fireext: 'Dập lửa nhanh ×2,5, cháy chỉ còn ½', turbo: 'Tốc độ +8%, tăng tốc +15%',
     radar: 'Thấy xe địch quanh ~75 m, kể cả núp bụi', jammer: 'Tên lửa địch khóa chậm gấp đôi'

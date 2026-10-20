@@ -2041,10 +2041,7 @@ class ArtilleryGame3D {
       if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
         directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.12 : 0.075; // 12.7mm bắn chậm hơn nhưng mỗi viên mạnh hơn; 30mm Gatling băng 450 viên nên mỗi viên nhẹ hơn
       } else if (ammoType === 'INCENDIARY') {
-        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.14 : 0.12;
-        if (typeof directTarget.ignite === 'function') {
-          directTarget.ignite(2.0);
-        }
+        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.14 : 0.12;   // bén lửa: xem dưới (lồng thép chặn được)
       } else if (ammoType === 'ANTI_TANK_MISSILE') {
         directDamage = 3.0; // Tên lửa chống tăng đầu nổ kép: xuyên sườn tăng chủ lực 2 phát chết, xe nhẹ 1 phát
       } else if (ammoType === 'RPG') {
@@ -2067,6 +2064,7 @@ class ArtilleryGame3D {
           dir: new THREE.Vector3(shell.vx || 0, shell.vy || 0, shell.vz || 0)
         });
         directDamage = Math.round(directDamage * dmgRes.mul * 1000) / 1000;
+        if (dmgRes.noFire) directTarget._noIgnite = true;
         // Đạn nảy khỏi giáp nghiêng: chỉ còn chút sát thương va đập
         if (unitHit && unitHit.ricochet) directDamage = Math.round(directDamage * 0.12 * 1000) / 1000;
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
@@ -2093,6 +2091,9 @@ class ArtilleryGame3D {
       }
       const res = directTarget.takeDamage(directDamage, shooter, 'DIRECT_HIT');
       directTarget._eraIgnore = false;
+      // Đạn cháy bén lửa vào xe (trừ khi chất cháy bắn tung trên lồng thép)
+      if (ammoType === 'INCENDIARY' && !directTarget._noIgnite && !directTarget.isDead && typeof directTarget.ignite === 'function') directTarget.ignite(2.0);
+      directTarget._noIgnite = false;
 
       if (res.blocked) {
         this.addCombatLog(`[[shield]] GIÁP PHẢN ỨNG NỔ CỦA ${directTarget.name} ĐÃ KÍCH NỔ CẢN PHÁ ĐẠN! BẢO VỆ XE AN TOÀN KHÔNG MẤT MÁU!`, 'alert');
@@ -2165,8 +2166,7 @@ class ArtilleryGame3D {
             // 30mm nổ-mảnh văng mảnh nhỏ sát điểm chạm; 12.7mm không có thuốc nổ
             splashDamage = (ammoType === 'SCOUT_BULLET' || (shooter && shooter.tankType === 'SCOUT')) ? 0 : 0.015;
           } else if (ammoType === 'INCENDIARY') {
-            splashDamage = 0.08;
-            if (typeof unit.ignite === 'function' && dist <= 12) unit.ignite(1.5);
+            splashDamage = 0.08;   // bén lửa khi nổ sát xe: xem dưới (lồng thép chặn được)
           } else if (ammoType === 'CLUSTER_SUBMUNITION') {
             splashDamage = 0.45; // Mảnh văng sát thương nhỏ diện rộng
           } else if (ammoType === 'RPG' || ammoType === 'ANTI_TANK_MISSILE') {
@@ -2205,6 +2205,7 @@ class ArtilleryGame3D {
           if (typeof VehicleDamage !== 'undefined') {
             const dmgRes = VehicleDamage.onSplash(unit, { x, y, z, ammo: ammoType, heavy: !!shell.isHeavyArty, dist, radius: blastRadius, shooter, fx: fxSys });
             splashDamage = Math.round(splashDamage * dmgRes.mul * 1000) / 1000;
+            if (dmgRes.noFire) unit._noIgnite = true;
             // phần cộng thêm của đạn cao cấp không vượt ngưỡng 1 phát máy chủ chấp nhận (2.6 máu)
             if (premSplash > 1) splashDamage = Math.min(splashDamage, Math.max(2.5, splashDamage / premSplash));
             this.reportVehicleDamage(unit, shooter, dmgRes.events);
@@ -2215,6 +2216,8 @@ class ArtilleryGame3D {
           unit._eraIgnore = true;
           const res = unit.takeDamage(splashDamage, shooter, 'SHELL');
           unit._eraIgnore = false;
+          if (ammoType === 'INCENDIARY' && dist <= 12 && !unit._noIgnite && !unit.isDead && typeof unit.ignite === 'function') unit.ignite(1.5);
+          unit._noIgnite = false;
 
           if (res.blocked) {
             this.addCombatLog(`[[shield]] GIÁP PHẢN ỨNG NỔ CỦA ${unit.name} ĐÃ CẢN PHÁ VỤ NỔ! KHÔNG MẤT MÁU!`, 'alert');
