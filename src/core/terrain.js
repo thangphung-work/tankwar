@@ -857,19 +857,61 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     this.rockItems = [];
     const rocks = this.map.rocks;
     if (!rocks.length) return;
-    const mat = new THREE.MeshStandardMaterial({ map: this.rockTexture(), roughness: 0.93, metalness: 0.02, flatShading: true });
+    const mat = new THREE.MeshStandardMaterial({ map: this.rockTexture(), roughness: 0.9, metalness: 0.02, vertexColors: true });
+    // Mặt trên đá: rêu (rừng / sông hồ), địa y bạc (cao nguyên), bụi cát (sa mạc), bụi xám (đô thị)
+    const topTint = { JUNGLE: [0.62, 0.8, 0.44], RIVER_LAKE: [0.72, 0.84, 0.56], HIGHLAND: [0.95, 0.97, 0.86], DESERT: [1.12, 1.0, 0.84], URBAN: [0.94, 0.93, 0.9] }[this.mapType] || [1, 1, 1];
     const variants = [0, 1, 2].map(v => {
-      const g = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
+      // Tảng đá: khối cầu chia mịn, nhiễu nhiều tầng (gồ ghề lớn + sần nhỏ), vài mặt cắt phẳng như vết vỡ tự nhiên,
+      // đáy phẳng chôn vào đất; pháp tuyến mượt (không lộ mặt tam giác), khe lõm tối, mặt hướng lên phủ rêu / bụi
+      let sd = (v + 1) * 2654435761 >>> 0;
+      const rnd = () => { sd = (sd + 0x6D2B79F5) >>> 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      const waves = [];
+      for (let k = 0; k < 9; k++) {
+        const z = rnd() * 2 - 1, a = rnd() * 6.283, r = Math.sqrt(1 - z * z), f = 1.4 * Math.pow(1.85, k % 5);
+        waves.push([Math.cos(a) * r * f, z * f, Math.sin(a) * r * f, rnd() * 6.283, 0.2 / Math.pow(1.7, k % 5)]);
+      }
+      const cuts = [];
+      for (let k = 0; k < 4; k++) {
+        const z = k === 0 ? 0.85 + rnd() * 0.15 : rnd() * 0.9 - 0.3, a = rnd() * 6.283, r = Math.sqrt(1 - z * z);
+        cuts.push([Math.cos(a) * r, z, Math.sin(a) * r, 0.62 + rnd() * 0.2]);
+      }
+      const g = new THREE.IcosahedronGeometry(1, 4);
       const p = g.attributes.position;
-      const seed = v * 13.7 + 1;
+      const disp = new Float32Array(p.count);
       for (let i = 0; i < p.count; i++) {
         const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-        const n = Math.sin(x * 3.1 + seed) * 0.18 + Math.sin(y * 4.3 + z * 2.2 + seed) * 0.14 + Math.sin(z * 5.7 - x * 1.3) * 0.1;
-        const k = 1 + n;
-        // Đáy phẳng chôn vào đất, đỉnh hơi dẹt
-        p.setXYZ(i, x * k, Math.max(-0.35, y * k * 0.8), z * k);
+        let n = 0;
+        for (const w of waves) n += Math.sin(x * w[0] + y * w[1] + z * w[2] + w[3]) * w[4];
+        let X = x * (1 + n), Y = y * (1 + n), Z = z * (1 + n);
+        for (const c of cuts) {
+          const dd = X * c[0] + Y * c[1] + Z * c[2] - c[3];
+          if (dd > 0) { X -= c[0] * dd * 0.9; Y -= c[1] * dd * 0.9; Z -= c[2] * dd * 0.9; }
+        }
+        Y = Math.max(-0.35, Y * 0.82);
+        disp[i] = Math.hypot(X, Y / 0.82, Z);
+        p.setXYZ(i, X, Y, Z);
       }
-      g.computeVertexNormals();
+      // pháp tuyến mượt: cộng dồn pháp tuyến mặt theo vị trí đỉnh gốc (đỉnh trùng nhau ở đường nối UV dùng chung)
+      const key = i => Math.round(p.getX(i) * 1e4) + ',' + Math.round(p.getY(i) * 1e4) + ',' + Math.round(p.getZ(i) * 1e4);
+      const acc = new Map(), A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
+      for (let i = 0; i < p.count; i += 3) {
+        A.fromBufferAttribute(p, i); B.fromBufferAttribute(p, i + 1); C.fromBufferAttribute(p, i + 2);
+        const fn = B.clone().sub(A).cross(C.clone().sub(A));
+        for (let j = 0; j < 3; j++) { const k = key(i + j); const s = acc.get(k); if (s) s.add(fn); else acc.set(k, fn.clone()); }
+      }
+      const nrm = g.attributes.normal, col = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        const n = acc.get(key(i)).normalize();
+        nrm.setXYZ(i, n.x, n.y, n.z);
+        // khe lõm (bị đẩy vào trong) tối hơn; chân đá sát đất tối; mặt hướng lên phủ rêu / bụi
+        const ao = Math.max(0.45, Math.min(1.08, 0.62 + (disp[i] - 0.82) * 1.6)) * (0.72 + 0.28 * Math.min(1, (p.getY(i) + 0.35) / 0.5));
+        const up = Math.max(0, Math.min(1, (n.y - 0.55) * 2.6));
+        col[i * 3] = ao * (1 + (topTint[0] - 1) * up); col[i * 3 + 1] = ao * (1 + (topTint[1] - 1) * up); col[i * 3 + 2] = ao * (1 + (topTint[2] - 1) * up);
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      // UV chiếu phẳng xiên theo vị trí (UV cầu gốc bị xoắn ở đỉnh đá)
+      const uv = g.attributes.uv;
+      for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 0.8 + p.getZ(i) * 0.45, p.getY(i) * 0.9 + p.getZ(i) * 0.4 - p.getX(i) * 0.2);
       return g;
     });
     const pools = variants.map(g => {
@@ -906,17 +948,25 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     if (!total) return;
     // xanh rêu / ô liu (xanh lá thuần dưới nắng thành xanh neon)
     const leafCol = { DESERT: [0x6f6e3c, 0x857e48], URBAN: [0x4e5c34, 0x5c6a3e], JUNGLE: [0x34482a, 0x405630], HIGHLAND: [0x4a5632, 0x58643a], RIVER_LAKE: [0x485a30, 0x566a38] }[this.mapType];
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const g = c.getContext('2d');
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 700; i++) { const s = 0.6 + Math.random() * 0.5; g.fillStyle = `rgb(${212 * s | 0},${228 * s | 0},${198 * s | 0})`; g.beginPath(); g.ellipse(Math.random() * 128, Math.random() * 128, 2 + Math.random() * 4, 1 + Math.random() * 2, Math.random() * 3, 0, 6.3); g.fill(); }
-    const tex = new THREE.CanvasTexture(c);
-    const geo = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
-    const p = geo.attributes.position;
-    for (let i = 0; i < p.count; i++) { const k = 1 + Math.sin(p.getX(i) * 7 + p.getZ(i) * 5) * 0.2; p.setXYZ(i, p.getX(i) * k, Math.max(-0.2, p.getY(i) * 0.7 * k), p.getZ(i) * k); }
-    geo.computeVertexNormals();
-    const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }), total);
+    let geo, mat;
+    const F = typeof Destructibles !== 'undefined' && Destructibles.Foliage;
+    if (F) {
+      // Bụi lá thật: vòm thẻ lá cắt alpha (texture lá nhạt màu, sắc xanh theo bản đồ do instanceColor quyết định)
+      geo = F.bushGeometry(0xb05e5);
+      mat = F.foliageMat(F.leafTex('neutral'));
+    } else {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, 128, 128);
+      for (let i = 0; i < 700; i++) { const s = 0.6 + Math.random() * 0.5; g.fillStyle = `rgb(${212 * s | 0},${228 * s | 0},${198 * s | 0})`; g.beginPath(); g.ellipse(Math.random() * 128, Math.random() * 128, 2 + Math.random() * 4, 1 + Math.random() * 2, Math.random() * 3, 0, 6.3); g.fill(); }
+      geo = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
+      const p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) { const k = 1 + Math.sin(p.getX(i) * 7 + p.getZ(i) * 5) * 0.2; p.setXYZ(i, p.getX(i) * k, Math.max(-0.2, p.getY(i) * 0.7 * k), p.getZ(i) * k); }
+      geo.computeVertexNormals();
+      mat = new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(c), roughness: 0.95 });
+    }
+    const im = new THREE.InstancedMesh(geo, mat, total);
     im.count = 0; im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
     im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(total * 3).fill(1), 3);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
