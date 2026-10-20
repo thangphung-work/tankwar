@@ -168,12 +168,12 @@
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
 <script src="src/entities/spg.js?v=20261020ammo1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020glass1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020m5"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
 <script src="src/gameplay/vehicle_damage.js?v=20261020cfire11"></script>
 <script src="src/core/equipment.js?v=20261020ammo1"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
-<script src="src/gameplay/destructibles.js?v=20261020real1"></script>
+<script src="src/gameplay/destructibles.js?v=20261020m5"></script>
 <script>
 (function () {
   // ===========================================================================
@@ -1021,7 +1021,26 @@
     const R = pond ? 66 : 54;
     fx.addCrater(0, 0, R, null, 1, null, 'HE', { heavy: true, persistent: true, bowlDepth: pond ? 16 : 26 });
     const rec = fx.craters[fx.craters.length - 1];
-    const holeR = rec.holeSlot ? rec.holeSlot.r : R;
+    // Bán kính lòng hố đo trên lưới độ cao của hố (chỗ gần tâm nhất mà mặt hố lên tới mép đất). Không dùng bán kính lỗ khoét
+    // mặt đất: lỗ đó cố tình rộng hơn lòng hố, lấn ra dưới gờ đất
+    const holeR = (() => {
+      const s = rec.surf;
+      if (!s) return R * 0.42;
+      const Hg = (px, pz) => {
+        const lx = (px - s.cx) * s.gc + (pz - s.cz) * s.gs, lz = -(px - s.cx) * s.gs + (pz - s.cz) * s.gc;
+        const i = Math.max(0, Math.min(s.M, Math.round((lx - s.ox) / s.S * s.M))), j = Math.max(0, Math.min(s.M, Math.round((lz - s.oz) / s.S * s.M)));
+        return s.Hgrid[j * (s.M + 1) + i];
+      };
+      const step = s.S / s.M * 0.5;
+      let rMin = Infinity;
+      for (let q = 0; q < 24; q++) {
+        const a = q / 24 * Math.PI * 2;
+        let r = 0;
+        while (r < R && Hg(Math.cos(a) * (r + step), Math.sin(a) * (r + step)) < -0.12) r += step;
+        rMin = Math.min(rMin, r);
+      }
+      return rMin;
+    })();
     const info = { x: 0, z: 0, r: holeR * 1.12, D: pond ? 16 : 26 };
     let water = null;
     if (pond) {
