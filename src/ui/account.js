@@ -245,14 +245,33 @@ const Account = (() => {
     armoryChanged();
     return r.profile;
   }
-  // Nhận đồ nâng cao bằng xem quảng cáo: adStart -> (xem hết quảng cáo) -> claim
-  async function adStart(tank, item) { return api('ad/start', { tank, item }); }
+  // QUẢNG CÁO CÓ THƯỞNG: ad/start -> phát quảng cáo (AdProvider) -> ad/reward. what = { ammo } | { item }
+  // Trả về { status: 'done' | 'skip' | 'unavailable', reward }
+  async function adStart(tank, what) { return api('ad/start', Object.assign({ tank }, typeof what === 'string' ? { item: what } : what)); }
   async function claim(tank, item, token) {
-    const r = await api('shop/claim', { tank, item, token });
+    const r = await api('ad/reward', { token });
     setProfile(r.profile, false);
     armoryChanged();
     return r.profile;
   }
+  const adsLeft = () => (profile && profile.ads ? profile.ads.left : 0);
+  async function watchAd(tank, what, label) {
+    if (!profile) throw Object.assign(new Error('Đăng nhập để nhận thưởng quảng cáo'), { status: 401 });
+    if (!window.AdProvider) return { status: 'unavailable' };
+    const s = await adStart(tank, what);
+    const t0 = Date.now();
+    const st = await AdProvider.showRewarded({ name: what.ammo ? 'resupply_' + what.ammo : 'unlock_' + what.item, label, sec: s.sec });
+    if (st !== 'done') return { status: st };
+    // máy chủ cần đủ thời lượng tối thiểu kể từ lúc bắt đầu (quảng cáo thật có thể rất ngắn)
+    const wait = (s.minSec || 0) * 1000 - (Date.now() - t0);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait + 150));
+    const r = await api('ad/reward', { token: s.token });
+    setProfile(r.profile, false);
+    armoryChanged();
+    return { status: 'done', reward: r.reward };
+  }
+  const freeOf = (tank, ammo) => { const f = profile && profile.armory && profile.armory.free; return (f && f[tank] && f[tank][ammo]) || 0; };
+  const adProgressOf = (tank, item) => { const p = profile && profile.armory && profile.armory.adProgress; return (p && p[tank] && p[tank][item]) || 0; };
   async function setLoadout(tank, m, a) {
     if (!profile) {
       const g = guestLoadouts();
@@ -439,9 +458,50 @@ const Account = (() => {
       const kd = r.kdPlace && r.kdBonus ? ` <span class="acc-kd">(có thưởng hạng ${r.kdPlace}: +${fmtSilver(r.kdBonus.silver)} Bạc)</span>` : '';
       if (line) line.innerHTML = `<b>+${r.gained} kinh nghiệm</b> · <b class="silver"><i class="ti ti-coins"></i> +${fmtSilver(r.silver)} Bạc</b>${kd}${r.levelUp ? ` · <span class="up">LÊN CẤP: ${esc(r.profile.rankText)}!</span>` : ` · ${esc(r.profile.rankText)}`}`
         + (r.verified ? ' <span class="acc-verified" title="Số hạ gục / sát thương lấy theo máy chủ"><i class="ti ti-shield-check"></i> Đã đối chiếu máy chủ</span>' : '');
+      renderResupply(line, P.tankType);
     } catch (e) {
       if (line) line.textContent = e.status === 400 ? e.message : 'Không lưu được kết quả: ' + e.message;
     }
+  }
+
+  // TIẾP TẾ SAU TRẬN: vật tư của xe vừa chơi còn ít hơn 1 lần xuất kích -> nút xem quảng cáo nhận thêm ngay
+  function renderResupply(after, tank) {
+    let box = $('#acc-resupply');
+    if (box) box.remove();
+    if (!after || !profile || typeof Equipment === 'undefined' || !window.AdProvider || !AdProvider.available()) return;
+    const shop = Equipment.AMMO_SHOP[tank] || {}, stock = (profile.armory && profile.armory.stock && profile.armory.stock[tank]) || {};
+    const lo = loadoutOf(tank);
+    const low = Object.keys(shop).filter(k => (stock[k] || 0) < shop[k].max && (!shop[k].gear || (lo.m || []).includes(shop[k].gear)));
+    if (!low.length) return;
+    box = document.createElement('div');
+    box.id = 'acc-resupply';
+    box.className = 'acc-resupply';
+    let note = '';
+    const draw = () => {
+      const left = adsLeft();
+      box.innerHTML = `<span class="acc-rs-title"><i class="ti ti-package"></i> KHO SẮP CẠN</span>`
+        + low.map(k => { const A = shop[k], have = ((profile.armory.stock[tank] || {})[k]) || 0;
+          return `<button class="eqp-btn ad" data-rs="${k}"${left > 0 ? '' : ' disabled'} title="Xem 1 quảng cáo: +${A.ad} ${esc(A.name.toLowerCase())}">
+            <i class="ti ti-player-play-filled"></i> +${A.ad} ${esc(A.name)} <small>(còn ${have})</small></button>`; }).join('')
+        + `<span class="acc-rs-left">${note ? esc(note) : left > 0 ? `Còn ${left}/${Equipment.AD.DAILY} lượt quảng cáo hôm nay` : 'Hết lượt quảng cáo hôm nay'}</span>`;
+    };
+    draw();
+    box.addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-rs]');
+      if (!b || b.disabled) return;
+      const k = b.dataset.rs, A = shop[k];
+      box.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      note = '';
+      try {
+        const r = await watchAd(tank, { ammo: k }, `+${A.ad} ${A.name}`);
+        if (r.status === 'done') low.splice(low.indexOf(k), 1);
+        else if (r.status === 'unavailable') note = 'Hiện chưa có quảng cáo, thử lại sau ít phút.';
+        else note = 'Chưa xem hết quảng cáo nên chưa nhận được.';
+      } catch (e) { note = e.message; }
+      if (!low.length) { box.innerHTML = '<span class="acc-rs-title ok"><i class="ti ti-circle-check"></i> Đã tiếp tế xong</span>'; return; }
+      draw();
+    });
+    after.after(box);
   }
 
   // ---------------------------------------------------------------------------
@@ -465,6 +525,6 @@ const Account = (() => {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
-  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, sell, flushAmmo, adStart, claim, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
+  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, sell, flushAmmo, adStart, claim, watchAd, adsLeft, freeOf, adProgressOf, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
 })();
 window.Account = Account;

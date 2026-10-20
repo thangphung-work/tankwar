@@ -297,13 +297,15 @@ const GroundShader = (() => {
 
   // Màu trung bình của ảnh nền cũ -> dùng để lấy "độ lệch màu" tầng lớn
   function averageColor(cv) {
+    if (cv._gAvg) return cv._gAvg.clone();
     const g = cv.getContext('2d'), S = 48, img = g.getImageData(0, 0, cv.width, cv.height).data;
     let r = 0, gg = 0, b = 0, n = 0;
     for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
       const x = Math.floor((i + 0.5) / S * cv.width), y = Math.floor((j + 0.5) / S * cv.height), k = (y * cv.width + x) * 4;
       r += img[k]; gg += img[k + 1]; b += img[k + 2]; n++;
     }
-    return new THREE.Vector3(r / n / 255, gg / n / 255, b / n / 255);
+    cv._gAvg = new THREE.Vector3(r / n / 255, gg / n / 255, b / n / 255);
+    return cv._gAvg.clone();
   }
 
   /**
@@ -352,7 +354,9 @@ const GroundShader = (() => {
 
   /**
    * Gắn shader lên vật liệu mặt đất (MeshStandardMaterial có map = ảnh màu bản đồ cũ)
-   * opts: { mapType, macroCanvas, water }
+   * opts: { mapType, macroCanvas, water, ownNormals }
+   * ownNormals: dùng pháp tuyến của chính lưới (công trình đắp đất nằm trên địa hình, vd ụ đất cứ điểm)
+   *   thay cho pháp tuyến nướng sẵn của địa hình -> cùng màu / vật liệu với mặt đất nhưng sáng tối theo hình khối riêng
    */
   function apply(mat, opts) {
     const L = layers(opts.mapType);
@@ -546,7 +550,7 @@ float gTuftH(vec2 p) {
   vec2 wp = vGW.xz;
   // pháp tuyến mượt nướng sẵn (không theo tam giác lưới địa hình)
   vec4 nTex = texture2D(gNrm, (vGW.xz + gTerr.x) / gTerr.y);
-  vec3 nrm = normalize(nTex.xyz * 2.0 - 1.0);
+  vec3 nrm = ${opts.ownNormals ? 'normalize(vGN)' : 'normalize(nTex.xyz * 2.0 - 1.0)'};
   // độ lõm (+) / lồi (-) của địa hình
   float cav = nTex.a * 2.0 - 1.0;
   float gWet = smoothstep(0.0, 0.45, cav), gDryR = smoothstep(0.0, 0.45, -cav);
@@ -693,7 +697,7 @@ float gTuftH(vec2 p) {
   reflectedLight.indirectDiffuse *= 1.0 - gWet * 0.3;   // hõm khuất ánh trời
   reflectedLight.directSpecular *= 1.0 - gCloud * 0.5;`);
     };
-    mat.customProgramCacheKey = () => 'groundPBR10:' + (opts.mapType || '');
+    mat.customProgramCacheKey = () => 'groundPBR10:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
     mat.needsUpdate = true;
     return mat;
   }
