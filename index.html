@@ -14,8 +14,8 @@
   <link rel="stylesheet" href="style.css?v=20261020slv1">
   <link rel="stylesheet" href="src/ui/lobby.css?v=20261020mob1">
   <link rel="stylesheet" href="hud.css?v=20261020zhp2">
-  <link rel="stylesheet" href="src/ui/account.css?v=20261020kd1">
-  <link rel="stylesheet" href="src/ui/armory.css?v=20261020cmp4">
+  <link rel="stylesheet" href="src/ui/account.css?v=20261020ad1">
+  <link rel="stylesheet" href="src/ui/armory.css?v=20261020ad1">
   <link rel="stylesheet" href="src/ui/game_menu.css?v=20261020gpu1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -397,7 +397,7 @@
           <div class="mm-mission-brief">
             <div class="brief-line">
               <span class="brief-lbl"><i class="ti ti-target" aria-hidden="true"></i> NHIỆM VỤ</span>
-              <span class="brief-txt">Giữ cứ điểm <b>A</b> <b>B</b> <b>C</b> để ghi điểm. Đội đạt <b>1.000</b> trước thắng.</span>
+              <span class="brief-txt">Chiếm cứ điểm <b>A</b> <b>B</b> hoặc <b>C</b> rồi đứng giữ đủ <b>60 giây</b> để thắng.</span>
             </div>
             <div class="brief-teams">
               <span class="team-name team-blue">LIÊN MINH</span>
@@ -459,7 +459,7 @@
   <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
   <script src="src/ui/icons.js?v=20261020lock1"></script>
   <script src="three.min.js?v=20261019i"></script>
-  <script src="src/core/equipment.js?v=20261020gp1"></script>
+  <script src="src/core/equipment.js?v=20261020ad1"></script>
   <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
 
   <!-- 1. Tầng Nền Tảng Cốt Lõi (Core Systems) -->
@@ -505,15 +505,21 @@
   <script src="src/gameplay/world_markers.js?v=20261020mark1"></script>
 
   <!-- 4. Tầng Giao Diện Người Dùng (UI & Sảnh Chờ) -->
-  <script src="src/ui/hud_controller.js?v=20261020bush1"></script>
+  <script src="src/ui/hud_controller.js?v=20261020ad1"></script>
   <script src="src/ui/tactical_map.js?v=20261020drive1"></script>
   <script src="src/ui/tank_inspector.js?v=20261020eq2"></script>
-  <script src="src/ui/armory_ui.js?v=20261020gp1"></script>
+  <!-- Quảng cáo có thưởng (src/core/ads.js): điền mã nhà xuất bản AdSense (H5 Games Ads) vào h5Client để phát quảng cáo thật;
+       để trống = khung quảng cáo mẫu (thử luồng nhận thưởng). Chạy thật: h5Test: false. -->
+  <script>
+    window.ADS_CONFIG = { provider: 'auto', h5Client: '', h5Test: true, allowMock: true };
+  </script>
+  <script src="src/core/ads.js?v=20261020ad1"></script>
+  <script src="src/ui/armory_ui.js?v=20261020ad1"></script>
   <script src="src/core/net_codec.js?v=20261019n1"></script>
   <script src="src/core/netcode.js?v=20261020cfire11"></script>
   <script src="src/ui/matchmaking.js?v=20261020map1"></script>
   <script src="src/ui/lobby_view.js?v=20261020fnt1"></script>
-  <script src="src/ui/account.js?v=20261020ammo1"></script>
+  <script src="src/ui/account.js?v=20261020ad1"></script>
 
   <!-- Phòng thử nghiệm cứ điểm (chỉ chạy khi mở index.html?lab=stronghold / stronghold_lab.html) -->
   <script src="src/ui/stronghold_lab.js?v=20261020gp1"></script>
@@ -523,6 +529,6 @@
   <!-- 5. Bộ Điều Phối Trò Chơi (Main Game Engine) -->
   <script src="src/ui/game_menu.js?v=20261020aim3"></script>
   <script src="src/ui/motion.js?v=20261020mo2"></script>
-  <script src="src/game.js?v=20261020gp1"></script>
+  <script src="src/game.js?v=20261020ad1"></script>
 </body>
 </html>

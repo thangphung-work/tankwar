@@ -817,7 +817,7 @@ class ArtilleryGame3D {
     const P = this.player;
     if (!P || P.isDead || P.tankType !== 'SCOUT') return;
     if ((P.missileAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
     }
     if (P.dmg && P.dmg.rpgDisabled) {
@@ -1696,29 +1696,35 @@ class ArtilleryGame3D {
     }
   }
 
+  // Câu nhắc kho vật tư khi bắn hết 1 loại đạn (Equipment.outOfStockNote)
+  stockNote(k) {
+    const P = this.player || (this.game && this.game.player);
+    return (typeof Equipment !== 'undefined' && Equipment.outOfStockNote && P) ? Equipment.outOfStockNote(P, k) : '';
+  }
+
   selectAmmoType(ammoType) {
     if (this.hud) return this.hud.selectAmmoType(ammoType);
     if (!this.player) return;
 
     // Kiểm tra cơ số đạn nâng cao
     if (ammoType === 'AP' && (this.player.apAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn xuyên phá! Hãy tìm nhặt hòm tiếp tế trên map!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn xuyên phá! Nhặt hòm tiếp tế trên map' + this.stockNote('AP'), 'alert');
       return;
     }
     if (ammoType === 'HE' && (this.player.heAmmoCount || 0) <= 0 && this.player.tankType !== 'ARTILLERY') {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn nổ mạnh! Hãy tìm nhặt hòm tiếp tế trên map!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn nổ mạnh! Nhặt hòm tiếp tế trên map' + this.stockNote('HE'), 'alert');
       return;
     }
     if (ammoType === 'CLUSTER' && (this.player.clusterAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn chùm nổ trên không! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn chùm nổ trên không! Nhặt hòm tiếp tế trên map' + this.stockNote('CLUSTER'), 'alert');
       return;
     }
     if (ammoType === 'INCENDIARY' && (this.player.incendiaryAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy nâng cao! Súng chuyển về đạn nhỏ liên thanh cơ bản!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy! Súng chuyển về đạn thường' + this.stockNote('INCENDIARY'), 'alert');
       return;
     }
     if (ammoType === 'ANTI_TANK_MISSILE' && (this.player.missileAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
     }
 
@@ -5161,10 +5167,10 @@ class ArtilleryGame3D {
     const P = this.player;
     if (!P || P.isDead || !this.isGameStarted || this.isGameOver || typeof Equipment === 'undefined') return;
     if (!Equipment.has(P, 'smoke')) {
-      this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — mua trong mục NÂNG CẤP ở sảnh', 'tip');
+      this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — lắp trong Kho vũ khí (nhóm PHỤ KIỆN) ở sảnh', 'tip');
       return;
     }
-    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói (nạp lại khi xuất kích lần sau)', 'alert'); return; }
+    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói' + this.stockNote('SMOKE'), 'alert'); return; }
     Equipment.triggerSmoke(this, P);
     this.addCombatLog(`[[cloud]] Đã phóng màn khói — địch không nhìn xuyên qua được (còn ${P.smokeLeft})`, 'tip');
     this.syncEquipmentChips();
