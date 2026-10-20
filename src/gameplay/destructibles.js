@@ -2097,30 +2097,77 @@ const Destructibles = (() => {
   }
   const NO_NOISE = () => 0;
   // Ô kính vỡ: lòng phòng tối, mảnh kính lởm chởm còn bám khung, vệt muội phía trên ô cửa
+  // Cửa kính vỡ: ô cửa toang lộ phòng tối, kính còn sót ở khung là các mảnh nhọn sắc chĩa vào giữa (to nhất ở góc khung,
+  // nơi kính bị kẹp chặt), mặt kính trong ngả xanh, mép sáng loé; khung sẫm muội bụi phía trên. Kèm bản đồ độ nhám riêng
+  // (brokenWindowRough): mảnh kính bóng như kính, phòng tối & mặt tường vẫn nhám -> không còn trông như mảnh vữa xám đục
   function brokenWindowTex(style) {
     return canvasTex('winBroken_' + style, 128, 128, (g, w, h) => {
       g.drawImage(windowPanelTex(style).image, 0, 0);
+      const rc = document.createElement('canvas'); rc.width = w; rc.height = h;
+      const r = rc.getContext('2d');
+      r.fillStyle = 'rgb(230,230,230)'; r.fillRect(0, 0, w, h);
       const rects = { office: [[6, 14, w - 12, h - 30]], adobe: [[48, 40, 32, 34]], stone: [[46, 38, 36, 40]], wood: [[40, 40, 48, 38]], metal: [], hangarDoor: [],
         shop: [[11, 50, 106, 68]], shopB: [[8, 96, 112, 24]], officeB: [[3, 33, 39, 52], [45, 33, 39, 52], [87, 33, 41, 52]],
         aptB: [[28, 28, 30, 74], [64, 32, 38, 46]], aptC: [[16, 30, 24, 56], [52, 30, 24, 56], [88, 30, 24, 56]],
         tube: [[33, 26, 62, 76]], side: [], tubeB: [[29, 33, 34, 48], [65, 33, 34, 48]], apt: [[38, 34, 25, 46], [65, 34, 25, 46]] }[style] || [[38, 34, 25, 46], [65, 34, 25, 46]];
+      // một mảnh nhọn: chân rộng bám mép khung tại (px, py), mũi chĩa theo (dx, dy) dài L
+      const shard = (px, py, dx, dy, L, bw) => {
+        const tx = -dy, ty = dx, sk = rand(-0.35, 0.35);
+        const pts = [[px - tx * bw, py - ty * bw], [px + tx * bw, py + ty * bw], [px + (dx + tx * sk) * L, py + (dy + ty * sk) * L]];
+        const gr = g.createLinearGradient(px, py, px + dx * L, py + dy * L);
+        gr.addColorStop(0, 'rgba(150,178,186,0.92)'); gr.addColorStop(1, 'rgba(96,122,132,0.75)');
+        g.fillStyle = gr;
+        g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill();
+        // mép gãy loé sáng một cạnh, cạnh kia tối (bề dày kính bắt sáng)
+        g.lineWidth = 0.8;
+        g.strokeStyle = 'rgba(235,248,252,0.95)'; g.beginPath(); g.moveTo(pts[1][0], pts[1][1]); g.lineTo(pts[2][0], pts[2][1]); g.stroke();
+        g.strokeStyle = 'rgba(40,52,58,0.7)'; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); g.lineTo(pts[2][0], pts[2][1]); g.stroke();
+        r.fillStyle = 'rgb(18,18,18)';
+        r.beginPath(); pts.forEach(([x, y], i) => i ? r.lineTo(x, y) : r.moveTo(x, y)); r.closePath(); r.fill();
+      };
       for (const [x, y, rw, rh] of rects) {
-        g.fillStyle = '#15130f'; g.fillRect(x, y, rw, rh);
-        g.fillStyle = 'rgba(150,170,180,0.7)';
-        for (let k = 0; k < 6; k++) {
-          const side = Math.floor(RNG() * 4), t = RNG(), L = rand(4, 12);
-          const px = side < 2 ? x + t * rw : (side === 2 ? x : x + rw), py = side >= 2 ? y + t * rh : (side === 0 ? y : y + rh);
-          const cx = x + rw / 2, cy = y + rh / 2, dl = Math.hypot(cx - px, cy - py) || 1;
-          g.beginPath(); g.moveTo(px - 3 * (cy - py) / dl, py + 3 * (cx - px) / dl); g.lineTo(px + 3 * (cy - py) / dl, py - 3 * (cx - px) / dl);
-          g.lineTo(px + (cx - px) / dl * L, py + (cy - py) / dl * L); g.closePath(); g.fill();
+        // phòng tối phía sau, sáng dần về phía cửa (ánh trời hắt vào)
+        const gi = g.createLinearGradient(0, y, 0, y + rh);
+        gi.addColorStop(0, '#0f0e0c'); gi.addColorStop(1, '#262320');
+        g.fillStyle = gi; g.fillRect(x, y, rw, rh);
+        r.fillStyle = 'rgb(255,255,255)'; r.fillRect(x, y, rw, rh);
+        // mảnh lớn kẹp ở góc khung (tam giác vuông bám 2 cạnh), mỗi ô 1-2 góc
+        const corners = [[x, y, 1, 1], [x + rw, y, -1, 1], [x + rw, y + rh, -1, -1], [x, y + rh, 1, -1]];
+        for (let k = 0, nc = 1 + Math.floor(RNG() * 2); k < nc; k++) {
+          const [cx, cy, sx, sy] = corners[Math.floor(RNG() * 4)];
+          const a = rand(0.25, 0.6) * rw, bb = rand(0.2, 0.5) * rh;
+          const pts = [[cx, cy], [cx + sx * a, cy], [cx + sx * a * rand(0.1, 0.4), cy + sy * bb * rand(0.3, 0.6)], [cx, cy + sy * bb]];
+          const gr = g.createLinearGradient(cx, cy, cx + sx * a, cy + sy * bb);
+          gr.addColorStop(0, 'rgba(160,186,194,0.92)'); gr.addColorStop(1, 'rgba(104,130,140,0.78)');
+          g.fillStyle = gr; g.beginPath(); pts.forEach(([px, py], i) => i ? g.lineTo(px, py) : g.moveTo(px, py)); g.closePath(); g.fill();
+          g.strokeStyle = 'rgba(235,248,252,0.9)'; g.lineWidth = 0.8;
+          g.beginPath(); g.moveTo(pts[1][0], pts[1][1]); g.lineTo(pts[2][0], pts[2][1]); g.lineTo(pts[3][0], pts[3][1]); g.stroke();
+          // vết rạn trên mảnh còn kẹp
+          g.strokeStyle = 'rgba(225,240,245,0.55)'; g.lineWidth = 0.5;
+          for (let q = 0; q < 2; q++) { g.beginPath(); g.moveTo(cx + sx * a * rand(0.1, 0.5), cy); g.lineTo(cx + sx * a * rand(0, 0.3), cy + sy * bb * rand(0.3, 0.7)); g.stroke(); }
+          r.fillStyle = 'rgb(18,18,18)'; r.beginPath(); pts.forEach(([px, py], i) => i ? r.lineTo(px, py) : r.moveTo(px, py)); r.closePath(); r.fill();
         }
+        // mảnh nhọn dọc 4 cạnh khung, dồn về gần góc
+        for (let k = 0; k < 7; k++) {
+          const side = Math.floor(RNG() * 4), t = RNG() < 0.6 ? (RNG() < 0.5 ? rand(0.05, 0.3) : rand(0.7, 0.95)) : rand(0.3, 0.7);
+          const horiz = side < 2, len = horiz ? rh : rw;
+          const px = horiz ? x + t * rw : (side === 2 ? x : x + rw), py = horiz ? (side === 0 ? y : y + rh) : y + t * rh;
+          const dx = horiz ? rand(-0.25, 0.25) : (side === 2 ? 1 : -1), dy = horiz ? (side === 0 ? 1 : -1) : rand(-0.25, 0.25);
+          const dl = Math.hypot(dx, dy);
+          shard(px, py, dx / dl, dy / dl, rand(0.12, 0.42) * len, rand(1.5, 4));
+        }
+        // muội bụi trên đầu khung (khí nổ phụt qua cửa)
         const gr = g.createLinearGradient(0, y - 22, 0, y + 4);
         gr.addColorStop(0, 'rgba(20,18,16,0)'); gr.addColorStop(1, 'rgba(20,18,16,0.55)');
         g.fillStyle = gr; g.fillRect(x - 4, y - 22, rw + 8, 26);
       }
       if (style === 'metal') speckle(g, w, h, 60, ['rgba(20,20,20,0.6)'], 2, 4);
+      const rt = new THREE.CanvasTexture(rc);
+      rt.anisotropy = 4;
+      TEX['winBrokenR_' + style] = rt;
     });
   }
+  function brokenWindowRough(style) { brokenWindowTex(style); return TEX['winBrokenR_' + style] || null; }
   // Đá vụn văng theo hướng (pháp tuyến mặt tường): n mảnh, cỡ sz, tốc độ sp
   function jet(fx, x, y, z, nx, ny, nz, n, sz, sp, col, spread) {
     if (!fx || !fx.hardRocks) return;
@@ -2231,7 +2278,7 @@ const Destructibles = (() => {
         const mat = new THREE.MeshStandardMaterial({ map: windowPanelTex(key), roughness: sm ? 1 : key === 'office' ? 0.35 : key === 'officeB' ? 0.6 : 0.9, metalness: key === 'office' ? 0.4 : key === 'officeB' ? 0.15 : key === 'metal' || key === 'hangarDoor' ? 0.2 : 0.02,
           normalMap: sm ? sm.normal : null, roughnessMap: sm ? sm.rough : null });
         if (sm) mat.normalScale.set(0.9, 0.9);
-        const shatterMat = new THREE.MeshStandardMaterial({ map: brokenWindowTex(key), roughness: 0.9, metalness: key === 'metal' || key === 'hangarDoor' ? 0.2 : 0.04, normalMap: sm ? sm.normal : null });
+        const shatterMat = new THREE.MeshStandardMaterial({ map: brokenWindowTex(key), roughness: 0.9, roughnessMap: brokenWindowRough(key), metalness: key === 'metal' || key === 'hangarDoor' ? 0.2 : 0.04, normalMap: sm ? sm.normal : null });
         if (sm) shatterMat.normalScale.set(0.9, 0.9);
         if (key !== 'office') { facadeGrime(mat, key === 'officeB' ? 0.6 : 1); facadeGrime(shatterMat, 1); }
         this.panelKits[key] = new FractureKit(this.group, mat, cracked, counts[key], { variants: 1, shatterMat, panelGeo: reliefPanelGeo(key) });
@@ -3404,7 +3451,7 @@ const Destructibles = (() => {
         if (d3 > I.glass && !sameRoom) continue;
         // kính: mảng quay về phía vụ nổ vỡ ở bán kính đầy đủ, mảng quay lưng chỉ vỡ khi rất gần
         const facing = inner === ctx.inside ? 1 : 0.4;
-        if ((m.state === 'ok') && (sameRoom || d3 < I.glass * facing)) this.shatter(B, m, ctx);
+        if ((m.state === 'ok') && (sameRoom || d3 < I.glass * facing)) this.shatter(B, m, ctx, inner, sameRoom ? 1 : 1 - d3 / (I.glass * facing));
         if (sameRoom && vents < 4 && !I.kin && I.sp > 0.3 && (m.state === 'glass' || m.state === 'holed')) {
           const w = this.toWorld(B, m.lx + m.ox * T, m.ly + FH * 0.15, m.lz + m.oz * T), o = this.dirToWorld(B, m.ox, 0, m.oz);
           if (this.vents.length < 48) this.vents.push({ B, x: w.x, y: w.y, z: w.z, nx: o.x, nz: o.z, t: rand(10, 22) * Math.min(1.5, I.sp), acc: rand(0, 0.2) });
@@ -3440,18 +3487,23 @@ const Destructibles = (() => {
       }
       if (vents) ctx.changed = true;
     }
-    // Kính vỡ do sóng nổ (mảng tường còn nguyên đổi sang mặt cửa vỡ toác)
-    shatter(B, m, ctx) {
+    // Kính vỡ do sóng nổ (mảng tường còn nguyên đổi sang mặt cửa vỡ toác). inner: điểm nổ ở phía trong nhà so với mảng,
+    // near: 0..1 độ gần điểm nổ. Mảnh kính (lớp mảnh kính riêng, không phải đá vụn): nổ ngoài nhà thì sóng nổ thổi phần lớn
+    // kính vào trong phòng (nằm lại trên sàn tầng đó), một phần rơi xuống chân tường; nổ trong phòng thì phụt ra ngoài
+    shatter(B, m, ctx, inner, near) {
       if (m.state !== 'ok' || !m.h) return;
       m.h = m.kit.swap(m.h, 'shatter', m.c);
       m.state = 'glass';
       if (ctx) {
         ctx.changed = true;
         if (B.cut && this.isCutMod(B, m)) this.cutHide(m);
-        if (ctx.fx && ctx.glassFx < 6 && B.st.mat !== 'metal') {
+        if (ctx.fx && ctx.glassFx < 14 && B.st.mat !== 'metal' && !m.side && !this._syncing) {
           ctx.glassFx++;
-          const w = this.toWorld(B, m.lx + m.ox * 1.5, m.ly, m.lz + m.oz * 1.5), o = this.dirToWorld(B, m.ox, 0, m.oz);
-          jet(ctx.fx, w.x, w.y, w.z, o.x * 0.6, 0.2, o.z * 0.6, 4, 0.9, 30, [0.72, 0.82, 0.88], 0.6);
+          const k = clamp01(near === undefined ? 0.5 : near);
+          const w = this.toWorld(B, m.lx, m.ly + B.FH * 0.05, m.lz), o = this.dirToWorld(B, m.ox, 0, m.oz);
+          const floorY = this.toWorld(B, 0, m.floor > 0 ? 1.5 + m.floor * B.FH + 0.8 : 2.1, 0).y;
+          if (ctx.fx.glassBurst) ctx.fx.glassBurst(w.x, w.y, w.z, o.x, o.z, { n: Math.round(6 + 12 * k), w: B.st.bay * 0.5, h: B.FH * 0.45, out: inner ? 0.85 : 0.2, speed: 0.4 + 0.9 * k, floor: floorY });
+          else jet(ctx.fx, w.x, w.y, w.z, o.x * 0.6, 0.2, o.z * 0.6, 4, 0.9, 30, [0.72, 0.82, 0.88], 0.6);
         }
       }
     }

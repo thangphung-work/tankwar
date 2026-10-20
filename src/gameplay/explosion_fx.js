@@ -785,6 +785,103 @@
   }
 
   // ===========================================================================
+  // MẢNH KÍNH VỠ: tấm mỏng sắc cạnh, trong & bóng (loé sáng khi lật dưới nắng), cản gió lớn nên bay lả, rơi chậm hơn đá;
+  // chạm đất / sàn thì vỡ vụn nằm phẳng lấp lánh (không nảy như đá). Khác hẳn mảnh bê tông (khối đặc, nhám, đục)
+  // ===========================================================================
+  function makeShardGeometry() {
+    // tam giác dài nhọn hơi lệch, 2 mặt (tấm kính dày ~5 mm coi như phẳng)
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([-0.45, 0, -0.5, 0.55, 0, -0.2, -0.05, 0, 0.75], 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+    return g;
+  }
+  class GlassLayer {
+    constructor(scene, max) {
+      this.max = max;
+      this.parts = [];
+      // kính gần như trong suốt: thấy nền phía sau, chỉ sáng & ngả xanh hơn một chút (phản chiếu trời, kể cả trong bóng râm);
+      // phản xạ gương mạnh: mảnh lật đúng góc nắng thì loé trắng. Màu tối sẽ làm nền sẫm đi -> trông như sạn, không như kính
+      const mat = new THREE.MeshPhongMaterial({ color: 0xd2e8ec, emissive: 0x22343a, specular: 0xffffff, shininess: 70, transparent: true, opacity: 0.44, side: THREE.DoubleSide, depthWrite: false });
+      this.mesh = new THREE.InstancedMesh(makeShardGeometry(), mat, max);
+      this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3).fill(1), 3);
+      this.mesh.count = 0;
+      this.mesh.frustumCulled = false;
+      this.mesh.renderOrder = 3;
+      scene.add(this.mesh);
+      this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler();
+      this._p = new THREE.Vector3(); this._s = new THREE.Vector3(); this._c = new THREE.Color(); this._n = new THREE.Vector3();
+      this.sun = new THREE.Vector3(0.45, 0.8, 0.4).normalize();
+    }
+    // r: { x, y, z, vx, vy, vz, size, floor? (độ cao sàn phòng: mảnh bay vào trong nhà nằm lại trên sàn), life? }
+    add(r) {
+      if (this.parts.length >= this.max) {
+        const i = this.parts.findIndex(q => q.resting);
+        if (i < 0) return;
+        this.parts.splice(i, 1);
+      }
+      r.t = 0; r.resting = false;
+      r.life = r.life || rand(30, 45);
+      r.ax = rand(0.5, 1.4); r.az = rand(0.5, 1.4);   // tỉ lệ 2 cạnh: mảnh dài / mảnh bè
+      r.rx = Math.random() * 6; r.ry = Math.random() * 6; r.rz = Math.random() * 6;
+      r.wx = rand(-18, 18); r.wy = rand(-10, 10); r.wz = rand(-18, 18);   // tấm mỏng lật nhanh
+      r.ph = Math.random() * 6.283;
+      const g = rand(0.85, 1.05);
+      r.c = [0.9 * g, 1.0 * g, 1.0 * g];   // kính thường ngả xanh lục nhạt
+      this.parts.push(r);
+    }
+    reground(x0, z0, x1, z1, groundAt) {
+      for (const r of this.parts) if (r.resting && r.floor === undefined && r.x >= x0 && r.x <= x1 && r.z >= z0 && r.z <= z1) r.y = groundAt(r.x, r.z) + 0.06;
+    }
+    update(dt, groundAt) {
+      const P = this.parts;
+      let n = 0;
+      for (let i = 0; i < P.length; i++) {
+        const r = P[i];
+        r.t += dt;
+        if (r.t >= r.life) continue;
+        if (!r.resting) {
+          // cản không khí lớn (tấm mỏng): vận tốc ngang tắt nhanh, rơi tới vận tốc giới hạn rồi lả xuống
+          const k = Math.exp(-1.6 * dt);
+          r.vx *= k; r.vz *= k;
+          r.vy = Math.max(r.vy - ROCK_G * dt, -45);
+          r.x += r.vx * dt; r.y += r.vy * dt; r.z += r.vz * dt;
+          r.rx += r.wx * dt; r.ry += r.wy * dt; r.rz += r.wz * dt;
+          const gy = r.floor !== undefined ? r.floor : (groundAt ? groundAt(r.x, r.z) : 0);
+          if (r.y < gy + 0.06 && r.vy < 0) {
+            // vỡ vụn khi chạm: nằm phẳng, nhỏ lại, xoay ngẫu nhiên trên mặt phẳng
+            r.y = gy + 0.06; r.resting = true;
+            r.rx = rand(-0.3, 0.3); r.rz = rand(-0.3, 0.3);
+            r.size *= rand(0.55, 0.8);
+            r.life = r.t + rand(25, 40);
+          }
+        }
+        P[n++] = r;
+      }
+      P.length = n;
+      for (let i = 0; i < n; i++) {
+        const r = P[i];
+        const fade = Math.min(1, (r.life - r.t) / 2);
+        this._e.set(r.rx, r.ry, r.rz);
+        this._q.setFromEuler(this._e);
+        this._p.set(r.x, r.y, r.z);
+        this._s.set(r.size * r.ax * fade, r.size, r.size * r.az * fade);
+        this._m.compose(this._p, this._q, this._s);
+        this.mesh.setMatrixAt(i, this._m);
+        // loé sáng: mặt mảnh quay đúng về phía nắng (mảnh đang lật thì chớp liên tục, mảnh nằm trên đất thỉnh thoảng
+        // lấp lánh như khi người nhìn / nắng đổi góc) -> kính đọc ra là kính chứ không phải sạn xám
+        const d = Math.abs(this._n.set(0, 1, 0).applyQuaternion(this._q).dot(this.sun));
+        const tw = r.resting ? Math.pow(Math.max(0, Math.sin(r.t * 2.3 + r.ph)), 10) : 1;
+        const gl = 1 + 1.6 * Math.pow(d, 24) * tw;
+        this._c.setRGB(Math.min(2.4, r.c[0] * gl), Math.min(2.4, r.c[1] * gl), Math.min(2.4, r.c[2] * gl));
+        this.mesh.setColorAt(i, this._c);
+      }
+      this.mesh.count = n;
+      this.mesh.instanceMatrix.needsUpdate = true;
+      this.mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
+  // ===========================================================================
   // HỒ SƠ VỤ NỔ THEO LOẠI ĐẠN
   // ===========================================================================
   const PROFILES = {
@@ -2906,6 +3003,7 @@
       this.fire = new ParticleLayer(scene, 1400, true);
       this.rocks = new RockLayer(scene, 360, 0x7d6a52);       // đất đá (màu theo bản đồ)
       this.hardRocks = new RockLayer(scene, 200, 0x6e6c68);   // bê tông / mảnh kim loại
+      this.glass = new GlassLayer(scene, 700);                // mảnh kính cửa sổ vỡ
       this.streaks = new StreakLayer(scene, 900);              // vệt mảnh thép nóng bay
       this.shocks = new ShockLayer(scene);                     // vỏ sóng xung kích
       this.ripples = [];                                       // gợn sóng mặt nước
@@ -2941,6 +3039,26 @@
      * Đạn nổ trên cát khô: mây bụi vàng nhạt lớn, lơ lửng lâu; đất cỏ: cột đất nâu sẫm; bùn ven sông: bùn đen văng, ít bụi;
      * đường nhựa: mảnh nhựa đen + bụi xám; sườn đá: đá vụn & bụi đá xám; bê tông: bụi xi măng sáng.
      */
+    /**
+     * Kính một ô cửa vỡ: (x, y, z) tâm ô cửa, (nx, nz) pháp tuyến mặt ngoài tường. o: { n số mảnh, w / h cỡ ô cửa,
+     * out: tỉ lệ mảnh văng ra ngoài (nổ ngoài nhà: sóng nổ thổi phần lớn kính VÀO trong phòng; nổ trong phòng: ra ngoài),
+     * speed: hệ số sức đẩy, floor: độ cao sàn phòng (mảnh bay vào trong nằm lại trên sàn) }
+     */
+    glassBurst(x, y, z, nx, nz, o = {}) {
+      const n = o.n || 12, w = o.w || 6, h = o.h || 6, out = o.out !== undefined ? o.out : 0.3, sp = o.speed || 1;
+      const ax = -nz, az = nx;
+      for (let i = 0; i < n; i++) {
+        const a = rand(-0.5, 0.5) * w, b = rand(-0.5, 0.5) * h;
+        const outward = Math.random() < out, sg = outward ? 1 : -1;
+        // ~1/4 số mảnh chỉ rời khung rơi xuống ngay dưới cửa, còn lại bị sóng nổ đẩy đi
+        const drop = Math.random() < 0.25, v = drop ? rand(1, 6) : rand(18, 60) * sp;
+        this.glass.add({
+          x: x + ax * a + nx * sg * 0.4, y: y + b, z: z + az * a + nz * sg * 0.4,
+          vx: nx * sg * v + ax * rand(-0.35, 0.35) * v, vy: rand(-0.1, 0.35) * v, vz: nz * sg * v + az * rand(-0.35, 0.35) * v,
+          size: rand(0.25, 0.95) * (Math.random() < 0.15 ? 1.8 : 1), floor: outward ? undefined : o.floor
+        });
+      }
+    }
     surfacePalette(x, z, hitType) {
       const base = this.palette(hitType);
       const t = this.terrainOf();
@@ -4744,6 +4862,7 @@
       // đá vụn / cục đất đã nằm yên trong vùng: rơi xuống lòng hố mới (hoặc nổi lên khi hố bị lấp)
       this.rocks.reground(x0, z0, x1, z1, this._surfFn);
       this.hardRocks.reground(x0, z0, x1, z1, this._surfFn);
+      this.glass.reground(x0, z0, x1, z1, this._surfFn);
       if (t && t.onGroundChanged) t.onGroundChanged(x0, z0, x1, z1);
     }
     // Trả lưới độ cao vật lý về như trước khi có hố d (các hố còn lại chồng lên vùng đó được áp lại)
@@ -4910,6 +5029,7 @@
       this.updateSurfaceMarks(dt);
       this.rocks.update(dt, this._surfFn);        // mảnh rơi nằm trên mặt NHÌN THẤY (lòng hố sâu hơn lưới vật lý)
       this.hardRocks.update(dt, this._surfFn);
+      this.glass.update(dt, this._surfFn);
       // Mảnh văng cắm xuống đất tung bụi nhỏ
       this.streaks.update(dt, this.groundAt, (x, y, z) => {
         if (Math.random() < 0.35) this.smoke.add({ x, y: y + 0.3, z, vx: rand(-4, 4), vy: rand(4, 12), vz: rand(-4, 4), size: rand(1.2, 2.4), grow: 3, drag: 2, grav: 30, life: rand(0.5, 1.0), alpha: 0.5, fadeIn: 0.02, c0: this.palette('GROUND').dust, cell: 2 });
@@ -4955,6 +5075,8 @@
       this.rocks.rocks.length = 0;
       this.hardRocks.rocks.length = 0;
       this.hardRocks.update(0.001, null);
+      this.glass.parts.length = 0;
+      this.glass.update(0.001, null);
       if (this.streaks) this.streaks.clear();
       if (this.shocks) this.shocks.clear();
       if (this.jetBeams) { for (const b of this.jetBeams) { this.scene.remove(b.m); b.m.material.dispose(); } this.jetBeams.length = 0; }
