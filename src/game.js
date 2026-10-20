@@ -1,9 +1,22 @@
 /**
  * Bộ điều phối trò chơi 3D Three.js - Góc nhìn từ trên nghiêng xuống chuẩn Art of War 3
  */
+
+// Tra phần tử giao diện theo id có nhớ đệm: vòng lặp game cập nhật HUD mỗi khung hình (~80 chỗ tra id) -> không tra lại DOM
+// mỗi lần. Phần tử bị gỡ khỏi trang (isConnected = false) thì tra lại; không nhớ kết quả rỗng.
+const __domCache = new Map();
+function domById(id) {
+  const el = __domCache.get(id);
+  if (el && el.isConnected) return el;
+  const found = document.getElementById(id);
+  if (found) __domCache.set(id, found);
+  else __domCache.delete(id);
+  return found;
+}
+
 class ArtilleryGame3D {
   constructor() {
-    this.container = document.getElementById('webgl-container');
+    this.container = domById('webgl-container');
 
     this.worldWidth = 3600;
     this.worldDepth = 3600;
@@ -61,7 +74,7 @@ class ArtilleryGame3D {
     this.cameraShake = 0;
 
     // Minimap Art of War 3
-    this.miniCanvas = document.getElementById('aow-minimap-canvas');
+    this.miniCanvas = domById('aow-minimap-canvas');
     this.miniCtx = this.miniCanvas ? this.miniCanvas.getContext('2d') : null;
     this.miniScannerAngle = 0;
 
@@ -401,8 +414,11 @@ class ArtilleryGame3D {
     if (typeof TeamIntel !== 'undefined') { TeamIntel.bind(this); TeamIntel.reset(); }
     this.matchStartTime = Date.now();
     // Bản đồ cứ điểm: vòng bo thu hẹp dần về quanh 3 cứ điểm (đặt trước khi chọn chỗ xuất phát)
-    const SHs = this.terrain && this.terrain.map && this.terrain.map.strongholds;
-    if (SHs && SHs.length && this.zone && this.zone.focusOn) this.zone.focusOn(SHs);
+    // Bản đồ kiểu cũ (3 cờ A / B / C): bo cũng co về quanh 3 cờ — trước đây tâm bo co ngẫu nhiên có thể bỏ cờ A / C
+    // ra ngoài vùng an toàn, phe đang giữ cờ đó thắng chắc vì đối phương không vào hạ cờ được
+    const M = this.terrain && this.terrain.map;
+    const SHs = M && M.strongholds && M.strongholds.length ? M.strongholds : (M && M.capture && M.capture.length ? M.capture : null);
+    if (SHs && this.zone && this.zone.focusOn) this.zone.focusOn(SHs);
     this.initEntitiesWithSlots(slots, myPeerId);
     this.prewarmShaders();
     // [NET] Gắn đồng bộ mạng: xe từ xa nội suy, bot do chủ phòng điều khiển, bắn bù trễ, sát thương có chủ quyền
@@ -416,7 +432,7 @@ class ArtilleryGame3D {
 
     this._playerDeaths = 0;
     this.addCombatLog(`[[rocket]] XUẤT TRẬN THÀNH CÔNG! Chào mừng ${myName} vào chiến địa!`, 'tip');
-    this.addCombatLog('[[swords]] Chiếm và giữ 1 cứ điểm A, B hoặc C đủ 60 giây để thắng — hoặc hạ nhiều địch hơn khi hết giờ', 'system');
+    this.addCombatLog('[[swords]] Chiếm 1 cứ điểm A, B hoặc C rồi đứng giữ đủ 60 giây để thắng — hoặc hạ nhiều địch hơn khi hết giờ', 'system');
     if (window.GameMenu && GameMenu.maybeShowFirstHint) GameMenu.maybeShowFirstHint();
   }
 
@@ -801,7 +817,7 @@ class ArtilleryGame3D {
     const P = this.player;
     if (!P || P.isDead || P.tankType !== 'SCOUT') return;
     if ((P.missileAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
     }
     if (P.dmg && P.dmg.rpgDisabled) {
@@ -899,8 +915,8 @@ class ArtilleryGame3D {
   // CẢNH BÁO BỊ KHÓA / TÊN LỬA LAO TỚI cho người chơi: chip + mũi tên chỉ hướng + tiếng báo
   updateThreatWarnings(dt) {
     const P = this.player;
-    const box = document.getElementById('lock-warning');
-    const arrows = document.getElementById('threat-arrows');
+    const box = domById('lock-warning');
+    const arrows = domById('threat-arrows');
     const W = this._threatW || (this._threatW = { beep: 0, mbeep: 0, wasMissile: false });
     const threats = [];   // { x, z, kind: 'gun' | 'mlock' | 'missile', d }
     if (P && !P.isDead) {
@@ -1020,7 +1036,7 @@ class ArtilleryGame3D {
 
   // Ô cách bắn trên HUD (chỉ hiện với pháo tự hành)
   updateArtyModeUI(force = false) {
-    const btn = document.getElementById('arty-mode-btn');
+    const btn = domById('arty-mode-btn');
     if (!btn) return;
     const P = this.player;
     const show = !!(P && !P.isDead && P.tankType === 'ARTILLERY');
@@ -1318,7 +1334,7 @@ class ArtilleryGame3D {
     const P = this.player;
     if (!P || !T || dt <= 0) return;
     let tr = this._lockTrack;
-    if (!tr || tr.id !== T.id) tr = this._lockTrack = { id: T.id, x: T.x, z: T.z, vx: 0, vz: 0, flightT: 0, solveT: 0, el: P.elevation };
+    if (!tr || tr.id !== T.id) tr = this._lockTrack = { id: T.id, x: T.x, z: T.z, vx: 0, vz: 0, flightT: 0, solveT: 0, el: P.elevation, leadK: 0 };
     // 1. Vận tốc mục tiêu từ chuyển động thực tế (đúng cho cả bot lẫn xe của máy khác)
     const ivx = (T.x - tr.x) / dt, ivz = (T.z - tr.z) / dt;
     if (Math.hypot(ivx, ivz) < 400) {   // bỏ qua cú nhảy vị trí (hồi sinh / hiệu chỉnh mạng)
@@ -1338,8 +1354,16 @@ class ArtilleryGame3D {
     let lx = tr.vx * tr.flightT, lz = tr.vz * tr.flightT;
     const ll = Math.hypot(lx, lz), cap = 320;
     if (ll > cap) { lx *= cap / ll; lz *= cap / ll; }
-    const aimX = T.x + lx, aimZ = T.z + lz;
-    tr.aimX = aimX; tr.aimZ = aimZ;   // điểm cần rơi trúng (đã đón đầu) — để tô màu đường đạn khi đã ngắm trúng
+    // Máy tính hỏa lực cần thời gian bám mục tiêu mới tính đủ lượng đón đầu (~1.5 s; mục tiêu đổi hướng gắt thì
+    // phải bám lại một phần). Bắn vội vào xe đang chạy dễ trượt -> có chỗ cho kỹ năng chọn thời điểm bóp cò.
+    // Vòng ngắm chỉ chuyển xanh khi đường đạn tới đúng điểm đón đầu ĐẦY ĐỦ (fullX / fullZ).
+    // gia tốc mục tiêu (từ vận tốc đã lọc): mục tiêu cua gắt / tăng giảm tốc -> lượng đón đầu đã tính bị mất dần
+    const acc = tr.pvx === undefined ? 0 : Math.hypot(tr.vx - tr.pvx, tr.vz - tr.pvz) / dt;
+    tr.pvx = tr.vx; tr.pvz = tr.vz;
+    tr.leadK = Math.max(0, Math.min(1, (tr.leadK || 0) + dt / 1.5 - Math.min(acc, 400) * dt / 240));
+    tr.fullX = T.x + lx; tr.fullZ = T.z + lz;
+    const aimX = T.x + lx * tr.leadK, aimZ = T.z + lz * tr.leadK;
+    tr.aimX = aimX; tr.aimZ = aimZ;   // điểm nòng đang bám (đón đầu theo mức đã tính được)
 
     // 3. Xoay tháp theo đường ngắn nhất với tốc độ quay tháp
     // Bù độ nghiêng thân xe trên dốc: nòng thật (không phải góc lệnh) phải chỉ đúng nghiệm đường đạn
@@ -1432,9 +1456,9 @@ class ArtilleryGame3D {
   }
 
   updateTargetLockUI() {
-    const box = document.getElementById('target-lock-stat-box');
-    const textEl = document.getElementById('target-lock-text');
-    const subEl = document.getElementById('target-lock-sub');
+    const box = domById('target-lock-stat-box');
+    const textEl = domById('target-lock-text');
+    const subEl = domById('target-lock-sub');
     if (!box || !textEl) return;
 
     if (this.lockedTarget && !this.lockedTarget.isDead) {
@@ -1449,7 +1473,7 @@ class ArtilleryGame3D {
       const hpPercent = Math.round((this.lockedTarget.hp / this.lockedTarget.maxHp) * 100);
 
       textEl.textContent = `${tankName} · ${hpPercent}%`;
-      const tHp = document.getElementById('target-hp-bar');
+      const tHp = domById('target-hp-bar');
       if (tHp) tHp.style.width = `${Math.max(0, Math.min(100, hpPercent))}%`;
       if (subEl) subEl.textContent = this._manualAim ? `${dist}M · NGẮM TAY · TAB: BÁM LẠI` : `${dist}M · ${this.aimStateText()}`;
       box.classList.remove('anchored');
@@ -1487,14 +1511,14 @@ class ArtilleryGame3D {
     if (this.hud) {
       return this.hud.updateTeamScoreUI();
     }
-    const blueLivesEl = document.getElementById('blue-lives-count');
-    const redLivesEl = document.getElementById('red-lives-count');
-    const blueKdEl = document.getElementById('blue-kd-val');
-    const redKdEl = document.getElementById('red-kd-val');
-    const blueUnitsEl = document.getElementById('blue-units-count');
-    const redUnitsEl = document.getElementById('red-units-count');
-    const scoreBlueEl = document.getElementById('score-blue-val');
-    const scoreRedEl = document.getElementById('score-red-val');
+    const blueLivesEl = domById('blue-lives-count');
+    const redLivesEl = domById('red-lives-count');
+    const blueKdEl = domById('blue-kd-val');
+    const redKdEl = domById('red-kd-val');
+    const blueUnitsEl = domById('blue-units-count');
+    const redUnitsEl = domById('red-units-count');
+    const scoreBlueEl = domById('score-blue-val');
+    const scoreRedEl = domById('score-red-val');
 
     if (blueLivesEl) blueLivesEl.textContent = '∞ (10s)';
     if (redLivesEl) redLivesEl.textContent = '∞ (10s)';
@@ -1514,8 +1538,8 @@ class ArtilleryGame3D {
       if (scoreRedEl) scoreRedEl.textContent = this.redKills.toString();
 
       // Cập nhật thanh ưu thế hạ gục thế trận
-      const momentumBlue = document.getElementById('kill-momentum-blue');
-      const momentumRed = document.getElementById('kill-momentum-red');
+      const momentumBlue = domById('kill-momentum-blue');
+      const momentumRed = domById('kill-momentum-red');
       if (momentumBlue && momentumRed) {
         const totalKills = this.blueKills + this.redKills;
         let bluePct = 50;
@@ -1527,13 +1551,13 @@ class ArtilleryGame3D {
       }
 
       // Cập nhật danh sách icon xe tăng hàng ngang của Phe Xanh
-      const blueTankIconsContainer = document.getElementById('blue-tank-icons');
+      const blueTankIconsContainer = domById('blue-tank-icons');
       if (blueTankIconsContainer) {
         blueTankIconsContainer.innerHTML = this.renderTankIconsHTML(blueUnits, 'BLUE');
       }
 
       // Cập nhật danh sách icon xe tăng hàng ngang của Phe Đỏ
-      const redTankIconsContainer = document.getElementById('red-tank-icons');
+      const redTankIconsContainer = domById('red-tank-icons');
       if (redTankIconsContainer) {
         redTankIconsContainer.innerHTML = this.renderTankIconsHTML(redUnits, 'RED');
       }
@@ -1632,7 +1656,7 @@ class ArtilleryGame3D {
   }
 
   initHUD() {
-    const fireBtn = document.getElementById('fire-btn');
+    const fireBtn = domById('fire-btn');
     if (fireBtn) {
       fireBtn.addEventListener('click', () => this.triggerPlayerFire());
       // Giữ nút bắn để xả đạn liên thanh (xe 6 nòng / trinh sát)
@@ -1666,10 +1690,16 @@ class ArtilleryGame3D {
     });
 
 
-    const restartBtn = document.getElementById('restart-game-btn');
+    const restartBtn = domById('restart-game-btn');
     if (restartBtn) {
       restartBtn.addEventListener('click', () => this.restartMatch());
     }
+  }
+
+  // Câu nhắc kho vật tư khi bắn hết 1 loại đạn (Equipment.outOfStockNote)
+  stockNote(k) {
+    const P = this.player || (this.game && this.game.player);
+    return (typeof Equipment !== 'undefined' && Equipment.outOfStockNote && P) ? Equipment.outOfStockNote(P, k) : '';
   }
 
   selectAmmoType(ammoType) {
@@ -1678,23 +1708,23 @@ class ArtilleryGame3D {
 
     // Kiểm tra cơ số đạn nâng cao
     if (ammoType === 'AP' && (this.player.apAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn xuyên phá! Hãy tìm nhặt hòm tiếp tế trên map!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn xuyên phá! Nhặt hòm tiếp tế trên map' + this.stockNote('AP'), 'alert');
       return;
     }
     if (ammoType === 'HE' && (this.player.heAmmoCount || 0) <= 0 && this.player.tankType !== 'ARTILLERY') {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn nổ mạnh! Hãy tìm nhặt hòm tiếp tế trên map!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn nổ mạnh! Nhặt hòm tiếp tế trên map' + this.stockNote('HE'), 'alert');
       return;
     }
     if (ammoType === 'CLUSTER' && (this.player.clusterAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn chùm nổ trên không! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn chùm nổ trên không! Nhặt hòm tiếp tế trên map' + this.stockNote('CLUSTER'), 'alert');
       return;
     }
     if (ammoType === 'INCENDIARY' && (this.player.incendiaryAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy nâng cao! Súng chuyển về đạn nhỏ liên thanh cơ bản!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy! Súng chuyển về đạn thường' + this.stockNote('INCENDIARY'), 'alert');
       return;
     }
     if (ammoType === 'ANTI_TANK_MISSILE' && (this.player.missileAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
     }
 
@@ -1726,7 +1756,7 @@ class ArtilleryGame3D {
       return this.hud.updateAmmoUI();
     }
     if (!this.player) return;
-    const ammoContainer = document.getElementById('ammo-selector');
+    const ammoContainer = domById('ammo-selector');
     if (!ammoContainer) return;
 
     const ammos = this.player.availableAmmos || ['NORMAL', 'AP', 'HE'];
@@ -1788,13 +1818,13 @@ class ArtilleryGame3D {
 
     // Gán lại sự kiện click cho các nút đạn
     ammos.forEach(type => {
-      const btn = document.getElementById(`ammo-tab-${type}`);
+      const btn = domById(`ammo-tab-${type}`);
       if (btn) {
         btn.addEventListener('click', () => this.selectAmmoType(type));
       }
     });
 
-    const armorTag = document.getElementById('reactive-armor-tag');
+    const armorTag = domById('reactive-armor-tag');
     if (armorTag) {
       if (this.player.hasReactiveArmor) {
         armorTag.classList.remove('hidden');
@@ -2024,7 +2054,9 @@ class ArtilleryGame3D {
       // Sát thương trúng thẳng đã gồm cả sức nổ tại chỗ (xe trúng thẳng không bị cộng thêm sát thương nổ lan)
       let directDamage = 1.6;
       if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
-        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.12 : 0.1; // 12.7mm bắn chậm hơn nhưng mỗi viên mạnh hơn
+        // 12.7mm bắn chậm hơn nhưng mỗi viên mạnh hơn. 30mm 6 nòng: 0.1 -> 0.08 (30 viên/s: ~2.4 máu/s lên xe giáp mỏng,
+        // trước đây ~3 máu/s -> xe trinh sát tan xác trong ~0.6 s)
+        directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.12 : 0.08;
       } else if (ammoType === 'INCENDIARY') {
         directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.14 : 0.16;
         if (typeof directTarget.ignite === 'function') {
@@ -2124,7 +2156,10 @@ class ArtilleryGame3D {
 
         const dist = Math.hypot(unit.x - x, unit.z - z);
         if (dist <= blastRadius) {
-          let splashDamage = (dist <= 25) ? 1.0 : 0.5;
+          // Sát thương nổ lan giảm dần theo khoảng cách: giữ nguyên mức tối đa trong lõi nổ, rồi giảm tuyến tính
+          // tới mức ở mép vùng nổ (trước đây chỉ 2 nấc: mép vùng nổ lựu pháo 135 m vẫn ăn 1.2 máu)
+          const fall = (core, inner, edge) => dist <= core ? inner : inner + (edge - inner) * Math.min(1, (dist - core) / Math.max(1, blastRadius - core));
+          let splashDamage = fall(15, 1.0, 0.35);
           if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
             // 30mm nổ-mảnh văng mảnh nhỏ sát điểm chạm; 12.7mm không có thuốc nổ
             splashDamage = (ammoType === 'SCOUT_BULLET' || (shooter && shooter.tankType === 'SCOUT')) ? 0 : 0.02;
@@ -2132,13 +2167,13 @@ class ArtilleryGame3D {
             splashDamage = 0.08;
             if (typeof unit.ignite === 'function' && dist <= 12) unit.ignite(1.5);
           } else if (ammoType === 'CLUSTER_SUBMUNITION') {
-            splashDamage = 0.45; // Mảnh văng sát thương nhỏ diện rộng
+            splashDamage = fall(8, 0.45, 0.15); // Mảnh văng sát thương nhỏ diện rộng
           } else if (ammoType === 'RPG' || ammoType === 'ANTI_TANK_MISSILE') {
-            splashDamage = 1.3;
+            splashDamage = fall(10, 1.3, 0.4);
           } else if (shell.isHeavyArty) {
-            splashDamage = (dist <= 55) ? 2.2 : 1.2; // Pháo HE hạng nặng nổ lan cực mạnh
+            splashDamage = fall(30, 2.2, 0.5); // Pháo HE hạng nặng: lõi nổ cực mạnh, mép vùng nổ chỉ còn mảnh văng
           } else if (ammoType === 'HE') {
-            splashDamage = (dist <= 35) ? 1.6 : 0.9;
+            splashDamage = fall(20, 1.6, 0.5);
           } else if (ammoType === 'AP') {
             splashDamage = 0.15;   // không thuốc nổ: chỉ mảnh vỡ / bụi kim loại cháy sát điểm chạm
           }
@@ -2326,9 +2361,9 @@ class ArtilleryGame3D {
     // Nếu xe người chơi bị bắn hạ: Bật banner đếm ngược 10 giây phạt hồi sinh
     if (victim.isPlayer) {
       this._playerDeaths = (this._playerDeaths || 0) + 1;   // thống kê cuối trận (tài khoản)
-      const respawnBanner = document.getElementById('player-respawn-banner');
-      const timeValEl = document.getElementById('player-respawn-time');
-      const barFillEl = document.getElementById('player-respawn-bar');
+      const respawnBanner = domById('player-respawn-banner');
+      const timeValEl = domById('player-respawn-time');
+      const barFillEl = domById('player-respawn-bar');
       if (respawnBanner) {
         respawnBanner.classList.remove('hidden');
       }
@@ -2348,8 +2383,8 @@ class ArtilleryGame3D {
 
       // Cập nhật banner đếm ngược trực quan nếu là xe của người chơi
       if (item.unit.isPlayer) {
-        const timeValEl = document.getElementById('player-respawn-time');
-        const barFillEl = document.getElementById('player-respawn-bar');
+        const timeValEl = domById('player-respawn-time');
+        const barFillEl = domById('player-respawn-bar');
         const remaining = Math.max(0, item.timer);
         if (timeValEl) {
           timeValEl.textContent = `${remaining.toFixed(1)}S`;
@@ -2368,7 +2403,7 @@ class ArtilleryGame3D {
 
         // Nếu xe người chơi tái xuất: ẩn banner đếm ngược phạt hồi sinh
         if (item.unit.isPlayer) {
-          const respawnBanner = document.getElementById('player-respawn-banner');
+          const respawnBanner = domById('player-respawn-banner');
           if (respawnBanner) {
             respawnBanner.classList.add('hidden');
           }
@@ -2385,7 +2420,7 @@ class ArtilleryGame3D {
   }
 
   updateAliveCount() {
-    const aliveCountEl = document.getElementById('alive-count');
+    const aliveCountEl = domById('alive-count');
     if (aliveCountEl) {
       const count = this.units.filter(u => !u.isDead).length;
       aliveCountEl.textContent = count.toString();
@@ -3389,7 +3424,7 @@ class ArtilleryGame3D {
 
   // Khung ngắm HTML (đè lên khung hình, không chặn chuột): mảnh, sáng, góc khung kiểu chiến thuật; vạch theo loại xe
   buildSightOverlay(P, prof) {
-    if (!document.getElementById('gun-sight-style')) {
+    if (!domById('gun-sight-style')) {
       const st = document.createElement('style');
       st.id = 'gun-sight-style';
       st.textContent = [
@@ -4145,9 +4180,9 @@ class ArtilleryGame3D {
             }
           }
 
-          // Cảnh báo bot né đạn
+          // Cảnh báo bot né đạn (chỉ đạn địch: đạn đồng đội không gây sát thương, không cần né)
           for (const u of this.units) {
-            if (!u.isDead && !u.isPlayer && u.id !== s.shooterId) {
+            if (!u.isDead && !u.isPlayer && u.id !== s.shooterId && !(s.shooterTeam && u.team === s.shooterTeam)) {
               if (Math.hypot(s.x - u.x, s.z - u.z) < 80 && (s.y - u.y) < 280) {
                 u.alertIncomingShell(s.x, s.z);
               }
@@ -4157,7 +4192,7 @@ class ArtilleryGame3D {
       }
     }
 
-    const warnBanner = document.getElementById('warning-banner');
+    const warnBanner = domById('warning-banner');
     if (warnBanner) {
       if (!this.player || this.player.isDead) {
         warnBanner.classList.add('hidden');
@@ -4167,6 +4202,12 @@ class ArtilleryGame3D {
         const subEl = warnBanner.querySelector('.warning-sub');
         if (glitchEl) UIIcons.set(glitchEl, '[[alert-triangle]] ĐẠN PHÁO ĐANG LAO XUỐNG ĐẦU! BẬT SHIFT CHẠY NGAY! [[alert-triangle]]');
         if (subEl) subEl.textContent = 'LÁI W/A/S/D + SHIFT ĐỂ CƠ ĐỘNG NÉ TÂM NỔ!';
+      } else if (this.player.isOutsideZone) {
+        warnBanner.classList.remove('hidden');
+        const glitchEl = warnBanner.querySelector('.warning-glitch');
+        const subEl = warnBanner.querySelector('.warning-sub');
+        if (glitchEl) UIIcons.set(glitchEl, '[[alert-triangle]] BẠN ĐANG Ở NGOÀI VÙNG AN TOÀN — ĐANG MẤT MÁU! [[alert-triangle]]');
+        if (subEl) subEl.textContent = 'LÁI VỀ PHÍA TÂM VÒNG BO NGAY (XEM BẢN ĐỒ NHỎ)!';
       } else if (this.radar && this.radar.detections && this.radar.detections.some(d => d.shooterId === this.player.id && d.alpha > 0.4)) {
         warnBanner.classList.remove('hidden');
         const glitchEl = warnBanner.querySelector('.warning-glitch');
@@ -4186,12 +4227,7 @@ class ArtilleryGame3D {
       x: this.player ? this.player.x + 1800 : 1800,
       y: this.player ? this.player.z + 1800 : 1800
     });
-    this.zone.update(dt, this.units.map(u => ({
-      ...u,
-      x: u.x + 1800,
-      y: u.z + 1800,
-      takeDamage: (amt) => u.takeDamage(amt, null, 'ZONE')
-    })));
+    this.zone.update(dt, this.units, this.worldWidth / 2, this.worldDepth / 2);
 
     // 5. CẬP NHẬT CAMERA BÁM ĐUÔI GÓC THẤP (xem updateChaseCamera)
     if (this.player) { this.updateChaseCamera(dt); this.updateUnitLOD(dt); }
@@ -4322,8 +4358,9 @@ class ArtilleryGame3D {
         let passAt = null;   // đạn lướt qua thân xe mục tiêu (điểm rơi xuống đất nằm sau xe): vòng ngắm đặt tại xe
         this._lastAim = null;   // điểm cần trúng (có đón đầu) — tâm kính ngắm bắn đặt vào đây
         if (tgt) {
-          const ax = tr && tr.id === tgt.id && tr.aimX !== undefined ? tr.aimX : tgt.x;
-          const az = tr && tr.id === tgt.id && tr.aimZ !== undefined ? tr.aimZ : tgt.z;
+          // điểm cần trúng: đón đầu đầy đủ (nòng có thể chưa bám tới khi máy tính hỏa lực chưa tính xong đón đầu)
+          const ax = tr && tr.id === tgt.id && tr.fullX !== undefined ? tr.fullX : (tr && tr.id === tgt.id && tr.aimX !== undefined ? tr.aimX : tgt.x);
+          const az = tr && tr.id === tgt.id && tr.fullZ !== undefined ? tr.fullZ : (tr && tr.id === tgt.id && tr.aimZ !== undefined ? tr.aimZ : tgt.z);
           const miss = Math.hypot(traj.impactPoint.x - ax, traj.impactPoint.z - az);
           const unreachable = tr && tr.id === tgt.id && tr.reachable === false;
           const onTol = Math.max(14, Math.hypot(ax - this.player.x, az - this.player.z) * 0.02);
@@ -4372,12 +4409,12 @@ class ArtilleryGame3D {
           this.updateSpreadRing(dt, this.reticle3D.position, col);
         }
 
-        const trajDistEl = document.getElementById('traj-dist-val');
+        const trajDistEl = domById('traj-dist-val');
         if (trajDistEl) {
           trajDistEl.textContent = `${traj.distance.toLocaleString()}M`;
         }
         this.updateArtyModeUI();
-        const trajModeHint = document.getElementById('traj-mode-hint');
+        const trajModeHint = domById('traj-mode-hint');
         if (trajModeHint) {
           if (isWall) {
             trajModeHint.textContent = '[CẢNH BÁO: BỊ CHẮN TƯỜNG]';
@@ -4437,7 +4474,7 @@ class ArtilleryGame3D {
   }
 
   updateHUDValues() {
-    const battleTimerEl = document.getElementById('battle-timer');
+    const battleTimerEl = domById('battle-timer');
     if (battleTimerEl) {
       const elapsedSecs = Math.max(0, Math.floor((Date.now() - this.matchStartTime) / 1000));
       const remainingSecs = Math.max(0, (this.matchDuration || 600) - elapsedSecs);
@@ -4461,8 +4498,8 @@ class ArtilleryGame3D {
 
     if (!this.player) return;
 
-    const hpBar = document.getElementById('hp-bar');
-    const hpText = document.getElementById('hp-text');
+    const hpBar = domById('hp-bar');
+    const hpText = domById('hp-text');
     if (hpBar && hpText) {
       const hpPct = Math.max(0, Math.min(100, (this.player.hp / this.player.maxHp) * 100));
       const prevPct = this._hudHpPct;
@@ -4471,7 +4508,7 @@ class ArtilleryGame3D {
         // ô máu chiếm (100% - 6px) của khung; vệt "máu vừa mất" (#hp-ghost) đi theo bằng transition trễ trong hud.css
         const w = `calc((100% - 6px) * ${hpPct / 100})`;
         hpBar.style.width = w;
-        const ghost = document.getElementById('hp-ghost');
+        const ghost = domById('hp-ghost');
         if (ghost) ghost.style.width = w;
         hpBar.classList.toggle('warn', hpPct < 60 && hpPct >= 30);
         hpBar.classList.toggle('crit', hpPct < 30 && hpPct > 0);
@@ -4480,7 +4517,7 @@ class ArtilleryGame3D {
         const lerp = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
         const OK = [143, 196, 111], AMB = [231, 166, 58], RED = [224, 103, 92];
         const c = t >= 0.6 ? OK : t >= 0.35 ? lerp(AMB, OK, (t - 0.35) / 0.25) : lerp(RED, AMB, Math.max(0, (t - 0.15) / 0.2));
-        const row = document.getElementById('hp-row');
+        const row = domById('hp-row');
         if (row) {
           row.style.setProperty('--hp-c', `rgb(${c[0]}, ${c[1]}, ${c[2]})`);
           if (prevPct !== undefined && hpPct < prevPct) {
@@ -4496,9 +4533,9 @@ class ArtilleryGame3D {
 
     this.updateAmmoUI();
 
-    const reloadBar = document.getElementById('reload-bar');
-    const reloadText = document.getElementById('reload-text');
-    const fireBtn = document.getElementById('fire-btn');
+    const reloadBar = domById('reload-bar');
+    const reloadText = domById('reload-text');
+    const fireBtn = domById('fire-btn');
     const fireMainText = (fireBtn && typeof fireBtn.querySelector === 'function') ? fireBtn.querySelector('.fire-main-text') : null;
 
     if (fireMainText) {
@@ -4525,7 +4562,7 @@ class ArtilleryGame3D {
       }
     }
 
-    const speedText = document.getElementById('speed-text');
+    const speedText = domById('speed-text');
     if (speedText) {
       // đang lội nước: hiện tốc độ thật (nước cản làm xe chậm hẳn dù vẫn đạp hết ga)
       const vShow = Math.abs(this.player.speed) * ((this.player.waterDepth || 0) > 0.6 ? (this.player._groundMult || 1) : 1);
@@ -4533,7 +4570,7 @@ class ArtilleryGame3D {
       speedText.textContent = `${speedKmH} KM/H`;
     }
 
-    const boostTag = document.getElementById('speed-boost-tag');
+    const boostTag = domById('speed-boost-tag');
     if (boostTag) {
       if (this.player.speedBoostTimer > 0) {
         boostTag.classList.remove('hidden');
@@ -4544,8 +4581,8 @@ class ArtilleryGame3D {
     }
     this.syncEquipmentChips();
 
-    const stealthBanner = document.getElementById('stealth-banner');
-    const stealthOverlay = document.getElementById('stealth-camo-overlay');
+    const stealthBanner = domById('stealth-banner');
+    const stealthOverlay = domById('stealth-camo-overlay');
     const isPlayerInBush = !this.player.isDead && this.player.isInBush;
     const isPlayerRevealed = isPlayerInBush && this.player.revealTimer > 0;
 
@@ -4578,13 +4615,13 @@ class ArtilleryGame3D {
       }
     }
 
-    const terrainText = document.getElementById('terrain-text');
+    const terrainText = domById('terrain-text');
     if (terrainText) {
       const tInfo = this.terrain.getTerrainInfoAt(this.player.x, this.player.z, this.player.currentPitch);
       terrainText.textContent = tInfo.name;
     }
 
-    const windValEl = document.getElementById('hud-wind-val');
+    const windValEl = domById('hud-wind-val');
     if (windValEl && this.ballistics && this.ballistics.wind) {
       const dir = Math.round(this.ballistics.wind.direction);
       let dirName = 'BẮC';
@@ -4599,13 +4636,13 @@ class ArtilleryGame3D {
     }
 
     // Cập nhật thông tin binh chủng xe tăng đang điều khiển trên HUD
-    const tankClassText = document.getElementById('tank-class-text');
-    const gatlingSpinTag = document.getElementById('gatling-spin-tag');
-    const gatlingMagTag = document.getElementById('gatling-mag-tag');
-    const gatlingHeatTag = document.getElementById('gatling-heat-tag');
-    const artyDeployTag = document.getElementById('arty-deploy-tag');
-    const scoutMissileTag = document.getElementById('scout-missile-tag');
-    const scoutRadarTag = document.getElementById('scout-radar-tag');
+    const tankClassText = domById('tank-class-text');
+    const gatlingSpinTag = domById('gatling-spin-tag');
+    const gatlingMagTag = domById('gatling-mag-tag');
+    const gatlingHeatTag = domById('gatling-heat-tag');
+    const artyDeployTag = domById('arty-deploy-tag');
+    const scoutMissileTag = domById('scout-missile-tag');
+    const scoutRadarTag = domById('scout-radar-tag');
     const P = this.player;
     // Đặt nội dung + màu cho một chip trạng thái (ẩn khi text rỗng)
     const chip = (el, text, color) => {
@@ -4625,9 +4662,9 @@ class ArtilleryGame3D {
       }[P.tankType] || ['HALBERD MK.3', 'XE TĂNG CHỦ LỰC', '#3cc8ff'];
       tankClassText.textContent = ident[0];
       tankClassText.style.color = ident[2];
-      const roleEl = document.getElementById('hud-veh-role');
+      const roleEl = domById('hud-veh-role');
       if (roleEl) roleEl.textContent = ident[1];
-      const iconEl = document.getElementById('hud-veh-icon');
+      const iconEl = domById('hud-veh-icon');
       if (iconEl && this.hud) {
         iconEl.innerHTML = this.hud.tankSvg(P.tankType);
         iconEl.style.color = ident[2];
@@ -4694,16 +4731,16 @@ class ArtilleryGame3D {
   syncHUDControls() {
     if (!this.player) return;
 
-    const azSlider = document.getElementById('azimuth-slider');
-    const azValEl = document.getElementById('azimuth-val');
+    const azSlider = domById('azimuth-slider');
+    const azValEl = domById('azimuth-val');
     if (azSlider && azValEl) {
       azSlider.value = this.player.azimuth;
       azValEl.textContent = `${this.player.azimuth.toFixed(1).padStart(5, '0')}°`;
     }
 
-    const elSlider = document.getElementById('elevation-slider');
-    const elValEl = document.getElementById('elevation-val');
-    const fireModeHint = document.getElementById('fire-mode-hint');
+    const elSlider = domById('elevation-slider');
+    const elValEl = domById('elevation-val');
+    const fireModeHint = domById('fire-mode-hint');
 
     const isFixedGatling = (this.player.canElevate === false || this.player.tankType === 'GATLING');
 
@@ -4777,7 +4814,7 @@ class ArtilleryGame3D {
   }
 
   addCombatLog(text, type = 'system') {
-    const logBox = document.getElementById('combat-log');
+    const logBox = domById('combat-log');
     if (!logBox) return;
 
     // Chặn trùng lặp tin nhắn giống hệt vừa mới hiển thị
@@ -5130,10 +5167,10 @@ class ArtilleryGame3D {
     const P = this.player;
     if (!P || P.isDead || !this.isGameStarted || this.isGameOver || typeof Equipment === 'undefined') return;
     if (!Equipment.has(P, 'smoke')) {
-      this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — mua trong mục NÂNG CẤP ở sảnh', 'tip');
+      this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — lắp trong Kho vũ khí (nhóm PHỤ KIỆN) ở sảnh', 'tip');
       return;
     }
-    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói (nạp lại khi xuất kích lần sau)', 'alert'); return; }
+    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói' + this.stockNote('SMOKE'), 'alert'); return; }
     Equipment.triggerSmoke(this, P);
     this.addCombatLog(`[[cloud]] Đã phóng màn khói — địch không nhìn xuyên qua được (còn ${P.smokeLeft})`, 'tip');
     this.syncEquipmentChips();
@@ -5142,9 +5179,9 @@ class ArtilleryGame3D {
   // Ô trạng thái trang bị trên thanh dưới: khói còn lại, lượt đánh chặn
   syncEquipmentChips() {
     const P = this.player;
-    const host = document.getElementById('speed-boost-tag');
+    const host = domById('speed-boost-tag');
     if (!host || !host.parentElement) return;
-    let el = document.getElementById('eq-chips');
+    let el = domById('eq-chips');
     if (!el) { el = document.createElement('span'); el.id = 'eq-chips'; el.className = 'hx-chip'; el.style.color = '#cbd5e1'; host.parentElement.appendChild(el); }
     if (!P || P.isDead || typeof Equipment === 'undefined' || !P.kit) { UIIcons.set(el, ''); return; }
     const parts = [];
@@ -5168,9 +5205,9 @@ class ArtilleryGame3D {
 
   // Bảng kết quả cuối trận — luôn viết theo góc nhìn đội của người chơi
   showMatchResult(result, subText) {
-    const modal = document.getElementById('game-over-modal');
-    const title = document.getElementById('game-over-title');
-    const sub = document.getElementById('game-over-subtitle');
+    const modal = domById('game-over-modal');
+    const title = domById('game-over-title');
+    const sub = domById('game-over-subtitle');
     const T = { win: ['victory-title', 'CHIẾN THẮNG!'], loss: ['defeat-title', 'THẤT BẠI'], draw: ['draw-title', 'HÒA'] }[result];
     if (title) { title.className = T[0]; title.textContent = T[1]; }
     if (sub) sub.textContent = subText;
@@ -5183,7 +5220,7 @@ class ArtilleryGame3D {
     const elapsedSecs = Math.min(this.matchDuration || 600, Math.floor((Date.now() - this.matchStartTime) / 1000));
     const m = Math.floor(elapsedSecs / 60);
     const s = elapsedSecs % 60;
-    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const set = (id, v) => { const el = domById(id); if (el) el.textContent = v; };
     set('stat-shots', String(this.player ? this.player.shotsFired : 0));
     set('stat-kills', String(this.player ? this.player.kills : 0));
     set('stat-damage', String(this.player ? Math.round(this.player.damageDealt) : 0));
@@ -5199,7 +5236,7 @@ class ArtilleryGame3D {
     if (!card || typeof Equipment === 'undefined' || !Equipment.rankKD) return;
     const top = Equipment.rankKD(this.units.map(u => ({ key: u, kills: u.kills || 0, deaths: u.deaths || 0, damage: u.damageDealt || 0 })));
     this._kdPlace = top.findIndex(t => t.key === this.player) + 1;
-    let el = document.getElementById('kd-podium');
+    let el = domById('kd-podium');
     if (!el) { el = document.createElement('div'); el.id = 'kd-podium'; el.className = 'kd-podium'; card.after(el); }
     const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const rows = top.map((t, i) => {
@@ -5215,398 +5252,17 @@ class ArtilleryGame3D {
       + `<div class="kd-note">Bạc thưởng dùng để mua trang bị & đạn cho xe</div>`;
   }
 
+  // Cứ điểm A / B / C: toàn bộ logic nằm ở CapturePointsManager (src/gameplay/capture_points.js)
   initCapturePoints() {
-    if (this.capturePointsManager) {
-      return this.capturePointsManager.init();
-    }
-    // Dọn dẹp các cứ điểm 3D cũ nếu có
-    if (this.capturePoints && this.capturePoints.length > 0) {
-      this.capturePoints.forEach(cp => {
-        if (cp.group && cp.group.parent) {
-          cp.group.parent.remove(cp.group);
-        }
-      });
-    }
-
-    this.capturePoints = [
-      {
-        id: 'A',
-        name: 'CỨ ĐIỂM A (PHÍA TÂY)',
-        shortName: 'CỨ ĐIỂM A',
-        x: -800,
-        z: 0,
-        radius: 85,
-        owner: null, // null: Trung lập, 'blue': Phe Xanh, 'red': Phe Đỏ
-        captureProgress: 0, // 0 - 100
-        holdTimer: 0.0, // Thời gian giữ cứ điểm (giây)
-        holdGoal: 60.0, // Mục tiêu 60 giây (1 phút) để thắng
-        isDisputed: false,
-        alert45Played: false
-      },
-      {
-        id: 'B',
-        name: 'CỨ ĐIỂM B (TRUNG TÂM)',
-        shortName: 'CỨ ĐIỂM B',
-        x: 0,
-        z: 0,
-        radius: 85,
-        owner: null,
-        captureProgress: 0,
-        holdTimer: 0.0,
-        holdGoal: 60.0,
-        isDisputed: false,
-        alert45Played: false
-      },
-      {
-        id: 'C',
-        name: 'CỨ ĐIỂM C (PHÍA ĐÔNG)',
-        shortName: 'CỨ ĐIỂM C',
-        x: 800,
-        z: 0,
-        radius: 85,
-        owner: null,
-        captureProgress: 0,
-        holdTimer: 0.0,
-        holdGoal: 60.0,
-        isDisputed: false,
-        alert45Played: false
-      }
-    ];
-
-    // Khởi tạo đồ họa 3D cho 3 cứ điểm
-    this.capturePoints.forEach(cp => {
-      const terrainHeight = this.terrain ? this.terrain.getElevationAt(cp.x, cp.z) : 0;
-      cp.y = terrainHeight;
-      this.createCapturePointMesh(cp);
-    });
-
-    this.updateCapturePointsUI();
-  }
-
-  createCapturePointMesh(cp) {
-    const group = new THREE.Group();
-    group.position.set(cp.x, cp.y, cp.z);
-
-    // 1. Vòng tròn ranh giới chiếm cứ điểm trên mặt đất (Bán kính 85 mét)
-    const ringGeo = new THREE.RingGeometry(cp.radius - 2.5, cp.radius, 48);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.7,
-      side: THREE.DoubleSide
-    });
-    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-    ringMesh.position.y = 0.4;
-    group.add(ringMesh);
-    cp.ringMat = ringMat;
-
-    // 2. Vùng phát sáng mờ bên trong cứ điểm
-    const zoneAreaGeo = new THREE.CircleGeometry(cp.radius - 2.6, 48);
-    zoneAreaGeo.rotateX(-Math.PI / 2);
-    const zoneAreaMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.DoubleSide
-    });
-    const zoneAreaMesh = new THREE.Mesh(zoneAreaGeo, zoneAreaMat);
-    zoneAreaMesh.position.y = 0.2;
-    group.add(zoneAreaMesh);
-    cp.zoneAreaMat = zoneAreaMat;
-
-    // 3. Bệ bê tông cứ điểm trung tâm
-    const baseGeo = new THREE.CylinderGeometry(8, 10, 2.5, 16);
-    const baseMat = new THREE.MeshStandardMaterial({
-      color: 0x475569,
-      roughness: 0.8,
-      metalness: 0.2
-    });
-    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-    baseMesh.position.y = 1.25;
-    baseMesh.castShadow = true;
-    baseMesh.receiveShadow = true;
-    group.add(baseMesh);
-
-    // 4. Cột cờ trung tâm vươn cao 22 mét
-    const poleGeo = new THREE.CylinderGeometry(0.4, 0.6, 22, 12);
-    const poleMat = new THREE.MeshStandardMaterial({
-      color: 0xd1d5db,
-      metalness: 0.8,
-      roughness: 0.3
-    });
-    const poleMesh = new THREE.Mesh(poleGeo, poleMat);
-    poleMesh.position.y = 12.25;
-    poleMesh.castShadow = true;
-    group.add(poleMesh);
-
-    // 5. Quả cầu đỉnh cột cờ
-    const orbGeo = new THREE.SphereGeometry(1.2, 16, 16);
-    const orbMat = new THREE.MeshStandardMaterial({
-      color: 0xfacc15,
-      emissive: 0xca8a04,
-      emissiveIntensity: 0.4,
-      metalness: 0.9,
-      roughness: 0.1
-    });
-    const orbMesh = new THREE.Mesh(orbGeo, orbMat);
-    orbMesh.position.y = 23.5;
-    group.add(orbMesh);
-
-    // 6. Lá cờ hiệu cứ điểm tung bay (Hiển thị màu phe)
-    const flagGeo = new THREE.PlaneGeometry(9, 5);
-    const flagMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
-      side: THREE.DoubleSide,
-      roughness: 0.6
-    });
-    const flagMesh = new THREE.Mesh(flagGeo, flagMat);
-    flagMesh.position.set(4.8, 19.5, 0);
-    flagMesh.castShadow = true;
-    group.add(flagMesh);
-    cp.flagMesh = flagMesh;
-    cp.flagMat = flagMat;
-
-    // 7. Khối ký hiệu chữ cái A, B, C xoay nhẹ trên không
-    const markerGeo = new THREE.BoxGeometry(3.5, 3.5, 3.5);
-    const markerMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      emissive: 0x64748b,
-      emissiveIntensity: 0.3,
-      metalness: 0.5,
-      roughness: 0.3
-    });
-    const markerMesh = new THREE.Mesh(markerGeo, markerMat);
-    markerMesh.position.y = 26.5;
-    group.add(markerMesh);
-    cp.markerMesh = markerMesh;
-
-    this.scene.add(group);
-    cp.group = group;
+    return this.capturePointsManager ? this.capturePointsManager.init() : [];
   }
 
   updateCapturePoints(dt) {
-    if (this.capturePointsManager) {
-      return this.capturePointsManager.updateCapturePoints(dt, this.units);
-    }
-    if (!this.capturePoints || this.capturePoints.length === 0 || this.isGameOver) return;
-
-    const captureRate = 14.0; // Tốc độ chiếm (% mỗi giây với 1 xe)
-
-    this.capturePoints.forEach(cp => {
-      // 1. Tìm các xe còn sống nằm trong ranh giới cứ điểm
-      let blueInZone = 0;
-      let redInZone = 0;
-
-      this.units.forEach(u => {
-        if (!u.isAlive) return;
-        const dist = Math.hypot(u.x - cp.x, u.z - cp.z);
-        if (dist <= cp.radius) {
-          if (u.team === 'blue') blueInZone++;
-          else if (u.team === 'red') redInZone++;
-        }
-      });
-
-      // 2. Xử lý logic trạng thái cứ điểm
-      if (blueInZone > 0 && redInZone > 0) {
-        // Có xe cả 2 phe: Tranh chấp dữ dội, đóng băng tiến trình và thời gian giữ
-        cp.isDisputed = true;
-      } else if (blueInZone > 0) {
-        // Chỉ có Phe Xanh hiện diện
-        cp.isDisputed = false;
-        const speed = captureRate * (1 + 0.4 * (blueInZone - 1));
-
-        if (cp.owner === 'blue') {
-          // Phe Xanh đang kiểm soát: Tiến trình đầy đủ, đếm thời gian giữ
-          cp.captureProgress = 100;
-          cp.holdTimer += dt;
-        } else if (cp.owner === 'red') {
-          // Phe Xanh hạ cờ Phe Đỏ
-          cp.captureProgress -= speed * dt;
-          cp.holdTimer = 0.0;
-          cp.alert45Played = false;
-          if (cp.captureProgress <= 0) {
-            cp.owner = null;
-            cp.captureProgress = 0;
-            this.addCombatLog(`Phe Xanh đã vô hiệu hóa thành công ${cp.name}! Cứ điểm trở lại trạng thái Trung Lập!`, 'system');
-          }
-        } else {
-          // Cứ điểm đang Trung Lập: Kéo cờ Phe Xanh
-          cp.captureProgress += speed * dt;
-          if (cp.captureProgress >= 100) {
-            cp.captureProgress = 100;
-            cp.owner = 'blue';
-            cp.holdTimer = 0.0;
-            cp.alert45Played = false;
-            this.addCombatLog(`Phe Xanh đã làm chủ ${cp.name}! Cần giữ vững cứ điểm trong 1 phút để giành chiến thắng!`, 'victory');
-            if (window.soundEngine && typeof window.soundEngine.playTargetLockAcquired === 'function') {
-              window.soundEngine.playTargetLockAcquired();
-            }
-          }
-        }
-      } else if (redInZone > 0) {
-        // Chỉ có Phe Đỏ hiện diện
-        cp.isDisputed = false;
-        const speed = captureRate * (1 + 0.4 * (redInZone - 1));
-
-        if (cp.owner === 'red') {
-          cp.captureProgress = 100;
-          cp.holdTimer += dt;
-        } else if (cp.owner === 'blue') {
-          cp.captureProgress -= speed * dt;
-          cp.holdTimer = 0.0;
-          cp.alert45Played = false;
-          if (cp.captureProgress <= 0) {
-            cp.owner = null;
-            cp.captureProgress = 0;
-            this.addCombatLog(`Quân Địch đã vô hiệu hóa quyền kiểm soát của Phe Xanh tại ${cp.name}!`, 'defeat');
-          }
-        } else {
-          cp.captureProgress += speed * dt;
-          if (cp.captureProgress >= 100) {
-            cp.captureProgress = 100;
-            cp.owner = 'red';
-            cp.holdTimer = 0.0;
-            cp.alert45Played = false;
-            this.addCombatLog(`CẢNH BÁO: Quân Địch đã làm chủ ${cp.name}! Mau tiến tới ngăn chặn!`, 'defeat');
-          }
-        }
-      } else {
-        // Không có xe nào trong vùng
-        cp.isDisputed = false;
-        if (cp.owner) {
-          // Cứ điểm đã thuộc quyền sở hữu của một phe: Tiếp tục tích lũy thời gian giữ vững
-          cp.holdTimer += dt;
-        } else {
-          // Chưa có phe nào làm chủ: Tiến trình chiếm dở giảm dần về 0
-          if (cp.captureProgress > 0) {
-            cp.captureProgress = Math.max(0, cp.captureProgress - 8.0 * dt);
-          }
-        }
-      }
-
-      // 3. Cảnh báo khẩn cấp khi phe nào giữ được 45s (còn 15s là thắng trận)
-      if (cp.owner && cp.holdTimer >= 45.0 && !cp.alert45Played) {
-        cp.alert45Played = true;
-        const remainingToWin = Math.max(1, Math.ceil(cp.holdGoal - cp.holdTimer));
-        const teamName = cp.owner === 'blue' ? 'PHE XANH' : 'PHE ĐỎ';
-        this.addCombatLog(`[BÁO ĐỘNG KHẨN CẤP] ${teamName} chỉ còn ${remainingToWin} giây nữa là thắng trận nhờ chiếm giữ ${cp.name}! Mau ngăn chặn!`, 'system');
-        if (window.soundEngine && typeof window.soundEngine.playRadarAlert === 'function') {
-          window.soundEngine.playRadarAlert();
-        }
-      }
-
-      // 4. KIỂM TRA ĐIỀU KIỆN THẮNG TRẬN KHI GIỮ QUÁ 1 PHÚT (60 GIÂY)
-      if (cp.owner && cp.holdTimer >= cp.holdGoal && !this.isGameOver) {
-        this.finishMatchByCapture(cp.owner, cp.name);
-        return;
-      }
-
-      // 5. Cập nhật hiệu ứng hình ảnh 3D
-      if (cp.markerMesh) {
-        cp.markerMesh.rotation.y += dt * 0.8;
-      }
-      if (cp.flagMesh) {
-        cp.flagMesh.rotation.y = Math.sin(Date.now() * 0.003) * 0.25;
-      }
-
-      // Đổi màu sắc 3D theo chủ sở hữu và trạng thái
-      let targetHex = 0xffffff;
-      let areaHex = 0xffffff;
-      let areaOpacity = 0.08;
-
-      if (cp.owner === 'blue') {
-        targetHex = 0x38bdf8;
-        areaHex = 0x0284c7;
-        areaOpacity = 0.16;
-      } else if (cp.owner === 'red') {
-        targetHex = 0xef4444;
-        areaHex = 0xdc2626;
-        areaOpacity = 0.16;
-      } else if (cp.captureProgress > 0) {
-        targetHex = 0xfacc15; // Vàng nhạt khi đang kéo cờ
-      }
-
-      // Nhấp nháy khẩn cấp khi sắp thắng (>45s)
-      if (cp.owner && cp.holdTimer >= 45.0) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.012);
-        areaOpacity = 0.2 + 0.25 * pulse;
-      }
-
-      if (cp.ringMat) {
-        cp.ringMat.color.setHex(targetHex);
-      }
-      if (cp.zoneAreaMat) {
-        cp.zoneAreaMat.color.setHex(areaHex);
-        cp.zoneAreaMat.opacity = areaOpacity;
-      }
-      if (cp.flagMat) {
-        cp.flagMat.color.setHex(targetHex);
-      }
-    });
-
-    // 6. Cập nhật giao diện HUD của các cứ điểm
-    this.updateCapturePointsUI();
+    if (this.capturePointsManager) this.capturePointsManager.updateCapturePoints(dt, this.units);
   }
 
   updateCapturePointsUI() {
-    if (!this.capturePoints) return;
-
-    this.capturePoints.forEach(cp => {
-      const lowerId = cp.id.toLowerCase();
-      const cardEl = document.getElementById(`cp-card-${lowerId}`);
-      const flagEl = document.getElementById(`cp-flag-${lowerId}`);
-      const statusEl = document.getElementById(`cp-status-${lowerId}`);
-      const barEl = document.getElementById(`cp-bar-${lowerId}`);
-      const timerEl = document.getElementById(`cp-timer-${lowerId}`);
-
-      if (!cardEl) return;
-
-      // Xóa class trạng thái cũ
-      cardEl.classList.remove('neutral', 'blue-owned', 'red-owned', 'disputed', 'winning-soon');
-
-      if (cp.isDisputed) {
-        cardEl.classList.add('disputed');
-        if (flagEl) UIIcons.set(flagEl, '[[swords]]');
-        if (statusEl) statusEl.textContent = 'TRANH CHẤP';
-        if (timerEl) {
-          const secs = Math.floor(cp.holdTimer);
-          timerEl.textContent = cp.owner ? `GIỮ: ${secs}s/60s (ĐÓNG BĂNG)` : 'Đang tranh chấp';
-        }
-      } else if (cp.owner === 'blue') {
-        cardEl.classList.add('blue-owned');
-        if (flagEl) UIIcons.set(flagEl, '[[circle-filled.ic-blue]]');
-        if (statusEl) statusEl.textContent = 'PHE XANH';
-        const secs = Math.floor(cp.holdTimer);
-        if (timerEl) timerEl.textContent = `GIỮ: ${secs}s / 60s`;
-        if (cp.holdTimer >= 45.0) cardEl.classList.add('winning-soon');
-      } else if (cp.owner === 'red') {
-        cardEl.classList.add('red-owned');
-        if (flagEl) UIIcons.set(flagEl, '[[circle-filled.ic-red]]');
-        if (statusEl) statusEl.textContent = 'PHE ĐỎ';
-        const secs = Math.floor(cp.holdTimer);
-        if (timerEl) timerEl.textContent = `GIỮ: ${secs}s / 60s`;
-        if (cp.holdTimer >= 45.0) cardEl.classList.add('winning-soon');
-      } else {
-        cardEl.classList.add('neutral');
-        if (flagEl) UIIcons.set(flagEl, '[[circle-filled.ic-neutral]]');
-        if (statusEl) statusEl.textContent = cp.captureProgress > 0 ? 'ĐANG CHIẾM' : 'TRUNG LẬP';
-        if (timerEl) timerEl.textContent = cp.captureProgress > 0 ? `Tiến trình: ${Math.round(cp.captureProgress)}%` : 'Chưa chiếm';
-      }
-
-      if (barEl) {
-        if (cp.owner) {
-          // Nếu đã chiếm được, thanh tiến trình hiển thị tỷ lệ thời gian giữ vững (0s -> 60s)
-          const holdPct = Math.min(100, (cp.holdTimer / cp.holdGoal) * 100);
-          barEl.style.width = `${holdPct}%`;
-          barEl.style.backgroundColor = cp.owner === 'blue' ? '#38bdf8' : '#ef4444';
-        } else {
-          // Khi đang trung lập hoặc đang kéo cờ
-          barEl.style.width = `${cp.captureProgress}%`;
-          barEl.style.backgroundColor = '#facc15';
-        }
-      }
-    });
+    if (this.capturePointsManager) this.capturePointsManager.updateCapturePointsUI();
   }
 
   // Chuyển đổi loại map chiến trường thời gian thực
@@ -5660,8 +5316,8 @@ class ArtilleryGame3D {
   }
 
   restartMatch() {
-    document.getElementById('game-over-modal').classList.add('hidden');
-    const respawnBanner = document.getElementById('player-respawn-banner');
+    domById('game-over-modal').classList.add('hidden');
+    const respawnBanner = domById('player-respawn-banner');
     if (respawnBanner) respawnBanner.classList.add('hidden');
 
     this.isGameOver = false;

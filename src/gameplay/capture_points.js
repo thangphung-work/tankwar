@@ -1,7 +1,9 @@
 /**
  * Module Quản Lý Cứ Điểm Chiến Lược 3D (Capture Points A, B, C)
  * - 3 Cứ điểm chiến thuật A (Phía Tây), B (Trung Tâm), C (Phía Đông)
- * - Cơ chế kéo cờ và chiếm giữ liên tục 60 giây để giành chiến thắng tuyệt đối
+ * - Cơ chế kéo cờ và chiếm giữ 60 giây để giành chiến thắng tuyệt đối: đồng hồ giữ CHỈ chạy khi phe chủ có
+ *   nhiều xe trong vùng hơn địch (bỏ đi thì tạm dừng, địch đông hơn thì kéo cờ xuống và đồng hồ về 0)
+ *   — chiếm xong rồi bỏ đi không còn tự thắng; hai phe cùng có xe trong vùng thì phe đông hơn thắng thế
  * - Hiệu ứng đồ họa 3D Three.js: Cột cờ hợp kim, cờ tam giác động, vòng quét laser năng lượng
  */
 class CapturePointsManager {
@@ -53,7 +55,7 @@ class CapturePointsManager {
     const n = cp.shortName;
     const sfx = (name) => { if (window.soundEngine && typeof window.soundEngine[name] === 'function') window.soundEngine[name](); };
     if (kind === 'taken') {
-      if (mine) { g.addCombatLog(`[[flag]] Đội bạn đã chiếm ${n} — giữ 60 giây để thắng`, 'victory'); sfx('playTargetLockAcquired'); }
+      if (mine) { g.addCombatLog(`[[flag]] Đội bạn đã chiếm ${n} — đứng giữ đủ 60 giây để thắng`, 'victory'); sfx('playTargetLockAcquired'); }
       else { g.addCombatLog(`[[flag]] Địch đã chiếm ${n} — tới giành lại ngay!`, 'defeat'); sfx('playRadarAlert'); }
     } else if (kind === 'lost') {
       // team = phe vừa mất cứ điểm
@@ -194,7 +196,7 @@ class CapturePointsManager {
   updateCapturePoints(dt, units = this.game.units) {
     if (!this.points || this.points.length === 0 || this.game.isGameOver) return;
     const activeUnits = Array.isArray(units) ? units : [];
-    const captureRate = 14.0; // Tốc độ chiếm (% mỗi giây với 1 xe) — bản đồ cũ
+    const captureRate = 9.0; // Tốc độ chiếm (% mỗi giây với 1 xe, ~11 s) — bản đồ cũ
     // Chơi mạng: máy khách hiển thị theo chủ phòng (applyNetState), không tự quyết đổi chủ / thắng
     const ns = this.game.netSync;
     const follower = !!(ns && !ns.detached && ns.net && !ns.net.isHost);
@@ -207,14 +209,16 @@ class CapturePointsManager {
         cp.isDisputed = !!K.contested;
         cp.captureProgress = Math.abs(K.capture || 0);
         cp.capTeam = (K.capture || 0) > 0.5 ? 'BLUE' : (K.capture || 0) < -0.5 ? 'RED' : null;
+        if (!follower) cp.owner = K.owner || null;
+        const enemyIn = cp.owner === 'BLUE' ? K.redIn : cp.owner === 'RED' ? K.blueIn : 0;
+        const ownIn = cp.owner === 'BLUE' ? K.blueIn : cp.owner === 'RED' ? K.redIn : 0;
+        // Đồng hồ giữ chỉ chạy khi phe chủ có nhiều xe trong vùng hơn địch
+        cp.holding = !!(cp.owner && (ownIn || 0) > (enemyIn || 0));
         if (!follower) {
-          cp.owner = K.owner || null;
-          const enemyIn = cp.owner === 'BLUE' ? K.redIn : cp.owner === 'RED' ? K.blueIn : 0;
-          const ownIn = cp.owner === 'BLUE' ? K.blueIn : cp.owner === 'RED' ? K.redIn : 0;
           if (!cp.owner) cp.holdTimer = 0;
-          else if (enemyIn && !ownIn) { cp.holdTimer = 0; cp.alert45Played = false; }   // địch đang hạ cờ
-          else if (!cp.isDisputed) cp.holdTimer += dt;                                     // tranh chấp: đóng băng
-        } else if (cp.owner && !cp.isDisputed) cp.holdTimer += dt;                       // nội suy giữa 2 gói của chủ phòng
+          else if ((enemyIn || 0) > (ownIn || 0)) { cp.holdTimer = 0; cp.alert45Played = false; }   // địch đông hơn: đang hạ cờ
+          else if (cp.holding) cp.holdTimer += dt;                                                   // bỏ trống / ngang số xe: tạm dừng
+        } else if (cp.holding) cp.holdTimer += dt;                                                   // nội suy giữa 2 gói của chủ phòng
       } else {
         // Bản đồ cũ: vòng tròn bán kính 85
         let blueIn = 0, redIn = 0;
@@ -223,13 +227,17 @@ class CapturePointsManager {
           if (Math.hypot(u.x - cp.x, u.z - cp.z) > cp.radius) continue;
           if (u.team === 'BLUE') blueIn++; else if (u.team === 'RED') redIn++;
         }
+        const ownIn = cp.owner === 'BLUE' ? blueIn : cp.owner === 'RED' ? redIn : 0;
+        const enemyIn = cp.owner === 'BLUE' ? redIn : cp.owner === 'RED' ? blueIn : 0;
+        cp.holding = !!(cp.owner && ownIn > enemyIn);
         if (follower) {
-          if (cp.owner && !cp.isDisputed) cp.holdTimer += dt;
-        } else if (blueIn && redIn) {
-          cp.isDisputed = true;   // tranh chấp: đóng băng tiến trình và thời gian giữ
+          if (cp.holding) cp.holdTimer += dt;
+        } else if (blueIn && redIn && blueIn === redIn) {
+          cp.isDisputed = true;   // hai phe ngang số xe: đóng băng tiến trình và thời gian giữ
         } else if (blueIn || redIn) {
-          cp.isDisputed = false;
-          const team = blueIn ? 'BLUE' : 'RED', n = blueIn || redIn;
+          // phe đông xe hơn kéo cờ (có xe 2 phe thì vẫn tính là tranh chấp, chỉ là phe đông hơn thắng thế)
+          cp.isDisputed = !!(blueIn && redIn);
+          const team = blueIn > redIn ? 'BLUE' : 'RED', n = Math.abs(blueIn - redIn);
           const speed = captureRate * (1 + 0.4 * (n - 1));
           if (cp.owner === team) { cp.captureProgress = 100; cp.holdTimer += dt; }
           else if (cp.owner) {
@@ -243,8 +251,8 @@ class CapturePointsManager {
           }
         } else {
           cp.isDisputed = false;
-          if (cp.owner) cp.holdTimer += dt;
-          else if (cp.captureProgress > 0) { cp.captureProgress = Math.max(0, cp.captureProgress - 8.0 * dt); if (!cp.captureProgress) cp.capTeam = null; }
+          // không xe nào đứng giữ: đồng hồ giữ tạm dừng (không tự chạy tiếp)
+          if (!cp.owner && cp.captureProgress > 0) { cp.captureProgress = Math.max(0, cp.captureProgress - 8.0 * dt); if (!cp.captureProgress) cp.capTeam = null; }
         }
       }
 
@@ -337,21 +345,23 @@ class CapturePointsManager {
         if (statusEl) statusEl.textContent = 'TRANH CHẤP';
         if (timerEl) {
           const secs = Math.floor(cp.holdTimer);
-          timerEl.textContent = cp.owner ? `GIỮ: ${secs}s/60s (ĐÓNG BĂNG)` : 'Đang tranh chấp';
+          timerEl.textContent = cp.owner
+            ? (cp.holding ? `GIỮ: ${secs}s/60s (phe giữ đông xe hơn)` : `GIỮ: ${secs}s/60s (ĐÓNG BĂNG)`)
+            : `Đang tranh chấp ${Math.round(cp.captureProgress)}%`;
         }
       } else if (cp.owner === 'BLUE') {
         cardEl.classList.add('blue-owned');
         if (flagEl) UIIcons.set(flagEl, '[[circle-filled.ic-blue]]');
         if (statusEl) statusEl.textContent = 'PHE XANH';
         const secs = Math.floor(cp.holdTimer);
-        if (timerEl) timerEl.textContent = `GIỮ: ${secs}s / 60s`;
+        if (timerEl) timerEl.textContent = cp.holding ? `GIỮ: ${secs}s / 60s` : `GIỮ: ${secs}s / 60s (TẠM DỪNG — cần xe đứng giữ)`;
         if (cp.holdTimer >= 45.0) cardEl.classList.add('winning-soon');
       } else if (cp.owner === 'RED') {
         cardEl.classList.add('red-owned');
         if (flagEl) UIIcons.set(flagEl, '[[circle-filled.ic-red]]');
         if (statusEl) statusEl.textContent = 'PHE ĐỎ';
         const secs = Math.floor(cp.holdTimer);
-        if (timerEl) timerEl.textContent = `GIỮ: ${secs}s / 60s`;
+        if (timerEl) timerEl.textContent = cp.holding ? `GIỮ: ${secs}s / 60s` : `GIỮ: ${secs}s / 60s (TẠM DỪNG — cần xe đứng giữ)`;
         if (cp.holdTimer >= 45.0) cardEl.classList.add('winning-soon');
       } else {
         cardEl.classList.add('neutral');
