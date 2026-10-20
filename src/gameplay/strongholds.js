@@ -16,12 +16,13 @@ const Strongholds = (() => {
     HB: 96,        // nửa chiều dài khoang có mái (24 m tổng: xe lùi sâu trong hầm hoặc tiến ra sát miệng)
     WI: 96,        // nửa bề rộng lòng khoang (24 m: 3 xe tăng hoặc 2 pháo tự hành song song, nòng quét rộng)
     TW: 28,        // tường bên dày 3.5 m
-    D: 16,         // sàn hạ thấp 2 m so với cốt nền
+    D: 20,         // sàn hạ thấp 2.5 m so với cốt nền (xe nằm khuất sâu hơn)
     CEIL: 30,      // đáy mái cao hơn cốt nền 3.75 m (thông thủy 5.75 m tính từ sàn)
     ROOF: 26,      // mái bê tông cốt thép dày 3.25 m
     COVER: 8,      // lớp đất phủ trên mái
     LIP: 4,        // gờ mặt tiền nhô trên lớp đất
-    RAMP: 64,      // dốc lên / xuống ở mỗi đầu
+    RAMP: 104,     // dốc lên / xuống ở mỗi đầu (13 m, hạ 2.5 m, dốc đều ~14°), kết thúc ngay trước đầu tường cánh
+    RAMP_EASE: 0.25, // phần uốn mềm ở mỗi đầu dốc (còn lại dốc thẳng đều -> dốc nhất chỉ 1.33 lần dốc trung bình)
     SPLAY: 0.62,   // độ loe tường cánh (dr / df)
     WING_T: 18,    // tường cánh dày 2.25 m
     RUN: 110,      // chân ta-luy ụ đất
@@ -29,14 +30,17 @@ const Strongholds = (() => {
     BEAMS_F: [-64, -32, 0, 32, 64],
     SLOT_R: 44,    // khoảng cách ngang giữa các chỗ đứng (3 xe tăng: -44 / 0 / +44)
     SLOT_SPG: 40,  // 2 pháo tự hành: -40 / +40
-    HAUNCH: 14,    // vát nách góc trần - tường bên 1.75 m (miệng hầm hình thang, góc trong vát 45°)
-    BEVEL: 3.5,    // vát mép trên gờ mặt tiền / mép nắp hầm
-    WING_BEVEL: 3  // vát mép trong đỉnh tường cánh
+    HAUNCH: 20,    // vát nách góc trần - tường bên 2.5 m (miệng hầm hình thang, góc trong vát 45°)
+    LIP_T: 10,     // bề dày gờ mặt tiền 1.25 m
+    LIP_BEVEL: 7,  // vát chéo mép trên gờ mặt tiền 0.9 m
+    BEVEL: 3.5,    // vát cạnh nắp hầm
+    WING_BEVEL: 9  // vát chéo mép trong đỉnh tường cánh 1.1 m (nửa bề dày tường)
   };
   S.WO = S.WI + S.TW;
   S.CREST = S.CEIL + S.ROOF + S.COVER;
   S.TOP = S.CREST + S.LIP;
   S.RAMP_END = S.HB + S.RAMP;
+  S.ZONE_END = S.HB + 74;   // vùng chiếm cờ: khoang + đoạn đầu dốc (giữ nguyên cỡ cũ khi dốc dài ra)
   S.END = S.HB + S.RUN;
   S.REACH = Math.hypot(S.END + 12, S.WO + S.RUN + 12);   // bán kính bao toàn bộ công trình
 
@@ -46,7 +50,15 @@ const Strongholds = (() => {
   // Nửa bề rộng lòng kênh xe chạy tại |f| (trong khoang = WI, ngoài khoang loe dần theo tường cánh)
   const cutHalf = af => af <= S.HB ? S.WI : S.WI + (af - S.HB) * S.SPLAY;
   // Cao độ sàn / dốc (so với cốt nền)
-  const floorY = af => af <= S.HB ? -S.D : af >= S.RAMP_END ? 0 : -S.D * (1 - smooth((af - S.HB) / S.RAMP));
+  // dốc thẳng đều, 2 đầu uốn parabol (không gãy góc ở chân / đỉnh dốc)
+  const rampK = t => {
+    const b = S.RAMP_EASE, k = 1 / (2 * b * (1 - b));
+    t = clamp01(t);
+    return t < b ? t * t * k : t > 1 - b ? 1 - (1 - t) * (1 - t) * k : (t - b / 2) / (1 - b);
+  };
+  // độ vát mép tường cánh: nhỏ lại ở đoạn tường thấp gần chân ụ (tường cao t - b)
+  const wingBevel = (t, b) => Math.min(S.WING_BEVEL, Math.max(0, t - b - 1) * 0.6);
+  const floorY = af => af <= S.HB ? -S.D : af >= S.RAMP_END ? 0 : -S.D * (1 - rampK((af - S.HB) / S.RAMP));
   const inCut = (af, ar) => ar < cutHalf(af);
   // Khoảng cách ra ngoài lõi (khối mái + tường bên) trên mặt bằng
   const coreDist = (af, ar) => Math.hypot(Math.max(0, af - S.HB), Math.max(0, ar - S.WO));
@@ -417,7 +429,9 @@ const Strongholds = (() => {
         const ch = cutHalf(af);
         if (ar >= ch - m && ar <= ch + S.WING_T) {
           const h = moundH(L.f, L.r);
-          const top = (h === null ? 0 : Math.max(0, h)) + 1.5;
+          // mép trong đỉnh tường vát chéo
+          const top0 = (h === null ? 0 : Math.max(0, h)) + 1.5;
+          const top = top0 - Math.max(0, wingBevel(top0, floorY(af) - 2) - (ar - ch));
           if (yy <= top + m && yy >= floorY(af) - 3) {
             const sf = Math.sign(L.f), sr = Math.sign(L.r);
             const nl = Math.hypot(S.SPLAY, 1);
@@ -610,8 +624,8 @@ const Strongholds = (() => {
       const HN = S.HAUNCH, BV = S.BEVEL;
       for (const sg of [-1, 1]) {
         // tiết diện (f, y): mặt tiền đứng, mép trên vát 45° lùi vào trong
-        const fi = sg * (HB - 5.5), fo = sg * HB;
-        Rf.prism([[fi, CEIL - 0.01], [fo, CEIL - 0.01], [fo, TOP - BV], [fo - sg * BV, TOP], [fi, TOP]], 'r', -WO - 2, WO + 2, SC, [0, 4], true, { 2: 1.08, 3: 1.04 });
+        const fi = sg * (HB - S.LIP_T), fo = sg * HB, LB = S.LIP_BEVEL;
+        Rf.prism([[fi, CEIL - 0.01], [fo, CEIL - 0.01], [fo, TOP - LB], [fo - sg * LB, TOP], [fi, TOP]], 'r', -WO - 2, WO + 2, SC, [0, 4], true, { 2: 1.1, 3: 1.04 });
         // Mép vát dưới lanh tô (chỉ đoạn giữa 2 góc vát nách)
         Rf.box(sg > 0 ? HB - 1.2 : -HB, sg > 0 ? HB + 0.6 : -HB - 0.6, CEIL - 1.6, CEIL, -WI + HN, WI - HN, SC, { top: true }, { bottom: 0.7 });
       }
@@ -651,15 +665,15 @@ const Strongholds = (() => {
           const P = (q, r, y) => [sg * q, y, sr * r];
           const flip = sg * sr > 0;
           // Mặt trong
-          const WB = S.WING_BEVEL;
-          const A = P(a0, r0, b0), Bq = P(a1, r1, b1), Cq = P(a1, r1, t1 - WB), Dq = P(a0, r0, t0 - WB);
+          const w0 = wingBevel(t0, b0), w1 = wingBevel(t1, b1), WB = Math.max(w0, w1);
+          const A = P(a0, r0, b0), Bq = P(a1, r1, b1), Cq = P(a1, r1, t1 - w1), Dq = P(a0, r0, t0 - w0);
           const u0 = a0 / SC * 1.18, u1 = a1 / SC * 1.18;
           if (flip) C.quad(Bq, A, Dq, Cq, [[u1, b1 / SC], [u0, b0 / SC], [u0, t0 / SC], [u1, t1 / SC]], 0.9);
           else C.quad(A, Bq, Cq, Dq, [[u0, b0 / SC], [u1, b1 / SC], [u1, t1 / SC], [u0, t0 / SC]], 0.9);
           // Đỉnh tường (gờ)
           // Mép trong vát 45° rồi tới đỉnh tường (gờ)
           const T = S.WING_T;
-          const Cb = P(a1, r1 + WB, t1), Db = P(a0, r0 + WB, t0);
+          const Cb = P(a1, r1 + w1, t1), Db = P(a0, r0 + w0, t0);
           if (flip) C.quad(Cq, Dq, Db, Cb, [[u1, 0], [u0, 0], [u0, WB * 1.41 / SC], [u1, WB * 1.41 / SC]], 0.98);
           else C.quad(Dq, Cq, Cb, Db, [[u0, 0], [u1, 0], [u1, WB * 1.41 / SC], [u0, WB * 1.41 / SC]], 0.98);
           const E = P(a0, r0 + T, t0), F = P(a1, r1 + T, t1);
@@ -670,8 +684,10 @@ const Strongholds = (() => {
         const ae = S.END, re = cutHalf(ae), te = 2.0, be = floorY(ae) - 2;
         const P = (r, y) => [sg * ae, y, sr * r];
         const flip = sg * sr > 0;
-        if (flip) C.quad(P(re + S.WING_T, be), P(re, be), P(re, te), P(re + S.WING_T, te), [[0, 0], [S.WING_T / SC, 0], [S.WING_T / SC, te / SC], [0, te / SC]], 0.95);
-        else C.quad(P(re, be), P(re + S.WING_T, be), P(re + S.WING_T, te), P(re, te), [[0, 0], [S.WING_T / SC, 0], [S.WING_T / SC, te / SC], [0, te / SC]], 0.95);
+        // tiết diện đầu tường có góc vát chéo như đỉnh tường
+        const WB = wingBevel(te, be), out = [sg, 0, 0], uv = (r, y) => [(r - re) / SC, y / SC];
+        const e = [[re, be], [re + S.WING_T, be], [re + S.WING_T, te], [re + WB, te], [re, te - WB]];
+        for (let i = 1; i < 4; i++) C.quadOut(P(...e[0]), P(...e[i]), P(...e[i + 1]), P(...e[i + 1]), [uv(...e[0]), uv(...e[i]), uv(...e[i + 1]), uv(...e[i + 1])], 0.95, out);
       }
       // Chân tường / gầm khoang tối hơn (bóng che khuất), mép trên sáng hơn
       const concMesh = new THREE.Mesh(C.build((f, y) => y < CEIL - 0.5 ? 0.66 + 0.34 * smooth((y + D) / 30) : 1), concMat);
@@ -689,7 +705,7 @@ const Strongholds = (() => {
       const pal = EARTH[this.mapType] || EARTH.HIGHLAND;
       const coverGround = this.groundMat(false);
       const coverMat = coverGround || new THREE.MeshStandardMaterial({ map: earthMap(), roughness: 0.97, color: new THREE.Color(pal.grass[0] / 255 * 1.3, pal.grass[1] / 255 * 1.3, pal.grass[2] / 255 * 1.3) });
-      const coverGeo = new THREE.PlaneGeometry(HB * 2, (WO + 0.5) * 2, 1, 1);
+      const coverGeo = new THREE.PlaneGeometry((HB - S.LIP_T + 0.5) * 2, (WO + 0.5) * 2, 1, 1);
       coverGeo.rotateX(-Math.PI / 2);
       {
         const uv = coverGeo.attributes.uv, P = coverGeo.attributes.position;
@@ -816,7 +832,7 @@ const Strongholds = (() => {
 
     inCaptureZone(K, x, z) {
       const L = this.local(K, x, z), af = Math.abs(L.f);
-      return af < S.RAMP_END + 10 && Math.abs(L.r) < cutHalf(af) + 6;
+      return af < S.ZONE_END && Math.abs(L.r) < cutHalf(af) + 6;
     }
 
     /**
