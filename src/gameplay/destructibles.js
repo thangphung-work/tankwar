@@ -890,8 +890,9 @@ const Destructibles = (() => {
     let n = 0;
     for (const g of list) n += g.attributes.position.count;
     const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-    // màu từng đỉnh (cây): chỉ tạo khi có mảnh mang 'tint', mảnh không có thì giữ 1
-    const tint = list.some(g => g.attributes.tint) ? new Float32Array(n * 3).fill(1) : null;
+    // thuộc tính riêng của cây (tint: nhân màu, mặc định 1; corner: góc thẻ lá billboard, mặc định 0):
+    // chỉ tạo khi có mảnh mang thuộc tính đó
+    const extra = [['tint', 3, 1], ['corner', 2, 0]].filter(([k]) => list.some(g => g.attributes[k])).map(([k, d, v]) => [k, d, new Float32Array(n * d).fill(v)]);
     let o = 0;
     for (const g of list) {
       const c = g.attributes.position.count;
@@ -899,14 +900,14 @@ const Destructibles = (() => {
       if (!g.attributes.normal) g.computeVertexNormals();
       nrm.set(g.attributes.normal.array.subarray(0, c * 3), o * 3);
       if (g.attributes.uv) uv.set(g.attributes.uv.array.subarray(0, c * 2), o * 2);
-      if (tint && g.attributes.tint) tint.set(g.attributes.tint.array.subarray(0, c * 3), o * 3);
+      for (const [k, d, arr] of extra) if (g.attributes[k]) arr.set(g.attributes[k].array.subarray(0, c * d), o * d);
       o += c;
     }
     const out = new THREE.BufferGeometry();
     out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     out.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    if (tint) out.setAttribute('tint', new THREE.BufferAttribute(tint, 3));
+    for (const [k, d, arr] of extra) out.setAttribute(k, new THREE.BufferAttribute(arr, d));
     out.computeBoundingSphere();
     return out;
   }
@@ -1559,12 +1560,25 @@ const Destructibles = (() => {
       #endif
       transformed += vec3(dot(instanceMatrix[0].xyz, twW), dot(instanceMatrix[1].xyz, twW), dot(instanceMatrix[2].xyz, twW)) / twS2;
     #endif`;
+  // Thẻ lá billboard: mọi đỉnh của thẻ nằm ở tâm thẻ, nới ra theo 'corner' trong không gian camera -> thẻ luôn quay mặt
+  // về phía người nhìn (và về phía mặt trời khi vẽ bóng), không bao giờ bị nhìn nghiêng thành mảnh mỏng lơ lửng
+  const TREE_PROJECT = `
+    vec4 mvPosition = vec4(transformed, 1.0);
+    float bbS = 1.0;
+    #ifdef USE_INSTANCING
+      mvPosition = instanceMatrix * mvPosition;
+      bbS = length(instanceMatrix[0].xyz);
+    #endif
+    mvPosition = modelViewMatrix * mvPosition;
+    mvPosition.xy += corner * bbS;
+    gl_Position = projectionMatrix * mvPosition;`;
   // Vật liệu cây: gió + nhân màu từng đỉnh (attribute tint: độ tối trong tán / gốc thân, lệch màu từng chùm lá)
   function treeMat(mat, leafy) {
     mat.onBeforeCompile = sh => {
       sh.uniforms.uWind = WIND;
-      sh.vertexShader = (leafy ? '#define TREE_LEAFY\n' : '') + 'attribute vec3 tint;\nvarying vec3 vTint;\nuniform float uWind;\n' +
-        sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY + '\n  vTint = tint;');
+      let vs = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY + '\n  vTint = tint;');
+      if (leafy) vs = 'attribute vec2 corner;\n' + vs.replace('#include <project_vertex>', TREE_PROJECT);
+      sh.vertexShader = (leafy ? '#define TREE_LEAFY\n' : '') + 'attribute vec3 tint;\nvarying vec3 vTint;\nuniform float uWind;\n' + vs;
       sh.fragmentShader = 'varying vec3 vTint;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vTint;');
     };
     mat.customProgramCacheKey = () => 'tree' + (leafy ? 'L' : 'T');
@@ -1575,7 +1589,9 @@ const Destructibles = (() => {
     const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: map || null, alphaTest: map ? 0.4 : 0 });
     m.onBeforeCompile = sh => {
       sh.uniforms.uWind = WIND;
-      sh.vertexShader = (leafy ? '#define TREE_LEAFY\n' : '') + 'uniform float uWind;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY);
+      let vs = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + TREE_SWAY);
+      if (leafy) vs = 'attribute vec2 corner;\n' + vs.replace('#include <project_vertex>', TREE_PROJECT);
+      sh.vertexShader = (leafy ? '#define TREE_LEAFY\n' : '') + 'uniform float uWind;\n' + vs;
     };
     m.customProgramCacheKey = () => 'treeD' + (leafy ? 'L' : 'T');
     return m;
@@ -1583,7 +1599,6 @@ const Destructibles = (() => {
 
   // ---- Tán lá: lõi kín + nhiều thẻ "chùm lá" cắt alpha. Pháp tuyến hướng ra ngoài khối tán (không theo mặt từng tấm)
   // -> cả khối sáng tối mềm như một vòm lá, thay vì từng mảnh phẳng loang lổ sáng tối
-  const _fq = new THREE.Quaternion(), _fq2 = new THREE.Quaternion(), _fz = new THREE.Vector3(0, 0, 1), _ff = new THREE.Vector3();
   function setNormals(g, nx, ny, nz) {
     const L = Math.hypot(nx, ny, nz) || 1, n = g.attributes.normal;
     for (let i = 0; i < n.count; i++) n.setXYZ(i, nx / L, ny / L, nz / L);
@@ -1599,18 +1614,19 @@ const Destructibles = (() => {
     const r = RNG(), k = depth * rand(0.9, 1.08);
     return r < 0.25 ? [1.1 * k, 1.07 * k, 0.84 * k] : r < 0.45 ? [0.88 * k, 0.95 * k, 0.95 * k] : [k, k, k];
   }
-  // 1 thẻ chùm lá w x h tại (x,y,z), mặt quay đại khái theo hướng (fx,fy,fz) có lệch ngẫu nhiên. band: chỉ lấy dải v giữa
-  function leafCard(out, x, y, z, fx, fy, fz, w, h, nrm, tint, band) {
+  // 1 thẻ chùm lá billboard w x h tâm (x,y,z), xoay ngẫu nhiên quanh trục nhìn. band: chỉ lấy dải v giữa (không xoay)
+  function leafCard(out, x, y, z, w, h, nrm, tint, band) {
     const g = new THREE.PlaneGeometry(w, h).toNonIndexed();
-    const uv = g.attributes.uv;
-    for (let i = 0; i < uv.count; i++) {
+    const uv = g.attributes.uv, p = g.attributes.position, cr = new Float32Array(p.count * 2);
+    const sp = band ? rand(-0.12, 0.12) : rand(0, 6.283), cs = Math.cos(sp), sn = Math.sin(sp);
+    for (let i = 0; i < p.count; i++) {
       uv.setX(i, 0.004 + uv.getX(i) * 0.492);
       if (band) uv.setY(i, band[0] + uv.getY(i) * (band[1] - band[0]));
+      const px = p.getX(i), py = p.getY(i);
+      cr[i * 2] = px * cs - py * sn; cr[i * 2 + 1] = px * sn + py * cs;
+      p.setXYZ(i, x, y, z);
     }
-    _ff.set(fx + rand(-0.6, 0.6), fy + rand(-0.6, 0.6), fz + rand(-0.6, 0.6)).normalize();
-    _fq.setFromUnitVectors(_fz, _ff);
-    if (!band) _fq.multiply(_fq2.setFromAxisAngle(_fz, rand(0, 6.283)));
-    g.applyMatrix4(_m.compose(_v.set(x, y, z), _fq, _s.set(1, 1, 1)));
+    g.setAttribute('corner', new THREE.BufferAttribute(cr, 2));
     setNormals(g, nrm[0], nrm[1], nrm[2]);
     tintAll(g, tint || [1, 1, 1]);
     out.push(g);
@@ -1637,7 +1653,7 @@ const Destructibles = (() => {
     const core = new THREE.IcosahedronGeometry(1, 0);
     const unit = core.attributes.position.array.slice();
     jitter(core, 0.22, cx * 3.1 + cz * 1.7);
-    const p = core.attributes.position, n = core.attributes.normal, k = o.core || 0.62;
+    const p = core.attributes.position, n = core.attributes.normal, k = o.core || 0.74;
     for (let i = 0; i < p.count; i++) {
       const ux = unit[i * 3], uy = unit[i * 3 + 1], uz = unit[i * 3 + 2];
       p.setXYZ(i, cx + p.getX(i) * rx * k, cy + p.getY(i) * ry * k, cz + p.getZ(i) * rz * k);
@@ -1655,10 +1671,11 @@ const Destructibles = (() => {
       // hướng ngẫu nhiên đều trên mặt cầu, bớt thẻ ở mặt dưới tán (ít ai nhìn, đỡ đỉnh)
       let dy = rand(-1, 1); if (dy < -0.5 && RNG() < 0.35) dy = -dy;
       const a = rand(0, 6.283), rr = Math.sqrt(1 - dy * dy), dx = Math.cos(a) * rr, dz = Math.sin(a) * rr;
-      const t = rand(0.72, 1.04);
+      // tâm thẻ nằm trong khối tán (không vượt mặt ngoài) -> chùm lá mép tán vẫn dính vào tán, không lơ lửng
+      const t = rand(0.45, 0.88);
       const nx = dx / rx, ny = dy / ry + 0.3 / ry, nz = dz / rz;
-      leafCard(C, cx + dx * rx * t, cy + dy * ry * t, cz + dz * rz * t, dx, dy * 0.6 + 0.25, dz, size, size, [nx, ny, nz],
-        leafVar(0.7 + 0.3 * Math.min(1, (t - 0.72) / 0.3)));
+      leafCard(C, cx + dx * rx * t, cy + dy * ry * t, cz + dz * rz * t, size, size, [nx, ny, nz],
+        leafVar(0.7 + 0.3 * Math.min(1, (t - 0.45) / 0.43)));
     }
   }
   // Cành / thân: ống thuôn từ p0 (bán kính r0) tới p1 (r1), cong nhẹ, gốc loe múi rễ (flare), UV vỏ cây không bị kéo giãn
@@ -1771,15 +1788,15 @@ const Destructibles = (() => {
         tintAll(sk, [0.62, 0.62, 0.62]);
         C.push(sk);
         const sz = Math.max(3.6, Math.min(6.4, R * 0.52)), nRim = Math.round(5 + R * 1.3), nTop = Math.round(R * 0.5);
+        // cành kim bám sát mặt váy nón (vị trí tính theo đúng mặt nón), mép ngoài chỉ nhô ra nửa thẻ
+        const RS = R * 0.82;
         for (let k = 0; k < nRim; k++) {
-          const a = (k / nRim) * 6.283 + rand(-0.2, 0.2), rr = R * rand(0.78, 1.0), u = rr / R;
-          leafCard(C, Math.cos(a) * rr, y + 1.5 - hh * u * rand(0.85, 1.0), Math.sin(a) * rr, Math.cos(a), -0.15, Math.sin(a), sz, sz,
-            [Math.cos(a) * 0.8, 1, Math.sin(a) * 0.8], leafVar(0.85 + 0.15 * t));
+          const a = (k / nRim) * 6.283 + rand(-0.2, 0.2), u = rand(0.6, 0.95), rr = RS * u;
+          leafCard(C, Math.cos(a) * rr, y + 1.5 - hh * u + 0.4, Math.sin(a) * rr, sz, sz, [Math.cos(a) * 0.8, 1, Math.sin(a) * 0.8], leafVar(0.85 + 0.15 * t));
         }
         for (let k = 0; k < nTop; k++) {
-          const a = rand(0, 6.283), rr = R * rand(0.3, 0.65);
-          leafCard(C, Math.cos(a) * rr, y + 1.8 - hh * (rr / R) * 0.9, Math.sin(a) * rr, Math.cos(a) * 0.5, 1, Math.sin(a) * 0.5, sz, sz,
-            [Math.cos(a) * 0.5, 1, Math.sin(a) * 0.5], leafVar(1));
+          const a = rand(0, 6.283), u = rand(0.2, 0.6), rr = RS * u;
+          leafCard(C, Math.cos(a) * rr, y + 1.5 - hh * u + 0.8, Math.sin(a) * rr, sz, sz, [Math.cos(a) * 0.5, 1, Math.sin(a) * 0.5], leafVar(1));
         }
         // cành gốc lộ ra dưới tầng lá thấp nhất
         if (wi === 0) for (let b = 0; b < 6; b++) {
@@ -1787,7 +1804,7 @@ const Destructibles = (() => {
           limb(T, [0, y - 2, 0], [Math.cos(a) * rr, y - 2 - rr * 0.45, Math.sin(a) * rr], 0.35, 0.1, { sides: 4, segs: 1, wobble: 0 });
         }
       }
-      for (let k = 0; k < 3; k++) { const a = k * 2.1; leafCard(C, Math.cos(a) * 0.4, 56.5, Math.sin(a) * 0.4, Math.cos(a), 0.2, Math.sin(a), 2.6, 5, [Math.cos(a), 1, Math.sin(a)], leafVar(1)); }
+      for (let k = 0; k < 2; k++) leafCard(C, 0, 55 + k * 1.6, 0, 2.6, 4.2, [0, 1, 0], leafVar(1), [0.3, 0.7]);
     } else if (kind === 'cypress') {
       barkKind = 'oak'; crownKind = 'needle'; height = 46; crownY = 8;
       limb(T, [0, 0, 0], [0, 40, 0], 1.2, 0.25, { sides: 6, flare: 0.4 });
@@ -1843,15 +1860,15 @@ const Destructibles = (() => {
       for (let k = 0; k < 6; k++) { const a = k / 6 * 6.283 + rand(-0.3, 0.3), d = k === 0 ? 0 : rand(4, 7); clumps.push([Math.cos(a) * d, rand(21, 26), Math.sin(a) * d, 6.5, 7.5, 6.5]); }
       branchesTo(clumps, () => lerp3([0, 0, 0], top, rand(0.8, 1)), 0.7);
       clumpsOut(clumps);
-      // cành liễu rủ: chuỗi chùm lá nhỏ treo quanh mép tán như rèm, thưa và nhỏ dần về ngọn
+      // cành liễu rủ: chuỗi chùm lá nhỏ chồng mép lên nhau, mọc ra từ đáy các khối tán ngoài, nhỏ dần về ngọn
       for (let k = 0; k < 26; k++) {
-        const a = (k / 26) * 6.283 + rand(-0.1, 0.1), r = rand(7.5, 11.5), n = 3 + (RNG() < 0.5 ? 1 : 0);
-        let y = rand(19, 24);
+        const c = clumps[1 + (k % (clumps.length - 1))], a = Math.atan2(c[2], c[0]) + rand(-1.1, 1.1);
+        let x = c[0] + Math.cos(a) * c[3] * 0.7, y = c[1] - c[4] * 0.35, z = c[2] + Math.sin(a) * c[5] * 0.7;
+        const n = 4 + (RNG() < 0.5 ? 1 : 0);
         for (let j = 0; j < n; j++) {
-          const sz = 3.6 - j * 0.5;
-          leafCard(C, Math.cos(a) * (r + j * 0.4), y - sz / 2, Math.sin(a) * (r + j * 0.4), Math.cos(a), -0.1, Math.sin(a), sz * 0.8, sz * 1.25,
-            [Math.cos(a), 0.6, Math.sin(a)], leafVar(0.95 - j * 0.07));
-          y -= sz * 0.95;
+          const sz = 3.6 - j * 0.4;
+          leafCard(C, x, y, z, sz * 0.8, sz * 1.2, [Math.cos(a), 0.6, Math.sin(a)], leafVar(0.95 - j * 0.06));
+          y -= sz * 0.6; x += Math.cos(a) * 0.25; z += Math.sin(a) * 0.25;
         }
       }
     } else if (kind === 'jungle') {
@@ -1879,6 +1896,7 @@ const Destructibles = (() => {
     if (C.length) {
       crown = merge(C);
       shadeByHeight(crown, crownKind === 'frond' ? 0.85 : 0.62, 1.05);
+      if (!crown.attributes.corner) crown.setAttribute('corner', new THREE.BufferAttribute(new Float32Array(crown.attributes.position.count * 2), 2));
     }
     return { trunk, crown, crownKind, barkKind, height };
   }
