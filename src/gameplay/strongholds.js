@@ -71,14 +71,28 @@ const Strongholds = (() => {
     return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
   }
   // Mặt ụ đất (so với cốt nền); null = ngoài chân ta-luy
+  // Đỉnh tường cánh: đường xiên THẲNG từ mép mái (cốt đỉnh ụ) xuống chân ụ đất (so với cốt nền)
+  const wingLine = af => S.CREST * clamp01(1 - (af - S.HB) / S.RUN);
+  const WING_BLEND = 36;   // dải đất sát mặt ngoài tường cánh được nắn theo đường xiên thẳng của đỉnh tường
   function moundH(f, r) {
     const af = Math.abs(f), ar = Math.abs(r);
     const d = coreDist(af, ar);
-    if (d >= S.RUN) return null;
-    const t = d / S.RUN;
-    // mô đất lồi lõm ngẫu nhiên mềm (không dùng sin: sin tạo gợn sóng đều -> sọc kẻ khi nắng chiếu)
-    const bump = (vnoise(f / 38, r / 38) - 0.5) * 3.2 * (4 * t * (1 - t)) + (vnoise(f / 13 + 7.3, r / 13 - 2.1) - 0.5) * 0.9 * t;
-    return S.CREST * (1 - smooth(t)) + bump;
+    let h = null;
+    if (d < S.RUN) {
+      const t = d / S.RUN;
+      // mô đất lồi lõm ngẫu nhiên mềm (không dùng sin: sin tạo gợn sóng đều -> sọc kẻ khi nắng chiếu)
+      const bump = (vnoise(f / 38, r / 38) - 0.5) * 3.2 * (4 * t * (1 - t)) + (vnoise(f / 13 + 7.3, r / 13 - 2.1) - 0.5) * 0.9 * t;
+      h = S.CREST * (1 - smooth(t)) + bump;
+    }
+    // sát tường cánh: mặt đất hạ / đắp dần về đường xiên thẳng (đất ôm khít đỉnh tường, không lộ / vùi tường)
+    if (af > S.HB && af < S.END) {
+      const w = 1 - smooth((ar - cutHalf(af) - S.WING_T) / WING_BLEND);
+      if (w > 0) {
+        const base = h === null ? 0 : h, v = base + (wingLine(af) - base) * w;
+        return h === null && v <= 0.05 ? null : v;
+      }
+    }
+    return h;
   }
   // Khoảng cách tới lõi tại đó ụ đất còn cao 5 (xe không leo được phía trong)
   const D_SOLID = (() => { let lo = 0, hi = S.RUN; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (S.CREST * (1 - smooth(m / S.RUN)) > 5) lo = m; else hi = m; } return lo; })();
@@ -428,9 +442,8 @@ const Strongholds = (() => {
         // tường cánh loe
         const ch = cutHalf(af);
         if (ar >= ch - m && ar <= ch + S.WING_T) {
-          const h = moundH(L.f, L.r);
-          // mép trong đỉnh tường vát chéo
-          const top0 = (h === null ? 0 : Math.max(0, h)) + 1.5;
+          // đỉnh tường xiên thẳng, mép trong vát chéo
+          const top0 = Math.max(0.5, wingLine(af)) + 1.5;
           const top = top0 - Math.max(0, wingBevel(top0, floorY(af) - 2) - (ar - ch));
           if (yy <= top + m && yy >= floorY(af) - 3) {
             const sf = Math.sign(L.f), sr = Math.sign(L.r);
@@ -659,7 +672,7 @@ const Strongholds = (() => {
       for (const sg of [-1, 1]) for (const sr of [-1, 1]) {
         for (let af = HB; af < S.END - 0.01; af += step) {
           const a0 = af, a1 = Math.min(S.END, af + step);
-          const top = q => Math.max(0.5, (moundH(sg * q, sr * (cutHalf(q) + 3)) || 0)) + 1.5;
+          const top = q => Math.max(0.5, wingLine(q)) + 1.5;
           const r0 = cutHalf(a0), r1 = cutHalf(a1);
           const b0 = floorY(a0) - 2, b1 = floorY(a1) - 2, t0 = top(a0), t1 = top(a1);
           const P = (q, r, y) => [sg * q, y, sr * r];
