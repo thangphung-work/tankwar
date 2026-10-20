@@ -29,6 +29,7 @@
  *   wading.js            lội nước
  *   music.js             nhạc nền (sảnh, ghép trận, trong trận, kết quả)
  *   battle_drama.js      hiệu ứng kịch tích theo diễn biến trận (tim đập, đồng hồ, hạ gục...)
+ *   ui_sounds.js         âm thanh giao diện: rê chuột, bấm nút, chọn xe / bản đồ, xuất trận
  */
 
 // Trái / phải theo hướng camera đang nhìn (camera bám đuôi xoay theo xe): dx, dz = nguồn âm - xe mình
