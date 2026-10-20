@@ -805,11 +805,24 @@ const VehicleDamage = (() => {
   }
 
   // Mặt giáp bị bắn (hệ tháp nếu trúng tháp)
-  function faceOf(u, hit, onTurret) {
+  // dir: hướng bay của đạn (thế giới). Tấm giáp mũi / đuôi rất nghiêng (gần nằm ngang) bị đạn bắn thẳng trúng vẫn
+  // là giáp mặt đó (đạn gặp tấm nghiêng ở góc sượt -> dày lên theo góc / dễ nảy); chỉ nóc phẳng, hoặc đạn rơi dốc từ
+  // trên xuống (lựu pháo, bom con) mới tính là nóc
+  function faceOf(u, hit, onTurret, dir) {
     const frame = onTurret && u.turretGroup ? u.turretGroup : u.group;
     const q = frame.getWorldQuaternion(new THREE.Quaternion()).invert();
     const n = hit.normal.clone().normalize().applyQuaternion(q);
-    if (n.y > 0.65) return 'top';
+    const plunging = !dir || dir.y < -0.5;
+    if (n.y > 0.97 || (n.y > 0.65 && plunging)) return 'top';
+    // tấm nghiêng (mũi / đuôi dốc) & mặt vát trong cung trước / sau: số giáp của mặt đã là độ dày quy đổi cho cả cung
+    // -> armorOutcome không nhân thêm trọn độ nghiêng (tránh tính trùng)
+    if (n.y > 0.65) hit.sloped = true;
+    // Đạn tới trong cung ±30° quanh trục dọc xe / tháp: tính giáp mặt trước / đuôi (giáp trước được thiết kế cho cả cung
+    // này) — kể cả khi trúng mặt vát hình nêm của tháp hay góc mũi, vốn có pháp tuyến chĩa sang ngang
+    if (dir) {
+      const dl = dir.clone().normalize().applyQuaternion(q), hz = Math.hypot(dl.x, dl.z);
+      if (hz > 0.2 && Math.abs(dl.z) > 0.866 * hz) { hit.sloped = true; return dl.z > 0 ? 'front' : 'rear'; }
+    }
     if (Math.abs(n.z) >= Math.abs(n.x)) return n.z < 0 ? 'front' : 'rear';
     return n.x < 0 ? 'sideL' : 'sideR';
   }
@@ -1496,7 +1509,7 @@ const VehicleDamage = (() => {
     CLUSTER_SUBMUNITION: { mm: 90, loss: 0, kind: 'CE', big: false },  // bom con nổ lõm: đánh nóc xe
     RPG: { mm: 600, loss: 0, kind: 'CE', big: true },
     // đầu nổ kép xuyên cả gạch ERA. Cân bằng game: xe tăng chủ lực chịu ~3 phát (postK), xe khác giữ nguyên
-    ANTI_TANK_MISSILE: { mm: 1100, loss: 0, kind: 'CE', big: true, tandem: true, postK: { heavy: 0.5 } },
+    ANTI_TANK_MISSILE: { mm: 1300, loss: 0, kind: 'CE', big: true, tandem: true, postK: { heavy: 0.5 } },   // cỡ Kornet-EM
     GATLING_BULLET: { mm: 110, loss: 0.35, kind: 'KE', big: false }, // 30mm xuyên dưới cỡ / nổ-cháy: thủng sườn tăng ở cự ly gần
     INCENDIARY: { mm: 40, loss: 0.35, kind: 'KE', big: false },
     SCOUT_BULLET: { mm: 28, loss: 0.5, kind: 'KE', big: false }     // 12.7mm xuyên giáp
@@ -1525,6 +1538,7 @@ const VehicleDamage = (() => {
     // Góc chạm: giáp nghiêng dày thêm 1/cos (tối đa x3.5)
     let cosI = 0.85;
     if (hit && hit.normal && dir) cosI = Math.abs(hit.normal.clone().normalize().dot(dir));
+    if (hit && hit.sloped) cosI = Math.max(cosI, 0.75);
     armor /= Math.max(0.285, cosI);
     // Mặt giáp đã mất tấm giáp / váy xích: mỏng đi
     armor /= (d.faceLoss[face] || 1);
@@ -1591,7 +1605,7 @@ const VehicleDamage = (() => {
     const local = (u.chassisGroup || u.group).worldToLocal(point.clone());
     const onTurret = hit ? isOnTurret(u, hit.object) : false;
     const onGun = hit ? isOnGun(u, hit.object) : false;
-    const face = hit ? faceOf(u, hit, onTurret) : 'side';
+    const face = hit ? faceOf(u, hit, onTurret, dir) : 'side';
 
     // Xuyên giáp: độ xuyên của đạn vs giáp mặt bị trúng (nghiêng theo góc chạm), vùng trúng, cỡ đạn vs cỡ xe
     const tag0 = tagAtHit(hit);
@@ -1622,7 +1636,7 @@ const VehicleDamage = (() => {
     const trackOrWheel = !onTurret && (A.drive === 'wheels' ? wheelIndexAt(u, hit, local) >= 0 : (local.y < 9.6 && Math.abs(local.x) > 8));
     const range = opts.shooter ? Math.hypot(point.x - opts.shooter.x, point.z - opts.shooter.z) : (opts.range || 0);
     const spotKey0 = Math.round(lp0.x / 4) + ',' + Math.round(lp0.y / 4) + ',' + Math.round(lp0.z / 4);
-    const fatigue = (cls === 'cannon' || cls === 'small') && d.spots ? (d.spots[spotKey0] || 0) / 20 : 0;
+    const fatigue = cls === 'cannon' && d.spots ? (d.spots[spotKey0] || 0) / 20 : 0;   // 12.7mm không làm mỏi được giáp nó không xuyên nổi
     const AO = armorOutcome(u, opts, { face, onTurret, onGun, hit, dir, point, d, tag: tag0, nearEngine, trackOrWheel, range, fatigue });
     mul = AO.mul;
     d.lastOutcome = AO;
@@ -1660,7 +1674,8 @@ const VehicleDamage = (() => {
       const n = (d.spots[key] = (d.spots[key] || 0) + 1);
       let need = cls === 'cannon' ? { heavy: 16, medium: 7, light: 3, soft: 2 }[A.cls] : { heavy: 9999, medium: 30, light: 5, soft: 3 }[A.cls];
       // Giáp quá dày so với cỡ đạn (vd 30mm vào giáp trước xe tăng): xả bao nhiêu cũng không đục thủng được
-      if (AO.ratio < 0.35) need = 9999;
+      // (12.7mm: giáp dày hơn ~1,7 lần độ xuyên — vd giáp 45mm của xe Gatling — cũng không đục nổi)
+      if (AO.ratio < (cls === 'small' ? 0.6 : 0.35)) need = 9999;
       // Tấm giáp tăng cường: phải đục qua lớp gốm ngoài trước -> lâu thủng hơn
       else if (EQ && EQ.appliqueCovers && EQ.appliqueCovers(u, face, onTurret)) need = Math.ceil(need * 1.6);
       // Vỏ thép bị đạn xả liên tục: lõm dần (giáp dày lõm ít), đục thủng rồi thì mảng vỏ quanh đó oằn, rách, móp cả khung
