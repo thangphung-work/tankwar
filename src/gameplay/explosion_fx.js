@@ -3666,8 +3666,9 @@
             W.charAcc = 0;
             this.applyChar(u);
           }
-          // Mất áp thủy lực: nòng gục dần xuống (tháp còn trên xe)
-          const droop = { ALL_ROUNDER: -0.05, GATLING: -0.05 }[type];
+          // Mất áp thủy lực: nòng gục dần xuống tới góc hạ tối đa của giá pháo (tháp còn trên xe) — dấu hiệu dễ nhận
+          // nhất của xe tăng đã chết; guardBarrel chặn không cho nòng cắm xuống đất / vào nóc thân
+          const droop = { ALL_ROUNDER: -0.13, GATLING: -0.1 }[type];
           if (droop !== undefined && !W.turret && u.barrelPivot && W.t > 0.8) {
             const bp = u.barrelPivot;
             // không gục quá mức làm nòng cắm xuống đất / vào nóc thân (dốc phía trước, xác lún)

@@ -204,9 +204,9 @@
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261020m14"></script>
 <script src="src/entities/spg.js?v=20261020m14"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020m14"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261021wreck1"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261020m14"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261021wreck1"></script>
 <script src="src/core/equipment.js?v=20261020m14"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
 
@@ -1327,7 +1327,8 @@
       }
 
       // Nâng hạ nòng pháo mượt mà theo góc người dùng điều khiển
-      if (u.barrelPivot) {
+      // (xác xe: nòng nằm theo góc gục / tựa do VehicleDamage + ExplosionFX tính, không kéo theo thanh trượt)
+      if (u.barrelPivot && !u.isDead) {
         const targetRad = state.targetElevRad;
         u.barrelPivot.rotation.x += (targetRad - u.barrelPivot.rotation.x) * Math.min(1, dt * 8);
         u.elevation = (u.barrelPivot.rotation.x * 180) / Math.PI;
