@@ -68,12 +68,40 @@ function serveFile(req, res) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
-    res.writeHead(200, {
+    // Cache phía trình duyệt:
+    // - ETag/Last-Modified theo kích thước + thời điểm sửa -> tải lại chỉ tốn 304 (không gửi lại nội dung)
+    // - Đường dẫn có ?v=... (đã đánh phiên bản) -> giữ 1 năm, đổi v là trình duyệt tải bản mới
+    // - Ảnh/âm thanh/phông chữ chưa đánh phiên bản -> giữ 1 ngày rồi hỏi lại bằng ETag
+    // - HTML/JS/CSS chưa đánh phiên bản -> luôn hỏi lại (no-cache) để không kẹt bản cũ
+    const etag = `W/"${stats.size.toString(16)}-${Math.floor(stats.mtimeMs).toString(16)}"`;
+    const lastModified = stats.mtime.toUTCString();
+    const versioned = /[?&]v=/.test(req.url);
+    const isStaticMedia = /^\.(png|jpe?g|gif|svg|ico|webp|wav|mp3|ogg|m4a|woff2?|ttf)$/.test(ext);
+    const cacheControl = versioned ? 'public, max-age=31536000, immutable'
+      : isStaticMedia ? 'public, max-age=86400'
+      : 'no-cache';
+    const headers = {
       'Content-Type': contentType,
-      'Content-Length': stats.size,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': cacheControl,
+      'ETag': etag,
+      'Last-Modified': lastModified,
       'Access-Control-Allow-Origin': '*'
-    });
+    };
+
+    const inm = req.headers['if-none-match'];
+    const ims = req.headers['if-modified-since'];
+    const notModified = inm
+      ? inm.split(',').some(t => t.trim() === etag || t.trim() === '*')
+      : (ims && Math.floor(stats.mtimeMs / 1000) <= Math.floor(Date.parse(ims) / 1000));
+    if (notModified) {
+      res.writeHead(304, headers);
+      res.end();
+      return;
+    }
+
+    headers['Content-Length'] = stats.size;
+    res.writeHead(200, headers);
+    if (req.method === 'HEAD') { res.end(); return; }
 
     const readStream = fs.createReadStream(filePath);
     readStream.pipe(res);

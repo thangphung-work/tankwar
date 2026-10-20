@@ -3,8 +3,10 @@
  * - Nền địa hình dựng riêng: đổ bóng địa hình + đường đồng mức + đường sá, sông hồ, rừng, nhà (tông trầm, dễ đọc ký hiệu)
  * - Đơn vị theo ký hiệu NATO: ta = khung chữ nhật xanh, địch = hình thoi đỏ; nét đứt = vết radar / báo cáo; "?" = vị trí cuối
  * - Cứ điểm OBJ A/B/C: vòng tiến độ chiếm + màu phe giữ; vòng bo; tầm bắn có vạch chia hướng
- * - Nhấp: chọn mục tiêu (khoảng cách & bắn tới được không hiện ngay tại mục tiêu) · Nhấp đúp: ngắm vào đó · Space: bắn
- * - Lăn chuột: phóng to quanh con trỏ · Giữ chuột phải: kéo bản đồ · F: về xe · 0: toàn cảnh
+ * - Nhấp vào xe địch đang hiện: KHÓA xe đó (như nhấp chuột vào xe trong màn hình 3D — nòng tự ngắm & đón đầu)
+ * - Nhấp chỗ trống: chọn mục tiêu (khoảng cách & bắn tới được không hiện ngay tại mục tiêu) · Nhấp đúp: ngắm vào đó · Space: bắn
+ * - Nhấp chuột phải: xe tự lái tới điểm đó (tự tìm đường) · Giữ chuột phải + kéo: kéo bản đồ
+ * - Lăn chuột: phóng to quanh con trỏ · F: về xe · 0: toàn cảnh
  */
 class TacticalMapController {
   constructor(game) {
@@ -42,7 +44,10 @@ class TacticalMapController {
     on('close-map-btn', 'click', () => this.toggle(false));
     on('toggle-map-btn', 'click', () => this.toggle());
     on('btn-aow-menu', 'click', () => this.toggle(true));
-    on('aow-minimap-box', 'click', () => this.toggle(true));
+    // Bản đồ nhỏ: nhấp trúng xe địch đang hiện -> khóa xe đó; nhấp chỗ khác -> mở bản đồ lớn
+    on('aow-minimap-box', 'click', (e) => { if (!this.lockFromMinimap(e)) this.toggle(true); });
+    // Bản đồ nhỏ: nhấp chuột phải -> xe tự lái tới điểm đó (không hiện menu chuột phải của trình duyệt)
+    on('aow-minimap-box', 'contextmenu', (e) => { e.preventDefault(); this.driveFromMinimap(e); });
     on('tm-zoom-in', 'click', () => this.zoomAt(this.cssW / 2, this.cssH / 2, 1.4));
     on('tm-zoom-out', 'click', () => this.zoomAt(this.cssW / 2, this.cssH / 2, 1 / 1.4));
     on('tm-focus-me', 'click', () => this.focusPlayer());
@@ -57,9 +62,14 @@ class TacticalMapController {
       const r = this.canvas.getBoundingClientRect();
       this.zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.18 : 1 / 1.18);
     }, { passive: false });
-    window.addEventListener('mouseup', () => this.onMouseUp());
+    window.addEventListener('mouseup', (e) => this.onMouseUp(e));
     this.canvas.addEventListener('dblclick', (e) => {
+      // nhấp đúp vào xe địch: đã khóa ở lần nhấp đầu -> chỉ đóng bản đồ, giữ khóa
+      const r = this.canvas.getBoundingClientRect();
+      if (this.enemyAt(e.clientX - r.left, e.clientY - r.top)) { this.toggle(false); return; }
       const w = this.screenToWorld(e.clientX, e.clientY);
+      // ngắm vào một điểm: nhả khóa xe (giống nhấp mặt đất trong màn hình 3D), nếu không tháp vẫn bám xe cũ
+      if (this.game.lockedTarget) this.game.setLockedTarget(null);
       this.game.aimPlayerAtTarget(w.x, w.z);
       this.toggle(false);
     });
@@ -150,11 +160,18 @@ class TacticalMapController {
   onMouseDown(e) {
     if (e.button === 1 || e.button === 2) {
       e.preventDefault();
-      this.pan = { x: e.clientX, y: e.clientY, cx: this.view.cx, cz: this.view.cz };
+      // chuột phải: nhấp nhả tại chỗ = lái tự động tới đó; giữ & kéo = kéo bản đồ
+      this.pan = { x: e.clientX, y: e.clientY, cx: this.view.cx, cz: this.view.cz, button: e.button, moved: false, t: performance.now() };
       return;
     }
     const w = this.screenToWorld(e.clientX, e.clientY);
     const p = this.game.player;
+    // Nhấp trúng xe địch đang hiện trên bản đồ: khóa luôn xe đó
+    if (!e.shiftKey && p && !p.isDead) {
+      const r = this.canvas.getBoundingClientRect();
+      const foe = this.enemyAt(e.clientX - r.left, e.clientY - r.top);
+      if (foe) { this.lockFromMap(foe); return; }
+    }
     this.measStart = (e.shiftKey || !p) ? { x: w.x, z: w.z } : { x: p.x, z: p.z, fromPlayer: true };
     this.measEnd = { x: w.x, z: w.z };
     this.isDragging = true;
@@ -165,6 +182,7 @@ class TacticalMapController {
     this.mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
     if (this.pan) {
       const k = this.k;
+      if (Math.hypot(e.clientX - this.pan.x, e.clientY - this.pan.y) > 5) this.pan.moved = true;
       this.view.cx = this.pan.cx - (e.clientX - this.pan.x) / k;
       this.view.cz = this.pan.cz - (e.clientY - this.pan.y) / k;
       this.clampView();
@@ -176,9 +194,120 @@ class TacticalMapController {
       this.updateMeasurements(false);
     }
   }
-  onMouseUp() {
-    if (this.pan) { this.pan = null; return; }
+  onMouseUp(e) {
+    if (this.pan) {
+      const P = this.pan;
+      this.pan = null;
+      if (P.button === 2 && !P.moved && e && performance.now() - P.t < 600) {
+        const w = this.screenToWorld(P.x, P.y);
+        this.driveTo(w.x, w.z);
+      }
+      return;
+    }
     if (this.isDragging) { this.isDragging = false; this.updateMeasurements(true); }
+  }
+
+  // Vị trí vẽ của xe địch trên bản đồ (vết radar vẽ ở chỗ radar bắt được, không phải vị trí thật) — null nếu không hiện
+  shownPos(u) {
+    const g = this.game, me = g.player;
+    const TI = typeof TeamIntel !== 'undefined' ? TeamIntel : null;
+    const lv = TI ? TI.knowledge(me, u) : 'direct';
+    if (!lv) return null;
+    if (lv === 'radar') { const c = TI.radarContact(me, u); if (c) return { x: c.x, z: c.z }; }
+    return { x: u.x, z: u.z };
+  }
+
+  // Xe địch đang hiện trên bản đồ gần điểm nhấp (sx, sy: tọa độ trong khung canvas). Vùng bấm rộng hơn ký hiệu
+  // (màn hình cảm ứng còn rộng hơn). Chỉ xe phe mình đang biết vị trí — xe ẩn không hiện nên không bấm trúng được.
+  enemyAt(sx, sy) {
+    const g = this.game, me = g.player;
+    if (!me || !g.units) return null;
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    let best = null, bd = coarse ? 32 : 22;
+    for (const u of g.units) {
+      if (!g.canTarget(u)) continue;
+      const pos = this.shownPos(u);
+      if (!pos) continue;
+      const s = this.worldToScreen(pos.x, pos.z);
+      const d = Math.hypot(s.x - sx, s.y - sy);
+      if (d < bd) { bd = d; best = u; }
+    }
+    return best;
+  }
+
+  // Nhấp lên bản đồ nhỏ góc màn hình (vẽ toàn bản đồ, tỉ lệ đều theo bề rộng canvas)
+  lockFromMinimap(e) {
+    const g = this.game, me = g.player, cv = document.getElementById('aow-minimap-canvas');
+    if (!cv || !me || me.isDead || !g.units || !g.worldWidth) return false;
+    const r = cv.getBoundingClientRect();
+    if (!r.width || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return false;
+    const css = r.width / cv.width, sc = cv.width / g.worldWidth;
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    let best = null, bd = coarse ? 18 : 12;
+    for (const u of g.units) {
+      if (!g.canTarget(u)) continue;
+      const pos = this.shownPos(u);
+      if (!pos) continue;
+      const d = Math.hypot((pos.x + g.worldWidth / 2) * sc * css - mx, (pos.z + g.worldDepth / 2) * sc * css - my);
+      if (d < bd) { bd = d; best = u; }
+    }
+    if (!best) return false;
+    this.lockFromMap(best);
+    return true;
+  }
+
+  // Lái tự động tới điểm chọn trên bản đồ: cùng cơ chế chuột phải xuống đất trong màn hình 3D
+  // (tự tìm đường, chỗ không vào được thì dời tới chỗ đi được gần nhất, W/A/S/D để hủy)
+  driveTo(x, z) {
+    const g = this.game, p = g.player;
+    if (!p || p.isDead) return;
+    g.setAutoDriveTarget(x, z);
+    if (g.autoDrive) this.driveFx = { x: g.autoDrive.x, z: g.autoDrive.z, t: performance.now() };
+  }
+
+  driveFromMinimap(e) {
+    const g = this.game, cv = document.getElementById('aow-minimap-canvas');
+    if (!cv || !g.player || g.player.isDead || !g.worldWidth) return;
+    const r = cv.getBoundingClientRect();
+    if (!r.width) return;
+    const css = r.width / cv.width, sc = cv.width / g.worldWidth;
+    this.driveTo((e.clientX - r.left) / css / sc - g.worldWidth / 2, (e.clientY - r.top) / css / sc - g.worldDepth / 2);
+  }
+
+  // Đường lái tự động + dấu đích (cờ nhỏ, cự ly còn lại); vừa đặt đích thì có vòng sáng thu lại
+  drawDrive(ctx) {
+    const g = this.game, A = g.autoDrive, p = g.player;
+    if (!A || !p || p.isDead) return;
+    if (g.drawAutoDrivePath) g.drawAutoDrivePath(ctx, (x, z) => this.worldToScreen(x, z), true);
+    const s = this.worldToScreen(A.x, A.z), now = performance.now();
+    ctx.save();
+    ctx.strokeStyle = '#00e5ff'; ctx.fillStyle = 'rgba(0, 229, 255, 0.85)'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x, s.y - 20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s.x, s.y - 20); ctx.lineTo(s.x + 12, s.y - 16); ctx.lineTo(s.x, s.y - 12); ctx.closePath(); ctx.fill();
+    const fx = this.driveFx;
+    if (fx && now - fx.t < 500) {
+      const a = (now - fx.t) / 500;
+      ctx.globalAlpha = 1 - a; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 8 + (1 - a) * 30, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+    const d = Math.round(Math.hypot(A.x - p.x, A.z - p.z));
+    this.tag(ctx, `ĐANG TỚI · ${d} m`, s.x, s.y + 18, '#00e5ff');
+  }
+
+  // Khóa xe địch chọn trên bản đồ: cùng cơ chế với nhấp chuột vào xe trong màn hình 3D (tiếng khóa, khung khóa HUD)
+  lockFromMap(u) {
+    const g = this.game, p = g.player;
+    this.measStart = this.measEnd = null; this.measStatus = null; this.flightT = null;
+    const d = Math.hypot(u.x - p.x, u.z - p.z);
+    if (d > g.lockRangeFor(p)) {
+      g.addCombatLog(`[[alert-triangle]] Xe địch ở quá xa (${Math.round(d)}M), chưa khóa được`, 'alert');
+      this.lockFx = { id: u.id, t: performance.now(), fail: true };
+      return;
+    }
+    g.setLockedTarget(u, true);
+    this.lockFx = { id: u.id, t: performance.now() };
   }
 
   // Tầm bắn theo loại xe + đạn (mô hình đường đạn thật, mặt đất phẳng) — tính một lần
@@ -208,6 +337,9 @@ class TacticalMapController {
       // pháo tăng: đạn bay rất xa nhưng máy tính hỏa lực chỉ bắn trong tầm hiệu quả (số liệu thật x tỉ lệ game)
       if (!arty && B.maxRangeFor) max = Math.min(max, B.maxRangeFor(unit));
       res = { min: arty ? Math.round(min) : 0, max: Math.round(max), kind: arty ? 'indirect' : 'gun' };
+      // lựu pháo hạ nòng bắn thẳng được địch ở gần: vùng dưới tầm cầu vồng vẫn bắn tới (trừ sát thân xe)
+      const AD = typeof BallisticsSystem3D !== 'undefined' && BallisticsSystem3D.ARTY_DIRECT;
+      if (arty && AD) { res.lobMin = res.min; res.min = AD.min; res.directMax = AD.max; }
     }
     this.rangeCache.set(key, res);
     return res;
@@ -215,6 +347,7 @@ class TacticalMapController {
 
   updateMeasurements(solve) {
     this.measStatus = null;
+    if (solve) this.measDirect = null;
     if (!this.measStart || !this.measEnd) return;
     const dist = Math.hypot(this.measEnd.x - this.measStart.x, this.measEnd.z - this.measStart.z);
     const p = this.game.player;
@@ -232,8 +365,9 @@ class TacticalMapController {
     } else {
       const s = B.solveAimingForTarget(p.x, p.y, p.z, this.measEnd.x, this.measEnd.z, this.game.terrain, p);
       if (s) {
-        const pr = B.predictTrajectoryImpact(p.x, p.y, p.z, s.azimuth, s.elevation, 1, this.game.terrain, { tankType: p.tankType, selectedAmmo: p.selectedAmmo });
+        const pr = B.predictTrajectoryImpact(p.x, p.y, p.z, s.azimuth, s.elevation, s.charge || 1, this.game.terrain, { tankType: p.tankType, selectedAmmo: p.selectedAmmo });
         this.flightT = (pr.flightTime || 0) / (B.bulletSpeedMultiplier || 1);
+        this.measDirect = p.tankType === 'ARTILLERY' ? !!s.direct : null;
       }
     }
   }
@@ -386,7 +520,9 @@ class TacticalMapController {
     this.drawAirdrop(ctx);
     if (g.player && !g.player.isDead) this.drawRanges(ctx, k);
     this.drawIntel(ctx, k);
+    this.drawDrive(ctx);
     if (g.player) this.drawPlayer(ctx);
+    this.drawLock(ctx);
     this.drawTarget(ctx);
     this.drawFrame(ctx, o, S, k, W, Hh);
     this.updateTip();
@@ -532,9 +668,14 @@ class TacticalMapController {
     ctx.fill();
     ring(R.max * k, 'rgba(95, 176, 220, 0.75)');
     this.tag(ctx, `${R.max} m`, s.x, s.y - R.max * k - 10, 'rgba(95, 176, 220, 1)');
-    if (R.min > 0) {
+    if (R.lobMin) {
+      // lựu pháo: trong vòng này hạ nòng bắn thẳng, ngoài vòng bắn cầu vồng
+      ring(R.lobMin * k, 'rgba(95, 176, 220, 0.45)', [3, 5]);
+      if (R.lobMin * k > 30) this.tag(ctx, `BẮN THẲNG < ${R.lobMin} m`, s.x, s.y + R.lobMin * k + 11, 'rgba(140, 200, 235, 1)');
+    }
+    if (R.min > 0 && R.min * k > 6) {
       ring(R.min * k, 'rgba(255, 120, 90, 0.75)', [4, 4]);
-      this.tag(ctx, `MIN ${R.min} m`, s.x, s.y + R.min * k + 11, 'rgba(255, 140, 110, 1)');
+      if (!R.lobMin) this.tag(ctx, `MIN ${R.min} m`, s.x, s.y + R.min * k + 11, 'rgba(255, 140, 110, 1)');
     }
     ctx.restore();
   }
@@ -656,6 +797,48 @@ class TacticalMapController {
     ctx.restore();
   }
 
+  // Xe địch đang khóa: khung khóa đỏ xoay chậm + đường nối từ xe mình + cự ly; vừa khóa thì có vòng sáng thu lại
+  drawLock(ctx) {
+    const g = this.game, p = g.player, T = g.lockedTarget, now = performance.now();
+    const fx = this.lockFx && now - this.lockFx.t < 450 ? this.lockFx : null;
+    if (fx && fx.fail) {
+      const u = (g.units || []).find(v => v.id === fx.id), pos = u && this.shownPos(u);
+      if (pos) {
+        const s = this.worldToScreen(pos.x, pos.z);
+        ctx.save(); ctx.strokeStyle = `rgba(224, 103, 92, ${1 - (now - fx.t) / 450})`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(s.x - 9, s.y - 9); ctx.lineTo(s.x + 9, s.y + 9); ctx.moveTo(s.x + 9, s.y - 9); ctx.lineTo(s.x - 9, s.y + 9); ctx.stroke();
+        ctx.restore();
+      }
+    }
+    if (!p || p.isDead || !T || T.isDead) return;
+    const pos = this.shownPos(T);
+    if (!pos) return;
+    const s = this.worldToScreen(pos.x, pos.z), ps = this.worldToScreen(p.x, p.z);
+    const manual = !!g._manualAim;
+    const col = manual ? '#e7a63a' : '#ff4d4d';
+    ctx.save();
+    ctx.strokeStyle = col; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.2; ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(ps.x, ps.y); ctx.lineTo(s.x, s.y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.translate(s.x, s.y);
+    ctx.rotate(now / 1600);
+    ctx.lineWidth = 2;
+    const r = 19, L = 7;
+    ctx.beginPath();
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      ctx.moveTo(sx * r, sy * (r - L)); ctx.lineTo(sx * r, sy * r); ctx.lineTo(sx * (r - L), sy * r);
+    }
+    ctx.stroke();
+    if (fx && fx.id === T.id && !fx.fail) {
+      const a = (now - fx.t) / 450;
+      ctx.globalAlpha = 1 - a; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, 0, 19 + (1 - a) * 34, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+    const d = Math.round(Math.hypot(T.x - p.x, T.z - p.z));
+    this.tag(ctx, manual ? `${d} m · TAB: BÁM LẠI` : `ĐÃ KHÓA · ${d} m`, s.x, s.y - 34, col, true, 'lock');
+  }
+
   // Mục tiêu đã chọn: đường ngắm + khung góc + kết luận ngay cạnh mục tiêu
   drawTarget(ctx) {
     if (!this.measStart || !this.measEnd) return;
@@ -679,7 +862,8 @@ class TacticalMapController {
     ctx.stroke();
     ctx.restore();
     const dist = Math.round(Math.hypot(this.measEnd.x - this.measStart.x, this.measEnd.z - this.measStart.z));
-    const verdict = st === 'ok' ? `${dist} m${this.flightT ? ' · ' + this.flightT.toFixed(1) + 's' : ''}`
+    const how = st === 'ok' && this.measDirect !== null && this.measDirect !== undefined ? (this.measDirect ? ' · BẮN THẲNG' : ' · CẦU VỒNG') : '';
+    const verdict = st === 'ok' ? `${dist} m${this.flightT ? ' · ' + this.flightT.toFixed(1) + 's' : ''}${how}`
       : st === 'far' ? `${dist} m · QUÁ XA` : st === 'near' ? `${dist} m · QUÁ GẦN` : `${dist} m`;
     const icon = st === 'ok' ? 'check' : (st === 'far' || st === 'near') ? 'x' : null;
     this.tag(ctx, verdict, e.x, e.y + 24, col, true, icon);

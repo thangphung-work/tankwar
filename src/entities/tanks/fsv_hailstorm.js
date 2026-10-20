@@ -179,8 +179,11 @@
       hb.add(new THREE.TorusGeometry(0.75, 0.22, 6, 12), M.steel, [s * 14.2, ROOF_Y + 0.3, 10.6], [Math.PI / 2, 0, 0]);
       for (const z of [-8, 3]) hb.box(0.9, 0.55, 0.5, D, [s * 14.2, ROOF_Y + 0.25, z]);
     }
+    // Tay nắm leo lên nóc sau
+    for (const s of [-1, 1]) hb.grabHandle([s * 9.5, ROOF_Y, 23.6], 'z', 2.6, 0.6, P);
     hb.setTag('cans');
-    for (let i = 0; i < 3; i++) hb.box(0.9, 1.9, 1.4, P, [-4.0 + i * 1.05, ROOF_Y + 0.95, 27.0]);
+    for (let i = 0; i < 3; i++) hb.jerrycan([-4.0 + i * 1.45, ROOF_Y + 1.5, 26.9], 0, 1.3, 3.0, 2.2, P, D);
+    hb.box(4.6, 0.3, 0.3, D, [-2.55, ROOF_Y + 2.1, 25.75]);
     hb.setTag(null);
 
     // Tấm đuôi: cửa sau tổ lái, bản lề, đèn hậu, móc kéo
@@ -466,6 +469,8 @@
     turret.add(periHead);
     VehicleKit.registerPartGroup(unit, 'opticCdr', periHead);
 
+    for (const s of [-1, 1]) tb.grabHandle([s * 8.6, TROOF, 4.0], 'z', 2.6, 0.55, P);
+
     // Nắp tháp, tấm nhận diện phe, cảm biến gió, ăng-ten
     tb.cyl(1.85, 1.95, 0.32, 18, P, [-4.8, TROOF + 0.16, 5.2]);
     tb.box(0.9, 0.35, 0.5, D, [-4.8, TROOF + 0.3, 7.1]);
@@ -497,6 +502,32 @@
     for (const x of [-6.0, 6.0]) for (const y of [1.6, 4.8]) tb.beam([x, y, 11.6], [x, y, cz], 0.26, 0.26, D);
     for (let i = 0; i < 4; i++) tb.box(17.0, 0.6, 0.18, D, [0, 1.6 + i * 1.1, cz - 0.08]);
     tb.setTag(null);
+
+    // --- Chi tiết bề mặt: gân tăng cứng hòm đạn, bu-lông, mối hàn, móc cẩu, đường ghép nóc ---
+    for (const s of [-1, 1]) {
+      // Hòm đạn: 3 gân dập đứng trên mặt ngoài + viền bu-lông trên/dưới
+      for (const z of [-3.4, 0.4]) tb.box(0.22, 3.6, 0.4, P, [s * 13.5, 2.9, z]);
+      tb.boltRow([s * 13.4, 4.55, -6.2], [s * 13.4, 4.55, 5.0], 9, 'x', D, 0.14, s);
+      tb.boltRow([s * 13.4, 1.25, -6.2], [s * 13.4, 1.25, 5.0], 9, 'x', D, 0.14, s);
+      tb.weld([s * 10.2, 5.5, -7.4], [s * 10.2, 5.5, 5.4], P, 0.1);
+      // Mép nóc - hông tháp: mối hàn + hàng bu-lông nóc
+      tb.weld([s * 9.55, TROOF + 0.02, -6.0], [s * 9.55, TROOF + 0.02, 7.8], P);
+      tb.boltRow([s * 8.8, TROOF, -5.6], [s * 8.8, TROOF, 9.6], 10, 'y', D, 0.14);
+      // Móc cẩu nóc trước / sau
+      for (const z of [-7.6, 10.6]) {
+        tb.box(0.9, 0.3, 0.55, P, [s * 7.4, TROOF + 0.13, z]);
+        tb.add(new THREE.TorusGeometry(0.46, 0.15, 5, 10), M.steel, [s * 7.4, TROOF + 0.45, z], [0, Math.PI / 2, 0]);
+      }
+      // Mối hàn chân khối giáp bổ sung mặt trước
+      tb.weld([s * 4.0, 5.02, -10.0], [s * 8.9, 5.02, -10.0], P, 0.1);
+    }
+    // Nóc: đường ghép ngang, nấm thông gió
+    tb.seam([-7.6, TROOF + 0.02, -2.2], [7.6, TROOF + 0.02, -2.2], [0, 1, 0], D);
+    tb.seam([-8.0, TROOF + 0.02, 9.4], [8.0, TROOF + 0.02, 9.4], [0, 1, 0], D);
+    tb.cyl(0.5, 0.55, 0.55, 12, P, [-1.4, TROOF + 0.27, 1.0]);
+    tb.cyl(1.05, 0.85, 0.32, 14, P, [-1.4, TROOF + 0.68, 1.0]);
+    // Mặt sau tháp: hàng bu-lông tấm đuôi
+    tb.boltRow([-7.6, 3.0, 11.75], [7.6, 3.0, 11.75], 10, 'z', D, 0.15, 1);
 
     tb.build(turret);
 

@@ -4,334 +4,197 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Phòng Thử Hiệu Ứng Chiến Xa</title>
-<style>
-  :root {
-    --bg: #070d14;
-    --panel: rgba(8, 20, 36, 0.92);
-    --line: #174b6e;
-    --line-active: #14c8ff;
-    --accent: #14c8ff;
-    --hot: #ff8a2a;
-    --warn: #ffd34e;
-    --danger: #ff3e3e;
-    --text: #e2eef7;
-    --muted: #8aa7be;
-    --btn-bg: rgba(6, 28, 48, 0.9);
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font: 13px/1.4 "Segoe UI", -apple-system, Arial, sans-serif;
-    overflow: hidden;
-    user-select: none;
-  }
-  #view { position: fixed; inset: 0; display: block; outline: none; }
-
-  /* Bảng điều khiển góc trái */
-  .panel {
-    position: fixed;
-    top: 12px;
-    left: 12px;
-    width: 320px;
-    max-height: calc(100% - 24px);
-    overflow-y: auto;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: 14px 14px 16px;
-    backdrop-filter: blur(6px);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-    z-index: 10;
-  }
-  .panel::-webkit-scrollbar { width: 4px; }
-  .panel::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
-
-  .header { margin-bottom: 10px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
-  h1 { margin: 0 0 3px; font-size: 16px; letter-spacing: 0.6px; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
-  .sub { color: var(--muted); font-size: 11px; line-height: 1.35; }
-
-  h2 {
-    margin: 12px 0 5px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    color: var(--accent);
-    text-transform: uppercase;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  h2 small { font-size: 10px; color: var(--muted); text-transform: none; letter-spacing: 0; }
-
-  .btn {
-    display: block;
-    width: 100%;
-    text-align: left;
-    cursor: pointer;
-    color: var(--text);
-    background: var(--btn-bg);
-    border: 1px solid #1c5275;
-    padding: 6px 10px;
-    font: 600 12px "Segoe UI", Arial, sans-serif;
-    border-radius: 2px;
-    transition: all 0.15s ease;
-  }
-  .btn small { display: block; color: var(--muted); font-weight: 400; font-size: 10.5px; }
-  .btn:hover { border-color: var(--line-active); background: rgba(14, 52, 85, 0.95); }
-  .btn.on {
-    background: linear-gradient(135deg, #14c8ff, #0a84b8);
-    color: #04121f;
-    border-color: #6ee3ff;
-    text-shadow: none;
-    box-shadow: 0 0 12px rgba(20, 200, 255, 0.4);
-  }
-  .btn.on small { color: #062b47; font-weight: 600; }
-
-  .btn-hot {
-    background: linear-gradient(135deg, #ff7b1a, #cc4a00);
-    color: #fff;
-    border-color: #ffa352;
-    text-align: center;
-  }
-  .btn-hot:hover { filter: brightness(1.15); box-shadow: 0 0 14px rgba(255, 123, 26, 0.5); }
-  .btn-hot.on { background: linear-gradient(135deg, #ff3b00, #8f1200); }
-
-  .row { display: flex; gap: 4px; flex-wrap: wrap; }
-  .row .btn { width: auto; flex: 1 1 auto; text-align: center; padding: 5px 6px; }
-
-  .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-  .action-grid .btn { text-align: center; padding: 7px 6px; }
-
-  /* Bảng HUD thông số góc phải trên */
-  .hud-top {
-    position: fixed;
-    right: 12px;
-    top: 12px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: 10px 14px;
-    color: var(--text);
-    font-size: 11.5px;
-    backdrop-filter: blur(4px);
-    pointer-events: none;
-    min-width: 200px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-  }
-  .hud-top .title { font-weight: 700; color: #fff; font-size: 13px; margin-bottom: 4px; }
-  .hud-item { display: flex; justify-content: space-between; margin: 2px 0; color: var(--muted); }
-  .hud-item b { color: var(--accent); font-weight: 600; }
-
-  /* Bảng trợ giúp phím bấm */
-  .hint {
-    position: fixed;
-    right: 12px;
-    bottom: 12px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: 8px 12px;
-    color: var(--muted);
-    font-size: 11px;
-    line-height: 1.6;
-    backdrop-filter: blur(4px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  }
-  .hint b { color: #fff; }
-
-  .nav-link {
-    display: block;
-    text-align: center;
-    padding: 7px 10px;
-    margin-bottom: 10px;
-    color: var(--accent);
-    background: rgba(14, 45, 75, 0.8);
-    border: 1px dashed var(--line-active);
-    text-decoration: none;
-    font-weight: 700;
-    font-size: 11.5px;
-    border-radius: 2px;
-    transition: all 0.2s;
-  }
-  .nav-link:hover {
-    background: rgba(20, 200, 255, 0.18);
-    color: #fff;
-    border-style: solid;
-  }
-
-  .badge {
-    display: inline-block;
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 9.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    background: rgba(20, 200, 255, 0.2);
-    color: var(--accent);
-  }
-
-  @media (max-width: 768px) {
-    .panel { width: calc(100% - 24px); max-height: 48%; }
-    .hud-top, .hint { display: none; }
-  }
-</style>
+<link rel="icon" href="favicon.svg?v=1" type="image/svg+xml">
+<link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+<link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261020lab2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <canvas id="view"></canvas>
 
-<div class="panel">
-  <a href="fx_lab.html" class="nav-link">🎯 CHUYỂN SANG: PHÒNG THỬ ĐẠN & HIỆU ỨNG NỔ →</a>
-
-  <div class="header">
-    <h1>PHÒNG THỬ HIỆU ỨNG CHIẾN XA</h1>
-    <div class="sub">Quan sát tỉ mỉ chớp lửa, khói xả ngang loa hãm lùi, giật nòng, nhún thân xe, khói ống xả và cơ cấu đặc biệt</div>
-  </div>
-
-  <h2>Dòng xe chiến đấu</h2>
-  <div class="row" id="tankRow" style="flex-direction:column;gap:3px">
-    <button class="btn on" data-tank="ARTILLERY">
-      🎯 Pháo Tự Hành Arbalest 155 <span class="badge">Có khói xả ngang</span>
-      <small>Lựu pháo 155mm · Loa hãm lùi 2 tầng · Chân chống & lưỡi càng</small>
-    </button>
-    <button class="btn" data-tank="ALL_ROUNDER">
-      🛡️ Xe Tăng Chủ Lực Halberd MK.3
-      <small>Pháo 120mm nòng trơn · Giáp nêm mũi tên · Bầu hút khói</small>
-    </button>
-    <button class="btn" data-tank="GATLING">
-      ⚡ Xe Chi Viện Hỏa Lực Hailstorm R6
-      <small>Cụm 6 nòng xoay 30mm · Gạch giáp ERA · Lưỡi ủi thủy lực</small>
-    </button>
-    <button class="btn" data-tank="SCOUT">
-      📡 Xe Trinh Sát Bọc Giáp Marten R4
-      <small>4x4 cơ động · Trạm súng máy & tên lửa · Radar ống lồng</small>
-    </button>
-  </div>
-
-  <h2>Màu sơn phe</h2>
-  <div class="row" id="teamRow">
-    <button class="btn on" data-team="BLUE">Phe Xanh Liên Minh</button>
-    <button class="btn" data-team="RED">Phe Đỏ Sa Mạc</button>
-  </div>
-
-  <h2>Hiệu ứng hỏa lực & đầu nòng</h2>
-  <button class="btn btn-hot" id="fireBtn" style="font-size:13.5px;padding:9px;margin-bottom:4px">
-    🔥 KHAI HỎA [SPACE / giữ để xả liên thanh]
-  </button>
-  <div class="action-grid">
-    <button class="btn" id="smokeBtn">💨 Xì khói nòng pháo</button>
-    <button class="btn" id="recoilBtn">💥 Giật nòng & nhún xe</button>
-    <button class="btn" id="barrelHotBtn">🌋 Nung đỏ nòng (R6)</button>
-    <button class="btn" id="autoFireBtn">🔄 Bắn tự động: TẮT</button>
-  </div>
-
-  <h2>📐 Nâng hạ nòng pháo</h2>
-  <div style="background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:8px 10px;margin-bottom:6px;border-radius:2px">
-    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11.5px">
-      <span>Góc nâng nòng: <b id="elevValLbl" style="color:var(--accent)">0.0°</b></span>
-      <span style="color:var(--muted)">Phím: ↑ / ↓</span>
+<aside class="lab-panel">
+  <header class="lab-head">
+    <div class="lab-brand">
+      <i class="ti ti-tank lab-emblem" aria-hidden="true"></i>
+      <div>
+        <h1>THỬ HIỆU ỨNG XE</h1>
+        <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Chớp lửa, khói loa hãm, giật nòng, nhún thân, khói xả và cơ cấu riêng từng xe</div>
+      </div>
     </div>
-    <input type="range" id="elevSlider" min="-5" max="65" value="0" step="1" style="width:100%;accent-color:var(--accent);cursor:pointer;margin:4px 0 6px">
-    <div class="row" id="elevPresets">
-      <button class="btn on" data-elev="0" style="padding:4px">Ngắm 0°</button>
-      <button class="btn" data-elev="15" style="padding:4px">Tác chiến 15°</button>
-      <button class="btn" data-elev="35" style="padding:4px">Bắn xa 35°</button>
-      <button class="btn" data-elev="55" style="padding:4px">Cầu vồng 55°</button>
+    <nav class="lab-nav">
+      <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+      <a class="on" href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+      <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+    </nav>
+  </header>
+
+  <div class="lab-scroll">
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">01</span><h2>Xe chiến đấu</h2></div>
+    <div class="row col" id="tankRow">
+      <button class="btn on" data-tank="ARTILLERY">
+        <i class="ti ti-crosshair" aria-hidden="true"></i>Pháo tự hành Arbalest 155<span class="badge">Khói xả ngang</span>
+        <small>Lựu pháo 155mm · Loa hãm lùi 2 tầng · Chân chống &amp; lưỡi càng</small>
+      </button>
+      <button class="btn" data-tank="ALL_ROUNDER">
+        <i class="ti ti-tank" aria-hidden="true"></i>Xe tăng chủ lực Halberd MK.3
+        <small>Pháo 120mm nòng trơn · Giáp nêm mũi tên · Bầu hút khói</small>
+      </button>
+      <button class="btn" data-tank="GATLING">
+        <i class="ti ti-bolt" aria-hidden="true"></i>Xe chi viện hỏa lực Hailstorm R6
+        <small>Cụm 6 nòng xoay 30mm · Gạch giáp ERA · Lưỡi ủi thủy lực</small>
+      </button>
+      <button class="btn" data-tank="SCOUT">
+        <i class="ti ti-radar-2" aria-hidden="true"></i>Xe trinh sát bọc giáp Marten R4
+        <small>4x4 cơ động · Trạm súng máy &amp; tên lửa · Radar ống lồng</small>
+      </button>
     </div>
-  </div>
-
-  <h2 id="steerH2">🔄 Bẻ lái bánh xe (Xe lốp) / Rẽ hướng</h2>
-  <div id="steerBox" style="background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:8px 10px;margin-bottom:6px;border-radius:2px">
-    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11.5px">
-      <span>Góc bẻ lái: <b id="steerValLbl" style="color:var(--accent)">0.0° (Thẳng lái)</b></span>
-      <span style="color:var(--muted)">Phím: A / D</span>
+    <div class="lab-label">Màu sơn phe</div>
+    <div class="row" id="teamRow">
+      <button class="btn on" data-team="BLUE">Phe Xanh Liên Minh</button>
+      <button class="btn" data-team="RED">Phe Đỏ Sa Mạc</button>
     </div>
-    <input type="range" id="steerSlider" min="-35" max="35" value="0" step="1" style="width:100%;accent-color:var(--accent);cursor:pointer;margin:4px 0 6px">
-    <div class="row" id="steerPresets">
-      <button class="btn" data-steer="-35" style="padding:4px">⬅️ Trái -35°</button>
-      <button class="btn on" data-steer="0" style="padding:4px">⬆️ Thẳng 0°</button>
-      <button class="btn" data-steer="35" style="padding:4px">➡️ Phải +35°</button>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">02</span><h2>Hỏa lực &amp; đầu nòng</h2></div>
+    <button class="btn btn-fire" id="fireBtn"><i class="ti ti-flame" aria-hidden="true"></i>KHAI HỎA <small>Space · giữ để xả liên thanh</small></button>
+    <div class="grid2 mt">
+      <button class="btn" id="smokeBtn"><i class="ti ti-cloud" aria-hidden="true"></i>Xì khói nòng pháo</button>
+      <button class="btn" id="recoilBtn"><i class="ti ti-arrow-back-up" aria-hidden="true"></i>Giật nòng &amp; nhún xe</button>
+      <button class="btn" id="barrelHotBtn"><i class="ti ti-flame" aria-hidden="true"></i>Nung đỏ nòng (R6)</button>
+      <button class="btn" id="autoFireBtn"><i class="ti ti-repeat" aria-hidden="true"></i>Bắn tự động: <b>TẮT</b></button>
     </div>
-  </div>
+  </section>
 
-  <h2>Cơ động & khói bụi</h2>
-  <div class="action-grid">
-    <button class="btn" id="exhaustBtn">💨 Khói đen ống xả</button>
-    <button class="btn" id="driveBtn">🚜 Lăn bánh & bụi cát: TẮT</button>
-    <button class="btn" id="steerBtn">🔄 Đổi góc lái nhanh</button>
-    <button class="btn" id="boostBtn">🚀 Phun luồng tăng tốc</button>
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">03</span><h2>Nòng pháo &amp; bánh lái</h2></div>
+    <div class="lab-box">
+      <div class="lab-readout"><span>Góc nâng nòng <b id="elevValLbl">0.0°</b></span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div>
+      <input type="range" id="elevSlider" min="-5" max="65" value="0" step="1" style="width:100%">
+      <div class="row" id="elevPresets">
+        <button class="btn on" data-elev="0">Ngắm 0°</button>
+        <button class="btn" data-elev="15">Tác chiến 15°</button>
+        <button class="btn" data-elev="35">Bắn xa 35°</button>
+        <button class="btn" data-elev="55">Cầu vồng 55°</button>
+      </div>
+    </div>
+    <div class="lab-label" id="steerH2">Bẻ lái bánh trước (xe bánh lốp)</div>
+    <div class="lab-box" id="steerBox">
+      <div class="lab-readout"><span>Góc bẻ lái <b id="steerValLbl">0.0° (Thẳng lái)</b></span><span><kbd>A</kbd> <kbd>D</kbd></span></div>
+      <input type="range" id="steerSlider" min="-35" max="35" value="0" step="1" style="width:100%">
+      <div class="row" id="steerPresets">
+        <button class="btn" data-steer="-35"><i class="ti ti-arrow-left" aria-hidden="true"></i>Trái 35°</button>
+        <button class="btn on" data-steer="0"><i class="ti ti-arrow-up" aria-hidden="true"></i>Thẳng</button>
+        <button class="btn" data-steer="35">Phải 35°<i class="ti ti-arrow-right" aria-hidden="true" style="margin:0 0 0 3px"></i></button>
+      </div>
+    </div>
+  </section>
 
-  <h2>⚡ Hiệu ứng & Cơ chế đặc trưng riêng</h2>
-  <div id="tankSpecialBox" style="background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:8px 10px;margin-bottom:6px;border-radius:2px">
-    <!-- Cập nhật tự động theo loại xe được chọn -->
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">04</span><h2>Cơ động &amp; khói bụi</h2></div>
+    <div class="grid2">
+      <button class="btn" id="exhaustBtn"><i class="ti ti-wind" aria-hidden="true"></i>Khói đen ống xả</button>
+      <button class="btn" id="driveBtn"><i class="ti ti-steering-wheel" aria-hidden="true"></i>Lăn bánh: <b>TẮT</b></button>
+      <button class="btn" id="steerBtn"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>Đổi góc lái nhanh</button>
+      <button class="btn" id="boostBtn"><i class="ti ti-rocket" aria-hidden="true"></i>Phun luồng tăng tốc</button>
+    </div>
+  </section>
 
-  <h2>Trạng thái thân xe & hư hại</h2>
-  <div class="row" id="damageRow">
-    <button class="btn on" data-hp="100">100%</button>
-    <button class="btn" data-hp="60">60% · Bốc khói</button>
-    <button class="btn" data-hp="25">25% · Bốc cháy</button>
-    <button class="btn" data-hp="0" style="color:#ff6b6b">0% · Phá hủy</button>
-  </div>
-  <div class="row" style="margin-top:4px">
-    <button class="btn" id="eraBtn" style="flex:1">💥 Kích nổ giáp ERA</button>
-    <button class="btn" id="deployBtn" style="flex:1">🏗️ Hạ / thu càng pháo</button>
-    <button class="btn" id="repairBtn" style="flex:1">💚 Sửa chữa nguyên vẹn</button>
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">05</span><h2>Cơ chế riêng của xe</h2></div>
+    <div class="lab-box" id="tankSpecialBox">
+      <!-- Cập nhật tự động theo loại xe được chọn -->
+    </div>
+  </section>
 
-  <h2>🎯 Hư hại theo bộ phận (theo đúng loại xe)</h2>
-  <div class="action-grid" id="partDmgBox"></div>
-  <div id="partDmgLog" style="font-size:11px;line-height:1.45;color:var(--muted);background:rgba(5,18,32,0.85);border:1px solid var(--line);padding:6px 8px;margin:4px 0 6px;border-radius:2px;max-height:120px;overflow:auto">Chọn bộ phận để phá — nhật ký hư hại hiện ở đây.</div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">06</span><h2>Thân xe &amp; hư hại</h2></div>
+    <div class="row" id="damageRow">
+      <button class="btn on" data-hp="100">100%</button>
+      <button class="btn" data-hp="60">60% · Bốc khói</button>
+      <button class="btn" data-hp="25">25% · Bốc cháy</button>
+      <button class="btn btn-danger" data-hp="0">0% · Phá hủy</button>
+    </div>
+    <div class="row mt">
+      <button class="btn" id="eraBtn"><i class="ti ti-bomb" aria-hidden="true"></i>Kích nổ giáp ERA</button>
+      <button class="btn" id="deployBtn"><i class="ti ti-assembly" aria-hidden="true"></i>Hạ / thu càng pháo</button>
+      <button class="btn" id="repairBtn"><i class="ti ti-tool" aria-hidden="true"></i>Sửa nguyên vẹn</button>
+    </div>
+    <div class="lab-label">Phá từng bộ phận</div>
+    <div class="grid2 left" id="partDmgBox"></div>
+    <div class="lab-log hot mt" id="partDmgLog">Chọn bộ phận để phá — nhật ký hư hại hiện ở đây.</div>
+  </section>
 
-  <h2>Góc quan sát & Chiếu sáng</h2>
-  <div class="row" id="camRow">
-    <button class="btn on" data-cam="muzzle">🔍 Cận đầu nòng</button>
-    <button class="btn" data-cam="orbit">🌐 Toàn cảnh</button>
-    <button class="btn" data-cam="suspension">🚜 Cận bánh xe</button>
-    <button class="btn" data-cam="exhaust">💨 Cận đuôi xe</button>
-  </div>
-  <div class="row" style="margin-top:4px">
-    <button class="btn on" id="themeBtn" style="flex:1">☀️ Nền sáng Showroom (Dễ nhìn)</button>
-    <button class="btn" id="autoRotBtn" style="flex:1">Tự xoay: TẮT</button>
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">07</span><h2>Góc nhìn &amp; ánh sáng</h2></div>
+    <div class="row" id="camRow">
+      <button class="btn on" data-cam="muzzle">Cận đầu nòng</button>
+      <button class="btn" data-cam="orbit">Toàn cảnh</button>
+      <button class="btn" data-cam="suspension">Cận bánh xe</button>
+      <button class="btn" data-cam="exhaust">Cận đuôi xe</button>
+    </div>
+    <div class="grid2 mt">
+      <button class="btn on" id="themeBtn"><i class="ti ti-mountain" aria-hidden="true"></i>Ngoài trời</button>
+      <button class="btn" id="autoRotBtn"><i class="ti ti-rotate-360" aria-hidden="true"></i>Tự xoay: <b>TẮT</b></button>
+    </div>
+  </section>
 
-  <h2>Tốc độ thời gian</h2>
-  <div class="row" id="speedRow">
-    <button class="btn on" data-speed="1">1x</button>
-    <button class="btn" data-speed="0.5">0.5x</button>
-    <button class="btn" data-speed="0.25">0.25x</button>
-    <button class="btn" data-speed="0.1">0.1x · Siêu chậm</button>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">08</span><h2>Tốc độ thời gian</h2></div>
+    <div class="row" id="speedRow">
+      <button class="btn on" data-speed="1">1x</button>
+      <button class="btn" data-speed="0.5">0.5x</button>
+      <button class="btn" data-speed="0.25">0.25x</button>
+      <button class="btn" data-speed="0.1">0.1x · Siêu chậm</button>
+    </div>
+  </section>
   </div>
+</aside>
+
+<div class="lab-info">
+  <div class="lab-info-title"><i class="ti ti-tank" aria-hidden="true"></i><span id="hudTitle">PHÁO TỰ HÀNH ARBALEST 155</span></div>
+  <div class="lab-info-row"><span>Cơ cấu tản giật</span><b id="hudBrake">Loa hãm lùi 2 tầng xả ngang</b></div>
+  <div class="lab-info-row"><span>Khí thoát ngang</span><b id="hudSmoke">2 luồng phản lực đối xứng</b></div>
+  <div class="lab-info-row"><span>Góc nâng nòng</span><b id="hudElevation">0.0°</b></div>
+  <div class="lab-info-row"><span>Bẻ lái bánh trước</span><b id="hudSteer">0.0° (Thẳng lái)</b></div>
+  <div class="lab-info-row"><span>Triển khai</span><b id="hudDeploy">Hành quân (0%)</b></div>
+  <div class="lab-info-row"><span>Giật lùi nòng</span><b id="hudRecoil">0.0 mm</b></div>
 </div>
 
-<div class="hud-top">
-  <div class="title" id="hudTitle">PHÁO TỰ HÀNH ARBALEST 155</div>
-  <div class="hud-item"><span>Cơ cấu tản giật:</span><b id="hudBrake">Loa hãm lùi 2 tầng xả ngang</b></div>
-  <div class="hud-item"><span>Khí thoát ngang:</span><b id="hudSmoke">2 luồng phản lực đối xứng</b></div>
-  <div class="hud-item"><span>Góc nâng hạ nòng:</span><b id="hudElevation">0.0°</b></div>
-  <div class="hud-item"><span>Bẻ lái bánh trước:</span><b id="hudSteer">0.0° (Thẳng lái)</b></div>
-  <div class="hud-item"><span>Trạng thái triển khai:</span><b id="hudDeploy">Hành quân (0%)</b></div>
-  <div class="hud-item"><span>Độ giật lùi nòng:</span><b id="hudRecoil">0.0 mm</b></div>
+<div class="lab-keys">
+  <span><kbd>Chuột trái</kbd> xoay 360°</span>
+  <span><kbd>Cuộn</kbd> zoom</span>
+  <span><kbd>Space</kbd> khai hỏa</span>
+  <span><kbd>A</kbd><kbd>D</kbd> bẻ lái</span>
+  <span><kbd>↑</kbd><kbd>↓</kbd> nâng hạ nòng</span>
+  <span><kbd>W</kbd> lăn bánh</span>
+  <span><kbd>Z</kbd> trả thẳng lái &amp; hạ nòng</span>
 </div>
 
-<div class="hint">
-  <b>Chuột trái kéo:</b> xoay 360° · <b>Cuộn:</b> zoom phóng to thu nhỏ<br>
-  <b>Space:</b> Khai hỏa · <b>A / D:</b> Bẻ lái bánh xe · <b>↑ / ↓:</b> Nâng hạ nòng · <b>W:</b> Lăn bánh · <b>Z:</b> Trả thẳng lái & hạ nòng
-</div>
 
 <script src="three.min.js"></script>
-<script src="src/core/audio.js?v=20261019wall2"></script>
+<script src="src/core/audio.js?v=20261020cfire8"></script>
+<script src="src/core/wading_audio.js?v=20261020flood1"></script>
 <script src="src/entities/tank_models.js?v=20261019i"></script>
 <script src="src/core/game_timing.js?v=20261019wall2"></script>
-<script src="src/entities/tanks/vehicle_kit.js?v=20261019i"></script>
-<script src="src/entities/tanks/mbt_halberd.js?v=20261019i"></script>
-<script src="src/entities/tanks/fsv_hailstorm.js?v=20261019i"></script>
-<script src="src/entities/tanks/spg_arbalest.js?v=20261019i"></script>
-<script src="src/entities/tanks/recon_marten.js?v=20261019i"></script>
+<script src="src/entities/tanks/vehicle_kit.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/mbt_halberd.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/spg_arbalest.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
-<script src="src/entities/spg.js?v=20261019env1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261019eqp1"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261019t1"></script>
-<script src="src/core/equipment.js?v=20261019eqp1"></script>
+<script src="src/entities/spg.js?v=20261020flood1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020srf4"></script>
+<script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261020cfire8"></script>
+<script src="src/core/equipment.js?v=20261020cfire8"></script>
+<script src="src/gameplay/camo_fire.js?v=20261020cfire8"></script>
 
 <script>
 (function () {
@@ -352,6 +215,31 @@
   const scene = new THREE.Scene();
   // MẶC ĐỊNH NỀN SÁNG SHOWROOM KỸ THUẬT QUÂN SỰ: Sáng rõ, tương phản sắc nét, quan sát tỉ mỉ từng chi tiết
   const THEME = {
+    // Ngoài trời: cùng trời, sương, mặt đất cát và nắng như phòng thử đạn (fx_lab.html)
+    field: {
+      bg: 0x9bb0c0,
+      fog: 0x9bb0c0,
+      fogDensity: 0.00065,
+      floorColor: 0xb39a72,
+      floorRough: 1,
+      floorMetal: 0,
+      floorTex: true,
+      grid: false,
+      gridCenter: 0x000000,
+      gridLines: 0x000000,
+      ringColor: 0x000000,
+      ringOpacity: 0.14,
+      hemiSky: 0xdfe9f2,
+      hemiGround: 0x5a4a36,
+      hemiInt: 0.55,
+      ambColor: 0xfff5e4,
+      ambInt: 0.35,
+      mainColor: 0xfff2dc,
+      mainInt: 1.25,
+      rimInt: 0,
+      underInt: 0,
+      underColor: 0xffffff
+    },
     bright: {
       bg: 0xd8e4ee,
       fog: 0xd8e4ee,
@@ -420,7 +308,7 @@
   underLight.position.set(0, 0.6, 0);
   scene.add(underLight);
 
-  const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 3000);
+  const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 20000);
 
   // ===========================================================================
   // BỆ TRƯNG BÀY & NỀN SÀN KỸ THUẬT QUÂN SỰ
@@ -434,7 +322,20 @@
     roughness: THEME.bright.floorRough,
     metalness: THEME.bright.floorMetal
   });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), floorMat);
+  // Vân hạt cát thủ tục (giống phòng thử đạn) — chỉ dùng ở nền ngoài trời
+  function noiseTex() {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const ctx = c.getContext('2d'); const img = ctx.createImageData(256, 256);
+    for (let i = 0; i < 256 * 256; i++) {
+      const v = 200 + (Math.random() - 0.5) * 70 + Math.sin(i * 0.013) * 6;
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(160, 160);
+    return t;
+  }
+  const floorTex = noiseTex();
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.05;
   floor.receiveShadow = true;
@@ -469,6 +370,8 @@
     floorMat.color.setHex(t.floorColor);
     floorMat.roughness = t.floorRough;
     floorMat.metalness = t.floorMetal;
+    floorMat.map = t.floorTex ? floorTex : null;
+    floorMat.needsUpdate = true;
 
     hemiLight.color.setHex(t.hemiSky);
     hemiLight.groundColor.setHex(t.hemiGround);
@@ -477,6 +380,7 @@
     ambLight.color.setHex(t.ambColor);
     ambLight.intensity = t.ambInt;
 
+    mainLight.color.setHex(t.mainColor || 0xfffaee);
     mainLight.intensity = t.mainInt;
     rimLight.intensity = t.rimInt;
 
@@ -487,14 +391,16 @@
     gridHelper.geometry.dispose(); (Array.isArray(gridHelper.material) ? gridHelper.material : [gridHelper.material]).forEach(m => m.dispose());
     gridHelper = new THREE.GridHelper(240, 48, t.gridCenter, t.gridLines);
     gridHelper.position.y = 0.02;
+    gridHelper.visible = t.grid !== false;
     hangarGroup.add(gridHelper);
 
-    rings.forEach(r => r.mat.color.setHex(t.ringColor));
+    rings.forEach(r => { r.mat.color.setHex(t.ringColor); r.mat.opacity = t.ringOpacity || 0.28; });
 
     const btn = document.getElementById('themeBtn');
     if (btn) {
-      btn.textContent = mode === 'bright' ? '☀️ Nền sáng Showroom (Dễ nhìn)' : '🌙 Nền tối Chiến thuật';
-      btn.classList.toggle('on', mode === 'bright');
+      btn.innerHTML = mode === 'field' ? '<i class="ti ti-mountain" aria-hidden="true"></i>Ngoài trời'
+        : mode === 'bright' ? '<i class="ti ti-sun" aria-hidden="true"></i>Nền sáng' : '<i class="ti ti-moon" aria-hidden="true"></i>Nền tối';
+      btn.classList.toggle('on', mode !== 'dark');
     }
   }
 
@@ -664,7 +570,7 @@
     lastX = e.clientX;
     lastY = e.clientY;
     state.autoRotate = false;
-    document.getElementById('autoRotBtn').textContent = 'Tự động xoay xe: TẮT';
+    document.getElementById('autoRotBtn').innerHTML = '<i class="ti ti-rotate-360" aria-hidden="true"></i>Tự xoay: <b>TẮT</b>';
     document.getElementById('autoRotBtn').classList.remove('on');
     updateCamera();
   });
@@ -897,10 +803,10 @@
 
   // Bộ phận có thể phá của từng loại xe (đúng cấu tạo thật của mẫu xe)
   const PART_ACTIONS = {
-    ALL_ROUNDER: [['skirt', '🛡️ Bong tấm váy xích'], ['applique', '🧱 Bong giáp tăng cường mũi'], ['track', '⛓️ Đứt xích'], ['ring', '⚙️ Kẹt vòng quay tháp'], ['gun', '🔧 Cong nòng pháo'], ['optic', '🔭 Vỡ kính ngắm'], ['engine', '🔥 Hỏng động cơ'], ['antenna', '📡 Gãy ăng-ten'], ['acc', '🧰 Văng phụ kiện']],
-    GATLING: [['era', '💥 Nổ khối giáp ERA'], ['cage', '🕸️ Bung lồng giáp lưới'], ['feed', '🔗 Đứt máng tiếp đạn'], ['track', '⛓️ Đứt xích'], ['gun', '🔧 Kẹt / cong cụm nòng'], ['ring', '⚙️ Kẹt vòng quay tháp'], ['engine', '🔥 Hỏng động cơ'], ['antenna', '📡 Gãy ăng-ten'], ['acc', '🧰 Văng phụ kiện']],
-    SCOUT: [['tire', '🛞 Thủng xẹp lốp'], ['wheel', '💣 Văng bánh (nổ mạnh)'], ['glass', '🪟 Vỡ kính cabin'], ['sensor', '📡 Hỏng cụm radar / cảm biến'], ['atgm', '🚀 Phá ống phóng tên lửa'], ['engine', '🔥 Hỏng động cơ'], ['antenna', '📡 Gãy ăng-ten'], ['acc', '🧰 Văng phụ kiện']],
-    ARTILLERY: [['tire', '🛞 Thủng xẹp lốp'], ['wheel', '💣 Văng bánh (nổ mạnh)'], ['glass', '🪟 Vỡ kính cabin'], ['fuel', '⛽ Thủng thùng nhiên liệu'], ['ammo', '📦 Nổ hòm đạn'], ['hyd', '🛠️ Hỏng thủy lực càng'], ['frame', '🚚 Vặn méo khung gầm'], ['gun', '🔧 Cong nòng pháo'], ['ring', '⚙️ Kẹt bàn xoay pháo'], ['acc', '🧰 Văng phụ kiện']]
+    ALL_ROUNDER: [['skirt', '<i class="ti ti-shield" aria-hidden="true"></i>Bong tấm váy xích'], ['applique', '<i class="ti ti-wall" aria-hidden="true"></i>Bong giáp tăng cường mũi'], ['track', '<i class="ti ti-link" aria-hidden="true"></i>Đứt xích'], ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt vòng quay tháp'], ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Cong nòng pháo'], ['optic', '<i class="ti ti-telescope" aria-hidden="true"></i>Vỡ kính ngắm'], ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'], ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']],
+    GATLING: [['era', '<i class="ti ti-bomb" aria-hidden="true"></i>Nổ khối giáp ERA'], ['cage', '<i class="ti ti-grid-dots" aria-hidden="true"></i>Bung lồng giáp lưới'], ['feed', '<i class="ti ti-link" aria-hidden="true"></i>Đứt máng tiếp đạn'], ['track', '<i class="ti ti-link" aria-hidden="true"></i>Đứt xích'], ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Kẹt / cong cụm nòng'], ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt vòng quay tháp'], ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'], ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']],
+    SCOUT: [['tire', '<i class="ti ti-wheel" aria-hidden="true"></i>Thủng xẹp lốp'], ['wheel', '<i class="ti ti-bomb" aria-hidden="true"></i>Văng bánh (nổ mạnh)'], ['glass', '<i class="ti ti-window" aria-hidden="true"></i>Vỡ kính cabin'], ['sensor', '<i class="ti ti-antenna" aria-hidden="true"></i>Hỏng cụm radar / cảm biến'], ['atgm', '<i class="ti ti-rocket" aria-hidden="true"></i>Phá ống phóng tên lửa'], ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'], ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']],
+    ARTILLERY: [['tire', '<i class="ti ti-wheel" aria-hidden="true"></i>Thủng xẹp lốp'], ['wheel', '<i class="ti ti-bomb" aria-hidden="true"></i>Văng bánh (nổ mạnh)'], ['glass', '<i class="ti ti-window" aria-hidden="true"></i>Vỡ kính cabin'], ['fuel', '<i class="ti ti-gas-station" aria-hidden="true"></i>Thủng thùng nhiên liệu'], ['ammo', '<i class="ti ti-package" aria-hidden="true"></i>Nổ hòm đạn'], ['hyd', '<i class="ti ti-tool" aria-hidden="true"></i>Hỏng thủy lực càng'], ['frame', '<i class="ti ti-truck" aria-hidden="true"></i>Vặn méo khung gầm'], ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Cong nòng pháo'], ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt bàn xoay pháo'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']]
   };
   const partHistory = [];
   function partLog(lines) {
@@ -921,7 +827,7 @@
     const box = document.getElementById('partDmgBox');
     if (!box) return;
     // Chung cho mọi xe: móp vỏ thật + bắn liên tục vào xác xe (các nấc hư nặng -> biến dạng cực nặng -> bẹp dúm)
-    const common = [['dent', '🔨 Móp lõm vỏ (biến dạng thật)'], ['wreck', '💀 Bắn liên tục vào XÁC xe']];
+    const common = [['dent', '<i class="ti ti-hammer" aria-hidden="true"></i>Móp lõm vỏ (biến dạng thật)'], ['wreck', '<i class="ti ti-skull" aria-hidden="true"></i>Bắn liên tục vào XÁC xe']];
     box.innerHTML = (PART_ACTIONS[type] || []).concat(common).map(([k, t]) => `<button class="btn" data-part="${k}">${t}</button>`).join('');
     const log = document.getElementById('partDmgLog');
     partHistory.length = 0;
@@ -943,15 +849,15 @@
 
     if (type === 'ARTILLERY') {
       box.innerHTML = `
-        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">🎯 ĐẶC TRƯNG: PHÁO TỰ HÀNH ARBALEST 155</div>
-        <button class="btn btn-hot" id="specArtyDeployBtn" style="margin-bottom:5px;padding:8px">
-          ${state.deployed ? '🏗️ Thu càng & chân chống (Hành quân)' : '🏗️ Hạ chân chống & cắm càng sau (Khai hỏa)'}
+        <div class="lab-box-title"><i class="ti ti-crosshair" aria-hidden="true"></i>PHÁO TỰ HÀNH ARBALEST 155</div>
+        <button class="btn btn-alt" id="specArtyDeployBtn" style="margin-bottom:4px;padding:8px">
+          ${state.deployed ? '<i class="ti ti-assembly" aria-hidden="true"></i>Thu càng & chân chống (Hành quân)' : '<i class="ti ti-assembly" aria-hidden="true"></i>Hạ chân chống & cắm càng sau (Khai hỏa)'}
         </button>
-        <div class="action-grid">
-          <button class="btn" id="specArtyBrakeSmokeBtn">💨 Xì khói ngang loa 2 tầng</button>
-          <button class="btn" id="specArtyArcElevBtn">📐 Nâng góc cầu vồng 55°</button>
+        <div class="grid2">
+          <button class="btn" id="specArtyBrakeSmokeBtn"><i class="ti ti-cloud" aria-hidden="true"></i>Xì khói ngang loa 2 tầng</button>
+          <button class="btn" id="specArtyArcElevBtn"><i class="ti ti-angle" aria-hidden="true"></i>Nâng góc cầu vồng 55°</button>
         </div>
-        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+        <small class="lab-box-note">
           Loa hãm lùi xả 2 luồng phản lực khói lửa ngang ngả sau 16°, 2 chân chống thủy lực và lưỡi càng thép hộp cắm sâu xuống đất.
         </small>
       `;
@@ -960,15 +866,15 @@
       document.getElementById('specArtyArcElevBtn').onclick = () => { initAudio(); setElevation(55); };
     } else if (type === 'ALL_ROUNDER') {
       box.innerHTML = `
-        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">🛡️ ĐẶC TRƯNG: XE TĂNG CHỦ LỰC HALBERD MK.3</div>
-        <button class="btn btn-hot" id="specMbtSabotBtn" style="margin-bottom:5px;padding:8px">
-          🚀 Bắn APFSDS bung 3 mảnh guốc ốp (Sabot)
+        <div class="lab-box-title"><i class="ti ti-tank" aria-hidden="true"></i>XE TĂNG CHỦ LỰC HALBERD MK.3</div>
+        <button class="btn btn-alt" id="specMbtSabotBtn" style="margin-bottom:4px;padding:8px">
+          <i class="ti ti-rocket" aria-hidden="true"></i>Bắn APFSDS bung 3 mảnh guốc ốp (Sabot)
         </button>
-        <div class="action-grid">
-          <button class="btn" id="specMbtEvacSmokeBtn">💨 Xì khói bầu hút nòng trơn</button>
-          <button class="btn" id="specMbtRcwsSpinBtn">🔄 Xoay trạm súng máy nóc</button>
+        <div class="grid2">
+          <button class="btn" id="specMbtEvacSmokeBtn"><i class="ti ti-cloud" aria-hidden="true"></i>Xì khói bầu hút nòng trơn</button>
+          <button class="btn" id="specMbtRcwsSpinBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Xoay trạm súng máy nóc</button>
         </div>
-        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+        <small class="lab-box-note">
           Pháo nòng trơn L/55 có bầu hút gom khí thuốc, đạn xuyên giáp APFSDS bung tách 3 mảnh guốc ốp nhôm bay sang hai bên.
         </small>
       `;
@@ -980,15 +886,15 @@
       };
     } else if (type === 'GATLING') {
       box.innerHTML = `
-        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">⚡ ĐẶC TRƯNG: XE CHI VIỆN HAILSTORM R6 (6 NÒNG XOAY)</div>
-        <button class="btn btn-hot" id="specGatlingBurstBtn" style="margin-bottom:5px;padding:8px">
-          ⚡ Xả liên thanh cụm 6 nòng (Mưa vỏ đạn)
+        <div class="lab-box-title"><i class="ti ti-bolt" aria-hidden="true"></i>XE CHI VIỆN HAILSTORM R6 (6 NÒNG XOAY)</div>
+        <button class="btn btn-alt" id="specGatlingBurstBtn" style="margin-bottom:4px;padding:8px">
+          <i class="ti ti-bolt" aria-hidden="true"></i>Xả liên thanh cụm 6 nòng (Mưa vỏ đạn)
         </button>
-        <div class="action-grid">
-          <button class="btn" id="specGatlingSpinBtn">🔄 Quay nòng không tải (Spin-up)</button>
-          <button class="btn" id="specGatlingOverheatBtn">🌋 Nung đỏ rực 6 nòng</button>
+        <div class="grid2">
+          <button class="btn" id="specGatlingSpinBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Quay nòng không tải (Spin-up)</button>
+          <button class="btn" id="specGatlingOverheatBtn"><i class="ti ti-flame" aria-hidden="true"></i>Nung đỏ rực 6 nòng</button>
         </div>
-        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+        <small class="lab-box-note">
           Cụm 6 nòng quay 38 rad/s, nòng pháo đỏ rực nhiệt độ cao, mưa vỏ đạn 30mm văng rào rào từ cửa hông nảy tanh tách trên sàn.
         </small>
       `;
@@ -1012,16 +918,16 @@
       };
     } else if (type === 'SCOUT') {
       box.innerHTML = `
-        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">📡 ĐẶC TRƯNG: XE TRINH SÁT MARTEN R4 (4x4 & TÊN LỬA)</div>
-        <button class="btn btn-hot" id="specScoutAtgmBtn" style="margin-bottom:5px;padding:8px">
-          🚀 Phóng tên lửa chống tăng ATGM (Lửa phản lực)
+        <div class="lab-box-title"><i class="ti ti-radar-2" aria-hidden="true"></i>XE TRINH SÁT MARTEN R4 (4x4 & TÊN LỬA)</div>
+        <button class="btn btn-alt" id="specScoutAtgmBtn" style="margin-bottom:4px;padding:8px">
+          <i class="ti ti-rocket" aria-hidden="true"></i>Phóng tên lửa chống tăng ATGM (Lửa phản lực)
         </button>
-        <div class="action-grid">
-          <button class="btn" id="specScoutMgBurstBtn">🔫 Xả súng máy hạng nặng</button>
-          <button class="btn" id="specScoutRadarSpinBtn">📡 Quay quét radar trinh sát</button>
-          <button class="btn" id="specScoutReloadBtn">🔄 Nạp đạn súng máy (thay hộp 100 viên)</button>
+        <div class="grid2">
+          <button class="btn" id="specScoutMgBurstBtn"><i class="ti ti-crosshair" aria-hidden="true"></i>Xả súng máy hạng nặng</button>
+          <button class="btn" id="specScoutRadarSpinBtn"><i class="ti ti-radar" aria-hidden="true"></i>Quay quét radar trinh sát</button>
+          <button class="btn" id="specScoutReloadBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Nạp đạn súng máy (thay hộp 100 viên)</button>
         </div>
-        <small style="color:var(--muted);display:block;margin-top:5px;line-height:1.35">
+        <small class="lab-box-note">
           Khung gầm 4x4 cơ động cao, bệ tên lửa chống tăng ATGM có luồng lửa phản lực phụt đuôi, súng máy 12.7mm và đĩa radar trinh sát.
         </small>
       `;
@@ -1243,21 +1149,21 @@
   const driveBtn = document.getElementById('driveBtn');
   driveBtn.addEventListener('click', () => {
     state.driving = !state.driving;
-    driveBtn.textContent = '🚜 Lăn bánh & bụi cát: ' + (state.driving ? 'BẬT' : 'TẮT');
+    driveBtn.innerHTML = '<i class="ti ti-steering-wheel" aria-hidden="true"></i>Lăn bánh: <b>' + (state.driving ? 'BẬT' : 'TẮT') + '</b>';
     driveBtn.classList.toggle('on', state.driving);
   });
 
   const autoFireBtn = document.getElementById('autoFireBtn');
   autoFireBtn.addEventListener('click', () => {
     state.autoFire = !state.autoFire;
-    autoFireBtn.textContent = '🔄 Bắn tự động: ' + (state.autoFire ? 'BẬT' : 'TẮT');
+    autoFireBtn.innerHTML = '<i class="ti ti-repeat" aria-hidden="true"></i>Bắn tự động: <b>' + (state.autoFire ? 'BẬT' : 'TẮT') + '</b>';
     autoFireBtn.classList.toggle('on', state.autoFire);
   });
 
   const autoRotBtn = document.getElementById('autoRotBtn');
   autoRotBtn.addEventListener('click', () => {
     state.autoRotate = !state.autoRotate;
-    autoRotBtn.textContent = 'Tự động xoay xe: ' + (state.autoRotate ? 'BẬT' : 'TẮT');
+    autoRotBtn.innerHTML = '<i class="ti ti-rotate-360" aria-hidden="true"></i>Tự xoay: <b>' + (state.autoRotate ? 'BẬT' : 'TẮT') + '</b>';
     autoRotBtn.classList.toggle('on', state.autoRotate);
   });
 
@@ -1355,7 +1261,7 @@
   const themeBtn = document.getElementById('themeBtn');
   if (themeBtn) {
     themeBtn.addEventListener('click', () => {
-      const next = state.theme === 'bright' ? 'dark' : 'bright';
+      const next = { field: 'bright', bright: 'dark', dark: 'field' }[state.theme] || 'field';
       setEnvironmentTheme(next);
     });
   }
@@ -1368,8 +1274,8 @@
   window.addEventListener('resize', resize);
   resize();
 
-  // Áp dụng mặc định NỀN SÁNG SHOWROOM KỸ THUẬT QUÂN SỰ
-  setEnvironmentTheme('bright');
+  // Mặc định NGOÀI TRỜI giống phòng thử đạn (bấm nút nền để đổi sang nền sáng / tối kiểu phòng trưng bày)
+  setEnvironmentTheme('field');
 
   // Khởi tạo xe ban đầu
   loadUnit(state.tankType, state.team);

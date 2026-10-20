@@ -146,6 +146,21 @@
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
+/* viền chéo cho góc vát (clip-path cắt mất viền thẳng ở góc trên phải) */
+.mm-commander-profile::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: -2.2px;
+  width: 12.4px;
+  height: 2px;
+  background: var(--lb-line-2);
+  transform: rotate(45deg);
+  pointer-events: none;
+  transition: background 0.2s ease;
+}
+.mm-commander-profile:hover::before { background: var(--lb-accent); }
+
 .mm-commander-profile:hover {
   border-color: var(--lb-accent);
   background: var(--lb-panel-2);
@@ -178,33 +193,47 @@
   border: 2px solid #0a0d0c;
 }
 
+/* Thẻ 2 dòng, 2 cột:
+   | tên · CẤP n            ┊ Bạc      |
+   | ★ quân hàm · x / y KN  ┊ thắng/trận |
+   thanh kinh nghiệm chạy dọc viền dưới thẻ */
 .commander-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 280px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: center;
+  width: 300px;
   min-width: 0;
 }
-
-/* dòng 1: tên + huy hiệu cấp */
-.cmd-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.cmd-top { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .cmd-top .commander-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .cmd-level {
-  flex-shrink: 0; padding: 1px 6px; font: 700 10px var(--font-mono, monospace); letter-spacing: 1px;
+  flex-shrink: 0; padding: 0 5px; font: 700 9px/14px var(--font-mono, monospace); letter-spacing: 1px;
   color: var(--lb-accent-2); border: 1px solid var(--lb-accent); background: var(--tc-accent-soft, rgba(231, 166, 58, 0.14));
 }
-/* dòng 2: quân hàm + kinh nghiệm (căn phải) */
-.commander-rank .rank-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cmd-xp { flex-shrink: 0; color: var(--lb-dim); font: 10px var(--font-mono, monospace); }
-.mm-commander-profile .acc-xpbar { margin-top: 3px; }
-/* dòng 4: Bạc · trận thắng · hạ gục */
-.cmd-meta { display: flex; align-items: center; gap: 12px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--lb-line, rgba(200, 210, 192, 0.13)); }
-.cmd-meta .acc-silver { margin-top: 0; font: 700 11px var(--font-mono, monospace); color: var(--lb-accent-2); white-space: nowrap; }
+.mm-commander-profile .commander-rank { grid-column: 1; grid-row: 2; min-width: 0; }
+.commander-rank .rank-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmd-xp { flex-shrink: 0; margin-left: auto; padding-left: 6px; color: var(--lb-dim); font: 10px var(--font-mono, monospace); white-space: nowrap; }
+/* cột phải: Bạc trên, trận dưới — cùng một mép trái, ngăn bằng vạch dọc */
+.cmd-meta { display: contents; }
+.cmd-meta .acc-silver,
+.cmd-meta .cmd-stat {
+  grid-column: 2; justify-self: stretch;
+  display: flex; align-items: center; gap: 5px; margin: 0; padding-left: 12px;
+  border-left: 1px solid var(--lb-line, rgba(200, 210, 192, 0.13));
+  font: 700 11px/16px var(--font-mono, monospace); white-space: nowrap;
+}
+.cmd-meta .acc-silver { grid-row: 1; color: var(--lb-accent-2); }
 .cmd-meta .acc-silver .ti { font-size: 13px; color: var(--lb-accent); }
-.cmd-stat { display: inline-flex; align-items: center; gap: 4px; font: 11px var(--font-mono, monospace); color: var(--lb-text, #dfe4d9); white-space: nowrap; }
+.cmd-meta .cmd-stat { grid-row: 2; font-weight: 400; color: var(--lb-text, #dfe4d9); }
 .cmd-stat .ti { color: var(--lb-dim); font-size: 13px; }
-.mm-commander-profile .commander-avatar-box { width: 52px; height: 52px; }
-.mm-commander-profile { padding: 7px 10px 7px 7px; gap: 12px; }
+.mm-commander-profile { position: relative; padding: 7px 10px 9px 7px; gap: 12px; }
+.mm-commander-profile .commander-avatar-box { width: 42px; height: 42px; }
+.mm-commander-profile > .acc-xpbar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px; min-width: 0; margin: 0; border-radius: 0;
+}
 
 .commander-name {
   font-size: 14px;
@@ -471,6 +500,68 @@
 }
 
 .hero-tips li .ti { color: var(--lb-accent); font-size: 12px; }
+
+/* Kỹ năng riêng của xe: ô biểu tượng · tên + mô tả 1 dòng · phím tắt (nếu có) */
+.hero-skills {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px dashed var(--lb-line);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.hero-skills::before {
+  content: 'KỸ NĂNG';
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--lb-faint);
+}
+.hero-skills li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  animation: lb-skill-in 0.28s ease both;
+}
+.hero-skills li:nth-child(3) { animation-delay: 60ms; }
+.hero-skills li:nth-child(4) { animation-delay: 120ms; }
+.hero-skill-ic {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  font-size: 16px;
+  color: var(--lb-accent);
+  border: 1px solid rgba(231, 166, 58, 0.35);
+  background: rgba(231, 166, 58, 0.08);
+}
+.hero-skill-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.hero-skill-txt b { font-size: 12.5px; font-weight: 700; color: var(--lb-text); letter-spacing: 0.3px; }
+.hero-skill-txt small { font-size: 11.5px; color: var(--lb-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-skills kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--lb-text);
+  padding: 1px 6px;
+  border: 1px solid var(--lb-line-2);
+  border-bottom-width: 2px;
+  background: rgba(200, 210, 192, 0.06);
+}
+/* co gọn khi cột thông tin không đủ cao (lobby_view.js đặt data-fit) */
+.hero-info[data-fit="1"] .hero-skill-txt small,
+.hero-info[data-fit="2"] .hero-skill-txt small { display: none; }
+.hero-info[data-fit="1"] .hero-skills { gap: 5px; }
+.hero-info[data-fit="1"] .hero-skills li { grid-template-columns: 22px minmax(0, 1fr) auto; }
+.hero-info[data-fit="1"] .hero-skill-ic,
+.hero-info[data-fit="2"] .hero-skill-ic { width: 22px; height: 22px; font-size: 13px; }
+.hero-info[data-fit="2"] .hero-tips,
+.hero-info[data-fit="3"] .hero-skills { display: none; }
+.hero-info[data-fit="2"] .hero-skills { flex-direction: row; flex-wrap: wrap; gap: 5px; }
+.hero-info[data-fit="2"] .hero-skills::before { flex-basis: 100%; }
+.hero-info[data-fit="2"] .hero-skills li { display: flex; gap: 6px; padding: 2px 8px 2px 2px; border: 1px solid var(--lb-line); }
+.hero-info[data-fit="2"] .hero-skill-txt b { font-size: 11.5px; white-space: nowrap; }
+.hero-info[data-fit="2"] .hero-skills kbd { display: none; }
+@keyframes lb-skill-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
 
 .hero-stats {
   display: flex;
@@ -973,7 +1064,10 @@
   .mm-container { height: auto; min-height: 100%; grid-template-rows: auto auto auto; }
   .mm-top-bar { grid-template-columns: minmax(0, 1fr) auto; }
   .mm-main-content { grid-template-columns: minmax(0, 1fr); }
-  .mm-vehicle-hero { grid-template-columns: minmax(0, 1fr); }
+  .mm-vehicle-hero { grid-template-columns: minmax(0, 1fr); flex: none; }   /* trang cuộn: cao theo nội dung (flex:1 làm khối co về 2px) */
+  .mm-main-content { grid-auto-rows: auto; grid-template-rows: none; }
+  .mm-panel { min-height: auto; }
+  .hero-info { overflow: visible; }
   .hero-photo { height: 220px; }
   .mm-map-cards-row { grid-template-rows: none; }
   .mm-map-card { height: 74px; }
@@ -991,6 +1085,5 @@
 }
 
 @media (max-width: 1280px) {
-  .commander-info { width: 220px; }
-  .cmd-meta .cmd-stat:last-child { display: none; }
+  .commander-info { width: 290px; }
 }

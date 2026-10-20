@@ -1,16 +1,17 @@
 /**
  * TÌNH BÁO CHIẾN TRƯỜNG (sương mù chiến tranh)
  * - Mỗi xe chỉ thấy địch trong TẦM NHÌN của chính nó (xe trinh sát nhìn xa & rộng hơn xe tăng thường).
- * - Xe núp trong bụi rậm: xe tăng thường KHÔNG phát hiện được (trừ khi xe đó vừa nổ súng -> lộ vị trí).
+ * - Xe núp trong bụi rậm KHÔNG tàng hình: chỉ bị phát hiện ở cự ly ngắn hơn — mắt thường trong BUSH_SPOT,
+ *   radar trong BUSH_RADAR x bán kính radar (vừa nổ súng -> lộ vị trí, tầm phát hiện trở lại bình thường).
  * - Xe có radar (xe trinh sát): ăng-ten radar quay tròn thật, mỗi vòng quét đi qua hướng nào thì bắt mục tiêu
- *   ở hướng đó (kể cả xe núp bụi) trong bán kính radar.
+ *   ở hướng đó (kể cả xe núp bụi, ở cự ly đã rút ngắn) trong bán kính radar.
  * - Xe trinh sát KHÓA mục tiêu đang nằm trong vùng radar -> liên tục BÁO VỊ TRÍ cho đồng đội (bản đồ, khung 3D,
  *   đồng đội khóa & bắn được mục tiêu đó, kể cả pháo tự hành bắn xa ngoài tầm nhìn).
  * - Radar bị bắn hỏng (mất cụm cảm biến) -> mất toàn bộ chức năng radar.
  */
 const TeamIntel = (() => {
   // Tầm nhìn trực tiếp (kính ngắm / quan sát bằng mắt) theo loại xe — 1 đơn vị game hiển thị là "1 m"
-  const SIGHT = { ALL_ROUNDER: 520, GATLING: 480, ARTILLERY: 420, SCOUT: 720 };
+  const SIGHT = { ALL_ROUNDER: 520, GATLING: 480, ARTILLERY: 620, SCOUT: 720 };
   const RADAR_RANGE = 950;                     // bán kính radar trinh sát
   const RADAR_RPS = 0.4;                       // 0.4 vòng/giây (1 vòng 2.5 s)
   const CONTACT_TTL = 1 / RADAR_RPS + 0.8;     // vết radar giữ hơn 1 vòng quét một chút
@@ -22,6 +23,11 @@ const TeamIntel = (() => {
   // đường ngắm xuyên quá FOREST_LOS đơn vị rừng rậm thì bị che khuất hoàn toàn
   const FOREST_SPOT = 170;
   const FOREST_LOS = 100;
+  // Bụi rậm: chỉ thu ngắn tầm phát hiện, không làm xe tàng hình. Mắt thường thấy xe núp bụi trong 260 đơn vị
+  // (32,5 m — bằng bán kính CLOSE "luôn gửi" của bộ lọc máy chủ server_auth.js nên hai bên luôn khớp; ~1/2 tầm
+  // nhìn xe tăng 520). Radar bắt xe núp bụi trong 70% bán kính (trinh sát 950 -> 665, radar lắp thêm 600 -> 420).
+  const BUSH_SPOT = 260;
+  const BUSH_RADAR = 0.7;
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -64,13 +70,14 @@ const TeamIntel = (() => {
     return !!t.isInBush && (t.revealTimer || 0) <= 0;
   }
 
-  // Thấy trực tiếp: trong tầm nhìn và không núp bụi (xe trinh sát có radar nhìn xuyên ngụy trang trong vùng radar)
+  // Thấy trực tiếp: trong tầm nhìn (xe núp bụi: chỉ trong BUSH_SPOT)
   function seesDirect(viewer, t) {
-    const d = Math.hypot(t.x - viewer.x, t.z - viewer.z);
+    const dx = t.x - viewer.x, dz = t.z - viewer.z, d = Math.sqrt(dx * dx + dz * dz);
     const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
     // lưới ngụy trang: phải tới gần hơn mới nhận ra xe đứng yên / chạy chậm
-    if (d > sightRange(viewer) * (EQ ? EQ.camoFactor(t) : 1)) return false;
-    if (inBushHidden(t)) return false;
+    let r = sightRange(viewer);
+    if (inBushHidden(t)) r = Math.min(r, BUSH_SPOT);
+    if (d > r * (EQ ? EQ.camoFactor(t) : 1)) return false;
     // màn khói chắn giữa 2 xe: không nhìn thấy (radar trinh sát vẫn bắt được — xem radarContact)
     if (EQ && EQ.smokeBlocks(viewer.x, viewer.z, t.x, t.z)) return false;
     const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
@@ -185,7 +192,10 @@ const TeamIntel = (() => {
     for (const e of units) {
       if (e.isDead || e.team === u.team) continue;
       const d = Math.hypot(e.x - u.x, e.z - u.z);
-      if (d > R) continue;
+      // lưới ngụy trang lá cây + đứng yên: radar chỉ bắt được ở cự ly gần hơn
+      const camoK = typeof Equipment !== 'undefined' && Equipment.camoRadarFactor ? Equipment.camoRadarFactor(e) : 1;
+      // núp bụi (chưa vừa nổ súng): radar chỉ bắt được trong BUSH_RADAR bán kính
+      if (d > R * camoK * (inBushHidden(e) ? BUSH_RADAR : 1)) continue;
       // Tia quét vừa đi qua hướng mục tiêu (hoặc mục tiêu sát bên xe)
       let rel = bearing(u, e) - prev;
       if (rel < 0) rel += TWO_PI;
@@ -353,7 +363,7 @@ const TeamIntel = (() => {
   }
 
   return {
-    SIGHT, RADAR_RANGE,
+    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR,
     bind, reset, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
     get time() { return time; },
     get reports() { return reports; }

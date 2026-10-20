@@ -838,7 +838,7 @@
   const GUN_STREAM_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 }; // Đạn liên thanh: đồng bộ bằng cờ bắn
   const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z' };
   const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE' };
-  const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8;
+  const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16;
 
   class NetGameSync {
     static attach(game, net, slots) {
@@ -916,7 +916,8 @@
           mapType: T ? T.mapType : '', seed: T ? (T.seed >>> 0) : 0,
           layout: (typeof MapGen !== 'undefined' && MapGen.getLayout) ? MapGen.getLayout() : 'CLASSIC',
           roster: this.byNetId.map((u, i) => ({ i, team: u.team, type: u.tankType, peer: u === game.player ? this.net.myId : (u.peerId || null),
-            rd: (typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar')) ? 1 : 0 }))   // radar lắp thêm: máy chủ mở rộng tầm nhìn
+            rd: (typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar')) ? 1 : 0,   // radar lắp thêm: máy chủ mở rộng tầm nhìn
+            cm: (typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'camo')) ? 1 : 0 }))   // lưới ngụy trang (cờ F_CAMO chỉ được tin khi xe có lắp)
         });
       } catch (e) {}
       console.log(`[NET] Đồng bộ trận đấu (${net.mode}) | máy ${net.myId} | chủ phòng ${net.hostId} | ${this.byNetId.length} xe`);
@@ -1268,6 +1269,8 @@
       if (u.hasReactiveArmor) f |= F_ERA;
       if (u.isFiringGatling) f |= F_GATLING;
       if (u.isDead) f |= F_DEAD;
+      // lưới ngụy trang đang che (đứng yên, chưa bắn, lưới không cháy / chưa mất): máy chủ thu tầm nhìn của địch
+      if (!u.isDead && typeof Equipment !== 'undefined' && Equipment.camoHidden && Equipment.camoHidden(u)) f |= F_CAMO;
       return {
         x: Math.round(u.x * 10),                         // 0.1 đơn vị
         z: Math.round(u.z * 10),

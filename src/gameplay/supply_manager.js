@@ -61,7 +61,7 @@ class SupplyManager {
     airdropGroup.add(crateMesh);
 
     const stripeGeo = new THREE.BoxGeometry(22.4, 4, 22.4);
-    const stripeMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+    const stripeMat = new THREE.MeshLambertMaterial({ color: 0xb8901c });   // sơn vàng mờ, không tự phát sáng
     const stripeMesh = new THREE.Mesh(stripeGeo, stripeMat);
     airdropGroup.add(stripeMesh);
 
@@ -87,17 +87,7 @@ class SupplyManager {
     }
     airdropGroup.add(parachuteGroup);
 
-    // 3. Cột sáng phát quang định vị từ xa
-    const beaconGeo = new THREE.CylinderGeometry(2, 2, 450, 12);
-    const beaconMat = new THREE.MeshBasicMaterial({
-      color: 0x00e5ff,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false
-    });
-    const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
-    beaconMesh.position.y = 225;
-    airdropGroup.add(beaconMesh);
+    // Định vị: không dùng cột sáng; tiếp đất là xịt khói tín hiệu vàng (emitSignalSmoke)
 
     airdropGroup.position.set(dropX, groundY + 650, dropZ);
     this.game.scene.add(airdropGroup);
@@ -105,14 +95,13 @@ class SupplyManager {
     this.airdrop = {
       mesh: airdropGroup,
       parachuteGroup: parachuteGroup,
-      beaconMesh: beaconMesh,
       x: dropX,
       z: dropZ,
       y: groundY + 650,
       groundY: groundY,
       landed: false,
       collected: false,
-      smokeTimer: 0
+      smokeAcc: 0
     };
 
     if (window.soundEngine) {
@@ -144,23 +133,18 @@ class SupplyManager {
         drop.mesh.position.y = drop.y;
         drop.landed = true;
         drop.mesh.remove(drop.parachuteGroup);
-        if (drop.beaconMesh) drop.beaconMesh.material.color.setHex(0xffaa00);
         this.game.addCombatLog('[[package]] HÒM TIẾP TẾ ĐÃ TIẾP ĐẤT! TRANH ĐOẠT HỎA LỰC NGAY!', 'tip');
       }
     } else {
-      // Đã tiếp đất: Tỏa khói tín hiệu cam
-      drop.smokeTimer += dt;
-      if (drop.smokeTimer > 0.18) {
-        drop.smokeTimer = 0;
-        this.spawnAirdropSmoke(drop.x, drop.groundY + 9, drop.z);
-      }
+      // Đã tiếp đất: xịt khói tín hiệu vàng từ nóc thùng cho tới khi có xe nhặt
+      this.emitSignalSmoke(drop, drop.x, drop.groundY + 19, drop.z, dt, true);
 
       // Kiểm tra xe nào nhặt được hòm (chỉ chủ phòng xét; phần thưởng bốc thăm tại chủ phòng rồi báo đi)
       if (!this.isAuthority()) return;
       for (const unit of this.game.units) {
         if (!unit.isDead) {
-          const dist = Math.hypot(unit.x - drop.x, unit.z - drop.z);
-          if (dist < 32) {
+          const dx = unit.x - drop.x, dz = unit.z - drop.z;
+          if (dx * dx + dz * dz < 32 * 32) {
             // 0: Đạn Xuyên Phá (AP), 1: Đạn Nổ Mạnh (HE), 2: Giáp Phản Ứng Nổ, 3: Nâng cấp tăng máu 1 đơn vị, 4: Động cơ tăng áp tốc độ
             const lootRoll = Math.floor(Math.random() * 5);
             if (unit.netId !== undefined) this.broadcast({ e: 'loot', u: unit.netId, r: lootRoll });
@@ -209,25 +193,49 @@ class SupplyManager {
     this.airdropTimer = 22; // 22 giây sau tiếp tục thả thùng mới
   }
 
-  spawnAirdropSmoke(x, y, z) {
-    const sGeo = new THREE.SphereGeometry(3.5 + Math.random() * 2, 6, 6);
-    const sMat = new THREE.MeshBasicMaterial({
-      color: 0xff6600,
-      transparent: true,
-      opacity: 0.7,
-      depthWrite: false
-    });
-    const sMesh = new THREE.Mesh(sGeo, sMat);
-    sMesh.position.set(x + (Math.random() - 0.5) * 4, y, z + (Math.random() - 0.5) * 4);
-    this.game.scene.add(sMesh);
-
-    (this.game.explosions3D || (this.game.explosions3D = [])).push({
-      mesh: sMesh,
-      scale: 1.0,
-      alpha: 0.7,
-      life: 1.5,
-      vy: 12 + Math.random() * 6
-    });
+  /**
+   * Khói tín hiệu vàng như lựu đạn khói đánh dấu thật (8 đv = 1 m): miệng ống xịt đặc ở gốc, bốc lên,
+   * nở rộng, bạt theo gió (game.ballistics.wind) rồi loãng nhạt dần ở trên cao; có ít khói nặng tràn sát đất.
+   * Dùng lại lớp hạt instanced của ExplosionFX (bể fx.signal riêng, 1 lần vẽ) -> không tạo mesh / vật liệu mới.
+   * em: đối tượng giữ nhịp phát ({ smokeAcc, smokeN }); big: hòm thả dù (cột khói to & dày hơn).
+   */
+  emitSignalSmoke(em, x, y, z, dt, big) {
+    const fx = this.game.effectsManager && this.game.effectsManager.fx;
+    const layer = fx && (fx.signal || fx.smoke);
+    if (!layer) return;
+    const every = big ? 0.15 : 0.26;
+    em.smokeAcc = (em.smokeAcc || 0) + dt;
+    if (em.smokeAcc < every) return;
+    const W = this.game.ballistics && this.game.ballistics.wind;
+    const wx = W ? W.vx : 0, wz = W ? W.vz : 0;
+    const R = Math.random, k = big ? 1.3 : 1;
+    let n = 0;
+    while (em.smokeAcc >= every && n < 3) {
+      em.smokeAcc -= every;
+      n++;
+      const age = em.smokeAcc;                     // hạt phát trễ trong khung dài: đẩy trước theo tuổi để cột khói không vón cục
+      const vy = (15 + R() * 5) * k, vx = (R() - 0.5) * 3 + wx * 0.25, vz = (R() - 0.5) * 3 + wz * 0.25;
+      const drag = 0.45, sat = 0.9 + R() * 0.1;
+      layer.add({
+        x: x + (R() - 0.5) * 1.5 + vx * age, y: y + vy * age, z: z + (R() - 0.5) * 1.5 + vz * age,
+        vx, vy, vz, ax: wx * drag, az: wz * drag,  // vận tốc ngang tiến dần tới tốc độ gió
+        size: (4.5 + R() * 2.5) * k, grow: (4 + R() * 1.5) * k, drag, grav: -2.6,
+        life: 8 + R() * 3, alpha: 0.9, fadeIn: 0.12, fadePow: 1.6,
+        c0: [1.65 * sat, 1.3 * sat, 0.2], c1: [1.3, 1.18, 0.7], colorRate: 1.3, cell: 0, floor: false
+      });
+      // khói nặng tràn ra quanh gốc, lăn sát đất theo chiều gió
+      em.smokeN = (em.smokeN || 0) + 1;
+      if (em.smokeN % 3 === 0) {
+        const a = R() * Math.PI * 2, sp = 3 + R() * 3;
+        layer.add({
+          x: x + Math.cos(a) * 3, y: y - 2, z: z + Math.sin(a) * 3,
+          vx: Math.cos(a) * sp, vy: 1 + R() * 1.5, vz: Math.sin(a) * sp, ax: wx * 0.6, az: wz * 0.6,
+          size: 7 * k, grow: 3.5 * k, drag: 0.6, grav: -0.3,
+          life: 4 + R() * 2, alpha: 0.55, fadeIn: 0.2, c0: [1.55, 1.25, 0.25], c1: [1.3, 1.15, 0.6], cell: 0, floor: false
+        });
+      }
+    }
+    if (em.smokeAcc > every) em.smokeAcc = 0;
   }
 
   // =========================================================================
@@ -271,6 +279,7 @@ class SupplyManager {
         name: loc.name,
         active: true,
         respawnTimer: 0,
+        smokeAcc: Math.random() * 0.2,
         mesh: crateMesh
       });
     });
@@ -284,23 +293,18 @@ class SupplyManager {
     const crateD = 18;
 
     let bodyColor = 0x1e3a1e;
-    let glowColor = 0x00ff9d;
     let stripeColor = 0x00e5ff;
     if (type === 'AMMO') {
       bodyColor = 0x3d2806;
-      glowColor = 0xf59e0b;
       stripeColor = 0xfbbf24;
     } else if (type === 'REPAIR') {
       bodyColor = 0x1e293b;
-      glowColor = 0x10b981;
       stripeColor = 0x34d399;
     } else if (type === 'SPEED') {
       bodyColor = 0x1e1e38;
-      glowColor = 0x00e5ff;
       stripeColor = 0x38bdf8;
     } else {
       bodyColor = 0x3b1c1c;
-      glowColor = 0xffd700;
       stripeColor = 0xfacc15;
     }
 
@@ -311,11 +315,11 @@ class SupplyManager {
     group.add(crateMesh);
 
     const edgeGeo = new THREE.BoxGeometry(crateW + 0.6, 2.5, crateD + 0.6);
-    const edgeMat = new THREE.MeshBasicMaterial({ color: stripeColor });
+    const edgeMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(stripeColor).multiplyScalar(0.62) });   // vạch sơn nhận dạng, không phát sáng
     const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
     group.add(edgeMesh);
 
-    const crossMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const crossMat = new THREE.MeshLambertMaterial({ color: 0xc9c4b4, side: THREE.DoubleSide });
     const cross1Geo = new THREE.PlaneGeometry(8, 2.2);
     cross1Geo.rotateX(-Math.PI / 2);
     const cross1 = new THREE.Mesh(cross1Geo, crossMat);
@@ -328,30 +332,7 @@ class SupplyManager {
     cross2.position.y = crateH / 2 + 0.1;
     group.add(cross2);
 
-    const beamGeo = new THREE.CylinderGeometry(5, 9, 65, 12, 1, true);
-    beamGeo.translate(0, 32.5, 0);
-    const beamMat = new THREE.MeshBasicMaterial({
-      color: glowColor,
-      transparent: true,
-      opacity: 0.32,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    const beamMesh = new THREE.Mesh(beamGeo, beamMat);
-    group.add(beamMesh);
-
-    const haloGeo = new THREE.RingGeometry(11, 14, 16);
-    haloGeo.rotateX(-Math.PI / 2);
-    const haloMat = new THREE.MeshBasicMaterial({
-      color: glowColor,
-      transparent: true,
-      opacity: 0.55,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    const haloMesh = new THREE.Mesh(haloGeo, haloMat);
-    haloMesh.position.y = -crateH / 2 + 0.2;
-    group.add(haloMesh);
+    // Không còn cột sáng / vòng sáng neon: hòm đánh dấu bằng khói tín hiệu vàng (emitSignalSmoke)
 
     return group;
   }
@@ -361,14 +342,14 @@ class SupplyManager {
 
     for (const crate of this.supplyCrates) {
       if (crate.active) {
-        crate.mesh.rotation.y += dt * 1.0;
-        crate.mesh.position.y = crate.baseY + Math.sin(Date.now() * 0.003 + crate.x) * 1.5;
+        // Hòm nằm yên trên đất (không xoay / nhấp nhô), xịt khói tín hiệu vàng từ nóc
+        this.emitSignalSmoke(crate, crate.x, crate.baseY + 8, crate.z, dt, false);
 
         if (!this.isAuthority()) continue;   // chỉ chủ phòng xét ai nhặt được
         for (const unit of this.game.units) {
           if (!unit.isDead) {
-            const dist = Math.hypot(unit.x - crate.x, unit.z - crate.z);
-            if (dist < 28) {
+            const dx = unit.x - crate.x, dz = unit.z - crate.z;
+            if (dx * dx + dz * dz < 28 * 28) {
               const ci = this.supplyCrates.indexOf(crate);
               if (unit.netId !== undefined) this.broadcast({ e: 'take', c: ci, u: unit.netId });
               this.takeCrate(crate, unit);

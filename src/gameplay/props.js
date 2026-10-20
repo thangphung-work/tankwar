@@ -10,7 +10,7 @@ const Props = (() => {
   const TAU = Math.PI * 2;
   // băm tất định theo số nguyên -> [0, 1)
   const hash = (n) => { let h = (n | 0) * 374761393 + 668265263; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-  const sfx = (kind, x, y, z, k) => { if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(kind, { x, y, z }, k || 1); };
+  const sfx = (kind, x, y, z, k, o) => { if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(kind, { x, y, z }, k || 1, o || null); };
 
   // ---------------------------------------------------------------------------
   // TEXTURE THỦ TỤC
@@ -73,23 +73,24 @@ const Props = (() => {
     speckle(g, w, h, 60, ['#5d4f35', '#a89670', '#6d5f40'], 1, 4, 31);
   }, true);
   const charTex = () => tex('charred', 128, 128, (g, w, h) => {
-    g.fillStyle = '#3a342e'; g.fillRect(0, 0, w, h);
+    // xác xe cháy: thép xám than + mảng gỉ nâu cam + tro xám nhạt (không đen kịt)
+    g.fillStyle = '#4a443d'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 70; i++) {
       const x = hash(i * 7) * w, y = hash(i * 7 + 1) * h, r = 4 + hash(i * 7 + 2) * 18;
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
       const rust = hash(i * 7 + 3) < 0.55;
-      gr.addColorStop(0, rust ? 'rgba(120,62,28,0.55)' : 'rgba(14,12,10,0.6)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      gr.addColorStop(0, rust ? 'rgba(128,72,38,0.6)' : 'rgba(24,21,18,0.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
     }
-    speckle(g, w, h, 400, ['#1b1714', '#6e4a2c', '#57524b', '#8a5a33'], 1, 3, 41);
+    speckle(g, w, h, 400, ['#2a2520', '#7a5232', '#6e6962', '#8a5a33', '#8c867c'], 1, 3, 41);
   }, true);
   // mặt ruộng: 1 ô = 64 đơn vị, luống chạy theo trục u
   const CROP = {
-    rice: { soil: '#4d5a36', row: '#6f8f3c', tip: '#9bbb5a', rows: 10, rough: 0.55, water: true },
-    veg: { soil: '#5a4630', row: '#4f7a2e', tip: '#79a84a', rows: 7, rough: 0.95 },
+    rice: { soil: '#434a32', row: '#5f7238', tip: '#7f9052', rows: 10, rough: 0.78, water: true },
+    veg: { soil: '#5a4630', row: '#506a32', tip: '#6e8a48', rows: 7, rough: 0.95 },
     wheat: { soil: '#8a7444', row: '#c4a65a', tip: '#e2c97c', rows: 14, rough: 0.95 },
     hay: { soil: '#857049', row: '#b59d62', tip: '#d1bb80', rows: 16, rough: 1.0, bales: true },
-    cassava: { soil: '#5b4128', row: '#3e6b2a', tip: '#5f9140', rows: 6, rough: 0.95 },
+    cassava: { soil: '#5b4128', row: '#425e30', tip: '#5e7a44', rows: 6, rough: 0.95 },
     dry: { soil: '#a08460', row: '#8a7050', tip: '#b49a72', rows: 8, rough: 1.0 }
   };
   const cropTex = (k) => tex('crop_' + k, 256, 256, (g, w, h) => {
@@ -107,7 +108,7 @@ const Props = (() => {
       }
       g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0, y0 + p * 0.9, w, p * 0.1);   // rãnh giữa luống
     }
-    if (C.water) { g.fillStyle = 'rgba(120,150,160,0.22)'; for (let r = 0; r < C.rows; r++) g.fillRect(0, r * p + p * 0.82, w, p * 0.18); }
+    if (C.water) { g.fillStyle = 'rgba(96,112,108,0.2)'; for (let r = 0; r < C.rows; r++) g.fillRect(0, r * p + p * 0.82, w, p * 0.18); }
   }, true);
 
   // ---------------------------------------------------------------------------
@@ -282,8 +283,10 @@ const Props = (() => {
       if (s.broken) return;
       s.broken = true;
       // ngã về phía bị đẩy: dấu của tích có hướng giữa pháp tuyến nhịp rào và hướng đẩy
+      // trục Z cục bộ của nhịp rào = n; quay +góc quanh trục X làm đỉnh rào ngả về +Z -> bị đẩy theo +n thì side = +1
       const nx = -(s.bz - s.az), nz = (s.bx - s.ax);
-      const side = (nx * dx + nz * dz) >= 0 ? -1 : 1;
+      const side = (nx * dx + nz * dz) >= 0 ? 1 : -1;
+      s.side = side;
       s.im.setMatrixAt(s.i, this.spanMatrix(s, side));
       s.im.instanceMatrix.needsUpdate = true;
       if (s.F.solid && !s.F.leafy) s.im.setColorAt(s.i, new THREE.Color(0.7, 0.68, 0.64)), s.im.instanceColor.needsUpdate = true;
@@ -292,7 +295,9 @@ const Props = (() => {
         for (let k = 0; k < 6; k++) fx.smoke.add({ x: s.x + (hash(s.seed + k) - 0.5) * s.L, y: (s.ga + s.gb) / 2 + 2, z: s.z + (hash(s.seed + k + 9) - 0.5) * s.L,
           vx: (hash(k) - 0.5) * 8, vy: 3 + hash(k + 2) * 5, vz: (hash(k + 4) - 0.5) * 8, size: 1.4 + hash(k + 6) * 1.6, grow: 2, drag: 2, grav: 6, life: 1.2, alpha: 0.5, fadeIn: 0.02, c0: c, cell: 2 });
       }
-      sfx(s.F.solid ? 'debris' : 'treeFall', s.x, (s.ga + s.gb) / 2, s.z, s.F.solid ? 0.5 : 0.3);
+      // tiếng theo vật liệu rào: gỗ / tre gãy rắc, tường đá đổ, tường đất bở sụp, bờ rào cây xào xạc gãy cành
+      const snd = s.F.leafy ? 'leafStrip' : s.F === FENCE.stone ? 'masonry' : s.F.solid ? 'adobe' : 'woodBreak';
+      sfx(snd, s.x, (s.ga + s.gb) / 2 + 2, s.z, s.F.leafy ? 0.8 : s.F.solid ? 0.45 : 0.4, { h: s.F.h });
     }
 
     // ---- RUỘNG: lưới bám địa hình, kẻ luống theo cạnh dài
@@ -325,6 +330,7 @@ const Props = (() => {
         const m = new THREE.Mesh(g, mat);
         m.receiveShadow = true;
         this.group.add(m);
+        (this.fieldGeos || (this.fieldGeos = [])).push(g);
         // ruộng rơm: vài cuộn rơm tròn
         if (C.bales) {
           const bales = [];
@@ -401,8 +407,8 @@ const Props = (() => {
         wheel: new THREE.CylinderGeometry(1, 1, 1, 12)
       };
       geos.turret.translate(0, 0, 0);
-      const mat = new THREE.MeshStandardMaterial({ map: charTex(), roughness: 0.92, metalness: 0.35 });
-      const trackMat = new THREE.MeshStandardMaterial({ color: 0x24211e, roughness: 1, metalness: 0.2 });
+      const mat = new THREE.MeshStandardMaterial({ map: charTex(), roughness: 0.9, metalness: 0.1 });
+      const trackMat = new THREE.MeshStandardMaterial({ color: 0x35302a, roughness: 1, metalness: 0.1 });
       const inst = {};   // geoName -> [Matrix4]
       const colors = {};
       for (const w of list) {
@@ -410,8 +416,10 @@ const Props = (() => {
         const yaw = -w.angle;
         const W = M4(w.x, gy - 0.9, w.z, w.roll || 0, yaw, w.tilt || 0);
         const parts = wreckParts(w.kind);
+        w._slots = []; w._dy = 0;
+        w._g0 = this.wreckFoot(w).map(([x, z]) => G(x, z));
         const blown = w.kind === 'tank' && hash((w.x * 7) | 0) < 0.3;   // tháp pháo bị thổi bay
-        const k = 0.6 + hash((w.z * 3) | 0) * 0.4;
+        const k = 0.78 + hash((w.z * 3) | 0) * 0.3;
         for (const [g, lm] of parts) {
           let m;
           if ((g === 'turret' || g === 'barrel') && w.kind !== 'truck') {
@@ -425,6 +433,7 @@ const Props = (() => {
           } else m = new THREE.Matrix4().multiplyMatrices(W, lm);
           (inst[g] || (inst[g] = [])).push(m);
           (colors[g] || (colors[g] = [])).push(k);
+          w._slots.push([g, inst[g].length - 1]);
         }
         // va chạm: chuỗi vòng tròn dọc thân (xe & đạn coi như đá tảng)
         const ca = Math.cos(w.angle), sa = Math.sin(w.angle), half = w.kind === 'truck' ? 13 : 14;
@@ -432,8 +441,9 @@ const Props = (() => {
           this.T.boulders.push({ x: w.x + ca * f, z: w.z + sa * f, radius: w.kind === 'truck' ? 6.5 : 8.5, height: w.kind === 'truck' ? 12 : 13, wreck: true });
         }
         this.wrecks.push(w);
-        if (w.smoke) this.smokers.push({ x: w.x, y: gy + 10, z: w.z, phase: hash(w.x | 0) * 3 });
+        if (w.smoke) this.smokers.push(w._smoker = { x: w.x, y: gy + 10, z: w.z, phase: hash(w.x | 0) * 3 });
       }
+      this.wreckIM = {};
       for (const g in inst) {
         const im = new THREE.InstancedMesh(geos[g], g === 'track' || g === 'wheel' ? trackMat : mat, inst[g].length);
         im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(inst[g].length * 3).fill(1), 3);
@@ -441,6 +451,78 @@ const Props = (() => {
         im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
         im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
         this.group.add(im);
+        this.wreckIM[g] = im;
+      }
+    }
+    wreckFoot(w) {
+      const ca = Math.cos(w.angle), sa = Math.sin(w.angle), h = w.kind === 'truck' ? 11 : 12, s = 6;
+      return [[w.x, w.z], [w.x + ca * h, w.z + sa * h], [w.x - ca * h, w.z - sa * h], [w.x - sa * s, w.z + ca * s], [w.x + sa * s, w.z - ca * s]];
+    }
+
+    // ---------------------------------------------------------------------------
+    // MẶT ĐẤT ĐỔI (hố bom mới / hố bị xoá): rào, bao cát, xác xe, mặt ruộng đặt lại theo mặt đất mới
+    // ---------------------------------------------------------------------------
+    reground(x0, z0, x1, z1) {
+      const T = this.T, raw = (x, z) => T.groundAtRaw(x, z);
+      const S = T.surfaceAt ? (x, z) => T.surfaceAt(x, z, true) : raw;
+      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, R = Math.hypot(x1 - x0, z1 - z0) / 2 + 20;
+      const inBox = (x, z, p) => x >= x0 - p && x <= x1 + p && z >= z0 - p && z <= z1 + p;
+      const dirtyIM = new Set();
+      let bags = false;
+      for (const o of this.near(cx, cz, R)) {
+        if (o.im) {
+          // nhịp rào: 2 đầu theo mặt đất mới; hố dưới giữa nhịp thì cả nhịp lún theo (không vắt ngang trên miệng hố)
+          if (!inBox(o.x, o.z, o.L / 2 + 2)) continue;
+          let ga = S(o.ax, o.az), gb = S(o.bx, o.bz);
+          const dm = Math.min(0, S(o.x, o.z) - (ga + gb) / 2);
+          ga += dm; gb += dm;
+          if (Math.abs(ga - o.ga) + Math.abs(gb - o.gb) < 0.02) continue;
+          o.ga = ga; o.gb = gb; o.pitch = Math.atan2(gb - ga, o.L);
+          o.im.setMatrixAt(o.i, this.spanMatrix(o, o.broken ? (o.side || 1) : 0));
+          dirtyIM.add(o.im);
+        } else if (inBox(o.x, o.z, 3)) {
+          const y = S(o.x, o.z) + 0.9 + o.layer * 1.85;
+          if (Math.abs(y - o.y) < 0.02) continue;
+          o.y = y;
+          this.bagIM.setMatrixAt(o.i, this.bagMatrix(o));
+          bags = true;
+        }
+      }
+      if (bags) {
+        this.bagIM.instanceMatrix.needsUpdate = true;
+        for (const sg of this.bagSegs) if (inBox(sg.x0, sg.z0, 3) || inBox(sg.x1, sg.z1, 3)) { sg.g0 = S(sg.x0, sg.z0); sg.g1 = S(sg.x1, sg.z1); }
+      }
+      // xác xe: tựa trên 2 điểm đỡ cao nhất dưới thân (hố một bên -> nằm vắt mép hố; hố dưới cả thân -> lún xuống)
+      const tmp = new THREE.Matrix4();
+      for (const w of this.wrecks) {
+        if (!w._slots || !inBox(w.x, w.z, 14)) continue;
+        const ds = this.wreckFoot(w).map(([x, z], k) => S(x, z) - w._g0[k]).sort((a, b) => b - a);
+        const dy = Math.min(0.5, ds[1]);
+        if (Math.abs(dy - w._dy) < 0.02) continue;
+        const step = dy - w._dy;
+        w._dy = dy;
+        for (const [g, i] of w._slots) {
+          const im = this.wreckIM[g];
+          im.getMatrixAt(i, tmp);
+          tmp.elements[13] += step;
+          im.setMatrixAt(i, tmp);
+          dirtyIM.add(im);
+        }
+        if (w._smoker) w._smoker.y += step;
+      }
+      dirtyIM.forEach(im => { im.instanceMatrix.needsUpdate = true; });
+      // mặt ruộng: bám mặt đất mới; trong lòng hố thì chìm dưới lưới hố (lòng hố lộ ra, không bị mặt ruộng phẳng che)
+      for (const g of this.fieldGeos || []) {
+        const P = g.attributes.position;
+        let any = false;
+        for (let i = 0; i < P.count; i++) {
+          const x = P.getX(i), z = P.getZ(i);
+          if (!inBox(x, z, 0)) continue;
+          const sf = S(x, z), y = sf < raw(x, z) - 0.3 ? sf - 1.0 : sf + 0.35;
+          if (Math.abs(y - P.getY(i)) < 0.01) continue;
+          P.setY(i, y); any = true;
+        }
+        if (any) { P.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere(); }
       }
     }
 
@@ -489,12 +571,19 @@ const Props = (() => {
       }
     }
     /** Điểm (x, y, z) nằm trong khối bao cát còn nguyên -> chắn đạn */
+    // Gọi ở mỗi bước mô phỏng đường đạn (hàng nghìn lần / khung): loại nhanh bằng hộp bao của đoạn bao cát
+    // (nới 2.6 = bề dày bờ bao) và dải độ cao, rồi mới tính khoảng cách điểm - đoạn — kết quả y hệt cách cũ
     hitTest(x, y, z) {
       for (const sg of this.bagSegs) {
         if (sg.dead) continue;
-        const r = segDist(x, z, sg.x0, sg.z0, sg.x1, sg.z1, true);
-        if (r.d > 2.6) continue;
-        const gy = sg.g0 + (sg.g1 - sg.g0) * r.t;
+        if (x < (sg.x0 < sg.x1 ? sg.x0 : sg.x1) - 2.6 || x > (sg.x0 > sg.x1 ? sg.x0 : sg.x1) + 2.6 ||
+            z < (sg.z0 < sg.z1 ? sg.z0 : sg.z1) - 2.6 || z > (sg.z0 > sg.z1 ? sg.z0 : sg.z1) + 2.6) continue;
+        if (y < (sg.g0 < sg.g1 ? sg.g0 : sg.g1) - 2 || y > (sg.g0 > sg.g1 ? sg.g0 : sg.g1) + sg.top) continue;
+        const dx = sg.x1 - sg.x0, dz = sg.z1 - sg.z0, L2 = dx * dx + dz * dz;
+        const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - sg.x0) * dx + (z - sg.z0) * dz) / L2)) : 0;
+        const ex = x - (sg.x0 + dx * t), ez = z - (sg.z0 + dz * t);
+        if (ex * ex + ez * ez > 2.6 * 2.6) continue;
+        const gy = sg.g0 + (sg.g1 - sg.g0) * t;
         if (y >= gy - 2 && y <= gy + sg.top) return { hit: true, type: 'SANDBAG', x, y, z };
       }
       return null;

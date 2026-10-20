@@ -505,7 +505,17 @@ class MatchmakingController {
     }
     this.mapSeed = seed;
     this.setMapSelectionUI(this.selectedMapType);
-    this.prepareSelectedMap();
+    this.schedulePrepareMap();
+  }
+
+  // Dựng bản đồ 3D mất ~0.5 s và chặn luồng chính: đổi giao diện ngay, dựng sau khi người chơi ngừng bấm.
+  // Mọi chỗ cần bản đồ thật (tìm trận, đếm ngược, xuất trận) đều gọi prepareSelectedMap() trực tiếp -> dựng ngay nếu còn chờ.
+  schedulePrepareMap() {
+    clearTimeout(this._prepareTimer);
+    this._prepareTimer = setTimeout(() => {
+      this._prepareTimer = null;
+      this.prepareSelectedMap();
+    }, 400);
   }
 
   setMapSelectionUI(mapType) {
@@ -516,6 +526,8 @@ class MatchmakingController {
 
   // Dựng bản đồ theo (loại, hạt giống) — chỉ dựng lại khi cặp này thay đổi
   prepareSelectedMap(force) {
+    clearTimeout(this._prepareTimer);
+    this._prepareTimer = null;
     const key = this.selectedMapType + ':' + (this.mapSeed >>> 0);
     const game = this.game;
     if (!game) return false; // Game chưa khởi tạo: onGameAttached() sẽ dựng sau

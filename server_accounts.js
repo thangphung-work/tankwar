@@ -23,8 +23,9 @@
  *   GET  /api/leaderboard                                   -> { top: [{ displayName, rankText, xp, ... }] }
  *   POST /api/profile       { displayName?, lastTank?, lastMap?, settings? } -> { profile }
  *   POST /api/password      { oldPassword, newPassword }    -> { ok }
- *   POST /api/match-result  { result, kills, deaths, damage, shots, tankType, mapType, durationSec, ammoUsed? } -> { profile, gained, silver }
- *   POST /api/shop/buy      { tank, item } (mô-đun / đạn cao cấp) | { tank, ammo, packs } (đạn mang thêm) -> { profile }
+ *   POST /api/match-result  { result, kills, deaths, damage, shots, tankType, mapType, durationSec, ammoUsed?, kdPlace? } -> { profile, gained, silver, kdPlace, kdBonus }
+ *   POST /api/shop/buy      { tank, item } (mô-đun / đạn cao cấp) | { tank, ammo, n } (mua lẻ n viên; { packs } kiểu cũ vẫn nhận) -> { profile }
+ *   POST /api/shop/sell     { tank, ammo, n } (trả lại n viên trong kho, hoàn đúng giá) -> { profile }
  *   POST /api/loadout       { tank, m: [mô-đun], a: { loại đạn: số viên mang thêm } } -> { profile }
  *   POST /api/ad/start      { tank, item } (đồ nâng cao) -> { token, sec }: bắt đầu xem quảng cáo
  *   POST /api/shop/claim    { tank, item, token } -> { profile }: xem đủ thời lượng thì nhận đồ (lưu vào owned, tự lắp nếu còn ô)
@@ -172,6 +173,9 @@ function openDb() {
     addStock: P(`INSERT INTO ammo_stock (user_id, tank, ammo, n) VALUES (?, ?, ?, ?)
                  ON CONFLICT (user_id, tank, ammo) DO UPDATE SET n = n + excluded.n`),
     useStock: P('UPDATE ammo_stock SET n = MAX(0, n - ?) WHERE user_id = ? AND tank = ? AND ammo = ?'),
+    stockGet: P('SELECT n FROM ammo_stock WHERE user_id = ? AND tank = ? AND ammo = ?'),
+    // trừ kho chỉ khi còn đủ (không bao giờ âm)
+    takeStock: P('UPDATE ammo_stock SET n = n - ? WHERE user_id = ? AND tank = ? AND ammo = ? AND n >= ?'),
     loadoutsOf: P('SELECT tank, data FROM loadouts WHERE user_id = ?'),
     loadoutGet: P('SELECT data FROM loadouts WHERE user_id = ? AND tank = ?'),
     setLoadout: P('INSERT INTO loadouts (user_id, tank, data) VALUES (?, ?, ?) ON CONFLICT (user_id, tank) DO UPDATE SET data = excluded.data'),
@@ -351,6 +355,12 @@ function noteOnline(userId, matchKey, kills, deaths, damage) {
   online.set(userId, o);
   if (online.size > 20000) online.clear();
 }
+// Hạng K/D trong trận mạng (server_auth.js tính từ số liệu đã kiểm tra): 1-3 = top 3, 0 = ngoài top
+function notePlace(userId, matchKey, place) {
+  const o = online.get(userId);
+  if (o && o.mk === matchKey) o.place = place;
+  else if (place) { noteOnline(userId, matchKey, 0, 0, 0); online.get(userId).place = place; }
+}
 function userIdFromToken(token) {
   if (!db || typeof token !== 'string' || !/^[A-Za-z0-9_\-]{20,100}$/.test(token)) return null;
   const s = Q.sessionGet.get(sha(token));
@@ -389,6 +399,9 @@ function cleanName(s) {
   const t = String(s || '').normalize('NFC').replace(/[^\p{L}\p{N} _\-.]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 24);
   return t.length >= 2 ? t : null;
 }
+
+// Kho đạn mua thêm mỗi loại: tối đa 10 lần số viên mang theo một lần xuất kích
+const stockCap = (A) => A.max * 10;
 
 // Bộ trang bị hợp lệ: đồ cơ bản (miễn phí) hoặc đồ nâng cao đã nhận / đã mua, lắp được trên xe, đủ ô từng nhóm
 function cleanLoadout(userId, tank, b) {
@@ -506,14 +519,35 @@ async function handle(req, res) {
       }
       const ammo = String(b.ammo || ''), A = (Equipment.AMMO_SHOP[tank] || {})[ammo];
       if (!A) return send(res, 400, { error: 'Loại đạn không hợp lệ' });
-      const packs = Math.round(clampN(b.packs, 1, 20)), qty = packs * A.pack, cost = qty * A.price;
-      const ok = tx(() => {
-        if (Number(Q.spend.run(cost, u.id, cost).changes) !== 1) return false;
+      // mua lẻ từng viên (n), hoặc theo gói kiểu cũ (packs). Kho mỗi loại tối đa STOCK_CAP viên.
+      const qty = b.n !== undefined ? Math.round(clampN(b.n, 1, 100)) : Math.round(clampN(b.packs, 1, 20)) * A.pack;
+      const cost = qty * A.price, cap = stockCap(A);
+      const r = tx(() => {
+        const have = (Q.stockGet.get(u.id, tank, ammo) || {}).n || 0;
+        if (have + qty > cap) return 'cap';
+        if (Number(Q.spend.run(cost, u.id, cost).changes) !== 1) return 'silver';
         Q.addStock.run(u.id, tank, ammo, qty);
         Q.addPurchase.run(u.id, now, tank, 'ammo:' + ammo, qty, cost);
+        return 'ok';
+      });
+      if (r === 'cap') return send(res, 409, { error: `Kho ${A.name.toLowerCase()} tối đa ${cap} viên` });
+      if (r !== 'ok') return send(res, 402, { error: 'Không đủ Bạc' });
+      return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
+    }
+    // ---- TRẢ LẠI ĐẠN MUA THÊM (bấm nhầm / đổi ý): trừ kho nếu còn đủ, hoàn đúng giá đã trả ----
+    if (url === '/api/shop/sell') {
+      const tank = String(b.tank || '');
+      if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
+      const ammo = String(b.ammo || ''), A = (Equipment.AMMO_SHOP[tank] || {})[ammo];
+      if (!A) return send(res, 400, { error: 'Loại đạn không hợp lệ' });
+      const qty = Math.round(clampN(b.n, 1, 100)), refund = qty * A.price, now = Date.now();
+      const ok = tx(() => {
+        if (Number(Q.takeStock.run(qty, u.id, tank, ammo, qty).changes) !== 1) return false;
+        Q.addSilver.run(refund, u.id);
+        Q.addPurchase.run(u.id, now, tank, 'ammo:' + ammo, -qty, -refund);
         return true;
       });
-      if (!ok) return send(res, 402, { error: 'Không đủ Bạc' });
+      if (!ok) return send(res, 409, { error: 'Trong kho không còn đủ đạn để trả lại' });
       return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
     }
     // ---- NHẬN ĐỒ NÂNG CAO BẰNG XEM QUẢNG CÁO ----
@@ -568,18 +602,23 @@ async function handle(req, res) {
       // vừa chơi trận mạng: không vượt quá số máy chủ đã tự đếm
       const o = online.get(u.id);
       let verified = false;
+      // hạng K/D trong trận (1-3 = top 3): trận mạng lấy theo máy chủ xếp, trận đánh máy lấy theo máy khách báo
+      let kdPlace = Math.round(clampN(b.kdPlace, 0, 3));
       if (o && now - o.at < 15 * 60e3) {
         verified = true;
         kills = Math.min(kills, o.kills);
         damage = Math.min(damage, Math.round((o.damage + 0.5) * 10) / 10);
         deaths = Math.max(deaths, o.deaths);
+        kdPlace = o.place || 0;
         online.delete(u.id);
       }
+      if (kills < 1) kdPlace = 0;
+      const kdBonus = kdPlace ? Equipment.KD_BONUS[kdPlace - 1] : null;
       const tank = TANKS.includes(b.tankType) ? b.tankType : 'ALL_ROUNDER';
       const map = MAPS.includes(b.mapType) ? b.mapType : null;
-      const gained = Math.round(40 + (result === 'win' ? 100 : result === 'draw' ? 50 : 0) + kills * 30 + damage * 8 + Math.min(dur, 900) / 15);
+      const gained = Math.round(40 + (result === 'win' ? 100 : result === 'draw' ? 50 : 0) + kills * 30 + damage * 8 + Math.min(dur, 900) / 15) + (kdBonus ? kdBonus.xp : 0);
       const before = levelInfo(u.xp).level;
-      const silver = Equipment.silverFor(result, kills, damage, dur);
+      const silver = Equipment.silverFor(result, kills, damage, dur) + (kdBonus ? kdBonus.silver : 0);
       // kiểm tra nhịp gửi + ghi 3 bảng trong cùng 1 giao dịch (đọc lại last_result_at bên trong -> không ghi trùng)
       const ok = tx(() => {
         const cur = Q.userById.get(u.id);
@@ -598,7 +637,7 @@ async function handle(req, res) {
       });
       if (!ok) return send(res, 429, { error: 'Kết quả trận đã được ghi' });
       const p = publicProfile(Q.userById.get(u.id));
-      return send(res, 200, { profile: p, gained, silver, levelUp: p.level > before, verified });
+      return send(res, 200, { profile: p, gained, silver, levelUp: p.level > before, verified, kdPlace, kdBonus });
     }
     return send(res, 404, { error: 'Không có API này' });
   } catch (e) {
@@ -616,4 +655,4 @@ if (openDb()) {
   process.on('SIGINT', () => { closeDb(); process.exit(0); });
   process.on('SIGTERM', () => { closeDb(); process.exit(0); });
 }
-module.exports = { handle, DATA_DIR, levelInfo, noteOnline, userIdFromToken };
+module.exports = { handle, DATA_DIR, levelInfo, noteOnline, notePlace, userIdFromToken };

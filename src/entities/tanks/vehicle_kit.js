@@ -13,7 +13,7 @@
 
 const VehicleKit = (() => {
   const TEX_CACHE = {};
-  const UV_SCALE = 1 / 48; // 1 ô texture sơn phủ 48 đơn vị (~6 mét)
+  const UV_SCALE = 1 / 30; // 1 ô texture sơn phủ 30 đơn vị (~3.7 mét): mảng ngụy trang cỡ 0.6-1.5 m như sơn thật
 
   // ---------------------------------------------------------------------------
   // NOISE TUẦN HOÀN (TILEABLE) CHO TEXTURE
@@ -70,21 +70,29 @@ const VehicleKit = (() => {
   // ---------------------------------------------------------------------------
   // SƠN NGỤY TRANG QUÂN SỰ (map + roughnessMap + bumpMap)
   // ---------------------------------------------------------------------------
+  // Màu sơn đo theo mẫu sơn mờ quân sự thật: xanh ô-liu ngả xám, nâu đất, đen than (rừng);
+  // cát CARC, nâu sô-cô-la, ô-liu khô (sa mạc). Màu thật khá tối & ít bão hòa -> dưới nắng
+  // không bị xanh lá mạ / cam như đồ chơi. dust: màu bụi đất bám gầm & mặt ngang (shader sơn).
   const PAINT_SCHEMES = {
-    // Sơn 3 màu rừng NATO: xanh đồng, nâu đất, đen
     WOODLAND: {
-      base: 0x3b4431,
-      patchA: { color: 0x433528, threshold: 0.55 },
-      patchB: { color: 0x1b1c19, threshold: 0.6 },
+      base: 0x3d4531,
+      patchA: { color: 0x503c2a, threshold: 0.55 },
+      patchB: { color: 0x1c1d1a, threshold: 0.6 },
+      dust: [0.50, 0.45, 0.36],
       seed: 11
     },
-    // Sơn sa mạc 2 màu: vàng cát CARC, nâu đất nung
     DESERT: {
-      base: 0x96805d,
-      patchA: { color: 0x6b5036, threshold: 0.56 },
-      patchB: { color: 0x84704b, threshold: 0.62 },
+      base: 0x8a7555,
+      patchA: { color: 0x634630, threshold: 0.56 },
+      patchB: { color: 0x504e37, threshold: 0.62 },
+      dust: [0.66, 0.58, 0.46],
       seed: 23
     }
+  };
+
+  const smooth01 = (e0, e1, x) => {
+    const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
   };
 
   function getPaintTextures(schemeName) {
@@ -108,11 +116,15 @@ const VehicleKit = (() => {
     const warp = makeFbm(4, 3, scheme.seed + 13);
     const grime = makeFbm(2, 4, scheme.seed + 29);
     const grain = makeFbm(64, 2, scheme.seed + 41);
+    const chips = makeFbm(32, 3, scheme.seed + 53);
+    const blot = makeFbm(8, 3, scheme.seed + 61);
     const rnd = mulberry32(scheme.seed + 97);
 
     const base = hexToRgb(scheme.base);
     const pa = hexToRgb(scheme.patchA.color);
     const pb = hexToRgb(scheme.patchB.color);
+    const primer = [74, 72, 64];      // lớp sơn lót / thép lộ ra ở chỗ tróc
+    const col = [0, 0, 0];
 
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
@@ -122,36 +134,43 @@ const VehicleKit = (() => {
         const a = camoA(nx + w, ny - w);
         const b = camoB(nx - w, ny + w);
 
-        let col = base;
-        if (a > scheme.patchA.threshold) col = pa;
-        if (b > scheme.patchB.threshold) col = pb;
+        // Viền mảng phun sơn: mép mềm ~1-2 cm (bụi sơn phun), không cắt sắc như decal
+        const ka = smooth01(scheme.patchA.threshold - 0.008, scheme.patchA.threshold + 0.008, a);
+        const kb = smooth01(scheme.patchB.threshold - 0.007, scheme.patchB.threshold + 0.007, b);
+        for (let k = 0; k < 3; k++) {
+          const v = base[k] + (pa[k] - base[k]) * ka;
+          col[k] = v + (pb[k] - v) * kb;
+        }
 
         const g = grime(nx, ny);
         const fine = grain(nx, ny);
-        // Lớp sơn bạc màu loang lổ + hạt sơn mịn
-        let shade = 0.86 + g * 0.26 + (fine - 0.5) * 0.1;
-        // Chấm tróc sơn / vết bùn khô lác đác
+        const bl = blot(nx, ny);
+        // Sơn phai không đều (nắng, rửa xe) + hạt sơn mịn
+        let shade = 0.9 + g * 0.18 + (fine - 0.5) * 0.08 + (bl - 0.5) * 0.07;
+        // Vết tróc sơn nhỏ thành cụm (va quệt cành cây, đá văng) -> lộ lớp lót
+        const ch = chips(nx, ny);
+        const chip = smooth01(0.74, 0.79, ch * (0.75 + g * 0.5));
+        // Chấm bùn khô lác đác
         const speck = rnd();
-        let dirt = 0;
-        if (speck > 0.9985) shade *= 0.6;
-        else if (speck < 0.004) dirt = 0.35;
+        const dirt = speck < 0.003 ? 0.4 : 0;
 
         const i = (y * size + x) * 4;
         for (let k = 0; k < 3; k++) {
           const dust = [118, 104, 84][k];
           let v = col[k] * shade;
+          v = v + (primer[k] - v) * chip * 0.85;
           v = v * (1 - dirt) + dust * dirt;
           cImg.data[i + k] = Math.max(0, Math.min(255, v));
         }
         cImg.data[i + 3] = 255;
 
-        // Sơn mờ quân sự: nhám cao, chỗ bạc màu nhám hơn
-        const rough = Math.max(0, Math.min(255, (0.72 + g * 0.18 + (fine - 0.5) * 0.12) * 255));
+        // Sơn mờ quân sự: nhám cao, chỗ bạc màu nhám hơn, chỗ tróc (thép) bóng hơn
+        const rough = Math.max(0, Math.min(255, (0.74 + g * 0.16 + (fine - 0.5) * 0.12 - chip * 0.25) * 255));
         rImg.data[i] = rImg.data[i + 1] = rImg.data[i + 2] = rough;
         rImg.data[i + 3] = 255;
 
-        // Bề mặt thép đúc sần sùi
-        const bump = 128 + (fine - 0.5) * 120 + (g - 0.5) * 40;
+        // Bề mặt thép đúc sần sùi + mép lõm của vết tróc
+        const bump = 128 + (fine - 0.5) * 110 + (g - 0.5) * 40 - chip * 26;
         bImg.data[i] = bImg.data[i + 1] = bImg.data[i + 2] = Math.max(0, Math.min(255, bump));
         bImg.data[i + 3] = 255;
       }
@@ -170,9 +189,105 @@ const VehicleKit = (() => {
     TEX_CACHE[schemeName] = {
       map: toTex(colorCanvas),
       roughnessMap: toTex(roughCanvas),
-      bumpMap: toTex(bumpCanvas)
+      bumpMap: toTex(bumpCanvas),
+      dust: scheme.dust
     };
     return TEX_CACHE[schemeName];
+  }
+
+  /**
+   * Texture thời tiết dùng chung (đọc trong shader sơn, cùng UV hộp với lớp sơn, lặp dày hơn):
+   * R: loang bụi tần số thấp, G: vệt chảy dọc (mưa cuốn bụi/dầu chảy xuống mặt đứng),
+   * B: nhiễu mịn để phá đều mép mòn & cụm tróc sơn.
+   */
+  function getWeatherTexture() {
+    if (TEX_CACHE.__weather) return TEX_CACHE.__weather;
+    if (typeof document === 'undefined') return null;
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(size, size);
+    const blot = makeFbm(4, 4, 71);
+    const fineN = makeFbm(32, 3, 83);
+    const streakX = makeFbm(16, 2, 91);   // dao động theo phương ngang -> vệt dọc
+    const streakY = makeFbm(2, 2, 97);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const nx = x / size, ny = y / size;
+        const p = (y * size + x) * 4;
+        // Ảnh canvas: hàng y = 0 ở trên -> v của UV lớn ở trên; vệt kéo dài theo y
+        const s = streakX(nx, ny * 0.06) * 0.75 + streakY(nx, ny) * 0.25;
+        img.data[p] = Math.max(0, Math.min(255, blot(nx, ny) * 255));
+        img.data[p + 1] = Math.max(0, Math.min(255, 128 + (s - 0.5) * 300));
+        img.data[p + 2] = Math.max(0, Math.min(255, fineN(nx, ny) * 255));
+        img.data[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(canvas);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    TEX_CACHE.__weather = t;
+    return t;
+  }
+
+  /**
+   * Shader sơn quân sự (chèn vào MeshStandardMaterial):
+   * - màu đỉnh (vertex color) mã hóa: R = che khuất (AO), G = độ cao trên gầm (0 sát đất .. 1 trên cao),
+   *   B = mặt ngửa lên trời (0..1)
+   * - bụi đất phủ dày dần xuống gầm + rắc trên mặt ngang, loang theo nhiễu; bụi làm sơn nhám hẳn
+   * - vệt chảy dọc trên mặt đứng
+   * - mép giáp mòn sơn sáng lên, lác đác lộ thép (cạnh sắc lấy từ thuộc tính edgeD do computeEdgeWear tính)
+   * Màu vật liệu (diffuse) vẫn nhân vào cuối -> xác xe cháy đen vẫn đen như cũ.
+   */
+  function patchPaintMaterial(m, dust, weather) {
+    if (!weather) return;
+    const dustColor = new THREE.Color().setRGB(dust[0], dust[1], dust[2]);
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.vkWeather = { value: weather };
+      sh.uniforms.vkDust = { value: dustColor };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec4 edgeD;\nvarying vec4 vEdgeD;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdgeD = edgeD;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform sampler2D vkWeather;\nuniform vec3 vkDust;\nvarying vec4 vEdgeD;')
+        .replace('#include <color_fragment>', `
+          #ifdef USE_COLOR
+            float vkAO = vColor.r, vkH = vColor.g, vkUp = vColor.b;
+          #else
+            float vkAO = 1.0, vkH = 1.0, vkUp = 0.0;
+          #endif
+          #ifdef USE_MAP
+            vec2 vkUv = vUv;
+          #else
+            vec2 vkUv = vec2(0.0);
+          #endif
+          vec3 vkW = texture2D(vkWeather, vkUv * 2.3).rgb;
+          vec3 vkTint = diffuse;
+          vec3 vkCol = diffuseColor.rgb;
+          // Vệt bẩn chảy dọc lác đác trên mặt đứng (chỉ vài vệt sẫm, không phủ đều)
+          vkCol *= 1.0 - smoothstep(0.62, 0.86, vkW.g) * 0.16 * (1.0 - vkUp) + smoothstep(0.3, 0.12, vkW.g) * 0.05 * (1.0 - vkUp);
+          // Mép cạnh sắc: sơn mòn sáng lên, chỗ mòn sâu lộ thép sẫm
+          float vkWear = 0.0;
+          if (vEdgeD.w < 0.5) {
+            float d = min(min(vEdgeD.x, vEdgeD.y), vEdgeD.z);
+            float band = 0.14 + 0.2 * vkW.b;
+            vkWear = 1.0 - smoothstep(0.0, band, d);
+            vkWear *= smoothstep(0.3, 0.62, vkW.b + 0.45 * vkWear);
+          }
+          vec3 vkWorn = mix(vkCol * 1.45 + 0.03 * vkTint, vec3(0.29, 0.28, 0.26) * vkTint, step(0.8, vkW.b) * 0.8);
+          vkCol = mix(vkCol, vkWorn, vkWear * 0.8);
+          // Bụi đất: dày dần xuống gầm, rắc trên mặt ngửa; loang theo nhiễu
+          float vkLow = pow(1.0 - vkH, 1.5);
+          float vkDustK = clamp(vkLow * (0.55 + 0.6 * vkW.r) + vkUp * (0.05 + 0.3 * vkW.r) * (0.6 + 0.4 * vkW.b) - 0.07, 0.0, 0.8);
+          vkCol = mix(vkCol, vkDust * vkTint, vkDustK);
+          diffuseColor.rgb = vkCol * vkAO;
+        `)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = mix(roughnessFactor, 1.0, vkDustK);
+          roughnessFactor = mix(roughnessFactor, 0.5, vkWear * 0.5);`);
+    };
+    m.customProgramCacheKey = () => 'vkPaint1';
   }
 
   // Texture mặt xích / lốp cao su (đường vân nhỏ), dùng chung
@@ -197,6 +312,48 @@ const VehicleKit = (() => {
     return t;
   }
 
+  /**
+   * Bầu trời phản chiếu dùng chung (cube map vẽ canvas, có mipmap): trời xám xanh ở đỉnh, chân trời mờ
+   * hơi ấm, mặt đất nâu tối. MeshStandardMaterial lấy mip theo độ nhám -> thép / kính / mép sơn mòn bắt
+   * ánh trời nhạt, mặt ngửa sáng hơn mặt úp; kính cửa ánh trời thay vì đen đặc. Cường độ đặt thấp
+   * từng vật liệu để không làm xe sáng hơn cảnh.
+   */
+  function getEnvCube() {
+    if (TEX_CACHE.__env) return TEX_CACHE.__env;
+    if (typeof document === 'undefined') return null;
+    const size = 64;
+    const sky = [150, 168, 182], horizon = [176, 172, 160], ground = [62, 56, 46];
+    const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    // Màu theo cao độ hướng nhìn (dy: -1 đất .. 1 thiên đỉnh)
+    const colorAt = (dy) => {
+      if (dy >= 0) return lerp3(horizon, sky, Math.pow(Math.min(1, dy * 1.6), 0.7));
+      return lerp3(horizon, ground, Math.min(1, Math.pow(-dy * 5, 0.6)));
+    };
+    const face = (fn) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const img = ctx.createImageData(size, size);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const u = (x + 0.5) / size * 2 - 1, v = (y + 0.5) / size * 2 - 1;
+          const col = colorAt(fn(u, v));
+          const p = (y * size + x) * 4;
+          img.data[p] = col[0]; img.data[p + 1] = col[1]; img.data[p + 2] = col[2]; img.data[p + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c;
+    };
+    // Mặt bên: hàng trên ảnh = +Y. dy = thành phần Y của hướng chuẩn hóa
+    const side = face((u, v) => -v / Math.hypot(1, u, v));
+    const top = face(() => 1), bottom = face(() => -1);
+    const tex = new THREE.CubeTexture([side, side, top, bottom, side, side]);
+    tex.needsUpdate = true;
+    TEX_CACHE.__env = tex;
+    return tex;
+  }
+
   // ---------------------------------------------------------------------------
   // BỘ VẬT LIỆU PBR CHUẨN CHO MỘT XE (mỗi xe một bộ riêng vì hiệu ứng tàng hình
   // và màu xác cháy chỉnh trực tiếp lên vật liệu)
@@ -205,6 +362,7 @@ const VehicleKit = (() => {
     const isBlue = team === 'BLUE';
     const paint = getPaintTextures(isBlue ? 'WOODLAND' : 'DESERT');
     const grimeTex = getGrimeTexture();
+    const weather = getWeatherTexture();
 
     const paintMat = (tint) => {
       const m = new THREE.MeshStandardMaterial({
@@ -219,6 +377,7 @@ const VehicleKit = (() => {
       });
       m.userData.boxUV = true;
       m.userData.baseColor = tint;
+      if (paint) patchPaintMaterial(m, paint.dust, weather);
       return m;
     };
 
@@ -229,17 +388,19 @@ const VehicleKit = (() => {
       paintDusty: paintMat(0xd2c6ae),
       // Mặt trong / khe tối (lưới tản nhiệt, khoang sâu)
       dark: new THREE.MeshStandardMaterial({ color: 0x23241f, roughness: 0.85, metalness: 0.2 }),
-      // Thép trần mài mòn (chốt xích, miệng nòng, vành bánh)
-      steel: new THREE.MeshStandardMaterial({ color: 0x77736b, roughness: 0.42, metalness: 0.75 }),
-      // Mắt xích thép đúc bám bùn
+      // Thép trần mài mòn (chốt xích, miệng nòng, vành bánh). Không có envMap nên kim loại quá cao
+      // sẽ đen sì -> để bán kim loại, xám ngả nâu như thép dầu mỡ ngoài trời
+      steel: new THREE.MeshStandardMaterial({ color: 0x6b675f, roughness: 0.5, metalness: 0.5 }),
+      // Mắt xích thép đúc bám bùn, gỉ nhẹ
       track: new THREE.MeshStandardMaterial({
-        color: 0x4a4740, map: grimeTex, roughness: 0.78, metalness: 0.45
+        color: 0x3f3832, map: grimeTex, roughness: 0.86, metalness: 0.35
       }),
       // Cao su đen vành bánh / đệm xích
       rubber: new THREE.MeshStandardMaterial({ color: 0x1c1b19, map: grimeTex, roughness: 0.95, metalness: 0.0 }),
       // Kính quang học phủ màng chống phản xạ
+      // (tối như kính thật, chỉ ánh xanh nhẹ; trước đây tự phát sáng xanh lơ trông như đồ chơi)
       glass: new THREE.MeshStandardMaterial({
-        color: 0x0b141a, roughness: 0.08, metalness: 0.9, emissive: 0x0d2a36, emissiveIntensity: 0.55
+        color: 0x1a2327, roughness: 0.12, metalness: 0.35, emissive: 0x0b1f27, emissiveIntensity: 0.18
       }),
       // Kính đèn pha
       lens: new THREE.MeshStandardMaterial({
@@ -250,17 +411,30 @@ const VehicleKit = (() => {
         color: 0x5c0f0b, roughness: 0.2, metalness: 0.1, emissive: 0x4a0604, emissiveIntensity: 0.6
       }),
       // Bạt vải / túi đồ dã chiến
-      canvas: new THREE.MeshStandardMaterial({ color: isBlue ? 0x55553f : 0x8b7757, roughness: 0.97, metalness: 0.0 }),
-      canvasDark: new THREE.MeshStandardMaterial({ color: isBlue ? 0x3d3d2e : 0x6b5a40, roughness: 0.97, metalness: 0.0 }),
+      // (vân sợi vải + nếp nhăn từ texture nhiễu; màu nâng nhẹ bù độ tối của texture)
+      canvas: new THREE.MeshStandardMaterial({ color: isBlue ? 0x67664c : 0xa58e68, map: grimeTex, roughness: 0.97, metalness: 0.0 }),
+      canvasDark: new THREE.MeshStandardMaterial({ color: isBlue ? 0x4a4a38 : 0x806c4d, map: grimeTex, roughness: 0.97, metalness: 0.0 }),
       // Tấm vải nhận diện phe trên nóc tháp (nhìn rõ từ camera trên cao)
       idPanel: new THREE.MeshStandardMaterial({
-        color: isBlue ? 0x3a72bd : 0xc4482f,
+        color: isBlue ? 0x2f62a6 : 0xb4422b,
         emissive: isBlue ? 0x0b2a5c : 0x5c140b,
-        emissiveIntensity: 0.35,
-        roughness: 0.9,
+        emissiveIntensity: 0.22,
+        roughness: 0.95,
         metalness: 0.0
       })
     };
+    // Phản chiếu bầu trời: kim loại & kính mạnh, sơn mờ chỉ chút ít (mép mòn, mặt ngửa)
+    const env = getEnvCube();
+    if (env) {
+      const envK = { paint: 0.3, paintDusty: 0.22, dark: 0.25, steel: 0.85, track: 0.35, rubber: 0.15, glass: 1.0, lens: 0.8, tailLens: 0.6 };
+      for (const k in envK) {
+        mats[k].envMap = env;
+        mats[k].envMapIntensity = envK[k];
+      }
+      // Có trời để phản chiếu -> thép trần được phép kim loại thật hơn (trước đây 0.5 để khỏi đen sì)
+      mats.steel.metalness = 0.72;
+      mats.steel.roughness = 0.42;
+    }
     mats.glass.userData.surface = 'glass';
     mats.glass.userData.windowGlass = true;   // kính cửa / kính chắn gió (khác kính đèn, ống ngắm)
     mats.lens.userData.surface = 'glass';
@@ -292,22 +466,33 @@ const VehicleKit = (() => {
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   }
 
-  // Bóng tối & bụi bẩn tích tụ dần xuống phía gầm xe (vertex color theo độ cao thế giới)
+  // Dữ liệu thời tiết theo đỉnh cho shader sơn (patchPaintMaterial), ghi vào vertex color:
+  // R = che khuất (gầm tối dần, mặt úp xuống tối hơn), G = độ cao trên mặt đất (0 sát đất .. 1 từ ~1.8 m),
+  // B = mức ngửa lên trời (bụi đọng trên mặt ngang)
   function applyGroundGrime(geo, yBase) {
     const pos = geo.attributes.position;
     const nrm = geo.attributes.normal;
     const col = new Float32Array(pos.count * 3);
+    // Che khuất tiếp xúc: chân mỗi chi tiết (chỗ tì lên giáp) tối dần lên trên -> chi tiết "ngồi" trên
+    // thân xe chứ không như dán nổi. Dải che khuất theo chiều cao chi tiết, tối đa ~0.3 m.
+    let yMin = Infinity, yMax = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      if (y < yMin) yMin = y;
+      if (y > yMax) yMax = y;
+    }
+    const band = Math.max(0.05, Math.min(yMax - yMin, 2.4) * 0.9);
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i) + yBase;
       let k = Math.max(0, Math.min(1, (y - 1.5) / 12.5));
       k = k * k * (3 - 2 * k);
-      // Mặt úp xuống nhận ít ánh sáng phản xạ từ đất hơn
-      const under = nrm.getY(i) < -0.5 ? 0.82 : 1.0;
-      const r = (0.6 + 0.4 * k) * under;
-      // Lớp bụi đất ngả nâu ở phần thấp
-      col[i * 3] = r * (1.0 - (1 - k) * 0.02);
-      col[i * 3 + 1] = r * (1.0 - (1 - k) * 0.06);
-      col[i * 3 + 2] = r * (1.0 - (1 - k) * 0.14);
+      const ny = nrm.getY(i);
+      const under = ny < -0.5 ? 0.8 : 1.0;
+      const c = Math.min(1, (pos.getY(i) - yMin) / band);
+      const contact = 0.66 + 0.34 * Math.sqrt(c);
+      col[i * 3] = (0.72 + 0.28 * k) * under * contact;
+      col[i * 3 + 1] = k;
+      col[i * 3 + 2] = ny > 0.55 ? Math.min(1, (ny - 0.55) / 0.35) : 0;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   }
@@ -338,6 +523,93 @@ const VehicleKit = (() => {
     out.computeBoundingSphere();
     out.computeBoundingBox();
     return out;
+  }
+
+  /**
+   * Khoảng cách tới cạnh sắc cho shader mòn mép sơn. Với mỗi tam giác, cạnh nào là mép giáp thật
+   * (2 mặt kề gập > ~35° hoặc cạnh hở) thì ghi độ cao tam giác hạ từ đỉnh đối diện; nội suy tuyến tính
+   * trong tam giác cho đúng khoảng cách (đơn vị thế giới) từ điểm vẽ tới cạnh đó. Cạnh chéo của mặt phẳng
+   * (2 tam giác đồng phẳng) không tính -> không lộ đường chéo. Thuộc tính vec4 edgeD (w = 0: hợp lệ).
+   * Xe cùng loại có hình học y hệt -> lưu đệm theo chữ ký hình học để 20 xe chỉ tính vài lần.
+   */
+  const EDGE_CACHE = new Map();
+  const EDGE_COS = Math.cos(35 * Math.PI / 180);
+  function computeEdgeWear(geo) {
+    const pos = geo.attributes.position.array;
+    const nV = geo.attributes.position.count, nT = Math.floor(nV / 3);
+    if (!nT) return;
+    let sig = nV;
+    for (let i = 0; i < pos.length; i += 7) sig = (sig * 31 + Math.round(pos[i] * 64)) % 2147483647;
+    const key = nV + ':' + sig;
+    let out = EDGE_CACHE.get(key);
+    if (!out) {
+      // Hàn đỉnh trùng vị trí (lưới 1/64 đơn vị) -> id số
+      const vid = new Int32Array(nV);
+      const weld = new Map();
+      let nextId = 0;
+      for (let i = 0; i < nV; i++) {
+        const x = Math.round(pos[i * 3] * 64), y = Math.round(pos[i * 3 + 1] * 64), z = Math.round(pos[i * 3 + 2] * 64);
+        const k = x + ',' + y + ',' + z;
+        let id = weld.get(k);
+        if (id === undefined) { id = nextId++; weld.set(k, id); }
+        vid[i] = id;
+      }
+      // Pháp tuyến mặt
+      const fn = new Float32Array(nT * 3);
+      for (let t = 0; t < nT; t++) {
+        const a = t * 9;
+        const ux = pos[a + 3] - pos[a], uy = pos[a + 4] - pos[a + 1], uz = pos[a + 5] - pos[a + 2];
+        const vx = pos[a + 6] - pos[a], vy = pos[a + 7] - pos[a + 1], vz = pos[a + 8] - pos[a + 2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const l = Math.hypot(nx, ny, nz) || 1;
+        fn[t * 3] = nx / l; fn[t * 3 + 1] = ny / l; fn[t * 3 + 2] = nz / l;
+      }
+      // Gom các tam giác theo cạnh (cạnh e đối diện đỉnh e)
+      const edges = new Map();
+      const sharp = new Uint8Array(nT * 3).fill(1);
+      for (let t = 0; t < nT; t++) {
+        for (let e = 0; e < 3; e++) {
+          const a = vid[t * 3 + (e + 1) % 3], b = vid[t * 3 + (e + 2) % 3];
+          if (a === b) { sharp[t * 3 + e] = 0; continue; }
+          const k = a < b ? a * 4194304 + b : b * 4194304 + a;
+          const list = edges.get(k);
+          if (list) list.push(t * 3 + e); else edges.set(k, [t * 3 + e]);
+        }
+      }
+      for (const list of edges.values()) {
+        if (list.length < 2) continue;
+        for (let i = 0; i < list.length; i++) {
+          const ti = (list[i] / 3) | 0;
+          for (let j = 0; j < list.length; j++) {
+            if (i === j) continue;
+            const tj = (list[j] / 3) | 0;
+            const d = fn[ti * 3] * fn[tj * 3] + fn[ti * 3 + 1] * fn[tj * 3 + 1] + fn[ti * 3 + 2] * fn[tj * 3 + 2];
+            if (d >= EDGE_COS) { sharp[list[i]] = 0; break; }
+          }
+        }
+      }
+      out = new Float32Array(nV * 4);
+      const FAR = 1000;
+      for (let t = 0; t < nT; t++) {
+        const a = t * 9;
+        const P = (k, c) => pos[a + k * 3 + c];
+        const ux = P(1, 0) - P(0, 0), uy = P(1, 1) - P(0, 1), uz = P(1, 2) - P(0, 2);
+        const vx = P(2, 0) - P(0, 0), vy = P(2, 1) - P(0, 1), vz = P(2, 2) - P(0, 2);
+        const area2 = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+        for (let e = 0; e < 3; e++) {
+          const p = (e + 1) % 3, q = (e + 2) % 3;
+          const len = Math.hypot(P(p, 0) - P(q, 0), P(p, 1) - P(q, 1), P(p, 2) - P(q, 2)) || 1;
+          const alt = area2 / len;
+          for (let k = 0; k < 3; k++) {
+            out[(t * 3 + k) * 4 + e] = sharp[t * 3 + e] ? (k === e ? alt : 0) : FAR;
+          }
+        }
+        for (let k = 0; k < 3; k++) out[(t * 3 + k) * 4 + 3] = 0;
+      }
+      if (EDGE_CACHE.size > 64) EDGE_CACHE.clear();
+      EDGE_CACHE.set(key, out);
+    }
+    geo.setAttribute('edgeD', new THREE.BufferAttribute(out, 4));
   }
 
   const _m4 = new THREE.Matrix4();
@@ -377,6 +649,115 @@ const VehicleKit = (() => {
   }
 
   /**
+   * Khối hộp vát cạnh 45° (chamfer): thép tấm thật luôn có mép mài / mối hàn bo, không vuông sắc như khối CAD.
+   * Dải vát nhỏ bắt sáng thành viền mảnh dọc mọi cạnh -> khối đọc rõ hình, hết vẻ "đồ chơi khối hộp".
+   * Kích thước ngoài giữ đúng w × h × d (vát ăn vào trong). Pháp tuyến phẳng từng mặt (non-indexed).
+   */
+  function chamferBoxGeometry(w, h, d, bevel) {
+    const hx = w / 2, hy = h / 2, hz = d / 2;
+    const b = Math.min(bevel, hx * 0.45, hy * 0.45, hz * 0.45);
+    const verts = [];
+    // 3 đỉnh ở mỗi góc (sx, sy, sz): nằm trên mặt X, mặt Y, mặt Z
+    const PX = (sx, sy, sz) => [sx * hx, sy * (hy - b), sz * (hz - b)];
+    const PY = (sx, sy, sz) => [sx * (hx - b), sy * hy, sz * (hz - b)];
+    const PZ = (sx, sy, sz) => [sx * (hx - b), sy * (hy - b), sz * hz];
+    const quad = (a, bq, c, dq) => {
+      const out = [(a[0] + bq[0] + c[0] + dq[0]) / 4, (a[1] + bq[1] + c[1] + dq[1]) / 4, (a[2] + bq[2] + c[2] + dq[2]) / 4];
+      pushTri(verts, a, bq, c, out);
+      pushTri(verts, a, c, dq, out);
+    };
+    const S = [-1, 1];
+    for (const s of S) {
+      quad(PX(s, -1, -1), PX(s, 1, -1), PX(s, 1, 1), PX(s, -1, 1));
+      quad(PY(-1, s, -1), PY(1, s, -1), PY(1, s, 1), PY(-1, s, 1));
+      quad(PZ(-1, -1, s), PZ(1, -1, s), PZ(1, 1, s), PZ(-1, 1, s));
+    }
+    for (const s of S) {
+      for (const t of S) {
+        quad(PY(-1, s, t), PY(1, s, t), PZ(1, s, t), PZ(-1, s, t));   // cạnh dọc trục X
+        quad(PX(s, -1, t), PX(s, 1, t), PZ(s, 1, t), PZ(s, -1, t));   // cạnh dọc trục Y
+        quad(PX(s, t, -1), PX(s, t, 1), PY(s, t, 1), PY(s, t, -1));   // cạnh dọc trục Z
+        for (const u of S) {
+          const a = PX(s, t, u), c = PY(s, t, u), e = PZ(s, t, u);
+          pushTri(verts, a, c, e, [s, t, u]);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  /**
+   * Trụ tròn (trục Y, đỉnh +Y bán kính rTop) thay cho CylinderGeometry:
+   * - mép hai mặt đầu vát nhỏ (bevel > 0) -> vành sáng mảnh như ống thép tiện / bánh đúc thật
+   * - UV trụ liên tục theo chu vi (đơn vị thế giới × UV_SCALE): vân ngụy trang quấn quanh ống
+   *   thay vì vỡ thành ô vuông như chiếu hộp; mặt đầu chiếu phẳng
+   * Pháp tuyến mượt quanh chu vi, gãy ở mép vát. Hình học không đánh chỉ số, uv.userData.custom = true.
+   */
+  function roundCylGeometry(rTop, rBottom, len, seg, bevel = 0, open = false) {
+    const h = len / 2;
+    const b = Math.min(bevel, Math.min(rTop, rBottom) * 0.3, len * 0.2);
+    // Mặt cắt dọc (r, y) từ đáy lên đỉnh
+    const prof = b > 0.001
+      ? [[rBottom - b, -h], [rBottom, -h + b], [rTop, h - b], [rTop - b, h]]
+      : [[rBottom, -h], [rTop, h]];
+    const pos = [], nrm = [], uv = [];
+    const rAvg = (rTop + rBottom) / 2;
+    const ring = (i) => { const a = (i / seg) * Math.PI * 2; return [Math.sin(a), Math.cos(a), a]; };
+    for (let k = 0; k < prof.length - 1; k++) {
+      const [r0, y0] = prof[k], [r1, y1] = prof[k + 1];
+      let nr = y1 - y0, ny = -(r1 - r0);
+      const l = Math.hypot(nr, ny) || 1; nr /= l; ny /= l;
+      for (let i = 0; i < seg; i++) {
+        const A = ring(i), B = ring(i + 1);
+        const v = (s, r, y) => {
+          pos.push(s[0] * r, y, s[1] * r);
+          nrm.push(s[0] * nr, ny, s[1] * nr);
+          uv.push(s[2] * rAvg * UV_SCALE, y * UV_SCALE);
+        };
+        v(A, r0, y0); v(B, r0, y0); v(B, r1, y1);
+        v(A, r0, y0); v(B, r1, y1); v(A, r1, y1);
+      }
+    }
+    if (!open) {
+      for (const [r, y, ny] of [[prof[prof.length - 1][0], h, 1], [prof[0][0], -h, -1]]) {
+        if (r <= 0.0001) continue;
+        for (let i = 0; i < seg; i++) {
+          const A = ring(i), B = ring(i + 1);
+          const pts = ny > 0 ? [[0, 0], [A[0] * r, A[1] * r], [B[0] * r, B[1] * r]] : [[0, 0], [B[0] * r, B[1] * r], [A[0] * r, A[1] * r]];
+          for (const p of pts) {
+            pos.push(p[0], y, p[1]);
+            nrm.push(0, ny, 0);
+            uv.push(p[0] * UV_SCALE, p[1] * UV_SCALE);
+          }
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.userData.customUV = true;
+    return g;
+  }
+
+  // Vát mép trụ theo cỡ: ống / bánh / tháp lớn vát ~1-2 cm, chi tiết nhỏ không vát
+  function cylBevel(rTop, rBottom, len, seg) {
+    const r = Math.min(rTop, rBottom);
+    if (r < 0.45 || len < 0.25 || seg < 10) return 0;
+    return Math.min(0.16, 0.04 + r * 0.05);
+  }
+
+  // Độ vát theo cỡ khối: tấm lớn vát ~2-4 cm, chi tiết nhỏ (bu-lông, khe, lá chớp) giữ hộp thường cho nhẹ
+  function boxGeometry(w, h, d) {
+    const m = Math.min(w, h, d);
+    if (m < 0.22 || Math.max(w, h, d) < 0.9) return new THREE.BoxGeometry(w, h, d);
+    return chamferBoxGeometry(w, h, d, Math.min(0.3, 0.06 + m * 0.1));
+  }
+
+  /**
    * Gom chi tiết tĩnh theo vật liệu rồi gộp thành một mesh cho mỗi vật liệu.
    * Mọi tọa độ tính trong hệ tọa độ của group cha sẽ nhận mesh.
    */
@@ -396,12 +777,13 @@ const VehicleKit = (() => {
     }
 
     add(geo, mat, pos, rot, scale) {
+      const customUV = !!(geo.userData && geo.userData.customUV) && !scale;
       const g = geo.index ? geo.toNonIndexed() : geo.clone();
       if (!g.attributes.normal) g.computeVertexNormals();
       g.applyMatrix4(makeMatrix(pos, rot, scale));
       if (this.tag) g.userData.partTag = this.tag;
       if (mat.userData && mat.userData.boxUV) {
-        applyBoxUV(g);
+        if (!customUV) applyBoxUV(g);
         applyGroundGrime(g, this.yBase);
       }
       if (!this.buckets.has(mat)) this.buckets.set(mat, []);
@@ -411,12 +793,12 @@ const VehicleKit = (() => {
     }
 
     box(w, h, d, mat, pos, rot) {
-      return this.add(new THREE.BoxGeometry(w, h, d), mat, pos, rot);
+      return this.add(this.plain ? new THREE.BoxGeometry(w, h, d) : boxGeometry(w, h, d), mat, pos, rot);
     }
 
     // Trụ nằm theo trục: 'x' | 'y' | 'z'
     cyl(rTop, rBottom, len, seg, mat, pos, axis = 'y', rot = null, open = false) {
-      const g = new THREE.CylinderGeometry(rTop, rBottom, len, seg, 1, open);
+      const g = roundCylGeometry(rTop, rBottom, len, seg, this.plain ? 0 : cylBevel(rTop, rBottom, len, seg), open);
       if (axis === 'x') g.rotateZ(-Math.PI / 2);
       else if (axis === 'z') g.rotateX(-Math.PI / 2);
       return this.add(g, mat, pos, rot);
@@ -425,13 +807,88 @@ const VehicleKit = (() => {
     // Ống trụ nối 2 điểm (xi-lanh thủy lực, thanh chống, ống dẫn)
     strut(p0, p1, radius, mat, seg = 8, radius1 = radius) {
       const o = orientBetween(p0, p1);
-      return this.add(new THREE.CylinderGeometry(radius1, radius, o.len, seg), mat, o.pos, o.rot);
+      return this.add(roundCylGeometry(radius1, radius, o.len, seg, cylBevel(radius1, radius, o.len, seg)), mat, o.pos, o.rot);
     }
 
     // Thanh hộp nối 2 điểm (tay đòn, dầm đỡ, mắt máng tiếp đạn)
     beam(p0, p1, w, d, mat) {
       const o = orientBetween(p0, p1);
-      return this.add(new THREE.BoxGeometry(w, o.len, d), mat, o.pos, o.rot);
+      return this.add(boxGeometry(w, o.len, d), mat, o.pos, o.rot);
+    }
+
+    // Tay nắm chữ U bằng thép tròn hàn lên giáp: p = giữa hai chân (trên mặt giáp), dir = 'x' | 'z'
+    // (phương thanh nắm), cao 'up' theo +Y. Sơn cùng màu xe -> shader tự mòn sơn ở chỗ tay cầm.
+    grabHandle(p, dir, len, up, mat, r = 0.13) {
+      const ax = dir === 'x' ? len / 2 : 0, az = dir === 'x' ? 0 : len / 2;
+      const p0 = [p[0] - ax, p[1], p[2] - az], p1 = [p[0] + ax, p[1], p[2] + az];
+      const q0 = [p0[0], p0[1] + up, p0[2]], q1 = [p1[0], p1[1] + up, p1[2]];
+      this.strut(p0, q0, r, mat, 6);
+      this.strut(p1, q1, r, mat, 6);
+      this.strut(q0, q1, r, mat, 6);
+      return this;
+    }
+
+    // Hàng bu-lông đầu lục giác từ p0 tới p1 (n con), mũ bu-lông nhô theo trục 'x' | 'y' | 'z'
+    // (dấu của nx hướng ra ngoài: dir = ±1). rot: nghiêng thêm cho mặt giáp vát.
+    boltRow(p0, p1, n, axis, mat, r = 0.17, dir = 1, rot = null) {
+      for (let i = 0; i < n; i++) {
+        const k = n === 1 ? 0.5 : i / (n - 1);
+        const p = [p0[0] + (p1[0] - p0[0]) * k, p0[1] + (p1[1] - p0[1]) * k, p0[2] + (p1[2] - p0[2]) * k];
+        if (axis === 'x') p[0] += dir * 0.06; else if (axis === 'y') p[1] += dir * 0.06; else p[2] += dir * 0.06;
+        this.cyl(r, r * 1.05, 0.16, 6, mat, p, axis, rot);
+      }
+      return this;
+    }
+
+    // Khe ghép tấm giáp (rãnh sẫm mảnh) từ p0 tới p1 trên mặt có pháp tuyến n ([x, y, z])
+    seam(p0, p1, n, mat, w = 0.12) {
+      const o = orientBetween(p0, p1);
+      _e.set(o.rot[0], o.rot[1], o.rot[2], 'XYZ');
+      _q.setFromEuler(_e);
+      _v.set(1, 0, 0).applyQuaternion(_q);
+      const thinX = Math.abs(_v.x * n[0] + _v.y * n[1] + _v.z * n[2]) > 0.7;
+      const t = 0.06;
+      return this.add(new THREE.BoxGeometry(thinX ? t : w, o.len, thinX ? w : t), mat, o.pos, o.rot);
+    }
+
+    // Đường hàn nổi (gờ tròn nhỏ cùng màu sơn) dọc mép ghép hai tấm giáp
+    weld(p0, p1, mat, r = 0.11) {
+      return this.strut(p0, p1, r, mat, 5);
+    }
+
+    // Bản lề cửa / nắp: các khớp trụ xen kẽ dọc trục 'x' | 'y' | 'z' tại p, dài len
+    hinge(p, axis, len, mat, r = 0.28, knuckles = 3) {
+      const seg = len / (knuckles * 2 - 1);
+      for (let i = 0; i < knuckles; i++) {
+        const off = -len / 2 + seg * (i * 2 + 0.5);
+        const q = [p[0], p[1], p[2]];
+        if (axis === 'x') q[0] += off; else if (axis === 'y') q[1] += off; else q[2] += off;
+        this.cyl(r, r, seg * 0.92, 8, mat, q, axis);
+      }
+      return this;
+    }
+
+    // Can nhiên liệu 20 L kiểu NATO: thân dập gân chữ X trên hai mặt lớn, vai vát, tay xách 3 quai,
+    // nắp rót ở góc. pos = tâm can; bề dày t theo trục X cục bộ, cao h, rộng d; rotY quay quanh trục đứng.
+    jerrycan(pos, rotY, t, h, d, mat, dark) {
+      const c = Math.cos(rotY), sn = Math.sin(rotY);
+      const P = (lx, ly, lz) => [pos[0] + lx * c + lz * sn, pos[1] + ly, pos[2] - lx * sn + lz * c];
+      this.box(t, h * 0.88, d, mat, P(0, -h * 0.06, 0), [0, rotY, 0]);
+      this.box(t * 0.9, h * 0.08, d * 0.94, mat, P(0, h * 0.42, 0), [0, rotY, 0]);
+      // Gân chữ X dập nổi
+      const ang = Math.atan2(d * 0.7, h * 0.66), L = Math.hypot(h * 0.66, d * 0.7);
+      for (const sx of [-1, 1]) {
+        for (const k of [-1, 1]) this.box(0.07, L, Math.max(0.12, d * 0.06), mat, P(sx * (t / 2 + 0.025), -h * 0.06, 0), [k * ang, rotY, 0, 'YXZ']);
+        // gờ viền quanh mặt
+        this.box(0.06, h * 0.08, d * 0.86, mat, P(sx * (t / 2 + 0.02), h * 0.3, 0), [0, rotY, 0]);
+        this.box(0.06, h * 0.08, d * 0.86, mat, P(sx * (t / 2 + 0.02), -h * 0.42, 0), [0, rotY, 0]);
+      }
+      // Tay xách 3 quai + nắp rót
+      const hy = h * 0.46 + 0.05;
+      this.box(t * 0.28, 0.14, d * 0.62, mat, P(0, hy + h * 0.07, -d * 0.12), [0, rotY, 0]);
+      for (const k of [-0.38, -0.12, 0.14]) this.box(t * 0.24, h * 0.07, 0.13, mat, P(0, hy + h * 0.03, k * d), [0, rotY, 0]);
+      this.cyl(t * 0.2, t * 0.22, h * 0.07, 8, dark || mat, P(0, hy + h * 0.02, d * 0.36));
+      return this;
     }
 
     // Chuyển toàn bộ thành mesh và gắn vào group. origin: dời gốc mesh (để getWorldPosition có ý nghĩa)
@@ -453,6 +910,7 @@ const VehicleKit = (() => {
         }
         const merged = mergeGeometries(geos);
         geos.forEach(g => g.dispose());
+        if (mat.userData && mat.userData.boxUV) computeEdgeWear(merged);
         const mesh = new THREE.Mesh(merged, mat);
         if (Object.keys(ranges).length) {
           mesh.userData.partRanges = ranges;
@@ -481,7 +939,9 @@ const VehicleKit = (() => {
     toGeometryByMaterial() {
       const out = new Map();
       for (const [mat, geos] of this.buckets) {
-        out.set(mat, mergeGeometries(geos));
+        const merged = mergeGeometries(geos);
+        if (mat.userData && mat.userData.boxUV) computeEdgeWear(merged);
+        out.set(mat, merged);
         geos.forEach(g => g.dispose());
       }
       this.buckets.clear();
@@ -647,13 +1107,15 @@ const VehicleKit = (() => {
         if (this.gone[i]) {
           this._m.makeScale(0, 0, 0);
         } else if (this.flat[i] > 0) {
-          // Lốp xẹp: tâm bánh tụt xuống, lốp bẹp theo phương đứng của thân xe (không xoay theo bánh)
+          // Lốp xẹp: lốp bẹp theo phương đứng của thân xe (không xoay theo bánh), tâm bánh giữ nguyên trong hệ thân —
+          // chính thân xe tụt xuống ở góc đó (VehicleDamage.recompute: sink / nghiêng ~0.2R) nên đáy lốp bẹp vẫn tì đúng
+          // mặt đất; hạ thêm tâm bánh ở đây sẽ thành tụt 2 lần -> lốp ngập xuống đất
           const f = this.flat[i];
           const sy = 1 - 0.2 * f;
           this._m.makeRotationFromQuaternion(this._q);
           this._sm.makeScale(1 + 0.04 * f, sy, 1 + 0.03 * f);
           this._m.premultiply(this._sm);
-          this._m.setPosition(p.x, p.y - this.radius * (1 - sy), p.z);
+          this._m.setPosition(p.x, p.y, p.z);
         } else {
           this._p.set(p.x, p.y, p.z);
           this._m.compose(this._p, this._q, this._one);
@@ -747,6 +1209,7 @@ const VehicleKit = (() => {
       this.offsets = this.sidesX.map(() => 0);
 
       const batch = new PartBatch();
+      batch.plain = true;   // mắt xích nhỏ, hàng trăm cái: không vát cạnh cho nhẹ
       opts.buildLink(batch, this.pitch);
       this.meshes = [];
       for (const [mat, geo] of batch.toGeometryByMaterial()) {
@@ -1054,8 +1517,8 @@ const VehicleKit = (() => {
     return t;
   }
 
-  // Decal chữ số hiệu chiến thuật (nền trong suốt)
-  function createStencilDecal(text, w, h, color = 'rgba(232,228,214,0.88)') {
+  // Decal chữ số hiệu chiến thuật (nền trong suốt; sơn trắng đã bạc, ngả màu như ngoài chiến trường)
+  function createStencilDecal(text, w, h, color = 'rgba(214,210,194,0.72)') {
     if (typeof document === 'undefined') return null;
     const canvas = document.createElement('canvas');
     canvas.width = 256;

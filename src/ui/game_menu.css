@@ -36,7 +36,9 @@
 .gm-field input[type=range] { width: 100%; accent-color: var(--tc-accent); }
 .gm-field b { text-align: right; font: 700 13px var(--font-mono, monospace); color: var(--tc-accent-2); }
 .gm-sub { margin-top: 4px; font-size: 12px; font-weight: 900; color: #a6ae9e; text-transform: uppercase; letter-spacing: .6px; }
-.gm-segs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.gm-segs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+@media (max-width: 560px) { .gm-segs { grid-template-columns: repeat(2, 1fr); } }
+.gm-seg b .ti { font-size: 12px; color: var(--tc-accent-2); }
 .gm-seg { cursor: pointer; padding: 10px 8px; border-radius: 0; border: 1px solid rgba(120, 130, 109, 0.45); background: rgba(9, 11, 9, 0.8); color: #d6dad2; text-align: left; font: inherit; }
 .gm-seg b { display: block; font-size: 14px; color: #fff; }
 .gm-seg small { font-size: 11px; color: #a0a997; font-family: system-ui, sans-serif; }

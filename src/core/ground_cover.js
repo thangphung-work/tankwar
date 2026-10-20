@@ -12,11 +12,11 @@ const GroundCover = (() => {
   const PEBBLES_PER_CELL = 7;
 
   const BIOME = {
-    HIGHLAND: { grass: [[0.38, 0.47, 0.22], [0.58, 0.55, 0.32]], density: 1.0, pebble: [0.52, 0.5, 0.46], pebbleK: 1.0, tuftH: [5, 9] },
-    RIVER_LAKE: { grass: [[0.34, 0.5, 0.2], [0.55, 0.55, 0.3]], density: 1.1, pebble: [0.5, 0.47, 0.42], pebbleK: 0.8, tuftH: [5, 10] },
-    JUNGLE: { grass: [[0.22, 0.38, 0.15], [0.38, 0.4, 0.2]], density: 1.2, pebble: [0.42, 0.38, 0.32], pebbleK: 0.6, tuftH: [6, 11] },
-    DESERT: { grass: [[0.74, 0.66, 0.42], [0.82, 0.72, 0.5]], density: 0.04, pebble: [0.8, 0.68, 0.52], pebbleK: 0.35, tuftH: [3, 6] },
-    URBAN: { grass: [[0.36, 0.44, 0.22], [0.5, 0.5, 0.3]], density: 0.35, pebble: [0.5, 0.49, 0.46], pebbleK: 1.1, tuftH: [3, 6] }
+    HIGHLAND: { grass: [[0.36, 0.41, 0.23], [0.53, 0.5, 0.33]], density: 1.0, pebble: [0.44, 0.42, 0.39], pebbleK: 1.0, tuftH: [5, 9] },
+    RIVER_LAKE: { grass: [[0.33, 0.42, 0.21], [0.51, 0.5, 0.31]], density: 1.1, pebble: [0.43, 0.4, 0.36], pebbleK: 0.8, tuftH: [5, 10] },
+    JUNGLE: { grass: [[0.25, 0.33, 0.17], [0.38, 0.38, 0.22]], density: 1.2, pebble: [0.36, 0.33, 0.28], pebbleK: 0.6, tuftH: [6, 11] },
+    DESERT: { grass: [[0.74, 0.66, 0.42], [0.82, 0.72, 0.5]], density: 0.04, pebble: [0.68, 0.57, 0.44], pebbleK: 0.35, tuftH: [3, 6] },
+    URBAN: { grass: [[0.35, 0.39, 0.23], [0.49, 0.47, 0.31]], density: 0.35, pebble: [0.43, 0.42, 0.4], pebbleK: 1.1, tuftH: [3, 6] }
   };
 
   function rngOf(seed) {
@@ -40,7 +40,7 @@ const GroundCover = (() => {
       for (let i = 0; i < K.n; i++) {
         const x0 = ox + C * (0.18 + rnd() * 0.64), lean = (rnd() - 0.5) * K.spread, h = C * (K.hMin + rnd() * (K.hMax - K.hMin)) - 2, w = 1.8 + rnd() * 2.8;
         const k = 0.7 + rnd() * 0.45, dry = K.dry ? 0.35 + rnd() * 0.5 : rnd() * 0.18;
-        const base = [120 + 60 * dry, 140 + 20 * dry, 96 - 10 * dry], tip = [215 + 30 * dry, 232 - 10 * dry, 180 - 60 * dry];
+        const base = [148 + 50 * dry, 162 + 16 * dry, 116 - 10 * dry], tip = [212 + 30 * dry, 222 - 6 * dry, 168 - 56 * dry];
         const gr = g.createLinearGradient(0, oy + C, 0, oy + C - h);
         gr.addColorStop(0, `rgb(${base[0] * k | 0},${base[1] * k | 0},${base[2] * k | 0})`);
         gr.addColorStop(1, `rgb(${Math.min(255, tip[0] * k) | 0},${Math.min(255, tip[1] * k) | 0},${Math.max(0, tip[2] * k) | 0})`);
@@ -194,17 +194,30 @@ const GroundCover = (() => {
       if (Math.abs(ox) <= half && Math.abs(oz) <= half) {
         const rnd = rngOf((i * 73856093) ^ (j * 19349663) ^ 0x5bd1e995);
         const nTry = Math.round(TUFTS_PER_CELL * B.density);
-        for (let k = 0; k < nTry; k++) {
-          const x = ox + rnd() * CELL, z = oz + rnd() * CELL, r1 = rnd(), r2 = rnd(), r3 = rnd();
-          const M = this.masks(x, z);
-          if (r1 > M.grass * 1.15 || this.blocked(x, z)) continue;
-          const hgt = B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0]), wid = hgt * (0.7 + r3 * 0.5);
-          const r4 = rnd(), r5 = rnd();
-          e.set((r4 - 0.5) * 0.5, r3 * 6.283, (r5 - 0.5) * 0.5);
-          m4.compose(v.set(x, M.h - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));
-          gm.push(...m4.elements);
-          const dry = Math.max(0, Math.min(1, r2 * 0.7 + (1 - M.grass) * 0.5)), kk = 1.05 + r1 * 0.25;
-          for (let ch = 0; ch < 3; ch++) gc.push((B.grass[0][ch] + (B.grass[1][ch] - B.grass[0][ch]) * dry) * kk);
+        // Cỏ mọc theo CỤM và MẢNG như ngoài đồng (không rắc đều từng khóm giống nhau -> hết cảm giác hoa văn lặp):
+        // - mảng lớn (~150 m) dày / thưa / trống theo nhiễu; mỗi cụm 1-6 khóm sát nhau
+        // - cả cụm chung cỡ & sắc độ (khô / xanh), từng khóm lệch nhẹ
+        const nClu = Math.max(1, Math.round(nTry / 2.6));
+        for (let k = 0; k < nClu; k++) {
+          const cx = ox + rnd() * CELL, cz = oz + rnd() * CELL, ra = rnd(), rb = rnd(), rc = rnd(), rd = rnd();
+          const pn = this.noise ? this.noise(cx / 170 + 0.37, cz / 170 + 0.11) : [0.5, 0.5, 0.5];
+          const dens = smooth(0.3, 0.66, pn[2]) * 1.35 + 0.08;
+          const n = 1 + Math.floor(ra * rb * 6), cr = 2.5 + rc * 7;
+          const size = 0.65 + rd * rd * 1.0;
+          const cDry = Math.max(0, Math.min(1, pn[0] * 0.9 - 0.15 + (rnd() - 0.5) * 0.5));
+          for (let t = 0; t < n; t++) {
+            const a = rnd() * 6.283, d = Math.sqrt(rnd()) * cr;
+            const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, r1 = rnd(), r2 = rnd(), r3 = rnd();
+            const M = this.masks(x, z);
+            if (r1 > M.grass * 1.15 * dens || this.blocked(x, z)) continue;
+            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3), wid = hgt * (0.7 + r3 * 0.5);
+            const r4 = rnd(), r5 = rnd();
+            e.set((r4 - 0.5) * 0.5, r3 * 6.283, (r5 - 0.5) * 0.5);
+            m4.compose(v.set(x, M.h - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));
+            gm.push(...m4.elements);
+            const dry = Math.max(0, Math.min(1, cDry + (r2 - 0.5) * 0.25 + (1 - M.grass) * 0.4)), kk = 1.0 + r1 * 0.22;
+            for (let ch = 0; ch < 3; ch++) gc.push((B.grass[0][ch] + (B.grass[1][ch] - B.grass[0][ch]) * dry) * kk);
+          }
         }
         for (let k = 0; k < PEBBLES_PER_CELL; k++) {
           const x = ox + rnd() * CELL, z = oz + rnd() * CELL, r1 = rnd(), r2 = rnd(), r3 = rnd();

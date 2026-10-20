@@ -437,6 +437,9 @@
     turret.add(periHead);
     VehicleKit.registerPartGroup(unit, 'opticCdr', periHead);
 
+    // Tay nắm leo tháp hai bên mép nóc
+    for (const s of [-1, 1]) tb.grabHandle([s * 9.4, ROOF, 7.0], 'z', 2.8, 0.6, P);
+
     // Tấm xả áp hộc đạn trên nóc đuôi tháp
     tb.box(16.2, 0.06, 0.16, D, [0, ROOF + 0.03, 8.6]);
     tb.box(16.2, 0.06, 0.16, D, [0, ROOF + 0.03, 16.2]);
@@ -489,8 +492,36 @@
     tb.cyl(1.15, 1.15, 11.5, 12, M.canvas, [0.6, by0 + 1.3, 18.9], 'x');
     tb.box(2.6, 2.1, 2.2, M.canvasDark, [-6.6, by0 + 1.15, 19.2], [0, 0.12, 0.05]);
     tb.box(2.2, 1.7, 2.0, M.canvas, [6.4, by0 + 0.95, 19.0], [0, -0.2, 0]);
-    tb.box(0.9, 2.0, 1.5, P, [-3.6, by0 + 1.1, 19.9]);
+    tb.jerrycan([-3.6, by0 + 1.4, 19.9], Math.PI / 2, 1.2, 2.8, 2.0, P, D);
     tb.setTag(null);
+
+    // --- Chi tiết bề mặt tháp: ghép tấm module má, mối hàn, bu-lông, móc cẩu ---
+    const SIDE_TILT = Math.atan2(0.7, 6.4);
+    const sideX = (y) => 11.2 - (y - 0.6) * (0.7 / 6.4);
+    for (const s of [-1, 1]) {
+      const rot = [0, 0, s * SIDE_TILT];
+      // Module giáp má: chia 2 tấm, viền bu-lông trên/dưới
+      tb.seam([s * 12.42, 1.5, -6.2], [s * 12.42, 6.4, -6.2], [s, 0, 0], D);
+      tb.boltRow([s * 12.4, 6.15, -11.0], [s * 12.4, 6.15, -1.2], 8, 'x', D, 0.16, s);
+      tb.boltRow([s * 12.4, 1.65, -11.0], [s * 12.4, 1.65, -1.2], 8, 'x', D, 0.16, s);
+      tb.weld([s * 12.2, 6.62, -11.0], [s * 12.2, 6.62, -0.7], P, 0.1);
+      // Hông tháp sau module: đường ghép ngang, bu-lông mép nóc, mối hàn nóc - hông
+      tb.seam([s * (sideX(2.4) + 0.02), 2.4, -0.4], [s * (sideX(2.4) + 0.02), 2.4, 8.4], [s, 0, 0], D);
+      tb.boltRow([s * sideX(6.5), 6.5, -0.2], [s * sideX(6.5), 6.5, 7.6], 6, 'x', D, 0.15, s, rot);
+      tb.weld([s * (sideX(ROOF) - 0.04), ROOF + 0.02, -4.0], [s * (sideX(ROOF) - 0.04), ROOF + 0.02, 8.0], P);
+      // Mối hàn chân giáp nêm với mặt trước tháp
+      tb.weld([s * 3.6, ROOF + 0.02, -11.2], [s * 10.6, ROOF + 0.02, -11.2], P, 0.1);
+      // Móc cẩu nóc tháp (trước & sau)
+      for (const z of [-9.8, 15.6]) {
+        tb.box(1.0, 0.35, 0.6, P, [s * 8.4, ROOF + 0.15, z]);
+        tb.add(new THREE.TorusGeometry(0.5, 0.16, 5, 10), M.steel, [s * 8.4, ROOF + 0.5, z], [0, Math.PI / 2, 0]);
+      }
+      // Bu-lông viền nóc dọc hai mép
+      tb.boltRow([s * 9.6, ROOF, -8.4], [s * 9.6, ROOF, 15.2], 12, 'y', D, 0.14);
+    }
+    // Nấm thông gió quạt hút khí thuốc phóng trên nóc giữa
+    tb.cyl(0.55, 0.6, 0.6, 12, P, [1.4, ROOF + 0.3, 5.6]);
+    tb.cyl(1.15, 0.95, 0.35, 14, P, [1.4, ROOF + 0.75, 5.6]);
 
     tb.build(turret);
 
@@ -539,6 +570,12 @@
     const mPts = [[-3.25, 1.5], [3.25, 1.5], [3.25, -2.8], [2.4, -4.3], [-2.4, -4.3], [-3.25, -2.8]];
     mb.add(VehicleKit.loft(mPts, mPts, -2.7, 2.5), M.paint);
     mb.cyl(1.75, 1.75, 1.2, 18, M.paint, [0, 0, -4.9], 'z');
+    // Bạt che khe nòng (chống bụi lọt vào khe tấm chắn), nếp gấp vải
+    mb.cyl(1.42, 1.9, 1.3, 16, M.canvasDark, [0, 0, -6.1], 'z');
+    for (const z of [-5.75, -6.3]) {
+      const r = 1.95 - (-5.45 - z) * 0.37;
+      mb.cyl(r, r, 0.16, 16, M.canvasDark, [0, 0, z], 'z');
+    }
     mb.cyl(0.24, 0.24, 1.0, 8, M.dark, [-2.0, -1.0, -4.7], 'z');
     mb.box(1.2, 0.8, 0.5, M.dark, [2.0, 1.4, -4.2]);
     mb.build(pivot);

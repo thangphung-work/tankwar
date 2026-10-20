@@ -179,7 +179,7 @@
     u.elevation = 0;
     u._labHome = s;
     lab.home = key;
-    lab.g.camera.position.set(s.x, u.y + 420, s.z + 320);
+    if (lab.g._cam) lab.g._cam.unit = null;   // camera bám đuôi đặt lại ngay sau lưng xe ở chỗ mới
     rebuildOverlay();
   }
 
@@ -439,27 +439,51 @@
   let root = null;
   function buildUI() {
     const css = document.createElement('style');
+    // Cùng phong cách bàn tác chiến của sảnh: màu lấy từ theme.css, góc hổ phách, mục đánh số
     css.textContent = `
-      #sh-lab{position:fixed;top:72px;right:14px;width:300px;z-index:9000;font:12px/1.35 'Segoe UI',Arial,sans-serif;color:#e6edf3;
-        background:rgba(8,14,22,.86);border:1px solid rgba(120,200,255,.35);border-radius:8px;padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,.45);
-        max-height:calc(100vh - 90px);overflow:auto;user-select:none}
-      #sh-lab h3{margin:0 0 6px;font-size:13px;letter-spacing:.06em;color:#9fd8ff}
-      #sh-lab .row{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 8px}
-      #sh-lab button{flex:1 1 auto;min-width:60px;background:#17263a;color:#dbe8f5;border:1px solid #2f4a68;border-radius:4px;padding:5px 6px;cursor:pointer;font:inherit}
-      #sh-lab button:hover{background:#21385a}
-      #sh-lab button.on{background:#2f6db0;border-color:#79b8ff;color:#fff}
-      #sh-lab .lbl{font-size:10.5px;color:#8aa4bf;text-transform:uppercase;letter-spacing:.08em;margin-top:4px}
-      #sh-lab .st{background:rgba(255,255,255,.05);border-radius:4px;padding:6px;margin:4px 0 8px;white-space:pre-line}
-      #sh-lab .safe{color:#62f09a}#sh-lab .warn{color:#ffcf5a}#sh-lab .bad{color:#ff6b5a}
-      #sh-lab .log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05)}
-      #sh-lab .log .ok{color:#7ff0b0}#sh-lab .log .hit{color:#ff9a7a}#sh-lab .log .info{color:#9fc3e6}
-      #sh-lab .hp{display:flex;align-items:center;gap:6px;margin:2px 0}
-      #sh-lab .hp i{flex:1;height:6px;background:#2a3442;border-radius:3px;overflow:hidden}
-      #sh-lab .hp b{display:block;height:100%;background:#e5533d}
-      #sh-lab .help{color:#8aa4bf;font-size:11px}
-      #sh-lab select{width:100%;background:#17263a;color:#dbe8f5;border:1px solid #2f4a68;border-radius:4px;padding:4px}
-      #sh-lab button.fx-go{background:#5a2a16;border-color:#c8642e;color:#ffe2cc}#sh-lab button.fx-go:hover{background:#7a3a1e}
-      #sh-lab button.fx-bad{background:#4a1418;border-color:#b8383f;color:#ffd6d8}#sh-lab button.fx-bad:hover{background:#6a1e24}
+      #sh-lab{position:fixed;top:72px;right:14px;width:318px;z-index:9000;display:flex;flex-direction:column;
+        max-height:calc(100vh - 90px);font:12px/1.35 var(--font-tech);color:var(--tc-text);user-select:none;
+        background:var(--tc-panel);border:1px solid var(--tc-line);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 10px 40px rgba(0,0,0,.5)}
+      #sh-lab::before,#sh-lab::after{content:'';position:absolute;width:14px;height:14px;pointer-events:none;border:0 solid var(--tc-accent);opacity:.85}
+      #sh-lab::before{top:-1px;left:-1px;border-width:2px 0 0 2px}#sh-lab::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0}
+      #sh-lab .shl-head{flex-shrink:0;padding:10px 12px 9px;border-bottom:1px solid var(--tc-line)}
+      #sh-lab .shl-brand{display:flex;align-items:center;gap:9px}
+      #sh-lab .shl-brand>.ti{font-size:22px;color:var(--tc-accent);filter:drop-shadow(0 0 6px rgba(231,166,58,.35))}
+      #sh-lab h1{margin:0;font-size:14px;font-weight:700;letter-spacing:2px;color:var(--tc-bright)}
+      #sh-lab .shl-sub{font-size:10.5px;color:var(--tc-dim)}
+      #sh-lab .shl-sub .ti{color:var(--tc-ok);font-size:9px}
+      #sh-lab nav{display:flex;gap:4px;margin-top:8px}
+      #sh-lab nav a{flex:1 1 0;display:flex;align-items:center;justify-content:center;gap:4px;padding:4px 5px;font-size:11px;font-weight:600;letter-spacing:.6px;white-space:nowrap;
+        color:var(--tc-dim);text-decoration:none;border:1px solid var(--tc-line);background:rgba(200,210,192,.03)}
+      #sh-lab nav a:hover{color:var(--tc-text);border-color:var(--tc-line-2)}
+      #sh-lab nav a.home{flex:0 0 28px}
+      #sh-lab nav a.on{color:var(--tc-accent-2);border-color:var(--tc-accent);background:var(--tc-accent-soft);pointer-events:none}
+      #sh-lab .shl-scroll{flex:1;min-height:0;overflow:auto;padding:2px 12px 12px}
+      #sh-lab h3{display:flex;align-items:center;gap:7px;margin:12px 0 6px;padding-bottom:5px;border-bottom:1px dashed var(--tc-line);
+        font-size:12px;font-weight:700;letter-spacing:1.6px;color:var(--tc-bright)}
+      #sh-lab h3 .n{font:11px var(--font-mono);color:#0a0d0c;background:var(--tc-accent);padding:0 5px;letter-spacing:1px}
+      #sh-lab .row{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 6px}
+      #sh-lab button{flex:1 1 auto;min-width:60px;padding:5px 6px;cursor:pointer;font:600 11.5px/1.3 var(--font-tech);
+        color:var(--tc-text);background:rgba(200,210,192,.04);border:1px solid var(--tc-line);transition:color .15s,border-color .15s,background .15s}
+      #sh-lab button:hover{border-color:var(--tc-line-2);background:rgba(200,210,192,.08)}
+      #sh-lab button.on{color:var(--tc-accent-2);border-color:var(--tc-accent);background:var(--tc-accent-soft)}
+      #sh-lab .lbl{margin-top:6px;font-size:10.5px;font-weight:600;color:var(--tc-dim);text-transform:uppercase;letter-spacing:1.1px}
+      #sh-lab .st{margin:3px 0 6px;padding:6px 8px;white-space:pre-line;font-size:11.5px;background:rgba(0,0,0,.22);border:1px solid var(--tc-line)}
+      #sh-lab .safe{color:var(--tc-ok)}#sh-lab .warn{color:var(--tc-accent-2)}#sh-lab .bad{color:var(--tc-red)}
+      #sh-lab .log{max-height:130px;overflow:auto;font:10.5px/1.45 var(--font-mono)}
+      #sh-lab .log div{padding:2px 0;border-bottom:1px solid var(--tc-line)}
+      #sh-lab .log .ok{color:var(--tc-ok)}#sh-lab .log .hit{color:#f0b48a}#sh-lab .log .info{color:var(--tc-dim)}
+      #sh-lab .hp{display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11px}
+      #sh-lab .hp i{flex:1;height:5px;background:rgba(200,210,192,.1);overflow:hidden}
+      #sh-lab .hp b{display:block;height:100%;background:var(--tc-red)}
+      #sh-lab .hp span{font-family:var(--font-mono);font-size:10.5px}
+      #sh-lab .hp span:first-child{font-family:var(--font-tech);font-size:11px}
+      #sh-lab .help{margin-top:8px;color:var(--tc-dim);font-size:11px;line-height:1.6}
+      #sh-lab kbd{font:10px var(--font-mono);color:var(--tc-text);padding:0 4px;border:1px solid var(--tc-line-2);border-bottom-width:2px;background:rgba(200,210,192,.06)}
+      #sh-lab select{width:100%;padding:5px 6px;font:600 11.5px var(--font-tech);color:var(--tc-text);background:var(--tc-bg-2);border:1px solid var(--tc-line-2);outline:none}
+      #sh-lab select:focus{border-color:var(--tc-accent)}
+      #sh-lab button.fx-go{color:#0a0d0c;background:var(--tc-accent);border-color:var(--tc-accent)}#sh-lab button.fx-go:hover{background:var(--tc-accent-2)}
+      #sh-lab button.fx-bad{color:var(--tc-red);border-color:rgba(224,103,92,.4)}#sh-lab button.fx-bad:hover{border-color:var(--tc-red);background:rgba(224,103,92,.1)}
       #sh-lab #shl-fx-ammo button,#sh-lab #shl-fx-parts button{min-width:52px;padding:4px 5px;font-size:11px}`;
     document.head.appendChild(css);
     root = document.createElement('div');
@@ -469,7 +493,20 @@
     root.addEventListener('mousedown', e => { if (e.target.tagName === 'BUTTON') e.preventDefault(); });
     document.body.appendChild(root);
     root.innerHTML = `
-      <h3><i class="ti ti-flask" aria-hidden="true"></i> THỬ NGHIỆM CỨ ĐIỂM A · B · C</h3>
+      <div class="shl-head">
+        <div class="shl-brand"><i class="ti ti-flag" aria-hidden="true"></i><div>
+          <h1>THỬ CỨ ĐIỂM A · B · C</h1>
+          <div class="shl-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Lái xe thật, thử che chắn, chiếm cờ và trúng đạn</div>
+        </div></div>
+        <nav>
+          <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+          <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+          <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+          <a class="on" href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+        </nav>
+      </div>
+      <div class="shl-scroll">
+      <h3><span class="n">01</span> XE &amp; VỊ TRÍ</h3>
       <div class="lbl">Loại xe</div><div class="row" id="shl-types"></div>
       <div class="lbl">Dịch chuyển</div>
       <div class="row">
@@ -482,7 +519,7 @@
         <button id="shl-fire">Mục tiêu bắn trả</button><button id="shl-god">Bất tử</button>
         <button id="shl-ov">Vùng bảo vệ & góc bắn</button><button id="shl-reveal">Luôn hiện mục tiêu</button><button id="shl-zone">Bo thu hẹp</button><button id="shl-revive">Hồi sinh mục tiêu</button>
       </div>
-      <h3 style="margin-top:10px"><i class="ti ti-bomb" aria-hidden="true"></i> THỬ HIỆU ỨNG</h3>
+      <h3><span class="n">02</span> THỬ HIỆU ỨNG</h3>
       <div class="lbl">Mục tiêu</div>
       <div class="row"><select id="shl-fx-target"></select></div>
       <div class="lbl">Loại đạn</div><div class="row" id="shl-fx-ammo"></div>
@@ -493,14 +530,16 @@
       <div class="row">
         <button id="shl-fx-kill" class="fx-bad">Phá hủy xe</button><button id="shl-fx-fix">Hồi phục xe</button><button id="shl-wreck">Giữ xác xe</button>
       </div>
+      <h3><span class="n">03</span> BẢN ĐỒ &amp; TRẠNG THÁI</h3>
       <div class="lbl">Bản đồ</div>
       <div class="row"><select id="shl-map"></select></div>
       <div class="lbl">Trạng thái xe</div><div class="st" id="shl-st"></div>
       <div class="lbl">Cờ cứ điểm</div><div id="shl-cap"></div>
       <div class="lbl">Mục tiêu</div><div id="shl-hp"></div>
       <div class="lbl">Nhật ký trúng đạn</div><div class="log" id="shl-log"></div>
-      <div class="help">Lái: W/A/S/D · Ngắm: click chuột vào xe địch / mặt đất (nòng tự tính góc) · Tab: khóa địch · Bắn: Space · Tháp tay: phím mũi tên · Đổi đạn: 1-3 · Shift: tăng tốc<br>
-      Khung xanh = vùng mái che (xe nằm trọn bên trong không mất máu). Quạt màu = góc nòng quét được không chạm tường.</div>`;
+      <div class="help"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> lái · <kbd>Chuột</kbd> ngắm xe địch / mặt đất · <kbd>Tab</kbd> khóa địch · <kbd>Space</kbd> bắn · <kbd>Mũi tên</kbd> xoay tháp · <kbd>1-3</kbd> đổi đạn · <kbd>Shift</kbd> tăng tốc<br>
+      Khung xanh = vùng mái che (xe nằm trọn bên trong không mất máu). Quạt màu = góc nòng quét được không chạm tường.</div>
+      </div>`;
     const types = root.querySelector('#shl-types');
     for (const [id, name, sub] of TYPES) {
       const b = document.createElement('button');
@@ -585,14 +624,14 @@
     }
     const capEl = root.querySelector('#shl-cap');
     capEl.innerHTML = t.strongholdSet.items.map(k => {
-      const c = k.capture || 0, col = c > 0 ? '#3d8bff' : '#ff5a4a';
+      const c = k.capture || 0, col = c > 0 ? 'var(--tc-blue)' : 'var(--tc-red)';
       const who = k.owner === 'BLUE' ? 'XANH giữ' : k.owner === 'RED' ? 'ĐỎ giữ' : (k.contested ? 'tranh chấp' : 'trung lập');
       return `<div class="hp"><span style="width:92px">Cứ điểm ${k.id}</span><i><b style="width:${Math.abs(c)}%;background:${col}"></b></i><span style="width:78px;text-align:right">${who}</span></div>`;
     }).join('');
     const hpEl = root.querySelector('#shl-hp');
     hpEl.innerHTML = lab.dummies.map(d => {
       const e = t.strongholdSet.exposure(d);
-      return `<div class="hp"><span style="width:92px">${d.name}</span><i><b style="width:${Math.max(0, d.hp / d.maxHp * 100)}%"></b></i><span style="width:44px;text-align:right">${d.isDead ? '<i class="ti ti-skull" aria-hidden="true"></i>' : d.hp.toFixed(2)}</span><span style="width:34px;text-align:right;color:#8aa4bf">${Math.round(e * 100)}%</span></div>`;
+      return `<div class="hp"><span style="width:92px">${d.name}</span><i><b style="width:${Math.max(0, d.hp / d.maxHp * 100)}%"></b></i><span style="width:44px;text-align:right">${d.isDead ? '<i class="ti ti-skull" aria-hidden="true"></i>' : d.hp.toFixed(2)}</span><span style="width:34px;text-align:right;color:var(--tc-dim)">${Math.round(e * 100)}%</span></div>`;
     }).join('');
   }
 

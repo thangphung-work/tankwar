@@ -72,10 +72,40 @@ const SkySystem = (() => {
       hemi.groundColor.setHex(atm.ground || 0x806a50);
       hemi.intensity = atm.skyIntensity;
     }
-    if (ambient) ambient.intensity = 0.22;
+    if (ambient) ambient.intensity = atm.ambientIntensity !== undefined ? atm.ambientIntensity : 0.15;
   }
 
-  return { create, applyLights };
+  /**
+   * Đường cong tông màu "vai mềm" cho cảnh trận (thay cho cắt cứng ở 1.0):
+   * - Dưới ngưỡng gối (0.6) giữ nguyên -> trung tông, màu sơn xe, giao diện 3D không đổi
+   * - Phần sáng hơn được nén mượt về 1.0 theo kênh sáng nhất (giữ sắc độ) -> bê tông / cát / ngọn cỏ dưới nắng
+   *   không còn cháy trắng, lá cây không bị đẩy thành xanh neon do kênh G bị cắt
+   * - Vùng rất sáng nhạt màu nhẹ như phim thật
+   */
+  function installToneCurve(renderer, exposure) {
+    const chunk = THREE.ShaderChunk.tonemapping_pars_fragment;
+    if (chunk.indexOf('SOFT_SHOULDER_TONE') < 0) {
+      THREE.ShaderChunk.tonemapping_pars_fragment = chunk.replace(/vec3 CustomToneMapping\( vec3 color \) \{ return color; \}/, `// SOFT_SHOULDER_TONE
+vec3 CustomToneMapping( vec3 color ) {
+  color *= toneMappingExposure;
+  float m = max( max( color.r, color.g ), color.b );
+  const float K = 0.6;
+  if ( m > K ) {
+    float t = m - K;
+    color *= ( K + ( 1.0 - K ) * ( 1.0 - exp( - t / ( 1.0 - K ) ) ) ) / m;
+    float l = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
+    color = mix( color, vec3( l ), clamp( t * 0.35, 0.0, 0.35 ) );
+  }
+  return color;
+}`);
+    }
+    if (renderer) {
+      renderer.toneMapping = THREE.CustomToneMapping;
+      renderer.toneMappingExposure = exposure || 1.0;
+    }
+  }
+
+  return { create, applyLights, installToneCurve };
 })();
 
 if (typeof window !== 'undefined') window.SkySystem = SkySystem;

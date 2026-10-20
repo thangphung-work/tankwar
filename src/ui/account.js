@@ -106,7 +106,10 @@ const Account = (() => {
     if (prof) {
       prof.style.cursor = 'pointer';
       prof.title = online ? 'Hồ sơ & thành tích' : 'Chơi ngoại tuyến (không có tài khoản)';
-      prof.addEventListener('click', () => { if (profile) openPanel(); else if (online) show(auth); });
+      prof.addEventListener('click', (e) => {
+        if (e.target.closest('.mm-gear-btn')) return;   // bánh răng = cài đặt (game_menu.js), không phải hồ sơ
+        if (profile) openPanel(); else if (online) show(auth);
+      });
     }
     // nhớ xe / bản đồ vừa chọn
     document.addEventListener('click', (e) => {
@@ -123,10 +126,18 @@ const Account = (() => {
   const hide = (el) => el.classList.add('hidden');
 
   function renderHeader() {
-    // Thẻ chỉ huy góc sảnh: tên + cấp · quân hàm + kinh nghiệm · thanh kinh nghiệm · Bạc / trận thắng / hạ gục
+    // Thẻ chỉ huy góc sảnh (2 dòng): tên + cấp | Bạc · quân hàm + kinh nghiệm | trận thắng; thanh kinh nghiệm ở viền dưới
     const nameEl = $('#mm-display-name'), rankEl = $('.mm-commander-profile .rank-text');
     const bar = $('.mm-commander-profile .acc-xpbar'), lvEl = $('#mm-level'), xpEl = $('#mm-xp-text'), meta = $('#mm-cmd-meta');
-    const silverEl = $('.mm-commander-profile .acc-silver'), winsEl = $('#mm-stat-wins'), killsEl = $('#mm-stat-kills');
+    const silverEl = $('.mm-commander-profile .acc-silver'), winsEl = $('#mm-stat-wins');
+    const tiSilver = document.getElementById('ti-silver');   // ô Bạc góc trên màn xem xe (tank_inspector.js)
+    if (tiSilver) {
+      tiSilver.classList.toggle('off', !profile);
+      if (profile) {
+        const b = tiSilver.querySelector('b'), txt = fmtSilver(profile.silver);
+        if (b.textContent !== txt) { b.textContent = txt; tiSilver.classList.remove('bump'); void tiSilver.offsetWidth; tiSilver.classList.add('bump'); }
+      }
+    }
     if (profile) {
       const st = profile.stats || {}, n = v => Math.round(v || 0).toLocaleString('vi-VN');
       if (nameEl) nameEl.textContent = profile.displayName;
@@ -137,7 +148,6 @@ const Account = (() => {
       if (meta) meta.classList.remove('hidden');
       if (silverEl) UIIcons.set(silverEl, `[[coins]] ${fmtSilver(profile.silver)} Bạc`);
       if (winsEl) UIIcons.set(winsEl, `[[trophy]] ${n(st.wins)}/${n(st.matches)} trận`);
-      if (killsEl) UIIcons.set(killsEl, `[[target-arrow]] ${n(st.kills)} hạ`);
     } else {
       if (nameEl) nameEl.textContent = 'Chưa đăng nhập';
       if (rankEl) rankEl.textContent = online ? 'Bấm để đăng nhập' : 'Chơi ngoại tuyến';
@@ -196,14 +206,20 @@ const Account = (() => {
   function kitFor(tank) {
     const A = profile && profile.armory;
     if (!A && typeof Equipment !== 'undefined') {
+      // khách: chỉ đạn chính (đạn khác phải mua bằng tài khoản)
       const lo = loadoutOf(tank);
       return { kit: lo.m.length ? Equipment.sanitize({ m: lo.m, p: [], a: {} }, tank) : null, stock: {} };
     }
     if (!A || typeof Equipment === 'undefined') return { kit: null, stock: {} };
     const lo = (A.loadouts && A.loadouts[tank]) || { m: [], a: {} };
     const stock = Object.assign({}, (A.stock && A.stock[tank]) || {});
-    const a = {};
-    for (const k in lo.a || {}) a[k] = Math.min(lo.a[k], stock[k] || 0);
+    // Đạn mua thêm: mặc định mang tối đa mỗi lần xuất kích (không quá số còn trong kho)
+    const a = {}, shop = Equipment.AMMO_SHOP[tank] || {};
+    for (const k in shop) {
+      const want = (lo.a && lo.a[k] !== undefined) ? lo.a[k] : shop[k].max;
+      const n = Math.min(want, stock[k] || 0);
+      if (n > 0) a[k] = n;
+    }
     const p = ((A.owned && A.owned[tank]) || []).filter(id => Equipment.PREMIUM[id]);
     return { kit: Equipment.sanitize({ m: lo.m, p, a }, tank), stock };
   }
@@ -218,6 +234,13 @@ const Account = (() => {
   }
   async function buy(tank, what) {
     const r = await api('shop/buy', Object.assign({ tank }, what));
+    setProfile(r.profile, false);
+    armoryChanged();
+    return r.profile;
+  }
+  // Trả lại n viên đạn mua thêm (hoàn đúng giá)
+  async function sell(tank, ammo, n) {
+    const r = await api('shop/sell', { tank, ammo, n });
     setProfile(r.profile, false);
     armoryChanged();
     return r.profile;
@@ -257,42 +280,69 @@ const Account = (() => {
     const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
     return h ? `${h} giờ ${m} phút` : `${m} phút`;
   }
+  function fmtAgo(t) {
+    if (!t) return '';
+    const s = Math.max(0, (Date.now() - (t < 1e12 ? t * 1000 : t)) / 1000);
+    if (s < 60) return 'vừa xong';
+    if (s < 3600) return Math.floor(s / 60) + ' phút trước';
+    if (s < 86400) return Math.floor(s / 3600) + ' giờ trước';
+    return Math.floor(s / 86400) + ' ngày trước';
+  }
   function openPanel() {
     const panel = $('#acc-panel'), body = $('.acc-body', panel), p = profile, S = p.stats;
+    const n = v => Math.round(v || 0).toLocaleString('vi-VN');
     const wr = S.matches ? Math.round(100 * S.wins / S.matches) : 0;
     const kd = S.deaths ? (S.kills / S.deaths).toFixed(2) : String(S.kills);
     const fav = Object.entries(S.byTank || {}).sort((a, b) => b[1].matches - a[1].matches)[0];
+    const pct = Math.round(100 * p.xpInLevel / p.xpToNext);
+    const RES = { win: 'Thắng', draw: 'Hòa', loss: 'Thua' };
     const hist = (p.history || []).slice().reverse().map(h => `
-      <tr class="r-${h.result}"><td>${h.result === 'win' ? 'Thắng' : h.result === 'draw' ? 'Hòa' : 'Thua'}</td>
-      <td>${esc(TANK_NAMES[h.tank] || h.tank)}</td><td>${esc(MAP_NAMES[h.map] || '—')}</td>
-      <td>${h.kills} hạ / ${h.deaths || 0} chết</td><td>+${h.xp} KN</td></tr>`).join('');
+      <li class="r-${h.result}">
+        <span class="acc-res">${RES[h.result] || 'Thua'}</span>
+        <span class="acc-h-main"><b>${esc(TANK_NAMES[h.tank] || h.tank)}</b><small>${esc(MAP_NAMES[h.map] || '—')}${h.t ? ' · ' + fmtAgo(h.t) : ''}</small></span>
+        <span class="acc-h-kd">${h.kills} hạ · ${h.deaths || 0} chết</span>
+        <span class="acc-h-xp">+${n(h.xp)} KN</span>
+      </li>`).join('');
+    const empty = !S.matches;
     body.innerHTML = `
+      <div class="acc-kicker">Hồ sơ chỉ huy</div>
       <div class="acc-head">
-        <img src="assets/commander_avatar.jpg" alt="">
+        <div class="acc-avatar"><img src="assets/commander_avatar.jpg" alt=""></div>
         <div class="acc-head-info">
-          <div class="acc-name-row"><input class="acc-name" value="${esc(p.displayName)}" maxlength="24" title="Bấm để đổi tên hiển thị"><span class="acc-user">@${esc(p.username)}</span></div>
-          <div class="acc-rank"><i class="ti ti-star"></i> ${esc(p.rankText)}</div>
-          <div class="acc-xpbar big"><i style="width:${Math.round(100 * p.xpInLevel / p.xpToNext)}%"></i></div>
-          <div class="acc-xptext">${p.xpInLevel} / ${p.xpToNext} kinh nghiệm để lên cấp</div>
+          <label class="acc-name-wrap" title="Bấm để đổi tên hiển thị">
+            <input class="acc-name" value="${esc(p.displayName)}" maxlength="24" spellcheck="false"><i class="ti ti-pencil"></i>
+          </label>
+          <div class="acc-sub">@${esc(p.username)}<span class="acc-dot"></span><span class="acc-silver-sm"><i class="ti ti-coins"></i> ${fmtSilver(p.silver)} Bạc</span></div>
+          <div class="acc-rank-row">
+            <span class="acc-rank"><i class="ti ti-star-filled"></i> ${esc(p.rankText)}</span>
+            <span class="acc-lv">Cấp ${p.level || 1}</span>
+          </div>
+          <div class="acc-xpbar big"><i style="width:${pct}%"></i></div>
+          <div class="acc-xptext"><span>${n(p.xpInLevel)} / ${n(p.xpToNext)} KN</span><span>còn ${n(p.xpToNext - p.xpInLevel)} KN lên cấp ${(p.level || 1) + 1}</span></div>
         </div>
       </div>
-      <div class="acc-stats">
-        <div><b>${S.matches}</b><span>Trận</span></div>
-        <div><b>${wr}%</b><span>Thắng</span></div>
-        <div><b>${S.kills}</b><span>Hạ gục</span></div>
-        <div><b>${kd}</b><span>Hạ / Chết</span></div>
-        <div><b>${Math.round(S.damage)}</b><span>Sát thương</span></div>
-        <div><b>${fmtTime(S.playSec)}</b><span>Thời gian</span></div>
+      <div class="acc-stats${empty ? ' is-empty' : ''}">
+        <div><b>${n(S.matches)}</b><span>Trận</span></div>
+        <div><b>${wr}<small>%</small></b><span>Tỉ lệ thắng</span></div>
+        <div><b>${n(S.kills)}</b><span>Hạ gục</span></div>
       </div>
-      ${fav ? `<div class="acc-fav">Xe hay dùng: <b>${esc(TANK_NAMES[fav[0]] || fav[0])}</b> · ${fav[1].matches} trận · ${fav[1].kills} hạ gục</div>` : ''}
+      <dl class="acc-minor">
+        <div><dt>Hạ / chết</dt><dd>${kd}</dd></div>
+        <div><dt>Sát thương</dt><dd>${n(S.damage)}</dd></div>
+        <div><dt>Thời gian chơi</dt><dd>${fmtTime(S.playSec || 0)}</dd></div>
+        ${fav ? `<div><dt>Xe hay dùng</dt><dd>${esc(TANK_NAMES[fav[0]] || fav[0])}</dd></div>` : ''}
+      </dl>
       <div class="acc-sec">Trận gần đây</div>
-      ${hist ? `<table class="acc-hist">${hist}</table>` : '<div class="acc-empty">Chưa có trận nào — xuất trận thôi!</div>'}
-      <details class="acc-pw"><summary>Đổi mật khẩu</summary>
-        <form class="acc-pw-form"><input type="password" name="o" placeholder="Mật khẩu hiện tại" autocomplete="current-password">
+      ${hist ? `<ul class="acc-hist">${hist}</ul>` : `<div class="acc-empty"><i class="ti ti-target"></i><div><b>Chưa có trận nào</b><span>Xuất trận để bắt đầu ghi thành tích.</span></div></div>`}
+      <form class="acc-pw-form hidden">
+        <input type="password" name="o" placeholder="Mật khẩu hiện tại" autocomplete="current-password">
         <input type="password" name="n" placeholder="Mật khẩu mới (ít nhất 6 ký tự)" autocomplete="new-password">
-        <button type="submit" class="acc-primary small">Lưu mật khẩu</button><span class="acc-error"></span></form>
-      </details>
-      <button type="button" class="acc-link danger" data-act="logout"><i class="ti ti-logout"></i> Đăng xuất</button>`;
+        <div class="acc-pw-row"><span class="acc-error"></span><button type="submit" class="acc-primary small">Lưu mật khẩu</button></div>
+      </form>
+      <div class="acc-foot">
+        <button type="button" class="acc-ghost" data-act="pw"><i class="ti ti-key"></i> Đổi mật khẩu</button>
+        <button type="button" class="acc-ghost danger" data-act="logout"><i class="ti ti-logout"></i> Đăng xuất</button>
+      </div>`;
     // đổi tên hiển thị
     const nameIn = $('.acc-name', body);
     const commitName = async () => {
@@ -304,7 +354,12 @@ const Account = (() => {
     nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameIn.blur(); e.stopPropagation(); });
     nameIn.addEventListener('blur', commitName);
     // đổi mật khẩu
-    const pf = $('.acc-pw-form', body);
+    const pf = $('.acc-pw-form', body), pwBtn = $('[data-act="pw"]', body);
+    pwBtn.addEventListener('click', () => {
+      const open = pf.classList.toggle('hidden') === false;
+      pwBtn.classList.toggle('active', open);
+      if (open) pf.o.focus();
+    });
     pf.addEventListener('keydown', (e) => e.stopPropagation());
     pf.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -350,7 +405,7 @@ const Account = (() => {
   async function reportMatch(g, result) {
     const card = $('#game-over-modal .stats-summary');
     let line = $('#acc-xp-line');
-    if (!line && card) { line = document.createElement('div'); line.id = 'acc-xp-line'; line.className = 'acc-xp-line'; card.after(line); }
+    if (!line && card) { line = document.createElement('div'); line.id = 'acc-xp-line'; line.className = 'acc-xp-line'; ($('#kd-podium') || card).after(line); }
     if (window.strongholdLab || /[?&]lab=/.test(location.search)) { if (line) line.textContent = ''; return; }
     if (!profile) { if (line) line.textContent = online ? 'Đăng nhập để lưu thành tích & lên cấp' : ''; return; }
     const P = g.player || {};
@@ -360,10 +415,11 @@ const Account = (() => {
     try {
       const ammoUsed = (typeof Equipment !== 'undefined' && Equipment.paidUsed) ? Equipment.paidUsed(P) : {};
       const r = await api('match-result', { result, kills: P.kills || 0, deaths: g._playerDeaths || 0, damage: P.damageDealt || 0, shots: P.shotsFired || 0,
-        tankType: P.tankType, mapType: mm.selectedMapType || (g.terrain && g.terrain.mapType), durationSec, ammoUsed });
+        tankType: P.tankType, mapType: mm.selectedMapType || (g.terrain && g.terrain.mapType), durationSec, ammoUsed, kdPlace: g._kdPlace || 0 });
       setProfile(r.profile, false);
       armoryChanged();
-      if (line) line.innerHTML = `<b>+${r.gained} kinh nghiệm</b> · <b class="silver"><i class="ti ti-coins"></i> +${fmtSilver(r.silver)} Bạc</b>${r.levelUp ? ` · <span class="up">LÊN CẤP: ${esc(r.profile.rankText)}!</span>` : ` · ${esc(r.profile.rankText)}`}`
+      const kd = r.kdPlace && r.kdBonus ? ` <span class="acc-kd">(có thưởng hạng ${r.kdPlace}: +${fmtSilver(r.kdBonus.silver)} Bạc)</span>` : '';
+      if (line) line.innerHTML = `<b>+${r.gained} kinh nghiệm</b> · <b class="silver"><i class="ti ti-coins"></i> +${fmtSilver(r.silver)} Bạc</b>${kd}${r.levelUp ? ` · <span class="up">LÊN CẤP: ${esc(r.profile.rankText)}!</span>` : ` · ${esc(r.profile.rankText)}`}`
         + (r.verified ? ' <span class="acc-verified" title="Số hạ gục / sát thương lấy theo máy chủ"><i class="ti ti-shield-check"></i> Đã đối chiếu máy chủ</span>' : '');
     } catch (e) {
       if (line) line.textContent = e.status === 400 ? e.message : 'Không lưu được kết quả: ' + e.message;
@@ -391,6 +447,6 @@ const Account = (() => {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
-  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, adStart, claim, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
+  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, sell, adStart, claim, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
 })();
 window.Account = Account;

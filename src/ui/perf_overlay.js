@@ -85,6 +85,9 @@
       `Hình học ${i.memory.geometries}   Texture ${i.memory.textures}   Đèn ${st.lights}\n` +
       `Vật thể hiện ${st.obj} · mesh ${st.meshes} · đổ bóng ${st.casters} · trong suốt ${st.transp}\n` +
       `Đạn bay ${g.ballistics ? g.ballistics.activeShells.length : 0}   Xe ${g.units ? g.units.length : 0}   DPR ${g.renderer.getPixelRatio().toFixed(2)}\n` +
+      (typeof GfxQuality !== 'undefined'
+        ? `GPU ${GfxQuality.gpuMs === null ? (GfxQuality.timerSupported ? '...' : 'không đo được') : GfxQuality.gpuMs.toFixed(1) + ' ms'} · nhịp màn hình ${GfxQuality.refreshMs.toFixed(1)} ms · độ nét ${g.renderer.getPixelRatio().toFixed(2)} (tối đa ${GfxQuality.maxRatio.toFixed(2)})\n`
+        : '') +
       `--- thời gian CPU trung bình mỗi khung ---\n` + rows.join('\n');
     for (const k in S.T) { S.T[k].ms = 0; S.T[k].n = 0; }
     S.frames = 0;

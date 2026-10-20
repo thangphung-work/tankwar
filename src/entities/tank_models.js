@@ -316,6 +316,83 @@ class TankModelBuilder {
     return builder.build();
   }
 
+  // Thanh máu trên đầu xe kiểu HUD quân sự: 26 x 3.6 đơn vị (nhỏ hơn bản cũ 32 x 3.8 để không che xe)
+  static hpBarGeometry() {
+    if (!this._hpBarGeo) this._hpBarGeo = new THREE.PlaneGeometry(26, 3.6);
+    return this._hpBarGeo;
+  }
+
+  static makeHpBarMaterial(isBlue) {
+    const rgb = hex => new THREE.Vector3(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255);
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uHp: { value: 1 },
+        uGhost: { value: 1 },
+        uHit: { value: 0 },
+        uTime: { value: 0 },
+        uSize: { value: new THREE.Vector2(26, 3.6) },
+        uTeam: { value: rgb(isBlue ? 0x6cc4ef : 0xec6a5c) },
+        // máu thấp: xanh -> vàng -> đỏ; đỏ -> vàng -> vàng sáng (đỏ đã là màu phe)
+        uLow: { value: rgb(isBlue ? 0xf0473a : 0xffb347) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: `
+        uniform float uHp, uGhost, uHit, uTime;
+        uniform vec2 uSize;
+        uniform vec3 uTeam, uLow;
+        varying vec2 vUv;
+        float cov(float d, float w) { return clamp(d / w + 0.5, 0.0, 1.0); }
+        void main() {
+          vec2 p = vUv * uSize;
+          float W = uSize.x, H = uSize.y;
+          float pw = max(max(fwidth(p.x), fwidth(p.y)), 0.02);
+          // khung vát hai góc chéo (trên trái, dưới phải)
+          float c = 1.25;
+          float d = min(min(p.x, W - p.x), min(p.y, H - p.y));
+          d = min(d, (p.x + (H - p.y) - c) * 0.7071);
+          d = min(d, ((W - p.x) + p.y - c) * 0.7071);
+          float inside = cov(d, pw);
+          if (inside <= 0.001) discard;
+          float border = 1.0 - cov(d - 0.3, pw);
+          // vùng ô máu: lùi vào 0.7, chia 5 ô cách nhau 0.45
+          float g = 0.7;
+          float span = W - 2.0 * g;
+          float inner = cov(d - g, pw);
+          float segW = span / 5.0;
+          float sx = mod(p.x - g, segW);
+          float slot = inner * cov(min(sx, segW - sx) - 0.225, pw);
+          float hpE = cov(g + uHp * span - p.x, pw);
+          float ghE = cov(g + uGhost * span - p.x, pw);
+          // màu theo phe, chuyển sang vàng khi dưới ~50 %, sang màu báo nguy và nhấp nháy dưới 25 %
+          vec3 amber = vec3(0.906, 0.651, 0.227);
+          vec3 col = mix(uTeam, amber, smoothstep(0.56, 0.44, uHp));
+          float crit = step(uHp, 0.25) * step(0.0001, uHp);
+          col = mix(col, uLow, crit);
+          col = mix(col, vec3(1.0), crit * 0.45 * (0.5 + 0.5 * sin(uTime * 8.0)));
+          col *= 0.82 + 0.3 * clamp((p.y - g) / (H - 2.0 * g), 0.0, 1.0);
+          vec3 color = vec3(0.025, 0.035, 0.03);
+          float a = 0.68;
+          color = mix(color, uTeam * 0.2 + 0.02, slot);
+          float gh = slot * ghE * (1.0 - hpE);
+          color = mix(color, vec3(1.0), gh * 0.92);
+          color = mix(color, col, slot * hpE);
+          a = mix(a, 0.95, slot * max(hpE, ghE));
+          vec3 bc = mix(uTeam * 0.85, vec3(1.0), uHit * 0.75);
+          color = mix(color, bc, border);
+          a = mix(a, 0.95, border);
+          gl_FragColor = vec4(color, a * inside);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      extensions: { derivatives: true }
+    });
+  }
+
   constructor(unit) {
     this.unit = unit;
     this.scene = unit.scene;
@@ -1289,21 +1366,13 @@ class TankModelBuilder {
     this.hpGroup = new THREE.Group();
     this.hpGroup.position.set(0, 36, 0);
 
-    const hpBgGeo = new THREE.PlaneGeometry(32, 3.8);
-    const hpBgMat = new THREE.MeshBasicMaterial({ color: 0x0a0e14, side: THREE.DoubleSide });
-    this.hpBgMesh = new THREE.Mesh(hpBgGeo, hpBgMat);
-    this.hpBgMesh.position.set(0, 0, 0);
-    this.hpGroup.add(this.hpBgMesh);
-    this.unit.hpBgMesh = this.hpBgMesh;
-
-    const hpFgGeo = new THREE.PlaneGeometry(30, 2.8);
-    const hpFgMat = new THREE.MeshBasicMaterial({
-      color: isBlue ? 0x00e5ff : 0xff3b30,
-      side: THREE.DoubleSide
-    });
-    this.hpBarMesh = new THREE.Mesh(hpFgGeo, hpFgMat);
-    this.hpBarMesh.position.set(0, 0, 0.2);
+    // Một tấm phẳng vẽ bằng shader: khung vát góc màu phe, 5 ô máu, vệt "máu vừa mất" mờ dần
+    // (spg.js cập nhật uHp / uGhost / uHit mỗi khung hình). Nền và vạch máu chung một mesh.
+    this.hpBarMesh = new THREE.Mesh(TankModelBuilder.hpBarGeometry(), TankModelBuilder.makeHpBarMaterial(isBlue));
+    this.hpBarMesh.renderOrder = 10;
     this.hpGroup.add(this.hpBarMesh);
+    this.hpBgMesh = this.hpBarMesh;
+    this.unit.hpBgMesh = this.hpBgMesh;
     this.unit.hpBarMesh = this.hpBarMesh;
 
     this.unit.hpGroup = this.hpGroup;

@@ -334,6 +334,19 @@
   background: rgba(9, 11, 9, 0.7);
 }
 
+/* Pháo tự hành: ô cách bắn (bấm hoặc phím B) — cầu vồng: vàng, bắn thẳng: xanh */
+.hx-artymode {
+  gap: 5px;
+  cursor: pointer;
+  pointer-events: auto;
+  color: var(--hx-amber);
+}
+.hx-artymode[hidden] { display: none; }
+.hx-artymode.direct { color: var(--hx-blue); }
+.hx-artymode b { font-weight: 700; color: var(--hx-text); }
+.hx-artymode small { font-size: 9px; color: var(--hx-muted); }
+.hx-artymode:hover { background: rgba(255, 255, 255, 0.08); }
+
 .hx-bar {
   display: flex;
   align-items: stretch;
@@ -378,35 +391,91 @@
   white-space: nowrap;
 }
 
+/* Thanh máu kiểu HUD quân sự: icon khiên · khung vát góc viền mảnh · 10 ô · vệt "máu vừa mất" · số */
+.hx-hp-row {
+  --hp-c: var(--hx-green);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hx-hp-ico {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--hp-c);
+  transition: color 0.3s;
+}
+
 .hx-hp-track {
+  --cut: 4px;
   position: relative;
-  height: 7px;
-  background: rgba(255, 255, 255, 0.08);
+  flex: 1;
+  height: 12px;
+  background: rgba(200, 210, 192, 0.32);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background-color 0.3s;
+}
+
+/* nền tối bên trong viền 1px */
+.hx-hp-track::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  padding: 2px;
+  /* ô trống mờ (phần máu đã mất) trên nền tối */
+  background: linear-gradient(rgba(200, 210, 192, 0.1), rgba(200, 210, 192, 0.1)) content-box, rgb(8, 11, 9);
+  clip-path: polygon(calc(var(--cut) - 0.5px) 0, 100% 0, 100% calc(100% - var(--cut) + 0.5px), calc(100% - var(--cut) + 0.5px) 100%, 0 100%, 0 calc(var(--cut) - 0.5px));
+}
+
+.hx-hp-fill,
+.hx-hp-ghost {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  bottom: 3px;
+  max-width: calc(100% - 6px);
+  width: calc(100% - 6px);
+}
+
+/* vệt máu vừa mất: đứng yên một nhịp rồi rút dần */
+.hx-hp-ghost {
+  background: #f4f1ea;
+  opacity: 0.85;
+  transition: width 0.7s cubic-bezier(0.5, 0, 0.8, 1) 0.45s;
 }
 
 .hx-hp-fill {
-  height: 100%;
-  width: 100%;
-  background: var(--hx-green);
-  transition: width 0.25s ease;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--hp-c) 100%, #fff 18%) 0%, var(--hp-c) 45%, color-mix(in srgb, var(--hp-c) 78%, #000) 100%);
+  transition: width 0.15s ease-out;
 }
-.hx-hp-fill.warn { background: var(--hx-amber); }
-.hx-hp-fill.crit { background: var(--hx-red); animation: hx-blink 0.9s infinite; }
+.hx-hp-fill.crit { animation: hx-blink 0.9s infinite; }
 
-/* vạch chia 10 đoạn */
+/* vạch chia 10 ô (khe màu nền) */
 .hx-hp-track::after {
   content: '';
   position: absolute;
-  inset: 0;
-  background-image: linear-gradient(90deg, transparent calc(100% - 2px), rgba(9, 11, 9, 0.9) calc(100% - 2px));
+  left: 3px;
+  right: 3px;
+  top: 3px;
+  bottom: 3px;
+  background-image: linear-gradient(90deg, transparent calc(100% - 2px), rgb(8, 11, 9) calc(100% - 2px));
   background-size: 10% 100%;
+  pointer-events: none;
 }
 
+/* trúng đạn: viền lóe sáng một nhịp */
+.hx-hp-row.hit .hx-hp-track { background: #fff; transition: none; }
+
 .hx-hp-num {
+  flex: none;
+  min-width: 52px;
+  text-align: right;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--hx-muted);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Đạn: ô nhỏ [phím · số lượng · tên] */

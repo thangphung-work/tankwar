@@ -1,0 +1,40 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "game",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "game-dst",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set PORT=8093&& node server.js"
+      ],
+      "port": 8093
+    },
+    {
+      "name": "game-camofire",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set PORT=8101&& node server.js"
+      ],
+      "port": 8101
+    },
+    {
+      "name": "game-shoptest",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set PORT=8097&& set ACCOUNTS_DIR=C:/Users/thang/AppData/Local/Temp/claude/H--Project-Random3/306e45cb-a3c9-4cbe-b3e7-eb16972dd404/scratchpad/acctest&& node server.js"
+      ],
+      "port": 8097
+    }
+  ]
+}

@@ -243,7 +243,9 @@ const MapGen = (() => {
         }
       }
     }
-    const isWater = (x, z) => river ? (distToPolyline(river.pts, x, z) < river.width / 2 || lakes.some(L => Math.hypot(x - L.x, z - L.z) < L.r)) : false;
+    // nước = lòng sông / hồ hoặc dải bờ ngập nông (đất thấp hơn mặt nước + ~1 đơn vị): không đặt nhà / cây / đá ở đó
+    // (trước đây nhà đầu cầu đứng chân dưới nước vì bờ thoải ra ngoài bề rộng lòng sông)
+    const isWater = (x, z) => river ? (distToPolyline(river.pts, x, z) < river.width / 2 || lakes.some(L => Math.hypot(x - L.x, z - L.z) < L.r) || H(x, z) < 1.2) : false;
 
     // 3. MẠNG ĐƯỜNG
     const roads = [];
@@ -367,6 +369,47 @@ const MapGen = (() => {
               }
               inW = -1;
             }
+          }
+        }
+      }
+    }
+
+    if (river) {
+      // 2b. CỒN CÁT / BÃI CẠN NGANG SÔNG: 2-3 chỗ lòng sông nông xe lội qua được (nước ~0.2 m), giữa thường nhô
+      //     một cồn cát khô; dải cạn chéo theo dòng chảy như bãi bồi thật. Bộ số ngẫu nhiên riêng -> không làm xô
+      //     lệch thứ tự ngẫu nhiên của đường / nhà / cây phía sau (bản đồ cũ giữ nguyên, chỉ thêm cồn)
+      const fr = mulberry32(seed ^ 0x51c0a7);
+      const FR = (a, b) => a + fr() * (b - a);
+      const nF = fr() < 0.5 ? 2 : 3;
+      river.fords = [];
+      const hw = river.width / 2;
+      // vị trí dọc sông: tránh xa mọi cây cầu (không ai cần lội ngay cạnh cầu) và cách nhau đủ xa
+      const zsel = [];
+      for (let t = 0; t < 60 && zsel.length < nF; t++) {
+        const zf = FR(-HALF * 0.62, HALF * 0.62);
+        if (bridges.some(b => Math.abs(b.z - zf) < 280) || zsel.some(z => Math.abs(z - zf) < 420)) continue;
+        zsel.push(zf);
+      }
+      for (const zf of zsel) {
+        let xc = river.pts[0][0], bd = Infinity;
+        for (const p of river.pts) { const dd = Math.abs(p[1] - zf); if (dd < bd) { bd = dd; xc = p[0]; } }
+        river.fords.push({ x: xc, z: zf, len: FR(80, 125), skew: FR(-0.55, 0.55), isle: fr() < 0.8 ? FR(1.0, 2.2) : 0, off: FR(-0.25, 0.25) * hw, seed: FR(0, 100) });
+      }
+      for (const F of river.fords) {
+        for (let iz = 0; iz < N; iz++) {
+          const z = -HALF + iz * CELL;
+          if (Math.abs(z - F.z) > F.len + hw) continue;
+          for (let ix = 0; ix < N; ix++) {
+            const x = -HALF + ix * CELL, i = iz * N + ix;
+            if (Math.abs(x - F.x) > hw + 60) continue;
+            const along = (z - F.z) - F.skew * (x - F.x) + noise2(x * 0.01 + F.seed, z * 0.01) * 18;
+            const f = 1 - smooth(F.len * 0.4, F.len, Math.abs(along));
+            if (f <= 0) continue;
+            // dải cạn ~0.2 m nước, gợn sóng cát nhỏ; giữa dòng nhô cồn cát khô (thuôn theo dòng chảy)
+            const across = Math.abs(x - F.x - F.off);
+            const isle = F.isle * (1 - smooth(hw * 0.12, hw * 0.55, across)) * (1 - smooth(F.len * 0.15, F.len * 0.55, Math.abs(along)));
+            const target = -1.4 + isle * 1.4 + noise(x * 0.05 + F.seed, z * 0.05) * 0.35;
+            if (target > heights[i]) heights[i] = lerp(heights[i], target, f);
           }
         }
       }
@@ -529,6 +572,8 @@ const MapGen = (() => {
     // 5b. Nhà cửa
     const buildings = [];
     if (type === 'URBAN') {
+      // Bộ sinh số riêng cho nhà phố: chỉnh cách xếp nhà sau này không làm lệch phần sinh sau (cây, đá, giờ trong ngày...)
+      const rng = mulberry32((seed ^ hashStr('URBAN_BLD')) >>> 0), R = (a, b) => a + rng() * (b - a);
       const g = roads.urbanGrid;
       const cr = Math.cos(g.rot), sr = Math.sin(g.rot);
       const tf = (u, v) => [u * cr - v * sr, u * sr + v * cr];
@@ -542,20 +587,61 @@ const MapGen = (() => {
             // Ô phố có cứ điểm / khu xuất kích: thành quảng trường / công viên
             continue;
           }
-          if (rng() < 0.16) continue; // ô trống: bãi đất / công viên
-          // Chia ô phố thành 1-4 lô
-          const splitU = (u1 - u0) > 170 && rng() < 0.7, splitV = (v1 - v0) > 170 && rng() < 0.7;
-          const lotsU = splitU ? [[u0, (u0 + u1) / 2 - 8], [(u0 + u1) / 2 + 8, u1]] : [[u0, u1]];
-          const lotsV = splitV ? [[v0, (v0 + v1) / 2 - 8], [(v0 + v1) / 2 + 8, v1]] : [[v0, v1]];
+          if (rng() < 0.12) continue; // ô trống: bãi đất / công viên
+          // Ô phố thật rộng 25-40 m: phần lớn là 1 công trình lớn (chung cư dài, cao ốc, khối nhà phố) hoặc 1-2 dãy
+          // nhà ống liền vách quay mặt ra đường; chỉ ô rất rộng mới chia 2 lô
+          const splitU = (u1 - u0) > 250 && rng() < 0.4, splitV = (v1 - v0) > 250 && rng() < 0.4;
+          const lotsU = splitU ? [[u0, (u0 + u1) / 2 - 10], [(u0 + u1) / 2 + 10, u1]] : [[u0, u1]];
+          const lotsV = splitV ? [[v0, (v0 + v1) / 2 - 10], [(v0 + v1) / 2 + 10, v1]] : [[v0, v1]];
+          const central = Math.hypot(...tf((u0 + u1) / 2, (v0 + v1) / 2)) < 900;
+          const put = (pu, pv, w, d, floors, kind) => {
+            const [bx, bz] = tf(pu, pv);
+            if (!clearOfKeys(bx, bz, Math.max(w, d) * 0.5) || !freeOf(bx, bz, Math.max(w, d) * 0.5)) return false;
+            buildings.push({ x: bx, z: bz, w, d, floors, angle: -g.rot, kind });
+            return true;
+          };
           for (const [a0, a1] of lotsU) for (const [b0, b1] of lotsV) {
-            const w = (a1 - a0) * R(0.72, 0.92), d = (b1 - b0) * R(0.72, 0.92);
-            const [bx, bz] = tf((a0 + a1) / 2, (b0 + b1) / 2);
-            if (!clearOfKeys(bx, bz, Math.max(w, d) * 0.5) || !freeOf(bx, bz, Math.max(w, d) * 0.5)) continue;
-            const tall = Math.hypot(bx, bz) < 900 ? rng() < 0.55 : rng() < 0.3;
-            const floors = tall ? Math.floor(R(4, 8)) : Math.floor(R(2, 5));   // tầng ~3 m: 4-7 tầng ~12-21 m
-            const kind = rng() < 0.12 ? 'ruin' : (tall ? 'office' : (rng() < 0.5 ? 'apartment' : 'shop'));
-            buildings.push({ x: bx, z: bz, w: Math.min(w, 200), d: Math.min(d, 200), floors, angle: -g.rot, kind });
-            occupied.push({ x: bx, z: bz, r: Math.max(w, d) * 0.5 });
+            // trục dài của lô = u nếu (a1-a0) >= (b1-b0); hàm đổi chỗ để nhà luôn trải dọc trục dài
+            const la = a1 - a0, lb = b1 - b0, alongU = la >= lb;
+            const L0 = alongU ? a0 : b0, L1 = alongU ? a1 : b1, S0 = alongU ? b0 : a0, S1 = alongU ? b1 : a1;
+            const at = (l, s) => alongU ? [l, s] : [s, l];
+            const size = (wl, ws) => alongU ? [wl, ws] : [ws, wl];
+            const LL = L1 - L0, SS = S1 - S0;
+            const r = rng();
+            if (r < 0.22 && SS > 170) {
+              // Dãy nhà ống: mỗi căn rộng 1-2 khoang (~4-8 m), sâu 11-16 m, 3-6 tầng, liền vách, cao thấp lệch nhau
+              // 2 dãy quay lưng vào nhau, mỗi dãy sát vỉa hè 1 bên đường
+              const dep = Math.min(R(90, 130), (SS - 4) / 2);
+              const rows = [S0 + dep / 2, S1 - dep / 2];
+              for (const sc of rows) {
+                let l = L0 + R(0, 10);
+                while (l < L1 - 32) {
+                  const wq = Math.min(L1 - l, rng() < 0.6 ? 32 : 64);   // mặt tiền 1-2 khoang nhà ống (4 / 8 m)
+                  if (rng() < 0.08) { l += wq; continue; }                       // khe trống / lô chưa xây
+                  const [pu, pv] = at(l + wq / 2, sc), [w, d] = size(wq - 0.6, dep * R(0.9, 1));
+                  put(pu, pv, w, d, Math.floor(R(3, 7)), rng() < 0.08 ? 'ruin' : 'tube');
+                  l += wq;
+                }
+              }
+              occupied.push({ x: tf((u0 + u1) / 2, (v0 + v1) / 2)[0], z: tf((u0 + u1) / 2, (v0 + v1) / 2)[1], r: Math.max(la, lb) * 0.5 });
+              continue;
+            }
+            let kind, floors, wl, ws;
+            if (r < 0.22 + (central ? 0.24 : 0.12)) {
+              kind = 'office'; floors = Math.floor(central ? R(8, 14) : R(6, 10));
+              wl = Math.min(LL * R(0.6, 0.85), 200); ws = Math.min(SS * R(0.65, 0.9), 170);
+            } else if (r < 0.64) {
+              kind = 'apartment'; floors = Math.floor(R(5, 10));
+              wl = Math.min(LL * R(0.84, 0.95), 320); ws = Math.min(SS * R(0.5, 0.75), 130);
+            } else if (r < 0.89) {
+              kind = 'shop'; floors = Math.floor(R(3, 7));
+              wl = Math.min(LL * R(0.8, 0.93), 280); ws = Math.min(SS * R(0.6, 0.85), 180);
+            } else {
+              kind = 'ruin'; floors = Math.floor(R(3, 8));
+              wl = Math.min(LL * R(0.7, 0.9), 260); ws = Math.min(SS * R(0.55, 0.8), 140);
+            }
+            const [pu, pv] = at((L0 + L1) / 2, (S0 + S1) / 2), [w, d] = size(wl, ws);
+            if (put(pu, pv, w, d, floors, kind)) occupied.push({ x: tf(pu, pv)[0], z: tf(pu, pv)[1], r: Math.max(w, d) * 0.5 });
           }
         }
       }

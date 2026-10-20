@@ -33,3 +33,92 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--tc-line-2); }
 ::-webkit-scrollbar-thumb:hover { background: var(--tc-dim); }
+
+/* ==========================================================================
+   CHUYỂN ĐỘNG CHIẾN THUẬT — dùng chung cho mọi bảng/nút
+   Bảng bật bằng display:none -> none->hiện thì animation tự chạy lại mỗi lần mở.
+   Mở bảng: nền mờ dần, khung "quét" mở từ trên xuống + viền hổ phách chớp như khóa
+   mục tiêu, nội dung trượt vào lần lượt. Chọn thẻ: vòng khóa loé ra. Nút: nhún khi bấm.
+   ========================================================================== */
+@keyframes tc-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+/* không dùng clip-path ở đây: nó sẽ cắt mất vòng sáng khóa và đè góc vát riêng của bảng */
+@keyframes tc-panel-in {
+  0%   { opacity: 0; transform: translateY(12px) scaleY(0.94); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes tc-lock-glow {
+  0%   { box-shadow: 0 0 0 1px var(--tc-accent), 0 0 24px rgba(231, 166, 58, 0.35), 0 20px 50px rgba(0, 0, 0, 0.6); }
+  100% { box-shadow: 0 0 0 0 transparent, 0 0 0 transparent, 0 20px 50px rgba(0, 0, 0, 0.6); }
+}
+@keyframes tc-item-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes tc-select-ping {
+  0%   { box-shadow: 0 0 0 0 rgba(231, 166, 58, 0.75); }
+  100% { box-shadow: 0 0 0 9px rgba(231, 166, 58, 0); }
+}
+@keyframes tc-scan {
+  0%   { transform: translateY(-100%); opacity: 0.0; }
+  20%  { opacity: 0.55; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* Lớp nền của các bảng */
+.acc-overlay, .gm-overlay, .ti-backdrop, .tactical-map-overlay, .game-over-screen {
+  animation: tc-backdrop-in 0.18s ease-out;
+}
+/* Khung bảng */
+.acc-card, .gm-card, .ti-modal, .game-over-card {
+  transform-origin: 50% 0;
+  animation: tc-panel-in 0.34s cubic-bezier(0.16, 1, 0.3, 1), tc-lock-glow 0.7s ease-out 0.12s;
+}
+.tactical-map-overlay .tac-map-body { animation: tc-panel-in 0.26s cubic-bezier(0.16, 1, 0.3, 1); }
+.tactical-map-overlay .tac-map-header { animation: tc-item-in 0.22s ease-out 0.05s backwards; }
+/* Vạch quét ngang chạy qua khung một lần khi mở */
+.acc-card::after, .gm-card::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 40%;
+  background: linear-gradient(180deg, transparent, rgba(231, 166, 58, 0.10) 60%, rgba(245, 196, 107, 0.35) 98%, transparent);
+  pointer-events: none; opacity: 0;
+  animation: tc-scan 0.55s ease-out 0.08s;
+}
+/* Nội dung trượt vào lần lượt (đổi trang trong menu cũng chạy lại vì phần tử mới được chèn) */
+.gm-body > *, .acc-card > * { animation: tc-item-in 0.26s ease-out backwards; }
+.gm-body > :nth-child(2), .acc-card > :nth-child(2) { animation-delay: 40ms; }
+.gm-body > :nth-child(3), .acc-card > :nth-child(3) { animation-delay: 80ms; }
+.gm-body > :nth-child(4), .acc-card > :nth-child(4) { animation-delay: 120ms; }
+.gm-body > :nth-child(5), .acc-card > :nth-child(5) { animation-delay: 160ms; }
+.gm-body > :nth-child(n+6), .acc-card > :nth-child(n+6) { animation-delay: 200ms; }
+
+/* Thẻ vừa được chọn: vòng khóa loé ra */
+.mm-class-card.active, .mm-map-card.active, .eqd-card.on, .eqd-tab.active, .unit-grid .btn.on {
+  animation: tc-select-ping 0.42s ease-out;
+}
+
+/* Nút: nhún nhẹ khi bấm (độ ưu tiên 0 để không đè hiệu ứng riêng của từng nút) */
+:where(button, .btn, .gm-btn, .eqd-act, .eqp-btn, .mm-class-card, .mm-map-card):not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+  filter: brightness(1.12);
+}
+
+/* ĐÓNG bảng (motion.js gắn .tc-closing cùng lúc với .hidden, gỡ sau ~0.19 s): giữ bảng hiện để chạy hiệu ứng thu lại */
+@keyframes tc-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes tc-panel-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scaleY(0.96); } }
+.acc-overlay.hidden.tc-closing, .gm-overlay.hidden.tc-closing, .tank-inspector-overlay.hidden.tc-closing,
+.tactical-map-overlay.hidden.tc-closing, .game-over-screen.hidden.tc-closing {
+  display: flex !important; opacity: 1; visibility: visible; pointer-events: none !important;
+  animation: tc-backdrop-out 0.19s ease-in forwards;
+}
+.tc-closing .acc-card, .tc-closing .gm-card, .tc-closing .ti-modal, .tc-closing .game-over-card,
+.tactical-map-overlay.tc-closing .tac-map-body {
+  transform-origin: 50% 0;
+  animation: tc-panel-out 0.19s ease-in forwards;
+}
+.tc-closing .acc-card::after, .tc-closing .gm-card::after { animation: none; }
+.tc-closing .ti-backdrop { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .acc-overlay, .gm-overlay, .ti-backdrop, .tactical-map-overlay, .game-over-screen,
+  .acc-card, .gm-card, .ti-modal, .game-over-card, .tactical-map-overlay *, .gm-body > *, .acc-card > *,
+  .acc-card::after, .gm-card::after, .mm-class-card.active, .mm-map-card.active {
+    animation: none !important;
+  }
+}

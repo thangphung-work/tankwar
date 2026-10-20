@@ -520,6 +520,34 @@ body, html {
   color: var(--hud-cyan);
 }
 
+/* Top 3 hạ gục / bị hạ cả trận (thưởng Bạc) */
+.kd-podium { margin: -10px 0 14px; text-align: left; }
+.kd-title { font-size: 11px; letter-spacing: 1px; color: var(--hud-text-muted); margin-bottom: 6px; }
+.kd-title .ti { color: var(--tc-accent); }
+.kd-podium ol { list-style: none; display: grid; gap: 4px; }
+.kd-row {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; gap: 10px; align-items: center;
+  padding: 6px 10px; background: rgba(27, 31, 25, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 4px; font-size: 13px;
+}
+.kd-row.me { border-color: var(--tc-accent); background: rgba(80, 70, 30, 0.35); }
+.kd-medal { font-family: var(--font-mono); font-weight: 900; display: flex; align-items: center; gap: 3px; }
+.kd-medal .ti { font-size: 17px; }
+.kd-row.p1 .kd-medal { color: #e8c547; }
+.kd-row.p2 .kd-medal { color: #c9ced6; }
+.kd-row.p3 .kd-medal { color: #c98a52; }
+.kd-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kd-name.blue { color: var(--tc-blue); }
+.kd-name.red { color: var(--tc-red); }
+.kd-val { color: var(--hud-text-muted); white-space: nowrap; }
+.kd-val b { color: var(--hud-cyan); font-family: var(--font-mono); }
+.kd-bonus { color: var(--tc-accent); font-weight: 700; white-space: nowrap; }
+.kd-empty { font-size: 12px; color: var(--hud-text-muted); padding: 6px 0; }
+.kd-note { font-size: 11px; color: var(--hud-text-muted); margin-top: 6px; }
+@media (max-width: 480px) {
+  .kd-row { grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .kd-val { display: none; }
+}
+
 /* Nút Khóa Tọa Độ Vào Nòng Pháo */
 .apply-target-btn {
   margin-top: 10px;
@@ -1162,6 +1190,13 @@ body, html {
 .ti-currency button { width: 34px; height: 34px; border: 0; border-left: 1px solid var(--tc-line); background: transparent; color: var(--tc-dim); font-size: 22px; cursor: pointer; }
 .ti-currency button:hover { color: var(--tc-accent); }
 .ti-profile { min-width: 230px; }
+.ti-silver { gap: 8px; padding: 0 14px 0 12px; }
+.ti-silver.off { display: none; }
+.ti-silver > span { font-size: 20px; line-height: 1; }
+.ti-silver b { font: 700 16px var(--font-mono); color: var(--tc-accent-2); }
+.ti-silver small { font: 600 11px var(--font-tech); letter-spacing: 1px; color: var(--tc-dim); }
+.ti-silver.bump b { animation: ti-silver-bump 0.45s ease-out; }
+@keyframes ti-silver-bump { 0% { color: #fff; text-shadow: 0 0 10px rgba(245, 196, 107, 0.9); } 100% { color: var(--tc-accent-2); text-shadow: none; } }
 .ti-profile img { width: 38px; height: 38px; border-radius: 0; object-fit: cover; border: 1px solid var(--tc-line-2); filter: saturate(.6); }
 .ti-profile span { display: flex; flex-direction: column; gap: 2px; }
 .ti-profile b { font: 700 14px var(--font-tech); color: var(--tc-bright); }
@@ -1191,16 +1226,19 @@ body, html {
 .ti-tab-name { font-family: var(--font-tech); font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--tc-text); }
 .ti-tab-btn.active .ti-tab-name { color: var(--tc-accent-2); }
 .ti-tab-sub { font-size: 10px; color: var(--tc-dim); }
-.ti-controls-hint { left: 18px; right: auto; bottom: 16px; padding: 7px 14px; gap: 12px; justify-content: flex-start; font-family: var(--font-tech); font-size: 11px; color: var(--tc-dim); background: var(--tc-panel); border: 1px solid var(--tc-line); clip-path: none; }
+.ti-controls-hint { left: 18px; right: auto; bottom: 16px; padding: 7px 14px; gap: 12px; justify-content: flex-start; font-family: var(--font-tech); font-size: 11px; color: var(--tc-dim); background: rgba(12, 16, 15, 0.42); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); border: 1px solid var(--tc-line); clip-path: none; }
 .ti-hint-toggle { display: none; }
-.ti-hint-toggle.ti-test-fire-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; cursor: pointer; user-select: none; touch-action: none; color: var(--tc-accent-2); font: 700 12px var(--font-tech); letter-spacing: 1px; background: var(--tc-panel-2); border: 1px solid var(--tc-accent); clip-path: none; transition: background .12s, color .12s; }
+.ti-hint-toggle.ti-test-fire-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 14px; cursor: pointer; user-select: none; touch-action: none; color: var(--tc-accent-2); font: 700 12px var(--font-tech); letter-spacing: 1px; background: var(--tc-panel-2); border: 1px solid var(--tc-accent); clip-path: none; transition: background .12s, color .12s; }
 .ti-hint-toggle.ti-test-fire-btn:hover { background: var(--tc-accent-soft); }
 .ti-hint-toggle.ti-test-fire-btn.active { color: var(--tc-bg); background: var(--tc-accent); box-shadow: none; }
-.ti-test-panel { position: absolute; top: 14px; right: 18px; z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 300px; }
-.ti-ammo-test { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-.ti-lab-link { padding: 4px 9px; color: var(--tc-dim); font: 600 10px var(--font-tech); letter-spacing: .6px; text-decoration: none; background: var(--tc-panel); border: 1px dashed var(--tc-line-2); }
+/* Cụm bắn thử: một hàng ngang gọn, các nút cao bằng nhau (hẹp thì tự xuống dòng, vẫn dồn phải) */
+.ti-test-panel { position: absolute; top: 14px; right: 18px; z-index: 6; display: flex; flex-direction: row; flex-wrap: wrap; align-items: stretch; justify-content: flex-end; gap: 6px; max-width: calc(100% - 36px); }
+.ti-test-panel > * { height: 30px; box-sizing: border-box; }
+.ti-ammo-test { display: flex; gap: 0; }
+.ti-ammo-test .ti-ammo-chip + .ti-ammo-chip { border-left-width: 0; }
+.ti-lab-link { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; cursor: pointer; padding: 0 10px; color: var(--tc-dim); font: 600 10px var(--font-tech); letter-spacing: .6px; text-decoration: none; background: var(--tc-panel); border: 1px dashed var(--tc-line-2); }
 .ti-lab-link:hover { color: var(--tc-text); border-color: var(--tc-dim); }
-.ti-ammo-chip { padding: 5px 10px; cursor: pointer; color: var(--tc-dim); font: 700 10px var(--font-tech); letter-spacing: .8px; background: var(--tc-panel-2); border: 1px solid var(--tc-line-2); clip-path: none; }
+.ti-ammo-chip { white-space: nowrap; padding: 0 11px; cursor: pointer; color: var(--tc-dim); font: 700 10px var(--font-tech); letter-spacing: .8px; background: var(--tc-panel-2); border: 1px solid var(--tc-line-2); clip-path: none; }
 .ti-ammo-chip:hover { color: var(--tc-text); border-color: var(--tc-dim); }
 .ti-ammo-chip.active { color: var(--tc-bg); background: var(--tc-text); border-color: var(--tc-text); }
 

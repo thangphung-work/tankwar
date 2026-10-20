@@ -21,7 +21,7 @@ const EnvDamage = (() => {
     NORMAL: { kin: 0.35, blast: 1.0, r: 20, e: 1.2 },
     HE: { kin: 0.15, blast: 1.6, r: 28, e: 2.0 },
     RPG: { kin: 0.3, blast: 0.7, r: 12, e: 1.0 },
-    ANTI_TANK_MISSILE: { kin: 0.45, blast: 1.1, r: 14, e: 1.4 },
+    ANTI_TANK_MISSILE: { kin: 0.45, blast: 1.3, r: 17, e: 1.5 },
     CLUSTER_SUBMUNITION: { kin: 0.1, blast: 0.35, r: 9, e: 0.5 },
     CLUSTER: { kin: 0.1, blast: 0.6, r: 18, e: 0.8 }
   };
@@ -207,6 +207,14 @@ const EnvDamage = (() => {
       this.place(cell);
       return cell;
     }
+    // Vết đạn trên đất trong vùng mặt đất vừa đổi (hố bom): đặt lại sát mặt đất mới
+    regroundGround(x0, z0, x1, z1, surf) {
+      for (const cell of this.cells.values()) {
+        if (cell.key.charCodeAt(0) !== 103 /* 'g' */ || cell.x < x0 || cell.x > x1 || cell.z < z0 || cell.z > z1) continue;
+        cell.y = surf(cell.x, cell.z);
+        if (cell.idx !== undefined) this.place(cell);
+      }
+    }
     removeNear(x, y, z, r) {
       for (const cell of this.cells.values()) {
         if ((cell.x - x) ** 2 + (cell.y - y) ** 2 + (cell.z - z) ** 2 < r * r) { this.unplace(cell); this.cells.delete(cell.key); }
@@ -215,6 +223,7 @@ const EnvDamage = (() => {
   }
 
   // ------------------------------------------------------------------ MẢNH VỠ / ĐÁ VỤN (rơi rồi nằm lại)
+  const DEB_VK = Math.sqrt(98 / 260);
   class Debris {
     constructor(parent, map, cap = 420) {
       const geo = new THREE.IcosahedronGeometry(1, 0);
@@ -225,17 +234,53 @@ const EnvDamage = (() => {
       this.im.matrixAutoUpdate = false;
       parent.add(this.im);
       this.cap = cap; this.next = 0; this.live = [];
+      this.parts = new Array(cap).fill(null);   // mọi mảnh (cả mảnh đã nằm yên) để đặt lại khi mặt đất đổi
       this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._p = new THREE.Vector3(); this._s = new THREE.Vector3();
+      this._v = new THREE.Vector3();
+      // 12 đỉnh khối 20 mặt (dò điểm chạm đất thấp nhất thay vì chỉ tâm mảnh)
+      const P = geo.attributes.position, seen = new Set();
+      this.verts = [];
+      for (let i = 0; i < P.count; i++) {
+        const k = P.getX(i).toFixed(3) + ',' + P.getY(i).toFixed(3) + ',' + P.getZ(i).toFixed(3);
+        if (!seen.has(k)) { seen.add(k); this.verts.push(new THREE.Vector3(P.getX(i), P.getY(i), P.getZ(i))); }
+      }
+    }
+    // Độ cao tâm mảnh để không đỉnh nào của mảnh (đã xoay) lọt xuống đất; lún nhẹ ~30% cỡ mảnh như vụn nằm trên đất tơi
+    contactY(p, groundAt) {
+      this._e.set(p.rx, p.ry, p.rz);
+      this._q.setFromEuler(this._e);
+      let need = -Infinity;
+      for (const v0 of this.verts) {
+        const v = this._v.set(v0.x * p.s, v0.y * p.sy, v0.z * p.s * 0.9).applyQuaternion(this._q);
+        need = Math.max(need, groundAt(p.x + v.x, p.z + v.z) - v.y);
+      }
+      return need - 0.3 * Math.min(p.s, p.sy);
+    }
+    // Mặt đất dưới vùng vừa đổi (hố bom): mảnh đã nằm yên hạ / nâng theo mặt mới
+    reground(x0, z0, x1, z1, groundAt) {
+      let any = false;
+      for (const p of this.parts) {
+        if (!p || !p.rest || p.x < x0 || p.x > x1 || p.z < z0 || p.z > z1) continue;
+        p.y = this.contactY(p, groundAt);
+        this._e.set(p.rx, p.ry, p.rz);
+        this._m.compose(this._p.set(p.x, p.y, p.z), this._q.setFromEuler(this._e), this._s.set(p.s, p.sy, p.s * 0.9));
+        this.im.setMatrixAt(p.i, this._m);
+        any = true;
+      }
+      if (any) this.im.instanceMatrix.needsUpdate = true;
     }
     burst(x, y, z, n, size, col, speed = 90, up = 0.8) {
       for (let k = 0; k < n; k++) {
         const i = this.next; this.next = (this.next + 1) % this.cap;
         this.im.count = Math.max(this.im.count, i + 1);
         const old = this.live.findIndex(p => p.i === i); if (old >= 0) this.live.splice(old, 1);
-        const a = Math.random() * 6.283, sp = speed * (0.3 + Math.random() * 0.8);
+        // vận tốc truyền vào theo trọng lực cũ 260 -> thu √(98/260): giữ tầm văng, thời gian bay như thật (g ×1,25)
+        const a = Math.random() * 6.283, sp = speed * DEB_VK * (0.3 + Math.random() * 0.8);
         const s = size * (0.45 + Math.random() * 0.7);
-        this.live.push({ i, x, y, z, vx: Math.cos(a) * sp, vy: speed * up * (0.3 + Math.random() * 0.9), vz: Math.sin(a) * sp,
-          rx: Math.random() * 6, ry: Math.random() * 6, rz: Math.random() * 6, w: (Math.random() - 0.5) * 14, s, sy: s * (0.55 + Math.random() * 0.4), t: 0 });
+        const part = { i, x, y, z, vx: Math.cos(a) * sp, vy: speed * DEB_VK * up * (0.3 + Math.random() * 0.9), vz: Math.sin(a) * sp,
+          rx: Math.random() * 6, ry: Math.random() * 6, rz: Math.random() * 6, w: (Math.random() - 0.5) * 14, s, sy: s * (0.55 + Math.random() * 0.4), t: 0 };
+        this.live.push(part);
+        this.parts[i] = part;
         const v = 0.8 + Math.random() * 0.3;
         this.im.setColorAt(i, new THREE.Color(col[0] * v, col[1] * v, col[2] * v));
       }
@@ -246,20 +291,22 @@ const EnvDamage = (() => {
       for (let j = this.live.length - 1; j >= 0; j--) {
         const p = this.live[j];
         p.t += dt;
-        p.vy -= 260 * dt;
+        p.vy -= 98 * dt;
         p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
         p.rx += p.w * dt; p.rz += p.w * 0.7 * dt;
-        const gy = groundAt(p.x, p.z) + p.sy * 0.45;
+        // gần đất mới dò đủ các đỉnh (mảnh nằm nghiêng trên dốc không cắm một nửa vào sườn dốc)
+        const g0 = groundAt(p.x, p.z), ext = Math.max(p.s, p.sy);
+        const gy = p.y - g0 > ext * 1.3 ? g0 + ext : this.contactY(p, groundAt);
         let rest = false;
         if (p.y <= gy) {
           p.y = gy;
-          if (Math.abs(p.vy) < 40 || p.t > 3) rest = true;
+          if (Math.abs(p.vy) < 40 * DEB_VK || p.t > 4) rest = true;
           p.vy = -p.vy * 0.28; p.vx *= 0.5; p.vz *= 0.5; p.w *= 0.5;
         }
         this._e.set(p.rx, p.ry, p.rz);
         this._m.compose(this._p.set(p.x, p.y, p.z), this._q.setFromEuler(this._e), this._s.set(p.s, p.sy, p.s * 0.9));
         this.im.setMatrixAt(p.i, this._m);
-        if (rest) this.live.splice(j, 1);   // nằm lại thành đống vụn (ma trận giữ nguyên)
+        if (rest) { p.rest = true; this.live.splice(j, 1); }   // nằm lại thành đống vụn (ma trận giữ nguyên)
       }
       this.im.instanceMatrix.needsUpdate = true;
     }
@@ -275,6 +322,42 @@ const EnvDamage = (() => {
         // máu theo thể tích (đá to vài phát lựu pháo / hàng chục phát pháo tăng; súng máy 12.7mm gần như không sứt)
         it.maxHp = it.hp = Math.max(0.35, Math.pow(Math.min(it.r, 26) / 10, 2) * (Math.min(it.h, 30) / 10) * 2.4);
         it.alive = true;
+        // mặt đất nguyên thuỷ dưới chân đá (5 điểm) -> hố bom khoét dưới đá thì đá lún theo
+        it.pos0 = it.pos.clone(); it.y0 = it.y; it.dy = 0;
+        it.g0s = this.footprint(it).map(([x, z]) => this.T.groundAtRaw ? this.T.groundAtRaw(x, z) : 0);
+        it.scarCells = new Set();
+      }
+    }
+    footprint(it) {
+      const d = it.r * 0.6;
+      return [[it.x, it.z], [it.x + d, it.z], [it.x - d, it.z], [it.x, it.z + d], [it.x, it.z - d]];
+    }
+    // Mặt đất dưới đá vừa đổi: đá tựa trên 2 điểm đỡ cao nhất (hố khoét một bên thì đá nằm vắt trên mép, khoét hết thì lún xuống)
+    reground(x0, z0, x1, z1, surf) {
+      for (const it of this.items) {
+        if (!it.alive || it.x + it.r < x0 || it.x - it.r > x1 || it.z + it.r < z0 || it.z - it.r > z1) continue;
+        const ds = this.footprint(it).map(([x, z], k) => surf(x, z) - it.g0s[k]).sort((a, b) => b - a);
+        const dy = Math.min(0.5, ds[1]);
+        if (Math.abs(dy - it.dy) < 0.02) continue;
+        it.dy = dy;
+        it.pos.y = it.pos0.y + dy; it.y = it.y0 + dy;
+        this.reshape(it, it.hp / it.maxHp);
+      }
+    }
+    // Vết mẻ / muội trên mặt đá bám theo đá: lưu toạ độ chuẩn hoá theo cỡ đá lúc trúng
+    meshPos(it, s) { return { x: it.pos.x, y: it.pos.y - (1 - s) * it.h * 0.25, z: it.pos.z }; }
+    attachScar(it, cell) {
+      if (!cell) return;
+      const s = this.scaleK(it, it.hp / it.maxHp), P = this.meshPos(it, s);
+      cell.u = { x: (cell.x - P.x) / s, y: (cell.y - P.y) / s, z: (cell.z - P.z) / s };
+      it.scarCells.add(cell);
+    }
+    syncScars(it, s) {
+      const P = this.meshPos(it, s), S = this.sys.scars;
+      for (const cell of it.scarCells) {
+        if (cell.idx === undefined || !cell.u) { it.scarCells.delete(cell); continue; }
+        cell.x = P.x + cell.u.x * s; cell.y = P.y + cell.u.y * s; cell.z = P.z + cell.u.z * s;
+        S.place(cell);
       }
     }
     damageAt(x, y, z, A, info, fx, events) {
@@ -301,8 +384,8 @@ const EnvDamage = (() => {
         const sc = this.scaleK(it, k);
         const px = it.x + n.x * it.r * 0.9 * sc, py = cy + n.y * it.h * 0.6 * sc, pz = it.z + n.z * it.r * 0.9 * sc;
         if (it.hp > 0) {
-          this.sys.scars.hit('r', 5, px, py, pz, n.x, n.y, n.z, A.e, () => 'r_chip', { e0: 0.3 });
-          if (A.blast > 0.3) this.sys.scars.hit('s', 10, px, py, pz, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: Math.min(1.4, it.r / 14) });
+          this.attachScar(it, this.sys.scars.hit('r', 5, px, py, pz, n.x, n.y, n.z, A.e, () => 'r_chip', { e0: 0.3 }));
+          if (A.blast > 0.3) this.attachScar(it, this.sys.scars.hit('s', 10, px, py, pz, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: Math.min(1.4, it.r / 14) }));
           this.reshape(it, k);
           // vụn đá văng ra theo độ mạnh
           const nChips = Math.min(10, Math.round(1 + dmg * 6));
@@ -324,6 +407,8 @@ const EnvDamage = (() => {
       const c = 0.55 + 0.45 * k;
       it.im.setColorAt(it.k, new THREE.Color(it.color.r * c, it.color.g * c, it.color.b * c));
       if (it.im.instanceColor) it.im.instanceColor.needsUpdate = true;
+      // đá nhỏ dần / lún: vết mẻ cũ co vào theo mặt đá (không lơ lửng ngoài không khí)
+      if (it.scarCells && it.scarCells.size) this.syncScars(it, s);
     }
     shatter(it, fx, events) {
       it.alive = false;
@@ -340,9 +425,11 @@ const EnvDamage = (() => {
       if (this.sys.debris) {
         this.sys.debris.burst(it.x, cy, it.z, Math.min(26, 8 + Math.round(it.r)), Math.max(1, it.r * 0.2), it.col, 110, 0.9);
         this.sys.debris.burst(it.x, cy, it.z, 10, Math.max(0.6, it.r * 0.08), it.col, 170, 1);
+        // đá tảng nứt toác thành vài khối lớn đổ nghiêng tại chỗ (không tan biến hết thành sỏi)
+        this.sys.debris.burst(it.x, it.y + it.h * 0.3, it.z, 3 + (it.r > 12 ? 2 : 0), Math.max(1.5, it.r * 0.42), it.col, 40, 0.5);
       }
       if (fx && fx.spawnDust && fx.palette) fx.spawnDust(it.x, it.y, it.z, Math.min(2.2, 0.6 + it.r / 14), { micro: false }, fx.palette('BOULDER'), false, null);
-      if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('concrete', { x: it.x, z: it.z }, Math.min(1.6, 0.6 + it.r / 15));
+      if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('rockSplit', { x: it.x, y: it.y + it.h * 0.5, z: it.z }, Math.min(1.6, 0.6 + it.r / 15), { h: it.h });
       events.push({ type: 'boulder', x: it.x, z: it.z, r: it.r });
     }
   }
@@ -421,9 +508,52 @@ const EnvDamage = (() => {
         if (Math.abs(L.along) > b.length / 2 || Math.abs(L.across) > b.width / 2) continue;
         const sp = this.spanAt(b, L.along);
         if (!sp || sp.state !== 'ok') return null;
-        return { b, along: L.along, across: L.across, span: sp };
+        // y: mặt cầu hiện tại (nhịp hư nặng võng xuống) — xe / vết đạn nằm đúng mặt võng
+        return { b, along: L.along, across: L.across, span: sp, y: b.deckY - sp.sag * 1.8 };
       }
       return null;
+    }
+    // Mặt nhịp cầu đang sập / đã nằm dưới sông tại (x, z) (null nếu không có): xe trên nhịp rơi theo nhịp, không tụt
+    // thẳng xuống lòng sông ngay khi nhịp vừa gãy; xe không xuyên qua mặt cầu đã đổ
+    brokenDeckAt(x, z) {
+      if (!this.broken) return null;
+      let best = null;
+      for (const b of this.items) {
+        const L = this.local(b, x, z);
+        if (Math.abs(L.along) > b.length / 2 + 40 || Math.abs(L.across) > b.width / 2) continue;
+        for (const sp of b.spans) {
+          const P = sp.pose;
+          if (!P) continue;
+          const c = Math.cos(P.th), sn = Math.sin(P.th);
+          const a = P.hinge + (L.along - P.hinge) / Math.max(0.2, c);    // vị trí trên nhịp trước khi chúi
+          if (a < sp.a0 - 0.5 || a > sp.a1 + 0.5) continue;
+          const y = P.py - sp.sag * 1.8 * c - (a - P.hinge) * sn;
+          if (best === null || y > best) best = y;
+        }
+      }
+      return best;
+    }
+    // Vết đạn trên mặt cầu: nhớ nhịp & toạ độ trên nhịp để vết võng / rơi theo mặt cầu
+    tagScar(cell, x, z) {
+      if (!cell || cell.br) return;
+      const br = this.at(x, z);
+      if (!br) return;
+      cell.br = { b: br.b, sp: br.span, al: br.along, ac: br.across };
+      (br.span.scars || (br.span.scars = new Set())).add(cell);
+    }
+    syncScars(b, sp) {
+      if (!sp.scars || !sp.scars.size) return;
+      const P = sp.pose || { hinge: 0, py: b.deckY, th: 0 }, c = Math.cos(P.th), sn = Math.sin(P.th), S = this.sys.scars;
+      for (const cell of sp.scars) {
+        if (cell.idx === undefined) { sp.scars.delete(cell); continue; }
+        const d = cell.br.al - P.hinge, sg = sp.sag * 1.8;
+        const along = P.hinge + d * c - sg * sn, ac = cell.br.ac;
+        cell.x = b.x + along * b.f.x - ac * b.f.z;
+        cell.z = b.z + along * b.f.z + ac * b.f.x;
+        cell.y = P.py - sg * c - d * sn;
+        cell.nx = b.f.x * sn; cell.ny = c; cell.nz = b.f.z * sn;
+        S.place(cell);
+      }
     }
     damageAt(x, y, z, A, info, fx, events) {
       const [mk, mb, ms] = MAT.bridge;
@@ -456,6 +586,7 @@ const EnvDamage = (() => {
       sp.grp.rotation.z = (hash3(b.x, sp.a0, b.z) - 0.5) * 0.03 * k;
       sp.rails.forEach((r, i) => { r.rotation.z = (i ? 1 : -1) * k * 0.35; r.rotation.y = (hash3(sp.a1, i, b.z) - 0.5) * 0.12 * k; r.updateMatrix(); });
       sp.grp.updateMatrix();
+      this.syncScars(b, sp);
     }
     collapse(b, sp, alongHit, fx, events) {
       sp.state = 'falling';
@@ -466,6 +597,9 @@ const EnvDamage = (() => {
       let hinge = alongHit < (sp.a0 + sp.a1) / 2 ? sp.a1 : sp.a0;
       if (hinge === sp.a1 && !rightOk && leftOk) hinge = sp.a0;
       else if (hinge === sp.a0 && !leftOk && rightOk) hinge = sp.a1;
+      // nhịp sát bờ: đầu gối lên mố bờ làm bản lề, đầu trụ rơi xuống sông (không cắm đầu tự do vào bờ đất)
+      const bankA0 = sp.a0 <= -b.length / 2 + 0.01, bankA1 = sp.a1 >= b.length / 2 - 0.01;
+      if (bankA0 !== bankA1) hinge = bankA0 ? sp.a0 : sp.a1;
       const flat = !leftOk && !rightOk;
       const pivot = new THREE.Group();
       pivot.position.set(0, b.deckY, hinge);
@@ -475,16 +609,44 @@ const EnvDamage = (() => {
       pivot.attach(sp.grp);
       sp.grp.matrixAutoUpdate = true;
       pivot.matrixAutoUpdate = true;
-      // độ sâu lòng sông dưới nhịp cầu
       const mw = { x: b.x + b.f.x * (sp.a0 + sp.a1) / 2, z: b.z + b.f.z * (sp.a0 + sp.a1) / 2 };
-      const bed = this.T.groundAtRaw(mw.x, mw.z);
-      const drop = Math.max(6, b.deckY - bed + 2);
       const freeSign = hinge === sp.a0 ? 1 : -1;   // đầu tự do nằm phía +z cục bộ hay -z
-      const ang = flat ? 0 : freeSign * Math.asin(Math.min(0.9, drop / sp.len));
-      this.anims.push({ b, sp, pivot, t: 0, dur: 1.5, ang, drop: flat ? drop : drop * 0.35, freeSign, splashed: false });
+      // Tư thế nằm cuối: đáy dầm (dày 4) chạm đất / lòng sông tại điểm đầu tiên dọc nhịp — tính trên đúng địa hình dưới cầu
+      const TH = 4, gAt = (a) => this.T.groundAtRaw(b.x + b.f.x * a, b.z + b.f.z * a);
+      const base = b.deckY - TH, NS = 10;
+      // điểm ban đầu đã ngập trong đất (dầm gối trên mố bờ) không tính là chạm
+      const clear = [];
+      for (let k = 0; k <= NS; k++) clear.push(base - gAt(hinge + freeSign * sp.len * k / NS) > 0.5);
+      let drop = 0, th = 0;
+      if (flat) {
+        // nhịp rơi phẳng: hạ tới khi điểm thấp nhất chạm đáy
+        let clr = Infinity;
+        for (let k = 0; k <= NS; k++) if (clear[k]) clr = Math.min(clr, base - gAt(hinge + freeSign * sp.len * k / NS));
+        drop = Math.max(2, clr === Infinity ? 6 : clr);
+      } else {
+        // đầu bản lề tụt khỏi gối một chút (không lún xuống đất dưới gối), rồi chúi tới khi chạm
+        drop = clear[0] ? Math.max(0, Math.min(3, base - gAt(hinge) - 0.3)) : 0;
+        for (th = 0.02; th < 1.25; th += 0.01) {
+          const c = Math.cos(th), sn = Math.sin(th);
+          let touch = false;
+          for (let k = 1; k <= NS && !touch; k++) {
+            if (!clear[k]) continue;
+            const d = sp.len * k / NS;
+            if (b.deckY - drop - d * sn - TH * c <= gAt(hinge + freeSign * d * c)) touch = true;
+          }
+          if (touch) break;
+        }
+      }
+      const ang = freeSign * th;
+      const fallH = flat ? drop : drop + sp.len * Math.sin(th);
+      // thời gian rơi theo trọng lực thật (rơi tự do √(2h/g); nhịp còn bản lề quay chậm hơn ~1,3 lần)
+      const dur = Math.max(0.9, Math.min(3.2, Math.sqrt(2 * (Math.max(6, fallH) / 8) / 9.8) * (flat ? 1.05 : 1.3)));
+      sp.pose = { hinge, py: b.deckY, th: 0 };
+      this.broken = (this.broken || 0) + 1;
+      this.anims.push({ b, sp, pivot, t: 0, dur, ang, drop, freeSign, hinge, splashed: false });
       this.sys.navDirty = true;
       this.sys.mapDirty = true;
-      if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('collapse', mw, 1.4);
+      if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('collapse', { x: mw.x, y: b.deckY, z: mw.z }, 1.4, { mat: 'concrete', h: drop, floors: 1 });
       if (fx && fx.spawnDust && fx.palette) fx.spawnDust(mw.x, b.deckY, mw.z, 1.6, { micro: false }, fx.palette('WALL'), true, null);
       events.push({ type: 'bridgeCollapse', x: mw.x, z: mw.z });
     }
@@ -496,16 +658,20 @@ const EnvDamage = (() => {
         a.pivot.rotation.x = a.ang * e;
         a.pivot.position.y = a.b.deckY - a.drop * e;
         a.pivot.updateMatrix();
+        // tư thế nhịp cho mặt đất xe (brokenDeckAt) & vết đạn trên mặt cầu rơi theo nhịp
+        a.sp.pose = { hinge: a.hinge, py: a.pivot.position.y, th: Math.abs(a.ang * e) * a.freeSign };
+        this.syncScars(a.b, a.sp);
         if (u >= 1 && !a.splashed) {
           a.splashed = true;
           a.sp.state = 'down';
-          const fz = a.freeSign > 0 ? a.sp.a1 : a.sp.a0;
+          const fz = a.hinge + a.freeSign * a.sp.len * Math.cos(a.ang);   // đầu tự do đã chúi (gần bản lề hơn)
           const wx = a.b.x + a.b.f.x * fz, wz = a.b.z + a.b.f.z * fz;
           const ws = this.T.waterMesh ? this.T.waterMesh.position.y : 0;
-          if (fx && fx.waterBurst && this.T.groundAtRaw(wx, wz) < 0.1) fx.waterBurst(wx, ws, wz, 'HE', true, 6);
+          const wet = this.T.groundAtRaw(wx, wz) < 0.1;
+          if (fx && fx.waterBurst && wet) fx.waterBurst(wx, ws, wz, 'HE', true, 6);
           else if (fx && fx.spawnDust && fx.palette) fx.spawnDust(wx, this.T.groundAtRaw(wx, wz), wz, 1.8, { micro: false }, fx.palette('WALL'), true, null);
           if (this.sys.debris) this.sys.debris.burst(wx, ws + 2, wz, 14, 1.6, [0.62, 0.6, 0.56], 90, 0.7);
-          if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('debrisLand', { x: wx, z: wz }, 1.5);
+          if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(wet ? 'splashBig' : 'slabImpact', { x: wx, z: wz }, 1.4);
           this.anims.splice(i, 1);
         }
       }
@@ -571,7 +737,7 @@ const EnvDamage = (() => {
       // Mặt cầu: vết đạn / vỡ bê tông cộng dồn trên mặt đường
       if (!isBullet(ammo) && info.t === 'GROUND') {
         const br = this.bridges.at(x, z);
-        if (br && Math.abs(y - br.b.deckY) < 3) this.concreteHit(x, br.b.deckY, z, 0, 0, ammo, A, true);
+        if (br && Math.abs(y - br.y) < 3) this.concreteHit(x, br.y, z, 0, 0, ammo, A, true);
       }
       return events;
     }
@@ -582,17 +748,19 @@ const EnvDamage = (() => {
       if (up || nx === undefined || nx === null || (!nx && !nz)) n = { x: 0, y: 1, z: 0 };
       else { const l = Math.hypot(nx, nz) || 1; n = { x: nx / l, y: 0, z: nz / l }; }
       const tier = (e) => e < 0.35 ? 'c_pock' : e < 1.3 ? 'c_chip' : 'c_spall';
-      this.scars.hit('c', ammo === 'SCOUT_BULLET' || ammo === 'INCENDIARY' ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2 });
-      if (A.blast > 0.3 || ammo === 'INCENDIARY') this.scars.hit('s', 12, x, y, z, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: ammo === 'INCENDIARY' ? 0.35 : Math.min(1.6, 0.6 + A.r / 40) });
+      const c1 = this.scars.hit('c', ammo === 'SCOUT_BULLET' || ammo === 'INCENDIARY' ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2 });
+      const c2 = (A.blast > 0.3 || ammo === 'INCENDIARY') ? this.scars.hit('s', 12, x, y, z, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: ammo === 'INCENDIARY' ? 0.35 : Math.min(1.6, 0.6 + A.r / 40) }) : null;
+      // mặt cầu: vết bám nhịp cầu (võng / rơi theo nhịp)
+      if (up) { this.bridges.tagScar(c1, x, z); this.bridges.tagScar(c2, x, z); }
     }
 
     // Đạn súng chạm đất (gọi từ hiệu ứng nổ, mọi máy tự vẽ): vết nhỏ theo loại đạn, cộng dồn theo ô ~2.5 đơn vị
     groundHit(x, z, ammo, dir) {
       const T = this.T;
-      const y = T.getElevationAt(x, z);
+      const y = this.surf(x, z);   // trong hố bom: vết nằm trên lòng hố nhìn thấy, không lơ lửng ở lưới vật lý
       const br = this.bridges.at(x, z);
-      if (br) { this.concreteHit(x, br.b.deckY, z, 0, 0, ammo, ammoOf(ammo, false), true); return true; }
-      const e = 1.5, hx = T.getElevationAt(x + e, z) - T.getElevationAt(x - e, z), hz = T.getElevationAt(x, z + e) - T.getElevationAt(x, z - e);
+      if (br) { this.concreteHit(x, br.y, z, 0, 0, ammo, ammoOf(ammo, false), true); return true; }
+      const e = 1.5, hx = this.surf(x + e, z) - this.surf(x - e, z), hz = this.surf(x, z + e) - this.surf(x, z - e);
       const n = new THREE.Vector3(-hx / (2 * e), 1, -hz / (2 * e)).normalize();
       const A = ammoOf(ammo, false);
       const kind = ammo === 'INCENDIARY' ? 'g_burn' : ammo === 'GATLING_BULLET' ? 'g_hei' : 'g_pock';
@@ -606,8 +774,18 @@ const EnvDamage = (() => {
       return true;
     }
 
+    // mặt đất nhìn thấy (lòng hố bom sâu hơn lưới vật lý) cho mảnh vụn & vết đạn trên đất
+    surf(x, z) { return this.T.surfaceAt ? this.T.surfaceAt(x, z) : this.T.getElevationAt(x, z); }
+    // Mặt đất trong vùng vừa đổi (hố bom mới / bị xoá): mảnh vụn, đá tảng, vết đạn trên đất đặt lại theo mặt mới
+    reground(x0, z0, x1, z1) {
+      const f = this._surf || (this._surf = (x, z) => this.surf(x, z));
+      this.debris.reground(x0, z0, x1, z1, f);
+      this.rocks.reground(x0, z0, x1, z1, this.T.surfaceAt ? (x, z) => this.T.surfaceAt(x, z, true) : f);
+      this.scars.regroundGround(x0, z0, x1, z1, f);
+    }
+
     update(dt, fx) {
-      this.debris.update(dt, (x, z) => this.T.getElevationAt(x, z));
+      this.debris.update(dt, this._surf || (this._surf = (x, z) => this.surf(x, z)));
       this.bridges.update(dt, fx);
       if (this.navDirty) {
         this.navDirty = false;

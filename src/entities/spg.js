@@ -190,6 +190,10 @@ window.SpgFXPool = SpgFXPool;
 const gameTime = (realSeconds) => (typeof GameTiming !== 'undefined' ? GameTiming.t(realSeconds) : realSeconds * 0.5);
 // Tốc độ tối đa cơ sở = tốc độ thật (km/h) x speedScale; trên đường nhựa tốt (x1.15) đạt đúng tốc độ thật tối đa
 const vehicleTopSpeed = (tankType, fallback) => (typeof GameTiming !== 'undefined' ? GameTiming.baseVehicleSpeed(tankType) : fallback);
+// Bán kính quay vòng tối thiểu của xe bánh lốp thật (m, tính tới tâm cầu sau), quy theo tỉ lệ thân xe 8 đơn vị = 1 m:
+// xe tải 6x6 chở lựu pháo 155mm (kiểu Caesar 6x6 / Archer) quay vòng ~20 m đường kính; xe trinh sát 4x4 (kiểu Fennek / LMV) ~13 m
+const WHEEL_TURN_RADIUS_M = { ARTILLERY: 10.0, SCOUT: 6.5 };
+const wheelTurnRadius = (tankType) => (WHEEL_TURN_RADIUS_M[tankType] || 0) * (typeof GameTiming !== 'undefined' ? GameTiming.UNITS_PER_M : 8);
 
 class SPGUnit3D {
   constructor(scene, options = {}) {
@@ -292,6 +296,15 @@ class SPGUnit3D {
       this.climbMax = 1.0;       // xe tăng leo được ụ đất / nắp hầm cứ điểm
       this.reloadDuration = gameTime(5.0);  // nạp đạn thật ~5 s (nạp tay / tự động 5-7 s); người chơi & bot như nhau
     }
+    // Xe bánh lốp (Arbalest 6x6, Marten 4x4) lái bằng bánh trước: không xoay tại chỗ như xe xích, quay theo bán kính quay vòng
+    this.isWheeled = this.tankType === 'SCOUT' || this.tankType === 'ARTILLERY';
+    this.turnRadius = this.isWheeled ? wheelTurnRadius(this.tankType) : 0;
+    // Lội nước (8 đơn vị = 1 m): [sâu lội bình thường, sâu tối đa trước khi nước tràn vào khoang máy]
+    // Xe tăng ~1.2 m (lội không chuẩn bị), xe hỏa lực cùng khung gầm; xe tải 6x6 ~1 m; xe 4x4 trinh sát thấp nhất ~0.8 m
+    const WADE = { ALL_ROUNDER: [10, 14], GATLING: [10, 13.5], ARTILLERY: [8, 11], SCOUT: [6.5, 9.5] }[this.tankType] || [10, 14];
+    this.wadeDepth = WADE[0];
+    this.wadeMax = WADE[1];
+    this.waterDepth = 0;
 
     this.speed = 0;
     this.hp = this.maxHp;
@@ -306,6 +319,12 @@ class SPGUnit3D {
 
     // Hệ thống góc bắn (xe 6 nòng cận chiến cố định nòng ở 0 độ)
     this.azimuth = options.azimuth || 0;
+    // Pháo tự hành: mũi xe là điểm mù khi BẮN (không bắn vắt qua cabin), nhưng nòng vẫn gác được lên giá khóa trên
+    // nóc cabin khi hành quân. Hướng ban đầu rơi vào điểm mù -> gác nòng thẳng mũi xe (tư thế hành quân)
+    if (this.tankType === 'ARTILLERY' && typeof BallisticsSystem3D !== 'undefined') {
+      const rel = -(this.azimuth * Math.PI / 180) - (options.bodyAngle || 0);
+      if (Math.abs(Math.atan2(Math.sin(rel), Math.cos(rel))) < BallisticsSystem3D.ARTY_DIRECT.blind) this.azimuth = ((-(options.bodyAngle || 0) * 180 / Math.PI) % 360 + 360) % 360;
+    }
     this.canElevate = (this.tankType !== 'GATLING');
     this.elevation = this.canElevate ? (options.elevation !== undefined ? options.elevation : 0) : 0;
     this.charge = options.charge || 1;
@@ -380,6 +399,7 @@ class SPGUnit3D {
     // Chỉ số chiến đấu
     this.shotsFired = 0;
     this.kills = 0;
+    this.deaths = 0;
     this.damageDealt = 0;
 
     // AI Chiến thuật nâng cao
@@ -1391,16 +1411,16 @@ class SPGUnit3D {
 
     // 2. Dao động máy nổ không tải (Idle vibration)
     this.idleVibeTimer += dt * 18;
-    // Rung máy nổ khi đứng yên: rất nhẹ (trước 0.008 rad nhìn như cả xe run lẩy bẩy)
-    const idleVibe = Math.abs(this.speed) < 5 ? Math.sin(this.idleVibeTimer) * 0.0022 : 0;
+    // Rung máy nổ khi đứng yên: cực nhẹ, mờ dần theo tốc độ (không bật/tắt giật ở ngưỡng).
+    // Góc này xoay cả thân quanh gốc ở mặt đất nên đầu nòng / ăng-ten khuếch đại lên nhiều lần:
+    // 0.0022 rad (~2.9 Hz) đã đủ làm cả xe run lẩy bẩy ở phòng xem xe -> nay 0.0004 rad (dưới 1 px ở mức zoom thường).
+    // idleVibeAmp = 0 tắt hẳn (phòng xem xe đặt vậy để xe đứng yên trên bệ).
+    const idleAmp = this.idleVibeAmp !== undefined ? this.idleVibeAmp : 0.0004;
+    const idleVibe = idleAmp > 0 && !this.isDead ? Math.sin(this.idleVibeTimer) * idleAmp * Math.max(0, 1 - Math.abs(this.speed) / 5) : 0;
 
     // 3. Tiến trình nạp đạn
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
-      // Tiếng nạp đạn chạy suốt quá trình nạp, khóa nòng đóng đúng lúc sẵn sàng
-      if (this.isPlayer && window.soundEngine && window.soundEngine.updateReload) {
-        window.soundEngine.updateReload(this.tankType, this.reloadTimer, this.reloadDuration);
-      }
     }
 
     // 4. Xoay radar cảnh giới & chớp đèn ăng-ten
@@ -1467,11 +1487,15 @@ class SPGUnit3D {
     const rearY  = groundAt(this.x - forwardX * 18, this.z - forwardZ * 18);
     const leftY  = groundAt(this.x - rightX * 14, this.z - rightZ * 14);
     const rightY = groundAt(this.x + rightX * 14, this.z + rightZ * 14);
+    // Đống đổ nát nhà sập / gạch vụn / gốc tường gãy thấp quanh xe: xích tì lên mặt đống (VehicleCollision.trackSupport)
+    // -> thân xe nhô lên, ngóc / chúc mũi và nghiêng theo đống, qua mép bậc thì bập bênh chúc xuống
+    const debris = terrain.vehicleDebris && typeof VehicleCollision !== 'undefined' ? terrain.vehicleDebris(this.x, this.z, this) : null;
+    const sup = debris ? VehicleCollision.trackSupport(this, this.x, this.z, this.bodyAngle, groundAt, debris, refY !== undefined ? refY : groundAt(this.x, this.z), this._trackSup || (this._trackSup = {})) : null;
 
     // Độ dốc dọc theo mũi xe: khi frontY > rearY (lên dốc), mũi ngửa lên chuẩn xác (góc dương)
-    const rawPitch = Math.atan2(frontY - rearY, 36);
+    const rawPitch = sup ? Math.atan2(sup.front - sup.rear, 36) : Math.atan2(frontY - rearY, 36);
     // Độ dốc ngang sườn xe: khi leftY > rightY (bên trái cao), thân xe nghiêng bám sườn (góc âm quanh Z)
-    const rawRoll  = Math.atan2(rightY - leftY, 28);
+    const rawRoll  = sup ? Math.atan2(sup.right - sup.left, 28) : Math.atan2(rightY - leftY, 28);
 
     // Giới hạn góc nghiêng nhún thân xe tối đa (±17° Pitch, ±12° Roll) để xe luôn giữ dáng vững chãi, không bị lộn mèo hay vặn xoắn
     const maxPitch = 0.75;   // đủ để thân xe ngóc theo sườn ụ đất dốc khi leo
@@ -1490,15 +1514,42 @@ class SPGUnit3D {
         ? { SAND: 0.95, JUNGLE_SOIL: 0.95, WATER: 0.85, ROAD: 1.05, URBAN_ROAD: 1.08, BRIDGE: 1.08 }
         : { SAND: 1.06, JUNGLE_SOIL: 1.05, WATER: 1.05 };   // xích ít bị địa hình mềm cản hơn
     // Sườn đá / cao nguyên: địa hình tự giảm 50% — xe xích & 4x4 vượt địa hình tốt hơn nhiều, chỉ xe tải bị ì
+    // Độ sâu nước tại chỗ xe đứng (0 nếu trên cạn / trên cầu)
+    const waterY = terrain.waterSurfaceAt ? terrain.waterSurfaceAt(this.x, this.z) : null;
+    const wDepth = waterY !== null && waterY !== undefined ? Math.max(0, waterY - groundAt(this.x, this.z)) : 0;
+    this.waterDepth = wDepth;
+    this.waterY = waterY;
     const baseSurf = terrainInfo.type === 'MOUNTAIN'
       ? (this.tankType === 'ARTILLERY' ? 0.62 : this.tankType === 'SCOUT' ? 0.88 : 0.9) / (DRIVE.MOUNTAIN || 1)
+      : terrainInfo.type === 'WATER' ? 1   // nước cản trực tiếp lên vận tốc (bên dưới), không nhân hệ số
       : terrainInfo.speedMult;
     const speedMult = baseSurf * (DRIVE[terrainInfo.type] || 1);
+    // NƯỚC CẢN (ì): lao xuống nước nhanh thì bị ghì lại trong ~0.5-1 s (mũi chúi theo lực hãm), đạp ga cũng không
+    // vượt được tốc độ lội; lên bờ phải tăng tốc lại từ tốc độ lội chứ không bật ngay về tốc độ cũ
+    if (terrainInfo.type === 'WATER') {
+      const cap = (this.baseMaxSpeed || 100) * this.wadeSpeedMult(wDepth);
+      const v = Math.abs(this.speed), sg = Math.sign(this.speed);
+      if (v > cap) {
+        let nv = this._wPrevSpd !== undefined ? Math.min(v, Math.max(cap, this._wPrevSpd)) : v;   // ga không đẩy thêm được
+        nv = cap + (nv - cap) * Math.exp(-dt * (2.2 + 3 * Math.min(1, wDepth / (this.wadeDepth || 10))));
+        this.speed = sg * nv;
+      }
+    }
+    this._wPrevSpd = Math.abs(this.speed);
+    // MÁY CHẾT (ngập nước): không còn lực kéo, xe chỉ trôi chậm dần rồi đứng (bỏ qua mọi lệnh ga của người / bot)
+    if (this.engineOff) {
+      this._floodV = (this._floodV || 0) * Math.exp(-dt * 4);
+      if (Math.abs(this._floodV) < 0.5) this._floodV = 0;
+      this.speed = this._floodV;
+    }
     this.currentTerrainType = terrainInfo.type;
 
     // LEO DỐC theo khả năng từng xe: dốc càng gần giới hạn càng chậm; quá giới hạn thì không leo nổi (trượt lùi nhẹ)
     const dirSign = this.speed >= 0 ? 1 : -1;
-    const grade = ((frontY - rearY) / 36) * dirSign;          // dốc theo hướng đang chạy (tan góc)
+    let grade = ((frontY - rearY) / 36) * dirSign;            // dốc theo hướng đang chạy (tan góc)
+    // Trên đống đổ nát: dốc theo đường đỡ của xích trên mặt đống — sườn đống quá dốc so với khả năng leo thì trượt lại
+    this.onDebris = !!(sup && sup.lift > 0.8);
+    if (this.onDebris) grade = Math.max(grade, sup.slope * dirSign);
     const climbMax = this.climbMax || 0.8;
     let slopeMult = 1;
     this.climbStall = false;
@@ -1513,6 +1564,8 @@ class SPGUnit3D {
       if (grade < -0.05) slopeMult = Math.min(1.25, 1 - grade * 0.5);
       this.engineLoad = terrainInfo.engineLoad && grade > -0.05 ? terrainInfo.engineLoad : 0.9;
     }
+    // Lội nước: máy gồng theo độ sâu (nước cản thân xe), quá mức lội thì gồng hết cỡ
+    if (wDepth > 1) this.engineLoad = Math.max(this.engineLoad, Math.min(2, 1.2 + 0.5 * wDepth / this.wadeDepth));
     if (this.climbStall && this.isPlayer && window.game && typeof window.game.addCombatLog === 'function') {
       const now = performance.now();
       if (!this._stallLogT || now - this._stallLogT > 3000) {
@@ -1521,6 +1574,12 @@ class SPGUnit3D {
       }
     }
 
+    // Bò trên đống đổ nát: xích trượt trên gạch đá lổn nhổn -> chậm hẳn; đang leo lên đống thì máy gầm (tải nặng)
+    if (this.onDebris) {
+      slopeMult *= 0.6;
+      if (Math.abs(this.speed) > 2) this.engineLoad = Math.max(this.engineLoad, Math.min(2, 1.35 + Math.max(0, grade) * 0.8));
+    }
+    this._groundMult = speedMult * slopeMult;   // tốc độ lăn thật / this.speed — xe bánh lốp quay thân theo tốc độ lăn thật
     let nextX = this.x + forwardX * this.speed * speedMult * slopeMult * dt;
     let nextZ = this.z + forwardZ * this.speed * speedMult * slopeMult * dt;
     if (this.climbStall) {
@@ -1531,6 +1590,34 @@ class SPGUnit3D {
       this.speed *= Math.exp(-dt * 2.5);
     }
     void wheeledDrive;
+
+    // NƯỚC QUÁ SÂU: không lội sâu thêm được (nước tràn vào khoang máy) — vẫn lùi / quay ra chỗ nông được
+    this.wadeStall = false;
+    if (waterY !== null && waterY !== undefined) {
+      const nwY = terrain.waterSurfaceAt(nextX, nextZ);
+      const nDepth = nwY !== null && nwY !== undefined ? nwY - groundAt(nextX, nextZ) : 0;
+      if (nDepth > this.wadeMax && nDepth > wDepth) {
+        nextX = this.x; nextZ = this.z;
+        this.wadeStall = Math.abs(this.speed) > 3;
+        this.speed *= Math.exp(-dt * 4);
+      }
+    }
+    if (this.isPlayer && window.game && typeof window.game.addCombatLog === 'function') {
+      const now = performance.now();
+      if (this.wadeStall) {
+        if (!this._wadeLogT || now - this._wadeLogT > 4000) {
+          this._wadeLogT = now;
+          window.game.addCombatLog('[[ripple]] NƯỚC QUÁ SÂU — xe không lội qua được, hãy tìm chỗ nông hơn hoặc đi qua cầu', 'alert');
+        }
+      } else if (wDepth > this.wadeDepth && !this._wadeDeepIn) {
+        if (!this._wadeLogT || now - this._wadeLogT > 8000) {
+          this._wadeLogT = now;
+          window.game.addCombatLog('[[ripple]] Nước sâu — xe đi rất chậm', 'tip');
+        }
+      }
+    }
+    this._wadeDeepIn = wDepth > this.wadeDepth * 0.9;
+    this.updateEngineFlood(dt, wDepth);
 
     // Giới hạn biên bản đồ
     nextX = Math.max(-terrain.width / 2 + 60, Math.min(terrain.width / 2 - 60, nextX));
@@ -1544,8 +1631,16 @@ class SPGUnit3D {
         const k = Math.abs(this.speed) / (this.baseMaxSpeed || 1);
         if (k > 0.12) window.soundEngine.playCollision(k, 'obstacle');
       }
-      // Giảm tốc độ khi cọ sát vật cản nhưng vẫn cho phép quay đầu hoặc lùi xe thoải mái
-      this.speed *= 0.65;
+      // Húc gần như thẳng vào vật cản: xe dừng lại (vẫn quay đầu / lùi thoải mái).
+      // Húc chéo: thân xe trượt dọc theo mặt tường, chỉ hao tốc độ do cọ sát
+      const want = Math.hypot(nextX - this.x, nextZ - this.z);
+      const gx = resolved.x - this.x, gz = resolved.z - this.z;
+      const slide = want > 1e-4 && gx * (nextX - this.x) + gz * (nextZ - this.z) > 0 ? Math.min(1, Math.hypot(gx, gz) / want) : 0;
+      if (slide < 0.3) this.speed *= 0.65;
+      else {
+        const cap = (this.baseMaxSpeed || Math.abs(this.speed)) * (0.35 + 0.65 * slide);
+        if (Math.abs(this.speed) > cap) this.speed = Math.sign(this.speed) * cap;
+      }
     }
     this._bumping = !!resolved.hit;
     this.x = resolved.x;
@@ -1577,8 +1672,10 @@ class SPGUnit3D {
     }
 
     // Độ cao mặt đất tại tâm xe + độ lún cát nhẹ + xóc nảy gồ ghề
-    const groundBaseY = groundAt(this.x, this.z);
-    const sinkY = Math.max(-1.0, terrainInfo.sinkY || 0);
+    let groundBaseY = groundAt(this.x, this.z);
+    // trên đống đổ nát: tâm xe theo đường đỡ của xích (tính ở vị trí cũ, cộng phần mặt đất đổi khi xe vừa nhích đi)
+    if (sup) groundBaseY = Math.max(groundBaseY, sup.center + groundBaseY - sup.g0);
+    const sinkY = this.onDebris ? 0 : Math.max(-1.0, terrainInfo.sinkY || 0);
 
     // Xóc nảy địa hình mấp mô theo QUÃNG ĐƯỜNG đã chạy (tần số thấp, mượt) — trước đây dùng sin(t*360)
     // ~57 Hz vượt tần số khung hình nên thành rung giật ngẫu nhiên, và đẩy cả camera rung theo.
@@ -1586,7 +1683,7 @@ class SPGUnit3D {
     const speedRatio = Math.abs(this.speed) / this.baseMaxSpeed;
     this._odo = (this._odo || 0) + Math.abs(this.speed) * dt;
     // Xe bánh lốp (giảm xóc lò xo) nhún nhiều hơn xe xích; tần số ~1-2.5 Hz ở tốc độ tối đa
-    const bumpAmp = Math.min(0.35, (terrainInfo.bumpiness || 0.4) * speedRatio * (wheeledDrive ? 0.32 : 0.2));
+    const bumpAmp = Math.min(0.35, (this.onDebris ? 1.2 : (terrainInfo.bumpiness || 0.4)) * speedRatio * (wheeledDrive ? 0.32 : 0.2));
     this._bumpY = (Math.sin(this._odo * 0.065) + 0.45 * Math.sin(this._odo * 0.15 + 1.3)) * bumpAmp * 0.7;
 
     // Hệ treo: độ cao thân bám mặt đất có lọc (không giật theo từng cạnh tam giác địa hình)
@@ -1676,8 +1773,20 @@ class SPGUnit3D {
       }
     }
 
+    // 8b. LỘI NƯỚC: sóng rẽ ở mũi, bọt hai bên xích, vòng sóng, tia nước khi tăng tốc (thay cho bụi)
+    const wading = this.waterDepth > 0.6 && !this.isDead;
+    if (typeof WadingFX !== 'undefined') {
+      const vNow = Math.abs(this.speed) * (this._groundMult || 1);
+      const accel = dt > 0 && this._wadePrevV !== undefined ? (vNow - this._wadePrevV) / dt : 0;
+      this._wadePrevV = vNow;
+      if (wading && (this.alwaysFX || SpgFXPool.isNearView(this.x, this.z))) {
+        WadingFX.emit(this, dt, { depth: this.waterDepth, waterY: this.waterY, boost: Math.abs(this.speed) > this.baseMaxSpeed, accel, stall: this.wadeStall });
+      } else if (!wading) WadingFX.leave(this);
+      WadingFX.frame();
+    }
+
     // 8. HIỆU ỨNG BỤI CÁT XÍCH XE THÍCH ỨNG ĐỊA HÌNH (DUST STORM)
-    if (Math.abs(this.speed) > 12) {
+    if (Math.abs(this.speed) > 12 && !wading && terrainInfo.type !== 'WATER') {
       this.dustTimer += dt;
       const isBoosting = Math.abs(this.speed) > this.baseMaxSpeed;
       const dustInterval = isBoosting ? 0.04 : (terrainInfo.type === 'SAND' ? 0.05 : 0.08);
@@ -1696,7 +1805,7 @@ class SPGUnit3D {
 
     if (this.exhaustTimer > exhaustInterval) {
       this.exhaustTimer = 0;
-      this.spawnExhaustPuff(isBoosting, isHeavyLoad);
+      if (!this.engineOff) this.spawnExhaustPuff(isBoosting, isHeavyLoad);
     }
 
     // 10. HIỆU ỨNG KHÓI NÒNG BỐC LÊN SAU KHI BẮN (LINGERING BARREL SMOKE)
@@ -1730,7 +1839,12 @@ class SPGUnit3D {
       const wantAz = this.aimAz - off.az;
       let d = ((wantAz - this.azimuth + 540) % 360) - 180;
       const st = T.traverse * dt;
-      if (Math.abs(d) <= st) { this.azimuth = ((wantAz % 360) + 360) % 360; d = 0; }
+      if (this.turretBlindHalf() > 0) {
+        // pháo tự hành: quay vòng phía đuôi xe, không quét qua điểm mù mũi xe; hướng lệnh trong điểm mù -> dừng ở mép
+        const r = this.stepAzimuth(this.azimuth, wantAz, st);
+        this.azimuth = r.az;
+        d = r.done ? 0 : 1;
+      } else if (Math.abs(d) <= st) { this.azimuth = ((wantAz % 360) + 360) % 360; d = 0; }
       else this.azimuth = (this.azimuth + Math.sign(d) * st + 360) % 360;
       let de = 0;
       if (this.aimEl !== undefined && this.canElevate !== false) {
@@ -1741,17 +1855,33 @@ class SPGUnit3D {
       if (d === 0 && de === 0) { this.aimAz = undefined; this.aimEl = undefined; }
     }
 
+    // 12c. Độ tản mát đạn: đo tốc độ quay tháp / thân xe, thời gian đứng ngắm, độ nở sau phát bắn (dispersion.js)
+    if (typeof Dispersion !== 'undefined') Dispersion.track(this, dt);
+
     // 13. XOAY THÁP PHÁO 3D BÁM GIỮ NGUYÊN HƯỚNG MỤC TIÊU (AZIMUTH STABILIZER)
     // Hướng ngắm trong thế giới: - (azimuth * PI / 180)
     // Tháp pháo quay cục bộ bù trừ hoàn toàn góc xoay thân xe -> Thân xe xoay nòng KHÔNG bị xoay theo!
+    const prevTurretYaw = this.turretGroup.rotation.y, prevBarrelEl = this.barrelPivot.rotation.x;   // tư thế khung trước (chặn nòng xuyên tường)
     const targetWorldTurretAngle = - (this.azimuth * Math.PI) / 180;
-    const targetTurretYaw = targetWorldTurretAngle - this.bodyAngle;
+    let targetTurretYaw = targetWorldTurretAngle - this.bodyAngle;
+    // Pháo tự hành: mũi xe là điểm mù khi BẮN (không bắn vắt qua cabin) nhưng tháp vẫn quay qua được để gác nòng lên
+    // giá khóa trên nóc cabin (tư thế hành quân, nòng hạ 0°). Nằm trong điểm mù thì không khai hỏa (xem fire()).
+    // Góc tháp biểu diễn 0..2PI (0 = mũi xe); lệnh ngắm tự động đi vòng phía đuôi (stepAzimuth)
+    const blindS = this.turretBlindHalf(), TWO_PI = Math.PI * 2;
+    const toU = a => ((a % TWO_PI) + TWO_PI) % TWO_PI;
+    if (blindS > 0) {
+      const u = toU(targetTurretYaw);
+      this.turretInBlind = u < blindS || u > TWO_PI - blindS;
+      targetTurretYaw = u;
+    }
     const trav = this.dmg ? this.dmg.traverse : 1;
     if (trav >= 0.999 || this._turretYaw === undefined) {
       this._turretYaw = targetTurretYaw;
     } else {
       // Vòng bi tháp bị kẹt: quay tay chậm chạp, tháp bị thân xe kéo lệch theo khi xe xoay
-      let dy = targetTurretYaw - this._turretYaw;
+      let dy;
+      if (blindS > 0) this._turretYaw = toU(this._turretYaw);
+      dy = targetTurretYaw - this._turretYaw;
       while (dy > Math.PI) dy -= Math.PI * 2;
       while (dy < -Math.PI) dy += Math.PI * 2;
       const step = 1.6 * trav * dt;
@@ -1781,13 +1911,29 @@ class SPGUnit3D {
     // Góc nâng nòng tối đa theo loại pháo (xe tăng bắn thẳng 12°, lựu pháo 85°)
     // (khi bắn cầu vồng vượt vật cản cho phép nâng tới giới hạn cơ khí của giá pháo)
     if (this.canElevate && ballistics && ballistics.maxElevationFor) this.elevation = Math.min(this.elevation, ballistics.maxLobElevationFor ? ballistics.maxLobElevationFor(this) : ballistics.maxElevationFor(this));
+    // Lựu pháo trên xe tải: hạ nòng tối đa -5° ra hai bên / phía sau, không hạ dưới 0° khi nòng vắt qua nóc cabin
+    if (this.tankType === 'ARTILLERY' && ballistics && ballistics.minElevationFor) this.elevation = Math.max(this.elevation, ballistics.minElevationFor(this));
     const elRad = (this.elevation * Math.PI) / 180;
     this.barrelPivot.rotation.x = elRad;
     // Nòng pháo không xuyên qua bê tông / ụ đất của cứ điểm: hạ nòng khi chạm trần, tháp dừng ở mép tường
     if (terrain && terrain.barrelBlocked && terrain.nearStronghold && terrain.nearStronghold(this.x, this.z)) this.applyBarrelClearance(terrain);
+    // Nòng pháo không xoay / nâng hạ xuyên qua tường bê tông, nhà: chạm mặt tường là tháp dừng lại
+    if (terrain && terrain.vehicleObstacles && typeof VehicleCollision !== 'undefined' && !this._netProxy && !this.isDead) this.applyWallBarrelBlock(terrain, prevTurretYaw, prevBarrelEl);
 
     // 15. CẬP NHẬT THANH MÁU 3D (BILLBOARD CHUẨN: LUÔN HƯỚNG VỀ CAMERA, KHÔNG XOAY THEO THÂN XE HAY THÁP PHÁO)
-    if (this.hpBarMesh) {
+    const hpU = this.hpBarMesh && this.hpBarMesh.material && this.hpBarMesh.material.uniforms;
+    if (hpU && hpU.uHp) {
+      // thanh máu shader (tank_models.js): vệt "máu vừa mất" đứng 0.45 s rồi rút dần về mức máu mới
+      const r = Math.min(1, hpRatio);
+      if (this._hpGhost === undefined || r > this._hpGhost) this._hpGhost = r;
+      if (r < hpU.uHp.value - 1e-4) { this._hpGhostHold = 0.45; hpU.uHit.value = 1; }
+      if (this._hpGhostHold > 0) this._hpGhostHold -= dt;
+      else this._hpGhost = Math.max(r, this._hpGhost - dt * 0.7);
+      hpU.uHp.value = r;
+      hpU.uGhost.value = this._hpGhost;
+      hpU.uHit.value = Math.max(0, hpU.uHit.value - dt * 3);
+      hpU.uTime.value = (hpU.uTime.value + dt) % 1000;
+    } else if (this.hpBarMesh) {
       this.hpBarMesh.scale.x = hpRatio;
       this.hpBarMesh.position.x = -15 * (1 - hpRatio);
     }
@@ -2325,6 +2471,44 @@ class SPGUnit3D {
     }
   }
 
+  /**
+   * NGẬP MÁY: cố đạp ga ở chỗ nước quá sâu (sâu hơn wadeMax) ~3 s thì nước tràn qua cửa hút gió, máy chết.
+   * Máy chết ~6 s rồi tự đề nổ lại (nước đã xả khỏi buồng đốt); lúc đó lùi ra chỗ nông. Thả ga / lùi ra kịp thì không sao.
+   */
+  updateEngineFlood(dt, wDepth) {
+    const log = (msg, type) => { if (this.isPlayer && window.game && typeof window.game.addCombatLog === 'function') window.game.addCombatLog(msg, type); };
+    if (this.engineOff) {
+      this._floodRestart -= dt;
+      if (this._floodRestart <= 0) {
+        this.engineOff = false;
+        this._floodT = 0;
+        // đề nổ lại: phụt mấy cụm khói đen dày + hơi nước
+        if (this.alwaysFX || SpgFXPool.isNearView(this.x, this.z, 900)) for (let i = 0; i < 4; i++) this.spawnExhaustPuff(false, true);
+        log('[[engine]] Máy đã nổ lại — lùi ra chỗ nông', 'tip');
+      }
+      return;
+    }
+    const pushing = this.wadeStall || (wDepth > (this.wadeMax || 14) && Math.abs(this.speed) > 3);
+    const prev = this._floodT || 0;
+    this._floodT = pushing ? prev + dt : Math.max(0, prev - dt * 0.6);
+    if (prev < 1 && this._floodT >= 1) log('[[alert-triangle]] Nước đang tràn vào máy — thả ga, lùi ra ngay!', 'alert');
+    if (this._floodT >= 3) {
+      this.engineOff = true;
+      this._floodRestart = 6;
+      this._floodV = this.speed;
+      log('[[engine-off]] MÁY NGẬP NƯỚC — xe chết máy, chờ khởi động lại...', 'alert');
+      if (this.isPlayer && window.soundEngine && window.soundEngine.playEngineFlood) window.soundEngine.playEngineFlood();
+    }
+  }
+
+  // Hệ số tốc độ khi lội nước theo độ sâu: nước nông chậm vừa, tới mức lội của xe ~một nửa,
+  // quá mức lội (sát giới hạn ngập máy) chỉ còn bò
+  wadeSpeedMult(depth) {
+    const W = this.wadeDepth || 10, M = this.wadeMax || 14;
+    if (depth <= W) return 0.82 - 0.44 * Math.pow(Math.max(0, depth) / W, 1.1);
+    return 0.38 - 0.24 * Math.min(1, (depth - W) / Math.max(1, M - W));
+  }
+
   // CẬP NHẬT TẤT CẢ HẠT HIỆU ỨNG 3D
   updateFXParticles(dt) {
     for (let i = this.fxParticles.length - 1; i >= 0; i--) {
@@ -2375,10 +2559,11 @@ class SPGUnit3D {
 
   // LÁI XE TỰ ĐỘNG XOAY THÂN XE THEO HƯỚNG PHÍM BẤM
   // Tốc độ quay tháp / nâng nòng (độ/giây) theo loại xe: tháp nặng quay chậm, giá súng máy trinh sát quay nhanh
-  // Tốc độ quay tháp / nâng nòng (độ/giây) theo xe thật: tăng 120mm ~ Leopard 2 / Abrams (360° trong ~9 s),
-  // tháp 30mm điện kiểu pháo phòng không, pháo 155mm tự hành nặng (PzH 2000), trạm súng máy điều khiển từ xa
+  // Tốc độ quay tháp / nâng nòng (độ/giây): xe tăng 120mm truyền động điện đời mới (360° trong ~6.5 s), tháp 30mm điện
+  // kiểu pháo phòng không, pháo 155mm tự hành nặng, trạm súng máy điều khiển từ xa — nhỉnh hơn số liệu xe thật ~1.3 lần
+  // cho tay ngắm đỡ ì (âm thanh mô-tơ tháp / bơm nòng trong audio.js lấy maxR theo đúng các số này)
   turretRates() {
-    const R = { ALL_ROUNDER: [42, 24], GATLING: [60, 45], ARTILLERY: [20, 10], SCOUT: [80, 50] }[this.tankType] || [42, 24];
+    const R = { ALL_ROUNDER: [55, 30], GATLING: [80, 55], ARTILLERY: [28, 14], SCOUT: [100, 60] }[this.tankType] || [55, 30];
     return { traverse: R[0], elevate: R[1] };
   }
 
@@ -2390,6 +2575,7 @@ class SPGUnit3D {
 
   steer(inputX, inputZ, dt, isBoost = false) {
     if (this.isDead) return;
+    if (this.engineOff) { inputX = 0; inputZ = 0; isBoost = false; }   // máy chết: không ga, không lái
 
     // Hệ số gia tăng tốc độ nếu đang có Item tăng tốc độ di chuyển
     const hasSpeedItem = (this.speedBoostTimer > 0);
@@ -2398,10 +2584,11 @@ class SPGUnit3D {
     const maxSpd = (isBoost ? this.baseMaxSpeed * 1.45 : this.baseMaxSpeed) * speedItemMult;
     const accel = (isBoost ? this.acceleration * 1.5 : this.acceleration) * speedItemMult;
 
-    // Xe bánh lốp không quay tại chỗ được như xe xích: tốc độ quay thân tăng theo vận tốc
-    const wheeled = this.tankType === 'SCOUT' || this.tankType === 'ARTILLERY';
-    let maxTurn = this.turnRate;
-    if (wheeled) maxTurn *= 0.4 + 0.6 * Math.min(1, Math.abs(this.speed) / Math.max(1, this.baseMaxSpeed * 0.35));
+    // Xe bánh lốp không quay tại chỗ được: lái theo bán kính quay vòng, tự lùi / tiến vòng cung để quay đầu
+    if (this.isWheeled) { this.steerWheeled(inputX, inputZ, dt, maxSpd, accel); return; }
+
+    // XE XÍCH: hai dải xích chạy ngược chiều -> xoay tại chỗ được
+    const maxTurn = this.turnRate;
     const turnAccel = this.turnRate * 5;   // quán tính quay: đạt tốc độ quay tối đa sau ~0.2 s
     this.yawRate = this.yawRate || 0;
 
@@ -2429,7 +2616,7 @@ class SPGUnit3D {
       }
 
       // Tăng ga theo độ thẳng hướng: đang quay gắt thì đi chậm (xe xích gần như xoay tại chỗ)
-      const alignment = Math.max(wheeled ? 0.45 : 0.3, Math.cos(angleDiff));
+      const alignment = Math.max(0.3, Math.cos(angleDiff));
       const targetSpeed = maxSpd * alignment;
       if (this.speed < targetSpeed) {
         // lực kéo lớn lúc khởi hành, giảm dần khi gần tốc độ tối đa (như xe thật)
@@ -2455,15 +2642,91 @@ class SPGUnit3D {
     }
   }
 
-  move(forwardInput, turnInput, dt, isBoost = false) {
-    if (this.isDead) return;
+  // Bánh trước bẻ dần tới góc lái mong muốn (-1..1 = hết lái trái..phải; dương = sang trái) rồi quay thân theo mô hình xe đạp:
+  // tốc độ quay = vận tốc / bán kính quay vòng x góc lái, giới hạn bởi turnRate. Đứng yên -> không quay;
+  // lùi -> đầu xe quay ngược chiều đánh lái như xe thật. Trả về tốc độ quay thân (rad/s).
+  applyWheelSteer(wantSteer, dt) {
+    const ms = 3.5 * dt;   // ~0.3 s từ thẳng tới hết lái
+    const cur = this._wheelSteer || 0;
+    this._wheelSteer = cur + Math.max(-ms, Math.min(ms, wantSteer - cur));
+    this.steerInput = this._wheelSteer;
+    const R = this.turnRadius || 60;
+    const roll = this.speed * (this._groundMult === undefined ? 1 : this._groundMult);   // tốc độ lăn bánh thật (địa hình / dốc)
+    const yaw = Math.max(-this.turnRate, Math.min(this.turnRate, roll / R * this._wheelSteer));
+    this.yawRate = yaw;
+    return yaw;
+  }
 
-    if (turnInput !== 0) {
-      this.bodyAngle -= turnInput * this.turnRate * dt;
-      this.steerInput = -turnInput;
+  // LÁI XE BÁNH LỐP THEO HƯỚNG PHÍM: tự chọn số tiến / lùi để quay đầu vòng cung, không đứng xoay tại chỗ
+  steerWheeled(inputX, inputZ, dt, maxSpd, accel) {
+    const hasInput = inputX !== 0 || inputZ !== 0;
+    // Xe có thực sự nhích không (đang húc tường / xe khác)
+    const movedRate = this._wlx !== undefined && dt > 0 ? Math.hypot(this.x - this._wlx, this.z - this._wlz) / dt : 99;
+    this._wlx = this.x; this._wlz = this.z;
+    this._gearHold = Math.max(0, (this._gearHold || 0) - dt);
+    let gear = this._gear || 1;   // 1 = số tiến, -1 = số lùi
+    let wantSteer = 0, targetSpeed = 0, diff = 0;
+
+    if (hasInput) {
+      const targetAngle = Math.atan2(-inputX, -inputZ);
+      diff = targetAngle - this.bodyAngle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      // Hướng gần như ngược hẳn: giữ phía quay đã chọn, không lưỡng lự trái / phải
+      if (Math.abs(diff) > 2.8 && this._uSide) diff = this._uSide * Math.abs(diff);
+      else this._uSide = diff >= 0 ? 1 : -1;
+      const ad = Math.abs(diff);
+
+      if (this._gearHold <= 0) {
+        // Hướng muốn đi ở phía sau mà xe đang chậm: lùi vòng cung cho đầu xe quay về hướng đó rồi mới tiến
+        // (lùi tối đa ~4 s rồi tiến lại, không lùi mãi khi đích di chuyển)
+        this._revT = gear < 0 ? (this._revT || 0) + dt : 0;
+        if (gear > 0 && ad > 2.0 && this.speed < maxSpd * 0.3) { gear = -1; this._revAlign = 1.5; }
+        else if (gear < 0 && (ad < (this._revAlign || 1.5) || this._revT > 4)) { gear = 1; this._gearHold = 0.7; }   // vào số tiến thì chạy hẳn một đoạn, không đổi số liên tục
+        // Cua mãi không vào được hướng (đích nằm lọt trong vòng quay của xe): lùi vòng cung tới khi đích gần như ngay trước mũi
+        this._wideT = gear > 0 && ad > 1.2 ? (this._wideT || 0) + dt : 0;
+        if (this._wideT > 4.0) { gear = -1; this._gearHold = 1.2; this._wideT = 0; this._revAlign = 0.5; }
+        // Húc tường / xe khác mà vẫn cần quay: tự đổi số tiến <-> lùi (quay đầu nhiều lần như xe thật)
+        const blocked = (this._bumping || this._touchingVeh) && movedRate < 10;
+        this._blockT = blocked && ad > 0.3 ? (this._blockT || 0) + dt : 0;
+        if (this._blockT > 0.45) { gear = -gear; this._gearHold = 1.1; this._blockT = 0; this._revAlign = 1.5; }
+      }
+      // Bánh trước bẻ về phía cần quay; khi xe đang lùi thì bẻ ngược lại để đầu xe vẫn quay về đúng hướng
+      const rollDir = this.speed > 0.5 ? 1 : this.speed < -0.5 ? -1 : gear;
+      wantSteer = Math.max(-1, Math.min(1, diff / 0.5)) * rollDir;
+      // Số tiến: vào cua gắt thì giảm ga nhưng vẫn lăn bánh (cần vận tốc mới quay được); số lùi: chạy lùi chậm
+      targetSpeed = gear > 0 ? maxSpd * Math.max(0.5, Math.cos(diff)) : -maxSpd * 0.4;
     } else {
-      this.steerInput = 0;
+      this._wideT = 0; this._blockT = 0;
+      if (Math.abs(this.speed) < 1 && this._gearHold <= 0) gear = 1;   // đã dừng hẳn: về số tiến
     }
+    this._gear = gear;
+
+    const yaw = this.applyWheelSteer(wantSteer, dt);
+    const step = yaw * dt;
+    if (hasInput && Math.abs(step) >= Math.abs(diff) && Math.sign(step) === Math.sign(diff)) {
+      // vào đúng hướng: không quay vọt quá, trả lái về giữa
+      this.bodyAngle += diff;
+      this._wheelSteer *= 0.5;
+    } else {
+      this.bodyAngle += step;
+    }
+
+    const s = this.speed;
+    if (s < targetSpeed) {
+      // đang lùi mà cần dừng / tiến: phanh; tiến: lực kéo lớn lúc khởi hành, giảm dần khi gần tốc độ tối đa
+      const rate = s < 0 ? accel * 2.0 : accel * (1 - 0.6 * Math.max(0, Math.min(1, s / Math.max(1, maxSpd))));
+      this.speed = Math.min(targetSpeed, s + rate * dt);
+    } else if (s > targetSpeed) {
+      // tiến mà cần lùi / dừng: phanh; vào cua: giảm tốc êm; lùi: gia tốc số lùi
+      const rate = s > 0 ? (targetSpeed > 0 ? accel * 0.8 : accel * 2.0) : accel * 0.7;
+      this.speed = Math.max(targetSpeed, s - rate * dt);
+    }
+  }
+
+  move(forwardInput, turnInput, dt, isBoost = false) {
+    if (this.engineOff) { forwardInput = 0; turnInput = 0; isBoost = false; }   // máy chết: không ga, không lái
+    if (this.isDead) return;
 
     const hasSpeedItem = (this.speedBoostTimer > 0);
     const speedItemMult = hasSpeedItem ? 1.65 : 1.0;
@@ -2471,16 +2734,33 @@ class SPGUnit3D {
     const maxSpd = (isBoost ? this.baseMaxSpeed * 1.45 : this.baseMaxSpeed) * speedItemMult;
     const accel = (isBoost ? this.acceleration * 1.5 : this.acceleration) * speedItemMult;
 
-    if (forwardInput > 0) {
-      this.speed = Math.min(maxSpd, this.speed + accel * dt);
-    } else if (forwardInput < 0) {
-      this.speed = Math.max(-maxSpd * 0.5, this.speed - accel * dt);
+    // ĐÁNH LÁI (A / D theo thân xe)
+    if (this.isWheeled) {
+      // Xe bánh lốp: A / D chỉ bẻ bánh trước; thân xe quay khi lăn bánh theo bán kính quay vòng
+      // (đứng yên thì không quay, lùi thì đầu xe quay ngược chiều đánh lái như xe thật)
+      this.bodyAngle += this.applyWheelSteer(-turnInput, dt) * dt;
     } else {
-      if (this.speed > 0) {
-        this.speed = Math.max(0, this.speed - this.acceleration * 2.2 * dt);
-      } else if (this.speed < 0) {
-        this.speed = Math.min(0, this.speed + this.acceleration * 2.2 * dt);
-      }
+      // Xe xích: hai dải xích chạy ngược chiều -> xoay tại chỗ được; chạy nhanh thì cua chậm lại một chút
+      const maxTurn = this.turnRate * (1 - 0.3 * Math.min(1, Math.abs(this.speed) / Math.max(1, maxSpd)));
+      const wantRate = -turnInput * maxTurn;
+      const ms = this.turnRate * (turnInput ? 5 : 7) * dt;   // quán tính quay ~0.2 s
+      this.yawRate = (this.yawRate || 0) + Math.max(-ms, Math.min(ms, wantRate - (this.yawRate || 0)));
+      this.bodyAngle += this.yawRate * dt;
+      this.steerInput = -turnInput;
+    }
+
+    // GA / PHANH / LÙI (W / S)
+    const s = this.speed;
+    if (forwardInput > 0) {
+      if (s < 0) this.speed = Math.min(0, s + accel * 2.0 * dt);   // đang lùi: phanh trước
+      else this.speed = Math.min(maxSpd, s + accel * (1 - 0.6 * Math.min(1, s / Math.max(1, maxSpd))) * dt);   // lực kéo giảm dần khi nhanh
+    } else if (forwardInput < 0) {
+      if (s > 0) this.speed = Math.max(0, s - accel * 2.0 * dt);   // đang tiến: phanh trước
+      else this.speed = Math.max(-maxSpd * 0.45, s - accel * 0.7 * dt);   // số lùi chậm hơn số tiến
+    } else if (s > 0) {
+      this.speed = Math.max(0, s - accel * 2.0 * dt);   // nhả ga: trôi rồi dừng
+    } else if (s < 0) {
+      this.speed = Math.min(0, s + accel * 2.0 * dt);
     }
   }
 
@@ -2518,6 +2798,59 @@ class SPGUnit3D {
   }
 
   // Giữ nòng pháo không cắm vào vật rắn của cứ điểm. Thử lần lượt: tư thế mong muốn -> hạ dần nòng -> tư thế an toàn gần nhất
+  // Tháp xoay / nòng nâng hạ mà đầu nòng cắm vào tường (khối bê tông, nhà) thì giữ tư thế cũ (hoặc chỉ phần không chạm).
+  // Đang kẹt sẵn (xe bị đẩy sát tường) thì vẫn cho xoay ra hướng ngập ít hơn.
+  // Nửa góc điểm mù mũi xe (rad): chỉ pháo tự hành trên xe tải (nòng không vắt qua cabin); xe khác 0
+  turretBlindHalf() {
+    return this.tankType === 'ARTILLERY' && typeof BallisticsSystem3D !== 'undefined' ? BallisticsSystem3D.ARTY_DIRECT.blind : 0;
+  }
+  // Xoay hướng bắn từ cur tới want (độ thế giới) tối đa stepDeg, tránh điểm mù mũi xe: đi vòng phía đuôi xe,
+  // hướng lệnh trong điểm mù thì dừng ở mép gần nhất. Tháp đang gác nòng trên cabin (trong điểm mù) thì quay dần
+  // ra mép gần đường tới hướng lệnh nhất (không nhảy cóc). Trả về { az, done }
+  stepAzimuth(cur, want, stepDeg) {
+    const S = this.turretBlindHalf(), T = Math.PI * 2;
+    const toU = az => { const u = -(az * Math.PI / 180) - (this.bodyAngle || 0); return ((u % T) + T) % T; };
+    const clampU = (u, side) => (u >= S && u <= T - S) ? u : (side < Math.PI ? S : T - S);
+    const uc = toU(cur), st = stepDeg * Math.PI / 180;
+    const inBlind = uc < S || uc > T - S;
+    const ut0 = toU(want), ut = clampU(ut0, inBlind ? (ut0 < Math.PI ? 0 : T) : uc);
+    let d;
+    if (inBlind) {
+      const v = uc > Math.PI ? uc - T : uc;                  // góc có dấu quanh mũi xe (-S..S)
+      const up = ut - v, down = v - (ut - T);               // ra mép trái / mép phải rồi tới hướng lệnh
+      d = up <= down ? up : -down;
+      const nu = Math.abs(d) <= st ? ut : v + Math.sign(d) * st;
+      const w = -(nu + (this.bodyAngle || 0)) * 180 / Math.PI;
+      return { az: ((w % 360) + 360) % 360, done: Math.abs(d) <= st && ut === ut0 };
+    }
+    d = ut - uc;
+    const nu = Math.abs(d) <= st ? ut : uc + Math.sign(d) * st;
+    const w = -(nu + (this.bodyAngle || 0)) * 180 / Math.PI;
+    return { az: ((w % 360) + 360) % 360, done: Math.abs(d) <= st && ut === ut0 };
+  }
+
+  applyWallBarrelBlock(terrain, yaw0, el0) {
+    if (!this.turretGroup || !this.barrelPivot) return;
+    const boxes = terrain.vehicleObstacles(this.x, this.z, this);
+    if (!boxes || !boxes.length) return;
+    const VC = VehicleCollision, yaw = this.turretGroup.rotation.y, el = this.barrelPivot.rotation.x;
+    const d = VC.barrelDepth(this, yaw, el, boxes);
+    if (d < 0.3) { this.barrelWallBlocked = false; return; }
+    const d0 = VC.barrelDepth(this, yaw0, el0, boxes);
+    if (d <= d0 + 0.01) { this.barrelWallBlocked = false; return; }
+    let pick = [yaw0, el0];
+    for (const c of [[yaw, el0], [yaw0, el]]) {
+      if (VC.barrelDepth(this, c[0], c[1], boxes) <= Math.max(0.3, d0 + 0.01)) { pick = c; break; }
+    }
+    this.turretGroup.rotation.y = this._turretYaw = pick[0];
+    this.barrelPivot.rotation.x = pick[1];
+    this.elevation = pick[1] * 180 / Math.PI;
+    // Hướng bắn thật là hướng tháp đang chỉ
+    const worldA = -(pick[0] + this.bodyAngle) * 180 / Math.PI;
+    this.azimuth = ((worldA % 360) + 360) % 360;
+    this.barrelWallBlocked = true;
+  }
+
   applyBarrelClearance(terrain) {
     if (!this.barrelPivot || !this.barrelGroup || !this.muzzleTipLocal) return;
     const base = this._bcBase || (this._bcBase = new THREE.Vector3());
@@ -2604,6 +2937,8 @@ class SPGUnit3D {
     if (this.tankType === 'ARTILLERY' && !this.isDeployed) {
       return null;
     }
+    // Nòng đang vắt qua nóc cabin (gác giá khóa / điểm mù mũi xe): không khai hỏa
+    if (this.tankType === 'ARTILLERY' && this.turretInBlind) return null;
 
     // Xác định loại đạn bắn ra theo dòng xe và loại đạn đang nạp
     let ammoTypeToFire = 'NORMAL';
@@ -2671,6 +3006,8 @@ class SPGUnit3D {
 
     // 2. LỬA ĐẦU NÒNG, SÓNG NỔ, KHÓI CUỘN & BỤI ĐẤT BỊ THỔI TUNG
     this.spawnMuzzleBlast(tipWorld, fireDir);
+    // Bắn sát mặt nước: sóng ép đầu nòng + màn bụi nước (src/gameplay/wading_fx.js)
+    if (typeof WadingFX !== 'undefined' && (this.alwaysFX || SpgFXPool.isNearView(this.x, this.z))) WadingFX.muzzleBlast(this, tipWorld, fireDir);
 
     // 6. GIẬT THỤT NÒNG PHÁO CỰC MẠNH & NHÚN THÂN XE LÒ XO
     if (this.tankType === 'ARTILLERY') {
@@ -2756,10 +3093,6 @@ class SPGUnit3D {
     // Nếu đang trong thời gian nạp lại băng đạn (hết đạn)
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
-      // Tiếng thay băng chạy suốt quá trình nạp (mở nắp, thay hộp, luồn dây đạn, lên đạn)
-      if (this.isPlayer && window.soundEngine && window.soundEngine.updateReload) {
-        window.soundEngine.updateReload(this.tankType, this.reloadTimer, this.reloadDuration);
-      }
       if (this.reloadTimer <= 0) {
         this.gatlingMag = this.gatlingMagMax;
       }
@@ -2961,19 +3294,25 @@ class SPGUnit3D {
     this.reconScanTimer = (this.reconScanTimer || 0) + dt;
     if (this.reconScanTimer < 0.25) return;
     this.reconScanTimer = 0;
-    let detectedEnemy = false;
-    for (const c of this.radarContacts.values()) if (c.inBush && c.unit && !c.unit.isDead) { detectedEnemy = true; break; }
+    // Chỉ báo khi radar bắt được xe núp bụi MỚI (trước đây ping + tin nhắn lặp mỗi 2.5 s suốt lúc mục tiêu còn đó)
+    // (mục tiêu mất khỏi radar giữa 2 vòng quét rồi bắt lại trong vòng 10 s không tính là mới)
+    const seen = this._pingedBush || (this._pingedBush = new Map());
+    const nowT = performance.now() / 1000;
+    let fresh = false;
+    for (const c of this.radarContacts.values()) {
+      if (!c.inBush || !c.unit || c.unit.isDead) continue;
+      const last = seen.get(c.unit.id);
+      if (last === undefined || nowT - last > 10) fresh = true;
+      seen.set(c.unit.id, nowT);
+    }
+    for (const [id, last] of seen) if (nowT - last > 30) seen.delete(id);
 
-    if (detectedEnemy) {
-      this.lastPingSound = (this.lastPingSound || 0) + 0.25;
-      if (this.lastPingSound >= 2.5) {
-        this.lastPingSound = 0;
-        if (window.soundEngine && typeof window.soundEngine.playReconPing === 'function') {
-          window.soundEngine.playReconPing();
-        }
-        if (game && typeof game.addCombatLog === 'function') {
-          game.addCombatLog('[[radar-2]] RADAR TRINH SÁT: ĐÃ PHÁT HIỆN MỤC TIÊU ĐỊCH NÚP BỤI RẬM!', 'tip');
-        }
+    if (fresh) {
+      if (window.soundEngine && typeof window.soundEngine.playReconPing === 'function') {
+        window.soundEngine.playReconPing();
+      }
+      if (game && typeof game.addCombatLog === 'function') {
+        game.addCombatLog('[[radar-2]] RADAR TRINH SÁT: ĐÃ PHÁT HIỆN MỤC TIÊU ĐỊCH NÚP BỤI RẬM!', 'tip');
       }
     }
   }
@@ -3020,12 +3359,14 @@ class SPGUnit3D {
     if (fxSys && this.hp < this.maxHp) fxSys.trackVehicle(this);
     if (this.hp <= 0) {
       this.isDead = true;
-      // Nổ tung, hất văng tháp pháo theo quán tính đạn và điểm nổ thực tế
+      this.deaths++;
+      // Kiểu chết (nổ kho đạn / cháy trong / cháy khoang máy...) do explosion_fx.killInfo chọn theo phát trúng cuối
+      this._killSource = source;
+      // Nổ tung, hất văng tháp pháo theo quán tính đạn và điểm nổ thực tế (sơn cháy sém dần trong explosion_fx)
       if (fxSys) {
         fxSys.onVehicleDestroyed(this, this.lastHitDir || null, this.lastHitPoint || null);
-      }
-      // Đổi sang màu xác xe kim loại cháy rụi đen xì
-      if (this.hullMainMesh && this.hullMainMesh.material) {
+      } else if (this.hullMainMesh && this.hullMainMesh.material) {
+        // Không có hệ hiệu ứng: đổi thẳng sang màu xác xe cháy đen
         this.hullMainMesh.material.color.setHex(0x181512);
       }
       if (attacker && attacker !== this) {
@@ -3079,7 +3420,8 @@ class SPGUnit3D {
     }
     if (this.botAI) this.botAI.assignedCampPos = null;
     this.y = 0;
-    this._suspY = undefined; this.yawRate = 0; this._dynPitch = this._dynRoll = 0; this._prevSpeed = undefined;
+    this.engineOff = false; this._floodT = 0; this._floodV = 0;   // hồi sinh: máy lành
+    this._suspY = undefined; this.yawRate = 0; this._wheelSteer = 0; this._gear = 1; this._gearHold = 0; this._wlx = undefined; this._dynPitch = this._dynRoll = 0; this._prevSpeed = undefined;
     this.maxHp = this.baseMaxHp;
     this.hp = this.maxHp;
     this.hasReactiveArmor = false;

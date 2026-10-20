@@ -10,7 +10,7 @@
   const TOKEN = /\[\[([a-z0-9-]+)(?:\.([a-z0-9-]+))?\]\]/g;
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   // Mã ký tự của các icon được vẽ trên canvas (lấy từ tabler-icons.min.css)
-  const GLYPHS = { check: '', x: '', 'radar-2': '' };
+  const GLYPHS = { check: '', x: '', 'radar-2': '', lock: '' };
 
   const UIIcons = {
     FONT: 'tabler-icons',

@@ -38,9 +38,9 @@ class CounterBatteryRadar {
     }
     this.detections.push(detection);
 
-    if (isPlayer && window.soundEngine) {
-      window.soundEngine.playRadarAlert();
-    }
+    // Không phát còi khi chính mình bắn: trong xe thật không có tiếng báo nào lúc khai hỏa, và súng 6 nòng / súng máy
+    // gọi hàm này cho TỪNG viên (30 viên/giây -> 30 chuỗi tiếng "tít" mỗi giây, vừa loạn tai vừa nặng máy)
+    void isPlayer;
 
     return detection;
   }

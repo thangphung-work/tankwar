@@ -272,6 +272,46 @@
     }
     hb.box(2.2, 1.4, 1.4, D, [0, 6.4, 37.6]);
 
+    // --- Chi tiết bề mặt cabin bọc giáp: khung kính dày, bản lề, gờ thoát nước, bu-lông tấm giáp ---
+    for (const s of [-1, 1]) {
+      const x = s * (HALF_W + 0.1);
+      // Khung kính cửa (gioăng cao su + nẹp thép bắt bu-lông)
+      const frame = (z0, z1, y0, y1) => {
+        hb.box(0.22, 0.35, z1 - z0 + 0.35, P, [x, y1 + 0.17, (z0 + z1) / 2]);
+        hb.box(0.22, 0.35, z1 - z0 + 0.35, P, [x, y0 - 0.17, (z0 + z1) / 2]);
+        hb.box(0.22, y1 - y0, 0.35, P, [x, (y0 + y1) / 2, z0 - 0.17]);
+        hb.box(0.22, y1 - y0, 0.35, P, [x, (y0 + y1) / 2, z1 + 0.17]);
+      };
+      frame(-32.35, -24.85, 15.0, 21.0);
+      frame(-23.9, -20.9, 16.6, 20.6);
+      hb.boltRow([x, 21.45, -32.0], [x, 21.45, -25.2], 6, 'x', D, 0.13, s);
+      hb.boltRow([x, 14.55, -32.0], [x, 14.55, -25.2], 6, 'x', D, 0.13, s);
+      // Bản lề cửa trước (mép trước cửa)
+      for (const y of [12.6, 19.6]) hb.hinge([s * (HALF_W + 0.22), y, -32.75], 'y', 1.7, P, 0.24);
+      // Gờ thoát nước mưa dọc mép nóc
+      hb.box(0.3, 0.3, 13.8, P, [s * (HALF_W + 0.05), CAB_ROOF - 0.45, -26.4]);
+      // Đường ghép tấm giáp sườn cabin dưới cửa + hàng bu-lông
+      hb.seam([s * (HALF_W + 0.02), 13.2, -35.6], [s * (HALF_W + 0.02), 13.2, -33.0], [s, 0, 0], D);
+      hb.boltRow([s * HALF_W, 12.6, -24.0], [s * HALF_W, 12.6, -19.2], 4, 'x', D, 0.15, s);
+    }
+    // Nóc cabin: đường ghép, bu-lông viền, móc cẩu
+    hb.seam([-HALF_W + 0.8, CAB_ROOF + 0.02, -29.6], [HALF_W - 0.8, CAB_ROOF + 0.02, -29.6], [0, 1, 0], D);
+    for (const s of [-1, 1]) {
+      hb.boltRow([s * (HALF_W - 0.6), CAB_ROOF, -32.4], [s * (HALF_W - 0.6), CAB_ROOF, -20.4], 8, 'y', D, 0.15);
+      for (const z of [-32.4, -20.2]) {
+        hb.add(new THREE.TorusGeometry(0.42, 0.13, 5, 10), M.steel, [s * (HALF_W - 1.6), CAB_ROOF + 0.4, z], [0, Math.PI / 2, 0]);
+      }
+    }
+    // Viền khung kính chắn gió bắt bu-lông
+    hb.boltRow([-9.6, 15.0, -37.05], [9.6, 15.0, -37.05], 14, 'z', D, 0.14, -1, [wsAngle, 0, 0]);
+    // Khoang máy: bu-lông viền nắp, móc cẩu, đường ghép nắp thăm
+    for (const s of [-1, 1]) {
+      hb.boltRow([s * 8.9, 17.1, -17.8], [s * 8.9, 17.1, -11.8], 5, 'y', D, 0.15);
+      hb.add(new THREE.TorusGeometry(0.42, 0.13, 5, 10), M.steel, [s * 7.6, 17.5, -14.8], [0, Math.PI / 2, 0]);
+    }
+    hb.seam([-8.6, 17.12, -14.8], [8.6, 17.12, -14.8], [0, 1, 0], D);
+    hb.seam([0, 17.12, -18.2], [0, 17.12, -11.4], [0, 1, 0], D);
+
     const meshes = hb.build(chassis, [0, 12, 0]);
     unit.hullMainMesh = meshes.get(P);
   }
@@ -474,6 +514,16 @@
     tb.box(0.25, 8.4, 0.25, M.steel, [9.95, 5.0, 8.3]);
     tb.box(0.25, 8.4, 0.25, M.steel, [9.95, 5.0, 10.5]);
 
+    // Can nhiên liệu dự phòng treo hai góc sau tháp (đai giữ sẫm màu) + tay nắm đầu thang leo
+    for (const s of [-1, 1]) {
+      tb.setTag('can' + (s < 0 ? 'L' : 'R'));
+      tb.jerrycan([s * 6.0, 2.5, 15.35], Math.PI / 2, 1.3, 3.7, 2.7, P, D);
+      for (const y of [1.6, 3.3]) tb.box(2.9, 0.22, 0.08, D, [s * 6.0, y, 16.04]);
+      tb.setTag(null);
+    }
+    tb.grabHandle([7.7, TOP, 9.4], 'z', 1.6, 0.55, P);
+    tb.grabHandle([-8.1, TOP, 10.8], 'z', 1.6, 0.55, P);
+
     // Tấm vải nhận diện phe trên nóc sau tháp
     tb.box(5.6, 0.08, 3.6, M.idPanel, [2.6, TOP + 0.06, 9.8], [0, 0.03, 0]);
 
@@ -527,6 +577,42 @@
       tb.box(1.7, 0.08, 8.1, D, [s * 10.52, 4.4, 2.0]);
       tb.setTag(null);
     }
+
+    // --- Chi tiết bề mặt tháp: đường ghép tấm, mối hàn, cửa thăm bên hông, móc cẩu, nấm thông gió ---
+    const SIDE_TILT = Math.atan2(0.9, 9.2);
+    const sideX = (y) => 9.8 - (y - 0.4) * (0.9 / 9.2);
+    for (const s of [-1, 1]) {
+      const rot = [0, 0, s * SIDE_TILT];
+      // Đường ghép ngang chia tấm giáp hông trên / dưới
+      tb.seam([s * (sideX(6.0) + 0.02), 6.0, -5.4], [s * (sideX(6.0) + 0.02), 6.0, 6.4], [s, 0, 0], D);
+      // Hàng bu-lông dọc mép trên tấm hông
+      tb.boltRow([s * sideX(8.9), 8.9, -4.8], [s * sideX(8.9), 8.9, 11.0], 10, 'x', D, 0.15, s, rot);
+      // Mối hàn mép nóc - hông
+      tb.weld([s * (sideX(9.6) - 0.05), 9.62, -5.4], [s * (sideX(9.6) - 0.05), 9.62, 11.4], P);
+      // Cửa thăm bên hông phía sau: tấm cửa nổi, bản lề trước, tay nắm, viền bu-lông
+      const dx = sideX(6.4) + 0.12;
+      if (s < 0) {   // hông phải đã có thang leo ở chỗ này
+      tb.box(0.22, 3.6, 4.2, P, [s * dx, 6.4, 9.3], rot);
+      tb.hinge([s * (dx + 0.12), 6.4, 7.05], 'y', 3.0, P, 0.2);
+      tb.box(0.25, 0.3, 1.1, M.steel, [s * (dx + 0.22), 6.1, 10.7], rot);
+      tb.boltRow([s * (dx + 0.08), 8.0, 7.6], [s * (dx + 0.08), 8.0, 11.0], 4, 'x', D, 0.12, s, rot);
+      tb.boltRow([s * (dx + 0.08), 4.8, 7.6], [s * (dx + 0.08), 4.8, 11.0], 4, 'x', D, 0.12, s, rot);
+      }
+      // Hộp giáp bệ nòng: hàng bu-lông chân hộp
+      tb.boltRow([s * 4.65, TOP + 0.35, -6.0], [s * 4.65, TOP + 0.35, 5.4], 8, 'x', D, 0.14, s);
+      tb.weld([s * 4.62, TOP + 0.02, -6.4], [s * 4.62, TOP + 0.02, 5.8], P, 0.1);
+      // Móc cẩu 4 góc nóc tháp
+      for (const z of [-7.6, 12.6]) {
+        tb.add(new THREE.TorusGeometry(0.48, 0.15, 5, 10), M.steel, [s * 7.8, TOP + 0.45, z], [0, Math.PI / 2, 0]);
+        tb.box(0.9, 0.3, 0.5, P, [s * 7.8, TOP + 0.12, z]);
+      }
+    }
+    // Nóc: đường ghép ngang sau hộp bệ nòng, nấm thông gió khoang chiến đấu
+    tb.seam([-8.2, TOP + 0.02, 6.6], [8.2, TOP + 0.02, 6.6], [0, 1, 0], D);
+    tb.cyl(0.55, 0.6, 0.7, 12, P, [-2.6, TOP + 0.35, 12.0]);
+    tb.cyl(1.1, 0.9, 0.35, 14, P, [-2.6, TOP + 0.85, 12.0]);
+    // Mặt trước: hàng bu-lông chân tấm giáp nghiêng
+    tb.boltRow([-8.0, 1.2, -10.85], [8.0, 1.2, -10.85], 10, 'z', D, 0.15, -1, [Math.atan2(2.4, 9.2), 0, 0]);
 
     tb.build(turret);
 

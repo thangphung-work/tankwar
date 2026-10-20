@@ -17,7 +17,7 @@ const path = require('path');
 let Worker = null;
 try { ({ Worker } = require('worker_threads')); } catch (e) { Worker = null; }
 
-const SIGHT = { ALL_ROUNDER: 520, GATLING: 480, ARTILLERY: 420, SCOUT: 720 };   // khớp TeamIntel
+const SIGHT = { ALL_ROUNDER: 520, GATLING: 480, ARTILLERY: 620, SCOUT: 720 };   // khớp TeamIntel
 const BASE_SPEED = { ALL_ROUNDER: 122, GATLING: 122, ARTILLERY: 122, SCOUT: 174 };   // = GameTiming.baseVehicleSpeed (70 / 70 / 70 / 100 km/h thật)
 const MAX_HP = { ALL_ROUNDER: 3.5, GATLING: 3.0, ARTILLERY: 1.6, SCOUT: 1.8 };
 const MAX_RANGE = { ARTILLERY: 3200 };      // tầm bắn tối đa + dư (đơn vị game)
@@ -27,13 +27,18 @@ const EQ_RADAR_RANGE = 600;   // radar lắp thêm (Equipment.EQ_RADAR_RANGE)
 const MARGIN = 120;            // nới tầm nhìn: gửi sớm 1 chút để xe hiện ra mượt, không giật
 const CLOSE = 260;             // xe ở rất gần luôn được gửi (va chạm, bắn mò cự ly gần)
 const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;
+// Bụi rậm chỉ thu ngắn tầm phát hiện (khớp TeamIntel.BUSH_SPOT = CLOSE, TeamIntel.BUSH_RADAR)
+const BUSH_SPOT = 260, BUSH_RADAR = 0.7;
 const REVEAL_MS = 4500;        // vừa nổ súng: lộ vị trí (bụi / rừng không che) — dài hơn thời gian lộ phía máy khách (tối đa 4 s)
 const SPOT_MS = 4500;          // báo cáo vị trí của trinh sát
 const FAR = 1500;              // xa hơn mức này: gửi nửa tần số
 const MAX_HIT = 6;             // sát thương 1 gói DAMAGE = máu thực mất -> không thể vượt máu tối đa của xe (3.5 + thưởng hòm)
 const DPS_CAP = 16;            // tổng sát thương 1 xe gây ra trong 1 s (lựu pháo / đạn chùm trúng nhiều xe cùng lúc)
 const MSG_PER_SEC = 400;       // giới hạn tin nhắn / giây / kết nối
-const F_BUSH = 1, F_GATLING = 4, F_DEAD = 8;
+const F_BUSH = 1, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16;
+// Lưới ngụy trang đang che (xe đứng yên, chưa bắn, lưới không cháy): khớp Equipment.camoFactor / camoRadarFactor.
+// Lưới bắt lửa / cháy hết -> máy chủ quyền tắt cờ F_CAMO -> máy chủ gửi vị trí ngay theo tầm nhìn thường.
+const CAMO_SIGHT = 0.65, CAMO_RADAR = 0.6;
 // Nhịp bắn tối đa (phát / giây) theo loại xe — rộng tay, chỉ bắt hack bắn nhanh lộ liễu
 const FIRE_RATE = { GATLING: 40, SCOUT: 25, ALL_ROUNDER: 8, ARTILLERY: 6 };
 // Sát thương phải đến sau một phát bắn thật của chính xe đó trong khoảng (đạn pháo bay lâu + bom con rơi)
@@ -45,6 +50,7 @@ let accounts = null;
 try { accounts = require('./server_accounts'); } catch (e) { accounts = null; }
 const FIELDS = ['x', 'z', 'b', 'a', 'e', 's', 'h', 'f', 'm'];
 const NetCodec = require('./src/core/net_codec.js');
+const Equipment = require('./src/core/equipment.js');
 const FLUSH_MS = 50;           // nhịp gom gói gửi đi (20 / giây, bằng nhịp gửi của máy khách)
 
 // ---------------------------------------------------------------------------
@@ -115,7 +121,8 @@ function initMatch(room, d, fromId) {
       team: r.team === 'RED' ? 'RED' : 'BLUE',
       type: SIGHT[r.type] ? r.type : 'ALL_ROUNDER',
       peer: typeof r.peer === 'string' ? r.peer : null,
-      rd: r.rd ? 1 : 0                      // xe lắp radar dò tìm (trang bị nâng cao)
+      rd: r.rd ? 1 : 0,                     // xe lắp radar dò tìm (trang bị nâng cao)
+      cm: r.cm ? 1 : 0                      // xe lắp lưới ngụy trang
     })),
     S: [],                 // trạng thái đầy đủ từng xe (lượng tử hóa như gói REMOTE_UNIT_SYNC)
     meta: [],              // { lastT, hpAuth, deadAt, revealUntil, dmg: [[t, amount]], tick }
@@ -129,7 +136,8 @@ function initMatch(room, d, fromId) {
     violations: new Map(),
     id: Math.random().toString(36).slice(2),   // nhận diện trận (tính thành tích tài khoản theo trận)
     lastHit: new Map(),                         // `${xe bị trúng}|${máy}` -> lúc gây sát thương hợp lệ gần nhất
-    lastFireBy: new Map()                       // máy -> lúc bắn gần nhất (kiểm tra ENV_HIT)
+    lastFireBy: new Map(),                      // máy -> lúc bắn gần nhất (kiểm tra ENV_HIT)
+    kd: new Map()                               // xe -> { kills, deaths, damage } đã kiểm tra (xếp hạng top 3 K/D)
   };
   M.byIdx = new Map(M.roster.map(r => [r.i, r]));
   room.match = M;
@@ -170,13 +178,17 @@ function updateVisibility(M, now) {
       if (sp && sp > now) { set.add(e.i); continue; }
       const ex = s.x / 10, ez = s.z / 10, m = meta(M, e.i), revealed = m.revealUntil > now;
       const inForest = !revealed && densityAt(M.dens, ex, ez) >= FOREST_DENSE;
+      // núp bụi chưa nổ súng: radar bắt được ở BUSH_RADAR bán kính, mắt thường trong BUSH_SPOT (+ MARGIN để hiện mượt)
+      const bush = !revealed && (s.f & F_BUSH);
+      // cờ ngụy trang chỉ tin khi xe có lắp lưới và thật sự đứng yên (chống gửi cờ giả để tàng hình khi chạy)
+      const camo = !revealed && (s.f & F_CAMO) && e.cm && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08;
+      const rk = (bush ? BUSH_RADAR : 1) * (camo ? CAMO_RADAR : 1), sk = camo ? CAMO_SIGHT : 1;
       for (const u of mine) {
         const v = M.S[u.i], vx = v.x / 10, vz = v.z / 10, d = Math.hypot(ex - vx, ez - vz);
         if (d < CLOSE) { set.add(e.i); break; }
-        if (u.type === 'SCOUT' && d < RADAR_RANGE) { set.add(e.i); break; }
-        if (u.rd && d < EQ_RADAR_RANGE) { set.add(e.i); break; }
-        if (d > SIGHT[u.type] + MARGIN) continue;
-        if (!revealed && (s.f & F_BUSH)) continue;
+        if (u.type === 'SCOUT' && d < RADAR_RANGE * rk) { set.add(e.i); break; }
+        if (u.rd && d < EQ_RADAR_RANGE * rk) { set.add(e.i); break; }
+        if (d > (bush ? Math.min(SIGHT[u.type] * sk, BUSH_SPOT) : SIGHT[u.type] * sk) + MARGIN) continue;
         if (inForest && d > FOREST_SPOT + MARGIN) continue;
         if (M.dens && denseLength(M.dens, vx, vz, ex, ez, FOREST_LOS + 60) > FOREST_LOS + 60) continue;
         set.add(e.i); break;
@@ -321,7 +333,25 @@ function validDamage(room, client, d) {
     const vicClient = vr.peer ? room.members.get(vr.peer) : null;
     if (d.k && vicClient && vicClient.userId) accounts.noteOnline(vicClient.userId, M.id, 0, 1, 0);
   }
+  noteKD(room, d, amount);
   return true;
+}
+
+// Top 3 K/D cả trận (mọi xe, kể cả xe máy) từ sát thương đã kiểm tra; mỗi lần có hạ gục: báo hạng cho tài khoản người chơi
+function noteKD(room, d, amount) {
+  const M = room.match;
+  const st = (i) => M.kd.get(i) || (M.kd.set(i, { key: i, kills: 0, deaths: 0, damage: 0 }), M.kd.get(i));
+  const ai = typeof d.a === 'number' && d.a >= 0 && d.a !== d.v ? d.a : -1;
+  if (ai >= 0 && !d.b) st(ai).damage += amount;
+  if (!d.k) return;
+  st(d.v).deaths++;
+  if (ai >= 0) st(ai).kills++;
+  if (!accounts || !accounts.notePlace) return;
+  const top = Equipment.rankKD([...M.kd.values()]);
+  for (const r of M.roster) {
+    const c = r.peer ? room.members.get(r.peer) : null;
+    if (c && c.userId) accounts.notePlace(c.userId, M.id, top.findIndex(t => t.key === r.i) + 1);
+  }
 }
 
 // ---------------------------------------------------------------------------

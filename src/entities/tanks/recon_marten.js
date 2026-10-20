@@ -262,7 +262,8 @@
       hb.box(1.4, 0.9, 0.35, D, [s * 6.6, 8.6, 18.1]);
       hb.box(0.55, 0.45, 0.1, M.tailLens, [s * 6.9, 8.65, 18.3]);
       hb.setTag('can' + (s < 0 ? 'L' : 'R'));
-      hb.box(1.2, 2.3, 1.7, P, [s * 5.4, 12.0, 18.6]);
+      hb.jerrycan([s * 5.4, 12.0, 18.33], Math.PI / 2, 0.95, 2.9, 2.1, P, D);
+      hb.box(2.3, 0.2, 0.08, D, [s * 5.4, 11.3, 18.84]);
       hb.setTag(null);
     }
     hb.box(1.8, 1.0, 1.0, D, [0, 6.0, 18.4]);
@@ -302,6 +303,31 @@
     }
     ant.build();
     (unit.antennaSets || (unit.antennaSets = [])).push(ant);
+
+    // --- Chi tiết bề mặt: bu-lông viền nóc, mối hàn mép nóc, đường ghép tấm, móc cẩu, nắp thông gió ---
+    for (const s of [-1, 1]) {
+      hb.boltRow([s * 7.0, ROOF_Y, -3.2], [s * 7.0, ROOF_Y, 16.4], 12, 'y', D, 0.13);
+      hb.weld([s * 7.38, ROOF_Y + 0.02, -6.7], [s * 7.38, ROOF_Y + 0.02, 16.8], P, 0.1);
+      for (const z of [-1.0, 14.6]) {
+        hb.box(0.8, 0.28, 0.5, P, [s * 5.6, ROOF_Y + 0.12, z]);
+        hb.add(new THREE.TorusGeometry(0.4, 0.13, 5, 10), M.steel, [s * 5.6, ROOF_Y + 0.42, z], [0, Math.PI / 2, 0]);
+      }
+      // Sườn sau cửa: đường ghép dọc + bu-lông tấm giáp
+      const fx = (y) => s * (HALF_W - (y - 9.7) * (0.6 / 5.7) + 0.03);
+      hb.seam([fx(10.2), 10.2, 9.0], [fx(14.8), 14.8, 9.0], [s, 0, 0], D);
+      const bx = s * (HALF_W - (14.6 - 9.7) * (0.6 / 5.7));
+      hb.boltRow([bx, 14.6, 9.6], [bx, 14.6, 16.6], 6, 'x', D, 0.13, s, [0, 0, s * Math.atan2(0.6, 5.7)]);
+    }
+    hb.seam([-7.0, ROOF_Y + 0.02, 9.2], [7.0, ROOF_Y + 0.02, 9.2], [0, 1, 0], D);
+    hb.seam([0, ROOF_Y + 0.02, -6.4], [0, ROOF_Y + 0.02, -2.1], [0, 1, 0], D);
+    // Nắp thông gió hộp có lá chớp trên nóc sau
+    hb.box(3.0, 0.5, 2.4, P, [-2.6, ROOF_Y + 0.25, 13.0]);
+    for (let i = 0; i < 4; i++) hb.box(2.6, 0.08, 0.32, D, [-2.6, ROOF_Y + 0.52, 12.2 + i * 0.52], [0.5, 0, 0]);
+    // Cửa sau: bản lề + bu-lông viền
+    hb.hinge([-3.75, 12.2, 17.86], 'y', 3.8, P, 0.22);
+    hb.boltRow([-3.0, 14.25, 17.83], [3.0, 14.25, 17.83], 6, 'z', D, 0.12, 1);
+    // Nắp máy: hàng bu-lông mép nắp thăm
+    hb.boltRow([-4.6, 11.0, -13.9], [4.6, 11.0, -13.9], 7, 'y', D, 0.12, 1, [-0.12, 0, 0]);
 
     const meshes = hb.build(chassis, [0, 10, 0]);
     unit.hullMainMesh = meshes.get(P);

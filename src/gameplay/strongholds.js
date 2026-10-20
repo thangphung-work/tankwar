@@ -287,6 +287,13 @@ const Strongholds = (() => {
       return null;
     }
 
+    // Độ cao cao nhất của mọi phần cứ điểm (ụ đất, mái, gờ, tường cánh) — chặn trên cho mô phỏng đường đạn
+    maxTop() {
+      let top = -Infinity;
+      for (const K of this.items) top = Math.max(top, K.G + S.TOP + 6);
+      return top;
+    }
+
     // Mặt "đất" để đạn / hiệu ứng chạm: sàn kênh xe chạy hoặc đỉnh ụ đất (null = địa hình thường)
     surfaceAt(x, z) {
       for (const K of this.items) {

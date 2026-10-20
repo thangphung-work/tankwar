@@ -4,150 +4,176 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Phòng Thử Đạn</title>
-<style>
-  :root { --bg:#060b12; --panel:rgba(6,16,28,.88); --line:#16425d; --accent:#14c8ff; --hot:#ff8a2a; --text:#dbe8f2; --muted:#8aa3b8; }
-  * { box-sizing:border-box; }
-  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:13px/1.4 "Segoe UI",Arial,sans-serif; overflow:hidden; }
-  #view { position:fixed; inset:0; display:block; }
-  .panel { position:fixed; top:12px; left:12px; width:300px; max-height:calc(100% - 24px); overflow-y:auto; background:var(--panel); border:1px solid var(--line); padding:12px 12px 14px; backdrop-filter:blur(4px); }
-  h1 { margin:0 0 2px; font-size:16px; letter-spacing:.5px; color:#fff; }
-  .sub { color:var(--muted); font-size:11px; margin-bottom:10px; }
-  h2 { margin:12px 0 6px; font-size:11px; letter-spacing:1px; color:var(--accent); text-transform:uppercase; }
-  .ammo { display:grid; grid-template-columns:1fr; gap:4px; }
-  .btn { display:block; width:100%; text-align:left; cursor:pointer; color:var(--text); background:rgba(4,22,38,.9); border:1px solid #1d5a7d; padding:6px 9px; font:600 12px "Segoe UI",Arial,sans-serif; }
-  .btn small { display:block; color:var(--muted); font-weight:400; font-size:10.5px; }
-  .btn:hover { border-color:#3fb7e8; }
-  .btn.on { background:linear-gradient(135deg,#ffc94a,#f39200); color:#1a1206; border-color:#ffd36b; }
-  .btn.on small { color:#3b2a08; }
-  .row { display:flex; gap:4px; flex-wrap:wrap; }
-  .row .btn { width:auto; flex:1 1 auto; text-align:center; padding:5px 6px; }
-  .fire { margin-top:12px; text-align:center; font-size:15px; padding:10px; color:#fff; background:linear-gradient(135deg,#ff6a00,#b31d00); border-color:#ff9a4a; }
-  .fire:hover { filter:brightness(1.12); }
-  .fire.on { background:linear-gradient(135deg,#ff3a00,#7a1000); color:#fff; }
-  .desc { margin-top:8px; padding:8px; border-left:3px solid var(--hot); background:rgba(255,138,42,.07); color:#e9d9c6; font-size:12px; }
-  .inset { position:fixed; right:12px; bottom:12px; width:340px; height:230px; border:1px solid var(--line); background:transparent; pointer-events:none; }
-  .inset .lbl { position:absolute; left:10px; top:8px; right:10px; font:700 12px "Segoe UI",Arial,sans-serif; color:#fff; text-shadow:0 1px 3px #000; }
-  .inset .lbl span { display:block; font-weight:400; font-size:10.5px; color:var(--muted); }
-  .hint { position:fixed; right:12px; top:12px; background:var(--panel); border:1px solid var(--line); padding:8px 10px; color:var(--muted); font-size:11px; line-height:1.6; }
-  .hint b { color:var(--text); }
-  @media (max-width:760px) { .panel { width:calc(100% - 24px); max-height:45%; } .inset { width:180px; height:130px; } .hint { display:none; } }
-</style>
+<link rel="icon" href="favicon.svg?v=1" type="image/svg+xml">
+<link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+<link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261020unit1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <canvas id="view"></canvas>
 
-<div class="panel">
-  <a href="vehicle_fx_lab.html" class="btn" style="text-align:center;margin-bottom:10px;background:rgba(20,200,255,0.12);color:var(--accent);border:1px dashed var(--accent);text-decoration:none;display:block">🚜 CHUYỂN SANG: PHÒNG THỬ HIỆU ỨNG XE →</a>
-  <h1>PHÒNG THỬ ĐẠN & HIỆU ỨNG NỔ</h1>
-  <div class="sub">Xe thật của game khai hỏa → đạn bay theo quỹ đạo → nổ đúng như trong trận</div>
+<aside class="lab-panel">
+  <header class="lab-head">
+    <div class="lab-brand">
+      <i class="ti ti-bomb lab-emblem" aria-hidden="true"></i>
+      <div>
+        <h1>THỬ ĐẠN &amp; NỔ</h1>
+        <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Xe thật khai hỏa · đạn bay theo quỹ đạo · nổ đúng như trong trận</div>
+      </div>
+    </div>
+    <nav class="lab-nav">
+      <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a class="on" href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+      <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+      <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+    </nav>
+  </header>
 
-  <h2>Loại đạn</h2>
-  <div class="ammo" id="ammoList"></div>
-  <div class="desc" id="ammoDesc"></div>
+  <div class="lab-scroll">
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">01</span><h2>Xe bắn & loại đạn</h2><small>phím V đổi xe</small></div>
+    <div class="unit-grid" id="unitRow"></div>
+    <div class="row col mt2" id="ammoList"></div>
+    <div class="lab-desc" id="ammoDesc"></div>
+  </section>
 
-  <h2>Mục tiêu</h2>
-  <div class="row" id="targetRow">
-    <button class="btn on" data-target="GROUND">Mặt đất</button>
-    <button class="btn" data-target="WALL">Tường bê tông</button>
-    <button class="btn" data-target="BUILDING">Tòa nhà 4 tầng</button>
-    <button class="btn" data-target="VEHICLE">Xe bọc thép</button>
-    <button class="btn" data-target="BERM">Ụ đất</button>
-    <button class="btn" data-target="TREES">Cây cối</button>
-    <button class="btn" data-target="BUNKER">Boong-ke</button>
-    <button class="btn" data-target="PIT">Hố sâu</button>
-    <button class="btn" data-target="POND">Hồ nước</button>
-  </div>
-  <div class="row cfg" data-for="BERM" style="margin-top:4px;align-items:center;gap:6px">
-    <span style="font-size:11px;color:var(--muted)">Chiều cao ụ đất</span>
-    <input type="range" id="bermH" min="4" max="26" step="1" value="10" style="flex:1">
-    <span id="bermHVal" style="font-size:11px;width:36px">10</span>
-  </div>
-  <div class="row cfg" data-for="BUILDING" id="bldRow" style="margin-top:4px">
-    <button class="btn on" data-bld="apartment">Chung cư 4 tầng</button>
-    <button class="btn" data-bld="office">Cao ốc kính</button>
-    <button class="btn" data-bld="mudbrick">Nhà đất</button>
-    <button class="btn" data-bld="hangar">Nhà kho</button>
-  </div>
-  <div class="row cfg" data-for="VEHICLE" id="vehRow" style="margin-top:4px">
-    <button class="btn on" data-veh="ALL_ROUNDER">Halberd</button>
-    <button class="btn" data-veh="GATLING">Hailstorm</button>
-    <button class="btn" data-veh="ARTILLERY">Arbalest</button>
-    <button class="btn" data-veh="SCOUT">Marten</button>
-  </div>
-  <div class="row cfg" data-for="VEHICLE" style="margin-top:4px;align-items:center;gap:6px">
-    <span style="font-size:11px;color:var(--muted);width:92px">Xoay xe mục tiêu</span>
-    <input type="range" id="yawS" min="-180" max="180" step="5" value="0" style="flex:1">
-    <span id="yawVal" style="font-size:11px;width:44px">0°</span>
-  </div>
-  <div id="dmgLog" style="margin-top:4px;font-size:10.5px;line-height:1.45;color:#ffb37a;max-height:96px;overflow:auto"></div>
-  <div class="row" style="margin-top:4px;align-items:center">
-    <span id="hpLbl" style="flex:1;color:var(--muted);font-size:11px">Mục tiêu: Mặt đất</span>
-    <button class="btn" id="reviveBtn" style="flex:0 0 auto">Dựng lại công trình / Xe</button>
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">02</span><h2>Mục tiêu</h2></div>
+    <div class="row" id="targetRow">
+      <button class="btn on" data-target="GROUND">Mặt đất</button>
+      <button class="btn" data-target="WALL">Tường bê tông</button>
+      <button class="btn" data-target="BUILDING">Tòa nhà 4 tầng</button>
+      <button class="btn" data-target="VEHICLE">Xe bọc thép</button>
+      <button class="btn" data-target="BERM">Ụ đất</button>
+      <button class="btn" data-target="TREES">Cây cối</button>
+      <button class="btn" data-target="BUNKER">Boong-ke</button>
+      <button class="btn" data-target="PIT">Hố sâu</button>
+      <button class="btn" data-target="POND">Hồ nước</button>
+    </div>
+    <div class="lab-field cfg mt2" data-for="BERM">
+      <span>Chiều cao ụ đất</span>
+      <input type="range" id="bermH" min="4" max="26" step="1" value="10">
+      <span class="lab-val" id="bermHVal" style="width:28px">10</span>
+    </div>
+    <div class="row cfg mt2" data-for="BUILDING" id="bldRow">
+      <button class="btn on" data-bld="apartment">Chung cư 4 tầng</button>
+      <button class="btn" data-bld="office">Cao ốc kính</button>
+      <button class="btn" data-bld="mudbrick">Nhà đất</button>
+      <button class="btn" data-bld="hangar">Nhà kho</button>
+    </div>
+    <div class="lab-sub cfg mt2" data-for="VEHICLE">Chọn xe làm bia</div>
+    <div class="row cfg" data-for="VEHICLE" id="vehRow">
+      <button class="btn on" data-veh="ALL_ROUNDER">Halberd</button>
+      <button class="btn" data-veh="GATLING">Hailstorm</button>
+      <button class="btn" data-veh="ARTILLERY">Arbalest</button>
+      <button class="btn" data-veh="SCOUT">Marten</button>
+    </div>
+    <div class="row cfg mt" data-for="VEHICLE" id="camoRow">
+      <button class="btn on" data-camo="1">Có lưới lá</button>
+      <button class="btn" data-camo="0">Không lưới</button>
+      <button class="btn" id="camoReset">Thay lưới mới</button>
+    </div>
+    <div class="lab-field cfg mt" data-for="VEHICLE">
+      <span>Xoay xe mục tiêu</span>
+      <input type="range" id="yawS" min="-180" max="180" step="5" value="0">
+      <span class="lab-val" id="yawVal" style="width:40px">0°</span>
+    </div>
+    <div class="lab-log hot mt" id="dmgLog"></div>
+    <div class="row mt2" style="align-items:center;flex-wrap:nowrap">
+      <span class="lab-status" id="hpLbl" style="flex:1">Mục tiêu: Mặt đất</span>
+      <button class="btn" id="reviveBtn" style="flex:0 0 auto"><i class="ti ti-refresh" aria-hidden="true"></i>Dựng lại</button>
+    </div>
+  </section>
 
-  <h2>Địa hình</h2>
-  <div class="row" id="mapRow">
-    <button class="btn on" data-map="DESERT">Sa mạc</button>
-    <button class="btn" data-map="URBAN">Đô thị</button>
-    <button class="btn" data-map="JUNGLE">Rừng</button>
-    <button class="btn" data-map="HIGHLAND">Cao nguyên</button>
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">03</span><h2>Địa hình</h2></div>
+    <div class="row" id="mapRow">
+      <button class="btn on" data-map="DESERT">Sa mạc</button>
+      <button class="btn" data-map="URBAN">Đô thị</button>
+      <button class="btn" data-map="JUNGLE">Rừng</button>
+      <button class="btn" data-map="HIGHLAND">Cao nguyên</button>
+    </div>
+  </section>
 
-  <h2>Tốc độ thời gian</h2>
-  <div class="row" id="speedRow">
-    <button class="btn on" data-speed="1">1x</button>
-    <button class="btn" data-speed="0.5">0.5x</button>
-    <button class="btn" data-speed="0.25">0.25x</button>
-    <button class="btn" data-speed="0.1">0.1x</button>
-    <button class="btn" data-speed="0.05">0.05x</button>
-    <button class="btn" data-speed="0.02">0.02x</button>
-    <button class="btn" data-speed="0.01">0.01x</button>
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">04</span><h2>Tốc độ thời gian</h2><small>phím S</small></div>
+    <div class="row" id="speedRow">
+      <button class="btn on" data-speed="1">1x</button>
+      <button class="btn" data-speed="0.5">0.5x</button>
+      <button class="btn" data-speed="0.25">0.25x</button>
+      <button class="btn" data-speed="0.1">0.1x</button>
+      <button class="btn" data-speed="0.05">0.05x</button>
+      <button class="btn" data-speed="0.02">0.02x</button>
+      <button class="btn" data-speed="0.01">0.01x</button>
+    </div>
+  </section>
 
-  <h2>Camera</h2>
-  <div class="row" id="camRow">
-    <button class="btn on" data-cam="wide">Toàn cảnh</button>
-    <button class="btn" data-cam="impact">Cận điểm nổ</button>
-    <button class="btn" data-cam="follow">Theo đạn</button>
-    <button class="btn" data-cam="launcher">Cận bệ phóng</button>
-  </div>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">05</span><h2>Camera</h2></div>
+    <div class="row" id="camRow">
+      <button class="btn on" data-cam="wide">Toàn cảnh</button>
+      <button class="btn" data-cam="impact">Cận điểm nổ</button>
+      <button class="btn" data-cam="follow">Theo đạn</button>
+      <button class="btn" data-cam="launcher">Cận bệ phóng</button>
+    </div>
+  </section>
 
-  <h2>Góc nâng nòng (thử phạm vi nổ) <small>bệ phóng tự lùi / tiến tới đúng điểm rơi</small></h2>
-  <div class="row" style="align-items:center;gap:6px">
-    <input type="range" id="elevS" min="-2" max="60" step="0.5" value="-2" style="flex:1">
-    <span id="elevVal" style="font-size:11px;width:96px;white-space:nowrap">Tự ngắm</span>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">06</span><h2>Ngắm bắn</h2><small>bệ phóng tự lùi / tiến tới điểm rơi</small></div>
+    <div class="lab-box">
+      <div class="lab-field">
+        <span style="width:66px">Góc nâng</span>
+        <input type="range" id="elevS" min="-2" max="60" step="0.5" value="-2">
+        <span class="lab-val" id="elevVal" style="width:104px">Tự ngắm</span>
+      </div>
+      <div class="lab-field">
+        <span style="width:66px">Hướng nòng</span>
+        <input type="range" id="aziS" min="-40" max="40" step="1" value="0">
+        <span class="lab-val" id="aziVal" style="width:104px">Thẳng mục tiêu</span>
+      </div>
+    </div>
+    <button class="btn btn-fire mt2" id="fireBtn"><i class="ti ti-flame" aria-hidden="true"></i>BẮN <small>Space · giữ để bắn liên tục</small></button>
+    <div class="grid2 mt">
+      <button class="btn" id="autoBtn"><i class="ti ti-repeat" aria-hidden="true"></i>Bắn tự động: <b>TẮT</b></button>
+      <button class="btn" id="clearBtn"><i class="ti ti-eraser" aria-hidden="true"></i>Dọn hố đạn</button>
+    </div>
+  </section>
   </div>
-  <div class="row" style="margin-top:4px;align-items:center;gap:6px">
-    <span style="font-size:11px;color:var(--muted);width:64px">Hướng nòng</span>
-    <input type="range" id="aziS" min="-40" max="40" step="1" value="0" style="flex:1">
-    <span id="aziVal" style="font-size:11px;width:96px;white-space:nowrap">Thẳng mục tiêu</span>
-  </div>
-  <button class="btn fire" id="fireBtn">🔥 BẮN  [SPACE / giữ để bắn liên tục]</button>
-  <div class="row" style="margin-top:6px">
-    <button class="btn" id="autoBtn">Bắn tự động: TẮT</button>
-    <button class="btn" id="clearBtn">Dọn hố đạn</button>
-  </div>
+</aside>
+
+<div class="lab-keys">
+  <span><kbd>Chuột trái</kbd> xoay camera</span>
+  <span><kbd>Cuộn</kbd> zoom</span>
+  <span><kbd>Space</kbd> bắn</span>
+  <span><kbd>V</kbd> đổi xe</span>
+  <span><kbd>1-3</kbd> chọn đạn</span>
+  <span><kbd>S</kbd> quay chậm</span>
 </div>
-
-<div class="hint"><b>Chuột trái kéo</b> xoay camera · <b>Cuộn</b> zoom<br><b>Space</b> bắn · <b>1-9</b> chọn đạn · <b>S</b> quay chậm</div>
-<div class="inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
+<div class="lab-frame lab-inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
 
 <script src="three.min.js"></script>
-<script src="src/core/audio.js?v=20261019wall2"></script>
+<script src="src/core/audio.js?v=20261020cfire8"></script>
+<script src="src/core/wading_audio.js?v=20261020flood1"></script>
 <script src="src/entities/tank_models.js?v=20261019i"></script>
-<script src="src/entities/tanks/vehicle_kit.js?v=20261019i"></script>
-<script src="src/entities/tanks/mbt_halberd.js?v=20261019i"></script>
-<script src="src/entities/tanks/fsv_hailstorm.js?v=20261019i"></script>
-<script src="src/entities/tanks/spg_arbalest.js?v=20261019i"></script>
-<script src="src/entities/tanks/recon_marten.js?v=20261019i"></script>
+<script src="src/entities/tanks/vehicle_kit.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/mbt_halberd.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/spg_arbalest.js?v=20261020fine1"></script>
+<script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
 <script src="src/core/game_timing.js?v=20261019wall2"></script>
-<script src="src/core/ballistics.js?v=20261019eqp1"></script>
+<script src="src/core/ballistics.js?v=20261020blind1"></script>
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
-<script src="src/entities/spg.js?v=20261019env1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261019eqp1"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261019t1"></script>
-<script src="src/gameplay/destructibles.js?v=20261019eqp1"></script>
+<script src="src/entities/spg.js?v=20261020flood1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020srf4"></script>
+<script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261020cfire8"></script>
+<script src="src/core/equipment.js?v=20261020cfire8"></script>
+<script src="src/gameplay/camo_fire.js?v=20261020cfire8"></script>
+<script src="src/gameplay/destructibles.js?v=20261020cz9x"></script>
 <script>
 (function () {
   // ===========================================================================
@@ -157,10 +183,10 @@
     { key: 'NORMAL', ammo: 'NORMAL', unit: 'ALL_ROUNDER', label: 'Đạn pháo tiêu chuẩn 120mm', who: 'Halberd MK.3', path: 'direct' },
     { key: 'AP', ammo: 'AP', unit: 'ALL_ROUNDER', label: 'Xuyên giáp APFSDS 120mm', who: 'Halberd MK.3', path: 'direct' },
     { key: 'HE', ammo: 'HE', unit: 'ALL_ROUNDER', label: 'Nổ mạnh HE 120mm', who: 'Halberd MK.3', path: 'direct' },
-    { key: 'HE155', ammo: 'HE', unit: 'ARTILLERY', label: 'Nổ mạnh HE 155mm', who: 'Arbalest 155 · bắn cầu vồng', path: 'arc', heavy: true },
-    { key: 'CLUSTER', ammo: 'CLUSTER', unit: 'ARTILLERY', label: 'Đạn chùm DPICM 155mm', who: 'Arbalest 155 · nổ trên không', path: 'arc', heavy: true },
     { key: 'G30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm nổ-cháy-vạch đường', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
     { key: 'INC', ammo: 'INCENDIARY', unit: 'GATLING', label: 'Đạn cháy 30mm', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'HE155', ammo: 'HE', unit: 'ARTILLERY', label: 'Nổ mạnh HE 155mm', who: 'Arbalest 155 · bắn cầu vồng', path: 'arc', heavy: true },
+    { key: 'CLUSTER', ammo: 'CLUSTER', unit: 'ARTILLERY', label: 'Đạn chùm DPICM 155mm', who: 'Arbalest 155 · nổ trên không', path: 'arc', heavy: true },
     { key: 'MG', ammo: 'SCOUT_BULLET', unit: 'SCOUT', label: 'Đạn súng máy hạng nặng', who: 'Marten R4 · giữ để xả', path: 'bullet', rapid: true },
     { key: 'RPG', ammo: 'RPG', unit: 'SCOUT', label: 'Tên lửa chống tăng HEAT', who: 'Marten R4', path: 'missile' }
   ];
@@ -749,10 +775,15 @@
   targetTank.group.rotation.y = targetBaseYaw();
   targetTank.group.visible = false;
   hideOverlays(targetTank);
+  // Lưới lá ngụy trang trên xe bia (thử đạn cháy làm lưới bắt lửa): ?camo=0 để bỏ
+  let labCamo = new URLSearchParams(location.search).get('camo') !== '0';
+  const labLeaf = new URLSearchParams(location.search).get('leaf');   // green | dry (mặc định theo phe: phe đỏ = lá khô)
+  function equipTarget(u) { if (labLeaf) u._foliageKind = labLeaf; if (typeof Equipment !== 'undefined') Equipment.equip(u, { m: labCamo ? ['camo'] : [], p: [], a: {} }, {}); }
+  equipTarget(targetTank);
 
   // Đổi dòng xe mục tiêu để thử kiểu hư hại riêng của từng xe
-  function setTargetType(type) {
-    if (targetTank.tankType === type) return;
+  function setTargetType(type, force) {
+    if (!force && targetTank.tankType === type) return;
     const vis = targetTank.group.visible;
     if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(targetTank);
     fx.restoreVehicle(targetTank);
@@ -761,6 +792,7 @@
     targetTank.group.rotation.y = targetBaseYaw();
     targetTank.group.visible = vis;
     hideOverlays(targetTank);
+    equipTarget(targetTank);
     document.getElementById('dmgLog').innerHTML = '';
     updateHpLabel();
   }
@@ -1694,7 +1726,38 @@
   }
 
   const list = document.getElementById('ammoList');
-  list.innerHTML = AMMO.map((a, i) => `<button class="btn${i === 0 ? ' on' : ''}" data-i="${i}">${i + 1 <= 9 ? (i + 1) + '. ' : ''}${a.label}<small>${a.who}</small></button>`).join('');
+  // Chọn xe bắn trước, danh sách chỉ hiện đạn của xe đó (phím số đánh lại 1..n theo xe)
+  const UNIT_GROUP = {
+    ALL_ROUNDER: { name: 'Halberd MK.3', role: 'Xe chủ lực', icon: 'shield-half' },
+    GATLING: { name: 'Hailstorm R6', role: 'Hỏa lực gần', icon: 'bolt' },
+    ARTILLERY: { name: 'Arbalest 155', role: 'Pháo tầm xa', icon: 'chart-arcs' },
+    SCOUT: { name: 'Marten R4', role: 'Trinh sát', icon: 'radar-2' }
+  };
+  const UNITS = Object.keys(UNIT_GROUP);
+  const PATH_NOTE = { direct: 'bắn thẳng', arc: 'bắn cầu vồng', bullet: 'giữ để xả', missile: 'có dẫn đường' };
+  const unitRow = document.getElementById('unitRow');
+  unitRow.innerHTML = UNITS.map(u => {
+    const g = UNIT_GROUP[u];
+    return `<button class="btn" data-unit="${u}"><i class="ti ti-${g.icon}" aria-hidden="true"></i>${g.name}<small>${g.role}</small></button>`;
+  }).join('');
+  const visibleAmmo = () => AMMO.map((a, i) => i).filter(i => AMMO[i].unit === state.unit);
+  function renderAmmoList() {
+    unitRow.querySelectorAll('.btn').forEach(b => b.classList.toggle('on', b.dataset.unit === state.unit));
+    list.innerHTML = visibleAmmo().map((i, n) => {
+      const a = AMMO[i];
+      const note = (a.who.split('·')[1] || '').trim() || PATH_NOTE[a.path] || '';
+      return `<button class="btn${a === state.sel ? ' on' : ''}" data-i="${i}"><kbd class="ammo-key">${n + 1}</kbd>${a.label}${note ? `<small>${note}</small>` : ''}</button>`;
+    }).join('');
+  }
+  function selectUnit(u) {
+    if (!UNIT_GROUP[u]) return;
+    state.unit = u;
+    renderAmmoList();
+    selectAmmo(visibleAmmo()[0]);
+  }
+  unitRow.addEventListener('click', e => { const b = e.target.closest('.btn'); if (b) { initAudio(); selectUnit(b.dataset.unit); } });
+  state.unit = state.sel.unit;
+  renderAmmoList();
   function selectAmmo(i) {
     state.sel = AMMO[i];
     list.querySelectorAll('.btn').forEach(b => b.classList.toggle('on', +b.dataset.i === i));
@@ -1734,7 +1797,7 @@
   fireBtn.addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); setFiring(true); });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => fireBtn.addEventListener(ev, () => setFiring(false)));
   const autoBtn = document.getElementById('autoBtn');
-  autoBtn.addEventListener('click', () => { initAudio(); state.auto = !state.auto; autoBtn.textContent = 'Bắn tự động: ' + (state.auto ? 'BẬT' : 'TẮT'); autoBtn.classList.toggle('on', state.auto); });
+  autoBtn.addEventListener('click', () => { initAudio(); state.auto = !state.auto; autoBtn.innerHTML = '<i class="ti ti-repeat" aria-hidden="true"></i>Bắn tự động: <b>' + (state.auto ? 'BẬT' : 'TẮT') + '</b>'; autoBtn.classList.toggle('on', state.auto); });
   document.getElementById('clearBtn').addEventListener('click', () => fx.clear());
   document.getElementById('reviveBtn').addEventListener('click', () => {
     targetTank.hp = targetTank.maxHp;
@@ -1751,7 +1814,8 @@
 
   window.addEventListener('keydown', e => {
     if (e.code === 'Space') { e.preventDefault(); initAudio(); if (!e.repeat) setFiring(true); }
-    else if (/^Digit[1-9]$/.test(e.code)) { const i = +e.code.slice(5) - 1; if (AMMO[i]) { initAudio(); selectAmmo(i); } }
+    else if (/^Digit[1-9]$/.test(e.code)) { const i = visibleAmmo()[+e.code.slice(5) - 1]; if (i !== undefined) { initAudio(); selectAmmo(i); } }
+    else if (e.code === 'KeyV') { initAudio(); selectUnit(UNITS[(UNITS.indexOf(state.unit) + 1) % UNITS.length]); }
     else if (e.code === 'KeyS') { const order = [1, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01]; const next = order[(order.indexOf(state.speed) + 1) % order.length]; document.querySelector(`#speedRow [data-speed="${next}"]`).click(); }
   });
   window.addEventListener('keyup', e => { if (e.code === 'Space') setFiring(false); });
@@ -1791,6 +1855,7 @@
     updateRipples(dt);
     if (typeof VehicleDamage !== 'undefined') {
       VehicleDamage.update(dt, [targetTank]);
+      if (typeof CamoFire !== 'undefined') CamoFire.update(dt, { units: [targetTank], fx });
       // Thân xe lệch theo lốp xẹp (xe mục tiêu đứng yên không chạy vòng cập nhật của game)
       if (targetTank.dmg && targetTank.chassisGroup && !targetTank.isDead) {
         const c = targetTank.chassisGroup.rotation;
@@ -1829,7 +1894,16 @@
     document.querySelectorAll('#vehRow [data-veh]').forEach(x => x.classList.toggle('on', x === b));
     setTargetType(b.dataset.veh);
   }));
-  window.__fxLab = { state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
+  // Có / không lưới lá: dựng lại xe bia; 'Thay lưới mới' = xe lành lặn với lưới xanh nguyên vẹn
+  function rebuildTarget() { setTargetType(targetTank.tankType, true); }
+  document.querySelectorAll('#camoRow [data-camo]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#camoRow [data-camo]').forEach(x => x.classList.toggle('on', x === b));
+    labCamo = b.dataset.camo === '1';
+    rebuildTarget();
+  }));
+  document.getElementById('camoReset').addEventListener('click', rebuildTarget);
+  if (!labCamo) document.querySelectorAll('#camoRow [data-camo]').forEach(x => x.classList.toggle('on', x.dataset.camo === '0'));
+  window.__fxLab = { orbit, state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
 })();
 </script>
 </body>

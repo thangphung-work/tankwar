@@ -442,7 +442,7 @@ class HUDController {
           stealthBanner.innerHTML = `<span class="stealth-pulse-dot red"></span> <i class="ti ti-alert-triangle" aria-hidden="true"></i> BỊ LỘ VỊ TRÍ DO VỪA BẮN PHÁO (${this.game.player.revealTimer.toFixed(1)}S)`;
           stealthBanner.classList.add('revealed');
         } else {
-          stealthBanner.innerHTML = `<span class="stealth-pulse-dot green"></span> <i class="ti ti-leaf" aria-hidden="true"></i> ĐANG NÚP BỤI RẬM — XE ĐANG MỜ ĐI & TÀNG HÌNH HOÀN TOÀN!`;
+          stealthBanner.innerHTML = `<span class="stealth-pulse-dot green"></span> <i class="ti ti-leaf" aria-hidden="true"></i> ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN`;
           stealthBanner.classList.remove('revealed');
         }
       } else {
@@ -927,7 +927,7 @@ class HUDController {
     // 4. Vẽ các xe pháo 2 phe trên Minimap (Xe địch núp bụi tàng hình sẽ không vẽ)
     this.game.units.forEach(u => {
       if (u.isDead) return;
-      if (u.isHiddenFromPlayer) return; // Địch núp bụi tàng hình: Không hiển thị trên Minimap!
+      if (u.isHiddenFromPlayer) return; // Địch chưa bị phát hiện (vd núp bụi ở xa): Không hiển thị trên Minimap!
 
       const ux = (u.x + this.worldWidth / 2) * scale;
       const uz = (u.z + this.worldDepth / 2) * scale;
