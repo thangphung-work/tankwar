@@ -273,8 +273,20 @@ const Strongholds = (() => {
       this.group.name = 'strongholds';
       parent.add(this.group);
       this.mapType = opts.mapType || 'HIGHLAND';
+      // Màu ụ đất theo địa hình: dùng chung shader mặt đất (opts.groundMaterial) nếu có, không thì bảng màu EARTH
+      this.groundMaterial = typeof opts.groundMaterial === 'function' ? opts.groundMaterial : null;
+      this.worldSize = opts.worldSize || null;
+      this.leafColors = opts.leafColors || null;
       this.items = list.map(s => this.buildOne(s));
     }
+
+    // Vật liệu đất giống mặt đất địa hình (null = không có -> dùng texture đất cỏ + bảng màu EARTH)
+    groundMat(vertexColors) {
+      if (!this.groundMaterial || !this.worldSize) return null;
+      return this.groundMaterial({ vertexColors }) || null;
+    }
+    // uv theo tọa độ bản đồ (khớp lưới địa hình: ảnh màu nền phủ cả bản đồ)
+    mapUV(x, z) { return [0.5 + x / this.worldSize[0], 0.5 - z / this.worldSize[1]]; }
 
     // ---------------------------------------------------------------- tra cứu
     local(K, x, z) {
@@ -616,10 +628,17 @@ const Strongholds = (() => {
       roofGrp.add(roofMesh);
       // Lớp đất phủ trên mái (ụ đất không phủ phần này để mái tách riêng được)
       const pal = EARTH[this.mapType] || EARTH.HIGHLAND;
-      const coverMat = new THREE.MeshStandardMaterial({ map: earthMap(), roughness: 0.97, color: new THREE.Color(pal.grass[0] / 255 * 1.3, pal.grass[1] / 255 * 1.3, pal.grass[2] / 255 * 1.3) });
+      const coverGround = this.groundMat(false);
+      const coverMat = coverGround || new THREE.MeshStandardMaterial({ map: earthMap(), roughness: 0.97, color: new THREE.Color(pal.grass[0] / 255 * 1.3, pal.grass[1] / 255 * 1.3, pal.grass[2] / 255 * 1.3) });
       const coverGeo = new THREE.PlaneGeometry(HB * 2, (WO + 0.5) * 2, 1, 1);
       coverGeo.rotateX(-Math.PI / 2);
-      { const uv = coverGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * HB / 16, uv.getY(i) * WO / 16); }
+      {
+        const uv = coverGeo.attributes.uv, P = coverGeo.attributes.position;
+        for (let i = 0; i < uv.count; i++) {
+          if (coverGround) { const w = this.toWorld(K, P.getX(i), P.getZ(i)); uv.setXY(i, ...this.mapUV(w.x, w.z)); }
+          else uv.setXY(i, uv.getX(i) * HB / 16, uv.getY(i) * WO / 16);
+        }
+      }
       const cover = new THREE.Mesh(coverGeo, coverMat);
       cover.position.y = S.CREST + 0.3;
       cover.castShadow = true; cover.receiveShadow = true;
@@ -804,6 +823,9 @@ const Strongholds = (() => {
       const F = Math.ceil((S.END + 12) / st) * st, R = Math.ceil((S.WO + S.RUN + 12) / st) * st;
       const nf = Math.round(2 * F / st) + 1, nr = Math.round(2 * R / st) + 1;
       const pal = EARTH[this.mapType] || EARTH.HIGHLAND;
+      // Có shader mặt đất: ụ đất lấy đúng vật liệu địa hình (cỏ / đất / đá theo độ dốc như sườn đồi thật), màu đỉnh = trắng
+      // (giữ thuộc tính màu đỉnh cho vết cháy sém, xem EnvDamage.scorchMound)
+      const gMat = this.groundMat(true);
       const pos = new Float32Array(nf * nr * 3), uv = new Float32Array(nf * nr * 2), col = new Float32Array(nf * nr * 3);
       const keep = new Uint8Array(nf * nr);
       const hAt = (f, r) => { const h = moundH(f, r); return h === null ? -1.2 : h; };
@@ -813,10 +835,12 @@ const Strongholds = (() => {
         const h = hAt(f, r);
         pos[k * 3] = f; pos[k * 3 + 1] = h; pos[k * 3 + 2] = r;
         const w = { x: K.x + K.fx * f + K.rx * r, z: K.z + K.fz * f + K.rz * r };
-        uv[k * 2] = w.x / 32; uv[k * 2 + 1] = w.z / 32;
+        if (gMat) { const t = this.mapUV(w.x, w.z); uv[k * 2] = t[0]; uv[k * 2 + 1] = t[1]; }
+        else { uv[k * 2] = w.x / 32; uv[k * 2 + 1] = w.z / 32; }
         // Bỏ đỉnh nằm trong kênh xe chạy (mép lưới răng cưa nằm khuất trong bề dày tường cánh)
         keep[k] = (af > S.HB - 2 && ar < cutHalf(Math.max(af, S.HB)) + S.WING_T * 0.5 && af < S.END + 6) ? 0 : 1;
         if (af < S.HB && ar < S.WO) keep[k] = 0;   // vùng mái: lớp đất phủ thuộc nhóm mái
+        if (gMat) { col[k * 3] = col[k * 3 + 1] = col[k * 3 + 2] = 1; continue; }
         // Màu: đỉnh / chỗ thoải xanh cỏ, sườn dốc lộ đất, chân ụ hòa vào nền
         const sl = Math.abs(hAt(f + 2, r) - hAt(f - 2, r)) / 4 + Math.abs(hAt(f, r + 2) - hAt(f, r - 2)) / 4;
         const blot = (vnoise(f / 60 + 3.1, r / 60 - 1.7) - 0.5) * 2.2;
@@ -841,7 +865,9 @@ const Strongholds = (() => {
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       g.setIndex(idx);
       g.computeVertexNormals();
-      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: earthMap(), vertexColors: true, roughness: 0.97, metalness: 0 }));
+      const m = new THREE.Mesh(g, gMat || new THREE.MeshStandardMaterial({ map: earthMap(), vertexColors: true, roughness: 0.97, metalness: 0 }));
+      // màu đỉnh là hệ số nhân (1 = màu mặt đất) -> vết cháy sém cần bù để không quá đen
+      if (gMat) g.userData.tintMul = true;
       // Ụ đất chỉ nhận bóng (tự đổ bóng lên chính nó gây sọc răng cưa trên mặt dốc thoải)
       m.castShadow = false; m.receiveShadow = true;
       m.name = 'stronghold_mound';
@@ -868,8 +894,9 @@ const Strongholds = (() => {
         e.set(0, rnd() * 6.28, 0);
         m4.compose(new THREE.Vector3(f, h - 0.4, r), q.setFromEuler(e), new THREE.Vector3(sc * (1 + rnd() * 0.6), sc * (0.6 + rnd() * 0.5), sc));
         im.setMatrixAt(cnt, m4);
-        const gc = pal.grass;
-        im.setColorAt(cnt, new THREE.Color(gc[0] / 255, gc[1] / 255, gc[2] / 255).multiplyScalar(0.75 + rnd() * 0.4));
+        // bụi cùng màu lá với bụi cây trên địa hình của map
+        const bc = this.leafColors ? new THREE.Color(this.leafColors[cnt & 1]) : new THREE.Color(pal.grass[0] / 255, pal.grass[1] / 255, pal.grass[2] / 255);
+        im.setColorAt(cnt, bc.multiplyScalar(0.75 + rnd() * 0.4));
         cnt++;
       }
       im.count = cnt;

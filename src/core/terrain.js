@@ -103,7 +103,11 @@ class BattleTerrain3D {
 
     const ground = (x, z) => this.groundAtRaw(x, z);
     if (SHL.length && typeof Strongholds !== 'undefined') {
-      this.strongholdSet = new Strongholds.StrongholdSet(this.group, SHL, { mapType: this.mapType, groundAt: ground });
+      // ụ đất / lớp đất phủ mái dùng chung shader + ảnh nền với mặt đất -> màu cứ điểm khớp màu địa hình từng map
+      this.strongholdSet = new Strongholds.StrongholdSet(this.group, SHL, {
+        mapType: this.mapType, groundAt: ground,
+        groundMaterial: o => this.groundLikeMaterial(o), worldSize: [this.width, this.depth], leafColors: this.leafColors()
+      });
     }
     // Dựng nhà / cây / boong-ke với hạt giống của bản đồ -> mọi máy có cùng hình dạng & độ bền từng mảng
     if (typeof Destructibles !== 'undefined') Destructibles.withSeed((this.seed ^ 0x5eed1234) >>> 0, () => {
@@ -217,6 +221,21 @@ class BattleTerrain3D {
     this.terrainMesh.name = 'ground';
     this.mesh = this.terrainMesh;
     this.group.add(this.terrainMesh);
+  }
+
+  // Vật liệu "mặt đất" cho khối đắp đất nằm trên địa hình (ụ đất cứ điểm): cùng shader nhiều lớp + ảnh màu nền
+  // với lưới địa hình (lưới phải có uv theo tọa độ bản đồ: u = 0.5 + x / width, v = 0.5 - z / depth),
+  // nhưng sáng tối theo pháp tuyến riêng của lưới. null nếu không có GroundShader.
+  groundLikeMaterial(o = {}) {
+    if (typeof GroundShader === 'undefined' || !this.groundTexture) return null;
+    const mat = new THREE.MeshStandardMaterial({ map: this.groundTexture, roughness: this.mapType === 'URBAN' ? 0.82 : 0.95, metalness: 0.0, vertexColors: !!o.vertexColors });
+    GroundShader.apply(mat, { mapType: this.mapType, macroCanvas: this.groundCanvas, water: !!(this.map.river || this.map.lakes.length), terrain: this, ownNormals: true });
+    return mat;
+  }
+
+  // Màu lá bụi cây theo map (xanh rêu / ô liu: xanh lá thuần dưới nắng thành xanh neon)
+  leafColors() {
+    return { DESERT: [0x6f6e3c, 0x857e48], URBAN: [0x4e5c34, 0x5c6a3e], JUNGLE: [0x34482a, 0x405630], HIGHLAND: [0x4a5632, 0x58643a], RIVER_LAKE: [0x485a30, 0x566a38] }[this.mapType] || [0x4a5632, 0x58643a];
   }
 
   // Texture hạt chi tiết trung tính (trung bình ~0.5 để nhân x2 không đổi độ sáng)
@@ -904,8 +923,7 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     // Bụi cây thấp dày đặc trong vùng ngụy trang (che thân xe)
     const total = this.map.bushes.length * 26;
     if (!total) return;
-    // xanh rêu / ô liu (xanh lá thuần dưới nắng thành xanh neon)
-    const leafCol = { DESERT: [0x6f6e3c, 0x857e48], URBAN: [0x4e5c34, 0x5c6a3e], JUNGLE: [0x34482a, 0x405630], HIGHLAND: [0x4a5632, 0x58643a], RIVER_LAKE: [0x485a30, 0x566a38] }[this.mapType];
+    const leafCol = this.leafColors();
     const c = document.createElement('canvas');
     c.width = c.height = 128;
     const g = c.getContext('2d');
