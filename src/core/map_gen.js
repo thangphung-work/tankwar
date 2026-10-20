@@ -196,7 +196,9 @@ const MapGen = (() => {
       if (s <= 0) return 0;
       // chân vành: sườn đều dốc ~0.6 như trước, lên cao thì thoải dần về đỉnh (không còn mặt nón thẳng đuột)
       const pk = OUT.peak * (0.8 + 0.5 * fbm(on, x * 0.0005 + 3, z * 0.0005, 3));
-      let r = pk * (1 - Math.exp(-s * 0.6 / pk));
+      // chân dốc mềm (độ dốc tăng dần từ 0) -> không có nếp gãy tròn nơi đồng bằng chạm chân núi
+      const se = s * s / (s + 90);
+      let r = pk * (1 - Math.exp(-se * 0.6 / pk));
       // sống núi, yên ngựa, khe suối: gồ ghề tăng dần khi lên cao
       r *= lerp(1, 0.35 + 1.25 * ridged(on, x * 0.0013, z * 0.0013, 5), smooth(60, 700, s));
       // qua đỉnh vành thì đổ xuống phía ngoài
