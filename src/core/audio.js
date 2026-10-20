@@ -646,7 +646,10 @@ class SoundEngine {
       this.burst(out, t + 0.01, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 1800, Q: 0.5, gain: 3.0 * s, attack: 0.004, dur: 0.45 });
       this.burst(out, t + 0.002, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1600, Q: 0.6, drive: 1.5, gain: 3.8 * s, attack: 0.001, dur: 0.2 });
     }
-    if (!remote) this.duck(arty ? 0.2 : 0.3, arty ? 1.6 : 1.1);
+    if (!remote) {
+      this.duck(arty ? 0.2 : 0.3, arty ? 1.6 : 1.1);
+      this.ownShotLayer(t, arty);
+    }
     this.noteBlast(distance, remote ? 1 : 1.5);
     // Rền sấm cuộn dài + tiếng dội từ đồi núi, công trình xung quanh
     const roll = this.voice({ gain: sp.gain * 0.9, lowpass: Math.min(sp.lowpass, 600), wet: 0.9, pan: sp.pan * 0.5 });
@@ -691,6 +694,33 @@ class SoundEngine {
     g.connect(this.weaponBus);
     this[key] = input;
     return input;
+  }
+
+  // Lớp "cú đấm" riêng cho phát bắn của chính mình: trầm rơi sâu đi thẳng vào bus vũ khí (không qua blastBus — kênh
+  // pháo 155 cắt dưới 75 Hz) -> cảm giác cả thân xe giật lùi; rồi luồng khí thuốc phóng tỏa rộng 2 bên, tan dần vào không gian
+  ownShotLayer(t, arty = false) {
+    const sub = this.voice({ gain: arty ? 0.24 : 0.2, wet: 0.08 });
+    this.tone(sub, t + 0.004, { freq: arty ? 72 : 84, freqEnd: 31, sweep: arty ? 0.6 : 0.45, drive: 1.5, gain: 1, attack: 0.003, dur: arty ? 1.0 : 0.75 });
+    const W = this.stereoSpread(this.voice({ gain: arty ? 0.2 : 0.15, wet: 0.9 }), 0.9);
+    for (const [ch, d] of [[W.L, 0.03], [W.R, 0.045]]) {
+      this.burst(ch, t + d, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 1400, freqEnd: 220, sweep: 1.2, gain: 1, attack: 0.02, dur: arty ? 1.8 : 1.3 });
+    }
+  }
+
+  // Nổ sát bên (c: 0..1, 1 = ngay cạnh xe): sóng áp suất "PHỤP" ép tai (lọc thấp đóng cực nhanh), trầm rơi sâu như đất
+  // rung dưới xích, rồi cát sỏi mảnh vụn rơi lộp độp hai bên tai kéo dài vài giây. Mức tăng theo bình phương độ gần:
+  // chỉ thật sự lấn át khi nổ trong vài chục mét
+  closeBlastLayer(t, c, pan = 0, big = false, k = 1) {
+    const g = c * c * Math.min(1.2, k);
+    if (g < 0.03) return;
+    const Zd = big ? 1.4 : 1;
+    const sub = this.voice({ gain: 0.3 * g, wet: 0.05, pan: pan * 0.3 });
+    this.tone(sub, t, { freq: 90, freqEnd: 33, sweep: 0.5 * Zd, drive: 1.6, gain: 1, attack: 0.004, dur: 0.9 * Zd });
+    this.burst(sub, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 1800, freqEnd: 70, sweep: 0.25, drive: 2.2, gain: 1.5, attack: 0.002, dur: 0.4 * Zd });
+    const W = this.stereoSpread(this.voice({ gain: 0.14 * g, wet: 0.35 }), 0.85);
+    for (const [ch, d] of [[W.L, 0.18], [W.R, 0.26]]) {
+      this.burst(ch, t + d, { buffer: this.crackleBuffer, filter: 'highpass', freq: 1800, gain: 1.2, attack: 0.25, dur: 2.2 * Zd });
+    }
   }
 
   // Tiếng nổ dội lại từ địa hình: các phản xạ rời rạc trái/phải, càng muộn càng nhỏ và trầm
@@ -788,6 +818,9 @@ class SoundEngine {
       }
     }
     if (distance < 700 * Z) this.duck(0.3 + 0.5 * (distance / (700 * Z)), heavy ? 1.6 : 1.0);
+    // Nổ sát xe mình (< ~55 m, 155mm < ~70 m): lớp áp suất ép ngực + trầm rơi sâu + mảnh vụn rơi hai bên tai
+    const closeR = 450 * Z;
+    if (distance < closeR && hitType !== 'WATER') this.closeBlastLayer(t, 1 - distance / closeR, sp.pan, heavy || ammoType === 'HE', k);
 
     // Rền cuộn lan xa + tiếng dội địa hình (nhỏ hơn hẳn phát nổ chính, kéo dài)
     const roll = this.voice({ gain: sp.gain * 0.8 * lvl, lowpass: Math.min(sp.lowpass, 500), wet: 0.95, pan: sp.pan * 0.5 });

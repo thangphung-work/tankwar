@@ -2312,6 +2312,10 @@ class ArtilleryGame3D {
 
     // Cơ chế hồi sinh vô hạn lần - Phạt 10 giây mỗi lần hy sinh
     // Bảng hạ gục: 1 dòng ngắn; xe người chơi liên quan thì nổi bật (đỏ khi mình bị hạ, xanh khi mình hạ địch)
+    if (window.soundEngine && window.soundEngine.musicEvent) {
+      if (victim.isPlayer) window.soundEngine.musicEvent('death');
+      else if (killer && killer.isPlayer) window.soundEngine.musicEvent('kill');
+    }
     if (victim.isPlayer) this.addCombatLog(`[[skull]] Bạn bị ${killer ? killer.name : 'vùng bo'} hạ — xuất kích lại sau ${penalty} giây`, 'defeat');
     else if (killer && killer.isPlayer) this.addCombatLog(`[[target-arrow]] Bạn hạ ${victim.name}`, 'victory');
     else this.addCombatLog(`[[skull]] ${killerName} hạ ${victim.name}`, 'feed');
@@ -3778,6 +3782,8 @@ class ArtilleryGame3D {
   }
 
   update(dt) {
+    // Nhạc nền thích ứng theo cường độ trận đánh (src/core/battle_music.js): tự vào khi trận bắt đầu, tắt khi về sảnh
+    if (window.soundEngine && window.soundEngine.updateMusic) window.soundEngine.updateMusic(dt, this);
     if (this.isGameOver) return;
 
     // Khi đang ở sảnh chờ ghép trận: Xoay nhẹ góc camera toàn cảnh sa mạc làm hình nền động tuyệt đẹp
@@ -5175,6 +5181,7 @@ class ArtilleryGame3D {
     if (title) { title.className = T[0]; title.textContent = T[1]; }
     if (sub) sub.textContent = subText;
     if (result === 'win' && window.soundEngine && typeof window.soundEngine.playVictoryFanfare === 'function') window.soundEngine.playVictoryFanfare();
+    if (window.soundEngine && window.soundEngine.musicEvent) window.soundEngine.musicEvent(result);
     // Màn hình kết quả: nhả phím đang giữ, đóng bản đồ lớn / menu tạm dừng nếu đang mở
     this.keys = {};
     if (this.tacticalMap && this.tacticalMap.isOpen && this.tacticalMap.toggle) this.tacticalMap.toggle(false);

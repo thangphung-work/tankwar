@@ -1,6 +1,6 @@
 /**
  * MENU TRÒ CHƠI
- * - Cài đặt (nút bánh răng ở sảnh, hoặc Esc trong trận): âm lượng tổng, tiếng động cơ, chất lượng đồ họa, khử răng cưa.
+ * - Cài đặt (nút bánh răng ở sảnh, hoặc Esc trong trận): âm lượng tổng, tiếng động cơ, nhạc nền, chất lượng đồ họa, khử răng cưa.
  *   Lưu trong trình duyệt (localStorage) — đồ họa phụ thuộc từng máy nên không lưu theo tài khoản.
  * - Esc trong trận: Tiếp tục / Cài đặt / Phím điều khiển / Rời trận. Trận nhiều người không tạm dừng.
  * - Bảng phím điều khiển; lần đầu vào trận tự hiện thẻ phím tắt gọn.
@@ -8,7 +8,7 @@
  */
 const GameMenu = (() => {
   const KEY = 'spg_settings', SEEN_KEY = 'spg_seen_controls';
-  const DEF = { vol: 0.8, engine: 0.8, gfx: 'high', aa: true, smooth: true };
+  const DEF = { vol: 0.8, engine: 0.8, music: 0.6, gfx: 'high', aa: true, smooth: true };
   let S = Object.assign({}, DEF);
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   // gfxUser: người chơi đã tự chọn mức đồ họa. Chưa chọn -> mức theo card đồ họa của máy (xem GfxQuality.detectTier)
@@ -31,6 +31,7 @@ const GameMenu = (() => {
   function applyAudio() {
     const se = window.soundEngine;
     if (se && se.setUserVolume) se.setUserVolume(S.vol, S.engine);
+    if (se && se.setMusicVolume) se.setMusicVolume(S.music);
   }
   function applyGraphics() {
     const g = game();
@@ -106,7 +107,7 @@ const GameMenu = (() => {
     });
     root.addEventListener('input', (e) => {
       const el = e.target;
-      if (el.name === 'vol' || el.name === 'engine') {
+      if (el.name === 'vol' || el.name === 'engine' || el.name === 'music') {
         S[el.name] = Number(el.value) / 100;
         const out = root.querySelector(`[data-out="${el.name}"]`);
         if (out) out.textContent = el.value + '%';
@@ -145,6 +146,7 @@ const GameMenu = (() => {
         <h3 class="gm-title"><i class="ti ti-adjustments"></i> CÀI ĐẶT</h3>
         <div class="gm-field"><span><i class="ti ti-volume"></i> Âm lượng tổng</span><input type="range" name="vol" min="0" max="100" value="${Math.round(S.vol * 100)}"><b data-out="vol">${Math.round(S.vol * 100)}%</b></div>
         <div class="gm-field"><span><i class="ti ti-engine"></i> Tiếng động cơ xe</span><input type="range" name="engine" min="0" max="100" value="${Math.round(S.engine * 100)}"><b data-out="engine">${Math.round(S.engine * 100)}%</b></div>
+        <div class="gm-field"><span><i class="ti ti-music"></i> Nhạc nền</span><input type="range" name="music" min="0" max="100" value="${Math.round(S.music * 100)}"><b data-out="music">${Math.round(S.music * 100)}%</b></div>
         <div class="gm-sub">Chất lượng hình ảnh</div>
         <div class="gm-segs">${q('low', 'Thấp', 'Máy yếu: tắt bóng đổ & cỏ')}${q('medium', 'Vừa', 'Bóng đổ thường')}${q('high', 'Cao', 'Bóng đổ mềm, nét hơn')}${q('ultra', 'Siêu cao', 'Card rời: nét nhất, bóng chi tiết')}</div>
         ${suggested ? `<p class="gm-note"><i class="ti ti-star-filled"></i> Hợp với máy này</p>` : ''}
