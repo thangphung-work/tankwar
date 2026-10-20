@@ -81,6 +81,15 @@ class MatchmakingController {
     this.countdown = 3;
 
     this.initElements();
+    this.music('lobby');   // nhạc sảnh chờ (phát ngay khi người chơi chạm / bấm phím lần đầu)
+  }
+
+  // Nhạc nền theo bước ghép trận: 'lobby' | 'search' | 'countdown' | 'battle' (xem src/core/audio/music.js)
+  music(mode) {
+    const se = window.soundEngine;
+    if (se && typeof se.setMusicMode === 'function') {
+      try { se.setMusicMode(mode); } catch (e) {}
+    }
   }
 
   // Đưa danh sách 20 vị trí về ban đầu (chỉ còn mình ở ô 0)
@@ -106,6 +115,7 @@ class MatchmakingController {
     if (window.soundEngine && window.soundEngine.playRadioChirp) {
       try { window.soundEngine.playRadioChirp(); } catch (e) {}
     }
+    this.music('search');
     this.state = 'SEARCHING';
     this.searchTime = 0;
     this.isHost = true;
@@ -138,6 +148,7 @@ class MatchmakingController {
     if (this.statusTextEl) this.statusTextEl.classList.remove('highlight-amber');
     this.setSearchView(false);
     this.renderLobby();
+    this.music('lobby');
   }
 
   // Bật / tắt màn chờ ghép trận (sảnh ẩn, bản đồ 3D quay toàn cảnh bên dưới)
@@ -569,6 +580,7 @@ class MatchmakingController {
     this.resetRoster();
     this.setSearchView(false);
     if (this.overlay) this.overlay.classList.remove('hidden');
+    this.music('lobby');
     this.renderLobby();
     this.prepareSelectedMap();
   }
@@ -811,6 +823,7 @@ class MatchmakingController {
     clearInterval(this.searchInterval);
     clearInterval(this.countdownTimer);
     this.state = 'COUNTDOWN';
+    this.music('countdown');
     this.prepareSelectedMap();
     this.updateSearchHUD();
     if (this.searchHudEl) this.searchHudEl.classList.add('is-counting');
@@ -855,6 +868,7 @@ class MatchmakingController {
     if (window.soundEngine && typeof window.soundEngine.init === 'function') {
       try { window.soundEngine.init(); } catch (e) {}
     }
+    this.music('battle');
 
     // Đảm bảo liên kết với đối tượng game chính
     if (!this.game) {

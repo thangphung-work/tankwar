@@ -1,5 +1,5 @@
 /**
- * TIẾNG XE LỘI NƯỚC (procedural, gắn thêm vào SoundEngine — xem src/core/audio.js)
+ * TIẾNG XE LỘI NƯỚC (procedural, gắn thêm vào SoundEngine — xem src/core/audio/sound_engine.js)
  * - Nước óc ách quanh thân xe: nhiễu hồng lọc dải trung, to nhỏ chậm ngẫu nhiên (sóng vỗ vào thân)
  * - Nước rẽ xè xè ở mũi: nhiễu trắng dải cao, to dần theo tốc độ
  * - Tiếng ục ục trầm của khối nước bị thân xe đẩy: nhiễu nâu lọc thấp, theo độ sâu
@@ -79,7 +79,7 @@
     const v = Math.max(0, Math.min(1.2, speedRatio || 0));
     const stall = inW && !!o.stall;                       // bánh / xích quẫy tại chỗ ở chỗ nước quá sâu
     const churn = Math.min(1.2, v + (stall ? 0.7 : 0));
-    this._wadeK = inW ? Math.min(1, depth / 3) : 0;       // audio.js giảm tiếng sỏi lạo xạo khi gầm ngập nước
+    this._wadeK = inW ? Math.min(1, depth / 3) : 0;       // vehicle_engine.js giảm tiếng sỏi lạo xạo khi gầm ngập nước
 
     W.slG.gain.setTargetAtTime(inW ? (0.08 + 0.32 * k) * (0.3 + 0.7 * Math.min(1, churn * 1.3)) : 0, t, 0.15);
     W.slF.frequency.setTargetAtTime(380 + churn * 420, t, 0.2);

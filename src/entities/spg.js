@@ -2571,7 +2571,7 @@ class SPGUnit3D {
   // Tốc độ quay tháp / nâng nòng (độ/giây) theo loại xe: tháp nặng quay chậm, giá súng máy trinh sát quay nhanh
   // Tốc độ quay tháp / nâng nòng (độ/giây): xe tăng 120mm truyền động điện đời mới (360° trong ~6.5 s), tháp 30mm điện
   // kiểu pháo phòng không, pháo 155mm tự hành nặng, trạm súng máy điều khiển từ xa — nhỉnh hơn số liệu xe thật ~1.3 lần
-  // cho tay ngắm đỡ ì (âm thanh mô-tơ tháp / bơm nòng trong audio.js lấy maxR theo đúng các số này)
+  // cho tay ngắm đỡ ì (âm thanh mô-tơ tháp / bơm nòng trong src/core/audio/turret_drives.js lấy maxR theo đúng các số này)
   turretRates() {
     const R = { ALL_ROUNDER: [55, 30], GATLING: [80, 55], ARTILLERY: [28, 14], SCOUT: [100, 60] }[this.tankType] || [55, 30];
     return { traverse: R[0], elevate: R[1] };

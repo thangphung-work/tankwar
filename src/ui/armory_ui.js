@@ -290,8 +290,13 @@ const ArmoryUI = (() => {
         msg = `<i class="ti ti-circle-check"></i> Đã mở khóa <b>${esc(M.name)}</b>${Eq.MODULES[id] ? ' — đã tự trang bị nếu nhóm còn ô' : ' — luôn dùng từ trận tới'}`;
         if (Eq.MODULES[id]) rebuildPreview();
       }
-      if (act !== 'sellAmmo' && window.soundEngine && window.soundEngine.playReloadDone) window.soundEngine.playReloadDone();
-    } catch (err) { flash = null; msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`; }
+      const se = window.soundEngine;
+      if (se && se.playUiPurchase) se.playUiPurchase(act === 'sellAmmo');
+      else if (act !== 'sellAmmo' && se && se.playReloadDone) se.playReloadDone();
+    } catch (err) {
+      flash = null; msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`;
+      if (window.soundEngine && window.soundEngine.playUiDenied) window.soundEngine.playUiDenied();
+    }
     finally { busy = false; render(); }
   }
 
@@ -316,7 +321,9 @@ const ArmoryUI = (() => {
         if (R.kind === 'ammo') { flash = { k: R.ammo, cost: 0 }; msg = `<i class="ti ti-circle-check"></i> Tiếp tế: <b>+${R.n} ${esc(S.name.toLowerCase())}</b> vào kho`; }
         else if (R.unlocked) { msg = `<i class="ti ti-circle-check"></i> Đã mở khóa <b>${esc(M.name)}</b>${Eq.MODULES[what.item] ? ' — đã tự trang bị nếu nhóm còn ô' : ' — luôn dùng từ trận tới'}`; if (Eq.MODULES[what.item]) rebuildPreview(); }
         else msg = `<i class="ti ti-player-play"></i> ${esc(M.name)}: đã xem <b>${R.progress}/${R.need}</b> quảng cáo — xem thêm ${R.need - R.progress} để mở khóa`;
-        if (window.soundEngine && window.soundEngine.playReloadDone) window.soundEngine.playReloadDone();
+        const se = window.soundEngine;
+        if (se && se.playUiPurchase) se.playUiPurchase(false);
+        else if (se && se.playReloadDone) se.playReloadDone();
       }
     } catch (err) { msg = `<i class="ti ti-alert-triangle"></i> ${esc(err.message)}`; }
     finally { busy = false; render(); }
