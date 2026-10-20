@@ -1925,8 +1925,8 @@ class ArtilleryGame3D {
     }
     const remoteShell = !!(this.netSync && this.netSync.skipShellDamage && this.netSync.skipShellDamage(shell, this.units.find(u => u.id === shell.shooterId)));
     // Trúng nhà: pháp tuyến đúng mặt tường / sàn / mái bị chạm -> lửa, mảnh văng bật ra đúng phía
-    const bn = hitType === 'BUILDING' && shell.hitNormal && shell.hitNormal.ny !== undefined ? { x: shell.hitNormal.nx, y: shell.hitNormal.ny, z: shell.hitNormal.nz } : null;
-    if (!fxDone) this.createImpactEffects(x, y, z, ammoType, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
+    const bn = (hitType === 'BUILDING' || hitType === 'TREE') && shell.hitNormal && shell.hitNormal.ny !== undefined ? { x: shell.hitNormal.nx, y: shell.hitNormal.ny, z: shell.hitNormal.nz } : null;
+    if (!fxDone) this.createImpactEffects(x, y, z, ammoType, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, tree: hitType === 'TREE' ? shell.hitTree : undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
     // Đạn xuyên giáp đâm thủng tường: lõi urani vỡ nóng đỏ + bê tông phụt ra mặt sau (nhà: lỗ ra ở vách bên kia do Destructibles tính)
     if (ammoType === 'AP' && !onStronghold && hitType === 'WALL' && fxSys && fxSys.spallCone) {
       const dv = new THREE.Vector3(shell.vx || 0, shell.vy || 0, shell.vz || 0);

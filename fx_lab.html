@@ -164,16 +164,16 @@
 <script src="src/entities/tanks/spg_arbalest.js?v=20261020fine1"></script>
 <script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
 <script src="src/core/game_timing.js?v=20261019wall2"></script>
-<script src="src/core/ballistics.js?v=20261020blind1"></script>
+<script src="src/core/ballistics.js?v=20261020surf1"></script>
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
 <script src="src/entities/spg.js?v=20261020ammo1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020hole1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020surf1"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261020cfire11"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261020surf1"></script>
 <script src="src/core/equipment.js?v=20261020ammo1"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
-<script src="src/gameplay/destructibles.js?v=20261020cz9x"></script>
+<script src="src/gameplay/destructibles.js?v=20261020surf1"></script>
 <script>
 (function () {
   // ===========================================================================
@@ -817,6 +817,8 @@
   // Địa hình giả cho hệ thống nổ
   const terrain = {
     mapType: 'DESERT',
+    // cây thử nghiệm: đạn găm thân cây tìm đúng cây để dán vết / chọn hiệu ứng theo loại cây
+    get trees() { return EX.trees && EX.trees.group.visible ? EX.trees.tf : null; },
     getElevationAt: (x, z) => labGround(x, z),
     // Mặt nước hồ thử nghiệm (sóng nổ dưới nước chỉ lan trong hồ)
     waterSurfaceAt: (x, z) => (EX.pond && EX.pond.water && EX.pond.water.visible && Math.hypot(x - EX.pond.info.x, z - EX.pond.info.z) < EX.pond.info.r * 0.93) ? EX.pond.water.position.y : null,
@@ -1402,6 +1404,7 @@
         if (root === building.group) { hitType = 'BUILDING'; break; }
         if (root === targetTank.group) { hitType = 'DIRECT_HIT'; unit = targetTank; break; }
         if (EX.bunker && root === EX.bunker.group) { hitType = 'WALL'; break; }
+        if (EX.trees && root === EX.trees.group) { hitType = 'TREE'; break; }
         root = root.parent;
       }
       const n = h.face ? h.face.normal.clone().transformDirection(o.matrixWorld) : new THREE.Vector3(0, 1, 0);
@@ -1903,7 +1906,7 @@
   }));
   document.getElementById('camoReset').addEventListener('click', rebuildTarget);
   if (!labCamo) document.querySelectorAll('#camoRow [data-camo]').forEach(x => x.classList.toggle('on', x.dataset.camo === '0'));
-  window.__fxLab = { orbit, state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
+  window.__fxLab = { collide, applyHit, wall, building, EX, ground, LAUNCH_DIR, orbit, state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
 })();
 </script>
 </body>

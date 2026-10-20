@@ -2724,8 +2724,10 @@ const Destructibles = (() => {
             touched = true;
             let lvl;
             if (P.chip) {
+              // đạn nhỏ: 1 phát chỉ mẻ vài cm (vết đạn dán, xem wallDebris) -> ô tường (~30 cm) chỉ bóc lở khi bị đục
+              // nhiều phát dồn vào một chỗ, rồi thủng
               K.hp[k] -= P.chip * (1 - d / cR);
-              lvl = Math.min(3, 1 + Math.floor((1 - Math.max(0, K.hp[k])) * 3));
+              lvl = K.hp[k] > 0.6 ? 0 : Math.min(3, 1 + Math.floor((0.6 - Math.max(0, K.hp[k])) / 0.6 * 3));
             } else lvl = Math.min(3, 1 + Math.floor(2.99 * (1 - (d - Math.max(0, hR)) / Math.max(0.5, cR - Math.max(0, hR)))));
             if (P.inner) K.si[k] = Math.max(K.si[k], lvl); else K.so[k] = Math.max(K.so[k], lvl);
             // bóc lở cả 2 mặt / đục mãi một chỗ: thủng xuyên
@@ -3279,6 +3281,8 @@ const Destructibles = (() => {
       const { B, I, fx } = ctx;
       const cells = res.removed, vol = cells * 2.6 * B.T;
       if (I.chip) {
+        // vết đạn trên mặt tường đúng cỡ (màu lớp vật liệu lộ ra); ô tường đã thủng thì bỏ vết quanh đó
+        if (fx && fx.addWallPit) { if (cells) fx.removeMarksNear(W.x, W.y, W.z, 2.5); else if (!ric) fx.addWallPit(W, N, I.chip > 0.45, B.WM.edge); }
         dustJet(fx, W.x, W.y, W.z, N.x, N.z, 1, ric ? 2.5 : 3.2, B.WM.dust, 14);
         if (cells) jet(fx, W.x, W.y, W.z, N.x, N.y, N.z, 2, 1.2, 40, B.WM.edge, 0.5);
         if (!this._syncing) sfx(matSnd(B), W.x, W.y, W.z, 0.25, { h: W.y - B.y });

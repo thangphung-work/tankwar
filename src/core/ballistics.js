@@ -741,6 +741,12 @@ class BallisticsSystem3D {
           const th = veg.trunkHit(prevX, prevY, prevZ, s.x, s.y, s.z);
           if (th) {
             s.x = th.x; s.y = th.y; s.z = th.z;
+            // pháp tuyến mặt thân cây tại điểm chạm + cây bị trúng (hiệu ứng dằm gỗ & vết đạn dán đúng thân cây)
+            if (th.it) {
+              const nl = Math.hypot(th.x - th.it.x, th.z - th.it.z) || 1;
+              s.hitNormal = { nx: (th.x - th.it.x) / nl, ny: 0, nz: (th.z - th.it.z) / nl };
+              s.hitTree = th.it;
+            }
             this.removeShellMesh(s, i);
             if (onImpact) onImpact(s, 'TREE');
             impacted = true;

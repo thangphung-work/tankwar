@@ -150,7 +150,11 @@ const EnvDamage = (() => {
         P = this.pools[kind] = { im, cap, next: 0, owner: new Array(cap).fill(null), pos: new Float32Array(cap * 3), mark: true };
         return P;
       }
-      const mat = new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+      // rỗ / mẻ bê tông do đạn: dùng texture hố mẻ bê tông tươi có pháp tuyến của ExplosionFX nếu có
+      const pit = (kind === 'c_pock' || kind === 'c_chip') && typeof ExplosionFX !== 'undefined' && ExplosionFX._pitTex ? ExplosionFX._pitTex(kind === 'c_pock' ? 'concretePit' : 'concretePitHE', 0) : null;
+      const mat = pit
+        ? new THREE.MeshStandardMaterial({ map: pit.map, normalMap: pit.normal, roughness: 0.92, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 })
+        : new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
       const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, cap);
       im.count = 0; im.frustumCulled = false; im.renderOrder = 3; im.receiveShadow = true;
       im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
