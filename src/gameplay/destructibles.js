@@ -1629,11 +1629,26 @@ const Destructibles = (() => {
     float fl = 0.7 + 0.3 * sin(uWind * 11.0 + vLP.y * 0.7);
     totalEmissiveRadiance += vec3(1.0, 0.33, 0.05) * cr * vBurn * 2.2 * fl;
   }`));
+      if (mode === 'leaf') fs = fs.replace('#include <alphatest_fragment>', LEAF_ALPHA(texW, texH) + '\n#include <alphatest_fragment>');
       sh.fragmentShader = brkCut('varying vec3 vTint;\n' + BURN_DECL + fs, mode);
     };
-    mat.customProgramCacheKey = () => 'tree_' + mode;
+    const img = mat.map && mat.map.image, texW = (img && img.width) || 256, texH = (img && img.height) || 256;
+    if (mode === 'leaf') mat.extensions = { derivatives: true };
+    mat.customProgramCacheKey = () => 'tree_' + mode + (mode === 'leaf' ? '_' + texW + 'x' + texH : '');
     return mat;
   }
+  // Độ trong của thẻ lá (alphaTest 0.4 + alphaToCoverage):
+  //  - bù alpha theo mức mipmap: ảnh lá thu nhỏ (ở xa) có alpha bị pha loãng -> lá mỏng dần, lốm đốm
+  //  - làm sắc alpha quanh ngưỡng cắt: trong lá đặc hẳn, chỉ dải ~1 điểm ảnh ở mép lá mới dùng độ phủ MSAA (khử răng cưa).
+  //    Không làm vậy thì alpha lửng khắp tán lá thành mẫu chấm phủ nửa trong suốt, đổi liên tục khi lá / camera dịch đi
+  //    -> tán lá "nhiễu" lấm tấm không ngừng
+  const LEAF_ALPHA = (w, h) => `
+  {
+    vec2 tq = vUv * vec2(${w.toFixed(1)}, ${h.toFixed(1)}); vec2 da = dFdx(tq), db = dFdy(tq);
+    float lod = max(0.0, 0.5 * log2(max(dot(da, da), dot(db, db))));
+    diffuseColor.a = min(1.0, diffuseColor.a * (1.0 + lod * 0.3));
+    diffuseColor.a = clamp((diffuseColor.a - 0.4) / max(fwidth(diffuseColor.a), 1e-4) + 0.5, 0.0, 1.0);
+  }`;
   // Bóng đổ khớp với cây đang lay / gãy / cháy loang + cắt theo viền lá
   function treeDepthMat(map, mode) {
     const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: map || null, alphaTest: map ? 0.4 : 0 });
@@ -6778,7 +6793,9 @@ const Destructibles = (() => {
       this.group = new THREE.Group();
       this.group.visible = this._vis || false;
       this.scene.add(this.group);
-      const cols = o.cols || 12, rows = o.rows || 5, bw = o.blockW || 5.9, bh = o.blockH || 5.1, bd = o.blockD || 6.4;
+      // dày 2,4 đv (0,3 m) như tường bê tông cốt thép thường (tường nhà trong trận ~0,27 m): đạn nổ phá thủng theo BREACH
+      // (đạn thường 2 phát trúng cùng chỗ, đạn nổ mạnh 1 phát). Dày 0,8 m như trước thì gần như không bắn vỡ nổi
+      const cols = o.cols || 12, rows = o.rows || 5, bw = o.blockW || 5.9, bh = o.blockH || 5.1, bd = o.blockD || ConcreteWall.THICK;
       const yaw = o.yaw || 0;
       this.S = new BlockStructure(this.group, cols * rows + 4);
       this.total = 0;
@@ -6816,6 +6833,8 @@ const Destructibles = (() => {
       this.build();
     }
   }
+
+  ConcreteWall.THICK = 2.4;
 
   class SingleBuilding {
     constructor(scene, opts = {}) {

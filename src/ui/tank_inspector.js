@@ -985,7 +985,7 @@ class TankInspector {
     const cols = 14, rows = 5, cz = -112;
     const wall = new Destructibles.ConcreteWall(this.scene, { x: 0, z: cz, yaw: 0, cols, rows });
     wall.visible = true;
-    this.testWall = { wall, group: wall.group, cx: 0, cz, hw: cols * 5.9 / 2, hd: 6.4 / 2, lastHit: -1, rise: 1 };
+    this.testWall = { wall, group: wall.group, cx: 0, cz, hw: cols * 5.9 / 2, hd: Destructibles.ConcreteWall.THICK / 2, lastHit: -1, rise: 1 };
   }
 
   get testWallGroup() { return this.testWall && this.testWall.wall.group; }
