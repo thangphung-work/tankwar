@@ -39,7 +39,7 @@ const Backdrop = (() => {
   // mỗi khóm là một khối tán cây đơn giản (cây lá rộng) hoặc chóp thông, rải theo đúng mặt nạ mảng rừng
   // của vertex color cảnh nền; chỉ mọc ngoài tầm xe chạy tới, không va chạm / không chặn đạn / không đổ bóng.
   const FOREST = {
-    JUNGLE: { pow: 0.55, r: [17, 27], squash: 0.75 },
+    JUNGLE: { pow: 0.3, r: [18, 28], squash: 0.75 },
     RIVER_LAKE: { pow: 1.0, r: [13, 21], squash: 0.8 },
     URBAN: { pow: 1.4, r: [11, 17], squash: 0.8 },
     HIGHLAND: { pow: 1.0, pine: true, r: [5, 8], hgt: [17, 28], treeline: 430 }
