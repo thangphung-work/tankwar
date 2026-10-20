@@ -19,38 +19,6 @@
 
   const rnd = (a, b) => a + Math.random() * (b - a);
 
-  // Âm đặc trưng từng chiến địa (phát sau tiếng xác nhận chọn bản đồ, ~1,5 s, nghe xa qua hồi âm)
-  const MAP_FX = {
-    // sa mạc: cơn gió nóng thổi cát rào rào
-    DESERT(out, t) {
-      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 420, freqEnd: 1150, sweep: 0.9, Q: 1.8, gain: 0.22, attack: 0.45, dur: 1.4 });
-      this.burst(out, t + 0.2, { filter: 'highpass', freq: 6000, gain: 0.05, attack: 0.4, dur: 1.2 });
-    },
-    // đô thị đổ nát: còi báo động phòng không vọng xa + gạch vụn lăn
-    URBAN(out, t) {
-      this.tone(out, t, { type: 'triangle', freq: 380, freqEnd: 720, sweep: 0.9, gain: 0.07, attack: 0.3, hold: 0.5, dur: 0.9, filter: 'lowpass', filterFreq: 1400 });
-      this.tone(out, t, { type: 'triangle', freq: 385, freqEnd: 728, sweep: 0.9, gain: 0.05, attack: 0.3, hold: 0.5, dur: 0.9, filter: 'lowpass', filterFreq: 1400 });
-      for (let i = 0; i < 5; i++) this.burst(out, t + 0.3 + i * rnd(0.08, 0.16), { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: rnd(700, 1600), Q: 2, gain: 0.05, attack: 0.001, dur: 0.04 });
-    },
-    // rừng rậm: ve sầu rỉ rả + chim hót hai tiếng
-    JUNGLE(out, t) {
-      this._uiNoiseAM(out, t, { filter: 'bandpass', freq: 4800, Q: 6, gain: 0.07, attack: 0.3, dur: 1.6, amHz: 38, amDepth: 0.9 });
-      for (const [d, f0, f1] of [[0.25, 2600, 3700], [0.36, 2700, 3800], [0.75, 1900, 1250], [0.95, 2000, 1300]]) {
-        this.tone(out, t + d, { freq: f0, freqEnd: f1, sweep: 0.08, gain: 0.03, attack: 0.005, dur: 0.1 });
-      }
-    },
-    // cao nguyên: gió núi hú + tiếng chim ưng kêu xa
-    HIGHLAND(out, t) {
-      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 650, freqEnd: 980, sweep: 1.2, Q: 7, gain: 0.3, attack: 0.5, dur: 1.5 });
-      this.tone(out, t + 0.35, { freq: 2700, freqEnd: 1850, sweep: 0.55, gain: 0.025, attack: 0.03, dur: 0.6, vibrato: 28, vibratoDepth: 60 });
-    },
-    // sông hồ: nước vỗ bờ óc ách + bọt nước lục bục
-    RIVER_LAKE(out, t) {
-      this._uiNoiseAM(out, t, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 900, Q: 0.7, gain: 0.2, attack: 0.25, dur: 1.5, amHz: 1.6, amDepth: 0.9 });
-      for (let i = 0; i < 5; i++) { const f = rnd(500, 900); this.tone(out, t + 0.2 + i * rnd(0.12, 0.25), { freq: f, freqEnd: f * 2.1, sweep: 0.05, gain: 0.025, attack: 0.003, dur: 0.06 }); }
-    }
-  };
-
   // Âm riêng từng món trang bị (k = 1 khi lắp, ~0,45 khi tháo)
   const EQUIP_FX = {
     // giáp phản ứng nổ: từng khối gạch thép nặng bắt bu lông "cộp — cộp" + cờ lê siết
@@ -283,7 +251,7 @@
       this._uiBrassHit(t + 0.02, 0.7);
     }
 
-    playUiSelectMap(type = '') {
+    playUiSelectMap() {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
       const out = this.uiOut(0.85, 0.2);
@@ -296,8 +264,6 @@
       this.tone(out, t + 0.22, { freq: 1760, gain: 0.05, attack: 0.002, dur: 0.18 });
       this.tone(out, t + 0.42, { freq: 1760, gain: 0.015, attack: 0.002, dur: 0.15 });
       this._uiBrassHit(t + 0.04, 0.45);
-      const fx = MAP_FX[type];
-      if (fx) fx.call(this, this.uiOut(0.8, 0.35), t + 0.15);
     }
 
     // TÌM TRẬN: cú "CHẮC" nặng như khóa nòng đóng + rung sàn
@@ -384,7 +350,7 @@
     ['.btn-inspect-tank-3d, .mm-gear-btn, #mm-open-tank-inspector-btn', () => call('playUiOpen')],
     // bấm lại thẻ đang chọn: chỉ "cạch" nhẹ
     ['.mm-class-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectTank', el.getAttribute('data-tank-type') || 'ALL_ROUNDER'); }],
-    ['.mm-map-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectMap', el.getAttribute('data-map-type') || ''); }],
+    ['.mm-map-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectMap'); }],
     ['#ti-select-this-tank-btn', () => { const i = window.tankInspector; call('playUiSelectTank', (i && i.currentTankType) || 'ALL_ROUNDER'); }],
     ['#ti-close-btn, .ti-backdrop, .acc-close, .gm-close, [data-act="close"], [data-act="resume"]', () => call('playUiClose')],
     ['.acc-tab, .ti-tab-btn, .eqd-tab, .gm-tab, [role="tab"]', () => call('playUiTab')],
