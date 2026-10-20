@@ -764,8 +764,24 @@ const VehicleDamage = (() => {
   // Hiệu ứng riêng khi một bộ phận đặc biệt bị phá
   // remote: áp từ bản tóm tắt của máy khác -> không châm lửa (cháy do máy có quyền tính & gửi riêng);
   // own: xe của chính máy này -> trừ đạn dự trữ / sát thương nổ kho đạn ở đây (máy chủ quyền của xe)
+  // Mặt giáp mà bộ phận giáp GỐC của xe che (váy xích L/R -> sườn trái / phải; module má tháp, tấm giáp mũi -> mặt
+  // trước). Đồ mua thêm (appliqueKit: hết tác dụng qua Equipment.armorMul) & lồng thép (không phải giáp vỏ) -> null
+  function armorPartFace(tag) {
+    if (/Kit/.test(tag) || /^cage/.test(tag)) return null;
+    let m = /^skirt([LR])/.exec(tag);
+    if (m) return m[1] === 'L' ? 'sideL' : 'sideR';
+    if (/^(cheek|applique)/.test(tag)) return 'front';
+    return null;
+  }
+
   function onPartLost(u, tag, kind, events, fx, point, remote, own) {
     const name = partName(tag);
+    // Mất bộ phận giáp gốc (bị bắn trúng thẳng hay bị sức nổ lan hất văng): mặt giáp đó mỏng đi.
+    // remote: lấy từ bản tóm tắt của máy có quyền — mức mỏng (FL) đã có sẵn trong bản tóm tắt
+    if (kind === 'armor' && !remote) {
+      const f = armorPartFace(tag), d = state(u);
+      if (f) d.faceLoss[f] = Math.min(1.5, (d.faceLoss[f] || 1) * (tag.startsWith('skirt') ? 1.12 : 1.22));
+    }
     const sp = point || partWorld(u, tag);
     if (kind === 'armor' || kind === 'heavyAcc') { sparksAt(sp, 18); sfx('armorPlate', sp); }
     else if (kind === 'era') sfx('era', sp);
@@ -1778,16 +1794,14 @@ const VehicleDamage = (() => {
     const bendable = tag && /^(skirt|flap|rail|mirror|lamp|bin|box|smoke|shield|cage|travelLock|tool|can|cans|stowage)/.test(tag);
     if (tag && !d.lost.has(tag) && bendable && !d.bent.has(tag) && (cls === 'cannon' || (cls === 'small' && Math.random() < 0.3) || (cls !== 'small' && Math.random() < 0.45))) {
       // Lần trúng đầu: oằn / vặn méo, lần sau mới bị xé bay
-      if (bendTag(u, tag, impulse)) { if (/^skirt/.test(tag) && !VIS_ONLY) d.faceLoss[face] = Math.min(1.5, (d.faceLoss[face] || 1) * 1.05); }
+      if (bendTag(u, tag, impulse)) { const bf = armorPartFace(tag); if (bf && /^skirt/.test(tag) && !VIS_ONLY) d.faceLoss[bf] = Math.min(1.5, (d.faceLoss[bf] || 1) * 1.05); }
     } else if (tag && !d.lost.has(tag)) {
       const kind = partKind(tag);
       const p = (DETACH_DIRECT[kind] || DETACH_DIRECT.acc)[cls];
       if (Math.random() < p && detachTag(u, tag, impulse)) {
         onPartLost(u, tag, kind, events, fx, point);
-        if (kind === 'armor') {
-          d.faceLoss[face] = Math.min(1.5, (d.faceLoss[face] || 1) * (tag.startsWith('skirt') ? 1.12 : 1.22));
-          if (!SH) mul *= cls === 'heat' ? 0.6 : 0.85;   // tấm giáp hấp thụ một phần (lồng thép đã tính ở SH)
-        }
+        // tấm giáp bị xé văng hấp thụ một phần phát này (lồng thép đã tính ở SH); mặt giáp mỏng đi: xem onPartLost
+        if (kind === 'armor' && !SH) mul *= cls === 'heat' ? 0.6 : 0.85;
       }
     }
     // Vỏ thép bị đạn lớn đánh móp thật (biến dạng lưới): giáp dày lõm ít, xe nhẹ / xe tải móp sâu
