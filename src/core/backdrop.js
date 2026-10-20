@@ -107,6 +107,11 @@ const Backdrop = (() => {
         const sn = smooth(560, 760, h + nz(x * 0.004, z * 0.004) * 60) * (1 - smooth(0.55, 0.85, slope) * 0.6);
         r += (1.45 - r) * sn; g += (1.45 - g) * sn; b += (1.55 - b) * sn;
       }
+      if (seaLvl !== null) {
+        // bãi biển: cát sáng, ấm hơn cát phù sa ven sông
+        const bc = smooth(-2, 0.5, h - seaLvl) * (1 - smooth(3.5, 6, h - seaLvl)) * k;
+        r *= 1 + 0.34 * bc; g *= 1 + 0.3 * bc; b *= 1 + 0.2 * bc;
+      }
       if (seaLvl !== null && h < seaLvl) { const w = smooth(0, 10, seaLvl - h); r *= 1 - 0.25 * w; g *= 1 - 0.2 * w; b *= 1 - 0.15 * w; }
       col[v * 3] = r; col[v * 3 + 1] = g; col[v * 3 + 2] = b;
       if (dep) dep[v] = seaLvl - h;
@@ -133,11 +138,12 @@ const Backdrop = (() => {
 
     const mat = new THREE.MeshStandardMaterial({ map: T.groundTexture, vertexColors: true, roughness: T.mapType === 'URBAN' ? 0.82 : 0.95, metalness: 0.0 });
     if (typeof GroundShader !== 'undefined') {
-      GroundShader.apply(mat, { mapType: T.mapType, macroCanvas: T.groundCanvas, water: O.sea || !!(T.map.river || T.map.lakes.length), terrain: T, ownNormals: true });
+      // biển: dải cát rộng hơn ven sông (bãi biển cao tới ~4 đơn vị trên mặt nước)
+      GroundShader.apply(mat, { mapType: T.mapType, macroCanvas: T.groundCanvas, water: O.sea || !!(T.map.river || T.map.lakes.length), waterLvl: O.sea ? 3.0 : undefined, terrain: T, ownNormals: true });
       const base = mat.onBeforeCompile, key = mat.customProgramCacheKey;
       mat.onBeforeCompile = (sh, r) => {
         base(sh, r);
-        sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + BattleTerrain3D.farFadeGLSL(false));
+        BattleTerrain3D.applyFarFade(sh, false);
       };
       mat.customProgramCacheKey = () => key() + ':far';
     } else {

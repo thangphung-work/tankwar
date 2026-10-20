@@ -206,12 +206,17 @@ const MapGen = (() => {
       const d = Math.hypot(x, z);
       if (d < 2300) return h;
       if (OUT.sea) {
-        // bờ biển lượn sóng ngoài vành núi, sát mép nước thoải ra thành bãi; ra xa là đáy biển
-        const coast = 3350 + 380 * angN(x, z, 2.9, 2.2) + 140 * on(x * 0.002 + 5, z * 0.002);
-        h = lerp(h, -38 + fbm(on, x * 0.001, z * 0.001, 2) * 10, smooth(coast - 450, coast + 380, d));
-        h *= lerp(1, 0.3 + 0.7 * smooth(1.5, 16, Math.abs(h - 0.2)), smooth(2300, 2700, d));
-        if (d > 3900) {
-          const fade = smooth(3900, 4800, d);
+        // BỜ BIỂN: chân vành núi thoải xuống dải đồng ven biển có cồn cát thấp -> bãi cát rộng dốc rất nhẹ ra mép nước
+        // -> thềm nước nông -> đáy biển sâu. Đường bờ lượn sóng (mũi đất, vịnh nhỏ), bề rộng bãi thay đổi dọc bờ.
+        const t = d - (3800 + 300 * angN(x, z, 2.9, 2.2) + 120 * on(x * 0.002 + 5, z * 0.002));   // > 0: ngoài mép nước
+        const bw = 190 + 80 * on(x * 0.0021 - 3, z * 0.0021 + 8), pw = 260;
+        let p;
+        if (t >= 0) p = 0.2 - 6 * smooth(0, 280, t) - 32 * smooth(200, 950, t) + fbm(on, x * 0.001, z * 0.001, 2) * 6 * smooth(300, 900, t);
+        else if (t > -bw) p = 0.2 + 4.2 * Math.pow(-t / bw, 1.3) + on(x * 0.03, z * 0.03) * 0.15;   // bãi cát
+        else p = 4.4 + 9 * smooth(-bw, -bw - pw, t) + Math.max(0, on(x * 0.012 + 2, z * 0.012)) * 4 * smooth(-bw, -bw - 80, t);   // cồn cát, đồng cỏ ven biển
+        h = lerp(h, p, smooth(-bw - pw - 550, -bw - pw, t));
+        if (d > 4500) {
+          const fade = smooth(4500, 5300, d);
           if (OUT.far === 'karst') {
             // núi đá vôi dựng đứng nhô lên giữa biển (kiểu vịnh Hạ Long)
             const kv = on(x * 0.0017 + 9, z * 0.0017 - 4) + 0.35 * on(x * 0.006, z * 0.006);

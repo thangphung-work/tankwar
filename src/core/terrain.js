@@ -811,7 +811,7 @@ ${sea ? 'varying float vDep;' : ''}
   }
   #include <tonemapping_fragment>`);
       // biển xa hòa hẳn vào sương trước khi chạm mặt phẳng cắt xa của camera (không lộ mép cắt)
-      if (sea) sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + BattleTerrain3D.farFadeGLSL(true));
+      if (sea) BattleTerrain3D.applyFarFade(sh, true);
     };
     mat.customProgramCacheKey = () => 'waterWorld3' + (sea ? ':sea' : '');
     return { mat, U };
@@ -1526,11 +1526,17 @@ window.BattleTerrain3D = BattleTerrain3D;
 // Ngưỡng rừng rậm: số cây có tán (quy đổi) trong ô ~72x72 quanh điểm
 BattleTerrain3D.FOREST_DENSE = 10;
 
-// Cảnh nền ngoài bản đồ (Backdrop) xa dần hòa hẳn vào màu sương trong khoảng này (camera far = 6000)
-BattleTerrain3D.FAR_FADE = [4300, 5800];
+// Cảnh nền ngoài bản đồ (Backdrop) + mặt biển xa dần hòa hẳn vào màu sương trong khoảng [x, y] (camera far = 6000).
+// Dùng chung một uniform: đổi giá trị là mọi vật liệu cảnh nền đổi theo (vd ảnh toàn cảnh khi xem cả đảo)
+BattleTerrain3D.FAR_FADE = { value: new THREE.Vector2(4300, 5800) };
 BattleTerrain3D.farFadeGLSL = (alpha) => `#ifdef USE_FOG
   {
-    float farK = smoothstep(${BattleTerrain3D.FAR_FADE[0].toFixed(1)}, ${BattleTerrain3D.FAR_FADE[1].toFixed(1)}, length(vViewPosition));
+    float farK = smoothstep(farFade.x, farFade.y, length(vViewPosition));
     gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, farK);${alpha ? '\n    gl_FragColor.a = mix(gl_FragColor.a, 1.0, farK);' : ''}
   }
   #endif`;
+// gắn uniform farFade + đoạn hòa sương xa vào shader đã biên dịch
+BattleTerrain3D.applyFarFade = (sh, alpha) => {
+  sh.uniforms.farFade = BattleTerrain3D.FAR_FADE;
+  sh.fragmentShader = 'uniform vec2 farFade;\n' + sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + BattleTerrain3D.farFadeGLSL(alpha));
+};

@@ -372,7 +372,7 @@ const GroundShader = (() => {
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, {
         gBase: { value: L.base }, gDirt: { value: L.dirt }, gRock: { value: L.rock }, gFine: { value: L.fine },
-        gNoise: { value: noise }, gMacroAvg: { value: avg }, gTime: uTime, gWaterLvl: { value: opts.water ? 2.5 : -999 },
+        gNoise: { value: noise }, gMacroAvg: { value: avg }, gTime: uTime, gWaterLvl: { value: opts.waterLvl !== undefined ? opts.waterLvl : opts.water ? 2.5 : -999 },
         gNrm: { value: bake ? bake.tex : null }, gTerr: { value: new THREE.Vector2(bake ? bake.half : 1800, bake ? bake.size : 3600) },
         gGrain: { value: L.grain || null }, gWindA: { value: windA }, gSoil: { value: L.soil || null }
       });
