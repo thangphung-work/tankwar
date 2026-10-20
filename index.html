@@ -11,11 +11,11 @@
   <meta name="theme-color" content="#10140c">
   <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
   <link rel="stylesheet" href="src/ui/theme.css?v=20261020mo2">
-  <link rel="stylesheet" href="style.css?v=20261020slv1">
+  <link rel="stylesheet" href="style.css?v=20261020pg3">
   <link rel="stylesheet" href="src/ui/lobby.css?v=20261020mob1">
   <link rel="stylesheet" href="hud.css?v=20261020zhp2">
-  <link rel="stylesheet" href="src/ui/account.css?v=20261020kd1">
-  <link rel="stylesheet" href="src/ui/armory.css?v=20261020cmp4">
+  <link rel="stylesheet" href="src/ui/account.css?v=20261020ad1">
+  <link rel="stylesheet" href="src/ui/armory.css?v=20261020ad1">
   <link rel="stylesheet" href="src/ui/game_menu.css?v=20261020gpu1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -397,7 +397,7 @@
           <div class="mm-mission-brief">
             <div class="brief-line">
               <span class="brief-lbl"><i class="ti ti-target" aria-hidden="true"></i> NHIỆM VỤ</span>
-              <span class="brief-txt">Giữ cứ điểm <b>A</b> <b>B</b> <b>C</b> để ghi điểm. Đội đạt <b>1.000</b> trước thắng.</span>
+              <span class="brief-txt">Chiếm cứ điểm <b>A</b> <b>B</b> hoặc <b>C</b> rồi đứng giữ đủ <b>60 giây</b> để thắng.</span>
             </div>
             <div class="brief-teams">
               <span class="team-name team-blue">LIÊN MINH</span>
@@ -459,28 +459,42 @@
   <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
   <script src="src/ui/icons.js?v=20261020lock1"></script>
   <script src="three.min.js?v=20261019i"></script>
-  <script src="src/core/equipment.js?v=20261020ammo1"></script>
+  <script src="src/core/equipment.js?v=20261020m9"></script>
   <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
 
   <!-- 1. Tầng Nền Tảng Cốt Lõi (Core Systems) -->
-  <script src="src/core/audio.js?v=20261020cfire11"></script>
-  <script src="src/core/wading_audio.js?v=20261020flood1"></script>
+  <script src="src/core/audio/sound_engine.js?v=20261020m8"></script>
+  <script src="src/core/audio/weapon_fire.js?v=20261020m8"></script>
+  <script src="src/core/audio/destruction.js?v=20261020m8"></script>
+  <script src="src/core/audio/impacts.js?v=20261020m8"></script>
+  <script src="src/core/audio/incoming.js?v=20261020m8"></script>
+  <script src="src/core/audio/cockpit_cues.js?v=20261020m8"></script>
+  <script src="src/core/audio/vehicle_engine.js?v=20261020m8"></script>
+  <script src="src/core/audio/vehicle_destroyed.js?v=20261020m8"></script>
+  <script src="src/core/audio/other_engines.js?v=20261020m8"></script>
+  <script src="src/core/audio/fire_ambience.js?v=20261020m8"></script>
+  <script src="src/core/audio/turret_drives.js?v=20261020m8"></script>
+  <script src="src/core/audio/gatling.js?v=20261020m8"></script>
+  <script src="src/core/audio/wading.js?v=20261020m8"></script>
+  <script src="src/core/audio/music.js?v=20261020m8"></script>
+  <script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
+  <script src="src/core/audio/ui_sounds.js?v=20261020m8"></script>
   <script src="src/core/map_gen.js?v=20261020ford2"></script>
   <script src="src/core/sky.js?v=20261020tone1"></script>
-  <script src="src/gameplay/destructibles.js?v=20261020surf1"></script>
+  <script src="src/gameplay/destructibles.js?v=20261020m10"></script>
   <script src="src/gameplay/props.js?v=20261020perf1"></script>
-  <script src="src/gameplay/strongholds.js?v=20261020perf1"></script>
+  <script src="src/gameplay/strongholds.js?v=20261020gp1"></script>
   <script src="src/core/vehicle_collision.js?v=20261020rub1"></script>
-  <script src="src/core/game_timing.js?v=20261019wall2"></script>
+  <script src="src/core/game_timing.js?v=20261020blast1"></script>
   <script src="src/core/dispersion.js?v=20261020disp8"></script>
-  <script src="src/gameplay/env_damage.js?v=20261020keep1"></script>
+  <script src="src/gameplay/env_damage.js?v=20261020m10"></script>
   <script src="src/core/ground_shader.js?v=20261020wdS5"></script>
   <script src="src/core/ground_cover.js?v=20261020obj1"></script>
-  <script src="src/core/terrain.js?v=20261020wdS5"></script>
+  <script src="src/core/terrain.js?v=20261020fol1"></script>
   <script src="src/entities/projectiles.js?v=20261019trc1"></script>
-  <script src="src/core/ballistics.js?v=20261020surf1"></script>
-  <script src="src/core/radar.js?v=20261020bp1"></script>
-  <script src="src/core/zone.js?v=20261019i"></script>
+  <script src="src/core/ballistics.js?v=20261020m10"></script>
+  <script src="src/core/radar.js?v=20261020m10"></script>
+  <script src="src/core/zone.js?v=20261020m10"></script>
 
   <!-- 2. Tầng Thực Thể & Trí Tuệ Nhân Tạo (Entities & AI) -->
   <script src="src/entities/tank_models.js?v=20261020zhp2"></script>
@@ -490,39 +504,46 @@
   <script src="src/entities/tanks/spg_arbalest.js?v=20261020fine1"></script>
   <script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
   <script src="src/ai/navigator.js?v=20261020perf1"></script>
-  <script src="src/ai/bot_ai.js?v=20261020bush1"></script>
-  <script src="src/entities/spg.js?v=20261020ammo1"></script>
+  <script src="src/ai/bot_ai.js?v=20261020m9"></script>
+  <script src="src/entities/spg.js?v=20261020m9"></script>
 
   <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
-  <script src="src/gameplay/capture_points.js?v=20261019eq1"></script>
-  <script src="src/gameplay/supply_manager.js?v=20261020smk2"></script>
-  <script src="src/gameplay/explosion_fx.js?v=20261020keep2"></script>
+  <script src="src/gameplay/capture_points.js?v=20261020m10"></script>
+  <script src="src/gameplay/supply_manager.js?v=20261020m10"></script>
+  <script src="src/gameplay/explosion_fx.js?v=20261020m10"></script>
   <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-  <script src="src/gameplay/vehicle_damage.js?v=20261020surf1"></script>
+  <script src="src/gameplay/vehicle_damage.js?v=20261020m10"></script>
   <script src="src/gameplay/team_intel.js?v=20261020bush1"></script>
   <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
   <script src="src/gameplay/effects_manager.js?v=20261019i"></script>
   <script src="src/gameplay/world_markers.js?v=20261020mark1"></script>
 
   <!-- 4. Tầng Giao Diện Người Dùng (UI & Sảnh Chờ) -->
-  <script src="src/ui/hud_controller.js?v=20261020bush1"></script>
+  <script src="src/ui/hud_controller.js?v=20261020ad1"></script>
   <script src="src/ui/tactical_map.js?v=20261020drive1"></script>
-  <script src="src/ui/tank_inspector.js?v=20261020eq2"></script>
-  <script src="src/ui/armory_ui.js?v=20261020eq2"></script>
+  <script src="src/ui/proving_ground.js?v=20261020pg3"></script>
+  <script src="src/ui/tank_inspector.js?v=20261020m6"></script>
+  <!-- Quảng cáo có thưởng (src/core/ads.js): điền mã nhà xuất bản AdSense (H5 Games Ads) vào h5Client để phát quảng cáo thật;
+       để trống = khung quảng cáo mẫu (thử luồng nhận thưởng). Chạy thật: h5Test: false. -->
+  <script>
+    window.ADS_CONFIG = { provider: 'auto', h5Client: '', h5Test: true, allowMock: true };
+  </script>
+  <script src="src/core/ads.js?v=20261020ad1"></script>
+  <script src="src/ui/armory_ui.js?v=20261020m9"></script>
   <script src="src/core/net_codec.js?v=20261019n1"></script>
   <script src="src/core/netcode.js?v=20261020cfire11"></script>
-  <script src="src/ui/matchmaking.js?v=20261020map1"></script>
+  <script src="src/ui/matchmaking.js?v=20261020mus1"></script>
   <script src="src/ui/lobby_view.js?v=20261020fnt1"></script>
-  <script src="src/ui/account.js?v=20261020ammo1"></script>
+  <script src="src/ui/account.js?v=20261020ad1"></script>
 
   <!-- Phòng thử nghiệm cứ điểm (chỉ chạy khi mở index.html?lab=stronghold / stronghold_lab.html) -->
-  <script src="src/ui/stronghold_lab.js?v=20261020cam1"></script>
+  <script src="src/ui/stronghold_lab.js?v=20261020gp1"></script>
   <script src="src/core/gfx_quality.js?v=20261020gpu2"></script>
   <script src="src/ui/perf_overlay.js?v=20261020gpu1"></script>
 
   <!-- 5. Bộ Điều Phối Trò Chơi (Main Game Engine) -->
-  <script src="src/ui/game_menu.js?v=20261020aim3"></script>
+  <script src="src/ui/game_menu.js?v=20261020mus1"></script>
   <script src="src/ui/motion.js?v=20261020mo2"></script>
-  <script src="src/game.js?v=20261020keep1"></script>
+  <script src="src/game.js?v=20261020m10"></script>
 </body>
 </html>

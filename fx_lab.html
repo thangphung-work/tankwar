@@ -155,8 +155,22 @@
 <div class="lab-frame lab-inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
 
 <script src="three.min.js"></script>
-<script src="src/core/audio.js?v=20261020cfire11"></script>
-<script src="src/core/wading_audio.js?v=20261020flood1"></script>
+<script src="src/core/audio/sound_engine.js?v=20261020m8"></script>
+<script src="src/core/audio/weapon_fire.js?v=20261020m8"></script>
+<script src="src/core/audio/destruction.js?v=20261020m8"></script>
+<script src="src/core/audio/impacts.js?v=20261020m8"></script>
+<script src="src/core/audio/incoming.js?v=20261020m8"></script>
+<script src="src/core/audio/cockpit_cues.js?v=20261020m8"></script>
+<script src="src/core/audio/vehicle_engine.js?v=20261020m8"></script>
+<script src="src/core/audio/vehicle_destroyed.js?v=20261020m8"></script>
+<script src="src/core/audio/other_engines.js?v=20261020m8"></script>
+<script src="src/core/audio/fire_ambience.js?v=20261020m8"></script>
+<script src="src/core/audio/turret_drives.js?v=20261020m8"></script>
+<script src="src/core/audio/gatling.js?v=20261020m8"></script>
+<script src="src/core/audio/wading.js?v=20261020m8"></script>
+<script src="src/core/audio/music.js?v=20261020m8"></script>
+<script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
+<script src="src/core/audio/ui_sounds.js?v=20261020m8"></script>
 <script src="src/entities/tank_models.js?v=20261019i"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261020fine1"></script>
 <script src="src/entities/tanks/mbt_halberd.js?v=20261020fine1"></script>
@@ -164,16 +178,16 @@
 <script src="src/entities/tanks/spg_arbalest.js?v=20261020fine1"></script>
 <script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
 <script src="src/core/game_timing.js?v=20261019wall2"></script>
-<script src="src/core/ballistics.js?v=20261020surf1"></script>
+<script src="src/core/ballistics.js?v=20261020m10"></script>
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
-<script src="src/entities/spg.js?v=20261020ammo1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261020keep2"></script>
+<script src="src/entities/spg.js?v=20261020m10"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261020m10"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261020surf1"></script>
-<script src="src/core/equipment.js?v=20261020ammo1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261020m10"></script>
+<script src="src/core/equipment.js?v=20261020m10"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
-<script src="src/gameplay/destructibles.js?v=20261020surf1"></script>
+<script src="src/gameplay/destructibles.js?v=20261020m10"></script>
 <script>
 (function () {
   // ===========================================================================
@@ -1023,7 +1037,26 @@
     const R = pond ? 66 : 54;
     fx.addCrater(0, 0, R, null, 1, null, 'HE', { heavy: true, persistent: true, bowlDepth: pond ? 16 : 26 });
     const rec = fx.craters[fx.craters.length - 1];
-    const holeR = rec.holeSlot ? rec.holeSlot.r : R;
+    // Bán kính lòng hố đo trên lưới độ cao của hố (chỗ gần tâm nhất mà mặt hố lên tới mép đất). Không dùng bán kính lỗ khoét
+    // mặt đất: lỗ đó cố tình rộng hơn lòng hố, lấn ra dưới gờ đất
+    const holeR = (() => {
+      const s = rec.surf;
+      if (!s) return R * 0.42;
+      const Hg = (px, pz) => {
+        const lx = (px - s.cx) * s.gc + (pz - s.cz) * s.gs, lz = -(px - s.cx) * s.gs + (pz - s.cz) * s.gc;
+        const i = Math.max(0, Math.min(s.M, Math.round((lx - s.ox) / s.S * s.M))), j = Math.max(0, Math.min(s.M, Math.round((lz - s.oz) / s.S * s.M)));
+        return s.Hgrid[j * (s.M + 1) + i];
+      };
+      const step = s.S / s.M * 0.5;
+      let rMin = Infinity;
+      for (let q = 0; q < 24; q++) {
+        const a = q / 24 * Math.PI * 2;
+        let r = 0;
+        while (r < R && Hg(Math.cos(a) * (r + step), Math.sin(a) * (r + step)) < -0.12) r += step;
+        rMin = Math.min(rMin, r);
+      }
+      return rMin;
+    })();
     const info = { x: 0, z: 0, r: holeR * 1.12, D: pond ? 16 : 26 };
     let water = null;
     if (pond) {
@@ -1434,7 +1467,7 @@
   function applyHit(p, hit, vel) {
     if (hit.hitType === 'WATER') {
       fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12);
-      playBoom(hit.point, 'GROUND', p.ammo === 'GATLING_BULLET' || p.ammo === 'SCOUT_BULLET' ? p.ammo : 'CLUSTER_SUBMUNITION');
+      playBoom(hit.point, 'WATER', p.ammo, p.heavy);
       return;
     }
     const onBerm = EX.berm && hit.object === EX.berm.mesh;
@@ -1531,7 +1564,7 @@
 
       // Đạn chùm: kích nổ trên không tầm cao (High Airburst ~20m) rồi rải chùm bom con diện rộng
       if (p.airburst && vel.y < 0 && pos.y <= 165) {
-        fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER', 'AIRBURST', { heavy: true });
+        fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER', 'AIRBURST', { heavy: true, dir: { x: vel.x, y: vel.y, z: vel.z } });
         playBoom(pos, 'AIRBURST', 'CLUSTER');
         // Đạn con giữ ~80% vận tốc đạn mẹ + bị đẩy tỏa tròn quanh trục bay, dải băng ổn định cản gió mạnh
         const subCount = 18;

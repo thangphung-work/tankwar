@@ -291,11 +291,15 @@ class BallisticsSystem3D {
     const cy = shell.y;
     const cz = shell.z;
 
-    if (this.fx) this.fx.spawn(cx, cy, cz, 'CLUSTER', 'AIRBURST');
+    if (this.fx) this.fx.spawn(cx, cy, cz, 'CLUSTER', 'AIRBURST', { dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 } });
     else this.createAirburstFlash(cx, cy, cz);
 
+    // Đạn mẹ tách vỏ trên không: tiếng rít lao xuống (dự đoán tới mặt đất) phải tắt ngay lúc này
+    if (shell.whistleSnd) { shell.whistleSnd.stop(); shell.whistleSnd = null; }
     if (window.soundEngine && typeof window.soundEngine.playExplosionAtDistance === 'function') {
-      const distToPlayer = (window.game && window.game.player) ? Math.hypot(window.game.player.x - cx, window.game.player.z - cz) : 500;
+      // nổ ở độ cao ~20 m: tính khoảng cách xiên tới người nghe, không chỉ khoảng cách trên mặt đất
+      const P = window.game && window.game.player;
+      const distToPlayer = P ? Math.hypot(P.x - cx, (P.y || 0) - cy, P.z - cz) : 500;
       window.soundEngine.playExplosionAtDistance(distToPlayer, 'AIRBURST', 'CLUSTER', { x: cx, z: cz });
     }
 
@@ -706,6 +710,11 @@ class BallisticsSystem3D {
         if (s.maxTravel && s.travel > s.maxTravel) {
           if ((s.ammoType === 'RPG' || s.ammoType === 'ANTI_TANK_MISSILE') && this.fx && this.fx.spawn) {
             this.fx.spawn(s.x, s.y, s.z, 'CLUSTER_SUBMUNITION', 'AIR', {});
+            // tên lửa hết tầm tự hủy: có chớp nổ thì phải có tiếng nổ (trước đây nổ câm)
+            const P = window.game && window.game.player;
+            if (P && window.soundEngine && window.soundEngine.playExplosionAtDistance) {
+              window.soundEngine.playExplosionAtDistance(Math.hypot(P.x - s.x, (P.y || 0) - s.y, P.z - s.z), 'AIRBURST', 'CLUSTER_SUBMUNITION', { x: s.x, z: s.z });
+            }
           }
           this.removeShellMesh(s, i);
           impacted = true;
