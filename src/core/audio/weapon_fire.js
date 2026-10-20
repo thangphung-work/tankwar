@@ -7,14 +7,19 @@ SoundEngine.mixin(class {
   // ===========================================================================
   // 1. KHAI HỎA PHÁO CHÍNH (120mm xe tăng / 155mm pháo tự hành)
   // ===========================================================================
-  playCannonFire(tankType = 'ALL_ROUNDER', ammoType = 'NORMAL', distance = 0, pos = null) {
+  // opts.chargeMul: hệ số sơ tốc theo liều phóng lựu pháo (1 = liều đầy ... 0,34 = liều nhỏ nhất)
+  playCannonFire(tankType = 'ALL_ROUNDER', ammoType = 'NORMAL', distance = 0, pos = null, opts = {}) {
     if (!this.ready()) return;
     const remote = distance > 0;
     const sp = remote ? this.spatial(distance, pos) : { gain: 1, lowpass: 20000, wet: 0.45, delay: 0, pan: 0 };
+    const arty = tankType === 'ARTILLERY';
+    // Liều phóng nhỏ = ít thuốc phóng hơn hẳn (liều 5 chỉ ~1/5 lượng thuốc của liều đầy): tiếng nổ đầu nòng nhỏ,
+    // ít trầm, rền ngắn hơn. Trước đây liều nào cũng nổ to y như liều đầy
+    const cm = arty ? Math.max(0.3, Math.min(1, (opts && opts.chargeMul) || 1)) : 1;
+    sp.gain *= 0.5 + 0.5 * cm;
     if (sp.gain < 0.04) return;
     const t = this.ctx.currentTime + sp.delay;
-    const arty = tankType === 'ARTILLERY';
-    const s = arty ? 1.7 : 1.15;
+    const s = arty ? 1.7 * (0.55 + 0.45 * cm) : 1.15;
     // Mức đưa vào thấp có chủ đích (xem playExplosionAtDistance): giữ cú đấm, không bị ép bẹt ở đầu ra.
     // Phát bắn của chính mình đi qua "blastBus" (bão hòa nhẹ cả cụm): các lớp quyện vào nhau thành một khối đặc, dày
     const out = this.voice({ bus: remote ? null : this.blastBus(arty), gain: sp.gain * (remote ? 0.2 : arty ? 0.2 : 0.22), lowpass: sp.lowpass, wet: Math.max(0.45, sp.wet), pan: sp.pan });
@@ -136,7 +141,9 @@ SoundEngine.mixin(class {
     if (ammoType === 'HE') k = 1.5;
     else if (ammoType === 'RPG') k = 1.25;
     else if (ammoType === 'ANTI_TANK_MISSILE') k = 1.45;   // đầu nổ lõm kép cỡ 152mm: ~4-5 kg thuốc nổ (RPG-7 chỉ ~0,7 kg)
-    else if (ammoType === 'CLUSTER') k = 1.1;
+    // Đạn chùm tách vỏ trên không: chỉ là liều đẩy nhỏ thổi bật đáy đạn cho bom con văng ra — "BỤP" đanh, nhỏ hơn hẳn
+    // một quả đạn nổ phá (trước đây to ngang đạn 120mm); tiếng nổ lớn là chuỗi bom con chạm đất ngay sau đó
+    else if (ammoType === 'CLUSTER') k = hitType === 'AIRBURST' ? 0.6 : 1.1;
     else if (ammoType === 'CLUSTER_SUBMUNITION') k = 0.45;
     const air = hitType === 'AIRBURST';
     const near = Math.max(0, 1 - distance / 900);
@@ -165,8 +172,11 @@ SoundEngine.mixin(class {
       const W = this.stereoSpread(out, 0.6);
       // Sóng xung kích + quả cầu lửa dựng theo vật lý (synthGunshot 'blast…'): hai biến thể khác nhau cho 2 kênh trái/phải
       // lệch 0,6 ms -> vụ nổ có bề rộng. Bề mặt mềm (bao cát, nước) nuốt âm cao: lọc bớt
-      const bk = heavy ? 'blast155' : ammoType === 'HE' ? 'blast120' : ammoType === 'ANTI_TANK_MISSILE' ? 'blastATGM' : heat ? 'blastRPG' : ammoType === 'CLUSTER_SUBMUNITION' ? 'blast30' : 'blastN';
+      const bk = heavy ? 'blast155' : ammoType === 'HE' ? 'blast120' : ammoType === 'ANTI_TANK_MISSILE' ? 'blastATGM' : (heat || (ammoType === 'CLUSTER' && air)) ? 'blastRPG' : ammoType === 'CLUSTER_SUBMUNITION' ? 'blast30' : 'blastN';
       let bDest = [W.L, W.R];
+      // Bề mặt mềm (bao cát, nước) nuốt một phần năng lượng nổ, không chỉ mất âm cao: hạ cả mức. Chỉ lọc tối mà giữ nguyên
+      // mức thì sau tầng giới hạn đỉnh tiếng nổ nghẹt lại TO hơn nổ trên đất (đỉnh tròn bị ép ít hơn) — đo được +4..6 dB
+      const soak = bright < 0.8 ? 0.22 + 0.5 * bright : 1;
       if (bright < 0.8) {
         const lp = this.ctx.createBiquadFilter();
         lp.type = 'lowpass';
@@ -179,7 +189,7 @@ SoundEngine.mixin(class {
         src.buffer = this.gunshotBuffer(bk);
         src.playbackRate.value = 1 + (Math.random() - 0.5) * 0.06;
         const g = this.ctx.createGain();
-        g.gain.value = 6.5 * k * Math.max(0.7, bodyK);
+        g.gain.value = 6.5 * k * Math.max(0.7, bodyK) * soak;
         src.connect(g);
         g.connect(d);
         src.start(t + c * 0.0006);
@@ -214,7 +224,10 @@ SoundEngine.mixin(class {
       return;
     }
     // Tiếng riêng của vật liệu bị trúng (giáp / bê tông / nhà gạch / gỗ / đá / bao cát / đất); tên lửa & RPG là đầu đạn lõm
-    this.surfaceHit(out, t, hitType, heat ? 'heat' : 'blast', k);
+    // bom con DPICM trúng xe: đầu nổ lõm nhỏ khoan qua nóc -> tiếng "chít" xé thép của luồng phụt, không phải "BOONG"
+    // của đạn nổ phá cỡ lớn đập lên vỏ xe
+    const bombOnArmor = ammoType === 'CLUSTER_SUBMUNITION' && hitType === 'DIRECT_HIT';
+    this.surfaceHit(out, t, hitType, heat || bombOnArmor ? 'heat' : 'blast', k);
 
     // Đất đá, mảnh vụn rơi rào rào + các cục đất rơi bịch bịch sau vụ nổ gần (không có khi nổ trên vỏ xe)
     if (!air && near > 0 && hitType !== 'DIRECT_HIT' && hitType !== 'WATER') {

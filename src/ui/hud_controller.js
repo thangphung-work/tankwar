@@ -225,28 +225,34 @@ class HUDController {
     }
   }
 
+  // Câu nhắc kho vật tư khi bắn hết 1 loại đạn (Equipment.outOfStockNote)
+  stockNote(k) {
+    const P = this.player || (this.game && this.game.player);
+    return (typeof Equipment !== 'undefined' && Equipment.outOfStockNote && P) ? Equipment.outOfStockNote(P, k) : '';
+  }
+
   selectAmmoType(ammoType) {
     if (!this.game.player) return;
 
     // Kiểm tra cơ số đạn nâng cao
     if (ammoType === 'AP' && (this.game.player.apAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn xuyên phá! Hãy tìm nhặt hòm tiếp tế trên map!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn xuyên phá! Nhặt hòm tiếp tế trên map' + this.stockNote('AP'), 'alert');
       return;
     }
     if (ammoType === 'HE' && (this.game.player.heAmmoCount || 0) <= 0 && this.game.player.tankType !== 'ARTILLERY') {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn nổ mạnh! Hãy tìm nhặt hòm tiếp tế trên map!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn nổ mạnh! Nhặt hòm tiếp tế trên map' + this.stockNote('HE'), 'alert');
       return;
     }
     if (ammoType === 'CLUSTER' && (this.game.player.clusterAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn chùm nổ trên không! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn chùm nổ trên không! Nhặt hòm tiếp tế trên map' + this.stockNote('CLUSTER'), 'alert');
       return;
     }
     if (ammoType === 'INCENDIARY' && (this.game.player.incendiaryAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy nâng cao! Súng chuyển về đạn nhỏ liên thanh cơ bản!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy! Súng chuyển về đạn thường' + this.stockNote('INCENDIARY'), 'alert');
       return;
     }
     if (ammoType === 'ANTI_TANK_MISSILE' && (this.game.player.missileAmmoCount || 0) <= 0) {
-      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Hãy nhặt hòm tiếp tế để nạp thêm!', 'alert');
+      this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
     }
 

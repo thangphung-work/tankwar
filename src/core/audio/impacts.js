@@ -195,7 +195,7 @@ SoundEngine.mixin(class {
       }
       case 'SANDBAG': {
         // BAO CÁT: hút năng lượng — "phập" nghẹt, không vang; cát chảy rào rào từ bao rách
-        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: bullet ? 280 : 220, drive: 2, gain: (bullet ? 0.7 : 1.1) * k, attack: 0.001, dur: bullet ? 0.06 : 0.18 });
+        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: bullet ? 280 : 220, drive: 2, gain: (bullet ? 0.7 : 0.6) * k, attack: 0.001, dur: bullet ? 0.06 : 0.18 });
         this.burst(out, t + 0.02, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1400, Q: 0.6, gain: (bullet ? 0.12 : 0.06) * k, attack: 0.08, dur: bullet ? 0.4 : 1.2 });
         if (!bullet) this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 160, gain: 0.5 * k, attack: 0.002, dur: 0.35 });
         break;
@@ -255,9 +255,9 @@ SoundEngine.mixin(class {
     this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 2.5, gain: 2.0, attack: 0.001, dur: heavy ? 0.45 : 0.3 });
     this.tone(out, t, { freq: 95, freqEnd: 45, sweep: 0.2, drive: 2, gain: 1.4, attack: 0.001, dur: 0.35 });
     this.metal(out, t, { f0, ratios: [1, 1.71, 2.63, 3.9, 5.3], decay: 1.4, gain: 0.55, click: 1 });
-    // ngân dài của vỏ xe như chuông bị gõ
-    this.tone(out, t + 0.005, { freq: f0 * 2.02, gain: 0.07, attack: 0.002, dur: 1.6 });
-    this.tone(out, t + 0.005, { freq: f0 * 3.31, gain: 0.04, attack: 0.002, dur: 1.1 });
+    // Giáp dày hàng chục mm, bắt chặt vào khung và đầy thiết bị bên trong: rung tắt rất nhanh, nghe "BỊCH / THỤP" nặng
+    // chứ không ngân như chuông (trước đây 2 sóng sin ngân 1-1,6 s -> nghe như gõ chuông chùa)
+    this.burst(out, t + 0.004, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f0 * 2, Q: 2.5, drive: 1.5, gain: 0.5, attack: 0.002, dur: 0.22 });
     // mảnh vỡ & sơn tróc lả tả bên trong khoang, đồ đạc trong xe xô lệch lách cách
     this.burst(out, t + 0.04, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 3000, Q: 0.8, gain: 0.55, attack: 0.01, dur: 0.6 });
     for (let i = 0; i < 4; i++) this.metal(out, t + 0.12 + Math.random() * 0.5, { f0: 600 + Math.random() * 900, ratios: [1, 2.4], decay: 0.06, gain: 0.06, click: 0.3 });

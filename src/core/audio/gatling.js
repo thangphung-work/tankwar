@@ -307,7 +307,7 @@ SoundEngine.mixin(class {
       // MỘT cú chạm của vỏ đạn (số lần nảy, nhịp nảy, lăn... do dropCasing lập lịch lúc chạy -> không vỏ nào giống vỏ nào).
       // Ống kim loại rỗng rung theo các mode uốn (thanh tự do 1 : 2,76 : 5,40 : 8,93), mỗi mode tách đôi lệch vài Hz (ống không
       // tròn tuyệt đối -> ngân hơi "rung"); điểm chạm dọc thân vỏ ngẫu nhiên -> mode nào nằm gần nút thì yếu đi, âm sắc mỗi cú
-      // một khác. Đồng thau 12.7mm "tinh" sáng; thép 30mm "keng" trầm nặng; mắt xích dây đạn (thép dập mỏng) "tích" khô
+      // một khác. Đồng thau 12.7mm "tinh" sáng; thép 30mm dày "cộc" trầm, tắt nhanh; mắt xích dây đạn (thép dập mỏng) "tích" khô
       const link = kind === 'link127', brass = kind === 'case127';
       const f1 = (link ? 3400 : brass ? 2300 : 1150) * v(0.12);
       const x = new Float32Array(N), i0 = Math.round(0.002 * SR), L = Math.max(2, Math.round((link ? 0.00004 : brass ? 0.00005 : 0.0001) * SR));
@@ -318,7 +318,7 @@ SoundEngine.mixin(class {
         if (f1 * r > SR * 0.42) return;
         const shape = Math.abs(Math.cos(Math.PI * hitPos * (k + 1.5)));
         const a = (0.25 + shape) * (0.6 + R() * 0.6) / (1 + k * 0.15);
-        const t60 = (link ? 0.035 : brass ? 0.17 : 0.22) / (1 + k * 0.35) * v(0.3);
+        const t60 = (link ? 0.035 : brass ? 0.17 : 0.07) / (1 + k * 0.35) * v(0.3);
         ms.push({ f: f1 * r, t60, a }, { f: f1 * r * (1.002 + R() * 0.006), t60: t60 * 0.8, a: a * (0.3 + R() * 0.5) });
       });
       // nóc xe thép bị gõ khẽ: vài mode trầm tắt rất nhanh (cho tiếng chạm có "nền", không chỉ tiếng tinh)
@@ -406,13 +406,25 @@ SoundEngine.mixin(class {
    * Một phát đạn 30mm: xung nén + sức ép đầu nòng + tiếng trầm.
    * distance > 0: xe khác bắn (nhỏ dần, mất âm cao, vọng nhiều hơn, nổi trái/phải theo pos).
    */
-  playGatlingShot(tankType = 'GATLING', distance = 0, pos = null) {
+  playGatlingShot(tankType = 'GATLING', distance = 0, pos = null, shooterId = null) {
     if (!this.ready()) return;
     const now = this.ctx.currentTime;
     const remote = distance > 0;
     if (remote) {
-      if (now - this.lastRemoteGatlingTime < 0.05) return;
-      this.lastRemoteGatlingTime = now;
+      // Giới hạn theo TỪNG xe bắn (trước đây một mốc chung 50 ms cho mọi xe: pháo 6 nòng địch 30 phát/giây bị cắt còn
+      // ~15 phát/giây, nghe chậm như súng máy thường; 2 xe cùng bắn thì giành lượt nhau, tràng đạn lỗ chỗ).
+      // Gần: giữ đủ nhịp 30 phát/giây; xa (>~100 m): các phát đã nhòe vào nhau, phát cách phát để đỡ tốn
+      const key = shooterId !== null && shooterId !== undefined ? shooterId : '_';
+      this._remoteGat = this._remoteGat || new Map();
+      const gap = tankType === 'SCOUT' ? 0.09 : distance < 800 ? 0.03 : 0.06;
+      const last = this._remoteGat.get(key);
+      if (last !== undefined && now - last < gap) return;
+      // tổng số phát của mọi xe khác trong ~0,1 s: chặn trên để mưa đạn không làm nghẽn âm thanh
+      this._remoteGatWin = (this._remoteGatWin || []).filter(x => now - x < 0.1);
+      if (this._remoteGatWin.length >= 8) return;
+      this._remoteGatWin.push(now);
+      this._remoteGat.set(key, now);
+      if (this._remoteGat.size > 24) this._remoteGat.clear();
     }
     const sp = remote ? this.spatial(distance, pos) : { gain: 1, lowpass: 20000, wet: 0.22, delay: 0, pan: 0 };
     if (sp.gain < 0.05) return;
@@ -430,7 +442,7 @@ SoundEngine.mixin(class {
     // chạm trần, đè mất mọi tiếng khác (đo được: loạt 30mm trước đây ~-4 dBFS liên tục)
     // Pháo 6 nòng của mình đi qua blastBus (bão hòa cả cụm): các phát quyện thành tiếng gầm "BRRRT" đặc
     // Súng máy 12.7mm của mình qua blastBus thường (giữ nguyên cú đấm 50-100 Hz; kênh heavy cắt trầm làm tiếng ồm "bè bè")
-    const out = this.voice({ bus: (remote || scout) ? null : this.blastBus(true), gain: sp.gain * (scout ? (remote ? 0.38 : 0.62) : remote ? 0.08 : 0.16), lowpass: remote ? sp.lowpass : scout ? 9000 : 2200,
+    const out = this.voice({ bus: (remote || scout) ? null : this.blastBus(true), gain: sp.gain * (scout ? (remote ? 0.38 : 0.62) : remote ? 0.5 : 0.16), lowpass: remote ? sp.lowpass : scout ? 9000 : 2200,
       wet: (scout && !remote) ? 0.55 : sp.wet,   // súng máy ngoài trời: tiếng dội môi trường lấp giữa các phát -> loạt đạn dày, thật
       pan: (!remote && !scout) ? (Math.random() - 0.5) * 0.25 : sp.pan });   // 6 nòng xoay: mỗi phát lệch nhẹ trái/phải -> loạt đạn rộng, dày
 
@@ -454,23 +466,34 @@ SoundEngine.mixin(class {
         // Pháo 30mm: mỗi phát là một cú "ĐÙNG" nhỏ có thân dày 200-600 Hz, tắt nhanh trong ~40 ms để 30 phát/giây
         // vẫn tách nhịp thành tiếng xé "BRRRT" (đuôi dài làm cả loạt nhòe thành bức tường ồn).
         // Ít xì chói trên 2,5 kHz (trước đây chiếm 36% phần tai nghe thấy -> loạt đạn mỏng, "lẹt đẹt")
+        // Xe khác bắn (remote): thân trầm 30 phát/giây chồng lên nhau thành một bức tường ù ở dải 100-300 Hz, chạm tầng giới
+        // hạn đỉnh và ép mất cả phần trung -> loạt đạn 30mm ở 50 m nghe NHỎ hơn súng máy 12.7mm (đo được ~-11 dB theo tai).
+        // Nên từ xa giảm lớp trầm, đuôi ngắn lại, nhấn tiếng "xé" dải trung 0,5-2 kHz
+        const lk = remote ? 0.4 : 1;
         this.snap(out, t, 0.55, 5000 * p, 5);
-        this.burst(out, t, { filter: 'lowpass', freq: 2600 * p, freqEnd: 350, sweep: 0.03, drive: 2, gain: 0.6, attack: 0.0006, dur: remote ? 0.1 : 0.05 });
-        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 250 * p, Q: 0.8, drive: 1.6, gain: 3.2, attack: 0.0008, dur: remote ? 0.14 : 0.07 });
-        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 150 * p, Q: 0.9, drive: 1.5, gain: 2.2, attack: 0.001, dur: remote ? 0.15 : 0.065 });
-        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 560 * p, Q: 0.8, drive: 1.4, gain: 1.1, attack: 0.0006, dur: remote ? 0.1 : 0.04 });
-        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 800 * p, freqEnd: 150, sweep: 0.06, drive: 2, gain: 1.2, attack: 0.001, dur: remote ? 0.32 : 0.07 });
-        this.tone(out, t, { freq: 150 * p, freqEnd: 65, sweep: 0.04, drive: 2.5, gain: 1.1, attack: 0.001, dur: remote ? 0.2 : 0.06 });
+        this.burst(out, t, { filter: 'lowpass', freq: 2600 * p, freqEnd: 350, sweep: 0.03, drive: 2, gain: 0.6, attack: 0.0006, dur: remote ? 0.08 : 0.05 });
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 250 * p, Q: 0.8, drive: 1.6, gain: 3.2 * lk, attack: 0.0008, dur: remote ? 0.1 : 0.07 });
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 150 * p, Q: 0.9, drive: 1.5, gain: 2.2 * lk, attack: 0.001, dur: remote ? 0.1 : 0.065 });
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 560 * p, Q: 0.8, drive: 1.4, gain: remote ? 1.6 : 1.1, attack: 0.0006, dur: remote ? 0.08 : 0.04 });
+        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 800 * p, freqEnd: 150, sweep: 0.06, drive: 2, gain: 1.2 * lk, attack: 0.001, dur: remote ? 0.16 : 0.07 });
+        this.tone(out, t, { freq: 150 * p, freqEnd: 65, sweep: 0.04, drive: 2.5, gain: 1.1 * lk, attack: 0.001, dur: remote ? 0.1 : 0.06 });
+        if (remote) this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1300 * p, Q: 0.7, drive: 2, gain: 1.8, attack: 0.0006, dur: 0.06 });
       }
     }
 
     if (!remote) {
       if (this.gatlingMotor) this.gatlingMotor.burstShots++;
-      // Vỏ đạn văng ra rơi xuống nóc xe / mặt đất: leng keng (12.7mm đồng thau nhẹ) / "coong" (30mm thép nặng)
-      // (mẫu dựng theo vật lý: ống kim loại rỗng rung + nảy vài lần, synthGunshot 'case127' / 'case30')
-      // từng vỏ một: chạm, nảy, lăn lập lịch lúc chạy; súng 12.7mm còn rơi thêm mắt xích dây đạn
-      if (Math.random() < (scout ? 0.8 : 0.35)) this.dropCasing(t + 0.22 + Math.random() * 0.3, scout ? 'case127' : 'case30');
-      if (scout && Math.random() < 0.6) this.dropCasing(t + 0.15 + Math.random() * 0.25, 'link127');
+      if (scout) {
+        // Đại liên 12.7mm trên nóc xe: vỏ đồng thau văng lên nóc thép, nảy leng keng + mắt xích dây đạn
+        // (mẫu dựng theo vật lý: ống kim loại rỗng rung + nảy vài lần, synthGunshot 'case127')
+        if (Math.random() < 0.8) this.dropCasing(t + 0.22 + Math.random() * 0.3, 'case127');
+        if (Math.random() < 0.6) this.dropCasing(t + 0.15 + Math.random() * 0.25, 'link127');
+      } else if (Math.random() < 0.3) {
+        // Pháo 6 nòng 30mm: vỏ đạn thoát qua máng dưới hộp pháo, rơi thẳng xuống đất cạnh xe (không nảy trên nóc).
+        // Giữa tiếng gầm 30 phát/giây chỉ còn nghe lộp cộp đục, rất nhỏ — trước đây ~10 vỏ/giây nảy ngân trên nóc thép
+        // thành tràng "leng keng" như chuông gió, lấn cả tiếng súng
+        this.dropChuteCasing(t + 0.18 + Math.random() * 0.2, 0.55);
+      }
     }
   }
 
@@ -521,6 +544,18 @@ SoundEngine.mixin(class {
     }
   }
 
+  /**
+   * Vỏ đạn 30mm của pháo 6 nòng rơi khỏi máng thoát vỏ xuống đất cạnh xe: vỏ thép nặng cắm xuống đất / đè lên vỏ
+   * khác — "cộp" đục, tắt ngay, không nảy, không lăn trên nóc xe. amp < 1 khi đang bắn (tiếng súng át gần hết).
+   */
+  dropChuteCasing(t, amp = 1) {
+    if (!this.ready()) return;
+    const out = this.voice({ bus: this.vehicleBus, gain: 0.09 * amp, lowpass: 1800, wet: 0.06, pan: 0.25 + (Math.random() - 0.5) * 0.4 });
+    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 520 + Math.random() * 260, gain: 0.7, attack: 0.001, dur: 0.035 });
+    // thỉnh thoảng vỏ rơi đè lên vỏ cũ dưới đất / sỏi: một tiếng kim loại ngắn, đã mất âm cao
+    if (Math.random() < 0.35) this.playCaseHit(out, t + 0.002, 'case30', 0.9 + Math.random() * 0.15, 0.35, 1400);
+  }
+
   // phát một mẫu cú chạm vỏ đạn (lp > 0: chạm vật mềm / xa, cắt bớt âm cao)
   playCaseHit(dest, t, kind, rate, amp, lp = 0) {
     const src = this.ctx.createBufferSource();
@@ -552,6 +587,15 @@ SoundEngine.mixin(class {
     });
     // Loạt đạn dài vọng lại từ đồi núi, công trình: "BRRRT ... rrrr" — như tiếng pháo, nhưng nhẹ hơn
     this.playTerrainEchoes(t - 0.1, (scout ? 0.28 : 0.4) * intensity);
+    // Pháo 6 nòng vừa ngừng: mấy vỏ cuối còn trong máng tuột xuống đất — lúc súng im mới nghe rõ vài tiếng "cộp"
+    if (!scout) {
+      const n = 2 + Math.floor(Math.random() * 3 * intensity);
+      let ct = t + 0.06 + Math.random() * 0.08;
+      for (let i = 0; i < n; i++) {
+        this.dropChuteCasing(ct, 0.8 + Math.random() * 0.3);
+        ct += 0.05 + Math.random() * 0.12;
+      }
+    }
     // Tiếng vọng của CHÍNH loạt đạn: ngoài trời, nhả cò xong vẫn nghe "rrrr" theo đúng nhịp bắn vọng về từ xa, mờ dần
     // ~2 s. Thiếu lớp này thì sau 10 s "BRRRT" liên tục tiếng tụt 26 dB trong 1 s -> nghe như tắt phụt
     const ev = this.voice({ gain: 1, lowpass: 1000, wet: 0.9, pan: (Math.random() - 0.5) * 0.4 });

@@ -385,6 +385,8 @@ SoundEngine.mixin(class {
     this.updateAmbience(t);
     this.sweepFires(t);
     const allGains = [e.engineGain, e.combGain, e.turboGain, e.exhaustGain, e.rumbleGain, e.squealGain, e.mechGain, e.airGain];
+    // bơm chân chống pháo tự hành: tắt khi xe bị hạ / đổi sang xe khác (spg.js chỉ cập nhật khi xe pháo còn sống)
+    if (this._legs && this._legs.dir !== 0 && (o.dead || type !== 'ARTILLERY')) { this._legs.dir = 0; this._legs.out.gain.setTargetAtTime(0, t, 0.15); }
     if (o.dead) {
       // Xe đã bị hạ: máy tắt lịm
       allGains.forEach(g => g && g.gain.setTargetAtTime(0, t, 0.4));
