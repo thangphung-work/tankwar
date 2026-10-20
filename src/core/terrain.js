@@ -66,6 +66,7 @@ class BattleTerrain3D {
     this.bridges = [];
     this.craters = [];
     this.waterMesh = null;
+    this.backdrop = null;
     this.trees = this.buildingSet = this.bunkerSet = this.strongholdSet = this.groundCover = this.propSet = null;
     this.envDamage = null;
     this.rockItems = [];
@@ -97,6 +98,11 @@ class BattleTerrain3D {
     this.initTerrainMesh();
     this.buildRoads();
     this.buildWater();
+    // Cảnh nền ngoài bản đồ: vành núi, bờ biển / biển cát / dãy núi, đảo xa tới chân trời (không còn khoảng trống ngoài mép)
+    if (typeof Backdrop !== 'undefined') {
+      this.backdrop = Backdrop.build(this);
+      if (this.backdrop) this.group.add(this.backdrop.group);
+    }
     this.buildRocks();
     this.buildBridges();   // + hệ thống phá hủy cảnh vật (EnvDamage): đá tảng có máu, cầu sập, vết đạn tích tụ
     this.buildBushes();
@@ -679,6 +685,19 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
   // ---------------------------------------------------------------------------
   buildWater() {
     if (!this.map.river && !this.map.lakes.length) return;
+    const { mat, U } = this.waterMaterial(false);
+    this.waterUniforms = U;
+    const geo = new THREE.PlaneGeometry(this.width, this.depth, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    this.waterMesh = new THREE.Mesh(geo, mat);
+    this.waterMesh.position.y = 0.2;
+    this.waterMesh.renderOrder = 2;
+    this.group.add(this.waterMesh);
+  }
+
+
+  // Bản đồ pháp tuyến gợn sóng (dùng chung cho sông hồ và biển)
+  waterNormalMap() {
     const c = document.createElement('canvas');
     c.width = c.height = 256;
     const g = c.getContext('2d');
@@ -715,40 +734,54 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     g.putImageData(img, 0, 0);
     const normal = new THREE.CanvasTexture(c);
     normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+    this.waterNormal = normal;
+    return normal;
+  }
+
+  // Vật liệu mặt nước. sea = mặt biển ngoài bản đồ (độ sâu theo thuộc tính đỉnh aDep, xa hòa vào sương)
+  waterMaterial(sea) {
     const atm = this.atmosphere;
     // Nước sông hồ thật: thân nước tối xanh rêu-xám (phù sa, tảo), không phải màu xanh dương sơn phẳng;
     // màu trời chỉ hiện ra qua phản chiếu Fresnel — nhìn xiên / xa thì sáng ánh trời, nhìn thẳng xuống thì tối trong
     const body = { DESERT: 0x26302a, JUNGLE: 0x202a1e, URBAN: 0x232c2a }[this.mapType] || 0x1e2b29;
-    const bodyCol = new THREE.Color(body).lerp(new THREE.Color(atm.zenith), 0.12);
+    // biển: nước sâu trong hơn, ngả xanh lam - lục theo màu trời
+    const bodyCol = sea ? new THREE.Color(0x1d3438).lerp(new THREE.Color(atm.zenith), 0.22) : new THREE.Color(body).lerp(new THREE.Color(atm.zenith), 0.12);
     const mat = new THREE.MeshStandardMaterial({
       color: bodyCol, roughness: 0.18, metalness: 0.0, transparent: true, opacity: 0.9, depthWrite: false
     });
     const skyRefl = new THREE.Color(atm.horizon).lerp(new THREE.Color(atm.zenith), 0.35).multiplyScalar(0.85);
     // Bản đồ độ sâu nước theo lưới địa hình (đơn vị game, -2..14): ven bờ nông trong & ngả màu bùn, có viền bọt
-    const S = this.segments, N = S + 1, dd = new Uint8Array(N * N * 4);
-    for (let i = 0; i < N * N; i++) {
-      const v = Math.round((Math.max(-2, Math.min(14, 0.2 - this.heightData[i])) + 2) / 16 * 255);
-      dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v; dd[i * 4 + 3] = 255;
+    // (biển: độ sâu lấy từ thuộc tính đỉnh aDep của lưới mặt biển, không theo lưới bản đồ)
+    const S = this.segments, N = S + 1;
+    let depthTex = null;
+    if (!sea) {
+      const dd = new Uint8Array(N * N * 4);
+      for (let i = 0; i < N * N; i++) {
+        const v = Math.round((Math.max(-2, Math.min(14, 0.2 - this.heightData[i])) + 2) / 16 * 255);
+        dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v; dd[i * 4 + 3] = 255;
+      }
+      depthTex = new THREE.DataTexture(dd, N, N, THREE.RGBAFormat);
+      depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter;
+      depthTex.needsUpdate = true;
     }
-    const depthTex = new THREE.DataTexture(dd, N, N, THREE.RGBAFormat);
-    depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter;
-    depthTex.needsUpdate = true;
-    const U = this.waterUniforms = {
-      wSky: { value: skyRefl }, wNrm: { value: normal }, wDepth: { value: depthTex }, wT: { value: 0 },
+    this.waterTime = this.waterTime || { value: 0 };
+    const U = {
+      wSky: { value: skyRefl }, wNrm: { value: this.waterNormal || this.waterNormalMap() }, wDepth: { value: depthTex }, wT: this.waterTime,
       wMap: { value: new THREE.Vector4(this.width, this.depth, S, N) },
       wShallow: { value: bodyCol.clone().lerp(new THREE.Color(0x6a6650), 0.55) },
       wFoam: { value: new THREE.Color(0xc4ccc9) }
     };
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U);
-      sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
-  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+      sh.vertexShader = 'varying vec3 vWPos;\n' + (sea ? 'attribute float aDep;\nvarying float vDep;\n' : '') + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;${sea ? '\n  vDep = aDep;' : ''}`);
       sh.fragmentShader = `uniform vec3 wSky; uniform sampler2D wNrm; uniform sampler2D wDepth; uniform float wT; uniform vec4 wMap;
 uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
+${sea ? 'varying float vDep;' : ''}
 ` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
   // độ sâu nước tại điểm này: ven bờ màu bùn nhạt, trong hơn (thấy đáy)
-  vec2 wuv = vec2((vWPos.x + wMap.x * 0.5) / wMap.x * wMap.z + 0.5, (vWPos.z + wMap.y * 0.5) / wMap.y * wMap.z + 0.5) / wMap.w;
-  float wDep = texture2D(wDepth, wuv).r * 16.0 - 2.0;
+  ${sea ? 'float wDep = clamp(vDep, -2.0, 14.0);' : `vec2 wuv = vec2((vWPos.x + wMap.x * 0.5) / wMap.x * wMap.z + 0.5, (vWPos.z + wMap.y * 0.5) / wMap.y * wMap.z + 0.5) / wMap.w;
+  float wDep = texture2D(wDepth, wuv).r * 16.0 - 2.0;`}
   diffuseColor.rgb = mix(wShallow, diffuseColor.rgb, smoothstep(0.5, 7.0, wDep));
   // mép nước mờ dần theo bản đồ độ sâu (đường bờ mượt), không lộ đường cắt tam giác của lưới địa hình
   diffuseColor.a *= smoothstep(0.05, 1.3, wDep) * mix(0.55, 1.0, smoothstep(1.3, 6.0, wDep));`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -777,15 +810,11 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     gl_FragColor.a = max(gl_FragColor.a, wf * 0.7);
   }
   #include <tonemapping_fragment>`);
+      // biển xa hòa hẳn vào sương trước khi chạm mặt phẳng cắt xa của camera (không lộ mép cắt)
+      if (sea) sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + BattleTerrain3D.farFadeGLSL(true));
     };
-    mat.customProgramCacheKey = () => 'waterWorld3';
-    const geo = new THREE.PlaneGeometry(this.width, this.depth, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    this.waterMesh = new THREE.Mesh(geo, mat);
-    this.waterMesh.position.y = 0.2;
-    this.waterMesh.renderOrder = 2;
-    this.waterNormal = normal;
-    this.group.add(this.waterMesh);
+    mat.customProgramCacheKey = () => 'waterWorld3' + (sea ? ':sea' : '');
+    return { mat, U };
   }
 
   // ---------------------------------------------------------------------------
@@ -1013,7 +1042,7 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     if (this.buildingSet) this.buildingSet.update(dt, fx);
     if (this.propSet) this.propSet.update(dt, fx, this.camPos || null);
     if (this.envDamage) this.envDamage.update(dt, fx);
-    if (this.waterUniforms) this.waterUniforms.wT.value += dt;   // sóng mặt nước trôi theo thời gian
+    if (this.waterTime) this.waterTime.value += dt;   // sóng mặt nước trôi theo thời gian (sông hồ + biển)
   }
 
   // Sóng nổ / đạn tác động lên cây, nhà, boong-ke tại điểm nổ
@@ -1496,3 +1525,12 @@ window.BattleTerrain3D = BattleTerrain3D;
 
 // Ngưỡng rừng rậm: số cây có tán (quy đổi) trong ô ~72x72 quanh điểm
 BattleTerrain3D.FOREST_DENSE = 10;
+
+// Cảnh nền ngoài bản đồ (Backdrop) xa dần hòa hẳn vào màu sương trong khoảng này (camera far = 6000)
+BattleTerrain3D.FAR_FADE = [4300, 5800];
+BattleTerrain3D.farFadeGLSL = (alpha) => `#ifdef USE_FOG
+  {
+    float farK = smoothstep(${BattleTerrain3D.FAR_FADE[0].toFixed(1)}, ${BattleTerrain3D.FAR_FADE[1].toFixed(1)}, length(vViewPosition));
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, farK);${alpha ? '\n    gl_FragColor.a = mix(gl_FragColor.a, 1.0, farK);' : ''}
+  }
+  #endif`;

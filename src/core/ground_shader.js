@@ -552,7 +552,9 @@ float gTuftH(vec2 p) {
   vec4 nTex = texture2D(gNrm, (vGW.xz + gTerr.x) / gTerr.y);
   vec3 nrm = ${opts.ownNormals ? 'normalize(vGN)' : 'normalize(nTex.xyz * 2.0 - 1.0)'};
   // độ lõm (+) / lồi (-) của địa hình
-  float cav = nTex.a * 2.0 - 1.0;
+  // ngoài mép bản đồ (cảnh nền Backdrop) không còn ảnh nướng sẵn: độ lõm / sắc tầng lớn trung tính dần
+  float gInMap = 1.0 - smoothstep(gTerr.x, gTerr.x + 260.0, max(abs(vGW.x), abs(vGW.z)));
+  float cav = (nTex.a * 2.0 - 1.0) * gInMap;
   float gWet = smoothstep(0.0, 0.45, cav), gDryR = smoothstep(0.0, 0.45, -cav);
   float slope = 1.0 - clamp(nrm.y, 0.0, 1.0);
   vec2 wr1 = mat2(0.866, -0.5, 0.5, 0.866) * wp, wr2 = mat2(0.423, -0.906, 0.906, 0.423) * wp, wr3 = mat2(0.94, 0.342, -0.342, 0.94) * wp;
@@ -634,7 +636,7 @@ float gTuftH(vec2 p) {
   // pha màu tầng lớn từ ảnh nền cũ (thảm thực vật, vệt ẩm, nền đường, đáy sông)
   vec3 macro = texture2D(map, vUv, 3.0).rgb;   // bản mờ: chỉ lấy sắc độ tầng lớn, không lộ điểm ảnh
   vec3 tint = clamp(macro / max(gMacroAvg, vec3(0.05)), vec3(0.5), vec3(1.7));
-  col *= mix(vec3(1.0), tint, 0.35);
+  col *= mix(vec3(1.0), tint, 0.35 * gInMap);
   // thay đổi sắc độ nhẹ tầng rất lớn (đồng cỏ không đều màu)
   col *= 0.9 + 0.2 * nz.b;
   // ĐỊA MẠO: hõm trũng giữ ẩm (xanh đậm / tối), gờ lồi khô nắng (vàng nhạt) — như ảnh chụp thật từ trên cao
