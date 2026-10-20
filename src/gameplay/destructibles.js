@@ -692,39 +692,93 @@ const Destructibles = (() => {
       }
     }, true);
   }
-  // Lá cây (kênh alpha để cắt viền lá)
+  // Tàu lá cọ (kênh alpha để cắt viền lá): sống lá giữa + lá chét thon nhọn xếp hai bên
   function leafTex(kind) {
     return canvasTex('leaf_' + kind, 128, 128, (g, w, h) => {
       g.clearRect(0, 0, w, h);
-      if (kind === 'frond') {
-        // Tàu lá cọ: sống lá giữa + lá chét xếp hai bên
-        g.strokeStyle = '#5c6b2a'; g.lineWidth = 3; g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.stroke();
-        for (let y = 4; y < h; y += 5) {
-          const L = 52 * Math.sin((y / h) * Math.PI) + 6;
-          g.strokeStyle = `rgb(${66 + RNG() * 26},${90 + RNG() * 30},${40 + RNG() * 18})`;
-          g.lineWidth = 3;
-          g.beginPath(); g.moveTo(w / 2, y); g.lineTo(w / 2 - L, y + 10); g.stroke();
-          g.beginPath(); g.moveTo(w / 2, y); g.lineTo(w / 2 + L, y + 10); g.stroke();
-        }
-      } else if (kind === 'needle') {
-        for (let i = 0; i < 2200; i++) {
-          const x = RNG() * w, y = RNG() * h;
-          if (RNG() > 1 - (y / h) * 0.15) continue;
-          g.strokeStyle = `rgba(${32 + RNG() * 22},${52 + RNG() * 24},${30 + RNG() * 14},0.95)`;
-          g.lineWidth = 1.4; g.beginPath(); g.moveTo(x, y); g.lineTo(x + rand(-4, 4), y + rand(3, 7)); g.stroke();
-        }
-      } else {
-        // Tán lá rộng: nhiều phiến lá chồng lớp, sáng tối xen kẽ
-        // tông lá thật: xanh ô liu / xanh rêu, không xanh lá thuần (dưới nắng gắt dễ thành xanh neon)
-        const pal = kind === 'jungle' ? [[46, 72, 34], [62, 90, 42], [36, 56, 28]] : kind === 'dry' ? [[118, 114, 64], [136, 124, 74], [98, 92, 54]] : [[62, 82, 40], [82, 102, 52], [50, 68, 34]];
-        for (let i = 0; i < 520; i++) {
-          const c = pal[i % 3];
-          const s = rand(0.7, 1.2);
-          g.fillStyle = `rgba(${c[0] * s | 0},${c[1] * s | 0},${c[2] * s | 0},0.96)`;
-          const x = RNG() * w, y = RNG() * h, a = RNG() * 6.3;
-          g.beginPath(); g.ellipse(x, y, rand(3, 6), rand(1.5, 3), a, 0, 6.3); g.fill();
+      for (let y = 3; y < h - 2; y += 4) {
+        const L = 54 * Math.sin((y / h) * Math.PI) + 8;
+        for (const s of [-1, 1]) {
+          const c = [66 + RNG() * 24, 92 + RNG() * 26, 40 + RNG() * 14];
+          const gr = g.createLinearGradient(w / 2, y, w / 2 + s * L, y + 12);
+          gr.addColorStop(0, `rgb(${c[0] * 0.8 | 0},${c[1] * 0.8 | 0},${c[2] * 0.8 | 0})`);
+          gr.addColorStop(1, `rgb(${c[0] * 1.15 | 0},${c[1] * 1.15 | 0},${c[2] * 1.1 | 0})`);
+          g.fillStyle = gr;
+          g.beginPath(); g.moveTo(w / 2, y - 1.6); g.quadraticCurveTo(w / 2 + s * L * 0.5, y + 2, w / 2 + s * L, y + 12);
+          g.quadraticCurveTo(w / 2 + s * L * 0.5, y + 5.5, w / 2, y + 2.2); g.fill();
         }
       }
+      g.strokeStyle = '#5a5a2c'; g.lineWidth = 3; g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.stroke();
+    });
+  }
+
+  // Tán lá kiểu game hiện đại: atlas 256x128
+  //  - nửa trái  (u 0..0.5): 1 "chùm lá" có viền lá cắt alpha, dán lên các tấm thẻ nhỏ rải quanh khối tán
+  //  - nửa phải (u 0.5..1): lá dày kín, tối hơn (lõi tán trong bóng râm), phủ khối lõi để tán không bị thủng lỗ
+  const FOLIAGE_PAL = {
+    broad: [[64, 86, 40], [84, 106, 50], [52, 72, 34], [96, 112, 56]],
+    jungle: [[44, 74, 34], [60, 94, 42], [34, 58, 28], [72, 104, 48]],
+    // keo / cây bụi khô: xanh ô liu xám (không vàng chói như lá úa)
+    dry: [[96, 102, 58], [116, 118, 68], [80, 88, 48], [128, 126, 78]],
+    needle: [[34, 56, 36], [44, 68, 42], [28, 46, 32], [52, 76, 46]]
+  };
+  function drawLeaf(g, x, y, len, wid, ang, c) {
+    g.save(); g.translate(x, y); g.rotate(ang);
+    const gr = g.createLinearGradient(0, -wid, 0, wid);
+    gr.addColorStop(0, `rgb(${Math.min(255, c[0] * 1.25) | 0},${Math.min(255, c[1] * 1.25) | 0},${Math.min(255, c[2] * 1.2) | 0})`);
+    gr.addColorStop(1, `rgb(${c[0] * 0.72 | 0},${c[1] * 0.72 | 0},${c[2] * 0.72 | 0})`);
+    g.fillStyle = gr;
+    g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(len * 0.45, -wid, len, 0); g.quadraticCurveTo(len * 0.45, wid, 0, 0); g.fill();
+    g.strokeStyle = 'rgba(30,40,18,0.35)'; g.lineWidth = 0.6;
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(len * 0.85, 0); g.stroke();
+    g.restore();
+  }
+  function drawNeedles(g, x, y, len, ang, c) {
+    // cành kim: trục cành + kim xòe hai bên về phía ngọn
+    g.save(); g.translate(x, y); g.rotate(ang);
+    g.strokeStyle = 'rgb(58,44,30)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(0, 0); g.lineTo(len, 0); g.stroke();
+    for (let t = 2; t < len; t += 1.6) {
+      const k = 1 - t / len * 0.5, s = 0.7 + RNG() * 0.5;
+      g.strokeStyle = `rgb(${c[0] * s | 0},${c[1] * s | 0},${c[2] * s | 0})`; g.lineWidth = 1.1;
+      for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(t, 0); g.lineTo(t + 3.5 * k, sd * 6.5 * k); g.stroke(); }
+    }
+    g.restore();
+  }
+  function foliageTex(kind) {
+    return canvasTex('foliage_' + kind, 256, 128, (g, w, h) => {
+      const pal = FOLIAGE_PAL[kind] || FOLIAGE_PAL.broad;
+      const pick = () => pal[(RNG() * pal.length) | 0];
+      const needle = kind === 'needle';
+      g.clearRect(0, 0, w, h);
+      // --- nửa trái: chùm lá. Lõi giữa đặc (mipmap ở xa vẫn đủ alpha, tán không bị "mòn" dần), viền lá lởm chởm
+      g.save(); g.beginPath(); g.rect(0, 0, 128, 128); g.clip();
+      const d = pal[2];
+      g.fillStyle = `rgb(${d[0] * 0.8 | 0},${d[1] * 0.8 | 0},${d[2] * 0.8 | 0})`;
+      for (let i = 0; i < 9; i++) {
+        const a = RNG() * 6.283, r = rand(0, 16);
+        g.beginPath(); g.arc(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, rand(14, 22), 0, 6.3); g.fill();
+      }
+      // lá rải ngẫu nhiên (dày ở giữa, thưa ra mép), lá ngoài chĩa ra ngoài -> viền chùm lá lởm chởm tự nhiên
+      const nLeaf = needle ? 34 : kind === 'dry' ? 420 : 170;
+      for (let i = 0; i < nLeaf; i++) {
+        const a = RNG() * 6.283, r = Math.pow(RNG(), 0.7) * (needle ? 30 : 44);
+        const x = 64 + Math.cos(a) * r, y = 64 + Math.sin(a) * r, la = a + rand(-1.1, 1.1);
+        if (needle) drawNeedles(g, x, y, rand(16, 26), la, pick());
+        else if (kind === 'dry') drawLeaf(g, x, y, rand(5, 7.5), rand(1.6, 2.4), la, pick());
+        else drawLeaf(g, x, y, rand(10, 15), rand(3.2, 4.8), la, pick());
+      }
+      g.restore();
+      // --- nửa phải: lá dày kín, tối (bên trong tán)
+      g.save(); g.beginPath(); g.rect(128, 0, 128, 128); g.clip();
+      g.fillStyle = `rgb(${d[0] * 0.7 | 0},${d[1] * 0.7 | 0},${d[2] * 0.7 | 0})`; g.fillRect(128, 0, 128, 128);
+      for (let i = 0; i < (needle ? 260 : 700); i++) {
+        const c = pick(), s = rand(0.7, 1.0), cc = [c[0] * s, c[1] * s, c[2] * s];
+        const x = 128 + RNG() * 128, y = RNG() * 128, a = RNG() * 6.283;
+        if (needle) drawNeedles(g, x, y, rand(10, 18), a, cc);
+        else if (kind === 'dry') drawLeaf(g, x, y, rand(4, 6), rand(1.4, 2), a, cc);
+        else drawLeaf(g, x, y, rand(6, 9), rand(2, 3), a, cc);
+      }
+      g.restore();
     });
   }
 
@@ -1391,6 +1445,86 @@ const Destructibles = (() => {
     charred: new THREE.Color(0.12, 0.1, 0.09)
   };
 
+  // ---- Tán lá: lõi kín + nhiều thẻ "chùm lá" cắt alpha. Pháp tuyến hướng ra ngoài khối tán (không theo mặt từng tấm)
+  // -> cả khối sáng tối mềm như một vòm lá, thay vì từng mảnh phẳng loang lổ sáng tối
+  const _fq = new THREE.Quaternion(), _fq2 = new THREE.Quaternion(), _fz = new THREE.Vector3(0, 0, 1), _ff = new THREE.Vector3();
+  function setNormals(g, nx, ny, nz) {
+    const L = Math.hypot(nx, ny, nz) || 1, n = g.attributes.normal;
+    for (let i = 0; i < n.count; i++) n.setXYZ(i, nx / L, ny / L, nz / L);
+  }
+  // 1 thẻ chùm lá vuông cạnh w x h tại (x,y,z), mặt quay đại khái theo hướng (fx,fy,fz) có lệch ngẫu nhiên
+  function leafCard(out, x, y, z, fx, fy, fz, w, h, nrm) {
+    const g = new THREE.PlaneGeometry(w, h).toNonIndexed();
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, 0.004 + uv.getX(i) * 0.492);
+    _ff.set(fx + rand(-0.6, 0.6), fy + rand(-0.6, 0.6), fz + rand(-0.6, 0.6)).normalize();
+    _fq.setFromUnitVectors(_fz, _ff).multiply(_fq2.setFromAxisAngle(_fz, rand(0, 6.283)));
+    g.applyMatrix4(_m.compose(_v.set(x, y, z), _fq, _s.set(1, 1, 1)));
+    setNormals(g, nrm[0], nrm[1], nrm[2]);
+    out.push(g);
+  }
+  // UV lõi tán: chiếu phẳng theo trục trội của từng tam giác vào nửa phải atlas (lá dày kín)
+  function coreUV(g, cx, cy, cz, span) {
+    const p = g.attributes.position, uv = g.attributes.uv || new THREE.BufferAttribute(new Float32Array(p.count * 2), 2);
+    g.setAttribute('uv', uv);
+    const f = t => 0.51 + 0.48 * Math.max(0, Math.min(1, t / span * 0.5 + 0.5));
+    for (let i = 0; i < p.count; i += 3) {
+      let ax = 0, ay = 0, az = 0;
+      for (let k = 0; k < 3; k++) { ax += p.getX(i + k) - cx; ay += p.getY(i + k) - cy; az += p.getZ(i + k) - cz; }
+      const X = Math.abs(ax), Y = Math.abs(ay), Z = Math.abs(az);
+      for (let k = 0; k < 3; k++) {
+        const x = p.getX(i + k) - cx, y = p.getY(i + k) - cy, z = p.getZ(i + k) - cz;
+        const [a, b] = X >= Y && X >= Z ? [z, y] : Y >= Z ? [x, z] : [x, y];
+        uv.setXY(i + k, f(a), Math.max(0.01, Math.min(0.99, b / span * 0.5 + 0.5)));
+      }
+    }
+  }
+  // Khối tán hình elip tâm (cx,cy,cz) bán trục rx,ry,rz
+  function foliageClump(C, cx, cy, cz, rx, ry, rz, o = {}) {
+    // lõi gần như bị thẻ lá che hết -> chỉ cần khối 20 mặt
+    const core = new THREE.IcosahedronGeometry(1, 0);
+    const unit = core.attributes.position.array.slice();
+    jitter(core, 0.22, cx * 3.1 + cz * 1.7);
+    const p = core.attributes.position, n = core.attributes.normal, k = o.core || 0.62;
+    for (let i = 0; i < p.count; i++) {
+      const ux = unit[i * 3], uy = unit[i * 3 + 1], uz = unit[i * 3 + 2];
+      p.setXYZ(i, cx + p.getX(i) * rx * k, cy + p.getY(i) * ry * k, cz + p.getZ(i) * rz * k);
+      const nx = ux / rx, ny = uy / ry + 0.25 / ry, nz = uz / rz, L = Math.hypot(nx, ny, nz);
+      n.setXYZ(i, nx / L, ny / L, nz / L);
+    }
+    coreUV(core, cx, cy, cz, Math.max(rx, ry, rz) * 0.9);
+    C.push(core);
+    const ravg = (rx + ry + rz) / 3;
+    const size = o.size || Math.max(4, Math.min(8.5, ravg * 0.95));
+    const area = 4 * Math.PI * ((rx * ry + ry * rz + rx * rz) / 3);
+    const cnt = Math.round((o.density || 1) * 1.7 * area / (size * size));
+    for (let i = 0; i < cnt; i++) {
+      // hướng ngẫu nhiên đều trên mặt cầu, ít thẻ ở mặt dưới tán (ít ai nhìn, đỡ đỉnh)
+      let dy = rand(-1, 1); if (dy < -0.5 && RNG() < 0.35) dy = -dy;
+      const a = rand(0, 6.283), rr = Math.sqrt(1 - dy * dy), dx = Math.cos(a) * rr, dz = Math.sin(a) * rr;
+      const t = rand(0.72, 1.04);
+      const nx = dx / rx, ny = dy / ry + 0.3 / ry, nz = dz / rz;
+      leafCard(C, cx + dx * rx * t, cy + dy * ry * t, cz + dz * rz * t, dx, dy * 0.6 + 0.25, dz, size, size, [nx, ny, nz]);
+    }
+  }
+  // Tầng tán thông hình nón: lõi nón kín + cành kim chĩa xuống quanh mép
+  function conifersTier(C, y0, r, hh, seed) {
+    const core = new THREE.ConeGeometry(r * 0.66, hh, 10, 1, true).toNonIndexed();
+    core.translate(0, y0 + hh / 2, 0);
+    jitter(core, 0.12, seed);
+    const p = core.attributes.position, n = core.attributes.normal;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), L = Math.hypot(x, z) || 1; const v = Math.hypot(x / L, 0.9, z / L); n.setXYZ(i, x / L / v, 0.9 / v, z / L / v); }
+    coreUV(core, 0, y0 + hh / 2, 0, Math.max(r, hh / 2));
+    C.push(core);
+    const cnt = Math.round(10 + r * 2.8);
+    for (let i = 0; i < cnt; i++) {
+      const a = (i / cnt) * 6.283 + rand(-0.2, 0.2), t = Math.sqrt(rand(0.12, 1)), rr = r * t * rand(0.85, 1.05);
+      const x = Math.cos(a) * rr, z = Math.sin(a) * rr, y = y0 + hh * (1 - t) + rand(-0.6, 0.6);
+      const sz = rand(4.2, 5.6) * (0.6 + 0.4 * t);
+      leafCard(C, x, y, z, Math.cos(a), 0.35, Math.sin(a), sz, sz, [Math.cos(a), 0.9, Math.sin(a)]);
+    }
+  }
+
   function buildTreeVariant(kind) {
     // trả { trunk: geometry, crown: geometry|null, crownMat, trunkMat, height }
     const T = [], C = [];
@@ -1424,6 +1558,7 @@ const Destructibles = (() => {
           last.translate(-px, -py, -pz);
           last.applyMatrix4(new THREE.Matrix4().makeRotationY(a));
           last.translate(px, py, pz);
+          setNormals(last, Math.sin(a) * 0.5, 1, Math.cos(a) * 0.5);
           px += Math.sin(a) * Math.cos(pitch) * len; pz += Math.cos(a) * Math.cos(pitch) * len; py -= Math.sin(pitch) * len;
         }
       }
@@ -1433,12 +1568,12 @@ const Destructibles = (() => {
       T.push(place(new THREE.CylinderGeometry(0.6, 1.6, 50, 7), [0, 25, 0]));
       for (let i = 0; i < 6; i++) {
         const r = 11 - i * 1.6, hh = 13 - i * 0.8;
-        C.push(jitter(place(new THREE.ConeGeometry(r, hh, 9, 1, true), [0, 14 + i * 7, 0], [0, i * 0.7, 0]), 0.18, i));
+        conifersTier(C, 14 + i * 7 - hh / 2, r, hh, i);
       }
     } else if (kind === 'cypress') {
       barkKind = 'oak'; crownKind = 'needle'; height = 46;
       T.push(place(new THREE.CylinderGeometry(0.7, 1.2, 14, 6), [0, 7, 0]));
-      C.push(jitter(place(new THREE.SphereGeometry(6, 9, 10), [0, 26, 0], null, [1, 3.1, 1]), 0.2, 3));
+      foliageClump(C, 0, 26, 0, 5.4, 17.5, 5.4, { size: 4.2, density: 1.3 });
     } else if (kind === 'cactus') {
       barkKind = 'cactus'; crownKind = null; height = 22;
       T.push(place(new THREE.CylinderGeometry(1.6, 1.8, 20, 10), [0, 10, 0]), place(new THREE.SphereGeometry(1.6, 10, 5, 0, 6.3, 0, Math.PI / 2), [0, 20, 0]));
@@ -1467,17 +1602,22 @@ const Destructibles = (() => {
         const br = place(new THREE.CylinderGeometry(0.4, 0.7, 12, 5), [0, 6, 0]);
         br.applyMatrix4(new THREE.Matrix4().makeRotationZ(s * 0.7)); br.translate(0, 13, 0); T.push(br);
       }
-      for (let k = 0; k < 6; k++) C.push(jitter(place(new THREE.SphereGeometry(6, 8, 5), [rand(-9, 9), 23 + rand(-1, 1.5), rand(-9, 9)], null, [1.4, 0.35, 1.4]), 0.25, k));
+      // tán keo xòe phẳng như cái ô: vài tầng đĩa lá mỏng
+      for (let k = 0; k < 5; k++) foliageClump(C, rand(-7, 7), 23 + rand(-1, 1.5), rand(-7, 7), rand(6.5, 8.5), 2.2, rand(6.5, 8.5), { size: 4.2, core: 0.6 });
     } else if (kind === 'willow') {
       barkKind = 'oak'; crownKind = 'broad'; height = 34;
       T.push(place(new THREE.CylinderGeometry(1.0, 1.9, 18, 7), [0, 9, 0]));
-      for (let k = 0; k < 7; k++) C.push(jitter(place(new THREE.SphereGeometry(7, 9, 7), [rand(-7, 7), 22 + rand(-2, 3), rand(-7, 7)], null, [1, 1.35, 1]), 0.3, k));
-      for (let k = 0; k < 10; k++) { const a = (k / 10) * 6.28; C.push(place(new THREE.ConeGeometry(4, 16, 6, 1, true), [Math.cos(a) * 9, 15, Math.sin(a) * 9], [Math.PI, 0, 0])); }
+      for (let k = 0; k < 6; k++) foliageClump(C, rand(-6, 6), 22 + rand(-2, 3), rand(-6, 6), 6.5, 8, 6.5);
+      // cành liễu rủ: dải lá treo thẳng đứng quanh mép tán
+      for (let k = 0; k < 22; k++) {
+        const a = (k / 22) * 6.283 + rand(-0.15, 0.15), r = rand(8.5, 11.5), L = rand(11, 17);
+        leafCard(C, Math.cos(a) * r, 21 - L / 2 + rand(-1, 2), Math.sin(a) * r, Math.cos(a), 0, Math.sin(a), rand(3, 4.2), L, [Math.cos(a), 0.6, Math.sin(a)]);
+      }
     } else if (kind === 'jungle') {
       barkKind = 'oak'; crownKind = 'jungle'; height = 64;
       T.push(place(new THREE.CylinderGeometry(1.0, 2.0, 46, 7), [0, 23, 0]));
       for (let r = 0; r < 4; r++) { const a = r * 1.57 + 0.4; T.push(place(new THREE.BoxGeometry(0.5, 7, 4), [Math.cos(a) * 2.2, 3, Math.sin(a) * 2.2], [0, -a, 0])); }
-      for (let k = 0; k < 7; k++) C.push(jitter(place(new THREE.SphereGeometry(8, 9, 6), [rand(-10, 10), 48 + rand(-3, 5), rand(-10, 10)], null, [1.3, 0.55, 1.3]), 0.3, k));
+      for (let k = 0; k < 7; k++) foliageClump(C, rand(-10, 10), 48 + rand(-3, 5), rand(-10, 10), rand(8.5, 10.5), rand(4.2, 5.5), rand(8.5, 10.5));
     } else {
       // Cây lá rộng (bàng / sồi): thân + 3 cành + tán nhiều khối
       barkKind = 'oak'; crownKind = 'broad'; height = 40;
@@ -1488,7 +1628,7 @@ const Destructibles = (() => {
         br.applyMatrix4(new THREE.Matrix4().makeRotationY(b * 2.1 + rand(-0.3, 0.3)));
         br.translate(0, 15, 0); T.push(br);
       }
-      for (let k = 0; k < 8; k++) C.push(jitter(place(new THREE.IcosahedronGeometry(7, 1), [rand(-8, 8), 27 + rand(-4, 6), rand(-8, 8)], null, rand(0.8, 1.2)), 0.35, k));
+      for (let k = 0; k < 8; k++) { const r = 7 * rand(0.8, 1.2); foliageClump(C, rand(-8, 8), 27 + rand(-4, 6), rand(-8, 8), r, r * 0.85, r); }
     }
     return { trunk: merge(T), crown: C.length ? merge(C) : null, crownKind, barkKind, height };
   }
@@ -1528,7 +1668,8 @@ const Destructibles = (() => {
           if (v.crown) {
             const transparent = v.crownKind === 'frond';
             crownMat = new THREE.MeshStandardMaterial({
-              map: leafTex(v.crownKind), alphaTest: 0.45, transparent: false, side: THREE.DoubleSide,
+              map: v.crownKind === 'frond' ? leafTex('frond') : foliageTex(v.crownKind), alphaTest: 0.4, alphaToCoverage: true,
+              transparent: false, side: THREE.DoubleSide,
               roughness: 0.85, metalness: 0
             });
             void transparent;
