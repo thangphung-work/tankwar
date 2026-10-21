@@ -10,9 +10,9 @@
  */
 const DroneAir = (() => {
   const C = {
-    HIT_R: 6.5,          // bán kính trúng quanh tâm thân drone (sải cánh quạt ~1.5 m = 12 đv)
+    HIT_R: 4.5,          // bán kính trúng quanh tâm thân drone (sải cánh kể cả cánh quạt ~0.8 m = 6.6 đv)
     NEAR_R: 42,          // đạn bay qua trong bán kính này: tiếng rít qua micro drone
-    CENTER_Y: 2.8,       // tâm thân drone trên gốc mô hình (đáy càng đáp)
+    CENTER_Y: 2.0,       // tâm thân drone trên gốc mô hình (đáy chân đáp) — recon_drone.js CENTER_Y
     // phần "thân drone" mất mỗi phát trúng (1 = rơi): drone nhựa / sợi carbon rất mỏng manh —
     // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát (đạn pháo không bắn được mục tiêu trên không)
     DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
@@ -97,11 +97,35 @@ const DroneAir = (() => {
         if (!B.onAirHit) B.onAirHit = (s, T, h) => this.onDroneShot(s, T.dr, h);
         if (!B.onAirNear) B.onAirNear = (s, T, d) => this.onDroneNearMiss(s, T.dr, d);
       }
+      this.updateDroneDocks(dt);
       this.updateDroneFalls(dt);
       this.sendDroneState(dt);
       this.flushDroneHits();
       this.updateDroneAmbient(list);
       this.updateAirLockOverlay();
+    },
+
+    // HỘP CHỨA DRONE trên nóc cabin mọi xe pháo: nắp mở khi drone cất cánh / sắp đáp, đèn trạng thái
+    // (xanh lá: sẵn sàng, vàng nhấp nháy: đang sạc, xanh dương: drone đang bay, đỏ: mất drone)
+    updateDroneDocks(dt) {
+      if (typeof ReconDrone === 'undefined' || !ReconDrone.buildDock) return;
+      const P = this.player, cam = this.camera;
+      for (const u of this.units) {
+        if (u.tankType !== 'ARTILLERY' || !u.chassisGroup) continue;
+        if (!u._droneDock || u._droneDock.parent !== u.chassisGroup) { u._droneDock = ReconDrone.buildDock(); u.chassisGroup.add(u._droneDock); }
+        if (u.isDead || !u.group || !u.group.visible) continue;
+        if (cam && u !== P && Math.hypot(cam.position.x - u.x, cam.position.z - u.z) > C.DOCK_VIEW) continue;
+        const dr = u === P ? this.droneState() : this.otherDrone(u);
+        let open = false, status = 'ready';
+        if (dr.state === 'lost') status = 'empty';
+        else if (dr.state === 'docked') status = u === P && dr.batt < 0.999 ? 'charging' : 'ready';
+        else {
+          status = 'out';
+          const pd = u === P ? this.dronePadWorld() : { x: u.x, y: (u.y || 0) + ReconDrone.PAD.y, z: u.z };
+          open = dr.state === 'launching' || (Math.hypot(dr.x - pd.x, dr.z - pd.z) < 140 && dr.y - pd.y < 220);
+        }
+        ReconDrone.animateDock(u._droneDock, dt, open, status);
+      }
     },
 
     // vận tốc thật của drone (ước lượng từ dịch chuyển, lọc nhẹ) — dùng để đón đầu

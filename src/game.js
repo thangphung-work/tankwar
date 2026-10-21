@@ -3435,9 +3435,9 @@ class ArtilleryGame3D {
       return;
     }
     if (D.state === 'launching') {
-      // cất cánh từ nóc cabin: cánh quay lên, bốc thẳng lên ~35 đơn vị rồi chuyển sang hình từ drone
+      // cất cánh từ hộp chứa trên nóc cabin: nắp mở, cánh quay lên, bốc thẳng lên ~35 đơn vị rồi chuyển sang hình từ drone
       D.launchT += dt;
-      const k = Math.min(1, Math.max(0, (D.launchT - 0.35) / 0.75));
+      const k = Math.min(1, Math.max(0, (D.launchT - 0.5) / 0.75));
       D.x = pd.x; D.z = pd.z; D.y = pd.y + k * k * (3 - 2 * k) * 35;
       D.batt = Math.max(0, D.batt - dt / C.flight);
       if (SE && SE.updateDrone) SE.updateDrone(true, { climb: k > 0 && k < 1 ? 160 : 0, speed: 0 });
@@ -3447,7 +3447,7 @@ class ArtilleryGame3D {
         M.rotation.set(0, D.yaw, 0);
         ReconDrone.animate(M, dt, 1);
       }
-      if (D.launchT >= 1.15) {
+      if (D.launchT >= 1.3) {
         if (this.isGameOver || this.isGameStarted === false || (this.tacticalMap && this.tacticalMap.isOpen)) { D.state = 'returning'; return; }
         this.setSightMode(true);
       }
@@ -4048,7 +4048,7 @@ class ArtilleryGame3D {
       S.roll = (S.roll || 0) + (Math.max(-0.12, Math.min(0.12, -vLat / 2600)) - (S.roll || 0)) * (1 - Math.exp(-dt * 4));
       const t = S.t;
       px = D.x + Math.sin(t * 0.63) * 1.6; pz = D.z + Math.cos(t * 0.71) * 1.6;
-      py = D.y + Math.sin(t * 0.91) * 1.2 - 1.5;
+      py = D.y + Math.sin(t * 0.91) * 1.2 + 0.7;   // ống kính gimbal dưới mũi drone
       if (Math.abs(cam.fov - 55) > 0.01) { cam.fov = 55; cam.updateProjectionMatrix(); }
       cam.position.set(px, py, pz);
       const cp = Math.cos(S.pitch), spch = Math.sin(S.pitch);
