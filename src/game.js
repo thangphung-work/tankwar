@@ -1599,7 +1599,10 @@ class ArtilleryGame3D {
       } else if (tr.solveT <= 0) {
         // lựu pháo: đạn bay lâu, mô phỏng nặng -> giải thưa hơn; luôn dò quanh nghiệm lần trước
         tr.solveT = P.tankType === 'ARTILLERY' ? 0.5 : 0.12;
-        const sol = B.solveAimingForTarget(P.x, P.y, P.z, aimX, aimZ, this.terrain, P, { hintEl: tr.solved ? tr.el : undefined, hintCharge: tr.solved ? tr.charge : undefined, atUnit: T !== this._aimPoint });
+        // kính ngắm tự do của súng bắn thẳng: đường đạn đi QUA ĐÚNG điểm 3D tâm kính chạm (sườn dốc, đỉnh gò, mặt tường);
+        // không tới được (quá tầm / vượt giới hạn nòng) thì về bộ giải theo mặt đất như cũ
+        const sol = (T === this._aimPoint && T.free && P.tankType !== 'ARTILLERY' && this.solveDirectThrough(P, aimX, T.hy !== undefined ? T.hy : T.y, aimZ))
+          || B.solveAimingForTarget(P.x, P.y, P.z, aimX, aimZ, this.terrain, P, { hintEl: tr.solved ? tr.el : undefined, hintCharge: tr.solved ? tr.charge : undefined, atUnit: T !== this._aimPoint });
         const wasSolved = tr.solved, wasReach = tr.reachable;
         tr.solved = true;
         tr.reachable = !!(sol && sol.reachable !== false);
@@ -1658,6 +1661,57 @@ class ArtilleryGame3D {
   // Góc tà (độ, trong thế giới) để đạn bắn thẳng đi qua điểm (x, y, z): bắt đầu từ góc nhìn thẳng tới điểm,
   // mô phỏng đường đạn thật (trọng lực, lực cản) rồi chỉnh theo độ lệch cao tại đúng cự ly đó, 3 vòng là khớp
   unitAimHeight(u) { return BallisticsSystem3D.unitAimHeight(u); }
+  // Góc nòng (súng bắn thẳng) để đường đạn đi qua đúng điểm 3D (tx, ty, tz): dò nhị phân góc nâng trong giới hạn giá súng,
+  // đo độ cao đường đạn (bay tự do, không va chạm) tại đúng khoảng cách ngang tới điểm. Bộ giải cũ nhắm điểm rơi trên mặt
+  // đất dưới tâm kính -> tâm kính đặt trên đỉnh gò / mép tường thì đạn sượt qua rơi tít phía sau (vòng nòng vàng lệch xa tâm)
+  solveDirectThrough(P, tx, ty, tz) {
+    const B = this.ballistics, ammo = P.selectedAmmo || 'NORMAL';
+    const bo = this.boreOrigin(P);
+    const az = (Math.atan2(tx - bo.x, -(tz - bo.z)) * 180 / Math.PI + 720) % 360;
+    const rp = B.roundParams(ammo, P, P.charge || 1);
+    const lo0 = B.minElevationFor ? B.minElevationFor(P, az) : -10, hi0 = B.maxElevationFor ? B.maxElevationFor(P) : 20;
+    // miệng nòng thật: tâm quay nòng + chiều dài nòng (đo trên mô hình), xoay theo góc thử
+    const M = P.getMuzzleWorldTransform ? P.getMuzzleWorldTransform() : null;
+    const piv = new THREE.Vector3();
+    let blen = 0;
+    if (M && P.barrelPivot) { P.barrelPivot.getWorldPosition(piv); blen = piv.distanceTo(M.position); }
+    let flight = 0;
+    const launch = (el) => {
+      if (!blen) return B.launchState(P.x, P.y || 0, P.z, az, el, rp.v0, { barrel: P.barrel });
+      const er = el * Math.PI / 180, ar = az * Math.PI / 180, ce = Math.cos(er);
+      const dx = Math.sin(ar) * ce, dy = Math.sin(er), dz = -Math.cos(ar) * ce;
+      return { x: piv.x + dx * blen, y: piv.y + dy * blen, z: piv.z + dz * blen, vx: dx * rp.v0, vy: dy * rp.v0, vz: dz * rp.v0 };
+    };
+    // độ cao đường đạn tại khoảng cách ngang tới điểm, trừ độ cao điểm (> 0: đạn bay trên điểm)
+    const errAt = (el) => {
+      const L = launch(el);
+      const d = Math.hypot(tx - L.x, tz - L.z);
+      const r = B.simulateShot(L.x, L.y, L.z, L.vx, L.vy, L.vz, rp, B.isDirectFireShot(ammo, el), null, { points: true });
+      const pts = r.points;
+      let prev = pts[0];
+      for (let i = 1; i < pts.length; i++) {
+        const q = pts[i], dq = Math.hypot(q.x - L.x, q.z - L.z);
+        if (dq >= d) {
+          const dp = Math.hypot(prev.x - L.x, prev.z - L.z), k = dq > dp ? (d - dp) / (dq - dp) : 0;
+          flight = r.time * i / pts.length;
+          return prev.y + (q.y - prev.y) * k - ty;
+        }
+        prev = q;
+      }
+      return -1e9;   // không bay tới được khoảng cách đó
+    };
+    let lo = lo0, hi = hi0;
+    const eLo = errAt(lo), eHi = errAt(hi);
+    if (!(eLo <= 0 && eHi >= 0)) return null;
+    for (let k = 0; k < 18; k++) {
+      const m = (lo + hi) / 2;
+      if (errAt(m) > 0) hi = m; else lo = m;
+    }
+    const el = (lo + hi) / 2;
+    errAt(el);
+    return { elevation: el, reachable: true, direct: true, flightTime: flight, distance: Math.round(Math.hypot(tx - P.x, tz - P.z)) };
+  }
+
   boreOrigin(P) { return BallisticsSystem3D.boreOrigin(P); }
 
   freeAimElevation(P, x, y, z, hintEl) {
