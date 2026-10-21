@@ -397,6 +397,7 @@ const Landmarks = (() => {
       tarp: () => G(0, { color: 0x4a5236, roughness: 0.95 }),
       hesco: () => S({ map: hescoTex(), color: 0xffffff, roughness: 1 }),
       steelRust: () => G(3, { color: 0x5a463a, roughness: 0.72, metalness: 0.45 }),
+      steelRust2: () => G(4, { color: 0x6a4632, roughness: 0.8, metalness: 0.35 }),
       // thân bồn thép sơn trắng ngà: 2 vành tôn (mỗi vành 2.4 m) có mối hàn ngang + mối hàn đứng so le, vệt bẩn mưa nhẹ
       tankShell: () => S({ color: 0xffffff, roughness: 0.55, metalness: 0.15, map: texOf('tankShell', 512, 256, (q, w, h) => {
         q.fillStyle = '#e1ded6'; q.fillRect(0, 0, w, h);
@@ -1103,33 +1104,54 @@ const Landmarks = (() => {
       K.cbox('concDark', f, 0.4, s * (r + k * 6), 8, 1.2, 8, 0.4);
     }
     for (const s of [-1, 1]) K.solid(CZ, s * (G + 14 + (iR - G - 20) / 2), 10, (iR - G - 20) / 2, 0, 7);
-    // ---- HÀNG NHÍM THÉP CHỐNG XE CƠ GIỚI (Czech hedgehog) vòng ngoài rào ngoài, giữa ụ đất và rào: mỗi con 3 thanh thép
-    //      góc L dài 1.5 m bắt chéo vuông góc tại tâm (tán bản mã), đứng trên 3 chấu, 3 chấu chĩa lên; xoay ngẫu nhiên,
-    //      cách nhau ~1.9 m, chừa lối xe vào cổng chính
+    // ---- HÀNG NHÍM THÉP CHỐNG XE CƠ GIỚI (Czech hedgehog) giữa ụ đất và rào ngoài: mỗi con 3 thanh thép góc L dài ~1.5 m
+    //      bắt chéo vuông góc tại tâm (bản mã), đứng trên 3 chấu. Xếp so le 2 hàng như ngoài thực địa: khoảng cách, lệch hàng,
+    //      cỡ, hướng xoay, độ nghiêng mỗi con một khác; thỉnh thoảng 1 con đổ nghiêng hoặc 1 quãng trống; 2 sắc gỉ; dây thép
+    //      gai võng nối chấu trên các con kề nhau. Chừa lối xe vào cổng chính.
     {
-      const HD = 29, LB = 12, qUp = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(v3(1, 1, 1).normalize(), v3(0, 1, 0)));
+      const LB = 12, qUp = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(v3(1, 1, 1).normalize(), v3(0, 1, 0)));
       const yC = LB / 2 / Math.sqrt(3) + 0.2;
       const arms = [M4(0, 0, 0), M4(0, 0, 0, 0, 0, Math.PI / 2), M4(0, 0, 0, 0, -Math.PI / 2, 0)];   // thanh theo X, Y, Z
-      let n = 0;
+      const tips = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]].map(([x, y, z]) => v3(x * LB / 2, y * LB / 2, z * LB / 2));
+      let n = 0, prev = null;
+      const R = () => hash(n * 13 + 9001 + (R.k = (R.k || 0) + 1));
       const hog = (f, r) => {
-        const base = mul(M4(f, K.earth(f, r) + yC, r, 0, hash(n++ * 7 + 311) * TAU, (hash(n * 3 + 17) - 0.5) * 0.12), qUp);
+        n++;
+        const sc = 0.86 + R() * 0.3, topple = R() < 0.05, yaw = R() * TAU;
+        const tx = topple ? 0.62 * (R() < 0.5 ? -1 : 1) : (R() - 0.5) * 0.16, tz = topple ? (R() - 0.5) * 0.3 : (R() - 0.5) * 0.16;
+        const base = mul(M4(f, K.earth(f, r) + yC * sc - (topple ? 1.6 * sc : 0), r, tx, yaw, tz, sc, sc, sc), qUp);
+        const m0 = R() < 0.45 ? 'steelRust2' : 'steelRust';
         for (const A of arms) {
           const m = mul(base, A);
-          // thép góc L ~125 x 125 x 20 mm: 2 cánh vuông góc chung sống lưng
-          K.add('steelRust', new THREE.BoxGeometry(LB, 1, 0.16), mul(m, M4(0, 0.5, 0)));
-          K.add('steelRust', new THREE.BoxGeometry(LB, 0.16, 1), mul(m, M4(0, 0, 0.5)));
+          // thép góc L ~125 x 125 mm: 2 cánh vuông góc chung sống lưng
+          K.add(m0, new THREE.BoxGeometry(LB, 1, 0.16), mul(m, M4(0, 0.5, 0)));
+          K.add(m0, new THREE.BoxGeometry(LB, 0.16, 1), mul(m, M4(0, 0, 0.5)));
         }
-        // bản mã nối 3 thanh tại tâm
-        for (const A of arms) K.add('steelRust', new THREE.BoxGeometry(2.2, 2.2, 0.14), mul(base, mul(A, M4(0.6, 0.6, 0))));
+        for (const A of arms) K.add(m0, new THREE.BoxGeometry(2.2, 2.2, 0.14), mul(base, mul(A, M4(0.6, 0.6, 0))));
+        // dây thép gai võng nối chấu cao nhất với con trước
+        let top = null; for (const t of tips) { const w = t.clone().applyMatrix4(base); if (!top || w.y > top.y) top = w; }
+        if (prev && prev.distanceTo(top) < 24) {
+          const mid = prev.clone().add(top).multiplyScalar(0.5); mid.y -= 1.4 + R() * 1.2;
+          K.beam('steelDark', prev.toArray(), mid.toArray(), 0.14); K.beam('steelDark', mid.toArray(), top.toArray(), 0.14);
+        }
+        prev = top;
       };
-      const eF = L.hu - HD, eR = L.hv - HD, step = 15;
+      // đi dọc 1 cạnh: bước ngẫu nhiên 7..11, xen kẽ 2 hàng (cách mép 26.5 / 31.5) + lệch ngang, ~5% bỏ trống
+      const line = (len, at) => {
+        prev = null;
+        for (let t = -len + R() * 4, k = 0; t < len; t += 7 + R() * 4, k++) {
+          if (R() < 0.05) { prev = null; continue; }
+          const d = (k % 2 ? 31.5 : 26.5) + (R() - 0.5) * 2.4;
+          at(t + (R() - 0.5) * 2, d);
+        }
+      };
       for (const s of [-1, 1]) {
-        for (let f = -eF; f <= eF + 0.1; f += (2 * eF) / Math.round(2 * eF / step)) hog(f, s * eR);
-        for (let r = -eR + step; r < eR - step / 2; r += (2 * eR) / Math.round(2 * eR / step)) if (s < 0 || Math.abs(r) > 58) hog(s * eF, r);
-        K.solid(0, s * eR, eF + 5, 5, 0, 10);
-        K.solid(eF, s * (58 + eR) / 2, 5, (eR - 58) / 2, 0, 10);   // cạnh trước: 2 đoạn 2 bên lối vào
+        line(L.hu - 26, (t, d) => hog(t, s * (L.hv - d)));
+        line(L.hv - 36, (t, d) => { if (s < 0 || Math.abs(t) > 60) hog(s * (L.hu - d), t); else prev = null; });
+        K.solid(0, s * (L.hv - 29), L.hu - 22, 7, 0, 10);
+        K.solid(L.hu - 29, s * (60 + L.hv - 29) / 2, 7, (L.hv - 29 - 60) / 2, 0, 10);   // cạnh trước: 2 đoạn 2 bên lối vào
       }
-      K.solid(-eF, 0, 5, eR, 0, 10);
+      K.solid(-(L.hu - 29), 0, 7, L.hv - 29, 0, 10);
     }
     // cột đèn chiếu sáng dọc rào trong
     for (let f = -iF + 20; f <= iF - 20; f += 120) for (const s of [-1, 1]) lamp(f, s * (iR - 6), -s * Math.PI / 2);
