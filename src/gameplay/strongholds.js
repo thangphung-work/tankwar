@@ -428,7 +428,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       float pud = smoothstep(0.58, 0.61, lvl - dry) * (1.0 - smoothstep(uShDim.x + 2.0, uShDim.x + 12.0, af));   // nước chỉ đọng chỗ sàn phẳng, không trên mặt dốc
       float damp = smoothstep(0.36, 0.55, lvl - dry) * tun;
       float stain = smoothstep(0.5, 0.53, lvl) * (1.0 - smoothstep(0.54, 0.6, lvl)) * tun * (0.12 + 0.18 * (1.0 - uWK.z));
-      float pudO = smoothstep(0.66, 0.69, pn - dry) * (1.0 - tun) * smoothstep(0.4, 0.9, uWK.z);
+      // (vũng ngoài trời đã bỏ: phản chiếu trời quang dưới nắng ra mảng trắng như tuyết — nước chỉ đọng trong lòng hầm)
+      float pudO = 0.0;
       diffuseColor.rgb *= 1.0 - 0.3 * damp - stain;
       diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.4 + vec3(0.012, 0.016, 0.02), max(pud, pudO) * 0.85);
       shWet = max(max(damp * 0.55, pud), pudO);
