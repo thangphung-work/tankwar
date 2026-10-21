@@ -85,6 +85,18 @@ const Landmarks = (() => {
         gr.addColorStop(0, 'rgba(48,46,40,0.32)'); gr.addColorStop(1, 'rgba(48,46,40,0)'); g.fillStyle = gr; g.fillRect(x, y, 3 + hash(i + 7703) * 12, l);
       }
       for (let i = 0; i < 60; i++) blotch(g, hash(i + 7800) * N, hash(i + 7801) * N, 6 + hash(i + 7802) * 30, hash(i + 7803) < 0.6 ? '88,98,62' : '70,66,58', 0.22);
+      // vệt gỉ chảy từ bulông / chi tiết sắt (cam nâu) + loang nước ố vàng hình giọt kéo dài
+      for (let i = 0; i < 46; i++) {
+        const x = hash(i + 7900) * N, y = hash(i + 7901) * N * 0.7, l = 40 + hash(i + 7902) * 200, wd = 1.5 + hash(i + 7903) * 5;
+        const gr = g.createLinearGradient(0, y, 0, y + l); gr.addColorStop(0, 'rgba(146,78,32,0.55)'); gr.addColorStop(0.3, 'rgba(150,96,44,0.32)'); gr.addColorStop(1, 'rgba(150,96,44,0)');
+        g.fillStyle = gr; g.fillRect(x, y, wd, l); g.fillStyle = 'rgba(110,56,24,0.7)'; g.beginPath(); g.arc(x + wd / 2, y, wd * 0.8, 0, TAU); g.fill();
+      }
+      for (let i = 0; i < 26; i++) {
+        const x = hash(i + 7950) * N, y = hash(i + 7951) * N, rw = 14 + hash(i + 7952) * 40, rh = rw * (1.6 + hash(i + 7953) * 1.6);
+        const gr = g.createRadialGradient(x, y, 0, x, y + rh * 0.3, rh);
+        gr.addColorStop(0, 'rgba(176,150,84,0.0)'); gr.addColorStop(0.6, 'rgba(176,146,80,0.16)'); gr.addColorStop(0.85, 'rgba(150,118,62,0.32)'); gr.addColorStop(1, 'rgba(150,118,62,0)');
+        g.save(); g.translate(x, y); g.scale(rw / rh, 1); g.translate(-x, -y); g.fillStyle = gr; g.fillRect(x - rh, y - rh, rh * 2, rh * 2); g.restore();
+      }
     }
     // vệt nước chảy + muối hoa trắng dưới lỗ ty
     for (let i = 0; i < 40; i++) {
@@ -495,7 +507,12 @@ const Landmarks = (() => {
     const S = (o) => new THREE.MeshStandardMaterial(o);
     const C = (o) => { const [t, b] = concPair(); return S(Object.assign({ map: t, bumpMap: b, bumpScale: 0.5 }, o)); };
     // thép / sơn: lớp bẩn gỉ theo mức (rust), độ sần nhẹ
-    const G = (rust, o) => { const [t, b] = grimePair('r' + rust, rust); return S(Object.assign({ map: t, bumpMap: b, bumpScale: 0.35 }, o)); };
+    // bỏ hoang: gỉ sét / bẩn nhiều hơn hẳn, sơn phai (màu ngả xám-nâu)
+    const G = (rust, o) => {
+      const rr = ABANDONED ? Math.round(Math.min(5, rust * 1.8 + 1.2) * 10) / 10 : rust, [t, b] = grimePair('r' + rr, rr);
+      if (ABANDONED && o.color !== undefined) o = Object.assign({}, o, { color: new THREE.Color(o.color).lerp(new THREE.Color(0x7d7262), 0.16).getHex(), roughness: Math.min(1, (o.roughness || 0.6) + 0.12) });
+      return S(Object.assign({ map: t, bumpMap: b, bumpScale: 0.35 }, o));
+    };
     const m = {
       conc: () => C({ color: ABANDONED ? 0xb9b5aa : 0xd6d2c8, roughness: 0.95 }),
       concDark: () => C({ color: 0x9a968c, roughness: 0.97 }),
@@ -509,12 +526,30 @@ const Landmarks = (() => {
       yellow: () => G(0.8, { color: 0xd2a21f, roughness: 0.6, metalness: 0.15 }),
       rubber: () => S({ color: 0x1c1c1c, roughness: 0.95 }),
       void: () => new THREE.MeshBasicMaterial({ color: 0x050505 }),
+      // kính vỡ (bỏ hoang): lỗ thủng lởm chởm thấy phòng tối bên trong, mảnh kính còn bám khung, vết nứt toả ra
+      glassBroken: () => S({ color: 0xffffff, roughness: 0.3, metalness: 0.05, map: texOf('glassBroken', 128, 128, (q, w, h) => {
+        const gr = q.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#7f8f97'); gr.addColorStop(0.5, '#48555c'); gr.addColorStop(1, '#262e33');
+        q.fillStyle = gr; q.fillRect(0, 0, w, h);
+        const gd = q.createLinearGradient(0, 0, 0, h); gd.addColorStop(0, 'rgba(120,108,88,0.3)'); gd.addColorStop(1, 'rgba(120,108,88,0.6)'); q.fillStyle = gd; q.fillRect(0, 0, w, h);
+        const cx = w * 0.48, cy = h * 0.55; q.fillStyle = '#0b0c0d'; q.beginPath();
+        for (let k = 0; k < 18; k++) { const a = k / 18 * TAU, rr = (0.22 + hash(k + 8300) * 0.26) * w; k ? q.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr) : q.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+        q.closePath(); q.fill();
+        q.strokeStyle = 'rgba(220,226,226,0.75)'; q.lineWidth = 0.8;
+        for (let k = 0; k < 16; k++) { const a = k / 16 * TAU + hash(k + 8400), r0 = 0.3 * w, r1 = r0 + hash(k + 8401) * 0.4 * w; q.beginPath(); q.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); q.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); q.stroke(); }
+      }) }),
       // kính: không có envmap nên vẽ sẵn phản chiếu trời (trên sáng, dưới tối) + vệt loá chéo + bóng rèm bên trong
       glass: () => S({ color: 0xffffff, roughness: 0.2, metalness: 0.1, map: texOf('glass', 64, 64, (q, w, h) => {
         const gr = q.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#8fa6b4'); gr.addColorStop(0.45, '#4d606b'); gr.addColorStop(1, '#1f2a31');
         q.fillStyle = gr; q.fillRect(0, 0, w, h);
         q.fillStyle = 'rgba(20,24,26,0.35)'; for (let y = 4; y < h * 0.4; y += 3) q.fillRect(0, y, w, 1);
         q.fillStyle = 'rgba(255,255,255,0.16)'; q.beginPath(); q.moveTo(w * 0.15, 0); q.lineTo(w * 0.42, 0); q.lineTo(w * 0.12, h); q.lineTo(-w * 0.15, h); q.fill();
+        if (ABANDONED) {
+          // kính bám bụi (dày dần xuống dưới), vệt mưa khô, vết nứt chân chim một góc
+          const gd = q.createLinearGradient(0, 0, 0, h); gd.addColorStop(0, 'rgba(120,108,88,0.25)'); gd.addColorStop(1, 'rgba(120,108,88,0.6)'); q.fillStyle = gd; q.fillRect(0, 0, w, h);
+          for (let i = 0; i < 10; i++) { q.fillStyle = 'rgba(90,80,64,0.35)'; q.fillRect(hash(i + 8200) * w, hash(i + 8201) * h * 0.5, 1, h * 0.5); }
+          q.strokeStyle = 'rgba(230,230,224,0.7)'; q.lineWidth = 0.6;
+          for (let k = 0; k < 7; k++) { const a = k * 0.9 + 0.3; q.beginPath(); q.moveTo(w * 0.78, h * 0.22); q.lineTo(w * 0.78 + Math.cos(a) * 22, h * 0.22 + Math.sin(a) * 22); q.stroke(); }
+        }
       }) }),
       hazard: () => S({ map: hazardTex(), roughness: 0.75 }),
       bands: () => S({ map: bandTex(), roughness: 0.55, metalness: 0.2 }),
@@ -527,6 +562,15 @@ const Landmarks = (() => {
       sand: () => G(0, { color: 0xa48f68, roughness: 1, bumpScale: 0.8 }),
       bagGreen: () => G(0, { color: 0x6b6a4a, roughness: 1, bumpScale: 0.8 }),
       drumBlue: () => G(1.2, { color: 0x2f4f7a, roughness: 0.6, metalness: 0.3 }),
+      drumRust: () => G(4, { color: 0x6a4a30, roughness: 0.85, metalness: 0.3 }),
+      cardboard: () => G(0, { color: 0xa88a60, roughness: 1 }),
+      paper: () => S({ color: 0xd8d2c2, roughness: 1, side: THREE.DoubleSide }),
+      // đất cát / lá mục dạt quanh chân công trình (dải mờ dần ra ngoài; đáy ảnh = v 0 = chân tường, đậm nhất)
+      dirtRing: () => S({ map: texOf('dirtRing', 128, 64, (q, w, h) => {
+        q.clearRect(0, 0, w, h);
+        for (let y = 0; y < h; y++) { const a = Math.pow(y / h, 1.6) * 0.85; q.fillStyle = `rgba(96,82,60,${a})`; q.fillRect(0, y, w, 1); }
+        for (let i = 0; i < 260; i++) { const x = hash(i + 8100) * w, y = (1 - Math.pow(hash(i + 8101), 1.5)) * h, r = 1 + hash(i + 8102) * 4; q.fillStyle = hash(i + 8103) < 0.5 ? 'rgba(70,60,44,0.6)' : 'rgba(120,104,70,0.5)'; q.beginPath(); q.arc(x, y, r, 0, TAU); q.fill(); }
+      }, true), transparent: true, depthWrite: false, side: THREE.DoubleSide, roughness: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
       tarp: () => G(0, { color: 0x4a5236, roughness: 0.95 }),
       hesco: () => S({ map: hescoTex(), color: 0xffffff, roughness: 1 }),
       steelRust: () => G(3, { color: 0x5a463a, roughness: 0.72, metalness: 0.45 }),
@@ -612,11 +656,14 @@ const Landmarks = (() => {
       if (g.attributes.uv) uv.set(g.attributes.uv.array, o * 2);
       let y0 = Infinity, y1 = -Infinity;
       for (let i = 1; i < P.length; i += 3) { if (P[i] < y0) y0 = P[i]; if (P[i] > y1) y1 = P[i]; }
-      const H = y1 - y0, span = Math.min(12, H * 0.6), tint = 0.93 + hash(part++ * 13 + n) * 0.12;
+      const H = y1 - y0, span = Math.min(12, H * 0.6), tint = ABANDONED ? 0.84 + hash(part++ * 13 + n) * 0.18 : 0.93 + hash(part++ * 13 + n) * 0.12;
       for (let i = 0; i < n; i++) {
         let k = tint;
         if (H > 1.5) { const t = Math.min(1, (P[i * 3 + 1] - y0) / span); k *= 0.58 + 0.42 * t * t * (3 - 2 * t); }
-        col[(o + i) * 3] = col[(o + i) * 3 + 1] = col[(o + i) * 3 + 2] = k;
+        // bỏ hoang: chân công trình ám đất cát (ngả nâu, cao ~1.5 m tính từ mặt sân)
+        let dr = 1, dg = 1, db = 1;
+        if (ABANDONED) { const y = P[i * 3 + 1], t = Math.max(0, Math.min(1, y / 12)), d = 1 - t * t * (3 - 2 * t); dr = 1 - 0.18 * d; dg = 1 - 0.26 * d; db = 1 - 0.38 * d; }
+        col[(o + i) * 3] = k * dr; col[(o + i) * 3 + 1] = k * dg; col[(o + i) * 3 + 2] = k * db;
       }
       o += n;
       g.dispose();
@@ -644,6 +691,8 @@ const Landmarks = (() => {
     // cao độ mặt đất (ụ đất hầm, kè đất) tại (f, r) so với cốt san nền
     earth(f, r) { const [x, z] = this.W(f, r); return this.groundAt(x, z) - this.L.G; }
     add(m, geo, mtx) {
+      // bỏ hoang: ~1/3 ô kính bị vỡ (chọn theo thứ tự dựng -> cố định giữa các máy)
+      if (ABANDONED && m === 'glass' && hash((this.nGlass = (this.nGlass || 0) + 1) * 7.31 + 91) < 0.34) m = 'glassBroken';
       const k = typeof m === 'string' ? mat(m) : m;
       if (!this.parts.has(k)) this.parts.set(k, []);
       this.parts.get(k).push([geo, mtx || null]);
@@ -683,6 +732,7 @@ const Landmarks = (() => {
     solid(f, r, hf, hr, y0, y1, rot) {
       const L = this.L, c = Math.cos(rot || 0), s = Math.sin(rot || 0), [cx, cz] = this.W(f, r);
       this.solids.push({ cx, cz, ux: L.fx * c - L.fz * s, uz: L.fz * c + L.fx * s, hu: hf, hv: hr, y0: L.G + y0, y1: L.G + y1 });
+      (this.lsolids || (this.lsolids = [])).push({ f, r, hf, hr, rot: rot || 0, y0, y1 });
       this.top = Math.max(this.top, y1);
     }
     build(group) {
@@ -2103,6 +2153,61 @@ const Landmarks = (() => {
   }
 
   // ===========================================================================
+  // DẤU VẾT THỜI GIAN (căn cứ bỏ hoang): đất cát + lá mục dạt quanh chân mọi khối công trình, rác và đồ bỏ lại rải khắp
+  // sân (phuy gỉ lăn đổ, lốp xe, pallet gỗ vỡ, gạch đá vụn, tấm tôn gỉ, thùng các-tông bẹp, giấy rác, bao cát rách).
+  // Vị trí theo hàm băm cố định (mọi máy giống nhau), tránh lọt vào trong khối công trình.
+  // ===========================================================================
+  function weather(K, L) {
+    const sol = (K.lsolids || []).slice();
+    const inside = (f, r, pad) => sol.some(q => { const c = Math.cos(q.rot), s2 = Math.sin(q.rot), df = f - q.f, dr = r - q.r; return Math.abs(df * c + dr * s2) < q.hf + pad && Math.abs(-df * s2 + dr * c) < q.hr + pad && q.y0 < 4; });
+    // dải đất dạt quanh chân khối (4 hình thang ôm 4 cạnh, u dọc cạnh / 24, v từ chân tường ra ngoài)
+    const pos = [], uv = [];
+    for (const q of sol) {
+      if (q.y0 > 2 || q.hf < 1.5 || q.hr < 1.5 || q.hf > 90 || q.hr > 90) continue;
+      const m = 4 + Math.min(6, (q.hf + q.hr) * 0.08), c = Math.cos(q.rot), s2 = Math.sin(q.rot);
+      const P = (a, b) => [q.f + a * c - b * s2, 0.62, q.r + a * s2 + b * c];
+      const cs = [[-q.hf, -q.hr], [q.hf, -q.hr], [q.hf, q.hr], [-q.hf, q.hr]], k2 = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+      for (let e = 0; e < 4; e++) {
+        const i0 = cs[e], i1 = cs[(e + 1) % 4], o0 = [i0[0] + k2[e][0] * m, i0[1] + k2[e][1] * m], o1 = [i1[0] + k2[(e + 1) % 4][0] * m, i1[1] + k2[(e + 1) % 4][1] * m];
+        const len = Math.hypot(i1[0] - i0[0], i1[1] - i0[1]) / 24, A = P(...i0), B = P(...i1), Cc = P(...o1), D = P(...o0);
+        pos.push(...A, ...Cc, ...B, ...A, ...D, ...Cc); uv.push(0, 0, len, 1, len, 0, 0, 0, 0, 1, len, 1);
+      }
+    }
+    if (pos.length) {
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => i % 3 === 1 ? 1 : 0), 3));
+      K.add('dirtRing', g, null);
+    }
+    // rác + đồ bỏ lại
+    const n = Math.round(L.hu * L.hv / 900);
+    for (let i = 0; i < n; i++) {
+      const f = (hash(i * 3.7 + 9001) * 2 - 1) * (L.hu - 70), r = (hash(i * 5.3 + 9002) * 2 - 1) * (L.hv - 70);
+      if (inside(f, r, 4)) continue;
+      const kind = hash(i + 9003), yaw = hash(i + 9004) * TAU, y = Math.max(0, K.earth(f, r)) + 0.4, b = M4(f, y, r, 0, yaw, 0);
+      const at = (x, yy, z, rx, ry, rz, sx, sy, sz) => new THREE.Matrix4().multiplyMatrices(b, M4(x, yy, z, rx, ry, rz, sx, sy, sz));
+      if (kind < 0.16) {           // phuy gỉ: 1 nằm lăn + 1-2 đứng
+        K.add(hash(i + 1) < 0.7 ? 'drumRust' : 'drumBlue', new THREE.CylinderGeometry(1.9, 1.9, 5.6, 14), at(0, 1.9, 0, Math.PI / 2, 0, 0));
+        for (let k = 0; k < 1 + (hash(i + 2) < 0.5 ? 1 : 0); k++) K.add('drumRust', new THREE.CylinderGeometry(1.9, 1.9, 5.6, 14), at(4 + k * 4, 2.8, 3 - k * 2, (hash(i + k) - 0.5) * 0.2, 0, 0));
+      } else if (kind < 0.27) {    // lốp xe chồng / nằm rải
+        for (let k = 0; k < 1 + Math.floor(hash(i + 3) * 3); k++) K.add('rubber', new THREE.TorusGeometry(2.4, 1, 6, 14), at(k ? hash(i + k) * 6 : 0, 1 + (k && hash(i + k + 5) < 0.5 ? k * 2 : 0), k ? hash(i + k + 7) * 6 : 0, Math.PI / 2 + (hash(i + k + 9) - 0.5) * 0.4, 0, 0));
+      } else if (kind < 0.38) {    // pallet gỗ vỡ: ván mặt (có tấm gãy lệch) trên 3 thanh đỡ
+        for (const z of [-4, 0, 4]) K.add('wood', new THREE.BoxGeometry(10, 0.9, 1.2), at(0, 0.45, z));
+        for (let k = 0; k < 5; k++) if (hash(i * 7 + k) > 0.2) K.add('wood', new THREE.BoxGeometry(1.5, 0.3, 10), at(-4 + k * 2, 1.05 + (hash(i * 9 + k) < 0.2 ? 0.8 : 0), 0, 0, (hash(i * 11 + k) - 0.5) * 0.5, (hash(i * 13 + k) < 0.2 ? 0.3 : 0)));
+      } else if (kind < 0.55) {    // gạch đá / bê tông vụn
+        for (let k = 0; k < 4 + Math.floor(hash(i + 4) * 6); k++) { const sz = 0.7 + hash(i * 3 + k) * 2.2; K.add('concDark', new THREE.IcosahedronGeometry(sz, 0), at((hash(i * 5 + k) - 0.5) * 9, sz * 0.35, (hash(i * 7 + k) - 0.5) * 9, hash(k) * 3, hash(k + 1) * 3, 0, 1, 0.6, 1)); }
+      } else if (kind < 0.66) {    // tấm tôn gỉ rơi / dựng nghiêng
+        K.add(hash(i + 5) < 0.5 ? 'steelRust2' : 'corrGray', new THREE.BoxGeometry(12, 0.2, 6), at(0, 1.2, 0, (hash(i + 6) - 0.5) * 0.5, 0, hash(i + 7) * 0.4));
+      } else if (kind < 0.76) {    // thùng các-tông bẹp, rách
+        for (let k = 0; k < 2 + Math.floor(hash(i + 8) * 3); k++) K.add('cardboard', new THREE.BoxGeometry(3.2, 2.6, 3.2), at((hash(i + k * 3) - 0.5) * 6, 0.8, (hash(i + k * 5) - 0.5) * 6, (hash(i + k) - 0.5) * 0.4, hash(i + k + 2) * 3, 0, 1, 0.55, 1));
+      } else if (kind < 0.9) {     // giấy rác, túi nilon (lá mỏng nằm rải)
+        for (let k = 0; k < 6; k++) K.add('paper', new THREE.PlaneGeometry(1.4, 1), at((hash(i * 3 + k) - 0.5) * 14, 0.15 + k * 0.01, (hash(i * 5 + k) - 0.5) * 14, -Math.PI / 2 + (hash(k) - 0.5) * 0.4, hash(k + 3) * 3, 0));
+      } else {                     // bao cát rách đổ
+        for (let k = 0; k < 3 + Math.floor(hash(i + 9) * 3); k++) K.add('bagGreen', new THREE.BoxGeometry(4.2, 1.6, 2.6), at((hash(i * 3 + k) - 0.5) * 7, 0.8, (hash(i * 5 + k) - 0.5) * 5, 0, hash(k + 1) * 3, (hash(k + 2) - 0.5) * 0.4));
+      }
+    }
+  }
+
+  // ===========================================================================
   // TẬP CÔNG TRÌNH TRÊN BẢN ĐỒ
   // ===========================================================================
   // Đoạn thẳng a -> b cắt hộp xoay (mặt bằng u/v + khoảng cao) -> tham số t hoặc -1
@@ -2146,6 +2251,7 @@ const Landmarks = (() => {
         if (L.kind === 'nuke') buildNuke(K, grp, anim);
         else if (L.kind === 'bio') buildBio(K, grp, anim);
         else if (L.kind === 'sam') buildSam(K, grp, anim);
+        if (ABANDONED) weather(K, L);
         K.build(grp);
         for (const p of anim.search) {
           const yaw = new THREE.Group();
@@ -2213,6 +2319,12 @@ const Landmarks = (() => {
         // để không ảnh hưởng xe của người chơi dùng chung vật liệu
         if (m && m.isMeshBasicMaterial && m.color && (m.color.r + m.color.g + m.color.b) > 1.2) o.visible = false;
         if (m && m.emissive && m.emissiveIntensity > 0 && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.3) { o.material = m.clone(); o.material.emissiveIntensity = 0; }
+        // xe bỏ lại nhiều năm: phủ bụi đất, sơn xỉn (bản sao vật liệu, không ảnh hưởng xe người chơi)
+        if (ABANDONED && o.visible && o.material && o.material.color && !o.material.isMeshBasicMaterial) {
+          const mm = o.material === m ? m.clone() : o.material;
+          mm.color.lerp(new THREE.Color(0x8a7a5e), 0.32); mm.roughness = 1; if (mm.metalness !== undefined) mm.metalness *= 0.5;
+          o.material = mm;
+        }
       });
       if (v.chassis && u.turretGroup) u.turretGroup.visible = false;
       if (u.turretGroup && v.ty) u.turretGroup.rotation.y = v.ty;
