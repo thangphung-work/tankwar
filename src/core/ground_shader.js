@@ -439,11 +439,22 @@ uniform float gWindA;
 // nếu không đỉnh gợn gập ngược thành vòng khép kín như vân tay / vân gỗ. Nhiễu lấy ở mip thô (bias) để bỏ tầng tần số cao.
 // Độ cao mặt đất quanh điểm đang tô (đặt trong main): gợn cát uốn theo sườn đụn — đỉnh gợn xoay dần theo đường đồng mức
 vec2 gRipP0, gRipHG; float gRipH0;
+// Nhiễu KHÔNG LẶP cho gợn cát: một ảnh nhiễu tuần hoàn lấy ở một tỉ lệ thì cứ mỗi chu kỳ (vài chục mét) lặp lại y hệt
+// -> mắt bắt được "khuôn". Cộng hai lần lấy mẫu lệch tỉ lệ theo tỉ lệ vàng & xoay ~37°: hai chu kỳ không bao giờ trùng lại
+const mat2 gRotA = mat2(0.8, -0.6, 0.6, 0.8);
+vec3 gN2(vec2 p, float s, float o, float bias) {
+  vec3 a = texture2D(gNoise, p / s + o, bias).rgb;
+  vec3 b = texture2D(gNoise, gRotA * p / (s * 1.618) + o + 0.37, bias).rgb;
+  return clamp((a + b - 1.0) * 0.72 + 0.5, 0.0, 1.0);   // tổng 2 mẫu độc lập: thu lại để độ tương phản như 1 mẫu
+}
 float gRipPh(vec2 p) {
   vec2 d = vec2(cos(gWindA), sin(gWindA));
   vec2 w1 = texture2D(gNoise, p / 1200.0 + 0.11, 2.0).rg - 0.5;     // hướng gió đổi chậm theo vùng (~±6°)
-  vec3 w2 = texture2D(gNoise, p / 260.0 + 0.57, 2.0).rgb - 0.5;     // đỉnh gợn lượn nhẹ + bước gợn dãn / nén ~10%
-  vec2 q = p + w1 * 16.0 + w2.rg * 5.0;
+  vec3 w2 = gN2(p, 260.0, 0.57, 2.0) - 0.5;                          // đỉnh gợn lượn nhẹ + bước gợn dãn / nén ~10%
+  // đỉnh gợn uốn khúc ngắn (mỗi vài mét một khúc lượn, lệch ~±0,5 đv) như gợn cát thật, không thẳng như kẻ chỉ;
+  // độ dốc của độ lệch vẫn << 1 nên đỉnh gợn không gập thành vòng
+  vec2 w3 = gN2(p, 60.0, 0.13, 1.0).rg - 0.5;
+  vec2 q = p + w1 * 16.0 + w2.rg * 5.0 + w3 * 1.1;
   float hgt = gRipH0 + dot(p - gRipP0, gRipHG);
   // bước gợn ~2 đơn vị (~25 cm, như gợn cát gió thật); độ cao địa hình lệch pha -> gợn bẻ theo sườn đụn (độ dốc pha luôn > 0, không gập)
   return dot(q, d) / 2.0 + w2.b * 1.8 + hgt * 0.3;
@@ -451,8 +462,8 @@ float gRipPh(vec2 p) {
 // hệ gợn thứ 2 (đợt gió khác, lệch ~30°, bước dài hơn ~35%) — mỗi vùng cát mang một hệ gợn riêng, không phủ một kiểu khắp bản đồ
 float gRipPh2(vec2 p) {
   vec2 d = vec2(cos(gWindA + 0.52), sin(gWindA + 0.52));
-  vec3 w2 = texture2D(gNoise, p / 230.0 + 0.29, 2.0).rgb - 0.5;
-  vec2 q = p + w2.rg * 5.0;
+  vec3 w2 = gN2(p, 230.0, 0.29, 2.0) - 0.5;
+  vec2 q = p + w2.rg * 5.0 + (gN2(p, 70.0, 0.47, 1.0).rg - 0.5) * 1.2;
   return dot(q, d) / 2.7 + w2.b * 1.6 + (gRipH0 + dot(p - gRipP0, gRipHG)) * 0.3;
 }
 // gợn đứt đoạn / rẽ nhánh chữ Y dày (mỗi 1-3 m): dọc đường lệch, đỉnh gợn chuyển sang hàng lệch nửa bước; đỉnh cao thấp dọc chiều dài
@@ -461,22 +472,28 @@ float gRipY(vec3 jm, float ph) {
   float y = mix(gRipAsym(fract(ph)), gRipAsym(fract(ph + 0.5)), smoothstep(0.46, 0.54, jm.r));
   return y * (0.35 + 0.65 * smoothstep(0.28, 0.62, jm.g)) * (0.7 + 0.3 * jm.b);
 }
-// một hệ gợn: gần = sóng bất đối xứng có chữ Y; xa dần = sóng sin mượt rồi tắt sớm (gợn < ~12 điểm ảnh thì không còn vẽ),
-// ở tầm camera trận mặt cát xa trông mịn như thật thay vì phủ sọc li ti đều tăm tắp
+// một hệ gợn: gần = sóng bất đối xứng có chữ Y; xa dần = sóng sin mượt rồi tắt sớm (gợn < ~16 điểm ảnh thì không còn vẽ),
+// ở tầm camera trận mặt cát xa trông mịn như thật thay vì phủ sọc li ti đều tăm tắp.
+// Bản sóng sin ở xa GIỮ NGUYÊN các chỗ gợn đứt / rẽ chữ Y (hai sóng lệch nửa bước hoà vào nhau -> đỉnh gợn tắt rồi nối
+// sang hàng bên cạnh) và độ cao đỉnh gợn thay đổi dọc chiều dài — trước đây bản xa là sóng sin đều tuyệt đối, nên ở tầm
+// nhìn thường (gợn 15-50 điểm ảnh) sườn cát thành những sọc song song đều như kẻ chỉ
 float gRipOne(vec3 jm, float ph) {
   float fw = fwidth(ph);
-  return mix(gRipY(jm, ph), 0.5 - 0.5 * cos(6.2832 * fract(ph)), smoothstep(0.02, 0.06, fw)) * (1.0 - smoothstep(0.05, 0.11, fw));
+  float sw = smoothstep(0.46, 0.54, jm.r);
+  float sn = mix(0.5 - 0.5 * cos(6.2832 * ph), 0.5 + 0.5 * cos(6.2832 * ph), sw);
+  float amp = (0.5 + 0.5 * smoothstep(0.28, 0.62, jm.g)) * (0.8 + 0.2 * jm.b) * (1.0 - 0.8 * sw * (1.0 - sw) * 4.0);
+  return mix(gRipY(jm, ph), sn * amp, smoothstep(0.02, 0.06, fw)) * (1.0 - smoothstep(0.05, 0.11, fw));
 }
 // Độ cao gợn 0..1: sườn đón gió thoải (70%), sườn khuất gió dốc (30%); có vạt cát phẳng không gợn; mờ dần khi
 // một gợn nhỏ hơn ~3-5 điểm ảnh (ở xa) để không sinh vân nhiễu / răng cưa
 float gRip(vec2 p) {
-  vec3 jm = texture2D(gNoise, p / 46.0 + 0.37, 0.5).rgb;
-  vec3 zn = texture2D(gNoise, p / 380.0 + 0.83, 1.0).rgb;
+  vec3 jm = gN2(p, 46.0, 0.37, 0.5);
+  vec3 zn = gN2(p, 380.0, 0.83, 1.0);
   // vùng hệ gợn 1 / hệ gợn 2 (ranh giới uốn lượn vài chục mét)
   float reg = smoothstep(0.42, 0.58, zn.b);
   float h = mix(gRipOne(jm, gRipPh(p)), gRipOne(jm.gbr, gRipPh2(p)), reg);
   // vạt cát phẳng (cát nén / vừa bị gió san) xen vạt gợn rõ, 2 tầng cỡ -> mỗi chỗ một khác
-  float field = smoothstep(0.36, 0.6, zn.g * 0.65 + texture2D(gNoise, p / 95.0 + 0.21, 1.0).r * 0.35);
+  float field = smoothstep(0.36, 0.6, zn.g * 0.65 + gN2(p, 95.0, 0.21, 1.0).r * 0.35);
   return h * (0.25 + 0.75 * field);
 }
 ` : ''}${urban ? `// ---- NỀN PHỐ: lát ngẫu nhiên theo ô (mỗi ô ~23 m lấy một mảnh ảnh lệch + xoay bất kỳ, biên ô uốn lượn, giữ độ tương phản)
@@ -703,7 +720,7 @@ float gTuftH(vec2 p) {
   reflectedLight.indirectDiffuse *= 1.0 - gWet * 0.3;   // hõm khuất ánh trời
   reflectedLight.directSpecular *= 1.0 - gCloud * 0.5;`);
     };
-    mat.customProgramCacheKey = () => 'groundPBR10:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
+    mat.customProgramCacheKey = () => 'groundPBR11:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
     mat.needsUpdate = true;
     return mat;
   }
