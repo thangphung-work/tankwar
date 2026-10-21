@@ -10,7 +10,7 @@
  * - Nhiễu khí động của cánh: nhiễu dải rộng 0.8-3 kHz, bị "băm" theo nhịp cánh quét qua
  * - Gió thổi vào micro khi bay nhanh: tiếng ầm trầm, giật cục
  * Lực đẩy (vòng quay) tăng khi cất cánh / lên cao / tăng tốc; nghiêng cánh thì rotor một bên quay nhanh hơn bên kia.
- * Kết nối dữ liệu: bíp số + nhiễu sóng khi bắt / chuyển vùng / ngắt tín hiệu.
+ * Kết nối dữ liệu: bíp số + nhiễu sóng khi bắt / chuyển vùng / ngắt tín hiệu; bíp báo pin yếu / tự bay về.
  */
 
 SoundEngine.mixin(class {
@@ -174,6 +174,15 @@ SoundEngine.mixin(class {
   setDroneFar(on) {
     if (!this.vehicleFar || !this.ctx) return;
     this.vehicleFar.gain.setTargetAtTime(on ? 0.35 : 1, this.ctx.currentTime, 0.25);
+  }
+
+  // Cảnh báo pin của trạm điều khiển drone: 'low' — 3 bíp ngắn; 'rth' — bíp trầm dài 2 lần (drone tự bay về)
+  playDroneBattery(kind = 'low') {
+    if (!this.ready()) return;
+    const bus = this.uiBus || this.masterGain, t = this.ctx.currentTime + 0.01;
+    const beep = (at, f, hold) => this.tone(bus, at, { type: 'square', freq: f, gain: 0.016, attack: 0.003, hold, dur: 0.04, filter: 'lowpass', filterFreq: 3000 });
+    if (kind === 'rth') { beep(t, 880, 0.22); beep(t + 0.36, 660, 0.3); }
+    else { beep(t, 1320, 0.05); beep(t + 0.12, 1320, 0.05); beep(t + 0.24, 1320, 0.05); }
   }
 
   /**
