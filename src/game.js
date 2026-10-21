@@ -2227,9 +2227,17 @@ class ArtilleryGame3D {
     }
 
     // 6. Sát thương nổ diện rộng 3D
-    // Bán kính nổ / vùng lõi theo loại đạn (bảng dùng chung với vòng sát thương dự kiến trên HUD — ballistics.js)
+    // Bán kính nổ / vùng lõi theo loại đạn (bảng dùng chung với vòng sát thương dự kiến trên HUD — ballistics.js).
+    // Với đạn có thuốc nổ, blastRadius chỉ còn dùng cho hư hại bộ phận (lốp, kính...) và xác xe.
     const BP = BallisticsSystem3D.blastProfile(ammoType, !!shell.isHeavyArty);
     const blastRadius = BP.radius, blastCore = BP.core;
+    // Đạn có thuốc nổ: sức ép (tầm ngắn) + mảnh văng (tầm xa, có hướng theo thân đạn) tính riêng, đo khoảng cách 3D
+    // tới BỀ MẶT thân xe (src/core/blast_physics.js). Đạn không thuốc nổ (AP, súng máy, đạn cháy): giảm dần theo blastFalloff.
+    const BPH = typeof BlastPhysics !== 'undefined' ? BlastPhysics : null;
+    const bSpec = BPH ? BPH.spec(ammoType, !!shell.isHeavyArty) : null;
+    const reachR = bSpec ? Math.max(blastRadius, BPH.reach(bSpec)) : blastRadius;
+    const shellAxis = { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 };
+    const hullOf = unit => this.hullDistanceTo(unit, x, y, z);
 
     this.units.forEach(unit => {
       if (unit._netHidden || unit._netStale) return;   // vị trí không rõ (máy chủ lọc tầm nhìn / mất gói quá lâu)
@@ -2251,8 +2259,9 @@ class ArtilleryGame3D {
           return;
         }
 
-        const dist = this.blastDistance(unit, x, y, z);
-        if (dist <= blastRadius) {
+        const hd = bSpec ? hullOf(unit) : null;
+        const dist = hd ? hd.d : this.blastDistance(unit, x, y, z);
+        if (dist <= reachR) {
           // Sát thương lớn nhất (sát điểm nổ) theo loại đạn; nhân với mức giảm theo khoảng cách ở dưới
           let splashDamage = 1.0;
           if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
@@ -2271,7 +2280,10 @@ class ArtilleryGame3D {
           } else if (ammoType === 'AP') {
             splashDamage = 0.15;   // không thuốc nổ: chỉ mảnh vỡ / bụi kim loại cháy sát điểm chạm
           }
-          splashDamage *= this.blastFalloff(dist, blastCore, blastRadius);
+          // Đạn có thuốc nổ: từ đây splashDamage chỉ là tích các hệ số (nước, che chắn, cây, đạn cao cấp); sát thương gốc
+          // (BlastPhysics) nhân sau. Đạn không thuốc nổ: giảm dần theo khoảng cách
+          if (bSpec) splashDamage = 1;
+          else splashDamage *= this.blastFalloff(dist, blastCore, blastRadius);
 
           // Nổ dưới nước: nước hấp thụ phần lớn mảnh văng & sóng nổ
           if (hitType === 'WATER') splashDamage *= 0.5;
@@ -2316,15 +2328,26 @@ class ArtilleryGame3D {
               }
             }
           }
+          let fragHit = false;
           if (typeof VehicleDamage !== 'undefined') {
-            const dmgRes = VehicleDamage.onSplash(unit, { x, y, z, ammo: ammoType, heavy: !!shell.isHeavyArty, dist, radius: blastRadius, shooter, fx: fxSys });
-            splashDamage = Math.round(splashDamage * dmgRes.mul * 1000) / 1000;
+            const dmgRes = VehicleDamage.onSplash(unit, { x, y, z, ammo: ammoType, heavy: !!shell.isHeavyArty, dist, radius: blastRadius, shooter, fx: fxSys, face: hd ? hd.face : undefined });
+            if (bSpec) {
+              const r = BPH.damage(bSpec, dist, hd.t, shellAxis, dmgRes.armorCls || 'medium', dmgRes.faceK || 1, hd.span);
+              fragHit = r.frag > r.blast;
+              splashDamage = Math.round(splashDamage * r.dmg * (dmgRes.equipK === undefined ? 1 : dmgRes.equipK) * 1000) / 1000;
+            } else splashDamage = Math.round(splashDamage * dmgRes.mul * 1000) / 1000;
             if (dmgRes.noFire) unit._noIgnite = true;
             // phần cộng thêm của đạn cao cấp không vượt ngưỡng 1 phát máy chủ chấp nhận (2.6 máu)
             if (premSplash > 1) splashDamage = Math.min(splashDamage, Math.max(2.5, splashDamage / premSplash));
             this.reportVehicleDamage(unit, shooter, dmgRes.events);
+          } else if (bSpec) {
+            const r = BPH.damage(bSpec, dist, hd.t, shellAxis, 'medium', 1, hd.span);
+            fragHit = r.frag > r.blast;
+            splashDamage = Math.round(splashDamage * r.dmg * 1000) / 1000;
           }
           if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(unit);
+          // Mảnh xa lác đác / bị giáp chặn hết: không trừ máu, không báo tin (hư hại bộ phận ở trên vẫn tính)
+          if (bSpec && splashDamage < BPH.MIN_SPLASH) { unit._noIgnite = false; return; }
 
           // Sức nổ lan / mảnh văng không làm giáp phản ứng nổ kích nổ (gạch chỉ phản ứng với đạn trúng thẳng)
           unit._eraIgnore = true;
@@ -2345,7 +2368,7 @@ class ArtilleryGame3D {
             this.onUnitDestroyed(unit, shooter);
           } else {
             if (unit.isPlayer && ammoType !== 'GATLING_BULLET') {
-              this.addCombatLog(`[[alert-triangle]] DÍNH SỨC ÉP ĐẠN NỔ (-${splashDamage} MÁU)! CÒN ${res.currentHp.toFixed(1)}/${unit.maxHp} MÁU!`, 'alert');
+              this.addCombatLog(`[[alert-triangle]] ${fragHit ? 'DÍNH MẢNH VĂNG' : 'DÍNH SỨC ÉP ĐẠN NỔ'} (-${splashDamage} MÁU)! CÒN ${res.currentHp.toFixed(1)}/${unit.maxHp} MÁU!`, 'alert');
             }
             this.updateTeamScoreUI();
           }
@@ -2389,6 +2412,14 @@ class ArtilleryGame3D {
     if (fromNet && fxSys && fxSys.syncCrater && (d.t === 'GROUND' || !d.t)) fxSys.syncCrater(d.x, d.y, d.z, d.a, !!d.h, { x: d.dx || 0, y: d.dy || -1, z: d.dz || 0 });
   }
 
+  // Khoảng cách 3D từ tâm nổ tới bề mặt hộp thân xe + mặt giáp bị đánh + hướng tới xe (BlastPhysics.hullDistance)
+  hullDistanceTo(unit, x, y, z) {
+    const box = typeof VehicleCollision !== 'undefined' && VehicleCollision.hullBox ? VehicleCollision.hullBox(unit)
+      : { minX: -16, maxX: 16, minY: 0, maxY: 28, minZ: -30, maxZ: 30 };
+    const uy = unit.y || (this.terrain ? this.terrain.getElevationAt(unit.x, unit.z) : 0);
+    return BlastPhysics.hullDistance({ x, y, z }, unit, box, uy);
+  }
+
   // Đạn từ máy khác: chỉ chạy hư hại bộ phận (không trừ máu) cho xe trúng trực tiếp & xe trong vùng nổ
   applyVehicleDamageVisuals(shell, hitType, directTarget, unitHit, ammoType, shooter, shooterTeam, fxSys) {
     if (typeof VehicleDamage === 'undefined') return;
@@ -2404,18 +2435,23 @@ class ArtilleryGame3D {
       VehicleDamage.visualOnly(() => VehicleDamage.onDirectHit(directTarget, { hit: unitHit, ammo: ammoType, heavy, shooter, fx: fxSys, dir }));
       return;
     }
-    const R = { HE: heavy ? 135 : 75, CLUSTER: 85, CLUSTER_SUBMUNITION: 32, RPG: 45, ANTI_TANK_MISSILE: 45, AP: 9, INCENDIARY: 16, GATLING_BULLET: 10, SCOUT_BULLET: 10 }[ammoType] || (heavy ? 90 : 55);
+    // cùng bảng bán kính / cách đo khoảng cách với máy có quyền (handleShellImpact) -> hư hại bộ phận khớp nhau
+    const bSpec = typeof BlastPhysics !== 'undefined' ? BlastPhysics.spec(ammoType, heavy) : null;
+    const R = BallisticsSystem3D.blastProfile(ammoType, heavy).radius;
+    const reachR = bSpec ? Math.max(R, BlastPhysics.reach(bSpec)) : R;
     for (const unit of this.units) {
       if (unit.isDead && unit.dmg && unit.group && unit.group.visible && !(hitType === 'DIRECT_HIT' && unit === directTarget)) {
-        const dW = Math.hypot(unit.x - shell.x, unit.z - shell.z);
+        const dW = this.blastDistance(unit, shell.x, shell.y, shell.z);
         if (dW <= R) VehicleDamage.onSplash(unit, { x: shell.x, y: shell.y, z: shell.z, ammo: ammoType, heavy, dist: dW, radius: R, fx: fxSys });
         continue;
       }
       if (unit.isDead || (shooterTeam && unit.team === shooterTeam)) continue;
-      const dist = Math.hypot(unit.x - shell.x, unit.z - shell.z);
-      if (dist > R) continue;
+      // giống máy có quyền: đạn có thuốc nổ đo tới bề mặt thân xe (hư hại bộ phận khớp nhau)
+      const hd = bSpec ? this.hullDistanceTo(unit, shell.x, shell.y, shell.z) : null;
+      const dist = hd ? hd.d : this.blastDistance(unit, shell.x, shell.y, shell.z);
+      if (dist > reachR) continue;
       if (this.terrain && this.terrain.shelterFactor && this.terrain.shelterFactor(unit) <= 0) continue;
-      VehicleDamage.visualOnly(() => VehicleDamage.onSplash(unit, { x: shell.x, y: shell.y, z: shell.z, ammo: ammoType, heavy, dist, radius: R, shooter, fx: fxSys }));
+      VehicleDamage.visualOnly(() => VehicleDamage.onSplash(unit, { x: shell.x, y: shell.y, z: shell.z, ammo: ammoType, heavy, dist, radius: R, shooter, fx: fxSys, face: hd ? hd.face : undefined }));
     }
   }
 

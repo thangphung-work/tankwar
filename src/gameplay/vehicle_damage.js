@@ -2716,13 +2716,16 @@ const VehicleDamage = (() => {
     d.last = { cls, heavy: !!opts.heavy, point: point.clone(), splash: true, ammo: opts.ammo, at: Date.now() };
     // Sóng nổ / mảnh văng: giáp dày chặn tốt, xe nhẹ & xe tải bị mảnh văng xé nát
     let mul = cls === 'heat' || cls === 'kinetic' ? VS.blast[A.cls] : VS[cls][A.cls];
-    // Nổ ngay dưới gầm / trên nóc (đạn chùm, lựu pháo) đánh vào chỗ giáp mỏng
-    if (opts.ammo === 'CLUSTER_SUBMUNITION' || opts.heavy) mul *= A.face.top;
+    // Mặt giáp bị đánh: opts.face (tính theo vị trí tâm nổ so với hộp thân xe, BlastPhysics.hullDistance);
+    // không có -> luật cũ: đạn chùm / lựu pháo coi như đánh vào nóc mỏng
+    const faceK = opts.face ? (A.face[opts.face] || 1) : ((opts.ammo === 'CLUSTER_SUBMUNITION' || opts.heavy) ? A.face.top : 1);
+    mul *= faceK;
     // Tấm giáp tăng cường che sườn / tháp: chặn bớt mảnh văng
-    if (typeof Equipment !== 'undefined' && Equipment.appliqueSplashMul) mul *= Equipment.appliqueSplashMul(u, cls);
+    let equipK = typeof Equipment !== 'undefined' && Equipment.appliqueSplashMul ? Equipment.appliqueSplashMul(u, cls) : 1;
     // Lồng thép quanh xe đỡ mảnh văng: ít sát thương hơn, ít hỏng lốp / xích / phụ kiện hơn (partK)
     const SL = typeof Equipment !== 'undefined' && Equipment.slatSplash ? Equipment.slatSplash(u, cls) : { mul: 1, partK: 1, noFire: false };
-    mul *= SL.mul;
+    equipK *= SL.mul;
+    mul *= equipK;
     const pk = SL.partK;
     const k = Math.max(0, 1 - opts.dist / Math.max(1, opts.radius));
     const impulse = point.clone().sub(u.group.position).normalize().multiplyScalar(-40 * k);
@@ -2766,7 +2769,8 @@ const VehicleDamage = (() => {
     }
     recompute(u);
     FX = null;
-    return { mul, events, noFire: SL.noFire };
+    // equipK: hệ số giáp tăng cường / lồng thép — game.js nhân vào sát thương tính theo BlastPhysics (mul thì đã gồm sẵn)
+    return { mul, events, noFire: SL.noFire, armorCls: A.cls, faceK, equipK };
   }
 
   // Xe bị phá hủy. K = explosion_fx.killInfo(u): kiểu chết theo phát kết liễu.
