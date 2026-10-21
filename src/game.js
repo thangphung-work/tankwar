@@ -2014,13 +2014,52 @@ class ArtilleryGame3D {
     if (!P || P.isDead || P.tankType !== 'ALL_ROUNDER' || !P.rcwsGun) return;
     const want = on === undefined ? !P.mgActive : !!on;
     if (want === !!P.mgActive) return;
+    // trạm súng máy nóc tháp bị bắn văng: không còn súng máy
+    if (want && P.dmg && P.dmg.lost && P.dmg.lost.has('rcws')) { this.addCombatLog('[[alert-triangle]] Trạm súng máy trên nóc tháp đã bị bắn văng — không dùng được', 'alert'); return; }
     P.mgActive = want;
     if (!want) P._aa = null;   // trạm súng thu về vị trí nghỉ
+    if (want) this.mgAirReady();
+    else {
+      // về pháo chính: thôi ngắm trời, kính hạ về đường chân trời
+      if (this._airAim && this.clearAirAim) this.clearAirAim();
+      const S = this._sight;
+      if (S && !S.arty) { S.aimPitch = Math.min(S.aimPitch, 0.08); if (S.vPitch !== undefined) S.vPitch = Math.min(S.vPitch, 0.08); }
+    }
     this.updateAmmoUI();
     if (window.soundEngine && typeof window.soundEngine.playAmmoSwitch === 'function') window.soundEngine.playAmmoSwitch(want ? 'SCOUT_BULLET' : P.selectedAmmo);
     this.addCombatLog(want
-      ? '[[crosshair]] SÚNG MÁY 7.62MM NÓC THÁP — bám chỗ đang ngắm, giữ Space để xả đạn (diệt drone, xe giáp mỏng; vô hại với xe tăng). [4] về pháo chính'
+      ? (this._airAim && this._airAim.kind === 'drone' ? '[[crosshair]] SÚNG MÁY 7.62MM NÓC THÁP — đã khóa drone địch, giữ Space để xả đạn. [4] về pháo chính'
+        : '[[crosshair]] SÚNG MÁY 7.62MM NÓC THÁP — ngóc lên trời phòng không: rê tâm kính / nhấp vào drone địch để khóa, giữ Space để xả đạn (diệt drone, xe giáp mỏng; vô hại với xe tăng). [4] về pháo chính')
       : '[[target-arrow]] Về pháo chính 120mm', 'tip');
+  }
+
+  // Chọn súng máy nóc tháp = tư thế phòng không: thấy drone địch trong tầm thì khóa ngay (máy tính hỏa lực tự đón đầu),
+  // không thì trạm súng (và kính ngắm nếu đang ngắm) ngóc lên trời ~30° theo hướng đang nhìn, chờ drone
+  mgAirReady() {
+    const P = this.player;
+    if (!P || P.isDead) return;
+    const S = this._sight && !this._sight.arty ? this._sight : null;
+    if (this.airDroneList && this.droneIsAirborne) {
+      let best = null, bd = 1100;
+      for (const d of this.airDroneList()) {
+        if (d.team === P.team || d.key === 'own' || !d.seen || !this.droneIsAirborne(d)) continue;
+        const r3 = Math.hypot(d.x - P.x, d.y - (P.y || 0), d.z - P.z);
+        if (r3 < bd) { bd = r3; best = d; }
+      }
+      if (best && this.setAirAim) { this.setAirAim({ kind: 'drone', dr: best, hard: !!S }); return; }
+    }
+    const EL = 30 * Math.PI / 180;
+    if (S) {
+      // trong kính: ngóc tâm kính lên trời -> tia dò tâm kính ra trời -> trạm súng ngắm trời theo (freeAimAir);
+      // đang khóa xe mặt đất thì thả khóa (kính đang bám xe sẽ không ngóc lên)
+      if (this.lockedTarget && this.setLockedTarget) this.setLockedTarget(null);
+      S.aimPitch = EL;
+      if (S.vPitch !== undefined) S.vPitch = Math.max(S.vPitch, EL - 0.25);
+      return;
+    }
+    const tw = (P._turretYaw !== undefined ? P._turretYaw : 0) + (P.bodyAngle || 0);
+    const m = P.getMuzzleWorldTransform ? P.getMuzzleWorldTransform().position : { x: P.x, y: (P.y || 0) + 20, z: P.z };
+    if (this.aimAtSky) this.aimAtSky({ origin: { x: m.x, y: m.y, z: m.z }, direction: { x: -Math.sin(tw) * Math.cos(EL), y: Math.sin(EL), z: -Math.cos(tw) * Math.cos(EL) } }, true);
   }
 
   // Được ngắm trời / khóa drone không: xe 6 nòng, trinh sát luôn được; xe tăng chỉ khi đang chọn súng máy nóc tháp [4]
