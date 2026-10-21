@@ -363,7 +363,7 @@ const Landmarks = (() => {
       drumBlue: () => G(1.2, { color: 0x2f4f7a, roughness: 0.6, metalness: 0.3 }),
       tarp: () => G(0, { color: 0x4a5236, roughness: 0.95 }),
       hesco: () => S({ map: hescoTex(), color: 0xffffff, roughness: 1 }),
-      steelRust: () => G(3, { color: 0x6e5444, roughness: 0.85, metalness: 0.3 }),
+      steelRust: () => G(3, { color: 0x5a463a, roughness: 0.72, metalness: 0.45 }),
       // thân bồn thép sơn trắng ngà: 2 vành tôn (mỗi vành 2.4 m) có mối hàn ngang + mối hàn đứng so le, vệt bẩn mưa nhẹ
       tankShell: () => S({ color: 0xffffff, roughness: 0.55, metalness: 0.15, map: texOf('tankShell', 512, 256, (q, w, h) => {
         q.fillStyle = '#e1ded6'; q.fillRect(0, 0, w, h);
@@ -1069,10 +1069,12 @@ const Landmarks = (() => {
         const base = mul(M4(f, K.earth(f, r) + yC, r, 0, hash(n++ * 7 + 311) * TAU, (hash(n * 3 + 17) - 0.5) * 0.12), qUp);
         for (const A of arms) {
           const m = mul(base, A);
-          K.add('steelRust', new THREE.BoxGeometry(LB, 1.5, 0.3), mul(m, M4(0, 0.6, 0)));
-          K.add('steelRust', new THREE.BoxGeometry(LB, 0.3, 1.5), mul(m, M4(0, 0, 0.6)));
+          // thép góc L ~125 x 125 x 20 mm: 2 cánh vuông góc chung sống lưng
+          K.add('steelRust', new THREE.BoxGeometry(LB, 1, 0.16), mul(m, M4(0, 0.5, 0)));
+          K.add('steelRust', new THREE.BoxGeometry(LB, 0.16, 1), mul(m, M4(0, 0, 0.5)));
         }
-        K.add('steelRust', new THREE.BoxGeometry(2.6, 2.6, 2.6), base);
+        // bản mã nối 3 thanh tại tâm
+        for (const A of arms) K.add('steelRust', new THREE.BoxGeometry(2.2, 2.2, 0.14), mul(base, mul(A, M4(0.6, 0.6, 0))));
       };
       const eF = L.hu - HD, eR = L.hv - HD, step = 15;
       for (const s of [-1, 1]) {
