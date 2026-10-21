@@ -2045,7 +2045,7 @@ const Destructibles = (() => {
 
   // Cây to cao như thật (so với xe): hệ số phóng theo loại; thân cây (bán kính gốc, phần thân / chiều cao) chặn đạn
   const TREE_SCALE = { cactus: 1.0, deadTree: 1.3 };
-  const TREE_CHUNK = 1800;   // cạnh ô vùng chia rừng cây (bản đồ 5400 -> 3 x 3 ô)
+  const TREE_CHUNK = 1350;   // cạnh ô vùng chia rừng cây (bản đồ 5400 -> 4 x 4 ô)
   // Cắt khung nhìn theo khối bao cả ô cây (toạ độ cục bộ của nhóm cây); tia dò trúng từng cây vẫn dùng khối bao gốc
   // của hình học một cây (InstancedMesh.raycast thử khối bao hình học theo ma trận từng cây)
   function cullBySphere(pool, sphere) {
