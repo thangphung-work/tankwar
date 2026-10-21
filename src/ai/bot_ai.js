@@ -153,9 +153,9 @@ class BotAIController {
       if (this.aa) { this.aa = null; U.isFiringGatling = false; U._aa = null; }
       return false;
     }
-    const ammo = tank ? 'SCOUT_BULLET' : U.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (U.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
+    const ammo = tank ? 'MG762' : U.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (U.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
     const elMax = tank && typeof DroneAir !== 'undefined' ? DroneAir.C.RCWS.elMax : 60;
-    const cap = ballistics && ballistics.maxTravelFor ? ballistics.maxTravelFor(ammo, U) : 800;
+    const cap = G.aaRound ? (G.aaRound(U, ammo).maxTravel || 800) : 800;
     const seeR = typeof DroneAir !== 'undefined' ? DroneAir.C.BOT_SEE_R : 1100;
     const cy = typeof DroneAir !== 'undefined' ? DroneAir.C.CENTER_Y : 2.8;
     let A = this.aa;

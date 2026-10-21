@@ -22,9 +22,13 @@ const DroneAir = (() => {
     INTERP: 0.12, EXTRAP: 0.35,
     DOCK_VIEW: 1300,     // drone đậu trên nóc xe khác chỉ vẽ khi camera trong khoảng này
     AA_TYPES: { GATLING: 1, SCOUT: 1, ALL_ROUNDER: 1 },
-    // trạm súng máy 12.7mm điều khiển từ xa trên nóc tháp xe tăng: súng nhỏ, đạn thường — kém hơn súng máy xe trinh sát
-    // (bắn chậm hơn, mỗi phát trúng drone ít hơn, gần như không làm xước xe bọc thép); quay độc lập với tháp pháo
-    RCWS: { rof: 0.12, mag: 100, reload: 6, yawRate: 1.7, pitchRate: 1.2, elMin: -8, elMax: 70, dmgDrone: 0.25, dmgVehicle: 0.015 }   // 4 phát trúng drone mới rơi (12.7mm xe trinh sát: 3)
+    // trạm súng máy 7.62mm điều khiển từ xa trên nóc tháp xe tăng: súng nhỏ, đạn thường — yếu hơn hẳn súng máy 12.7mm
+    // xe trinh sát: tầm ngắn hơn ~1/3 (đạn nhẹ, cản lớn, rơi nhanh), ~7 phát trúng drone mới rơi (12.7mm: 3), bắn vào xe
+    // bọc thép vô hại; bắn nhanh hơn (~11 phát/giây như súng 7.62mm thật), dây đạn 200 viên. Quay độc lập với tháp pháo.
+    // v / k / travel: hệ số so với đường đạn 12.7mm (SCOUT_BULLET)
+    RCWS: { rof: 0.09, mag: 200, reload: 5, yawRate: 1.7, pitchRate: 1.2, elMin: -8, elMax: 70, dmgDrone: 0.15, dmgVehicle: 0.005,
+      v: 0.92, k: 1.9, travel: 0.65,
+      spread: 0.03 }   // tản mát thêm (rad, ~30 mil — bệ nhẹ rung theo phát bắn, ngắm điện tử trễ): ~1.4 lần súng 12.7mm xe trinh sát
   };
   const ST = ['docked', 'launching', 'flying', 'returning', 'lost'];
   const airborne = s => s === 'launching' || s === 'flying' || s === 'returning';
@@ -344,6 +348,15 @@ const DroneAir = (() => {
     },
 
     // ---------- TRẠM SÚNG MÁY PHÒNG KHÔNG TRÊN NÓC THÁP XE TĂNG ----------
+    /** Thông số đường đạn dùng để ngắm mục tiêu trên không. 'MG762': súng 7.62mm trạm xe tăng (suy từ đạn 12.7mm) */
+    aaRound(u, ammo) {
+      const B = this.ballistics;
+      if (ammo !== 'MG762') return B.roundParams(ammo, u);
+      const r = Object.assign({}, B.roundParams('SCOUT_BULLET', u)), R = C.RCWS;
+      r.v0 *= R.v; r.k *= R.k; r.maxTravel = (r.maxTravel || 900) * R.travel;
+      return r;
+    },
+
     /** Miệng nòng dùng để bắn mục tiêu trên không: trạm súng máy (xe tăng) hoặc nòng chính (xe 6 nòng / trinh sát) */
     aaMuzzle(u) {
       if (u.rcwsGun && u.rcwsMuzzleLocal) {
@@ -409,7 +422,7 @@ const DroneAir = (() => {
           if (--S.mag <= 0) {
             S.reload = R.reload;
             if (u === this.player) {
-              this.addCombatLog('[[hourglass]] Trạm súng phòng không hết hộp đạn — đang thay hộp (6 s)', 'alert');
+              this.addCombatLog('[[hourglass]] Súng máy phòng không 7.62mm hết dây đạn — đang thay hộp (5 s)', 'alert');
               if (window.soundEngine && window.soundEngine.playReloadPhase) window.soundEngine.playReloadPhase('SCOUT', 'magOut');   // khóa nòng mở, tháo hộp rỗng
             }
           }
@@ -423,13 +436,24 @@ const DroneAir = (() => {
       let shell = null;
       u._launchOverride = { position: m.position, direction: d };
       try { shell = this.ballistics.fireShell3D(u, az, el, 1, 'SCOUT_BULLET'); } finally { u._launchOverride = null; }
-      if (shell) { shell.isGatling = true; shell.aaMG = true; shell.damage = C.RCWS.dmgVehicle; }
+      if (shell) {
+        // đạn 7.62mm: chậm hơn chút, cản lớn hơn hẳn (rơi nhanh), tầm ngắn hơn ~1/3 so với 12.7mm
+        const rp = this.aaRound(u, 'MG762'), f = C.RCWS.v;
+        shell.vx *= f; shell.vy *= f; shell.vz *= f;
+        // bệ súng nhẹ trên nóc tháp rung theo từng phát: lệch thêm ngẫu nhiên quanh hướng nòng (phân bố chuẩn)
+        const g = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, Math.random()))) * Math.cos(2 * Math.PI * Math.random());
+        const sp = Math.hypot(shell.vx, shell.vy, shell.vz), ax = Math.atan2(shell.vx, -shell.vz) + g() * C.RCWS.spread;
+        const ae = Math.asin(Math.max(-1, Math.min(1, shell.vy / sp))) + g() * C.RCWS.spread;
+        shell.vx = Math.sin(ax) * Math.cos(ae) * sp; shell.vy = Math.sin(ae) * sp; shell.vz = -Math.cos(ax) * Math.cos(ae) * sp;
+        shell.k = rp.k; shell.dragMul = rp.k / (this.ballistics.dragCoeff || 1); shell.maxTravel = rp.maxTravel;
+        shell.isGatling = true; shell.aaMG = true; shell.damage = C.RCWS.dmgVehicle;
+      }
       const SE = window.soundEngine, P = this.player;
       if (SE && SE.playGatlingShot && P) {
-        if (u === P) SE.playGatlingShot('SCOUT', 0, null, null, { inside: true, interval: C.RCWS.rof });
+        if (u === P) SE.playGatlingShot('MG762', 0, null, null, { inside: true, interval: C.RCWS.rof });
         else {
           const L = this.audioListener() || P, dd = Math.hypot(u.x - L.x, u.z - L.z);
-          if (dd < 1400) SE.playGatlingShot('SCOUT', Math.max(1, dd), { x: u.x, z: u.z }, u.id);
+          if (dd < 1200) SE.playGatlingShot('MG762', Math.max(1, dd), { x: u.x, z: u.z }, u.id);
         }
       }
     },
@@ -972,7 +996,7 @@ const DroneAir = (() => {
     airShotSolution(shooter, ammo, tx, ty, tz, tvx, tvy, tvz) {
       const B = this.ballistics;
       if (!B || !B.roundParams) return null;
-      const rp = B.roundParams(ammo, shooter), M = B.bulletSpeedMultiplier || 1;
+      const rp = this.aaRound(shooter, ammo), M = B.bulletSpeedMultiplier || 1;
       const mz = this.aaMuzzle(shooter).position;
       let t = Math.hypot(tx - mz.x, ty - mz.y, tz - mz.z) / Math.max(1, rp.v0 * M);
       let az = 0, el, dist = 0, travel = 0;
@@ -1026,7 +1050,7 @@ const DroneAir = (() => {
       if (manual) { this.clearAirAim(); return false; }
       const B = this.ballistics;
       const tank = P.tankType === 'ALL_ROUNDER';   // xe tăng: trạm súng máy trên nóc tháp, pháo chính không ngóc lên
-      const ammo = tank ? 'SCOUT_BULLET' : P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (P.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
+      const ammo = tank ? 'MG762' : P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (P.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
       const elMax = tank ? C.RCWS.elMax : 60;
       let az = A.az, el = A.el;
       if (A.kind === 'drone') {
@@ -1040,7 +1064,7 @@ const DroneAir = (() => {
         const S = A.sol;
         if (!S) return true;
         az = S.az; el = S.el;
-        const cap = B.maxTravelFor ? B.maxTravelFor(ammo, P) : 900;
+        const cap = this.aaRound(P, ammo).maxTravel || 900;
         A.state = el > elMax ? 'high' : (!S.reach || S.dist > cap) ? 'far' : 'track';
         A.lead = { x: dr.x + (dr.wvx || 0) * S.t, y: dr.y + C.CENTER_Y + (dr.wvy || 0) * S.t, z: dr.z + (dr.wvz || 0) * S.t };
         A.dist = S.dist;

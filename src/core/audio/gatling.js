@@ -419,7 +419,7 @@ SoundEngine.mixin(class {
       // Gần: giữ đủ nhịp 30 phát/giây; xa (>~100 m): các phát đã nhòe vào nhau, phát cách phát để đỡ tốn
       const key = shooterId !== null && shooterId !== undefined ? shooterId : '_';
       this._remoteGat = this._remoteGat || new Map();
-      const gap = tankType === 'SCOUT' ? 0.09 : distance < 800 ? 0.03 : 0.06;
+      const gap = tankType === 'MG762' ? 0.075 : tankType === 'SCOUT' ? 0.09 : distance < 800 ? 0.03 : 0.06;
       const last = this._remoteGat.get(key);
       if (last !== undefined && now - last < gap) return;
       // tổng số phát của mọi xe khác trong ~0,1 s: chặn trên để mưa đạn không làm nghẽn âm thanh
@@ -431,7 +431,9 @@ SoundEngine.mixin(class {
     }
     const sp = remote ? this.spatial(distance, pos) : { gain: 1, lowpass: 20000, wet: 0.22, delay: 0, pan: 0 };
     if (sp.gain < 0.05) return;
-    const scout = tankType === 'SCOUT';
+    // MG762: súng máy 7.62mm (trạm súng xe tăng) — cùng kiểu tiếng súng máy nhưng đạn nhỏ: "tạch" mỏng, cao, ngắn hơn
+    const mg762 = tankType === 'MG762';
+    const scout = tankType === 'SCOUT' || mg762;
     let t = now + sp.delay;
     if (!remote && !scout) {
       // Game nhả đạn theo khung hình: có khung 2 phát rơi cùng một thời điểm (chồng đôi, nhịp giật cục).
@@ -447,12 +449,12 @@ SoundEngine.mixin(class {
       if (now - last < 0.3) t = Math.max(now, Math.min(now + 0.26, last + opts.interval));
       this._mgShotT = t;
     }
-    const p = (scout ? 1.25 : 1.0) * (1 + (Math.random() - 0.5) * 0.1);
+    const p = (mg762 ? 1.65 : scout ? 1.25 : 1.0) * (1 + (Math.random() - 0.5) * 0.1);
     // 30 phát/giây (6 nòng) / 10 phát/giây (12.7mm) cộng dồn: mỗi phát phải nhỏ, nếu không cả loạt thành bức tường ồn
     // chạm trần, đè mất mọi tiếng khác (đo được: loạt 30mm trước đây ~-4 dBFS liên tục)
     // Pháo 6 nòng của mình đi qua blastBus (bão hòa cả cụm): các phát quyện thành tiếng gầm "BRRRT" đặc
     // Súng máy 12.7mm của mình qua blastBus thường (giữ nguyên cú đấm 50-100 Hz; kênh heavy cắt trầm làm tiếng ồm "bè bè")
-    const out = this.voice({ bus: (remote || scout) ? null : this.blastBus(true), gain: sp.gain * (inside ? 0.5 : scout ? (remote ? 0.38 : 0.62) : remote ? 0.5 : 0.16), lowpass: remote ? sp.lowpass : inside ? 2300 : scout ? 9000 : 2200,
+    const out = this.voice({ bus: (remote || scout) ? null : this.blastBus(true), gain: sp.gain * (mg762 ? 0.62 : 1) * (inside ? 0.5 : scout ? (remote ? 0.38 : 0.62) : remote ? 0.5 : 0.16), lowpass: remote ? sp.lowpass : inside ? 2300 : scout ? 9000 : 2200,
       wet: inside ? 0.12 : (scout && !remote) ? 0.55 : sp.wet,   // súng máy ngoài trời: tiếng dội môi trường lấp giữa các phát -> loạt đạn dày, thật
       pan: (!remote && !scout) ? (Math.random() - 0.5) * 0.25 : sp.pan });   // 6 nòng xoay: mỗi phát lệch nhẹ trái/phải -> loạt đạn rộng, dày
 
@@ -502,8 +504,9 @@ SoundEngine.mixin(class {
       if (scout) {
         // Đại liên 12.7mm trên nóc xe: vỏ đồng thau văng lên nóc thép, nảy leng keng + mắt xích dây đạn
         // (mẫu dựng theo vật lý: ống kim loại rỗng rung + nảy vài lần, synthGunshot 'case127')
-        if (Math.random() < 0.8) this.dropCasing(t + 0.22 + Math.random() * 0.3, 'case127', inside);
-        if (Math.random() < 0.6) this.dropCasing(t + 0.15 + Math.random() * 0.25, 'link127', inside);
+        // (7.62mm: vỏ nhỏ, nhẹ — rơi thưa hơn trong tai vì nhỏ tiếng; dùng chung mẫu vỏ / mắt xích)
+        if (Math.random() < (mg762 ? 0.5 : 0.8)) this.dropCasing(t + 0.22 + Math.random() * 0.3, 'case127', inside);
+        if (Math.random() < (mg762 ? 0.4 : 0.6)) this.dropCasing(t + 0.15 + Math.random() * 0.25, 'link127', inside);
       } else if (Math.random() < 0.3) {
         // Pháo 6 nòng 30mm: vỏ đạn thoát qua máng dưới hộp pháo, rơi thẳng xuống đất cạnh xe (không nảy trên nóc).
         // Giữa tiếng gầm 30 phát/giây chỉ còn nghe lộp cộp đục, rất nhỏ — trước đây ~10 vỏ/giây nảy ngân trên nóc thép
