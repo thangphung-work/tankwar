@@ -750,7 +750,7 @@ class ArtilleryGame3D {
 
     const handleAimFromScreen = (clientX, clientY) => {
       if (!this.player || this.player.isDead || this.tacticalMap.isOpen) return;
-      const aa = this.canShootAir && this.canShootAir(this.player) && !(this._sight && this._sight.arty);
+      const aa = this.airAimAllowed(this.player) && !(this._sight && this._sight.arty);
 
       // Xe 6 nòng / trinh sát nhấp đúng drone địch đang thấy: khóa drone (radar / Tab không khóa được drone)
       if (aa) {
@@ -1931,6 +1931,13 @@ class ArtilleryGame3D {
     this.addCombatLog(want
       ? '[[crosshair]] SÚNG MÁY 7.62MM NÓC THÁP — bám chỗ đang ngắm, giữ Space để xả đạn (diệt drone, xe giáp mỏng; vô hại với xe tăng). [4] về pháo chính'
       : '[[target-arrow]] Về pháo chính 120mm', 'tip');
+  }
+
+  // Được ngắm trời / khóa drone không: xe 6 nòng, trinh sát luôn được; xe tăng chỉ khi đang chọn súng máy nóc tháp [4]
+  // (trước đây tâm kính chỉ lên trời / sượt drone là tự chuyển sang súng máy, Space không bắn pháo chính nữa)
+  airAimAllowed(P) {
+    if (!P || !this.canShootAir || !this.canShootAir(P)) return false;
+    return P.tankType !== 'ALL_ROUNDER' || !!P.mgActive;
   }
 
   selectAmmoType(ammoType) {
@@ -4181,7 +4188,7 @@ class ArtilleryGame3D {
     while (S.aimYaw > Math.PI) S.aimYaw -= Math.PI * 2;
     while (S.aimYaw < -Math.PI) S.aimYaw += Math.PI * 2;
     // xe bắn được mục tiêu trên không (6 nòng, trinh sát, trạm súng xe tăng): ngóc kính lên trời tới ~60°
-    const up = this.canShootAir && this.canShootAir(this.player) ? 1.05 : 0.35;
+    const up = this.airAimAllowed(this.player) ? 1.05 : 0.35;
     S.aimPitch = Math.max(-0.3, Math.min(up, S.aimPitch - my * k));
   }
 
@@ -4796,7 +4803,7 @@ class ArtilleryGame3D {
           S.probeT = 0.033;
           const h = this.freeAimProbe(px, py, pz, fx * cp, Math.sin(S.pitch), fz * cp);
           // xe bắn được mục tiêu trên không: tâm kính chỉ lên trời / sát drone địch -> ngắm trời / khóa drone (DroneAir)
-          const air = this.canShootAir && this.canShootAir(P) && this.freeAimAir(P, px, py, pz, fx * cp, Math.sin(S.pitch), fz * cp, h);
+          const air = this.airAimAllowed(P) && this.freeAimAir(P, px, py, pz, fx * cp, Math.sin(S.pitch), fz * cp, h);
           // (đang ngắm trời / khóa drone: nòng do DroneAir.updatePlayerAirAim điều khiển, không đặt điểm ngắm mặt đất)
           if (!air) {
             const prev = this._aimPoint && this._aimPoint.free ? this._aimPoint : null;
@@ -5375,6 +5382,8 @@ class ArtilleryGame3D {
       // 1.1.c. XE TĂNG ĐANG CHỌN SÚNG MÁY [4]: trạm súng nóc tháp bám chỗ đang ngắm, giữ Space xả đạn
       // (đang ngắm trời / khóa drone thì updatePlayerAirAim đã điều khiển trạm súng)
       if (this.player.mgActive && this.player.tankType === 'ALL_ROUNDER' && !this._airAim) this.updatePlayerGroundMG();
+      // xe tăng chưa chọn súng máy [4]: không giữ chế độ ngắm trời / khóa drone (Space phải bắn pháo chính)
+      if (this._airAim && this.player.tankType === 'ALL_ROUNDER' && !this.player.mgActive && this.clearAirAim) this.clearAirAim();
 
       // 1.2. LÁI XE CƠ ĐỘNG theo thân xe như xe thật: W / S ga tiến / lùi, A / D đánh lái trái / phải
       // (xe xích: A / D xoay tại chỗ; xe bánh lốp: A / D chỉ bẻ bánh, phải có ga mới cua được)
