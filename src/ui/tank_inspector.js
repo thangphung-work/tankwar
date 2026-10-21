@@ -1383,6 +1383,9 @@ class TankInspector {
   clearUnitFX(u) {
     if (!u || !u.fxParticles) return;
     for (const p of u.fxParticles) {
+      // Hạt dạng hàm (lửa đầu nòng, đèn chớp — spg.js spawnMuzzleBlast) không có p.mesh: phải gọi dispose để gỡ
+      // ngọn lửa khỏi scene / tắt đèn, nếu không đổi xe / lắp trang bị / đóng đúng lúc vừa bắn sẽ để lại đốm lửa sáng đứng yên mãi
+      if (p.update) { if (p.dispose) p.dispose(); continue; }
       if (p.mesh && p.mesh.userData && p.mesh.userData.fxKind && window.SpgFXPool) window.SpgFXPool.release(p.mesh);
       else if (p.mesh && p.mesh.parent) p.mesh.parent.remove(p.mesh);
     }
