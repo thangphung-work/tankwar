@@ -251,6 +251,88 @@ const Strongholds = (() => {
   // ===========================================================================
   // DỰNG HÌNH: gom mọi mặt cùng vật liệu vào 1 BufferGeometry
   // ===========================================================================
+  // ===========================================================================
+  // BÊ TÔNG BÁM BỤI CÁT CỦA MÔI TRƯỜNG: không có công trình dã chiến nào sạch tinh với ranh giới cắt thẳng tắp —
+  //  - sàn / dốc: cát (bùn, bụi tuỳ bản đồ) lấn vào từ mép giáp đất & ụ đất, viền lồi lõm, vệt cát gió thổi lấm tấm
+  //  - chân tường: bụi cát bắn / bám cao ~1-2,5 m, mép loang lổ
+  //  - mặt ngửa (đỉnh tường cánh, nóc hầm, gờ mặt tiền): cát đọng thành mảng; mặt vát giữ ít; tường đứng gần sạch;
+  //    mặt úp (trần, dầm) gần như không bám
+  //  - màng bụi mỏng + vệt bẩn lem nhem theo hướng mặt: mảng loang trên mặt ngửa, vệt nước mưa chảy dọc trên tường đứng
+  // Nhiễu theo toạ độ thế giới (không lặp theo ô texture); mức độ & màu theo bản đồ
+  // ===========================================================================
+  const GRIME = {
+    DESERT: { c: [0.8, 0.67, 0.48], k: 1.0 },
+    HIGHLAND: { c: [0.6, 0.55, 0.45], k: 0.75 },
+    RIVER_LAKE: { c: [0.52, 0.45, 0.34], k: 0.7 },
+    JUNGLE: { c: [0.4, 0.32, 0.22], k: 0.7 },
+    URBAN: { c: [0.6, 0.58, 0.54], k: 0.6 }
+  };
+  function weatherMat(mat, kind, mapType) {
+    const G = GRIME[mapType] || GRIME.HIGHLAND;
+    const floor = kind === 'floor';
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uSand = { value: new THREE.Vector3(...G.c) };
+      sh.uniforms.uSandK = { value: G.k };
+      sh.vertexShader = 'attribute float aFloorY;\nattribute float aSand;\nvarying vec3 vShWP;\nvarying vec3 vShWN;\nvarying float vShLY, vShFY, vShSand;\n' +
+        sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+  vShWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  vShWN = normalize(mat3(modelMatrix) * objectNormal);
+  vShLY = transformed.y; vShFY = aFloorY; vShSand = aSand;`);
+      sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK;
+varying vec3 vShWP; varying vec3 vShWN; varying float vShLY, vShFY, vShSand;
+float shH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(shH(i), shH(i + vec2(1.0, 0.0)), f.x), mix(shH(i + vec2(0.0, 1.0)), shH(i + vec2(1.0, 1.0)), f.x), f.y); }
+` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+  {
+    vec2 q = vShWP.xz;
+    float n1 = shN(q * 0.035), n2 = shN(q * 0.13 + 7.1), n3 = shN(q * 0.6 + 3.7), n4 = shN(q * 2.3 + 1.3);
+    float fb = n1 * 0.5 + n2 * 0.3 + n3 * 0.14 + n4 * 0.06;
+    float up = clamp(vShWN.y, 0.0, 1.0), down = clamp(-vShWN.y, 0.0, 1.0);
+    // Bụi cát đọng theo HƯỚNG MẶT (không cào bằng): mặt ngửa hứng nhiều nhất; mặt vát ~45° cát trượt đi, chỉ còn
+    // lớp mỏng & vệt đọng ở chân vát; tường đứng chỉ bẩn ở chân + vệt nước mưa chảy dọc; mặt úp (trần, dầm) gần như sạch
+    float flatK = smoothstep(0.82, 0.97, up);                 // mặt gần nằm ngang
+    float slopeK = smoothstep(0.3, 0.75, up) * (1.0 - flatK); // mặt vát
+    float wallK = 1.0 - smoothstep(0.15, 0.45, up) - down;    // mặt đứng
+    float sand;
+    ${floor ? `// cát lấn từ mép vào (mép lồi lõm theo nhiễu nhiều tầng) + vệt cát gió thổi lấm tấm, dày hơn gần mép
+    sand = smoothstep(0.42, 0.62, vShSand * 0.95 + (fb - 0.5) * 0.9);
+    sand = max(sand, smoothstep(0.55, 0.9, n2 * 0.6 + n4 * 0.4) * 0.4 * (0.25 + vShSand));` : `// bụi cát bám chân tường (cao ~1-2,5 m, mép loang), mặt úp thì không
+    float hb = vShLY - vShFY;
+    sand = (1.0 - smoothstep(0.0, 6.0 + fb * 14.0, hb)) * (0.4 + 0.45 * n3) * (1.0 - down);
+    // mặt ngửa: cát đọng thành mảng; mặt vát: chỉ lớp mỏng loang, dày hơn ở chỗ thấp của mặt vát (cát trượt xuống đọng lại)
+    sand = max(sand, flatK * smoothstep(0.5, 0.64, fb * 0.75 + n2 * 0.25 + (n4 - 0.5) * 0.12) * 0.85);
+    sand = max(sand, slopeK * smoothstep(0.55, 0.75, fb + n4 * 0.15) * 0.35);`}
+    sand *= uSandK;
+    // màng bụi mỏng: phủ mặt ngửa, ít trên mặt vát, rất ít trên tường đứng, gần như không dưới trần
+    float film = (0.04 + 0.1 * smoothstep(0.3, 0.8, fb)) * uSandK * (0.2 + 0.8 * up) * (1.0 - 0.8 * down);
+    diffuseColor.rgb = mix(diffuseColor.rgb, uSand * (0.86 + 0.26 * n4), clamp(film + sand, 0.0, 0.95));
+    // vệt bẩn: mặt ngửa / vát loang lổ thành mảng (bùn khô, dầu); tường đứng thành VỆT DỌC nước mưa cuốn bụi chảy xuống
+    // (nhiễu kéo dài theo phương đứng, toạ độ ngang dọc theo mặt tường)
+    vec2 tw = normalize(vec2(-vShWN.z, vShWN.x) + 1e-4);
+    float st = shN(vec2(dot(q, tw) * 0.45, vShWP.y * 0.025)) * 0.7 + shN(vec2(dot(q, tw) * 1.6, vShWP.y * 0.06) + 9.0) * 0.3;
+    float blot = smoothstep(0.55, 0.85, n2 * 0.7 + n1 * 0.3) * 0.16 + smoothstep(0.72, 0.95, n3) * 0.08;
+    float streak = smoothstep(0.58, 0.85, st) * 0.13;
+    float grime = mix(blot * (1.0 - 0.5 * slopeK), streak, clamp(wallK, 0.0, 1.0)) * (1.0 - 0.7 * down);
+    diffuseColor.rgb *= 1.0 - grime * (1.0 - clamp(sand, 0.0, 1.0));
+  }`);
+    };
+    mat.customProgramCacheKey = () => 'shWeather2:' + kind;
+    return mat;
+  }
+  // Thuộc tính cho shader bám bụi: aFloorY = cao độ mặt sàn / đất dưới chân đỉnh đó, aSand = mức cát lấn (sàn)
+  function addWeatherAttrs(geo, floorAt, sandAt) {
+    const P = geo.attributes.position, n = P.count, fy = new Float32Array(n), sd = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      fy[i] = floorAt ? floorAt(x, y, z) : -1e4;
+      sd[i] = sandAt ? sandAt(x, y, z) : 0;
+    }
+    geo.setAttribute('aFloorY', new THREE.BufferAttribute(fy, 1));
+    geo.setAttribute('aSand', new THREE.BufferAttribute(sd, 1));
+    return geo;
+  }
+
   class Builder {
     constructor() { this.p = []; this.n = []; this.uv = []; this.c = []; this.i = []; }
     // Tứ giác a-b-c-d (ngược chiều kim đồng hồ khi nhìn từ phía pháp tuyến), uv theo đơn vị thế giới / scale
@@ -703,15 +785,19 @@ const Strongholds = (() => {
         for (let i = 1; i < 4; i++) C.quadOut(P(...e[0]), P(...e[i]), P(...e[i + 1]), P(...e[i + 1]), [uv(...e[0]), uv(...e[i]), uv(...e[i + 1]), uv(...e[i + 1])], 0.95, out);
       }
       // Chân tường / gầm khoang tối hơn (bóng che khuất), mép trên sáng hơn
-      const concMesh = new THREE.Mesh(C.build((f, y) => y < CEIL - 0.5 ? 0.66 + 0.34 * smooth((y + D) / 30) : 1), concMat);
+      weatherMat(concMat, 'wall', this.mapType);
+      const concGeo = addWeatherAttrs(C.build((f, y) => y < CEIL - 0.5 ? 0.66 + 0.34 * smooth((y + D) / 30) : 1), (f) => floorY(Math.abs(f)));
+      const concMesh = new THREE.Mesh(concGeo, concMat);
       concMesh.castShadow = true; concMesh.receiveShadow = true;
       grp.add(concMesh);
       // Nhóm mái: mờ đi khi cứ điểm nằm trong khung nhìn để thấy xe bên dưới (tường & ụ đất vẫn đặc)
       const roofGrp = new THREE.Group();
       roofGrp.name = 'stronghold_roof';
       grp.add(roofGrp);
-      const roofMat = concMat.clone();
-      const roofMesh = new THREE.Mesh(Rf.build((f, y) => y < CEIL + 0.5 ? 0.78 : 1), roofMat);
+      const roofMat = weatherMat(concMat.clone(), 'wall', this.mapType);
+      // nắp hầm & gờ mặt tiền nhô trên lớp đất phủ: bụi cát bám từ mặt đất phủ lên; mặt dưới mái / dầm trong khoang: theo sàn
+      const roofGeo = addWeatherAttrs(Rf.build((f, y) => y < CEIL + 0.5 ? 0.78 : 1), (f, y) => y > S.CREST - 4 ? S.CREST - 1 : floorY(Math.abs(f)));
+      const roofMesh = new THREE.Mesh(roofGeo, roofMat);
       roofMesh.castShadow = true; roofMesh.receiveShadow = true;
       roofGrp.add(roofMesh);
       // Lớp đất phủ trên mái (ụ đất không phủ phần này để mái tách riêng được)
@@ -746,7 +832,16 @@ const Strongholds = (() => {
           Fb.quad(A, Dq, Cq, Bq, [[f / FS, s0 * w0 / FS], [f / FS, s1 * w0 / FS], [f1 / FS, s1 * w1 / FS], [f1 / FS, s0 * w1 / FS]], Math.abs(f) < HB ? 0.8 : 1);
         }
       }
-      const floorMesh = new THREE.Mesh(Fb.build(), floorMat);
+      weatherMat(floorMat, 'floor', this.mapType);
+      // cát lấn: mạnh ở đoạn sân / chân dốc giáp đất ngoài cùng & dọc hai mép giáp ụ đất, trong lòng hầm (có mái che) ít hẳn
+      const floorGeo = addWeatherAttrs(Fb.build(), null, (f, y, r) => {
+        const af = Math.abs(f), w = cutHalf(af) + 1;
+        const end = smooth((af - (S.RAMP_END - 40)) / (S.END - S.RAMP_END + 40));
+        const side = smooth((Math.abs(r) / w - 0.62) / 0.38);
+        const open = af > HB ? 1 : 0.35;
+        return Math.max(end * 0.95, side * 0.8 * open, 0.12 * open);
+      });
+      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
       floorMesh.receiveShadow = true;
       grp.add(floorMesh);
 
