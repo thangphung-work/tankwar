@@ -1847,6 +1847,15 @@ const Landmarks = (() => {
       }
       return null;
     }
+    // Đẩy điểm (x, z) ra ngoài khu căn cứ (cách mép pad) theo cạnh gần nhất — dùng cho hòm tiếp tế / thả dù
+    outside(x, z, pad) {
+      const it = this.noFireAt(x, z, pad);
+      if (!it) return [x, z];
+      const L = it.L, p = pad || 0, dx = x - L.x, dz = z - L.z;
+      let f = dx * L.fx + dz * L.fz, r = -dx * L.fz + dz * L.fx;
+      if (L.hu - Math.abs(f) < L.hv - Math.abs(r)) f = (f < 0 ? -1 : 1) * (L.hu + p + 1); else r = (r < 0 ? -1 : 1) * (L.hv + p + 1);
+      return [L.x + L.fx * f - L.fz * r, L.z + L.fz * f + L.fx * r];
+    }
     // hộp va chạm gần (x, z) cho VehicleCollision
     vehicleBoxes(x, z, reach, out) {
       for (const it of this.items) {
