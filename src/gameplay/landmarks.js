@@ -1225,7 +1225,7 @@ const Landmarks = (() => {
   }
   // Chu vi an ninh chung: cảm biến, răng rồng, hàng nhím thép, cột đèn, biển cảnh báo, rào 2 lớp + cổng, cổng kiểm soát (ECP)
   function perimeter(K, kit) {
-    const L = K.L, { oF, oR, iF, iR, G, CZ, CR, booth, lamp } = kit;
+    const L = K.L, { oF, oR, iF, iR, G, CZ, CR, booth, lamp, mul } = kit;
     // rào ngoài + rào trong (chừa cổng |r| < G ở cạnh trước)
     fence(K, -oF, -oR, oF, -oR, -1, 17, true); fence(K, -oF, oR, oF, oR, 1, 17, true); fence(K, -oF, -oR, -oF, oR, -1, 17, true);
     fence(K, oF, -oR, oF, -G, 1, 17, true); fence(K, oF, G, oF, oR, 1, 17, true);
