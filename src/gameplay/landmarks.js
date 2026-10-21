@@ -203,6 +203,15 @@ const Landmarks = (() => {
     g.strokeStyle = 'rgba(60,62,60,0.9)'; g.lineWidth = 1.6;
     for (let x = 0; x <= w; x += w / 6) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
     for (let y = 0; y <= h; y += h / 6) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    if (ABANDONED) {
+      // vải địa kỹ thuật bạc màu nắng mưa, rách lộ đất cát, rêu mốc xanh đen, lưới thép gỉ
+      g.fillStyle = 'rgba(96,88,70,0.35)'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 14; i++) blotch(g, hash(i + 1300) * w, hash(i + 1301) * h, 6 + hash(i + 1302) * 18, hash(i + 1303) < 0.5 ? '64,72,46' : '58,52,40', 0.45);
+      for (let i = 0; i < 6; i++) { const x = hash(i + 1310) * w, y = hash(i + 1311) * h; g.fillStyle = 'rgba(112,94,66,0.9)'; g.beginPath(); g.ellipse(x, y, 4 + hash(i + 1312) * 8, 2 + hash(i + 1313) * 5, hash(i) * 3, 0, TAU); g.fill(); }
+      g.strokeStyle = 'rgba(120,70,36,0.55)'; g.lineWidth = 1.2;
+      for (let x = 0; x <= w; x += w / 6) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+      for (let i = 0; i < 12; i++) { const x = Math.round(hash(i + 1320) * 6) * w / 6, y = hash(i + 1321) * h; const gr = g.createLinearGradient(0, y, 0, y + 30); gr.addColorStop(0, 'rgba(130,72,32,0.5)'); gr.addColorStop(1, 'rgba(130,72,32,0)'); g.fillStyle = gr; g.fillRect(x - 1, y, 3, 30); }
+    }
   }, true);
   // Sơn kẻ sọc vàng đen (1 ô = 16 đơn vị)
   const hazardTex = () => texOf('hazard', 128, 128, (g, w, h) => {
