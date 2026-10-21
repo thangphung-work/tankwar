@@ -3458,6 +3458,7 @@ class ArtilleryGame3D {
         // drone trinh sát cất cánh ngay cạnh xe: thấp sát xe rồi bốc lên độ cao làm việc
         S.h = 45; S.hT = 520; S.boost = 0; S.roll = 0; S.t = 0; S.climb = 0; S.pcx = S.cx; S.pcz = S.cz;
         this.renderer.domElement.style.filter = 'saturate(.62) contrast(1.12) brightness(1.04)';   // hình ảnh truyền về từ camera drone
+        if (window.soundEngine && window.soundEngine.playDroneLink) window.soundEngine.playDroneLink('up');
         S.dirty = false; S.commitT = 0;
         for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD']) this.keys[k] = false;   // xe dừng, phím dùng để di chuyển vùng nhìn
       } else {
@@ -3481,7 +3482,11 @@ class ArtilleryGame3D {
       cam.fov = 45; cam.updateProjectionMatrix();
       if (this._cam) { this._cam.yaw = S.arty ? this._cam.yaw : S.yaw; this._cam.R = 0; }
       if (this._sightEl) this._sightEl.classList.add('hidden');
-      if (S.arty) this.renderer.domElement.style.filter = '';
+      if (S.arty) {
+        this.renderer.domElement.style.filter = '';
+        const SE = window.soundEngine;
+        if (SE && SE.updateDrone) { SE.updateDrone(false); SE.playDroneLink('down'); }
+      }
     }
   }
 
@@ -3676,7 +3681,10 @@ class ArtilleryGame3D {
           S.goal = tgt;
           // drone chuyển tới vùng xa: hình nhiễu chớp lại một nhịp như bắt lại tín hiệu
           const U = this._uavEl;
-          if (U && U.stat && Math.hypot(tgt.x - S.cx, tgt.z - S.cz) > 700) { const n = U.stat.cloneNode(); U.stat.replaceWith(n); U.stat = n; }
+          if (U && U.stat && Math.hypot(tgt.x - S.cx, tgt.z - S.cz) > 700) {
+            const n = U.stat.cloneNode(); U.stat.replaceWith(n); U.stat = n;
+            if (window.soundEngine && window.soundEngine.playDroneLink) window.soundEngine.playDroneLink('hop');
+          }
         }
       }
       if (S.goal && S.goal === this.lockedTarget && this.lockedTarget.isDead) S.goal = null;
@@ -3745,6 +3753,15 @@ class ArtilleryGame3D {
       cam.lookAt(S.cx, S.y, S.cz);
       cam.rotateZ(S.roll + Math.sin(t * 0.8) * 0.006);
       S.alt = Math.round(py - gy);
+      // tiếng cánh quạt theo chuyển động thật của drone: lên cao / tăng tốc -> rotor quay nhanh, nghiêng cánh -> lệch rotor
+      if (window.soundEngine && window.soundEngine.updateDrone && dt > 0) {
+        const M = S.mot || (S.mot = { x: px, y: py, z: pz, climb: 0, speed: 0 });
+        const kM = 1 - Math.exp(-dt * 5);
+        M.climb += ((py - M.y) / dt - M.climb) * kM;
+        M.speed += (Math.hypot(px - M.x, pz - M.z) / dt - M.speed) * kM;
+        M.x = px; M.y = py; M.z = pz;
+        window.soundEngine.updateDrone(true, { climb: M.climb, speed: M.speed, roll: S.roll });
+      }
       this._camYaw = S.yaw;
       this._lodMag = 1;
       this.updateRangeRings(P, R, dt);
