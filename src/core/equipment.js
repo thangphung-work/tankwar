@@ -129,7 +129,7 @@
   // xe tăng đa dụng luôn có 2 đạn xuyên giáp + 2 đạn nổ mạnh + 2 lựu đạn khói (đổi loại đạn theo mục tiêu là sở trường)
   const BASE_AMMO = { ALL_ROUNDER: { AP: 2, HE: 2, SMOKE: 2 }, ARTILLERY: { HE: 0, CLUSTER: 0 }, GATLING: { INCENDIARY: 0, SMOKE: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2, SMOKE: 0 } };
   // Xe do máy điều khiển không mua sắm: mang cơ số như trước khi có cửa hàng để trận không dễ đi
-  const BOT_AMMO = { ALL_ROUNDER: { AP: 1, HE: 1, SMOKE: 6 }, ARTILLERY: { HE: 4, CLUSTER: 3 }, GATLING: { INCENDIARY: 80, SMOKE: 6 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1, SMOKE: 6 } };   // + đạn miễn phí (BASE_AMMO): trinh sát 3 tên lửa, xe tăng 3 AP / 3 HE / 8 khói
+  const BOT_AMMO = { ALL_ROUNDER: { AP: 1, HE: 1, SMOKE: 6 }, ARTILLERY: { HE: 4, CLUSTER: 3 }, GATLING: { INCENDIARY: 80, SMOKE: 6 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1, SMOKE: 6 } };   // + đạn miễn phí (BASE_AMMO): trinh sát 3 tên lửa (tối đa 3), xe tăng 3 AP / 3 HE / 8 khói
   const AMMO_PROP = { AP: 'apAmmoCount', HE: 'heAmmoCount', CLUSTER: 'clusterAmmoCount', INCENDIARY: 'incendiaryAmmoCount', RPG: 'rpgAmmoCount', ANTI_TANK_MISSILE: 'missileAmmoCount', SMOKE: 'smokeLeft' };
 
   function compatible(id, tank) {
@@ -244,6 +244,8 @@
       if (shop[k] && shop[k].gear && !has(u, shop[k].gear)) extra = 0;
       // lựu đạn khói: tổng (miễn phí + mua) không vượt số ống phóng 2 bên
       if (k === 'SMOKE') extra = Math.min(extra, Math.max(0, 2 * smokeMax(u) - (base[k] || 0)));
+      // tên lửa trinh sát: ống phóng trên nóc chứa tối đa 3 quả mỗi lần xuất kích (miễn phí + mua)
+      if (k === 'ANTI_TANK_MISSILE') extra = Math.min(extra, Math.max(0, 3 - (base[k] || 0)));
       E.loaded[k] = extra;
       u[AMMO_PROP[k]] = base[k] + extra;
     }

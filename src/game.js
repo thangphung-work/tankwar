@@ -14,6 +14,9 @@ function domById(id) {
   return found;
 }
 
+// 30mm (đạn thường / đạn cháy) trúng xe khung xích hạng nặng (xe tăng, 6 nòng): nhân hệ số này sau khi tính giáp
+const HEAVY_VS_30MM = 0.35;
+
 class ArtilleryGame3D {
   constructor() {
     this.container = domById('webgl-container');
@@ -2288,6 +2291,9 @@ class ArtilleryGame3D {
           dir: new THREE.Vector3(shell.vx || 0, shell.vy || 0, shell.vz || 0)
         });
         directDamage = Math.round(directDamage * dmgRes.mul * 1000) / 1000;
+        // 30mm vào xe khung xích hạng nặng (xe tăng / 6 nòng) kể cả sườn: chỉ còn ~35% -> 6 nòng thua xe tăng khi đấu tay đôi,
+        // vẫn xé nát xe nhẹ (pháo, trinh sát) và drone
+        if ((ammoType === 'GATLING_BULLET' || ammoType === 'INCENDIARY') && (directTarget.tankType === 'ALL_ROUNDER' || directTarget.tankType === 'GATLING')) directDamage = Math.round(directDamage * HEAVY_VS_30MM * 1000) / 1000;
         if (dmgRes.noFire) directTarget._noIgnite = true;
         // (đạn nảy khỏi giáp nghiêng: VehicleDamage đã giảm sát thương theo cỡ đạn — không nhân giảm thêm lần nữa)
         // Đạn đã nảy trên mặt nước trước khi trúng: chao đảo, chạm xiên / ngang thân -> xuyên kém hẳn
@@ -3405,8 +3411,8 @@ class ArtilleryGame3D {
                   rewardMsg = '+60 VIÊN ĐẠN CHÁY NÂNG CAO!';
                 } else if (unit.tankType === 'SCOUT') {
                   unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 40;
-                  unit.missileAmmoCount = (unit.missileAmmoCount || 0) + 3;
-                  rewardMsg = '+40 ĐẠN CHÁY VÀ +3 TÊN LỬA CHỐNG TĂNG!';
+                  unit.missileAmmoCount = Math.max(unit.missileAmmoCount || 0, 3);   // ống phóng chứa tối đa 3 quả
+                  rewardMsg = '+40 ĐẠN CHÁY VÀ NẠP ĐẦY 3 TÊN LỬA CHỐNG TĂNG!';
                 } else {
                   unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
                   unit.heAmmoCount = (unit.heAmmoCount || 0) + 2;

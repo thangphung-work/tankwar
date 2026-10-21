@@ -223,9 +223,9 @@ class SPGUnit3D {
     this.tankType = options.tankType || 'ALL_ROUNDER';
 
     if (this.tankType === 'GATLING') {
-      // Xe hỏa lực yểm trợ bánh xích trên khung gầm xe tăng: giáp dày (sau MBT), nhanh hơn MBT một chút
-      this.baseMaxHp = 3.0;
-      this.maxHp = 3.0;
+      // Xe hỏa lực yểm trợ bánh xích trên khung gầm xe tăng: trâu nhất trận (4.0 máu), bù lại 30mm yếu trước giáp dày
+      this.baseMaxHp = 4.0;
+      this.maxHp = 4.0;
       this.baseMaxSpeed = vehicleTopSpeed('GATLING', 122); // khung gầm xích như tăng chủ lực, 70 km/h đường tốt
       this.acceleration = this.baseMaxSpeed * 0.5;          // lực kéo lúc khởi hành; giảm dần khi xe nhanh lên (0 -> 50% ~1.2 s, 0 -> 90% ~2.6 s)
       this.turnRate = 1.7;       // rad/s tối đa khi xoay thân (~100°/s)
@@ -246,9 +246,9 @@ class SPGUnit3D {
       this.gatlingHeatMat = null;
     } else if (this.tankType === 'ARTILLERY') {
       // Pháo tự hành bánh lốp 6x6: cabin bọc giáp mỏng, chạy đường nhanh (bắn - chạy) nhưng nặng nề, cua rộng
-      this.baseMaxHp = 1.6;
-      this.maxHp = 1.6;
-      this.hp = 1.6;
+      this.baseMaxHp = 2.2;   // máu vừa (trên trinh sát): hỏa lực to nhất nhưng kém chính xác
+      this.maxHp = 2.2;
+      this.hp = 2.2;
       this.baseMaxSpeed = vehicleTopSpeed('ARTILLERY', 122); // xe tải 6x6 chở lựu pháo: 70 km/h đường tốt, nặng nề ngoài địa hình
       this.acceleration = this.baseMaxSpeed * 0.358;          // xe tải 6x6 nặng: 0 -> 50% ~1.7 s, 0 -> 90% ~3.6 s
       this.turnRate = 1.5;
@@ -265,8 +265,8 @@ class SPGUnit3D {
       this.outriggerRight = null;
     } else if (this.tankType === 'SCOUT') {
       // Xe trinh sát 4x4 giáp nhẹ: chỉ chống đạn súng bộ binh & mảnh, nhanh và linh hoạt nhất
-      this.baseMaxHp = 1.8;
-      this.maxHp = 1.8;
+      this.baseMaxHp = 1.6;   // máu yếu nhất trận: đánh du kích, bắn tên lửa rồi rút
+      this.maxHp = 1.6;
       this.baseMaxSpeed = vehicleTopSpeed('SCOUT', 174); // xe nhanh nhất: 100 km/h đường tốt
       this.acceleration = this.baseMaxSpeed * 0.589;      // xe 4x4 nhẹ: 0 -> 50% ~1.0 s, 0 -> 90% ~2.2 s
       this.turnRate = 2.6;
@@ -290,8 +290,8 @@ class SPGUnit3D {
       this.antiTankLauncherMesh = null;
     } else {
       this.tankType = 'ALL_ROUNDER';
-      this.baseMaxHp = 3.5; // Máu cao nhất (3.5 máu), giáp composite dày nhất ở mặt trước
-      this.maxHp = 3.5;
+      this.baseMaxHp = 3.2; // Máu vừa (3.2, sau xe 6 nòng), giáp composite dày nhất ở mặt trước, sát thương mỗi phát to
+      this.maxHp = 3.2;
       this.baseMaxSpeed = vehicleTopSpeed('ALL_ROUNDER', 122); // 70 km/h đường tốt (~45-55 việt dã)
       this.acceleration = this.baseMaxSpeed * 0.433;            // xe 60 tấn, 1500 mã lực: 0 -> 50% ~1.4 s, 0 -> 90% ~3 s
       this.turnRate = 1.5;       // ~85°/s khi xoay tại chỗ
@@ -369,7 +369,7 @@ class SPGUnit3D {
       this.availableAmmos = ['SCOUT_BULLET', 'INCENDIARY', 'ANTI_TANK_MISSILE'];
       this.selectedAmmo = 'SCOUT_BULLET';   // Đạn nhỏ 30mm cơ bản
       this.incendiaryAmmoCount = 45;        // Đạn cháy nâng cao
-      this.missileAmmoCount = 4;            // Tên lửa chống tăng dẫn hướng trong ống phóng trên nóc (ô đạn 3)
+      this.missileAmmoCount = 3;            // Tên lửa chống tăng dẫn hướng trong ống phóng trên nóc (ô đạn 3, tối đa 3 quả)
     } else {
       this.availableAmmos = ['NORMAL', 'AP', 'HE'];
       this.selectedAmmo = 'NORMAL';
