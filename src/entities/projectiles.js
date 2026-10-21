@@ -103,6 +103,35 @@
     }
   }
 
+  // Đốm sáng đầu vạch đường (luôn quay về camera): nhìn dọc theo đường bay — từ kính ngắm của người bắn — vạch đường
+  // là một chấm lửa nhỏ bay xa dần, không phải vệt dài
+  let GLOW = null;
+  function glowTexture() {
+    if (GLOW || typeof document === 'undefined') return GLOW;
+    const n = 64, c = document.createElement('canvas');
+    c.width = c.height = n;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+    g.addColorStop(0, 'rgba(255,255,240,1)');
+    g.addColorStop(0.18, 'rgba(255,225,170,0.95)');
+    g.addColorStop(0.42, 'rgba(255,140,70,0.45)');
+    g.addColorStop(1, 'rgba(255,90,40,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, n, n);
+    GLOW = new THREE.CanvasTexture(c);
+    return GLOW;
+  }
+  function headGlow(group, size, color, key, y) {
+    const m = mat('spr_' + key, () => new THREE.SpriteMaterial({ map: glowTexture(), color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const sp = new THREE.Sprite(m);
+    sp.userData.sharedAsset = true;
+    sp.userData.tracer = true;
+    sp.userData.glow = size;
+    sp.position.set(0, y, 0);
+    sp.scale.setScalar(size);
+    group.add(sp);
+  }
+
   // Tỉ lệ để đường kính đạn khớp lòng nòng của xe bắn ra nó (đạn không được to hơn nòng)
   const CALIBER_SCALE = {
     NORMAL: 0.55, HE: 0.55, AP: 0.55,           // 120mm (lòng nòng Halberd ~0.62)
@@ -230,20 +259,27 @@
   }
 
   // tracer = false: viên thường trong băng đạn (không có vệt sáng; băng đạn thật cứ vài viên mới có 1 viên vạch đường)
-  function smallRound(group, kind, tracer = true) {
+  // flight = true: viên đang bay — đạn 12.7 / 30mm bay ~900–1100 m/s, mắt người không thấy thân đạn, chỉ thấy liều
+  // vạch đường cháy ở đáy đạn: đốm lửa đỏ cam + vệt sáng ngắn (lưu ảnh trên võng mạc). Viên thường: không thấy gì.
+  function smallRound(group, kind, tracer = true, flight = false) {
     const scout = kind === 'SCOUT_BULLET';
     const r = scout ? 0.32 : 0.42;
     const L = scout ? 2.4 : 3.2;
     const key = scout ? 's' : 'g';
-    mesh(shellBodyGeo('round' + key, r, L), kind === 'INCENDIARY' ? M.red() : M.yellow(), group);
-    mesh(ring('roundband' + key, r * 1.05, L * 0.1), M.copper(), group, [0, -L * 0.3, 0]);
+    if (!flight) {
+      mesh(shellBodyGeo('round' + key, r, L), kind === 'INCENDIARY' ? M.red() : M.yellow(), group);
+      mesh(ring('roundband' + key, r * 1.05, L * 0.1), M.copper(), group, [0, -L * 0.3, 0]);
+    }
     if (!tracer) return L;
     if (kind === 'INCENDIARY') {
-      // Đạn cháy: hỗn hợp cháy + vạch đường cháy mạnh -> vệt dài hơn, đỏ rực, lõi sáng gắt
-      addTracer(group, 26, 2.8, 0xff3414, 'incendiary', -L / 2);
-      addTracer(group, 14, 1.1, 0xffd8a0, 'incendiaryCore', -L / 2);
+      // Đạn cháy: liều vạch đường + chất cháy cháy mạnh -> đốm to hơn, cam rực
+      addTracer(group, 22, 0.9, 0xff4a18, 'incendiary', -L / 2);
+      addTracer(group, 10, 0.35, 0xffd8a0, 'incendiaryCore', -L / 2);
+      headGlow(group, 2.4, 0xff7a3a, 'incendiary', -L / 2);
     } else {
-      addTracer(group, scout ? 11 : 15, scout ? 1.3 : 1.7, 0xffb050, 'bullet' + key, -L / 2);
+      // vạch đường đỏ cam (chất cháy strontium): vệt mảnh, đầu sáng
+      addTracer(group, scout ? 15 : 19, scout ? 0.42 : 0.55, 0xff5a2a, 'bullet' + key, -L / 2);
+      headGlow(group, scout ? 1.5 : 1.9, 0xff8a52, 'bullet' + key, -L / 2);
     }
     return L;
   }
@@ -273,7 +309,7 @@
         case 'ANTI_TANK_MISSILE': L = missile(g); break;
         case 'GATLING_BULLET':
         case 'SCOUT_BULLET':
-        case 'INCENDIARY': L = smallRound(g, ammoType, opts.tracer !== false); break;
+        case 'INCENDIARY': L = smallRound(g, ammoType, opts.tracer !== false, opts.scale === undefined); break;
         case 'HE':
         case 'CLUSTER': L = artilleryShell(g, opts, ammoType); break;
         default: L = artilleryShell(g, opts, 'NORMAL');
@@ -285,7 +321,10 @@
       // Vệt vạch đường không thu nhỏ theo cỡ đạn (thứ mắt người thấy được khi đạn bay)
       if (opts.scale === undefined) {
         const boost = 1.25 / sc;
-        g.traverse(o => { if (o.userData.tracer) { o.scale.x *= boost * 0.8; o.scale.y *= boost; } });
+        g.traverse(o => {
+          if (o.userData.glow) o.scale.setScalar(o.userData.glow / sc);   // đốm sáng: cỡ cố định trong thế giới
+          else if (o.userData.tracer) { o.scale.x *= boost * 0.8; o.scale.y *= boost; }
+        });
       }
       g.userData.length = L * sc;
       g.userData.sharedAsset = true;

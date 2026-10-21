@@ -370,7 +370,8 @@ class SoundEngine {
     // Nguồn trong tầm nhìn camera phát ngay để khớp hình; ngoài màn hình mới trễ theo tốc độ âm thanh
     const delay = Math.min(1.0, Math.max(0, d - 600) / 8 / 343);
     let pan = 0;
-    const me = window.game && window.game.player;
+    // tai nghe: xe mình, hoặc micro drone khi đang xem qua camera drone (game.audioListener)
+    const g = window.game, me = g && (g.audioListener ? g.audioListener() : g.player);
     if (pos && me) {
       pan = viewPan(pos.x - me.x, pos.z - me.z, 0.85);
     }

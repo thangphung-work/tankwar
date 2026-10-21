@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phòng Thử Drone Trinh Sát</title>
+<style>
+  :root {
+    --panel: rgba(8, 20, 36, 0.9);
+    --line: #174b6e;
+    --accent: #14c8ff;
+    --text: #e2eef7;
+    --muted: #8aa7be;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b1117; color: var(--text); font: 13px/1.4 "Segoe UI", -apple-system, Arial, sans-serif; overflow: hidden; user-select: none; }
+  #view { position: fixed; inset: 0; display: block; outline: none; touch-action: none; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 250px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  #panel h1 { margin: 0 0 8px; font-size: 14px; letter-spacing: .06em; color: var(--accent); }
+  #panel button { display: block; width: 100%; margin: 4px 0; padding: 7px 8px; background: rgba(6, 28, 48, .9); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; text-align: left; cursor: pointer; }
+  #panel button.on { border-color: var(--accent); color: #fff; box-shadow: inset 3px 0 0 var(--accent); }
+  #stats { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; white-space: pre-line; }
+  #hint { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; text-shadow: 0 0 3px #000; }
+  @media (max-width: 600px) { #panel { width: auto; right: 12px; } }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="panel">
+  <h1>DRONE TRINH SÁT · PHÒNG THỬ</h1>
+  <button data-k="spin">Cánh quạt quay</button>
+  <button data-k="dock">Trên đế sạc nóc cabin</button>
+  <button data-k="lid">Nhả kẹp càng (cất cánh)</button>
+  <button data-k="team">Phe: XANH</button>
+  <button data-k="many">Thử tải: 20 drone</button>
+  <button data-k="hurt">Thân hỏng: nguyên vẹn</button>
+  <button data-k="kill">Bắn nổ drone</button>
+  <div id="stats"></div>
+</div>
+<div id="hint">Kéo chuột: xoay · Lăn chuột: gần / xa · Chuột phải kéo: nâng / hạ điểm nhìn</div>
+<script src="three.min.js"></script>
+<script src="src/entities/recon_drone.js"></script>
+<script>window.ArtilleryGame3D = window.ArtilleryGame3D || {};</script>
+<script src="src/gameplay/drone_air.js"></script>
+<script>
+(() => {
+  // Xem mô hình drone + đế sạc không cần vào trận; số lượt vẽ / tam giác để đo độ tối ưu (8 đơn vị = 1 m)
+  const canvas = document.getElementById('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xb8c6cf);
+  scene.fog = new THREE.Fog(0xb8c6cf, 80, 260);
+  scene.add(new THREE.HemisphereLight(0xd7e3ec, 0x6e5a40, 0.7));
+  const sun = new THREE.DirectionalLight(0xfff0d6, 1.15);
+  sun.position.set(-25, 45, -15);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 120 });
+  scene.add(sun);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ color: 0xc2a678, roughness: 1 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  // tấm nóc cabin giả (đặt đế sạc lên)
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(21.2, 1, 14), new THREE.MeshStandardMaterial({ color: 0x4f5a3c, roughness: 0.85 }));
+  roof.receiveShadow = roof.castShadow = true;
+  scene.add(roof);
+
+  const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 800);
+  const view = { yaw: -2.3, pitch: 0.35, dist: 14, y: 1.6 };
+  const S = { spin: false, dock: false, lid: false, team: 'BLUE', many: false, hp: 1 };
+  // hiệu ứng hỏng / cháy / vỡ dùng đúng code trong game (drone_air.js) trên một "game" giả tối giản
+  const G = Object.assign({ scene, terrain: { getElevationAt: () => 0 }, ballistics: null, player: null, units: [], _sight: null }, DroneAir.methods);
+  let deadT = 0;
+  let root = null, drones = [], dock = null;
+
+  function rebuild() {
+    if (root) scene.remove(root);
+    root = new THREE.Group();
+    scene.add(root);
+    drones = [];
+    dock = null;
+    roof.visible = S.dock;
+    if (S.dock) {
+      // đế sạc đặt như trên nóc cabin Arbalest (tọa độ đế quy về gốc)
+      roof.position.set(0, -0.5, 0);
+      dock = ReconDrone.buildDock();
+      dock.position.set(0, 0, 0);
+      root.add(dock);
+      const d = ReconDrone.build(S.team);
+      d.position.set(0, ReconDrone.DOCK.floor, 0);
+      root.add(d);
+      drones.push(d);
+    } else {
+      const n = S.many ? 20 : 1;
+      for (let i = 0; i < n; i++) {
+        const d = ReconDrone.build(i % 2 ? (S.team === 'BLUE' ? 'RED' : 'BLUE') : S.team);
+        if (n > 1) d.position.set((i % 5 - 2) * 10, 0, (Math.floor(i / 5) - 1.5) * 10);
+        root.add(d);
+        drones.push(d);
+      }
+    }
+    syncButtons();
+  }
+
+  function syncButtons() {
+    document.querySelectorAll('#panel button').forEach(b => {
+      const k = b.dataset.k;
+      b.classList.toggle('on', k === 'team' ? S.team === 'RED' : !!S[k]);
+      if (k === 'team') b.textContent = 'Phe: ' + (S.team === 'RED' ? 'ĐỎ' : 'XANH');
+      if (k === 'hurt') { b.textContent = 'Thân hỏng: ' + (S.hp > 0.6 ? 'nguyên vẹn' : S.hp > 0.3 ? 'bốc khói (50%)' : 'bốc cháy (25%)'); b.classList.toggle('on', S.hp < 1); }
+      if (k === 'kill') b.classList.toggle('on', deadT > 0);
+    });
+  }
+
+  document.getElementById('panel').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const k = b.dataset.k;
+    if (k === 'hurt') { S.hp = S.hp > 0.6 ? 0.5 : S.hp > 0.3 ? 0.25 : 1; syncButtons(); return; }
+    if (k === 'kill') {
+      const d = drones[0];
+      if (!d || deadT > 0) return;
+      const wp = d.getWorldPosition(new THREE.Vector3());
+      d.visible = false;
+      G.startDroneFall(S.team, wp.x, Math.max(wp.y, 9), wp.z, 40, 10, d.rotation.y, false);
+      deadT = 13;
+      return;
+    }
+    if (k === 'team') S.team = S.team === 'RED' ? 'BLUE' : 'RED';
+    else S[k] = !S[k];
+    if (k === 'many' && S.many) S.dock = false;
+    if (k === 'dock' && S.dock) S.many = false;
+    if (k === 'lid' || k === 'spin') { syncButtons(); return; }
+    rebuild();
+  });
+
+  // xoay / phóng to bằng chuột
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, b: e.button }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.b === 2) view.y = Math.max(-2, Math.min(20, view.y + dy * 0.03));
+    else { view.yaw -= dx * 0.008; view.pitch = Math.max(-1.2, Math.min(1.45, view.pitch + dy * 0.006)); }
+  });
+  canvas.addEventListener('pointerup', () => { drag = null; });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('wheel', e => { e.preventDefault(); view.dist = Math.max(4, Math.min(120, view.dist * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const statsEl = document.getElementById('stats');
+  let last = performance.now(), statT = 0, fps = 60;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    fps += (1 / Math.max(1e-3, dt) - fps) * 0.05;
+    // bay: drone lơ lửng nhấp nhô; trên đế: nhả kẹp + cánh quay thì drone bốc lên
+    const t = now / 1000;
+    drones.forEach((d, i) => {
+      ReconDrone.animate(d, dt, S.spin ? 1 : 0);
+      if (S.dock) {
+        const up = S.lid && S.spin ? 7 : 0;
+        d.position.y += ((ReconDrone.DOCK.floor + up) - d.position.y) * Math.min(1, dt * 2);
+      } else if (S.spin) d.position.y = 3 + Math.sin(t * 1.3 + i) * 0.25;
+      else d.position.y += (0 - d.position.y) * Math.min(1, dt * 4);
+    });
+    if (dock) ReconDrone.animateDock(dock, dt, S.lid, S.spin && S.lid ? 'out' : 'charging');
+    // drone hỏng: khói / lửa (như drone đang bay trong trận); bắn nổ: rơi, vỡ mảnh, xác cháy — hết thì dựng lại drone
+    const d0 = drones[0];
+    if (d0) {
+      const wp = d0.getWorldPosition(new THREE.Vector3());
+      G.updateDroneDamageFX(dt, d0.visible ? [{ key: 'lab', x: wp.x, y: wp.y, z: wp.z, yaw: d0.rotation.y, hp: S.hp, seen: true }] : []);
+    }
+    G.updateDroneFalls(dt);
+    if (deadT > 0 && (deadT -= dt) <= 0) { deadT = 0; rebuild(); }
+    const cp = Math.cos(view.pitch);
+    cam.position.set(Math.sin(view.yaw) * cp * view.dist, view.y + Math.sin(view.pitch) * view.dist, Math.cos(view.yaw) * cp * view.dist);
+    cam.lookAt(0, view.y, 0);
+    renderer.render(scene, cam);
+    if ((statT -= dt) <= 0) {
+      statT = 0.4;
+      // đếm riêng phần drone / đế sạc (không tính mặt đất, nóc cabin)
+      let calls = 0, tris = 0;
+      root.traverse(o => {
+        if (!o.isMesh || !o.visible) return;
+        let v = o; while (v && v.visible) v = v.parent === root ? null : v.parent;
+        if (v) return;
+        calls++;
+        const g = o.geometry;
+        tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+      });
+      const per = drones.length || 1;
+      statsEl.textContent = 'Drone: ' + drones.length + (dock ? ' + đế sạc' : '') + '\n'
+        + 'Lượt vẽ: ' + calls + (drones.length > 1 ? ' (~' + Math.round(calls / per) + ' / drone)' : '') + '\n'
+        + 'Tam giác: ' + Math.round(tris).toLocaleString() + (drones.length > 1 ? ' (~' + Math.round(tris / per).toLocaleString() + ' / drone)' : '') + '\n'
+        + 'Khung hình: ' + Math.round(fps) + ' / giây';
+    }
+    requestAnimationFrame(frame);
+  }
+  rebuild();
+  requestAnimationFrame(frame);
+  window.droneLab = { S, view, rebuild };
+})();
+</script>
+</body>
+</html>

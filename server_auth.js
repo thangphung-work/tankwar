@@ -437,6 +437,39 @@ function handle(room, client, msg) {
       fm.smokeAt = now;
       return false;
     }
+    case 'DRONE': {
+      // trạng thái drone trinh sát: chỉ máy điều khiển xe pháo đó
+      const d = msg.d || {}, r = M.byIdx.get(d.i);
+      if (!r || r.type !== 'ARTILLERY' || ownerOf(room, r) !== client.id) return true;
+      return false;
+    }
+    case 'DRONE_HIT': {
+      // phát trúng drone: máy điều khiển xe bắn, xe còn sống, vừa bắn thật
+      const d = msg.d || {}, ar = M.byIdx.get(d.a), or = M.byIdx.get(d.o), as = M.S[d.a];
+      if (!ar || !or || or.type !== 'ARTILLERY' || ar.team === or.team || ownerOf(room, ar) !== client.id) return true;
+      if ((as && (as.f & F_DEAD)) || now - (M.lastFireBy.get(client.id) || 0) > 3000) { flag(M, client, `báo trúng drone xe ${d.o} khi không bắn`); return true; }
+      if (!(d.d > 0) || d.d > 1000) return true;   // tối đa 1 lần thân drone / gói (chỉ đạn súng)
+      return false;
+    }
+    case 'AA_MG': {
+      // trạm súng phòng không xe tăng: chỉ máy điều khiển xe đó; đang bóp cò thì tính như vừa bắn (cho phát trúng drone)
+      const d = msg.d || {}, r = M.byIdx.get(d.i), st = M.S[d.i];
+      if (!r || r.type !== 'ALL_ROUNDER' || ownerOf(room, r) !== client.id || (st && (st.f & F_DEAD))) return true;
+      if (d.f) M.lastFireBy.set(client.id, now);
+      return false;
+    }
+    case 'DRONE_LOCK': {
+      // cảnh báo drone bị khóa: chỉ máy điều khiển xe đang khóa, xe phòng không còn sống, khóa drone của phe địch
+      const d = msg.d || {}, ar = M.byIdx.get(d.a), or = M.byIdx.get(d.o), as = M.S[d.a];
+      if (!ar || !or || or.type !== 'ARTILLERY' || ar.team === or.team || ownerOf(room, ar) !== client.id) return true;
+      if (as && (as.f & F_DEAD)) return true;
+      return false;
+    }
+    case 'DRONE_DOWN': {
+      const d = msg.d || {}, r = M.byIdx.get(d.o);
+      if (!r || r.type !== 'ARTILLERY' || ownerOf(room, r) !== client.id) return true;
+      return false;
+    }
     case 'SPOT': {
       const d = msg.d || {}, sr = M.byIdx.get(d.s), tr = M.byIdx.get(d.t);
       if (!sr || !tr || sr.type !== 'SCOUT' || ownerOf(room, sr) !== client.id) return true;
