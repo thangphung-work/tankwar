@@ -1324,9 +1324,25 @@ const MapGen = (() => {
 
   // ===== ĐÀI ĐIỀU KHIỂN RADAR VỆ TINH (cao nguyên) =====
   function detailRadar(L) {
+    // trạm điều khiển / bám vệ tinh trên cao nguyên: mặt bằng san 2 cấp — nền trên (terrace) cao h (3.5 m) phía sau
+    // đặt cụm ăng-ten (chảo 18 m, 2 radome), mặt trước giữ bằng tường chắn đất bê tông (mặt trong tại f1, chân tường
+    // nhô tới f1 + 26), lưng và 2 đầu là ta-luy đất thoải run; đường dốc lên nền trên chạy dọc chân tường (tâm rf, nửa
+    // rộng rw, từ r = r1 xuống tới cốt sân tại r = rEnd). Chảo / nhà điều hành / trạm phát điện... ở nền dưới
+    L.terrace = { f0: -200, f1: -68, r0: -370, r1: 150, h: 28, run: 46, rf: -84, rw: 16, rEnd: 330, cut: 18 };
   }
   function moundRadar(L, f, r) {
-    return 0;
+    const T = L.terrace;
+    // nền trên + ta-luy lưng / 2 đầu (mặt trước không có ta-luy: tường chắn)
+    const d = Math.hypot(Math.max(0, T.f0 - f), Math.max(0, T.r0 - r, r - T.r1));
+    let h = T.h * (1 - smooth(0, T.run, d));
+    // đường dốc: cao độ giảm tuyến tính từ mép nền trên (r1) tới rEnd, vai đường đắp đất thoải phía sau
+    if (r > T.r1 - 10 && r < T.rEnd + 10) {
+      const k = Math.max(0, Math.min(1, 1 - (r - T.r1) / (T.rEnd - T.r1)));
+      const side = 1 - smooth(T.rw, T.rw + 26, Math.abs(f - T.rf));
+      h = Math.max(h, T.h * k * side);
+    }
+    // cắt thẳng ở tường chắn: dải chuyển cao độ nằm trong bề dày tường (mặt trong f1, chân tường f1 + 26)
+    return h * (1 - smooth(T.f1, T.f1 + T.cut, f));
   }
 
   // ---------------------------------------------------------------------------
