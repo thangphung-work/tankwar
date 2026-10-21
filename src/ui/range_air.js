@@ -538,7 +538,7 @@ const RangeAir = (() => {
 .ra-sight{position:absolute;inset:0;pointer-events:none;z-index:6;display:none;--g:#a8f5bf;--a:#ffc04d;color:var(--g);font-family:"Share Tech Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.06em;text-shadow:0 0 2px #000,0 0 5px rgba(0,0,0,.85)}
 .ti-sight-on .ra-sight{display:block}
 .ra-sight .scr{position:absolute;inset:8px 10px;border-radius:22px;box-shadow:0 0 0 60px #06090a,inset 0 0 0 1px rgba(168,245,191,.22),inset 0 0 120px rgba(0,0,0,.55);background:repeating-linear-gradient(0deg,rgba(0,0,0,.06) 0 1px,transparent 1px 3px)}
-.ra-sight svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}
+.ra-sight svg.ret{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}
 .ra-sight svg .k{stroke:var(--g);fill:none;filter:drop-shadow(0 0 1.5px #000)}
 .ra-sight svg text{fill:var(--g);stroke:none;font:10px "Share Tech Mono",ui-monospace,monospace;paint-order:stroke;filter:drop-shadow(0 0 2px #000)}
 .ra-sight .cmd{position:absolute;left:0;top:0;width:12px;height:12px;margin:-6px 0 0 -6px;opacity:.8}
@@ -570,7 +570,7 @@ const RangeAir = (() => {
 .ra-sight .lrf{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;padding:4px 12px;border:1px solid rgba(168,245,191,.45);background:rgba(0,0,0,.35);white-space:nowrap}
 .ra-sight .lrf span{opacity:.75}.ra-sight .lrf b{font-weight:400;color:#eafff0;font-size:13px}.ra-sight .lrf b.on{color:var(--a)}
 .ra-sight .lrf i{width:1px;height:12px;background:rgba(168,245,191,.45)}
-.ra-sight .hullv{position:absolute;left:26px;bottom:20px;width:70px;height:70px}
+.ra-sight .hullv{position:absolute;left:26px;bottom:22px;width:64px;height:64px;overflow:visible}
 .ra-sight .keys{position:absolute;right:26px;bottom:20px;text-align:right;line-height:1.55;font-size:11px;opacity:.75}.ra-sight .keys b{font-weight:400;color:#eafff0}
 .ra-sight .hit{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;opacity:0;background:linear-gradient(45deg,transparent 46%,#fff 46%,#fff 54%,transparent 54%),linear-gradient(-45deg,transparent 46%,#fff 46%,#fff 54%,transparent 54%);-webkit-mask:radial-gradient(circle,transparent 6px,#000 7px);mask:radial-gradient(circle,transparent 6px,#000 7px);filter:drop-shadow(0 0 2px #000)}
 .ra-sight .msg{position:absolute;left:0;right:0;top:30%;text-align:center;font-family:"Chakra Petch",system-ui,sans-serif;font-size:20px;font-weight:700;letter-spacing:.14em;color:var(--a);opacity:0}
