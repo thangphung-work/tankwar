@@ -1636,12 +1636,10 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       for (const K of this.items) {
         let want = 1;
         const view = opts.view || unit;
-        if (view && Math.hypot(K.x - view.x, K.z - view.z) < S.REACH + (opts.viewRadius || 560)) {
-          // mái đặc bình thường; chỉ mờ vừa (vẫn thấy rõ khối hầm) khi bên dưới có xe: xe mình hoặc xe đang được nhìn thấy
-          const L = unit && !unit.isDead ? this.local(K, unit.x, unit.z) : null;
-          // góc nhìn trong xe (opts.insideView): mái giữ đặc — đang nhìn từ trong hầm ra, không cần nhìn xuyên mái
-          const meInside = !opts.insideView && L && Math.abs(L.f) < S.HB + 24 && Math.abs(L.r) < S.WI + 12;
-          if (meInside || (units && this.occupiedVisible(K, units, unit, !!opts.all))) want = 0.45;
+        // Mái luôn đặc trong trận (xe mình vào hầm thì camera chuyển sang góc nhìn trong xe — game.blendInsideView;
+        // nhìn xuyên mái thấy xe bên dưới trông giả). Chỉ phòng thử bật X-quang (opts.all) mới làm mờ để soi xe trong hầm
+        if (opts.all && view && Math.hypot(K.x - view.x, K.z - view.z) < S.REACH + (opts.viewRadius || 560)) {
+          if (units && this.occupiedVisible(K, units, unit, true)) want = 0.45;
         }
         const cast = want > 0.5;
         if (K.roofMeshes && K.roofMeshes[0].castShadow !== cast) for (const m of K.roofMeshes) m.castShadow = cast;

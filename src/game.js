@@ -5058,13 +5058,10 @@ class ArtilleryGame3D {
     this._blastInfo = { radius: Math.round(Math.max(ra, rc)), core: Math.round(core), cluster: fire === 'CLUSTER', hitK };
     const M = U.mesh.material.uniforms;
     M.uHit.value += ((hitK || 0) - M.uHit.value) * Math.min(1, dt * 6);
-    this.updateBlastLabel(Z, rc, ra, core, fire === 'CLUSTER', yaw);
   }
 
-  // Vòng sát thương dự kiến: lưới phủ bám mặt đất (bị xe / vật cản che đúng chiều sâu, không nổi lơ lửng trên dốc) +
-  // shader vẽ trong hệ toạ độ đĩa đơn vị: nền đỏ thẫm ở lõi nhạt dần ra mép theo đường suy giảm sức nổ, lõi chết chắc
-  // viền liền + sọc chéo cảnh báo, viền ngoài mảnh có vạch chia + vòng đứt nét quay chậm, sóng xung kích lan từ tâm.
-  // Nét vẽ đo bằng fwidth -> mảnh đều theo điểm ảnh ở mọi cỡ / elip (đạn chùm)
+  // Vòng sát thương dự kiến: lưới phủ bám mặt đất (bị xe / vật cản che đúng chiều sâu, không nổi lơ lửng trên dốc),
+  // vẽ tối giản: viền ngoài mảnh + nền rất mờ + 1 vòng mảnh đánh dấu lõi. Nét đo bằng fwidth -> mảnh đều ở mọi cỡ / elip
   buildBlastZone() {
     const Z = new THREE.Group();
     const N = 40, geo = new THREE.PlaneGeometry(2, 2, N, N);
@@ -5085,39 +5082,14 @@ class ArtilleryGame3D {
         'float line(float d, float w) { float a = fwidth(d); return 1.0 - smoothstep(w * a, (w + 1.2) * a, abs(d)); }',
         'void main() {',
         '  float r = length(vU);',
-        '  if (r > 1.03) discard;',
-        '  float ang = atan(vU.y, vU.x);',
-        '  vec3 hot = vec3(1.0, 0.22, 0.12), warm = vec3(1.0, 0.58, 0.18), pale = vec3(1.0, 0.86, 0.6);',
-        // sức nổ tương đối: 1 ở lõi, giảm dần ra tới mép
-        '  float c = max(uCore, 0.001);',
-        '  float k = r <= c ? 1.0 : clamp((1.0 - r) / max(0.001, 1.0 - c), 0.0, 1.0);',
-        '  k = pow(k, 1.3);',
-        '  vec3 col = mix(warm, hot, k);',
-        '  float a = (0.05 + 0.16 * k) * step(r, 1.0);',
-        // lõi: sọc chéo cảnh báo + viền liền
-        '  if (uCore > 0.01) {',
-        '    float inCore = 1.0 - smoothstep(c - fwidth(r), c, r);',
-        '    float hatch = step(0.55, fract((vU.x + vU.y) * 7.0 / c - uTime * 0.6));',
-        '    a += inCore * hatch * 0.13;',
-        '    float cl = line(r - c, 0.9);',
-        '    col = mix(col, hot, cl); a = max(a, cl * 0.85);',
-        '  }',
-        // viền ngoài mảnh + quầng mờ phía trong
-        '  float ol = line(r - 1.0, 1.1);',
-        '  float glow = smoothstep(0.86, 1.0, r) * step(r, 1.0) * 0.18;',
-        '  col = mix(col, pale, ol * 0.6); a = max(a, ol * 0.95); a += glow;',
-        // vòng đứt nét quay chậm ngay trong mép + vạch chia mỗi 15 độ
-        '  float dashR = line(r - 0.93, 0.6) * step(0.45, fract(ang / 6.28318 * 48.0 + uTime * 0.08));',
-        '  a = max(a, dashR * 0.55);',
-        '  float tick = step(0.86, r) * step(r, 1.0) * line(fract(ang / 6.28318 * 24.0 + 0.5) - 0.5, 0.9);',
-        '  a = max(a, tick * 0.6);',
-        // sóng xung kích lan từ tâm ra mép
-        '  float pr = fract(uTime * 0.55);',
-        '  float wave = line(r - pr, 2.5) * (1.0 - pr) * step(r, 1.0);',
-        '  a = max(a, wave * 0.45); col = mix(col, pale, wave * 0.5);',
-        // mục tiêu đang ngắm nằm trong vùng sát thương: cả vòng sáng lên, nhấp nháy nhẹ
-        '  float hl = uHit * (0.75 + 0.25 * sin(uTime * 7.0));',
-        '  col = mix(col, vec3(1.0, 0.95, 0.85), hl * 0.25); a *= 1.0 + hl * 0.6;',
+        '  if (r > 1.02) discard;',
+        '  vec3 col = vec3(1.0, 0.45, 0.2);',
+        // nền rất mờ, đậm dần vào tâm; viền ngoài mảnh; lõi chỉ 1 vòng mảnh
+        '  float a = 0.07 * (1.0 - r) * step(r, 1.0);',
+        '  a = max(a, line(r - 1.0, 0.8) * 0.6);',
+        '  if (uCore > 0.01) a = max(a, line(r - uCore, 0.6) * 0.45);',
+        // mục tiêu đang ngắm nằm trong vùng sát thương: đậm hơn chút
+        '  a *= 1.0 + uHit * 0.5;',
         '  gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));',
         '}'
       ].join('\n')
@@ -5154,44 +5126,6 @@ class ArtilleryGame3D {
     }
     pos.needsUpdate = true;
     mesh.geometry.computeBoundingSphere();
-  }
-
-  // Nhãn bán kính treo trên mép vòng phía xa camera: "SÁT THƯƠNG 14 M · LÕI 4 M" (đạn chùm: kích thước vùng rải)
-  updateBlastLabel(Z, rc, ra, core, cluster, yaw) {
-    const U = Z.userData;
-    const m = (v) => Math.max(1, Math.round(v / 8));
-    const text = cluster ? 'VÙNG RẢI ' + m(rc * 2) + '×' + m(ra * 2) + ' M'
-      : 'SÁT THƯƠNG ' + m(Math.max(ra, rc)) + ' M' + (core > 0 ? ' · LÕI ' + m(core) + ' M' : '');
-    if (!U.label) {
-      const c = document.createElement('canvas'); c.width = 512; c.height = 96;
-      const tex = new THREE.CanvasTexture(c);
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
-      sp.renderOrder = 4;
-      Z.add(sp);
-      U.label = { sp, c, tex, text: '' };
-    }
-    const L = U.label;
-    if (L.text !== text) {
-      L.text = text;
-      const g = L.c.getContext('2d');
-      g.clearRect(0, 0, 512, 96);
-      g.font = '600 38px "Barlow Condensed", "Roboto Condensed", Arial, sans-serif';
-      const w = Math.min(500, g.measureText(text).width + 44);
-      g.fillStyle = 'rgba(14,10,8,0.72)'; g.strokeStyle = 'rgba(255,140,80,0.85)'; g.lineWidth = 3;
-      g.beginPath(); g.rect((512 - w) / 2, 18, w, 60); g.fill(); g.stroke();
-      g.fillStyle = '#ffd9b8'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(text, 256, 49);
-      L.tex.needsUpdate = true;
-    }
-    // cỡ cố định trên màn hình (~3,5% chiều cao) -> gần hay xa đều đọc được; vị trí: mép xa của vòng theo hướng nhìn
-    const cam = this.camera, wp = Z.position;
-    const s = 0.035;
-    L.sp.scale.set(s * 5.33, s, 1);
-    let vx = cam ? wp.x - cam.position.x : 0, vz = cam ? wp.z - cam.position.z : -1;
-    const vl = Math.hypot(vx, vz) || 1; vx /= vl; vz /= vl;
-    const R = Math.max(ra, rc), wx = vx * R, wz = vz * R, cy = Math.cos(yaw), sy = Math.sin(yaw);
-    // nghịch đảo phép quay của nhóm (thế giới -> cục bộ)
-    L.sp.position.set(wx * cy - wz * sy, 6, wx * sy + wz * cy);
   }
 
   screenCovered() {
