@@ -1357,6 +1357,7 @@ class SPGUnit3D {
   // Máy châm lửa (máy có quyền với phát bắn) là máy duy nhất tính sát thương cháy -> không trừ máu 2 lần khi chơi mạng
   ignite(duration = 2.5) {
     if (this.isDead) return;
+    if (typeof Equipment !== 'undefined' && Equipment.extIgniteMul) duration *= Equipment.extIgniteMul(this);   // bình chữa cháy: cháy ngắn hơn
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
     this.burnAuth = true;
   }

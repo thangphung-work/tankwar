@@ -990,7 +990,7 @@ class TankInspector {
     }
     this.smoke.deploy(u, null);
     const n = Equipment.smokeMax ? Equipment.smokeMax(u) : 3;
-    this.toast(`<i class="ti ti-cloud"></i> Đã bắn 1 loạt lựu đạn khói (~15 giây). Trong trận: ${n} ống mỗi bên = ${n} loạt mỗi lần xuất kích; ở đây bắn thoải mái`);
+    this.toast(`<i class="ti ti-cloud"></i> Đã bắn 1 loạt lựu đạn khói (~15 giây). Trong trận: ${n} ống mỗi bên, mang tối đa ${2 * n} quả lấy từ kho; ở đây bắn thoải mái`);
   }
 
   // Các khối còn đứng của tường thử gần xe (hộp vật cản cho VehicleCollision)

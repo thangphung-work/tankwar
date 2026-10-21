@@ -2368,6 +2368,7 @@ const VehicleDamage = (() => {
       else if (tag && (partKind(tag) === 'acc' || partKind(tag) === 'heavyAcc')) { zone = 'acc'; mul *= 0.5; }
       else if (onTurret) { zone = 'crew'; mul *= 1.1; }
       if (EQ) mul *= EQ.spallMul(u, zone);   // lớp lót chống mảnh
+      if (EQ && EQ.extHitMul) mul *= EQ.extHitMul(u, opts.ammo, penetrated && P.kind === 'KE' && P.big, zone);   // bình chữa cháy tự động
     }
     return { mul, ratio, pen: penetrated, zone, armor: Math.round(armor), penMm: Math.round(pen), key };
   }
@@ -2458,7 +2459,11 @@ const VehicleDamage = (() => {
     if (AO.pen && (cls === 'kinetic' || cls === 'heat' || cls === 'cannon') && typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'spall')) {
       events.push({ type: 'spall', text: `LỚP LÓT CHỐNG MẢNH đã chặn bớt mảnh vỡ trong khoang (sát thương -${AO.zone === 'ammo' ? 25 : 15}%)` });
     }
-    else if (!AO.pen && AO.ratio < 0.8 && !(hit && hit.ricochet) && (cls === 'kinetic' || cls === 'heat')) events.push({ type: 'nopen', text: `KHÔNG XUYÊN GIÁP (${AO.penMm}mm < ${AO.armor}mm) — nhắm chỗ giáp mỏng hơn: sườn / đuôi / nóc` });
+    // Bình chữa cháy (trang bị) dập chớp lửa khi đạn xuyên giáp lọt vào khoang (đạn cháy không báo từng viên: bắn liên thanh)
+    if (AO.pen && cls === 'kinetic' && typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'fireext')) {
+      events.push({ type: 'fireext', text: `BÌNH CHỮA CHÁY dập chớp lửa trong khoang (sát thương -${AO.zone === 'ammo' ? 15 : 8}%, ít bốc cháy)` });
+    }
+    if (!AO.pen && AO.ratio < 0.8 && !(hit && hit.ricochet) && (cls === 'kinetic' || cls === 'heat')) events.push({ type: 'nopen', text: `KHÔNG XUYÊN GIÁP (${AO.penMm}mm < ${AO.armor}mm) — nhắm chỗ giáp mỏng hơn: sườn / đuôi / nóc` });
 
     const impulse = dir.clone().multiplyScalar(cls === 'small' ? 25 : cls === 'cannon' ? 40 : 70);
     const tag = tagAtHit(hit);
@@ -2629,8 +2634,9 @@ const VehicleDamage = (() => {
     }
 
     // Lỗ xuyên giáp bốc cháy tại chỗ (xăng dầu, dây điện, đạn dự trữ bên trong)
-    if ((cls === 'heat' || cls === 'kinetic') && !onGun && AO.pen && Math.random() < (A.cls === 'heavy' ? 0.35 : 0.6)) addFire(u, point, cls === 'heat' ? 1.1 : 0.8, rand(10, 22));
-    if (opts.ammo === 'INCENDIARY' && !(SH && SH.noFire) && Math.random() < 0.3) addFire(u, point, 0.5, rand(4, 8));
+    const extF = typeof Equipment !== 'undefined' && Equipment.extFireChance ? Equipment.extFireChance(u, opts.ammo, cls) : 1;   // bình chữa cháy tự động
+    if ((cls === 'heat' || cls === 'kinetic') && !onGun && AO.pen && Math.random() < (A.cls === 'heavy' ? 0.35 : 0.6) * extF) addFire(u, point, cls === 'heat' ? 1.1 : 0.8, rand(10, 22));
+    if (opts.ammo === 'INCENDIARY' && !(SH && SH.noFire) && Math.random() < 0.3 * extF) addFire(u, point, 0.5, rand(4, 8));
     // Lưới lá ngụy trang bén lửa tại chỗ trúng (đạn cháy, nổ, nổ lõm) — máy có quyền quyết định rồi gửi trong digest
     if (!VIS_ONLY && typeof CamoFire !== 'undefined' && u._cfStatic && CamoFire.onHit(u, { point, ammo: opts.ammo, heavy: !!opts.heavy, shooter: opts.shooter })) {
       events.push({ type: 'camoFire', text: 'LƯỚI NGỤY TRANG BỐC CHÁY — xe bị lộ' });

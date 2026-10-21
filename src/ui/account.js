@@ -414,6 +414,8 @@ const Account = (() => {
     const origRestart = g.restartMatch;
     if (typeof origRestart === 'function') g.restartMatch = function (...args) { if (this.player) flushAmmo(this.player); return origRestart.apply(this, args); };
     addEventListener('pagehide', () => { if (g.player && g.isGameStarted) flushAmmo(g.player, true); });
+    // trừ kho dần trong trận: cứ ~10 s báo phần vật tư mua thêm vừa dùng (lựu đạn khói, đạn đặc chủng); không dùng gì thì không gửi
+    setInterval(() => { if (g.player && g.isGameStarted && !g.isGameOver) flushAmmo(g.player); }, 10000);
     wrap('finishMatchByTime', function () {
       const my = this.player && this.player.team === 'RED' ? 'RED' : 'BLUE';
       const b = this.blueKills || 0, r = this.redKills || 0;

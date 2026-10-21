@@ -1460,8 +1460,9 @@
       if (!u || u.isDead || this.ownerOf(u) !== from) return;
       if (![d.x, d.z, d.a].every(Number.isFinite)) return;
       if (typeof global.Equipment !== 'undefined' && global.Equipment.deploySmoke) {
-        if (u.smokeLeft > 0) u.smokeLeft--;
-        global.Equipment.deploySmoke(this.game, u, { x: d.x, z: d.z, a: d.a, m: (d.m | 0) & 3 || 3, k: d.k === 1 });
+        const m = (d.m | 0) & 3 || 3;
+        u.smokeLeft = Math.max(0, (u.smokeLeft || 0) - global.Equipment.smokeCount(m));
+        global.Equipment.deploySmoke(this.game, u, { x: d.x, z: d.z, a: d.a, m, k: d.k === 1 });
       }
     }
 
