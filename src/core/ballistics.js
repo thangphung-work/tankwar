@@ -809,9 +809,10 @@ class BallisticsSystem3D {
           break;
         }
 
-        // DRONE ĐỊCH TRÊN KHÔNG (game.js cập nhật airTargets mỗi khung hình): đạn bay qua sát thân drone là trúng;
-        // bay sượt qua gần thì báo onAirNear một lần (tiếng đạn rít qua micro drone)
-        if (this.airTargets && this.airTargets.length && s.timeAlive > 0.004) {
+        // DRONE ĐỊCH TRÊN KHÔNG (game.js cập nhật airTargets mỗi khung hình): chỉ đạn súng máy / pháo 30mm liên thanh
+        // (xe 6 nòng, xe trinh sát) bắn được — đạn pháo tăng / lựu pháo bay xuyên qua chỗ drone không tính.
+        // Bay qua sát thân drone là trúng; sượt qua gần thì báo onAirNear một lần (tiếng đạn rít qua micro drone)
+        if (this.airTargets && this.airTargets.length && s.timeAlive > 0.004 && BallisticsSystem3D.AIR_AMMO[s.ammoType]) {
           const ah = this.airTargetHit(s, prevX, prevY, prevZ);
           if (ah) {
             s.x = ah.x; s.y = ah.y; s.z = ah.z;
@@ -1597,6 +1598,8 @@ BallisticsSystem3D.blastProfile = function (ammoType, heavy) {
 // Ra khỏi mép bản đồ (nửa bề rộng / bề sâu mặt đất) là đạn đã bay ra ngoài chiến trường: đạn thật bị hủy, không có điểm rơi.
 // (trước đây giới hạn cố định 2300 trong khi bản đồ chỉ rộng ±1800 -> đạn "rơi" xuống khoảng trống ngoài bản đồ)
 BallisticsSystem3D.FIELD_LIMIT = 2300;
+// Đạn bắn được mục tiêu trên không (drone): súng liên thanh của xe 6 nòng / xe trinh sát
+BallisticsSystem3D.AIR_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 };
 BallisticsSystem3D.fieldHalf = function (terrain, dim) {
   const v = terrain && terrain[dim];
   return v > 0 ? v / 2 : BallisticsSystem3D.FIELD_LIMIT;

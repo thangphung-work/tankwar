@@ -14,7 +14,7 @@ const DroneAir = (() => {
     NEAR_R: 42,          // đạn bay qua trong bán kính này: tiếng rít qua micro drone
     CENTER_Y: 2.8,       // tâm thân drone trên gốc mô hình (đáy càng đáp)
     // phần "thân drone" mất mỗi phát trúng (1 = rơi): drone nhựa / sợi carbon rất mỏng manh —
-    // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát, đạn pháo 1 phát
+    // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát (đạn pháo không bắn được mục tiêu trên không)
     DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
     SEE_R: 1500,         // đội có xe trong bán kính ngang này thì thấy drone địch bay (drone bay cao, dễ lộ)
     BOT_SEE_R: 1100,     // bot tự phát hiện drone trong bán kính này
@@ -197,20 +197,20 @@ const DroneAir = (() => {
     onDroneShot(s, dr, h) {
       if (!dr) return;
       const fx = this.ballistics && this.ballistics.fx;
-      const micro = !!C.DMG[s.ammoType];
       const sp = Math.hypot(s.vx, s.vy, s.vz) || 1;
       if (fx) {
         try {
-          if (micro && fx.spawnBulletSurfaceImpact) {
+          if (fx.spawnBulletSurfaceImpact) {
             const D = new THREE.Vector3(s.vx / sp, s.vy / sp, s.vz / sp);
             fx.spawnBulletSurfaceImpact(new THREE.Vector3(h.x, h.y, h.z), D.clone().negate(), D, s.ammoType, 'steel', {});
-          } else if (fx.spawn) fx.spawn(h.x, h.y, h.z, s.ammoType, 'AIR', {});
+          }
         } catch (e) { /* hiệu ứng phụ */ }
       }
       const shooter = this.unitById(s.shooterId);
       const NS = this.netSync && !this.netSync.detached ? this.netSync : null;
       const auth = !s.netRemote && (!NS || (shooter && NS.owns(shooter)));
-      const dmg = C.DMG[s.ammoType] || 1;
+      const dmg = C.DMG[s.ammoType] || 0;
+      if (!dmg) return;
       if (dr.key === 'own') {
         if (auth) this.damageOwnDrone(dmg, shooter);
         else this.droneHitFX(true);   // đạn từ bản sao trên máy mình: chỉ hình / tiếng, sát thương do máy người bắn báo
@@ -229,7 +229,7 @@ const DroneAir = (() => {
       const S = this._sight;
       if (!S || !S.arty) return;
       const SE = window.soundEngine;
-      if (SE && SE.playFlyby) SE.playFlyby(s.ammoType === 'GATLING_BULLET' ? 'cannon30' : C.DMG[s.ammoType] ? 'mg' : 'shell', d, null);
+      if (SE && SE.playFlyby) SE.playFlyby(s.ammoType === 'SCOUT_BULLET' ? 'mg' : 'cannon30', d, null);
       S.jolt = Math.max(S.jolt || 0, 0.18 * (1 - d / C.NEAR_R) + 0.05);
       S.underFire = 2.2;
     },
@@ -449,7 +449,7 @@ const DroneAir = (() => {
       const a = typeof d.a === 'number' && d.a >= 0 ? NS.byNetId[d.a] : null;
       if (a && NS.ownerOf(a) !== from) return;
       if (a && a.team === this.player.team) return;
-      this.damageOwnDrone(Math.max(0, Math.min(3, (d.d || 0) / 1000)), a);
+      this.damageOwnDrone(Math.max(0, Math.min(1, (d.d || 0) / 1000)), a);
     },
 
     onNetDroneDown(d, from, NS) {

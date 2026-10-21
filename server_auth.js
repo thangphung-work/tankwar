@@ -448,7 +448,7 @@ function handle(room, client, msg) {
       const d = msg.d || {}, ar = M.byIdx.get(d.a), or = M.byIdx.get(d.o), as = M.S[d.a];
       if (!ar || !or || or.type !== 'ARTILLERY' || ar.team === or.team || ownerOf(room, ar) !== client.id) return true;
       if ((as && (as.f & F_DEAD)) || now - (M.lastFireBy.get(client.id) || 0) > 3000) { flag(M, client, `báo trúng drone xe ${d.o} khi không bắn`); return true; }
-      if (!(d.d > 0) || d.d > 3000) return true;
+      if (!(d.d > 0) || d.d > 1000) return true;   // tối đa 1 lần thân drone / gói (chỉ đạn súng)
       return false;
     }
     case 'DRONE_DOWN': {
