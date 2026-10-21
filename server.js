@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const auth = require('./server_auth');
 // Tài khoản người chơi (đăng ký / đăng nhập / lưu hồ sơ) — xem server_accounts.js
 const accounts = require('./server_accounts');
+// Chế độ phát triển: tự áp dụng thay đổi khi lưu tệp (npm run dev) — xem server_dev.js
+const dev = require('./server_dev');
 
 // Danh sách cổng ưu tiên
 const PORTS = process.env.PORT ? [Number(process.env.PORT)] : [3000, 8080, 8000, 5000, 8888];
@@ -77,7 +79,8 @@ function serveFile(req, res) {
     const lastModified = stats.mtime.toUTCString();
     const versioned = /[?&]v=/.test(req.url);
     const isStaticMedia = /^\.(png|jpe?g|gif|svg|ico|webp|wav|mp3|ogg|m4a|woff2?|ttf)$/.test(ext);
-    const cacheControl = versioned ? 'public, max-age=31536000, immutable'
+    const cacheControl = dev.enabled ? 'no-cache'
+      : versioned ? 'public, max-age=31536000, immutable'
       : isStaticMedia ? 'public, max-age=86400'
       : 'no-cache';
     const headers = {
@@ -87,6 +90,17 @@ function serveFile(req, res) {
       'Last-Modified': lastModified,
       'Access-Control-Allow-Origin': '*'
     };
+
+    // Dev: trang HTML luôn được dựng lại (chèn script dev, đánh phiên bản theo thời điểm sửa tệp)
+    if (dev.enabled && ext === '.html') {
+      fs.readFile(filePath, 'utf8', (readErr, html) => {
+        if (readErr) { res.writeHead(500); res.end(); return; }
+        const body = Buffer.from(dev.transformHtml(filePath, html));
+        res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store', 'Content-Length': body.length });
+        res.end(req.method === 'HEAD' ? undefined : body);
+      });
+      return;
+    }
 
     const inm = req.headers['if-none-match'];
     const ims = req.headers['if-modified-since'];
@@ -462,6 +476,7 @@ function attachWebSocket(server) {
 function startServer(port) {
   const server = http.createServer((req, res) => {
     if (String(req.url || '').startsWith('/api/')) { accounts.handle(req, res); return; }
+    if (dev.enabled && String(req.url || '').startsWith('/__dev/')) { dev.handle(req, res); return; }
     serveFile(req, res);
   });
   attachWebSocket(server);
@@ -485,16 +500,23 @@ function startServer(port) {
     console.log('   TACTICAL SPG COMMAND 3D - SERVER IS READY!');
     console.log(`   Running at: ${url}`);
     console.log(`   Multiplayer WebSocket: ws://localhost:${port}${WS_PATH}`);
+    if (dev.enabled) console.log('   DEV MODE: hot reload ON (save a file -> browser updates)');
     console.log('   (Press Ctrl + C in this terminal to stop)');
     console.log('======================================================\n');
+    if (dev.enabled) dev.startWatcher(accounts.DATA_DIR);
 
     // Tự động mở trình duyệt mặc định trên Windows (đặt NO_BROWSER=1 để tắt)
     if (process.env.NO_BROWSER) return;
-    exec(`start ${url}`, (openErr) => {
-      if (openErr) {
-        console.log(`Please open your browser at: ${url}`);
-      }
-    });
+    const openBrowser = () => {
+      exec(`start ${url}`, (openErr) => {
+        if (openErr) {
+          console.log(`Please open your browser at: ${url}`);
+        }
+      });
+    };
+    // Dev: máy chủ khởi động lại liên tục -> chỉ mở trình duyệt khi chưa có tab nào kết nối lại
+    if (dev.enabled) setTimeout(() => { if (dev.clientCount() === 0) openBrowser(); }, 1500);
+    else openBrowser();
   });
 }
 
