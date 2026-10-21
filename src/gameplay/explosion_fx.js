@@ -139,6 +139,19 @@
     RIVER_LAKE: { soil: [0.3, 0.26, 0.19], dark: [0.1, 0.08, 0.06], dust: [0.55, 0.5, 0.4], rock: [0.42, 0.4, 0.36] }
   };
   const CONCRETE = { soil: [0.46, 0.45, 0.43], dark: [0.1, 0.1, 0.1], dust: [0.72, 0.71, 0.68], rock: [0.46, 0.45, 0.42] };
+  // Cơ học đất trong hố khi xe lăn qua (ExplosionFX.soilUnderVehicle):
+  //  tan: hệ số góc nghỉ (cát khô ~33° -> 0,65; đất ẩm / sét dính đứng được dốc hơn), sink: xích lún vào mặt đất tơi (đv),
+  //  compact: phần thể tích bị nén chặt (mất đi), lat: phần đất bị gạt sang hai bên (còn lại bị ủi dồn về phía trước),
+  //  cut: độ dày tối đa xích gạt mỗi lần (đv), dust: bụi bốc khi đất đổ (cát khô nhiều, đất ẩm gần như không)
+  const SOIL = {
+    // (đất văng quanh hố là đất tơi xốp: bị xích đè nén chặt lại đáng kể, chỉ phần còn lại mới bị gạt / ủi đi)
+    DESERT: { tan: 0.65, sink: 1.0, compact: 0.3, lat: 0.62, cut: 3, dust: 1 },
+    HIGHLAND: { tan: 0.8, sink: 0.6, compact: 0.3, lat: 0.6, cut: 2.2, dust: 0.6 },
+    RIVER_LAKE: { tan: 0.78, sink: 0.8, compact: 0.32, lat: 0.62, cut: 2.5, dust: 0.35 },
+    JUNGLE: { tan: 0.92, sink: 0.9, compact: 0.35, lat: 0.7, cut: 2.4, dust: 0.15 },
+    URBAN: { tan: 0.95, sink: 0.35, compact: 0.35, lat: 0.55, cut: 1.5, dust: 0.5 },
+    DEFAULT: { tan: 0.8, sink: 0.6, compact: 0.3, lat: 0.6, cut: 2.2, dust: 0.5 }
+  };
 
   // ===========================================================================
   // TEXTURE HỐ ĐẠN 3D & RÃNH CÀY: QUẠT ĐẤT ĐÁ BẤT ĐỐI XỨNG & TIA NỨT ÁP LỰC
@@ -6235,6 +6248,8 @@
           const near = c.blasts.some(b => Math.hypot(b.x - x, b.z - z) < (b.A + blast.A) * 1.45);
           if (!near) continue;
           blasts = c.blasts.concat(blasts);
+          // đất cát xe đã ủi / san trong cụm cũ: giữ lại khi dựng lại cụm (trừ chỗ phát nổ mới hất tung)
+          if (c.soilE && c.surf) (opts = Object.assign({}, opts)).soilEdits = (opts.soilEdits || []).concat([{ s: c.surf, E: c.soilE }]);
           this.removeDecal(this.craters, i, true);   // cụm mới dựng lại ngay, báo mặt đất đổi một lần
         }
         if (blasts.length > 14) blasts = blasts.slice(blasts.length - 14);
@@ -6435,11 +6450,20 @@
       const N1 = M + 1, pos = new Float32Array(N1 * N1 * 3), uv = new Float32Array(N1 * N1 * 2);
       const r0 = {};
       const Hgrid = new Float32Array(N1 * N1);
+      // đất xe ủi / san ở các cụm cũ (xem soilUnderVehicle): cộng lại vào lưới mới, phát nổ mới nhất hất tung chỗ nó nổ
+      const edits = opts.soilEdits && opts.soilEdits.length ? opts.soilEdits : null;
+      const soilE = edits ? new Float32Array(N1 * N1) : null;
+      const nb = blasts[blasts.length - 1];
       for (let j = 0; j <= M; j++) for (let i = 0; i <= M; i++) {
         const [px, pz] = fromG(ox + S * i / M, oz + S * j / M), k = j * N1 + i;
         sample(px, pz, r0);
-        Hgrid[k] = r0.H;
-        pos[k * 3] = px - cx; pos[k * 3 + 1] = base(px, pz) + r0.H + 0.04; pos[k * 3 + 2] = pz - cz;
+        let h = r0.H;
+        if (edits) {
+          const e = ExplosionFX.soilEditAt(edits, px, pz) * smooth(1.0, 1.6, Math.hypot(px - nb.x, pz - nb.z) / Math.max(nb.A, nb.B));
+          h += e; soilE[k] = e;
+        }
+        Hgrid[k] = h;
+        pos[k * 3] = px - cx; pos[k * 3 + 1] = base(px, pz) + h + 0.04; pos[k * 3 + 2] = pz - cz;
         uv[k * 2] = i / M; uv[k * 2 + 1] = 1 - j / M;
       }
       const idx = new Uint16Array(M * M * 6);
@@ -6775,13 +6799,15 @@
 
       this.scene.add(group);
       const rec = {
-        group, mats: [mat, matF, ...clodMats, ...rockMats], geos: [geo], texs: [tex, texA], t: 0,
+        group, mats: [mat, matF, ...clodMats, ...rockMats], geos: [geo], texs: [tex, texA], t: 0, soilE, pal: P,
         life: opts.persistent ? 1e12 : 1e9,          // hố nổ tồn tại suốt trận (cộng dồn), chỉ cũ nhất bị thay khi quá nhiều
         holeSlot: holes[0], holeSlots: holes, persistent: !!opts.persistent, blasts,
         params: { x: blasts[blasts.length - 1].x, z: blasts[blasts.length - 1].z, R: maxRa, effR: maxRa, bowlD: deepest, heavy: blasts.some(b => b.heavy) },
         // mặt hố nhìn thấy (lưới Hgrid + đất nguyên thuỷ) cho craterSurfaceAt; phần lưới vật lý đã hạ (def) để trả lại khi xoá
         surf: { ox, oz, cx, cz, gc, gs, S, M, Hgrid, holeC, base, x0, x1, z0, z1 }, def
       };
+      // đất xe đã ủi / san mang sang từ cụm cũ: tô lại màu & độ trong (texture vừa dựng chưa có)
+      if (soilE) rec._soilPend = { i0: 0, i1: M, j0: 0, j1: M, x0, x1, z0, z1, cut: 0 };
       this.craters.push(rec);
       while (this.craters.length > this.maxCraters) {
         const oi = this.craters.findIndex(c => !c.persistent);
@@ -6833,6 +6859,272 @@
       }
       return false;
     }
+    // ===========================================================================
+    // XE LĂN QUA HỐ: XÍCH / BÁNH ÉP, GẠT, ỦI ĐẤT CÁT — đất chuyển chỗ thật trên lưới độ cao của hố (bảo toàn khối lượng)
+    //  1. Dải xích / mặt lốp là tấm cứng theo đúng tư thế xe (độ cao tâm, góc chúc, góc nghiêng): đất nhô cao hơn mặt tì
+    //     (gờ hố, đống đất văng, cát tuột) bị ép xuống; xích lún thêm một chút vào cát tơi
+    //  2. Đất bị ép không biến mất: phần lớn bị gạt sang hai bên dải xích thành gờ, phần còn lại bị ủi dồn ra trước mép
+    //     dải xích theo chiều xe chạy; một phần nhỏ bị nén chặt
+    //  3. Sụt lở theo góc nghỉ: chỗ vừa bị xáo trộn & quanh chỗ xích đè (tải trọng làm vách yếu) dốc hơn góc nghỉ của đất
+    //     thì đất trượt xuống chỗ thấp -> gờ bị đè sụp, cát tràn xuống lấp dần lòng hố, gờ gạt ra cũng xẹp về dốc tự nhiên
+    //  4. Cập nhật: hình lưới hố, độ trong (gờ cát mới đắp hiện ra), màu cát xáo trộn, lưới độ cao vật lý (đạn, xe khác),
+    //     cục đất đá trong hố lăn / lún theo, bụi cát bốc khi đất đổ
+    // Chỉ là hình ảnh + mặt tì cục bộ: mỗi máy tự tính theo vị trí xe (đã đồng bộ), không gửi mạng
+    // ===========================================================================
+    soilUnderVehicle(u, dt) {
+      if (!u || u.isDead || u.airborne || !u.inCrater || !this.craters.length) return;
+      if (u._soilX === undefined) { u._soilX = u.x; u._soilZ = u.z; u._soilA = u.bodyAngle || 0; return; }
+      let da = (u.bodyAngle || 0) - u._soilA; da = Math.atan2(Math.sin(da), Math.cos(da));
+      const mvx = u.x - u._soilX, mvz = u.z - u._soilZ, mv = Math.hypot(mvx, mvz);
+      if (mv < 1.2 && Math.abs(da) < 0.03) return;           // đứng yên: không xáo đất
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - (u._soilT || 0) < 33) return;                 // tối đa ~30 lần / giây mỗi xe
+      u._soilT = now;
+      u._soilX = u.x; u._soilZ = u.z; u._soilA = u.bodyAngle || 0;
+      if (mv > 40) return;                                    // dịch chuyển tức thời (hồi sinh)
+      const t = this.terrainOf();
+      const soil = SOIL[t && t.mapType] || SOIL.DEFAULT;
+      const a = u.bodyAngle || 0;
+      const V = {
+        x: u.x, z: u.z, y: u.y, fX: -Math.sin(a), fZ: -Math.cos(a), rX: Math.cos(a), rZ: -Math.sin(a),
+        tp: Math.tan(u.currentPitch || 0), tr: Math.tan(u.currentRoll || 0), pads: this.contactPads(u)
+      };
+      V.dir = mv > 0.1 ? (Math.sign(mvx * V.fX + mvz * V.fZ) || 1) : (Math.sign(u.speed || 1) || 1);
+      V.ext = 0;
+      for (const p of V.pads) V.ext = Math.max(V.ext, Math.hypot(Math.abs(p.r) + p.hw, Math.abs(p.f) + p.hl));
+      for (const rec of this.craters) {
+        const sf = rec.surf;
+        if (!sf || u.x + V.ext < sf.x0 || u.x - V.ext > sf.x1 || u.z + V.ext < sf.z0 || u.z - V.ext > sf.z1) continue;
+        this.pushSoil(rec, V, soil);
+      }
+    }
+
+    // Các mặt tiếp đất của xe trong hệ xe: r = ngang (phải +), f = dọc (trước +), hw / hl = nửa rộng / nửa dài
+    contactPads(u) {
+      if (u._soilPads) return u._soilPads;
+      const TT = typeof TireTracks !== 'undefined' ? TireTracks.CFG : null;
+      const cfg = (TT && (TT[u.tankType] || TT.ALL_ROUNDER)) || { w: 5.4, len: 34, lines: [[-12.2, 0], [12.2, 0]] };
+      let pads;
+      if (cfg.wheels) {
+        const ws = u.wheelSet && u.wheelSet.positions && u.wheelSet.positions.length ? u.wheelSet.positions
+          : [{ x: -7, z: -10 }, { x: 7, z: -10 }, { x: -7, z: 10 }, { x: 7, z: 10 }];
+        pads = ws.map(p => ({ r: p.x, f: -p.z, hw: cfg.w / 2, hl: cfg.w * 0.6 }));
+      } else pads = (cfg.lines || [[-12.2, 0], [12.2, 0]]).map(([lx, lz]) => ({ r: lx, f: -lz, hw: cfg.w / 2, hl: (cfg.len || 34) / 2 }));
+      return (u._soilPads = pads);
+    }
+
+    // Đỉnh nào của lưới hố nằm trong lỗ khoét mặt đất (được đào sâu dưới mặt đất); ngoài lỗ đất chỉ hạ được tới mặt đất
+    holeMask(sf) {
+      const M = sf.M, N1 = M + 1, mk = new Uint8Array(N1 * N1), cell = sf.S / M;
+      for (let j = 0; j <= M; j++) for (let i = 0; i <= M; i++) {
+        const uu = sf.ox + i * cell, vv = sf.oz + j * cell;
+        const x = sf.cx + uu * sf.gc - vv * sf.gs, z = sf.cz + uu * sf.gs + vv * sf.gc;
+        for (const h of sf.holeC) {
+          let dx = x - h.x, dz = z - h.z;
+          if (h.ratio && h.ratio < 0.995) { const c = Math.cos(h.ang), sn = Math.sin(h.ang), q = dx * c + dz * sn; dz = (-dx * sn + dz * c) / h.ratio; dx = q; }
+          if (dx * dx + dz * dz < h.r * h.r * 0.92) { mk[j * N1 + i] = 1; break; }
+        }
+      }
+      return mk;
+    }
+
+    pushSoil(rec, V, soil) {
+      const sf = rec.surf, M = sf.M, N1 = M + 1, G = sf.Hgrid, cell = sf.S / M, ca = cell * cell;
+      const E = rec.soilE || (rec.soilE = new Float32Array(N1 * N1));
+      const inH = sf.inHole || (sf.inHole = this.holeMask(sf));
+      const toGrid = (x, z) => {
+        const lx = (x - sf.cx) * sf.gc + (z - sf.cz) * sf.gs, lz = -(x - sf.cx) * sf.gs + (z - sf.cz) * sf.gc;
+        return [(lx - sf.ox) / cell, (lz - sf.oz) / cell];
+      };
+      const [gi, gj] = toGrid(V.x, V.z);
+      const rc = Math.ceil(V.ext / cell) + 1;
+      const mg = Math.ceil(8 / cell) + 3;                     // lề cho đất gạt / ủi ra ngoài dải xích + sụt lở
+      const ci0 = Math.floor(gi - rc), ci1 = Math.ceil(gi + rc), cj0 = Math.floor(gj - rc), cj1 = Math.ceil(gj + rc);
+      if (ci1 < 0 || cj1 < 0 || ci0 > M || cj0 > M) return;
+      const I0 = Math.max(0, ci0 - mg), I1 = Math.min(M, ci1 + mg), J0 = Math.max(0, cj0 - mg), J1 = Math.min(M, cj1 + mg);
+      const W = I1 - I0 + 1, Hh = J1 - J0 + 1;
+      const D = new Float32Array(W * Hh), dirty = new Uint8Array(W * Hh), Y0 = new Float32Array(W * Hh);
+      const wx = new Float32Array(W * Hh), wz = new Float32Array(W * Hh);
+      for (let j = J0; j <= J1; j++) for (let i = I0; i <= I1; i++) {
+        const uu = sf.ox + i * cell, vv = sf.oz + j * cell, q = (j - J0) * W + (i - I0);
+        wx[q] = sf.cx + uu * sf.gc - vv * sf.gs; wz[q] = sf.cz + uu * sf.gs + vv * sf.gc;
+        Y0[q] = sf.base(wx[q], wz[q]);
+      }
+      // rải một khối đất (thể tích v) vào 4 đỉnh lưới quanh điểm (x, z)
+      const deposit = (x, z, v) => {
+        const [fi, fj] = toGrid(x, z);
+        const i = Math.floor(fi), j = Math.floor(fj), ax = fi - i, az = fj - j;
+        if (i < I0 || j < J0 || i + 1 > I1 || j + 1 > J1) return 0;
+        const h = v / ca, q = (j - J0) * W + (i - I0);
+        D[q] += h * (1 - ax) * (1 - az); D[q + 1] += h * ax * (1 - az); D[q + W] += h * (1 - ax) * az; D[q + W + 1] += h * ax * az;
+        dirty[q] = dirty[q + 1] = dirty[q + W] = dirty[q + W + 1] = 1;
+        return 1;
+      };
+      let cut = 0, depX = 0, depZ = 0, nDep = 0;
+      for (let j = Math.max(J0, cj0); j <= Math.min(J1, cj1); j++) for (let i = Math.max(I0, ci0); i <= Math.min(I1, ci1); i++) {
+        const q = (j - J0) * W + (i - I0), k = j * N1 + i;
+        const dx = wx[q] - V.x, dz = wz[q] - V.z;
+        const f = dx * V.fX + dz * V.fZ, r = dx * V.rX + dz * V.rZ;
+        let pad = null;
+        for (const p of V.pads) if (Math.abs(r - p.r) <= p.hw && Math.abs(f - p.f) <= p.hl) { pad = p; break; }
+        if (!pad) continue;
+        dirty[q] = 2;                                         // dưới xích: tải trọng làm vách quanh đó dễ sụt
+        const e = Y0[q] + G[k] - (V.y + f * V.tp + r * V.tr - soil.sink);
+        if (e <= 0.03) continue;
+        let take = Math.min(e, soil.cut, inH[k] ? e : Math.max(0, G[k] + D[q]));
+        if (take <= 0.01) continue;
+        D[q] -= take;
+        cut += take;
+        const v = take * ca * (1 - soil.compact);
+        // gạt sang hai bên mép dải tiếp đất
+        // (gần mép nhiều, văng xa hơn ít: gờ thấp thoải, không thành sống cát nhọn)
+        const side = Math.sign(r - pad.r) || (pad.r >= 0 ? 1 : -1);
+        const edge = pad.hw - Math.abs(r - pad.r);
+        const off1 = edge + cell * (0.5 + Math.random() * 1.5), off2 = edge + pad.hw * 0.4 + cell * (1 + Math.random() * 2.5);
+        const tx = wx[q] + V.rX * side * off1, tz = wz[q] + V.rZ * side * off1;
+        if (deposit(tx, tz, v * soil.lat * 0.6)) { depX += tx; depZ += tz; nDep++; }
+        deposit(wx[q] + V.rX * side * off2, wz[q] + V.rZ * side * off2, v * soil.lat * 0.4);
+        // ủi dồn ra trước mép dải tiếp đất theo chiều xe chạy
+        const ahead = (pad.f + V.dir * pad.hl - f) + V.dir * cell * (0.5 + Math.random());
+        deposit(wx[q] + V.fX * ahead, wz[q] + V.fZ * ahead, v * (1 - soil.lat));
+      }
+      // áp phần đất ép / gạt / ủi
+      for (let q = 0; q < D.length; q++) if (D[q]) {
+        const i = I0 + q % W, j = J0 + Math.floor(q / W), k = j * N1 + i;
+        G[k] += D[q]; E[k] += D[q];
+      }
+      // sụt lở theo góc nghỉ: chỉ quanh chỗ vừa xáo trộn / chỗ xích đè (nở thêm 2 ô)
+      const act = new Uint8Array(W * Hh);
+      for (let jj = 0; jj < Hh; jj++) for (let ii = 0; ii < W; ii++) if (dirty[jj * W + ii]) {
+        for (let b = -2; b <= 2; b++) for (let c = -2; c <= 2; c++) {
+          const a2 = ii + c, b2 = jj + b;
+          if (a2 >= 0 && b2 >= 0 && a2 < W && b2 < Hh) act[b2 * W + a2] = 1;
+        }
+      }
+      const lim1 = soil.tan * cell, lim2 = soil.tan * cell * Math.SQRT2;
+      let slid = 0;
+      const pair = (qa, qb, lim) => {
+        const ia = I0 + qa % W, ja = J0 + Math.floor(qa / W), ib = I0 + qb % W, jb = J0 + Math.floor(qb / W);
+        const ka = ja * N1 + ia, kb = jb * N1 + ib;
+        const dh = (Y0[qa] + G[ka]) - (Y0[qb] + G[kb]);
+        if (Math.abs(dh) <= lim) return;
+        const src = dh > 0 ? ka : kb, dst = dh > 0 ? kb : ka;
+        let m = (Math.abs(dh) - lim) * 0.22;
+        if (!inH[src]) m = Math.min(m, Math.max(0, G[src]));  // ngoài lỗ khoét: không đào thủng mặt đất
+        if (m <= 0.002) return;
+        G[src] -= m; E[src] -= m; G[dst] += m; E[dst] += m;
+        slid += m;
+      };
+      for (let it = 0; it < 6; it++) {
+        for (let jj = 0; jj < Hh; jj++) for (let ii = 0; ii < W; ii++) {
+          const q = jj * W + ii;
+          if (!act[q]) continue;
+          if (ii + 1 < W) pair(q, q + 1, lim1);
+          if (jj + 1 < Hh) {
+            pair(q, q + W, lim1);
+            if (ii + 1 < W) pair(q, q + W + 1, lim2);
+            if (ii > 0) pair(q, q + W - 1, lim2);
+          }
+        }
+      }
+      if (cut <= 0 && slid <= 0) return;
+      // đỉnh lưới hiển thị
+      const pos = rec.geos[0].attributes.position;
+      for (let jj = 0; jj < Hh; jj++) for (let ii = 0; ii < W; ii++) {
+        const q = jj * W + ii;
+        if (!act[q]) continue;
+        const k = (J0 + jj) * N1 + (I0 + ii);
+        pos.array[k * 3 + 1] = Y0[q] + G[k] + 0.04;
+      }
+      pos.needsUpdate = true;
+      const P = rec._soilPend || (rec._soilPend = { i0: I0, i1: I1, j0: J0, j1: J1, x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity, cut: 0 });
+      P.i0 = Math.min(P.i0, I0); P.i1 = Math.max(P.i1, I1); P.j0 = Math.min(P.j0, J0); P.j1 = Math.max(P.j1, J1);
+      for (const q of [0, W - 1, (Hh - 1) * W, Hh * W - 1]) {
+        P.x0 = Math.min(P.x0, wx[q]); P.x1 = Math.max(P.x1, wx[q]); P.z0 = Math.min(P.z0, wz[q]); P.z1 = Math.max(P.z1, wz[q]);
+      }
+      P.cut += cut;
+      // bụi cát bốc khi xích gạt / đất đổ (cát khô nhiều, đất ẩm gần như không)
+      const vol = (cut + slid) * ca;
+      if (soil.dust > 0 && vol > 6 && nDep) {
+        const pal = rec.pal || this.palette('GROUND');
+        const n = Math.min(3, Math.round(vol / 25 * soil.dust) + (Math.random() < soil.dust ? 1 : 0));
+        for (let m = 0; m < n; m++) {
+          const x = depX / nDep + rand(-3, 3), z = depZ / nDep + rand(-3, 3);
+          this.smoke.add({ x, y: this.surfaceAt(x, z) + 1, z, vx: rand(-4, 4), vy: rand(3, 9), vz: rand(-4, 4),
+            size: rand(3, 6), grow: 5, drag: 1.8, grav: 3, life: rand(1.4, 2.6), alpha: 0.22 * soil.dust + 0.08, fadeIn: 0.1,
+            c0: pal.dust, cell: 0 });
+        }
+      }
+    }
+
+    // Phần việc nặng sau khi đất trong hố đổi (gộp ~8 lần / giây): pháp tuyến lưới, độ trong & màu texture, lưới độ cao vật lý,
+    // cục đất đá trong hố, vật thể khác trong vùng
+    flushSoil(rec) {
+      const P = rec._soilPend;
+      rec._soilPend = null;
+      const sf = rec.surf;
+      if (!P || !sf) return;
+      const M = sf.M, N1 = M + 1, G = sf.Hgrid, E = rec.soilE, cell = sf.S / M;
+      rec.geos[0].computeVertexNormals();
+      // texture tính lại từng điểm ảnh từ ảnh gốc lúc dựng hố (không vẽ chồng cộng dồn): gờ cát mới đắp nằm ngoài vùng đặc
+      // hiện ra (độ trong); cát bị gạt / ủi đắp lên sáng & tơi hơn (ngả màu cát khô), chỗ xích nén chặt hơi sẫm
+      const tex = rec.texs && rec.texs[0], texA = rec.texs && rec.texs[1];
+      if (tex && texA && tex.image && texA.image && tex.image.getContext) {
+        const TS = texA.image.width, g2 = tex.image.getContext('2d'), gA = texA.image.getContext('2d');
+        if (!rec._img0) { rec._img0 = g2.getImageData(0, 0, TS, TS); rec._imgA0 = gA.getImageData(0, 0, TS, TS); }
+        const x0 = Math.max(0, Math.floor(P.i0 / M * TS) - 1), x1 = Math.min(TS - 1, Math.ceil(P.i1 / M * TS) + 1);
+        const y0 = Math.max(0, Math.floor(P.j0 / M * TS) - 1), y1 = Math.min(TS - 1, Math.ceil(P.j1 / M * TS) + 1);
+        const w = x1 - x0 + 1, h = y1 - y0 + 1;
+        const img = g2.getImageData(x0, y0, w, h), imgA = gA.getImageData(x0, y0, w, h);
+        const B = rec._img0.data, BA = rec._imgA0.data, dust = (rec.pal || this.palette('GROUND')).dust;
+        const lerpG = (A, gx, gz) => {
+          const i = Math.min(M - 1, Math.floor(gx)), j = Math.min(M - 1, Math.floor(gz)), fx = gx - i, fz = gz - j, k = j * N1 + i;
+          return (A[k] * (1 - fx) + A[k + 1] * fx) * (1 - fz) + (A[k + N1] * (1 - fx) + A[k + N1 + 1] * fx) * fz;
+        };
+        for (let py = 0; py < h; py++) for (let pxx = 0; pxx < w; pxx++) {
+          const ix = x0 + pxx, iy = y0 + py, gx = (ix + 0.5) / TS * M, gz = (iy + 0.5) / TS * M;
+          const e = lerpG(E, gx, gz), q0 = (iy * TS + ix) * 4, q = (py * w + pxx) * 4;
+          if (Math.abs(e) < 0.03) { for (let c = 0; c < 4; c++) { img.data[q + c] = B[q0 + c]; imgA.data[q + c] = BA[q0 + c]; } continue; }
+          const hh = lerpG(G, gx, gz);
+          const fill = e > 0 ? clamp01(e / 1.5) * 0.3 : 0, press = e < 0 ? clamp01(-e / 2) * 0.12 : 0;
+          for (let c = 0; c < 3; c++) {
+            const v0 = B[q0 + c];
+            img.data[q + c] = (v0 + (dust[c] * 0.9 * 255 - v0) * fill) * (1 - press);
+          }
+          img.data[q + 3] = 255;
+          const a = Math.max(BA[q0] / 255, clamp01((hh - 0.06) / 0.3) * clamp01(Math.abs(e) / 0.25));
+          imgA.data[q] = imgA.data[q + 1] = imgA.data[q + 2] = a * 255; imgA.data[q + 3] = 255;
+        }
+        g2.putImageData(img, x0, y0); gA.putImageData(imgA, x0, y0);
+        tex.needsUpdate = true; texA.needsUpdate = true;
+      }
+      // lưới độ cao vật lý (đạn nổ, xe khác, vật thể): như lúc dựng hố — thoải hơn mặt hố ~25%, không cao hơn mặt đất gốc
+      const t = this.terrainOf();
+      if (rec.def && t && t.heightData && t._heightOrig) {
+        const Sg = t.segments, Ng = Sg + 1, I = rec.def.idx, Vv = rec.def.val, H0 = t._heightOrig;
+        for (let q = 0; q < I.length; q++) {
+          const k = I[q], wxp = -t.width / 2 + (k % Ng) * (t.width / Sg), wzp = -t.depth / 2 + Math.floor(k / Ng) * (t.depth / Sg);
+          if (wxp < P.x0 || wxp > P.x1 || wzp < P.z0 || wzp > P.z1) continue;
+          const lx = (wxp - sf.cx) * sf.gc + (wzp - sf.cz) * sf.gs, lz = -(wxp - sf.cx) * sf.gs + (wzp - sf.cz) * sf.gc;
+          const gi = Math.round((lx - sf.ox) / cell), gj = Math.round((lz - sf.oz) / cell);
+          if (gi < 0 || gj < 0 || gi > M || gj > M) continue;
+          const v = Math.min(H0[k], H0[k] + Math.min(0, G[gj * N1 + gi]) * 0.75);
+          Vv[q] = v; t.heightData[k] = v;
+        }
+      }
+      // cục đất / đá trong hố: lăn theo mặt đất mới (bị xích đè thì lún bẹp xuống)
+      const g = rec.group;
+      for (const m of g.children) {
+        if (!m.isMesh || m.geometry === rec.geos[0]) continue;
+        const x = m.position.x + g.position.x, z = m.position.z + g.position.z;
+        if (x < P.x0 || x > P.x1 || z < P.z0 || z > P.z1) continue;
+        const y = this.craterSurfaceAt(x, z, this.groundAt(x, z));
+        if (y === null || y === undefined) continue;
+        if (y < m.position.y - m.scale.y * 0.6 || y > m.position.y) { m.position.y = y + m.scale.y * 0.1; if (P.cut > 0.5) m.scale.y = Math.max(m.scale.y * 0.85, m.scale.x * 0.25); }
+      }
+      this.groundChanged(P.x0, P.z0, P.x1, P.z1);
+    }
+
     // Báo địa hình: mặt đất trong hình chữ nhật vừa đổi (hố mới / hố bị xoá) -> các hệ vật thể đặt lại độ cao
     groundChanged(x0, z0, x1, z1) {
       const t = this.terrainOf();
@@ -7050,6 +7342,11 @@
         if (w.t > w.life) { this.scene.remove(w.m); w.m.geometry.dispose(); w.m.material.dispose(); this.waves.splice(i, 1); }
       }
       this._rainBudget = 40;
+      // đất trong hố vừa bị xe ủi / san: cập nhật phần nặng ~8 lần / giây
+      if ((this._soilT = (this._soilT || 0) + dt) > 0.12) {
+        this._soilT = 0;
+        for (const c of this.craters) if (c._soilPend) this.flushSoil(c);
+      }
       if (this.domes) for (let i = this.domes.length - 1; i >= 0; i--) {
         const d = this.domes[i];
         d.t += dt;
@@ -7284,6 +7581,19 @@ float holeQ(vec2 p, vec4 gh) {
   };
 
   ExplosionFX.forScene = (scene) => REGISTRY.get(scene) || null;
+  // Lượng đất xe đã ủi / san (+ đắp, - gạt đi) tại (x, z) theo lưới của các cụm hố cũ (nội suy song tuyến)
+  ExplosionFX.soilEditAt = (edits, x, z) => {
+    let e = 0;
+    for (const { s, E } of edits) {
+      if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) continue;
+      const lx = (x - s.cx) * s.gc + (z - s.cz) * s.gs, lz = -(x - s.cx) * s.gs + (z - s.cz) * s.gc;
+      const gx = (lx - s.ox) / s.S * s.M, gz = (lz - s.oz) / s.S * s.M;
+      if (gx < 0 || gz < 0 || gx > s.M || gz > s.M) continue;
+      const i = Math.min(s.M - 1, Math.floor(gx)), j = Math.min(s.M - 1, Math.floor(gz)), fx = gx - i, fz = gz - j, N1 = s.M + 1, k = j * N1 + i;
+      e += (E[k] * (1 - fx) + E[k + 1] * fx) * (1 - fz) + (E[k + N1] * (1 - fx) + E[k + N1 + 1] * fx) * fz;
+    }
+    return e;
+  };
 
   if (typeof window !== 'undefined') window.ExplosionFX = ExplosionFX;
 })();

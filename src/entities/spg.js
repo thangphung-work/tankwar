@@ -1832,6 +1832,12 @@ class SPGUnit3D {
       this.bodyAngle -= this.dmg.pull * dt * Math.min(1, Math.abs(this.speed) / Math.max(1, this.baseMaxSpeed)) * Math.sign(this.speed);
     }
 
+    // 6b. Lăn qua hố đạn: xích / bánh ép, gạt đất cát sang hai bên, ủi dồn về trước, gờ sụp & cát tràn xuống lấp hố
+    if (this.inCrater && typeof ExplosionFX !== 'undefined' && ExplosionFX.forScene) {
+      const efx = ExplosionFX.forScene(this.scene);
+      if (efx && efx.soilUnderVehicle) efx.soilUnderVehicle(this, dt);
+    }
+
     // 7. TẠO VỆT XÍCH XE HẰN TRÊN MẶT ĐẤT (GROUND TRACK MARKS)
     // Vệt liền mạch đúng vị trí dải xích / từng bánh, hoa xích / hoa lốp riêng từng xe, màu & độ hằn theo mặt đất
     if (typeof TireTracks !== 'undefined') {
