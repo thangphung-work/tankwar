@@ -670,8 +670,8 @@ class ArtilleryGame3D {
     });
 
     // Rời cửa sổ (Alt-Tab, mở tab khác) khi đang giữ phím: trình duyệt không gửi keyup -> nhả hết phím,
-    // tránh xe tự chạy / súng tự xả khi quay lại
-    const releaseAll = () => { this.keys = {}; this.isPointerFiring = false; };
+    // tránh xe tự chạy / súng tự xả / drone tự bay khi quay lại
+    const releaseAll = () => { this.keys = {}; this.isPointerFiring = false; if (this._sight) this._sight.keys = {}; };
     window.addEventListener('blur', releaseAll);
     document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
 
@@ -3412,6 +3412,12 @@ class ArtilleryGame3D {
     return D;
   }
 
+  // Hướng (độ la bàn, cùng cách tính với số hướng trên màn hình drone) từ xe mình tới điểm / xe `t`
+  bearingFromPlayer(t) {
+    const P = this.player;
+    return String(Math.round(((Math.atan2(t.x - P.x, -(t.z - P.z)) * 180 / Math.PI) % 360 + 360) % 360) % 360).padStart(3, '0') + '°';
+  }
+
   // Bãi đáp trên nóc cabin xe pháo (tọa độ thế giới) + hướng mũi xe
   dronePadWorld() {
     const P = this.player, ch = P && P.chassisGroup;
@@ -3607,7 +3613,19 @@ class ArtilleryGame3D {
       place(T.imp, L.x, L.y + 2, L.z, what + (miss !== null ? ' · LỆCH ' + miss + ' M' : '') + (L.ft ? ' · BAY ' + L.ft.toFixed(1) + ' S' : ''), col);
     } else place(T.imp, null);
     const D = this.droneState();
-    place(T.gun, P.x, (P.y || 0) + 30, P.z, 'PHÁO · ' + Math.round(Math.hypot(D.x - P.x, D.z - P.z)).toLocaleString() + ' M', '#9fd3ff');
+    // ĐỊCH ÁP SÁT XE MÌNH (đã biết vị trí: kíp xe thấy / radar / đồng đội báo, trong vòng cảnh giới quanh xe):
+    // drone đang ở xa nên xe pháo không còn trong khung hình -> băng cảnh báo + nhãn đỏ trên từng xe địch, nhãn PHÁO đỏ
+    const near = this._proxNear || [];
+    T.thr.forEach((tag, i) => {
+      const n = near[i];
+      if (n) place(tag, n.u.x, (n.u.y || 0) + 14, n.u.z, 'ĐỊCH · CÁCH XE ' + Math.round(n.d) + ' M', '#ff3b30');
+      else place(tag, null);
+    });
+    const c0 = near[0];
+    const pTxt = c0 ? (c0.d < 280 ? 'ĐỊCH SÁT XE PHÁO' : 'ĐỊCH ÁP SÁT XE PHÁO') + ' · ' + Math.round(c0.d) + ' M · HƯỚNG ' + this.bearingFromPlayer(c0.u)
+      + (near.length > 1 ? ' · ' + near.length + ' XE' : '') + ' — C: THU DRONE' : '';
+    if (T.prox._t !== pTxt) { T.prox._t = pTxt; T.prox.textContent = pTxt; T.prox.hidden = !pTxt; }
+    place(T.gun, P.x, (P.y || 0) + 30, P.z, 'PHÁO · ' + Math.round(Math.hypot(D.x - P.x, D.z - P.z)).toLocaleString() + ' M', c0 ? '#ff3b30' : '#9fd3ff');
     // xe phòng không đang khóa drone (hướng như máy cảnh báo radar; nằm ngoài khung hình thì mũi tên ở mép)
     const TH = this._droneThreat && this._droneThreat.top;
     if (T.aa) place(T.aa, TH ? TH.x : null, TH ? (TH.y || 0) + 14 : 0, TH ? TH.z : 0, (this._droneThreat.firing ? 'PHÒNG KHÔNG ĐANG BẮN · ' : 'PHÒNG KHÔNG KHÓA · ') + (TH ? Math.round(Math.hypot(TH.x - D.x, TH.z - D.z)).toLocaleString() + ' M' : ''), '#ff3b30');
@@ -4001,6 +4019,9 @@ class ArtilleryGame3D {
         '#gun-sight .gs-tag.off.flip span{right:4px;left:auto}',
         '#gun-sight .gs-shot{position:absolute;top:calc(50% + 46px);left:50%;transform:translateX(-50%);font-size:14px;font-weight:600;letter-spacing:.1em;color:#ffd166;text-shadow:0 0 3px #000,0 0 6px #000}',
         '#gun-sight .gs-sig{position:absolute;top:max(calc(7vh + 58px),130px);left:50%;transform:translateX(-50%);font-size:12px;font-weight:600;letter-spacing:.1em;color:#ff5a4a;text-shadow:0 0 3px #000;animation:gsRec 1s steps(1) infinite}',
+        // địch áp sát xe mình trong lúc lái drone: băng đỏ nhấp nháy giữa phía trên khung hình
+        '#gun-sight .gs-prox{position:absolute;top:max(calc(7vh + 84px),156px);left:50%;transform:translateX(-50%);padding:5px 14px;font-size:13px;font-weight:700;letter-spacing:.08em;white-space:nowrap;max-width:86vw;overflow:hidden;text-overflow:ellipsis;color:#fff;background:rgba(150,14,14,.82);border:1px solid rgba(255,77,77,.85);box-shadow:0 0 10px rgba(0,0,0,.6);animation:gsProx .5s steps(1) infinite}',
+        '@keyframes gsProx{50%{background:rgba(90,8,8,.82)}}',
         // thanh pin UAV góc trên bên phải: hình cục pin 10 vạch
         '#gun-sight .gs-bat{position:absolute;top:max(calc(7vh + 10px),82px);right:calc(7vw + 12px);display:flex;align-items:center;gap:8px;--bc:#5cf08a;font-size:12px;letter-spacing:.08em;text-shadow:0 0 3px #000,0 0 6px #000;font-variant-numeric:tabular-nums}',
         '#gun-sight .gs-bat[data-lv=mid]{--bc:#ffd166}',
@@ -4031,7 +4052,7 @@ class ArtilleryGame3D {
         '#gun-sight .gs-dead span{position:relative;font-size:14px;font-weight:600;letter-spacing:.14em;color:#ff5a4a;background:rgba(10,12,10,.7);padding:4px 12px;justify-self:center}',
         '#gun-sight .gs-rec i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff3b30;margin-right:6px;vertical-align:0;animation:gsRec 1s steps(1) infinite}',
         '@keyframes gsRec{50%{opacity:0}}',
-        '@media (prefers-reduced-motion:reduce){#gun-sight .gs-grain,#gun-sight .gs-static,#gun-sight .gs-rec i{animation:none}}',
+        '@media (prefers-reduced-motion:reduce){#gun-sight .gs-grain,#gun-sight .gs-static,#gun-sight .gs-rec i,#gun-sight .gs-prox{animation:none}}',
         '#gun-sight.optic .gs-vig{background:radial-gradient(circle at 50% 50%,transparent 0,transparent 46%,rgba(12,16,12,.14) 49%,rgba(12,16,12,.24) 100%)}',
         '#gun-sight .gs-optic{position:absolute;left:50%;top:50%;width:min(92vh,92vw);height:min(92vh,92vw);transform:translate(-50%,-50%);border-radius:50%;box-shadow:0 0 0 1px rgba(18,22,16,.45),inset 0 0 36px rgba(0,0,0,.16)}',
         '#gun-sight svg.gs-ret.etched{filter:drop-shadow(0 0 .6px rgba(236,240,226,.95)) drop-shadow(0 0 1.6px rgba(236,240,226,.4))}',
@@ -4112,7 +4133,8 @@ class ArtilleryGame3D {
         + '<span>CÁCH XE <b class="gs-dist">—</b></span><span>GIÓ <b class="gs-wind">—</b></span><span>THÂN DRONE <b class="gs-hull">100%</b></span><span class="gs-grid"></span>'
         + '</div><div class="gs-bat"><span class="gs-bat-l">PIN UAV</span><span class="gs-bat-c">' + '<i></i>'.repeat(10) + '</span><b class="gs-batt">—</b></div>'
         + '<div class="gs-tags"><div class="gs-tag tgt"><i></i><span></span></div><div class="gs-tag imp"><i></i><span></span></div>'
-        + '<div class="gs-tag gun"><i></i><span></span></div><div class="gs-tag aa"><i></i><span></span></div></div><div class="gs-shot" hidden></div><div class="gs-sig" hidden>SẮP RA NGOÀI TẦM TÍN HIỆU</div>'
+        + '<div class="gs-tag gun"><i></i><span></span></div><div class="gs-tag aa"><i></i><span></span></div>' + '<div class="gs-tag thr"><i></i><span></span></div>'.repeat(3) + '</div>'
+        + '<div class="gs-shot" hidden></div><div class="gs-sig" hidden>SẮP RA NGOÀI TẦM TÍN HIỆU</div><div class="gs-prox" hidden></div>'
         + '<div class="gs-burn"></div><div class="gs-fire" hidden>⚠ DRONE ĐANG BỊ BẮN</div><div class="gs-lock" hidden></div>' : '')
       + '<div class="gs-vig"></div><div class="gs-frame"><i></i><i></i><i></i><i></i></div>'
       + (etched ? '<div class="gs-optic"></div>' : '')
@@ -4139,7 +4161,8 @@ class ArtilleryGame3D {
     this._droneTags = null;
     if (arty) {
       const tg = (c) => { const e = el.querySelector('.gs-tag.' + c); e._arrow = e.querySelector('i'); e._txt = e.querySelector('span'); e.hidden = true; return e; };
-      this._droneTags = { tgt: tg('tgt'), imp: tg('imp'), gun: tg('gun'), aa: tg('aa'), shot: el.querySelector('.gs-shot'), sig: el.querySelector('.gs-sig') };
+      this._droneTags = { tgt: tg('tgt'), imp: tg('imp'), gun: tg('gun'), aa: tg('aa'), shot: el.querySelector('.gs-shot'), sig: el.querySelector('.gs-sig'), prox: el.querySelector('.gs-prox'),
+        thr: [...el.querySelectorAll('.gs-tag.thr')].map(e => { e._arrow = e.querySelector('i'); e._txt = e.querySelector('span'); e.hidden = true; return e; }) };
     }
     this._uavEl = arty ? { alt: el.querySelector('.gs-alt'), dist: el.querySelector('.gs-dist'), wind: el.querySelector('.gs-wind'), grid: el.querySelector('.gs-grid'), stat: el.querySelector('.gs-static'), batt: el.querySelector('.gs-batt'), bat: el.querySelector('.gs-bat'), segs: [...el.querySelectorAll('.gs-bat-c i')], hull: el.querySelector('.gs-hull'), fire: el.querySelector('.gs-fire'), lock: el.querySelector('.gs-lock'), burn: el.querySelector('.gs-burn'), dead: el.querySelector('.gs-dead'), t: 0 } : null;
     el._c = null;
@@ -5314,7 +5337,9 @@ class ArtilleryGame3D {
 
     // 8. CẢNH BÁO RADAR CẬN CHIẾN: NẾU CÓ XE ĐỊCH TRONG BÁN KÍNH QUANH XE (TIẾNG BÍP BÍP)
     if (this.player && !this.player.isDead) {
+      const radarAlertRadius = 600; // Bán kính cảnh giới quanh xe (600 đơn vị ~ 75 m)
       let closestEnemyDist = Infinity;
+      const near = [];   // xe địch đã biết trong vòng cảnh giới (gần nhất trước) — màn hình drone dùng để báo
       for (const unit of this.units) {
         // Chỉ cảnh báo xe địch mình đang biết vị trí (không có radar thì không "đánh hơi" được địch khuất tầm)
         if (!unit.isDead && unit.team !== this.player.team && (typeof TeamIntel === 'undefined' || TeamIntel.knows(this.player, unit))) {
@@ -5322,10 +5347,11 @@ class ArtilleryGame3D {
           if (d < closestEnemyDist) {
             closestEnemyDist = d;
           }
+          if (d < radarAlertRadius) near.push({ u: unit, d });
         }
       }
+      this._proxNear = near.sort((a, b) => a.d - b.d);
 
-      const radarAlertRadius = 600; // Bán kính cảnh giới quanh xe (600 đơn vị ~ 75 m)
       // Chỉ báo LÚC địch vừa áp sát (vào vòng 600, rồi vào vòng 280), không bíp liên tục suốt lúc giao chiến gần —
       // bíp dồn dập liên tục lẫn với các tiếng báo khác nghe rất loạn, và xe thật không có còi kiểu đó
       const zone = closestEnemyDist < 280 ? 2 : closestEnemyDist < radarAlertRadius ? 1 : 0;
@@ -5335,8 +5361,13 @@ class ArtilleryGame3D {
       if (zone > prevZone && window.soundEngine && typeof window.soundEngine.playRadarProximityBeep === 'function') {
         window.soundEngine.playRadarProximityBeep(zone);
       }
+      // đang nhìn qua drone ở xa: không thấy quanh xe mình -> báo thêm vào nhật ký (màn hình drone có băng cảnh báo riêng)
+      if (zone > prevZone && this._sight && this._sight.arty && near.length) {
+        const c = near[0];
+        this.addCombatLog(`[[alert-triangle]] ĐỊCH ${zone === 2 ? 'SÁT' : 'ÁP SÁT'} XE PHÁO — cách xe ${Math.round(c.d)}M, hướng ${this.bearingFromPlayer(c.u)} · [C] thu drone`, 'alert');
+      }
       this._proxZone = Math.max(zone, Math.min(prevZone, outZone));
-    }
+    } else this._proxNear = null;
 
     this.miniScannerAngle = (this.miniScannerAngle + dt * 160) % 360;
 
