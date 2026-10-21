@@ -1031,10 +1031,14 @@ const Landmarks = (() => {
     const lamp = (f, r, ang) => {
       const base = M4(f, 0, r, 0, -ang, 0);
       K.cbox('concDark', 0, 1, 0, 4, 2, 4, 0.4, 0, base);
-      K.add('steelGray', new THREE.CylinderGeometry(0.7, 1.3, 66, 8), mul(base, M4(0, 35, 0)));
-      K.beam('steelGray', [0, 66, 0], [5, 70, 0], 0.8, base); K.beam('steelGray', [5, 70, 0], [11, 70.6, 0], 0.7, base);
-      K.cbox('steelDark', 13.5, 70.4, 0, 6, 1.6, 2.8, 0.5, 0, base);
-      K.add('glass', new THREE.BoxGeometry(5, 0.3, 2.2), mul(base, M4(13.5, 69.5, 0)));
+      K.add('steelGray', new THREE.CylinderGeometry(0.6, 1.2, 66, 12), mul(base, M4(0, 35, 0)));
+      K.add('steelGray', new THREE.CylinderGeometry(1.5, 1.5, 3, 12), mul(base, M4(0, 3.5, 0)));   // đế bích + hộp cửa kiểm tra
+      K.add('steelGray', new THREE.SphereGeometry(0.62, 10, 6, 0, TAU, 0, Math.PI / 2), mul(base, M4(0, 68, 0)));
+      // cần đèn ống thép uốn cong liền từ đỉnh cột, chao đèn hình mai rùa dẹt, kính khuếch tán phía dưới
+      const arm = new THREE.QuadraticBezierCurve3(v3(0, 66, 0), v3(0.4, 71, 0), v3(10.5, 71.2, 0));
+      K.add('steelGray', new THREE.TubeGeometry(arm, 12, 0.38, 8, false), base);
+      K.add('steelDark', new THREE.SphereGeometry(1, 14, 8), mul(base, M4(13, 71.2, 0, 0, 0, 0, 3.2, 0.75, 1.5)));
+      K.add('glass', new THREE.SphereGeometry(1, 12, 6, 0, TAU, Math.PI / 2, Math.PI / 2), mul(base, M4(13.2, 70.9, 0, 0, 0, 0, 2.4, 0.5, 1.1)));
       K.solid(f, r, 2, 2, 0, 72);
     };
     fence(K, -oF, -oR, oF, -oR, -1, 17, true); fence(K, -oF, oR, oF, oR, 1, 17, true); fence(K, -oF, -oR, -oF, oR, -1, 17, true);
@@ -1337,7 +1341,7 @@ const Landmarks = (() => {
           if (i < 8) for (const y of [42.8, 45]) K.beam('yellow', [x + Math.cos(b) * 14.2, y, z + Math.sin(b) * 14.2], [x + Math.cos(b2) * 14.2, y, z + Math.sin(b2) * 14.2], 0.35);
         }
         // bảng nhận dạng nhiên liệu (JP-8 + hình thoi NFPA 704) quay ra ngoài
-        { const ao = Math.atan2(z - fr, x - ff), px2 = x + Math.cos(ao) * 15.25, pz2 = z + Math.sin(ao) * 15.25;
+        { const ao = Math.atan2(z - fr, x - ff);
           K.add(decal('jp8', texOf('jp8', 256, 160, (q, w, h) => {
             q.fillStyle = '#f2f0ea'; q.fillRect(0, 0, w, h); q.fillStyle = '#1b1b1b'; q.font = 'bold 54px Arial'; q.textAlign = 'center'; q.textBaseline = 'middle';
             q.fillText('JP-8', w * 0.34, h * 0.5);
@@ -1346,7 +1350,7 @@ const Landmarks = (() => {
               q.fillStyle = col; q.beginPath(); q.moveTo(cx + dx, cy + dy - d); q.lineTo(cx + dx + d, cy + dy); q.lineTo(cx + dx, cy + dy + d); q.lineTo(cx + dx - d, cy + dy); q.closePath(); q.fill();
               q.strokeStyle = '#111'; q.lineWidth = 2; q.stroke(); q.fillStyle = '#111'; q.font = 'bold 22px Arial'; q.fillText(n, cx + dx, cy + dy + 1);
             }
-          })), new THREE.PlaneGeometry(12, 7.5), M4(px2, 26, pz2, 0, Math.PI / 2 - ao, 0)); }
+          })), new THREE.CylinderGeometry(15.08, 15.08, 7.5, 12, 1, true, Math.PI / 2 - ao - 0.4, 0.8), M4(x, 26, z)); }   // mảng cong ôm thân bồn (rộng 12 = 0.8 rad)
         // cầu thang xoắn ôm thân bồn (lên dốc ~45°, 1/3 vòng): bậc lưới thép hàn vào thân, cốn ngoài, tay vịn + cột,
         // chiếu nghỉ trên đỉnh nối vào lan can mái
         { const NS = 26, th0 = a - 2.2, P2 = (th, rr, y) => [x + Math.cos(th) * rr, y, z + Math.sin(th) * rr];
