@@ -75,8 +75,9 @@ const Landmarks = (() => {
     // tông màu khác nhau từng tấm ván (mẻ đổ)
     for (let row = 0; row < 8; row++) for (let k = -1; k < 4; k++) { g.fillStyle = `rgba(${hash(row * 9 + k) < 0.5 ? '70,68,62' : '210,206,196'},${0.04 + hash(row * 7 + k + 3) * 0.06})`; g.fillRect(k * 128 + (row % 2) * 64, row * 64, 128, 64); }
     // lỗ ty giằng
-    both((x, bm) => { x.fillStyle = bm ? '#1e1e1e' : 'rgba(36,34,32,0.7)';
-      for (let y = 32; y < N; y += 64) for (let xx = 32; xx < N; xx += 64) { x.beginPath(); x.arc(xx, y, bm ? 3.2 : 2.6, 0, TAU); x.fill(); } });
+    // (nhỏ + mờ: lỗ ty Ø ~3 cm cách nhau 1 m, ở xa gần như không thấy — tránh lưới chấm tròn trên mọi mặt)
+    both((x, bm) => { x.fillStyle = bm ? '#5a5a5a' : 'rgba(46,44,40,0.32)';
+      for (let y = 32; y < N; y += 64) for (let xx = 32; xx < N; xx += 64) { x.beginPath(); x.arc(xx, y, bm ? 1.6 : 1.4, 0, TAU); x.fill(); } });
     // vệt nước chảy + muối hoa trắng dưới lỗ ty
     for (let i = 0; i < 40; i++) {
       const x = hash(i + 40) * N, y = hash(i + 43) * N * 0.6, l = 40 + hash(i + 41) * 220, dark = hash(i + 44) < 0.7;
