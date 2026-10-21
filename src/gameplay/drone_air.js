@@ -367,7 +367,11 @@ const DroneAir = (() => {
         let A = u._aa;
         if (A && (A.until || 0) < now) A = u._aa = null;
         const S = u._rcws || (u._rcws = { yaw: 0, pitch: 0, mag: R.mag, reload: 0, t: R.rof });
-        if (u.isDead) { u.isFiringAAmg = false; continue; }
+        if (u.isDead) {
+          u.isFiringAAmg = false;
+          if (u === this.player && window.soundEngine && window.soundEngine.updateRCWSServo) window.soundEngine.updateRCWSServo(0);
+          continue;
+        }
         let wy = 0, wp = 0;
         if (A) {
           // hướng lệnh (thế giới) đổi sang khung tọa độ của tháp pháo (kể cả thân xe nghiêng trên dốc) -> góc quay / ngóc
@@ -379,11 +383,22 @@ const DroneAir = (() => {
           wp = Math.atan2(v.y, Math.hypot(v.x, v.z));
         }
         const dy = wrapPi(wy - S.yaw), sy = R.yawRate * dt;
+        const y0 = S.yaw, p0 = S.pitch;
         S.yaw = wrapPi(S.yaw + Math.max(-sy, Math.min(sy, dy)));
         S.pitch += Math.max(-R.pitchRate * dt, Math.min(R.pitchRate * dt, Math.max(R.elMin * D2R, Math.min(R.elMax * D2R, wp)) - S.pitch));
+        // tiếng mô-tơ servo trạm súng của xe mình (theo tốc độ quay / ngóc)
+        if (u === this.player && window.soundEngine && window.soundEngine.updateRCWSServo) {
+          window.soundEngine.updateRCWSServo(Math.abs(wrapPi(S.yaw - y0)) / (R.yawRate * dt) * 0.7 + Math.abs(S.pitch - p0) / (R.pitchRate * dt) * 0.5);
+        }
         u.rcwsTurret.rotation.y = S.yaw;
         u.rcwsGun.rotation.x = S.pitch;
-        if (S.reload > 0 && (S.reload -= dt) <= 0) S.mag = R.mag;
+        if (S.reload > 0) {
+          const prev = S.reload;
+          S.reload -= dt;
+          // thay hộp đạn: tiếng lắp hộp mới + dây đạn + kéo khóa lên đạn canh rơi đúng lúc thay xong
+          if (u === this.player && prev > 1.3 && S.reload <= 1.3 && window.soundEngine && window.soundEngine.playReloadPhase) window.soundEngine.playReloadPhase('SCOUT', 'magIn', S.reload);
+          if (S.reload <= 0) S.mag = R.mag;
+        }
         const firing = !!(A && A.firing) && S.reload <= 0;
         u.isFiringAAmg = firing;
         if (!firing) { S.t = R.rof; continue; }
@@ -393,7 +408,10 @@ const DroneAir = (() => {
           this.fireRCWS(u);
           if (--S.mag <= 0) {
             S.reload = R.reload;
-            if (u === this.player) this.addCombatLog('[[hourglass]] Trạm súng phòng không hết hộp đạn — đang thay hộp (6 s)', 'alert');
+            if (u === this.player) {
+              this.addCombatLog('[[hourglass]] Trạm súng phòng không hết hộp đạn — đang thay hộp (6 s)', 'alert');
+              if (window.soundEngine && window.soundEngine.playReloadPhase) window.soundEngine.playReloadPhase('SCOUT', 'magOut');   // khóa nòng mở, tháo hộp rỗng
+            }
           }
         }
       }
@@ -408,7 +426,7 @@ const DroneAir = (() => {
       if (shell) { shell.isGatling = true; shell.aaMG = true; shell.damage = C.RCWS.dmgVehicle; }
       const SE = window.soundEngine, P = this.player;
       if (SE && SE.playGatlingShot && P) {
-        if (u === P) SE.playGatlingShot('SCOUT', 0);
+        if (u === P) SE.playGatlingShot('SCOUT', 0, null, null, { inside: true, interval: C.RCWS.rof });
         else {
           const L = this.audioListener() || P, dd = Math.hypot(u.x - L.x, u.z - L.z);
           if (dd < 1400) SE.playGatlingShot('SCOUT', Math.max(1, dd), { x: u.x, z: u.z }, u.id);

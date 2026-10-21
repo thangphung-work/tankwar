@@ -297,6 +297,58 @@ SoundEngine.mixin(class {
   }
 
   /**
+   * Mô-tơ servo trạm súng điều khiển từ xa trên nóc tháp xe mình: tiếng "rừ rừ" điện + hộp số khi quay / ngóc nòng,
+   * nghe qua lớp thép tháp (ù). rate: 0 (đứng yên) .. 1 (quay hết tốc)
+   */
+  updateRCWSServo(rate) {
+    if (!this.ctx) return;
+    let S = this.rcwsServo;
+    const t = this.ctx.currentTime;
+    if (!S) {
+      if (!(rate > 0.02) || this.isMuted) return;
+      const ctx = this.ctx, out = ctx.createGain();
+      out.gain.value = 0;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1400;
+      out.connect(lp);
+      lp.connect(this.vehicleBus || this.masterGain);
+      const o = ctx.createOscillator();       // mô-tơ điện
+      o.type = 'sawtooth';
+      o.frequency.value = 110;
+      const og = ctx.createGain();
+      og.gain.value = 0.35;
+      o.connect(og);
+      og.connect(out);
+      const w = ctx.createOscillator();       // hộp số giảm tốc: tiếng rít bánh răng
+      w.type = 'square';
+      w.frequency.value = 520;
+      const wg = ctx.createGain();
+      wg.gain.value = 0.06;
+      w.connect(wg);
+      wg.connect(out);
+      const ns = ctx.createBufferSource();    // ổ bi + vòng quay sát nóc tháp
+      ns.buffer = this.pinkNoiseBuffer || this.noiseBuffer;
+      ns.loop = true;
+      const nf = ctx.createBiquadFilter();
+      nf.type = 'bandpass';
+      nf.frequency.value = 700;
+      nf.Q.value = 1.2;
+      const ng = ctx.createGain();
+      ng.gain.value = 0.25;
+      ns.connect(nf);
+      nf.connect(ng);
+      ng.connect(out);
+      o.start(t); w.start(t); ns.start(t);
+      S = this.rcwsServo = { out, o, w };
+    }
+    const r = this.isMuted ? 0 : Math.max(0, Math.min(1, rate));
+    S.out.gain.setTargetAtTime(0.045 * Math.sqrt(r), t, r > 0.02 ? 0.03 : 0.08);
+    S.o.frequency.setTargetAtTime(85 + 95 * r, t, 0.05);
+    S.w.frequency.setTargetAtTime(420 + 380 * r, t, 0.05);
+  }
+
+  /**
    * Báo động trạm điều khiển drone: 'lock' — bị phòng không khóa mục tiêu (2 tiếng luyến cao-thấp, kiểu máy cảnh báo
    * radar); 'fire' — phòng không đang xả đạn (bíp cao gắt, dồn dập). k: âm lượng (đang không xem màn hình drone: nhỏ hơn)
    */
