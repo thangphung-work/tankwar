@@ -5187,6 +5187,37 @@ class ArtilleryGame3D {
     if (m === 'lobby' || m === 'search' || m === 'countdown' || m === 'hangar') { try { se.setMusicMode('battle'); } catch (e) { /* bỏ qua */ } }
   }
 
+  // Điểm chạm & pháp tuyến mặt tường cho dấu ngắm: dò lại đoạn bay cuối như đạn thật (cứ điểm / nhà trả về đúng mặt
+  // ngoài + pháp tuyến); vật khác: quay về phía xe bắn (ngược hướng bay). Điểm mô phỏng cuối có thể bị lặp lại 2 lần ->
+  // lấy điểm trước đó khác hẳn điểm cuối (trước đây hướng = 0 -> dấu nằm bẹp ngang trên mặt tường)
+  wallAimSurface(tp, ip) {
+    const Bp = tp[tp.length - 1];
+    let A = null;
+    for (let i = tp.length - 2; i >= 0; i--) if (tp[i].distanceToSquared(Bp) > 1) { A = tp[i]; break; }
+    if (!A) return { x: ip.x, y: ip.y, z: ip.z, nx: 0, ny: 1, nz: 0 };
+    const T = this.terrain;
+    const sh = T && T.strongholdSegmentHit ? T.strongholdSegmentHit(A.x, A.y, A.z, Bp.x, Bp.y, Bp.z) : null;
+    if (sh && sh.type === 'WALL' && sh.normal) return { x: sh.x, y: sh.y, z: sh.z, nx: sh.normal.nx, ny: sh.normal.ny || 0, nz: sh.normal.nz };
+    // mái / trần bê tông: bắn chúc xuống trúng mặt trên, bắn ngóc lên (trong kênh) trúng mặt dưới trần
+    if (sh && sh.type === 'WALL') return { x: sh.x, y: sh.y, z: sh.z, nx: 0, ny: A.y >= Bp.y ? 1 : -1, nz: 0 };
+    const bh = T && T.buildingSegmentHit ? T.buildingSegmentHit(A.x, A.y, A.z, Bp.x, Bp.y, Bp.z) : null;
+    if (bh && bh.nx !== undefined) return { x: bh.x, y: bh.y, z: bh.z, nx: bh.nx, ny: bh.ny || 0, nz: bh.nz };
+    return { x: ip.x, y: ip.y, z: ip.z, nx: A.x - Bp.x, ny: 0, nz: A.z - Bp.z };
+  }
+
+  // Pháp tuyến mặt "đất" tại điểm chạm nếu mặt đó dựng gần đứng (mặt trước ụ cứ điểm, vách dốc); null = mặt thoải
+  // (lấy gradient độ cao 2 phía điểm chạm: điểm chạm nằm đúng bậc thềm nên lấy mẫu sát, mặt dựng cho pháp tuyến gần nằm ngang)
+  steepSurfaceNormal(x, z) {
+    const T = this.terrain;
+    if (!T || !T.getElevationAt) return null;
+    const e = 2.5;
+    const gx = T.getElevationAt(x - e, z) - T.getElevationAt(x + e, z), gz = T.getElevationAt(x, z - e) - T.getElevationAt(x, z + e);
+    const n = new THREE.Vector3(gx, 2 * e, gz).normalize();
+    if (n.y > 0.5) return null;
+    n.y = 0;
+    return n.lengthSq() > 1e-6 ? n.normalize() : null;
+  }
+
   screenCovered() {
     if (window.tankInspector && window.tankInspector.isOpen) return true;
     if (this.isGameStarted) return false;
@@ -5872,22 +5903,26 @@ class ArtilleryGame3D {
           const ip = passAt || traj.impactPoint;
           const rr = WorldMarkers.sizeFor(this.camera, ip.x, ip.y, ip.z, 12, 0.026);
           const tp = traj.points, nTp = tp.length;
+          // chạm mặt "đất" dựng đứng (mặt trước ụ cứ điểm, vách ta-luy...): coi như tường, dấu áp theo pháp tuyến mặt đó
+          const steepN = !isWall && !passAt && traj.hitType === 'GROUND' ? this.steepSurfaceNormal(ip.x, ip.z) : null;
           if (isWall && !passAt && nTp > 1 && WorldMarkers.placeOnSurface) {
-            // trúng tường / vách: dấu dựng đứng áp lên mặt tường, quay về phía xe bắn (ngược hướng bay đoạn cuối)
-            const A = tp[nTp - 2], Bp = tp[nTp - 1];
-            WorldMarkers.placeOnSurface(this.reticle3D, ip.x, ip.y, ip.z, A.x - Bp.x, 0, A.z - Bp.z, rr * 0.8);
+            // trúng tường / vách: dấu áp phẳng lên đúng mặt bị trúng (vuông góc pháp tuyến mặt đó)
+            const W = this.wallAimSurface(tp, ip);
+            WorldMarkers.placeOnSurface(this.reticle3D, W.x, W.y, W.z, W.nx, W.ny, W.nz, rr * 0.8);
+          } else if (steepN && WorldMarkers.placeOnSurface) {
+            WorldMarkers.placeOnSurface(this.reticle3D, ip.x, ip.y, ip.z, steepN.x, steepN.y, steepN.z, rr * 0.8);
           } else WorldMarkers.placeOnGround(this.reticle3D, this.terrain, ip.x, ip.z, ip.y, rr, 0);
           // dấu trên tường luôn quay về phía xe bắn: vẽ đè (mặt tường nhìn thấy có thể nhô trước hộp va chạm vài đơn vị
           // -> dấu chìm mất); trên mặt đất vẫn bị đồi / vật cản che như thường
-          const onWall = !!(isWall && !passAt && nTp > 1);
+          const onWall = !!(isWall && !passAt && nTp > 1) || !!steepN;
           if (this.reticleRingMat.depthTest === onWall) { this.reticleRingMat.depthTest = !onWall; this.reticleRingMat.needsUpdate = true; }
           const RU = this.reticleRingMat.uniforms;
           RU.uState.value = (isWall || isOut || aimState === 'blocked' || aimState === 'covered') ? 1 : 0;
           this.reticleRingMat.color.setHex(col);
           this.reticle3D.visible = true;
           this.updateSpreadRing(dt, this.reticle3D.position, col);
-          if (isWall && this.spreadRing) this.spreadRing.visible = false;   // vòng tản mát nằm ngang: không hợp khi trúng tường
-          this.updateBlastZone(dt, isOut || isWall ? null : (passAt || traj.impactPoint), FP.F, tgt);
+          if ((isWall || steepN) && this.spreadRing) this.spreadRing.visible = false;   // vòng tản mát nằm ngang: không hợp khi trúng tường
+          this.updateBlastZone(dt, isOut || isWall || steepN ? null : (passAt || traj.impactPoint), FP.F, tgt);
           // nhìn qua kính ngắm (xe bắn thẳng): kính đã có tâm ngắm riêng -> ẩn dấu 3D (đặt trên tường / mép vật cản trông
           // như vòng dẹt lơ lửng, nhảy theo điểm chạm). Màn hình drone xe pháo vẫn giữ (nhìn từ trên cao cần thấy điểm rơi)
           if (this._sight && !this._sight.arty) {
