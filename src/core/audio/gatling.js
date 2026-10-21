@@ -3,6 +3,36 @@
  * Gắn thêm phương thức vào SoundEngine (xem sound_engine.js). Nạp sau sound_engine.js.
  */
 
+// Va chạm thép dựng theo vật lý (synthGunshot): tc = thời gian tiếp xúc (s), len = độ dài mẫu (s),
+// m = các nhóm mode [số mode, tần thấp, tần cao (Hz), t60 mode thấp, t60 mode cao (s), mức]. '…Hull' = rơi trên vỏ thép xe
+const LOW_HULL = [18, 55, 420, 0.14, 0.05, 0.6];   // vỏ xe bị gõ rung trầm theo
+const STEEL = {
+  // tấm giáp / váy xích / gạch ERA (thép dày, nặng)
+  // (rơi đất: mode thấp biên độ lớn bị đất ép tắt nhanh nhất; chạm bằng mép / góc trước nên xung ngắn hơn chạm cả mặt)
+  debrisPlate: { tc: 0.0018, len: 0.25, m: [[70, 150, 5000, 0.045, 0.025, 1]] },
+  debrisPlateHull: { tc: 0.0004, len: 1.3, m: [[70, 110, 8000, 0.8, 0.04, 1], [18, 55, 420, 0.14, 0.05, 1.2]] },
+  // phụ kiện thép nhỏ: hộp đồ, đèn, lan can, giá súng, vỏ kính ngắm
+  debrisMetal: { tc: 0.0012, len: 0.22, m: [[30, 350, 7000, 0.1, 0.018, 1]] },
+  debrisMetalHull: { tc: 0.00018, len: 0.75, m: [[45, 300, 9000, 0.45, 0.03, 1], LOW_HULL] },
+  // vỏ rỗng (bình nhiên liệu, ống phóng): vỏ mỏng + khoang khí cộng hưởng "boong" đục
+  debrisCan: { tc: 0.0015, len: 0.35, m: [[35, 240, 6000, 0.22, 0.03, 1], [3, 170, 320, 0.12, 0.08, 1.5]] },
+  debrisCanHull: { tc: 0.00025, len: 0.9, m: [[45, 240, 8000, 0.6, 0.04, 1], [3, 170, 320, 0.25, 0.15, 1.5], LOW_HULL] },
+  // mắt xích thép đúc: khối đặc nhỏ -> "cạch" đanh, mode cao
+  debrisLink: { tc: 0.0007, len: 0.25, m: [[20, 600, 8000, 0.14, 0.02, 1]] },
+  debrisLinkHull: { tc: 0.00012, len: 0.7, m: [[25, 600, 9000, 0.5, 0.03, 1], LOW_HULL] },
+  // đạn nổ / va đập lớn lên thân xe: giáp dày hàng chục mm bắt chặt vào khung, đầy thiết bị bên trong -> rung tắt nhanh,
+  // "CHÁT-THỤP" nặng chứ không ngân như chuông; cả khối xe hàng chục tấn rung trầm theo
+  hullBlast: { tc: 0.0003, len: 0.9, m: [[80, 70, 7000, 0.45, 0.025, 1], [25, 40, 300, 0.25, 0.08, 1.4]] },
+  // đạn nhỏ đập vỏ xe (nghe trong khoang): "tạch / keng" khô, tắt nhanh
+  hullTick: { tc: 0.00008, len: 0.35, m: [[40, 500, 9000, 0.18, 0.02, 1], [15, 80, 500, 0.08, 0.04, 0.8]] },
+  // tôn / khung thép mỏng: tấm rộng mỏng, mode thấp dày đặc ngân lâu -> "oàng" rung rinh
+  sheetMetal: { tc: 0.0006, len: 1.6, m: [[90, 50, 6000, 1.2, 0.08, 1]] },
+  // khối tháp thép hàng chục tấn đập xuống đất: tiếp xúc rất lâu -> chỉ còn "RẦM" trầm đục, ít âm thép
+  turretLand: { tc: 0.008, len: 1.0, m: [[50, 45, 2500, 0.35, 0.03, 1], [20, 30, 200, 0.3, 0.1, 1.5]] },
+  // thanh cốt thép đứt bật: thanh dài mảnh -> ngân có cao độ thật (mode uốn của thanh tự do)
+  rebar: { tc: 0.0001, len: 0.8, m: [[24, 700, 9000, 0.4, 0.03, 1]] }
+};
+
 SoundEngine.mixin(class {
   // ===========================================================================
   // 7. PHÁO 6 NÒNG XOAY (GATLING) & SÚNG LIÊN THANH XE TRINH SÁT
@@ -183,6 +213,8 @@ SoundEngine.mixin(class {
   // Dựng sẵn mỗi loại 1-2 biến thể ngay sau khi khởi tạo, từng mẫu một lúc trình duyệt rảnh
   warmGunshots() {
     const jobs = ['blast120', 'blastN', 'blast155', 'blastRPG', 'blastATGM', 'blast30', 'hitDirt', 'hitSteel', 'mg127', 'case127', 'case30', 'hitSteelHeavy', 'blastAmmo',
+      'debrisPlate', 'debrisMetal', 'debrisLink', 'hullBlast', 'hullTick', 'debrisPlateHull', 'debrisMetalHull', 'debrisCan',
+      'debrisLinkHull', 'debrisCanHull', 'turretLand', 'sheetMetal', 'rebar',
       'blast120', 'blastN', 'blast155', 'blastRPG', 'blast30'];
     const step = () => {
       const k = jobs.shift();
@@ -221,7 +253,7 @@ SoundEngine.mixin(class {
       // kho đạn xe kích nổ: hàng chục kg thuốc phóng + thuốc nổ, nổ dây chuyền -> sóng dài, cầu lửa lớn & lâu
       blastAmmo: [0.009, 0.6, 420, 0.32, 1.6]
     }[kind];
-    const HIT = { hitSteel: 0.3, hitSteelHeavy: 0.7, hitDirt: 0.3, case127: 0.5, case30: 0.6, link127: 0.2 }[kind];
+    const HIT = { hitSteel: 0.3, hitSteelHeavy: 0.7, hitDirt: 0.3, case127: 0.5, case30: 0.6, link127: 0.2 }[kind] || (STEEL[kind] && STEEL[kind].len);
     const N = Math.round((BP ? BP[4] : HIT || 0.32) * SR);
     const y = new Float32Array(N);
     const v = (a) => 1 + (R() - 0.5) * a;
@@ -326,6 +358,24 @@ SoundEngine.mixin(class {
       ring(x, ms, 1);
       // tiếng "tách" của lúc chạm (dải rộng, 1-2 ms)
       for (let i = 0; i < Math.round(0.002 * SR); i++) y[i0 + i] += (R() * 2 - 1) * 0.12 * Math.exp(-i / (0.0004 * SR));
+    } else if (STEEL[kind]) {
+      // MỘT cú va của vật bằng thép (mảnh văng, tấm giáp, tháp pháo, thân xe...), xem bảng STEEL. Bản cũ dựng từ vài sóng
+      // sin / dải nhiễu hẹp có cao độ rõ -> lần chạm nào cũng kêu "tưng / boong" như gảy đàn, gõ chuông. Ngoài đời:
+      //  - xung tiếp xúc nửa hình sin dài tc: mặt mềm (đất) chạm lâu 1-8 ms -> xung tự lọc mất âm cao, chỉ gõ được các mode
+      //    thấp, đất ôm lấy vật hút gần hết rung -> "CỘP / THỤNG" đục, tắt trong vài chục ms; thép đập thép chạm 0,1-0,5 ms
+      //    -> gõ vào hàng chục mode;
+      //  - mode của tấm / khối thép dày đặc và bất hòa -> "CHOANG / CHÁT" rền chứ không ra nốt; mode cao tắt nhanh hơn;
+      //  - điểm chạm ngẫu nhiên: mode nằm gần đường nút gần như không kêu -> mỗi biến thể một âm sắc, lần nảy nào cũng khác
+      const P = STEEL[kind];
+      const x = new Float32Array(N), i0 = Math.round(0.002 * SR);
+      const L = Math.max(2, Math.round(P.tc * v(0.5) * SR));
+      for (let i = 0; i < L; i++) x[i0 + i] += Math.PI / (2 * L) * Math.sin(Math.PI * (i + 0.5) / L);
+      const ms = [];
+      for (const [n, fLo, fHi, tLo, tHi, amp] of P.m) for (const m of modes(n, fLo, fHi, tLo, tHi)) { m.a *= amp * (0.2 + R()); ms.push(m); }
+      ring(x, ms, 1);
+      let pk = 0;
+      for (let i = 0; i < N; i++) pk = Math.max(pk, Math.abs(y[i]));
+      for (let i = 0; i < N; i++) y[i] /= pk || 1;
     } else if (kind === 'hitDirt') {
       // Đầu đạn cắm xuống đất: cú "phập" (xung ngắn) + đất bị xới bắn tung (nhiễu tắt ~25 ms) + thụp trầm của nền đất
       const x = new Float32Array(N);
