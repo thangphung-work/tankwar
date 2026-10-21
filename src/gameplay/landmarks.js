@@ -2150,12 +2150,29 @@ const Landmarks = (() => {
       K.solid(f, r, Math.abs(c) * len / 2 + Math.abs(sn) * wid / 2, Math.abs(sn) * len / 2 + Math.abs(c) * wid / 2, 0, 12 + hgt);
     };
     truck(0, 0, 64, 22, 24, 0);
-    K.cyl('steelDark', 0, 34, 0, 5, 6, 12, 12);
-    K.box('olive', 0, 52, 0, 16, 12, 16);
-    K.box('oliveDark', 10, 64, -6, 10, 12, 74); K.box('steelGray', 15.2, 64, -6, 0.8, 9, 70);
-    K.box('oliveDark', 10, 58, 20, 10, 74, 12); K.box('steelGray', 15.2, 58, 20, 0.8, 70, 9);
-    for (const r of [-6, 6]) K.add('steelWhite', new THREE.SphereGeometry(6, 14, 6, 0, TAU, 0, Math.PI * 0.4), M4(12, 50, r, 0, 0, -Math.PI / 2));
-    K.solid(10, -6, 6, 38, 56, 72); K.solid(10, 20, 6, 7, 20, 96);
+    // giàn ăng-ten kiểu "Fan Song": mâm xoay trên nóc cabin, khung đỡ thép, máng phản xạ parabol hở nằm ngang (quét
+    // phương vị) + máng dựng đứng (quét góc tà), thanh dẫn sóng + loa thu trước mỗi máng, 2 chảo nhỏ phát lệnh điều khiển
+    const trough = (len, half, depth) => {
+      const sh = new THREE.Shape(), N = 12, t = 0.5;
+      for (let i = 0; i <= N; i++) { const y = -half + 2 * half * i / N, x = depth * (y / half) * (y / half); i ? sh.lineTo(-x, y) : sh.moveTo(-x, y); }
+      for (let i = N; i >= 0; i--) { const y = -half + 2 * half * i / N, x = depth * (y / half) * (y / half); sh.lineTo(-x - t, y); }
+      sh.closePath();
+      const g = new THREE.ExtrudeGeometry(sh, { depth: len, bevelEnabled: false }); g.translate(depth * 0.5, 0, -len / 2);
+      const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 24, uv.getY(i) / 24);
+      return g;
+    };
+    K.cyl('steelDark', 0, 34, 0, 7, 8, 3, 16); K.cyl('olive', 0, 37, 0, 5, 6, 8, 14);
+    const ant = M4(6, 45, 0, 0, 0, 0);
+    K.cbox('oliveDark', 0, 0, 0, 12, 6, 14, 0.5, 0, ant);
+    for (const z of [-30, 30]) K.beam('steelGray', [0, 0, 0], [4, 18, z], 1, ant);
+    for (const y of [-22, 22]) K.beam('steelGray', [0, 0, 10], [4, y + 18, 24], 0.8, ant);
+    K.add('oliveDark', trough(72, 6, 3), mul(ant, M4(6, 18, -4)));                                  // máng ngang
+    K.add('oliveDark', trough(64, 5, 2.6), mul(ant, M4(6, 18, 24, 0, 0, 0)).multiply(M4(0, 0, 0, Math.PI / 2, 0, 0)));   // máng đứng
+    K.add('steelGray', new THREE.BoxGeometry(0.8, 0.8, 70), mul(ant, M4(14, 18, -4)));
+    K.add('steelGray', new THREE.BoxGeometry(0.8, 62, 0.8), mul(ant, M4(13, 18, 24)));
+    for (const [y, z] of [[18, -40], [-14, 24]]) K.add('steelDark', new THREE.BoxGeometry(3, 3, 3), mul(ant, M4(14, y, z)));
+    for (const [y, z] of [[-4, -36], [-4, 12]]) { K.add('steelWhite', new THREE.SphereGeometry(5, 14, 6, 0, TAU, 0, Math.PI * 0.35), mul(ant, M4(8, y, z, 0, 0, -Math.PI / 2))); K.add('steelGray', new THREE.CylinderGeometry(0.3, 0.3, 5, 5), mul(ant, M4(10, y, z, 0, 0, Math.PI / 2))); }
+    K.solid(10, -4, 8, 38, 55, 72); K.solid(10, 24, 8, 8, 32, 96);
     for (let k = 0; k < 10; k++) { const a0 = k / 10 * TAU + 0.3, a1 = a0 + TAU / 10 - 0.12; if (k === 0) continue; sandbags(K, Math.cos(a0) * 52, Math.sin(a0) * 52, Math.cos(a1) * 52, Math.sin(a1) * 52, 4, 0); }
     // xe chỉ huy UV + xe phân phối điện, cáp nối; 2 máy phát diesel có ống xả + bồn dầu ngày
     truck(50, 82, 52, 20, 22, 0.15); truck(50, -82, 44, 18, 20, -0.15, 'oliveDark');
