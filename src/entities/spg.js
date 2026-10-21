@@ -1998,7 +1998,7 @@ class SPGUnit3D {
     // Góc nâng nòng tối đa theo loại pháo (xe tăng bắn thẳng 12°, lựu pháo 85°)
     // (khi bắn cầu vồng vượt vật cản cho phép nâng tới giới hạn cơ khí của giá pháo)
     if (this.canElevate && ballistics && ballistics.maxElevationFor) this.elevation = Math.min(this.elevation, ballistics.maxLobElevationFor ? ballistics.maxLobElevationFor(this) : ballistics.maxElevationFor(this));
-    // Lựu pháo trên xe tải: hạ nòng tối đa -5° ra hai bên / phía sau, không hạ dưới 0° khi nòng vắt qua nóc cabin
+    // Lựu pháo trên xe tải: hạ nòng tối đa -5° ra hai bên / phía sau, vắt qua nóc cabin / khoang máy thì tự nâng vượt mọi thứ bên dưới (ballistics.js artyMinElevation)
     if (this.tankType === 'ARTILLERY' && ballistics && ballistics.minElevationFor) this.elevation = Math.max(this.elevation, ballistics.minElevationFor(this));
     const elRad = (this.elevation * Math.PI) / 180;
     this.barrelPivot.rotation.x = elRad;
