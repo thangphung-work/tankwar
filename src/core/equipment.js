@@ -49,7 +49,7 @@
     },
     smoke: {
       name: 'Ống phóng lựu khói', icon: 'cloud', cat: 'gear', price: 1500, tanks: ALL,
-      desc: 'Phím G: phóng màn khói dày trước mũi xe, che khuất tầm nhìn của địch ~14 giây. Cần lựu đạn khói (mua hoặc xem quảng cáo tiếp tế ở mục ĐẠN), mang tối đa 2 quả mỗi lần xuất kích.'
+      desc: 'Phím G: bắn 1 loạt lựu đạn khói (mỗi bên tháp 1 quả) bay ra nổ trên không trước mũi tháp, dựng tường khói dày che khuất tầm nhìn của địch ~15 giây. Số loạt = số ống mỗi bên (xe tăng đa dụng 4 ống, các xe khác 3 ống), nạp sẵn mỗi lần xuất kích. Khói đa phổ: đang bị khóa mà phóng khói thì địch mất khóa và không khóa lại được tới khi khói tan. Cụm ống bị bắn hỏng thì bên đó hết bắn được.'
     },
     camo: {
       name: 'Lưới ngụy trang', icon: 'leaf', cat: 'gear', price: 1600, tanks: ALL,
@@ -96,17 +96,19 @@
   // CÂN BẰNG KHAN HIẾM: mang đủ 1 lần xuất kích tốn ~450–520 Bạc ở MỌI xe (trước đây xe 6 nòng 150, trinh sát 930);
   // 1 trận 10 phút (~3 lần xuất kích) dùng hết ~1.400–1.700 Bạc, trong khi 1 trận chỉ kiếm ~650–1.650 Bạc
   // -> phải tính toán lúc nào dùng đạn đặc chủng; thiếu thì xem quảng cáo tiếp tế (mỗi lần ≈ 150–250 Bạc giá trị).
-  // gear: chỉ nạp khi xe có lắp mô-đun đó (lựu đạn khói cần Ống phóng lựu khói).
-  const SMOKE_ITEM = { name: 'Lựu đạn khói', price: 35, pack: 2, max: 2, ad: 4, gear: 'smoke' };
+  // Lựu đạn khói: không bán nữa — nạp sẵn đầy ống phóng mỗi lần xuất kích (SMOKE_TUBES), xem startLife.
   const AMMO_SHOP = {
-    ALL_ROUNDER: { AP: { name: 'Đạn xuyên giáp', price: 45, pack: 5, max: 6, ad: 5 }, HE: { name: 'Đạn nổ mạnh', price: 30, pack: 5, max: 6, ad: 6 }, SMOKE: SMOKE_ITEM },
-    ARTILLERY: { HE: { name: 'Lựu đạn nổ mạnh 155', price: 40, pack: 5, max: 6, ad: 5 }, CLUSTER: { name: 'Đạn chùm 155', price: 70, pack: 2, max: 4, ad: 3 }, SMOKE: SMOKE_ITEM },
-    GATLING: { INCENDIARY: { name: 'Đạn cháy 30mm', price: 3, pack: 50, max: 150, ad: 75 }, SMOKE: SMOKE_ITEM },
-    SCOUT: { INCENDIARY: { name: 'Đạn cháy 12.7mm', price: 1, pack: 50, max: 90, ad: 90 }, ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng', price: 80, pack: 1, max: 3, ad: 3 }, SMOKE: SMOKE_ITEM }
+    ALL_ROUNDER: { AP: { name: 'Đạn xuyên giáp', price: 45, pack: 5, max: 6, ad: 5 }, HE: { name: 'Đạn nổ mạnh', price: 30, pack: 5, max: 6, ad: 6 } },
+    ARTILLERY: { HE: { name: 'Lựu đạn nổ mạnh 155', price: 40, pack: 5, max: 6, ad: 5 }, CLUSTER: { name: 'Đạn chùm 155', price: 70, pack: 2, max: 4, ad: 3 } },
+    GATLING: { INCENDIARY: { name: 'Đạn cháy 30mm', price: 3, pack: 50, max: 150, ad: 75 } },
+    SCOUT: { INCENDIARY: { name: 'Đạn cháy 12.7mm', price: 1, pack: 50, max: 90, ad: 90 }, ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng', price: 80, pack: 1, max: 3, ad: 3 } }
   };
   // Đạn đã ngừng bán (xe không còn ô bắn loại này): máy chủ tự hoàn đúng giá cho số còn trong kho rồi xóa khỏi kho
-  // (RPG của xe trinh sát: đã thay bằng tên lửa chống tăng). Chỉ hoàn phần mua bằng Bạc, không hoàn phần nhận từ quảng cáo
-  const RETIRED_AMMO = { SCOUT: { RPG: { price: 45 } } };
+  // (RPG của xe trinh sát: đã thay bằng tên lửa chống tăng; lựu đạn khói: nay nạp sẵn theo số ống phóng).
+  // Chỉ hoàn phần mua bằng Bạc, không hoàn phần nhận từ quảng cáo
+  const RETIRED_AMMO = { SCOUT: { RPG: { price: 45 }, SMOKE: { price: 35 } }, ALL_ROUNDER: { SMOKE: { price: 35 } }, ARTILLERY: { SMOKE: { price: 35 } }, GATLING: { SMOKE: { price: 35 } } };
+  // Số ống phóng lựu khói MỖI BÊN tháp (theo mô hình xe) = số loạt khói bắn được mỗi lần xuất kích (1 loạt = mỗi bên 1 quả)
+  const SMOKE_TUBES = { ALL_ROUNDER: 4, GATLING: 3, ARTILLERY: 3, SCOUT: 3 };
 
   // QUẢNG CÁO CÓ THƯỞNG (máy chủ kiểm tra): tối đa DAILY lượt / ngày / tài khoản, mỗi lượt cách nhau COOLDOWN_SEC,
   // phải xem ít nhất MIN_SEC giây (mạng quảng cáo thật có quảng cáo ngắn); khung quảng cáo mẫu dài MOCK_SEC giây.
@@ -119,9 +121,9 @@
   // Đạn đặc chủng miễn phí mỗi lần xuất kích: KHÔNG CÒN — ngoài đạn chính (không giới hạn), mọi loại đạn khác phải
   // mua bằng Bạc (đạn đã mua tự mang theo tới mức tối đa mỗi lần xuất kích). Giữ đủ khóa để startLife đặt lại số đạn.
   // Đạn miễn phí mỗi lần xuất kích (cộng thêm số mua): xe trinh sát luôn có 2 tên lửa để còn đánh được xe giáp
-  const BASE_AMMO = { ALL_ROUNDER: { AP: 0, HE: 0, SMOKE: 0 }, ARTILLERY: { HE: 0, CLUSTER: 0, SMOKE: 0 }, GATLING: { INCENDIARY: 0, SMOKE: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2, SMOKE: 0 } };
+  const BASE_AMMO = { ALL_ROUNDER: { AP: 0, HE: 0 }, ARTILLERY: { HE: 0, CLUSTER: 0 }, GATLING: { INCENDIARY: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2 } };
   // Xe do máy điều khiển không mua sắm: mang cơ số như trước khi có cửa hàng để trận không dễ đi
-  const BOT_AMMO = { ALL_ROUNDER: { AP: 3, HE: 3, SMOKE: 2 }, ARTILLERY: { HE: 4, CLUSTER: 3, SMOKE: 2 }, GATLING: { INCENDIARY: 80, SMOKE: 2 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1, SMOKE: 2 } };   // + 2 tên lửa miễn phí = 3
+  const BOT_AMMO = { ALL_ROUNDER: { AP: 3, HE: 3 }, ARTILLERY: { HE: 4, CLUSTER: 3 }, GATLING: { INCENDIARY: 80 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1 } };   // + 2 tên lửa miễn phí = 3
   const AMMO_PROP = { AP: 'apAmmoCount', HE: 'heAmmoCount', CLUSTER: 'clusterAmmoCount', INCENDIARY: 'incendiaryAmmoCount', RPG: 'rpgAmmoCount', ANTI_TANK_MISSILE: 'missileAmmoCount', SMOKE: 'smokeLeft' };
 
   function compatible(id, tank) {
@@ -190,7 +192,7 @@
       .slice(0, 3);
   }
 
-  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AD, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
+  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, SMOKE_TUBES, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AD, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================
@@ -198,7 +200,7 @@
   // ===========================================================================
   const has = (u, id) => !!(u && u.kit && u.kit.m && u.kit.m.indexOf(id) >= 0);
   const lost = (u, tag) => !!(u && u.dmg && u.dmg.lost && u.dmg.lost.has(tag));
-  const APS_CHARGES = 2, SMOKE_CHARGES = 2;
+  const APS_CHARGES = 2;
 
   /**
    * Lắp bộ trang bị cho xe (gọi 1 lần lúc tạo xe trong trận). opts.local: xe của người chơi máy này;
@@ -237,7 +239,12 @@
       E.loaded[k] = extra;
       u[AMMO_PROP[k]] = base[k] + extra;
     }
+    // ống phóng lựu khói nạp đầy: mỗi ống 1 quả -> số loạt bằng số ống mỗi bên
+    u.smokeLeft = has(u, 'smoke') ? smokeMax(u) : 0;
+    u._smokeAt = 0;
+    u._smokeCloak = null;
   }
+  function smokeMax(u) { return (u && SMOKE_TUBES[u.tankType]) || 3; }
   // Đạn mua thêm đã bắn trong lần xuất kích này (bắn đạn miễn phí trước, hết mới tới đạn mua)
   function lifeUsed(u, k) {
     const E = u._eq, n = E.loaded[k] || 0;
@@ -1086,7 +1093,7 @@
       for (const s of [-1, 1]) {
         host.setTag(s < 0 ? 'smokeKitL' : 'smokeKitR');
         const bx = T ? s * (T.hw - 1) : s * (F.hw - 2), by = T ? T.h * 0.7 : F.y1 + 1, bz = T ? T.zF + 4 : F.zF + 6;
-        for (let i = 0; i < 4; i++) host.cyl(0.55, 0.55, 2.4, 8, M.steel, [bx + s * (i % 2) * 1.2, by + Math.floor(i / 2) * 1.1, bz], 'z', [0.35, s * 0.4, 0]);
+        for (let i = 0; i < smokeMax(u); i++) host.cyl(0.55, 0.55, 2.4, 8, M.steel, [bx, by + i * 1.1, bz], 'z', [0.35, s * 0.4, 0]);
       }
     }
     if (has(u, 'camo')) buildFoliage(u, F, T, len);   // lưới lá: dựng & gắn riêng (xem buildFoliage)
@@ -1121,46 +1128,99 @@
   }
 
   // ---------------------------------------------------------------------------
-  // MÀN KHÓI
+  // MÀN KHÓI (ống phóng lựu đạn khói)
   // ---------------------------------------------------------------------------
-  const SMOKE_LIFE = 14, SMOKE_R = 42;
+  // Mỗi loạt: mỗi bên tháp bắn 1 quả (bên phải trễ ~0,1 s), bay vòng cung xòe ±26° về phía mũi tháp, nổ trên không
+  // ~2 m trên mặt đất cách xe ~10 m: phụt bông khói trắng + chùm viên phốt-pho đỏ cháy văng xòe rơi xuống kéo vệt khói,
+  // rồi 2 đám khói nở to dần thành bức tường dày. Khói đa phổ: chắn cả kính ngắm nhiệt và tia laser đo xa.
+  const SMOKE_LIFE = 17, SMOKE_FADE = 4, SMOKE_R = 50;             // đời đám khói (s) · thời gian tan cuối đời · bán kính khi nở hết
+  const SMOKE_RANGE = 80, SMOKE_FAN = 0.46, SMOKE_BURST_H = 16;    // tầm nổ · góc xòe mỗi bên (rad) · độ cao nổ trên mặt đất
+  const SMOKE_FLIGHT = 0.75, SMOKE_GAP = 2600;                     // thời gian bay của lựu đạn (s) · tối thiểu giữa 2 loạt (ms, máy chủ chặn 2,5 s)
+  // đang bị khóa mà phóng khói: địch mất khóa từ lúc khói nở tới khi khói tan gần hết
+  const CLOAK_FROM = SMOKE_FLIGHT + 0.5, CLOAK_UNTIL = SMOKE_FLIGHT + SMOKE_LIFE - SMOKE_FADE / 2;
+  const WIND_X = 0.9, WIND_Z = 0.5;                                // gió nhẹ đẩy hạt khói trôi chầm chậm
+  // Vị trí cụm ống phóng trên mô hình (tag smokeL / smokeR, tọa độ trong tháp hoặc thân xe): ống đầu tiên + khoảng cách ống
+  const TUBE_SPOT = {
+    ALL_ROUNDER: { host: 'turret', x: 11.95, y: 6.25, z: 0.8, dz: 1.05 },
+    GATLING: { host: 'turret', x: 10.5, y: 5.0, z: 7.7, dz: 1.05 },
+    ARTILLERY: { host: 'turret', x: 10.5, y: 8.1, z: -8.0, dz: 0.95 },
+    SCOUT: { host: 'hull', x: 6.5, y: 15.85, z: -5.6, dz: 0.8 }
+  };
+  const sideLost = (u, s) => lost(u, s < 0 ? 'smokeL' : 'smokeR') || lost(u, s < 0 ? 'smokeKitL' : 'smokeKitR');
+  /** Bên còn bắn được (cụm ống chưa bị bắn bay): bit 1 = trái, 2 = phải; 0 = hỏng cả hai */
+  function smokeSides(u) { return (sideLost(u, -1) ? 0 : 1) | (sideLost(u, 1) ? 0 : 2); }
+  const _sv = new THREE.Vector3();
+  // Hướng bắn (cùng quy ước bodyAngle): ống trên tháp bắn theo mũi tháp, ống trên nóc thân (xe trinh sát) theo mũi xe
+  function smokeYaw(u) {
+    const sp = TUBE_SPOT[u.tankType];
+    const host = sp && sp.host === 'hull' ? null : u.turretGroup;
+    if (host && host.getWorldDirection) {
+      host.updateWorldMatrix(true, false);
+      host.getWorldDirection(_sv);   // trục +z của tháp hướng ra đuôi -> mũi tháp là -z
+      if (Math.hypot(_sv.x, _sv.z) > 1e-3) return Math.atan2(_sv.x, _sv.z);
+    }
+    return u.bodyAngle || 0;
+  }
+  // Miệng ống thứ k (bắn lần lượt từ ống trước ra sau) bên s của xe u, tọa độ thế giới
+  function tubeMuzzle(u, s, k, a) {
+    const sp = TUBE_SPOT[u.tankType];
+    const host = sp && (sp.host === 'hull' ? u.chassisGroup : u.turretGroup);
+    if (host && host.localToWorld && u.partRegistry && u.partRegistry[s < 0 ? 'smokeL' : 'smokeR']) {
+      _sv.set(s * (sp.x + 0.6), sp.y + 0.7, sp.z + Math.min(k, smokeMax(u) - 1) * sp.dz - 0.3);
+      host.updateWorldMatrix(true, false);
+      host.localToWorld(_sv);
+      return { x: _sv.x, y: _sv.y, z: _sv.z };
+    }
+    const rx = Math.cos(a), rz = -Math.sin(a);
+    return { x: u.x + rx * s * 9, y: (u.y || 0) + 11, z: u.z + rz * s * 9 };
+  }
+  const soundOf = () => (typeof window !== 'undefined' && window.soundEngine) || null;
 
   /**
-   * Một "bãi khói" độc lập: danh sách đám khói + vẽ hạt + chặn tầm nhìn.
+   * Một "bãi khói" độc lập: lựu đạn đang bay, viên phốt-pho đang cháy, các đám khói + vẽ hạt + chặn tầm nhìn.
    * Trận đấu dùng bãi chung (MAIN_SMOKE); phòng xem xe tự tạo bãi riêng để thử khói mà không lọt vào trận đang chơi.
    */
   function SmokeField() {
-    const smokes = [];
-    let emitAcc = 0;
+    const smokes = [], shots = [], pellets = [];
+    const R = Math.random;
     function radius(s) {
       if (s.t < 0) return 0;
-      const grow = Math.min(1, s.t / 2.2), fade = s.t > SMOKE_LIFE - 3 ? Math.max(0, (SMOKE_LIFE - s.t) / 3) : 1;
-      return SMOKE_R * (0.3 + 0.7 * grow) * (0.55 + 0.45 * fade);
+      const g = Math.min(1, s.t / 2.5), grow = 1 - (1 - g) * (1 - g);
+      const fade = s.t > SMOKE_LIFE - SMOKE_FADE ? Math.max(0, (SMOKE_LIFE - s.t) / SMOKE_FADE) : 1;
+      return SMOKE_R * (0.35 + 0.65 * grow) * (0.6 + 0.4 * fade);
     }
-    // 3 đám khói xếp ngang trước mũi xe u (hoặc tại tâm at = { x, z, a }); trả về { x, z, a } để gửi mạng
-    // game (tùy chọn): để tính khoảng cách tới người chơi cho tiếng phóng khói
+    // 1 loạt lựu đạn từ xe u (hoặc theo at = { x, z, a, m } nhận từ mạng: tâm giữa 2 điểm nổ, hướng bắn, bên bắn).
+    // game (tùy chọn): để tính khoảng cách tới người chơi cho tiếng phóng. Trả về { x, z, a, m } để gửi mạng
     function deploy(u, at, game) {
-      const a = at ? at.a : (u.bodyAngle || 0);
-      const fx = -Math.sin(a), fz = -Math.cos(a);   // mũi xe
-      const cx = at ? at.x : u.x + fx * 55, cz = at ? at.z : u.z + fz * 55;
-      for (let i = -1; i <= 1; i++) {
-        smokes.push({ x: cx + fz * i * 46, z: cz - fx * i * 46, t: -0.25 * Math.abs(i), team: u.team, src: u });
+      const a = at ? at.a : smokeYaw(u);
+      const m = (at ? at.m : smokeSides(u)) || 3;
+      const fx = -Math.sin(a), fz = -Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
+      const fwd = SMOKE_RANGE * Math.cos(SMOKE_FAN), side = SMOKE_RANGE * Math.sin(SMOKE_FAN);
+      const cx = at ? at.x : u.x + fx * fwd, cz = at ? at.z : u.z + fz * fwd;
+      const k = Math.max(0, smokeMax(u) - (u.smokeLeft || 0) - 1);
+      let n = 0;
+      for (const s of [-1, 1]) {
+        if (!(m & (s < 0 ? 1 : 2))) continue;
+        const p0 = tubeMuzzle(u, s, k, a);
+        shots.push({ x0: p0.x, y0: p0.y, z0: p0.z, x1: cx + rx * s * side, z1: cz + rz * s * side, y1: null,
+          x: p0.x, y: p0.y, z: p0.z, dx: rx * s, dz: rz * s, fx, fz, t: n ? -0.09 - R() * 0.05 : 0, live: false, trail: 0, src: u });
+        n++;
       }
-      const S = typeof window !== 'undefined' && window.soundEngine;
+      const S = soundOf();
       if (S && typeof S.playSmokeLaunch === 'function') {
         // nghe theo khoảng cách từ xe phóng tới người chơi (xe mình: 0)
         const me = game && game.player;
         const d = !me || me === u ? 0 : Math.max(1, Math.hypot(u.x - me.x, u.z - me.z));
-        if (d < 2400) S.playSmokeLaunch(d, { x: u.x, z: u.z });
+        if (d < 2400) S.playSmokeLaunch(d, { x: u.x, z: u.z }, n);
       }
-      return { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10, a: Math.round(a * 1000) / 1000 };
+      return { x: Math.round(cx * 10) / 10, z: Math.round(cz * 10) / 10, a: Math.round(a * 1000) / 1000, m };
     }
     // Đường ngắm (x1,z1)-(x2,z2) xuyên qua đám khói dày
     function blocks(x1, z1, x2, z2) {
       if (!smokes.length) return false;
       const dx = x2 - x1, dz = z2 - z1, L2 = dx * dx + dz * dz || 1;
       for (const s of smokes) {
-        if (s.t < 0.8 || s.t > SMOKE_LIFE - 1) continue;
+        if (s.t < 0.6 || s.t > SMOKE_LIFE - 1) continue;
         const r = radius(s);
         let k = ((s.x - x1) * dx + (s.z - z1) * dz) / L2;
         k = Math.max(0, Math.min(1, k));
@@ -1169,41 +1229,176 @@
       }
       return false;
     }
-    // Khói: hạt bay chậm, dày, lan rộng. layer = lớp hạt khói (ExplosionFX.smoke), T = địa hình (độ cao mặt đất)
-    function step(dt, layer, T) {
-      if (!smokes.length) return;
-      emitAcc += dt;
-      const emit = emitAcc >= 0.12;
-      if (emit) emitAcc = 0;
+
+    // Miệng ống: chớp lửa liều phóng + phụt khói thuốc phóng xám
+    function muzzleFx(g, L, F) {
+      if (F) F.add({ x: g.x0, y: g.y0, z: g.z0, vx: 0, vy: 0, vz: 0, size: 3.2, grow: 14, life: 0.06, alpha: 1, fadeIn: 0.003, c0: [1, 0.9, 0.7], c1: [1, 0.5, 0.15], cell: 3, floor: false });
+      if (!L) return;
+      for (let i = 0; i < 6; i++) {
+        const sp = 6 + R() * 10, gr = 0.5 + R() * 0.12;
+        L.add({ x: g.x0, y: g.y0, z: g.z0, vx: (g.dx * 0.7 + g.fx * 0.4) * sp + (R() - 0.5) * 3, vy: sp * 0.6 + R() * 2, vz: (g.dz * 0.7 + g.fz * 0.4) * sp + (R() - 0.5) * 3,
+          size: 1.6 + R() * 1.4, grow: 5, drag: 2.4, grav: -1, life: 1.2 + R() * 0.9, alpha: 0.6, fadeIn: 0.02, c0: [gr, gr, gr * 0.97], c1: [gr + 0.15, gr + 0.15, gr + 0.13], cell: 0, floor: false });
+      }
+    }
+    // Lựu đạn nổ trên không: chớp sáng, bông khói phụt tròn, chùm viên phốt-pho cháy văng ra; đám khói bắt đầu nở
+    function burst(g, L, F, ear) {
+      const bx = g.x1, by = g.y1, bz = g.z1;
+      smokes.push({ x: bx, z: bz, y: by - SMOKE_BURST_H, t: 0, acc: 0, team: g.src.team, src: g.src });
+      const S = soundOf();
+      if (S && typeof S.playSmokeBurst === 'function') {
+        const o = ear || g.src, d = Math.max(1, Math.hypot(bx - o.x, bz - o.z));
+        if (d < 2400) S.playSmokeBurst(d, { x: bx, z: bz });
+      }
+      if (F) F.add({ x: bx, y: by, z: bz, vx: 0, vy: 0, vz: 0, size: 7, grow: 40, life: 0.12, alpha: 1, fadeIn: 0.004, c0: [1, 0.97, 0.9], c1: [1, 0.6, 0.25], cell: 3, floor: false });
+      if (L) for (let i = 0; i < 16; i++) {
+        const th = R() * Math.PI * 2, ph = Math.acos(2 * R() - 1), sp = 26 + R() * 30;
+        const ux = Math.sin(ph) * Math.cos(th), uy = Math.cos(ph) * 0.6, uz = Math.sin(ph) * Math.sin(th);
+        L.add({ x: bx, y: by, z: bz, vx: ux * sp, vy: uy * sp + 2, vz: uz * sp, size: 6 + R() * 5, grow: 13, drag: 3, grav: -0.6, life: 4 + R() * 2.5, alpha: 0.95, fadeIn: 0.02, fadePow: 0.8,
+          c0: [0.97, 0.97, 0.96], c1: [0.85, 0.85, 0.84], cell: 0, floor: false, ax: WIND_X, az: WIND_Z });
+      }
+      for (let i = 0; i < 7; i++) {
+        const th = R() * Math.PI * 2, sp = 16 + R() * 22;
+        pellets.push({ x: bx, y: by, z: bz, vx: Math.cos(th) * sp + g.fx * 6, vy: -4 + R() * 16, vz: Math.sin(th) * sp + g.fz * 6, t: 0, life: 2.4 + R() * 1.6, trail: 0, ground: false });
+      }
+    }
+    // Đám khói nhả hạt theo 3 lớp: thảm sát đất (tối hơn — nằm trong bóng khối khói), thân tường khói, ngọn cuộn lên sáng hơn
+    function emit(s, r, L, gy) {
+      const band = R(), a = R() * Math.PI * 2, rr = Math.sqrt(R()) * r * (band < 0.4 ? 0.95 : 0.75);
+      const ca = Math.cos(a), sa = Math.sin(a), x = s.x + ca * rr, z = s.z + sa * rr, g0 = gy(x, z, s.y);
+      if (band < 0.4) {
+        const c = 0.64 + R() * 0.06;
+        L.add({ x, y: g0 + 3 + R() * 4, z, vx: ca * (2 + R() * 3), vy: 0.4 + R(), vz: sa * (2 + R() * 3), size: 24 + R() * 12, grow: 3.2, drag: 0.6, grav: -0.15,
+          life: 7 + R() * 3, alpha: 0.92, fadeIn: 0.5, fadePow: 0.7, c0: [c, c, c * 0.98], c1: [c + 0.12, c + 0.12, c + 0.1], cell: 0, ax: WIND_X, az: WIND_Z });
+      } else if (band < 0.85) {
+        const c = 0.74 + R() * 0.06;
+        L.add({ x, y: g0 + 8 + R() * 16, z, vx: ca * (1 + R() * 2), vy: 1 + R() * 2, vz: sa * (1 + R() * 2), size: 22 + R() * 10, grow: 4, drag: 0.7, grav: -0.5,
+          life: 6.5 + R() * 3, alpha: 0.88, fadeIn: 0.4, fadePow: 0.75, c0: [c, c, c * 0.98], c1: [c + 0.1, c + 0.1, c + 0.08], cell: 0, floor: false, ax: WIND_X, az: WIND_Z });
+      } else {
+        const c = 0.84 + R() * 0.05;
+        L.add({ x, y: g0 + 20 + R() * 12, z, vx: ca * R() * 2, vy: 2 + R() * 2.5, vz: sa * R() * 2, size: 18 + R() * 10, grow: 5, drag: 0.6, grav: -0.8,
+          life: 5.5 + R() * 2.5, alpha: 0.78, fadeIn: 0.35, fadePow: 0.85, c0: [c, c, c * 0.99], c1: [c + 0.07, c + 0.07, c + 0.06], cell: 0, floor: false, ax: WIND_X, az: WIND_Z });
+      }
+    }
+    // fx = ExplosionFX (lớp hạt riêng cho màn khói: fx.screen, chớp lửa: fx.fire) hoặc 1 lớp hạt; T = địa hình (độ cao mặt đất);
+    // ear = { x, z } người nghe (tiếng lựu đạn nổ)
+    function step(dt, fx, T, ear) {
+      if (!smokes.length && !shots.length && !pellets.length) return;
+      const L = fx ? (fx.screen || fx.smoke || (fx.add ? fx : null)) : null;
+      const F = fx && fx.fire && fx.fire.add ? fx.fire : null;
+      const gy = (x, z, d) => (T ? T.getElevationAt(x, z) : d);
+      // lựu đạn đang bay: vòng cung từ miệng ống tới điểm nổ, ngòi chậm kéo vệt khói mảnh
+      for (let i = shots.length - 1; i >= 0; i--) {
+        const g = shots[i];
+        g.t += dt;
+        if (g.t < 0) continue;
+        if (!g.live) { g.live = true; muzzleFx(g, L, F); }
+        if (g.y1 === null) g.y1 = gy(g.x1, g.z1, g.y0 - 10) + SMOKE_BURST_H;
+        const p = Math.min(1, g.t / SMOKE_FLIGHT);
+        g.x = g.x0 + (g.x1 - g.x0) * p; g.z = g.z0 + (g.z1 - g.z0) * p;
+        g.y = g.y0 + (g.y1 - g.y0) * p + 72 * p * (1 - p);
+        if (L && (g.trail -= dt) <= 0) {
+          g.trail = 0.018;
+          const c = 0.7 + R() * 0.08;
+          L.add({ x: g.x, y: g.y, z: g.z, vx: (R() - 0.5) * 1.2, vy: 0.4, vz: (R() - 0.5) * 1.2, size: 1.2 + R() * 0.8, grow: 2.6, drag: 1, grav: -0.5, life: 0.9 + R() * 0.6, alpha: 0.5, fadeIn: 0.03, c0: [c, c, c], c1: [c + 0.12, c + 0.12, c + 0.11], cell: 0, floor: false });
+        }
+        if (F) F.add({ x: g.x, y: g.y, z: g.z, vx: 0, vy: 0, vz: 0, size: 0.9, grow: 0, life: 0.05, alpha: 0.8, fadeIn: 0.005, c0: [1, 0.75, 0.45], cell: 3, floor: false });
+        if (p >= 1) { burst(g, L, F, ear); shots.splice(i, 1); }
+      }
+      // viên phốt-pho đỏ: văng xòe, rơi xuống kéo vệt khói trắng ("con bạch tuộc"), nằm cháy âm ỉ trên đất tỏa khói
+      for (let i = pellets.length - 1; i >= 0; i--) {
+        const q = pellets[i];
+        q.t += dt;
+        if (q.t > q.life) { pellets.splice(i, 1); continue; }
+        if (!q.ground) {
+          const dr = Math.exp(-0.9 * dt);
+          q.vx *= dr; q.vz *= dr; q.vy = q.vy * dr - 34 * dt;
+          q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+          const g0 = gy(q.x, q.z, -1e9);
+          if (q.y <= g0 + 0.5) { q.y = g0 + 0.5; q.ground = true; }
+        }
+        if (F) F.add({ x: q.x, y: q.y, z: q.z, vx: 0, vy: 0, vz: 0, size: q.ground ? 1.3 : 1.8, grow: 0, life: 0.05, alpha: 1, fadeIn: 0.005, c0: [1, 0.85, 0.6], c1: [1, 0.45, 0.15], cell: 3, floor: false });
+        if (L && (q.trail -= dt) <= 0) {
+          q.trail = q.ground ? 0.12 : 0.045;
+          const c = 0.9 + R() * 0.06;
+          L.add({ x: q.x, y: q.y, z: q.z, vx: (R() - 0.5) * 1.5, vy: q.ground ? 2 + R() * 2 : 0.5, vz: (R() - 0.5) * 1.5, size: q.ground ? 4 + R() * 2 : 2.4 + R(), grow: q.ground ? 5 : 4,
+            drag: 0.8, grav: -0.8, life: 3 + R() * 1.8, alpha: 0.75, fadeIn: 0.04, c0: [c, c, c * 0.99], c1: [c - 0.08, c - 0.08, c - 0.09], cell: 0, floor: false, ax: WIND_X, az: WIND_Z });
+        }
+      }
+      // đám khói: nở mạnh lúc đầu, nhả đều khi dựng tường, ngừng nhả trước khi tan để hạt kịp mờ hết
+      const stop = SMOKE_LIFE - SMOKE_FADE - 2.5;
       for (let i = smokes.length - 1; i >= 0; i--) {
         const s = smokes[i];
         s.t += dt;
         if (s.t > SMOKE_LIFE) { smokes.splice(i, 1); continue; }
-        if (!emit || !layer || s.t < 0 || s.t > SMOKE_LIFE - 3.5) continue;
-        const r = radius(s), y = T ? T.getElevationAt(s.x, s.z) : 0;
-        const n = s.t < 1.5 ? 3 : 1;
-        for (let k = 0; k < n; k++) {
-          const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * r * 0.7, g = 0.78 + Math.random() * 0.1;
-          layer.add({ x: s.x + Math.cos(a) * rr, y: y + 4 + Math.random() * 8, z: s.z + Math.sin(a) * rr, vx: (Math.random() - 0.5) * 6, vy: 2 + Math.random() * 4, vz: (Math.random() - 0.5) * 6,
-            size: 16 + Math.random() * 10, grow: 4.5, drag: 0.7, grav: -0.4, life: 5 + Math.random() * 3, alpha: 0.85, fadeIn: 0.25, c0: [g, g, g * 0.98], c1: [g + 0.08, g + 0.08, g + 0.06], cell: 0, floor: false });
-        }
+        if (!L || s.t < 0.15) continue;
+        const rate = s.t < 2.5 ? 34 : s.t < stop ? 24 : 24 * Math.max(0, 1 - (s.t - stop) / 2);
+        s.acc += rate * dt;
+        const r = radius(s);
+        while (s.acc >= 1) { s.acc -= 1; emit(s, r, L, gy); }
       }
     }
-    return { deploy, blocks, step, radius, clear() { smokes.length = 0; }, get count() { return smokes.length; }, LIFE: SMOKE_LIFE };
+    return { deploy, blocks, step, radius, clear() { smokes.length = shots.length = pellets.length = 0; },
+      get count() { return smokes.length + shots.length + pellets.length; }, LIFE: SMOKE_LIFE };
   }
   const MAIN_SMOKE = SmokeField();
 
+  // Xe u đang bị địch khóa: tia laser đo xa / dẫn tên lửa đang chiếu vào, hoặc tên lửa dẫn đường đang bay tới
+  function beingLocked(game, u) {
+    if (!game || !u) return false;
+    const now = Date.now();
+    for (const v of game.units || []) {
+      const L = v && !v.isDead && v.team !== u.team && v._lockOn;
+      if (L && L.id === u.id && now - L.at < 3500) return true;
+    }
+    for (const s of (game.ballistics && game.ballistics.activeShells) || []) {
+      if (s.guide && !s.guide.lost && s.guide.targetId === u.id && s.shooterTeam !== u.team) return true;
+    }
+    return false;
+  }
+  // Bị tên lửa khóa / tên lửa đang lao tới (xe máy điều khiển phản xạ phóng khói)
+  function missileThreat(game, u) {
+    const now = Date.now();
+    for (const v of game.units || []) {
+      const L = v && !v.isDead && v.team !== u.team && v._lockOn;
+      if (L && L.m === 2 && L.id === u.id && now - L.at < 3500) return true;
+    }
+    for (const s of (game.ballistics && game.ballistics.activeShells) || []) {
+      if (s.guide && !s.guide.lost && s.guide.targetId === u.id && Math.hypot(s.x - u.x, s.z - u.z) < 900) return true;
+    }
+    return false;
+  }
   /**
-   * Phóng màn khói từ xe u: 3 đám khói xếp ngang trước mũi xe (hoặc tại điểm cho trước khi nhận từ mạng).
-   * Trả về { x, z, a } để gửi mạng.
+   * Khói đa phổ che xe t: xe phe khác (team) không khóa được t (kính ngắm nhiệt / laser đo xa / đầu dò tên lửa đều mù).
+   * Chỉ có khi t đang bị khóa lúc phóng khói; kéo dài tới khi khói gần tan.
+   */
+  function lockBlocked(t, team) {
+    const c = t && t._smokeCloak;
+    if (!c || t.isDead || t.team === team) return false;
+    const now = performance.now();
+    return now >= c.from && now < c.until;
+  }
+
+  /**
+   * Phóng 1 loạt lựu đạn khói từ xe u (mỗi bên 1 quả, hoặc theo at nhận từ mạng). Xe đang bị khóa -> khói đa phổ cắt khóa.
+   * Trả về { x, z, a, m, k } để gửi mạng; null = không phóng được (hết ống, hỏng cả 2 cụm ống, chưa đủ nhịp giữa 2 loạt).
    */
   function deploySmoke(game, u, at) {
     if (!u || u.isDead) return null;
+    let k = !!(at && at.k);
     if (!at) {
-      if (!(u.smokeLeft > 0)) return null;
+      const now = performance.now();
+      if (!(u.smokeLeft > 0) || !smokeSides(u) || (u._smokeAt && now - u._smokeAt < SMOKE_GAP)) return null;
+      u._smokeAt = now;
       u.smokeLeft--;
+      k = beingLocked(game, u);
     }
-    return MAIN_SMOKE.deploy(u, at, game);
+    const r = MAIN_SMOKE.deploy(u, at, game);
+    if (k) {
+      const now = performance.now();
+      u._smokeCloak = { from: now + CLOAK_FROM * 1000, until: now + CLOAK_UNTIL * 1000, told: 0 };
+      r.k = 1;
+    }
+    return r;
   }
   // Đường ngắm (x1,z1)-(x2,z2) xuyên qua đám khói dày
   function smokeBlocks(x1, z1, x2, z2) { return MAIN_SMOKE.blocks(x1, z1, x2, z2); }
@@ -1222,19 +1417,37 @@
     // lưới lá bắt lửa / cháy lan (src/gameplay/camo_fire.js)
     if (game && game.units && window.CamoFire) CamoFire.update(dt, { units: game.units, fx: game.effectsManager && game.effectsManager.fx, game });
     if (!MAIN_SMOKE.count && !game) return;
-    // khói: hạt bay chậm, dày, lan rộng
+    // khói: lựu đạn bay, nổ, đám khói nở & nhả hạt
     const fx = game && game.effectsManager && game.effectsManager.fx;
-    MAIN_SMOKE.step(dt, fx && fx.smoke, game && game.terrain);
-    // xe do máy điều khiển (máy này có quyền): vừa trúng đạn, máu thấp -> phóng khói che rút lui
-    if (game && game.units) {
-      const now = performance.now();
-      for (const u of game.units) {
-        if (!u || u.isDead || u.isPlayer || u.isRemotePlayer || !(u.smokeLeft > 0)) continue;
-        if (!u._lastHitAt || now - u._lastHitAt > 1200 || u.hp > u.maxHp * 0.6) continue;
-        if (u._smokeAt && now - u._smokeAt < 6000) continue;
-        u._smokeAt = now;
-        triggerSmoke(game, u);
+    MAIN_SMOKE.step(dt, fx, game && game.terrain, game && game.player);
+    if (!game || !game.units) return;
+    const now = performance.now();
+    // khói đa phổ của xe mình: báo lúc bắt đầu cắt khóa và lúc khói tan
+    const P = game.player, C = P && P._smokeCloak;
+    if (C && !P.isDead && game.addCombatLog) {
+      if (!C.told && now >= C.from) {
+        C.told = 1;
+        game.addCombatLog(`[[lock-off]] Khói đa phổ đã cắt tia khóa của địch — địch không khóa được xe bạn cho tới khi khói tan (~${Math.round((C.until - now) / 1000)} giây)`, 'tip');
+      } else if (C.told === 1 && now >= C.until) {
+        C.told = 2;
+        game.addCombatLog('[[cloud]] Khói đã tan — địch khóa lại được xe bạn', 'alert');
       }
+    }
+    // xe do máy điều khiển (máy này có quyền): vừa trúng đạn & máu thấp -> phóng khói che rút lui;
+    // bị tên lửa khóa / tên lửa đang lao tới -> phản xạ phóng khói cắt đường dẫn (có trễ, không phải lần nào cũng kịp)
+    for (const u of game.units) {
+      if (!u || u.isDead || u.isPlayer || u.isRemotePlayer || !(u.smokeLeft > 0)) continue;
+      if (u._smokeAt && now - u._smokeAt < 6000) continue;
+      let want = !!u._lastHitAt && now - u._lastHitAt <= 1200 && u.hp <= u.maxHp * 0.6;
+      if (!want) {
+        if (missileThreat(game, u)) {
+          if (u._smokeReact === undefined) u._smokeReact = Math.random() < 0.65 ? now + 350 + Math.random() * 900 : Infinity;
+          want = now >= u._smokeReact;
+        } else u._smokeReact = undefined;
+      }
+      if (!want) continue;
+      u._smokeReact = undefined;
+      if (!triggerSmoke(game, u)) u._smokeAt = now;   // không phóng được (hỏng ống...): thôi thử lại liên tục
     }
   }
   // Phóng khói (xe của máy này) + báo các máy khác
@@ -1247,8 +1460,8 @@
   return Object.assign(API, {
     has, equip, onRespawn, paidUsed, ammoDelta, startLife,
     armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, eraEffect, penMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul,
-    deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, update, buildVisuals, FIT,
+    deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, smokeSides, smokeMax, lockBlocked, SMOKE_GAP, SMOKE_LIFE, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)
-    APS_CHARGES, SMOKE_CHARGES, outOfStockNote
+    APS_CHARGES, outOfStockNote
   });
 });

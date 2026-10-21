@@ -3956,6 +3956,8 @@
       this.smoke = new ParticleLayer(scene, 2600, false);
       // Khói tín hiệu của hòm tiếp tế (SupplyManager.emitSignalSmoke): bể riêng để khói trận đánh dày không đẩy mất cột khói vàng
       this.signal = new ParticleLayer(scene, 640, false);
+      // Màn khói của ống phóng lựu đạn khói (Equipment.SmokeField): bể riêng — tường khói dày không đẩy mất khói trận đánh
+      this.screen = new ParticleLayer(scene, 1800, false);
       this.fire = new ParticleLayer(scene, 1400, true);
       this.rocks = new RockLayer(scene, 360, 0x7d6a52);       // đất đá (màu theo bản đồ)
       this.hardRocks = new RockLayer(scene, 200, 0x6e6c68);   // bê tông / mảnh kim loại
@@ -6634,6 +6636,7 @@
 
       this.smoke.update(dt, this.groundAt);
       this.signal.update(dt, null);
+      this.screen.update(dt, this.groundAt);
       this.fire.update(dt, this.groundAt);
       this.updateVehicles(dt);
       this.updateSurfaceMarks(dt);
@@ -6682,6 +6685,7 @@
     clear() {
       this.smoke.parts.length = 0;
       this.signal.parts.length = 0;
+      this.screen.parts.length = 0;
       this.fire.parts.length = 0;
       this.rocks.rocks.length = 0;
       this.hardRocks.rocks.length = 0;
@@ -6708,6 +6712,7 @@
       if (this.fragHoles) this.fragHoles.clear();
       this.smoke.update(0.001, null);
       this.signal.update(0.001, null);
+      this.screen.update(0.001, null);
       this.fire.update(0.001, null);
       this.rocks.update(0.001, null);
     }
@@ -6717,7 +6722,7 @@
      */
     reattach() {
       const add = (o) => { if (o && o.parent !== this.scene) this.scene.add(o); };
-      for (const L of [this.smoke, this.signal, this.fire, this.rocks, this.hardRocks, this.bits, this.streaks, this.wallHoles]) add(L && L.mesh);
+      for (const L of [this.smoke, this.signal, this.screen, this.fire, this.rocks, this.hardRocks, this.bits, this.streaks, this.wallHoles]) add(L && L.mesh);
       for (const k in this.groundHoles.layers) add(this.groundHoles.layers[k].im);
       for (const k in this.bulletHoles.L) { add(this.bulletHoles.L[k].capIm); add(this.bulletHoles.L[k].bowlIm); }
       for (const P of [this.wallPits.s, this.wallPits.he, this.treePits.wood, this.treePits.cactus]) for (const L of P.layers) add(L.im);

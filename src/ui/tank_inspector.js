@@ -989,7 +989,8 @@ class TankInspector {
       if (typeof window.soundEngine.resume === 'function') window.soundEngine.resume();
     }
     this.smoke.deploy(u, null);
-    this.toast('<i class="ti ti-cloud"></i> Đã phóng màn khói (~14 giây). Trong trận mỗi lần xuất kích có 2 lần, ở đây thả thoải mái');
+    const n = Equipment.smokeMax ? Equipment.smokeMax(u) : 3;
+    this.toast(`<i class="ti ti-cloud"></i> Đã bắn 1 loạt lựu đạn khói (~15 giây). Trong trận: ${n} ống mỗi bên = ${n} loạt mỗi lần xuất kích; ở đây bắn thoải mái`);
   }
 
   // Các khối còn đứng của tường thử gần xe (hộp vật cản cho VehicleCollision)
@@ -1077,7 +1078,7 @@ class TankInspector {
         this.field.crush(u.x, u.z, u.tankType === 'SCOUT' ? 9 : 14, -Math.sin(a) * u.speed, -Math.cos(a) * u.speed, fxs);
       }
     }
-    if (this.smoke) this.smoke.step(dt, fxs && fxs.smoke, T);
+    if (this.smoke) this.smoke.step(dt, fxs, T, this.camera ? this.camera.position : u);
   }
 
   // Tiếng máy nổ (nghỉ / chạy / tăng tốc), xích rít khi quay, mô-tơ quay tháp — cùng hàm âm thanh trong trận

@@ -10,6 +10,9 @@
  * - Cơ chế phân tán đội hình: Tự động giữ khoảng cách an toàn 50-70m với đồng đội, không chụm đầu dồn cục
  * - Cơ chế tự động lùi thoát kẹt: Nhận biết khi bị kẹt bờ tường công sự, vào số lùi bẻ lái thoát hiểm
  */
+// Xe t vừa phóng khói đa phổ lúc bị khóa: phe team không khóa / ngắm được t cho tới khi khói tan (Equipment.lockBlocked)
+const smokeVeiled = (t, team) => typeof Equipment !== 'undefined' && !!Equipment.lockBlocked && Equipment.lockBlocked(t, team);
+
 class BotAIController {
   constructor(unit) {
     this.unit = unit;
@@ -501,6 +504,7 @@ class BotAIController {
       // (xe trinh sát), hoặc đồng đội trinh sát báo vị trí
       const enemyUnits = (allUnits || []).filter(u => {
         if (u.isDead || u.team === this.unit.team) return false;
+        if (smokeVeiled(u, this.unit.team)) return false;   // mất khóa sau khói đa phổ: chỉ còn bắn mò theo vị trí kẻ vừa bắn mình
         if (typeof TeamIntel !== 'undefined') return TeamIntel.knows(this.unit, u);
         return !(u.isInBush && (u.revealTimer || 0) <= 0) || Math.hypot(u.x - this.unit.x, u.z - this.unit.z) <= 260;
       });
@@ -655,6 +659,7 @@ class BotAIController {
   // Bot tự nhìn thấy xe đó (mắt / kính ngắm), không tính vị trí do đồng đội báo hay radar
   seesDirect(t) {
     if (!t || t.isDead) return false;
+    if (smokeVeiled(t, this.unit.team)) return false;   // khói đa phổ: kính ngắm / laser đo xa không khóa được
     if (typeof TeamIntel === 'undefined') return true;
     return TeamIntel.seesDirect(this.unit, t);
   }
