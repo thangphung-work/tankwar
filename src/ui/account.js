@@ -159,9 +159,12 @@ const Account = (() => {
   }
 
   function setProfile(p, applyChoices) {
+    const swapped = !!profile !== !!p;
     profile = p;
     try { if (p) localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (e) {}
     renderHeader();
+    // đăng nhập / đăng xuất: bộ trang bị đổi theo tài khoản
+    if (swapped) { try { window.dispatchEvent(new CustomEvent('armory-changed')); } catch (e) {} }
     const mm = window.matchmakingController || (window.game && window.game.matchmaking);
     if (mm && !p && mm.guestName) {
       // đăng xuất: về lại tên khách, không giữ tên tài khoản cũ

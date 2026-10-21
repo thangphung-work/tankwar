@@ -56,15 +56,28 @@
     if (nameEl && name) nameEl.textContent = name.textContent;
     if (descEl && desc) descEl.textContent = desc.textContent;
 
-    const tipsEl = $('#mm-hero-tips');
-    if (tipsEl) {
-      tipsEl.innerHTML = '';
-      (card.getAttribute('data-tips') || '').split('|').filter(Boolean).forEach(t => {
-        const li = document.createElement('li');
-        li.innerHTML = '<i class="ti ti-chevron-right" aria-hidden="true"></i>';
-        li.appendChild(document.createTextNode(t));
-        tipsEl.appendChild(li);
-      });
+    // Trang bị đang lắp của xe này (có sẵn theo xe + món đã lắp + đạn cao cấp đã sở hữu): hàng ô biểu tượng
+    const gearEl = $('#mm-hero-gear');
+    if (gearEl) {
+      const Eq = window.Equipment, Acc = window.Account;
+      const items = [];
+      if (Eq) {
+        for (const id in Eq.MODULES) if (Eq.builtin && Eq.builtin(type, id)) items.push({ icon: Eq.MODULES[id].icon, name: Eq.MODULES[id].name, built: true });
+        const lo = Acc && Acc.loadoutOf ? Acc.loadoutOf(type) : { m: [] };
+        for (const id of lo.m || []) {
+          const M = Eq.MODULES[id];
+          if (M && !(Eq.builtin && Eq.builtin(type, id))) items.push({ icon: M.icon, name: M.name });
+        }
+        const kit = Acc && Acc.kitFor ? Acc.kitFor(type).kit : null;
+        for (const id of (kit && kit.p) || []) { const P = Eq.PREMIUM[id]; if (P) items.push({ icon: P.icon, name: P.name, ammo: true }); }
+      }
+      const sig = type + '|' + items.map(i => i.name).join(',');
+      if (gearEl.dataset.sig !== sig) {
+        gearEl.dataset.sig = sig;
+        gearEl.innerHTML = items.length
+          ? items.map(i => `<li class="${i.built ? 'built' : i.ammo ? 'ammo' : ''}" title="${i.name}${i.built ? ' (có sẵn theo xe)' : ''}"><i class="ti ti-${i.icon}" aria-hidden="true"></i></li>`).join('')
+          : '<li class="empty">Chưa lắp — bấm XEM MÔ HÌNH 3D để lắp trang bị</li>';
+      }
     }
 
     const skillsEl = $('#mm-hero-skills');
@@ -92,7 +105,7 @@
   }
 
   // Cột thông tin cao cố định theo khung sảnh: màn thấp thì co khối kỹ năng dần cho vừa
-  // 0 đầy đủ · 1 bỏ mô tả · 2 kỹ năng thành hàng chip, ẩn "cách chơi" · 3 ẩn kỹ năng
+  // 0 đầy đủ · 1 bỏ mô tả · 2 kỹ năng thành hàng chip · 3 ẩn kỹ năng
   function fitHero() {
     const info = $('.hero-info');
     if (!info) return;
@@ -115,6 +128,8 @@
       new MutationObserver(fn).observe(root, { subtree: true, attributes: true, attributeFilter: ['class'] });
     };
     watch($('.mm-class-cards-grid'), () => { renderHero(); fitHero(); });
+    // lắp / tháo / mua trang bị, đăng nhập / đăng xuất -> cập nhật hàng trang bị
+    window.addEventListener('armory-changed', () => { renderHero(); fitHero(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -473,33 +473,36 @@
   color: var(--lb-dim);
 }
 
-.hero-tips {
+/* Trang bị đang lắp của xe: hàng ô biểu tượng (rê chuột xem tên) */
+.hero-gear {
   list-style: none;
   margin: 4px 0 0;
   padding: 10px 0 0;
   border-top: 1px dashed var(--lb-line);
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 6px;
 }
-
-.hero-tips::before {
-  content: 'CÁCH CHƠI';
+.hero-gear::before {
+  content: 'TRANG BỊ';
+  flex-basis: 100%;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.5px;
   color: var(--lb-faint);
 }
-
-.hero-tips li {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 13px;
+.hero-gear li {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  font-size: 17px;
   color: var(--lb-text);
+  border: 1px solid var(--lb-line-2);
+  background: rgba(200, 210, 192, 0.06);
+  animation: lb-skill-in 0.28s ease both;
 }
-
-.hero-tips li .ti { color: var(--lb-accent); font-size: 12px; }
+.hero-gear li.built { color: var(--lb-accent); border-color: rgba(231, 166, 58, 0.35); background: rgba(231, 166, 58, 0.08); }
+.hero-gear li.ammo { color: #9fd3ff; border-color: rgba(159, 211, 255, 0.35); }
+.hero-gear li.empty { width: auto; height: auto; padding: 4px 8px; font-size: 11.5px; color: var(--lb-dim); border-style: dashed; background: none; }
 
 /* Kỹ năng riêng của xe: ô biểu tượng · tên + mô tả 1 dòng · phím tắt (nếu có) */
 .hero-skills {
@@ -554,7 +557,6 @@
 .hero-info[data-fit="1"] .hero-skills li { grid-template-columns: 22px minmax(0, 1fr) auto; }
 .hero-info[data-fit="1"] .hero-skill-ic,
 .hero-info[data-fit="2"] .hero-skill-ic { width: 22px; height: 22px; font-size: 13px; }
-.hero-info[data-fit="2"] .hero-tips,
 .hero-info[data-fit="3"] .hero-skills { display: none; }
 .hero-info[data-fit="2"] .hero-skills { flex-direction: row; flex-wrap: wrap; gap: 5px; }
 .hero-info[data-fit="2"] .hero-skills::before { flex-basis: 100%; }
