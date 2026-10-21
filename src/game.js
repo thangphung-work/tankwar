@@ -2133,6 +2133,8 @@ class ArtilleryGame3D {
         if (dmgRes.noFire) directTarget._noIgnite = true;
         // Đạn nảy khỏi giáp nghiêng: chỉ còn chút sát thương va đập
         if (unitHit && unitHit.ricochet) directDamage = Math.round(directDamage * 0.12 * 1000) / 1000;
+        // Đạn đã nảy trên mặt nước trước khi trúng: chao đảo, chạm xiên / ngang thân -> xuyên kém hẳn
+        if (shell.skips) directDamage = Math.round(directDamage * (shell.skipMul || 1) * 1000) / 1000;
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
       }
       // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy

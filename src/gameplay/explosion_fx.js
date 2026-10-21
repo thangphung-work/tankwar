@@ -5739,6 +5739,47 @@
       }
     }
 
+    // Đạn nảy trên mặt nước (ballistics.waterSkip): đạn lướt rạch mặt nước rồi bật lên -> rãnh nước trắng ngắn theo hướng bay,
+    // hai cánh nước xòe chữ V như mũi thuyền, bụi nước bắn chếch về phía trước theo đạn, vòng sóng nhỏ, tiếng "chát" + rít nảy
+    waterSkip(x, wy, z, ammoType, vin, vout) {
+      const prof = PROFILES[ammoType] || PROFILES.NORMAL;
+      const micro = !!prof.micro;
+      const k = micro ? 0.12 : Math.min(1.4, (prof.size || 1) / 1.65 + 0.35);
+      const sk = Math.sqrt(k);
+      const hl = Math.hypot(vin.x, vin.z) || 1, hx = vin.x / hl, hz = vin.z / hl;
+      const px = -hz, pz = hx;                                   // vuông góc hướng bay (trên mặt nước)
+      const sp = Math.hypot(vout.x, vout.y, vout.z);
+      const sun = BM_SUN.value, sh = Math.hypot(sun.x, sun.z) || 1;
+      const shade = (dx, dz) => { const b = 0.82 + 0.18 * (0.5 + 0.5 * (dx * sun.x + dz * sun.z) / sh); return [0.9 * b, 0.94 * b, 0.97 * b]; };
+      const L = (micro ? 5 : 30) * sk;                           // chiều dài rãnh rạch nước trước khi bật lên
+      // hai cánh nước chữ V: bắn xiên lên & ra hai bên dọc theo rãnh, cánh sau (gần chỗ bật) cao & dày hơn
+      const nV = micro ? 8 : Math.round(64 * sk);
+      for (let i = 0; i < nV; i++) {
+        const f = Math.random(), side = i % 2 ? 1 : -1, w = rand(25, 75) * sk * (0.5 + 0.5 * f);
+        const fw = Math.min(140, sp * 0.1) * rand(0.3, 0.9);
+        this.smoke.add({ x: x - hx * L * (1 - f) + px * side * rand(0, 2), y: wy + 0.3, z: z - hz * L * (1 - f) + pz * side * rand(0, 2), sinkY: wy, splash: !micro,
+          vx: hx * fw + px * side * w, vy: rand(22, 65) * sk * (0.45 + 0.55 * f), vz: hz * fw + pz * side * w,
+          size: rand(2.6, 5.5) * sk, grow: 4 * sk, drag: 1, grav: GRAV, life: rand(1.1, 1.9), alpha: 0.88, fadeIn: 0.01, fadePow: 0.9,
+          c0: shade(px * side, pz * side), cell: 2, delay: f * 0.04 });
+      }
+      // chùm nước bị đạn kéo theo: tung cao & chếch về phía trước ngay chỗ đạn bật khỏi mặt nước ("đuôi gà")
+      for (let i = 0; i < (micro ? 5 : Math.round(30 * sk)); i++) {
+        const fw = Math.min(220, sp * 0.18) * rand(0.3, 1);
+        this.smoke.add({ x: x + rand(-1.5, 1.5), y: wy + 0.5, z: z + rand(-1.5, 1.5), sinkY: wy, splash: !micro,
+          vx: hx * fw + rand(-10, 10), vy: rand(30, 85) * sk, vz: hz * fw + rand(-10, 10),
+          size: rand(3, 6) * sk, grow: 6 * sk, drag: 1.6, grav: GRAV, life: rand(1.2, 2), alpha: 0.8, fadeIn: 0.01, fadePow: 0.9, c0: shade(hx, hz), cell: 2, delay: rand(0, 0.04) });
+      }
+      // vệt bọt trắng dọc rãnh nước còn lại vài giây
+      if (!micro) for (let i = 0; i < 14; i++) {
+        const f = i / 13;
+        this.smoke.add({ x: x - hx * L * (1 - f) + rand(-1, 1), y: wy + 0.4, z: z - hz * L * (1 - f) + rand(-1, 1), floorY: wy,
+          vx: hx * 6 + rand(-2, 2), vy: 0, vz: hz * 6 + rand(-2, 2), size: rand(3, 5) * sk, grow: 2.5 * sk, drag: 1.5, grav: 0,
+          life: rand(3, 5), alpha: 0.45, fadeIn: 0.15, fadePow: 1.4, c0: [0.92, 0.95, 0.96], cell: 2, delay: 0.1 + f * 0.05 });
+      }
+      this.addWaterWaves(x, wy, z, micro ? 0.08 : k * 0.25, micro, false, 0);
+      if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('waterSkip', { x, y: wy, z }, micro ? 0.45 : 0.6 + 0.4 * sk, { bullet: micro });
+    }
+
     // Hơi nước bốc lên từ chỗ lửa / kim loại nóng chạm nước: làn hơi trắng mỏng, bốc nhanh rồi tan (không phải khói đen)
     steamWisp(x, y, z, k = 1) {
       this.smoke.add({ x: x + rand(-1, 1), y, z: z + rand(-1, 1), vx: rand(-3, 3), vy: rand(8, 18) * Math.sqrt(k), vz: rand(-3, 3),

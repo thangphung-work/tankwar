@@ -152,7 +152,7 @@ SoundEngine.mixin(class {
       cookoff: 0.25, cookoffSmall: 0.3, era: 0.3, fuel: 0.2, flare: 0.22, collapse: 0.11, turretLand: 0.08, metalCrush: 0.25,
       tire: 0.2, trackSnap: 0.35, concrete: 0.3, treeFall: 0.25, armorPlate: 0.35, snap: 0.5, debris: 0.45, debrisLand: 0.45, debrisHit: 0.42, debrisScrape: 0.3,
       masonry: 0.3, adobe: 0.3, woodBreak: 0.32, sheetMetal: 0.26, rockSplit: 0.25, leafStrip: 0.35, slabImpact: 0.14, splashBig: 0.12,
-      apsFire: 0.3, apsKill: 0.22, slat: 0.4, fireExt: 0.45, camoRustle: 0.5, steamDouse: 0.4
+      apsFire: 0.3, apsKill: 0.22, slat: 0.4, fireExt: 0.45, camoRustle: 0.5, steamDouse: 0.4, waterSkip: 0.35
     };
     const out = this.voice({ gain: sp.gain * (LEVEL[kind] || 1), lowpass: sp.lowpass, wet: Math.min(0.95, sp.wet + 0.08), pan: sp.pan });
     if (mask) {
@@ -255,6 +255,17 @@ SoundEngine.mixin(class {
         this.burst(out, t + 0.01, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, gain: 0.6 * k, attack: 0.003, dur: 0.12 });
         this.burst(out, t + 0.015, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: inside ? 2400 : 900, freqEnd: inside ? 1500 : 600, sweep: 1.4, Q: 0.6, gain: 0.8 * k, attack: 0.02, dur: 1.6 });
         this.burst(out, t + 0.02, { filter: 'highpass', freq: inside ? 4200 : 2000, gain: 0.35 * k * hi, attack: 0.03, dur: 1.2 });
+        break;
+      }
+      case 'waterSkip': {
+        // Đạn lướt nảy trên mặt nước: "CHÁT" đanh của mặt nước bị đập dẹt, tiếng nước xé "xoẹt" ngắn,
+        // rồi đạn bật đi rít vút (đạn súng rít cao, đạn pháo trầm hơn); bụi nước lộp độp rơi lại
+        const small = !!(opts && opts.bullet);
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: small ? 2600 : 1500, Q: 1.1, drive: 2, gain: 0.9 * k, attack: 0.001, dur: small ? 0.05 : 0.09 });
+        if (!small) this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, gain: 0.7 * k, attack: 0.002, dur: 0.18 });
+        this.burst(out, t + 0.01, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3200, freqEnd: 1600, sweep: 0.25, Q: 0.7, gain: 0.45 * k, attack: 0.01, dur: 0.3 });
+        if (this.playRicochet && (small || near > 0.2)) this.playRicochet(out, t + 0.02);
+        for (let i = 0; i < (small ? 3 : 8); i++) this.burst(out, t + 0.35 + Math.random() * 0.8, { filter: 'bandpass', freq: 1800 + Math.random() * 3500, Q: 4, gain: (0.03 + Math.random() * 0.05) * k, attack: 0.001, dur: 0.03 });
         break;
       }
       case 'steamDouse': {

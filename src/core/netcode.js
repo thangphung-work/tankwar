@@ -817,6 +817,9 @@
       if (terrain && typeof terrain.getElevationAt === 'function') {
         const g = terrain.getElevationAt(s.x, s.z);
         if (s.y <= g + 2) stop = true;
+        // tới mặt nước: dừng bù trễ để vòng bay thật xử lý (đạn đâm xuống nước / nảy) giống máy bắn
+        const wl = typeof terrain.waterSurfaceAt === 'function' ? terrain.waterSurfaceAt(s.x, s.z) : null;
+        if (wl !== null && wl !== undefined && s.y <= wl + 2) stop = true;
         if (s.ammoType === 'CLUSTER' && s.vy < -12 && (s.y - g) <= 175) stop = true;
       }
       if (stop) {
