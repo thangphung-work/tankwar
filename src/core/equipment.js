@@ -831,6 +831,26 @@
       // đuôi xe: lá rủ kín cửa sau (cửa sau không có kính)
       for (let x = -6.6; x <= 6.61; x += R(2.8, 3.4)) { drape(fh, x, 13.4, 18.6, 0, R(3.4, 4.2), R(3.2, 4)); drape(fh, x + 1, 9.6, 18.8, 0, R(3, 3.8), R(2.6, 3.2)); }
       wheelCurtain(9.3, 9.4, -16.4, 16.6);
+      // khoang máy phía trước: bụi lá thấp trên nắp máy (đỉnh lá < mép dưới kính chắn gió y ~13.2, không có ngọn / cành
+      // nhô lên che tầm nhìn lái xe), phủ vè trước; chừa đèn pha (x ±6.6, z -17.2) và gương chiếu hậu
+      const hoodY = (z) => 10.6 + (z + 17.6) * 0.105;   // nắp máy dốc lên về phía kính
+      const lowBush = (x, y, z, sx, sy, sz) => {
+        cfCur = cfCell(fh, x, y + sy * 0.3, z, Math.max(sx, sz));
+        try {
+          clump(fh, x, y, z, sx, sy, sz);
+          if (rnd() < 0.7) clump(fh, x + R(-0.5, 0.5) * sx, y + sy * 0.25, z + R(-0.4, 0.4) * sz, sx * R(0.5, 0.7), sy * 0.6, sz * R(0.5, 0.7), true);
+        } finally { cfCur = -1; }
+      };
+      for (let z = -17.0; z <= -10.2; z += R(1.9, 2.4)) {
+        for (let x = -4.4; x <= 4.41; x += R(2.6, 3.1)) lowBush(x + R(-0.4, 0.4), hoodY(z) - 0.1, z, R(2.2, 2.8), R(0.9, 1.3), R(2.0, 2.6));
+        if (z > -15.2) for (const s of [-1, 1]) lowBush(s * R(7.2, 7.8), 10.2, z, R(2.0, 2.6), R(1.0, 1.4), R(2.0, 2.6));
+      }
+      // lá rủ trùm lưới tản nhiệt & cản trước (giữa 2 đèn pha)
+      for (let x = -3.8; x <= 3.81; x += R(1.8, 2.2)) curtain(fh, x, -19.1, 0, 11.0, 4.6 + R(0, 0.8), [R(-0.4, 0.4), -0.45], R(2.6, 3.1));
+      for (let x = -4.4; x <= 4.41; x += R(2.4, 2.9)) curtain(fh, x, -19.8, 0, 6.6, 1.6 + R(0, 0.8), [R(-0.4, 0.4), -0.4], R(3.0, 3.6));
+      // trước 2 bánh lái (dưới đèn pha): rèm lá tới sát đất
+      for (const s of [-1, 1]) curtain(fh, s * 6.9, -19.5, 0, 9.4, 1.0 + R(0, 0.5), [s * 0.3, -0.4], R(3.4, 4.0));
+      for (const s of [-1, 1]) curtain(fh, s * 5.0, -19.3, 0, 9.8, 3.4 + R(0, 0.8), [s * 0.3, -0.4], R(2.0, 2.4));
     } else if (u.tankType === 'ARTILLERY') {
       // Arbalest: nóc + diềm cabin (chừa kính chắn gió, kính cửa, đèn và hành lang nòng gác trên giá khóa),
       // lưới tản nhiệt mặt trước, nóc khoang máy (tránh ống xả nóng), sàn trước tháp, sườn sàn rủ trùm bánh
