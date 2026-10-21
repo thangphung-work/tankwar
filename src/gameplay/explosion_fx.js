@@ -1553,15 +1553,32 @@
   const ROCK_G = GRAV, ROCK_VK = Math.sqrt(GRAV / 160);
   // Va chạm mặt đất của mảnh vụn: dưới ~1 m/s thì thôi nảy; ma sát trượt / lăn trên đất (μ ~0,7 -> hãm ~6,9 m/s²)
   const ROCK_REST_V = 12 * ROCK_VK, ROCK_MU = 0.7;
+  // Mảnh bê tông / thép vỡ: tấm dẹt đa giác 5 cạnh không đều, mặt phẳng sắc (không tròn như hòn đá)
+  function makeShardGeometry() {
+    const sh = new THREE.Shape();
+    const pts = [[-0.62, -0.38], [0.18, -0.55], [0.66, -0.12], [0.4, 0.5], [-0.35, 0.44]];
+    pts.forEach(([x, y], i) => (i ? sh.lineTo(x, y) : sh.moveTo(x, y)));
+    sh.closePath();
+    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.42, bevelEnabled: false });
+    g.translate(0, 0, -0.21);
+    // mặt trên hơi nghiêng (vết vỡ không song song)
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) if (pos.getZ(i) > 0) pos.setZ(i, pos.getZ(i) + pos.getX(i) * 0.16 - pos.getY(i) * 0.1);
+    const ng = g.toNonIndexed();
+    ng.computeVertexNormals();
+    g.dispose();
+    return ng;
+  }
+
   class RockLayer {
-    constructor(scene, max, color = 0x8a7a63) {
+    constructor(scene, max, color = 0x8a7a63, opts = {}) {
       this.max = max;
       this.rocks = [];
       // Màu riêng từng mảnh (đất / bê tông / thép) qua instanceColor; material trắng
       const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.02, flatShading: true });
       this.material = mat;
       this.base = new THREE.Color(color);
-      this.mesh = new THREE.InstancedMesh(makeRockGeometry(), mat, max);
+      this.mesh = new THREE.InstancedMesh(opts.shard ? makeShardGeometry() : makeRockGeometry(), mat, max);
       this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3).fill(1), 3);
       this.mesh.count = 0;
       this.mesh.castShadow = true;
@@ -4214,7 +4231,7 @@
       this.screen = new ParticleLayer(scene, 1800, false);
       this.fire = new ParticleLayer(scene, 1400, true);
       this.rocks = new RockLayer(scene, 360, 0x7d6a52);       // đất đá (màu theo bản đồ)
-      this.hardRocks = new RockLayer(scene, 200, 0x6e6c68);   // bê tông / mảnh kim loại
+      this.hardRocks = new RockLayer(scene, 200, 0x6e6c68, { shard: true });   // bê tông / mảnh kim loại: mảnh vỡ góc cạnh
       this.hardRocks.dustLayer = this.smoke;                  // tảng bê tông đập đất tung bụi
       this.bits = new RockLayer(scene, 600, 0x7d6a52);        // vụn nhỏ do đạn súng (cục đất, vụn bê tông, dằm gỗ): bể riêng, không đẩy mất đất đá của đạn pháo
       this.glass = new GlassLayer(scene, 700);                // mảnh kính cửa sổ vỡ

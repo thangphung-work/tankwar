@@ -6701,7 +6701,10 @@ const Destructibles = (() => {
       this.kitC = new FractureKit(parent, conc, cracked, cap, { maxCustom: 100 });      // khối lành
       this.kitK = new FractureKit(parent, cracked, cracked, cap, { maxCustom: 100 });   // khối đã nứt toác
       // đống vụn: sạn / cục nhỏ (khối đa diện) + mảnh vừa / tảng lớn góc cạnh (hộp méo), vân sạn thô, mặt phẳng từng mảng
-      this.rubblePool = new Pool(parent, fracUV(jitter(new THREE.DodecahedronGeometry(0.5, 0), 0.3, 7)), cracked, cap * 10, { color: true });
+      // sạn: khối hộp dẹt méo (mặt phẳng sắc như bê tông vỡ) — trước là khối 12 mặt tròn trịa trông như hòn đá cuội
+      this.rubblePool = new Pool(parent, fracUV(jitter(new THREE.BoxGeometry(1, 0.62, 0.86).toNonIndexed(), 0.32, 7)), cracked, cap * 10, { color: true });
+      // màu vụn theo bê tông của công trình (BunkerSet bê tông cũ sẫm màu đặt lại)
+      this.debrisCol = [0.76, 0.74, 0.7];
       this.chunkPool = new Pool(parent, fracUV(jitter(new THREE.BoxGeometry(1, 1, 1, 2, 2, 2).toNonIndexed(), 0.34, 3)), cracked, cap * 8, { color: true });
       this.blocks = [];
     }
@@ -6945,7 +6948,7 @@ const Destructibles = (() => {
         const s = rand(0.45, 1.1) * (exitSide ? 1 : 0.8);
         const E = new THREE.Vector3(q.x + q.ax * a + nX * sd * off, gy + s * 0.2, q.z + q.az * a + nZ * sd * off);
         const Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3))), Sc = new THREE.Vector3(s * 1.2, s * 0.8, s);
-        const bi = this.rubblePool.add(new THREE.Matrix4().compose(E, Q, Sc), new THREE.Color(0.76, 0.74, 0.7).multiplyScalar(rand(0.74, 1.04)));
+        const bi = this.rubblePool.add(new THREE.Matrix4().compose(E, Q, Sc), new THREE.Color(...this.debrisCol).multiplyScalar(rand(0.74, 1.04)));
         const a0 = al + vr(-0.6, 0.6);
         this.launch(fx, this.rubblePool, bi, E, Q, Sc, new THREE.Vector3(q.x + q.ax * a0 + nX * sd * W, y + vr(-0.6, 0.6), q.z + q.az * a0 + nZ * sd * W),
           { vy: exitSide ? vr(0, 8) * back : vr(0, 4), e: 0.3, turns: vr(1, 2.5), delay: vr(0, 0.04) });
@@ -7066,7 +7069,7 @@ const Destructibles = (() => {
         const bp = new THREE.Vector3(q.x + q.ax * al - q.az * side * off, gy + sy * (flat ? 0.3 : 0.22), q.z + q.az * al + q.ax * side * off);
         const rot = flat ? new THREE.Euler(rand(-0.4, 0.4), rand(0, 6.28), rand(-0.4, 0.4)) : new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3));
         const quat = new THREE.Quaternion().setFromEuler(rot), scl = new THREE.Vector3(sx, sy, sz);
-        const bi = pool.add(new THREE.Matrix4().compose(bp, quat, scl), new THREE.Color(0.76, 0.74, 0.7).multiplyScalar(rand(0.74, 1.04)));
+        const bi = pool.add(new THREE.Matrix4().compose(bp, quat, scl), new THREE.Color(...this.debrisCol).multiplyScalar(rand(0.74, 1.04)));
         if (bi >= 0 && bump) bumps.push({ x: bp.x, z: bp.z, r: Math.max(sx, sz) * 0.5, base: gy, top: gy + sy * 0.75 });
         if (bi < 0 || !fx) return;
         const aS = Math.max(-0.45, Math.min(0.45, al / q.len * vr(0.6, 1))) * q.len, w = q.thick * vr(0.1, 0.5) * side;
@@ -7091,7 +7094,7 @@ const Destructibles = (() => {
         put(this.rubblePool, s * 1.2, s * 0.8, s, 1.6, false, false, 2);
       }
       // Mảnh văng bay xa (ngoài đống vụn): vận tốc thật theo sức nổ — sạn 4-45 m/s, mảnh to chậm hơn; nhiều sạn nhỏ, ít mảnh to
-      const dc = [0.74, 0.72, 0.68], fxX = -q.az * far, fxZ = q.ax * far;
+      const dc = this.debrisCol.map(v => v * 0.97), fxX = -q.az * far, fxZ = q.ax * far;
       const sv = Math.sqrt(vol), sBig = Math.min(1.0, 0.22 + Math.cbrt(vol) * 0.035), nD = Math.min(4, Math.round(vol / 300));
       if (kick > 0.1) {
         // phụt theo hướng sóng nổ (ra phía sau tường), ít mảnh bóc lở bật ngược về phía điểm nổ
@@ -7225,6 +7228,7 @@ const Destructibles = (() => {
       this.groundAt = groundAt;
       this.items = [];
       this.S = new BlockStructure(this.group, list.length * 60 + 10);
+      this.S.debrisCol = [0.5, 0.47, 0.43];   // boong-ke bê tông cũ sẫm, loang gỉ: vụn cùng tông (không trắng như đá rải)
       const unit = new THREE.BoxGeometry(1, 1, 1);
       const conc = new THREE.MeshStandardMaterial({ map: concreteTex(), roughness: 0.92, metalness: 0.02 });
       this.roofPool = new Pool(this.group, unit, conc, list.length * 12, { color: true });
