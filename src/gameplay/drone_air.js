@@ -38,6 +38,11 @@ const DroneAir = (() => {
       this._droneFalls = [];
       (this._droneSmoke || []).forEach(p => { drop(p.m); p.m.material.dispose(); });
       this._droneSmoke = [];
+      (this._droneFalls || []).forEach(f => (f.flames || []).forEach(drop));
+      (this._droneDebris || []).forEach(d => { drop(d.m); if (d.flame) drop(d.flame); });
+      this._droneDebris = [];
+      if (this._droneFlames) this._droneFlames.forEach(drop);
+      this._droneFlames = new Map();
       this._airList = [];
       this._airAim = null;
       this._droneSentCode = undefined;
@@ -98,6 +103,7 @@ const DroneAir = (() => {
         if (!B.onAirNear) B.onAirNear = (s, T, d) => this.onDroneNearMiss(s, T.dr, d);
       }
       this.updateDroneDocks(dt);
+      this.updateDroneDamageFX(dt, list);
       this.updateDroneFalls(dt);
       this.sendDroneState(dt);
       this.flushDroneHits();
@@ -342,17 +348,65 @@ const DroneAir = (() => {
       return true;
     },
 
-    // ---------- DRONE RƠI ----------
+    // ---------- DRONE BỊ BẮN HỎNG KHI ĐANG BAY: thân dưới 60% bốc khói, dưới 35% bắt lửa (máy khác thấy theo máu
+    // drone trong gói mạng). Drone mình khi đang xem qua camera của nó: không vẽ (camera nằm trong drone) ----------
+    updateDroneDamageFX(dt, list) {
+      const FL = this._droneFlames || (this._droneFlames = new Map());
+      const viewing = this._sight && this._sight.arty, t = performance.now() / 1000;
+      const seen = this._dmgSeen || (this._dmgSeen = new Set());
+      seen.clear();
+      for (const dr of list) {
+        const hp = dr.hp === undefined ? 1 : dr.hp;
+        if (hp >= 0.6 || (dr.key === 'own' && viewing) || (dr.key !== 'own' && !dr.seen)) continue;
+        seen.add(dr.key);
+        const yaw = dr.yaw || 0, ox = Math.sin(yaw) * 1.2, oz = Math.cos(yaw) * 1.2;   // đuôi drone (khoang pin)
+        dr._puff = (dr._puff || 0) - dt;
+        if (dr._puff <= 0) { dr._puff = hp < 0.35 ? 0.06 : 0.12; this.droneSmokePuff(dr.x + ox, dr.y + 2, dr.z + oz, hp < 0.35 ? 0.9 : 0.55); }
+        if (hp < 0.35 && typeof ReconDrone !== 'undefined' && ReconDrone.buildFlame) {
+          let f = FL.get(dr.key);
+          if (!f) { f = ReconDrone.buildFlame(); this.scene.add(f); FL.set(dr.key, f); }
+          f.position.set(dr.x + ox, dr.y + 1.9, dr.z + oz);
+          ReconDrone.animateFlame(f, t, 0.75);
+        }
+      }
+      FL.forEach((f, k) => { if (!seen.has(k)) f.visible = false; });
+    },
+
+    // ---------- DRONE BỊ BẮN NỔ: pin bùng cháy, vỡ tung mảnh (cánh quạt, tay đòn, mô-tơ, pin, vỏ), thân rơi xoay vừa
+    // cháy vừa kéo khói, chạm đất thì cháy âm ỉ rồi chỉ còn khói ----------
     startDroneFall(team, x, y, z, vx, vz, yaw, own) {
       if (typeof ReconDrone === 'undefined') return;
       const m = ReconDrone.build(team);
       m.position.set(x, y, z);
       m.rotation.set(0, yaw, 0);
       this.scene.add(m);
+      // 2 cánh quạt bị bắn văng khỏi xác (bay ra thành mảnh vỡ)
+      const rot = m.userData.rotors || [];
+      const lostRotors = [Math.floor(Math.random() * 4)];
+      lostRotors.push((lostRotors[0] + 1 + Math.floor(Math.random() * 3)) % 4);
+      const flames = [];
+      if (ReconDrone.buildFlame) for (let i = 0; i < 2; i++) { const fl = ReconDrone.buildFlame(); this.scene.add(fl); flames.push(fl); }
       const F = this._droneFalls || (this._droneFalls = []);
-      F.push({ m, x, y, z, vx: vx * 0.6, vy: 20, vz: vz * 0.6, spin: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 4), tumble: 1.5 + Math.random() * 2, t: 0, puff: 0, own, ground: false, gT: 0 });
+      F.push({ m, x, y, z, vx: vx * 0.6, vy: 20, vz: vz * 0.6, spin: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 4), tumble: 1.5 + Math.random() * 2, t: 0, puff: 0, own, ground: false, gT: 0, flames });
+      // mảnh vỡ văng tung tóe
+      const kinds = ['prop', 'prop', 'arm', 'motor', 'battery', 'plate', 'shard', 'shard', 'shard', 'skid'];
+      kinds.forEach((kind, i) => {
+        let px = x, pz = z;
+        if (kind === 'prop' && rot[lostRotors[i]]) {
+          const h = rot[lostRotors[i]].hub;
+          h.visible = false;
+          const c = Math.cos(yaw), sn = Math.sin(yaw);
+          px = x + h.position.x * c + h.position.z * sn; pz = z - h.position.x * sn + h.position.z * c;
+        }
+        this.spawnDroneDebris(kind, px, y + C.CENTER_Y, pz, vx, vz, kind === 'battery');
+      });
       const fx = this.ballistics && this.ballistics.fx;
-      try { if (fx && fx.spawn) fx.spawn(x, y + C.CENTER_Y, z, 'CLUSTER_SUBMUNITION', 'AIR', {}); } catch (e) { /* hiệu ứng phụ */ }
+      try {
+        if (fx && fx.spawn) {
+          fx.spawn(x, y + C.CENTER_Y, z, 'INCENDIARY', 'AIR', {});            // pin lithium bùng cháy
+          fx.spawn(x, y + C.CENTER_Y, z, 'CLUSTER_SUBMUNITION', 'AIR', {});   // tia lửa + mảnh văng
+        }
+      } catch (e) { /* hiệu ứng phụ */ }
       const P = this.player, SE = window.soundEngine;
       if (P && SE && SE.playExplosionAtDistance && !(own && this._sight && this._sight.arty)) {
         SE.playExplosionAtDistance(Math.hypot(P.x - x, (P.y || 0) - y, P.z - z), 'AIRBURST', 'CLUSTER_SUBMUNITION', { x, z });
@@ -360,8 +414,7 @@ const DroneAir = (() => {
     },
 
     updateDroneFalls(dt) {
-      const F = this._droneFalls;
-      if (!F || !F.length) return;
+      const F = this._droneFalls || (this._droneFalls = []);
       const T = this.terrain, G = 78, fx = this.ballistics && this.ballistics.fx;
       for (let i = F.length - 1; i >= 0; i--) {
         const f = F[i], m = f.m;
@@ -375,8 +428,9 @@ const DroneAir = (() => {
           m.rotation.x += f.tumble * dt * 0.6;
           m.rotation.z += f.tumble * dt;
           ReconDrone.animate(m, dt, Math.max(0, 0.6 - f.t * 0.4));
-          // vệt khói đen kéo theo
-          if ((f.puff -= dt) <= 0) { f.puff = 0.05; this.droneSmokePuff(f.x, f.y + 2, f.z, 1); }
+          // vệt khói đen kéo theo, lửa bốc ngược lên khi rơi
+          if ((f.puff -= dt) <= 0) { f.puff = 0.04; this.droneSmokePuff(f.x, f.y + 2, f.z, 1.1); }
+          this.placeFallFlames(f, 1.0);
           const gy = T ? T.getElevationAt(f.x, f.z) : 0;
           if (f.y <= gy) {
             f.ground = true;
@@ -390,8 +444,11 @@ const DroneAir = (() => {
           }
         } else {
           f.gT += dt;
-          if (f.gT < 6 && (f.puff -= dt) <= 0) { f.puff = 0.25; this.droneSmokePuff(f.x, f.y + 2, f.z, 0.7); }
+          // xác cháy âm ỉ ~8 s (lửa nhỏ dần), khói bốc tới ~12 s
+          this.placeFallFlames(f, f.gT < 6 ? 1.1 : Math.max(0, 1.1 * (1 - (f.gT - 6) / 3)));
+          if (f.gT < 12 && (f.puff -= dt) <= 0) { f.puff = f.gT < 8 ? 0.15 : 0.35; this.droneSmokePuff(f.x, f.y + 2, f.z, 0.8); }
           if (f.gT > 15) {
+            (f.flames || []).forEach(fl => this.scene.remove(fl));
             this.scene.remove(m);
             // hình khối dùng chung giữa các drone (recon_drone.js): chỉ hủy vật liệu cháy sém đã nhân bản riêng
             m.traverse(o => { if (o.isMesh && o.userData.ownMat) o.material.dispose(); });
@@ -402,19 +459,91 @@ const DroneAir = (() => {
         }
         // drone mình đang rơi khi màn hình drone còn mở: camera nằm trong drone -> ẩn mô hình
         m.visible = !(f.own && this._sight && this._sight.arty);
+        if (!m.visible) (f.flames || []).forEach(fl => { fl.visible = false; });
       }
+      this.updateDroneDebris(dt);
       this.updateDroneSmoke(dt);
+    },
+
+    // 2 ngọn lửa trên xác (khoang pin + thân), luôn bốc thẳng lên
+    placeFallFlames(f, k) {
+      const t = performance.now() / 1000;
+      (f.flames || []).forEach((fl, i) => {
+        fl.position.set(f.x + (i ? 0.8 : -0.5), f.y + (f.ground ? 0.6 : 1.6) + i * 0.3, f.z + (i ? -0.4 : 0.6));
+        ReconDrone.animateFlame(fl, t + i * 3.7, k * (i ? 0.75 : 1));
+      });
+    },
+
+    // mảnh vỡ: văng ra theo vận tốc drone + lực nổ, xoay lộn, rơi xuống nảy nhẹ rồi nằm im; pin vẫn cháy một lúc
+    spawnDroneDebris(kind, x, y, z, vx, vz, burning) {
+      if (!ReconDrone.buildDebris) return;
+      const L = this._droneDebris || (this._droneDebris = []);
+      if (L.length > 60) return;
+      const m = ReconDrone.buildDebris(kind);
+      m.position.set(x, y, z);
+      m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+      this.scene.add(m);
+      const a = Math.random() * Math.PI * 2, sp = 25 + Math.random() * 45;
+      let flame = null;
+      if (burning && ReconDrone.buildFlame) { flame = ReconDrone.buildFlame(); this.scene.add(flame); }
+      L.push({ m, flame, x, y, z, vx: vx * 0.5 + Math.cos(a) * sp, vy: 15 + Math.random() * 35, vz: vz * 0.5 + Math.sin(a) * sp,
+        rx: (Math.random() - 0.5) * 18, ry: (Math.random() - 0.5) * 18, rz: (Math.random() - 0.5) * 18, t: 0, rest: false, bounce: 0 });
+    },
+
+    updateDroneDebris(dt) {
+      const L = this._droneDebris;
+      if (!L || !L.length) return;
+      const T = this.terrain, t = performance.now() / 1000;
+      for (let i = L.length - 1; i >= 0; i--) {
+        const d = L[i], m = d.m;
+        d.t += dt;
+        if (!d.rest) {
+          d.vy -= 78 * dt;
+          d.vx *= 1 - dt * 0.6; d.vz *= 1 - dt * 0.6;
+          d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+          m.rotation.x += d.rx * dt; m.rotation.y += d.ry * dt; m.rotation.z += d.rz * dt;
+          const gy = T ? T.getElevationAt(d.x, d.z) : 0;
+          if (d.y <= gy + 0.15) {
+            d.y = gy + 0.15;
+            if (d.bounce < 2 && d.vy < -12) { d.vy *= -0.3; d.vx *= 0.5; d.vz *= 0.5; d.rx *= 0.5; d.rz *= 0.5; d.bounce++; }
+            else { d.rest = true; m.rotation.x = Math.round(m.rotation.x / Math.PI) * Math.PI; m.rotation.z = Math.round(m.rotation.z / Math.PI) * Math.PI; }
+          }
+          m.position.set(d.x, d.y, d.z);
+          if (d.t < 2.5 && Math.random() < dt * 12) this.droneSmokePuff(d.x, d.y, d.z, d.flame ? 0.6 : 0.3);
+        }
+        if (d.flame) { d.flame.position.set(d.x, d.y, d.z); ReconDrone.animateFlame(d.flame, t + i, d.t < 6 ? 0.6 : Math.max(0, 0.6 * (1 - (d.t - 6) / 2))); }
+        if (d.t > 14) {
+          this.scene.remove(m);
+          if (d.flame) this.scene.remove(d.flame);
+          L.splice(i, 1);
+        }
+      }
+    },
+
+    // khói: mảng khói mềm (sprite tròn mờ mép, luôn quay về camera) — đen đặc lúc mới nhả, loang rộng, nhạt dần, bốc lên
+    droneSmokeTex() {
+      if (this._droneSmokeTex || typeof document === 'undefined') return this._droneSmokeTex;
+      const S = 64, cv = document.createElement('canvas');
+      cv.width = cv.height = S;
+      const x = cv.getContext('2d'), gr = x.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+      gr.addColorStop(0, 'rgba(255,255,255,1)');
+      gr.addColorStop(0.45, 'rgba(255,255,255,0.7)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = gr;
+      x.fillRect(0, 0, S, S);
+      this._droneSmokeTex = new THREE.CanvasTexture(cv);
+      return this._droneSmokeTex;
     },
 
     droneSmokePuff(x, y, z, k) {
       const L = this._droneSmoke || (this._droneSmoke = []);
-      if (L.length > 90) return;
-      const geo = this._droneSmokeGeo || (this._droneSmokeGeo = new THREE.SphereGeometry(1, 6, 5));
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2a2826, transparent: true, opacity: 0.55, depthWrite: false }));
-      m.position.set(x + (Math.random() - 0.5) * 2, y, z + (Math.random() - 0.5) * 2);
-      m.scale.setScalar(2.2 * k);
+      if (L.length > 160) return;
+      const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.droneSmokeTex(), color: 0x1e1c1a, transparent: true, opacity: 0.7, depthWrite: false }));
+      m.position.set(x + (Math.random() - 0.5) * 0.6, y, z + (Math.random() - 0.5) * 0.6);
+      m.scale.setScalar(1.2 * k);
+      m.material.rotation = Math.random() * 6.28;
       this.scene.add(m);
-      L.push({ m, life: 1.4, max: 1.4, k });
+      L.push({ m, life: 1.8, max: 1.8, k, drift: (Math.random() - 0.5) * 2 });
     },
 
     updateDroneSmoke(dt) {
@@ -425,9 +554,12 @@ const DroneAir = (() => {
         p.life -= dt;
         if (p.life <= 0) { this.scene.remove(p.m); p.m.material.dispose(); L.splice(i, 1); continue; }
         const a = 1 - p.life / p.max;
-        p.m.scale.setScalar((2.2 + a * 7) * p.k);
-        p.m.position.y += dt * 6;
-        p.m.material.opacity = 0.55 * (1 - a);
+        p.m.scale.setScalar((1.2 + a * 4.5) * p.k);
+        p.m.position.y += dt * (5 - a * 2);
+        p.m.position.x += p.drift * dt;
+        // đen đặc -> xám nhạt dần rồi tan
+        p.m.material.opacity = 0.7 * (1 - a) * (1 - a * 0.3);
+        p.m.material.color.setHex(a < 0.3 ? 0x1e1c1a : 0x3a3734);
       }
     },
 

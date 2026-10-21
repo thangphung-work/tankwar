@@ -402,7 +402,67 @@ const ReconDrone = (() => {
     U.lamp.visible = status !== 'charging' || (U.t % 1) < 0.6;
   }
 
-  return { PAD, DOCK, CENTER_Y, build, animate, buildDock, animateDock };
+  // ---------- MẢNH VỠ khi drone bị bắn nổ: cánh quạt, đoạn tay đòn, mô-tơ, pin, mảnh vỏ giáp (hình dùng chung) ----------
+  let DEBRIS = null;
+  function debrisKinds() {
+    if (DEBRIS) return DEBRIS;
+    const T = template(), M = T.M;
+    const one = (geo, mat) => { const B = batcher(); B.add(geo, mat); return B.merge(); };
+    const motor = batcher();
+    motor.add(new THREE.CylinderGeometry(0.33, 0.35, 0.3, 10), M.metal, [0, 0.1, 0]);
+    motor.add(roundedSlab(chamferOutline(0.8, 0.8, 0.18, 1), 0.2, 0.03), M.dark, [0, -0.15, 0]);
+    DEBRIS = {
+      prop: T.blades[1],
+      arm: one(new THREE.BoxGeometry(0.26, 0.26, 1.7), M.carbon),
+      motor: motor.merge(),
+      battery: one(roundedSlab(chamferOutline(1.3, 1.0, 0.12, 1), 0.5, 0.04), M.dark),
+      plate: one(new THREE.BoxGeometry(0.9, 0.08, 0.7), M.shell),
+      shard: one(new THREE.BoxGeometry(0.45, 0.06, 0.3), M.shell),
+      skid: one(new THREE.BoxGeometry(0.16, 0.14, 1.8), M.dark)
+    };
+    return DEBRIS;
+  }
+
+  /** Một mảnh vỡ (Group) loại kind: 'prop' | 'arm' | 'motor' | 'battery' | 'plate' | 'shard' | 'skid' */
+  function buildDebris(kind) {
+    const g = new THREE.Group();
+    meshes(debrisKinds()[kind] || debrisKinds().shard, g, true);
+    return g;
+  }
+
+  // ---------- LỬA (drone bốc cháy / xác cháy): ngọn lửa hình nón cộng sáng, ngoài cam trong vàng ----------
+  let FLAME = null;
+  function flameKit() {
+    if (FLAME) return FLAME;
+    const cone = (r, h) => { const g = new THREE.ConeGeometry(r, h, 7, 1, true); g.translate(0, h / 2, 0); return g; };
+    // màu đặc (không cộng sáng): giữa ban ngày trên nền cát / trời sáng lửa vẫn rực, không bị trắng bệch
+    const mat = (c, op) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide });
+    FLAME = { outer: cone(0.75, 2.4), inner: cone(0.42, 1.4), core: new THREE.SphereGeometry(0.6, 8, 6), mOut: mat(0xff4a0a, 0.8), mIn: mat(0xffc21a, 0.95), mCore: mat(0xffe27a, 0.95) };
+    return FLAME;
+  }
+
+  function buildFlame() {
+    const K = flameKit(), g = new THREE.Group();
+    const o = new THREE.Mesh(K.outer, K.mOut), i = new THREE.Mesh(K.inner, K.mIn), c = new THREE.Mesh(K.core, K.mCore);
+    c.scale.set(1, 0.6, 1);
+    o.renderOrder = 1; i.renderOrder = 2; c.renderOrder = 2;
+    for (const m of [o, i, c]) { m.userData.shared = true; g.add(m); }
+    g.userData = { o, i, seed: Math.random() * 100 };
+    return g;
+  }
+
+  /** k: cỡ lửa (0 = tắt); ngọn lửa luôn bốc thẳng lên (đặt hướng theo thế giới, không theo drone đang lộn nhào) */
+  function animateFlame(f, t, k) {
+    f.visible = k > 0.02;
+    if (!f.visible) return;
+    const U = f.userData, a = t * 11 + U.seed;
+    const fl = 0.75 + 0.25 * Math.sin(a) * Math.sin(a * 1.7 + 1.3);
+    U.o.scale.set(k * (0.9 + 0.15 * Math.sin(a * 2.3)), k * fl * 1.15, k * (0.9 + 0.15 * Math.cos(a * 1.9)));
+    U.i.scale.set(k, k * (0.7 + 0.3 * Math.sin(a * 2.9 + 0.5)), k);
+    U.o.rotation.y = a * 0.3;
+  }
+
+  return { PAD, DOCK, CENTER_Y, build, animate, buildDock, animateDock, buildDebris, buildFlame, animateFlame };
 })();
 
 if (typeof window !== 'undefined') window.ReconDrone = ReconDrone;

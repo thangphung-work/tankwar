@@ -33,11 +33,15 @@
   <button data-k="lid">Nhả kẹp càng (cất cánh)</button>
   <button data-k="team">Phe: XANH</button>
   <button data-k="many">Thử tải: 20 drone</button>
+  <button data-k="hurt">Thân hỏng: nguyên vẹn</button>
+  <button data-k="kill">Bắn nổ drone</button>
   <div id="stats"></div>
 </div>
 <div id="hint">Kéo chuột: xoay · Lăn chuột: gần / xa · Chuột phải kéo: nâng / hạ điểm nhìn</div>
 <script src="three.min.js"></script>
 <script src="src/entities/recon_drone.js"></script>
+<script>window.ArtilleryGame3D = window.ArtilleryGame3D || {};</script>
+<script src="src/gameplay/drone_air.js"></script>
 <script>
 (() => {
   // Xem mô hình drone + đế sạc không cần vào trận; số lượt vẽ / tam giác để đo độ tối ưu (8 đơn vị = 1 m)
@@ -68,7 +72,10 @@
 
   const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 800);
   const view = { yaw: -2.3, pitch: 0.35, dist: 14, y: 1.6 };
-  const S = { spin: false, dock: false, lid: false, team: 'BLUE', many: false };
+  const S = { spin: false, dock: false, lid: false, team: 'BLUE', many: false, hp: 1 };
+  // hiệu ứng hỏng / cháy / vỡ dùng đúng code trong game (drone_air.js) trên một "game" giả tối giản
+  const G = Object.assign({ scene, terrain: { getElevationAt: () => 0 }, ballistics: null, player: null, units: [], _sight: null }, DroneAir.methods);
+  let deadT = 0;
   let root = null, drones = [], dock = null;
 
   function rebuild() {
@@ -105,6 +112,8 @@
       const k = b.dataset.k;
       b.classList.toggle('on', k === 'team' ? S.team === 'RED' : !!S[k]);
       if (k === 'team') b.textContent = 'Phe: ' + (S.team === 'RED' ? 'ĐỎ' : 'XANH');
+      if (k === 'hurt') { b.textContent = 'Thân hỏng: ' + (S.hp > 0.6 ? 'nguyên vẹn' : S.hp > 0.3 ? 'bốc khói (50%)' : 'bốc cháy (25%)'); b.classList.toggle('on', S.hp < 1); }
+      if (k === 'kill') b.classList.toggle('on', deadT > 0);
     });
   }
 
@@ -112,6 +121,16 @@
     const b = e.target.closest('button');
     if (!b) return;
     const k = b.dataset.k;
+    if (k === 'hurt') { S.hp = S.hp > 0.6 ? 0.5 : S.hp > 0.3 ? 0.25 : 1; syncButtons(); return; }
+    if (k === 'kill') {
+      const d = drones[0];
+      if (!d || deadT > 0) return;
+      const wp = d.getWorldPosition(new THREE.Vector3());
+      d.visible = false;
+      G.startDroneFall(S.team, wp.x, Math.max(wp.y, 9), wp.z, 40, 10, d.rotation.y, false);
+      deadT = 13;
+      return;
+    }
     if (k === 'team') S.team = S.team === 'RED' ? 'BLUE' : 'RED';
     else S[k] = !S[k];
     if (k === 'many' && S.many) S.dock = false;
@@ -160,6 +179,14 @@
       else d.position.y += (0 - d.position.y) * Math.min(1, dt * 4);
     });
     if (dock) ReconDrone.animateDock(dock, dt, S.lid, S.spin && S.lid ? 'out' : 'charging');
+    // drone hỏng: khói / lửa (như drone đang bay trong trận); bắn nổ: rơi, vỡ mảnh, xác cháy — hết thì dựng lại drone
+    const d0 = drones[0];
+    if (d0) {
+      const wp = d0.getWorldPosition(new THREE.Vector3());
+      G.updateDroneDamageFX(dt, d0.visible ? [{ key: 'lab', x: wp.x, y: wp.y, z: wp.z, yaw: d0.rotation.y, hp: S.hp, seen: true }] : []);
+    }
+    G.updateDroneFalls(dt);
+    if (deadT > 0 && (deadT -= dt) <= 0) { deadT = 0; rebuild(); }
     const cp = Math.cos(view.pitch);
     cam.position.set(Math.sin(view.yaw) * cp * view.dist, view.y + Math.sin(view.pitch) * view.dist, Math.cos(view.yaw) * cp * view.dist);
     cam.lookAt(0, view.y, 0);
