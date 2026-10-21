@@ -133,13 +133,15 @@ const Landmarks = (() => {
     if (TEX[key]) return TEX[key];
     const N = 128, c = canvas(N, N), g = c.getContext('2d'), b = canvas(N, N), q = b.getContext('2d');
     for (let i = 0; i < N; i++) {
-      const k = 0.5 + 0.5 * Math.sin(i / period * TAU), v = Math.round(base * (0.78 + 0.3 * k)), bv = Math.round(70 + 120 * k);
+      // sóng hình thang (tôn 5 sóng vuông): mặt phẳng sáng, sườn tối
+      const sn = Math.sin(i / period * TAU), k = Math.max(0, Math.min(1, 0.5 + sn * 1.4)), lit = 0.5 + 0.5 * Math.cos(i / period * TAU);
+      const v = Math.round(base * (0.74 + 0.22 * k + 0.08 * lit)), bv = Math.round(60 + 150 * k);
       g.fillStyle = `rgb(${v},${v},${v})`; q.fillStyle = `rgb(${bv},${bv},${bv})`;
       if (horiz) { g.fillRect(0, i, N, 1); q.fillRect(0, i, N, 1); } else { g.fillRect(i, 0, 1, N); q.fillRect(i, 0, 1, N); }
     }
-    for (let i = 0; i < 14; i++) {
-      const x = hash(i + 2100 + period) * N, l = 20 + hash(i + 2101) * 80, gr = g.createLinearGradient(0, 0, 0, l);
-      gr.addColorStop(0, 'rgba(120,70,36,0.3)'); gr.addColorStop(1, 'rgba(120,70,36,0)'); g.fillStyle = gr; g.fillRect(x, 0, 2 + hash(i + 2102) * 3, l);
+    for (let i = 0; i < 6; i++) {
+      const x = hash(i + 2100 + period) * N, l = 20 + hash(i + 2101) * 60, gr = g.createLinearGradient(0, 0, 0, l);
+      gr.addColorStop(0, 'rgba(120,80,50,0.14)'); gr.addColorStop(1, 'rgba(120,70,36,0)'); g.fillStyle = gr; g.fillRect(x, 0, 2 + hash(i + 2102) * 3, l);
     }
     speckle(g, N, N, 500, ['rgba(70,64,56,1)', 'rgba(255,255,255,1)'], 1, 2, 2110 + period);
     const t = new THREE.CanvasTexture(c), tb = new THREE.CanvasTexture(b);
@@ -354,8 +356,8 @@ const Landmarks = (() => {
       drumBlue: () => G(1.2, { color: 0x2f4f7a, roughness: 0.6, metalness: 0.3 }),
       tarp: () => G(0, { color: 0x4a5236, roughness: 0.95 }),
       hesco: () => S({ map: hescoTex(), color: 0xffffff, roughness: 1 }),
-      corrTan: () => { const [t, b] = ribPair('rib_v', false, 6, 236); return S({ map: t, bumpMap: b, bumpScale: 0.6, color: 0xc4b89a, roughness: 0.7, metalness: 0.3 }); },
-      corrGray: () => { const [t, b] = ribPair('rib_v', false, 6, 236); return S({ map: t, bumpMap: b, bumpScale: 0.6, color: 0x8e9396, roughness: 0.6, metalness: 0.45 }); },
+      corrTan: () => { const [t, b] = ribPair('rib_v', false, 16, 236); return S({ map: t, bumpMap: b, bumpScale: 0.8, color: 0xb4b2a2, roughness: 0.7, metalness: 0.3 }); },
+      corrGray: () => { const [t, b] = ribPair('rib_v', false, 16, 236); return S({ map: t, bumpMap: b, bumpScale: 0.8, color: 0x8e9396, roughness: 0.6, metalness: 0.45 }); },
       shutter: () => { const [t, b] = ribPair('rib_h', true, 5, 230); return S({ map: t, bumpMap: b, bumpScale: 0.5, color: 0x9ba1a4, roughness: 0.55, metalness: 0.45 }); },
       louver: () => { const [t, b] = ribPair('rib_l', true, 3, 120); return S({ map: t, bumpMap: b, bumpScale: 0.8, color: 0x6f7478, roughness: 0.6, metalness: 0.4 }); }
     }[key];
