@@ -2947,43 +2947,58 @@ class SPGUnit3D {
     if (!this.barrelPivot || !this.barrelGroup || !this.muzzleTipLocal) return;
     const base = this._bcBase || (this._bcBase = new THREE.Vector3());
     const tip = this._bcTip || (this._bcTip = new THREE.Vector3());
+    // lần thử đầu cập nhật cả xe, các lần sau chỉ cập nhật cụm tháp (nòng nằm trong tháp) cho nhẹ
+    let full = true;
     const clear = () => {
       if (this.syncBarrelPose) this.syncBarrelPose();   // mô hình có trục nòng thật riêng (lựu pháo trên xe tải)
-      this.group.updateMatrixWorld(true);
+      if (full) { this.group.updateMatrixWorld(true); full = false; } else this.turretGroup.updateMatrixWorld(true);
       this.barrelPivot.getWorldPosition(base);
       this.barrelGroup.localToWorld(tip.copy(this.muzzleTipLocal));
       return !terrain.barrelBlocked(base, tip);
     };
     const yaw0 = this.turretGroup.rotation.y, el0 = this.barrelPivot.rotation.x;
-    // Chạm trần / mái: hạ nòng từng nấc tới tối đa -6° (từ góc 'from')
-    const minEl = -0.1;
-    // góc cao nhất (≤ from) mà nòng không chạm: dò nhị phân (trần phẳng: càng hạ càng thoáng) -> nòng nằm sát dưới trần,
-    // không tụt hẳn xuống thấp như hạ từng nấc thô
+    const minEl = -0.1;   // hạ nòng tối đa -6°
+    // Góc cao nhất (≤ from) mà nòng không chạm: hạ từng nấc 3° tới góc đầu tiên không chạm, rồi dò nhị phân ngược lên sát
+    // chỗ chạm (nòng nằm sát dưới trần). Không giả định "càng hạ càng thoáng": trong hầm chúc nòng xuống thì chạm sàn
+    // (trước đây thử thẳng -6° thấy chạm sàn -> bỏ cuộc, nòng ghim -6° rồi giằng co với máy tính hỏa lực -> nòng giật lên xuống)
     const lower = (from) => {
-      this.barrelPivot.rotation.x = minEl;
-      if (!clear()) return false;
-      let lo = minEl, hi = from;
-      for (let k = 0; k < 9; k++) {
-        const m = (lo + hi) / 2;
-        this.barrelPivot.rotation.x = m;
-        if (clear()) lo = m; else hi = m;
+      const st = 3 * Math.PI / 180;
+      let hiBlocked = from;
+      for (let e = from - st; ; e -= st) {
+        const ee = Math.max(minEl, e);
+        this.barrelPivot.rotation.x = ee;
+        if (clear()) {
+          let lo = ee, hi = hiBlocked;
+          for (let k = 0; k < 6; k++) {
+            const m = (lo + hi) / 2;
+            this.barrelPivot.rotation.x = m;
+            if (clear()) lo = m; else hi = m;
+          }
+          this.barrelPivot.rotation.x = lo;
+          clear();
+          return true;
+        }
+        hiBlocked = ee;
+        if (ee <= minEl) return false;
       }
-      this.barrelPivot.rotation.x = lo;
-      clear();
-      return true;
     };
     let ok = clear() || lower(el0);
     if (!ok && this._clearYaw !== undefined) {
       // Quay vào tường bên (nòng dài chĩa ngang chạm vách): tháp dừng ở góc an toàn trước đó, nòng hạ tới khi không chạm.
-      // KHÔNG trả nòng về góc nâng cũ (góc ghi lúc còn ở ngoài hầm -> nòng xuyên mái)
+      // KHÔNG trả nòng về góc nâng cũ ghi lúc còn ở ngoài hầm (nòng xuyên mái) trừ khi góc đó vẫn thật sự không chạm
       this.turretGroup.rotation.y = this._turretYaw = this._clearYaw;
-      ok = lower(Math.min(el0, this._clearEl));
-      if (!ok) this.barrelPivot.rotation.x = minEl;
+      this.barrelPivot.rotation.x = Math.min(el0, this._clearEl);
+      ok = clear() || lower(Math.min(el0, this._clearEl));
+      if (!ok) { this.barrelPivot.rotation.x = this._clearEl; ok = clear(); }
       // hướng bắn thật = hướng tháp đang chỉ (lệnh quay tiếp tục từ đây, không chạy trước tháp)
       const worldA = -(this._clearYaw + this.bodyAngle) * 180 / Math.PI;
       this.azimuth = ((worldA % 360) + 360) % 360;
-    } else if (!ok) {
-      this.barrelPivot.rotation.x = minEl;
+    }
+    if (!ok) {
+      // không có tư thế nào thoáng: giữ nguyên tư thế lệnh
+      this.barrelPivot.rotation.x = el0; this.turretGroup.rotation.y = this._turretYaw = yaw0; clear();
+      const worldA = -(yaw0 + this.bodyAngle) * 180 / Math.PI;
+      this.azimuth = ((worldA % 360) + 360) % 360;
     }
     if (this.canElevate && Math.abs(this.barrelPivot.rotation.x - el0) > 1e-4) this.elevation = this.barrelPivot.rotation.x * 180 / Math.PI;
     this.barrelBlockedNow = !ok || this.turretGroup.rotation.y !== yaw0 || Math.abs(this.barrelPivot.rotation.x - el0) > 1e-4;
