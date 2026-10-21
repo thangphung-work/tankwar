@@ -1183,7 +1183,12 @@ const Landmarks = (() => {
       const ff = -40, fr = -iR + 68;
       for (let k = 0; k < 3; k++) {
         const a = k * TAU / 3, x = ff + Math.cos(a) * 26, z = fr + Math.sin(a) * 26;
-        K.cyl('steelWhite', x, 0, z, 15, 15, 40, 24); K.add('steelWhite', new THREE.SphereGeometry(15, 20, 6, 0, TAU, 0, 0.5), M4(x, 36.3, z));
+        K.cyl('steelWhite', x, 0, z, 15, 15, 40, 24);
+        // mái vòm thấp úp khít miệng bồn: chỏm cầu bán kính 15/sin(0.5) ≈ 31.3, chân chỏm đúng y = 40
+        K.add('steelWhite', new THREE.SphereGeometry(15 / Math.sin(0.5), 24, 6, 0, TAU, 0, 0.5), M4(x, 40 - 15 / Math.tan(0.5), z));
+        K.cyl('steelGray', x, 39.4, z, 15.4, 15.4, 1.2, 24);
+        K.cyl('steelGray', x + 4, 41.5, z, 1, 1, 3, 8); K.cyl('steelDark', x + 4, 44.5, z, 1.8, 1.8, 0.8, 8);
+        for (let i = 0; i < 8; i++) { const b = a + i * 0.2; K.add('steelGray', new THREE.BoxGeometry(0.4, 5, 0.4), M4(x + Math.cos(b) * 14.2, 42.6, z + Math.sin(b) * 14.2)); }
         K.box('hazard', x, 30, z, 31, 2, 31, a, 16);
         for (let i = 0; i < 6; i++) K.beam('steelGray', [x + Math.cos(a + i * 0.25) * 15.6, i * 6.6, z + Math.sin(a + i * 0.25) * 15.6], [x + Math.cos(a + (i + 1) * 0.25) * 15.6, (i + 1) * 6.6, z + Math.sin(a + (i + 1) * 0.25) * 15.6], 1);
         K.solid(x, z, 15, 15, 0, 42);
