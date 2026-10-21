@@ -639,10 +639,10 @@ const VehicleKit = (() => {
   }
 
   /**
-   * Kính cabin bám bụi (map + roughnessMap theo UV mặt hộp, 0..1 trên mỗi ô kính). Kính thật không phải mảng màu
-   * phẳng: nhìn xuyên thấy nội thất tối (táp-lô bắt nắng, vô-lăng, tựa ghế, tấm che nắng, ô kính hậu sáng mờ),
-   * phủ lớp bụi dày ở mép & đáy, vệt mưa chảy dọc, lấm tấm bùn / xác côn trùng.
-   * kind: 'windL' (kính chắn gió bên lái, có vô-lăng) | 'windR' (bên phụ, có vết đá văng nứt sao) | 'side' (kính cửa).
+   * Kính cabin chống đạn bám bụi (map + roughnessMap theo UV mặt hộp, 0..1 trên mỗi ô kính): kính dày tối, không
+   * nhìn xuyên vào trong; đọc ra là mặt kính nhờ phản chiếu trời (getGlassEnvCube) + lớp bụi dày ở mép & đáy,
+   * vệt mưa chảy dọc, lấm tấm bùn / xác côn trùng.
+   * kind: 'windL' (kính chắn gió bên lái) | 'windR' (bên phụ, có vết đá văng nứt sao) | 'side' (kính cửa).
    * Kính chắn gió: cần gạt gốc ở góc dưới (u ≈ 0.15) quét cung sạch, mép cung dồn bụi thành gờ.
    * Màu ảnh đã chia cho màu vật liệu 0x606060 (để hệ hư hại vẫn nhận đây là kính tối, không phải kính đèn).
    */
@@ -654,57 +654,16 @@ const VehicleKit = (() => {
     const size = wind ? 512 : 256, W = size;
     const mk = () => { const c = document.createElement('canvas'); c.width = c.height = size; return c; };
     const ic = mk(), cc = mk(), rc = mk();
-    // --- Nội thất nhìn qua kính (màu thật, chưa chia) ---
+    // --- Kính chống đạn dày nhiều lớp: tối, ngả xanh rêu, không nhìn xuyên vào cabin (màu thật, chưa chia) ---
+    // dải tối hơn ở mép trên (dải chống chói), loang nhẹ do độ dày các lớp kính không đều
     const ix = ic.getContext('2d');
     const bg = ix.createLinearGradient(0, 0, 0, W);
-    bg.addColorStop(0, 'rgb(12,13,13)');
-    bg.addColorStop(0.45, 'rgb(30,31,29)');
-    bg.addColorStop(1, 'rgb(17,17,16)');
+    bg.addColorStop(0, 'rgb(9,12,11)');
+    bg.addColorStop(wind ? 0.16 : 0.1, 'rgb(13,17,16)');
+    bg.addColorStop(0.55, 'rgb(19,23,21)');
+    bg.addColorStop(1, 'rgb(15,18,17)');
     ix.fillStyle = bg;
     ix.fillRect(0, 0, W, W);
-    const rr = (x, y, w, h, r, col) => {
-      ix.fillStyle = col;
-      ix.beginPath();
-      ix.moveTo(x + r, y); ix.lineTo(x + w - r, y); ix.quadraticCurveTo(x + w, y, x + w, y + r);
-      ix.lineTo(x + w, y + h - r); ix.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-      ix.lineTo(x + r, y + h); ix.quadraticCurveTo(x, y + h, x, y + h - r);
-      ix.lineTo(x, y + r); ix.quadraticCurveTo(x, y, x + r, y);
-      ix.fill();
-    };
-    if (wind) {
-      // ô kính hậu sau cabin: vùng sáng mờ phía sau ghế
-      const g = ix.createRadialGradient(W * 0.5, W * 0.38, 0, W * 0.5, W * 0.38, W * 0.3);
-      g.addColorStop(0, 'rgba(70,74,72,0.8)');
-      g.addColorStop(1, 'rgba(70,74,72,0)');
-      ix.fillStyle = g;
-      ix.fillRect(0, 0, W, W);
-      rr(W * 0.27, W * 0.36, W * 0.46, W * 0.3, W * 0.05, 'rgb(22,23,20)');        // tựa ghế
-      rr(W * 0.36, W * 0.29, W * 0.28, W * 0.1, W * 0.04, 'rgb(19,20,18)');         // gối đầu
-      rr(W * 0.04, -W * 0.05, W * 0.6, W * 0.15, W * 0.04, 'rgb(34,36,29)');        // tấm che nắng (lật xuống)
-      ix.fillStyle = 'rgb(15,15,14)';
-      ix.fillRect(0, W * 0.78, W, W * 0.22);                                         // táp-lô
-      ix.fillStyle = 'rgb(58,57,52)';
-      ix.fillRect(0, W * 0.775, W, W * 0.018);                                       // mặt táp-lô bắt nắng
-      ix.fillStyle = 'rgba(80,76,64,0.6)';
-      ix.fillRect(W * 0.62, W * 0.765, W * 0.2, W * 0.014);                          // bản đồ / giấy tờ trên táp-lô
-      if (kind === 'windL') {
-        ix.strokeStyle = 'rgb(8,8,8)';
-        ix.lineWidth = W * 0.024;
-        ix.beginPath();
-        ix.ellipse(W * 0.52, W * 0.72, W * 0.2, W * 0.085, 0, 0, Math.PI * 2);
-        ix.stroke();
-        ix.lineWidth = W * 0.016;
-        ix.beginPath();
-        ix.moveTo(W * 0.33, W * 0.72); ix.lineTo(W * 0.71, W * 0.72);
-        ix.moveTo(W * 0.52, W * 0.72); ix.lineTo(W * 0.52, W * 0.8);
-        ix.stroke();
-      }
-    } else {
-      rr(W * 0.35, W * 0.3, W * 0.4, W * 0.45, W * 0.06, 'rgb(22,23,20)');
-      rr(W * 0.45, W * 0.22, W * 0.2, W * 0.1, W * 0.04, 'rgb(19,20,18)');
-      ix.fillStyle = 'rgb(16,16,15)';
-      ix.fillRect(0, W * 0.82, W, W * 0.18);
-    }
     const inter = ix.getImageData(0, 0, W, W).data;
 
     // --- Bụi, vệt mưa, cung gạt nước, bùn bắn ---
