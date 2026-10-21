@@ -550,6 +550,7 @@ SoundEngine.mixin(class {
     }
 
     if (!remote) {
+      if (this.interior && this.interiorShot) this.interiorShot(scout ? 'mg' : 'gatling', t);
       if (this.gatlingMotor) this.gatlingMotor.burstShots++;
       if (scout) {
         // Đại liên 12.7mm trên nóc xe: vỏ đồng thau văng lên nóc thép, nảy leng keng + mắt xích dây đạn

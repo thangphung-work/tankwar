@@ -22,7 +22,10 @@ SoundEngine.mixin(class {
     const s = arty ? 1.7 * (0.55 + 0.45 * cm) : 1.15;
     // Mức đưa vào thấp có chủ đích (xem playExplosionAtDistance): giữ cú đấm, không bị ép bẹt ở đầu ra.
     // Phát bắn của chính mình đi qua "blastBus" (bão hòa nhẹ cả cụm): các lớp quyện vào nhau thành một khối đặc, dày
-    const out = this.voice({ bus: remote ? null : this.blastBus(arty), gain: sp.gain * (remote ? 0.2 : arty ? 0.2 : 0.22), lowpass: sp.lowpass, wet: Math.max(0.45, sp.wet), pan: sp.pan });
+    // Ngắm qua kính (trong xe): tiếng nổ đầu nòng vọng vào qua vỏ thép bớt chói, lớp tiếng trong khoang gánh cú đấm
+    const inside = !remote && this.interior;
+    const out = this.voice({ bus: remote ? null : this.blastBus(arty), gain: sp.gain * (remote ? 0.2 : arty ? 0.2 : 0.22), lowpass: inside ? 8000 : sp.lowpass, wet: Math.max(inside ? 0.25 : 0.45, sp.wet), pan: sp.pan });
+    if (inside && this.interiorShot) this.interiorShot(arty ? 'arty' : 'cannon', t);
 
     if (!this.playSample(arty ? 'artillery_fire' : 'cannon_fire', out, t, { gain: 1.3 })) {
       // Pháo khai hỏa: xung nén đầu nòng cực gắt (đỉnh ngay ms đầu) -> khí thuốc phóng phụt "ĐÙNG" trầm dày
@@ -65,9 +68,10 @@ SoundEngine.mixin(class {
     if (!remote) this.duck(arty ? 0.2 : 0.3, arty ? 1.6 : 1.1);
     this.noteBlast(distance, remote ? 1 : 1.5);
     // Rền sấm cuộn dài + tiếng dội từ đồi núi, công trình xung quanh
-    const roll = this.voice({ gain: sp.gain * 0.9, lowpass: Math.min(sp.lowpass, 600), wet: 0.9, pan: sp.pan * 0.5 });
+    const ik = inside ? 0.6 : 1;   // trong xe: rền & tiếng dội ngoài trời nghe qua vỏ thép, nhỏ hơn
+    const roll = this.voice({ gain: sp.gain * 0.9 * ik, lowpass: Math.min(sp.lowpass, 600), wet: 0.9, pan: sp.pan * 0.5 });
     this.burst(roll, t + 0.08, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 280, gain: 0.48 * s, attack: 0.15, dur: arty ? 3.4 : 2.3 });
-    this.playTerrainEchoes(t, s * 0.55 * Math.sqrt(sp.gain), sp.lowpass);
+    this.playTerrainEchoes(t, s * 0.55 * ik * Math.sqrt(sp.gain), inside ? Math.min(sp.lowpass, 700) : sp.lowpass);
   }
 
   // Kênh gộp cho phát bắn của chính người chơi: bão hòa mềm cả cụm (như micro / màng nhĩ bị sóng nổ ép),
@@ -264,6 +268,10 @@ SoundEngine.mixin(class {
     const ti = t + 0.09 + Math.random() * 0.03;
     this.snap(out, ti, 0.4, 7000, 2);
     this.burst(out, ti, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1300, Q: 0.6, drive: 1.5, gain: 0.8, attack: 0.002, dur: 0.1 });
+    if (!remote && this.interior && this.interiorShot) this.interiorShot('missile', t);
+    // Game đang cho tiếng động cơ bám theo viên tên lửa thật (sight_audio.js startMissileTrack): không phát đoạn
+    // tiếng bay dựng sẵn 2,6 s (bắn gần thì kéo dài sau tiếng nổ, bắn xa thì tên lửa bay im lặng nửa sau)
+    if (this.trackMissiles) return;
     const D = 2.6, N = 80, c = 343;
     const r0 = remote ? Math.max(8, distance / 8) : 5, vr = remote ? 150 : 300;   // xe khác: hướng bay không thẳng ra xa mình
     const gC = new Float32Array(N), bpC = new Float32Array(N), hpC = new Float32Array(N), lpC = new Float32Array(N);

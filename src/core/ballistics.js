@@ -626,6 +626,8 @@ class BallisticsSystem3D {
     if (rp.burnTravel) shell.burnTravel = rp.burnTravel;
 
     this.activeShells.push(shell);
+    // người chơi vừa bắn (mọi loại vũ khí): game giật kính ngắm / rung camera theo cỡ đạn
+    if (shooter && shooter.isPlayer && this.onPlayerShot) this.onPlayerShot(shell, shooter);
     return shell;
   }
 
