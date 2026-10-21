@@ -10,6 +10,7 @@ const GroundCover = (() => {
   const RADIUS = 720;           // bán kính quanh tâm khung nhìn
   const TUFTS_PER_CELL = 16;
   const PEBBLES_PER_CELL = 7;
+  const OG = 7;                 // hệ số rải dày trong ô thuộc căn cứ bỏ hoang (cỏ dại um tùm)
 
   const BIOME = {
     HIGHLAND: { grass: [[0.36, 0.41, 0.23], [0.53, 0.5, 0.33]], density: 1.0, pebble: [0.44, 0.42, 0.39], pebbleK: 1.0, tuftH: [5, 9] },
@@ -91,7 +92,7 @@ const GroundCover = (() => {
       this.group.name = 'groundCover';
       terrain.group.add(this.group);   // dọn theo địa hình khi đổi bản đồ
       const maxCells = Math.ceil((2 * RADIUS / CELL) + 2) ** 2;
-      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5);
+      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5) + 90000;   // + cỏ dại dày trong căn cứ
       this.maxP = maxCells * PEBBLES_PER_CELL;
       // cỏ
       const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
@@ -200,7 +201,7 @@ const GroundCover = (() => {
         // - cả cụm chung cỡ & sắc độ (khô / xanh), từng khóm lệch nhẹ
         // ô nằm trong căn cứ bỏ hoang: cỏ dại um tùm -> rải dày gấp 2.6, từng khóm lọc theo mức mọc tại chỗ
         const LS = this.T.landmarkSet, inBase = !!(LS && LS.overgrowth && LS.covers(ox + CELL / 2, oz + CELL / 2, CELL));
-        const nClu = Math.max(1, Math.round(nTry / 2.6 * (inBase ? 2.6 : 1)));
+        const nClu = Math.max(1, Math.round(nTry / 2.6 * (inBase ? OG : 1)));
         for (let k = 0; k < nClu; k++) {
           const cx = ox + rnd() * CELL, cz = oz + rnd() * CELL, ra = rnd(), rb = rnd(), rc = rnd(), rd = rnd();
           const pn = this.noise ? this.noise(cx / 170 + 0.37, cz / 170 + 0.11) : [0.5, 0.5, 0.5];
@@ -214,8 +215,8 @@ const GroundCover = (() => {
             const M = this.masks(x, z);
             // trong căn cứ: mật độ / chiều cao theo mức cỏ dại tại chỗ (bãi cỏ cũ um tùm, sỏi & mặt đường thưa thấp)
             const inside = inBase && !!LS.noFireAt(x, z, 0), og = inside ? LS.overgrowth(x, z) : null, mg = og ? 0.85 : M.grass;
-            if (inside ? (!og || r1 > og.k / 2.6) : (r1 > mg * 1.15 * dens / (inBase ? 2.6 : 1) || this.blocked(x, z))) continue;
-            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : 1), wid = hgt * (0.7 + r3 * 0.5);
+            if (inside ? (!og || r1 > og.k / 2.6) : (r1 > mg * 1.15 * dens / (inBase ? OG : 1) || this.blocked(x, z))) continue;
+            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : 1), wid = hgt * (0.7 + r3 * 0.5) * (og ? 1.25 : 1);
             const r4 = rnd(), r5 = rnd();
             e.set((r4 - 0.5) * 0.5, r3 * 6.283, (r5 - 0.5) * 0.5);
             m4.compose(v.set(x, M.h - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));
@@ -237,7 +238,7 @@ const GroundCover = (() => {
           for (let ch = 0; ch < 3; ch++) pc.push(B.pebble[ch] * kk);
         }
       }
-      c = { gm: new Float32Array(gm), gc: new Float32Array(gc), pm: new Float32Array(pm), pc: new Float32Array(pc) };
+      c = { gm: new Float32Array(gm), gc: new Float32Array(gc), pm: new Float32Array(pm), pc: new Float32Array(pc), dense: gm.length / 16 > TUFTS_PER_CELL * 4 };
       this.cache.set(key, c);
       return c;
     }
@@ -251,8 +252,10 @@ const GroundCover = (() => {
       const c0z = Math.floor((cz - RADIUS) / CELL), c1z = Math.floor((cz + RADIUS) / CELL);
       for (let j = c0z; j <= c1z; j++) for (let i = c0x; i <= c1x; i++) {
         const c = this.cellData(i, j);
-        const ng = c.gm.length / 16, npb = c.pm.length / 16;
-        if (ng && nt + ng <= this.maxT) { gA.set(c.gm, nt * 16); gC.set(c.gc, nt * 3); nt += ng; }
+        // ô cỏ dày (căn cứ bỏ hoang): đủ dày trong ~300 quanh tâm nhìn, xa hơn chỉ lấy 1/3 (các khóm rải ngẫu nhiên -> lấy phần đầu)
+        const far = c.dense && Math.hypot(i * CELL + CELL / 2 - cx, j * CELL + CELL / 2 - cz) > 300;
+        const ng = far ? Math.floor(c.gm.length / 16 / 3) : c.gm.length / 16, npb = c.pm.length / 16;
+        if (ng && nt + ng <= this.maxT) { gA.set(c.gm.subarray(0, ng * 16), nt * 16); gC.set(c.gc.subarray(0, ng * 3), nt * 3); nt += ng; }
         if (npb && np + npb <= this.maxP) { pA.set(c.pm, np * 16); pC.set(c.pc, np * 3); np += npb; }
       }
       // dọn ô quá xa khỏi bộ nhớ đệm

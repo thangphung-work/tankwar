@@ -2055,21 +2055,33 @@ const Landmarks = (() => {
         const L = it.L; if (L.kind !== 'nuke') continue;
         const dx = x - L.x, dz = z - L.z, f = dx * L.fx + dz * L.fz, r = -dx * L.fz + dz * L.fx;
         if (Math.abs(f) > L.hu - 2 || Math.abs(r) > L.hv - 2) continue;
+        // tra lưới 4 đơn vị dựng dần (mỗi ô tính 1 lần): rải cỏ dày gọi hàm này hàng trăm nghìn lần
+        const GS = 4, nf = Math.ceil(L.hu * 2 / GS), nr = Math.ceil(L.hv * 2 / GS);
+        if (!it.ogK) { it.ogK = new Float32Array(nf * nr).fill(-1); it.ogH = new Float32Array(nf * nr); }
+        const gi = Math.min(nf - 1, Math.floor((f + L.hu) / GS)), gj = Math.min(nr - 1, Math.floor((r + L.hv) / GS)), k = gj * nf + gi;
+        if (it.ogK[k] < 0) { const v = this.overgrowthRaw(it, x, z, f, r); it.ogK[k] = v ? v.k : 0; it.ogH[k] = v ? v.h : 0; }
+        return it.ogK[k] > 0 ? { k: it.ogK[k], h: it.ogH[k] } : null;
+      }
+      return null;
+    }
+    overgrowthRaw(it, x, z, f, r) {
+      const L = it.L;
+      {
         for (const q of it.boxes) { const ex = x - q.cx, ez = z - q.cz; if (Math.abs(ex * q.ux + ez * q.uz) < q.hu + 3 && Math.abs(-ex * q.uz + ez * q.ux) < q.hv + 3) return null; }
         if (f > -132 && f < 72 && Math.abs(r) < 86) return null;   // bệ bê tông miệng hầm silo (nằm trên gò)
-        for (const [fa, ra, fb, rb] of NUKE_SLABS) if (f > fa && f < fb && r > ra && r < rb) return { k: 0.16, h: 0.4 };
+        for (const [fa, ra, fb, rb] of NUKE_SLABS) if (f > fa && f < fb && r > ra && r < rb) return { k: 0.3, h: 0.5 };
         let road = Infinity;
         for (const [pts, wd] of NUKE_ROADS) for (let i = 1; i < pts.length; i++) {
           const [af, ar] = pts[i - 1], [bf, br] = pts[i], ef = bf - af, er = br - ar, t = Math.max(0, Math.min(1, ((f - af) * ef + (r - ar) * er) / (ef * ef + er * er)));
           road = Math.min(road, Math.hypot(f - af - ef * t, r - ar - er * t) - wd / 2);
         }
-        if (road < -2) return { k: 0.14, h: 0.42 };
-        if (road < 9) return { k: 1.1, h: 0.75 };
+        if (road < -2) return { k: 0.3, h: 0.5 };
+        if (road < 9) return { k: 1.9, h: 0.9 };
         // gò đất đắp (gò silo, gò trung tâm điều khiển, ụ đất mép): đất cỏ -> um tùm như bãi cỏ
         if (this.groundAt(x, z) - it.G > 2.5) return { k: 2.4, h: 1.15 };
-        for (const [fa, ra, fb, rb] of nukeGravel(L.hu)) if (f > fa - 4 && f < fb + 4 && r > ra - 4 && r < rb + 4) return { k: 0.55, h: 0.7 };
+        for (const [fa, ra, fb, rb] of nukeGravel(L.hu)) if (f > fa - 4 && f < fb + 4 && r > ra - 4 && r < rb + 4) return { k: 1.1, h: 0.8 };
         if (Math.abs(f) < L.hu - 92 && Math.abs(r) < L.hv - 92) return { k: 2.6, h: 1.2 };
-        return { k: 0.6, h: 0.75 };   // dải sỏi giữa các lớp rào, đường tuần tra
+        return { k: 1.3, h: 0.85 };   // dải sỏi giữa các lớp rào, đường tuần tra
       }
       return null;
     }
