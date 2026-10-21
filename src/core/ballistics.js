@@ -647,7 +647,9 @@ class BallisticsSystem3D {
         // Phòng thử nghiệm ("luôn hiện mục tiêu"): mục tiêu đang hiện trên màn hình của người chơi cũng tính là thấy.
         // Trận thật vẫn bắt buộc tự nhìn thấy trực tiếp (tên lửa dẫn theo đường ngắm, đồng đội báo vị trí không đủ)
         const onScreen = !!(window.STRONGHOLD_LAB && shooter && shooter.isPlayer && target.group && target.group.visible && !target.isHiddenFromPlayer);
-        const seen = !(target._netHidden) && (!shooter || typeof TeamIntel === 'undefined' || TeamIntel.seesDirect(shooter, target) || onScreen);
+        // khói đa phổ (mục tiêu phóng khói lúc đang bị khóa): đầu dò mất mục tiêu, bay tới chỗ thấy lần cuối
+        const veiled = typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(target, s.shooterTeam);
+        const seen = !(target._netHidden) && !veiled && (!shooter || typeof TeamIntel === 'undefined' || TeamIntel.seesDirect(shooter, target) || onScreen);
         if (seen) {
           const ty = (target.y || (terrain ? terrain.getElevationAt(target.x, target.z) : 0)) + 7;
           // vận tốc mục tiêu (đơn vị / giây mô phỏng): xe chỉ dịch chuyển mỗi khung hình, đạn bước 3 lần / khung

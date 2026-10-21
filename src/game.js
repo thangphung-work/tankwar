@@ -630,7 +630,7 @@ class ArtilleryGame3D {
         this.triggerPlayerFire();
       }
 
-      // Phím G: phóng lựu đạn khói (trang bị mua thêm)
+      // Phím G: phóng lựu đạn khói (cần Ống phóng lựu khói; số loạt = số ống mỗi bên)
       if (e.code === 'KeyG' && !e.repeat) this.triggerPlayerSmoke();
 
       // Phím B: pháo tự hành đổi cách bắn (tự chọn / luôn bắn thẳng / luôn bắn cầu vồng)
@@ -869,6 +869,7 @@ class ArtilleryGame3D {
   // Kíp xe nhìn thấy mục tiêu bằng mắt / kính ngắm (không tính vị trí đồng đội báo hay radar)
   missileCanSee(shooter, t) {
     if (!shooter || !t || t.isDead) return false;
+    if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(t, shooter.team)) return false;   // khói đa phổ: đầu dò mù
     if (typeof TeamIntel === 'undefined') return true;
     // Phòng thử nghiệm ("luôn hiện mục tiêu"): mục tiêu đang hiện trên màn hình người chơi coi như nhìn thấy
     if (window.STRONGHOLD_LAB && shooter.isPlayer && t.group && t.group.visible && !t.isHiddenFromPlayer) return true;
@@ -935,6 +936,7 @@ class ArtilleryGame3D {
       for (const u of this.units) {
         if (!u || u.isDead || u.team === P.team || !u._lockOn) continue;
         if (u._lockOn.id !== P.id || now - u._lockOn.at > 3500) continue;
+        if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(P, u.team)) continue;   // khói đa phổ đã cắt tia khóa
         threats.push({ x: u.x, z: u.z, kind: u._lockOn.m === 2 ? 'mlock' : 'gun', hidden: !!u._netHidden });
       }
       for (const s of (this.ballistics && this.ballistics.activeShells) || []) {
@@ -1142,7 +1144,11 @@ class ArtilleryGame3D {
       && Math.hypot(u.x - this.player.x, u.z - this.player.z) <= maxLock);
     if (enemies.length === 0) {
       this.setLockedTarget(null);
-      this.addCombatLog('[[alert-triangle]] Không thấy xe địch nào trong tầm nhìn — cần xe trinh sát (radar) báo vị trí!', 'alert');
+      const EQ = typeof Equipment !== 'undefined' && Equipment.lockBlocked ? Equipment : null;
+      const veiled = EQ && this.units.some(u => u && !u.isDead && EQ.lockBlocked(u, this.player.team)
+        && Math.hypot(u.x - this.player.x, u.z - this.player.z) <= maxLock);
+      this.addCombatLog(veiled ? '[[lock-off]] Xe địch đang núp sau khói đa phổ — chưa khóa được cho tới khi khói tan'
+        : '[[alert-triangle]] Không thấy xe địch nào trong tầm nhìn — cần xe trinh sát (radar) báo vị trí!', 'alert');
       return;
     }
 
@@ -1325,6 +1331,8 @@ class ArtilleryGame3D {
   // (sương mù chiến tranh ẩn xe chưa phát hiện bằng group.visible, nên điều kiện thứ hai không làm lộ xe địch)
   canTarget(u) {
     if (!u || u.isDead || !this.player || u.team === this.player.team) return false;
+    // xe địch vừa phóng khói đa phổ lúc bị khóa: không khóa được cho tới khi khói tan
+    if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(u, this.player.team)) return false;
     if (typeof TeamIntel === 'undefined' || TeamIntel.knows(this.player, u)) return true;
     return !!(u.group && u.group.visible && !u.isHiddenFromPlayer);
   }
@@ -4417,6 +4425,10 @@ class ArtilleryGame3D {
           if (dist > this.lockRangeFor(this.player)) {
             this.addCombatLog('[[alert-triangle]] Mục tiêu đã vượt quá cự ly ngắm bắn, đã hủy khóa!', 'alert');
             this.setLockedTarget(null);
+          } else if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(T, this.player.team)) {
+            this.addCombatLog('[[lock-off]] MẤT KHÓA — địch phóng khói đa phổ, kính ngắm nhiệt & laser đo xa bị mù. Không khóa lại được tới khi khói tan!', 'alert');
+            if (window.soundEngine && window.soundEngine.playTargetLost) window.soundEngine.playTargetLost();
+            this.setLockedTarget(null);
           } else if (this._lockLostT > 1.5) {
             this.addCombatLog('[[radar-2]] MẤT DẤU MỤC TIÊU — địch đã khuất tầm nhìn / núp bụi, không còn ai báo vị trí. Đã hủy khóa!', 'alert');
             this.setLockedTarget(null);
@@ -5725,9 +5737,14 @@ class ArtilleryGame3D {
       this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — lắp trong Kho vũ khí (nhóm PHỤ KIỆN) ở sảnh', 'tip');
       return;
     }
-    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói' + this.stockNote('SMOKE'), 'alert'); return; }
-    Equipment.triggerSmoke(this, P);
-    this.addCombatLog(`[[cloud]] Đã phóng màn khói — địch không nhìn xuyên qua được (còn ${P.smokeLeft})`, 'tip');
+    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã bắn hết lựu đạn khói trong ống phóng — nạp đầy lại khi xuất kích lần sau', 'alert'); return; }
+    if (!Equipment.smokeSides(P)) { this.addCombatLog('[[alert-triangle]] Cả hai cụm ống phóng lựu khói đã bị bắn hỏng!', 'alert'); return; }
+    if (P._smokeAt && performance.now() - P._smokeAt < Equipment.SMOKE_GAP) return;   // loạt trước vừa bắn (chống bấm đúp)
+    const r = Equipment.triggerSmoke(this, P);
+    if (!r) return;
+    const one = r.m !== 3 ? ' (1 bên ống phóng đã hỏng)' : '';
+    this.addCombatLog(`[[cloud]] Đã bắn loạt lựu đạn khói${one} — còn ${P.smokeLeft}/${Equipment.smokeMax(P)} loạt`, 'tip');
+    if (r.k) this.addCombatLog('[[lock-off]] Đang bị khóa: khói đa phổ sẽ cắt tia khóa của địch khi khói nở', 'tip');
     this.syncEquipmentChips();
   }
 
@@ -5740,7 +5757,7 @@ class ArtilleryGame3D {
     if (!el) { el = document.createElement('span'); el.id = 'eq-chips'; el.className = 'hx-chip'; el.style.color = '#cbd5e1'; host.parentElement.appendChild(el); }
     if (!P || P.isDead || typeof Equipment === 'undefined' || !P.kit) { UIIcons.set(el, ''); return; }
     const parts = [];
-    if (Equipment.has(P, 'smoke')) parts.push(`[[cloud]] KHÓI ×${P.smokeLeft || 0} [G]`);
+    if (Equipment.has(P, 'smoke')) parts.push(`[[cloud]] KHÓI ${P.smokeLeft || 0}/${Equipment.smokeMax(P)} [G]`);
     if (Equipment.has(P, 'aps')) parts.push(`[[radar]] ĐÁNH CHẶN ×${Equipment.apsLeft(P)}`);
     // lưới lá: đứng yên = ẩn (địch phải tới gần mới thấy / radar mới bắt được), chạy hoặc vừa bắn = lộ
     // lưới bắt lửa: đang cháy = lộ hẳn (khói lửa); cháy hết = mất lưới tới lần xuất kích sau

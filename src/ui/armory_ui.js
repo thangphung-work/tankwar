@@ -4,7 +4,7 @@
  *   3 nhóm: GIÁP (giáp phản ứng nổ, giáp lồng...) · ĐẠN (đạn có sẵn + đạn cao cấp) · PHỤ KIỆN (radar, máy gây nhiễu, khói...)
  *   Đồ cơ bản: bấm là lắp (miễn phí). Đồ nâng cao (ổ khóa): mở khóa vĩnh viễn cho xe đó bằng Bạc hoặc xem đủ số
  *   quảng cáo (Equipment.adsToUnlock, máy chủ lưu tiến độ). Mỗi nhóm có số ô giới hạn (Equipment.CATS).
- *   Vật tư tiêu hao (đạn đặc chủng, lựu đạn khói): mua bằng Bạc, hoặc xem quảng cáo tiếp tế (+AMMO_SHOP[..].ad viên).
+ *   Vật tư tiêu hao (đạn đặc chủng): mua bằng Bạc, hoặc xem quảng cáo tiếp tế (+AMMO_SHOP[..].ad viên). Lựu đạn khói: nạp sẵn theo số ống phóng.
  * Quảng cáo: src/core/ads.js (AdProvider) — Google H5 Games Ads khi đã cấu hình, không thì khung quảng cáo mẫu.
  */
 const ArmoryUI = (() => {
@@ -23,7 +23,6 @@ const ArmoryUI = (() => {
     ARTILLERY: [['NORMAL', 'Lựu đạn 155mm', 'circle-dot', 'Không giới hạn'], ['HE', 'Lựu đạn nổ mạnh 155', 'flame'], ['CLUSTER', 'Đạn chùm 155', 'atom-2']],
     SCOUT: [['SCOUT_BULLET', 'Đạn 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
   };
-  for (const t in STOCK_AMMO) STOCK_AMMO[t].push(['SMOKE', 'Lựu đạn khói', 'cloud']);   // vật tư của Ống phóng lựu khói
   const adsLeft = () => (A() && A().adsLeft ? A().adsLeft() : 0);
   const adsOn = () => !!(window.AdProvider && AdProvider.available());
 
@@ -36,7 +35,7 @@ const ArmoryUI = (() => {
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)
   const SHORT = {
     era: 'Chặn đạn nổ lõm / RPG, giảm xuyên', slat: 'Chặn ~1/4 tên lửa, ~6/10 bom con; giảm nổ, mảnh văng, chống bén lửa', applique: 'Giáp sườn +45%, mũi +20%, nặng hơn',
-    spall: 'Mảnh vỡ trong xe −15% sát thương', aps: 'Tự bắn hạ RPG / tên lửa (2 lần)', smoke: 'Phím G: màn khói ~14 giây (cần lựu đạn khói)',
+    spall: 'Mảnh vỡ trong xe −15% sát thương', aps: 'Tự bắn hạ RPG / tên lửa (2 lần)', smoke: 'Phím G: tường khói ~15 giây, cắt khóa của địch; 3–4 loạt / xuất kích',
     camo: 'Đứng yên: khó bị thấy & bị radar bắt', fireext: 'Dập lửa nhanh ×2,5, cháy chỉ còn ½', turbo: 'Tốc độ +8%, tăng tốc +15%',
     radar: 'Thấy xe địch quanh ~75 m, kể cả núp bụi', jammer: 'Tên lửa địch khóa chậm gấp đôi'
   };

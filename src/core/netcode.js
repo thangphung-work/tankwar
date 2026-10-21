@@ -1448,10 +1448,11 @@
       this.net.send('SPOT', { s: spotter.netId, t: target.netId });
     }
 
-    // Màn khói (trang bị): máy điều khiển xe phóng -> mọi máy dựng cùng đám khói (che tầm nhìn như nhau)
+    // Màn khói (trang bị): máy điều khiển xe phóng -> mọi máy dựng cùng đám khói (che tầm nhìn như nhau).
+    // m: bên ống phóng còn bắn (1 trái, 2 phải, 3 cả hai); k: xe đang bị khóa -> khói đa phổ cắt khóa trên mọi máy
     sendSmoke(unit, r) {
       if (this.detached || !unit || unit.netId === undefined || !r) return;
-      this.net.send('SMOKE', { i: unit.netId, x: r.x, z: r.z, a: r.a });
+      this.net.send('SMOKE', { i: unit.netId, x: r.x, z: r.z, a: r.a, m: r.m || 3, k: r.k ? 1 : 0 });
     }
     onSmoke(d, from) {
       if (this.detached || !d) return;
@@ -1460,7 +1461,7 @@
       if (![d.x, d.z, d.a].every(Number.isFinite)) return;
       if (typeof global.Equipment !== 'undefined' && global.Equipment.deploySmoke) {
         if (u.smokeLeft > 0) u.smokeLeft--;
-        global.Equipment.deploySmoke(this.game, u, { x: d.x, z: d.z, a: d.a });
+        global.Equipment.deploySmoke(this.game, u, { x: d.x, z: d.z, a: d.a, m: (d.m | 0) & 3 || 3, k: d.k === 1 });
       }
     }
 
