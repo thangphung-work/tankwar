@@ -559,6 +559,9 @@ class BallisticsSystem3D {
       vx = p.vx; vy = p.vy; vz = p.vz;
     }
     const shellMesh = this.createShell155Mesh(isDirectFire, ammoType, !!(shooter && shooter.tankType === 'ARTILLERY'), tracer);
+    // đạn súng: liều vạch đường chỉ bén cháy sau khi rời nòng ~10 m (như đạn thật) -> không có đốm lửa sát miệng nòng
+    const smallArms = ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
+    if (smallArms) shellMesh.visible = false;
     // Đạn APFSDS: 3 mảnh guốc đạn tách khỏi mũi tên urani ngay khi rời nòng
     if (ammoType === 'AP' && this.fx && this.fx.sabotDiscard) {
       this.fx.sabotDiscard(startX, startY, startZ, vx, vy, vz);
@@ -596,6 +599,7 @@ class BallisticsSystem3D {
       spinAngle: 0,
       trailTimer: 0,
       tracer,
+      ignite: smallArms ? 80 : 0,
       exploded: false
     };
 
@@ -1033,6 +1037,7 @@ class BallisticsSystem3D {
 
       if (impacted) continue;
 
+      if (s.ignite && s.travel >= s.ignite) { s.ignite = 0; s.mesh.visible = true; }
       s.mesh.position.set(s.x, s.y, s.z);
 
       // Cập nhật hướng mũi đạn bám theo tiếp tuyến quỹ đạo bay tức thời (trục Y hướng theo vận tốc)
