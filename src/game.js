@@ -5808,14 +5808,31 @@ class ArtilleryGame3D {
           // dấu điểm rơi nằm sát mặt đất (nghiêng theo dốc), cỡ theo khoảng cách camera; bị chắn: dấu X
           const ip = passAt || traj.impactPoint;
           const rr = WorldMarkers.sizeFor(this.camera, ip.x, ip.y, ip.z, 12, 0.026);
-          WorldMarkers.placeOnGround(this.reticle3D, this.terrain, ip.x, ip.z, ip.y, rr, 0);
+          const tp = traj.points, nTp = tp.length;
+          if (isWall && !passAt && nTp > 1 && WorldMarkers.placeOnSurface) {
+            // trúng tường / vách: dấu dựng đứng áp lên mặt tường, quay về phía xe bắn (ngược hướng bay đoạn cuối)
+            const A = tp[nTp - 2], Bp = tp[nTp - 1];
+            WorldMarkers.placeOnSurface(this.reticle3D, ip.x, ip.y, ip.z, A.x - Bp.x, 0, A.z - Bp.z, rr * 0.8);
+          } else WorldMarkers.placeOnGround(this.reticle3D, this.terrain, ip.x, ip.z, ip.y, rr, 0);
+          // dấu trên tường luôn quay về phía xe bắn: vẽ đè (mặt tường nhìn thấy có thể nhô trước hộp va chạm vài đơn vị
+          // -> dấu chìm mất); trên mặt đất vẫn bị đồi / vật cản che như thường
+          const onWall = !!(isWall && !passAt && nTp > 1);
+          if (this.reticleRingMat.depthTest === onWall) { this.reticleRingMat.depthTest = !onWall; this.reticleRingMat.needsUpdate = true; }
           const RU = this.reticleRingMat.uniforms;
-          RU.uSpin.value = (RU.uSpin.value + dt * 0.5) % 6.2832;
           RU.uState.value = (isWall || isOut || aimState === 'blocked' || aimState === 'covered') ? 1 : 0;
           this.reticleRingMat.color.setHex(col);
           this.reticle3D.visible = true;
           this.updateSpreadRing(dt, this.reticle3D.position, col);
+          if (isWall && this.spreadRing) this.spreadRing.visible = false;   // vòng tản mát nằm ngang: không hợp khi trúng tường
           this.updateBlastZone(dt, isOut || isWall ? null : (passAt || traj.impactPoint), FP.F, tgt);
+          // nhìn qua kính ngắm (xe bắn thẳng): kính đã có tâm ngắm riêng -> ẩn dấu 3D (đặt trên tường / mép vật cản trông
+          // như vòng dẹt lơ lửng, nhảy theo điểm chạm). Màn hình drone xe pháo vẫn giữ (nhìn từ trên cao cần thấy điểm rơi)
+          if (this._sight && !this._sight.arty) {
+            this.reticle3D.visible = false;
+            if (this.spreadRing) this.spreadRing.visible = false;
+            if (this._blastZone) this._blastZone.visible = false;
+            if (this.trajectoryLine) this.trajectoryLine.visible = false;
+          }
         }
 
         const trajDistEl = domById('traj-dist-val');

@@ -1,7 +1,7 @@
 /**
  * DẤU CHỈ 3D TRONG TRẬN — phong cách HUD tác chiến: nét mảnh, viền tối mỏng, góc vát, không phát sáng chói
  * (cùng bảng màu với thanh máu trên đầu xe: xanh phe ta #6cc4ef, đỏ địch #ec6a5c, vàng #e7a63a)
- * - Đường đạn dự kiến: một dải mỏng luôn quay mặt về camera, vạch có nhịp chạy dần về phía điểm rơi, mờ ở hai đầu
+ * - Đường đạn dự kiến: một dải mỏng liền nét luôn quay mặt về camera, chấm cự ly mỗi 50 m, mờ sát miệng nòng
  * - Điểm rơi / điểm ngắm mặt đất / điểm lái tới: một mặt phẳng + shader vẽ nét (SDF), nghiêng theo mặt đất
  * - Khung khóa mục tiêu: 4 góc ngoặc vát quay mặt về camera, thu lại + xoay khi vừa khóa
  * Mỗi dấu là MỘT mesh tạo một lần; mỗi khung hình chỉ ghi vào buffer / uniform có sẵn.
@@ -85,19 +85,18 @@ const WorldMarkers = (() => {
         void main() {
           float a = abs(vSide);
           float aw = fwidth(vSide);
-          float core = 1.0 - smoothstep(0.46 - aw, 0.46 + aw, a);
-          float halo = 1.0 - smoothstep(1.0 - aw * 1.5, 1.0, a);
-          // nhịp vạch: vạch dài 60 %, cứ 5 vạch có 1 vạch ngắn đánh dấu cự ly; vạch trôi dần về phía điểm rơi
-          float P = uPeriod;
-          float u = vS - uTime * P * 1.1;
-          float ph = mod(u, P);
-          float k = mod(floor(u / P), 5.0);
-          float on = k < 0.5 ? 0.25 : 0.6;
-          float sw = max(fwidth(vS), 1e-3);
-          float dash = smoothstep(0.0, sw, ph) * (1.0 - smoothstep(on * P - sw, on * P, ph));
-          // mờ dần: sát miệng nòng và đoạn cuối trước điểm rơi
-          float f = smoothstep(2.0, 36.0, vS) * (1.0 - 0.7 * smoothstep(uLen * 0.82, uLen, vS));
-          float alpha = max(core, halo * 0.42) * dash * f * uOpacity;
+          // nét liền mảnh (không vạch chạy) + viền tối mỏng
+          float core = 1.0 - smoothstep(0.34 - aw, 0.34 + aw, a);
+          float halo = 1.0 - smoothstep(0.72 - aw * 1.5, 0.72, a);
+          // chấm cự ly mỗi 50 m (400 đơn vị): chấm tròn cỡ đều trên màn hình (đo theo điểm ảnh dọc đường)
+          float P = 400.0;
+          float ph = mod(vS, P);
+          float dd = min(ph, P - ph) / max(fwidth(vS), 1e-4);
+          float dotK = (1.0 - smoothstep(1.6, 2.6, dd)) * step(P * 0.5, vS) * (1.0 - smoothstep(0.9 - aw, 0.9 + aw, a));
+          core = max(core, dotK);
+          // mờ dần sát miệng nòng; đoạn cuối trước điểm rơi nhạt bớt
+          float f = smoothstep(2.0, 36.0, vS) * (1.0 - 0.5 * smoothstep(uLen * 0.85, uLen, vS));
+          float alpha = max(core * 0.85, halo * 0.32) * f * uOpacity;
           if (alpha < 0.01) discard;
           gl_FragColor = vec4(mix(uColor * 0.14, uColor, core), alpha);
         }
@@ -187,21 +186,14 @@ const WorldMarkers = (() => {
           float r = length(p);
           float d = 1e3, fillD = 1e3, extra = 0.0;
           if (uKind < 0.5) {
-            // ĐIỂM RƠI: vòng mảnh + vạch chia quay chậm, chữ thập hở tâm; bị chắn: dấu X
-            d = abs(r - 0.86);
-            float st = 6.2831853 / 24.0;
-            vec2 q = rot(p, uSpin);
-            float k = floor(atan(q.y, q.x) / st + 0.5);
-            vec2 t = rot(q, -k * st);
-            float L0 = mod(k, 6.0) < 0.5 ? 0.6 : 0.76;
-            d = min(d, sdSeg(t, vec2(L0, 0.0), vec2(0.86, 0.0)));
-            vec2 f = abs(p);
+            // ĐIỂM RƠI kiểu chiến thuật: 4 góc ngoặc vuông + chấm tâm; bị chắn: thêm dấu X trong khung
+            vec2 a = abs(p);
+            float B = 0.62, L = 0.24;
+            d = min(sdSeg(a, vec2(B, B), vec2(B - L, B)), sdSeg(a, vec2(B, B), vec2(B, B - L)));
             if (uState < 0.5) {
-              if (f.x < f.y) f = f.yx;
-              d = min(d, sdSeg(f, vec2(0.17, 0.0), vec2(0.48, 0.0)));
-              fillD = r - 0.045;
+              fillD = r - 0.07;
             } else {
-              d = min(d, sdSeg(f, vec2(0.12), vec2(0.4)));
+              d = min(d, sdSeg(a, vec2(0.0), vec2(0.34)));
             }
           } else if (uKind < 1.5) {
             // ĐIỂM ĐẾN: ô vuông vát góc + 4 chevron chụm vào tâm (nhịp nhẹ), thoi nhỏ ở giữa
@@ -271,6 +263,18 @@ const WorldMarkers = (() => {
     _qy.setFromAxisAngle(_up, yaw || 0);
     mesh.quaternion.copy(_q).multiply(_qy);
     mesh.position.set(x, (gy || 0) + 0.5 + radius * 0.03, z);
+    mesh.scale.setScalar(radius);
+  }
+
+  // Đặt dấu áp lên một bề mặt bất kỳ (tường, vách): mặt dấu quay theo pháp tuyến (nx, ny, nz), nhô ra ~0,4 m
+  // (hộp va chạm nhà / ụ có thể nằm sau mặt tường nhìn thấy một chút -> nhô ít quá thì dấu chìm vào tường)
+  function placeOnSurface(mesh, x, y, z, nx, ny, nz, radius) {
+    _n.set(nx, ny, nz);
+    if (_n.lengthSq() < 1e-8) _n.set(0, 1, 0);
+    _n.normalize();
+    _q.setFromUnitVectors(_up, _n);
+    mesh.quaternion.copy(_q);
+    mesh.position.set(x + _n.x * 3.2, y + _n.y * 3.2, z + _n.z * 3.2);
     mesh.scale.setScalar(radius);
   }
 
@@ -390,6 +394,6 @@ const WorldMarkers = (() => {
     mesh.visible = true;
   }
 
-  return { C, stateColor, trajectory, setTrajectory, groundMarker, placeOnGround, sizeFor, tickMove, lockBrackets, tickLock, now };
+  return { C, stateColor, trajectory, setTrajectory, groundMarker, placeOnGround, placeOnSurface, sizeFor, tickMove, lockBrackets, tickLock, now };
 })();
 window.WorldMarkers = WorldMarkers;
