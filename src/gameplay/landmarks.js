@@ -1185,6 +1185,7 @@ const Landmarks = (() => {
     // ---- LÔ CỐT BÊ TÔNG lục giác: lỗ châu mai quanh thân, bao cát trên nóc, hào giao thông dẫn vào
     const pillbox = (f, r) => {
       K.add('conc', new THREE.CylinderGeometry(19, 21, 14, 6), M4(f, 7, r));
+      K.add('concDark', new THREE.CylinderGeometry(21.6, 23.2, 2.2, 6), M4(f, 1.1, r));   // móng loe chân lô cốt
       K.add('concDark', new THREE.CylinderGeometry(23, 23, 3, 6), M4(f, 15.5, r));
       for (let k = 0; k < 6; k++) {
         const a = k * Math.PI / 3 + Math.PI / 6, c = Math.cos(a), sn = Math.sin(a);
