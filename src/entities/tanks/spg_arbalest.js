@@ -91,6 +91,20 @@
     updateDeployGear(deploy, 0);
     const turretParts = buildTurret(chassis, M, unit, rnd);
     const gun = buildHowitzer(unit, M);
+    // Nòng thật theo trục giả ngay lập tức (giới hạn khi vắt qua cabin): spg.js gọi khi thử góc nòng (chạm trần hầm / tường)
+    // trong cùng khung hình — không thì phép thử đo nòng ở góc khung trước
+    const syncGun = () => {
+      let el = gun.pivotProxy.rotation.x;
+      let rel = unit.turretGroup.rotation.y % (Math.PI * 2);
+      if (rel > Math.PI) rel -= Math.PI * 2;
+      if (rel < -Math.PI) rel += Math.PI * 2;
+      if (typeof BallisticsSystem3D !== 'undefined' && BallisticsSystem3D.artyMinElevation) {
+        el = Math.max(el, BallisticsSystem3D.artyMinElevation(rel) * Math.PI / 180);
+      } else if (Math.abs(rel) < 0.85) el = Math.max(el, 0);
+      gun.pivot.rotation.x = el;
+      return el;
+    };
+    unit.syncBarrelPose = syncGun;
 
     unit.roadWheels = [];
     unit.strobeLight = null;
@@ -129,14 +143,7 @@
 
         // Nòng: lấy góc nâng spg.js ghi vào trục giả, giới hạn khi nòng vắt qua cabin
         // (vắt qua nóc cabin / khoang máy thì tự nâng vượt giá khóa nòng, drone, ống xả... — ballistics.js artyMinElevation)
-        let el = gun.pivotProxy.rotation.x;
-        let rel = u.turretGroup.rotation.y % (Math.PI * 2);
-        if (rel > Math.PI) rel -= Math.PI * 2;
-        if (rel < -Math.PI) rel += Math.PI * 2;
-        if (typeof BallisticsSystem3D !== 'undefined' && BallisticsSystem3D.artyMinElevation) {
-          el = Math.max(el, BallisticsSystem3D.artyMinElevation(rel) * Math.PI / 180);
-        } else if (Math.abs(rel) < 0.85) el = Math.max(el, 0);
-        gun.pivot.rotation.x = el;
+        const el = syncGun();
         // Giật nòng hiển thị thu nhỏ (độ giật gameplay vẫn giữ nguyên)
         gun.barrel.position.z = (u.barrelRecoil || 0) * RECOIL_VISUAL;
 

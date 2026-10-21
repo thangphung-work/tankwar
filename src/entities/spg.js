@@ -2948,34 +2948,44 @@ class SPGUnit3D {
     const base = this._bcBase || (this._bcBase = new THREE.Vector3());
     const tip = this._bcTip || (this._bcTip = new THREE.Vector3());
     const clear = () => {
+      if (this.syncBarrelPose) this.syncBarrelPose();   // mô hình có trục nòng thật riêng (lựu pháo trên xe tải)
       this.group.updateMatrixWorld(true);
       this.barrelPivot.getWorldPosition(base);
       this.barrelGroup.localToWorld(tip.copy(this.muzzleTipLocal));
       return !terrain.barrelBlocked(base, tip);
     };
     const yaw0 = this.turretGroup.rotation.y, el0 = this.barrelPivot.rotation.x;
-    let ok = clear();
-    if (!ok) {
-      // Chạm trần / mái: hạ nòng từng nấc tới tối đa -6°
-      const minEl = -0.1;
-      for (let k = 1; k <= 8 && !ok && el0 > minEl; k++) {
-        this.barrelPivot.rotation.x = el0 + (minEl - el0) * k / 8;
-        ok = clear();
+    // Chạm trần / mái: hạ nòng từng nấc tới tối đa -6° (từ góc 'from')
+    const minEl = -0.1;
+    // góc cao nhất (≤ from) mà nòng không chạm: dò nhị phân (trần phẳng: càng hạ càng thoáng) -> nòng nằm sát dưới trần,
+    // không tụt hẳn xuống thấp như hạ từng nấc thô
+    const lower = (from) => {
+      this.barrelPivot.rotation.x = minEl;
+      if (!clear()) return false;
+      let lo = minEl, hi = from;
+      for (let k = 0; k < 9; k++) {
+        const m = (lo + hi) / 2;
+        this.barrelPivot.rotation.x = m;
+        if (clear()) lo = m; else hi = m;
       }
-      if (ok) {
-        if (this.canElevate) this.elevation = this.barrelPivot.rotation.x * 180 / Math.PI;
-      } else if (this._clearYaw !== undefined) {
-        // Chạm tường bên: tháp pháo dừng lại ở góc an toàn gần nhất
-        this.turretGroup.rotation.y = this._clearYaw;
-        this._turretYaw = this._clearYaw;
-        this.barrelPivot.rotation.x = Math.min(el0, this._clearEl);
-        if (!clear()) this.barrelPivot.rotation.x = this._clearEl;
-        ok = true;
-      } else {
-        this.barrelPivot.rotation.x = el0;
-        this.turretGroup.rotation.y = yaw0;
-      }
+      this.barrelPivot.rotation.x = lo;
+      clear();
+      return true;
+    };
+    let ok = clear() || lower(el0);
+    if (!ok && this._clearYaw !== undefined) {
+      // Quay vào tường bên (nòng dài chĩa ngang chạm vách): tháp dừng ở góc an toàn trước đó, nòng hạ tới khi không chạm.
+      // KHÔNG trả nòng về góc nâng cũ (góc ghi lúc còn ở ngoài hầm -> nòng xuyên mái)
+      this.turretGroup.rotation.y = this._turretYaw = this._clearYaw;
+      ok = lower(Math.min(el0, this._clearEl));
+      if (!ok) this.barrelPivot.rotation.x = minEl;
+      // hướng bắn thật = hướng tháp đang chỉ (lệnh quay tiếp tục từ đây, không chạy trước tháp)
+      const worldA = -(this._clearYaw + this.bodyAngle) * 180 / Math.PI;
+      this.azimuth = ((worldA % 360) + 360) % 360;
+    } else if (!ok) {
+      this.barrelPivot.rotation.x = minEl;
     }
+    if (this.canElevate && Math.abs(this.barrelPivot.rotation.x - el0) > 1e-4) this.elevation = this.barrelPivot.rotation.x * 180 / Math.PI;
     this.barrelBlockedNow = !ok || this.turretGroup.rotation.y !== yaw0 || Math.abs(this.barrelPivot.rotation.x - el0) > 1e-4;
     if (ok) { this._clearYaw = this.turretGroup.rotation.y; this._clearEl = this.barrelPivot.rotation.x; }
   }

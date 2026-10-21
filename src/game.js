@@ -3561,57 +3561,104 @@ class ArtilleryGame3D {
   // Hệ số khoảng cách camera theo xe: pháo tự hành bắn xa -> camera lùi xa hơn ~1,5 lần ở mọi mức zoom (thấy vùng rộng hơn)
   camDistK(P) { return P && P.tankType === 'ARTILLERY' ? 1.5 : 1; }
 
-  // GÓC NHÌN TRONG XE KHI NẰM DƯỚI MÁI HẦM: camera bám đuôi phía trên bị mái / ụ đất che -> chuyển dần sang góc nhìn của
-  // trưởng xe ngồi ở cửa nóc tháp, nhìn dọc theo tháp ra miệng hầm (thấy nòng pháo, vách hầm, trần, cửa hầm sáng phía
-  // trước). Giữ chuột giữa + kéo vẫn nhìn quanh. Ra khỏi mái thì trả dần về camera bám đuôi. inT: 0 = bám đuôi, 1 = trong xe
-  // XE LỰU PHÁO VÀO HẦM: tự quay nòng ra miệng hầm phía đuôi xe (mũi xe / cabin là điểm mù, xe chạy mũi vào thì đuôi quay
-  // ra cửa vừa đi vào) và đặt góc bắn tối ưu — góc nâng cao nhất mà đạn liều đầy vẫn lọt ra khỏi miệng hầm (vát chéo), không
-  // vướng lanh tô / dầm / mái. Đang khóa xe địch bắn tới được thì máy tính hỏa lực tự giải như thường.
+  // XE LỰU PHÁO VÀO HẦM. Nòng lựu pháo dài ~14 m: dưới mái không quay ngang được (chạm vách bên), nâng cao cũng chạm trần
+  //  -> đang chạy mũi vào miệng hầm (trên dốc / sân trước cửa) thì tháp tự quay nòng ra phía đuôi xe từ ngoài, nâng cao để
+  //     quét qua tường cánh; vào dưới mái thì nòng hạ xuống góc bắn tối ưu: góc nâng cao nhất mà nòng không chạm trần & đạn
+  //     liều đầy vẫn lọt ra miệng hầm (sâu trong hầm góc thấp, ra sát mép / dưới phần vát góc cao hơn).
+  //  Đang khóa xe địch bắn tới được thì máy tính hỏa lực tự giải như thường.
   updateArtyShelterAim() {
     const P = this.player, T = this.terrain;
-    if (!P || P.isDead || P.tankType !== 'ARTILLERY' || !T || !T.shelterOf) { this._artyShelter = null; return; }
+    if (!P || P.isDead || P.tankType !== 'ARTILLERY' || !T || !T.shelterOf) { this._artyShelter = null; this._artyApproach = null; return; }
+    const SS = T.strongholdSet, S0 = typeof Strongholds !== 'undefined' ? Strongholds.S : null;
     const K = T.shelterOf(P);
     const inside = !!K && T.isProtectedPoint(P.x, (P.y || 0) + 12, P.z);
+    const locked = !!(this.lockedTarget && !this.lockedTarget.isDead);
+    const azOf = (dx, dz) => ((-Math.atan2(-dx, -dz) * 180 / Math.PI) % 360 + 360) % 360;   // hướng thế giới -> azimuth (độ)
+    // 1) đang chạy mũi vào miệng hầm: quay nòng ra phía đuôi xe ngay từ ngoài mái
+    if (!inside && SS && S0) {
+      const KN = SS.near(P.x, P.z, 60);
+      let approaching = false;
+      if (KN) {
+        const L = SS.local(KN, P.x, P.z), af = Math.abs(L.f), sgm = L.f >= 0 ? 1 : -1, ba = P.bodyAngle || 0;
+        const heading = -sgm * (-Math.sin(ba) * KN.fx - Math.cos(ba) * KN.fz);   // > 0: mũi xe hướng vào trong hầm
+        approaching = af > S0.HB - 4 && af < S0.HB + 260 && Math.abs(L.r) < S0.WI + 120 && heading > 0.6 && (P.speed || 0) > 2;
+        if (approaching && !locked && this._artyApproach !== KN.id + sgm) {
+          this._artyApproach = KN.id + sgm;
+          this._aimPoint = null; this._lockTrack = null;
+          P.aimAz = azOf(KN.fx * sgm, KN.fz * sgm); P.aimEl = 45;
+          this.syncHUDControls();
+          this.addCombatLog('[[crosshair]] Sắp vào hầm: tháp quay nòng ra phía đuôi xe (dưới mái nòng dài không quay ngang được)', 'tip');
+        }
+      }
+      if (!KN) this._artyApproach = null;
+    }
+    // 2) vào dưới mái: nòng hạ về góc bắn tối ưu ra miệng hầm phía đuôi
     const was = this._artyShelter;
     this._artyShelter = inside ? K : null;
-    if (!inside) { this._shelterShot = null; return; }
-    if (was === K) return;
+    if (!inside) { this._shelterShot = null; this._shelterAt = null; return; }
+    // xe chạy sâu vào / lùi ra trong hầm: tính lại góc tối ưu (~2 lần / giây khi đã dịch chuyển), nòng theo luôn
+    const now = performance.now(), at = this._shelterAt;
+    if (was === K) {
+      if (!at || now - at.t < 500 || Math.hypot(P.x - at.x, P.z - at.z) < 6) return;
+      const prev = this._shelterShot;
+      this._shelterAt = { t: now, x: P.x, z: P.z };
+      const nb = this._shelterShot = this.bestShelterShot(P, K);
+      // tháp đang giữ góc tối ưu cũ (người chơi chưa ngắm chỗ khác): nòng theo góc mới
+      if (nb && !locked && !this._aimPoint && prev && (P.aimAz === undefined || Math.abs(P.aimAz - prev.az) < 0.5)) { P.aimAz = nb.az; P.aimEl = nb.el; }
+      return;
+    }
+    this._shelterAt = { t: now, x: P.x, z: P.z };
     const best = this._shelterShot = this.bestShelterShot(P, K);
-    if (!best || (this.lockedTarget && !this.lockedTarget.isDead)) return;
+    if (!best || locked) return;
     // lệnh thẳng hướng & góc nâng cho tháp (không qua bộ giải điểm ngắm: bộ giải có thể chọn quỹ đạo cầu vồng cao -> nòng
     // nâng chạm trần hầm); tháp tự quay vòng phía đuôi (không quét qua điểm mù cabin)
     this._aimPoint = null; this._lockTrack = null;
     P.aimAz = best.az; P.aimEl = best.el;
     P.charge = 1;
     this.syncHUDControls();
-    this.addCombatLog(`[[crosshair]] Vào hầm: nòng quay ra miệng hầm phía đuôi xe — nâng được tối đa ${best.el}° mà không vướng mái (miệng hầm vát chéo)`, 'tip');
+    this.addCombatLog(`[[crosshair]] Trong hầm: nòng ra miệng hầm phía đuôi xe, nâng tối đa ${best.el}° (vào sâu góc thấp, ra sát cửa hầm góc cao hơn)`, 'tip');
   }
-  // Góc nâng cao nhất (bước 1°, tới giới hạn giá pháo) ra miệng hầm phía đuôi xe mà nòng không chạm trần & đường đạn liều đầy
-  // không vướng bê tông: góc cầu vồng cao nhất bắn được từ chỗ đứng này (máy tính hỏa lực chọn góc thật khi bắn mục tiêu)
+  // Góc nâng cao nhất (bước 1°, tới giới hạn giá pháo) ra miệng hầm phía đuôi xe: đặt THẬT tháp & nòng mô hình ở từng góc,
+  // nòng không chạm trần / vách và đạn liều đầy bắn từ đầu nòng không vướng bê tông (lanh tô, dầm, mái, mặt vát)
   bestShelterShot(P, K) {
     const T = this.terrain, B = this.ballistics, ba = P.bodyAngle || 0;
+    if (!P.turretGroup || !P.barrelPivot || !P.barrelGroup || !P.muzzleTipLocal) return null;
     const sg = Math.sin(ba) * K.fx + Math.cos(ba) * K.fz >= 0 ? 1 : -1;   // hướng đuôi xe chiếu lên trục hầm
     const dx = K.fx * sg, dz = K.fz * sg;
-    const ammo = P.selectedAmmo || 'HE';
-    const v = new THREE.Vector3();
-    if (P.barrelPivot) { P.barrelPivot.updateWorldMatrix(true, false); P.barrelPivot.getWorldPosition(v); } else v.set(P.x, (P.y || 0) + 14, P.z);
-    const rp = B.roundParams(ammo, P, 1), L = 36;   // nòng ~4,5 m
+    const az = ((-Math.atan2(-dx, -dz) * 180 / Math.PI) % 360 + 360) % 360;
+    const ammo = P.selectedAmmo || 'HE', rp = B.roundParams(ammo, P, 1);
     const minD = (typeof Strongholds !== 'undefined' ? Strongholds.S.HB : 96) * 2;
     const elTop = Math.floor(Math.min(70, B.maxLobElevationFor ? B.maxLobElevationFor(P) : (B.maxElevationFor ? B.maxElevationFor(P) : 45)));
-    for (let el = elTop; el >= 2; el--) {
-      const er = el * Math.PI / 180, ce = Math.cos(er), se = Math.sin(er);
-      const tip = { x: v.x + dx * ce * L, y: v.y + se * L, z: v.z + dz * ce * L };
-      if (T.barrelBlocked && T.barrelBlocked(v, tip)) continue;
-      const r = B.simulateShot(tip.x, tip.y, tip.z, dx * ce * rp.v0, se * rp.v0, dz * ce * rp.v0, rp, B.isDirectFireShot(ammo, el), T);
-      if (r.hitType === 'WALL') continue;   // vướng mái / lanh tô / dầm trần
-      const d = Math.hypot(r.x - P.x, r.z - P.z);
-      if (r.hitType !== 'OUT' && d < minD) continue;
-      const az = ((-Math.atan2(-dx, -dz) * 180 / Math.PI) % 360 + 360) % 360;   // hướng thế giới -> azimuth (độ)
-      return { x: r.x, z: r.z, el, az, d: Math.round(d) };
+    const yaw0 = P.turretGroup.rotation.y, el0 = P.barrelPivot.rotation.x;
+    const base = new THREE.Vector3(), tip = new THREE.Vector3(), d = new THREE.Vector3();
+    let best = null;
+    try {
+      P.turretGroup.rotation.y = -az * Math.PI / 180 - ba;
+      for (let el = elTop; el >= 0 && !best; el--) {
+        P.barrelPivot.rotation.x = el * Math.PI / 180;
+        if (P.syncBarrelPose) P.syncBarrelPose();
+        P.group.updateMatrixWorld(true);
+        P.barrelPivot.getWorldPosition(base);
+        P.barrelGroup.localToWorld(tip.copy(P.muzzleTipLocal));
+        if (T.barrelBlocked && T.barrelBlocked(base, tip)) continue;
+        d.copy(tip).sub(base).normalize();
+        const r = B.simulateShot(tip.x, tip.y, tip.z, d.x * rp.v0, d.y * rp.v0, d.z * rp.v0, rp, B.isDirectFireShot(ammo, el), T);
+        if (r.hitType === 'WALL') continue;   // vướng mái / lanh tô / dầm trần
+        const dist = Math.hypot(r.x - P.x, r.z - P.z);
+        if (r.hitType !== 'OUT' && dist < minD) continue;
+        best = { x: r.x, z: r.z, el, az, d: Math.round(dist) };
+      }
+    } finally {
+      P.turretGroup.rotation.y = yaw0; P.barrelPivot.rotation.x = el0;
+      if (P.syncBarrelPose) P.syncBarrelPose();
+      P.group.updateMatrixWorld(true);
     }
-    return null;
+    return best;
   }
 
+  // GÓC NHÌN TRONG XE KHI NẰM DƯỚI MÁI HẦM: camera bám đuôi phía trên bị mái / ụ đất che -> chuyển dần sang góc nhìn của
+  // trưởng xe ngồi ở cửa nóc tháp, nhìn dọc theo tháp ra miệng hầm (thấy nòng pháo, vách hầm, trần, cửa hầm sáng phía
+  // trước). Giữ chuột giữa + kéo vẫn nhìn quanh. Ra khỏi mái thì trả dần về camera bám đuôi. inT: 0 = bám đuôi, 1 = trong xe
   blendInsideView(dt, C, yaw, lx, ly, lz) {
     const P = this.player, cam = this.camera;
     const inside = !!(P && !P.isDead && this.terrain && this.terrain.isProtectedPoint && this.terrain.isProtectedPoint(P.x, (P.y || 0) + 12, P.z));
