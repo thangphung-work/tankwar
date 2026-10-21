@@ -392,6 +392,9 @@ class SoundEngine {
     if (pos && me) {
       pan = viewPan(pos.x - me.x, pos.z - me.z, 0.85);
     }
+    // Đang nhìn qua kính ngắm = ngồi trong xe (sight_audio.js setInterior): vỏ thép chặn âm cao, tiếng ngoài nhỏ và
+    // ít hồi âm ngoài trời hơn
+    if (this.interior) return { gain: gain * 0.72, lowpass: Math.min(lowpass, 2600), wet: wet * 0.6, delay, pan };
     return { gain, lowpass, wet, delay, pan };
   }
 

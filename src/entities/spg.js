@@ -1708,7 +1708,8 @@ class SPGUnit3D {
     const speedRatio = Math.abs(this.speed) / this.baseMaxSpeed;
     this._odo = (this._odo || 0) + Math.abs(this.speed) * dt;
     // Xe bánh lốp (giảm xóc lò xo) nhún nhiều hơn xe xích; tần số ~1-2.5 Hz ở tốc độ tối đa
-    const bumpAmp = Math.min(0.35, (this.onDebris ? 1.2 : (terrainInfo.bumpiness || 0.4)) * speedRatio * (wheeledDrive ? 0.32 : 0.2));
+    this._bumpiness = this.onDebris ? 1.2 : (terrainInfo.bumpiness || 0.4);   // độ gồ ghề dưới xe (dispersion.js: chạy đường xấu kém chụm)
+    const bumpAmp = Math.min(0.35, this._bumpiness * speedRatio * (wheeledDrive ? 0.32 : 0.2));
     this._bumpY = (Math.sin(this._odo * 0.065) + 0.45 * Math.sin(this._odo * 0.15 + 1.3)) * bumpAmp * 0.7;
 
     // Hệ treo: độ cao thân bám mặt đất có lọc (không giật theo từng cạnh tam giác địa hình)

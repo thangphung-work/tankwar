@@ -53,6 +53,9 @@ class ArtilleryGame3D {
     this.ballistics = new BallisticsSystem3D(this.scene);
     this.ballistics.vegetationProvider = () => this.terrain && this.terrain.trees;
     this.ballistics.terrainProvider = () => this.terrain;
+    this.ballistics.onPlayerShot = (shell, shooter) => this.onPlayerShot(shell, shooter);
+    // tiếng động cơ tên lửa bám theo viên tên lửa thật (sight_audio.js) thay cho đoạn tiếng bay dựng sẵn
+    if (window.soundEngine && window.soundEngine.startMissileTrack) window.soundEngine.trackMissiles = true;
     this.radar = new CounterBatteryRadar();
     this.zone = new BattleZone(this.worldWidth, this.worldDepth);
 
@@ -1974,7 +1977,6 @@ class ArtilleryGame3D {
       if (this.matchmaking) {
         this.matchmaking.broadcastMyFire(firedShell);
       }
-      this.cameraShake = (this.player.tankType === 'ARTILLERY') ? 5 : 3;   // giật nhẹ khi khai hỏa (trước 16-28)
       this.updateAmmoUI();
 
     }
@@ -3718,6 +3720,112 @@ class ArtilleryGame3D {
   //   (vòng tầm tối thiểu / tối đa), W A S D di chuyển vùng nhìn (xe đứng yên), con lăn nâng / hạ độ cao.
   // Nhấp chuột vẫn ngắm điểm / khóa xe như thường; Space bắn; Ctrl / Esc thoát.
   // =========================================================================
+  /**
+   * Độ rung hình trong kính ngắm (rad): rung theo Dispersion.sway (chạy, mặt đường xấu, quay tháp, hẫng / đập xuống —
+   * xe có ổn định pháo rung nhỏ và nhanh, xe không ổn định lắc lớn và chậm) + giật khi bắn: lò xo tắt dần
+   * (onPlayerShot đẩy vận tốc ban đầu). Chỉ là hình: phát bắn đã lệch theo Dispersion.sigma.
+   */
+  sightShake(dt, P, S) {
+    S.t = (S.t || 0) + dt;
+    // rung camera ngoài vẫn tắt dần khi đang nhìn kính (không dồn lại giật bù lúc thoát kính)
+    if (this.cameraShake > 0) this.cameraShake = Math.max(0, this.cameraShake - dt * 25);
+    const W = typeof Dispersion !== 'undefined' && Dispersion.sway ? Dispersion.sway(P) : { amp: 0, hz: 3 };
+    S.swA = (S.swA || 0) + (W.amp - (S.swA || 0)) * (1 - Math.exp(-dt * 5));
+    const t = S.t, w = 2 * Math.PI * W.hz, a = S.swA;
+    const n = (k, ph) => Math.sin(w * k * t + ph);
+    // nhiều tần số lệch nhau -> rung không lặp đều; dọc mạnh hơn ngang (xóc theo mặt đường)
+    const yaw = a * 0.8 * (0.6 * n(1, 0) + 0.3 * n(1.73, 1.1) + 0.35 * n(0.41, 2.3));
+    const pitch = a * 1.15 * (0.6 * n(1.09, 0.7) + 0.3 * n(2.21, 2.9) + 0.35 * n(0.53, 4.1));
+    const K = S.kick || (S.kick = { p: 0, vp: 0, y: 0, vy: 0, om: 16 });
+    const om = K.om, z = 0.5, h = Math.min(dt, 0.05);
+    K.vp += (-om * om * K.p - 2 * z * om * K.vp) * h; K.p += K.vp * h;
+    K.vy += (-om * om * K.y - 2 * z * om * K.vy) * h; K.y += K.vy * h;
+    return { yaw: yaw + K.y, pitch: pitch + K.p, roll: K.y * 0.6 + a * 0.3 * n(0.77, 5.2) };
+  }
+
+  /**
+   * Tiếng động cơ tên lửa / đạn phản lực bám theo viên đạn thật: mỗi viên một kênh (sight_audio.js), cập nhật theo
+   * khoảng cách & hướng tới xe mình, vận tốc lại gần (Doppler), động cơ còn cháy hay đã tắt; viên đạn nổ / biến mất -> tắt.
+   */
+  updateMissileSounds(dt) {
+    const se = window.soundEngine, P = this.player;
+    const live = this._missileSnd || (this._missileSnd = new Map());
+    if (!se || !se.trackMissiles || !P || !(dt > 0)) {
+      if (live.size) { for (const h of live.values()) se && se.stopMissileTrack(h); live.clear(); }
+      return;
+    }
+    const seen = new Set();
+    for (const s of this.ballistics.activeShells) {
+      if (s.exploded || (s.ammoType !== 'ANTI_TANK_MISSILE' && s.ammoType !== 'RPG')) continue;
+      const d = Math.hypot(s.x - P.x, (s.y || 0) - (P.y || 0), s.z - P.z);
+      let h = s._snd;
+      if (!h) {
+        if (s._sndTried || d > 2200) continue;
+        s._sndTried = true;
+        // động cơ hành trình bắt lửa ~0,1 s sau liều đẩy (tiếng phóng do playMissileLaunch phát)
+        h = s._snd = se.startMissileTrack(Math.max(0, 0.09 - (s.timeAlive || 0)));
+        if (!h) continue;
+        h.prevD = d;
+      }
+      seen.add(h);
+      live.set(s.id, h);
+      const vr = (h.prevD - d) / dt;   // > 0: đang lao lại gần
+      h.prevD = d;
+      const burning = !s.burnedOut && (!!s.guide || !!(s.burnTravel && (s.travel || 0) < s.burnTravel));   // tên lửa dẫn đường: động cơ cháy suốt hành trình
+      se.updateMissileTrack(h, { dist: d, pos: { x: s.x, z: s.z }, vr, speed: Math.hypot(s.vx, s.vy, s.vz), burning });
+    }
+    for (const [id, h] of live) if (!seen.has(h)) { se.stopMissileTrack(h); live.delete(id); }
+  }
+
+  /**
+   * Người chơi vừa bắn (ballistics.onPlayerShot): giật kính ngắm & rung camera theo cỡ đạn / loại xe.
+   * kick: góc hình nảy lên trong kính (rad), om: độ cứng lò xo (ổn định pháo kéo hình về nhanh), shake: rung camera ngoài.
+   */
+  onPlayerShot(shell, P) {
+    // súng máy nóc (RCWS) bắn qua _launchOverride: không giật kính ngắm / rung camera như pháo chính
+    if (P && P._launchOverride) return;
+    const a = shell && shell.ammoType, type = P && P.tankType;
+    const K = a === 'GATLING_BULLET' || (a === 'INCENDIARY' && type === 'GATLING') ? { kick: 0.0035, om: 22, shake: 1.1 }
+      : a === 'SCOUT_BULLET' || a === 'INCENDIARY' ? { kick: 0.005, om: 14, shake: 0.7 }
+      : a === 'ANTI_TANK_MISSILE' ? { kick: 0.006, om: 12, shake: 1.8 }
+      : a === 'RPG' ? { kick: 0.01, om: 12, shake: 2.2 }
+      : type === 'ARTILLERY' ? { kick: 0.03, om: 10, shake: 5.5 }
+      : { kick: a === 'HE' ? 0.024 : 0.022, om: 16, shake: 3.5 };   // pháo 120 mm
+    this.cameraShake = Math.max(this.cameraShake || 0, K.shake);
+    const S = this._sight;
+    if (S && !S.arty && S.unit === P) {
+      const J = S.kick || (S.kick = { p: 0, vp: 0, y: 0, vy: 0, om: K.om });
+      J.om = K.om;
+      // nòng nảy lên + lệch ngang ngẫu nhiên nhẹ; súng liên thanh cộng dồn theo loạt (có trần)
+      J.vp = Math.min(J.vp + K.kick * K.om * 1.7, K.kick * K.om * 6);
+      J.vy += (Math.random() - 0.5) * K.kick * K.om * 0.9;
+    }
+  }
+
+  /** Vòng tản mát 2D trong kính (2σ, quy theo độ phóng) + hệ số tản hiện tại */
+  updateSightSpread(dt, P, S, range) {
+    const el = this._sightSpreadEl;
+    if (!el || typeof Dispersion === 'undefined') return;
+    const sg = Dispersion.sigma(P, P.selectedAmmo, P.elevation, range || 500);
+    const cam = this.camera;
+    const r = Math.tan(2 * sg.lat) / Math.tan(cam.fov * Math.PI / 360) * (window.innerHeight / 2);
+    S.spr = S.spr === undefined ? r : S.spr + (r - S.spr) * (1 - Math.exp(-dt * 10));
+    const show = S.spr >= 5 && !sg.lob;
+    if (el.hidden === show) el.hidden = !show;
+    if (show) {
+      const d = Math.round(S.spr * 2) + 'px';
+      if (el._d !== d) { el._d = d; el.style.width = d; el.style.height = d; }
+    }
+    const D = this._sightDispEl;
+    if (D) {
+      const m = sg.mul;
+      const txt = 'ĐỘ TẢN ×' + m.toFixed(1) + (m <= 0.85 ? ' · ĐÃ ỔN ĐỊNH' : m >= 2 ? ' · RUNG MẠNH' : '');
+      if (D.textContent !== txt) D.textContent = txt;
+      const col = m <= 1 ? '#5cf08a' : m < 2 ? '#ffd166' : '#ff7a5a';
+      if (D._c !== col) { D._c = col; D.style.color = col; }
+    }
+  }
+
   sightProfile(type) {
     switch (type) {
       case 'GATLING': return { kind: 'ring', mag: 3, magMin: 2, magMax: 6, name: 'KÍNH NGẮM 30MM' };
@@ -3775,9 +3883,12 @@ class ArtilleryGame3D {
       if (trees && trees.setCameraView) trees.setCameraView(null, null);   // nhìn qua kính: cây chắn là chắn thật
       this.buildSightOverlay(P, prof);
       if (window.soundEngine && window.soundEngine.playAmmoSwitch) window.soundEngine.playAmmoSwitch();
+      // nhìn qua kính = ngồi trong xe: tiếng ngoài bị vỏ thép chặn bớt, phát bắn thêm lớp tiếng trong khoang
+      if (!S.arty && window.soundEngine && window.soundEngine.setInterior) window.soundEngine.setInterior(true, P.tankType);
     } else {
       const S = this._sight;
       this._sight = null;
+      if (window.soundEngine && window.soundEngine.setInterior) window.soundEngine.setInterior(false);
       if (!S.arty) {
         if (S.unit && S.unit.group) S.unit.group.traverse(o => o.layers.set(o._lodH ? 1 : 0));
         extras.forEach(o => o.layers.set(0));
@@ -3818,6 +3929,10 @@ class ArtilleryGame3D {
         '#gun-sight .gs-m{stroke:var(--gs-c);stroke-width:1.5;fill:none}',
         '#gun-sight .gs-d{fill:var(--gs-c)}',
         '#gun-sight .gs-n{fill:#dff5d8;font-size:5px;font-family:inherit}',
+        // vòng tản mát trong kính: ~9/10 phát rơi trong vòng (2σ), nở khi chạy / quay tháp / vừa bắn, co khi đứng ngắm
+        '#gun-sight .gs-spread{position:absolute;left:50%;top:50%;width:0;height:0;transform:translate(-50%,-50%);border-radius:50%;border:1px dashed var(--gs-c);opacity:.55;box-shadow:0 0 0 1px rgba(0,0,0,.35);pointer-events:none}',
+        '#gun-sight .gs-spread[hidden]{display:none}',
+        '#gun-sight .gs-disp{font-size:11px;letter-spacing:.06em}',
         '#gun-sight .gs-top{position:absolute;top:max(calc(7vh + 6px),78px);left:50%;transform:translateX(-50%);display:flex;gap:14px;align-items:center;font-size:13px;letter-spacing:.12em;text-shadow:0 0 3px #000,0 0 6px #000}',
         '#gun-sight .gs-top b{font-weight:600;color:#fff}',
         '#gun-sight .gs-side{position:absolute;left:calc(7vw + 12px);top:50%;transform:translateY(-50%);display:grid;gap:6px;font-size:12px;letter-spacing:.08em;text-shadow:0 0 3px #000,0 0 6px #000}',
@@ -3963,13 +4078,15 @@ class ArtilleryGame3D {
         + '<div class="gs-burn"></div><div class="gs-fire" hidden>⚠ DRONE ĐANG BỊ BẮN</div><div class="gs-lock" hidden></div>' : '')
       + '<div class="gs-vig"></div><div class="gs-frame"><i></i><i></i><i></i><i></i></div>'
       + (etched ? '<div class="gs-optic"></div>' : '')
+      + (arty ? '' : '<div class="gs-spread" hidden></div>')
       // pháo: dấu tâm màn hình = điểm sẽ ngắm khi thả phím W A S D
       + (arty ? '<svg class="gs-ret" viewBox="-100 -100 200 200"><circle class="gs-m" r="6"/><circle class="gs-d" r="1"/>'
         + '<line class="gs-l" x1="-24" y1="0" x2="-10" y2="0"/><line class="gs-l" x1="10" y1="0" x2="24" y2="0"/>'
         + '<line class="gs-l" x1="0" y1="-24" x2="0" y2="-10"/><line class="gs-l" x1="0" y1="10" x2="0" y2="24"/></svg>'
         : '<svg class="gs-ret' + (etched ? ' etched' : '') + '" viewBox="-100 -100 200 200">' + ret + '</svg>')
       + '<div class="gs-top"><span>' + prof.name + '</span><b class="gs-hdg">000°</b><span class="gs-mag"></span></div>'
-      + '<div class="gs-side"><span>CỰ LY</span><span class="gs-big gs-range">—</span><span class="gs-state"></span><span class="gs-blast"></span></div>'
+      + '<div class="gs-side"><span>CỰ LY</span><span class="gs-big gs-range">—</span><span class="gs-state"></span><span class="gs-blast"></span>'
+      + (arty ? '' : '<span class="gs-disp"></span>') + '</div>'
       + '<div class="gs-hint">' + (arty
         ? 'W A S D: lái drone · Q / E: xoay · Shift: nhanh · Lăn chuột: lên / xuống · Nhấp: đánh dấu mục tiêu / khóa xe · F: đánh dấu tâm màn hình · Space: bắn · C: thu drone'
         : 'Lăn chuột: phóng to / thu nhỏ · Nhấp: ngắm điểm / khóa xe' + (P.tankType === 'GATLING' || P.tankType === 'SCOUT' ? ' · Nhấp lên trời: nâng nòng · Nhấp drone địch: khóa drone' : '') + ' · Space: bắn · Ctrl hoặc C: thoát') + '</div>'
@@ -3979,6 +4096,8 @@ class ArtilleryGame3D {
     this._sightStateEl = el.querySelector('.gs-state');
     this._sightBlastEl = el.querySelector('.gs-blast');
     this._sightHdgEl = el.querySelector('.gs-hdg');
+    this._sightSpreadEl = el.querySelector('.gs-spread');
+    this._sightDispEl = el.querySelector('.gs-disp');
     this._droneTags = null;
     if (arty) {
       const tg = (c) => { const e = el.querySelector('.gs-tag.' + c); e._arrow = e.querySelector('i'); e._txt = e.querySelector('span'); e.hidden = true; return e; };
@@ -4198,8 +4317,11 @@ class ArtilleryGame3D {
       const fov = 45 / S.mag;
       if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
       cam.position.set(px, py, pz);
-      const cp = Math.cos(S.pitch);
-      cam.lookAt(px + fx * cp * 100, py + Math.sin(S.pitch) * 100, pz + fz * cp * 100);
+      // rung hình theo trạng thái xe (cùng nguồn với độ tản mát) + giật khi bắn
+      const J = this.sightShake(dt, P, S);
+      const yv = S.yaw + J.yaw, pv = S.pitch + J.pitch, cp = Math.cos(pv);
+      cam.lookAt(px - Math.sin(yv) * cp * 100, py + Math.sin(pv) * 100, pz - Math.cos(yv) * cp * 100);
+      if (J.roll) cam.rotateZ(J.roll);
       this._camYaw = S.yaw;
       this._lodMag = S.mag;
       // thanh máu / khung khóa trên xe địch: kính phóng to N lần thì thu nhỏ lại cho khỏi che kín mục tiêu
@@ -4250,6 +4372,7 @@ class ArtilleryGame3D {
         else if (BI.hitK !== null) bTxt += BI.hitK >= 0.99 ? ' · MỤC TIÊU TRONG LÕI' : BI.hitK > 0 ? ' · SỨC NỔ TỚI MỤC TIÊU ~' + Math.round(BI.hitK * 100) + '%' : ' · MỤC TIÊU NGOÀI VÙNG NỔ';
       }
       if (this._sightBlastEl && this._sightBlastEl.textContent !== bTxt) this._sightBlastEl.textContent = bTxt;
+      if (!S.arty) this.updateSightSpread(dt, P, S, range);
       // thông số drone (~6 lần/giây): độ cao trên mặt đất, cách xe mình, gió (hướng gió thổi tới, độ thật), ô lưới bản đồ
       const U = S.arty ? this._uavEl : null;
       if (U && (U.t -= dt) <= 0) {
@@ -4808,6 +4931,7 @@ class ArtilleryGame3D {
     }
 
     // 3. Cập nhật đạn pháo 3D & kiểm tra tiếng rít đạn lao xuống + cảnh báo né đạn
+    this.updateMissileSounds(dt);
     let hasIncomingDanger = false;
     if (this.player && this.ballistics.activeShells.length > 0) {
       for (const s of this.ballistics.activeShells) {
@@ -4816,7 +4940,7 @@ class ArtilleryGame3D {
           const at = s.ammoType;
           const kind = at === 'SCOUT_BULLET' ? 'mg' : (at === 'GATLING_BULLET' || at === 'INCENDIARY') ? 'cannon30'
             : (at === 'RPG' || at === 'ANTI_TANK_MISSILE') ? 'missile' : (s.isDirectFire ? 'shell' : null);
-          if (!kind) s.flybyDone = true;   // đạn cầu vồng đã có tiếng rít lao xuống
+          if (!kind || (kind === 'missile' && s._snd)) s.flybyDone = true;   // đạn cầu vồng đã có tiếng rít lao xuống; tên lửa có kênh tiếng bám theo
           else {
             const dH = Math.hypot(s.x - this.player.x, s.z - this.player.z);
             const prev = s._flyPrev;
@@ -6098,6 +6222,7 @@ class ArtilleryGame3D {
     this.ballistics = new BallisticsSystem3D(this.scene);
     this.ballistics.vegetationProvider = () => this.terrain && this.terrain.trees;
     this.ballistics.terrainProvider = () => this.terrain;
+    this.ballistics.onPlayerShot = (shell, shooter) => this.onPlayerShot(shell, shooter);
     if (this.effectsManager) this.ballistics.fx = this.effectsManager.fx;
     this.radar = new CounterBatteryRadar();
     this.zone = new BattleZone(this.worldWidth, this.worldDepth);
