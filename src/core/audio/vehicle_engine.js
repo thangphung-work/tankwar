@@ -492,12 +492,21 @@ SoundEngine.mixin(class {
     e.engineGain.gain.setTargetAtTime(eg, t, tc);
     e.combGain.gain.setTargetAtTime((0.06 + rpm * 0.12 + thr * 0.24) * (1 + dmg * 0.35) * tk, t, tc);
     if (e.combFilter) e.combFilter.frequency.setTargetAtTime(200 + rpm * 300 + thr * 260, t, tc);
-    e.turbo.frequency.setTargetAtTime(1500 + tb * 2600, t, 0.08);
+    // Động cơ tăng áp (trang bị): bộ tăng áp lớn hơn, áp suất cao hơn -> tiếng rít của máy nén cao & rõ hẳn,
+    // gió hút vào ồn hơn; đang ở áp cao mà nhả ga thì van xả áp mở "PSSHH" (playTurboBlowOff)
+    const tku = o.turbo ? 1 : 0;
+    e.turbo.frequency.setTargetAtTime(1500 + tb * (2600 + 1900 * tku), t, 0.08);
     // Turbo hỏng: tiếng rít mất hẳn
-    e.turboGain.gain.setTargetAtTime(dmg >= 2 ? 0 : Math.max(0, tb - 0.2) * (isBoost ? 0.009 : 0.0055), t, 0.1);
+    e.turboGain.gain.setTargetAtTime(dmg >= 2 ? 0 : Math.max(0, tb - 0.2) * (isBoost ? 0.009 : 0.0055) * (1 + 1.8 * tku), t, 0.1);
     if (e.airGain) {
-      e.airGain.gain.setTargetAtTime(dmg >= 2 ? 0.002 : (0.002 + tb * 0.016) * (wheeled ? 0.8 : 1), t, 0.1);
-      e.airFilter.frequency.setTargetAtTime(1700 + tb * 2300, t, 0.1);
+      e.airGain.gain.setTargetAtTime(dmg >= 2 ? 0.002 : (0.002 + tb * 0.016 * (1 + 0.6 * tku)) * (wheeled ? 0.8 : 1), t, 0.1);
+      e.airFilter.frequency.setTargetAtTime(1700 + tb * (2300 + 900 * tku), t, 0.1);
+    }
+    if (tku && dmg < 2) {
+      // nhả ga đột ngột khi turbo đang quay nhanh: van xả áp mở
+      const prev = this._thrPrevBO === undefined ? thr : this._thrPrevBO;
+      if (prev - thr > 0.2 && tb > 0.5 && t - (this._blowOffT || 0) > 1.6) { this._blowOffT = t; this.playTurboBlowOff(tb); }
+      this._thrPrevBO = prev + (thr - prev) * Math.min(1, dtE * 3);
     }
     // quạt làm mát + cơ khí: theo vòng tua (quạt dẫn động từ trục máy), không theo ga
     if (e.mechGain) {
@@ -712,6 +721,18 @@ SoundEngine.mixin(class {
     this.tone(out, tc, { type: 'sawtooth', freq: big ? 50 : 40, freqEnd: big ? 120 : 100, sweep: 0.3, drive: 3, gain: 0.08, attack: 0.05, hold: 0.15, dur: 0.4, filter: 'lowpass', filterFreq: 700 });
     this.burst(out, tc + 0.05, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 900, freqEnd: 400, sweep: 0.5, gain: 0.25, attack: 0.08, dur: 0.5 });
     if (big) this.burst(out, tc + 0.1, { filter: 'bandpass', freq: 1800, freqEnd: 2600, sweep: 0.4, Q: 4, gain: 0.04, attack: 0.1, dur: 0.6 });   // turbo quay lên
+  }
+
+  // Van xả áp của bộ tăng áp: khí nén thoát ra "PSSHH" (to theo áp suất tăng áp lúc nhả ga), cánh máy nén quay trớn
+  // rít tụt dần — đặc trưng của máy có lắp Động cơ tăng áp
+  playTurboBlowOff(k = 1) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.voice({ bus: this.vehicleBus, gain: 0.5 * Math.min(1, k), wet: 0.05 });
+    this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3200, freqEnd: 1500, sweep: 0.35, Q: 0.9, gain: 0.22, attack: 0.008, dur: 0.38 });
+    this.burst(out, t, { filter: 'highpass', freq: 4500, gain: 0.08, attack: 0.004, dur: 0.25 });
+    this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 650, Q: 3, gain: 0.05, attack: 0.002, dur: 0.05 });   // van bật "phụt"
+    this.tone(out, t + 0.02, { freq: 4300, freqEnd: 1900, sweep: 0.9, gain: 0.006, attack: 0.01, dur: 0.9 });
   }
 
   // Hộp số sang số: nhả ga thoáng chốc + tiếng "cạch" cơ khí khẽ trong hộp số (vào số thấp có thêm "ục" ăn số)

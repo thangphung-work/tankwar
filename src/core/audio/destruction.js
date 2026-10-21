@@ -145,13 +145,14 @@ SoundEngine.mixin(class {
     // Bị sóng nổ che (opts.mask 0..1, xem blastMask): kết cấu vỡ SAU khi sóng xung kích tới (~20-50 ms) -> tiếng nổ
     // giữ được cú mở đầu, tiếng nứt vỡ chìm dưới sóng nổ rồi mới nổi lên ở đoạn mảnh vụn rơi
     const mask = (opts && opts.mask) || 0;
-    const t = this.ctx.currentTime + sp.delay + (mask ? 0.02 + 0.03 * mask : 0);
+    const t = this.ctx.currentTime + sp.delay + (mask ? 0.02 + 0.03 * mask : 0) + ((opts && opts.delay) || 0);
     // Thứ bậc độ to như ngoài đời (cùng khoảng cách): nổ đạn pháo > kho đạn / gạch ERA > nhà sập > tháp rơi, thép oằn
     // > nổ lốp > xích đứt > mảnh rơi. Thiếu bậc này thì nổ lốp to ngang đạn 155 và tiếng nổ chính mất uy lực
     const LEVEL = {
       cookoff: 0.25, cookoffSmall: 0.3, era: 0.3, fuel: 0.2, flare: 0.22, collapse: 0.11, turretLand: 0.08, metalCrush: 0.25,
       tire: 0.2, trackSnap: 0.35, concrete: 0.3, treeFall: 0.25, armorPlate: 0.35, snap: 0.5, debris: 0.45, debrisLand: 0.45, debrisHit: 0.42, debrisScrape: 0.3,
-      masonry: 0.3, adobe: 0.3, woodBreak: 0.32, sheetMetal: 0.26, rockSplit: 0.25, leafStrip: 0.35, slabImpact: 0.14, splashBig: 0.12
+      masonry: 0.3, adobe: 0.3, woodBreak: 0.32, sheetMetal: 0.26, rockSplit: 0.25, leafStrip: 0.35, slabImpact: 0.14, splashBig: 0.12,
+      apsFire: 0.3, apsKill: 0.22, slat: 0.4, fireExt: 0.45, camoRustle: 0.5
     };
     const out = this.voice({ gain: sp.gain * (LEVEL[kind] || 1), lowpass: sp.lowpass, wet: Math.min(0.95, sp.wet + 0.08), pan: sp.pan });
     if (mask) {
@@ -211,6 +212,56 @@ SoundEngine.mixin(class {
         this.burst(out, t, { filter: 'bandpass', freq: 2600, Q: 0.8, drive: 5, gain: 0.9 * k, attack: 0.0004, dur: 0.06 });
         this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 700, drive: 5, gain: 1.4 * k, attack: 0.002, dur: 0.7 });
         this.metal(out, t + 0.02, { f0: 520, decay: 0.5, gain: 0.25 * k });
+        break;
+      }
+      case 'apsFire': {
+        // Hệ thống đánh chặn bắn đạn chặn: bệ phóng xoay "rrít" cực ngắn rồi liều nổ tạo mảnh định hướng "ĐOÀNG" chát,
+        // đanh như súng hoa cải cỡ lớn, kèm mảnh kim loại rít bay ra
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1500, freqEnd: 2600, sweep: 0.04, Q: 4, gain: 0.12 * k, attack: 0.005, dur: 0.04 });
+        const tb = t + 0.04;
+        this.snap(out, tb, 1.2 * k, 8000, 6);
+        this.burst(out, tb, { filter: 'bandpass', freq: 3200, Q: 0.7, drive: 4, gain: 0.8 * k, attack: 0.0004, dur: 0.05 });
+        this.burst(out, tb, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 600, drive: 3, gain: 0.9 * k, attack: 0.002, dur: 0.35 });
+        this.burst(out, tb + 0.01, { filter: 'bandpass', freq: 5200, freqEnd: 2400, sweep: 0.15, Q: 3, gain: 0.12 * k, attack: 0.002, dur: 0.16 });
+        break;
+      }
+      case 'apsKill': {
+        // Đầu đạn RPG / tên lửa bị mảnh chặn xé nát, liều nổ lõm nổ dở dang giữa không trung: "ẦM" đục, không có luồng xuyên
+        this.snap(out, t, 1.0 * k, 4500, 4);
+        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 4, gain: 1.6 * k, attack: 0.002, dur: 0.6 });
+        this.burst(out, t + 0.01, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1100, Q: 0.6, gain: 0.5 * k, attack: 0.002, dur: 0.25 });
+        for (let i = 0; i < 4; i++) this.burst(out, t + 0.15 + Math.random() * 0.6, { filter: 'bandpass', freq: 2500 + Math.random() * 3000, Q: 6, gain: 0.06 * k, attack: 0.0005, dur: 0.02 });   // mảnh vỏ rơi lách cách
+        break;
+      }
+      case 'slat': {
+        // Lồng thép hứng đạn: thanh thép bị đập "KENG" ngân, cả lồng rung lạch cạch trên tay đỡ; dud (đầu nổ lõm bị kẹp
+        // méo, không nổ): thêm tiếng thân đạn nhôm bẹp "rắc" và rơi lăn lóc
+        this.metal(out, t, { f0: 780 + Math.random() * 140, ratios: [1, 2.76, 5.4], decay: 0.6, gain: 0.35 * k, click: 0.8 });
+        this.metal(out, t + 0.005, { f0: 1350 + Math.random() * 200, ratios: [1, 2.3], decay: 0.35, gain: 0.15 * k, click: 0.3 });
+        for (let i = 0; i < 5; i++) this.burst(out, t + 0.04 + i * (0.035 + Math.random() * 0.04), { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1800 + Math.random() * 1500, Q: 5, gain: (0.12 - i * 0.02) * k, attack: 0.0005, dur: 0.025 });
+        if (opts && opts.dud) {
+          this.burst(out, t + 0.003, { buffer: this.crackleBuffer || this.pinkNoiseBuffer, filter: 'bandpass', freq: 1600, Q: 0.8, gain: 0.5 * k, attack: 0.001, dur: 0.12 });
+          this.metal(out, t + 0.45 + Math.random() * 0.15, { f0: 420, ratios: [1, 2.6], decay: 0.25, gain: 0.08 * k, click: 0.3 });
+          this.metal(out, t + 0.7 + Math.random() * 0.2, { f0: 460, ratios: [1, 2.6], decay: 0.2, gain: 0.05 * k, click: 0.3 });
+        }
+        break;
+      }
+      case 'fireExt': {
+        // Bình chữa cháy tự động xả: van điện "tách", khí dập lửa nén phụt "PSSSHHH" qua các vòi phun trong khoang rồi xì nhỏ
+        // dần; nghe từ ngoài xe bị vỏ thép bóp nghẹt (đục, mất âm cao)
+        const inside = !!(opts && opts.inside);
+        const hi = inside ? 1 : 0.35;
+        this.burst(out, t, { filter: 'bandpass', freq: 3000, Q: 3, gain: 0.25 * k * hi, attack: 0.0005, dur: 0.015 });
+        this.burst(out, t + 0.01, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, gain: 0.6 * k, attack: 0.003, dur: 0.12 });
+        this.burst(out, t + 0.015, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: inside ? 2400 : 900, freqEnd: inside ? 1500 : 600, sweep: 1.4, Q: 0.6, gain: 0.8 * k, attack: 0.02, dur: 1.6 });
+        this.burst(out, t + 0.02, { filter: 'highpass', freq: inside ? 4200 : 2000, gain: 0.35 * k * hi, attack: 0.03, dur: 1.2 });
+        break;
+      }
+      case 'camoRustle': {
+        // Lưới ngụy trang + cành lá phủ xe phần phật khi xe chạy: lá cọ nhau xào xạc, cành con quệt vào vỏ thép
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2600 + Math.random() * 1200, Q: 0.8, gain: 0.25 * k, attack: 0.06, dur: 0.35 + Math.random() * 0.3 });
+        for (let i = 0; i < 3; i++) this.burst(out, t + Math.random() * 0.4, { filter: 'bandpass', freq: 1800 + Math.random() * 3000, Q: 3, gain: 0.08 * k, attack: 0.001, dur: 0.02 });
+        if (Math.random() < 0.3) this.burst(out, t + Math.random() * 0.3, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 600, Q: 1.5, gain: 0.12 * k, attack: 0.02, dur: 0.15 });   // lưới đập phạch
         break;
       }
       case 'fuel': {

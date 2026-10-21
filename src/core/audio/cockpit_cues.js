@@ -123,31 +123,96 @@ SoundEngine.mixin(class {
   }
 
   /**
-   * Phóng lựu đạn khói từ ống phóng trên tháp: mỗi ống một tiếng "BỤP" đanh của liều phóng nhỏ (bắn điện, lệch nhau vài
-   * chục ms) -> lựu đạn bay ~50 m, ~0,6 s sau liều nổ tung khói "bụp" đục -> khói phụt xì xì. distance > 0: xe khác phóng
-   * (nhỏ dần, mất âm cao theo khoảng cách). Trước đây là 2 tiếng "cạch" kim loại, phát to như nhau dù xe ở đâu trên bản đồ.
+   * Phóng 1 loạt lựu đạn khói (n quả, mỗi bên tháp 1 quả): trong xe nghe rơ-le bắn điện "tách" trên bảng điều khiển,
+   * rồi mỗi ống một tiếng "THỤP" rỗng của liều phóng nhỏ trong ống ngắn (cộng hưởng ống ~180 Hz, khác hẳn tiếng nổ
+   * đanh của pháo), lệch nhau ~0,1 s; thân xe rung nhẹ, lựu đạn xé gió "vút" bay đi. Tiếng nổ trên không ở điểm rơi:
+   * playSmokeBurst (Equipment.SmokeField gọi đúng lúc lựu đạn nổ). distance > 0: xe khác phóng (nhỏ, tối dần theo
+   * khoảng cách, không có tiếng trong khoang).
    */
-  playSmokeLaunch(distance = 0, pos = null, n = 3) {
+  playSmokeLaunch(distance = 0, pos = null, n = 2) {
     if (!this.ready()) return;
     const remote = distance > 0;
-    const sp = remote ? this.spatial(distance, pos) : { gain: 1, lowpass: 20000, wet: 0.3, delay: 0, pan: 0 };
+    const sp = remote ? this.spatial(distance, pos) : { gain: 1, lowpass: 20000, wet: 0.25, delay: 0, pan: 0 };
     if (sp.gain < 0.05) return;
     const t = this.ctx.currentTime + sp.delay;
-    const out = this.voice({ bus: remote ? null : this.weaponBus, gain: sp.gain * 0.5, lowpass: sp.lowpass, wet: Math.max(0.3, sp.wet), pan: sp.pan });
     const R = Math.random;
-    for (let i = 0; i < n; i++) {
-      const ti = t + i * (0.04 + R() * 0.05);
-      this.snap(out, ti, 0.6, 6000, 3);
-      this.burst(out, ti, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 700 + R() * 200, Q: 0.8, drive: 1.8, gain: 1.4, attack: 0.001, dur: 0.09 });
-      this.burst(out, ti, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, drive: 1.6, gain: 0.8, attack: 0.001, dur: 0.12 });
+    if (!remote) {
+      // rơ-le / công tắc bắn điện trong khoang + tiếng ù điện ngắn
+      const cab = this.voice({ bus: this.weaponBus, gain: 0.5, wet: 0.02 });
+      this.burst(cab, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3200, Q: 3, gain: 0.25, attack: 0.0005, dur: 0.015 });
+      this.metal(cab, t + 0.008, { f0: 1900, ratios: [1, 2.4], decay: 0.05, gain: 0.05, click: 0.5 });
+      this.tone(cab, t + 0.01, { type: 'square', freq: 120, gain: 0.012, attack: 0.004, dur: 0.06, filter: 'lowpass', filterFreq: 900 });
     }
-    // lựu đạn tung khói ở phía trước xe (xa hơn -> nhỏ & tối hơn tiếng phóng)
-    const far = this.voice({ gain: sp.gain * 0.3, lowpass: Math.min(sp.lowpass, 3000), wet: Math.max(0.45, sp.wet), pan: sp.pan });
-    for (let i = 0; i < n; i++) {
-      const tb = t + 0.55 + i * 0.06 + R() * 0.12;
-      this.burst(far, tb, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 450, drive: 2, gain: 1.2, attack: 0.001, dur: 0.15 });
-      this.burst(far, tb, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1200, Q: 0.7, gain: 0.5, attack: 0.001, dur: 0.06 });
-      this.burst(far, tb + 0.05, { buffer: this.pinkNoiseBuffer, filter: 'highpass', freq: 1800, gain: 0.12, attack: 0.15, dur: 1.6 });
+    for (let i = 0; i < Math.max(1, n); i++) {
+      const ti = t + 0.03 + i * (0.09 + R() * 0.05);
+      const pp = this.voice({ bus: remote ? null : this.weaponBus, gain: sp.gain * 0.55, lowpass: sp.lowpass, wet: Math.max(0.25, sp.wet), pan: remote ? sp.pan : (i === 0 ? -0.35 : 0.35) });
+      // xung áp liều phóng (ngắn, không đanh như đầu nòng pháo)
+      this.snap(pp, ti, 0.45, remote ? Math.min(sp.lowpass, 2500) : 3800, 2.2);
+      // tiếng "thụp" rỗng: cộng hưởng ống phóng ngắn, tụt cao độ khi khí thoát
+      this.tone(pp, ti, { type: 'sine', freq: 190 + R() * 25, freqEnd: 85, sweep: 0.09, gain: 0.55, attack: 0.002, dur: 0.16 });
+      this.burst(pp, ti, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 1.8, gain: 1.1, attack: 0.001, dur: 0.14 });
+      this.burst(pp, ti, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 650 + R() * 200, Q: 1.1, drive: 1.5, gain: 0.8, attack: 0.001, dur: 0.07 });
+      // khí phụt khỏi miệng ống
+      this.burst(pp, ti + 0.005, { buffer: this.pinkNoiseBuffer, filter: 'highpass', freq: 1500, gain: 0.18, attack: 0.002, dur: 0.12 });
+      // lựu đạn xé gió bay đi (nhỏ dần, cao độ tụt — hiệu ứng Doppler khi bay xa)
+      if (!remote || distance < 900) this.burst(pp, ti + 0.04, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2400, freqEnd: 900, sweep: 0.5, Q: 2.2, gain: 0.09, attack: 0.04, dur: 0.45 });
+      if (!remote) this.metal(pp, ti + 0.004, { f0: 260, ratios: [1, 2.1, 3.3], decay: 0.12, gain: 0.05, click: 0.2 });   // cụm ống rung trên vỏ tháp
+    }
+    if (!remote && this.duck) this.duck(0.75, 0.4);
+  }
+
+  /**
+   * Lựu đạn khói nổ trên không: liều nổ tung nhỏ "bụp" đục (không phải tiếng nổ phá), vỏ lựu đạn tách "tạch",
+   * rồi khói phụt "phù" và các viên phốt-pho đỏ văng ra cháy xèo xèo / lách tách rơi xuống đất.
+   */
+  playSmokeBurst(distance = 80, pos = null) {
+    if (!this.ready()) return;
+    const sp = this.spatial(distance, pos);
+    if (sp.gain < 0.04) return;
+    const t = this.ctx.currentTime + sp.delay;
+    const out = this.voice({ gain: sp.gain * 0.5, lowpass: sp.lowpass, wet: Math.max(0.35, sp.wet), pan: sp.pan });
+    const R = Math.random;
+    this.snap(out, t, 0.35, Math.min(sp.lowpass, 3200), 2);
+    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, drive: 2, gain: 1.2, attack: 0.001, dur: 0.18 });
+    this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1300, Q: 0.8, gain: 0.45, attack: 0.001, dur: 0.05 });
+    this.tone(out, t, { type: 'sine', freq: 110, freqEnd: 55, sweep: 0.15, gain: 0.3, attack: 0.002, dur: 0.2 });
+    // khói phụt ra: tiếng "phù" trắng dài
+    this.burst(out, t + 0.02, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, freqEnd: 500, sweep: 1.0, Q: 0.6, gain: 0.22, attack: 0.05, dur: 1.2 });
+    // phốt-pho cháy: xèo xèo + vài tiếng lách tách lúc rơi
+    if (distance < 1200) {
+      this.burst(out, t + 0.08, { buffer: this.crackleBuffer || this.pinkNoiseBuffer, filter: 'highpass', freq: 2200, gain: 0.1, attack: 0.15, dur: 2.2 });
+      for (let i = 0; i < 5; i++) this.burst(out, t + 0.15 + R() * 1.2, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2500 + R() * 2000, Q: 2, gain: 0.08, attack: 0.0005, dur: 0.02 });
+    }
+  }
+
+  /**
+   * Radar của xe mình bắt được vết mới: tiếng "píp" điện tử ngắn trên màn hình radar, gần thì cao hơn một chút.
+   * Giãn cách ≥ 0,8 s để nhiều vết cùng lúc không thành chuỗi bíp liên hồi
+   */
+  playRadarContact(k = 0.5) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    if (this._radarPipT !== undefined && t - this._radarPipT < 0.8) return;
+    this._radarPipT = t;
+    const out = this.voice({ bus: this.uiBus || this.weaponBus, gain: 0.35, wet: 0.02 });
+    const f = 1500 + (1 - Math.min(1, Math.max(0, k))) * 500;
+    this.tone(out, t, { type: 'sine', freq: f, gain: 0.03, attack: 0.002, dur: 0.12 });
+    this.tone(out, t + 0.003, { type: 'sine', freq: f * 2, gain: 0.006, attack: 0.002, dur: 0.06 });
+  }
+
+  /**
+   * Hệ thống đánh chặn chủ động trên xe mình vừa khai hỏa: còi báo trong tai nghe — bíp kép cao (đã chặn được)
+   * hoặc bíp trầm dài (bắn trượt, đầu đạn vẫn lao vào)
+   */
+  playApsAlert(ok = true) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime + 0.12;
+    const out = this.voice({ bus: this.uiBus || this.weaponBus, gain: 0.5, wet: 0.02 });
+    if (ok) {
+      this.tone(out, t, { type: 'square', freq: 1760, gain: 0.03, attack: 0.002, dur: 0.07, filter: 'lowpass', filterFreq: 4000 });
+      this.tone(out, t + 0.12, { type: 'square', freq: 2350, gain: 0.03, attack: 0.002, dur: 0.1, filter: 'lowpass', filterFreq: 4000 });
+    } else {
+      this.tone(out, t, { type: 'square', freq: 520, gain: 0.04, attack: 0.002, hold: 0.25, dur: 0.12, filter: 'lowpass', filterFreq: 2500 });
     }
   }
 

@@ -1357,12 +1357,15 @@ class SPGUnit3D {
   // Máy châm lửa (máy có quyền với phát bắn) là máy duy nhất tính sát thương cháy -> không trừ máu 2 lần khi chơi mạng
   ignite(duration = 2.5) {
     if (this.isDead) return;
+    if (typeof Equipment !== 'undefined' && Equipment.extIgniteMul) duration *= Equipment.extIgniteMul(this);   // bình chữa cháy: cháy ngắn hơn
+    if (typeof VehicleDamage !== 'undefined' && VehicleDamage.extinguisherSound) VehicleDamage.extinguisherSound(this);
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
     this.burnAuth = true;
   }
   // Lửa do máy khác báo sang: chỉ hiện khói lửa, không tự trừ máu
   igniteVisual(duration = 2.5) {
     if (this.isDead) return;
+    if (typeof VehicleDamage !== 'undefined' && VehicleDamage.extinguisherSound) VehicleDamage.extinguisherSound(this);
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
   }
 
@@ -2946,12 +2949,27 @@ class SPGUnit3D {
   }
 
   // Hình học nòng đo trên mô hình 3D: tâm quay nòng (cao / trước tâm xe) và chiều dài nòng — cho bộ giải đường đạn
+  // Tâm quay của tháp thường không nằm ở tâm xe (pháo tự hành: bàn xoay đặt phía sau thùng xe) -> ghi thêm vị trí trục tháp
+  // (axX / axZ so với tâm xe) và gốc nòng so với trục tháp theo hướng nòng (fwd: phía trước, lat: sang phải) để bộ giải
+  // đặt miệng nòng đúng chỗ cho mọi hướng bắn (trước đây coi gốc nòng nằm trên đường thẳng từ tâm xe theo hướng bắn
+  // -> lệch tới ~20 đơn vị, điểm rơi bộ giải tính khác đường đạn thật)
   barrelGeometry() {
     if (!this.barrelGroup || !this.muzzleTipLocal) return null;
     this.group.updateMatrixWorld(true);
     const tip = this.barrelGroup.localToWorld(this.muzzleTipLocal.clone());
     const base = this.barrelGroup.localToWorld(new THREE.Vector3());
-    return { pivotH: base.y - this.y, pivotFwd: Math.hypot(base.x - this.x, base.z - this.z), len: tip.distanceTo(base) };
+    const out = { pivotH: base.y - this.y, pivotFwd: Math.hypot(base.x - this.x, base.z - this.z), len: tip.distanceTo(base) };
+    if (this.turretGroup) {
+      const ax = this.turretGroup.getWorldPosition(new THREE.Vector3());
+      const dx = tip.x - base.x, dz = tip.z - base.z, dl = Math.hypot(dx, dz);
+      if (dl > 1e-3) {
+        const ux = dx / dl, uz = dz / dl, ox = base.x - ax.x, oz = base.z - ax.z;
+        out.axX = ax.x - this.x; out.axZ = ax.z - this.z;
+        out.fwd = ox * ux + oz * uz;
+        out.lat = ox * -uz + oz * ux;   // phải của hướng (ux, uz) trong hệ x-z là (-uz, ux)
+      }
+    }
+    return out;
   }
 
   getMuzzleWorldTransform() {
