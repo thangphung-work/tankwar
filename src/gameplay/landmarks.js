@@ -1178,14 +1178,19 @@ const Landmarks = (() => {
       K.add('concDark', new THREE.CylinderGeometry(23, 23, 3, 6), M4(f, 15.5, r));
       for (let k = 0; k < 6; k++) {
         const a = k * Math.PI / 3 + Math.PI / 6, c = Math.cos(a), sn = Math.sin(a);
-        K.box('void', f + c * 18.2, 9, r + sn * 18.2, 1, 2.2, 8, -a);
-        K.box('steelDark', f + c * 18.6, 10.6, r + sn * 18.6, 1.2, 0.8, 9.4, -a); K.box('steelDark', f + c * 18.6, 7.4, r + sn * 18.6, 1.6, 0.8, 9.4, -a);
-        if (k % 2 === 0) K.add('steelDark', new THREE.CylinderGeometry(0.3, 0.3, 4, 6), M4(f + c * 19.4, 9, r + sn * 19.4, 0, -a, Math.PI / 2));
+        // lỗ châu mai kiểu khe ngang có mũ che + 2 má loe bằng bê tông, tấm chắn thép trượt hé mở bên trong
+        const tx = -sn, tz = c;
+        K.box('void', f + c * 18.3, 9.2, r + sn * 18.3, 1, 2, 8, -a);
+        K.box('steelDark', f + c * 17.9, 10.6, r + sn * 17.9, 0.4, 1.2, 8.4, -a);
+        K.box('concDark', f + c * 19.4, 11.2, r + sn * 19.4, 3, 1.8, 11, -a);
+        K.box('concDark', f + c * 19.2, 7.4, r + sn * 19.2, 2.6, 1.6, 10.4, -a);
+        for (const s2 of [-1, 1]) K.box('concDark', f + c * 19.3 + tx * s2 * 5.1, 9.2, r + sn * 19.3 + tz * s2 * 5.1, 2.8, 2.4, 0.9, -a);
+        if (k % 2 === 0) K.add('steelDark', new THREE.CylinderGeometry(0.28, 0.28, 2.6, 6), M4(f + c * 19.2, 9.2, r + sn * 19.2, 0, -a, Math.PI / 2));
       }
       // hào giao thông lót bao cát dẫn vào cửa sau, lưới nguỵ trang phủ nóc, ăng-ten
       const ia = Math.atan2(-r, -f) + Math.PI, ex = f + Math.cos(ia) * 21, ez = r + Math.sin(ia) * 21, px = -Math.sin(ia), pz = Math.cos(ia);
       for (const s2 of [-1, 1]) sandbags(K, ex + px * s2 * 6, ez + pz * s2 * 6, ex + Math.cos(ia) * 22 + px * s2 * 6, ez + Math.sin(ia) * 22 + pz * s2 * 6, 3, 0);
-      camoNet(K, M4(f, 0, r, 0, 0.4, 0), 40, 40, 26, 3);
+      camoNet(K, M4(f, 0, r, 0, 0.4, 0), 50, 50, 17.5, -8);
       K.cyl('steelGray', f + 8, 17, r + 8, 0.2, 0.3, 20, 5);
       for (let k = 0; k < 6; k++) { const a0 = k * Math.PI / 3, a1 = a0 + Math.PI / 3; sandbags(K, f + Math.cos(a0) * 19, r + Math.sin(a0) * 19, f + Math.cos(a1) * 19, r + Math.sin(a1) * 19, 2, 17); }
       K.solid(f, r, 21, 21, 0, 21);
