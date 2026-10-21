@@ -491,11 +491,16 @@ const MapGen = (() => {
       let v = -1500 * K;
       while (v <= 1500 * K) { linesV.push(v); v += R(240, 360); }
       if (!linesV.some(q => Math.abs(q) < 60)) linesV.push(0);
+      // phố chỉ trong lòng thung lũng: đoạn nào chạy lên sườn vành núi thì cắt bỏ (phố cụt ở chân núi)
       const seg = (a, b, w, kind) => {
-        const pts = [];
         const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 14);
-        for (let i = 0; i <= n; i++) pts.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]);
-        roads.push({ pts, width: w, kind });
+        let pts = [];
+        const flush = () => { if (pts.length >= 4) roads.push({ pts, width: w, kind }); pts = []; };
+        for (let i = 0; i <= n; i++) {
+          const x = lerp(a[0], b[0], i / n), z = lerp(a[1], b[1], i / n);
+          if (Math.hypot(x, z) < rimFoot(x, z) - 40) pts.push([x, z]); else flush();
+        }
+        flush();
       };
       for (const q of lines) seg(tf(q, -1560 * K), tf(q, 1560 * K), Math.abs(q) < 140 ? 44 : 32, 'asphalt');
       for (const q of linesV) seg(tf(-1560 * K, q), tf(1560 * K, q), Math.abs(q) < 60 ? 52 : 32, 'asphalt');
