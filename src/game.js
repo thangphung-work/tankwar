@@ -544,6 +544,7 @@ class ArtilleryGame3D {
     if (T.groundAtRaw && T.groundAtRaw(x, z) < -0.5) return false;
     if (T.bridges && T.bridges.length && T.bridgeAt(x, z)) return false;
     if (T.strongholdSet && T.strongholdSet.near(x, z, 60)) return false;
+    if (T.landmarkSet && T.landmarkSet.near(x, z, 40)) return false;
     for (const b of T.buildings || []) if (Math.hypot(x - b.x, z - b.z) < (b.radius || 30) + 40) return false;
     for (const r of T.boulders || []) if (Math.hypot(x - r.x, z - r.z) < (r.radius || 18) + 30) return false;
     for (const f of T.horseshoeForts || []) if (Math.hypot(x - f.x, z - f.z) < (f.outerRadius || 60) + 30) return false;

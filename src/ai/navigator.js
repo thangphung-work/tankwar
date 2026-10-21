@@ -68,6 +68,11 @@ const Navigator = (() => {
       const r = bl.radius + INF;
       mark(bl.x, bl.z, r, (x, z) => Math.hypot(x - bl.x, z - bl.z) < r);
     }
+    // Khối đặc của công trình bối cảnh (bệ phóng, tháp, bồn, xe, cột...): hộp xoay nới rộng như nhà
+    for (const q of terrain.landmarkSet ? terrain.landmarkSet.navBoxes() : []) {
+      const hu = q.hu + INF, hv = q.hv + INF;
+      mark(q.cx, q.cz, Math.hypot(hu, hv), (x, z) => { const dx = x - q.cx, dz = z - q.cz; return Math.abs(dx * q.ux + dz * q.uz) < hu && Math.abs(-dx * q.uz + dz * q.ux) < hv; });
+    }
     G = { nx, nz, W, D, h, blocked, wd, terrain };
     grids.set(terrain, G);
     return G;

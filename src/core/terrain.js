@@ -67,7 +67,7 @@ class BattleTerrain3D {
     this.craters = [];
     this.waterMesh = null;
     this.backdrop = null;
-    this.trees = this.buildingSet = this.bunkerSet = this.strongholdSet = this.groundCover = this.propSet = null;
+    this.trees = this.buildingSet = this.bunkerSet = this.strongholdSet = this.landmarkSet = this.groundCover = this.propSet = null;
     this.envDamage = null;
     this.rockItems = [];
     this.built = false;
@@ -115,6 +115,8 @@ class BattleTerrain3D {
         groundMaterial: o => this.groundLikeMaterial(o), worldSize: [this.width, this.depth], leafColors: this.leafColors()
       });
     }
+    // Công trình bối cảnh giữa 3 cứ điểm (bệ phóng hạt nhân, hầm sinh học, trận địa phòng không)
+    if ((this.map.landmarks || []).length && typeof Landmarks !== 'undefined') this.landmarkSet = new Landmarks.LandmarkSet(this.group, this.map.landmarks, { groundAt: ground });
     // Dựng nhà / cây / boong-ke với hạt giống của bản đồ -> mọi máy có cùng hình dạng & độ bền từng mảng
     if (typeof Destructibles !== 'undefined') Destructibles.withSeed((this.seed ^ 0x5eed1234) >>> 0, () => {
       this.bunkerSet = new Destructibles.BunkerSet(this.group, this.map.bunkers, ground);
@@ -385,6 +387,8 @@ class BattleTerrain3D {
     }
     // Nền bê tông dưới boong-ke
     for (const k of M.bunkers) { ctx.fillStyle = 'rgba(110,106,96,0.55)'; ctx.beginPath(); ctx.arc(toPx(k.x), toPx(k.z), 62 * sc, 0, 6.283); ctx.fill(); }
+    // Sân bê tông / đường đất trong khu công trình bối cảnh
+    if (M.landmarks && M.landmarks.length && typeof Landmarks !== 'undefined') Landmarks.paintGround(ctx, M.landmarks, toPx, sc);
     this.groundCanvas = cv;
     const tex = new THREE.CanvasTexture(cv);
     tex.anisotropy = 8;
@@ -1062,6 +1066,8 @@ ${sea ? 'varying float vDep;' : ''}
   blastFactor(ex, ey, ez, ux, uy, uz) {
     // Ụ đất / tường bê tông cứ điểm nằm giữa điểm nổ và xe
     if (this.strongholdSet && this.strongholdSet.segmentHit(ex, ey, ez, ux, uy, uz)) return 0.15;
+    // khối bê tông / thép của công trình bối cảnh
+    if (this.landmarkSet && this.landmarkSet.segmentHit(ex, ey, ez, ux, uy, uz)) return 0.2;
     if (this.bunkerSet) {
       const hit = this.bunkerSet.blocks(ex, ey, ez, ux, uy, uz);
       if (hit) return hit.roof ? 0.12 : 0.18;
@@ -1237,6 +1243,7 @@ ${sea ? 'varying float vDep;' : ''}
       if (K.roofs) for (const s of K.roofs) top = Math.max(top, s.y1 + 4);
     }
     if (this.strongholdSet) top = Math.max(top, this.strongholdSet.maxTop());
+    if (this.landmarkSet) top = Math.max(top, this.landmarkSet.maxTop());
     for (const br of this.bridges) top = Math.max(top, br.deckY !== undefined ? br.deckY : -Infinity);
     if (this.propSet) for (const sg of this.propSet.bagSegs) top = Math.max(top, Math.max(sg.g0, sg.g1) + sg.top);
     // lề: gờ đất quanh hố bom, dầm / gờ nhô, sai số nội suy
@@ -1253,6 +1260,7 @@ ${sea ? 'varying float vDep;' : ''}
       const c = this.strongholdSet.concreteAt(x, y, z);
       if (c) return { hit: true, type: 'WALL', stronghold: c.K, normal: c.normal, x, y, z };
     }
+    if (this.landmarkSet) { const lm = this.landmarkSet.hitTest(x, y, z); if (lm) return lm; }
     for (const b of this.buildings) {
       if (Math.abs(x - b.x) > b.radius || Math.abs(z - b.z) > b.radius) continue;
       const R = b.ref;
@@ -1366,6 +1374,7 @@ ${sea ? 'varying float vDep;' : ''}
       box.y1 = (R.y || 0) + (b.height || 60);
       out.push(box);
     }
+    if (this.landmarkSet) this.landmarkSet.vehicleBoxes(x, z, reach + 10, out);
     return out;
   }
 
@@ -1481,6 +1490,8 @@ ${sea ? 'varying float vDep;' : ''}
     }
     // Cứ điểm bê tông dưới ụ đất
     if (this.strongholdSet) this.strongholdSet.drawOnMap(ctx, P, sc);
+    // Công trình bối cảnh (bệ phóng, hầm sinh học, trận địa phòng không)
+    if (this.landmarkSet) this.landmarkSet.drawOnMap(ctx, P, sc, false);
     // Boong-ke (hình chữ U)
     for (const f of this.horseshoeForts) {
       ctx.save(); ctx.translate(P(f.x), P(f.z)); ctx.rotate(f.openAngle);

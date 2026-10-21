@@ -179,6 +179,7 @@ const GroundCover = (() => {
       if (T.groundAtRaw(x, z) < 0.6 && (T.map.river || T.map.lakes.length)) return true;
       if (T.map.roadAt && T.map.roadAt(x, z)) return true;
       if (T.strongholdSet && T.strongholdSet.covers(x, z, 4)) return true;
+      if (T.landmarkSet && T.landmarkSet.covers(x, z, 4)) return true;
       if (T.bridges.length && T.bridgeAt(x, z)) return true;
       return false;
     }
