@@ -12,7 +12,7 @@ const MapGen = (() => {
   const RES = 336;                 // số ô lưới mỗi cạnh (~16 đơn vị / ô)
   const HALF = SIZE / 2;
   const CELL = SIZE / RES;
-  const OUTER_EXT = 9000;          // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (6000)
+  const OUTER_EXT = 12000;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
   // Bố cục gốc thiết kế cho bản đồ 3600: K giãn khoảng cách giữa các điểm chiến thuật, AREA nhân số lượng vật thể
   // (giữ mật độ cây / đá / làng như cũ); kích thước từng vật thể, đồi, đường... giữ nguyên
   const K = SIZE / 3600, AREA = K * K;
@@ -201,20 +201,46 @@ const MapGen = (() => {
     // nhiễu theo hướng (liền mạch quanh vòng tròn): mép vành núi / bờ biển lượn sóng thay vì tròn xoe
     const angN = (x, z, f, o) => { const d = Math.hypot(x, z) || 1; return on(x / d * f + o, z / d * f - o * 0.7); };
     const coastPhi = on(0.37, 9.1) * Math.PI * 2;   // hướng trục dài của đảo
-    // CHÂN VÀNH NÚI = ranh giới thung lũng chiến trường: không phải vòng tròn — vuông bo góc theo khung bản đồ (theo trục
-    // gần hơn, theo đường chéo lùi xa) + lượn sóng nhiều tầng + mũi núi lấn sâu ở chỗ ngẫu nhiên. Không lấn vào cứ
-    // điểm / khu xuất kích, không chạm mép giữ xe
+    // Bán kính tối thiểu của lòng thung lũng theo hướng: đủ ôm đồi cứ điểm (+ chân đồi) và khu xuất kích hai phe theo
+    // hướng đó; hướng trống thì núi được lấn vào tới ~0.56 nửa bản đồ
+    const KEYS = [];
+    for (const c of STRONGHOLD_SITES) KEYS.push([c.x, c.z, 820]);
+    for (const zc of [(SPAWN.blue.z0 + SPAWN.blue.z1) / 2, (SPAWN.red.z0 + SPAWN.red.z1) / 2])
+      for (const xc of [-SPAWN.halfX, 0, SPAWN.halfX]) KEYS.push([xc, zc, 360]);
+    const KM = new Float32Array(720);
+    for (let a = 0; a < 720; a++) {
+      const t = a / 720 * Math.PI * 2, c = Math.cos(t), sn = Math.sin(t);
+      let r = HALF * 0.56;
+      for (const [kx, kz, kr] of KEYS) {
+        const along = kx * c + kz * sn, across = Math.abs(-kx * sn + kz * c);
+        if (across < kr) r = Math.max(r, along + Math.sqrt(kr * kr - across * across));
+      }
+      KM[a] = r;
+    }
+    // làm mượt bảng (không gãy góc ở mép tầm ảnh hưởng của từng điểm)
+    for (let pass = 0; pass < 3; pass++) {
+      const T0 = KM.slice();
+      for (let a = 0; a < 720; a++) KM[a] = Math.max(T0[a], (T0[(a + 719) % 720] + T0[a] + T0[(a + 1) % 720]) / 3);
+    }
+    const keyMinAt = (x, z) => {
+      const u = (Math.atan2(z, x) / (Math.PI * 2) + 1) % 1 * 720, i = Math.floor(u) % 720, f = u - Math.floor(u);
+      return KM[i] * (1 - f) + KM[(i + 1) % 720] * f;
+    };
+    // CHÂN VÀNH NÚI = ranh giới thung lũng chiến trường: hình dạng ngẫu nhiên tự nhiên mỗi map (không tròn, không vuông):
+    // lượn sóng nhiều tầng trên toạ độ bị bẻ cong + mũi núi lấn sâu ở chỗ ngẫu nhiên. Không lấn vào cứ điểm / khu xuất
+    // kích, không chạm mép giữ xe
     function rimFoot(x, z) {
       const d = Math.hypot(x, z) || 1;
       // bẻ cong toạ độ trước khi lấy nhiễu: đường chân núi méo theo vùng, không toả đều từ tâm
       const wx = x + 0.45 * d * on(x / d * 0.9 + 4.4, z / d * 0.9 - 2.2), wz = z + 0.45 * d * on(x / d * 0.9 - 7.1, z / d * 0.9 + 1.3);
-      const diag = Math.min(Math.abs(x), Math.abs(z)) / d / 0.7071;   // 0 theo trục .. 1 theo đường chéo
-      let f = HALF * (0.84 + 0.2 * diag * diag)
-        + 300 * angN(wx, wz, 1.3, 11.3) + 190 * angN(wx, wz, 3.1, 3.1) + 70 * angN(wx, wz, 7.3, 5.5) + 18 * on(x * 0.004 + 2, z * 0.004);
+      // bán kính nền như nhau mọi hướng (không bám khung vuông), hình dạng do nhiễu quyết định; nền đủ nhỏ để
+      // phần lồi ra ít khi chạm giới hạn mép (chỗ đó bị ép phẳng thành cạnh thẳng)
+      let f = HALF * 0.79
+        + 340 * angN(wx, wz, 1.3, 11.3) + 210 * angN(wx, wz, 3.1, 3.1) + 80 * angN(wx, wz, 7.3, 5.5) + 18 * on(x * 0.004 + 2, z * 0.004);
       // vài mũi núi lấn sâu vào lòng thung lũng ở chỗ ngẫu nhiên (mỗi map khác nhau)
       f -= 1100 * Math.pow(Math.max(0, angN(wx, wz, 2.4, 6.6) - 0.08), 1.3);
-      // không lấn vào cứ điểm / khu xuất kích (căn cứ nằm trên trục z): max mềm với bán kính tối thiểu theo hướng
-      const minA = 1850 + 260 * Math.pow(Math.abs(z) / d, 6);
+      // không lấn vào cứ điểm / khu xuất kích: max mềm với bán kính tối thiểu theo hướng (bảng keyMin)
+      const minA = keyMinAt(x, z);
       f = minA + 90 * Math.log(Math.exp((f - minA) / 90) + 1);
       // cách mép giữ xe (±(HALF - 60)) ít nhất ~200 theo hướng này: min mềm, không gãy góc
       const lim = boxDist(x, z) - 200;

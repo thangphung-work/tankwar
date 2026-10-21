@@ -160,7 +160,7 @@ class BattleTerrain3D {
     const sun = this.map.sun;
     const PAL = {
       // sunK / skyK: đặc trưng ánh sáng từng chiến địa (sa mạc nắng gắt, rừng ẩm nhiều ánh trời tán xạ, cao nguyên trong vắt)
-      DESERT: { zenith: 0x4f86c6, horizon: 0xe6cfa4, fog: 0xdcc39a, density: 0.00022, ground: 0xb08a5a, sunK: 1.08, skyK: 0.9 },
+      DESERT: { zenith: 0x4a86cc, horizon: 0xd6dbd6, fog: 0xd5cfbd, density: 0.00022, ground: 0xb08a5a, sunK: 1.08, skyK: 0.9 },
       URBAN: { zenith: 0x5c7fa8, horizon: 0xc4c6c4, fog: 0xb9bcbc, density: 0.00030, ground: 0x6a6a64, sunK: 0.95, skyK: 0.88 },
       JUNGLE: { zenith: 0x5d8fb5, horizon: 0xb9cbb6, fog: 0xa9b7a2, density: 0.00036, ground: 0x4a4a32, sunK: 0.94, skyK: 1.06 },
       HIGHLAND: { zenith: 0x3f7cc4, horizon: 0xc9d8e4, fog: 0xbfcfdc, density: 0.00020, ground: 0x6b6450, sunK: 1.04, skyK: 0.96 },
@@ -170,7 +170,8 @@ class BattleTerrain3D {
     // Giờ vàng / sáng sớm: chân trời ấm hơn, trời đậm hơn
     const warm = sun.timeOfDay === 'golden' ? 0.55 : sun.timeOfDay === 'morning' ? 0.25 : 0;
     const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
-    if (warm) { p.horizon = mix(p.horizon, 0xf0a868, warm); p.fog = mix(p.fog, 0xe6a878, warm * 0.8); p.zenith = mix(p.zenith, 0x35558f, warm * 0.5); }
+    // (sương chỉ ngả ấm nhẹ: sương cam đậm làm cả nửa dưới bầu trời và cảnh xa vàng ệch)
+    if (warm) { p.horizon = mix(p.horizon, 0xf0b888, warm * 0.45); p.fog = mix(p.fog, 0xe8c8a8, warm * 0.3); p.zenith = mix(p.zenith, 0x35558f, warm * 0.35); }
     p.sun = sun;
     // Hướng mặt trời (từ mặt đất nhìn lên mặt trời)
     p.sunDir = new THREE.Vector3(Math.cos(sun.elevation) * Math.sin(sun.azimuth), Math.sin(sun.elevation), Math.cos(sun.elevation) * Math.cos(sun.azimuth)).normalize();
@@ -1490,6 +1491,8 @@ ${sea ? 'varying float vDep;' : ''}
       ctx.stroke();
       ctx.restore();
     }
+    // Phủ tối ngoài lòng thung lũng: bản đồ nhỏ thấy đúng hình dạng vùng chiến đấu
+    BattleTerrain3D.shadeOutside(ctx, this.map, P, w);
   }
 
   // Hố bom hạ thấp lưới độ cao vật lý (xe sụt xuống lòng hố); lưới hiển thị đã được khoét lỗ thay bằng lòng chảo
@@ -1527,9 +1530,9 @@ window.BattleTerrain3D = BattleTerrain3D;
 // Ngưỡng rừng rậm: số cây có tán (quy đổi) trong ô ~72x72 quanh điểm
 BattleTerrain3D.FOREST_DENSE = 10;
 
-// Cảnh nền ngoài bản đồ (Backdrop) + mặt biển xa dần hòa hẳn vào màu sương trong khoảng [x, y] (camera far = 6000).
+// Cảnh nền ngoài bản đồ (Backdrop) + mặt biển xa dần hòa hẳn vào màu sương trong khoảng [x, y] (camera far = 9000).
 // Dùng chung một uniform: đổi giá trị là mọi vật liệu cảnh nền đổi theo (vd ảnh toàn cảnh khi xem cả đảo)
-BattleTerrain3D.FAR_FADE = { value: new THREE.Vector2(4300, 5800) };
+BattleTerrain3D.FAR_FADE = { value: new THREE.Vector2(6000, 8700) };
 BattleTerrain3D.farFadeGLSL = (alpha) => `#ifdef USE_FOG
   {
     float farK = smoothstep(farFade.x, farFade.y, length(vViewPosition));
@@ -1552,4 +1555,23 @@ BattleTerrain3D.strokeRiver = (ctx, R, P, sc) => {
       ctx.beginPath(); ctx.moveTo(P(line[i][0]), P(line[i][1])); ctx.lineTo(P(line[i + 1][0]), P(line[i + 1][1])); ctx.stroke();
     }
   }
+};
+
+// Bản đồ 2D: phủ tối phần ngoài lòng thung lũng (sườn vành núi phía ngoài tường giữ xe, cảnh nền) theo đúng đường chân
+// núi của bản đồ -> thấy hình dạng thật của vùng chiến đấu. P: toạ độ thế giới -> điểm ảnh; size: cạnh canvas (điểm ảnh)
+BattleTerrain3D.shadeOutside = (ctx, map, P, size) => {
+  const O = map && map.outer;
+  if (!O || !O.rimFoot) return;
+  const ring = [];
+  for (let a = 0; a < 360; a++) {
+    const t = a / 360 * Math.PI * 2, c = Math.cos(t), s = Math.sin(t), r = O.rimFoot(c * 2000, s * 2000) + O.wall * 0.35;
+    ring.push([P(c * r), P(s * r)]);
+  }
+  const path = () => { ctx.moveTo(ring[0][0], ring[0][1]); for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]); ctx.closePath(); };
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, size, size); path();
+  ctx.fillStyle = 'rgba(6, 10, 12, 0.5)'; ctx.fill('evenodd');
+  ctx.beginPath(); path();
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'; ctx.lineWidth = Math.max(2, size / 220); ctx.stroke();
+  ctx.restore();
 };

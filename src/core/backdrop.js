@@ -15,7 +15,7 @@ const Backdrop = (() => {
     const outer = [];
     let p = half, st = cell;
     while (p < ext) {
-      st = Math.min(260, st * 1.085);
+      st = Math.min(p > 8000 ? 600 : 260, st * 1.085);   // ngoài ~8000 đã chìm trong sương: lưới thưa hơn
       p = ext - (p + st) < st * 0.4 ? ext : p + st;
       outer.push(p);
     }
@@ -112,7 +112,7 @@ const Backdrop = (() => {
     const F = FOREST[T.mapType];
     if (!F) return null;
     const rnd = MapGen.mulberry32((T.seed ^ 0x3a7f11) >>> 0);
-    const ext = T.width / 2 + 4400, mats = [], cols = [];
+    const ext = T.width / 2 + 5200, mats = [], cols = [];
     const leaf = T.leafColors ? T.leafColors() : [0x4a5632, 0x58643a];
     const c0 = new THREE.Color(leaf[0]), c1 = new THREE.Color(leaf[1]), c = new THREE.Color();
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), sc = new THREE.Vector3();

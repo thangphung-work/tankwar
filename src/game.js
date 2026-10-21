@@ -29,7 +29,7 @@ class ArtilleryGame3D {
       45,
       window.innerWidth / window.innerHeight,
       1,
-      6000
+      9000   // xa đủ để từ camera pháo binh trên cao vẫn thấy biển / đảo xa thay vì mảng trời bị cắt
     );
 
     // high-performance: máy có 2 card (laptop Intel + NVIDIA/AMD) chạy game bằng card rời thay vì card tích hợp

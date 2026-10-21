@@ -36,18 +36,24 @@ const SkySystem = (() => {
           vec3 d = normalize(vDir);
           float h = d.y;
           vec3 col = mix(horizon, zenith, pow(clamp(h, 0.0, 1.0), 0.55));
-          // Sát / dưới chân trời: đúng màu sương -> cảnh nền xa (đã hòa vào sương) liền với bầu trời, không lộ mép cắt
-          // dải mù chân trời: núi / đảo xa đã chìm trong sương nổi lên như bóng mờ chứ không thành mảng màu phẳng
-          col = mix(col, fogC, pow(smoothstep(0.16, -0.015, h), 1.6));
+          // Sát / dưới chân trời: đúng màu sương -> cảnh nền xa (đã hòa vào sương) liền với bầu trời, không lộ mép cắt;
+          // dải mù mỏng sát chân trời, phía trên là trời xanh trong
+          col = mix(col, fogC, pow(smoothstep(0.06, -0.01, h), 1.4));
           // Tán xạ quanh mặt trời (Mie) + đĩa mặt trời
           float cs = max(dot(d, normalize(sunDir)), 0.0);
           col += sunColor * (pow(cs, 8.0) * 0.28 + pow(cs, 64.0) * 0.45);
           col = mix(col, vec3(1.0, 0.98, 0.92) * 1.6, smoothstep(0.99955, 0.99975, cs));
-          // Mây ti tầng cao mỏng
-          if (h > 0.02) {
+          if (h > 0.0) {
+            // Mây tích trắng xốp tầng thấp: từng đám rời, đỉnh sáng, đáy hơi xám; thưa dần sát chân trời
+            vec2 uc = d.xz / (h + 0.12) * 1.3;
+            float c1 = noise(uc) * 0.5 + noise(uc * 2.3 + 7.1) * 0.28 + noise(uc * 5.1 + 3.3) * 0.14 + noise(uc * 11.0) * 0.08;
+            float cov = smoothstep(0.5, 0.68, c1) * smoothstep(0.0, 0.1, h);
+            vec3 cc = mix(vec3(0.78, 0.81, 0.86), vec3(1.0), smoothstep(0.55, 0.8, c1)) * (0.92 + 0.2 * cs);
+            col = mix(col, mix(cc, sunColor * 1.05, 0.15), cov * 0.9);
+            // Mây ti tầng cao mỏng
             vec2 uv = d.xz / (h + 0.25) * 2.2;
-            float c = noise(uv) * 0.6 + noise(uv * 2.7) * 0.3 + noise(uv * 6.1) * 0.1;
-            c = smoothstep(0.55, 0.85, c) * smoothstep(0.02, 0.25, h) * 0.55;
+            float c = noise(uv + 13.7) * 0.6 + noise(uv * 2.7) * 0.3 + noise(uv * 6.1) * 0.1;
+            c = smoothstep(0.58, 0.85, c) * smoothstep(0.05, 0.3, h) * 0.4 * (1.0 - cov);
             col = mix(col, mix(vec3(1.0), sunColor, 0.25) * (0.85 + 0.25 * cs), c);
           }
           gl_FragColor = vec4(col, 1.0);
