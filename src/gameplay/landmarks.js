@@ -1713,13 +1713,20 @@ const Landmarks = (() => {
           yaw.userData.a0 = p.a0 === undefined ? 2.4 : -p.a0; yaw.userData.ph = anim.beams.length * 1.7;
           const head = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2, 4, 12), MAT.radarD || (MAT.radarD = new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.6, metalness: 0.5 })));
           head.rotation.z = Math.PI / 2 - 0.35; head.position.x = 1;
-          const lens = new THREE.Mesh(new THREE.CircleGeometry(2.3, 12), anim.beacon);
+          // đèn pha chỉ bật lúc trời tối (mặt trời < ~7°): kính trắng sáng đều + quầng sáng mờ dần theo chiều dài tia;
+          // ban ngày tắt hẳn (trước đây quầng vàng cộng sáng nhìn đúng hướng chĩa thành cục sáng vàng lơ lửng)
+          const night = !!(opts && opts.sun && opts.sun.elevation < 0.12);
+          const lensM = night ? (MAT.lensOn || (MAT.lensOn = new THREE.MeshStandardMaterial({ color: 0xeef3ff, emissive: 0xeef3ff, emissiveIntensity: 1.6, roughness: 0.2 })))
+            : (MAT.lensOff || (MAT.lensOff = new THREE.MeshStandardMaterial({ color: 0x9aa4aa, roughness: 0.15, metalness: 0.4 })));
+          const lens = new THREE.Mesh(new THREE.CircleGeometry(2.3, 12), lensM);
           lens.rotation.y = Math.PI / 2; lens.rotation.x = 0; lens.position.set(3.1, -0.7, 0);
           const cone = new THREE.ConeGeometry(30, 260, 20, 1, true);
           cone.translate(0, -130, 0); cone.rotateZ(Math.PI / 2 - 0.35);
-          const beam = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-          // giữa ban ngày quầng sáng đèn pha không nhìn thấy (chỉ hiện lúc sáng sớm / chiều tà)
-          beam.visible = !(opts && opts.sun && opts.sun.elevation > 0.42);
+          const fade = TEX.beamFade || (TEX.beamFade = texOf('beamFade', 8, 128, (q, w, h) => {
+            const gr = q.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.35, '#555555'); gr.addColorStop(1, '#000000'); q.fillStyle = gr; q.fillRect(0, 0, w, h);
+          }));
+          const beam = new THREE.Mesh(cone, MAT.beam || (MAT.beam = new THREE.MeshBasicMaterial({ color: 0xdfe8ff, alphaMap: fade, transparent: true, opacity: 0.05, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.FrontSide })));
+          beam.visible = night;
           yaw.add(head, lens, beam);
           grp.add(yaw);
           anim.beams.push(yaw);
