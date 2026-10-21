@@ -1533,6 +1533,10 @@
     if (rapid) {
       const spread = state.target === 'VEHICLE' ? 12 : 20;
       p.add(new THREE.Vector3((Math.random() - 0.5) * spread, (Math.random() - 0.5) * (spread * 0.45), (Math.random() - 0.5) * spread));
+    } else if (state.target === 'VEHICLE') {
+      // Pháo tăng cũng tản mát (độ chụm nòng + sai số ngắm, σ ~0,3 m quanh điểm ngắm): các phát không chui cùng một lỗ
+      const g = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, Math.random()))) * Math.cos(2 * Math.PI * Math.random());
+      p.add(new THREE.Vector3(g() * 2.6, g() * 1.6, g() * 2.6));
     }
     if (p.y < 1.0 && state.target !== 'PIT' && state.target !== 'POND') p.y = 1.0;
     return p;
@@ -1696,7 +1700,9 @@
       updateHpLabel();
     } else if (hit.hitType === 'DIRECT_HIT' && targetTank.isDead && typeof VehicleDamage !== 'undefined') {
       logDamage(VehicleDamage.onDirectHit(targetTank, { hit, ammo: p.ammo, heavy: p.heavy, dir: vel, fx }).events);
-    } else if (hit.hitType === 'DIRECT_HIT' && !res.ricochet && !targetTank.isDead) {
+    } else if (hit.hitType === 'DIRECT_HIT' && !targetTank.isDead) {
+      // đạn nảy khỏi giáp nghiêng: VehicleDamage tự giảm sát thương (như trong game)
+      if (res && res.ricochet) hit.ricochet = true;
       targetTank.lastHitDir = vel.clone();
       targetTank.lastHitPoint = hit.point.clone();
       // Giáp theo cấp + hướng + ERA, hỏng hóc bộ phận đúng điểm chạm (cùng hệ thống với game)
@@ -1706,7 +1712,11 @@
         mul = r.mul;
         logDamage(r.events);
       }
-      targetTank.hp = Math.max(0, targetTank.hp - (DMG[p.ammo] || 0.5) * (p.heavy ? 1.8 : 1) * mul);
+      // lựu pháo 155mm trúng thẳng: cùng sát thương gốc như trong game (game.js handleShellImpact)
+      let dmg = (p.heavy ? (p.ammo === 'AP' ? 4.6 : 4.5) : (DMG[p.ammo] || 0.5)) * mul;
+      // lựu pháo trúng thẳng (không nảy / không bị chặn): hạ gục như trong game
+      if (p.heavy && p.ammo !== 'AP' && mul > 0 && !hit.ricochet) dmg = Math.max(dmg, targetTank.hp + 0.05);
+      targetTank.hp = Math.max(0, targetTank.hp - dmg);
       if (targetTank.hp <= 0) {
         targetTank.isDead = true;
         fx.onVehicleDestroyed(targetTank, vel, hit.point);

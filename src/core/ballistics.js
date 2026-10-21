@@ -1302,7 +1302,7 @@ class BallisticsSystem3D {
     // Chọn góc nòng THẤP NHẤT mà đạn thật sự rơi tới điểm chỉ định:
     // quét nâng dần; phát nào đâm đồi / tường / nhà trước mục tiêu thì tiếp tục nâng (bắn vòng qua vật cản);
     // khi điểm rơi vượt qua mục tiêu -> chia đôi khoảng để ra nghiệm chính xác.
-    // Lựu pháo: bắn cầu vồng 25..70° (đánh xa) hoặc HẠ NÒNG BẮN THẲNG (liều đầy, đạn bay căng) khi địch áp sát.
+    // Lựu pháo: bắn cầu vồng 10..70° (đánh xa) hoặc HẠ NÒNG BẮN THẲNG (liều đầy, đạn bay căng) khi địch áp sát.
     const arty = !!(shooterObj && shooterObj.tankType === 'ARTILLERY');
     const AD = BallisticsSystem3D.ARTY_DIRECT;
     const bodyTiltEl = arty && typeof shooterObj.barrelWorldOffset === 'function' ? shooterObj.barrelWorldOffset().el : 0;
@@ -1321,8 +1321,11 @@ class BallisticsSystem3D {
       const elMax = directArty ? AD.elMax : this.maxElevationFor(shooterObj);
       // góc hạ nòng thấp nhất là giới hạn cơ khí theo THÂN XE; bộ giải tính góc trong thế giới -> cộng độ nghiêng thân xe
       // (xe đỗ chúc mũi 3° thì nòng chạm -5° trên thân xe = -8° thật). Trước đây kẹp ở -5° thật: mục tiêu sát dưới dốc
-      // không bao giờ khớp, kính ngắm báo "đang xoay tháp" mãi
-      const elMin = directArty ? this.minElevationFor(shooterObj, baseAz) + bodyTiltEl : (arty ? 25 : -10);
+      // không bao giờ khớp, kính ngắm báo "đang xoay tháp" mãi.
+      // Cầu vồng góc thấp từ 10° (trước đây 25°): ở cự ly giữa hai liều phóng, liều lớn bắn góc thấp bay nhanh gấp đôi
+      // thay vì liều nhỏ phải nâng nòng 55-60° (đạn bay ~6-7 s). Góc thấp: sai số góc nòng thành sai số tầm lớn
+      // (dR/dθ = 2R / tan2θ) nên độ tản dọc vẫn tương đương bắn cao (xem Dispersion.ring)
+      const elMin = directArty ? this.minElevationFor(shooterObj, baseAz) + bodyTiltEl : (arty ? 10 : -10);
       let az = baseAz;
       const targetY = terrain && terrain.getElevationAt ? terrain.getElevationAt(targetX, targetZ) : 0;
       const ammo = (shooterObj && shooterObj.selectedAmmo) || 'NORMAL';
@@ -1457,13 +1460,17 @@ class BallisticsSystem3D {
       const order = [5, 4, 3, 2, 1];
       const hc = opts && opts.hintCharge;
       if (hc) { order.splice(order.indexOf(hc), 1); order.unshift(hc); }
-      let first = null;
+      // Liều nhỏ nhất bắn tới được Ở GÓC THẤP (<= 45°) như tổ tính phần tử bắn pháo binh: liều nhỏ chỉ với tới ở góc rất
+      // cao thì đạn bay lâu gấp 1,5-2 lần và tản mát dọc lớn hơn (trước đây cự ly 1200 bay ~5,7 s, lâu hơn cả cự ly 1800).
+      // Không liều nào tới ở góc thấp (vd vượt đồi gần) mới dùng góc cao
+      let first = null, high = null;
       for (const ch of order) {
         const r = solveFor(ch);
         if (!first || (!first.reachable && r.miss < first.miss)) first = first && first.reachable ? first : r;
-        if (r.reachable) return r;
+        if (r.reachable && r.elevation <= 45) return r;
+        if (r.reachable && !high) high = r;
       }
-      return first;
+      return high || first;
     };
     // Tự chọn: bắn vào xe (đã thấy, đường bắn thẳng thông) trong tầm bắn thẳng -> hạ nòng bắn thẳng trước;
     // đường thẳng bị đồi / nhà chặn thì mới nâng nòng bắn cầu vồng. Bắn điểm trên mặt đất: gần bắn thẳng, xa cầu vồng.

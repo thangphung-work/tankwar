@@ -2161,7 +2161,9 @@ class ArtilleryGame3D {
       } else if (ammoType === 'CLUSTER') {
         directDamage = 1.8;
       } else if (shell.isHeavyArty) {
-        directDamage = (ammoType === 'AP') ? 3.2 : 3.0; // Lựu pháo 155mm trúng thẳng (đánh nóc): diệt gọn xe nhẹ, xe tăng chủ lực chịu 2 phát
+        // Lựu pháo 155mm trúng thẳng: ~7-11 kg thuốc nổ nổ ngay trên vỏ -> diệt gọn mọi xe, kể cả xe tăng chủ lực
+        // (trước đây 3.0 < 3.5 máu xe tăng: trúng thẳng mà xe tăng vẫn sống). Xem thêm mức tối thiểu bên dưới
+        directDamage = (ammoType === 'AP') ? 4.6 : 4.5;
       } else {
         // Sát thương khi XUYÊN THỦNG; có xuyên được không do VehicleDamage tính (độ xuyên vs giáp, góc chạm, vùng trúng)
         directDamage = (ammoType === 'AP') ? 2.0 : ((ammoType === 'HE') ? 1.6 : 1.6);
@@ -2175,8 +2177,13 @@ class ArtilleryGame3D {
         });
         directDamage = Math.round(directDamage * dmgRes.mul * 1000) / 1000;
         if (dmgRes.noFire) directTarget._noIgnite = true;
-        // Đạn nảy khỏi giáp nghiêng: chỉ còn chút sát thương va đập
-        if (unitHit && unitHit.ricochet) directDamage = Math.round(directDamage * 0.12 * 1000) / 1000;
+        // (đạn nảy khỏi giáp nghiêng: VehicleDamage đã giảm sát thương theo cỡ đạn — không nhân giảm thêm lần nữa)
+        // Lựu pháo 155mm trúng thẳng: ngòi chạm nổ ngay trên vỏ (7-11 kg thuốc nổ cách kíp xe vài chục cm) -> xe nào
+        // cũng bị hạ, kể cả trúng giáp mũi / sườn xe tăng. Trừ phát bị chặn hẳn (VehicleDamage trả mul = 0) hoặc nảy khỏi
+        // giáp; giáp phản ứng nổ nhặt từ hòm tiếp tế (tính ngay dưới) vẫn giảm được
+        if (shell.isHeavyArty && ammoType !== 'AP' && dmgRes.mul > 0 && !(unitHit && unitHit.ricochet)) {
+          directDamage = Math.max(directDamage, Math.min(5.9, Math.round((directTarget.hp + 0.05) * 1000) / 1000));
+        }
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
       }
       // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy
@@ -5695,7 +5702,9 @@ class ArtilleryGame3D {
             this.player.azimuth, this.player.elevation, this.player.charge,
             this.terrain, this.player
           );
-          const distStr = pred ? ` // ĐIỂM RƠI: ${pred.distance}M (${pred.flightTime}S)` : '';
+          // flightTime tính theo giây mô phỏng (= giây thật x bulletSpeedMultiplier) -> đổi về giây thật
+          const fT = pred ? (pred.flightTime || 0) / ((this.ballistics && this.ballistics.bulletSpeedMultiplier) || 1) : 0;
+          const distStr = pred ? ` // ĐIỂM RƠI: ${pred.distance}M (${fT.toFixed(1)}S)` : '';
           if (this.player.elevation < 0) {
             fireModeHint.textContent = `[HẠ NÒNG ÂM]${distStr}`;
             fireModeHint.style.color = '#00ff9d';
