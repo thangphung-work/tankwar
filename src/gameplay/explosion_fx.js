@@ -2291,7 +2291,10 @@
     },
 
     addBatchedMark(parent, mat, tf, unit) {
-      const bs = parent.userData.pitBatches || (parent.userData.pitBatches = {});
+      // không liệt kê (enumerable: false): Object3D.clone() chép userData qua JSON — lô vết có tham chiếu vòng
+      // (vết <-> lô) làm sập khi bộ phận mang vết bị bắn văng (VehicleDamage.detachTag clone nhóm bộ phận)
+      if (!parent.userData.pitBatches) Object.defineProperty(parent.userData, 'pitBatches', { value: {}, writable: true, configurable: true, enumerable: false });
+      const bs = parent.userData.pitBatches;
       let B = bs[mat.uuid];
       if (!B) {
         const cap = 64, Z = new THREE.Matrix4().makeScale(0, 0, 0);

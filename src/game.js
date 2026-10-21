@@ -14,8 +14,31 @@ function domById(id) {
   return found;
 }
 
-// 30mm (đạn thường / đạn cháy) trúng xe khung xích hạng nặng (xe tăng, 6 nòng): nhân hệ số này sau khi tính giáp
-const HEAVY_VS_30MM = 0.35;
+// BẢNG CÂN BẰNG: hệ số cuối theo [loại xe bắn:đạn][loại xe trúng], nhân sau khi tính giáp thật (VehicleDamage).
+// faceP < 1: nén chênh lệch giữa các mặt giáp (mul^faceP) — bắn sườn / đuôi vẫn lợi hơn nhưng không chênh vài chục lần.
+// spread: độ dao động ngẫu nhiên ± của đầu nổ. Mốc (trúng 100%, xe chưa lắp trang bị, phòng thử stronghold_lab):
+//   6 nòng 30mm: xe tăng mặt trước ~1 băng (~15 s), 6 nòng ~15 s, pháo ~12 s, trinh sát ~8 s
+//   trinh sát 12.7mm: yếu hơn 30mm (pháo ~20 s, trinh sát ~14 s, xe xích gần như không xuyên)
+//   tên lửa trinh sát: pháo trung bình ~1,7 quả, trinh sát ~1,3 quả, xe tăng 3 quả, 6 nòng 2 quả
+const BALANCE = {
+  'GATLING:GATLING_BULLET': { faceP: 0.25, k: { ALL_ROUNDER: 0.204, GATLING: 0.188, ARTILLERY: 0.079, SCOUT: 0.089 } },
+  'GATLING:INCENDIARY': { faceP: 0.25, k: { ALL_ROUNDER: 0.204, GATLING: 0.188, ARTILLERY: 0.079, SCOUT: 0.089 } },
+  'SCOUT:SCOUT_BULLET': { k: { ARTILLERY: 0.125, SCOUT: 0.143 } },
+  'SCOUT:INCENDIARY': { k: { ARTILLERY: 0.125, SCOUT: 0.143 } },
+  // xe nhẹ: sát thương tính theo phần máu tối đa (hpFrac x máu x dao động) thay vì theo mặt giáp — mặt giáp xe nhẹ gần như
+  // không đổi gì; trang bị giảm sát thương (lồng thép, tấm giáp) vẫn có tác dụng qua mul so với mức chuẩn mulRef
+  'SCOUT:ANTI_TANK_MISSILE': { spread: 0.2, mulRef: 0.6, hpFrac: { ARTILLERY: 0.926, SCOUT: 1.087 }, k: {} }
+};
+function balanceDamage(base, mul, shooter, ammoType, target) {
+  const B = shooter && BALANCE[shooter.tankType + ':' + ammoType];
+  if (!B) return base * mul;
+  const r = B.spread ? 1 + (Math.random() * 2 - 1) * B.spread : 1;
+  const hf = B.hpFrac && B.hpFrac[target.tankType];
+  if (hf) return (target.maxHp || 1) * hf * r * Math.min(1, Math.max(0, mul) / (B.mulRef || 1));
+  const k = B.k[target.tankType] !== undefined ? B.k[target.tankType] : 1;
+  const m = B.faceP ? Math.pow(Math.max(0, Math.min(1.2, mul)), B.faceP) : mul;
+  return base * m * k * r;
+}
 
 class ArtilleryGame3D {
   constructor() {
@@ -2289,10 +2312,7 @@ class ArtilleryGame3D {
           hit: unitHit, ammo: ammoType, heavy: !!shell.isHeavyArty, shooter, fx: fxSys,
           dir: new THREE.Vector3(shell.vx || 0, shell.vy || 0, shell.vz || 0)
         });
-        directDamage = Math.round(directDamage * dmgRes.mul * 1000) / 1000;
-        // 30mm vào xe khung xích hạng nặng (xe tăng / 6 nòng) kể cả sườn: chỉ còn ~35% -> 6 nòng thua xe tăng khi đấu tay đôi,
-        // vẫn xé nát xe nhẹ (pháo, trinh sát) và drone
-        if ((ammoType === 'GATLING_BULLET' || ammoType === 'INCENDIARY') && (directTarget.tankType === 'ALL_ROUNDER' || directTarget.tankType === 'GATLING')) directDamage = Math.round(directDamage * HEAVY_VS_30MM * 1000) / 1000;
+        directDamage = Math.round(balanceDamage(directDamage, dmgRes.mul, shooter, ammoType, directTarget) * 10000) / 10000;
         if (dmgRes.noFire) directTarget._noIgnite = true;
         // (đạn nảy khỏi giáp nghiêng: VehicleDamage đã giảm sát thương theo cỡ đạn — không nhân giảm thêm lần nữa)
         // Đạn đã nảy trên mặt nước trước khi trúng: chao đảo, chạm xiên / ngang thân -> xuyên kém hẳn
