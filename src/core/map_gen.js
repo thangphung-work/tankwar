@@ -199,6 +199,7 @@ const MapGen = (() => {
     const on = makeNoise(mulberry32((seed ^ 0x0b5e55ed) >>> 0));
     // nhiễu theo hướng (liền mạch quanh vòng tròn): mép vành núi / bờ biển lượn sóng thay vì tròn xoe
     const angN = (x, z, f, o) => { const d = Math.hypot(x, z) || 1; return on(x / d * f + o, z / d * f - o * 0.7); };
+    const coastPhi = on(0.37, 9.1) * Math.PI * 2;   // hướng trục dài của đảo
     // CHÂN VÀNH NÚI = ranh giới thung lũng chiến trường: không phải vòng tròn — vuông bo góc theo khung bản đồ (theo trục
     // gần hơn, theo đường chéo lùi xa) + lượn sóng nhiều tầng (vịnh lõm vào, mũi núi lấn ra). Theo trục trong khoảng
     // ~0.75..0.9 nửa bản đồ: không lấn vào cứ điểm / khu xuất kích, không chạm mép giữ xe
@@ -234,7 +235,9 @@ const MapGen = (() => {
         // -> thềm nước nông -> đáy biển sâu. Đường bờ bị bẻ cong nhiều tầng (vịnh, mũi đất, bán đảo); có đoạn bãi rộng,
         // có đoạn núi đổ thẳng xuống biển thành vách đá không có bãi.
         const wx = x + 750 * fbm(on, x * 0.0003 + 1.7, z * 0.0003, 3), wz = z + 750 * fbm(on, x * 0.0003, z * 0.0003 + 9.1, 3);
-        const t = Math.hypot(wx, wz) - (3750 + O0 + 380 * angN(wx, wz, 2.2, 2.2) + 210 * angN(wx, wz, 5.3, 7.7) + 90 * on(x * 0.0025 + 5, z * 0.0025));
+        // đảo không tròn: bám dáng chân vành núi (vuông bo góc, lượn sóng) + kéo dài thành bầu dục theo hướng ngẫu nhiên
+        const oval = 1 - 0.15 * Math.cos(2 * (Math.atan2(wz, wx) - coastPhi));
+        const t = Math.hypot(wx, wz) * oval - (rimFoot(x, z) + 1850 + 420 * angN(wx, wz, 2.2, 2.2) + 230 * angN(wx, wz, 5.3, 7.7) + 90 * on(x * 0.0025 + 5, z * 0.0025));
         const bn = fbm(on, x * 0.0011 + 4, z * 0.0011 - 1, 2) + 0.3 * on(x * 0.004, z * 0.004 + 6);
         const bw = 18 + 340 * smooth(-0.3, 0.35, bn), pw = 50 + 280 * smooth(-0.2, 0.3, bn);
         let p;
