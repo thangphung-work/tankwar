@@ -684,6 +684,8 @@ class TankInspector {
 
     // Cập nhật thông số kỹ thuật bên phải
     this.updateSpecPanel(tankType);
+    // Sân thử: lưới ngụy trang theo địa hình bãi đang chọn (sa mạc, rừng, đồi...) như trong trận theo bản đồ
+    if (this.rangeMode && this.field && this.field.mapType) u._foliageKind = this.field.mapType;
     // Lắp bộ trang bị đang dùng lên xe xem trước + vẽ lại trang cửa hàng / trang bị
     if (window.ArmoryUI) ArmoryUI.onTankLoaded(this, tankType);
   }

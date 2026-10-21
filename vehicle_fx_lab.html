@@ -484,6 +484,9 @@
       u.alwaysFX = true;
       // ?kit=era,slat,applique... : lắp thử trang bị mua thêm (xem hình & thử bắn)
       const kitQ = new URLSearchParams(location.search).get('kit');
+      // ?camo=DESERT|URBAN|JUNGLE|HIGHLAND|RIVER_LAKE : ép kiểu lưới ngụy trang theo bản đồ (mặc định theo phe)
+      const camoQ = new URLSearchParams(location.search).get('camo');
+      if (camoQ) u._foliageKind = camoQ;
       if (kitQ && typeof Equipment !== 'undefined') Equipment.equip(u, { m: kitQ.split(',') }, { local: true });
       if (u.hpBgMesh) u.hpBgMesh.visible = false;
       if (u.hpBarMesh) u.hpBarMesh.visible = false;
