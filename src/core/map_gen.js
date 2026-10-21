@@ -1317,9 +1317,14 @@ const MapGen = (() => {
 
   // ===== TRẠM BIẾN ÁP / PHÁT ĐIỆN CAO THẾ (thành phố) =====
   function detailPower(L) {
+    // trạm biến áp 500/220 kV ngoài trời (AIS) + khối phát điện tua-bin khí chu trình đơn: chỉ đắp thêm bờ bao đất
+    // quanh bồn dầu nhiên liệu của tua-bin (đê ngăn tràn tròn: tâm f/r, bán kính đỉnh R, nửa rộng chân w, cao h 1.6 m).
+    // Mương cáp / hố dầu MBA dựng bằng bê tông nổi trên nền sỏi (không khoét địa hình: mặt sân phủ kín)
+    L.bund = { f: 88, r: 395, R: 34, w: 12, h: 13 };
   }
   function moundPower(L, f, r) {
-    return 0;
+    const B = L.bund, d = Math.hypot(f - B.f, r - B.r);
+    return B.h * (1 - smooth(0, B.w, Math.abs(d - B.R)));
   }
 
   // ===== ĐÀI ĐIỀU KHIỂN RADAR VỆ TINH (cao nguyên) =====
