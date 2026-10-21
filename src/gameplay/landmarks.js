@@ -78,6 +78,14 @@ const Landmarks = (() => {
     // (nhỏ + mờ: lỗ ty Ø ~3 cm cách nhau 1 m, ở xa gần như không thấy — tránh lưới chấm tròn trên mọi mặt)
     both((x, bm) => { x.fillStyle = bm ? '#5a5a5a' : 'rgba(46,44,40,0.32)';
       for (let y = 32; y < N; y += 64) for (let xx = 32; xx < N; xx += 64) { x.beginPath(); x.arc(xx, y, bm ? 1.6 : 1.4, 0, TAU); x.fill(); } });
+    // căn cứ bỏ hoang: vệt mưa đen dài, mảng rêu / địa y xanh xám, loang ẩm
+    if (ABANDONED) {
+      for (let i = 0; i < 70; i++) {
+        const x = hash(i + 7700) * N, y = hash(i + 7701) * N * 0.4, l = 120 + hash(i + 7702) * 360, gr = g.createLinearGradient(0, y, 0, y + l);
+        gr.addColorStop(0, 'rgba(48,46,40,0.32)'); gr.addColorStop(1, 'rgba(48,46,40,0)'); g.fillStyle = gr; g.fillRect(x, y, 3 + hash(i + 7703) * 12, l);
+      }
+      for (let i = 0; i < 60; i++) blotch(g, hash(i + 7800) * N, hash(i + 7801) * N, 6 + hash(i + 7802) * 30, hash(i + 7803) < 0.6 ? '88,98,62' : '70,66,58', 0.22);
+    }
     // vệt nước chảy + muối hoa trắng dưới lỗ ty
     for (let i = 0; i < 40; i++) {
       const x = hash(i + 40) * N, y = hash(i + 43) * N * 0.6, l = 40 + hash(i + 41) * 220, dark = hash(i + 44) < 0.7;
@@ -464,7 +472,7 @@ const Landmarks = (() => {
     // thép / sơn: lớp bẩn gỉ theo mức (rust), độ sần nhẹ
     const G = (rust, o) => { const [t, b] = grimePair('r' + rust, rust); return S(Object.assign({ map: t, bumpMap: b, bumpScale: 0.35 }, o)); };
     const m = {
-      conc: () => C({ color: 0xd6d2c8, roughness: 0.95 }),
+      conc: () => C({ color: ABANDONED ? 0xb9b5aa : 0xd6d2c8, roughness: 0.95 }),
       concDark: () => C({ color: 0x9a968c, roughness: 0.97 }),
       steelRed: () => G(1, { color: 0xb04a2e, roughness: 0.62, metalness: 0.35 }),
       steelWhite: () => G(0.5, { color: 0xdcdad2, roughness: 0.5, metalness: 0.25 }),
