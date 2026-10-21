@@ -362,6 +362,15 @@ const Landmarks = (() => {
       drumBlue: () => G(1.2, { color: 0x2f4f7a, roughness: 0.6, metalness: 0.3 }),
       tarp: () => G(0, { color: 0x4a5236, roughness: 0.95 }),
       hesco: () => S({ map: hescoTex(), color: 0xffffff, roughness: 1 }),
+      // thân bồn thép sơn trắng ngà: 2 vành tôn (mỗi vành 2.4 m) có mối hàn ngang + mối hàn đứng so le, vệt bẩn mưa nhẹ
+      tankShell: () => S({ color: 0xffffff, roughness: 0.55, metalness: 0.15, map: texOf('tankShell', 512, 256, (q, w, h) => {
+        q.fillStyle = '#e1ded6'; q.fillRect(0, 0, w, h);
+        for (let i = 0; i < 40; i++) { const x = hash(i + 3300) * w, l = 30 + hash(i + 3301) * 150, gr = q.createLinearGradient(0, 0, 0, l); gr.addColorStop(0, 'rgba(120,112,98,0.18)'); gr.addColorStop(1, 'rgba(120,112,98,0)'); q.fillStyle = gr; q.fillRect(x, 0, 2 + hash(i + 3302) * 5, l); }
+        q.fillStyle = 'rgba(90,86,78,0.55)'; q.fillRect(0, h / 2 - 1, w, 2); q.fillRect(0, 0, w, 2); q.fillRect(0, h - 2, w, 2);
+        for (let k = 0; k < 4; k++) { q.fillRect(k * w / 4 + 20, 0, 2, h / 2); q.fillRect(k * w / 4 + 84, h / 2, 2, h / 2); }
+        const gb = q.createLinearGradient(0, h * 0.8, 0, h); gb.addColorStop(0, 'rgba(90,80,64,0)'); gb.addColorStop(1, 'rgba(90,80,64,0.35)'); q.fillStyle = gb; q.fillRect(0, h * 0.8, w, h * 0.2);
+        speckle(q, w, h, 900, ['rgba(120,116,106,1)', 'rgba(250,250,246,1)'], 1, 2, 3310);
+      }) }),
       corrTan: () => { const [t, b] = ribPair('rib_v', false, 16, 236); return S({ map: t, bumpMap: b, bumpScale: 0.8, color: 0xb4b2a2, roughness: 0.7, metalness: 0.3 }); },
       corrGray: () => { const [t, b] = ribPair('rib_v', false, 16, 236); return S({ map: t, bumpMap: b, bumpScale: 0.8, color: 0x8e9396, roughness: 0.6, metalness: 0.45 }); },
       shutter: () => { const [t, b] = ribPair('rib_h', true, 5, 230); return S({ map: t, bumpMap: b, bumpScale: 0.5, color: 0x9ba1a4, roughness: 0.55, metalness: 0.45 }); },
@@ -1314,12 +1323,17 @@ const Landmarks = (() => {
       const ff = -40, fr = -iR + 68;
       for (let k = 0; k < 3; k++) {
         const a = k * TAU / 3, x = ff + Math.cos(a) * 26, z = fr + Math.sin(a) * 26;
-        K.cyl('steelWhite', x, 0, z, 15, 15, 40, 24);
+        K.add('tankShell', new THREE.CylinderGeometry(15, 15, 40, 32, 1, true), M4(x, 20, z, 0, -a, 0));
+        K.cyl('concDark', x, 0, z, 16.4, 16.8, 1.2, 32);
         // mái vòm thấp úp khít miệng bồn: chỏm cầu bán kính 15/sin(0.5) ≈ 31.3, chân chỏm đúng y = 40
         K.add('steelWhite', new THREE.SphereGeometry(15 / Math.sin(0.5), 24, 6, 0, TAU, 0, 0.5), M4(x, 40 - 15 / Math.tan(0.5), z));
         K.cyl('steelGray', x, 39.4, z, 15.4, 15.4, 1.2, 24);
         K.cyl('steelGray', x + 4, 41.5, z, 1, 1, 3, 8); K.cyl('steelDark', x + 4, 44.5, z, 1.8, 1.8, 0.8, 8);
-        for (let i = 0; i < 8; i++) { const b = a + i * 0.2; K.add('steelGray', new THREE.BoxGeometry(0.4, 5, 0.4), M4(x + Math.cos(b) * 14.2, 42.6, z + Math.sin(b) * 14.2)); }
+        for (let i = 0; i <= 8; i++) {
+          const b = a + i * 0.18, b2 = b + 0.18;
+          K.add('steelGray', new THREE.BoxGeometry(0.4, 5, 0.4), M4(x + Math.cos(b) * 14.2, 42.6, z + Math.sin(b) * 14.2));
+          if (i < 8) for (const y of [42.8, 45]) K.beam('yellow', [x + Math.cos(b) * 14.2, y, z + Math.sin(b) * 14.2], [x + Math.cos(b2) * 14.2, y, z + Math.sin(b2) * 14.2], 0.35);
+        }
         // bảng nhận dạng nhiên liệu (JP-8 + hình thoi NFPA 704) quay ra ngoài
         { const ao = Math.atan2(z - fr, x - ff), px2 = x + Math.cos(ao) * 15.25, pz2 = z + Math.sin(ao) * 15.25;
           K.add(decal('jp8', texOf('jp8', 256, 160, (q, w, h) => {
@@ -1331,7 +1345,23 @@ const Landmarks = (() => {
               q.strokeStyle = '#111'; q.lineWidth = 2; q.stroke(); q.fillStyle = '#111'; q.font = 'bold 22px Arial'; q.fillText(n, cx + dx, cy + dy + 1);
             }
           })), new THREE.PlaneGeometry(12, 7.5), M4(px2, 26, pz2, 0, Math.PI / 2 - ao, 0)); }
-        for (let i = 0; i < 6; i++) K.beam('steelGray', [x + Math.cos(a + i * 0.25) * 15.6, i * 6.6, z + Math.sin(a + i * 0.25) * 15.6], [x + Math.cos(a + (i + 1) * 0.25) * 15.6, (i + 1) * 6.6, z + Math.sin(a + (i + 1) * 0.25) * 15.6], 1);
+        // cầu thang xoắn ôm thân bồn (lên dốc ~45°, 1/3 vòng): bậc lưới thép hàn vào thân, cốn ngoài, tay vịn + cột,
+        // chiếu nghỉ trên đỉnh nối vào lan can mái
+        { const NS = 26, th0 = a - 2.2, P2 = (th, rr, y) => [x + Math.cos(th) * rr, y, z + Math.sin(th) * rr];
+          for (let i = 0; i < NS; i++) {
+            const t = (i + 0.5) / NS, th = th0 + 2.2 * t, y = 40 * (i + 1) / NS;
+            const m = M4(...P2(th, 17.4, y - 0.2), 0, -th, 0);
+            K.add('steelDark', new THREE.BoxGeometry(4.6, 0.35, 1.7), m);
+          }
+          for (let i = 0; i < 8; i++) {
+            const t0 = i / 8, t1 = (i + 1) / 8, a0 = th0 + 2.2 * t0, a1 = th0 + 2.2 * t1;
+            K.beam('steelDark', P2(a0, 19.8, 40 * t0 - 0.8), P2(a1, 19.8, 40 * t1 - 0.8), 0.6);
+            K.beam('yellow', P2(a0, 19.9, 40 * t0 + 6.4), P2(a1, 19.9, 40 * t1 + 6.4), 0.35);
+            K.beam('steelGray', P2(a0, 19.9, 40 * t0 + 3.2), P2(a1, 19.9, 40 * t1 + 3.2), 0.25);
+            K.add('steelGray', new THREE.BoxGeometry(0.35, 7, 0.35), M4(...P2(a1, 19.9, 40 * t1 + 3)));
+          }
+          K.add('steelDark', new THREE.BoxGeometry(5, 0.5, 5), M4(...P2(a + 0.05, 17.4, 40), 0, -a, 0));
+        }
         K.solid(x, z, 15, 15, 0, 42);
       }
       K.plane(decal('fuel_sign', signTex('fuel_sign', ['DANGER — FUEL STORAGE', 'FLAMMABLE — NO SMOKING WITHIN 50 FT'], { w: 768, h: 192, bg: '#d9a61c', fg: '#151515' })), ff + 48.6, 6, fr - 34, 24, 6);
