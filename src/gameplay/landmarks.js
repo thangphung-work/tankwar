@@ -191,6 +191,7 @@ const Landmarks = (() => {
       gr.addColorStop(0, 'rgba(120,80,50,0.14)'); gr.addColorStop(1, 'rgba(120,70,36,0)'); g.fillStyle = gr; g.fillRect(x, 0, 2 + hash(i + 2102) * 3, l);
     }
     speckle(g, N, N, 500, ['rgba(70,64,56,1)', 'rgba(255,255,255,1)'], 1, 2, 2110 + period);
+    if (ABANDONED) ageCanvas(g, N, N, 2200 + period + (horiz ? 7 : 0), 1.2);   // tôn gỉ loang, phai, bẩn
     const t = new THREE.CanvasTexture(c), tb = new THREE.CanvasTexture(b);
     for (const k of [t, tb]) { k.wrapS = k.wrapT = THREE.RepeatWrapping; k.anisotropy = 4; }
     return (TEX[key] = [t, tb]);
