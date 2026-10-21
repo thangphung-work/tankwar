@@ -166,6 +166,7 @@ const TeamIntel = (() => {
     if (t._netHidden) return false;   // máy chủ không gửi vị trí (khuất tầm nhìn cả phe)
     if (seesDirect(viewer, t)) return true;
     if (droneSees(viewer.team, t)) return true;
+    if (jamDetect(viewer, t)) return true;
     if (radarContact(viewer, t)) return true;
     if (reportOf(viewer.team, t)) return true;
     return false;
@@ -176,7 +177,6 @@ const TeamIntel = (() => {
     if (!viewer || !t) return null;
     if (t.team === viewer.team || t.isDead) return 'direct';
     if (t._netHidden) return null;
-    if (jamDetect(viewer, t)) return true;
     if (seesDirect(viewer, t) || droneSees(viewer.team, t)) return 'direct';
     if (radarContact(viewer, t) || jamDetect(viewer, t)) return 'radar';
     if (reportOf(viewer.team, t)) return 'report';

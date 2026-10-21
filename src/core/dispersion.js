@@ -45,6 +45,9 @@ const Dispersion = (() => {
   // Pháo tăng: σ thật x GUN_SCALE (thay cho SCALE 16) — vẫn tản rõ khi chạy / quay tháp (hệ số nhân), nhưng đứng ngắm
   // bắn xa không văng lệch tầm cả trăm đơn vị; lệch dọc = VERT_K x lệch ngang
   const GUN_SCALE = 9, VERT_K = 0.55;
+  // pháo tăng 120 nòng trơn có ổn định & máy tính hỏa lực: chụm hơn lựu pháo hạ nòng (~1.2 đv lệch ngang 1σ ở 800 đv
+  // khi đứng yên) — đạn đi đúng chỗ tâm kính / vạch cự ly chỉ, chạy / quay tháp vẫn tản rõ (hệ số nhân)
+  const TANK_SCALE = 5;
 
   // ẢNH HƯỞNG CỦA CHUYỂN ĐỘNG theo dòng xe (pháo tăng có ổn định pháo 2 trục -> ít bị ảnh hưởng nhất):
   //  move   : hệ số theo tốc độ (tỉ lệ so với tốc độ tối đa của xe) — chạy hết tốc: σ x (1 + move)
@@ -185,7 +188,7 @@ const Dispersion = (() => {
     // ngang (VERT_K) — đường đạn rất căng (rơi xiên ~1° ở 900 đv) nên mỗi mrad lệch dọc thành hàng chục-trăm đv lệch
     // tầm trên mặt đất; trước đây σ x16 cả hai chiều -> bắn điểm mặt đất ở 600-1000 đv rơi lệch tầm cả trăm đv
     const gun = P === PROFILE.TANK_AP || P === PROFILE.TANK_NORMAL || P === PROFILE.TANK_HE;
-    const s = P.mil * (gun ? GUN_SCALE : SCALE) * 1e-3 * m * r;
+    const s = P.mil * (gun ? TANK_SCALE : SCALE) * 1e-3 * m * r;
     return { lat: s, vert: gun ? s * VERT_K : s, mv: P.mv * m * r, lob: false, mul: m, rmul: r };
   }
 

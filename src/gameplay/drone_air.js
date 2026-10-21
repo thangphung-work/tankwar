@@ -21,6 +21,7 @@ const DroneAir = (() => {
     DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
     SEE_R: 1500,         // đội có xe trong bán kính ngang này thì thấy drone địch bay (drone bay cao, dễ lộ)
     AA_RADAR_R: 2600,    // xe 6 nòng còn radar phòng không: phát hiện drone địch trong bán kính ngang này (~325 m)
+    SCOUT_AIR_R: 1800,   // radar trinh sát cũng bắt & khóa được drone, nhưng tầm ngắn hơn radar phòng không 6 nòng
     BOT_SEE_R: 1100,     // bot tự phát hiện drone trong bán kính này
     SEND_FLY: 0.1, SEND_IDLE: 1.0,
     INTERP: 0.12, EXTRAP: 0.35,
@@ -73,16 +74,24 @@ const DroneAir = (() => {
 
     /** Xe có radar cảnh giới phòng không còn hoạt động (xe 6 nòng, cụm radar chưa bị bắn bay) */
     aaRadarUp(u) {
-      return !!u && !u.isDead && u.tankType === 'GATLING' && !(u.dmg && u.dmg.lost && u.dmg.lost.has('aaRadar'));
+      return !!u && !u.isDead && u.tankType === 'GATLING' && !(u.dmg && u.dmg.lost && u.dmg.lost.has('aaRadar'))
+        && !(this.radarJammed && this.radarJammed(u));
+    },
+
+    /** Tầm radar bắt / khóa drone của xe (0: không có / hỏng / đang bị phá sóng): 6 nòng AA_RADAR_R, trinh sát SCOUT_AIR_R */
+    airRadarR(u) {
+      if (this.aaRadarUp(u)) return C.AA_RADAR_R;
+      if (!u || u.isDead || u.tankType !== 'SCOUT' || (u.dmg && u.dmg.lost && u.dmg.lost.has('sensor'))) return 0;
+      return this.radarJammed && this.radarJammed(u) ? 0 : C.SCOUT_AIR_R;
     },
 
     /** Phe team có thấy drone này không: drone phe mình, hoặc có xe phe mình còn sống trong bán kính SEE_R
-     *  (xe 6 nòng còn radar phòng không: AA_RADAR_R) */
+     *  (xe còn radar bắt drone: airRadarR — 6 nòng AA_RADAR_R, trinh sát SCOUT_AIR_R) */
     droneSeenByTeam(dr, team) {
       if (!dr || dr.team === team) return true;
       for (const u of this.units) {
         if (u.isDead || u.team !== team) continue;
-        const R = this.aaRadarUp(u) ? C.AA_RADAR_R : C.SEE_R;
+        const R = Math.max(C.SEE_R, this.airRadarR(u));
         const dx = u.x - dr.x, dz = u.z - dr.z;
         if (dx * dx + dz * dz <= R * R) return true;
       }
@@ -323,16 +332,17 @@ const DroneAir = (() => {
 
     // ---------- DRONE TRÊN BẢN ĐỒ NHỎ / BẢN ĐỒ CHIẾN THUẬT ----------
     // Drone phe mình luôn hiện (xanh); drone địch chỉ hiện khi phe mình đang thấy (đỏ) — radar mặt đất không bắt drone,
-    // chỉ radar phòng không của xe 6 nòng (tầm AA_RADAR_R).
+    // radar phòng không xe 6 nòng (AA_RADAR_R) và radar trinh sát (SCOUT_AIR_R, ngắn hơn).
     // Ký hiệu: dấu X 4 cánh quạt trong vòng tròn + vạch hướng bay; drone đang bị mình khóa: vòng khóa vàng;
     // bản đồ lớn có nhãn UAV + độ cao
     drawDronesOnMap(ctx, toScreen, big) {
       const P = this.player;
       if (!P) return;
       const t = performance.now() / 1000, A = this._airAim;
-      // Xe 6 nòng: vòng nét đứt = vùng phủ radar phòng không, vạch quét quay theo ăng-ten
-      if (this.aaRadarUp(P)) {
-        const c = toScreen(P.x, P.z), e = toScreen(P.x + C.AA_RADAR_R, P.z), rr = Math.abs(e.x - c.x);
+      // Xe 6 nòng / trinh sát: vòng nét đứt = vùng radar bắt drone, vạch quét quay theo ăng-ten
+      const RR = this.airRadarR(P);
+      if (RR) {
+        const c = toScreen(P.x, P.z), e = toScreen(P.x + RR, P.z), rr = Math.abs(e.x - c.x);
         if (rr > 4) {
           ctx.save();
           ctx.strokeStyle = 'rgba(255,190,90,0.45)'; ctx.lineWidth = big ? 1.4 : 1;
@@ -993,6 +1003,11 @@ const DroneAir = (() => {
     setAirAim(A) {
       const P = this.player;
       if (!P || !A) return;
+      // radar (trinh sát / phòng không 6 nòng) đang bị máy phá sóng địch chiếu: không khóa được drone (ew_jammer.js)
+      if (A.kind === 'drone' && (P.tankType === 'SCOUT' || P.tankType === 'GATLING') && this.radarJammed && this.radarJammed(P)) {
+        this.radarJamNote();   // tự giãn cách 2 s, không lặp khi bám theo chuột
+        return;
+      }
       if (this.lockedTarget) this.setLockedTarget(null);
       this._aimPoint = null;
       this._lockTrack = null;
@@ -1205,7 +1220,8 @@ const DroneAir = (() => {
     updateAARadar(list) {
       const P = this.player, seen = this._aaContacts || (this._aaContacts = new Set());
       let el = this._aaRadarEl;
-      if (!this.aaRadarUp(P)) {
+      const RR = this.airRadarR(P);
+      if (!RR) {
         if (seen.size) seen.clear();
         if (el && !el.hidden) el.hidden = true;
         return;
@@ -1219,7 +1235,7 @@ const DroneAir = (() => {
         if (!seen.has(dr.key)) {
           const brg = Math.round((Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360) % 360;
           const gy = this.terrain ? this.terrain.getElevationAt(dr.x, dr.z) : 0;
-          this.addCombatLog(`[[radar-2]] RADAR PHÒNG KHÔNG: DRONE ĐỊCH · phương vị ${String(brg).padStart(3, '0')}° · cự ly ${Math.round(Math.hypot(dx, dz))}M · cao ${Math.round(Math.max(0, dr.y - gy))}M — nhấp vào drone để khóa`, 'alert');
+          this.addCombatLog(`[[radar-2]] ${P.tankType === 'SCOUT' ? 'RADAR TRINH SÁT' : 'RADAR PHÒNG KHÔNG'}: DRONE ĐỊCH · phương vị ${String(brg).padStart(3, '0')}° · cự ly ${Math.round(Math.hypot(dx, dz))}M · cao ${Math.round(Math.max(0, dr.y - gy))}M — [F] / Tab / nhấp vào drone để khóa`, 'alert');
           const SE = window.soundEngine;
           if (SE && SE.playRadarContact) SE.playRadarContact(1);
         }

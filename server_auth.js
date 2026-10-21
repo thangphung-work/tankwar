@@ -482,12 +482,12 @@ function handle(room, client, msg) {
       const d = msg.d || {}, r = M.byIdx.get(d.i), st = M.S[d.i];
       if (!r || r.type !== 'ALL_ROUNDER' || ownerOf(room, r) !== client.id || (st && (st.f & F_DEAD))) return true;
       if (d.f) M.lastFireBy.set(client.id, now);
+      // máy phá sóng chống UAV đang phát (trường j): địch dò phương thấy xe trong tầm EW_DETECT (updateVisibility)
+      if (d.j !== undefined) meta(M, d.i).jamUntil = d.j ? now + 1300 : 0;
       return false;
     }
     case 'DRONE_LOCK': {
       // cảnh báo drone bị khóa: chỉ máy điều khiển xe đang khóa, xe phòng không còn sống, khóa drone của phe địch
-      // máy phá sóng chống UAV đang phát (trường j): địch dò phương thấy xe trong tầm EW_DETECT (updateVisibility)
-      if (d.j !== undefined) meta(M, d.i).jamUntil = d.j ? now + 1300 : 0;
       const d = msg.d || {}, ar = M.byIdx.get(d.a), or = M.byIdx.get(d.o), as = M.S[d.a];
       if (!ar || !or || or.type !== 'ARTILLERY' || ar.team === or.team || ownerOf(room, ar) !== client.id) return true;
       if (as && (as.f & F_DEAD)) return true;
