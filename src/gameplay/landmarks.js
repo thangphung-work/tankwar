@@ -564,7 +564,7 @@ const Landmarks = (() => {
       drumBlue: () => G(1.2, { color: 0x2f4f7a, roughness: 0.6, metalness: 0.3 }),
       drumRust: () => G(4, { color: 0x6a4a30, roughness: 0.85, metalness: 0.3 }),
       cardboard: () => G(0, { color: 0xa88a60, roughness: 1 }),
-      paper: () => S({ color: 0xd8d2c2, roughness: 1, side: THREE.DoubleSide }),
+      paper: () => S({ color: 0x9c9482, roughness: 1, side: THREE.DoubleSide }),   // giấy rác bẩn, ngả màu
       // đất cát / lá mục dạt quanh chân công trình (dải mờ dần ra ngoài; đáy ảnh = v 0 = chân tường, đậm nhất)
       dirtRing: () => S({ map: texOf('dirtRing', 128, 64, (q, w, h) => {
         q.clearRect(0, 0, w, h);
@@ -1847,7 +1847,9 @@ const Landmarks = (() => {
     for (const s of [-1, 1]) { K.box('concDark', F1 + 3, (DH + 6) / 2, s * (DW + 3), 6, DH + 6, 6); K.box('hazard', F1 + 6.2, DH / 2, s * (DW + 3), 0.4, DH, 6); }
     K.box('concDark', F1 + 3, DH + 3, 0, 6, 6, DW * 2 + 12);
     const [dA, dB] = doorMats();
-    K.box('void', F0 + 9, DH / 2, 0, 16, DH, DW * 2);
+    K.box('void', F0 - 4, DH / 2, 0, 40, DH, DW * 2);
+    // mái bê tông lòng hầm sau mặt tiền (che rãnh khoét gò phía sau tường), bằng cốt mặt gò
+    K.cbox('concDark', F0 - 12, (DH + M.h) / 2, 0, 26, M.h - DH, CUT * 2 + 10, 0.6);
     K.add(dB, boxGeo(8, DH, DW - 4, 0), M4(F1 - 14, DH / 2, -(DW + 4) / 2 - 8));
     K.add(dA, boxGeo(8, DH, DW - 4, 0), M4(F1 - 14, DH / 2, (DW + 4) / 2 + 8));
     K.box('steelDark', F1 - 9, 2, 0, 3, 4, DW * 2 + 20);
@@ -2200,7 +2202,7 @@ const Landmarks = (() => {
       } else if (kind < 0.76) {    // thùng các-tông bẹp, rách
         for (let k = 0; k < 2 + Math.floor(hash(i + 8) * 3); k++) K.add('cardboard', new THREE.BoxGeometry(3.2, 2.6, 3.2), at((hash(i + k * 3) - 0.5) * 6, 0.8, (hash(i + k * 5) - 0.5) * 6, (hash(i + k) - 0.5) * 0.4, hash(i + k + 2) * 3, 0, 1, 0.55, 1));
       } else if (kind < 0.9) {     // giấy rác, túi nilon (lá mỏng nằm rải)
-        for (let k = 0; k < 6; k++) K.add('paper', new THREE.PlaneGeometry(1.4, 1), at((hash(i * 3 + k) - 0.5) * 14, 0.15 + k * 0.01, (hash(i * 5 + k) - 0.5) * 14, -Math.PI / 2 + (hash(k) - 0.5) * 0.4, hash(k + 3) * 3, 0));
+        for (let k = 0; k < 3; k++) K.add('paper', new THREE.PlaneGeometry(1.4, 1), at((hash(i * 3 + k) - 0.5) * 14, 0.15 + k * 0.01, (hash(i * 5 + k) - 0.5) * 14, -Math.PI / 2 + (hash(k) - 0.5) * 0.4, hash(k + 3) * 3, 0));
       } else {                     // bao cát rách đổ
         for (let k = 0; k < 3 + Math.floor(hash(i + 9) * 3); k++) K.add('bagGreen', new THREE.BoxGeometry(4.2, 1.6, 2.6), at((hash(i * 3 + k) - 0.5) * 7, 0.8, (hash(i * 5 + k) - 0.5) * 5, 0, hash(k + 1) * 3, (hash(k + 2) - 0.5) * 0.4));
       }

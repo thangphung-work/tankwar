@@ -1270,8 +1270,8 @@ const MapGen = (() => {
       const M = L.mound, u = (f - M.fc) / M.af, v = r / M.ar;
       const d = Math.pow(Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6), 1 / 6);
       if (d >= 1) return 0;
-      // sân trước khoét vào ụ: dải chuyển cao độ nằm gọn trong bề dày tường mặt tiền / tường chắn đất
-      const notch = smooth(M.face - 2, M.face + 10, f) * (1 - smooth(M.cut - 6, M.cut + 6, Math.abs(r)));
+      // sân trước khoét vào ụ, lòng hầm khoét sâu ra sau mặt tiền (khe cửa hé không lộ mặt đất): dải chuyển cao độ khuất sau tường mặt tiền
+      const notch = smooth(M.face - 34, M.face - 22, f) * (1 - smooth(M.cut - 6, M.cut + 6, Math.abs(r)));
       return M.h * (1 - smooth(0.68, 1, d)) * (1 - notch);
     }
     if (L.launchers) {
