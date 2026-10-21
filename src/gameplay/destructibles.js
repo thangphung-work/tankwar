@@ -464,6 +464,9 @@ const Destructibles = (() => {
   // Độ cao so với chân / đỉnh nhà lấy từ ảnh lưới thông tin nhà (BuildingSet.grimeInfo); ngoài nhà (mảnh văng) bỏ qua phần đó.
   // opt: peel (bong vữa) · moss (rêu) · rust (gỉ) · peelA / peelB (màu lớp lộ ra) · U (uniform dùng chung: ảnh lưới nhà)
   // (băm không dùng sin: rẻ hơn trên GPU yếu, không mất chính xác ở toạ độ lớn)
+  // Ảnh lưới thông tin nhà dùng chung (một bộ cho cả bản đồ): chân / đỉnh tường (uBld) cho phong hoá, độ che khuất
+  // quanh chân nhà đã làm mờ (uBldOcc) cho mặt đất tối dần sát tường (GroundShader). Đổi bản đồ -> BuildingSet mới ghi đè
+  const BLD_INFO = { uBld: { value: null }, uBldGrid: { value: new THREE.Vector4(0, 0, 0, 0) }, uBldOcc: { value: null } };
   const GRIME_GLSL = `
     float gHash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     float gNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -491,7 +494,7 @@ const Destructibles = (() => {
         #endif
         vGrimeW = (modelMatrix * gw).xyz;
         vGrimeN = normalize(mat3(modelMatrix) * gn);`);
-      sh.fragmentShader = ['varying vec3 vGrimeW;', 'varying vec3 vGrimeN;', 'uniform float uGrime, uPeel, uMoss, uRust;', 'uniform vec3 uPeelA, uPeelB;',
+      sh.fragmentShader = ['varying vec3 vGrimeW;', 'varying vec3 vGrimeN;', 'float gAOk = 1.0;', 'uniform float uGrime, uPeel, uMoss, uRust;', 'uniform vec3 uPeelA, uPeelB;',
         'uniform sampler2D uBld;', 'uniform vec4 uBldGrid;', GRIME_GLSL, ''].join(NL) +
         sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
         {
@@ -567,9 +570,12 @@ const Destructibles = (() => {
             gc = mix(gc, vec3(0.34, 0.17, 0.07) * (0.7 + 0.5 * gNoise(vec2(hx * 0.7, y * 0.7))), rust * 0.55);
           }
           diffuseColor.rgb = mix(diffuseColor.rgb, gc, uGrime);
-        }`);
+          // che khuất ánh trời sát chân tường (góc tường - đất nhận ít ánh trời tán xạ)
+          gAOk = mix(1.0, mix(0.5, 1.0, smoothstep(0.0, 14.0, hb)), inB * wall);
+        }`).replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        reflectedLight.indirectDiffuse *= gAOk;`);
     };
-    mat.customProgramCacheKey = () => (key ? key() : '') + '|grime2';
+    mat.customProgramCacheKey = () => (key ? key() : '') + '|grime3';
     return mat;
   }
   // Mái ngói / tôn / mái bằng: rêu & địa y loang thành đám, vệt nước sẫm chảy theo dốc mái (trục v của uv), tôn gỉ vệt
@@ -3392,7 +3398,9 @@ const Destructibles = (() => {
       }
       const glassy = k => k === 'office' || k === 'officeB';
       // Phong hoá: ảnh lưới chân / đỉnh nhà (điền sau khi dựng nhà, xem buildGrimeInfo) dùng chung cho mọi vật liệu nhà
-      this.grimeU = { uBld: { value: null }, uBldGrid: { value: new THREE.Vector4(0, 0, 0, 0) } };
+      this.grimeU = BLD_INFO;
+      for (const k of ['uBld', 'uBldOcc']) { if (BLD_INFO[k].value) BLD_INFO[k].value.dispose(); BLD_INFO[k].value = null; }
+      BLD_INFO.uBldGrid.value.set(0, 0, 0, 0);
       const wk = k => this.weatherOpt(k);
       for (const key in counts) {
         // normal map (mạch gạch / vân gỗ / sóng tôn / hạt vữa nổi dưới nắng) + roughness map (kính bóng, tường nhám)
@@ -3498,6 +3506,41 @@ const Destructibles = (() => {
       t.needsUpdate = true;
       this.grimeU.uBld.value = t;
       this.grimeU.uBldGrid.value.set(x0, z0, 1 / (nx * cell), 1 / (nz * cell));
+      // Độ che khuất mặt đất quanh chân nhà: đúng chân tường = 1, làm mờ 2 lượt (~gauss) -> tối dần trong ~2 m ra ngoài
+      let occ = new Float32Array(nx * nz);
+      for (const B of this.items) {
+        const ca = Math.cos(B.angle), sa = Math.sin(B.angle), hw = B.w / 2, hd = B.d / 2, r = Math.hypot(hw, hd);
+        const i0 = Math.max(0, Math.floor((B.x - r - x0) / cell)), i1 = Math.min(nx - 1, Math.ceil((B.x + r - x0) / cell));
+        const j0 = Math.max(0, Math.floor((B.z - r - z0) / cell)), j1 = Math.min(nz - 1, Math.ceil((B.z + r - z0) / cell));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const dx = x0 + (i + 0.5) * cell - B.x, dz = z0 + (j + 0.5) * cell - B.z;
+          if (Math.abs(dx * ca - dz * sa) <= hw && Math.abs(dx * sa + dz * ca) <= hd) occ[j * nx + i] = 1;
+        }
+      }
+      const R = Math.max(1, Math.round(9 / cell)), tmp = new Float32Array(nx * nz);
+      const blur = (src, dst, horiz) => {
+        const n = horiz ? nx : nz, m = horiz ? nz : nx;
+        for (let a = 0; a < m; a++) {
+          let sum = 0;
+          const at = b => (horiz ? a * nx + b : b * nx + a);
+          for (let b = -R; b <= R; b++) sum += b >= 0 && b < n ? src[at(b)] : 0;
+          for (let b = 0; b < n; b++) {
+            dst[at(b)] = sum / (2 * R + 1);
+            const o = b - R, q = b + R + 1;
+            if (o >= 0) sum -= src[at(o)];
+            if (q < n) sum += src[at(q)];
+          }
+        }
+      };
+      for (let k = 0; k < 2; k++) { blur(occ, tmp, true); blur(tmp, occ, false); }
+      const ob = new Uint8Array(nx * nz);
+      for (let i = 0; i < ob.length; i++) ob[i] = Math.min(255, Math.round(Math.min(1, occ[i] * 2) * 255));
+      const ot = new THREE.DataTexture(ob, nx, nz, THREE.LuminanceFormat);
+      ot.magFilter = ot.minFilter = THREE.LinearFilter;
+      ot.unpackAlignment = 1;   // hàng 1 byte / điểm ảnh, bề ngang không chia hết cho 4
+      ot.generateMipmaps = false;
+      ot.needsUpdate = true;
+      this.grimeU.uBldOcc.value = ot;
     }
 
     commitAll() {
@@ -7439,7 +7482,7 @@ const Destructibles = (() => {
     return { leafTex, foliageMat, bushGeometry };
   })();
 
-  return { Foliage, TreeField, BuildingSet, BunkerSet, ConcreteWall, SingleBuilding, BlockStructure, FractureKit, ammoInfo, BK, segCircleT, withSeed };
+  return { buildingInfo: BLD_INFO, Foliage, TreeField, BuildingSet, BunkerSet, ConcreteWall, SingleBuilding, BlockStructure, FractureKit, ammoInfo, BK, segCircleT, withSeed };
 })();
 
 if (typeof window !== 'undefined') window.Destructibles = Destructibles;

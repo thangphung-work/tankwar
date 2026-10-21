@@ -76,7 +76,8 @@ const SkySystem = (() => {
       sunLight.userData.sunDir = atm.sunDir.clone();
     }
     if (hemi) {
-      hemi.color.setHex(atm.zenith).lerp(new THREE.Color(0xffffff), 0.45);
+      // ánh trời ngả xanh rõ hơn (vùng bóng lạnh màu, vùng nắng ấm -> tương phản nóng / lạnh như ảnh chụp ngoài trời)
+      hemi.color.setHex(atm.zenith).lerp(new THREE.Color(0xffffff), 0.32);
       hemi.groundColor.setHex(atm.ground || 0x806a50);
       hemi.intensity = atm.skyIntensity;
     }
@@ -113,7 +114,50 @@ vec3 CustomToneMapping( vec3 color ) {
     }
   }
 
-  return { create, applyLights, installToneCurve };
+  /**
+   * BÓNG MÂY TRÔI DÙNG CHUNG: mây che nắng thì MỌI vật trong vùng đó cùng tối (mặt đất, nhà, xe, cây) — trước đây chỉ
+   * mặt đất tối, nhà / xe đứng trong bóng mây vẫn sáng chói như có đèn rọi riêng.
+   * Vá chunk chiếu sáng của Three.js: nhân ánh nắng trực tiếp (đèn hướng) với độ che của mây tại điểm đang tô (toạ độ
+   * thế giới dựng lại từ vViewPosition + viewMatrix), ánh trời tán xạ giữ nguyên.
+   * CLOUD dùng chung cho mọi vật liệu (object thường không bị cloneUniforms nhân bản): x = thời gian, y = độ đậm bóng
+   * (0 = tắt: sảnh / phòng xem xe không có mây), z = 1 / cỡ đám mây, w = ngưỡng độ phủ
+   */
+  const CLOUD = { x: 0, y: 0, z: 1 / 1100, w: 0.56 };
+  function installCloudShadows() {
+    const C = THREE.ShaderChunk;
+    if (C.lights_pars_begin.indexOf('skyCloudShade') >= 0) return;
+    C.lights_pars_begin = `uniform vec4 skyCloudU;
+float skyCH( vec2 p ) { vec3 q = fract( p.xyx * 0.1031 ); q += dot( q, q.yzx + 33.33 ); return fract( ( q.x + q.y ) * q.z ); }
+float skyCN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( skyCH( i ), skyCH( i + vec2( 1.0, 0.0 ) ), f.x ), mix( skyCH( i + vec2( 0.0, 1.0 ) ), skyCH( i + vec2( 1.0, 1.0 ) ), f.x ), f.y ); }
+float skyCloudShade( vec3 viewPos ) {
+  if ( skyCloudU.y <= 0.0 ) return 1.0;
+  vec3 v = viewPos - viewMatrix[ 3 ].xyz;
+  vec2 w = vec2( dot( viewMatrix[ 0 ].xyz, v ), dot( viewMatrix[ 2 ].xyz, v ) );
+  // gió trôi chậm (~2 m/s ở độ cao mây), đám mây vài trăm mét, mép mềm, trong đám có chỗ dày chỗ mỏng
+  vec2 p = ( w + skyCloudU.x * vec2( 16.0, 7.0 ) ) * skyCloudU.z;
+  float n = skyCN( p ) * 0.55 + skyCN( p * 2.13 + 3.7 ) * 0.3 + skyCN( p * 4.7 + 9.1 ) * 0.15;
+  float c = smoothstep( skyCloudU.w, skyCloudU.w + 0.2, n ) * ( 0.75 + 0.25 * smoothstep( skyCloudU.w + 0.1, skyCloudU.w + 0.3, n ) );
+  return 1.0 - skyCloudU.y * c;
+}
+` + C.lights_pars_begin;
+    const A = 'DirectionalLight directionalLight;';
+    const B = 'getDirectionalDirectLightIrradiance( directionalLight, geometry, directLight );';
+    if (C.lights_fragment_begin.indexOf(A) < 0 || C.lights_fragment_begin.indexOf(B) < 0) return;
+    C.lights_fragment_begin = C.lights_fragment_begin
+      .replace(A, A + '\n\tfloat skyCloud = skyCloudShade( - vViewPosition );')
+      .replace(B, B + '\n\t\tdirectLight.color *= skyCloud;');
+    // mọi loại vật liệu có chiếu sáng từng điểm ảnh mang uniform này (cùng một object CLOUD)
+    for (const k of ['standard', 'physical', 'phong', 'toon']) if (THREE.ShaderLib[k]) THREE.ShaderLib[k].uniforms.skyCloudU = { value: CLOUD };
+  }
+  function tickClouds(dt) { CLOUD.x += dt; }
+  // độ đậm bóng mây theo chiến địa (sa mạc nắng gắt ít mây; rừng / sông hồ nhiều mây hơn); 0 = tắt
+  function setClouds(strength, coverage) { CLOUD.y = strength; if (coverage !== undefined) CLOUD.w = coverage; }
+  function cloudStrength() { return CLOUD.y; }
+
+  return { create, applyLights, installToneCurve, installCloudShadows, tickClouds, setClouds, cloudStrength };
 })();
 
+// vá chunk chiếu sáng ngay khi tải (trước khi bất kỳ shader nào được biên dịch: sảnh, phòng xem xe, trận)
+if (typeof THREE !== 'undefined') SkySystem.installCloudShadows();
 if (typeof window !== 'undefined') window.SkySystem = SkySystem;
