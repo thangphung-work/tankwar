@@ -350,6 +350,71 @@ const Strongholds = (() => {
     JUNGLE: { c: [0.4, 0.32, 0.22], k: 0.7, moss: [0.17, 0.29, 0.08], mk: 1.0, lich: [0.6, 0.64, 0.46], lk: 0.25, wet: 1.0, weed: 1.0 },
     URBAN: { c: [0.6, 0.58, 0.54], k: 0.6, moss: [0.28, 0.32, 0.17], mk: 0.35, lich: [0.7, 0.7, 0.62], lk: 0.25, wet: 0.6, weed: 0.5 }
   };
+  // ===========================================================================
+  // HỐ ĐẠN THẬT TRÊN BÊ TÔNG CỨ ĐIỂM
+  //  Mặt tường là mặt phẳng lớn -> không khoét lưới được: shader tường (và vết dán trên tường) bỏ điểm ảnh trong viền hố
+  //  răng cưa, phía sau đặt 1 "lòng chảo" 3D sâu thật (được chiếu sáng, đổ bóng) + cốt thép gỉ lộ ra ở hố lớn.
+  //  Hố gần nhau cùng mặt dồn lại: rộng & sâu dần. Chỉ hình ảnh — va chạm, cứ điểm vẫn nguyên (hố tối đa ~0,9 m
+  //  trong tường dày ~3,5 m). Toạ độ & hạt giống lấy từ điểm trúng (gói ENV_HIT) -> mọi máy khoét giống hệt nhau
+  // ===========================================================================
+  const MAX_HOLES = 96;
+  const HOLE_U = {
+    uHoleP: { value: Array.from({ length: MAX_HOLES }, () => new THREE.Vector4()) },   // tâm (mặt tường) + bán kính
+    uHoleN: { value: Array.from({ length: MAX_HOLES }, () => new THREE.Vector4()) },   // pháp tuyến + hạt giống viền
+    uHoleCount: { value: 0 }
+  };
+  // viền hố răng cưa (tỉ lệ theo bán kính) — JS & GLSL dùng đúng một công thức
+  const holeRim = (a, s) => 0.9 + 0.06 * Math.sin(3 * a + s) + 0.06 * Math.sin(7 * a + s * 1.7) + 0.04 * Math.sin(11 * a + s * 2.3) + 0.03 * Math.sin(17 * a + s * 3.1);
+  const HOLE_GLSL = `uniform vec4 uHoleP[${MAX_HOLES}]; uniform vec4 uHoleN[${MAX_HOLES}]; uniform int uHoleCount;
+varying vec3 vHoleWP; varying vec3 vHoleWN;
+bool shInHole(vec3 wp, vec3 wn) {
+  for (int i = 0; i < ${MAX_HOLES}; i++) {
+    if (i >= uHoleCount) break;
+    vec4 P = uHoleP[i]; vec4 N = uHoleN[i];
+    vec3 d = wp - P.xyz;
+    float dn = dot(d, N.xyz);
+    if (abs(dn) > 0.9 || dot(wn, N.xyz) < 0.6) continue;
+    vec3 q = d - N.xyz * dn;
+    float l = length(q);
+    if (l > P.w * 1.2) continue;
+    vec3 t = abs(N.y) > 0.9 ? vec3(1.0, 0.0, 0.0) : normalize(vec3(N.z, 0.0, -N.x));
+    vec3 b = cross(N.xyz, t);
+    float a = atan(dot(q, b), dot(q, t));
+    if (l < P.w * (0.9 + 0.06 * sin(3.0 * a + N.w) + 0.06 * sin(7.0 * a + N.w * 1.7) + 0.04 * sin(11.0 * a + N.w * 2.3) + 0.03 * sin(17.0 * a + N.w * 3.1))) return true;
+  }
+  return false;
+}
+`;
+  // Vật liệu (tường bê tông cứ điểm, vết dán trên tường) bỏ điểm ảnh nằm trong lỗ hố đạn
+  // (đánh dấu bằng WeakSet chứ không qua userData: vật liệu clone() chép cả userData -> bản sao bị bỏ qua)
+  const HOLE_MATS = new WeakSet();
+  function holeDiscard(mat) {
+    if (!mat || HOLE_MATS.has(mat)) return mat;
+    HOLE_MATS.add(mat);
+    const prev = mat.onBeforeCompile, pk = mat.customProgramCacheKey();
+    mat.onBeforeCompile = (sh, r) => {
+      if (prev) prev.call(mat, sh, r);
+      Object.assign(sh.uniforms, HOLE_U);
+      sh.vertexShader = 'varying vec3 vHoleWP;\nvarying vec3 vHoleWN;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+  { vec4 hp = vec4(transformed, 1.0); vec3 hn = objectNormal;
+  #ifdef USE_INSTANCING
+    hp = instanceMatrix * hp; hn = mat3(instanceMatrix) * hn;
+  #endif
+    vHoleWP = (modelMatrix * hp).xyz; vHoleWN = normalize(mat3(modelMatrix) * hn); }`);
+      sh.fragmentShader = HOLE_GLSL + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (shInHole(vHoleWP, vHoleWN)) discard;');
+    };
+    mat.customProgramCacheKey = () => pk + '|holes1';
+    mat.needsUpdate = true;
+    return mat;
+  }
+  // [bán kính, độ sâu] hố theo loại đạn (8 đv = 1 m): pháo tăng 120 mm ~ hố 55 cm sâu 25 cm, lựu pháo 155 mm ~ 80 cm sâu
+  // 35 cm, đạn xuyên / đầu nổ lõm: lỗ hẹp mà sâu; đạn súng chỉ khoét được khi dồn nhiều phát vào một chỗ
+  const CRATER = {
+    SCOUT_BULLET: [0.8, 0.3], INCENDIARY: [0.8, 0.3], GATLING_BULLET: [1.3, 0.6],
+    AP: [1.5, 3.4], RPG: [1.8, 2.8], ANTI_TANK_MISSILE: [2.3, 3.6],
+    CLUSTER_SUBMUNITION: [2.2, 1.0], CLUSTER: [3.4, 1.4], NORMAL: [4.4, 2.0], HE: [6.4, 2.8]
+  };
+
   // opts: { shadeDir: [x, z] hướng nắng nằm ngang (mặt quay ngược hướng này là mặt khuất nắng) }
   function weatherMat(mat, kind, mapType, opts = {}) {
     const G = GRIME[mapType] || GRIME.HIGHLAND;
@@ -655,6 +720,14 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       this.group = new THREE.Group();
       this.group.name = 'strongholds';
       parent.add(this.group);
+      // hố đạn trên bê tông (bản đồ mới: xoá hết)
+      this.holes = [];
+      HOLE_U.uHoleCount.value = 0;
+      this.craterGroup = new THREE.Group();
+      this.craterGroup.name = 'stronghold_craters';
+      this.group.add(this.craterGroup);
+      this.craterMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+      this.rebarMat = new THREE.MeshStandardMaterial({ color: 0x4a2a17, roughness: 0.8, metalness: 0.45 });
       this.mapType = opts.mapType || 'HIGHLAND';
       // Màu ụ đất theo địa hình: dùng chung shader mặt đất (opts.groundMaterial) nếu có, không thì bảng màu EARTH
       this.groundMaterial = typeof opts.groundMaterial === 'function' ? opts.groundMaterial : null;
@@ -830,6 +903,160 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         return { x, y: sf !== null ? Math.max(y, sf - 0.2) : y, z, type: 'GROUND' };
       }
       return null;
+    }
+
+    // ---------------------------------------------------------------- hố đạn trên bê tông
+    /**
+     * Khoét / đào sâu hố tại điểm trúng (x, y, z: điểm ngay mặt ngoài bê tông, n: pháp tuyến mặt). room: khoảng trống tới
+     * mép tường gần nhất (hố không lấn ra ngoài khoảng không). k: hệ số cỡ. Trả về hố.
+     */
+    addCrater(x, y, z, nx, ny, nz, ammo, heavy, room = Infinity, k = 1) {
+      const C = CRATER[ammo];
+      if (!C) return null;
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      const n = new THREE.Vector3(nx / nl, ny / nl, nz / nl);
+      const r = C[0] * (heavy ? 1.35 : 1) * k, d = C[1] * (heavy ? 1.4 : 1) * k;
+      const maxR = Math.max(0.8, Math.min(15, room * 1.05)), maxD = 7;
+      const blast = ammo === 'AP' || C[0] < 1.4 ? 0 : 1;
+      const face = new THREE.Vector3(x, y, z).addScaledVector(n, -0.15);
+      // hố cũ cùng mặt ở sát bên: dồn vào (rộng & sâu thêm)
+      let best = null, bd = Infinity;
+      for (const h of this.holes) {
+        if (h.n.dot(n) < 0.85) continue;
+        const q = face.clone().sub(h.p);
+        if (Math.abs(q.dot(h.n)) > 1.5) continue;
+        q.addScaledVector(h.n, -q.dot(h.n));
+        const dd = q.length();
+        if (dd < h.R * 0.8 + r * 0.5 && dd < bd) { best = h; bd = dd; }
+      }
+      if (best) {
+        const h = best, w = (r * r) / (h.R * h.R + r * r) * 0.5;
+        const q = face.clone().sub(h.p); q.addScaledVector(h.n, -q.dot(h.n));
+        h.p.addScaledVector(q, w);
+        h.maxR = Math.max(h.maxR, maxR);
+        h.R = Math.min(h.maxR, Math.max(h.R, Math.sqrt(h.R * h.R + 0.45 * r * r), bd * (1 - w) + r * 0.7));
+        h.D = Math.min(maxD, Math.max(h.D, d) + d * 0.35);
+        h.blast = Math.max(h.blast, blast);
+        this.buildCrater(h);
+        this.syncHoles();
+        return h;
+      }
+      // hạt giống lấy từ toạ độ (như các vết khác) -> mọi máy có cùng hình hố
+      const seed = (((Math.floor(x * 10) * 73856093) ^ (Math.floor(y * 10) * 19349663) ^ (Math.floor(z * 10) * 83492791)) >>> 0) % 100000 / 100000 * 6.283;
+      const h = { p: face, n, R: Math.min(r, maxR), D: d, seed, maxR, blast, mesh: null };
+      if (this.holes.length >= MAX_HOLES) { const o = this.holes.shift(); if (o.mesh) { this.craterGroup.remove(o.mesh); this.disposeCrater(o); } }
+      this.holes.push(h);
+      this.buildCrater(h);
+      this.syncHoles();
+      return h;
+    }
+    // điểm (x, y, z) có nằm trong lòng hố nào trên mặt tường không (vết dán / rỗ không đặt lơ lửng trên lỗ)
+    inHole(x, y, z, pad = 0) {
+      for (const h of this.holes) {
+        const q = new THREE.Vector3(x - h.p.x, y - h.p.y, z - h.p.z);
+        if (Math.abs(q.dot(h.n)) > 1.5) continue;
+        q.addScaledVector(h.n, -q.dot(h.n));
+        if (q.length() < h.R * 0.8 + pad) return h;
+      }
+      return null;
+    }
+    syncHoles() {
+      const P = HOLE_U.uHoleP.value, N = HOLE_U.uHoleN.value;
+      this.holes.forEach((h, i) => { P[i].set(h.p.x, h.p.y, h.p.z, h.R); N[i].set(h.n.x, h.n.y, h.n.z, h.seed); });
+      HOLE_U.uHoleCount.value = this.holes.length;
+    }
+    disposeCrater(h) {
+      if (!h.mesh) return;
+      h.mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      h.mesh = null;
+    }
+    // Lòng hố: lưới đĩa xuyên tâm, mép trùng viền lỗ (nhỉnh hơn chút, nằm ngay sau mặt tường); mặt vỡ lởm chởm theo nhiễu
+    // liền mạch (mảng vỡ thành khối, không rối từng đỉnh); màu bê tông vỡ lộ cốt liệu, sâu thì tối dần, nổ thì ám khói;
+    // hố lớn & sâu lộ cốt thép gỉ (lớp bảo vệ ~6 cm): thanh cong vênh, đứt gãy, chìa ra
+    buildCrater(h) {
+      if (h.mesh) { this.craterGroup.remove(h.mesh); this.disposeCrater(h); }
+      const NS = 40, NR = 9, R = h.R, D = h.D;
+      let sd = (Math.floor(h.seed * 1e5) * 2654435761) >>> 0;
+      const rnd = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+      // nhiễu giá trị 2D liền mạch theo toạ độ trên mặt tường
+      const hs = (i, j) => { let k = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.floor(h.seed * 9973)) | 0; k = Math.imul(k ^ (k >>> 13), 1274126177); return ((k ^ (k >>> 16)) >>> 0) / 4294967296; };
+      const vn = (x, y) => {
+        const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+        return (hs(i, j) * (1 - u) + hs(i + 1, j) * u) * (1 - v) + (hs(i, j + 1) * (1 - u) + hs(i + 1, j + 1) * u) * v;
+      };
+      const pos = [], col = [], idx = [];
+      const push = (px, py, pz, depth01, rr, rim) => {
+        pos.push(px, py, pz);
+        // mép: gần màu mặt tường; vào trong: bê tông vỡ xám, tối dần xuống đáy, lốm đốm cốt liệu; muội khói ở lòng hố nổ
+        let c = rim ? 0.42 : 0.47 - 0.27 * Math.pow(depth01, 0.8) + (vn(px * 3.1, py * 3.1) - 0.5) * 0.12;
+        if (h.blast && !rim) c *= 0.6 + 0.4 * Math.min(1, rr * 1.25);
+        col.push(c, c * 0.96, c * 0.88);
+      };
+      const depthAt = (x, y, r) => {
+        // thành hố dốc gần đứng sát mép (bê tông vỡ giòn), đáy lòng chảo; mảng vỡ khối nhô / lõm theo nhiễu 2 tầng
+        const base = Math.pow(Math.max(0, 1 - Math.pow(r, 3)), 0.55);
+        const n = (vn(x / 1.3, y / 1.3) - 0.5) * 0.55 + (vn(x / 0.55 + 7, y / 0.55) - 0.5) * 0.25;
+        return -D * base * (1 + n) - 0.02;
+      };
+      push(0, 0, depthAt(0, 0, 0), 1, 0, false);
+      for (let i = 1; i <= NR; i++) {
+        const r = Math.pow(i / NR, 0.85);
+        for (let j = 0; j < NS; j++) {
+          const a = (j + (i % 2) * 0.5) / NS * Math.PI * 2;
+          const rad = r * holeRim(a, h.seed) * R * 1.03;
+          const x = Math.cos(a) * rad, y = Math.sin(a) * rad;
+          const z = i === NR ? -0.06 : depthAt(x, y, r);
+          push(x, y, z, Math.min(1, -z / Math.max(0.01, D)), r, i === NR);
+        }
+      }
+      for (let j = 0; j < NS; j++) idx.push(0, 1 + j, 1 + (j + 1) % NS);
+      for (let i = 1; i < NR; i++) {
+        const a0 = 1 + (i - 1) * NS, a1 = 1 + i * NS;
+        for (let j = 0; j < NS; j++) {
+          const j1 = (j + 1) % NS;
+          idx.push(a0 + j, a1 + j, a1 + j1, a0 + j, a1 + j1, a0 + j1);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      const grp = new THREE.Group();
+      const bowl = new THREE.Mesh(g, this.craterMat);
+      bowl.receiveShadow = true; bowl.castShadow = true;
+      grp.add(bowl);
+      // cốt thép lộ: lưới 2 lớp bước ~28 cm, lớp bảo vệ ~6 cm. Thanh bị nổ bẻ cong vênh ra ngoài, đứt khúc, nhiều thanh mất hẳn
+      const cover = 0.5;
+      if (D > cover + 0.5 && R > 2.2) {
+        const reach = R * Math.cbrt(Math.max(0, 1 - Math.pow(cover / D, 1 / 0.55))) * 0.9;
+        const step = 2.2, ph = rnd() * step;
+        for (const [ax, dz] of [[0, cover], [1, cover + 0.24]]) {
+          for (let s = -reach + ph; s < reach; s += step) {
+            const L = Math.sqrt(Math.max(0, reach * reach - s * s));
+            if (L < 0.6 || rnd() < 0.35) continue;
+            // đứt: chỉ còn 1 khúc bám từ mép hố vào; nguyên: chạy suốt, võng / vênh nhẹ
+            const broken = rnd() < 0.45;
+            const len = broken ? L * (0.5 + rnd() * 0.6) : L * 2 * (0.85 + rnd() * 0.15);
+            const off = broken ? (rnd() < 0.5 ? -1 : 1) * (L - len / 2) : 0;
+            const bar = new THREE.Mesh(new THREE.BoxGeometry(ax ? 0.2 : len, ax ? len : 0.2, 0.2), this.rebarMat);
+            bar.position.set(ax ? s : off, ax ? off : s, -dz + (broken ? 0.15 : 0));
+            // khúc đứt vênh chĩa ra ngoài mặt tường; thanh nguyên cong nhẹ
+            const tilt = (broken ? 0.25 + rnd() * 0.35 : (rnd() - 0.5) * 0.12) * (off >= 0 ? 1 : -1);
+            if (ax) bar.rotation.x = -tilt; else bar.rotation.y = tilt;
+            bar.rotation.z = (rnd() - 0.5) * 0.08;
+            bar.castShadow = true;
+            grp.add(bar);
+          }
+        }
+      }
+      // khung toạ độ: X = t, Y = b (trên mặt tường), Z = n (hướng ra ngoài)
+      const n = h.n, t = Math.abs(n.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(n.z, 0, -n.x).normalize();
+      const b = new THREE.Vector3().crossVectors(n, t);
+      grp.matrix.makeBasis(t, b, n).setPosition(h.p);
+      grp.matrixAutoUpdate = false;
+      this.craterGroup.add(grp);
+      h.mesh = grp;
     }
 
     // Nòng pháo (từ chốt nòng tới đầu nòng) có cắm vào bê tông / ụ đất không
@@ -1051,6 +1278,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       // Chân tường / gầm khoang tối hơn (bóng che khuất), mép trên sáng hơn
       const wopt = { shadeDir: this.shadeDir };
       weatherMat(concMat, 'wall', this.mapType, wopt);
+      holeDiscard(concMat);
       const concGeo = addWeatherAttrs(C.build((f, y) => y < CEIL - 0.5 ? 0.66 + 0.34 * smooth((y + D) / 30) : 1),
         (f, y, r) => Math.abs(f) > S.END + 0.5 ? slabY(f, r) : floorY(Math.abs(f)),
         null,
@@ -1068,7 +1296,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const roofGrp = new THREE.Group();
       roofGrp.name = 'stronghold_roof';
       grp.add(roofGrp);
-      const roofMat = weatherMat(concMat.clone(), 'wall', this.mapType, wopt);
+      const roofMat = holeDiscard(weatherMat(concMat.clone(), 'wall', this.mapType, wopt));
       // nắp hầm & gờ mặt tiền nhô trên lớp đất phủ: bụi cát bám từ mặt đất phủ lên; mặt dưới mái / dầm trong khoang: theo sàn
       // mép trên: nắp hầm / gờ mặt tiền (vệt nước mưa chảy từ đỉnh gờ xuống lanh tô) / trần (dầm)
       const roofGeo = addWeatherAttrs(Rf.build((f, y) => y < CEIL + 0.5 ? 0.78 : 1), (f, y) => y > S.CREST - 4 ? S.CREST - 1 : floorY(Math.abs(f)),
@@ -1155,13 +1383,14 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       // Lòng hầm đủ sáng nhờ ánh sáng môi trường; đèn trần là tấm tự phát sáng.
       const letter = letterTexture(K.id);
       for (const sg of [-1, 1]) {
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), new THREE.MeshStandardMaterial({ map: letter, transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+        // chữ & vạch sơn trên mặt tiền: không sơn đè lên lỗ hố đạn
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), holeDiscard(new THREE.MeshStandardMaterial({ map: letter, transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
         m.position.set(sg * (HB + 0.08), CEIL + (S.TOP - CEIL) / 2, 0);
         m.rotation.y = sg > 0 ? Math.PI / 2 : -Math.PI / 2;
         roofGrp.add(m);
         K.fadeMats.push(m.material);
         // vạch sơn cảnh báo vàng đen dưới lanh tô
-        const stripe = new THREE.Mesh(new THREE.PlaneGeometry((WI - S.HAUNCH) * 2, 1.8), new THREE.MeshStandardMaterial({ map: hazardTex(), roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+        const stripe = new THREE.Mesh(new THREE.PlaneGeometry((WI - S.HAUNCH) * 2, 1.8), holeDiscard(new THREE.MeshStandardMaterial({ map: hazardTex(), roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
         stripe.position.set(sg * (HB + 0.68), CEIL - 0.6, 0);
         stripe.rotation.y = sg > 0 ? Math.PI / 2 : -Math.PI / 2;
         roofGrp.add(stripe);
@@ -1802,7 +2031,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     }
   }
 
-  return { S, StrongholdSet, carveHeights, unitBox, segUnitBox, cutHalf, floorY };
+  return { S, StrongholdSet, carveHeights, unitBox, segUnitBox, cutHalf, floorY, holeDiscard };
 })();
 
 if (typeof window !== 'undefined') window.Strongholds = Strongholds;
