@@ -68,6 +68,24 @@ const DroneAir = (() => {
       return false;
     },
 
+    // ---------- TAI NGHE ----------
+    // Đang xem qua camera drone: nghe bằng micro trên drone (âm thanh chiến trường quanh drone, theo độ cao bay, trễ theo
+    // khoảng cách, trái / phải theo hướng camera drone); còn lại: nghe tại xe mình
+    audioListener() {
+      const S = this._sight;
+      if (S && S.arty && this.camera) return this.camera.position;
+      return this.player;
+    },
+
+    /** Khoảng cách từ micro drone tới nguồn âm pos {x, z[, y]} (null: không xem qua drone) — nguồn thiếu y coi như trên mặt đất */
+    droneEarDistance(pos) {
+      const S = this._sight;
+      if (!S || !S.arty || !pos || !this.camera) return null;
+      const L = this.camera.position;
+      const y = pos.y !== undefined ? pos.y : (this.terrain ? this.terrain.getElevationAt(pos.x, pos.z) : 0);
+      return Math.max(1, Math.hypot(pos.x - L.x, y - L.y, pos.z - L.z));
+    },
+
     unitById(id) {
       for (const u of this.units) if (u.id === id) return u;
       return null;
@@ -259,7 +277,7 @@ const DroneAir = (() => {
       const S = this._sight;
       if (!S || !S.arty) return;
       const SE = window.soundEngine;
-      if (SE && SE.playFlyby) SE.playFlyby(s.ammoType === 'SCOUT_BULLET' ? 'mg' : 'cannon30', d, null);
+      if (SE && SE.playFlyby) SE.playFlyby(s.ammoType === 'SCOUT_BULLET' ? 'mg' : 'cannon30', d, { x: s.x, z: s.z });
       S.jolt = Math.max(S.jolt || 0, 0.18 * (1 - d / C.NEAR_R) + 0.05);
       S.underFire = 2.2;
     },
@@ -640,11 +658,12 @@ const DroneAir = (() => {
       if (!SE || !SE.updateDroneAmbient) return;
       const near = this._ambList || (this._ambList = []);
       near.length = 0;
-      if (P && !P.isDead && !(this._sight && this._sight.arty)) {
-        const py = (P.y || 0) + 10;
+      const viewing = this._sight && this._sight.arty, L = this.audioListener();
+      if (P && !P.isDead && L) {
+        const py = viewing ? L.y : (P.y || 0) + 10;
         for (const dr of list) {
-          if (dr.key === 'own' && dr.state === 'launching') continue;   // pha cất cánh đã có tiếng riêng
-          const dx = dr.x - P.x, dy = dr.y - py, dz = dr.z - P.z, d = Math.hypot(dx, dy, dz);
+          if (dr.key === 'own' && (dr.state === 'launching' || viewing)) continue;   // cất cánh / camera trên drone: đã có tiếng riêng
+          const dx = dr.x - L.x, dy = dr.y - py, dz = dr.z - L.z, d = Math.hypot(dx, dy, dz);
           if (d > 1650) continue;
           // vận tốc lại gần xe mình (m/s, 8 đv = 1 m): dương = đang lao tới -> tiếng cao lên (Doppler)
           const vr = -((dr.wvx || 0) * dx + (dr.wvy || 0) * dy + (dr.wvz || 0) * dz) / Math.max(1, d) / 8;
@@ -653,7 +672,7 @@ const DroneAir = (() => {
         near.sort((a, b) => a.d - b.d);
       }
       // tiếng máy / xích xe mình át tiếng drone khi xe chạy nhanh
-      const mask = P && !P.isDead ? Math.min(1, Math.abs(P.speed || 0) / Math.max(1, P.baseMaxSpeed || 100)) : 0;
+      const mask = viewing ? 0.45 : P && !P.isDead ? Math.min(1, Math.abs(P.speed || 0) / Math.max(1, P.baseMaxSpeed || 100)) : 0;   // micro drone: tiếng cánh quạt của chính nó át bớt
       SE.updateDroneAmbient(near, mask);
     },
 
@@ -864,18 +883,37 @@ const DroneAir = (() => {
 
     // ---------- MÀN HÌNH DRONE KHI BỊ BẮN HẠ: hình lật nhào, rồi nhiễu trắng "MẤT TÍN HIỆU" ----------
     updateDroneDeathCam(dt, S) {
-      const cam = this.camera, K = S.dying;
+      // 0–0.75 s: drone lộn nhào theo xác rơi, ánh lửa liếm ống kính, hình giật xé; 0.75 s: hình đứng khựng ở khung cuối,
+      // nhiễu trắng + vạch xé hình phủ dần; 1.15 s: hiện "MẤT TÍN HIỆU"; ~3.6 s: về camera xe
+      const cam = this.camera, K = S.dying, U = this._uavEl;
       K.t += dt;
-      const F = this._droneFalls && this._droneFalls.find(f => f.own);
-      const x = F ? F.x : K.x, y = F ? F.y : K.y, z = F ? F.z : K.z;
-      cam.position.set(x, y + 1, z);
-      const yaw = K.yaw + K.t * 5.5, pitch = -0.9 + Math.sin(K.t * 7) * 0.5;
-      cam.lookAt(x - Math.sin(yaw) * Math.cos(pitch) * 100, y + 1 + Math.sin(pitch) * 100, z - Math.cos(yaw) * Math.cos(pitch) * 100);
-      cam.rotateZ(K.t * 9);
-      const el = this._sightEl, dead = el && el.querySelector('.gs-dead');
-      if (dead && K.t > 0.7 && dead.hidden) dead.hidden = false;
-      this.renderer.domElement.style.transform = K.t < 0.7 ? 'translate(' + Math.round((Math.random() - 0.5) * 24) + 'px,' + Math.round((Math.random() - 0.5) * 18) + 'px)' : '';
-      if (K.t > 3.4) {
+      const dead = U && U.dead;
+      if (K.t < 0.75) {
+        const F = this._droneFalls && this._droneFalls.find(f => f.own);
+        const x = F ? F.x : K.x, y = F ? F.y : K.y, z = F ? F.z : K.z;
+        cam.position.set(x, y + 1, z);
+        const yaw = K.yaw + K.t * 5.5, pitch = -0.9 + Math.sin(K.t * 7) * 0.5;
+        cam.lookAt(x - Math.sin(yaw) * Math.cos(pitch) * 100, y + 1 + Math.sin(pitch) * 100, z - Math.cos(yaw) * Math.cos(pitch) * 100);
+        cam.rotateZ(K.t * 9);
+        this.renderer.domElement.style.transform = 'translate(' + Math.round((Math.random() - 0.5) * 28) + 'px,' + Math.round((Math.random() - 0.5) * 20) + 'px)';
+        if (U && U.burn) U.burn.style.opacity = (0.6 + Math.random() * 0.4).toFixed(2);
+        if (U && U.fire) { U.fire.hidden = false; U.fire.textContent = '⚠ DRONE TRÚNG ĐẠN · ĐANG RƠI'; }
+      } else {
+        if (!K.freeze) {
+          K.freeze = true;
+          this.renderer.domElement.style.transform = 'translate(0,' + Math.round((Math.random() - 0.5) * 14) + 'px)';   // khung cuối lệch dòng
+          if (U && U.burn) U.burn.style.opacity = '0.25';
+          if (U && U.fire) U.fire.hidden = true;
+          if (dead) dead.hidden = false;
+        }
+        if (dead) {
+          const k = Math.min(1, (K.t - 0.75) / 0.9);
+          dead.style.setProperty('--na', (0.35 + 0.6 * k).toFixed(2));
+          dead.style.setProperty('--bg', (0.75 * Math.max(0, (K.t - 1.4) / 0.8)).toFixed(2));
+          if (K.t > 1.15 && !dead.classList.contains('txt')) dead.classList.add('txt');
+        }
+      }
+      if (K.t > 3.6) {
         this.setSightMode(false);
         this.addCombatLog('[[eye-off]] Mất tín hiệu drone — về camera xe pháo', 'alert');
       }
@@ -886,3 +924,26 @@ const DroneAir = (() => {
 })();
 
 if (typeof window !== 'undefined') window.DroneAir = DroneAir;
+
+// Tiếng chiến trường có vị trí (nổ, khai hỏa, súng máy, phóng tên lửa, đạn găm): khi đang xem qua drone, khoảng cách
+// tính lại từ micro drone thay vì từ xe (nơi gọi đã tính từ xe mình). [vị trí tham số khoảng cách, vị trí tham số pos]
+(function () {
+  if (typeof SoundEngine === 'undefined') return;
+  const P = SoundEngine.prototype;
+  const MAP = { playExplosionAtDistance: [0, 3], playCannonFire: [2, 3], playGatlingShot: [1, 2], playMissileLaunch: [0, 1], playGatlingImpact: [0, 3], playKineticImpact: [0, 2] };
+  Object.keys(MAP).forEach(name => {
+    const orig = P[name];
+    if (typeof orig !== 'function' || orig.__droneEar) return;
+    const [di, pi] = MAP[name];
+    const w = function (...a) {
+      const g = typeof window !== 'undefined' ? window.game : null;
+      if (a[pi] && g && g.droneEarDistance) {
+        const d = g.droneEarDistance(a[pi]);
+        if (d !== null) a[di] = d;
+      }
+      return orig.apply(this, a);
+    };
+    w.__droneEar = true;
+    P[name] = w;
+  });
+})();
