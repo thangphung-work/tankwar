@@ -2309,7 +2309,7 @@ class ArtilleryGame3D {
             : `[[shield]] ${shell.absorbedBy.name} đang nấp trong cứ điểm: đạn bị bê tông chặn! Chờ địch thò ra ngoài.`, 'tip');
         }
       } else if (shooter && shooter.isPlayer) {
-        this.addCombatLog(onStronghold ? '[[wall]] Đạn nổ trên bê tông / ụ đất cứ điểm (không thể phá hủy)!' : '[[shield]] Đạn pháo va vào tường công sự / tòa nhà kiên cố và phát nổ!', 'tip');
+        this.addCombatLog(onStronghold ? '[[wall]] Đạn nổ trên bê tông cứ điểm — mái chịu được nhiều phát, dồn hỏa lực vào một đoạn sẽ làm sập mái!' : '[[shield]] Đạn pháo va vào tường công sự / tòa nhà kiên cố và phát nổ!', 'tip');
       }
     }
 
@@ -2576,6 +2576,7 @@ class ArtilleryGame3D {
       if (envEvents && envEvents.length && this.player && Math.hypot(this.player.x - d.x, this.player.z - d.z) < 1400) {
         for (const ev of envEvents) if (ev.type === 'collapse') this.addCombatLog('[[building]] Một tòa nhà vừa sập đổ hoàn toàn!', 'tip');
         for (const ev of envEvents) if (ev.type === 'bridgeCollapse') this.addCombatLog('[[building-bridge]] Một nhịp cầu vừa gãy sập xuống sông — đường qua sông bị cắt!', 'alert');
+        for (const ev of envEvents) if (ev.type === 'strongholdCollapse') this.addCombatLog(`[[building]] Một đoạn mái cứ điểm ${ev.id} vừa sập — xe bên dưới không còn được che!`, 'alert');
       }
     };
     if (typeof Destructibles !== 'undefined' && Destructibles.withSeed) Destructibles.withSeed(d.s >>> 0, run); else run();

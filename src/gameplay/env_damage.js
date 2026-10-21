@@ -769,6 +769,11 @@ const EnvDamage = (() => {
           this.concretePits(SS, x, y, z, info.nx, info.nz, ammo, A, fx, hole);
         }
         else if (A.blast > 0.15 && A.r > 0) scorchMound(SS, x, y, z, Math.max(6, A.r * 0.9), A.blast);
+        // mái cứ điểm bị bào mòn -> sập từng ô (va chạm & che chắn đổi theo; xe bot phải tìm đường lại)
+        if (SS.damagePanels) {
+          const ev = SS.damagePanels(x, y, z, ammo, heavy, info, fx, A.r);
+          if (ev.length) { events.push(...ev); this.navDirty = true; }
+        }
       }
       // Mặt cầu: vết đạn / vỡ bê tông cộng dồn trên mặt đường
       if (!isBullet(ammo) && info.t === 'GROUND') {

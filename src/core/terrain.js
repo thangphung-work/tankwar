@@ -1133,12 +1133,15 @@ ${sea ? 'varying float vDep;' : ''}
   updateBuildingView(cam, focus, dt) { if (this.buildingSet) this.buildingSet.setView(cam, focus, dt); }
   // ĐỒNG BỘ: trạng thái phá hủy nhà & cây gọn thành chuỗi (máy chủ phòng so "dấu vân tay"; lệch thì gộp hợp nhất)
   envStateString() {
-    return (this.buildingSet && this.buildingSet.stateString ? this.buildingSet.stateString() : '') + '#' + (this.trees && this.trees.stateString ? this.trees.stateString() : '');
+    return (this.buildingSet && this.buildingSet.stateString ? this.buildingSet.stateString() : '') + '#' + (this.trees && this.trees.stateString ? this.trees.stateString() : '')
+      + '#' + (this.strongholdSet && this.strongholdSet.stateString ? this.strongholdSet.stateString() : '');
   }
   applyEnvState(str, fx) {
-    const [b, t] = String(str || '').split('#');
+    const [b, t, sh] = String(str || '').split('#');
     if (b && this.buildingSet && this.buildingSet.applyState) this.buildingSet.applyState(b, fx);
     if (t && this.trees && this.trees.applyState) this.trees.applyState(t, fx);
+    // mái cứ điểm: máu từng ô (lấy mức hư hại nặng hơn), ô đã sập thì sập luôn
+    if (sh && this.strongholdSet && this.strongholdSet.applyState) this.strongholdSet.applyState(sh, fx);
   }
   // Rừng rậm: mật độ tán quanh điểm (>= FOREST_DENSE là rừng rậm) & quãng xuyên rừng rậm trên đường ngắm
   forestDensityAt(x, z) { return this.trees && this.trees.densityAt ? this.trees.densityAt(x, z) : 0; }
