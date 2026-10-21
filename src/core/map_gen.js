@@ -35,13 +35,13 @@ const MapGen = (() => {
   // hầm phóng (silo) tên lửa hạt nhân / hầm nghiên cứu vũ khí sinh học / trận địa tên lửa phòng không.
   // Đặt tại trọng tâm tam giác A B C; mặt trước nhìn về cứ điểm B. angle: hướng mặt trước (cos -> x, sin -> z);
   // hu / hv: nửa dài mặt bằng san nền theo trục trước-sau / ngang
-  // (8 đơn vị = 1 m: căn cứ hầm phóng 80 x 110 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
+  // (8 đơn vị = 1 m: căn cứ hầm phóng 80 x 130 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
   const LANDMARK_SITE = {
     x: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.x, 0) / 3),
     z: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.z, 0) / 3),
     angle: -Math.PI / 2
   };
-  const LANDMARK_KINDS = { nuke: { hu: 320, hv: 440, back: 60 }, bio: { hu: 200, hv: 160 }, sam: { hu: 192, hv: 192 } };
+  const LANDMARK_KINDS = { nuke: { hu: 320, hv: 520, back: 60 }, bio: { hu: 200, hv: 160 }, sam: { hu: 192, hv: 192 } };
   let landmarkKind = null;          // null = theo seed; đặt cố định để thử (setLandmark)
   const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
   let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
