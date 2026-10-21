@@ -3520,6 +3520,27 @@ class ArtilleryGame3D {
   // Hệ số khoảng cách camera theo xe: pháo tự hành bắn xa -> camera lùi xa hơn ~1,5 lần ở mọi mức zoom (thấy vùng rộng hơn)
   camDistK(P) { return P && P.tankType === 'ARTILLERY' ? 1.5 : 1; }
 
+  // GÓC NHÌN TRONG XE KHI NẰM DƯỚI MÁI HẦM: camera bám đuôi phía trên bị mái / ụ đất che -> chuyển dần sang góc nhìn của
+  // trưởng xe ngồi ở cửa nóc tháp, nhìn dọc theo tháp ra miệng hầm (thấy nòng pháo, vách hầm, trần, cửa hầm sáng phía
+  // trước). Giữ chuột giữa + kéo vẫn nhìn quanh. Ra khỏi mái thì trả dần về camera bám đuôi. inT: 0 = bám đuôi, 1 = trong xe
+  blendInsideView(dt, C, yaw, lx, ly, lz) {
+    const P = this.player, cam = this.camera;
+    const inside = !!(P && !P.isDead && this.terrain && this.terrain.isProtectedPoint && this.terrain.isProtectedPoint(P.x, (P.y || 0) + 12, P.z));
+    C.inT = (C.inT || 0) + ((inside ? 1 : 0) - (C.inT || 0)) * (1 - Math.exp(-dt * 3.5));
+    if (C.inT < 0.002) { C.inT = 0; return; }
+    const v = this._inV || (this._inV = new THREE.Vector3());
+    if (P.barrelPivot) { P.barrelPivot.updateWorldMatrix(true, false); P.barrelPivot.getWorldPosition(v); } else v.set(P.x, (P.y || 0) + 24, P.z);
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    // mắt trưởng xe: trên nóc tháp, lùi sau trục nòng một chút (thấy nóc tháp + nòng chĩa ra trước)
+    const ex = v.x - fx * 12, ey = v.y + 11, ez = v.z - fz * 12;
+    const pitch = 0.05 - (C.freePitch || 0) * 0.6;
+    const tx = ex + fx * 300, ty = ey - Math.tan(pitch) * 300, tz = ez + fz * 300;
+    const k = C.inT * C.inT * (3 - 2 * C.inT);
+    cam.position.set(cam.position.x + (ex - cam.position.x) * k, cam.position.y + (ey - cam.position.y) * k, cam.position.z + (ez - cam.position.z) * k);
+    cam.lookAt(lx + (tx - lx) * k, ly + (ty - ly) * k, lz + (tz - lz) * k);
+    if (P.hpGroup && k > 0.3) P.hpGroup.visible = false;
+  }
+
   toggleHighView() {
     const C = this._cam;
     if (!C || !this.player) return;
@@ -3877,6 +3898,7 @@ class ArtilleryGame3D {
     const upT = AA && AA.barrelEl > 3 ? Math.tan(Math.min(38, AA.barrelEl) * Math.PI / 180) * (ahead + C.R * cp) * 0.85 : 0;
     C.airUp = (C.airUp || 0) + (upT - (C.airUp || 0)) * (1 - Math.exp(-dt * 3));
     cam.lookAt(C.px + fx * ahead, C.y + Z.up + C.airUp, C.pz + fz * ahead);
+    this.blendInsideView(dt, C, yaw, C.px + fx * ahead, C.y + Z.up + C.airUp, C.pz + fz * ahead);
     this._camYaw = yaw;
     // Thanh máu trên nóc xe mình: camera bám đuôi ở sát sau xe -> thanh to chắn giữa màn hình (máu đã có ở góc dưới)
     if (P.hpGroup) P.hpGroup.visible = Z.t > 0.5;
@@ -5529,7 +5551,7 @@ class ArtilleryGame3D {
     // Cứ điểm bê tông: làm mờ mái khi xe mình nằm trong khoang
     if (this.terrain && this.terrain.strongholdSet) {
       const sight = (typeof TeamIntel !== 'undefined' && this.player && TeamIntel.sightRange) ? TeamIntel.sightRange(this.player) : 520;
-      this.terrain.strongholdSet.updateCutaway(this.player, dt, this.units, { sight, all: !!this.strongholdXray });
+      this.terrain.strongholdSet.updateCutaway(this.player, dt, this.units, { sight, all: !!this.strongholdXray, insideView: !!(this._cam && this._cam.inT > 0.5) });
       // Chiếm cứ điểm: phe nào đứng giữ khoang thì kéo cờ phe đó lên nắp hầm
       this.terrain.strongholdSet.updateCapture(this.units, dt);
     }

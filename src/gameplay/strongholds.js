@@ -1177,7 +1177,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (view && Math.hypot(K.x - view.x, K.z - view.z) < S.REACH + (opts.viewRadius || 560)) {
           // mái đặc bình thường; chỉ mờ vừa (vẫn thấy rõ khối hầm) khi bên dưới có xe: xe mình hoặc xe đang được nhìn thấy
           const L = unit && !unit.isDead ? this.local(K, unit.x, unit.z) : null;
-          const meInside = L && Math.abs(L.f) < S.HB + 24 && Math.abs(L.r) < S.WI + 12;
+          // góc nhìn trong xe (opts.insideView): mái giữ đặc — đang nhìn từ trong hầm ra, không cần nhìn xuyên mái
+          const meInside = !opts.insideView && L && Math.abs(L.f) < S.HB + 24 && Math.abs(L.r) < S.WI + 12;
           if (meInside || (units && this.occupiedVisible(K, units, unit, !!opts.all))) want = 0.45;
         }
         const cast = want > 0.5;
