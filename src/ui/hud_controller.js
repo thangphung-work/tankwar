@@ -233,6 +233,8 @@ class HUDController {
 
   selectAmmoType(ammoType) {
     if (!this.game.player) return;
+    // đang dùng súng máy nóc tháp [4]: chọn đạn pháo = quay về pháo chính
+    if (this.game.player.mgActive && this.game.selectMG) this.game.selectMG(false);
 
     // Kiểm tra cơ số đạn nâng cao
     if (ammoType === 'AP' && (this.game.player.apAmmoCount || 0) <= 0) {
@@ -312,15 +314,21 @@ class HUDController {
     }
 
     const list = ammos.map(type => ({ type, ...info(type) }));
+    // Xe tăng: ô [4] súng máy 7.62mm nóc tháp — số đạn còn trong dây, đang thay hộp thì hiện "NẠP"
+    const mg = p.tankType === 'ALL_ROUNDER' && p.rcwsGun;
+    if (mg) {
+      const S = p._rcws;
+      list.push({ type: 'MG762', name: 'SÚNG MÁY', qty: S ? (S.reload > 0 ? 'NẠP' : S.mag) : 200, color: '#c8d6a0', mg: true });
+    }
     // Chỉ dựng lại khi có thay đổi (hàm này được gọi mỗi khung hình; dựng lại liên tục làm nút mất cú nhấp)
-    const sig = p.selectedAmmo + '|' + list.map(a => a.type + ':' + a.qty).join(',');
+    const sig = p.selectedAmmo + (p.mgActive ? '+mg' : '') + '|' + list.map(a => a.type + ':' + a.qty).join(',');
     if (ammoContainer._sig === sig) return;
     ammoContainer._sig = sig;
 
     ammoContainer.innerHTML = list.map((a, idx) => {
-      const isActive = p.selectedAmmo === a.type;
-      const qtyStr = a.qty === Infinity ? '∞' : `×${a.qty}`;
-      const empty = a.qty !== Infinity && a.qty <= 0;
+      const isActive = a.mg ? !!p.mgActive : (!p.mgActive && p.selectedAmmo === a.type);
+      const qtyStr = typeof a.qty === 'string' ? a.qty : a.qty === Infinity ? '∞' : `×${a.qty}`;
+      const empty = typeof a.qty === 'number' && a.qty !== Infinity && a.qty <= 0;
       return `
         <button class="ammo-tab ${isActive ? 'active' : ''} ${empty ? 'empty' : ''}" data-ammo="${a.type}" id="ammo-tab-${a.type}" title="[${idx + 1}] ${a.name}" style="--ammo: ${a.color}">
           <span class="hx-ammo-key">${idx + 1}</span>
@@ -342,6 +350,10 @@ class HUDController {
         btn.addEventListener('click', () => this.selectAmmoType(type));
       }
     });
+    if (mg) {
+      const btn = document.getElementById('ammo-tab-MG762');
+      if (btn) btn.addEventListener('click', () => this.game.selectMG(true));
+    }
   }
 
   selectCharge(chargeNum) {
@@ -393,7 +405,11 @@ class HUDController {
     const fireMainText = (fireBtn && typeof fireBtn.querySelector === 'function') ? fireBtn.querySelector('.fire-main-text') : null;
 
     if (fireMainText) {
-      if (this.game.player.selectedAmmo === 'AP') {
+      if (this.game.player.mgActive) {
+        const S = this.game.player._rcws;
+        fireMainText.textContent = S && S.reload > 0 ? 'SÚNG MÁY [THAY HỘP]' : `SÚNG MÁY [${S ? S.mag : 200}]`;
+        fireMainText.style.color = '#c8d6a0';
+      } else if (this.game.player.selectedAmmo === 'AP') {
         fireMainText.textContent = `XUYÊN PHÁ [${this.game.player.apAmmoCount}]`;
         fireMainText.style.color = '#5fb0dc';
       } else if (this.game.player.selectedAmmo === 'HE') {

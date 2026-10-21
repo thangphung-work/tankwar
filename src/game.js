@@ -684,6 +684,9 @@ class ArtilleryGame3D {
           if (this.player.availableAmmos[1]) this.selectAmmoType(this.player.availableAmmos[1]);
         } else if (e.code === 'Digit3' || e.code === 'KeyR') {
           if (this.player.availableAmmos[2]) this.selectAmmoType(this.player.availableAmmos[2]);
+        } else if (e.code === 'Digit4' && !e.repeat) {
+          // [4] xe tăng: chuyển sang / về từ súng máy 7.62mm trên nóc tháp
+          this.selectMG();
         }
       }
     });
@@ -1914,6 +1917,22 @@ class ArtilleryGame3D {
     return (typeof Equipment !== 'undefined' && Equipment.outOfStockNote && P) ? Equipment.outOfStockNote(P, k) : '';
   }
 
+  // [4] Xe tăng: chuyển sang trạm súng máy 7.62mm trên nóc tháp — Space / nút bắn xả súng máy vào chỗ đang ngắm,
+  // pháo chính giữ nguyên loại đạn đang nạp. Bấm [4] lần nữa hoặc [1]-[3] để về pháo chính.
+  selectMG(on) {
+    const P = this.player;
+    if (!P || P.isDead || P.tankType !== 'ALL_ROUNDER' || !P.rcwsGun) return;
+    const want = on === undefined ? !P.mgActive : !!on;
+    if (want === !!P.mgActive) return;
+    P.mgActive = want;
+    if (!want) P._aa = null;   // trạm súng thu về vị trí nghỉ
+    this.updateAmmoUI();
+    if (window.soundEngine && typeof window.soundEngine.playAmmoSwitch === 'function') window.soundEngine.playAmmoSwitch(want ? 'SCOUT_BULLET' : P.selectedAmmo);
+    this.addCombatLog(want
+      ? '[[crosshair]] SÚNG MÁY 7.62MM NÓC THÁP — bám chỗ đang ngắm, giữ Space để xả đạn (diệt drone, xe giáp mỏng; vô hại với xe tăng). [4] về pháo chính'
+      : '[[target-arrow]] Về pháo chính 120mm', 'tip');
+  }
+
   selectAmmoType(ammoType) {
     if (this.hud) return this.hud.selectAmmoType(ammoType);
     if (!this.player) return;
@@ -2076,8 +2095,9 @@ class ArtilleryGame3D {
 
   triggerPlayerFire() {
     if (!this.player || this.player.isDead) return;
-    // xe tăng đang ngắm lên trời / khóa drone: Space bóp cò trạm súng máy phòng không (drone_air.js), không bắn pháo chính
-    if (this._airAim && this.player.tankType === 'ALL_ROUNDER') return;
+    // xe tăng đang ngắm lên trời / khóa drone hoặc đang chọn súng máy [4]: Space bóp cò trạm súng máy nóc tháp
+    // (drone_air.js), không bắn pháo chính
+    if ((this._airAim || this.player.mgActive) && this.player.tankType === 'ALL_ROUNDER') return;
     if (this.inNoFireZone()) { this.noFireWarn(); return; }
     // Xe trinh sát đang chọn ô tên lửa: Space phóng tên lửa dẫn hướng (súng máy nạp đạn không ảnh hưởng)
     if (this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE') {
@@ -5342,6 +5362,9 @@ class ArtilleryGame3D {
         if (nfz) this.noFireWarn();
         this.player.isFiringGatling = wantFire && !nfz;
       }
+      // 1.1.c. XE TĂNG ĐANG CHỌN SÚNG MÁY [4]: trạm súng nóc tháp bám chỗ đang ngắm, giữ Space xả đạn
+      // (đang ngắm trời / khóa drone thì updatePlayerAirAim đã điều khiển trạm súng)
+      if (this.player.mgActive && this.player.tankType === 'ALL_ROUNDER' && !this._airAim) this.updatePlayerGroundMG();
 
       // 1.2. LÁI XE CƠ ĐỘNG theo thân xe như xe thật: W / S ga tiến / lùi, A / D đánh lái trái / phải
       // (xe xích: A / D xoay tại chỗ; xe bánh lốp: A / D chỉ bẻ bánh, phải có ga mới cua được)

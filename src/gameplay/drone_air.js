@@ -1088,6 +1088,34 @@ const DroneAir = (() => {
       return true;
     },
 
+    /**
+     * Xe tăng chọn súng máy [4] (game.selectMG), không ngắm trời: trạm súng nóc tháp bám đúng chỗ người chơi đang ngắm —
+     * xe đang khóa (đón đầu theo vận tốc ước lượng của bộ bám mục tiêu), điểm mặt đất / tâm kính ngắm, không có thì theo
+     * hướng tháp & góc nòng. Nghiệm đường đạn 7.62mm thật (airShotSolution chạy được cho cả điểm đứng yên trên mặt đất).
+     */
+    updatePlayerGroundMG() {
+      const P = this.player, R = C.RCWS;
+      if (!P || P.isDead || !P.rcwsGun) return;
+      const T = this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null, pt = this._aimPoint;
+      let az = P.azimuth || 0, el = P.elevation || 0;
+      let tgt = null;
+      if (T) {
+        const tr = this._lockTrack && this._lockTrack.id === T.id ? this._lockTrack : null;
+        tgt = [T.x, (T.y || this.terrain.getElevationAt(T.x, T.z)) + 8, T.z, tr ? tr.vx : 0, tr ? tr.vz : 0];   // giữa thân xe (~1 m)
+      } else if (pt) {
+        tgt = [pt.x, (pt.hy !== undefined ? pt.hy : pt.y + 1), pt.z, 0, 0];
+      }
+      if (tgt) {
+        const S = this.airShotSolution(P, 'MG762', tgt[0], tgt[1], tgt[2], tgt[3], 0, tgt[4]);
+        if (S) { az = S.az; el = S.el; }
+      }
+      el = Math.max(R.elMin, Math.min(R.elMax, el));
+      const want = !!(this.keys && (this.keys.Space || this.isPointerFiring));
+      const nfz = want && this.inNoFireZone();
+      if (nfz) this.noFireWarn();
+      P._aa = { az, el, firing: want && !nfz, until: performance.now() / 1000 + 0.3 };
+    },
+
     // khung khóa drone địch (HTML): góc ngoặc quanh drone + chấm điểm đón đầu + cự ly / trạng thái
     updateAirLockOverlay() {
       const A = this._airAim;

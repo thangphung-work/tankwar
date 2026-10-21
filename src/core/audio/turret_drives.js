@@ -15,7 +15,7 @@ SoundEngine.mixin(class {
     // cắt dưới ~110 Hz: đuôi trầm của các dải nhiễu chỉ thành tiếng "ù" trên tai nghe, không giúp nghe ra tháp quay
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.value = 110;
+    hp.frequency.value = 75;
     hp.Q.value = 0.6;
     out.connect(hp);
     hp.connect(this.vehicleBus);
@@ -24,7 +24,7 @@ SoundEngine.mixin(class {
     try { nb = this.ensureFireBuffers().pink; } catch (e) { /* dùng bộ đệm chung */ }
     // 1. Mô-tơ servo điện quay tháp: tiếng "vù-uuu" cao độ theo vòng quay mô-tơ — sin cơ bản + bậc 2 + một bậc lệch
     //    (từ trường / răng hộp số hành tinh), lọc thấp: tròn, không chói như răng cưa
-    const parts = [[1, 'sine', 1], [2, 'sine', 0.42], [3.03, 'triangle', 0.16]].map(([r, type, g]) => {
+    const parts = [[1, 'sine', 1], [2, 'sine', 0.3]].map(([r, type, g]) => {
       const o = ctx.createOscillator();
       o.type = type;
       o.frequency.value = 260 * r;
@@ -42,6 +42,33 @@ SoundEngine.mixin(class {
     parts.forEach(p => p.og.connect(wlp));
     wlp.connect(wg);
     wg.connect(out);
+    // 1b. Tiếng rít thật của mô-tơ không phải sin sạch: dải nhiễu hẹp bám bậc 2 / bậc 3 (chổi than, từ trường, bánh răng hành tinh)
+    //     -> nghe "xè-vù" cơ khí thay vì tiếng còi điện tử
+    const ws = ctx.createBufferSource();
+    ws.buffer = nb;
+    ws.loop = true;
+    const wn = ctx.createBiquadFilter();
+    wn.type = 'bandpass';
+    wn.frequency.value = 520;
+    wn.Q.value = 9;
+    const wng = ctx.createGain();
+    wng.gain.value = 0;
+    ws.connect(wn);
+    wn.connect(wng);
+    wng.connect(out);
+    // 1c. Bơm / mô-tơ thủy lực: tiếng ừ trầm có họa âm (tam giác lọc thấp), nền "nặng" của khối tháp
+    const ho = ctx.createOscillator();
+    ho.type = 'triangle';
+    ho.frequency.value = 120;
+    const hlp = ctx.createBiquadFilter();
+    hlp.type = 'lowpass';
+    hlp.frequency.value = 520;
+    hlp.Q.value = 0.7;
+    const hg = ctx.createGain();
+    hg.gain.value = 0;
+    ho.connect(hlp);
+    hlp.connect(hg);
+    hg.connect(out);
     // 2. Bánh răng ăn khớp (bánh răng nhỏ chạy trên vành răng tháp): tiếng "rrr" dải trung, độ lớn chao ngẫu nhiên (không theo nhịp)
     const gs = ctx.createBufferSource();
     gs.buffer = nb;
@@ -54,7 +81,19 @@ SoundEngine.mixin(class {
     const gg = ctx.createGain();
     gg.gain.value = 0;
     gs.connect(gf);
-    gf.connect(gg);
+    // răng bánh răng ăn khớp theo nhịp: điều biên bằng LFO răng cưa ở tần số ăn răng (tăng theo tốc độ) -> "rrrrr" lạch cạch cơ khí,
+    // không phải tiếng xè đều của nhiễu
+    const gm = ctx.createGain();
+    gm.gain.value = 0.45;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sawtooth';
+    lfo.frequency.value = 20;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 0.4;
+    lfo.connect(lfoG);
+    lfoG.connect(gm.gain);
+    gf.connect(gm);
+    gm.connect(gg);
     gg.connect(out);
     // 3. Vòng bi tháp hàng chục tấn lăn: tiếng ầm trầm-trung, nhẹ
     const rs = ctx.createBufferSource();
@@ -71,9 +110,12 @@ SoundEngine.mixin(class {
     rf.connect(rg);
     rg.connect(out);
     parts.forEach(p => p.o.start());
+    ho.start();
+    lfo.start();
+    ws.start(this.ctx.currentTime, Math.random() * nb.duration);
     gs.start(this.ctx.currentTime, Math.random() * nb.duration);
     rs.start(this.ctx.currentTime, Math.random() * nb.duration);
-    this.turretDrive = { out, parts, wlp, wg, gf, gg, rf, rg, moving: false, spin: 0, env: 0 };
+    this.turretDrive = { out, parts, wlp, wg, wn, wng, ho, hg, lfo, gf, gg, rf, rg, moving: false, spin: 0, env: 0 };
     return this.turretDrive;
   }
 
@@ -97,10 +139,10 @@ SoundEngine.mixin(class {
     // quay nhanh, mô-tơ rít cao; trạm súng máy trinh sát: servo nhỏ, cao và khẽ.
     // f0/f1: cao độ mô-tơ lúc nhích chậm / quay hết tốc; maxR = turretRates().traverse (rad/s); whine/grind/rumble: tỉ lệ 3 lớp
     const P = {
-      ALL_ROUNDER: { f0: 240, f1: 900, maxR: 0.96, g: 0.016, whine: 1, grind: 6, rumble: 2.2, gF: 750, rF: 260 },
-      ARTILLERY: { f0: 170, f1: 480, maxR: 0.49, g: 0.023, whine: 0.75, grind: 6, rumble: 3.5, gF: 560, rF: 200 },
-      GATLING: { f0: 360, f1: 1400, maxR: 1.4, g: 0.0095, whine: 1.1, grind: 7, rumble: 2.2, gF: 950, rF: 300 },
-      SCOUT: { f0: 520, f1: 1800, maxR: 1.75, g: 0.0068, whine: 1, grind: 7, rumble: 1, gF: 1400, rF: 360 }
+      ALL_ROUNDER: { f0: 330, f1: 620, hf: 105, tooth: 46, maxR: 0.96, g: 0.016, whine: 0.7, grind: 6, rumble: 2.2, gF: 750, rF: 260 },
+      ARTILLERY: { f0: 230, f1: 400, hf: 80, tooth: 30, maxR: 0.49, g: 0.023, whine: 0.5, grind: 6, rumble: 3.5, gF: 560, rF: 200 },
+      GATLING: { f0: 480, f1: 980, hf: 140, tooth: 60, maxR: 1.4, g: 0.0095, whine: 0.9, grind: 7, rumble: 2.2, gF: 950, rF: 300 },
+      SCOUT: { f0: 700, f1: 1350, hf: 180, tooth: 70, maxR: 1.75, g: 0.0068, whine: 0.9, grind: 7, rumble: 1, gF: 1400, rF: 360 }
     };
     const p = P[tankType] || P.ALL_ROUNDER;
     const k = Math.min(1, td.rateS / p.maxR);
@@ -116,6 +158,12 @@ SoundEngine.mixin(class {
     // cao độ trôi rất nhẹ ngẫu nhiên (≤0,5%), không rung đều
     const f = (p.f0 + (p.f1 - p.f0) * s) * (1 + (Math.random() - 0.5) * 0.01) * (jammed ? 0.45 : 1);
     td.parts.forEach(q => q.o.frequency.setTargetAtTime(f * q.r, t, 0.06));
+    td.wn.frequency.setTargetAtTime(f * 2.02, t, 0.06);
+    td.wng.gain.setTargetAtTime((jammed ? 0.3 : 1) * p.whine * 9 * (0.5 + 0.5 * s), t, 0.05);
+    td.ho.frequency.setTargetAtTime(p.hf * (0.92 + 0.2 * s) * (jammed ? 0.7 : 1), t, 0.08);
+    td.hg.gain.setTargetAtTime(0.55 * (0.6 + 0.4 * s) * (1 + 0.6 * accel), t, 0.06);
+    // nhịp ăn răng: tháp chạy nhanh thì "rrr" dày hơn; kẹt vòng bi: nhịp chậm, giật
+    td.lfo.frequency.setTargetAtTime(jammed ? 7 + 4 * Math.random() : p.tooth * (0.35 + 0.65 * s), t, 0.05);
     td.wg.gain.setTargetAtTime((jammed ? 0.1 : 1) * p.whine * (1 - 0.3 * s) * (1 + 0.8 * accel), t, 0.05);
     td.gf.frequency.setTargetAtTime(jammed ? 420 : p.gF * (0.9 + 0.25 * s), t, 0.08);
     td.gg.gain.setTargetAtTime((jammed ? 12 : p.grind * (0.35 + 0.65 * s)) * (0.75 + 0.5 * Math.random()), t, 0.07);

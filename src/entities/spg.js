@@ -1826,6 +1826,11 @@ class SPGUnit3D {
     const dmgTiltP = this.dmg ? this.dmg.tiltP : 0, dmgTiltR = this.dmg ? this.dmg.tiltR : 0;
     this.chassisGroup.rotation.x = this.currentPitch + recoilPitch + dmgTiltP;
     this.chassisGroup.rotation.z = this.currentRoll + (this._dynRoll || 0) + this.rockRoll + dmgTiltR;
+    // tư thế thân xe KHÔNG kể dao động nhất thời (rung máy, nhún khi tăng / giảm tốc, giật khi bắn / trúng đạn):
+    // hệ ổn định pháo giữ hướng nòng theo tư thế này (getMuzzleWorldTransform)
+    this._stabRot = this._stabRot || { x: 0, z: 0 };
+    this._stabRot.x = this.currentPitch + dmgTiltP;
+    this._stabRot.z = this.currentRoll + dmgTiltR;
     // Thân xe ngồi thấp xuống theo độ tụt của các bánh xẹp / mất bánh (bánh lành vẫn chạm đất)
     // Độ cao gốc của khung thân theo từng mẫu xe (mẫu mới dựng ở y = 0, mẫu cũ ở y = 8) -> chỉ cộng thêm độ sụt / nhún
     if (this._chassisBaseY === undefined) this._chassisBaseY = this.chassisGroup.position.y;
@@ -2996,12 +3001,19 @@ class SPGUnit3D {
   }
 
   getMuzzleWorldTransform() {
+    // HỆ ỔN ĐỊNH PHÁO: thân xe rung máy / nhún / giật nhưng nòng giữ hướng -> tính theo tư thế thân xe đã bỏ dao động nhất
+    // thời (hình xe vẫn rung như cũ). Trước đây rung máy ~0,02° làm hướng nòng dao động: đường đạn sượt mép ụ đất / tán
+    // cây thì điểm rơi dự kiến lật qua lại liên tục
+    const C = this.chassisGroup, st = this._stabRot;
+    let rx = 0, rz = 0;
+    if (C && st) { rx = C.rotation.x; rz = C.rotation.z; C.rotation.x = st.x; C.rotation.z = st.z; }
     this.group.updateMatrixWorld(true);
     const tipWorld = new THREE.Vector3();
     this.barrelGroup.localToWorld(tipWorld.copy(this.muzzleTipLocal));
 
     const baseWorld = new THREE.Vector3();
     this.barrelGroup.localToWorld(baseWorld.set(0, 0, 0));
+    if (C && st) { C.rotation.x = rx; C.rotation.z = rz; this.group.updateMatrixWorld(true); }
 
     const dir = new THREE.Vector3().subVectors(tipWorld, baseWorld).normalize();
     return { position: tipWorld, direction: dir };
