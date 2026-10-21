@@ -13,8 +13,9 @@ const DroneAir = (() => {
     HIT_R: 6.5,          // bán kính trúng quanh tâm thân drone (sải cánh quạt ~1.5 m = 12 đv)
     NEAR_R: 42,          // đạn bay qua trong bán kính này: tiếng rít qua micro drone
     CENTER_Y: 2.8,       // tâm thân drone trên gốc mô hình (đáy càng đáp)
-    // phần "thân drone" mất mỗi phát trúng (1 = rơi): 30mm ~8 phát, 12.7mm ~5 phát, đạn cháy ~4 phát, đạn pháo 1 phát
-    DMG: { GATLING_BULLET: 0.13, SCOUT_BULLET: 0.21, INCENDIARY: 0.26 },
+    // phần "thân drone" mất mỗi phát trúng (1 = rơi): drone nhựa / sợi carbon rất mỏng manh —
+    // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát, đạn pháo 1 phát
+    DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
     SEE_R: 1500,         // đội có xe trong bán kính ngang này thì thấy drone địch bay (drone bay cao, dễ lộ)
     BOT_SEE_R: 1100,     // bot tự phát hiện drone trong bán kính này
     SEND_FLY: 0.1, SEND_IDLE: 1.0,
