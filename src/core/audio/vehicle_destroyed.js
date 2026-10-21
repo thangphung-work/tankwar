@@ -42,7 +42,7 @@ SoundEngine.mixin(class {
       this.burst(out, t + 0.002, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1700, Q: 0.6, drive: 1.2, gain: 1.8 * k, attack: 0.002, dur: 0.2 });
       this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 1.5, gain: 0.6 * k, attack: 0.004, dur: 0.6 });
       // thân thép xe bị xé toạc: tiếng thép ngân trầm lẫn trong tiếng nổ + mảnh thép văng rít
-      this.metal(out, t + 0.01, { f0: 90 + Math.random() * 30, ratios: [1, 1.7, 2.6, 3.9], decay: 1.2, gain: 0.5 * k, click: 0.5 });
+      this.playCaseHit(out, t + 0.01, 'hullBlast', 0.75 + Math.random() * 0.15, 0.8 * k);
       this.burst(out, t + 0.05, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2600, freqEnd: 900, sweep: 0.5, Q: 3, gain: 0.5 * k, attack: 0.01, dur: 0.5 });
       if (d < 700) this.duck(0.25, 1.4);
       // rền cuộn + tiếng dội
@@ -132,7 +132,7 @@ SoundEngine.mixin(class {
       src.start(t);
       this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, drive: 1.5, gain: 1.2 * k, attack: 0.003, dur: 0.35 });
       // thân xe ngân trầm (cả khối thép bị đánh từ trong), mảnh văng lạch cạch
-      this.metal(out, t + 0.005, { f0: (big ? 80 : 120) + Math.random() * 30, ratios: [1, 1.6, 2.5, 3.7], decay: big ? 1.0 : 0.7, gain: 0.32 * k, click: 0.3 });
+      this.playCaseHit(out, t + 0.005, 'hullBlast', (big ? 0.75 : 1.05) + Math.random() * 0.15, 0.55 * k);
       this.burst(out, t + 0.01, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2300, Q: 0.7, gain: 0.5 * k, attack: 0.002, dur: 0.3 });
       // lửa bén: "phừ" nhỏ to dần trong ~1,5 s (sau đó tiếng lửa cháy liên tục tiếp nối)
       this.sustainNoise(out, t + 0.35, { buffer: this.pinkNoiseBuffer, freq: 750, Q: 0.5, gain: 0.55 * k, attack: 1.4, hold: 1.2, release: 1.2, flicker: 0.4 });
@@ -156,7 +156,7 @@ SoundEngine.mixin(class {
       src.connect(g); g.connect(out);
       src.start(t + c * 0.0006);
     });
-    this.metal(out, t + 0.01, { f0: 150 + Math.random() * 40, ratios: [1, 2.3, 3.7, 5.1], decay: 0.7, gain: 0.45, click: 0.6 });
+    this.playCaseHit(out, t + 0.01, 'debrisPlateHull', 1.0 + Math.random() * 0.2, 0.6);
     if (d < 500) this.duck(0.5, 0.8);
     // Luồng lửa đạn cháy phụt thẳng lên: gầm dày dải rộng (như mỏ hàn khổng lồ / động cơ phản lực), rít cao, rền trầm
     const h = Math.max(1, dur - 1.6);

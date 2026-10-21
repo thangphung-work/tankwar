@@ -109,18 +109,18 @@ SoundEngine.mixin(class {
     const out = this.voice({ gain: 0.6 + 0.6 * k, wet: 0.12 });
     // khối thép hàng chục tấn đập vào vật cản: "huỵch" trầm
     this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 200 + 120 * k, drive: 3, gain: 1.2 * k, attack: 0.003, dur: 0.25 + 0.2 * k });
-    this.tone(out, t, { freq: 55, freqEnd: 30, sweep: 0.2, drive: 2, gain: 0.8 * k, attack: 0.003, dur: 0.3 });
     if (kind === 'vehicle') {
       // thép đâm thép: tiếng "KENG" lớn ngân trầm + cạ xước
-      this.metal(out, t, { f0: 95 + Math.random() * 40, ratios: [1, 1.8, 2.9, 4.2], decay: 0.9, gain: 0.45 * k, click: 0.8 });
+      this.playCaseHit(out, t, 'hullBlast', 0.85 + Math.random() * 0.2, 0.9 * k);
+      this.playCaseHit(out, t + 0.003, 'debrisPlateHull', 0.8 + Math.random() * 0.2, 0.3 * k);
       this.burst(out, t + 0.03, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1900, freqEnd: 900, sweep: 0.35, Q: 4, gain: 0.3 * k, attack: 0.01, dur: 0.4 });
     } else {
       // vật cản vỡ: gạch, bê tông, gỗ vỡ lạo xạo + giáp trước va cạ
       this.burst(out, t + 0.01, { buffer: this.crackleBuffer, filter: 'lowpass', freq: 2600, gain: 1.0 * k, attack: 0.005, dur: 0.5 });
-      this.metal(out, t, { f0: 160 + Math.random() * 60, ratios: [1, 2.3, 3.7], decay: 0.35, gain: 0.25 * k, click: 0.5 });
+      this.playCaseHit(out, t, 'hullBlast', 1.0 + Math.random() * 0.2, 0.5 * k, 3500);
     }
     // đồ đạc trong khoang xô lệch
-    for (let i = 0; i < 3; i++) this.metal(out, t + 0.05 + Math.random() * 0.25, { f0: 700 + Math.random() * 800, ratios: [1, 2.4], decay: 0.05, gain: 0.05 * k, click: 0.3 });
+    for (let i = 0; i < 3; i++) this.playCaseHit(out, t + 0.05 + Math.random() * 0.25, 'debrisMetal', 1.2 + Math.random() * 0.6, 0.08 * k);
   }
 
   /**
@@ -145,12 +145,12 @@ SoundEngine.mixin(class {
           // đầu đạn lõm: luồng kim loại nóng chảy xuyên giáp — "CHÍT" cực gắt, rồi mảnh giáp vụn phun "xèèè" vào trong
           this.burst(out, t, { filter: 'bandpass', freq: 3600, Q: 1.2, drive: 4, gain: 1.4 * k, attack: 0.0003, dur: 0.025 });
           this.burst(out, t + 0.004, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 4200, freqEnd: 1400, sweep: 0.3, Q: 1.5, drive: 2, gain: 1.0 * k, attack: 0.003, dur: 0.35 });
-          this.metal(out, t, { f0: 130 + R() * 40, ratios: [1, 1.8, 2.9, 4.3], decay: 0.6, gain: 0.35 * k, click: 0.6 });
+          this.playCaseHit(out, t, 'hullBlast', 1.1 + R() * 0.2, 0.5 * k);
         } else if (big) {
           // đạn nổ trên vỏ thép: thép cộng hưởng chát chúa + tiếng xé kim loại + thân xe "BOONG" trầm
           this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, Q: 1.2, drive: 3, gain: 0.9 * k, attack: 0.001, dur: 0.18 });
           this.burst(out, t, { filter: 'bandpass', freq: 2400, freqEnd: 900, Q: 0.9, drive: 2, gain: 0.4 * k, attack: 0.001, dur: 0.25 });
-          this.metal(out, t + 0.005, { f0: 105 + R() * 35, ratios: [1, 1.7, 2.6, 3.9], decay: 0.8, gain: 0.4 * k, click: 0.5 });
+          this.playCaseHit(out, t + 0.002, 'hullBlast', 0.9 + R() * 0.2, 0.6 * k);
         }
         break;   // đạn xuyên giáp / đạn nhỏ trúng giáp: hàm riêng đã tạo tiếng thép (kèm nảy rít)
       }
@@ -242,7 +242,7 @@ SoundEngine.mixin(class {
       const mg = ammoType === 'SCOUT_BULLET';
       const f0 = (mg ? 700 : 480) * (0.8 + Math.random() * 0.45);
       this.burst(out, t, { filter: 'bandpass', freq: f0 * 3, Q: 1.2, drive: 3, gain: mg ? 0.5 : 0.6, attack: 0.0003, dur: 0.018 });
-      this.metal(out, t, { f0, ratios: [1, 1.83, 2.95, 4.4], decay: mg ? 0.22 : 0.3, gain: mg ? 0.28 : 0.36, click: 0.5 });
+      this.playCaseHit(out, t, 'hullTick', f0 / 560, mg ? 0.4 : 0.5);
       if (!mg) this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 2, gain: 0.7, attack: 0.001, dur: 0.12 });   // đầu đạn 30mm nổ ngoài vỏ
       return;
     }
@@ -253,14 +253,12 @@ SoundEngine.mixin(class {
     // va đập: xung gắt + khối thép dày ngân (mode bất hòa thấp, tắt chậm)
     this.snap(out, t, 1.4, 4500, 5);
     this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, drive: 2.5, gain: 2.0, attack: 0.001, dur: heavy ? 0.45 : 0.3 });
-    this.tone(out, t, { freq: 95, freqEnd: 45, sweep: 0.2, drive: 2, gain: 1.4, attack: 0.001, dur: 0.35 });
-    this.metal(out, t, { f0, ratios: [1, 1.71, 2.63, 3.9, 5.3], decay: 1.4, gain: 0.55, click: 1 });
     // Giáp dày hàng chục mm, bắt chặt vào khung và đầy thiết bị bên trong: rung tắt rất nhanh, nghe "BỊCH / THỤP" nặng
-    // chứ không ngân như chuông (trước đây 2 sóng sin ngân 1-1,6 s -> nghe như gõ chuông chùa)
-    this.burst(out, t + 0.004, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f0 * 2, Q: 2.5, drive: 1.5, gain: 0.5, attack: 0.002, dur: 0.22 });
+    // chứ không ngân như chuông (trước đây sóng sin trượt + dải nhiễu hẹp có cao độ -> nghe như gõ chuông / trống điện tử)
+    this.playCaseHit(out, t, 'hullBlast', f0 / 100, 2.8);
     // mảnh vỡ & sơn tróc lả tả bên trong khoang, đồ đạc trong xe xô lệch lách cách
     this.burst(out, t + 0.04, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 3000, Q: 0.8, gain: 0.55, attack: 0.01, dur: 0.6 });
-    for (let i = 0; i < 4; i++) this.metal(out, t + 0.12 + Math.random() * 0.5, { f0: 600 + Math.random() * 900, ratios: [1, 2.4], decay: 0.06, gain: 0.06, click: 0.3 });
+    for (let i = 0; i < 4; i++) this.playCaseHit(out, t + 0.12 + Math.random() * 0.5, 'debrisMetal', 1.2 + Math.random() * 0.8, 0.1);
     this.shellShock(heavy ? 0.85 : ammoType === 'AP' ? 0.6 : 0.7);
   }
 

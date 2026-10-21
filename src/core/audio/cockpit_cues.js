@@ -39,7 +39,8 @@ SoundEngine.mixin(class {
     const clunk = (tt, f, g, ring = 0.08) => {
       this.burst(out, tt, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: f * 0.6, drive: 2, gain: g, attack: 0.001, dur: 0.09 });
       this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f, Q: 1.6, drive: 1.6, gain: g * 0.55, attack: 0.0006, dur: 0.05 });
-      if (ring) this.metal(out, tt, { f0: f * 1.6, ratios: [1, 2.3, 3.9], decay: ring, gain: g * 0.12, click: 0.4 });
+      // khối thép đúc va nhau: mẫu va chạm thép dựng theo vật lý (bảng STEEL) thay cho dải nhiễu hẹp có cao độ ("tưng")
+      if (ring) this.playCaseHit(out, tt, ring > 0.3 ? 'debrisLinkHull' : 'debrisLink', f / 520, g * 0.2, 7000);
     };
     // vật trượt trên rãnh / ray: nhiễu dải trung ngắn
     const slide = (tt, f0, f1, dur, g) => this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f0, freqEnd: f1, sweep: dur, Q: 2, gain: g, attack: dur * 0.3, dur });
