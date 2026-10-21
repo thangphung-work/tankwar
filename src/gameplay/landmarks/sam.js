@@ -1,166 +1,924 @@
 /**
- * TRẬN ĐỊA TÊN LỬA PHÒNG KHÔNG S-125 PECHORA (SA-3) — BỎ HOANG
+ * CĂN CỨ PHÒNG KHÔNG — TIỂU ĐOÀN TÊN LỬA S-125 PECHORA (SA-3 GOA) GIỮA SA MẠC, BỎ HOANG
  *
- * Đăng ký vào window.LandmarkKinds (landmarks.js gọi build khi dựng bản đồ). Mặt bằng / kè đất: MapGen (map_gen.js).
- * Tên lửa 5V27, xe ZIL-131, pháo phòng không: dùng chung trong landmarks.js (api.missile125 / milTruck / aaGun).
+ * Bố trí theo trận địa S-125 thật (tiểu đoàn hoả lực):
+ * - gò đất giữa trận địa đặt cột ăng-ten dẫn bắn SNR-125 "Low Blow" (UNV) trên rơ-moóc: cabin thiết bị, 2 ăng-ten máng
+ *   quét UV-10 / UV-11 nghiêng ±45°, ăng-ten parabol bám mục tiêu UV-12, chảo nhỏ phát lệnh; 2 cabin điều khiển UNK
+ *   (thùng kung trên ZIL-131) trong ụ chữ U 2 bên gò, cáp nối trong mương có nắp bê tông
+ * - 4 bệ phóng 5P73 (4 ray, 2 trên / 2 dưới) trên bệ bê tông tròn trong kè đất móng ngựa, đường vòng nối miệng kè
+ * - hầm chỉ huy phủ đất (KP), kho tên lửa 2 vòm phủ đất + sân nạp đạn với xe vận tải - nạp đạn PR-14, giá cẩu
+ * - trạm phát điện: 2 máy phát diesel 5E96 trên rơ-moóc trong ụ chữ U dưới lưới nguỵ trang, tủ phân phối, cáp đi
+ *   trong mương nắp bê tông tới gò radar; kho dầu diesel 3 bồn nằm trong bờ bao đất
+ * - radar cảnh giới P-18 "Spoon Rest D" (2 hàng x 8 ăng-ten Yagi trên cột) trên gò riêng, xe thiết bị dưới chân gò
+ * - phòng thủ gần: 4 hố pháo ZU-23-2, 2 pháo S-60, hào giao thông kè bao cát, lô cốt, tháp canh, 2 lớp rào + cổng
+ *   kiểm soát (bộ canh phòng chung), doanh trại, tháp nước, cột cờ, bãi xe trong ụ
+ * Sa mạc: sơn nguỵ trang cát / xanh Liên Xô bạc nắng, tróc lớp sơn; cát dạt chân tường, kè, bánh xe và phủ mặt đường;
+ * lưới nguỵ trang màu cát; nền sân cát nén thay bãi cỏ.
+ *
+ * Đăng ký vào window.LandmarkKinds (landmarks.js gọi build khi dựng bản đồ). Ụ đất / kè / gò: MapGen (map_gen.js,
+ * detailSam / moundSam) — toạ độ đọc lại từ L.* để hình khớp địa hình.
  */
 (function () {
   const KINDS = window.LandmarkKinds = window.LandmarkKinds || {};
+  // đường vòng nối miệng 4 kè bệ phóng; đường cổng vào chân dốc gò radar; 2 nhánh ngang 2 bên (r = ±300) tới doanh trại,
+  // bãi xe, gò P-18 / trạm điện, kho dầu, sân nạp đạn; nhánh sau tới hầm chỉ huy
+  const RING = [[92, 157], [-92, 157], [-92, -157], [92, -157]];
+  const ROADS = [
+    [[[320, 0], [92, 0]], 30],
+    [RING.concat([RING[0]]), 20],
+    [[[0, 157], [0, 300]], 16], [[[0, -157], [0, -300]], 16],
+    [[[200, 300], [-150, 300]], 18], [[[200, -300], [-60, -300]], 18],
+    [[[-92, 0], [-106, 0]], 20]
+  ];
+  const JUNCTIONS = RING.map(([f, r]) => [f, r, 24, 24]).concat([[92, 0, 22, 30], [0, 157, 16, 20], [0, -157, 16, 20], [0, 300, 16, 18], [0, -300, 16, 18], [-92, 0, 20, 20]]);
+  // nền sỏi / đất nện quanh công trình (vẽ lên sân cát)
+  const PADS = (hu) => [[hu - 150, -70, hu, 70], [-36, 66, 28, 150], [-36, -150, 28, -66], [-150, -60, -100, 60], [56, -428, 204, -316], [-42, -432, 68, -330],
+    [-176, 294, -124, 346], [-62, 304, 56, 404], [56, 312, 200, 450], [-124, -440, -54, -304],
+    [18, 214, 62, 258], [18, -258, 62, -214], [-248, 128, -204, 172], [-248, -172, -204, -128],
+    [84, 170, 164, 254], [-164, 170, -84, 254], [-164, -254, -84, -170], [84, -254, 164, -170]];
   KINDS.sam = {
-    name: 'TRẬN ĐỊA TÊN LỬA PHÒNG KHÔNG', icon: '✈', color: '#9fd3ff',
-    // trận địa S-75: đường vòng lục giác nối miệng 6 kè bệ phóng + nan hoa vào radar giữa ("ngôi sao"), đường cổng
-    site: (() => {
-      const ring = [[92, 157], [-92, 157], [-92, -157], [92, -157]];
-      const spokes = ring.map(([f, r]) => { const d = Math.hypot(f, r); return [[[f, r], [f * 56 / d, r * 56 / d]], 14]; });
-      return {
-        roads: [[[[320, 0], [92, 0]], 30], [ring.concat([ring[0]]), 20]].concat(spokes),
-        junctions: ring.map(([f, r]) => [f, r, 24, 24]).concat([[92, 0, 22, 30]]),
-        gravel: (hu) => [[-90, -105, 70, 105], [hu - 150, -70, hu, 70], [-60, 380, 80, 450], [-250, -45, -185, 45], [-185, 370, -115, 430], [120, 360, 180, 440], [-165, -432, -95, -368],
-          [92, 180, 156, 244], [-156, 180, -92, 244], [-156, -244, -92, -180], [92, -244, 156, -180],
-          [147, 82, 203, 138], [147, -138, 203, -82], [-228, 92, -172, 148], [-228, -148, -172, -92]],
-        slabs: [], noGrow: []
-      };
-    })(),
+    name: 'CĂN CỨ PHÒNG KHÔNG', icon: '✈', color: '#9fd3ff',
+    // slabs phủ cả khu: cỏ dại chỉ lún phún thưa thấp (sa mạc), không um tùm như căn cứ vùng cỏ
+    site: { roads: ROADS, junctions: JUNCTIONS, gravel: PADS, slabs: [[-340, -540, 340, 540]], noGrow: [] },
     build(K, group, anim, api) {
-      // eslint-disable-next-line no-unused-vars
-      const { TAU, hash, TEX, canvas, texOf, speckle, blotch, ageCanvas, concreteFill, concPair, concTex, grimePair, ribPair, hescoTex, hazardTex, bandTex, biohazard, trefoil, warnSign, signTex, icbmTex, detailTex, ABANDONED, SITES, siteOf, asphaltTex, roadStripGeo, roadNet, apronTex, MAT, mat, decal, decalT, doorMats, v3, M4, boxGeo, mergeGeos, defTile, Kit, apron, meshFenceMat, fence, sandbags, drum, camoMat, camoNet, warnPlate, loftGeo, plateGeo, heliSkin, heli, secKit, perimeter, officeBlock, stack, vTank, missile125, milTruck, aaGun } = api;
-      const SITE = KINDS.sam.site;
-      const L = K.L, EL = 30 * Math.PI / 180, SI = SITE;
-      apron(group, L, -L.hu, L.hu, -L.hv, L.hv, 'sam');
-      roadNet(group, SI.roads, SI.junctions, { bars: [[L.hu - 150, 0, 2.4, 28]], words: [['STOP', L.hu - 144, 0, Math.PI / 2, 14]] });
-      const kit = secKit(K, anim), { iF, iR, G, mul, tower, pillbox, hesco } = kit;
-      perimeter(K, kit);
-      // ---- 4 BỆ PHÓNG 5P73: khung đế + 4 tay chống có kích đế tròn, bệ xoay, mâm, 2 dầm bên + giá 4 ray (2 trên / 2 dưới)
-      //      nâng 30°, tên lửa treo trên ray trên và dưới ray dưới, tấm chắn luồng phụt, hộp điều khiển, cáp
-      const ammo = [4, 2, 4, 0];
+      const { TAU, hash, texOf, speckle, blotch, grimePair, signTex, detailTex, MAT, decal, v3, M4, sandbags, drum, plateGeo, secKit, perimeter, milTruck, aaGun } = api;
+      const L = K.L, mul = (a, b) => new THREE.Matrix4().multiplyMatrices(a, b);
+
+      // =====================================================================================================
+      // VẬT LIỆU SA MẠC (dùng chung cache MAT, khoá 'sam_')
+      // =====================================================================================================
+      // Sơn thép lát lặp 256 px / 3 m: nền + mảng nguỵ trang méo, mảng bạc phấn nắng, bụi cát, sơn tróc lộ lót gỉ, xước
+      const paintTex = (key, base, blots, seed, chip) => texOf('sam_p_' + key, 256, 256, (g, w, h) => {
+        const wrap = (fn) => { for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) { g.save(); g.translate(dx, dy); fn(); g.restore(); } };
+        g.fillStyle = base; g.fillRect(0, 0, w, h);
+        blots.forEach(([col, n, R], b) => {
+          for (let i = 0; i < n; i++) {
+            const s = seed + b * 131 + i * 7, cx = hash(s) * w, cy = hash(s + 1) * h, rr = R * (0.6 + hash(s + 2) * 0.8), rot = hash(s + 3) * TAU;
+            wrap(() => {
+              g.fillStyle = col; g.beginPath();
+              for (let k = 0; k < 14; k++) {
+                const a = k / 14 * TAU, q = rr * (0.6 + hash(s * 3 + k) * 0.55), x = Math.cos(a) * q * 1.5, y = Math.sin(a) * q * 0.75;
+                const X = cx + x * Math.cos(rot) - y * Math.sin(rot), Y = cy + x * Math.sin(rot) + y * Math.cos(rot);
+                k ? g.lineTo(X, Y) : g.moveTo(X, Y);
+              }
+              g.closePath(); g.fill();
+            });
+          }
+        });
+        // nắng sa mạc: mảng phấn bạc màu, bụi cát loang
+        for (let i = 0; i < 46; i++) { const s = seed + 900 + i * 5, x = hash(s) * w, y = hash(s + 1) * h, r = 10 + hash(s + 2) * 46; wrap(() => blotch(g, x, y, r, hash(s + 3) < 0.6 ? '240,232,212' : '170,146,108', 0.2)); }
+        // sơn tróc từng mảng nhỏ: lộ lớp lót nâu đỏ / thép xám, viền tối
+        for (let i = 0; i < (chip || 1) * 24; i++) {
+          const s = seed + 1500 + i * 9, cx = hash(s) * w, cy = hash(s + 1) * h, R = 1.5 + hash(s + 2) * 6;
+          wrap(() => {
+            g.beginPath();
+            for (let k = 0; k < 8; k++) { const a = k / 8 * TAU, q = R * (0.5 + hash(s + k + 3) * 0.8); k ? g.lineTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q * 0.7) : g.moveTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q * 0.7); }
+            g.closePath(); g.fillStyle = hash(s + 20) < 0.55 ? 'rgba(128,84,52,0.85)' : 'rgba(150,146,136,0.85)'; g.fill();
+            g.strokeStyle = 'rgba(50,40,30,0.45)'; g.lineWidth = 0.8; g.stroke();
+          });
+        }
+        g.strokeStyle = 'rgba(246,240,224,0.3)'; g.lineWidth = 0.7;
+        for (let i = 0; i < 30; i++) { const s = seed + 2100 + i * 4, x = hash(s) * w, y = hash(s + 1) * h, a = hash(s + 2) * TAU, l = 5 + hash(s + 3) * 22; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+        speckle(g, w, h, 2600, ['rgba(120,100,70,1)', 'rgba(250,244,228,1)', 'rgba(90,80,64,1)'], 1, 2, seed + 77);
+      }, true);
+      const pm = (key, base, blots, seed, o, chip) => MAT['sam_' + key] || (MAT['sam_' + key] = new THREE.MeshStandardMaterial(Object.assign({
+        map: paintTex(key, base, blots, seed, chip), bumpMap: grimePair('r1.5', 1.5)[1], bumpScale: 0.3, roughness: 0.9, metalness: 0.1 }, o || {})));
+      const std = (key, o) => MAT['sam_' + key] || (MAT['sam_' + key] = new THREE.MeshStandardMaterial(o));
+      const M = {
+        // nguỵ trang sa mạc kiểu xuất khẩu (nền cát, mảng nâu + xanh ô-liu nhạt) — bệ phóng, cột ăng-ten, máy phát, pháo
+        camo: pm('camo', '#b9a274', [['#866948', 6, 54], ['#8d8c64', 4, 44]], 101),
+        camoDark: pm('camoDark', '#8a7856', [['#6b583c', 5, 50]], 131),
+        // sơn xanh Liên Xô bạc nắng (xe, cabin), cát trơn (thép tháp canh / rào)
+        oliveSun: pm('oliveSun', '#737858', [], 151, null, 1.4),
+        oliveSunDark: pm('oliveSunDark', '#575c46', [], 171, null, 1.2),
+        tanSteel: pm('tanSteel', '#a8956c', [], 191),
+        tanDark: pm('tanDark', '#7e6e50', [], 211),
+        mWhite: pm('mWhite', '#d8d6ca', [], 231, { roughness: 0.62, metalness: 0.15 }, 0.5),
+        mGreen: pm('mGreen', '#6c7352', [], 251, { roughness: 0.7 }),
+        dish: pm('dish', '#b5b3a6', [], 271, { side: THREE.DoubleSide, roughness: 0.62, metalness: 0.3 }, 0.6),
+        door: pm('door', '#6d7660', [], 291, { roughness: 0.8, metalness: 0.25 }, 2),
+        tarp: pm('tarp', '#a08d66', [['#8e7a56', 5, 40]], 311, { roughness: 1, metalness: 0 }, 0.2),
+        bagTan: std('bagTan', { color: 0xc6b088, map: grimePair('r0.4', 0.4)[0], bumpMap: grimePair('r0.4', 0.4)[1], bumpScale: 0.8, roughness: 1 }),
+        bagSand: std('bagSand', { color: 0xb29b74, map: grimePair('r0.4', 0.4)[0], bumpMap: grimePair('r0.4', 0.4)[1], bumpScale: 0.8, roughness: 1 }),
+        brass: std('brass', { color: 0xa88440, roughness: 0.45, metalness: 0.6 }),
+        trench: std('trench', { color: 0x7a664a, roughness: 1 }),
+        black: std('black', { color: 0x2a2a28, roughness: 0.7, metalness: 0.1 })
+      };
+      // Vữa trát doanh trại (1 ô = 3 m): vữa cát bạc, vệt nước, mảng vữa bong lộ gạch, vết nứt
+      M.plaster = MAT.sam_plaster || (MAT.sam_plaster = new THREE.MeshStandardMaterial({ roughness: 0.95, bumpMap: grimePair('r0.4', 0.4)[1], bumpScale: 0.5, map: texOf('sam_plaster', 256, 256, (g, w, h) => {
+        g.fillStyle = '#d4c39f'; g.fillRect(0, 0, w, h);
+        for (let i = 0; i < 40; i++) for (const ox of [-w, 0, w]) for (const oy of [-h, 0, h]) blotch(g, hash(i + 4600) * w + ox, hash(i + 4601) * h + oy, 12 + hash(i + 4602) * 40, hash(i + 4603) < 0.5 ? '176,156,120' : '236,226,204', 0.22);
+        for (let i = 0; i < 26; i++) { const x = hash(i + 4700) * w, l = 30 + hash(i + 4701) * 120, gr = g.createLinearGradient(0, 0, 0, l); gr.addColorStop(0, 'rgba(120,100,72,0.22)'); gr.addColorStop(1, 'rgba(120,100,72,0)'); g.fillStyle = gr; g.fillRect(x, hash(i + 4702) * h * 0.5, 2 + hash(i + 4703) * 6, l); }
+        for (let i = 0; i < 5; i++) {
+          const cx = hash(i + 4800) * w, cy = hash(i + 4801) * h, R = 10 + hash(i + 4802) * 16;
+          g.save(); g.beginPath();
+          for (let k = 0; k < 11; k++) { const a = k / 11 * TAU, q = R * (0.6 + hash(i * 13 + k) * 0.6); k ? g.lineTo(cx + Math.cos(a) * q * 1.4, cy + Math.sin(a) * q) : g.moveTo(cx + Math.cos(a) * q * 1.4, cy + Math.sin(a) * q); }
+          g.closePath(); g.fillStyle = '#9a6a4c'; g.fill(); g.clip();
+          g.strokeStyle = 'rgba(200,184,150,0.8)'; g.lineWidth = 1.2;
+          for (let y = cy - R; y < cy + R; y += 5) { g.beginPath(); g.moveTo(cx - R * 1.6, y); g.lineTo(cx + R * 1.6, y); g.stroke(); for (let x = cx - R * 1.6 + ((y / 5) % 2) * 6; x < cx + R * 1.6; x += 12) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 5); g.stroke(); } }
+          g.restore(); g.strokeStyle = 'rgba(80,64,46,0.5)'; g.lineWidth = 1; g.stroke();
+        }
+        g.strokeStyle = 'rgba(90,76,56,0.45)'; g.lineWidth = 0.8;
+        for (let i = 0; i < 10; i++) { let x = hash(i + 4900) * w, y = hash(i + 4901) * h, a = hash(i + 4902) * TAU; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 8; k++) { a += (hash(i * 17 + k + 4903) - 0.5) * 1.3; x += Math.cos(a) * 5; y += Math.sin(a) * 5; g.lineTo(x, y); } g.stroke(); }
+        speckle(g, w, h, 3000, ['#a8946e', '#ece2cc', '#8c7a5c'], 1, 2, 4950);
+      }, true) }));
+      // Cát dạt (đụn nhỏ chân tường, phủ bánh xe): hạt cát lấm tấm + gợn sóng gió
+      M.sand = MAT.sam_sand || (MAT.sam_sand = new THREE.MeshStandardMaterial({ roughness: 1, map: texOf('sam_sand', 256, 256, (g, w, h) => {
+        g.fillStyle = '#d3b587'; g.fillRect(0, 0, w, h);
+        for (let i = 0; i < 30; i++) for (const ox of [-w, 0, w]) for (const oy of [-h, 0, h]) blotch(g, hash(i + 5100) * w + ox, hash(i + 5101) * h + oy, 20 + hash(i + 5102) * 50, hash(i + 5103) < 0.5 ? '190,158,112' : '230,206,160', 0.25);
+        g.strokeStyle = 'rgba(150,120,80,0.16)'; g.lineWidth = 1.4;
+        for (let y = 0; y < h; y += 7) { g.beginPath(); for (let x = 0; x <= w; x += 8) { const yy = y + Math.sin(x / w * TAU * 2 + y * 0.3) * 2.5; x ? g.lineTo(x, yy) : g.moveTo(x, yy); } g.stroke(); }
+        speckle(g, w, h, 5000, ['#b89a6c', '#ead2a4', '#a0835a'], 1, 1.8, 5150);
+      }, true) }));
+      // Lưới nguỵ trang sa mạc: mảng vải cát / nâu / kaki trên lưới dây
+      M.net = MAT.sam_net || (MAT.sam_net = new THREE.MeshStandardMaterial({ roughness: 1, side: THREE.DoubleSide, alphaTest: 0.45, map: texOf('sam_net', 256, 256, (g, w, h) => {
+        g.clearRect(0, 0, w, h);
+        const cols = ['#b39b6c', '#9c8457', '#c9b48a', '#7d6a48', '#a8946a'];
+        for (let i = 0; i < 950; i++) { g.fillStyle = cols[i % 5]; g.beginPath(); g.ellipse(hash(i + 5250) * w, hash(i + 5251) * h, 3 + hash(i + 5252) * 7, 2 + hash(i + 5253) * 4, hash(i + 5254) * 3, 0, TAU); g.fill(); }
+        g.strokeStyle = '#5a4c36'; g.lineWidth = 1; for (let x = 0; x < w; x += 8) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); g.beginPath(); g.moveTo(0, x); g.lineTo(w, x); g.stroke(); }
+      }, true) }));
+      // Mảng cát phủ mặt đường (ảnh trong suốt, mép loang)
+      M.sandPatch = MAT.sam_sandPatch || (MAT.sam_sandPatch = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, map: texOf('sam_sandPatch', 256, 128, (g, w, h) => {
+        g.clearRect(0, 0, w, h);
+        for (let i = 0; i < 70; i++) { const x = w * (0.15 + hash(i + 5300) * 0.7), y = h * (0.2 + hash(i + 5301) * 0.6), r = 8 + hash(i + 5302) * 30; blotch(g, x, y, r, hash(i + 5303) < 0.5 ? '214,184,136' : '196,164,116', 0.55); }
+        g.globalCompositeOperation = 'source-atop'; g.strokeStyle = 'rgba(150,120,80,0.35)'; g.lineWidth = 1.2;
+        for (let x = 0; x < w; x += 6) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + Math.sin(x) * 3, h); g.stroke(); }
+        g.globalCompositeOperation = 'source-over';
+      }) }));
+      const tankM = 'tankShell';
+      // Kit đổi vật liệu cho các khối dựng sẵn dùng chung (milTruck, aaGun, bộ canh phòng): cùng gom vào K
+      // (lưới nguỵ trang xanh dùng chung -> lưới màu cát)
+      const NETG = api.camoMat();
+      const remap = (map) => { const P = Object.create(K); P.add = (m, g, x) => K.add(m === NETG ? M.net : typeof m === 'string' && map[m] ? map[m] : m, g, x); P.solid = (...a) => K.solid(...a); return P; };
+      const TK = remap({ olive: M.oliveSun, oliveDark: M.oliveSunDark, missile: M.mWhite, bagGreen: M.bagTan, sand: M.bagSand });
+      const TT = remap({ olive: M.tanSteel, oliveDark: M.tanDark, missile: M.mWhite, bagGreen: M.bagTan, sand: M.bagSand });
+      const CK = remap({ olive: M.camo, oliveDark: M.camoDark, missile: M.mWhite, bagGreen: M.bagTan, sand: M.bagSand, yellow: M.brass });
+      const SK = remap({ olive: M.tanSteel, oliveDark: M.tanDark, bagGreen: M.bagTan, sand: M.bagSand });
+
+      // =====================================================================================================
+      // HÌNH CƠ BẢN
+      // =====================================================================================================
+      // đĩa bê tông tròn có UV theo kích thước thật (1 ô = 8 m)
+      const disk = (m, f, y, r, R0, R1, h, seg) => {
+        const g = new THREE.CylinderGeometry(R0, R1, h, seg || 28), uv = g.attributes.uv, P = g.attributes.position, N = g.attributes.normal;
+        for (let i = 0; i < uv.count; i++) { if (Math.abs(N.getY(i)) > 0.9) uv.setXY(i, P.getX(i) / 64, P.getZ(i) / 64); else uv.setXY(i, uv.getX(i) * TAU * R1 / 64, (P.getY(i) + h / 2) / 64); }
+        K.add(m, g, M4(f, y + h / 2, r));
+      };
+      // đụn cát dạt (nửa elip dẹt, mặt lồi lổn nhổn): dài len theo hướng ang, sâu dep, cao ht; side > 0 dồn dốc về 1 phía
+      const drift = (f, r, len, dep, ht, ang, y0) => {
+        const g = new THREE.SphereGeometry(1, 16, 5, 0, TAU, 0, Math.PI / 2), P = g.attributes.position, uv = g.attributes.uv;
+        for (let i = 0; i < P.count; i++) {
+          const x = P.getX(i), y = P.getY(i), z = P.getZ(i), n = 1 + (hash(i * 3.1 + f * 0.7 + r * 1.3) - 0.5) * 0.3 * y;
+          P.setXYZ(i, x * len / 2, y * ht * n, z * dep / 2 * (z > 0 ? 1.4 : 0.6));
+          uv.setXY(i, P.getX(i) / 24, P.getZ(i) / 24);
+        }
+        g.computeVertexNormals();
+        K.add(M.sand, g, M4(f, (y0 || 0) + 0.15, r, 0, -ang, 0));
+      };
+      // dây cáp nằm trên đất nối các điểm (f, r) (bám cao độ đất), võng nhẹ
+      const cable = (pts, t, lift) => {
+        for (let i = 1; i < pts.length; i++) {
+          const [af, ar, ay] = pts[i - 1], [bf, br, by] = pts[i];
+          const A = [af, ay !== undefined ? ay : Math.max(0, K.earth(af, ar)) + (lift || 0.7), ar], B = [bf, by !== undefined ? by : Math.max(0, K.earth(bf, br)) + (lift || 0.7), br];
+          K.beam('rubber', A, B, t || 0.9);
+        }
+      };
+      // lưới nguỵ trang sa mạc võng giữa 4 cọc (base: tâm, cỡ w x d, cao y, độ võng sag)
+      const net = (base, w, d, y, sag) => {
+        const g = new THREE.PlaneGeometry(w, d, 10, 8); g.rotateX(-Math.PI / 2);
+        const P = g.attributes.position, uv = g.attributes.uv;
+        for (let i = 0; i < P.count; i++) { const u = P.getX(i) / (w / 2), v = P.getZ(i) / (d / 2); P.setY(i, y - sag * (1 - u * u) * (1 - v * v) + (hash(i * 7 + w) - 0.5) * 1.4); uv.setXY(i, uv.getX(i) * w / 40, uv.getY(i) * d / 40); }
+        g.computeVertexNormals();
+        K.add(M.net, g, base);
+        for (const [a, b] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) K.add('steelDark', new THREE.CylinderGeometry(0.4, 0.5, y + 1, 6), mul(base, M4(a * (w / 2 - 1), (y + 1) / 2, b * (d / 2 - 1))));
+      };
+      // khoảng cách tới mép đường gần nhất (âm = trên mặt đường)
+      const roadGap = (f, r) => {
+        let d = Infinity;
+        for (const [pts, wd] of ROADS) for (let i = 1; i < pts.length; i++) {
+          const [af, ar] = pts[i - 1], [bf, br] = pts[i], ef = bf - af, er = br - ar, t = Math.max(0, Math.min(1, ((f - af) * ef + (r - ar) * er) / (ef * ef + er * er)));
+          d = Math.min(d, Math.hypot(f - af - ef * t, r - ar - er * t) - wd / 2);
+        }
+        return d;
+      };
+      // mương cáp có nắp bê tông (tấm 0.9 x 0.65 m, lệch nhẹ, vài tấm vỡ / mất lộ lòng mương tối): chạy theo polyline
+      const cableTrench = (pts) => {
+        let n = 0;
+        for (let i = 1; i < pts.length; i++) {
+          const [af, ar] = pts[i - 1], [bf, br] = pts[i], len = Math.hypot(bf - af, br - ar), ang = Math.atan2(br - ar, bf - af);
+          for (let s = 4; s < len; s += 7.6) {
+            const f = af + (bf - af) * s / len, r = ar + (br - ar) * s / len;
+            if (roadGap(f, r) < 3) continue;
+            const y = Math.max(0, K.earth(f, r)), j = hash(++n * 3.3 + af);
+            if (j < 0.05) { K.box('void', f, y + 0.5, r, 7, 0.2, 4.4, -ang); continue; }
+            K.cbox('concDark', f, y + 0.5, r, 7.2, 1, 5.2, 0.3, -ang + (j - 0.5) * 0.06);
+          }
+        }
+      };
+      // hào giao thông kè bao cát 2 bên (đất sa mạc cứng: hào nông + tường bao cát), nền hào đất tối, ván lót
+      const trench = (pts) => {
+        for (let i = 1; i < pts.length; i++) {
+          const [af, ar] = pts[i - 1], [bf, br] = pts[i], len = Math.hypot(bf - af, br - ar), nf = -(br - ar) / len, nr = (bf - af) / len, ang = Math.atan2(br - ar, bf - af);
+          for (const s of [-1, 1]) sandbags(SK, af + nf * s * 5.4, ar + nr * s * 5.4, bf + nf * s * 5.4, br + nr * s * 5.4, 2, 0);
+          const g = new THREE.PlaneGeometry(len + 6, 8.4); g.rotateX(-Math.PI / 2);
+          K.add(M.trench, g, M4((af + bf) / 2, 0.55, (ar + br) / 2, 0, -ang, 0));
+          for (let s = 3; s < len; s += 6) K.box('wood', af + (bf - af) * s / len, 0.75, ar + (br - ar) * s / len, 1.6, 0.3, 6, -ang);
+          K.solid((af + bf) / 2 + nf * 5.4, (ar + br) / 2 + nr * 5.4, len / 2, 1.6, 0, 6, ang);
+          K.solid((af + bf) / 2 - nf * 5.4, (ar + br) / 2 - nr * 5.4, len / 2, 1.6, 0, 6, ang);
+        }
+      };
+      // mảng cát phủ mặt đường
+      const sandOnRoad = (f, r, len, wd, ang) => { const g = new THREE.PlaneGeometry(len, wd); g.rotateX(-Math.PI / 2); K.add(M.sandPatch, g, M4(f, 0.95, r, 0, -ang, 0)); };
+      // bảng chữ trên cọc thép
+      const signPost = (key, lines, opts, f, r, ry, w, h) => {
+        const base = M4(f, 0, r, 0, ry, 0);
+        for (const s of [-1, 1]) K.add('steelGray', new THREE.CylinderGeometry(0.4, 0.4, 12 + h, 6), mul(base, M4(0, (12 + h) / 2, s * (w / 2 - 1))));
+        K.add(decal(key, signTex(key, lines, opts)), new THREE.PlaneGeometry(w, h), mul(base, M4(0.5, 10 + h / 2, 0, 0, Math.PI / 2, 0)));
+        K.add('steelDark', new THREE.BoxGeometry(0.4, h + 0.6, w + 0.6), mul(base, M4(0.2, 10 + h / 2, 0)));
+      };
+
+      // =====================================================================================================
+      // SÂN CÁT NÉN (thay bãi cỏ của các căn cứ vùng cỏ): cát + sỏi nện, gợn gió, nền sỏi quanh công trình, lề đường,
+      // vết bánh xe, vết dầu; lớp chi tiết hạt sỏi lát lặp ở gần
+      // =====================================================================================================
+      {
+        const f0 = -L.hu, f1 = L.hu, r0 = -L.hv, r1 = L.hv, Wd = 1024, Hh = Math.round(Wd * (r1 - r0) / (f1 - f0));
+        const tex = texOf('sam_apron_' + L.hu + '_' + L.hv, Wd, Hh, (g, w, h) => {
+          const P = (f, r) => [(f - f0) / (f1 - f0) * w, (r - r0) / (r1 - r0) * h], S = w / (f1 - f0);
+          g.fillStyle = '#c2a67b'; g.fillRect(0, 0, w, h);
+          for (let i = 0; i < 90; i++) blotch(g, hash(i + 6000) * w, hash(i + 6001) * h, 30 + hash(i + 6002) * 110, hash(i + 6003) < 0.5 ? '216,190,146' : '160,136,100', 0.28);
+          speckle(g, w, h, 30000, ['#9c845e', '#d8c098', '#8a7454', '#c9b086', '#a89070'], 1, 3, 6010);
+          // gợn cát theo gió
+          g.strokeStyle = 'rgba(120,98,66,0.09)'; g.lineWidth = 1.6;
+          for (let i = 0; i < 260; i++) {
+            const x = hash(i + 6100) * w, y = hash(i + 6101) * h, l = 40 + hash(i + 6102) * 160;
+            g.beginPath(); for (let k = 0; k <= 10; k++) { const t = k / 10, xx = x + t * l, yy = y + t * l * 0.35 + Math.sin(t * 9 + i) * 3; k ? g.lineTo(xx, yy) : g.moveTo(xx, yy); } g.stroke();
+          }
+          // đường tuần tra sỏi nện giữa 2 lớp rào
+          const iF = L.hu - 62, iR = L.hv - 62;
+          g.strokeStyle = 'rgba(150,132,104,0.9)'; g.lineWidth = 20 * S; g.strokeRect(...P(-iF + 14, -iR + 14), (iF * 2 - 28) * S, (iR * 2 - 28) * S);
+          // nền sỏi quanh công trình
+          for (const [fa, ra, fb, rb] of PADS(L.hu)) {
+            const [x0, y0] = P(Math.min(fa, fb), Math.min(ra, rb)), ww = Math.abs(fb - fa) * S, hh = Math.abs(rb - ra) * S;
+            g.save(); g.beginPath(); g.rect(x0, y0, ww, hh); g.clip();
+            g.fillStyle = 'rgba(158,144,120,0.92)'; g.fillRect(x0, y0, ww, hh);
+            for (let i = 0; i < ww * hh / 18; i++) { const x = x0 + hash(i * 1.7 + fa) * ww, y = y0 + hash(i * 2.3 + ra) * hh; g.fillStyle = hash(i + fa + ra) < 0.5 ? 'rgba(110,100,86,0.8)' : 'rgba(196,184,160,0.8)'; g.fillRect(x, y, 1.5, 1.5); }
+            for (let i = 0; i < 8; i++) blotch(g, x0 + hash(i + fa * 3) * ww, y0 + hash(i + ra * 3) * hh, 12 * S + hash(i) * 20 * S, '200,172,128', 0.5);   // cát lấn vào
+            g.restore();
+          }
+          // lề đường đất sỏi + cát dạt mép đường
+          g.lineCap = 'round'; g.lineJoin = 'round';
+          for (const [pts, wd] of ROADS) for (const [ex, col] of [[14, 'rgba(176,150,110,0.6)'], [6, 'rgba(120,104,80,0.55)']]) {
+            g.strokeStyle = col; g.lineWidth = (wd + ex) * S; g.beginPath(); pts.forEach(([f, r], i) => i ? g.lineTo(...P(f, r)) : g.moveTo(...P(f, r))); g.stroke();
+          }
+          // vết bánh xe 2 vệt song song (xe ra vào ụ, đi tắt qua sân)
+          g.lineCap = 'butt';
+          const track = (pts, k) => {
+            for (const s of [-1, 1]) {
+              g.strokeStyle = 'rgba(96,78,54,0.22)'; g.lineWidth = 2.6 * S; g.beginPath();
+              pts.forEach(([f, r], i) => {
+                const j = Math.min(i + 1, pts.length - 1), m = Math.max(i - 1, 0), tf = pts[j][0] - pts[m][0], tr = pts[j][1] - pts[m][1], l = Math.hypot(tf, tr) || 1;
+                const x = f - tr / l * s * 9, y = r + tf / l * s * 9; i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y));
+              });
+              g.stroke();
+            }
+            if (k) for (let i = 0; i < 12; i++) blotch(g, ...P(pts[pts.length - 1][0] + (hash(i + k) - 0.5) * 30, pts[pts.length - 1][1] + (hash(i + k + 1) - 0.5) * 30), (3 + hash(i + k + 2) * 8) * S, '40,34,26', 0.32);
+          };
+          track([[92, 157], [60, 130], [24, 128], [-4, 140]], 1); track([[92, -157], [60, -130], [24, -128], [-4, -140]], 2);
+          track([[200, -300], [170, -318], [140, -340], [130, -370]], 3); track([[200, -300], [150, -306], [110, -330], [104, -372]], 4);
+          track([[0, 300], [-10, 320], [-30, 350]], 5); track([[0, 300], [16, 322], [24, 350]], 6);
+          track([[-60, -300], [-80, -330], [-90, -360]], 7); track([[-150, 300], [-112, 300], [-90, 330], [-84, 350]], 8);
+          track([[150, 0], [140, -30], [110, -60], [70, -90], [40, -118]], 0); track([[-92, -60], [-140, -100], [-200, -150], [-216, -150]], 0);
+          for (let i = 0; i < 60; i++) blotch(g, hash(i + 6500) * w, hash(i + 6501) * h, (3 + hash(i + 6502) * 10) * S, '44,36,28', 0.26);
+          // vết cháy xém trên bệ bệ phóng trống (tên lửa phóng / cháy khi rút chạy)
+          { const Pq = L.launchers[3]; const [x, y] = P(Pq.f, Pq.r); const gr = g.createRadialGradient(x, y, 0, x, y, 60 * S); gr.addColorStop(0, 'rgba(30,26,22,0.55)'); gr.addColorStop(0.6, 'rgba(50,42,34,0.3)'); gr.addColorStop(1, 'rgba(50,42,34,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, 60 * S, 0, TAU); g.fill(); }
+        });
+        const am = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.97, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+        const rep = new THREE.Vector2(L.hu * 2 / 24, L.hv * 2 / 24);
+        am.onBeforeCompile = (sh) => {
+          sh.uniforms.tGrav = { value: detailTex('gravel') }; sh.uniforms.uRep = { value: rep };
+          sh.fragmentShader = 'uniform sampler2D tGrav;\nuniform vec2 uRep;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+            { vec3 dv = texture2D(tGrav, vUv * uRep * 1.7).rgb; diffuseColor.rgb *= mix(vec3(1.0), dv * 2.0, 0.45); }`);
+        };
+        const top = new THREE.Mesh(new THREE.PlaneGeometry(L.hu * 2, L.hv * 2), am);
+        top.rotation.x = -Math.PI / 2; top.position.set(0, 0.35, 0); top.receiveShadow = true;
+        group.add(top);
+      }
+      api.roadNet(group, ROADS, JUNCTIONS, { bars: [[L.hu - 150, 0, 2.4, 28]], words: [['STOP', L.hu - 144, 0, Math.PI / 2, 14]] });
+      // cát gió thổi phủ ngang mặt đường từng đám
+      for (const [f, r, len, wd, ang] of [[250, 6, 30, 26, 0.2], [130, -4, 46, 30, 0], [40, 157, 40, 22, 0], [-60, -157, 34, 20, 0.1], [-92, 80, 22, 40, 0], [92, -80, 24, 36, 0],
+        [0, 230, 18, 34, Math.PI / 2], [0, -250, 20, 30, Math.PI / 2], [120, 300, 50, 22, 0], [-80, 300, 40, 20, 0.15], [140, -300, 44, 22, -0.1], [-30, -300, 30, 20, 0], [-100, 0, 18, 22, 0]]) sandOnRoad(f, r, len, wd, ang);
+
+      // =====================================================================================================
+      // CHU VI AN NINH (bộ canh phòng chung, thép sơn cát), tháp canh, lô cốt
+      // =====================================================================================================
+      const kit = secKit(SK, anim), { iF, iR, G, win, acUnit, tower, pillbox, hesco } = kit;
+      perimeter(SK, kit);
+      for (const [f, r] of [[iF - 38, iR - 38], [iF - 38, -iR + 38], [iF - 28, G + 40], [iF - 28, -G - 40], [-iF + 34, iR - 34], [-iF + 26, -250]]) tower(f, r);
+      for (const [f, r] of [[iF - 34, 260], [iF - 34, -260]]) pillbox(f, r);
+      // biển tên đơn vị ngoài cổng
+      signPost('sam_gate', ['AIR DEFENSE MISSILE BATTALION', 'ЗЕНИТНЫЙ РАКЕТНЫЙ ДИВИЗИОН — ЗАПРЕТНАЯ ЗОНА'], { w: 1024, h: 192, bg: '#e6dcc4', fg: '#1d2a3a', fg2: '#a3221a' }, L.hu - 16, G - 4, 0, 30, 6.5);
+
+      // =====================================================================================================
+      // TÊN LỬA 5V27 (dài 6.1 m): tầng đẩy Ø 0.55 m sơn xanh có 4 cánh lớn, đoạn chuyển tầng, tầng hành trình Ø 0.375 m
+      // trắng ngà có 4 cánh giữa, mũi vuốt nhọn có 4 cánh lái mũi + 4 cánh mất ổn định nhỏ, khe ăng-ten ngòi nổ, vạch sơn.
+      // Nằm dọc +X, đuôi tại x = 0. cover: áo bạt che tầng hành trình (tên lửa trong kho / trên xe)
+      // =====================================================================================================
+      const finGeo = {};
+      const fin = (key, x0, x1, t0, t1, span, rad, th) => finGeo[key] || (finGeo[key] = (() => {
+        const sh = new THREE.Shape(); sh.moveTo(x0, rad); sh.lineTo(x1, rad); sh.lineTo(t1, rad + span); sh.lineTo(t0, rad + span); sh.closePath();
+        const g = new THREE.ExtrudeGeometry(sh, { depth: th, bevelEnabled: false }); g.translate(0, 0, -th / 2); return g;
+      })());
+      const noseGeo = new THREE.LatheGeometry(Array.from({ length: 10 }, (_, i) => { const t = i / 9; return new THREE.Vector2(1.5 * Math.pow(1 - t * t, 0.7) + 0.02, t * 9); }), 16);
+      const missile = (base, cover) => {
+        const at = (x, y, z, rx, ry, rz) => mul(base, M4(x, y, z, rx, ry, rz));
+        const along = (m, r0, r1, x0, x1, seg) => K.add(m, new THREE.CylinderGeometry(r1, r0, x1 - x0, seg || 16), at((x0 + x1) / 2, 0, 0, 0, 0, -Math.PI / 2));
+        along('steelDark', 1.5, 2, -1.8, 0, 12);
+        along(M.mGreen, 2.2, 2.2, 0, 15.6, 18);
+        for (const x of [0.4, 15.2]) along('steelDark', 2.3, 2.3, x - 0.3, x + 0.3, 18);
+        along('steelDark', 2.2, 1.55, 15.6, 17.4, 16);
+        along(M.mWhite, 1.5, 1.5, 17.4, 40.5, 16);
+        along('steelRed', 1.52, 1.52, 21, 21.8, 16);
+        K.add(M.mWhite, noseGeo.clone(), at(40.5, 0, 0, 0, 0, -Math.PI / 2));
+        for (let k = 0; k < 4; k++) {
+          const roll = Math.PI / 4 + k * Math.PI / 2;
+          K.add(M.mGreen, fin('b', 0.8, 10, 6, 10.5, 6.6, 2.1, 0.5).clone(), at(0, 0, 0, roll, 0, 0));
+          K.add(M.mWhite, fin('w', 25, 34, 30.5, 34.6, 3.8, 1.4, 0.35).clone(), at(0, 0, 0, roll, 0, 0));
+          K.add(M.mWhite, fin('c', 37.2, 39.8, 38.2, 40, 1.9, 1.4, 0.3).clone(), at(0, 0, 0, roll - Math.PI / 4, 0, 0));
+          K.add(M.mWhite, fin('d', 43, 44, 43.4, 44.1, 0.8, 0.9, 0.2).clone(), at(0, 0, 0, roll, 0, 0));
+          K.add('steelDark', new THREE.BoxGeometry(1.6, 0.12, 0.5), at(42.4, Math.cos(roll) * 1.32, Math.sin(roll) * 1.32, roll, 0, 0));
+        }
+        if (cover) {
+          along(M.tarp, 1.8, 1.8, 20, 41, 14);
+          K.add(M.tarp, new THREE.ConeGeometry(1.85, 9.4, 14), at(45.7, 0, 0, 0, 0, -Math.PI / 2));
+          for (const x of [23, 30, 37]) along('steelDark', 1.9, 1.9, x - 0.25, x + 0.25, 14);
+        }
+      };
+
+      // =====================================================================================================
+      // 4 BỆ PHÓNG 5P73 trong kè móng ngựa: bệ bê tông tròn, đế chữ thập 4 tay chống có kích + đế tròn, mâm xoay, khung
+      // gối trục, 2 dầm phóng giàn mắt cáo mỗi dầm 1 ray trên + 1 ray dưới (tên lửa đặt trên ray trên, treo dưới ray dưới),
+      // cơ cấu nâng, tấm chắn luồng phụt, tủ điều khiển, hộp cáp + cáp. Bỏ hoang: bệ thiếu đạn, 1 bệ trống cháy xém
+      // =====================================================================================================
+      const ammo = [4, 2, 4, 0], ELS = [0.42, 0.16, 0.5, 0.3], YAW = [0.12, -0.25, -0.08, 0.4];
       L.launchers.forEach((P, idx) => {
         const base = mul(M4(P.f, 0, P.r), M4(0, 0, 0, 0, -P.az, 0)), at = (x, y, z, rx, ry, rz) => mul(base, M4(x, y, z, rx, ry, rz));
-        K.add('concDark', new THREE.CylinderGeometry(30, 32, 2, 8), at(0, -0.4, 0));
-        K.cbox('olive', 0, 3, 0, 22, 3, 22, 0.5, 0, base);
+        disk('concDark', P.f, 0, P.r, 33, 34.5, 1.4, 32);
+        K.add('conc', new THREE.TorusGeometry(33.6, 0.9, 4, 32), at(0, 1.3, 0, Math.PI / 2, 0, 0));
         for (const a of [Math.PI / 4, 3 * Math.PI / 4, -3 * Math.PI / 4, -Math.PI / 4]) {
-          K.add('olive', new THREE.BoxGeometry(20, 2.4, 2.6), at(Math.cos(a) * 18, 3, Math.sin(a) * 18, 0, -a, 0));
-          K.add('steelGray', new THREE.CylinderGeometry(0.9, 0.9, 5, 8), at(Math.cos(a) * 27, 3, Math.sin(a) * 27));
-          K.add('steelDark', new THREE.CylinderGeometry(2.6, 3, 0.8, 12), at(Math.cos(a) * 27, 0.4, Math.sin(a) * 27));
+          K.add(M.camo, new THREE.BoxGeometry(20, 2.4, 2.8), at(Math.cos(a) * 17, 3.6, Math.sin(a) * 17, 0, -a, 0));
+          K.add(M.camo, new THREE.BoxGeometry(8, 1.4, 2.4), at(Math.cos(a) * 24, 4.6, Math.sin(a) * 24, 0, -a, 0));
+          K.add('steelGray', new THREE.CylinderGeometry(0.9, 0.9, 6, 8), at(Math.cos(a) * 27.5, 3.4, Math.sin(a) * 27.5));
+          K.add('steelDark', new THREE.CylinderGeometry(2.6, 3, 0.8, 12), at(Math.cos(a) * 27.5, 1.8, Math.sin(a) * 27.5));
+          K.add('steelDark', new THREE.TorusGeometry(1.4, 0.2, 4, 10), at(Math.cos(a) * 27.5, 6.6, Math.sin(a) * 27.5, Math.PI / 2, 0, 0));
         }
-        K.add('steelDark', new THREE.CylinderGeometry(9, 9.6, 3, 20), at(0, 6, 0));
-        K.cbox('olive', -2, 10, 0, 18, 5, 16, 0.6, 0, base);
-        for (const s of [-1, 1]) K.add('olive', plateGeo([[-10, 0], [6, 0], [4, 10], [-6, 12]], 1.4), at(-2, 12, s * 8));
-        K.cbox('oliveDark', 7, 11, 9, 5, 7, 4, 0.4, 0, base);
-        const boom = mul(at(-4, 22, 0), M4(0, 0, 0, 0, 0, EL));
-        for (const s of [-1, 1]) K.add('olive', new THREE.BoxGeometry(34, 3, 1.4), mul(boom, M4(10, 0, s * 7.4)));
-        for (const x of [-2, 16]) K.add('olive', new THREE.BoxGeometry(2, 2.4, 16), mul(boom, M4(x, 0, 0)));
-        const rails = [[3.6, -3.8], [3.6, 3.8], [-3.6, -3.8], [-3.6, 3.8]];
-        rails.forEach(([y, z], k) => {
-          K.add('steelGray', new THREE.BoxGeometry(44, 0.9, 1.4), mul(boom, M4(14, y, z)));
-          if (k < ammo[idx]) missile125(K, mul(boom, M4(-8, y + (y > 0 ? 2.7 : -2.7), z)));
+        K.cbox(M.camo, 0, 3.8, 0, 18, 3.4, 18, 0.5, 0, base);
+        K.add('steelDark', new THREE.CylinderGeometry(10, 10.4, 2.2, 24), at(0, 6.6, 0));
+        // phần quay (mâm + khung gối trục + dầm phóng) lệch hướng ngẫu nhiên so với bệ
+        const tb = mul(base, M4(0, 0, 0, 0, YAW[idx], 0)), tat = (x, y, z, rx, ry, rz) => mul(tb, M4(x, y, z, rx, ry, rz));
+        K.cbox(M.camo, -2, 10, 0, 24, 4.4, 18, 0.6, 0, tb);
+        for (const s of [-1, 1]) K.add(M.camo, plateGeo([[-13, 0], [6, 0], [1, 12], [-9, 12]], 1.4), tat(0, 12, s * 7.8));
+        K.add('steelGray', new THREE.CylinderGeometry(1.5, 1.5, 19, 12), tat(-6, 22.5, 0, Math.PI / 2, 0, 0));
+        K.cbox(M.camoDark, 7, 15, 9.6, 6, 8, 4, 0.4, 0, tb);
+        K.add('steelDark', new THREE.BoxGeometry(0.3, 6.6, 3.4), tat(10.1, 15, 9.6));
+        K.add('steelGray', new THREE.BoxGeometry(14, 0.4, 0.4), tat(-2, 15.6, -10.4));
+        for (const x of [-8, 4]) K.add('steelGray', new THREE.BoxGeometry(0.4, 4, 0.4), tat(x, 13.8, -10.4));
+        for (let k = 0; k < 4; k++) K.add('steelDark', new THREE.BoxGeometry(1.4, 0.3, 2.4), tat(12.6, 2.4 + k * 2.2, -6));
+        // tấm chắn luồng phụt nghiêng sau đuôi tên lửa
+        K.add('steelDark', new THREE.BoxGeometry(0.8, 10, 18), tat(-19, 8.6, 0, 0, 0, 0.42));
+        for (const s of [-1, 1]) K.beam('steelDark', [-14, 12.4, s * 9], [-24, 4, s * 9], 0.8, tb);
+        // dầm phóng nâng góc EL quanh trục gối
+        const EL = ELS[idx], boom = mul(tat(-6, 22.5, 0), M4(0, 0, 0, 0, 0, EL)), bat = (x, y, z, rx, ry, rz) => mul(boom, M4(x, y, z, rx, ry, rz));
+        for (const s of [-1, 1]) {
+          const z = s * 7.8;
+          for (const y of [-2.6, 2.6]) K.add(M.camo, new THREE.BoxGeometry(46, 1.4, 1.6), bat(16, y, z));
+          for (let x = -6; x < 38; x += 7.4) { K.add(M.camoDark, new THREE.BoxGeometry(0.6, 5.2, 0.6), bat(x, 0, z)); K.beam(M.camoDark, [x, 2.4, z], [x + 7.4, -2.4, z], 0.45, boom); }
+          for (const y of [-3.8, 3.8]) { K.add('steelGray', new THREE.BoxGeometry(48, 0.8, 1.1), bat(17, y, z)); K.add('steelDark', new THREE.BoxGeometry(2, 1.2, 1.6), bat(40.2, y, z)); }
+        }
+        for (const x of [-4, 14, 32]) K.add(M.camoDark, new THREE.BoxGeometry(2, 2, 15.6), bat(x, 0, 0));
+        // cơ cấu nâng: 2 xi-lanh từ mâm lên bụng dầm
+        for (const s of [-1, 1]) {
+          const p = new THREE.Vector3(16, -3.2, s * 4).applyMatrix4(mul(M4(-6, 22.5, 0), M4(0, 0, 0, 0, 0, EL)));
+          K.beam('steelGray', [6, 12, s * 4], [p.x, p.y, p.z], 1.3, tb);
+          K.beam('steelDark', [6, 12, s * 4], [(6 + p.x) / 2, (12 + p.y) / 2, s * 4], 1.8, tb);
+        }
+        // 4 ray: trên trái, trên phải, dưới trái, dưới phải
+        [[3.8, -7.8], [3.8, 7.8], [-3.8, -7.8], [-3.8, 7.8]].forEach(([y, z], k) => {
+          if (k >= ammo[idx]) return;
+          const my = y + (y > 0 ? 2.75 : -2.75);
+          missile(bat(-5, my, z), false);
+          for (const x of [2, 20]) K.add('steelDark', new THREE.BoxGeometry(2.4, 1.1, 0.9), bat(x, (y + my) / 2 + (y > 0 ? -0.2 : 0.2), z));
         });
-        K.add('steelDark', new THREE.BoxGeometry(1, 12, 22), at(-24, 6, 0, 0, 0, 0.3));   // tấm chắn luồng phụt
-        K.solid(P.f, P.r, 26, 26, 0, 24, P.az);
+        // va chạm: bệ + dầm phóng (3 đoạn nâng dần theo góc)
+        K.solid(P.f, P.r, 28, 28, 0, 22, P.az + YAW[idx]);
         for (let k = 0; k < 3; k++) {
-          const x0 = -8 + k * 16, c = Math.cos(EL), sn = Math.sin(EL), mid = (x0 + 8) * c - 4;
-          K.solid(P.f + Math.cos(P.az) * mid, P.r + Math.sin(P.az) * mid, 9 * c + 4, 10, 22 + x0 * sn - 6, 22 + (x0 + 16) * sn + 8, P.az);
+          const x0 = -6 + k * 16, c = Math.cos(EL), sn = Math.sin(EL), mid = -6 + (x0 + 8) * c, a = P.az + YAW[idx];
+          K.solid(P.f + Math.cos(a) * mid, P.r + Math.sin(a) * mid, 8 * c + 3, 12, 22.5 + x0 * sn - 9, 22.5 + (x0 + 16) * sn + 9, a);
         }
-        const d = Math.hypot(P.f, P.r), ux = P.f / d, uz = P.r / d;
-        K.add('concDark', new THREE.BoxGeometry(d - 70, 0.8, 3), M4(ux * (d / 2 + 4), 0.6, uz * (d / 2 + 4), 0, -P.az, 0));
-        K.cbox('steelGray', P.f - ux * 34, 4, P.r - uz * 34, 4, 8, 6, 0.3, -P.az);
+        // hộp cáp mép bệ + cáp, cát dạt phía gió (sau bệ)
+        const d = Math.hypot(P.f, P.r), ux = P.f / d, uz = P.r / d, bx = P.f - ux * 30 - uz * 12, bz = P.r - uz * 30 + ux * 12;
+        K.cbox('steelGray', bx, 4, bz, 4, 8, 6, 0.3, -P.az);
+        cable([[bx, bz], [P.f - ux * 14, P.r - uz * 14, 2], [P.f - ux * 6, P.r - uz * 6, 3.2]], 0.9);
+        drift(P.f + uz * 32, P.r - ux * 32, 30, 10, 3.5, P.az + Math.PI / 2);
+        drift(P.f + ux * 22 - uz * 26, P.r + uz * 22 + ux * 26, 22, 8, 2.6, P.az + 0.8);
       });
-      // tên lửa đổ nằm cạnh bệ thiếu đạn (rơi khỏi xe nạp đạn khi rút chạy)
-      { const P = L.launchers[3]; missile125(K, M4(P.f - 44, 2.3, P.r + 26, 0.4, 0.6, 0.05)); K.solid(P.f - 30, P.r + 16, 26, 5, 0, 6, 0.6); }
-      // ---- TRẠM RADAR DẪN BẮN SNR-125 ở giữa: cabin thiết bị trên rơ-moóc, cột ăng-ten xoay, ăng-ten parabol chữ nhật lớn
-      //      (bám mục tiêu) + 2 máng phản xạ chéo (quét), loa thu trước mỗi ăng-ten, chảo nhỏ phát lệnh; vòng bao cát
+      // tên lửa rơi khỏi xe nạp đạn nằm đổ cạnh bệ trống (cánh gãy), thùng tên lửa bật nắp
+      { missile(M4(36, 2.4, -122, 0.35, -0.15, 0.05), false); K.solid(60, -118, 26, 6, 0, 6, 0.15); drift(58, -126, 26, 8, 2.2, 0.15); }
+
+      // =====================================================================================================
+      // GÒ RADAR DẪN BẮN: sân bê tông trên gò, cột ăng-ten SNR-125 (UNV) trên rơ-moóc 2 trục có 4 kích chống: cabin thiết bị
+      // có gân, cửa, thang, điều hoà lọc độc; mâm xoay trên nóc, khung ăng-ten: chảo parabol bám mục tiêu UV-12 + loa thu,
+      // 2 ăng-ten máng quét UV-10 / UV-11 nghiêng ±45° (ống dẫn sóng phía trước, thanh chống), chảo nhỏ phát lệnh UV-13,
+      // đối trọng; bờ bao cát quanh mép gò, cáp thả xuống dốc
+      // =====================================================================================================
       {
-        const b = M4(0, 0, 0), at = (x, y, z, rx, ry, rz) => mul(b, M4(x, y, z, rx, ry, rz));
-        K.add('steelDark', new THREE.BoxGeometry(56, 4, 16), at(0, 8, 0));
-        K.cbox('olive', 0, 22, 0, 60, 24, 22, 1, 0, b); K.cbox('oliveDark', 0, 34.6, 0, 60.6, 1.4, 22.6, 0.3, 0, b);
-        for (const x of [-20, 20]) for (const s of [-1, 1]) K.add('rubber', new THREE.CylinderGeometry(4.6, 4.6, 3, 16), at(x, 4.6, s * 9.5, Math.PI / 2, 0, 0));
-        for (let x = -26; x <= 26; x += 4) for (const s of [-1, 1]) K.add('oliveDark', new THREE.BoxGeometry(0.5, 22, 0.5), at(x, 22, s * 11.2));
-        K.add('steelGray', new THREE.BoxGeometry(0.5, 14, 6), at(30.4, 19, 4));
-        K.cyl('steelDark', 0, 35, 0, 7, 8, 3, 16); K.cyl('olive', 0, 38, 0, 5, 6, 8, 14);
-        const ant = M4(4, 48, 0, 0, 0, 0);
-        K.cbox('oliveDark', 0, 0, 0, 12, 6, 14, 0.5, 0, ant);
-        const dish = new THREE.CylinderGeometry(30, 30, 30, 18, 1, true, -0.55, 1.1);
-        { const uv = dish.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 1.4, uv.getY(i) * 1.2); }
-        K.add('steelGray', dish, mul(ant, M4(-22, 20, 0, 0, Math.PI / 2, 0)));
-        for (const y of [5, 35]) K.add('olive', new THREE.BoxGeometry(2, 1.2, 34), mul(ant, M4(5, y, 0)));
-        for (const z of [-16, 16]) K.add('olive', new THREE.BoxGeometry(2, 32, 1.2), mul(ant, M4(5, 20, z)));
-        K.beam('steelGray', [5, 6, -14], [24, 20, 0], 0.6, ant); K.beam('steelGray', [5, 34, -14], [24, 20, 0], 0.6, ant); K.beam('steelGray', [5, 20, 16], [24, 20, 0], 0.6, ant);
-        K.add('steelDark', new THREE.BoxGeometry(3, 3, 3), mul(ant, M4(25, 20, 0)));
-        const trough = (len, half, depth) => {
-          const sh = new THREE.Shape(), N = 12, t = 0.5;
-          for (let i = 0; i <= N; i++) { const y = -half + 2 * half * i / N, x = depth * (y / half) * (y / half); i ? sh.lineTo(-x, y) : sh.moveTo(-x, y); }
-          for (let i = N; i >= 0; i--) { const y = -half + 2 * half * i / N, x = depth * (y / half) * (y / half); sh.lineTo(-x - t, y); }
-          sh.closePath();
-          const g = new THREE.ExtrudeGeometry(sh, { depth: len, bevelEnabled: false }); g.translate(depth * 0.5, 0, -len / 2);
-          const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 24, uv.getY(i) / 24);
-          return g;
-        };
-        for (const [z, rx] of [[-26, Math.PI / 4], [26, -Math.PI / 4]]) {
-          K.add('oliveDark', trough(46, 4, 2.2), mul(ant, M4(4, 30, z, rx, 0, 0)));
-          K.add('steelGray', new THREE.BoxGeometry(0.6, 0.6, 46), mul(ant, M4(10, 30, z, rx, 0, 0)));
-          K.beam('steelGray', [0, 2, Math.sign(z) * 7], [4, 30, z], 0.8, ant);
+        const U = L.unv, H = U.h + 2;
+        K.cbox('concDark', U.f, U.h, U.r, 62, 4, 58, 0.6);
+        for (const [a, b, c2, d2] of [[-U.hf + 1, -U.hr + 1, U.hf - 1, -U.hr + 1], [-U.hf + 1, U.hr - 1, U.hf - 1, U.hr - 1], [-U.hf + 1, -U.hr + 1, -U.hf + 1, U.hr - 1], [U.hf - 1, -U.hr + 1, U.hf - 1, -18], [U.hf - 1, 18, U.hf - 1, U.hr - 1]]) sandbags(SK, U.f + a, U.r + b, U.f + c2, U.r + d2, 2, U.h - 0.4);
+        const b = M4(U.f - 2, H, U.r, 0, -Math.PI / 2 - 0.08, 0), at = (x, y, z, rx, ry, rz) => mul(b, M4(x, y, z, rx, ry, rz));
+        // rơ-moóc: 2 dầm dọc, 2 trục bánh đôi, chắn bùn, càng kéo, 4 kích chống
+        for (const z of [-5, 5]) K.add('steelDark', new THREE.BoxGeometry(54, 2.4, 1.6), at(0, 7.4, z));
+        for (const x of [-12, -2]) for (const s of [-1, 1]) {
+          K.add('rubber', new THREE.CylinderGeometry(4.2, 4.2, 4.4, 16), at(x, 4.2, s * 8.6, Math.PI / 2, 0, 0));
+          K.add(M.camoDark, new THREE.CylinderGeometry(2.2, 2.2, 4.5, 10), at(x, 4.2, s * 8.6, Math.PI / 2, 0, 0));
         }
-        K.add('steelWhite', new THREE.SphereGeometry(4.6, 14, 6, 0, TAU, 0, Math.PI * 0.35), mul(ant, M4(6, -2, -12, 0, 0, -Math.PI / 2)));
-        K.solid(0, 0, 31, 12, 0, 38); K.solid(-12, 0, 14, 34, 40, 90);
-        for (let k = 1; k < 10; k++) { const a0 = k / 10 * TAU + 0.3, a1 = a0 + TAU / 10 - 0.12; sandbags(K, Math.cos(a0) * 52, Math.sin(a0) * 52, Math.cos(a1) * 52, Math.sin(a1) * 52, 4, 0); }
+        for (const s of [-1, 1]) K.add(M.camo, new THREE.BoxGeometry(22, 0.6, 5.2), at(-7, 9.4, s * 8.6));
+        K.beam('steelDark', [26, 6.6, -5], [40, 5, 0], 1.2, b); K.beam('steelDark', [26, 6.6, 5], [40, 5, 0], 1.2, b);
+        K.add('steelDark', new THREE.TorusGeometry(1.2, 0.4, 6, 10), at(41.4, 5, 0, Math.PI / 2, 0, 0));
+        for (const [x, z] of [[-25, -11], [-25, 11], [22, -11], [22, 11]]) {
+          K.beam('steelGray', [x * 0.85, 7.6, z * 0.4], [x, 5, z], 1, b);
+          K.add('steelGray', new THREE.CylinderGeometry(0.8, 0.8, 6, 8), at(x, 3, z));
+          K.add('steelDark', new THREE.CylinderGeometry(2.4, 2.8, 0.8, 10), at(x, 0.4, z));
+        }
+        // cabin
+        K.cbox(M.camo, 0, 20, 0, 46, 20, 22, 0.8, 0, b);
+        for (let x = -20; x <= 20; x += 4) for (const s of [-1, 1]) K.add(M.camoDark, new THREE.BoxGeometry(0.6, 19, 0.5), at(x, 20, s * 11.2));
+        K.add(M.door, new THREE.BoxGeometry(7, 15, 0.5), at(8, 18.5, 11.3));
+        for (let k = 0; k < 4; k++) K.add('steelGray', new THREE.BoxGeometry(5, 0.4, 2.2), at(8, 2.4 + k * 2.4, 12.6 + k * 0.4));
+        K.cbox('steelWhite', -23.4, 22, -4, 2.4, 7, 9, 0.3, 0, b); K.add('void', new THREE.CircleGeometry(2.4, 12), at(-24.7, 22, -4, 0, -Math.PI / 2, 0));
+        K.add(M.camoDark, new THREE.BoxGeometry(0.5, 12, 8), at(23.3, 19, 4));
+        for (let k = 0; k < 5; k++) K.add('steelDark', new THREE.CylinderGeometry(0.7, 0.7, 1.4, 8), at(24, 14 + k * 2, 4, 0, 0, Math.PI / 2));
+        for (let y = 12; y < 30; y += 2.4) K.add('steelGray', new THREE.BoxGeometry(0.3, 0.3, 3), at(-23.6, y, 7));
+        // mâm xoay + khung ăng-ten (quay lệch hướng cabin, đứng im từ ngày mất điện)
+        K.cyl('steelDark', 0, 30, 0, 8, 9, 3, 18, at(0, 30, 0));
+        const ant = mul(at(0, 33, 0), M4(0, 0, 0, 0, 1.25, 0)), aat = (x, y, z, rx, ry, rz) => mul(ant, M4(x, y, z, rx, ry, rz));
+        K.cbox(M.camo, -2, 4, 0, 18, 8, 16, 0.6, 0, ant);
+        K.cbox(M.camoDark, -14, 8, 0, 8, 10, 12, 0.5, 0, ant);
+        for (const s of [-1, 1]) K.add(M.camo, new THREE.BoxGeometry(3, 26, 2.4), aat(2, 18, s * 7));
+        K.add(M.camo, new THREE.BoxGeometry(3, 2.4, 60), aat(2, 30, 0));
+        // chảo parabol UV-12 (mặt cong 26 x 22, tiêu cự ~10.6) + loa thu trên 3 thanh chống
+        {
+          const w = 26, h = 22, dep = 4, g = new THREE.PlaneGeometry(w, h, 12, 10), P = g.attributes.position;
+          for (let i = 0; i < P.count; i++) { const y = P.getX(i) / (w / 2), z = P.getY(i) / (h / 2); P.setZ(i, dep * (y * y + z * z)); }
+          g.computeVertexNormals();
+          K.add(M.dish, g, aat(5, 17, 0, 0, Math.PI / 2, 0));
+          for (const [y, z] of [[17 - h / 2 + 1, -w / 2 + 2], [17 - h / 2 + 1, w / 2 - 2], [17 + h / 2 - 1, 0]]) K.beam('steelGray', [5 + dep * 0.9, y, z], [15.6, 17, 0], 0.5, ant);
+          K.add('steelDark', new THREE.BoxGeometry(3.4, 2.4, 2.4), aat(16.4, 17, 0));
+          K.add('steelDark', new THREE.BoxGeometry(1, 1, 8), aat(4.6, 17, 0)); K.add('steelDark', new THREE.BoxGeometry(1, 8, 1), aat(4.6, 17, 0));
+        }
+        // 2 máng quét UV-10 / UV-11 (dài 46, miệng 10) nghiêng ±45°: mặt phản xạ, ống dẫn sóng khe phía trước, thanh chống
+        {
+          const trough = (len, half, dep) => {
+            const sh = new THREE.Shape(), N = 12, t = 0.5;
+            for (let i = 0; i <= N; i++) { const y = -half + 2 * half * i / N, x = dep * (y / half) * (y / half); i ? sh.lineTo(x, y) : sh.moveTo(x, y); }
+            for (let i = N; i >= 0; i--) { const y = -half + 2 * half * i / N, x = dep * (y / half) * (y / half); sh.lineTo(x - t, y); }
+            sh.closePath();
+            const g = new THREE.ExtrudeGeometry(sh, { depth: len, bevelEnabled: false }); g.translate(-dep * 0.5, 0, -len / 2);
+            const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 24, uv.getY(i) / 24);
+            return g;
+          };
+          // 2 máng xếp hình chữ V (đầu trong thấp, đầu ngoài cao), tâm cao 46, cách trục ±24
+          for (const s of [-1, 1]) {
+            const tm = aat(4, 46, s * 24, -s * Math.PI / 4, 0, 0);
+            K.add(M.dish, trough(40, 5, 2.6), tm);
+            K.add('steelGray', new THREE.BoxGeometry(0.8, 0.8, 40), mul(tm, M4(7, 0, 0)));
+            for (const z of [-16, 0, 16]) K.beam('steelGray', [-0.6, 0, z], [7, 0, z], 0.4, tm);
+            for (const z of [-17, 17]) K.add(M.camoDark, new THREE.BoxGeometry(1.4, 10.4, 1.2), mul(tm, M4(-1.4, 0, z)));
+            K.beam(M.camo, [2, 30, s * 12], [2.6, 36.5, s * 14.4], 1.2, ant);
+            K.beam(M.camo, [2, 30, s * 28], [2.6, 46, s * 24], 1.2, ant);
+            K.beam(M.camoDark, [-1, 30, s * 4], [2.6, 46, s * 24], 0.7, ant);
+          }
+        }
+        // chảo nhỏ phát lệnh dẫn tên lửa UV-13 + đối trọng
+        K.add(M.dish, new THREE.SphereGeometry(5, 14, 6, 0, TAU, 0, Math.PI * 0.32), aat(6, 4, -11, 0, 0, -Math.PI / 2));
+        K.add('steelDark', new THREE.BoxGeometry(2, 2, 2), aat(9.4, 4, -11));
+        // va chạm: rơ-moóc + cabin, khung ăng-ten
+        K.solid(U.f - 2, U.r, 14, 29, U.h - 2, U.h + 34, -0.08);
+        K.solid(U.f, U.r, 18, 38, U.h + 34, U.h + 94, Math.PI / 2 + 0.08 - 1.25);
+        // cáp thả xuống dốc gò về 2 cabin UNK + cát dạt trên sân bê tông
+        for (const s of [-1, 1]) cable([[U.f - 6, U.r + s * 12, H + 0.6], [U.f - 6, U.r + s * 29, H + 0.6], [U.f - 6, U.r + s * 40], [U.f - 6, U.r + s * 60], [U.f - 4, U.r + s * 80]], 1);
+        cable([[U.f + 10, U.r, H + 0.6], [U.f + 28, U.r + 4, H + 0.6], [U.f + 50, U.r + 10], [U.f + 74, U.r + 12]], 0.8);
+        drift(U.f - 26, U.r + 22, 18, 10, 2.2, 0.4, H - 1); drift(U.f + 24, U.r - 24, 14, 8, 1.8, -0.8, H - 1);
       }
-      // ---- XE CHỈ HUY + XE PHÂN PHỐI ĐIỆN (kung trên ZIL-131), cáp nối; 2 MÁY PHÁT DIESEL trên rơ-moóc (lá chắn gió, ống xả,
-      //      bồn dầu, càng kéo)
-      milTruck(K, M4(52, 0, 84, 0, -0.15 + Math.PI, 0), 'kung'); milTruck(K, M4(52, 0, -84, 0, 0.15 + Math.PI, 0), 'kung');
-      K.solid(52, 84, 36, 11, 0, 32, 0.15); K.solid(52, -84, 36, 11, 0, 32, -0.15);
-      for (const r of [84, -84]) K.beam('rubber', [34, 0.8, r * 0.8], [10, 0.8, r * 0.2], 1.4);
-      for (const r of [-26, 26]) {
-        K.add('steelDark', new THREE.BoxGeometry(34, 2, 12), M4(-66, 7, r));
-        K.cbox('olive', -68, 15, r, 28, 14, 15, 0.8); for (const x of [-78, -70, -62]) K.box('louver', x, 15, r + Math.sign(r) * 7.6, 6, 9, 0.4);
-        K.cyl('steelDark', -76, 22, r, 1.2, 1.2, 12, 8); K.add('steelDark', new THREE.CylinderGeometry(1.5, 1.5, 3, 8), M4(-76, 34.5, r));
-        K.add('tankShell', new THREE.CylinderGeometry(3.4, 3.4, 12, 14), M4(-58, 10, r, Math.PI / 2, 0, 0));
-        K.beam('steelDark', [-50, 6, r - 3], [-40, 3, r], 0.8); K.beam('steelDark', [-50, 6, r + 3], [-40, 3, r], 0.8);
-        for (const x of [-78, -60]) for (const s of [-1, 1]) { K.add('rubber', new THREE.CylinderGeometry(3.4, 3.4, 2.6, 14), M4(x, 3.4, r + s * 7, Math.PI / 2, 0, 0)); K.add('olive', new THREE.CylinderGeometry(1.8, 1.8, 2.7, 10), M4(x, 3.4, r + s * 7.05, Math.PI / 2, 0, 0)); }
-        K.solid(-66, r, 18, 9, 0, 36);
+
+      // =====================================================================================================
+      // 2 CABIN ĐIỀU KHIỂN UNK (thùng kung trên ZIL-131) trong ụ chữ U 2 bên gò, lưới nguỵ trang, hộp đấu cáp
+      // =====================================================================================================
+      for (const R of L.revs.slice(0, 2)) {
+        milTruck(TK, M4(R.f + Math.cos(R.a) * 2, 0, R.r + Math.sin(R.a) * 2, 0, -R.a, 0), 'kung');
+        K.solid(R.f + Math.cos(R.a) * 2, R.r + Math.sin(R.a) * 2, 34, 11, 0, 32, R.a);
+        net(M4(R.f, 0, R.r, 0, -R.a, 0), 82, 46, 38, 5);
+        const bk = [R.f - Math.cos(R.a) * (R.hl - 2), R.r - Math.sin(R.a) * (R.hl - 2)];
+        K.cbox('steelGray', bk[0] + 8, 5, bk[1], 6, 10, 4, 0.3, -R.a);
+        drift(R.f + Math.cos(R.a) * (R.hl + 6) + 14, R.r + Math.sin(R.a) * (R.hl + 6), 20, 8, 2.4, R.a + Math.PI / 2);
       }
-      // ---- 4 KHẨU PHÁO PHÒNG KHÔNG TẦM TRUNG S-60 57 mm bảo vệ trận địa (ụ bao cát tròn), nòng hướng các hướng tiếp cận
-      for (const [f, r, az] of [[175, 110, 0.5], [175, -110, -0.5], [-200, 120, 2.4], [-200, -120, -2.4]]) aaGun(K, f, r, az, 0.62);
-      // ---- 2 XE VẬN TẢI - NẠP ĐẠN PR-14 (ZIL-131 chở 2 tên lửa trên ray) ở bãi nạp đạn
-      for (const [r, n] of [[396, 2], [430, 1]]) {
-        milTruck(K, M4(20, 0, r, 0, 0, 0), 'loader');
-        for (let k = 0; k < n; k++) missile125(K, M4(-32, 23, r + (k ? 5 : -5)));
-        K.solid(8, r, 34, 11, 0, 28);
-      }
-      // ---- KHO TÊN LỬA: vòm bê tông nửa trụ phủ đất 2 đầu, cửa thép 2 cánh hướng vào trận địa, gờ chắn đầu hồi
+      // mương cáp nắp bê tông: gò radar -> 4 bệ phóng
+      for (const P of L.launchers) { const d = Math.hypot(P.f, P.r); cableTrench([[P.f * 74 / d, P.r * 74 / d], [P.f * (d - 36) / d, P.r * (d - 36) / d]]); }
+
+      // =====================================================================================================
+      // HẦM CHỈ HUY TIỂU ĐOÀN (KP) phủ đất: mặt tiền bê tông, cửa chống nổ thép 2 cánh (1 cánh mở hé) lùi trong hốc có mái
+      // hắt, tường cánh xiên giữ đất, tường rọ đá chắn mảnh trước cửa, lưới nguỵ trang; nóc gò: 2 ống thông gió nắp nấm,
+      // cửa thoát hiểm, cột ăng-ten dây néo, bờ bao cát
+      // =====================================================================================================
       {
-        const f = -220, r = 0, R = 26, Lg = 80;
-        const sh = new THREE.Shape(); sh.absarc(0, 0, R, 0, Math.PI, false); sh.lineTo(-R, 0); sh.closePath();
-        const g = new THREE.ExtrudeGeometry(sh, { depth: Lg, bevelEnabled: false, curveSegments: 18 }); g.translate(0, 0, -Lg / 2);
-        { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 64, uv.getY(i) / 64); }
-        K.add('conc', g, M4(f, 0, r, 0, 0, 0));
-        K.cbox('concDark', f + R + 1, 14, r, 2, 28, 44, 0.4);
-        for (const s2 of [-1, 1]) K.add(s2 > 0 ? doorMats()[0] : doorMats()[1], boxGeo(1, 20, 14, 0), M4(f + R + 2.2, 10, r + s2 * 7.2));
-        K.plane(decal('mstore', signTex('mstore', ['MISSILE STORAGE', 'EXPLOSIVES — NO OPEN FLAME'], { w: 768, h: 160, bg: '#efece2', fg: '#a3221a' })), f + R + 2.3, 24, r, 20, 4.2);
-        K.solid(f, r, R, Lg / 2, 0, R);
+        const C = L.kp, ff = C.f + C.hf, W = C.hr, Hh = C.h + 6, DW = 12, DH = 24;
+        for (const s of [-1, 1]) K.cbox('conc', ff - 7, Hh / 2 - 2, C.r + s * (W + DW) / 2, 14, Hh + 4, W - DW, 1.2);
+        K.cbox('conc', ff - 7, (DH + Hh) / 2 - 1, C.r, 14, Hh - DH + 2, DW * 2, 1.2);
+        K.cbox('concDark', ff - 4, Hh + 1.5, C.r, 22, 3, W * 2 + 6, 1);
+        K.cbox('concDark', ff + 6, DH + 4, C.r, 14, 3, DW * 2 + 10, 0.8);
+        for (const s of [-1, 1]) K.cbox('concDark', ff + 6, (DH + 4) / 2, C.r + s * (DW + 3.5), 14, DH + 4, 3, 0.6);
+        K.box('void', ff - 4, DH / 2, C.r, 0.6, DH, DW * 2);
+        K.box('concDark', ff + 5, 0.5, C.r, 18, 1, DW * 2);
+        for (const s of [-1, 1]) {
+          const leaf = mul(M4(ff - 3, 0, C.r + s * DW), M4(0, 0, 0, 0, s < 0 ? 0.9 : 0, 0));
+          K.cbox(M.door, 2.5, DH / 2, -s * DW / 2, 5, DH, DW, 0.4, 0, leaf);
+          for (const y of [5, DH / 2, DH - 5]) K.add('steelDark', new THREE.BoxGeometry(1.2, 2, 3), mul(leaf, M4(5.4, y, -s * 1.5)));
+          K.add('steelDark', new THREE.CylinderGeometry(1.4, 1.4, 0.8, 12), mul(leaf, M4(5.2, DH / 2, -s * DW / 2, 0, 0, Math.PI / 2)));
+          const sh = new THREE.Shape(); sh.moveTo(0, -2); sh.lineTo(C.run + 6, -2); sh.lineTo(C.run + 6, 3); sh.lineTo(0, Hh - 2); sh.closePath();
+          const g = new THREE.ExtrudeGeometry(sh, { depth: 10, bevelEnabled: false });
+          if (s > 0) g.translate(0, 0, -10);
+          const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 64, uv.getY(i) / 64);
+          K.add('conc', g, M4(ff - 10, 0, C.r + s * W, 0, s > 0 ? -Math.PI / 2 + 0.35 : Math.PI / 2 - 0.35, 0));
+          K.solid(ff - 10 + Math.sin(0.35) * C.run / 2, C.r + s * (W + C.run / 2), 6, C.run / 2 + 3, -2, Hh * 0.6, s * (Math.PI / 2 - 0.35));
+          drift(ff + 3, C.r + s * (DW + 20), 26, 10, 3.6, Math.PI / 2);
+        }
+        K.plane(decal('sam_kp', signTex('sam_kp', ['COMMAND POST', 'КП ДИВИЗИОНА — ВХОД ВОСПРЕЩЁН'], { w: 768, h: 192, bg: '#e6dcc4', fg: '#a3221a' })), ff + 0.2, DH + 10, C.r, 36, 9);
+        K.add('lampAmber', new THREE.BoxGeometry(1.4, 1.6, 4), M4(ff + 13.5, DH + 1, C.r));
+        K.solid(ff - 7, C.r, 8, W, -2, Hh + 3);
+        K.solid(ff + 6, C.r, 7, DW + 5, DH + 2, DH + 6);
+        hesco(ff + 30, C.r - 22, ff + 30, C.r + 22, 1);
+        net(M4(ff + 21, 0, C.r, 0, 0, 0), 30, 58, 30, 4);
+        const top = C.h;
+        for (const [f, r] of [[C.f - 14, C.r - 24], [C.f - 14, C.r + 24]]) {
+          K.cyl('concDark', f, top - 2, r, 5, 6, 5, 14); K.cyl('steelGray', f, top + 3, r, 2.4, 2.4, 9, 10);
+          K.add('steelGray', new THREE.SphereGeometry(4.4, 14, 6, 0, TAU, 0, Math.PI / 2), M4(f, top + 12, r, 0, 0, 0, 1, 0.5, 1));
+          K.solid(f, r, 5, 5, top - 2, top + 15);
+        }
+        K.cbox('concDark', C.f + 6, top + 1, C.r + 30, 14, 4, 14, 1); K.cbox(M.door, C.f + 6, top + 3.4, C.r + 30, 9, 1, 9, 0.3);
+        const mf = C.f - 20, mr = C.r + 6, MH = 110;
+        K.cbox('conc', mf, top + 1, mr, 8, 4, 8, 1);
+        K.cyl('steelGray', mf, top + 3, mr, 0.8, 1.4, MH, 8);
+        for (const y of [MH * 0.5, MH * 0.95]) K.add('steelGray', new THREE.BoxGeometry(14, 0.5, 0.5), M4(mf, top + 3 + y, mr, 0, 0.6, 0));
+        for (let k = 0; k < 3; k++) { const a = k * TAU / 3 + 0.4, ax = mf + Math.cos(a) * 30, az = mr + Math.sin(a) * 30, ay = K.earth(ax, az); K.box('concDark', ax, ay + 1, az, 4, 3, 4); K.beam('steelDark', [ax, ay + 3, az], [mf, top + MH * 0.7, mr], 0.3); }
+        K.solid(mf, mr, 4, 4, top, top + MH + 4);
+        K.cyl('steelGray', C.f + 18, top, C.r - 36, 0.25, 0.4, 44, 5);
+        sandbags(SK, ff - 22, C.r - W + 4, ff - 22, C.r + W - 4, 2, C.h - 1);
+        cableTrench([[ff + 2, C.r + 36], [-64, C.r + 36]]);
       }
-      // ---- RADAR CẢNH GIỚI P-12 (giàn ăng-ten Yagi 2 tầng trên cột xoay, đặt trên xe kung) ở góc sau
+
+      // =====================================================================================================
+      // KHO TÊN LỬA 2 VÒM PHỦ ĐẤT: tường đầu hồi bê tông khoét 2 cửa vòm, cửa thép trượt (kho 1 mở hé thấy thùng tên lửa
+      // bên trong tối), ray trượt trên cửa, đèn chống nổ, biển cấm lửa, tường cánh, 2 cột thu lôi trên gò, ống thông gió;
+      // SÂN NẠP ĐẠN bê tông trước kho: 2 xe vận tải - nạp đạn PR-14 chở tên lửa, giá cẩu chữ A, tên lửa trên giá kê, thùng
+      // tên lửa xếp chồng, bảng cứu hoả
+      // =====================================================================================================
       {
-        const f = -150, r = 400;
-        milTruck(K, M4(f, 0, r, 0, -0.4, 0), 'mast');
-        const ant = M4(f - 13, 72, r - 5, 0, 0.9, 0);
-        K.add('steelGray', new THREE.BoxGeometry(2, 22, 60), ant);
-        for (const y of [-7, 7]) for (let z = -27; z <= 27; z += 6) { K.add('steelGray', new THREE.BoxGeometry(18, 0.5, 0.5), mul(ant, M4(4, y, z))); for (const x of [-4, 4, 12]) K.add('steelGray', new THREE.BoxGeometry(0.4, 0.4, 4.4), mul(ant, M4(x, y, z))); }
-        K.solid(f, r, 36, 12, 0, 32, 0.4); K.solid(f - 13, r - 5, 30, 30, 58, 86);
+        const S = L.store, ff = S.f + S.hf, W = S.hr, Hh = S.h + 6, AW = 18, AH = 16;
+        // tường đầu hồi khoét 2 cửa vòm (rộng 4.5 m, cao 4.25 m)
+        {
+          const sh = new THREE.Shape(); sh.moveTo(-W, -2); sh.lineTo(W, -2); sh.lineTo(W, Hh); sh.lineTo(-W, Hh); sh.closePath();
+          for (const dr of S.doors) {
+            const x = dr - S.r, hole = new THREE.Path();
+            hole.moveTo(x - AW, 0); hole.lineTo(x + AW, 0); hole.lineTo(x + AW, AH); hole.absarc(x, AH, AW, 0, Math.PI, false); hole.lineTo(x - AW, 0);
+            sh.holes.push(hole);
+          }
+          const g = new THREE.ExtrudeGeometry(sh, { depth: 14, bevelEnabled: false, curveSegments: 14 });
+          const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 64, uv.getY(i) / 64);
+          K.add('conc', g, new THREE.Matrix4().makeBasis(v3(0, 0, 1), v3(0, 1, 0), v3(-1, 0, 0)).setPosition(ff, 0, S.r));
+        }
+        K.cbox('concDark', ff - 6, Hh + 1.5, S.r, 18, 3, W * 2 + 4, 1);
+        for (const s of [-1, 1]) {
+          const sh = new THREE.Shape(); sh.moveTo(0, -2); sh.lineTo(S.run + 6, -2); sh.lineTo(S.run + 6, 3); sh.lineTo(0, Hh - 2); sh.closePath();
+          const g = new THREE.ExtrudeGeometry(sh, { depth: 10, bevelEnabled: false });
+          if (s > 0) g.translate(0, 0, -10);
+          const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 64, uv.getY(i) / 64);
+          K.add('conc', g, M4(ff - 10, 0, S.r + s * W, 0, s > 0 ? -Math.PI / 2 + 0.35 : Math.PI / 2 - 0.35, 0));
+          K.solid(ff - 10 + Math.sin(0.35) * S.run / 2, S.r + s * (W + S.run / 2), 6, S.run / 2 + 3, -2, Hh * 0.6, s * (Math.PI / 2 - 0.35));
+        }
+        // cánh cửa: nửa vòm (mép thẳng ở giữa), dày 1.4; s = -1 cánh phía -r, s = +1 phía +r
+        const leafShape = new THREE.Shape(); leafShape.moveTo(0, 0); leafShape.lineTo(AW, 0); leafShape.lineTo(AW, AH); leafShape.absarc(0, AH, AW, 0, Math.PI / 2, false); leafShape.lineTo(0, 0);
+        const leafG = new THREE.ExtrudeGeometry(leafShape, { depth: 1.4, bevelEnabled: false, curveSegments: 8 });
+        { const uv = leafG.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 24, uv.getY(i) / 24); }
+        S.doors.forEach((dr, k) => {
+          // lòng vòm tối + nền bê tông trước cửa
+          const arch = new THREE.Shape(); arch.moveTo(-AW, 0); arch.lineTo(AW, 0); arch.lineTo(AW, AH); arch.absarc(0, AH, AW, 0, Math.PI, false); arch.closePath();
+          K.add('void', new THREE.ShapeGeometry(arch, 12), M4(ff - 13.6, 0, dr, 0, Math.PI / 2, 0));
+          K.box('concDark', ff + 9, 0.5, dr, 20, 1, AW * 2 + 6);
+          for (const s of [-1, 1]) {
+            // cửa trượt: kho 0 cánh -r đã đẩy sang bên (lộ nửa lòng kho)
+            const open = k === 0 && s < 0 ? AW : 0, x0 = s < 0 ? ff + 1.2 : ff + 2.6;
+            const m = new THREE.Matrix4().makeBasis(v3(0, 0, s), v3(0, 1, 0), v3(-s, 0, 0)).setPosition(x0, 0, dr + s * open);
+            K.add(M.door, leafG.clone(), m);
+            for (const y of [6, 18]) K.add('steelDark', new THREE.BoxGeometry(AW - 2, 0.8, 0.6), mul(m, M4(AW / 2, y, s < 0 ? 1.8 : -0.4)));
+            K.add('steelDark', new THREE.BoxGeometry(0.8, 4, 0.6), mul(m, M4(2, 12, s < 0 ? 1.8 : -0.4)));
+          }
+          K.add('steelDark', new THREE.BoxGeometry(1.4, 1.4, AW * 2 + 18), M4(ff + 2.6, AH + AW + 2, dr));
+          K.add('lampAmber', new THREE.BoxGeometry(1.6, 2, 3), M4(ff + 1.6, AH + AW + 5.4, dr));
+          K.add(decal('sam_dn' + k, texOf('sam_dn' + k, 64, 64, (q, w, h) => { q.fillStyle = '#e8dcc0'; q.fillRect(0, 0, w, h); q.fillStyle = '#a3221a'; q.font = 'bold 46px Arial'; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillText(String(k + 1), w / 2, h / 2 + 3); })), new THREE.PlaneGeometry(4, 4), M4(ff + 0.15, AH + AW + 5.4, dr + AW + 4, 0, Math.PI / 2, 0));
+          // thùng tên lửa trong lòng kho thấy qua cửa mở
+          if (k === 0) for (let j = 0; j < 4; j++) K.box(M.oliveSunDark, ff - 7, 3.6 + (j % 2) * 7.2, dr - 6 - Math.floor(j / 2) * 9, 10, 7, 8, 0, 24);
+        });
+        K.plane(decal('sam_mstore', signTex('sam_mstore', ['MISSILE STORAGE', 'ВЗРЫВООПАСНО — НЕ КУРИТЬ — NO OPEN FLAME'], { w: 768, h: 160, bg: '#efe6d0', fg: '#a3221a' })), ff + 0.2, Hh - 4.6, (S.doors[0] + S.doors[1]) / 2, 30, 6.2);
+        K.solid(ff - 7, S.r, 7, W, -2, Hh + 3);
+        // nóc gò: ống thông gió nắp chụp + 2 cột thu lôi giàn thép
+        for (const dr of S.doors) { const y0 = S.h; K.cyl('steelGray', S.f - 10, y0 - 1, dr, 1.8, 1.8, 10, 10); K.add('steelGray', new THREE.ConeGeometry(3.4, 3, 10), M4(S.f - 10, y0 + 10.5, dr)); K.solid(S.f - 10, dr, 4, 4, y0, y0 + 12); }
+        for (const [f, r] of [[S.f - 40, S.r - W - 18], [S.f + 10, S.r + W + 14]]) {
+          const y0 = Math.max(0, K.earth(f, r));
+          K.cbox('concDark', f, y0 + 1, r, 6, 3, 6, 0.6);
+          for (let k = 0; k < 4; k++) K.beam('steelGray', [f + (k < 2 ? -2 : 2), y0 + 2, r + (k % 2 ? -2 : 2)], [f, y0 + 92, r], 0.5);
+          for (let y = 12; y < 90; y += 14) K.add('steelGray', new THREE.BoxGeometry(3.2 * (1 - y / 100), 0.4, 3.2 * (1 - y / 100)), M4(f, y0 + y, r));
+          K.cyl('steelGray', f, y0 + 92, r, 0.15, 0.3, 16, 5);
+          K.solid(f, r, 3, 3, y0, y0 + 108);
+        }
+        drift(ff + 4, S.r - W + 6, 30, 10, 3.8, Math.PI / 2); drift(ff + 4, S.r + W - 8, 22, 8, 3, Math.PI / 2);
+        drift(ff + 3, (S.doors[0] + S.doors[1]) / 2, 14, 7, 2.6, Math.PI / 2);
+        // sân nạp đạn bê tông
+        const pf0 = ff + 2, pf1 = -54, pr0 = -436, pr1 = -306, pf = (pf0 + pf1) / 2, pr = (pr0 + pr1) / 2;
+        K.cbox('conc', pf, 0.4, pr, pf1 - pf0, 1.2, pr1 - pr0, 0.4);
+        // 2 xe PR-14 (ZIL-131 khung ray chở 2 tên lửa, xe 2 tên lửa phủ bạt) lùi đuôi sát cửa kho
+        for (const [r, cover] of [[S.doors[0], false], [S.doors[1], true]]) {
+          const tb = M4(-80, 1, r, 0, 0, 0);
+          milTruck(TT, tb, 'loader');
+          for (const z of [-5, 5]) missile(mul(tb, M4(-47, 22.4, z)), cover);
+          K.solid(-82, r, 36, 11, 0, 30);
+        }
+        // tên lửa trên 2 giá kê gỗ chờ nạp (phủ bạt) mép sân
+        { const f = -100, r = -316; for (const x of [-12, 12]) { K.box('wood', f + x, 2.4, r, 3, 4.8, 8); K.box('wood', f + x, 5.4, r, 3, 1.2, 4); } missile(M4(f - 25, 8.2, r), true); K.solid(f, r, 26, 6, 0, 12); }
+        // thùng tên lửa (gỗ / thép sơn xanh) xếp chồng mép sân, 1 thùng bật nắp
+        for (let j = 0; j < 5; j++) K.box(j % 2 ? 'wood' : M.oliveSunDark, -96, 3.6 + (j > 2 ? 7.2 : 0), pr0 + 6 + (j > 2 ? j - 2.5 : j) * 9, 52, 7, 8, 0, 24);
+        K.box(M.oliveSunDark, -66, 1.2, pr0 + 8, 52, 2.4, 8, 0, 24); K.box(M.oliveSunDark, -66, 4.2, pr0 + 13, 52, 0.6, 8, 0, 24, 0.6);
+        K.solid(-96, pr0 + 15, 27, 10, 0, 15); K.solid(-66, pr0 + 9, 27, 6, 0, 6);
+        // bảng cứu hoả sơn đỏ (xô hình nón, xẻng, bình bọt) + thùng cát
+        K.cbox('steelRed', pf1 - 2, 10, pr1 - 10, 1, 14, 18, 0.2);
+        for (const z of [-5, 0, 5]) K.add('steelRed', new THREE.ConeGeometry(1.4, 3, 10), M4(pf1 - 0.8, 12, pr1 - 10 + z, Math.PI, 0, 0));
+        K.add('wood', new THREE.BoxGeometry(0.4, 10, 0.6), M4(pf1 - 0.9, 9, pr1 - 3, 0.2, 0, 0));
+        K.cbox('wood', pf1 - 2, 3, pr1 - 24, 6, 6, 10, 0.3);
+        K.solid(pf1 - 2, pr1 - 16, 4, 14, 0, 17);
       }
-      // ---- DOANH TRẠI + SỞ CHỈ HUY trận địa, bồn dầu diesel có tường rọ đá
-      officeBlock(K, kit, 150, 400, 0, 50, 70, 1, ['BATTERY HQ', 'AIR DEFENSE — RESTRICTED']);
+
+      // =====================================================================================================
+      // TRẠM PHÁT ĐIỆN: 2 máy phát diesel 5E96 trên rơ-moóc (vỏ có cửa chớp, cửa bảo dưỡng, ống xả + giảm thanh, két
+      // nước, càng kéo, kích chống) trong ụ chữ U dưới lưới nguỵ trang, tủ phân phối điện, cáp, túi dầu mềm, phuy;
+      // cáp đi trong mương nắp bê tông về gò radar
+      // =====================================================================================================
       {
-        const f = -130, r = -400;
-        for (const z of [-16, 16]) { K.add('tankShell', new THREE.CylinderGeometry(8, 8, 42, 20), M4(f, 10, r + z, 0, 0, Math.PI / 2)); for (const x of [-14, 14]) K.cbox('concDark', f + x, 2.2, r + z, 3, 4.4, 12, 0.3); }
-        hesco(f - 32, r - 34, f + 32, r - 34, 2); hesco(f - 32, r + 34, f + 32, r + 34, 2); hesco(f - 32, r - 34, f - 32, r + 34, 2);
-        K.solid(f, r, 22, 26, 0, 19);
+        const R = L.revs[2];
+        const genset = (f, r, a) => {
+          const b = M4(f, 0, r, 0, -a, 0), at = (x, y, z, rx, ry, rz) => mul(b, M4(x, y, z, rx, ry, rz));
+          for (const z of [-4.6, 4.6]) K.add('steelDark', new THREE.BoxGeometry(50, 2, 1.4), at(0, 7, z));
+          for (const x of [-12, 10]) for (const s of [-1, 1]) {
+            K.add('rubber', new THREE.CylinderGeometry(4, 4, 2.6, 16), at(x, 4, s * 8.6, Math.PI / 2, 0, 0));
+            K.add(M.camoDark, new THREE.CylinderGeometry(2.1, 2.1, 2.7, 10), at(x, 4, s * 8.7, Math.PI / 2, 0, 0));
+          }
+          K.beam('steelDark', [24, 6, -4], [36, 4.4, 0], 1, b); K.beam('steelDark', [24, 6, 4], [36, 4.4, 0], 1, b);
+          K.add('steelGray', new THREE.CylinderGeometry(0.6, 0.6, 5, 6), at(34, 2.4, 0));
+          for (const [x, z] of [[-22, -8], [-22, 8], [20, -8], [20, 8]]) { K.add('steelGray', new THREE.CylinderGeometry(0.7, 0.7, 6, 6), at(x, 3, z)); K.add('steelDark', new THREE.BoxGeometry(3, 0.6, 3), at(x, 0.3, z)); }
+          K.cbox(M.camo, 0, 19, 0, 48, 20, 18, 0.8, 0, b);
+          for (const x of [-23.8, 23.8]) K.add('louver', new THREE.BoxGeometry(0.6, 12, 12), at(x, 19, 0));
+          for (const x of [-14, -2, 10]) for (const s of [-1, 1]) { K.add(M.camoDark, new THREE.BoxGeometry(10, 15, 0.4), at(x, 18.5, s * 9.1)); K.add('steelDark', new THREE.BoxGeometry(1.4, 0.6, 0.6), at(x + 3.6, 18, s * 9.4)); }
+          K.add('louver', new THREE.BoxGeometry(8, 5, 0.5), at(-14, 24, 9.2));
+          K.add('void', new THREE.BoxGeometry(9, 12, 0.3), at(10, 18, -9.05));
+          K.add(M.camoDark, new THREE.BoxGeometry(9, 12, 0.5), at(15.4, 18, -13.6, 0, -1.1, 0));
+          K.cyl('steelDark', -8, 29, 4, 2.6, 2.6, 3, 12, at(-8, 29, 4));
+          K.add('steelDark', new THREE.CylinderGeometry(2.4, 2.4, 10, 12), at(-12, 31.4, -3, 0, 0, Math.PI / 2));
+          K.cyl('steelRust', -18, 31, -3, 1, 1, 12, 8, at(-18, 31, -3));
+          K.add('steelRust', new THREE.CylinderGeometry(1.6, 1.6, 0.4, 10), at(-18.6, 43.4, -3, 0, 0, 0.5));
+          K.add('rubber', new THREE.CylinderGeometry(3.4, 3.4, 1, 14), at(26, 9, 0, 0, 0, Math.PI / 2));
+          K.solid(f, r, 26, 11, 0, 44, a);
+        };
+        genset(R.f - 27, R.r - 4, R.a); genset(R.f + 27, R.r - 4, R.a);
+        // tủ phân phối điện (cabin nhỏ trên bệ) ở đáy ụ + cáp từ 2 máy
+        const bf = R.f, br = R.r - R.hl + 10;
+        K.cbox(M.oliveSun, bf, 10, br, 28, 16, 14, 0.5);
+        K.cbox('concDark', bf, 1, br, 30, 2, 16, 0.3);
+        K.add(M.oliveSunDark, new THREE.BoxGeometry(8, 12, 0.5), M4(bf - 6, 10, br + 7.2));
+        K.add('void', new THREE.BoxGeometry(8, 12, 0.3), M4(bf + 6, 10, br + 7.1));
+        K.add(M.oliveSunDark, new THREE.BoxGeometry(8, 12, 0.5), M4(bf + 12.4, 10, br + 10.6, 0, -1.2, 0));
+        K.plane(decal('sam_hv', signTex('sam_hv', ['ОПАСНО — DANGER', 'HIGH VOLTAGE 400 V'], { w: 512, h: 192, bg: '#e6dcc4', fg: '#a3221a' })), bf - 6, 12, br + 7.6, 7, 2.6, 0);
+        K.solid(bf, br, 15, 8, 0, 18);
+        for (const s of [-1, 1]) cable([[R.f + s * 16, R.r - 22, 8], [R.f + s * 16, br + 2], [bf + s * 14, br + 2, 6]], 1.1);
+        cable([[bf, br + 7.5, 4], [bf, br + 12], [bf + 2, R.r + 30], [R.f + 30, R.r + R.hl + 6]], 1.3);
+        net(M4(R.f, 0, R.r, 0, 0, 0), 116, 86, 46, 6);
+        // phuy dầu ở miệng ụ, biển cảnh báo trên cọc
+        for (let j = 0; j < 6; j++) drum(K, R.f + 44 + (j % 3) * 5.4, R.r + 26 + Math.floor(j / 3) * 5.4, j === 4 ? 'drumRust' : M.oliveSun);
+        K.solid(R.f + 50, R.r + 29, 9, 7, 0, 8);
+        signPost('sam_hv2', ['DANGER — HIGH VOLTAGE', 'ЭЛЕКТРОСТАНЦИЯ ДИВИЗИОНА'], { w: 768, h: 192, bg: '#d9a61c', fg: '#151515' }, R.f + 66, R.r + R.hl + 4, -Math.PI / 2, 22, 6);
+        cableTrench([[R.f + 30, R.r + R.hl + 10], [R.f + 30, -314], [34, -314], [34, -150], [34, -66]]);
+        drift(R.f - 60, R.r + R.hl + 2, 30, 10, 3, Math.PI / 2 + 0.3); drift(R.f, R.r + 2, 40, 8, 2, 0, 0);
       }
-      // ---- THÁP CANH + LÔ CỐT
-      for (const [f, r] of [[iF - 38, iR - 38], [iF - 38, -iR + 38], [-iF + 38, iR - 38], [-iF + 38, -iR + 38], [iF - 28, G + 40], [iF - 28, -G - 40], [-iF + 30, 230], [-iF + 30, -230]]) tower(f, r);
-      for (const [f, r] of [[iF - 34, 260], [iF - 34, -260], [-iF + 22, 300], [-iF + 22, -300]]) pillbox(f, r);
-      // ---- XE BỎ LẠI
-      anim.vehicles.push({ type: 'SCOUT', f: 60, r: -170, a: -0.9, ty: 0.3, hf: 20, hr: 11 });
-      anim.vehicles.push({ type: 'SCOUT', f: 0, r: 262, a: 0.3, ty: 0, hf: 20, hr: 11 });
-      anim.vehicles.push({ type: 'GATLING', f: 120, r: -400, a: 0, ty: -0.6, hf: 43, hr: 32 });
+
+      // =====================================================================================================
+      // KHO DẦU DIESEL: 3 bồn nằm trên gối bê tông trong bờ bao đất (lối vào phía đường), đai thép, cổ bồn, sàn đi nóc +
+      // thang, ống góp tới trạm bơm ngoài lối vào, biển ДИЗТОПЛИВО / ОГНЕОПАСНО, phuy
+      // =====================================================================================================
+      {
+        const B = L.bund;
+        for (const dr of [-22, 0, 22]) {
+          const r = B.r + dr;
+          K.add(tankM, new THREE.CylinderGeometry(8.6, 8.6, 52, 22, 1, true), M4(B.f, 12.6, r, 0, 0, Math.PI / 2));
+          for (const s of [-1, 1]) K.add('steelWhite', new THREE.SphereGeometry(8.6, 18, 8), M4(B.f + s * 26, 12.6, r, 0, 0, 0, 0.3, 1, 1));
+          for (const x of [-16, 16]) { K.cbox('concDark', B.f + x, 2.4, r, 4, 4.8, 14, 0.4); K.add('steelDark', new THREE.TorusGeometry(8.8, 0.35, 4, 22, Math.PI), M4(B.f + x, 12.6, r, 0, Math.PI / 2, 0)); }
+          K.cyl('steelGray', B.f + 6, 21, r, 1.6, 1.6, 2, 10); K.cyl('steelGray', B.f - 10, 21, r, 0.6, 0.6, 4, 6);
+          K.add(decal('sam_dt', signTex('sam_dt', ['ДИЗТОПЛИВО', 'DIESEL — ОГНЕОПАСНО'], { w: 512, h: 160, bg: '#efe6d0', fg: '#a3221a' })), new THREE.PlaneGeometry(7, 2.2), M4(B.f + 28.5, 13, r, 0, Math.PI / 2, 0));
+          K.solid(B.f, r, 29, 9, 0, 22);
+        }
+        K.add('steelDark', new THREE.BoxGeometry(3, 0.4, 50), M4(B.f + 6, 22.2, B.r));
+        for (let y = 2; y < 22; y += 2.4) K.add('steelGray', new THREE.BoxGeometry(0.3, 0.3, 3), M4(B.f + 6, y, B.r + 33.5));
+        for (const s of [-1, 1]) K.add('steelGray', new THREE.BoxGeometry(0.3, 22, 0.3), M4(B.f + 6, 11, B.r + 33.5 + s * 1.4));
+        // ống góp đầu bồn -> trạm bơm ngoài lối vào
+        K.add('steelGray', new THREE.CylinderGeometry(0.9, 0.9, 52, 8), M4(B.f + 32, 5, B.r, Math.PI / 2, 0, 0));
+        for (const dr of [-22, 0, 22]) K.beam('steelGray', [B.f + 27, 8, B.r + dr], [B.f + 32, 5, B.r + dr], 0.9);
+        K.beam('steelGray', [B.f + 32, 5, B.r + 26], [B.f + 32, 5, B.r + 42], 1.6); K.beam('steelGray', [B.f + 32, 5, B.r + 42], [B.f + 2, 5, B.r + 46], 1.6);
+        K.beam('steelGray', [B.f + 2, 5, B.r + 46], [B.f, 4, B.r + 58], 1.6);
+        const pr = B.r + B.hl + 18;
+        K.cbox('concDark', B.f, 1, pr, 12, 2, 10, 0.3); K.cbox(M.oliveSun, B.f, 6, pr, 8, 8, 6, 0.4);
+        K.add('steelDark', new THREE.CylinderGeometry(2, 2, 6, 12), M4(B.f + 6.6, 6, pr, 0, 0, Math.PI / 2));
+        K.solid(B.f, pr, 7, 6, 0, 10);
+        signPost('sam_fuel', ['ОГНЕОПАСНО', 'FLAMMABLE — NO SMOKING'], { w: 512, h: 192, bg: '#d9a61c', fg: '#151515' }, B.f - 20, pr + 4, -Math.PI / 2, 16, 5.5);
+        for (let j = 0; j < 4; j++) drum(K, B.f - 24 + j * 5.2, B.r + B.hl - 5, j === 2 ? 'drumBlue' : 'drumRust');
+        K.solid(B.f - 16, B.r + B.hl - 5, 10, 3, 0, 8);
+        drift(B.f - 8, B.r + B.hl - 2, 30, 6, 2, 0); drift(B.f + 20, B.r - B.hl + 4, 26, 7, 2, 0);
+      }
+
+      // =====================================================================================================
+      // RADAR CẢNH GIỚI P-18 trên gò riêng: đế 4 tay chống có kích, cột ăng-ten ống lồng, đầu xoay, 2 hàng x 8 ăng-ten Yagi
+      // (mỗi chiếc 1 chấn tử phản xạ + chấn tử chủ động + 6 chấn tử dẫn xạ), giàn đỡ, dây néo; xe thiết bị (kung) dưới
+      // chân gò, cáp; bờ bao cát mép gò
+      // =====================================================================================================
+      {
+        const Q = L.p18, y0 = Q.h, b = M4(Q.f, y0, Q.r + 4, 0, 0.9, 0), at = (x, y, z, rx, ry, rz) => mul(b, M4(x, y, z, rx, ry, rz));
+        K.cbox('concDark', Q.f, y0 - 1, Q.r + 4, 34, 3, 34, 0.5);
+        for (const a of [0.4, 0.4 + Math.PI / 2, 0.4 + Math.PI, 0.4 - Math.PI / 2]) {
+          K.add(M.camo, new THREE.BoxGeometry(22, 2, 2.4), mul(M4(Q.f, y0 + 2.4, Q.r + 4), M4(Math.cos(a) * 10, 0, Math.sin(a) * 10, 0, -a, 0)));
+          K.add('steelGray', new THREE.CylinderGeometry(0.8, 0.8, 4, 8), M4(Q.f + Math.cos(a) * 20, y0 + 2, Q.r + 4 + Math.sin(a) * 20));
+          K.add('steelDark', new THREE.CylinderGeometry(2.2, 2.6, 0.8, 10), M4(Q.f + Math.cos(a) * 20, y0 + 0.9, Q.r + 4 + Math.sin(a) * 20));
+        }
+        K.cbox(M.camo, 0, 4.6, 0, 10, 5, 10, 0.5, 0, b);
+        K.cyl(M.camoDark, 0, 7, 0, 2.2, 2.6, 30, 12, at(0, 7, 0));
+        K.cyl(M.camoDark, 0, 37, 0, 1.7, 1.9, 30, 12, at(0, 37, 0));
+        K.cyl('steelDark', 0, 36, 0, 2.8, 2.8, 1.4, 12, at(0, 36, 0));
+        K.cyl('steelDark', 0, 67, 0, 3.2, 3.2, 3, 14, at(0, 67, 0));
+        const hd = at(0, 70, 0);
+        K.add(M.camo, new THREE.BoxGeometry(3, 3, 76), mul(hd, M4(-2, 12, 0)));
+        K.add(M.camo, new THREE.BoxGeometry(3, 3, 76), mul(hd, M4(-2, 0, 0)));
+        for (const z of [-30, -10, 10, 30]) K.add(M.camo, new THREE.BoxGeometry(2, 13, 2), mul(hd, M4(-2, 6, z)));
+        for (const s of [-1, 1]) { K.beam(M.camo, [-2, 0, 0], [-2, 12, s * 30], 0.8, hd); K.beam('steelGray', [-2, -3, 0], [-2, 12, s * 36], 0.4, hd); }
+        for (const y of [0, 12]) for (let i = 0; i < 8; i++) {
+          const z = -31.5 + i * 9;
+          K.add('steelGray', new THREE.BoxGeometry(28, 0.6, 0.6), mul(hd, M4(12, y, z)));
+          K.add('steelGray', new THREE.BoxGeometry(0.3, 0.3, 8.4), mul(hd, M4(0.6, y, z)));
+          K.add('steelDark', new THREE.BoxGeometry(0.5, 0.9, 7.8), mul(hd, M4(4.4, y, z)));
+          for (let k = 0; k < 6; k++) K.add('steelGray', new THREE.BoxGeometry(0.25, 0.25, 7 - k * 0.25), mul(hd, M4(8.4 + k * 3.8, y, z)));
+        }
+        for (let k = 0; k < 4; k++) { const a = k * TAU / 4 + 0.4, ax = Q.f + Math.cos(a) * 32, az = Q.r + 4 + Math.sin(a) * 32, ay = Math.max(0, K.earth(ax, az)); K.box('concDark', ax, ay + 0.8, az, 3, 2.4, 3); K.beam('steelDark', [ax, ay + 2, az], [Q.f, y0 + 52, Q.r + 4], 0.25); }
+        K.solid(Q.f, Q.r + 4, 12, 12, y0, y0 + 68);
+        K.solid(Q.f, Q.r + 4, 34, 34, y0 + 64, y0 + 86, 0.9 + Math.PI / 2);
+        for (const [a0, a1] of [[0.6, 2.2], [2.6, 4.0], [-1.4, 0.2]]) for (let k = 0; k < 4; k++) { const t0 = a0 + (a1 - a0) * k / 4, t1 = a0 + (a1 - a0) * (k + 1) / 4; sandbags(SK, Q.f + Math.cos(t0) * (Q.R - 2), Q.r + Math.sin(t0) * (Q.R - 2), Q.f + Math.cos(t1) * (Q.R - 2), Q.r + Math.sin(t1) * (Q.R - 2), 2, Q.h - 1); }
+        // xe thiết bị radar dưới chân gò (thùng kung, cột ăng-ten thông tin), cáp lên gò
+        milTruck(TK, M4(-80, 0, 346, 0, Math.PI / 2, 0), 'kung');
+        K.solid(-80, 347, 34, 11, 0, 32, -Math.PI / 2);
+        net(M4(-80, 0, 348, 0, Math.PI / 2, 0), 80, 40, 36, 4);
+        cable([[Q.f, Q.r + 4, y0 + 6], [Q.f + 4, Q.r - 20, y0 + 0.6], [Q.f + 8, Q.r - Q.R - 10], [Q.f + 14, Q.r - Q.R - 30], [-84, 380]], 1);
+        cableTrench([[Q.f + 30, 312], [-40, 312], [-40, 150], [-40, 66]]);
+        drift(Q.f + 22, Q.r + 40, 30, 10, 3, 1.1, 0);
+      }
+
+      // =====================================================================================================
+      // PHÒNG KHÔNG TẦM THẤP: 4 hố pháo ZU-23-2 (ụ đất tròn + bao cát đỉnh bờ, hòm đạn, vỏ đạn rơi vãi) + 2 pháo S-60
+      // ZU-23-2: đế tam giác 3 kích, 2 bánh nhấc khỏi đất, mâm xoay, khung 2 ghế, 2 nòng 23 mm có loa che lửa, 2 hòm băng
+      // đạn 2 bên, kính ngắm ZAP-23, máng hất vỏ đạn
+      // =====================================================================================================
+      const zu23 = (f, r, az, el, ent) => {
+        const b = M4(f, 0, r, 0, -az, 0), at = (x, y, z, rx, ry, rz) => mul(b, M4(x, y, z, rx, ry, rz));
+        for (const a of [0, 2.3, -2.3]) {
+          K.add(M.camo, new THREE.BoxGeometry(15, 1.6, 2), at(Math.cos(a) * 7, 2.4, Math.sin(a) * 7, 0, -a, 0));
+          K.add('steelDark', new THREE.CylinderGeometry(1.6, 1.8, 0.6, 10), at(Math.cos(a) * 14.4, 0.3, Math.sin(a) * 14.4));
+          K.add('steelGray', new THREE.CylinderGeometry(0.5, 0.5, 2.6, 6), at(Math.cos(a) * 14.4, 1.6, Math.sin(a) * 14.4));
+        }
+        for (const s of [-1, 1]) { K.add('rubber', new THREE.CylinderGeometry(3.4, 3.4, 1.8, 14), at(-2, 4.6, s * 7.4, Math.PI / 2, 0, 0)); K.add(M.camoDark, new THREE.CylinderGeometry(1.6, 1.6, 1.9, 8), at(-2, 4.6, s * 7.5, Math.PI / 2, 0, 0)); }
+        K.cbox(M.camo, 0, 3.4, 0, 12, 2.6, 8, 0.4, 0, b);
+        K.add('steelDark', new THREE.CylinderGeometry(4, 4.2, 1.4, 16), at(0, 5.4, 0));
+        K.cbox(M.camo, -0.5, 8.4, 0, 8, 4.6, 7, 0.4, 0, b);
+        for (const s of [-1, 1]) {
+          K.add(M.camoDark, new THREE.BoxGeometry(3, 0.6, 3), at(-4.6, 9, s * 4.8));
+          K.add(M.camoDark, new THREE.BoxGeometry(0.6, 3, 3), at(-6.2, 10.6, s * 4.8));
+          K.add('steelGray', new THREE.TorusGeometry(1, 0.15, 4, 10), at(-3, 10.4, s * 3.9));
+        }
+        const cr = mul(at(1, 11, 0), M4(0, 0, 0, 0, 0, el)), cat = (x, y, z, rx, ry, rz) => mul(cr, M4(x, y, z, rx, ry, rz));
+        for (const s of [-1, 1]) {
+          K.add(M.camoDark, new THREE.BoxGeometry(11, 2.2, 1.8), cat(1, 0, s * 1.3));
+          K.add('steelDark', new THREE.CylinderGeometry(0.42, 0.5, 19, 8), cat(16, 0.4, s * 1.1, 0, 0, -Math.PI / 2));
+          K.add('steelDark', new THREE.CylinderGeometry(0.7, 0.7, 2.6, 8), cat(26.6, 0.4, s * 1.1, 0, 0, -Math.PI / 2));
+          K.cbox(M.camoDark, 0, 0, s * 4.4, 4.4, 5, 3.8, 0.3, 0, cr);
+          K.add('steelDark', new THREE.BoxGeometry(1.4, 3, 1), cat(0.6, -3, s * 1.3, 0, 0, 0.3));
+        }
+        K.add('steelDark', new THREE.BoxGeometry(1.6, 2.6, 1.6), cat(-1, 3.6, -3.2)); K.add('glass', new THREE.PlaneGeometry(1.2, 1.2), cat(-0.18, 3.8, -3.2, 0, Math.PI / 2, 0));
+        K.solid(f, r, 15, 15, 0, 16, az);
+        // hòm đạn, vỏ đạn đồng vương vãi, bao cát trên đỉnh bờ
+        for (let k = 0; k < 3; k++) { const a = az + Math.PI + 0.7 + k * 0.22; K.cbox(k % 2 ? 'wood' : M.oliveSunDark, f + Math.cos(a) * 16, 1.4 + (k === 2 ? 2.8 : 0), r + Math.sin(a) * 16, 6, 2.8, 3.6, 0.3, -a); }
+        for (let k = 0; k < 26; k++) { const a = hash(k + f) * TAU, d = 3 + hash(k + r) * 9; K.add(M.brass, new THREE.CylinderGeometry(0.16, 0.16, 1.3, 5), M4(f + Math.cos(a) * d, 0.6, r + Math.sin(a) * d, Math.PI / 2, hash(k * 3 + f) * 3, 0)); }
+        for (let k = 0; k < 7; k++) { const st = (TAU - 1.1) / 7, a0 = ent + 0.55 + k * st, a1 = a0 + st - 0.06, R0 = 29; sandbags(SK, f + Math.cos(a0) * R0, r + Math.sin(a0) * R0, f + Math.cos(a1) * R0, r + Math.sin(a1) * R0, 2, Math.max(0, K.earth(f + Math.cos((a0 + a1) / 2) * R0, r + Math.sin((a0 + a1) / 2) * R0)) - 0.8); }
+      };
+      for (const [f, r, a] of L.pits) zu23(f, r, a + Math.PI, 0.3 + hash(f + r) * 0.5, a);
+      aaGun(CK, iF - 53, 172, 0.55, 0.55); aaGun(CK, iF - 53, -172, -0.55, 0.62);
+      // hào giao thông kè bao cát: tuyến chặn trước (giữa cổng và 2 bệ phóng trước), hào nối hố pháo sau
+      for (const s of [-1, 1]) {
+        trench([[112, s * 30], [128, s * 58], [114, s * 86], [132, s * 114], [120, s * 138]]);
+        trench([[-186, s * 150], [-168, s * 128], [-150, s * 140], [-132, s * 122]]);
+      }
+
+      // =====================================================================================================
+      // DOANH TRẠI: 2 dãy nhà 1 tầng tường vữa bạc nắng, mái bằng có tường chắn mái, hiên che nắng tôn trên cột thép,
+      // cửa sổ có song sắt, điều hoà, bồn nước đen trên mái, số nhà sơn; cát dạt chân tường; tháp nước, cột cờ, nhà vệ sinh
+      // =====================================================================================================
+      const barrack = (f, r, len, wid, num) => {
+        const base = M4(f, 0, r);
+        K.cbox('concDark', f, 1.2, r, len + 2, 2.4, wid + 2, 0.4);
+        K.cbox(M.plaster, f, 15.4, r, len, 26, wid, 0.6);
+        K.cbox('concDark', f, 29.4, r, len + 3, 2, wid + 3, 0.4);
+        for (const s of [-1, 1]) { K.cbox(M.plaster, f, 31.6, r + s * (wid / 2 + 0.8), len + 3, 2.6, 1.4, 0.3); K.cbox(M.plaster, f + s * (len / 2 + 0.8), 31.6, r, 1.4, 2.6, wid + 3, 0.3); }
+        const front = mul(base, M4(0, 0, -wid / 2, 0, Math.PI, 0)), back = mul(base, M4(0, 0, wid / 2, 0, 0, 0));
+        for (let x = -len / 2 + 12; x <= len / 2 - 12; x += 16) {
+          const door = Math.round((x + len / 2 - 12) / 16) % 3 === 2;
+          if (door) {
+            K.add(M.door, new THREE.BoxGeometry(8, 16, 0.6), mul(front, M4(x, 10.4, 0.3)));
+            K.cbox('concDark', f - x, 1.4, r - wid / 2 - 4, 10, 1, 6, 0.2);
+          } else {
+            win(front, x, 15, 8, 8);
+            for (let k = -3; k <= 3; k++) K.add('steelDark', new THREE.BoxGeometry(0.3, 8, 0.3), mul(front, M4(x + k * 1.1, 15, 0.7)));
+          }
+          win(back, x, 17, 7, 6);
+          if (hash(x + f) < 0.4) acUnit(back, x + 6.2, 9);
+        }
+        // hiên che nắng mặt trước
+        K.add('corrTan', boxGeo2(len - 6, 0.6, 14), M4(f, 22.4, r - wid / 2 - 7, -0.06, 0, 0));
+        for (let x = -len / 2 + 4; x <= len / 2 - 4; x += 20) K.cyl('steelGray', f + x, 2.4, r - wid / 2 - 13, 0.6, 0.6, 20, 6);
+        K.add('steelGray', new THREE.BoxGeometry(len - 6, 0.8, 0.8), M4(f, 22, r - wid / 2 - 13));
+        K.cbox('concDark', f, 2.6, r - wid / 2 - 7, len - 4, 0.8, 14, 0.2);
+        // mái: bồn nước đen, ăng-ten, ống thoát nước mái
+        K.cyl(M.black, f - len / 4, 30.4, r + 6, 5, 5, 8, 14); K.cbox('steelGray', f - len / 4, 30.8, r + 6, 12, 0.8, 12, 0.2);
+        K.cyl('steelGray', f + len / 3, 30.4, r, 0.2, 0.3, 18, 5); K.add('steelGray', new THREE.BoxGeometry(10, 0.3, 0.3), M4(f + len / 3, 46, r, 0, 0.5, 0));
+        for (const x of [-len / 2 + 6, len / 2 - 6]) K.add('steelGray', new THREE.BoxGeometry(1, 1, 4), M4(f + x, 30.6, r + wid / 2 + 2));
+        K.add(decal('sam_bn' + num, texOf('sam_bn' + num, 128, 128, (q, w, h) => { q.fillStyle = '#d4c39f'; q.fillRect(0, 0, w, h); q.fillStyle = 'rgba(40,40,36,0.85)'; q.font = 'bold 92px Arial'; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillText(String(num), w / 2, h / 2 + 6); speckle(q, w, h, 500, ['#b8a684', '#efe4cc'], 1, 2, num * 7); })), new THREE.PlaneGeometry(9, 9), M4(f + len / 2 + 0.05, 20, r, 0, Math.PI / 2, 0));
+        K.solid(f, r, len / 2 + 1.5, wid / 2 + 1.5, 0, 33);
+        K.solid(f, r - wid / 2 - 7, len / 2 - 3, 7, 18, 23);
+        drift(f + len / 2 + 3, r, 30, 12, 4, Math.PI / 2); drift(f - len / 4, r + wid / 2 + 3, 44, 10, 3.6, 0); drift(f + len / 5, r + wid / 2 + 3, 30, 9, 3, 0);
+      };
+      const boxGeo2 = (sx, sy, sz) => api.boxGeo(sx, sy, sz, 24);
+      barrack(125, 350, 128, 44, 1); barrack(125, 424, 128, 40, 2);
+      signPost('sam_bar', ['BARRACKS — КАЗАРМА', 'ЛИЧНЫЙ СОСТАВ ДИВИЗИОНА'], { w: 768, h: 192, bg: '#e6dcc4', fg: '#1d2a3a' }, 196, 312, 0, 22, 6);
+      // tháp nước thép 4 chân
+      {
+        const f = 40, r = 436, H = 66;
+        for (const [a, b] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) { K.cbox('concDark', f + a * 9, 1, r + b * 9, 4, 2, 4, 0.3); K.beam(M.tanSteel, [f + a * 9, 2, r + b * 9], [f + a * 6, H, r + b * 6], 1.2); }
+        for (let y = 14; y < H; y += 16) { const w = 9 - (y / H) * 3; for (const [p0, p1] of [[[-w, -w], [w, -w]], [[w, -w], [w, w]], [[w, w], [-w, w]], [[-w, w], [-w, -w]]]) { K.beam(M.tanSteel, [f + p0[0], y, r + p0[1]], [f + p1[0], y, r + p1[1]], 0.6); K.beam(M.tanSteel, [f + p0[0], y, r + p0[1]], [f + p1[0], y + 16, r + p1[1]], 0.35); } }
+        K.cbox(M.tanSteel, f, H + 1, r, 18, 2, 18, 0.3);
+        K.cyl(M.tanSteel, f, H + 2, r, 11, 11, 18, 18); K.add(M.tanDark, new THREE.ConeGeometry(11.6, 5, 18), M4(f, H + 22.5, r));
+        K.cyl('steelGray', f + 3, 0, r, 1, 1, H + 2, 8);
+        for (let y = 2; y < H + 18; y += 2.4) K.add('steelGray', new THREE.BoxGeometry(0.3, 0.3, 3), M4(f - 11.8, y, r));
+        K.solid(f, r, 12, 12, 0, H + 26);
+      }
+      // cột cờ (cờ rách bạc màu)
+      {
+        const f = 200, r = 336;
+        K.cbox('concDark', f, 1, r, 6, 2, 6, 0.4); K.cyl('steelGray', f, 2, r, 0.5, 0.8, 76, 8);
+        const fg = new THREE.PlaneGeometry(13, 8, 8, 2), ps = fg.attributes.position;
+        for (let i = 0; i < ps.count; i++) { const x = ps.getX(i) + 6.5; ps.setZ(i, Math.sin(x * 0.6) * 0.6 * x / 13); if (x > 9 && hash(i) < 0.5) ps.setX(i, ps.getX(i) - 2); }
+        fg.computeVertexNormals();
+        K.add(MAT.sam_flag || (MAT.sam_flag = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.95, map: texOf('sam_flag', 128, 80, (q, w, h) => {
+          q.fillStyle = '#5d6448'; q.fillRect(0, 0, w, h); q.fillStyle = '#c9a640'; q.beginPath(); q.arc(w * 0.32, h / 2, 18, 0, TAU); q.fill();
+          q.fillStyle = '#5d6448'; q.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? 5 : 13; k ? q.lineTo(w * 0.32 + Math.cos(a) * rr, h / 2 + Math.sin(a) * rr) : q.moveTo(w * 0.32 + Math.cos(a) * rr, h / 2 + Math.sin(a) * rr); } q.fill();
+          q.fillStyle = 'rgba(236,228,206,0.35)'; q.fillRect(0, 0, w, h); speckle(q, w, h, 400, ['#7a6a52'], 1, 2, 9);
+        }) })), fg, M4(f + 6.6, 70, r, 0, 0.4, 0));
+        K.solid(f, r, 3, 3, 0, 78);
+      }
+      // nhà vệ sinh / kho nhỏ tôn
+      K.cbox('corrTan', -76, 10, 438, 16, 18, 12, 0.3); K.cbox('steelGray', -76, 19.6, 438, 18, 1, 14, 0.2); K.add(M.door, new THREE.BoxGeometry(0.4, 14, 6), M4(-67.8, 8, 438)); K.solid(-76, 438, 9, 7, 0, 21);
+
+      // =====================================================================================================
+      // BÃI XE: 2 ụ chữ U che xe dưới lưới nguỵ trang (xe kung + xe trinh sát bỏ lại), cát lấp nửa bánh
+      // =====================================================================================================
+      {
+        const [R1, R2] = [L.revs[3], L.revs[4]];
+        milTruck(TT, M4(R1.f, 0, R1.r + 4, 0, -R1.a, 0), 'kung');
+        K.solid(R1.f, R1.r + 4, 34, 11, 0, 32, R1.a);
+        for (const R of [R1, R2]) { net(M4(R.f, 0, R.r, 0, -R.a, 0), 80, 40, 34, 5); drift(R.f + 4, R.r + Math.sin(R.a) * 6, 12, 8, 2.6, R.a, 0); }
+        anim.vehicles.push({ type: 'SCOUT', f: R2.f, r: R2.r - 4, a: R2.a, ty: 0.4, hf: 20, hr: 11 });
+      }
+      anim.vehicles.push({ type: 'SCOUT', f: 150, r: -27, a: Math.PI + 0.22, ty: -0.5, hf: 20, hr: 11 });
+
+      // cát dạt chân tường cổng kiểm soát / tường rọ đá
+      for (const s of [-1, 1]) { drift(iF - 70, s * 64, 40, 10, 3.4, 0); drift(iF - 20, s * 64, 30, 8, 2.8, 0); }
     }
   };
 })();

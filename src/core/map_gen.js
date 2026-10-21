@@ -1295,10 +1295,31 @@ const MapGen = (() => {
 
   // ===== TRẬN ĐỊA TÊN LỬA PHÒNG KHÔNG (sa mạc) =====
   function detailSam(L) {
-    // trận địa S-125 Pechora: 4 bệ phóng 5P73 (mỗi bệ 4 tên lửa) quanh trạm radar dẫn bắn ở giữa, mỗi bệ nằm trong kè đất
-    // móng ngựa cao 1.75 m, miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
+    // Tiểu đoàn tên lửa S-125 Pechora (bố trí theo trận địa thật), toạ độ cục bộ f (trước, về cổng) / r (ngang):
+    // - 4 bệ phóng 5P73 (mỗi bệ 4 tên lửa) quanh trạm radar dẫn bắn ở giữa, mỗi bệ nằm trong kè đất móng ngựa cao 2.25 m,
+    //   miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
     L.launchers = [0, 1, 2, 3].map(k => { const a = Math.PI / 4 + k * Math.PI / 2, f = Math.cos(a) * 175, r = Math.sin(a) * 300; return { f, r, az: Math.atan2(r, f) }; });
-    L.berm = { r: 46, w: 14, h: 14, gap: 0.7 };
+    L.berm = { r: 46, w: 14, h: 18, gap: 0.7 };
+    // - gò đặt cột ăng-ten SNR-125 (UNV): mặt bằng vuông bo nửa cỡ hf x hr, cao h (2.75 m), ta-luy run, dốc lên xe phía +f
+    L.unv = { f: 0, r: 0, hf: 36, hr: 34, h: 22, run: 26, ramp: { hw: 16, len: 46 } };
+    // - hầm chỉ huy (KP) và kho tên lửa 2 vòm: ụ đất phủ, mặt tiền +f cắt thẳng (tường bê tông ở f + hf)
+    L.kp = { f: -180, r: 0, hf: 36, hr: 46, h: 36, run: 30 };
+    L.store = { f: -172, r: -366, hf: 44, hr: 58, h: 38, run: 28, doors: [-338, -394] };
+    // - gò radar cảnh giới P-18: mặt tròn bán kính R cao h, dốc lên xe phía -r (về đường ngang r = 300)
+    L.p18 = { f: -150, r: 380, R: 34, h: 20, run: 32, ramp: { hw: 16, len: 44 } };
+    // - ụ chữ U che xe / thiết bị: tâm, hướng miệng a, nửa dài lòng hl (theo a), nửa rộng lòng hw, cao h, bề dày w
+    //   (2 cabin điều khiển UNK cạnh gò radar, trạm phát điện 5E96, 2 ụ xe ở bãi xe trái)
+    L.revs = [
+      { f: -4, r: 112, a: Math.PI / 2, hl: 30, hw: 14, h: 16, w: 14 },
+      { f: -4, r: -112, a: -Math.PI / 2, hl: 30, hw: 14, h: 16, w: 14 },
+      { f: 130, r: -365, a: Math.PI / 2, hl: 40, hw: 56, h: 20, w: 16 },
+      { f: -30, r: 352, a: -Math.PI / 2, hl: 36, hw: 14, h: 15, w: 12 },
+      { f: 24, r: 352, a: -Math.PI / 2, hl: 36, hw: 14, h: 15, w: 12 }
+    ];
+    // - bờ bao kho dầu (kín 4 phía, chừa lối vào phía đường +r rộng 2 * gate)
+    L.bund = { f: 10, r: -380, a: Math.PI / 2, hl: 44, hw: 36, h: 10, w: 16, gate: 12 };
+    // - hố pháo ZU-23-2 tròn: [f, r, hướng lối vào]; bán kính lòng 20, bờ cao 1.25 m
+    L.pits = [[46, 238, Math.PI], [46, -238, Math.PI], [-214, 150, 0], [-214, -150, 0]];
   }
   function moundSam(L, f, r) {
     const B = L.berm;
@@ -1311,6 +1332,46 @@ const MapGen = (() => {
       const open = Math.atan2(dr, df) - (P.az + Math.PI);
       const da = Math.abs(Math.atan2(Math.sin(open), Math.cos(open)));
       h = Math.max(h, B.h * ring * smooth(B.gap, B.gap + 0.35, da));
+    }
+    // mặt cắt bờ đất: 0 trong lòng (d <= 0), đỉnh tại d = c, chân ngoài tại d = 2c
+    const wall = (d, c) => d <= 0 ? 0 : 1 - smooth(0, c, Math.abs(d - c));
+    // gò radar dẫn bắn + dốc lên xe phía +f
+    {
+      const U = L.unv, pf = f - U.f, pr = r - U.r;
+      h = Math.max(h, U.h * (1 - smooth(0, U.run, Math.hypot(Math.max(0, Math.abs(pf) - U.hf), Math.max(0, Math.abs(pr) - U.hr)))));
+      const t = (pf - U.hf) / U.ramp.len;
+      if (t > -0.2 && t < 1) h = Math.max(h, U.h * Math.min(1, 1 - t) * (1 - smooth(U.ramp.hw, U.ramp.hw + 14, Math.abs(pr))));
+    }
+    // ụ đất phủ hầm chỉ huy / kho tên lửa: mặt tiền +f cắt thẳng (dải chuyển cao độ khuất sau tường mặt tiền dày 14)
+    for (const C of [L.kp, L.store]) {
+      const pf = f - C.f, pr = r - C.r;
+      if (pf < C.hf - 22) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
+    }
+    // gò radar cảnh giới + dốc phía -r
+    {
+      const Q = L.p18, pf = f - Q.f, pr = r - Q.r;
+      h = Math.max(h, Q.h * (1 - smooth(0, Q.run, Math.max(0, Math.hypot(pf, pr) - Q.R))));
+      const t = (-pr - Q.R + 4) / Q.ramp.len;
+      if (t > -0.2 && t < 1) h = Math.max(h, Q.h * Math.min(1, 1 - t) * (1 - smooth(Q.ramp.hw, Q.ramp.hw + 14, Math.abs(pf))));
+    }
+    // ụ chữ U (miệng mở hướng a, 2 cánh vuốt thấp dần ra phía miệng) + bờ bao kho dầu (kín, chừa lối vào)
+    for (const R of L.revs.concat([L.bund])) {
+      const df = f - R.f, dr = r - R.r, c = Math.cos(R.a), s = Math.sin(R.a), u = df * c + dr * s, v = -df * s + dr * c;
+      const cw = R.w * 0.55;
+      if (R.gate) {
+        const d = Math.hypot(Math.max(0, Math.abs(u) - R.hl), Math.max(0, Math.abs(v) - R.hw));
+        h = Math.max(h, R.h * wall(d, cw) * (u > R.hl ? smooth(R.gate, R.gate + 8, Math.abs(v)) : 1));
+      } else {
+        const d = Math.hypot(Math.max(0, -u - R.hl), Math.max(0, Math.abs(v) - R.hw));
+        h = Math.max(h, R.h * wall(d, cw) * (1 - smooth(R.hl - 6, R.hl + R.w, u)));
+      }
+    }
+    // hố pháo phòng không tròn, chừa lối vào
+    for (const [pf0, pr0, a] of L.pits) {
+      const df = f - pf0, dr = r - pr0, d = Math.hypot(df, dr) - 20;
+      if (d > 20) continue;
+      const da = Math.abs(Math.atan2(Math.sin(Math.atan2(dr, df) - a), Math.cos(Math.atan2(dr, df) - a)));
+      h = Math.max(h, 10 * wall(d, 9) * smooth(0.35, 0.6, da));
     }
     return h;
   }
