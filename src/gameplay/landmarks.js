@@ -1237,7 +1237,13 @@ const Landmarks = (() => {
       for (let x = -HL / 2 + 16; x < HL / 2 - 10; x += 8) K.box('louver', hf + x, HH + 15.8, hr, 5, 2, 6.2);
       for (const s2 of [-1, 1]) {
         K.add('steelGray', new THREE.BoxGeometry(HL + 8, 1.4, 1.8), M4(hf, HH - 0.2, hr + s2 * (HW / 2 + 4.4)));
-        for (const x of [-HL / 2 - 2, HL / 2 + 2]) K.cyl('steelGray', hf + x, 0, hr + s2 * (HW / 2 + 3.6), 0.7, 0.7, HH, 8);
+        // ống thoát nước ôm sát tường, đoạn cổ ngỗng nối lên máng xối, cút xả dưới chân + kẹp ống
+        for (const x of [-HL / 2 + 1.5, HL / 2 - 1.5]) {
+          K.cyl('steelGray', hf + x, 1.2, hr + s2 * (HW / 2 + 0.9), 0.7, 0.7, HH - 6, 8);
+          K.beam('steelGray', [hf + x, HH - 4.8, hr + s2 * (HW / 2 + 0.9)], [hf + x, HH - 0.6, hr + s2 * (HW / 2 + 4.2)], 1.3);
+          K.beam('steelGray', [hf + x, 1.6, hr + s2 * (HW / 2 + 0.9)], [hf + x, 0.4, hr + s2 * (HW / 2 + 3)], 1.3);
+          for (let y = 10; y < HH - 6; y += 12) K.add('steelDark', new THREE.BoxGeometry(1.8, 0.5, 1.4), M4(hf + x, y, hr + s2 * (HW / 2 + 0.6)));
+        }
       }
       const back = M4(hf, 0, hr + HW / 2, 0, 0, 0);
       for (let i = 0; i < 9; i++) win(back, -HL / 2 + 12 + i * 15.8, HH - 9, 11, 5);
@@ -1252,6 +1258,7 @@ const Landmarks = (() => {
       for (const x of [-69, 69]) {
         K.box('steelGray', hf + x, 9.5, fr0 - 0.4, 7, 15, 0.6);
         K.cbox('steelGray', hf + x, 18.5, fr0 - 3, 10, 1, 6, 0.3);
+        for (const dx of [-4.4, 4.4]) K.beam('steelDark', [hf + x + dx, 14, fr0 - 0.4], [hf + x + dx, 18, fr0 - 5.4], 0.5);
         K.box('lampAmber', hf + x, 17.4, fr0 - 1, 2, 1, 1);
       }
       acUnit(M4(hf + HL / 2, 0, hr, 0, Math.PI / 2, 0), 10, 10); acUnit(M4(hf + HL / 2, 0, hr, 0, Math.PI / 2, 0), -10, 10);
