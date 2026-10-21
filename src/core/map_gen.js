@@ -35,13 +35,13 @@ const MapGen = (() => {
   // hầm phóng (silo) tên lửa hạt nhân / hầm nghiên cứu vũ khí sinh học / trận địa tên lửa phòng không.
   // Đặt tại trọng tâm tam giác A B C; mặt trước nhìn về cứ điểm B. angle: hướng mặt trước (cos -> x, sin -> z);
   // hu / hv: nửa dài mặt bằng san nền theo trục trước-sau / ngang
-  // (8 đơn vị = 1 m: hầm phóng 44 x 38 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
+  // (8 đơn vị = 1 m: hầm phóng 58 x 50 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
   const LANDMARK_SITE = {
     x: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.x, 0) / 3),
     z: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.z, 0) / 3),
     angle: -Math.PI / 2
   };
-  const LANDMARK_KINDS = { nuke: { hu: 176, hv: 152 }, bio: { hu: 200, hv: 160 }, sam: { hu: 192, hv: 192 } };
+  const LANDMARK_KINDS = { nuke: { hu: 232, hv: 200 }, bio: { hu: 200, hv: 160 }, sam: { hu: 192, hv: 192 } };
   let landmarkKind = null;          // null = theo seed; đặt cố định để thử (setLandmark)
   const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
   let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
@@ -773,7 +773,7 @@ const MapGen = (() => {
         const w = 1 - smooth(0, LM_BLEND, lmOut(L, x, z));
         if (w > 0) heights[k] = lerp(heights[k], L.G, w);
         const add = landmarkMound(L, f, r);
-        if (add > 0) heights[k] += add + noise(x * 0.03, z * 0.03) * 1.6 * Math.min(1, add / 20);
+        if (add > 0) heights[k] += add + (L.silo ? 0 : noise(x * 0.03, z * 0.03) * 1.6 * Math.min(1, add / 20));
       }
     }
     // Đỉnh đồi cứ điểm: trả lại mặt bằng phẳng tuyệt đối (đường lên đồi có thể đã khắc lệch)
@@ -1195,7 +1195,11 @@ const MapGen = (() => {
   // Hệ toạ độ cục bộ: f theo hướng mặt trước (angle), r vuông góc (-sin, cos), cao độ tính từ cốt san nền G
   // ---------------------------------------------------------------------------
   function landmarkDetail(L) {
-    if (L.kind === 'bio') {
+    if (L.kind === 'nuke') {
+      // gò silo (kiểu Titan II): mặt bằng bệ bê tông nửa cỡ hf x hr cao h (4 m) trên gò đất, ta-luy run; giếng phóng
+      // bán kính shaft và 2 ống xả (tâm, nửa cỡ) khoét xuyên gò xuống tới cốt sân
+      L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]] };
+    } else if (L.kind === 'bio') {
       // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
       // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
       L.mound = { fc: -84, af: 150, ar: 150, h: 76, cut: 88, face: 22 };
@@ -1209,6 +1213,16 @@ const MapGen = (() => {
   }
   // Độ cao đắp thêm trên cốt san nền tại (f, r)
   function landmarkMound(L, f, r) {
+    if (L.silo) {
+      const S = L.silo, df = f - S.f, dr = r - S.r;
+      const d = Math.hypot(Math.max(0, Math.abs(df) - S.hf), Math.max(0, Math.abs(dr) - S.hr));
+      let h = S.h * (1 - smooth(0, S.run, d));
+      if (h <= 0) return 0;
+      // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
+      h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
+      for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
+      return h;
+    }
     if (L.mound) {
       const M = L.mound, u = (f - M.fc) / M.af, v = r / M.ar;
       const d = Math.pow(Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6), 1 / 6);

@@ -1047,6 +1047,7 @@ ${sea ? 'varying float vDep;' : ''}
     if (this.trees) this.trees.update(dt, fx);
     if (this.buildingSet) this.buildingSet.update(dt, fx);
     if (this.propSet) this.propSet.update(dt, fx, this.camPos || null);
+    if (this.landmarkSet) this.landmarkSet.update(dt, fx, this.camPos || null);
     if (this.envDamage) this.envDamage.update(dt, fx);
     if (this.waterTime) this.waterTime.value += dt;   // sóng mặt nước trôi theo thời gian (sông hồ + biển)
   }
