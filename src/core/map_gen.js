@@ -1198,7 +1198,8 @@ const MapGen = (() => {
     if (L.kind === 'nuke') {
       // gò silo (kiểu Titan II): mặt bằng bệ bê tông nửa cỡ hf x hr cao h (4 m) trên gò đất, ta-luy run; giếng phóng
       // bán kính shaft và 2 ống xả (tâm, nửa cỡ) khoét xuyên gò xuống tới cốt sân
-      L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]] };
+      L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]],
+        portal: { f: 186, r: -128, hf: 26, hr: 22, h: 28, run: 40 } };   // lối xuống trung tâm điều khiển: ụ đất kín 3 mặt
     } else if (L.kind === 'bio') {
       // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
       // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
@@ -1221,6 +1222,8 @@ const MapGen = (() => {
       // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
       h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
       for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
+      const P = S.portal, pf = f - P.f, pr = r - P.r;
+      if (pf < P.hf - 4) h = Math.max(h, P.h * (1 - smooth(0, P.run, Math.hypot(Math.max(0, Math.abs(pf) - P.hf), Math.max(0, Math.abs(pr) - P.hr)))));
       return h;
     }
     if (L.mound) {

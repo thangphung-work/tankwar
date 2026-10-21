@@ -439,8 +439,8 @@ const Landmarks = (() => {
         q.clearRect(0, 0, w, h);
         const P = (f, r) => [(f + S.hf) / (2 * S.hf) * w, (r + S.hr) / (2 * S.hr) * h], k = w / (2 * S.hf);
         q.strokeStyle = 'rgba(176,30,22,0.9)'; q.lineWidth = 4 * k; q.strokeRect(...P(-92, -78), 184 * k, 156 * k);
-        q.fillStyle = 'rgba(176,30,22,0.9)'; q.font = `bold ${(9 * k) | 0}px Arial, sans-serif`; q.textAlign = 'center'; q.textBaseline = 'middle';
-        for (const [f, r, rot] of [[0, -70, 0], [0, 70, Math.PI], [-86, 0, -Math.PI / 2], [86, 0, Math.PI / 2]]) {
+        q.fillStyle = 'rgba(176,30,22,0.9)'; q.font = `bold ${(5 * k) | 0}px Arial, sans-serif`; q.textAlign = 'center'; q.textBaseline = 'middle';
+        for (const [f, r, rot] of [[0, -74, 0], [0, 74, Math.PI], [-88, 0, -Math.PI / 2], [88, 0, Math.PI / 2]]) {
           q.save(); q.translate(...P(f, r)); q.rotate(rot); q.fillText('NO LONE ZONE — TWO-PERSON CONCEPT', 0, 0); q.restore();
         }
         q.lineWidth = 5 * k; q.setLineDash([6 * k, 6 * k]);
@@ -466,8 +466,9 @@ const Landmarks = (() => {
     const mr = 12.2;
     K.add('icbm', new THREE.CylinderGeometry(mr, mr, 30, 36, 1, true), M4(cf, -9, cr));
     K.cyl('steelDark', cf, 4.4, cr, mr + 0.4, mr + 0.4, 1.6, 36);
-    const rv = [[12.2, 0], [11.6, 5], [10, 10], [8, 15], [5.8, 19], [3.8, 22], [1.8, 23.6], [0, 24]].map(([x, y]) => new THREE.Vector2(x, y));
-    K.add('steelDark', new THREE.LatheGeometry(rv, 36), M4(cf, 6, cr));
+    // đầu đạn kiểu Mk-6: nón cụt thẳng, mũi bo tròn, lớp chống nhiệt xám than
+    const rv = [[12.2, 0], [10.2, 6], [8.2, 12], [6.2, 18], [4.4, 23], [3.2, 25.4], [1.6, 26.6], [0, 27]].map(([x, y]) => new THREE.Vector2(x, y));
+    K.add(MAT.rv || (MAT.rv = new THREE.MeshStandardMaterial({ color: 0x45484b, roughness: 0.55, metalness: 0.3 })), new THREE.LatheGeometry(rv, 36), M4(cf, 6, cr));
     for (const [a, y] of [[0.6, 10], [2.7, 16], [4.4, 12]]) K.beam('steelGray', [cf + Math.cos(a) * (RS - 1), y, cr + Math.sin(a) * (RS - 1)], [cf + Math.cos(a) * (mr + 1), y - 2, cr + Math.sin(a) * (mr + 1)], 1.4);
     K.solid(cf, cr, RS + 2, RS + 2, -2, TOP + 1);
     // ---- 2 ống xả khói từ đáy giếng lên mặt đất: lòng hộp tối, lưới thép chịu nhiệt
@@ -481,7 +482,7 @@ const Landmarks = (() => {
       anim.steam.push([K.W(f, r), L.G + TOP + 2]);
     }
     // ---- Nắp hầm 740 tấn (19.5 x 12.5 x 1.5 m) lăn trên 2 cặp ray, đang mở hé 7 m; dầm ray chìa ra khỏi gò
-    const DF = 78, DR = 50, DT = 12, DOPEN = 60, dr = cr + DOPEN, RY = TOP + 3, RE = cr + S.hr + 92;
+    const DF = 78, DR = 50, DT = 12, DOPEN = 76, dr = cr + DOPEN, RY = TOP + 3, RE = cr + S.hr + 92;
     for (const t of [-64, -52, 52, 64]) K.box('steelDark', cf + t, TOP + 1.5, (cr - S.hr + 6 + RE) / 2, 4, 3, RE - (cr - S.hr + 6));
     for (const s of [-1, 1]) {
       K.box('conc', cf + s * 58, TOP / 2, (cr + S.hr + RE) / 2, 28, TOP, RE - cr - S.hr);
@@ -500,8 +501,8 @@ const Landmarks = (() => {
       for (const t of [-64, -52, 52, 64]) for (const u of [-30, 0, 30]) K.box('steelDark', cf + t, RY - 0.4, dr + u, 6, 2.4, 12);   // giá bánh xe
       for (const [a, b] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) K.box('steelDark', cf + a * (DF - 10), RY + DT + 2, dr + b * (DR - 10), 6, 4, 6);   // tai cẩu
       K.add(decalT('lid_sten', texOf('lid_sten', 512, 256, (q, w, h) => {
-        q.clearRect(0, 0, w, h); q.fillStyle = 'rgba(232,228,214,0.85)'; q.font = 'bold 54px Arial, sans-serif'; q.textAlign = 'center'; q.textBaseline = 'middle';
-        q.fillText('LAUNCH COMPLEX 7', w / 2, h * 0.35); q.font = 'bold 30px Arial, sans-serif'; q.fillText('NO STEP — CLOSURE DOOR', w / 2, h * 0.7);
+        q.clearRect(0, 0, w, h); q.fillStyle = 'rgba(232,228,214,0.85)'; q.font = 'bold 40px Arial, sans-serif'; q.textAlign = 'center'; q.textBaseline = 'middle';
+        q.fillText('LAUNCH COMPLEX 7', w / 2, h * 0.35); q.font = 'bold 24px Arial, sans-serif'; q.fillText('NO STEP — CLOSURE DOOR', w / 2, h * 0.7);
       })), new THREE.PlaneGeometry(120, 60), M4(cf, RY + DT + 0.15, dr, -Math.PI / 2, 0, 0));
       K.solid(cf, dr, DF + 2, DR + 8, RY - 2, RY + DT + 4);
     }
@@ -527,7 +528,8 @@ const Landmarks = (() => {
     }
     // ---- Lối xuống trung tâm điều khiển: cửa thép chống nổ mở hé, lòng tối đèn đỏ, mái bê tông dốc, biển cấm
     {
-      const pf = 186, pr = -128, W = 44, D = 52, Hh = 30;
+      // đắp ụ đất kín 3 mặt (MapGen: L.silo.portal), chỉ lộ mặt trước có cửa
+      const pf = S.portal.f, pr = S.portal.r, W = S.portal.hr * 2, D = S.portal.hf * 2, Hh = 30;
       K.box('conc', pf, Hh / 2, pr, D, Hh, W);
       K.box('concDark', pf - 4, Hh + 2, pr, D + 10, 4, W + 8, 0, 64, 0, 0.06);
       K.box('void', pf + D / 2 - 6.4, 11, pr, 12, 22, 20);
