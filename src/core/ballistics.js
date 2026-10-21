@@ -1017,7 +1017,9 @@ class BallisticsSystem3D {
         }
 
         // 2b. RƠI XUỐNG SÔNG / HỒ: nổ ngay dưới mặt nước (cột nước), không chui xuống đáy
+        //     — trừ khi chạm nước góc rất thấp: đạn nảy lên khỏi mặt nước bay tiếp (waterSkip)
         const wl = terrain.waterSurfaceAt ? terrain.waterSurfaceAt(s.x, s.z) : null;
+        if (wl !== null && s.y <= wl && s.timeAlive > 0.02 && this.waterSkip(s, wl, prevX, prevY, prevZ)) continue;
         if (wl !== null && s.y <= wl && s.timeAlive > 0.02) {
           s.y = wl;
           this.removeShellMesh(s, i);
@@ -1113,6 +1115,63 @@ class BallisticsSystem3D {
       }
     }
     return best;
+  }
+
+  /**
+   * ĐẠN NẢY TRÊN MẶT NƯỚC (như ném thia lia): chạm nước dưới góc tới hạn thì lực nâng thủy động đẩy đạn bật lên.
+   * Góc tới hạn ~ 18° / √(khối lượng riêng đạn / nước) (công thức Birkhoff): thép ~6°, mũi tên vonfram dài ~5°, đạn súng ~7°.
+   * - Đạn xuyên giáp động năng & đạn súng (không ngòi nổ): dưới góc tới hạn là nảy; gần góc tới hạn nảy hay không tùy phát
+   * - Đạn nổ phá / đa năng bắn thẳng (ngòi chạm): ngòi thường vẫn kích nổ khi đập nước, chỉ thỉnh thoảng sượt quá thấp
+   *   ngòi không ăn -> nảy đi rồi nổ ở chỗ chạm kế tiếp
+   * - Đạn nổ lõm (ngòi áp điện), đạn chùm, lựu pháo bắn cầu vồng: luôn nổ (góc rơi lớn / ngòi cực nhạy)
+   * Sau khi nảy: mất 12-40% tốc độ, góc bật lên nhỏ hơn góc tới, lệch hướng vài độ, đạn chao đảo (cản tăng) -> trúng xe
+   * sau khi nảy thì xuyên kém hẳn (skipMul). Ngẫu nhiên lấy từ burstSeed (gửi kèm sự kiện bắn) -> mọi máy nảy giống hệt.
+   * Trả true nếu đạn đã nảy (đặt lại vị trí / vận tốc), false nếu đạn đâm xuống nước như cũ.
+   */
+  waterSkip(s, wl, px, py, pz) {
+    const am = s.ammoType;
+    const bullet = am === 'GATLING_BULLET' || am === 'SCOUT_BULLET' || am === 'INCENDIARY';
+    const kinetic = am === 'AP' && !s.isHeavyArty;
+    const fuzed = (am === 'NORMAL' || am === 'HE') && s.isDirectFire && !s.isHeavyArty;
+    if (!bullet && !kinetic && !fuzed) return false;
+    const n = s.skips || 0;
+    if (n >= (bullet ? 3 : 2)) return false;
+    const hv = Math.hypot(s.vx, s.vz), sp = Math.hypot(hv, s.vy);
+    if (s.vy >= 0 || hv < 1 || sp < (bullet ? 150 : 250)) return false;
+    const graze = Math.atan2(-s.vy, hv) * 180 / Math.PI;
+    const crit = bullet ? 7 : kinetic ? 5.5 : 6;
+    const ratio = graze / crit;
+    let p = ratio < 0.7 ? 1 : ratio > 1.25 ? 0 : (1.25 - ratio) / 0.55;
+    if (fuzed) p *= ratio < 0.6 ? 0.45 : 0.15;
+    // số ngẫu nhiên tất định theo phát bắn & lần nảy
+    const R = (salt) => { let h = Math.imul((s.burstSeed || 0) ^ Math.imul(n + 1, 0x9e3779b1) ^ Math.imul(salt, 0x85ebca6b), 0xc2b2ae35); h ^= h >>> 15; h = Math.imul(h, 0x27d4eb2f); h ^= h >>> 13; return (h >>> 0) / 4294967296; };
+    if (R(1) >= p) return false;
+    // điểm chạm mặt nước trên đoạn bay
+    const t = py > s.y ? Math.max(0, Math.min(1, (py - wl) / (py - s.y))) : 1;
+    const x = px + (s.x - px) * t, z = pz + (s.z - pz) * t;
+    const vin = { x: s.vx, y: s.vy, z: s.vz };
+    const keep = bullet ? 0.6 + 0.18 * R(2) : kinetic ? 0.8 + 0.1 * R(2) : 0.74 + 0.14 * R(2);
+    const out = Math.max(0.3, graze * (0.45 + 0.4 * R(3))) * Math.PI / 180;
+    const yaw = Math.atan2(s.vz, s.vx) + (R(4) - 0.5) * 2 * (bullet ? 6 : 3) * Math.PI / 180;
+    const v = sp * keep;
+    s.vx = Math.cos(yaw) * Math.cos(out) * v;
+    s.vz = Math.sin(yaw) * Math.cos(out) * v;
+    s.vy = Math.sin(out) * v;
+    s.x = x; s.z = z; s.y = wl + 0.05;
+    // đạn chao đảo / lộn vòng sau khi nảy: cản không khí tăng, trúng xe thì xuyên kém
+    if (s.k !== undefined) s.k *= bullet ? 1.8 : kinetic ? 1.5 : 1.15;
+    s.dragMul = (s.dragMul || 1) * (bullet ? 1.8 : kinetic ? 1.5 : 1.15);
+    s.skips = n + 1;
+    s.skipMul = (s.skipMul || 1) * (bullet ? 0.5 : kinetic ? 0.35 : 0.85);
+    if (this.fx && this.fx.waterSkip) this.fx.waterSkip(x, wl, z, am, vin, { x: s.vx, y: s.vy, z: s.vz });
+    if (s.mesh) {
+      s.mesh.position.set(s.x, s.y, s.z);
+      s.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(s.vx, s.vy, s.vz).normalize());
+    }
+    if (typeof window !== 'undefined' && window.game && window.game.player && s.shooterId === window.game.player.id && !bullet && window.game.addCombatLog) {
+      window.game.addCombatLog('[[ripple]] Đạn chạm nước góc quá thấp — NẢY khỏi mặt nước, bay tiếp', 'tip');
+    }
+    return true;
   }
 
   removeShellMesh(shell, index) {

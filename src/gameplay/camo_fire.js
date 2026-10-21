@@ -553,6 +553,7 @@ float cfNoise(vec2 p) {
         if (u.isPlayer && game && game.addCombatLog) game.addCombatLog('[[flame-off]] Đã dập lửa lưới ngụy trang', 'tip');
         if (fx && fx.smoke) extinguishPuff(u, st, S, fx);
       }
+      if (u.waterY !== null && u.waterY !== undefined && (u.waterDepth || 0) > 2) douseWet(u, st, S, c, fx, game, dt);
       // các ô đang cháy (lửa ngọn) / đang tàn (tro, than)
       while (S.lo < S.order.length) {
         const i = S.order[S.lo];
@@ -695,6 +696,27 @@ float cfNoise(vec2 p) {
     }
   }
   // Kíp xe xịt bình chữa cháy: mây bột trắng phủ chỗ đang cháy
+  // Xe lội sâu: bụi lá ngập dưới mặt nước tắt ngay (xèo hơi nước), lửa không lan xuống phần lưới đã ngập.
+  // Chỉ là hình ảnh cục bộ theo vị trí xe (giống nhau trên mọi máy), lịch cháy phần còn khô giữ nguyên
+  function douseWet(u, st, S, c, fx, game, dt) {
+    S.wetT = (S.wetT || 0) - dt;
+    if (S.wetT > 0) return;
+    S.wetT = 0.2;
+    const wy = u.waterY;
+    let n = 0, lit = 0;
+    for (let k = S.lo; k < S.order.length; k++) {
+      const i = S.order[k];
+      if (S.stop[i] <= c) continue;
+      if (cellWorld(st.cells[i], _v).y >= wy + 0.3) continue;
+      if (S.ign[i] <= c && (c - S.ign[i]) / S.dur[i] < 1) { lit++; if (fx && fx.douseSteam && lit <= 3) fx.douseSteam(_v, wy, 0.5, lit === 1); }
+      S.stop[i] = c;
+      n++;
+    }
+    if (!n) return;
+    summarize(st, S);
+    writeAttrs(st, S);
+    if (lit && u.isPlayer && game && game.addCombatLog && !S.logged.wet) { S.logged.wet = true; game.addCombatLog('[[flame-off]] Lưới ngụy trang ngập nước — phần lá chìm đã tắt lửa', 'tip'); }
+  }
   function extinguishPuff(u, st, S, fx) {
     const c = clock(S);
     let n = 0;

@@ -870,7 +870,36 @@ const VehicleDamage = (() => {
     extinguisherSound(u, worldPt);
     if (d.fires.length >= 4) d.fires.shift();
     const l = u.group.worldToLocal(worldPt.clone());
-    d.fires.push({ x: l.x, y: l.y, z: l.z, k: strength || 1, life: life || 20, t: 0 });
+    d.fires.push({ x: l.x, y: l.y, z: l.z, k: strength || 1, life: life || 20, t: 0, wet: 0, douseAt: rand(0.45, 0.9) });
+  }
+
+  // Xe lội nước: đám cháy nằm dưới mặt nước thì tắt sau ~0,5-0,9 s ngập (nước tràn vào lỗ thủng / khoang máy),
+  // xèo hơi nước trắng; đám cháy cao hơn mặt nước (nóc tháp, khoang kíp lái) vẫn cháy như thường.
+  // Mỗi máy tự tính theo vị trí xe (đã đồng bộ) — đám cháy trên xe chỉ là hình ảnh cục bộ, không gửi mạng
+  const _wp = new THREE.Vector3();
+  function douseFires(u, d, dt, fx) {
+    const wy = u.waterY;
+    if (wy === null || wy === undefined || !(u.waterDepth > 0.5) || !d.fires.length) return;
+    let n = 0;
+    for (let i = d.fires.length - 1; i >= 0; i--) {
+      const f = d.fires[i];
+      u.group.localToWorld(_wp.set(f.x, f.y, f.z));
+      if (_wp.y >= wy + 0.6) { f.wet = 0; continue; }
+      f.wet = (f.wet || 0) + dt;
+      if (f.wet < (f.douseAt || 0.6)) continue;
+      d.fires.splice(i, 1);
+      if (fx && fx.douseSteam) fx.douseSteam(_wp, wy, f.k, n === 0);
+      n++;
+    }
+    if (n) logDoused(u);
+  }
+  function logDoused(u) {
+    const g = typeof window !== 'undefined' ? window.game : null;
+    if (!u.isPlayer || !g || !g.addCombatLog) return;
+    const now = Date.now();
+    if (u._douseLogAt && now - u._douseLogAt < 5000) return;
+    u._douseLogAt = now;
+    g.addCombatLog('[[flame-off]] Nước tràn lên dập tắt đám cháy trên xe', 'tip');
   }
 
   // Bình chữa cháy tự động (trang bị): cảm biến thấy lửa -> xả khí dập lửa ngay (nghe "PSSSHH"; trong xe mình to & rõ)
@@ -3302,8 +3331,10 @@ const VehicleDamage = (() => {
     u.dmg = null;
   }
 
-  // Cập nhật mỗi khung hình: mảnh vỡ, hẹn giờ nối xích
-  function update(dt, units) {
+  // Cập nhật mỗi khung hình: mảnh vỡ, hẹn giờ nối xích, lửa bị nước dập
+  // fx: hệ hiệu ứng (hơi nước khi lửa tắt); bỏ trống thì lấy của trận đang chơi
+  function update(dt, units, fx) {
+    if (!fx && typeof window !== 'undefined' && window.game && window.game.effectsManager) fx = window.game.effectsManager.fx;
     updateDebris(dt);
     if (units) {
       for (const u of units) {
@@ -3318,6 +3349,7 @@ const VehicleDamage = (() => {
         }
         const fk = (typeof Equipment !== 'undefined' && Equipment.fireMul) ? Equipment.fireMul(u) : 1;
         for (let i = d.fires.length - 1; i >= 0; i--) { const f = d.fires[i]; f.t += dt * fk; if (f.t > f.life) d.fires.splice(i, 1); }
+        douseFires(u, d, dt, fx);
         // Tiếng lửa đang cháy trên xe (động cơ, khoang): nguồn âm liên tục, báo "còn cháy" 2 lần/giây,
         // to theo đám cháy lớn nhất; hết lửa thì tự tắt dần
         if (d.fires.length) {
@@ -3581,7 +3613,7 @@ const VehicleDamage = (() => {
 
   return {
     ARMOR, ammoClass, extinguisherSound, onDirectHit, onSplash, onDestroyed, onDetonate, reset, update, recompute, summary, state,
-    visualOnly, digest, applyDigest, addFire,
+    visualOnly, digest, applyDigest, addFire, logDoused,
     detachTag, flatTire, blowWheel, breakTrack, bendTag, sfx, debugAction,
     crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, hatchHoles, armorOutcome, ARMOR_MM, PEN,
     setGroundProvider(fn) { groundProvider = fn; },

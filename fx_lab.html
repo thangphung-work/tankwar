@@ -1641,7 +1641,7 @@
   const SPLASH_R = { NORMAL: 35, HE: 50, AP: 7, CLUSTER_SUBMUNITION: 25, RPG: 38, GATLING_BULLET: 10, INCENDIARY: 14, SCOUT_BULLET: 10 };
   function applyHit(p, hit, vel) {
     if (hit.hitType === 'WATER') {
-      fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12);
+      fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12, vel ? { x: vel.x, y: vel.y, z: vel.z } : null);
       playBoom(hit.point, 'WATER', p.ammo, p.heavy);
       return;
     }
@@ -1795,6 +1795,23 @@
         }
       }
       const hit = collide(p.prev, pos);
+      // Chạm nước góc thấp: đạn nảy khỏi mặt nước bay tiếp (cùng luật với trận thật: BallisticsSystem3D.waterSkip)
+      if (hit && hit.hitType === 'WATER' && BAL && BAL.waterSkip) {
+        if (p._bs === undefined) p._bs = (Math.random() * 4294967296) >>> 0;
+        const sh = { ammoType: p.ammo, isDirectFire: state.sel.path !== 'arc', isHeavyArty: !!p.heavy, burstSeed: p._bs, skips: p.skips || 0,
+          x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z };
+        const keepFx = BAL.fx; BAL.fx = fx;
+        const skipped = BAL.waterSkip(sh, hit.point.y, p.prev.x, p.prev.y, p.prev.z);
+        BAL.fx = keepFx;
+        if (skipped) {
+          p.skips = sh.skips;
+          p.numeric = true; p.pos = new THREE.Vector3(sh.x, sh.y, sh.z); p.vel = new THREE.Vector3(sh.vx, sh.vy, sh.vz);
+          p.drag = (p.drag || 0.02) * 1.5;
+          p.prev.copy(p.pos); p.T = p.t + 4;
+          p.mesh.position.copy(p.pos);
+          continue;
+        }
+      }
       if (hit || p.t >= p.T) {
         const h = hit || { point: pos, normal: new THREE.Vector3(0, 1, 0), object: null, unit: null, hitType: 'GROUND' };
         applyHit(p, h, vel);
@@ -2094,7 +2111,7 @@
     updateRipples(dt);
     if (EX.pond && EX.pond.water) EX.pond.water.material.uniforms.uTime.value += dt;
     if (typeof VehicleDamage !== 'undefined') {
-      VehicleDamage.update(dt, [targetTank]);
+      VehicleDamage.update(dt, [targetTank], fx);
       if (typeof CamoFire !== 'undefined') CamoFire.update(dt, { units: [targetTank], fx });
       // Thân xe lệch theo lốp xẹp (xe mục tiêu đứng yên không chạy vòng cập nhật của game)
       if (targetTank.dmg && targetTank.chassisGroup && !targetTank.isDead) {
