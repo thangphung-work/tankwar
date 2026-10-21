@@ -3890,10 +3890,10 @@ class ArtilleryGame3D {
     return { x, z, y: ground(x, z), hy: oy + dy * tEnd, d: tEnd, unit: null };
   }
 
-  // Thang góc nòng (độ, so với thân xe) trên màn hình ngắm điện tử: cao 180px
+  // Thang góc nòng (độ, so với thân xe) trên màn hình ngắm điện tử: cao 140px
   digitalElevY(P, d) {
     const B = this.ballistics, elMax = B && B.maxElevationFor ? B.maxElevationFor(P) : 20, elMin = -10;
-    return 170 - (Math.max(elMin, Math.min(elMax, d)) - elMin) / (elMax - elMin) * 160;
+    return 132 - (Math.max(elMin, Math.min(elMax, d)) - elMin) / (elMax - elMin) * 124;
   }
 
   // Bảng quanh màn hình ngắm điện tử: thước hướng (trên), thang góc nòng (phải), hướng tháp so với thân xe (dưới trái),
@@ -3909,7 +3909,7 @@ class ArtilleryGame3D {
     e += '<line class="gs-l" x1="36" y1="' + this.digitalElevY(P, elMax).toFixed(1) + '" x2="36" y2="' + this.digitalElevY(P, -10).toFixed(1) + '"/>'
       + '<g class="gs-elc"><path class="gs-m" d="M38 0 L45 -4 L45 4 Z"/></g>';
     return '<div class="gs-tape"><svg viewBox="-150 0 300 34"></svg></div>'
-      + '<svg class="gs-elev" viewBox="0 0 46 180">' + e + '</svg>'
+      + '<svg class="gs-elev" viewBox="0 0 46 140">' + e + '</svg>'
       + '<svg class="gs-trt" viewBox="-32 -32 64 64"><circle class="gs-l gs-dim" r="30"/>'
       + '<rect class="gs-l" x="-9" y="-15" width="18" height="30" rx="2"/><path class="gs-l" d="M-5 -15 L0 -21 L5 -15"/>'
       + '<g class="gs-trtg"><circle class="gs-l" r="6"/><line class="gs-m" x1="0" y1="-6" x2="0" y2="-28"/></g></svg>'
@@ -3926,17 +3926,23 @@ class ArtilleryGame3D {
     const lab = 10 * m >= 20;   // vạch đủ thưa mới ghi số
     const tick = (big) => big ? Math.max(4, 1.5 * m) : Math.max(2.5, 0.8 * m);
     let h = '';
-    if (kind === 'ring') {
-      // pháo tự động 30mm: chữ Λ tại điểm ngắm, thước ngang ±40 ly (vạch 5 ly, số mỗi 10 ly) đo đón đầu xe chạy ngang,
-      // vạch dọc bên dưới mỗi 5 ly
-      const g = Math.max(5 * m, 10);
-      h += ln(-40 * m, 0, -g, 0) + ln(g, 0, 40 * m, 0) + ln(0, g, 0, 25 * m);
-      for (let k = 5; k <= 40; k += 5) {
-        const x = k * m, big = k % 10 === 0, t = tick(big);
+    // thước đón đầu ngang ±100 ly: trong trận xe chạy 40 km/h cần đón ~80-100 ly (xem dòng ĐÓN XE ở bảng vũ khí);
+    // vạch 5 ly trong ±20 ly cho ngắm tinh, ra ngoài vạch 10 ly, số mỗi 20 ly
+    const leadScale = (g) => {
+      let r = ln(-100 * m, 0, -g, 0) + ln(g, 0, 100 * m, 0);
+      for (let k = 5; k <= 100; k += 5) {
+        if (k > 20 && k % 10) continue;
+        const x = k * m, big = k % 20 === 0, t = tick(big || k === 10);
         if (x < g) continue;
-        h += ln(x, 0, x, -t, 'gs-t') + ln(-x, 0, -x, -t, 'gs-t');
-        if (big && lab) h += tx(x, -t - 3, k) + tx(-x, -t - 3, k);
+        r += ln(x, 0, x, -t, 'gs-t') + ln(-x, 0, -x, -t, 'gs-t');
+        if (big && 20 * m >= 24) r += tx(x, -t - 3, k) + tx(-x, -t - 3, k);
       }
+      return r;
+    };
+    if (kind === 'ring') {
+      // pháo tự động 30mm: chữ Λ tại điểm ngắm, thước đón đầu ngang, vạch dọc bên dưới mỗi 5 ly
+      const g = Math.max(5 * m, 10);
+      h += leadScale(g) + ln(0, g, 0, 25 * m);
       for (let k = 10; k <= 25; k += 5) { const y = k * m, w = tick(k % 10 === 0); if (y > g) h += ln(-w, y, w, y, 'gs-t'); }
       const c = Math.max(5, 1.6 * m);
       h += '<path class="gs-m" d="M' + f(-c) + ' ' + f(c) + ' L0 0 L' + f(c) + ' ' + f(c) + '"/><circle class="gs-d" r="1.2"/>';
@@ -3955,15 +3961,15 @@ class ArtilleryGame3D {
         + ' M' + f(gx) + ' ' + f(gy - c) + ' V' + f(gy) + ' H' + f(gx - c) + ' M' + f(-gx + c) + ' ' + f(gy) + ' H' + f(-gx) + ' V' + f(gy - c) + '"/>'
         + '<circle class="gs-d" r="1.2"/>';
     } else {
-      // trạm vũ khí 12.7mm: chữ thập mảnh có khe 3 ly, vạch 5 ly (số mỗi 10 ly) để đón đầu, chấm sáng ở tâm
+      // trạm vũ khí 12.7mm: chữ thập mảnh có khe 3 ly, thước đón đầu ngang, vạch dọc 5 ly (số mỗi 10 ly), chấm sáng ở tâm
       const g = Math.max(3 * m, 8);
-      h += ln(-30 * m, 0, -g, 0) + ln(g, 0, 30 * m, 0) + ln(0, -15 * m, 0, -g) + ln(0, g, 0, 30 * m);
+      h += leadScale(g) + ln(0, -15 * m, 0, -g) + ln(0, g, 0, 30 * m);
       for (let k = 5; k <= 30; k += 5) {
         const d = k * m, big = k % 10 === 0, t = tick(big);
         if (d < g) continue;
-        h += ln(d, -t, d, t, 'gs-t') + ln(-d, -t, -d, t, 'gs-t') + ln(-t, d, t, d, 'gs-t');
+        h += ln(-t, d, t, d, 'gs-t');
         if (k <= 15) h += ln(-t, -d, t, -d, 'gs-t');
-        if (big && lab) h += tx(d, -t - 3, k) + tx(-d, -t - 3, k) + tx(t + 3, d + 3.5, k, 'start');
+        if (big && lab) h += tx(t + 3, d + 3.5, k, 'start');
       }
       h += '<circle class="gs-m" r="' + f(Math.max(3, 1 * m)) + '"/><circle class="gs-d" r="' + f(Math.max(1.3, 0.3 * m)) + '"/>';
     }
@@ -3991,7 +3997,7 @@ class ArtilleryGame3D {
       for (let d = Math.ceil((hdg - 25) / 5) * 5; d <= hdg + 25; d += 5) {
         const x = ((d - hdg) * 6).toFixed(1), big = d % 10 === 0;
         t += '<line class="gs-l" x1="' + x + '" y1="8" x2="' + x + '" y2="' + (big ? 16 : 12) + '"/>';
-        if (big && Math.abs(d - hdg) > 4) t += '<text class="gs-n" x="' + x + '" y="29" text-anchor="middle">' + String(((d % 360) + 360) % 360).padStart(3, '0') + '</text>';
+        if (big && Math.abs(d - hdg) > 6.5) t += '<text class="gs-n" x="' + x + '" y="29" text-anchor="middle">' + String(((d % 360) + 360) % 360).padStart(3, '0') + '</text>';
       }
       t += '<path class="gs-m" d="M-5 0 L5 0 L0 6 Z"/><rect class="gs-l" x="-19" y="18" width="38" height="15" rx="1"/>'
         + '<text class="gs-n gs-hd" x="0" y="29.5" text-anchor="middle">' + String(Math.round(hdg) % 360).padStart(3, '0') + '</text>';
@@ -4016,7 +4022,7 @@ class ArtilleryGame3D {
       sd = sk === 'locked' && !(P.antiTankCooldown > 0) ? '' : 'warn';
     } else if (P.reloadTimer > 0) { st = (gat ? 'THAY BĂNG ' : 'THAY DÂY ĐẠN ') + P.reloadTimer.toFixed(1) + ' S'; sd = 'warn'; }
     else if (P.isOverheated) { st = 'QUÁ NHIỆT — CHỜ NGUỘI'; sd = 'bad'; }
-    else if (firing && !spun) { st = 'QUAY NÒNG ' + Math.round((P.spinUpTime || 0) / Math.max(0.01, P.spinRequired) * 100) + '%'; sd = 'warn'; }
+    else if (firing && !spun && gat) { st = 'QUAY NÒNG ' + Math.round((P.spinUpTime || 0) / Math.max(0.01, P.spinRequired) * 100) + '%'; sd = 'warn'; }
     else if (firing) { st = 'ĐANG BẮN'; sd = 'fire'; }
     else st = 'SẴN SÀNG';
     const inc = P.selectedAmmo === 'INCENDIARY';
@@ -4114,7 +4120,7 @@ class ArtilleryGame3D {
         '#gun-sight .gs-tape .gs-hd{font-size:12px;font-weight:600;fill:#fff}',
         '#gun-sight .gs-tape{position:absolute;top:max(calc(7vh + 30px),104px);left:50%;width:300px;height:34px;margin-left:-150px}',
         '#gun-sight .gs-tape svg{width:100%;height:100%}',
-        '#gun-sight svg.gs-elev{position:absolute;right:calc(7vw + 14px);top:50%;width:46px;height:180px;margin-top:-90px}',
+        '#gun-sight svg.gs-elev{position:absolute;right:calc(7vw + 14px);top:calc(50% - 150px);width:46px;height:140px}',
         '#gun-sight svg.gs-trt{position:absolute;left:calc(7vw + 14px);bottom:calc(7vh + 100px);width:64px;height:64px}',
         '#gun-sight .gs-dim{opacity:.45}',
         '#gun-sight .gs-wpn{position:absolute;right:calc(7vw + 14px);bottom:calc(7vh + 100px);display:grid;gap:4px;justify-items:end;font-size:12px;letter-spacing:.06em;text-shadow:0 0 3px #000,0 0 6px #000;font-variant-numeric:tabular-nums}',
