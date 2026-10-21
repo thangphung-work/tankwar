@@ -183,7 +183,7 @@ const GameMenu = (() => {
       ['<i class="ti ti-mouse"></i> Con lăn chuột', 'Camera gần / xa (kéo xa để nhìn từ trên cao)'],
       ['<i class="ti ti-mouse"></i> Giữ chuột giữa + kéo', 'Nhìn quanh xe'],
       [K('V'), 'Đổi góc nhìn: bám sau xe / nhìn cao'],
-      [`${K('Ctrl')} hoặc ${K('C')}`, 'Ngắm bắn: kính ngắm trên tháp (lăn chuột phóng to); pháo tự hành: bản đồ hỏa lực nhìn từ trên cao, W A S D di chuyển vùng nhìn. Bấm lại để thoát'],
+      [`${K('Ctrl')} hoặc ${K('C')}`, 'Ngắm bắn: kính ngắm trên tháp — rê chuột ngắm tự do, nhấp trái / Space bắn, vẫn lái W A S D được, Tab tự khóa xe địch gần tâm kính, lăn chuột phóng to; pháo tự hành: drone điều khiển hỏa lực, W A S D lái drone. Bấm lại để thoát'],
       [K('I'), 'Xem chi tiết xe'],
       [K('Esc'), 'Menu / cài đặt']
     ];
