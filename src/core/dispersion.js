@@ -50,17 +50,19 @@ const Dispersion = (() => {
   //  settleT / settleGain: đứng yên, nòng không đổi hướng settleT giây -> chụm hơn settleGain
   //  rough  : nhạy với độ gồ ghề mặt đường khi chạy (xe bánh lốp giảm xóc lò xo nảy nhiều, xe xích đè phẳng ổ gà)
   //  jolt   : xe đang hẫng / vừa đập xuống sau cú nhảy -> σ x (1 + jolt)
+  //  sway / swayHz: độ rung hình trong kính ngắm (rad ứng với mỗi đơn vị phạt chuyển động) và tần số rung chính —
+  //           xe có ổn định pháo rung nhỏ, nhanh (rì rì); giá súng / xe tải không ổn định lắc lớn, chậm (chòng chành)
   const VEH = {
     // HALBERD: ổn định pháo 2 trục, kính ngắm pháo thủ ổn định độc lập — bắn khi chạy tốt nhất
-    ALL_ROUNDER: { move: 1.1, turnK: 0.016, turnMax: 0.6, hull: 0.15, settleT: 2.0, settleGain: 0.22, rough: 0.35, jolt: 0.6 },
+    ALL_ROUNDER: { move: 1.1, turnK: 0.016, turnMax: 0.6, hull: 0.15, settleT: 2.0, settleGain: 0.22, rough: 0.35, jolt: 0.6, sway: 0.0012, swayHz: 7 },
     // HAILSTORM: khung gầm xích như tăng chủ lực, tháp có ổn định nhưng cụm 6 nòng nặng, quay nhanh hơn
-    GATLING:     { move: 1.0, turnK: 0.018, turnMax: 0.7, hull: 0.25, settleT: 1.5, settleGain: 0.15, rough: 0.4, jolt: 0.7 },
+    GATLING:     { move: 1.0, turnK: 0.018, turnMax: 0.7, hull: 0.25, settleT: 1.5, settleGain: 0.15, rough: 0.4, jolt: 0.7, sway: 0.002, swayHz: 5.5 },
     // MARTEN: súng máy / ống phóng trên giá xoay, không ổn định; xe 4x4 nhẹ nảy mạnh trên đường xấu
-    SCOUT:       { move: 1.5, turnK: 0.03, turnMax: 1.2, hull: 0.6, settleT: 1.5, settleGain: 0.2, rough: 1.0, jolt: 1.2 },
+    SCOUT:       { move: 1.5, turnK: 0.03, turnMax: 1.2, hull: 0.6, settleT: 1.5, settleGain: 0.2, rough: 1.0, jolt: 1.2, sway: 0.0045, swayHz: 2.6 },
     // ARBALEST: xe tải 6x6 chở lựu pháo, không ổn định; cần đứng yên lâu để khung xe hết rung
-    ARTILLERY:   { move: 2.5, turnK: 0.035, turnMax: 1.2, hull: 0.8, settleT: 3.0, settleGain: 0.3, rough: 1.0, jolt: 1.5 }
+    ARTILLERY:   { move: 2.5, turnK: 0.035, turnMax: 1.2, hull: 0.8, settleT: 3.0, settleGain: 0.3, rough: 1.0, jolt: 1.5, sway: 0.006, swayHz: 1.8 }
   };
-  const VEH_DEFAULT = { move: 1.2, turnK: 0.025, turnMax: 1.0, hull: 0.25, settleT: 2.0, settleGain: 0.22, rough: 0.5, jolt: 0.8 };
+  const VEH_DEFAULT = { move: 1.2, turnK: 0.025, turnMax: 1.0, hull: 0.25, settleT: 2.0, settleGain: 0.22, rough: 0.5, jolt: 0.8, sway: 0.003, swayHz: 3 };
   const vehOf = u => VEH[u && u.tankType] || VEH_DEFAULT;
   // độ gồ ghề mặt đất (terrainInfo.bumpiness): bãi cỏ 0.4 là mốc (hệ số move ở trên tính theo mốc này),
   // đường nhựa ~0.1 êm hơn, sườn núi đá 1.4 / đống đổ nát 1.2 xóc hơn nhiều
@@ -126,22 +128,40 @@ const Dispersion = (() => {
     return PROFILE[key] || PROFILE.TANK_NORMAL;
   }
 
+  /** Các thành phần phạt do chuyển động (cộng vào hệ số nhân): chạy (theo mặt đường), quay tháp / thân, hẫng / đập xuống */
+  function motionTerms(u, V, S) {
+    const sp = Math.min(1.3, Math.abs(u.speed || 0) / Math.max(1, u.baseMaxSpeed || 100));
+    // chạy trên đường xấu xóc hơn, đường nhựa êm hơn (spg.js lưu độ gồ ghề mặt đất dưới xe vào _bumpiness)
+    const bump = u._bumpiness !== undefined ? Math.max(ROUGH_MIN, Math.min(ROUGH_MAX, u._bumpiness)) : ROUGH_REF;
+    // đang hẫng sau cú nhảy / vừa đập xuống đất: cả xe giật nảy
+    const jolt = u.airborne ? 1 : Math.min(1, u._landK || 0);
+    return {
+      move: V.move * sp * Math.max(0.3, 1 + V.rough * (bump - ROUGH_REF)),
+      turn: Math.min(V.turnMax, S.rate * V.turnK),
+      jolt: V.jolt * jolt
+    };
+  }
+
+  /**
+   * Độ rung hình trong kính ngắm lúc này — cùng nguồn với độ tản mát (chạy / mặt đường / quay tháp / hẫng), để người
+   * chơi nhìn kính là biết đang bắn chụm hay tản: { amp (rad, biên độ ~1σ), hz (tần số rung chính) }.
+   * Chỉ là hình ảnh: phát bắn đã lệch ngẫu nhiên theo sigma(), không cộng thêm độ rung này vào đường đạn.
+   */
+  function sway(u) {
+    if (!u) return { amp: 0, hz: 3 };
+    const V = vehOf(u), M = motionTerms(u, V, stateOf(u));
+    return { amp: V.sway * (M.move + 0.6 * M.turn + M.jolt), hz: V.swayHz };
+  }
+
   /** Hệ số nhân độ tản mát hiện tại của xe (1 = đứng yên vừa dừng tay) */
   function multiplier(u) {
     if (!u) return 1;
     const S = stateOf(u);
     const V = vehOf(u);
-    let m = 1;
-    const sp = Math.min(1.3, Math.abs(u.speed || 0) / Math.max(1, u.baseMaxSpeed || 100));
-    // chạy trên đường xấu xóc hơn, đường nhựa êm hơn (spg.js lưu độ gồ ghề mặt đất dưới xe vào _bumpiness)
-    const bump = u._bumpiness !== undefined ? Math.max(ROUGH_MIN, Math.min(ROUGH_MAX, u._bumpiness)) : ROUGH_REF;
-    m *= 1 + V.move * sp * Math.max(0.3, 1 + V.rough * (bump - ROUGH_REF));
-    m *= 1 + Math.min(V.turnMax, S.rate * V.turnK);
+    const M = motionTerms(u, V, S);
+    let m = (1 + M.move) * (1 + M.turn) * (1 + M.jolt);
     m *= 1 + S.bloom;
     m *= 1 - V.settleGain * Math.min(1, S.still / V.settleT);
-    // đang hẫng sau cú nhảy / vừa đập xuống đất: cả xe giật nảy
-    const jolt = u.airborne ? 1 : Math.min(1, u._landK || 0);
-    if (jolt > 0) m *= 1 + V.jolt * jolt;
     if (u.tankType === 'ARTILLERY' && !u.isDeployed) m *= 1.8;   // chưa hạ chân chống: cả xe giật nảy theo phát bắn
     const d = u.dmg;
     if (d && d.lost && d.lost.has && d.lost.has('opticGunner')) m *= 1.7;   // vỡ kính ngắm pháo thủ: ngắm qua kính dự phòng
@@ -223,7 +243,7 @@ const Dispersion = (() => {
     return { vx: dx / dl * nsp, vy: dy / dl * nsp, vz: dz / dl * nsp };
   }
 
-  return { SCALE, PROFILE, ARTY_LOB, RANGE_GROW, VEH, track, sigma, ring, multiplier, perturb, profileFor, rangeMul };
+  return { SCALE, PROFILE, ARTY_LOB, RANGE_GROW, VEH, track, sigma, ring, multiplier, sway, perturb, profileFor, rangeMul };
 })();
 
 if (typeof window !== 'undefined') window.Dispersion = Dispersion;
