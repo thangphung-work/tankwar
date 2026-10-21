@@ -45,8 +45,13 @@
     M.tire = M.tire || M.rubber;
     M.soot = M.soot || M.dark;
     M.wood = M.wood || M.canvasDark;
-    M.glassWind = M.glassWind || M.glass;
+    M.glassWindL = M.glassWindL || M.glass;
+    M.glassWindR = M.glassWindR || M.glass;
     M.glassDusty = M.glassDusty || M.glass;
+    M.headLensL = M.headLensL || M.lens;
+    M.headLensR = M.headLensR || M.lens;
+    M.amberLens = M.amberLens || M.tailLens;
+    M.mirror = M.mirror || M.glass;
     const rnd = K.mulberry32((Math.random() * 1e9) | 0);
 
     const chassis = new THREE.Group();
@@ -141,11 +146,20 @@
     // Lấp lòng hốc bánh (khối động cơ/khung phía trong)
     hb.box(14.0, 6.5, 12.0, D, [0, 8.8, ax]);
 
-    // Kính chắn gió 2 tấm nghiêng + gờ che nắng + gạt nước
+    // Kính chắn gió 2 tấm nghiêng (bên lái có vô-lăng sau kính, bên phụ dính vết đá văng) + gạt nước nằm nghỉ
+    // dọc mép dưới: gốc cần ở góc ngoài-dưới mỗi tấm, khớp với cung quét sạch vẽ trên texture kính
     const wsAngle = Math.atan2(36.8 - 33.5, CAB_ROOF - 15.0);
+    const wc = Math.cos(wsAngle), wsn = Math.sin(wsAngle);
     for (const s of [-1, 1]) {
-      hb.box(8.9, 7.0, 0.16, M.glassWind, [s * 4.85, 18.65, -35.42], [wsAngle, 0, 0]);
-      hb.box(0.12, 0.12, 4.2, D, [s * 4.6, 16.0, -36.4], [0, 0, s * 0.6]);
+      hb.box(8.9, 7.0, 0.16, s < 0 ? M.glassWindL : M.glassWindR, [s * 4.85, 18.65, -35.42], [wsAngle, 0, 0]);
+      // điểm trên mặt kính: lx dọc bề ngang tấm, ly dọc chiều cao, lz pháp tuyến (âm = ra phía trước)
+      const W = (lx, ly, lz) => [s * 4.85 + lx, 18.65 + ly * wc - lz * wsn, -35.42 + ly * wsn + lz * wc];
+      const tilt = s < 0 ? 0.03 : 0.1;   // cần bên phụ nghỉ lệch, không nằm sát mép
+      const piv = W(3.15, -3.85, -0.2);
+      hb.cyl(0.2, 0.22, 0.35, 8, D, piv, 'z', [wsAngle, 0, 0]);
+      hb.beam(piv, W(-0.1, -3.05 + tilt * 3, -0.32), 0.14, 0.1, D);
+      hb.box(4.6, 0.1, 0.16, M.rubber, W(-0.15, -3.12 + tilt * 3, -0.2), [wsAngle, 0, tilt]);
+      hb.box(4.4, 0.08, 0.1, D, W(-0.15, -3.05 + tilt * 3, -0.3), [wsAngle, 0, tilt]);
     }
     hb.box(0.6, 7.6, 0.3, P, [0, 18.65, -35.45], [wsAngle, 0, 0]);
     // Khung viền kính chắn gió
@@ -168,7 +182,7 @@
       hb.setTag('mirror' + (s < 0 ? 'L' : 'R'));
       hb.beam([s * (HALF_W - 0.2), 19.5, -34.8], [s * (HALF_W + 2.0), 19.0, -35.6], 0.25, 0.25, D);
       hb.box(0.5, 3.2, 1.8, D, [s * (HALF_W + 2.2), 18.2, -35.6]);
-      hb.box(0.1, 2.8, 1.5, M.glass, [s * (HALF_W + 2.48), 18.2, -35.6]);
+      hb.box(0.1, 2.8, 1.5, M.mirror, [s * (HALF_W + 2.48), 18.2, -35.6], [0, 0, s * 0.05]);
       hb.setTag(null);
     }
 
@@ -177,12 +191,29 @@
     for (let i = 0; i < 6; i++) hb.box(9.0, 0.25, 0.3, D, [0, 11.5 + i * 0.55, -37.25], [-0.15, 0, 0]);
     for (const s of [-1, 1]) {
       hb.setTag('lamp' + (s < 0 ? 'L' : 'R'));
+      // Hộp đèn: đèn pha tròn lõm trong chén đèn có vành thép, kính vòm khía rãnh (đèn trái nứt), xi-nhan hổ phách
+      // khía gân, đèn mờ hành quân ban đêm (khe hẹp); lồng thép bảo vệ có một thanh bị cong
       hb.box(3.0, 1.8, 0.6, D, [s * 8.3, 8.8, -38.7]);
-      hb.cyl(0.6, 0.6, 0.2, 14, M.lens, [s * 7.6, 8.9, -39.05], 'z');
-      hb.box(0.6, 0.45, 0.2, M.tailLens, [s * 9.3, 8.9, -39.05]);
-      hb.box(3.4, 0.18, 0.18, P, [s * 8.3, 10.0, -39.4]);
-      hb.box(0.18, 2.2, 0.18, P, [s * 6.6, 8.9, -39.4]);
-      hb.box(0.18, 2.2, 0.18, P, [s * 10.0, 8.9, -39.4]);
+      const lx = s * 7.6, ly = 8.9;
+      hb.cyl(0.78, 0.74, 0.4, 18, D, [lx, ly, -39.15], 'z');
+      hb.add(new THREE.TorusGeometry(0.68, 0.08, 6, 20), M.steel, [lx, ly, -39.36]);
+      hb.add(domeLens(0.64, 0.12), s < 0 ? M.headLensL : M.headLensR, [lx, ly, -39.3]);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.4;
+        hb.cyl(0.05, 0.05, 0.08, 6, M.steel, [lx + Math.cos(a) * 0.68, ly + Math.sin(a) * 0.68, -39.42], 'z');
+      }
+      hb.box(0.62, 0.42, 0.2, D, [s * 9.3, 9.28, -39.05]);
+      hb.box(0.52, 0.32, 0.08, M.amberLens, [s * 9.3, 9.28, -39.17]);
+      for (let i = 0; i < 3; i++) hb.box(0.5, 0.03, 0.04, M.amberLens, [s * 9.3, 9.18 + i * 0.1, -39.22]);
+      hb.box(0.62, 0.36, 0.22, D, [s * 9.3, 8.45, -39.06]);
+      for (let i = 0; i < 3; i++) hb.box(0.36, 0.035, 0.05, M.lens, [s * 9.3, 8.36 + i * 0.09, -39.18]);
+      hb.box(3.4, 0.18, 0.18, P, [s * 8.3, 10.0, -39.6]);
+      hb.box(0.18, 2.2, 0.18, P, [s * 6.6, 8.9, -39.6]);
+      hb.box(0.18, 2.2, 0.18, P, [s * 10.0, 8.9, -39.6]);
+      for (const bx of [-0.35, 0.35]) {
+        const bent = s < 0 && bx > 0;
+        hb.box(0.12, 2.0, 0.12, P, [lx + bx + (bent ? 0.12 : 0), 8.9, -39.62 + (bent ? 0.08 : 0)], [bent ? 0.12 : 0, 0, bent ? -0.14 : 0]);
+      }
       hb.setTag(null);
       hb.add(new THREE.TorusGeometry(0.75, 0.22, 6, 12, Math.PI * 1.3), M.steel, [s * 4.0, 6.4, -38.8], [0, Math.PI / 2, Math.PI * 0.85]);
     }
@@ -395,6 +426,17 @@
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) * VehicleKit.UV_SCALE, pos.getZ(i) * VehicleKit.UV_SCALE + pos.getY(i) * 0.02);
     geo.userData.customUV = true;
     return geo;
+  }
+
+  // Kính đèn vòm (chỏm cầu) hướng -z, bán kính miệng r, độ phồng h; UV phẳng theo mặt kính (0..1 trên miệng đèn)
+  function domeLens(r, h) {
+    const R = (r * r + h * h) / (2 * h), th = Math.asin(r / R);
+    const g = new THREE.SphereGeometry(R, 20, 5, 0, Math.PI * 2, 0, th).toNonIndexed();
+    g.translate(0, -(R - h), 0);
+    g.rotateX(-Math.PI / 2);
+    const pos = g.attributes.position, uv = g.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, 0.5 - pos.getX(i) / (2 * r), 0.5 + pos.getY(i) / (2 * r));
+    return g;
   }
 
   // Mặt vành thép lòng chảo (trục Y, mặt ngoài hướng +Y): mép vành cuộn, thành chảo lõm, mặt bắt bu-lông, moay-ơ
@@ -868,12 +910,35 @@
     section(1.08, 1.18, -52.0, -66.0);
     for (const z of [-18.2, -44.0, -60.0]) gb.cyl(1.5, 1.5, 0.6, 20, M.dark, [0, 0, z], 'z');
 
-    // Hãm lùi đầu nòng 2 tầng: khối thép với cửa xả khí hai bên
-    gb.box(3.6, 2.7, 6.0, M.soot, [0, 0, -69.0]);   // khí thuốc phóng hun đen cả khối
-    for (const z of [-67.4, -70.6]) {
-      for (const s of [-1, 1]) gb.box(0.2, 1.9, 1.8, M.bore, [s * 1.82, 0, z]);
+    // Hãm lùi đầu nòng 2 tầng kiểu lựu pháo 155 hiện đại: ống ren bắt vào nòng + vòng hãm, thân sau, 2 vách chắn
+    // dày (vách trước làm mặt đầu nòng) có lỗ cho đạn đi qua; giữa các vách chỉ có cầu nối trên / dưới, hai bên để
+    // hở thành cửa xả -> nhìn ngang thấy xuyên qua, khí phụt ngang. Vách & mép cửa xả hun đen muội, thân sơn cháy bạc.
+    const baffle = (w, h, r, hole, t, z, mat) => {
+      const sh = new THREE.Shape(), x = w / 2 - 0.06, y = h / 2 - 0.06;
+      sh.moveTo(-x + r, -y); sh.lineTo(x - r, -y); sh.quadraticCurveTo(x, -y, x, -y + r);
+      sh.lineTo(x, y - r); sh.quadraticCurveTo(x, y, x - r, y); sh.lineTo(-x + r, y);
+      sh.quadraticCurveTo(-x, y, -x, y - r); sh.lineTo(-x, -y + r); sh.quadraticCurveTo(-x, -y, -x + r, -y);
+      const hp = new THREE.Path();
+      hp.absarc(0, 0, hole, 0, Math.PI * 2, true);
+      sh.holes.push(hp);
+      const g = new THREE.ExtrudeGeometry(sh, { depth: t - 0.12, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 1, curveSegments: 8 });
+      g.translate(0, 0, -(t - 0.12) / 2);
+      gb.add(g, mat, [0, 0, z]);
+    };
+    gb.cyl(1.32, 1.32, 1.3, 22, M.paintDusty, [0, 0, -66.55], 'z');
+    gb.cyl(1.45, 1.45, 0.32, 22, M.dark, [0, 0, -66.1], 'z');
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.3;
+      gb.box(0.18, 0.3, 0.2, M.steel, [Math.cos(a) * 1.5, Math.sin(a) * 1.5, -66.1], [0, 0, a]);
     }
-    gb.cyl(1.0, 1.0, 0.1, 18, M.bore, [0, 0, -72.02], 'z');
+    baffle(3.3, 2.6, 0.6, 1.0, 1.0, -67.6, M.paintDusty);            // thân sau (nối ống ren)
+    baffle(3.9, 2.6, 0.55, 0.74, 0.62, -69.55, M.soot);              // vách giữa
+    baffle(3.9, 2.6, 0.55, 0.74, 0.9, -71.6, M.soot);                // vách trước = mặt đầu nòng
+    for (const sy of [-1, 1]) {
+      gb.box(2.1, 0.5, 4.2, M.paintDusty, [0, sy * 1.05, -69.7]);    // cầu nối trên / dưới
+      gb.box(2.15, 0.06, 0.6, M.soot, [0, sy * 1.31, -68.4]);        // muội tràn qua mép cửa xả
+    }
+    gb.cyl(0.95, 0.95, 0.04, 18, M.bore, [0, 0, -67.23], 'z');       // lòng nòng nhìn qua lỗ vách
     gb.build(barrel);
 
     unit.muzzleTipLocal = new THREE.Vector3(0, 0, -72.2);
