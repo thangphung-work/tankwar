@@ -832,8 +832,8 @@ class ArtilleryGame3D {
     document.addEventListener('mousemove', (e) => {
       const S = this._sight;
       if (!S || !S.free) return;
-      // chưa khóa được chuột: vẫn ngắm được khi rê trên màn hình 3D (con trỏ còn hiện)
-      if (!S.locked && e.target !== canvas) return;
+      // chưa khóa được chuột: vẫn ngắm được khi rê trên màn hình (con trỏ còn hiện), trừ lúc rê trên nút / ô nhập của HUD
+      if (!S.locked && e.target !== canvas && e.target.closest && e.target.closest('button,input,select,textarea,a,label,[role=button]')) return;
       this.freeAimMove(e.movementX || 0, e.movementY || 0);
     });
     window.addEventListener('mouseup', (e) => { if (e.button === 0 && this._sight && this._sight.free) this.isPointerFiring = false; });
