@@ -1691,6 +1691,8 @@ class SPGUnit3D {
       for (const other of allUnits) {
         // xác xe đã chết vẫn là khối thép nằm đó: chặn như xe sống (chỉ bỏ qua khi xác đã dọn / ẩn khỏi cảnh)
         if (other === this || (other.isDead && (!other.group || !other.group.visible || !other.group.parent))) continue;
+        // khác tầng (xe trên nóc hầm / xe trong lòng hầm bên dưới, cầu / gầm cầu): không chạm nhau
+        if (Math.abs((this.y || 0) - (other.y || 0)) > 24) continue;
         const dx = this.x - other.x, dz = this.z - other.z;
         let px = 0, pz = 0;
         if (VC) {

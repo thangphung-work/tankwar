@@ -2306,7 +2306,9 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const view = opts.view || unit;
         // Mái luôn đặc trong trận (xe mình vào hầm thì camera chuyển sang góc nhìn trong xe — game.blendInsideView;
         // nhìn xuyên mái thấy xe bên dưới trông giả). Chỉ phòng thử bật X-quang (opts.all) mới làm mờ để soi xe trong hầm
-        if (opts.all && view && Math.hypot(K.x - view.x, K.z - view.z) < S.REACH + (opts.viewRadius || 560)) {
+        // xe mình đang đứng trên nóc hầm này: mái phải đặc (đang đi trên nó)
+        const onRoof = unit && (unit.y || 0) - K.G > S.CEIL + 10 && (() => { const L = this.local(K, unit.x, unit.z); return Math.abs(L.f) <= S.HB + 12 && Math.abs(L.r) <= S.WO + 12; })();
+        if (opts.all && !onRoof && view && Math.hypot(K.x - view.x, K.z - view.z) < S.REACH + (opts.viewRadius || 560)) {
           if (units && this.occupiedVisible(K, units, unit, true)) want = 0.45;
         }
         const cast = want > 0.5;
