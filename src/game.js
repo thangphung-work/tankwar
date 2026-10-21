@@ -1589,10 +1589,21 @@ class ArtilleryGame3D {
     if (d < 6) return null;
     const az = (Math.atan2(x - P.x, -(z - P.z)) * 180 / Math.PI + 360) % 360;
     const elMax = B.maxElevationFor ? B.maxElevationFor(P) : 30;
+    // Mô phỏng với ĐÚNG góc đang thử: xe thật có getMuzzleWorldTransform -> launchState lấy hướng nòng HIỆN TẠI, bỏ qua
+    // az / el truyền vào -> lời giải phụ thuộc chỗ nòng đang chĩa, nòng nhích tới thì lời giải nhảy đi (nòng & điểm ngắm
+    // lắc qua lại). Bản sao: miệng nòng ở đúng vị trí thật nhưng hướng bắn theo góc đang thử
+    const M0 = typeof P.getMuzzleWorldTransform === 'function' ? P.getMuzzleWorldTransform() : null;
+    const Q = Object.create(P);
+    let trial = 0;
+    Q.getMuzzleWorldTransform = M0 ? () => {
+      const er = trial * Math.PI / 180, ar = az * Math.PI / 180;
+      return { position: M0.position, direction: new THREE.Vector3(Math.sin(ar) * Math.cos(er), Math.sin(er), -Math.cos(ar) * Math.cos(er)) };
+    } : null;
     let el = typeof hintEl === 'number' ? hintEl : Math.atan2(y - ((P.y || 0) + 20), d) * 180 / Math.PI;
-    for (let k = 0; k < 3; k++) {
+    for (let k = 0; k < 4; k++) {
       el = Math.max(-10, Math.min(elMax, el));
-      const tj = B.calculateTrajectoryPoints(P, az, el, P.charge, this.terrain);
+      trial = el;
+      const tj = B.calculateTrajectoryPoints(Q, az, el, P.charge, this.terrain);
       const pts = tj && tj.points;
       if (!pts || pts.length < 2) return el;
       let yAt = null, dEnd = 0, yEnd = 0;
