@@ -179,11 +179,15 @@ class BattleTerrain3D {
     p.sunDir = new THREE.Vector3(Math.cos(sun.elevation) * Math.sin(sun.azimuth), Math.sin(sun.elevation), Math.cos(sun.elevation) * Math.cos(sun.azimuth)).normalize();
     const elevK = Math.min(1, sun.elevation / 0.9);
     p.sunColor = new THREE.Color(0xffe2b0).lerp(new THREE.Color(0xfff6e8), elevK).getHex();
-    // Tổng ánh sáng trên mặt đất phẳng giữa trưa ~1.6 (cũ ~2.2 -> nền sáng bị cắt trắng / lá cây xanh neon);
-    // ánh trời mạnh hơn để vùng bóng còn ~45% vùng nắng (bóng có sắc trời xanh nhạt, không đen kịt)
-    p.sunIntensity = (0.75 + 0.25 * elevK) * p.sunK;
-    p.skyIntensity = (0.68 + 0.1 * elevK) * p.skyK;
-    p.ambientIntensity = 0.15;
+    // Tổng ánh sáng trên mặt đất phẳng giữa trưa ~1.5 (cũ ~2.2 -> nền sáng bị cắt trắng / lá cây xanh neon).
+    // Nắng trực tiếp chiếm phần lớn, ánh trời tán xạ ít hơn: vùng bóng còn ~35% vùng nắng (trước ~45-50% -> cảnh phẳng
+    // như trời âm u, khối nhà / xe không nổi). Bóng vẫn có sắc trời xanh nhạt (ánh trời), không đen kịt
+    p.sunIntensity = (0.75 + 0.25 * elevK) * p.sunK * 1.2;
+    p.skyIntensity = (0.68 + 0.1 * elevK) * p.skyK * 0.78;
+    p.ambientIntensity = 0.08;
+    // bóng mây trôi: độ đậm (phần nắng bị che) & ngưỡng độ phủ — sa mạc trời quang ít mây, rừng / sông hồ mây nhiều
+    const CL = { DESERT: [0.3, 0.66], URBAN: [0.4, 0.6], JUNGLE: [0.45, 0.56], HIGHLAND: [0.4, 0.6], RIVER_LAKE: [0.42, 0.58] }[this.mapType] || [0.4, 0.6];
+    p.cloudK = CL[0]; p.cloudCover = CL[1];
     this.atmosphere = p;
     this.scene.background = new THREE.Color(p.horizon);
     this.scene.fog = new THREE.FogExp2(p.fog, p.density);
@@ -1043,7 +1047,8 @@ ${sea ? 'varying float vDep;' : ''}
   // CẬP NHẬT MỖI KHUNG HÌNH (cây cháy / đổ, nhà sập, mặt nước gợn)
   // ---------------------------------------------------------------------------
   update(dt, fx) {
-    if (typeof GroundShader !== 'undefined') GroundShader.tick(dt);   // bóng mây trôi
+    if (typeof GroundShader !== 'undefined') GroundShader.tick(dt);
+    if (typeof SkySystem !== 'undefined' && SkySystem.tickClouds) SkySystem.tickClouds(dt);   // bóng mây trôi
     if (this.trees) this.trees.update(dt, fx);
     if (this.buildingSet) this.buildingSet.update(dt, fx);
     if (this.propSet) this.propSet.update(dt, fx, this.camPos || null);

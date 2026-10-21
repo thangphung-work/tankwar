@@ -5572,7 +5572,11 @@ class ArtilleryGame3D {
     if (GQ) GQ.beginFrame();
     // drone vừa bị bắn hạ: hình truyền về đứng khựng ở khung cuối (không vẽ khung mới), nhiễu phủ lên
     const frozen = this._sight && this._sight.dying && this._sight.dying.freeze;
+    // bóng mây trôi chỉ bật cho cảnh trận (sảnh / phòng xem xe dùng chung chunk chiếu sáng nhưng không có mây)
+    const atm = this.terrain && this.terrain.atmosphere, SK = typeof SkySystem !== 'undefined' && SkySystem.setClouds ? SkySystem : null;
+    if (SK && atm) SK.setClouds(atm.cloudK || 0, atm.cloudCover);
     if (!frozen) this.renderer.render(this.scene, this.camera);
+    if (SK) SK.setClouds(0);
     if (GQ) GQ.endFrame();
     this.pinShaderPrograms();
 

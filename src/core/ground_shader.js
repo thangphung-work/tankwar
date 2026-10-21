@@ -5,7 +5,7 @@
  * - Mỗi lớp lấy mẫu ở 2 tỉ lệ & lệch hướng (không lộ ô lặp); đá chiếu 3 phía (vách dốc không bị kéo giãn)
  * - Gồ ghề bề mặt (bump) theo độ cao của chính lớp vật liệu đang hiện
  * - Ảnh màu cũ của bản đồ (paintGround) chỉ còn dùng pha màu tầng lớn: vệt ẩm, thảm thực vật, nền đường
- * - Bóng mây trôi chậm trên mặt đất (chỉ làm tối phần nắng chiếu trực tiếp)
+ * - Bóng mây trôi: dùng chung cho mọi vật (SkySystem.installCloudShadows), không còn riêng mặt đất
  */
 const GroundShader = (() => {
   const TEX = {};
@@ -376,12 +376,17 @@ const GroundShader = (() => {
         gNrm: { value: bake ? bake.tex : null }, gTerr: { value: new THREE.Vector2(bake ? bake.half : 1800, bake ? bake.size : 3600) },
         gGrain: { value: L.grain || null }, gWindA: { value: windA }, gSoil: { value: L.soil || null }
       });
+      // độ che khuất quanh chân nhà (Destructibles.buildingInfo, cùng object -> cập nhật khi dựng nhà xong)
+      const BI = typeof Destructibles !== 'undefined' && Destructibles.buildingInfo;
+      sh.uniforms.gBldOcc = BI ? BI.uBldOcc : { value: null };
+      sh.uniforms.gBldGrid = BI ? BI.uBldGrid : { value: new THREE.Vector4(0, 0, 0, 0) };
       sh.vertexShader = 'varying vec3 vGW;\nvarying vec3 vGN;\n' + sh.vertexShader.replace(
         '#include <project_vertex>',
         '#include <project_vertex>\n  vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vGN = normalize(mat3(modelMatrix) * objectNormal);'
       );
-      sh.fragmentShader = `uniform sampler2D gBase, gDirt, gRock, gFine, gNoise, gNrm;
+      sh.fragmentShader = `uniform sampler2D gBase, gDirt, gRock, gFine, gNoise, gNrm, gBldOcc;
 uniform vec2 gTerr;
+uniform vec4 gBldGrid;
 #if __VERSION__ >= 300
 #define GTEXG(s, uv, dx, dy) textureGrad(s, uv, dx, dy)
 #else
@@ -671,8 +676,6 @@ float gTuftH(vec2 p) {
   }
   diffuseColor.rgb *= col;
 
-  // bóng mây trôi (dùng ở phần chiếu sáng)
-  float gCloud = smoothstep(0.5, 0.7, texture2D(gNoise, (wr2 + gTime * vec2(16.0, 7.0)) / 1500.0).b);
 `)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   {
@@ -699,11 +702,19 @@ float gTuftH(vec2 p) {
     normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
   }`)
         .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-  reflectedLight.directDiffuse *= 1.0 - gCloud * 0.5;
+  // (bóng mây trôi: tính chung cho mọi vật liệu trong chunk chiếu sáng, xem SkySystem.installCloudShadows)
   reflectedLight.indirectDiffuse *= 1.0 - gWet * 0.3;   // hõm khuất ánh trời
-  reflectedLight.directSpecular *= 1.0 - gCloud * 0.5;`);
+  // sát chân tường nhà: ánh trời bị tường che một nửa bầu trời -> mặt đất tối dần vào chân tường (bóng tiếp xúc)
+  if (gBldGrid.z > 0.0) {
+    vec2 bu = (vGW.xz - gBldGrid.xy) * gBldGrid.zw;
+    if (bu.x > 0.0 && bu.y > 0.0 && bu.x < 1.0 && bu.y < 1.0) {
+      float gOcc = texture2D(gBldOcc, bu).r;
+      reflectedLight.indirectDiffuse *= 1.0 - 0.6 * gOcc;
+      reflectedLight.directDiffuse *= 1.0 - 0.15 * gOcc;
+    }
+  }`);
     };
-    mat.customProgramCacheKey = () => 'groundPBR10:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
+    mat.customProgramCacheKey = () => 'groundPBR11:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
     mat.needsUpdate = true;
     return mat;
   }
