@@ -213,6 +213,10 @@ class BotAIController {
     }
     if (this.unit.evadeTimer > 0) this.unit.evadeTimer -= dt;
 
+    // PHÒNG KHÔNG: xe 6 nòng thấy drone địch trong tầm -> đứng lại, quay tháp bám drone và xả đạn bắn hạ
+    // (drone đang chỉ điểm cho pháo địch); địch mặt đất áp sát thì tự vệ trước
+    if (this.unit.tankType === 'GATLING' && typeof DroneOps !== 'undefined' && this.engageDrone(dt, allUnits)) return;
+
     // Đang ngắm / khóa xe địch: tia laser đo xa (hoặc dẫn tên lửa) chiếu vào mục tiêu -> xe kia nhận cảnh báo
     if (this.lockUnit) {
       const L = this.lockUnit;
@@ -653,6 +657,29 @@ class BotAIController {
    * Giúp xe giữ cự ly an toàn 50-70m với đồng đội, không bị dồn cục
    */
   // Bot tự nhìn thấy xe đó (mắt / kính ngắm), không tính vị trí do đồng đội báo hay radar
+  // Bắn hạ drone địch (xe 6 nòng): trả true khi đang giao chiến với drone (bỏ qua phần lái / bắn mặt đất khung này)
+  engageDrone(dt, allUnits) {
+    const U = this.unit;
+    const dr = !U.isDead && DroneOps.count ? DroneOps.enemyDroneFor(U, DroneOps.AA_RANGE) : null;
+    const closeFoe = dr && (allUnits || []).some(e => !e.isDead && e.team !== U.team && Math.hypot(e.x - U.x, e.z - U.z) < 260 && this.seesDirect(e));
+    if (!dr || closeFoe) {
+      if (this.aaDrone) { this.aaDrone = null; U.isFiringGatling = false; U.fcsTarget = null; }
+      return false;
+    }
+    if (this.aaDrone !== dr) { this.aaDrone = dr; this.aaReact = 0.5 + Math.random() * 0.6; }   // nhịp phản xạ khi mới thấy drone
+    this.pendingShot = null; this.burstUnit = null;
+    const sol = DroneOps.aaSolution(U, dr);
+    U.aimTo(sol.az);
+    U.fcsTarget = { x: sol.x, y: sol.y, z: sol.z, el: sol.el };
+    const off = U.barrelWorldOffset ? U.barrelWorldOffset() : { az: 0, el: 0 };
+    const resAz = Math.abs(((sol.az - off.az - (U.azimuth || 0) + 540) % 360) - 180);
+    const resEl = Math.abs(sol.el - off.el - U.elevation);
+    this.aaReact -= dt;
+    U.isFiringGatling = this.aaReact <= 0 && resAz < 3 && resEl < 3;
+    U.steer(0, 0, dt);
+    return true;
+  }
+
   seesDirect(t) {
     if (!t || t.isDead) return false;
     if (typeof TeamIntel === 'undefined') return true;

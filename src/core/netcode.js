@@ -892,6 +892,8 @@
       sub('WORLD', (d, from) => this.onWorld(d, from));
       sub('SPOT', (d, from) => this.onSpot(d, from));
       sub('SMOKE', (d, from) => this.onSmoke(d, from));
+      sub('DRONE', (d, from) => this.onDrone(d, from));
+      sub('DRONE_HIT', (d, from) => this.onDroneHit(d, from));
       sub('LOCK', (d, from) => this.onLock(d, from));
       sub('ENV_HIT', (d, from) => this.onEnvHit(d, from));
       sub('PARTS', (d, from) => this.onParts(d, from));
@@ -1462,6 +1464,31 @@
         if (u.smokeLeft > 0) u.smokeLeft--;
         global.Equipment.deploySmoke(this.game, u, { x: d.x, z: d.z, a: d.a });
       }
+    }
+
+    // Drone trinh sát: máy điều khiển xe pháo gửi vị trí drone (a: đang bay, k: vừa bị bắn hạ)
+    sendDrone(unit, r, airborne, killed) {
+      if (this.detached || !unit || unit.netId === undefined || !r) return;
+      const q = v => Math.round(v * 10) / 10;
+      this.net.send('DRONE', { i: unit.netId, x: q(r.x), y: q(r.y), z: q(r.z), a: airborne ? 1 : 0, k: killed ? 1 : 0 });
+    }
+    onDrone(d, from) {
+      if (this.detached || !d || typeof global.DroneOps === 'undefined') return;
+      const u = this.byNetId[d.i];
+      if (!u || u.tankType !== 'ARTILLERY' || this.ownerOf(u) !== from) return;
+      if (![d.x, d.y, d.z].every(Number.isFinite)) return;
+      global.DroneOps.onNet(u, d);
+    }
+    // Đạn 30mm của xe máy này trúng drone do máy khác điều khiển: báo máy đó tự trừ máu drone
+    sendDroneHit(owner, amount, shooter) {
+      if (this.detached || !owner || owner.netId === undefined || !shooter || shooter.netId === undefined) return;
+      this.net.send('DRONE_HIT', { i: owner.netId, a: Math.round(amount * 1000) / 1000, s: shooter.netId });
+    }
+    onDroneHit(d, from) {
+      if (this.detached || !d || typeof global.DroneOps === 'undefined') return;
+      const u = this.byNetId[d.i], sh = this.byNetId[d.s];
+      if (!u || !this.owns(u) || !sh || sh.tankType !== 'GATLING' || this.ownerOf(sh) !== from || !Number.isFinite(d.a)) return;
+      global.DroneOps.onNetHit(u, d.a, sh);
     }
 
     onSpot(d, from) {

@@ -1329,8 +1329,11 @@ class SPGUnit3D {
     }
 
     // Nếu xe đang chui vào bụi cây và chưa bị lộ vị trí do nổ súng
-    const isStealthing = this.isInBush && (this.revealTimer || 0) <= 0;
-    this.targetStealthAlpha = isStealthing ? 0.38 : 1.0;
+    // (chỉ khi bụi thật sự che được loại xe này: trinh sát mờ hẳn, xe tăng / 6 nòng mờ nhẹ, xe pháo không mờ)
+    const cover = typeof TeamIntel !== 'undefined' && TeamIntel.bushCover ? TeamIntel.bushCover(this)
+      : (this.isInBush && (this.revealTimer || 0) <= 0 ? { spot: 1 } : null);
+    const isStealthing = !!cover;
+    this.targetStealthAlpha = cover ? (cover.spot ? 0.38 : 0.72) : 1.0;
 
     // Chuyển đổi độ mờ mượt mà: vào bụi thì mờ êm, khi nổ súng hoặc ra khỏi bụi thì hiện rõ ngay lập tức
     const fadeSpeed = isStealthing ? 4.5 : 8.0;

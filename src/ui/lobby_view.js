@@ -11,24 +11,24 @@
   // Kỹ năng riêng của từng xe (đều là cơ chế có thật trong trận) — lời lẽ ngắn, dễ hiểu
   const SKILLS = {
     ALL_ROUNDER: [
-      { icon: 'arrow-big-right-lines', name: 'Đạn xuyên giáp', desc: 'Xuyên được cả giáp dày nhất', key: '3' },
-      { icon: 'shield-half', name: 'Giáp mũi dày', desc: 'Quay mũi xe về phía địch để chịu đòn' },
-      { icon: 'crosshair', name: 'Bắn thẳng tầm xa', desc: 'Trúng mục tiêu cách tới khoảng 3,4 km' }
+      { icon: 'stack-2', name: 'Đa dạng đạn', desc: 'Đạn thường, xuyên giáp, nổ mạnh — đổi theo mục tiêu', key: '1·2·3' },
+      { icon: 'cloud', name: 'Thả khói', desc: 'Màn khói che mắt địch ~14 giây', key: 'G' },
+      { icon: 'leaf', name: 'Núp bụi giảm radar', desc: 'Radar địch phải vào gần mới bắt được' }
     ],
     GATLING: [
-      { icon: 'bolt', name: 'Xả đạn liên hồi', desc: 'Giữ để xả 1.800 phát mỗi phút', key: 'Space' },
-      { icon: 'temperature', name: 'Nòng nóng đỏ', desc: 'Bắn liền lâu phải nghỉ cho nguội' },
-      { icon: 'shield-check', name: 'Gạch giáp phản ứng', desc: 'Kích nổ đạn trước khi chạm giáp' }
+      { icon: 'drone-off', name: 'Phòng không', desc: 'Khóa và bắn hạ drone trinh sát địch', key: 'F' },
+      { icon: 'crosshair', name: 'Máy tính hỏa lực', desc: 'Nòng tự nâng, đón đầu mục tiêu kể cả trên trời', key: 'Tab' },
+      { icon: 'flame', name: 'Đạn cháy 30mm', desc: 'Xe địch trúng đạn bốc cháy', key: '2' }
     ],
     ARTILLERY: [
-      { icon: 'chart-arcs', name: 'Bắn cầu vồng', desc: 'Bay vòng qua đồi, tầm 440–3.300 m' },
-      { icon: 'anchor', name: 'Hạ chân chống', desc: 'Đứng yên 2 giây để bắn vững hơn' },
-      { icon: 'grain', name: 'Đạn chùm', desc: 'Nổ trên đầu, rải mảnh rộng', key: '2' }
+      { icon: 'drone', name: 'Drone trinh sát', desc: 'Soi địch cho cả đội, ngắm bắn qua camera drone', key: 'C' },
+      { icon: 'chart-arcs', name: 'Tầm bắn xa nhất', desc: 'Bắn cầu vồng qua đồi, xa tới 3.300 m' },
+      { icon: 'grain', name: 'Hỏa lực hạng nặng', desc: 'Lựu pháo 155mm, đạn chùm phủ cả vùng', key: '2' }
     ],
     SCOUT: [
-      { icon: 'radar-2', name: 'Radar dò tìm', desc: 'Lộ xe địch núp trong bụi cho cả đội' },
-      { icon: 'rocket', name: 'Tên lửa chống tăng', desc: 'Tự bay tới xe địch xa 2 km', key: 'F' },
-      { icon: 'gauge', name: 'Nhanh nhất trận', desc: '100 km/h, chiếm cứ điểm trống trước' }
+      { icon: 'leaf', name: 'Núp bụi', desc: 'Trong bụi, địch chỉ thấy khi tới thật gần' },
+      { icon: 'rocket', name: 'Tên lửa diệt phòng không', desc: 'Tên lửa tự bay 2 km; bắn xe 6 nòng thêm 50% sát thương', key: '3' },
+      { icon: 'gauge', name: 'Nhanh & nhìn xa', desc: '100 km/h, tầm nhìn xa nhất trận, có radar' }
     ]
   };
 

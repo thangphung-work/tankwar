@@ -23,7 +23,7 @@ const ArmoryUI = (() => {
     ARTILLERY: [['NORMAL', 'Lựu đạn 155mm', 'circle-dot', 'Không giới hạn'], ['HE', 'Lựu đạn nổ mạnh 155', 'flame'], ['CLUSTER', 'Đạn chùm 155', 'atom-2']],
     SCOUT: [['SCOUT_BULLET', 'Đạn 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
   };
-  for (const t in STOCK_AMMO) STOCK_AMMO[t].push(['SMOKE', 'Lựu đạn khói', 'cloud']);   // vật tư của Ống phóng lựu khói
+  for (const t in STOCK_AMMO) if (t !== 'ARTILLERY') STOCK_AMMO[t].push(['SMOKE', 'Lựu đạn khói', 'cloud']);   // vật tư của Ống phóng lựu khói (xe pháo không lắp)
   const adsLeft = () => (A() && A().adsLeft ? A().adsLeft() : 0);
   const adsOn = () => !!(window.AdProvider && AdProvider.available());
 
@@ -155,7 +155,7 @@ const ArmoryUI = (() => {
         if (!S) { h += card({ img, name, line: 'Đạn chính · không giới hạn', cls: ' on std', tip: `${name}: đạn chính, mang theo không giới hạn` }); continue; }
         const have = stock[k] || 0, free = A() && A().freeOf ? A().freeOf(tank, k) : 0, paid = Math.max(0, have - free);
         const carry = Math.min(have, S.max), bump = flash && flash.k === k ? ' bump' : '';
-        const needGear = S.gear && !lo.m.includes(S.gear);
+        const needGear = S.gear && !lo.m.includes(S.gear) && !(Eq.builtin && Eq.builtin(tank, S.gear));
         const full = have >= S.max * 10;
         const adBtn = adsOn() ? `
             <button class="eqd-q ad" data-act="adAmmo" data-item="${k}"${left > 0 && !full ? '' : ' disabled'} title="${full ? 'Kho đã đầy' : left > 0 ? `Xem 1 quảng cáo: +${S.ad} viên miễn phí (còn ${left} lượt hôm nay)` : 'Hết lượt quảng cáo hôm nay'}"><i class="ti ti-player-play-filled"></i>+${S.ad}</button>` : '';

@@ -14,6 +14,9 @@ function domById(id) {
   return found;
 }
 
+// Xe trinh sát khắc chế xe phòng không (6 nòng): mọi phát trúng thẳng của trinh sát lên xe 6 nòng nhân hệ số này
+const SCOUT_VS_AA = 1.5;
+
 class ArtilleryGame3D {
   constructor() {
     this.container = domById('webgl-container');
@@ -413,6 +416,8 @@ class ArtilleryGame3D {
     this._aimPoint = null;
     this._lockTrack = null;
     if (typeof TeamIntel !== 'undefined') { TeamIntel.bind(this); TeamIntel.reset(); }
+    if (typeof DroneOps !== 'undefined') { DroneOps.bind(this); DroneOps.reset(); }
+    this._aaLock = null;
     this.matchStartTime = Date.now();
     // Bản đồ cứ điểm: vòng bo thu hẹp dần về quanh 3 cứ điểm (đặt trước khi chọn chỗ xuất phát)
     // Bản đồ kiểu cũ (3 cờ A / B / C): bo cũng co về quanh 3 cờ — trước đây tâm bo co ngẫu nhiên có thể bỏ cờ A / C
@@ -632,6 +637,9 @@ class ArtilleryGame3D {
 
       // Phím G: phóng lựu đạn khói (trang bị mua thêm)
       if (e.code === 'KeyG' && !e.repeat) this.triggerPlayerSmoke();
+
+      // Phím F (xe 6 nòng): khóa phòng không drone địch gần nhất / thôi khóa
+      if (e.code === 'KeyF' && !e.repeat && this.player && this.player.tankType === 'GATLING') this.toggleAALock();
 
       // Phím B: pháo tự hành đổi cách bắn (tự chọn / luôn bắn thẳng / luôn bắn cầu vồng)
       if (e.code === 'KeyB' && !e.repeat) this.cycleArtyFireMode();
@@ -1439,6 +1447,50 @@ class ArtilleryGame3D {
     this.syncHUDControls();
   }
 
+  // PHÒNG KHÔNG (xe 6 nòng): F = khóa drone địch gần nhất trong tầm, bấm lại = thôi khóa
+  toggleAALock() {
+    const P = this.player;
+    if (!P || P.isDead || P.tankType !== 'GATLING' || typeof DroneOps === 'undefined') return;
+    if (this._aaLock) { this.clearAALock('[[drone]] Thôi bám drone — tháp trở lại mục tiêu mặt đất'); return; }
+    const r = DroneOps.enemyDroneFor(P, DroneOps.AA_RANGE);
+    if (!r) { this.addCombatLog('[[drone]] Không có drone địch nào trong tầm phòng không (~' + DroneOps.AA_RANGE + 'M)', 'alert'); return; }
+    this._aaLock = r;
+    this._manualAim = false;
+    if (window.soundEngine && window.soundEngine.playTargetLockSound) window.soundEngine.playTargetLockSound();
+    this.addCombatLog(`[[target]] PHÒNG KHÔNG: ĐÃ KHÓA DRONE ĐỊCH (${Math.round(Math.hypot(r.x - P.x, r.y - (P.y || 0), r.z - P.z))}M) — giữ [Space] để xả đạn, [F] để thôi`, 'tip');
+  }
+
+  clearAALock(msg) {
+    this._aaLock = null;
+    if (this.player) this.player.fcsTarget = null;
+    if (this.lockReticle3D) this.lockReticle3D.visible = false;
+    if (msg) this.addCombatLog(msg, 'tip');
+  }
+
+  // Mỗi khung hình khi đang khóa phòng không: tháp quay (đúng tốc độ quay tháp) & nòng tự nâng tới điểm đón đầu drone.
+  // Trả true khi đang bám (bỏ qua bám mục tiêu mặt đất)
+  trackAALock(dt, turretChanged, turretRotSpeed) {
+    const R = this._aaLock, P = this.player;
+    if (!R) return false;
+    if (!P || P.isDead || P.tankType !== 'GATLING' || typeof DroneOps === 'undefined') { this.clearAALock(); return false; }
+    if (!R.alive) { this.clearAALock(); return false; }
+    if (turretChanged) { this.clearAALock('[[crosshair]] Tự xoay tháp — thôi bám drone'); return false; }
+    if (Math.hypot(R.x - P.x, R.y - (P.y || 0), R.z - P.z) > DroneOps.AA_RANGE * 1.15) {
+      this.clearAALock('[[alert-triangle]] Drone địch đã bay ra ngoài tầm phòng không — đã hủy khóa');
+      return false;
+    }
+    const sol = DroneOps.aaSolution(P, R);
+    const off = P.barrelWorldOffset ? P.barrelWorldOffset() : { el: 0, az: 0 };
+    const TR = P.turretRates ? P.turretRates() : { traverse: turretRotSpeed };
+    const want = (sol.az - off.az + 720) % 360;
+    const diff = ((want - P.azimuth + 540) % 360) - 180, step = TR.traverse * dt;
+    P.aimAz = P.aimEl = undefined;
+    P.azimuth = (P.azimuth + Math.max(-step, Math.min(step, diff)) + 360) % 360;
+    P.fcsTarget = { x: sol.x, y: sol.y, z: sol.z, el: sol.el };
+    if (this.lockReticle3D) WorldMarkers.tickLock(this.lockReticle3D, { id: 'aa' + R.unit.id, x: R.x, y: R.y - 10, z: R.z }, dt, this.camera);
+    return true;
+  }
+
   // Dấu neo điểm ngắm trên mặt đất (thoi hở đỉnh + vạch hướng, nằm sát đất): tháp & nòng tự bám điểm này khi xe di chuyển
   updateAimAnchor(dt) {
     const A = this._aimPoint;
@@ -2127,6 +2179,8 @@ class ArtilleryGame3D {
         if (unitHit && unitHit.ricochet) directDamage = Math.round(directDamage * 0.12 * 1000) / 1000;
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
       }
+      // Xe trinh sát chuyên diệt phòng không: tên lửa / súng máy trúng xe 6 nòng gây thêm 50% sát thương
+      if (shooter && shooter.tankType === 'SCOUT' && directTarget.tankType === 'GATLING') directDamage = Math.round(directDamage * SCOUT_VS_AA * 1000) / 1000;
       // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy
       if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(directTarget);
 
@@ -3320,6 +3374,18 @@ class ArtilleryGame3D {
     return D;
   }
 
+  // Drone của người chơi bị phòng không địch bắn hạ (DroneOps): mất hình, chờ drone dự phòng
+  onPlayerDroneDown(shooter) {
+    const D = this.droneState();
+    if (this._sight && this._sight.arty) this.setSightMode(false);
+    D.state = 'docked'; D.batt = 0; D.hp = DroneOps.HP; D.vx = D.vy = D.vz = 0; D.warned = 0;
+    D.downUntil = performance.now() / 1000 + DroneOps.REBUILD;
+    const by = shooter && shooter.name ? shooter.name : 'phòng không địch';
+    this.addCombatLog(`[[drone-off]] DRONE TRINH SÁT BỊ ${by.toUpperCase()} BẮN HẠ — mất tín hiệu! Drone dự phòng sẵn sàng sau ${DroneOps.REBUILD} giây`, 'alert');
+    const SE = window.soundEngine;
+    if (SE && SE.playTargetLost) SE.playTargetLost();
+  }
+
   // Bãi đáp trên nóc cabin xe pháo (tọa độ thế giới) + hướng mũi xe
   dronePadWorld() {
     const P = this.player, ch = P && P.chassisGroup;
@@ -3337,6 +3403,11 @@ class ArtilleryGame3D {
   launchDrone() {
     const P = this.player, C = ArtilleryGame3D.DRONE, D = this.droneState();
     if (D.state === 'launching') return;
+    const down = (D.downUntil || 0) - performance.now() / 1000;
+    if (down > 0) {
+      this.addCombatLog(`[[drone-off]] Drone trước đã bị bắn hạ — drone dự phòng sẵn sàng sau ${Math.ceil(down)} giây`, 'alert');
+      return;
+    }
     if (D.batt < C.minLaunch) {
       const need = Math.ceil((C.minLaunch - D.batt) * C.charge);
       this.addCombatLog(`[[battery]] Drone trinh sát đang sạc ${Math.round(D.batt * 100)}% — cần ${Math.round(C.minLaunch * 100)}% để cất cánh (còn ~${need} giây)`, 'alert');
@@ -3436,7 +3507,7 @@ class ArtilleryGame3D {
     D.batt = Math.min(1, D.batt + dt / C.charge);
     if (D.batt > C.warn[0]) D.warned = 0;
     if (M) {
-      M.visible = true;
+      M.visible = !((D.downUntil || 0) > performance.now() / 1000);   // bị bắn hạ: chờ drone dự phòng
       M.position.set(pd.x, pd.y, pd.z);
       if (P.chassisGroup) P.chassisGroup.getWorldQuaternion(M.quaternion); else M.rotation.set(0, P.bodyAngle || 0, 0);
       ReconDrone.animate(M, dt, 0);
@@ -4404,7 +4475,9 @@ class ArtilleryGame3D {
 
       // 1.1.a. TỰ ĐỘNG BÁM MỤC TIÊU & TỰ ĐỘNG KHÓA KHI CÓ ĐỊCH Ở GẦN
       // Chỉ khóa / bám được xe địch mà mình đang biết vị trí (tự nhìn thấy, radar của mình, hoặc đồng đội trinh sát báo)
-      if (this.lockedTarget) {
+      if (this.trackAALock(dt, turretChanged, turretRotSpeed)) {
+        // PHÒNG KHÔNG (xe 6 nòng, phím F): tháp & nòng đang bám drone địch
+      } else if (this.lockedTarget) {
         if (this.lockedTarget.isDead) {
           // Xe mục tiêu bị hạ: tự tìm xe địch gần nhất còn sống (và đang thấy được) khác
           const next = this.nearestKnownEnemy(this.lockRangeFor(this.player));
@@ -4566,6 +4639,10 @@ class ArtilleryGame3D {
     // 2.2. TÌNH BÁO CHIẾN TRƯỜNG: tầm nhìn từng xe, radar quay của xe trinh sát, báo vị trí cho đồng đội
     if (typeof TeamIntel !== 'undefined') {
       TeamIntel.update(dt, this.units, this.player, this.lockedTarget);
+    }
+    // Drone trinh sát (người chơi / bot / máy khác): vị trí, trinh sát cho phe, bị phòng không bắn hạ
+    if (typeof DroneOps !== 'undefined') {
+      DroneOps.update(dt);
     }
     this.updateMissileSeeker(dt);
     this.updateThreatWarnings(dt);
@@ -5122,19 +5199,15 @@ class ArtilleryGame3D {
 
     const stealthBanner = domById('stealth-banner');
     const stealthOverlay = domById('stealth-camo-overlay');
-    const isPlayerInBush = !this.player.isDead && this.player.isInBush;
-    const isPlayerRevealed = isPlayerInBush && this.player.revealTimer > 0;
+    const BB = typeof TeamIntel !== 'undefined' && TeamIntel.bushBanner ? TeamIntel.bushBanner(this.player) : null;
+    const isPlayerInBush = !!BB && BB.cover;
+    const isPlayerRevealed = isPlayerInBush && BB.warn;
 
     if (stealthBanner) {
-      if (isPlayerInBush) {
+      if (BB) {
         stealthBanner.classList.remove('hidden');
-        if (isPlayerRevealed) {
-          stealthBanner.innerHTML = `<span class="stealth-pulse-dot red"></span> BỊ LỘ VỊ TRÍ DO VỪA KHAI HỎA · ${this.player.revealTimer.toFixed(1)}S`;
-          stealthBanner.classList.add('revealed');
-        } else {
-          stealthBanner.innerHTML = `<span class="stealth-pulse-dot green"></span> ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN`;
-          stealthBanner.classList.remove('revealed');
-        }
+        stealthBanner.innerHTML = `<span class="stealth-pulse-dot ${BB.warn ? 'red' : 'green'}"></span> ${BB.html}`;
+        stealthBanner.classList.toggle('revealed', BB.warn);
       } else {
         stealthBanner.classList.add('hidden');
       }
@@ -5881,6 +5954,8 @@ class ArtilleryGame3D {
     this.matchStartTime = Date.now();
     this._playerDeaths = 0;
     if (typeof TeamIntel !== 'undefined') TeamIntel.reset();
+    if (typeof DroneOps !== 'undefined') DroneOps.reset();
+    this._aaLock = null;
     if (typeof Equipment !== 'undefined' && Equipment.clearSmoke) Equipment.clearSmoke();
     this.setLockedTarget(null);
     this._spotMarkers = null;   // scene sắp bị dọn sạch

@@ -596,6 +596,8 @@ class BallisticsSystem3D {
       spinAngle: 0,
       trailTimer: 0,
       tracer,
+      // đạn 30mm của xe 6 nòng: bắn hạ được drone (phòng không)
+      aa: !!(shooter && shooter.tankType === 'GATLING' && (ammoType === 'GATLING_BULLET' || ammoType === 'INCENDIARY')),
       exploded: false
     };
 
@@ -815,6 +817,18 @@ class BallisticsSystem3D {
           if ((s.y - groundElev) <= 165) { // Kích nổ trên không tầm cao (~21 m), tạo mưa bom con diện rộng
             this.spawnClusterAirburst(s, terrain, allUnits, onImpact);
             this.removeShellMesh(s, i);
+            impacted = true;
+            break;
+          }
+        }
+
+        // PHÒNG KHÔNG: đạn 30mm của xe 6 nòng trúng drone địch đang bay (DroneOps)
+        if (s.aa && s.timeAlive > 0.01 && typeof DroneOps !== 'undefined' && DroneOps.count) {
+          const dh = DroneOps.segmentHit(prevX, prevY, prevZ, s.x, s.y, s.z, s.shooterTeam);
+          if (dh) {
+            s.x = dh.x; s.y = dh.y; s.z = dh.z;
+            this.removeShellMesh(s, i);
+            DroneOps.onBulletHit(dh, s);
             impacted = true;
             break;
           }
