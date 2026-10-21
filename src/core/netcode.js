@@ -836,8 +836,8 @@
   //  - Máy nhận áp dụng sự kiện DAMAGE, không tự tính sát thương cho đạn của máy khác
   // ==========================================
   const GUN_STREAM_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 }; // Đạn liên thanh: đồng bộ bằng cờ bắn
-  const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z' };
-  const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE' };
+  const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z', WATER: 'W' };
+  const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE', W: 'WATER' };
   const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16;
 
   class NetGameSync {
@@ -1019,7 +1019,7 @@
       let auth;
       if (this._impactDepth > 0) auth = true;               // Trong vụ nổ do máy này có chủ quyền
       else if (attacker) auth = this.owns(attacker);
-      else if (source === 'ZONE') auth = this.owns(unit);   // Vùng bo: máy chủ quyền của xe bị trúng
+      else if (source === 'ZONE' || source === 'WATER') auth = this.owns(unit);   // Vùng bo / ngập nước: máy chủ quyền của xe bị trúng
       else auth = true;                                     // Cháy âm ỉ: chỉ máy chủ quyền phát bắn mới châm lửa
       if (!auth) return { blocked: false, killed: false, prevHp: unit.hp, currentHp: unit.hp, netIgnored: true };
 
@@ -1162,6 +1162,7 @@
           dm: typeof s.damage === 'number' ? Math.round(s.damage * 1000) : undefined,
           h: s.isHeavyArty ? 1 : 0,
           at: s.isAntiTank ? 1 : 0,
+          bs: typeof s.burstSeed === 'number' ? s.burstSeed >>> 0 : undefined,   // hạt giống nổ trên tán
           // tên lửa dẫn hướng: xe mục tiêu (netId) hoặc điểm ngắm -> máy khác lái tên lửa giống hệt
           tg: s.guide && s.guide.targetId ? this.netIdOfUnitId(s.guide.targetId) : undefined,
           gp: s.guide && !s.guide.targetId && s.guide.point ? [Math.round(s.guide.point.x), Math.round(s.guide.point.y), Math.round(s.guide.point.z)] : undefined
@@ -1213,6 +1214,7 @@
       if (typeof d.dm === 'number') shell.damage = d.dm / 1000;
       shell.isHeavyArty = !!d.h;
       if (d.at) shell.isAntiTank = true;
+      if (typeof d.bs === 'number') shell.burstSeed = d.bs >>> 0;
       shell.x = px; shell.y = py; shell.z = pz;
       shell.vx = vx; shell.vy = vy; shell.vz = vz;
       shell.timeAlive = 0;

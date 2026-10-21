@@ -300,8 +300,14 @@ class TankInspector {
           <section class="ti-viewport-container" id="ti-vehicle-stage">
             <div class="ti-stage">
               <canvas id="ti-canvas"></canvas>
-              <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><i class="ti ti-mouse" aria-hidden="true"></i> kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
-              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><a class="ti-lab-link" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng xem mọi loại đạn bay & nổ"><i class="ti ti-flask" aria-hidden="true"></i> PHÒNG THỬ ĐẠN ↗</a><button id="ti-wall-reset-btn" class="ti-lab-link ti-wall-btn" title="Tường tự dựng lại sau 5 giây không trúng đạn"><i class="ti ti-wall" aria-hidden="true"></i> DỰNG LẠI TƯỜNG</button></div>
+              <div class="ti-stage-foot">
+                <div class="ti-range-readout" id="ti-range-readout" aria-live="polite"></div>
+                <div class="ti-range-bar" id="ti-range-bar" aria-label="Chọn bãi thử"></div>
+                <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>G</kbd> thả khói</span><span><i class="ti ti-mouse" aria-hidden="true"></i> nhấp trái ngắm + bắn · nhấp phải lái tới · kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
+              </div>
+              <div class="ti-toast" id="ti-toast" role="status"></div>
+              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><button id="ti-range-enter" class="ti-range-enter" title="Phòng thử đạn toàn màn hình: chọn địa hình (đồi dốc, lội nước, sa mạc, rừng & vật cản), lái thử, bắn thử, thả khói với đúng xe + bộ trang bị đang lắp"><i class="ti ti-target-arrow" aria-hidden="true"></i> PHÒNG THỬ ĐẠN</button><a class="ti-lab-link ti-lab-detail" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng: quỹ đạo, tốc độ chậm, bắn vào tường / tòa nhà / xe bia / boong-ke"><i class="ti ti-flask" aria-hidden="true"></i> THỬ ĐẠN CHI TIẾT ↗</a><button id="ti-wall-reset-btn" class="ti-lab-link ti-wall-btn" title="Tường tự dựng lại sau 5 giây không trúng đạn"><i class="ti ti-wall" aria-hidden="true"></i> DỰNG LẠI TƯỜNG</button></div>
+              <div class="ti-range-head"><button id="ti-range-exit" class="ti-range-exit" title="Về màn thông tin xe [ESC]"><i class="ti ti-chevron-left" aria-hidden="true"></i> THOÁT</button><div class="ti-range-title"><b>PHÒNG THỬ ĐẠN</b><span id="ti-range-tank"></span></div></div>
             </div>
             <div class="ti-equip-dock" id="ti-equip-dock" aria-label="Chọn trang bị"></div>
           </section>
@@ -335,7 +341,7 @@ class TankInspector {
     const width = rect.width || 800;
     const height = rect.height || 600;
 
-    this.camera = new THREE.PerspectiveCamera(38, width / height, 1, 1000);
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 1, 2800);
     this.updateCameraPosition();
 
     this.renderer = new THREE.WebGLRenderer({
@@ -374,13 +380,16 @@ class TankInspector {
     dirLightMain.shadow.mapSize.width = 1024;
     dirLightMain.shadow.mapSize.height = 1024;
     dirLightMain.shadow.camera.near = 10;
-    dirLightMain.shadow.camera.far = 400;
-    const d = 80;
+    dirLightMain.shadow.camera.far = 420;
+    const d = 110;
     dirLightMain.shadow.camera.left = -d;
     dirLightMain.shadow.camera.right = d;
     dirLightMain.shadow.camera.top = d;
     dirLightMain.shadow.camera.bottom = -d;
     this.scene.add(dirLightMain);
+    // nắng + vùng đổ bóng đi theo xe khi lái ra xa bệ (xem animate)
+    this.sunLight = dirLightMain;
+    this.scene.add(dirLightMain.target);
 
     // Đèn viền phản xạ sau lưng (Rim Light) làm nổi bật đường nét kim loại
     const rimLight = new THREE.DirectionalLight(0xd9cfb4, 0.45);
@@ -437,16 +446,24 @@ class TankInspector {
     this.setupMouseControls(canvas);
   }
 
-  // Điều khiển xoay chuột 360 độ và cuộn chuột thu phóng
+  // Chuột: kéo trái xoay camera 360°, cuộn thu phóng; nhấp trái (không kéo) ngắm + bắn vào điểm đó, nhấp phải lái xe tới điểm đó
   setupMouseControls(canvas) {
     canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
       this.isMouseDown = true;
+      this._dragPx = 0;
       this.previousMousePosition = { x: e.clientX, y: e.clientY };
       canvas.setPointerCapture(e.pointerId);
     });
 
-    window.addEventListener('pointerup', () => {
+    window.addEventListener('pointerup', (e) => {
+      if (this.isMouseDown && e.button === 0 && this._dragPx < 6) this.mouseAimFire(e.clientX, e.clientY);
       this.isMouseDown = false;
+    });
+
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.mouseDriveTo(e.clientX, e.clientY);
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -454,6 +471,7 @@ class TankInspector {
 
       const deltaX = e.clientX - this.previousMousePosition.x;
       const deltaY = e.clientY - this.previousMousePosition.y;
+      this._dragPx += Math.abs(deltaX) + Math.abs(deltaY);
 
       this.cameraYaw -= deltaX * 0.005;
       this.cameraPitch += deltaY * 0.004;
@@ -474,6 +492,123 @@ class TankInspector {
     }, { passive: false });
   }
 
+  // Điểm dưới con trỏ: tường thử hoặc mặt sân (đồi, nước, đá, cây...) — null nếu trỏ lên trời
+  pickPoint(clientX, clientY) {
+    if (!this.camera || !this.renderer) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ray = this._pickRay || (this._pickRay = new THREE.Raycaster());
+    ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), this.camera);
+    let best = null;
+    const wallG = this.testWallGroup;
+    if (wallG && wallG.visible) {
+      for (const it of ray.intersectObject(wallG, true)) {
+        const mt = Array.isArray(it.object.material) ? it.object.material[0] : it.object.material;
+        if (!it.object.visible || it.object.userData.isFxDecal || (mt && mt.isMeshBasicMaterial)) continue;
+        best = { point: it.point.clone(), dist: it.distance };
+        break;
+      }
+    }
+    // mặt sân: dò dọc tia từng đoạn ngắn
+    const o = ray.ray.origin, d = ray.ray.direction, F = this.field;
+    const a = new THREE.Vector3(), b = new THREE.Vector3();
+    for (let t = 0; t < 3000 && (!best || t < best.dist); t += 12) {
+      a.copy(o).addScaledVector(d, t);
+      b.copy(o).addScaledVector(d, t + 12);
+      if (F) {
+        const h = F.segmentHit(a, b);
+        if (h) { const dist = h.point.distanceTo(o); if (!best || dist < best.dist) best = { point: h.point.clone(), dist }; break; }
+      } else if (b.y <= 0) {
+        const k = a.y / Math.max(1e-6, a.y - b.y);
+        best = { point: a.clone().lerp(b, k).setY(0), dist: t + 12 * k };
+        break;
+      }
+    }
+    return best ? best.point : null;
+  }
+
+  // Nhấp trái: tháp quay / nòng nâng tới điểm trỏ (đúng tốc độ thật), quay xong thì tự bắn
+  // (pháo 1 phát khi nạp xong, súng liên thanh 1 loạt ngắn)
+  mouseAimFire(clientX, clientY) {
+    const u = this.activeUnit;
+    if (!u || u.isDead) return;
+    const p = this.pickPoint(clientX, clientY);
+    if (!p) return;
+    const m = typeof u.getMuzzleWorldTransform === 'function' ? u.getMuzzleWorldTransform() : null;
+    const sy = m ? m.position.y : (u.y || 0) + 17;
+    const dx = p.x - u.x, dz = p.z - u.z, d = Math.hypot(dx, dz);
+    if (d < 20) return;
+    const az = Math.atan2(dx, -dz) * 180 / Math.PI;
+    // góc nòng theo cùng sơ tốc / trọng lực với đường đạn mô phỏng (queueTestImpact):
+    // xe tăng gần như bắn thẳng, lựu pháo bắn cầu vồng (nghiệm góc cao)
+    const arty = u.tankType === 'ARTILLERY';
+    const v2 = Math.pow(this.testShotSpeed(u, u.selectedAmmo), 2), g = 78, h = p.y - sy;
+    const disc = v2 * v2 - g * (g * d * d + 2 * h * v2);
+    let el = disc < 0 ? 45 : Math.atan((v2 + (arty ? 1 : -1) * Math.sqrt(disc)) / (g * d)) * 180 / Math.PI;
+    const elMax = this.testBallistics ? this.testBallistics.maxElevationFor(u) : 45;
+    el = Math.max(-10, Math.min(elMax, el));
+    u.aimTo(az, u.tankType === 'GATLING' ? undefined : el);
+    this.mouseShot = { t: 0, fireT: 0, fired: false };
+    if (this.autoRotate) { this.autoRotate = false; this.syncAutoRotateBtn(); }
+    this.resumeTestSound();
+  }
+
+  // Nhấp phải: lái tự động tới điểm trỏ (bấm W A S D để tự lái lại)
+  mouseDriveTo(clientX, clientY) {
+    const u = this.activeUnit;
+    if (!u || u.isDead) return;
+    const p = this.pickPoint(clientX, clientY);
+    if (!p) return;
+    this.driveTo = { x: p.x, z: p.z };
+    if (typeof WorldMarkers !== 'undefined' && this.scene) {
+      if (!this._driveMarker || this._driveMarker.parent !== this.scene) {
+        this._driveMarker = WorldMarkers.groundMarker('move');
+        this.scene.add(this._driveMarker);
+      }
+      const M = this._driveMarker;
+      M.userData.pop = 0; M.userData.fade = 1; M.visible = true;
+    }
+    if (this.autoRotate) { this.autoRotate = false; this.syncAutoRotateBtn(); }
+    this.resumeTestSound();
+  }
+
+  resumeTestSound() {
+    const se = window.soundEngine;
+    if (!se) return;
+    if (typeof se.init === 'function') se.init();
+    if (typeof se.resume === 'function') se.resume();
+  }
+
+  // Lái tới điểm nhấp phải: thân xe quay về hướng điểm rồi chạy, gần tới thì giảm tốc và dừng (như lái tự động trong trận)
+  updateDriveTo(u, dt, boost) {
+    const A = this.driveTo, M = this._driveMarker;
+    if (A) {
+      const dx = A.x - u.x, dz = A.z - u.z, dist = Math.hypot(dx, dz);
+      if (dist < 14 || u.isDead) { u.steer(0, 0, dt, false); this.driveTo = null; }
+      else {
+        u.steer(dx, dz, dt, boost && dist > 250);
+        const cap = Math.max(22, dist * 1.1);
+        if (dist < 140 && Math.abs(u.speed) > cap) u.speed = Math.sign(u.speed) * Math.max(cap, Math.abs(u.speed) - u.acceleration * 1.5 * dt);
+      }
+    }
+    if (M && typeof WorldMarkers !== 'undefined') {
+      if (this.driveTo) {
+        const T = this.getTestTerrain(), y = T.getElevationAt(this.driveTo.x, this.driveTo.z);
+        M.userData.r0 = WorldMarkers.sizeFor(this.camera, this.driveTo.x, y, this.driveTo.z, 12, 0.026);
+        WorldMarkers.placeOnGround(M, T, this.driveTo.x, this.driveTo.z, null, M.userData.r0, 0);
+        const k = 1 - M.userData.pop;
+        M.scale.setScalar(M.userData.r0 * (1 + k * k * 0.6));
+      }
+      WorldMarkers.tickMove(M, dt, !!this.driveTo);
+    }
+  }
+
+  // Sơ tốc đạn thử (đơn vị / giây, 8 đơn vị = 1 m). Lựu pháo thu nhỏ để quỹ đạo cầu vồng rơi gọn trong bãi thử
+  testShotSpeed(u, ammoType) {
+    const rapid = ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
+    return u.tankType === 'ARTILLERY' ? 170
+      : rapid ? 7200 : ammoType === 'ANTI_TANK_MISSILE' || ammoType === 'RPG' ? 2200 : 12000;
+  }
+
   updateCameraPosition() {
     if (!this.camera) return;
     const x = this.cameraDistance * Math.cos(this.cameraPitch) * Math.sin(this.cameraYaw);
@@ -481,13 +616,22 @@ class TankInspector {
     const z = this.cameraDistance * Math.cos(this.cameraPitch) * Math.cos(this.cameraYaw);
 
     const f = this.camFocus || { x: 0, z: 0 };
-    this.camera.position.set(f.x + x, y, f.z + z);
-    this.camera.lookAt(f.x, 10, f.z);
+    // lái lên đồi / xuống sông: camera nâng hạ theo mặt đất dưới xe (mượt)
+    const gy = this.field ? this.field.groundAt(f.x, f.z) : 0;
+    this.camGroundY = this.camGroundY === undefined ? gy : this.camGroundY + (gy - this.camGroundY) * 0.12;
+    const fy = this.camGroundY;
+    this.camera.position.set(f.x + x, y + fy, f.z + z);
+    if (this.field) {   // không chui xuống dưới sườn đồi phía sau camera
+      const cg = this.field.groundAt(this.camera.position.x, this.camera.position.z) + 8;
+      if (this.camera.position.y < cg) this.camera.position.y = cg;
+    }
+    this.camera.lookAt(f.x, 10 + fy, f.z);
   }
 
   // Tải xe tăng 3D lên sàn bục
   loadTankModel(tankType, team = this.currentTeam) {
     if (!this.scene) return;
+    this.driveTo = null; this.mouseShot = null;
 
     // Xóa xe cũ (kèm khói/lửa đầu nòng còn đang bay)
     if (this.activeUnit && this.activeUnit.group) {
@@ -643,6 +787,12 @@ class TankInspector {
     }
     if (this.autoRotate && !this.isMouseDown) this.cameraYaw += 0.06 * dt;
     this.updateCameraPosition();
+    if (this.sunLight) {
+      const f = this.camFocus, gy = this.field ? this.field.groundAt(f.x, f.z) : 0;
+      this.sunLight.position.set(f.x + 70, gy + 110, f.z + 80);
+      this.sunLight.target.position.set(f.x, gy, f.z);
+    }
+    this.updateRangeReadout(dt);
 
     if (this.renderer && this.scene && this.camera) {
       this.renderer.render(this.scene, this.camera);
@@ -670,9 +820,27 @@ class TankInspector {
     if (btn) btn.classList.remove('active');
   }
 
-  // Mặt đất phẳng của phòng xem cho spg.update(): cỏ nén, va vào tường thử, không ra khỏi bãi
+  // Mặt đất của sân thử cho spg.update() / hiệu ứng nổ / khói: độ cao + loại đất theo bãi đang chọn (proving_ground.js),
+  // biên tròn + đá tảng / xác xe chắn đường, và bức tường thử: thân xe (hộp xoay) + nòng pháo va từng khối bê tông,
+  // khối đã vỡ thì đi qua được
   getTestTerrain() {
     if (this.testTerrain) return this.testTerrain;
+    if (!this.field) this.ensureField();
+    const debris = (x, z) => {
+      // gốc tường gãy thấp + ụ gạch vụn dưới chân tường thử: xích bò lên được
+      const W = this.testWall;
+      if (!W || !W.wall.visible || typeof VehicleCollision === 'undefined') return null;
+      if (Math.abs(x - W.cx) > W.hw + 60 || Math.abs(z - W.cz) > W.hd + 60) return null;
+      const out = this._testDebris || (this._testDebris = []);
+      out.length = 0;
+      VehicleCollision.blockDebris(W.wall.S, W.wall.group.position.y, x, z, 40, out);
+      return out.length ? out : null;
+    };
+    if (this.field) {
+      this.testTerrain = this.field.makeTerrain({ boxes: (x, z, unit) => this.testWallBoxes(x, z, unit), debris });
+      return this.testTerrain;
+    }
+    // dự phòng (thiếu proving_ground.js): bãi phẳng tròn bán kính 380 như cũ
     const info = { type: 'GRASS', name: 'Bãi thử', speedMult: 1, engineLoad: 1, bumpiness: 0.35, sinkY: 0 };
     this.testTerrain = {
       width: 900, depth: 900, mapType: 'GRASSLAND',
@@ -680,8 +848,6 @@ class TankInspector {
       getTerrainInfoAt: () => info,
       checkHorseshoeCollision: () => null,
       resolveVehicleCollision: (x0, z0, x1, z1, r, unit) => {
-        // bãi thử tròn bán kính 380, và bức tường thử chắn đường: thân xe (hộp xoay) + nòng pháo va từng khối bê tông,
-        // khối đã vỡ thì đi qua được
         const R = 380, d = Math.hypot(x1, z1);
         if (d > R) { x1 *= R / d; z1 *= R / d; }
         const boxes = unit ? this.testWallBoxes(x1, z1, unit) : null;
@@ -692,18 +858,138 @@ class TankInspector {
         return { x: x1, z: z1, hit: d > R };
       },
       vehicleObstacles: (x, z, unit) => this.testWallBoxes(x, z, unit),
-      // gốc tường gãy thấp + ụ gạch vụn dưới chân tường thử: xích bò lên được
-      vehicleDebris: (x, z) => {
-        const W = this.testWall;
-        if (!W || !W.wall.visible || typeof VehicleCollision === 'undefined') return null;
-        if (Math.abs(x - W.cx) > W.hw + 60 || Math.abs(z - W.cz) > W.hd + 60) return null;
-        const out = this._testDebris || (this._testDebris = []);
-        out.length = 0;
-        VehicleCollision.blockDebris(W.wall.S, W.wall.group.position.y, x, z, 40, out);
-        return out.length ? out : null;
-      }
+      vehicleDebris: debris
     };
     return this.testTerrain;
+  }
+
+  // ---------------------------------------------------------------------------
+  // SÂN THỬ NHIỀU ĐỊA HÌNH (src/ui/proving_ground.js) + MÀN KHÓI THỬ (phím G)
+  // ---------------------------------------------------------------------------
+  ensureField() {
+    if (this.field || !this.scene || typeof ProvingGround === 'undefined') return this.field || null;
+    this.field = new ProvingGround.Field(this.scene);
+    this.field.build(this.rangeMode ? this.savedRange() : 'flat');   // màn thông tin xe: luôn bãi phẳng + tường thử
+    this.renderRangeBar();
+    return this.field;
+  }
+
+  savedRange() {
+    let id = 'hills';
+    try { id = localStorage.getItem('ti-range') || 'hills'; } catch (e) { /* bỏ qua */ }
+    return ProvingGround.PRESETS[id] ? id : 'hills';
+  }
+
+  // PHÒNG THỬ ĐẠN (trường bắn): màn riêng toàn màn hình (ẩn thông tin xe + dải trang bị), chọn địa hình, lái / bắn / thả khói
+  // với đúng xe + bộ trang bị đang lắp. Thoát (nút / Esc) -> về màn thông tin xe, bãi phẳng như cũ.
+  enterRangeMode() {
+    if (this.rangeMode || !this.isOpen) return;
+    const overlay = document.getElementById('tank-inspector-overlay');
+    if (!overlay) return;
+    this.rangeMode = true;
+    overlay.classList.add('ti-range-mode');
+    const nm = document.getElementById('ti-tank-name'), tk = document.getElementById('ti-range-tank');
+    if (tk) tk.textContent = nm ? nm.textContent : '';
+    if (this.autoRotate) { this.autoRotate = false; this.syncAutoRotateBtn(); }
+    this.cameraDistance = 200; this.cameraPitch = 0.42;
+    this.setRange(this.savedRange());
+  }
+
+  exitRangeMode(opts = {}) {
+    if (!this.rangeMode) return;
+    this.rangeMode = false;
+    const overlay = document.getElementById('tank-inspector-overlay');
+    if (overlay) overlay.classList.remove('ti-range-mode');
+    const ro = document.getElementById('ti-range-readout');
+    if (ro) { ro.innerHTML = ''; this._roHtml = ''; }
+    if (!opts.closing) this.setRange('flat', { silent: true });
+    else if (this.field && this.field.id !== 'flat') { this.clearTestImpacts(); if (this.smoke) this.smoke.clear(); this.field.build('flat'); if (this.testWall) this.resetTestWall(); }
+  }
+
+  // Đổi bãi thử: dựng lại mặt đất + vật thể, dọn hố / vết đạn / khói / vệt xích cũ, đưa xe về bệ
+  setRange(id, opts = {}) {
+    if (!this.field) this.ensureField();
+    if (!this.field || !ProvingGround.PRESETS[id]) return;
+    if (this.rangeMode) { try { localStorage.setItem('ti-range', id); } catch (e) { /* bỏ qua */ } }
+    this.clearTestImpacts();
+    if (this.smoke) this.smoke.clear();
+    if (this.activeUnit && typeof TireTracks !== 'undefined') TireTracks.clear(this.activeUnit);
+    try { this.field.build(id); } catch (e) { console.warn('[Sân thử] Lỗi dựng bãi', id, e); this.field.build('flat'); }
+    if (this.testWall) this.resetTestWall();
+    this.camGroundY = undefined;
+    this.loadTankModel(this.currentTankType, this.currentTeam);
+    this.renderRangeBar();
+    const P = ProvingGround.PRESETS[this.field.id];
+    if (!opts.silent) this.toast(`<i class="ti ti-${P.icon}"></i> Bãi thử: <b>${P.name}</b> — ${P.desc}`);
+  }
+
+  renderRangeBar() {
+    const bar = document.getElementById('ti-range-bar');
+    if (!bar || typeof ProvingGround === 'undefined') return;
+    const cur = this.field ? this.field.id : 'flat';
+    bar.innerHTML = '<span class="ti-range-lbl"><i class="ti ti-map-2" aria-hidden="true"></i> BÃI THỬ</span>' +
+      ProvingGround.list().map(p => `<button class="ti-range-chip${p.id === cur ? ' active' : ''}" data-range="${p.id}" title="${p.desc}"><i class="ti ti-${p.icon}" aria-hidden="true"></i>${p.name}</button>`).join('') +
+      '<button class="ti-range-chip ti-range-home" data-range-home="1" title="Đưa xe về bệ (cả khi xe kẹt / bị phá hủy vì ngập nước)"><i class="ti ti-home" aria-hidden="true"></i>Về bệ</button>';
+    if (!bar._bound) {
+      bar._bound = true;
+      bar.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        b.blur();   // để phím W A S D / Space không bấm lại nút
+        if (b.dataset.rangeHome) { this.loadTankModel(this.currentTankType, this.currentTeam); this.camGroundY = undefined; return; }
+        if (b.dataset.range && (!this.field || b.dataset.range !== this.field.id)) this.setRange(b.dataset.range);
+      });
+    }
+  }
+
+  // Ô thông tin dưới góc trái: mặt đất dưới xe, độ dốc, độ sâu nước, tốc độ, cảnh báo leo dốc / lội nước
+  updateRangeReadout(dt) {
+    this._roT = (this._roT || 0) + dt;
+    if (this._roT < 0.15) return;
+    this._roT = 0;
+    const el = document.getElementById('ti-range-readout'), u = this.activeUnit, F = this.field;
+    if (!el || !u || !F || !this.rangeMode) return;
+    const info = F.infoAt(u.x, u.z);
+    const slope = Math.round(Math.atan(F.slopeAt(u.x, u.z)) * 180 / Math.PI);
+    const v = Math.abs(u.speed || 0) * ((u.waterDepth || 0) > 0.6 ? (u._groundMult || 1) : 1);
+    const kmh = Math.round(typeof GameTiming !== 'undefined' && GameTiming.kmh ? GameTiming.kmh(v) : v * 0.45);
+    const parts = [`<b>${info.name}</b>`, `Dốc ${slope}°`];
+    if ((u.waterDepth || 0) > 0.3) parts.push(`Nước sâu ${(u.waterDepth / 8).toFixed(1)} m <small>(lội tối đa ${((u.wadeMax || 14) / 8).toFixed(1)} m)</small>`);
+    parts.push(`${kmh} km/h`);
+    let warn = '';
+    if (u.isDead && u.submerged) warn = '<i class="ti ti-ripple"></i> XE CHÌM VÌ NGẬP NƯỚC — bấm “Về bệ”';
+    else if (u.submerged) warn = `<i class="ti ti-ripple"></i> NGẬP NƯỚC — mất máu dần (còn ${Math.round(100 * u.hp / (u.maxHp || 1))}%)`;
+    else if (u.climbStall) warn = '<i class="ti ti-mountain"></i> DỐC QUÁ CAO — xe không leo nổi';
+    const html = parts.join(' · ') + (warn ? `<div class="ti-range-warn">${warn}</div>` : '');
+    if (html !== this._roHtml) { el.innerHTML = html; this._roHtml = html; }
+  }
+
+  toast(html, ms = 2600) {
+    const el = document.getElementById('ti-toast');
+    if (!el) return;
+    el.innerHTML = html;
+    el.classList.add('show');
+    clearTimeout(this._toastT);
+    this._toastT = setTimeout(() => el.classList.remove('show'), ms);
+  }
+
+  // Phím G: phóng màn khói trước mũi xe (cần lắp "Ống phóng lựu khói"); trong phòng xem thả không giới hạn.
+  // Khói thử dùng bãi khói riêng (Equipment.SmokeField) -> không lọt vào trận đang chơi nếu mở phòng xem giữa trận.
+  testSmoke() {
+    const u = this.activeUnit;
+    if (!u || u.isDead || typeof Equipment === 'undefined') return;
+    if (!Equipment.has(u, 'smoke')) {
+      this.toast('<i class="ti ti-cloud"></i> Xe chưa lắp <b>Ống phóng lựu khói</b> — chọn ở dải trang bị bên dưới, nhóm <b>PHỤ KIỆN</b>', 3600);
+      return;
+    }
+    if (!this.smoke && Equipment.SmokeField) this.smoke = Equipment.SmokeField();
+    if (!this.smoke) return;
+    if (window.soundEngine) {
+      if (typeof window.soundEngine.init === 'function') window.soundEngine.init();
+      if (typeof window.soundEngine.resume === 'function') window.soundEngine.resume();
+    }
+    this.smoke.deploy(u, null);
+    this.toast('<i class="ti ti-cloud"></i> Đã phóng màn khói (~14 giây). Trong trận mỗi lần xuất kích có 2 lần, ở đây thả thoải mái');
   }
 
   // Các khối còn đứng của tường thử gần xe (hộp vật cản cho VehicleCollision)
@@ -741,7 +1027,9 @@ class TankInspector {
     // LÁI THỬ: W/S tiến lùi, A/D quay thân xe (xe xích xoay tại chỗ; xe bánh lốp bẻ lái, chỉ quay khi lăn bánh), Shift tăng tốc (theo hướng xe)
     const fwd = (K.KeyW ? 1 : 0) - (K.KeyS ? 1 : 0), turn = (K.KeyD ? 1 : 0) - (K.KeyA ? 1 : 0);
     const boost = !!(K.ShiftLeft || K.ShiftRight);
-    u.move(fwd, turn, dt, boost);
+    if (this.driveTo && (fwd || turn)) this.driveTo = null;   // tự cầm lái: hủy lái tới điểm nhấp phải
+    if (this.driveTo) this.updateDriveTo(u, dt, boost);
+    else { u.move(fwd, turn, dt, boost); this.updateDriveTo(u, dt, boost); }
     // THÁP & NÒNG: Q/E xoay tháp, Z nâng / X hạ nòng — đúng tốc độ thật của từng xe như phím mũi tên trong trận
     const TR = u.turretRates ? u.turretRates() : { traverse: 42, elevate: 24 };
     if (K.KeyQ) u.azimuth = (u.azimuth - TR.traverse * dt + 360) % 360;
@@ -755,18 +1043,41 @@ class TankInspector {
     // BẮN THỬ: xe liên thanh xả theo nút / Space; pháo bắn khi nạp xong (pháo tự hành phải đứng yên hạ càng)
     const rapid = (u.tankType === 'GATLING' || u.tankType === 'SCOUT') && u.selectedAmmo !== 'ANTI_TANK_MISSILE';
     if (u.antiTankCooldown > 0) u.antiTankCooldown = Math.max(0, Math.min(u.antiTankCooldown, 1.2) - dt);   // ống phóng nạp nhanh để thử liên tục
-    u.isFiringGatling = rapid && !!this.testFiring;
+    // Nhấp trái: chờ tháp quay tới điểm ngắm rồi bắn (pháo: 1 phát khi nạp xong; liên thanh: loạt ~0.6 s); quá 8 s thì bỏ
+    const MS = this.mouseShot;
+    let mouseFire = false;
+    if (MS) {
+      MS.t += dt;
+      if (u.aimAz === undefined || MS.t > 4) { mouseFire = true; MS.fireT += dt; }
+      if (MS.t > 8 || MS.fired || (rapid && MS.fireT > 0.6)) { this.mouseShot = null; mouseFire = mouseFire && !MS.fired; }
+    }
+    const firing = !!this.testFiring || mouseFire;
+    u.isFiringGatling = rapid && firing;
     // Pháo tự hành đang gác nòng trên nóc cabin (không bắn được qua cabin): bấm bắn thử thì tự quay tháp ra sau xe
     if (this.testFiring && u.tankType === 'ARTILLERY' && u.turretInBlind && !K.KeyQ && !K.KeyE && u.aimAz === undefined) {
       u.aimAz = ((-(Math.PI + (u.bodyAngle || 0)) * 180 / Math.PI) % 360 + 360) % 360;
     }
-    if (!rapid && this.testFiring && u.reloadTimer <= 0 && (u.tankType !== 'ARTILLERY' || u.isDeployed)) u.fire(this.testBallistics, this.testRadar);
+    if (!rapid && firing && u.reloadTimer <= 0 && (u.tankType !== 'ARTILLERY' || u.isDeployed)) {
+      u.fire(this.testBallistics, this.testRadar);
+      if (MS && mouseFire) MS.fired = true;
+    }
 
     // Toàn bộ chuyển động, hệ treo, xích, bụi, khói xả, nạp đạn, tháp / nòng: đúng như trong trận
-    u.update(dt, this.getTestTerrain(), this.testBallistics, this.testRadar, null, [u]);
+    const T = this.getTestTerrain();
+    u.update(dt, T, this.testBallistics, this.testRadar, null, [u]);
     this.updateTestSound(u, dt, boost);
     this.updateTestImpacts(dt);
     this.updateTestWall(dt);
+    // sân thử: cây đổ / cháy, khói xác xe; xe chạy qua húc đổ cây, hàng rào, cán bẹp bao cát (như trong trận)
+    const fxs = this.testEffects && this.testEffects.fx;
+    if (this.field) {
+      this.field.update(dt, fxs, this.camera ? this.camera.position : null);
+      if (!u.isDead && Math.abs(u.speed || 0) >= 8) {
+        const a = u.bodyAngle || 0;
+        this.field.crush(u.x, u.z, u.tankType === 'SCOUT' ? 9 : 14, -Math.sin(a) * u.speed, -Math.cos(a) * u.speed, fxs);
+      }
+    }
+    if (this.smoke) this.smoke.step(dt, fxs && fxs.smoke, T);
   }
 
   // Tiếng máy nổ (nghỉ / chạy / tăng tốc), xích rít khi quay, mô-tơ quay tháp — cùng hàm âm thanh trong trận
@@ -815,7 +1126,7 @@ class TankInspector {
     const cols = 14, rows = 5, cz = -112;
     const wall = new Destructibles.ConcreteWall(this.scene, { x: 0, z: cz, yaw: 0, cols, rows });
     wall.visible = true;
-    this.testWall = { wall, group: wall.group, cx: 0, cz, hw: cols * 5.9 / 2, hd: 6.4 / 2, lastHit: -1, rise: 1 };
+    this.testWall = { wall, group: wall.group, cx: 0, cz, hw: cols * 5.9 / 2, hd: Destructibles.ConcreteWall.THICK / 2, lastHit: -1, rise: 1 };
   }
 
   get testWallGroup() { return this.testWall && this.testWall.wall.group; }
@@ -871,10 +1182,13 @@ class TankInspector {
     });
   }
 
-  // Bãi đất bắn thử quanh bệ trưng bày + lùi camera để thấy cả điểm nổ
+  // Bãi đất bắn thử quanh bệ trưng bày (sân thử nhiều địa hình, proving_ground.js) + lùi camera để thấy cả điểm nổ
   showTestRange() {
     if (!this.scene) return;
-    if (!this.testRange) {
+    if (this.ensureField()) {
+      // đã có sân thử
+    } else if (!this.testRange) {
+      // dự phòng (thiếu proving_ground.js): bãi đất phẳng tròn + vạch cự ly như cũ
       const g = new THREE.Group();
       const ground = new THREE.Mesh(
         new THREE.CircleGeometry(420, 64),
@@ -884,7 +1198,6 @@ class TankInspector {
       ground.position.y = -0.04;
       ground.receiveShadow = true;
       g.add(ground);
-      // Vạch cự ly mờ để dễ ước lượng khoảng cách nổ
       for (const r of [100, 200, 300]) {
         const ring = new THREE.Mesh(
           new THREE.RingGeometry(r - 0.6, r + 0.6, 96),
@@ -897,7 +1210,7 @@ class TankInspector {
       this.scene.add(g);
       this.testRange = g;
     }
-    this.testRange.visible = true;
+    if (this.testRange) this.testRange.visible = true;
     if (!this.testRangeCamSet) {
       this.testRangeCamSet = true;
       this.cameraDistance = Math.max(this.cameraDistance, 240);
@@ -908,10 +1221,10 @@ class TankInspector {
 
   getTestEffects() {
     if (!this.testEffects && typeof EffectsManager !== 'undefined' && this.scene) {
-      // EffectsManager chỉ cần scene + terrain: cấp mặt đất phẳng của phòng trưng bày
+      // EffectsManager chỉ cần scene + terrain: cấp mặt đất của sân thử (độ cao + loại đất -> màu đất / bụi văng đúng bãi)
       this.testEffects = new EffectsManager({
         scene: this.scene,
-        terrain: { getElevationAt: () => 0, checkHorseshoeCollision: () => null }
+        terrain: this.getTestTerrain()
       });
     }
     return this.testEffects;
@@ -929,9 +1242,7 @@ class TankInspector {
       D.x += (Math.random() - 0.5) * 0.03; D.y += (Math.random() - 0.5) * 0.02; D.z += (Math.random() - 0.5) * 0.03;
       D.normalize();
     }
-    // Sơ tốc (đơn vị / giây, 8 đơn vị = 1 m). Lựu pháo thu nhỏ để quỹ đạo cầu vồng rơi gọn trong bãi thử
-    const V0 = u.tankType === 'ARTILLERY' ? 170
-      : rapid ? 7200 : ammoType === 'ANTI_TANK_MISSILE' || ammoType === 'RPG' ? 2200 : 12000;
+    const V0 = this.testShotSpeed(u, ammoType);
     const G = 78;
     const vel = D.clone().multiplyScalar(V0);
     const pos = P.clone(), prev = new THREE.Vector3();
@@ -957,15 +1268,25 @@ class TankInspector {
         }
         if (hit) break;
       }
-      if (pos.y <= 0) {
-        const k = prev.y / Math.max(1e-6, prev.y - pos.y);
-        hit = { point: prev.clone().lerp(pos, k).setY(0), normal: new THREE.Vector3(0, 1, 0), object: null, hitType: 'GROUND' };
-        break;
-      }
-      // ụ đất chắn đạn quanh rìa bãi (bán kính 330): đạn bắn thẳng nổ ở chân ụ
-      if (Math.hypot(pos.x, pos.z) > 330) {
-        hit = { point: new THREE.Vector3(pos.x, 0, pos.z), normal: new THREE.Vector3(0, 1, 0), object: null, hitType: 'GROUND' };
-        break;
+      const F = this.field;
+      if (F) {
+        // sân thử: mặt đất có đồi / hào, mặt nước, đá tảng, xác xe, bao cát, thân cây (ụ đất quanh bãi hứng đạn bay quá)
+        const fh = F.segmentHit(prev, pos);
+        if (fh) { hit = { point: fh.point, normal: fh.normal, object: null, hitType: fh.hitType, tree: fh.tree, sandbag: fh.sandbag }; break; }
+        // bay qua tán cây: lá rụng (đạn bay thẳng tới gần như tức thì; lựu pháo bay lâu thì bỏ qua cho khỏi rụng lá trước khi đạn tới)
+        if (u.tankType !== 'ARTILLERY' && (!rapid || (i & 3) === 0)) F.passSegment(prev, pos, ammoType, this.testEffects && this.testEffects.fx);
+        if (Math.hypot(pos.x, pos.z) > F.R + 140) return;
+      } else {
+        if (pos.y <= 0) {
+          const k = prev.y / Math.max(1e-6, prev.y - pos.y);
+          hit = { point: prev.clone().lerp(pos, k).setY(0), normal: new THREE.Vector3(0, 1, 0), object: null, hitType: 'GROUND' };
+          break;
+        }
+        // ụ đất chắn đạn quanh rìa bãi (bán kính 330): đạn bắn thẳng nổ ở chân ụ
+        if (Math.hypot(pos.x, pos.z) > 330) {
+          hit = { point: new THREE.Vector3(pos.x, 0, pos.z), normal: new THREE.Vector3(0, 1, 0), object: null, hitType: 'GROUND' };
+          break;
+        }
       }
       if (t > 12) return;
     }
@@ -1000,16 +1321,22 @@ class TankInspector {
       }
       return;
     }
-    const W = this.testWall;
+    const W = this.testWall, F = this.field;
+    if (p.y === undefined) p.y = F ? F.groundAt(p.x, p.z) : 0;   // đạn con rơi xuống mặt đất (đồi / hào)
     const hitWall = p.hit && p.hit.hitType === 'WALL' && W && W.wall.visible;
+    // trúng đá / xác xe / thân cây: nổ kiểu va vật cứng; rơi xuống nước: nổ trên mặt nước (không khoét hố dưới đáy)
+    const ht = p.hit ? p.hit.hitType : 'GROUND';
+    const fxType = ht === 'BOULDER' ? 'BOULDER' : ht === 'WATER' ? 'AIRBURST' : 'GROUND';
     if (hitWall && fx && fx.fx && fx.fx.impactSurface) fx.fx.impactSurface(p.ammoType, p.hit, p.dir || new THREE.Vector3(0, 0, -1), {});
-    else if (fx) fx.createImpactEffects(p.x, p.y || 0, p.z, p.ammoType, 'GROUND');
-    if (se && typeof se.playExplosionAtDistance === 'function') se.playExplosionAtDistance(p.dist, hitWall ? 'WALL' : 'GROUND', p.ammoType);
+    else if (fx) fx.createImpactEffects(p.x, p.y, p.z, p.ammoType, fxType);
+    if (se && typeof se.playExplosionAtDistance === 'function') se.playExplosionAtDistance(p.dist, hitWall || ht === 'BOULDER' ? 'WALL' : ht === 'WATER' ? 'AIRBURST' : 'GROUND', p.ammoType);
+    // cây rung / đổ / cháy, hàng rào đổ theo sức nổ (như terrain.damageAt trong trận)
+    if (F) F.damageAt(p.x, p.y, p.z, p.ammoType, false, fx && fx.fx);
     // Sức phá kết cấu theo loại đạn (như phòng thử đạn): trúng thẳng tường, hoặc nổ trên đất sát chân tường
     if (W && W.wall.visible && p.ammoType !== 'CLUSTER') {
       const SP = { NORMAL: [24, 1.8], HE: [38, 2.8], AP: [3.6, 4.2], CLUSTER_SUBMUNITION: [12, 0.9], RPG: [20, 2.2], ANTI_TANK_MISSILE: [20, 2.6],
         GATLING_BULLET: [3.2, 0.2], INCENDIARY: [3.8, 0.24], SCOUT_BULLET: [1.8, 0.09] }[p.ammoType] || [24, 1.8];
-      const pt = new THREE.Vector3(p.x, p.y || 0, p.z);
+      const pt = new THREE.Vector3(p.x, p.y, p.z);
       const near = Math.abs(p.x - W.cx) < W.hw + SP[0] && Math.abs(p.z - W.cz) < W.hd + SP[0];
       if (hitWall || (near && p.ammoType !== 'AP')) {
         W.wall.damageAt(pt, SP[0], SP[1] * (hitWall ? 1 : 0.7), p.ammoType, fx && fx.fx);
@@ -1089,11 +1416,14 @@ class TankInspector {
     if (overlay) {
       overlay.classList.add('hidden');
     }
+    this.exitRangeMode({ closing: true });
     this.stopTestFire();
     this.keys = {};
+    this.driveTo = null; this.mouseShot = null;
     this.stopTestSound();
     if (this.activeUnit) this.clearUnitFX(this.activeUnit);
     this.clearTestImpacts();
+    if (this.smoke) this.smoke.clear();
     this.isOpen = false;
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
@@ -1176,8 +1506,19 @@ class TankInspector {
       this.keys[e.code] = false;
     }, true);
     window.addEventListener('blur', () => { this.keys = {}; });
+    // G: thả khói thử (chặn luôn phím G của trận để mở phòng xem giữa trận không phóng khói thật)
+    window.addEventListener('keydown', (e) => {
+      if (!this.isOpen || e.code !== 'KeyG') return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement && document.activeElement.tagName)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) this.testSmoke();
+    }, true);
     const wallBtn = document.getElementById('ti-wall-reset-btn');
     if (wallBtn) wallBtn.addEventListener('click', () => this.resetTestWall());
+    const rIn = document.getElementById('ti-range-enter'), rOut = document.getElementById('ti-range-exit');
+    if (rIn) rIn.addEventListener('click', () => { rIn.blur(); this.enterRangeMode(); });
+    if (rOut) rOut.addEventListener('click', () => { rOut.blur(); this.exitRangeMode(); });
 
     // Nút bật/tắt tự động xoay
     const autoRotateToggle = document.getElementById('ti-autorotate-toggle');
@@ -1297,7 +1638,8 @@ class TankInspector {
     // Phím tắt bàn phím: ESC hoặc phím I để mở/đóng
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.isOpen) {
-        this.close();
+        if (this.rangeMode) this.exitRangeMode();
+        else this.close();
       } else if ((e.key === 'i' || e.key === 'I') && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
         if (this.isOpen) {
           this.close();

@@ -451,10 +451,25 @@ window.addEventListener('error',e=>{document.title='ERR '+e.message;});</script>
   <script src="src/core/equipment.js?v=20261019eqp1"></script>
 
   <!-- 1. Tầng Nền Tảng Cốt Lõi (Core Systems) -->
-  <script src="src/core/audio.js?v=20261019eq1"></script>
+  <script src="src/core/audio/sound_engine.js?v=20261020eq1"></script>
+  <script src="src/core/audio/weapon_fire.js?v=20261020mus1"></script>
+  <script src="src/core/audio/destruction.js?v=20261020mus1"></script>
+  <script src="src/core/audio/impacts.js?v=20261020mus1"></script>
+  <script src="src/core/audio/incoming.js?v=20261020mus1"></script>
+  <script src="src/core/audio/cockpit_cues.js?v=20261020mus1"></script>
+  <script src="src/core/audio/vehicle_engine.js?v=20261020mus1"></script>
+  <script src="src/core/audio/vehicle_destroyed.js?v=20261020mus1"></script>
+  <script src="src/core/audio/other_engines.js?v=20261020mus1"></script>
+  <script src="src/core/audio/fire_ambience.js?v=20261020mus1"></script>
+  <script src="src/core/audio/turret_drives.js?v=20261020mus1"></script>
+  <script src="src/core/audio/gatling.js?v=20261020mus1"></script>
+  <script src="src/core/audio/wading.js?v=20261020mouse1"></script>
+  <script src="src/core/audio/music.js?v=20261020eq1"></script>
+  <script src="src/core/audio/battle_drama.js?v=20261020mus2"></script>
+  <script src="src/core/audio/ui_sounds.js?v=20261020mouse1"></script>
   <script src="src/core/map_gen.js?v=20261019eqp1"></script>
   <script src="src/core/sky.js?v=20261019i"></script>
-  <script src="src/gameplay/destructibles.js?v=20261019eqp1"></script>
+  <script src="src/gameplay/destructibles.js?v=20261020leaf1"></script>
   <script src="src/gameplay/props.js?v=20261019f3"></script>
   <script src="src/gameplay/strongholds.js?v=20261019s1"></script>
   <script src="src/core/game_timing.js?v=20261019env1"></script>
@@ -476,12 +491,12 @@ window.addEventListener('error',e=>{document.title='ERR '+e.message;});</script>
   <script src="src/entities/tanks/recon_marten.js?v=20261019i"></script>
   <script src="src/ai/navigator.js?v=20261019i"></script>
   <script src="src/ai/bot_ai.js?v=20261019env1"></script>
-  <script src="src/entities/spg.js?v=20261019eq1"></script>
+  <script src="src/entities/spg.js?v=20261020mouse1"></script>
 
   <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
   <script src="src/gameplay/capture_points.js?v=20261019eq1"></script>
   <script src="src/gameplay/supply_manager.js?v=20261019s4"></script>
-  <script src="src/gameplay/explosion_fx.js?v=20261019eqp1"></script>
+  <script src="src/gameplay/explosion_fx.js?v=20261020mouse1"></script>
   <script src="src/gameplay/vehicle_damage.js?v=20261020dent1"></script>
   <script src="src/gameplay/team_intel.js?v=20261019eqp1"></script>
   <script src="src/gameplay/tire_tracks.js?v=20261019i"></script>
@@ -490,10 +505,10 @@ window.addEventListener('error',e=>{document.title='ERR '+e.message;});</script>
   <!-- 4. Tầng Giao Diện Người Dùng (UI & Sảnh Chờ) -->
   <script src="src/ui/hud_controller.js?v=20261019tc2"></script>
   <script src="src/ui/tactical_map.js?v=20261019tc2"></script>
-  <script src="src/ui/tank_inspector.js?v=20261019eqp1"></script>
-  <script src="src/ui/armory_ui.js?v=20261019eqp1"></script>
+  <script src="src/ui/tank_inspector.js?v=20261020mouse1"></script>
+  <script src="src/ui/armory_ui.js?v=20261020eq1"></script>
   <script src="src/core/net_codec.js?v=20261019n1"></script>
-  <script src="src/core/netcode.js?v=20261019eqp1"></script>
+  <script src="src/core/netcode.js?v=20261020mouse1"></script>
   <script src="src/ui/matchmaking.js?v=20261019eq1"></script>
   <script src="src/ui/lobby_view.js?v=20261019tc2"></script>
   <script src="src/ui/account.js?v=20261019eqp1"></script>
@@ -504,7 +519,7 @@ window.addEventListener('error',e=>{document.title='ERR '+e.message;});</script>
 
   <!-- 5. Bộ Điều Phối Trò Chơi (Main Game Engine) -->
   <script src="src/ui/game_menu.js?v=20261019gm1"></script>
-  <script src="src/game.js?v=20261019eqp1"></script>
+  <script src="src/game.js?v=20261020mouse1"></script>
 <script>
 (function(){
 const v=(location.search.match(/view=([a-z]+)/)||[])[1]||'lobby';
