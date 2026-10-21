@@ -10,6 +10,33 @@
 const GroundShader = (() => {
   const TEX = {};
   const uTime = { value: 0 };
+  // Che khuất ánh trời dưới gầm / sát quanh xe (contact AO): tối đa 16 xe gần camera; A = (x, z, cos, -sin) góc thân xe,
+  // B = (nửa rộng, nửa dài, lõi tối vào trong, tán ra ngoài). Không có thì gầm xe sáng như bãi trống -> xe như đặt nổi
+  const VEH_N = 16;
+  const uVehA = { value: Array.from({ length: VEH_N }, () => new THREE.Vector4(0, 0, 1, 0)) };
+  const uVehB = { value: Array.from({ length: VEH_N }, () => new THREE.Vector4(0, 0, 1, 1)) };
+  const uVehN = { value: 0 };
+  const VEH_SIZE = { ALL_ROUNDER: [15, 24], GATLING: [15.5, 21], ARTILLERY: [10, 24], SCOUT: [8.5, 14] };
+  const _vehTmp = [];
+  /** Cập nhật mỗi khung: units (xe sống & xác), cam (vị trí camera) */
+  function setVehicles(units, cam, groundAt) {
+    _vehTmp.length = 0;
+    for (const u of units || []) {
+      if (!u || !u.group || u.group.visible === false || u.airborne) continue;
+      const d = cam ? Math.hypot(u.x - cam.x, u.z - cam.z) : 0;
+      if (d > 1600) continue;
+      if (groundAt && (u.y || 0) - groundAt(u.x, u.z) > 14) continue;   // đang bay / rơi: không đè bóng xuống đất
+      _vehTmp.push([d, u]);
+    }
+    _vehTmp.sort((a, b) => a[0] - b[0]);
+    const n = Math.min(VEH_N, _vehTmp.length);
+    for (let i = 0; i < n; i++) {
+      const u = _vehTmp[i][1], sz = VEH_SIZE[u.tankType] || VEH_SIZE.ALL_ROUNDER, a = u.bodyAngle || 0;
+      uVehA.value[i].set(u.x, u.z, Math.cos(a), -Math.sin(a));
+      uVehB.value[i].set(sz[0], sz[1], 3, u.isDead ? 6 : 7.5);
+    }
+    uVehN.value = n;
+  }
 
   // ---------------------------------------------------------------------------
   // TIỆN ÍCH VẼ TEXTURE LẶP LIỀN MẠCH
@@ -374,7 +401,8 @@ const GroundShader = (() => {
         gBase: { value: L.base }, gDirt: { value: L.dirt }, gRock: { value: L.rock }, gFine: { value: L.fine },
         gNoise: { value: noise }, gMacroAvg: { value: avg }, gTime: uTime, gWaterLvl: { value: opts.waterLvl !== undefined ? opts.waterLvl : opts.water ? 2.5 : -999 },
         gNrm: { value: bake ? bake.tex : null }, gTerr: { value: new THREE.Vector2(bake ? bake.half : 1800, bake ? bake.size : 3600) },
-        gGrain: { value: L.grain || null }, gWindA: { value: windA }, gSoil: { value: L.soil || null }
+        gGrain: { value: L.grain || null }, gWindA: { value: windA }, gSoil: { value: L.soil || null },
+        gVehA: uVehA, gVehB: uVehB, gVehN: uVehN
       });
       sh.vertexShader = 'varying vec3 vGW;\nvarying vec3 vGN;\n' + sh.vertexShader.replace(
         '#include <project_vertex>',
@@ -405,6 +433,20 @@ float gMotF(vec2 p) {
 }
 uniform vec3 gMacroAvg;
 uniform float gTime, gWaterLvl;
+uniform vec4 gVehA[${VEH_N}]; uniform vec4 gVehB[${VEH_N}]; uniform int gVehN;
+// ánh trời bị thân xe che: tối hẳn dưới gầm, nhạt dần ra ~1 m quanh thân (khoảng cách tới hình chữ nhật thân xe)
+float gVehAO(vec2 p) {
+  float ao = 1.0;
+  for (int i = 0; i < ${VEH_N}; i++) {
+    if (i >= gVehN) break;
+    vec4 A = gVehA[i], B = gVehB[i];
+    vec2 d = p - A.xy;
+    vec2 q = abs(vec2(dot(d, A.zw), dot(d, vec2(-A.w, A.z)))) - B.xy;
+    float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+    ao *= 1.0 - 0.72 * (1.0 - smoothstep(-B.z, B.w, sd));
+  }
+  return ao;
+}
 varying vec3 vGW;
 varying vec3 vGN;
 vec3 g2(sampler2D t, vec2 p, float s) {
@@ -716,11 +758,16 @@ float gTuftH(vec2 p) {
     normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
   }`)
         .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+  {
+    float vao = gVehAO(vGW.xz);
+    reflectedLight.indirectDiffuse *= vao;
+    reflectedLight.directDiffuse *= mix(1.0, vao, 0.3);   // mép bóng đổ dưới gầm (bóng nắng mềm hở sáng) cũng sẫm theo
+  }
   reflectedLight.directDiffuse *= 1.0 - gCloud * 0.5;
   reflectedLight.indirectDiffuse *= 1.0 - gWet * 0.3;   // hõm khuất ánh trời
   reflectedLight.directSpecular *= 1.0 - gCloud * 0.5;`);
     };
-    mat.customProgramCacheKey = () => 'groundPBR11:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
+    mat.customProgramCacheKey = () => 'groundPBR12:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
     mat.needsUpdate = true;
     return mat;
   }
@@ -742,7 +789,7 @@ float gTuftH(vec2 p) {
     };
   }
 
-  return { apply, tick, layers, noiseSampler, bakeNormals, time: uTime };
+  return { apply, tick, layers, noiseSampler, bakeNormals, setVehicles, time: uTime };
 })();
 
 if (typeof window !== 'undefined') window.GroundShader = GroundShader;

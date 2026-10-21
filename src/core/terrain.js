@@ -179,8 +179,11 @@ class BattleTerrain3D {
     p.sunColor = new THREE.Color(0xffe2b0).lerp(new THREE.Color(0xfff6e8), elevK).getHex();
     // Tổng ánh sáng trên mặt đất phẳng giữa trưa ~1.6 (cũ ~2.2 -> nền sáng bị cắt trắng / lá cây xanh neon);
     // ánh trời mạnh hơn để vùng bóng còn ~45% vùng nắng (bóng có sắc trời xanh nhạt, không đen kịt)
-    p.sunIntensity = (0.75 + 0.25 * elevK) * p.sunK;
-    p.skyIntensity = (0.68 + 0.1 * elevK) * p.skyK;
+    // Tỷ lệ bóng / nắng: trời quang ngoài trời thật vùng bóng chỉ còn ~20-35% vùng nắng (ánh trực tiếp ~80% tổng sáng);
+    // trước đây bóng sáng tới ~48% -> cảnh bệt, khối không nổi, bóng xe / nhà nhạt thếch. Nắng mạnh lên, ánh trời tán xạ
+    // giảm, tổng sáng trên mặt phẳng giữa trưa gần như giữ nguyên (đường cong tông màu vai mềm lo phần sáng gắt)
+    p.sunIntensity = (0.75 + 0.25 * elevK) * p.sunK * 1.17;
+    p.skyIntensity = (0.68 + 0.1 * elevK) * p.skyK * 0.74;
     p.ambientIntensity = 0.15;
     this.atmosphere = p;
     this.scene.background = new THREE.Color(p.horizon);

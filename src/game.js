@@ -4787,6 +4787,10 @@ class ArtilleryGame3D {
       }
       VehicleDamage.update(dt, this.units);
     }
+    // Bóng che ánh trời dưới gầm xe trên mặt đất (GroundShader contact AO)
+    if (typeof GroundShader !== 'undefined' && GroundShader.setVehicles && this.terrain) {
+      GroundShader.setVehicles(this.units, this.camera && this.camera.position, (x, z) => this.terrain.getElevationAt(x, z));
+    }
     // Cây cháy / đổ, nhà sập, mặt nước; xe húc đổ cây khi chạy qua
     if (this.terrain && this.terrain.update) {
       const fxs = this.effectsManager && this.effectsManager.fx;

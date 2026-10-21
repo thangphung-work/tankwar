@@ -273,13 +273,14 @@ const Strongholds = (() => {
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uSand = { value: new THREE.Vector3(...G.c) };
       sh.uniforms.uSandK = { value: G.k };
-      sh.vertexShader = 'attribute float aFloorY;\nattribute float aSand;\nvarying vec3 vShWP;\nvarying vec3 vShWN;\nvarying float vShLY, vShFY, vShSand;\n' +
+      sh.uniforms.uShDim = { value: new THREE.Vector2(S.HB, S.CEIL) };
+      sh.vertexShader = 'attribute float aFloorY;\nattribute float aSand;\nvarying vec3 vShWP;\nvarying vec3 vShWN;\nvarying vec3 vShLP;\nvarying float vShLY, vShFY, vShSand;\n' +
         sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
   vShWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
   vShWN = normalize(mat3(modelMatrix) * objectNormal);
-  vShLY = transformed.y; vShFY = aFloorY; vShSand = aSand;`);
-      sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK;
-varying vec3 vShWP; varying vec3 vShWN; varying float vShLY, vShFY, vShSand;
+  vShLY = transformed.y; vShFY = aFloorY; vShSand = aSand; vShLP = transformed;`);
+      sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK; uniform vec2 uShDim;
+varying vec3 vShWP; varying vec3 vShWN; varying vec3 vShLP; varying float vShLY, vShFY, vShSand;
 float shH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(shH(i), shH(i + vec2(1.0, 0.0)), f.x), mix(shH(i + vec2(0.0, 1.0)), shH(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -315,9 +316,18 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     float streak = smoothstep(0.58, 0.85, st) * 0.13;
     float grime = mix(blot * (1.0 - 0.5 * slopeK), streak, clamp(wallK, 0.0, 1.0)) * (1.0 - 0.7 * down);
     diffuseColor.rgb *= 1.0 - grime * (1.0 - clamp(sand, 0.0, 1.0));
+  }`).replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+  {
+    // Trong lòng hầm (dưới mái) ánh trời chỉ lọt vào từ 2 đầu miệng hầm: càng vào sâu càng tối, trần & dầm còn tối hơn
+    float af = abs(vShLP.x);
+    float under = (1.0 - smoothstep(uShDim.x - 6.0, uShDim.x + 22.0, af)) * (1.0 - step(uShDim.y + 0.5, vShLP.y));
+    float depthIn = clamp(1.0 - af / uShDim.x, 0.0, 1.0);
+    float vis = mix(1.0, mix(0.55, 0.3, depthIn) * (1.0 - 0.25 * clamp(-vShWN.y, 0.0, 1.0)), under);
+    reflectedLight.indirectDiffuse *= vis;
+    reflectedLight.indirectSpecular *= vis;
   }`);
     };
-    mat.customProgramCacheKey = () => 'shWeather2:' + kind;
+    mat.customProgramCacheKey = () => 'shWeather3:' + kind;
     return mat;
   }
   // Thuộc tính cho shader bám bụi: aFloorY = cao độ mặt sàn / đất dưới chân đỉnh đó, aSand = mức cát lấn (sàn)
