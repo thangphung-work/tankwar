@@ -360,7 +360,8 @@ const Landmarks = (() => {
         roads: [[[[320, 0], [92, 0]], 30], [ring.concat([ring[0]]), 20]].concat(spokes),
         junctions: ring.map(([f, r]) => [f, r, 24, 24]).concat([[92, 0, 22, 30]]),
         gravel: (hu) => [[-90, -105, 70, 105], [hu - 150, -70, hu, 70], [-60, 380, 80, 450], [-250, -45, -185, 45], [-185, 370, -115, 430], [120, 360, 180, 440], [-165, -432, -95, -368],
-          [92, 180, 156, 244], [-156, 180, -92, 244], [-156, -244, -92, -180], [92, -244, 156, -180]],
+          [92, 180, 156, 244], [-156, 180, -92, 244], [-156, -244, -92, -180], [92, -244, 156, -180],
+          [147, 82, 203, 138], [147, -138, 203, -82], [-228, 92, -172, 148], [-228, -148, -172, -92]],
         slabs: [], noGrow: []
       };
     })()
@@ -2134,6 +2135,39 @@ const Landmarks = (() => {
       for (const a of [0.8, 2.4, 3.9, 5.5]) K.beam('steelGray', [-14, 60, 0], [-14 + Math.cos(a) * 16, 9, Math.sin(a) * 16], 0.12, base);
     }
   }
+  // Pháo phòng không tầm trung S-60 57 mm ở thế bắn (gốc giữa bệ, nòng hướng +x): bệ chữ thập 4 chân kích hạ xuống,
+  // 4 bánh nâng khỏi đất, mâm xoay, khung pháo + tấm chắn, nòng L/76 (~4.4 m) có hãm giật đục lỗ, lò xo đẩy lên nòng,
+  // khay kẹp đạn 4 viên phía trên khoá nòng, 2 ghế pháo thủ + tay quay, kính ngắm; ụ bao cát tròn + thùng đạn
+  function aaGun(K, f, r, az, el) {
+    const b = M4(f, 0, r, 0, -az, 0), at = (x, y, z, rx, ry, rz) => new THREE.Matrix4().multiplyMatrices(b, M4(x, y, z, rx, ry, rz));
+    for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      K.add('olive', new THREE.BoxGeometry(22, 2.4, 3), at(Math.cos(a) * 12, 3, Math.sin(a) * 12, 0, -a, 0));
+      K.add('steelGray', new THREE.CylinderGeometry(0.7, 0.7, 4, 8), at(Math.cos(a) * 22, 2.4, Math.sin(a) * 22));
+      K.add('steelDark', new THREE.CylinderGeometry(2, 2.4, 0.7, 10), at(Math.cos(a) * 22, 0.35, Math.sin(a) * 22));
+    }
+    K.cbox('olive', 0, 5, 0, 18, 4, 12, 0.6, 0, b);
+    for (const [x, s2] of [[-6, -1], [-6, 1], [6, -1], [6, 1]]) { K.add('rubber', new THREE.CylinderGeometry(3.6, 3.6, 2.4, 14), at(x, 7.2, s2 * 8.4, Math.PI / 2, 0, 0)); K.add('olive', new THREE.CylinderGeometry(1.8, 1.8, 2.5, 10), at(x, 7.2, s2 * 8.5, Math.PI / 2, 0, 0)); }
+    K.add('steelDark', new THREE.CylinderGeometry(5.6, 5.6, 1.6, 18), at(0, 7.8, 0));
+    for (const s2 of [-1, 1]) K.add('olive', plateGeo([[-6, 0], [5, 0], [3, 8], [-3, 8]], 1), at(0, 8.6, s2 * 4));
+    const cr = new THREE.Matrix4().multiplyMatrices(at(1, 15, 0), M4(0, 0, 0, 0, 0, el));
+    K.add('olive', new THREE.BoxGeometry(16, 4, 5), new THREE.Matrix4().multiplyMatrices(cr, M4(2, 0, 0)));
+    K.add('steelDark', new THREE.CylinderGeometry(0.75, 0.9, 35, 10), new THREE.Matrix4().multiplyMatrices(cr, M4(26, 0.6, 0, 0, 0, -Math.PI / 2)));
+    K.add('steelDark', new THREE.CylinderGeometry(1.3, 1.3, 3.4, 10), new THREE.Matrix4().multiplyMatrices(cr, M4(44.5, 0.6, 0, 0, 0, -Math.PI / 2)));
+    for (let k = 0; k < 4; k++) K.add('void', new THREE.BoxGeometry(0.5, 2.7, 0.5), new THREE.Matrix4().multiplyMatrices(cr, M4(43.4 + k * 0.7, 0.6, 1.2)));
+    K.add('steelGray', new THREE.CylinderGeometry(0.6, 0.6, 14, 8), new THREE.Matrix4().multiplyMatrices(cr, M4(12, -1.6, 0, 0, 0, -Math.PI / 2)));
+    K.add('olive', new THREE.BoxGeometry(10, 3.4, 3), new THREE.Matrix4().multiplyMatrices(cr, M4(-1, 3.6, 0)));
+    for (let k = 0; k < 4; k++) K.add('yellow', new THREE.CylinderGeometry(0.35, 0.35, 5, 6), new THREE.Matrix4().multiplyMatrices(cr, M4(-1 + (k - 1.5) * 1.8, 6, 0, Math.PI / 2, 0, 0)));
+    for (const s2 of [-1, 1]) {
+      K.add('olive', plateGeo([[-2, 0], [8, 0], [6, 9], [-1, 7]], 0.4), at(2, 10, s2 * 6.2));
+      K.add('steelDark', new THREE.BoxGeometry(3, 0.6, 3), at(-4, 13, s2 * 8));
+      K.add('steelDark', new THREE.BoxGeometry(0.4, 4, 2.6), at(-5.4, 15, s2 * 8));
+      K.add('steelGray', new THREE.TorusGeometry(1.2, 0.18, 4, 12), at(-1, 14, s2 * 7.6));
+    }
+    K.add('steelDark', new THREE.BoxGeometry(2, 2, 1.4), at(-2, 18, -5.6));
+    K.solid(f, r, 22, 22, 0, 18, az);
+    for (let k = 0; k < 9; k++) { const a0 = k / 9 * TAU + az + 0.35, a1 = a0 + TAU / 9 - 0.1; if (k === 4) continue; sandbags(K, f + Math.cos(a0) * 28, r + Math.sin(a0) * 28, f + Math.cos(a1) * 28, r + Math.sin(a1) * 28, 3, 0); }
+    for (let k = 0; k < 4; k++) { const a = az + Math.PI + 0.5 + k * 0.18; K.cbox('olive', f + Math.cos(a) * 22, 1.6 + (k % 2) * 3, r + Math.sin(a) * 22, 6, 3, 3.6, 0.3, -a); }
+  }
   // Theo trận địa S-125 thật: 4 bệ phóng 5P73 (mỗi bệ 4 ray / 4 tên lửa) trong kè đất móng ngựa quanh trạm radar dẫn bắn
   // SNR-125 ở giữa; đường vòng nối miệng các kè + nan hoa vào giữa; cáp điều khiển trong mương có nắp; xe chỉ huy, xe
   // phân phối điện + 2 máy phát diesel, 2 xe vận tải - nạp đạn PR-14 (mỗi xe 2 tên lửa), kho tên lửa vòm bê tông, radar
@@ -2231,6 +2265,8 @@ const Landmarks = (() => {
       for (const x of [-78, -60]) for (const s of [-1, 1]) { K.add('rubber', new THREE.CylinderGeometry(3.4, 3.4, 2.6, 14), M4(x, 3.4, r + s * 7, Math.PI / 2, 0, 0)); K.add('olive', new THREE.CylinderGeometry(1.8, 1.8, 2.7, 10), M4(x, 3.4, r + s * 7.05, Math.PI / 2, 0, 0)); }
       K.solid(-66, r, 18, 9, 0, 36);
     }
+    // ---- 4 KHẨU PHÁO PHÒNG KHÔNG TẦM TRUNG S-60 57 mm bảo vệ trận địa (ụ bao cát tròn), nòng hướng các hướng tiếp cận
+    for (const [f, r, az] of [[175, 110, 0.5], [175, -110, -0.5], [-200, 120, 2.4], [-200, -120, -2.4]]) aaGun(K, f, r, az, 0.62);
     // ---- 2 XE VẬN TẢI - NẠP ĐẠN PR-14 (ZIL-131 chở 2 tên lửa trên ray) ở bãi nạp đạn
     for (const [r, n] of [[396, 2], [430, 1]]) {
       milTruck(K, M4(20, 0, r, 0, 0, 0), 'loader');
