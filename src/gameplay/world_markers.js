@@ -204,28 +204,31 @@ const WorldMarkers = (() => {
               d = min(d, sdSeg(f, vec2(0.12), vec2(0.4)));
             }
           } else if (uKind < 1.5) {
-            // ĐIỂM ĐẾN: ô vuông vát góc + 4 chevron chụm vào tâm (nhịp nhẹ), thoi nhỏ ở giữa
+            // ĐIỂM ĐẾN (điểm hành quân): vòng tròn chia 4 cung hở ở 4 hướng, chấm tâm, mũi tên hướng hành quân phía
+            // trước (trục +y cục bộ = hướng từ xe tới điểm, xem placeOnGround yaw) và 2 vạch dấu hai bên; gợn khi vừa đặt
+            float R0 = 0.52;
+            d = abs(r - R0);
             vec2 a = abs(p);
-            float B = 0.5, c = 0.17;
-            float box = max(max(a.x, a.y) - B, (a.x + a.y - (2.0 * B - c)) * 0.7071);
-            d = abs(box);
-            if (min(a.x, a.y) < 0.13) d = 1e3;   // khe giữa mỗi cạnh: chỗ chevron chỉ vào
-            vec2 f = a; if (f.x > f.y) f = f.yx;
-            float y0 = 0.66 + 0.07 * (0.5 + 0.5 * cos(uTime * 3.4));
-            d = min(d, sdSeg(f, vec2(0.0, y0), vec2(0.16, y0 + 0.13)));
-            fillD = (a.x + a.y - 0.1) * 0.7071;
+            if (min(a.x, a.y) < 0.13) d = 1e3;                  // khe ở 4 hướng
+            d = min(d, sdSeg(a, vec2(R0 + 0.06, 0.0), vec2(R0 + 0.2, 0.0)));   // vạch dấu trái / phải
+            // mũi tên hướng đi: tam giác nhọn đặc ở phía trước vòng
+            vec2 t = vec2(abs(p.x), p.y - 0.62);
+            float tri = max(t.x * 0.94 + t.y * 0.34 - 0.06, -t.y - 0.07);
+            fillD = min(r - 0.07, tri);
             // gợn sóng lan ra khi vừa đặt điểm
             float rr = 0.35 + uPop * 0.62;
             float rw = max(uThick * 0.8, pw * 0.7);
             extra = (1.0 - smoothstep(rw - pw * 0.5, rw + pw * 0.5, abs(r - rr))) * (1.0 - uPop) * 0.9;
           } else {
-            // ĐIỂM NGẮM MẶT ĐẤT: thoi hở 4 đỉnh + vạch hướng ra ngoài, chấm tâm
-            vec2 q = rot(p, uSpin);
-            vec2 a = abs(q);
-            d = abs(a.x + a.y - 0.6) * 0.7071;
-            if (min(a.x, a.y) < 0.1) d = 1e3;
+            // ĐIỂM CHỈ ĐỊNH BẮN (điểm tham chiếu mục tiêu): 4 góc ngoặc vuông, chữ thập hở tâm, chấm tâm,
+            // mũi tên nhỏ ở mép xa chỉ hướng bắn (trục +y cục bộ = hướng từ xe mình tới điểm). Đứng yên, không xoay
+            vec2 a = abs(p);
+            float B = 0.74, L = 0.26;
+            d = min(sdSeg(a, vec2(B, B), vec2(B - L, B)), sdSeg(a, vec2(B, B), vec2(B, B - L)));
             vec2 f = a; if (f.x > f.y) f = f.yx;
-            d = min(d, sdSeg(f, vec2(0.0, 0.72), vec2(0.0, 0.95)));
+            d = min(d, sdSeg(f, vec2(0.0, 0.16), vec2(0.0, 0.46)));
+            vec2 t = vec2(abs(p.x), p.y - 0.9);
+            d = min(d, sdSeg(t, vec2(0.0, 0.0), vec2(0.11, -0.1)));   // chevron ^ chỉ hướng bắn
             fillD = r - 0.05;
           }
           float core, halo;

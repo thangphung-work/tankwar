@@ -9,6 +9,8 @@
  * - Xe trinh sát KHÓA mục tiêu đang nằm trong vùng radar -> liên tục BÁO VỊ TRÍ cho đồng đội (bản đồ, khung 3D,
  *   đồng đội khóa & bắn được mục tiêu đó, kể cả pháo tự hành bắn xa ngoài tầm nhìn).
  * - Radar bị bắn hỏng (mất cụm cảm biến) -> mất toàn bộ chức năng radar.
+ * - Drone trinh sát của xe pháo đang bay (drone_air.js): camera nhìn chếch xuống phía trước, xe địch trong vùng nhìn bị
+ *   lộ cho CẢ PHE (hình truyền về). Nhìn từ trên cao: bụi chỉ che được xe trinh sát, tán rừng rậm & khói vẫn che.
  */
 const TeamIntel = (() => {
   // Tầm nhìn trực tiếp (kính ngắm / quan sát bằng mắt) theo loại xe — 1 đơn vị game hiển thị là "1 m"
@@ -35,6 +37,9 @@ const TeamIntel = (() => {
   //  - pháo tự hành: thân xe tải + nòng dài, không núp bụi được (không có mục nào)
   // spot: tầm mắt thường thấy được xe núp bụi (0 = bụi không che mắt); radar: hệ số bán kính radar bắt được
   const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
+  // Vùng nhìn của drone trinh sát (khớp server_auth.js DRONE_SIGHT / DRONE_AHEAD): tròn bán kính DRONE_SIGHT, tâm lệch
+  // DRONE_AHEAD về phía trước drone (camera chúc ~52° ở độ cao bay ~50 m: giữa khung hình nằm trước drone)
+  const DRONE_SIGHT = 520, DRONE_AHEAD = 250;
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -119,6 +124,28 @@ const TeamIntel = (() => {
     return v;
   }
 
+  // Drone trinh sát phe `team` đang bay nhìn thấy xe t
+  function droneSees(team, t) {
+    const list = game && game.airDroneList ? game.airDroneList() : null;
+    if (!list || !list.length) return false;
+    const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
+    const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
+    const bc = bushCover(t);
+    for (const dr of list) {
+      if (dr.team !== team || dr.state === 'lost') continue;
+      const yaw = dr.yaw || 0, cx = dr.x - Math.sin(yaw) * DRONE_AHEAD, cz = dr.z - Math.cos(yaw) * DRONE_AHEAD;
+      const d = Math.hypot(t.x - cx, t.z - cz);
+      let r = DRONE_SIGHT;
+      if (bc && bc.spot) r = Math.min(r, bc.spot);   // trinh sát núp bụi: chỉ lộ khi drone ở gần
+      if (d > r * (EQ ? EQ.camoFactor(t) : 1)) continue;
+      // tán rừng rậm che xe bên dưới (trừ khi vừa nổ súng); màn khói che khuất
+      if ((t.forestDens || 0) >= dense && d > FOREST_SPOT && !((t.revealTimer || 0) > 0)) continue;
+      if (EQ && EQ.smokeBlocks && EQ.smokeBlocks(dr.x, dr.z, t.x, t.z)) continue;
+      return true;
+    }
+    return false;
+  }
+
   function radarContact(viewer, t) {
     if (!hasRadar(viewer) || !viewer.radarContacts) return null;
     const c = viewer.radarContacts.get(t.id);
@@ -139,6 +166,7 @@ const TeamIntel = (() => {
     if (t.isDead) return true;     // xác xe thì ai cũng thấy
     if (t._netHidden) return false;   // máy chủ không gửi vị trí (khuất tầm nhìn cả phe)
     if (seesDirect(viewer, t)) return true;
+    if (droneSees(viewer.team, t)) return true;
     if (radarContact(viewer, t)) return true;
     if (reportOf(viewer.team, t)) return true;
     return false;
@@ -149,7 +177,7 @@ const TeamIntel = (() => {
     if (!viewer || !t) return null;
     if (t.team === viewer.team || t.isDead) return 'direct';
     if (t._netHidden) return null;
-    if (seesDirect(viewer, t)) return 'direct';
+    if (seesDirect(viewer, t) || droneSees(viewer.team, t)) return 'direct';
     if (radarContact(viewer, t)) return 'radar';
     if (reportOf(viewer.team, t)) return 'report';
     return null;
@@ -386,7 +414,7 @@ const TeamIntel = (() => {
   }
 
   return {
-    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, bushCover, bushBanner,
+    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, DRONE_SIGHT, DRONE_AHEAD, bushCover, bushBanner, droneSees,
     bind, reset, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
     get time() { return time; },
     get reports() { return reports; }

@@ -31,6 +31,9 @@ const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;
 // trinh sát núp thật (mắt thường BUSH_SPOT, radar 40%), xe tăng / 6 nòng chỉ giảm tầm radar, pháo tự hành không núp được
 const BUSH_SPOT = 260, BUSH_RADAR = 0.7;
 const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
+// Drone trinh sát xe pháo đang bay: thấy xe địch trong DRONE_SIGHT quanh tâm vùng nhìn (lệch DRONE_AHEAD về phía trước)
+// (khớp TeamIntel.DRONE_SIGHT / DRONE_AHEAD); vị trí lấy từ gói DRONE, hết hạn nếu lâu không có gói mới
+const DRONE_SIGHT = 520, DRONE_AHEAD = 250, DRONE_TTL_MS = 1500, DRONE_UP = new Set([1, 2, 3]);   // launching / flying / returning
 const REVEAL_MS = 4500;        // vừa nổ súng: lộ vị trí (bụi / rừng không che) — dài hơn thời gian lộ phía máy khách (tối đa 4 s)
 const SPOT_MS = 4500;          // báo cáo vị trí của trinh sát
 const FAR = 1500;              // xa hơn mức này: gửi nửa tần số
@@ -129,6 +132,7 @@ function initMatch(room, d, fromId) {
     S: [],                 // trạng thái đầy đủ từng xe (lượng tử hóa như gói REMOTE_UNIT_SYNC)
     meta: [],              // { lastT, hpAuth, deadAt, revealUntil, dmg: [[t, amount]], tick }
     spotted: { BLUE: new Map(), RED: new Map() },   // xe -> hết hạn báo cáo
+    drones: new Map(),     // xe pháo -> { cx, cz, until } tâm vùng nhìn drone đang bay
     vis: { BLUE: new Set(), RED: new Set() },
     sent: new Map(),       // máy nhận -> Map(xe -> trạng thái đã gửi | {hid:1})
     dirty: new Set(),      // xe có trạng thái mới chờ gửi ở nhịp tới
@@ -171,6 +175,12 @@ function updateVisibility(M, now) {
   for (const team of ['BLUE', 'RED']) {
     const set = new Set();
     const mine = M.roster.filter(r => r.team === team && M.S[r.i] && !(M.S[r.i].f & F_DEAD));
+    const drones = [];
+    for (const [i, dr] of M.drones) {
+      if (dr.until < now) { M.drones.delete(i); continue; }
+      const r = M.byIdx.get(i);
+      if (r && r.team === team && M.S[i] && !(M.S[i].f & F_DEAD)) drones.push(dr);
+    }
     for (const e of M.roster) {
       if (e.team === team) continue;
       const s = M.S[e.i];
@@ -185,6 +195,11 @@ function updateVisibility(M, now) {
       // cờ ngụy trang chỉ tin khi xe có lắp lưới và thật sự đứng yên (chống gửi cờ giả để tàng hình khi chạy)
       const camo = !revealed && (s.f & F_CAMO) && e.cm && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08;
       const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = camo ? CAMO_SIGHT : 1;
+      // drone trinh sát phe mình soi từ trên xuống (bụi chỉ che trinh sát, tán rừng rậm che như mắt thường)
+      if (drones.some(dr => {
+        const d = Math.hypot(ex - dr.cx, ez - dr.cz);
+        return d < DRONE_SIGHT * sk + MARGIN && !(bush && bush.spot && d > bush.spot + MARGIN) && !(inForest && d > FOREST_SPOT + MARGIN);
+      })) { set.add(e.i); continue; }
       for (const u of mine) {
         const v = M.S[u.i], vx = v.x / 10, vz = v.z / 10, d = Math.hypot(ex - vx, ez - vz);
         if (d < CLOSE) { set.add(e.i); break; }
@@ -440,9 +455,14 @@ function handle(room, client, msg) {
       return false;
     }
     case 'DRONE': {
-      // trạng thái drone trinh sát: chỉ máy điều khiển xe pháo đó
-      const d = msg.d || {}, r = M.byIdx.get(d.i);
+      // trạng thái drone trinh sát: chỉ máy điều khiển xe pháo đó; drone đang bay trong tầm tín hiệu -> soi xe địch cho phe
+      const d = msg.d || {}, r = M.byIdx.get(d.i), st = M.S[d.i];
       if (!r || r.type !== 'ARTILLERY' || ownerOf(room, r) !== client.id) return true;
+      if (DRONE_UP.has(d.s) && [d.x, d.z].every(Number.isFinite) && st && !(st.f & F_DEAD)
+        && Math.hypot(d.x / 10 - st.x / 10, d.z / 10 - st.z / 10) <= (MAX_RANGE.ARTILLERY || 3200) + 800) {
+        const yaw = (d.w || 0) / 100, x = d.x / 10, z = d.z / 10;
+        M.drones.set(d.i, { cx: x - Math.sin(yaw) * DRONE_AHEAD, cz: z - Math.cos(yaw) * DRONE_AHEAD, until: now + DRONE_TTL_MS });
+      } else M.drones.delete(d.i);
       return false;
     }
     case 'DRONE_HIT': {
