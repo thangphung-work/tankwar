@@ -161,7 +161,7 @@ const Landmarks = (() => {
       warnSign(g, u - 44, sep - 120, 88, 88, 'nuke');
       g.save(); g.translate(u, sep + 500); g.rotate(-Math.PI / 2);
       g.fillStyle = '#1b1b1b'; g.font = 'bold 58px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText('TL-HN 07', 0, 0);
+      g.fillText('ICBM-07', 0, 0);
       g.restore();
       g.fillStyle = '#a3261b'; g.fillRect(u - 34, sep + 230, 68, 12);
     }
@@ -201,7 +201,7 @@ const Landmarks = (() => {
         for (const r of [-60, 60]) { g.beginPath(); g.moveTo(...P(70, r)); g.lineTo(...P(f1, r)); g.stroke(); }
         g.save(); g.translate(...P(176, 0)); g.rotate(Math.PI / 2);
         g.fillStyle = 'rgba(200,40,28,0.85)'; g.font = `bold ${(15 * S) | 0}px Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText('KHU VỰC CÁCH LY', 0, 0);
+        g.fillText('QUARANTINE ZONE', 0, 0);
         g.restore();
       }
     });
@@ -260,7 +260,7 @@ const Landmarks = (() => {
       g.fillStyle = '#d9a61c'; g.beginPath(); g.arc(w / 2, h * 0.47, 86, 0, TAU); g.fill();
       biohazard(g, w / 2, h * 0.47, 76, '#141414');
       g.fillStyle = '#a3261b'; g.font = 'bold 26px Arial, sans-serif'; g.textAlign = 'center';
-      g.fillText('NGUY HIỂM SINH HỌC', w / 2, h - 30);
+      g.fillText('BIOHAZARD', w / 2, h - 30);
       // vệt gỉ chảy
       for (let i = 0; i < 20; i++) { const x = hash(i + 300) * w; g.fillStyle = 'rgba(110,70,40,0.25)'; g.fillRect(x, h * 0.2 + hash(i + 301) * h * 0.4, 3, 40 + hash(i + 302) * 60); }
     });
@@ -482,7 +482,7 @@ const Landmarks = (() => {
       K.beam('steelGray', [0, 1, 0], [0, 1, -s * 38], 0.8, leaf); K.beam('steelGray', [0, 15, 0], [0, 15, -s * 38], 0.8, leaf);
       K.beam('steelGray', [0, 1, -s * 38], [0, 15, -s * 38], 0.8, leaf); K.beam('steelGray', [0, 1, 0], [0, 15, -s * 38], 0.6, leaf);
     }
-    K.plane(decal('nuke_sign', signTex('nuke_sign', ['KHU VỰC QUÂN SỰ CẤM', 'ĐƯỢC PHÉP NỔ SÚNG'], { w: 512, h: 256, bg: '#f2efe6', fg: '#a3221a' })), fH + 0.6, 10, G + 14, 12, 6);
+    K.plane(decal('nuke_sign', signTex('nuke_sign', ['RESTRICTED AREA', 'USE OF DEADLY FORCE AUTHORIZED'], { w: 512, h: 256, bg: '#f2efe6', fg: '#a3221a' })), fH + 0.6, 10, G + 14, 12, 6);
   }
 
   // ===========================================================================
@@ -509,7 +509,7 @@ const Landmarks = (() => {
     K.add(dA, boxGeo(8, DH, DW - 4, 0), M4(F1 - 14, DH / 2, (DW + 4) / 2));
     K.box('steelDark', F1 - 9, 2, 0, 3, 4, DW * 2);                     // ray trượt cửa
     // biển tên trên lanh tô + biểu tượng nguy hiểm 2 trụ + đèn cảnh báo
-    K.plane(decal('bio_sign', signTex('bio_sign', ['VIỆN NGHIÊN CỨU SINH HỌC QUÂN SỰ', 'NGUY HIỂM SINH HỌC CẤP 4 — KHU VỰC CẤM'], { icon: 'bio' })), F1 + 0.4, 78, 0, 116, 21);
+    K.plane(decal('bio_sign', signTex('bio_sign', ['MILITARY BIOLOGICAL RESEARCH FACILITY', 'BIOHAZARD — BSL-4 — AUTHORIZED PERSONNEL ONLY'], { icon: 'bio' })), F1 + 0.4, 78, 0, 116, 21);
     for (const s of [-1, 1]) {
       K.plane(decal('bio_icon', texOf('bio_icon', 128, 128, (g, w, h) => warnSign(g, 0, 0, w, h, 'bio'))), F1 + 0.4, 38, s * (DW + 30), 26, 26);
       K.box('lampAmber', F1 + 2, 70, s * (DW + 14), 4, 5, 6);
@@ -566,7 +566,7 @@ const Landmarks = (() => {
       K.box('steelWhite', (f0 + f1) / 2, 11, r, f1 - f0, 21, 20);
       K.box('yellow', (f0 + f1) / 2, 21.8, r, f1 - f0, 1.6, 20.4);
       K.box('yellow', (f0 + f1) / 2, 1, r, f1 - f0 + 0.4, 2, 20.4);
-      for (const s of [-1, 1]) K.plane(decal('decon', signTex('decon', ['KHOANG KHỬ NHIỄM', 'BẮT BUỘC KHỬ ĐỘC TRƯỚC KHI RA'], { w: 1024, h: 160, icon: 'bio' })), (f0 + f1) / 2, 12, r + s * 10.2, 70, 11, s > 0 ? 0 : Math.PI);
+      for (const s of [-1, 1]) K.plane(decal('decon', signTex('decon', ['DECONTAMINATION', 'MANDATORY DECON BEFORE EXIT'], { w: 1024, h: 160, icon: 'bio' })), (f0 + f1) / 2, 12, r + s * 10.2, 70, 11, s > 0 ? 0 : Math.PI);
       K.box('yellow', f0 - 14, 12, r, 28, 24, 24);
       K.box('steelGray', f0 - 14, 11, r + 12.2, 12, 20, 0.6);
       K.solid((f0 + f1) / 2 - 14, r, (f1 - f0) / 2 + 14, 12, 0, 24);
