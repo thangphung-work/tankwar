@@ -1,6 +1,7 @@
 /**
  * CHẤT LƯỢNG ĐỒ HỌA THEO SỨC MÁY
- * - Nhận diện card đồ họa (lần đầu chơi) để chọn mức mặc định: card rời mạnh -> "Siêu cao", máy văn phòng -> "Vừa"...
+ * - Nhận diện card đồ họa (lần đầu chơi) để chọn mức mặc định: card rời -> "Cao", máy văn phòng -> "Vừa"...
+ *   ("Siêu cao" chỉ bật khi người chơi tự chọn)
  * - Đo thời gian GPU vẽ mỗi khung (EXT_disjoint_timer_query_webgl2). Độ phân giải động: GPU không kịp vẽ trong
  *   nhịp màn hình -> hạ nhẹ độ phân giải để giữ mượt; dư sức -> nâng dần trở lại mức tối đa của mức chất lượng.
  *   Chỉ phản ứng theo thời gian GPU: khung chậm vì CPU (logic) thì không hạ độ phân giải vô ích.
@@ -39,8 +40,9 @@ const GfxQuality = (() => {
     if (!n) return 'high';
     if (/swiftshader|llvmpipe|software|basic render|softpipe/.test(n)) return 'low';
     if (/mali|adreno|powervr|videocore|apple gpu/.test(n)) return 'medium';            // điện thoại / máy tính bảng
-    if (/rtx|radeon rx [5-9]\d{3}|rx [67]\d{3}|radeon pro w|arc a[57]|apple m\d (pro|max|ultra)/.test(n)) return 'ultra';
-    if (/geforce|nvidia|quadro|radeon rx|radeon pro|\barc\b|apple m\d/.test(n)) return 'high';   // card rời đời cũ / tầm trung
+    // card rời (kể cả RTX mạnh): mặc định "Cao" = vẽ đúng độ phân giải màn hình. "Siêu cao" vẽ gấp đôi (gấp 4 số điểm ảnh:
+    // RTX 4070 trên bản đồ thành phố ~26 ms / khung so với ~10 ms) -> chỉ bật khi người chơi tự chọn trong cài đặt
+    if (/geforce|nvidia|quadro|radeon rx|radeon pro|\barc\b|apple m\d/.test(n)) return 'high';
     if (/intel|uhd|iris|radeon\(tm\) graphics|radeon graphics|vega \d/.test(n)) return 'medium';   // card tích hợp
     return 'high';
   }
