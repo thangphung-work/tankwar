@@ -43,6 +43,14 @@ const Strongholds = (() => {
   S.ZONE_END = S.HB + 74;   // vùng chiếm cờ: khoang + đoạn đầu dốc (giữ nguyên cỡ cũ khi dốc dài ra)
   S.END = S.HB + S.RUN;
   S.REACH = Math.hypot(S.END + 12, S.WO + S.RUN + 12);   // bán kính bao toàn bộ công trình
+  // Sân phễu bê tông trước mỗi miệng hầm (thông số gốc ở MapGen.PORTAL — map_gen san nền theo đúng hình này)
+  const PORTAL = (typeof MapGen !== 'undefined' && MapGen.PORTAL) || { END: 206, APRON: 104, NECK: 30, HW0: 184.2, STRAIGHT: 152, ROAD_W: 52, NECK_F: 310, APP: 462 };
+  const portalHalf = (typeof MapGen !== 'undefined' && MapGen.portalHalf) || (af => {
+    const u = Math.max(0, Math.min(1, (af - PORTAL.END) / PORTAL.APRON));
+    return PORTAL.NECK + (PORTAL.HW0 - PORTAL.NECK) * Math.pow(1 - u, 2.2);
+  });
+  // (af, ar) nằm trên sân phễu (ngoài mép cuối sân giữa 2 tường cánh)
+  const onApron = (af, ar, pad = 0) => af > S.END && af <= PORTAL.NECK_F + pad && ar < portalHalf(af) + 3 + pad;
 
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
   const smooth = t => { t = clamp01(t); return t * t * (3 - 2 * t); };
@@ -233,15 +241,83 @@ const Strongholds = (() => {
     return (TEX.earth = map);
   }
 
+  // Sơn cũ bong tróc + bám bẩn: phủ vệt bẩn tối loang lổ rồi khoét mảng tróc (trong suốt -> lộ bê tông bên dưới)
+  function agePaint(g, rnd, x0, y0, w, h, chips, dirt) {
+    g.save();
+    g.beginPath(); g.rect(x0, y0, w, h); g.clip();
+    g.globalCompositeOperation = 'source-atop';
+    for (let i = 0; i < dirt; i++) {
+      const x = x0 + rnd() * w, y = y0 + rnd() * h, r = 4 + rnd() * 22;
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      const a = 0.12 + rnd() * 0.22;
+      gr.addColorStop(0, `rgba(70,62,48,${a})`); gr.addColorStop(1, 'rgba(70,62,48,0)');
+      g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    // bạc màu nắng mưa: phủ mờ xám
+    g.fillStyle = 'rgba(150,146,136,0.18)'; g.fillRect(x0, y0, w, h);
+    g.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < chips; i++) {
+      const x = x0 + rnd() * w, y = y0 + rnd() * h, r = 0.8 + Math.pow(rnd(), 2.2) * 9;
+      g.fillStyle = `rgba(0,0,0,${0.55 + rnd() * 0.45})`;
+      g.beginPath(); g.ellipse(x, y, r, r * (0.4 + rnd() * 0.6), rnd() * 3.14, 0, 6.2832); g.fill();
+    }
+    // vết xước / mòn dài
+    g.lineWidth = 1.2;
+    for (let i = 0; i < chips / 8; i++) {
+      const x = x0 + rnd() * w, y = y0 + rnd() * h, a = rnd() * 6.28, l = 6 + rnd() * 26;
+      g.strokeStyle = `rgba(0,0,0,${0.5 + rnd() * 0.5})`;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+    g.restore();
+  }
+  // Atlas chi tiết lối vào: hàng 0 sọc vàng đen cũ, hàng 1 sơn trắng mòn (vạch dừng), hàng 2 nắp lưới thép rãnh thu nước
+  function portalPaintTex() {
+    if (TEX.portalPaint) return TEX.portalPaint;
+    const W = 256, RH = 64, c = canvas(W, RH * 3), g = c.getContext('2d'), rnd = rngOf(4417);
+    // hàng 0: sọc chéo vàng đen (chu kỳ 64 px -> lặp khít theo u)
+    g.fillStyle = '#c4a03e'; g.fillRect(0, 0, W, RH);
+    g.fillStyle = '#23211d';
+    for (let x = -RH; x < W + RH; x += 64) { g.beginPath(); g.moveTo(x, RH); g.lineTo(x + 32, RH); g.lineTo(x + 32 + RH, 0); g.lineTo(x + RH, 0); g.closePath(); g.fill(); }
+    agePaint(g, rnd, 0, 0, W, RH, 260, 40);
+    // hàng 1: sơn trắng
+    g.fillStyle = '#d6d3c8'; g.fillRect(0, RH, W, RH);
+    agePaint(g, rnd, 0, RH, W, RH, 320, 46);
+    // hàng 2: khung thép góc (trên / dưới) + thanh lưới dọc (khe tối sâu) + 2 thanh giằng ngang; gỉ loang
+    const y2 = RH * 2;
+    g.fillStyle = '#0d0c0b'; g.fillRect(0, y2, W, RH);
+    for (let x = 0; x < W; x += 8) {
+      const gr = g.createLinearGradient(x, 0, x + 3, 0);
+      gr.addColorStop(0, '#6d6a64'); gr.addColorStop(1, '#3e3b37');
+      g.fillStyle = gr; g.fillRect(x, y2 + 6, 3, RH - 12);
+    }
+    g.fillStyle = '#4a4741';
+    for (const yy of [y2 + 22, y2 + 41]) g.fillRect(0, yy, W, 2);
+    g.fillStyle = '#5c5953'; g.fillRect(0, y2, W, 6); g.fillRect(0, y2 + RH - 6, W, 6);
+    g.fillStyle = 'rgba(20,18,16,0.6)'; g.fillRect(0, y2 + 5, W, 1); g.fillRect(0, y2 + RH - 6, W, 1);
+    g.save(); g.beginPath(); g.rect(0, y2, W, RH); g.clip();
+    for (let i = 0; i < 46; i++) {
+      const x = rnd() * W, y = y2 + rnd() * RH, r = 4 + rnd() * 16, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, `rgba(120,62,26,${0.25 + rnd() * 0.3})`); gr.addColorStop(1, 'rgba(120,62,26,0)');
+      g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    // lá khô / đất kẹt trong khe lưới
+    for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(${90 + rnd() * 40 | 0},${70 + rnd() * 30 | 0},${40 + rnd() * 20 | 0},0.8)`; g.fillRect(rnd() * W, y2 + 8 + rnd() * (RH - 16), 2 + rnd() * 5, 1 + rnd() * 2); }
+    g.restore();
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8;
+    return (TEX.portalPaint = t);
+  }
   function letterTexture(ch) {
     const c = canvas(256, 256), g = c.getContext('2d');
     g.fillStyle = 'rgba(0,0,0,0)'; g.fillRect(0, 0, 256, 256);
     g.font = 'bold 200px Arial Black, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = 'rgba(232,196,64,0.92)'; g.fillText(ch, 128, 140);
-    // sơn bong tróc
+    // sơn vàng cũ đã bạc màu (không còn vàng tươi mới sơn), bám bẩn, bong tróc từng mảng
+    g.fillStyle = 'rgba(204,176,84,0.86)'; g.fillText(ch, 128, 140);
     const rnd = rngOf(ch.charCodeAt(0) * 31);
+    agePaint(g, rnd, 0, 0, 256, 256, 520, 70);
+    // vệt nước mưa chảy dọc làm sơn mờ thành sọc
     g.globalCompositeOperation = 'destination-out';
-    for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(0,0,0,${0.3 + rnd() * 0.7})`; g.beginPath(); g.arc(rnd() * 256, rnd() * 256, 1 + rnd() * 4, 0, 6.2832); g.fill(); }
+    for (let i = 0; i < 26; i++) { const x = rnd() * 256, w = 2 + rnd() * 7, gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.3 + rnd() * 0.5, `rgba(0,0,0,${0.15 + rnd() * 0.3})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x, 0, w, 256); }
     g.globalCompositeOperation = 'source-over';
     const t = new THREE.CanvasTexture(c);
     t.anisotropy = 4;
@@ -259,51 +335,73 @@ const Strongholds = (() => {
   //    mặt úp (trần, dầm) gần như không bám
   //  - màng bụi mỏng + vệt bẩn lem nhem theo hướng mặt: mảng loang trên mặt ngửa, vệt nước mưa chảy dọc trên tường đứng
   // Nhiễu theo toạ độ thế giới (không lặp theo ô texture); mức độ & màu theo bản đồ
+  //  - RÊU / ĐỊA Y mọc nơi nước đọng: đỉnh tường, chân tường (vùng nước mưa hắt ~0,5-1 m), dọc mạch ván khuôn, mặt khuất
+  //    nắng; vệt nước mưa đen chảy từ gờ mặt tiền / đỉnh tường; vài vết nứt rỉ sắt (cốt thép) hoặc kết tủa vôi trắng;
+  //    mép vát sứt lộ cốt liệu. Mức độ theo bản đồ: rừng / sông hồ rêu xanh dày, cao nguyên địa y + rêu, đô thị bụi bẩn
+  //    + ít rêu, sa mạc gần như không (chỉ bám cát bụi)
+  //  - NẮP HẦM: đất từ ụ trôi lên mép tấm, cỏ dại mọc ở mạch co giãn & vết nứt, vệt vũng nước khô, rêu ở mép
+  //  - LÒNG HẦM ẨM: vũng nước đọng trên sàn hạ thấp (bóng loáng phản chiếu trời ở miệng hầm), chân tường thấm ẩm sẫm màu,
+  //    vệt nước rỉ chảy từ mạch trần, vôi kết tủa dọc dầm trần
   // ===========================================================================
   const GRIME = {
-    DESERT: { c: [0.8, 0.67, 0.48], k: 1.0 },
-    HIGHLAND: { c: [0.6, 0.55, 0.45], k: 0.75 },
-    RIVER_LAKE: { c: [0.52, 0.45, 0.34], k: 0.7 },
-    JUNGLE: { c: [0.4, 0.32, 0.22], k: 0.7 },
-    URBAN: { c: [0.6, 0.58, 0.54], k: 0.6 }
+    DESERT: { c: [0.8, 0.67, 0.48], k: 1.0, moss: [0.45, 0.44, 0.3], mk: 0.04, lich: [0.72, 0.66, 0.52], lk: 0.1, wet: 0.16, weed: 0.12 },
+    HIGHLAND: { c: [0.6, 0.55, 0.45], k: 0.75, moss: [0.31, 0.36, 0.17], mk: 0.55, lich: [0.74, 0.73, 0.58], lk: 0.75, wet: 0.7, weed: 0.7 },
+    RIVER_LAKE: { c: [0.52, 0.45, 0.34], k: 0.7, moss: [0.23, 0.33, 0.12], mk: 0.85, lich: [0.66, 0.68, 0.5], lk: 0.35, wet: 0.95, weed: 0.9 },
+    JUNGLE: { c: [0.4, 0.32, 0.22], k: 0.7, moss: [0.17, 0.29, 0.08], mk: 1.0, lich: [0.6, 0.64, 0.46], lk: 0.25, wet: 1.0, weed: 1.0 },
+    URBAN: { c: [0.6, 0.58, 0.54], k: 0.6, moss: [0.28, 0.32, 0.17], mk: 0.35, lich: [0.7, 0.7, 0.62], lk: 0.25, wet: 0.6, weed: 0.5 }
   };
-  function weatherMat(mat, kind, mapType) {
+  // opts: { shadeDir: [x, z] hướng nắng nằm ngang (mặt quay ngược hướng này là mặt khuất nắng) }
+  function weatherMat(mat, kind, mapType, opts = {}) {
     const G = GRIME[mapType] || GRIME.HIGHLAND;
+    const E = EARTH[mapType] || EARTH.HIGHLAND;
     const floor = kind === 'floor';
+    const sd = opts.shadeDir || [0.6, 0.8];
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uSand = { value: new THREE.Vector3(...G.c) };
       sh.uniforms.uSandK = { value: G.k };
-      sh.uniforms.uShDim = { value: new THREE.Vector3(S.HB, S.CEIL, S.END) };
-      sh.vertexShader = 'attribute float aFloorY;\nattribute float aSand;\nvarying vec3 vShWP;\nvarying vec3 vShWN;\nvarying vec3 vShLP;\nvarying float vShLY, vShFY, vShSand;\n' +
+      sh.uniforms.uShDim = { value: new THREE.Vector4(S.HB, S.CEIL, S.END, S.WI) };
+      sh.uniforms.uMoss = { value: new THREE.Vector3(...G.moss) };
+      sh.uniforms.uLich = { value: new THREE.Vector3(...G.lich) };
+      sh.uniforms.uWK = { value: new THREE.Vector4(G.mk, G.lk, G.wet, G.weed) };
+      sh.uniforms.uSoil = { value: new THREE.Vector3(E.dirt[0] / 255 * 0.95, E.dirt[1] / 255 * 0.95, E.dirt[2] / 255 * 0.95) };
+      sh.uniforms.uShadeDir = { value: new THREE.Vector2(sd[0], sd[1]).normalize() };
+      // nắp hầm: nửa dài mặt trên theo f, theo r, cao độ đỉnh ụ, bước mạch co giãn
+      sh.uniforms.uPad = { value: new THREE.Vector4(S.HB - 7 - S.BEVEL, S.WI - 2 - S.BEVEL, S.CREST, (S.HB - 7 - S.BEVEL) / 2) };
+      sh.vertexShader = 'attribute float aFloorY;\nattribute float aSand;\nattribute float aTopY;\nvarying vec3 vShWP;\nvarying vec3 vShWN;\nvarying vec3 vShLP;\nvarying float vShLY, vShFY, vShSand, vShTY;\n' +
         sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
   vShWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
   vShWN = normalize(mat3(modelMatrix) * objectNormal);
-  vShLY = transformed.y; vShFY = aFloorY; vShSand = aSand; vShLP = transformed;`);
-      sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK; uniform vec3 uShDim;
-varying vec3 vShWP; varying vec3 vShWN; varying vec3 vShLP; varying float vShLY, vShFY, vShSand;
+  vShLY = transformed.y; vShFY = aFloorY; vShSand = aSand; vShTY = aTopY; vShLP = transformed;`);
+      sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK; uniform vec4 uShDim;
+uniform vec3 uMoss; uniform vec3 uLich; uniform vec4 uWK; uniform vec3 uSoil; uniform vec2 uShadeDir; uniform vec4 uPad;
+varying vec3 vShWP; varying vec3 vShWN; varying vec3 vShLP; varying float vShLY, vShFY, vShSand, vShTY;
 float shH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(shH(i), shH(i + vec2(1.0, 0.0)), f.x), mix(shH(i + vec2(0.0, 1.0)), shH(i + vec2(1.0, 1.0)), f.x), f.y); }
 ` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+  float shWet = 0.0;
   {
     vec2 q = vShWP.xz;
     float n1 = shN(q * 0.035), n2 = shN(q * 0.13 + 7.1), n3 = shN(q * 0.6 + 3.7), n4 = shN(q * 2.3 + 1.3);
     float fb = n1 * 0.5 + n2 * 0.3 + n3 * 0.14 + n4 * 0.06;
     float up = clamp(vShWN.y, 0.0, 1.0), down = clamp(-vShWN.y, 0.0, 1.0);
+    float af = abs(vShLP.x);
+    // dưới mái che (lòng hầm)
+    float uT = (1.0 - smoothstep(uShDim.x - 6.0, uShDim.x + 22.0, af)) * (1.0 - step(uShDim.y + 0.5, vShLP.y));
     // Bụi cát đọng theo HƯỚNG MẶT (không cào bằng): mặt ngửa hứng nhiều nhất; mặt vát ~45° cát trượt đi, chỉ còn
     // lớp mỏng & vệt đọng ở chân vát; tường đứng chỉ bẩn ở chân + vệt nước mưa chảy dọc; mặt úp (trần, dầm) gần như sạch
     float flatK = smoothstep(0.82, 0.97, up);                 // mặt gần nằm ngang
     float slopeK = smoothstep(0.3, 0.75, up) * (1.0 - flatK); // mặt vát
     float wallK = 1.0 - smoothstep(0.15, 0.45, up) - down;    // mặt đứng
+    vec2 tw = normalize(vec2(-vShWN.z, vShWN.x) + 1e-4);
+    // toạ độ phẳng theo mặt: mặt ngửa dùng (x, z), mặt đứng dùng (dọc mặt tường, cao độ) -> vân rêu / vết không bị kéo sọc
+    vec2 qs = mix(q, vec2(dot(q, tw), vShWP.y), clamp(1.0 - up, 0.0, 1.0) * (1.0 - down));
     float sand;
-    ${floor ? `// mép cuối sân không cắt thẳng: tấm sàn "tan" dần vào cát theo đường viền lồi lõm -> lộ ra mặt đất thật ngay bên dưới
-    // (đã hạ sát mặt sàn), ranh giới là cát địa hình giáp cát, không còn một đường kẻ thẳng tắp
-    if (abs(vShLP.x) > uShDim.z - 24.0 + (shN(q * 0.09) * 0.6 + shN(q * 0.42 + 5.0) * 0.4) * 22.0) discard;
-    // cát lấn từ mép vào (mép lồi lõm theo nhiễu nhiều tầng) + vệt cát gió thổi lấm tấm, dày hơn gần mép
+    ${floor ? `// cát lấn từ mép vào (mép lồi lõm theo nhiễu nhiều tầng) + vệt cát gió thổi lấm tấm, dày hơn gần mép
     sand = smoothstep(0.42, 0.62, vShSand * 0.95 + (fb - 0.5) * 0.9);
     sand = max(sand, smoothstep(0.55, 0.9, n2 * 0.6 + n4 * 0.4) * 0.4 * (0.25 + vShSand));` : `// bụi cát bám chân tường (cao ~1-2,5 m, mép loang), mặt úp thì không
-    float hb = vShLY - vShFY;
-    sand = (1.0 - smoothstep(0.0, 6.0 + fb * 14.0, hb)) * (0.4 + 0.45 * n3) * (1.0 - down);
+    float hb0 = vShLY - vShFY;
+    sand = (1.0 - smoothstep(0.0, 6.0 + fb * 14.0, hb0)) * (0.4 + 0.45 * n3) * (1.0 - down);
     // mặt ngửa: cát đọng thành mảng; mặt vát: chỉ lớp mỏng loang, dày hơn ở chỗ thấp của mặt vát (cát trượt xuống đọng lại)
     sand = max(sand, flatK * smoothstep(0.5, 0.64, fb * 0.75 + n2 * 0.25 + (n4 - 0.5) * 0.12) * 0.85);
     sand = max(sand, slopeK * smoothstep(0.55, 0.75, fb + n4 * 0.15) * 0.35);`}
@@ -313,13 +411,108 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     diffuseColor.rgb = mix(diffuseColor.rgb, uSand * (0.86 + 0.26 * n4), clamp(film + sand, 0.0, 0.95));
     // vệt bẩn: mặt ngửa / vát loang lổ thành mảng (bùn khô, dầu); tường đứng thành VỆT DỌC nước mưa cuốn bụi chảy xuống
     // (nhiễu kéo dài theo phương đứng, toạ độ ngang dọc theo mặt tường)
-    vec2 tw = normalize(vec2(-vShWN.z, vShWN.x) + 1e-4);
     float st = shN(vec2(dot(q, tw) * 0.45, vShWP.y * 0.025)) * 0.7 + shN(vec2(dot(q, tw) * 1.6, vShWP.y * 0.06) + 9.0) * 0.3;
     float blot = smoothstep(0.55, 0.85, n2 * 0.7 + n1 * 0.3) * 0.16 + smoothstep(0.72, 0.95, n3) * 0.08;
     float streak = smoothstep(0.58, 0.85, st) * 0.13;
     float grime = mix(blot * (1.0 - 0.5 * slopeK), streak, clamp(wallK, 0.0, 1.0)) * (1.0 - 0.7 * down);
     diffuseColor.rgb *= 1.0 - grime * (1.0 - clamp(sand, 0.0, 1.0));
-  }`).replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+    ${floor ? `// NƯỚC ĐỌNG: lòng hầm có sàn hạ thấp 2,5 m + chân dốc là chỗ trũng nhất -> vũng nước phẳng (bóng loáng, sẫm), quầng
+    // ẩm sẫm quanh vũng, nhiều hơn sát chân tường bên; bản đồ khô chỉ còn vệt bùn khô viền vũng. Ngoài trời (sân / phễu)
+    // vài vũng nhỏ sau mưa ở chỗ trũng (bản đồ ẩm)
+    {
+      float tun = 1.0 - smoothstep(uShDim.x + 6.0, uShDim.x + 34.0, af);
+      float arr = abs(vShLP.z) / uShDim.w;
+      float pn = shN(q * 0.02 + 3.1) * 0.55 + shN(q * 0.065 + 8.0) * 0.3 + shN(q * 0.27 + 1.0) * 0.15;
+      float dry = 0.42 * (1.0 - uWK.z);
+      float lvl = pn + 0.2 * smoothstep(0.55, 0.97, arr) + 0.08 * smoothstep(uShDim.x - 30.0, uShDim.x + 10.0, af);
+      float pud = smoothstep(0.58, 0.61, lvl - dry) * (1.0 - smoothstep(uShDim.x + 2.0, uShDim.x + 12.0, af));   // nước chỉ đọng chỗ sàn phẳng, không trên mặt dốc
+      float damp = smoothstep(0.36, 0.55, lvl - dry) * tun;
+      float stain = smoothstep(0.5, 0.53, lvl) * (1.0 - smoothstep(0.54, 0.6, lvl)) * tun * (0.12 + 0.18 * (1.0 - uWK.z));
+      float pudO = smoothstep(0.66, 0.69, pn - dry) * (1.0 - tun) * smoothstep(0.4, 0.9, uWK.z);
+      diffuseColor.rgb *= 1.0 - 0.3 * damp - stain;
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.4 + vec3(0.012, 0.016, 0.02), max(pud, pudO) * 0.85);
+      shWet = max(max(damp * 0.55, pud), pudO);
+    }` : `{
+      float hb = vShLY - vShFY;            // cao hơn mặt sàn / đất dưới chân
+      float below = vShTY - vShLY;         // thấp hơn mép đỉnh tường / gờ
+      float pad = step(uPad.z - 2.6, vShLP.y) * step(0.3, up) * (1.0 - step(uPad.z + 3.0, vShLP.y)) * step(abs(vShLP.x), uPad.x + 3.8);   // không tính gờ mặt tiền
+      vec2 nh = normalize(vShWN.xz + 1e-4);
+      float shadeSide = clamp(-dot(nh, uShadeDir), 0.0, 1.0) * (1.0 - up) * (1.0 - down);
+      // mạch ván khuôn (tấm 2 m x 1 m) lấy từ uv texture bê tông
+      float fv = fract(vUv.y * 8.0), du = fract((vUv.x - mod(floor(vUv.y * 8.0), 2.0) * 0.125) * 4.0);
+      float jd = min(min(fv, 1.0 - fv), 2.0 * min(du, 1.0 - du));
+      float joint = (1.0 - smoothstep(0.015, 0.09 + 0.08 * n3, jd)) * clamp(wallK, 0.0, 1.0);
+      float m1 = shN(qs * 0.05 + 11.0), m2 = shN(qs * 0.21 + 4.0), m3 = shN(qs * 0.9 + 2.0);
+      float mn = m1 * 0.5 + m2 * 0.33 + m3 * 0.17;
+      float wk = clamp(wallK, 0.0, 1.0);
+      // độ ẩm: vùng nước hắt chân tường, ngay dưới mép đỉnh, mặt ngửa / vát đọng nước, mạch, vệt chảy, mặt khuất nắng
+      float splash = (1.0 - smoothstep(2.0 + 4.0 * m2, 6.0 + 7.0 * m1, hb)) * wk;
+      float topZone = (1.0 - smoothstep(0.0, 5.0 + 9.0 * m2, below)) * wk;
+      float rainSt = smoothstep(0.5, 0.82, st) * (1.0 - smoothstep(0.0, 22.0 + 46.0 * st, below)) * wk * (1.0 - uT);
+      float moist = splash * 0.95 + (flatK * 0.8 + slopeK * 0.55) * (1.0 - pad * 0.4) + joint * 0.7 + topZone * 0.45 + rainSt * 0.5 + shadeSide * 0.35;
+      float lightK = mix(1.0, 0.18, uT);   // rêu cần ánh sáng: sâu trong lòng hầm gần như không mọc
+      float moss = smoothstep(0.62, 0.95, moist * (0.45 + 0.85 * mn)) * uWK.x * lightK * (1.0 - down);
+      moss = max(moss, smoothstep(0.7, 0.9, mn) * uWK.x * 0.35 * (flatK + slopeK) * lightK);
+      vec3 mossC = uMoss * (0.7 + 0.6 * m3) * (1.0 + 0.25 * (n4 - 0.5));
+      // vệt nước mưa đen chảy từ gờ mặt tiền / đỉnh tường xuống (sa mạc nhạt hơn)
+      diffuseColor.rgb *= 1.0 - rainSt * 0.3 * (0.35 + 0.65 * uWK.z);
+      diffuseColor.rgb = mix(diffuseColor.rgb, mossC, clamp(moss, 0.0, 0.92));
+      // địa y: đốm tròn loang nhạt trên mặt phơi nắng (đỉnh tường, mặt tiền, nắp hầm)
+      float lc = shN(qs * 0.55 + 21.0) * 0.65 + shN(qs * 1.9 + 3.0) * 0.35;
+      float lich = smoothstep(0.66, 0.72, lc) * uWK.y * (1.0 - uT) * (1.0 - down) * (0.35 + 0.65 * (1.0 - moss));
+      diffuseColor.rgb = mix(diffuseColor.rgb, uLich * (0.85 + 0.3 * m3), lich * 0.7);
+      // mép vát / gờ sứt mẻ lộ cốt liệu
+      float sp = smoothstep(0.74, 0.8, shN(qs * 0.3 + 7.7)) * clamp(slopeK + topZone * 0.6, 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.58, 0.54) * (0.65 + 0.6 * shN(qs * 3.1)), sp * 0.7);
+      // vài vết nứt: rỉ sắt cốt thép (nâu cam) hoặc kết tủa vôi trắng chảy xuống từ vết nứt
+      if (wk > 0.5) {
+        vec2 cs = vec2(20.0, 28.0), cc = floor(qs / cs);
+        float hc = shH(cc + vec2(17.3, 5.1));
+        if (hc > 0.86) {
+          vec2 lc2 = qs - (cc + vec2(0.2 + 0.6 * fract(hc * 7.13), 0.82)) * cs;
+          float wob = (shN(vec2(lc2.y * 0.35, hc * 40.0)) - 0.5) * 1.6;
+          float wdt = 0.6 + 1.4 * fract(hc * 13.7), len = 7.0 + 16.0 * fract(hc * 3.31);
+          float run = (1.0 - smoothstep(wdt * 0.3, wdt, abs(lc2.x + wob) / (1.0 + 0.6 * max(0.0, -lc2.y) / len))) * (1.0 - step(0.5, lc2.y)) * (1.0 - smoothstep(len * 0.4, len, -lc2.y));
+          float crack = (1.0 - smoothstep(0.1, 0.32, abs(lc2.x + wob * 1.8))) * (1.0 - smoothstep(2.0, 5.5, abs(lc2.y - 1.5)));
+          crack = max(crack, (1.0 - smoothstep(0.1, 0.3, abs(lc2.y - 1.5 + (shN(vec2(lc2.x * 0.4, hc * 9.0)) - 0.5) * 2.0))) * (1.0 - smoothstep(2.0, 7.0, abs(lc2.x))));
+          diffuseColor.rgb *= 1.0 - crack * 0.5;
+          if (hc > 0.93) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.45, 0.24, 0.11) * (0.8 + 0.4 * n4), run * 0.6);
+          else diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.87, 0.82), run * 0.45 * (0.6 + 0.4 * n3));
+        }
+      }
+      // LÒNG HẦM ẨM: chân tường thấm ẩm, vệt nước rỉ từ mạch trần chảy xuống, mảng ẩm trên trần; vôi trắng dọc dầm trần
+      float dampLow = (1.0 - smoothstep(5.0 + 10.0 * m1, 12.0 + 18.0 * m2, hb)) * wk;
+      float seepSt = shN(vec2(dot(q, tw) * 0.6, vShWP.y * 0.04) + 31.0);
+      float seep = smoothstep(0.55, 0.78, seepSt) * (1.0 - smoothstep(0.0, 14.0 + 30.0 * seepSt, below)) * wk;
+      float ceilD = down * smoothstep(0.45, 0.7, n2 * 0.6 + n1 * 0.4);
+      float wetW = clamp(max(max(dampLow, seep), ceilD * 0.8), 0.0, 1.0) * uT * uWK.z;
+      wetW = max(wetW, splash * 0.3 * uWK.z * (1.0 - uT));
+      diffuseColor.rgb *= 1.0 - 0.34 * wetW;
+      float nb = abs(fract(vShLP.x / 32.0 + 0.5) - 0.5) * 32.0;   // khoảng cách tới dầm trần gần nhất (dầm cách 4 m)
+      float cal = down * uT * (1.0 - smoothstep(3.5, 9.0, nb)) * smoothstep(0.5, 0.75, m2 * 0.7 + n4 * 0.3) * (0.3 + 0.7 * uWK.z);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.83, 0.82, 0.78), cal * 0.5);
+      shWet = wetW;
+      // NẮP HẦM: đất trôi từ ụ lên mép tấm, mạch co giãn & vết nứt sẫm có cỏ dại, vệt vũng nước khô, rêu ở mép
+      if (pad > 0.5) {
+        vec2 lp = vShLP.xz;
+        float e = min(uPad.x - abs(lp.x), uPad.y - abs(lp.y));
+        float edge = 1.0 - smoothstep(0.0, 16.0 + 26.0 * n2, e);
+        float soil = smoothstep(0.3, 0.75, edge * 0.85 + (fb - 0.5) * 0.7 + (m2 - 0.5) * 0.3);
+        vec2 jg = abs(fract(lp / uPad.w + 0.5) - 0.5) * uPad.w;
+        float jt = 1.0 - smoothstep(0.3, 1.0, min(jg.x, jg.y));
+        float ck = (1.0 - smoothstep(0.015, 0.04, abs(shN(lp * 0.045 + 4.0) - 0.5))) * smoothstep(0.35, 0.65, shN(lp * 0.02 + 1.0));
+        float pz = shN(lp * 0.028 + 9.0) * 0.7 + shN(lp * 0.11 + 2.0) * 0.3;
+        float ring = smoothstep(0.55, 0.58, pz) * (1.0 - smoothstep(0.6, 0.66, pz));
+        diffuseColor.rgb *= 1.0 - 0.14 * ring - 0.07 * smoothstep(0.58, 0.7, pz) - 0.4 * jt - 0.35 * ck;
+        diffuseColor.rgb = mix(diffuseColor.rgb, uSoil * (0.78 + 0.4 * n4), soil * 0.9);
+        float weed = max(jt, ck) * smoothstep(0.4, 0.7, shN(lp * 0.3 + 2.0)) * uWK.w;
+        weed = max(weed, soil * smoothstep(0.55, 0.8, shN(lp * 0.18 + 6.0)) * uWK.w);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uMoss * 1.25 * (0.7 + 0.6 * n3), clamp(weed, 0.0, 0.9));
+        diffuseColor.rgb = mix(diffuseColor.rgb, mossC, edge * smoothstep(0.45, 0.75, mn) * uWK.x * 0.8);
+      }
+    }`}
+  }`).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  roughnessFactor = mix(roughnessFactor, ${floor ? '0.05' : '0.42'}, clamp(shWet, 0.0, 1.0));`).replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
   {
     // Trong lòng hầm (dưới mái) ánh trời chỉ lọt vào từ 2 đầu miệng hầm: càng vào sâu càng tối, trần & dầm còn tối hơn
     float af = abs(vShLP.x);
@@ -327,23 +520,48 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     float depthIn = clamp(1.0 - af / uShDim.x, 0.0, 1.0);
     float vis = mix(1.0, mix(0.55, 0.3, depthIn) * (1.0 - 0.25 * clamp(-vShWN.y, 0.0, 1.0)), under);
     reflectedLight.indirectDiffuse *= vis;
-    reflectedLight.indirectSpecular *= vis;
+    reflectedLight.indirectSpecular *= vis${floor ? ' * mix(0.45, 2.6, clamp(shWet, 0.0, 1.0))' : ''};
   }`);
     };
-    mat.customProgramCacheKey = () => 'shWeather4:' + kind;
+    mat.customProgramCacheKey = () => 'shWeather5:' + kind;
     return mat;
   }
-  // Thuộc tính cho shader bám bụi: aFloorY = cao độ mặt sàn / đất dưới chân đỉnh đó, aSand = mức cát lấn (sàn)
-  function addWeatherAttrs(geo, floorAt, sandAt) {
-    const P = geo.attributes.position, n = P.count, fy = new Float32Array(n), sd = new Float32Array(n);
+  // Thuộc tính cho shader bám bụi: aFloorY = cao độ mặt sàn / đất dưới chân đỉnh đó, aSand = mức cát lấn (sàn),
+  // aTopY = cao độ mép đỉnh tường / gờ phía trên đỉnh đó (vệt nước mưa / nước rỉ chảy xuống từ đó)
+  function addWeatherAttrs(geo, floorAt, sandAt, topAt) {
+    const P = geo.attributes.position, n = P.count, fy = new Float32Array(n), sd = new Float32Array(n), ty = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
       fy[i] = floorAt ? floorAt(x, y, z) : -1e4;
       sd[i] = sandAt ? sandAt(x, y, z) : 0;
+      ty[i] = topAt ? topAt(x, y, z) : y + 1e3;
     }
     geo.setAttribute('aFloorY', new THREE.BufferAttribute(fy, 1));
     geo.setAttribute('aSand', new THREE.BufferAttribute(sd, 1));
+    geo.setAttribute('aTopY', new THREE.BufferAttribute(ty, 1));
     return geo;
+  }
+  // Bầu trời phản chiếu cho vũng nước (cube map vẽ canvas, có mipmap: độ nhám chọn mức mờ)
+  function envCube() {
+    if (TEX.env) return TEX.env;
+    const size = 32, sky = [150, 168, 186], hor = [182, 178, 166], gnd = [60, 56, 48];
+    const col = dy => {
+      const L = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+      return dy >= 0 ? L(hor, sky, Math.pow(Math.min(1, dy * 1.6), 0.7)) : L(hor, gnd, Math.min(1, Math.pow(-dy * 5, 0.6)));
+    };
+    const face = fn => {
+      const c = canvas(size, size), g = c.getContext('2d'), img = g.createImageData(size, size);
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        const u = (x + 0.5) / size * 2 - 1, v = (y + 0.5) / size * 2 - 1, k = (y * size + x) * 4, cc = col(fn(u, v));
+        img.data[k] = cc[0]; img.data[k + 1] = cc[1]; img.data[k + 2] = cc[2]; img.data[k + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      return c;
+    };
+    const side = face((u, v) => -v / Math.hypot(1, u, v));
+    const t = new THREE.CubeTexture([side, side, face(() => 1), face(() => -1), side, side]);
+    t.needsUpdate = true;
+    return (TEX.env = t);
   }
 
   class Builder {
@@ -359,6 +577,12 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const k = col || 1; this.c.push(k, k, k);
       }
       this.i.push(o, o + 1, o + 2, o, o + 2, o + 3);
+    }
+    // Tứ giác với hệ số sáng riêng từng đỉnh (cols: 4 số)
+    quadC(a, b, c, d, uvs, cols) {
+      const o = this.p.length / 3;
+      this.quad(a, b, c, d, uvs, 1);
+      for (let k = 0; k < 4; k++) { const j = (o + k) * 3; this.c[j] = this.c[j + 1] = this.c[j + 2] = cols[k]; }
     }
     // Tứ giác quay mặt về hướng out (tự đảo thứ tự đỉnh nếu cần)
     quadOut(a, b, c, d, uvs, col, out) {
@@ -435,6 +659,10 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       this.groundMaterial = typeof opts.groundMaterial === 'function' ? opts.groundMaterial : null;
       this.worldSize = opts.worldSize || null;
       this.leafColors = opts.leafColors || null;
+      // mặt đất địa hình (sân phễu bê tông bám theo) & hướng nắng nằm ngang (mặt khuất nắng ẩm, rêu nhiều hơn)
+      this.groundAt = typeof opts.groundAt === 'function' ? opts.groundAt : null;
+      const sun = opts.sun;
+      this.shadeDir = sun && isFinite(sun.azimuth) ? [Math.sin(sun.azimuth), Math.cos(sun.azimuth)] : [0.6, 0.8];
       this.items = list.map(s => this.buildOne(s));
     }
 
@@ -502,6 +730,12 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           return { K, inside, name: inside ? `KHOANG CỨ ĐIỂM ${K.id} (MÁI BÊ TÔNG CHE)` : `DỐC BÊ TÔNG CỨ ĐIỂM ${K.id}` };
         }
       }
+      // sân phễu bê tông trước cửa hầm (mặt đất thường, chỉ đổi loại mặt đường: ít bụi, ít xóc)
+      for (const K of this.items) {
+        const L = this.local(K, x, z), af = Math.abs(L.f), ar = Math.abs(L.r);
+        if (af > PORTAL.NECK_F + 4 || ar > PORTAL.HW0 + 4) continue;
+        if (onApron(af, ar)) return { K, inside: false, name: `SÂN BÊ TÔNG TRƯỚC CỬA HẦM ${K.id}` };
+      }
       return null;
     }
     // Không đào hố bom trên ụ đất / sàn bê tông
@@ -510,6 +744,12 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (Math.abs(x - K.x) > S.REACH + pad || Math.abs(z - K.z) > S.REACH + pad) continue;
         const L = this.local(K, x, z), af = Math.abs(L.f), ar = Math.abs(L.r);
         if ((af <= S.END + pad && inCut(af, ar)) || coreDist(af, ar) < S.RUN + pad) return K;
+      }
+      // sân phễu bê tông: không cỏ mọc xuyên, không hố bom (ngoài tầm REACH theo trục)
+      for (const K of this.items) {
+        const L = this.local(K, x, z), af = Math.abs(L.f), ar = Math.abs(L.r);
+        if (af > PORTAL.NECK_F + pad + 4 || ar > PORTAL.HW0 + pad + 4) continue;
+        if (onApron(af, ar, pad)) return K;
       }
       return null;
     }
@@ -797,9 +1037,23 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const e = [[re, be], [re + S.WING_T, be], [re + S.WING_T, te], [re + WB, te], [re, te - WB]];
         for (let i = 1; i < 4; i++) C.quadOut(P(...e[0]), P(...e[i]), P(...e[i + 1]), P(...e[i + 1]), [uv(...e[0]), uv(...e[i]), uv(...e[i + 1]), uv(...e[i + 1])], 0.95, out);
       }
+      // Sân phễu bê tông trước 2 miệng hầm: bó vỉa / gờ mép (vào khối bê tông chung)
+      const slabY = this.portalSlabFn(K);
+      K.slabY = slabY;
+      this.buildPortalKerbs(K, C, slabY, SC);
       // Chân tường / gầm khoang tối hơn (bóng che khuất), mép trên sáng hơn
-      weatherMat(concMat, 'wall', this.mapType);
-      const concGeo = addWeatherAttrs(C.build((f, y) => y < CEIL - 0.5 ? 0.66 + 0.34 * smooth((y + D) / 30) : 1), (f) => floorY(Math.abs(f)));
+      const wopt = { shadeDir: this.shadeDir };
+      weatherMat(concMat, 'wall', this.mapType, wopt);
+      const concGeo = addWeatherAttrs(C.build((f, y) => y < CEIL - 0.5 ? 0.66 + 0.34 * smooth((y + D) / 30) : 1),
+        (f, y, r) => Math.abs(f) > S.END + 0.5 ? slabY(f, r) : floorY(Math.abs(f)),
+        null,
+        // mép trên phía trên đỉnh đó: bó vỉa / tường cánh (đường xiên) / tường bên trong hầm (trần) / đỉnh ụ
+        (f, y, r) => {
+          const af = Math.abs(f);
+          if (af > S.END + 0.5) return y + 0.5;
+          if (af > HB + 0.5) return Math.max(0.5, wingLine(af)) + 1.5;
+          return y < CEIL + 0.5 ? CEIL : S.CREST;
+        });
       const concMesh = new THREE.Mesh(concGeo, concMat);
       concMesh.castShadow = true; concMesh.receiveShadow = true;
       grp.add(concMesh);
@@ -807,9 +1061,11 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const roofGrp = new THREE.Group();
       roofGrp.name = 'stronghold_roof';
       grp.add(roofGrp);
-      const roofMat = weatherMat(concMat.clone(), 'wall', this.mapType);
+      const roofMat = weatherMat(concMat.clone(), 'wall', this.mapType, wopt);
       // nắp hầm & gờ mặt tiền nhô trên lớp đất phủ: bụi cát bám từ mặt đất phủ lên; mặt dưới mái / dầm trong khoang: theo sàn
-      const roofGeo = addWeatherAttrs(Rf.build((f, y) => y < CEIL + 0.5 ? 0.78 : 1), (f, y) => y > S.CREST - 4 ? S.CREST - 1 : floorY(Math.abs(f)));
+      // mép trên: nắp hầm / gờ mặt tiền (vệt nước mưa chảy từ đỉnh gờ xuống lanh tô) / trần (dầm)
+      const roofGeo = addWeatherAttrs(Rf.build((f, y) => y < CEIL + 0.5 ? 0.78 : 1), (f, y) => y > S.CREST - 4 ? S.CREST - 1 : floorY(Math.abs(f)),
+        null, (f, y) => y > S.CREST - 4 ? S.CREST + 2.2 : (y > CEIL - 2 && Math.abs(f) > HB - S.LIP_T - 1 ? TOP : CEIL));
       const roofMesh = new THREE.Mesh(roofGeo, roofMat);
       roofMesh.castShadow = true; roofMesh.receiveShadow = true;
       roofGrp.add(roofMesh);
@@ -845,18 +1101,31 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           Fb.quad(A, Dq, Cq, Bq, [[f / FS, s0 * w0 / FS], [f / FS, s1 * w0 / FS], [f1 / FS, s1 * w1 / FS], [f1 / FS, s0 * w1 / FS]], Math.abs(f) < HB ? 0.8 : 1);
         }
       }
-      weatherMat(floorMat, 'floor', this.mapType);
-      // cát lấn: mạnh ở đoạn sân / chân dốc giáp đất ngoài cùng & dọc hai mép giáp ụ đất, trong lòng hầm (có mái che) ít hẳn
+      // sân phễu bê tông nối liền mép cuối sân (cùng vật liệu sàn -> mạch co giãn, vệt xích liền một mạch)
+      this.buildPortalSlab(K, Fb, slabY, FS);
+      weatherMat(floorMat, 'floor', this.mapType, wopt);
+      // vũng nước trong lòng hầm phản chiếu trời ở miệng hầm (chỉ chỗ ướt: shader nhân phản chiếu theo độ ướt)
+      floorMat.envMap = envCube(); floorMat.envMapIntensity = 0.6;
+      // cát lấn: dọc hai mép giáp ụ đất / bó vỉa, cuối sân & cổ phễu (đất bánh xe kéo từ đường vào), trong lòng hầm ít hẳn
       const floorGeo = addWeatherAttrs(Fb.build(), null, (f, y, r) => {
-        const af = Math.abs(f), w = cutHalf(af) + 1;
+        const af = Math.abs(f);
+        if (af > S.END + 0.01) {
+          const hw = portalHalf(af), u = (af - S.END) / PORTAL.APRON;
+          const side = smooth((Math.abs(r) / hw - 0.72) / 0.28);
+          return Math.max(side * 0.85, smooth((u - 0.6) / 0.4) * 0.62, 0.14 + 0.25 * smooth((Math.abs(r) - 40) / 80));
+        }
+        const w = cutHalf(af) + 1;
         const end = smooth((af - (S.RAMP_END - 40)) / (S.END - S.RAMP_END + 40));
         const side = smooth((Math.abs(r) / w - 0.62) / 0.38);
         const open = af > HB ? 1 : 0.35;
-        return Math.max(end * 0.95, side * 0.8 * open, 0.12 * open);
+        // cuối sân không còn là mép tan vào cát (đã nối sân phễu): chỉ còn cát lấn ở 2 góc ngoài làn xe
+        return Math.max(end * 0.5 * smooth((Math.abs(r) - 50) / 70), side * 0.8 * open, 0.12 * open);
       });
       const floorMesh = new THREE.Mesh(floorGeo, floorMat);
       floorMesh.receiveShadow = true;
       grp.add(floorMesh);
+      // rãnh thu nước nắp lưới thép ngang miệng dốc, sơn cảnh báo đầu tường cánh, vạch dừng, cọc tiêu phản quang
+      this.buildPortalDetails(K, grp, slabY);
 
       // ---- Ụ đất phủ cỏ (lưới cao độ cục bộ, khoét kênh xe chạy)
       const moundGrp = this.buildMound(K);
@@ -903,6 +1172,162 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       // Cột cờ trên nắp hầm
       this.buildFlag(K, grp);
       return K;
+    }
+
+    // ---------------------------------------------------------------- lối vào cửa hầm (sân phễu bê tông)
+    // Bố cục mỗi miệng hầm (8 đv = 1 m, |f| tính từ tâm cứ điểm):
+    //  - |f| 200..206: rãnh thu nước ngang miệng dốc (nắp lưới thép 0,55 m) ngay trên đỉnh dốc xuống hầm
+    //  - |f| 206..310: sân phễu bê tông 13 m, miệng rộng ~46 m (phủ cả chân 2 tường cánh) thu kiểu loa kèn về cổ 7,5 m;
+    //    bó vỉa thấp 15 cm hai mép (vuốt thấp dần ở cổ), vạch dừng sơn trắng mòn trước cổ phễu
+    //  - |f| 310..462: đường vào thẳng theo trục hầm 6,5 m (loại đường của bản đồ, map_gen), vai sỏi + rãnh thoát nước
+    //    hai bên, cọc tiêu phản quang dọc vai đường
+    groundLocal(K, f, r) {
+      if (!this.groundAt) return 0;
+      const w = this.toWorld(K, f, r);
+      return this.groundAt(w.x, w.z) - K.G;
+    }
+    // Cao độ mặt sân phễu (hệ cục bộ, so với cốt nền) tại (f, r): bám mặt đất đã san phẳng (map_gen) + nâng 0,6 đv chống
+    // z-fighting với mặt đất / mặt đường, bù chỗ nền lồi giữa 2 đỉnh lưới địa hình; sát mép cuối sân trùng đúng mặt sàn
+    portalSlabFn(K) {
+      const cache = new Map();
+      const g = (f, r) => this.groundLocal(K, f, r);
+      return (f, r) => {
+        const key = Math.round(f * 4) * 100003 + Math.round(r * 4);
+        const c = cache.get(key);
+        if (c !== undefined) return c;
+        const af = Math.abs(f);
+        let v = 0.06;
+        if (af > S.END) {
+          const gy = g(f, r);
+          let bulge = 0;
+          for (const [uf, ur] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) {
+            const bm = g(f + uf, r + ur) - (gy + g(f + uf * 2, r + ur * 2)) / 2;
+            if (bm > bulge) bulge = bm;
+          }
+          v = 0.06 + (gy + Math.min(bulge, 1.2) + 0.6 - 0.06) * smooth((af - S.END) / 12);
+        }
+        cache.set(key, v);
+        return v;
+      };
+    }
+    // Tấm sân phễu: lưới bám đất, uv nối tiếp sàn (mạch co giãn 6 m), màu đỉnh = vệt mòn bánh xích / dầu ở giữa làn
+    buildPortalSlab(K, Fb, slabY, FS) {
+      const st = 4, NA = 24;
+      const wear = (f, r) => {
+        const ar = Math.abs(r);
+        const lane = Math.exp(-(((ar - 13) / 6) ** 2)) * 0.13 + Math.exp(-(((ar - 38) / 9) ** 2)) * 0.05;   // vệt xích: làn chính + làn phụ
+        const oil = Math.exp(-((r / 4) ** 2)) * 0.06 + Math.exp(-((r / 30) ** 2)) * 0.05;                   // dầu nhỏ giọt giữa làn
+        const spot = vnoise(f / 9 + 3.7, r / 9 - 1.3) > 0.78 ? 0.08 : 0;                                // vết dầu loang
+        const edge = smooth((ar / portalHalf(Math.abs(f)) - 0.55) / 0.45) * 0.06;                       // mép ít xe qua: sáng hơn
+        return 1 - lane - oil - spot + edge;
+      };
+      for (const sg of [-1, 1]) {
+        for (let af = S.END; af < PORTAL.NECK_F - 0.01; af += st) {
+          const a1 = Math.min(PORTAL.NECK_F, af + st);
+          const w0 = portalHalf(af) - 1, w1 = portalHalf(a1) - 1;   // mép tấm nằm khuất dưới bó vỉa
+          for (let k = 0; k < NA; k++) {
+            const s0 = -1 + 2 * k / NA, s1 = -1 + 2 * (k + 1) / NA;
+            const V = (a, s, w) => [sg * a, slabY(sg * a, s * w), s * w];
+            const A = V(af, s0, w0), Bq = V(a1, s0, w1), Cq = V(a1, s1, w1), Dq = V(af, s1, w0);
+            const uv = q => [q[0] / FS, q[2] / FS], cw = q => wear(q[0], q[2]);
+            if (sg > 0) Fb.quadC(A, Dq, Cq, Bq, [uv(A), uv(Dq), uv(Cq), uv(Bq)], [cw(A), cw(Dq), cw(Cq), cw(Bq)]);
+            else Fb.quadC(A, Bq, Cq, Dq, [uv(A), uv(Bq), uv(Cq), uv(Dq)], [cw(A), cw(Bq), cw(Cq), cw(Dq)]);
+          }
+        }
+      }
+    }
+    // Bó vỉa bê tông thấp (15 cm, rộng 0,3 m, vát mép trên) chạy theo mép loa kèn, mặt ngoài cắm xuống đất che mép tấm sân
+    buildPortalKerbs(K, C, slabY, SC) {
+      const KH = 1.2, KW = 2.4, CH = 0.5, st = 4;
+      const f0 = S.END + 1, f1 = PORTAL.NECK_F;
+      const kh = af => KH * (1 - 0.9 * smooth((af - (f1 - 10)) / 10));   // cuối bó vỉa vuốt thấp dần nhập vai đường
+      for (const sg of [-1, 1]) for (const sr of [-1, 1]) {
+        const row = af => {
+          const hw = portalHalf(af), rIn = hw - KW, rOut = hw + 0.3;
+          const yIn = slabY(sg * af, sr * rIn);
+          const top = Math.max(yIn, slabY(sg * af, sr * hw)) + kh(af);
+          return { rIn, rOut, yIn, top, gOut: Math.min(yIn - 0.4, this.groundLocal(K, sg * af, sr * (rOut + 1.5))) - 1.0 };
+        };
+        const P = (af, r, y) => [sg * af, y, sr * r];
+        const cap = (R, af, dir) => {
+          const out = [dir * sg, 0, 0];
+          C.quadOut(P(af, R.rIn, R.yIn - 0.2), P(af, R.rOut, R.gOut), P(af, R.rOut, R.top), P(af, R.rIn + CH, R.top), [[0, 0], [KW / SC, 0], [KW / SC, KH / SC], [0, KH / SC]], 0.9, out);
+          C.quadOut(P(af, R.rIn, R.yIn - 0.2), P(af, R.rIn + CH, R.top), P(af, R.rIn, R.top - CH), P(af, R.rIn, R.top - CH), [[0, 0], [0, KH / SC], [0, KH / SC], [0, KH / SC]], 0.9, out);
+        };
+        let A = row(f0);
+        cap(A, f0, -1);
+        for (let af = f0; af < f1 - 0.01; af += st) {
+          const a1 = Math.min(f1, af + st), B = row(a1);
+          const u0 = af / SC, u1 = a1 / SC, h = KH / SC, wv = KW / SC;
+          C.quadOut(P(af, A.rIn, A.yIn - 0.2), P(a1, B.rIn, B.yIn - 0.2), P(a1, B.rIn, B.top - CH), P(af, A.rIn, A.top - CH), [[u0, 0], [u1, 0], [u1, h], [u0, h]], 0.92, [0, 0, -sr]);
+          C.quadOut(P(af, A.rIn, A.top - CH), P(a1, B.rIn, B.top - CH), P(a1, B.rIn + CH, B.top), P(af, A.rIn + CH, A.top), [[u0, h], [u1, h], [u1, h + 0.01], [u0, h + 0.01]], 1.0, [0, 1, -sr]);
+          C.quadOut(P(af, A.rIn + CH, A.top), P(a1, B.rIn + CH, B.top), P(a1, B.rOut, B.top), P(af, A.rOut, A.top), [[u0, 0], [u1, 0], [u1, wv], [u0, wv]], 1.04, [0, 1, 0]);
+          C.quadOut(P(af, A.rOut, A.top), P(a1, B.rOut, B.top), P(a1, B.rOut, B.gOut), P(af, A.rOut, A.gOut), [[u0, h], [u1, h], [u1, 0], [u0, 0]], 0.86, [0, 0, sr]);
+          A = B;
+        }
+        cap(A, f1, 1);
+      }
+    }
+    // Chi tiết rẻ (gộp hình, 2 lần vẽ / cứ điểm): rãnh thu nước nắp lưới thép, sơn sọc vàng đen đầu tường cánh, vạch
+    // dừng trắng mòn trước cổ phễu (chung 1 texture atlas, sơn bong tróc bằng alphaTest); cọc tiêu phản quang
+    buildPortalDetails(K, grp, slabY) {
+      const Pt = new Builder(), out = [0, 1, 0];
+      const row = i => [1 - i / 3 - 0.012, 1 - (i + 1) / 3 + 0.012];   // dải v của hàng i trong atlas
+      for (const sg of [-1, 1]) {
+        // rãnh thu nước ngang miệng dốc (trên đỉnh dốc, nước mặt sân không chảy xuống lòng hầm)
+        {
+          const fa = S.RAMP_END + 0.8, fb = S.RAMP_END + 5.2, rr = cutHalf(fb) - 0.6, y = floorY(fa) + 0.11, [v0, v1] = row(2);
+          Pt.quadOut([sg * fa, y, -rr], [sg * fa, y, rr], [sg * fb, y, rr], [sg * fb, y, -rr], [[-rr / 16, v0], [rr / 16, v0], [rr / 16, v1], [-rr / 16, v1]], 1, out);
+        }
+        // vạch dừng trắng ngang cổ phễu
+        {
+          const fs = PORTAL.NECK_F - 20, w = portalHalf(fs + 1.6) - 4, [v0, v1] = row(1), n = 8;
+          for (let k = 0; k < n; k++) {
+            const r0 = -w + 2 * w * k / n, r1 = -w + 2 * w * (k + 1) / n;
+            const Y = (f, r) => slabY(sg * f, r) + 0.05;
+            Pt.quadOut([sg * (fs - 1.6), Y(fs - 1.6, r0), r0], [sg * (fs - 1.6), Y(fs - 1.6, r1), r1], [sg * (fs + 1.6), Y(fs + 1.6, r1), r1], [sg * (fs + 1.6), Y(fs + 1.6, r0), r0],
+              [[r0 / 20, v0], [r1 / 20, v0], [r1 / 20, v1], [r0 / 20, v1]], 1, out);
+          }
+        }
+        // sọc vàng đen trên đỉnh 6 m cuối tường cánh + mặt đầu tường
+        for (const sr of [-1, 1]) {
+          const [v0, v1] = row(0);
+          const top = q => Math.max(0.5, wingLine(q)) + 1.5;
+          for (let af = S.END - 48; af < S.END - 0.31; af += 4) {
+            const a1 = Math.min(S.END - 0.3, af + 4);
+            const e = q => { const t = top(q); return [cutHalf(q) + wingBevel(t, floorY(q) - 2) + 0.3, cutHalf(q) + S.WING_T - 0.3, t + 0.04]; };
+            const E0 = e(af), E1 = e(a1);
+            Pt.quadOut([sg * af, E0[2], sr * E0[0]], [sg * a1, E1[2], sr * E1[0]], [sg * a1, E1[2], sr * E1[1]], [sg * af, E0[2], sr * E0[1]],
+              [[af / 14, v0], [a1 / 14, v0], [a1 / 14, v1], [af / 14, v1]], 1, out);
+          }
+          const re = cutHalf(S.END), fe = sg * (S.END + 0.05), WB = wingBevel(2.0, floorY(S.END) - 2);
+          Pt.quadOut([fe, 0.14, sr * (re + WB)], [fe, 0.14, sr * (re + S.WING_T - 0.3)], [fe, 1.92, sr * (re + S.WING_T - 0.3)], [fe, 1.92, sr * (re + WB)],
+            [[(re + WB) / 14, v0], [(re + S.WING_T) / 14, v0], [(re + S.WING_T) / 14, v1], [(re + WB) / 14, v1]], 1, [sg, 0, 0]);
+        }
+      }
+      const paintMat = new THREE.MeshStandardMaterial({ map: portalPaintTex(), alphaTest: 0.45, roughness: 0.78, metalness: 0.12, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+      const paint = new THREE.Mesh(Pt.build(), paintMat);
+      paint.receiveShadow = true;
+      paint.name = 'stronghold_portal_paint';
+      grp.add(paint);
+      // Cọc tiêu: thân trắng, đai phản quang đỏ, chóp đen (0,18 x 0,18 x 1,1 m), dọc vai đường vào + 2 góc cổ phễu
+      const Po = new Builder();
+      const post = (f, r) => {
+        const y0 = this.groundLocal(K, f, r) - 0.6, h = 0.7;
+        for (const [a, b, col] of [[y0, y0 + 6.4, [0.86, 0.86, 0.82]], [y0 + 6.4, y0 + 7.8, [0.78, 0.1, 0.06]], [y0 + 7.8, y0 + 8.8, [0.12, 0.12, 0.12]]]) {
+          const n0 = Po.c.length;
+          Po.box(f - h, f + h, a, b, r - h, r + h, 8, { bottom: true });
+          for (let i = n0; i < Po.c.length; i += 3) { Po.c[i] = col[0]; Po.c[i + 1] = col[1]; Po.c[i + 2] = col[2]; }
+        }
+      };
+      for (const sg of [-1, 1]) for (const sr of [-1, 1]) {
+        post(sg * (PORTAL.NECK_F - 3), sr * (portalHalf(PORTAL.NECK_F - 3) + 3.5));
+        for (const d of [14, 62, 110]) post(sg * (PORTAL.NECK_F + d), sr * (PORTAL.ROAD_W / 2 + 4.5));
+      }
+      const posts = new THREE.Mesh(Po.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.0 }));
+      posts.castShadow = true; posts.receiveShadow = true;
+      posts.name = 'stronghold_portal_posts';
+      grp.add(posts);
     }
 
     // ---------------------------------------------------------------- cờ chiếm cứ điểm
@@ -1026,6 +1451,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       // Có shader mặt đất: ụ đất lấy đúng vật liệu địa hình (cỏ / đất / đá theo độ dốc như sườn đồi thật), màu đỉnh = trắng
       // (giữ thuộc tính màu đỉnh cho vết cháy sém, xem EnvDamage.scorchMound)
       const gMat = this.groundMat(true);
+      // hệ số nhân màu mặt đất -> đất trơ (sa mạc: cát đã gần màu đất, chỉ sẫm nhẹ)
+      const soilMul = this.mapType === 'DESERT' ? [0.98, 0.93, 0.86] : this.mapType === 'URBAN' ? [1.02, 0.88, 0.74] : [1.1, 0.86, 0.66];
       const pos = new Float32Array(nf * nr * 3), uv = new Float32Array(nf * nr * 2), col = new Float32Array(nf * nr * 3);
       const keep = new Uint8Array(nf * nr);
       const hAt = (f, r) => { const h = moundH(f, r); return h === null ? -1.2 : h; };
@@ -1040,7 +1467,18 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         // Bỏ đỉnh nằm trong kênh xe chạy (mép lưới răng cưa nằm khuất trong bề dày tường cánh)
         keep[k] = (af > S.HB - 2 && ar < cutHalf(Math.max(af, S.HB)) + S.WING_T * 0.5 && af < S.END + 6) ? 0 : 1;
         if (af < S.HB && ar < S.WO) keep[k] = 0;   // vùng mái: lớp đất phủ thuộc nhóm mái
-        if (gMat) { col[k * 3] = col[k * 3 + 1] = col[k * 3 + 2] = 1; continue; }
+        // dải đất trơ sát bê tông (chân mặt ngoài tường cánh, mép tấm mái): nước mưa từ bê tông chảy xuống xói, cỏ không
+        // bén rễ -> đất lộ ra, mép lởm chởm
+        let dW = Infinity;
+        if (af > S.HB && af < S.END) dW = ar - cutHalf(af) - S.WING_T;
+        if (af < S.HB + 4 && ar >= S.WO) dW = Math.min(dW, ar - S.WO);
+        const bn = vnoise(f / 7 + 1.3, r / 7 - 4.1);
+        const bare = dW < 0 ? 1 : clamp01(1 - (dW - 3 - 7 * bn) / (5 + 8 * vnoise(f / 23, r / 23))) * (0.55 + 0.45 * bn);
+        if (gMat) {
+          const m = soilMul;
+          col[k * 3] = 1 + (m[0] - 1) * bare; col[k * 3 + 1] = 1 + (m[1] - 1) * bare; col[k * 3 + 2] = 1 + (m[2] - 1) * bare;
+          continue;
+        }
         // Màu: đỉnh / chỗ thoải xanh cỏ, sườn dốc lộ đất, chân ụ hòa vào nền
         const sl = Math.abs(hAt(f + 2, r) - hAt(f - 2, r)) / 4 + Math.abs(hAt(f, r + 2) - hAt(f, r - 2)) / 4;
         const blot = (vnoise(f / 60 + 3.1, r / 60 - 1.7) - 0.5) * 2.2;
@@ -1048,7 +1486,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const toe = clamp01(1 - h / 8);
         const v = 0.96 + 0.05 * blot;
         for (let c = 0; c < 3; c++) {
-          let x = pal.grass[c] + (pal.dirt[c] - pal.grass[c]) * dirt;
+          let x = pal.grass[c] + (pal.dirt[c] - pal.grass[c]) * Math.max(dirt, bare * 0.85);
           x = x + (pal.toe[c] - x) * toe * 0.7;
           col[k * 3 + c] = x / 255 * v * 1.35;
         }
@@ -1079,8 +1517,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const bp = bushGeo.attributes.position;
       for (let i = 0; i < bp.count; i++) bp.setY(i, Math.max(-0.2, bp.getY(i) * 0.65));
       bushGeo.computeVertexNormals();
-      const nB = 46;
-      const im = new THREE.InstancedMesh(bushGeo, new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), nB);
+      const nB = 46, nW = 28;
+      const im = new THREE.InstancedMesh(bushGeo, new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), nB + nW);
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
       let cnt = 0;
       for (let t = 0; t < 400 && cnt < nB; t++) {
@@ -1097,6 +1535,20 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         // bụi cùng màu lá với bụi cây trên địa hình của map
         const bc = this.leafColors ? new THREE.Color(this.leafColors[cnt & 1]) : new THREE.Color(pal.grass[0] / 255, pal.grass[1] / 255, pal.grass[2] / 255);
         im.setColorAt(cnt, bc.multiplyScalar(0.75 + rnd() * 0.4));
+        cnt++;
+      }
+      // cỏ dại lúp xúp mọc sát chân mặt ngoài tường cánh (khe đất ẩm giáp bê tông)
+      for (let t = 0; t < 200 && cnt < nB + nW; t++) {
+        const af = S.HB + 10 + rnd() * (S.RUN - 24), sf = rnd() < 0.5 ? -1 : 1, sr = rnd() < 0.5 ? -1 : 1;
+        const ar = cutHalf(af) + S.WING_T + 2.5 + rnd() * 7;
+        const h = moundH(sf * af, sr * ar);
+        if (h === null || h < 1.5) continue;
+        const sc = 0.9 + rnd() * 1.3;
+        e.set(0, rnd() * 6.28, 0);
+        m4.compose(new THREE.Vector3(sf * af, h - 0.3, sr * ar), q.setFromEuler(e), new THREE.Vector3(sc * (1 + rnd() * 0.5), sc * (0.7 + rnd() * 0.6), sc));
+        im.setMatrixAt(cnt, m4);
+        const bc = this.leafColors ? new THREE.Color(this.leafColors[cnt & 1]) : new THREE.Color(pal.grass[0] / 255, pal.grass[1] / 255, pal.grass[2] / 255);
+        im.setColorAt(cnt, bc.multiplyScalar(0.8 + rnd() * 0.45));
         cnt++;
       }
       im.count = cnt;
@@ -1125,6 +1577,16 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         ring.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
         ctx.closePath(); ctx.fill();
         if (tac) { ctx.strokeStyle = 'rgba(190, 200, 160, 0.45)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]); }
+        // sân phễu bê tông trước 2 miệng hầm
+        ctx.fillStyle = tac ? 'rgba(40, 46, 50, 0.85)' : '#aaa69b';
+        for (const sg of [-1, 1]) {
+          ctx.beginPath();
+          const fs = [];
+          for (let f = S.END - 1; f <= PORTAL.NECK_F; f += 8) fs.push(f);
+          fs.forEach((f, i) => { const p = pt(sg * f, portalHalf(f)); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+          for (let i = fs.length - 1; i >= 0; i--) { const p = pt(sg * fs[i], -portalHalf(fs[i])); ctx.lineTo(p[0], p[1]); }
+          ctx.closePath(); ctx.fill();
+        }
         // kênh bê tông
         ctx.fillStyle = tac ? 'rgba(26, 32, 36, 0.92)' : '#b9b5aa';
         ctx.beginPath();
@@ -1222,9 +1684,12 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
   function hazardTex() {
     if (_haz) return _haz;
     const c = canvas(256, 16), g = c.getContext('2d');
-    g.fillStyle = '#d8b030'; g.fillRect(0, 0, 256, 16);
-    g.fillStyle = '#1c1c1c';
+    g.fillStyle = '#c4a03e'; g.fillRect(0, 0, 256, 16);
+    g.fillStyle = '#23211d';
     for (let x = -16; x < 272; x += 24) { g.beginPath(); g.moveTo(x, 16); g.lineTo(x + 12, 0); g.lineTo(x + 24, 0); g.lineTo(x + 12, 16); g.fill(); }
+    // sơn cũ bạc màu, bám bẩn, sứt mẻ (vết tróc lộ màu bê tông)
+    agePaint(g, rngOf(3301), 0, 0, 256, 16, 90, 18);
+    g.globalCompositeOperation = 'destination-over'; g.fillStyle = '#8d8a82'; g.fillRect(0, 0, 256, 16); g.globalCompositeOperation = 'source-over';
     _haz = new THREE.CanvasTexture(c); _haz.wrapS = THREE.RepeatWrapping; _haz.repeat.set(4, 1);
     return _haz;
   }

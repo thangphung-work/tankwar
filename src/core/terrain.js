@@ -111,7 +111,7 @@ class BattleTerrain3D {
     if (SHL.length && typeof Strongholds !== 'undefined') {
       // ụ đất / lớp đất phủ mái dùng chung shader + ảnh nền với mặt đất -> màu cứ điểm khớp màu địa hình từng map
       this.strongholdSet = new Strongholds.StrongholdSet(this.group, SHL, {
-        mapType: this.mapType, groundAt: ground,
+        mapType: this.mapType, groundAt: ground, sun: this.map.sun,
         groundMaterial: o => this.groundLikeMaterial(o), worldSize: [this.width, this.depth], leafColors: this.leafColors()
       });
     }
@@ -380,8 +380,28 @@ class BattleTerrain3D {
       rd.pts.forEach((p, i) => i ? ctx.lineTo(toPx(p[0]), toPx(p[1])) : ctx.moveTo(toPx(p[0]), toPx(p[1])));
       ctx.stroke();
     };
+    // Lối vào cửa hầm cứ điểm: rãnh thoát nước đất ẩm sẫm hai bên + vai sỏi đầm dọc đường vào; nền sỏi viền quanh sân phễu
+    const gravel = { DESERT: '#a8977a', URBAN: '#807e78', JUNGLE: '#6f6b58', HIGHLAND: '#8a8573', RIVER_LAKE: '#827d69' }[this.mapType] || '#8a8573';
+    const ditch = { DESERT: '#94795a', URBAN: '#5e5c52', JUNGLE: '#3e3a26', HIGHLAND: '#5f5a44', RIVER_LAKE: '#55513a' }[this.mapType] || '#5f5a44';
+    const portalRoads = M.roads.filter(rd => rd.portal);
+    for (const rd of portalRoads) stroke(rd, rd.width + 48, ditch);
     for (const rd of M.roads) { const s = style[rd.kind] || style.dirt; stroke(rd, rd.width + 14, s.edge); }
+    for (const rd of portalRoads) stroke(rd, rd.width + 16, gravel);
     for (const rd of M.roads) { const s = style[rd.kind] || style.dirt; stroke(rd, rd.width, s.base); }
+    if (portalRoads.length && typeof MapGen !== 'undefined' && MapGen.portalHalf) {
+      const PT = MapGen.PORTAL;
+      ctx.fillStyle = gravel;
+      for (const c of M.strongholds || []) for (const sg of [1, -1]) {
+        const fx = Math.cos(c.angle), fz = Math.sin(c.angle);
+        const W = (f, r) => [toPx(c.x + fx * sg * f - fz * r), toPx(c.z + fz * sg * f + fx * r)];
+        ctx.beginPath();
+        const side = [];
+        for (let f = PT.END - 2; f <= PT.NECK_F + 6; f += 6) side.push(f);
+        side.forEach((f, i) => { const p = W(f, MapGen.portalHalf(f) + 12); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+        for (let i = side.length - 1; i >= 0; i--) { const p = W(side[i], -(MapGen.portalHalf(side[i]) + 12)); ctx.lineTo(p[0], p[1]); }
+        ctx.closePath(); ctx.fill();
+      }
+    }
     ctx.setLineDash([]);
     // Nước (mặt nước 3D phủ lên, đây là màu đáy nhìn qua)
     if (M.river) {
