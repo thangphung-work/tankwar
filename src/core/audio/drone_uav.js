@@ -296,6 +296,22 @@ SoundEngine.mixin(class {
     this.burst(bus, t + 0.02, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 2400, Q: 0.7, filter2: 'highpass', freq2: 700, gain: 0.05, attack: 0.003, dur: 0.35 });
   }
 
+  /**
+   * Báo động trạm điều khiển drone: 'lock' — bị phòng không khóa mục tiêu (2 tiếng luyến cao-thấp, kiểu máy cảnh báo
+   * radar); 'fire' — phòng không đang xả đạn (bíp cao gắt, dồn dập). k: âm lượng (đang không xem màn hình drone: nhỏ hơn)
+   */
+  playDroneLockAlarm(kind = 'lock', k = 1) {
+    if (!this.ready()) return;
+    const bus = this.uiBus || this.masterGain, t = this.ctx.currentTime + 0.005;
+    if (kind === 'fire') {
+      this.tone(bus, t, { type: 'square', freq: 1950, gain: 0.022 * k, attack: 0.002, hold: 0.06, dur: 0.03, filter: 'lowpass', filterFreq: 4200 });
+      this.tone(bus, t + 0.1, { type: 'square', freq: 1950, gain: 0.022 * k, attack: 0.002, hold: 0.06, dur: 0.03, filter: 'lowpass', filterFreq: 4200 });
+      return;
+    }
+    this.tone(bus, t, { type: 'square', freq: 1250, freqEnd: 1600, sweep: 0.16, gain: 0.018 * k, attack: 0.004, hold: 0.16, dur: 0.04, filter: 'lowpass', filterFreq: 3800 });
+    this.tone(bus, t + 0.22, { type: 'square', freq: 1600, freqEnd: 1100, sweep: 0.16, gain: 0.018 * k, attack: 0.004, hold: 0.16, dur: 0.05, filter: 'lowpass', filterFreq: 3800 });
+  }
+
   /** Drone của mình bị bắn hạ: nổ chát trong micro, rotor gào lên rồi tắt, nhiễu trắng kéo dài (mất tín hiệu) */
   playDroneLost() {
     if (!this.ready()) return;

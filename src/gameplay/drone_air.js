@@ -45,6 +45,8 @@ const DroneAir = (() => {
       this._droneFlames = new Map();
       this._airList = [];
       this._airAim = null;
+      this._droneLocks = new Map();
+      this._droneThreat = null;
       this._droneSentCode = undefined;
       if (this._airLockEl) this._airLockEl.hidden = true;
       if (this.ballistics && this.ballistics.airTargets) this.ballistics.airTargets.length = 0;
@@ -125,6 +127,8 @@ const DroneAir = (() => {
       this.updateDroneFalls(dt);
       this.sendDroneState(dt);
       this.flushDroneHits();
+      this.sendDroneLocks(dt);
+      this.updateDroneThreat(dt);
       this.updateDroneAmbient(list);
       this.updateAirLockOverlay();
     },
@@ -293,6 +297,75 @@ const DroneAir = (() => {
         NS.net.send('DRONE_HIT', { o: R.unit.netId, a: R.pendBy && R.pendBy.netId !== undefined ? R.pendBy.netId : -1, d: Math.round(R.pend * 1000) });
         R.pend = 0;
       });
+    },
+
+    // ---------- BỊ KHÓA MỤC TIÊU ----------
+    // Máy nào điều khiển xe đang khóa / đang bắn drone của máy khác (người chơi khóa drone, bot đang bám drone) thì báo
+    // cho máy chủ drone ~2 lần/giây: DRONE_LOCK { o: xe pháo chủ drone, a: xe khóa, f: 1 = đang xả đạn }
+    sendDroneLocks(dt) {
+      const NS = this.netSync;
+      if (!NS || NS.detached) return;
+      if ((this._lockSendT = (this._lockSendT || 0) - dt) > 0) return;
+      this._lockSendT = 0.5;
+      const P = this.player, A = this._airAim;
+      const send = (dr, u) => {
+        if (!dr || !dr.net || !dr.unit || dr.unit.netId === undefined || u.netId === undefined) return;
+        NS.net.send('DRONE_LOCK', { o: dr.unit.netId, a: u.netId, f: u.isFiringGatling ? 1 : 0 });
+      };
+      if (A && A.kind === 'drone' && P && !P.isDead) send(A.dr, P);
+      for (const u of this.units) {
+        if (u === P || u.isDead || !u.botAI || !u.botAI.aa || u._netProxy) continue;
+        send(u.botAI.aa.d, u);
+      }
+    },
+
+    onNetDroneLock(d, from, NS) {
+      if (!d || !this.player) return;
+      if (NS.byNetId[d.o] !== this.player) return;
+      const a = NS.byNetId[d.a];
+      if (!a || a.team === this.player.team || NS.ownerOf(a) !== from) return;
+      const L = this._droneLocks || (this._droneLocks = new Map());
+      L.set(a, { until: performance.now() / 1000 + 1.6, firing: !!d.f });
+    },
+
+    /** Drone mình đang bị khóa / bị bắn: báo động trạm điều khiển, chữ cảnh báo + nhãn xe đang khóa trên màn hình drone */
+    updateDroneThreat(dt) {
+      const P = this.player, D = this._drone, SE = window.soundEngine, now = performance.now() / 1000;
+      const L = this._droneLocks || (this._droneLocks = new Map());
+      const T = this._droneThreat || (this._droneThreat = { beep: 0, was: false, top: null, firing: false });
+      // bot do máy mình điều khiển đang bám drone mình (chơi đơn / chủ phòng)
+      if (D && D.unit === P) for (const u of this.units) {
+        if (!u.isDead && u.botAI && !u._netProxy && u.botAI.aa && u.botAI.aa.d === D) L.set(u, { until: now + 0.3, firing: !!u.isFiringGatling });
+      }
+      let top = null, best = Infinity, firing = false;
+      const up = D && D.unit === P && !P.isDead && airborne(D.state);
+      L.forEach((v, u) => {
+        if (v.until < now || u.isDead || !up) { L.delete(u); return; }
+        const d = Math.hypot(u.x - D.x, u.z - D.z);
+        if (v.firing) firing = true;
+        if (d < best) { best = d; top = u; }
+      });
+      T.top = top;
+      T.firing = firing;
+      const on = !!top, viewing = this._sight && this._sight.arty;
+      if (on && !T.was) {
+        this.addCombatLog(`[[target-arrow]] DRONE BỊ PHÒNG KHÔNG ĐỊCH KHÓA MỤC TIÊU (${top.name}) — đổi hướng, hạ thấp hoặc bay khuất sau địa hình`, 'alert');
+        T.beep = 0;
+      }
+      if (on && firing && !T.wasFiring) this.addCombatLog('[[alert-triangle]] PHÒNG KHÔNG ĐỊCH ĐANG XẢ ĐẠN VÀO DRONE!', 'alert');
+      T.was = on;
+      T.wasFiring = on && firing;
+      if (on && SE && SE.playDroneLockAlarm && (T.beep -= dt) <= 0) {
+        T.beep = firing ? 0.28 : 0.95;
+        SE.playDroneLockAlarm(firing ? 'fire' : 'lock', viewing ? 1 : 0.5);
+      }
+      const U = this._uavEl;
+      if (U && U.lock) {
+        const txt = !on ? '' : firing ? '⚠ PHÒNG KHÔNG ĐANG BẮN — NÉ NGAY' : '⚠ BỊ KHÓA MỤC TIÊU';
+        if (U.lock.textContent !== txt) U.lock.textContent = txt;
+        if (U.lock.hidden === !!txt) U.lock.hidden = !txt;
+        U.lock.classList.toggle('fire', firing);
+      }
     },
 
     // ---------- DRONE CỦA MÌNH BỊ BẮN ----------

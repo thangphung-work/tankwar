@@ -3537,6 +3537,9 @@ class ArtilleryGame3D {
     } else place(T.imp, null);
     const D = this.droneState();
     place(T.gun, P.x, (P.y || 0) + 30, P.z, 'PHÁO · ' + Math.round(Math.hypot(D.x - P.x, D.z - P.z)).toLocaleString() + ' M', '#9fd3ff');
+    // xe phòng không đang khóa drone (hướng như máy cảnh báo radar; nằm ngoài khung hình thì mũi tên ở mép)
+    const TH = this._droneThreat && this._droneThreat.top;
+    if (T.aa) place(T.aa, TH ? TH.x : null, TH ? (TH.y || 0) + 14 : 0, TH ? TH.z : 0, (this._droneThreat.firing ? 'PHÒNG KHÔNG ĐANG BẮN · ' : 'PHÒNG KHÔNG KHÓA · ') + (TH ? Math.round(Math.hypot(TH.x - D.x, TH.z - D.z)).toLocaleString() + ' M' : ''), '#ff3b30');
     // đạn đang bay: đếm ngược tới lúc chạm đất
     const W2 = this._shotWatch;
     let sTxt = '';
@@ -3827,6 +3830,9 @@ class ArtilleryGame3D {
         // drone bị bắn: cảnh báo nhấp nháy, thân drone; bị bắn hạ: nhiễu trắng phủ kín "MẤT TÍN HIỆU"
         '#gun-sight .gs-fire{position:absolute;top:calc(50% - 74px);left:50%;transform:translateX(-50%);font-size:15px;font-weight:700;letter-spacing:.14em;color:#ff3b30;text-shadow:0 0 3px #000,0 0 8px #000;animation:gsRec .5s steps(1) infinite}',
         '#gun-sight .gs-hull.mid{color:#ffd166}#gun-sight .gs-hull.low{color:#ff3b30}',
+        '#gun-sight .gs-lock{position:absolute;top:calc(50% - 100px);left:50%;transform:translateX(-50%);padding:3px 12px;border:2px solid #ff3b30;font-size:15px;font-weight:700;letter-spacing:.14em;color:#ff3b30;background:rgba(40,6,4,.45);text-shadow:0 0 3px #000;animation:gsLock 1s steps(1) infinite}',
+        '#gun-sight .gs-lock.fire{animation-duration:.3s;background:rgba(90,8,4,.55)}',
+        '@keyframes gsLock{50%{opacity:.45}}',
         // mất tín hiệu: hình đứng khựng ở khung cuối, nhiễu trắng + vạch xé hình phủ dần (JS chỉnh --na, nền), rồi hiện chữ
         '#gun-sight .gs-dead{position:absolute;inset:0;display:grid;place-content:center;gap:10px;text-align:center;background:rgba(28,31,28,var(--bg,0));color:#e8ece6;text-shadow:0 0 4px #000;--na:.35}',
         '#gun-sight .gs-dead .gs-tear{position:absolute;inset:0;opacity:calc(var(--na) * .9);background:repeating-linear-gradient(0deg,rgba(235,240,232,.0) 0 7px,rgba(235,240,232,.35) 7px 9px,rgba(0,0,0,.25) 9px 13px);background-size:100% 37px;animation:gsTear .12s steps(2) infinite}',
@@ -3922,8 +3928,8 @@ class ArtilleryGame3D {
         + '<span>CÁCH XE <b class="gs-dist">—</b></span><span>GIÓ <b class="gs-wind">—</b></span><span>THÂN DRONE <b class="gs-hull">100%</b></span><span class="gs-grid"></span>'
         + '</div><div class="gs-bat"><span class="gs-bat-l">PIN UAV</span><span class="gs-bat-c">' + '<i></i>'.repeat(10) + '</span><b class="gs-batt">—</b></div>'
         + '<div class="gs-tags"><div class="gs-tag tgt"><i></i><span></span></div><div class="gs-tag imp"><i></i><span></span></div>'
-        + '<div class="gs-tag gun"><i></i><span></span></div></div><div class="gs-shot" hidden></div><div class="gs-sig" hidden>SẮP RA NGOÀI TẦM TÍN HIỆU</div>'
-        + '<div class="gs-burn"></div><div class="gs-fire" hidden>⚠ DRONE ĐANG BỊ BẮN</div>' : '')
+        + '<div class="gs-tag gun"><i></i><span></span></div><div class="gs-tag aa"><i></i><span></span></div></div><div class="gs-shot" hidden></div><div class="gs-sig" hidden>SẮP RA NGOÀI TẦM TÍN HIỆU</div>'
+        + '<div class="gs-burn"></div><div class="gs-fire" hidden>⚠ DRONE ĐANG BỊ BẮN</div><div class="gs-lock" hidden></div>' : '')
       + '<div class="gs-vig"></div><div class="gs-frame"><i></i><i></i><i></i><i></i></div>'
       + (etched ? '<div class="gs-optic"></div>' : '')
       // pháo: dấu tâm màn hình = điểm sẽ ngắm khi thả phím W A S D
@@ -3945,9 +3951,9 @@ class ArtilleryGame3D {
     this._droneTags = null;
     if (arty) {
       const tg = (c) => { const e = el.querySelector('.gs-tag.' + c); e._arrow = e.querySelector('i'); e._txt = e.querySelector('span'); e.hidden = true; return e; };
-      this._droneTags = { tgt: tg('tgt'), imp: tg('imp'), gun: tg('gun'), shot: el.querySelector('.gs-shot'), sig: el.querySelector('.gs-sig') };
+      this._droneTags = { tgt: tg('tgt'), imp: tg('imp'), gun: tg('gun'), aa: tg('aa'), shot: el.querySelector('.gs-shot'), sig: el.querySelector('.gs-sig') };
     }
-    this._uavEl = arty ? { alt: el.querySelector('.gs-alt'), dist: el.querySelector('.gs-dist'), wind: el.querySelector('.gs-wind'), grid: el.querySelector('.gs-grid'), stat: el.querySelector('.gs-static'), batt: el.querySelector('.gs-batt'), bat: el.querySelector('.gs-bat'), segs: [...el.querySelectorAll('.gs-bat-c i')], hull: el.querySelector('.gs-hull'), fire: el.querySelector('.gs-fire'), burn: el.querySelector('.gs-burn'), dead: el.querySelector('.gs-dead'), t: 0 } : null;
+    this._uavEl = arty ? { alt: el.querySelector('.gs-alt'), dist: el.querySelector('.gs-dist'), wind: el.querySelector('.gs-wind'), grid: el.querySelector('.gs-grid'), stat: el.querySelector('.gs-static'), batt: el.querySelector('.gs-batt'), bat: el.querySelector('.gs-bat'), segs: [...el.querySelectorAll('.gs-bat-c i')], hull: el.querySelector('.gs-hull'), fire: el.querySelector('.gs-fire'), lock: el.querySelector('.gs-lock'), burn: el.querySelector('.gs-burn'), dead: el.querySelector('.gs-dead'), t: 0 } : null;
     el._c = null;
     return el;
   }
@@ -5352,7 +5358,9 @@ class ArtilleryGame3D {
       const DR = this.droneState(), DC = ArtilleryGame3D.DRONE, pct = Math.round(DR.batt * 100);
       const charging = DR.state === 'docked' && DR.batt < 0.999;
       const hull = Math.round(Math.max(0, DR.hp === undefined ? 1 : DR.hp) * 100);
+      const thr = this._droneThreat && this._droneThreat.top;
       const [dTxt, dCol] = DR.state === 'lost' ? ['MẤT DRONE · CHỜ HỒI SINH', '#ff4d4d']
+        : thr && DR.state !== 'docked' ? [this._droneThreat.firing ? 'DRONE ĐANG BỊ BẮN!' : 'DRONE BỊ KHÓA MỤC TIÊU', '#ff4d4d']
         : DR.state === 'flying' || DR.state === 'launching' ? [`DRONE ĐANG BAY ${pct}%` + (hull < 100 ? ` · THÂN ${hull}%` : ''), pct < DC.warn[0] * 100 || hull < 35 ? '#ff4d4d' : '#3cc8ff']
         : DR.state === 'returning' ? [`DRONE ĐANG BAY VỀ ${pct}%`, '#ffb020']
           : !charging ? ['DRONE SẴN SÀNG · C', '#5cf08a']
