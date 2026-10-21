@@ -75,7 +75,7 @@
       if (gearEl.dataset.sig !== sig) {
         gearEl.dataset.sig = sig;
         gearEl.innerHTML = items.length
-          ? items.map(i => `<li class="${i.built ? 'built' : i.ammo ? 'ammo' : ''}" title="${i.name}${i.built ? ' (có sẵn theo xe)' : ''}"><i class="ti ti-${i.icon}" aria-hidden="true"></i></li>`).join('')
+          ? items.map(i => `<li class="${i.built ? 'built' : i.ammo ? 'ammo' : ''}" title="${i.name}${i.built ? ' (có sẵn theo xe)' : ''}"><i class="ti ti-${i.icon}" aria-hidden="true"></i><span>${i.name}${i.built ? ' <em>có sẵn</em>' : ''}</span></li>`).join('')
           : '<li class="empty">Chưa lắp — bấm XEM MÔ HÌNH 3D để lắp trang bị</li>';
       }
     }
