@@ -551,8 +551,9 @@ const Destructibles = (() => {
     };
   }
   // Mái hai dốc thật trong khối đơn vị (khớp cách đặt cũ: sống mái dọc trục X, chân mái y = 0 ở z = ±0,433, đỉnh y = 0,75):
-  // tấm mái có bề dày (thấy mép tấm mái / diềm mái), mái chìa khỏi tường, bờ nóc úp, 2 đầu hồi là TƯỜNG (nhóm vật liệu 1)
-  function gableRoofGeo() {
+  // tấm mái có bề dày (thấy mép tấm mái / diềm mái), mái chìa khỏi tường, bờ nóc úp, 2 đầu hồi là TƯỜNG (nhóm vật liệu 1).
+  // Mái chia thành từng ô theo khoang nhà (đạn đục thủng từng ô): g0 / g1 = có tường hồi ở đầu -X / +X, xG = vị trí tường hồi
+  function gableRoofGeo(g0 = true, g1 = true, xG = 0.455) {
     const b = geoBuilder(), V = b.V;
     const zE = 0.433, yR = 0.75, th = 0.035, slopeN = (s) => new THREE.Vector3(0, zE, s * yR).normalize();
     b.group(0);
@@ -572,12 +573,13 @@ const Destructibles = (() => {
     for (const s of [-1, 1]) b.quad(V(-0.5, yR + ry, 0), V(0.5, yR + ry, 0), V(0.5, yR - ry, s * rc), V(-0.5, yR - ry, s * rc), new THREE.Vector3(0, rc, s * ry * 2).normalize(), [0, 0.98], [1, 0.98], [1, 1], [0, 1]);
     // đầu hồi: tường tam giác thụt vào trong đúng mặt tường hồi, nằm dưới tấm mái
     b.group(1);
-    const xG = 0.455, zG = 0.4, yG = yR * (1 - 0.04 / zE) - th;
-    for (const e of [-1, 1]) b.tri(V(e * xG, 0, -zG), V(e * xG, 0, zG), V(e * xG, yG, 0), V(e, 0, 0), [0, 0], [1, 0], [0.5, 1]);
+    const zG = 0.4, yG = yR * (1 - 0.04 / zE) - th;
+    for (const e of [-1, 1]) if (e < 0 ? g0 : g1) b.tri(V(e * xG, 0, -zG), V(e * xG, 0, zG), V(e * xG, yG, 0), V(e, 0, 0), [0, 0], [1, 0], [0.5, 1]);
     return b.build();
   }
-  // Vòm nhà kho tôn (nửa trụ, trục dọc X) + 2 vách đầu hồi bán nguyệt (nhóm 1) — trước đây 2 đầu vòm hở, nhìn xuyên vào trong
-  function archRoofGeo() {
+  // Vòm nhà kho tôn (nửa trụ, trục dọc X) + 2 vách đầu hồi bán nguyệt (nhóm 1) — trước đây 2 đầu vòm hở, nhìn xuyên vào trong.
+  // Chia ô theo khoang như mái dốc: e0 / e1 = có vách đầu hồi ở đầu -X / +X
+  function archRoofGeo(e0 = true, e1 = true) {
     const b = geoBuilder(), V = b.V, seg = 20;
     b.group(0);
     for (let i = 0; i < seg; i++) {
@@ -589,7 +591,7 @@ const Destructibles = (() => {
       b.quad(V(-0.5, y0, z0), V(0.5, y0, z0), V(0.5, y1, z1), V(-0.5, y1, z1), n, [i / seg, 0], [i / seg, 1], [(i + 1) / seg, 1], [(i + 1) / seg, 0]);
     }
     b.group(1);
-    for (const e of [-1, 1]) for (let i = 0; i < seg; i++) {
+    for (const e of [-1, 1]) if (e < 0 ? e0 : e1) for (let i = 0; i < seg; i++) {
       const a0 = i / seg * Math.PI, a1 = (i + 1) / seg * Math.PI;
       b.tri(V(e * 0.5, 0, 0), V(e * 0.5, 0.5 * Math.sin(a0), 0.5 * Math.cos(a0)), V(e * 0.5, 0.5 * Math.sin(a1), 0.5 * Math.cos(a1)), V(e, 0, 0),
         [0.5, 0], [0.5 + 0.5 * Math.cos(a0), Math.sin(a0)], [0.5 + 0.5 * Math.cos(a1), Math.sin(a1)]);
@@ -604,8 +606,10 @@ const Destructibles = (() => {
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev(sh, r);
       const sx = 'length(instanceMatrix[0].xyz)', sy = 'length(instanceMatrix[1].xyz)', sz = 'length(instanceMatrix[2].xyz)';
-      const expr = mode === 'slope' ? `vec2(vUv.x * ${sx}, vUv.y * length(vec2(0.75 * ${sy}, 0.433 * ${sz})))`
-        : mode === 'arch' ? `vec2(vUv.y * ${sx}, vUv.x * 1.5708 * 0.5 * (${sy} + ${sz}))`
+      // dọc sống mái: tính theo vị trí thật trên trục nhà -> các ô mái kề nhau nối liền vân ngói / sóng tôn, không lệch mạch
+      const ax = `(dot(instanceMatrix[3].xyz, normalize(instanceMatrix[0].xyz)) - 0.5 * ${sx})`;
+      const expr = mode === 'slope' ? `vec2(vUv.x * ${sx} + ${ax}, vUv.y * length(vec2(0.75 * ${sy}, 0.433 * ${sz})))`
+        : mode === 'arch' ? `vec2(vUv.y * ${sx} + ${ax}, vUv.x * 1.5708 * 0.5 * (${sy} + ${sz}))`
         : `vec2(vUv.x * ${sz}, vUv.y * ${sy})`;
       sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
         #if defined( USE_UV ) && defined( USE_INSTANCING )
@@ -2193,7 +2197,7 @@ const Destructibles = (() => {
       this.items = [];
       this.anim = [];
       this.vents = [];
-      let slabs = 0, cols = 0, roofs = 0, decos = 0;
+      let slabs = 0, cols = 0, roofs = 0, roofMid = 0, decos = 0;
       const plans = list.map(b => {
         const st = STYLE[b.kind] || STYLE.apartment;
         const bx = Math.max(1, Math.round(b.w / st.bay)), bz = Math.max(1, Math.round(b.d / st.bay));
@@ -2201,6 +2205,7 @@ const Destructibles = (() => {
         slabs += (floors + 1) * bx * bz + 2;
         cols += 4 * floors + (bx > 2 && bz > 2 ? floors * 4 : 0);
         roofs += 1;
+        roofMid += Math.max(0, bx - 2);   // ô mái giữa (mái dốc / vòm chia ô theo khoang, xem buildOne)
         // chi tiết mái bằng: tường chắn mái / tum / chân bồn dùng chung bể cột (không thêm draw call)
         if (DECO_KINDS[b.kind] && st.roof === 'flat' && !st.ruined) { decos++; cols += 2 * (bx + bz) + 32; }
         // Mẫu mặt tường tầng trệt / tầng trên: chọn theo vị trí nhà (không lấy số RNG chung -> mọi máy dựng giống nhau)
@@ -2248,12 +2253,21 @@ const Destructibles = (() => {
       const rep = t => { const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.needsUpdate = true; return c; };
       const roofMat = worldUV(new THREE.MeshStandardMaterial({ map: roofTileTex(), roughness: 0.8 }), 'slope', 16);
       const gableMat = noInstanceColor(worldUV(new THREE.MeshStandardMaterial({ map: concreteTex(), color: 0xd8cdb6, roughness: 0.92, side: THREE.DoubleSide }), 'endYZ', 26));
+      // mái chia ô theo khoang: nhà 1 khoang dùng khối đủ 2 đầu hồi, nhà nhiều khoang = ô đầu -X / ô giữa / ô đầu +X
+      // (tường hồi ô đầu ở ~0,365 bề rộng ô: ô đầu = 1 khoang + 3,5 chìa mái -> tường hồi nằm ngay mặt tường đầu nhà)
       this.roofPool = new Pool(this.group, gableRoofGeo(), [roofMat, gableMat], roofs, { color: true });
+      this.roofPools = { full: this.roofPool, n: new Pool(this.group, gableRoofGeo(true, false, 0.365), [roofMat, gableMat], roofs, { color: true }),
+        mid: new Pool(this.group, gableRoofGeo(false, false), [roofMat, gableMat], roofMid, { color: true }),
+        p: new Pool(this.group, gableRoofGeo(false, true, 0.365), [roofMat, gableMat], roofs, { color: true }) };
       const metalMap = rep(windowPanelTex('metal')), sm = panelSurfaceMaps('metal');
       const metalN = sm ? rep(sm.normal) : null;
       const archMat = worldUV(new THREE.MeshStandardMaterial({ map: metalMap, normalMap: metalN, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide }), 'arch', 36);
       const archEnd = worldUV(new THREE.MeshStandardMaterial({ map: metalMap, normalMap: metalN, roughness: 0.65, metalness: 0.2, side: THREE.DoubleSide }), 'endYZ', 36);
       this.archPool = new Pool(this.group, archRoofGeo(), [archMat, archEnd], roofs, { color: true });
+      this.archPools = { full: this.archPool, n: new Pool(this.group, archRoofGeo(true, false), [archMat, archEnd], roofs, { color: true }),
+        mid: new Pool(this.group, archRoofGeo(false, false), [archMat, archEnd], roofMid, { color: true }),
+        p: new Pool(this.group, archRoofGeo(false, true), [archMat, archEnd], roofs, { color: true }) };
+      for (const k in this.archPools) this.archPools[k].arch = true;
       // Tảng bê tông lớn vương vãi trên đống đổ nát
       this.slabChunkPool = new Pool(this.group, jitter(new THREE.BoxGeometry(1, 1, 1, 2, 1, 2), 0.25, 9), cracked, list.length * 60, { color: true });
       // Gạch đá vỡ rơi xuống chân tường chỗ bị khoét thủng
@@ -2272,7 +2286,8 @@ const Destructibles = (() => {
 
     commitAll() {
       for (const k in this.panelKits) this.panelKits[k].commit();
-      [this.slabPool, this.colPool, this.roofPool, this.archPool, this.slabChunkPool, this.bitPool, this.tankPool, this.acPool, this.rodPool, this.dishPool].forEach(pl => pl.commit());
+      [this.slabPool, this.colPool, this.slabChunkPool, this.bitPool, this.tankPool, this.acPool, this.rodPool, this.dishPool].forEach(pl => pl.commit());
+      for (const k in this.roofPools) { this.roofPools[k].commit(); this.archPools[k].commit(); }
       if (this.rd) for (const k in this.rd) for (const pl of [].concat(this.rd[k])) pl.commit();
     }
 
@@ -2284,7 +2299,7 @@ const Destructibles = (() => {
       const base = new THREE.Matrix4().makeRotationY(b.angle || 0).setPosition(b.x, gy - 1.5, b.z);
       const color = new THREE.Color(st.colors[Math.floor(RNG() * st.colors.length)]);
       const B = { x: b.x, z: b.z, y: gy, w: W, d: D, bx, bz, floors, FH, T, st, WM, base, color, mods: [], collapsed: false, angle: b.angle || 0, kind: b.kind,
-        hpTotal: 0, walls: [], levels: [], wgrid: { x1: [], 'x-1': [], z1: [], 'z-1': [] }, roofMod: null, dmgPanels: new Set(), cut: false, cutHold: 0, seedG: Math.floor(RNG() * 1e6) };
+        hpTotal: 0, walls: [], levels: [], wgrid: { x1: [], 'x-1': [], z1: [], 'z-1': [] }, roofMods: null, dmgPanels: new Set(), cut: false, cutHold: 0, seedG: Math.floor(RNG() * 1e6) };
       const kit = this.panelKits[P.gT], kitUp = this.panelKits[P.uT] || kit, sideKit = st.sideTex && this.panelKits[st.sideTex];
       // vách hông kín của nhà ống: cạnh dài (bx > bz -> 2 mặt z là vách hông, ngược lại 2 mặt x)
       let sideNow = false;
@@ -2298,11 +2313,11 @@ const Destructibles = (() => {
         const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry || 0);
         const m = new THREE.Matrix4().compose(new THREE.Vector3(lx, ly, lz), q, new THREE.Vector3(sx, sy, sz));
         const world = base.clone().multiply(m);
-        const src = pool === 'panel' || pool === this.archPool ? color : role === 'roof' ? roofCol : slabCol;
+        const src = pool === 'panel' || (pool && pool.arch) ? color : role === 'roof' ? roofCol : slabCol;
         const c = src.clone().multiplyScalar(rand(0.9, 1.04) * (pool === 'panel' && floor === 0 ? 0.9 : 1));
         // cột / tường tầng dưới nhà cao gánh nhiều tầng hơn -> tiết diện to, dày, bền hơn (mỗi tầng phía trên: cột +10%, tường +7%)
         const up = Math.max(0, floors - 1 - floor);
-        const hp = role === 'col' ? 2.2 * (1 + 0.1 * up) : role === 'slab' ? 2.6 : role === 'roof' ? (pool === this.slabPool ? 2.2 : 3.0) : role === 'wall' ? 1 + 0.07 * up : 1.0;
+        const hp = role === 'col' ? 2.2 * (1 + 0.1 * up) : role === 'slab' ? 2.6 : role === 'roof' ? (pool === this.slabPool ? 2.2 : 1.6) : role === 'wall' ? 1 + 0.07 * up : 1.0;
         const mod = { local: m, world, role, floor, ry: ry || 0, hp, hp0: hp, state: 'ok', c, lx, ly, lz, sx, hx: hx || sx / 2, hy: hy || sy / 2, hz: hz || sz / 2, id: B.mods.length };
         if (pool === 'panel') { mod.side = sideNow; mod.kit = sideNow ? sideKit : floor > 0 ? kitUp : kit; mod.h = mod.kit.add('box', world, c); }
         else { mod.pool = pool; mod.idx = pool.add(world, c); }
@@ -2348,20 +2363,34 @@ const Destructibles = (() => {
       }
       mk(this.slabPool, 0, 1.0, 0, W + 2, 2.2, D + 2, 0, 'base', -1);
       const topY = 1.5 + floors * FH;
+      // Mái dốc / vòm: một ô mái mỗi khoang dọc sống mái (trục X) -> đạn đục thủng đúng chỗ trúng, ô mất chỗ tựa thì sụp
+      // riêng (xem checkStructure); ô đầu nhà gồm cả phần mái chìa. Cả mái chung một màu (không loang sọc theo ô)
+      const roofSlices = (pools, ov, y, sy, sz, hy, hz, ly) => {
+        B.roofMods = [];
+        let c0 = null;
+        for (let i = 0; i < bx; i++) {
+          const xa = -W / 2 + i * st.bay - (i === 0 ? ov : 0), xb = -W / 2 + (i + 1) * st.bay + (i === bx - 1 ? ov : 0);
+          const pool = bx === 1 ? pools.full : i === 0 ? pools.n : i === bx - 1 ? pools.p : pools.mid;
+          const m = mk(pool, (xa + xb) / 2, y, 0, xb - xa, sy, sz, 0, 'roof', floors, (xb - xa) / 2, hy, hz);
+          m.ly = ly; m.ti = i; m.slice = true;
+          if (c0) { m.c = c0.clone(); pool.color(m.idx, m.c); } else c0 = m.c;
+          B.roofMods.push(m);
+        }
+      };
       if (st.roof === 'pitched') {
         const rh = Math.min(W, D) * 0.42;
         // mái chìa ~0,45 m khỏi tường mỗi phía (W + 7)
-        B.roofMod = mk(this.roofPool, 0, topY + 0.6, 0, W + 7, rh / 0.75, (D + 7) / 0.866, 0, 'roof', floors, W / 2 + 1.5, rh / 2, D / 2 + 1.5);
-        B.roofMod.ly = topY + 0.6 + rh / 2;
+        roofSlices(this.roofPools, 3.5, topY + 0.6, rh / 0.75, (D + 7) / 0.866, rh / 2, D / 2 + 1.5, topY + 0.6 + rh / 2);
         B.roofShape = { kind: 'pitched', y0: topY + 0.6, h: rh, hx: W / 2 + 1.5, hz: D / 2 + 1.5 };
       } else if (st.roof === 'arched') {
-        B.roofMod = mk(this.archPool, 0, topY - 0.5, 0, W, FH * 1.3, D, 0, 'roof', floors, W / 2, FH * 0.33, D / 2);
-        B.roofMod.ly = topY - 0.5 + FH * 0.33;
+        roofSlices(this.archPools, 0, topY - 0.5, FH * 1.3, D, FH * 0.33, D / 2, topY - 0.5 + FH * 0.33);
         B.roofShape = { kind: 'arched', y0: topY - 0.5, h: FH * 0.65, hx: W / 2, hz: D / 2 };
       } else {
         if (!topGone) B.levels.push(this.tileLevel(B, mk, topY + 1.4, 2.8, 'roof', floors, -0.25));
       }
       B.topY = topY;
+      // đỉnh cao nhất của nhà (mái dốc / vòm có thể cao hơn 1 tầng): lọc nhanh đoạn bay trong segmentHit
+      B.hitTop = Math.max(topY + FH, B.roofShape ? B.roofShape.y0 + B.roofShape.h + 2 : 0);
       B.entry = { x: b.x, z: b.z, radius: Math.hypot(W, D) * 0.5 * 0.92, height: topY + 4, type: 'BUILDING', id: 'bldg-' + Math.round(b.x) + '-' + Math.round(b.z), ref: B };
       B.halfW = W / 2; B.halfD = D / 2;
       // Nhà đổ nát sẵn: vài lỗ đạn pháo cũ ám khói trên tường
@@ -2658,7 +2687,7 @@ const Destructibles = (() => {
               if (m.role !== 'wall') { this.tintMod(m, m.c.clone().multiplyScalar(0.45 + 0.5 * clamp01(m.hp / m.hp0))); if (m.state === 'ok') m.state = 'scarred'; }
             }
             if (t <= cur) return;
-            if (t >= 3) { this.setGone(B, m, fx, true); changed = true; }
+            if (t >= 3) { this.setGone(B, m, fx, true); if (m.slice) this.roofBreach({ B, fx }, m, 0); changed = true; }
             else if (m.role === 'wall' && t === 2) {
               this.carve(B, m, 0, 0, { hole: B.st.bay * 0.3, crater: B.st.bay * 0.45, soot: B.st.bay * 0.5, chip: 0, stretch: 1, tx: 1, ty: 0, noise: holeNoise(), seed: rand(0, 1000), inner: false });
               changed = true;
@@ -3072,11 +3101,15 @@ const Destructibles = (() => {
       const j = Math.max(0, Math.min(B.bz - 1, Math.floor((pz + B.halfD) / B.st.bay)));
       return Lv.tiles[i * B.bz + j] || null;
     }
+    // Ô mái dốc / vòm tại hoành độ x (hệ nhà)
+    roofSliceAt(B, x) { return B.roofMods[Math.max(0, Math.min(B.roofMods.length - 1, Math.floor((x + B.halfW) / B.st.bay)))]; }
+    // Điểm p (hệ nhà) nằm trong phần mái dốc / vòm còn đứng (ô mái đã sập là lỗ hổng, đạn bay lọt qua)
     inRoof(B, p) {
       const R = B.roofShape;
       if (Math.abs(p.x) > R.hx || p.y < R.y0 || p.y > R.y0 + R.h) return false;
       const u = (p.y - R.y0) / R.h;
-      return R.kind === 'pitched' ? Math.abs(p.z) <= R.hz * (1 - u) : u * u + (p.z / R.hz) * (p.z / R.hz) <= 1;
+      if (!(R.kind === 'pitched' ? Math.abs(p.z) <= R.hz * (1 - u) : u * u + (p.z / R.hz) * (p.z / R.hz) <= 1)) return false;
+      return this.roofSliceAt(B, p.x).state !== 'gone';
     }
     segHitB(B, a, b) {
       const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -3115,7 +3148,7 @@ const Destructibles = (() => {
         }
       }
       // Mái dốc / mái vòm: dò theo đoạn rồi chia đôi tìm điểm chạm
-      if (B.roofMod && B.roofMod.state !== 'gone') {
+      if (B.roofMods && B.roofMods.some(m => m.state !== 'gone')) {
         const n = 12;
         let prevT = 0;
         for (let k = 0; k <= n; k++) {
@@ -3128,7 +3161,7 @@ const Destructibles = (() => {
             const L = { x: a.x + dx * hi, y: a.y + dy * hi, z: a.z + dz * hi }, R = B.roofShape;
             let ln = R.kind === 'pitched' ? [0, R.hz, Math.sign(L.z) * R.h] : [0, (L.y - R.y0) / (R.h * R.h), L.z / (R.hz * R.hz)];
             const l = Math.hypot(ln[0], ln[1], ln[2]) || 1; ln = [ln[0] / l, ln[1] / l, ln[2] / l];
-            best = { t: hi, part: 'roof', m: B.roofMod, L, ln, inside: false };
+            best = { t: hi, part: 'roof', m: this.roofSliceAt(B, L.x), L, ln, inside: false };
             break;
           }
           prevT = t;
@@ -3143,7 +3176,7 @@ const Destructibles = (() => {
         if (B.collapsed) continue;
         const r = Math.hypot(B.halfW, B.halfD) + 6;
         if (Math.max(x0, x1) < B.x - r || Math.min(x0, x1) > B.x + r || Math.max(z0, z1) < B.z - r || Math.min(z0, z1) > B.z + r) continue;
-        if (Math.min(y0, y1) > B.y + B.topY + B.FH) continue;
+        if (Math.min(y0, y1) > B.y + B.hitTop) continue;
         if (segPointDist(x0, z0, x1, z1, B.x, B.z) > r) continue;
         const h = this.segHitB(B, this.toLocal(B, x0, y0, z0), this.toLocal(B, x1, y1, z1));
         if (h && (!best || h.t < best.t)) { h.B = B; best = h; }
@@ -3309,10 +3342,27 @@ const Destructibles = (() => {
       m.hp -= dmg;
       ctx.changed = true;
       this.tintMod(m, m.c.clone().multiplyScalar(0.45 + 0.5 * clamp01(m.hp / m.hp0)));
-      if (m.hp <= 0) { this.setGone(B, m, ctx.fx); return true; }
+      if (m.hp <= 0) {
+        const over = -m.hp;
+        this.setGone(B, m, ctx.fx);
+        if (m.slice) this.roofBreach(ctx, m, over);
+        return true;
+      }
       if (m.state === 'ok') m.state = 'scarred';
       void W;
       return false;
+    }
+    // Ô mái ngói / tôn mỏng bị đục thủng: phần sức phá còn dư xuyên xuống trần tầng trên cùng ngay bên dưới; ngói vỡ, gạch
+    // vụn, muội khói rơi phủ kín mặt trần dưới lỗ (nhìn từ trên xuống thấy lòng nhà tối sẫm, không phải mặt trần sạch)
+    roofBreach(ctx, m, over) {
+      const { B } = ctx, Lv = B.levels.find(L => L.role === 'slab' && L.f === B.floors - 1);
+      if (!Lv) return;
+      for (const t of Lv.tiles) {
+        if (t.ti !== m.ti || t.state === 'gone') continue;
+        if (!t.soot) { t.soot = true; t.c = t.c.clone().multiplyScalar(0.55); }
+        if (over > 0.05) this.hitTile(ctx, t, over * 0.7, null);
+        else this.tintMod(t, t.c.clone().multiplyScalar(0.45 + 0.5 * clamp01(t.hp / t.hp0)));
+      }
     }
     // Sóng nổ / mảnh văng quanh điểm nổ: cột, ô sàn, mảng tường gần (không trúng thẳng), kính vỡ, khói phụt ra cửa sổ
     blastNear(ctx, L) {
@@ -3349,10 +3399,12 @@ const Destructibles = (() => {
           vents++;
         }
         if (I.kin && !ctx.inside) continue;
-        // sóng nổ làm nứt mảng tường gần (nổ trong phòng kín: cả tầng chịu ép)
+        // sóng nổ làm nứt mảng tường gần. Nổ trong phòng kín: áp suất dội đi dội lại không thoát ra được -> tường cùng tầng
+        // sát điểm nổ bị thổi bay, xa hơn nứt toác (lựu pháo 155 nổ trong nhà 1 khoang ~ thổi bung tường quanh nó).
+        // Nổ ngoài trời sát chân tường: sóng nổ dội thẳng vào mặt tường
         if (!I.kin && I.sd) {
-          const rr = I.sr * (sameRoom ? 0.9 : 0.5);
-          if (d3 < rr) { this.strain(ctx, m, null, I.sd * 0.45 * (1 - d3 / rr) * (sameRoom ? 1.4 : 1), null); if (m.state === 'gone') continue; }
+          const rr = I.sr * (sameRoom ? 1 : 0.6);
+          if (d3 < rr) { this.strain(ctx, m, null, I.sd * (sameRoom ? 2 : 0.8) * (1 - d3 / rr), null); if (m.state === 'gone') continue; }
         }
         // nổ gần (không trúng thẳng): chỉ phá thủng khi nổ sát mặt tường, xa hơn thì bóc lở / ám khói / mảnh văng rỗ mặt
         const hole = I.hole * B.WM.k * clamp01(1 - dp / (I.hole * 0.75 + 0.01)) * (sameRoom ? 1.25 : 1);
@@ -3558,19 +3610,24 @@ const Destructibles = (() => {
           for (const t of grid.values()) if (!anch.has(t) && !(reach(t, -1, 0) && reach(t, 1, 0)) && !(reach(t, 0, -1) && reach(t, 0, 1))) drop.push(t);
           for (const t of drop) if (this.fallMod(B, t, Math.sign(t.lx) * 0.5, Math.sign(t.lz) * 0.5, t.ly + rand(2, 6), rand(0.05, 0.3))) parts.push(t);
         }
-        // Mái dốc / vòm (một khối liền) tựa lên tường + cột tầng trên cùng: đứng được khi các điểm còn đỡ quanh chu vi bao được
-        // tâm mái (không có khoảng hở ≥ nửa vòng quanh tâm). Mất cả một mặt / nửa nhà tầng trên -> mái lật sụp về phía hở
-        const RM = B.roofMod, fT = B.floors - 1;
-        if (RM && RM.state !== 'gone' && fl[fT]) {
-          const hx = B.halfW - 0.8, hz = B.halfD - 0.8, ang = [];
-          for (const [sx, sz] of [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) if (supAt(fT, sx * hx, sz * hz, bay * 0.9) > 0.3) ang.push(Math.atan2(sz * hz, sx * hx));
-          ang.sort((a, b) => a - b);
-          let gap = ang.length ? 0 : 7, mid = 0;
-          for (let i = 0; i < ang.length; i++) {
-            const g = (i + 1 < ang.length ? ang[i + 1] : ang[0] + 6.2832) - ang[i];
-            if (g > gap) { gap = g; mid = ang[i] + g / 2; }
-          }
-          if (gap > Math.PI - 0.05 && this.fallMod(B, RM, Math.cos(mid) * 0.6, Math.sin(mid) * 0.6, RM.ly + rand(2, 5), rand(0.1, 0.3))) parts.push(RM);
+        // Mái dốc / vòm chia ô theo khoang: vì kèo mỗi ô gác lên 2 tường dọc (2 mép mái, z = ±) của tầng trên cùng.
+        // Ô còn đủ chỗ tựa ở cả 2 mép thì đứng; chỉ còn một mép thì treo được nhờ xà gồ / bờ nóc gác sang ô kề bên còn đứng
+        // vững; không thì sụp (lật về phía mép mất chỗ tựa). Xét theo chỗ tựa tính trước -> không phụ thuộc thứ tự duyệt
+        const RS = B.roofMods, fT = B.floors - 1;
+        if (RS && fl[fT]) {
+          const hz = B.halfD - 0.8, hx = B.halfW - 0.8;
+          const sup2 = RS.map(m => {
+            if (m.state === 'gone') return -1;
+            const x = Math.max(-hx, Math.min(hx, m.lx));
+            return (supAt(fT, x, -hz, bay * 0.9) > 0.3 ? 1 : 0) + (supAt(fT, x, hz, bay * 0.9) > 0.3 ? 2 : 0);
+          });
+          RS.forEach((m, i) => {
+            const k = sup2[i];
+            if (k < 0 || k === 3) return;
+            if (k && (sup2[i - 1] === 3 || sup2[i + 1] === 3)) return;
+            const tz = k === 1 ? 0.6 : k === 2 ? -0.6 : 0;
+            if (this.fallMod(B, m, rand(-0.15, 0.15), tz, m.ly + rand(2, 5), rand(0.1, 0.3))) parts.push(m);
+          });
         }
         if (parts.length) {
           let wx = 0, wy = 0, wz = 0, f1 = 0;
@@ -3647,7 +3704,11 @@ const Destructibles = (() => {
       for (let g = f; g < fl.length; g++) for (const m of fl[g].side[k]) if (this.fallMod(B, m, o[0] + rand(-0.4, 0.4), o[1] + rand(-0.4, 0.4), m.ly + rand(2, 6), rand(0, 0.15) + (g - f) * 0.05)) { n++; if (m.role === 'wall') nw++; }
       const edge = t => k === 'x1' ? t.ti === B.bx - 1 : k === 'x-1' ? t.ti === 0 : k === 'z1' ? t.tj === B.bz - 1 : t.tj === 0;
       for (const Lv of B.levels) if (Lv.f >= f) for (const t of Lv.tiles) if (edge(t) && this.fallMod(B, t, o[0], o[1], t.ly + rand(2, 6), rand(0.05, 0.25))) { n++; nt++; }
-      if (B.roofMod && this.fallMod(B, B.roofMod, o[0] * 0.6, o[1] * 0.6, B.roofMod.ly + rand(2, 5), rand(0.1, 0.3))) n++;
+      // mái dốc / vòm: mặt đầu hồi đổ -> ô mái đầu đó đổ theo; mặt dọc (mép mái) đổ -> cả mái mất chỗ tựa
+      if (B.roofMods) for (const m of B.roofMods) {
+        if (k === 'x1' ? m.ti !== B.bx - 1 : k === 'x-1' ? m.ti !== 0 : false) continue;
+        if (this.fallMod(B, m, o[0] * 0.6, o[1] * 0.6, m.ly + rand(2, 5), rand(0.1, 0.3) + 0.04 * Math.abs(m.ti - (B.bx - 1) / 2))) n++;
+      }
       if (!n) return 0;
       const y0 = 1.5 + f * B.FH, y1 = 1.5 + fl.length * B.FH;
       this.fallFx(B, fx, o[0] * B.halfW, (y0 + y1) / 2, o[1] * B.halfD, (o[0] ? B.halfD : B.halfW), n, fl.length - f, o);
