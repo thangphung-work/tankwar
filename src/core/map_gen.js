@@ -17,6 +17,7 @@ const MapGen = (() => {
   // (giữ mật độ cây / đá / làng như cũ); kích thước từng vật thể, đồi, đường... giữ nguyên
   const K = SIZE / 3600, AREA = K * K;
   const O0 = HALF - 1800;          // cảnh ngoài bản đồ (vành núi, bờ biển, đảo xa) dời ra theo mép bản đồ
+  const RIM_WALL = 650;            // tường giữ xe vô hình nằm trên sườn vành núi: cách chân núi bấy nhiêu (spg.js)
 
   // Điểm chiến thuật cố định của luật chơi
   const CAPTURE = [{ x: -800 * K, z: 0 }, { x: 0, z: 0 }, { x: 800 * K, z: 0 }];
@@ -221,8 +222,8 @@ const MapGen = (() => {
     }
     // khoảng cách từ tâm tới mép giữ xe (hình vuông ±(HALF - 60)) theo hướng (x, z)
     function boxDist(x, z) { return (HALF - 60) / Math.max(Math.abs(x), Math.abs(z), 1e-6) * Math.hypot(x, z); }
-    // đồng bằng ven biển chỉ bắt đầu sau chân núi + 900 và sau đỉnh vành ở góc bản đồ
-    function coastIn(x, z) { return Math.max(rimFoot(x, z) + 900, boxDist(x, z) + 600); }
+    // đồng bằng ven biển chỉ bắt đầu sau chân núi + 900 (ngoài tường giữ xe)
+    function coastIn(x, z) { return rimFoot(x, z) + 900; }
     function rimRaise(x, z) {
       const d = Math.hypot(x, z), foot = rimFoot(x, z);
       const s = d - foot;
@@ -235,8 +236,8 @@ const MapGen = (() => {
       // sống núi, yên ngựa, khe suối: gồ ghề tăng dần khi lên cao
       r *= lerp(1, 0.35 + 1.25 * ridged(on, x * 0.0013, z * 0.0013, 5), smooth(60, 700, s));
       // qua đỉnh vành thì đổ xuống phía ngoài
-      // đỉnh vành luôn ngoài mép giữ xe (kể cả ở góc bản đồ): không leo qua được sườn ngoài xuống bờ biển
-      const crest = Math.max(foot + 1150, boxDist(x, z) + 380) + 260 * angN(x, z, 2.3, 5.7) + 170 * angN(x, z, 5.9, 1.9);
+      // đỉnh vành luôn ngoài tường giữ xe trên sườn núi (chân núi + WALL, xem spg.js): không leo qua núi xuống biển
+      const crest = foot + 1250 + 230 * angN(x, z, 2.3, 5.7) + 150 * angN(x, z, 5.9, 1.9);
       return r * (1 - smooth(crest, crest + 1300, d));
     }
     function outerLand(x, z, h) {
@@ -248,8 +249,8 @@ const MapGen = (() => {
         // có đoạn núi đổ thẳng xuống biển thành vách đá không có bãi.
         const wx = x + 750 * fbm(on, x * 0.0003 + 1.7, z * 0.0003, 3), wz = z + 750 * fbm(on, x * 0.0003, z * 0.0003 + 9.1, 3);
         // đảo không tròn: bám dáng chân vành núi (vuông bo góc, lượn sóng) + kéo dài thành bầu dục theo hướng ngẫu nhiên
-        const oval = 1 - 0.15 * Math.cos(2 * (Math.atan2(wz, wx) - coastPhi));
-        const t = Math.hypot(wx, wz) * oval - (rimFoot(x, z) + 1850 + 420 * angN(wx, wz, 2.2, 2.2) + 230 * angN(wx, wz, 5.3, 7.7) + 90 * on(x * 0.0025 + 5, z * 0.0025));
+        const oval = 1 - 0.15 * (0.5 + 0.5 * Math.cos(2 * (Math.atan2(wz, wx) - coastPhi)));   // chỉ kéo dài ra, không thu vào
+        const t = Math.hypot(wx, wz) * oval - (rimFoot(x, z) + 1950 + 520 * angN(wx, wz, 2.2, 2.2) + 260 * angN(wx, wz, 5.3, 7.7) + 90 * on(x * 0.0025 + 5, z * 0.0025));
         const bn = fbm(on, x * 0.0011 + 4, z * 0.0011 - 1, 2) + 0.3 * on(x * 0.004, z * 0.004 + 6);
         const bw = 18 + 340 * smooth(-0.3, 0.35, bn), pw = 50 + 280 * smooth(-0.2, 0.3, bn);
         let p;
@@ -1015,7 +1016,7 @@ const MapGen = (() => {
       bases, capture: CAP, roads, river, lakes, bridges, bunkers, strongholds, layout, buildings, rocks, bushes, trees, forests, props, sun,
       genMs: Math.round(ms),
       // độ cao cảnh nền tại điểm bất kỳ (kể cả ngoài bản đồ): cùng công thức với lưới trong bản đồ -> nối liền ở mép
-      outer: { rimFoot, sea: OUT.sea, seaLevel: OUT.sea ? 0.2 : null, ext: OUTER_EXT, heightAt: (x, z) => riverCut ? riverCut(x, z, baseHeight(x, z)) : baseHeight(x, z) },
+      outer: { rimFoot, wall: RIM_WALL, sea: OUT.sea, seaLevel: OUT.sea ? 0.2 : null, ext: OUTER_EXT, heightAt: (x, z) => riverCut ? riverCut(x, z, baseHeight(x, z)) : baseHeight(x, z) },
       // tra cứu nhanh mặt đường cho động lực học xe
       roadAt(x, z) {
         const nr = nearestRoad(x, z, 60);

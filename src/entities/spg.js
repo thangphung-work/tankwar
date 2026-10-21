@@ -1626,6 +1626,12 @@ class SPGUnit3D {
     // Giới hạn biên bản đồ
     nextX = Math.max(-terrain.width / 2 + 60, Math.min(terrain.width / 2 - 60, nextX));
     nextZ = Math.max(-terrain.depth / 2 + 60, Math.min(terrain.depth / 2 - 60, nextZ));
+    // tường vô hình trên sườn vành núi, bám đường chân núi méo của bản đồ (không leo qua núi ra bờ biển / ra góc)
+    const OUT = terrain.map && terrain.map.outer;
+    if (OUT && OUT.rimFoot) {
+      const d = Math.hypot(nextX, nextZ), lim = OUT.rimFoot(nextX, nextZ) + OUT.wall;
+      if (d > lim) { nextX *= lim / d; nextZ *= lim / d; }
+    }
 
     // KIỂM TRA VA CHẠM VẬT CẢN (TÒA NHÀ CĂN CỨ & BỜ TƯỜNG CÔNG SỰ MÓNG NGỰA)
     const resolved = terrain.resolveVehicleCollision(this.x, this.z, nextX, nextZ, 16, this);

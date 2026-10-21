@@ -21,6 +21,7 @@ const Navigator = (() => {
     const wd = new Float32Array(nx * nz);   // độ sâu nước tại tâm ô (0 = cạn)
     const margin = 70;
     const SS = terrain.strongholdSet;
+    const OUT = terrain.map && terrain.map.outer;
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) {
         const x = -W / 2 + (i + 0.5) * CELL, z = -D / 2 + (j + 0.5) * CELL;
@@ -29,6 +30,8 @@ const Navigator = (() => {
         const ws = terrain.waterSurfaceAt ? terrain.waterSurfaceAt(x, z) : null;
         if (ws !== null && ws !== undefined) wd[k] = Math.max(0, ws - h[k]);
         if (Math.abs(x) > W / 2 - margin || Math.abs(z) > D / 2 - margin) { blocked[k] = 1; continue; }
+        // ngoài tường giữ xe trên sườn vành núi (spg.js)
+        if (OUT && OUT.rimFoot && Math.hypot(x, z) > OUT.rimFoot(x, z) + OUT.wall - 40) { blocked[k] = 1; continue; }
         // Tường bê tông cứ điểm: thử va chạm thân xe tại tâm ô (chỉ các ô gần cứ điểm)
         if (SS && SS.near && SS.near(x, z, 40)) {
           const r = terrain.resolveVehicleCollision(x, z, x, z, CLEAR, null);
