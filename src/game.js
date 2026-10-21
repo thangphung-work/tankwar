@@ -4984,14 +4984,7 @@ class ArtilleryGame3D {
       return;
     }
     if (!Z || Z.parent !== this.scene) {
-      Z = this._blastZone = new THREE.Group();
-      const outer = new THREE.RingGeometry(0.965, 1, 96); outer.rotateX(-Math.PI / 2);
-      const disc = new THREE.CircleGeometry(1, 64); disc.rotateX(-Math.PI / 2);
-      const mk = (geo, op) => {
-        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xff6a3d, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false, depthTest: false }));
-        m.renderOrder = 2; m.frustumCulled = false; Z.add(m); return m;
-      };
-      Z.userData = { outer: mk(outer, 0.55), fill: mk(disc, 0.07), core: mk(disc, 0.16) };
+      Z = this._blastZone = this.buildBlastZone();
       this.scene.add(Z);
     }
     const U = Z.userData;
@@ -5008,12 +5001,7 @@ class ArtilleryGame3D {
       const SR = BallisticsSystem3D.blastProfile('CLUSTER_SUBMUNITION', heavy).radius;
       cx = fp.x; cz = fp.z; ra = fp.along + SR; rc = fp.cross + SR; core = 0; yaw = fp.yaw;
     }
-    const y = this.terrain ? this.terrain.getElevationAt(cx, cz) : at.y;
-    Z.position.set(cx, y + 0.8, cz);
-    Z.rotation.y = yaw;
-    U.outer.scale.set(rc, 1, ra); U.fill.scale.set(rc, 1, ra);
-    U.core.visible = core > 0;
-    if (core > 0) U.core.scale.set(core, 1, core);
+    this.placeBlastZone(Z, cx, cz, rc, ra, yaw, core / Math.max(1, Math.min(ra, rc)), dt);
     Z.visible = true;
     // sức nổ ước tính tới mục tiêu đang ngắm (1 = trọn sức nổ ở lõi); xe đứng ngoài vòng: 0
     let hitK = null;
@@ -5026,6 +5014,142 @@ class ArtilleryGame3D {
       } else hitK = this.blastFalloff(Math.hypot(dx, dz), BP.core, BP.radius);
     }
     this._blastInfo = { radius: Math.round(Math.max(ra, rc)), core: Math.round(core), cluster: fire === 'CLUSTER', hitK };
+    const M = U.mesh.material.uniforms;
+    M.uHit.value += ((hitK || 0) - M.uHit.value) * Math.min(1, dt * 6);
+    this.updateBlastLabel(Z, rc, ra, core, fire === 'CLUSTER', yaw);
+  }
+
+  // Vòng sát thương dự kiến: lưới phủ bám mặt đất (bị xe / vật cản che đúng chiều sâu, không nổi lơ lửng trên dốc) +
+  // shader vẽ trong hệ toạ độ đĩa đơn vị: nền đỏ thẫm ở lõi nhạt dần ra mép theo đường suy giảm sức nổ, lõi chết chắc
+  // viền liền + sọc chéo cảnh báo, viền ngoài mảnh có vạch chia + vòng đứt nét quay chậm, sóng xung kích lan từ tâm.
+  // Nét vẽ đo bằng fwidth -> mảnh đều theo điểm ảnh ở mọi cỡ / elip (đạn chùm)
+  buildBlastZone() {
+    const Z = new THREE.Group();
+    const N = 40, geo = new THREE.PlaneGeometry(2, 2, N, N);
+    geo.rotateX(-Math.PI / 2);
+    const uv0 = new Float32Array(geo.attributes.position.count * 2);
+    for (let i = 0; i < geo.attributes.position.count; i++) { uv0[i * 2] = geo.attributes.position.getX(i); uv0[i * 2 + 1] = geo.attributes.position.getZ(i); }
+    geo.setAttribute('aUnit', new THREE.BufferAttribute(uv0, 2));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8,
+      uniforms: { uTime: { value: 0 }, uCore: { value: 0.3 }, uHit: { value: 0 } },
+      vertexShader: [
+        'attribute vec2 aUnit; varying vec2 vU;',
+        'void main() { vU = aUnit; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }'
+      ].join('\n'),
+      fragmentShader: [
+        'varying vec2 vU; uniform float uTime, uCore, uHit;',
+        'float line(float d, float w) { float a = fwidth(d); return 1.0 - smoothstep(w * a, (w + 1.2) * a, abs(d)); }',
+        'void main() {',
+        '  float r = length(vU);',
+        '  if (r > 1.03) discard;',
+        '  float ang = atan(vU.y, vU.x);',
+        '  vec3 hot = vec3(1.0, 0.22, 0.12), warm = vec3(1.0, 0.58, 0.18), pale = vec3(1.0, 0.86, 0.6);',
+        // sức nổ tương đối: 1 ở lõi, giảm dần ra tới mép
+        '  float c = max(uCore, 0.001);',
+        '  float k = r <= c ? 1.0 : clamp((1.0 - r) / max(0.001, 1.0 - c), 0.0, 1.0);',
+        '  k = pow(k, 1.3);',
+        '  vec3 col = mix(warm, hot, k);',
+        '  float a = (0.05 + 0.16 * k) * step(r, 1.0);',
+        // lõi: sọc chéo cảnh báo + viền liền
+        '  if (uCore > 0.01) {',
+        '    float inCore = 1.0 - smoothstep(c - fwidth(r), c, r);',
+        '    float hatch = step(0.55, fract((vU.x + vU.y) * 7.0 / c - uTime * 0.6));',
+        '    a += inCore * hatch * 0.13;',
+        '    float cl = line(r - c, 0.9);',
+        '    col = mix(col, hot, cl); a = max(a, cl * 0.85);',
+        '  }',
+        // viền ngoài mảnh + quầng mờ phía trong
+        '  float ol = line(r - 1.0, 1.1);',
+        '  float glow = smoothstep(0.86, 1.0, r) * step(r, 1.0) * 0.18;',
+        '  col = mix(col, pale, ol * 0.6); a = max(a, ol * 0.95); a += glow;',
+        // vòng đứt nét quay chậm ngay trong mép + vạch chia mỗi 15 độ
+        '  float dashR = line(r - 0.93, 0.6) * step(0.45, fract(ang / 6.28318 * 48.0 + uTime * 0.08));',
+        '  a = max(a, dashR * 0.55);',
+        '  float tick = step(0.86, r) * step(r, 1.0) * line(fract(ang / 6.28318 * 24.0 + 0.5) - 0.5, 0.9);',
+        '  a = max(a, tick * 0.6);',
+        // sóng xung kích lan từ tâm ra mép
+        '  float pr = fract(uTime * 0.55);',
+        '  float wave = line(r - pr, 2.5) * (1.0 - pr) * step(r, 1.0);',
+        '  a = max(a, wave * 0.45); col = mix(col, pale, wave * 0.5);',
+        // mục tiêu đang ngắm nằm trong vùng sát thương: cả vòng sáng lên, nhấp nháy nhẹ
+        '  float hl = uHit * (0.75 + 0.25 * sin(uTime * 7.0));',
+        '  col = mix(col, vec3(1.0, 0.95, 0.85), hl * 0.25); a *= 1.0 + hl * 0.6;',
+        '  gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));',
+        '}'
+      ].join('\n')
+    });
+    mat.extensions = { derivatives: true };
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 2; mesh.frustumCulled = false;
+    Z.add(mesh);
+    Z.userData = { mesh, key: '' };
+    return Z;
+  }
+
+  // Đặt vòng sát thương: tâm (cx, cz), bán kính ngang rc / dọc ra (elip đạn chùm), hướng yaw; các đỉnh lưới lấy đúng
+  // cao độ mặt đất (+0,6) — chỉ tính lại khi tâm / cỡ / hướng đổi đáng kể
+  placeBlastZone(Z, cx, cz, rc, ra, yaw, coreK, dt) {
+    const U = Z.userData, mesh = U.mesh, T = this.terrain;
+    const uni = mesh.material.uniforms;
+    uni.uTime.value += dt || 0;
+    uni.uCore.value = Math.max(0, Math.min(0.95, coreK || 0));
+    const key = [Math.round(cx * 2), Math.round(cz * 2), Math.round(rc), Math.round(ra), Math.round(yaw * 100)].join(',');
+    if (key === U.key) return;
+    U.key = key;
+    const base = T ? T.getElevationAt(cx, cz) : 0;
+    Z.position.set(cx, base, cz);
+    Z.rotation.y = yaw;
+    const pos = mesh.geometry.attributes.position, un = mesh.geometry.attributes.aUnit;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    for (let i = 0; i < pos.count; i++) {
+      const lx = un.getX(i) * rc, lz = un.getY(i) * ra;
+      // nhóm quay quanh trục y: thế giới = tâm + R(yaw) * (lx, lz)
+      const wx = cx + lx * cy + lz * sy, wz = cz - lx * sy + lz * cy;
+      const h = T ? T.getElevationAt(wx, wz) : base;
+      pos.setXYZ(i, lx, h - base + 0.6, lz);
+    }
+    pos.needsUpdate = true;
+    mesh.geometry.computeBoundingSphere();
+  }
+
+  // Nhãn bán kính treo trên mép vòng phía xa camera: "SÁT THƯƠNG 14 M · LÕI 4 M" (đạn chùm: kích thước vùng rải)
+  updateBlastLabel(Z, rc, ra, core, cluster, yaw) {
+    const U = Z.userData;
+    const m = (v) => Math.max(1, Math.round(v / 8));
+    const text = cluster ? 'VÙNG RẢI ' + m(rc * 2) + '×' + m(ra * 2) + ' M'
+      : 'SÁT THƯƠNG ' + m(Math.max(ra, rc)) + ' M' + (core > 0 ? ' · LÕI ' + m(core) + ' M' : '');
+    if (!U.label) {
+      const c = document.createElement('canvas'); c.width = 512; c.height = 96;
+      const tex = new THREE.CanvasTexture(c);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+      sp.renderOrder = 4;
+      Z.add(sp);
+      U.label = { sp, c, tex, text: '' };
+    }
+    const L = U.label;
+    if (L.text !== text) {
+      L.text = text;
+      const g = L.c.getContext('2d');
+      g.clearRect(0, 0, 512, 96);
+      g.font = '600 38px "Barlow Condensed", "Roboto Condensed", Arial, sans-serif';
+      const w = Math.min(500, g.measureText(text).width + 44);
+      g.fillStyle = 'rgba(14,10,8,0.72)'; g.strokeStyle = 'rgba(255,140,80,0.85)'; g.lineWidth = 3;
+      g.beginPath(); g.rect((512 - w) / 2, 18, w, 60); g.fill(); g.stroke();
+      g.fillStyle = '#ffd9b8'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(text, 256, 49);
+      L.tex.needsUpdate = true;
+    }
+    // cỡ cố định trên màn hình (~3,5% chiều cao) -> gần hay xa đều đọc được; vị trí: mép xa của vòng theo hướng nhìn
+    const cam = this.camera, wp = Z.position;
+    const s = 0.035;
+    L.sp.scale.set(s * 5.33, s, 1);
+    let vx = cam ? wp.x - cam.position.x : 0, vz = cam ? wp.z - cam.position.z : -1;
+    const vl = Math.hypot(vx, vz) || 1; vx /= vl; vz /= vl;
+    const R = Math.max(ra, rc), wx = vx * R, wz = vz * R, cy = Math.cos(yaw), sy = Math.sin(yaw);
+    // nghịch đảo phép quay của nhóm (thế giới -> cục bộ)
+    L.sp.position.set(wx * cy - wz * sy, 6, wx * sy + wz * cy);
   }
 
   screenCovered() {
