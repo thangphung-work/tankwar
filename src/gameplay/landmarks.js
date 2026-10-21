@@ -266,7 +266,7 @@ const Landmarks = (() => {
       for (let i = 0; i < 9000; i++) {
         const x = hash(i + 4200) * N, y = hash(i + 4201) * N, l = 3 + hash(i + 4202) * 6, a = -Math.PI / 2 + (hash(i + 4203) - 0.5) * 1.3;
         const t = hash(i + 4204), dry = hash(i + 4205) < 0.08;
-        const v = 70 + t * 110, col = dry ? `rgb(${v + 40},${v + 30},${v - 10})` : `rgb(${v - 8},${v + 12},${v - 22})`;
+        const v = 70 + t * 110, col = dry ? `rgb(${v + 30},${v + 22},${v - 8})` : `rgb(${v - 4},${v + 4},${v - 10})`;
         wrap(() => { g.strokeStyle = col; g.lineWidth = 0.8 + hash(i + 4206) * 0.9; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); });
       }
     } else {
@@ -388,12 +388,12 @@ const Landmarks = (() => {
         const rect = (fa, ra, fb, rb, col) => { const [x0, y0] = P(Math.min(fa, fb), Math.min(ra, rb)); g.fillStyle = col; g.fillRect(x0, y0, Math.abs(fb - fa) * S, Math.abs(rb - ra) * S); };
         const hu = f1, hv = r1, iF = hu - 62, iR = hv - 62;
         // cỏ trong khu trong (lốm đốm, ngả vàng chỗ xe đi), viền đường tuần tra sỏi đầm
-        rect(-iF + 24, -iR + 24, iF - 24, iR - 24, '#5f6c3a');
+        rect(-iF + 24, -iR + 24, iF - 24, iR - 24, '#586040');   // cùng tông cỏ địa hình HIGHLAND, không xanh gắt
         // vệt cắt cỏ song song (bãi cỏ trong căn cứ được cắt định kỳ, mỗi vệt máy cắt ~4 m), mảng úa vàng / xanh đậm
         { const [x0, y0] = P(-iF + 24, -iR + 24), [x1, y1] = P(iF - 24, iR - 24);
           g.save(); g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0); g.clip();
           for (let r = -iR + 24, k = 0; r < iR - 24; r += 32, k++) { g.fillStyle = k % 2 ? 'rgba(150,160,90,0.10)' : 'rgba(30,40,14,0.10)'; g.fillRect(x0, P(0, r)[1], x1 - x0, 32 * S); }
-          for (let i = 0; i < 220; i++) blotch(g, hash(i + 1500) * w, hash(i + 1501) * h, (10 + hash(i + 1502) * 50) * S, hash(i + 1503) < 0.55 ? '74,86,42' : '128,122,70', 0.28);
+          for (let i = 0; i < 220; i++) blotch(g, hash(i + 1500) * w, hash(i + 1501) * h, (10 + hash(i + 1502) * 50) * S, hash(i + 1503) < 0.55 ? '70,78,46' : '124,116,74', 0.3);
           g.restore(); }
         g.strokeStyle = 'rgba(120,112,96,0.95)'; g.lineWidth = 20 * S; g.strokeRect(...P(-iF + 14, -iR + 14), (iF * 2 - 28) * S, (iR * 2 - 28) * S);
         // nền sỏi quanh công trình: khu cấm silo, cổng, gò điều khiển, nhà xe, trạm điện, bồn nhiên liệu, chân tháp canh
@@ -650,15 +650,26 @@ const Landmarks = (() => {
   function apron(group, L, f0, f1, r0, r1, kind) {
     const hu = (f1 - f0) / 2, hv = (r1 - r0) / 2;
     const at = apronTex(kind, f0, f1, r0, r1);
+    // mặt nạ bãi cỏ (trắng = cỏ) cùng toạ độ ảnh nền: lớp chi tiết ngọn cỏ chỉ phủ đúng bãi cỏ (kể cả mảng úa vàng)
+    const mask = TEX['apronMask_' + kind] || (TEX['apronMask_' + kind] = texOf('apronMask_' + kind, 512, Math.round(512 * (r1 - r0) / (f1 - f0)), (g, w, h) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+      if (kind !== 'nuke') return;
+      const P = (f, r) => [(f - f0) / (f1 - f0) * w, (r - r0) / (r1 - r0) * h], S = w / (f1 - f0), iF = f1 - 62, iR = r1 - 62;
+      const rect = (fa, ra, fb, rb, col) => { const [x0, y0] = P(Math.min(fa, fb), Math.min(ra, rb)); g.fillStyle = col; g.fillRect(x0, y0, Math.abs(fb - fa) * S, Math.abs(rb - ra) * S); };
+      rect(-iF + 26, -iR + 26, iF - 26, iR - 26, '#fff');
+      for (const [fa, ra, fb, rb] of nukeGravel(f1)) rect(fa, ra, fb, rb, '#000');
+      g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#000';
+      for (const [pts, wd] of NUKE_ROADS) { g.lineWidth = (wd + 8) * S; g.beginPath(); pts.forEach(([f, r], i) => i ? g.lineTo(...P(f, r)) : g.moveTo(...P(f, r))); g.stroke(); }
+      g.filter = 'blur(2px)'; g.drawImage(g.canvas, 0, 0); g.filter = 'none';
+    }));
     const am = new THREE.MeshStandardMaterial({ map: at, roughness: 0.94, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     // lớp chi tiết lát lặp độ phân giải cao (ảnh nền chỉ ~13 px/m): chỗ nền màu cỏ -> ngọn cỏ, còn lại -> hạt sỏi / bê tông;
     // nhân vào màu nền (giá trị trung bình ~0.5 x 2)
     const rep = [hu * 2 / 24, hv * 2 / 24];
     am.onBeforeCompile = (sh) => {
-      sh.uniforms.tGrass = { value: detailTex('grass') }; sh.uniforms.tGrav = { value: detailTex('gravel') }; sh.uniforms.uRep = { value: new THREE.Vector2(rep[0], rep[1]) };
-      sh.fragmentShader = 'uniform sampler2D tGrass;\nuniform sampler2D tGrav;\nuniform vec2 uRep;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-        { vec3 mc = diffuseColor.rgb;
-          float gm = smoothstep(0.004, 0.03, mc.g - mc.r) * smoothstep(0.02, 0.08, mc.g - mc.b);
+      sh.uniforms.tGrass = { value: detailTex('grass') }; sh.uniforms.tGrav = { value: detailTex('gravel') }; sh.uniforms.tMask = { value: mask }; sh.uniforms.uRep = { value: new THREE.Vector2(rep[0], rep[1]) };
+      sh.fragmentShader = 'uniform sampler2D tGrass;\nuniform sampler2D tGrav;\nuniform sampler2D tMask;\nuniform vec2 uRep;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+        { float gm = texture2D(tMask, vUv).r;
           vec2 duv = vUv * uRep;
           vec3 dg = texture2D(tGrass, duv).rgb, dv = texture2D(tGrav, duv * 1.7).rgb;
           diffuseColor.rgb *= mix(mix(vec3(1.0), dv * 2.0, 0.7), dg * 2.0, gm); }`);
