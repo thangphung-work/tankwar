@@ -1468,6 +1468,15 @@
         game.addCombatLog('[[cloud]] Khói đã tan — địch khóa lại được xe bạn', 'alert');
       }
     }
+    // lưới ngụy trang trên xe mình: chạy thì cành lá + lưới phần phật, xào xạc (nhanh dày hơn khi chạy nhanh)
+    if (P && !P.isDead && has(P, 'camo') && !lost(P, 'camoKit') && !(window.CamoFire && CamoFire.status(P) === 'gone')) {
+      const sp = Math.min(1.2, Math.abs(P.speed || 0) / (P.baseMaxSpeed || 120));
+      const S = soundOf();
+      if (sp > 0.1 && now >= (P._camoSndT || 0) && S && S.secondaryAt) {
+        P._camoSndT = now + 220 + Math.random() * 480 * (1.3 - sp);
+        S.secondaryAt('camoRustle', { x: P.x, z: P.z }, 0.35 + 0.65 * Math.min(1, sp));
+      }
+    }
     // xe do máy điều khiển (máy này có quyền): vừa trúng đạn & máu thấp -> phóng khói che rút lui;
     // bị tên lửa khóa / tên lửa đang lao tới -> phản xạ phóng khói cắt đường dẫn (có trễ, không phải lần nào cũng kịp)
     for (const u of game.units) {

@@ -186,6 +186,37 @@ SoundEngine.mixin(class {
   }
 
   /**
+   * Radar của xe mình bắt được vết mới: tiếng "píp" điện tử ngắn trên màn hình radar, gần thì cao hơn một chút.
+   * Giãn cách ≥ 0,8 s để nhiều vết cùng lúc không thành chuỗi bíp liên hồi
+   */
+  playRadarContact(k = 0.5) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    if (this._radarPipT !== undefined && t - this._radarPipT < 0.8) return;
+    this._radarPipT = t;
+    const out = this.voice({ bus: this.uiBus || this.weaponBus, gain: 0.35, wet: 0.02 });
+    const f = 1500 + (1 - Math.min(1, Math.max(0, k))) * 500;
+    this.tone(out, t, { type: 'sine', freq: f, gain: 0.03, attack: 0.002, dur: 0.12 });
+    this.tone(out, t + 0.003, { type: 'sine', freq: f * 2, gain: 0.006, attack: 0.002, dur: 0.06 });
+  }
+
+  /**
+   * Hệ thống đánh chặn chủ động trên xe mình vừa khai hỏa: còi báo trong tai nghe — bíp kép cao (đã chặn được)
+   * hoặc bíp trầm dài (bắn trượt, đầu đạn vẫn lao vào)
+   */
+  playApsAlert(ok = true) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime + 0.12;
+    const out = this.voice({ bus: this.uiBus || this.weaponBus, gain: 0.5, wet: 0.02 });
+    if (ok) {
+      this.tone(out, t, { type: 'square', freq: 1760, gain: 0.03, attack: 0.002, dur: 0.07, filter: 'lowpass', filterFreq: 4000 });
+      this.tone(out, t + 0.12, { type: 'square', freq: 2350, gain: 0.03, attack: 0.002, dur: 0.1, filter: 'lowpass', filterFreq: 4000 });
+    } else {
+      this.tone(out, t, { type: 'square', freq: 520, gain: 0.04, attack: 0.002, hold: 0.25, dur: 0.12, filter: 'lowpass', filterFreq: 2500 });
+    }
+  }
+
+  /**
    * Pháo tự hành hạ / thu chân chống thủy lực (xe mình). dir: +1 đang hạ, -1 đang thu, 0 đứng yên.
    * Bơm thủy lực gầm trầm + dầu rít qua van khi xi-lanh chạy; hạ xong: lưỡi càng cắm đất "RẦM", cả xe nhún;
    * thu xong: chốt khóa hành trình "cạch". (Trước đây 2 giây hạ càng hoàn toàn im lặng.)

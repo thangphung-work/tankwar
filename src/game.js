@@ -4506,7 +4506,8 @@ class ArtilleryGame3D {
           engineDmg: D ? D.engine || 0 : 0,
           tracksBroken: D && D.trackTimer ? (D.trackTimer[0] > 0 ? 1 : 0) + (D.trackTimer[1] > 0 ? 1 : 0) : 0,
           flatTires: D ? cnt(D.flat) + cnt(D.gone) : 0,
-          stall: !!this.player.climbStall    // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
+          stall: !!this.player.climbStall,   // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
+          turbo: typeof Equipment !== 'undefined' && Equipment.has(this.player, 'turbo')   // động cơ tăng áp: turbo rít to, có van xả áp
         });
         // Tiếng lội nước theo độ sâu & tốc độ thật (src/core/audio/wading.js)
         if (window.soundEngine.updateWading) {

@@ -1358,12 +1358,14 @@ class SPGUnit3D {
   ignite(duration = 2.5) {
     if (this.isDead) return;
     if (typeof Equipment !== 'undefined' && Equipment.extIgniteMul) duration *= Equipment.extIgniteMul(this);   // bình chữa cháy: cháy ngắn hơn
+    if (typeof VehicleDamage !== 'undefined' && VehicleDamage.extinguisherSound) VehicleDamage.extinguisherSound(this);
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
     this.burnAuth = true;
   }
   // Lửa do máy khác báo sang: chỉ hiện khói lửa, không tự trừ máu
   igniteVisual(duration = 2.5) {
     if (this.isDead) return;
+    if (typeof VehicleDamage !== 'undefined' && VehicleDamage.extinguisherSound) VehicleDamage.extinguisherSound(this);
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
   }
 

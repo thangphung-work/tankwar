@@ -1090,7 +1090,7 @@ class TankInspector {
     let dBody = this._sndBody === undefined ? 0 : wrap(ba - this._sndBody);
     if (Math.abs(dBody) > 0.5) dBody = 0;
     this._sndBody = ba;
-    if (se.updateEngine) se.updateEngine(Math.abs(u.speed) / (u.baseMaxSpeed || 1), boost, u.engineLoad || 1, { turn: dBody / dt, tankType: u.tankType });
+    if (se.updateEngine) se.updateEngine(Math.abs(u.speed) / (u.baseMaxSpeed || 1), boost, u.engineLoad || 1, { turn: dBody / dt, tankType: u.tankType, turbo: typeof Equipment !== 'undefined' && Equipment.has(u, 'turbo') });
     if (se.updateTurretDrive && u._turretYaw !== undefined) {
       const ty = -(u.azimuth || 0) * Math.PI / 180;   // hướng tháp trong thế giới (như trong trận)
       let dy = this._sndTurret === undefined ? 0 : wrap(ty - this._sndTurret);
