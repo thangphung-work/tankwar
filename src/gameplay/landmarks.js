@@ -86,16 +86,21 @@ const Landmarks = (() => {
     }
     // vết nứt chân chim
     both((x, bm) => {
-      x.strokeStyle = bm ? '#2c2c2c' : 'rgba(40,38,34,0.55)'; x.lineWidth = bm ? 1.6 : 1;
+      x.strokeStyle = bm ? '#5a5a5a' : 'rgba(40,38,34,0.3)'; x.lineWidth = bm ? 1 : 0.8;
       for (let i = 0; i < 9; i++) {
         let px = hash(i + 500) * N, py = hash(i + 501) * N, a = hash(i + 502) * TAU;
         x.beginPath(); x.moveTo(px, py);
-        for (let k = 0; k < 10; k++) { a += (hash(i * 31 + k) - 0.5) * 1.4; px += Math.cos(a) * 9; py += Math.sin(a) * 9; x.lineTo(px, py); }
+        for (let k = 0; k < 7; k++) { a += (hash(i * 31 + k) - 0.5) * 1.4; px += Math.cos(a) * 6; py += Math.sin(a) * 6; x.lineTo(px, py); }
         x.stroke();
       }
     });
     // sứt mẻ (mảng lõm sáng)
-    for (let i = 0; i < 18; i++) { const x = hash(i + 600) * N, y = hash(i + 601) * N, r = 3 + hash(i + 602) * 8; g.fillStyle = 'rgba(190,186,176,0.5)'; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); q.fillStyle = '#4a4a4a'; q.beginPath(); q.arc(x, y, r, 0, TAU); q.fill(); }
+    // (mảng loang mờ không đều thay cho chấm tròn — chấm tròn nhìn như lỗ thủng)
+    for (let i = 0; i < 26; i++) {
+      const x = hash(i + 600) * N, y = hash(i + 601) * N, r = 10 + hash(i + 602) * 30, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, hash(i + 603) < 0.5 ? 'rgba(80,76,68,0.12)' : 'rgba(214,210,200,0.1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
     const t = new THREE.CanvasTexture(c), tb = new THREE.CanvasTexture(b);
     for (const k of [t, tb]) { k.wrapS = k.wrapT = THREE.RepeatWrapping; k.anisotropy = 4; }
     return (TEX.conc = [t, tb]);
@@ -320,11 +325,11 @@ const Landmarks = (() => {
   function mat(key) {
     if (MAT[key]) return MAT[key];
     const S = (o) => new THREE.MeshStandardMaterial(o);
-    const C = (o) => { const [t, b] = concPair(); return S(Object.assign({ map: t, bumpMap: b, bumpScale: 0.9 }, o)); };
+    const C = (o) => { const [t, b] = concPair(); return S(Object.assign({ map: t, bumpMap: b, bumpScale: 0.5 }, o)); };
     // thép / sơn: lớp bẩn gỉ theo mức (rust), độ sần nhẹ
     const G = (rust, o) => { const [t, b] = grimePair('r' + rust, rust); return S(Object.assign({ map: t, bumpMap: b, bumpScale: 0.35 }, o)); };
     const m = {
-      conc: () => C({ color: 0xffffff, roughness: 0.95 }),
+      conc: () => C({ color: 0xd6d2c8, roughness: 0.95 }),
       concDark: () => C({ color: 0x9a968c, roughness: 0.97 }),
       steelRed: () => G(1, { color: 0xb04a2e, roughness: 0.62, metalness: 0.35 }),
       steelWhite: () => G(0.5, { color: 0xdcdad2, roughness: 0.5, metalness: 0.25 }),
@@ -1177,7 +1182,8 @@ const Landmarks = (() => {
       for (const s2 of [-1, 1]) K.cbox('concDark', pf, 41.2, pr + s2 * 21.5, 86, 2.4, 2, 0.4);
       for (const x of [-20, 20]) {
         K.cyl('steelGray', pf + x, 40, pr + 10, 6, 6, 12, 16); K.cyl('steelDark', pf + x, 52, pr + 10, 6.3, 6.3, 1, 16);
-        K.add('bands', new THREE.CylinderGeometry(3, 4.2, 70, 12, 1, true), M4(pf + x, 88, pr + 10)); K.cyl('steelDark', pf + x, 123, pr + 10, 3.3, 3.3, 2, 12);
+        K.cyl('steelGray', pf + x, 53, pr + 10, 3, 4.2, 70, 12); K.cyl('steelDark', pf + x, 123, pr + 10, 3.3, 3.3, 2, 12);
+        K.add('lampRed', new THREE.SphereGeometry(0.9, 8, 6), M4(pf + x + 3.4, 124, pr + 10));
         for (const y of [70, 100]) K.add('steelDark', new THREE.TorusGeometry(4, 0.5, 6, 16), M4(pf + x, y, pr + 10, Math.PI / 2, 0, 0));
         anim.steam.push([K.W(pf + x, pr + 10), L.G + 125]);
       }
@@ -1209,7 +1215,17 @@ const Landmarks = (() => {
         K.cyl('steelGray', x, 39.4, z, 15.4, 15.4, 1.2, 24);
         K.cyl('steelGray', x + 4, 41.5, z, 1, 1, 3, 8); K.cyl('steelDark', x + 4, 44.5, z, 1.8, 1.8, 0.8, 8);
         for (let i = 0; i < 8; i++) { const b = a + i * 0.2; K.add('steelGray', new THREE.BoxGeometry(0.4, 5, 0.4), M4(x + Math.cos(b) * 14.2, 42.6, z + Math.sin(b) * 14.2)); }
-        K.box('hazard', x, 30, z, 31, 2, 31, a, 16);
+        // bảng nhận dạng nhiên liệu (JP-8 + hình thoi NFPA 704) quay ra ngoài
+        { const ao = Math.atan2(z - fr, x - ff), px2 = x + Math.cos(ao) * 15.25, pz2 = z + Math.sin(ao) * 15.25;
+          K.add(decal('jp8', texOf('jp8', 256, 160, (q, w, h) => {
+            q.fillStyle = '#f2f0ea'; q.fillRect(0, 0, w, h); q.fillStyle = '#1b1b1b'; q.font = 'bold 54px Arial'; q.textAlign = 'center'; q.textBaseline = 'middle';
+            q.fillText('JP-8', w * 0.34, h * 0.5);
+            const cx = w * 0.8, cy = h * 0.5, d = 26;
+            for (const [dx, dy, col, n] of [[0, -d, '#c8261c', '3'], [-d, 0, '#1f5fb0', '1'], [d, 0, '#e6c41c', '0'], [0, d, '#ffffff', '']]) {
+              q.fillStyle = col; q.beginPath(); q.moveTo(cx + dx, cy + dy - d); q.lineTo(cx + dx + d, cy + dy); q.lineTo(cx + dx, cy + dy + d); q.lineTo(cx + dx - d, cy + dy); q.closePath(); q.fill();
+              q.strokeStyle = '#111'; q.lineWidth = 2; q.stroke(); q.fillStyle = '#111'; q.font = 'bold 22px Arial'; q.fillText(n, cx + dx, cy + dy + 1);
+            }
+          })), new THREE.PlaneGeometry(12, 7.5), M4(px2, 26, pz2, 0, Math.PI / 2 - ao, 0)); }
         for (let i = 0; i < 6; i++) K.beam('steelGray', [x + Math.cos(a + i * 0.25) * 15.6, i * 6.6, z + Math.sin(a + i * 0.25) * 15.6], [x + Math.cos(a + (i + 1) * 0.25) * 15.6, (i + 1) * 6.6, z + Math.sin(a + (i + 1) * 0.25) * 15.6], 1);
         K.solid(x, z, 15, 15, 0, 42);
       }
@@ -1276,8 +1292,8 @@ const Landmarks = (() => {
     anim.vehicles.push({ type: 'SCOUT', f: iF - 110, r: 150, a: 0.05, ty: 0.3, hf: 20, hr: 11 });
     anim.vehicles.push({ type: 'SCOUT', f: iF - 110, r: 186, a: -0.05, ty: -0.2, hf: 20, hr: 11 });
     anim.vehicles.push({ type: 'SCOUT', f: iF - 50, r: -G + 14, a: Math.PI, ty: 0.6, hf: 20, hr: 11 });
-    anim.vehicles.push({ type: 'SCOUT', f: -130, r: 200, a: 1.4 + Math.PI, ty: 0, hf: 20, hr: 11 });
-    camoNet(K, M4(-130, 0, 200, 0, -1.4, 0), 50, 40, 46, 5);
+    anim.vehicles.push({ type: 'SCOUT', f: -62, r: 242, a: 1.4 + Math.PI, ty: 0, hf: 20, hr: 11 });
+    camoNet(K, M4(-62, 0, 242, 0, -1.4, 0), 50, 40, 46, 5);
     anim.vehicles.push({ type: 'GATLING', f: -30, r: -238, a: 0, ty: -0.5, hf: 43, hr: 32 });
     anim.vehicles.push({ type: 'ARTILLERY', f: -150, r: 240, a: 0, chassis: true, cargo: 'n2o4', hf: 50, hr: 13 });
 
