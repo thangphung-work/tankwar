@@ -990,7 +990,7 @@ class TankInspector {
     }
     this.smoke.deploy(u, null);
     const n = Equipment.smokeMax ? Equipment.smokeMax(u) : 3;
-    this.toast(`<i class="ti ti-cloud"></i> Đã bắn 1 loạt lựu đạn khói (~15 giây). Trong trận: ${n} ống mỗi bên = ${n} loạt mỗi lần xuất kích; ở đây bắn thoải mái`);
+    this.toast(`<i class="ti ti-cloud"></i> Đã bắn 1 loạt lựu đạn khói (~15 giây). Trong trận: ${n} ống mỗi bên, mang tối đa ${2 * n} quả lấy từ kho; ở đây bắn thoải mái`);
   }
 
   // Các khối còn đứng của tường thử gần xe (hộp vật cản cho VehicleCollision)
@@ -1090,7 +1090,7 @@ class TankInspector {
     let dBody = this._sndBody === undefined ? 0 : wrap(ba - this._sndBody);
     if (Math.abs(dBody) > 0.5) dBody = 0;
     this._sndBody = ba;
-    if (se.updateEngine) se.updateEngine(Math.abs(u.speed) / (u.baseMaxSpeed || 1), boost, u.engineLoad || 1, { turn: dBody / dt, tankType: u.tankType });
+    if (se.updateEngine) se.updateEngine(Math.abs(u.speed) / (u.baseMaxSpeed || 1), boost, u.engineLoad || 1, { turn: dBody / dt, tankType: u.tankType, turbo: typeof Equipment !== 'undefined' && Equipment.has(u, 'turbo') });
     if (se.updateTurretDrive && u._turretYaw !== undefined) {
       const ty = -(u.azimuth || 0) * Math.PI / 180;   // hướng tháp trong thế giới (như trong trận)
       let dy = this._sndTurret === undefined ? 0 : wrap(ty - this._sndTurret);

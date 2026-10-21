@@ -862,9 +862,19 @@ const VehicleDamage = (() => {
   // Đám cháy bám theo xe tại điểm trúng (hệ tọa độ group của xe): lỗ xuyên giáp, bình xăng, kho đạn
   function addFire(u, worldPt, strength, life) {
     const d = state(u);
+    extinguisherSound(u, worldPt);
     if (d.fires.length >= 4) d.fires.shift();
     const l = u.group.worldToLocal(worldPt.clone());
     d.fires.push({ x: l.x, y: l.y, z: l.z, k: strength || 1, life: life || 20, t: 0 });
+  }
+
+  // Bình chữa cháy tự động (trang bị): cảm biến thấy lửa -> xả khí dập lửa ngay (nghe "PSSSHH"; trong xe mình to & rõ)
+  function extinguisherSound(u, p) {
+    if (!u || u.isDead || typeof Equipment === 'undefined' || !Equipment.has || !Equipment.has(u, 'fireext')) return;
+    const now = Date.now();
+    if (u._extSndAt && now - u._extSndAt < 4000) return;
+    u._extSndAt = now;
+    sfx('fireExt', p || u.group.position, 1, { inside: !!u.isPlayer });
   }
 
   // Kính cabin bị sóng nổ / mảnh văng đánh vỡ: nứt mạng nhện cả ô kính + mảnh kính văng
@@ -2334,7 +2344,7 @@ const VehicleDamage = (() => {
     if (ctx.fatigue) armor *= 1 - 0.45 * Math.min(1, ctx.fatigue);
     // Độ xuyên giảm theo cự ly bay (đạn động năng)
     let pen = P.mm * (EQ ? EQ.penMul(opts.shooter, opts.ammo) : 1);
-    if (P.loss && ctx.range) pen *= Math.max(0.2, 1 - P.loss * ctx.range / 1000);
+    if (P.loss && ctx.range) pen *= Math.max(0.2, 1 - P.loss * (EQ && EQ.penLossMul ? EQ.penLossMul(opts.shooter, opts.ammo) : 1) * ctx.range / 1000);
     const ratio = pen / Math.max(1, armor);
     const sizeK = POSTPEN[P.big ? 'big' : 'small'][A.cls] || 1;
     let mul, penetrated = false;
@@ -2368,6 +2378,7 @@ const VehicleDamage = (() => {
       else if (tag && (partKind(tag) === 'acc' || partKind(tag) === 'heavyAcc')) { zone = 'acc'; mul *= 0.5; }
       else if (onTurret) { zone = 'crew'; mul *= 1.1; }
       if (EQ) mul *= EQ.spallMul(u, zone);   // lớp lót chống mảnh
+      if (EQ && EQ.extHitMul) mul *= EQ.extHitMul(u, opts.ammo, penetrated && P.kind === 'KE' && P.big, zone);   // bình chữa cháy tự động
     }
     return { mul, ratio, pen: penetrated, zone, armor: Math.round(armor), penMm: Math.round(pen), key };
   }
@@ -2406,7 +2417,10 @@ const VehicleDamage = (() => {
       // Radar trên nóc tháp phát hiện đạn bay tới, phóng đạn đánh chặn nổ cách xe vài mét
       const intercepted = EQ.apsTry(u, opts.ammo);
       const ip = point.clone().addScaledVector(dir, -16);
-      sparksAt(ip, 22); sfx('era', ip, 0.9);
+      sparksAt(ip, 22); sfx('apsFire', ip, 1);
+      // đạn chặn trúng: đầu đạn bị xé nát nổ dở dang cách xe vài mét (trượt: đầu đạn lao tiếp vào xe, nổ như thường)
+      if (intercepted) sfx('apsKill', point.clone().addScaledVector(dir, -22), 1, { delay: 0.05 });
+      if (u.isPlayer && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.playApsAlert) window.soundEngine.playApsAlert(!!intercepted);
       if (intercepted) {
         events.push({ type: 'aps', text: `HỆ THỐNG ĐÁNH CHẶN ĐÃ BẮN HẠ ${opts.ammo === 'RPG' ? 'ĐẠN RPG' : 'TÊN LỬA'} (còn ${EQ.apsLeft(u)} lần)` });
         FX = null;
@@ -2420,6 +2434,7 @@ const VehicleDamage = (() => {
       // Lồng thép bóp méo đầu đạn nổ lõm / kích nổ sớm bom con: đầu nổ không tạo được luồng xuyên, chỉ xé lồng
       if (detachTag(u, tag0, dir.clone().multiplyScalar(40))) onPartLost(u, tag0, partKind(tag0), events, fx, point);
       sparksAt(point, 14);
+      sfx('slat', point, 1, { dud: true });
       events.push({ type: 'slat', text: 'LỒNG THÉP BÓP MÉO ĐẦU ĐẠN — không xuyên được vỏ xe' });
       FX = null;
       return { mul: 0.03, events };
@@ -2436,6 +2451,7 @@ const VehicleDamage = (() => {
     d.lastOutcome = AO;
     if (SH && !(hit && hit.ricochet)) {
       mul *= SH.mul;
+      if (SH.mul < 1) sfx('slat', point, 0.6);
       if (SH.mul < 1) events.push({ type: 'slatHit', text: SH.noFire ? 'LỒNG THÉP HỨNG ĐẠN CHÁY — vỏ xe không bén lửa' : `LỒNG THÉP HỨNG ĐẠN — giảm ${Math.round((1 - SH.mul) * 100)}% sát thương` });
     }
     // Trúng gạch giáp phản ứng nổ còn nguyên: gạch kích nổ phá đầu đạn (xem Equipment.eraEffect)
@@ -2450,15 +2466,20 @@ const VehicleDamage = (() => {
         events.push({ type: 'eraStop', text: eff.mul === 0 ? 'GẠCH GIÁP NỔ ĐÃ PHÁ HỦY ĐẦU ĐẠN — không mất máu'
           : eff.why === 'tandem' ? 'Đầu nổ mồi kích nổ gạch giáp — đầu chính vẫn xuyên vào'
           : eff.why === 'kinetic' ? 'Gạch giáp nổ chém lệch mũi tên xuyên giáp — giảm 40% sát thương'
-          : 'Gạch giáp nổ đỡ được một nửa sức nổ lựu pháo' });
+          : eff.why === 'blast' ? 'Đạn nổ phá làm gạch giáp nổ — gạch chỉ đỡ được chút sức ép (giảm 20%)'
+          : 'Lựu pháo 155mm quá mạnh — gạch giáp nổ chỉ đỡ được chút ít (giảm 15%)' });
       }
     }
     if (AO.zone === 'ammo' && AO.pen && opts.ammo !== 'SCOUT_BULLET') events.push({ type: 'ammoRack', text: 'TRÚNG KHO ĐẠN — sát thương cực lớn' });
     // Lớp lót chống mảnh (trang bị): phát xuyên vào khoang bị lớp sợi aramid giữ bớt mảnh vỡ -> báo cho người chơi biết
     if (AO.pen && (cls === 'kinetic' || cls === 'heat' || cls === 'cannon') && typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'spall')) {
-      events.push({ type: 'spall', text: `LỚP LÓT CHỐNG MẢNH đã chặn bớt mảnh vỡ trong khoang (sát thương -${AO.zone === 'ammo' ? 25 : 15}%)` });
+      if (AO.zone !== 'ammo') events.push({ type: 'spall', text: `LỚP LÓT CHỐNG MẢNH đã chặn bớt mảnh vỡ trong khoang (sát thương -${AO.zone === 'crew' ? 20 : 10}%)` });
     }
-    else if (!AO.pen && AO.ratio < 0.8 && !(hit && hit.ricochet) && (cls === 'kinetic' || cls === 'heat')) events.push({ type: 'nopen', text: `KHÔNG XUYÊN GIÁP (${AO.penMm}mm < ${AO.armor}mm) — nhắm chỗ giáp mỏng hơn: sườn / đuôi / nóc` });
+    // Bình chữa cháy (trang bị) dập chớp lửa khi đạn xuyên giáp lọt vào khoang (đạn cháy không báo từng viên: bắn liên thanh)
+    if (AO.pen && cls === 'kinetic' && typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'fireext')) {
+      events.push({ type: 'fireext', text: `BÌNH CHỮA CHÁY dập chớp lửa trong khoang (sát thương -${AO.zone === 'ammo' ? 15 : 8}%, ít bốc cháy)` });
+    }
+    if (!AO.pen && AO.ratio < 0.8 && !(hit && hit.ricochet) && (cls === 'kinetic' || cls === 'heat')) events.push({ type: 'nopen', text: `KHÔNG XUYÊN GIÁP (${AO.penMm}mm < ${AO.armor}mm) — nhắm chỗ giáp mỏng hơn: sườn / đuôi / nóc` });
 
     const impulse = dir.clone().multiplyScalar(cls === 'small' ? 25 : cls === 'cannon' ? 40 : 70);
     const tag = tagAtHit(hit);
@@ -2629,8 +2650,9 @@ const VehicleDamage = (() => {
     }
 
     // Lỗ xuyên giáp bốc cháy tại chỗ (xăng dầu, dây điện, đạn dự trữ bên trong)
-    if ((cls === 'heat' || cls === 'kinetic') && !onGun && AO.pen && Math.random() < (A.cls === 'heavy' ? 0.35 : 0.6)) addFire(u, point, cls === 'heat' ? 1.1 : 0.8, rand(10, 22));
-    if (opts.ammo === 'INCENDIARY' && !(SH && SH.noFire) && Math.random() < 0.3) addFire(u, point, 0.5, rand(4, 8));
+    const extF = typeof Equipment !== 'undefined' && Equipment.extFireChance ? Equipment.extFireChance(u, opts.ammo, cls) : 1;   // bình chữa cháy tự động
+    if ((cls === 'heat' || cls === 'kinetic') && !onGun && AO.pen && Math.random() < (A.cls === 'heavy' ? 0.35 : 0.6) * extF) addFire(u, point, cls === 'heat' ? 1.1 : 0.8, rand(10, 22));
+    if (opts.ammo === 'INCENDIARY' && !(SH && SH.noFire) && Math.random() < 0.3 * extF) addFire(u, point, 0.5, rand(4, 8));
     // Lưới lá ngụy trang bén lửa tại chỗ trúng (đạn cháy, nổ, nổ lõm) — máy có quyền quyết định rồi gửi trong digest
     if (!VIS_ONLY && typeof CamoFire !== 'undefined' && u._cfStatic && CamoFire.onHit(u, { point, ammo: opts.ammo, heavy: !!opts.heavy, shooter: opts.shooter })) {
       events.push({ type: 'camoFire', text: 'LƯỚI NGỤY TRANG BỐC CHÁY — xe bị lộ' });
@@ -3397,7 +3419,7 @@ const VehicleDamage = (() => {
   }
 
   return {
-    ARMOR, ammoClass, onDirectHit, onSplash, onDestroyed, onDetonate, reset, update, recompute, summary, state,
+    ARMOR, ammoClass, extinguisherSound, onDirectHit, onSplash, onDestroyed, onDetonate, reset, update, recompute, summary, state,
     visualOnly, digest, applyDigest, addFire,
     detachTag, flatTire, blowWheel, breakTrack, bendTag, sfx, debugAction,
     crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, hatchHoles, armorOutcome, ARMOR_MM, PEN,

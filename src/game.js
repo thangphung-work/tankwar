@@ -630,7 +630,7 @@ class ArtilleryGame3D {
         this.triggerPlayerFire();
       }
 
-      // Phím G: phóng lựu đạn khói (cần Ống phóng lựu khói; số loạt = số ống mỗi bên)
+      // Phím G: phóng 1 loạt lựu đạn khói (cần Ống phóng lựu khói + lựu đạn khói trong kho)
       if (e.code === 'KeyG' && !e.repeat) this.triggerPlayerSmoke();
 
       // Phím B: pháo tự hành đổi cách bắn (tự chọn / luôn bắn thẳng / luôn bắn cầu vồng)
@@ -4506,7 +4506,8 @@ class ArtilleryGame3D {
           engineDmg: D ? D.engine || 0 : 0,
           tracksBroken: D && D.trackTimer ? (D.trackTimer[0] > 0 ? 1 : 0) + (D.trackTimer[1] > 0 ? 1 : 0) : 0,
           flatTires: D ? cnt(D.flat) + cnt(D.gone) : 0,
-          stall: !!this.player.climbStall    // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
+          stall: !!this.player.climbStall,   // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
+          turbo: typeof Equipment !== 'undefined' && Equipment.has(this.player, 'turbo')   // động cơ tăng áp: turbo rít to, có van xả áp
         });
         // Tiếng lội nước theo độ sâu & tốc độ thật (src/core/audio/wading.js)
         if (window.soundEngine.updateWading) {
@@ -5737,13 +5738,13 @@ class ArtilleryGame3D {
       this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — lắp trong Kho vũ khí (nhóm PHỤ KIỆN) ở sảnh', 'tip');
       return;
     }
-    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã bắn hết lựu đạn khói trong ống phóng — nạp đầy lại khi xuất kích lần sau', 'alert'); return; }
+    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói trong ống phóng' + this.stockNote('SMOKE'), 'alert'); return; }
     if (!Equipment.smokeSides(P)) { this.addCombatLog('[[alert-triangle]] Cả hai cụm ống phóng lựu khói đã bị bắn hỏng!', 'alert'); return; }
     if (P._smokeAt && performance.now() - P._smokeAt < Equipment.SMOKE_GAP) return;   // loạt trước vừa bắn (chống bấm đúp)
     const r = Equipment.triggerSmoke(this, P);
     if (!r) return;
-    const one = r.m !== 3 ? ' (1 bên ống phóng đã hỏng)' : '';
-    this.addCombatLog(`[[cloud]] Đã bắn loạt lựu đạn khói${one} — còn ${P.smokeLeft}/${Equipment.smokeMax(P)} loạt`, 'tip');
+    const one = r.m !== 3 ? (Equipment.smokeSides(P) === 3 ? ' (quả cuối, 1 bên)' : ' (1 bên ống phóng đã hỏng)') : '';
+    this.addCombatLog(`[[cloud]] Đã bắn ${Equipment.smokeCount(r.m)} quả lựu đạn khói${one} — trong ống còn ${P.smokeLeft} quả`, 'tip');
     if (r.k) this.addCombatLog('[[lock-off]] Đang bị khóa: khói đa phổ sẽ cắt tia khóa của địch khi khói nở', 'tip');
     this.syncEquipmentChips();
   }
@@ -5757,7 +5758,7 @@ class ArtilleryGame3D {
     if (!el) { el = document.createElement('span'); el.id = 'eq-chips'; el.className = 'hx-chip'; el.style.color = '#cbd5e1'; host.parentElement.appendChild(el); }
     if (!P || P.isDead || typeof Equipment === 'undefined' || !P.kit) { UIIcons.set(el, ''); return; }
     const parts = [];
-    if (Equipment.has(P, 'smoke')) parts.push(`[[cloud]] KHÓI ${P.smokeLeft || 0}/${Equipment.smokeMax(P)} [G]`);
+    if (Equipment.has(P, 'smoke')) parts.push(`[[cloud]] KHÓI ×${P.smokeLeft || 0} [G]`);
     if (Equipment.has(P, 'aps')) parts.push(`[[radar]] ĐÁNH CHẶN ×${Equipment.apsLeft(P)}`);
     // lưới lá: đứng yên = ẩn (địch phải tới gần mới thấy / radar mới bắt được), chạy hoặc vừa bắn = lộ
     // lưới bắt lửa: đang cháy = lộ hẳn (khói lửa); cháy hết = mất lưới tới lần xuất kích sau
