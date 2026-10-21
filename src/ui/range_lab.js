@@ -136,7 +136,9 @@
     g.units = g.units.filter(u => !lab.dummies.includes(u));
     lab.dummies = [];
     const D = Math.hypot(dx, dz), ux = dx / D, uz = dz / D;
-    const plan = [[220, -0.18, 'ALL_ROUNDER'], [D - 90, 0.12, 'GATLING'], [D + 40, -0.06, 'ALL_ROUNDER'], [D + 170, 0.2, 'ARTILLERY']];
+    // ?ew=1: thử máy phá sóng — chỉ 1 xe tăng địch (tự bật phá sóng khi drone mình bay tới gần, ew_jammer.js)
+    const plan = q.get('ew') === '1' ? [[1300, 0, 'ALL_ROUNDER']]
+      : [[220, -0.18, 'ALL_ROUNDER'], [D - 90, 0.12, 'GATLING'], [D + 40, -0.06, 'ALL_ROUNDER'], [D + 170, 0.2, 'ARTILLERY']];
     plan.forEach(([r0, off, type], i) => {
       let p = null;
       for (let k = 0; k < 160 && !p; k++) {

@@ -800,72 +800,69 @@
       }
     }
 
-    // Trạm vũ khí điều khiển từ xa (súng máy 7.62mm phòng không) trên nóc phía nạp đạn — kiểu trạm hộp như Protector /
-    // CROWS: chân đế xoay + 2 càng đỡ trục ngóc; khối ngóc gồm hộp súng ở giữa-trái (súng máy + loa che lửa), hộp camera
-    // ngày / ảnh nhiệt + đo xa laser bên phải, hộp dây đạn treo bên trái; tất cả ngóc theo nòng
-    const rcws = new THREE.Group();
-    rcws.position.set(6.2, ROOF, 9.0);
-    const rb = new VehicleKit.PartBatch(DECK_Y + ROOF);
-    // Đế: vòng xoay, mâm tròn có vành bu-lông, bệ mô-tơ vát mép
-    rb.cyl(1.2, 1.3, 0.3, 20, D, [0, 0.15, 0]);
-    rb.cyl(1.15, 1.15, 0.12, 20, P, [0, 0.36, 0]);
-    for (let i = 0; i < 10; i++) {
-      const a = i * Math.PI / 5;
-      rb.cyl(0.06, 0.06, 0.08, 6, D, [Math.cos(a) * 1.02, 0.45, Math.sin(a) * 1.02]);
+    // Máy phá sóng chống UAV PHÁT CHÙM ĐỊNH HƯỚNG trên nóc phía nạp đạn (thay trạm súng máy 7.62mm). Kiểu tổ hợp gây nhiễu
+    // định hướng gắn xe: đế chống rung + hộp nguồn / máy phát cố định trên nóc (lá tản nhiệt, đầu nối cáp), bệ xoay ngang
+    // mang chạc ngóc (bộ phận phát duy nhất là mảng ăng-ten tấm định hướng — liên lạc dùng ăng-ten radio sẵn của xe);
+    // khối ngóc là MẢNG ĂNG-TEN TẤM phẳng lớn (radome 2 x 2 phần tử, viền gân) chĩa
+    // về một hướng, kèm camera ngắm nhỏ bên phải và hộp khuếch đại sau tấm. Đầu phát quay / ngóc theo hướng chùm
+    // (ew_jammer.js), đèn trạng thái đỏ nhấp nháy khi đang phát. Kích thước thật (8 đv = 1 m): tấm ~0.45 x 0.4 m
+    const jam = new THREE.Group();
+    jam.position.set(6.2, ROOF, 9.0);
+    const jb = new VehicleKit.PartBatch(DECK_Y + ROOF);
+    const radome = new THREE.MeshStandardMaterial({ color: 0xbab8a7, roughness: 0.8, metalness: 0.0 });
+    // Đế chống rung + cục cao su
+    jb.box(4.4, 0.28, 3.8, D, [0, 0.14, 0]);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) jb.cyl(0.3, 0.34, 0.36, 10, M.rubber || D, [sx * 1.75, 0.46, sz * 1.45]);
+    // Hộp nguồn / máy phát: thân thấp, nắp, lá tản nhiệt hai bên, đầu nối, cửa thăm sau
+    jb.box(3.6, 1.3, 3.0, P, [0, 1.3, 0.2]);
+    jb.box(3.8, 0.18, 3.2, P, [0, 2.02, 0.2]);
+    for (const sx of [-1, 1]) for (let k = 0; k < 6; k++) jb.box(0.12, 1.0, 2.4, D, [sx * 1.86, 1.3, -0.8 + k * 0.4]);
+    jb.box(2.2, 0.9, 0.08, D, [0, 1.3, 1.72]);
+    for (let k = 0; k < 3; k++) jb.cyl(0.14, 0.14, 0.3, 10, D, [-0.8 + k * 0.8, 0.85, 1.78], 'z');
+    // bó cáp xuống nóc tháp
+    jb.strut([-1.3, 0.8, 1.6], [-1.8, 0.2, 2.4], 0.12, D);
+    jb.build(jam);
+    // Bệ xoay ngang (theo hướng chùm)
+    const head = new THREE.Group();
+    head.position.set(0, 2.1, -0.2);
+    const hb = new VehicleKit.PartBatch(DECK_Y + ROOF + 2.1);
+    hb.cyl(1.05, 1.15, 0.32, 18, D, [0, 0.16, 0]);
+    hb.cyl(0.75, 0.9, 0.7, 16, P, [0, 0.62, 0]);
+    hb.box(2.9, 0.24, 1.0, P, [0, 1.05, 0]);
+    for (const sx of [-1, 1]) {
+      hb.box(0.24, 1.2, 0.9, P, [sx * 1.33, 1.7, 0]);
+      hb.cyl(0.28, 0.28, 0.12, 12, D, [sx * 1.5, 2.15, 0], 'x');
     }
-    rb.cyl(0.85, 1.0, 0.5, 16, P, [0, 0.67, 0.1]);
-    // Chạc chữ U: dầm ngang + 2 tay đỡ vát đầu, ổ trục ngóc to
-    rb.box(3.16, 0.26, 1.3, P, [0, 1.05, 0.05]);
-    for (const s of [-1, 1]) {
-      rb.box(0.26, 0.85, 1.2, P, [s * 1.45, 1.55, 0.05]);
-      rb.box(0.26, 0.42, 0.75, P, [s * 1.45, 2.05, 0.0]);
-      rb.cyl(0.3, 0.3, 0.12, 14, D, [s * 1.64, 2.05, 0.0], 'x');
-      rb.cyl(0.12, 0.12, 0.14, 8, P, [s * 1.71, 2.05, 0.0], 'x');
+    hb.build(head);
+    // Khối ngóc: mảng ăng-ten tấm định hướng chĩa về phía trước (-Z)
+    const tilt = new THREE.Group();
+    tilt.position.set(0, 2.15, 0);
+    const jt = new VehicleKit.PartBatch(DECK_Y + ROOF + 4.25);
+    jt.box(3.4, 3.1, 0.5, radome, [0, 0.2, -0.35]);                       // tấm radome
+    jt.box(3.55, 0.16, 0.6, D, [0, 1.8, -0.35]); jt.box(3.55, 0.16, 0.6, D, [0, -1.4, -0.35]);   // viền gân trên / dưới
+    for (const sx of [-1, 1]) jt.box(0.16, 3.3, 0.6, D, [sx * 1.77, 0.2, -0.35]);
+    jt.box(0.06, 2.9, 0.06, D, [0, 0.2, -0.62]); jt.box(3.2, 0.06, 0.06, D, [0, 0.2, -0.62]);   // vạch chia 2 x 2 phần tử
+    jt.box(2.4, 2.0, 0.7, D, [0, 0.2, 0.25]);                               // hộp khuếch đại sau tấm
+    for (let k = 0; k < 4; k++) jt.box(2.2, 0.08, 0.5, D, [0, -0.5 + k * 0.45, 0.65]);   // lá tản nhiệt sau hộp
+    jt.box(0.7, 0.6, 1.0, P, [1.6, -1.0, 0.05]);                            // camera ngắm nhỏ bên phải
+    jt.cyl(0.16, 0.16, 0.08, 12, M.lens, [1.6, -1.0, -0.47], 'z');
+    jt.build(tilt);
+    head.add(tilt);
+    jam.add(head);
+    // đèn trạng thái mặt sau hộp nguồn (vật liệu riêng mỗi xe: ew_jammer.js đổi màu / nhấp nháy)
+    const ledMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x33ff55, emissiveIntensity: 0.7, roughness: 0.4 });
+    for (const x of [-0.5, 0.5]) {
+      const led = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.12, 10), ledMat);
+      led.rotation.x = Math.PI / 2;
+      led.position.set(x, 1.75, 1.79);
+      jam.add(led);
     }
-    // Hộp điều khiển + bó cáp phía sau
-    rb.box(0.9, 0.5, 0.42, D, [0, 0.95, 0.95]);
-    rb.cyl(0.07, 0.07, 0.6, 6, D, [0.3, 0.6, 1.05], 'y', [0.4, 0, 0]);
-    rb.build(rcws);
-    const rcwsGun = new THREE.Group();
-    rcwsGun.position.set(0, 2.05, 0.0);
-    const gb = new VehicleKit.PartBatch(DECK_Y + ROOF + 2.05);
-    // hộp súng (vỏ che thân súng) + thân súng máy, nòng, loa che lửa
-    // Nôi súng: khung hộp ôm trục ngóc, súng nằm giữa
-    gb.box(2.1, 0.22, 1.3, D, [0, -0.2, 0.0]);
-    // Vỏ súng giữa: nóc vát hai mép, mặt trước nghiêng, khe nhả vỏ đạn bên phải
-    gb.box(0.66, 0.5, 2.1, P, [0, 0.14, -0.15]);
-    for (const s of [-1, 1]) gb.box(0.2, 0.2, 2.1, P, [s * 0.24, 0.42, -0.15], [0, 0, s * -0.7]);
-    gb.box(0.36, 0.14, 2.1, P, [0, 0.46, -0.15]);
-    gb.box(0.6, 0.42, 0.3, P, [0, 0.1, -1.3], [0.4, 0, 0]);
-    gb.box(0.05, 0.16, 0.6, D, [0.34, 0.08, 0.1]);
-    gb.cyl(0.14, 0.14, 0.55, 12, D, [0, 0.12, -1.6], 'z');      // ống áo nòng
-    gb.cyl(0.075, 0.075, 2.3, 10, D, [0, 0.12, -2.85], 'z');    // nòng
-    gb.cyl(0.13, 0.11, 0.42, 10, D, [0, 0.12, -4.2], 'z');      // loa che lửa
-    // Hộp đạn bên trái: thân, nắp gờ, quai xách, máng dây đạn vào vỏ súng
-    gb.box(0.55, 0.7, 1.15, P, [-0.75, 0.08, 0.1]);
-    gb.box(0.6, 0.06, 1.2, D, [-0.75, 0.45, 0.1]);
-    gb.box(0.08, 0.1, 0.5, D, [-0.75, 0.52, 0.1]);
-    gb.box(0.3, 0.12, 0.45, D, [-0.42, 0.33, -0.1]);
-    // Đầu cảm biến bên phải: thân vát mép trước, cửa kính lõm, mái che, cần gạt nước
-    gb.box(0.78, 0.74, 1.1, P, [0.8, 0.16, -0.15]);
-    gb.box(0.78, 0.3, 0.3, P, [0.8, 0.44, -0.72], [0.6, 0, 0]);
-    gb.box(0.78, 0.3, 0.3, P, [0.8, -0.12, -0.72], [-0.6, 0, 0]);
-    gb.box(0.7, 0.4, 0.05, D, [0.8, 0.16, -0.76]);
-    gb.box(0.9, 0.06, 1.3, D, [0.8, 0.58, -0.25]);
-    gb.cyl(0.14, 0.14, 0.06, 14, M.lens, [0.66, 0.2, -0.79], 'z');    // camera ngày
-    gb.cyl(0.12, 0.12, 0.06, 12, M.glass, [0.95, 0.2, -0.79], 'z');   // ảnh nhiệt
-    gb.cyl(0.05, 0.05, 0.06, 8, M.lens, [0.8, 0.02, -0.79], 'z');     // đo xa laser
-    gb.build(rcwsGun);
-    rcws.add(rcwsGun);
-    // Các số đo trên dựng nhỏ ~1/2 cỡ thật (súng chỉ ~0.67 m). Trạm thật cỡ Protector cho súng 7.62mm: dài ~1.2 m,
-    // cao ~0.6 m, vòng đế ~0.6 m -> phóng cả cụm. Nòng, đạn, ngắm bắn drone đều tính qua matrixWorld của rcwsGun
-    // (rcwsMuzzleLocal ở hệ cục bộ) nên tự theo tỉ lệ mới.
-    rcws.scale.setScalar(2.1);
-    turret.add(rcws);
-    unit.rcwsTurret = rcws;
-    unit.rcwsGun = rcwsGun;
-    unit.rcwsMuzzleLocal = new THREE.Vector3(0, 0.12, -4.42);
-    VehicleKit.registerPartGroup(unit, 'rcws', rcws);
+    turret.add(jam);
+    // trạm súng máy đã bỏ (DroneAir / bot / ô [4] tự bỏ qua khi không có rcwsGun)
+    unit.rcwsTurret = null;
+    unit.rcwsGun = null;
+    unit.jammer = { group: jam, head, tilt, ledMat };
+    VehicleKit.registerPartGroup(unit, 'jammer', jam);
 
     return { periHead };
   }

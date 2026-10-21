@@ -686,8 +686,9 @@ class ArtilleryGame3D {
         } else if (e.code === 'Digit3' || e.code === 'Numpad3' || e.code === 'KeyR') {
           if (this.player.availableAmmos[2]) this.selectAmmoType(this.player.availableAmmos[2]);
         } else if ((e.code === 'Digit4' || e.code === 'Numpad4') && !e.repeat) {
-          // [4] xe tăng: chuyển sang / về từ súng máy 7.62mm trên nóc tháp
-          this.selectMG();
+          // [4] xe tăng: chọn máy phá sóng chống UAV trên nóc tháp làm vũ khí (ew_jammer.js); xe cũ còn trạm súng: súng máy
+          if (this.player.jammer && this.selectJammer) this.selectJammer();
+          else this.selectMG();
         }
       }
     });
@@ -2233,7 +2234,7 @@ class ArtilleryGame3D {
     if (!this.player || this.player.isDead) return;
     // xe tăng đang ngắm lên trời / khóa drone hoặc đang chọn súng máy [4]: Space bóp cò trạm súng máy nóc tháp
     // (drone_air.js), không bắn pháo chính
-    if ((this._airAim || this.player.mgActive) && this.player.tankType === 'ALL_ROUNDER') return;
+    if ((this._airAim || this.player.mgActive || this.player.ewActive) && this.player.tankType === 'ALL_ROUNDER') return;
     if (this.inNoFireZone()) { this.noFireWarn(); return; }
     // Xe trinh sát đang chọn ô tên lửa: Space phóng tên lửa dẫn hướng (súng máy nạp đạn không ảnh hưởng)
     if (this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE') {
@@ -4463,7 +4464,7 @@ class ArtilleryGame3D {
     while (S.aimYaw > Math.PI) S.aimYaw -= Math.PI * 2;
     while (S.aimYaw < -Math.PI) S.aimYaw += Math.PI * 2;
     // xe bắn được mục tiêu trên không (6 nòng, trinh sát, trạm súng xe tăng): ngóc kính lên trời tới ~60°
-    const up = this.airAimAllowed(this.player) ? 1.05 : 0.35;
+    const up = this.airAimAllowed(this.player) || (this.player && this.player.ewActive) ? 1.05 : 0.35;
     S.aimPitch = Math.max(-0.3, Math.min(up, S.aimPitch - my * k));
   }
 

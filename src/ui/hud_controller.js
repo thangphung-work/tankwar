@@ -235,6 +235,7 @@ class HUDController {
     if (!this.game.player) return;
     // đang dùng súng máy nóc tháp [4]: chọn đạn pháo = quay về pháo chính
     if (this.game.player.mgActive && this.game.selectMG) this.game.selectMG(false);
+    if (this.game.player.ewActive && this.game.selectJammer) this.game.selectJammer(false);
 
     // Kiểm tra cơ số đạn nâng cao
     if (ammoType === 'AP' && (this.game.player.apAmmoCount || 0) <= 0) {
@@ -320,13 +321,21 @@ class HUDController {
       const S = p._rcws;
       list.push({ type: 'MG762', name: 'SÚNG MÁY', qty: S ? (S.reload > 0 ? 'NẠP' : S.mag) : 200, color: '#c8d6a0', mg: true });
     }
+    // Xe tăng: ô [4] máy phá sóng chống UAV — đang phát: giây còn lại; tắt: % pin (dưới mức bật được thì "SẠC")
+    const ew = p.tankType === 'ALL_ROUNDER' && p.jammer && typeof EWJammer !== 'undefined';
+    const ewOn = ew && this.game.jamming && this.game.jamming(p);
+    if (ew) {
+      const J = p._jam || { e: 1 }, EC = EWJammer.C, lost = !this.game.canJam(p);
+      const qty = lost ? 'HỎNG' : ewOn ? `${Math.ceil(J.e * EC.ON)}S` : J.e < EC.MIN ? `SẠC ${Math.round(J.e * 100)}%` : `${Math.round(J.e * 100)}%`;
+      list.push({ type: 'EW', name: ewOn ? 'ĐANG PHÁ SÓNG' : 'PHÁ SÓNG', qty, color: '#7fd3ff', ew: true });
+    }
     // Chỉ dựng lại khi có thay đổi (hàm này được gọi mỗi khung hình; dựng lại liên tục làm nút mất cú nhấp)
-    const sig = p.selectedAmmo + (p.mgActive ? '+mg' : '') + '|' + list.map(a => a.type + ':' + a.qty).join(',');
+    const sig = p.selectedAmmo + (p.mgActive ? '+mg' : '') + (p.ewActive ? '+ews' : '') + (ewOn ? '+ew' : '') + '|' + list.map(a => a.type + ':' + a.qty).join(',');
     if (ammoContainer._sig === sig) return;
     ammoContainer._sig = sig;
 
     ammoContainer.innerHTML = list.map((a, idx) => {
-      const isActive = a.mg ? !!p.mgActive : (!p.mgActive && p.selectedAmmo === a.type);
+      const isActive = a.ew ? !!p.ewActive : a.mg ? !!p.mgActive : (!p.mgActive && !p.ewActive && p.selectedAmmo === a.type);
       const qtyStr = typeof a.qty === 'string' ? a.qty : a.qty === Infinity ? '∞' : `×${a.qty}`;
       const empty = typeof a.qty === 'number' && a.qty !== Infinity && a.qty <= 0;
       return `
@@ -353,6 +362,10 @@ class HUDController {
     if (mg) {
       const btn = document.getElementById('ammo-tab-MG762');
       if (btn) btn.addEventListener('click', () => this.game.selectMG(true));
+    }
+    if (ew) {
+      const btn = document.getElementById('ammo-tab-EW');
+      if (btn) btn.addEventListener('click', () => this.game.selectJammer());
     }
   }
 

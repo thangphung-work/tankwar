@@ -53,7 +53,7 @@ const VehicleDamage = (() => {
     if (tag === 'atgm') return 'atgm';
     if (tag === 'fuelTank') return 'fuel';
     if (tag === 'ammoBoxes') return 'ammo';
-    if (tag === 'dozer' || tag === 'spareTrack' || tag === 'rcws') return 'heavyAcc';
+    if (tag === 'dozer' || tag === 'spareTrack' || tag === 'rcws' || tag === 'jammer') return 'heavyAcc';
     return 'acc';
   }
 
@@ -83,7 +83,7 @@ const VehicleDamage = (() => {
     skirt: 'VÁY XÍCH', cheek: 'MODULE GIÁP MÁ THÁP', applique: 'GIÁP TĂNG CƯỜNG MŨI', appliqueF: 'TẤM GIÁP TĂNG CƯỜNG MŨI', cageRear: 'LỒNG CHỐNG RPG ĐUÔI XE',
     cageTurret: 'LỒNG CHỐNG RPG ĐUÔI THÁP', era: 'GẠCH GIÁP PHẢN ỨNG NỔ', opticGunner: 'KÍNH NGẮM PHÁO THỦ', opticCdr: 'KÍNH TOÀN CẢNH CHỈ HUY',
     feed: 'MÁNG TIẾP ĐẠN', sensor: 'RADAR TRINH SÁT', aaRadar: 'RADAR PHÒNG KHÔNG', atgm: 'ỐNG PHÓNG TÊN LỬA', fuelTank: 'BÌNH NHIÊN LIỆU', ammoBoxes: 'THÙNG ĐẠN TRÊN SÀN',
-    dozer: 'LƯỠI ỦI', spareTrack: 'MẮT XÍCH DỰ PHÒNG', rcws: 'TRẠM SÚNG MÁY ĐIỀU KHIỂN TỪ XA', mirror: 'GƯƠNG CHIẾU HẬU', lamp: 'CỤM ĐÈN PHA',
+    dozer: 'LƯỠI ỦI', spareTrack: 'MẮT XÍCH DỰ PHÒNG', rcws: 'TRẠM SÚNG MÁY ĐIỀU KHIỂN TỪ XA', jammer: 'MÁY PHÁ SÓNG CHỐNG UAV', mirror: 'GƯƠNG CHIẾU HẬU', lamp: 'CỤM ĐÈN PHA',
     smoke: 'ỐNG PHÓNG LỰU ĐẠN KHÓI', bin: 'THÙNG ĐỒ', box: 'HỘP DỤNG CỤ', can: 'CAN NHIÊN LIỆU', cans: 'CAN NHIÊN LIỆU', rail: 'LAN CAN NÓC',
     railRear: 'LAN CAN NÓC', stowage: 'GIỎ ĐỒ ĐUÔI THÁP', tool: 'DỤNG CỤ DÃ CHIẾN', flap: 'TẤM CHẮN BÙN', shield: 'TẤM CHẮN SÚNG MÁY',
     travelLock: 'GIÁ KHÓA NÒNG', spare: 'BÁNH DỰ PHÒNG', generator: 'MÁY PHÁT ĐIỆN', tarpRoll: 'CUỘN BẠT', searchlight: 'ĐÈN CHIẾU', meteo: 'CỘT KHÍ TƯỢNG',
@@ -1511,7 +1511,7 @@ const VehicleDamage = (() => {
     } else if (kind === 'atgm') {
       events.push({ type: 'atgm', text: `${name} BỊ PHÁ — mất tên lửa chống tăng` });
     } else if (kind === 'heavyAcc') {
-      events.push({ type: 'acc', text: `VĂNG ${name}` });
+      events.push({ type: 'acc', text: tag === 'jammer' ? `VĂNG ${name} — hết phá sóng drone` : `VĂNG ${name}` });
     }
   }
 
@@ -3448,7 +3448,7 @@ const VehicleDamage = (() => {
       case 'atgm': lose(/^atgm$/); break;
       case 'fuel': lose(/^fuelTank$/); break;
       case 'ammo': lose(/^ammoBoxes$/); break;
-      case 'acc': lose(/^(mirror|lamp|bin|box|can|cans|rail|railRear|smoke|tool|flap|stowage|shield|travelLock|spare|generator|tarpRoll|searchlight|meteo|rcws)/); break;
+      case 'acc': lose(/^(mirror|lamp|bin|box|can|cans|rail|railRear|smoke|tool|flap|stowage|shield|travelLock|spare|generator|tarpRoll|searchlight|meteo|rcws|jammer)/); break;
       case 'antenna': breakAntennas(u, null, 0, 0.6, new THREE.Vector3(0, 30, 0)); events.push({ type: 'acc', text: 'Gãy văng cần ăng-ten' }); break;
       case 'track': {
         const side = Math.random() < 0.5 ? 0 : 1;

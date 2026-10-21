@@ -24,6 +24,7 @@ const MAX_RANGE = { ARTILLERY: 3200 };      // tầm bắn tối đa + dư (đơ
 const DEFAULT_RANGE = 2400;   // tên lửa dẫn hướng 2000 + mục tiêu chạy; đạn tăng bay quá tầm hiệu quả 1750
 const RADAR_RANGE = 950;
 const EQ_RADAR_RANGE = 600;   // radar lắp thêm (Equipment.EQ_RADAR_RANGE)
+const EW_DETECT = 2400;        // dò phương xe đang phát sóng phá UAV (ew_jammer.js EWJammer.C.DETECT)
 const MARGIN = 120;            // nới tầm nhìn: gửi sớm 1 chút để xe hiện ra mượt, không giật
 const CLOSE = 260;             // xe ở rất gần luôn được gửi (va chạm, bắn mò cự ly gần)
 const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;
@@ -189,6 +190,8 @@ function updateVisibility(M, now) {
       if (sp && sp > now) { set.add(e.i); continue; }
       const ex = s.x / 10, ez = s.z / 10, m = meta(M, e.i), revealed = m.revealUntil > now;
       const inForest = !revealed && densityAt(M.dens, ex, ez) >= FOREST_DENSE;
+      // xe tăng đang phát sóng phá UAV: lộ với mọi xe địch trong tầm dò phương
+      if (m.jamUntil > now && mine.some(u => Math.hypot(ex - M.S[u.i].x / 10, ez - M.S[u.i].z / 10) < EW_DETECT)) { set.add(e.i); continue; }
       // núp bụi chưa nổ súng: radar / mắt thường phải vào gần hơn tùy loại xe (BUSH_COVER; + MARGIN để hiện mượt)
       const bush = !revealed && (s.f & F_BUSH) ? BUSH_COVER[e.type] || null : null;
       // cờ ngụy trang chỉ tin khi xe có lắp lưới và thật sự đứng yên (chống gửi cờ giả để tàng hình khi chạy)
@@ -483,6 +486,8 @@ function handle(room, client, msg) {
     }
     case 'DRONE_LOCK': {
       // cảnh báo drone bị khóa: chỉ máy điều khiển xe đang khóa, xe phòng không còn sống, khóa drone của phe địch
+      // máy phá sóng chống UAV đang phát (trường j): địch dò phương thấy xe trong tầm EW_DETECT (updateVisibility)
+      if (d.j !== undefined) meta(M, d.i).jamUntil = d.j ? now + 1300 : 0;
       const d = msg.d || {}, ar = M.byIdx.get(d.a), or = M.byIdx.get(d.o), as = M.S[d.a];
       if (!ar || !or || or.type !== 'ARTILLERY' || ar.team === or.team || ownerOf(room, ar) !== client.id) return true;
       if (as && (as.f & F_DEAD)) return true;

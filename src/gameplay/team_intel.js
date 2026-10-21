@@ -151,6 +151,13 @@ const TeamIntel = (() => {
     return r;
   }
 
+  // Xe tăng đang phát sóng phá UAV (ew_jammer.js): địch dò phương bắt được vị trí trong tầm EW DETECT
+  function jamDetect(viewer, t) {
+    if (!game || !game.jamming || !game.jamming(t)) return false;
+    const R = typeof EWJammer !== 'undefined' ? EWJammer.C.DETECT : 2400;
+    return Math.hypot(t.x - viewer.x, t.z - viewer.z) < R;
+  }
+
   /** Xe `viewer` có biết vị trí của `t` không (đồng minh luôn biết) */
   function knows(viewer, t) {
     if (!viewer || !t) return false;
@@ -169,8 +176,9 @@ const TeamIntel = (() => {
     if (!viewer || !t) return null;
     if (t.team === viewer.team || t.isDead) return 'direct';
     if (t._netHidden) return null;
+    if (jamDetect(viewer, t)) return true;
     if (seesDirect(viewer, t) || droneSees(viewer.team, t)) return 'direct';
-    if (radarContact(viewer, t)) return 'radar';
+    if (radarContact(viewer, t) || jamDetect(viewer, t)) return 'radar';
     if (reportOf(viewer.team, t)) return 'report';
     return null;
   }
