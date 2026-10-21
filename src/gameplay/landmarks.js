@@ -333,8 +333,8 @@ const Landmarks = (() => {
       concDark: () => C({ color: 0x9a968c, roughness: 0.97 }),
       steelRed: () => G(1, { color: 0xb04a2e, roughness: 0.62, metalness: 0.35 }),
       steelWhite: () => G(0.5, { color: 0xdcdad2, roughness: 0.5, metalness: 0.25 }),
-      steelGray: () => G(1.5, { color: 0x7c8186, roughness: 0.55, metalness: 0.5 }),
-      steelDark: () => G(2, { color: 0x3a3d40, roughness: 0.6, metalness: 0.55 }),
+      steelGray: () => G(1.5, { color: 0x80858a, roughness: 0.55, metalness: 0.35 }),
+      steelDark: () => G(2, { color: 0x45494c, roughness: 0.62, metalness: 0.35 }),
       olive: () => G(0.6, { color: 0x58623f, roughness: 0.78, metalness: 0.12 }),
       oliveDark: () => G(0.8, { color: 0x3c4430, roughness: 0.82, metalness: 0.1 }),
       ochre: () => G(0.7, { color: 0xc9a46a, roughness: 0.55, metalness: 0.2 }),
@@ -1021,15 +1021,15 @@ const Landmarks = (() => {
       const a = Math.atan2(-tr, -tf), H = 64, W = 22, h2 = W / 2, base = M4(tf, 0, tr, 0, -a, 0);
       for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
         K.cbox('concDark', x * h2, 1.5, z * h2, 6, 3, 6, 0.4, 0, base);
-        K.add('steelDark', new THREE.BoxGeometry(2.2, H, 2.2), mul(base, M4(x * h2, H / 2 + 3, z * h2)));
+        K.add('olive', new THREE.BoxGeometry(2.2, H, 2.2), mul(base, M4(x * h2, H / 2 + 3, z * h2)));
       }
       for (let y = 8; y < H; y += 14) for (const [p0, p1] of [[[-h2, -h2], [h2, -h2]], [[h2, -h2], [h2, h2]], [[h2, h2], [-h2, h2]], [[-h2, h2], [-h2, -h2]]]) {
-        K.beam('steelDark', [p0[0], y, p0[1]], [p1[0], y, p1[1]], 1, base);
-        K.beam('steelDark', [p0[0], y, p0[1]], [p1[0], y + 14, p1[1]], 0.7, base);
-        K.beam('steelDark', [p1[0], y, p1[1]], [p0[0], y + 14, p0[1]], 0.7, base);
+        K.beam('olive', [p0[0], y, p0[1]], [p1[0], y, p1[1]], 1, base);
+        K.beam('olive', [p0[0], y, p0[1]], [p1[0], y + 14, p1[1]], 0.7, base);
+        K.beam('olive', [p1[0], y, p1[1]], [p0[0], y + 14, p0[1]], 0.7, base);
       }
       const D = h2 + 7, top = H + 3;
-      K.cbox('steelDark', 0, top + 0.8, 0, D * 2, 1.6, D * 2, 0.3, 0, base);
+      K.cbox('olive', 0, top + 0.8, 0, D * 2, 1.6, D * 2, 0.3, 0, base);
       for (let k = -D; k <= D; k += 6) for (const [x, z] of [[k, -D], [k, D], [-D, k], [D, k]]) K.add('steelGray', new THREE.BoxGeometry(0.5, 8.4, 0.5), mul(base, M4(x, top + 5.8, z)));
       for (const y of [top + 5.4, top + 9.8]) for (const [x, z, w2, d2] of [[0, -D, D * 2, 0.5], [0, D, D * 2, 0.5], [-D, 0, 0.5, D * 2], [D, 0, 0.5, D * 2]]) K.add('steelGray', new THREE.BoxGeometry(w2, 0.5, d2), mul(base, M4(x, y, z)));
       // cabin
@@ -1053,11 +1053,11 @@ const Landmarks = (() => {
       // 2 dầm cốn chữ C + bậc lưới thép (cao ~18 cm, sâu ~28 cm), tay vịn 2 bên có cột, chiếu nghỉ nối vào chân tháp bằng dầm,
       // đợt cuối lên thẳng mép sàn, cabin có cửa thép mở ra phía cầu thang
       const deck = top + 1.6, rise = deck / 4, run = h2 - 1, xs = -D - 3.4, sw = 4.6, zl = run + 3.2, nst = Math.round(rise / 1.45);
-      for (const z of [-zl - 2.8, zl + 2.8]) for (const dx of [-sw / 2 - 0.6, sw / 2 + 0.6]) K.add('steelDark', new THREE.BoxGeometry(1, deck + 4, 1), mul(base, M4(xs + dx, (deck + 4) / 2, z)));
+      for (const z of [-zl - 2.8, zl + 2.8]) for (const dx of [-sw / 2 - 0.6, sw / 2 + 0.6]) K.add('olive', new THREE.BoxGeometry(1, deck + 4, 1), mul(base, M4(xs + dx, (deck + 4) / 2, z)));
       for (let k = 0; k < 4; k++) {
         const z0 = k % 2 ? run : -run, z1 = -z0, y0 = k * rise, y1 = y0 + rise, sg = Math.sign(z1);
         for (const dx of [-sw / 2, sw / 2]) {
-          K.beam('steelDark', [xs + dx, y0 - 0.6, z0], [xs + dx, y1 - 0.6, z1], 0.9, base);
+          K.beam('olive', [xs + dx, y0 - 0.6, z0], [xs + dx, y1 - 0.6, z1], 0.9, base);
           K.beam('yellow', [xs + dx * 1.1, y0 + 6.6, z0], [xs + dx * 1.1, y1 + 6.6, z1], 0.35, base);
           for (let i = 0; i <= 3; i++) { const t = i / 3; K.add('steelGray', new THREE.BoxGeometry(0.3, 6.6, 0.3), mul(base, M4(xs + dx * 1.1, y0 + rise * t + 3.3, z0 + (z1 - z0) * t))); }
         }
