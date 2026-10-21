@@ -27,7 +27,7 @@
     ],
     SCOUT: [
       { icon: 'leaf', name: 'Núp bụi', desc: 'Trong bụi, địch chỉ thấy khi tới thật gần' },
-      { icon: 'rocket', name: 'Tên lửa diệt phòng không', desc: 'Tên lửa tự bay 2 km; bắn xe 6 nòng thêm 50% sát thương', key: '3' },
+      { icon: 'rocket', name: 'Tên lửa chống tăng', desc: 'Tự bay tới xe địch xa 2 km', key: '3' },
       { icon: 'gauge', name: 'Nhanh & nhìn xa', desc: '100 km/h, tầm nhìn xa nhất trận, có radar' }
     ]
   };

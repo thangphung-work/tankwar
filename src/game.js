@@ -14,9 +14,6 @@ function domById(id) {
   return found;
 }
 
-// Xe trinh sát khắc chế xe phòng không (6 nòng): mọi phát trúng thẳng của trinh sát lên xe 6 nòng nhân hệ số này
-const SCOUT_VS_AA = 1.5;
-
 class ArtilleryGame3D {
   constructor() {
     this.container = domById('webgl-container');
@@ -2303,8 +2300,6 @@ class ArtilleryGame3D {
         }
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
       }
-      // Xe trinh sát chuyên diệt phòng không: tên lửa / súng máy trúng xe 6 nòng gây thêm 50% sát thương
-      if (shooter && shooter.tankType === 'SCOUT' && directTarget.tankType === 'GATLING') directDamage = Math.round(directDamage * SCOUT_VS_AA * 1000) / 1000;
       // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy
       if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(directTarget);
 
