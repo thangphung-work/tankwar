@@ -1544,8 +1544,14 @@ class ArtilleryGame3D {
     const want = (Math.atan2(aimX - bo.x, -(aimZ - bo.z)) * 180 / Math.PI + (tr.windAz || 0) - off.az + 720) % 360;
     const diff = ((want - P.azimuth + 540) % 360) - 180;
     const step = rotSpeed * dt;
+    // Lựu pháo trong hầm mà mục tiêu đang khóa không bắn tới (đường đạn vướng mái / ụ đất): không ghì nòng vào trần,
+    // giữ nòng ở góc bắn ra miệng hầm tốt nhất (tháp tự quay tới); mục tiêu lọt vào tầm bắn ra cửa thì bám lại như thường
+    const hold = P.tankType === 'ARTILLERY' && this._artyShelter && this._shelterShot && tr.solved && tr.reachable === false ? this._shelterShot : null;
+    if (hold) { P.aimAz = hold.az; P.aimEl = hold.el; tr.held = true; }
+    else if (tr.held) { tr.held = false; P.aimAz = P.aimEl = undefined; }
     // pháo tự hành: tháp quay vòng phía đuôi xe, không quét qua điểm mù mũi xe
-    if (P.turretBlindHalf && P.turretBlindHalf() > 0) P.azimuth = P.stepAzimuth(P.azimuth, want, step).az;
+    if (hold) { /* tháp do lệnh aimAz quay (spg.js) */ }
+    else if (P.turretBlindHalf && P.turretBlindHalf() > 0) P.azimuth = P.stepAzimuth(P.azimuth, want, step).az;
     else P.azimuth = (P.azimuth + Math.max(-step, Math.min(step, diff)) + 360) % 360;
 
     // 4. Góc tà: xe 6 nòng do máy tính hỏa lực tự nâng nòng; xe khác giải đường đạn ~8 lần/giây
@@ -1621,7 +1627,7 @@ class ArtilleryGame3D {
       const elCap = B.maxLobElevationFor ? B.maxLobElevationFor(P) : (B.maxElevationFor ? B.maxElevationFor(P) : 85);
       if (tr.el - off.el > elCap + 0.5) tr.reachable = false;
       const de = (tr.el - off.el) - P.elevation, es = elevSpeed * dt;
-      P.elevation = Math.max(-10, Math.min(85, P.elevation + Math.max(-es, Math.min(es, de))));
+      if (!tr.held) P.elevation = Math.max(-10, Math.min(85, P.elevation + Math.max(-es, Math.min(es, de))));
     }
     this.syncHUDControls();
   }
@@ -3559,8 +3565,8 @@ class ArtilleryGame3D {
   // trưởng xe ngồi ở cửa nóc tháp, nhìn dọc theo tháp ra miệng hầm (thấy nòng pháo, vách hầm, trần, cửa hầm sáng phía
   // trước). Giữ chuột giữa + kéo vẫn nhìn quanh. Ra khỏi mái thì trả dần về camera bám đuôi. inT: 0 = bám đuôi, 1 = trong xe
   // XE LỰU PHÁO VÀO HẦM: tự quay nòng ra miệng hầm phía đuôi xe (mũi xe / cabin là điểm mù, xe chạy mũi vào thì đuôi quay
-  // ra cửa vừa đi vào) và đặt góc bắn tối ưu — góc nâng cao nhất (≤ 45°) mà đạn liều đầy vẫn lọt ra khỏi miệng hầm, không
-  // vướng lanh tô / mái -> bắn xa nhất có thể từ trong hầm. Đang khóa xe địch thì để máy tính hỏa lực tự giải như thường.
+  // ra cửa vừa đi vào) và đặt góc bắn tối ưu — góc nâng cao nhất mà đạn liều đầy vẫn lọt ra khỏi miệng hầm (vát chéo), không
+  // vướng lanh tô / dầm / mái. Đang khóa xe địch bắn tới được thì máy tính hỏa lực tự giải như thường.
   updateArtyShelterAim() {
     const P = this.player, T = this.terrain;
     if (!P || P.isDead || P.tankType !== 'ARTILLERY' || !T || !T.shelterOf) { this._artyShelter = null; return; }
@@ -3568,19 +3574,20 @@ class ArtilleryGame3D {
     const inside = !!K && T.isProtectedPoint(P.x, (P.y || 0) + 12, P.z);
     const was = this._artyShelter;
     this._artyShelter = inside ? K : null;
-    if (!inside || was === K) return;
-    if (this.lockedTarget && !this.lockedTarget.isDead) return;
-    const best = this.bestShelterShot(P, K);
-    if (!best) return;
+    if (!inside) { this._shelterShot = null; return; }
+    if (was === K) return;
+    const best = this._shelterShot = this.bestShelterShot(P, K);
+    if (!best || (this.lockedTarget && !this.lockedTarget.isDead)) return;
     // lệnh thẳng hướng & góc nâng cho tháp (không qua bộ giải điểm ngắm: bộ giải có thể chọn quỹ đạo cầu vồng cao -> nòng
     // nâng chạm trần hầm); tháp tự quay vòng phía đuôi (không quét qua điểm mù cabin)
     this._aimPoint = null; this._lockTrack = null;
     P.aimAz = best.az; P.aimEl = best.el;
     P.charge = 1;
     this.syncHUDControls();
-    this.addCombatLog(`[[crosshair]] Vào hầm: nòng quay ra miệng hầm phía đuôi xe, nâng ${best.el}° — bắn xa nhất ~${best.d}M mà không vướng mái hầm`, 'tip');
+    this.addCombatLog(`[[crosshair]] Vào hầm: nòng quay ra miệng hầm phía đuôi xe — nâng được tối đa ${best.el}° mà không vướng mái (miệng hầm vát chéo)`, 'tip');
   }
-  // Góc nâng cao nhất (bước 1°) ra miệng hầm phía đuôi xe mà nòng không chạm trần & đường đạn liều đầy không vướng bê tông
+  // Góc nâng cao nhất (bước 1°, tới giới hạn giá pháo) ra miệng hầm phía đuôi xe mà nòng không chạm trần & đường đạn liều đầy
+  // không vướng bê tông: góc cầu vồng cao nhất bắn được từ chỗ đứng này (máy tính hỏa lực chọn góc thật khi bắn mục tiêu)
   bestShelterShot(P, K) {
     const T = this.terrain, B = this.ballistics, ba = P.bodyAngle || 0;
     const sg = Math.sin(ba) * K.fx + Math.cos(ba) * K.fz >= 0 ? 1 : -1;   // hướng đuôi xe chiếu lên trục hầm

@@ -39,6 +39,12 @@ const Strongholds = (() => {
   S.WO = S.WI + S.TW;
   S.CREST = S.CEIL + S.ROOF + S.COVER;
   S.TOP = S.CREST + S.LIP;
+  // VÁT CHÉO MIỆNG HẦM: mép mái phía trên 2 cửa hầm (trong phạm vi lòng hầm, giữa 2 góc vát nách) cắt xiên ~60°, bắt đầu
+  // lùi vào trong CH đơn vị từ mặt tiền, lên tới đỉnh gờ -> pháo trong hầm nâng nòng cao hơn bắn ra ngoài (vẫn được mái che
+  // phía trên). Mặt cắt (f, y): đường thẳng từ (HB - CH, CEIL) tới (HB, TOP)
+  S.CH = 22;
+  S.CHK = (S.TOP - S.CEIL) / S.CH;
+  S.CH_R = S.WI - S.HAUNCH;   // nửa bề rộng phần vát (phía ngoài: mái gác trên góc vát nách & tường bên giữ mặt tiền đứng)
   S.RAMP_END = S.HB + S.RAMP;
   S.ZONE_END = S.HB + 74;   // vùng chiếm cờ: khoang + đoạn đầu dốc (giữ nguyên cỡ cũ khi dốc dài ra)
   S.END = S.HB + S.RUN;
@@ -68,6 +74,8 @@ const Strongholds = (() => {
   const wingBevel = (t, b) => Math.min(S.WING_BEVEL, Math.max(0, t - b - 1) * 0.6);
   const floorY = af => af <= S.HB ? -S.D : af >= S.RAMP_END ? 0 : -S.D * (1 - rampK((af - S.HB) / S.RAMP));
   const inCut = (af, ar) => ar < cutHalf(af);
+  // đáy mái tại |f| trong phần vát miệng hầm (CEIL nếu chưa tới chỗ vát)
+  const chamY = af => af <= S.HB - S.CH ? S.CEIL : S.CEIL + (af - (S.HB - S.CH)) * S.CHK;
   // Cao độ mặt trên nóc mái nhìn thấy (so với cốt nền) theo |f|, |r|: lớp đất phủ, nắp hầm bê tông (chóp cụt vát 4 phía,
   // khớp hình dựng ở buildOne) và gờ mặt tiền 2 đầu (mặt trên phẳng rồi vát 45° ra ngoài)
   function roofTopY(af, ar) {
@@ -78,7 +86,11 @@ const Strongholds = (() => {
       y = Math.max(y, y1 - t * (y1 - y0));
     }
     const fi = S.HB - S.LIP_T, lb = S.LIP_BEVEL;
-    if (af >= fi && af <= S.HB) y = Math.max(y, af <= S.HB - lb ? S.TOP : S.TOP - (af - (S.HB - lb)));
+    if (af >= fi && af <= S.HB) {
+      const yl = af <= S.HB - lb ? S.TOP : S.TOP - (af - (S.HB - lb));
+      // phần giữa bị mặt vát cắt: ngoài chỗ mặt vát vượt lên khỏi mép gờ thì không còn gì
+      if (!(ar < S.CH_R && chamY(af) >= yl)) y = Math.max(y, yl);
+    }
     return y;
   }
   // Khoảng cách ra ngoài lõi (khối mái + tường bên) trên mặt bằng
@@ -862,7 +874,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (onTop && K.nDown && this.cutAt(K, L.f, L.r)) return K.G + floorY(af);
         // Trên nóc mái: theo đúng mặt nhìn thấy — nắp hầm bê tông nhô trên lớp đất phủ, gờ mặt tiền ở 2 đầu (trước đây lấy
         // mặt đất phủ -> xe lún nửa bánh vào nắp hầm, chúi mũi vào gờ mặt tiền)
-        if (onTop && af <= S.HB + 0.5 && ar <= S.WO + 2) return K.G + roofTopY(af, ar);
+        if (onTop && af <= S.HB + 0.5 && ar <= S.WO + 2) { const rt = roofTopY(af, ar); return K.G + (rt > -1e6 ? rt : floorY(af)); }
         // Trên ụ: mọi điểm ngoài kênh hở (kể cả phần mái che phía trên khoang) là mặt đất đắp
         if (onTop && h !== null && !(inCut(af, ar) && af > S.HB)) return K.G + Math.max(0, h);
         if (af <= S.END + 6 && ar < cutHalf(af) + S.WING_T + 26) {
@@ -924,8 +936,16 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           if (ar < S.WI) for (const bf of S.BEAMS_F) if (Math.abs(L.f - bf) < 3 + m) ceil = S.CEIL - S.BEAM - m;
           // vát nách góc trần - tường
           if (ar > S.WI - S.HAUNCH - m) ceil = Math.min(ceil, S.CEIL - S.HAUNCH + (S.WI - ar) - m);
+          // vát chéo miệng hầm: đáy mái nâng dần ra tới mặt tiền
+          const inCh = ar < S.CH_R + m && af > S.HB - S.CH - m;
+          if (inCh) ceil = Math.max(ceil, chamY(af) - m);
           if (yy >= ceil) {
             if (K.nDown && this.cutAt(K, L.f, L.r)) continue;   // ô mái đã sập: trống
+            // trúng mặt vát: pháp tuyến chếch xuống & ra ngoài
+            if (inCh && yy < chamY(af) + 3) {
+              const l = Math.hypot(S.CHK, 1), h = this.dirN(K, Math.sign(L.f), 0);
+              return { K, normal: { nx: h.nx * S.CHK / l, ny: -1 / l, nz: h.nz * S.CHK / l } };
+            }
             return { K, normal: af > S.HB - 3 ? this.dirN(K, Math.sign(L.f), 0) : null };
           }
           // tường bên
@@ -982,7 +1002,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           // không thì vết đạn / rỗ / muội nằm chìm sau mặt bê tông nhìn thấy (bắn vào cứ điểm như không để lại gì)
           const [sx, sy, sz] = P(lo), nn = c.normal;
           const o = nn ? 0.15 : 0;
-          return { x: sx + (nn ? nn.nx * o : 0), y: sy, z: sz + (nn ? nn.nz * o : 0), type: 'WALL', normal: c.normal, K: c.K };
+          return { x: sx + (nn ? nn.nx * o : 0), y: sy + (nn && nn.ny ? nn.ny * o : 0), z: sz + (nn ? nn.nz * o : 0), type: 'WALL', normal: c.normal, K: c.K };
         }
         const sf = this.surfaceAt(x, z);
         return { x, y: sf !== null ? Math.max(y, sf - 0.2) : y, z, type: 'GROUND' };
@@ -1166,6 +1186,10 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
             const fL = sdx.alongR ? fc + sdx.sg * off : fc + s, rL = sdx.alongR ? rc + s : rc + sdx.sg * off;
             const inLip = Math.abs(fL) > S.HB - S.LIP_T - 0.5;
             const top = inLip ? S.TOP : S.CREST + 0.3, roofTop = S.CEIL + S.ROOF;
+            // phần vát miệng hầm: đáy mái nâng theo mặt vát; mặt vát vượt khỏi đỉnh thì cạnh này không còn bê tông
+            const cb = Math.abs(rL) < S.CH_R ? chamY(Math.abs(fL)) : S.CEIL;
+            if (cb >= top - 1.5) { cols.push(null); continue; }
+            const ry = (y) => cb > S.CEIL ? cb + (y - S.CEIL) * (top - cb) / (top - S.CEIL) : y;
             // hướng vào lòng lỗ sập (để làm mặt vỡ lồi lõm)
             const inF = sdx.alongR ? -sdx.sg : 0, inR = sdx.alongR ? 0 : -sdx.sg;
             // mặt vỡ thành từng khối bậc lồi lõm (nhiễu liền mạch theo dọc cạnh, mỗi tầng một kiểu); mép dưới bản mái
@@ -1183,14 +1207,14 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
             const c = [];
             for (let v = 0; v < ys.length; v++) {
               const lf = fL + inF * outs[v], lr = rL + inR * outs[v];
-              pos.push(lf, ys[v], lr);
+              pos.push(lf, ry(ys[v]), lr);
               const g = cs[v];
               col.push(...(g < 0 ? ec : [g, g * 0.97, g * 0.9]));
               c.push(pos.length / 3 - 1);
             }
             cols.push(c);
             // cốt thép 2 lớp (đáy & đỉnh bản mái) đứt, thõng vào lỗ sập
-            if (rnd() < 0.5) {
+            if (rnd() < 0.5 && cb <= S.CEIL) {
               for (const yb of [S.CEIL + 0.8, roofTop - 0.8]) {
                 if (rnd() < 0.4) continue;
                 const len = 1.5 + rnd() * 4, droop = len * (0.25 + rnd() * 0.6);
@@ -1198,7 +1222,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
               }
             }
           }
-          for (let k = 0; k < n; k++) for (let v = 0; v < Math.min(cols[k].length, cols[k + 1].length) - 1; v++) quad(cols[k][v], cols[k + 1][v], cols[k + 1][v + 1], cols[k][v + 1]);
+          for (let k = 0; k < n; k++) if (cols[k] && cols[k + 1]) for (let v = 0; v < Math.min(cols[k].length, cols[k + 1].length) - 1; v++) quad(cols[k][v], cols[k + 1][v], cols[k + 1][v + 1], cols[k][v + 1]);
         }
       }
       if (!idx.length) return;
@@ -1571,15 +1595,21 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const C = new Builder(), Rf = new Builder();
       const { HB, WI, WO, CEIL, ROOF, TOP, D } = S;
       // Mái (mặt dưới = trần khoang; mặt trên bị đất phủ)
-      Rf.box(-HB, HB, CEIL, CEIL + ROOF, -WO - 2, WO + 2, SC, { top: true, fp: true, fn: true }, { bottom: 0.78 });
+      const HN = S.HAUNCH, BV = S.BEVEL, CR = S.CH_R;
+      // Phần mái gác trên góc vát nách & tường bên (2 bên): khối hộp như cũ, mặt bên phía trong khép kín mép phần vát
+      for (const sr of [-1, 1]) Rf.box(-HB, HB, CEIL, CEIL + ROOF, sr > 0 ? CR : -WO - 2, sr > 0 ? WO + 2 : -CR, SC, { top: true, fp: true, fn: true }, { bottom: 0.78 });
+      // Phần mái giữa (trên lòng hầm): tiết diện vát chéo 2 đầu
+      const fi0 = HB - S.LIP_T, yCh = chamY(fi0), fCh = HB - S.CH;
+      Rf.prism([[-fCh, CEIL], [fCh, CEIL], [fi0, yCh], [fi0, CEIL + ROOF], [-fi0, CEIL + ROOF], [-fi0, yCh]], 'r', -CR, CR, SC, [2, 3, 4], false, { 0: 0.78, 1: 0.9, 5: 0.9 });
       // Mặt tiền 2 đầu (gờ dày nhô lên khỏi lớp đất)
-      const HN = S.HAUNCH, BV = S.BEVEL;
       for (const sg of [-1, 1]) {
         // tiết diện (f, y): mặt tiền đứng, mép trên vát 45° lùi vào trong
         const fi = sg * (HB - S.LIP_T), fo = sg * HB, LB = S.LIP_BEVEL;
-        Rf.prism([[fi, CEIL - 0.01], [fo, CEIL - 0.01], [fo, TOP - LB], [fo - sg * LB, TOP], [fi, TOP]], 'r', -WO - 2, WO + 2, SC, [0, 4], true, { 2: 1.1, 3: 1.04 });
-        // Mép vát dưới lanh tô (chỉ đoạn giữa 2 góc vát nách)
-        Rf.box(sg > 0 ? HB - 1.2 : -HB, sg > 0 ? HB + 0.6 : -HB - 0.6, CEIL - 1.6, CEIL, -WI + HN, WI - HN, SC, { top: true }, { bottom: 0.7 });
+        for (const sr of [-1, 1]) Rf.prism([[fi, CEIL - 0.01], [fo, CEIL - 0.01], [fo, TOP - LB], [fo - sg * LB, TOP], [fi, TOP]], 'r', sr > 0 ? CR : -WO - 2, sr > 0 ? WO + 2 : -CR, SC, [0, 4], true, { 2: 1.1, 3: 1.04 });
+        // phần giữa: gờ bị mặt vát cắt — mặt vát -> giao với mép vát trên gờ -> đỉnh gờ
+        const fx = (S.TOP - LB + HB - S.CEIL + S.CHK * (HB - S.CH)) / (1 + S.CHK);   // giao mặt vát & mép vát 45° của gờ
+        const yx = S.CEIL + (fx - (HB - S.CH)) * S.CHK;
+        Rf.prism([[fi, chamY(HB - S.LIP_T)], [sg * fx, yx], [fo - sg * LB, TOP], [fi, TOP]], 'r', -CR, CR, SC, [3], true, { 0: 0.9, 1: 1.1, 2: 1.04 });
       }
       // Tường bên (chỉ mặt trong lộ ra)
       for (const sg of [-1, 1]) {
@@ -1757,15 +1787,22 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const letter = letterTexture(K.id);
       for (const sg of [-1, 1]) {
         // chữ & vạch sơn trên mặt tiền: không sơn đè lên lỗ hố đạn
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), holeDiscard(new THREE.MeshStandardMaterial({ map: letter, transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
-        m.position.set(sg * (HB + 0.08), CEIL + (S.TOP - CEIL) / 2, 0);
-        m.rotation.y = sg > 0 ? Math.PI / 2 : -Math.PI / 2;
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(22, 22), holeDiscard(new THREE.MeshStandardMaterial({ map: letter, transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
+        // mặt vát miệng hầm: trục ngang theo r, trục dọc theo dốc mặt vát, pháp tuyến chếch xuống & ra ngoài
+        const cl = Math.hypot(S.CHK, 1), cnf = S.CHK / cl, cny = -1 / cl;
+        const onCh = (t, out) => {   // t: quãng dọc mặt vát từ mép dưới (đơn vị)
+          const uf = 1 / cl, uy = S.CHK / cl;
+          return new THREE.Vector3(sg * (HB - S.CH + uf * t + cnf * out), CEIL + uy * t + cny * out, 0);
+        };
+        const chBasis = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, -sg), new THREE.Vector3(-sg * cny, cnf, 0), new THREE.Vector3(sg * cnf, cny, 0));
+        m.quaternion.setFromRotationMatrix(chBasis);
+        m.position.copy(onCh(22, 0.1));
         roofGrp.add(m);
         K.fadeMats.push(m.material);
-        // vạch sơn cảnh báo vàng đen dưới lanh tô
+        // vạch sơn cảnh báo vàng đen dọc mép dưới mặt vát
         const stripe = new THREE.Mesh(new THREE.PlaneGeometry((WI - S.HAUNCH) * 2, 1.8), holeDiscard(new THREE.MeshStandardMaterial({ map: hazardTex(), roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
-        stripe.position.set(sg * (HB + 0.68), CEIL - 0.6, 0);
-        stripe.rotation.y = sg > 0 ? Math.PI / 2 : -Math.PI / 2;
+        stripe.quaternion.setFromRotationMatrix(chBasis);
+        stripe.position.copy(onCh(1.4, 0.1));
         roofGrp.add(stripe);
         K.fadeMats.push(stripe.material);
       }

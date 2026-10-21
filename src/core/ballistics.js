@@ -1257,6 +1257,12 @@ class BallisticsSystem3D {
       if (Math.abs(s.x) > limX || Math.abs(s.z) > limZ) { hitType = 'OUT'; break; }
       if (s.y >= ceilY || !terrain) continue;
       // Kiểm tra va chạm công sự móng ngựa / tòa nhà 3D
+      // Bê tông / ụ đất cứ điểm: quét theo cả đoạn bay như đạn thật (bước mô phỏng ~50 đv lọt qua mái dày 26 đv; bắn từ
+      // trong hầm thì đạn đã vượt qua mái trước mốc 0,06 s) -> dự đoán & máy tính hỏa lực biết nòng có bắn lọt ra miệng hầm
+      if (t > 0.004 && terrain.strongholdSegmentHit) {
+        const sh = terrain.strongholdSegmentHit(px0, py0, pz0, s.x, s.y, s.z);
+        if (sh) { s.x = sh.x; s.y = sh.y; s.z = sh.z; hitType = sh.type === 'WALL' ? 'WALL' : 'GROUND'; break; }
+      }
       if (t > 0.06 && terrain.checkHorseshoeCollision(s.x, s.y, s.z).hit) { hitType = 'WALL'; break; }
       const gy = terrain.getElevationAt(s.x, s.z);
       // Đạn chùm: đạn mẹ tách vỏ ở ~165 trên mặt đất khi đang lao xuống (cùng điều kiện với đạn thật)
