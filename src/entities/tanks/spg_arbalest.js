@@ -343,40 +343,15 @@
     chassis.add(g);
     const b = new VehicleKit.PartBatch(DECK_Y);
     b.setTag('spare');
-    const R = WHEEL_R - 0.12, H = TIRE_W * 0.46, BEAD = 3.2;
+    const LUG = 0.42, R = WHEEL_R - LUG, H = TIRE_W * 0.47, BEAD = 3.2;
     const yc = 0.95 + H;
 
-    // Thân lốp: lathe theo mặt cắt (hông phồng, vai bo, mặt gai phẳng)
-    const prof = [
-      [BEAD, -H * 0.78], [BEAD + 0.3, -H * 0.93], [BEAD + 0.9, -H], [R - 0.65, -H * 0.97], [R - 0.25, -H * 0.86],
-      [R - 0.04, -H * 0.66], [R, -H * 0.35], [R, H * 0.35], [R - 0.04, H * 0.66], [R - 0.25, H * 0.86],
-      [R - 0.65, H * 0.97], [BEAD + 0.9, H], [BEAD + 0.3, H * 0.93], [BEAD, H * 0.78]
-    ].map(([r, y]) => new THREE.Vector2(r, y));
-    b.add(latheTopUV(prof, 40), M.tire, [0, yc, 0]);
-    // Gai chữ V: 2 hàng khối lệch nửa bước, nghiêng ngược chiều
-    const N = 26;
-    for (let i = 0; i < N; i++) {
-      for (const sy of [-1, 1]) {
-        const a = ((i + (sy > 0 ? 0 : 0.5)) / N) * Math.PI * 2;
-        b.box(0.34, 0.95, 0.85, M.tire, [Math.cos(a) * (R + 0.08), yc + sy * 0.6, -Math.sin(a) * (R + 0.08)], [sy * 0.45, a, 0, 'YXZ']);
-      }
-    }
-    // Hông lốp mặt trên: gờ vòng + chữ nổi (cỡ lốp, mã sản xuất)
-    b.add(new THREE.TorusGeometry(4.3, 0.07, 4, 40), M.tire, [0, yc + H * 0.985, 0], [Math.PI / 2, 0, 0]);
-    for (const [a0, n] of [[0.35, 11], [3.5, 7]]) {
-      for (let k = 0; k < n; k++) {
-        const a = a0 + k * 0.085;
-        b.box(0.32, 0.08, 0.13 + (k % 3 === 1 ? 0.08 : 0), M.tire, [Math.cos(a) * 4.75, yc + H * 0.975, -Math.sin(a) * 4.75], [0, a, 0]);
-      }
-    }
+    // Lốp cùng kiểu 6 bánh xe (gai chữ V đúc liền, chữ nổi hông), nằm ngửa hông ngoài lên trên
+    for (const geo of tireGeos({ R, H, bead: BEAD, lugH: LUG, seed: 23 }, M)) b.add(geo, M.tire, [0, yc, 0], [0, 0.3, 0]);
 
     // Vành thép: ống vành trong lốp + mặt vành lòng chảo (lathe từ mép ngoài vào tâm)
     b.cyl(BEAD + 0.02, BEAD + 0.02, H * 1.6, 30, M.paintDusty, [0, yc, 0], 'y', null, true);
-    const rimTop = [
-      [BEAD + 0.28, H * 0.74], [BEAD + 0.26, H * 0.9], [BEAD + 0.02, H * 0.95], [BEAD - 0.12, H * 0.8],
-      [BEAD - 0.42, H * 0.42], [BEAD - 0.7, H * 0.3], [1.75, H * 0.3], [1.6, H * 0.38], [1.45, H * 0.56], [1.05, H * 0.6]
-    ].map(([r, y]) => new THREE.Vector2(r, y));
-    b.add(latheTopUV(rimTop, 32), M.paintDusty, [0, yc, 0]);
+    b.add(rimFaceGeo(BEAD, H), M.paintDusty, [0, yc, 0]);
     // Moay-ơ, đai ốc bánh (thiếu 1 con — mất ngoài chiến trường chưa kịp thay), van bơm hơi
     b.cyl(0.95, 1.05, 0.42, 14, M.steel, [0, yc + H * 0.6 + 0.2, 0]);
     for (let i = 0; i < 10; i++) {
@@ -396,7 +371,7 @@
 
     // Dây chằng vải + khóa tăng đơ, hai đầu móc vào khoen trên sàn (chạy dọc trục z cục bộ, lệch khỏi moay-ơ)
     const sx = 1.7;
-    const zo = Math.sqrt(R * R - sx * sx), zr = Math.sqrt((BEAD + 0.2) ** 2 - sx * sx);
+    const zo = Math.sqrt((R + LUG * 0.3) ** 2 - sx * sx), zr = Math.sqrt((BEAD + 0.2) ** 2 - sx * sx);
     const path = [
       [0.02, -6.3], [yc - 0.5, -zo - 0.62], [yc + 0.85, -zo - 0.5], [yc + H + 0.1, -zo + 0.35], [yc + H + 0.08, -zr],
       [yc + H + 0.02, 0], [yc + H + 0.08, zr], [yc + H + 0.1, zo - 0.35], [yc + 0.85, zo + 0.5], [yc - 0.5, zo + 0.62], [0.02, 6.3]
@@ -420,6 +395,20 @@
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) * VehicleKit.UV_SCALE, pos.getZ(i) * VehicleKit.UV_SCALE + pos.getY(i) * 0.02);
     geo.userData.customUV = true;
     return geo;
+  }
+
+  // Mặt vành thép lòng chảo (trục Y, mặt ngoài hướng +Y): mép vành cuộn, thành chảo lõm, mặt bắt bu-lông, moay-ơ
+  function rimFaceGeo(bead, H) {
+    return latheTopUV([
+      [bead + 0.28, H * 0.74], [bead + 0.26, H * 0.9], [bead + 0.02, H * 0.95], [bead - 0.12, H * 0.8],
+      [bead - 0.42, H * 0.42], [bead - 0.7, H * 0.3], [1.75, H * 0.3], [1.6, H * 0.38], [1.45, H * 0.56], [1.05, H * 0.6]
+    ].map(([r, y]) => new THREE.Vector2(r, y)), 32);
+  }
+
+  // Lốp từ VehicleKit.tireGeometry; không có vật liệu lốp riêng (không có document) thì trụ cao su đơn giản
+  function tireGeos(opts, M) {
+    if (M.tire !== M.rubber) return VehicleKit.tireGeometry(opts);
+    return [new THREE.CylinderGeometry(opts.R + opts.lugH, opts.R + opts.lugH, opts.H * 2, 24)];
   }
 
   // Điểm cục bộ (lx, ly, lz) của vật đặt tại c, xoay rotY quanh trục đứng -> tọa độ cha
@@ -536,30 +525,24 @@
     for (const a of AXLES) for (const s of [-1, 1]) positions.push({ x: s * WHEEL_X, y: WHEEL_Y, z: a.z, steer: a.steer });
     return new VehicleKit.WheelSet(chassis, (b) => {
       const hw = TIRE_W / 2;
-      // Lốp: thân lốp + hông lốp bo tròn + gai chữ V
-      b.cyl(WHEEL_R - 0.35, WHEEL_R - 0.35, TIRE_W, 28, M.tire, [0, 0, 0], 'x');
-      for (const sx of [-1, 1]) {
-        b.add(new THREE.TorusGeometry(WHEEL_R - 0.85, 0.55, 8, 28), M.tire, [sx * (hw - 0.55), 0, 0], [0, Math.PI / 2, 0]);
+      // Lốp: thân lốp mặt cắt thật + gai chữ V đúc liền vắt qua vai + chữ nổi hông ngoài (trục Y xoay thành X)
+      for (const geo of tireGeos({ R: WHEEL_R - 0.42, H: hw, bead: 3.3, lugH: 0.42, seed: 11 }, M)) {
+        geo.rotateZ(-Math.PI / 2);
+        b.add(geo, M.tire, [0, 0, 0]);
       }
-      const lugs = 22;
-      for (let i = 0; i < lugs; i++) {
-        const a = (i / lugs) * Math.PI * 2;
-        for (const sx of [-1, 1]) {
-          b.box(1.5, 0.55, 0.9, M.tire,
-            [sx * 0.85, Math.cos(a) * (WHEEL_R - 0.25), Math.sin(a) * (WHEEL_R - 0.25)],
-            [a, sx * 0.45, 0]);
-        }
-      }
-      // Vành thép, moay-ơ, bu-lông, van bơm hơi trung tâm
-      b.cyl(3.1, 3.1, TIRE_W + 0.06, 20, M.paintDusty, [0, 0, 0], 'x');
-      b.cyl(2.5, 2.5, 0.3, 18, M.dark, [hw + 0.02, 0, 0], 'x');
-      b.cyl(1.35, 1.5, 0.9, 14, M.steel, [hw + 0.3, 0, 0], 'x');
+      // Vành lòng chảo (ống vành + mặt vành lõm, cùng mặt cắt bánh dự phòng), moay-ơ, đai ốc trên đáy chảo,
+      // nắp van bơm hơi trung tâm + ống dẫn hơi ra mép vành
+      b.cyl(3.32, 3.32, TIRE_W * 0.82, 24, M.paintDusty, [0, 0, 0], 'x', null, true);
+      const face = rimFaceGeo(3.3, hw);
+      face.rotateZ(-Math.PI / 2);
+      b.add(face, M.paintDusty, [0, 0, 0]);
+      b.cyl(1.3, 1.45, 1.5, 14, M.steel, [hw - 0.05, 0, 0], 'x');
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * Math.PI * 2;
-        b.cyl(0.14, 0.14, 0.4, 6, M.steel, [hw + 0.25, Math.cos(a) * 1.9, Math.sin(a) * 1.9], 'x');
+        b.cyl(0.18, 0.18, 0.32, 6, M.steel, [hw * 0.3 + 0.16, Math.cos(a) * 2.1, Math.sin(a) * 2.1], 'x');
       }
       b.cyl(0.45, 0.45, 0.8, 10, M.paintDusty, [hw + 0.8, 0, 0], 'x');
-      b.beam([hw + 0.5, 0.3, 0], [hw + 0.1, 2.6, 0.4], 0.16, 0.16, M.dark);
+      b.beam([hw + 0.6, 0.3, 0], [hw * 0.92, 3.0, 0.5], 0.16, 0.16, M.dark);
     }, positions, WHEEL_R);
   }
 

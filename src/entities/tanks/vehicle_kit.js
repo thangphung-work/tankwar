@@ -827,13 +827,13 @@ const VehicleKit = (() => {
       dark.envMap = mats.dark.envMap;
       dark.envMapIntensity = mats.dark.envMapIntensity;
       mats.dark = dark;
-      // Lốp bám bùn khô (map chiếu hộp để cả gai lốp cũng lấm bùn)
       // Thép trần ngoài thực địa: xỉn, dầu mỡ bám bụi, không sáng bóng
       mats.steel.color.setHex(0x57534b);
       mats.steel.roughness = 0.62;
       mats.steel.metalness = 0.6;
-      mats.tire = new THREE.MeshStandardMaterial({ color: 0xffffff, map: getTireTexture(), roughness: 0.94, metalness: 0.0 });
-      mats.tire.userData.boxUV = true;
+      // Lốp bám bùn khô; màu đỉnh (tireGeometry) làm tối rãnh gai / chân gai. Mọi hình gộp chung mesh với vật liệu
+      // này phải có thuộc tính color -> chỉ dùng cho hình từ tireGeometry
+      mats.tire = new THREE.MeshStandardMaterial({ color: 0xffffff, map: getTireTexture(), roughness: 0.92, metalness: 0.0, vertexColors: true });
       mats.tire.userData.surface = 'rubber';
       // Kính cabin bụi bám, kính chắn gió có cung gạt nước
       for (const [k, wiper] of [['glassWind', true], ['glassDusty', false]]) {
@@ -1364,6 +1364,169 @@ const VehicleKit = (() => {
       this.buckets.clear();
       return out;
     }
+  }
+
+  /**
+   * Lốp xe quân sự địa hình (trục quay = trục Y, hông "trên" +Y là hông ngoài có chữ nổi). Trả về mảng
+   * BufferGeometry không chỉ số, đã có uv riêng (userData.customUV) và màu đỉnh làm che khuất:
+   * - thân lốp: lathe mặt cắt thật (mặt gai phẳng, vai bo, hông phồng, mép tanh), rãnh gai sẫm hơn hông
+   * - gai: mỗi gai là khối đúc liền bám theo mặt cong của lốp, chạy chéo chữ V từ giữa mặt lốp vắt qua vai
+   *   xuống hông; hai nửa so le nửa bước, mép trong hai nửa gối nhau như lốp XZL; gai thấp dần ở vai
+   * - hông ngoài: chữ nổi (cỡ lốp, hãng, mã) + gờ bảo vệ vành
+   * R: bán kính đáy rãnh gai (ngoài cùng = R + lugH), H: nửa bề rộng, bead: bán kính mép tanh (vành).
+   */
+  function tireGeometry({ R, H, bead, lugH = 0.42, lugs = 20, seg = 48, seed = 7 }) {
+    const rnd = mulberry32(seed);
+    const k = UV_SCALE * 2;
+    // Nửa trên mặt cắt: từ giữa mặt gai lên vai, qua hông tới mép tanh
+    const half = new THREE.SplineCurve([
+      [R, 0], [R, H * 0.4], [R - 0.05, H * 0.66], [R - 0.28, H * 0.88], [R - 0.7, H * 1.0],
+      [(R + bead) / 2, H * 1.04], [bead + 0.55, H * 0.98], [bead + 0.22, H * 0.9], [bead + 0.26, H * 0.82], [bead, H * 0.78]
+    ].map(([r, y]) => new THREE.Vector2(r, y))).getPoints(36).map(p => [p.x, p.y]);
+    const cum = [0];
+    for (let i = 1; i < half.length; i++) cum.push(cum[i - 1] + Math.hypot(half[i][0] - half[i - 1][0], half[i][1] - half[i - 1][1]));
+    // (r, y, nr, ny) tại độ dài cung u tính từ đường giữa mặt lốp (u < 0: nửa dưới, lật y)
+    const prof = (u) => {
+      const s = u < 0 ? -1 : 1, a = Math.min(Math.abs(u), cum[cum.length - 1]);
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < a) i++;
+      const t = (a - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
+      const p0 = half[i - 1], p1 = half[i];
+      const dr = p1[0] - p0[0], dy = p1[1] - p0[1], l = Math.hypot(dr, dy) || 1;
+      return [p0[0] + dr * t, s * (p0[1] + dy * t), dy / l, -s * dr / l];
+    };
+    const pt = (th, r, y) => [r * Math.cos(th), y, -r * Math.sin(th)];
+    const out = [];
+    const finish = (pos, uvs, cols) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+      g.computeVertexNormals();
+      g.userData.customUV = true;
+      out.push(g);
+      return g;
+    };
+
+    // --- Thân lốp ---
+    const full = half.slice().reverse().map(([r, y]) => new THREE.Vector2(r, -y)).concat(half.slice(1).map(([r, y]) => new THREE.Vector2(r, y)));
+    const lathe = new THREE.LatheGeometry(full, seg).toNonIndexed();
+    {
+      const p = lathe.attributes.position, uv = lathe.attributes.uv;
+      const uvs = [], cols = [];
+      const circ = 2 * Math.PI * R, plen = cum[cum.length - 1] * 2;
+      for (let i = 0; i < p.count; i++) {
+        const r = Math.hypot(p.getX(i), p.getZ(i));
+        uvs.push(uv.getX(i) * circ * k, uv.getY(i) * plen * k);
+        // đáy rãnh gai tối (đất lèn + khuất sáng), hông sáng hơn, sát vành hơi tối
+        const groove = smooth01(R - 0.75, R - 0.1, r);
+        const c = 0.92 - groove * 0.36 - (1 - smooth01(bead, bead + 0.5, r)) * 0.12;
+        cols.push(c, c, c);
+      }
+      finish(Array.from(p.array), uvs, cols);
+    }
+
+    // --- Gai chữ V đúc liền ---
+    const pitch = (Math.PI * 2) / lugs;
+    const uA = -H * 0.14, uB = cum[cum.length - 1] * 0.5;   // gối qua đường giữa ... vắt qua vai xuống nửa hông
+    const slope = 0.75;                                       // độ chéo gai (~37°)
+    const wTh = pitch * 0.48;
+    const NU = 7;
+    const pos = [], uvs = [], cols = [];
+    const tri = (a, b, c, ca, cb, cc, want) => {
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+      const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      const flip = ((uy * vz - uz * vy) * want[0] + (uz * vx - ux * vz) * want[1] + (ux * vy - uy * vx) * want[2]) < 0;
+      const vs = flip ? [a, c, b] : [a, b, c], cs = flip ? [ca, cc, cb] : [ca, cb, cc];
+      for (let q = 0; q < 3; q++) {
+        pos.push(...vs[q]);
+        const r = Math.hypot(vs[q][0], vs[q][2]);
+        uvs.push(Math.atan2(-vs[q][2], vs[q][0]) * r * k, vs[q][1] * k);
+        cols.push(cs[q], cs[q], cs[q]);
+      }
+    };
+    const quad = (a, b, c, d, ca, cb, cc, cd, want) => { tri(a, b, c, ca, cb, cc, want); tri(a, c, d, ca, cc, cd, want); };
+    for (let i = 0; i < lugs; i++) {
+      for (const side of [1, -1]) {
+        const th0 = (i + (side < 0 ? 0.5 : 0)) * pitch + (rnd() - 0.5) * 0.01;
+        const wear = 0.85 + rnd() * 0.15;   // gai mòn không đều
+        const rows = [];
+        for (let j = 0; j <= NU; j++) {
+          const t = j / NU, u = uA + (uB - uA) * t;
+          const [r, y, nr, ny] = prof(side * u);
+          const th = th0 + slope * Math.max(0, u) / R;   // nửa dưới lật y -> hai nửa thành chữ V
+          const h = lugH * wear * (1 - 0.45 * smooth01(0.55, 1, t));
+          const w0 = wTh * (1.05 - 0.15 * t), w1 = w0 * 0.82;
+          const n3 = (tt) => [nr * Math.cos(tt), ny, -nr * Math.sin(tt)];
+          const base = (tt) => { const q = pt(tt, r, y), n = n3(tt); return [q[0] - n[0] * 0.04, q[1] - n[1] * 0.04, q[2] - n[2] * 0.04]; };
+          const top = (tt) => { const q = pt(tt, r, y), n = n3(tt); return [q[0] + n[0] * h, q[1] + n[1] * h, q[2] + n[2] * h]; };
+          rows.push({ bl: base(th - w0 / 2), br: base(th + w0 / 2), tl: top(th - w1 / 2), tr: top(th + w1 / 2), n: n3(th), th, y });
+        }
+        for (let j = 0; j < NU; j++) {
+          const A = rows[j], B = rows[j + 1];
+          const nm = [(A.n[0] + B.n[0]) / 2, (A.n[1] + B.n[1]) / 2, (A.n[2] + B.n[2]) / 2];
+          quad(A.tl, A.tr, B.tr, B.tl, 1, 1, 1, 1, nm);
+          quad(A.bl, A.tl, B.tl, B.bl, 0.62, 0.85, 0.85, 0.62, [Math.sin(A.th), 0, Math.cos(A.th)]);
+          quad(A.br, A.tr, B.tr, B.br, 0.62, 0.85, 0.85, 0.62, [-Math.sin(A.th), 0, -Math.cos(A.th)]);
+        }
+        // hai đầu gai
+        const F = rows[0], E = rows[NU];
+        const along = (a, b) => [b.tl[0] - a.tl[0], b.tl[1] - a.tl[1], b.tl[2] - a.tl[2]];
+        const dF = along(rows[1], F), dE = along(rows[NU - 1], E);
+        quad(F.bl, F.br, F.tr, F.tl, 0.62, 0.62, 0.85, 0.85, dF);
+        quad(E.bl, E.br, E.tr, E.tl, 0.62, 0.62, 0.85, 0.85, dE);
+      }
+    }
+    // Gờ tròn bảo vệ mép vành + đường gân hông (vòng nổi trên hông ngoài)
+    const yAtR = (rr) => {
+      for (let i = 1; i < half.length; i++) {
+        const a = half[i - 1], b = half[i];
+        if (a[0] >= rr && b[0] < rr) return a[1] + (b[1] - a[1]) * (a[0] - rr) / (a[0] - b[0]);
+      }
+      return H;
+    };
+    for (const [rr, w] of [[bead + 0.42, 0.12], [R - 0.62, 0.06]]) {
+      const y0 = yAtR(rr) - 0.02, y1 = y0 + 0.02 + w * 0.6;
+      for (let i = 0; i < seg; i++) {
+        const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2, am = (a0 + a1) / 2;
+        const er = [Math.cos(am), 0, -Math.sin(am)], ei = [-er[0], 0, -er[2]];
+        quad(pt(a0, rr - w, y1), pt(a1, rr - w, y1), pt(a1, rr + w, y1), pt(a0, rr + w, y1), 0.92, 0.92, 0.92, 0.92, [0, 1, 0]);
+        quad(pt(a0, rr - w, y0), pt(a1, rr - w, y0), pt(a1, rr - w, y1), pt(a0, rr - w, y1), 0.8, 0.8, 0.9, 0.9, ei);
+        quad(pt(a0, rr + w, y0), pt(a1, rr + w, y0), pt(a1, rr + w, y1), pt(a0, rr + w, y1), 0.8, 0.8, 0.9, 0.9, er);
+      }
+    }
+    finish(pos, uvs, cols);
+
+    // --- Hông ngoài: chữ nổi kiểu 7 nét (cỡ lốp, hãng, mã sản xuất) ---
+    const yAt = yAtR;
+    const lp = [], lu = [], lc = [];
+    const bar = (th, rC, tC, lenR, lenT) => {
+      const g = new THREE.BoxGeometry(lenR, 0.1, lenT).toNonIndexed();
+      g.rotateY(th);
+      const q = pt(th, rC, yAt(rC) + 0.02), e = [Math.sin(th) * tC, 0, Math.cos(th) * tC];
+      g.translate(q[0] + e[0], q[1], q[2] + e[2]);
+      const a = g.attributes.position;
+      for (let i = 0; i < a.count; i++) {
+        lp.push(a.getX(i), a.getY(i), a.getZ(i));
+        lu.push(a.getX(i) * k, a.getZ(i) * k);
+        lc.push(0.95, 0.95, 0.95);
+      }
+    };
+    const SEGS = [[0, 1, 0], [0, 0, 0], [0, -1, 0], [1, 0.5, 1], [1, -0.5, 1], [-1, 0.5, 1], [-1, -0.5, 1]];
+    const rL = (bead + R) / 2 - 0.05, cw = 0.26, chh = 0.4, sw = 0.065;
+    for (const [a0, n] of [[0.3, 13], [3.4, 9], [5.2, 5]]) {
+      for (let c = 0; c < n; c++) {
+        if (rnd() < 0.12) continue;   // khoảng trắng giữa các cụm chữ
+        const th = a0 + c * (cw * 1.35) / rL;
+        for (const [kind, o, vert] of SEGS) {
+          if (rnd() < 0.42) continue;
+          if (!vert) bar(th, rL + o * chh / 2, 0, sw, cw);
+          else bar(th, rL + o * chh / 2, kind * cw / 2, chh / 2, sw);
+        }
+      }
+    }
+    finish(lp, lu, lc);
+    return out;
   }
 
   function pushTri(arr, a, b, c, desired) {
@@ -1987,6 +2150,7 @@ const VehicleKit = (() => {
     UV_SCALE,
     getPaintTextures,
     createMaterials,
+    tireGeometry,
     applyBoxUV,
     mergeGeometries,
     PartBatch,
