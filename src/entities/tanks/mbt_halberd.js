@@ -542,21 +542,46 @@
       }
     }
 
-    // Trạm vũ khí điều khiển từ xa 12.7mm trên nóc phía nạp đạn
+    // Trạm vũ khí điều khiển từ xa (súng máy 7.62mm phòng không) trên nóc phía nạp đạn — kiểu trạm hộp như Protector /
+    // CROWS: chân đế xoay + 2 càng đỡ trục ngóc; khối ngóc gồm hộp súng ở giữa-trái (súng máy + loa che lửa), hộp camera
+    // ngày / ảnh nhiệt + đo xa laser bên phải, hộp dây đạn treo bên trái; tất cả ngóc theo nòng
     const rcws = new THREE.Group();
     rcws.position.set(6.2, ROOF, 9.0);
     const rb = new VehicleKit.PartBatch(DECK_Y + ROOF);
-    rb.cyl(1.1, 1.2, 0.6, 12, D, [0, 0.3, 0]);
-    rb.box(1.8, 1.3, 2.2, P, [0, 1.25, 0]);
-    rb.box(0.55, 0.55, 2.6, D, [0, 2.0, -0.6]);
-    rb.cyl(0.14, 0.14, 4.2, 8, D, [0, 2.05, -3.9], 'z');
-    rb.cyl(0.24, 0.24, 0.7, 8, D, [0, 2.05, -6.0], 'z');
-    rb.box(1.0, 1.0, 1.3, P, [1.4, 1.6, -0.2]);
-    rb.box(0.9, 0.8, 1.1, P, [-1.4, 1.9, -0.5]);
-    rb.box(0.6, 0.4, 0.08, M.glass, [-1.4, 1.95, -1.08]);
+    rb.cyl(1.15, 1.25, 0.35, 14, D, [0, 0.18, 0]);              // vòng xoay
+    rb.box(1.9, 0.55, 1.9, P, [0, 0.62, 0.15]);                  // bệ (mô-tơ quay, điện)
+    rb.box(1.5, 0.3, 1.5, D, [0, 0.98, 0.15]);
+    for (const s of [-1, 1]) {                                    // 2 càng đỡ trục ngóc
+      rb.box(0.22, 1.25, 0.8, P, [s * 0.98, 1.6, 0.0]);
+      rb.cyl(0.24, 0.24, 0.12, 10, D, [s * 1.1, 2.05, 0.0], 'x');
+    }
+    rb.box(0.5, 0.35, 0.5, D, [0.6, 1.2, 0.95]);                 // hộp điều khiển phía sau
     rb.build(rcws);
+    const rcwsGun = new THREE.Group();
+    rcwsGun.position.set(0, 2.05, 0.0);
+    const gb = new VehicleKit.PartBatch(DECK_Y + ROOF + 2.05);
+    // hộp súng (vỏ che thân súng) + thân súng máy, nòng, loa che lửa
+    gb.box(0.62, 0.6, 2.2, P, [-0.3, 0.05, -0.15]);
+    gb.box(0.5, 0.08, 1.9, D, [-0.3, 0.39, -0.15]);              // nắp hộp súng
+    gb.cyl(0.13, 0.13, 0.7, 8, D, [-0.3, 0.12, -1.55], 'z');     // ống áo nòng
+    gb.cyl(0.075, 0.075, 2.3, 8, D, [-0.3, 0.12, -2.85], 'z');   // nòng
+    gb.cyl(0.13, 0.11, 0.42, 8, D, [-0.3, 0.12, -4.2], 'z');     // loa che lửa
+    // hộp dây đạn treo bên trái + máng dẫn dây đạn
+    gb.box(0.48, 0.62, 0.95, P, [-0.95, -0.12, 0.1]);
+    gb.box(0.2, 0.12, 0.5, D, [-0.7, 0.22, -0.2]);
+    // hộp camera ngày / ảnh nhiệt + đo xa laser bên phải, có mái che
+    gb.box(0.82, 0.78, 1.25, P, [0.55, 0.08, -0.25]);
+    gb.box(0.95, 0.08, 1.45, D, [0.55, 0.52, -0.3]);
+    gb.box(0.7, 0.62, 0.06, D, [0.55, 0.08, -0.89]);
+    gb.cyl(0.17, 0.17, 0.06, 12, M.lens, [0.42, 0.18, -0.93], 'z');   // camera ngày
+    gb.cyl(0.13, 0.13, 0.06, 10, M.glass, [0.72, 0.18, -0.93], 'z');  // ảnh nhiệt
+    gb.cyl(0.06, 0.06, 0.06, 8, M.lens, [0.55, -0.12, -0.93], 'z');   // đo xa laser
+    gb.build(rcwsGun);
+    rcws.add(rcwsGun);
     turret.add(rcws);
     unit.rcwsTurret = rcws;
+    unit.rcwsGun = rcwsGun;
+    unit.rcwsMuzzleLocal = new THREE.Vector3(-0.3, 0.12, -4.42);
     VehicleKit.registerPartGroup(unit, 'rcws', rcws);
 
     return { periHead };

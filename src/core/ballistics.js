@@ -559,6 +559,9 @@ class BallisticsSystem3D {
       vx = p.vx; vy = p.vy; vz = p.vz;
     }
     const shellMesh = this.createShell155Mesh(isDirectFire, ammoType, !!(shooter && shooter.tankType === 'ARTILLERY'), tracer);
+    // đạn súng: liều vạch đường chỉ bén cháy sau khi rời nòng ~10 m (như đạn thật) -> không có đốm lửa sát miệng nòng
+    const smallArms = ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
+    if (smallArms) shellMesh.visible = false;
     // Đạn APFSDS: 3 mảnh guốc đạn tách khỏi mũi tên urani ngay khi rời nòng
     if (ammoType === 'AP' && this.fx && this.fx.sabotDiscard) {
       this.fx.sabotDiscard(startX, startY, startZ, vx, vy, vz);
@@ -596,6 +599,7 @@ class BallisticsSystem3D {
       spinAngle: 0,
       trailTimer: 0,
       tracer,
+      ignite: smallArms ? 80 : 0,
       exploded: false
     };
 
@@ -811,6 +815,20 @@ class BallisticsSystem3D {
           break;
         }
 
+        // DRONE ĐỊCH TRÊN KHÔNG (game.js cập nhật airTargets mỗi khung hình): chỉ đạn súng máy / pháo 30mm liên thanh
+        // (xe 6 nòng, xe trinh sát) bắn được — đạn pháo tăng / lựu pháo bay xuyên qua chỗ drone không tính.
+        // Bay qua sát thân drone là trúng; sượt qua gần thì báo onAirNear một lần (tiếng đạn rít qua micro drone)
+        if (this.airTargets && this.airTargets.length && s.timeAlive > 0.004 && BallisticsSystem3D.AIR_AMMO[s.ammoType]) {
+          const ah = this.airTargetHit(s, prevX, prevY, prevZ);
+          if (ah) {
+            s.x = ah.x; s.y = ah.y; s.z = ah.z;
+            this.removeShellMesh(s, i);
+            if (this.onAirHit) this.onAirHit(s, ah.target, ah);
+            impacted = true;
+            break;
+          }
+        }
+
         // KIỂM TRA ĐẠN CHÙM NỔ TRÊN KHÔNG (CLUSTER AIRBURST)
         if (s.ammoType === 'CLUSTER' && s.vy < -12 && s.timeAlive > 0.3) {
           const groundElev = terrain.getElevationAt(s.x, s.z);
@@ -1023,6 +1041,7 @@ class BallisticsSystem3D {
 
       if (impacted) continue;
 
+      if (s.ignite && s.travel >= s.ignite) { s.ignite = 0; s.mesh.visible = true; }
       s.mesh.position.set(s.x, s.y, s.z);
 
       // Cập nhật hướng mũi đạn bám theo tiếp tuyến quỹ đạo bay tức thời (trục Y hướng theo vận tốc)
@@ -1131,6 +1150,26 @@ class BallisticsSystem3D {
       window.game.addCombatLog('[[ripple]] Đạn chạm nước góc quá thấp — NẢY khỏi mặt nước, bay tiếp', 'tip');
     }
     return true;
+  }
+
+  // Đoạn bay (prev -> hiện tại) đi qua drone địch nào trong bán kính trúng: trả { target, x, y, z } (điểm gần nhất)
+  // airTargets: [{ x, y, z (tâm thân), r (bán kính trúng), nearR (bán kính đạn rít qua), team, ... }]
+  airTargetHit(s, x0, y0, z0) {
+    const sx = s.x - x0, sy = s.y - y0, sz = s.z - z0, L2 = sx * sx + sy * sy + sz * sz;
+    let best = null, bd = Infinity;
+    for (const T of this.airTargets) {
+      if (s.shooterTeam && T.team === s.shooterTeam) continue;
+      let t = L2 > 1e-6 ? ((T.x - x0) * sx + (T.y - y0) * sy + (T.z - z0) * sz) / L2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const cx = x0 + sx * t, cy = y0 + sy * t, cz = z0 + sz * t;
+      const d = Math.hypot(cx - T.x, cy - T.y, cz - T.z);
+      if (d <= T.r && d < bd) { bd = d; best = { target: T, x: cx, y: cy, z: cz, d }; }
+      else if (T.nearR && d <= T.nearR && this.onAirNear) {
+        const seen = s._airNear || (s._airNear = new Set());
+        if (!seen.has(T)) { seen.add(T); this.onAirNear(s, T, d); }
+      }
+    }
+    return best;
   }
 
   removeShellMesh(shell, index) {
@@ -1625,6 +1664,8 @@ BallisticsSystem3D.blastProfile = function (ammoType, heavy) {
 // Ra khỏi mép bản đồ (nửa bề rộng / bề sâu mặt đất) là đạn đã bay ra ngoài chiến trường: đạn thật bị hủy, không có điểm rơi.
 // (trước đây giới hạn cố định 2300 trong khi bản đồ chỉ rộng ±1800 -> đạn "rơi" xuống khoảng trống ngoài bản đồ)
 BallisticsSystem3D.FIELD_LIMIT = 2300;
+// Đạn bắn được mục tiêu trên không (drone): súng liên thanh của xe 6 nòng / xe trinh sát
+BallisticsSystem3D.AIR_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 };
 BallisticsSystem3D.fieldHalf = function (terrain, dim) {
   const v = terrain && terrain[dim];
   return v > 0 ? v / 2 : BallisticsSystem3D.FIELD_LIMIT;

@@ -145,9 +145,88 @@ class BotAIController {
     }
   }
 
+  /**
+   * PHÒNG KHÔNG (xe 6 nòng / xe trinh sát; xe tăng dùng trạm súng máy trên nóc tháp): tự phát hiện drone trinh sát địch bay trong tầm nhìn & tầm súng -> bám đón đầu,
+   * ngóc nòng xả loạt (có nhịp phản xạ + sai số ngắm chỉnh dần như bắn xe). true = đang bắn drone (bỏ qua bắn mục tiêu mặt đất)
+   */
+  updateAntiAir(dt, ballistics) {
+    const U = this.unit, G = typeof window !== 'undefined' ? window.game : null;
+    const tank = U.tankType === 'ALL_ROUNDER';
+    if ((U.tankType !== 'GATLING' && U.tankType !== 'SCOUT' && !(tank && U.rcwsGun)) || U.isDead || !G || !G.airDroneList || !G.airShotSolution) {
+      if (this.aa) { this.aa = null; U.isFiringGatling = false; U._aa = null; }
+      return false;
+    }
+    const ammo = tank ? 'MG762' : U.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (U.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
+    const elMax = tank && typeof DroneAir !== 'undefined' ? DroneAir.C.RCWS.elMax : 60;
+    const cap = G.aaRound ? (G.aaRound(U, ammo).maxTravel || 800) : 800;
+    const seeR = typeof DroneAir !== 'undefined' ? DroneAir.C.BOT_SEE_R : 1100;
+    const cy = typeof DroneAir !== 'undefined' ? DroneAir.C.CENTER_Y : 2.8;
+    let A = this.aa;
+    if (!A) {
+      if ((this.aaScan = (this.aaScan || 0) - dt) > 0) return false;
+      this.aaScan = 0.5 + Math.random() * 0.4;
+      let best = null, bd = cap * 0.85;
+      for (const d of G.airDroneList()) {
+        if (d.team === U.team || !G.droneIsAirborne(d)) continue;
+        const h = Math.hypot(d.x - U.x, d.z - U.z);
+        if (h > seeR) continue;
+        const r3 = Math.hypot(h, d.y - (U.y || 0));
+        if (r3 < bd && Math.atan2(d.y - (U.y || 0), h) < elMax * Math.PI / 180 - 0.05) { bd = r3; best = d; }
+      }
+      // xe địch đang áp sát mà bot tự nhìn thấy: lo xe địch trước
+      if (!best || (this.burstUnit && !this.burstUnit.isDead && Math.hypot(this.burstUnit.x - U.x, this.burstUnit.z - U.z) < 220)) return false;
+      const g = () => { const u = Math.max(1e-9, Math.random()); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random()); };
+      const k = this.skill, E = BotAIController.AIM_ERR;
+      A = this.aa = { d: best, t: -(0.5 + Math.random() * 0.8 * k), g, bAz: g() * E.az * k, bEl: g() * E.el * k, solT: 0, corrT: 0, until: 5 + Math.random() * 3 };
+      if (!tank) { this.burstUnit = null; this.pendingShot = null; }   // xe tăng: pháo chính vẫn đánh mặt đất, súng trên nóc lo drone
+      if (U.tankType === 'SCOUT' && U.selectedAmmo === 'ANTI_TANK_MISSILE') U.selectedAmmo = 'SCOUT_BULLET';
+    }
+    const d = A.d;
+    A.t += dt;
+    const h = Math.hypot(d.x - U.x, d.z - U.z);
+    if (!G.droneIsAirborne(d) || A.t > A.until || h > seeR * 1.1 || Math.hypot(h, d.y - (U.y || 0)) > cap) {
+      this.aa = null;
+      U.isFiringGatling = false;
+      U._aa = null;
+      this.aaScan = 0.6;
+      return false;
+    }
+    if ((A.solT -= dt) <= 0) {
+      A.solT = 0.12;
+      A.sol = G.airShotSolution(U, ammo, d.x, d.y + cy, d.z, d.wvx || 0, d.wvy || 0, d.wvz || 0);
+    }
+    // nhìn vệt đạn vạch đường: cứ ~0.6 s kéo loạt đạn về gần drone hơn
+    if (A.t > 0 && (A.corrT += dt) >= 0.6) {
+      A.corrT = 0;
+      const E = BotAIController.AIM_ERR;
+      A.bAz = A.bAz * E.keep + A.g() * E.az * E.jitter * this.skill;
+      A.bEl = A.bEl * E.keep + A.g() * E.el * E.jitter * this.skill;
+    }
+    const S = A.sol;
+    if (!S) return !tank;
+    const az = (S.az + A.bAz * 0.0573 + 360) % 360, el = Math.max(-5, Math.min(elMax, S.el + A.bEl * 0.0573));
+    if (!tank) U.aimTo(az, el);
+    if (!tank && !U.canElevate) {
+      const r = az * Math.PI / 180;
+      U.fcsTarget = { x: U.x + Math.sin(r) * 800, z: U.z - Math.cos(r) * 800, y: (U.y || 0) + 800 * Math.tan(el * Math.PI / 180), el };
+    }
+    let on = false;
+    {
+      const v = G.aaMuzzle ? G.aaMuzzle(U).direction : U.getMuzzleWorldTransform().direction;
+      const baz = (Math.atan2(v.x, -v.z) * 180 / Math.PI + 360) % 360, bel = Math.asin(Math.max(-1, Math.min(1, v.y))) * 180 / Math.PI;
+      on = Math.abs(((baz - az + 540) % 360) - 180) < 2 && Math.abs(bel - el) < 2;
+    }
+    const fire = A.t > 0 && on && S.el <= elMax;
+    if (tank) { U._aa = { az, el, firing: fire, until: performance.now() / 1000 + 0.3 }; return false; }   // pháo chính vẫn tự do
+    U.isFiringGatling = fire;
+    U.aiTimer = Math.max(U.aiTimer, 0.4);
+    return true;
+  }
+
   update(dt, terrain, ballistics, radar, zone, allUnits, airdrop = null, supplyCrates = null, capturePoints = null) {
     this.unit.aiTimer -= dt;
     this.clock += dt;
+    this.updateAntiAir(dt, ballistics);
     // bám mục tiêu đang giao chiến / đang chờ bắn để ước lượng vận tốc (đón đầu)
     const trkU = (this.pendingShot && this.pendingShot.tu) || this.burstUnit || this.lockUnit;
     if (trkU) this.trackTarget(trkU, dt);

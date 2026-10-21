@@ -1972,7 +1972,8 @@ class SPGUnit3D {
     this.turretGroup.rotation.y = this._turretYaw;
 
     // 14. NÂNG HẠ NÒNG PHÁO 3D THEO ELEVATION (Xe 6 nòng cận chiến nòng cố định ở 0 độ)
-    if (!this.canElevate) {
+    // (bản sao xe của máy khác: góc nòng lấy từ gói mạng, không để máy tính hỏa lực kéo về 0°)
+    if (!this.canElevate && !this._netProxy) {
       // Xe 6 nòng: hệ điều khiển hỏa lực tự nâng / hạ nòng nhắm đúng tâm mục tiêu (người lái chỉ xoay tháp)
       let want = 0;
       const T = this.fcsTarget;
@@ -2848,9 +2849,9 @@ class SPGUnit3D {
     const se = window.soundEngine;
     if (!se || typeof se.playMissileLaunch !== 'function') return;
     if (this.isPlayer) { se.playMissileLaunch(); return; }
-    const me = window.game && window.game.player;
+    const me = window.game && window.game.player, L = window.game && window.game.audioListener ? window.game.audioListener() : me;
     if (!me || me === this) return;
-    const d = Math.hypot(this.x - me.x, this.z - me.z);
+    const d = Math.hypot(this.x - L.x, this.z - L.z);
     if (d < 2200) se.playMissileLaunch(Math.max(1, d), { x: this.x, z: this.z });
   }
 
@@ -3146,9 +3147,9 @@ class SPGUnit3D {
         this._reloadSndPhase = 'open';
       } else {
         // Xe khác nã pháo: nghe theo khoảng cách & hướng tới người chơi
-        const me = window.game && window.game.player;
+        const me = window.game && window.game.player, L = window.game && window.game.audioListener ? window.game.audioListener() : me;
         if (me && me !== this) {
-          const d = Math.hypot(this.x - me.x, this.z - me.z);
+          const d = Math.hypot(this.x - L.x, this.z - L.z);
           if (d < 3200) window.soundEngine.playCannonFire(this.tankType, ammoTypeToFire, Math.max(1, d), { x: this.x, z: this.z }, sndOpts);
         }
       }
@@ -3336,9 +3337,9 @@ class SPGUnit3D {
         window.soundEngine.playGatlingShot(this.tankType, 0);
       } else {
         // Xe khác xả đạn: nghe nhỏ dần và trầm dần theo khoảng cách tới người chơi
-        const me = window.game && window.game.player;
+        const me = window.game && window.game.player, L = window.game && window.game.audioListener ? window.game.audioListener() : me;
         if (me && !me.isDead) {
-          const d = Math.hypot(this.x - me.x, this.z - me.z);
+          const d = Math.hypot(this.x - L.x, this.z - L.z);
           if (d < 1400) window.soundEngine.playGatlingShot(this.tankType, Math.max(1, d), { x: this.x, z: this.z }, this.id);
         }
       }

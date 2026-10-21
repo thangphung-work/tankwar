@@ -752,6 +752,7 @@ class TacticalMapController {
         ctx.fillText(code[u.tankType] || '', s.x + 15, s.y);
       }
     }
+    if (g.drawDronesOnMap) g.drawDronesOnMap(ctx, (x, z) => this.worldToScreen(x, z), true);
     for (const [id, gh] of this.ghosts) {
       const age = now - gh.t;
       if (age > 6) { this.ghosts.delete(id); continue; }
