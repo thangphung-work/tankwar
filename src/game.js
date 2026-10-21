@@ -3890,32 +3890,6 @@ class ArtilleryGame3D {
     return { x, z, y: ground(x, z), hy: oy + dy * tEnd, d: tEnd, unit: null };
   }
 
-  // Thang góc nòng (độ, so với thân xe) trên màn hình ngắm điện tử: cao 140px
-  digitalElevY(P, d) {
-    const B = this.ballistics, elMax = B && B.maxElevationFor ? B.maxElevationFor(P) : 20, elMin = -10;
-    return 132 - (Math.max(elMin, Math.min(elMax, d)) - elMin) / (elMax - elMin) * 124;
-  }
-
-  // Bảng quanh màn hình ngắm điện tử: thước hướng (trên), thang góc nòng (phải), hướng tháp so với thân xe (dưới trái),
-  // tình trạng vũ khí + máy tính hỏa lực (dưới phải) — như màn hình trạm vũ khí / kính pháo thủ xe chiến đấu bộ binh
-  digitalSightPanels(P) {
-    const B = this.ballistics, elMax = B && B.maxElevationFor ? B.maxElevationFor(P) : 20;
-    let e = '';
-    for (let d = -10; d <= elMax; d += 5) {
-      const y = this.digitalElevY(P, d).toFixed(1);
-      e += '<line class="gs-l" x1="' + (d % 10 === 0 ? 27 : 31) + '" y1="' + y + '" x2="36" y2="' + y + '"/>';
-      if (d % 10 === 0) e += '<text class="gs-n" x="23" y="' + (+y + 3.5) + '" text-anchor="end">' + (d > 0 ? '+' : '') + d + '</text>';
-    }
-    e += '<line class="gs-l" x1="36" y1="' + this.digitalElevY(P, elMax).toFixed(1) + '" x2="36" y2="' + this.digitalElevY(P, -10).toFixed(1) + '"/>'
-      + '<g class="gs-elc"><path class="gs-m" d="M38 0 L45 -4 L45 4 Z"/></g>';
-    return '<div class="gs-tape"><svg viewBox="-150 0 300 34"></svg></div>'
-      + '<svg class="gs-elev" viewBox="0 0 46 140">' + e + '</svg>'
-      + '<svg class="gs-trt" viewBox="-32 -32 64 64"><circle class="gs-l gs-dim" r="30"/>'
-      + '<rect class="gs-l" x="-9" y="-15" width="18" height="30" rx="2"/><path class="gs-l" d="M-5 -15 L0 -21 L5 -15"/>'
-      + '<g class="gs-trtg"><circle class="gs-l" r="6"/><line class="gs-m" x1="0" y1="-6" x2="0" y2="-28"/></g></svg>'
-      + '<div class="gs-wpn"></div>';
-  }
-
   // Vạch kính theo LY GIÁC thật (1 ly = 1/1000 rad): m = số điểm ảnh của 1 ly ở độ phóng hiện tại, nên phóng to / thu nhỏ
   // vạch vẫn đúng góc — dùng vạch đo được độ đón đầu, khoảng lệch. Máy tính hỏa lực đã tự cộng góc bù đạn rơi theo
   // cự ly laser, nên kính không có thang cự ly (đặt mục tiêu vào tâm là đủ).
@@ -3976,74 +3950,55 @@ class ArtilleryGame3D {
     return h;
   }
 
-  // Cập nhật màn hình ngắm điện tử mỗi khung: vạch theo độ phóng, thước hướng, góc nòng, hướng tháp, tình trạng súng
-  updateDigitalSight(P, S, dt) {
+  // Vạch kính của súng tự động vẽ lại theo độ phóng (vạch luôn đúng ly giác)
+  updateDigitalSight(P, S) {
     const D = this._digiEl, cam = this.camera;
     if (!D) return;
     const W = window.innerWidth, H = window.innerHeight;
     const m = (H / 2) / Math.tan(cam.fov * Math.PI / 360) / 1000;
     const missile = P.selectedAmmo === 'ANTI_TANK_MISSILE';
     const key = S.prof.kind + '|' + m.toFixed(2) + '|' + W + 'x' + H + '|' + missile;
-    if (D.key !== key) {
-      D.key = key;
-      D.mil.setAttribute('viewBox', (-W / 2) + ' ' + (-H / 2) + ' ' + W + ' ' + H);
-      D.mil.innerHTML = this.milReticle(S.prof.kind, m, missile);
-    }
-    // thước hướng: 6px mỗi độ, vạch 5°, số mỗi 10°; ô giữa là hướng nhìn hiện tại
-    const hdg = ((-S.yaw * 180 / Math.PI) % 360 + 360) % 360;
-    if (D.hdg === null || Math.abs(hdg - D.hdg) > 0.05) {
-      D.hdg = hdg;
-      let t = '';
-      for (let d = Math.ceil((hdg - 25) / 5) * 5; d <= hdg + 25; d += 5) {
-        const x = ((d - hdg) * 6).toFixed(1), big = d % 10 === 0;
-        t += '<line class="gs-l" x1="' + x + '" y1="8" x2="' + x + '" y2="' + (big ? 16 : 12) + '"/>';
-        if (big && Math.abs(d - hdg) > 6.5) t += '<text class="gs-n" x="' + x + '" y="29" text-anchor="middle">' + String(((d % 360) + 360) % 360).padStart(3, '0') + '</text>';
-      }
-      t += '<path class="gs-m" d="M-5 0 L5 0 L0 6 Z"/><rect class="gs-l" x="-19" y="18" width="38" height="15" rx="1"/>'
-        + '<text class="gs-n gs-hd" x="0" y="29.5" text-anchor="middle">' + String(Math.round(hdg) % 360).padStart(3, '0') + '</text>';
-      D.tape.innerHTML = t;
-    }
-    // góc nòng thật so với thân xe; hướng tháp so với mũi xe (quay trái = ngược chiều kim đồng hồ)
-    const ey = this.digitalElevY(P, P.elevation || 0).toFixed(1);
-    if (D.ey !== ey) { D.ey = ey; D.elc.setAttribute('transform', 'translate(0 ' + ey + ')'); }
-    const rel = P._turretYaw !== undefined ? P._turretYaw : -(P.azimuth || 0) * Math.PI / 180 - (P.bodyAngle || 0);
-    const rd = (-rel * 180 / Math.PI).toFixed(1);
-    if (D.rd !== rd) { D.rd = rd; D.trtg.setAttribute('transform', 'rotate(' + rd + ')'); }
-    // tình trạng vũ khí + số liệu máy tính hỏa lực (~8 lần / giây)
-    if ((D.t -= dt) > 0) return;
-    D.t = 0.12;
-    const gat = P.tankType === 'GATLING';
-    const firing = P.isFiringGatling && P.reloadTimer <= 0 && !P.isOverheated && (P.gatlingMag || 0) > 0;
-    const spun = (P.spinUpTime || 0) >= (P.spinRequired || 0);
-    let st, sd = '';
+    if (D.key === key) return;
+    D.key = key;
+    D.mil.setAttribute('viewBox', (-W / 2) + ' ' + (-H / 2) + ' ' + W + ' ' + H);
+    D.mil.innerHTML = this.milReticle(S.prof.kind, m, missile);
+  }
+
+  // Số đạn trong kính ngắm (~8 lần / giây): loại đạn, số còn lại (súng tự động: trong băng / dây đạn), tình trạng súng
+  updateSightAmmo(P, dt) {
+    const A = this._sightAmmo;
+    if (!A || !A.el || (A.t -= dt) > 0) return;
+    A.t = 0.12;
+    const T = P.tankType, auto = T === 'GATLING' || T === 'SCOUT', ammo = P.selectedAmmo;
+    const missile = ammo === 'ANTI_TANK_MISSILE', inc = ammo === 'INCENDIARY';
+    let name, cnt, of = '', extra = '', low = false, out = false;
     if (missile) {
-      const sk = this._seeker ? this._seeker.state : 'none';
-      st = P.antiTankCooldown > 0 ? 'NẠP ỐNG PHÓNG ' + P.antiTankCooldown.toFixed(1) + ' S' : sk === 'locked' ? 'ĐÃ KHÓA · SẴN SÀNG PHÓNG' : sk === 'seeking' ? 'ĐẦU DÒ ĐANG BÁM' : sk === 'blind' ? 'KHÔNG NHÌN THẤY MỤC TIÊU' : 'CHƯA KHÓA · TAB';
-      sd = sk === 'locked' && !(P.antiTankCooldown > 0) ? '' : 'warn';
-    } else if (P.reloadTimer > 0) { st = (gat ? 'THAY BĂNG ' : 'THAY DÂY ĐẠN ') + P.reloadTimer.toFixed(1) + ' S'; sd = 'warn'; }
-    else if (P.isOverheated) { st = 'QUÁ NHIỆT — CHỜ NGUỘI'; sd = 'bad'; }
-    else if (firing && !spun && gat) { st = 'QUAY NÒNG ' + Math.round((P.spinUpTime || 0) / Math.max(0.01, P.spinRequired) * 100) + '%'; sd = 'warn'; }
-    else if (firing) { st = 'ĐANG BẮN'; sd = 'fire'; }
-    else st = 'SẴN SÀNG';
-    const inc = P.selectedAmmo === 'INCENDIARY';
-    const name = missile ? 'TÊN LỬA CHỐNG TĂNG' : gat ? (inc ? '30MM ĐẠN CHÁY' : '30MM NỔ-CHÁY') : (inc ? '12.7MM ĐẠN CHÁY' : '12.7MM');
-    let cnt = missile ? 'CÒN ' + (P.missileAmmoCount || 0) + ' QUẢ'
-      : (gat ? 'BĂNG ' : 'DÂY ĐẠN ') + (P.gatlingMag || 0) + ' / ' + (P.gatlingMagMax || 0) + (inc ? ' · CHÁY ' + (P.incendiaryAmmoCount || 0) : '');
-    if (!missile && !gat && (P.missileAmmoCount || 0) > 0) cnt += ' · TÊN LỬA ' + P.missileAmmoCount;
-    let heat = '';
-    if (gat) {
-      const on = Math.ceil((P.barrelHeat || 0) * 10 - 1e-6);
-      heat = '<span>NHIỆT NÒNG<span class="gs-heat">' + Array.from({ length: 10 }, (_, i) => '<i class="' + (i < on ? 'on' + (P.isOverheated ? ' over' : i >= 7 ? ' hot' : '') : '') + '"></i>').join('') + '</span></span>';
+      name = 'TÊN LỬA CHỐNG TĂNG'; cnt = P.missileAmmoCount || 0; of = 'QUẢ'; out = cnt <= 0;
+    } else if (auto) {
+      name = (T === 'GATLING' ? '30MM ' : '12.7MM ') + (inc ? 'ĐẠN CHÁY' : T === 'GATLING' ? 'NỔ-CHÁY' : 'ĐẠN THƯỜNG');
+      cnt = P.gatlingMag || 0; of = '/ ' + (P.gatlingMagMax || 0);
+      low = cnt <= (P.gatlingMagMax || 0) * 0.2; out = cnt <= 0;
+      if (inc) extra = 'CÒN ' + (P.incendiaryAmmoCount || 0) + ' VIÊN CHÁY';
+      if (T === 'SCOUT' && (P.missileAmmoCount || 0) > 0) extra += (extra ? ' · ' : '') + 'TÊN LỬA ×' + P.missileAmmoCount;
+    } else {
+      const N = { AP: ['XUYÊN PHÁ', P.apAmmoCount], HE: ['NỔ MẠNH', P.heAmmoCount], INCENDIARY: ['ĐẠN CHÁY', P.incendiaryAmmoCount] }[ammo];
+      name = 'PHÁO 120MM · ' + (N ? N[0] : 'ĐẠN THƯỜNG');
+      cnt = N ? (N[1] || 0) : '∞'; of = N ? 'VIÊN' : '';
+      out = N && cnt <= 0; low = N && cnt > 0 && cnt <= 2;
     }
-    // máy tính hỏa lực: thời gian bay tới cự ly laser + độ đón đầu xe chạy ngang 40 km/h (đo bằng vạch ly trên kính)
-    let fcs = '';
-    const L = this._lastTraj;
-    if (!missile && L && !L.out && L.ft > 0 && L.d > 20) {
-      const v = typeof GameTiming !== 'undefined' && GameTiming.vehicleSpeed ? GameTiming.vehicleSpeed(40) : 40 / 0.45;
-      fcs = '<span class="gs-fcs">ĐẠN BAY ' + L.ft.toFixed(2) + ' S · ĐÓN XE 40 KM/H ≈ ' + Math.round(1000 * v * L.ft / L.d) + ' LY</span>';
-    }
-    const html = '<b>' + name + '</b><span>' + cnt + '</span>' + heat + '<span data-s="' + sd + '">' + st + '</span>' + fcs;
-    if (D.wpnHtml !== html) { D.wpnHtml = html; D.wpn.innerHTML = html; }
+    let st = 'SẴN SÀNG', sd = '';
+    if (missile && P.antiTankCooldown > 0) { st = 'NẠP ỐNG PHÓNG ' + P.antiTankCooldown.toFixed(1) + ' S'; sd = 'warn'; }
+    else if (!missile && P.reloadTimer > 0) { st = (auto ? (T === 'GATLING' ? 'THAY BĂNG ' : 'THAY DÂY ĐẠN ') : 'NẠP ĐẠN ') + P.reloadTimer.toFixed(1) + ' S'; sd = 'warn'; }
+    else if (!missile && P.isOverheated) { st = 'QUÁ NHIỆT — CHỜ NGUỘI'; sd = 'bad'; }
+    else if (!missile && auto && P.isFiringGatling && cnt > 0) {
+      const spun = (P.spinUpTime || 0) >= (P.spinRequired || 0);
+      st = spun || T !== 'GATLING' ? 'ĐANG BẮN' : 'QUAY NÒNG';
+      sd = spun || T !== 'GATLING' ? 'fire' : 'warn';
+    } else if (out) { st = 'HẾT ĐẠN'; sd = 'bad'; }
+    const html = '<span class="gs-an">' + name + '</span>'
+      + '<span class="gs-ac" data-s="' + (out ? 'out' : low ? 'low' : '') + '">' + cnt + (of ? '<small>' + of + '</small>' : '') + '</span>'
+      + '<span class="gs-as" data-s="' + sd + '">' + st + '</span>' + (extra ? '<span class="gs-ax">' + extra + '</span>' : '');
+    if (A.html !== html) { A.html = html; A.el.innerHTML = html; }
   }
 
   // Khung ngắm HTML (đè lên khung hình, không chặn chuột): mảnh, sáng, góc khung kiểu chiến thuật; vạch theo loại xe
@@ -4113,28 +4068,20 @@ class ArtilleryGame3D {
         // màn hình ngắm điện tử của súng tự động: ký hiệu sáng viền tối vẽ đè lên hình camera, vạch lưới quét mờ
         '#gun-sight.digital .gs-vig{background:radial-gradient(ellipse at 50% 50%,transparent 68%,rgba(4,8,6,.34) 100%)}',
         '#gun-sight.digital .gs-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.05) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}',
-        '#gun-sight.digital .gs-top .gs-hdg{display:none}',
-        '#gun-sight svg.gs-mil,#gun-sight svg.gs-elev,#gun-sight svg.gs-trt,#gun-sight .gs-tape svg{overflow:visible;filter:drop-shadow(0 0 1px rgba(0,0,0,.95)) drop-shadow(0 0 2px rgba(0,0,0,.5))}',
-        '#gun-sight svg.gs-mil{position:absolute;inset:0;width:100%;height:100%}',
-        '#gun-sight svg.gs-mil .gs-n,#gun-sight svg.gs-elev .gs-n,#gun-sight .gs-tape .gs-n{font-size:10px;font-variant-numeric:tabular-nums}',
-        '#gun-sight .gs-tape .gs-hd{font-size:12px;font-weight:600;fill:#fff}',
-        '#gun-sight .gs-tape{position:absolute;top:max(calc(7vh + 30px),104px);left:50%;width:300px;height:34px;margin-left:-150px}',
-        '#gun-sight .gs-tape svg{width:100%;height:100%}',
-        '#gun-sight svg.gs-elev{position:absolute;right:calc(7vw + 14px);top:calc(50% - 150px);width:46px;height:140px}',
-        '#gun-sight svg.gs-trt{position:absolute;left:calc(7vw + 14px);bottom:calc(7vh + 100px);width:64px;height:64px}',
-        '#gun-sight .gs-dim{opacity:.45}',
-        '#gun-sight .gs-wpn{position:absolute;right:calc(7vw + 14px);bottom:calc(7vh + 100px);display:grid;gap:4px;justify-items:end;font-size:12px;letter-spacing:.06em;text-shadow:0 0 3px #000,0 0 6px #000;font-variant-numeric:tabular-nums}',
-        '#gun-sight .gs-wpn b{font-weight:600;color:#fff}',
-        '#gun-sight .gs-wpn [data-s=warn]{color:#ffd166}',
-        '#gun-sight .gs-wpn [data-s=bad]{color:#ff3b30}',
-        '#gun-sight .gs-wpn [data-s=fire]{color:#ff9a4a}',
-        '#gun-sight .gs-wpn .gs-fcs{opacity:.85;font-size:11px}',
-        '#gun-sight .gs-heat{display:inline-flex;gap:2px;margin-left:6px;vertical-align:-1px}',
-        '#gun-sight .gs-heat i{width:7px;height:10px;background:rgba(255,255,255,.12);box-shadow:0 0 2px rgba(0,0,0,.8)}',
-        '#gun-sight .gs-heat i.on{background:#dff5d8}',
-        '#gun-sight .gs-heat i.on.hot{background:#ffb020}',
-        '#gun-sight .gs-heat i.on.over{background:#ff3b30}',
-        '@media (max-width:700px){#gun-sight svg.gs-trt,#gun-sight .gs-wpn,#gun-sight svg.gs-elev{display:none}}',
+        '#gun-sight svg.gs-mil{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 0 1px rgba(0,0,0,.95)) drop-shadow(0 0 2px rgba(0,0,0,.5))}',
+        '#gun-sight svg.gs-mil .gs-n{font-size:10px;font-variant-numeric:tabular-nums}',
+        // số đạn trong kính (dưới bên phải tâm): số to = đạn còn trong băng / loại đạn đang nạp
+        '#gun-sight .gs-ammo{position:absolute;right:calc(7vw + 14px);bottom:calc(7vh + 100px);display:grid;justify-items:end;gap:2px;text-shadow:0 0 3px #000,0 0 6px #000;font-variant-numeric:tabular-nums;letter-spacing:.06em}',
+        '#gun-sight .gs-ammo .gs-an{font-size:12px;opacity:.85}',
+        '#gun-sight .gs-ammo .gs-ac{font-size:34px;font-weight:600;line-height:1;color:#fff}',
+        '#gun-sight .gs-ammo .gs-ac small{font-size:15px;font-weight:500;opacity:.7;margin-left:4px}',
+        '#gun-sight .gs-ammo .gs-ac[data-s=low]{color:#ffd166}',
+        '#gun-sight .gs-ammo .gs-ac[data-s=out]{color:#ff3b30}',
+        '#gun-sight .gs-ammo .gs-as{font-size:12px;font-weight:600}',
+        '#gun-sight .gs-ammo .gs-as[data-s=warn]{color:#ffd166}',
+        '#gun-sight .gs-ammo .gs-as[data-s=bad]{color:#ff3b30}',
+        '#gun-sight .gs-ammo .gs-as[data-s=fire]{color:#ff9a4a}',
+        '#gun-sight .gs-ammo .gs-ax{font-size:11px;opacity:.8}',
         // ngắm tự do: vòng chỉ chỗ đạn sẽ chạm theo nòng THẬT (tháp còn đang quay đuổi theo tâm kính thì vòng lệch khỏi tâm)
         '#gun-sight .gs-gun{position:absolute;left:0;top:0;width:28px;height:28px;margin:-14px 0 0 -14px;border:2px dashed var(--gs-c);border-radius:50%;box-sizing:border-box;filter:drop-shadow(0 0 1.5px rgba(0,0,0,.9));will-change:transform}',
         '#gun-sight .gs-gun::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--gs-c)}',
@@ -4171,12 +4118,12 @@ class ArtilleryGame3D {
         + '<div class="gs-tag gun"><i></i><span></span></div></div><div class="gs-shot" hidden></div><div class="gs-sig" hidden>SẮP RA NGOÀI TẦM TÍN HIỆU</div>' : '')
       + (digital ? '<div class="gs-scan"></div>' : '')
       + '<div class="gs-vig"></div><div class="gs-frame"><i></i><i></i><i></i><i></i></div>'
-      + (arty ? '' : '<div class="gs-gun" hidden></div>')
+      + (arty ? '' : '<div class="gs-gun" hidden></div><div class="gs-ammo"></div>')
       // pháo: dấu tâm màn hình = điểm sẽ ngắm khi thả phím W A S D
       + (arty ? '<svg class="gs-ret" viewBox="-100 -100 200 200"><circle class="gs-m" r="6"/><circle class="gs-d" r="1"/>'
         + '<line class="gs-l" x1="-24" y1="0" x2="-10" y2="0"/><line class="gs-l" x1="10" y1="0" x2="24" y2="0"/>'
         + '<line class="gs-l" x1="0" y1="-24" x2="0" y2="-10"/><line class="gs-l" x1="0" y1="10" x2="0" y2="24"/></svg>'
-        : digital ? '<svg class="gs-mil"></svg>' + this.digitalSightPanels(P)
+        : digital ? '<svg class="gs-mil"></svg>'
         : '<svg class="gs-ret" viewBox="-100 -100 200 200">' + ret + '</svg>')
       + '<div class="gs-top"><span>' + prof.name + '</span><b class="gs-hdg">000°</b><span class="gs-mag"></span></div>'
       + '<div class="gs-side"><span>' + (digital ? 'CỰ LY LASER' : 'CỰ LY') + '</span><span class="gs-big gs-range">—</span><span class="gs-state"></span><span class="gs-blast"></span></div>'
@@ -4189,8 +4136,8 @@ class ArtilleryGame3D {
     this._sightBlastEl = el.querySelector('.gs-blast');
     this._sightHdgEl = el.querySelector('.gs-hdg');
     this._sightGunEl = el.querySelector('.gs-gun');
-    this._digiEl = digital ? { mil: el.querySelector('.gs-mil'), tape: el.querySelector('.gs-tape svg'), elc: el.querySelector('.gs-elc'),
-      trtg: el.querySelector('.gs-trtg'), wpn: el.querySelector('.gs-wpn'), key: '', hdg: null, t: 0 } : null;
+    this._digiEl = digital ? { mil: el.querySelector('.gs-mil'), key: '' } : null;
+    this._sightAmmo = arty ? null : { el: el.querySelector('.gs-ammo'), html: '', t: 0 };
     this._droneTags = null;
     if (arty) {
       const tg = (c) => { const e = el.querySelector('.gs-tag.' + c); e._arrow = e.querySelector('i'); e._txt = e.querySelector('span'); e.hidden = true; return e; };
@@ -4445,7 +4392,8 @@ class ArtilleryGame3D {
       if (this._sightMagEl.textContent !== m) this._sightMagEl.textContent = m;
       const r = range !== null ? range.toLocaleString() + ' M' : '—';
       if (this._sightRangeEl.textContent !== r) this._sightRangeEl.textContent = r;
-      if (this._digiEl) this.updateDigitalSight(P, S, dt);
+      if (this._digiEl) this.updateDigitalSight(P, S);
+      if (!S.arty) this.updateSightAmmo(P, dt);
       // vòng nòng thật: chiếu điểm đạn sẽ chạm (theo góc tháp / nòng hiện tại) lên màn hình
       const G = this._sightGunEl;
       if (G) {
