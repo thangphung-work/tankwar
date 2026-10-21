@@ -362,9 +362,9 @@ const MapGen = (() => {
       const dir = rv() < 0.5 ? 1 : -1;              // chiều chảy theo z: nguồn ở phía -dir
       const sg = Math.sign(cx) || 1;
       const ph2 = RV(0, 6.28), f2 = f1 * RV(2.1, 2.7);
-      // hồ đầu nguồn: dưới chân vành núi phía thượng nguồn (sông chảy suốt ít nhất ~0.6 chiều dài thung lũng)
-      let zSrc = -dir * HALF * 0.6;
-      while (Math.abs(zSrc) < HALF * 0.85 && Math.hypot(cx, zSrc) < rimFoot(cx, zSrc) - 260) zSrc -= dir * 20;
+      // hồ đầu nguồn: ngay dưới chân vành núi phía thượng nguồn (dò từ giữa thung lũng ra tới chân núi trên tuyến sông)
+      let zSrc = -dir * HALF * 0.45;   // sông dài ít nhất ~nửa thung lũng; lỡ gặp mũi núi thì hồ nằm trong thung lũng sông xẻ qua núi
+      while (Math.abs(zSrc) < HALF * 0.85 && Math.hypot(cx, zSrc) < rimFoot(cx, zSrc) - 120) zSrc -= dir * 20;
       const lakeR = RV(190, 250);
       const srcLake = { x: cx + RV(-60, 60), z: zSrc, r: lakeR, source: true };
       // bề rộng & biên độ uốn theo quãng đường xuôi dòng tính từ hồ
@@ -376,10 +376,13 @@ const MapGen = (() => {
         const o = smooth(HALF + 100, HALF + 1100, Math.abs(z));
         let x = cx + A * (Math.sin(z * f1 * 1.25 + ph) + 0.35 * Math.sin(z * f2 + ph2)) + fbm(noise, 7.3, z * 0.0012, 3) * 60 * (1 + 4 * o)
           + o * 650 * Math.sin((Math.abs(z) - HALF - 100) * 0.0019 + ph * 2) * Math.sign(z);
-        // trong thung lũng: không lấn lên đồi cứ điểm, không chạm chân vành núi phía ngoài
-        if (!o) {
+        // ngang tầm các cứ điểm: không lấn lên đồi cứ điểm, không chạm chân vành núi phía ngoài (chuyển mềm theo z;
+        // ra khỏi tầm đó sông uốn tự do trong thung lũng xẻ núi)
+        const w = 1 - smooth(1500, 1900, Math.abs(z));
+        if (w > 0 && !o) {
           const inner = 1040 * K, hw = halfW(z), outer = Math.sqrt(Math.max(0, (rimFoot(x, z) - hw - 170) ** 2 - z * z));
-          x = sg * Math.max(inner, Math.min(Math.max(inner, outer), Math.abs(x)));
+          const xc = sg * Math.max(inner, Math.min(Math.max(inner, outer), Math.abs(x)));
+          x += (xc - x) * w;
         }
         return x;
       };
@@ -441,7 +444,11 @@ const MapGen = (() => {
         return h;
       };
       for (let k = 0; k < 2; k++) {
-        lakes.push({ x: (k ? 1 : -1) * R(900, 1350) * K, z: (k ? -1 : 1) * R(420, 720) * K, r: R(150, 230) });
+        const L = { x: (k ? 1 : -1) * R(900, 1350) * K, z: (k ? -1 : 1) * R(420, 720) * K, r: R(150, 230) };
+        // hồ nằm trọn trong lòng thung lũng (không vắt qua chân vành núi)
+        const lim = rimFoot(L.x, L.z) - L.r - 220, d = Math.hypot(L.x, L.z);
+        if (d > lim) { L.x *= lim / d; L.z *= lim / d; }
+        lakes.push(L);
       }
       lakes.push(srcLake);
       for (let iz = 0; iz < N; iz++) {
@@ -964,7 +971,7 @@ const MapGen = (() => {
         for (let k = 0; k < 3; k++) {
           const x = R(-700, 700) * K, z = side * R(1240, 1420) * K;
           const w = R(130, 180), d = R(90, 120);
-          if (!freeOf(x, z, 110) || !roadClear(x, z, 70)) continue;
+          if (!freeOf(x, z, 110) || !roadClear(x, z, 70) || Math.hypot(x, z) > rimFoot(x, z) - 160) continue;   // không lên sườn núi
           buildings.push({ x, z, w, d, floors: 1, angle: 0, kind: 'hangar' });
           occupied.push({ x, z, r: 110 });
         }
