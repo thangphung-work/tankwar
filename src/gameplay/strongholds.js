@@ -819,7 +819,13 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const tIn = Math.min(i / n, hi + 0.25 / Math.max(1, len));
         const [x, y, z] = P(tIn);
         const c = this.concreteAt(x, y, z);
-        if (c) return { x, y, z, type: 'WALL', normal: c.normal, K: c.K };
+        if (c) {
+          // điểm dò lấn 0,25 đơn vị vào trong khối để đọc đúng mặt -> trả về điểm ngay mặt ngoài (nhích ra theo pháp tuyến),
+          // không thì vết đạn / rỗ / muội nằm chìm sau mặt bê tông nhìn thấy (bắn vào cứ điểm như không để lại gì)
+          const [sx, sy, sz] = P(lo), nn = c.normal;
+          const o = nn ? 0.15 : 0;
+          return { x: sx + (nn ? nn.nx * o : 0), y: sy, z: sz + (nn ? nn.nz * o : 0), type: 'WALL', normal: c.normal, K: c.K };
+        }
         const sf = this.surfaceAt(x, z);
         return { x, y: sf !== null ? Math.max(y, sf - 0.2) : y, z, type: 'GROUND' };
       }
