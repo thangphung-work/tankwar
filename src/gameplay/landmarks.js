@@ -1212,8 +1212,15 @@ const Landmarks = (() => {
         K.add('steelDark', new THREE.BoxGeometry(iw * 2 + 1, 0.9, 0.3), new THREE.Matrix4().multiplyMatrices(fm, M4(0, iy1 - 0.1, T - 0.6)));
         if (k % 2 === 0) K.add('steelDark', new THREE.CylinderGeometry(0.26, 0.26, 3.2, 6), new THREE.Matrix4().multiplyMatrices(fm, M4(0, (iy0 + iy1) / 2 - 0.1, T - 1.8, Math.PI / 2, 0, 0)));
       }
-      K.add('concDark', new THREE.CylinderGeometry(R + 2.4, R + 2.4, 3, 6), M4(f, 15.5, r, 0, -Math.PI / 6, 0));
-      K.add('concDark', new THREE.CylinderGeometry(R + 1.6, R + 3.2, 2.2, 6), M4(f, 1.1, r, 0, -Math.PI / 6, 0));   // móng loe chân lô cốt
+      // mái đua + móng loe: chỉnh UV theo kích thước thật (tránh vân bê tông bị kéo dài thành sọc)
+      const hexSlab = (r0, r1, h) => { const g = new THREE.CylinderGeometry(r0, r1, h, 6), uv = g.attributes.uv, P = g.attributes.position;
+        for (let i = 0; i < uv.count; i++) {
+          if (Math.abs(g.attributes.normal.getY(i)) > 0.9) uv.setXY(i, P.getX(i) / 64, P.getZ(i) / 64);   // mặt trên / dưới
+          else uv.setXY(i, uv.getX(i) * 6 * r1 / 64, (P.getY(i) + h / 2) / 64);                          // mặt hông
+        }
+        return g; };
+      K.add('concDark', hexSlab(R + 2.4, R + 2.4, 3), M4(f, 15.5, r, 0, -Math.PI / 6, 0));
+      K.add('concDark', hexSlab(R + 1.6, R + 3.2, 2.2), M4(f, 1.1, r, 0, -Math.PI / 6, 0));   // móng loe chân lô cốt
       // hào giao thông lót bao cát dẫn vào cửa sau, lưới nguỵ trang phủ nóc, ăng-ten
       const ia = Math.atan2(-r, -f) + Math.PI, ex = f + Math.cos(ia) * 21, ez = r + Math.sin(ia) * 21, px = -Math.sin(ia), pz = Math.cos(ia);
       for (const s2 of [-1, 1]) sandbags(K, ex + px * s2 * 6, ez + pz * s2 * 6, ex + Math.cos(ia) * 22 + px * s2 * 6, ez + Math.sin(ia) * 22 + pz * s2 * 6, 3, 0);
