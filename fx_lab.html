@@ -157,7 +157,7 @@
 <script src="three.min.js"></script>
 <script src="src/core/audio/sound_engine.js?v=20261020m14"></script>
 <script src="src/core/audio/weapon_fire.js?v=20261020m8"></script>
-<script src="src/core/audio/destruction.js?v=20261021snd1"></script>
+<script src="src/core/audio/destruction.js?v=20261021wet1"></script>
 <script src="src/core/audio/impacts.js?v=20261020m8"></script>
 <script src="src/core/audio/incoming.js?v=20261020m8"></script>
 <script src="src/core/audio/cockpit_cues.js?v=20261021snd1"></script>
@@ -181,12 +181,12 @@
 <script src="src/core/ballistics.js?v=20261021smk1"></script>
 <script src="src/entities/projectiles.js?v=20261019trc1"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261020m14"></script>
-<script src="src/entities/spg.js?v=20261021snd1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261021smk1"></script>
+<script src="src/entities/spg.js?v=20261021wet1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261021wet1"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261021snd1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261021wet1"></script>
 <script src="src/core/equipment.js?v=20261021snd1"></script>
-<script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
+<script src="src/gameplay/camo_fire.js?v=20261021wet1"></script>
 <script src="src/gameplay/destructibles.js?v=20261021wall1"></script>
 <script>
 (function () {
@@ -1636,7 +1636,7 @@
   const SPLASH_R = { NORMAL: 35, HE: 50, AP: 7, CLUSTER_SUBMUNITION: 25, RPG: 38, GATLING_BULLET: 10, INCENDIARY: 14, SCOUT_BULLET: 10 };
   function applyHit(p, hit, vel) {
     if (hit.hitType === 'WATER') {
-      fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12);
+      fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12, vel ? { x: vel.x, y: vel.y, z: vel.z } : null);
       playBoom(hit.point, 'WATER', p.ammo, p.heavy);
       return;
     }
@@ -2083,7 +2083,7 @@
     updateRipples(dt);
     if (EX.pond && EX.pond.water) EX.pond.water.material.uniforms.uTime.value += dt;
     if (typeof VehicleDamage !== 'undefined') {
-      VehicleDamage.update(dt, [targetTank]);
+      VehicleDamage.update(dt, [targetTank], fx);
       if (typeof CamoFire !== 'undefined') CamoFire.update(dt, { units: [targetTank], fx });
       // Thân xe lệch theo lốp xẹp (xe mục tiêu đứng yên không chạy vòng cập nhật của game)
       if (targetTank.dmg && targetTank.chassisGroup && !targetTank.isDead) {

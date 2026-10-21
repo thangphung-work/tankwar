@@ -1382,6 +1382,18 @@ class SPGUnit3D {
         this.spawnExhaustPuff(true, false);
       }
       if (this.burnTimer <= 0) this.burnAuth = false;
+      // Lội nước ngập quá thân dưới (bánh xích, sườn xe): nước trùm lên vỏ dập chất cháy bám ngoài sau ~0,5 s — hết cháy,
+      // hết mất máu. Mọi máy tự tính theo vị trí xe (máy có quyền thôi gửi B, máy khác cũng tự dập ngay)
+      if (!this.isDead && this.waterY !== null && this.waterY !== undefined && this.waterDepth > (this.wadeDepth || 10) * 0.8) {
+        this._burnWet = (this._burnWet || 0) + dt;
+        if (this._burnWet > 0.5) {
+          this.burnTimer = 0;
+          this.burnAuth = false;
+          const fx = window.game && window.game.effectsManager && window.game.effectsManager.fx;
+          if (fx && fx.douseSteam) fx.douseSteam(new THREE.Vector3(this.x, this.waterY + 3, this.z), this.waterY, 0.8);
+          if (typeof VehicleDamage !== 'undefined' && VehicleDamage.logDoused) VehicleDamage.logDoused(this);
+        }
+      } else this._burnWet = 0;
     }
     if (this.isDead) {
       // Cập nhật xác xe cháy bốc khói đen (hệ thống nổ mới tự lo khi đang theo dõi xe này)

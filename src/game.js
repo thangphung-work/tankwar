@@ -1992,9 +1992,9 @@ class ArtilleryGame3D {
       }
     }
     if (!fxDone && hitType === 'WATER' && fxSys && fxSys.waterBurst) {
-      // Nổ dưới mặt nước: cột nước trắng xóa + sóng mù + gợn sóng
+      // Đạn rơi xuống nước: cột nước / tia nước theo loại đạn, nghiêng theo hướng bay + sóng nổ lan
       const depth = this.terrain && this.terrain.groundAtRaw ? Math.max(0.5, y - this.terrain.groundAtRaw(x, z)) : 6;
-      fxSys.waterBurst(x, y, z, ammoType, !!shell.isHeavyArty, depth);
+      fxSys.waterBurst(x, y, z, ammoType, !!shell.isHeavyArty, depth, { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 });
       fxDone = true;
     }
     const remoteShell = !!(this.netSync && this.netSync.skipShellDamage && this.netSync.skipShellDamage(shell, this.units.find(u => u.id === shell.shooterId)));

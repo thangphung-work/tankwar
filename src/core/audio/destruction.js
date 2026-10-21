@@ -152,7 +152,7 @@ SoundEngine.mixin(class {
       cookoff: 0.25, cookoffSmall: 0.3, era: 0.3, fuel: 0.2, flare: 0.22, collapse: 0.11, turretLand: 0.08, metalCrush: 0.25,
       tire: 0.2, trackSnap: 0.35, concrete: 0.3, treeFall: 0.25, armorPlate: 0.35, snap: 0.5, debris: 0.45, debrisLand: 0.45, debrisHit: 0.42, debrisScrape: 0.3,
       masonry: 0.3, adobe: 0.3, woodBreak: 0.32, sheetMetal: 0.26, rockSplit: 0.25, leafStrip: 0.35, slabImpact: 0.14, splashBig: 0.12,
-      apsFire: 0.3, apsKill: 0.22, slat: 0.4, fireExt: 0.45, camoRustle: 0.5
+      apsFire: 0.3, apsKill: 0.22, slat: 0.4, fireExt: 0.45, camoRustle: 0.5, steamDouse: 0.4
     };
     const out = this.voice({ gain: sp.gain * (LEVEL[kind] || 1), lowpass: sp.lowpass, wet: Math.min(0.95, sp.wet + 0.08), pan: sp.pan });
     if (mask) {
@@ -255,6 +255,15 @@ SoundEngine.mixin(class {
         this.burst(out, t + 0.01, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, gain: 0.6 * k, attack: 0.003, dur: 0.12 });
         this.burst(out, t + 0.015, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: inside ? 2400 : 900, freqEnd: inside ? 1500 : 600, sweep: 1.4, Q: 0.6, gain: 0.8 * k, attack: 0.02, dur: 1.6 });
         this.burst(out, t + 0.02, { filter: 'highpass', freq: inside ? 4200 : 2000, gain: 0.35 * k * hi, attack: 0.03, dur: 1.2 });
+        break;
+      }
+      case 'steamDouse': {
+        // Nước tràn lên chỗ lửa / thép nóng: "XÈO" chát (nước sôi bùng trên mặt kim loại), lép bép sủi bọt,
+        // hơi nước xì dài nhỏ dần, nước ộc ục ục trầm bên dưới
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'highpass', freq: 3200, gain: 0.7 * k, attack: 0.004, dur: 0.25 });
+        this.burst(out, t + 0.01, { buffer: this.crackleBuffer || this.pinkNoiseBuffer, filter: 'bandpass', freq: 4200, Q: 0.7, gain: 0.55 * k, attack: 0.01, dur: 0.9 });
+        this.burst(out, t + 0.05, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2600, freqEnd: 1300, sweep: 1.6, Q: 0.6, gain: 0.6 * k, attack: 0.06, dur: 2.2 });
+        for (let i = 0; i < 4; i++) this.burst(out, t + 0.08 + i * (0.09 + Math.random() * 0.12), { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 260 + Math.random() * 200, Q: 2.5, gain: 0.3 * k * near, attack: 0.01, dur: 0.12 });
         break;
       }
       case 'camoRustle': {
