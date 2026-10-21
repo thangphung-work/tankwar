@@ -282,6 +282,100 @@ const Landmarks = (() => {
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
     return (TEX[key] = t);
   }
+  // Đường nội bộ bãi phóng (f, r cục bộ; bề rộng): cổng -> khu cấm silo, trục dọc trước, trục nhà xe / trạm điện,
+  // nhánh tới cửa trung tâm điều khiển. Nút giao: [f, r, rộng theo f, rộng theo r]
+  const NUKE_ROADS = [[[[320, 0], [160, 0]], 36], [[[180, -300], [180, 280]], 28], [[[180, 240], [-210, 240]], 26], [[[180, -200], [-60, -200], [-60, -270], [-92, -270]], 24]];
+  // nền sỏi quanh công trình: khu cấm silo, cổng, gò điều khiển, nhà xe, trạm điện, bồn nhiên liệu, chân tháp canh...
+  const nukeGravel = (hu) => [[-216, -170, 156, 210], [hu - 150, -70, hu, 70], [-250, -366, -80, -180], [-25, 252, 150, 348], [-200, 262, -90, 338],
+    [-98, -448, 18, -332], [hu - 110, 120, hu - 60, 215], [180, -200, 230, -140], [-260, -50, -210, 50]];
+  const NUKE_JUNCTIONS = [[180, 0, 28, 36], [180, 240, 28, 26], [180, -200, 28, 24], [-60, -200, 24, 24], [-60, -270, 24, 24]];
+  // Mặt đường nhựa (u dọc đường: 1 ô = 12 m, v ngang: 0..1 = cả bề rộng): cốt liệu đá lấm tấm, vệt bánh xe mòn sáng,
+  // vệt dầu giữa làn, vết nứt + đường trám nhựa đen, mép sứt; vạch biên trắng + vạch tim vàng đứt (3 m vạch / 9 m trống).
+  // plain = nhựa trơn không vạch (vá nút giao)
+  function asphaltTex(plain) {
+    const key = plain ? 'asph_plain' : 'asph';
+    if (TEX[key]) return TEX[key];
+    const W = 1024, H = plain ? 1024 : 256, c = canvas(W, H), g = c.getContext('2d');
+    const img = g.createImageData(W, H), d = img.data;
+    for (let i = 0; i < W * H; i++) {
+      let v = 60 + (hash(i * 0.37 + 11) - 0.5) * 22;
+      const q = hash(i * 1.13 + 5);
+      if (q < 0.035) v += 40 + hash(i + 3) * 40; else if (q < 0.06) v -= 20;
+      d[i * 4] = v; d[i * 4 + 1] = v; d[i * 4 + 2] = v + 2; d[i * 4 + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    for (let i = 0; i < 70; i++) blotch(g, hash(i + 5100) * W, hash(i + 5101) * H, 20 + hash(i + 5102) * 90, hash(i + 5103) < 0.5 ? '40,40,42' : '96,96,94', 0.18);
+    if (!plain) {
+      // vệt bánh xe 2 làn (mòn bóng, sáng hơn) + vệt dầu giữa làn
+      for (const [v0, v1, col] of [[0.12, 0.2, 'rgba(110,110,108,0.18)'], [0.32, 0.4, 'rgba(110,110,108,0.18)'], [0.6, 0.68, 'rgba(110,110,108,0.18)'], [0.8, 0.88, 'rgba(110,110,108,0.18)'],
+        [0.22, 0.3, 'rgba(18,18,20,0.22)'], [0.7, 0.78, 'rgba(18,18,20,0.22)']]) {
+        const gr = g.createLinearGradient(0, v0 * H, 0, v1 * H); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, col); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr; g.fillRect(0, v0 * H, W, (v1 - v0) * H);
+      }
+    }
+    // đường trám nứt bằng nhựa đen (uốn lượn) + vết nứt nhỏ
+    for (let i = 0; i < (plain ? 10 : 6); i++) {
+      let x = hash(i + 5200) * W, y = hash(i + 5201) * H, a = hash(i + 5202) * TAU;
+      g.strokeStyle = 'rgba(14,14,16,0.75)'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 14; k++) { a += (hash(i * 17 + k) - 0.5) * 0.9; x += Math.cos(a) * 14; y += Math.sin(a) * 6; g.lineTo(x, y); }
+      g.stroke();
+    }
+    g.strokeStyle = 'rgba(20,20,22,0.6)'; g.lineWidth = 0.8;
+    for (let i = 0; i < 40; i++) { let x = hash(i + 5300) * W, y = hash(i + 5301) * H; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (hash(i * 7 + k + 9) - 0.5) * 18; y += (hash(i * 5 + k + 3) - 0.5) * 10; g.lineTo(x, y); } g.stroke(); }
+    if (!plain) {
+      // mép đường sứt (tối, lởm chởm)
+      for (let x = 0; x < W; x += 3) for (const e of [0, 1]) { const dd = 2 + hash(x * 0.7 + e * 31) * 6; g.fillStyle = 'rgba(30,28,26,0.6)'; g.fillRect(x, e ? H - dd : 0, 3, dd); }
+      // vạch sơn (sơn mòn: lấm tấm hở nhựa)
+      const paint = (x, y, w, h, col) => {
+        g.fillStyle = col; g.fillRect(x, y, w, h);
+        for (let i = 0; i < w * h / 14; i++) { g.fillStyle = 'rgba(60,60,62,0.55)'; g.fillRect(x + hash(i + x + y * 3) * w, y + hash(i * 3 + x + 7) * h, 1.5, 1.5); }
+      };
+      paint(0, H * 0.045, W, H * 0.03, 'rgba(226,224,214,0.9)'); paint(0, H * 0.925, W, H * 0.03, 'rgba(226,224,214,0.9)');
+      paint(0, H * 0.485, W * 0.25, H * 0.03, 'rgba(214,170,40,0.92)');
+    }
+    const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.wrapT = plain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping; t.anisotropy = 8;
+    return (TEX[key] = t);
+  }
+  // Dải mặt đường theo đường gấp khúc (nối góc kiểu vát), u = quãng dọc / 96, v = 0..1 ngang
+  function roadStripGeo(pts, wd, y) {
+    const pos = [], uv = [], idx = [];
+    let acc = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      let tf = b[0] - a[0], tr = b[1] - a[1]; const l = Math.hypot(tf, tr) || 1; tf /= l; tr /= l;
+      let nf = -tr, nr = tf, k = 1;
+      if (i > 0 && i < pts.length - 1) {
+        const d0 = [p[0] - a[0], p[1] - a[1]], l0 = Math.hypot(...d0), n0 = [-d0[1] / l0, d0[0] / l0];
+        k = 1 / Math.max(0.5, n0[0] * nf + n0[1] * nr);
+      }
+      if (i) acc += Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]);
+      for (const sd of [-1, 1]) { pos.push(p[0] + nf * sd * wd / 2 * k, y, p[1] + nr * sd * wd / 2 * k); uv.push(acc / 96, sd < 0 ? 0 : 1); }
+      if (i) { const o = (i - 1) * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+    g.computeVertexNormals();
+    if (g.attributes.normal.getY(0) < 0) { const I = g.index.array; for (let i = 0; i < I.length; i += 3) { const t = I[i]; I[i] = I[i + 1]; I[i + 1] = t; } g.computeVertexNormals(); }
+    return g;
+  }
+  // Lưới đường nội bộ: dải nhựa + mảng vá nút giao (che vạch tim) + vạch dừng, chữ STOP, ô đỗ xe
+  function roadNet(group, roads, junctions, extra) {
+    const mk = (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.88, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const rm = MAT.road || (MAT.road = mk(asphaltTex(false))), pm = MAT.roadPlain || (MAT.roadPlain = mk(asphaltTex(true)));
+    roads.forEach(([pts, wd], i) => { const m = new THREE.Mesh(roadStripGeo(pts, wd, 0.5 + i * 0.03), rm); m.receiveShadow = true; group.add(m); });
+    for (const [f, r, wf, wr] of junctions) {
+      const g = new THREE.PlaneGeometry(wf + 1, wr + 1); g.rotateX(-Math.PI / 2);
+      const uv = g.attributes.uv, P = g.attributes.position; for (let i = 0; i < uv.count; i++) uv.setXY(i, (P.getX(i) + f) / 96, (P.getZ(i) + r) / 96);
+      const m = new THREE.Mesh(g, pm); m.position.set(f, 0.65, r); m.receiveShadow = true; group.add(m);
+    }
+    const paintM = MAT.paintW || (MAT.paintW = new THREE.MeshStandardMaterial({ color: 0xe2e0d6, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+    for (const [f, r, wf, wr] of extra.bars) { const g = new THREE.PlaneGeometry(wf, wr); g.rotateX(-Math.PI / 2); const m = new THREE.Mesh(g, paintM); m.position.set(f, 0.75, r); group.add(m); }
+    for (const [txt, f, r, rot, sz] of extra.words) {
+      const t = texOf('word_' + txt, 256, 96, (q, w, h) => { q.fillStyle = 'rgba(226,224,214,0.92)'; q.font = 'bold 84px Arial'; q.textAlign = 'center'; q.textBaseline = 'middle'; q.save(); q.scale(1, 1); q.fillText(txt, w / 2, h / 2 + 4); q.restore(); });
+      const g = new THREE.PlaneGeometry(sz, sz * 96 / 256); g.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(g, decalT('word_' + txt, t)); m.position.set(f, 0.78, r); m.rotation.y = rot; group.add(m);
+    }
+  }
   function apronTex(kind, f0, f1, r0, r1) {
     const W = 1024, Hh = Math.round(W * (r1 - r0) / (f1 - f0));
     return texOf('apron_' + kind, W, Hh, (g, w, h) => {
@@ -304,26 +398,14 @@ const Landmarks = (() => {
         g.strokeStyle = 'rgba(120,112,96,0.95)'; g.lineWidth = 20 * S; g.strokeRect(...P(-iF + 14, -iR + 14), (iF * 2 - 28) * S, (iR * 2 - 28) * S);
         // nền sỏi quanh công trình: khu cấm silo, cổng, gò điều khiển, nhà xe, trạm điện, bồn nhiên liệu, chân tháp canh
         const grav = 'rgba(166,158,142,0.97)';
-        for (const [fa, ra, fb, rb] of [[-216, -170, 156, 210], [hu - 150, -70, hu, 70], [-250, -366, -80, -180], [-25, 252, 150, 348], [-200, 262, -90, 338],
-          [-98, -448, 18, -332], [hu - 110, 120, hu - 60, 215], [180, -200, 230, -140], [-260, -50, -210, 50]]) rect(fa, ra, fb, rb, grav);
-        // đường nhựa nội bộ: cổng -> khu cấm silo, trục ngang trước, trục nhà xe / trạm điện, nhánh tới cửa trung tâm điều khiển
-        const road = (pts, wd) => {
-          g.lineCap = 'round'; g.lineJoin = 'round';
-          g.strokeStyle = '#3f4144'; g.lineWidth = wd * S; g.beginPath(); pts.forEach(([f, r], i) => i ? g.lineTo(...P(f, r)) : g.moveTo(...P(f, r))); g.stroke();
-          g.strokeStyle = 'rgba(30,30,32,0.4)'; g.lineWidth = 1.2 * S; g.setLineDash([3 * S, 9 * S]); g.stroke();
-          g.strokeStyle = 'rgba(222,190,60,0.9)'; g.lineWidth = 1.2 * S; g.setLineDash([10 * S, 10 * S]); g.stroke(); g.setLineDash([]);
-          g.strokeStyle = 'rgba(232,230,220,0.75)'; g.lineWidth = 0.8 * S;
-          for (const s2 of [-1, 1]) { g.beginPath(); pts.forEach(([f, r], i) => { const q = pts[Math.min(pts.length - 1, i + 1)], p0 = pts[Math.max(0, i - 1)], df = q[0] - p0[0], dr = q[1] - p0[1], l = Math.hypot(df, dr) || 1; const pp = P(f - dr / l * s2 * (wd / 2 - 1.5), r + df / l * s2 * (wd / 2 - 1.5)); i ? g.lineTo(...pp) : g.moveTo(...pp); }); g.stroke(); }
-        };
-        road([[hu, 0], [160, 0]], 36);
-        road([[180, -300], [180, 280]], 28);
-        road([[180, 240], [-210, 240]], 26);
-        road([[180, -200], [-60, -200], [-60, -270], [-92, -270]], 24);
-        // vạch dừng + chữ STOP trước cổng khu cấm, ô đỗ xe chống mìn
-        g.fillStyle = 'rgba(240,238,228,0.9)'; g.fillRect(...P(166, -16), 2.4 * S, 32 * S);
-        g.save(); g.translate(...P(172, 0)); g.rotate(Math.PI / 2); g.font = `bold ${(8 * S) | 0}px Arial`; g.textAlign = 'center'; g.fillText('STOP', 0, 0); g.restore();
-        g.strokeStyle = 'rgba(240,238,228,0.85)'; g.lineWidth = 1 * S;
-        for (let r = 128; r <= 212; r += 28) { g.beginPath(); g.moveTo(...P(hu - 140, r)); g.lineTo(...P(hu - 80, r)); g.stroke(); }
+        for (const [fa, ra, fb, rb] of nukeGravel(hu)) rect(fa, ra, fb, rb, grav);
+        // lề đường đất sỏi mòn (mặt đường nhựa + vạch sơn dựng thành lưới riêng, xem NUKE_ROADS / roadNet)
+        g.lineCap = 'round'; g.lineJoin = 'round';
+        for (const [pts, wd] of NUKE_ROADS) {
+          for (const [ex, col] of [[10, 'rgba(118,108,92,0.55)'], [5, 'rgba(92,84,72,0.7)']]) {
+            g.strokeStyle = col; g.lineWidth = (wd + ex) * S; g.beginPath(); pts.forEach(([f, r], i) => i ? g.lineTo(...P(f, r)) : g.moveTo(...P(f, r))); g.stroke();
+          }
+        }
         // vệt dầu, vết bánh xích
         for (let i = 0; i < 40; i++) blotch(g, hash(i + 1700) * w, hash(i + 1701) * h, (4 + hash(i + 1702) * 12) * S, '34,30,26', 0.3);
         return;
@@ -855,6 +937,10 @@ const Landmarks = (() => {
   function buildNuke(K, group, anim) {
     const L = K.L, S = L.silo, cf = S.f, cr = S.r, HB = S.h, RS = S.shaft, TOP = HB + 3;
     apron(group, L, -L.hu, L.hu, -L.hv, L.hv, 'nuke');
+    roadNet(group, NUKE_ROADS, NUKE_JUNCTIONS, {
+      bars: [[167.2, 0, 2.4, 32]].concat([128, 156, 184, 212].map(r => [L.hu - 110, r, 60, 1])),
+      words: [['STOP', 173, 0, Math.PI / 2, 16]]
+    });
     // ---- Bệ bê tông miệng hầm trên gò silo: khoét lỗ giếng phóng + 2 ống xả
     {
       const sh = new THREE.Shape();
@@ -1923,6 +2009,22 @@ const Landmarks = (() => {
       return null;
     }
     // trong mặt bằng san nền (hoặc khối đặc) — không mọc cỏ, không đặt xe
+    // Điểm (x, z) nằm trên bãi cỏ trong căn cứ (không phải nền sỏi, đường, công trình) -> cho mọc khóm cỏ thấp
+    lawnAt(x, z) {
+      for (const it of this.items) {
+        const L = it.L; if (L.kind !== 'nuke') continue;
+        const dx = x - L.x, dz = z - L.z, f = dx * L.fx + dz * L.fz, r = -dx * L.fz + dz * L.fx;
+        if (Math.abs(f) > L.hu - 92 || Math.abs(r) > L.hv - 92) continue;
+        for (const [fa, ra, fb, rb] of nukeGravel(L.hu)) if (f > fa - 4 && f < fb + 4 && r > ra - 4 && r < rb + 4) return false;
+        for (const [pts, wd] of NUKE_ROADS) for (let i = 1; i < pts.length; i++) {
+          const [af, ar] = pts[i - 1], [bf, br] = pts[i], ef = bf - af, er = br - ar, t = Math.max(0, Math.min(1, ((f - af) * ef + (r - ar) * er) / (ef * ef + er * er)));
+          if (Math.hypot(f - af - ef * t, r - ar - er * t) < wd / 2 + 9) return false;
+        }
+        for (const q of it.boxes) { const ex = x - q.cx, ez = z - q.cz; if (Math.abs(ex * q.ux + ez * q.uz) < q.hu + 6 && Math.abs(-ex * q.uz + ez * q.ux) < q.hv + 6) return false; }
+        return true;
+      }
+      return false;
+    }
     covers(x, z, pad) {
       for (const it of this.items) {
         const L = it.L, dx = x - L.x, dz = z - L.z;

@@ -179,7 +179,7 @@ const GroundCover = (() => {
       if (T.groundAtRaw(x, z) < 0.6 && (T.map.river || T.map.lakes.length)) return true;
       if (T.map.roadAt && T.map.roadAt(x, z)) return true;
       if (T.strongholdSet && T.strongholdSet.covers(x, z, 4)) return true;
-      if (T.landmarkSet && T.landmarkSet.covers(x, z, 4)) return true;
+      if (T.landmarkSet && T.landmarkSet.covers(x, z, 4) && !(T.landmarkSet.lawnAt && T.landmarkSet.lawnAt(x, z))) return true;
       if (T.bridges.length && T.bridgeAt(x, z)) return true;
       return false;
     }
@@ -210,13 +210,15 @@ const GroundCover = (() => {
             const a = rnd() * 6.283, d = Math.sqrt(rnd()) * cr;
             const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, r1 = rnd(), r2 = rnd(), r3 = rnd();
             const M = this.masks(x, z);
-            if (r1 > M.grass * 1.15 * dens || this.blocked(x, z)) continue;
-            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3), wid = hgt * (0.7 + r3 * 0.5);
+            // bãi cỏ trong căn cứ (được cắt): luôn có cỏ, khóm thấp ~1/4
+            const LS = this.T.landmarkSet, lawn = !!(LS && LS.lawnAt && LS.lawnAt(x, z)), mg = lawn ? 0.8 : M.grass;
+            if (r1 > mg * 1.15 * dens || this.blocked(x, z)) continue;
+            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (lawn ? 0.26 : 1), wid = hgt * (lawn ? 2.2 : 0.7 + r3 * 0.5);
             const r4 = rnd(), r5 = rnd();
             e.set((r4 - 0.5) * 0.5, r3 * 6.283, (r5 - 0.5) * 0.5);
             m4.compose(v.set(x, M.h - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));
             gm.push(...m4.elements);
-            const dry = Math.max(0, Math.min(1, cDry + (r2 - 0.5) * 0.25 + (1 - M.grass) * 0.4)), kk = 1.0 + r1 * 0.22;
+            const dry = Math.max(0, Math.min(1, cDry + (r2 - 0.5) * 0.25 + (1 - mg) * 0.4)), kk = 1.0 + r1 * 0.22;
             for (let ch = 0; ch < 3; ch++) gc.push((B.grass[0][ch] + (B.grass[1][ch] - B.grass[0][ch]) * dry) * kk);
           }
         }
