@@ -199,10 +199,21 @@ const MapGen = (() => {
     const on = makeNoise(mulberry32((seed ^ 0x0b5e55ed) >>> 0));
     // nhiễu theo hướng (liền mạch quanh vòng tròn): mép vành núi / bờ biển lượn sóng thay vì tròn xoe
     const angN = (x, z, f, o) => { const d = Math.hypot(x, z) || 1; return on(x / d * f + o, z / d * f - o * 0.7); };
+    // CHÂN VÀNH NÚI = ranh giới thung lũng chiến trường: không phải vòng tròn — vuông bo góc theo khung bản đồ (theo trục
+    // gần hơn, theo đường chéo lùi xa) + lượn sóng nhiều tầng (vịnh lõm vào, mũi núi lấn ra). Theo trục trong khoảng
+    // ~0.75..0.9 nửa bản đồ: không lấn vào cứ điểm / khu xuất kích, không chạm mép giữ xe
+    function rimFoot(x, z) {
+      const d = Math.hypot(x, z) || 1;
+      const diag = Math.min(Math.abs(x), Math.abs(z)) / d / 0.7071;   // 0 theo trục .. 1 theo đường chéo
+      const f = HALF * (0.84 + 0.2 * diag * diag)
+        + 300 * angN(x, z, 1.3, 11.3) + 190 * angN(x, z, 3.1, 3.1) + 70 * angN(x, z, 7.3, 5.5) + 18 * on(x * 0.004 + 2, z * 0.004);
+      // cách mép giữ xe (±(HALF - 60)) ít nhất ~200 theo hướng này: min mềm, không gãy góc
+      const lim = (HALF - 60) / Math.max(Math.abs(x), Math.abs(z), 1e-6) * d - 200;
+      return -120 * Math.log(Math.exp(-f / 120) + Math.exp(-lim / 120));
+    }
     function rimRaise(x, z) {
-      const d = Math.hypot(x, z);
-      // chân vành lượn nhiều tầng (không thành vòng tròn đều)
-      const s = d - (SIZE * 0.44 + 60 * angN(x, z, 1.7, 11.3) + 32 * angN(x, z, 4.6, 3.1) + 18 * on(x * 0.004 + 2, z * 0.004));
+      const d = Math.hypot(x, z), foot = rimFoot(x, z);
+      const s = d - foot;
       if (s <= 0) return 0;
       // chân vành: sườn đều dốc ~0.6 như trước, lên cao thì thoải dần về đỉnh (không còn mặt nón thẳng đuột)
       const pk = OUT.peak * (0.8 + 0.5 * fbm(on, x * 0.0005 + 3, z * 0.0005, 3));
@@ -212,7 +223,7 @@ const MapGen = (() => {
       // sống núi, yên ngựa, khe suối: gồ ghề tăng dần khi lên cao
       r *= lerp(1, 0.35 + 1.25 * ridged(on, x * 0.0013, z * 0.0013, 5), smooth(60, 700, s));
       // qua đỉnh vành thì đổ xuống phía ngoài
-      const crest = 2750 + O0 + 260 * angN(x, z, 2.3, 5.7) + 170 * angN(x, z, 5.9, 1.9);
+      const crest = foot + 1150 + 260 * angN(x, z, 2.3, 5.7) + 170 * angN(x, z, 5.9, 1.9);
       return r * (1 - smooth(crest, crest + 1300, d));
     }
     function outerLand(x, z, h) {
@@ -230,7 +241,7 @@ const MapGen = (() => {
         if (t >= 0) p = 0.2 - 6 * smooth(0, 60 + bw, t) - 32 * smooth(150, 900, t) + fbm(on, x * 0.001, z * 0.001, 2) * 6 * smooth(300, 900, t);
         else if (t > -bw) p = 0.2 + 4.2 * Math.pow(-t / bw, 1.3) + on(x * 0.03, z * 0.03) * 0.15;   // bãi cát
         else p = 4.4 + 9 * smooth(-bw, -bw - pw, t) + Math.max(0, on(x * 0.012 + 2, z * 0.012)) * 4 * smooth(-bw, -bw - 80, t);   // cồn cát, đồng cỏ ven biển
-        h = lerp(h, p, smooth(-bw - pw - 120 - 450 * smooth(-0.3, 0.3, bn), -bw - pw, t) * smooth(2350 + O0, 2700 + O0, d));
+        h = lerp(h, p, smooth(-bw - pw - 120 - 450 * smooth(-0.3, 0.3, bn), -bw - pw, t) * smooth(rimFoot(x, z) + 900, rimFoot(x, z) + 1250, d));
         if (d > 4500 + O0) {
           const fade = smooth(4500 + O0, 5300 + O0, d);
           if (OUT.far === 'karst') {
@@ -606,7 +617,7 @@ const MapGen = (() => {
     const occupied = [];  // {x,z,r}
     const freeOf = (x, z, r) => occupied.every(o => Math.hypot(o.x - x, o.z - z) > o.r + r);
     function clearOfKeys(x, z, r) {
-      if (Math.hypot(x, z) > SIZE * 0.42 - r) return false;
+      if (Math.hypot(x, z) > rimFoot(x, z) - 90 - r) return false;   // chỉ trong lòng thung lũng (trước chân vành núi)
       for (const c of CAP) if (Math.hypot(x - c.x, z - c.z) < keyR + r) return false;
       if (Math.abs(x) < SPAWN.halfX + r && ((z > SPAWN.blue.z0 - r && z < SPAWN.blue.z1 + r) || (z > SPAWN.red.z0 - r && z < SPAWN.red.z1 + r))) return false;
       return true;
@@ -989,7 +1000,7 @@ const MapGen = (() => {
       bases, capture: CAP, roads, river, lakes, bridges, bunkers, strongholds, layout, buildings, rocks, bushes, trees, forests, props, sun,
       genMs: Math.round(ms),
       // độ cao cảnh nền tại điểm bất kỳ (kể cả ngoài bản đồ): cùng công thức với lưới trong bản đồ -> nối liền ở mép
-      outer: { sea: OUT.sea, seaLevel: OUT.sea ? 0.2 : null, ext: OUTER_EXT, heightAt: (x, z) => riverCut ? riverCut(x, z, baseHeight(x, z)) : baseHeight(x, z) },
+      outer: { rimFoot, sea: OUT.sea, seaLevel: OUT.sea ? 0.2 : null, ext: OUTER_EXT, heightAt: (x, z) => riverCut ? riverCut(x, z, baseHeight(x, z)) : baseHeight(x, z) },
       // tra cứu nhanh mặt đường cho động lực học xe
       roadAt(x, z) {
         const nr = nearestRoad(x, z, 60);

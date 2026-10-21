@@ -119,9 +119,9 @@ const Backdrop = (() => {
     const H = meshH;
     for (let z = -ext; z <= ext; z += SP) for (let x = -ext; x <= ext; x += SP) {
       const px = x + (rnd() - 0.5) * SP * 0.9, pz = z + (rnd() - 0.5) * SP * 0.9, r1 = rnd(), r2 = rnd(), r3 = rnd();
-      // ngoài tầm xe (xe bị giữ trong ±(nửa bản đồ - 60), chân vành núi dốc dần từ ~0.44 cạnh bản đồ)
-      // bìa rừng lượn sóng, không thành vòng tròn
-      if (Math.hypot(px, pz) < T.width * 0.44 + 206 + 130 * nz(px * 0.0016 + 4, pz * 0.0016)) continue;
+      // ngoài tầm xe (xe bị giữ trong ±(nửa bản đồ - 60), lòng thung lũng kết thúc ở chân vành núi MapGen rimFoot)
+      // bìa rừng theo chân vành núi, lượn sóng
+      if (Math.hypot(px, pz) < O.rimFoot(px, pz) + 206 + 130 * nz(px * 0.0016 + 4, pz * 0.0016)) continue;
       const fm = smooth(-0.08, 0.28, MapGen.fbm(nz, px * 0.0024, pz * 0.0024, 3));
       if (r1 > Math.pow(fm, F.pow)) continue;
       const h = H(px, pz);

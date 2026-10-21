@@ -650,8 +650,10 @@ float gTuftH(vec2 p) {
   col *= ${desert ? '0.95 + 0.1 * mot' : urban ? '0.95 + 0.1 * mot' : '0.88 + 0.24 * mot'};   // cát / bê tông: chỉ loang rất nhẹ
   ${desert || urban ? '' : `// đồng cỏ thật nhìn từ xa ngả xanh ô-liu dịu, không xanh chói như sân golf (bản đồ sáng nắng dễ bị chói màu nhất)
   col = mix(vec3(lum(col)), col, ${opts.mapType === 'RIVER_LAKE' ? '0.74' : opts.mapType === 'JUNGLE' ? '0.88' : '0.92'});`}
-  ${urban ? `// đồi quanh thành phố (vành núi + cảnh nền ngoài bản đồ) phủ cỏ: chuyển dần theo vòng lượn sóng quanh tâm
-  col *= mix(vec3(1.0), vec3(0.8, 0.97, 0.68), smoothstep(gTerr.x * 0.88 + 66.0, gTerr.x * 0.88 + 766.0, length(vGW.xz) + 260.0 * (texture2D(gNoise, wp / 1300.0 + 0.21).g - 0.5)));` : ''}
+  ${urban ? `// đồi quanh thành phố (vành núi + cảnh nền ngoài bản đồ) phủ cỏ: chuyển dần theo đường vuông bo góc lượn sóng
+  // (bám chân vành núi: theo trục gần, theo đường chéo xa), không thành vòng tròn
+  float gRd = mix(length(vGW.xz), max(abs(vGW.x), abs(vGW.z)), 0.5) + 420.0 * (texture2D(gNoise, wp / 1700.0 + 0.21).g - 0.5);
+  col *= mix(vec3(1.0), vec3(0.8, 0.97, 0.68), smoothstep(gTerr.x * 0.8, gTerr.x * 0.8 + 650.0, gRd));` : ''}
   if (gSand > 0.001) {
     // cát bồi mịn: một sắc cát, hạt li ti tương phản rất thấp (mờ dần ở xa), đổi sắc nhẹ theo mảng vài chục mét;
     // mép nước / phần ngập nông sẫm ướt dần, bờ cao khô sáng hơn; không vệt, không đốm
