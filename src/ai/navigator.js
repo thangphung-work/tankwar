@@ -163,7 +163,7 @@ const Navigator = (() => {
   }
 
   // Bộ nhớ đệm A* dùng lại cho mọi lần tìm đường trên cùng lưới: ô chỉ có giá trị khi stamp[k] === gen
-  // (thay cho tạo + điền 3 mảng 22 500 ô mỗi lần gọi)
+  // (thay cho tạo + điền 3 mảng ~50 000 ô mỗi lần gọi)
   const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
   let scratch = null;
   function scratchFor(N) {

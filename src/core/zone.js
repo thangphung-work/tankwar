@@ -2,7 +2,7 @@
  * Hệ thống vòng bo an toàn thu hẹp dần theo thời gian (Battle Zone System)
  */
 class BattleZone {
-  constructor(worldWidth = 3600, worldHeight = 3600) {
+  constructor(worldWidth = MapGen.SIZE, worldHeight = MapGen.SIZE) {
     this.worldWidth = worldWidth;
     this.worldHeight = worldHeight;
 
@@ -52,7 +52,9 @@ class BattleZone {
     let R = 0;
     for (const p of points) R = Math.max(R, Math.hypot(p.x - cx, p.z - cz));
     R += pad;
-    this.plan = [R + 560, R + 320, R + 140, R].map(r => ({ x: cx + H, y: cz + H, radius: r }));
+    // khoảng lùi từng pha thiết kế cho bản đồ 3600, giãn theo kích thước bản đồ
+    const k = this.worldWidth / 3600;
+    this.plan = [R + 560 * k, R + 320 * k, R + 140 * k, R].map(r => ({ x: cx + H, y: cz + H, radius: r }));
     this.maxPhases = this.plan.length;
     this.phase = 1;
     this.state = 'waiting';

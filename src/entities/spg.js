@@ -3049,8 +3049,8 @@ class SPGUnit3D {
     radar.registerShot({
       id: this.id,
       isPlayer: this.isPlayer,
-      x: this.x + 1800,
-      y: this.z + 1800,
+      x: this.x + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
+      y: this.z + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
       baseMaxSpeed: this.baseMaxSpeed
     });
 
@@ -3283,8 +3283,8 @@ class SPGUnit3D {
       radar.registerShot({
         id: this.id,
         isPlayer: this.isPlayer,
-        x: this.x + 1800,
-        y: this.z + 1800,
+        x: this.x + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
+        y: this.z + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
         baseMaxSpeed: this.baseMaxSpeed
       });
     }
@@ -3335,8 +3335,8 @@ class SPGUnit3D {
       radar.registerShot({
         id: this.id,
         isPlayer: this.isPlayer,
-        x: this.x + 1800,
-        y: this.z + 1800,
+        x: this.x + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
+        y: this.z + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
         baseMaxSpeed: this.baseMaxSpeed
       });
     }

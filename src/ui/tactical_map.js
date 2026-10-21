@@ -116,7 +116,7 @@ class TacticalMapController {
   // ---------------------------------------------------------------------------
   // TỌA ĐỘ (tỉ lệ đều, phóng to / kéo)
   // ---------------------------------------------------------------------------
-  get worldSize() { return this.game.terrain ? this.game.terrain.width : 3600; }
+  get worldSize() { return this.game.terrain ? this.game.terrain.width : MapGen.SIZE; }
   get k() { return (Math.min(this.cssW, this.cssH) - 40) / this.worldSize * this.view.zoom; }
 
   worldToScreen(wx, wz) {

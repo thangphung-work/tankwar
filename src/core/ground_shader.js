@@ -314,7 +314,7 @@ const GroundShader = (() => {
    */
   function bakeNormals(T) {
     if (T._gBake && T._gBake.map === T.map) return T._gBake;
-    const N = 1024, size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData, cell = size / S, px = size / N;
+    const N = Math.min(2048, Math.round(T.width / 3600 * 4) * 256), size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData, cell = size / S, px = size / N;
     const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
     const hv = (i, j) => H[Math.max(0, Math.min(S, j)) * NN + Math.max(0, Math.min(S, i))];
     const W = N + 2, hb = new Float32Array(W * W);
@@ -651,7 +651,7 @@ float gTuftH(vec2 p) {
   ${desert || urban ? '' : `// đồng cỏ thật nhìn từ xa ngả xanh ô-liu dịu, không xanh chói như sân golf (bản đồ sáng nắng dễ bị chói màu nhất)
   col = mix(vec3(lum(col)), col, ${opts.mapType === 'RIVER_LAKE' ? '0.74' : opts.mapType === 'JUNGLE' ? '0.88' : '0.92'});`}
   ${urban ? `// đồi quanh thành phố (vành núi + cảnh nền ngoài bản đồ) phủ cỏ: chuyển dần theo vòng lượn sóng quanh tâm
-  col *= mix(vec3(1.0), vec3(0.8, 0.97, 0.68), smoothstep(1650.0, 2350.0, length(vGW.xz) + 260.0 * (texture2D(gNoise, wp / 1300.0 + 0.21).g - 0.5)));` : ''}
+  col *= mix(vec3(1.0), vec3(0.8, 0.97, 0.68), smoothstep(gTerr.x * 0.88 + 66.0, gTerr.x * 0.88 + 766.0, length(vGW.xz) + 260.0 * (texture2D(gNoise, wp / 1300.0 + 0.21).g - 0.5)));` : ''}
   if (gSand > 0.001) {
     // cát bồi mịn: một sắc cát, hạt li ti tương phản rất thấp (mờ dần ở xa), đổi sắc nhẹ theo mảng vài chục mét;
     // mép nước / phần ngập nông sẫm ướt dần, bờ cao khô sáng hơn; không vệt, không đốm

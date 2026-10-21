@@ -9,7 +9,7 @@
  * Dữ liệu bản đồ: src/core/map_gen.js (thuần dữ liệu); vật thể phá hủy: src/gameplay/destructibles.js
  */
 class BattleTerrain3D {
-  constructor(scene, width = 3600, depth = 3600, mapType = 'DESERT', seed) {
+  constructor(scene, width = MapGen.SIZE, depth = MapGen.SIZE, mapType = 'DESERT', seed) {
     this.scene = scene;
     this.width = width;
     this.depth = depth;
@@ -274,7 +274,8 @@ class BattleTerrain3D {
   }
 
   paintGround() {
-    const SZ = 1024;
+    // ~3.5 đơn vị / điểm ảnh như bản đồ 3600 cũ (1024 px)
+    const SZ = Math.min(2048, Math.round(this.width / 3600 * 4) * 256);
     const cv = document.createElement('canvas');
     cv.width = cv.height = SZ;
     const ctx = cv.getContext('2d');

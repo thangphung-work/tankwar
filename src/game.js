@@ -18,8 +18,8 @@ class ArtilleryGame3D {
   constructor() {
     this.container = domById('webgl-container');
 
-    this.worldWidth = 3600;
-    this.worldDepth = 3600;
+    this.worldWidth = MapGen.SIZE;
+    this.worldDepth = MapGen.SIZE;
 
     // 1. Khởi tạo Three.js Scene, Camera, Renderer
     this.scene = new THREE.Scene();
@@ -2870,8 +2870,8 @@ class ArtilleryGame3D {
       this.airdrop = null;
     }
 
-    const zoneCenterX = this.zone.current.x - 1800;
-    const zoneCenterZ = this.zone.current.y - 1800;
+    const zoneCenterX = this.zone.current.x - this.worldWidth / 2;
+    const zoneCenterZ = this.zone.current.y - this.worldDepth / 2;
 
     const r = Math.random() * (this.zone.current.radius * 0.65);
     const angle = Math.random() * Math.PI * 2;
@@ -3072,7 +3072,8 @@ class ArtilleryGame3D {
     }
     this.supplyCrates = [];
 
-    // Danh sách 11 vị trí rải rác chiến lược trên chiến trường 3600 x 3600
+    // Danh sách 11 vị trí rải rác chiến lược (bố cục gốc cho bản đồ 3600, giãn theo kích thước bản đồ)
+    const K = this.worldWidth / 3600;
     const crateLocations = [
       { x: 0, z: 0, type: 'ALL', name: 'TRUNG TÂM CHIẾN ĐỊA' },
       { x: -360, z: 520, type: 'REPAIR', name: 'CÔNG SỰ TÂY PHE XANH' },
@@ -3087,7 +3088,8 @@ class ArtilleryGame3D {
       { x: 650, z: 0, type: 'ALL', name: 'ĐÈO CÁT PHÍA ĐÔNG' }
     ];
 
-    crateLocations.forEach((loc, idx) => {
+    crateLocations.forEach((loc0, idx) => {
+      const loc = Object.assign({}, loc0, { x: loc0.x * K, z: loc0.z * K });
       const groundY = this.terrain.getElevationAt(loc.x, loc.z);
       const crateMesh = this.createSupplyCrateMesh(loc.type);
       crateMesh.position.set(loc.x, groundY + 7, loc.z);
@@ -4290,8 +4292,8 @@ class ArtilleryGame3D {
 
     // 4. Cập nhật radar phản pháo & vòng bo
     this.radar.update(dt, {
-      x: this.player ? this.player.x + 1800 : 1800,
-      y: this.player ? this.player.z + 1800 : 1800
+      x: (this.player ? this.player.x : 0) + this.worldWidth / 2,
+      y: (this.player ? this.player.z : 0) + this.worldDepth / 2
     });
     this.zone.update(dt, this.units, this.worldWidth / 2, this.worldDepth / 2);
 
