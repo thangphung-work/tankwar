@@ -378,8 +378,8 @@ class BattleTerrain3D {
     ctx.setLineDash([]);
     // Nước (mặt nước 3D phủ lên, đây là màu đáy nhìn qua)
     if (M.river) {
-      ctx.strokeStyle = '#3d4a3c'; ctx.lineWidth = M.river.width * sc;
-      ctx.beginPath(); M.river.pts.forEach((p, i) => i ? ctx.lineTo(toPx(p[0]), toPx(p[1])) : ctx.moveTo(toPx(p[0]), toPx(p[1]))); ctx.stroke();
+      ctx.strokeStyle = '#3d4a3c';
+      BattleTerrain3D.strokeRiver(ctx, M.river, toPx, sc);
       for (const L of M.lakes) { ctx.fillStyle = '#3d4a3c'; ctx.beginPath(); ctx.arc(toPx(L.x), toPx(L.z), L.r * sc, 0, 6.283); ctx.fill(); }
     }
     // Nền bê tông dưới boong-ke
@@ -1452,9 +1452,9 @@ ${sea ? 'varying float vDep;' : ''}
     if (this.groundCanvas) ctx.drawImage(this.groundCanvas, 0, 0, w, h);
     // Nước
     if (this.map.river) {
-      ctx.strokeStyle = '#2f6f8f'; ctx.lineWidth = this.map.river.width * sc;
+      ctx.strokeStyle = '#2f6f8f';
       ctx.lineCap = 'round';
-      ctx.beginPath(); this.map.river.pts.forEach((p, i) => i ? ctx.lineTo(P(p[0]), P(p[1])) : ctx.moveTo(P(p[0]), P(p[1]))); ctx.stroke();
+      BattleTerrain3D.strokeRiver(ctx, this.map.river, P, sc);
     }
     for (const L of this.map.lakes) { ctx.fillStyle = '#2f6f8f'; ctx.beginPath(); ctx.arc(P(L.x), P(L.z), L.r * sc, 0, 6.283); ctx.fill(); }
     // Cây
@@ -1540,4 +1540,16 @@ BattleTerrain3D.farFadeGLSL = (alpha) => `#ifdef USE_FOG
 BattleTerrain3D.applyFarFade = (sh, alpha) => {
   sh.uniforms.farFade = BattleTerrain3D.FAR_FADE;
   sh.fragmentShader = 'uniform vec2 farFade;\n' + sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + BattleTerrain3D.farFadeGLSL(alpha));
+};
+
+// Vẽ sông lên canvas 2D (ảnh nền mặt đất, bản đồ nhỏ, bản đồ chiến thuật): bề rộng theo từng đoạn (rộng dần về hạ lưu)
+// + suối nhỏ đầu nguồn. P: toạ độ thế giới -> điểm ảnh; sc: điểm ảnh / đơn vị
+BattleTerrain3D.strokeRiver = (ctx, R, P, sc) => {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const line of [R.pts, R.inlet || []]) {
+    for (let i = 0; i < line.length - 1; i++) {
+      ctx.lineWidth = 2 * (line[i][2] || R.width / 2) * sc;
+      ctx.beginPath(); ctx.moveTo(P(line[i][0]), P(line[i][1])); ctx.lineTo(P(line[i + 1][0]), P(line[i + 1][1])); ctx.stroke();
+    }
+  }
 };

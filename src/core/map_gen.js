@@ -323,46 +323,105 @@ const MapGen = (() => {
       }
     }
 
-    // 2. SÔNG & HỒ (map sông hồ): dòng sông uốn khúc chảy dọc bản đồ (Bắc - Nam) giữa hai cứ điểm,
-    //    cả hai phe đều phải qua cầu khi đánh vòng cánh -> công bằng, không ngập cứ điểm
+    // 2. SÔNG & HỒ (map sông hồ): sông bắt nguồn từ suối trong núi đổ xuống hồ dưới chân vành núi ở một đầu thung lũng,
+    //    uốn khúc dọc một cánh chiến trường (Bắc - Nam) rồi qua khe núi ở đầu kia đổ ra biển. Càng về hạ lưu càng rộng,
+    //    càng uốn mạnh. Vẫn chắn trọn một cánh -> cả hai phe đều phải qua cầu / bãi cạn khi đánh vòng cánh, không ngập cứ điểm
     const lakes = [];
     let riverCut = null;
     if (type === 'RIVER_LAKE') {
-      const pts = [];
       const cx = (rng() < 0.5 ? -1 : 1) * (SH ? R(1120, 1220) : R(380, 420)) * K;
       const amp = R(60, 110), f1 = R(0.0016, 0.0026), ph = R(0, 6.28);
-      // ngoài mép bản đồ (|z| > HALF + 100) sông uốn khúc mạnh dần; trong bản đồ giữ nguyên như cũ
+      // bộ số riêng cho dáng sông (không xáo trộn chuỗi ngẫu nhiên của phần sau)
+      const rv = mulberry32((seed ^ 0x51ee7) >>> 0), RV = (a, b) => a + rv() * (b - a);
+      const dir = rv() < 0.5 ? 1 : -1;              // chiều chảy theo z: nguồn ở phía -dir
+      const sg = Math.sign(cx) || 1;
+      const ph2 = RV(0, 6.28), f2 = f1 * RV(2.1, 2.7);
+      // hồ đầu nguồn: dưới chân vành núi phía thượng nguồn (sông chảy suốt ít nhất ~0.6 chiều dài thung lũng)
+      let zSrc = -dir * HALF * 0.6;
+      while (Math.abs(zSrc) < HALF * 0.85 && Math.hypot(cx, zSrc) < rimFoot(cx, zSrc) - 260) zSrc -= dir * 20;
+      const lakeR = RV(190, 250);
+      const srcLake = { x: cx + RV(-60, 60), z: zSrc, r: lakeR, source: true };
+      // bề rộng & biên độ uốn theo quãng đường xuôi dòng tính từ hồ
+      const down = z => Math.max(0, (z - zSrc) * dir);
+      const halfW = z => lerp(46, 84, smooth(0, 3200, down(z)));
       const riverX = z => {
-        const o = smooth(HALF + 100, HALF + 1100, Math.abs(z)), lim = 170 + 1100 * o;
-        return Math.max(cx - lim, Math.min(cx + lim, cx + Math.sin(z * f1 + ph) * amp * (1 + 2.5 * o) + fbm(noise, 7.3, z * 0.0012, 3) * 70 * (1 + 4 * o)
-          + o * 650 * Math.sin((Math.abs(z) - HALF - 100) * 0.0019 + ph * 2) * Math.sign(z)));
+        const t = down(z), A = lerp(60, 1.9 * amp + 30, smooth(0, 2400, t));
+        // ngoài mép bản đồ (qua khe núi ra biển) uốn khúc mạnh dần
+        const o = smooth(HALF + 100, HALF + 1100, Math.abs(z));
+        let x = cx + A * (Math.sin(z * f1 * 1.25 + ph) + 0.35 * Math.sin(z * f2 + ph2)) + fbm(noise, 7.3, z * 0.0012, 3) * 60 * (1 + 4 * o)
+          + o * 650 * Math.sin((Math.abs(z) - HALF - 100) * 0.0019 + ph * 2) * Math.sign(z);
+        // trong thung lũng: không lấn lên đồi cứ điểm, không chạm chân vành núi phía ngoài
+        if (!o) {
+          const inner = 1040 * K, hw = halfW(z), outer = Math.sqrt(Math.max(0, (rimFoot(x, z) - hw - 170) ** 2 - z * z));
+          x = sg * Math.max(inner, Math.min(Math.max(inner, outer), Math.abs(x)));
+        }
+        return x;
       };
-      for (let z = -HALF - 100; z <= HALF + 100; z += 40) pts.push([riverX(z), z]);
-      river = { pts, width: R(130, 165) };
-      // dòng sông kéo dài ra ngoài bản đồ, qua thung lũng xẻ vành núi rồi đổ ra biển (cảnh nền dùng chung)
-      const far = [];
-      for (let z = -OUTER_EXT; z <= OUTER_EXT; z += 40) far.push([riverX(z), z]);
+      // từ hồ xuôi về hạ lưu: trong bản đồ (pts) và kéo dài qua khe núi ra biển (far, cảnh nền dùng chung); [x, z, nửa bề rộng]
+      const pts = [], far = [];
+      const zEnd = dir * OUTER_EXT;
+      for (let z = zSrc; dir > 0 ? z <= zEnd : z >= zEnd; z += 40 * dir) {
+        const q = [riverX(z), z, halfW(z)];
+        far.push(q);
+        if (Math.abs(z) <= HALF + 100) pts.push(q);
+      }
+      if (dir < 0) { pts.reverse(); far.reverse(); }   // giữ thứ tự tăng dần theo z
+      // suối nhỏ từ trong núi đổ xuống hồ (khe hẹp xẻ sườn núi)
+      const inA = -dir * Math.PI / 2 + RV(-0.6, 0.6) + (sg > 0 ? 0.25 : -0.25) * dir;
+      const inlet = [];
+      for (let k = 0; k <= 22; k++) {
+        const r = lakeR * 0.6 + k * 40, wob = Math.sin(k * 0.55 + ph2) * 30;
+        inlet.push([srcLake.x + Math.cos(inA) * r - Math.sin(inA) * wob, srcLake.z + Math.sin(inA) * r + Math.cos(inA) * wob, lerp(15, 7, k / 22)]);
+      }
+      river = { pts, width: 2 * 84, inlet, source: srcLake, dir };
+      const zLo = far[0][1], zHi = far[far.length - 1][1];
+      // khoảng cách tới đường sông (nửa bề rộng nội suy theo đoạn gần nhất); không cấp phát (gọi hàng trăm nghìn lần)
+      const NR = { d: Infinity, hw: 0 };
+      const nearOn = (P, i0, i1, x, z) => {
+        let best = Infinity, hw = 0;
+        for (let i = i0; i < i1; i++) {
+          const a = P[i], b = P[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], L = dx * dx + dz * dz;
+          const t = L > 0 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L)) : 0;
+          const ex = a[0] + dx * t - x, ez = a[1] + dz * t - z, d2 = ex * ex + ez * ez;
+          if (d2 < best) { best = d2; hw = a[2] + (b[2] - a[2]) * t; }
+        }
+        NR.d = Math.sqrt(best); NR.hw = hw;
+        return NR;
+      };
+      river.near = (x, z) => {
+        // trong bản đồ sông lệch khỏi cx tối đa ~400 (+ thung lũng 1134); ra ngoài khe núi uốn xa hơn
+        if (z < zLo - 1300 || z > zHi + 1300 || Math.abs(x - cx) > (Math.abs(z) < HALF ? 1600 : 2700)) { NR.d = Infinity; NR.hw = 0; return NR; }
+        const i0 = Math.max(0, Math.floor((z - zLo - 1200) / 40)), i1 = Math.min(far.length - 1, Math.ceil((z - zLo + 1200) / 40));
+        if (i1 <= i0) { NR.d = Infinity; NR.hw = 0; return NR; }
+        return nearOn(far, i0, i1, x, z);
+      };
       riverCut = (x, z, h) => {
-        if (Math.abs(x - cx) > 1270 + river.width / 2 + 1100) return h;
-        // chỉ xét đoạn sông quanh z (các điểm cách đều 40)
-        const i0 = Math.max(0, Math.floor((z + OUTER_EXT - 1200) / 40)), i1 = Math.min(far.length - 1, Math.ceil((z + OUTER_EXT + 1200) / 40));
-        const d = distToPolyline(far.slice(i0, i1 + 1), x, z), hw = river.width / 2;
+        const { d, hw } = river.near(x, z);
         // vành núi hạ thấp thành thung lũng rộng hai bên sông (bãi bồi ven sông, sườn thoải dần lên núi)
         if (d < hw + 1050) {
           const rr = rimRaise(x, z);
           if (rr > 0) h = Math.max(Math.min(h, 7), h - rr * (1 - smooth(hw + 60, hw + 1050, d)));
         }
         if (d < hw + 120) h = Math.min(h, d < hw ? lerp(-12, -2.5, smooth(0, hw, d)) : lerp(-2, h, smooth(hw, hw + 120, d)));
+        // suối đầu nguồn: khe hẹp xẻ sườn núi, lòng suối nông
+        if (Math.hypot(x - srcLake.x, z - srcLake.z) < 1400) {
+          const di = nearOn(inlet, 0, inlet.length - 1, x, z);
+          if (di.d < 320) {
+          const rr = rimRaise(x, z);
+          if (rr > 0) h = Math.max(Math.min(h, 6), h - rr * 0.9 * (1 - smooth(di.hw + 20, di.hw + 320, di.d)));
+          if (di.d < di.hw + 40) h = Math.min(h, di.d < di.hw ? lerp(-3, -0.6, smooth(0, di.hw, di.d)) : lerp(-0.4, h, smooth(di.hw, di.hw + 40, di.d)));
+          }
+        }
         return h;
       };
       for (let k = 0; k < 2; k++) {
         lakes.push({ x: (k ? 1 : -1) * R(900, 1350) * K, z: (k ? -1 : 1) * R(420, 720) * K, r: R(150, 230) });
       }
+      lakes.push(srcLake);
       for (let iz = 0; iz < N; iz++) {
         for (let ix = 0; ix < N; ix++) {
           const x = -HALF + ix * CELL, z = -HALF + iz * CELL;
-          const d = distToPolyline(river.pts, x, z);
-          const hw = river.width / 2;
+          const { d, hw } = river.near(x, z);
           let carve = null;
           const cut = riverCut(x, z, heights[iz * N + ix]);
           if (d < hw + 120) carve = cut;
@@ -383,7 +442,7 @@ const MapGen = (() => {
     }
     // nước = lòng sông / hồ hoặc dải bờ ngập nông (đất thấp hơn mặt nước + ~1 đơn vị): không đặt nhà / cây / đá ở đó
     // (trước đây nhà đầu cầu đứng chân dưới nước vì bờ thoải ra ngoài bề rộng lòng sông)
-    const isWater = (x, z) => river ? (distToPolyline(river.pts, x, z) < river.width / 2 || lakes.some(L => Math.hypot(x - L.x, z - L.z) < L.r) || H(x, z) < 1.2) : false;
+    const isWater = (x, z) => river ? (((n) => n.d < n.hw)(river.near(x, z)) || lakes.some(L => Math.hypot(x - L.x, z - L.z) < L.r) || H(x, z) < 1.2) : false;
 
     // 3. MẠNG ĐƯỜNG
     const roads = [];
@@ -959,7 +1018,7 @@ const MapGen = (() => {
         const nr = nearestRoad(x, z, 60);
         p = nr && nr.d > nr.road.width / 2 + 3 && nr.d < nr.road.width / 2 + 10 ? 0.5 : 0.01; // hàng cây vỉa hè
       } else if (type === 'RIVER_LAKE') {
-        const dr = river ? distToPolyline(river.pts, x, z) - river.width / 2 : 1e9;
+        const rn = river ? river.near(x, z) : null, dr = rn ? rn.d - rn.hw : 1e9;
         p = (dr > 10 && dr < 140 ? 0.55 : 0) + smooth(0.1, 0.45, forestMask(x, z)) * 0.6;
       } else if (type === 'HIGHLAND') {
         const h = H(x, z);

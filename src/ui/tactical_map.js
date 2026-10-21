@@ -450,8 +450,8 @@ class TacticalMapController {
 
     // 3. Sông hồ
     if (M.river) {
-      g.strokeStyle = '#2a4458'; g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = M.river.width * sc;
-      g.beginPath(); M.river.pts.forEach((p, i) => i ? g.lineTo(P(p[0]), P(p[1])) : g.moveTo(P(p[0]), P(p[1]))); g.stroke();
+      g.strokeStyle = '#2a4458';
+      BattleTerrain3D.strokeRiver(g, M.river, P, sc);
     }
     for (const Lk of M.lakes || []) {
       g.fillStyle = '#2a4458'; g.beginPath(); g.arc(P(Lk.x), P(Lk.z), Lk.r * sc, 0, Math.PI * 2); g.fill();
