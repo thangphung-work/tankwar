@@ -3088,10 +3088,12 @@ class SPGUnit3D {
   // KHAI HỎA: KÍCH HOẠT HIỆU ỨNG BẮN SIÊU MÃN NHÃN
   // ==========================================
   fire(ballistics, radar) {
-    if (this.reloadTimer > 0 || this.isDead) return null;
+    if (this.isDead) return null;
     // Xe 6 nòng & xe trinh sát không có pháo chính: xả đạn liên thanh qua updateGatling().
-    // Ngoại lệ: xe trinh sát đang chọn tên lửa dẫn hướng (ô đạn 3) -> phóng từ ống phóng trên nóc.
+    // Ngoại lệ: xe trinh sát đang chọn tên lửa dẫn hướng (ô đạn 3) -> phóng từ ống phóng trên nóc. Ống phóng có hồi nạp
+    // riêng (antiTankCooldown) — đang thay hộp đạn súng máy (reloadTimer) không chặn phóng tên lửa như trước
     if (this.tankType === 'SCOUT' && this.selectedAmmo === 'ANTI_TANK_MISSILE') return this.fireAntiTank(ballistics, radar);
+    if (this.reloadTimer > 0) return null;
     if (this.tankType === 'GATLING' || this.tankType === 'SCOUT') return null;
     // Pháo cao xạ / pháo tự hành hạng nặng bắt buộc phải dừng xe hạ chân chống thủy lực mới được khai hỏa
     if (this.tankType === 'ARTILLERY' && !this.isDeployed) {
@@ -3305,8 +3307,11 @@ class SPGUnit3D {
         }
       }
     } else {
-      // Khi nhả phím bắn: Nòng quay chậm dần lại
-      this.spinUpTime = Math.max(0, this.spinUpTime - dt * 2.0);
+      // Khi nhả phím bắn: nòng quay chậm dần lại. Cụm 6 nòng nặng quay theo quán tính ~1.6 s mới dừng hẳn (đúng như hình
+      // cụm nòng đang quay) -> bóp cò lại khi nòng còn quay thì chỉ cần lấy lại phần tốc độ đã mất, không phải khởi động
+      // lại từ đầu như trước (trước đây tụt về 0 sau 0.25 s trong khi nòng vẫn đang quay trên màn hình)
+      const spinDown = this.tankType === 'GATLING' ? this.spinRequired / 1.6 : 2.0;
+      this.spinUpTime = Math.max(0, this.spinUpTime - dt * spinDown);
     }
 
     // Xoay cụm 6 nòng 3D theo tốc độ quay nòng cực nhanh tương ứng tốc độ xả đạn

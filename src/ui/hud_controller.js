@@ -549,7 +549,7 @@ class HUDController {
           UIIcons.set(gatlingSpinTag, '[[bolt]] 100% FULL CÔNG SUẤT!');
           gatlingSpinTag.style.color = '#8fc46f';
         } else if (spinPct > 0) {
-          UIIcons.set(gatlingSpinTag, `[[bolt]] KHỞI ĐỘNG: ${spinPct}% (3S)`);
+          UIIcons.set(gatlingSpinTag, `[[bolt]] KHỞI ĐỘNG: ${spinPct}% (${(this.game.player.spinRequired || 0.5).toFixed(1)}S)`);
           gatlingSpinTag.style.color = '#e7a63a';
         } else {
           UIIcons.set(gatlingSpinTag, '[[bolt]] GIỮ SPACE: QUAY NÒNG');
@@ -633,7 +633,7 @@ class HUDController {
       }
       if (scoutRadarTag) {
         scoutRadarTag.classList.remove('hidden');
-        UIIcons.set(scoutRadarTag, `[[radar-2]] TRINH SÁT: QUÉT 650M`);
+        UIIcons.set(scoutRadarTag, `[[radar-2]] TRINH SÁT: QUÉT ${Math.round(this.game.player.reconRadius || 950)}M`);
         scoutRadarTag.style.color = '#8fc46f';
       }
 

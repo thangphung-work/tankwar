@@ -971,6 +971,17 @@ class BallisticsSystem3D {
             // xe đồng đội cũng là vật rắn: đạn bay trúng thân là nổ / xuyên (không có ngòi nổ cận đích với xe phe mình)
             const friend = !unit.isDead && !isEnemy && unit.id !== s.shooterId;
             if (wreck || friend || (!unit.isDead && unit.id !== s.shooterId && isEnemy)) {
+              // đạn súng máy / pháo 30mm liên thanh không có ngòi nổ cận đích: chỉ trúng khi đường đạn cắt đúng hộp thân xe
+              // (trước đây bay qua trong 40 đv quanh tâm xe địch là tính trúng -> loạt đạn 6 nòng bị xe đứng gần đường đạn
+              // "hút" mất, không tới được điểm ruồi đang ngắm)
+              if (s.isGatling && typeof Strongholds !== 'undefined' && Strongholds.segUnitBox) {
+                const tb = Strongholds.segUnitBox(unit, prevX, prevY, prevZ, prevX + segX, prevY + segY, prevZ + segZ, 1.0);
+                if (tb >= 0) {
+                  const dh = tb * Math.sqrt(segLenSq);
+                  if (dh < minHitDist) { minHitDist = dh; hitVehicle = unit; s.x = prevX + segX * tb; s.y = prevY + segY * tb; s.z = prevZ + segZ * tb; }
+                }
+                continue;
+              }
               const targetCenterY = unit.y + (wreck ? 7 : 9);
               // Bán kính kích nổ tiếp cận: 40 mét khi bắn thẳng, 34 mét khi bắn cầu vồng
               const proximityRadius = wreck || friend ? 13 : (s.isDirectFire ? 40 : 34);

@@ -1571,9 +1571,15 @@ class ArtilleryGame3D {
       tr.solveT -= dt;
       if (tr.solveT <= 0) {
         tr.solveT = 0.15;
-        const sol = B.solveAimingForTarget(P.x, P.y, P.z, aimX, aimZ, this.terrain, P, { hintEl: tr.fel, atUnit: T !== this._aimPoint });
-        tr.fel = sol && sol.reachable ? sol.elevation : undefined;
-        tr.reachable = !!(sol && sol.reachable !== false);
+        // ngắm tự do trong kính: đường đạn đi qua đúng điểm 3D tâm kính chạm (mặt tường, chỗ trên thân xe, sườn dốc) —
+        // trước đây giải theo điểm mặt đất dưới tâm kính nên loạt đạn 6 nòng lệch khỏi điểm ruồi (cao / thấp hơn)
+        const el3 = T.free && T.hy !== undefined ? this.freeAimElevation(P, aimX, T.hy, aimZ, tr.fel) : null;
+        if (el3 !== null) { tr.fel = el3; tr.reachable = true; }
+        else {
+          const sol = B.solveAimingForTarget(P.x, P.y, P.z, aimX, aimZ, this.terrain, P, { hintEl: tr.fel, atUnit: T !== this._aimPoint });
+          tr.fel = sol && sol.reachable ? sol.elevation : undefined;
+          tr.reachable = !!(sol && sol.reachable !== false);
+        }
       }
       P.fcsTarget = { x: aimX, z: aimZ, y: ty + 9, el: tr.fel };
     } else {
@@ -1703,8 +1709,11 @@ class ArtilleryGame3D {
     cam.updateMatrixWorld();
     let h = '';
     const f = (n) => n.toFixed(1);
-    // phóng nhỏ thì các vạch xít nhau: bỏ vạch / số đè lên vạch / số trước đó
-    let lastT = -1e9, lastL = -1e9;
+    // Thước đứng lệch sang phải trục dọc (không bị chữ Λ ở tâm che): mỗi vạch đúng độ cao đạn đi qua ở cự ly đó (đường đạn
+    // rất căng — vạch gần nằm sát ngang tâm, xa dần xuống dưới; lăn chuột phóng to thì thước giãn ra). Vạch / số đè lên
+    // nhau khi phóng nhỏ thì bỏ bớt
+    const X0 = 24;
+    let lastT = -1e9, lastL = -1e9, y0 = null, y1 = null;
     for (const M of LD.pts) {
       v.set(M.x, M.y, M.z).project(cam);
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;
@@ -4597,7 +4606,7 @@ class ArtilleryGame3D {
       t += 3 + t * 0.015;
     }
     let tEnd = tHit !== null ? tHit : Math.min(2400, lo), wall = false;
-    let unit = null;
+    let unit = null, unitTc = 0;
     // xe địch: tia cắt khối cầu ôm thân xe (chỉ xe mình đang thấy / biết vị trí)
     for (const u of this.units) {
       if (u === P || u.isDead || u.team === P.team || !this.canTarget(u)) continue;
@@ -4607,7 +4616,7 @@ class ArtilleryGame3D {
       const d2 = cx * cx + cy * cy + cz * cz - tc * tc;
       if (d2 > 14 * 14) continue;
       const t0 = tc - Math.sqrt(14 * 14 - d2);
-      if (t0 < tEnd) { tEnd = Math.max(0, t0); unit = u; }
+      if (t0 < tEnd) { tEnd = Math.max(0, t0); unit = u; unitTc = tc; }
     }
     // nhà / ụ cứ điểm chắn trước
     const bx = ox + dx * tEnd, by = oy + dy * tEnd, bz = oz + dz * tEnd;
@@ -4656,8 +4665,13 @@ class ArtilleryGame3D {
         break;
       }
     }
-    // hy: độ cao điểm tia nhìn chạm (súng bắn thẳng nhắm đúng điểm 3D này); trúng xe: nhắm giữa thân
-    if (unit) return { x: unit.x, z: unit.z, y: ground(unit.x, unit.z), hy: (unit.y || 0) + 9, d: tEnd, unit };
+    // hy: độ cao điểm tia nhìn chạm (súng bắn thẳng nhắm đúng điểm 3D này). Trúng xe: nhắm đúng chỗ tâm kính đặt trên xe
+    // (điểm trên tia gần tâm xe nhất, giới hạn trong thân xe) — trước đây luôn nhắm giữa thân, đặt tâm kính lên tháp / mép
+    // xe thì đạn vẫn đi vào giữa thân, lệch khỏi điểm ruồi
+    if (unit) {
+      const qx = ox + dx * unitTc, qz = oz + dz * unitTc, qy = Math.max((unit.y || 0) + 2, Math.min((unit.y || 0) + 18, oy + dy * unitTc));
+      return { x: qx, z: qz, y: ground(qx, qz), hy: qy, d: tEnd, unit };
+    }
     const x = Math.max(-lim, Math.min(lim, ox + dx * tEnd)), z = Math.max(-lim, Math.min(lim, oz + dz * tEnd));
     // sky: tia nhìn không chạm đất / nhà trong tầm dò (ra tới mép bản đồ hoặc ~3.200) — ngắm lên trời
     return { x, z, y: ground(x, z), hy: oy + dy * tEnd, d: tEnd, unit: null, sky: tHit === null && !wall };
@@ -5065,6 +5079,21 @@ class ArtilleryGame3D {
         const sp = fast ? C.fastSpeed : C.speed;
         wvx = (fx * mf + rx * mr) * sp; wvz = (fz * mf + rz * mr) * sp;
       }
+      // nhiễu điện từ của máy phá sóng (ew_jammer.js D.emiT): lệnh điều khiển mất từng lúc, drone giật / trôi dạt, chao
+      // độ cao, mũi lắc — trục trặc chứ không rơi
+      if (D.emiT > 0 && !S.landing) {
+        const E = S._emi || (S._emi = { t: 0 });
+        E.t -= dt;
+        if (E.t <= 0) {
+          E.t = 0.25 + Math.random() * 0.45;
+          const a = Math.random() * Math.PI * 2, m = 60 + Math.random() * 110;
+          E.x = Math.cos(a) * m; E.z = Math.sin(a) * m; E.y = (Math.random() - 0.5) * 70; E.yaw = (Math.random() - 0.5) * 1.2; E.drop = Math.random() < 0.35;
+        }
+        if (E.drop) { wvx *= 0.15; wvz *= 0.15; }
+        wvx += E.x; wvz += E.z;
+        D.yaw = wrap(D.yaw + E.yaw * dt);
+        D.vy += E.y * dt;
+      }
       // quán tính: tăng / giảm tốc mềm như drone thật
       const kv = 1 - Math.exp(-dt * 2.2);
       D.vx += (wvx - D.vx) * kv; D.vz += (wvz - D.vz) * kv;
@@ -5210,9 +5239,10 @@ class ArtilleryGame3D {
       if (P.barrelPivot) { P.barrelPivot.updateWorldMatrix(true, false); P.barrelPivot.getWorldPosition(v); } else v.set(P.x, (P.y || 0) + 26, P.z);
       px = v.x - fx * 4; pz = v.z - fz * 4;
       const gy = T ? T.getElevationAt(px, pz) : 0;
-      // xe tăng: kính pháo thủ đặt ngang trục nòng (không thị sai) — thước cự ly chỉ còn đúng độ rơi của đạn, vạch xa nằm
-      // thấp dần dưới tâm (kính cao hơn nòng 7 đv ở cự ly game ngắn làm thứ tự vạch đảo lộn); xe khác như cũ
-      const eyeH = P.tankType === 'ALL_ROUNDER' ? 0.5 : 7;
+      // kính ngắm đặt ngang trục nòng (không thị sai): thấy được chỗ nào thì đạn tới được chỗ đó — kính cao hơn nòng 7 đv
+      // nhìn vượt đỉnh gò / mép tường trong khi đạn từ nòng thấp hơn cắm vào gò (6 nòng xả cả loạt trúng gò trước mặt, lệch
+      // xa điểm ruồi); xe tăng: thước cự ly chỉ còn đúng độ rơi của đạn (thị sai ở cự ly game ngắn làm thứ tự vạch đảo lộn)
+      const eyeH = 0.5;
       if (S.y === null) S.y = v.y + eyeH;
       S.y += (v.y + eyeH - S.y) * (1 - Math.exp(-dt * 10));
       py = Math.max(S.y, gy + 4);
@@ -5363,7 +5393,8 @@ class ArtilleryGame3D {
           set(U.hull, hp + '%');
           if (U.hull.className !== cls) U.hull.className = cls;
         }
-        // nhiễu điện từ của máy phá sóng (ew_jammer.js D.emiT): số pin & thanh pin nhảy loạn, lúc chập báo "LỖI PIN"
+        // nhiễu điện từ của máy phá sóng (ew_jammer.js D.emiT): cảm biến pin báo loạn (số & thanh pin nhảy, lúc báo "LỖI PIN"),
+        // pin thật không đổi
         const emi = DR.emiT > 0, zap = emi && Math.random() < 0.18;
         const shown = emi ? Math.max(0, Math.min(1, DR.batt + (Math.random() - 0.5) * 0.35)) : DR.batt;
         set(U.batt, zap ? '⚡ LỖI PIN' : Math.round(shown * 100) + '% · ' + Math.floor(bs / 60) + ':' + String(bs % 60).padStart(2, '0'));

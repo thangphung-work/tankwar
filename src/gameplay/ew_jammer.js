@@ -30,7 +30,6 @@ const EWJammer = (() => {
     DETECT: 2400,    // địch dò phương bắt được xe đang phát sóng trong bán kính này
     SEND: 0.5,       // nhịp báo trạng thái đang phát cho máy khác (s)
     TTL: 1.3,        // máy khác coi là đang phát tới khi hết hạn gói cuối + chừng này
-    EMI_DRAIN: 0.03,  // drone trong chùm: pin tụt thêm (phần/giây) + chập chờn sụt từng nấc (nhiễu điện từ cảm ứng vào mạch pin)
     BLIND_IN: 0.4,   // radar địch nằm trong chùm bấy nhiêu giây thì bị phá sóng
     BLIND: 3.0       // radar bị phá sóng: không khóa được mục tiêu tới bấy nhiêu giây sau khi ra khỏi chùm
   };
@@ -361,21 +360,19 @@ const EWJammer = (() => {
       if (jam) {
         // vừa lọt vào chùm: báo trục trặc do nhiễu điện từ (một lần mỗi lượt bị chiếu)
         if (!(D.jamT > 0.05)) {
-          this.addCombatLog('[[alert-triangle]] DRONE TRỤC TRẶC — NHIỄU ĐIỆN TỪ: hình truyền về nhiễu sọc, pin chập chờn tụt nhanh. Bay ra khỏi chùm phá sóng ngay!', 'alert');
+          this.addCombatLog('[[alert-triangle]] DRONE TRỤC TRẶC — NHIỄU ĐIỆN TỪ: hình nhiễu sọc, lệnh điều khiển chập chờn, drone giật / trôi dạt, báo pin loạn. Bay ra khỏi chùm phá sóng ngay!', 'alert');
           if (window.soundEngine && window.soundEngine.playDroneBattery) window.soundEngine.playDroneBattery('warn');
         }
         D.jamT = (D.jamT || 0) + dt;
         const k = Math.min(1, D.jamT / C.LINK);
-        // pin: tụt đều thêm + chập (sụt 1-3% bất chợt); thanh pin trên màn hình nhảy loạn (game.js đọc D.emiT)
+        // trục trặc (game.js đọc D.emiT): lệnh điều khiển mất từng lúc, drone giật / trôi dạt, cảm biến pin báo loạn —
+        // pin thật KHÔNG bị rút (nhiễu làm hỏng liên lạc / điện tử, không đốt pin)
         D.emiT = 0.6;
-        D.batt = Math.max(0, D.batt - dt * C.EMI_DRAIN * (0.5 + k));
-        D.emiZap = (D.emiZap || 0) - dt;
-        if (D.emiZap <= 0) { D.emiZap = 0.35 + Math.random() * 0.6; D.batt = Math.max(0, D.batt - (0.01 + Math.random() * 0.02)); }
         if (S) {
           S.glitch = Math.max(S.glitch || 0, 0.15 + 0.35 * k);
           S.jolt = Math.max(S.jolt || 0, 0.1 + 0.25 * k);
           if (T && T.sig) {
-            const txt = D.jamT < C.LINK ? `⚠ NHIỄU ĐIỆN TỪ — DRONE TRỤC TRẶC, PIN CHẬP · MẤT LIÊN LẠC SAU ${(C.LINK - D.jamT).toFixed(1)} S` : '⚠ NHIỄU ĐIỆN TỪ — MẤT ĐIỀU KHIỂN, DRONE TỰ BAY VỀ';
+            const txt = D.jamT < C.LINK ? `⚠ NHIỄU ĐIỆN TỪ — DRONE TRỤC TRẶC, ĐIỀU KHIỂN CHẬP CHỜN · MẤT LIÊN LẠC SAU ${(C.LINK - D.jamT).toFixed(1)} S` : '⚠ NHIỄU ĐIỆN TỪ — MẤT ĐIỀU KHIỂN, DRONE TỰ BAY VỀ';
             if (T.sig.textContent !== txt) T.sig.textContent = txt;
             T.sig.hidden = false; T._sig = true; T._jamTxt = true;
           }
