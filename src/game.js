@@ -4089,21 +4089,16 @@ class ArtilleryGame3D {
       this._freeLook = false;
       if (S.arty) {
         const DR = this.droneState(), DC = ArtilleryGame3D.DRONE;
-        // camera gắn trên drone (đang lơ lửng trên xe sau pha cất cánh, hoặc đang bay về thì bay tiếp từ chỗ đó);
-        // tự bay ra vùng đang ngắm (xe đã khóa / điểm đã đánh dấu / điểm đạn rơi theo nòng; chưa có thì giữa vùng bắn)
-        // — chạm phím lái là người chơi cầm lái
-        const R = this.artyRangeOf(P), mid = (R.min + R.max) / 2;
-        const A = (this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null) || this._aimPoint;
-        const L = this._lastTraj;
-        const G = A || (L && !L.out && !L.wall && L.d >= R.min ? { x: L.x, z: L.z } : { x: P.x - Math.sin(tw) * mid, z: P.z - Math.cos(tw) * mid });
-        if (DR.state === 'docked') { const pd = this.dronePadWorld(); DR.x = pd.x; DR.y = pd.y + 30; DR.z = pd.z; DR.yaw = (P.bodyAngle || 0); }
+        // camera gắn trên drone (đang lơ lửng trên xe sau pha cất cánh, hoặc đang bay về thì bay tiếp từ chỗ đó):
+        // drone bay THẲNG LÊN tại chỗ tới độ cao làm việc, mũi quay theo hướng nòng (đỉnh màn hình = hướng bắn) rồi lơ lửng
+        // chờ người chơi lái (W A S D / Q E / lăn chuột) — không tự bay đi đâu (trước đây tự bay ra mục tiêu / điểm rơi)
+        if (DR.state === 'docked') { const pd = this.dronePadWorld(); DR.x = pd.x; DR.y = pd.y + 30; DR.z = pd.z; }
         DR.state = 'flying';
-        DR.vx = DR.vx || 0; DR.vz = DR.vz || 0; DR.vy = DR.vy || 0;
+        DR.vx = 0; DR.vz = 0; DR.vy = DR.vy || 0;
+        DR.yaw = tw;
         S.hT = DC.cruiseAlt; S.pitch = -1.38; S.roll = 0; S.t = 0;
-        const gb = Math.atan2(-(G.x - P.x), -(G.z - P.z));   // hướng drone = hướng từ xe tới mục tiêu (đỉnh màn hình = hướng bắn)
-        const back = DC.cruiseAlt / Math.tan(-DC.gimbal);
-        S.auto = { x: G.x - (-Math.sin(gb)) * back, z: G.z - (-Math.cos(gb)) * back, yaw: gb };
-        S.cx = G.x; S.cz = G.z; S.h = DR.y;
+        S.auto = null;
+        S.cx = DR.x; S.cz = DR.z; S.h = DR.y;
         if (DR.model) DR.model.visible = false;   // camera nằm trong drone
         this.renderer.domElement.style.filter = 'saturate(.62) contrast(1.12) brightness(1.04)';   // hình ảnh truyền về từ camera drone
         if (window.soundEngine && window.soundEngine.playDroneLink) window.soundEngine.playDroneLink('up');

@@ -849,7 +849,13 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (onTop && K.nDown && this.cutAt(K, L.f, L.r)) return K.G + floorY(af);
         // Trên ụ: mọi điểm ngoài kênh hở (kể cả phần mái che phía trên khoang) là mặt đất đắp
         if (onTop && h !== null && !(inCut(af, ar) && af > S.HB)) return K.G + Math.max(0, h);
-        if (af <= S.END + 6 && ar < cutHalf(af) + S.WING_T + 26) return K.G + floorY(af);
+        if (af <= S.END + 6 && ar < cutHalf(af) + S.WING_T + 26) {
+          // dải lề ngoài mặt trong tường cánh chỉ tính là sàn kênh cho xe đang ở dưới kênh (bánh xích quệt sát tường);
+          // xe đi bên ngoài tường cánh (trên ụ / nền cao hơn sàn) thì theo mặt đất thật — trước đây bị hạ xuống sàn kênh,
+          // xe chúi mũi lún xuống đất cạnh tường cánh
+          if (ar >= cutHalf(af) && h !== null && refY !== undefined && refY - K.G > floorY(af) + 1.5) return K.G + Math.max(0, h);
+          return K.G + floorY(af);
+        }
         if (h !== null) return K.G + Math.max(0, h);
       }
       return null;

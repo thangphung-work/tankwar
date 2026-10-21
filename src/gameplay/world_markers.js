@@ -248,6 +248,7 @@ const WorldMarkers = (() => {
 
   // Đặt dấu nằm sát mặt đất: nghiêng theo độ dốc tại chỗ, cỡ theo khoảng cách camera (luôn đọc được)
   const _n = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion();
+  const _t = new THREE.Vector3(), _b = new THREE.Vector3(), _m = new THREE.Matrix4();
   function placeOnGround(mesh, terrain, x, z, y, radius, yaw) {
     let gy = y;
     if (terrain && terrain.getElevationAt) {
@@ -272,7 +273,14 @@ const WorldMarkers = (() => {
     _n.set(nx, ny, nz);
     if (_n.lengthSq() < 1e-8) _n.set(0, 1, 0);
     _n.normalize();
-    _q.setFromUnitVectors(_up, _n);
+    if (Math.abs(_n.y) < 0.95) {
+      // mặt dựng (tường, vách): trục dấu thẳng hàng ngang / dọc theo mặt tường (chỉ quay up -> n thì dấu bị xoay
+      // nghiêng tuỳ hướng tường, 4 góc ngoặc lệch chéo)
+      _t.set(_n.z, 0, -_n.x).normalize();
+      _b.crossVectors(_t, _n);
+      _m.makeBasis(_t, _n, _b);
+      _q.setFromRotationMatrix(_m);
+    } else _q.setFromUnitVectors(_up, _n);
     mesh.quaternion.copy(_q);
     mesh.position.set(x + _n.x * 3.2, y + _n.y * 3.2, z + _n.z * 3.2);
     mesh.scale.setScalar(radius);
