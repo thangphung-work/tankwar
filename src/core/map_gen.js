@@ -1235,9 +1235,9 @@ const MapGen = (() => {
       // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
       L.mound = { fc: -80, af: 150, ar: 200, h: 72, cut: 80, face: 10 };
     } else if (L.kind === 'sam') {
-      // trận địa S-75 kiểu "ngôi sao": 6 bệ phóng quanh radar điều khiển hoả lực ở giữa (lục giác giãn theo r cho vừa mặt bằng),
-      // mỗi bệ nằm trong kè đất móng ngựa cao 1.75 m, miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
-      L.launchers = [0, 1, 2, 3, 4, 5].map(k => { const a = Math.PI / 6 + k * Math.PI / 3, f = Math.cos(a) * 175, r = Math.sin(a) * 300; return { f, r, az: Math.atan2(r, f) }; });
+      // trận địa S-125 Pechora: 4 bệ phóng 5P73 (mỗi bệ 4 tên lửa) quanh trạm radar dẫn bắn ở giữa, mỗi bệ nằm trong kè đất
+      // móng ngựa cao 1.75 m, miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
+      L.launchers = [0, 1, 2, 3].map(k => { const a = Math.PI / 4 + k * Math.PI / 2, f = Math.cos(a) * 175, r = Math.sin(a) * 300; return { f, r, az: Math.atan2(r, f) }; });
       L.berm = { r: 46, w: 14, h: 14, gap: 0.7 };
     }
     return L;
