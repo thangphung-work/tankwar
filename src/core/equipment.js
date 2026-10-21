@@ -29,7 +29,7 @@
   const MODULES = {
     era: {
       name: 'Giáp phản ứng nổ', icon: 'bolt', cat: 'armor', adv: true, price: 3200, tanks: ['ALL_ROUNDER', 'GATLING', 'SCOUT'], speed: 0.97,
-      desc: 'Gạch nổ phủ mũi, sườn và tháp. Trúng gạch: phá hủy hẳn RPG, bom con, đạn pháo 120mm (không mất máu); tên lửa đầu nổ kép chỉ giảm 15%, đạn xuyên giáp giảm 40%, lựu pháo 155mm giảm 50%. Đạn súng máy / 30mm không làm gạch nổ. Mảng gạch đã nổ thì mất.'
+      desc: 'Gạch nổ phủ mũi, sườn và tháp — khắc tinh của đạn nổ lõm. Trúng gạch: phá hủy hẳn RPG, bom con đạn chùm (không mất máu); tên lửa đầu nổ kép chỉ giảm 15%, đạn xuyên giáp giảm 40%. Đạn nổ phá 120mm (không phải nổ lõm) làm gạch nổ nhưng chỉ giảm 20%, lựu pháo 155mm giảm 15%. Đạn súng máy / 30mm không làm gạch nổ. Mảng gạch đã nổ thì mất.'
     },
     slat: {
       name: 'Giáp lồng chống RPG', icon: 'grid-dots', cat: 'armor', price: 1800, tanks: ALL, speed: 0.98,
@@ -41,7 +41,7 @@
     },
     spall: {
       name: 'Lớp lót chống mảnh', icon: 'layers-subtract', cat: 'armor', price: 2800, tanks: ALL,
-      desc: 'Lớp sợi aramid lót bên trong khoang (không nhìn thấy từ ngoài): khi bị bắn thủng, mảnh vỡ gây ít sát thương hơn (-15%, trúng kho đạn -25%), xe bị hạ ít khi nổ tung kho đạn hơn.'
+      desc: 'Lớp sợi aramid lót bên trong khoang (không nhìn thấy từ ngoài): khi bị bắn thủng, giữ lại mảnh vỡ bong từ mặt trong giáp, thu hẹp nón mảnh văng -> kíp xe trong khoang chịu ít sát thương hơn (-20%), máy móc / động cơ -10%; mảnh ít bắn vào cơ số đạn nên xe bị hạ ít khi nổ kho đạn lây hơn. Trúng thẳng kho đạn thì thuốc phóng vẫn bén lửa / nổ (gần như không đỡ).'
     },
     aps: {
       name: 'Hệ thống đánh chặn chủ động', icon: 'shield-bolt', cat: 'gear', adv: true, price: 7000, tanks: ['ALL_ROUNDER', 'GATLING'],
@@ -69,7 +69,7 @@
     },
     jammer: {
       name: 'Máy gây nhiễu', icon: 'antenna-bars-off', cat: 'gear', adv: true, price: 5000, tanks: ALL,
-      desc: 'Phát nhiễu điện tử: đầu dò tên lửa địch mất gấp đôi thời gian mới khóa được bạn, tên lửa đang bay dễ lệch hướng, radar địch bắt bạn chập chờn.'
+      desc: 'Tổ hợp gây nhiễu quang - điện tử (kiểu Shtora): 2 đèn hồng ngoại nhấp nháy làm rối máy bám tên lửa của xe phóng + phát nhiễu radar. Đầu dò tên lửa địch mất gấp đôi thời gian mới khóa được bạn, tên lửa đang bay bị dẫn chập chờn (lắc ~3 m quanh xe, chỉ bám lại ở đoạn cuối), radar địch cứ 2 vòng quét mới bắt được bạn 1 lần. Không tác dụng với đạn pháo / đạn súng thường (không có dẫn hướng).'
     }
   };
   // Nhóm trong bảng chọn trang bị & số ô tối đa mỗi nhóm (đạn cao cấp không chiếm ô)
@@ -84,9 +84,9 @@
 
   // Đạn cao cấp: mua 1 lần cho 1 xe, luôn dùng. pen: hệ số độ xuyên; splash: hệ số sát thương nổ lan; tandem: đầu nổ kép
   const PREMIUM = {
-    ap_du: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'AP', name: 'Đạn xuyên lõi hợp kim nặng', icon: 'arrow-big-right-lines', price: 4500, pen: 1.22, desc: 'Đạn xuyên giáp xuyên sâu hơn 22%, ít mất sức xuyên khi bắn xa.' },
-    heat_tandem: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'NORMAL', name: 'Đạn nổ lõm 2 tầng', icon: 'flame', price: 3500, pen: 1.1, tandem: true, desc: 'Thay đạn nổ phá thường bằng đạn nổ lõm có đầu nổ mồi: xuyên ~530mm, phá gạch giáp nổ trước.' },
-    apds30: { tank: 'GATLING', cat: 'ammo', adv: true, ammo: 'GATLING_BULLET', name: 'Đạn 30mm xuyên dưới cỡ', icon: 'arrow-big-right-lines', price: 3800, pen: 1.36, desc: 'Đạn 30mm lõi tungsten: xuyên sâu hơn 36%, đục thủng sườn xe tăng nhanh hơn.' },
+    ap_du: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'AP', name: 'Đạn xuyên lõi hợp kim nặng', icon: 'arrow-big-right-lines', price: 4500, pen: 1.22, loss: 0.6, desc: 'Đạn xuyên giáp xuyên sâu hơn 22%, mũi tên dài & nặng hơn nên giữ tốc độ tốt: bắn xa chỉ mất ~60% sức xuyên so với đạn thường.' },
+    heat_tandem: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'NORMAL', name: 'Đạn nổ lõm 2 tầng', icon: 'flame', price: 3500, pen: 1.1, tandem: true, splash: 0.6, desc: 'Thay đạn nổ phá thường bằng đạn nổ lõm có đầu nổ mồi: xuyên ~530mm, phá gạch giáp nổ trước. Đổi lại sức ép / mảnh nổ lan yếu hơn đạn nổ phá (~60%).' },
+    apds30: { tank: 'GATLING', cat: 'ammo', adv: true, ammo: 'GATLING_BULLET', name: 'Đạn 30mm xuyên dưới cỡ', icon: 'arrow-big-right-lines', price: 3800, pen: 1.36, splash: 0, desc: 'Đạn 30mm lõi tungsten: xuyên sâu hơn 36%, đục thủng sườn xe tăng nhanh hơn. Lõi đặc không có thuốc nổ: hết mảnh nổ lan khi bắn trượt sát xe.' },
     slap127: { tank: 'SCOUT', cat: 'ammo', adv: true, ammo: 'SCOUT_BULLET', name: 'Đạn 12.7mm SLAP', icon: 'arrow-big-right-lines', price: 2600, pen: 1.6, desc: 'Đạn 12.7mm xuyên dưới cỡ có đai nhựa: xuyên sâu gấp 1,6 lần.' },
     he_frag: { tank: 'ARTILLERY', cat: 'ammo', adv: true, ammo: 'HE', name: 'Lựu đạn mảnh định sẵn', icon: 'atom-2', price: 3500, splash: 1.15, desc: 'Vỏ đạn 155mm khía rãnh tạo mảnh đều: sát thương nổ lan +15%.' }
   };
@@ -323,21 +323,28 @@
   }
   // Giáp phản ứng nổ (gạch mua thêm, gạch có sẵn trên xe, giáp nổ nhặt ở thùng tiếp tế) khi bị trúng thẳng:
   //  - đạn súng máy / 30mm / đạn cháy: gạch được thiết kế KHÔNG kích nổ với đạn nhỏ -> không tác dụng, không mất
-  //  - RPG, bom con, đạn nổ phá 120mm, đạn chùm: gạch kích nổ, tấm thép văng ra phá hủy đầu đạn -> 0 sát thương
+  //  - RPG, bom con, đạn chùm (đầu nổ lõm): gạch kích nổ, tấm thép văng ra cắt đứt luồng kim loại -> 0 sát thương
   //  - tên lửa đầu nổ kép / đạn nổ lõm 2 tầng: đầu mồi kích nổ gạch, đầu chính vẫn xuyên -> còn 85%
   //  - đạn xuyên giáp mũi tên: tấm thép văng chém lệch / gãy mũi tên -> còn 60%
-  //  - lựu pháo 155mm: quá mạnh, gạch chỉ đỡ được một nửa
+  //  - đạn nổ phá 120mm: không có luồng kim loại để cắt -> gạch nổ theo nhưng chỉ đỡ chút sức ép / mảnh -> còn 80%
+  //  - lựu pháo 155mm: sức nổ quá lớn, gạch gần như vô dụng -> còn 85%
   // Trả { trigger: gạch có kích nổ (và mất) không, mul: phần sát thương còn lại }
   function eraEffect(ammo, heavy, shooter) {
     if (ammo === 'SCOUT_BULLET' || ammo === 'GATLING_BULLET' || ammo === 'INCENDIARY') return { trigger: false, mul: 1, why: 'small' };
-    if (heavy) return { trigger: true, mul: 0.5, why: 'heavy' };
+    if (heavy) return { trigger: true, mul: 0.85, why: 'heavy' };
     if (ammo === 'ANTI_TANK_MISSILE' || isTandem(shooter, ammo)) return { trigger: true, mul: 0.85, why: 'tandem' };
     if (ammo === 'AP') return { trigger: true, mul: 0.6, why: 'kinetic' };
+    if (ammo === 'NORMAL' || ammo === 'HE') return { trigger: true, mul: 0.8, why: 'blast' };
     return { trigger: true, mul: 0, why: 'defeat' };
   }
   function penMul(shooter, ammo) {
     const P = shooter && shooter.ammoMods && shooter.ammoMods[ammo];
     return P && P.pen ? P.pen : 1;
+  }
+  // Hệ số mất sức xuyên theo cự ly (đạn cao cấp giữ tốc độ tốt hơn)
+  function penLossMul(shooter, ammo) {
+    const P = shooter && shooter.ammoMods && shooter.ammoMods[ammo];
+    return P && P.loss !== undefined ? P.loss : 1;
   }
   function isTandem(shooter, ammo) {
     const P = shooter && shooter.ammoMods && shooter.ammoMods[ammo];
@@ -345,11 +352,12 @@
   }
   function splashMul(shooter, ammo) {
     const P = shooter && shooter.ammoMods && shooter.ammoMods[ammo];
-    return P && P.splash ? P.splash : 1;
+    return P && P.splash !== undefined ? P.splash : 1;
   }
+  // Lớp lót chống mảnh: chặn mảnh vỡ bay vào kíp xe; trúng kho đạn thì thuốc phóng vẫn bén lửa / nổ (gần như không đỡ)
   function spallMul(u, zone) {
     if (!has(u, 'spall')) return 1;
-    return zone === 'ammo' ? 0.75 : 0.85;
+    return zone === 'crew' ? 0.8 : zone === 'ammo' ? 0.97 : 0.9;
   }
   // Lồng thép bị trúng bởi RPG / tên lửa: xác suất đầu đạn bị bóp méo, không nổ đúng cách
   // Lồng thép (nan thép cách vỏ ~0,3 m, mua thêm hoặc có sẵn trên xe) khi bị trúng thẳng:
@@ -1486,7 +1494,7 @@
 
   return Object.assign(API, {
     has, equip, onRespawn, paidUsed, ammoDelta, startLife,
-    armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, eraEffect, penMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul, extHitMul, extFireChance, extIgniteMul,
+    armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, eraEffect, penMul, penLossMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, apsLeft, apsTry, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul, extHitMul, extFireChance, extIgniteMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, smokeSides, smokeMax, smokeCount, lockBlocked, SMOKE_GAP, SMOKE_LIFE, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)
     APS_CHARGES, outOfStockNote

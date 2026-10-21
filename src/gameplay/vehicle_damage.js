@@ -2334,7 +2334,7 @@ const VehicleDamage = (() => {
     if (ctx.fatigue) armor *= 1 - 0.45 * Math.min(1, ctx.fatigue);
     // Độ xuyên giảm theo cự ly bay (đạn động năng)
     let pen = P.mm * (EQ ? EQ.penMul(opts.shooter, opts.ammo) : 1);
-    if (P.loss && ctx.range) pen *= Math.max(0.2, 1 - P.loss * ctx.range / 1000);
+    if (P.loss && ctx.range) pen *= Math.max(0.2, 1 - P.loss * (EQ && EQ.penLossMul ? EQ.penLossMul(opts.shooter, opts.ammo) : 1) * ctx.range / 1000);
     const ratio = pen / Math.max(1, armor);
     const sizeK = POSTPEN[P.big ? 'big' : 'small'][A.cls] || 1;
     let mul, penetrated = false;
@@ -2451,13 +2451,14 @@ const VehicleDamage = (() => {
         events.push({ type: 'eraStop', text: eff.mul === 0 ? 'GẠCH GIÁP NỔ ĐÃ PHÁ HỦY ĐẦU ĐẠN — không mất máu'
           : eff.why === 'tandem' ? 'Đầu nổ mồi kích nổ gạch giáp — đầu chính vẫn xuyên vào'
           : eff.why === 'kinetic' ? 'Gạch giáp nổ chém lệch mũi tên xuyên giáp — giảm 40% sát thương'
-          : 'Gạch giáp nổ đỡ được một nửa sức nổ lựu pháo' });
+          : eff.why === 'blast' ? 'Đạn nổ phá làm gạch giáp nổ — gạch chỉ đỡ được chút sức ép (giảm 20%)'
+          : 'Lựu pháo 155mm quá mạnh — gạch giáp nổ chỉ đỡ được chút ít (giảm 15%)' });
       }
     }
     if (AO.zone === 'ammo' && AO.pen && opts.ammo !== 'SCOUT_BULLET') events.push({ type: 'ammoRack', text: 'TRÚNG KHO ĐẠN — sát thương cực lớn' });
     // Lớp lót chống mảnh (trang bị): phát xuyên vào khoang bị lớp sợi aramid giữ bớt mảnh vỡ -> báo cho người chơi biết
     if (AO.pen && (cls === 'kinetic' || cls === 'heat' || cls === 'cannon') && typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'spall')) {
-      events.push({ type: 'spall', text: `LỚP LÓT CHỐNG MẢNH đã chặn bớt mảnh vỡ trong khoang (sát thương -${AO.zone === 'ammo' ? 25 : 15}%)` });
+      if (AO.zone !== 'ammo') events.push({ type: 'spall', text: `LỚP LÓT CHỐNG MẢNH đã chặn bớt mảnh vỡ trong khoang (sát thương -${AO.zone === 'crew' ? 20 : 10}%)` });
     }
     // Bình chữa cháy (trang bị) dập chớp lửa khi đạn xuyên giáp lọt vào khoang (đạn cháy không báo từng viên: bắn liên thanh)
     if (AO.pen && cls === 'kinetic' && typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'fireext')) {
