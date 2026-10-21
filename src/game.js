@@ -796,7 +796,7 @@ class ArtilleryGame3D {
       this.toggleHighView();
     });
 
-    // CHẾ ĐỘ NGẮM BẮN: bấm rồi thả Ctrl, hoặc bấm C, để vào / thoát kính ngắm.
+    // CHẾ ĐỘ NGẮM BẮN: bấm rồi thả Ctrl để vào / thoát kính ngắm (xe pháo: cất / thu drone).
     // Ctrl bật theo kiểu bấm-thả chứ không giữ (giữ Ctrl rồi bấm W là tổ hợp đóng tab của trình duyệt).
     // Phím đang giữ sẵn để lái (W tự lặp) không làm hỏng cú bấm Ctrl; chỉ một phím MỚI bấm kèm Ctrl mới tính là tổ hợp.
     let ctrlAlone = false;
@@ -816,7 +816,6 @@ class ArtilleryGame3D {
       if (e.key === 'Control') { if (!e.repeat) ctrlAlone = true; return; }
       if (!e.repeat) ctrlAlone = false;
       if (e.key === 'Escape' && this._sight) this.setSightMode(false);
-      if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey && !typing(e)) toggleSight();
       // bản đồ hỏa lực của pháo: W A S D (+ Shift) di chuyển vùng nhìn, không lái xe
       if (this._sight && this._sight.arty && PAN[e.code]) { this._sight.keys[e.code] = true; e.stopImmediatePropagation(); }
       // màn hình drone: F = đánh dấu mục tiêu tại tâm màn hình (điểm gimbal camera đang nhìn)
@@ -3470,7 +3469,7 @@ class ArtilleryGame3D {
     } else {
       C.chaseZoom = C.zoomT;
       C.zoomT = this.player.tankType === 'ARTILLERY' ? 3.3 : 2.6;
-      this.addCombatLog('[[eye]] Góc nhìn cao — bấm V để về bám đuôi, M mở bản đồ để ngắm thật xa', 'tip');
+      this.addCombatLog('[[eye]] Góc nhìn cao — lăn chuột để về bám đuôi, M mở bản đồ để ngắm thật xa', 'tip');
     }
   }
 
@@ -3710,7 +3709,7 @@ class ArtilleryGame3D {
     });
     const c0 = near[0];
     const pTxt = c0 ? (c0.d < 280 ? 'ĐỊCH SÁT XE PHÁO' : 'ĐỊCH ÁP SÁT XE PHÁO') + ' · ' + Math.round(c0.d) + ' M · HƯỚNG ' + this.bearingFromPlayer(c0.u)
-      + (near.length > 1 ? ' · ' + near.length + ' XE' : '') + ' — C: THU DRONE' : '';
+      + (near.length > 1 ? ' · ' + near.length + ' XE' : '') + ' — CTRL: THU DRONE' : '';
     if (T.prox._t !== pTxt) { T.prox._t = pTxt; T.prox.textContent = pTxt; T.prox.hidden = !pTxt; }
     place(T.gun, P.x, (P.y || 0) + 30, P.z, 'PHÁO · ' + Math.round(Math.hypot(D.x - P.x, D.z - P.z)).toLocaleString() + ' M', c0 ? '#ff3b30' : '#9fd3ff');
     // xe phòng không đang khóa drone (hướng như máy cảnh báo radar; nằm ngoài khung hình thì mũi tên ở mép)
@@ -4423,8 +4422,8 @@ class ArtilleryGame3D {
       + '<div class="gs-side"><span>' + (digital ? 'CỰ LY LASER' : 'CỰ LY') + '</span><span class="gs-big gs-range">—</span><span class="gs-state"></span><span class="gs-blast"></span>'
       + (arty ? '' : '<span class="gs-disp"></span>') + '</div>'
       + '<div class="gs-hint">' + (arty
-        ? 'W A S D: lái drone · Q / E: xoay · Shift: nhanh · Lăn chuột: lên / xuống · Nhấp: đánh dấu mục tiêu / khóa xe · F: đánh dấu tâm màn hình · Space: bắn · C: thu drone'
-        : 'Rê chuột: ngắm · Nhấp trái / Space: bắn · W A S D: lái · Tab: tự khóa mục tiêu · Lăn chuột: phóng to · Ctrl hoặc C: thoát'
+        ? 'W A S D: lái drone · Q / E: xoay · Shift: nhanh · Lăn chuột: lên / xuống · Nhấp: đánh dấu mục tiêu / khóa xe · F: đánh dấu tâm màn hình · Space: bắn · Ctrl: thu drone'
+        : 'Rê chuột: ngắm · Nhấp trái / Space: bắn · W A S D: lái · Tab: tự khóa mục tiêu · Lăn chuột: phóng to · Ctrl: thoát'
           + (P.tankType === 'GATLING' || P.tankType === 'SCOUT' ? ' · Ngắm lên trời: bắn drone' : '') + (P.tankType === 'GATLING' ? ' · F: khóa drone' : '')) + '</div>'
       + (arty ? '<div class="gs-dead" hidden><div class="gs-dead-n"></div><div class="gs-tear"></div><div class="gs-txt"><b>MẤT TÍN HIỆU</b><span>DRONE TRINH SÁT ĐÃ BỊ PHÁ HỦY</span></div></div>' : '');
     this._sightMagEl = el.querySelector('.gs-mag');
@@ -5715,7 +5714,7 @@ class ArtilleryGame3D {
       // đang nhìn qua drone ở xa: không thấy quanh xe mình -> báo thêm vào nhật ký (màn hình drone có băng cảnh báo riêng)
       if (zone > prevZone && this._sight && this._sight.arty && near.length) {
         const c = near[0];
-        this.addCombatLog(`[[alert-triangle]] ĐỊCH ${zone === 2 ? 'SÁT' : 'ÁP SÁT'} XE PHÁO — cách xe ${Math.round(c.d)}M, hướng ${this.bearingFromPlayer(c.u)} · [C] thu drone`, 'alert');
+        this.addCombatLog(`[[alert-triangle]] ĐỊCH ${zone === 2 ? 'SÁT' : 'ÁP SÁT'} XE PHÁO — cách xe ${Math.round(c.d)}M, hướng ${this.bearingFromPlayer(c.u)} · [Ctrl] thu drone`, 'alert');
       }
       this._proxZone = Math.max(zone, Math.min(prevZone, outZone));
     } else this._proxNear = null;

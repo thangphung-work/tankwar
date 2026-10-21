@@ -21,7 +21,7 @@
       { icon: 'flame', name: 'Đạn cháy 30mm', desc: 'Xe địch trúng đạn bốc cháy', key: '2' }
     ],
     ARTILLERY: [
-      { icon: 'drone', name: 'Drone trinh sát', desc: 'Soi địch cho cả đội, ngắm bắn qua camera drone', key: 'C' },
+      { icon: 'drone', name: 'Drone trinh sát', desc: 'Soi địch cho cả đội, ngắm bắn qua camera drone', key: 'Ctrl' },
       { icon: 'chart-arcs', name: 'Tầm bắn xa nhất', desc: 'Bắn cầu vồng qua đồi, xa tới 3.300 m' },
       { icon: 'grain', name: 'Hỏa lực hạng nặng', desc: 'Lựu pháo 155mm, đạn chùm phủ cả vùng', key: '2' }
     ],
