@@ -875,7 +875,12 @@ class ArtilleryGame3D {
       else if (S.locked) { S.locked = false; this.isPointerFiring = false; this.setSightMode(false); }
     });
     document.addEventListener('pointerlockerror', () => { if (this._sight) this._sight.noLock = true; });
+    document.addEventListener('mouseleave', () => { if (this._mouse) this._mouse.on = false; });
+    window.addEventListener('blur', () => { if (this._mouse) this._mouse.on = false; });
     document.addEventListener('mousemove', (e) => {
+      // vị trí con trỏ trên màn 3D (ngắm tự do chưa khóa chuột: giữ con trỏ sát mép -> tháp quay tiếp, xem sightEdgeTurn)
+      const M = this._mouse || (this._mouse = { x: 0, y: 0, on: false });
+      M.x = e.clientX; M.y = e.clientY; M.on = e.target === canvas;
       const S = this._sight;
       if (!S || !S.free) return;
       // chưa khóa được chuột: vẫn ngắm được khi rê trên màn hình (con trỏ còn hiện), trừ lúc rê trên nút / ô nhập của HUD
@@ -4134,6 +4139,24 @@ class ArtilleryGame3D {
     S.aimPitch = Math.max(-0.3, Math.min(up, S.aimPitch - my * k));
   }
 
+  // Ngắm tự do khi CHƯA khóa chuột (con trỏ còn hiện): rê tới mép màn hình thì con trỏ dừng lại (hết movementX) ->
+  // giữ con trỏ trong dải mép thì kính + tháp quay tiếp về phía đó, càng sát mép càng nhanh (mép trên / dưới: ngóc / cúi kính)
+  sightEdgeTurn(dt) {
+    const S = this._sight, M = this._mouse;
+    if (!S || !S.free || S.locked || !M || !M.on || !(dt > 0)) return;
+    const w = window.innerWidth, h = window.innerHeight;
+    const EX = Math.max(36, w * 0.07), EY = Math.max(30, h * 0.07);
+    const depth = (v, lo, hi, E) => v < lo + E ? -(1 - (v - lo) / E) : v > hi - E ? 1 - (hi - v) / E : 0;
+    const ex = depth(M.x, 0, w, EX), ey = depth(M.y, 0, h, EY);
+    if (!ex && !ey) return;
+    // sát mép ngoài cùng: kính quay đúng tốc độ quay tháp / nâng nòng thật của xe -> tháp luôn bám kịp tâm kính.
+    // Đổi ra "pixel rê chuột" theo cùng hệ số với freeAimMove (k = 0.0024 / độ phóng^0.85)
+    const P = this.player, TR = P && P.turretRates ? P.turretRates() : { traverse: 40, elevate: 24 };
+    const k = 0.0024 / Math.pow(S.mag || 1, 0.85), D2R = Math.PI / 180;
+    const px = TR.traverse * D2R * dt / k, py = Math.max(8, TR.elevate || 0) * D2R * dt / k;
+    this.freeAimMove(Math.sign(ex) * ex * ex * px, Math.sign(ey) * ey * ey * py);
+  }
+
   // Điểm đầu tiên tia nhìn từ tâm kính chạm vào: mặt đất (dò dọc tia), nhà / ụ cứ điểm, hoặc xe địch đang nhìn thấy
   freeAimProbe(ox, oy, oz, dx, dy, dz) {
     const T = this.terrain, P = this.player;
@@ -4678,7 +4701,7 @@ class ArtilleryGame3D {
         const dr = this._airAim.dr;
         S.aimYaw = wrap(S.aimYaw + wrap(Math.atan2(-(dr.x - P.x), -(dr.z - P.z)) - S.aimYaw) * (1 - Math.exp(-dt * 10)));
       }
-      if (S.free) S.yaw = S.aimYaw;
+      if (S.free) { this.sightEdgeTurn(dt); S.yaw = S.aimYaw; }
       else S.yaw = wrap(S.yaw + wrap(tw - S.yaw) * (1 - Math.exp(-dt * 18)));
       fx = -Math.sin(S.yaw); fz = -Math.cos(S.yaw);
       const v = this._sightV || (this._sightV = new THREE.Vector3());
