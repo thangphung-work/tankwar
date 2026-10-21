@@ -5058,10 +5058,11 @@ class ArtilleryGame3D {
     this._blastInfo = { radius: Math.round(Math.max(ra, rc)), core: Math.round(core), cluster: fire === 'CLUSTER', hitK };
     const M = U.mesh.material.uniforms;
     M.uHit.value += ((hitK || 0) - M.uHit.value) * Math.min(1, dt * 6);
+    if (U.wall) U.wall.material.uniforms.uHit.value = M.uHit.value;
   }
 
-  // Vòng sát thương dự kiến: lưới phủ bám mặt đất (bị xe / vật cản che đúng chiều sâu, không nổi lơ lửng trên dốc),
-  // vẽ tối giản: viền ngoài mảnh + nền rất mờ + 1 vòng mảnh đánh dấu lõi. Nét đo bằng fwidth -> mảnh đều ở mọi cỡ / elip
+  // Vòng sát thương dự kiến (màu trắng nhẹ): lưới phủ bám mặt đất (bị xe / vật cản che đúng chiều sâu) với viền ngoài
+  // mảnh + nền rất mờ + 1 vòng mảnh đánh dấu lõi, kèm màn sáng 3D thấp quanh mép. Nét đo bằng fwidth -> mảnh đều ở mọi cỡ
   buildBlastZone() {
     const Z = new THREE.Group();
     const N = 40, geo = new THREE.PlaneGeometry(2, 2, N, N);
@@ -5083,11 +5084,11 @@ class ArtilleryGame3D {
         'void main() {',
         '  float r = length(vU);',
         '  if (r > 1.02) discard;',
-        '  vec3 col = vec3(1.0, 0.45, 0.2);',
-        // nền rất mờ, đậm dần vào tâm; viền ngoài mảnh; lõi chỉ 1 vòng mảnh
-        '  float a = 0.07 * (1.0 - r) * step(r, 1.0);',
-        '  a = max(a, line(r - 1.0, 0.8) * 0.6);',
-        '  if (uCore > 0.01) a = max(a, line(r - uCore, 0.6) * 0.45);',
+        '  vec3 col = vec3(1.0, 0.98, 0.94);',
+        // nền trắng rất mờ, đậm dần vào tâm; viền ngoài mảnh; lõi chỉ 1 vòng mảnh
+        '  float a = 0.05 * (1.0 - r) * step(r, 1.0);',
+        '  a = max(a, line(r - 1.0, 0.9) * 0.55);',
+        '  if (uCore > 0.01) a = max(a, line(r - uCore, 0.6) * 0.3);',
         // mục tiêu đang ngắm nằm trong vùng sát thương: đậm hơn chút
         '  a *= 1.0 + uHit * 0.5;',
         '  gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));',
@@ -5098,7 +5099,36 @@ class ArtilleryGame3D {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 2; mesh.frustumCulled = false;
     Z.add(mesh);
-    Z.userData = { mesh, key: '' };
+    // MÀN SÁNG 3D quanh mép vòng: dải trắng thấp (~1,2 m) dựng đứng theo chu vi, mờ dần lên trên -> đọc rõ bán kính nổ
+    // từ mọi góc nhìn mà không che cảnh; chân dải bám đúng cao độ mặt đất từng điểm (placeBlastZone)
+    const SEG = 96, wallGeo = new THREE.BufferGeometry();
+    const wp = new Float32Array((SEG + 1) * 2 * 3), wv = new Float32Array((SEG + 1) * 2), widx = [];
+    for (let i = 0; i <= SEG; i++) {
+      wv[i * 2] = 0; wv[i * 2 + 1] = 1;
+      if (i < SEG) { const a = i * 2; widx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    }
+    wallGeo.setAttribute('position', new THREE.BufferAttribute(wp, 3));
+    wallGeo.setAttribute('aV', new THREE.BufferAttribute(wv, 1));
+    wallGeo.setIndex(widx);
+    const wallMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+      uniforms: { uHit: { value: 0 } },
+      vertexShader: [
+        'attribute float aV; varying float vV;',
+        'void main() { vV = aV; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }'
+      ].join('\n'),
+      fragmentShader: [
+        'varying float vV; uniform float uHit;',
+        'void main() {',
+        '  float a = pow(1.0 - vV, 2.2) * 0.22 * (1.0 + uHit * 0.6);',
+        '  gl_FragColor = vec4(vec3(1.0, 0.98, 0.94) * a, 1.0);',
+        '}'
+      ].join('\n')
+    });
+    const wall = new THREE.Mesh(wallGeo, wallMat);
+    wall.renderOrder = 2; wall.frustumCulled = false;
+    Z.add(wall);
+    Z.userData = { mesh, wall, SEG, key: '' };
     return Z;
   }
 
@@ -5126,6 +5156,28 @@ class ArtilleryGame3D {
     }
     pos.needsUpdate = true;
     mesh.geometry.computeBoundingSphere();
+    if (U.wall) {
+      const wp = U.wall.geometry.attributes.position, H = 10;
+      for (let i = 0; i <= U.SEG; i++) {
+        const a = i / U.SEG * Math.PI * 2, lx = Math.cos(a) * rc, lz = Math.sin(a) * ra;
+        const wx = cx + lx * cy + lz * sy, wz = cz - lx * sy + lz * cy;
+        const h = (T ? T.getElevationAt(wx, wz) : base) - base + 0.4;
+        wp.setXYZ(i * 2, lx, h, lz);
+        wp.setXYZ(i * 2 + 1, lx, h + H, lz);
+      }
+      wp.needsUpdate = true;
+      U.wall.geometry.computeBoundingSphere();
+    }
+  }
+
+  // Đang trong trận mà nhạc vẫn là nhạc sảnh (vào trận không qua bước ghép trận: phòng thử cứ điểm, trường bắn, sân thử...
+  // hoặc vừa đóng phòng xem xe trả về nhạc sảnh) -> chuyển sang chế độ trận (không có nhạc nền, chỉ tiếng chiến trường)
+  ensureBattleMusic(covered) {
+    if (!this.isGameStarted || this.isGameOver || covered) return;
+    const se = window.soundEngine;
+    if (!se || typeof se.setMusicMode !== 'function') return;
+    const m = se._musicWant;
+    if (m === 'lobby' || m === 'search' || m === 'countdown' || m === 'hangar') { try { se.setMusicMode('battle'); } catch (e) { /* bỏ qua */ } }
   }
 
   screenCovered() {
@@ -5150,7 +5202,9 @@ class ArtilleryGame3D {
       this.update(dt);
       // Sảnh / phòng xem xe 3D che kín màn hình (nền đục): không vẽ chiến trường phía sau — trước đây vẫn vẽ cả bản đồ
       // (~650 lệnh vẽ, ~2,4 triệu tam giác, ~55 ms / khung) chồng lên renderer riêng của phòng xem xe -> lag
-      if (!this.screenCovered()) this.render();
+      const covered = this.screenCovered();
+      if (!covered) this.render();
+      this.ensureBattleMusic(covered);
     } catch (e) {
       this._loopErrN = (this._loopErrN || 0) + 1;
       if (this._loopErrN <= 3 || this._loopErrN % 300 === 0) console.error('[GAME] Lỗi trong khung hình (vòng lặp vẫn chạy tiếp):', e);
