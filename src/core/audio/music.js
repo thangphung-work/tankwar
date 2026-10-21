@@ -6,7 +6,7 @@
  *   'lobby'      sảnh chờ: chủ đề chính đi qua các đoạn mở đầu -> dồn dần -> cao trào -> lắng, lặp lại
  *   'search'     đang tìm trận: tối thiểu đoạn "dồn dần" + tiếng tích tắc móc đơn
  *   'countdown'  đếm ngược: cao trào + vê trống dồn + tiếng xoáy dâng lên
- *   'battle'     trong trận: nền căng thẳng, dày / mỏng theo độ ác liệt (musicHeat), phút cuối dồn dập
+ *   'battle'     trong trận: tắt nhạc sảnh, chỉ phát tiếng kèn mở trận rồi im (không có nhạc nền trong trận)
  *   'victory' | 'defeat' | 'draw'   đoạn kết ngắn rồi im
  *   'off'        tắt
  * Gọi được trước khi bật âm thanh: chế độ được nhớ lại, nhạc chạy ngay khi trình duyệt cho phép (thao tác đầu tiên).
@@ -175,7 +175,7 @@
         this._mzStop(0.25);
         M.heat = 0.3;
         if (this.playBattleStart) this.playBattleStart();
-        this._mzStart('battle', t + 3.2, 4);
+        // trong trận không có nhạc nền: chỉ còn tiếng chiến trường + hiệu ứng kịch tích (battle_drama.js)
       } else if (mode === 'victory' || mode === 'defeat' || mode === 'draw') {
         this._mzStop(1.2);
         this.playMusicStinger(mode, t + 0.15);
