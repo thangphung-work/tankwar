@@ -224,6 +224,8 @@
   const SKY = 0x9bb0c0;
   scene.background = new THREE.Color(SKY);
   scene.fog = new THREE.FogExp2(SKY, 0.00065);
+  // sương mù loãng dần khi camera lùi xa (toàn cảnh pháo bắn cầu vồng tầm vài km): không phủ kín xe và mặt đất thành màu trời
+  const FOG0 = scene.fog.density, fogUniforms = [];
   scene.add(new THREE.HemisphereLight(0xdfe9f2, 0x5a4a36, 0.55));
   scene.add(new THREE.AmbientLight(0xfff5e4, 0.35));
   const sun = new THREE.DirectionalLight(0xfff2dc, 1.25);
@@ -1120,7 +1122,7 @@
         uSun: { value: sunDir }, uSunCol: { value: new THREE.Color(0xfff2dc) },
         uSkyHi: { value: new THREE.Color(0x7f9db8) }, uSkyLo: { value: new THREE.Color(SKY) },
         uShallow: { value: new THREE.Color(0x77704a) }, uDeep: { value: new THREE.Color(0x203a30) },
-        uFogCol: { value: scene.fog.color }, uFogDen: { value: scene.fog.density }
+        uFogCol: { value: scene.fog.color }, uFogDen: fogUniforms[fogUniforms.push({ value: scene.fog.density }) - 1]
       },
       vertexShader: `
         varying vec3 vW; varying float vFogD;
@@ -1965,6 +1967,9 @@
     const cp = Math.cos(orbit.pitch);
     camera.position.set(tgt.x + Math.sin(orbit.yaw) * cp * orbit.dist, tgt.y + Math.sin(orbit.pitch) * orbit.dist, tgt.z + Math.cos(orbit.yaw) * cp * orbit.dist);
     camera.lookAt(tgt);
+    const fd = FOG0 * Math.min(1, 900 / Math.max(1, orbit.dist));
+    scene.fog.density = fd;
+    for (const u of fogUniforms) u.value = fd;
   }
 
   // ===========================================================================
@@ -2016,7 +2021,13 @@
     document.getElementById('ammoDesc').textContent = ProjectileModels.info(state.sel.ammo).desc;
     placeLauncher();
     showInsetModel();
+    // bệ phóng xa (pháo cầu vồng: vài km) -> toàn cảnh chỉ thấy xe bé tí: tự chuyển sang camera cận bệ phóng
+    if (state.cam === 'wide' && (state.launchD || 0) > 1500) setCamButton('launcher');
     if (state.cam === 'wide' || state.cam === 'launcher') camPreset(state.cam);
+  }
+  function setCamButton(name) {
+    state.cam = name;
+    document.querySelectorAll('#camRow .btn').forEach(x => x.classList.toggle('on', x.dataset.cam === name));
   }
   list.addEventListener('click', e => { const b = e.target.closest('.btn'); if (b) { initAudio(); selectAmmo(+b.dataset.i); } });
 
