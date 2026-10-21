@@ -31,50 +31,64 @@ const GroundCover = (() => {
   // Ảnh lá cỏ: atlas 2x2 = 4 kiểu khóm khác nhau (số lá, độ cao, độ xòe, độ khô) — mỗi khóm chọn ngẫu nhiên 1 kiểu
   function blades() {
     if (bladeTex) return bladeTex;
-    const C = 128, c = document.createElement('canvas'); c.width = c.height = C * 2;
+    // atlas 2x2, mỗi ô 256 px (~1 m tấm lá): 4 kiểu khóm — cỏ đồng dày, cỏ cao trổ bông, búi cỏ thấp, cỏ khô úa.
+    // Lá mảnh thon nhọn, cong võng (Bezier bậc 3), một số gãy gập; gốc sẫm -> ngọn sáng; lẫn lá chết nâu
+    const C = 256, c = document.createElement('canvas'); c.width = c.height = C * 2;
     const g = c.getContext('2d');
-    const kinds = [{ n: 46, hMin: 0.45, hMax: 0.98, spread: 50, seed: 77 }, { n: 28, hMin: 0.6, hMax: 1.0, spread: 24, seed: 91 },
-      { n: 64, hMin: 0.3, hMax: 0.7, spread: 70, seed: 113 }, { n: 36, hMin: 0.4, hMax: 0.9, spread: 90, seed: 137, dry: true }];
+    const kinds = [{ n: 150, hMin: 0.4, hMax: 0.95, spread: 60, seed: 77 }, { n: 95, hMin: 0.55, hMax: 1.0, spread: 34, seed: 91, heads: 16 },
+      { n: 190, hMin: 0.22, hMax: 0.6, spread: 90, seed: 113 }, { n: 120, hMin: 0.35, hMax: 0.9, spread: 80, seed: 137, dry: true, heads: 6 }];
     kinds.forEach((K, idx) => {
       const ox = (idx % 2) * C, oy = (idx >> 1) * C, rnd = rngOf(K.seed);
       g.save(); g.beginPath(); g.rect(ox, oy, C, C); g.clip();
-      for (let i = 0; i < K.n; i++) {
-        const x0 = ox + C * (0.18 + rnd() * 0.64), lean = (rnd() - 0.5) * K.spread, h = C * (K.hMin + rnd() * (K.hMax - K.hMin)) - 2, w = 1.8 + rnd() * 2.8;
-        const k = 0.7 + rnd() * 0.45, dry = K.dry ? 0.35 + rnd() * 0.5 : rnd() * 0.18;
-        const base = [140 + 50 * dry, 160 + 16 * dry, 118 - 10 * dry], tip = [192 + 34 * dry, 214 - 6 * dry, 172 - 56 * dry];
+      const blade = (front) => {
+        const x0 = ox + C * (0.2 + rnd() * 0.6), lean = (rnd() - 0.5) * K.spread * (front ? 1.2 : 0.8), h = C * (K.hMin + rnd() * (K.hMax - K.hMin)) - 2, w = 1.1 + rnd() * 2.2;
+        const k = (front ? 0.82 : 0.62) + rnd() * 0.38, dead = rnd() < 0.08, dry = K.dry ? 0.35 + rnd() * 0.6 : dead ? 0.9 : rnd() * 0.22;
+        const base = dead ? [120, 104, 80] : [118 + 70 * dry, 138 + 26 * dry, 96 - 8 * dry], tip = dead ? [168, 150, 112] : [176 + 50 * dry, 200 - 4 * dry, 140 - 50 * dry];
+        const bend = rnd() < 0.18;                  // lá gãy gập: ngọn quặt xuống
+        const tx = x0 + lean * (bend ? 1.7 : 1), ty = oy + C - h * (bend ? 0.72 : 1);
+        const c1x = x0 + lean * 0.1, c1y = oy + C - h * 0.45, c2x = x0 + lean * (bend ? 1.2 : 0.6), c2y = oy + C - h * (bend ? 1.02 : 0.85);
         const gr = g.createLinearGradient(0, oy + C, 0, oy + C - h);
-        gr.addColorStop(0, `rgb(${base[0] * k | 0},${base[1] * k | 0},${base[2] * k | 0})`);
+        gr.addColorStop(0, `rgb(${base[0] * k * 0.7 | 0},${base[1] * k * 0.7 | 0},${base[2] * k * 0.7 | 0})`);
         gr.addColorStop(1, `rgb(${Math.min(255, tip[0] * k) | 0},${Math.min(255, tip[1] * k) | 0},${Math.max(0, tip[2] * k) | 0})`);
-        g.fillStyle = gr;
-        g.beginPath();
+        g.fillStyle = gr; g.beginPath();
         g.moveTo(x0 - w, oy + C);
-        g.quadraticCurveTo(x0 + lean * 0.4, oy + C - h * 0.55, x0 + lean, oy + C - h);
-        g.quadraticCurveTo(x0 + lean * 0.4 + w * 0.4, oy + C - h * 0.5, x0 + w, oy + C);
+        g.bezierCurveTo(c1x - w * 0.8, c1y, c2x - w * 0.35, c2y, tx, ty);
+        g.bezierCurveTo(c2x + w * 0.35, c2y, c1x + w * 0.8, c1y, x0 + w, oy + C);
         g.closePath(); g.fill();
+      };
+      for (let i = 0; i < K.n * 0.45; i++) blade(false);   // lớp lá sau (tối)
+      for (let i = 0; i < K.n * 0.55; i++) blade(true);
+      // bông hạt: thân mảnh + bông hạt thuôn (cỏ trổ bông lâu ngày không cắt)
+      for (let i = 0; i < (K.heads || 0); i++) {
+        const x0 = ox + C * (0.25 + rnd() * 0.5), lean = (rnd() - 0.5) * 50, h = C * (0.75 + rnd() * 0.24);
+        const tx = x0 + lean, ty = oy + C - h;
+        g.strokeStyle = K.dry ? 'rgb(170,150,104)' : 'rgb(150,150,96)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, oy + C); g.quadraticCurveTo(x0 + lean * 0.3, oy + C - h * 0.6, tx, ty); g.stroke();
+        for (let j = 0; j < 14; j++) { const t = j / 14; g.fillStyle = `rgba(${190 + rnd() * 30 | 0},${172 + rnd() * 20 | 0},${118 + rnd() * 20 | 0},0.95)`; g.beginPath(); g.ellipse(tx - lean * 0.05 * t + (rnd() - 0.5) * 3, ty + t * 22, 1.6, 3, lean * 0.01, 0, 6.283); g.fill(); }
       }
       g.restore();
     });
     bladeTex = new THREE.CanvasTexture(c);
+    bladeTex.anisotropy = 4;
     return bladeTex;
   }
 
-  // Khóm cỏ: 5 tấm tỏa tròn, nghiêng ra ngoài (nhìn từ trên cao vẫn thấy thành khóm), pháp tuyến hướng lên như mặt đất
+  // Khóm cỏ: 9 tấm lá toả tròn, mỗi tấm cong 2 đoạn (gốc gần đứng, ngọn ngả ra ngoài như bụi cỏ thật), rộng hẹp /
+  // cao thấp khác nhau; pháp tuyến hướng lên như mặt đất
   function tuftGeometry() {
     const P = [], UV = [], NR = [], I = [];
-    const n = 7, rnd = rngOf(4242);
+    const n = 9, rnd = rngOf(4242);
     for (let k = 0; k < n; k++) {
-      const a = k / n * Math.PI * 2 + (rnd() - 0.5) * 0.8, ca = Math.cos(a), sa = Math.sin(a);
-      const tilt = 0.45 + rnd() * 0.55;      // độ ngả ra ngoài khác nhau từng tấm
-      const w = 0.35 + rnd() * 0.25;
-      const bx = ca * 0.08, bz = sa * 0.08;
-      const tx = ca * tilt, tz = sa * tilt;
+      const a = k / n * Math.PI * 2 + (rnd() - 0.5) * 0.7, ca = Math.cos(a), sa = Math.sin(a);
+      const tilt = 0.3 + rnd() * 0.55, w = 0.28 + rnd() * 0.26, hy = 0.6 + rnd() * 0.4;
       const px = -sa * w, pz = ca * w;
+      const pt = (t, lift) => { const lean = tilt * t * t, y = hy * (t * 0.98 + lift); return [ca * (0.06 + lean), y, sa * (0.06 + lean)]; };
       const o = P.length / 3;
-      const hy = 0.65 + rnd() * 0.35;
-      P.push(bx - px, 0, bz - pz, bx + px, 0, bz + pz, tx + px, hy, tz + pz, tx - px, hy, tz - pz);
-      UV.push(0, 0, 1, 0, 1, 1, 0, 1);
-      for (let q = 0; q < 4; q++) NR.push(0, 1, 0);
-      I.push(o, o + 1, o + 2, o, o + 2, o + 3);
+      for (const [t, v] of [[0, 0], [0.55, 0.55], [1, 1]]) {
+        const [x, y, z] = pt(t, 0), ww = 1 - t * 0.12;
+        P.push(x - px * ww, y, z - pz * ww, x + px * ww, y, z + pz * ww); UV.push(0, v, 1, v);
+        NR.push(0, 1, 0, 0, 1, 0);
+      }
+      I.push(o, o + 1, o + 3, o, o + 3, o + 2, o + 2, o + 3, o + 5, o + 2, o + 5, o + 4);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
@@ -95,7 +109,7 @@ const GroundCover = (() => {
       this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5) + 90000;   // + cỏ dại dày trong căn cứ
       this.maxP = maxCells * PEBBLES_PER_CELL;
       // cỏ
-      const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+      const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.32, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });   // lá mảnh: ngưỡng thấp để xa không bị mỏng mất
       gm.onBeforeCompile = (sh) => {
         sh.uniforms.gTime = GroundShader && GroundShader.time ? GroundShader.time : { value: 0 };
         sh.vertexShader = 'uniform float gTime;\nvarying float vBY;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
@@ -119,7 +133,7 @@ const GroundCover = (() => {
           .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
             normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`);
       };
-      gm.customProgramCacheKey = () => 'grassTuft3';
+      gm.customProgramCacheKey = () => 'grassTuft4';
       this.grass = new THREE.InstancedMesh(tuftGeometry(), gm, this.maxT);
       this.grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxT * 3), 3);
       this.grass.count = 0; this.grass.frustumCulled = false; this.grass.receiveShadow = true; this.grass.castShadow = false;
