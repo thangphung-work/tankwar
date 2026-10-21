@@ -4587,7 +4587,10 @@ class ArtilleryGame3D {
       const dr = this.pickDroneAt({ x: 0, y: 0 }, r);
       if (dr) { if (!AA || AA.dr !== dr) this.setAirAim({ kind: 'drone', dr }); return true; }
     }
-    if (dy > 0.02 && !h.unit && (h.sky || h.d > 2350)) {
+    // trạm súng máy xe tăng (tầm ~1.100): tâm kính ngóc lên rõ rệt mà tia chỉ chạm sườn núi xa ngoài tầm súng -> vẫn là
+    // ngắm trời (trước đây ngóc 30° ở vùng đồi núi chạm sườn núi xa -> tự chuyển sang ngắm mặt đất)
+    const mgFar = P.tankType === 'ALL_ROUNDER' && P.mgActive && dy > 0.1 && h.d > 1100;
+    if (dy > 0.02 && !h.unit && (h.sky || h.d > 2350 || mgFar)) {
       if (!AA || AA.kind !== 'sky') { this.aimAtSky({ origin: { x: px, y: py, z: pz }, direction: { x: dx, y: dy, z: dz } }); return !!this._airAim; }
       // đang ngắm trời: cập nhật hướng theo tâm kính (cùng cách tính với aimAtSky, không ghi nhật ký lại)
       const m = P.getMuzzleWorldTransform ? P.getMuzzleWorldTransform().position : { x: P.x, y: (P.y || 0) + 20, z: P.z };
@@ -5739,6 +5742,13 @@ class ArtilleryGame3D {
           const TR = this.player.turretRates ? this.player.turretRates() : { traverse: turretRotSpeed, elevate: turretElevSpeed };
           this.trackLockedTarget(dt, TR.traverse, TR.elevate, this._aimPoint);
         }
+      } else if (this.player.tankType === 'ALL_ROUNDER' && this.player.mgActive) {
+        // Súng máy nóc tháp [4] = phòng không: KHÔNG tự khóa xe mặt đất (trước đây mất drone / chạm phím quay tháp là tự
+        // khóa xe địch gần nhất -> trạm súng chúc xuống đất). Không có gì để ngắm thì về tư thế phòng không (khóa drone
+        // trong tầm / ngóc lên trời). Người chơi tự nhấp xe / mặt đất vẫn bắn mặt đất như thường
+        if (this.lockReticle3D) this.lockReticle3D.visible = false;
+        this._mgAirT = (this._mgAirT || 0) - dt;
+        if (this._mgAirT <= 0 && !this._sight) { this._mgAirT = 1.2; this.mgAirReady(); }
       } else {
         // Chưa khóa: tự động khóa khi có xe địch áp sát gần (bán kính <= 360m) mà mình nhìn thấy
         this.autoLockCooldown = Math.max(0, (this.autoLockCooldown || 0) - dt);
