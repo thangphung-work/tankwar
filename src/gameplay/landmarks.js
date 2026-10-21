@@ -1187,21 +1187,33 @@ const Landmarks = (() => {
     for (const [f, r] of [[iF - 38, iR - 38], [iF - 38, -240], [-iF + 38, iR - 38], [-iF + 38, -iR + 38], [iF - 28, G + 40], [iF - 28, -G - 40], [-iF + 30, 0], [-62, iR - 32], [-150, -iR + 32]]) tower(f, r);
 
     // ---- LÔ CỐT BÊ TÔNG lục giác: lỗ châu mai quanh thân, bao cát trên nóc, hào giao thông dẫn vào
+    // Mỗi mặt tường lục giác là 1 tấm bê tông dày 6 (0.75 m) khoét lỗ châu mai: miệng ngoài rộng 7.2 x 3.2, thu loe dần
+    // vào khe bắn trong 3.6 x 1.4 (4 mặt loe nghiêng như lô cốt thật), cuối khe tối + tấm chắn thép trượt
     const pillbox = (f, r) => {
-      K.add('conc', new THREE.CylinderGeometry(19, 21, 14, 6), M4(f, 7, r));
-      K.add('concDark', new THREE.CylinderGeometry(21.6, 23.2, 2.2, 6), M4(f, 1.1, r));   // móng loe chân lô cốt
-      K.add('concDark', new THREE.CylinderGeometry(23, 23, 3, 6), M4(f, 15.5, r));
+      const R = 20, T = 6, HH = 14, ap = R * Math.cos(Math.PI / 6), side = R, up = v3(0, 1, 0);
       for (let k = 0; k < 6; k++) {
-        const a = k * Math.PI / 3 + Math.PI / 6, c = Math.cos(a), sn = Math.sin(a);
-        // lỗ châu mai kiểu khe ngang có mũ che + 2 má loe bằng bê tông, tấm chắn thép trượt hé mở bên trong
-        const tx = -sn, tz = c;
-        K.box('void', f + c * 18.3, 9.2, r + sn * 18.3, 1, 2, 8, -a);
-        K.box('steelDark', f + c * 17.9, 10.6, r + sn * 17.9, 0.4, 1.2, 8.4, -a);
-        K.box('concDark', f + c * 19.4, 11.2, r + sn * 19.4, 3, 1.8, 11, -a);
-        K.box('concDark', f + c * 19.2, 7.4, r + sn * 19.2, 2.6, 1.6, 10.4, -a);
-        for (const s2 of [-1, 1]) K.box('concDark', f + c * 19.3 + tx * s2 * 5.1, 9.2, r + sn * 19.3 + tz * s2 * 5.1, 2.8, 2.4, 0.9, -a);
-        if (k % 2 === 0) K.add('steelDark', new THREE.CylinderGeometry(0.28, 0.28, 2.6, 6), M4(f + c * 19.2, 9.2, r + sn * 19.2, 0, -a, Math.PI / 2));
+        const ph = k * Math.PI / 3 + Math.PI / 6, n = v3(Math.cos(ph), 0, Math.sin(ph)), t = v3(-Math.sin(ph), 0, Math.cos(ph));
+        const fm = new THREE.Matrix4().makeBasis(t, up, n.clone().negate()).setPosition(f + n.x * ap, 0, r + n.z * ap);
+        const sh = new THREE.Shape(); sh.moveTo(-side / 2, 0); sh.lineTo(side / 2, 0); sh.lineTo(side / 2, HH); sh.lineTo(-side / 2, HH); sh.closePath();
+        const ow = 3.6, oy0 = 7.4, oy1 = 10.6, iw = 1.8, iy0 = 8.4, iy1 = 9.8;
+        const hole = new THREE.Path(); hole.moveTo(-ow, oy0); hole.lineTo(-ow, oy1); hole.lineTo(ow, oy1); hole.lineTo(ow, oy0); hole.closePath(); sh.holes.push(hole);
+        const wg = new THREE.ExtrudeGeometry(sh, { depth: T, bevelEnabled: false });
+        { const uv = wg.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 64, uv.getY(i) / 64); }
+        K.add('conc', wg, fm);
+        // 4 mặt loe (2 chiều quấn để luôn thấy), đáy loe có bậc thoát nước
+        const O = [[-ow, oy0], [ow, oy0], [ow, oy1], [-ow, oy1]], I = [[-iw, iy0], [iw, iy0], [iw, iy1], [-iw, iy1]], pos = [], uvs = [];
+        for (let q = 0; q < 4; q++) {
+          const q2 = (q + 1) % 4, A = [...O[q], 0], B = [...O[q2], 0], C = [...I[q2], T - 0.4], D = [...I[q], T - 0.4];
+          for (const tri of [[A, B, C], [A, C, D], [A, C, B], [A, D, C]]) for (const P of tri) { pos.push(...P); uvs.push((P[0] + P[1]) / 16, P[2] / 16); }
+        }
+        const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); sg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); sg.computeVertexNormals();
+        K.add('concDark', sg, fm);
+        K.add('void', new THREE.PlaneGeometry(iw * 2 + 0.4, iy1 - iy0 + 0.4), new THREE.Matrix4().multiplyMatrices(fm, M4(0, (iy0 + iy1) / 2, T - 0.35, 0, Math.PI, 0)));
+        K.add('steelDark', new THREE.BoxGeometry(iw * 2 + 1, 0.9, 0.3), new THREE.Matrix4().multiplyMatrices(fm, M4(0, iy1 - 0.1, T - 0.6)));
+        if (k % 2 === 0) K.add('steelDark', new THREE.CylinderGeometry(0.26, 0.26, 3.2, 6), new THREE.Matrix4().multiplyMatrices(fm, M4(0, (iy0 + iy1) / 2 - 0.1, T - 1.8, Math.PI / 2, 0, 0)));
       }
+      K.add('concDark', new THREE.CylinderGeometry(R + 2.4, R + 2.4, 3, 6), M4(f, 15.5, r, 0, -Math.PI / 6, 0));
+      K.add('concDark', new THREE.CylinderGeometry(R + 1.6, R + 3.2, 2.2, 6), M4(f, 1.1, r, 0, -Math.PI / 6, 0));   // móng loe chân lô cốt
       // hào giao thông lót bao cát dẫn vào cửa sau, lưới nguỵ trang phủ nóc, ăng-ten
       const ia = Math.atan2(-r, -f) + Math.PI, ex = f + Math.cos(ia) * 21, ez = r + Math.sin(ia) * 21, px = -Math.sin(ia), pz = Math.cos(ia);
       for (const s2 of [-1, 1]) sandbags(K, ex + px * s2 * 6, ez + pz * s2 * 6, ex + Math.cos(ia) * 22 + px * s2 * 6, ez + Math.sin(ia) * 22 + pz * s2 * 6, 3, 0);
