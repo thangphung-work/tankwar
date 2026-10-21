@@ -51,6 +51,32 @@ const Landmarks = (() => {
     g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
   }
   // Bê tông đổ khuôn: 1 ô texture = 64 đơn vị (8 m), mạch ván khuôn + lỗ ty + vệt loang
+  // Làm cũ một ảnh sơn / biển / cửa thép (căn cứ bỏ hoang): phai màu, bụi đất đóng dày dần xuống chân, vệt gỉ chảy từ
+  // đầu bulông + mép trên, mảng sơn bong lộ thép gỉ (viền tối), vết xước, đốm bẩn. k: mức độ (0..1.5)
+  function ageCanvas(g, w, h, seed, k) {
+    k = k === undefined ? 1 : k;
+    const H = (i) => hash(seed * 31 + i);
+    g.fillStyle = `rgba(176,168,150,${0.16 * k})`; g.fillRect(0, 0, w, h);
+    const gd = g.createLinearGradient(0, h * 0.55, 0, h); gd.addColorStop(0, 'rgba(92,80,60,0)'); gd.addColorStop(1, `rgba(92,80,60,${0.55 * k})`); g.fillStyle = gd; g.fillRect(0, h * 0.55, w, h * 0.45);
+    for (let i = 0; i < 14 * k; i++) { const x = H(i) * w, y = H(i + 50) * h, r = (0.02 + H(i + 90) * 0.06) * Math.max(w, h); blotch(g, x, y, r, H(i + 130) < 0.5 ? '70,62,48' : '150,140,118', 0.25 * k); }
+    // mảng sơn bong
+    for (let i = 0; i < 9 * k; i++) {
+      const cx = H(i + 200) * w, cy = H(i + 230) * h, R = (0.015 + H(i + 260) * 0.05) * Math.max(w, h);
+      g.beginPath();
+      for (let j = 0; j < 9; j++) { const a = j / 9 * TAU, rr = R * (0.5 + H(i * 9 + j + 300) * 0.8); j ? g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8) : g.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8); }
+      g.closePath(); g.fillStyle = 'rgba(118,74,42,0.85)'; g.fill(); g.strokeStyle = 'rgba(40,30,22,0.6)'; g.lineWidth = 1; g.stroke();
+    }
+    // vệt gỉ chảy (từ bulông / mép trên)
+    for (let i = 0; i < 22 * k; i++) {
+      const x = H(i + 400) * w, y = H(i + 430) < 0.35 ? 0 : H(i + 460) * h * 0.7, l = (0.15 + H(i + 490) * 0.5) * h, wd = 1 + H(i + 520) * Math.max(2, w / 120);
+      const gr = g.createLinearGradient(0, y, 0, y + l); gr.addColorStop(0, 'rgba(138,72,30,0.6)'); gr.addColorStop(0.35, 'rgba(150,92,44,0.35)'); gr.addColorStop(1, 'rgba(150,92,44,0)');
+      g.fillStyle = gr; g.fillRect(x, y, wd, l);
+    }
+    // vết xước sáng
+    g.strokeStyle = 'rgba(220,214,200,0.35)'; g.lineWidth = 0.7;
+    for (let i = 0; i < 18 * k; i++) { const x = H(i + 600) * w, y = H(i + 630) * h, a = H(i + 660) * TAU, l = (0.02 + H(i + 690) * 0.08) * w; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+    speckle(g, w, h, Math.round(w * h / 90 * k), ['rgba(60,52,40,0.8)', 'rgba(120,96,60,0.7)'], 1, 2, seed + 7);
+  }
   function concreteFill(g, w, h, base, seed) {
     g.fillStyle = base; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 40; i++) {
@@ -179,11 +205,12 @@ const Landmarks = (() => {
     for (let y = 0; y <= h; y += h / 6) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
   }, true);
   // Sơn kẻ sọc vàng đen (1 ô = 16 đơn vị)
-  const hazardTex = () => texOf('hazard', 64, 64, (g, w, h) => {
+  const hazardTex = () => texOf('hazard', 128, 128, (g, w, h) => {
     g.fillStyle = '#d9a61c'; g.fillRect(0, 0, w, h);
     g.fillStyle = '#1b1b1b';
-    for (let k = -2; k < 3; k++) { g.beginPath(); g.moveTo(k * 32, 0); g.lineTo(k * 32 + 16, 0); g.lineTo(k * 32 + 16 + 64, h); g.lineTo(k * 32 + 64, h); g.fill(); }
-    speckle(g, w, h, 160, ['#5a4a20', '#efe0a0'], 1, 2, 77);
+    for (let k = -2; k < 3; k++) { g.beginPath(); g.moveTo(k * 64, 0); g.lineTo(k * 64 + 32, 0); g.lineTo(k * 64 + 32 + 128, h); g.lineTo(k * 64 + 128, h); g.fill(); }
+    speckle(g, w, h, 640, ['#5a4a20', '#efe0a0'], 1, 2, 77);
+    if (ABANDONED) ageCanvas(g, w, h, 11, 1.1);
   }, true);
   // Sọc đỏ trắng cảnh báo hàng không (theo chiều dọc ống / cột: 8 khúc)
   const bandTex = () => texOf('bands', 16, 128, (g, w, h) => {
@@ -241,6 +268,7 @@ const Landmarks = (() => {
         if (i === 0) g.fillStyle = o.fg2 || '#1d1d1d';
       });
       speckle(g, w, h, 700, ['#6a6258', '#ffffff'], 1, 3, 5);
+      if (ABANDONED) ageCanvas(g, w, h, key.length * 13 + 3, 0.8);
     });
   }
   // Thân tên lửa đạn đạo: trắng ngà, sọc lăn đen trắng, vành ngăn tầng, biểu tượng phóng xạ, số hiệu dọc thân
@@ -564,6 +592,18 @@ const Landmarks = (() => {
       drumBlue: () => G(1.2, { color: 0x2f4f7a, roughness: 0.6, metalness: 0.3 }),
       drumRust: () => G(4, { color: 0x6a4a30, roughness: 0.85, metalness: 0.3 }),
       cardboard: () => G(0, { color: 0xa88a60, roughness: 1 }),
+      // dây leo rủ từ đỉnh tường: nhiều sợi lá nhỏ dài ngắn khác nhau, nền trong suốt
+      vine: () => S({ side: THREE.DoubleSide, alphaTest: 0.45, roughness: 0.95, map: texOf('vine', 128, 256, (q, w, h) => {
+        q.clearRect(0, 0, w, h);
+        for (let i = 0; i < 26; i++) {
+          let x = hash(i + 8500) * w, y = 0; const l = (0.25 + hash(i + 8501) * 0.75) * h;
+          while (y < l) {
+            x += (hash(x + y) - 0.5) * 3; y += 3;
+            const k = 0.6 + hash(y + i) * 0.5, sz = 2 + hash(x * 0.3 + i) * 3.5 * (1 - y / h * 0.5);
+            q.fillStyle = `rgb(${50 * k | 0},${70 * k | 0},${30 * k | 0})`; q.beginPath(); q.ellipse(x + (hash(y * 0.7) - 0.5) * 6, y, sz, sz * 0.7, hash(y) * 3, 0, TAU); q.fill();
+          }
+        }
+      }) }),
       paper: () => S({ color: 0x9c9482, roughness: 1, side: THREE.DoubleSide }),   // giấy rác bẩn, ngả màu
       // đất cát / lá mục dạt quanh chân công trình (dải mờ dần ra ngoài; đáy ảnh = v 0 = chân tường, đậm nhất)
       dirtRing: () => S({ map: texOf('dirtRing', 128, 64, (q, w, h) => {
@@ -621,8 +661,16 @@ const Landmarks = (() => {
       g.fillText('BIOHAZARD', w / 2, h - 30);
       // vệt gỉ chảy
       for (let i = 0; i < 20; i++) { const x = hash(i + 300) * w; g.fillStyle = 'rgba(110,70,40,0.25)'; g.fillRect(x, h * 0.2 + hash(i + 301) * h * 0.4, 3, 40 + hash(i + 302) * 60); }
+      if (ABANDONED) {
+        ageCanvas(g, w, h, 41, 1.4);
+        // vết móp + vệt bùn bắn chân cửa, chữ X sơn xịt đánh dấu đã lục soát
+        for (let i = 0; i < 6; i++) { const x = hash(i + 700) * w, y = hash(i + 701) * h * 0.8; const gr = g.createRadialGradient(x - 3, y - 3, 1, x, y, 14); gr.addColorStop(0, 'rgba(230,226,214,0.35)'); gr.addColorStop(0.6, 'rgba(30,28,24,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - 16, y - 16, 32, 32); }
+        for (let i = 0; i < 120; i++) { g.fillStyle = 'rgba(78,64,44,0.55)'; g.fillRect(hash(i + 800) * w, h - 4 - Math.pow(hash(i + 801), 2) * 60, 2 + hash(i + 802) * 5, 1 + hash(i + 803) * 3); }
+        g.strokeStyle = 'rgba(196,40,30,0.8)'; g.lineWidth = 7; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(w * 0.7, h * 0.18); g.lineTo(w * 0.86, h * 0.42); g.moveTo(w * 0.86, h * 0.18); g.lineTo(w * 0.7, h * 0.42); g.stroke();
+      }
     });
-    const mk = (ox) => { const t = base.clone(); t.needsUpdate = true; t.repeat.set(0.5, 1); t.offset.set(ox, 0); return new THREE.MeshStandardMaterial({ map: t, roughness: 0.55, metalness: 0.45 }); };
+    const mk = (ox) => { const t = base.clone(); t.needsUpdate = true; t.repeat.set(0.5, 1); t.offset.set(ox, 0); return new THREE.MeshStandardMaterial({ map: t, roughness: ABANDONED ? 0.8 : 0.55, metalness: ABANDONED ? 0.25 : 0.45 }); };
     MAT.doorA = mk(0); MAT.doorB = mk(0.5);
     return [MAT.doorA, MAT.doorB];
   }
@@ -1862,6 +1910,17 @@ const Landmarks = (() => {
       K.box('steelGray', F1 + 3, 84, s * (FW - 6), 5, 4, 4); K.box('glass', F1 + 6, 84, s * (FW - 6), 1, 2.5, 2.5);
     }
     K.solid((F0 + F1) / 2, 0, (F1 - F0) / 2 + 6, FW, -6, TOPY + 4);
+    if (ABANDONED) {
+      // dây leo rủ từ gờ đỉnh mặt tiền, rêu bám; đống đổ nát trước cửa: bê tông vụn, tấm biển rơi, đèn vỡ, phuy lăn
+      for (let r = -FW + 6; r < FW - 4; r += 9 + hash(r) * 10) {
+        const hh = 14 + hash(r + 3) * 34, ww = 8 + hash(r + 5) * 8;
+        K.add('vine', new THREE.PlaneGeometry(ww, hh), M4(F1 + 3.6 + hash(r + 7) * 0.6, TOPY + 2 - hh / 2, r, 0, Math.PI / 2, 0));
+      }
+      for (let k = 0; k < 14; k++) { const sz = 1 + hash(k + 8600) * 3.2; K.add('concDark', new THREE.IcosahedronGeometry(sz, 0), M4(F1 + 6 + hash(k + 8601) * 12, sz * 0.35, -DW + 6 + hash(k + 8602) * 34, hash(k) * 3, hash(k + 1) * 3, 0, 1, 0.6, 1)); }
+      K.add('steelDark', new THREE.BoxGeometry(1.4, 0.6, 22), M4(F1 + 10, 0.8, 44, 0, 0.3, 1.45));
+      K.add(decal('bio_sign_fallen', signTex('bio_sign_fallen', ['RESTRICTED', 'BSL-4 ZONE'], { w: 512, h: 192, icon: 'bio' })), new THREE.PlaneGeometry(14, 5.2), M4(F1 + 14, 0.5, -20, -Math.PI / 2 + 0.12, 0, 0.6));
+      K.add('drumRust', new THREE.CylinderGeometry(1.9, 1.9, 5.6, 14), M4(F1 + 20, 1.9, 30, Math.PI / 2, 0.7, 0));
+    }
     // tường chắn đất 2 bên sân: đỉnh bám mặt gò thật
     const WF1 = M.fc + M.af + 12;
     for (const s of [-1, 1]) {
