@@ -1450,7 +1450,17 @@ class ArtilleryGame3D {
       P.fcsTarget = { x: aimX, z: aimZ, y: ty + 9, el: tr.fel };
     } else {
       tr.solveT -= dt;
-      if (tr.solveT <= 0) {
+      if (T.free && T.hy !== undefined && P.tankType !== 'ARTILLERY') {
+        // ngắm tự do bằng súng bắn thẳng: nòng nâng hạ sao cho đường đạn đi qua đúng điểm 3D dưới tâm kính
+        // (mặt tường, thân xe, hay một điểm trên không) — không ép về điểm mặt đất như khi nhấp ngắm
+        if (tr.solveT <= 0) {
+          tr.solveT = 0.1;
+          const el = this.freeAimElevation(P, aimX, T.hy, aimZ, tr.solved ? tr.el : undefined);
+          if (el !== null) { tr.el = el; tr.solved = true; }
+          tr.windAz = 0;
+          tr.reachable = true;
+        }
+      } else if (tr.solveT <= 0) {
         // lựu pháo: đạn bay lâu, mô phỏng nặng -> giải thưa hơn; luôn dò quanh nghiệm lần trước
         tr.solveT = P.tankType === 'ARTILLERY' ? 0.5 : 0.12;
         const sol = B.solveAimingForTarget(P.x, P.y, P.z, aimX, aimZ, this.terrain, P, { hintEl: tr.solved ? tr.el : undefined, hintCharge: tr.solved ? tr.charge : undefined, atUnit: T !== this._aimPoint });
@@ -1481,6 +1491,37 @@ class ArtilleryGame3D {
       P.elevation = Math.max(-10, Math.min(85, P.elevation + Math.max(-es, Math.min(es, de))));
     }
     this.syncHUDControls();
+  }
+
+  // Góc tà (độ, trong thế giới) để đạn bắn thẳng đi qua điểm (x, y, z): bắt đầu từ góc nhìn thẳng tới điểm,
+  // mô phỏng đường đạn thật (trọng lực, lực cản) rồi chỉnh theo độ lệch cao tại đúng cự ly đó, 3 vòng là khớp
+  freeAimElevation(P, x, y, z, hintEl) {
+    const B = this.ballistics;
+    if (!B || !B.calculateTrajectoryPoints) return null;
+    const d = Math.hypot(x - P.x, z - P.z);
+    if (d < 6) return null;
+    const az = (Math.atan2(x - P.x, -(z - P.z)) * 180 / Math.PI + 360) % 360;
+    const elMax = B.maxElevationFor ? B.maxElevationFor(P) : 30;
+    let el = typeof hintEl === 'number' ? hintEl : Math.atan2(y - ((P.y || 0) + 20), d) * 180 / Math.PI;
+    for (let k = 0; k < 3; k++) {
+      el = Math.max(-10, Math.min(elMax, el));
+      const tj = B.calculateTrajectoryPoints(P, az, el, P.charge, this.terrain);
+      const pts = tj && tj.points;
+      if (!pts || pts.length < 2) return el;
+      let yAt = null, dEnd = 0, yEnd = 0;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const da = Math.hypot(a.x - P.x, a.z - P.z), db = Math.hypot(b.x - P.x, b.z - P.z);
+        dEnd = db; yEnd = b.y;
+        if (db >= d) { const t = db > da ? (d - da) / (db - da) : 1; yAt = a.y + (b.y - a.y) * t; break; }
+      }
+      // đạn dừng trước cự ly đó: sát điểm ngắm (chính bức tường / thân xe đang ngắm) là đã khớp
+      if (yAt === null) { if (dEnd >= d - 8) return el; yAt = yEnd - (d - dEnd) * 0.2; }
+      const corr = Math.atan2(y - yAt, d) * 180 / Math.PI;
+      el += corr;
+      if (Math.abs(corr) < 0.02) break;
+    }
+    return Math.max(-10, Math.min(elMax, el));
   }
 
   // Dấu neo điểm ngắm trên mặt đất (thoi hở đỉnh + vạch hướng, nằm sát đất): tháp & nòng tự bám điểm này khi xe di chuyển
@@ -3843,9 +3884,10 @@ class ArtilleryGame3D {
       const th = (h.x - ox) * dx + (h.y - oy) * dy + (h.z - oz) * dz;
       if (th < tEnd) { tEnd = Math.max(0, th - 3); unit = null; }
     }
-    if (unit) return { x: unit.x, z: unit.z, y: ground(unit.x, unit.z), d: tEnd, unit };
+    // hy: độ cao điểm tia nhìn chạm (súng bắn thẳng nhắm đúng điểm 3D này); trúng xe: nhắm giữa thân
+    if (unit) return { x: unit.x, z: unit.z, y: ground(unit.x, unit.z), hy: (unit.y || 0) + 9, d: tEnd, unit };
     const x = Math.max(-lim, Math.min(lim, ox + dx * tEnd)), z = Math.max(-lim, Math.min(lim, oz + dz * tEnd));
-    return { x, z, y: ground(x, z), d: tEnd, unit: null };
+    return { x, z, y: ground(x, z), hy: oy + dy * tEnd, d: tEnd, unit: null };
   }
 
   // Khung ngắm HTML (đè lên khung hình, không chặn chuột): mảnh, sáng, góc khung kiểu chiến thuật; vạch theo loại xe
@@ -4214,9 +4256,9 @@ class ArtilleryGame3D {
           S.probeT = 0.033;
           const h = this.freeAimProbe(px, py, pz, fx * cp, Math.sin(S.pitch), fz * cp);
           const prev = this._aimPoint && this._aimPoint.free ? this._aimPoint : null;
-          if (prev) { prev.x = h.x; prev.z = h.z; prev.y = h.y; prev.unit = h.unit; }
+          if (prev) { prev.x = h.x; prev.z = h.z; prev.y = h.y; prev.hy = h.hy; prev.unit = h.unit; }
           else {
-            this._aimPoint = { id: 'free', free: true, x: h.x, z: h.z, y: h.y, unit: h.unit };
+            this._aimPoint = { id: 'free', free: true, x: h.x, z: h.z, y: h.y, hy: h.hy, unit: h.unit };
             this._lockTrack = null;
             P.aimAz = P.aimEl = undefined;
           }
@@ -5087,8 +5129,8 @@ class ArtilleryGame3D {
           const onTol = Math.max(14, Math.hypot(ax - this.player.x, az - this.player.z) * 0.02);
           // bắn thẳng tầm gần: điểm rơi xuống đất nằm sau xe địch nhưng đạn lướt ngang thân xe -> vẫn trúng
           // (tính cả đoạn nòng: địch sát tới mức miệng nòng đã vượt qua tâm xe địch)
-          const passes = miss >= onTol && tgt === this.lockedTarget && !isWall
-            && this.trajPassesUnit([new THREE.Vector3(this.player.x, (this.player.y || 0) + 22, this.player.z), ...traj.points], ax, (tgt.y || 0) + 9, az);
+          const passes = miss >= onTol && (tgt === this.lockedTarget || (tgt.free && tgt.unit)) && !isWall
+            && this.trajPassesUnit([new THREE.Vector3(this.player.x, (this.player.y || 0) + 22, this.player.z), ...traj.points], ax, (tgt.free ? tgt.unit.y || 0 : tgt.y || 0) + 9, az);
           aimState = (miss < onTol || passes) && !isOut ? 'on' : ((unreachable || isWall || isOut) && miss > 40 ? 'blocked' : 'slew');
           // Nòng đã chỉ đúng hướng mục tiêu mà đường đạn bị gò / đồi / nhà / tường / thân cây chặn trước khi tới -> BỊ CHE
           // (trước đây đạn chạm đỉnh gò ngay trước xe địch vẫn nằm trong dung sai -> báo "đã ngắm trúng")
