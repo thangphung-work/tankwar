@@ -1451,6 +1451,28 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       h.mesh = grp;
     }
 
+    // Đáy mái hầm (độ cao thế giới) phía trên điểm (x, z) nếu điểm nằm dưới mái còn nguyên (trong lòng hầm), null nếu không.
+    // Lấy mức thấp nhất (đáy dầm trần) — vật bay trong hầm (drone) giữ thấp hơn mức này; phần vát miệng hầm cao dần ra cửa
+    roofUnder(x, z) {
+      for (const K of this.items) {
+        if (Math.abs(x - K.x) > S.REACH || Math.abs(z - K.z) > S.REACH) continue;
+        const L = this.local(K, x, z), af = Math.abs(L.f), ar = Math.abs(L.r);
+        if (af > S.HB || ar >= S.WI) continue;
+        if (K.nDown && this.cutAt(K, L.f, L.r)) continue;
+        // dưới mái phẳng: thấp hơn đáy dầm trần; phần vát miệng hầm: theo mặt vát (cao dần ra cửa)
+        const ch = ar < S.CH_R && af > S.HB - S.CH ? chamY(af) - 2 : S.CEIL - S.BEAM - 1;
+        return { K, y: K.G + Math.max(S.CEIL - S.BEAM - 1, ch) };
+      }
+      return null;
+    }
+    // Điểm ngay ngoài miệng hầm gần nhất (so với điểm (x, z) trong lòng hầm K), cách mặt tiền 'out' đơn vị, sát sàn dốc
+    mouthOut(K, x, z, out = 40) {
+      const L = this.local(K, x, z), sg = L.f >= 0 ? 1 : -1;
+      const r = Math.max(-S.WI + 24, Math.min(S.WI - 24, L.r)), f = sg * (S.HB + out);
+      const w = this.toWorld(K, f, r);
+      return { x: w.x, z: w.z, y: K.G + floorY(Math.abs(f)), sg };
+    }
+
     // Nòng pháo (từ chốt nòng tới đầu nòng) có cắm vào bê tông / ụ đất không
     barrelBlocked(p0, p1) {
       if (!this.near(p1.x, p1.z, 70) && !this.near(p0.x, p0.z, 70)) return false;

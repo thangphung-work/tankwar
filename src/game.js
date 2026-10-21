@@ -3597,14 +3597,15 @@ class ArtilleryGame3D {
     if (P.barrelPivot) { P.barrelPivot.updateWorldMatrix(true, false); P.barrelPivot.getWorldPosition(v); } else v.set(P.x, (P.y || 0) + 14, P.z);
     const rp = B.roundParams(ammo, P, 1), L = 36;   // nòng ~4,5 m
     const minD = (typeof Strongholds !== 'undefined' ? Strongholds.S.HB : 96) * 2;
-    for (let el = 45; el >= 2; el--) {
+    const elTop = Math.floor(Math.min(70, B.maxLobElevationFor ? B.maxLobElevationFor(P) : (B.maxElevationFor ? B.maxElevationFor(P) : 45)));
+    for (let el = elTop; el >= 2; el--) {
       const er = el * Math.PI / 180, ce = Math.cos(er), se = Math.sin(er);
       const tip = { x: v.x + dx * ce * L, y: v.y + se * L, z: v.z + dz * ce * L };
       if (T.barrelBlocked && T.barrelBlocked(v, tip)) continue;
       const r = B.simulateShot(tip.x, tip.y, tip.z, dx * ce * rp.v0, se * rp.v0, dz * ce * rp.v0, rp, B.isDirectFireShot(ammo, el), T);
-      if (r.hitType === 'WALL' || r.hitType === 'OUT') continue;
+      if (r.hitType === 'WALL') continue;   // vướng mái / lanh tô / dầm trần
       const d = Math.hypot(r.x - P.x, r.z - P.z);
-      if (d < minD) continue;
+      if (r.hitType !== 'OUT' && d < minD) continue;
       const az = ((-Math.atan2(-dx, -dz) * 180 / Math.PI) % 360 + 360) % 360;   // hướng thế giới -> azimuth (độ)
       return { x: r.x, z: r.z, el, az, d: Math.round(d) };
     }
@@ -3704,6 +3705,9 @@ class ArtilleryGame3D {
   }
 
   // Bãi đáp trên nóc cabin xe pháo (tọa độ thế giới) + hướng mũi xe
+  // Đáy mái hầm phía trên điểm (x, z) (drone bay trong hầm giữ thấp hơn), null nếu không ở dưới mái cứ điểm
+  droneRoof(x, z) { const SS = this.terrain && this.terrain.strongholdSet; return SS && SS.roofUnder ? SS.roofUnder(x, z) : null; }
+
   dronePadWorld() {
     const P = this.player, ch = P && P.chassisGroup;
     const v = this._padV || (this._padV = new THREE.Vector3());
@@ -3800,7 +3804,8 @@ class ArtilleryGame3D {
       // cất cánh từ đế sạc trên nóc cabin: kẹp càng nhả, cánh quay lên, bốc thẳng lên ~35 đơn vị rồi chuyển sang hình từ drone
       D.launchT += dt;
       const k = Math.min(1, Math.max(0, (D.launchT - 0.5) / 0.75));
-      D.x = pd.x; D.z = pd.z; D.y = pd.y + k * k * (3 - 2 * k) * 35;
+      const ruL = this.droneRoof(pd.x, pd.z);
+      D.x = pd.x; D.z = pd.z; D.y = pd.y + k * k * (3 - 2 * k) * (ruL ? Math.max(4, Math.min(35, ruL.y - 3 - pd.y)) : 35);
       D.batt = Math.max(0, D.batt - dt / C.flight);
       if (SE && SE.updateDrone) SE.updateDrone(true, { climb: k > 0 && k < 1 ? 160 : 0, speed: 0 });
       if (M) {
@@ -3819,13 +3824,26 @@ class ArtilleryGame3D {
       // màn hình đã đóng nhưng drone còn ở ngoài: tự bay về nóc cabin (vẫn tốn pin) rồi hạ xuống đáp, về tới nơi mới sạc
       D.state = 'returning';
       D.batt = Math.max(0, D.batt - dt / C.flight);
-      const dx = pd.x - D.x, dz = pd.z - D.z, d = Math.hypot(dx, dz), st = C.rthSpeed * dt;
+      // xe nằm trong hầm mà drone ở ngoài: bay tới miệng hầm gần xe, hạ thấp rồi mới bay vào dưới mái
+      // (trong hầm = dưới mái VÀ thấp hơn đáy mái; bay cao ngang trên nóc ụ không tính) — tới miệng hầm, hạ thấp hẳn rồi mới vào
+      const pr = this.droneRoof(pd.x, pd.z), dRoof = this.droneRoof(D.x, D.z), dIn = !!(dRoof && D.y < dRoof.y + 6);
+      let tx = pd.x, tz = pd.z, low = null;
+      if (!pr) D.inMouth = false;
+      else if (!D.inMouth && !dIn) {
+        const mo = this.terrain.strongholdSet.mouthOut(pr.K, pd.x, pd.z, 40);
+        tx = mo.x; tz = mo.z; low = mo.y + 14;
+        if (Math.hypot(D.x - mo.x, D.z - mo.z) <= 8 && D.y < low + 6) D.inMouth = true;
+      }
+      if (pr && (D.inMouth || dIn)) low = null;
+      const dx = tx - D.x, dz = tz - D.z, d = Math.hypot(dx, dz), st = C.rthSpeed * dt;
       const gD = this.terrain ? this.terrain.getElevationAt(D.x, D.z) : 0;
       if (d > st) { D.x += dx / d * st; D.z += dz / d * st; D.yaw = Math.atan2(-dx, -dz); }
-      else { D.x = pd.x; D.z = pd.z; }
-      const wantY = d > 60 ? Math.max(gD + 90, pd.y + 40) : pd.y;
-      D.y += Math.max(-140 * dt, Math.min(140 * dt, wantY - D.y));
-      if (d <= st + 1 && D.y - pd.y < 1) { D.state = 'docked'; D.vx = D.vz = D.vy = 0; }
+      else { D.x = tx; D.z = tz; }
+      let wantY = low !== null ? (d > 120 ? Math.max(gD + 90, low) : low) : pr && (D.inMouth || dIn) ? (d > 30 ? pr.y - 4 : pd.y) : d > 60 ? Math.max(gD + 90, pd.y + 40) : pd.y;
+      if (dIn) wantY = Math.min(wantY, dRoof.y - 4);
+      const vD = (C.descent || 140) * dt;
+      D.y += Math.max(-vD, Math.min(vD, wantY - D.y));
+      if (low === null && d <= st + 1 && D.y - pd.y < 1) { D.state = 'docked'; D.vx = D.vz = D.vy = 0; D.inMouth = false; }
       if (M) {
         M.visible = true;
         M.position.set(D.x, D.y, D.z);
@@ -4203,11 +4221,19 @@ class ArtilleryGame3D {
         // drone bay THẲNG LÊN tại chỗ tới độ cao làm việc, mũi quay theo hướng nòng (đỉnh màn hình = hướng bắn) rồi lơ lửng
         // chờ người chơi lái (W A S D / Q E / lăn chuột) — không tự bay đi đâu (trước đây tự bay ra mục tiêu / điểm rơi)
         if (DR.state === 'docked') { const pd = this.dronePadWorld(); DR.x = pd.x; DR.y = pd.y + 30; DR.z = pd.z; }
+        const ru = this.droneRoof(DR.x, DR.z);
+        if (ru) DR.y = Math.min(DR.y, ru.y - 3);
         DR.state = 'flying';
         DR.vx = 0; DR.vz = 0; DR.vy = DR.vy || 0;
         DR.yaw = tw;
         S.hT = DC.cruiseAlt; S.pitch = -1.38; S.roll = 0; S.t = 0;
         S.auto = null;
+        if (ru) {
+          // xe đang nằm trong hầm: drone bay thấp dưới trần ra miệng hầm gần nhất, ra khỏi mái mới bốc lên độ cao làm việc
+          const mo = this.terrain.strongholdSet.mouthOut(ru.K, DR.x, DR.z, 40);
+          S.auto = { x: mo.x, z: mo.z, yaw: Math.atan2(-(mo.x - DR.x), -(mo.z - DR.z)), speed: DC.autoSpeed * 0.6, tunnel: true };
+          S.pitch = -0.25;
+        }
         S.cx = DR.x; S.cz = DR.z; S.h = DR.y;
         if (DR.model) DR.model.visible = false;   // camera nằm trong drone
         this.renderer.domElement.style.filter = 'saturate(.62) contrast(1.12) brightness(1.04)';   // hình ảnh truyền về từ camera drone
@@ -4751,6 +4777,17 @@ class ArtilleryGame3D {
         mf = mr = my = 0;
         S.auto = { x: pad.x, z: pad.z, speed: C.rthSpeed, land: true };
       }
+      // pin yếu bay về đáp xuống xe đang nằm trong hầm: bay thấp vào qua miệng hầm gần xe trước (không xuyên mái)
+      if (S.rth && S.auto && S.auto.land) {
+        const pr = this.droneRoof(pad.x, pad.z), dr = this.droneRoof(D.x, D.z), dIn = !!(dr && D.y < dr.y + 6);
+        if (pr && !dIn && !S.viaDone) {
+          const mo = this.terrain.strongholdSet.mouthOut(pr.K, pad.x, pad.z, 40);
+          if (Math.hypot(D.x - mo.x, D.z - mo.z) > 10 || D.y > mo.y + 40) S.auto = { x: mo.x, z: mo.z, speed: C.rthSpeed, land: false, via: true, low: mo.y + 14 };
+          else S.viaDone = true;
+        }
+        // đã tới miệng hầm: bay thấp vào dưới mái tới xe
+        if (pr && S.viaDone) S.auto.low = pr.y - 4;
+      }
       if (mf || mr || my) S.auto = null;   // người chơi cầm lái: hủy bay tự động
       if (my) D.yaw = wrap(D.yaw - my * C.yawRate * dt);
       fx = -Math.sin(D.yaw); fz = -Math.cos(D.yaw);
@@ -4762,7 +4799,7 @@ class ArtilleryGame3D {
         if (ad > 0.5) { wvx = ax / ad * sp; wvz = az / ad * sp; }
         if (S.auto.land) { wvx += S.pvx || 0; wvz += S.pvz || 0; }
         if (S.auto.yaw !== undefined) D.yaw = wrap(D.yaw + wrap(S.auto.yaw - D.yaw) * (1 - Math.exp(-dt * 2.5)));
-        if (ad < (S.auto.land ? 3 : 8)) { if (S.auto.land) S.landing = true; else S.auto = null; }
+        if (ad < (S.auto.land ? 3 : 8)) { if (S.auto.land) S.landing = true; else if (!S.auto.via) S.auto = null; }   // điểm qua miệng hầm: giữ tới khi hạ đủ thấp
       } else {
         const sp = fast ? C.fastSpeed : C.speed;
         wvx = (fx * mf + rx * mr) * sp; wvz = (fz * mf + rz * mr) * sp;
@@ -4787,15 +4824,22 @@ class ArtilleryGame3D {
       D.x = Math.max(-edge, Math.min(edge, D.x)); D.z = Math.max(-edge, Math.min(edge, D.z));
       // độ cao: giữ độ cao làm việc so với mặt đất (lăn chuột chỉnh); đáp thì hạ xuống nóc cabin; tốc độ lên / xuống giới hạn
       const gD = T ? T.getElevationAt(D.x, D.z) : 0;
-      const wantY = S.landing ? pad.y : gD + S.hT;
+      let wantY = S.landing ? pad.y : gD + S.hT;
+      // dưới mái hầm: bay thấp hơn đáy dầm trần (không xuyên mái); đang bay vào miệng hầm để đáp: hạ thấp trước
+      const roofD = this.droneRoof(D.x, D.z);
+      if (S.auto && S.auto.low !== undefined) wantY = Math.min(wantY, S.auto.low);
+      if (roofD && D.y < roofD.y + 6) wantY = Math.min(wantY, roofD.y - 4);
       const vyWant = Math.max(-C.climbRate, Math.min(C.climbRate, (wantY - D.y) * 1.6));
       D.vy += (vyWant - D.vy) * (1 - Math.exp(-dt * 3));
       D.y += D.vy * dt;
-      if (!S.landing) D.y = Math.max(D.y, gD + 30);
+      if (!S.landing) D.y = Math.max(D.y, Math.min(gD + 30, roofD ? roofD.y - 4 : Infinity));
+      if (roofD && D.y < roofD.y + 6) D.y = Math.min(D.y, roofD.y - 3);
       if (S.landing && D.y - pad.y < 2 && Math.hypot(D.x - pad.x, D.z - pad.z) < 4) S.landed = true;
       // gimbal: sát xe (cất cánh / đáp) nhìn gần thẳng xuống, bay thì chúc ~52°
       const nearPad = Math.hypot(D.x - pad.x, D.z - pad.z) < 80 && D.y - pad.y < 90;
-      S.pitch += ((nearPad || S.landing ? -1.38 : C.gimbal) - S.pitch) * (1 - Math.exp(-dt * 2));
+      // trong hầm / đang bay ra miệng hầm: gimbal nhìn thẳng phía trước (thấy cửa hầm), không chúc xuống sàn
+      const inTun = !!(roofD && D.y < roofD.y + 6) || !!(S.auto && (S.auto.tunnel || S.auto.via));
+      S.pitch += ((inTun && !S.landing ? -0.22 : nearPad || S.landing ? -1.38 : C.gimbal) - S.pitch) * (1 - Math.exp(-dt * 2));
       // nghiêng cánh theo tốc độ dạt ngang, trôi lơ lửng nhẹ
       const vLat = D.vx * rx + D.vz * rz;
       S.roll = (S.roll || 0) + (Math.max(-0.12, Math.min(0.12, -vLat / 2600)) - (S.roll || 0)) * (1 - Math.exp(-dt * 4));
