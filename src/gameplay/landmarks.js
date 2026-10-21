@@ -1044,15 +1044,35 @@ const Landmarks = (() => {
       K.add('steelDark', new THREE.CylinderGeometry(2, 2.4, 3, 10), mul(base, M4(C - 3, cy0 + 23.8, -C + 3)));
       const sp = new THREE.Vector3(C - 3, cy0 + 28, -C + 3).applyMatrix4(base);
       anim.search.push({ x: sp.x, y: sp.y, z: sp.z, a0: -a });
-      // cầu thang 4 đợt sau tháp (phía -X cục bộ)
-      const xs = -h2 - 5, run = h2, rise = H / 4;
+      // cầu thang thép 4 đợt gấp khúc dựng ngoài khung tháp (phía -X cục bộ): 4 cột riêng, chiếu nghỉ ở 2 đầu, mỗi đợt
+      // 2 dầm cốn chữ C + bậc lưới thép (cao ~18 cm, sâu ~28 cm), tay vịn 2 bên có cột, chiếu nghỉ nối vào chân tháp bằng dầm,
+      // đợt cuối lên thẳng mép sàn, cabin có cửa thép mở ra phía cầu thang
+      const deck = top + 1.6, rise = deck / 4, run = h2 - 1, xs = -D - 3.4, sw = 4.6, zl = run + 3.2, nst = Math.round(rise / 1.45);
+      for (const z of [-zl - 2.8, zl + 2.8]) for (const dx of [-sw / 2 - 0.6, sw / 2 + 0.6]) K.add('steelDark', new THREE.BoxGeometry(1, deck + 4, 1), mul(base, M4(xs + dx, (deck + 4) / 2, z)));
       for (let k = 0; k < 4; k++) {
-        const z0 = k % 2 ? run : -run, z1 = -z0, y0 = 3 + k * rise - (k ? 0 : 3);
-        for (const dx of [-2.4, 2.4]) K.beam('steelGray', [xs + dx, y0, z0], [xs + dx, y0 + rise, z1], 0.7, base);
-        for (let t = 0.06; t < 1; t += 0.11) K.add('steelGray', new THREE.BoxGeometry(4.8, 0.4, 1.4), mul(base, M4(xs, y0 + rise * t, z0 + (z1 - z0) * t)));
-        K.beam('steelGray', [xs - 2.6, y0 + 6, z0], [xs - 2.6, y0 + rise + 6, z1], 0.4, base);
-        K.add('steelGray', new THREE.BoxGeometry(6, 0.6, 6), mul(base, M4(xs, y0 + rise, z1 + Math.sign(z1) * 2)));
+        const z0 = k % 2 ? run : -run, z1 = -z0, y0 = k * rise, y1 = y0 + rise, sg = Math.sign(z1);
+        for (const dx of [-sw / 2, sw / 2]) {
+          K.beam('steelDark', [xs + dx, y0 - 0.6, z0], [xs + dx, y1 - 0.6, z1], 0.9, base);
+          K.beam('yellow', [xs + dx * 1.1, y0 + 6.6, z0], [xs + dx * 1.1, y1 + 6.6, z1], 0.35, base);
+          for (let i = 0; i <= 3; i++) { const t = i / 3; K.add('steelGray', new THREE.BoxGeometry(0.3, 6.6, 0.3), mul(base, M4(xs + dx * 1.1, y0 + rise * t + 3.3, z0 + (z1 - z0) * t))); }
+        }
+        for (let i = 0; i < nst; i++) { const t = (i + 0.5) / nst; K.add('steelDark', new THREE.BoxGeometry(sw, 0.35, Math.abs(z1 - z0) / nst + 0.3), mul(base, M4(xs, y0 + rise * (i + 1) / nst - 0.2, z0 + (z1 - z0) * t))); }
+        if (k < 3) {
+          // chiếu nghỉ lưới thép + lan can 3 mặt + dầm nối vào cột tháp
+          const lz = sg * zl;
+          K.add('steelDark', new THREE.BoxGeometry(sw + 1.6, 0.5, 5.8), mul(base, M4(xs, y1 - 0.25, lz)));
+          K.add('yellow', new THREE.BoxGeometry(0.35, 0.35, 5.8), mul(base, M4(xs - sw / 2 - 0.6, y1 + 6.6, lz)));
+          K.add('yellow', new THREE.BoxGeometry(sw + 1.6, 0.35, 0.35), mul(base, M4(xs, y1 + 6.6, lz + sg * 2.9)));
+          K.add('steelGray', new THREE.BoxGeometry(sw + 1.6, 0.3, 0.3), mul(base, M4(xs, y1 + 3.3, lz + sg * 2.9)));
+          K.beam('steelDark', [xs + sw / 2 + 0.6, y1 - 0.6, lz], [-h2, y1 - 0.6, sg * h2], 0.8, base);
+        }
       }
+      { const w2 = 3.4 + sw / 2 + 0.8;
+        K.add('steelDark', new THREE.BoxGeometry(w2, 0.5, 5.8), mul(base, M4(-D - w2 / 2, deck - 0.25, -zl)));
+        K.add('yellow', new THREE.BoxGeometry(w2, 0.35, 0.35), mul(base, M4(-D - w2 / 2, deck + 6.6, -zl - 2.9)));
+        K.add('yellow', new THREE.BoxGeometry(0.35, 0.35, 5.8), mul(base, M4(-D - w2, deck + 6.6, -zl))); }
+      K.add('steelGray', new THREE.BoxGeometry(0.6, 15, 4.6), mul(base, M4(-C - 0.4, cy0 + 7.5, C - 5)));
+      K.add('steelDark', new THREE.BoxGeometry(0.5, 0.5, 1.6), mul(base, M4(-C - 0.9, cy0 + 7, C - 7)));
       K.solid(tf, tr, D, D, 0, cy0 + 24);
     };
     for (const [f, r] of [[iF - 38, iR - 38], [iF - 38, -240], [-iF + 38, iR - 38], [-iF + 38, -iR + 38], [iF - 28, G + 40], [iF - 28, -G - 40], [-iF + 30, 0], [-62, iR - 32], [-150, -iR + 32]]) tower(f, r);
