@@ -207,7 +207,7 @@
 <script src="src/gameplay/explosion_fx.js?v=20261021pr19"></script>
 <script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
 <script src="src/gameplay/vehicle_damage.js?v=20261021hatch1"></script>
-<script src="src/core/equipment.js?v=20261021camo2"></script>
+<script src="src/core/equipment.js?v=20261021camo3"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
 
 <script>
@@ -484,6 +484,9 @@
       u.alwaysFX = true;
       // ?kit=era,slat,applique... : lắp thử trang bị mua thêm (xem hình & thử bắn)
       const kitQ = new URLSearchParams(location.search).get('kit');
+      // ?camo=DESERT|URBAN|JUNGLE|HIGHLAND|RIVER_LAKE : ép kiểu lưới ngụy trang theo bản đồ (mặc định theo phe)
+      const camoQ = new URLSearchParams(location.search).get('camo');
+      if (camoQ) u._foliageKind = camoQ;
       if (kitQ && typeof Equipment !== 'undefined') Equipment.equip(u, { m: kitQ.split(',') }, { local: true });
       if (u.hpBgMesh) u.hpBgMesh.visible = false;
       if (u.hpBarMesh) u.hpBarMesh.visible = false;
