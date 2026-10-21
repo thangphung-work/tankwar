@@ -1781,6 +1781,10 @@ const Landmarks = (() => {
         // tấm vải nhận diện phe (xanh / đỏ) và tia lửa đầu nòng (vật liệu cơ bản trong suốt) không dùng cho xe đỗ
         if (m && m.color && (m.color.getHex() === 0x2f62a6 || m.color.getHex() === 0xb4422b)) o.visible = false;
         if (m && m.isMeshBasicMaterial && m.transparent) o.visible = false;
+        // xe đỗ: tắt đèn (quầng đèn pha/đèn rọi dạng đĩa sáng không bóng, vật liệu tự phát sáng) — dùng bản sao vật liệu
+        // để không ảnh hưởng xe của người chơi dùng chung vật liệu
+        if (m && m.isMeshBasicMaterial && m.color && (m.color.r + m.color.g + m.color.b) > 1.2) o.visible = false;
+        if (m && m.emissive && m.emissiveIntensity > 0 && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.3) { o.material = m.clone(); o.material.emissiveIntensity = 0; }
       });
       if (v.chassis && u.turretGroup) u.turretGroup.visible = false;
       if (u.turretGroup && v.ty) u.turretGroup.rotation.y = v.ty;
