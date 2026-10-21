@@ -159,7 +159,10 @@ SoundEngine.mixin(class {
         this.burst(out, t, { filter: 'bandpass', freq: 2200, Q: 0.9, drive: 3, gain: (bullet ? 0.5 : 0.9) * k, attack: 0.0004, dur: 0.04 });
         this.burst(out, t + 0.005, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 3000, Q: 0.6, gain: (bullet ? 1.2 : 2.2) * k, attack: 0.004, dur: bullet ? 0.25 : 0.8 });
         if (!bullet) {
-          for (let i = 0; i < (big ? 6 : 3); i++) this.burst(out, t + 0.15 + R() * 0.8, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, gain: 0.5 * k, attack: 0.002, dur: 0.07 });
+          // Đạn xuyên động năng chỉ khoét lỗ nhỏ, không có tiếng nổ che phía sau: vụn rơi phải dồn sát cú va.
+          // Rải tới ~1 s thì tiếng "bịch" lẻ loi tách hẳn ra, nghe như một tiếng nổ nhỏ thứ hai sau phát bắn
+          const kin = cls === 'kinetic';
+          for (let i = 0; i < (big ? 6 : 3); i++) this.burst(out, t + (kin ? 0.04 + R() * 0.22 : 0.15 + R() * 0.8), { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, gain: (kin ? 0.35 : 0.5) * k, attack: 0.002, dur: 0.07 });
           this.burst(out, t + 0.1, { filter: 'highpass', freq: 2600, gain: 0.12 * k, attack: 0.2, dur: 1.0 });
         }
         if (bullet && R() < (cls === 'b127' ? 0.35 : 0.15)) this.playRicochet(out, t + 0.006);

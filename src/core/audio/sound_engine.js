@@ -84,7 +84,7 @@ class SoundEngine {
 
     // Bus -> master -> nén keo (glue) -> giới hạn đỉnh chống vỡ tiếng -> loa
     this.masterGain = ctx.createGain();
-    this.masterGain.gain.setValueAtTime(0.9 * (this.userMaster === undefined ? 1 : this.userMaster), t);
+    this.masterGain.gain.setValueAtTime(this.masterTarget(), t);
 
     this.compressor = ctx.createDynamicsCompressor();
     // Nén nhẹ để giữ dải động: tiếng nổ lớn vẫn to hơn hẳn tiếng nhỏ, xung đầu lọt qua trước khi nén (attack 10 ms).
@@ -227,6 +227,23 @@ class SoundEngine {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  // Âm lượng tổng thực tế: tab bị ẩn (chuyển tab / thu nhỏ) thì về 0.
+  // Không suspend AudioContext vì chơi mạng logic vẫn chạy nền (startBackgroundTicker) và gọi ready() -> resume() lại;
+  // hạ gain giữ đồng hồ âm thanh chạy đều nên quay lại tab không bị dồn một loạt tiếng nổ cũ.
+  masterTarget() {
+    if (this.isPageHidden) return 0;
+    return 0.9 * (this.userMaster === undefined ? 1 : this.userMaster);
+  }
+
+  setPageHidden(hidden) {
+    this.isPageHidden = !!hidden;
+    if (!this.ctx || !this.masterGain) return;
+    const t = this.ctx.currentTime;
+    this.masterGain.gain.cancelScheduledValues(t);
+    this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, t);
+    this.masterGain.gain.setTargetAtTime(this.masterTarget(), t, hidden ? 0.03 : 0.15);
+  }
+
   // Mở bản đồ chiến thuật: tắt tiếng máy nổ / mô-tơ, giảm tiếng chiến trường
   // Âm lượng người chơi chọn (0..1): tổng và tiếng động cơ xe. Gọi được trước khi bật âm thanh.
   setUserVolume(master, engine) {
@@ -234,7 +251,7 @@ class SoundEngine {
     if (typeof engine === 'number') this.userEngine = Math.max(0, Math.min(1, engine));
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    if (this.masterGain) this.masterGain.gain.setTargetAtTime(0.9 * (this.userMaster === undefined ? 1 : this.userMaster), t, 0.05);
+    if (this.masterGain) this.masterGain.gain.setTargetAtTime(this.masterTarget(), t, 0.05);
     if (this.vehicleUser) this.vehicleUser.gain.setTargetAtTime(this.userEngine === undefined ? 1 : this.userEngine, t, 0.05);
   }
 
@@ -637,3 +654,9 @@ SoundEngine.mixin = function (Part) {
 };
 
 window.soundEngine = new SoundEngine();
+
+// Chuyển sang tab khác / thu nhỏ cửa sổ: tắt tiếng (động cơ, nổ, môi trường...) tới khi quay lại tab
+if (typeof document !== 'undefined') {
+  window.soundEngine.isPageHidden = !!document.hidden;
+  document.addEventListener('visibilitychange', () => window.soundEngine.setPageHidden(document.hidden));
+}
