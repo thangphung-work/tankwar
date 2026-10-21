@@ -2018,7 +2018,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       cloth.castShadow = true;
       pole.add(cloth);
       grp.add(pole);
-      K.flag = { pole, cloth, W, base0: geo.attributes.position.array.slice(), top: poleH + 1, bottom: 6 + H, t: Math.random() * 10, shown: undefined };
+      K.flag = { pole, cloth, W, base0: geo.attributes.position.array.slice(), top: poleH + 1, bottom: 6 + H, t: Math.random() * 10, shown: undefined, h: 0 };
       K.capture = 0;          // -100 (đỏ) .. +100 (xanh)
       K.owner = null;
       this.setFlagHeight(K, 0);
@@ -2050,8 +2050,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     }
 
     /**
-     * Chiếm cứ điểm: xe một phe đứng trong khoang / dốc ra vào (không có xe địch) -> kéo cờ phe mình lên.
-     * Phe kia vào chiếm lại: cờ cũ hạ dần xuống, đổi cờ và kéo lên. Gọi mỗi khung hình.
+     * Chiếm cứ điểm: phe đông xe hơn trong khoang / dốc ra vào kéo tiến độ về phía mình; chiếm xong cờ phe mình tự kéo lên
+     * đỉnh. Phe kia vào chiếm lại: cờ cũ hạ dần xuống, mất chủ thì cờ trắng dưới chân cột. Gọi mỗi khung hình.
      */
     updateCapture(units, dt) {
       for (const K of this.items) {
@@ -2082,15 +2082,25 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           K.owner = owner;
           if (this.onCapture) this.onCapture(K, owner, old);
         }
-        // Cờ phe đang chiếm dở / đã chiếm, kéo cao theo tiến độ; về 0 thì cờ trắng nằm dưới chân cột
-        const team = K.capture > 0.5 ? 'BLUE' : K.capture < -0.5 ? 'RED' : null;
-        const F = K.flag;
-        if (team !== F.shown) {
-          F.shown = team;
-          F.cloth.material.map = flagTexture(team, K.id);
-          F.cloth.material.needsUpdate = true;
+        // Cờ trên cột theo CHỦ cứ điểm (không theo tiến độ chiếm dở):
+        //  - đang bị phe kia chiếm: cờ chủ cũ hạ dần theo tiến độ; về 0 (mất chủ) thì cờ trắng nằm dưới chân cột
+        //  - đang chiếm dở cứ điểm trống: cờ trắng vẫn nằm dưới chân cột
+        //  - chiếm xong (đổi chủ): cờ phe mới tự kéo lên đỉnh (~2 s)
+        //  Đổi cờ khác phe: hạ cờ cũ xuống chân cột trước rồi mới thay
+        const F = K.flag, want = K.owner || null;
+        let target = 0;
+        if (want) target = Math.max(0, K.capture * (want === 'BLUE' ? 1 : -1)) / 100;
+        if (want !== F.shown) {
+          target = 0;
+          if (F.h <= 0.02) {
+            F.shown = want;
+            F.cloth.material.map = flagTexture(want, K.id);
+            F.cloth.material.needsUpdate = true;
+          }
         }
-        this.setFlagHeight(K, team ? Math.abs(K.capture) / 100 : 0);
+        const dh = target - F.h;
+        F.h += dh > 0 ? Math.min(dh, 0.45 * dt) : Math.max(dh, -0.8 * dt);
+        this.setFlagHeight(K, F.h);
       }
       this.waveFlags(dt);
     }
