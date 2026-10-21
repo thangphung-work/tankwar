@@ -605,49 +605,121 @@
   }
 
   // ---- Lá ngụy trang ----
-  // 'green' (rừng / đồng cỏ) | 'dry' (sa mạc: bụi khô ngả vàng ô-liu). Trong trận theo bản đồ, phòng xem theo phe.
+  // Kiểu lưới theo bản đồ (màu lấy từ bảng màu địa hình, src/core/terrain.js / ground_shader.js) để xe lẫn vào nền:
+  // rừng rậm lá to xanh đậm; sông hồ lá xanh tươi + cỏ lau; cao nguyên ô-liu + lá kim + đá xám;
+  // sa mạc lưới mảnh vải cắt màu cát / đất / đá, ụ thấp như mô đất đá; đô thị mảnh xám bê tông / gạch vụn.
+  // shapes: tỉ lệ [lá nhọn, lá tròn, cỏ, mảnh cắt, lá kim, sỏi]; sprig / twig: tỉ lệ ngọn lá nhô / cành; flat: độ bẹt bụi;
+  // fire: loại cháy (CamoFire: 'green' lá tươi khói trắng, 'dry' khô cháy nhanh)
+  const CAMO_STYLE = {
+    JUNGLE: {
+      pal: [[38, 58, 26], [50, 72, 30], [30, 46, 22], [60, 80, 34], [72, 88, 40], [70, 60, 36]],
+      shapes: [0.62, 0.24, 0.1, 0, 0, 0.04], scale: 1.25, stem: 'rgba(50,44,30,0.95)', twig: 0x3b3223,
+      tints: [[1, 1, 1], [0.82, 0.98, 0.74], [1.2, 1.06, 0.76], [0.72, 0.84, 0.62]], sprig: 0.65, twigP: 0.75, flat: 1, fire: 'green', seed: 7, shade: [0.6, 0.9, 1.12], edge: 0.7
+    },
+    RIVER_LAKE: {
+      pal: [[62, 84, 36], [80, 100, 44], [48, 66, 30], [96, 108, 56], [110, 106, 66], [76, 70, 46]],
+      shapes: [0.46, 0.18, 0.3, 0, 0, 0.06], scale: 1.05, stem: 'rgba(70,62,40,0.95)', twig: 0x4a3f2c,
+      tints: [[1, 1, 1], [0.86, 1.0, 0.78], [1.16, 1.08, 0.82], [0.8, 0.86, 0.7]], sprig: 0.7, twigP: 0.55, flat: 0.95, fire: 'green', seed: 21, shade: [0.62, 0.9, 1.12], edge: 0.7
+    },
+    HIGHLAND: {
+      pal: [[70, 80, 46], [88, 94, 56], [56, 64, 38], [104, 98, 70], [120, 116, 104], [84, 74, 56]],
+      shapes: [0.34, 0.14, 0.16, 0.08, 0.22, 0.06], scale: 1, stem: 'rgba(66,56,40,0.95)', twig: 0x4a3e2c,
+      tints: [[1, 1, 1], [0.88, 0.96, 0.8], [1.12, 1.04, 0.86], [0.94, 0.94, 0.94]], sprig: 0.5, twigP: 0.6, flat: 0.9, fire: 'green', seed: 13, shade: [0.64, 0.9, 1.1], edge: 0.6
+    },
+    DESERT: {
+      pal: [[214, 184, 138], [196, 160, 112], [176, 140, 98], [154, 122, 90], [206, 190, 156], [184, 162, 120]],
+      shapes: [0.04, 0.08, 0.12, 0.6, 0, 0.16], scale: 1, stem: 'rgba(120,98,70,0.95)', twig: 0x7a6650,
+      tints: [[1.06, 1.04, 1.02], [0.96, 0.92, 0.86], [1.12, 1.06, 0.96], [0.86, 0.82, 0.78]], sprig: 0.16, twigP: 0.18, flat: 0.68, fire: 'dry', seed: 11, shade: [0.8, 0.95, 1.06], edge: 0.3
+    },
+    URBAN: {
+      pal: [[138, 136, 130], [120, 118, 112], [104, 102, 98], [146, 138, 124], [124, 114, 100], [92, 92, 90]],
+      shapes: [0.06, 0.04, 0.08, 0.66, 0, 0.16], scale: 1, stem: 'rgba(70,66,60,0.95)', twig: 0x55504a,
+      tints: [[1, 1, 1], [0.86, 0.86, 0.86], [1.08, 1.02, 0.94], [0.74, 0.74, 0.76]], sprig: 0.12, twigP: 0.12, flat: 0.74, fire: 'dry', seed: 51, shade: [0.78, 0.94, 1.06], edge: 0.3
+    }
+  };
+  const CAMO_ALIAS = { green: 'JUNGLE', dry: 'DESERT' };   // tên cũ (fx_lab ?leaf=green|dry)
   function foliageKind(u) {
-    if (u._foliageKind === 'green' || u._foliageKind === 'dry') return u._foliageKind;   // phòng thử ép loại lá
+    const f = u._foliageKind && (CAMO_STYLE[u._foliageKind] ? u._foliageKind : CAMO_ALIAS[u._foliageKind]);
+    if (f) return f;   // phòng thử ép kiểu lưới
     const g = window.game;
-    if (g && u.scene && u.scene === g.scene && g.currentMapType) return g.currentMapType === 'DESERT' ? 'dry' : 'green';
-    return u.team === 'RED' ? 'dry' : 'green';
+    if (g && u.scene && u.scene === g.scene && g.currentMapType) return CAMO_STYLE[g.currentMapType] ? g.currentMapType : 'HIGHLAND';
+    return u.team === 'RED' ? 'DESERT' : 'JUNGLE';
   }
   const foliageCache = {};
   function foliageMats(kind) {
+    kind = CAMO_STYLE[kind] ? kind : CAMO_ALIAS[kind] || 'JUNGLE';
     if (foliageCache[kind]) return foliageCache[kind];
-    // Atlas 256 x 128: nửa trái = lá dày (khối bụi lá), nửa phải = chùm lá thưa dần ra mép (tấm lá rủ có viền lởm chởm)
+    const ST = CAMO_STYLE[kind];
+    // Atlas 512 x 256: nửa trái = lá dày (khối bụi lá), nửa phải = chùm lá thưa dần ra mép (tấm lá rủ có viền lởm chởm)
+    // Vẽ 3 lớp: lá sẫm (bóng trong lòng bụi) -> lá giữa -> lá sáng trên cùng => có chiều sâu, không phẳng như tấm dán
     const c = document.createElement('canvas');
-    c.width = 256; c.height = 128;
+    c.width = 512; c.height = 256;
     const g = c.getContext('2d');
-    const pal = kind === 'dry'
-      ? [[96, 90, 54], [114, 104, 62], [78, 72, 42], [86, 70, 44]]
-      : [[40, 52, 27], [52, 66, 33], [31, 41, 22], [50, 52, 30]];
-    let seed = kind === 'dry' ? 11 : 7;
+    const pal = ST.pal, cum = [];
+    ST.shapes.reduce((a, v, i) => (cum[i] = a + v), 0);
+    let seed = ST.seed;
     const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const leafAt = (x, y, i, sc) => {
-      const p = pal[i % pal.length], k = 0.75 + r() * 0.45;
-      g.fillStyle = `rgba(${p[0] * k | 0},${p[1] * k | 0},${p[2] * k | 0},0.97)`;
-      g.beginPath(); g.ellipse(x, y, (3 + r() * 4) * sc, (1.3 + r() * 2) * sc, r() * 6.3, 0, 6.3); g.fill();
+    // lá nhọn (có gân giữa) / lá tròn / ngọn cỏ mảnh / mảnh vải cắt (lưới sa mạc, đô thị) / chùm lá kim / sỏi; sh = độ sáng của lớp
+    const leafAt = (x, y, i, sc, sh) => {
+      const p = pal[i % pal.length], k = sh * (0.84 + r() * 0.32);
+      const col = `rgba(${Math.min(255, p[0] * k) | 0},${Math.min(255, p[1] * k) | 0},${Math.min(255, p[2] * k) | 0},0.98)`;
+      const dark = `rgba(${p[0] * k * 0.6 | 0},${p[1] * k * 0.6 | 0},${p[2] * k * 0.55 | 0},${ST.edge})`;
+      const t = r() * cum[cum.length - 1], a = r() * 6.3;
+      sc *= ST.scale;
+      g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = col;
+      g.beginPath();
+      if (t < cum[0]) {
+        const L = (7 + r() * 8) * sc, W = (2.6 + r() * 3) * sc;
+        g.moveTo(-L / 2, 0); g.quadraticCurveTo(0, -W, L / 2, 0); g.quadraticCurveTo(0, W, -L / 2, 0); g.fill();
+        g.strokeStyle = dark; g.lineWidth = 0.7 * sc;
+        g.beginPath(); g.moveTo(-L / 2, 0); g.lineTo(L / 2, 0); g.stroke();
+      } else if (t < cum[1]) {
+        g.ellipse(0, 0, (3.5 + r() * 4) * sc, (2.4 + r() * 2.6) * sc, 0, 0, 6.3); g.fill();
+      } else if (t < cum[2]) {
+        const L = (10 + r() * 10) * sc;
+        g.moveTo(0, 0); g.quadraticCurveTo(L * 0.5, 1.6 * sc, L, (r() - 0.5) * 3 * sc); g.quadraticCurveTo(L * 0.5, -0.6 * sc, 0, 0); g.fill();
+      } else if (t < cum[3]) {
+        // mảnh vải cắt hình đa giác méo, mép sẫm (bóng của mảnh chồng lên nhau) -> mặt lưới lổn nhổn như đất đá
+        const n = 5 + (r() * 4 | 0), R0 = (4 + r() * 5) * sc, el = 0.55 + r() * 0.45;
+        for (let j = 0; j < n; j++) {
+          const an = (j / n) * 6.283 + r() * 0.6, rr = R0 * (0.6 + r() * 0.5);
+          j ? g.lineTo(Math.cos(an) * rr, Math.sin(an) * rr * el) : g.moveTo(Math.cos(an) * rr, Math.sin(an) * rr * el);
+        }
+        g.closePath(); g.fill();
+        g.strokeStyle = dark; g.lineWidth = 0.9 * sc; g.stroke();
+      } else if (t < cum[4]) {
+        g.strokeStyle = col; g.lineWidth = 1.1 * sc;
+        const m = 6 + (r() * 5 | 0);
+        for (let j = 0; j < m; j++) { const an = (j / m) * 2.6 - 1.3 + r() * 0.3, L = (5 + r() * 4) * sc; g.moveTo(0, 0); g.lineTo(Math.cos(an) * L, Math.sin(an) * L); }
+        g.stroke();
+      } else {
+        g.ellipse(0, 0, (1.4 + r() * 1.8) * sc, (1.1 + r() * 1.4) * sc, 0, 0, 6.3); g.fill();
+      }
+      g.restore();
     };
-    g.save(); g.beginPath(); g.rect(0, 0, 128, 128); g.clip();
-    for (let i = 0; i < 640; i++) leafAt(r() * 128, r() * 128, i, 1);
+    g.save(); g.beginPath(); g.rect(0, 0, 256, 256); g.clip();
+    const [s0, s1, s2] = ST.shade;
+    for (const [n, sh] of [[900, s0], [800, s1], [520, s2]]) for (let i = 0; i < n; i++) leafAt(r() * 256, r() * 256, i, 1, sh);
     g.restore();
-    g.save(); g.beginPath(); g.rect(129, 0, 127, 128); g.clip();
-    // cuống / cành nhỏ treo lá
-    g.strokeStyle = kind === 'dry' ? 'rgba(80,66,44,0.95)' : 'rgba(52,44,30,0.95)'; g.lineWidth = 1.6;
-    for (let i = 0; i < 9; i++) { const x = 140 + r() * 104; g.beginPath(); g.moveTo(x, 4); g.lineTo(x + (r() - 0.5) * 30, 40 + r() * 70); g.stroke(); }
-    for (let i = 0; i < 900; i++) {
-      const x = 129 + r() * 127, y = r() * 128;
-      // dày ở giữa & mép trên (chỗ buộc vào lưới), thưa dần xuống dưới và ra hai bên -> viền lởm chởm
-      const dx = Math.abs(x - 192.5) / 64, dy = y / 128;
-      if (r() > 1.15 - dx * 0.75 - dy * 0.75) continue;
-      leafAt(x, y, i, 1.1);
+    g.save(); g.beginPath(); g.rect(258, 0, 254, 256); g.clip();
+    // cuống / cành nhỏ (dây buộc) treo lá
+    g.strokeStyle = ST.stem; g.lineWidth = 2.6;
+    for (let i = 0; i < 14; i++) {
+      const x = 276 + r() * 216, x1 = x + (r() - 0.5) * 60, y1 = 80 + r() * 150;
+      g.beginPath(); g.moveTo(x, 6); g.quadraticCurveTo((x + x1) / 2 + (r() - 0.5) * 30, y1 * 0.5, x1, y1); g.stroke();
+    }
+    // dày ở giữa & mép trên (chỗ buộc vào lưới), thưa dần xuống dưới và ra hai bên -> viền lởm chởm
+    for (const [n, sh] of [[1100, s0], [1000, s1], [600, s2]]) for (let i = 0; i < n; i++) {
+      const x = 258 + r() * 254, y = r() * 256;
+      const dx = Math.abs(x - 385) / 127, dy = y / 256;
+      if (r() > 1.18 - dx * 0.72 - dy * 0.78) continue;
+      leafAt(x, y, i, 1.1, sh);
     }
     g.restore();
     const tex = new THREE.CanvasTexture(c);
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     const leaf = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
-    const twig = new THREE.MeshStandardMaterial({ color: kind === 'dry' ? 0x5a4a34 : 0x3b3223, roughness: 0.95, metalness: 0 });
+    const twig = new THREE.MeshStandardMaterial({ color: ST.twig, roughness: 0.95, metalness: 0 });
     leaf.userData.surface = twig.userData.surface = 'cloth';
     return (foliageCache[kind] = { leaf, twig });
   }
@@ -678,15 +750,12 @@
   // - lá đung đưa (vertex shader): gió nhẹ, rung mạnh khi xe chạy / bắn / trúng đạn; trúng đạn rơi vài lá
   // - tấm vải màu phe đặt trên lớp lá: vẫn nhận ra phe từ trên cao
   // ---------------------------------------------------------------------------
-  const LEAF_TINTS = {
-    green: [[1, 1, 1], [0.8, 0.96, 0.72], [1.34, 1.08, 0.7], [0.7, 0.8, 0.6]],     // ô-liu, xanh rêu, nâu khô, rêu sẫm
-    dry: [[1, 1, 1], [0.86, 0.92, 0.72], [1.18, 0.96, 0.74], [0.76, 0.72, 0.6]]
-  };
   // Dải lá trên nòng (hệ tọa độ barrelGroup: trục nòng = -Z): đoạn [z đầu, z cuối] chừa bầu hút khói & 1/3 đầu nòng
+  // [z đầu, z cuối, bán kính nòng đoạn đó] (đo từ mô hình). Quấn kín cả bầu hút khói, chỉ chừa miệng nòng / hãm lùi
+  // (lửa đầu nòng thổi bay lá); Arbalest chừa chỗ nòng gác lên giá khóa.
   const BARREL_LEAF = {
-    // phủ gần hết nòng tới sát đầu nòng (chừa bầu hút khói, miệng nòng / hãm lùi; Arbalest chừa chỗ nòng gác lên giá khóa)
-    ALL_ROUNDER: { r: 1.3, segs: [[-6.5, -20.6], [-29.2, -53.6]] },
-    ARTILLERY: { r: 1.45, segs: [[-5, -30.2], [-38.2, -64.6]] }
+    ALL_ROUNDER: { segs: [[-6.2, -20.4, 1.42], [-20.4, -27.8, 1.8], [-27.8, -54.6, 1.42]] },
+    ARTILLERY: { segs: [[-4.6, -29.6, 1.5], [-38.4, -64.8, 1.5]] }
   };
   let clumpLoGeo = null;
   function foliageClumpLo() {   // khối lá thô (20 tam giác) cho lớp phụ & nòng
@@ -752,7 +821,7 @@
   }
 
   function buildFoliage(u, F, T, len) {
-    const kind = foliageKind(u), Lm = foliageMats(kind), leaf = swayLeafMat(kind), tw = Lm.twig, tints = LEAF_TINTS[kind];
+    const kind = foliageKind(u), ST = CAMO_STYLE[kind], Lm = foliageMats(kind), leaf = swayLeafMat(kind), tw = Lm.twig, tints = ST.tints;
     const rnd = (window.VehicleKit && VehicleKit.mulberry32) ? VehicleKit.mulberry32(977 + u.tankType.length * 31 + (u.team === 'RED' ? 7 : 0)) : Math.random;
     const R = (a, b) => a + rnd() * (b - a);
     const tint = () => { const r = rnd(); return tints[r < 0.5 ? 0 : r < 0.72 ? 1 : r < 0.88 ? 2 : 3]; };
@@ -770,16 +839,36 @@
     const clump = (b, x, y, z, sx, sy, sz, lo) => b.add(cfAdd(b, tinted(lo ? foliageClumpLo() : foliageClump(), tint()), x, y, z, Math.max(sx, sz)), leaf, [x, y, z], [R(-0.3, 0.3), R(0, 6.28), R(-0.3, 0.3)], [sx, sy, sz]);
     const card = (b, pos, rot, sc) => b.add(cfAdd(b, tinted(leafCardGeo(), tint()), pos[0], pos[1], pos[2], Math.max(sc[0], sc[1]) * 0.5), leaf, pos, rot, sc);
     const twig = (b, x, y, z, h) => b.strut([x, y, z], [x + R(-1.6, 1.6), y + h, z + R(-1.6, 1.6)], 0.12, tw, 4, 0.04);
+    // ngọn lá / nhánh cỏ cắm ngược lên (2 tấm lá chéo nhau, lật ngược: dày ở gốc, lởm chởm ở ngọn) -> phá đường viền xe
+    const sprig = (b, x, y, z, h) => {
+      const a = R(0, 3.14), w = h * R(0.7, 1.0), lean = R(-0.25, 0.25);
+      for (const d of [0, Math.PI / 2]) card(b, [x, y + h * 0.42, z], [lean, a + d, Math.PI + R(-0.2, 0.2)], [w, h, 1]);
+    };
+    // rèm lá rủ dài (2 lớp so le, lớp ngoài lệch ra) — phủ sườn, bánh, xích
+    const curtain = (b, x, z, ry, yTop, yBot, out, w) => {
+      const h = yTop - yBot;
+      card(b, [x, yTop - h * 0.5, z], [R(-0.06, 0.06), ry + R(-0.14, 0.14), R(-0.1, 0.1)], [w * R(0.95, 1.2), h * R(1.0, 1.1), 1]);
+      if (rnd() < 0.8) card(b, [x + out[0], yTop - h * 0.42 - R(0, 0.8), z + out[1] + R(-0.8, 0.8)], [R(-0.08, 0.08), ry + R(-0.18, 0.18), R(-0.12, 0.12)], [w * R(0.8, 1.05), h * R(0.75, 0.95), 1]);
+    };
+    const bushSide = (b, s, x, y, z) => {
+      cfCur = cfCell(b, s * x, y, z, 2.4);
+      try {
+        clump(b, s * x, y, z, R(1.4, 2.0), R(1.8, 2.6), R(2.2, 3.2), true);
+        if (rnd() < 0.6) clump(b, s * (x + 0.5), y + R(-1.2, 0.6), z + R(-1.2, 1.2), R(1.0, 1.4), R(1.2, 1.8), R(1.4, 2.0), true);
+      } finally { cfCur = -1; }
+    };
     const bush = (b, x, y, z, sx, sy, sz) => {
       cfCur = cfCell(b, x, y + sy * 0.3, z, Math.max(sx, sz));
-      try { bushParts(b, x, y, z, sx, sy, sz); } finally { cfCur = -1; }
+      try { bushParts(b, x, y, z, sx, sy * ST.flat, sz); } finally { cfCur = -1; }   // sa mạc / đô thị: ụ bẹt như mô đất đá
     };
     const bushParts = (b, x, y, z, sx, sy, sz) => {
       clump(b, x, y, z, sx, sy, sz);
-      // lớp lá thứ 2 nhỏ hơn chồng lệch lên trên -> dày, nhiều lớp
-      if (rnd() < 0.7) clump(b, x + R(-0.5, 0.5) * sx, y + sy * R(0.35, 0.6), z + R(-0.5, 0.5) * sz, sx * R(0.5, 0.7), sy * R(0.55, 0.75), sz * R(0.5, 0.7), true);
+      // lớp lá thứ 2, 3 nhỏ hơn chồng lệch lên trên / sang bên -> dày, nhiều lớp, mặt bụi gồ ghề
+      if (rnd() < 0.85) clump(b, x + R(-0.5, 0.5) * sx, y + sy * R(0.35, 0.6), z + R(-0.5, 0.5) * sz, sx * R(0.5, 0.7), sy * R(0.55, 0.75), sz * R(0.5, 0.7), true);
+      if (rnd() < 0.5) clump(b, x + R(-0.7, 0.7) * sx, y + sy * R(0.1, 0.3), z + R(-0.7, 0.7) * sz, sx * R(0.45, 0.6), sy * R(0.5, 0.7), sz * R(0.45, 0.6), true);
       card(b, [x + R(-0.4, 0.4) * sx, y + sy * 0.5, z + R(-0.4, 0.4) * sz], [R(-0.5, 0.5), R(0, 3.14), R(-0.4, 0.4)], [sx * 1.7, sy * 1.7, 1]);
-      if (rnd() < 0.7) twig(b, x, y, z, sy * R(1.4, 2.6));
+      if (rnd() < ST.sprig) sprig(b, x + R(-0.3, 0.3) * sx, y + sy * 0.4, z + R(-0.3, 0.3) * sz, sy * R(1.2, 1.9));
+      if (rnd() < ST.twigP) twig(b, x, y, z, sy * R(1.4, 2.6));
     };
     // Mỗi nhóm lá một nhãn bộ phận riêng: khi bị hất văng, mỗi phần giữ đúng hệ tọa độ của nhóm cha
     // (trước đây chung 1 nhãn -> lá trên nòng bị đặt theo hệ thân xe, rơi thành khối nằm ngang dưới đất)
@@ -790,6 +879,17 @@
     const top = F.y1 + 0.6, z0 = F.zF + len * 0.1, z1 = F.zR - 1.2;
     const ringClear = (x, z) => u.tankType === 'SCOUT' && Math.hypot(x, z - 2.6) < 4.6;   // chừa vòng xoay súng Marten
     const drape = (b, x, y, z, ry, w, h) => card(b, [x, y, z], [R(-0.12, 0.12), ry + R(-0.3, 0.3), R(-0.15, 0.15)], [w, h, 1]);
+    // xe bánh lốp: rèm lá rủ từ dưới mép cửa / sàn xuống sát đất, trùm kín các bánh; bánh lái phía trước đánh lái
+    // quét rộng ra ngoài -> rèm chỗ đó lệch ra xa hơn
+    const wheelCurtain = (xs, yTop, za, zb) => {
+      const W = u.wheelSet, wr = W ? W.radius : 4;
+      const steerZ = W ? W.positions.filter(p => p.steer).map(p => p.z) : [];
+      for (const s of [-1, 1]) for (let z = za; z <= zb; z += R(2.3, 2.9)) {
+        const nearSteer = steerZ.some(sz => Math.abs(z - sz) < wr + 1.5);
+        curtain(fh, s * (xs + (nearSteer ? wr * 0.3 : 0)), z, Math.PI / 2, yTop + R(-0.4, 0.4), 0.9 + (rnd() < 0.35 ? R(0.8, 2.0) : R(0, 0.5)), [s * 0.5, 0], R(4.4, 5.6));
+      }
+      for (const s of [-1, 1]) for (const zz of [za - 0.6, zb + 0.6]) curtain(fh, s * (xs - 2.4), zz, s * (zz < 0 ? -0.6 : 0.6), yTop - 1, 1.4, [0, zz < 0 ? -0.5 : 0.5], R(3.6, 4.4));
+    };
     if (u.tankType === 'SCOUT') {
       // Marten: phủ nóc + phần sau thân; CHỪA kính chắn gió, ô kính cửa, đèn pha, gương (lái xe & trưởng xe vẫn nhìn được)
       const RY = 15.4;
@@ -811,6 +911,27 @@
       }
       // đuôi xe: lá rủ kín cửa sau (cửa sau không có kính)
       for (let x = -6.6; x <= 6.61; x += R(2.8, 3.4)) { drape(fh, x, 13.4, 18.6, 0, R(3.4, 4.2), R(3.2, 4)); drape(fh, x + 1, 9.6, 18.8, 0, R(3, 3.8), R(2.6, 3.2)); }
+      wheelCurtain(9.3, 9.4, -16.4, 16.6);
+      // khoang máy phía trước: bụi lá thấp trên nắp máy (đỉnh lá < mép dưới kính chắn gió y ~13.2, không có ngọn / cành
+      // nhô lên che tầm nhìn lái xe), phủ vè trước; chừa đèn pha (x ±6.6, z -17.2) và gương chiếu hậu
+      const hoodY = (z) => 10.6 + (z + 17.6) * 0.105;   // nắp máy dốc lên về phía kính
+      const lowBush = (x, y, z, sx, sy, sz) => {
+        cfCur = cfCell(fh, x, y + sy * 0.3, z, Math.max(sx, sz));
+        try {
+          clump(fh, x, y, z, sx, sy, sz);
+          if (rnd() < 0.7) clump(fh, x + R(-0.5, 0.5) * sx, y + sy * 0.25, z + R(-0.4, 0.4) * sz, sx * R(0.5, 0.7), sy * 0.6, sz * R(0.5, 0.7), true);
+        } finally { cfCur = -1; }
+      };
+      for (let z = -17.0; z <= -10.2; z += R(1.9, 2.4)) {
+        for (let x = -4.4; x <= 4.41; x += R(2.6, 3.1)) lowBush(x + R(-0.4, 0.4), hoodY(z) - 0.1, z, R(2.2, 2.8), R(0.9, 1.3), R(2.0, 2.6));
+        if (z > -15.2) for (const s of [-1, 1]) lowBush(s * R(7.2, 7.8), 10.2, z, R(2.0, 2.6), R(1.0, 1.4), R(2.0, 2.6));
+      }
+      // lá rủ trùm lưới tản nhiệt & cản trước (giữa 2 đèn pha)
+      for (let x = -3.8; x <= 3.81; x += R(1.8, 2.2)) curtain(fh, x, -19.1, 0, 11.0, 4.6 + R(0, 0.8), [R(-0.4, 0.4), -0.45], R(2.6, 3.1));
+      for (let x = -4.4; x <= 4.41; x += R(2.4, 2.9)) curtain(fh, x, -19.8, 0, 6.6, 1.6 + R(0, 0.8), [R(-0.4, 0.4), -0.4], R(3.0, 3.6));
+      // trước 2 bánh lái (dưới đèn pha): rèm lá tới sát đất
+      for (const s of [-1, 1]) curtain(fh, s * 6.9, -19.5, 0, 9.4, 1.0 + R(0, 0.5), [s * 0.3, -0.4], R(3.4, 4.0));
+      for (const s of [-1, 1]) curtain(fh, s * 5.0, -19.3, 0, 9.8, 3.4 + R(0, 0.8), [s * 0.3, -0.4], R(2.0, 2.4));
     } else if (u.tankType === 'ARTILLERY') {
       // Arbalest: nóc + diềm cabin (chừa kính chắn gió, kính cửa, đèn và hành lang nòng gác trên giá khóa),
       // lưới tản nhiệt mặt trước, nóc khoang máy (tránh ống xả nóng), sàn trước tháp, sườn sàn rủ trùm bánh
@@ -834,48 +955,72 @@
       // sàn trước tháp (ngoài vòng quay của tháp) + sườn sàn: lá rủ trùm nửa trên bánh
       for (let z = -10.2; z <= -2.4; z += R(2.6, 3.2)) for (const s of [-1, 1]) bush(fh, s * R(7.6, 9.2), 13.0, z, R(3.0, 3.6), R(1.5, 2.2), R(3.0, 3.6));
       for (const s of [-1, 1]) for (let z = -10.2; z <= 36.6; z += R(2.6, 3.4)) drape(fh, s * 10.9, 10.4, z, Math.PI / 2, R(3.6, 4.6), R(3.2, 4.2));
+      wheelCurtain(11.6, 11.2, -32.6, 30.4);
     } else {
     // Giáp mũi xe xích: lá phủ dọc mép trên & sườn giáp mũi, chừa giữa (kính tiềm vọng lái xe)
     const gl = u.tankType === 'ALL_ROUNDER' ? (z) => Math.min(12.8, 9.4 + (z + 31) * 0.34) : (z) => Math.min(14.2, 9.6 + (z + 30.6) * 0.286);
-    for (let z = F.zF + 1.5; z < z0 + 1; z += R(2.4, 3.0)) {
-      for (let x = -F.hw + 2.6; x <= F.hw - 2.6; x += R(3.2, 3.9)) {
+    for (let z = F.zF + 1.5; z < z0 + 1; z += R(2.0, 2.5)) {
+      for (let x = -F.hw + 2.6; x <= F.hw - 2.6; x += R(2.7, 3.3)) {
         if (Math.abs(x) < 3.4) continue;
         bush(fh, x, gl(z) + 0.2, z, R(3.0, 3.8), R(1.5, 2.2), R(3.0, 3.6));
       }
     }
-    for (let x = -F.hw + 1.5; x <= F.hw - 1.4; x += R(3.0, 3.8)) if (Math.abs(x) > 3.2) drape(fh, x, gl(F.zF) - 0.6, F.zF - 0.6, 0, R(3.4, 4.4), R(2.4, 3.2));
-    for (const s of [-1, 1]) {
-      for (let z = z0; z <= z1; z += R(2.5, 3.1)) bush(fh, s * (F.hw - R(0.4, 1.8)), top - R(0, 0.8), z, R(3.8, 4.8), R(2.3, 3.3), R(3.6, 4.6));
-      for (let z = z0 + 1.5; z <= z1; z += R(3.2, 4.0)) { const x = s * (F.hw - R(4, 5.5)); if (!ringClear(x, z)) bush(fh, x, top - R(0.2, 0.6), z, R(3.2, 4.2), R(1.6, 2.4), R(3.2, 4.2)); }
-      // mép lá lởm chởm rủ xuống sườn: tầng trên + tầng dưới phủ tới đỉnh bánh / xích / váy xích
-      for (let z = z0; z <= z1; z += R(2.6, 3.6)) card(fh, [s * (F.hw + 0.7), top - 2.0, z], [0, Math.PI / 2 + R(-0.3, 0.3), R(-0.15, 0.15)], [R(4.5, 6.5), R(3.2, 4.6), 1]);
-      for (let z = z0 + 1; z <= z1; z += R(3.2, 4.4)) card(fh, [s * (F.hw + 1.0), F.y0 + R(0.4, 1.4), z], [0, Math.PI / 2 + R(-0.35, 0.35), R(-0.2, 0.2)], [R(4, 6), R(3, 4.4), 1]);
+    for (let x = -F.hw + 1.5; x <= F.hw - 1.4; x += R(2.6, 3.2)) if (Math.abs(x) > 3.2) drape(fh, x, gl(F.zF) - 0.6, F.zF - 0.6, 0, R(3.4, 4.4), R(2.6, 3.4));
+    // dải xích (đo từ đường chạy xích): đầu / cuối xích, mép ngoài xích
+    let tF = F.zF + 2, tR = F.zR - 1;
+    const TS = u.trackSystem, tx = TS && TS.sidesX ? Math.abs(TS.sidesX[1]) : F.hw - 3.6;
+    if (TS && TS.path && TS.path.segs) {
+      let lo = Infinity, hi = -Infinity;
+      for (const sg of TS.path.segs) {
+        if (sg.C) { lo = Math.min(lo, sg.C.u - sg.C.r); hi = Math.max(hi, sg.C.u + sg.C.r); }
+        for (const q of [sg.p0, sg.p1]) if (q) { lo = Math.min(lo, q.u); hi = Math.max(hi, q.u); }
+      }
+      if (isFinite(lo)) { tF = lo; tR = hi; }
     }
-    // đuôi xe: lá rủ
-    for (let x = -F.hw * 0.85; x <= F.hw * 0.86; x += R(3.5, 5)) card(fh, [x, top - 2.2, F.zR + 0.8], [R(-0.2, 0.2), R(-0.3, 0.3), R(-0.2, 0.2)], [R(4, 5.5), R(3, 4.4), 1]);
+    const yBot = 0.9;   // mép dưới rèm lá: sát mặt đất nhưng không quệt đất
+    for (const s of [-1, 1]) {
+      for (let z = z0; z <= z1; z += R(2.0, 2.5)) bush(fh, s * (F.hw - R(0.4, 1.8)), top - R(0, 0.8), z, R(3.8, 4.8), R(2.3, 3.3), R(3.6, 4.6));
+      for (let z = z0 + 1.5; z <= z1; z += R(2.6, 3.2)) { const x = s * (F.hw - R(4, 5.5)); if (!ringClear(x, z)) bush(fh, x, top - R(0.2, 0.6), z, R(3.2, 4.2), R(1.6, 2.4), R(3.2, 4.2)); }
+      // mép lá lởm chởm rủ xuống sườn: tầng trên phủ sườn thân, rèm dài phủ kín váy xích, bánh chịu lực & xích tới sát đất
+      for (let z = z0; z <= z1; z += R(2.2, 2.9)) card(fh, [s * (F.hw + 0.7), top - 2.0, z], [0, Math.PI / 2 + R(-0.3, 0.3), R(-0.15, 0.15)], [R(4.5, 6.5), R(3.2, 4.6), 1]);
+      for (let z = Math.min(z0, tF + 2); z <= tR - 1.5; z += R(2.3, 2.9)) curtain(fh, s * (F.hw + R(0.8, 1.5)), z, Math.PI / 2, F.y0 + R(1.2, 2.2), yBot + (rnd() < 0.35 ? R(0.8, 2.2) : R(0, 0.5)), [s * 0.55, 0], R(4.6, 5.8));
+      // chùm lá phồng ra ngoài rèm (mặt rèm gồ ghề, không phẳng như tường rào)
+      for (let z = tF + 2; z <= tR - 2; z += R(3.4, 5.0)) bushSide(fh, s, F.hw + R(1.4, 2.0), F.y0 + R(-1.6, 1.4), z);
+      // đầu & đuôi dải xích: lá rủ trùm bánh sao chủ động / bánh dẫn hướng
+      for (const [zz, dz] of [[tF - 0.9, -0.5], [tR + 0.9, 0.5]]) {
+        curtain(fh, s * tx, zz, 0, F.y0 + R(1.4, 2.4), yBot + R(0.3, 0.9), [0, dz], R(5.4, 6.6));
+        card(fh, [s * (tx + 2.0), F.y0 - 0.6, zz - dz * 2], [0, s * (dz < 0 ? -0.7 : 0.7) + R(-0.2, 0.2), R(-0.1, 0.1)], [R(3.6, 4.4), R(5.0, 6.0), 1]);
+      }
+    }
+    // đuôi xe: lá rủ (2 tầng)
+    for (let x = -F.hw * 0.85; x <= F.hw * 0.86; x += R(2.8, 3.6)) {
+      card(fh, [x, top - 2.2, F.zR + 0.8], [R(-0.2, 0.2), R(-0.3, 0.3), R(-0.2, 0.2)], [R(4, 5.5), R(3, 4.4), 1]);
+      if (Math.abs(x) < tx - 3) card(fh, [x + R(-0.6, 0.6), F.y0 + 0.2, F.zR + 1.1], [R(-0.1, 0.1), R(-0.25, 0.25), R(-0.15, 0.15)], [R(3.8, 4.8), R(3.6, 4.6), 1]);
+    }
     // sàn sau (sau tháp) / nóc xe không tháp
     const rz0 = T ? Math.min(F.zR - 4, T.zR + 3) : F.zF + len * 0.35;
-    for (let z = rz0; z <= z1; z += R(3.0, 3.8)) {
-      for (let x = -F.hw * 0.62; x <= F.hw * 0.63; x += R(3.4, 4.4)) { const xx = x + R(-1, 1); if (!ringClear(xx, z)) bush(fh, xx, F.netY + 0.4, z, R(3.6, 4.6), R(1.8, 2.8), R(3.6, 4.6)); }
+    for (let z = rz0; z <= z1; z += R(2.5, 3.1)) {
+      for (let x = -F.hw * 0.62; x <= F.hw * 0.63; x += R(2.9, 3.6)) { const xx = x + R(-1, 1); if (!ringClear(xx, z)) bush(fh, xx, F.netY + 0.4, z, R(3.6, 4.6), R(1.8, 2.8), R(3.6, 4.6)); }
     }
     }
     let panelHost = null, panelPos = null;
     // ---- THÁP ----
     if (T && u.turretGroup) {
       const ty = (REAL_ROOF[u.tankType] || T.roof) + 0.4, tl = T.zR - T.zF;
-      for (let i = 0; i < 18; i++) {   // lá rủ quanh sườn tháp
-        const a = (i / 18) * Math.PI * 2 + 0.3;
+      for (let i = 0; i < 26; i++) {   // lá rủ quanh sườn tháp: tầng trên + tầng dưới phủ kín vách tháp
+        const a = (i / 26) * Math.PI * 2 + 0.3;
         const x = Math.sin(a) * (T.hw + 0.4), z = (T.zF + T.zR) / 2 - Math.cos(a) * tl * 0.5;
         if (z < T.zF + tl * 0.3 && Math.abs(x) < T.hw * 0.5) continue;
         card(ft, [x, ty - 2.4, z], [0, a + R(-0.25, 0.25), R(-0.15, 0.15)], [R(4.2, 6), R(3, 4.4), 1]);
+        if (rnd() < 0.85) card(ft, [x * 1.04, ty - 5.2, z + R(-0.6, 0.6)], [0, a + R(-0.3, 0.3), R(-0.15, 0.15)], [R(4.0, 5.4), R(3.6, 4.6), 1]);
       }
-      for (let i = 0; i < 28; i++) {   // viền nóc tháp (trừ giữa phía trước: nòng + kính ngắm)
-        const a = (i / 28) * Math.PI * 2;
+      for (let i = 0; i < 36; i++) {   // viền nóc tháp (trừ giữa phía trước: nòng + kính ngắm)
+        const a = (i / 36) * Math.PI * 2;
         const x = Math.sin(a) * T.hw * 0.92, z = (T.zF + T.zR) / 2 - Math.cos(a) * tl * 0.46;
         if (z < T.zF + tl * 0.3 && Math.abs(x) < T.hw * 0.45) continue;
         bush(ft, x, ty - R(0, 1.2), z, R(3.0, 4.0), R(1.9, 2.8), R(3.0, 4.0));
       }
-      for (let i = 0; i < 14; i++) {   // giữa-sau nóc tháp
+      for (let i = 0; i < 22; i++) {   // giữa-sau nóc tháp
         const x = R(-T.hw * 0.65, T.hw * 0.65), z = T.zF + tl * R(0.4, 0.95);
         if (u.tankType === 'ARTILLERY' && Math.abs(x) < 5.4 && z < 6.5) continue;   // chừa hộp bệ nòng 155
         bush(ft, x, ty + 0.2, z, R(3.2, 4.2), R(1.5, 2.2), R(3.2, 4.2));
@@ -893,10 +1038,16 @@
     // ---- NÒNG / HỘP PHÁO ----
     const BL = BARREL_LEAF[u.tankType];
     if (BL && u.barrelGroup) {
-      for (const [a, b] of BL.segs) {
-        for (let z = a; z >= b; z -= R(1.5, 2.0)) {
-          clump(fb, R(-0.3, 0.3), BL.r * 0.55, z, R(1.5, 2.1), R(0.9, 1.3), R(1.6, 2.2), true);
-          if (rnd() < 0.6) for (const s of [-1, 1]) card(fb, [s * (BL.r + 0.25), -BL.r * 0.25, z], [0, Math.PI / 2 + R(-0.3, 0.3), s * R(0.1, 0.3)], [R(2.0, 2.8), R(1.6, 2.2), 1]);
+      // quấn kín quanh nòng: bụi lá trên lưng + hai bên hông, tấm lá rủ dưới bụng nòng, ngọn lá nhô lên phá dáng nòng
+      for (const [a, b, r] of BL.segs) {
+        for (let z = a; z >= b; z -= R(1.1, 1.4)) {
+          clump(fb, R(-0.3, 0.3), r * 0.55, z, R(1.6, 2.2), R(0.9, 1.3), R(1.6, 2.2), true);
+          for (const s of [-1, 1]) {
+            if (rnd() < 0.75) clump(fb, s * r * R(0.65, 0.85), R(-0.3, 0.1), z + R(-0.4, 0.4), R(1.0, 1.4), R(1.2, 1.6), R(1.2, 1.6), true);
+            if (rnd() < 0.7) card(fb, [s * (r + 0.25), -r * 0.45, z], [0, Math.PI / 2 + R(-0.3, 0.3), s * R(0.1, 0.3)], [R(2.2, 3.0), R(2.0, 2.8), 1]);
+          }
+          if (rnd() < 0.5) clump(fb, R(-0.3, 0.3), -r * 0.7, z + R(-0.4, 0.4), R(1.1, 1.5), R(0.7, 1.0), R(1.2, 1.6), true);
+          if (rnd() < ST.sprig * 0.3) sprig(fb, R(-0.4, 0.4), r * 0.8, z, R(1.8, 2.8));
         }
       }
     } else if (u.tankType === 'GATLING' && u.barrelPivot) {
@@ -930,7 +1081,7 @@
         cfCells.forEach((c, i) => { if (c.p !== k) return; const d = (c.x - panelPos[0]) ** 2 + (c.y - panelPos[1]) ** 2 + (c.z - panelPos[2]) ** 2; if (d < bd) { bd = d; best = i; } });
         panel = { mesh: pp.panel, cell: best };
       }
-      CamoFire.prepare(u, { kind, leaf, twig: tw, cells: cfCells, parts: cfParts.map(p => ({ parent: p.parent, tag: p.tag, mesh: p.mesh, rec: p.rec })), panel });
+      CamoFire.prepare(u, { kind: ST.fire, leaf, twig: tw, cells: cfCells, parts: cfParts.map(p => ({ parent: p.parent, tag: p.tag, mesh: p.mesh, rec: p.rec })), panel });
     }
     // Lá không chặn đạn (tia dò đạn đi xuyên, như lá thật) và không bị bóp méo khi xe thành xác
     for (const m of meshes) { m.userData.isFxDecal = true; m.userData.noDeform = true; }
