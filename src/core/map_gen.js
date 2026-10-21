@@ -35,13 +35,13 @@ const MapGen = (() => {
   // hầm phóng (silo) tên lửa hạt nhân / hầm nghiên cứu vũ khí sinh học / trận địa tên lửa phòng không.
   // Đặt tại trọng tâm tam giác A B C; mặt trước nhìn về cứ điểm B. angle: hướng mặt trước (cos -> x, sin -> z);
   // hu / hv: nửa dài mặt bằng san nền theo trục trước-sau / ngang
-  // (8 đơn vị = 1 m: hầm phóng 58 x 50 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
+  // (8 đơn vị = 1 m: hầm phóng 60 x 70 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
   const LANDMARK_SITE = {
     x: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.x, 0) / 3),
     z: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.z, 0) / 3),
     angle: -Math.PI / 2
   };
-  const LANDMARK_KINDS = { nuke: { hu: 232, hv: 200 }, bio: { hu: 200, hv: 160 }, sam: { hu: 192, hv: 192 } };
+  const LANDMARK_KINDS = { nuke: { hu: 240, hv: 280 }, bio: { hu: 200, hv: 160 }, sam: { hu: 192, hv: 192 } };
   let landmarkKind = null;          // null = theo seed; đặt cố định để thử (setLandmark)
   const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
   let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
@@ -1198,8 +1198,9 @@ const MapGen = (() => {
     if (L.kind === 'nuke') {
       // gò silo (kiểu Titan II): mặt bằng bệ bê tông nửa cỡ hf x hr cao h (4 m) trên gò đất, ta-luy run; giếng phóng
       // bán kính shaft và 2 ống xả (tâm, nửa cỡ) khoét xuyên gò xuống tới cốt sân
-      L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]],
-        portal: { f: 186, r: -128, hf: 26, hr: 22, h: 28, run: 40 } };   // lối xuống trung tâm điều khiển: ụ đất kín 3 mặt
+      // lcc: gò đất phủ trung tâm điều khiển phóng ngầm (nửa cỡ hf x hr, cao h, ta-luy run 3 phía), mặt tiền +f thẳng đứng
+      L.silo = { f: -40, r: 20, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]],
+        lcc: { f: -130, r: -172, hf: 44, hr: 40, h: 44, run: 26 } };
     } else if (L.kind === 'bio') {
       // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
       // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
@@ -1221,9 +1222,9 @@ const MapGen = (() => {
       // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
       h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
       for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
-      const P = S.portal, pf = f - P.f, pr = r - P.r;
-      // ụ đất phủ nửa sau khối cửa hầm (dải chuyển cao độ nằm trong khối bê tông, không lấn ô cửa phía trước)
-      if (pf < -10) h = Math.max(h, P.h * (1 - smooth(0, P.run, Math.hypot(Math.max(0, Math.abs(pf) - P.hf), Math.max(0, Math.abs(pr) - P.hr)))));
+      // gò trung tâm điều khiển: cắt thẳng ở mặt tiền (dải chuyển cao độ nằm trong bề dày tường mặt tiền / tường cánh)
+      const C = S.lcc, pf = f - C.f, pr = r - C.r;
+      if (pf < C.hf - 22) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
       return h;
     }
     if (L.mound) {
