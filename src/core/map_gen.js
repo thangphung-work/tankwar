@@ -41,7 +41,7 @@ const MapGen = (() => {
     z: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.z, 0) / 3),
     angle: -Math.PI / 2
   };
-  const LANDMARK_KINDS = { nuke: { hu: 320, hv: 520, back: 60 }, bio: { hu: 200, hv: 160 }, sam: { hu: 192, hv: 192 } };
+  const LANDMARK_KINDS = { nuke: { hu: 320, hv: 520, back: 60 }, bio: { hu: 300, hv: 470, back: 50 }, sam: { hu: 320, hv: 520, back: 60 } };
   let landmarkKind = null;          // null = theo seed; đặt cố định để thử (setLandmark)
   const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
   let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
@@ -1233,17 +1233,27 @@ const MapGen = (() => {
     } else if (L.kind === 'bio') {
       // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
       // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
-      L.mound = { fc: -84, af: 150, ar: 150, h: 76, cut: 88, face: 22 };
+      L.mound = { fc: -80, af: 150, ar: 200, h: 72, cut: 80, face: 10 };
     } else if (L.kind === 'sam') {
-      // 3 bệ phóng lệch nhau 120° quanh xe radar điều khiển ở giữa, mỗi bệ nằm trong kè đất móng ngựa cao 1.75 m,
-      // miệng kè quay vào giữa trận địa (đường xe nạp đạn), tên lửa chĩa ra ngoài
-      L.launchers = [Math.PI / 3, Math.PI, -Math.PI / 3].map(a => ({ f: Math.cos(a) * 128, r: Math.sin(a) * 128, az: a }));
-      L.berm = { r: 56, w: 18, h: 14, gap: 0.75 };
+      // trận địa S-75 kiểu "ngôi sao": 6 bệ phóng quanh radar điều khiển hoả lực ở giữa (lục giác giãn theo r cho vừa mặt bằng),
+      // mỗi bệ nằm trong kè đất móng ngựa cao 1.75 m, miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
+      L.launchers = [0, 1, 2, 3, 4, 5].map(k => { const a = Math.PI / 6 + k * Math.PI / 3, f = Math.cos(a) * 175, r = Math.sin(a) * 300; return { f, r, az: Math.atan2(r, f) }; });
+      L.berm = { r: 46, w: 14, h: 14, gap: 0.7 };
     }
     return L;
   }
   // Độ cao đắp thêm trên cốt san nền tại (f, r)
+  // ụ đất chống xe vòng quanh mép khu đất (mọi căn cứ), chừa cổng ở giữa cạnh trước
+  const PERIM_BERM = { h: 12, w: 11, inset: 11, gate: 52 };
+  function perimBerm(L, f, r) {
+    const Bm = PERIM_BERM, dIn = Math.min(L.hu - Math.abs(f), L.hv - Math.abs(r));
+    if (dIn <= 0 || (f > 0 && Math.abs(r) < Bm.gate && L.hu - f < Bm.inset + Bm.w * 2)) return 0;
+    return Bm.h * (1 - smooth(0, Bm.w, Math.abs(dIn - Bm.inset)));
+  }
   function landmarkMound(L, f, r) {
+    return Math.max(landmarkMoundCore(L, f, r), perimBerm(L, f, r));
+  }
+  function landmarkMoundCore(L, f, r) {
     if (L.silo) {
       const S = L.silo, df = f - S.f, dr = r - S.r;
       const d = Math.hypot(Math.max(0, Math.abs(df) - S.hf), Math.max(0, Math.abs(dr) - S.hr));
@@ -1251,10 +1261,6 @@ const MapGen = (() => {
       // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
       h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
       for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
-      // ụ đất chống xe vòng quanh mép khu đất (chừa cổng ở giữa cạnh trước)
-      const Bm = S.berm, dIn = Math.min(L.hu - Math.abs(f), L.hv - Math.abs(r));
-      if (dIn > 0 && !(f > 0 && Math.abs(r) < Bm.gate && L.hu - f < Bm.inset + Bm.w * 2))
-        h = Math.max(h, Bm.h * (1 - smooth(0, Bm.w, Math.abs(dIn - Bm.inset))));
       // gò trung tâm điều khiển: cắt thẳng ở mặt tiền (dải chuyển cao độ nằm trong bề dày tường mặt tiền / tường cánh)
       const C = S.lcc, pf = f - C.f, pr = r - C.r;
       if (pf < C.hf - 22) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
