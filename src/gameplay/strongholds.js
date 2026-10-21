@@ -21,8 +21,8 @@ const Strongholds = (() => {
     ROOF: 26,      // mái bê tông cốt thép dày 3.25 m
     COVER: 8,      // lớp đất phủ trên mái
     LIP: 4,        // gờ mặt tiền nhô trên lớp đất
-    RAMP: 104,     // dốc lên / xuống ở mỗi đầu (13 m, hạ 2.5 m, dốc đều ~14°), kết thúc ngay trước đầu tường cánh
-    RAMP_EASE: 0.25, // phần uốn mềm ở mỗi đầu dốc (còn lại dốc thẳng đều -> dốc nhất chỉ 1.33 lần dốc trung bình)
+    RAMP: 104,     // dốc lên / xuống ở mỗi đầu: mặt dốc chéo thẳng 13 m, hạ 2.5 m (~11°), kết thúc ngay trước đầu tường cánh
+    RAMP_EASE: 0.06, // bo rất ngắn (~0.8 m) ở chân / đỉnh dốc cho xe khỏi giật; còn lại thẳng tuyệt đối
     SPLAY: 0.62,   // độ loe tường cánh (dr / df)
     WING_T: 18,    // tường cánh dày 2.25 m
     RUN: 110,      // chân ta-luy ụ đất
@@ -50,7 +50,7 @@ const Strongholds = (() => {
   // Nửa bề rộng lòng kênh xe chạy tại |f| (trong khoang = WI, ngoài khoang loe dần theo tường cánh)
   const cutHalf = af => af <= S.HB ? S.WI : S.WI + (af - S.HB) * S.SPLAY;
   // Cao độ sàn / dốc (so với cốt nền)
-  // dốc thẳng đều, 2 đầu uốn parabol (không gãy góc ở chân / đỉnh dốc)
+  // dốc chéo thẳng, chỉ bo parabol rất ngắn ở 2 mép (không gãy góc ở chân / đỉnh dốc)
   const rampK = t => {
     const b = S.RAMP_EASE, k = 1 / (2 * b * (1 - b));
     t = clamp01(t);
