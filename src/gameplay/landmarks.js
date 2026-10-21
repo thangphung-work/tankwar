@@ -363,6 +363,7 @@ const Landmarks = (() => {
       drumBlue: () => G(1.2, { color: 0x2f4f7a, roughness: 0.6, metalness: 0.3 }),
       tarp: () => G(0, { color: 0x4a5236, roughness: 0.95 }),
       hesco: () => S({ map: hescoTex(), color: 0xffffff, roughness: 1 }),
+      steelRust: () => G(3, { color: 0x6e5444, roughness: 0.85, metalness: 0.3 }),
       // thân bồn thép sơn trắng ngà: 2 vành tôn (mỗi vành 2.4 m) có mối hàn ngang + mối hàn đứng so le, vệt bẩn mưa nhẹ
       tankShell: () => S({ color: 0xffffff, roughness: 0.55, metalness: 0.15, map: texOf('tankShell', 512, 256, (q, w, h) => {
         q.fillStyle = '#e1ded6'; q.fillRect(0, 0, w, h);
@@ -1056,6 +1057,32 @@ const Landmarks = (() => {
       K.cbox('concDark', f, 0.4, s * (r + k * 6), 8, 1.2, 8, 0.4);
     }
     for (const s of [-1, 1]) K.solid(CZ, s * (G + 14 + (iR - G - 20) / 2), 10, (iR - G - 20) / 2, 0, 7);
+    // ---- HÀNG NHÍM THÉP CHỐNG XE CƠ GIỚI (Czech hedgehog) vòng ngoài rào ngoài, giữa ụ đất và rào: mỗi con 3 thanh thép
+    //      góc L dài 1.5 m bắt chéo vuông góc tại tâm (tán bản mã), đứng trên 3 chấu, 3 chấu chĩa lên; xoay ngẫu nhiên,
+    //      cách nhau ~1.9 m, chừa lối xe vào cổng chính
+    {
+      const HD = 29, LB = 12, qUp = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(v3(1, 1, 1).normalize(), v3(0, 1, 0)));
+      const yC = LB / 2 / Math.sqrt(3) + 0.2;
+      const arms = [M4(0, 0, 0), M4(0, 0, 0, 0, 0, Math.PI / 2), M4(0, 0, 0, 0, -Math.PI / 2, 0)];   // thanh theo X, Y, Z
+      let n = 0;
+      const hog = (f, r) => {
+        const base = mul(M4(f, K.earth(f, r) + yC, r, 0, hash(n++ * 7 + 311) * TAU, (hash(n * 3 + 17) - 0.5) * 0.12), qUp);
+        for (const A of arms) {
+          const m = mul(base, A);
+          K.add('steelRust', new THREE.BoxGeometry(LB, 1.5, 0.3), mul(m, M4(0, 0.6, 0)));
+          K.add('steelRust', new THREE.BoxGeometry(LB, 0.3, 1.5), mul(m, M4(0, 0, 0.6)));
+        }
+        K.add('steelRust', new THREE.BoxGeometry(2.6, 2.6, 2.6), base);
+      };
+      const eF = L.hu - HD, eR = L.hv - HD, step = 15;
+      for (const s of [-1, 1]) {
+        for (let f = -eF; f <= eF + 0.1; f += (2 * eF) / Math.round(2 * eF / step)) hog(f, s * eR);
+        for (let r = -eR + step; r < eR - step / 2; r += (2 * eR) / Math.round(2 * eR / step)) if (s < 0 || Math.abs(r) > 58) hog(s * eF, r);
+        K.solid(0, s * eR, eF + 5, 5, 0, 10);
+        K.solid(eF, s * (58 + eR) / 2, 5, (eR - 58) / 2, 0, 10);   // cạnh trước: 2 đoạn 2 bên lối vào
+      }
+      K.solid(-eF, 0, 5, eR, 0, 10);
+    }
     // cột đèn chiếu sáng dọc rào trong
     for (let f = -iF + 20; f <= iF - 20; f += 120) for (const s of [-1, 1]) lamp(f, s * (iR - 6), -s * Math.PI / 2);
     for (let r = -iR + 60; r <= iR - 60; r += 120) lamp(-iF + 6, r, 0);
