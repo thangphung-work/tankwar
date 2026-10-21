@@ -449,6 +449,7 @@ class TankInspector {
   // Chuột: kéo trái xoay camera 360°, cuộn thu phóng; nhấp trái (không kéo) ngắm + bắn vào điểm đó, nhấp phải lái xe tới điểm đó
   setupMouseControls(canvas) {
     canvas.addEventListener('pointerdown', (e) => {
+      if (this.sight) { this.raSightPointerDown(e, canvas); return; }   // kính ngắm xạ thủ (range_air.js)
       if (e.button !== 0) return;
       this.isMouseDown = true;
       this._dragPx = 0;
@@ -457,16 +458,19 @@ class TankInspector {
     });
 
     window.addEventListener('pointerup', (e) => {
+      if (this.sight) { this.raSightPointerUp(e); this.isMouseDown = false; return; }
       if (this.isMouseDown && e.button === 0 && this._dragPx < 6) this.mouseAimFire(e.clientX, e.clientY);
       this.isMouseDown = false;
     });
 
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
+      if (this.sight) return;
       this.mouseDriveTo(e.clientX, e.clientY);
     });
 
     canvas.addEventListener('pointermove', (e) => {
+      if (this.sight) { this.raSightPointerMove(e, canvas); return; }
       if (!this.isMouseDown) return;
 
       const deltaX = e.clientX - this.previousMousePosition.x;
@@ -485,6 +489,7 @@ class TankInspector {
 
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
+      if (this.sight) { this.raZoom(e.deltaY > 0 ? -1 : 1); return; }
       const zoomSpeed = 0.08;
       this.cameraDistance += e.deltaY * zoomSpeed;
       this.cameraDistance = Math.max(50, Math.min(400, this.cameraDistance));
@@ -531,6 +536,7 @@ class TankInspector {
   mouseAimFire(clientX, clientY) {
     const u = this.activeUnit;
     if (!u || u.isDead) return;
+    if (this.raPick && this.raPick(clientX, clientY)) return;   // bia drone: nhấp drone = khóa, nhấp trời = nâng nòng
     const p = this.pickPoint(clientX, clientY);
     if (!p) return;
     const m = typeof u.getMuzzleWorldTransform === 'function' ? u.getMuzzleWorldTransform() : null;
@@ -632,6 +638,7 @@ class TankInspector {
   loadTankModel(tankType, team = this.currentTeam) {
     if (!this.scene) return;
     this.driveTo = null; this.mouseShot = null;
+    if (this.raReset) this.raReset({ unit: true });   // kính ngắm / khóa drone của xe cũ
 
     // Xóa xe cũ (kèm khói/lửa đầu nòng còn đang bay)
     if (this.activeUnit && this.activeUnit.group) {
@@ -786,13 +793,14 @@ class TankInspector {
       this.camFocus.z += (u.z - this.camFocus.z) * k;
     }
     if (this.autoRotate && !this.isMouseDown) this.cameraYaw += 0.06 * dt;
-    this.updateCameraPosition();
+    if (!(this.raSightCamera && this.raSightCamera(dt))) this.updateCameraPosition();
     if (this.sunLight) {
       const f = this.camFocus, gy = this.field ? this.field.groundAt(f.x, f.z) : 0;
       this.sunLight.position.set(f.x + 70, gy + 110, f.z + 80);
       this.sunLight.target.position.set(f.x, gy, f.z);
     }
     this.updateRangeReadout(dt);
+    if (this.raHUD) this.raHUD(dt);
 
     if (this.renderer && this.scene && this.camera) {
       this.renderer.render(this.scene, this.camera);
@@ -893,10 +901,12 @@ class TankInspector {
     if (this.autoRotate) { this.autoRotate = false; this.syncAutoRotateBtn(); }
     this.cameraDistance = 200; this.cameraPitch = 0.42;
     this.setRange(this.savedRange());
+    if (this.raBindKeys) { this.raBindKeys(); this.raEnsureDom(); }
   }
 
   exitRangeMode(opts = {}) {
     if (!this.rangeMode) return;
+    if (this.raReset) this.raReset();   // tắt bia drone + kính ngắm
     this.rangeMode = false;
     const overlay = document.getElementById('tank-inspector-overlay');
     if (overlay) overlay.classList.remove('ti-range-mode');
@@ -1015,6 +1025,10 @@ class TankInspector {
         maxElevationFor: BP ? (sh) => BP.maxElevationFor.call(null, sh) : () => 20,
         maxLobElevationFor: BP ? (sh) => BP.maxLobElevationFor.call(null, sh) : () => 20,
         fireShell3D: (shooter, az, el, charge, ammoType) => {
+          // bia drone / kính ngắm: đạn súng bay bằng hệ đường đạn thật (trúng drone, vạch đường) — range_air.js
+          const B = this.rangeMode && ((this._ra && this._ra.on) || this.sight) && typeof BallisticsSystem3D !== 'undefined' &&
+            BallisticsSystem3D.AIR_AMMO[ammoType] && this.raBallistics ? this.raBallistics() : null;
+          if (B) return B.fireShell3D(shooter, az, el, charge, ammoType);
           this.queueTestImpact(shooter, ammoType || 'NORMAL');
           return {};
         }
@@ -1030,11 +1044,14 @@ class TankInspector {
     if (this.driveTo && (fwd || turn)) this.driveTo = null;   // tự cầm lái: hủy lái tới điểm nhấp phải
     if (this.driveTo) this.updateDriveTo(u, dt, boost);
     else { u.move(fwd, turn, dt, boost); this.updateDriveTo(u, dt, boost); }
+    // Bia drone / kính ngắm (range_air.js): khóa drone, ngắm trời, hướng ngắm của kính — trước khi xe cập nhật
+    const RA = this.raPre ? this.raPre(dt, u) : null;
     // THÁP & NÒNG: Q/E xoay tháp, Z nâng / X hạ nòng — đúng tốc độ thật của từng xe như phím mũi tên trong trận
+    // (đang nhìn qua kính ngắm: Q E Z X chỉnh hướng kính ngắm, nòng tự đuổi theo)
     const TR = u.turretRates ? u.turretRates() : { traverse: 42, elevate: 24 };
-    if (K.KeyQ) u.azimuth = (u.azimuth - TR.traverse * dt + 360) % 360;
-    if (K.KeyE) u.azimuth = (u.azimuth + TR.traverse * dt) % 360;
-    if ((K.KeyZ || K.KeyX) && u.canElevate !== false && u.tankType !== 'GATLING') {
+    if (K.KeyQ && !(RA && RA.keys)) u.azimuth = (u.azimuth - TR.traverse * dt + 360) % 360;
+    if (K.KeyE && !(RA && RA.keys)) u.azimuth = (u.azimuth + TR.traverse * dt) % 360;
+    if ((K.KeyZ || K.KeyX) && !(RA && RA.keys) && u.canElevate !== false && u.tankType !== 'GATLING') {
       const elMax = this.testBallistics.maxElevationFor(u);
       if (K.KeyZ) u.elevation = Math.min(elMax, u.elevation + TR.elevate * dt);
       if (K.KeyX) u.elevation = Math.max(-10, u.elevation - TR.elevate * dt);
@@ -1051,7 +1068,8 @@ class TankInspector {
       if (u.aimAz === undefined || MS.t > 4) { mouseFire = true; MS.fireT += dt; }
       if (MS.t > 8 || MS.fired || (rapid && MS.fireT > 0.6)) { this.mouseShot = null; mouseFire = mouseFire && !MS.fired; }
     }
-    const firing = !!this.testFiring || mouseFire;
+    // xe tăng đang khóa drone: Space bóp cò súng máy nóc tháp, pháo chính không bắn (như trong trận)
+    const firing = (!!this.testFiring || mouseFire || !!(RA && RA.fire)) && !(RA && RA.noMain);
     u.isFiringGatling = rapid && firing;
     // Pháo tự hành đang gác nòng trên nóc cabin (không bắn được qua cabin): bấm bắn thử thì tự quay tháp ra sau xe
     if (this.testFiring && u.tankType === 'ARTILLERY' && u.turretInBlind && !K.KeyQ && !K.KeyE && u.aimAz === undefined) {
@@ -1065,6 +1083,7 @@ class TankInspector {
     // Toàn bộ chuyển động, hệ treo, xích, bụi, khói xả, nạp đạn, tháp / nòng: đúng như trong trận
     const T = this.getTestTerrain();
     u.update(dt, T, this.testBallistics, this.testRadar, null, [u]);
+    if (this.raPost) this.raPost(dt, u);
     this.updateTestSound(u, dt, boost);
     this.updateTestImpacts(dt);
     this.updateTestWall(dt);
@@ -1638,7 +1657,8 @@ class TankInspector {
     // Phím tắt bàn phím: ESC hoặc phím I để mở/đóng
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.isOpen) {
-        if (this.rangeMode) this.exitRangeMode();
+        if (this.sight) this.setSight(false);
+        else if (this.rangeMode) this.exitRangeMode();
         else this.close();
       } else if ((e.key === 'i' || e.key === 'I') && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
         if (this.isOpen) {
