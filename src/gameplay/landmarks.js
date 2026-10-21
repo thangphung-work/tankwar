@@ -1320,6 +1320,14 @@ const Landmarks = (() => {
       }
       return false;
     }
+    // VÙNG CẤM BẮN: cả khu đất công trình (+ lề pad) — không ngắm bắn vào đó
+    noFireAt(x, z, pad) {
+      for (const it of this.items) {
+        const L = it.L, dx = x - L.x, dz = z - L.z, p = pad || 0;
+        if (Math.abs(dx * L.fx + dz * L.fz) < L.hu + p && Math.abs(-dx * L.fz + dz * L.fx) < L.hv + p) return it;
+      }
+      return null;
+    }
     // hộp va chạm gần (x, z) cho VehicleCollision
     vehicleBoxes(x, z, reach, out) {
       for (const it of this.items) {

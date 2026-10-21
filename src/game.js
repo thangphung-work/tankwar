@@ -817,6 +817,7 @@ class ArtilleryGame3D {
   triggerPlayerAntiTank() {
     const P = this.player;
     if (!P || P.isDead || P.tankType !== 'SCOUT') return;
+    if (this.inNoFireZone()) { this.noFireWarn(); return; }
     if ((P.missileAmmoCount || 0) <= 0) {
       this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
@@ -1849,8 +1850,23 @@ class ArtilleryGame3D {
     });
   }
 
+  // VÙNG CẤM BẮN (khu công trình giữa 3 cứ điểm): điểm rơi dự kiến hoặc xe đang khóa nằm trong đó -> không khai hỏa
+  inNoFireZone() {
+    const LS = this.terrain && this.terrain.landmarkSet;
+    if (!LS || !LS.noFireAt) return false;
+    const T = this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null;
+    return !!((this._lastTraj && LS.noFireAt(this._lastTraj.x, this._lastTraj.z, 8)) || (T && LS.noFireAt(T.x, T.z, 8)));
+  }
+  noFireWarn() {
+    const t = performance.now();
+    if (t - (this._nfzT || 0) < 1500) return;
+    this._nfzT = t;
+    this.addCombatLog('[[alert-triangle]] VÙNG CẤM BẮN — khu căn cứ giữa 3 cứ điểm, không được ngắm bắn vào đó!', 'alert');
+  }
+
   triggerPlayerFire() {
     if (!this.player || this.player.isDead) return;
+    if (this.inNoFireZone()) { this.noFireWarn(); return; }
     // Xe trinh sát đang chọn ô tên lửa: Space phóng tên lửa dẫn hướng (súng máy nạp đạn không ảnh hưởng)
     if (this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE') {
       this.triggerPlayerAntiTank();
@@ -4003,7 +4019,10 @@ class ArtilleryGame3D {
       if (this.player.tankType === 'GATLING' || this.player.tankType === 'SCOUT') {
         // đang chọn ô tên lửa: Space chỉ để phóng tên lửa, không xả súng máy
         const missileSel = this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE';
-        this.player.isFiringGatling = !missileSel && !!(this.keys['Space'] || this.isPointerFiring);
+        const wantFire = !missileSel && !!(this.keys['Space'] || this.isPointerFiring);
+        const nfz = wantFire && this.inNoFireZone();
+        if (nfz) this.noFireWarn();
+        this.player.isFiringGatling = wantFire && !nfz;
       }
 
       // 1.2. LÁI XE CƠ ĐỘNG theo thân xe như xe thật: W / S ga tiến / lùi, A / D đánh lái trái / phải
@@ -4460,6 +4479,9 @@ class ArtilleryGame3D {
           this._lastAim = { x: ax, y: (tgt === this._aimPoint ? this.terrain.getElevationAt(ax, az) + 2 : (tgt.y || 0) + 10), z: az, d: Math.round(Math.hypot(ax - this.player.x, az - this.player.z)) };
           this._aimMiss = miss;
         }
+        // vùng cấm bắn: điểm rơi / xe đang khóa nằm trong khu căn cứ -> đường đạn đỏ, không khai hỏa được
+        const noFire = this.inNoFireZone();
+        if (noFire) aimState = 'blocked';
         this._aimState = aimState;
         if (!tgt && this._aimCover) this._aimCover.hit = null;
         const col = WorldMarkers.stateColor(aimState === 'covered' ? 'blocked' : aimState, isWall);
@@ -4485,7 +4507,10 @@ class ArtilleryGame3D {
         this.updateArtyModeUI();
         const trajModeHint = domById('traj-mode-hint');
         if (trajModeHint) {
-          if (isWall) {
+          if (noFire) {
+            trajModeHint.textContent = '[VÙNG CẤM BẮN — KHÔNG ĐƯỢC KHAI HỎA]';
+            trajModeHint.style.color = '#ff3b30';
+          } else if (isWall) {
             trajModeHint.textContent = '[CẢNH BÁO: BỊ CHẮN TƯỜNG]';
             trajModeHint.style.color = '#ff3b30';
           } else if (this.player.canElevate === false || this.player.tankType === 'GATLING') {

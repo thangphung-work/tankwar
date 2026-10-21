@@ -563,6 +563,8 @@ class BotAIController {
         }
       }
 
+      // vùng cấm bắn (khu công trình giữa 3 cứ điểm): bot không nhắm bắn vào đó
+      if (targetX !== null && terrain && terrain.landmarkSet && terrain.landmarkSet.noFireAt(targetX, targetZ, 20)) targetX = targetZ = null;
       if (targetX !== null && targetZ !== null) {
         this.lastBallistics = ballistics;
         // Xe tự nhìn thấy: ngắm có đón đầu + sai số của bot (chỉnh dần qua từng phát); còn lại: bắn vào điểm phỏng chừng
