@@ -43,7 +43,8 @@ const VehicleDamage = (() => {
 
   // Phân loại bộ phận theo tên tag (đặt trong file model)
   function partKind(tag) {
-    if (/^camoKit/.test(tag)) return 'camo';   // lưới lá ngụy trang: khó bị hất văng cả mảng
+    if (/^camoKit/.test(tag)) return 'camo';
+    if (/^hatch/.test(tag)) return 'hatch';   // nắp tháp / nắp lái: thép dày, chỉ bị nổ trong khoang thổi bật (blowHatches)   // lưới lá ngụy trang: khó bị hất văng cả mảng
     if (/^(skirt|cheek|applique|cage)/.test(tag)) return 'armor';
     if (/^era/.test(tag)) return 'era';
     if (/^optic/.test(tag)) return 'optic';
@@ -70,10 +71,11 @@ const VehicleDamage = (() => {
     atgm: { small: 0.08, cannon: 0.4, kinetic: 0.9, heat: 0.9, blast: 0.8 },
     fuel: { small: 0.15, cannon: 0.45, kinetic: 1, heat: 1, blast: 1 },
     ammo: { small: 0.05, cannon: 0.35, kinetic: 1, heat: 1, blast: 1 },
-    camo: { small: 0, cannon: 0.03, kinetic: 0.05, heat: 0.08, blast: 0.15 }
+    camo: { small: 0, cannon: 0.03, kinetic: 0.05, heat: 0.08, blast: 0.15 },
+    hatch: { small: 0, cannon: 0, kinetic: 0, heat: 0, blast: 0 }
   };
   // Hệ số văng do sóng nổ gần (nhân với độ gần tâm nổ)
-  const DETACH_BLAST = { acc: 1, armor: 0.5, era: 0.55, heavyAcc: 0.3, optic: 0.75, feed: 0.4, sensor: 0.8, atgm: 0.5, fuel: 0.35, ammo: 0.35, camo: 0.12 };
+  const DETACH_BLAST = { acc: 1, armor: 0.5, era: 0.55, heavyAcc: 0.3, optic: 0.75, feed: 0.4, sensor: 0.8, atgm: 0.5, fuel: 0.35, ammo: 0.35, camo: 0.12, hatch: 0 };
 
   const PART_NAME = {
     skirt: 'VÁY XÍCH', cheek: 'MODULE GIÁP MÁ THÁP', applique: 'GIÁP TĂNG CƯỜNG MŨI', appliqueF: 'TẤM GIÁP TĂNG CƯỜNG MŨI', cageRear: 'LỒNG CHỐNG RPG ĐUÔI XE',
@@ -83,6 +85,7 @@ const VehicleDamage = (() => {
     smoke: 'ỐNG PHÓNG LỰU ĐẠN KHÓI', bin: 'THÙNG ĐỒ', box: 'HỘP DỤNG CỤ', can: 'CAN NHIÊN LIỆU', cans: 'CAN NHIÊN LIỆU', rail: 'LAN CAN NÓC',
     railRear: 'LAN CAN NÓC', stowage: 'GIỎ ĐỒ ĐUÔI THÁP', tool: 'DỤNG CỤ DÃ CHIẾN', flap: 'TẤM CHẮN BÙN', shield: 'TẤM CHẮN SÚNG MÁY',
     travelLock: 'GIÁ KHÓA NÒNG', spare: 'BÁNH DỰ PHÒNG', generator: 'MÁY PHÁT ĐIỆN', searchlight: 'ĐÈN CHIẾU', meteo: 'CỘT KHÍ TƯỢNG',
+    hatchDrv: 'NẮP LÁI XE', hatchCdr: 'NẮP CHỈ HUY', hatchLdr: 'NẮP NẠP ĐẠN', hatchCrew: 'NẮP KHOANG TỔ LÁI',
     camoKit: 'LƯỚI NGỤY TRANG', camoKitT: 'LƯỚI NGỤY TRANG THÁP', camoKitB: 'LÁ NGỤY TRANG TRÊN NÒNG', camoKitP: 'LÁ NGỤY TRANG HỘP PHÁO'
   };
   function partName(tag) {
@@ -312,7 +315,7 @@ const VehicleDamage = (() => {
     if (/^(stowage|camoKit)/.test(tag)) return 'net';
     if (/^(lamp|mirror|searchlight)/.test(tag)) return 'glass';
     const k = partKind(tag);
-    if (k === 'armor' || k === 'era' || k === 'heavyAcc') return 'plate';
+    if (k === 'armor' || k === 'era' || k === 'heavyAcc' || k === 'hatch') return 'plate';
     if (k === 'optic' || k === 'sensor') return 'glass';
     if (k === 'fuel' || k === 'atgm') return 'can';
     if (k === 'camo') return 'net';
@@ -515,6 +518,91 @@ const VehicleDamage = (() => {
     }
     holder.userData.radius = Math.max(0.6, c.size * 0.35);
     return holder;
+  }
+
+  // ---------------------------------------------------------------------------
+  // NẮP THÁP / NẮP LÁI: kho đạn / thuốc phóng nổ trong khoang -> áp suất thổi bật nắp (giật đứt khỏi bản lề văng lên, hoặc
+  // quật mở toang), lửa & khói phụt ra từ lỗ nắp (ExplosionFX đọc hatchHoles). Kíp lái thoát ra -> nắp mở dựng.
+  // ---------------------------------------------------------------------------
+  function hatchTags(u) { return Object.keys(u.partRegistry || {}).filter(t => partKind(t) === 'hatch'); }
+  // Quật nắp mở quanh bản lề: bản lề ở mép đối diện tay nắm (tay nắm là chi tiết cao nhất trên nắp)
+  function swingHatch(u, tag, ang) {
+    const d = state(u);
+    const entries = u.partRegistry[tag];
+    if (!entries || d.lost.has(tag) || d.bent.has(tag)) return null;
+    const v = new THREE.Vector3(), box = new THREE.Box3();
+    let topY = -Infinity;
+    for (const e of entries) for (const [st, n] of e.ranges) for (let i = st; i < st + n; i++) { v.fromBufferAttribute(e.mesh.geometry.attributes.position, i); box.expandByPoint(v); topY = Math.max(topY, v.y); }
+    if (box.isEmpty()) return null;
+    const c = box.getCenter(new THREE.Vector3()), hz = new THREE.Vector3();
+    let nh = 0;
+    for (const e of entries) for (const [st, n] of e.ranges) for (let i = st; i < st + n; i++) { v.fromBufferAttribute(e.mesh.geometry.attributes.position, i); if (v.y > topY - 0.12) { hz.add(v); nh++; } }
+    hz.multiplyScalar(1 / Math.max(1, nh));
+    const toHandle = new THREE.Vector3(hz.x - c.x, 0, hz.z - c.z);
+    if (toHandle.lengthSq() < 1e-4) toHandle.set(0, 0, 1);
+    toHandle.normalize();
+    const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+    const pivot = new THREE.Vector3(c.x - toHandle.x * r, box.min.y, c.z - toHandle.z * r);
+    const axis = new THREE.Vector3(0, 1, 0).cross(toHandle).normalize();
+    const R = new THREE.Matrix4().makeRotationAxis(axis, ang);
+    const T = new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z).multiply(R).multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+    const nm = new THREE.Matrix3().getNormalMatrix(R);
+    d.bent.add(tag);
+    for (const e of entries) {
+      const pos = e.mesh.geometry.attributes.position, nor = e.mesh.geometry.attributes.normal;
+      for (const [st, n] of e.ranges) {
+        d.saved.push({ attr: pos, start: st, data: pos.array.slice(st * 3, (st + n) * 3) });
+        if (nor) d.saved.push({ attr: nor, start: st, data: nor.array.slice(st * 3, (st + n) * 3) });
+        for (let i = st; i < st + n; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(T); pos.setXYZ(i, v.x, v.y, v.z);
+          if (nor) { v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize(); nor.setXYZ(i, v.x, v.y, v.z); }
+        }
+      }
+      pos.needsUpdate = true; if (nor) nor.needsUpdate = true;
+    }
+    fieldChanged(u, true);
+    return { mesh: entries[0].mesh, local: c };
+  }
+  // strength 1: nổ kho đạn (nắp bị giật văng hoặc quật toang); 0.3: kíp lái mở nắp thoát ra (mở dựng 1 nắp)
+  function blowHatches(u, strength, events) {
+    if (VIS_ONLY) return;
+    const d = state(u);
+    d.hatchHoles = d.hatchHoles || [];
+    u.group.updateMatrixWorld(true);
+    let tags = hatchTags(u).filter(t => !d.lost.has(t) && !d.bent.has(t));
+    // tháp đã văng khỏi xe: nắp trên tháp đi theo tháp, không phụt lửa từ đó nữa
+    if (u.fxWreck && u.fxWreck.turret) tags = tags.filter(t => !isOnTurret(u, u.partRegistry[t][0].mesh));
+    if (strength < 0.5) tags = tags.length ? [tags[Math.floor(Math.random() * tags.length)]] : [];
+    let flung = 0;
+    for (const tag of tags) {
+      const c = partCenter(u, tag);
+      if (!c || !c.mesh) continue;
+      const hole = { mesh: c.mesh, local: c.local.clone(), k: strength };
+      if (strength >= 0.5 && Math.random() < 0.45) {
+        // giật đứt bản lề: nắp thép dày bay vọt lên, lộn vòng, rơi cách xe vài mét
+        const up = new THREE.Vector3(rand(-25, 25), rand(150, 230), rand(-25, 25));
+        if (detachTag(u, tag, up)) { flung++; d.hatchHoles.push(hole); }
+      } else {
+        // quật mở toang (nổ) / mở dựng (kíp lái thoát)
+        if (swingHatch(u, tag, strength >= 0.5 ? -rand(2.0, 2.6) : -rand(1.5, 1.75))) d.hatchHoles.push(hole);
+      }
+    }
+    if (strength >= 0.5 && tags.length) {
+      const wp = u.group.position.clone().add(new THREE.Vector3(0, 14, 0));
+      sfx('armorPlate', wp, 1.2);
+      events.push({ type: 'hatch', text: flung ? 'NỔ TRONG KHOANG — NẮP THÁP BỊ THỔI BAY' : 'NỔ TRONG KHOANG — NẮP THÁP BỊ QUẬT TUNG' });
+    }
+  }
+  // Lỗ nắp đang hở (thế giới) để ExplosionFX phụt lửa / khói: [{ p, k }]
+  function hatchHoles(u) {
+    const d = u && u.dmg;
+    if (!d || !d.hatchHoles || !d.hatchHoles.length) return [];
+    const out = [];
+    for (const h of d.hatchHoles) {
+      if (!h.mesh.parent || (u.fxWreck && u.fxWreck.turret && isOnTurret(u, h.mesh))) continue;
+      out.push({ p: h.mesh.localToWorld(h.local.clone()), k: h.k });
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -2098,7 +2186,7 @@ const VehicleDamage = (() => {
       if (FX.tossTurret(u, dirV, point, 0.7)) events.push({ type: 'wreck', text: 'XÁC XE TRÚNG ĐẠN NỔ MẠNH — THÁP PHÁO BỊ HẤT VĂNG' });
     }
     // 1. Phụ kiện / tấm giáp còn sót gần điểm trúng bị hất bay
-    const tags = Object.keys(u.partRegistry || {}).concat(Object.keys(u.partGroups || {})).filter(t => !d.lost.has(t) && !segmented(t));
+    const tags = Object.keys(u.partRegistry || {}).concat(Object.keys(u.partGroups || {})).filter(t => !d.lost.has(t) && !segmented(t) && partKind(t) !== 'hatch');
     const R = 7 + pw * 14;
     damageSegsNear(u, point, R * 0.5, pw * 0.6, events);
     const near = tags.map(t => ({ t, p: partWorld(u, t) })).filter(o => o.p && o.p.distanceTo(point) < R).sort((a, b) => a.p.distanceTo(point) - b.p.distanceTo(point));
@@ -2579,7 +2667,7 @@ const VehicleDamage = (() => {
       const dist = wp.distanceTo(point);
       if (dist > R) continue;
       const kind = partKind(tag);
-      const p = Math.pow(1 - dist / R, 1.2) * (DETACH_BLAST[kind] || 1) * strength;
+      const p = Math.pow(1 - dist / R, 1.2) * (kind in DETACH_BLAST ? DETACH_BLAST[kind] : 1) * strength;
       if (Math.random() < p) {
         const away = wp.clone().sub(point).normalize().multiplyScalar(60 * (1 - dist / R) + 15).add(impulse.clone().multiplyScalar(0.3));
         if (detachTag(u, tag, away)) {
@@ -2710,7 +2798,9 @@ const VehicleDamage = (() => {
     }
     // Đạn nổ phá / lựu pháo đánh nóc: nóc khoang bị ép lõm
     if (blastKill && !det) crushHull(u, rand(0.15, 0.25), { roof: 0.8, sag: 0.2, sides: 0, twist: 0.1 });
-    if (det) detonateHull(u);
+    if (det) { detonateHull(u); blowHatches(u, 1, events); }
+    // không nổ ngay: kíp lái còn sống mở nắp thoát ra (xả áp hốc đạn: kíp lái được vách ngăn che, cũng thoát)
+    else if (Math.random() < 0.55) blowHatches(u, 0.3, events);
     recompute(u);
     applyPose(u);
     FX = null;
@@ -2728,6 +2818,7 @@ const VehicleDamage = (() => {
         continue;
       }
       const kind = partKind(tag);
+      if (kind === 'hatch') continue;   // nắp: blowHatches
       if (Math.random() < k * (kind === 'acc' ? 0.55 : 0.3)) {
         const wp = partWorld(u, tag) || center;
         detachTag(u, tag, wp.clone().sub(center).setY(0).normalize().multiplyScalar(rand(40, 90) * k).add(new THREE.Vector3(0, rand(20, 50) * k, 0)));
@@ -2754,6 +2845,7 @@ const VehicleDamage = (() => {
     d.frame = (d.frame < 0 ? -1 : 1) * Math.max(Math.abs(d.frame || 0), rand(0.3, 0.5));
     if (u.trackSystem && u.trackSystem.breakSide && Math.random() < 0.6) u.trackSystem.breakSide(Math.random() < 0.5 ? 0 : 1, Math.random() < 0.5);
     detonateHull(u);
+    blowHatches(u, 1, []);
     recompute(u);
     applyPose(u);
     guardBarrel(u);
@@ -3308,7 +3400,7 @@ const VehicleDamage = (() => {
     ARMOR, ammoClass, onDirectHit, onSplash, onDestroyed, onDetonate, reset, update, recompute, summary, state,
     visualOnly, digest, applyDigest, addFire,
     detachTag, flatTire, blowWheel, breakTrack, bendTag, sfx, debugAction,
-    crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, armorOutcome, ARMOR_MM, PEN,
+    crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, hatchHoles, armorOutcome, ARMOR_MM, PEN,
     setGroundProvider(fn) { groundProvider = fn; },
     get debrisCount() { return debrisList.length; }
   };

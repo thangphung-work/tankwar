@@ -1342,8 +1342,14 @@
     #include <fog_pars_vertex>
     void main() {
       vec4 mvPosition = modelViewMatrix * vec4(iPos, 1.0);
+      // Kéo tấm hạt dọc tia nhìn về phía camera ~1/3 cỡ hạt (vị trí & cỡ trên màn hình giữ nguyên): tấm phẳng không cắt
+      // ngang vỏ xe / mặt đất thành đường mép thẳng sắc ngay cạnh chỗ khói bốc (không có bản đồ độ sâu để làm mờ mềm thật)
+      float dist = -mvPosition.z;
+      float pull = min(iSize * 0.35, max(0.0, dist - 2.0));
+      float kz = dist > 0.0 ? (dist - pull) / dist : 1.0;
+      mvPosition.xyz *= kz;
       float c = cos(iRot), s = sin(iRot);
-      vec2 p = position.xy * iSize;
+      vec2 p = position.xy * iSize * kz;
       mvPosition.xy += vec2(c * p.x - s * p.y, s * p.x + c * p.y);
       gl_Position = projectionMatrix * mvPosition;
       vec2 cellOff = vec2(mod(iCell, 2.0), floor(iCell / 2.0)) * 0.5;
@@ -3717,6 +3723,27 @@
             const a = (W.t - W.torch.t0) / W.torch.dur;
             W.torch.lastT = W.t;
             this.emitJet(this.ammoPoint(u), (a < 0.6 ? 1 : 1 - (a - 0.6) / 0.4) * (0.8 + 0.4 * Math.random()), W.torch.scale, W.t + (W.torch.ph || 0));
+          }
+          // Lỗ nắp tháp / nắp lái bị thổi bật: lửa phụt ra theo cột lửa chính rồi còn khói đen tuôn từ lỗ nắp
+          if (typeof VehicleDamage !== 'undefined' && VehicleDamage.hatchHoles && W.t - (W.hatchT || -1) >= 0.05) {
+            W.hatchT = W.t;
+            const holes = VehicleDamage.hatchHoles(u);
+            if (holes.length) {
+              const age = W.t - (W.detonated ? W.cookStart : 0);
+              const jetDur = W.torch ? W.torch.dur + 1.5 : 0;
+              for (const h of holes) {
+                if (W.detonated && age < jetDur) this.emitJet(h.p, (1 - age / jetDur) * (0.7 + 0.4 * Math.random()), 0.42, W.t * 1.3 + h.p.x);
+                else if (Math.random() < (W.detonated ? 0.5 : 0.25) * Math.max(0.15, 1 - W.t / 40)) {
+                  // khói từ khoang qua lỗ nắp (kíp lái mở nắp thoát: khói xám nhạt, sau nổ: khói đen dầu)
+                  const g = W.detonated ? rand(0.05, 0.1) : rand(0.18, 0.28);
+                  this.smoke.add({
+                    x: h.p.x + rand(-0.8, 0.8), y: h.p.y + 1.5, z: h.p.z + rand(-0.8, 0.8), vx: rand(-3, 3), vy: rand(18, 30), vz: rand(-3, 3),
+                    size: rand(3.5, 5.5), grow: 6, drag: 0.8, grav: -4, life: rand(2.5, 4), alpha: W.detonated ? 0.7 : 0.45, fadeIn: 0.12,
+                    c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 0, floor: false
+                  });
+                }
+              }
+            }
           }
           // Động cơ tên lửa chống tăng trong ống phóng bắt lửa: luồng lửa trắng phụt ngang vài giây kèm vệt khói
           if (W.motor && W.t < W.motor.t0 + W.motor.dur && W.t - (W.motor.lastT || -1) >= 0.033) {
