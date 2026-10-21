@@ -232,6 +232,249 @@ const VehicleKit = (() => {
   }
 
   /**
+   * Texture vết chiến trường dùng chung (shader sơn đọc khi bật lớp battle, xem createMaterials):
+   * A: R = bùn văng (cụm vết bắn từ bánh + giọt li ti + vệt chảy), G = muội khói / cháy sém, B = dầu loang chảy
+   * B: R = vết thương sơn (≈0.5 xước / tróc lộ sơn lót, 1.0 lõi lỗ mảnh đạn lộ thép; shader đọc ở tần số cao hơn ~3.4 lần
+ *    cho đúng cỡ lỗ 1-3 cm), G = vệt gỉ chảy, B = mặt nạ vùng hư hại tần số thấp (chỉ vài mảng xe dính mảnh / va quệt)
+   * Vẽ bằng canvas 2D, mỗi hình vẽ lặp 9 bản lệch ±1 ô -> lặp liền mạch. Ảnh: hàng trên = phía trên mặt đứng.
+   */
+  function getBattleTextures() {
+    if (TEX_CACHE.__battle) return TEX_CACHE.__battle;
+    if (typeof document === 'undefined') return null;
+    const S = 512;
+    const rnd = mulberry32(4271);
+    const R = (a, b) => a + (b - a) * rnd();
+    const layer = () => {
+      const c = document.createElement('canvas');
+      c.width = c.height = S;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, S, S);
+      return ctx;
+    };
+    const tiled = (ctx, fn) => {
+      for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+        ctx.save();
+        ctx.translate(dx, dy);
+        fn(ctx);
+        ctx.restore();
+      }
+    };
+    // Vết loang mép răng cưa (bùn, dầu): đa giác bán kính dao động
+    const blobPath = (r) => {
+      const n = 12 + Math.floor(rnd() * 8), pts = [], ph = rnd() * 6.28, k = R(0.15, 0.35);
+      for (let i = 0; i < n; i++) {
+        const t = (i / n) * Math.PI * 2;
+        pts.push([Math.cos(t), Math.sin(t), r * (1 - k + k * (Math.sin(t * 3 + ph) * 0.5 + 0.5) + R(-0.12, 0.12) * r / (r + 2))]);
+      }
+      return pts;
+    };
+    const fillBlob = (ctx, x, y, pts, sx = 1, ang = 0) => {
+      const c = Math.cos(ang), s = Math.sin(ang);
+      ctx.beginPath();
+      pts.forEach(([px, py, r], i) => {
+        const lx = px * r * sx, ly = py * r;
+        const X = x + lx * c - ly * s, Y = y + lx * s + ly * c;
+        if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+      });
+      ctx.closePath();
+      ctx.fill();
+    };
+    // Vệt chảy dọc xuống (dầu, bùn ướt, gỉ): dải thuôn có lắc nhẹ, mờ dần về cuối
+    const drip = (ctx, x, y, len, w, a) => {
+      const steps = Math.max(4, Math.floor(len / 3));
+      let px = x;
+      for (let i = 0; i < steps; i++) {
+        const k = i / steps;
+        const nx = px + R(-0.35, 0.35);
+        ctx.strokeStyle = `rgba(255,255,255,${a * (1 - k * 0.85)})`;
+        ctx.lineWidth = Math.max(0.6, w * (1 - k * 0.6));
+        ctx.beginPath();
+        ctx.moveTo(px, y + (len * i) / steps);
+        ctx.lineTo(nx, y + (len * (i + 1)) / steps);
+        ctx.stroke();
+        px = nx;
+      }
+      return px;
+    };
+
+    // --- Bùn văng: cụm vết lớn + giọt bắn tỏa theo hướng văng (chủ yếu hắt lên & ra sau) + vệt chảy ---
+    const mud = layer();
+    mud.globalCompositeOperation = 'lighter';
+    const mudShapes = [];
+    for (let i = 0; i < 64; i++) {
+      const x = R(0, S), y = R(0, S), r = R(4, 22) * (rnd() < 0.15 ? 1.6 : 1);
+      const dir = -Math.PI / 2 + R(-1.3, 1.3);
+      const shape = { x, y, r, a: R(0.45, 0.85), pts: blobPath(r), drops: [], drips: [] };
+      const nd = 6 + Math.floor(rnd() * 34);
+      for (let k = 0; k < nd; k++) {
+        const dist = r * (0.8 + Math.pow(rnd(), 1.7) * 4.5);
+        const ang = dir + R(-0.55, 0.55);
+        const dr = Math.max(0.6, r * R(0.04, 0.28) * (1.4 - dist / (r * 5.3)));
+        shape.drops.push({ x: x + Math.cos(ang) * dist, y: y + Math.sin(ang) * dist, pts: blobPath(dr), sx: R(1, 2.4), ang, a: R(0.5, 1) });
+      }
+      if (rnd() < 0.4) for (let k = 0; k < 1 + rnd() * 3; k++) shape.drips.push({ x: x + R(-r * 0.6, r * 0.6), y: y + r * R(0.3, 0.8), len: R(6, 30), w: R(1.2, 3.2) });
+      mudShapes.push(shape);
+    }
+    tiled(mud, (ctx) => {
+      for (const s of mudShapes) {
+        ctx.fillStyle = `rgba(255,255,255,${s.a})`;
+        fillBlob(ctx, s.x, s.y, s.pts);
+        // lõi bùn dày giữa vết
+        ctx.fillStyle = `rgba(255,255,255,${s.a * 0.5})`;
+        fillBlob(ctx, s.x + R(-1, 1), s.y + R(-1, 1), s.pts, 0.55);
+        for (const d of s.drops) {
+          ctx.fillStyle = `rgba(255,255,255,${d.a})`;
+          fillBlob(ctx, d.x, d.y, d.pts, d.sx, d.ang);
+        }
+        for (const d of s.drips) drip(ctx, d.x, d.y, d.len, d.w, 0.7);
+      }
+    });
+    // giọt li ti rải đều
+    const specks = [];
+    for (let i = 0; i < 2600; i++) specks.push([R(0, S), R(0, S), R(0.5, 1.6), R(0.25, 0.8)]);
+    tiled(mud, (ctx) => {
+      for (const [x, y, r, a] of specks) {
+        ctx.fillStyle = `rgba(255,255,255,${a})`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    // --- Muội khói / cháy sém: vài đám loang mềm, lưỡi muội liếm ngược lên trên ---
+    const soot = layer();
+    soot.globalCompositeOperation = 'lighter';
+    const sootShapes = [];
+    for (let i = 0; i < 4; i++) {
+      const x = R(0, S), y = R(0, S), r = R(26, 60), puffs = [];
+      for (let k = 0; k < 9; k++) puffs.push([x + R(-r, r) * 0.7, y + R(-r, r) * 0.5, r * R(0.3, 0.75), R(0.12, 0.3)]);
+      for (let k = 0; k < 5; k++) {
+        const len = r * R(0.8, 1.9);
+        puffs.push([x + R(-r, r) * 0.5, y - len * 0.6, r * R(0.15, 0.3), R(0.08, 0.2), len]);
+      }
+      sootShapes.push(puffs);
+    }
+    tiled(soot, (ctx) => {
+      for (const puffs of sootShapes) {
+        for (const [x, y, r, a, len] of puffs) {
+          ctx.save();
+          ctx.translate(x, y);
+          if (len) ctx.scale(1, len / r);
+          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+          g.addColorStop(0, `rgba(255,255,255,${a})`);
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(-r, -r, r * 2, r * 2);
+          ctx.restore();
+        }
+      }
+    });
+
+    // --- Dầu / nhiên liệu loang: vũng nhỏ + vài dòng chảy dài xuống dưới ---
+    const oil = layer();
+    oil.globalCompositeOperation = 'lighter';
+    const oilShapes = [];
+    for (let i = 0; i < 7; i++) {
+      const x = R(0, S), y = R(0, S), r = R(4, 13), drips = [];
+      for (let k = 0; k < 2 + rnd() * 4; k++) drips.push([x + R(-r, r) * 0.8, y + r * 0.4, R(18, 90), R(1.4, 3.6)]);
+      oilShapes.push({ x, y, pts: blobPath(r), drips });
+    }
+    tiled(oil, (ctx) => {
+      for (const o of oilShapes) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        fillBlob(ctx, o.x, o.y, o.pts);
+        for (const [x, y, len, w] of o.drips) {
+          const ex = drip(ctx, x, y, len, w, 0.8);
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.beginPath();
+          ctx.arc(ex, y + len, w * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    });
+
+    // --- Vết thương sơn: chùm lỗ mảnh đạn (lõi sẫm + viền tróc), xước cành cây / đá, sứt mẻ ---
+    const scar = layer();
+    scar.globalCompositeOperation = 'lighten';
+    const rust = layer();
+    rust.globalCompositeOperation = 'lighter';
+    const pocks = [], scratches = [], chipsL = [], rustL = [];
+    for (let c = 0; c < 7; c++) {
+      const cx = R(0, S), cy = R(0, S), spread = R(20, 80), n = 3 + Math.floor(rnd() * 13);
+      for (let k = 0; k < n; k++) {
+        const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * spread;
+        const p = [cx + Math.cos(a) * d, cy + Math.sin(a) * d, R(1.2, 3.4)];
+        pocks.push(p);
+        if (rnd() < 0.45) rustL.push([p[0], p[1] + p[2] * 0.6, R(8, 46), R(1, 2.4)]);
+      }
+    }
+    for (let g = 0; g < 26; g++) {
+      const x = R(0, S), y = R(0, S), ang = R(-0.35, 0.35) + (rnd() < 0.2 ? Math.PI / 2 : 0), len = R(18, 130), n = 1 + Math.floor(rnd() * 5);
+      for (let k = 0; k < n; k++) scratches.push([x + R(-3, 3), y + k * R(1.5, 4), ang + R(-0.05, 0.05), len * R(0.5, 1), R(0.6, 1.5), R(0.25, 0.4)]);
+      if (rnd() < 0.3) rustL.push([x + R(0, len * 0.6), y + 2, R(6, 28), R(0.8, 1.8)]);
+    }
+    for (let i = 0; i < 160; i++) chipsL.push([R(0, S), R(0, S), blobPath(R(1.5, 6))]);
+    tiled(scar, (ctx) => {
+      for (const [x, y, ang, len, w, bend] of scratches) {
+        ctx.strokeStyle = 'rgb(128,128,128)';
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + Math.cos(ang) * len * 0.5, y + Math.sin(ang) * len * 0.5 + bend * 10, x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgb(122,122,122)';
+      for (const [x, y, pts] of chipsL) fillBlob(ctx, x, y, pts);
+      for (const [x, y, r] of pocks) {
+        ctx.fillStyle = 'rgb(140,140,140)';
+        ctx.beginPath();
+        ctx.arc(x, y, r * 1.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgb(255,255,255)';
+        ctx.beginPath();
+        ctx.arc(x + R(-0.4, 0.4), y + R(-0.4, 0.4), r * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    tiled(rust, (ctx) => {
+      for (const [x, y, len, w] of rustL) drip(ctx, x, y, len, w, 0.75);
+    });
+
+    // --- Gộp kênh + phá đều bằng nhiễu (bùn khô nứt mép, muội không đặc đều) ---
+    const read = (ctx) => ctx.getImageData(0, 0, S, S).data;
+    const dm = read(mud), ds = read(soot), dO = read(oil), dc = read(scar), dr = read(rust);
+    const breakup = makeFbm(8, 4, 211), fine = makeFbm(64, 2, 223);
+    const outA = layer(), outB = layer();
+    const iA = outA.createImageData(S, S), iB = outB.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const p = (y * S + x) * 4;
+        const n = breakup(x / S, y / S), f = fine(x / S, y / S);
+        const m = Math.min(255, dm[p] * (0.75 + 0.5 * f));
+        iA.data[p] = m;
+        iA.data[p + 1] = Math.min(255, ds[p] * (0.55 + 0.9 * n) * (0.85 + 0.3 * f));
+        iA.data[p + 2] = Math.min(255, dO[p] * (0.8 + 0.4 * n));
+        iA.data[p + 3] = 255;
+        iB.data[p] = dc[p];
+        iB.data[p + 1] = Math.min(255, dr[p] * (0.6 + 0.8 * n));
+        iB.data[p + 2] = Math.max(0, Math.min(255, (n - 0.5) * 2.4 * 255 + 128));   // vùng từng hứng mảnh đạn / va quệt
+        iB.data[p + 3] = 255;
+      }
+    }
+    outA.putImageData(iA, 0, 0);
+    outB.putImageData(iB, 0, 0);
+    const toTex = (ctx) => {
+      const t = new THREE.CanvasTexture(ctx.canvas);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = 4;
+      return t;
+    };
+    TEX_CACHE.__battle = { a: toTex(outA), b: toTex(outB) };
+    return TEX_CACHE.__battle;
+  }
+
+  /**
    * Shader sơn quân sự (chèn vào MeshStandardMaterial):
    * - màu đỉnh (vertex color) mã hóa: R = che khuất (AO), G = độ cao trên gầm (0 sát đất .. 1 trên cao),
    *   B = mặt ngửa lên trời (0..1)
@@ -240,17 +483,32 @@ const VehicleKit = (() => {
    * - mép giáp mòn sơn sáng lên, lác đác lộ thép (cạnh sắc lấy từ thuộc tính edgeD do computeEdgeWear tính)
    * Màu vật liệu (diffuse) vẫn nhân vào cuối -> xác xe cháy đen vẫn đen như cũ.
    */
-  function patchPaintMaterial(m, dust, weather) {
+  function patchPaintMaterial(m, dust, weather, battle = null) {
     if (!weather) return;
     const dustColor = new THREE.Color().setRGB(dust[0], dust[1], dust[2]);
+    if (battle) m.defines = Object.assign(m.defines || {}, { VK_BATTLE: '' });
     m.onBeforeCompile = (sh) => {
       sh.uniforms.vkWeather = { value: weather };
       sh.uniforms.vkDust = { value: dustColor };
+      if (battle) {
+        sh.uniforms.vkBattleA = { value: battle.tex.a };
+        sh.uniforms.vkBattleB = { value: battle.tex.b };
+        sh.uniforms.vkBattle = { value: battle.amount };
+        sh.uniforms.vkBattleOff = { value: battle.offset };
+      }
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec4 edgeD;\nvarying vec4 vEdgeD;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdgeD = edgeD;');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform sampler2D vkWeather;\nuniform vec3 vkDust;\nvarying vec4 vEdgeD;')
+        .replace('#include <common>', `#include <common>
+          uniform sampler2D vkWeather;
+          uniform vec3 vkDust;
+          varying vec4 vEdgeD;
+          #ifdef VK_BATTLE
+            uniform sampler2D vkBattleA, vkBattleB;
+            uniform float vkBattle;
+            uniform vec2 vkBattleOff;
+          #endif`)
         .replace('#include <color_fragment>', `
           #ifdef USE_COLOR
             float vkAO = vColor.r, vkH = vColor.g, vkUp = vColor.b;
@@ -277,17 +535,52 @@ const VehicleKit = (() => {
           }
           vec3 vkWorn = mix(vkCol * 1.45 + 0.03 * vkTint, vec3(0.29, 0.28, 0.26) * vkTint, step(0.8, vkW.b) * 0.8);
           vkCol = mix(vkCol, vkWorn, vkWear * 0.8);
+          #ifdef VK_BATTLE
+            // Vết chiến trường: sơn bạc nắng, xước & lỗ mảnh đạn, gỉ chảy, dầu loang, muội cháy sém
+            vec2 vkBUv = vkUv * 0.81 + vkBattleOff;
+            vec3 vkBA = texture2D(vkBattleA, vkBUv).rgb;
+            vec3 vkBB = texture2D(vkBattleB, vkBUv).rgb;
+            float vkZone = smoothstep(0.4, 0.75, vkBB.b);
+            float vkScar = texture2D(vkBattleB, vkBUv * 3.4 + vec2(0.37, 0.61)).r;
+            float vkSide = 1.0 - vkUp;
+            float vkLum = dot(vkCol, vec3(0.3, 0.59, 0.11));
+            vkCol = mix(vkCol, vkLum * vec3(1.05, 1.0, 0.9), 0.2 * vkBattle);
+            float vkPit = smoothstep(0.8, 0.95, vkScar) * vkZone * vkBattle;
+            float vkScr = smoothstep(0.3, 0.48, vkScar) * (1.0 - vkPit) * (0.3 + 0.7 * vkZone) * vkBattle;
+            vkCol = mix(vkCol, vec3(0.4, 0.39, 0.35) * vkTint * (0.85 + 0.3 * vkW.b), vkScr * 0.55);
+            vkCol = mix(vkCol, vec3(0.1, 0.095, 0.085) * vkTint, vkPit * 0.8);
+            float vkRust = vkBB.g * vkSide * (0.35 + 0.65 * vkZone) * vkBattle;
+            vkCol = mix(vkCol, vec3(0.32, 0.17, 0.08) * vkTint * (0.75 + 0.5 * vkW.b), vkRust * 0.7);
+            float vkOil = smoothstep(0.12, 0.7, vkBA.b) * (0.45 + 0.55 * vkSide) * vkBattle;
+            vkCol *= 1.0 - vkOil * 0.6;
+            float vkSoot = smoothstep(0.1, 0.8, vkBA.g) * vkBattle;
+            vkCol = mix(vkCol, vec3(0.04, 0.038, 0.035) * vkTint, vkSoot * 0.7);
+          #endif
           // Bụi đất: dày dần xuống gầm, rắc trên mặt ngửa; loang theo nhiễu
           float vkLow = pow(1.0 - vkH, 1.5);
           float vkDustK = clamp(vkLow * (0.55 + 0.6 * vkW.r) + vkUp * (0.05 + 0.3 * vkW.r) * (0.6 + 0.4 * vkW.b) - 0.07, 0.0, 0.8);
           vkCol = mix(vkCol, vkDust * vkTint, vkDustK);
+          #ifdef VK_BATTLE
+            // Bùn văng từ bánh: dày sát gầm, lên cao chỉ còn vết bắn to; mặt sàn có bùn giày dẫm.
+            // Lõi vết dày còn ướt (sẫm, hơi bóng), mép khô bạc màu như đất
+            float vkMudT = mix(0.06, 0.8, smoothstep(0.0, 0.9, vkH)) - vkUp * 0.14;
+            float vkMud = smoothstep(vkMudT, vkMudT + 0.14, vkBA.r) * vkBattle;
+            vec3 vkMudCol = mix(vkDust * 0.82, vkDust * 0.45, smoothstep(0.65, 1.0, vkBA.r));
+            vkCol = mix(vkCol, vkMudCol * vkTint, vkMud * 0.93);
+          #endif
           diffuseColor.rgb = vkCol * vkAO;
         `)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, 1.0, vkDustK);
-          roughnessFactor = mix(roughnessFactor, 0.5, vkWear * 0.5);`);
+          roughnessFactor = mix(roughnessFactor, 0.5, vkWear * 0.5);
+          #ifdef VK_BATTLE
+            roughnessFactor = mix(roughnessFactor, 0.55, vkPit * 0.7);
+            roughnessFactor = mix(roughnessFactor, 0.3, vkOil * 0.8);
+            roughnessFactor = mix(roughnessFactor, 1.0, vkSoot * 0.8);
+            roughnessFactor = mix(roughnessFactor, mix(1.0, 0.5, smoothstep(0.75, 1.0, vkBA.r)), vkMud);
+          #endif`);
     };
-    m.customProgramCacheKey = () => 'vkPaint1';
+    m.customProgramCacheKey = () => (battle ? 'vkPaint1b' : 'vkPaint1');
   }
 
   // Texture mặt xích / lốp cao su (đường vân nhỏ), dùng chung
@@ -310,6 +603,230 @@ const VehicleKit = (() => {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     TEX_CACHE.__grime = t;
     return t;
+  }
+
+  // Lốp đã chạy chiến trường: cao su xám bạc (không đen tuyền), màng bụi loang, bùn khô bám cục
+  function getTireTexture() {
+    if (TEX_CACHE.__tire) return TEX_CACHE.__tire;
+    if (typeof document === 'undefined') return null;
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(size, size);
+    const film = makeFbm(4, 4, 301), clod = makeFbm(16, 3, 307), grain = makeFbm(64, 2, 311);
+    const rubber = [40, 39, 37], dust = [104, 93, 76], mud = [70, 58, 44];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const nx = x / size, ny = y / size, p = (y * size + x) * 4;
+        const g = grain(nx, ny);
+        const f = smooth01(0.35, 0.8, film(nx, ny)) * 0.3 + 0.05;
+        const c = smooth01(0.66, 0.74, clod(nx, ny) * 0.8 + film(nx, ny) * 0.3);
+        for (let k = 0; k < 3; k++) {
+          let v = rubber[k] * (0.9 + g * 0.2);
+          v += (dust[k] - v) * f;
+          v += (mud[k] * (0.85 + g * 0.3) - v) * c * 0.9;
+          img.data[p + k] = Math.max(0, Math.min(255, v));
+        }
+        img.data[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(canvas);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    TEX_CACHE.__tire = t;
+    return t;
+  }
+
+  /**
+   * Kính cabin chống đạn bám bụi (map + roughnessMap theo UV mặt hộp, 0..1 trên mỗi ô kính): kính dày tối, không
+   * nhìn xuyên vào trong; đọc ra là mặt kính nhờ phản chiếu trời (getGlassEnvCube) + lớp bụi dày ở mép & đáy,
+   * vệt mưa chảy dọc, lấm tấm bùn / xác côn trùng.
+   * kind: 'windL' (kính chắn gió bên lái) | 'windR' (bên phụ, có vết đá văng nứt sao) | 'side' (kính cửa).
+   * Kính chắn gió: cần gạt gốc ở góc dưới (u ≈ 0.15) quét cung sạch, mép cung dồn bụi thành gờ.
+   * Màu ảnh đã chia cho màu vật liệu 0x606060 (để hệ hư hại vẫn nhận đây là kính tối, không phải kính đèn).
+   */
+  function getDirtyGlassTextures(kind) {
+    const key = '__glass_' + kind;
+    if (TEX_CACHE[key]) return TEX_CACHE[key];
+    if (typeof document === 'undefined') return null;
+    const wind = kind !== 'side';
+    const size = wind ? 512 : 256, W = size;
+    const mk = () => { const c = document.createElement('canvas'); c.width = c.height = size; return c; };
+    const ic = mk(), cc = mk(), rc = mk();
+    // --- Kính chống đạn dày nhiều lớp: tối, ngả xanh rêu, không nhìn xuyên vào cabin (màu thật, chưa chia) ---
+    // dải tối hơn ở mép trên (dải chống chói), loang nhẹ do độ dày các lớp kính không đều
+    const ix = ic.getContext('2d');
+    const bg = ix.createLinearGradient(0, 0, 0, W);
+    bg.addColorStop(0, 'rgb(9,12,11)');
+    bg.addColorStop(wind ? 0.16 : 0.1, 'rgb(13,17,16)');
+    bg.addColorStop(0.55, 'rgb(19,23,21)');
+    bg.addColorStop(1, 'rgb(15,18,17)');
+    ix.fillStyle = bg;
+    ix.fillRect(0, 0, W, W);
+    const inter = ix.getImageData(0, 0, W, W).data;
+
+    // --- Bụi, vệt mưa, cung gạt nước, bùn bắn ---
+    const cImg = cc.getContext('2d').createImageData(W, W), rImg = rc.getContext('2d').createImageData(W, W);
+    const seed = kind === 'windL' ? 401 : kind === 'windR' ? 409 : 415;
+    const blot = makeFbm(4, 4, seed), fine = makeFbm(32, 2, seed + 7), rain = makeFbm(64, 2, seed + 13);
+    const rnd = mulberry32(seed + 31);
+    const inv = 1 / 0.376;
+    const tint = [0.82, 0.93, 1.0], dust = [92, 85, 70];
+    // gạt nước (đơn vị mét-kính: ô 8.9 x 7): gốc dưới góc u = 0.15, lưỡi dài từ r 1.0 tới 5.8, quét 0..105°
+    const PX = 0.15 * 8.9, PY = -0.35, R0 = 1.0, R1 = 5.8, AMAX = 1.83;
+    for (let y = 0; y < W; y++) {
+      for (let x = 0; x < W; x++) {
+        const u = x / W, v = 1 - y / W, p = (y * W + x) * 4;
+        const edge = Math.min(u, 1 - u, v, 1 - v);
+        let d = 0.1 + blot(u, v) * 0.22 + (1 - smooth01(0, 0.13, edge)) * 0.42 + (1 - smooth01(0, 0.3, v)) * 0.2;
+        d += (rain(u, v * 0.04) - 0.5) * 0.16 * smooth01(0.2, 0.9, v);
+        if (wind) {
+          const X = u * 8.9 - PX, Y = v * 7 - PY, r = Math.hypot(X, Y), a = Math.atan2(Y, X);
+          const inR = smooth01(R0 - 0.06, R0 + 0.06, r) * (1 - smooth01(R1 - 0.08, R1 + 0.04, r));
+          const inA = 1 - smooth01(AMAX - 0.02, AMAX + 0.02, a);
+          const swept = inR * inA * (a > -0.15 ? 1 : 0);
+          const arcs = 0.5 + 0.5 * Math.sin(r * 55 + fine(u, v) * 3);
+          d = d * (1 - swept * 0.9) + swept * arcs * arcs * 0.06;
+          // gờ bụi dồn ở mép cung quét
+          const ridge = Math.exp(-Math.pow((r - R1 - 0.12) / 0.08, 2)) * inA + Math.exp(-Math.pow((a - AMAX - 0.035) / 0.025, 2)) * inR;
+          d += ridge * 0.35 * (a > -0.15 ? 1 : 0);
+        }
+        d = Math.max(0, Math.min(0.95, d * (0.85 + fine(u, v) * 0.3)));
+        const speck = rnd() < (v < 0.5 ? 0.0035 : 0.0012) ? 1 : 0;
+        for (let k = 0; k < 3; k++) {
+          let c = inter[p + k] * tint[k] + 4;
+          c = c + (dust[k] - c) * d;
+          if (speck) c = dust[k] * 0.62;
+          cImg.data[p + k] = Math.min(255, c * inv);
+        }
+        cImg.data[p + 3] = 255;
+        const rough = Math.min(255, (0.05 + d * 0.9 + speck * 0.5) * 255);
+        rImg.data[p] = rImg.data[p + 1] = rImg.data[p + 2] = rough;
+        rImg.data[p + 3] = 255;
+      }
+    }
+    const cx = cc.getContext('2d'), rx = rc.getContext('2d');
+    cx.putImageData(cImg, 0, 0);
+    rx.putImageData(rImg, 0, 0);
+    if (kind === 'windR') {
+      // đá văng: nốt vỡ hình sao + một vết nứt dài bò ra mép kính
+      const ox = W * 0.68, oy = W * 0.4;
+      for (const [ctx, col, lw] of [[cx, 'rgba(235,245,245,0.85)', 1.6], [rx, 'rgba(120,120,120,1)', 2]]) {
+        ctx.strokeStyle = col;
+        ctx.lineWidth = lw;
+        const rr2 = mulberry32(77);
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * Math.PI * 2 + rr2() * 0.4, l = W * (0.012 + rr2() * 0.03);
+          ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + Math.cos(a) * l, oy + Math.sin(a) * l); ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        let px = ox, py = oy;
+        while (px < W) { px += W * (0.02 + rr2() * 0.03); py += W * (rr2() - 0.35) * 0.03; ctx.lineTo(px, py); }
+        ctx.stroke();
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(ox, oy, W * 0.007, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    const tex = (c) => { const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; };
+    TEX_CACHE[key] = { map: tex(cc), roughnessMap: tex(rc) };
+    return TEX_CACHE[key];
+  }
+
+  // Kính đèn pha tròn: chóa phản quang sáng sau lớp kính khía rãnh (khía dọc + dải lăng kính ngang), chụp che
+  // bóng ở giữa, bụi bám nửa dưới, lấm tấm bùn; cracked = vỡ nứt một góc
+  function getHeadlampTexture(cracked) {
+    const key = cracked ? '__lampC' : '__lamp';
+    if (TEX_CACHE[key]) return TEX_CACHE[key];
+    if (typeof document === 'undefined') return null;
+    const S = 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    const film = makeFbm(4, 3, cracked ? 501 : 503), rnd = mulberry32(cracked ? 511 : 513);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const u = x / S - 0.5, v = 0.5 - y / S, r = Math.hypot(u, v) * 2, p = (y * S + x) * 4;
+        let b = 228 - r * 70;                                    // chóa sáng giữa, tối dần ra viền
+        b += Math.sin(u * 2 * Math.PI * 14) * 10;                // khía dọc
+        b += Math.abs(v) < 0.08 ? 14 * Math.cos(v * 40) : 0;     // dải lăng kính ngang
+        b -= r > 0.88 ? (r - 0.88) * 600 : 0;                    // gờ viền tối
+        const cap = 1 - smooth01(0.1, 0.14, r);
+        b = b * (1 - cap) + 120 * cap;                           // chụp che bóng
+        const d = Math.max(0, Math.min(0.75, (0.25 - v) * 0.9 + (film(u + 0.5, v + 0.5) - 0.5) * 0.5));
+        const col = [b * 0.99, b * 0.98, b * 0.9];
+        const dc = [128, 114, 90];
+        const sp = rnd() < 0.006 * (v < 0 ? 3 : 1);
+        for (let k = 0; k < 3; k++) img.data[p + k] = Math.max(0, Math.min(255, sp ? dc[k] * 0.6 : col[k] + (dc[k] - col[k]) * d));
+        img.data[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    if (cracked) {
+      ctx.strokeStyle = 'rgba(40,40,36,0.9)';
+      ctx.lineWidth = 1.2;
+      const r2 = mulberry32(91);
+      const ox = S * 0.7, oy = S * 0.3;
+      for (let i = 0; i < 6; i++) {
+        let px = ox, py = oy;
+        ctx.beginPath(); ctx.moveTo(px, py);
+        const a = r2() * Math.PI * 2;
+        for (let k = 0; k < 5; k++) { px += Math.cos(a + (r2() - 0.5)) * S * 0.07; py += Math.sin(a + (r2() - 0.5)) * S * 0.07; ctx.lineTo(px, py); }
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(30,30,28,0.9)';
+      ctx.beginPath(); ctx.moveTo(ox - 5, oy - 3); ctx.lineTo(ox + 6, oy - 5); ctx.lineTo(ox + 3, oy + 6); ctx.closePath(); ctx.fill();
+    }
+    TEX_CACHE[key] = new THREE.CanvasTexture(c);
+    return TEX_CACHE[key];
+  }
+
+  /**
+   * Bầu trời phản chiếu riêng cho kính cửa / gương: trời có mây mờ, dải đồi xa sẫm ở chân trời, mặt đất nâu.
+   * Kính tối phản chiếu được đường chân trời -> đọc ra là mặt kính nghiêng thật, không phải mảng màu phẳng.
+   */
+  function getGlassEnvCube() {
+    if (TEX_CACHE.__genv) return TEX_CACHE.__genv;
+    if (typeof document === 'undefined') return null;
+    const size = 128;
+    const ridge = makeFbm(4, 4, 601), cloud = makeFbm(4, 4, 607);
+    const side = document.createElement('canvas');
+    side.width = side.height = size;
+    const ctx = side.getContext('2d');
+    const img = ctx.createImageData(size, size);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const u = x / size, v = 1 - y / size, p = (y * size + x) * 4;   // v 0.5 = chân trời
+        let col;
+        if (v >= 0.5) {
+          const h = (v - 0.5) * 2;
+          const sky = [138 + 40 * (1 - h), 156 + 30 * (1 - h), 176 + 12 * (1 - h)];
+          const cl = smooth01(0.5, 0.75, cloud(u, h * 0.5)) * (1 - h * 0.6);
+          col = sky.map(c => c + (205 - c) * cl * 0.7);
+          const rh = 0.5 + 0.06 * ridge(u, 0.1);                          // dải đồi xa
+          if (v < rh) col = [78, 82, 72];
+        } else {
+          const g = Math.min(1, (0.5 - v) * 6);
+          col = [120 - 50 * g, 112 - 50 * g, 96 - 46 * g];
+        }
+        img.data[p] = col[0]; img.data[p + 1] = col[1]; img.data[p + 2] = col[2]; img.data[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const flat = (r, g, b) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;   // mọi mặt cube map phải cùng cỡ, lệch cỡ -> texture không hợp lệ (đen)
+      const x = c.getContext('2d');
+      x.fillStyle = `rgb(${r},${g},${b})`;
+      x.fillRect(0, 0, size, size);
+      return c;
+    };
+    const tex = new THREE.CubeTexture([side, side, flat(140, 158, 178), flat(66, 60, 50), side, side]);
+    tex.needsUpdate = true;
+    TEX_CACHE.__genv = tex;
+    return tex;
   }
 
   /**
@@ -358,11 +875,19 @@ const VehicleKit = (() => {
   // BỘ VẬT LIỆU PBR CHUẨN CHO MỘT XE (mỗi xe một bộ riêng vì hiệu ứng tàng hình
   // và màu xác cháy chỉnh trực tiếp lên vật liệu)
   // ---------------------------------------------------------------------------
-  function createMaterials(team) {
+  // opts.battle (0..1): bật lớp vết chiến trường (bùn văng, muội, dầu, xước, lỗ mảnh, gỉ) + lốp bám bùn, kính bụi,
+  // khung gầm sẫm cũng nhận bụi bùn. Mỗi xe lệch texture vết một đoạn ngẫu nhiên -> không xe nào giống xe nào.
+  function createMaterials(team, opts = {}) {
     const isBlue = team === 'BLUE';
     const paint = getPaintTextures(isBlue ? 'WOODLAND' : 'DESERT');
     const grimeTex = getGrimeTexture();
     const weather = getWeatherTexture();
+    const battleTex = opts.battle ? getBattleTextures() : null;
+    const battle = battleTex ? {
+      tex: battleTex,
+      amount: opts.battle,
+      offset: new THREE.Vector2(Math.random(), Math.random())
+    } : null;
 
     const paintMat = (tint) => {
       const m = new THREE.MeshStandardMaterial({
@@ -377,7 +902,7 @@ const VehicleKit = (() => {
       });
       m.userData.boxUV = true;
       m.userData.baseColor = tint;
-      if (paint) patchPaintMaterial(m, paint.dust, weather);
+      if (paint) patchPaintMaterial(m, paint.dust, weather, battle);
       return m;
     };
 
@@ -434,6 +959,58 @@ const VehicleKit = (() => {
       // Có trời để phản chiếu -> thép trần được phép kim loại thật hơn (trước đây 0.5 để khỏi đen sì)
       mats.steel.metalness = 0.72;
       mats.steel.roughness = 0.42;
+    }
+    if (battle && paint) {
+      // Thép sơn sẫm (khung gầm, cầu xe, giá đỡ) cũng ăn bụi bùn như phần sơn: dùng vân bẩn xám làm map
+      // (độ sáng trung bình ~0.78 -> nâng màu bù lại)
+      const dark = new THREE.MeshStandardMaterial({ color: 0x2d2e28, map: grimeTex, roughness: 0.85, metalness: 0.2, vertexColors: true });
+      dark.userData.boxUV = true;
+      dark.userData.baseColor = 0x2d2e28;
+      patchPaintMaterial(dark, paint.dust, weather, battle);
+      dark.envMap = mats.dark.envMap;
+      dark.envMapIntensity = mats.dark.envMapIntensity;
+      mats.dark = dark;
+      // Thép trần ngoài thực địa: xỉn, dầu mỡ bám bụi, không sáng bóng
+      mats.steel.color.setHex(0x57534b);
+      mats.steel.roughness = 0.62;
+      mats.steel.metalness = 0.6;
+      // Lốp bám bùn khô; màu đỉnh (tireGeometry) làm tối rãnh gai / chân gai. Mọi hình gộp chung mesh với vật liệu
+      // này phải có thuộc tính color -> chỉ dùng cho hình từ tireGeometry
+      mats.tire = new THREE.MeshStandardMaterial({ color: 0xffffff, map: getTireTexture(), roughness: 0.92, metalness: 0.0, vertexColors: true });
+      mats.tire.userData.surface = 'rubber';
+      // Kính cabin bụi bám, kính chắn gió có cung gạt nước
+      const genv = getGlassEnvCube();
+      for (const [k, kind] of [['glassWindL', 'windL'], ['glassWindR', 'windR'], ['glassDusty', 'side']]) {
+        const t = getDirtyGlassTextures(kind);
+        const g = mats.glass.clone();
+        g.color.setHex(0x606060);
+        g.map = t.map;
+        g.roughnessMap = t.roughnessMap;
+        g.roughness = 1.0;
+        g.metalness = 0.2;
+        g.emissiveIntensity = 0.06;
+        if (genv) { g.envMap = genv; g.envMapIntensity = 1.0; }
+        g.userData = { surface: 'glass', windowGlass: true };
+        mats[k] = g;
+      }
+      mats.glassWind = mats.glassWindL;
+      // Kính đèn pha (trái nứt), kính xi-nhan hổ phách, gương chiếu hậu tráng bạc
+      for (const [k, cracked] of [['headLensL', true], ['headLensR', false]]) {
+        mats[k] = new THREE.MeshStandardMaterial({
+          color: 0xffffff, map: getHeadlampTexture(cracked), roughness: 0.2, metalness: 0.15,
+          emissive: 0x2a261c, emissiveIntensity: 0.3, envMap: genv, envMapIntensity: 0.7
+        });
+        mats[k].userData.surface = 'glass';
+      }
+      mats.amberLens = new THREE.MeshStandardMaterial({ color: 0xc8861f, roughness: 0.28, metalness: 0.1, emissive: 0x3a1e04, emissiveIntensity: 0.45, envMap: genv, envMapIntensity: 0.6 });
+      mats.amberLens.userData.surface = 'glass';
+      mats.mirror = new THREE.MeshStandardMaterial({ color: 0x9da3a4, roughness: 0.14, metalness: 1.0, envMap: genv, envMapIntensity: 1.0 });
+      mats.mirror.userData.surface = 'glass';
+      // Muội đen (miệng ống xả, loa hãm lùi cháy sém), gỗ thùng đạn / chèn bánh
+      mats.soot = new THREE.MeshStandardMaterial({ color: 0x9a948c, map: grimeTex, roughness: 0.98, metalness: 0.1 });
+      mats.soot.color.multiplyScalar(0.3);
+      mats.wood = new THREE.MeshStandardMaterial({ color: isBlue ? 0x6a5a44 : 0x7a6649, map: grimeTex, roughness: 0.93, metalness: 0.0 });
+      mats.wood.userData.surface = 'cloth';   // gỗ: trúng đạn không tóe lửa, không nảy
     }
     mats.glass.userData.surface = 'glass';
     mats.glass.userData.windowGlass = true;   // kính cửa / kính chắn gió (khác kính đèn, ống ngắm)
@@ -947,6 +1524,169 @@ const VehicleKit = (() => {
       this.buckets.clear();
       return out;
     }
+  }
+
+  /**
+   * Lốp xe quân sự địa hình (trục quay = trục Y, hông "trên" +Y là hông ngoài có chữ nổi). Trả về mảng
+   * BufferGeometry không chỉ số, đã có uv riêng (userData.customUV) và màu đỉnh làm che khuất:
+   * - thân lốp: lathe mặt cắt thật (mặt gai phẳng, vai bo, hông phồng, mép tanh), rãnh gai sẫm hơn hông
+   * - gai: mỗi gai là khối đúc liền bám theo mặt cong của lốp, chạy chéo chữ V từ giữa mặt lốp vắt qua vai
+   *   xuống hông; hai nửa so le nửa bước, mép trong hai nửa gối nhau như lốp XZL; gai thấp dần ở vai
+   * - hông ngoài: chữ nổi (cỡ lốp, hãng, mã) + gờ bảo vệ vành
+   * R: bán kính đáy rãnh gai (ngoài cùng = R + lugH), H: nửa bề rộng, bead: bán kính mép tanh (vành).
+   */
+  function tireGeometry({ R, H, bead, lugH = 0.55, lugs = 20, seg = 48, seed = 7 }) {
+    const rnd = mulberry32(seed);
+    const k = UV_SCALE * 2;
+    // Nửa trên mặt cắt: từ giữa mặt gai lên vai, qua hông tới mép tanh
+    const half = new THREE.SplineCurve([
+      [R, 0], [R, H * 0.4], [R - 0.05, H * 0.66], [R - 0.28, H * 0.88], [R - 0.7, H * 1.0],
+      [(R + bead) / 2, H * 1.04], [bead + 0.55, H * 0.98], [bead + 0.22, H * 0.9], [bead + 0.26, H * 0.82], [bead, H * 0.78]
+    ].map(([r, y]) => new THREE.Vector2(r, y))).getPoints(36).map(p => [p.x, p.y]);
+    const cum = [0];
+    for (let i = 1; i < half.length; i++) cum.push(cum[i - 1] + Math.hypot(half[i][0] - half[i - 1][0], half[i][1] - half[i - 1][1]));
+    // (r, y, nr, ny) tại độ dài cung u tính từ đường giữa mặt lốp (u < 0: nửa dưới, lật y)
+    const prof = (u) => {
+      const s = u < 0 ? -1 : 1, a = Math.min(Math.abs(u), cum[cum.length - 1]);
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < a) i++;
+      const t = (a - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
+      const p0 = half[i - 1], p1 = half[i];
+      const dr = p1[0] - p0[0], dy = p1[1] - p0[1], l = Math.hypot(dr, dy) || 1;
+      return [p0[0] + dr * t, s * (p0[1] + dy * t), dy / l, -s * dr / l];
+    };
+    const pt = (th, r, y) => [r * Math.cos(th), y, -r * Math.sin(th)];
+    const out = [];
+    const finish = (pos, uvs, cols) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+      g.computeVertexNormals();
+      g.userData.customUV = true;
+      out.push(g);
+      return g;
+    };
+
+    // --- Thân lốp ---
+    const full = half.slice().reverse().map(([r, y]) => new THREE.Vector2(r, -y)).concat(half.slice(1).map(([r, y]) => new THREE.Vector2(r, y)));
+    const lathe = new THREE.LatheGeometry(full, seg).toNonIndexed();
+    {
+      const p = lathe.attributes.position, uv = lathe.attributes.uv;
+      const uvs = [], cols = [];
+      const circ = 2 * Math.PI * R, plen = cum[cum.length - 1] * 2;
+      for (let i = 0; i < p.count; i++) {
+        const r = Math.hypot(p.getX(i), p.getZ(i));
+        uvs.push(uv.getX(i) * circ * k, uv.getY(i) * plen * k);
+        // đáy rãnh gai tối (đất lèn + khuất sáng), hông sáng hơn, sát vành hơi tối
+        const groove = smooth01(R - 0.75, R - 0.1, r);
+        const c = 0.92 - groove * 0.36 - (1 - smooth01(bead, bead + 0.5, r)) * 0.12;
+        cols.push(c, c, c);
+      }
+      finish(Array.from(p.array), uvs, cols);
+    }
+
+    // --- Gai chữ V đúc liền ---
+    const pitch = (Math.PI * 2) / lugs;
+    const uA = -H * 0.14, uB = cum[cum.length - 1] * 0.5;   // gối qua đường giữa ... vắt qua vai xuống nửa hông
+    const slope = 0.75;                                       // độ chéo gai (~37°)
+    const wTh = pitch * 0.48;
+    const NU = 7;
+    const pos = [], uvs = [], cols = [];
+    const tri = (a, b, c, ca, cb, cc, want) => {
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+      const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      const flip = ((uy * vz - uz * vy) * want[0] + (uz * vx - ux * vz) * want[1] + (ux * vy - uy * vx) * want[2]) < 0;
+      const vs = flip ? [a, c, b] : [a, b, c], cs = flip ? [ca, cc, cb] : [ca, cb, cc];
+      for (let q = 0; q < 3; q++) {
+        pos.push(...vs[q]);
+        const r = Math.hypot(vs[q][0], vs[q][2]);
+        uvs.push(Math.atan2(-vs[q][2], vs[q][0]) * r * k, vs[q][1] * k);
+        cols.push(cs[q], cs[q], cs[q]);
+      }
+    };
+    const quad = (a, b, c, d, ca, cb, cc, cd, want) => { tri(a, b, c, ca, cb, cc, want); tri(a, c, d, ca, cc, cd, want); };
+    for (let i = 0; i < lugs; i++) {
+      for (const side of [1, -1]) {
+        const th0 = (i + (side < 0 ? 0.5 : 0)) * pitch + (rnd() - 0.5) * 0.01;
+        const wear = 0.94 + rnd() * 0.06;   // gai còn sâu, mòn nhẹ không đều
+        const rows = [];
+        for (let j = 0; j <= NU; j++) {
+          const t = j / NU, u = uA + (uB - uA) * t;
+          const [r, y, nr, ny] = prof(side * u);
+          const th = th0 + slope * Math.max(0, u) / R;   // nửa dưới lật y -> hai nửa thành chữ V
+          const h = lugH * wear * (1 - 0.25 * smooth01(0.6, 1, t));
+          const w0 = wTh * (1.05 - 0.12 * t), w1 = w0 * 0.88;
+          const n3 = (tt) => [nr * Math.cos(tt), ny, -nr * Math.sin(tt)];
+          const base = (tt) => { const q = pt(tt, r, y), n = n3(tt); return [q[0] - n[0] * 0.04, q[1] - n[1] * 0.04, q[2] - n[2] * 0.04]; };
+          const top = (tt) => { const q = pt(tt, r, y), n = n3(tt); return [q[0] + n[0] * h, q[1] + n[1] * h, q[2] + n[2] * h]; };
+          rows.push({ bl: base(th - w0 / 2), br: base(th + w0 / 2), tl: top(th - w1 / 2), tr: top(th + w1 / 2), n: n3(th), th, y });
+        }
+        for (let j = 0; j < NU; j++) {
+          const A = rows[j], B = rows[j + 1];
+          const nm = [(A.n[0] + B.n[0]) / 2, (A.n[1] + B.n[1]) / 2, (A.n[2] + B.n[2]) / 2];
+          quad(A.tl, A.tr, B.tr, B.tl, 0.9, 0.9, 0.9, 0.9, nm);
+          quad(A.bl, A.tl, B.tl, B.bl, 0.62, 0.85, 0.85, 0.62, [Math.sin(A.th), 0, Math.cos(A.th)]);
+          quad(A.br, A.tr, B.tr, B.br, 0.62, 0.85, 0.85, 0.62, [-Math.sin(A.th), 0, -Math.cos(A.th)]);
+        }
+        // hai đầu gai
+        const F = rows[0], E = rows[NU];
+        const along = (a, b) => [b.tl[0] - a.tl[0], b.tl[1] - a.tl[1], b.tl[2] - a.tl[2]];
+        const dF = along(rows[1], F), dE = along(rows[NU - 1], E);
+        quad(F.bl, F.br, F.tr, F.tl, 0.62, 0.62, 0.85, 0.85, dF);
+        quad(E.bl, E.br, E.tr, E.tl, 0.62, 0.62, 0.85, 0.85, dE);
+      }
+    }
+    // Gờ tròn bảo vệ mép vành + đường gân hông (vòng nổi trên hông ngoài)
+    const yAtR = (rr) => {
+      for (let i = 1; i < half.length; i++) {
+        const a = half[i - 1], b = half[i];
+        if (a[0] >= rr && b[0] < rr) return a[1] + (b[1] - a[1]) * (a[0] - rr) / (a[0] - b[0]);
+      }
+      return H;
+    };
+    for (const [rr, w] of [[bead + 0.42, 0.12], [R - 0.62, 0.06]]) {
+      const y0 = yAtR(rr) - 0.02, y1 = y0 + 0.02 + w * 0.6;
+      for (let i = 0; i < seg; i++) {
+        const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2, am = (a0 + a1) / 2;
+        const er = [Math.cos(am), 0, -Math.sin(am)], ei = [-er[0], 0, -er[2]];
+        quad(pt(a0, rr - w, y1), pt(a1, rr - w, y1), pt(a1, rr + w, y1), pt(a0, rr + w, y1), 0.92, 0.92, 0.92, 0.92, [0, 1, 0]);
+        quad(pt(a0, rr - w, y0), pt(a1, rr - w, y0), pt(a1, rr - w, y1), pt(a0, rr - w, y1), 0.8, 0.8, 0.9, 0.9, ei);
+        quad(pt(a0, rr + w, y0), pt(a1, rr + w, y0), pt(a1, rr + w, y1), pt(a0, rr + w, y1), 0.8, 0.8, 0.9, 0.9, er);
+      }
+    }
+    finish(pos, uvs, cols);
+
+    // --- Hông ngoài: chữ nổi kiểu 7 nét (cỡ lốp, hãng, mã sản xuất) ---
+    const yAt = yAtR;
+    const lp = [], lu = [], lc = [];
+    const bar = (th, rC, tC, lenR, lenT) => {
+      const g = new THREE.BoxGeometry(lenR, 0.1, lenT).toNonIndexed();
+      g.rotateY(th);
+      const q = pt(th, rC, yAt(rC) + 0.02), e = [Math.sin(th) * tC, 0, Math.cos(th) * tC];
+      g.translate(q[0] + e[0], q[1], q[2] + e[2]);
+      const a = g.attributes.position;
+      for (let i = 0; i < a.count; i++) {
+        lp.push(a.getX(i), a.getY(i), a.getZ(i));
+        lu.push(a.getX(i) * k, a.getZ(i) * k);
+        lc.push(0.95, 0.95, 0.95);
+      }
+    };
+    const SEGS = [[0, 1, 0], [0, 0, 0], [0, -1, 0], [1, 0.5, 1], [1, -0.5, 1], [-1, 0.5, 1], [-1, -0.5, 1]];
+    const rL = (bead + R) / 2 + 0.1, cw = 0.28, chh = 0.46, sw = 0.07;
+    for (const [a0, n] of [[0.3, 13], [3.4, 9], [5.2, 5]]) {
+      for (let c = 0; c < n; c++) {
+        if (rnd() < 0.12) continue;   // khoảng trắng giữa các cụm chữ
+        const th = a0 + c * (cw * 1.35) / rL;
+        for (const [kind, o, vert] of SEGS) {
+          if (rnd() < 0.42) continue;
+          if (!vert) bar(th, rL + o * chh / 2, 0, sw, cw);
+          else bar(th, rL + o * chh / 2, kind * cw / 2, chh / 2, sw);
+        }
+      }
+    }
+    finish(lp, lu, lc);
+    return out;
   }
 
   function pushTri(arr, a, b, c, desired) {
@@ -1518,7 +2258,8 @@ const VehicleKit = (() => {
   }
 
   // Decal chữ số hiệu chiến thuật (nền trong suốt; sơn trắng đã bạc, ngả màu như ngoài chiến trường)
-  function createStencilDecal(text, w, h, color = 'rgba(214,210,194,0.72)') {
+  // worn = true: chữ sơn phai tróc lỗ chỗ, xước ngang, nửa dưới mờ bụi (xe đã qua chiến trường)
+  function createStencilDecal(text, w, h, color = 'rgba(214,210,194,0.72)', worn = false) {
     if (typeof document === 'undefined') return null;
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -1533,6 +2274,30 @@ const VehicleKit = (() => {
     // Khe hở khuôn stencil
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillRect(0, canvas.height * 0.47, canvas.width, canvas.height * 0.06);
+    if (worn) {
+      const rnd = mulberry32((Math.random() * 1e9) | 0);
+      const W = canvas.width, H = canvas.height;
+      for (let i = 0; i < 260; i++) {
+        ctx.fillStyle = `rgba(0,0,0,${0.3 + rnd() * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(rnd() * W, rnd() * H, 0.5 + rnd() * rnd() * 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      for (let i = 0; i < 7; i++) {
+        ctx.strokeStyle = `rgba(0,0,0,${0.5 + rnd() * 0.5})`;
+        ctx.lineWidth = 0.8 + rnd() * 2;
+        const y = rnd() * H, x = rnd() * W * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + W * (0.15 + rnd() * 0.4), y + (rnd() - 0.5) * H * 0.2);
+        ctx.stroke();
+      }
+      const g = ctx.createLinearGradient(0, H * 0.45, 0, H);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.55)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
     const tex = new THREE.CanvasTexture(canvas);
     const mat = new THREE.MeshStandardMaterial({
       map: tex, transparent: true, roughness: 0.9, metalness: 0,
@@ -1545,6 +2310,7 @@ const VehicleKit = (() => {
     UV_SCALE,
     getPaintTextures,
     createMaterials,
+    tireGeometry,
     applyBoxUV,
     mergeGeometries,
     PartBatch,

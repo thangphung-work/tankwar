@@ -485,6 +485,7 @@ class TacticalMapController {
     // 7. Cứ điểm bê tông
     if (T.propSet) T.propSet.drawOnMap(g, P, sc);
     if (T.strongholdSet) T.strongholdSet.drawOnMap(g, P, sc, 'tac');
+    if (T.landmarkSet) T.landmarkSet.drawOnMap(g, P, sc, true);
     // 8. Phủ tối ngoài lòng thung lũng (sườn vành núi xe không tới được) theo đúng hình dạng vùng chiến đấu
     BattleTerrain3D.shadeOutside(g, M, P, N);
     this.base = { canvas: c, map: M };

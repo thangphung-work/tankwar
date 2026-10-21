@@ -16,7 +16,7 @@
 (function () {
   if (typeof TankModelBuilder === 'undefined' || typeof VehicleKit === 'undefined') return;
 
-  const WHEEL_R = 5.4;
+  const WHEEL_R = 5.55;   // lốp 14.00R20 cỡ ~1.4 m; đỉnh lốp sau còn hở ~2 cm dưới sàn
   const TIRE_W = 3.6;
   const WHEEL_X = 9.0;
   const WHEEL_Y = WHEEL_R;
@@ -39,8 +39,19 @@
   function buildArbalest(builder) {
     const unit = builder.unit;
     const K = VehicleKit;
-    const M = K.createMaterials(unit.team);
+    // Xe đã qua chiến trường: bùn văng, muội, dầu loang, xước, lỗ mảnh đạn, gỉ chảy, lốp bám bùn, kính bụi
+    const M = K.createMaterials(unit.team, { battle: 1 });
     M.bore = new THREE.MeshBasicMaterial({ color: 0x050505 });
+    M.tire = M.tire || M.rubber;
+    M.soot = M.soot || M.dark;
+    M.wood = M.wood || M.canvasDark;
+    M.glassWindL = M.glassWindL || M.glass;
+    M.glassWindR = M.glassWindR || M.glass;
+    M.glassDusty = M.glassDusty || M.glass;
+    M.headLensL = M.headLensL || M.lens;
+    M.headLensR = M.headLensR || M.lens;
+    M.amberLens = M.amberLens || M.tailLens;
+    M.mirror = M.mirror || M.glass;
     const rnd = K.mulberry32((Math.random() * 1e9) | 0);
 
     const chassis = new THREE.Group();
@@ -48,7 +59,8 @@
     builder.chassisGroup = chassis;
     unit.group.add(chassis);
 
-    buildTruck(chassis, M, unit);
+    buildTruck(chassis, M, unit, rnd);
+    buildSpareWheel(chassis, M);
     const wheels = buildWheels(chassis, M);
     unit.wheelSet = wheels;
     const deploy = buildDeployGear(chassis, M);
@@ -115,7 +127,7 @@
   // ===========================================================================
   // XE TẢI: CABIN BỌC GIÁP, KHUNG GẦM, SÀN, KHOANG MÁY
   // ===========================================================================
-  function buildTruck(chassis, M, unit) {
+  function buildTruck(chassis, M, unit, rnd) {
     const hb = new VehicleKit.PartBatch();
     const P = M.paint, D = M.dark;
 
@@ -134,11 +146,20 @@
     // Lấp lòng hốc bánh (khối động cơ/khung phía trong)
     hb.box(14.0, 6.5, 12.0, D, [0, 8.8, ax]);
 
-    // Kính chắn gió 2 tấm nghiêng + gờ che nắng + gạt nước
+    // Kính chắn gió 2 tấm nghiêng (bên lái có vô-lăng sau kính, bên phụ dính vết đá văng) + gạt nước nằm nghỉ
+    // dọc mép dưới: gốc cần ở góc ngoài-dưới mỗi tấm, khớp với cung quét sạch vẽ trên texture kính
     const wsAngle = Math.atan2(36.8 - 33.5, CAB_ROOF - 15.0);
+    const wc = Math.cos(wsAngle), wsn = Math.sin(wsAngle);
     for (const s of [-1, 1]) {
-      hb.box(8.9, 7.0, 0.16, M.glass, [s * 4.85, 18.65, -35.42], [wsAngle, 0, 0]);
-      hb.box(0.12, 0.12, 4.2, D, [s * 4.6, 16.0, -36.4], [0, 0, s * 0.6]);
+      hb.box(8.9, 7.0, 0.16, s < 0 ? M.glassWindL : M.glassWindR, [s * 4.85, 18.65, -35.42], [wsAngle, 0, 0]);
+      // điểm trên mặt kính: lx dọc bề ngang tấm, ly dọc chiều cao, lz pháp tuyến (âm = ra phía trước)
+      const W = (lx, ly, lz) => [s * 4.85 + lx, 18.65 + ly * wc - lz * wsn, -35.42 + ly * wsn + lz * wc];
+      const tilt = s < 0 ? 0.03 : 0.1;   // cần bên phụ nghỉ lệch, không nằm sát mép
+      const piv = W(3.15, -3.85, -0.2);
+      hb.cyl(0.2, 0.22, 0.35, 8, D, piv, 'z', [wsAngle, 0, 0]);
+      hb.beam(piv, W(-0.1, -3.05 + tilt * 3, -0.32), 0.14, 0.1, D);
+      hb.box(4.6, 0.1, 0.16, M.rubber, W(-0.15, -3.12 + tilt * 3, -0.2), [wsAngle, 0, tilt]);
+      hb.box(4.4, 0.08, 0.1, D, W(-0.15, -3.05 + tilt * 3, -0.3), [wsAngle, 0, tilt]);
     }
     hb.box(0.6, 7.6, 0.3, P, [0, 18.65, -35.45], [wsAngle, 0, 0]);
     // Khung viền kính chắn gió
@@ -149,8 +170,8 @@
     // Cửa, kính cửa, tay nắm, bậc lên xuống, gương chiếu hậu
     for (const s of [-1, 1]) {
       const x = s * (HALF_W + 0.04);
-      hb.box(0.1, 6.0, 7.5, M.glass, [x, 18.0, -28.6]);
-      hb.box(0.1, 4.0, 3.0, M.glass, [x, 18.6, -22.4]);
+      hb.box(0.1, 6.0, 7.5, M.glassDusty, [x, 18.0, -28.6]);
+      hb.box(0.1, 4.0, 3.0, M.glassDusty, [x, 18.6, -22.4]);
       hb.box(0.08, 13.0, 0.12, D, [x, 15.2, -32.5]);
       hb.box(0.08, 13.0, 0.12, D, [x, 15.2, -23.9]);
       hb.box(0.08, 0.12, 8.6, D, [x, 21.7, -28.2]);
@@ -161,7 +182,7 @@
       hb.setTag('mirror' + (s < 0 ? 'L' : 'R'));
       hb.beam([s * (HALF_W - 0.2), 19.5, -34.8], [s * (HALF_W + 2.0), 19.0, -35.6], 0.25, 0.25, D);
       hb.box(0.5, 3.2, 1.8, D, [s * (HALF_W + 2.2), 18.2, -35.6]);
-      hb.box(0.1, 2.8, 1.5, M.glass, [s * (HALF_W + 2.48), 18.2, -35.6]);
+      hb.box(0.1, 2.8, 1.5, M.mirror, [s * (HALF_W + 2.48), 18.2, -35.6], [0, 0, s * 0.05]);
       hb.setTag(null);
     }
 
@@ -170,12 +191,29 @@
     for (let i = 0; i < 6; i++) hb.box(9.0, 0.25, 0.3, D, [0, 11.5 + i * 0.55, -37.25], [-0.15, 0, 0]);
     for (const s of [-1, 1]) {
       hb.setTag('lamp' + (s < 0 ? 'L' : 'R'));
+      // Hộp đèn: đèn pha tròn lõm trong chén đèn có vành thép, kính vòm khía rãnh (đèn trái nứt), xi-nhan hổ phách
+      // khía gân, đèn mờ hành quân ban đêm (khe hẹp); lồng thép bảo vệ có một thanh bị cong
       hb.box(3.0, 1.8, 0.6, D, [s * 8.3, 8.8, -38.7]);
-      hb.cyl(0.6, 0.6, 0.2, 14, M.lens, [s * 7.6, 8.9, -39.05], 'z');
-      hb.box(0.6, 0.45, 0.2, M.tailLens, [s * 9.3, 8.9, -39.05]);
-      hb.box(3.4, 0.18, 0.18, P, [s * 8.3, 10.0, -39.4]);
-      hb.box(0.18, 2.2, 0.18, P, [s * 6.6, 8.9, -39.4]);
-      hb.box(0.18, 2.2, 0.18, P, [s * 10.0, 8.9, -39.4]);
+      const lx = s * 7.6, ly = 8.9;
+      hb.cyl(0.78, 0.74, 0.4, 18, D, [lx, ly, -39.15], 'z');
+      hb.add(new THREE.TorusGeometry(0.68, 0.08, 6, 20), M.steel, [lx, ly, -39.36]);
+      hb.add(domeLens(0.64, 0.12), s < 0 ? M.headLensL : M.headLensR, [lx, ly, -39.3]);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.4;
+        hb.cyl(0.05, 0.05, 0.08, 6, M.steel, [lx + Math.cos(a) * 0.68, ly + Math.sin(a) * 0.68, -39.42], 'z');
+      }
+      hb.box(0.62, 0.42, 0.2, D, [s * 9.3, 9.28, -39.05]);
+      hb.box(0.52, 0.32, 0.08, M.amberLens, [s * 9.3, 9.28, -39.17]);
+      for (let i = 0; i < 3; i++) hb.box(0.5, 0.03, 0.04, M.amberLens, [s * 9.3, 9.18 + i * 0.1, -39.22]);
+      hb.box(0.62, 0.36, 0.22, D, [s * 9.3, 8.45, -39.06]);
+      for (let i = 0; i < 3; i++) hb.box(0.36, 0.035, 0.05, M.lens, [s * 9.3, 8.36 + i * 0.09, -39.18]);
+      hb.box(3.4, 0.18, 0.18, P, [s * 8.3, 10.0, -39.6]);
+      hb.box(0.18, 2.2, 0.18, P, [s * 6.6, 8.9, -39.6]);
+      hb.box(0.18, 2.2, 0.18, P, [s * 10.0, 8.9, -39.6]);
+      for (const bx of [-0.35, 0.35]) {
+        const bent = s < 0 && bx > 0;
+        hb.box(0.12, 2.0, 0.12, P, [lx + bx + (bent ? 0.12 : 0), 8.9, -39.62 + (bent ? 0.08 : 0)], [bent ? 0.12 : 0, 0, bent ? -0.14 : 0]);
+      }
       hb.setTag(null);
       hb.add(new THREE.TorusGeometry(0.75, 0.22, 6, 12, Math.PI * 1.3), M.steel, [s * 4.0, 6.4, -38.8], [0, Math.PI / 2, Math.PI * 0.85]);
     }
@@ -203,7 +241,10 @@
     }
     hb.cyl(0.75, 0.75, 11.5, 12, D, [9.6, 17.2, -12.0]);
     hb.cyl(0.95, 0.95, 5.0, 12, M.steel, [9.6, 16.0, -12.0], 'y', null, true);
-    hb.cyl(0.85, 0.75, 0.6, 12, D, [9.6, 23.2, -12.0]);
+    // Đầu ống xả đen muội, mũ chắn mưa vênh
+    hb.cyl(0.78, 0.78, 3.2, 12, M.soot, [9.6, 21.5, -12.0], 'y', null, true);
+    hb.cyl(0.85, 0.75, 0.6, 12, M.soot, [9.6, 23.2, -12.0]);
+    hb.box(1.5, 0.08, 1.3, M.soot, [9.75, 23.62, -11.9], [0.08, 0, -0.32]);
     hb.cyl(0.65, 0.65, 10.0, 12, P, [-9.7, 17.0, -12.4]);
     hb.box(1.6, 1.4, 1.6, P, [-9.7, 22.5, -12.4]);
     unit.exhaustLeft = new THREE.Object3D();
@@ -232,11 +273,23 @@
     }
     for (const s of [-1, 1]) {
       // Chắn bùn cụm bánh sau + tấm chắn bùn cao su
-      hb.box(4.6, 0.3, 25.0, P, [s * 9.0, 11.4, 18.2]);
+      if (s > 0) {
+        hb.box(4.6, 0.3, 25.0, P, [s * 9.0, 11.4, 18.2]);
+      } else {
+        // Bên trái: đuôi chắn bùn bị va quệt, gập xuống & vặn méo
+        hb.box(4.6, 0.3, 18.4, P, [s * 9.0, 11.4, 14.9]);
+        hb.box(4.6, 0.3, 6.7, P, [s * 9.0 - 0.08, 11.4 - 3.35 * Math.sin(0.14), 24.1 + 3.35 * Math.cos(0.14)], [0.14, 0, 0.06]);
+      }
       hb.setTag('flap' + (s < 0 ? 'L' : 'R'));
-      hb.box(3.8, 3.2, 0.15, M.rubber, [s * 9.0, 4.0, 30.3]);
+      if (s < 0) {
+        hb.box(3.8, 3.2, 0.15, M.rubber, [s * 9.0, 3.85, 31.0], [0.12, 0, 0]);
+      } else {
+        // Tấm phải rách mất một góc dưới, cong vênh do bùn đá
+        hb.box(3.8, 2.0, 0.15, M.rubber, [s * 9.0, 4.6, 30.3], [0.1, 0.06, 0.03]);
+        hb.box(2.2, 1.3, 0.15, M.rubber, [s * 9.0 - 0.75, 3.05, 30.45], [0.2, 0.08, 0.1]);
+      }
       hb.setTag(null);
-      hb.box(3.8, 3.2, 0.15, M.rubber, [s * 9.0, 4.0, -20.2]);
+      hb.box(3.8, 3.2, 0.15, M.rubber, [s * 9.0, 4.0, -20.2], [s < 0 ? 0.05 : -0.04, 0, 0]);
     }
 
     // Thùng nhiên liệu, hộp ắc quy/dụng cụ, tủ đồ giữa hai cụm bánh
@@ -253,15 +306,8 @@
       hb.setTag(null);
     }
 
-    // Trên sàn trước tháp: bánh dự phòng, thùng đạn, máy phát điện
-    hb.setTag('spare');
-    hb.cyl(WHEEL_R * 0.95, WHEEL_R * 0.95, TIRE_W * 0.9, 20, M.rubber, [-4.6, DECK_Y + TIRE_W * 0.45, -4.2], 'y');
-    hb.cyl(2.8, 2.8, TIRE_W, 16, M.paintDusty, [-4.6, DECK_Y + TIRE_W * 0.5, -4.2], 'y');
-    hb.setTag('ammoBoxes');
-    for (let i = 0; i < 3; i++) hb.box(2.6, 1.6, 3.6, P, [4.2, DECK_Y + 0.8 + (i === 2 ? 1.6 : 0), -7.4 + (i % 2) * 3.8]);
-    hb.setTag('generator');
-    hb.box(3.6, 2.6, 3.2, D, [6.4, DECK_Y + 1.3, 1.8]);
-    hb.setTag(null);
+    // Trên sàn trước tháp (bánh dự phòng dựng riêng ở buildSpareWheel): thùng đạn, máy phát, xẻng, cuộn bạt
+    buildDeckStowage(hb, M, rnd);
 
     // Đuôi xe: cản sau, đèn hậu, móc kéo, bậc lên tháp
     hb.box(21.4, 1.8, 1.2, P, [0, 9.6, 37.4]);
@@ -317,6 +363,203 @@
   }
 
   // ===========================================================================
+  // BÁNH DỰ PHÒNG: lốp thật (mặt cắt bo tròn, gai chữ V, chữ nổi hông lốp), vành thép lòng chảo có moay-ơ
+  // và đai ốc, nằm trên 2 thanh gỗ kê, kẹp bằng ty ren + tai hồng giữa moay-ơ và 1 dây chằng tăng đơ.
+  // Đặt hơi lệch (không thẳng tăm tắp) như được quăng lên & chằng vội ngoài thực địa.
+  // ===========================================================================
+  function buildSpareWheel(chassis, M) {
+    const g = new THREE.Group();
+    g.position.set(-4.7, DECK_Y, -4.4);
+    g.rotation.set(0.016, 0.42, -0.012);
+    chassis.add(g);
+    const b = new VehicleKit.PartBatch(DECK_Y);
+    b.setTag('spare');
+    const LUG = 0.55, R = WHEEL_R - LUG, H = TIRE_W * 0.47, BEAD = 2.55;
+    const yc = 0.95 + H;
+
+    // Lốp cùng kiểu 6 bánh xe (gai chữ V đúc liền, chữ nổi hông), nằm ngửa hông ngoài lên trên
+    for (const geo of tireGeos({ R, H, bead: BEAD, lugH: LUG, seed: 23 }, M)) b.add(geo, M.tire, [0, yc, 0], [0, 0.3, 0]);
+
+    // Vành thép: ống vành trong lốp + mặt vành lòng chảo (lathe từ mép ngoài vào tâm)
+    b.cyl(BEAD + 0.02, BEAD + 0.02, H * 1.6, 30, M.paintDusty, [0, yc, 0], 'y', null, true);
+    b.add(rimFaceGeo(BEAD, H), M.paintDusty, [0, yc, 0]);
+    // Moay-ơ, đai ốc bánh (thiếu 1 con — mất ngoài chiến trường chưa kịp thay), van bơm hơi
+    b.cyl(0.82, 0.92, 0.42, 14, M.steel, [0, yc + H * 0.6 + 0.2, 0]);
+    for (let i = 0; i < 10; i++) {
+      if (i === 3) continue;
+      const a = (i / 10) * Math.PI * 2 + 0.2;
+      b.cyl(0.18, 0.18, 0.3, 6, M.steel, [Math.cos(a) * 1.72, yc + H * 0.3 + 0.15, Math.sin(a) * 1.72]);
+    }
+    b.cyl(0.07, 0.07, 0.55, 6, M.steel, [2.15, yc + H * 0.55, 0.75], 'y', [0, 0, -0.45]);
+
+    // Kê trên 2 thanh gỗ, ty ren giữa moay-ơ + tấm kẹp + tai hồng
+    for (const x of [-2.6, 2.6]) b.box(1.0, 0.95, 9.6, M.wood, [x, 0.475, 0], [0, x > 0 ? 0.03 : -0.02, 0]);
+    const top = yc + H * 0.6 + 0.41;
+    b.strut([0, -0.1, 0], [0, top + 0.75, 0], 0.17, M.steel, 8);
+    b.box(3.4, 0.22, 0.8, M.paintDusty, [0, top + 0.11, 0], [0, 0.25, 0]);
+    b.cyl(0.32, 0.32, 0.3, 6, M.steel, [0, top + 0.37, 0]);
+    for (const s of [-1, 1]) b.box(0.7, 0.42, 0.1, M.steel, [s * 0.45, top + 0.45, 0], [0, 0.25, s * 0.2]);
+
+    // Dây chằng vải + khóa tăng đơ, hai đầu móc vào khoen trên sàn (chạy dọc trục z cục bộ, lệch khỏi moay-ơ)
+    const sx = 1.7;
+    const zo = Math.sqrt((R + LUG * 0.3) ** 2 - sx * sx), zr = Math.sqrt((BEAD + 0.2) ** 2 - sx * sx);
+    const path = [
+      [0.02, -6.3], [yc - 0.5, -zo - 0.62], [yc + 0.85, -zo - 0.5], [yc + H + 0.1, -zo + 0.35], [yc + H + 0.08, -zr],
+      [yc + H + 0.02, 0], [yc + H + 0.08, zr], [yc + H + 0.1, zo - 0.35], [yc + 0.85, zo + 0.5], [yc - 0.5, zo + 0.62], [0.02, 6.3]
+    ];
+    for (let i = 0; i < path.length - 1; i++) {
+      b.beam([sx, path[i][0], path[i][1]], [sx, path[i + 1][0], path[i + 1][1]], 0.75, 0.07, M.canvasDark);
+    }
+    b.box(0.95, 1.15, 0.5, M.steel, [sx, yc + 0.1, -zo - 0.68], [-0.08, 0, 0]);
+    b.box(1.1, 0.12, 0.22, M.steel, [sx, yc + 0.72, -zo - 0.9], [0.5, 0, 0]);
+    for (const z of [-6.4, 6.4]) b.add(new THREE.TorusGeometry(0.4, 0.12, 5, 10), M.steel, [sx, 0.2, z], [0, Math.PI / 2, 0]);
+
+    b.build(g);
+  }
+
+  // Lathe quanh trục đứng, UV chiếu từ trên xuống (đơn vị thế giới) -> vân sơn / bùn liền mạch trên mặt vành, lốp nằm
+  function latheTopUV(points, seg) {
+    // nắn mặt cắt thành đường cong mượt: không gãy góc > 35° -> shader mòn mép không vẽ răng cưa quanh vành
+    const smoothPts = new THREE.SplineCurve(points).getPoints(points.length * 3);
+    const geo = new THREE.LatheGeometry(smoothPts, seg).toNonIndexed();
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) * VehicleKit.UV_SCALE, pos.getZ(i) * VehicleKit.UV_SCALE + pos.getY(i) * 0.02);
+    geo.userData.customUV = true;
+    return geo;
+  }
+
+  // Kính đèn vòm (chỏm cầu) hướng -z, bán kính miệng r, độ phồng h; UV phẳng theo mặt kính (0..1 trên miệng đèn)
+  function domeLens(r, h) {
+    const R = (r * r + h * h) / (2 * h), th = Math.asin(r / R);
+    const g = new THREE.SphereGeometry(R, 20, 5, 0, Math.PI * 2, 0, th).toNonIndexed();
+    g.translate(0, -(R - h), 0);
+    g.rotateX(-Math.PI / 2);
+    const pos = g.attributes.position, uv = g.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, 0.5 - pos.getX(i) / (2 * r), 0.5 + pos.getY(i) / (2 * r));
+    return g;
+  }
+
+  // Mặt vành thép lòng chảo (trục Y, mặt ngoài hướng +Y): mép vành cuộn, thành chảo lõm, mặt bắt bu-lông, moay-ơ
+  function rimFaceGeo(bead, H) {
+    return latheTopUV([
+      [bead + 0.28, H * 0.74], [bead + 0.26, H * 0.9], [bead + 0.02, H * 0.95], [bead - 0.12, H * 0.8],
+      [bead - 0.34, H * 0.42], [bead - 0.56, H * 0.3], [1.45, H * 0.3], [1.33, H * 0.38], [1.2, H * 0.56], [0.9, H * 0.6]
+    ].map(([r, y]) => new THREE.Vector2(r, y)), 32);
+  }
+
+  // Lốp từ VehicleKit.tireGeometry; không có vật liệu lốp riêng (không có document) thì trụ cao su đơn giản
+  function tireGeos(opts, M) {
+    if (M.tire !== M.rubber) return VehicleKit.tireGeometry(opts);
+    return [new THREE.CylinderGeometry(opts.R + opts.lugH, opts.R + opts.lugH, opts.H * 2, 24)];
+  }
+
+  // Điểm cục bộ (lx, ly, lz) của vật đặt tại c, xoay rotY quanh trục đứng -> tọa độ cha
+  function rotPt(c, rotY, lx, ly, lz) {
+    const cs = Math.cos(rotY), sn = Math.sin(rotY);
+    return [c[0] + lx * cs + lz * sn, c[1] + ly, c[2] - lx * sn + lz * cs];
+  }
+
+  // Thùng đạn thép: thân dập gân, nắp chụp có khe, quai xách hai đầu, khóa gài mặt bên
+  function steelCrate(hb, M, c, rotY, w, h, d) {
+    const at = (x, y, z) => rotPt(c, rotY, x, y, z), r = [0, rotY, 0];
+    hb.box(w, h * 0.78, d, M.paint, at(0, h * 0.39, 0), r);
+    hb.box(w + 0.1, h * 0.2, d + 0.1, M.paint, at(0, h * 0.89, 0), r);
+    hb.box(w + 0.14, 0.06, d + 0.14, M.dark, at(0, h * 0.785, 0), r);
+    for (const z of [-d * 0.28, d * 0.28]) hb.box(w + 0.08, h * 0.6, 0.16, M.paint, at(0, h * 0.4, z), r);
+    for (const s of [-1, 1]) {
+      hb.box(w * 0.45, 0.12, 0.12, M.steel, at(0, h * 0.62, s * (d / 2 + 0.22)), r);
+      for (const x of [-w * 0.24, w * 0.24]) hb.box(0.14, 0.32, 0.26, M.dark, at(x, h * 0.62, s * (d / 2 + 0.1)), r);
+      hb.box(0.12, 0.42, 0.32, M.steel, at(w / 2 + 0.07, h * 0.76, s * d * 0.3), r);
+    }
+    // nhãn lô đạn giấy đã bạc, rách
+    hb.box(0.03, h * 0.3, d * 0.28, M.canvas, at(w / 2 + 0.02, h * 0.4, -d * 0.02), [0.04, rotY, 0]);
+  }
+
+  // Thùng gỗ: ván ghép (khe sẫm), nẹp đầu, quai dây thừng
+  function woodCrate(hb, M, c, rotY, w, h, d) {
+    const at = (x, y, z) => rotPt(c, rotY, x, y, z), r = [0, rotY, 0];
+    hb.box(w, h, d, M.wood, at(0, h / 2, 0), r);
+    for (const k of [-1, 0, 1]) {
+      hb.box(w + 0.03, 0.05, d + 0.03, M.dark, at(0, h / 2 + k * h * 0.28, 0), r);
+    }
+    hb.box(w + 0.03, h + 0.03, 0.05, M.dark, at(0, h / 2, 0), r);
+    for (const s of [-1, 1]) {
+      hb.box(w + 0.16, h + 0.08, 0.3, M.wood, at(0, h / 2, s * (d / 2 - 0.15)), r);
+      hb.add(new THREE.TorusGeometry(0.32, 0.07, 4, 10, Math.PI), M.canvas, at(0, h * 0.62, s * (d / 2 + 0.05)), r);
+    }
+  }
+
+  // Đồ trên sàn trước tháp: thùng đạn chồng lệch, máy phát điện khung ống, xẻng kẹp sàn, cuộn bạt trên nóc khoang máy
+  function buildDeckStowage(hb, M, rnd) {
+    const P = M.paint, D = M.dark;
+
+    hb.setTag('ammoBoxes');
+    steelCrate(hb, M, [4.3, DECK_Y, -8.0], 0.04, 2.6, 1.6, 3.6);
+    steelCrate(hb, M, [4.2, DECK_Y, -4.1], -0.05, 2.6, 1.6, 3.6);
+    woodCrate(hb, M, [4.45, DECK_Y + 1.62, -6.3], 0.17 + rnd() * 0.06, 2.4, 1.25, 3.3);
+
+    // Máy phát điện dã chiến: khung ống, động cơ, đầu phát, bình xăng trên nóc, ống xả muội, bảng điện
+    hb.setTag('generator');
+    const gc = [6.5, DECK_Y, 1.8], gr = -0.08;
+    const G = (x, y, z) => rotPt(gc, gr, x, y, z), grot = [0, gr, 0];
+    const fx = 1.6, fz = 1.45, fy = 2.45;
+    for (const x of [-fx, fx]) {
+      hb.box(0.35, 0.25, fz * 2 + 0.3, D, G(x, 0.13, 0), grot);
+      for (const z of [-fz, fz]) hb.strut(G(x, 0.25, z), G(x, fy, z), 0.13, P, 6);
+      hb.strut(G(x, fy, -fz), G(x, fy, fz), 0.13, P, 6);
+    }
+    for (const z of [-fz, fz]) hb.strut(G(-fx, fy, z), G(fx, fy, z), 0.13, P, 6);
+    hb.box(1.8, 1.2, 1.6, D, G(-0.45, 0.85, 0.2), grot);
+    for (let i = 0; i < 4; i++) hb.box(1.4, 0.08, 0.1, D, G(-0.45, 1.5, -0.4 + i * 0.38), grot);
+    hb.cyl(0.62, 0.62, 1.2, 14, D, G(0.95, 0.85, 0.2), 'x', grot);
+    hb.box(2.9, 0.62, 2.2, P, G(0, 2.02, 0), grot);
+    hb.cyl(0.24, 0.26, 0.2, 10, M.steel, G(0.85, 2.42, -0.55));
+    hb.cyl(0.3, 0.3, 1.4, 10, M.soot, G(-1.15, 1.45, -0.3), 'z', grot);
+    hb.cyl(0.13, 0.13, 0.5, 6, M.soot, G(-1.15, 1.45, -1.15), 'z', grot);
+    hb.box(0.14, 0.75, 1.0, D, G(fx + 0.05, 1.15, -0.75), grot);
+    for (const z of [-1.0, -0.6]) hb.cyl(0.07, 0.07, 0.06, 8, M.tailLens, G(fx + 0.13, 1.35, z), 'x', grot);
+    hb.cyl(0.13, 0.13, 0.2, 8, M.steel, G(fx + 0.15, 0.95, -0.5), 'x', grot);
+    // Cáp điện võng xuống sàn rồi bò về phía tháp
+    const cable = [G(fx + 0.2, 0.95, -0.5), G(fx + 1.1, 0.5, -0.1), G(fx + 1.1, 0.1, 0.9), G(fx + 0.4, 0.1, 2.4), G(fx - 0.6, 0.1, 3.4)];
+    for (let i = 0; i < cable.length - 1; i++) hb.strut(cable[i], cable[i + 1], 0.09, M.rubber, 5);
+
+    // Xẻng công binh kẹp nằm trên sàn
+    hb.setTag('tool');
+    const sc = [8.65, DECK_Y, -6.4], sr = 0.07;
+    const Sh = (x, y, z) => rotPt(sc, sr, x, y, z);
+    hb.strut(Sh(0, 0.3, -3.6), Sh(0, 0.3, 1.5), 0.16, M.wood, 6);
+    hb.add(new THREE.TorusGeometry(0.42, 0.09, 4, 10), M.wood, Sh(0, 0.3, -4.0), [Math.PI / 2, sr, 0, 'YXZ']);
+    hb.cyl(0.22, 0.26, 0.9, 8, M.paintDusty, Sh(0, 0.3, 1.85), 'z', [0, sr, 0]);
+    hb.box(1.55, 0.1, 1.9, M.paintDusty, Sh(0, 0.2, 3.2), [0.06, sr, 0.04]);
+    for (const z of [-2.6, 0.4]) hb.box(0.85, 0.5, 0.3, M.steel, Sh(0, 0.25, z), [0, sr, 0]);
+
+    // Cuộn bạt chằng trên nóc khoang máy: cuộn phồng xẹp không đều, thắt lại ở chỗ dây, đầu cuộn lộ lớp vải
+    // cuộn tròn, một mép bạt thõng xuống
+    hb.setTag('tarpRoll');
+    const ty = 17.1, tz = -12.9, x0 = -6.2, x1 = 6.2;
+    const cuts = [x0, -4.6, -2.4, 0.3, 2.8, 4.7, x1];
+    const straps = [-4.6, 0.3, 4.7];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const a = cuts[i], c = cuts[i + 1];
+      const ra = straps.includes(a) ? 0.84 : 0.88 + rnd() * 0.12, rc = straps.includes(c) ? 0.84 : 0.88 + rnd() * 0.12;
+      const rm = Math.max(ra, rc) + 0.02 + rnd() * 0.08;
+      const mid = (a + c) / 2, dy = rnd() * 0.08, dz = (rnd() - 0.5) * 0.18;
+      hb.cyl(rm, ra, mid - a, 12, M.canvasDark, [(a + mid) / 2, ty + 0.9 + dy, tz + dz], 'x');
+      hb.cyl(rc, rm, c - mid, 12, M.canvasDark, [(mid + c) / 2, ty + 0.9 + dy, tz + dz], 'x');
+    }
+    for (const [x, sx] of [[x0, -1], [x1, 1]]) {
+      for (const r of [0.66, 0.4]) hb.cyl(r, r, 0.12, 12, M.canvas, [x + sx * 0.02, ty + 0.9, tz], 'x');
+    }
+    hb.box(2.4, 0.06, 1.3, M.canvasDark, [1.6, ty + 0.6, tz + 1.15], [-1.25, 0.04, 0.05]);
+    hb.box(2.3, 0.06, 0.9, M.canvasDark, [1.62, ty - 0.05, tz + 1.75], [-1.5, 0.06, 0.03]);
+    for (const x of straps) {
+      hb.add(new THREE.TorusGeometry(0.88, 0.08, 4, 14), M.dark, [x, ty + 0.9, tz], [0, Math.PI / 2, 0]);
+      hb.box(0.28, 0.32, 0.36, M.steel, [x, ty + 1.6, tz - 0.55], [0.6, 0, 0]);
+    }
+    hb.setTag(null);
+  }
+
+  // ===========================================================================
   // BÁNH LỐP ĐỊA HÌNH 6x6
   // ===========================================================================
   function buildWheels(chassis, M) {
@@ -324,30 +567,24 @@
     for (const a of AXLES) for (const s of [-1, 1]) positions.push({ x: s * WHEEL_X, y: WHEEL_Y, z: a.z, steer: a.steer });
     return new VehicleKit.WheelSet(chassis, (b) => {
       const hw = TIRE_W / 2;
-      // Lốp: thân lốp + hông lốp bo tròn + gai chữ V
-      b.cyl(WHEEL_R - 0.35, WHEEL_R - 0.35, TIRE_W, 28, M.rubber, [0, 0, 0], 'x');
-      for (const sx of [-1, 1]) {
-        b.add(new THREE.TorusGeometry(WHEEL_R - 0.85, 0.55, 8, 28), M.rubber, [sx * (hw - 0.55), 0, 0], [0, Math.PI / 2, 0]);
+      // Lốp: thân lốp mặt cắt thật + gai chữ V đúc liền vắt qua vai + chữ nổi hông ngoài (trục Y xoay thành X)
+      for (const geo of tireGeos({ R: WHEEL_R - 0.55, H: hw, bead: 2.6, lugH: 0.55, seed: 11 }, M)) {
+        geo.rotateZ(-Math.PI / 2);
+        b.add(geo, M.tire, [0, 0, 0]);
       }
-      const lugs = 22;
-      for (let i = 0; i < lugs; i++) {
-        const a = (i / lugs) * Math.PI * 2;
-        for (const sx of [-1, 1]) {
-          b.box(1.5, 0.55, 0.9, M.rubber,
-            [sx * 0.85, Math.cos(a) * (WHEEL_R - 0.25), Math.sin(a) * (WHEEL_R - 0.25)],
-            [a, sx * 0.45, 0]);
-        }
-      }
-      // Vành thép, moay-ơ, bu-lông, van bơm hơi trung tâm
-      b.cyl(3.1, 3.1, TIRE_W + 0.06, 20, M.paintDusty, [0, 0, 0], 'x');
-      b.cyl(2.5, 2.5, 0.3, 18, M.dark, [hw + 0.02, 0, 0], 'x');
-      b.cyl(1.35, 1.5, 0.9, 14, M.steel, [hw + 0.3, 0, 0], 'x');
+      // Vành lòng chảo (ống vành + mặt vành lõm, cùng mặt cắt bánh dự phòng), moay-ơ, đai ốc trên đáy chảo,
+      // nắp van bơm hơi trung tâm + ống dẫn hơi ra mép vành
+      b.cyl(2.62, 2.62, TIRE_W * 0.82, 24, M.paintDusty, [0, 0, 0], 'x', null, true);
+      const face = rimFaceGeo(2.6, hw);
+      face.rotateZ(-Math.PI / 2);
+      b.add(face, M.paintDusty, [0, 0, 0]);
+      b.cyl(1.05, 1.15, 1.5, 14, M.steel, [hw - 0.05, 0, 0], 'x');
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * Math.PI * 2;
-        b.cyl(0.14, 0.14, 0.4, 6, M.steel, [hw + 0.25, Math.cos(a) * 1.9, Math.sin(a) * 1.9], 'x');
+        b.cyl(0.17, 0.17, 0.3, 6, M.steel, [hw * 0.3 + 0.15, Math.cos(a) * 1.72, Math.sin(a) * 1.72], 'x');
       }
       b.cyl(0.45, 0.45, 0.8, 10, M.paintDusty, [hw + 0.8, 0, 0], 'x');
-      b.beam([hw + 0.5, 0.3, 0], [hw + 0.1, 2.6, 0.4], 0.16, 0.16, M.dark);
+      b.beam([hw + 0.6, 0.3, 0], [hw * 0.92, 2.45, 0.45], 0.16, 0.16, M.dark);
     }, positions, WHEEL_R);
   }
 
@@ -618,7 +855,7 @@
 
     const tacNumber = `${7 + Math.floor(rnd() * 3)}${1 + Math.floor(rnd() * 4)}${1 + Math.floor(rnd() * 9)}`;
     for (const s of [-1, 1]) {
-      const decal = VehicleKit.createStencilDecal(tacNumber, 4.2, 1.6);
+      const decal = VehicleKit.createStencilDecal(tacNumber, 4.2, 1.6, undefined, true);
       if (decal) {
         decal.position.set(s * 11.32, 3.0, 2.0);
         decal.rotation.y = s * Math.PI / 2;
@@ -673,12 +910,35 @@
     section(1.08, 1.18, -52.0, -66.0);
     for (const z of [-18.2, -44.0, -60.0]) gb.cyl(1.5, 1.5, 0.6, 20, M.dark, [0, 0, z], 'z');
 
-    // Hãm lùi đầu nòng 2 tầng: khối thép với cửa xả khí hai bên
-    gb.box(3.6, 2.7, 6.0, M.paintDusty, [0, 0, -69.0]);
-    for (const z of [-67.4, -70.6]) {
-      for (const s of [-1, 1]) gb.box(0.2, 1.9, 1.8, M.bore, [s * 1.82, 0, z]);
+    // Hãm lùi đầu nòng 2 tầng kiểu lựu pháo 155 hiện đại: ống ren bắt vào nòng + vòng hãm, thân sau, 2 vách chắn
+    // dày (vách trước làm mặt đầu nòng) có lỗ cho đạn đi qua; giữa các vách chỉ có cầu nối trên / dưới, hai bên để
+    // hở thành cửa xả -> nhìn ngang thấy xuyên qua, khí phụt ngang. Vách & mép cửa xả hun đen muội, thân sơn cháy bạc.
+    const baffle = (w, h, r, hole, t, z, mat) => {
+      const sh = new THREE.Shape(), x = w / 2 - 0.06, y = h / 2 - 0.06;
+      sh.moveTo(-x + r, -y); sh.lineTo(x - r, -y); sh.quadraticCurveTo(x, -y, x, -y + r);
+      sh.lineTo(x, y - r); sh.quadraticCurveTo(x, y, x - r, y); sh.lineTo(-x + r, y);
+      sh.quadraticCurveTo(-x, y, -x, y - r); sh.lineTo(-x, -y + r); sh.quadraticCurveTo(-x, -y, -x + r, -y);
+      const hp = new THREE.Path();
+      hp.absarc(0, 0, hole, 0, Math.PI * 2, true);
+      sh.holes.push(hp);
+      const g = new THREE.ExtrudeGeometry(sh, { depth: t - 0.12, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 1, curveSegments: 8 });
+      g.translate(0, 0, -(t - 0.12) / 2);
+      gb.add(g, mat, [0, 0, z]);
+    };
+    gb.cyl(1.32, 1.32, 1.3, 22, M.paintDusty, [0, 0, -66.55], 'z');
+    gb.cyl(1.45, 1.45, 0.32, 22, M.dark, [0, 0, -66.1], 'z');
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.3;
+      gb.box(0.18, 0.3, 0.2, M.steel, [Math.cos(a) * 1.5, Math.sin(a) * 1.5, -66.1], [0, 0, a]);
     }
-    gb.cyl(1.0, 1.0, 0.1, 18, M.bore, [0, 0, -72.02], 'z');
+    baffle(3.3, 2.6, 0.6, 1.0, 1.0, -67.6, M.paintDusty);            // thân sau (nối ống ren)
+    baffle(3.9, 2.6, 0.55, 0.74, 0.62, -69.55, M.soot);              // vách giữa
+    baffle(3.9, 2.6, 0.55, 0.74, 0.9, -71.6, M.soot);                // vách trước = mặt đầu nòng
+    for (const sy of [-1, 1]) {
+      gb.box(2.1, 0.5, 4.2, M.paintDusty, [0, sy * 1.05, -69.7]);    // cầu nối trên / dưới
+      gb.box(2.15, 0.06, 0.6, M.soot, [0, sy * 1.31, -68.4]);        // muội tràn qua mép cửa xả
+    }
+    gb.cyl(0.95, 0.95, 0.04, 18, M.bore, [0, 0, -67.23], 'z');       // lòng nòng nhìn qua lỗ vách
     gb.build(barrel);
 
     unit.muzzleTipLocal = new THREE.Vector3(0, 0, -72.2);

@@ -47,6 +47,9 @@ class SupplyManager {
       const angle = Math.random() * Math.PI * 2;
       dropX = zoneCenterX + Math.cos(angle) * r;
       dropZ = zoneCenterZ + Math.sin(angle) * r;
+      // không thả dù vào khu căn cứ vùng cấm bắn giữa 3 cứ điểm
+      const LS = this.game.terrain && this.game.terrain.landmarkSet;
+      if (LS && LS.outside) [dropX, dropZ] = LS.outside(dropX, dropZ, 60);
       this.broadcast({ e: 'drop', x: Math.round(dropX * 10) / 10, z: Math.round(dropZ * 10) / 10 });
     }
     const groundY = this.game.terrain.getElevationAt(dropX, dropZ);
@@ -267,6 +270,9 @@ class SupplyManager {
 
     crateLocations.forEach((loc0, idx) => {
       const loc = Object.assign({}, loc0, { x: loc0.x * K, z: loc0.z * K });
+      // hòm rơi vào khu căn cứ (vùng cấm bắn) -> dời ra ngoài hàng rào
+      const LS = this.game.terrain && this.game.terrain.landmarkSet;
+      if (LS && LS.outside) [loc.x, loc.z] = LS.outside(loc.x, loc.z, 40);
       const groundY = this.game.terrain.getElevationAt(loc.x, loc.z);
       const crateMesh = this.createSupplyCrateMesh(loc.type);
       crateMesh.position.set(loc.x, groundY + 7, loc.z);

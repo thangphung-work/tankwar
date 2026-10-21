@@ -5,14 +5,14 @@
  *
  * Kết quả: lưới độ cao + mặt phủ (đường / nước / bê tông), mạng đường A* bám địa hình (có ổ gà, gợn sóng),
  * sông hồ, vị trí boong-ke, nhà cửa, cây, bụi, đá, cầu và mặt trời theo giờ trong ngày.
- * Quy ước tọa độ giống game: bản đồ SIZE x SIZE (5400) tâm tại gốc, phe XANH ở z dương, phe ĐỎ ở z âm.
+ * Quy ước tọa độ giống game: bản đồ SIZE x SIZE (8100) tâm tại gốc, phe XANH ở z dương, phe ĐỎ ở z âm.
  */
 const MapGen = (() => {
-  const SIZE = 5400;
-  const RES = 336;                 // số ô lưới mỗi cạnh (~16 đơn vị / ô)
+  const SIZE = 8100;
+  const RES = 504;                 // số ô lưới mỗi cạnh (~16 đơn vị / ô)
   const HALF = SIZE / 2;
   const CELL = SIZE / RES;
-  const OUTER_EXT = 12000;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
+  const OUTER_EXT = 13200;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
   // Bố cục gốc thiết kế cho bản đồ 3600: K giãn khoảng cách giữa các điểm chiến thuật, AREA nhân số lượng vật thể
   // (giữ mật độ cây / đá / làng như cũ); kích thước từng vật thể, đồi, đường... giữ nguyên
   const K = SIZE / 3600, AREA = K * K;
@@ -22,13 +22,28 @@ const MapGen = (() => {
   // Điểm chiến thuật cố định của luật chơi
   const CAPTURE = [{ x: -800 * K, z: 0 }, { x: 0, z: 0 }, { x: 800 * K, z: 0 }];
   const SPAWN = { blue: { z0: 800 * K, z1: 1180 * K }, red: { z0: -1180 * K, z1: -800 * K }, halfX: 430 * K };
-  // Bố cục "3 cứ điểm trên 3 đồi" (hình tam giác): A, C mở cửa theo trục ngang (x), B mở theo trục dọc (z).
+  // Bố cục "3 cứ điểm trên 3 đồi" (hình tam giác): trục xuyên qua của 3 khoang lệch nhau đúng 120° (B dọc trục z,
+  // A -30°, C 210°) -> 3 trục gặp nhau giữa tam giác, miệng +1 của cả 3 hầm cùng nhìn vào khu công trình ở giữa.
   // angle: hướng trục xuyên qua của khoang (cos -> x, sin -> z); hill: độ cao đỉnh đồi so với nền xung quanh
   const STRONGHOLD_SITES = [
-    { id: 'A', x: -620 * K, z: 220 * K, angle: 0, hill: 72 },
-    { id: 'B', x: 0, z: -340 * K, angle: Math.PI / 2, hill: 96 },
-    { id: 'C', x: 620 * K, z: 220 * K, angle: Math.PI, hill: 58 }
+    // giãn rộng (A, C lùi về phía xanh, B lùi về phía đỏ, chân đồi vẫn ngoài khu xuất kích) chừa chỗ cho công trình ở giữa
+    { id: 'A', x: -620 * K, z: 330 * K, angle: -Math.PI / 6, hill: 72 },
+    { id: 'B', x: 0, z: -400 * K, angle: Math.PI / 2, hill: 96 },
+    { id: 'C', x: 620 * K, z: 330 * K, angle: Math.PI * 7 / 6, hill: 58 }
   ];
+  // CÔNG TRÌNH BỐI CẢNH lớn ở giữa 3 cứ điểm (landmarks.js dựng hình): mỗi bản đồ 1 công trình, loại chọn theo seed —
+  // hầm phóng (silo) tên lửa hạt nhân / hầm nghiên cứu vũ khí sinh học / trận địa tên lửa phòng không.
+  // Đặt tại trọng tâm tam giác A B C; mặt trước nhìn về cứ điểm B. angle: hướng mặt trước (cos -> x, sin -> z);
+  // hu / hv: nửa dài mặt bằng san nền theo trục trước-sau / ngang
+  // (8 đơn vị = 1 m: căn cứ hầm phóng 80 x 130 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
+  const LANDMARK_SITE = {
+    x: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.x, 0) / 3),
+    z: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.z, 0) / 3),
+    angle: -Math.PI / 2
+  };
+  const LANDMARK_KINDS = { nuke: { hu: 320, hv: 520, back: 60 }, bio: { hu: 300, hv: 470, back: 50 }, sam: { hu: 320, hv: 520, back: 60 } };
+  let landmarkKind = null;          // null = theo seed; đặt cố định để thử (setLandmark)
+  const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
   let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
 
   // ---------------------------------------------------------------------------
@@ -117,6 +132,17 @@ const MapGen = (() => {
     const SH = layout === 'STRONGHOLDS';
     const CAP = SH ? STRONGHOLD_SITES.map(c => ({ x: c.x, z: c.z })) : CAPTURE;
     const keyR = SH ? 345 : 110;   // bán kính cấm đặt cây / nhà / đá quanh cứ điểm
+    // Công trình bối cảnh (chỉ bố cục 3 cứ điểm): G (cốt san nền) tính sau khi khắc đường
+    const lmKind = LANDMARK_KINDS[landmarkKind] ? landmarkKind : ['nuke', 'bio', 'sam'][Math.floor(mulberry32((seed ^ 0x1a2d9c3) >>> 0)() * 3)];
+    // back: lùi tâm công trình ra sau (xa cứ điểm B mà mặt trước nhìn về) cho mặt bằng lớn không lấn chân đồi B
+    const lmFx = Math.cos(LANDMARK_SITE.angle), lmFz = Math.sin(LANDMARK_SITE.angle), lmBack = LANDMARK_KINDS[lmKind].back || 0;
+    const landmarks = SH ? [landmarkDetail(Object.assign({ kind: lmKind }, LANDMARK_SITE, LANDMARK_KINDS[lmKind],
+      { x: LANDMARK_SITE.x - lmFx * lmBack, z: LANDMARK_SITE.z - lmFz * lmBack, fx: lmFx, fz: lmFz }))] : [];
+    // khoảng cách ra ngoài mặt bằng san nền (hình chữ nhật xoay, 0 = bên trong)
+    const lmOut = (L, x, z) => {
+      const dx = x - L.x, dz = z - L.z;
+      return Math.hypot(Math.max(0, Math.abs(dx * L.fx + dz * L.fz) - L.hu), Math.max(0, Math.abs(-dx * L.fz + dz * L.fx) - L.hv));
+    };
     const rng = mulberry32(seed ^ hashStr(type));
     const noise = makeNoise(rng);
     const noise2 = makeNoise(rng);
@@ -205,6 +231,7 @@ const MapGen = (() => {
     // hướng đó; hướng trống thì núi được lấn vào tới ~0.56 nửa bản đồ
     const KEYS = [];
     for (const c of STRONGHOLD_SITES) KEYS.push([c.x, c.z, 820]);
+    for (const L of landmarks) KEYS.push([L.x, L.z, Math.hypot(L.hu, L.hv) + LM_BLEND + 200]);
     for (const zc of [(SPAWN.blue.z0 + SPAWN.blue.z1) / 2, (SPAWN.red.z0 + SPAWN.red.z1) / 2])
       for (const xc of [-SPAWN.halfX, 0, SPAWN.halfX]) KEYS.push([xc, zc, 360]);
     const KM = new Float32Array(720);
@@ -342,7 +369,8 @@ const MapGen = (() => {
             if (d0 > 820) continue;
             const ang = Math.atan2(dz, dx);
             const d = d0 * (1 + 0.16 * Math.sin(ang * 3 + c.G) + 0.1 * noise(Math.cos(ang) * 1.7 + c.x * 0.01, Math.sin(ang) * 1.7));
-            const k = 1 - smooth(290, 680, d);
+            // sườn đồi phía giáp mặt bằng công trình ở giữa thoải dần ra (không lấn vào mặt bằng)
+            const k = (1 - smooth(290, 680, d)) * (landmarks.length ? smooth(10, 220, lmOut(landmarks[0], x, z)) : 1);
             if (k > 0) heights[i] = lerp(heights[i], c.G + (k < 0.98 ? noise(x * 0.02, z * 0.02) * 2.5 * (1 - k) : 0), k);
           }
         }
@@ -509,6 +537,10 @@ const MapGen = (() => {
       const waterCell = new Uint8Array((G + 1) * (G + 1));
       if (river) for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) if (isWater(-HALF + i * gc, -HALF + j * gc)) waterCell[j * (G + 1) + i] = 1;
       const toCell = (x, z) => [Math.round((x + HALF) / gc), Math.round((z + HALF) / gc)];
+      const lmCell = new Uint8Array((G + 1) * (G + 1));
+      if (landmarks.length) for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+        if (landmarks.some(L => lmOut(L, -HALF + i * gc, -HALF + j * gc) < 64)) lmCell[j * (G + 1) + i] = 1;
+      }
       const route = (a, b, w, kind, noReuse = false) => {
         const [sx, sz] = toCell(a.x, a.z), [ex, ez] = toCell(b.x, b.z);
         const W = G + 1, idx = (i, j) => j * W + i;
@@ -529,6 +561,7 @@ const MapGen = (() => {
             const ni = ci + di, nj = cj + dj;
             if (ni < 2 || nj < 2 || ni > G - 2 || nj > G - 2) continue;
             const n = idx(ni, nj);
+            if (lmCell[n]) continue;               // mặt bằng công trình: đường đi vòng
             const len = Math.hypot(di, dj) * gc;
             const slope = Math.abs(gh[n] - gh[cur]) / len;
             let c = len * (1 + slope * slope * 260 + slope * 8);
@@ -566,6 +599,19 @@ const MapGen = (() => {
         route(B0, mouth(cC, -1), 28, B.roadKind);
         route(R0, mouth(cA, -1), 26, B.roadKind);
         route(R0, mouth(cC, -1), 26, B.roadKind);
+        // đường nhánh từ ngay mép khu đất (trước cổng) nhập vào mạng đường (đi chung đường cũ -> nhập vào tuyến gần nhất);
+        // đánh dấu access: không bị đẩy / cắt khi né mặt bằng công trình -> nối liền tới cổng
+        for (const L of landmarks) {
+          // đoạn thẳng từ mép khu đất ra khỏi vùng cấm đường (A* không xuất phát được từ trong vùng cấm), rồi tìm đường
+          const D = 110, a = { x: L.x + L.fx * L.hu, z: L.z + L.fz * L.hu }, b = { x: L.x + L.fx * (L.hu + D), z: L.z + L.fz * (L.hu + D) };
+          const pts = [];
+          for (let t = 0; t <= D; t += 14) pts.push([a.x + L.fx * t, a.z + L.fz * t]);
+          pts.push([b.x, b.z]);
+          const n0 = roads.length;
+          roads.push({ pts, width: 24, kind: B.roadKind });
+          route(b, mouth(cB, 1), 24, B.roadKind);
+          for (let i = n0; i < roads.length; i++) roads[i].access = true;
+        }
       } else {
       route(B0, CAPTURE[1], 36, B.roadKind);
       route(R0, CAPTURE[1], 36, B.roadKind);
@@ -645,6 +691,39 @@ const MapGen = (() => {
       }
     }
 
+    // 3b. Đường không chạy xuyên mặt bằng công trình bối cảnh. Đường tìm theo A* đã đi vòng; đoạn bo cong lấn vào sát
+    //     mặt bằng được đẩy ra ngoài mép (đường vẫn liền mạch). Lưới phố đô thị: cắt bỏ đoạn nằm trong (phố cụt tại rào)
+    if (landmarks.length && type !== 'URBAN') {
+      for (const rd of roads) {
+        if (rd.access) continue;
+        const m = rd.width / 2 + 14;
+        for (const p of rd.pts) for (const L of landmarks) {
+          const dx = p[0] - L.x, dz = p[1] - L.z, f = dx * L.fx + dz * L.fz, r = -dx * L.fz + dz * L.fx;
+          const pf = L.hu + m - Math.abs(f), pr = L.hv + m - Math.abs(r);
+          if (pf <= 0 || pr <= 0) continue;
+          let nf = f, nr = r;
+          if (pf < pr) nf = Math.sign(f || 1) * (L.hu + m); else nr = Math.sign(r || 1) * (L.hv + m);
+          p[0] = L.x + L.fx * nf - L.fz * nr; p[1] = L.z + L.fz * nf + L.fx * nr;
+        }
+      }
+    }
+    if (landmarks.length && type === 'URBAN') {
+      const keep = [];
+      for (const rd of roads) {
+        let run = [];
+        const flush = () => { if (run.length >= 2) keep.push(Object.assign({}, rd, { pts: run })); run = []; };
+        for (const p of rd.pts) {
+          if (landmarks.some(L => lmOut(L, p[0], p[1]) < rd.width / 2 + 6)) flush(); else run.push(p);
+        }
+        flush();
+      }
+      if (keep.length !== roads.length || keep.some((r, i) => r.pts !== roads[i].pts)) {
+        const ug = roads.urbanGrid;
+        roads.length = 0; roads.push(...keep);
+        if (ug) roads.urbanGrid = ug;
+      }
+    }
+
     // 4. KHẮC ĐƯỜNG VÀO ĐỊA HÌNH: nền đường phẳng có độ dốc thoải + gồ ghề (ổ gà, gợn sóng, lún vệt bánh)
     const roadHash = new Map();
     const HB = 64;
@@ -705,6 +784,26 @@ const MapGen = (() => {
         if (nr.d < hw) surface[i] = 1;
       }
     }
+    // CÔNG TRÌNH BỐI CẢNH: san phẳng mặt bằng (cốt G = trung bình địa hình trong mặt bằng, đào chỗ cao đắp chỗ thấp,
+    // ta-luy thoải ra ngoài), rồi đắp ụ đất phủ hầm sinh học / kè đất quanh bệ phóng phòng không
+    for (const L of landmarks) {
+      let sum = 0, n = 0;
+      for (let a = -L.hu; a <= L.hu; a += 24) for (let b = -L.hv; b <= L.hv; b += 24) {
+        sum += H(L.x + L.fx * a - L.fz * b, L.z + L.fz * a + L.fx * b); n++;
+      }
+      L.G = Math.round(sum / n * 10) / 10;
+      const Rr = Math.hypot(L.hu, L.hv) + LM_BLEND + 90;
+      const i0 = Math.max(0, Math.floor((L.x - Rr + HALF) / CELL)), i1 = Math.min(RES, Math.ceil((L.x + Rr + HALF) / CELL));
+      const j0 = Math.max(0, Math.floor((L.z - Rr + HALF) / CELL)), j1 = Math.min(RES, Math.ceil((L.z + Rr + HALF) / CELL));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = -HALF + i * CELL, z = -HALF + j * CELL, k = j * N + i;
+        const dx = x - L.x, dz = z - L.z, f = dx * L.fx + dz * L.fz, r = -dx * L.fz + dz * L.fx;
+        const w = 1 - smooth(0, LM_BLEND, lmOut(L, x, z));
+        if (w > 0) heights[k] = lerp(heights[k], L.G, w);
+        const add = landmarkMound(L, f, r);
+        if (add > 0) heights[k] += add + (L.silo ? 0 : noise(x * 0.03, z * 0.03) * 1.6 * Math.min(1, add / 20));
+      }
+    }
     // Đỉnh đồi cứ điểm: trả lại mặt bằng phẳng tuyệt đối (đường lên đồi có thể đã khắc lệch)
     for (const c of strongholds) {
       for (let iz = 0; iz < N; iz++) {
@@ -726,6 +825,7 @@ const MapGen = (() => {
     const freeOf = (x, z, r) => occupied.every(o => Math.hypot(o.x - x, o.z - z) > o.r + r);
     function clearOfKeys(x, z, r) {
       if (Math.hypot(x, z) > rimFoot(x, z) - 90 - r) return false;   // chỉ trong lòng thung lũng (trước chân vành núi)
+      for (const L of landmarks) if (lmOut(L, x, z) < r + 34) return false;
       for (const c of CAP) if (Math.hypot(x - c.x, z - c.z) < keyR + r) return false;
       if (Math.abs(x) < SPAWN.halfX + r && ((z > SPAWN.blue.z0 - r && z < SPAWN.blue.z1 + r) || (z > SPAWN.red.z0 - r && z < SPAWN.red.z1 + r))) return false;
       return true;
@@ -1105,7 +1205,7 @@ const MapGen = (() => {
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return {
       type, seed, size: SIZE, res: RES, cell: CELL, heights, surface,
-      bases, capture: CAP, roads, river, lakes, bridges, bunkers, strongholds, layout, buildings, rocks, bushes, trees, forests, props, sun,
+      bases, capture: CAP, roads, river, lakes, bridges, bunkers, strongholds, landmarks, layout, buildings, rocks, bushes, trees, forests, props, sun,
       genMs: Math.round(ms),
       // độ cao cảnh nền tại điểm bất kỳ (kể cả ngoài bản đồ): cùng công thức với lưới trong bản đồ -> nối liền ở mép
       outer: { rimFoot, wall: RIM_WALL, sea: OUT.sea, seaLevel: OUT.sea ? 0.2 : null, ext: OUTER_EXT, heightAt: (x, z) => riverCut ? riverCut(x, z, baseHeight(x, z)) : baseHeight(x, z) },
@@ -1116,6 +1216,79 @@ const MapGen = (() => {
       },
       nearestRoad
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // CÔNG TRÌNH BỐI CẢNH: thông số cố định từng loại (dùng chung cho khắc địa hình ở đây và dựng hình ở landmarks.js)
+  // Hệ toạ độ cục bộ: f theo hướng mặt trước (angle), r vuông góc (-sin, cos), cao độ tính từ cốt san nền G
+  // ---------------------------------------------------------------------------
+  function landmarkDetail(L) {
+    if (L.kind === 'nuke') {
+      // gò silo (kiểu Titan II): mặt bằng bệ bê tông nửa cỡ hf x hr cao h (4 m) trên gò đất, ta-luy run; giếng phóng
+      // bán kính shaft và 2 ống xả (tâm, nửa cỡ) khoét xuyên gò xuống tới cốt sân
+      // lcc: gò đất phủ trung tâm điều khiển phóng ngầm (nửa cỡ hf x hr, cao h, ta-luy run 3 phía), mặt tiền +f thẳng đứng
+      // berm: ụ đất chống xe dọc mép khu đất (cao, rộng, cách mép), chừa cổng |r| < gate ở cạnh trước
+      L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]],
+        lcc: { f: -150, r: -270, hf: 60, hr: 56, h: 48, run: 30 }, berm: { h: 12, w: 11, inset: 11, gate: 52 } };   // ụ đất sát mép (0..22), chừa dải phẳng trước rào ngoài cho hàng nhím thép
+    } else if (L.kind === 'bio') {
+      // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
+      // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
+      L.mound = { fc: -80, af: 150, ar: 200, h: 72, cut: 80, face: 10 };
+    } else if (L.kind === 'sam') {
+      // trận địa S-125 Pechora: 4 bệ phóng 5P73 (mỗi bệ 4 tên lửa) quanh trạm radar dẫn bắn ở giữa, mỗi bệ nằm trong kè đất
+      // móng ngựa cao 1.75 m, miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
+      L.launchers = [0, 1, 2, 3].map(k => { const a = Math.PI / 4 + k * Math.PI / 2, f = Math.cos(a) * 175, r = Math.sin(a) * 300; return { f, r, az: Math.atan2(r, f) }; });
+      L.berm = { r: 46, w: 14, h: 14, gap: 0.7 };
+    }
+    return L;
+  }
+  // Độ cao đắp thêm trên cốt san nền tại (f, r)
+  // ụ đất chống xe vòng quanh mép khu đất (mọi căn cứ), chừa cổng ở giữa cạnh trước
+  const PERIM_BERM = { h: 12, w: 11, inset: 11, gate: 52 };
+  function perimBerm(L, f, r) {
+    const Bm = PERIM_BERM, dIn = Math.min(L.hu - Math.abs(f), L.hv - Math.abs(r));
+    if (dIn <= 0 || (f > 0 && Math.abs(r) < Bm.gate && L.hu - f < Bm.inset + Bm.w * 2)) return 0;
+    return Bm.h * (1 - smooth(0, Bm.w, Math.abs(dIn - Bm.inset)));
+  }
+  function landmarkMound(L, f, r) {
+    return Math.max(landmarkMoundCore(L, f, r), perimBerm(L, f, r));
+  }
+  function landmarkMoundCore(L, f, r) {
+    if (L.silo) {
+      const S = L.silo, df = f - S.f, dr = r - S.r;
+      const d = Math.hypot(Math.max(0, Math.abs(df) - S.hf), Math.max(0, Math.abs(dr) - S.hr));
+      let h = S.h * (1 - smooth(0, S.run, d));
+      // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
+      h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
+      for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
+      // gò trung tâm điều khiển: cắt thẳng ở mặt tiền (dải chuyển cao độ nằm trong bề dày tường mặt tiền / tường cánh)
+      const C = S.lcc, pf = f - C.f, pr = r - C.r;
+      if (pf < C.hf - 22) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
+      return h;
+    }
+    if (L.mound) {
+      const M = L.mound, u = (f - M.fc) / M.af, v = r / M.ar;
+      const d = Math.pow(Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6), 1 / 6);
+      if (d >= 1) return 0;
+      // sân trước khoét vào ụ, lòng hầm khoét sâu ra sau mặt tiền (khe cửa hé không lộ mặt đất): dải chuyển cao độ khuất sau tường mặt tiền
+      const notch = smooth(M.face - 34, M.face - 22, f) * (1 - smooth(M.cut - 6, M.cut + 6, Math.abs(r)));
+      return M.h * (1 - smooth(0.68, 1, d)) * (1 - notch);
+    }
+    if (L.launchers) {
+      const B = L.berm;
+      let h = 0;
+      for (const P of L.launchers) {
+        const df = f - P.f, dr = r - P.r, d = Math.hypot(df, dr);
+        const ring = 1 - smooth(0, B.w, Math.abs(d - B.r));
+        if (ring <= 0) continue;
+        // miệng kè quay về tâm trận địa (ngược hướng phóng)
+        const open = Math.atan2(dr, df) - (P.az + Math.PI);
+        const da = Math.abs(Math.atan2(Math.sin(open), Math.cos(open)));
+        h = Math.max(h, B.h * ring * smooth(B.gap, B.gap + 0.35, da));
+      }
+      return h;
+    }
+    return 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -1215,7 +1388,7 @@ const MapGen = (() => {
   // Bộ nhớ đệm: sinh 1 lần cho mỗi (loại, seed), dùng lại khi vào trận
   const cache = new Map();
   function get(type, seed) {
-    const key = type + ':' + (seed >>> 0) + ':' + layout;
+    const key = type + ':' + (seed >>> 0) + ':' + layout + ':' + (landmarkKind || '');
     if (!cache.has(key)) {
       if (cache.size > 4) cache.delete(cache.keys().next().value);
       cache.set(key, generate(type, seed));
@@ -1223,8 +1396,9 @@ const MapGen = (() => {
     return cache.get(key);
   }
 
+  function setLandmark(k) { landmarkKind = LANDMARK_KINDS[k] ? k : null; }
   function setLayout(l) { layout = l === 'STRONGHOLDS' ? 'STRONGHOLDS' : 'CLASSIC'; }
-  return { generate, get, setLayout, getLayout: () => layout, STRONGHOLD_SITES, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
+  return { generate, get, setLayout, getLayout: () => layout, STRONGHOLD_SITES, LANDMARK_SITE, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
 })();
 
 if (typeof window !== 'undefined') window.MapGen = MapGen;

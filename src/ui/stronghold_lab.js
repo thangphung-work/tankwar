@@ -16,6 +16,8 @@
   if (q.get('lab') !== 'stronghold') return;
   window.STRONGHOLD_LAB = true;
   if (typeof MapGen !== 'undefined') MapGen.setLayout('STRONGHOLDS');
+  // landmark=nuke|bio|sam: chọn công trình giữa 3 cứ điểm (mặc định theo seed)
+  if (typeof MapGen !== 'undefined' && MapGen.setLandmark) MapGen.setLandmark(q.get('landmark'));
   // Chơi độc lập: không vào sảnh mạng
   try { window.NetTransport = undefined; } catch (e) { /* bỏ qua */ }
 
