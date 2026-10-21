@@ -3990,6 +3990,9 @@ class ArtilleryGame3D {
       let mf = (K.KeyW ? 1 : 0) - (K.KeyS ? 1 : 0), mr = (K.KeyD ? 1 : 0) - (K.KeyA ? 1 : 0), my = (K.KeyE ? 1 : 0) - (K.KeyQ ? 1 : 0);
       S.t = (S.t || 0) + dt;
       const pad = this.dronePadWorld();
+      // vận tốc bãi đáp (xe mình đang chạy): drone bay về bám theo xe, không bị tụt lại phía sau
+      if (S._pad && dt > 0) { S.pvx = (pad.x - S._pad.x) / dt; S.pvz = (pad.z - S._pad.z) / dt; if (Math.hypot(S.pvx, S.pvz) > 600) S.pvx = S.pvz = 0; }
+      S._pad = { x: pad.x, z: pad.z };
       if (S.rth) {
         // PIN YẾU: tự bay về trên nóc cabin xe rồi hạ xuống đáp (không điều khiển được nữa)
         mf = mr = my = 0;
@@ -4004,6 +4007,7 @@ class ArtilleryGame3D {
         const ax = S.auto.x - D.x, az = S.auto.z - D.z, ad = Math.hypot(ax, az);
         const sp = Math.min(S.auto.speed || C.autoSpeed, ad * 1.8);
         if (ad > 0.5) { wvx = ax / ad * sp; wvz = az / ad * sp; }
+        if (S.auto.land) { wvx += S.pvx || 0; wvz += S.pvz || 0; }
         if (S.auto.yaw !== undefined) D.yaw = wrap(D.yaw + wrap(S.auto.yaw - D.yaw) * (1 - Math.exp(-dt * 2.5)));
         if (ad < (S.auto.land ? 3 : 8)) { if (S.auto.land) S.landing = true; else S.auto = null; }
       } else {
@@ -4014,6 +4018,12 @@ class ArtilleryGame3D {
       const kv = 1 - Math.exp(-dt * 2.2);
       D.vx += (wvx - D.vx) * kv; D.vz += (wvz - D.vz) * kv;
       D.x += D.vx * dt; D.z += D.vz * dt;
+      // sát nóc cabin khi đang đáp: khóa ngang theo bãi đáp (xe chạy vẫn đáp được)
+      if (S.auto && S.auto.land && Math.hypot(pad.x - D.x, pad.z - D.z) < 40) {
+        const kk = Math.min(1, dt * 8);
+        D.x += (pad.x - D.x) * kk; D.z += (pad.z - D.z) * kk;
+        D.vx = S.pvx || 0; D.vz = S.pvz || 0;
+      }
       // tầm tín hiệu (quanh xe mình) + mép bản đồ
       const sig = R.max + C.signalExtra;
       let ddx = D.x - P.x, ddz = D.z - P.z, dd = Math.hypot(ddx, ddz);
