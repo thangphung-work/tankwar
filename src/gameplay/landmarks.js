@@ -217,7 +217,7 @@ const Landmarks = (() => {
         g.font = `bold ${sz | 0}px Arial, sans-serif`;
         const fit = Math.min(1, (x1 - x0) / g.measureText(t).width);
         g.save(); g.translate((x0 + x1) / 2, h * (n > 1 ? (i === 0 ? 0.36 : 0.72) : 0.52)); g.scale(fit, 1); g.fillText(t, 0, 0); g.restore();
-        if (i === 0) g.fillStyle = '#1d1d1d';
+        if (i === 0) g.fillStyle = o.fg2 || '#1d1d1d';
       });
       speckle(g, w, h, 700, ['#6a6258', '#ffffff'], 1, 3, 5);
     });
@@ -1087,7 +1087,7 @@ const Landmarks = (() => {
       K.cbox('conc', cf0, 1.2, 0, 50, 2.4, 14, 0.6);
       booth(cf0, 0, 0, 16, 10);
       K.solid(cf0, 0, 25, 7, 0, 24);
-      K.plane(decal('id_sign', signTex('id_sign', ['100% ID CHECK', 'ALL VEHICLES SUBJECT TO SEARCH'], { w: 768, h: 192, bg: '#1d2a3a', fg: '#ffffff', border: '#d6a51f' })), cf0 + 26.8, 31, 0, 44, 11);
+      K.plane(decal('id_sign', signTex('id_sign', ['100% ID CHECK', 'ALL VEHICLES SUBJECT TO SEARCH'], { w: 768, h: 192, bg: '#1d2a3a', fg: '#ffffff', fg2: '#e8c34a', border: '#d6a51f' })), cf0 + 26.8, 31, 0, 44, 11);
       // tường chữ T 2 bên làn xe
       const twall = (f0, r0, f1, r1) => {
         const len = Math.hypot(f1 - f0, r1 - r0), ang = Math.atan2(r1 - r0, f1 - f0), n = Math.max(1, Math.round(len / 12.4));
@@ -1417,7 +1417,7 @@ const Landmarks = (() => {
         q.fillStyle = '#3d4a2c'; q.fillRect(0, 0, w, h); q.fillStyle = '#d6a51f'; q.beginPath(); q.arc(w / 2, h / 2, 22, 0, TAU); q.fill();
         q.fillStyle = '#1b1b1b'; q.font = 'bold 22px Arial'; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillText('SF', w / 2, h / 2 + 1);
       }) })), (() => { const fg = new THREE.PlaneGeometry(12, 7.5, 8, 1), ps = fg.attributes.position; for (let i = 0; i < ps.count; i++) { const x = ps.getX(i) + 6; ps.setZ(i, Math.sin(x * 0.7) * 0.5 * x / 12); } fg.computeVertexNormals(); return fg; })(), M4(qf + 40.2, 65, qr + 24, 0, 0.3, 0));
-      K.plane(decal('qrf_sign', signTex('qrf_sign', ['SECURITY FORCES', 'QUICK REACTION FORCE'], { w: 768, h: 192, bg: '#1d2a3a', fg: '#ffffff', border: '#d6a51f' })), qf, 33, qr + 20.6, 30, 7.5, 0);
+      K.plane(decal('qrf_sign', signTex('qrf_sign', ['SECURITY FORCES', 'QUICK REACTION FORCE'], { w: 768, h: 192, bg: '#1d2a3a', fg: '#ffffff', fg2: '#e8c34a', border: '#d6a51f' })), qf, 33, qr + 20.6, 30, 7.5, 0);
       K.solid(qf, qr, 30, 20, 0, 38);
       hesco(qf - 30, qr + 34, qf + 30, qr + 34, 2);
     }
