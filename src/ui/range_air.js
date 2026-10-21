@@ -559,7 +559,7 @@ const RangeAir = (() => {
 .ra-sight .elv em{position:absolute;right:14px;font-style:normal;font-size:10.5px;transform:translateY(-50%)}
 .ra-sight .elvv{position:absolute;right:74px;top:50%;transform:translateY(-50%);padding:1px 6px;border:1px solid var(--g);font-size:12px;background:rgba(0,0,0,.35)}
 .ra-sight .elvv:after{content:"";position:absolute;right:-9px;top:50%;margin-top:-4px;border:4px solid transparent;border-left-color:var(--g)}
-.ra-sight .wpn{position:absolute;left:26px;top:58px;width:214px;line-height:1.45}
+.ra-sight .wpn{position:absolute;left:26px;top:58px;width:270px;line-height:1.45}
 .ra-sight .wpn .n{color:#eafff0;margin-bottom:3px}
 .ra-sight .wpn .row{display:flex;align-items:center;gap:7px}.ra-sight .wpn .row span{width:40px;opacity:.8}
 .ra-sight .wpn .bar{flex:1;height:5px;border:1px solid rgba(168,245,191,.6);padding:1px}.ra-sight .wpn .bar i{display:block;height:100%;background:var(--g)}
