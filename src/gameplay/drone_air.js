@@ -12,7 +12,7 @@ const DroneAir = (() => {
   const C = {
     HIT_R: 4.5,          // bán kính trúng quanh tâm thân drone (sải cánh kể cả cánh quạt ~0.8 m = 6.6 đv)
     NEAR_R: 42,          // đạn bay qua trong bán kính này: tiếng rít qua micro drone
-    CENTER_Y: 2.0,       // tâm thân drone trên gốc mô hình (đáy chân đáp) — recon_drone.js CENTER_Y
+    CENTER_Y: 1.5,       // tâm thân drone trên gốc mô hình (đáy chân đáp) — recon_drone.js CENTER_Y
     // phần "thân drone" mất mỗi phát trúng (1 = rơi): drone nhựa / sợi carbon rất mỏng manh —
     // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát (đạn pháo không bắn được mục tiêu trên không)
     DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
@@ -383,7 +383,7 @@ const DroneAir = (() => {
             f.y = gy; m.position.y = gy + 0.5;
             m.rotation.set(0.35, m.rotation.y, 1.2);
             ReconDrone.animate(m, 1, 0);
-            m.traverse(o => { if (o.isMesh && o.material && o.material.color && !o.material.transparent) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.35); } });
+            m.traverse(o => { if (o.isMesh && o.material && o.material.color && !o.material.transparent) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.35); o.userData.ownMat = true; } });
             try { if (fx && fx.spawn) fx.spawn(f.x, gy + 1, f.z, 'GATLING_BULLET', 'GROUND', {}); } catch (e) { /* hiệu ứng phụ */ }
             const P = this.player, SE = window.soundEngine;
             if (P && SE && SE.playExplosionAtDistance) SE.playExplosionAtDistance(Math.hypot(P.x - f.x, P.z - f.z), 'GROUND', 'GATLING_BULLET', { x: f.x, z: f.z });
@@ -393,7 +393,9 @@ const DroneAir = (() => {
           if (f.gT < 6 && (f.puff -= dt) <= 0) { f.puff = 0.25; this.droneSmokePuff(f.x, f.y + 2, f.z, 0.7); }
           if (f.gT > 15) {
             this.scene.remove(m);
-            m.traverse(o => { if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); } });
+            // hình khối dùng chung giữa các drone (recon_drone.js): chỉ hủy vật liệu cháy sém đã nhân bản riêng
+            m.traverse(o => { if (o.isMesh && o.userData.ownMat) o.material.dispose(); });
+            if (m.userData.discMat) m.userData.discMat.dispose();
             F.splice(i, 1);
             continue;
           }

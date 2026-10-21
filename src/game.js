@@ -4048,7 +4048,7 @@ class ArtilleryGame3D {
       S.roll = (S.roll || 0) + (Math.max(-0.12, Math.min(0.12, -vLat / 2600)) - (S.roll || 0)) * (1 - Math.exp(-dt * 4));
       const t = S.t;
       px = D.x + Math.sin(t * 0.63) * 1.6; pz = D.z + Math.cos(t * 0.71) * 1.6;
-      py = D.y + Math.sin(t * 0.91) * 1.2 + 0.7;   // ống kính gimbal dưới mũi drone
+      py = D.y + Math.sin(t * 0.91) * 1.2 + 0.4;   // ống kính gimbal dưới mũi drone
       if (Math.abs(cam.fov - 55) > 0.01) { cam.fov = 55; cam.updateProjectionMatrix(); }
       cam.position.set(px, py, pz);
       const cp = Math.cos(S.pitch), spch = Math.sin(S.pitch);
