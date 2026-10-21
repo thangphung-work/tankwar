@@ -4990,6 +4990,13 @@ class ArtilleryGame3D {
     this._blastInfo = { radius: Math.round(Math.max(ra, rc)), core: Math.round(core), cluster: fire === 'CLUSTER', hitK };
   }
 
+  screenCovered() {
+    if (window.tankInspector && window.tankInspector.isOpen) return true;
+    if (this.isGameStarted) return false;
+    const o = domById('matchmaking-overlay');
+    return !!(o && !o.classList.contains('hidden'));
+  }
+
   loop(currentTime) {
     const now = typeof currentTime === 'number' && !isNaN(currentTime) ? currentTime : performance.now();
     const frameMs = now - (this.lastTime || now);
@@ -5003,7 +5010,9 @@ class ArtilleryGame3D {
     requestAnimationFrame((t) => this.loop(t));
     try {
       this.update(dt);
-      this.render();
+      // Sảnh / phòng xem xe 3D che kín màn hình (nền đục): không vẽ chiến trường phía sau — trước đây vẫn vẽ cả bản đồ
+      // (~650 lệnh vẽ, ~2,4 triệu tam giác, ~55 ms / khung) chồng lên renderer riêng của phòng xem xe -> lag
+      if (!this.screenCovered()) this.render();
     } catch (e) {
       this._loopErrN = (this._loopErrN || 0) + 1;
       if (this._loopErrN <= 3 || this._loopErrN % 300 === 0) console.error('[GAME] Lỗi trong khung hình (vòng lặp vẫn chạy tiếp):', e);
