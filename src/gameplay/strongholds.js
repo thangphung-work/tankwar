@@ -68,6 +68,19 @@ const Strongholds = (() => {
   const wingBevel = (t, b) => Math.min(S.WING_BEVEL, Math.max(0, t - b - 1) * 0.6);
   const floorY = af => af <= S.HB ? -S.D : af >= S.RAMP_END ? 0 : -S.D * (1 - rampK((af - S.HB) / S.RAMP));
   const inCut = (af, ar) => ar < cutHalf(af);
+  // Cao độ mặt trên nóc mái nhìn thấy (so với cốt nền) theo |f|, |r|: lớp đất phủ, nắp hầm bê tông (chóp cụt vát 4 phía,
+  // khớp hình dựng ở buildOne) và gờ mặt tiền 2 đầu (mặt trên phẳng rồi vát 45° ra ngoài)
+  function roofTopY(af, ar) {
+    let y = af <= S.HB - S.LIP_T + 0.5 ? S.CREST + 0.3 : -Infinity;   // lớp đất phủ chỉ trải tới mặt trong gờ mặt tiền
+    const f0 = S.HB - 7, r0 = S.WI - 2, f1 = f0 - S.BEVEL, r1 = r0 - S.BEVEL, y0 = S.CREST - 2, y1 = S.CREST + 2.2;
+    if (af <= f0 && ar <= r0) {
+      const t = Math.max(0, (af - f1) / S.BEVEL, (ar - r1) / S.BEVEL);
+      y = Math.max(y, y1 - t * (y1 - y0));
+    }
+    const fi = S.HB - S.LIP_T, lb = S.LIP_BEVEL;
+    if (af >= fi && af <= S.HB) y = Math.max(y, af <= S.HB - lb ? S.TOP : S.TOP - (af - (S.HB - lb)));
+    return y;
+  }
   // Khoảng cách ra ngoài lõi (khối mái + tường bên) trên mặt bằng
   const coreDist = (af, ar) => Math.hypot(Math.max(0, af - S.HB), Math.max(0, ar - S.WO));
   // Nhiễu giá trị 2D mượt (băm theo ô lưới nguyên) — dùng cho bề mặt ụ đất
@@ -847,6 +860,9 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const onTop = refY !== undefined && refY - K.G > 8;
         // đậu trên nóc đúng chỗ mái sập: rơi xuống lòng hầm
         if (onTop && K.nDown && this.cutAt(K, L.f, L.r)) return K.G + floorY(af);
+        // Trên nóc mái: theo đúng mặt nhìn thấy — nắp hầm bê tông nhô trên lớp đất phủ, gờ mặt tiền ở 2 đầu (trước đây lấy
+        // mặt đất phủ -> xe lún nửa bánh vào nắp hầm, chúi mũi vào gờ mặt tiền)
+        if (onTop && af <= S.HB + 0.5 && ar <= S.WO + 2) return K.G + roofTopY(af, ar);
         // Trên ụ: mọi điểm ngoài kênh hở (kể cả phần mái che phía trên khoang) là mặt đất đắp
         if (onTop && h !== null && !(inCut(af, ar) && af > S.HB)) return K.G + Math.max(0, h);
         if (af <= S.END + 6 && ar < cutHalf(af) + S.WING_T + 26) {
