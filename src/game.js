@@ -2009,9 +2009,9 @@ class ArtilleryGame3D {
       }
     }
     if (!fxDone && hitType === 'WATER' && fxSys && fxSys.waterBurst) {
-      // Nổ dưới mặt nước: cột nước trắng xóa + sóng mù + gợn sóng
+      // Đạn rơi xuống nước: cột nước / tia nước theo loại đạn, nghiêng theo hướng bay + sóng nổ lan
       const depth = this.terrain && this.terrain.groundAtRaw ? Math.max(0.5, y - this.terrain.groundAtRaw(x, z)) : 6;
-      fxSys.waterBurst(x, y, z, ammoType, !!shell.isHeavyArty, depth);
+      fxSys.waterBurst(x, y, z, ammoType, !!shell.isHeavyArty, depth, { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 });
       fxDone = true;
     }
     const remoteShell = !!(this.netSync && this.netSync.skipShellDamage && this.netSync.skipShellDamage(shell, this.units.find(u => u.id === shell.shooterId)));
@@ -2150,6 +2150,8 @@ class ArtilleryGame3D {
         if (dmgRes.noFire) directTarget._noIgnite = true;
         // Đạn nảy khỏi giáp nghiêng: chỉ còn chút sát thương va đập
         if (unitHit && unitHit.ricochet) directDamage = Math.round(directDamage * 0.12 * 1000) / 1000;
+        // Đạn đã nảy trên mặt nước trước khi trúng: chao đảo, chạm xiên / ngang thân -> xuyên kém hẳn
+        if (shell.skips) directDamage = Math.round(directDamage * (shell.skipMul || 1) * 1000) / 1000;
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
       }
       // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy
@@ -4804,6 +4806,10 @@ class ArtilleryGame3D {
         VehicleDamage.setGroundProvider((gx, gz) => this.terrain.getElevationAt(gx, gz));
       }
       VehicleDamage.update(dt, this.units);
+    }
+    // Bóng che ánh trời dưới gầm xe trên mặt đất (GroundShader contact AO)
+    if (typeof GroundShader !== 'undefined' && GroundShader.setVehicles && this.terrain) {
+      GroundShader.setVehicles(this.units, this.camera && this.camera.position, (x, z) => this.terrain.getElevationAt(x, z));
     }
     // Cây cháy / đổ, nhà sập, mặt nước; xe húc đổ cây khi chạy qua
     if (this.terrain && this.terrain.update) {

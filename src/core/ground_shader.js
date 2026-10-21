@@ -10,6 +10,33 @@
 const GroundShader = (() => {
   const TEX = {};
   const uTime = { value: 0 };
+  // Che khuất ánh trời dưới gầm / sát quanh xe (contact AO): tối đa 16 xe gần camera; A = (x, z, cos, -sin) góc thân xe,
+  // B = (nửa rộng, nửa dài, lõi tối vào trong, tán ra ngoài). Không có thì gầm xe sáng như bãi trống -> xe như đặt nổi
+  const VEH_N = 16;
+  const uVehA = { value: Array.from({ length: VEH_N }, () => new THREE.Vector4(0, 0, 1, 0)) };
+  const uVehB = { value: Array.from({ length: VEH_N }, () => new THREE.Vector4(0, 0, 1, 1)) };
+  const uVehN = { value: 0 };
+  const VEH_SIZE = { ALL_ROUNDER: [15, 24], GATLING: [15.5, 21], ARTILLERY: [10, 24], SCOUT: [8.5, 14] };
+  const _vehTmp = [];
+  /** Cập nhật mỗi khung: units (xe sống & xác), cam (vị trí camera) */
+  function setVehicles(units, cam, groundAt) {
+    _vehTmp.length = 0;
+    for (const u of units || []) {
+      if (!u || !u.group || u.group.visible === false || u.airborne) continue;
+      const d = cam ? Math.hypot(u.x - cam.x, u.z - cam.z) : 0;
+      if (d > 1600) continue;
+      if (groundAt && (u.y || 0) - groundAt(u.x, u.z) > 14) continue;   // đang bay / rơi: không đè bóng xuống đất
+      _vehTmp.push([d, u]);
+    }
+    _vehTmp.sort((a, b) => a[0] - b[0]);
+    const n = Math.min(VEH_N, _vehTmp.length);
+    for (let i = 0; i < n; i++) {
+      const u = _vehTmp[i][1], sz = VEH_SIZE[u.tankType] || VEH_SIZE.ALL_ROUNDER, a = u.bodyAngle || 0;
+      uVehA.value[i].set(u.x, u.z, Math.cos(a), -Math.sin(a));
+      uVehB.value[i].set(sz[0], sz[1], 3, u.isDead ? 6 : 7.5);
+    }
+    uVehN.value = n;
+  }
 
   // ---------------------------------------------------------------------------
   // TIỆN ÍCH VẼ TEXTURE LẶP LIỀN MẠCH
@@ -374,7 +401,8 @@ const GroundShader = (() => {
         gBase: { value: L.base }, gDirt: { value: L.dirt }, gRock: { value: L.rock }, gFine: { value: L.fine },
         gNoise: { value: noise }, gMacroAvg: { value: avg }, gTime: uTime, gWaterLvl: { value: opts.waterLvl !== undefined ? opts.waterLvl : opts.water ? 2.5 : -999 },
         gNrm: { value: bake ? bake.tex : null }, gTerr: { value: new THREE.Vector2(bake ? bake.half : 1800, bake ? bake.size : 3600) },
-        gGrain: { value: L.grain || null }, gWindA: { value: windA }, gSoil: { value: L.soil || null }
+        gGrain: { value: L.grain || null }, gWindA: { value: windA }, gSoil: { value: L.soil || null },
+        gVehA: uVehA, gVehB: uVehB, gVehN: uVehN
       });
       // độ che khuất quanh chân nhà (Destructibles.buildingInfo, cùng object -> cập nhật khi dựng nhà xong)
       const BI = typeof Destructibles !== 'undefined' && Destructibles.buildingInfo;
@@ -410,6 +438,20 @@ float gMotF(vec2 p) {
 }
 uniform vec3 gMacroAvg;
 uniform float gTime, gWaterLvl;
+uniform vec4 gVehA[${VEH_N}]; uniform vec4 gVehB[${VEH_N}]; uniform int gVehN;
+// ánh trời bị thân xe che: tối hẳn dưới gầm, nhạt dần ra ~1 m quanh thân (khoảng cách tới hình chữ nhật thân xe)
+float gVehAO(vec2 p) {
+  float ao = 1.0;
+  for (int i = 0; i < ${VEH_N}; i++) {
+    if (i >= gVehN) break;
+    vec4 A = gVehA[i], B = gVehB[i];
+    vec2 d = p - A.xy;
+    vec2 q = abs(vec2(dot(d, A.zw), dot(d, vec2(-A.w, A.z)))) - B.xy;
+    float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+    ao *= 1.0 - 0.72 * (1.0 - smoothstep(-B.z, B.w, sd));
+  }
+  return ao;
+}
 varying vec3 vGW;
 varying vec3 vGN;
 vec3 g2(sampler2D t, vec2 p, float s) {
@@ -444,11 +486,22 @@ uniform float gWindA;
 // nếu không đỉnh gợn gập ngược thành vòng khép kín như vân tay / vân gỗ. Nhiễu lấy ở mip thô (bias) để bỏ tầng tần số cao.
 // Độ cao mặt đất quanh điểm đang tô (đặt trong main): gợn cát uốn theo sườn đụn — đỉnh gợn xoay dần theo đường đồng mức
 vec2 gRipP0, gRipHG; float gRipH0;
+// Nhiễu KHÔNG LẶP cho gợn cát: một ảnh nhiễu tuần hoàn lấy ở một tỉ lệ thì cứ mỗi chu kỳ (vài chục mét) lặp lại y hệt
+// -> mắt bắt được "khuôn". Cộng hai lần lấy mẫu lệch tỉ lệ theo tỉ lệ vàng & xoay ~37°: hai chu kỳ không bao giờ trùng lại
+const mat2 gRotA = mat2(0.8, -0.6, 0.6, 0.8);
+vec3 gN2(vec2 p, float s, float o, float bias) {
+  vec3 a = texture2D(gNoise, p / s + o, bias).rgb;
+  vec3 b = texture2D(gNoise, gRotA * p / (s * 1.618) + o + 0.37, bias).rgb;
+  return clamp((a + b - 1.0) * 0.72 + 0.5, 0.0, 1.0);   // tổng 2 mẫu độc lập: thu lại để độ tương phản như 1 mẫu
+}
 float gRipPh(vec2 p) {
   vec2 d = vec2(cos(gWindA), sin(gWindA));
   vec2 w1 = texture2D(gNoise, p / 1200.0 + 0.11, 2.0).rg - 0.5;     // hướng gió đổi chậm theo vùng (~±6°)
-  vec3 w2 = texture2D(gNoise, p / 260.0 + 0.57, 2.0).rgb - 0.5;     // đỉnh gợn lượn nhẹ + bước gợn dãn / nén ~10%
-  vec2 q = p + w1 * 16.0 + w2.rg * 5.0;
+  vec3 w2 = gN2(p, 260.0, 0.57, 2.0) - 0.5;                          // đỉnh gợn lượn nhẹ + bước gợn dãn / nén ~10%
+  // đỉnh gợn uốn khúc ngắn (mỗi vài mét một khúc lượn, lệch ~±0,5 đv) như gợn cát thật, không thẳng như kẻ chỉ;
+  // độ dốc của độ lệch vẫn << 1 nên đỉnh gợn không gập thành vòng
+  vec2 w3 = gN2(p, 60.0, 0.13, 1.0).rg - 0.5;
+  vec2 q = p + w1 * 16.0 + w2.rg * 5.0 + w3 * 1.1;
   float hgt = gRipH0 + dot(p - gRipP0, gRipHG);
   // bước gợn ~2 đơn vị (~25 cm, như gợn cát gió thật); độ cao địa hình lệch pha -> gợn bẻ theo sườn đụn (độ dốc pha luôn > 0, không gập)
   return dot(q, d) / 2.0 + w2.b * 1.8 + hgt * 0.3;
@@ -456,8 +509,8 @@ float gRipPh(vec2 p) {
 // hệ gợn thứ 2 (đợt gió khác, lệch ~30°, bước dài hơn ~35%) — mỗi vùng cát mang một hệ gợn riêng, không phủ một kiểu khắp bản đồ
 float gRipPh2(vec2 p) {
   vec2 d = vec2(cos(gWindA + 0.52), sin(gWindA + 0.52));
-  vec3 w2 = texture2D(gNoise, p / 230.0 + 0.29, 2.0).rgb - 0.5;
-  vec2 q = p + w2.rg * 5.0;
+  vec3 w2 = gN2(p, 230.0, 0.29, 2.0) - 0.5;
+  vec2 q = p + w2.rg * 5.0 + (gN2(p, 70.0, 0.47, 1.0).rg - 0.5) * 1.2;
   return dot(q, d) / 2.7 + w2.b * 1.6 + (gRipH0 + dot(p - gRipP0, gRipHG)) * 0.3;
 }
 // gợn đứt đoạn / rẽ nhánh chữ Y dày (mỗi 1-3 m): dọc đường lệch, đỉnh gợn chuyển sang hàng lệch nửa bước; đỉnh cao thấp dọc chiều dài
@@ -466,22 +519,28 @@ float gRipY(vec3 jm, float ph) {
   float y = mix(gRipAsym(fract(ph)), gRipAsym(fract(ph + 0.5)), smoothstep(0.46, 0.54, jm.r));
   return y * (0.35 + 0.65 * smoothstep(0.28, 0.62, jm.g)) * (0.7 + 0.3 * jm.b);
 }
-// một hệ gợn: gần = sóng bất đối xứng có chữ Y; xa dần = sóng sin mượt rồi tắt sớm (gợn < ~12 điểm ảnh thì không còn vẽ),
-// ở tầm camera trận mặt cát xa trông mịn như thật thay vì phủ sọc li ti đều tăm tắp
+// một hệ gợn: gần = sóng bất đối xứng có chữ Y; xa dần = sóng sin mượt rồi tắt sớm (gợn < ~16 điểm ảnh thì không còn vẽ),
+// ở tầm camera trận mặt cát xa trông mịn như thật thay vì phủ sọc li ti đều tăm tắp.
+// Bản sóng sin ở xa GIỮ NGUYÊN các chỗ gợn đứt / rẽ chữ Y (hai sóng lệch nửa bước hoà vào nhau -> đỉnh gợn tắt rồi nối
+// sang hàng bên cạnh) và độ cao đỉnh gợn thay đổi dọc chiều dài — trước đây bản xa là sóng sin đều tuyệt đối, nên ở tầm
+// nhìn thường (gợn 15-50 điểm ảnh) sườn cát thành những sọc song song đều như kẻ chỉ
 float gRipOne(vec3 jm, float ph) {
   float fw = fwidth(ph);
-  return mix(gRipY(jm, ph), 0.5 - 0.5 * cos(6.2832 * fract(ph)), smoothstep(0.02, 0.06, fw)) * (1.0 - smoothstep(0.05, 0.11, fw));
+  float sw = smoothstep(0.46, 0.54, jm.r);
+  float sn = mix(0.5 - 0.5 * cos(6.2832 * ph), 0.5 + 0.5 * cos(6.2832 * ph), sw);
+  float amp = (0.5 + 0.5 * smoothstep(0.28, 0.62, jm.g)) * (0.8 + 0.2 * jm.b) * (1.0 - 0.8 * sw * (1.0 - sw) * 4.0);
+  return mix(gRipY(jm, ph), sn * amp, smoothstep(0.02, 0.06, fw)) * (1.0 - smoothstep(0.05, 0.11, fw));
 }
 // Độ cao gợn 0..1: sườn đón gió thoải (70%), sườn khuất gió dốc (30%); có vạt cát phẳng không gợn; mờ dần khi
 // một gợn nhỏ hơn ~3-5 điểm ảnh (ở xa) để không sinh vân nhiễu / răng cưa
 float gRip(vec2 p) {
-  vec3 jm = texture2D(gNoise, p / 46.0 + 0.37, 0.5).rgb;
-  vec3 zn = texture2D(gNoise, p / 380.0 + 0.83, 1.0).rgb;
+  vec3 jm = gN2(p, 46.0, 0.37, 0.5);
+  vec3 zn = gN2(p, 380.0, 0.83, 1.0);
   // vùng hệ gợn 1 / hệ gợn 2 (ranh giới uốn lượn vài chục mét)
   float reg = smoothstep(0.42, 0.58, zn.b);
   float h = mix(gRipOne(jm, gRipPh(p)), gRipOne(jm.gbr, gRipPh2(p)), reg);
   // vạt cát phẳng (cát nén / vừa bị gió san) xen vạt gợn rõ, 2 tầng cỡ -> mỗi chỗ một khác
-  float field = smoothstep(0.36, 0.6, zn.g * 0.65 + texture2D(gNoise, p / 95.0 + 0.21, 1.0).r * 0.35);
+  float field = smoothstep(0.36, 0.6, zn.g * 0.65 + gN2(p, 95.0, 0.21, 1.0).r * 0.35);
   return h * (0.25 + 0.75 * field);
 }
 ` : ''}${urban ? `// ---- NỀN PHỐ: lát ngẫu nhiên theo ô (mỗi ô ~23 m lấy một mảnh ảnh lệch + xoay bất kỳ, biên ô uốn lượn, giữ độ tương phản)
@@ -703,6 +762,11 @@ float gTuftH(vec2 p) {
   }`)
         .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
   // (bóng mây trôi: tính chung cho mọi vật liệu trong chunk chiếu sáng, xem SkySystem.installCloudShadows)
+  {
+    float vao = gVehAO(vGW.xz);
+    reflectedLight.indirectDiffuse *= vao;
+    reflectedLight.directDiffuse *= mix(1.0, vao, 0.3);   // mép bóng đổ dưới gầm (bóng nắng mềm hở sáng) cũng sẫm theo
+  }
   reflectedLight.indirectDiffuse *= 1.0 - gWet * 0.3;   // hõm khuất ánh trời
   // sát chân tường nhà: ánh trời bị tường che một nửa bầu trời -> mặt đất tối dần vào chân tường (bóng tiếp xúc)
   if (gBldGrid.z > 0.0) {
@@ -714,7 +778,7 @@ float gTuftH(vec2 p) {
     }
   }`);
     };
-    mat.customProgramCacheKey = () => 'groundPBR11:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
+    mat.customProgramCacheKey = () => 'groundPBR13:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
     mat.needsUpdate = true;
     return mat;
   }
@@ -736,7 +800,7 @@ float gTuftH(vec2 p) {
     };
   }
 
-  return { apply, tick, layers, noiseSampler, bakeNormals, time: uTime };
+  return { apply, tick, layers, noiseSampler, bakeNormals, setVehicles, time: uTime };
 })();
 
 if (typeof window !== 'undefined') window.GroundShader = GroundShader;
