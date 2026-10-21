@@ -3540,13 +3540,43 @@ class ArtilleryGame3D {
     if (P.barrelPivot) { P.barrelPivot.updateWorldMatrix(true, false); P.barrelPivot.getWorldPosition(v); } else v.set(P.x, (P.y || 0) + 24, P.z);
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     // mắt trưởng xe: trên nóc tháp, lùi sau trục nòng một chút (thấy nóc tháp + nòng chĩa ra trước)
-    const ex = v.x - fx * 12, ey = v.y + 11, ez = v.z - fz * 12;
+    const ex = v.x - fx * 12, ez = v.z - fz * 12;
+    let ey = v.y + 11;
+    // mắt luôn nằm TRÊN nóc thân xe tại chỗ đó (dò mô hình xe, ~2 lần / giây): xe pháo bánh lốp có bệ pháo to cao, mắt đặt
+    // theo trục nòng như xe tăng thì nằm lọt trong vỏ bệ pháo (nhìn thấy mặt trong mô hình); dưới mái hầm: không chạm dầm trần
+    const now = performance.now();
+    if (!P._eyeTopT || now - P._eyeTopT > 500 || P._eyeTopType !== P.tankType) {
+      P._eyeTopT = now; P._eyeTopType = P.tankType;
+      P._eyeTop = this.vehicleTopNear(P, ex, ez, 4) - (P.y || 0);
+    }
+    ey = Math.max(ey, (P.y || 0) + P._eyeTop + 3.5);
+    const K = this.terrain.shelterOf ? this.terrain.shelterOf(P) : null;
+    if (K && typeof Strongholds !== 'undefined') ey = Math.min(ey, K.G + Strongholds.S.CEIL - Strongholds.S.BEAM - 1.5);
     const pitch = 0.05 - (C.freePitch || 0) * 0.6;
     const tx = ex + fx * 300, ty = ey - Math.tan(pitch) * 300, tz = ez + fz * 300;
     const k = C.inT * C.inT * (3 - 2 * C.inT);
     cam.position.set(cam.position.x + (ex - cam.position.x) * k, cam.position.y + (ey - cam.position.y) * k, cam.position.z + (ez - cam.position.z) * k);
     cam.lookAt(lx + (tx - lx) * k, ly + (ty - ly) * k, lz + (tz - lz) * k);
     if (P.hpGroup && k > 0.3) P.hpGroup.visible = false;
+  }
+
+  // Đỉnh cao nhất của thân xe quanh điểm (x, z) trong bán kính rad (dò tia xuống mô hình; bỏ nòng, thanh máu)
+  vehicleTopNear(P, x, z, rad) {
+    const rc = this._topRc || (this._topRc = new THREE.Raycaster());
+    const skip = new Set();
+    if (P.barrelPivot) P.barrelPivot.traverse(o => skip.add(o));
+    if (P.hpGroup) P.hpGroup.traverse(o => skip.add(o));
+    const o = this._topO || (this._topO = new THREE.Vector3()), dn = this._topD || (this._topD = new THREE.Vector3(0, -1, 0));
+    let top = P.y || 0;
+    for (const [ox, oz] of [[0, 0], [rad, 0], [-rad, 0], [0, rad], [0, -rad]]) {
+      rc.set(o.set(x + ox, (P.y || 0) + 90, z + oz), dn);
+      for (const h of rc.intersectObject(P.group, true)) {
+        if (skip.has(h.object) || !h.object.visible || h.object.isSprite) continue;
+        top = Math.max(top, h.point.y);
+        break;
+      }
+    }
+    return top;
   }
 
   toggleHighView() {
