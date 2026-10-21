@@ -16,7 +16,7 @@
 (function () {
   if (typeof TankModelBuilder === 'undefined' || typeof VehicleKit === 'undefined') return;
 
-  const WHEEL_R = 5.4;
+  const WHEEL_R = 5.55;   // lốp 14.00R20 cỡ ~1.4 m; đỉnh lốp sau còn hở ~2 cm dưới sàn
   const TIRE_W = 3.6;
   const WHEEL_X = 9.0;
   const WHEEL_Y = WHEEL_R;
@@ -343,7 +343,7 @@
     chassis.add(g);
     const b = new VehicleKit.PartBatch(DECK_Y);
     b.setTag('spare');
-    const LUG = 0.42, R = WHEEL_R - LUG, H = TIRE_W * 0.47, BEAD = 3.2;
+    const LUG = 0.55, R = WHEEL_R - LUG, H = TIRE_W * 0.47, BEAD = 2.55;
     const yc = 0.95 + H;
 
     // Lốp cùng kiểu 6 bánh xe (gai chữ V đúc liền, chữ nổi hông), nằm ngửa hông ngoài lên trên
@@ -353,13 +353,13 @@
     b.cyl(BEAD + 0.02, BEAD + 0.02, H * 1.6, 30, M.paintDusty, [0, yc, 0], 'y', null, true);
     b.add(rimFaceGeo(BEAD, H), M.paintDusty, [0, yc, 0]);
     // Moay-ơ, đai ốc bánh (thiếu 1 con — mất ngoài chiến trường chưa kịp thay), van bơm hơi
-    b.cyl(0.95, 1.05, 0.42, 14, M.steel, [0, yc + H * 0.6 + 0.2, 0]);
+    b.cyl(0.82, 0.92, 0.42, 14, M.steel, [0, yc + H * 0.6 + 0.2, 0]);
     for (let i = 0; i < 10; i++) {
       if (i === 3) continue;
       const a = (i / 10) * Math.PI * 2 + 0.2;
-      b.cyl(0.2, 0.2, 0.32, 6, M.steel, [Math.cos(a) * 2.1, yc + H * 0.3 + 0.16, Math.sin(a) * 2.1]);
+      b.cyl(0.18, 0.18, 0.3, 6, M.steel, [Math.cos(a) * 1.72, yc + H * 0.3 + 0.15, Math.sin(a) * 1.72]);
     }
-    b.cyl(0.07, 0.07, 0.55, 6, M.steel, [2.75, yc + H * 0.55, 0.9], 'y', [0, 0, -0.45]);
+    b.cyl(0.07, 0.07, 0.55, 6, M.steel, [2.15, yc + H * 0.55, 0.75], 'y', [0, 0, -0.45]);
 
     // Kê trên 2 thanh gỗ, ty ren giữa moay-ơ + tấm kẹp + tai hồng
     for (const x of [-2.6, 2.6]) b.box(1.0, 0.95, 9.6, M.wood, [x, 0.475, 0], [0, x > 0 ? 0.03 : -0.02, 0]);
@@ -401,7 +401,7 @@
   function rimFaceGeo(bead, H) {
     return latheTopUV([
       [bead + 0.28, H * 0.74], [bead + 0.26, H * 0.9], [bead + 0.02, H * 0.95], [bead - 0.12, H * 0.8],
-      [bead - 0.42, H * 0.42], [bead - 0.7, H * 0.3], [1.75, H * 0.3], [1.6, H * 0.38], [1.45, H * 0.56], [1.05, H * 0.6]
+      [bead - 0.34, H * 0.42], [bead - 0.56, H * 0.3], [1.45, H * 0.3], [1.33, H * 0.38], [1.2, H * 0.56], [0.9, H * 0.6]
     ].map(([r, y]) => new THREE.Vector2(r, y)), 32);
   }
 
@@ -526,23 +526,23 @@
     return new VehicleKit.WheelSet(chassis, (b) => {
       const hw = TIRE_W / 2;
       // Lốp: thân lốp mặt cắt thật + gai chữ V đúc liền vắt qua vai + chữ nổi hông ngoài (trục Y xoay thành X)
-      for (const geo of tireGeos({ R: WHEEL_R - 0.42, H: hw, bead: 3.3, lugH: 0.42, seed: 11 }, M)) {
+      for (const geo of tireGeos({ R: WHEEL_R - 0.55, H: hw, bead: 2.6, lugH: 0.55, seed: 11 }, M)) {
         geo.rotateZ(-Math.PI / 2);
         b.add(geo, M.tire, [0, 0, 0]);
       }
       // Vành lòng chảo (ống vành + mặt vành lõm, cùng mặt cắt bánh dự phòng), moay-ơ, đai ốc trên đáy chảo,
       // nắp van bơm hơi trung tâm + ống dẫn hơi ra mép vành
-      b.cyl(3.32, 3.32, TIRE_W * 0.82, 24, M.paintDusty, [0, 0, 0], 'x', null, true);
-      const face = rimFaceGeo(3.3, hw);
+      b.cyl(2.62, 2.62, TIRE_W * 0.82, 24, M.paintDusty, [0, 0, 0], 'x', null, true);
+      const face = rimFaceGeo(2.6, hw);
       face.rotateZ(-Math.PI / 2);
       b.add(face, M.paintDusty, [0, 0, 0]);
-      b.cyl(1.3, 1.45, 1.5, 14, M.steel, [hw - 0.05, 0, 0], 'x');
+      b.cyl(1.05, 1.15, 1.5, 14, M.steel, [hw - 0.05, 0, 0], 'x');
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * Math.PI * 2;
-        b.cyl(0.18, 0.18, 0.32, 6, M.steel, [hw * 0.3 + 0.16, Math.cos(a) * 2.1, Math.sin(a) * 2.1], 'x');
+        b.cyl(0.17, 0.17, 0.3, 6, M.steel, [hw * 0.3 + 0.15, Math.cos(a) * 1.72, Math.sin(a) * 1.72], 'x');
       }
       b.cyl(0.45, 0.45, 0.8, 10, M.paintDusty, [hw + 0.8, 0, 0], 'x');
-      b.beam([hw + 0.6, 0.3, 0], [hw * 0.92, 3.0, 0.5], 0.16, 0.16, M.dark);
+      b.beam([hw + 0.6, 0.3, 0], [hw * 0.92, 2.45, 0.45], 0.16, 0.16, M.dark);
     }, positions, WHEEL_R);
   }
 

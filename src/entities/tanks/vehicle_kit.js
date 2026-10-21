@@ -1375,7 +1375,7 @@ const VehicleKit = (() => {
    * - hông ngoài: chữ nổi (cỡ lốp, hãng, mã) + gờ bảo vệ vành
    * R: bán kính đáy rãnh gai (ngoài cùng = R + lugH), H: nửa bề rộng, bead: bán kính mép tanh (vành).
    */
-  function tireGeometry({ R, H, bead, lugH = 0.42, lugs = 20, seg = 48, seed = 7 }) {
+  function tireGeometry({ R, H, bead, lugH = 0.55, lugs = 20, seg = 48, seed = 7 }) {
     const rnd = mulberry32(seed);
     const k = UV_SCALE * 2;
     // Nửa trên mặt cắt: từ giữa mặt gai lên vai, qua hông tới mép tanh
@@ -1449,14 +1449,14 @@ const VehicleKit = (() => {
     for (let i = 0; i < lugs; i++) {
       for (const side of [1, -1]) {
         const th0 = (i + (side < 0 ? 0.5 : 0)) * pitch + (rnd() - 0.5) * 0.01;
-        const wear = 0.85 + rnd() * 0.15;   // gai mòn không đều
+        const wear = 0.94 + rnd() * 0.06;   // gai còn sâu, mòn nhẹ không đều
         const rows = [];
         for (let j = 0; j <= NU; j++) {
           const t = j / NU, u = uA + (uB - uA) * t;
           const [r, y, nr, ny] = prof(side * u);
           const th = th0 + slope * Math.max(0, u) / R;   // nửa dưới lật y -> hai nửa thành chữ V
-          const h = lugH * wear * (1 - 0.45 * smooth01(0.55, 1, t));
-          const w0 = wTh * (1.05 - 0.15 * t), w1 = w0 * 0.82;
+          const h = lugH * wear * (1 - 0.25 * smooth01(0.6, 1, t));
+          const w0 = wTh * (1.05 - 0.12 * t), w1 = w0 * 0.88;
           const n3 = (tt) => [nr * Math.cos(tt), ny, -nr * Math.sin(tt)];
           const base = (tt) => { const q = pt(tt, r, y), n = n3(tt); return [q[0] - n[0] * 0.04, q[1] - n[1] * 0.04, q[2] - n[2] * 0.04]; };
           const top = (tt) => { const q = pt(tt, r, y), n = n3(tt); return [q[0] + n[0] * h, q[1] + n[1] * h, q[2] + n[2] * h]; };
@@ -1465,7 +1465,7 @@ const VehicleKit = (() => {
         for (let j = 0; j < NU; j++) {
           const A = rows[j], B = rows[j + 1];
           const nm = [(A.n[0] + B.n[0]) / 2, (A.n[1] + B.n[1]) / 2, (A.n[2] + B.n[2]) / 2];
-          quad(A.tl, A.tr, B.tr, B.tl, 1, 1, 1, 1, nm);
+          quad(A.tl, A.tr, B.tr, B.tl, 0.9, 0.9, 0.9, 0.9, nm);
           quad(A.bl, A.tl, B.tl, B.bl, 0.62, 0.85, 0.85, 0.62, [Math.sin(A.th), 0, Math.cos(A.th)]);
           quad(A.br, A.tr, B.tr, B.br, 0.62, 0.85, 0.85, 0.62, [-Math.sin(A.th), 0, -Math.cos(A.th)]);
         }
@@ -1513,7 +1513,7 @@ const VehicleKit = (() => {
       }
     };
     const SEGS = [[0, 1, 0], [0, 0, 0], [0, -1, 0], [1, 0.5, 1], [1, -0.5, 1], [-1, 0.5, 1], [-1, -0.5, 1]];
-    const rL = (bead + R) / 2 - 0.05, cw = 0.26, chh = 0.4, sw = 0.065;
+    const rL = (bead + R) / 2 + 0.1, cw = 0.28, chh = 0.46, sw = 0.07;
     for (const [a0, n] of [[0.3, 13], [3.4, 9], [5.2, 5]]) {
       for (let c = 0; c < n; c++) {
         if (rnd() < 0.12) continue;   // khoảng trắng giữa các cụm chữ
