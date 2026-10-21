@@ -29,8 +29,8 @@
 <div id="panel">
   <h1>DRONE TRINH SÁT · PHÒNG THỬ</h1>
   <button data-k="spin">Cánh quạt quay</button>
-  <button data-k="dock">Trong hộp chứa trên nóc cabin</button>
-  <button data-k="lid">Mở nắp hộp</button>
+  <button data-k="dock">Trên đế sạc nóc cabin</button>
+  <button data-k="lid">Nhả kẹp càng (cất cánh)</button>
   <button data-k="team">Phe: XANH</button>
   <button data-k="many">Thử tải: 20 drone</button>
   <div id="stats"></div>
@@ -40,7 +40,7 @@
 <script src="src/entities/recon_drone.js"></script>
 <script>
 (() => {
-  // Xem mô hình drone + hộp chứa không cần vào trận; số lượt vẽ / tam giác để đo độ tối ưu (8 đơn vị = 1 m)
+  // Xem mô hình drone + đế sạc không cần vào trận; số lượt vẽ / tam giác để đo độ tối ưu (8 đơn vị = 1 m)
   const canvas = document.getElementById('view');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -61,7 +61,7 @@
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
-  // tấm nóc cabin giả (đặt hộp chứa lên)
+  // tấm nóc cabin giả (đặt đế sạc lên)
   const roof = new THREE.Mesh(new THREE.BoxGeometry(21.2, 1, 14), new THREE.MeshStandardMaterial({ color: 0x4f5a3c, roughness: 0.85 }));
   roof.receiveShadow = roof.castShadow = true;
   scene.add(roof);
@@ -79,7 +79,7 @@
     dock = null;
     roof.visible = S.dock;
     if (S.dock) {
-      // hộp chứa đặt như trên nóc cabin Arbalest (tọa độ hộp quy về gốc)
+      // đế sạc đặt như trên nóc cabin Arbalest (tọa độ đế quy về gốc)
       roof.position.set(0, -0.5, 0);
       dock = ReconDrone.buildDock();
       dock.position.set(0, 0, 0);
@@ -149,7 +149,7 @@
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     fps += (1 / Math.max(1e-3, dt) - fps) * 0.05;
-    // bay: drone lơ lửng nhấp nhô; trong hộp: nắp mở thì drone bốc lên khỏi hộp
+    // bay: drone lơ lửng nhấp nhô; trên đế: nhả kẹp + cánh quay thì drone bốc lên
     const t = now / 1000;
     drones.forEach((d, i) => {
       ReconDrone.animate(d, dt, S.spin ? 1 : 0);
@@ -166,7 +166,7 @@
     renderer.render(scene, cam);
     if ((statT -= dt) <= 0) {
       statT = 0.4;
-      // đếm riêng phần drone / hộp chứa (không tính mặt đất, nóc cabin)
+      // đếm riêng phần drone / đế sạc (không tính mặt đất, nóc cabin)
       let calls = 0, tris = 0;
       root.traverse(o => {
         if (!o.isMesh || !o.visible) return;
@@ -177,7 +177,7 @@
         tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
       });
       const per = drones.length || 1;
-      statsEl.textContent = 'Drone: ' + drones.length + (dock ? ' + hộp chứa' : '') + '\n'
+      statsEl.textContent = 'Drone: ' + drones.length + (dock ? ' + đế sạc' : '') + '\n'
         + 'Lượt vẽ: ' + calls + (drones.length > 1 ? ' (~' + Math.round(calls / per) + ' / drone)' : '') + '\n'
         + 'Tam giác: ' + Math.round(tris).toLocaleString() + (drones.length > 1 ? ' (~' + Math.round(tris / per).toLocaleString() + ' / drone)' : '') + '\n'
         + 'Khung hình: ' + Math.round(fps) + ' / giây';

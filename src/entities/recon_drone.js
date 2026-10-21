@@ -1,18 +1,19 @@
 /**
- * DRONE TRINH SÁT của pháo tự hành — trang bị theo xe, cất trong HỘP CHỨA DRONE bọc thép trên nóc cabin.
- * Kiểu quadcopter trinh sát quân sự cỡ nhỏ (như Skydio X10D / Parrot Anafi USA): sải cánh kể cả cánh quạt ~0.8 m
- * (8 đơn vị = 1 m) để vừa hộp chứa; thân composite bo tròn, 4 tay đòn sợi carbon có khớp gập, mô-tơ không chổi than,
- * cánh quạt 2 lá có xoắn, cụm gimbal 3 ống kính (ngày / zoom / nhiệt) dưới mũi, camera tránh vật cản, vòm GPS,
- * pin rút ở lưng, chân đáp dưới mô-tơ, đèn hàng không (trái đỏ / phải xanh / đuôi chớp trắng) + đèn màu phe.
- * Gốc tọa độ = mặt đáy chân đáp, mũi drone hướng -z.
+ * DRONE TRINH SÁT của pháo tự hành — trang bị theo xe, đậu lộ thiên trên ĐẾ SẠC gắn nóc cabin.
+ * Kiểu quadcopter trinh sát quân sự cỡ nhỏ, vuông vắn hầm hố: sải cánh kể cả cánh quạt ~0.8 m (8 đơn vị = 1 m);
+ * thân giáp góc cạnh vát mép, thanh ray gắn phụ kiện, tay đòn ống vuông có khớp gập, mô-tơ không chổi than,
+ * cánh quạt 2 lá có xoắn, đầu camera hộp 3 ống kính (ngày / zoom / nhiệt) + đo xa laser, càng đáp kiểu trượt,
+ * đèn hàng không (trái đỏ / phải xanh / đuôi chớp trắng) + đèn màu phe. Gốc tọa độ = mặt đáy càng đáp, mũi hướng -z.
  *
- * Hộp chứa (buildDock): khung thép + vách giáp, sàn sạc có dấu đáp, 2 nắp lật mở trước / sau, đèn trạng thái.
- * Đặt lệch phải trên nóc cabin Arbalest (spg_arbalest.js: CAB_ROOF = 22.5, nóc phẳng z -33.5 .. -19.5, rộng ±10.6):
- * tránh nòng pháo gác trên giá hành quân ở giữa (x = 0, z -21.6), cửa nóc bên trái (x -4.6) và ăng-ten (x 7.6, z -31.5).
+ * Đế sạc (buildDock): khung thép bắt vào nóc cabin, mặt đáp có dấu H, 2 thanh tiếp điểm sạc nằm đúng dưới 2 thanh
+ * càng trượt (đáp xuống là sạc), 4 kẹp khóa càng (nhả khi cất cánh / sắp đáp, khóa khi đậu để xe chạy xóc không văng),
+ * hộp sạc + đèn trạng thái + ống luồn cáp. Đặt lệch phải trên nóc cabin Arbalest (spg_arbalest.js: CAB_ROOF = 22.5,
+ * nóc phẳng z -33.5 .. -19.5, rộng ±10.6): tránh nòng pháo gác trên giá hành quân ở giữa (x = 0, z -21.6), cửa nóc bên
+ * trái (x -4.6) và ăng-ten (x 7.6, z -31.5).
  */
 const ReconDrone = (() => {
-  const DOCK = { x: 6.1, y: 22.5, z: -26.4, w: 8.0, d: 8.0, h: 3.3, floor: 0.45 };
-  // bãi đáp (đáy chân đáp khi đậu) = sàn sạc trong hộp
+  const DOCK = { x: 6.1, y: 22.5, z: -26.4, w: 4.8, d: 5.4, floor: 0.42 };
+  // bãi đáp (đáy càng đáp khi đậu) = mặt thanh tiếp điểm sạc
   const PAD = { x: DOCK.x, y: DOCK.y + DOCK.floor, z: DOCK.z };
   const CENTER_Y = 1.5;   // tâm thân drone trên gốc mô hình
 
@@ -324,76 +325,78 @@ const ReconDrone = (() => {
     U.led.visible = !on || (U.t % 1.2) < 0.5;
   }
 
-  // ---------- HỘP CHỨA DRONE trên nóc cabin ----------
+  // ---------- ĐẾ SẠC DRONE trên nóc cabin ----------
+  const SKID_X = 1.45;   // 2 thanh càng trượt của drone (x = ±1.45, dài 3.5, tâm z = +0.1)
   let DOCK_TPL = null;
   function dockTemplate() {
     if (DOCK_TPL) return DOCK_TPL;
     const std = (color, roughness, metalness) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
-    const M = { armor: std(0x56604a, 0.78, 0.15), frame: std(0x3a3f35, 0.6, 0.35), pad: std(0x23251f, 0.9, 0.05), mark: std(0xc9a640, 0.7, 0.05), steel: std(0x5e5b55, 0.45, 0.6) };
-    const B = batcher(), W = DOCK.w, D = DOCK.d, H = DOCK.h, t = 0.28;
-    // đế + sàn sạc (vạch đáp chữ H, tiếp điểm sạc)
-    B.add(new THREE.BoxGeometry(W, DOCK.floor, D), M.frame, [0, DOCK.floor / 2, 0]);
-    B.add(new THREE.BoxGeometry(W - 2 * t - 0.1, 0.04, D - 2 * t - 0.1), M.pad, [0, DOCK.floor + 0.02, 0]);
-    for (const sx of [-1, 1]) B.add(new THREE.BoxGeometry(0.22, 0.02, 2.2), M.mark, [sx * 0.85, DOCK.floor + 0.05, 0]);
-    B.add(new THREE.BoxGeometry(1.5, 0.02, 0.22), M.mark, [0, DOCK.floor + 0.05, 0]);
-    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) B.add(new THREE.BoxGeometry(0.5, 0.06, 0.5), M.steel, [sx * 2.5, DOCK.floor + 0.04, sz * 2.25]);
-    // vách giáp 4 bên + cột góc
-    for (const sx of [-1, 1]) B.add(new THREE.BoxGeometry(t, H - DOCK.floor, D), M.armor, [sx * (W / 2 - t / 2), DOCK.floor + (H - DOCK.floor) / 2, 0]);
-    for (const sz of [-1, 1]) B.add(new THREE.BoxGeometry(W - 2 * t, H - DOCK.floor, t), M.armor, [0, DOCK.floor + (H - DOCK.floor) / 2, sz * (D / 2 - t / 2)]);
-    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) B.add(new THREE.BoxGeometry(0.45, H + 0.05, 0.45), M.frame, [sx * (W / 2 - 0.15), (H + 0.05) / 2, sz * (D / 2 - 0.15)]);
-    // gân tăng cứng + bu-lông + móc cẩu 2 bên hông, hộp điều khiển / sạc phía sau
+    const M = { frame: std(0x3d4234, 0.62, 0.35), pad: std(0x22241f, 0.92, 0.05), mark: std(0xc9a640, 0.7, 0.05),
+      steel: std(0x6a675f, 0.38, 0.7), copper: std(0xb07a45, 0.35, 0.8) };
+    const B = batcher(), W = DOCK.w, D = DOCK.d, F = DOCK.floor;
+    // khung đế: thép hộp vát góc + 4 chân bắt bu-lông xuống nóc cabin
+    B.add(roundedSlab(chamferOutline(W, D, 0.5, 1), F - 0.06, 0.03), M.frame, [0, 0, 0]);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      B.add(new THREE.BoxGeometry(0.7, 0.1, 0.7), M.frame, [sx * (W / 2 - 0.15), 0.05, sz * (D / 2 - 0.15)]);
+      B.add(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 6), M.steel, [sx * (W / 2 - 0.15), 0.12, sz * (D / 2 - 0.15)]);
+    }
+    // mặt đáp cao su chống trượt + dấu H vàng
+    B.add(new THREE.BoxGeometry(W - 0.5, 0.04, D - 0.5), M.pad, [0, F - 0.04, 0]);
+    for (const sx of [-1, 1]) B.add(new THREE.BoxGeometry(0.2, 0.02, 1.6), M.mark, [sx * 0.6, F - 0.01, 0.1]);
+    B.add(new THREE.BoxGeometry(1.2, 0.02, 0.2), M.mark, [0, F - 0.01, 0.1]);
+    // vạch mép cảnh báo (vàng) 2 đầu
+    for (const sz of [-1, 1]) B.add(new THREE.BoxGeometry(W - 0.9, 0.02, 0.14), M.mark, [0, F - 0.01, sz * (D / 2 - 0.42)]);
+    // 2 thanh tiếp điểm sạc (đồng) đúng dưới 2 càng trượt, đế cách điện
     for (const sx of [-1, 1]) {
-      for (const y of [1.2, 2.2]) B.add(new THREE.BoxGeometry(0.12, 0.16, D - 0.6), M.frame, [sx * (W / 2 + 0.04), y, 0]);
-      B.add(new THREE.TorusGeometry(0.28, 0.08, 6, 10), M.steel, [sx * (W / 2 + 0.1), H - 0.5, 0], [0, Math.PI / 2, 0]);
+      B.add(new THREE.BoxGeometry(0.34, 0.06, 3.3), M.frame, [sx * SKID_X, F - 0.03, 0.1]);
+      B.add(new THREE.BoxGeometry(0.2, 0.03, 3.1), M.copper, [sx * SKID_X, F + 0.0, 0.1]);
     }
-    B.add(new THREE.BoxGeometry(2.4, 1.2, 0.5), M.frame, [1.6, 1.25, D / 2 + 0.25]);
-    B.add(new THREE.CylinderGeometry(0.16, 0.16, 0.3, 10), M.steel, [2.6, 1.25, D / 2 + 0.55], [Math.PI / 2, 0, 0]);   // giắc cáp
-    // bản lề nắp trước / sau
-    for (const sz of [-1, 1]) B.add(new THREE.CylinderGeometry(0.16, 0.16, W - 1.0, 10), M.steel, [0, H, sz * (D / 2 - 0.05)], [0, 0, Math.PI / 2]);
-    // 2 nắp lật: bản lề ở mép trước / sau
-    const lids = {};
-    for (const sz of [-1, 1]) {
-      const LB = batcher(), half = D / 2 - 0.05;
-      LB.add(new THREE.BoxGeometry(W - 0.1, 0.24, half), M.armor, [0, 0.12, -sz * half / 2]);
-      for (let i = 0; i < 3; i++) LB.add(new THREE.BoxGeometry(W - 1.4, 0.1, 0.18), M.armor, [0, 0.28, -sz * (0.6 + i * 1.15)]);   // gân chống võng
-      LB.add(new THREE.BoxGeometry(1.4, 0.12, 0.12), M.armor, [0, 0.3, -sz * (half - 0.35)]);   // tay nắm / chốt khóa
-      lids[sz] = LB.merge();
-    }
-    DOCK_TPL = { body: B.merge(), lids, lampGeo: new THREE.BoxGeometry(0.5, 0.18, 0.06) };
+    // hộp sạc + ống luồn cáp bên hông (phía ngoài cabin)
+    B.add(roundedSlab(chamferOutline(0.9, 1.6, 0.12, 1), 0.7, 0.03), M.frame, [W / 2 + 0.45, 0, 0.6]);
+    B.add(new THREE.BoxGeometry(0.06, 0.3, 1.2), M.steel, [W / 2 + 0.92, 0.38, 0.6]);   // lá tản nhiệt
+    B.tube([W / 2 + 0.45, 0.2, 1.4], [W / 2 + 0.45, 0.2, 2.6], 0.09, M.pad, 6);       // ống cáp chạy về sau
+    // kẹp khóa càng: 4 kẹp, mỗi kẹp gồm đế + má kẹp (quay quanh trục dọc z) — dựng sẵn má kẹp 1 lần
+    const jaw = batcher();
+    jaw.add(new THREE.BoxGeometry(0.12, 0.26, 0.34), M.steel, [0, 0.13, 0]);
+    jaw.add(new THREE.BoxGeometry(0.36, 0.08, 0.34), M.steel, [-0.15, 0.22, 0]);   // mỏ kẹp chụp lên càng
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.add(new THREE.BoxGeometry(0.3, 0.16, 0.42), M.frame, [sx * (SKID_X + 0.36), F - 0.02, 0.1 + sz * 1.05]);
+    DOCK_TPL = { body: B.merge(), jaw: jaw.merge(), lampGeo: new THREE.BoxGeometry(0.06, 0.16, 0.36) };
     return DOCK_TPL;
   }
 
   function buildDock() {
-    const T = dockTemplate(), D = DOCK.d, H = DOCK.h;
+    const T = dockTemplate(), W = DOCK.w, F = DOCK.floor;
     const g = new THREE.Group();
     g.name = 'droneDock';
     meshes(T.body, g, true);
-    // 2 nắp lật: bản lề ở mép trước / sau, mở ngửa ra ngoài
-    const lids = [];
-    for (const sz of [-1, 1]) {
+    // 4 kẹp: bản lề ở mép ngoài càng trượt, má kẹp nghiêng vào chụp lên càng khi khóa, ngả ra ngoài khi nhả
+    const clamps = [];
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
       const pivot = new THREE.Group();
-      pivot.position.set(0, H, sz * (D / 2 - 0.05));
-      meshes(T.lids[sz], pivot, true);
+      pivot.position.set(sx * (SKID_X + 0.36), F, 0.1 + sz * 1.05);
+      pivot.scale.x = sx;   // kẹp bên trái là ảnh gương của kẹp bên phải
+      meshes(T.jaw, pivot, true);
       g.add(pivot);
-      lids.push({ pivot, sz });
+      clamps.push({ pivot, sx });
     }
-    // đèn trạng thái trên hộp điều khiển (vật liệu riêng: màu theo trạng thái từng xe)
+    // đèn trạng thái trên hộp sạc (vật liệu riêng: màu theo trạng thái từng xe)
     const lamp = new THREE.Mesh(T.lampGeo, new THREE.MeshBasicMaterial({ color: 0x40ff70 }));
     lamp.userData.shared = true;
-    lamp.position.set(1.6, 1.55, D / 2 + 0.52);
+    lamp.position.set(W / 2 + 0.93, 0.5, 0.05);
     g.add(lamp);
     g.position.set(DOCK.x, DOCK.y, DOCK.z);
-    g.userData = { lids, lamp, open: 0, t: 0 };
+    g.userData = { clamps, lamp, open: 0, t: 0 };
     return g;
   }
 
-  /** open: nắp mở (true) / đóng; status: 'ready' (xanh) | 'charging' (vàng nhấp nháy) | 'out' (xanh dương: drone đang bay) | 'empty' (đỏ: mất drone) */
+  /** open: nhả kẹp (true) / khóa; status: 'ready' (xanh) | 'charging' (vàng nhấp nháy) | 'out' (xanh dương: drone đang bay) | 'empty' (đỏ: mất drone) */
   function animateDock(dock, dt, open, status) {
     const U = dock.userData;
     U.t += dt;
-    U.open += ((open ? 1 : 0) - U.open) * Math.min(1, dt * 7);
-    const a = U.open * 1.68;   // ~96°: nắp trước không quệt vào ăng-ten cabin
-    for (const L of U.lids) L.pivot.rotation.x = L.sz * a;
+    U.open += ((open ? 1 : 0) - U.open) * Math.min(1, dt * 8);
+    // khóa: má kẹp nghiêng vào ~0.1 rad chụp lên càng; nhả: ngả ra ngoài ~1.1 rad
+    const a = 0.1 - U.open * 1.2;
+    for (const c of U.clamps) c.pivot.rotation.z = a * c.sx;
     const col = status === 'empty' ? 0xff3020 : status === 'out' ? 0x3aa0ff : status === 'charging' ? 0xffb020 : 0x40ff70;
     if (U.col !== col) { U.col = col; U.lamp.material.color.setHex(col); }
     U.lamp.visible = status !== 'charging' || (U.t % 1) < 0.6;

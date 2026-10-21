@@ -186,63 +186,93 @@ SoundEngine.mixin(class {
   }
 
   /**
-   * Tiếng cánh quạt của drone KHÁC đang bay (nghe từ xe mình): d = khoảng cách tới drone gần nhất (null: không có),
-   * pos = vị trí drone (lệch trái / phải). Tiếng "vo vo" cao, nhỏ dần theo khoảng cách, lọc trầm khi ở xa.
+   * Tiếng cánh quạt của các drone đang bay nghe từ xe mình dưới đất (tối đa 2 chiếc gần nhất, mỗi chiếc 1 giọng).
+   * list: [{ d (đv), pos {x, z}, vr (vận tốc lại gần, m/s; dương = đang lao tới), speed (đv/s), climb (đv/s) }]
+   * mask: tiếng máy / xích xe mình át bớt (0..1)
+   * Mô phỏng âm học ngoài trời: cường độ giảm theo 1/khoảng cách (−6 dB mỗi lần xa gấp đôi), không khí hấp thụ âm cao
+   * (xa chỉ còn tiếng "ù" trầm, gần mới nghe rít mô-tơ / xé gió của cánh), lệch trái / phải, Doppler khi bay vụt qua,
+   * cánh quay nhanh hơn khi drone tăng tốc / leo cao. Quá ~1600 đv (~200 m) thì nhỏ dần rồi tắt hẳn.
    */
-  updateDroneAmbient(d, pos) {
+  updateDroneAmbient(list, mask = 0) {
     if (!this.ctx) return;
-    const A = this.droneAmb;
-    if ((d === null || this.isMuted) && !A) return;
+    const V = this.droneAmb || (this.droneAmb = []);
     const t = this.ctx.currentTime;
-    if (d === null || this.isMuted) { A.out.gain.setTargetAtTime(0, t, 0.25); return; }
-    if (!A) {
-      const ctx = this.ctx, out = ctx.createGain();
-      out.gain.value = 0;
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 1800;
-      out.connect(lp);
-      let node = lp;
-      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-      if (pan) { lp.connect(pan); node = pan; }
-      node.connect(this.masterGain);
-      // 2 cặp rotor lệch nhau vài Hz -> tiếng phách "ào ào" của quadcopter nghe từ xa
-      const oscs = [196, 203, 211, 189].map(f => {
-        const o = ctx.createOscillator();
-        o.type = 'sawtooth';
-        o.frequency.value = f;
-        const g = ctx.createGain();
-        g.gain.value = 0.22;
-        o.connect(g);
-        g.connect(out);
-        o.start(t);
-        return o;
-      });
-      const ns = ctx.createBufferSource();
-      ns.buffer = this.pinkNoiseBuffer || this.noiseBuffer;
-      ns.loop = true;
-      const nf = ctx.createBiquadFilter();
-      nf.type = 'bandpass';
-      nf.frequency.value = 1400;
-      nf.Q.value = 0.7;
-      const ng = ctx.createGain();
-      ng.gain.value = 0.35;
-      ns.connect(nf);
-      nf.connect(ng);
-      ng.connect(out);
-      ns.start(t);
-      this.droneAmb = { out, lp, pan, oscs, ns, jit: 0 };
-      return;
+    for (let i = 0; i < 2; i++) {
+      const s = !this.isMuted && list ? list[i] : null;
+      let A = V[i];
+      if (!s) { if (A) A.out.gain.setTargetAtTime(0, t, 0.3); continue; }
+      if (!A) A = V[i] = this.makeDroneAmbVoice();
+      const REF = 24, FAR = 1300, END = 1650;   // 3 m: mức chuẩn; từ ~160 m nhỏ dần, ~205 m tắt
+      const d = Math.max(REF, s.d);
+      let g = 0.085 * REF / d;
+      if (s.d > FAR) g *= Math.max(0, 1 - (s.d - FAR) / (END - FAR));
+      g *= 1 - 0.5 * Math.max(0, Math.min(1, mask));
+      const sp = this.spatial(s.d, s.pos);
+      A.out.gain.setTargetAtTime(g, t, 0.12);
+      A.lp.frequency.setTargetAtTime(Math.max(300, Math.min(9000, sp.lowpass * 1.1)), t, 0.2);
+      if (A.pan && s.pos) A.pan.pan.setTargetAtTime(sp.pan * 0.85, t, 0.15);
+      // vòng quay theo tải (tăng tốc / leo cao) + Doppler (giới hạn ±6%) + dao động bộ điều khiển bay
+      const load = 1 + Math.min(0.22, (s.speed || 0) / 3000 + Math.max(0, s.climb || 0) / 1500);
+      const dop = Math.max(0.94, Math.min(1.06, 1 / (1 - (s.vr || 0) / 343)));
+      A.jit += ((Math.random() - 0.5) * 0.04 - A.jit) * 0.1;
+      const k = load * dop * (1 + A.jit);
+      A.oscs.forEach((o, j) => o.frequency.setTargetAtTime(A.base[j] * k, t, 0.08));
+      A.nf.frequency.setTargetAtTime(1400 * k, t, 0.15);
+      // gần mới nghe tiếng rít mô-tơ điện / xé gió đầu cánh (tần số cao bị không khí hấp thụ trước)
+      A.whine.gain.setTargetAtTime(0.06 * Math.max(0, 1 - s.d / 300), t, 0.15);
+      A.whineO.frequency.setTargetAtTime(A.base[0] * 3.6 * k, t, 0.08);
     }
-    const near = Math.max(0, 1 - d / 1000);
-    A.out.gain.setTargetAtTime(0.05 * near * near, t, 0.2);
-    A.lp.frequency.setTargetAtTime(600 + 2400 * near, t, 0.3);
-    if (A.pan && pos) {
-      const sp = this.spatial(d, pos);
-      A.pan.pan.setTargetAtTime(sp.pan * 0.8, t, 0.2);
-    }
-    A.jit += ((Math.random() - 0.5) * 0.04 - A.jit) * 0.1;
-    A.oscs.forEach((o, i) => o.frequency.setTargetAtTime([196, 203, 211, 189][i] * (1 + A.jit), t, 0.1));
+  }
+
+  makeDroneAmbVoice() {
+    const ctx = this.ctx, t = ctx.currentTime, out = ctx.createGain();
+    out.gain.value = 0;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1800;
+    out.connect(lp);
+    let node = lp;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (pan) { lp.connect(pan); node = pan; }
+    node.connect(this.masterGain);
+    // 4 rotor lệch nhau vài Hz -> tiếng phách "ào ào" của quadcopter (mỗi drone lệch tông một chút)
+    const f0 = 190 + Math.random() * 30;
+    const base = [f0, f0 * 1.035, f0 * 1.075, f0 * 0.965];
+    const oscs = base.map(f => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = 0.22;
+      o.connect(g);
+      g.connect(out);
+      o.start(t);
+      return o;
+    });
+    // nhiễu khí động của cánh
+    const ns = ctx.createBufferSource();
+    ns.buffer = this.pinkNoiseBuffer || this.noiseBuffer;
+    ns.loop = true;
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.value = 1400;
+    nf.Q.value = 0.7;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.35;
+    ns.connect(nf);
+    nf.connect(ng);
+    ng.connect(out);
+    ns.start(t, Math.random() * (ns.buffer.duration || 1));
+    // tiếng rít mô-tơ không chổi than (chỉ nghe khi ở gần)
+    const whineO = ctx.createOscillator();
+    whineO.type = 'sine';
+    whineO.frequency.value = f0 * 3.6;
+    const whine = ctx.createGain();
+    whine.gain.value = 0;
+    whineO.connect(whine);
+    whine.connect(out);
+    whineO.start(t);
+    return { out, lp, pan, oscs, base, ns, nf, whineO, whine, jit: 0 };
   }
 
   /**

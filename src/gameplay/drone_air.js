@@ -105,7 +105,7 @@ const DroneAir = (() => {
       this.updateAirLockOverlay();
     },
 
-    // HỘP CHỨA DRONE trên nóc cabin mọi xe pháo: nắp mở khi drone cất cánh / sắp đáp, đèn trạng thái
+    // ĐẾ SẠC DRONE trên nóc cabin mọi xe pháo: kẹp càng nhả khi drone cất cánh / sắp đáp, đèn trạng thái
     // (xanh lá: sẵn sàng, vàng nhấp nháy: đang sạc, xanh dương: drone đang bay, đỏ: mất drone)
     updateDroneDocks(dt) {
       if (typeof ReconDrone === 'undefined' || !ReconDrone.buildDock) return;
@@ -506,15 +506,23 @@ const DroneAir = (() => {
     updateDroneAmbient(list) {
       const SE = window.soundEngine, P = this.player;
       if (!SE || !SE.updateDroneAmbient) return;
-      let best = null, bd = 1000;
+      const near = this._ambList || (this._ambList = []);
+      near.length = 0;
       if (P && !P.isDead && !(this._sight && this._sight.arty)) {
+        const py = (P.y || 0) + 10;
         for (const dr of list) {
           if (dr.key === 'own' && dr.state === 'launching') continue;   // pha cất cánh đã có tiếng riêng
-          const d = Math.hypot(dr.x - P.x, dr.y - (P.y || 0), dr.z - P.z);
-          if (d < bd) { bd = d; best = dr; }
+          const dx = dr.x - P.x, dy = dr.y - py, dz = dr.z - P.z, d = Math.hypot(dx, dy, dz);
+          if (d > 1650) continue;
+          // vận tốc lại gần xe mình (m/s, 8 đv = 1 m): dương = đang lao tới -> tiếng cao lên (Doppler)
+          const vr = -((dr.wvx || 0) * dx + (dr.wvy || 0) * dy + (dr.wvz || 0) * dz) / Math.max(1, d) / 8;
+          near.push({ d, pos: { x: dr.x, z: dr.z }, vr, speed: Math.hypot(dr.wvx || 0, dr.wvz || 0), climb: dr.wvy || 0 });
         }
+        near.sort((a, b) => a.d - b.d);
       }
-      SE.updateDroneAmbient(best ? bd : null, best ? { x: best.x, z: best.z } : null);
+      // tiếng máy / xích xe mình át tiếng drone khi xe chạy nhanh
+      const mask = P && !P.isDead ? Math.min(1, Math.abs(P.speed || 0) / Math.max(1, P.baseMaxSpeed || 100)) : 0;
+      SE.updateDroneAmbient(near, mask);
     },
 
     // ---------- PHÒNG KHÔNG: XE 6 NÒNG / XE TRINH SÁT ----------

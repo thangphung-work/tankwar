@@ -3435,7 +3435,7 @@ class ArtilleryGame3D {
       return;
     }
     if (D.state === 'launching') {
-      // cất cánh từ hộp chứa trên nóc cabin: nắp mở, cánh quay lên, bốc thẳng lên ~35 đơn vị rồi chuyển sang hình từ drone
+      // cất cánh từ đế sạc trên nóc cabin: kẹp càng nhả, cánh quay lên, bốc thẳng lên ~35 đơn vị rồi chuyển sang hình từ drone
       D.launchT += dt;
       const k = Math.min(1, Math.max(0, (D.launchT - 0.5) / 0.75));
       D.x = pd.x; D.z = pd.z; D.y = pd.y + k * k * (3 - 2 * k) * 35;
