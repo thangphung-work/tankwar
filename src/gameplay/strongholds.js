@@ -273,13 +273,13 @@ const Strongholds = (() => {
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uSand = { value: new THREE.Vector3(...G.c) };
       sh.uniforms.uSandK = { value: G.k };
-      sh.uniforms.uShDim = { value: new THREE.Vector2(S.HB, S.CEIL) };
+      sh.uniforms.uShDim = { value: new THREE.Vector3(S.HB, S.CEIL, S.END) };
       sh.vertexShader = 'attribute float aFloorY;\nattribute float aSand;\nvarying vec3 vShWP;\nvarying vec3 vShWN;\nvarying vec3 vShLP;\nvarying float vShLY, vShFY, vShSand;\n' +
         sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
   vShWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
   vShWN = normalize(mat3(modelMatrix) * objectNormal);
   vShLY = transformed.y; vShFY = aFloorY; vShSand = aSand; vShLP = transformed;`);
-      sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK; uniform vec2 uShDim;
+      sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK; uniform vec3 uShDim;
 varying vec3 vShWP; varying vec3 vShWN; varying vec3 vShLP; varying float vShLY, vShFY, vShSand;
 float shH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -296,7 +296,10 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     float slopeK = smoothstep(0.3, 0.75, up) * (1.0 - flatK); // mặt vát
     float wallK = 1.0 - smoothstep(0.15, 0.45, up) - down;    // mặt đứng
     float sand;
-    ${floor ? `// cát lấn từ mép vào (mép lồi lõm theo nhiễu nhiều tầng) + vệt cát gió thổi lấm tấm, dày hơn gần mép
+    ${floor ? `// mép cuối sân không cắt thẳng: tấm sàn "tan" dần vào cát theo đường viền lồi lõm -> lộ ra mặt đất thật ngay bên dưới
+    // (đã hạ sát mặt sàn), ranh giới là cát địa hình giáp cát, không còn một đường kẻ thẳng tắp
+    if (abs(vShLP.x) > uShDim.z - 24.0 + (shN(q * 0.09) * 0.6 + shN(q * 0.42 + 5.0) * 0.4) * 22.0) discard;
+    // cát lấn từ mép vào (mép lồi lõm theo nhiễu nhiều tầng) + vệt cát gió thổi lấm tấm, dày hơn gần mép
     sand = smoothstep(0.42, 0.62, vShSand * 0.95 + (fb - 0.5) * 0.9);
     sand = max(sand, smoothstep(0.55, 0.9, n2 * 0.6 + n4 * 0.4) * 0.4 * (0.25 + vShSand));` : `// bụi cát bám chân tường (cao ~1-2,5 m, mép loang), mặt úp thì không
     float hb = vShLY - vShFY;
@@ -327,7 +330,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     reflectedLight.indirectSpecular *= vis;
   }`);
     };
-    mat.customProgramCacheKey = () => 'shWeather3:' + kind;
+    mat.customProgramCacheKey = () => 'shWeather4:' + kind;
     return mat;
   }
   // Thuộc tính cho shader bám bụi: aFloorY = cao độ mặt sàn / đất dưới chân đỉnh đó, aSand = mức cát lấn (sàn)
@@ -1312,8 +1315,15 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const f = dx * fx + dz * fz, r = dx * rx + dz * rz, af = Math.abs(f), ar = Math.abs(r);
         // dải kênh + bề dày tường + 1 ô lưới đệm
         if (af <= S.END + cell && ar < cutHalf(Math.min(af, S.END)) + S.WING_T + cell * 1.2) {
+          // Ngoài mép cuối sân (af > END) không còn sàn: đất chỉ cần thấp hơn mặt sân một chút. Trước đây ô lưới ngoài mép
+          // (ô 16 đv) bị hạ theo cao độ đoạn dốc phía trong (-2..-3 đv) -> rãnh trũng thẳng tắp chạy ngang ngay sau mép sân,
+          // nếp gãy tam giác lưới lộ thành vạch tối. Gần đỉnh dốc (đoạn cong lồi, đã cao gần bằng mặt sân) cũng bớt hạ dư
           const fy = floorY(Math.max(0, af - cell));
-          const lim = s.G + fy - (fy < -0.01 ? 3 : 0.3);
+          // đoạn cuối dốc cong lồi & sân phẳng: dây cung của mặt dốc luôn nằm dưới mặt dốc -> chỉ cần thấp hơn mặt sàn tại
+          // chính chỗ đó 0,4 đv (đất ngay dưới mép sân gần như sát mặt sàn: mép sân "tan" vào cát, xem weatherMat)
+          const lim = af > S.END ? s.G - 0.3
+            : af > S.RAMP_END - cell * 1.5 ? s.G + floorY(af) - 0.4
+            : s.G + fy - (fy < -0.01 ? 3 : 0.3);
           const k = j * N + i;
           if (heights[k] > lim) heights[k] = lim;
         }
