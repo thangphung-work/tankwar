@@ -902,6 +902,7 @@
       sub('DRONE_HIT', (d, from) => { if (game.onNetDroneHit) game.onNetDroneHit(d, from, this); });
       sub('DRONE_DOWN', (d, from) => { if (game.onNetDroneDown) game.onNetDroneDown(d, from, this); });
       sub('DRONE_LOCK', (d, from) => { if (game.onNetDroneLock) game.onNetDroneLock(d, from, this); });
+      sub('AA_MG', (d, from) => { if (game.onNetAAmg) game.onNetAAmg(d, from, this); });
       sub('ENVSUM', (d, from) => this.onEnvSum(d, from));
       sub('ENVSTATE', (d, from) => this.onEnvState(d, from));
       sub('ENVFIX', (d, from) => this.onEnvFix(d, from));

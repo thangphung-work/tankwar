@@ -542,15 +542,23 @@
     const rb = new VehicleKit.PartBatch(DECK_Y + ROOF);
     rb.cyl(1.1, 1.2, 0.6, 12, D, [0, 0.3, 0]);
     rb.box(1.8, 1.3, 2.2, P, [0, 1.25, 0]);
-    rb.box(0.55, 0.55, 2.6, D, [0, 2.0, -0.6]);
-    rb.cyl(0.14, 0.14, 4.2, 8, D, [0, 2.05, -3.9], 'z');
-    rb.cyl(0.24, 0.24, 0.7, 8, D, [0, 2.05, -6.0], 'z');
     rb.box(1.0, 1.0, 1.3, P, [1.4, 1.6, -0.2]);
-    rb.box(0.9, 0.8, 1.1, P, [-1.4, 1.9, -0.5]);
-    rb.box(0.6, 0.4, 0.08, M.glass, [-1.4, 1.95, -1.08]);
     rb.build(rcws);
+    // khối súng + ống ngắm nâng hạ được (súng phòng không: trạm quay độc lập với tháp pháo, xem drone_air.js)
+    const rcwsGun = new THREE.Group();
+    rcwsGun.position.set(0, 2.0, -0.4);
+    const gb = new VehicleKit.PartBatch(DECK_Y + ROOF + 2.0);
+    gb.box(0.55, 0.55, 2.6, D, [0, 0, -0.2]);
+    gb.cyl(0.14, 0.14, 4.2, 8, D, [0, 0.05, -3.5], 'z');
+    gb.cyl(0.24, 0.24, 0.7, 8, D, [0, 0.05, -5.6], 'z');
+    gb.box(0.9, 0.8, 1.1, P, [-1.4, -0.1, -0.1]);
+    gb.box(0.6, 0.4, 0.08, M.glass, [-1.4, -0.05, -0.68]);
+    gb.build(rcwsGun);
+    rcws.add(rcwsGun);
     turret.add(rcws);
     unit.rcwsTurret = rcws;
+    unit.rcwsGun = rcwsGun;
+    unit.rcwsMuzzleLocal = new THREE.Vector3(0, 0.05, -6.0);
     VehicleKit.registerPartGroup(unit, 'rcws', rcws);
 
     return { periHead };

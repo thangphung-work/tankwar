@@ -1892,6 +1892,8 @@ class ArtilleryGame3D {
 
   triggerPlayerFire() {
     if (!this.player || this.player.isDead) return;
+    // xe tăng đang ngắm lên trời / khóa drone: Space bóp cò trạm súng máy phòng không (drone_air.js), không bắn pháo chính
+    if (this._airAim && this.player.tankType === 'ALL_ROUNDER') return;
     // Xe trinh sát đang chọn ô tên lửa: Space phóng tên lửa dẫn hướng (súng máy nạp đạn không ảnh hưởng)
     if (this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE') {
       this.triggerPlayerAntiTank();
@@ -5745,6 +5747,9 @@ class ArtilleryGame3D {
         ctx.fill();
       });
     }
+
+    // drone đang bay (phe mình + drone địch đang thấy)
+    if (this.drawDronesOnMap) this.drawDronesOnMap(ctx, (wx, wz) => ({ x: (wx + this.worldWidth / 2) * scale, y: (wz + this.worldDepth / 2) * scale }), false);
 
     // Xe địch đang khóa: khung khóa đỏ (vàng khi đang ngắm tay) — vẽ đúng chỗ ký hiệu đang hiện
     const LT = this.lockedTarget;

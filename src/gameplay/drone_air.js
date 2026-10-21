@@ -21,7 +21,10 @@ const DroneAir = (() => {
     SEND_FLY: 0.1, SEND_IDLE: 1.0,
     INTERP: 0.12, EXTRAP: 0.35,
     DOCK_VIEW: 1300,     // drone đậu trên nóc xe khác chỉ vẽ khi camera trong khoảng này
-    AA_TYPES: { GATLING: 1, SCOUT: 1 }
+    AA_TYPES: { GATLING: 1, SCOUT: 1, ALL_ROUNDER: 1 },
+    // trạm súng máy 12.7mm điều khiển từ xa trên nóc tháp xe tăng: súng nhỏ, đạn thường — kém hơn súng máy xe trinh sát
+    // (bắn chậm hơn, mỗi phát trúng drone ít hơn, gần như không làm xước xe bọc thép); quay độc lập với tháp pháo
+    RCWS: { rof: 0.12, mag: 100, reload: 6, yawRate: 1.7, pitchRate: 1.2, elMin: -8, elMax: 70, dmgDrone: 0.25, dmgVehicle: 0.015 }   // 4 phát trúng drone mới rơi (12.7mm xe trinh sát: 3)
   };
   const ST = ['docked', 'launching', 'flying', 'returning', 'lost'];
   const airborne = s => s === 'launching' || s === 'flying' || s === 'returning';
@@ -126,6 +129,8 @@ const DroneAir = (() => {
       this.updateDroneDamageFX(dt, list);
       this.updateDroneFalls(dt);
       this.sendDroneState(dt);
+      this.updateRCWS(dt);
+      this.sendAAmg(dt);
       this.flushDroneHits();
       this.sendDroneLocks(dt);
       this.updateDroneThreat(dt);
@@ -261,7 +266,7 @@ const DroneAir = (() => {
       const shooter = this.unitById(s.shooterId);
       const NS = this.netSync && !this.netSync.detached ? this.netSync : null;
       const auth = !s.netRemote && (!NS || (shooter && NS.owns(shooter)));
-      const dmg = C.DMG[s.ammoType] || 0;
+      const dmg = s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0);
       if (!dmg) return;
       if (dr.key === 'own') {
         if (auth) this.damageOwnDrone(dmg, shooter);
@@ -299,6 +304,140 @@ const DroneAir = (() => {
       });
     },
 
+    // ---------- DRONE TRÊN BẢN ĐỒ NHỎ / BẢN ĐỒ CHIẾN THUẬT ----------
+    // Drone phe mình luôn hiện (xanh); drone địch chỉ hiện khi phe mình đang nhìn thấy (đỏ) — radar không bắt drone.
+    // Ký hiệu: dấu X 4 cánh quạt trong vòng tròn + vạch hướng bay; drone đang bị mình khóa: vòng khóa vàng;
+    // bản đồ lớn có nhãn UAV + độ cao
+    drawDronesOnMap(ctx, toScreen, big) {
+      const P = this.player;
+      if (!P) return;
+      const t = performance.now() / 1000, A = this._airAim;
+      for (const dr of this.airDroneList()) {
+        const ally = dr.team === P.team;
+        if (!ally && !dr.seen) continue;
+        const s = toScreen(dr.x, dr.z), r = big ? 7 : 4.2;
+        const col = ally ? '#5fb0dc' : '#ff6a5c';
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.strokeStyle = col; ctx.fillStyle = ally ? 'rgba(95,176,220,0.25)' : 'rgba(255,106,92,0.25)'; ctx.lineWidth = big ? 1.6 : 1.1;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        // 4 cánh quạt
+        ctx.lineWidth = big ? 1.3 : 0.9;
+        const k = r * 0.62;
+        ctx.beginPath(); ctx.moveTo(-k, -k); ctx.lineTo(k, k); ctx.moveTo(k, -k); ctx.lineTo(-k, k); ctx.stroke();
+        for (const [ax, ay] of [[-k, -k], [k, -k], [-k, k], [k, k]]) { ctx.beginPath(); ctx.arc(ax, ay, r * 0.28, 0, Math.PI * 2); ctx.stroke(); }
+        // vạch hướng bay (theo vận tốc)
+        const sp = Math.hypot(dr.wvx || 0, dr.wvz || 0);
+        if (sp > 20) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo((dr.wvx / sp) * r * 2.2, (dr.wvz / sp) * r * 2.2); ctx.stroke(); }
+        if (A && A.dr === dr) {
+          ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.arc(0, 0, r + 3 + Math.sin(t * 6), 0, Math.PI * 2); ctx.stroke();
+        }
+        if (big) {
+          ctx.fillStyle = ally ? 'rgba(160,225,245,0.95)' : 'rgba(255,150,150,0.95)';
+          ctx.font = '10px Share Tech Mono, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          const gy = this.terrain ? this.terrain.getElevationAt(dr.x, dr.z) : 0;
+          ctx.fillText('UAV · CAO ' + Math.round(Math.max(0, dr.y - gy)) + 'M', r + 4, 0);   // cùng đơn vị với HUD drone
+        }
+        ctx.restore();
+      }
+    },
+
+    // ---------- TRẠM SÚNG MÁY PHÒNG KHÔNG TRÊN NÓC THÁP XE TĂNG ----------
+    /** Miệng nòng dùng để bắn mục tiêu trên không: trạm súng máy (xe tăng) hoặc nòng chính (xe 6 nòng / trinh sát) */
+    aaMuzzle(u) {
+      if (u.rcwsGun && u.rcwsMuzzleLocal) {
+        u.rcwsGun.updateWorldMatrix(true, false);
+        const M = u.rcwsGun.matrixWorld;
+        const pos = u.rcwsMuzzleLocal.clone().applyMatrix4(M);
+        const dir = new THREE.Vector3(0, 0, -1).transformDirection(M);
+        return { position: pos, direction: dir };
+      }
+      if (u.getMuzzleWorldTransform) return u.getMuzzleWorldTransform();
+      return { position: new THREE.Vector3(u.x, (u.y || 0) + 20, u.z), direction: new THREE.Vector3(0, 0, -1) };
+    },
+
+    // Mỗi khung hình, mọi xe tăng: trạm súng quay / ngóc về hướng lệnh u._aa { az, el, firing } (người chơi, bot, hoặc
+    // gói mạng của xe máy khác), không có lệnh thì về vị trí nghỉ; bắn ~8 phát/giây, hộp 100 viên, thay hộp 6 s
+    updateRCWS(dt) {
+      if (!(dt > 0) || !this.ballistics) return;
+      const R = C.RCWS, now = performance.now() / 1000, D2R = Math.PI / 180;
+      for (const u of this.units) {
+        if (u.tankType !== 'ALL_ROUNDER' || !u.rcwsTurret || !u.rcwsGun) continue;
+        let A = u._aa;
+        if (A && (A.until || 0) < now) A = u._aa = null;
+        const S = u._rcws || (u._rcws = { yaw: 0, pitch: 0, mag: R.mag, reload: 0, t: R.rof });
+        if (u.isDead) { u.isFiringAAmg = false; continue; }
+        let wy = 0, wp = 0;
+        if (A) {
+          // hướng lệnh (thế giới) đổi sang khung tọa độ của tháp pháo (kể cả thân xe nghiêng trên dốc) -> góc quay / ngóc
+          const par = u.rcwsTurret.parent, az = A.az * D2R, e = Math.max(R.elMin, Math.min(R.elMax, A.el)) * D2R;
+          const v = this._rcwsV || (this._rcwsV = new THREE.Vector3()), q = this._rcwsQ || (this._rcwsQ = new THREE.Quaternion());
+          v.set(Math.sin(az) * Math.cos(e), Math.sin(e), -Math.cos(az) * Math.cos(e));
+          if (par) { par.updateWorldMatrix(true, false); par.getWorldQuaternion(q); v.applyQuaternion(q.invert()); }
+          wy = Math.atan2(-v.x, -v.z);
+          wp = Math.atan2(v.y, Math.hypot(v.x, v.z));
+        }
+        const dy = wrapPi(wy - S.yaw), sy = R.yawRate * dt;
+        S.yaw = wrapPi(S.yaw + Math.max(-sy, Math.min(sy, dy)));
+        S.pitch += Math.max(-R.pitchRate * dt, Math.min(R.pitchRate * dt, Math.max(R.elMin * D2R, Math.min(R.elMax * D2R, wp)) - S.pitch));
+        u.rcwsTurret.rotation.y = S.yaw;
+        u.rcwsGun.rotation.x = S.pitch;
+        if (S.reload > 0 && (S.reload -= dt) <= 0) S.mag = R.mag;
+        const firing = !!(A && A.firing) && S.reload <= 0;
+        u.isFiringAAmg = firing;
+        if (!firing) { S.t = R.rof; continue; }
+        S.t += dt;
+        while (S.t >= R.rof && S.mag > 0) {
+          S.t -= R.rof;
+          this.fireRCWS(u);
+          if (--S.mag <= 0) {
+            S.reload = R.reload;
+            if (u === this.player) this.addCombatLog('[[hourglass]] Trạm súng phòng không hết hộp đạn — đang thay hộp (6 s)', 'alert');
+          }
+        }
+      }
+    },
+
+    fireRCWS(u) {
+      const m = this.aaMuzzle(u), d = m.direction;
+      const az = (Math.atan2(d.x, -d.z) * 180 / Math.PI + 360) % 360, el = Math.asin(Math.max(-1, Math.min(1, d.y))) * 180 / Math.PI;
+      let shell = null;
+      u._launchOverride = { position: m.position, direction: d };
+      try { shell = this.ballistics.fireShell3D(u, az, el, 1, 'SCOUT_BULLET'); } finally { u._launchOverride = null; }
+      if (shell) { shell.isGatling = true; shell.aaMG = true; shell.damage = C.RCWS.dmgVehicle; }
+      const SE = window.soundEngine, P = this.player;
+      if (SE && SE.playGatlingShot && P) {
+        if (u === P) SE.playGatlingShot('SCOUT', 0);
+        else {
+          const L = this.audioListener() || P, dd = Math.hypot(u.x - L.x, u.z - L.z);
+          if (dd < 1400) SE.playGatlingShot('SCOUT', Math.max(1, dd), { x: u.x, z: u.z }, u.id);
+        }
+      }
+    },
+
+    // xe tăng mình điều khiển (người chơi, bot) đang dùng trạm súng phòng không: báo hướng súng + cò cho máy khác
+    // (thấy súng quay, thấy đạn vạch đường bay lên) ~6 lần/giây; thôi thì báo một lần để máy khác thu súng về
+    sendAAmg(dt) {
+      const NS = this.netSync;
+      if (!NS || NS.detached) return;
+      if ((this._aaSendT = (this._aaSendT || 0) - dt) > 0) return;
+      this._aaSendT = 0.15;
+      for (const u of this.units) {
+        if (u.tankType !== 'ALL_ROUNDER' || u.netId === undefined || !(u === this.player || (u.botAI && !u._netProxy))) continue;
+        const A = u._aa;
+        if (A) { NS.net.send('AA_MG', { i: u.netId, a: Math.round(A.az * 10), e: Math.round(A.el * 10), f: A.firing ? 1 : 0 }); u._aaSent = true; }
+        else if (u._aaSent) { NS.net.send('AA_MG', { i: u.netId, x: 1 }); u._aaSent = false; }
+      }
+    },
+
+    onNetAAmg(d, from, NS) {
+      if (!d) return;
+      const u = NS.byNetId[d.i];
+      if (!u || u === this.player || NS.owns(u) || NS.ownerOf(u) !== from || u.tankType !== 'ALL_ROUNDER') return;
+      u._aa = d.x ? null : { az: (d.a || 0) / 10, el: (d.e || 0) / 10, firing: !!d.f, until: performance.now() / 1000 + 0.6 };
+    },
+
     // ---------- BỊ KHÓA MỤC TIÊU ----------
     // Máy nào điều khiển xe đang khóa / đang bắn drone của máy khác (người chơi khóa drone, bot đang bám drone) thì báo
     // cho máy chủ drone ~2 lần/giây: DRONE_LOCK { o: xe pháo chủ drone, a: xe khóa, f: 1 = đang xả đạn }
@@ -310,7 +449,7 @@ const DroneAir = (() => {
       const P = this.player, A = this._airAim;
       const send = (dr, u) => {
         if (!dr || !dr.net || !dr.unit || dr.unit.netId === undefined || u.netId === undefined) return;
-        NS.net.send('DRONE_LOCK', { o: dr.unit.netId, a: u.netId, f: u.isFiringGatling ? 1 : 0 });
+        NS.net.send('DRONE_LOCK', { o: dr.unit.netId, a: u.netId, f: u.isFiringGatling || u.isFiringAAmg ? 1 : 0 });
       };
       if (A && A.kind === 'drone' && P && !P.isDead) send(A.dr, P);
       for (const u of this.units) {
@@ -335,7 +474,7 @@ const DroneAir = (() => {
       const T = this._droneThreat || (this._droneThreat = { beep: 0, was: false, top: null, firing: false });
       // bot do máy mình điều khiển đang bám drone mình (chơi đơn / chủ phòng)
       if (D && D.unit === P) for (const u of this.units) {
-        if (!u.isDead && u.botAI && !u._netProxy && u.botAI.aa && u.botAI.aa.d === D) L.set(u, { until: now + 0.3, firing: !!u.isFiringGatling });
+        if (!u.isDead && u.botAI && !u._netProxy && u.botAI.aa && u.botAI.aa.d === D) L.set(u, { until: now + 0.3, firing: !!(u.isFiringGatling || u.isFiringAAmg) });
       }
       let top = null, best = Infinity, firing = false;
       const up = D && D.unit === P && !P.isDead && airborne(D.state);
@@ -803,7 +942,7 @@ const DroneAir = (() => {
       if (!this._airAim) return;
       this._airAim = null;
       const P = this.player;
-      if (P) { P.fcsTarget = null; P.aimAz = P.aimEl = undefined; }
+      if (P) { P.fcsTarget = null; P.aimAz = P.aimEl = undefined; P._aa = null; }
       if (msg) this.addCombatLog(msg, 'alert');
       if (this._airLockEl) this._airLockEl.hidden = true;
     },
@@ -816,7 +955,7 @@ const DroneAir = (() => {
       const B = this.ballistics;
       if (!B || !B.roundParams) return null;
       const rp = B.roundParams(ammo, shooter), M = B.bulletSpeedMultiplier || 1;
-      const mz = shooter.getMuzzleWorldTransform ? shooter.getMuzzleWorldTransform().position : { x: shooter.x, y: (shooter.y || 0) + 20, z: shooter.z };
+      const mz = this.aaMuzzle(shooter).position;
       let t = Math.hypot(tx - mz.x, ty - mz.y, tz - mz.z) / Math.max(1, rp.v0 * M);
       let az = 0, el, dist = 0, travel = 0;
       for (let it = 0; it < 3; it++) {
@@ -868,7 +1007,9 @@ const DroneAir = (() => {
       if (!A || !P || P.isDead || !this.canShootAir(P)) { this._airAim = null; return false; }
       if (manual) { this.clearAirAim(); return false; }
       const B = this.ballistics;
-      const ammo = P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (P.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
+      const tank = P.tankType === 'ALL_ROUNDER';   // xe tăng: trạm súng máy trên nóc tháp, pháo chính không ngóc lên
+      const ammo = tank ? 'SCOUT_BULLET' : P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (P.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
+      const elMax = tank ? C.RCWS.elMax : 60;
       let az = A.az, el = A.el;
       if (A.kind === 'drone') {
         const dr = A.dr;
@@ -882,20 +1023,22 @@ const DroneAir = (() => {
         if (!S) return true;
         az = S.az; el = S.el;
         const cap = B.maxTravelFor ? B.maxTravelFor(ammo, P) : 900;
-        A.state = el > 60 ? 'high' : (!S.reach || S.dist > cap) ? 'far' : 'track';
+        A.state = el > elMax ? 'high' : (!S.reach || S.dist > cap) ? 'far' : 'track';
         A.lead = { x: dr.x + (dr.wvx || 0) * S.t, y: dr.y + C.CENTER_Y + (dr.wvy || 0) * S.t, z: dr.z + (dr.wvz || 0) * S.t };
         A.dist = S.dist;
         if (S.dist > cap * 1.8) { this.clearAirAim('[[alert-triangle]] Drone địch đã ra quá xa tầm súng — đã hủy khóa'); return false; }
       }
-      el = Math.max(-5, Math.min(60, el));
-      if (P.aimTo) P.aimTo(az, el); else { P.aimAz = az; P.aimEl = el; }
-      if (P.canElevate === false || P.tankType === 'GATLING') {
+      el = Math.max(-5, Math.min(elMax, el));
+      // xe tăng: tháp quay theo hướng drone (camera nhìn theo), trạm súng trên nóc tự ngóc / bám chính xác
+      if (tank) { P._aa = { az, el, firing: !!(this.keys && (this.keys.Space || this.isPointerFiring)), until: performance.now() / 1000 + 0.3 }; if (P.aimTo) P.aimTo(az); }
+      else if (P.aimTo) P.aimTo(az, el); else { P.aimAz = az; P.aimEl = el; }
+      if (!tank && (P.canElevate === false || P.tankType === 'GATLING')) {
         const r = az * Math.PI / 180;
         P.fcsTarget = { x: P.x + Math.sin(r) * 800, z: P.z - Math.cos(r) * 800, y: (P.y || 0) + 800 * Math.tan(el * Math.PI / 180), el };
       }
-      // nòng đã khớp hướng nghiệm chưa (đo hướng thật của nòng)
-      if (P.getMuzzleWorldTransform) {
-        const d = P.getMuzzleWorldTransform().direction;
+      // nòng đã khớp hướng nghiệm chưa (đo hướng thật của nòng / súng trạm phòng không)
+      {
+        const d = this.aaMuzzle(P).direction;
         const baz = (Math.atan2(d.x, -d.z) * 180 / Math.PI + 360) % 360, bel = Math.asin(Math.max(-1, Math.min(1, d.y))) * 180 / Math.PI;
         A.on = Math.abs(((baz - az + 540) % 360) - 180) < 1.2 && Math.abs(bel - el) < 1.2;
         A.barrelEl = bel;
