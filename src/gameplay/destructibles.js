@@ -6889,8 +6889,9 @@ const Destructibles = (() => {
       this.group = new THREE.Group();
       this.group.visible = this._vis || false;
       this.scene.add(this.group);
-      // dày 2,4 đv (0,3 m) như tường bê tông cốt thép thường (tường nhà trong trận ~0,27 m): đạn nổ phá thủng theo BREACH
-      // (đạn thường 2 phát trúng cùng chỗ, đạn nổ mạnh 1 phát). Dày 0,8 m như trước thì gần như không bắn vỡ nổi
+      // dày 1,6 đv (0,2 m) như tường bê tông cốt thép thường của nhà / tường rào: đạn pháo 120 mm đa năng nổ chạm khoét lỗ
+      // người chui lọt qua tường 20 cm cốt thép 2 lớp trong 1 phát (BREACH) -> đạn thường / nổ mạnh 1 phát là thủng.
+      // Dày 0,3 m thì đạn thường phải 2 phát trúng cùng chỗ, 0,8 m gần như không bắn vỡ nổi
       const cols = o.cols || 12, rows = o.rows || 5, bw = o.blockW || 5.9, bh = o.blockH || 5.1, bd = o.blockD || ConcreteWall.THICK;
       const yaw = o.yaw || 0;
       this.S = new BlockStructure(this.group, cols * rows + 4);
@@ -6930,7 +6931,7 @@ const Destructibles = (() => {
     }
   }
 
-  ConcreteWall.THICK = 2.4;
+  ConcreteWall.THICK = 1.6;
 
   class SingleBuilding {
     constructor(scene, opts = {}) {
