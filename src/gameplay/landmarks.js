@@ -739,10 +739,11 @@ const Landmarks = (() => {
     K.beam('steelGray', [f0, H, r0], [f1, H, r1], 0.35);
     for (const k of [1, 2, 3]) K.beam('steelDark', [f0 + ox * k, H + k, r0 + oz * k], [f1 + ox * k, H + k, r1 + oz * k], 0.25);
     if (coil) {
-      const ring = new THREE.TorusGeometry(3.4, 0.16, 3, 10), m = Math.round(len / 2.4);
+      // dây thép gai cuộn (concertina) Ø ~0.85 m: dây mảnh, vòng tròn đều, các vòng chéo nhau so le + lệch nhẹ ngẫu nhiên
+      const ring = new THREE.TorusGeometry(3.4, 0.09, 3, 16), m = Math.round(len / 2.4);
       for (let i = 0; i <= m; i++) {
-        const t = i / m;
-        K.add('steelGray', ring.clone(), M4(f0 + (f1 - f0) * t + ox * 1.5, H + 4.5, r0 + (r1 - r0) * t + oz * 1.5, 0.35 * (i % 2 ? 1 : -1), Math.PI / 2 - ang, 0));
+        const t = i / m, j = hash(i * 7 + f0 * 0.13 + r0 * 0.29);
+        K.add('steelGray', ring.clone(), M4(f0 + (f1 - f0) * t + ox * 1.5, H + 4.5 + (j - 0.5) * 0.5, r0 + (r1 - r0) * t + oz * 1.5, (0.32 + j * 0.1) * (i % 2 ? 1 : -1), Math.PI / 2 - ang, (j - 0.5) * 0.2));
       }
       ring.dispose();
     }
