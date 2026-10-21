@@ -3891,60 +3891,38 @@ class ArtilleryGame3D {
   }
 
   // Vạch kính theo LY GIÁC thật (1 ly = 1/1000 rad): m = số điểm ảnh của 1 ly ở độ phóng hiện tại, nên phóng to / thu nhỏ
-  // vạch vẫn đúng góc — dùng vạch đo được độ đón đầu, khoảng lệch. Máy tính hỏa lực đã tự cộng góc bù đạn rơi theo
-  // cự ly laser, nên kính không có thang cự ly (đặt mục tiêu vào tâm là đủ).
+  // vạch vẫn đúng góc. Máy tính hỏa lực đã tự cộng góc bù đạn rơi theo cự ly laser, nên kính chỉ cần tâm ngắm gọn.
   milReticle(kind, m, missile) {
     const f = (v) => (Math.round(v * 2) / 2).toFixed(1);
     const ln = (x1, y1, x2, y2, c) => '<line class="' + (c || 'gs-l') + '" x1="' + f(x1) + '" y1="' + f(y1) + '" x2="' + f(x2) + '" y2="' + f(y2) + '"/>';
-    const tx = (x, y, t, a) => '<text class="gs-n" x="' + f(x) + '" y="' + f(y) + '" text-anchor="' + (a || 'middle') + '">' + t + '</text>';
-    const lab = 10 * m >= 20;   // vạch đủ thưa mới ghi số
     const tick = (big) => big ? Math.max(4, 1.5 * m) : Math.max(2.5, 0.8 * m);
     let h = '';
-    // thước đón đầu ngang ±100 ly: trong trận xe chạy 40 km/h cần đón ~80-100 ly (xem dòng ĐÓN XE ở bảng vũ khí);
-    // vạch 5 ly trong ±20 ly cho ngắm tinh, ra ngoài vạch 10 ly, số mỗi 20 ly
+    // vạch ngang ±30 ly, vạch chia mỗi 10 ly (không ghi số): đủ để ước lượng đón đầu mà không rối mắt
     const leadScale = (g) => {
-      let r = ln(-100 * m, 0, -g, 0) + ln(g, 0, 100 * m, 0);
-      for (let k = 5; k <= 100; k += 5) {
-        if (k > 20 && k % 10) continue;
-        const x = k * m, big = k % 20 === 0, t = tick(big || k === 10);
-        if (x < g) continue;
-        r += ln(x, 0, x, -t, 'gs-t') + ln(-x, 0, -x, -t, 'gs-t');
-        if (big && 20 * m >= 24) r += tx(x, -t - 3, k) + tx(-x, -t - 3, k);
-      }
+      let r = ln(-30 * m, 0, -g, 0) + ln(g, 0, 30 * m, 0);
+      for (let k = 10; k <= 30; k += 10) { const x = k * m, t = tick(k === 20); if (x > g) r += ln(x, 0, x, -t, 'gs-t') + ln(-x, 0, -x, -t, 'gs-t'); }
       return r;
     };
     if (kind === 'ring') {
       // pháo tự động 30mm: chữ Λ tại điểm ngắm, thước đón đầu ngang, vạch dọc bên dưới mỗi 5 ly
       const g = Math.max(5 * m, 10);
-      h += leadScale(g) + ln(0, g, 0, 25 * m);
-      for (let k = 10; k <= 25; k += 5) { const y = k * m, w = tick(k % 10 === 0); if (y > g) h += ln(-w, y, w, y, 'gs-t'); }
+      h += leadScale(g) + ln(0, g, 0, 20 * m);
+      for (let k = 10; k <= 20; k += 10) { const y = k * m, w = tick(false); if (y > g) h += ln(-w, y, w, y, 'gs-t'); }
       const c = Math.max(5, 1.6 * m);
       h += '<path class="gs-m" d="M' + f(-c) + ' ' + f(c) + ' L0 0 L' + f(c) + ' ' + f(c) + '"/><circle class="gs-d" r="1.2"/>';
     } else if (missile) {
-      // dẫn tên lửa: chữ thập suốt khung (vạch 5 ly), cửa bám mục tiêu ±12 × ±7 ly (màu theo đầu dò)
+      // dẫn tên lửa: chữ thập mảnh, cửa bám mục tiêu ±12 × ±7 ly (màu theo đầu dò)
       const g = Math.max(3 * m, 8);
-      h += ln(-60 * m, 0, -g, 0) + ln(g, 0, 60 * m, 0) + ln(0, -40 * m, 0, -g) + ln(0, g, 0, 40 * m);
-      for (let k = 5; k <= 60; k += 5) {
-        const d = k * m, t = tick(k % 10 === 0);
-        if (d < g) continue;
-        h += ln(d, -t, d, t, 'gs-t') + ln(-d, -t, -d, t, 'gs-t');
-        if (k <= 40) h += ln(-t, d, t, d, 'gs-t') + ln(-t, -d, t, -d, 'gs-t');
-      }
+      h += ln(-40 * m, 0, -g, 0) + ln(g, 0, 40 * m, 0) + ln(0, -25 * m, 0, -g) + ln(0, g, 0, 25 * m);
       const gx = 12 * m, gy = 7 * m, c = Math.max(6, 3 * m);
       h += '<path class="gs-m" d="M' + f(-gx) + ' ' + f(-gy + c) + ' V' + f(-gy) + ' H' + f(-gx + c) + ' M' + f(gx - c) + ' ' + f(-gy) + ' H' + f(gx) + ' V' + f(-gy + c)
         + ' M' + f(gx) + ' ' + f(gy - c) + ' V' + f(gy) + ' H' + f(gx - c) + ' M' + f(-gx + c) + ' ' + f(gy) + ' H' + f(-gx) + ' V' + f(gy - c) + '"/>'
         + '<circle class="gs-d" r="1.2"/>';
     } else {
-      // trạm vũ khí 12.7mm: chữ thập mảnh có khe 3 ly, thước đón đầu ngang, vạch dọc 5 ly (số mỗi 10 ly), chấm sáng ở tâm
+      // trạm vũ khí 12.7mm: chữ thập mảnh có khe 3 ly, vạch chia mỗi 10 ly, chấm sáng ở tâm
       const g = Math.max(3 * m, 8);
-      h += leadScale(g) + ln(0, -15 * m, 0, -g) + ln(0, g, 0, 30 * m);
-      for (let k = 5; k <= 30; k += 5) {
-        const d = k * m, big = k % 10 === 0, t = tick(big);
-        if (d < g) continue;
-        h += ln(-t, d, t, d, 'gs-t');
-        if (k <= 15) h += ln(-t, -d, t, -d, 'gs-t');
-        if (big && lab) h += tx(t + 3, d + 3.5, k, 'start');
-      }
+      h += leadScale(g) + ln(0, -15 * m, 0, -g) + ln(0, g, 0, 20 * m);
+      for (let k = 10; k <= 20; k += 10) { const d = k * m, t = tick(false); if (d > g) h += ln(-t, d, t, d, 'gs-t'); }
       h += '<circle class="gs-m" r="' + f(Math.max(3, 1 * m)) + '"/><circle class="gs-d" r="' + f(Math.max(1.3, 0.3 * m)) + '"/>';
     }
     return h;
@@ -4069,7 +4047,6 @@ class ArtilleryGame3D {
         '#gun-sight.digital .gs-vig{background:radial-gradient(ellipse at 50% 50%,transparent 68%,rgba(4,8,6,.34) 100%)}',
         '#gun-sight.digital .gs-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.05) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}',
         '#gun-sight svg.gs-mil{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 0 1px rgba(0,0,0,.95)) drop-shadow(0 0 2px rgba(0,0,0,.5))}',
-        '#gun-sight svg.gs-mil .gs-n{font-size:10px;font-variant-numeric:tabular-nums}',
         // số đạn trong kính (dưới bên phải tâm): số to = đạn còn trong băng / loại đạn đang nạp
         '#gun-sight .gs-ammo{position:absolute;right:calc(7vw + 14px);bottom:calc(7vh + 100px);display:grid;justify-items:end;gap:2px;text-shadow:0 0 3px #000,0 0 6px #000;font-variant-numeric:tabular-nums;letter-spacing:.06em}',
         '#gun-sight .gs-ammo .gs-an{font-size:12px;opacity:.85}',
