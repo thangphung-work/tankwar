@@ -2,8 +2,7 @@
  * ÂM THANH GIAO DIỆN (sảnh, bảng chọn, cài đặt) — tổng hợp, kiểu bảng điều khiển quân sự:
  * - Rê chuột qua thẻ / nút: tiếng "tích" rất khẽ
  * - Bấm nút: công tắc gạt "cạch"; chuyển tab: "tách" nhẹ
- * - Chọn xe: chốt khóa thép "cộp" + tiếng máy riêng từng loại xe (tăng: diesel gầm; 6 nòng: mô-tơ rít vòng tua;
- *   pháo tự hành: xi-lanh thủy lực xì + khóa nòng đóng; trinh sát: máy nhẹ rồ nhanh) + kèn đồng chớp khi nhạc bật
+ * - Chọn xe: không phát tiếng (playUiSelectTank vẫn còn nếu cần dùng lại)
  * - Chọn bản đồ: tiếng giấy bản đồ phẩy + bíp radar xác nhận + âm đặc trưng chiến địa (gió cát, còi báo động,
  *   côn trùng & chim rừng, gió núi & chim ưng, nước vỗ)
  * - Trang bị: ngàm thép + tiếng riêng từng món (giáp nổ bắt bu lông, giáp lồng lạch cạch, tấm giáp nặng, vải kevlar,
@@ -348,10 +347,10 @@
     ['#mm-find-match-btn', () => { if (mmIdle()) call('playUiDeploy'); }],
     ['#mm-cancel-search-btn', () => call('playUiCancel')],
     ['.btn-inspect-tank-3d, .mm-gear-btn, #mm-open-tank-inspector-btn', () => call('playUiOpen')],
-    // bấm lại thẻ đang chọn: chỉ "cạch" nhẹ
-    ['.mm-class-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectTank', el.getAttribute('data-tank-type') || 'ALL_ROUNDER'); }],
+    // chọn xe: im lặng (không phát tiếng máy / chốt khóa)
+    ['.mm-class-card', () => {}],
     ['.mm-map-card', el => { if (!mmIdle()) return; if (el.classList.contains('active')) call('playUiClick'); else call('playUiSelectMap'); }],
-    ['#ti-select-this-tank-btn', () => { const i = window.tankInspector; call('playUiSelectTank', (i && i.currentTankType) || 'ALL_ROUNDER'); }],
+    ['#ti-select-this-tank-btn', () => {}],
     ['#ti-close-btn, .ti-backdrop, .acc-close, .gm-close, [data-act="close"], [data-act="resume"]', () => call('playUiClose')],
     ['.acc-tab, .ti-tab-btn, .eqd-tab, .gm-tab, [role="tab"]', () => call('playUiTab')],
     // kho trang bị: mua / bán phát tiếng khi máy chủ trả kết quả (xem armory_ui.js); đồ khóa: mở quảng cáo
