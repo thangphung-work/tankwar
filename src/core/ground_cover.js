@@ -41,7 +41,7 @@ const GroundCover = (() => {
       for (let i = 0; i < K.n; i++) {
         const x0 = ox + C * (0.18 + rnd() * 0.64), lean = (rnd() - 0.5) * K.spread, h = C * (K.hMin + rnd() * (K.hMax - K.hMin)) - 2, w = 1.8 + rnd() * 2.8;
         const k = 0.7 + rnd() * 0.45, dry = K.dry ? 0.35 + rnd() * 0.5 : rnd() * 0.18;
-        const base = [148 + 50 * dry, 162 + 16 * dry, 116 - 10 * dry], tip = [212 + 30 * dry, 222 - 6 * dry, 168 - 56 * dry];
+        const base = [140 + 50 * dry, 160 + 16 * dry, 118 - 10 * dry], tip = [192 + 34 * dry, 214 - 6 * dry, 172 - 56 * dry];
         const gr = g.createLinearGradient(0, oy + C, 0, oy + C - h);
         gr.addColorStop(0, `rgb(${base[0] * k | 0},${base[1] * k | 0},${base[2] * k | 0})`);
         gr.addColorStop(1, `rgb(${Math.min(255, tip[0] * k) | 0},${Math.min(255, tip[1] * k) | 0},${Math.max(0, tip[2] * k) | 0})`);
@@ -98,7 +98,8 @@ const GroundCover = (() => {
       const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
       gm.onBeforeCompile = (sh) => {
         sh.uniforms.gTime = GroundShader && GroundShader.time ? GroundShader.time : { value: 0 };
-        sh.vertexShader = 'uniform float gTime;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+        sh.vertexShader = 'uniform float gTime;\nvarying float vBY;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+          vBY = uv.y;
           {
             float hv = fract(sin(dot(vec2(instanceMatrix[3][0], instanceMatrix[3][2]), vec2(12.9898, 78.233))) * 43758.5453);
             vUv = vUv * 0.5 + vec2(step(0.5, fract(hv * 2.0)), step(0.5, hv)) * 0.5;
@@ -110,8 +111,15 @@ const GroundCover = (() => {
             transformed.x += sw * uv.y;
             transformed.z += sw * 0.6 * uv.y;
           }`);
+        // ánh sáng: lá cỏ 2 mặt -> mặt sau bị lật pháp tuyến xuống dưới thành lá tối sẫm xen lá sáng chói. Cho mọi lá nhận
+        // sáng như mặt đất (pháp tuyến hướng lên), gốc khóm tối dần (lá che nhau), ngọn sáng
+        sh.fragmentShader = 'varying float vBY;\n' + sh.fragmentShader
+          .replace('#include <map_fragment>', `#include <map_fragment>
+            diffuseColor.rgb *= mix(0.38, 1.04, smoothstep(0.0, 0.9, vBY));`)
+          .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+            normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`);
       };
-      gm.customProgramCacheKey = () => 'grassTuft2';
+      gm.customProgramCacheKey = () => 'grassTuft3';
       this.grass = new THREE.InstancedMesh(tuftGeometry(), gm, this.maxT);
       this.grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxT * 3), 3);
       this.grass.count = 0; this.grass.frustumCulled = false; this.grass.receiveShadow = true; this.grass.castShadow = false;
