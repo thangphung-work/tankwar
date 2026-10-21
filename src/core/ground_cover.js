@@ -91,7 +91,7 @@ const GroundCover = (() => {
       this.group.name = 'groundCover';
       terrain.group.add(this.group);   // dọn theo địa hình khi đổi bản đồ
       const maxCells = Math.ceil((2 * RADIUS / CELL) + 2) ** 2;
-      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density));
+      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5);
       this.maxP = maxCells * PEBBLES_PER_CELL;
       // cỏ
       const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
@@ -179,7 +179,7 @@ const GroundCover = (() => {
       if (T.groundAtRaw(x, z) < 0.6 && (T.map.river || T.map.lakes.length)) return true;
       if (T.map.roadAt && T.map.roadAt(x, z)) return true;
       if (T.strongholdSet && T.strongholdSet.covers(x, z, 4)) return true;
-      if (T.landmarkSet && T.landmarkSet.covers(x, z, 4) && !(T.landmarkSet.lawnAt && T.landmarkSet.lawnAt(x, z))) return true;
+      if (T.landmarkSet && T.landmarkSet.covers(x, z, 4) && !(T.landmarkSet.overgrowth && T.landmarkSet.overgrowth(x, z))) return true;
       if (T.bridges.length && T.bridgeAt(x, z)) return true;
       return false;
     }
@@ -198,7 +198,9 @@ const GroundCover = (() => {
         // Cỏ mọc theo CỤM và MẢNG như ngoài đồng (không rắc đều từng khóm giống nhau -> hết cảm giác hoa văn lặp):
         // - mảng lớn (~150 m) dày / thưa / trống theo nhiễu; mỗi cụm 1-6 khóm sát nhau
         // - cả cụm chung cỡ & sắc độ (khô / xanh), từng khóm lệch nhẹ
-        const nClu = Math.max(1, Math.round(nTry / 2.6));
+        // ô nằm trong căn cứ bỏ hoang: cỏ dại um tùm -> rải dày gấp 2.6, từng khóm lọc theo mức mọc tại chỗ
+        const LS = this.T.landmarkSet, inBase = !!(LS && LS.overgrowth && LS.covers(ox + CELL / 2, oz + CELL / 2, CELL));
+        const nClu = Math.max(1, Math.round(nTry / 2.6 * (inBase ? 2.6 : 1)));
         for (let k = 0; k < nClu; k++) {
           const cx = ox + rnd() * CELL, cz = oz + rnd() * CELL, ra = rnd(), rb = rnd(), rc = rnd(), rd = rnd();
           const pn = this.noise ? this.noise(cx / 170 + 0.37, cz / 170 + 0.11) : [0.5, 0.5, 0.5];
@@ -210,10 +212,10 @@ const GroundCover = (() => {
             const a = rnd() * 6.283, d = Math.sqrt(rnd()) * cr;
             const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, r1 = rnd(), r2 = rnd(), r3 = rnd();
             const M = this.masks(x, z);
-            // bãi cỏ trong căn cứ (được cắt): luôn có cỏ, khóm thấp ~1/4
-            const LS = this.T.landmarkSet, lawn = !!(LS && LS.lawnAt && LS.lawnAt(x, z)), mg = lawn ? 0.8 : M.grass;
-            if (r1 > mg * 1.15 * dens || this.blocked(x, z)) continue;
-            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (lawn ? 0.26 : 1), wid = hgt * (lawn ? 2.2 : 0.7 + r3 * 0.5);
+            // trong căn cứ: mật độ / chiều cao theo mức cỏ dại tại chỗ (bãi cỏ cũ um tùm, sỏi & mặt đường thưa thấp)
+            const inside = inBase && !!LS.noFireAt(x, z, 0), og = inside ? LS.overgrowth(x, z) : null, mg = og ? 0.85 : M.grass;
+            if (inside ? (!og || r1 > og.k / 2.6) : (r1 > mg * 1.15 * dens / (inBase ? 2.6 : 1) || this.blocked(x, z))) continue;
+            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : 1), wid = hgt * (0.7 + r3 * 0.5);
             const r4 = rnd(), r5 = rnd();
             e.set((r4 - 0.5) * 0.5, r3 * 6.283, (r5 - 0.5) * 0.5);
             m4.compose(v.set(x, M.h - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));

@@ -288,6 +288,10 @@ const Landmarks = (() => {
   // nền sỏi quanh công trình: khu cấm silo, cổng, gò điều khiển, nhà xe, trạm điện, bồn nhiên liệu, chân tháp canh...
   const nukeGravel = (hu) => [[-216, -170, 156, 210], [hu - 150, -70, hu, 70], [-250, -366, -80, -180], [-25, 252, 150, 348], [-200, 262, -90, 338],
     [-98, -448, 18, -332], [hu - 110, 120, hu - 60, 215], [180, -200, 230, -140], [-260, -50, -210, 50]];
+  // mặt bê tông phẳng không có hộp va chạm (sân trực thăng, sân trước nhà xe, bệ biến áp): chỉ cỏ mọc khe nứt
+  // Kịch bản: căn cứ bị bỏ hoang (người chơi phải chiếm lại) — cỏ dại um tùm, mất điện
+  const ABANDONED = true;
+  const NUKE_SLABS = [[40, -428, 200, -298], [-15, 218, 135, 262], [-91, 241, -65, 303]];
   const NUKE_JUNCTIONS = [[180, 0, 28, 36], [180, 240, 28, 26], [180, -200, 28, 24], [-60, -200, 24, 24], [-60, -270, 24, 24]];
   // Mặt đường nhựa (u dọc đường: 1 ô = 12 m, v ngang: 0..1 = cả bề rộng): cốt liệu đá lấm tấm, vệt bánh xe mòn sáng,
   // vệt dầu giữa làn, vết nứt + đường trám nhựa đen, mép sứt; vạch biên trắng + vạch tim vàng đứt (3 m vạch / 9 m trống).
@@ -313,12 +317,16 @@ const Landmarks = (() => {
         g.fillStyle = gr; g.fillRect(0, v0 * H, W, (v1 - v0) * H);
       }
     }
-    // đường trám nứt bằng nhựa đen (uốn lượn) + vết nứt nhỏ
-    for (let i = 0; i < (plain ? 10 : 6); i++) {
+    // vết nứt lớn (đường bỏ hoang lâu năm) + cỏ dại / rêu mọc dọc khe nứt
+    for (let i = 0; i < (plain ? 14 : 10); i++) {
       let x = hash(i + 5200) * W, y = hash(i + 5201) * H, a = hash(i + 5202) * TAU;
-      g.strokeStyle = 'rgba(14,14,16,0.75)'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(x, y);
-      for (let k = 0; k < 14; k++) { a += (hash(i * 17 + k) - 0.5) * 0.9; x += Math.cos(a) * 14; y += Math.sin(a) * 6; g.lineTo(x, y); }
-      g.stroke();
+      const pts = [[x, y]];
+      for (let k = 0; k < 16; k++) { a += (hash(i * 17 + k) - 0.5) * 0.9; x += Math.cos(a) * 14; y += Math.sin(a) * 6; pts.push([x, y]); }
+      g.strokeStyle = 'rgba(14,14,16,0.8)'; g.lineWidth = 2.4; g.beginPath(); pts.forEach(([px, py], k) => k ? g.lineTo(px, py) : g.moveTo(px, py)); g.stroke();
+      if (ABANDONED) for (const [px, py] of pts) for (let k = 0; k < 6; k++) {
+        const ox = px + (hash(px + k * 3.1) - 0.5) * 8, oy = py + (hash(py + k * 5.3) - 0.5) * 5;
+        g.fillStyle = hash(ox + oy) < 0.6 ? 'rgba(78,88,46,0.85)' : 'rgba(120,112,64,0.8)'; g.fillRect(ox, oy, 2 + hash(ox) * 3, 1.5 + hash(oy) * 2);
+      }
     }
     g.strokeStyle = 'rgba(20,20,22,0.6)'; g.lineWidth = 0.8;
     for (let i = 0; i < 40; i++) { let x = hash(i + 5300) * W, y = hash(i + 5301) * H; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (hash(i * 7 + k + 9) - 0.5) * 18; y += (hash(i * 5 + k + 3) - 0.5) * 10; g.lineTo(x, y); } g.stroke(); }
@@ -330,8 +338,16 @@ const Landmarks = (() => {
         g.fillStyle = col; g.fillRect(x, y, w, h);
         for (let i = 0; i < w * h / 14; i++) { g.fillStyle = 'rgba(60,60,62,0.55)'; g.fillRect(x + hash(i + x + y * 3) * w, y + hash(i * 3 + x + 7) * h, 1.5, 1.5); }
       };
-      paint(0, H * 0.045, W, H * 0.03, 'rgba(226,224,214,0.9)'); paint(0, H * 0.925, W, H * 0.03, 'rgba(226,224,214,0.9)');
-      paint(0, H * 0.485, W * 0.25, H * 0.03, 'rgba(214,170,40,0.92)');
+      const fa = ABANDONED ? 0.55 : 0.9;   // sơn phai
+      paint(0, H * 0.045, W, H * 0.03, `rgba(226,224,214,${fa})`); paint(0, H * 0.925, W, H * 0.03, `rgba(226,224,214,${fa})`);
+      paint(0, H * 0.485, W * 0.25, H * 0.03, `rgba(214,170,40,${fa})`);
+      if (ABANDONED) {
+        // đất cát + lá mục dạt mép đường, cỏ lấn từ lề vào
+        for (const e of [0, 1]) for (let i = 0; i < 160; i++) {
+          const x = hash(i + e * 400 + 5600) * W, y = (e ? H - 1 : 0) + (e ? -1 : 1) * hash(i + e * 400 + 5601) * H * 0.16;
+          blotch(g, x, y, 6 + hash(i + 5602) * 16, hash(i + 5603) < 0.5 ? '96,84,62' : '88,94,52', 0.4);
+        }
+      }
     }
     const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.wrapT = plain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping; t.anisotropy = 8;
     return (TEX[key] = t);
@@ -389,16 +405,17 @@ const Landmarks = (() => {
         const hu = f1, hv = r1, iF = hu - 62, iR = hv - 62;
         // cỏ trong khu trong (lốm đốm, ngả vàng chỗ xe đi), viền đường tuần tra sỏi đầm
         rect(-iF + 24, -iR + 24, iF - 24, iR - 24, '#586040');   // cùng tông cỏ địa hình HIGHLAND, không xanh gắt
-        // vệt cắt cỏ song song (bãi cỏ trong căn cứ được cắt định kỳ, mỗi vệt máy cắt ~4 m), mảng úa vàng / xanh đậm
+        // căn cứ bỏ hoang: bãi cỏ lâu không cắt — mảng cỏ khô vàng, mảng xanh đậm um tùm, chỗ đất trống
         { const [x0, y0] = P(-iF + 24, -iR + 24), [x1, y1] = P(iF - 24, iR - 24);
           g.save(); g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0); g.clip();
-          for (let r = -iR + 24, k = 0; r < iR - 24; r += 32, k++) { g.fillStyle = k % 2 ? 'rgba(150,160,90,0.10)' : 'rgba(30,40,14,0.10)'; g.fillRect(x0, P(0, r)[1], x1 - x0, 32 * S); }
-          for (let i = 0; i < 220; i++) blotch(g, hash(i + 1500) * w, hash(i + 1501) * h, (10 + hash(i + 1502) * 50) * S, hash(i + 1503) < 0.55 ? '70,78,46' : '124,116,74', 0.3);
+          for (let i = 0; i < 320; i++) blotch(g, hash(i + 1500) * w, hash(i + 1501) * h, (10 + hash(i + 1502) * 60) * S, hash(i + 1503) < 0.45 ? '62,70,40' : hash(i + 1503) < 0.85 ? '138,124,78' : '104,90,70', 0.32);
           g.restore(); }
         g.strokeStyle = 'rgba(120,112,96,0.95)'; g.lineWidth = 20 * S; g.strokeRect(...P(-iF + 14, -iR + 14), (iF * 2 - 28) * S, (iR * 2 - 28) * S);
         // nền sỏi quanh công trình: khu cấm silo, cổng, gò điều khiển, nhà xe, trạm điện, bồn nhiên liệu, chân tháp canh
         const grav = 'rgba(166,158,142,0.97)';
         for (const [fa, ra, fb, rb] of nukeGravel(hu)) rect(fa, ra, fb, rb, grav);
+        // cỏ dại mọc lan trên nền sỏi
+        for (let i = 0; i < 900; i++) blotch(g, hash(i + 1800) * w, hash(i + 1801) * h, (2 + hash(i + 1802) * 9) * S, hash(i + 1803) < 0.6 ? '84,90,52' : '126,116,76', 0.4);
         // lề đường đất sỏi mòn (mặt đường nhựa + vạch sơn dựng thành lưới riêng, xem NUKE_ROADS / roadNet)
         g.lineCap = 'round'; g.lineJoin = 'round';
         for (const [pts, wd] of NUKE_ROADS) {
@@ -470,8 +487,9 @@ const Landmarks = (() => {
       bands: () => S({ map: bandTex(), roughness: 0.55, metalness: 0.2 }),
       icbm: () => S({ map: icbmTex(), roughness: 0.42, metalness: 0.15 }),
       missile: () => S({ color: 0xc3c8b9, roughness: 0.5, metalness: 0.2 }),
-      lampRed: () => S({ color: 0x801010, emissive: 0xff2a1a, emissiveIntensity: 1.4, roughness: 0.4 }),
-      lampAmber: () => S({ color: 0x806010, emissive: 0xffa21a, emissiveIntensity: 1.2, roughness: 0.4 }),
+      // căn cứ bỏ hoang, mất điện: đèn tắt (chỉ còn màu kính đèn)
+      lampRed: () => S({ color: 0x6a1a14, emissive: 0xff2a1a, emissiveIntensity: ABANDONED ? 0 : 1.4, roughness: 0.35 }),
+      lampAmber: () => S({ color: 0x7a5a1a, emissive: 0xffa21a, emissiveIntensity: ABANDONED ? 0 : 1.2, roughness: 0.35 }),
       wood: () => G(0, { color: 0x7a5c38, roughness: 0.9 }),
       sand: () => G(0, { color: 0xa48f68, roughness: 1, bumpScale: 0.8 }),
       bagGreen: () => G(0, { color: 0x6b6a4a, roughness: 1, bumpScale: 0.8 }),
@@ -1928,7 +1946,7 @@ const Landmarks = (() => {
           head.rotation.z = Math.PI / 2 - 0.35; head.position.x = 1;
           // đèn pha chỉ bật lúc trời tối (mặt trời < ~7°): kính trắng sáng đều + quầng sáng mờ dần theo chiều dài tia;
           // ban ngày tắt hẳn (trước đây quầng vàng cộng sáng nhìn đúng hướng chĩa thành cục sáng vàng lơ lửng)
-          const night = !!(opts && opts.sun && opts.sun.elevation < 0.12);
+          const night = !ABANDONED && !!(opts && opts.sun && opts.sun.elevation < 0.12);
           const lensM = night ? (MAT.lensOn || (MAT.lensOn = new THREE.MeshStandardMaterial({ color: 0xeef3ff, emissive: 0xeef3ff, emissiveIntensity: 1.6, roughness: 0.2 })))
             : (MAT.lensOff || (MAT.lensOff = new THREE.MeshStandardMaterial({ color: 0x9aa4aa, roughness: 0.15, metalness: 0.4 })));
           const lens = new THREE.Mesh(new THREE.CircleGeometry(2.3, 12), lensM);
@@ -2020,21 +2038,28 @@ const Landmarks = (() => {
       return null;
     }
     // trong mặt bằng san nền (hoặc khối đặc) — không mọc cỏ, không đặt xe
-    // Điểm (x, z) nằm trên bãi cỏ trong căn cứ (không phải nền sỏi, đường, công trình) -> cho mọc khóm cỏ thấp
-    lawnAt(x, z) {
+    // CĂN CỨ BỎ HOANG: cỏ dại mọc ở đâu, dày / cao cỡ nào tại (x, z). null = ngoài căn cứ hoặc dưới công trình.
+    //  bãi cỏ cũ: cỏ um tùm ngang gối; nền sỏi / lề đường: đám cỏ dại; mặt đường, sân bê tông: cỏ thấp mọc khe nứt
+    overgrowth(x, z) {
       for (const it of this.items) {
         const L = it.L; if (L.kind !== 'nuke') continue;
         const dx = x - L.x, dz = z - L.z, f = dx * L.fx + dz * L.fz, r = -dx * L.fz + dz * L.fx;
-        if (Math.abs(f) > L.hu - 92 || Math.abs(r) > L.hv - 92) continue;
-        for (const [fa, ra, fb, rb] of nukeGravel(L.hu)) if (f > fa - 4 && f < fb + 4 && r > ra - 4 && r < rb + 4) return false;
+        if (Math.abs(f) > L.hu - 2 || Math.abs(r) > L.hv - 2) continue;
+        for (const q of it.boxes) { const ex = x - q.cx, ez = z - q.cz; if (Math.abs(ex * q.ux + ez * q.uz) < q.hu + 3 && Math.abs(-ex * q.uz + ez * q.ux) < q.hv + 3) return null; }
+        if (f > -132 && f < 72 && Math.abs(r) < 86) return null;   // bệ bê tông miệng hầm silo (nằm trên gò)
+        for (const [fa, ra, fb, rb] of NUKE_SLABS) if (f > fa && f < fb && r > ra && r < rb) return { k: 0.16, h: 0.4 };
+        let road = Infinity;
         for (const [pts, wd] of NUKE_ROADS) for (let i = 1; i < pts.length; i++) {
           const [af, ar] = pts[i - 1], [bf, br] = pts[i], ef = bf - af, er = br - ar, t = Math.max(0, Math.min(1, ((f - af) * ef + (r - ar) * er) / (ef * ef + er * er)));
-          if (Math.hypot(f - af - ef * t, r - ar - er * t) < wd / 2 + 9) return false;
+          road = Math.min(road, Math.hypot(f - af - ef * t, r - ar - er * t) - wd / 2);
         }
-        for (const q of it.boxes) { const ex = x - q.cx, ez = z - q.cz; if (Math.abs(ex * q.ux + ez * q.uz) < q.hu + 6 && Math.abs(-ex * q.uz + ez * q.ux) < q.hv + 6) return false; }
-        return true;
+        if (road < -2) return { k: 0.14, h: 0.42 };
+        if (road < 9) return { k: 1.1, h: 0.75 };
+        for (const [fa, ra, fb, rb] of nukeGravel(L.hu)) if (f > fa - 4 && f < fb + 4 && r > ra - 4 && r < rb + 4) return { k: 0.55, h: 0.7 };
+        if (Math.abs(f) < L.hu - 92 && Math.abs(r) < L.hv - 92) return { k: 2.6, h: 1.2 };
+        return { k: 0.6, h: 0.75 };   // dải sỏi giữa các lớp rào, đường tuần tra
       }
-      return false;
+      return null;
     }
     covers(x, z, pad) {
       for (const it of this.items) {
@@ -2108,6 +2133,8 @@ const Landmarks = (() => {
         const A = it.anim;
         if (!A) continue;
         A.t += dt;
+        // căn cứ bỏ hoang: mất điện -> đèn hiệu tắt, radar đứng yên, đèn pha không quét, máy phát không xả hơi
+        if (ABANDONED) { A.beacon.emissiveIntensity = 0; A.blink.emissiveIntensity = 0; continue; }
         A.beacon.emissiveIntensity = 0.25 + 2.2 * Math.pow(Math.max(0, Math.sin(A.t * 7)), 6);
         A.blink.emissiveIntensity = (A.t % 1.4) < 0.25 ? 2.4 : 0.15;
         for (const r of A.radars) { r.rotation.y = A.t * 1.3; r.updateMatrix(); }
