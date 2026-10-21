@@ -27,8 +27,10 @@ const EQ_RADAR_RANGE = 600;   // radar lắp thêm (Equipment.EQ_RADAR_RANGE)
 const MARGIN = 120;            // nới tầm nhìn: gửi sớm 1 chút để xe hiện ra mượt, không giật
 const CLOSE = 260;             // xe ở rất gần luôn được gửi (va chạm, bắn mò cự ly gần)
 const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;
-// Bụi rậm chỉ thu ngắn tầm phát hiện (khớp TeamIntel.BUSH_SPOT = CLOSE, TeamIntel.BUSH_RADAR)
+// Bụi rậm chỉ thu ngắn tầm phát hiện, tùy loại xe (khớp TeamIntel.BUSH_COVER; BUSH_SPOT = CLOSE):
+// trinh sát núp thật (mắt thường BUSH_SPOT, radar 40%), xe tăng / 6 nòng chỉ giảm tầm radar, pháo tự hành không núp được
 const BUSH_SPOT = 260, BUSH_RADAR = 0.7;
+const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
 const REVEAL_MS = 4500;        // vừa nổ súng: lộ vị trí (bụi / rừng không che) — dài hơn thời gian lộ phía máy khách (tối đa 4 s)
 const SPOT_MS = 4500;          // báo cáo vị trí của trinh sát
 const FAR = 1500;              // xa hơn mức này: gửi nửa tần số
@@ -178,17 +180,17 @@ function updateVisibility(M, now) {
       if (sp && sp > now) { set.add(e.i); continue; }
       const ex = s.x / 10, ez = s.z / 10, m = meta(M, e.i), revealed = m.revealUntil > now;
       const inForest = !revealed && densityAt(M.dens, ex, ez) >= FOREST_DENSE;
-      // núp bụi chưa nổ súng: radar bắt được ở BUSH_RADAR bán kính, mắt thường trong BUSH_SPOT (+ MARGIN để hiện mượt)
-      const bush = !revealed && (s.f & F_BUSH);
+      // núp bụi chưa nổ súng: radar / mắt thường phải vào gần hơn tùy loại xe (BUSH_COVER; + MARGIN để hiện mượt)
+      const bush = !revealed && (s.f & F_BUSH) ? BUSH_COVER[e.type] || null : null;
       // cờ ngụy trang chỉ tin khi xe có lắp lưới và thật sự đứng yên (chống gửi cờ giả để tàng hình khi chạy)
       const camo = !revealed && (s.f & F_CAMO) && e.cm && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08;
-      const rk = (bush ? BUSH_RADAR : 1) * (camo ? CAMO_RADAR : 1), sk = camo ? CAMO_SIGHT : 1;
+      const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = camo ? CAMO_SIGHT : 1;
       for (const u of mine) {
         const v = M.S[u.i], vx = v.x / 10, vz = v.z / 10, d = Math.hypot(ex - vx, ez - vz);
         if (d < CLOSE) { set.add(e.i); break; }
         if (u.type === 'SCOUT' && d < RADAR_RANGE * rk) { set.add(e.i); break; }
         if (u.rd && d < EQ_RADAR_RANGE * rk) { set.add(e.i); break; }
-        if (d > (bush ? Math.min(SIGHT[u.type] * sk, BUSH_SPOT) : SIGHT[u.type] * sk) + MARGIN) continue;
+        if (d > (bush && bush.spot ? Math.min(SIGHT[u.type] * sk, bush.spot) : SIGHT[u.type] * sk) + MARGIN) continue;
         if (inForest && d > FOREST_SPOT + MARGIN) continue;
         if (M.dens && denseLength(M.dens, vx, vz, ex, ez, FOREST_LOS + 60) > FOREST_LOS + 60) continue;
         set.add(e.i); break;

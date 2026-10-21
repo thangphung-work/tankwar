@@ -175,7 +175,7 @@ const GameMenu = (() => {
       [K('Space'), 'Bắn (giữ để xả liên thanh)'],
       [K('Tab'), 'Khóa / đổi mục tiêu tiếp theo'],
       [`${K('1')} ${K('2')} ${K('3')} hoặc ${K('Q')} ${K('E')} ${K('R')}`, 'Đổi loại đạn'],
-      [K('F'), 'Tên lửa chống tăng (xe trinh sát)'],
+      [K('3'), 'Tên lửa chống tăng (xe trinh sát): chọn ô 3 rồi bắn'],
       [K('G'), 'Phóng lựu đạn khói (cần trang bị)'],
       [K('B'), 'Pháo tự hành: đổi cách bắn (tự chọn / bắn thẳng / bắn cầu vồng)'],
       [`${K('←')} ${K('→')} ${K('↑')} ${K('↓')}`, 'Xoay tháp / nâng hạ nòng bằng tay'],

@@ -1,8 +1,9 @@
 /**
  * TÌNH BÁO CHIẾN TRƯỜNG (sương mù chiến tranh)
  * - Mỗi xe chỉ thấy địch trong TẦM NHÌN của chính nó (xe trinh sát nhìn xa & rộng hơn xe tăng thường).
- * - Xe núp trong bụi rậm KHÔNG tàng hình: chỉ bị phát hiện ở cự ly ngắn hơn — mắt thường trong BUSH_SPOT,
- *   radar trong BUSH_RADAR x bán kính radar (vừa nổ súng -> lộ vị trí, tầm phát hiện trở lại bình thường).
+ * - Bụi rậm che tùy loại xe (BUSH_COVER): xe trinh sát núp thật (mắt thường chỉ thấy trong BUSH_SPOT, radar 40% tầm);
+ *   xe tăng / 6 nòng chỉ làm radar địch phải vào gần hơn; pháo tự hành không núp bụi được.
+ *   Vừa nổ súng -> lộ vị trí, tầm phát hiện trở lại bình thường.
  * - Xe có radar (xe trinh sát): ăng-ten radar quay tròn thật, mỗi vòng quét đi qua hướng nào thì bắt mục tiêu
  *   ở hướng đó (kể cả xe núp bụi, ở cự ly đã rút ngắn) trong bán kính radar.
  * - Xe trinh sát KHÓA mục tiêu đang nằm trong vùng radar -> liên tục BÁO VỊ TRÍ cho đồng đội (bản đồ, khung 3D,
@@ -28,6 +29,12 @@ const TeamIntel = (() => {
   // nhìn xe tăng 520). Radar bắt xe núp bụi trong 70% bán kính (trinh sát 950 -> 665, radar lắp thêm 600 -> 420).
   const BUSH_SPOT = 260;
   const BUSH_RADAR = 0.7;
+  // Bụi che theo loại xe (khớp server_auth.js BUSH_COVER):
+  //  - xe trinh sát: núp bụi thật sự — mắt thường chỉ thấy trong BUSH_SPOT, radar chỉ bắt được trong 40% bán kính
+  //  - xe tăng / xe 6 nòng: xe to, bụi không che được mắt — chỉ làm radar địch phải vào gần hơn (70% bán kính)
+  //  - pháo tự hành: thân xe tải + nòng dài, không núp bụi được (không có mục nào)
+  // spot: tầm mắt thường thấy được xe núp bụi (0 = bụi không che mắt); radar: hệ số bán kính radar bắt được
+  const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -66,8 +73,20 @@ const TeamIntel = (() => {
     }
     return r;
   }
-  function inBushHidden(t) {
-    return !!t.isInBush && (t.revealTimer || 0) <= 0;
+  // Bụi đang che xe t (đang trong bụi, chưa vừa nổ súng, loại xe núp được): { spot, radar } | null
+  function bushCover(t) {
+    if (!t || !t.isInBush || (t.revealTimer || 0) > 0) return null;
+    return BUSH_COVER[t.tankType] || null;
+  }
+
+  // Dòng báo trạng thái bụi cho xe người chơi: { html, warn, cover } | null (không ở trong bụi)
+  function bushBanner(u) {
+    if (!u || u.isDead || !u.isInBush) return null;
+    if ((u.revealTimer || 0) > 0) return { html: `BỊ LỘ VỊ TRÍ DO VỪA KHAI HỎA · ${u.revealTimer.toFixed(1)}S`, warn: true, cover: true };
+    const bc = BUSH_COVER[u.tankType];
+    if (!bc) return { html: 'XE PHÁO KHÔNG NÚP BỤI ĐƯỢC · ĐỊCH VẪN THẤY RÕ', warn: true, cover: false };
+    if (!bc.spot) return { html: 'TRONG BỤI · ĐỊCH VẪN NHÌN THẤY, RADAR ĐỊCH PHẢI VÀO GẦN MỚI BẮT ĐƯỢC', warn: false, cover: true };
+    return { html: 'ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN', warn: false, cover: true };
   }
 
   // Thấy trực tiếp: trong tầm nhìn (xe núp bụi: chỉ trong BUSH_SPOT)
@@ -76,7 +95,8 @@ const TeamIntel = (() => {
     const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
     // lưới ngụy trang: phải tới gần hơn mới nhận ra xe đứng yên / chạy chậm
     let r = sightRange(viewer);
-    if (inBushHidden(t)) r = Math.min(r, BUSH_SPOT);
+    const bc = bushCover(t);
+    if (bc && bc.spot) r = Math.min(r, bc.spot);
     if (d > r * (EQ ? EQ.camoFactor(t) : 1)) return false;
     // màn khói chắn giữa 2 xe: không nhìn thấy (radar trinh sát vẫn bắt được — xem radarContact)
     if (EQ && EQ.smokeBlocks(viewer.x, viewer.z, t.x, t.z)) return false;
@@ -194,8 +214,9 @@ const TeamIntel = (() => {
       const d = Math.hypot(e.x - u.x, e.z - u.z);
       // lưới ngụy trang lá cây + đứng yên: radar chỉ bắt được ở cự ly gần hơn
       const camoK = typeof Equipment !== 'undefined' && Equipment.camoRadarFactor ? Equipment.camoRadarFactor(e) : 1;
-      // núp bụi (chưa vừa nổ súng): radar chỉ bắt được trong BUSH_RADAR bán kính
-      if (d > R * camoK * (inBushHidden(e) ? BUSH_RADAR : 1)) continue;
+      // núp bụi (chưa vừa nổ súng): radar chỉ bắt được ở cự ly gần hơn, tùy loại xe (BUSH_COVER)
+      const bc = bushCover(e);
+      if (d > R * camoK * (bc ? bc.radar : 1)) continue;
       // Tia quét vừa đi qua hướng mục tiêu (hoặc mục tiêu sát bên xe)
       let rel = bearing(u, e) - prev;
       if (rel < 0) rel += TWO_PI;
@@ -206,7 +227,7 @@ const TeamIntel = (() => {
         // màn hình radar của xe mình: vết mới hiện lên -> "píp" khẽ (không kêu lại cho vết đang theo dõi)
         if (u.isPlayer && !u.radarContacts.has(e.id) && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.playRadarContact) window.soundEngine.playRadarContact(d / radarRange(u));
         const c = u.radarContacts.get(e.id) || {};
-        c.x = e.x; c.z = e.z; c.t = time; c.inBush = !!e.isInBush; c.unit = e;
+        c.x = e.x; c.z = e.z; c.t = time; c.inBush = !!bc; c.unit = e;
         u.radarContacts.set(e.id, c);
       }
     }
@@ -365,7 +386,7 @@ const TeamIntel = (() => {
   }
 
   return {
-    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR,
+    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, bushCover, bushBanner,
     bind, reset, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
     get time() { return time; },
     get reports() { return reports; }
