@@ -530,10 +530,16 @@ const Landmarks = (() => {
     {
       // đắp ụ đất kín 3 mặt (MapGen: L.silo.portal), chỉ lộ mặt trước có cửa
       const pf = S.portal.f, pr = S.portal.r, W = S.portal.hr * 2, D = S.portal.hf * 2, Hh = 30;
-      K.box('conc', pf, Hh / 2, pr, D, Hh, W);
+      // khối bê tông có ô cửa 20 x 22 ở mặt trước (2 vách bên + lanh tô), lòng hầm tối phía sau
+      K.box('conc', pf - 6, Hh / 2, pr, D - 12, Hh, W);
+      for (const s of [-1, 1]) K.box('conc', pf + D / 2 - 6, Hh / 2, pr + s * (W / 4 + 5), 12, Hh, W / 2 - 10);
+      K.box('conc', pf + D / 2 - 6, (Hh + 22) / 2, pr, 12, Hh - 22, 20);
       K.box('concDark', pf - 4, Hh + 2, pr, D + 10, 4, W + 8, 0, 64, 0, 0.06);
-      K.box('void', pf + D / 2 - 6.4, 11, pr, 12, 22, 20);
-      K.box('lampRed', pf + D / 2 - 12, 20, pr - 8, 1, 2, 2);
+      K.box('void', pf + D / 2 - 12.6, 11, pr, 0.6, 22, 20);
+      K.box('concDark', pf + D / 2 - 6, 0.6, pr, 12, 1.2, 20);
+      for (let k = 0; k < 3; k++) K.box('concDark', pf + D / 2 - 9 - k * 1.2, 2 + k * 0.01, pr, 2, 0.2, 18);
+      K.box('lampRed', pf + D / 2 - 11, 20, pr - 8, 1, 2, 2);
+      K.box('lampRed', pf + D / 2 - 11, 20, pr + 8, 1, 2, 2);
       const hinge = new THREE.Matrix4().multiplyMatrices(M4(pf + D / 2 + 0.4, 0, pr - 10), M4(0, 0, 0, 0, -1.8, 0));
       K.add('steelGray', new THREE.BoxGeometry(3, 22, 20), new THREE.Matrix4().multiplyMatrices(hinge, M4(1.5, 11, 10)));
       K.add('hazard', boxGeo(0.4, 22, 2, 16), new THREE.Matrix4().multiplyMatrices(hinge, M4(3.2, 11, 19)));

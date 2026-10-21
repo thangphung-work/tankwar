@@ -1218,12 +1218,12 @@ const MapGen = (() => {
       const S = L.silo, df = f - S.f, dr = r - S.r;
       const d = Math.hypot(Math.max(0, Math.abs(df) - S.hf), Math.max(0, Math.abs(dr) - S.hr));
       let h = S.h * (1 - smooth(0, S.run, d));
-      if (h <= 0) return 0;
       // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
       h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
       for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
       const P = S.portal, pf = f - P.f, pr = r - P.r;
-      if (pf < P.hf - 4) h = Math.max(h, P.h * (1 - smooth(0, P.run, Math.hypot(Math.max(0, Math.abs(pf) - P.hf), Math.max(0, Math.abs(pr) - P.hr)))));
+      // ụ đất phủ nửa sau khối cửa hầm (dải chuyển cao độ nằm trong khối bê tông, không lấn ô cửa phía trước)
+      if (pf < -10) h = Math.max(h, P.h * (1 - smooth(0, P.run, Math.hypot(Math.max(0, Math.abs(pf) - P.hf), Math.max(0, Math.abs(pr) - P.hr)))));
       return h;
     }
     if (L.mound) {
