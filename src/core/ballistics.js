@@ -220,6 +220,76 @@ class BallisticsSystem3D {
     return shellGroup;
   }
 
+  /**
+   * ĐỘ TẢN MÁT TẠI ĐIỂM RƠI tính từ chính đường đạn hiện tại (độ nhạy của điểm rơi): lệch nòng lên/xuống, sang ngang
+   * và dao động sơ tốc (σ lấy từ Dispersion.sigma — cùng σ dùng khi bắn thật) -> độ lệch chuẩn dọc / ngang hướng bắn
+   * trên mặt đất. Bắn cầu vồng góc cao: lệch ngang nhân 1/cos(góc nòng), lệch sơ tốc kéo dài vùng rơi theo hướng bắn...
+   * đúng như các phát bắn thật rải ra. Trả về { along, cross } (σ, đơn vị game) hoặc null.
+   */
+  impactSpread(shooter, terrain, sg) {
+    if (!shooter || !terrain || !sg) return null;
+    const ammo = shooter.selectedAmmo || 'NORMAL';
+    const rp = this.roundParams(ammo, shooter, shooter.charge);
+    const L = this.launchState(shooter.x, shooter.y, shooter.z, shooter.azimuth, shooter.elevation, rp.v0, shooter);
+    const direct = this.isDirectFireShot(ammo, shooter.elevation);
+    const sp = Math.hypot(L.vx, L.vy, L.vz) || 1;
+    const dx = L.vx / sp, dy = L.vy / sp, dz = L.vz / sp;
+    let rx = -dz, rz = dx;
+    const rl = Math.hypot(rx, rz) || 1; rx /= rl; rz /= rl;
+    const ux = -rz * dy, uy = rz * dx - rx * dz, uz = rx * dy;
+    const imp = (vx, vy, vz) => this.simulateShot(L.x, L.y, L.z, vx, vy, vz, rp, direct, terrain);
+    const b = imp(L.vx, L.vy, L.vz);
+    if (b.hitType === 'OUT') return null;
+    let hx = b.x - L.x, hz = b.z - L.z;
+    const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl;
+    const e = 0.002, ev = 0.004;
+    const part = (r, k) => [((r.x - b.x) * hx + (r.z - b.z) * hz) / k, ((r.x - b.x) * -hz + (r.z - b.z) * hx) / k];
+    const pU = part(imp((dx + ux * e) * sp, (dy + uy * e) * sp, (dz + uz * e) * sp), e);
+    const pR = part(imp((dx + rx * e) * sp, dy * sp, (dz + rz * e) * sp), e);
+    const pV = part(imp(L.vx * (1 + ev), L.vy * (1 + ev), L.vz * (1 + ev)), ev);
+    const comb = (i) => Math.hypot(pU[i] * sg.vert, pR[i] * sg.lat, pV[i] * sg.mv);
+    return { along: comb(0), cross: comb(1) };
+  }
+
+  /**
+   * VÙNG RẢI ĐẠN CON dự kiến của đạn chùm từ trạng thái đạn mẹ lúc tách vỏ (burst: vị trí + vận tốc):
+   * mô phỏng các đạn con ở các mép của dải ngẫu nhiên trong spawnClusterAirburst (lực văng 50..145, giữ 60..94% quán tính,
+   * tỏa tròn quanh trục bay) với đúng lực cản / trọng lực của đạn con -> elip theo hướng bắn.
+   * Trả về { x, z: tâm vùng rải, along / cross: bán trục (chưa cộng bán kính nổ mỗi đạn con), yaw: hướng trục dài }
+   * quick: chỉ cần tâm vùng rải (bộ giải ngắm) -> ít đạn con mẫu hơn
+   */
+  clusterFootprint(burst, terrain, quick = false) {
+    if (!burst || !terrain) return null;
+    const sp = Math.hypot(burst.vx, burst.vy, burst.vz) || 1;
+    const fx = burst.vx / sp, fy = burst.vy / sp, fz = burst.vz / sp;
+    // r1 = fwd x up, r2 = r1 x fwd (giống spawnClusterAirburst)
+    let r1x = -fz, r1z = fx;
+    const rl = Math.hypot(r1x, r1z) || 1; r1x /= rl; r1z /= rl;
+    const r2x = -r1z * fy, r2y = r1z * fx - r1x * fz, r2z = r1x * fy;
+    const rp = { k: this.dragCoeff * 6.5, g: this.gunGravity };
+    const hx = burst.vx, hz = burst.vz, hl = Math.hypot(hx, hz) || 1, ux = hx / hl, uz = hz / hl;   // trục dọc hướng bắn
+    const pts = [];
+    const nA = quick ? 4 : 8;
+    for (const carry of [0.6, 0.94]) for (const eject of quick ? [97] : [50, 145]) for (let k = 0; k < nA; k++) {
+      const a = k / nA * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      const vx = burst.vx * carry + (r1x * c + r2x * sn) * eject;
+      const vy = burst.vy * carry + r2y * sn * eject - 6;
+      const vz = burst.vz * carry + (r1z * c + r2z * sn) * eject;
+      const r = this.simulateShot(burst.x, burst.y - 2, burst.z, vx, vy, vz, rp, false, terrain);
+      pts.push(r);
+    }
+    let mx = 0, mz = 0;
+    for (const p of pts) { mx += p.x; mz += p.z; }
+    mx /= pts.length; mz /= pts.length;
+    let along = 0, cross = 0;
+    for (const p of pts) {
+      const dx = p.x - mx, dz = p.z - mz;
+      along = Math.max(along, Math.abs(dx * ux + dz * uz));
+      cross = Math.max(cross, Math.abs(-dx * uz + dz * ux));
+    }
+    return { x: mx, z: mz, along, cross, yaw: Math.atan2(ux, uz) };
+  }
+
   // Tạo Mesh quả đạn con của đạn chùm
   createSubmunitionMesh() {
     if (typeof ProjectileModels !== 'undefined') {
@@ -478,7 +548,14 @@ class BallisticsSystem3D {
     // — như nhau cho người chơi và bot (xem dispersion.js)
     if (shooter && typeof Dispersion !== 'undefined') {
       const stream = ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
-      const p = Dispersion.perturb(shooter, ammoType, elevation, vx, vy, vz, stream);
+      // cự ly tới điểm rơi dự kiến (chưa tản mát): bắn càng xa càng kém chụm (dispersion.js rangeMul)
+      let range = 0;
+      const T = !stream && !rp.guided && this.terrainProvider ? this.terrainProvider() : null;
+      if (T) {
+        const r = this.simulateShot(startX, startY, startZ, vx, vy, vz, rp, isDirectFire, T);
+        range = Math.hypot(r.x - startX, r.z - startZ);
+      }
+      const p = Dispersion.perturb(shooter, ammoType, elevation, vx, vy, vz, stream, range);
       vx = p.vx; vy = p.vy; vz = p.vz;
     }
     const shellMesh = this.createShell155Mesh(isDirectFire, ammoType, !!(shooter && shooter.tankType === 'ARTILLERY'), tracer);
@@ -638,19 +715,27 @@ class BallisticsSystem3D {
 
   // Một bước bay của đạn không điều khiển: gió, lực cản (k theo quãng đường), trọng lực thế giới thu nhỏ.
   // Đạn phản lực (RPG) còn cháy động cơ thì lực đẩy bù cản & phần lớn trọng lực.
+  /**
+   * Một bước bay h (giây mô phỏng) — DÙNG CHUNG cho đạn thật, đạn dự đoán (đường nét đứt / bộ giải ngắm) và bù trễ mạng,
+   * nên điểm rơi dự đoán trùng điểm rơi thật bất kể tốc độ khung hình.
+   * - Lực cản tính theo vận tốc SO VỚI KHÔNG KHÍ (v - gió): gió bạt đạn đúng vật lý. Trước đây vận tốc ngang bị kéo
+   *   về vận tốc gió với hệ số cố định = thêm một lực cản tuyến tính rất lớn (kể cả khi lặng gió) -> lựu pháo chỉ
+   *   bay ~2150 thay vì ~2700 như thiết kế, góc bắn xa nhất tụt về ~33°.
+   * - Tích phân điểm giữa (bậc 2): bước dự đoán lớn (0.11 s) vẫn chỉ lệch vài đơn vị so với đạn thật bước nhỏ
+   *   (Euler bậc 1 trước đây làm đạn dự đoán rơi ngắn ~30 đơn vị ở tầm 2000).
+   * Gọi xong, nơi gọi cộng vị trí như cũ: s.x += s.vx * h — vị trí đã được bù trước để tổng dịch chuyển = v_giữa·h.
+   */
   integrateFlight(s, h) {
-    s.vx += (this.wind.vx - s.vx) * this.windDriftCoeff * h;
-    s.vz += (this.wind.vz - s.vz) * this.windDriftCoeff * h;
     const burning = s.burnTravel && (s.travel || 0) < s.burnTravel;
-    const k = s.k !== undefined ? s.k : this.dragCoeff * (s.dragMul || 1);
-    if (!burning) {
-      const dragFactor = k * Math.sqrt(s.vx * s.vx + s.vy * s.vy + s.vz * s.vz) * h;
-      s.vx -= s.vx * dragFactor;
-      s.vy -= s.vy * dragFactor;
-      s.vz -= s.vz * dragFactor;
-    }
-    const g = s.g !== undefined ? s.g : this.gravityFor(s.ammoType, s.isDirectFire);
-    s.vy -= g * (burning ? 0.25 : 1) * h;
+    const k = burning ? 0 : (s.k !== undefined ? s.k : this.dragCoeff * (s.dragMul || 1));
+    const g = (s.g !== undefined ? s.g : this.gravityFor(s.ammoType, s.isDirectFire)) * (burning ? 0.25 : 1);
+    const w = this.wind, wx = (w && w.vx) || 0, wz = (w && w.vz) || 0;
+    // gia tốc đầu bước (cản theo vận tốc so với gió + trọng lực) -> vận tốc giữa bước -> gia tốc giữa bước
+    let ax = s.vx - wx, az = s.vz - wz, d = k * Math.sqrt(ax * ax + s.vy * s.vy + az * az) * h * 0.5;
+    const mx = s.vx - d * ax, my = s.vy - d * s.vy - g * h * 0.5, mz = s.vz - d * az;
+    ax = mx - wx; az = mz - wz; d = k * Math.sqrt(ax * ax + my * my + az * az) * h;
+    s.vx -= d * ax; s.vy -= d * my + g * h; s.vz -= d * az;
+    s.x += (mx - s.vx) * h; s.y += (my - s.vy) * h; s.z += (mz - s.vz) * h;
   }
 
   updateShells3D(dt, terrain, allUnits, onImpact) {
@@ -705,7 +790,7 @@ class BallisticsSystem3D {
         // Đạn súng / tên lửa bắn thẳng: hết tầm hiệu quả thì tự hủy (đạn vạch đường cháy hết, tên lửa tự nổ)
         s.travel += Math.hypot(s.x - prevX, s.y - prevY, s.z - prevZ);
         // Bay ra khỏi chiến trường (đạn pháo tăng bắn trượt bay tiếp vài km) -> bỏ
-        if (Math.abs(s.x) > 2300 || Math.abs(s.z) > 2300 || s.y < -400) {
+        if (Math.abs(s.x) > BallisticsSystem3D.fieldHalf(terrain, 'width') || Math.abs(s.z) > BallisticsSystem3D.fieldHalf(terrain, 'depth') || s.y < -400) {
           this.removeShellMesh(s, i);
           impacted = true;
           break;
@@ -1041,6 +1126,81 @@ class BallisticsSystem3D {
   }
 
   /**
+   * MÔ PHỎNG MỘT PHÁT BẮN từ (x,y,z) với vận tốc đầu (vx,vy,vz) — dùng chung cho điểm rơi dự đoán, đường nét đứt
+   * và bộ giải ngắm. Cùng bước vật lý với đạn thật (integrateFlight).
+   * opts: { points: true -> trả danh sách điểm vẽ đường đạn; ammo: loại đạn (đạn chùm: ghi lại điểm đạn mẹ tách vỏ) }
+   * hitType: GROUND / WALL / OUT (bay ra khỏi chiến trường — đạn thật bị hủy ở đó, không có điểm rơi)
+   */
+  simulateShot(x, y, z, vx, vy, vz, rp, isDirectFire, terrain, opts = null) {
+    const h = 0.035 * this.bulletSpeedMultiplier;
+    const s = { x, y, z, vx, vy, vz, k: rp.k, g: rp.g, burnTravel: rp.burnTravel || 0, travel: 0 };
+    const pts = opts && opts.points ? [new THREE.Vector3(x, y, z)] : null;
+    const cluster = !!(opts && opts.ammo === 'CLUSTER');
+    const limX = BallisticsSystem3D.fieldHalf(terrain, 'width'), limZ = BallisticsSystem3D.fieldHalf(terrain, 'depth');
+    // Trên "trần" bản đồ (cao hơn mọi mặt đất / vật cản) không thể va chạm -> bỏ qua kiểm tra (xem terrain.shotCeiling)
+    const ceilY = terrain && terrain.shotCeiling ? terrain.shotCeiling() : Infinity;
+    const off = isDirectFire ? 0.8 : 0;
+    let t = 0, maxAltitude = y, hitType = 'GROUND', burst = null;
+    const maxSteps = Math.ceil(2400 / this.bulletSpeedMultiplier);
+    for (let step = 0; step < maxSteps; step++) {
+      t += h;
+      const px0 = s.x, py0 = s.y, pz0 = s.z;
+      this.integrateFlight(s, h);
+      s.x += s.vx * h; s.y += s.vy * h; s.z += s.vz * h;
+      if (s.burnTravel) { const tx = s.x - px0, ty = s.y - py0, tz = s.z - pz0; s.travel += Math.sqrt(tx * tx + ty * ty + tz * tz); }
+      if (s.y > maxAltitude) maxAltitude = s.y;
+      if (pts && (step % 2 === 0 || step < 6)) pts.push(new THREE.Vector3(s.x, s.y, s.z));
+      if (Math.abs(s.x) > limX || Math.abs(s.z) > limZ) { hitType = 'OUT'; break; }
+      if (s.y >= ceilY || !terrain) continue;
+      // Kiểm tra va chạm công sự móng ngựa / tòa nhà 3D
+      if (t > 0.06 && terrain.checkHorseshoeCollision(s.x, s.y, s.z).hit) { hitType = 'WALL'; break; }
+      const gy = terrain.getElevationAt(s.x, s.z);
+      // Đạn chùm: đạn mẹ tách vỏ ở ~165 trên mặt đất khi đang lao xuống (cùng điều kiện với đạn thật)
+      if (cluster && !burst && s.vy < -12 && t > 0.3 && s.y - gy <= 165) burst = { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz };
+      // Chạm mặt đất / đồi núi: chia đôi đoạn bay tìm đúng chỗ chạm
+      if (s.y <= gy - off && t > 0.02) {
+        const c = this.groundCrossing(terrain, px0, py0, pz0, s.x, s.y, s.z, off);
+        s.x = c.x; s.y = c.y; s.z = c.z;
+        hitType = 'GROUND';
+        break;
+      }
+    }
+    if (pts) pts.push(new THREE.Vector3(s.x, s.y, s.z));
+    return { x: s.x, y: s.y, z: s.z, time: t, maxAltitude, hitType, burst, points: pts };
+  }
+
+  // Vị trí miệng nòng + vận tốc đầu (chưa tản mát) của một phát bắn: lấy từ nòng 3D thật nếu có, không thì từ góc lệnh
+  launchState(shooterX, shooterY, shooterZ, azimuth, elevation, v0, shooterObj, fallbackPivot = true) {
+    if (shooterObj && typeof shooterObj.getMuzzleWorldTransform === 'function') {
+      const m = shooterObj.getMuzzleWorldTransform();
+      return { x: m.position.x, y: m.position.y, z: m.position.z, vx: m.direction.x * v0, vy: m.direction.y * v0, vz: m.direction.z * v0 };
+    }
+    const elRad = elevation * (Math.PI / 180), azRad = azimuth * (Math.PI / 180);
+    const vh = v0 * Math.cos(elRad);
+    const o = { vx: vh * Math.sin(azRad), vy: v0 * Math.sin(elRad), vz: -vh * Math.cos(azRad) };
+    const bg = shooterObj && shooterObj.barrel;
+    if (bg && bg.fwd !== undefined) {
+      // Miệng nòng = trục tháp + gốc nòng (quay theo hướng bắn) + nòng dài len nghiêng theo góc el
+      const ux = Math.sin(azRad), uz = -Math.cos(azRad), rx = -uz, rz = ux;
+      const reach = bg.fwd + Math.cos(elRad) * bg.len;
+      o.x = shooterX + bg.axX + ux * reach + rx * bg.lat;
+      o.z = shooterZ + bg.axZ + uz * reach + rz * bg.lat;
+      o.y = shooterY + bg.pivotH + Math.sin(elRad) * bg.len;
+    } else if (bg) {
+      // Miệng nòng = tâm quay nòng + nòng dài len nghiêng theo góc el
+      const reach = bg.pivotFwd + Math.cos(elRad) * bg.len;
+      o.x = shooterX + Math.sin(azRad) * reach; o.z = shooterZ - Math.cos(azRad) * reach;
+      o.y = shooterY + bg.pivotH + Math.sin(elRad) * bg.len;
+    } else if (fallbackPivot) {
+      o.x = shooterX + Math.sin(azRad) * 40; o.z = shooterZ - Math.cos(azRad) * 40;
+      o.y = shooterY + 18 + Math.sin(elRad) * 40;
+    } else {
+      o.x = shooterX; o.y = shooterY + 18; o.z = shooterZ;
+    }
+    return o;
+  }
+
+  /**
    * Tính toán tự động điểm rơi đạn pháo mô phỏng vật lý thời gian thực
    * Giúp xạ thủ biết trước điểm rơi chính xác khi xoay nòng, nâng hạ nòng hoặc đổi liều phóng
    */
@@ -1048,112 +1208,17 @@ class BallisticsSystem3D {
     const ammo = ammoOverride || (shooterObj && shooterObj.selectedAmmo) || 'NORMAL';
     const isDirectFire = this.isDirectFireShot(ammo, elevation);
     const rp = this.roundParams(ammo, shooterObj, chargeLevel);
-    const v0 = rp.v0, kDrag = rp.k, gAcc = rp.g;
-
-    let x, y, z;
-    let vx, vy, vz;
-
-    // Nếu truyền đối tượng xe có miệng nòng 3D, lấy chuẩn xác 100% từ miệng nòng thực tế
-    if (shooterObj && typeof shooterObj.getMuzzleWorldTransform === 'function') {
-      const muzzle = shooterObj.getMuzzleWorldTransform();
-      x = muzzle.position.x;
-      y = muzzle.position.y;
-      z = muzzle.position.z;
-      vx = muzzle.direction.x * v0;
-      vy = muzzle.direction.y * v0;
-      vz = muzzle.direction.z * v0;
-    } else {
-      const elRad = elevation * (Math.PI / 180);
-      const azRad = azimuth * (Math.PI / 180);
-
-      const vHoriz = v0 * Math.cos(elRad);
-      vy = v0 * Math.sin(elRad);
-      vx = vHoriz * Math.sin(azRad);
-      vz = -vHoriz * Math.cos(azRad);
-
-      const bg = shooterObj && shooterObj.barrel;
-      if (bg) {
-        // Miệng nòng = tâm quay nòng + nòng dài len nghiêng theo góc el
-        const reach = bg.pivotFwd + Math.cos(elRad) * bg.len;
-        x = shooterX + Math.sin(azRad) * reach;
-        z = shooterZ - Math.cos(azRad) * reach;
-        y = shooterY + bg.pivotH + Math.sin(elRad) * bg.len;
-      } else {
-        x = shooterX + Math.sin(azRad) * 40;
-        z = shooterZ - Math.cos(azRad) * 40;
-        y = shooterY + 18 + Math.sin(elRad) * 40;
-      }
-    }
-
-    const simDt = 0.035 * this.bulletSpeedMultiplier;
-    let totalTime = 0;
-    let travel = 0;
-    let maxAltitude = y;
-    let hitType = 'GROUND';
-
-    // Trên "trần" bản đồ (cao hơn mọi mặt đất / vật cản) không thể va chạm -> bỏ qua kiểm tra (xem terrain.shotCeiling)
-    const ceilY = terrain && terrain.shotCeiling ? terrain.shotCeiling() : Infinity;
-
-    // Mô phỏng từng bước bay theo tốc độ đạn mới
-    const maxSteps = Math.ceil(2400 / this.bulletSpeedMultiplier);
-    for (let step = 0; step < maxSteps; step++) {
-      totalTime += simDt;
-
-      // Gió bạt ngang
-      const relWindX = this.wind.vx - vx;
-      const relWindZ = this.wind.vz - vz;
-      vx += relWindX * this.windDriftCoeff * simDt;
-      vz += relWindZ * this.windDriftCoeff * simDt;
-
-      // Lực cản không khí (đạn phản lực còn cháy động cơ: lực đẩy bù cản, phần lớn trọng lực)
-      const burning = rp.burnTravel && travel < rp.burnTravel;
-      if (!burning) {
-        const dragFactor = kDrag * Math.sqrt(vx * vx + vy * vy + vz * vz) * simDt;
-        vx -= vx * dragFactor;
-        vy -= vy * dragFactor;
-        vz -= vz * dragFactor;
-      }
-      vy -= gAcc * (burning ? 0.25 : 1) * simDt;
-      travel += Math.sqrt(vx * vx + vy * vy + vz * vz) * simDt;
-
-      const px0 = x, py0 = y, pz0 = z;
-      x += vx * simDt;
-      y += vy * simDt;
-      z += vz * simDt;
-
-      if (y > maxAltitude) maxAltitude = y;
-      if (y >= ceilY) continue;
-
-      // Kiểm tra va chạm công sự móng ngựa 3D
-      if (totalTime > 0.06) {
-        const wallHit = terrain.checkHorseshoeCollision(x, y, z);
-        if (wallHit.hit) {
-          hitType = 'WALL';
-          break;
-        }
-      }
-
-      // Kiểm tra chạm mặt đất hoặc đồi núi 3D
-      const groundY = terrain.getElevationAt(x, z);
-      const groundThreshold = isDirectFire ? (groundY - 0.8) : groundY;
-      if (y <= groundThreshold && totalTime > 0.02) {
-        const c = this.groundCrossing(terrain, px0, py0, pz0, x, y, z, isDirectFire ? 0.8 : 0);
-        x = c.x; y = c.y; z = c.z;
-        hitType = 'GROUND';
-        break;
-      }
-    }
-
-    const dist = Math.hypot(x - shooterX, z - shooterZ);
-
+    const L = this.launchState(shooterX, shooterY, shooterZ, azimuth, elevation, rp.v0, shooterObj);
+    const r = this.simulateShot(L.x, L.y, L.z, L.vx, L.vy, L.vz, rp, isDirectFire, terrain, { ammo });
     return {
-      impactX: x,
-      impactY: y,
-      impactZ: z,
-      distance: Math.round(dist),
-      flightTime: Math.round(totalTime * 10) / 10,
-      maxAltitude: Math.round(maxAltitude),
-      hitType: hitType,
+      impactX: r.x,
+      impactY: r.y,
+      impactZ: r.z,
+      distance: Math.round(Math.hypot(r.x - shooterX, r.z - shooterZ)),
+      flightTime: Math.round(r.time * 10) / 10,
+      maxAltitude: Math.round(r.maxAltitude),
+      hitType: r.hitType,
+      burst: r.burst,
       maxRange: this.maxRangeFor(shooterObj)
     };
   }
@@ -1166,115 +1231,17 @@ class BallisticsSystem3D {
     const ammo = (shooter && shooter.selectedAmmo) || 'NORMAL';
     const isDirectFire = this.isDirectFireShot(ammo, elevation);
     const rp = this.roundParams(ammo, shooter, chargeLevel);
-    const v0 = rp.v0, kDrag = rp.k, gAcc = rp.g;
-
-    let startX, startY, startZ;
-    let vx, vy, vz;
-
-    if (shooter && typeof shooter.getMuzzleWorldTransform === 'function') {
-      const muzzle = shooter.getMuzzleWorldTransform();
-      startX = muzzle.position.x;
-      startY = muzzle.position.y;
-      startZ = muzzle.position.z;
-      const fireDir = muzzle.direction;
-      vx = fireDir.x * v0;
-      vy = fireDir.y * v0;
-      vz = fireDir.z * v0;
-    } else {
-      const elRad = elevation * (Math.PI / 180);
-      const azRad = azimuth * (Math.PI / 180);
-      const vHoriz = v0 * Math.cos(elRad);
-      vy = v0 * Math.sin(elRad);
-      vx = vHoriz * Math.sin(azRad);
-      vz = -vHoriz * Math.cos(azRad);
-      startX = shooter ? shooter.x : 0;
-      startZ = shooter ? shooter.z : 0;
-      startY = (shooter ? shooter.y : 0) + 18;
-    }
-
-    const points = [new THREE.Vector3(startX, startY, startZ)];
-    let curX = startX;
-    let curY = startY;
-    let curZ = startZ;
-    let curVx = vx;
-    let curVy = vy;
-    let curVz = vz;
-
-    const simDt = 0.035 * this.bulletSpeedMultiplier;
-    let totalTime = 0;
-    let travel = 0;
-    let hitType = isDirectFire ? 'DIRECT_AIM' : 'GROUND';
-    let maxAltitude = curY;
-
-    const ceilY = terrain && terrain.shotCeiling ? terrain.shotCeiling() : Infinity;
-
-    // Mô phỏng từng bước theo tốc độ đạn mới
-    const maxSteps = Math.ceil(2400 / this.bulletSpeedMultiplier);
-    for (let step = 0; step < maxSteps; step++) {
-      totalTime += simDt;
-
-      // Gió bạt ngang
-      const relWindX = this.wind.vx - curVx;
-      const relWindZ = this.wind.vz - curVz;
-      curVx += relWindX * this.windDriftCoeff * simDt;
-      curVz += relWindZ * this.windDriftCoeff * simDt;
-
-      // Lực cản không khí (đạn phản lực còn cháy động cơ: lực đẩy bù cản, phần lớn trọng lực)
-      const burning = rp.burnTravel && travel < rp.burnTravel;
-      if (!burning) {
-        const dragFactor = kDrag * Math.sqrt(curVx * curVx + curVy * curVy + curVz * curVz) * simDt;
-        curVx -= curVx * dragFactor;
-        curVy -= curVy * dragFactor;
-        curVz -= curVz * dragFactor;
-      }
-      curVy -= gAcc * (burning ? 0.25 : 1) * simDt;
-      travel += Math.sqrt(curVx * curVx + curVy * curVy + curVz * curVz) * simDt;
-
-      const px0 = curX, py0 = curY, pz0 = curZ;
-      curX += curVx * simDt;
-      curY += curVy * simDt;
-      curZ += curVz * simDt;
-
-      if (curY > maxAltitude) maxAltitude = curY;
-
-      // Lưu điểm lấy mẫu vào đường nét đứt (cứ 2 bước lưu 1 điểm để tối ưu hiệu năng)
-      if (step % 2 === 0 || step < 6) {
-        points.push(new THREE.Vector3(curX, curY, curZ));
-      }
-      if (curY >= ceilY) continue;   // trên trần bản đồ: không thể chạm gì
-
-      // Kiểm tra va chạm công sự bê tông hoặc tòa nhà
-      if (totalTime > 0.05 && terrain) {
-        const wallHit = terrain.checkHorseshoeCollision(curX, curY, curZ);
-        if (wallHit.hit) {
-          hitType = 'WALL';
-          points.push(new THREE.Vector3(curX, curY, curZ));
-          break;
-        }
-      }
-
-      // Kiểm tra chạm mặt đất hoặc đồi núi sa mạc
-      if (terrain && totalTime > 0.02) {
-        const groundY = terrain.getElevationAt(curX, curZ);
-        const groundThreshold = isDirectFire ? (groundY - 0.8) : groundY;
-        if (curY <= groundThreshold) {
-          const c = this.groundCrossing(terrain, px0, py0, pz0, curX, curY, curZ, isDirectFire ? 0.8 : 0);
-          curX = c.x; curY = c.y; curZ = c.z;
-          hitType = isDirectFire ? 'DIRECT_AIM' : 'GROUND';
-          points.push(new THREE.Vector3(curX, curY, curZ));
-          break;
-        }
-      }
-    }
-
-    const dist = Math.hypot(curX - startX, curZ - startZ);
-
+    const L = this.launchState(shooter ? shooter.x : 0, shooter ? shooter.y : 0, shooter ? shooter.z : 0, azimuth, elevation, rp.v0, shooter, false);
+    const r = this.simulateShot(L.x, L.y, L.z, L.vx, L.vy, L.vz, rp, isDirectFire, terrain, { points: true, ammo });
+    const hitType = r.hitType === 'GROUND' && isDirectFire ? 'DIRECT_AIM' : r.hitType;
     return {
-      points,
-      impactPoint: new THREE.Vector3(curX, curY, curZ),
-      distance: Math.round(dist),
+      points: r.points,
+      impactPoint: new THREE.Vector3(r.x, r.y, r.z),
+      distance: Math.round(Math.hypot(r.x - L.x, r.z - L.z)),
       hitType,
-      maxAltitude: Math.round(maxAltitude)
+      burst: r.burst,
+      flightTime: r.time,
+      maxAltitude: Math.round(r.maxAltitude)
     };
   }
 
@@ -1295,6 +1262,7 @@ class BallisticsSystem3D {
     // Lựu pháo: bắn cầu vồng 25..70° (đánh xa) hoặc HẠ NÒNG BẮN THẲNG (liều đầy, đạn bay căng) khi địch áp sát.
     const arty = !!(shooterObj && shooterObj.tankType === 'ARTILLERY');
     const AD = BallisticsSystem3D.ARTY_DIRECT;
+    const bodyTiltEl = arty && typeof shooterObj.barrelWorldOffset === 'function' ? shooterObj.barrelWorldOffset().el : 0;
     const probe = shooterObj ? { tankType: shooterObj.tankType, selectedAmmo: shooterObj.selectedAmmo } : null;
     // Đạn bay ra từ miệng nòng thật: lấy độ cao / tầm với của tâm quay nòng và chiều dài nòng đo trên mô hình 3D
     // (trước đây giả định cố định cao 18, trước 40 cho mọi xe -> pháo bắn thẳng lệch điểm rơi đáng kể)
@@ -1308,7 +1276,10 @@ class BallisticsSystem3D {
     const solveFor = (curCharge, directArty = false) => {
       const lobArty = arty && !directArty;
       const elMax = directArty ? AD.elMax : this.maxElevationFor(shooterObj);
-      const elMin = directArty ? this.minElevationFor(shooterObj, baseAz) : (arty ? 25 : -10);
+      // góc hạ nòng thấp nhất là giới hạn cơ khí theo THÂN XE; bộ giải tính góc trong thế giới -> cộng độ nghiêng thân xe
+      // (xe đỗ chúc mũi 3° thì nòng chạm -5° trên thân xe = -8° thật). Trước đây kẹp ở -5° thật: mục tiêu sát dưới dốc
+      // không bao giờ khớp, kính ngắm báo "đang xoay tháp" mãi
+      const elMin = directArty ? this.minElevationFor(shooterObj, baseAz) + bodyTiltEl : (arty ? 25 : -10);
       let az = baseAz;
       const targetY = terrain && terrain.getElevationAt ? terrain.getElevationAt(targetX, targetZ) : 0;
       const ammo = (shooterObj && shooterObj.selectedAmmo) || 'NORMAL';
@@ -1316,6 +1287,12 @@ class BallisticsSystem3D {
       const cap = this.maxTravelFor ? this.maxTravelFor(capAmmo, shooterObj) : 0;
       const shot = (el) => {
         const p = this.predictTrajectoryImpact(shooterX, shooterY, shooterZ, az, el, curCharge, terrain, probe);
+        // Đạn chùm: đạn mẹ tách vỏ trên không, đạn con bị cản mạnh rơi ngắn hơn điểm chạm đất của đạn mẹ ~100-200 ->
+        // ngắm cho TÂM VÙNG RẢI ĐẠN CON trùng điểm chỉ định (trước đây mục tiêu nằm ở mép xa của vùng rải)
+        if (p.burst && ammo === 'CLUSTER') {
+          const F = this.clusterFootprint(p.burst, terrain, true);
+          if (F) { p.impactX = F.x; p.impactZ = F.z; }
+        }
         const ix = p.impactX - shooterX, iz = p.impactZ - shooterZ;
         p.along = ix * ux + iz * uz;                 // cự ly theo hướng bắn
         p.lateral = -ix * uz + iz * ux;              // dạt ngang (gió)
@@ -1353,7 +1330,20 @@ class BallisticsSystem3D {
             found = true;
             break;
           }
-          if (Math.abs(p.err) < tol) { found = true; break; }
+          // đủ gần nhưng chưa đổi dấu: vẫn tinh chỉnh (dây cung) tới sát điểm chỉ định — nhận ngay mẫu "đủ gần" thì mỗi lần
+          // giải lại (0.5 s / lần) nòng nhảy sang một góc khác trong dung sai -> điểm rơi giật qua lại vài chục đơn vị
+          if (Math.abs(p.err) < tol) {
+            let a = prev || shot(el - step * 0.5), aEl = prev ? prevEl : el - step * 0.5, b = p, bEl = el;
+            for (let k = 0; k < 8 && Math.abs(best.err) > Math.min(2, tol * 0.15); k++) {
+              const den = b.err - a.err;
+              if (Math.abs(den) < 1e-9) break;
+              const m = Math.max(from, Math.min(to, bEl - b.err * (bEl - aEl) / den)), pm = shot(m);
+              if (Math.abs(pm.err) < Math.abs(best.err)) { best = pm; bestEl = m; }
+              a = b; aEl = bEl; b = pm; bEl = m;
+            }
+            found = true;
+            break;
+          }
           prev = p; prevEl = el;
         }
         return { best, bestEl, obstacle, found };
@@ -1457,7 +1447,8 @@ class BallisticsSystem3D {
     const AD = BallisticsSystem3D.ARTY_DIRECT;
     const dx = targetX - shooterX, dz = targetZ - shooterZ, dist = Math.hypot(dx, dz);
     const ux = dist > 0 ? dx / dist : 0, uz = dist > 0 ? dz / dist : -1;
-    const elMin = this.minElevationFor(shooterObj, az), elMax = AD.elMax;
+    const offEl = shooterObj && typeof shooterObj.barrelWorldOffset === 'function' ? shooterObj.barrelWorldOffset().el : 0;
+    const elMin = this.minElevationFor(shooterObj, az) + offEl, elMax = AD.elMax;
     const ty = (terrain && terrain.getElevationAt ? terrain.getElevationAt(targetX, targetZ) : 0) + 9;   // tâm thân xe
     const h = el => this.shotHeightAt(shooterY, el, 1, shooterObj, probe, dist);
     let lo = elMin, hi = elMax, el;
@@ -1551,6 +1542,31 @@ BallisticsSystem3D.prototype.maxLobElevationFor = function (shooter) {
   const t = shooter && shooter.tankType;
   // như xe thật: lựu pháo 70°, tháp 30mm & giá súng máy 12.7mm ngóc được +60°, pháo tăng +20°
   return t === 'ARTILLERY' ? 70 : (t === 'GATLING' || t === 'SCOUT') ? 60 : 20;
+};
+
+// VÙNG SÁT THƯƠNG theo loại đạn (đơn vị game, 8 = 1 m): radius = bán kính nổ lan tối đa, core = vùng lõi chịu trọn sức nổ
+// (ra ngoài lõi giảm dần — game.js blastFalloff).
+// heavy: đạn lựu pháo 155mm (xe pháo tự hành). Dùng chung cho tính sát thương thật và vòng sát thương dự kiến trên HUD.
+BallisticsSystem3D.blastProfile = function (ammoType, heavy) {
+  let radius = 55;   // mặc định: đạn pháo 120mm tiêu chuẩn
+  if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') radius = 10;
+  else if (ammoType === 'INCENDIARY') radius = 16;
+  else if (ammoType === 'CLUSTER_SUBMUNITION') radius = 32;   // mảnh văng đạn con
+  else if (ammoType === 'CLUSTER') radius = 85;
+  else if (ammoType === 'RPG' || ammoType === 'ANTI_TANK_MISSILE') radius = 45;
+  else if (ammoType === 'HE') radius = heavy ? 135 : 75;      // pháo HE nổ lan tương xứng uy lực
+  else if (ammoType === 'AP') radius = 9;                     // đạn xuyên động năng không thuốc nổ: chỉ mảnh vỡ sát điểm chạm
+  else if (heavy) radius = 90;
+  const core = (heavy && ammoType !== 'AP') ? 32 : ammoType === 'HE' ? 20 : ammoType === 'NORMAL' || ammoType === 'CLUSTER' ? 16 : radius * 0.35;
+  return { radius, core };
+};
+
+// Ra khỏi mép bản đồ (nửa bề rộng / bề sâu mặt đất) là đạn đã bay ra ngoài chiến trường: đạn thật bị hủy, không có điểm rơi.
+// (trước đây giới hạn cố định 2300 trong khi bản đồ chỉ rộng ±1800 -> đạn "rơi" xuống khoảng trống ngoài bản đồ)
+BallisticsSystem3D.FIELD_LIMIT = 2300;
+BallisticsSystem3D.fieldHalf = function (terrain, dim) {
+  const v = terrain && terrain[dim];
+  return v > 0 ? v / 2 : BallisticsSystem3D.FIELD_LIMIT;
 };
 
 // LỰU PHÁO HẠ NÒNG BẮN THẲNG: liều đầy, góc thấp, đạn bay căng — để tự vệ khi địch áp sát (dưới tầm cầu vồng).

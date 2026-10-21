@@ -37,6 +37,12 @@ const Dispersion = (() => {
   // lệch ngang ≈ defl·cự ly -> vùng rơi là hình bầu dục dài theo hướng bắn
   const ARTY_LOB = { defl: 5, el: 1.0, mv: 0.012, bloom: 0.3, bloomMax: 0.3, bloomDecay: 0.4 };
 
+  // BẮN CÀNG XA CÀNG KÉM CHỤM HƠN TỈ LỆ THUẬN: ngoài độ lệch góc (sai lệch tại đích tăng đều theo cự ly), đạn bay càng lâu
+  // càng chịu thêm sai số khí tượng (gió giật, mật độ / nhiệt độ không khí dọc đường bay), nhiệt độ thuốc phóng, sai số đo
+  // cự ly... -> σ nhân thêm (1 + grow·(cự ly / ref)²). Ở tầm bắn hiệu quả tối đa (ref): σ x (1 + grow).
+  // Đạn liên thanh không áp dụng (độ tản mát theo loạt đã lớn, không biết trước cự ly từng viên).
+  const RANGE_GROW = { ARTY_LOB: 1.0, ARTY_DIRECT: 0.6, GUN: 0.6 };
+
   // ảnh hưởng của chuyển động thân xe theo dòng xe (pháo tăng có ổn định pháo 2 trục -> ít bị ảnh hưởng nhất)
   const MOVE = { ALL_ROUNDER: 1.1, GATLING: 1.0, SCOUT: 1.5, ARTILLERY: 2.5 };
   const TURN_K = 0.025, TURN_MAX = 1.0;      // tháp quay 40°/s -> +100%
@@ -122,12 +128,26 @@ const Dispersion = (() => {
   /**
    * σ hiện tại cho phát bắn tiếp theo: { lat, vert } (rad) và mv (tỉ lệ sơ tốc), lob = lựu pháo cầu vồng
    */
-  function sigma(u, ammo, elevation) {
-    const P = profileFor(u, ammo !== undefined ? ammo : (u && u.selectedAmmo), elevation !== undefined ? elevation : (u && u.elevation));
+  function sigma(u, ammo, elevation, range) {
+    const a = ammo !== undefined ? ammo : (u && u.selectedAmmo), el = elevation !== undefined ? elevation : (u && u.elevation);
+    const P = profileFor(u, a, el);
     const m = multiplier(u);
-    if (P === ARTY_LOB) return { lat: P.defl * 1e-3 * m, vert: P.el * 1e-3 * m, mv: P.mv * m, lob: true, mul: m };
-    const s = P.mil * SCALE * 1e-3 * m;
-    return { lat: s, vert: s, mv: P.mv * m, lob: false, mul: m };
+    const r = rangeMul(u, a, P, range);
+    if (P === ARTY_LOB) return { lat: P.defl * 1e-3 * m * r, vert: P.el * 1e-3 * m * r, mv: P.mv * m * r, lob: true, mul: m, rmul: r };
+    const s = P.mil * SCALE * 1e-3 * m * r;
+    return { lat: s, vert: s, mv: P.mv * m * r, lob: false, mul: m, rmul: r };
+  }
+
+  /** Hệ số kém chụm thêm theo cự ly bắn (1 ở sát nòng, 1 + grow ở tầm hiệu quả tối đa của loại đạn) */
+  function rangeMul(u, ammo, P, range) {
+    if (!(range > 0)) return 1;
+    let grow = 0, ref = 0;
+    if (P === ARTY_LOB) { grow = RANGE_GROW.ARTY_LOB; ref = typeof GameTiming !== 'undefined' ? GameTiming.round('HE', 'ARTILLERY').eff : 2700; }
+    else if (P === PROFILE.ARTY_DIRECT) { grow = RANGE_GROW.ARTY_DIRECT; ref = typeof BallisticsSystem3D !== 'undefined' ? BallisticsSystem3D.ARTY_DIRECT.max : 800; }
+    else if (P === PROFILE.TANK_AP || P === PROFILE.TANK_NORMAL || P === PROFILE.TANK_HE) { grow = RANGE_GROW.GUN; ref = typeof GameTiming !== 'undefined' ? GameTiming.round(ammo || 'NORMAL', u && u.tankType).eff : 1500; }
+    if (!grow || !(ref > 0)) return 1;
+    const k = Math.min(1.5, range / ref);
+    return 1 + grow * k * k;
   }
 
   /**
@@ -135,22 +155,22 @@ const Dispersion = (() => {
    * along: theo hướng bắn, cross: ngang.
    */
   function ring(u, dist, ammo, elevation) {
-    const s = sigma(u, ammo, elevation);
+    const s = sigma(u, ammo, elevation, dist);
     const cross = 2 * s.lat * dist;
     // lựu pháo cầu vồng: tầm ~ v² -> lệch dọc ≈ 2·σv·cự ly
     const along = s.lob ? 2 * Math.hypot(2 * s.mv * dist, s.vert * dist) : cross;
-    return { along, cross, mul: s.mul, lob: s.lob };
+    return { along, cross, mul: s.mul, rmul: s.rmul, lob: s.lob };
   }
 
   /**
    * Làm lệch vector vận tốc đầu nòng của một phát bắn (gọi trong fireShell3D, trước khi tạo viên đạn).
-   * Trả về { vx, vy, vz }. Cập nhật độ nở sau phát bắn.
+   * range: cự ly tới điểm rơi dự kiến (bắn càng xa càng kém chụm). Trả về { vx, vy, vz }. Cập nhật độ nở sau phát bắn.
    */
-  function perturb(u, ammo, elevation, vx, vy, vz, stream) {
+  function perturb(u, ammo, elevation, vx, vy, vz, stream, range) {
     if (!u) return { vx, vy, vz };
     const S = stateOf(u);
     const P = profileFor(u, ammo, elevation);
-    const s = sigma(u, ammo, elevation);
+    const s = sigma(u, ammo, elevation, stream ? 0 : range);
     // hạt giống: đạn liên thanh = (mã xe, số loạt, viên thứ mấy) để mọi máy rải cùng chùm; pháo: đếm phát của xe
     // (vận tốc thật được gửi kèm phát bắn nên máy khác không cần tự tính lại)
     let seed;
@@ -179,7 +199,7 @@ const Dispersion = (() => {
     return { vx: dx / dl * nsp, vy: dy / dl * nsp, vz: dz / dl * nsp };
   }
 
-  return { SCALE, PROFILE, ARTY_LOB, track, sigma, ring, multiplier, perturb, profileFor };
+  return { SCALE, PROFILE, ARTY_LOB, RANGE_GROW, track, sigma, ring, multiplier, perturb, profileFor, rangeMul };
 })();
 
 if (typeof window !== 'undefined') window.Dispersion = Dispersion;

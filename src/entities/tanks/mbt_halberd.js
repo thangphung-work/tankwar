@@ -127,9 +127,11 @@
     }
 
     hb.setTag(null);
-    // Nắp lái xe + 3 kính tiềm vọng ở mép giáp mũi
+    // Nắp lái xe + 3 kính tiềm vọng ở mép giáp mũi (nắp: bị nổ kho đạn thổi bật — VehicleDamage.blowHatches)
+    hb.setTag('hatchDrv');
     hb.cyl(1.9, 2.0, 0.35, 18, P, [5.6, DECK_Y + 0.17, -18.4]);
     hb.box(1.2, 0.35, 0.8, D, [5.6, DECK_Y + 0.2, -16.3]);
+    hb.setTag(null);
     for (const x of [3.9, 5.6, 7.3]) {
       hb.box(1.1, 0.55, 0.7, D, [x, glacisY(-21.6) + 0.25, -21.6], [-GLACIS_ANGLE, 0, 0]);
       hb.box(0.9, 0.32, 0.08, M.glass, [x, glacisY(-22.0) + 0.38, -22.0], [-GLACIS_ANGLE - 0.9, 0, 0]);
@@ -414,15 +416,19 @@
 
     // Nắp chỉ huy với vòng kính tiềm vọng (trái) & nắp nạp đạn (phải)
     tb.cyl(2.3, 2.4, 0.55, 20, P, [-5.2, ROOF + 0.27, 3.0]);
+    tb.setTag('hatchCdr');
     tb.cyl(1.95, 2.0, 0.32, 20, P, [-5.2, ROOF + 0.7, 3.0]);
     tb.box(1.0, 0.35, 0.6, D, [-5.2, ROOF + 0.75, 5.0]);
+    tb.setTag(null);
     for (let i = 0; i < 7; i++) {
       const a = -Math.PI * 0.85 + i * (Math.PI * 1.7 / 6) - Math.PI / 2;
       const x = -5.2 + Math.cos(a) * 2.35, z = 3.0 + Math.sin(a) * 2.35;
       tb.box(0.75, 0.4, 0.3, M.glass, [x, ROOF + 0.45, z], [0, -a + Math.PI / 2, 0]);
     }
+    tb.setTag('hatchLdr');
     tb.cyl(1.85, 1.9, 0.3, 18, P, [5.4, ROOF + 0.15, 2.6]);
     tb.box(0.9, 0.35, 0.5, D, [5.4, ROOF + 0.3, 4.5]);
+    tb.setTag(null);
     tb.box(0.8, 0.45, 0.4, M.glass, [5.4, ROOF + 0.25, 0.4]);
 
     // Kính toàn cảnh trưởng xe trên trụ cao (đầu kính xoay quét)
