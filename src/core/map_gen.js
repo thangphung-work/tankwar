@@ -143,14 +143,18 @@ const MapGen = (() => {
     seed = (seed >>> 0) || 1;
     const B = BIOME[type];
     const SH = layout === 'STRONGHOLDS';
-    const CAP = SH ? STRONGHOLD_SITES.map(c => ({ x: c.x, z: c.z })) : CAPTURE;
+    // bố cục 3 cứ điểm + công trình giữa theo seed (lật phe, xoay, co giãn, dịch, đổi độ cao đồi)
+    const sites = SH ? siteLayout(type, seed) : null;
+    const LMS = SH ? sites.landmark : LANDMARK_SITE;
+    const SITES = SH ? sites.strongholds : STRONGHOLD_SITES;
+    const CAP = SH ? SITES.map(c => ({ x: c.x, z: c.z })) : CAPTURE;
     const keyR = SH ? 345 : 110;   // bán kính cấm đặt cây / nhà / đá quanh cứ điểm
     // Công trình bối cảnh (chỉ bố cục 3 cứ điểm): G (cốt san nền) tính sau khi khắc đường
     const lmKind = LANDMARK_KINDS[landmarkKind] ? landmarkKind : MAP_LANDMARK[type];
     // back: lùi tâm công trình ra sau (xa cứ điểm B mà mặt trước nhìn về) cho mặt bằng lớn không lấn chân đồi B
-    const lmFx = Math.cos(LANDMARK_SITE.angle), lmFz = Math.sin(LANDMARK_SITE.angle), lmBack = LANDMARK_KINDS[lmKind].back || 0;
-    const landmarks = SH ? [landmarkDetail(Object.assign({ kind: lmKind }, LANDMARK_SITE, LANDMARK_KINDS[lmKind],
-      { x: LANDMARK_SITE.x - lmFx * lmBack, z: LANDMARK_SITE.z - lmFz * lmBack, fx: lmFx, fz: lmFz }))] : [];
+    const lmFx = Math.cos(LMS.angle), lmFz = Math.sin(LMS.angle), lmBack = LANDMARK_KINDS[lmKind].back || 0;
+    const landmarks = SH ? [landmarkDetail(Object.assign({ kind: lmKind }, LMS, LANDMARK_KINDS[lmKind],
+      { x: LMS.x - lmFx * lmBack, z: LMS.z - lmFz * lmBack, fx: lmFx, fz: lmFz }))] : [];
     // khoảng cách ra ngoài mặt bằng san nền (hình chữ nhật xoay, 0 = bên trong)
     const lmOut = (L, x, z) => {
       const dx = x - L.x, dz = z - L.z;
@@ -243,7 +247,7 @@ const MapGen = (() => {
     // Bán kính tối thiểu của lòng thung lũng theo hướng: đủ ôm đồi cứ điểm (+ chân đồi) và khu xuất kích hai phe theo
     // hướng đó; hướng trống thì núi được lấn vào tới ~0.56 nửa bản đồ
     const KEYS = [];
-    for (const c of STRONGHOLD_SITES) KEYS.push([c.x, c.z, 820]);
+    for (const c of SITES) KEYS.push([c.x, c.z, 820]);
     for (const L of landmarks) KEYS.push([L.x, L.z, Math.hypot(L.hu, L.hv) + LM_BLEND + 200]);
     for (const zc of [(SPAWN.blue.z0 + SPAWN.blue.z1) / 2, (SPAWN.red.z0 + SPAWN.red.z1) / 2])
       for (const xc of [-SPAWN.halfX, 0, SPAWN.halfX]) KEYS.push([xc, zc, 360]);
@@ -369,7 +373,7 @@ const MapGen = (() => {
     // 1b. BA NGỌN ĐỒI CỨ ĐIỂM: đỉnh bằng phẳng (cốt nền G) rộng ~200, sườn thoải xe leo được, chân đồi lượn sóng tự nhiên
     const strongholds = [];
     if (SH) {
-      for (const c of STRONGHOLD_SITES) {
+      for (const c of SITES) {
         let base = 0, n = 0;
         for (let a = 0; a < 12; a++) { base += H(c.x + Math.cos(a * 0.5236) * 300, c.z + Math.sin(a * 0.5236) * 300); n++; }
         strongholds.push({ id: c.id, x: c.x, z: c.z, angle: c.angle, G: Math.round((base / n + c.hill) * 10) / 10 });
@@ -1232,6 +1236,43 @@ const MapGen = (() => {
   }
 
   // ---------------------------------------------------------------------------
+  // BỐ CỤC CHIẾN THUẬT THEO SEED: tam giác 3 cứ điểm gốc (STRONGHOLD_SITES) qua một phép đồng dạng ngẫu nhiên — lật
+  // Bắc / Nam (50%: cứ điểm đơn B nằm bên phe xanh thay vì phe đỏ), xoay, co giãn, dịch — rồi trượt từng cứ điểm dọc trục
+  // xuyên qua của chính nó (3 trục vẫn gặp nhau ở giữa, miệng +1 vẫn nhìn vào công trình). Độ cao 3 đồi đổi chỗ + lệch.
+  // Ràng buộc: chân đồi không lấn khu xuất kích, không chạm tuyến sông bên sườn (map sông hồ), công trình giữa không
+  // lấn chân đồi. Bộ số ngẫu nhiên riêng -> không xáo trộn phần còn lại của bản đồ
+  function siteLayout(type, seed) {
+    const rnd = mulberry32((seed ^ hashStr(type) ^ 0x7a3c51d9) >>> 0), RR = (a, b) => a + rnd() * (b - a);
+    const flip = rnd() < 0.5 ? -1 : 1;
+    const hills = STRONGHOLD_SITES.map(c => c.hill);
+    for (let i = hills.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = hills[i]; hills[i] = hills[j]; hills[j] = t; }
+    const zMax = SPAWN.blue.z0 - 840;          // chân đồi (~680) + đệm trước khu xuất kích
+    const xMax = 1040 * K - 84 - 690;          // sông bên sườn (riverX: |x| >= 1040 K, nửa bề rộng <= 84)
+    const ok = L => L.every(c => Math.abs(c.z) <= zMax && Math.abs(c.x) <= xMax);
+    let out = null;
+    for (let tries = 0; tries < 24 && !out; tries++) {
+      const th = RR(-0.22, 0.22), sc = RR(0.95, 1.06), dx = RR(-150, 150) * K, dz = RR(-40, 40) * K;
+      const cs = Math.cos(th), sn = Math.sin(th);
+      const L = STRONGHOLD_SITES.map((c, i) => {
+        // lật theo z (góc trục đổi dấu), trượt dọc trục, rồi xoay + co giãn quanh gốc + dịch
+        const a0 = flip * c.angle, sl = RR(-50, 25) * K;   // trục hướng vào tâm: dương = lại gần công trình giữa
+        const x0 = c.x + Math.cos(a0) * sl, z0 = flip * c.z + Math.sin(a0) * sl;
+        return {
+          id: c.id, x: Math.round((x0 * cs - z0 * sn) * sc + dx), z: Math.round((x0 * sn + z0 * cs) * sc + dz),
+          angle: a0 + th, hill: Math.round(hills[i] + RR(-10, 10))
+        };
+      });
+      // cứ điểm đơn cách xa 2 cứ điểm còn lại đủ chỗ cho công trình giữa
+      const [a, b, c] = L, gap = Math.min(Math.hypot(a.x - b.x, a.z - b.z), Math.hypot(c.x - b.x, c.z - b.z), Math.hypot(a.x - c.x, a.z - c.z));
+      if (ok(L) && gap > 2000) out = L;
+    }
+    if (!out) out = STRONGHOLD_SITES.map(c => Object.assign({}, c));
+    const B = out[1];
+    const lx = Math.round(out.reduce((s, c) => s + c.x, 0) / 3), lz = Math.round(out.reduce((s, c) => s + c.z, 0) / 3);
+    // công trình ở trọng tâm, mặt trước nhìn về cứ điểm đơn B
+    return { strongholds: out, landmark: { x: lx, z: lz, angle: Math.atan2(B.z - lz, B.x - lx) }, flip };
+  }
+
   // CÔNG TRÌNH BỐI CẢNH: thông số cố định từng loại (dùng chung cho khắc địa hình ở đây và dựng hình ở landmarks.js)
   // Hệ toạ độ cục bộ: f theo hướng mặt trước (angle), r vuông góc (-sin, cos), cao độ tính từ cốt san nền G
   // ---------------------------------------------------------------------------
