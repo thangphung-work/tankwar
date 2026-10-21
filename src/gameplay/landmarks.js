@@ -535,7 +535,7 @@ const Landmarks = (() => {
       for (const s of [-1, 1]) K.box('conc', pf + D / 2 - 6, Hh / 2, pr + s * (W / 4 + 5), 12, Hh, W / 2 - 10);
       K.box('conc', pf + D / 2 - 6, (Hh + 22) / 2, pr, 12, Hh - 22, 20);
       K.box('concDark', pf - 4, Hh + 2, pr, D + 10, 4, W + 8, 0, 64, 0, 0.06);
-      K.box('void', pf + D / 2 - 12.6, 11, pr, 0.6, 22, 20);
+      K.box('void', pf + D / 2 - 11.6, 11, pr, 0.6, 22, 20);   // ngay trước mặt khối sau -> lòng hầm tối om
       K.box('concDark', pf + D / 2 - 6, 0.6, pr, 12, 1.2, 20);
       for (let k = 0; k < 3; k++) K.box('concDark', pf + D / 2 - 9 - k * 1.2, 2 + k * 0.01, pr, 2, 0.2, 18);
       K.box('lampRed', pf + D / 2 - 11, 20, pr - 8, 1, 2, 2);
