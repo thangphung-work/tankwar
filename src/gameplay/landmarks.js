@@ -1931,6 +1931,7 @@ const Landmarks = (() => {
       this.items = [];
       this.boxes = [];
       const groundAt = (opts && opts.groundAt) || (() => 0);
+      this.groundAt = groundAt;
       for (const L of list || []) {
         const grp = new THREE.Group();
         grp.name = 'landmark_' + L.kind;
@@ -2063,6 +2064,8 @@ const Landmarks = (() => {
         }
         if (road < -2) return { k: 0.14, h: 0.42 };
         if (road < 9) return { k: 1.1, h: 0.75 };
+        // gò đất đắp (gò silo, gò trung tâm điều khiển, ụ đất mép): đất cỏ -> um tùm như bãi cỏ
+        if (this.groundAt(x, z) - it.G > 2.5) return { k: 2.4, h: 1.15 };
         for (const [fa, ra, fb, rb] of nukeGravel(L.hu)) if (f > fa - 4 && f < fb + 4 && r > ra - 4 && r < rb + 4) return { k: 0.55, h: 0.7 };
         if (Math.abs(f) < L.hu - 92 && Math.abs(r) < L.hv - 92) return { k: 2.6, h: 1.2 };
         return { k: 0.6, h: 0.75 };   // dải sỏi giữa các lớp rào, đường tuần tra
