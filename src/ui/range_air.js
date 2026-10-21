@@ -387,8 +387,8 @@ const RangeAir = (() => {
       right.set(-out.dir.z, 0, out.dir.x).normalize();
       const up = right.clone().cross(out.dir).negate();
       if (up.y < 0) up.negate();
-      const side = u.tankType === 'GATLING' ? 3.2 : 2.2, hi = u.tankType === 'GATLING' ? 3.6 : 2.6;
-      out.pos.copy(piv).addScaledVector(up, hi).addScaledVector(right, side).addScaledVector(out.dir, 1.5);
+      const side = u.tankType === 'GATLING' ? 3.4 : 2.2, hi = u.tankType === 'GATLING' ? 5.2 : 2.8, fwd = u.tankType === 'GATLING' ? 5 : 2;
+      out.pos.copy(piv).addScaledVector(up, hi).addScaledVector(right, side).addScaledVector(out.dir, fwd);
       return out;
     },
 
@@ -510,8 +510,9 @@ const RangeAir = (() => {
         const st = document.createElement('style');
         st.id = 'ra-style';
         st.textContent = `
-.ra-bar{position:absolute;top:12px;right:12px;z-index:7;display:none;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:min(560px,70%);font-family:"Chakra Petch",system-ui,sans-serif}
+.ra-bar{position:absolute;top:56px;right:12px;z-index:7;display:none;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:min(560px,70%);font-family:"Chakra Petch",system-ui,sans-serif}
 .ti-range-mode .ra-bar{display:flex}
+.ti-sight-on .ra-bar{top:12px}
 .ra-bar button{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:6px;background:rgba(12,16,20,.72);border:1px solid rgba(255,255,255,.16);color:#d9e1e8;font-size:12px;font-weight:600;letter-spacing:.06em;backdrop-filter:blur(4px)}
 .ra-bar button:hover{border-color:rgba(255,190,80,.6)}
 .ra-bar button.on{background:rgba(255,170,40,.22);border-color:#ffb020;color:#ffd27a}
@@ -540,12 +541,12 @@ const RangeAir = (() => {
 .ra-sight .trk span{position:absolute;left:0;top:100%;margin-top:3px;white-space:nowrap;font-size:11px}
 .ra-sight .lead{position:absolute;left:0;top:0;width:12px;height:12px;margin:-6px 0 0 -6px;border:2px solid #ffb020;transform:rotate(45deg);box-sizing:border-box;display:none}
 .ra-sight .c{position:absolute;padding:10px 14px;line-height:1.5}
-.ra-sight .tl{left:0;top:52px}.ra-sight .tr{right:0;top:52px;text-align:right}.ra-sight .bl{left:0;bottom:8px}.ra-sight .br{right:0;bottom:8px;text-align:right;opacity:.8}
+.ra-sight .tl{left:0;top:52px}.ra-sight .tr{right:0;top:84px;text-align:right}.ra-sight .bl{left:0;bottom:8px}.ra-sight .br{right:0;bottom:8px;text-align:right;opacity:.8}
 .ra-sight b{color:#eafff0;font-weight:400}
 .ra-sight .warn{color:#ff8a70}
 .ra-sight .hit{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;background:linear-gradient(45deg,transparent 45%,#fff 45%,#fff 55%,transparent 55%),linear-gradient(-45deg,transparent 45%,#fff 45%,#fff 55%,transparent 55%);filter:drop-shadow(0 0 2px #000)}
 .ra-sight .msg{position:absolute;left:0;right:0;top:34%;text-align:center;font-family:"Chakra Petch",system-ui,sans-serif;font-size:20px;font-weight:700;letter-spacing:.14em;color:#ffd27a;opacity:0}
-.ra-sight .hint{position:absolute;left:0;right:0;top:58%;text-align:center;color:#fff;font-family:"Chakra Petch",system-ui,sans-serif;font-size:13px;letter-spacing:.06em}
+.ra-sight .hint{position:absolute;left:0;right:0;top:72%;text-align:center;color:#fff;font-family:"Chakra Petch",system-ui,sans-serif;font-size:13px;letter-spacing:.06em}
 `;
         document.head.appendChild(st);
       }
@@ -601,8 +602,29 @@ const RangeAir = (() => {
       return { x: c.offsetLeft + (v.x * 0.5 + 0.5) * c.clientWidth, y: c.offsetTop + (-v.y * 0.5 + 0.5) * c.clientHeight, out: Math.abs(v.x) > 1 || Math.abs(v.y) > 1 };
     },
 
+    // bầu trời cho phòng thử đạn (khung phòng xem vốn nền tối): ngước lên thấy drone đen trên nền trời như ngoài trận
+    raSky(on) {
+      if (!this._raSky && on && this.scene) {
+        const mat = new THREE.ShaderMaterial({
+          side: THREE.BackSide, depthWrite: false, fog: false,
+          uniforms: { top: { value: new THREE.Color(0x5f86ab) }, mid: { value: new THREE.Color(0xa9bfd2) }, bot: { value: new THREE.Color(0xc9d3d6) } },
+          vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+          fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(mid, top, pow(clamp(h * 1.6, 0.0, 1.0), 0.7)) : mix(mid, bot, clamp(-h * 4.0, 0.0, 1.0)); gl_FragColor = vec4(c, 1.0); }'
+        });
+        this._raSky = new THREE.Mesh(new THREE.SphereGeometry(2200, 24, 12), mat);
+        this._raSky.renderOrder = -10;
+        this._raSky.frustumCulled = false;
+        this.scene.add(this._raSky);
+      }
+      if (this._raSky) {
+        this._raSky.visible = !!on;
+        if (on && this.camera) this._raSky.position.copy(this.camera.position);
+      }
+    },
+
     raHUD(dt) {
       if (!this.rangeMode) return;
+      this.raSky(true);
       const D = this.raEnsureDom();
       if (!D) return;
       const R = this._ra, S = this.sight, u = this.activeUnit, G = this._raG;
@@ -672,7 +694,7 @@ const RangeAir = (() => {
           if (x > W / 2 - 20) break;
           const h = m % 10 === 0 ? 7 : 4;
           s += `<line x1="${x}" y1="${-h}" x2="${x}" y2="${h}"/><line x1="${-x}" y1="${-h}" x2="${-x}" y2="${h}"/>`;
-          if (m % 10 === 0 && x > 18) s += `<text x="${x}" y="${-h - 3}" fill="#b6f5c8" stroke="none" font-size="9" text-anchor="middle">${m}</text>`;
+          if (m % 10 === 0 && 10 * pxMil > 24) s += `<text x="${x}" y="${-h - 3}" fill="#b6f5c8" stroke="none" font-size="9" text-anchor="middle">${m}</text>`;
           const y = m * pxMil;
           if (y < H / 2 - 20) s += `<line x1="${-h}" y1="${y}" x2="${h}" y2="${y}"/>`;
         }
@@ -793,6 +815,7 @@ const RangeAir = (() => {
       if (this._ra && this._ra.on) this.raSetDrones(false);
       this.raClearShells();
       if (G) G.resetDroneWorld();
+      this.raSky(false);
       const D = this._raDom;
       if (D) { D.lock.hidden = true; D.tagEls.forEach(t => { t.style.display = 'none'; }); }
     }
