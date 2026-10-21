@@ -186,14 +186,13 @@ const WorldMarkers = (() => {
           float r = length(p);
           float d = 1e3, fillD = 1e3, extra = 0.0;
           if (uKind < 0.5) {
-            // ĐIỂM RƠI kiểu chiến thuật: 4 góc ngoặc vuông + chấm tâm; bị chắn: thêm dấu X trong khung
-            vec2 a = abs(p);
-            float B = 0.62, L = 0.24;
-            d = min(sdSeg(a, vec2(B, B), vec2(B - L, B)), sdSeg(a, vec2(B, B), vec2(B, B - L)));
+            // ĐIỂM RƠI: vòng tròn áp trên bề mặt + chấm tâm; bị chắn: vòng + dấu X
+            d = abs(r - 0.58);
             if (uState < 0.5) {
-              fillD = r - 0.07;
+              fillD = r - 0.08;
             } else {
-              d = min(d, sdSeg(a, vec2(0.0), vec2(0.34)));
+              vec2 a = abs(p);
+              d = min(d, sdSeg(a, vec2(0.0), vec2(0.3)));
             }
           } else if (uKind < 1.5) {
             // ĐIỂM ĐẾN: ô vuông vát góc + 4 chevron chụm vào tâm (nhịp nhẹ), thoi nhỏ ở giữa
@@ -211,14 +210,17 @@ const WorldMarkers = (() => {
             float rw = max(uThick * 0.8, pw * 0.7);
             extra = (1.0 - smoothstep(rw - pw * 0.5, rw + pw * 0.5, abs(r - rr))) * (1.0 - uPop) * 0.9;
           } else {
-            // ĐIỂM NGẮM MẶT ĐẤT: thoi hở 4 đỉnh + vạch hướng ra ngoài, chấm tâm
-            vec2 q = rot(p, uSpin);
-            vec2 a = abs(q);
-            d = abs(a.x + a.y - 0.6) * 0.7071;
-            if (min(a.x, a.y) < 0.1) d = 1e3;
-            vec2 f = a; if (f.x > f.y) f = f.yx;
-            d = min(d, sdSeg(f, vec2(0.0, 0.72), vec2(0.0, 0.95)));
-            fillD = r - 0.05;
+            // ĐIỂM NGẮM: vòng tròn áp trên bề mặt (mặt đất / tường / mái), vòng ngoài nét đứt xoay chậm, 4 vạch chỉ vào tâm
+            // (cố định theo bề mặt), chấm tâm
+            d = abs(r - 0.6);
+            float ang = atan(p.y, p.x) + uSpin;
+            float seg = fract(ang * 10.0 / 6.2832);
+            float outer = abs(r - 0.86);
+            if (seg > 0.55) outer = 1e3;
+            d = min(d, outer);
+            vec2 a = abs(p); vec2 f = a; if (f.x > f.y) f = f.yx;
+            d = min(d, sdSeg(f, vec2(0.0, 0.34), vec2(0.0, 0.5)));
+            fillD = r - 0.06;
           }
           float core, halo;
           ink(d, fillD, uThick, pw, core, halo);

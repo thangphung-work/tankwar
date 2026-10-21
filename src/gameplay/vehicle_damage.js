@@ -49,7 +49,7 @@ const VehicleDamage = (() => {
     if (/^era/.test(tag)) return 'era';
     if (/^optic/.test(tag)) return 'optic';
     if (/^feed/.test(tag)) return 'feed';
-    if (tag === 'sensor') return 'sensor';
+    if (tag === 'sensor' || tag === 'aaRadar') return 'sensor';
     if (tag === 'atgm') return 'atgm';
     if (tag === 'fuelTank') return 'fuel';
     if (tag === 'ammoBoxes') return 'ammo';
@@ -59,19 +59,21 @@ const VehicleDamage = (() => {
 
   // Xác suất văng khi trúng TRỰC TIẾP vào bộ phận
   const DETACH_DIRECT = {
-    acc: { small: 0.35, cannon: 0.75, kinetic: 1, heat: 1, blast: 1 },
-    // váy xích / lồng thép (tấm hàn, gạch ERA: xem segmentsOf). Đạn xuyên giáp chỉ khoét lỗ qua tấm váy mỏng; nổ lõm /
-    // nổ phá mới xé được cả tấm khỏi giá treo
-    armor: { small: 0, cannon: 0.06, kinetic: 0.12, heat: 0.45, blast: 0.6 },
-    era: { small: 0, cannon: 0.15, kinetic: 1, heat: 1, blast: 0.7 },
-    heavyAcc: { small: 0, cannon: 0.05, kinetic: 0.35, heat: 0.5, blast: 0.4 },
-    optic: { small: 0.25, cannon: 0.6, kinetic: 0.9, heat: 0.9, blast: 0.9 },
-    feed: { small: 0.05, cannon: 0.35, kinetic: 0.9, heat: 0.9, blast: 0.8 },
-    sensor: { small: 0.3, cannon: 0.7, kinetic: 0.9, heat: 0.9, blast: 0.9 },
-    atgm: { small: 0.08, cannon: 0.4, kinetic: 0.9, heat: 0.9, blast: 0.8 },
-    fuel: { small: 0.15, cannon: 0.45, kinetic: 1, heat: 1, blast: 1 },
-    ammo: { small: 0.05, cannon: 0.35, kinetic: 1, heat: 1, blast: 1 },
-    camo: { small: 0, cannon: 0.03, kinetic: 0.05, heat: 0.08, blast: 0.15 },
+    // phụ kiện ngoài (đèn, thùng, hộp, lan can, ống phóng khói...): bắt vít / hàn mỏng -> trúng là văng / nát
+    acc: { small: 0.6, cannon: 0.9, kinetic: 1, heat: 1, blast: 1 },
+    // váy xích / lồng thép (tấm hàn, gạch ERA: xem segmentsOf). Đạn xuyên giáp chủ yếu khoét lỗ qua tấm váy mỏng; nổ lõm /
+    // nổ phá mới hay xé cả tấm khỏi giá treo
+    armor: { small: 0, cannon: 0.08, kinetic: 0.25, heat: 0.6, blast: 0.75 },
+    era: { small: 0, cannon: 0.2, kinetic: 1, heat: 1, blast: 0.8 },
+    // trạm súng máy / lưỡi ủi / mắt xích dự phòng: đạn pháo trúng là gãy bật khỏi giá
+    heavyAcc: { small: 0.1, cannon: 0.4, kinetic: 1, heat: 1, blast: 0.8 },
+    optic: { small: 0.5, cannon: 0.85, kinetic: 1, heat: 1, blast: 1 },
+    feed: { small: 0.2, cannon: 0.6, kinetic: 1, heat: 1, blast: 0.9 },
+    sensor: { small: 0.5, cannon: 0.9, kinetic: 1, heat: 1, blast: 1 },
+    atgm: { small: 0.2, cannon: 0.6, kinetic: 1, heat: 1, blast: 0.9 },
+    fuel: { small: 0.3, cannon: 0.7, kinetic: 1, heat: 1, blast: 1 },
+    ammo: { small: 0.15, cannon: 0.6, kinetic: 1, heat: 1, blast: 1 },
+    camo: { small: 0, cannon: 0.1, kinetic: 0.2, heat: 0.3, blast: 0.4 },
     hatch: { small: 0, cannon: 0, kinetic: 0, heat: 0, blast: 0 }
   };
   // Hệ số văng do sóng nổ gần (nhân với độ gần tâm nổ)
@@ -80,7 +82,7 @@ const VehicleDamage = (() => {
   const PART_NAME = {
     skirt: 'VÁY XÍCH', cheek: 'MODULE GIÁP MÁ THÁP', applique: 'GIÁP TĂNG CƯỜNG MŨI', appliqueF: 'TẤM GIÁP TĂNG CƯỜNG MŨI', cageRear: 'LỒNG CHỐNG RPG ĐUÔI XE',
     cageTurret: 'LỒNG CHỐNG RPG ĐUÔI THÁP', era: 'GẠCH GIÁP PHẢN ỨNG NỔ', opticGunner: 'KÍNH NGẮM PHÁO THỦ', opticCdr: 'KÍNH TOÀN CẢNH CHỈ HUY',
-    feed: 'MÁNG TIẾP ĐẠN', sensor: 'RADAR TRINH SÁT', atgm: 'ỐNG PHÓNG TÊN LỬA', fuelTank: 'BÌNH NHIÊN LIỆU', ammoBoxes: 'THÙNG ĐẠN TRÊN SÀN',
+    feed: 'MÁNG TIẾP ĐẠN', sensor: 'RADAR TRINH SÁT', aaRadar: 'RADAR PHÒNG KHÔNG', atgm: 'ỐNG PHÓNG TÊN LỬA', fuelTank: 'BÌNH NHIÊN LIỆU', ammoBoxes: 'THÙNG ĐẠN TRÊN SÀN',
     dozer: 'LƯỠI ỦI', spareTrack: 'MẮT XÍCH DỰ PHÒNG', rcws: 'TRẠM SÚNG MÁY ĐIỀU KHIỂN TỪ XA', mirror: 'GƯƠNG CHIẾU HẬU', lamp: 'CỤM ĐÈN PHA',
     smoke: 'ỐNG PHÓNG LỰU ĐẠN KHÓI', bin: 'THÙNG ĐỒ', box: 'HỘP DỤNG CỤ', can: 'CAN NHIÊN LIỆU', cans: 'CAN NHIÊN LIỆU', rail: 'LAN CAN NÓC',
     railRear: 'LAN CAN NÓC', stowage: 'GIỎ ĐỒ ĐUÔI THÁP', tool: 'DỤNG CỤ DÃ CHIẾN', flap: 'TẤM CHẮN BÙN', shield: 'TẤM CHẮN SÚNG MÁY',
@@ -1503,7 +1505,9 @@ const VehicleDamage = (() => {
     } else if (kind === 'feed') {
       events.push({ type: 'feed', text: `ĐỨT ${name} — tốc độ bắn giảm` });
     } else if (kind === 'sensor') {
-      events.push({ type: 'sensor', text: `${name} BỊ PHÁ — mất radar: hết phát hiện xe núp bụi & hết báo vị trí cho đồng đội` });
+      events.push({ type: 'sensor', text: tag === 'aaRadar'
+        ? `${name} BỊ PHÁ — mất cảnh báo drone, tầm phát hiện drone địch về mức mắt thường`
+        : `${name} BỊ PHÁ — mất radar: hết phát hiện xe núp bụi & hết báo vị trí cho đồng đội` });
     } else if (kind === 'atgm') {
       events.push({ type: 'atgm', text: `${name} BỊ PHÁ — mất tên lửa chống tăng` });
     } else if (kind === 'heavyAcc') {
@@ -3440,7 +3444,7 @@ const VehicleDamage = (() => {
       }
       case 'feed': lose(/^feed/); break;
       case 'optic': lose(/^optic/); break;
-      case 'sensor': lose(/^sensor$/); break;
+      case 'sensor': lose(/^(sensor|aaRadar)$/); break;
       case 'atgm': lose(/^atgm$/); break;
       case 'fuel': lose(/^fuelTank$/); break;
       case 'ammo': lose(/^ammoBoxes$/); break;

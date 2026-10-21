@@ -43,8 +43,10 @@ const GameTiming = {
       ANTI_TANK_MISSILE: { v: 300, k: 0, eff: 4000, max: 4000, guided: true, turnG: 12, boostS: 0.6 }, // tên lửa dẫn hướng bán tự động
       ARTY: { v: 945, k: 3.81e-5, eff: 30000, max: 0 }                // lựu pháo 155mm L/52 liều 1 (base-bleed): 30 km ở góc ~37°
     },
-    // Liều phóng lựu pháo (hệ số sơ tốc): liều 1 = đầy 30 km ... liều 5 = nhỏ nhất ~5 km ở góc 70°
-    artyCharges: [1, 0.8, 0.62, 0.44, 0.34]
+    // Liều phóng lựu pháo (hệ số sơ tốc): liều 1 = đầy 30 km ... liều 7 = nhỏ nhất. Liều 6-7 (trước đây chỉ tới 5: góc 70° vẫn
+    // rơi ~1100 đv) để bắn cầu vồng góc cao thật sự ở cự ly 400-1100 thay vì đường gần thẳng 10-15°
+    // liều 8-10 (siêu nhỏ): bắn cầu vồng vào mục tiêu sát gần (~85-480) thay vì hạ nòng bắn thẳng rồi dính mảnh văng của chính mình
+    artyCharges: [1, 0.8, 0.62, 0.44, 0.34, 0.26, 0.2, 0.14, 0.1, 0.07]
   },
 
   /** Thời gian chờ trong game (giây) từ thời gian thật */

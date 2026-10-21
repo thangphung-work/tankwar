@@ -1675,26 +1675,45 @@ class SPGUnit3D {
     this.z = resolved.z;
 
     // KIỂM TRA VA CHẠM VỚI CÁC XE PHÁO KHÁC (KHÔNG ĐI XUYÊN QUA NHAU)
+    // Thân xe là hình hộp xoay theo hướng xe (đo trên mô hình, như va chạm tường) chứ không phải vòng tròn bán kính cố
+    // định: xe tăng dài ~9 m mà vòng cũ chỉ cách tâm ~4 m -> hai xe chồng sâu vào nhau. Xe mình chịu nửa phần đẩy,
+    // xe kia tự đẩy nửa còn lại ở lượt cập nhật của nó; xe kia không tự chạy (proxy mạng / đã bỏ) thì mình nhận trọn
     if (allUnits) {
       let touching = false;
+      const VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
+      const obb = (u) => {
+        const B = VC.hullBox(u), a = u.bodyAngle || 0, ca = Math.cos(a), sa = Math.sin(a);
+        const lcx = (B.minX + B.maxX) / 2, lcz = (B.minZ + B.maxZ) / 2;
+        return { cx: u.x + lcx * ca + lcz * sa, cz: u.z - lcx * sa + lcz * ca, ux: ca, uz: -sa,
+          hu: (B.maxX - B.minX) / 2, hv: (B.maxZ - B.minZ) / 2 };
+      };
+      const me = VC ? obb(this) : null;
       for (const other of allUnits) {
-        if (other !== this && !other.isDead) {
-          const dx = this.x - other.x;
-          const dz = this.z - other.z;
-          const dist = Math.hypot(dx, dz);
-          const minSep = 34; // Khoảng cách an toàn thân xe
-          if (dist < minSep && dist > 0.001) {
-            touching = true;
-            // Tiếng thép đâm thép khi xe mình húc vào xe khác (chỉ lúc mới chạm)
-            if (this.isPlayer && !this._touchingVeh && window.soundEngine && window.soundEngine.playCollision) {
-              const rel = Math.abs(this.speed - (other.speed || 0) * Math.cos((other.bodyAngle || 0) - (this.bodyAngle || 0))) / (this.baseMaxSpeed || 1);
-              if (rel > 0.1) window.soundEngine.playCollision(rel, 'vehicle');
-            }
-            const push = (minSep - dist) * 0.5;
-            this.x += (dx / dist) * push;
-            this.z += (dz / dist) * push;
-          }
+        // xác xe đã chết vẫn là khối thép nằm đó: chặn như xe sống (chỉ bỏ qua khi xác đã dọn / ẩn khỏi cảnh)
+        if (other === this || (other.isDead && (!other.group || !other.group.visible || !other.group.parent))) continue;
+        const dx = this.x - other.x, dz = this.z - other.z;
+        let px = 0, pz = 0;
+        if (VC) {
+          if (Math.hypot(dx, dz) > (VC.reach(this) + VC.reach(other))) continue;
+          const p = VC.obbPush(me.cx, me.cz, me.ux, me.uz, me.hu, me.hv, obb(other));
+          if (!p) continue;
+          px = p.x; pz = p.z;
+        } else {
+          const dist = Math.hypot(dx, dz), minSep = 34;
+          if (!(dist < minSep && dist > 0.001)) continue;
+          px = dx / dist * (minSep - dist); pz = dz / dist * (minSep - dist);
         }
+        touching = true;
+        // Tiếng thép đâm thép khi xe mình húc vào xe khác (chỉ lúc mới chạm)
+        if (this.isPlayer && !this._touchingVeh && window.soundEngine && window.soundEngine.playCollision) {
+          const rel = Math.abs(this.speed - (other.speed || 0) * Math.cos((other.bodyAngle || 0) - (this.bodyAngle || 0))) / (this.baseMaxSpeed || 1);
+          if (rel > 0.1) window.soundEngine.playCollision(rel, 'vehicle');
+        }
+        const share = other._netProxy || other.isRemote || other.isDead ? 1 : 0.5;   // xác xe không tự đẩy lại
+        this.x += px * share; this.z += pz * share;
+        if (me) { me.cx += px * share; me.cz += pz * share; }
+        // húc thẳng vào xe khác: mất đà như đâm tường
+        if (Math.hypot(px, pz) > 0.5) this.speed *= 0.85;
       }
       this._touchingVeh = touching;
     }
@@ -3451,10 +3470,7 @@ class SPGUnit3D {
       return { blocked: false, killed: false, prevHp: this.hp, currentHp: this.hp };
     }
 
-    // MIỄN NHIỄM SÁT THƯƠNG CÙNG PHE (TỰ BẮN VÀO TƯỜNG HAY BẮN NHẦM ĐỒNG MINH KHÔNG MẤT MÁU)
-    if (attacker && attacker.team && attacker.team === this.team && source !== 'ZONE') {
-      return { blocked: true, friendlyFire: true, killed: false, prevHp: this.hp, currentHp: this.hp };
-    }
+    // Bắn nhầm đồng đội / mảnh văng của chính mình: VẪN mất máu như đạn địch (không còn miễn nhiễm cùng phe)
 
     // GIÁP PHẢN ỨNG NỔ (thùng tiếp tế): kích nổ phá hủy đầu đạn -> không mất máu. Đạn nhỏ & sức nổ lan không làm gạch
     // kích nổ, đạn mạnh chỉ bị giảm bớt: game.js quyết theo Equipment.eraEffect rồi đặt _eraIgnore cho các phát đó

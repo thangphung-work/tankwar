@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
   <link rel="stylesheet" href="src/ui/theme.css?v=20261020mo2">
   <link rel="stylesheet" href="style.css?v=20261020pg3">
-  <link rel="stylesheet" href="src/ui/lobby.css?v=20261020mob1">
+  <link rel="stylesheet" href="src/ui/lobby.css?v=20261021nobrief1">
   <link rel="stylesheet" href="hud.css?v=20261021drn1">
   <link rel="stylesheet" href="src/ui/account.css?v=20261020ad1">
   <link rel="stylesheet" href="src/ui/armory.css?v=20261020ad1">
@@ -393,24 +393,11 @@
           </section>
         </main>
 
-        <!-- THANH DƯỚI: NHIỆM VỤ, PHÍM ĐIỀU KHIỂN & NÚT TÌM TRẬN -->
+        <!-- THANH DƯỚI: PHÍM ĐIỀU KHIỂN & NÚT TÌM TRẬN -->
         <footer class="mm-footer-bar">
-          <div class="mm-mission-brief">
-            <div class="brief-line">
-              <span class="brief-lbl"><i class="ti ti-target" aria-hidden="true"></i> NHIỆM VỤ</span>
-              <span class="brief-txt">Chiếm cứ điểm <b>A</b> <b>B</b> hoặc <b>C</b> rồi đứng giữ đủ <b>60 giây</b> để thắng.</span>
-            </div>
-            <div class="brief-teams">
-              <span class="team-name team-blue">LIÊN MINH</span>
-              <span class="team-pips team-blue" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
-              <span class="team-vs" id="mm-human-count">10 VS 10</span>
-              <span class="team-pips team-red" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
-              <span class="team-name team-red">KHÁNG CHIẾN</span>
-            </div>
-            <!-- Container ẩn các slot để logic JavaScript không bị ảnh hưởng -->
-            <div id="mm-blue-slots" hidden></div>
-            <div id="mm-red-slots" hidden></div>
-          </div>
+          <!-- Container ẩn các slot để logic JavaScript không bị ảnh hưởng -->
+          <div id="mm-blue-slots" hidden></div>
+          <div id="mm-red-slots" hidden></div>
 
           <div class="mm-shortcuts-box">
             <span class="sc-chip"><kbd>W A S D</kbd> Lái xe</span>
@@ -485,7 +472,7 @@
   <script src="src/core/audio/gatling.js?v=20261021mg1"></script>
   <script src="src/core/audio/sight_audio.js?v=20261021sight1"></script>
   <script src="src/core/audio/wading.js?v=20261020mouse1"></script>
-  <script src="src/core/audio/music.js?v=20261021nb1"></script>
+  <script src="src/core/audio/music.js?v=20261021hangar1"></script>
   <script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
   <script src="src/core/audio/ui_sounds.js?v=20261020mouse1"></script>
   <script src="src/core/map_gen.js?v=20261021s125"></script>
@@ -507,7 +494,7 @@
   <script src="src/core/terrain.js?v=20261021light2"></script>
   <script src="src/core/backdrop.js?v=20261021sky1"></script>
   <script src="src/entities/projectiles.js?v=20261019trc1"></script>
-  <script src="src/core/ballistics.js?v=20261021skip1"></script>
+  <script src="src/core/ballistics.js?v=20261022clear1"></script>
   <script src="src/core/radar.js?v=20261020m11"></script>
   <script src="src/core/zone.js?v=20261021map54"></script>
 
@@ -516,7 +503,7 @@
   <script src="src/entities/tanks/vehicle_kit.js?v=20261021lamp2"></script>
   <script src="src/entities/tanks/mbt_halberd.js?v=20261021worn2"></script>
   <script src="src/entities/tanks/fsv_hailstorm.js?v=20261021hatch1"></script>
-  <script src="src/entities/tanks/spg_arbalest.js?v=20261021lamp1"></script>
+  <script src="src/entities/tanks/spg_arbalest.js?v=20261022lock1"></script>
   <script src="src/entities/tanks/recon_marten.js?v=20261020fine1"></script>
   <script src="src/ai/navigator.js?v=20261021mrg1"></script>
   <script src="src/ai/bot_ai.js?v=20261021mrg26"></script>
@@ -537,8 +524,8 @@
   <!-- 4. Tầng Giao Diện Người Dùng (UI & Sảnh Chờ) -->
   <script src="src/ui/hud_controller.js?v=20261021mg4"></script>
   <script src="src/ui/tactical_map.js?v=20261021mrg26"></script>
-  <script src="src/ui/proving_ground.js?v=20261020mouse1"></script>
-  <script src="src/ui/tank_inspector.js?v=20261021glow1"></script>
+  <script src="src/ui/proving_ground.js?v=20261022urban1"></script>
+  <script src="src/ui/tank_inspector.js?v=20261022rng1"></script>
   <!-- Quảng cáo có thưởng (src/core/ads.js): điền mã nhà xuất bản AdSense (H5 Games Ads) vào h5Client để phát quảng cáo thật;
        để trống = khung quảng cáo mẫu (thử luồng nhận thưởng). Chạy thật: h5Test: false. -->
   <script>
@@ -548,12 +535,13 @@
   <script src="src/ui/armory_ui.js?v=20261021eqr1"></script>
   <script src="src/core/net_codec.js?v=20261019n1"></script>
   <script src="src/core/netcode.js?v=20261021skip1"></script>
-  <script src="src/ui/matchmaking.js?v=20261020m11"></script>
+  <script src="src/ui/matchmaking.js?v=20261021lazymap1"></script>
   <script src="src/ui/lobby_view.js?v=20261020fnt1"></script>
   <script src="src/ui/account.js?v=20261021smk2"></script>
 
   <!-- Phòng thử nghiệm cứ điểm (chỉ chạy khi mở index.html?lab=stronghold / stronghold_lab.html) -->
   <script src="src/ui/stronghold_lab.js?v=20261021mrg1"></script>
+  <script src="src/ui/range_lab.js?v=20261022rng1"></script>
   <script src="src/core/gfx_quality.js?v=20261020gpu2"></script>
   <script src="src/ui/perf_overlay.js?v=20261020gpu1"></script>
 

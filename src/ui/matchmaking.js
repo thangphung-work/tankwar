@@ -120,15 +120,17 @@ class MatchmakingController {
     this.searchTime = 0;
     this.isHost = true;
     this.resetRoster();
-    this.prepareSelectedMap();
     this.setSearchView(true);
 
+    // Chưa dựng bản đồ ở đây: vào được phòng có sẵn thì dựng bản đồ của chủ phòng (DISCOVER_ROOM_ACK),
+    // không có phòng / mất mạng thì máy này làm chủ phòng và dựng bản đồ mình đã chọn (becomeHost)
     if (typeof NetTransport !== 'undefined') {
       this.netPending = true;
       if (!this.net) this.initNetwork();
       else this.net.rejoin();
     } else {
       this.netPending = false;
+      this.schedulePrepareMap();
     }
     this.renderLobby();
     this.startSearchingLoop();
@@ -139,6 +141,9 @@ class MatchmakingController {
     if (this.state !== 'SEARCHING' && this.state !== 'FILLING_BOTS') return;
     clearInterval(this.searchInterval);
     clearTimeout(this.discoverTimer);
+    clearTimeout(this._prepareTimer);
+    this._prepareTimer = null;
+    this.buildingMap = false;
     if (this.net) this.net.leave();
     this.state = 'IDLE';
     this.netPending = false;
@@ -176,6 +181,7 @@ class MatchmakingController {
     let text;
     if (this.state === 'COUNTDOWN') text = 'ĐÃ ĐỦ NGƯỜI · TRẬN ĐẤU SẮP BẮT ĐẦU';
     else if (this.netPending) text = 'ĐANG KẾT NỐI...';
+    else if (this.buildingMap) text = 'ĐANG DỰNG BẢN ĐỒ...';
     else text = 'ĐANG TÌM TRẬN ĐẤU...';
     this.statusTextEl.textContent = text;
   }
@@ -489,10 +495,20 @@ class MatchmakingController {
     });
   }
 
-  // Người chơi bấm chọn bản đồ: chủ phòng (hoặc chơi độc lập) sinh hạt giống mới; khách gửi yêu cầu cho chủ phòng
+  // Người chơi bấm chọn bản đồ: khách gửi yêu cầu cho chủ phòng; ở sảnh chỉ ghi nhận lựa chọn (chưa dựng gì)
   selectMap(mapType) {
     if (this.isNetGuest()) {
       this.net.sendTo(this.net.hostId, 'MAP_REQUEST', { mapType });
+      return;
+    }
+    if (this.state === 'IDLE') {
+      // Chưa biết sẽ vào phòng của ai: bấm "TÌM TRẬN ĐẤU" mới chốt bản đồ (phòng có sẵn -> bản đồ chủ phòng).
+      // Chọn lại đúng loại đang dựng sẵn thì giữ hạt giống đó để khỏi dựng lại.
+      const t = mapType || 'DESERT', T = this.game && this.game.terrain;
+      this.selectedMapType = t;
+      this.mapSeed = (T && T.built && T.mapType === t) ? (T.seed >>> 0)
+        : (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
+      this.setMapSelectionUI(t);
       return;
     }
     this.selectMapAsHost(mapType);
@@ -519,14 +535,20 @@ class MatchmakingController {
     this.schedulePrepareMap();
   }
 
-  // Dựng bản đồ 3D mất ~0.5 s và chặn luồng chính: đổi giao diện ngay, dựng sau khi người chơi ngừng bấm.
-  // Mọi chỗ cần bản đồ thật (tìm trận, đếm ngược, xuất trận) đều gọi prepareSelectedMap() trực tiếp -> dựng ngay nếu còn chờ.
+  // Dựng bản đồ 3D mất vài giây và chặn luồng chính -> chỉ dựng khi đã chốt phòng (vào phòng có sẵn / tự mở phòng),
+  // trước đó hiện "ĐANG DỰNG BẢN ĐỒ..." cho kịp vẽ. Ở sảnh không dựng gì.
+  // Đếm ngược / xuất trận gọi prepareSelectedMap() trực tiếp -> dựng ngay nếu còn chờ.
   schedulePrepareMap() {
     clearTimeout(this._prepareTimer);
+    this._prepareTimer = null;
+    this.buildingMap = false;
+    if (this.state === 'IDLE' || this.preparedMapKey === this.selectedMapType + ':' + (this.mapSeed >>> 0)) return;
+    this.buildingMap = true;
+    this.updateSearchHUD();
     this._prepareTimer = setTimeout(() => {
       this._prepareTimer = null;
       this.prepareSelectedMap();
-    }, 400);
+    }, 60);
   }
 
   setMapSelectionUI(mapType) {
@@ -539,6 +561,7 @@ class MatchmakingController {
   prepareSelectedMap(force) {
     clearTimeout(this._prepareTimer);
     this._prepareTimer = null;
+    if (this.buildingMap) { this.buildingMap = false; this.updateSearchHUD(); }
     const key = this.selectedMapType + ':' + (this.mapSeed >>> 0);
     const game = this.game;
     if (!game) return false; // Game chưa khởi tạo: onGameAttached() sẽ dựng sau
@@ -559,7 +582,17 @@ class MatchmakingController {
   // Được game.js gọi khi ArtilleryGame3D liên kết với sảnh chờ
   onGameAttached(game) {
     this.game = game || this.game;
-    if (this.state !== 'IN_GAME') this.prepareSelectedMap();
+    if (this.state === 'IN_GAME') return;
+    // Ở sảnh: nhận luôn bản đồ game vừa dựng lúc khởi động (cùng loại thì lấy hạt giống của nó), không dựng lại
+    const T = this.game && this.game.terrain;
+    if (this.state === 'IDLE') {
+      if (T && T.built && T.mapType === this.selectedMapType) {
+        this.mapSeed = T.seed >>> 0;
+        this.preparedMapKey = this.selectedMapType + ':' + this.mapSeed;
+      }
+      return;
+    }
+    this.prepareSelectedMap();
   }
 
   // Được game.js gọi khi quay về sảnh sau trận (restartMatch)

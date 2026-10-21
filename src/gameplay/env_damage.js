@@ -26,7 +26,7 @@ const EnvDamage = (() => {
     CLUSTER: { kin: 0.1, blast: 0.6, r: 18, e: 0.8 }
   };
   // Hệ số vật liệu: [động năng, sức nổ, đạn cỡ nhỏ (súng máy / 30mm chỉ làm sứt mẻ bề mặt)]
-  const MAT = { rock: [0.5, 1.0, 0.35], bridge: [0.35, 0.8, 0.1] };
+  const MAT = { rock: [0.9, 1.0, 0.35], bridge: [0.35, 0.8, 0.1] };
   const smallArms = (A) => A.blast < 0.1 && A.kin < 0.1;
 
   function ammoOf(ammo, heavy) {
@@ -347,8 +347,9 @@ const EnvDamage = (() => {
       this.items = items || [];
       this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._p = new THREE.Vector3(); this._s = new THREE.Vector3();
       for (const it of this.items) {
-        // máu theo thể tích (đá to vài phát lựu pháo / hàng chục phát pháo tăng; súng máy 12.7mm gần như không sứt)
-        it.maxHp = it.hp = Math.max(0.35, Math.pow(Math.min(it.r, 26) / 10, 2) * (Math.min(it.h, 30) / 10) * 2.4);
+        // máu theo cỡ đá: đá nhỏ 1-2 phát pháo tăng, tảng to nhất ~9 phát nổ phá / ~13 phát xuyên giáp, 2-3 phát lựu pháo;
+        // súng máy 12.7mm gần như không sứt. (Trước đây máu ~ thể tích: tảng lớn ~50 máu = ~40 phát pháo tăng mới vỡ)
+        it.maxHp = it.hp = Math.max(0.35, Math.pow(Math.min(it.r, 26) / 10, 1.5) * Math.sqrt(Math.min(it.h, 30) / 10) * 1.6);
         it.alive = true;
         // mặt đất nguyên thuỷ dưới chân đá (5 điểm) -> hố bom khoét dưới đá thì đá lún theo
         it.pos0 = it.pos.clone(); it.y0 = it.y; it.dy = 0;

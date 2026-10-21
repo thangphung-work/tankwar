@@ -23,13 +23,16 @@
   const HALF_W = 8.0;          // nửa bề ngang thân
   const HOOD_HALF = 6.6;       // nửa bề ngang nắp máy
   const ROOF_Y = 15.4;
+  const CAB_CH = 0.6;          // mép nóc cabin vát chéo 45° quanh 4 phía (~7 cm) như thân xe bọc thép hàn tấm
   const CAB_FRONT = -9.4;      // chân kính chắn gió
   const RING_Z = 2.6;          // vị trí lỗ nóc gắn súng
+  const TIRE_LUG = 0.5;        // chiều cao gai lốp
+  const TIRE_BEAD = 2.3;       // bán kính mép vành
 
   function buildMarten(builder) {
     const unit = builder.unit;
     const K = VehicleKit;
-    const M = K.createMaterials(unit.team);
+    const M = K.createMaterials(unit.team, { battle: 1 });
     M.bore = new THREE.MeshBasicMaterial({ color: 0x050505 });
     M.rim = new THREE.MeshStandardMaterial({ color: 0x1f2120, roughness: 0.7, metalness: 0.35 });
     M.plate = new THREE.MeshStandardMaterial({ color: 0xe9ecea, roughness: 0.6, metalness: 0.1 });
@@ -42,6 +45,9 @@
 
     buildBody(chassis, M, unit, rnd);
     const wheels = buildWheels(chassis, M);
+    buildSuspension(chassis, M);
+    buildStowage(chassis, M, rnd);
+    buildSpareWheel(chassis, M);
     unit.wheelSet = wheels;
     const sensor = buildRoofSensor(chassis, M, unit);
     const mg = buildRingMount(chassis, M, unit);
@@ -108,6 +114,18 @@
     return { hullW: HALF_W * 2 };
   }
 
+  // Cắt vát góc đa giác [x, z]: mỗi đỉnh thay bằng 2 đỉnh lùi k đơn vị theo hai cạnh kề (góc đứng thân xe vát chéo)
+  function cutCorners(pts, k) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], a = pts[(i - 1 + pts.length) % pts.length], b = pts[(i + 1) % pts.length];
+      const la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+      out.push([p[0] + (a[0] - p[0]) * k / la, p[1] + (a[1] - p[1]) * k / la]);
+      out.push([p[0] + (b[0] - p[0]) * k / lb, p[1] + (b[1] - p[1]) * k / lb]);
+    }
+    return out;
+  }
+
   function archPoints(cz, r, yCut) {
     const a0 = Math.asin(Math.max(-1, Math.min(1, (yCut - WHEEL_Y) / r)));
     const pts = [];
@@ -140,7 +158,7 @@
     // Khoang máy phía trước: nắp máy dốc lên về phía kính
     hb.add(VehicleKit.sideProfile([
       [-18.4, 5.6], [-18.6, 8.6], [-17.6, 10.6], [CAB_FRONT + 0.4, 11.6], [CAB_FRONT + 0.4, 8.6], [-16.0, 5.6]
-    ], HOOD_HALF * 2, 0.25), P);
+    ], HOOD_HALF * 2, 0.5), P);
     // Lưới tản nhiệt nan ngang ở mặt trước (dốc)
     const grillA = Math.atan2(1.0, 2.0);
     for (let i = 0; i < 7; i++) {
@@ -178,8 +196,8 @@
       const x = s * 6.6, z = -17.2, y = 10.9;
       hb.setTag('lamp' + (s < 0 ? 'L' : 'R'));
       hb.box(2.2, 1.6, 1.4, D, [x, y, z]);
-      hb.cyl(0.5, 0.5, 0.2, 14, M.lens, [x, y + 0.05, z - 0.75], 'z');
-      hb.box(0.5, 0.35, 0.15, M.tailLens, [x + s * 0.75, y - 0.4, z - 0.72]);
+      hb.cyl(0.5, 0.5, 0.2, 14, (s < 0 ? M.headLensL : M.headLensR) || M.lens, [x, y + 0.05, z - 0.75], 'z');
+      hb.box(0.5, 0.35, 0.15, M.amberLens || M.tailLens, [x + s * 0.75, y - 0.4, z - 0.72]);
       // Khung lồng đèn
       hb.box(2.8, 0.16, 0.16, D, [x, y + 1.0, z - 1.2]);
       hb.box(2.8, 0.16, 0.16, D, [x, y - 0.9, z - 1.2]);
@@ -191,7 +209,7 @@
       hb.box(0.25, 3.6, 0.25, D, [s * 8.0, 12.8, -15.6]);
       hb.box(0.25, 0.25, 1.4, D, [s * 8.0, 14.6, -16.2]);
       hb.box(0.4, 2.0, 1.0, D, [s * 8.0, 15.3, -16.9]);
-      hb.box(0.08, 1.7, 0.8, M.glass, [s * 8.22, 15.3, -16.9]);
+      hb.box(0.08, 1.7, 0.8, M.mirror || M.glass, [s * 8.22, 15.3, -16.9]);
       hb.setTag(null);
     }
     // Cản trước, móc kéo, biển số trắng
@@ -201,11 +219,40 @@
     }
     hb.box(4.2, 1.2, 0.12, M.plate, [0, 6.0, -19.45]);
 
-    // Cabin hộp: mặt kính dốc nhẹ, sườn hơi vát vào trong
+    // Cản ủi ống thép trước mũi + tời kéo có cáp quấn, móc tời gác lên cản
+    hb.setTag('bullbar');
+    const bar = (a, b) => hb.strut(a, b, 0.22, D, 8);
+    for (const s of [-1, 1]) {
+      bar([s * 5.6, 5.4, -19.4], [s * 5.6, 9.4, -19.9]);
+      bar([s * 5.6, 9.4, -19.9], [s * 2.2, 10.0, -19.7]);
+      bar([s * 5.6, 5.4, -19.4], [s * 5.6, 5.6, -18.6]);
+    }
+    bar([-2.2, 10.0, -19.7], [2.2, 10.0, -19.7]);
+    bar([-5.6, 7.6, -19.65], [5.6, 7.6, -19.65]);
+    hb.box(4.6, 1.3, 1.1, D, [0, 6.9, -19.25]);
+    hb.cyl(0.55, 0.55, 2.6, 12, M.steel, [0, 6.9, -19.4], 'x');
+    for (let i = -3; i <= 3; i++) hb.cyl(0.6, 0.6, 0.08, 10, D, [i * 0.36, 6.9, -19.4], 'x');
+    hb.add(new THREE.TorusGeometry(0.32, 0.1, 5, 10), M.steel, [0.6, 8.0, -19.95]);
+    hb.strut([0.4, 7.2, -19.9], [0.6, 7.7, -19.95], 0.06, M.steel, 5);
+
+    for (const s of [-1, 1]) {
+      // Tấm thoát lầy (sand channel) kẹp dọc sườn dưới giữa hai bánh, 2 đai giữ
+      hb.setTag('sand' + (s < 0 ? 'L' : 'R'));
+      const sx = s * (HALF_W + 0.2);
+      hb.box(0.22, 1.5, 7.6, M.paintDusty, [sx, 7.4, -0.4]);
+      for (let i = 0; i < 7; i++) hb.box(0.26, 0.9, 0.3, D, [sx + s * 0.02, 7.4, -3.6 + i * 1.07]);
+      for (const z of [-2.6, 1.8]) hb.box(0.4, 1.8, 0.32, M.steel, [sx + s * 0.08, 7.4, z]);
+      // Tấm chắn bùn cao su sau bánh sau
+      hb.setTag('flap' + (s < 0 ? 'L' : 'R'));
+      hb.box(TIRE_W + 0.2, 2.6, 0.12, M.rubber, [s * WHEEL_X, 3.6, AXLES[1].z + WHEEL_R + 1.4], [0.08, 0, 0]);
+    }
+    hb.setTag(null);
+
+    // Cabin hộp: mặt kính dốc nhẹ, sườn hơi vát vào trong, 4 góc đứng cắt vát
     hb.add(VehicleKit.loft(
-      [[-HALF_W, CAB_FRONT], [HALF_W, CAB_FRONT], [HALF_W, 17.6], [-HALF_W, 17.6]],
-      [[-7.4, -6.9], [7.4, -6.9], [7.4, 17.0], [-7.4, 17.0]],
-      9.7, ROOF_Y
+      cutCorners([[-HALF_W, CAB_FRONT], [HALF_W, CAB_FRONT], [HALF_W, 17.6], [-HALF_W, 17.6]], 0.7),
+      cutCorners([[-7.4, -6.9], [7.4, -6.9], [7.4, 17.0], [-7.4, 17.0]], 0.7),
+      9.7, ROOF_Y, CAB_CH
     ), P);
 
     // Kính chắn gió 2 tấm phẳng + khung giữa + gạt mưa (nằm đúng trên mặt dốc của cabin)
@@ -215,18 +262,18 @@
     const nY = Math.sin(wsA), nZ = -Math.cos(wsA);           // pháp tuyến hướng ra trước-lên
     const onFace = (y, out) => [y + nY * out, CAB_FRONT + (y - CAB_BASE_Y) * slope + nZ * out];
     for (const s of [-1, 1]) {
-      const [gy, gz] = onFace(13.45, 0.08);
-      hb.box(6.1, 3.5, 0.1, M.glass, [s * 3.55, gy, gz], [wsA, 0, 0]);
-      const [ty, tz] = onFace(15.25, 0.14);
+      const [gy, gz] = onFace(13.15, 0.08);
+      hb.box(6.1, 3.1, 0.1, (s < 0 ? M.glassWindL : M.glassWindR) || M.glass, [s * 3.55, gy, gz], [wsA, 0, 0]);
+      const [ty, tz] = onFace(14.65, 0.14);
       hb.box(6.7, 0.32, 0.22, P, [s * 3.55, ty, tz], [wsA, 0, 0]);
       const [by, bz] = onFace(11.65, 0.14);
       hb.box(6.7, 0.32, 0.22, P, [s * 3.55, by, bz], [wsA, 0, 0]);
       // Gạt mưa nằm trên kính, chốt ở mép trên
-      const [wy, wz] = onFace(14.6, 0.2);
+      const [wy, wz] = onFace(13.4, 0.2);
       hb.box(0.14, 2.9, 0.12, D, [s * 3.1, wy, wz], [wsA, 0, s * 0.55]);
     }
-    const [py, pz] = onFace(13.45, 0.14);
-    hb.box(0.7, 3.9, 0.24, P, [0, py, pz], [wsA, 0, 0]);
+    const [py, pz] = onFace(13.2, 0.14);
+    hb.box(0.7, 3.4, 0.24, P, [0, py, pz], [wsA, 0, 0]);
 
     // 4 cửa: viền cửa, ô kính nhỏ, bản lề tròn lộ, tay nắm, bậc lên
     for (const s of [-1, 1]) {
@@ -234,12 +281,12 @@
       const sideA = Math.atan2(0.6, ROOF_Y - 9.7);
       for (const [z0, z1] of [[-6.6, 0.4], [0.8, 7.8]]) {
         const zc = (z0 + z1) / 2;
-        hb.box(0.1, 5.3, 0.14, D, [x, 12.4, z0], [0, 0, s * sideA]);
-        hb.box(0.1, 5.3, 0.14, D, [x, 12.4, z1], [0, 0, s * sideA]);
-        hb.box(0.1, 0.14, z1 - z0, D, [x - s * 0.08, 15.0, zc]);
+        hb.box(0.1, 4.9, 0.14, D, [x, 12.2, z0], [0, 0, s * sideA]);
+        hb.box(0.1, 4.9, 0.14, D, [x, 12.2, z1], [0, 0, s * sideA]);
+        hb.box(0.1, 0.14, z1 - z0, D, [s * (HALF_W - (14.55 - 9.7) * (0.6 / 5.7) + 0.05), 14.55, zc]);
         hb.box(0.1, 0.14, z1 - z0, D, [x + s * 0.05, 9.85, zc]);
         // Ô kính nhỏ + khung
-        hb.box(0.12, 1.9, 2.4, M.glass, [x + s * 0.04 - s * 0.12, 13.6, zc - 0.6], [0, 0, s * sideA]);
+        hb.box(0.12, 1.9, 2.4, M.glassDusty || M.glass, [x + s * 0.04 - s * 0.12, 13.6, zc - 0.6], [0, 0, s * sideA]);
         hb.box(0.14, 2.3, 0.18, P, [x + s * 0.06 - s * 0.12, 13.6, zc - 2.0], [0, 0, s * sideA]);
         hb.box(0.14, 2.3, 0.18, P, [x + s * 0.06 - s * 0.12, 13.6, zc + 0.8], [0, 0, s * sideA]);
         // Bản lề (2 cái) ở mép trước cửa + tay nắm ở mép sau
@@ -280,22 +327,22 @@
     const RY = ROOF_Y + 1.6;
     for (const s of [-1, 1]) {
       hb.setTag('rail' + (s < 0 ? 'L' : 'R'));
-      rail([s * 6.8, ROOF_Y, 6.6], [s * 6.8, RY, 7.2]);
-      rail([s * 6.8, ROOF_Y, 16.2], [s * 6.8, RY, 15.8]);
-      rail([s * 6.8, RY, 7.2], [s * 6.8, RY, 15.8]);
-      rail([s * 6.8, ROOF_Y, 11.4], [s * 6.8, RY, 11.4]);
+      rail([s * 6.4, ROOF_Y, 6.6], [s * 6.4, RY, 7.2]);
+      rail([s * 6.4, ROOF_Y, 15.9], [s * 6.4, RY, 15.6]);
+      rail([s * 6.4, RY, 7.2], [s * 6.4, RY, 15.6]);
+      rail([s * 6.4, ROOF_Y, 11.4], [s * 6.4, RY, 11.4]);
     }
     hb.setTag('railRear');
-    rail([-6.8, RY, 15.8], [6.8, RY, 15.8]);
+    rail([-6.4, RY, 15.6], [6.4, RY, 15.6]);
     hb.setTag(null);
     // Nóc: đường ghép, ống phóng lựu đạn khói, bệ ăng-ten
-    hb.box(14.4, 0.06, 0.12, D, [0, ROOF_Y + 0.03, -2.0]);
+    hb.box(13.4, 0.06, 0.12, D, [0, ROOF_Y + 0.03, -2.0]);
     for (const s of [-1, 1]) {
       hb.setTag('smoke' + (s < 0 ? 'L' : 'R'));
       for (let i = 0; i < 3; i++) hb.cyl(0.32, 0.32, 1.3, 10, D, [s * 6.5, ROOF_Y + 0.45, -5.6 + i * 0.8], 'y', [0.45, 0, -s * 0.7]);
       hb.setTag(null);
     }
-    const antennas = [[-6.8, -5.8], [-6.6, 16.4], [6.6, 16.4]];
+    const antennas = [[-6.2, -5.4], [-6.2, 15.9], [6.2, 15.9]];
     const ant = new VehicleKit.AntennaSet(D, chassis);
     for (const [ax, az] of antennas) {
       hb.cyl(0.38, 0.45, 0.8, 8, D, [ax, ROOF_Y + 0.4, az]);
@@ -306,8 +353,9 @@
 
     // --- Chi tiết bề mặt: bu-lông viền nóc, mối hàn mép nóc, đường ghép tấm, móc cẩu, nắp thông gió ---
     for (const s of [-1, 1]) {
-      hb.boltRow([s * 7.0, ROOF_Y, -3.2], [s * 7.0, ROOF_Y, 16.4], 12, 'y', D, 0.13);
-      hb.weld([s * 7.38, ROOF_Y + 0.02, -6.7], [s * 7.38, ROOF_Y + 0.02, 16.8], P, 0.1);
+      hb.boltRow([s * (7.4 - CAB_CH - 0.4), ROOF_Y, -3.2], [s * (7.4 - CAB_CH - 0.4), ROOF_Y, 15.9], 12, 'y', D, 0.13);
+      // mối hàn theo đường gãy nóc phẳng - dải vát mép
+      hb.weld([s * (7.4 - CAB_CH), ROOF_Y + 0.02, -6.9 + CAB_CH], [s * (7.4 - CAB_CH), ROOF_Y + 0.02, 17.0 - CAB_CH], P, 0.1);
       for (const z of [-1.0, 14.6]) {
         hb.box(0.8, 0.28, 0.5, P, [s * 5.6, ROOF_Y + 0.12, z]);
         hb.add(new THREE.TorusGeometry(0.4, 0.13, 5, 10), M.steel, [s * 5.6, ROOF_Y + 0.42, z], [0, Math.PI / 2, 0]);
@@ -318,8 +366,8 @@
       const bx = s * (HALF_W - (14.6 - 9.7) * (0.6 / 5.7));
       hb.boltRow([bx, 14.6, 9.6], [bx, 14.6, 16.6], 6, 'x', D, 0.13, s, [0, 0, s * Math.atan2(0.6, 5.7)]);
     }
-    hb.seam([-7.0, ROOF_Y + 0.02, 9.2], [7.0, ROOF_Y + 0.02, 9.2], [0, 1, 0], D);
-    hb.seam([0, ROOF_Y + 0.02, -6.4], [0, ROOF_Y + 0.02, -2.1], [0, 1, 0], D);
+    hb.seam([-6.7, ROOF_Y + 0.02, 9.2], [6.7, ROOF_Y + 0.02, 9.2], [0, 1, 0], D);
+    hb.seam([0, ROOF_Y + 0.02, -6.2], [0, ROOF_Y + 0.02, -2.1], [0, 1, 0], D);
     // Nắp thông gió hộp có lá chớp trên nóc sau
     hb.box(3.0, 0.5, 2.4, P, [-2.6, ROOF_Y + 0.25, 13.0]);
     for (let i = 0; i < 4; i++) hb.box(2.6, 0.08, 0.32, D, [-2.6, ROOF_Y + 0.52, 12.2 + i * 0.52], [0.5, 0, 0]);
@@ -342,6 +390,118 @@
     }
   }
 
+  // Lathe quanh trục đứng, UV chiếu từ trên xuống (đơn vị thế giới) -> vân sơn / bùn liền mạch trên mặt vành
+  function latheTopUV(points, seg) {
+    const smoothPts = new THREE.SplineCurve(points).getPoints(points.length * 3);
+    const geo = new THREE.LatheGeometry(smoothPts, seg).toNonIndexed();
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) * VehicleKit.UV_SCALE, pos.getZ(i) * VehicleKit.UV_SCALE + pos.getY(i) * 0.02);
+    geo.userData.customUV = true;
+    return geo;
+  }
+
+  // Mặt vành thép lòng chảo (trục Y, mặt ngoài hướng +Y): mép vành cuộn, thành chảo lõm, mặt bắt bu-lông, moay-ơ
+  function rimFaceGeo(bead, H) {
+    return latheTopUV([
+      [bead + 0.26, H * 0.74], [bead + 0.24, H * 0.9], [bead + 0.02, H * 0.95], [bead - 0.12, H * 0.8],
+      [bead - 0.3, H * 0.45], [bead - 0.5, H * 0.32], [1.3, H * 0.32], [1.2, H * 0.4], [1.08, H * 0.56], [0.8, H * 0.6]
+    ].map(([r, y]) => new THREE.Vector2(r, y)), 30);
+  }
+
+  // Lốp từ VehicleKit.tireGeometry; không có vật liệu lốp riêng thì trụ cao su đơn giản
+  function tireGeos(opts, M) {
+    if (M.tire && M.tire !== M.rubber) return VehicleKit.tireGeometry(opts);
+    return [new THREE.CylinderGeometry(opts.R + opts.lugH, opts.R + opts.lugH, opts.H * 2, 24)];
+  }
+
+  // ===========================================================================
+  // HỆ TREO ĐỘC LẬP TAY ĐÒN KÉP: tay đòn trên/dưới, giảm chấn lò xo trụ, bán trục, vi sai, các-đăng
+  // ===========================================================================
+  function buildSuspension(chassis, M) {
+    const b = new VehicleKit.PartBatch(0);
+    const D = M.dark;
+    for (const a of AXLES) {
+      for (const s of [-1, 1]) {
+        const hubX = s * (WHEEL_X - TIRE_W / 2 - 0.35), z = a.z;
+        // Tay đòn chữ A dưới + tay đòn trên ngắn hơn, mỗi tay 2 nhánh về khung
+        for (const dz of [-1.1, 1.1]) {
+          b.strut([s * 3.4, 2.6, z + dz], [hubX, 2.9, z], 0.2, D, 6);
+          b.strut([s * 3.9, 5.6, z + dz * 0.8], [hubX, 5.2, z], 0.16, D, 6);
+        }
+        b.box(0.7, 3.2, 1.0, M.steel, [hubX, 4.0, z]);
+        // Bán trục + chụp cao su chống bụi
+        b.cyl(0.24, 0.24, Math.abs(hubX) - 1.6, 8, M.steel, [(hubX + s * 1.6) / 2, WHEEL_Y, z], 'x');
+        b.cyl(0.42, 0.3, 0.7, 10, M.rubber, [hubX - s * 0.5, WHEEL_Y, z], 'x');
+        // Giảm chấn lò xo trụ nghiêng lên tai bắt trên khung
+        const p0 = [s * 4.8, 3.1, z + 0.4], p1 = [s * 3.8, 8.6, z + 0.6];
+        b.strut(p0, p1, 0.22, M.steel, 8);
+        for (let i = 1; i < 9; i++) {
+          const t = 0.12 + i * 0.085;
+          b.add(new THREE.TorusGeometry(0.42, 0.08, 4, 10), M.paintDusty,
+            [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, p0[2] + (p1[2] - p0[2]) * t],
+            [Math.PI / 2, 0, s * 0.18]);
+        }
+        b.box(1.2, 0.6, 1.2, D, [s * 3.8, 8.9, z + 0.6]);
+      }
+      // Bộ vi sai giữa cầu + thanh cân bằng ngang
+      b.box(3.0, 2.2, 2.6, D, [0, WHEEL_Y, a.z]);
+      b.cyl(0.18, 0.18, 7.2, 8, D, [0, 2.2, a.z + (a.steer ? 2.0 : -2.0)], 'x');
+    }
+    b.cyl(0.32, 0.32, AXLES[1].z - AXLES[0].z - 2.6, 10, M.steel, [0, WHEEL_Y, (AXLES[0].z + AXLES[1].z) / 2], 'z');
+    b.build(chassis);
+  }
+
+  // ===========================================================================
+  // ĐỒ CHẰNG TRÊN NÓC SAU (trong lan can): hòm đạn, cuộn bạt, bó lưới ngụy trang, xẻng
+  // ===========================================================================
+  function buildStowage(chassis, M, rnd) {
+    const b = new VehicleKit.PartBatch(ROOF_Y);
+    const Y = ROOF_Y, D = M.dark;
+    b.setTag('stowage');
+    for (const z of [8.4, 10.9]) {
+      const h = 1.5;
+      b.box(2.4, h, 2.2, M.paint, [4.0, Y + h / 2, z], [0, (rnd() - 0.5) * 0.1, 0]);
+      b.box(2.5, 0.2, 2.3, M.paint, [4.0, Y + h + 0.1, z]);
+      b.box(0.9, 0.12, 0.2, M.steel, [4.0, Y + h + 0.28, z]);
+      b.box(0.04, 0.5, 0.7, M.canvas, [5.22, Y + h * 0.5, z]);
+    }
+    // Cuộn bạt ngang sát lan can sau, phồng xẹp không đều, 3 dây chằng
+    const tz = 14.9, ty = Y + 0.9;
+    for (let i = 0; i < 5; i++) {
+      const r = 0.82 + rnd() * 0.12;
+      b.cyl(r, r * 0.95, 2.24, 12, M.canvasDark, [-5.6 + i * 2.24 + 1.12, ty, tz + (rnd() - 0.5) * 0.12], 'x');
+    }
+    for (const x of [-3.4, 0, 3.4]) b.add(new THREE.TorusGeometry(0.9, 0.07, 4, 14), D, [x, ty, tz], [0, Math.PI / 2, 0]);
+    for (const x of [-5.62, 5.62]) b.cyl(0.6, 0.6, 0.1, 12, M.canvas, [x, ty, tz], 'x');
+    // Bó lưới ngụy trang bẹp phía trái + 2 dây chằng
+    b.box(3.2, 1.0, 4.4, M.canvas, [-4.4, Y + 0.5, 9.4], [0, 0.06, 0.03]);
+    b.box(3.0, 0.5, 3.6, M.canvasDark, [-4.3, Y + 1.15, 9.5], [0.05, -0.08, 0]);
+    for (const z of [8.2, 10.6]) b.beam([-6.0, Y + 1.2, z], [-2.8, Y + 1.45, z], 0.4, 0.06, D);
+    // Xẻng kẹp dọc lan can trái
+    b.strut([-6.85, Y + 1.0, 7.0], [-6.85, Y + 1.0, 12.4], 0.14, M.wood || M.dark, 6);
+    b.box(0.1, 1.3, 1.6, M.paintDusty, [-6.85, Y + 1.0, 13.3]);
+    b.build(chassis);
+  }
+
+  // Bánh dự phòng trên giá bắt vào cửa sau (đứng, hông ngoài quay ra sau)
+  function buildSpareWheel(chassis, M) {
+    const g = new THREE.Group();
+    const H = TIRE_W / 2;
+    g.position.set(0, 12.6, 17.95 + H + 0.35);
+    g.rotation.set(Math.PI / 2, 0, 0);
+    chassis.add(g);
+    const b = new VehicleKit.PartBatch(0);
+    b.setTag('spare');
+    for (const geo of tireGeos({ R: WHEEL_R - TIRE_LUG, H, bead: TIRE_BEAD, lugH: TIRE_LUG, seed: 29 }, M)) b.add(geo, M.tire || M.rubber, [0, 0, 0], [0, 0.4, 0]);
+    b.cyl(TIRE_BEAD + 0.02, TIRE_BEAD + 0.02, H * 1.6, 28, M.rim, [0, 0, 0], 'y', null, true);
+    b.add(rimFaceGeo(TIRE_BEAD, H), M.rim, [0, 0, 0]);
+    b.cyl(0.75, 0.85, 0.5, 12, M.steel, [0, H * 0.6 + 0.2, 0]);
+    b.box(3.0, 0.22, 0.7, M.dark, [0, H * 0.6 + 0.5, 0]);
+    b.cyl(0.3, 0.3, 0.3, 6, M.steel, [0, H * 0.6 + 0.75, 0]);
+    for (const x of [-1.6, 1.6]) b.box(0.4, H * 2 + 0.6, 0.4, M.dark, [x, -0.3, 0]);
+    b.build(g);
+  }
+
   // ===========================================================================
   // 4 BÁNH LỐP LỚN, VÀNH THÉP ĐEN
   // ===========================================================================
@@ -350,29 +510,23 @@
     for (const a of AXLES) for (const s of [-1, 1]) positions.push({ x: s * WHEEL_X, y: WHEEL_Y, z: a.z, steer: a.steer });
     return new VehicleKit.WheelSet(chassis, (b) => {
       const hw = TIRE_W / 2;
-      b.cyl(WHEEL_R - 0.3, WHEEL_R - 0.3, TIRE_W, 26, M.rubber, [0, 0, 0], 'x');
-      for (const sx of [-1, 1]) {
-        b.add(new THREE.TorusGeometry(WHEEL_R - 0.72, 0.46, 8, 26), M.rubber, [sx * (hw - 0.46), 0, 0], [0, Math.PI / 2, 0]);
+      // Lốp địa hình mặt cắt thật, gai đúc liền (trục Y xoay thành X)
+      for (const geo of tireGeos({ R: WHEEL_R - TIRE_LUG, H: hw, bead: TIRE_BEAD, lugH: TIRE_LUG, seed: 17 }, M)) {
+        geo.rotateZ(-Math.PI / 2);
+        b.add(geo, M.tire || M.rubber, [0, 0, 0]);
       }
-      const lugs = 18;
-      for (let i = 0; i < lugs; i++) {
-        const a = (i / lugs) * Math.PI * 2;
-        for (const sx of [-1, 1]) {
-          b.box(1.15, 0.42, 0.95, M.rubber, [sx * 0.68, Math.cos(a) * (WHEEL_R - 0.18), Math.sin(a) * (WHEEL_R - 0.18)], [a, sx * 0.55, 0]);
-        }
-      }
-      // Vành thép đen có lỗ thoát nhiệt + moay-ơ
-      b.cyl(2.2, 2.2, TIRE_W + 0.04, 18, M.rim, [0, 0, 0], 'x');
-      b.cyl(1.9, 1.9, 0.2, 18, M.rim, [hw + 0.03, 0, 0], 'x');
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + 0.3;
-        b.cyl(0.36, 0.36, 0.1, 10, M.dark, [hw + 0.15, Math.cos(a) * 1.3, Math.sin(a) * 1.3], 'x');
-      }
-      b.cyl(0.8, 0.9, 0.55, 12, M.rim, [hw + 0.32, 0, 0], 'x');
+      // Vành thép lòng chảo, moay-ơ giảm tốc, đai ốc, van bơm hơi trung tâm + ống dẫn hơi ra mép vành
+      b.cyl(TIRE_BEAD + 0.02, TIRE_BEAD + 0.02, TIRE_W * 0.82, 24, M.rim, [0, 0, 0], 'x', null, true);
+      const face = rimFaceGeo(TIRE_BEAD, hw);
+      face.rotateZ(-Math.PI / 2);
+      b.add(face, M.rim, [0, 0, 0]);
+      b.cyl(0.95, 1.05, 1.4, 14, M.rim, [hw - 0.1, 0, 0], 'x');
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2;
-        b.cyl(0.1, 0.1, 0.3, 6, M.steel, [hw + 0.4, Math.cos(a) * 0.62, Math.sin(a) * 0.62], 'x');
+        b.cyl(0.15, 0.15, 0.3, 6, M.steel, [hw * 0.32 + 0.15, Math.cos(a) * 1.5, Math.sin(a) * 1.5], 'x');
       }
+      b.cyl(0.4, 0.4, 0.7, 10, M.rim, [hw + 0.65, 0, 0], 'x');
+      b.beam([hw + 0.5, 0.25, 0], [hw * 0.9, 2.1, 0.4], 0.14, 0.14, M.dark);
     }, positions, WHEEL_R);
   }
 

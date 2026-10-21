@@ -105,7 +105,8 @@ const ProvingGround = (() => {
     dirt: { type: 'ROAD', speedMult: 1.08, bumpiness: 0.42, dustMult: 0.9, sinkY: -0.1, engineLoad: 0.92, name: 'ĐƯỜNG ĐẤT (LÚN VỆT BÁNH, Ổ GÀ)', col: [0.5, 0.4, 0.28] },
     gravel: { type: 'ROAD', speedMult: 1.05, bumpiness: 0.55, dustMult: 0.7, sinkY: 0, engineLoad: 0.95, name: 'ĐƯỜNG SỎI ĐÁ GỒ GHỀ', col: [0.47, 0.45, 0.41] },
     mud: { type: 'ROAD', speedMult: 0.94, bumpiness: 0.6, dustMult: 0.15, sinkY: -0.5, engineLoad: 1.15, name: 'ĐƯỜNG BÙN NHÃO', col: [0.3, 0.24, 0.17] },
-    asphalt: { type: 'URBAN_ROAD', speedMult: 1.15, bumpiness: 0.12, dustMult: 0.25, sinkY: 0, engineLoad: 0.85, name: 'ĐƯỜNG NHỰA', col: [0.17, 0.17, 0.18] }
+    asphalt: { type: 'URBAN_ROAD', speedMult: 1.15, bumpiness: 0.12, dustMult: 0.25, sinkY: 0, engineLoad: 0.85, name: 'ĐƯỜNG NHỰA', col: [0.17, 0.17, 0.18] },
+    URBAN: { type: 'ROAD', speedMult: 1.0, bumpiness: 0.3, dustMult: 0.6, sinkY: 0, engineLoad: 0.95, name: 'BÃI ĐẤT ĐÔ THỊ (GẠCH VỤN)', col: [0.37, 0.35, 0.32] }
   };
 
   // ---------------------------------------------------------------------------
@@ -286,9 +287,56 @@ const ProvingGround = (() => {
         return o;
       },
       surface() { return 'JUNGLE'; }
+    },
+
+    // Nhà / boong-ke dùng đúng lớp trong trận (Destructibles.BuildingSet / BunkerSet): khoét lỗ, nứt, sập, đống đổ nát
+    // xe bò lên được. Hai dãy nhà hai bên hàng bắn để bắn thẳng từ bệ; nút "Dựng lại" khôi phục mọi thứ đã phá.
+    urban: {
+      name: 'Đô thị', icon: 'building', mapType: 'URBAN', R: 560, base: 'URBAN', seed: 67,
+      desc: 'Nhà phố, chung cư, văn phòng, nhà đổ nát, nhà kho, boong-ke — phá được như trong trận; bấm Dựng lại để khôi phục',
+      roads: [
+        { kind: 'asphalt', width: 26, ring: 250 },
+        { kind: 'asphalt', width: 24, pts: [[0, -262], [0, -560]] },
+        { kind: 'asphalt', width: 24, pts: [[262, 0], [560, 0]] },
+        { kind: 'asphalt', width: 24, pts: [[-262, 0], [-560, 0]] }
+      ],
+      height(x, z) { return fbm(x, z, 120, 61) * 0.8; },
+      avoid(x, z) { return false; },
+      objects(rng, P) {
+        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS], fences: [], sandbags: [], signs: [], buildings: [], bunkers: [] };
+        // mặt nhà quay về bệ xe (angle = góc xoay quanh trục đứng như map_gen)
+        const B = (x, z, w, d, floors, kind) => o.buildings.push({ x, z, w, d, floors, kind, angle: -Math.atan2(x, z) });
+        // dãy phố hai bên hàng bắn (bắn thẳng từ bệ)
+        B(-140, -350, 56, 48, 3, 'shop');
+        B(-140, -440, 34, 44, 3, 'tube');
+        B(150, -360, 64, 54, 4, 'apartment');
+        B(155, -465, 60, 50, 5, 'office');
+        // quanh bãi: nhà đổ nát, nhà đá, nhà gạch đất, nhà ống, nhà kho
+        B(340, 60, 56, 46, 2, 'ruin');
+        B(345, 190, 36, 40, 2, 'tube');
+        B(-345, 70, 52, 44, 2, 'farm');
+        B(-350, -110, 44, 40, 1, 'stone');
+        B(-330, 230, 46, 40, 1, 'mudbrick');
+        B(0, 410, 84, 60, 1, 'hangar');
+        B(390, -260, 58, 48, 3, 'ruin');
+        // boong-ke bê tông quay cửa về bệ
+        for (const [x, z] of [[240, 340], [-250, 350], [-390, -300]]) o.bunkers.push({ x, z, openAngle: Math.atan2(-z, -x) });
+        // xác xe trên phố, bao cát chắn đường
+        for (const [x, z, a, kind] of [[60, -300, 0.4, 'truck'], [300, -20, 1.6, 'apc'], [-300, -20, -1.4, 'tank'], [120, 330, 2.6, 'truck']]) {
+          o.wrecks.push({ x, z, angle: a, kind, turretRot: rng() * 2 - 1, smoke: rng() < 0.35 });
+        }
+        o.sandbags.push({ x0: -95, z0: -300, x1: -95, z1: -250, layers: 3 }, { x0: 95, z0: -300, x1: 95, z1: -250, layers: 3 }, { x0: 250, z0: 270, x1: 300, z1: 300, layers: 2 });
+        scatter(rng, P, 10, (x, z) => o.trees.push({ x, z, kind: rng() < 0.5 ? 'broadleaf' : 'deadTree', s: 0.8 + rng() * 0.35, rot: rng() * 6.28 }), 40);
+        o.signs.push({ x: -100, z: -330, text: 'NHÀ PHỐ', sub: 'Bắn thủng tường, sập tầng' });
+        o.signs.push({ x: 108, z: -335, text: 'CHUNG CƯ · VĂN PHÒNG' });
+        o.signs.push({ x: 205, z: 300, text: 'BOONG-KE' });
+        o.signs.push({ x: 40, z: 350, text: 'NHÀ KHO' });
+        return o;
+      },
+      surface() { return 'URBAN'; }
     }
   };
-  const ORDER = ['flat', 'hills', 'water', 'desert', 'forest'];
+  const ORDER = ['flat', 'hills', 'water', 'desert', 'forest', 'urban'];
 
   // Chỗ đặt vật thể hợp lệ: ngoài bãi phẳng giữa, trong vòng ụ đất, không trên hàng bắn / đường / chỗ cấm của bãi
   function okSpot(P, x, z, pad) {
@@ -390,18 +438,28 @@ const ProvingGround = (() => {
         this.buildRocks(o.rocks || [], rng);
         this.buildTrees(o.trees || []);
         this.buildProps(o);
+        this.buildStructures(o, P);
         this.buildSigns(o.signs || []);
       }
       this.root.updateMatrixWorld(true);
     }
 
     clear() {
+      // nhà / boong-ke tự tạo hình khối & vật liệu riêng: giải phóng như terrain.clearTerrain (dựng lại nhiều lần không rò bộ nhớ)
+      for (const S of [this.buildingSet, this.bunkerSet]) {
+        if (!S || !S.group) continue;
+        S.group.traverse(o => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+        });
+      }
       while (this.root.children.length) this.root.remove(this.root.children[0]);
       for (const r of this.own) { try { r.dispose(); } catch (e) { /* bỏ qua */ } }
       this.own = [];
       this.boulders = [];
       this.trees = null;
       this.props = null;
+      this.buildingSet = this.bunkerSet = null;
       this.H = null;
     }
 
@@ -611,6 +669,44 @@ const ProvingGround = (() => {
       try { this.props = new Props.PropSet(T, data); } catch (e) { console.warn('[Sân thử] Không dựng được hàng rào / xác xe', e); this.props = null; }
     }
 
+    // nhà / boong-ke: đúng lớp trong trận, cùng hạt giống mỗi lần dựng (dựng lại ra y hệt)
+    buildStructures(o, P) {
+      if (typeof Destructibles === 'undefined') return;
+      const ground = (x, z) => this.groundAt(x, z);
+      Destructibles.withSeed(((P.seed || 1) * 104729) >>> 0, () => {
+        try {
+          if ((o.buildings || []).length) this.buildingSet = new Destructibles.BuildingSet(this.root, o.buildings, ground);
+        } catch (e) { console.warn('[Sân thử] Không dựng được nhà', e); this.buildingSet = null; }
+        try {
+          if ((o.bunkers || []).length) this.bunkerSet = new Destructibles.BunkerSet(this.root, o.bunkers, ground);
+        } catch (e) { console.warn('[Sân thử] Không dựng được boong-ke', e); this.bunkerSet = null; }
+      });
+    }
+
+    // hộp va chạm xe của nhà (như terrain.vehicleObstacles): nhà sập thì chỉ còn mảng tường góc đứng chặn
+    structureBoxes(x, z, unit, out) {
+      const S = this.buildingSet;
+      if (!S) return out;
+      const reach = typeof VehicleCollision !== 'undefined' && unit ? VehicleCollision.reach(unit) : 60;
+      for (const R of S.items) {
+        const m = R.halfW + R.halfD + reach + 10;
+        if (Math.abs(x - R.x) > m || Math.abs(z - R.z) > m) continue;
+        if (R.collapsed) { if (R.rubbleWalls) for (const w of R.rubbleWalls) out.push(w); continue; }
+        const box = R._pgBox || (R._pgBox = { cx: R.x, cz: R.z, ux: Math.cos(R.angle), uz: -Math.sin(R.angle), hu: R.halfW, hv: R.halfD, y0: 0, y1: 0 });
+        box.y0 = (R.y || 0) - 20;
+        box.y1 = (R.y || 0) + ((R.entry && R.entry.height) || 60);
+        out.push(box);
+      }
+      return out;
+    }
+    // đống nhà sập / gốc tường boong-ke cho xích bò lên (như terrain.vehicleDebris)
+    structureDebris(x, z, unit, out) {
+      const r = 40 + Math.min(20, Math.abs((unit && unit.speed) || 0) * 0.1);
+      if (this.buildingSet && this.buildingSet.vehicleDebris) this.buildingSet.vehicleDebris(x, z, r, out);
+      if (this.bunkerSet && this.bunkerSet.S && typeof VehicleCollision !== 'undefined') VehicleCollision.blockDebris(this.bunkerSet.S, 0, x, z, r, out);
+      return out;
+    }
+
     buildSigns(list) {
       if (!list.length) return;
       const postGeo = new THREE.CylinderGeometry(0.45, 0.55, 12, 6);
@@ -652,18 +748,25 @@ const ProvingGround = (() => {
       if (this.trees) this.trees.crush(x, z, radius, vx, vz, fx);
       if (this.props && Math.hypot(vx, vz) >= 6) this.props.crush(x, z, radius, vx, vz, fx);
     }
-    // Sóng nổ / đạn: cây rung / đổ / cháy, rào đổ
-    damageAt(x, y, z, ammo, heavy, fx) {
+    // Sóng nổ / đạn: cây rung / đổ / cháy, rào đổ, nhà thủng / sập, boong-ke vỡ (info như terrain.damageAt)
+    damageAt(x, y, z, ammo, heavy, fx, info) {
       if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx);
       if (this.props) this.props.damageAt(x, y, z, ammo, heavy, fx);
+      if (this.buildingSet) this.buildingSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {});
+      if (this.bunkerSet) this.bunkerSet.damageAt(x, y, z, ammo, heavy, fx);
     }
     // Đạn bay qua tán cây: lá rụng, cây rung
     passSegment(a, b, ammo, fx) {
       if (this.trees) this.trees.passSegment(a.x, a.y, a.z, b.x, b.y, b.z, ammo, fx);
     }
-    update(dt, fx, cam) {
+    // cam: vị trí camera; focus: xe đang lái (nhà che xe thì cắt mái / tường như trong trận)
+    update(dt, fx, cam, focus) {
       if (this.trees) this.trees.update(dt, fx);
       if (this.props) this.props.update(dt, fx, cam || null);
+      if (this.buildingSet) {
+        this.buildingSet.update(dt, fx);
+        if (cam && focus && this.buildingSet.setView) this.buildingSet.setView(cam, focus, dt);
+      }
     }
 
     /**
@@ -701,6 +804,20 @@ const ProvingGround = (() => {
       }
       // bao cát (kiểm tra điểm cuối đoạn — đoạn bay ngắn ~6 đơn vị)
       if (this.props && this.props.hitTest(b.x, b.y, b.z)) take(1, 'GROUND', new THREE.Vector3(a.x - b.x, 0, a.z - b.z).normalize(), { sandbag: true });
+      // tường / sàn / mái nhà (pháp tuyến đúng mặt bị chạm)
+      if (this.buildingSet) {
+        const h = this.buildingSet.segmentHit(a.x, a.y, a.z, b.x, b.y, b.z);
+        if (h) take(h.t, 'BUILDING', new THREE.Vector3(h.nx, h.ny, h.nz), { bn: { x: h.nx, y: h.ny, z: h.nz } });
+      }
+      // khối bê tông / mái boong-ke
+      if (this.bunkerSet) {
+        const h = this.bunkerSet.blocks(a.x, a.y, a.z, b.x, b.y, b.z);
+        if (h) {
+          const q = h.block;
+          const t = q ? Destructibles.segCircleT(a.x, a.z, b.x, b.z, q.x, q.z, q.radius) : 1;
+          take(t >= 0 ? t : 1, 'BUNKER', q ? new THREE.Vector3(a.x - q.x, 0.3, a.z - q.z).normalize() : new THREE.Vector3(0, 1, 0));
+        }
+      }
       // mặt nước
       const P = this.preset;
       if (P.waterY !== undefined && a.y > P.waterY && b.y <= P.waterY) {
@@ -731,7 +848,8 @@ const ProvingGround = (() => {
     makeTerrain(hooks) {
       const F = this;
       const VC = () => (typeof VehicleCollision !== 'undefined' ? VehicleCollision : null);
-      return {
+      const boxBuf = [], debrisBuf = [];
+      const T = {
         get width() { return (F.R + 260) * 2; },
         get depth() { return (F.R + 260) * 2; },
         get mapType() { return F.mapType; },
@@ -745,7 +863,7 @@ const ProvingGround = (() => {
         noCraterAt: (x, z) => Math.hypot(x, z) < 60,   // không khoét hố trên bệ trưng bày
         resolveVehicleCollision: (x0, z0, x1, z1, r, unit) => {
           const c = F.collide(x0, z0, x1, z1, r || 16);
-          const boxes = unit && hooks && hooks.boxes ? hooks.boxes(c.x, c.z, unit) : null;
+          const boxes = unit ? T.vehicleObstacles(c.x, c.z, unit) : null;
           const V = VC();
           if (boxes && boxes.length && V) {
             const res = V.resolve(unit, x0, z0, c.x, c.z, boxes);
@@ -753,9 +871,25 @@ const ProvingGround = (() => {
           }
           return c;
         },
-        vehicleObstacles: (x, z, unit) => (hooks && hooks.boxes ? hooks.boxes(x, z, unit) : null),
-        vehicleDebris: (x, z) => (hooks && hooks.debris ? hooks.debris(x, z) : null)
+        // tường thử (hooks) + nhà của bãi
+        vehicleObstacles: (x, z, unit) => {
+          const own = hooks && hooks.boxes ? hooks.boxes(x, z, unit) : null;
+          if (!F.buildingSet) return own;
+          const out = boxBuf; out.length = 0;
+          if (own) for (const b of own) out.push(b);
+          return F.structureBoxes(x, z, unit, out);
+        },
+        vehicleDebris: (x, z, unit) => {
+          const own = hooks && hooks.debris ? hooks.debris(x, z) : null;
+          if (!F.buildingSet && !F.bunkerSet) return own;
+          const out = debrisBuf; out.length = 0;
+          if (own) for (const d of own) out.push(d);
+          F.structureDebris(x, z, unit, out);
+          return out.length ? out : null;
+        },
+        buildingSegmentHit: (x0, y0, z0, x1, y1, z1) => (F.buildingSet ? F.buildingSet.segmentHit(x0, y0, z0, x1, y1, z1) : null)
       };
+      return T;
     }
   }
 

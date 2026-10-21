@@ -357,7 +357,7 @@ class HUDController {
   }
 
   selectCharge(chargeNum) {
-    if (!this.game.player || chargeNum < 1 || chargeNum > 5) return;
+    if (!this.game.player || chargeNum < 1 || chargeNum > 10) return;
     this.game.player.charge = chargeNum;
 
     const chargeBtns = document.querySelectorAll('.charge-btn');

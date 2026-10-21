@@ -6,7 +6,10 @@
  *   quyết định trúng (gửi DRONE_HIT); máy điều khiển drone trừ "thân drone", hết thì drone rơi (DRONE_DOWN)
  * - Mất drone: pháo không còn mắt ngắm cầu vồng (chỉ bắn thẳng tự vệ trong tầm nhìn), phải hồi sinh mới có drone mới
  * - Xe 6 nòng / xe trinh sát: nhấp lên trời = nâng nòng bắn lên hướng đó; nhấp đúng drone địch đang thấy = khóa drone
- *   (máy tính hỏa lực tự đón đầu + nâng hạ nòng). Radar / Tab / tự khóa KHÔNG khóa drone — phải tự phát hiện bằng mắt.
+ *   (máy tính hỏa lực tự đón đầu + nâng hạ nòng). Radar / Tab / tự khóa KHÔNG khóa drone — phải tự nhấp vào drone.
+ * - Xe 6 nòng có radar cảnh giới phòng không riêng (bộ phận 'aaRadar' trên nóc tháp): phe mình thấy drone địch xa hơn
+ *   (AA_RADAR_R thay vì SEE_R), xe mình báo bíp + nhật ký khi drone địch lọt vào vùng phủ, đánh dấu vết radar trên màn hình
+ *   (mũi tên mép màn hình khi drone ngoài khung nhìn) để người chơi tìm & nhấp khóa. Radar bị bắn bay -> mất hết.
  */
 const DroneAir = (() => {
   const C = {
@@ -17,6 +20,7 @@ const DroneAir = (() => {
     // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát (đạn pháo không bắn được mục tiêu trên không)
     DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
     SEE_R: 1500,         // đội có xe trong bán kính ngang này thì thấy drone địch bay (drone bay cao, dễ lộ)
+    AA_RADAR_R: 2600,    // xe 6 nòng còn radar phòng không: phát hiện drone địch trong bán kính ngang này (~325 m)
     BOT_SEE_R: 1100,     // bot tự phát hiện drone trong bán kính này
     SEND_FLY: 0.1, SEND_IDLE: 1.0,
     INTERP: 0.12, EXTRAP: 0.35,
@@ -28,7 +32,7 @@ const DroneAir = (() => {
     // v / k / travel: hệ số so với đường đạn 12.7mm (SCOUT_BULLET)
     RCWS: { rof: 0.09, mag: 200, reload: 5, yawRate: 1.7, pitchRate: 1.2, elMin: -8, elMax: 70, dmgDrone: 0.15, dmgVehicle: 0.005,
       v: 0.92, k: 1.9, travel: 0.65,
-      spread: 0.03 }   // tản mát thêm (rad, ~30 mil — bệ nhẹ rung theo phát bắn, ngắm điện tử trễ): ~1.4 lần súng 12.7mm xe trinh sát
+      spread: 0.008 }  // tản mát thêm (rad, ~8 mil — trạm có bệ ổn định, chùm đạn gọn như súng máy thật trên giá cứng)
   };
   const ST = ['docked', 'launching', 'flying', 'returning', 'lost'];
   const airborne = s => s === 'launching' || s === 'flying' || s === 'returning';
@@ -56,6 +60,8 @@ const DroneAir = (() => {
       this._droneThreat = null;
       this._droneSentCode = undefined;
       if (this._airLockEl) this._airLockEl.hidden = true;
+      this._aaContacts = new Set();
+      if (this._aaRadarEl) this._aaRadarEl.hidden = true;
       if (this.ballistics && this.ballistics.airTargets) this.ballistics.airTargets.length = 0;
     },
 
@@ -65,14 +71,20 @@ const DroneAir = (() => {
 
     droneIsAirborne(dr) { return !!dr && airborne(dr.state) && !(dr.owner && dr.owner.isDead); },
 
-    /** Phe team có thấy drone này không: drone phe mình, hoặc có xe phe mình còn sống trong bán kính SEE_R */
+    /** Xe có radar cảnh giới phòng không còn hoạt động (xe 6 nòng, cụm radar chưa bị bắn bay) */
+    aaRadarUp(u) {
+      return !!u && !u.isDead && u.tankType === 'GATLING' && !(u.dmg && u.dmg.lost && u.dmg.lost.has('aaRadar'));
+    },
+
+    /** Phe team có thấy drone này không: drone phe mình, hoặc có xe phe mình còn sống trong bán kính SEE_R
+     *  (xe 6 nòng còn radar phòng không: AA_RADAR_R) */
     droneSeenByTeam(dr, team) {
       if (!dr || dr.team === team) return true;
-      const r2 = C.SEE_R * C.SEE_R;
       for (const u of this.units) {
         if (u.isDead || u.team !== team) continue;
+        const R = this.aaRadarUp(u) ? C.AA_RADAR_R : C.SEE_R;
         const dx = u.x - dr.x, dz = u.z - dr.z;
-        if (dx * dx + dz * dz <= r2) return true;
+        if (dx * dx + dz * dz <= R * R) return true;
       }
       return false;
     },
@@ -140,6 +152,7 @@ const DroneAir = (() => {
       this.updateDroneThreat(dt);
       this.updateDroneAmbient(list);
       this.updateAirLockOverlay();
+      this.updateAARadar(list);
     },
 
     // ĐẾ SẠC DRONE trên nóc cabin mọi xe pháo: kẹp càng nhả khi drone cất cánh / sắp đáp, đèn trạng thái
@@ -309,13 +322,29 @@ const DroneAir = (() => {
     },
 
     // ---------- DRONE TRÊN BẢN ĐỒ NHỎ / BẢN ĐỒ CHIẾN THUẬT ----------
-    // Drone phe mình luôn hiện (xanh); drone địch chỉ hiện khi phe mình đang nhìn thấy (đỏ) — radar không bắt drone.
+    // Drone phe mình luôn hiện (xanh); drone địch chỉ hiện khi phe mình đang thấy (đỏ) — radar mặt đất không bắt drone,
+    // chỉ radar phòng không của xe 6 nòng (tầm AA_RADAR_R).
     // Ký hiệu: dấu X 4 cánh quạt trong vòng tròn + vạch hướng bay; drone đang bị mình khóa: vòng khóa vàng;
     // bản đồ lớn có nhãn UAV + độ cao
     drawDronesOnMap(ctx, toScreen, big) {
       const P = this.player;
       if (!P) return;
       const t = performance.now() / 1000, A = this._airAim;
+      // Xe 6 nòng: vòng nét đứt = vùng phủ radar phòng không, vạch quét quay theo ăng-ten
+      if (this.aaRadarUp(P)) {
+        const c = toScreen(P.x, P.z), e = toScreen(P.x + C.AA_RADAR_R, P.z), rr = Math.abs(e.x - c.x);
+        if (rr > 4) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,190,90,0.45)'; ctx.lineWidth = big ? 1.4 : 1;
+          ctx.setLineDash(big ? [6, 5] : [3, 3]);
+          ctx.beginPath(); ctx.arc(c.x, c.y, rr, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+          const a = t * Math.PI * 2;
+          ctx.strokeStyle = 'rgba(255,190,90,0.3)';
+          ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.x + Math.sin(a) * rr, c.y - Math.cos(a) * rr); ctx.stroke();
+          ctx.restore();
+        }
+      }
       for (const dr of this.airDroneList()) {
         const ally = dr.team === P.team;
         if (!ally && !dr.seen) continue;
@@ -1165,6 +1194,94 @@ const DroneAir = (() => {
       const txt = 'DRONE ĐỊCH · ' + Math.round(A.dist || 0) + ' M · ' + (A.state === 'high' ? 'QUÁ CAO — LÙI XE RA XA'
         : A.state === 'far' ? 'NGOÀI TẦM SÚNG' : A.on ? 'ĐÃ NGẮM TRÚNG' : 'ĐANG XOAY THÁP') + (this._droneHitMark > 0 ? ' · TRÚNG!' : '');
       if (el._txt.textContent !== txt) el._txt.textContent = txt;
+    },
+
+    // ---------- RADAR PHÒNG KHÔNG XE 6 NÒNG: CẢNH BÁO + ĐÁNH DẤU VẾT TRÊN MÀN HÌNH ----------
+    /**
+     * Người chơi lái xe 6 nòng còn radar: drone địch mới lọt vào vùng phủ -> bíp + nhật ký (phương vị, cự ly, độ cao).
+     * Mỗi vết radar có ô kim cương trên màn hình (ngoài khung nhìn: mũi tên ở mép màn hình chỉ hướng) để tìm & nhấp khóa.
+     * Không tự khóa — vẫn phải nhấp vào drone (pickDroneAt). Drone đang khóa đã có khung khóa riêng nên bỏ qua.
+     */
+    updateAARadar(list) {
+      const P = this.player, seen = this._aaContacts || (this._aaContacts = new Set());
+      let el = this._aaRadarEl;
+      if (!this.aaRadarUp(P)) {
+        if (seen.size) seen.clear();
+        if (el && !el.hidden) el.hidden = true;
+        return;
+      }
+      const R2 = C.AA_RADAR_R * C.AA_RADAR_R, A = this._airAim, now = new Set(), tracks = [];
+      for (const dr of list) {
+        if (dr.team === P.team || dr.key === 'own' || !this.droneIsAirborne(dr)) continue;
+        const dx = dr.x - P.x, dz = dr.z - P.z;
+        if (dx * dx + dz * dz > R2) continue;
+        now.add(dr.key);
+        if (!seen.has(dr.key)) {
+          const brg = Math.round((Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360) % 360;
+          const gy = this.terrain ? this.terrain.getElevationAt(dr.x, dr.z) : 0;
+          this.addCombatLog(`[[radar-2]] RADAR PHÒNG KHÔNG: DRONE ĐỊCH · phương vị ${String(brg).padStart(3, '0')}° · cự ly ${Math.round(Math.hypot(dx, dz))}M · cao ${Math.round(Math.max(0, dr.y - gy))}M — nhấp vào drone để khóa`, 'alert');
+          const SE = window.soundEngine;
+          if (SE && SE.playRadarContact) SE.playRadarContact(1);
+        }
+        if (!(A && A.kind === 'drone' && A.dr === dr)) tracks.push(dr);
+      }
+      seen.clear();
+      for (const k of now) seen.add(k);
+
+      if (!tracks.length) { if (el && !el.hidden) el.hidden = true; return; }
+      if (!el) {
+        if (!document.getElementById('aa-radar-style')) {
+          const st = document.createElement('style');
+          st.id = 'aa-radar-style';
+          st.textContent = [
+            '#aa-radar{position:fixed;inset:0;pointer-events:none;z-index:6;font-family:"Chakra Petch",system-ui,sans-serif}',
+            '#aa-radar .ar-m{position:absolute;left:0;top:0;color:#ffbe5a;font-size:10px;font-weight:600;letter-spacing:.08em;text-shadow:0 0 3px #000,0 0 6px #000;white-space:nowrap}',
+            '#aa-radar .ar-d{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border:1.5px solid currentColor;transform:rotate(45deg);box-sizing:border-box;filter:drop-shadow(0 0 2px #000)}',
+            '#aa-radar .ar-a{position:absolute;left:-7px;top:-8px;width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent;border-left:14px solid currentColor;transform-origin:7px 8px;filter:drop-shadow(0 0 2px #000)}',
+            '#aa-radar .ar-t{position:absolute;left:14px;top:-6px}',
+            '#aa-radar .ar-m.off .ar-t{left:-40px;top:12px;width:80px;text-align:center}'
+          ].join('');
+          document.head.appendChild(st);
+        }
+        el = this._aaRadarEl = document.createElement('div');
+        el.id = 'aa-radar';
+        el._marks = [];
+        document.body.appendChild(el);
+      }
+      if (el.hidden) el.hidden = false;
+      const cam = this.camera, W = window.innerWidth, H = window.innerHeight, MG = 34;
+      const v = this._arV || (this._arV = new THREE.Vector3());
+      for (let i = 0; i < Math.max(tracks.length, el._marks.length); i++) {
+        let m = el._marks[i];
+        const dr = tracks[i];
+        if (!dr) { if (m && !m.hidden) m.hidden = true; continue; }
+        if (!m) {
+          m = document.createElement('div');
+          m.className = 'ar-m';
+          m.innerHTML = '<div class="ar-d"></div><div class="ar-a"></div><div class="ar-t"></div>';
+          m._d = m.children[0]; m._a = m.children[1]; m._t = m.children[2];
+          el.appendChild(m);
+          el._marks.push(m);
+        }
+        if (m.hidden) m.hidden = false;
+        v.set(dr.x, dr.y + C.CENTER_Y, dr.z).project(cam);
+        let nx = v.x, ny = v.y;
+        const behind = v.z > 1;
+        if (behind) { nx = -nx; ny = -ny; }
+        const off = behind || Math.abs(nx) > 1 || Math.abs(ny) > 1;
+        let sx = (nx * 0.5 + 0.5) * W, sy = (-ny * 0.5 + 0.5) * H, ang = 0;
+        if (off) {
+          // dồn ra mép màn hình theo hướng từ tâm tới vết
+          const cx = W / 2, cy = H / 2, dx = sx - cx, dy = sy - cy;
+          const k = Math.min((cx - MG) / Math.max(1e-3, Math.abs(dx)), (cy - MG) / Math.max(1e-3, Math.abs(dy)));
+          sx = cx + dx * k; sy = cy + dy * k; ang = Math.atan2(dy, dx);
+        }
+        if (m._off !== off) { m._off = off; m.classList.toggle('off', off); m._d.hidden = off; m._a.hidden = !off; }
+        m.style.transform = 'translate(' + Math.round(sx) + 'px,' + Math.round(sy) + 'px)';
+        if (off) m._a.style.transform = 'rotate(' + ang.toFixed(3) + 'rad)';
+        const txt = 'RADAR · ' + Math.round(Math.hypot(dr.x - P.x, dr.z - P.z)) + 'M';
+        if (m._t.textContent !== txt) m._t.textContent = txt;
+      }
     },
 
     // ---------- MÀN HÌNH DRONE KHI BỊ BẮN HẠ: hình lật nhào, rồi nhiễu trắng "MẤT TÍN HIỆU" ----------

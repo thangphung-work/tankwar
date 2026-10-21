@@ -122,6 +122,18 @@ class BotAIController {
     } else {
       if (!sol || Math.hypot(px - t.x, pz - t.z) > 1) sol = solve(px, pz) || sol;
       if (!sol) return null;
+      // pháo / súng bắn thẳng: nhắm giữa thân xe địch (điểm 3D) như người chơi, không nhắm mặt đất dưới gầm — bộ giải
+      // theo điểm mặt đất coi đường tới chân xe đâm vào gò trước mặt (đường tới thân xe vẫn thông) -> nòng hạ thấp,
+      // đạn cắm xuống gò. Lựu pháo / xe 6 nòng (máy tính hỏa lực riêng) giữ nguyên
+      if (U.tankType !== 'ARTILLERY' && U.tankType !== 'GATLING' && U.canElevate !== false && ballistics.elevationThrough && typeof BallisticsSystem3D !== 'undefined') {
+        const r3 = ballistics.elevationThrough(U, px, (t.y || 0) + BallisticsSystem3D.unitAimHeight(t), pz, terrain, sol.elevation);
+        if (r3) {
+          // giữ phần bù gió của bộ giải, chỉ đổi gốc hướng từ tâm xe sang trục tháp
+          const azC = (Math.atan2(px - U.x, -(pz - U.z)) * 180 / Math.PI + 360) % 360;
+          const az = (sol.azimuth + ((r3.az - azC + 540) % 360 - 180) + 360) % 360;
+          sol = Object.assign({}, sol, { elevation: Math.round(r3.el * 100) / 100, azimuth: Math.round(az * 10) / 10, reachable: true, aim3d: true });
+        }
+      }
       E.last = { px, pz, dist: dNew, at: this.clock, sol: Object.assign({}, sol) };
     }
     E.tf = Math.min(12, (sol.flightTime || 0) / (ballistics.bulletSpeedMultiplier || 1));

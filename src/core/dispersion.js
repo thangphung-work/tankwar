@@ -42,6 +42,9 @@ const Dispersion = (() => {
   // cự ly... -> σ nhân thêm (1 + grow·(cự ly / ref)²). Ở tầm bắn hiệu quả tối đa (ref): σ x (1 + grow).
   // Đạn liên thanh không áp dụng (độ tản mát theo loạt đã lớn, không biết trước cự ly từng viên).
   const RANGE_GROW = { ARTY_LOB: 1.0, ARTY_DIRECT: 0.6, GUN: 0.6 };
+  // Pháo tăng: σ thật x GUN_SCALE (thay cho SCALE 16) — vẫn tản rõ khi chạy / quay tháp (hệ số nhân), nhưng đứng ngắm
+  // bắn xa không văng lệch tầm cả trăm đơn vị; lệch dọc = VERT_K x lệch ngang
+  const GUN_SCALE = 9, VERT_K = 0.55;
 
   // ẢNH HƯỞNG CỦA CHUYỂN ĐỘNG theo dòng xe (pháo tăng có ổn định pháo 2 trục -> ít bị ảnh hưởng nhất):
   //  move   : hệ số theo tốc độ (tỉ lệ so với tốc độ tối đa của xe) — chạy hết tốc: σ x (1 + move)
@@ -178,8 +181,12 @@ const Dispersion = (() => {
     const m = multiplier(u);
     const r = rangeMul(u, a, P, range);
     if (P === ARTY_LOB) return { lat: P.defl * 1e-3 * m * r, vert: P.el * 1e-3 * m * r, mv: P.mv * m * r, lob: true, mul: m, rmul: r };
-    const s = P.mil * SCALE * 1e-3 * m * r;
-    return { lat: s, vert: s, mv: P.mv * m * r, lob: false, mul: m, rmul: r };
+    // pháo tăng nòng dài có ổn định + máy tính hỏa lực: tỉ lệ game riêng nhỏ hơn (GUN_SCALE) và lệch dọc nhỏ hơn lệch
+    // ngang (VERT_K) — đường đạn rất căng (rơi xiên ~1° ở 900 đv) nên mỗi mrad lệch dọc thành hàng chục-trăm đv lệch
+    // tầm trên mặt đất; trước đây σ x16 cả hai chiều -> bắn điểm mặt đất ở 600-1000 đv rơi lệch tầm cả trăm đv
+    const gun = P === PROFILE.TANK_AP || P === PROFILE.TANK_NORMAL || P === PROFILE.TANK_HE;
+    const s = P.mil * (gun ? GUN_SCALE : SCALE) * 1e-3 * m * r;
+    return { lat: s, vert: gun ? s * VERT_K : s, mv: P.mv * m * r, lob: false, mul: m, rmul: r };
   }
 
   /** Hệ số kém chụm thêm theo cự ly bắn (1 ở sát nòng, 1 + grow ở tầm hiệu quả tối đa của loại đạn) */
@@ -246,7 +253,7 @@ const Dispersion = (() => {
     return { vx: dx / dl * nsp, vy: dy / dl * nsp, vz: dz / dl * nsp };
   }
 
-  return { SCALE, PROFILE, ARTY_LOB, RANGE_GROW, VEH, track, sigma, ring, multiplier, sway, perturb, profileFor, rangeMul };
+  return { SCALE, GUN_SCALE, VERT_K, PROFILE, ARTY_LOB, RANGE_GROW, VEH, track, sigma, ring, multiplier, sway, perturb, profileFor, rangeMul };
 })();
 
 if (typeof window !== 'undefined') window.Dispersion = Dispersion;
