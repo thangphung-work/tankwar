@@ -9,7 +9,7 @@
  * Dữ liệu bản đồ: src/core/map_gen.js (thuần dữ liệu); vật thể phá hủy: src/gameplay/destructibles.js
  */
 class BattleTerrain3D {
-  constructor(scene, width = 3600, depth = 3600, mapType = 'DESERT', seed) {
+  constructor(scene, width = MapGen.SIZE, depth = MapGen.SIZE, mapType = 'DESERT', seed) {
     this.scene = scene;
     this.width = width;
     this.depth = depth;
@@ -66,6 +66,7 @@ class BattleTerrain3D {
     this.bridges = [];
     this.craters = [];
     this.waterMesh = null;
+    this.backdrop = null;
     this.trees = this.buildingSet = this.bunkerSet = this.strongholdSet = this.groundCover = this.propSet = null;
     this.envDamage = null;
     this.rockItems = [];
@@ -97,6 +98,11 @@ class BattleTerrain3D {
     this.initTerrainMesh();
     this.buildRoads();
     this.buildWater();
+    // Cảnh nền ngoài bản đồ: vành núi, bờ biển / biển cát / dãy núi, đảo xa tới chân trời (không còn khoảng trống ngoài mép)
+    if (typeof Backdrop !== 'undefined') {
+      this.backdrop = Backdrop.build(this);
+      if (this.backdrop) this.group.add(this.backdrop.group);
+    }
     this.buildRocks();
     this.buildBridges();   // + hệ thống phá hủy cảnh vật (EnvDamage): đá tảng có máu, cầu sập, vết đạn tích tụ
     this.buildBushes();
@@ -154,7 +160,7 @@ class BattleTerrain3D {
     const sun = this.map.sun;
     const PAL = {
       // sunK / skyK: đặc trưng ánh sáng từng chiến địa (sa mạc nắng gắt, rừng ẩm nhiều ánh trời tán xạ, cao nguyên trong vắt)
-      DESERT: { zenith: 0x4f86c6, horizon: 0xe6cfa4, fog: 0xdcc39a, density: 0.00022, ground: 0xb08a5a, sunK: 1.08, skyK: 0.9 },
+      DESERT: { zenith: 0x4a86cc, horizon: 0xd6dbd6, fog: 0xd5cfbd, density: 0.00022, ground: 0xb08a5a, sunK: 1.08, skyK: 0.9 },
       URBAN: { zenith: 0x5c7fa8, horizon: 0xc4c6c4, fog: 0xb9bcbc, density: 0.00030, ground: 0x6a6a64, sunK: 0.95, skyK: 0.88 },
       JUNGLE: { zenith: 0x5d8fb5, horizon: 0xb9cbb6, fog: 0xa9b7a2, density: 0.00036, ground: 0x4a4a32, sunK: 0.94, skyK: 1.06 },
       HIGHLAND: { zenith: 0x3f7cc4, horizon: 0xc9d8e4, fog: 0xbfcfdc, density: 0.00020, ground: 0x6b6450, sunK: 1.04, skyK: 0.96 },
@@ -164,7 +170,8 @@ class BattleTerrain3D {
     // Giờ vàng / sáng sớm: chân trời ấm hơn, trời đậm hơn
     const warm = sun.timeOfDay === 'golden' ? 0.55 : sun.timeOfDay === 'morning' ? 0.25 : 0;
     const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
-    if (warm) { p.horizon = mix(p.horizon, 0xf0a868, warm); p.fog = mix(p.fog, 0xe6a878, warm * 0.8); p.zenith = mix(p.zenith, 0x35558f, warm * 0.5); }
+    // (sương chỉ ngả ấm nhẹ: sương cam đậm làm cả nửa dưới bầu trời và cảnh xa vàng ệch)
+    if (warm) { p.horizon = mix(p.horizon, 0xf0b888, warm * 0.45); p.fog = mix(p.fog, 0xe8c8a8, warm * 0.3); p.zenith = mix(p.zenith, 0x35558f, warm * 0.35); }
     p.sun = sun;
     // Hướng mặt trời (từ mặt đất nhìn lên mặt trời)
     p.sunDir = new THREE.Vector3(Math.cos(sun.elevation) * Math.sin(sun.azimuth), Math.sin(sun.elevation), Math.cos(sun.elevation) * Math.cos(sun.azimuth)).normalize();
@@ -268,7 +275,8 @@ class BattleTerrain3D {
   }
 
   paintGround() {
-    const SZ = 1024;
+    // ~3.5 đơn vị / điểm ảnh như bản đồ 3600 cũ (1024 px)
+    const SZ = Math.min(2048, Math.round(this.width / 3600 * 4) * 256);
     const cv = document.createElement('canvas');
     cv.width = cv.height = SZ;
     const ctx = cv.getContext('2d');
@@ -371,8 +379,8 @@ class BattleTerrain3D {
     ctx.setLineDash([]);
     // Nước (mặt nước 3D phủ lên, đây là màu đáy nhìn qua)
     if (M.river) {
-      ctx.strokeStyle = '#3d4a3c'; ctx.lineWidth = M.river.width * sc;
-      ctx.beginPath(); M.river.pts.forEach((p, i) => i ? ctx.lineTo(toPx(p[0]), toPx(p[1])) : ctx.moveTo(toPx(p[0]), toPx(p[1]))); ctx.stroke();
+      ctx.strokeStyle = '#3d4a3c';
+      BattleTerrain3D.strokeRiver(ctx, M.river, toPx, sc);
       for (const L of M.lakes) { ctx.fillStyle = '#3d4a3c'; ctx.beginPath(); ctx.arc(toPx(L.x), toPx(L.z), L.r * sc, 0, 6.283); ctx.fill(); }
     }
     // Nền bê tông dưới boong-ke
@@ -679,6 +687,19 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
   // ---------------------------------------------------------------------------
   buildWater() {
     if (!this.map.river && !this.map.lakes.length) return;
+    const { mat, U } = this.waterMaterial(false);
+    this.waterUniforms = U;
+    const geo = new THREE.PlaneGeometry(this.width, this.depth, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    this.waterMesh = new THREE.Mesh(geo, mat);
+    this.waterMesh.position.y = 0.2;
+    this.waterMesh.renderOrder = 2;
+    this.group.add(this.waterMesh);
+  }
+
+
+  // Bản đồ pháp tuyến gợn sóng (dùng chung cho sông hồ và biển)
+  waterNormalMap() {
     const c = document.createElement('canvas');
     c.width = c.height = 256;
     const g = c.getContext('2d');
@@ -715,40 +736,54 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     g.putImageData(img, 0, 0);
     const normal = new THREE.CanvasTexture(c);
     normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+    this.waterNormal = normal;
+    return normal;
+  }
+
+  // Vật liệu mặt nước. sea = mặt biển ngoài bản đồ (độ sâu theo thuộc tính đỉnh aDep, xa hòa vào sương)
+  waterMaterial(sea) {
     const atm = this.atmosphere;
     // Nước sông hồ thật: thân nước tối xanh rêu-xám (phù sa, tảo), không phải màu xanh dương sơn phẳng;
     // màu trời chỉ hiện ra qua phản chiếu Fresnel — nhìn xiên / xa thì sáng ánh trời, nhìn thẳng xuống thì tối trong
     const body = { DESERT: 0x26302a, JUNGLE: 0x202a1e, URBAN: 0x232c2a }[this.mapType] || 0x1e2b29;
-    const bodyCol = new THREE.Color(body).lerp(new THREE.Color(atm.zenith), 0.12);
+    // biển: nước sâu trong hơn, ngả xanh lam - lục theo màu trời
+    const bodyCol = sea ? new THREE.Color(0x1d3438).lerp(new THREE.Color(atm.zenith), 0.22) : new THREE.Color(body).lerp(new THREE.Color(atm.zenith), 0.12);
     const mat = new THREE.MeshStandardMaterial({
       color: bodyCol, roughness: 0.18, metalness: 0.0, transparent: true, opacity: 0.9, depthWrite: false
     });
     const skyRefl = new THREE.Color(atm.horizon).lerp(new THREE.Color(atm.zenith), 0.35).multiplyScalar(0.85);
     // Bản đồ độ sâu nước theo lưới địa hình (đơn vị game, -2..14): ven bờ nông trong & ngả màu bùn, có viền bọt
-    const S = this.segments, N = S + 1, dd = new Uint8Array(N * N * 4);
-    for (let i = 0; i < N * N; i++) {
-      const v = Math.round((Math.max(-2, Math.min(14, 0.2 - this.heightData[i])) + 2) / 16 * 255);
-      dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v; dd[i * 4 + 3] = 255;
+    // (biển: độ sâu lấy từ thuộc tính đỉnh aDep của lưới mặt biển, không theo lưới bản đồ)
+    const S = this.segments, N = S + 1;
+    let depthTex = null;
+    if (!sea) {
+      const dd = new Uint8Array(N * N * 4);
+      for (let i = 0; i < N * N; i++) {
+        const v = Math.round((Math.max(-2, Math.min(14, 0.2 - this.heightData[i])) + 2) / 16 * 255);
+        dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v; dd[i * 4 + 3] = 255;
+      }
+      depthTex = new THREE.DataTexture(dd, N, N, THREE.RGBAFormat);
+      depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter;
+      depthTex.needsUpdate = true;
     }
-    const depthTex = new THREE.DataTexture(dd, N, N, THREE.RGBAFormat);
-    depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter;
-    depthTex.needsUpdate = true;
-    const U = this.waterUniforms = {
-      wSky: { value: skyRefl }, wNrm: { value: normal }, wDepth: { value: depthTex }, wT: { value: 0 },
+    this.waterTime = this.waterTime || { value: 0 };
+    const U = {
+      wSky: { value: skyRefl }, wNrm: { value: this.waterNormal || this.waterNormalMap() }, wDepth: { value: depthTex }, wT: this.waterTime,
       wMap: { value: new THREE.Vector4(this.width, this.depth, S, N) },
       wShallow: { value: bodyCol.clone().lerp(new THREE.Color(0x6a6650), 0.55) },
       wFoam: { value: new THREE.Color(0xc4ccc9) }
     };
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U);
-      sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
-  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+      sh.vertexShader = 'varying vec3 vWPos;\n' + (sea ? 'attribute float aDep;\nvarying float vDep;\n' : '') + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;${sea ? '\n  vDep = aDep;' : ''}`);
       sh.fragmentShader = `uniform vec3 wSky; uniform sampler2D wNrm; uniform sampler2D wDepth; uniform float wT; uniform vec4 wMap;
 uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
+${sea ? 'varying float vDep;' : ''}
 ` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
   // độ sâu nước tại điểm này: ven bờ màu bùn nhạt, trong hơn (thấy đáy)
-  vec2 wuv = vec2((vWPos.x + wMap.x * 0.5) / wMap.x * wMap.z + 0.5, (vWPos.z + wMap.y * 0.5) / wMap.y * wMap.z + 0.5) / wMap.w;
-  float wDep = texture2D(wDepth, wuv).r * 16.0 - 2.0;
+  ${sea ? 'float wDep = clamp(vDep, -2.0, 14.0);' : `vec2 wuv = vec2((vWPos.x + wMap.x * 0.5) / wMap.x * wMap.z + 0.5, (vWPos.z + wMap.y * 0.5) / wMap.y * wMap.z + 0.5) / wMap.w;
+  float wDep = texture2D(wDepth, wuv).r * 16.0 - 2.0;`}
   diffuseColor.rgb = mix(wShallow, diffuseColor.rgb, smoothstep(0.5, 7.0, wDep));
   // mép nước mờ dần theo bản đồ độ sâu (đường bờ mượt), không lộ đường cắt tam giác của lưới địa hình
   diffuseColor.a *= smoothstep(0.05, 1.3, wDep) * mix(0.55, 1.0, smoothstep(1.3, 6.0, wDep));`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -777,15 +812,11 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     gl_FragColor.a = max(gl_FragColor.a, wf * 0.7);
   }
   #include <tonemapping_fragment>`);
+      // biển xa hòa hẳn vào sương trước khi chạm mặt phẳng cắt xa của camera (không lộ mép cắt)
+      if (sea) BattleTerrain3D.applyFarFade(sh, true);
     };
-    mat.customProgramCacheKey = () => 'waterWorld3';
-    const geo = new THREE.PlaneGeometry(this.width, this.depth, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    this.waterMesh = new THREE.Mesh(geo, mat);
-    this.waterMesh.position.y = 0.2;
-    this.waterMesh.renderOrder = 2;
-    this.waterNormal = normal;
-    this.group.add(this.waterMesh);
+    mat.customProgramCacheKey = () => 'waterWorld3' + (sea ? ':sea' : '');
+    return { mat, U };
   }
 
   // ---------------------------------------------------------------------------
@@ -1013,7 +1044,7 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     if (this.buildingSet) this.buildingSet.update(dt, fx);
     if (this.propSet) this.propSet.update(dt, fx, this.camPos || null);
     if (this.envDamage) this.envDamage.update(dt, fx);
-    if (this.waterUniforms) this.waterUniforms.wT.value += dt;   // sóng mặt nước trôi theo thời gian
+    if (this.waterTime) this.waterTime.value += dt;   // sóng mặt nước trôi theo thời gian (sông hồ + biển)
   }
 
   // Sóng nổ / đạn tác động lên cây, nhà, boong-ke tại điểm nổ
@@ -1422,9 +1453,9 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
     if (this.groundCanvas) ctx.drawImage(this.groundCanvas, 0, 0, w, h);
     // Nước
     if (this.map.river) {
-      ctx.strokeStyle = '#2f6f8f'; ctx.lineWidth = this.map.river.width * sc;
+      ctx.strokeStyle = '#2f6f8f';
       ctx.lineCap = 'round';
-      ctx.beginPath(); this.map.river.pts.forEach((p, i) => i ? ctx.lineTo(P(p[0]), P(p[1])) : ctx.moveTo(P(p[0]), P(p[1]))); ctx.stroke();
+      BattleTerrain3D.strokeRiver(ctx, this.map.river, P, sc);
     }
     for (const L of this.map.lakes) { ctx.fillStyle = '#2f6f8f'; ctx.beginPath(); ctx.arc(P(L.x), P(L.z), L.r * sc, 0, 6.283); ctx.fill(); }
     // Cây
@@ -1460,6 +1491,8 @@ uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
       ctx.stroke();
       ctx.restore();
     }
+    // Phủ tối ngoài lòng thung lũng: bản đồ nhỏ thấy đúng hình dạng vùng chiến đấu
+    BattleTerrain3D.shadeOutside(ctx, this.map, P, w);
   }
 
   // Hố bom hạ thấp lưới độ cao vật lý (xe sụt xuống lòng hố); lưới hiển thị đã được khoét lỗ thay bằng lòng chảo
@@ -1496,3 +1529,49 @@ window.BattleTerrain3D = BattleTerrain3D;
 
 // Ngưỡng rừng rậm: số cây có tán (quy đổi) trong ô ~72x72 quanh điểm
 BattleTerrain3D.FOREST_DENSE = 10;
+
+// Cảnh nền ngoài bản đồ (Backdrop) + mặt biển xa dần hòa hẳn vào màu sương trong khoảng [x, y] (camera far = 9000).
+// Dùng chung một uniform: đổi giá trị là mọi vật liệu cảnh nền đổi theo (vd ảnh toàn cảnh khi xem cả đảo)
+BattleTerrain3D.FAR_FADE = { value: new THREE.Vector2(6000, 8700) };
+BattleTerrain3D.farFadeGLSL = (alpha) => `#ifdef USE_FOG
+  {
+    float farK = smoothstep(farFade.x, farFade.y, length(vViewPosition));
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, farK);${alpha ? '\n    gl_FragColor.a = mix(gl_FragColor.a, 1.0, farK);' : ''}
+  }
+  #endif`;
+// gắn uniform farFade + đoạn hòa sương xa vào shader đã biên dịch
+BattleTerrain3D.applyFarFade = (sh, alpha) => {
+  sh.uniforms.farFade = BattleTerrain3D.FAR_FADE;
+  sh.fragmentShader = 'uniform vec2 farFade;\n' + sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + BattleTerrain3D.farFadeGLSL(alpha));
+};
+
+// Vẽ sông lên canvas 2D (ảnh nền mặt đất, bản đồ nhỏ, bản đồ chiến thuật): bề rộng theo từng đoạn (rộng dần về hạ lưu)
+// + suối nhỏ đầu nguồn. P: toạ độ thế giới -> điểm ảnh; sc: điểm ảnh / đơn vị
+BattleTerrain3D.strokeRiver = (ctx, R, P, sc) => {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const line of [R.pts, R.inlet || []]) {
+    for (let i = 0; i < line.length - 1; i++) {
+      ctx.lineWidth = 2 * (line[i][2] || R.width / 2) * sc;
+      ctx.beginPath(); ctx.moveTo(P(line[i][0]), P(line[i][1])); ctx.lineTo(P(line[i + 1][0]), P(line[i + 1][1])); ctx.stroke();
+    }
+  }
+};
+
+// Bản đồ 2D: phủ tối phần ngoài lòng thung lũng (sườn vành núi phía ngoài tường giữ xe, cảnh nền) theo đúng đường chân
+// núi của bản đồ -> thấy hình dạng thật của vùng chiến đấu. P: toạ độ thế giới -> điểm ảnh; size: cạnh canvas (điểm ảnh)
+BattleTerrain3D.shadeOutside = (ctx, map, P, size) => {
+  const O = map && map.outer;
+  if (!O || !O.rimFoot) return;
+  const ring = [];
+  for (let a = 0; a < 360; a++) {
+    const t = a / 360 * Math.PI * 2, c = Math.cos(t), s = Math.sin(t), r = O.rimFoot(c * 2000, s * 2000) + O.wall * 0.35;
+    ring.push([P(c * r), P(s * r)]);
+  }
+  const path = () => { ctx.moveTo(ring[0][0], ring[0][1]); for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]); ctx.closePath(); };
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, size, size); path();
+  ctx.fillStyle = 'rgba(6, 10, 12, 0.5)'; ctx.fill('evenodd');
+  ctx.beginPath(); path();
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'; ctx.lineWidth = Math.max(2, size / 220); ctx.stroke();
+  ctx.restore();
+};

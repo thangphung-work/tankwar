@@ -116,7 +116,7 @@ class TacticalMapController {
   // ---------------------------------------------------------------------------
   // TỌA ĐỘ (tỉ lệ đều, phóng to / kéo)
   // ---------------------------------------------------------------------------
-  get worldSize() { return this.game.terrain ? this.game.terrain.width : 3600; }
+  get worldSize() { return this.game.terrain ? this.game.terrain.width : MapGen.SIZE; }
   get k() { return (Math.min(this.cssW, this.cssH) - 40) / this.worldSize * this.view.zoom; }
 
   worldToScreen(wx, wz) {
@@ -450,8 +450,8 @@ class TacticalMapController {
 
     // 3. Sông hồ
     if (M.river) {
-      g.strokeStyle = '#2a4458'; g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = M.river.width * sc;
-      g.beginPath(); M.river.pts.forEach((p, i) => i ? g.lineTo(P(p[0]), P(p[1])) : g.moveTo(P(p[0]), P(p[1]))); g.stroke();
+      g.strokeStyle = '#2a4458';
+      BattleTerrain3D.strokeRiver(g, M.river, P, sc);
     }
     for (const Lk of M.lakes || []) {
       g.fillStyle = '#2a4458'; g.beginPath(); g.arc(P(Lk.x), P(Lk.z), Lk.r * sc, 0, Math.PI * 2); g.fill();
@@ -485,10 +485,8 @@ class TacticalMapController {
     // 7. Cứ điểm bê tông
     if (T.propSet) T.propSet.drawOnMap(g, P, sc);
     if (T.strongholdSet) T.strongholdSet.drawOnMap(g, P, sc, 'tac');
-    // 8. Tối dần ra rìa bản đồ
-    const vg = g.createRadialGradient(N / 2, N / 2, N * 0.36, N / 2, N / 2, N * 0.62);
-    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.45)');
-    g.fillStyle = vg; g.fillRect(0, 0, N, N);
+    // 8. Phủ tối ngoài lòng thung lũng (sườn vành núi xe không tới được) theo đúng hình dạng vùng chiến đấu
+    BattleTerrain3D.shadeOutside(g, M, P, N);
     this.base = { canvas: c, map: M };
   }
 

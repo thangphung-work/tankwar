@@ -2049,6 +2049,20 @@ const Destructibles = (() => {
 
   // Cây to cao như thật (so với xe): hệ số phóng theo loại; thân cây (bán kính gốc, phần thân / chiều cao) chặn đạn
   const TREE_SCALE = { cactus: 1.0, deadTree: 1.3 };
+  const TREE_CHUNK = 1350;   // cạnh ô vùng chia rừng cây (bản đồ 5400 -> 4 x 4 ô)
+  // Cắt khung nhìn theo khối bao cả ô cây (toạ độ cục bộ của nhóm cây); tia dò trúng từng cây vẫn dùng khối bao gốc
+  // của hình học một cây (InstancedMesh.raycast thử khối bao hình học theo ma trận từng cây)
+  function cullBySphere(pool, sphere) {
+    const geo = pool.mesh.geometry;
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    const local = geo.boundingSphere;
+    geo.boundingSphere = sphere;
+    pool.mesh.frustumCulled = true;
+    pool.mesh.raycast = function (rc, out) {
+      geo.boundingSphere = local;
+      try { THREE.InstancedMesh.prototype.raycast.call(this, rc, out); } finally { geo.boundingSphere = sphere; }
+    };
+  }
   const TRUNK = {
     palm: [1.3, 0.9], pine: [1.4, 0.85], cypress: [1.0, 0.3], cactus: [1.7, 0.9], deadTree: [1.4, 0.75],
     acacia: [1.2, 0.5], willow: [1.6, 0.5], jungle: [1.7, 0.72], broadleaf: [1.5, 0.45]
@@ -2082,14 +2096,16 @@ const Destructibles = (() => {
       this.grid = new Map();
       this.swaying = [];
       this.smouldering = [];
-      // Gom theo loại -> 2 biến thể hình học / loại cho đỡ đơn điệu
+      // Gom theo loại -> 2 biến thể hình học / loại cho đỡ đơn điệu; mỗi biến thể chia tiếp theo ô vùng TREE_CHUNK:
+      // mỗi ô một bộ InstancedMesh có khối bao riêng -> khung nhìn camera và khung chiếu bóng đổ (chỉ phủ quanh
+      // camera) tự bỏ qua các ô không thấy (bản đồ lớn hàng nghìn cây; trước đây cả rừng vẽ ở mọi lượt)
       const byKind = {};
       for (const t of trees) (byKind[t.kind] || (byKind[t.kind] = [])).push(t);
+      const chunkOf = t => Math.floor(t.x / TREE_CHUNK) * 1000 + Math.floor(t.z / TREE_CHUNK);
       this.kinds = {};
       for (const kind in byKind) {
         const list = byKind[kind];
-        const variants = [buildTreeVariant(kind), buildTreeVariant(kind)];
-        const vs = variants.map(v => {
+        const variants = [buildTreeVariant(kind), buildTreeVariant(kind)].map(v => {
           const trunkMat = treeMat(new THREE.MeshStandardMaterial({ map: barkTex(v.barkKind), roughness: 0.95, metalness: 0 }), 'trunk');
           const stumpMat = treeMat(new THREE.MeshStandardMaterial({ map: barkTex(v.barkKind), roughness: 0.95, metalness: 0 }), 'stump');
           let crownMat = null, crownMap = null;
@@ -2099,30 +2115,49 @@ const Destructibles = (() => {
               map: crownMap, alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0
             }), 'leaf');
           }
-          const n = list.length;
+          return { v, trunkMat, stumpMat, crownMat, crownMap };
+        });
+        // số cây + phạm vi từng (biến thể, ô)
+        const cells = new Map();
+        list.forEach((t, k) => {
+          const key = (k % 2) * 1e7 + chunkOf(t);
+          let c = cells.get(key);
+          if (!c) cells.set(key, c = { vi: k % 2, n: 0, x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity, V: null });
+          c.n++; c.x0 = Math.min(c.x0, t.x); c.x1 = Math.max(c.x1, t.x); c.z0 = Math.min(c.z0, t.z); c.z1 = Math.max(c.z1, t.z);
+        });
+        const vs = [];
+        for (const c of cells.values()) {
+          const M = variants[c.vi], v = M.v, n = c.n;
           // thân & gốc cụt dùng chung hình học nhưng mỗi bên 1 bộ 'brk' riêng (độ cao gãy từng cây)
-          const stumpGeo = v.trunk.clone();
+          const trunkGeo = v.trunk.clone(), stumpGeo = v.trunk.clone(), crownGeo = v.crown ? v.crown.clone() : null;
           const inst = () => new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1);
-          v.trunk.setAttribute('brk', inst()); v.trunk.setAttribute('burn', inst());
+          trunkGeo.setAttribute('brk', inst()); trunkGeo.setAttribute('burn', inst());
           stumpGeo.setAttribute('brk', inst()); stumpGeo.setAttribute('burn', inst());
-          if (v.crown) v.crown.setAttribute('burn', inst());
-          const trunk = new Pool(this.group, v.trunk, trunkMat, n, { color: true });
+          if (crownGeo) crownGeo.setAttribute('burn', inst());
+          const trunk = new Pool(this.group, trunkGeo, M.trunkMat, n, { color: true });
           trunk.mesh.customDepthMaterial = treeDepthMat(null, 'trunk');
           trunk.mesh.onBeforeRender = windTick;
-          const stump = new Pool(this.group, stumpGeo, stumpMat, n, { color: true });
+          const stump = new Pool(this.group, stumpGeo, M.stumpMat, n, { color: true });
           stump.mesh.customDepthMaterial = treeDepthMat(null, 'stump');
           stump.mesh.onBeforeRender = windTick;
+          stump.mesh.visible = false;   // chưa có gốc cụt nào (bật khi cây đầu tiên trong ô gãy)
           let crown = null;
-          if (v.crown) {
-            crown = new Pool(this.group, v.crown, crownMat, n, { color: true });
-            crown.mesh.customDepthMaterial = treeDepthMat(crownMap, 'leaf');
+          if (crownGeo) {
+            crown = new Pool(this.group, crownGeo, M.crownMat, n, { color: true });
+            crown.mesh.customDepthMaterial = treeDepthMat(M.crownMap, 'leaf');
             crown.mesh.onBeforeRender = windTick;
           }
-          return { info: v, trunk, crown, stump };
-        });
+          // khối bao cả ô (thêm cao / tầm đổ của cây lớn nhất)
+          const sphere = new THREE.Sphere(new THREE.Vector3((c.x0 + c.x1) / 2, groundAt((c.x0 + c.x1) / 2, (c.z0 + c.z1) / 2), (c.z0 + c.z1) / 2),
+            Math.hypot(c.x1 - c.x0, c.z1 - c.z0) / 2 + 160);
+          for (const P of [trunk, stump, crown]) if (P) cullBySphere(P, sphere);
+          c.V = { info: v, trunk, crown, stump };
+          vs.push(c.V);
+        }
         this.kinds[kind] = vs;
+        // thứ tự cây giữ nguyên như danh sách bản đồ (đồng bộ trạng thái cây theo chỉ số giữa các máy)
         list.forEach((t, k) => {
-          const V = vs[k % 2];
+          const V = cells.get((k % 2) * 1e7 + chunkOf(t)).V;
           const gy = groundAt(t.x, t.z);
           const s = t.s * (TREE_SCALE[kind] !== undefined ? TREE_SCALE[kind] : 1.6);
           const m = new THREE.Matrix4().compose(new THREE.Vector3(t.x, gy - 0.6, t.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), t.rot), new THREE.Vector3(s, s, s));
@@ -2596,7 +2631,7 @@ const Destructibles = (() => {
         if (it.capS >= 0) { this.caps.hide(it.capS); this.caps.hide(it.capT); }
         return;
       }
-      if (it.si < 0) it.si = it.V.stump.add(it.base, it.tcol);
+      if (it.si < 0) { it.si = it.V.stump.add(it.base, it.tcol); it.V.stump.mesh.visible = true; }
       if (it.capS < 0) { it.capS = this.caps.add(it.base, it.tcol); it.capT = this.caps.add(it.base, it.tcol); }
       if (it.si < 0 || it.capT < 0) { it.brk = 0; tb.setX(it.ti, 0); return; }   // hết chỗ trong bể (không xảy ra): đổ cả cây
       const sb = it.V.stump.mesh.geometry.attributes.brk;

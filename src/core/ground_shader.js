@@ -314,7 +314,7 @@ const GroundShader = (() => {
    */
   function bakeNormals(T) {
     if (T._gBake && T._gBake.map === T.map) return T._gBake;
-    const N = 1024, size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData, cell = size / S, px = size / N;
+    const N = Math.min(2048, Math.round(T.width / 3600 * 4) * 256), size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData, cell = size / S, px = size / N;
     const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
     const hv = (i, j) => H[Math.max(0, Math.min(S, j)) * NN + Math.max(0, Math.min(S, i))];
     const W = N + 2, hb = new Float32Array(W * W);
@@ -372,7 +372,7 @@ const GroundShader = (() => {
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, {
         gBase: { value: L.base }, gDirt: { value: L.dirt }, gRock: { value: L.rock }, gFine: { value: L.fine },
-        gNoise: { value: noise }, gMacroAvg: { value: avg }, gTime: uTime, gWaterLvl: { value: opts.water ? 2.5 : -999 },
+        gNoise: { value: noise }, gMacroAvg: { value: avg }, gTime: uTime, gWaterLvl: { value: opts.waterLvl !== undefined ? opts.waterLvl : opts.water ? 2.5 : -999 },
         gNrm: { value: bake ? bake.tex : null }, gTerr: { value: new THREE.Vector2(bake ? bake.half : 1800, bake ? bake.size : 3600) },
         gGrain: { value: L.grain || null }, gWindA: { value: windA }, gSoil: { value: L.soil || null }
       });
@@ -552,7 +552,9 @@ float gTuftH(vec2 p) {
   vec4 nTex = texture2D(gNrm, (vGW.xz + gTerr.x) / gTerr.y);
   vec3 nrm = ${opts.ownNormals ? 'normalize(vGN)' : 'normalize(nTex.xyz * 2.0 - 1.0)'};
   // độ lõm (+) / lồi (-) của địa hình
-  float cav = nTex.a * 2.0 - 1.0;
+  // ngoài mép bản đồ (cảnh nền Backdrop) không còn ảnh nướng sẵn: độ lõm / sắc tầng lớn trung tính dần
+  float gInMap = 1.0 - smoothstep(gTerr.x, gTerr.x + 260.0, max(abs(vGW.x), abs(vGW.z)));
+  float cav = (nTex.a * 2.0 - 1.0) * gInMap;
   float gWet = smoothstep(0.0, 0.45, cav), gDryR = smoothstep(0.0, 0.45, -cav);
   float slope = 1.0 - clamp(nrm.y, 0.0, 1.0);
   vec2 wr1 = mat2(0.866, -0.5, 0.5, 0.866) * wp, wr2 = mat2(0.423, -0.906, 0.906, 0.423) * wp, wr3 = mat2(0.94, 0.342, -0.342, 0.94) * wp;
@@ -634,7 +636,7 @@ float gTuftH(vec2 p) {
   // pha màu tầng lớn từ ảnh nền cũ (thảm thực vật, vệt ẩm, nền đường, đáy sông)
   vec3 macro = texture2D(map, vUv, 3.0).rgb;   // bản mờ: chỉ lấy sắc độ tầng lớn, không lộ điểm ảnh
   vec3 tint = clamp(macro / max(gMacroAvg, vec3(0.05)), vec3(0.5), vec3(1.7));
-  col *= mix(vec3(1.0), tint, 0.35);
+  col *= mix(vec3(1.0), tint, 0.35 * gInMap);
   // thay đổi sắc độ nhẹ tầng rất lớn (đồng cỏ không đều màu)
   col *= 0.9 + 0.2 * nz.b;
   // ĐỊA MẠO: hõm trũng giữ ẩm (xanh đậm / tối), gờ lồi khô nắng (vàng nhạt) — như ảnh chụp thật từ trên cao
@@ -648,6 +650,10 @@ float gTuftH(vec2 p) {
   col *= ${desert ? '0.95 + 0.1 * mot' : urban ? '0.95 + 0.1 * mot' : '0.88 + 0.24 * mot'};   // cát / bê tông: chỉ loang rất nhẹ
   ${desert || urban ? '' : `// đồng cỏ thật nhìn từ xa ngả xanh ô-liu dịu, không xanh chói như sân golf (bản đồ sáng nắng dễ bị chói màu nhất)
   col = mix(vec3(lum(col)), col, ${opts.mapType === 'RIVER_LAKE' ? '0.74' : opts.mapType === 'JUNGLE' ? '0.88' : '0.92'});`}
+  ${urban ? `// đồi quanh thành phố (vành núi + cảnh nền ngoài bản đồ) phủ cỏ: chuyển dần theo đường vuông bo góc lượn sóng
+  // (bám chân vành núi: theo trục gần, theo đường chéo xa), không thành vòng tròn
+  float gRd = mix(length(vGW.xz), max(abs(vGW.x), abs(vGW.z)), 0.5) + 420.0 * (texture2D(gNoise, wp / 1700.0 + 0.21).g - 0.5);
+  col *= mix(vec3(1.0), vec3(0.8, 0.97, 0.68), smoothstep(gTerr.x * 0.8, gTerr.x * 0.8 + 650.0, gRd));` : ''}
   if (gSand > 0.001) {
     // cát bồi mịn: một sắc cát, hạt li ti tương phản rất thấp (mờ dần ở xa), đổi sắc nhẹ theo mảng vài chục mét;
     // mép nước / phần ngập nông sẫm ướt dần, bờ cao khô sáng hơn; không vệt, không đốm

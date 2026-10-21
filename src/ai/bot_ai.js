@@ -226,8 +226,8 @@ class BotAIController {
       }
     }
 
-    const zoneCenterX = zone.current.x - 1800;
-    const zoneCenterZ = zone.current.y - 1800;
+    const zoneCenterX = zone.current.x - zone.worldWidth / 2;
+    const zoneCenterZ = zone.current.y - zone.worldHeight / 2;
     const distToZone = Math.hypot(this.unit.x - zoneCenterX, this.unit.z - zoneCenterZ);
 
     // 0. CƠ CHẾ PHÁT HIỆN KẸT XE & TỰ ĐỘNG LÙI THOÁT HIỂM (ANTI-STUCK & REVERSE)
@@ -529,8 +529,8 @@ class BotAIController {
         });
 
         if (targetDetection) {
-          targetX = targetDetection.originX - 1800 + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
-          targetZ = targetDetection.originY - 1800 + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
+          targetX = targetDetection.originX - MapGen.HALF + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
+          targetZ = targetDetection.originY - MapGen.HALF + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
         } else if (enemyUnits.length > 0) {
           // đang giao chiến với xe nào mà vẫn thấy thì bắn tiếp xe đó (đã chỉnh được sai số qua các phát trước)
           const cur = this.eng && this.clock - this.eng.lastAt < 15 ? enemyUnits.find(u => u.id === this.eng.id && this.seesDirect(u)) : null;
