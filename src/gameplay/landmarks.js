@@ -252,6 +252,36 @@ const Landmarks = (() => {
   });
   // Sân bê tông các công trình: texture riêng (vạch sơn, mạch co giãn, vết dầu, vết cháy xém)
   // (f0..f1, r0..r1: phạm vi sân theo toạ độ cục bộ công trình)
+  // Ảnh chi tiết lát lặp 256 px / 3 m (trung bình ~xám 50% để nhân vào màu nền):
+  //  grass: hàng nghìn ngọn cỏ ngắn nhiều sắc độ (xanh đậm gốc, ngọn sáng, ít ngọn úa), kẽ đất tối giữa các khóm
+  //  gravel: hạt sỏi tròn nhiều cỡ có bóng đổ nhẹ phía dưới
+  function detailTex(kind) {
+    const key = 'detail_' + kind;
+    if (TEX[key]) return TEX[key];
+    const N = 256, c = canvas(N, N), g = c.getContext('2d');
+    const wrap = (fn) => { for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) { g.save(); g.translate(dx, dy); fn(); g.restore(); } };
+    if (kind === 'grass') {
+      g.fillStyle = '#6a6d5c'; g.fillRect(0, 0, N, N);
+      for (let i = 0; i < 160; i++) { const x = hash(i + 4100) * N, y = hash(i + 4101) * N, r = 4 + hash(i + 4102) * 12; wrap(() => { g.fillStyle = 'rgba(40,40,30,0.25)'; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); }); }
+      for (let i = 0; i < 9000; i++) {
+        const x = hash(i + 4200) * N, y = hash(i + 4201) * N, l = 3 + hash(i + 4202) * 6, a = -Math.PI / 2 + (hash(i + 4203) - 0.5) * 1.3;
+        const t = hash(i + 4204), dry = hash(i + 4205) < 0.08;
+        const v = 70 + t * 110, col = dry ? `rgb(${v + 40},${v + 30},${v - 10})` : `rgb(${v - 8},${v + 12},${v - 22})`;
+        wrap(() => { g.strokeStyle = col; g.lineWidth = 0.8 + hash(i + 4206) * 0.9; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); });
+      }
+    } else {
+      g.fillStyle = '#7b7873'; g.fillRect(0, 0, N, N);
+      for (let i = 0; i < 2600; i++) {
+        const x = hash(i + 4400) * N, y = hash(i + 4401) * N, r = 0.8 + Math.pow(hash(i + 4402), 2) * 3.2, v = 90 + hash(i + 4403) * 110;
+        wrap(() => {
+          g.fillStyle = 'rgba(30,28,26,0.35)'; g.beginPath(); g.ellipse(x + r * 0.3, y + r * 0.4, r, r * 0.8, 0, 0, TAU); g.fill();
+          g.fillStyle = `rgb(${v},${v - 4},${v - 10})`; g.beginPath(); g.ellipse(x, y, r, r * 0.8, hash(i + 4404) * 3, 0, TAU); g.fill();
+        });
+      }
+    }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+    return (TEX[key] = t);
+  }
   function apronTex(kind, f0, f1, r0, r1) {
     const W = 1024, Hh = Math.round(W * (r1 - r0) / (f1 - f0));
     return texOf('apron_' + kind, W, Hh, (g, w, h) => {
@@ -264,15 +294,18 @@ const Landmarks = (() => {
         const rect = (fa, ra, fb, rb, col) => { const [x0, y0] = P(Math.min(fa, fb), Math.min(ra, rb)); g.fillStyle = col; g.fillRect(x0, y0, Math.abs(fb - fa) * S, Math.abs(rb - ra) * S); };
         const hu = f1, hv = r1, iF = hu - 62, iR = hv - 62;
         // cỏ trong khu trong (lốm đốm, ngả vàng chỗ xe đi), viền đường tuần tra sỏi đầm
-        rect(-iF + 24, -iR + 24, iF - 24, iR - 24, '#6f7a45');
-        for (let i = 0; i < 260; i++) blotch(g, hash(i + 1500) * w, hash(i + 1501) * h, (8 + hash(i + 1502) * 40) * S, hash(i + 1503) < 0.5 ? '96,108,58' : '132,126,80', 0.35);
-        speckle(g, w, h, 14000, ['#5c6a38', '#83894f', '#4f5a30'], 1, 2.4, 1510);
+        rect(-iF + 24, -iR + 24, iF - 24, iR - 24, '#5f6c3a');
+        // vệt cắt cỏ song song (bãi cỏ trong căn cứ được cắt định kỳ, mỗi vệt máy cắt ~4 m), mảng úa vàng / xanh đậm
+        { const [x0, y0] = P(-iF + 24, -iR + 24), [x1, y1] = P(iF - 24, iR - 24);
+          g.save(); g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0); g.clip();
+          for (let r = -iR + 24, k = 0; r < iR - 24; r += 32, k++) { g.fillStyle = k % 2 ? 'rgba(150,160,90,0.10)' : 'rgba(30,40,14,0.10)'; g.fillRect(x0, P(0, r)[1], x1 - x0, 32 * S); }
+          for (let i = 0; i < 220; i++) blotch(g, hash(i + 1500) * w, hash(i + 1501) * h, (10 + hash(i + 1502) * 50) * S, hash(i + 1503) < 0.55 ? '74,86,42' : '128,122,70', 0.28);
+          g.restore(); }
         g.strokeStyle = 'rgba(120,112,96,0.95)'; g.lineWidth = 20 * S; g.strokeRect(...P(-iF + 14, -iR + 14), (iF * 2 - 28) * S, (iR * 2 - 28) * S);
         // nền sỏi quanh công trình: khu cấm silo, cổng, gò điều khiển, nhà xe, trạm điện, bồn nhiên liệu, chân tháp canh
         const grav = 'rgba(166,158,142,0.97)';
         for (const [fa, ra, fb, rb] of [[-216, -170, 156, 210], [hu - 150, -70, hu, 70], [-250, -366, -80, -180], [-25, 252, 150, 348], [-200, 262, -90, 338],
           [-98, -448, 18, -332], [hu - 110, 120, hu - 60, 215], [180, -200, 230, -140], [-260, -50, -210, 50]]) rect(fa, ra, fb, rb, grav);
-        for (let i = 0; i < 9000; i++) { const x = hash(i + 1600) * w, y = hash(i + 1601) * h; g.fillStyle = hash(i + 1602) < 0.5 ? 'rgba(110,104,92,0.35)' : 'rgba(200,192,176,0.35)'; g.fillRect(x, y, 2, 2); }
         // đường nhựa nội bộ: cổng -> khu cấm silo, trục ngang trước, trục nhà xe / trạm điện, nhánh tới cửa trung tâm điều khiển
         const road = (pts, wd) => {
           g.lineCap = 'round'; g.lineJoin = 'round';
@@ -534,7 +567,20 @@ const Landmarks = (() => {
   function apron(group, L, f0, f1, r0, r1, kind) {
     const hu = (f1 - f0) / 2, hv = (r1 - r0) / 2;
     const at = apronTex(kind, f0, f1, r0, r1);
-    const top = new THREE.Mesh(new THREE.PlaneGeometry(hu * 2, hv * 2), new THREE.MeshStandardMaterial({ map: at, bumpMap: at, bumpScale: kind === 'nuke' ? 1.6 : 0.6, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    const am = new THREE.MeshStandardMaterial({ map: at, roughness: 0.94, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    // lớp chi tiết lát lặp độ phân giải cao (ảnh nền chỉ ~13 px/m): chỗ nền màu cỏ -> ngọn cỏ, còn lại -> hạt sỏi / bê tông;
+    // nhân vào màu nền (giá trị trung bình ~0.5 x 2)
+    const rep = [hu * 2 / 24, hv * 2 / 24];
+    am.onBeforeCompile = (sh) => {
+      sh.uniforms.tGrass = { value: detailTex('grass') }; sh.uniforms.tGrav = { value: detailTex('gravel') }; sh.uniforms.uRep = { value: new THREE.Vector2(rep[0], rep[1]) };
+      sh.fragmentShader = 'uniform sampler2D tGrass;\nuniform sampler2D tGrav;\nuniform vec2 uRep;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+        { vec3 mc = diffuseColor.rgb;
+          float gm = smoothstep(0.004, 0.03, mc.g - mc.r) * smoothstep(0.02, 0.08, mc.g - mc.b);
+          vec2 duv = vUv * uRep;
+          vec3 dg = texture2D(tGrass, duv).rgb, dv = texture2D(tGrav, duv * 1.7).rgb;
+          diffuseColor.rgb *= mix(mix(vec3(1.0), dv * 2.0, 0.7), dg * 2.0, gm); }`);
+    };
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(hu * 2, hv * 2), am);
     top.rotation.x = -Math.PI / 2;
     top.position.set((f0 + f1) / 2, 0.35, (r0 + r1) / 2);
     top.receiveShadow = true;
