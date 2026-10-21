@@ -4120,7 +4120,7 @@ class ArtilleryGame3D {
       lo = t;
       t += 3 + t * 0.015;
     }
-    let tEnd = tHit !== null ? tHit : Math.min(2400, lo);
+    let tEnd = tHit !== null ? tHit : Math.min(2400, lo), wall = false;
     let unit = null;
     // xe địch: tia cắt khối cầu ôm thân xe (chỉ xe mình đang thấy / biết vị trí)
     for (const u of this.units) {
@@ -4140,12 +4140,13 @@ class ArtilleryGame3D {
       const h = T[fn](ox, oy, oz, bx, by, bz);
       if (!h) continue;
       const th = (h.x - ox) * dx + (h.y - oy) * dy + (h.z - oz) * dz;
-      if (th < tEnd) { tEnd = Math.max(0, th - 3); unit = null; }
+      if (th < tEnd) { tEnd = Math.max(0, th - 3); unit = null; wall = true; }
     }
     // hy: độ cao điểm tia nhìn chạm (súng bắn thẳng nhắm đúng điểm 3D này); trúng xe: nhắm giữa thân
     if (unit) return { x: unit.x, z: unit.z, y: ground(unit.x, unit.z), hy: (unit.y || 0) + 9, d: tEnd, unit };
     const x = Math.max(-lim, Math.min(lim, ox + dx * tEnd)), z = Math.max(-lim, Math.min(lim, oz + dz * tEnd));
-    return { x, z, y: ground(x, z), hy: oy + dy * tEnd, d: tEnd, unit: null };
+    // sky: tia nhìn không chạm đất / nhà trong tầm dò (ra tới mép bản đồ hoặc ~3.200) — ngắm lên trời
+    return { x, z, y: ground(x, z), hy: oy + dy * tEnd, d: tEnd, unit: null, sky: tHit === null && !wall };
   }
 
   // Ngắm tự do bằng xe bắn được mục tiêu trên không: tâm kính sát drone địch đang thấy -> khóa drone (máy tính hỏa lực tự
@@ -4166,7 +4167,7 @@ class ArtilleryGame3D {
       const dr = this.pickDroneAt({ x: 0, y: 0 }, r);
       if (dr) { if (!AA || AA.dr !== dr) this.setAirAim({ kind: 'drone', dr }); return true; }
     }
-    if (dy > 0.02 && !h.unit && h.d > 2350) {
+    if (dy > 0.02 && !h.unit && (h.sky || h.d > 2350)) {
       if (!AA || AA.kind !== 'sky') { this.aimAtSky({ origin: { x: px, y: py, z: pz }, direction: { x: dx, y: dy, z: dz } }); return !!this._airAim; }
       // đang ngắm trời: cập nhật hướng theo tâm kính (cùng cách tính với aimAtSky, không ghi nhật ký lại)
       const m = P.getMuzzleWorldTransform ? P.getMuzzleWorldTransform().position : { x: P.x, y: (P.y || 0) + 20, z: P.z };
