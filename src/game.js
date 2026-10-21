@@ -3455,7 +3455,9 @@ class ArtilleryGame3D {
         S.goal = A || (L && !L.out && !L.wall && L.d >= R.min ? { x: L.x, z: L.z } : { x: P.x - Math.sin(tw) * mid, z: P.z - Math.cos(tw) * mid });
         S.followId = A ? A.id : null;
         S.cx = P.x - Math.sin(tw) * 60; S.cz = P.z - Math.cos(tw) * 60;
-        S.h = 160; S.hT = 520;
+        // drone trinh sát cất cánh ngay cạnh xe: thấp sát xe rồi bốc lên độ cao làm việc
+        S.h = 45; S.hT = 520; S.boost = 0; S.roll = 0; S.t = 0; S.climb = 0; S.pcx = S.cx; S.pcz = S.cz;
+        this.renderer.domElement.style.filter = 'saturate(.62) contrast(1.12) brightness(1.04)';   // hình ảnh truyền về từ camera drone
         S.dirty = false; S.commitT = 0;
         for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD']) this.keys[k] = false;   // xe dừng, phím dùng để di chuyển vùng nhìn
       } else {
@@ -3479,6 +3481,7 @@ class ArtilleryGame3D {
       cam.fov = 45; cam.updateProjectionMatrix();
       if (this._cam) { this._cam.yaw = S.arty ? this._cam.yaw : S.yaw; this._cam.R = 0; }
       if (this._sightEl) this._sightEl.classList.add('hidden');
+      if (S.arty) this.renderer.domElement.style.filter = '';
     }
   }
 
@@ -3512,6 +3515,19 @@ class ArtilleryGame3D {
         '#gun-sight .gs-blast{color:#ff9a6e;font-size:11px;max-width:220px;line-height:1.35}',
         '#gun-sight .gs-hint{position:absolute;left:50%;bottom:calc(7vh + 64px);transform:translateX(-50%);font-size:11px;opacity:.8;letter-spacing:.04em;text-shadow:0 0 3px #000;white-space:nowrap}',
         '#gun-sight.arty .gs-vig{background:radial-gradient(ellipse at 50% 50%,transparent 70%,rgba(6,12,8,.22) 100%)}',
+        // hình truyền về từ drone trinh sát: vạch quét, hạt nhiễu, chớp nhiễu lúc bắt tín hiệu, đèn REC, thông số bay
+        '#gun-sight .gs-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.07) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}',
+        '#gun-sight .gs-grain,#gun-sight .gs-static{position:absolute;inset:-60px;background-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27160%27 height=%27160%27%3E%3Cfilter id=%27n%27%3E%3CfeTurbulence type=%27fractalNoise%27 baseFrequency=%27.9%27 numOctaves=%272%27 stitchTiles=%27stitch%27/%3E%3C/filter%3E%3Crect width=%27100%25%27 height=%27100%25%27 filter=%27url(%23n)%27/%3E%3C/svg%3E");background-size:160px 160px}',
+        '#gun-sight .gs-grain{opacity:.07;animation:gsGrain .45s steps(4) infinite}',
+        '#gun-sight .gs-static{opacity:0;background-color:#9aa59a;animation:gsStatic .75s ease-out 1,gsGrain .2s steps(3) 4}',
+        '@keyframes gsGrain{0%{transform:translate(0,0)}25%{transform:translate(-37px,21px)}50%{transform:translate(23px,-41px)}75%{transform:translate(-15px,-12px)}100%{transform:translate(31px,35px)}}',
+        '@keyframes gsStatic{0%{opacity:.85}35%{opacity:.5}100%{opacity:0}}',
+        '#gun-sight .gs-uav{position:absolute;right:calc(7vw + 12px);top:50%;transform:translateY(-50%);display:grid;gap:5px;text-align:right;font-size:11px;letter-spacing:.08em;text-shadow:0 0 3px #000,0 0 6px #000;font-variant-numeric:tabular-nums}',
+        '#gun-sight .gs-uav b{font-weight:600;color:#fff}',
+        '#gun-sight .gs-rec{color:#ff5a4a;font-weight:600}',
+        '#gun-sight .gs-rec i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff3b30;margin-right:6px;vertical-align:0;animation:gsRec 1s steps(1) infinite}',
+        '@keyframes gsRec{50%{opacity:0}}',
+        '@media (prefers-reduced-motion:reduce){#gun-sight .gs-grain,#gun-sight .gs-static,#gun-sight .gs-rec i{animation:none}}',
         '#gun-sight.optic .gs-vig{background:radial-gradient(circle at 50% 50%,transparent 0,transparent 46%,rgba(12,16,12,.14) 49%,rgba(12,16,12,.24) 100%)}',
         '#gun-sight .gs-optic{position:absolute;left:50%;top:50%;width:min(92vh,92vw);height:min(92vh,92vw);transform:translate(-50%,-50%);border-radius:50%;box-shadow:0 0 0 1px rgba(18,22,16,.45),inset 0 0 36px rgba(0,0,0,.16)}',
         '#gun-sight svg.gs-ret.etched{filter:drop-shadow(0 0 .6px rgba(236,240,226,.95)) drop-shadow(0 0 1.6px rgba(236,240,226,.4))}',
@@ -3587,7 +3603,10 @@ class ArtilleryGame3D {
     el.className = arty ? 'arty' : etched ? 'optic' : '';
     if (prof.kind === 'box') prof = Object.assign({}, prof, { name: P.selectedAmmo === 'ANTI_TANK_MISSILE' ? 'KÍNH DẪN TÊN LỬA' : 'KÍNH SÚNG MÁY 12.7MM' });
     if (this._sight) this._sight.ammo = P.selectedAmmo;
-    el.innerHTML = '<div class="gs-vig"></div><div class="gs-frame"><i></i><i></i><i></i><i></i></div>'
+    el.innerHTML = (arty ? '<div class="gs-grain"></div><div class="gs-scan"></div><div class="gs-static"></div>'
+        + '<div class="gs-uav"><span class="gs-rec"><i></i>REC · UAV TRINH SÁT</span><span>ĐỘ CAO <b class="gs-alt">—</b></span>'
+        + '<span>CÁCH XE <b class="gs-dist">—</b></span><span>GIÓ <b class="gs-wind">—</b></span><span class="gs-grid"></span></div>' : '')
+      + '<div class="gs-vig"></div><div class="gs-frame"><i></i><i></i><i></i><i></i></div>'
       + (etched ? '<div class="gs-optic"></div>' : '')
       // pháo: dấu tâm màn hình = điểm sẽ ngắm khi thả phím W A S D
       + (arty ? '<svg class="gs-ret" viewBox="-100 -100 200 200"><circle class="gs-m" r="6"/><circle class="gs-d" r="1"/>'
@@ -3604,6 +3623,7 @@ class ArtilleryGame3D {
     this._sightStateEl = el.querySelector('.gs-state');
     this._sightBlastEl = el.querySelector('.gs-blast');
     this._sightHdgEl = el.querySelector('.gs-hdg');
+    this._uavEl = arty ? { alt: el.querySelector('.gs-alt'), dist: el.querySelector('.gs-dist'), wind: el.querySelector('.gs-wind'), grid: el.querySelector('.gs-grid'), stat: el.querySelector('.gs-static'), t: 0 } : null;
     el._c = null;
     return el;
   }
@@ -3650,7 +3670,15 @@ class ArtilleryGame3D {
       // điểm đã chọn / xe đã khóa thay đổi -> tâm nhìn bay tới đó
       const tgt = this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : this._aimPoint;
       const tid = tgt ? tgt.id : null;
-      if (tid !== S.followId) { S.followId = tid; if (tgt && tid !== S.ownAimId) S.goal = tgt; }
+      if (tid !== S.followId) {
+        S.followId = tid;
+        if (tgt && tid !== S.ownAimId) {
+          S.goal = tgt;
+          // drone chuyển tới vùng xa: hình nhiễu chớp lại một nhịp như bắt lại tín hiệu
+          const U = this._uavEl;
+          if (U && U.stat && Math.hypot(tgt.x - S.cx, tgt.z - S.cz) > 700) { const n = U.stat.cloneNode(); U.stat.replaceWith(n); U.stat = n; }
+        }
+      }
       if (S.goal && S.goal === this.lockedTarget && this.lockedTarget.isDead) S.goal = null;
       const K = S.keys, fast = K.ShiftLeft || K.ShiftRight;
       const mf = (K.KeyW ? 1 : 0) - (K.KeyS ? 1 : 0), mr = (K.KeyD ? 1 : 0) - (K.KeyA ? 1 : 0);
@@ -3664,8 +3692,9 @@ class ArtilleryGame3D {
         const nb = brg - mr * sp * 0.75 / Math.max(150, nd);
         S.cx = P.x + Math.sin(nb) * nd; S.cz = P.z + Math.cos(nb) * nd;
       } else if (S.goal) {
-        // bay theo vào điểm ngắm (xe đã khóa: bám theo xe)
-        const k = 1 - Math.exp(-dt * 3.5);
+        // bay theo vào điểm ngắm (xe đã khóa: bám theo xe); vừa cất cánh thì lên cao trước rồi mới bay ngang
+        // (không lướt sát ngọn cây / mái nhà)
+        const k = (1 - Math.exp(-dt * 3.5)) * Math.max(0.12, Math.min(1, (S.h - 30) / (S.hT * 0.6)));
         S.cx += (S.goal.x - S.cx) * k; S.cz += (S.goal.z - S.cz) * k;
         if (S.goal !== this.lockedTarget && Math.hypot(S.goal.x - S.cx, S.goal.z - S.cz) < 2) S.goal = null;
       }
@@ -3689,16 +3718,33 @@ class ArtilleryGame3D {
         S.yaw = wrap(S.yaw + wrap(want - S.yaw) * (1 - Math.exp(-dt * 5)));
       }
       fx = -Math.sin(S.yaw); fz = -Math.cos(S.yaw);
-      S.h += (S.hT - S.h) * (1 - Math.exp(-dt * 6));
+      // DRONE TRINH SÁT: cất cánh từ xe lên độ cao làm việc; bay tới điểm xa thì vọt cao lên (thấy đường bay) rồi hạ dần
+      // khi tới nơi; lơ lửng thì trôi nhẹ theo gió; chỉnh hướng sang ngang thì nghiêng cánh theo
+      S.t = (S.t || 0) + dt;
+      // tốc độ lên cao tăng dần từ lúc cất cánh (không bật vọt lên ngay khung hình đầu)
+      S.climb = Math.min(700, (S.climb || 0) + 900 * dt);
+      const up = (v, want, k) => { const dv = (want - v) * (1 - Math.exp(-dt * k)); return v + Math.min(dv, S.climb * dt); };
+      S.h = up(S.h, S.hT, 2.2);
+      const gd = S.goal ? Math.hypot(S.goal.x - S.cx, S.goal.z - S.cz) : 0;
+      S.boost = up(S.boost || 0, Math.min(420, gd * 0.3), 3);
+      const H = S.h + S.boost;
+      const vx = (S.cx - (S.pcx === undefined ? S.cx : S.pcx)) / Math.max(1e-3, dt), vz = (S.cz - (S.pcz === undefined ? S.cz : S.pcz)) / Math.max(1e-3, dt);
+      S.pcx = S.cx; S.pcz = S.cz;
+      const vLat = vx * -fz + vz * fx;   // tốc độ dạt sang phải màn hình
+      S.roll = (S.roll || 0) + (Math.max(-0.12, Math.min(0.12, -vLat / 2600)) - (S.roll || 0)) * (1 - Math.exp(-dt * 4));
       const gy = T ? T.getElevationAt(S.cx, S.cz) : 0;
       if (S.y === null) S.y = gy;
       S.y += (gy - S.y) * (1 - Math.exp(-dt * 4));
-      // nhìn chéo ~52° từ phía sau điểm ngắm
-      px = S.cx - fx * S.h * 0.78; pz = S.cz - fz * S.h * 0.78;
-      py = Math.max(S.y + S.h, (T ? T.getElevationAt(px, pz) : 0) + 40);
+      // nhìn chéo ~52° từ phía sau điểm ngắm; trôi lơ lửng vài đơn vị (tâm màn hình vẫn đúng điểm ngắm)
+      const t = S.t;
+      px = S.cx - fx * H * 0.78 + Math.sin(t * 0.63) * 4 + Math.sin(t * 1.7) * 1.2;
+      pz = S.cz - fz * H * 0.78 + Math.cos(t * 0.71) * 4;
+      py = Math.max(S.y + H + Math.sin(t * 0.91) * 3, (T ? T.getElevationAt(px, pz) : 0) + 70);   // luôn trên ngọn cây
       if (Math.abs(cam.fov - 55) > 0.01) { cam.fov = 55; cam.updateProjectionMatrix(); }
       cam.position.set(px, py, pz);
       cam.lookAt(S.cx, S.y, S.cz);
+      cam.rotateZ(S.roll + Math.sin(t * 0.8) * 0.006);
+      S.alt = Math.round(py - gy);
       this._camYaw = S.yaw;
       this._lodMag = 1;
       this.updateRangeRings(P, R, dt);
@@ -3790,6 +3836,18 @@ class ArtilleryGame3D {
         else if (BI.hitK !== null) bTxt += BI.hitK >= 0.99 ? ' · MỤC TIÊU TRONG LÕI' : BI.hitK > 0 ? ' · SỨC NỔ TỚI MỤC TIÊU ~' + Math.round(BI.hitK * 100) + '%' : ' · MỤC TIÊU NGOÀI VÙNG NỔ';
       }
       if (this._sightBlastEl && this._sightBlastEl.textContent !== bTxt) this._sightBlastEl.textContent = bTxt;
+      // thông số drone (~6 lần/giây): độ cao trên mặt đất, cách xe mình, gió (hướng gió thổi tới, độ thật), ô lưới bản đồ
+      const U = S.arty ? this._uavEl : null;
+      if (U && (U.t -= dt) <= 0) {
+        U.t = 0.16;
+        const W = this.ballistics.wind || {};
+        const set = (e, v) => { if (e && e.textContent !== v) e.textContent = v; };
+        set(U.alt, (S.alt || 0) + ' M');
+        set(U.dist, Math.round(Math.hypot(cam.position.x - P.x, cam.position.z - P.z)).toLocaleString() + ' M');
+        set(U.wind, (W.speed !== undefined ? W.speed.toFixed(1) : '—') + ' · ' + String(Math.round(((W.direction || 0) % 360 + 360) % 360)).padStart(3, '0') + '°');
+        const half = (T && T.width ? T.width : 3600) / 2, gx = Math.floor((S.cx + half) / 100), gz = Math.floor((S.cz + half) / 100);
+        set(U.grid, 'Ô LƯỚI ' + String(gx).padStart(2, '0') + '-' + String(gz).padStart(2, '0'));
+      }
     }
   }
 
