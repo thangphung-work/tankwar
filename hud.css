@@ -334,6 +334,35 @@
   background: rgba(9, 11, 9, 0.7);
 }
 
+/* Drone trinh sát: chip trạng thái kèm thanh pin hình cục pin (vạch sọc chạy khi đang sạc) */
+.hx-chip .dr-txt { margin-right: 6px; }
+.hx-chip .dr-bat {
+  position: relative;
+  width: 30px;
+  height: 9px;
+  padding: 1px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  box-sizing: border-box;
+  margin-right: 3px;
+}
+.hx-chip .dr-bat::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: 2px;
+  width: 2px;
+  height: 3px;
+  background: currentColor;
+}
+.hx-chip .dr-bat i { display: block; height: 100%; background: currentColor; }
+.hx-chip .dr-bat.charging i {
+  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 6px);
+  animation: drCharge 1s linear infinite;
+}
+@keyframes drCharge { from { background-position: 0 0; } to { background-position: 6px 0; } }
+@media (prefers-reduced-motion: reduce) { .hx-chip .dr-bat.charging i { animation: none; } }
+
 /* Pháo tự hành: ô cách bắn (bấm hoặc phím B) — cầu vồng: vàng, bắn thẳng: xanh */
 .hx-artymode {
   gap: 5px;

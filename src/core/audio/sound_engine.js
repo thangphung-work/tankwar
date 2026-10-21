@@ -25,6 +25,7 @@
  *   other_engines.js     tiếng máy các xe khác
  *   fire_ambience.js     lửa cháy liên tục, gió nền
  *   turret_drives.js     mô-tơ quay tháp, bơm nâng hạ nòng
+ *   drone_uav.js         drone trinh sát của màn hình điều khiển hỏa lực (cánh quạt, gió vào micro, kết nối dữ liệu)
  *   gatling.js           pháo 6 nòng xoay, súng liên thanh, vỏ đạn
  *   wading.js            lội nước
  *   music.js             nhạc nền (sảnh, ghép trận, trong trận, kết quả)
@@ -169,7 +170,10 @@ class SoundEngine {
     this.vehicleUser.gain.setValueAtTime(this.userEngine === undefined ? 1 : this.userEngine, t);
     this.vehicleBus.connect(this.vehicleUser);
     this.vehicleUser.connect(this.vehicleDuck);
-    this.vehicleDuck.connect(this.masterGain);
+    // xem qua drone trinh sát: tiếng xe mình nhỏ đi như nghe từ xa (drone_uav.js setDroneFar)
+    this.vehicleFar = ctx.createGain();
+    this.vehicleDuck.connect(this.vehicleFar);
+    this.vehicleFar.connect(this.masterGain);
     this.uiBus = ctx.createGain();
     this.uiBus.gain.setValueAtTime(0.75, t);
     this.uiBus.connect(this.masterGain);
