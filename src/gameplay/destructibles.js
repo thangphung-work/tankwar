@@ -454,34 +454,166 @@ const Destructibles = (() => {
     TEX[key] = g;
     return g;
   }
-  // Ố bẩn theo toạ độ thế giới phủ lên mặt tường: mọi khoang dùng chung 1 ảnh nên mặt nhà lặp đều như giấy dán tường ->
-  // thêm vết loang lớn (ẩm, phai màu không đều) + vệt nước mưa chảy dọc liền qua nhiều tầng, mỗi chỗ trên mặt nhà một kiểu.
-  // Tính trong shader (nhiễu giá trị 2D), không tốn texture
-  function facadeGrime(mat, amt = 1) {
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uGrime = { value: amt };
-      sh.vertexShader = 'varying vec3 vGrimeW;' + String.fromCharCode(10) + sh.vertexShader.replace('#include <project_vertex>',
+  // Phong hoá theo toạ độ thế giới phủ lên mặt tường: mọi khoang dùng chung 1 ảnh nên mặt nhà lặp đều như giấy dán tường ->
+  // tính thêm trong shader (nhiễu giá trị 2D, không tốn texture), mỗi chỗ trên mặt nhà một kiểu:
+  //  · loang ẩm / phai nắng cỡ lớn, ngả vàng ố hoặc bạc màu
+  //  · vệt nước mưa chảy dọc liền qua nhiều tầng, dày & đậm hơn ngay dưới mép mái; dải bẩn sát mép mái
+  //  · chân tường ngấm ẩm (mép trên lượn sóng, vệt muối trắng ở mép), bùn hắt sát đất, rêu xanh bám chỗ ẩm
+  //  · vữa tô bong từng mảng lộ gạch / bê tông bên dưới, mép mảng sẫm (chỉ trên nền tường sáng, không ăn vào kính)
+  //  · gỉ sét loang & chảy vệt trên tôn
+  // Độ cao so với chân / đỉnh nhà lấy từ ảnh lưới thông tin nhà (BuildingSet.grimeInfo); ngoài nhà (mảnh văng) bỏ qua phần đó.
+  // opt: peel (bong vữa) · moss (rêu) · rust (gỉ) · peelA / peelB (màu lớp lộ ra) · U (uniform dùng chung: ảnh lưới nhà)
+  // (băm không dùng sin: rẻ hơn trên GPU yếu, không mất chính xác ở toạ độ lớn)
+  const GRIME_GLSL = `
+    float gHash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float gNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), f.x), mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float gFbm(vec2 p) { return gNoise(p) * 0.55 + gNoise(p * 2.03 + 5.1) * 0.3 + gNoise(p * 4.1 + 9.7) * 0.15; }
+    float gDec(vec2 v) { return (v.x * 65280.0 + v.y * 255.0) * 0.25 - 1024.0; }`;
+  function facadeGrime(mat, amt = 1, opt = {}) {
+    const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : null;
+    const U = opt.U || { uBld: { value: null }, uBldGrid: { value: new THREE.Vector4(0, 0, 0, 0) } };
+    const NL = String.fromCharCode(10);
+    mat.onBeforeCompile = (sh, r) => {
+      if (prev) prev(sh, r);
+      Object.assign(sh.uniforms, {
+        uGrime: { value: amt }, uPeel: { value: opt.peel || 0 }, uMoss: { value: opt.moss === undefined ? 0.6 : opt.moss }, uRust: { value: opt.rust || 0 },
+        uPeelA: { value: new THREE.Color(...(opt.peelA || [0.3, 0.17, 0.12])) }, uPeelB: { value: new THREE.Color(...(opt.peelB || [0.36, 0.35, 0.32])) },
+        uBld: U.uBld, uBldGrid: U.uBldGrid
+      });
+      sh.vertexShader = 'varying vec3 vGrimeW;' + NL + 'varying vec3 vGrimeN;' + NL + sh.vertexShader.replace('#include <project_vertex>',
+        `#include <project_vertex>
+        vec4 gw = vec4(transformed, 1.0);
+        vec3 gn = objectNormal;
+        #ifdef USE_INSTANCING
+          gw = instanceMatrix * gw;
+          gn = mat3(instanceMatrix) * gn;
+        #endif
+        vGrimeW = (modelMatrix * gw).xyz;
+        vGrimeN = normalize(mat3(modelMatrix) * gn);`);
+      sh.fragmentShader = ['varying vec3 vGrimeW;', 'varying vec3 vGrimeN;', 'uniform float uGrime, uPeel, uMoss, uRust;', 'uniform vec3 uPeelA, uPeelB;',
+        'uniform sampler2D uBld;', 'uniform vec4 uBldGrid;', GRIME_GLSL, ''].join(NL) +
+        sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          vec3 gN = normalize(vGrimeN);
+          // toạ độ ngang dọc theo mặt tường (theo pháp tuyến -> vệt dọc đúng mọi hướng nhà); mặt nằm ngang dùng x + z
+          vec2 gT = normalize(vec2(-gN.z, gN.x) + vec2(1e-4, 0.0));
+          float wall = 1.0 - smoothstep(0.5, 0.85, abs(gN.y));
+          float hx = mix(vGrimeW.x + vGrimeW.z, dot(vGrimeW.xz, gT), wall), y = vGrimeW.y;
+          // chân / đỉnh nhà tại chỗ này (đơn vị thế giới, 8 = 1 m); ngoài nhà -> không tính phần theo độ cao
+          float hb = 1e4, ht = 1e4, inB = 0.0;
+          if (uBldGrid.z > 0.0) {
+            vec2 bu = (vGrimeW.xz - uBldGrid.xy) * uBldGrid.zw;
+            if (bu.x > 0.0 && bu.y > 0.0 && bu.x < 1.0 && bu.y < 1.0) {
+              vec4 bi = texture2D(uBld, bu);
+              float by = gDec(bi.rg), ty = gDec(bi.ba);
+              if (by > -1000.0) { inB = 1.0; hb = y - by; ht = ty - y; }
+            }
+          }
+          vec3 gc = diffuseColor.rgb;
+          float lum = dot(gc, vec3(0.3, 0.59, 0.11));
+          float base = 1.0;
+          #ifdef USE_MAP
+            base = dot(texelColor.rgb, vec3(0.3, 0.59, 0.11));
+          #endif
+          // 1) loang lớn: chỗ ẩm sẫm ngả nâu, chỗ phơi nắng bạc màu
+          float gPatch = gFbm(vec2(hx * 0.016, y * 0.02));
+          float dark = smoothstep(0.45, 0.8, gPatch), bleach = smoothstep(0.5, 0.2, gPatch);
+          gc *= mix(vec3(1.0), vec3(0.8, 0.76, 0.69), dark * 0.85);
+          gc = mix(gc, vec3(lum) * 1.06, bleach * 0.28);
+          // 2) vệt mưa chảy dọc: vệt to mờ + vệt mảnh sắc, đậm hơn dưới mép mái, đứt quãng theo chiều cao
+          float topW = mix(0.75, 0.45 + 0.75 * exp(-ht / 70.0), inB);
+          float sBig = smoothstep(0.6, 0.86, gNoise(vec2(hx * 0.13, y * 0.006 + 3.0)));
+          float sFine = smoothstep(0.7, 0.9, gNoise(vec2(hx * 0.55 + 11.0, y * 0.018)));
+          float sBreak = smoothstep(0.25, 0.6, gNoise(vec2(hx * 0.13 + 2.0, y * 0.03)));
+          float streak = clamp((sBig * 0.85 + sFine * 0.55) * sBreak, 0.0, 1.0) * topW * wall;
+          gc = mix(gc, gc * vec3(0.5, 0.48, 0.44), streak * 0.75);
+          // 3) dải bẩn ngay dưới mép mái (bụi mái dồn xuống theo nước mưa)
+          float topBand = (1.0 - smoothstep(0.0, 26.0, ht)) * inB * wall * (0.6 + 0.4 * gNoise(vec2(hx * 0.08, 1.7)));
+          gc *= 1.0 - 0.28 * topBand;
+          // 4) chân tường ngấm ẩm: mép trên lượn sóng, vệt muối trắng ở mép, sát đất bùn hắt
+          float edge = 7.0 + 11.0 * gFbm(vec2(hx * 0.04, 2.3));
+          float damp = (1.0 - smoothstep(edge - 5.0, edge + 1.5, hb)) * inB;
+          float salt = exp(-pow((hb - edge - 0.5) / 1.3, 2.0)) * inB * wall;
+          float splash = (1.0 - smoothstep(0.0, 4.5 + 2.0 * gNoise(vec2(hx * 0.3, 0.0)), hb)) * inB;
+          gc = mix(gc, gc * vec3(0.55, 0.52, 0.44), damp * 0.9);
+          gc = mix(gc, vec3(0.78, 0.76, 0.7) * max(lum, 0.35), salt * 0.25);
+          gc = mix(gc, vec3(0.24, 0.2, 0.15), splash * 0.55);
+          // 5) rêu / tảo xanh sẫm bám chỗ ẩm: chân tường, theo vệt nước, mặt nằm ngang
+          float mossN = gFbm(vec2(hx * 0.09 + 4.0, y * 0.09));
+          float moss = smoothstep(0.42, 0.72, mossN) * (damp * 0.9 + streak * 0.35 + (1.0 - wall) * 0.35 * smoothstep(0.55, 0.8, gPatch)) * uMoss;
+          gc = mix(gc, vec3(0.2, 0.25, 0.13) * (0.55 + 0.6 * lum), clamp(moss, 0.0, 1.0) * 0.6);
+          // 6) bong vữa: mảng mép sắc, nhiều hơn ở chỗ ẩm (chân tường, dưới mái); chỉ trên nền tường sáng
+          if (uPeel > 0.0) {
+            float pn = gFbm(vec2(hx * 0.06 + 13.0, y * 0.075)) + gNoise(vec2(hx * 0.4, y * 0.4)) * 0.08;
+            float thr = 0.8 - 0.07 * damp - 0.04 * topBand + 0.04 * (1.0 - uPeel);
+            float plaster = smoothstep(0.42, 0.55, base) * wall;
+            float hole = smoothstep(thr, thr + 0.012, pn) * plaster;
+            float rim = (smoothstep(thr - 0.035, thr, pn) - hole) * plaster;
+            // lớp lộ ra: gạch (có mạch vữa) hoặc vữa lót xám, nhuộm theo màu tường cũ cho đỡ chói
+            float brick = smoothstep(0.55, 0.7, gNoise(vec2(hx * 0.02 + 7.0, y * 0.02)));
+            vec2 bc = vec2(hx / 1.9 + step(0.5, fract(y / 1.3)) * 0.5, y / 0.65);
+            float joint = max(step(0.86, fract(bc.x)), step(0.8, fract(bc.y)));
+            vec3 under = mix(uPeelB, uPeelA * (1.0 - 0.45 * joint), brick);
+            under *= (0.8 + 0.35 * gNoise(vec2(hx * 0.9, y * 0.9))) * mix(vec3(1.0), gc / max(lum, 0.2), 0.25);
+            gc *= 1.0 - 0.3 * rim * uPeel;
+            gc = mix(gc, under, hole * min(1.0, uPeel * 1.3));
+          }
+          // 7) gỉ sét trên tôn: loang thành mảng + chảy vệt xuống
+          if (uRust > 0.0) {
+            float rp = smoothstep(0.6, 0.82, gFbm(vec2(hx * 0.05 + 21.0, y * 0.05)));
+            float rs = smoothstep(0.62, 0.88, gNoise(vec2(hx * 0.35 + 5.0, y * 0.01))) * sBreak;
+            float rust = clamp(rp * 0.8 + rs * 0.6 + damp * 0.4, 0.0, 1.0) * uRust;
+            gc = mix(gc, vec3(0.34, 0.17, 0.07) * (0.7 + 0.5 * gNoise(vec2(hx * 0.7, y * 0.7))), rust * 0.55);
+          }
+          diffuseColor.rgb = mix(diffuseColor.rgb, gc, uGrime);
+        }`);
+    };
+    mat.customProgramCacheKey = () => (key ? key() : '') + '|grime2';
+    return mat;
+  }
+  // Mái ngói / tôn / mái bằng: rêu & địa y loang thành đám, vệt nước sẫm chảy theo dốc mái (trục v của uv), tôn gỉ vệt
+  function roofGrime(mat, opt = {}) {
+    const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : null;
+    const NL = String.fromCharCode(10);
+    mat.onBeforeCompile = (sh, r) => {
+      if (prev) prev(sh, r);
+      sh.uniforms.uRust = { value: opt.rust || 0 };
+      sh.vertexShader = 'varying vec3 vGrimeW;' + NL + sh.vertexShader.replace('#include <project_vertex>',
         `#include <project_vertex>
         vec4 gw = vec4(transformed, 1.0);
         #ifdef USE_INSTANCING
           gw = instanceMatrix * gw;
         #endif
         vGrimeW = (modelMatrix * gw).xyz;`);
-      sh.fragmentShader = 'varying vec3 vGrimeW;' + String.fromCharCode(10) + 'uniform float uGrime;' + String.fromCharCode(10) +
-        `float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-        float gNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), f.x), mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), f.x), f.y); }
-` + String.fromCharCode(10) +
-        sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      sh.fragmentShader = ['varying vec3 vGrimeW;', 'uniform float uRust;', GRIME_GLSL, ''].join(NL) +
+        sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
         {
-          float hx = vGrimeW.x + vGrimeW.z;
-          float gPatch = gNoise(vec2(hx * 0.018, vGrimeW.y * 0.022)) * 0.65 + gNoise(vec2(hx * 0.05 + 7.0, vGrimeW.y * 0.06)) * 0.35;
-          float gStreak = gNoise(vec2(hx * 0.11, vGrimeW.y * 0.009 + 3.0));
-          float k = (0.85 + 0.3 * gPatch) * (1.0 - 0.16 * smoothstep(0.55, 0.9, gStreak));
-          diffuseColor.rgb *= mix(1.0, k, uGrime);
+          vec2 w = vGrimeW.xz;
+          vec3 gc = diffuseColor.rgb;
+          float lum = dot(gc, vec3(0.3, 0.59, 0.11));
+          float patchN = gFbm(w * 0.02);
+          gc *= mix(1.0, 0.72, smoothstep(0.45, 0.8, patchN));
+          #ifdef USE_UV
+            // vệt chảy theo dốc: tần số cao dọc sống mái (u), thấp theo dốc (v)
+            float st = smoothstep(0.6, 0.88, gNoise(vec2(vUv.x * 9.0, vUv.y * 0.6 + 3.0)));
+            gc *= 1.0 - 0.35 * st;
+          #else
+            float st = 0.0;
+          #endif
+          float mossN = gFbm(w * 0.05 + 3.0);
+          float moss = smoothstep(0.5, 0.75, mossN) * (1.0 - uRust);
+          float lichen = smoothstep(0.8, 0.84, gNoise(w * 0.45 + 8.0)) * (1.0 - uRust);
+          gc = mix(gc, vec3(0.15, 0.18, 0.09) * (0.6 + 0.6 * lum), moss * 0.6);
+          gc = mix(gc, gc * vec3(0.95, 1.0, 0.7) + vec3(0.04, 0.05, 0.0), lichen * 0.5);
+          if (uRust > 0.0) {
+            float rust = clamp(smoothstep(0.6, 0.82, gFbm(w * 0.04 + 17.0)) + st * 0.6, 0.0, 1.0) * uRust;
+            gc = mix(gc, vec3(0.34, 0.17, 0.07) * (0.7 + 0.5 * gNoise(w * 0.6)), rust * 0.5);
+          }
+          diffuseColor.rgb = gc;
         }`);
     };
-    mat.customProgramCacheKey = () => 'grime' + amt;
+    mat.customProgramCacheKey = () => (key ? key() : '') + '|rgrime';
     return mat;
   }
   // Normal map + roughness map dựng từ chính ảnh mặt tiền: mạch gạch / đá / ván gỗ / sóng tôn / hạt vữa nổi gồ dưới nắng;
@@ -3259,6 +3391,9 @@ const Destructibles = (() => {
         dmgKeys.add(p.dmgKey);
       }
       const glassy = k => k === 'office' || k === 'officeB';
+      // Phong hoá: ảnh lưới chân / đỉnh nhà (điền sau khi dựng nhà, xem buildGrimeInfo) dùng chung cho mọi vật liệu nhà
+      this.grimeU = { uBld: { value: null }, uBldGrid: { value: new THREE.Vector4(0, 0, 0, 0) } };
+      const wk = k => this.weatherOpt(k);
       for (const key in counts) {
         // normal map (mạch gạch / vân gỗ / sóng tôn / hạt vữa nổi dưới nắng) + roughness map (kính bóng, tường nhám)
         const sm = panelSurfaceMaps(key);
@@ -3267,7 +3402,7 @@ const Destructibles = (() => {
         if (sm) mat.normalScale.set(0.9, 0.9);
         const shatterMat = new THREE.MeshStandardMaterial({ map: brokenWindowTex(key), roughness: 0.9, roughnessMap: brokenWindowRough(key), metalness: key === 'metal' || key === 'hangarDoor' ? 0.2 : 0.04, normalMap: sm ? sm.normal : null });
         if (sm) shatterMat.normalScale.set(0.9, 0.9);
-        if (key !== 'office') { facadeGrime(mat, key === 'officeB' ? 0.6 : 1); facadeGrime(shatterMat, 1); }
+        facadeGrime(mat, wk(key).amt, wk(key)); facadeGrime(shatterMat, wk(key).amt, wk(key));
         this.panelKits[key] = new FractureKit(this.group, mat, cracked, counts[key], { variants: 1, shatterMat, panelGeo: reliefPanelGeo(key) });
         this.panelKits[key].styleKey = key;   // kiểu mặt tiền -> vị trí ô cửa (RELIEF) cho vết mảnh văng
       }
@@ -3275,14 +3410,15 @@ const Destructibles = (() => {
       for (const key of dmgKeys) {
         const [gk, uk] = key.split('|');
         this.dmgMats[key] = new THREE.MeshStandardMaterial({ map: uk ? atlasTex(gk, uk) : brokenWindowTex(gk), vertexColors: true, roughness: glassy(gk) ? 0.6 : 0.92, metalness: gk === 'metal' || gk === 'hangarDoor' ? 0.2 : 0.02 });
-        if (gk !== 'office') facadeGrime(this.dmgMats[key], 1);
+        facadeGrime(this.dmgMats[key], wk(gk).amt, wk(gk));
       }
-      this.slabPool = new Pool(this.group, unit, new THREE.MeshStandardMaterial({ map: slabTex(), roughness: 0.92 }), slabs, { color: true });
-      this.colPool = new Pool(this.group, unit, new THREE.MeshStandardMaterial({ map: concreteTex(), roughness: 0.9 }), cols, { color: true });
+      const concW = { U: this.grimeU, moss: 0.7 };
+      this.slabPool = new Pool(this.group, unit, facadeGrime(new THREE.MeshStandardMaterial({ map: slabTex(), roughness: 0.92 }), 0.9, concW), slabs, { color: true });
+      this.colPool = new Pool(this.group, unit, facadeGrime(new THREE.MeshStandardMaterial({ map: concreteTex(), roughness: 0.9 }), 0.9, concW), cols, { color: true });
       // Mái dốc thật (chìa mái, dày mái, bờ nóc, đầu hồi là tường) + vòm nhà kho có vách đầu hồi; ngói / tôn trải theo mét thật
       const rep = t => { const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.needsUpdate = true; return c; };
-      const roofMat = worldUV(new THREE.MeshStandardMaterial({ map: roofTileTex(), roughness: 0.8 }), 'slope', 16);
-      const gableMat = noInstanceColor(worldUV(new THREE.MeshStandardMaterial({ map: concreteTex(), color: 0xd8cdb6, roughness: 0.92, side: THREE.DoubleSide }), 'endYZ', 26));
+      const roofMat = roofGrime(worldUV(new THREE.MeshStandardMaterial({ map: roofTileTex(), roughness: 0.8 }), 'slope', 16));
+      const gableMat = facadeGrime(noInstanceColor(worldUV(new THREE.MeshStandardMaterial({ map: concreteTex(), color: 0xd8cdb6, roughness: 0.92, side: THREE.DoubleSide }), 'endYZ', 26)), 1, { U: this.grimeU, peel: 0.8 });
       // mái chia ô theo khoang: nhà 1 khoang dùng khối đủ 2 đầu hồi, nhà nhiều khoang = ô đầu -X / ô giữa / ô đầu +X
       // (tường hồi ô đầu ở ~0,365 bề rộng ô: ô đầu = 1 khoang + 3,5 chìa mái -> tường hồi nằm ngay mặt tường đầu nhà)
       this.roofPool = new Pool(this.group, gableRoofGeo(), [roofMat, gableMat], roofs, { color: true });
@@ -3291,8 +3427,8 @@ const Destructibles = (() => {
         p: new Pool(this.group, gableRoofGeo(false, true, 0.365), [roofMat, gableMat], roofs, { color: true }) };
       const metalMap = rep(windowPanelTex('metal')), sm = panelSurfaceMaps('metal');
       const metalN = sm ? rep(sm.normal) : null;
-      const archMat = worldUV(new THREE.MeshStandardMaterial({ map: metalMap, normalMap: metalN, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide }), 'arch', 36);
-      const archEnd = worldUV(new THREE.MeshStandardMaterial({ map: metalMap, normalMap: metalN, roughness: 0.65, metalness: 0.2, side: THREE.DoubleSide }), 'endYZ', 36);
+      const archMat = roofGrime(worldUV(new THREE.MeshStandardMaterial({ map: metalMap, normalMap: metalN, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide }), 'arch', 36), { rust: 1 });
+      const archEnd = facadeGrime(worldUV(new THREE.MeshStandardMaterial({ map: metalMap, normalMap: metalN, roughness: 0.65, metalness: 0.2, side: THREE.DoubleSide }), 'endYZ', 36), 1, { U: this.grimeU, rust: 1, moss: 0.2 });
       this.archPool = new Pool(this.group, archRoofGeo(), [archMat, archEnd], roofs, { color: true });
       this.archPools = { full: this.archPool, n: new Pool(this.group, archRoofGeo(true, false), [archMat, archEnd], roofs, { color: true }),
         mid: new Pool(this.group, archRoofGeo(false, false), [archMat, archEnd], roofMid, { color: true }),
@@ -3310,8 +3446,58 @@ const Destructibles = (() => {
       this.rodPool = new Pool(this.group, new THREE.CylinderGeometry(0.5, 0.5, 1, 5, 1), new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.5 }), nd * 22, { color: true, castShadow: false });
       this.dishPool = new Pool(this.group, dishGeo(), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide }), nd * 3, { color: true });
       for (const p of plans) { const B = this.buildOne(p); this.roofDeco(B, p); this.items.push(B); }
+      this.buildGrimeInfo();
       for (const B of this.items) if (B.dmgPanels.size) this.rebuildDamage(B);
       this.commitAll();
+    }
+
+    // Mức phong hoá theo kiểu mặt tường: tường tô bong vữa lộ gạch / bê tông, đất mộc tróc lớp trát, đá & gỗ chỉ rêu ố,
+    // tôn gỉ sét, mặt dựng kính chỉ ố bụi vệt mưa
+    weatherOpt(key) {
+      const k = key.replace(/B$|C$/, '');
+      const o = k === 'office' ? (key === 'office' ? { amt: 0.55, peel: 0, moss: 0.2 } : { amt: 0.85, peel: 0.45, moss: 0.4 })
+        : k === 'adobe' ? { amt: 1, peel: 0.75, moss: 0.25, peelA: [0.5, 0.37, 0.25], peelB: [0.43, 0.32, 0.22] }
+        : k === 'stone' ? { amt: 1, peel: 0, moss: 1 }
+        : k === 'wood' ? { amt: 1, peel: 0, moss: 0.7 }
+        : k === 'metal' || k === 'hangarDoor' ? { amt: 1, peel: 0, moss: 0.2, rust: 1 }
+        : { amt: 1, peel: 1, moss: 0.6 };
+      o.U = this.grimeU;
+      return o;
+    }
+    // Ảnh lưới (mỗi ô ~0,5 m) ghi độ cao chân & đỉnh tường của nhà phủ lên ô đó (16 bit mỗi số, 1/4 đơn vị) -> shader phong hoá
+    // biết chỗ đang tô cách đất / cách mép mái bao xa (ẩm chân tường, vệt bẩn dưới mái). Ô trống = 0 -> ngoài nhà
+    buildGrimeInfo() {
+      if (!this.items.length || typeof document === 'undefined') return;
+      const M = 10;   // lề quanh nhà (mái chìa, gờ tường, mảnh đổ nát)
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const B of this.items) {
+        const r = Math.hypot(B.w, B.d) / 2 + M;
+        x0 = Math.min(x0, B.x - r); x1 = Math.max(x1, B.x + r); z0 = Math.min(z0, B.z - r); z1 = Math.max(z1, B.z + r);
+      }
+      const cell = Math.max(4, (x1 - x0) / 1024, (z1 - z0) / 1024);
+      const nx = Math.ceil((x1 - x0) / cell), nz = Math.ceil((z1 - z0) / cell);
+      const data = new Uint8Array(nx * nz * 4);
+      const enc = v => Math.max(1, Math.min(65535, Math.round((v + 1024) * 4)));
+      for (const B of this.items) {
+        const yb = enc(B.y), yt = enc(B.y + B.floors * B.FH);
+        const ca = Math.cos(B.angle), sa = Math.sin(B.angle), hw = B.w / 2 + M, hd = B.d / 2 + M, r = Math.hypot(hw, hd);
+        const i0 = Math.max(0, Math.floor((B.x - r - x0) / cell)), i1 = Math.min(nx - 1, Math.ceil((B.x + r - x0) / cell));
+        const j0 = Math.max(0, Math.floor((B.z - r - z0) / cell)), j1 = Math.min(nz - 1, Math.ceil((B.z + r - z0) / cell));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const dx = x0 + (i + 0.5) * cell - B.x, dz = z0 + (j + 0.5) * cell - B.z;
+          // về hệ trục nhà (base xoay quanh Y một góc angle)
+          const lx = dx * ca - dz * sa, lz = dx * sa + dz * ca;
+          if (Math.abs(lx) > hw || Math.abs(lz) > hd) continue;
+          const q = (j * nx + i) * 4;
+          data[q] = yb >> 8; data[q + 1] = yb & 255; data[q + 2] = yt >> 8; data[q + 3] = yt & 255;
+        }
+      }
+      const t = new THREE.DataTexture(data, nx, nz, THREE.RGBAFormat);
+      t.magFilter = t.minFilter = THREE.NearestFilter;
+      t.generateMipmaps = false;
+      t.needsUpdate = true;
+      this.grimeU.uBld.value = t;
+      this.grimeU.uBldGrid.value.set(x0, z0, 1 / (nx * cell), 1 / (nz * cell));
     }
 
     commitAll() {
