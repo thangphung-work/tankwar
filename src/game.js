@@ -5442,7 +5442,11 @@ class ArtilleryGame3D {
     // 1. Render Scene 3D Three.js (đo thời gian GPU cho độ phân giải động — GfxQuality)
     const GQ = typeof GfxQuality !== 'undefined' ? GfxQuality : null;
     if (GQ) GQ.beginFrame();
+    // bóng mây trôi chỉ bật cho cảnh trận (sảnh / phòng xem xe dùng chung chunk chiếu sáng nhưng không có mây)
+    const atm = this.terrain && this.terrain.atmosphere, SK = typeof SkySystem !== 'undefined' && SkySystem.setClouds ? SkySystem : null;
+    if (SK && atm) SK.setClouds(atm.cloudK || 0, atm.cloudCover);
     this.renderer.render(this.scene, this.camera);
+    if (SK) SK.setClouds(0);
     if (GQ) GQ.endFrame();
     this.pinShaderPrograms();
 
