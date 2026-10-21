@@ -14,6 +14,9 @@ function domById(id) {
   return found;
 }
 
+// Xe trinh sát khắc chế xe phòng không (6 nòng): mọi phát trúng thẳng của trinh sát lên xe 6 nòng nhân hệ số này
+const SCOUT_VS_AA = 1.5;
+
 class ArtilleryGame3D {
   constructor() {
     this.container = domById('webgl-container');
@@ -637,6 +640,9 @@ class ArtilleryGame3D {
 
       // Phím G: phóng 1 loạt lựu đạn khói (cần Ống phóng lựu khói + lựu đạn khói trong kho)
       if (e.code === 'KeyG' && !e.repeat) this.triggerPlayerSmoke();
+
+      // Phím F (xe 6 nòng): khóa phòng không drone địch gần nhất đang thấy / thôi khóa (khóa qua DroneAir.setAirAim)
+      if (e.code === 'KeyF' && !e.repeat && !(this._sight && this._sight.arty) && this.player && this.player.tankType === 'GATLING') this.toggleAALock();
 
       // Phím B: pháo tự hành đổi cách bắn (tự chọn / luôn bắn thẳng / luôn bắn cầu vồng)
       if (e.code === 'KeyB' && !e.repeat) this.cycleArtyFireMode();
@@ -1475,6 +1481,29 @@ class ArtilleryGame3D {
     this.syncHUDControls();
   }
 
+  // PHÒNG KHÔNG (xe 6 nòng): F = khóa drone địch gần nhất mà phe mình đang thấy (dr.seen) trong tầm súng, bấm lại = thôi khóa.
+  // Dùng chung cơ chế khóa drone của DroneAir (setAirAim / updatePlayerAirAim: máy tính hỏa lực tự đón đầu & nâng nòng)
+  toggleAALock() {
+    const P = this.player;
+    if (!P || P.isDead || P.tankType !== 'GATLING' || !this.airDroneList || !this.canShootAir || !this.canShootAir(P)) return;
+    if (this._airAim && this._airAim.kind === 'drone') {
+      this.clearAirAim();
+      this.addCombatLog('[[drone]] Thôi bám drone — tháp trở lại mục tiêu mặt đất', 'tip');
+      return;
+    }
+    const ammo = P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : 'GATLING_BULLET';
+    const reach = Math.round(((this.aaRound && this.aaRound(P, ammo).maxTravel) || 900) * 1.5);
+    let best = null, bd = reach;
+    for (const d of this.airDroneList()) {
+      if (d.team === P.team || d.key === 'own' || !d.seen || !this.droneIsAirborne(d)) continue;
+      const r3 = Math.hypot(d.x - P.x, d.y - (P.y || 0), d.z - P.z);
+      if (r3 < bd) { bd = r3; best = d; }
+    }
+    if (!best) { this.addCombatLog(`[[drone]] Không thấy drone địch nào trong tầm phòng không (~${reach}M)`, 'alert'); return; }
+    this._manualAim = false;
+    this.setAirAim({ kind: 'drone', dr: best });
+  }
+
   // Dấu neo điểm ngắm trên mặt đất (thoi hở đỉnh + vạch hướng, nằm sát đất): tháp & nòng tự bám điểm này khi xe di chuyển
   updateAimAnchor(dt) {
     const A = this._aimPoint;
@@ -2188,6 +2217,8 @@ class ArtilleryGame3D {
         }
         this.reportVehicleDamage(directTarget, shooter, dmgRes.events);
       }
+      // Xe trinh sát chuyên diệt phòng không: tên lửa / súng máy trúng xe 6 nòng gây thêm 50% sát thương
+      if (shooter && shooter.tankType === 'SCOUT' && directTarget.tankType === 'GATLING') directDamage = Math.round(directDamage * SCOUT_VS_AA * 1000) / 1000;
       // [NET] máy này có quyền với phát bắn -> gửi trạng thái hư hại bộ phận (đứt xích, cháy...) cho mọi máy
       if (this.netSync && this.netSync.queueParts) this.netSync.queueParts(directTarget);
 
@@ -5422,19 +5453,15 @@ class ArtilleryGame3D {
 
     const stealthBanner = domById('stealth-banner');
     const stealthOverlay = domById('stealth-camo-overlay');
-    const isPlayerInBush = !this.player.isDead && this.player.isInBush;
-    const isPlayerRevealed = isPlayerInBush && this.player.revealTimer > 0;
+    const BB = typeof TeamIntel !== 'undefined' && TeamIntel.bushBanner ? TeamIntel.bushBanner(this.player) : null;
+    const isPlayerInBush = !!BB && BB.cover;
+    const isPlayerRevealed = isPlayerInBush && BB.warn;
 
     if (stealthBanner) {
-      if (isPlayerInBush) {
+      if (BB) {
         stealthBanner.classList.remove('hidden');
-        if (isPlayerRevealed) {
-          stealthBanner.innerHTML = `<span class="stealth-pulse-dot red"></span> BỊ LỘ VỊ TRÍ DO VỪA KHAI HỎA · ${this.player.revealTimer.toFixed(1)}S`;
-          stealthBanner.classList.add('revealed');
-        } else {
-          stealthBanner.innerHTML = `<span class="stealth-pulse-dot green"></span> ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN`;
-          stealthBanner.classList.remove('revealed');
-        }
+        stealthBanner.innerHTML = `<span class="stealth-pulse-dot ${BB.warn ? 'red' : 'green'}"></span> ${BB.html}`;
+        stealthBanner.classList.toggle('revealed', BB.warn);
       } else {
         stealthBanner.classList.add('hidden');
       }
@@ -6039,7 +6066,9 @@ class ArtilleryGame3D {
     const P = this.player;
     if (!P || P.isDead || !this.isGameStarted || this.isGameOver || typeof Equipment === 'undefined') return;
     if (!Equipment.has(P, 'smoke')) {
-      this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — lắp trong Kho vũ khí (nhóm PHỤ KIỆN) ở sảnh', 'tip');
+      // xe pháo không lắp được ống phóng khói (Equipment.MODULES.smoke.tanks)
+      this.addCombatLog(P.tankType === 'ARTILLERY' ? '[[cloud]] Xe pháo không có ống phóng lựu khói — giữ khoảng cách, dùng drone tìm địch'
+        : '[[cloud]] Xe chưa lắp ống phóng lựu khói — lắp trong Kho vũ khí (nhóm PHỤ KIỆN) ở sảnh', 'tip');
       return;
     }
     if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói trong ống phóng' + this.stockNote('SMOKE'), 'alert'); return; }

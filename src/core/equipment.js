@@ -48,11 +48,12 @@
       desc: 'Radar + đạn đánh chặn trên nóc tháp tự bắn hạ RPG và tên lửa chống tăng bay tới (2 lần mỗi lần xuất kích). Radar bị bắn hỏng thì ngừng hoạt động.'
     },
     smoke: {
-      name: 'Ống phóng lựu khói', icon: 'cloud', cat: 'gear', price: 1500, tanks: ALL,
-      desc: 'Phím G: bắn 1 loạt lựu đạn khói (mỗi bên tháp 1 quả) bay ra nổ trên không trước mũi tháp, dựng tường khói dày che khuất tầm nhìn của địch ~15 giây. Mỗi ống chứa 1 quả: mang tối đa bằng số ống (xe tăng đa dụng 2×4 = 8 quả, các xe khác 2×3 = 6 quả), lấy từ kho lựu đạn khói (mua hoặc xem quảng cáo tiếp tế ở mục ĐẠN), bắn quả nào trừ kho quả đó. Khói đa phổ: đang bị khóa mà phóng khói thì địch mất khóa và không khóa lại được tới khi khói tan. Cụm ống bị bắn hỏng thì bên đó hết bắn được.'
+      // xe tăng đa dụng có sẵn ống phóng khói (BUILTIN, không chiếm ô), xe pháo không lắp được (đứng xa phía sau, không cần khói)
+      name: 'Ống phóng lựu khói', icon: 'cloud', cat: 'gear', price: 1500, tanks: ['GATLING', 'SCOUT'],
+      desc: 'Phím G: bắn 1 loạt lựu đạn khói (mỗi bên tháp 1 quả) bay ra nổ trên không trước mũi tháp, dựng tường khói dày che khuất tầm nhìn của địch ~15 giây. Mỗi ống chứa 1 quả: mang tối đa bằng số ống (xe 6 nòng / trinh sát 2×3 = 6 quả; xe tăng đa dụng có sẵn 2×4 = 8 ống, mỗi lần xuất kích được 2 quả miễn phí), lấy từ kho lựu đạn khói (mua hoặc xem quảng cáo tiếp tế ở mục ĐẠN), bắn quả nào trừ kho quả đó. Khói đa phổ: đang bị khóa mà phóng khói thì địch mất khóa và không khóa lại được tới khi khói tan. Cụm ống bị bắn hỏng thì bên đó hết bắn được.'
     },
     camo: {
-      name: 'Lưới ngụy trang', icon: 'leaf', cat: 'gear', price: 1600, tanks: ALL,
+      name: 'Lưới ngụy trang', icon: 'leaf', cat: 'gear', price: 1600, tanks: ['ALL_ROUNDER', 'GATLING', 'SCOUT'],   // xe pháo không ngụy trang được
       desc: 'Phủ kín lá cây & cành lên xe, nhìn như một bụi cây. Khi đứng yên: địch phải tới gần hơn ~35% mới thấy và khóa được, radar chỉ bắt được ở ~60% tầm. Chạy hoặc nổ súng là lộ.'
     },
     fireext: {
@@ -80,6 +81,9 @@
     gear: { name: 'PHỤ KIỆN', icon: 'cpu', slots: UNLIMITED_SLOTS ? catSize('gear') : 2 }
   };
   const SLOTS = CATS.armor.slots + CATS.gear.slots;   // tổng số ô các nhóm
+  // Trang bị có sẵn theo xe (không chiếm ô, không cần mua): xe tăng đa dụng luôn có ống phóng lựu khói
+  const BUILTIN = { ALL_ROUNDER: ['smoke'] };
+  const builtin = (tank, id) => !!(BUILTIN[tank] && BUILTIN[tank].includes(id));
   const EQ_RADAR_RANGE = 600;   // radar lắp thêm (xe trinh sát: 950)
 
   // Đạn cao cấp: mua 1 lần cho 1 xe, luôn dùng. pen: hệ số độ xuyên; splash: hệ số sát thương nổ lan; tandem: đầu nổ kép
@@ -102,13 +106,14 @@
   const smokeItem = (tank) => ({ name: 'Lựu đạn khói', price: 25, pack: 2, max: 2 * SMOKE_TUBES[tank], ad: 4, gear: 'smoke' });
   const AMMO_SHOP = {
     ALL_ROUNDER: { AP: { name: 'Đạn xuyên giáp', price: 45, pack: 5, max: 6, ad: 5 }, HE: { name: 'Đạn nổ mạnh', price: 30, pack: 5, max: 6, ad: 6 }, SMOKE: smokeItem('ALL_ROUNDER') },
-    ARTILLERY: { HE: { name: 'Lựu đạn nổ mạnh 155', price: 40, pack: 5, max: 6, ad: 5 }, CLUSTER: { name: 'Đạn chùm 155', price: 70, pack: 2, max: 4, ad: 3 }, SMOKE: smokeItem('ARTILLERY') },
+    ARTILLERY: { HE: { name: 'Lựu đạn nổ mạnh 155', price: 40, pack: 5, max: 6, ad: 5 }, CLUSTER: { name: 'Đạn chùm 155', price: 70, pack: 2, max: 4, ad: 3 } },
     GATLING: { INCENDIARY: { name: 'Đạn cháy 30mm', price: 3, pack: 50, max: 150, ad: 75 }, SMOKE: smokeItem('GATLING') },
     SCOUT: { INCENDIARY: { name: 'Đạn cháy 12.7mm', price: 1, pack: 50, max: 90, ad: 90 }, ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng', price: 80, pack: 1, max: 3, ad: 3 }, SMOKE: smokeItem('SCOUT') }
   };
   // Đạn đã ngừng bán (xe không còn ô bắn loại này): máy chủ tự hoàn đúng giá cho số còn trong kho rồi xóa khỏi kho
   // (RPG của xe trinh sát: đã thay bằng tên lửa chống tăng). Chỉ hoàn phần mua bằng Bạc, không hoàn phần nhận từ quảng cáo
-  const RETIRED_AMMO = { SCOUT: { RPG: { price: 45 } } };
+  // (lựu đạn khói của xe pháo: xe pháo không còn lắp ống phóng khói)
+  const RETIRED_AMMO = { SCOUT: { RPG: { price: 45 } }, ARTILLERY: { SMOKE: { price: smokeItem('ARTILLERY').price } } };
 
   // QUẢNG CÁO CÓ THƯỞNG (máy chủ kiểm tra): tối đa DAILY lượt / ngày / tài khoản, mỗi lượt cách nhau COOLDOWN_SEC,
   // phải xem ít nhất MIN_SEC giây (mạng quảng cáo thật có quảng cáo ngắn); khung quảng cáo mẫu dài MOCK_SEC giây.
@@ -120,15 +125,16 @@
   }
   // Đạn đặc chủng miễn phí mỗi lần xuất kích: KHÔNG CÒN — ngoài đạn chính (không giới hạn), mọi loại đạn khác phải
   // mua bằng Bạc (đạn đã mua tự mang theo tới mức tối đa mỗi lần xuất kích). Giữ đủ khóa để startLife đặt lại số đạn.
-  // Đạn miễn phí mỗi lần xuất kích (cộng thêm số mua): xe trinh sát luôn có 2 tên lửa để còn đánh được xe giáp
-  const BASE_AMMO = { ALL_ROUNDER: { AP: 0, HE: 0, SMOKE: 0 }, ARTILLERY: { HE: 0, CLUSTER: 0, SMOKE: 0 }, GATLING: { INCENDIARY: 0, SMOKE: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2, SMOKE: 0 } };
+  // Đạn miễn phí mỗi lần xuất kích (cộng thêm số mua): xe trinh sát luôn có 2 tên lửa để còn đánh được xe giáp;
+  // xe tăng đa dụng luôn có 2 đạn xuyên giáp + 2 đạn nổ mạnh + 2 lựu đạn khói (đổi loại đạn theo mục tiêu là sở trường)
+  const BASE_AMMO = { ALL_ROUNDER: { AP: 2, HE: 2, SMOKE: 2 }, ARTILLERY: { HE: 0, CLUSTER: 0 }, GATLING: { INCENDIARY: 0, SMOKE: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2, SMOKE: 0 } };
   // Xe do máy điều khiển không mua sắm: mang cơ số như trước khi có cửa hàng để trận không dễ đi
-  const BOT_AMMO = { ALL_ROUNDER: { AP: 3, HE: 3, SMOKE: 8 }, ARTILLERY: { HE: 4, CLUSTER: 3, SMOKE: 6 }, GATLING: { INCENDIARY: 80, SMOKE: 6 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1, SMOKE: 6 } };   // + 2 tên lửa miễn phí = 3
+  const BOT_AMMO = { ALL_ROUNDER: { AP: 1, HE: 1, SMOKE: 6 }, ARTILLERY: { HE: 4, CLUSTER: 3 }, GATLING: { INCENDIARY: 80, SMOKE: 6 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1, SMOKE: 6 } };   // + đạn miễn phí (BASE_AMMO): trinh sát 3 tên lửa, xe tăng 3 AP / 3 HE / 8 khói
   const AMMO_PROP = { AP: 'apAmmoCount', HE: 'heAmmoCount', CLUSTER: 'clusterAmmoCount', INCENDIARY: 'incendiaryAmmoCount', RPG: 'rpgAmmoCount', ANTI_TANK_MISSILE: 'missileAmmoCount', SMOKE: 'smokeLeft' };
 
   function compatible(id, tank) {
     const m = MODULES[id];
-    if (m) return m.tanks.includes(tank);
+    if (m) return m.tanks.includes(tank) && !builtin(tank, id);
     const p = PREMIUM[id];
     return !!(p && p.tank === tank);
   }
@@ -192,13 +198,13 @@
       .slice(0, 3);
   }
 
-  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, SMOKE_TUBES, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AD, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
+  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AD, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================
   // PHẦN TRONG TRẬN (TRÌNH DUYỆT)
   // ===========================================================================
-  const has = (u, id) => !!(u && u.kit && u.kit.m && u.kit.m.indexOf(id) >= 0);
+  const has = (u, id) => !!(u && ((u.kit && u.kit.m && u.kit.m.indexOf(id) >= 0) || builtin(u.tankType, id)));
   const lost = (u, tag) => !!(u && u.dmg && u.dmg.lost && u.dmg.lost.has(tag));
   const APS_CHARGES = 2;
 
@@ -236,6 +242,8 @@
       if (E.local) extra = Math.max(0, Math.min(extra, (E.stock[k] || 0) - (E.used[k] || 0)));
       // vật tư của mô-đun (lựu đạn khói): chỉ nạp khi có lắp mô-đun đó
       if (shop[k] && shop[k].gear && !has(u, shop[k].gear)) extra = 0;
+      // lựu đạn khói: tổng (miễn phí + mua) không vượt số ống phóng 2 bên
+      if (k === 'SMOKE') extra = Math.min(extra, Math.max(0, 2 * smokeMax(u) - (base[k] || 0)));
       E.loaded[k] = extra;
       u[AMMO_PROP[k]] = base[k] + extra;
     }
