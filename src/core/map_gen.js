@@ -201,17 +201,28 @@ const MapGen = (() => {
     const angN = (x, z, f, o) => { const d = Math.hypot(x, z) || 1; return on(x / d * f + o, z / d * f - o * 0.7); };
     const coastPhi = on(0.37, 9.1) * Math.PI * 2;   // hướng trục dài của đảo
     // CHÂN VÀNH NÚI = ranh giới thung lũng chiến trường: không phải vòng tròn — vuông bo góc theo khung bản đồ (theo trục
-    // gần hơn, theo đường chéo lùi xa) + lượn sóng nhiều tầng (vịnh lõm vào, mũi núi lấn ra). Theo trục trong khoảng
-    // ~0.75..0.9 nửa bản đồ: không lấn vào cứ điểm / khu xuất kích, không chạm mép giữ xe
+    // gần hơn, theo đường chéo lùi xa) + lượn sóng nhiều tầng + mũi núi lấn sâu ở chỗ ngẫu nhiên. Không lấn vào cứ
+    // điểm / khu xuất kích, không chạm mép giữ xe
     function rimFoot(x, z) {
       const d = Math.hypot(x, z) || 1;
+      // bẻ cong toạ độ trước khi lấy nhiễu: đường chân núi méo theo vùng, không toả đều từ tâm
+      const wx = x + 0.45 * d * on(x / d * 0.9 + 4.4, z / d * 0.9 - 2.2), wz = z + 0.45 * d * on(x / d * 0.9 - 7.1, z / d * 0.9 + 1.3);
       const diag = Math.min(Math.abs(x), Math.abs(z)) / d / 0.7071;   // 0 theo trục .. 1 theo đường chéo
-      const f = HALF * (0.84 + 0.2 * diag * diag)
-        + 300 * angN(x, z, 1.3, 11.3) + 190 * angN(x, z, 3.1, 3.1) + 70 * angN(x, z, 7.3, 5.5) + 18 * on(x * 0.004 + 2, z * 0.004);
+      let f = HALF * (0.84 + 0.2 * diag * diag)
+        + 300 * angN(wx, wz, 1.3, 11.3) + 190 * angN(wx, wz, 3.1, 3.1) + 70 * angN(wx, wz, 7.3, 5.5) + 18 * on(x * 0.004 + 2, z * 0.004);
+      // vài mũi núi lấn sâu vào lòng thung lũng ở chỗ ngẫu nhiên (mỗi map khác nhau)
+      f -= 1100 * Math.pow(Math.max(0, angN(wx, wz, 2.4, 6.6) - 0.08), 1.3);
+      // không lấn vào cứ điểm / khu xuất kích (căn cứ nằm trên trục z): max mềm với bán kính tối thiểu theo hướng
+      const minA = 1850 + 260 * Math.pow(Math.abs(z) / d, 6);
+      f = minA + 90 * Math.log(Math.exp((f - minA) / 90) + 1);
       // cách mép giữ xe (±(HALF - 60)) ít nhất ~200 theo hướng này: min mềm, không gãy góc
-      const lim = (HALF - 60) / Math.max(Math.abs(x), Math.abs(z), 1e-6) * d - 200;
+      const lim = boxDist(x, z) - 200;
       return -120 * Math.log(Math.exp(-f / 120) + Math.exp(-lim / 120));
     }
+    // khoảng cách từ tâm tới mép giữ xe (hình vuông ±(HALF - 60)) theo hướng (x, z)
+    function boxDist(x, z) { return (HALF - 60) / Math.max(Math.abs(x), Math.abs(z), 1e-6) * Math.hypot(x, z); }
+    // đồng bằng ven biển chỉ bắt đầu sau chân núi + 900 và sau đỉnh vành ở góc bản đồ
+    function coastIn(x, z) { return Math.max(rimFoot(x, z) + 900, boxDist(x, z) + 600); }
     function rimRaise(x, z) {
       const d = Math.hypot(x, z), foot = rimFoot(x, z);
       const s = d - foot;
@@ -224,7 +235,8 @@ const MapGen = (() => {
       // sống núi, yên ngựa, khe suối: gồ ghề tăng dần khi lên cao
       r *= lerp(1, 0.35 + 1.25 * ridged(on, x * 0.0013, z * 0.0013, 5), smooth(60, 700, s));
       // qua đỉnh vành thì đổ xuống phía ngoài
-      const crest = foot + 1150 + 260 * angN(x, z, 2.3, 5.7) + 170 * angN(x, z, 5.9, 1.9);
+      // đỉnh vành luôn ngoài mép giữ xe (kể cả ở góc bản đồ): không leo qua được sườn ngoài xuống bờ biển
+      const crest = Math.max(foot + 1150, boxDist(x, z) + 380) + 260 * angN(x, z, 2.3, 5.7) + 170 * angN(x, z, 5.9, 1.9);
       return r * (1 - smooth(crest, crest + 1300, d));
     }
     function outerLand(x, z, h) {
@@ -244,7 +256,7 @@ const MapGen = (() => {
         if (t >= 0) p = 0.2 - 6 * smooth(0, 60 + bw, t) - 32 * smooth(150, 900, t) + fbm(on, x * 0.001, z * 0.001, 2) * 6 * smooth(300, 900, t);
         else if (t > -bw) p = 0.2 + 4.2 * Math.pow(-t / bw, 1.3) + on(x * 0.03, z * 0.03) * 0.15;   // bãi cát
         else p = 4.4 + 9 * smooth(-bw, -bw - pw, t) + Math.max(0, on(x * 0.012 + 2, z * 0.012)) * 4 * smooth(-bw, -bw - 80, t);   // cồn cát, đồng cỏ ven biển
-        h = lerp(h, p, smooth(-bw - pw - 120 - 450 * smooth(-0.3, 0.3, bn), -bw - pw, t) * smooth(rimFoot(x, z) + 900, rimFoot(x, z) + 1250, d));
+        h = lerp(h, p, smooth(-bw - pw - 120 - 450 * smooth(-0.3, 0.3, bn), -bw - pw, t) * smooth(coastIn(x, z), coastIn(x, z) + 350, d));
         if (d > 4500 + O0) {
           const fade = smooth(4500 + O0, 5300 + O0, d);
           if (OUT.far === 'karst') {
