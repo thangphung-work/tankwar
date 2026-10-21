@@ -1275,9 +1275,10 @@ const Landmarks = (() => {
       for (const x of [-30, -6, 18]) { K.box('louver', pf + x, 28, pr - 22.3, 14, 9, 0.6); K.box('steelDark', pf + x, 28, pr - 22.1, 15, 10, 0.3); }
       K.box('shutter', pf + 34, 12, pr - 22.4, 12, 22, 0.6); K.cbox('steelGray', pf + 34, 24, pr - 23.6, 14, 2.4, 2.4, 0.3);
       K.box('steelGray', pf - 40, 9, pr - 22.4, 6, 16, 0.6);
-      // 2 ống cáp/nhiên liệu ốp sát tường trên giá đỡ, đầu ống chui vào tường
-      for (const y of [6, 9.5]) K.add('steelGray', new THREE.CylinderGeometry(0.8, 0.8, 60, 10), M4(pf - 2, y, pr - 23.2, 0, 0, Math.PI / 2));
-      for (let x = -30; x <= 26; x += 8) K.add('steelDark', new THREE.BoxGeometry(0.6, 6, 1.4), M4(pf + x, 7.8, pr - 22.6));
+      // 3 ống cáp đứng từ hố cáp dưới đất chui vào tường (có hộp đấu nối), kẹp ống
+      for (const x of [-30, -27.6, -25.2]) { K.cyl('steelGray', pf + x, 0, pr - 22.8, 0.7, 0.7, 24, 8); for (const y of [6, 14, 22]) K.add('steelDark', new THREE.BoxGeometry(1.8, 0.5, 1.6), M4(pf + x, y, pr - 22.6)); }
+      K.cbox('steelGray', pf - 27.6, 26, pr - 23.4, 9, 6, 2.4, 0.3);
+      K.cbox('concDark', pf - 27.6, 0.3, pr - 25, 10, 0.8, 5, 0.2);
       for (const s2 of [-1, 1]) K.cbox('concDark', pf, 41.2, pr + s2 * 21.5, 86, 2.4, 2, 0.4);
       for (const x of [-20, 20]) {
         K.cyl('steelGray', pf + x, 40, pr + 10, 6, 6, 12, 16); K.cyl('steelDark', pf + x, 52, pr + 10, 6.3, 6.3, 1, 16);
