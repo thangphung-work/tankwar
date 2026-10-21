@@ -438,19 +438,15 @@ class HUDController {
 
     const stealthBanner = document.getElementById('stealth-banner');
     const stealthOverlay = document.getElementById('stealth-camo-overlay');
-    const isPlayerInBush = !this.game.player.isDead && this.game.player.isInBush;
-    const isPlayerRevealed = isPlayerInBush && this.game.player.revealTimer > 0;
+    const BB = typeof TeamIntel !== 'undefined' && TeamIntel.bushBanner ? TeamIntel.bushBanner(this.game.player) : null;
+    const isPlayerInBush = !!BB && BB.cover;
+    const isPlayerRevealed = isPlayerInBush && BB.warn;
 
     if (stealthBanner) {
-      if (isPlayerInBush) {
+      if (BB) {
         stealthBanner.classList.remove('hidden');
-        if (isPlayerRevealed) {
-          stealthBanner.innerHTML = `<span class="stealth-pulse-dot red"></span> <i class="ti ti-alert-triangle" aria-hidden="true"></i> BỊ LỘ VỊ TRÍ DO VỪA BẮN PHÁO (${this.game.player.revealTimer.toFixed(1)}S)`;
-          stealthBanner.classList.add('revealed');
-        } else {
-          stealthBanner.innerHTML = `<span class="stealth-pulse-dot green"></span> <i class="ti ti-leaf" aria-hidden="true"></i> ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN`;
-          stealthBanner.classList.remove('revealed');
-        }
+        stealthBanner.innerHTML = `<span class="stealth-pulse-dot ${BB.warn ? 'red' : 'green'}"></span> ${BB.html}`;
+        stealthBanner.classList.toggle('revealed', BB.warn);
       } else {
         stealthBanner.classList.add('hidden');
       }
@@ -679,7 +675,9 @@ class HUDController {
             this.game.player.azimuth, this.game.player.elevation, this.game.player.charge,
             this.game.terrain, this.game.player
           );
-          const distStr = pred ? ` // ĐIỂM RƠI: ${pred.distance}M (${pred.flightTime}S)` : '';
+          // flightTime tính theo giây mô phỏng (= giây thật x bulletSpeedMultiplier) -> đổi về giây thật
+          const fT = pred ? (pred.flightTime || 0) / ((this.ballistics && this.ballistics.bulletSpeedMultiplier) || 1) : 0;
+          const distStr = pred ? ` // ĐIỂM RƠI: ${pred.distance}M (${fT.toFixed(1)}S)` : '';
           if (this.game.player.elevation < 0) {
             fireModeHint.textContent = `[HẠ NÒNG ÂM]${distStr}`;
             fireModeHint.style.color = '#8fc46f';

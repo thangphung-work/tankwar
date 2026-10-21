@@ -1,13 +1,16 @@
 /**
  * TÌNH BÁO CHIẾN TRƯỜNG (sương mù chiến tranh)
  * - Mỗi xe chỉ thấy địch trong TẦM NHÌN của chính nó (xe trinh sát nhìn xa & rộng hơn xe tăng thường).
- * - Xe núp trong bụi rậm KHÔNG tàng hình: chỉ bị phát hiện ở cự ly ngắn hơn — mắt thường trong BUSH_SPOT,
- *   radar trong BUSH_RADAR x bán kính radar (vừa nổ súng -> lộ vị trí, tầm phát hiện trở lại bình thường).
+ * - Bụi rậm che tùy loại xe (BUSH_COVER): xe trinh sát núp thật (mắt thường chỉ thấy trong BUSH_SPOT, radar 40% tầm);
+ *   xe tăng / 6 nòng chỉ làm radar địch phải vào gần hơn; pháo tự hành không núp bụi được.
+ *   Vừa nổ súng -> lộ vị trí, tầm phát hiện trở lại bình thường.
  * - Xe có radar (xe trinh sát): ăng-ten radar quay tròn thật, mỗi vòng quét đi qua hướng nào thì bắt mục tiêu
  *   ở hướng đó (kể cả xe núp bụi, ở cự ly đã rút ngắn) trong bán kính radar.
  * - Xe trinh sát KHÓA mục tiêu đang nằm trong vùng radar -> liên tục BÁO VỊ TRÍ cho đồng đội (bản đồ, khung 3D,
  *   đồng đội khóa & bắn được mục tiêu đó, kể cả pháo tự hành bắn xa ngoài tầm nhìn).
  * - Radar bị bắn hỏng (mất cụm cảm biến) -> mất toàn bộ chức năng radar.
+ * - Drone trinh sát của pháo tự hành đang bay: xe địch trong DRONE_SIGHT quanh hình chiếu drone bị lộ cho cả phe
+ *   (danh sách drone của DroneAir — game.airDroneList; máy chủ lọc tầm nhìn khớp server_auth.js DRONE_SIGHT).
  */
 const TeamIntel = (() => {
   // Tầm nhìn trực tiếp (kính ngắm / quan sát bằng mắt) theo loại xe — 1 đơn vị game hiển thị là "1 m"
@@ -28,6 +31,14 @@ const TeamIntel = (() => {
   // nhìn xe tăng 520). Radar bắt xe núp bụi trong 70% bán kính (trinh sát 950 -> 665, radar lắp thêm 600 -> 420).
   const BUSH_SPOT = 260;
   const BUSH_RADAR = 0.7;
+  // Bụi che theo loại xe (khớp server_auth.js BUSH_COVER):
+  //  - xe trinh sát: núp bụi thật sự — mắt thường chỉ thấy trong BUSH_SPOT, radar chỉ bắt được trong 40% bán kính
+  //  - xe tăng / xe 6 nòng: xe to, bụi không che được mắt — chỉ làm radar địch phải vào gần hơn (70% bán kính)
+  //  - pháo tự hành: thân xe tải + nòng dài, không núp bụi được (không có mục nào)
+  // spot: tầm mắt thường thấy được xe núp bụi (0 = bụi không che mắt); radar: hệ số bán kính radar bắt được
+  const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
+  // Drone trinh sát đang bay soi thấy xe địch trong bán kính này quanh hình chiếu drone (khớp server_auth.js DRONE_SIGHT)
+  const DRONE_SIGHT = 420;
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -66,8 +77,20 @@ const TeamIntel = (() => {
     }
     return r;
   }
-  function inBushHidden(t) {
-    return !!t.isInBush && (t.revealTimer || 0) <= 0;
+  // Bụi đang che xe t (đang trong bụi, chưa vừa nổ súng, loại xe núp được): { spot, radar } | null
+  function bushCover(t) {
+    if (!t || !t.isInBush || (t.revealTimer || 0) > 0) return null;
+    return BUSH_COVER[t.tankType] || null;
+  }
+
+  // Dòng báo trạng thái bụi cho xe người chơi: { html, warn, cover } | null (không ở trong bụi)
+  function bushBanner(u) {
+    if (!u || u.isDead || !u.isInBush) return null;
+    if ((u.revealTimer || 0) > 0) return { html: `BỊ LỘ VỊ TRÍ DO VỪA KHAI HỎA · ${u.revealTimer.toFixed(1)}S`, warn: true, cover: true };
+    const bc = BUSH_COVER[u.tankType];
+    if (!bc) return { html: 'XE PHÁO KHÔNG NÚP BỤI ĐƯỢC · ĐỊCH VẪN THẤY RÕ', warn: true, cover: false };
+    if (!bc.spot) return { html: 'TRONG BỤI · ĐỊCH VẪN NHÌN THẤY, RADAR ĐỊCH PHẢI VÀO GẦN MỚI BẮT ĐƯỢC', warn: false, cover: true };
+    return { html: 'ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN', warn: false, cover: true };
   }
 
   // Thấy trực tiếp: trong tầm nhìn (xe núp bụi: chỉ trong BUSH_SPOT)
@@ -76,7 +99,8 @@ const TeamIntel = (() => {
     const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
     // lưới ngụy trang: phải tới gần hơn mới nhận ra xe đứng yên / chạy chậm
     let r = sightRange(viewer);
-    if (inBushHidden(t)) r = Math.min(r, BUSH_SPOT);
+    const bc = bushCover(t);
+    if (bc && bc.spot) r = Math.min(r, bc.spot);
     if (d > r * (EQ ? EQ.camoFactor(t) : 1)) return false;
     // màn khói chắn giữa 2 xe: không nhìn thấy (radar trinh sát vẫn bắt được — xem radarContact)
     if (EQ && EQ.smokeBlocks(viewer.x, viewer.z, t.x, t.z)) return false;
@@ -99,6 +123,21 @@ const TeamIntel = (() => {
     return v;
   }
 
+  // Drone trinh sát của phe đang bay soi thấy xe t (camera nhìn từ trên xuống, báo cho cả phe). Xe trinh sát núp bụi
+  // chỉ lộ khi drone ở gần (BUSH_COVER.spot)
+  function droneSees(team, t) {
+    if (!game || !game.airDroneList || !t) return false;
+    const list = game.airDroneList();
+    if (!list.length) return false;
+    const bc = bushCover(t);
+    const r = bc && bc.spot ? Math.min(DRONE_SIGHT, bc.spot) : DRONE_SIGHT;
+    for (const dr of list) {
+      if (dr.team !== team || !game.droneIsAirborne(dr)) continue;
+      if (Math.hypot(t.x - dr.x, t.z - dr.z) <= r) return true;
+    }
+    return false;
+  }
+
   function radarContact(viewer, t) {
     if (!hasRadar(viewer) || !viewer.radarContacts) return null;
     const c = viewer.radarContacts.get(t.id);
@@ -119,6 +158,7 @@ const TeamIntel = (() => {
     if (t.isDead) return true;     // xác xe thì ai cũng thấy
     if (t._netHidden) return false;   // máy chủ không gửi vị trí (khuất tầm nhìn cả phe)
     if (seesDirect(viewer, t)) return true;
+    if (droneSees(viewer.team, t)) return true;
     if (radarContact(viewer, t)) return true;
     if (reportOf(viewer.team, t)) return true;
     return false;
@@ -129,7 +169,7 @@ const TeamIntel = (() => {
     if (!viewer || !t) return null;
     if (t.team === viewer.team || t.isDead) return 'direct';
     if (t._netHidden) return null;
-    if (seesDirect(viewer, t)) return 'direct';
+    if (seesDirect(viewer, t) || droneSees(viewer.team, t)) return 'direct';
     if (radarContact(viewer, t)) return 'radar';
     if (reportOf(viewer.team, t)) return 'report';
     return null;
@@ -194,8 +234,9 @@ const TeamIntel = (() => {
       const d = Math.hypot(e.x - u.x, e.z - u.z);
       // lưới ngụy trang lá cây + đứng yên: radar chỉ bắt được ở cự ly gần hơn
       const camoK = typeof Equipment !== 'undefined' && Equipment.camoRadarFactor ? Equipment.camoRadarFactor(e) : 1;
-      // núp bụi (chưa vừa nổ súng): radar chỉ bắt được trong BUSH_RADAR bán kính
-      if (d > R * camoK * (inBushHidden(e) ? BUSH_RADAR : 1)) continue;
+      // núp bụi (chưa vừa nổ súng): radar chỉ bắt được ở cự ly gần hơn, tùy loại xe (BUSH_COVER)
+      const bc = bushCover(e);
+      if (d > R * camoK * (bc ? bc.radar : 1)) continue;
       // Tia quét vừa đi qua hướng mục tiêu (hoặc mục tiêu sát bên xe)
       let rel = bearing(u, e) - prev;
       if (rel < 0) rel += TWO_PI;
@@ -206,7 +247,7 @@ const TeamIntel = (() => {
         // màn hình radar của xe mình: vết mới hiện lên -> "píp" khẽ (không kêu lại cho vết đang theo dõi)
         if (u.isPlayer && !u.radarContacts.has(e.id) && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.playRadarContact) window.soundEngine.playRadarContact(d / radarRange(u));
         const c = u.radarContacts.get(e.id) || {};
-        c.x = e.x; c.z = e.z; c.t = time; c.inBush = !!e.isInBush; c.unit = e;
+        c.x = e.x; c.z = e.z; c.t = time; c.inBush = !!bc; c.unit = e;
         u.radarContacts.set(e.id, c);
       }
     }
@@ -299,6 +340,16 @@ const TeamIntel = (() => {
         ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + Math.cos(a) * R, s.y + Math.sin(a) * R); ctx.stroke();
       }
     }
+    // Drone trinh sát phe mình đang bay: vòng nét đứt = vùng drone soi lộ xe địch cho cả phe
+    // (biểu tượng drone do DroneAir.drawDronesOnMap vẽ)
+    if (game && game.airDroneList) {
+      for (const r of game.airDroneList()) {
+        if (r.team !== viewer.team || !game.droneIsAirborne(r)) continue;
+        const s = toScreen(r.x, r.z);
+        ctx.strokeStyle = 'rgba(125,211,252,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+        ctx.beginPath(); ctx.arc(s.x, s.y, DRONE_SIGHT * pxPerUnit, 0, TWO_PI); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
     // Vị trí cuối cùng của địch vừa mất dấu
     for (const g of ghosts.values()) {
       const s = toScreen(g.x, g.z);
@@ -365,8 +416,8 @@ const TeamIntel = (() => {
   }
 
   return {
-    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR,
-    bind, reset, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
+    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, DRONE_SIGHT,
+    bind, reset, bushCover, bushBanner, droneSees, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
     get time() { return time; },
     get reports() { return reports; }
   };

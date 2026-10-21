@@ -27,8 +27,12 @@ const EQ_RADAR_RANGE = 600;   // radar lắp thêm (Equipment.EQ_RADAR_RANGE)
 const MARGIN = 120;            // nới tầm nhìn: gửi sớm 1 chút để xe hiện ra mượt, không giật
 const CLOSE = 260;             // xe ở rất gần luôn được gửi (va chạm, bắn mò cự ly gần)
 const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;
-// Bụi rậm chỉ thu ngắn tầm phát hiện (khớp TeamIntel.BUSH_SPOT = CLOSE, TeamIntel.BUSH_RADAR)
+// Bụi rậm chỉ thu ngắn tầm phát hiện, tùy loại xe (khớp TeamIntel.BUSH_COVER; BUSH_SPOT = CLOSE):
+// trinh sát núp thật (mắt thường BUSH_SPOT, radar 40%), xe tăng / 6 nòng chỉ giảm tầm radar, pháo tự hành không núp được
 const BUSH_SPOT = 260, BUSH_RADAR = 0.7;
+const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
+// Drone trinh sát của xe pháo đang bay: soi thấy xe địch trong DRONE_SIGHT quanh hình chiếu drone (khớp TeamIntel.DRONE_SIGHT)
+const DRONE_SIGHT = 420, DRONE_TTL_MS = 1500;
 const REVEAL_MS = 4500;        // vừa nổ súng: lộ vị trí (bụi / rừng không che) — dài hơn thời gian lộ phía máy khách (tối đa 4 s)
 const SPOT_MS = 4500;          // báo cáo vị trí của trinh sát
 const FAR = 1500;              // xa hơn mức này: gửi nửa tần số
@@ -127,6 +131,7 @@ function initMatch(room, d, fromId) {
     S: [],                 // trạng thái đầy đủ từng xe (lượng tử hóa như gói REMOTE_UNIT_SYNC)
     meta: [],              // { lastT, hpAuth, deadAt, revealUntil, dmg: [[t, amount]], tick }
     spotted: { BLUE: new Map(), RED: new Map() },   // xe -> hết hạn báo cáo
+    drones: new Map(),     // xe pháo -> { x, z, until } drone đang bay
     vis: { BLUE: new Set(), RED: new Set() },
     sent: new Map(),       // máy nhận -> Map(xe -> trạng thái đã gửi | {hid:1})
     dirty: new Set(),      // xe có trạng thái mới chờ gửi ở nhịp tới
@@ -169,6 +174,12 @@ function updateVisibility(M, now) {
   for (const team of ['BLUE', 'RED']) {
     const set = new Set();
     const mine = M.roster.filter(r => r.team === team && M.S[r.i] && !(M.S[r.i].f & F_DEAD));
+    const drones = [];
+    for (const [i, dr] of M.drones) {
+      if (dr.until < now) { M.drones.delete(i); continue; }
+      const r = M.byIdx.get(i);
+      if (r && r.team === team && M.S[i] && !(M.S[i].f & F_DEAD)) drones.push(dr);
+    }
     for (const e of M.roster) {
       if (e.team === team) continue;
       const s = M.S[e.i];
@@ -178,17 +189,22 @@ function updateVisibility(M, now) {
       if (sp && sp > now) { set.add(e.i); continue; }
       const ex = s.x / 10, ez = s.z / 10, m = meta(M, e.i), revealed = m.revealUntil > now;
       const inForest = !revealed && densityAt(M.dens, ex, ez) >= FOREST_DENSE;
-      // núp bụi chưa nổ súng: radar bắt được ở BUSH_RADAR bán kính, mắt thường trong BUSH_SPOT (+ MARGIN để hiện mượt)
-      const bush = !revealed && (s.f & F_BUSH);
+      // núp bụi chưa nổ súng: radar / mắt thường phải vào gần hơn tùy loại xe (BUSH_COVER; + MARGIN để hiện mượt)
+      const bush = !revealed && (s.f & F_BUSH) ? BUSH_COVER[e.type] || null : null;
       // cờ ngụy trang chỉ tin khi xe có lắp lưới và thật sự đứng yên (chống gửi cờ giả để tàng hình khi chạy)
       const camo = !revealed && (s.f & F_CAMO) && e.cm && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08;
-      const rk = (bush ? BUSH_RADAR : 1) * (camo ? CAMO_RADAR : 1), sk = camo ? CAMO_SIGHT : 1;
+      const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = camo ? CAMO_SIGHT : 1;
+      // drone trinh sát phe mình soi từ trên xuống (bụi che trinh sát / rừng rậm che như mắt thường)
+      if (drones.some(dr => {
+        const d = Math.hypot(ex - dr.x, ez - dr.z);
+        return d < DRONE_SIGHT + MARGIN && !(bush && bush.spot && d > bush.spot + MARGIN) && !(inForest && d > FOREST_SPOT + MARGIN);
+      })) { set.add(e.i); continue; }
       for (const u of mine) {
         const v = M.S[u.i], vx = v.x / 10, vz = v.z / 10, d = Math.hypot(ex - vx, ez - vz);
         if (d < CLOSE) { set.add(e.i); break; }
         if (u.type === 'SCOUT' && d < RADAR_RANGE * rk) { set.add(e.i); break; }
         if (u.rd && d < EQ_RADAR_RANGE * rk) { set.add(e.i); break; }
-        if (d > (bush ? Math.min(SIGHT[u.type] * sk, BUSH_SPOT) : SIGHT[u.type] * sk) + MARGIN) continue;
+        if (d > (bush && bush.spot ? Math.min(SIGHT[u.type] * sk, bush.spot) : SIGHT[u.type] * sk) + MARGIN) continue;
         if (inForest && d > FOREST_SPOT + MARGIN) continue;
         if (M.dens && denseLength(M.dens, vx, vz, ex, ez, FOREST_LOS + 60) > FOREST_LOS + 60) continue;
         set.add(e.i); break;
@@ -439,8 +455,15 @@ function handle(room, client, msg) {
     }
     case 'DRONE': {
       // trạng thái drone trinh sát: chỉ máy điều khiển xe pháo đó
-      const d = msg.d || {}, r = M.byIdx.get(d.i);
+      const d = msg.d || {}, r = M.byIdx.get(d.i), st = M.S[d.i];
       if (!r || r.type !== 'ARTILLERY' || ownerOf(room, r) !== client.id) return true;
+      // drone đang bay (s: 1 cất cánh / 2 bay / 3 bay về; x, z nhân 10): ghi vị trí để drone soi xe địch cho cả phe
+      // (updateVisibility). Drone không bay quá xa xe (tầm tín hiệu) — xa hơn coi như không soi
+      const up = d.s >= 1 && d.s <= 3 && Number.isFinite(d.x) && Number.isFinite(d.z);
+      const dx = up ? d.x / 10 : 0, dz = up ? d.z / 10 : 0;
+      if (up && st && !(st.f & F_DEAD) && Math.hypot(dx - st.x / 10, dz - st.z / 10) <= (MAX_RANGE.ARTILLERY || 3200) + 600) {
+        M.drones.set(d.i, { x: dx, z: dz, until: now + DRONE_TTL_MS });
+      } else M.drones.delete(d.i);
       return false;
     }
     case 'DRONE_HIT': {
@@ -468,6 +491,7 @@ function handle(room, client, msg) {
     case 'DRONE_DOWN': {
       const d = msg.d || {}, r = M.byIdx.get(d.o);
       if (!r || r.type !== 'ARTILLERY' || ownerOf(room, r) !== client.id) return true;
+      M.drones.delete(d.o);   // drone rơi: thôi soi
       return false;
     }
     case 'SPOT': {
