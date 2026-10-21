@@ -2,6 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "yarn-dev",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
       "name": "game",
       "runtimeExecutable": "node",
       "runtimeArgs": [

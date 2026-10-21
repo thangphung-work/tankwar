@@ -31,8 +31,9 @@ const MapGen = (() => {
     { id: 'B', x: 0, z: -400 * K, angle: Math.PI / 2, hill: 96 },
     { id: 'C', x: 620 * K, z: 330 * K, angle: Math.PI * 7 / 6, hill: 58 }
   ];
-  // CÔNG TRÌNH BỐI CẢNH lớn ở giữa 3 cứ điểm (landmarks.js dựng hình): mỗi bản đồ 1 công trình, loại chọn theo seed —
-  // hầm phóng (silo) tên lửa hạt nhân / hầm nghiên cứu vũ khí sinh học / trận địa tên lửa phòng không.
+  // CÔNG TRÌNH BỐI CẢNH lớn ở giữa 3 cứ điểm (landmarks.js + src/gameplay/landmarks/*.js dựng hình): mỗi bản đồ 1 công
+  // trình cố định (MAP_LANDMARK) — đảo / sông hồ: căn cứ tên lửa hạt nhân, sa mạc: trận địa phòng không, thành phố: trạm
+  // biến áp cao thế, rừng: hầm vũ khí sinh học, cao nguyên: đài điều khiển radar vệ tinh.
   // Đặt tại trọng tâm tam giác A B C; mặt trước nhìn về cứ điểm B. angle: hướng mặt trước (cos -> x, sin -> z);
   // hu / hv: nửa dài mặt bằng san nền theo trục trước-sau / ngang
   // (8 đơn vị = 1 m: căn cứ hầm phóng 80 x 130 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
@@ -41,7 +42,19 @@ const MapGen = (() => {
     z: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.z, 0) / 3),
     angle: -Math.PI / 2
   };
-  const LANDMARK_KINDS = { nuke: { hu: 320, hv: 520, back: 60 }, bio: { hu: 300, hv: 470, back: 50 }, sam: { hu: 320, hv: 520, back: 60 } };
+  const LANDMARK_KINDS = {
+    // căn cứ hầm phóng tên lửa hạt nhân
+    nuke: { hu: 320, hv: 520, back: 60 },
+    // hầm nghiên cứu vũ khí sinh học
+    bio: { hu: 300, hv: 470, back: 50 },
+    // trận địa tên lửa phòng không
+    sam: { hu: 320, hv: 520, back: 60 },
+    // trạm biến áp / phát điện cao thế
+    power: { hu: 320, hv: 520, back: 60 },
+    // đài điều khiển radar vệ tinh
+    radar: { hu: 320, hv: 520, back: 60 }
+  };
+  const MAP_LANDMARK = { RIVER_LAKE: 'nuke', DESERT: 'sam', URBAN: 'power', JUNGLE: 'bio', HIGHLAND: 'radar' };
   let landmarkKind = null;          // null = theo seed; đặt cố định để thử (setLandmark)
   const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
   let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
@@ -133,7 +146,7 @@ const MapGen = (() => {
     const CAP = SH ? STRONGHOLD_SITES.map(c => ({ x: c.x, z: c.z })) : CAPTURE;
     const keyR = SH ? 345 : 110;   // bán kính cấm đặt cây / nhà / đá quanh cứ điểm
     // Công trình bối cảnh (chỉ bố cục 3 cứ điểm): G (cốt san nền) tính sau khi khắc đường
-    const lmKind = LANDMARK_KINDS[landmarkKind] ? landmarkKind : ['nuke', 'bio', 'sam'][Math.floor(mulberry32((seed ^ 0x1a2d9c3) >>> 0)() * 3)];
+    const lmKind = LANDMARK_KINDS[landmarkKind] ? landmarkKind : MAP_LANDMARK[type];
     // back: lùi tâm công trình ra sau (xa cứ điểm B mà mặt trước nhìn về) cho mặt bằng lớn không lấn chân đồi B
     const lmFx = Math.cos(LANDMARK_SITE.angle), lmFz = Math.sin(LANDMARK_SITE.angle), lmBack = LANDMARK_KINDS[lmKind].back || 0;
     const landmarks = SH ? [landmarkDetail(Object.assign({ kind: lmKind }, LANDMARK_SITE, LANDMARK_KINDS[lmKind],
@@ -1223,23 +1236,8 @@ const MapGen = (() => {
   // Hệ toạ độ cục bộ: f theo hướng mặt trước (angle), r vuông góc (-sin, cos), cao độ tính từ cốt san nền G
   // ---------------------------------------------------------------------------
   function landmarkDetail(L) {
-    if (L.kind === 'nuke') {
-      // gò silo (kiểu Titan II): mặt bằng bệ bê tông nửa cỡ hf x hr cao h (4 m) trên gò đất, ta-luy run; giếng phóng
-      // bán kính shaft và 2 ống xả (tâm, nửa cỡ) khoét xuyên gò xuống tới cốt sân
-      // lcc: gò đất phủ trung tâm điều khiển phóng ngầm (nửa cỡ hf x hr, cao h, ta-luy run 3 phía), mặt tiền +f thẳng đứng
-      // berm: ụ đất chống xe dọc mép khu đất (cao, rộng, cách mép), chừa cổng |r| < gate ở cạnh trước
-      L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]],
-        lcc: { f: -150, r: -270, hf: 60, hr: 56, h: 48, run: 30 }, berm: { h: 12, w: 11, inset: 11, gate: 52 } };   // ụ đất sát mép (0..22), chừa dải phẳng trước rào ngoài cho hàng nhím thép
-    } else if (L.kind === 'bio') {
-      // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
-      // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
-      L.mound = { fc: -80, af: 150, ar: 200, h: 72, cut: 80, face: 10 };
-    } else if (L.kind === 'sam') {
-      // trận địa S-125 Pechora: 4 bệ phóng 5P73 (mỗi bệ 4 tên lửa) quanh trạm radar dẫn bắn ở giữa, mỗi bệ nằm trong kè đất
-      // móng ngựa cao 1.75 m, miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
-      L.launchers = [0, 1, 2, 3].map(k => { const a = Math.PI / 4 + k * Math.PI / 2, f = Math.cos(a) * 175, r = Math.sin(a) * 300; return { f, r, az: Math.atan2(r, f) }; });
-      L.berm = { r: 46, w: 14, h: 14, gap: 0.7 };
-    }
+    const D = { nuke: detailNuke, bio: detailBio, sam: detailSam, power: detailPower, radar: detailRadar }[L.kind];
+    if (D) D(L);
     return L;
   }
   // Độ cao đắp thêm trên cốt san nền tại (f, r)
@@ -1254,40 +1252,80 @@ const MapGen = (() => {
     return Math.max(landmarkMoundCore(L, f, r), perimBerm(L, f, r));
   }
   function landmarkMoundCore(L, f, r) {
-    if (L.silo) {
-      const S = L.silo, df = f - S.f, dr = r - S.r;
-      const d = Math.hypot(Math.max(0, Math.abs(df) - S.hf), Math.max(0, Math.abs(dr) - S.hr));
-      let h = S.h * (1 - smooth(0, S.run, d));
-      // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
-      h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
-      for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
-      // gò trung tâm điều khiển: cắt thẳng ở mặt tiền (dải chuyển cao độ nằm trong bề dày tường mặt tiền / tường cánh)
-      const C = S.lcc, pf = f - C.f, pr = r - C.r;
-      if (pf < C.hf - 22) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
-      return h;
+    const M = { nuke: moundNuke, bio: moundBio, sam: moundSam, power: moundPower, radar: moundRadar }[L.kind];
+    return M ? M(L, f, r) : 0;
+  }
+
+  // ===== CĂN CỨ HẦM PHÓNG TÊN LỬA HẠT NHÂN (đảo / sông hồ) =====
+  function detailNuke(L) {
+    // gò silo (kiểu Titan II): mặt bằng bệ bê tông nửa cỡ hf x hr cao h (4 m) trên gò đất, ta-luy run; giếng phóng
+    // bán kính shaft và 2 ống xả (tâm, nửa cỡ) khoét xuyên gò xuống tới cốt sân
+    // lcc: gò đất phủ trung tâm điều khiển phóng ngầm (nửa cỡ hf x hr, cao h, ta-luy run 3 phía), mặt tiền +f thẳng đứng
+    // berm: ụ đất chống xe dọc mép khu đất (cao, rộng, cách mép), chừa cổng |r| < gate ở cạnh trước
+    L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]],
+      lcc: { f: -150, r: -270, hf: 60, hr: 56, h: 48, run: 30 }, berm: { h: 12, w: 11, inset: 11, gate: 52 } };   // ụ đất sát mép (0..22), chừa dải phẳng trước rào ngoài cho hàng nhím thép
+  }
+  function moundNuke(L, f, r) {
+    const S = L.silo, df = f - S.f, dr = r - S.r;
+    const d = Math.hypot(Math.max(0, Math.abs(df) - S.hf), Math.max(0, Math.abs(dr) - S.hr));
+    let h = S.h * (1 - smooth(0, S.run, d));
+    // dải chuyển cao độ quanh lỗ khoét nằm khuất dưới bệ bê tông (ngoài thành giếng / thành ống xả)
+    h *= smooth(S.shaft + 8, S.shaft + 20, Math.hypot(df, dr));
+    for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
+    // gò trung tâm điều khiển: cắt thẳng ở mặt tiền (dải chuyển cao độ nằm trong bề dày tường mặt tiền / tường cánh)
+    const C = S.lcc, pf = f - C.f, pr = r - C.r;
+    if (pf < C.hf - 22) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
+    return h;
+  }
+
+  // ===== HẦM NGHIÊN CỨU VŨ KHÍ SINH HỌC (rừng rậm) =====
+  function detailBio(L) {
+    // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
+    // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
+    L.mound = { fc: -80, af: 150, ar: 200, h: 72, cut: 80, face: 10 };
+  }
+  function moundBio(L, f, r) {
+    const M = L.mound, u = (f - M.fc) / M.af, v = r / M.ar;
+    const d = Math.pow(Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6), 1 / 6);
+    if (d >= 1) return 0;
+    // sân trước khoét vào ụ, lòng hầm khoét sâu ra sau mặt tiền (khe cửa hé không lộ mặt đất): dải chuyển cao độ khuất sau tường mặt tiền
+    const notch = smooth(M.face - 34, M.face - 22, f) * (1 - smooth(M.cut - 6, M.cut + 6, Math.abs(r)));
+    return M.h * (1 - smooth(0.68, 1, d)) * (1 - notch);
+  }
+
+  // ===== TRẬN ĐỊA TÊN LỬA PHÒNG KHÔNG (sa mạc) =====
+  function detailSam(L) {
+    // trận địa S-125 Pechora: 4 bệ phóng 5P73 (mỗi bệ 4 tên lửa) quanh trạm radar dẫn bắn ở giữa, mỗi bệ nằm trong kè đất
+    // móng ngựa cao 1.75 m, miệng kè quay vào giữa (đường xe nạp đạn), tên lửa chĩa ra ngoài
+    L.launchers = [0, 1, 2, 3].map(k => { const a = Math.PI / 4 + k * Math.PI / 2, f = Math.cos(a) * 175, r = Math.sin(a) * 300; return { f, r, az: Math.atan2(r, f) }; });
+    L.berm = { r: 46, w: 14, h: 14, gap: 0.7 };
+  }
+  function moundSam(L, f, r) {
+    const B = L.berm;
+    let h = 0;
+    for (const P of L.launchers) {
+      const df = f - P.f, dr = r - P.r, d = Math.hypot(df, dr);
+      const ring = 1 - smooth(0, B.w, Math.abs(d - B.r));
+      if (ring <= 0) continue;
+      // miệng kè quay về tâm trận địa (ngược hướng phóng)
+      const open = Math.atan2(dr, df) - (P.az + Math.PI);
+      const da = Math.abs(Math.atan2(Math.sin(open), Math.cos(open)));
+      h = Math.max(h, B.h * ring * smooth(B.gap, B.gap + 0.35, da));
     }
-    if (L.mound) {
-      const M = L.mound, u = (f - M.fc) / M.af, v = r / M.ar;
-      const d = Math.pow(Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6), 1 / 6);
-      if (d >= 1) return 0;
-      // sân trước khoét vào ụ, lòng hầm khoét sâu ra sau mặt tiền (khe cửa hé không lộ mặt đất): dải chuyển cao độ khuất sau tường mặt tiền
-      const notch = smooth(M.face - 34, M.face - 22, f) * (1 - smooth(M.cut - 6, M.cut + 6, Math.abs(r)));
-      return M.h * (1 - smooth(0.68, 1, d)) * (1 - notch);
-    }
-    if (L.launchers) {
-      const B = L.berm;
-      let h = 0;
-      for (const P of L.launchers) {
-        const df = f - P.f, dr = r - P.r, d = Math.hypot(df, dr);
-        const ring = 1 - smooth(0, B.w, Math.abs(d - B.r));
-        if (ring <= 0) continue;
-        // miệng kè quay về tâm trận địa (ngược hướng phóng)
-        const open = Math.atan2(dr, df) - (P.az + Math.PI);
-        const da = Math.abs(Math.atan2(Math.sin(open), Math.cos(open)));
-        h = Math.max(h, B.h * ring * smooth(B.gap, B.gap + 0.35, da));
-      }
-      return h;
-    }
+    return h;
+  }
+
+  // ===== TRẠM BIẾN ÁP / PHÁT ĐIỆN CAO THẾ (thành phố) =====
+  function detailPower(L) {
+  }
+  function moundPower(L, f, r) {
+    return 0;
+  }
+
+  // ===== ĐÀI ĐIỀU KHIỂN RADAR VỆ TINH (cao nguyên) =====
+  function detailRadar(L) {
+  }
+  function moundRadar(L, f, r) {
     return 0;
   }
 
