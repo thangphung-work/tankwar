@@ -1525,7 +1525,8 @@ class ArtilleryGame3D {
         if (tr.solveT <= 0) {
           tr.solveT = 0.1;
           const el = this.freeAimElevation(P, aimX, T.hy, aimZ, tr.solved ? tr.el : undefined);
-          if (el !== null) { tr.el = el; tr.solved = true; }
+          // vùng chết như nhánh dưới: nghiệm lệch vài phần trăm độ không làm nòng nhích (điểm rơi khỏi nhảy khi sượt vật cản)
+          if (el !== null && (!tr.solved || Math.abs(el - tr.el) > 0.05)) { tr.el = el; tr.solved = true; }
           tr.windAz = 0;
           tr.reachable = true;
         }
@@ -1533,10 +1534,13 @@ class ArtilleryGame3D {
         // lựu pháo: đạn bay lâu, mô phỏng nặng -> giải thưa hơn; luôn dò quanh nghiệm lần trước
         tr.solveT = P.tankType === 'ARTILLERY' ? 0.5 : 0.12;
         const sol = B.solveAimingForTarget(P.x, P.y, P.z, aimX, aimZ, this.terrain, P, { hintEl: tr.solved ? tr.el : undefined, hintCharge: tr.solved ? tr.charge : undefined, atUnit: T !== this._aimPoint });
+        const wasSolved = tr.solved, wasReach = tr.reachable;
         tr.solved = true;
         tr.reachable = !!(sol && sol.reachable !== false);
         if (sol) {
-          tr.el = sol.elevation;
+          // vùng chết: mỗi lần giải lại lệch nhau vài phần trăm độ; đường đạn sượt mép gò / tán cây / ụ đất thì chừng đó đủ
+          // làm điểm rơi nhảy qua lại hàng trăm mét -> chỉ nhận nghiệm mới khi khác hẳn (mục tiêu / xe đã dịch chuyển)
+          if (!wasSolved || wasReach !== tr.reachable || Math.abs(sol.elevation - tr.el) > 0.08) tr.el = sol.elevation;
           const baseAz = Math.atan2(aimX - P.x, -(aimZ - P.z)) * 180 / Math.PI;
           tr.windAz = sol.reachable !== false && typeof sol.azimuth === 'number' ? ((sol.azimuth - baseAz + 540) % 360) - 180 : 0;
           if (sol.charge) { tr.charge = sol.charge; P.charge = sol.charge; }   // lựu pháo: liều phóng theo cự ly
