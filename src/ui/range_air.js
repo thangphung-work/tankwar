@@ -322,7 +322,12 @@ const RangeAir = (() => {
           if (d.dead && (d.respawn -= dt) <= 0) { d.dead = false; d.hp = 1; d.hits = 0; }
         }
         this.raPlaceDrones(dt);
-        B.airTargets = R.drones.filter(d => !d.dead).map(d => ({ x: d.x, y: d.y + DroneAir.C.CENTER_Y, z: d.z, r: DroneAir.C.HIT_R, nearR: DroneAir.C.NEAR_R, team: d.team, ref: d }));
+        // vật mục tiêu giữ nguyên qua các khung hình (đạn ghi nhớ "đã rít qua drone này" theo đúng vật đó)
+        B.airTargets = R.drones.filter(d => !d.dead).map(d => {
+          const T = d._T || (d._T = { r: DroneAir.C.HIT_R, nearR: DroneAir.C.NEAR_R, team: d.team, ref: d });
+          T.x = d.x; T.y = d.y + DroneAir.C.CENTER_Y; T.z = d.z;
+          return T;
+        });
         G.updateDroneDamageFX(dt, R.drones.filter(d => !d.dead));
         G.updateDroneAmbient(R.drones.filter(d => !d.dead));
       } else if (B) B.airTargets = [];
@@ -362,7 +367,7 @@ const RangeAir = (() => {
         if (overlay) overlay.classList.remove('ti-sight-on');
         const G = this._raG;
         if (G) G.clearAirAim();
-        if (u) { u._aa = null; u.fcsTarget = null; u.aimAz = u.aimEl = undefined; }
+        if (u) { u._aa = null; u.fcsTarget = null; u.aimAz = u.aimEl = undefined; if (u.group) u.group.visible = true; }
       }
       this.raSyncBar();
     },
@@ -436,6 +441,7 @@ const RangeAir = (() => {
       if (Math.abs(cam.fov - S.fov) > 0.01 || cam.near !== 0.3) { cam.fov = S.fov; cam.near = 0.3; cam.updateProjectionMatrix(); }
       cam.position.copy(p.pos);
       cam.up.set(0, 1, 0);
+      if (u.group) u.group.visible = false;   // nhìn qua kính ngắm: không thấy thân xe mình (camera nằm trên nóc tháp)
       cam.lookAt(tgt);
       this.camFocus.x = u.x; this.camFocus.z = u.z;
       return true;
@@ -529,24 +535,46 @@ const RangeAir = (() => {
 .ra-lock .l{position:absolute;left:0;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border:2px solid var(--ac);border-radius:50%;box-sizing:border-box;filter:drop-shadow(0 0 2px #000)}
 .ra-lock .t{position:absolute;left:0;top:0;margin:28px 0 0 -110px;width:220px;text-align:center;color:var(--ac);font-size:11px;font-weight:600;letter-spacing:.08em;text-shadow:0 0 3px #000,0 0 6px #000;white-space:nowrap}
 .ti-sight-on .ti-stage-foot,.ti-sight-on .ti-test-panel,.ti-sight-on .ti-range-bar{opacity:0;pointer-events:none}
-.ra-sight{position:absolute;inset:0;pointer-events:none;z-index:6;display:none;color:#b6f5c8;font-family:"Share Tech Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.05em;text-shadow:0 0 3px rgba(0,0,0,.9)}
+.ra-sight{position:absolute;inset:0;pointer-events:none;z-index:6;display:none;--g:#a8f5bf;--a:#ffc04d;color:var(--g);font-family:"Share Tech Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.06em;text-shadow:0 0 2px #000,0 0 5px rgba(0,0,0,.85)}
 .ti-sight-on .ra-sight{display:block}
-.ra-sight .vig{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.55) 100%),repeating-linear-gradient(0deg,rgba(0,0,0,.06) 0 1px,transparent 1px 3px)}
+.ra-sight .scr{position:absolute;inset:8px 10px;border-radius:22px;box-shadow:0 0 0 60px #06090a,inset 0 0 0 1px rgba(168,245,191,.22),inset 0 0 120px rgba(0,0,0,.55);background:repeating-linear-gradient(0deg,rgba(0,0,0,.06) 0 1px,transparent 1px 3px)}
 .ra-sight svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}
-.ra-sight .cmd{position:absolute;left:0;top:0;width:14px;height:14px;margin:-7px 0 0 -7px;opacity:.75}
-.ra-sight .cmd:before,.ra-sight .cmd:after{content:"";position:absolute;background:#ffd27a}
-.ra-sight .cmd:before{left:6px;top:0;width:2px;height:14px}.ra-sight .cmd:after{left:0;top:6px;width:14px;height:2px}
-.ra-sight .trk{position:absolute;left:0;top:0;border:1.5px solid #8dffb0;box-sizing:border-box;display:none}
-.ra-sight .trk.lock{border-color:#ffb020}
-.ra-sight .trk span{position:absolute;left:0;top:100%;margin-top:3px;white-space:nowrap;font-size:11px}
-.ra-sight .lead{position:absolute;left:0;top:0;width:12px;height:12px;margin:-6px 0 0 -6px;border:2px solid #ffb020;transform:rotate(45deg);box-sizing:border-box;display:none}
-.ra-sight .c{position:absolute;padding:10px 14px;line-height:1.5}
-.ra-sight .tl{left:0;top:52px}.ra-sight .tr{right:0;top:84px;text-align:right}.ra-sight .bl{left:0;bottom:8px}.ra-sight .br{right:0;bottom:8px;text-align:right;opacity:.8}
-.ra-sight b{color:#eafff0;font-weight:400}
-.ra-sight .warn{color:#ff8a70}
-.ra-sight .hit{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;background:linear-gradient(45deg,transparent 45%,#fff 45%,#fff 55%,transparent 55%),linear-gradient(-45deg,transparent 45%,#fff 45%,#fff 55%,transparent 55%);filter:drop-shadow(0 0 2px #000)}
-.ra-sight .msg{position:absolute;left:0;right:0;top:34%;text-align:center;font-family:"Chakra Petch",system-ui,sans-serif;font-size:20px;font-weight:700;letter-spacing:.14em;color:#ffd27a;opacity:0}
-.ra-sight .hint{position:absolute;left:0;right:0;top:72%;text-align:center;color:#fff;font-family:"Chakra Petch",system-ui,sans-serif;font-size:13px;letter-spacing:.06em}
+.ra-sight svg .k{stroke:var(--g);fill:none;filter:drop-shadow(0 0 1.5px #000)}
+.ra-sight svg text{fill:var(--g);stroke:none;font:10px "Share Tech Mono",ui-monospace,monospace;paint-order:stroke;filter:drop-shadow(0 0 2px #000)}
+.ra-sight .cmd{position:absolute;left:0;top:0;width:12px;height:12px;margin:-6px 0 0 -6px;opacity:.8}
+.ra-sight .cmd:before,.ra-sight .cmd:after{content:"";position:absolute;background:var(--a)}
+.ra-sight .cmd:before{left:5px;top:0;width:2px;height:12px}.ra-sight .cmd:after{left:0;top:5px;width:12px;height:2px}
+.ra-sight .trk{--c:var(--g);position:absolute;left:0;top:0;display:none;box-sizing:border-box;background:linear-gradient(var(--c),var(--c)) 0 0/9px 1.5px,linear-gradient(var(--c),var(--c)) 0 0/1.5px 9px,linear-gradient(var(--c),var(--c)) 100% 0/9px 1.5px,linear-gradient(var(--c),var(--c)) 100% 0/1.5px 9px,linear-gradient(var(--c),var(--c)) 0 100%/9px 1.5px,linear-gradient(var(--c),var(--c)) 0 100%/1.5px 9px,linear-gradient(var(--c),var(--c)) 100% 100%/9px 1.5px,linear-gradient(var(--c),var(--c)) 100% 100%/1.5px 9px;background-repeat:no-repeat;filter:drop-shadow(0 0 1.5px #000)}
+.ra-sight .trk.lock{--c:var(--a)}
+.ra-sight .trk span{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:4px;white-space:nowrap;font-size:10.5px;color:var(--c)}
+.ra-sight .lead{position:absolute;left:0;top:0;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border:1.5px solid var(--a);box-sizing:border-box;display:none;filter:drop-shadow(0 0 1.5px #000)}
+.ra-sight .cmp{position:absolute;left:50%;top:18px;width:360px;margin-left:-180px;height:24px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 20%,#000 80%,transparent);mask-image:linear-gradient(90deg,transparent,#000 20%,#000 80%,transparent)}
+.ra-sight .cmp .s,.ra-sight .elv .s{position:absolute;left:0;top:0}
+.ra-sight .cmp i{position:absolute;bottom:0;width:1px;height:5px;background:var(--g)}.ra-sight .cmp i.l{height:9px}
+.ra-sight .cmp em{position:absolute;top:0;font-style:normal;font-size:10.5px;transform:translateX(-50%)}
+.ra-sight .cmpv{position:absolute;left:50%;top:44px;transform:translateX(-50%);padding:1px 6px;border:1px solid var(--g);font-size:12px;background:rgba(0,0,0,.35)}
+.ra-sight .cmpv:before{content:"";position:absolute;left:50%;top:-6px;margin-left:-4px;border:4px solid transparent;border-bottom-color:var(--g)}
+.ra-sight .elv{position:absolute;right:30px;top:50%;height:220px;margin-top:-110px;width:40px;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,transparent,#000 20%,#000 80%,transparent);mask-image:linear-gradient(180deg,transparent,#000 20%,#000 80%,transparent)}
+.ra-sight .elv i{position:absolute;right:0;height:1px;width:5px;background:var(--g)}.ra-sight .elv i.l{width:10px}
+.ra-sight .elv em{position:absolute;right:14px;font-style:normal;font-size:10.5px;transform:translateY(-50%)}
+.ra-sight .elvv{position:absolute;right:74px;top:50%;transform:translateY(-50%);padding:1px 6px;border:1px solid var(--g);font-size:12px;background:rgba(0,0,0,.35)}
+.ra-sight .elvv:after{content:"";position:absolute;right:-9px;top:50%;margin-top:-4px;border:4px solid transparent;border-left-color:var(--g)}
+.ra-sight .wpn{position:absolute;left:26px;top:58px;width:214px;line-height:1.45}
+.ra-sight .wpn .n{color:#eafff0;margin-bottom:3px}
+.ra-sight .wpn .row{display:flex;align-items:center;gap:7px}.ra-sight .wpn .row span{width:40px;opacity:.8}
+.ra-sight .wpn .bar{flex:1;height:5px;border:1px solid rgba(168,245,191,.6);padding:1px}.ra-sight .wpn .bar i{display:block;height:100%;background:var(--g)}
+.ra-sight .wpn .bar.heat i{background:linear-gradient(90deg,var(--g),#ffc04d 60%,#ff6a4a)}
+.ra-sight .wpn .row b{width:34px;text-align:right;font-weight:400;color:#eafff0}
+.ra-sight .wpn .st{margin-top:3px}
+.ra-sight .warn{color:#ff8a70!important}
+.ra-sight .lrf{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;padding:4px 12px;border:1px solid rgba(168,245,191,.45);background:rgba(0,0,0,.35);white-space:nowrap}
+.ra-sight .lrf span{opacity:.75}.ra-sight .lrf b{font-weight:400;color:#eafff0;font-size:13px}.ra-sight .lrf b.on{color:var(--a)}
+.ra-sight .lrf i{width:1px;height:12px;background:rgba(168,245,191,.45)}
+.ra-sight .hullv{position:absolute;left:26px;bottom:20px;width:70px;height:70px}
+.ra-sight .keys{position:absolute;right:26px;bottom:20px;text-align:right;line-height:1.55;font-size:11px;opacity:.75}.ra-sight .keys b{font-weight:400;color:#eafff0}
+.ra-sight .hit{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;opacity:0;background:linear-gradient(45deg,transparent 46%,#fff 46%,#fff 54%,transparent 54%),linear-gradient(-45deg,transparent 46%,#fff 46%,#fff 54%,transparent 54%);-webkit-mask:radial-gradient(circle,transparent 6px,#000 7px);mask:radial-gradient(circle,transparent 6px,#000 7px);filter:drop-shadow(0 0 2px #000)}
+.ra-sight .msg{position:absolute;left:0;right:0;top:30%;text-align:center;font-family:"Chakra Petch",system-ui,sans-serif;font-size:20px;font-weight:700;letter-spacing:.14em;color:var(--a);opacity:0}
+.ra-sight .hint{position:absolute;left:0;right:0;bottom:62px;text-align:center;color:#fff;font-family:"Chakra Petch",system-ui,sans-serif;font-size:12.5px;letter-spacing:.06em}
 `;
         document.head.appendChild(st);
       }
@@ -573,14 +601,36 @@ const RangeAir = (() => {
       lock.innerHTML = '<div class="b"></div><div class="l"></div><div class="t"></div>';
       const sight = document.createElement('div');
       sight.className = 'ra-sight';
-      sight.innerHTML = '<div class="vig"></div><svg></svg><div class="cmd"></div><div class="trk"><span></span></div><div class="lead"></div>' +
-        '<div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div><div class="hit"></div><div class="msg"></div><div class="hint"></div>';
+      // thước hướng 0–360° (lặp 2 vòng để cuộn vòng quanh) + thước góc tầm -10…+80°
+      let cmp = '', elv = '';
+      for (let g = -180; g <= 540; g += 5) {
+        const x = (g + 180) * 4, h = ((g % 360) + 360) % 360;
+        cmp += `<i class="${g % 10 === 0 ? 'l' : ''}" style="left:${x}px"></i>`;
+        if (g % 30 === 0) cmp += `<em style="left:${x}px">${({ 0: 'B', 90: 'Đ', 180: 'N', 270: 'T' })[h] || String(h / 10).padStart(2, '0')}</em>`;
+      }
+      for (let g = -10; g <= 80; g += 5) {
+        const y = (80 - g) * 3.2;
+        elv += `<i class="${g % 10 === 0 ? 'l' : ''}" style="top:${y}px"></i>` + (g % 10 === 0 ? `<em style="top:${y}px">${g}</em>` : '');
+      }
+      sight.innerHTML = '<div class="scr"></div>' +
+        '<svg class="ret"><g><circle class="k" r="2.2" stroke-width="1.4"/><circle r=".9" fill="#a8f5bf"/>' +
+        '<circle class="k disp" stroke-width="1.6"/><text class="dispT">2σ</text>' +
+        '<circle class="k l50" stroke-width="1" stroke-dasharray="3 5" opacity=".85"/><text class="l50t" text-anchor="middle">50</text>' +
+        '<circle class="k l100" stroke-width="1" stroke-dasharray="3 5" opacity=".85"/><text class="l100t" text-anchor="middle">100</text>' +
+        '<line class="k tk" stroke-width="1.6"/><line class="k tk" stroke-width="1.6"/><line class="k tk" stroke-width="1.6"/><line class="k tk" stroke-width="1.6"/></g></svg>' +
+        '<div class="cmd"></div><div class="trk"><span></span></div><div class="lead"></div>' +
+        `<div class="cmp"><div class="s">${cmp}</div></div><div class="cmpv"></div><div class="elv"><div class="s">${elv}</div></div><div class="elvv"></div>` +
+        '<div class="wpn"></div><div class="lrf"></div><div class="keys"></div>' +
+        '<svg class="hullv" viewBox="-35 -35 70 70"><circle class="k" r="32" stroke-width="1" opacity=".5"/><g class="hull"><rect class="k" x="-9" y="-15" width="18" height="30" rx="2" stroke-width="1.4"/><line class="k" x1="-5" y1="-12" x2="5" y2="-12" stroke-width="1.4"/></g><circle class="k" r="5" stroke-width="1.4"/><line class="k" x1="0" y1="-5" x2="0" y2="-28" stroke-width="2"/></svg>' +
+        '<div class="hit"></div><div class="msg"></div><div class="hint"></div>';
       stage.append(tags, lock, sight, bar);
       const q = (r, s) => r.querySelector(s);
       this._raDom = {
         stage, canvas, bar, stats: q(bar, '.ra-stats'), list: q(bar, '.ra-list'), tags, tagEls: [], lock, lockB: q(lock, '.b'), lockL: q(lock, '.l'), lockT: q(lock, '.t'),
-        sight, svg: q(sight, 'svg'), cmd: q(sight, '.cmd'), trk: q(sight, '.trk'), trkT: q(sight, '.trk span'), lead: q(sight, '.lead'),
-        tl: q(sight, '.tl'), tr: q(sight, '.tr'), bl: q(sight, '.bl'), br: q(sight, '.br'), hit: q(sight, '.hit'), msg: q(sight, '.msg'), hint: q(sight, '.hint')
+        sight, cmd: q(sight, '.cmd'), trk: q(sight, '.trk'), trkT: q(sight, '.trk span'), lead: q(sight, '.lead'),
+        ret: { g: q(sight, '.ret g'), disp: q(sight, '.disp'), dispT: q(sight, '.dispT'), l50: q(sight, '.l50'), l50t: q(sight, '.l50t'), l100: q(sight, '.l100'), l100t: q(sight, '.l100t'), ticks: [...sight.querySelectorAll('.tk')] },
+        cmpS: q(sight, '.cmp .s'), cmpV: q(sight, '.cmpv'), elvS: q(sight, '.elv .s'), elvV: q(sight, '.elvv'), hull: q(sight, '.hull'),
+        wpn: q(sight, '.wpn'), lrf: q(sight, '.lrf'), keys: q(sight, '.keys'), hit: q(sight, '.hit'), msg: q(sight, '.msg'), hint: q(sight, '.hint')
       };
       this.raSyncBar();
       return this._raDom;
@@ -678,106 +728,140 @@ const RangeAir = (() => {
     },
 
     raSightHUD(D, dt) {
-      const S = this.sight, u = this.activeUnit, R = this._ra, G = this._raG, cam = this.camera;
+      const S = this.sight, u = this.activeUnit, R = this._ra, G = this.raGame(), cam = this.camera;
       const W = D.canvas.clientWidth, H = D.canvas.clientHeight, cx = D.canvas.offsetLeft + W / 2, cy = D.canvas.offsetTop + H / 2;
-      // lưới ngắm: vạch chia mil theo độ phóng đại (1 mil = 1 m ở 1000 m)
-      const pxMil = (H / 2) / Math.tan(cam.fov * D2R / 2) * 0.001;
-      const key = Math.round(pxMil * 100) + ':' + W + ':' + H;
-      if (D._svgKey !== key) {
-        D._svgKey = key;
-        const g = 6 * pxMil < 10 ? 10 : 6 * pxMil, L = Math.max(W, H);
-        let s = `<g stroke="#b6f5c8" stroke-width="1.4" fill="none" opacity=".9" transform="translate(${cx},${cy})">`;
-        s += `<line x1="${-L}" y1="0" x2="${-g}" y2="0"/><line x1="${g}" y1="0" x2="${L}" y2="0"/><line x1="0" y1="${g}" x2="0" y2="${L}"/><line x1="0" y1="${-L}" x2="0" y2="${-g * 2.2}"/>`;
-        s += `<circle r="1.6" fill="#b6f5c8" stroke="none"/>`;
-        for (let m = 5; m <= 60; m += 5) {
-          const x = m * pxMil;
-          if (x > W / 2 - 20) break;
-          const h = m % 10 === 0 ? 7 : 4;
-          s += `<line x1="${x}" y1="${-h}" x2="${x}" y2="${h}"/><line x1="${-x}" y1="${-h}" x2="${-x}" y2="${h}"/>`;
-          if (m % 10 === 0 && 10 * pxMil > 24) s += `<text x="${x}" y="${-h - 3}" fill="#b6f5c8" stroke="none" font-size="9" text-anchor="middle">${m}</text>`;
-          const y = m * pxMil;
-          if (y < H / 2 - 20) s += `<line x1="${-h}" y1="${y}" x2="${h}" y2="${y}"/>`;
-        }
-        // vòng đón đầu 20 mil (~drone 50 km/h ở 400 m)
-        if (20 * pxMil < H / 2 - 10) s += `<circle r="${20 * pxMil}" opacity=".55" stroke-dasharray="4 6"/>`;
-        s += '</g>';
-        D.svg.innerHTML = s;
+      const pxMil = (H / 2) / Math.tan(cam.fov * D2R / 2) * 0.001;   // 1 mil (1 m ở 1000 m) = bao nhiêu px ở độ phóng đại hiện tại
+      const p = this.raSightPose(u), tank = S.rcws, d = p.dir;
+      const ammo = tank ? 'MG762' : u.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : u.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET';
+      const set = (el, k, v) => { if (el['_' + k] !== v) { el['_' + k] = v; el.setAttribute(k, v); } };
+      // ---- VÒNG NGẮM ----
+      // vòng tản mát (2σ: ~9/10 viên rơi trong vòng) — đúng độ tản mát đang áp vào đạn (dispersion.js: chạy xe, quay tháp,
+      // nở theo loạt bắn; trạm súng xe tăng cộng thêm độ rung bệ súng) -> vòng "thở" theo loạt bắn / khi xe chạy
+      let sig = 0.02;
+      if (typeof Dispersion !== 'undefined') sig = Dispersion.sigma(u, tank ? 'SCOUT_BULLET' : ammo).lat;
+      if (tank) sig = Math.hypot(sig, DroneAir.C.RCWS.spread);
+      const rDisp = 2 * sig * 1000 * pxMil;
+      S.rD = S.rD === undefined ? rDisp : S.rD + (rDisp - S.rD) * Math.min(1, dt * 8);
+      // vòng đón đầu: mục tiêu bay ngang 50 / 100 km/h ở cự ly laser -> đặt mục tiêu lên vòng (đầu drone hướng vào tâm)
+      if ((S.tofT = (S.tofT || 0) - dt) <= 0 || S.tofR !== Math.round(S.R || 600)) {
+        S.tofT = 0.25; S.tofR = Math.round(S.R || 600);
+        const Rr = Math.max(80, S.R || 600), q = p.muzzle.clone().addScaledVector(d, Rr);
+        const so = G ? G.airShotSolution(u, ammo, q.x, q.y, q.z, 0, 0, 0) : null;
+        S.tof = so ? so.t : Rr / 900;
       }
-      // hướng ngắm đang ra lệnh (tay / chuột): dấu + ; nòng đang đuổi theo với tốc độ servo thật
-      const p = this.raSightPose(u), Rg = Math.max(120, S.R || 600);
-      const az = S.az * D2R, el = S.el * D2R;
+      const kmh = v => (typeof GameTiming !== 'undefined' && GameTiming.vehicleSpeed ? GameTiming.vehicleSpeed(v) : v * 2.2);
+      const leadMil = v => kmh(v) * S.tof / Math.max(80, S.R || 600) * 1000;
+      const r50 = leadMil(50) * pxMil, r100 = leadMil(100) * pxMil;
+      const E = D.ret;
+      set(E.g, 'transform', `translate(${Math.round(cx)},${Math.round(cy)})`);
+      const rd = Math.max(9, S.rD);
+      set(E.disp, 'r', rd.toFixed(1));
+      set(E.dispT, 'x', (rd * 0.72 + 4).toFixed(0)); set(E.dispT, 'y', (rd * 0.72 + 10).toFixed(0));
+      const lim = Math.min(W, H) / 2 - 24;
+      [[E.l50, E.l50t, r50], [E.l100, E.l100t, r100]].forEach(([c, t, r]) => {
+        const vis = r > rd + 10 && r < lim ? '' : 'none';
+        set(c, 'display', vis); set(t, 'display', vis);
+        set(c, 'r', r.toFixed(1)); set(t, 'y', (-r - 4).toFixed(0));
+      });
+      // 4 vạch ở vòng ngoài cùng đang hiện (kiểu thước ngắm vòng tròn phòng không)
+      const rOut = r100 > rd + 10 && r100 < lim ? r100 : r50 > rd + 10 && r50 < lim ? r50 : rd;
+      E.ticks.forEach((t, i) => {
+        const a = i * Math.PI / 2, s0 = rOut + 3, s1 = rOut + 11;
+        set(t, 'x1', (Math.sin(a) * s0).toFixed(1)); set(t, 'y1', (-Math.cos(a) * s0).toFixed(1));
+        set(t, 'x2', (Math.sin(a) * s1).toFixed(1)); set(t, 'y2', (-Math.cos(a) * s1).toFixed(1));
+      });
+      // ---- HƯỚNG LỆNH (chuột / phím): dấu + ; nòng đuổi theo với tốc độ servo thật ----
+      const Rg = Math.max(120, S.R || 600), az = S.az * D2R, el = S.el * D2R;
       const cmd = this.raProj(p.pos.x + Math.sin(az) * Math.cos(el) * Rg, p.pos.y + Math.sin(el) * Rg, p.pos.z - Math.cos(az) * Math.cos(el) * Rg);
-      const showCmd = cmd && !(G && G._airAim) && Math.hypot(cmd.x - cx, cmd.y - cy) > 3;
+      const showCmd = cmd && !(G && G._airAim) && Math.hypot(cmd.x - cx, cmd.y - cy) > 4;
       D.cmd.style.display = showCmd ? '' : 'none';
       if (showCmd) D.cmd.style.transform = `translate(${Math.round(cmd.x)}px,${Math.round(cmd.y)}px)`;
-      // khung bám mục tiêu (drone gần tâm nhất trong 4°, hoặc mục tiêu đang bám) + dấu đón đầu
+      // ---- BÁM MỤC TIÊU: ngoặc góc quanh drone gần tâm nhất (≤ 4°) hoặc drone đang bám + dấu đón đầu ----
       let trk = S.track, ta = 4 * D2R;
       const f = cam.getWorldDirection(this._raF || (this._raF = new THREE.Vector3()));
       if (!trk && R && R.on) {
-        for (const d of R.drones) {
-          if (d.dead) continue;
-          const vx = d.x - cam.position.x, vy = d.y + 1.5 - cam.position.y, vz = d.z - cam.position.z, L = Math.hypot(vx, vy, vz);
+        for (const dr of R.drones) {
+          if (dr.dead) continue;
+          const vx = dr.x - cam.position.x, vy = dr.y + 1.5 - cam.position.y, vz = dr.z - cam.position.z, L = Math.hypot(vx, vy, vz);
           const a = Math.acos(Math.max(-1, Math.min(1, (vx * f.x + vy * f.y + vz * f.z) / L)));
-          if (a < ta) { ta = a; trk = d; }
+          if (a < ta) { ta = a; trk = dr; }
         }
       }
-      let info = '';
+      let warn = '';
       if (trk && !trk.dead) {
         const tp = this.raProj(trk.x, trk.y + 1.5, trk.z);
         const dist = Math.hypot(trk.x - p.muzzle.x, trk.y + 1.5 - p.muzzle.y, trk.z - p.muzzle.z);
         if (tp && !tp.out) {
-          const sz = Math.max(18, Math.min(160, 12 / dist / Math.tan(cam.fov * D2R / 2) * (H / 2) * 1.6));
+          const sz = Math.max(22, Math.min(150, 12 / dist / Math.tan(cam.fov * D2R / 2) * (H / 2) * 1.7));
           D.trk.style.display = 'block';
           D.trk.classList.toggle('lock', !!S.track);
           D.trk.style.width = D.trk.style.height = Math.round(sz) + 'px';
           D.trk.style.transform = `translate(${Math.round(tp.x - sz / 2)}px,${Math.round(tp.y - sz / 2)}px)`;
           const gy = this.field ? this.field.groundAt(trk.x, trk.z) : 0;
-          const t = `UAV ${trk.P.name} · ${Math.round(dist)} M · CAO ${Math.round(trk.y - gy)} · ${Math.round(MAX_SPEED_KMH(Math.hypot(trk.wvx, trk.wvy, trk.wvz)))} KM/H${S.track ? ' · BÁM' : ''}`;
+          const t = `${Math.round(dist)} M · ${Math.round(trk.y - gy)} M CAO · ${Math.round(MAX_SPEED_KMH(Math.hypot(trk.wvx, trk.wvy, trk.wvz)))} KM/H`;
           if (D.trkT.textContent !== t) D.trkT.textContent = t;
         } else D.trk.style.display = 'none';
-        // dấu đón đầu: đặt tâm kính ngắm vào dấu này thì đạn (bay theo đường đạn thật) gặp drone
+        // dấu đón đầu: đặt tâm vòng ngắm vào dấu này thì đạn (bay theo đường đạn thật) gặp drone
         let lp = null;
         if (S.assist && G) {
           if ((S.solT = (S.solT || 0) - dt) <= 0 || S.solFor !== trk) {
             S.solT = 0.08; S.solFor = trk;
-            const ammo = S.rcws ? 'MG762' : u.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : u.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET';
             S.sol = G.airShotSolution(u, ammo, trk.x, trk.y + 1.5, trk.z, trk.wvx, trk.wvy, trk.wvz);
           }
           const so = S.sol;
           if (so) {
             const a2 = so.az * D2R, e2 = so.el * D2R, Rr = Math.max(120, so.dist);
             lp = this.raProj(p.muzzle.x + Math.sin(a2) * Math.cos(e2) * Rr, p.muzzle.y + Math.sin(e2) * Rr, p.muzzle.z - Math.cos(a2) * Math.cos(e2) * Rr);
-            if (!so.reach) info = '<span class="warn">NGOÀI TẦM SÚNG</span>';
+            if (!so.reach) warn = 'NGOÀI TẦM SÚNG';
           }
         }
         D.lead.style.display = lp && !lp.out ? 'block' : 'none';
         if (lp) D.lead.style.transform = `translate(${Math.round(lp.x)}px,${Math.round(lp.y)}px) rotate(45deg)`;
       } else { D.trk.style.display = 'none'; D.lead.style.display = 'none'; }
-      // khung thông tin 4 góc
-      const tank = S.rcws, d = p.dir;
+      // ---- THƯỚC HƯỚNG (trên) + THƯỚC GÓC TẦM (phải) ----
       const gaz = wrap360(Math.atan2(d.x, -d.z) * R2D), gel = Math.asin(Math.max(-1, Math.min(1, d.y))) * R2D;
-      let wpn, ammoTxt;
+      D.cmpS.style.transform = `translateX(${(180 - (gaz + 180) * 4).toFixed(1)}px)`;
+      D.elvS.style.transform = `translateY(${(110 - (80 - gel) * 3.2).toFixed(1)}px)`;
+      const hz = String(Math.round(gaz) % 360).padStart(3, '0'), ev = (gel >= 0 ? '+' : '') + gel.toFixed(1);
+      if (D._hz !== hz) { D.cmpV.textContent = hz; D._hz = hz; }
+      if (D._ev !== ev) { D.elvV.textContent = ev + '°'; D._ev = ev; }
+      // ---- HƯỚNG THÁP SO VỚI THÂN XE (góc dưới trái): nòng luôn chỉ lên, thân xe xoay theo góc lệch ----
+      const rel = wrap360(-(u.bodyAngle || 0) * R2D - gaz);
+      set(D.hull, 'transform', `rotate(${rel.toFixed(1)})`);
+      // ---- KHUNG CHỮ ----
+      let wpn, ammoN, ammoMax, status = 'SẴN SÀNG', heat = null;
       if (tank) {
         const rs = u._rcws || {};
-        wpn = 'SÚNG MÁY 7.62MM · TRẠM ĐIỀU KHIỂN TỪ XA';
-        ammoTxt = rs.reload > 0 ? `<span class="warn">THAY HỘP ĐẠN ${rs.reload.toFixed(1)} S</span>` : `ĐẠN <b>${rs.mag !== undefined ? rs.mag : DroneAir.C.RCWS.mag}</b> / ${DroneAir.C.RCWS.mag}`;
+        wpn = 'SÚNG MÁY 7.62 · TRẠM VŨ KHÍ';
+        ammoN = rs.mag !== undefined ? rs.mag : DroneAir.C.RCWS.mag; ammoMax = DroneAir.C.RCWS.mag;
+        if (rs.reload > 0) status = 'THAY HỘP ' + rs.reload.toFixed(1) + ' S';
+        else if (u.isFiringAAmg) status = 'ĐANG BẮN';
       } else {
-        wpn = u.tankType === 'GATLING' ? 'PHÁO 30MM 6 NÒNG' : 'SÚNG MÁY 12.7MM';
-        if (u.selectedAmmo === 'INCENDIARY') wpn += ' · ĐẠN CHÁY';
-        const heat = Math.round((u.barrelHeat || 0) * 100);
-        ammoTxt = (u.reloadTimer > 0 && u.gatlingMag <= 0 ? `<span class="warn">NẠP ĐẠN ${u.reloadTimer.toFixed(1)} S</span>` : `ĐẠN <b>${u.gatlingMag !== undefined ? u.gatlingMag : '--'}</b> / ${u.gatlingMagMax || '--'}`) +
-          (u.tankType === 'GATLING' ? `<br>NHIỆT NÒNG ${u.isOverheated ? '<span class="warn">QUÁ NHIỆT</span>' : heat + '%'}` : '');
+        wpn = (u.tankType === 'GATLING' ? 'PHÁO 30MM 6 NÒNG' : 'SÚNG MÁY 12.7') + (u.selectedAmmo === 'INCENDIARY' ? ' · ĐẠN CHÁY' : '');
+        ammoN = u.gatlingMag !== undefined ? u.gatlingMag : 0; ammoMax = u.gatlingMagMax || 1;
+        if (u.tankType === 'GATLING') heat = u.barrelHeat || 0;
+        if (u.isOverheated) status = 'QUÁ NHIỆT';
+        else if (u.reloadTimer > 0 && ammoN <= 0) status = 'NẠP ĐẠN ' + u.reloadTimer.toFixed(1) + ' S';
+        else if (u.isFiringGatling) status = 'ĐANG BẮN';
       }
-      const tl = `${wpn}<br>${ammoTxt}`;
-      const tr = `HƯỚNG <b>${gaz.toFixed(1).padStart(5, '0')}°</b><br>GÓC TẦM <b>${(gel >= 0 ? '+' : '') + gel.toFixed(1)}°</b><br>PHÓNG ĐẠI <b>${ZOOM[S.zoom].k}</b>`;
-      const bl = `CỰ LY LASER <b>${S.laser ? Math.round(S.laser) + ' M' : '----'}</b>${info ? '<br>' + info : ''}<br>${S.track ? 'BÁM MỤC TIÊU: <b>BẬT</b>' : 'NGẮM TAY'} · ĐÓN ĐẦU: <b>${S.assist ? 'BẬT' : 'TẮT'}</b>`;
-      const br = `chuột: ngắm · giữ trái: bắn · cuộn / phải: phóng đại<br>T: bám mục tiêu · L: dấu đón đầu · V / Esc: thoát${tank ? '<br>Space: pháo chính' : ''}`;
-      if (D._tl !== tl) { D.tl.innerHTML = tl; D._tl = tl; }
-      if (D._tr !== tr) { D.tr.innerHTML = tr; D._tr = tr; }
-      if (D._bl !== bl) { D.bl.innerHTML = bl; D._bl = bl; }
-      if (D._br !== br) { D.br.innerHTML = br; D._br = br; }
+      const bad = status !== 'SẴN SÀNG' && status !== 'ĐANG BẮN';
+      const wk = wpn + '|' + ammoN + '|' + status + '|' + (heat === null ? '' : Math.round(heat * 50));
+      if (D._wk !== wk) {
+        D._wk = wk;
+        D.wpn.innerHTML = `<div class="n">${wpn}</div>` +
+          `<div class="row"><span>ĐẠN</span><div class="bar"><i style="width:${(100 * ammoN / ammoMax).toFixed(0)}%"></i></div><b>${ammoN}</b></div>` +
+          (heat === null ? '' : `<div class="row"><span>NHIỆT</span><div class="bar heat"><i style="width:${(100 * heat).toFixed(0)}%"></i></div><b>${Math.round(heat * 100)}%</b></div>`) +
+          `<div class="st${bad ? ' warn' : ''}">${status}</div>`;
+      }
+      const lrf = `<span>LRF</span><b>${S.laser ? String(Math.round(S.laser)).padStart(4, '0') : '----'}</b><span>M</span>` +
+        `<i></i><span>${['TRƯỜNG RỘNG', 'TRƯỜNG VỪA', 'TRƯỜNG HẸP'][S.zoom]}</span><b>${ZOOM[S.zoom].k}</b>` +
+        `<i></i><b class="${S.track ? 'on' : ''}">${S.track ? 'BÁM MỤC TIÊU' : 'NGẮM TAY'}</b>` +
+        (warn ? `<i></i><b class="warn">${warn}</b>` : '');
+      if (D._lrf !== lrf) { D.lrf.innerHTML = lrf; D._lrf = lrf; }
+      const keys = `<b>CHUỘT</b> ngắm · <b>GIỮ TRÁI</b> bắn · <b>CUỘN</b> phóng đại<br><b>T</b> bám mục tiêu · <b>L</b> dấu đón đầu ${S.assist ? 'bật' : 'tắt'} · <b>V</b> thoát${tank ? '<br><b>SPACE</b> pháo chính' : ''}`;
+      if (D._keys !== keys) { D.keys.innerHTML = keys; D._keys = keys; }
       const locked = document.pointerLockElement === D.canvas;
-      const hint = !locked && !S.dragging ? 'NHẤP VÀO KHUNG HÌNH ĐỂ CẦM SÚNG (khóa chuột) · hoặc kéo chuột để ngắm, Space bắn' : '';
+      const hint = !locked && !S.dragging ? 'NHẤP VÀO KHUNG HÌNH ĐỂ CẦM SÚNG · hoặc kéo chuột để ngắm, Space bắn' : '';
       if (D._hint !== hint) { D.hint.textContent = hint; D._hint = hint; }
       D.hit.style.opacity = R && R.mark > 0 ? Math.min(1, R.mark / 0.15) : 0;
       D.msg.style.opacity = R && R.msg > 0 ? Math.min(1, R.msg / 0.4) : 0;
