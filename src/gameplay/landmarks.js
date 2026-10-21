@@ -716,6 +716,8 @@ const Landmarks = (() => {
     // trụ đứng chân tại y0 (rTop, rBot, cao h)
     cyl(m, x, y0, z, rTop, rBot, h, seg, mtx) {
       const g = new THREE.CylinderGeometry(rTop, rBot, h, seg || 16);
+      // UV theo kích thước thật (1 ô ảnh = 24 đơn vị) để vết gỉ / bẩn không bị phóng to trên trụ lớn
+      { const uv = g.attributes.uv, ku = Math.PI * (rTop + rBot) / 24, kv = h / 24; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * ku, uv.getY(i) * kv); }
       this.add(m, g, mtx ? new THREE.Matrix4().multiplyMatrices(mtx, M4(0, h / 2, 0)) : M4(x, y0 + h / 2, z));
     }
     // thanh dầm thẳng từ a tới b (tiết diện t x t)
