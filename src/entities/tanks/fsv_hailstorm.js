@@ -131,8 +131,10 @@
     }
 
     // Nắp lái xe phía trước trái + kính tiềm vọng
+    hb.setTag('hatchDrv');
     hb.cyl(1.8, 1.9, 0.35, 18, P, [-7.6, ROOF_Y + 0.17, -11.6]);
     hb.box(1.1, 0.35, 0.7, D, [-7.6, ROOF_Y + 0.25, -9.7]);
+    hb.setTag(null);
     for (const x of [-9.3, -7.6, -5.9]) {
       hb.box(1.1, 0.55, 0.7, D, [x, ROOF_Y + 0.15, -14.3]);
       hb.box(0.9, 0.32, 0.08, M.glass, [x, ROOF_Y + 0.25, -14.68], [-0.5, 0, 0]);
@@ -167,6 +169,7 @@
 
     // Nắp tổ lái phía sau, thùng đồ dọc nóc, can nhiên liệu, cáp kéo
     for (const s of [-1, 1]) {
+      hb.setTag('hatchCrew' + (s < 0 ? 'L' : 'R'));
       hb.cyl(1.7, 1.8, 0.32, 16, P, [s * 5.4, ROOF_Y + 0.16, 21.6]);
       hb.box(0.9, 0.35, 0.5, D, [s * 5.4, ROOF_Y + 0.3, 23.4]);
       hb.setTag('bin' + (s < 0 ? 'L' : 'R'));
@@ -472,8 +475,10 @@
     for (const s of [-1, 1]) tb.grabHandle([s * 8.6, TROOF, 4.0], 'z', 2.6, 0.55, P);
 
     // Nắp tháp, tấm nhận diện phe, cảm biến gió, ăng-ten
+    tb.setTag('hatchCdr');
     tb.cyl(1.85, 1.95, 0.32, 18, P, [-4.8, TROOF + 0.16, 5.2]);
     tb.box(0.9, 0.35, 0.5, D, [-4.8, TROOF + 0.3, 7.1]);
+    tb.setTag(null);
     tb.box(4.6, 0.08, 3.2, M.idPanel, [1.6, TROOF + 0.06, 7.6], [0, -0.05, 0]);
     tb.cyl(0.12, 0.14, 2.4, 6, D, [-1.8, TROOF + 1.2, 9.8]);
     tb.box(1.3, 0.12, 0.12, D, [-1.8, TROOF + 2.4, 9.8]);

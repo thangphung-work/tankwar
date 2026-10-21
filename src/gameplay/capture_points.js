@@ -34,7 +34,7 @@ class CapturePointsManager {
       const r = (S.HB || 96) + (S.RUN || 40) * 0.7;
       this.points = set.items.map(K => mk(K.id, K.x, K.z, { K, radius: r }));
     } else {
-      this.points = [mk('A', -800, 0), mk('B', 0, 0), mk('C', 800, 0)];
+      this.points = MapGen.CAPTURE.map((c, i) => mk('ABC'[i], c.x, c.z));
       this.points.forEach(cp => {
         cp.y = T ? T.getElevationAt(cp.x, cp.z) : 0;
         this.createMesh(cp);

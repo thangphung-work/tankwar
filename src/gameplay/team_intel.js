@@ -203,6 +203,8 @@ const TeamIntel = (() => {
       const jam = typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(e, 'jammer') && d >= 40;
       if (jam && (Math.floor(time * RADAR_RPS) + (e.id | 0)) % 2) continue;
       if (rel <= step + 1e-4 || d < 40) {
+        // màn hình radar của xe mình: vết mới hiện lên -> "píp" khẽ (không kêu lại cho vết đang theo dõi)
+        if (u.isPlayer && !u.radarContacts.has(e.id) && typeof window !== 'undefined' && window.soundEngine && window.soundEngine.playRadarContact) window.soundEngine.playRadarContact(d / radarRange(u));
         const c = u.radarContacts.get(e.id) || {};
         c.x = e.x; c.z = e.z; c.t = time; c.inBush = !!e.isInBush; c.unit = e;
         u.radarContacts.set(e.id, c);

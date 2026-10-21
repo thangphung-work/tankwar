@@ -1357,12 +1357,15 @@ class SPGUnit3D {
   // Máy châm lửa (máy có quyền với phát bắn) là máy duy nhất tính sát thương cháy -> không trừ máu 2 lần khi chơi mạng
   ignite(duration = 2.5) {
     if (this.isDead) return;
+    if (typeof Equipment !== 'undefined' && Equipment.extIgniteMul) duration *= Equipment.extIgniteMul(this);   // bình chữa cháy: cháy ngắn hơn
+    if (typeof VehicleDamage !== 'undefined' && VehicleDamage.extinguisherSound) VehicleDamage.extinguisherSound(this);
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
     this.burnAuth = true;
   }
   // Lửa do máy khác báo sang: chỉ hiện khói lửa, không tự trừ máu
   igniteVisual(duration = 2.5) {
     if (this.isDead) return;
+    if (typeof VehicleDamage !== 'undefined' && VehicleDamage.extinguisherSound) VehicleDamage.extinguisherSound(this);
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
   }
 
@@ -1626,6 +1629,12 @@ class SPGUnit3D {
     // Giới hạn biên bản đồ
     nextX = Math.max(-terrain.width / 2 + 60, Math.min(terrain.width / 2 - 60, nextX));
     nextZ = Math.max(-terrain.depth / 2 + 60, Math.min(terrain.depth / 2 - 60, nextZ));
+    // tường vô hình trên sườn vành núi, bám đường chân núi méo của bản đồ (không leo qua núi ra bờ biển / ra góc)
+    const OUT = terrain.map && terrain.map.outer;
+    if (OUT && OUT.rimFoot) {
+      const d = Math.hypot(nextX, nextZ), lim = OUT.rimFoot(nextX, nextZ) + OUT.wall;
+      if (d > lim) { nextX *= lim / d; nextZ *= lim / d; }
+    }
 
     // KIỂM TRA VA CHẠM VẬT CẢN (TÒA NHÀ CĂN CỨ & BỜ TƯỜNG CÔNG SỰ MÓNG NGỰA)
     const resolved = terrain.resolveVehicleCollision(this.x, this.z, nextX, nextZ, 16, this);
@@ -3065,8 +3074,8 @@ class SPGUnit3D {
     radar.registerShot({
       id: this.id,
       isPlayer: this.isPlayer,
-      x: this.x + 1800,
-      y: this.z + 1800,
+      x: this.x + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
+      y: this.z + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
       baseMaxSpeed: this.baseMaxSpeed
     });
 
@@ -3299,8 +3308,8 @@ class SPGUnit3D {
       radar.registerShot({
         id: this.id,
         isPlayer: this.isPlayer,
-        x: this.x + 1800,
-        y: this.z + 1800,
+        x: this.x + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
+        y: this.z + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
         baseMaxSpeed: this.baseMaxSpeed
       });
     }
@@ -3351,8 +3360,8 @@ class SPGUnit3D {
       radar.registerShot({
         id: this.id,
         isPlayer: this.isPlayer,
-        x: this.x + 1800,
-        y: this.z + 1800,
+        x: this.x + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
+        y: this.z + (typeof MapGen !== 'undefined' ? MapGen.HALF : 1800),
         baseMaxSpeed: this.baseMaxSpeed
       });
     }

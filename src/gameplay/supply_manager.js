@@ -41,12 +41,15 @@ class SupplyManager {
 
     let dropX = px, dropZ = pz;
     if (typeof dropX !== 'number' || typeof dropZ !== 'number') {
-      const zoneCenterX = this.game.zone.current.x - 1800;
-      const zoneCenterZ = this.game.zone.current.y - 1800;
+      const zoneCenterX = this.game.zone.current.x - this.game.worldWidth / 2;
+      const zoneCenterZ = this.game.zone.current.y - this.game.worldDepth / 2;
       const r = Math.random() * (this.game.zone.current.radius * 0.65);
       const angle = Math.random() * Math.PI * 2;
       dropX = zoneCenterX + Math.cos(angle) * r;
       dropZ = zoneCenterZ + Math.sin(angle) * r;
+      // không thả dù vào khu căn cứ vùng cấm bắn giữa 3 cứ điểm
+      const LS = this.game.terrain && this.game.terrain.landmarkSet;
+      if (LS && LS.outside) [dropX, dropZ] = LS.outside(dropX, dropZ, 60);
       this.broadcast({ e: 'drop', x: Math.round(dropX * 10) / 10, z: Math.round(dropZ * 10) / 10 });
     }
     const groundY = this.game.terrain.getElevationAt(dropX, dropZ);
@@ -249,7 +252,8 @@ class SupplyManager {
     }
     this.supplyCrates = [];
 
-    // Danh sách 11 vị trí rải rác chiến lược trên chiến trường 3600 x 3600
+    // Danh sách 11 vị trí rải rác chiến lược (bố cục gốc cho bản đồ 3600, giãn theo kích thước bản đồ)
+    const K = this.game.worldWidth / 3600;
     const crateLocations = [
       { x: 0, z: 0, type: 'ALL', name: 'TRUNG TÂM CHIẾN ĐỊA' },
       { x: -360, z: 520, type: 'REPAIR', name: 'CÔNG SỰ TÂY PHE XANH' },
@@ -264,7 +268,11 @@ class SupplyManager {
       { x: 650, z: 0, type: 'ALL', name: 'ĐÈO CÁT PHÍA ĐÔNG' }
     ];
 
-    crateLocations.forEach((loc, idx) => {
+    crateLocations.forEach((loc0, idx) => {
+      const loc = Object.assign({}, loc0, { x: loc0.x * K, z: loc0.z * K });
+      // hòm rơi vào khu căn cứ (vùng cấm bắn) -> dời ra ngoài hàng rào
+      const LS = this.game.terrain && this.game.terrain.landmarkSet;
+      if (LS && LS.outside) [loc.x, loc.z] = LS.outside(loc.x, loc.z, 40);
       const groundY = this.game.terrain.getElevationAt(loc.x, loc.z);
       const crateMesh = this.createSupplyCrateMesh(loc.type);
       crateMesh.position.set(loc.x, groundY + 7, loc.z);

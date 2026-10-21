@@ -10,6 +10,7 @@ const GroundCover = (() => {
   const RADIUS = 720;           // bán kính quanh tâm khung nhìn
   const TUFTS_PER_CELL = 16;
   const PEBBLES_PER_CELL = 7;
+  const OG = 7;                 // hệ số rải dày trong ô thuộc căn cứ bỏ hoang (cỏ dại um tùm)
 
   const BIOME = {
     HIGHLAND: { grass: [[0.36, 0.41, 0.23], [0.53, 0.5, 0.33]], density: 1.0, pebble: [0.44, 0.42, 0.39], pebbleK: 1.0, tuftH: [5, 9] },
@@ -30,50 +31,64 @@ const GroundCover = (() => {
   // Ảnh lá cỏ: atlas 2x2 = 4 kiểu khóm khác nhau (số lá, độ cao, độ xòe, độ khô) — mỗi khóm chọn ngẫu nhiên 1 kiểu
   function blades() {
     if (bladeTex) return bladeTex;
-    const C = 128, c = document.createElement('canvas'); c.width = c.height = C * 2;
+    // atlas 2x2, mỗi ô 256 px (~1 m tấm lá): 4 kiểu khóm — cỏ đồng dày, cỏ cao trổ bông, búi cỏ thấp, cỏ khô úa.
+    // Lá mảnh thon nhọn, cong võng (Bezier bậc 3), một số gãy gập; gốc sẫm -> ngọn sáng; lẫn lá chết nâu
+    const C = 256, c = document.createElement('canvas'); c.width = c.height = C * 2;
     const g = c.getContext('2d');
-    const kinds = [{ n: 46, hMin: 0.45, hMax: 0.98, spread: 50, seed: 77 }, { n: 28, hMin: 0.6, hMax: 1.0, spread: 24, seed: 91 },
-      { n: 64, hMin: 0.3, hMax: 0.7, spread: 70, seed: 113 }, { n: 36, hMin: 0.4, hMax: 0.9, spread: 90, seed: 137, dry: true }];
+    const kinds = [{ n: 150, hMin: 0.4, hMax: 0.95, spread: 60, seed: 77 }, { n: 95, hMin: 0.55, hMax: 1.0, spread: 34, seed: 91, heads: 16 },
+      { n: 190, hMin: 0.22, hMax: 0.6, spread: 90, seed: 113 }, { n: 120, hMin: 0.35, hMax: 0.9, spread: 80, seed: 137, dry: true, heads: 6 }];
     kinds.forEach((K, idx) => {
       const ox = (idx % 2) * C, oy = (idx >> 1) * C, rnd = rngOf(K.seed);
       g.save(); g.beginPath(); g.rect(ox, oy, C, C); g.clip();
-      for (let i = 0; i < K.n; i++) {
-        const x0 = ox + C * (0.18 + rnd() * 0.64), lean = (rnd() - 0.5) * K.spread, h = C * (K.hMin + rnd() * (K.hMax - K.hMin)) - 2, w = 1.8 + rnd() * 2.8;
-        const k = 0.7 + rnd() * 0.45, dry = K.dry ? 0.35 + rnd() * 0.5 : rnd() * 0.18;
-        const base = [148 + 50 * dry, 162 + 16 * dry, 116 - 10 * dry], tip = [212 + 30 * dry, 222 - 6 * dry, 168 - 56 * dry];
+      const blade = (front) => {
+        const x0 = ox + C * (0.2 + rnd() * 0.6), lean = (rnd() - 0.5) * K.spread * (front ? 1.2 : 0.8), h = C * (K.hMin + rnd() * (K.hMax - K.hMin)) - 2, w = 1.1 + rnd() * 2.2;
+        const k = (front ? 0.82 : 0.62) + rnd() * 0.38, dead = rnd() < 0.08, dry = K.dry ? 0.35 + rnd() * 0.6 : dead ? 0.9 : rnd() * 0.22;
+        const base = dead ? [120, 104, 80] : [118 + 70 * dry, 138 + 26 * dry, 96 - 8 * dry], tip = dead ? [168, 150, 112] : [176 + 50 * dry, 200 - 4 * dry, 140 - 50 * dry];
+        const bend = rnd() < 0.18;                  // lá gãy gập: ngọn quặt xuống
+        const tx = x0 + lean * (bend ? 1.7 : 1), ty = oy + C - h * (bend ? 0.72 : 1);
+        const c1x = x0 + lean * 0.1, c1y = oy + C - h * 0.45, c2x = x0 + lean * (bend ? 1.2 : 0.6), c2y = oy + C - h * (bend ? 1.02 : 0.85);
         const gr = g.createLinearGradient(0, oy + C, 0, oy + C - h);
-        gr.addColorStop(0, `rgb(${base[0] * k | 0},${base[1] * k | 0},${base[2] * k | 0})`);
+        gr.addColorStop(0, `rgb(${base[0] * k * 0.7 | 0},${base[1] * k * 0.7 | 0},${base[2] * k * 0.7 | 0})`);
         gr.addColorStop(1, `rgb(${Math.min(255, tip[0] * k) | 0},${Math.min(255, tip[1] * k) | 0},${Math.max(0, tip[2] * k) | 0})`);
-        g.fillStyle = gr;
-        g.beginPath();
+        g.fillStyle = gr; g.beginPath();
         g.moveTo(x0 - w, oy + C);
-        g.quadraticCurveTo(x0 + lean * 0.4, oy + C - h * 0.55, x0 + lean, oy + C - h);
-        g.quadraticCurveTo(x0 + lean * 0.4 + w * 0.4, oy + C - h * 0.5, x0 + w, oy + C);
+        g.bezierCurveTo(c1x - w * 0.8, c1y, c2x - w * 0.35, c2y, tx, ty);
+        g.bezierCurveTo(c2x + w * 0.35, c2y, c1x + w * 0.8, c1y, x0 + w, oy + C);
         g.closePath(); g.fill();
+      };
+      for (let i = 0; i < K.n * 0.45; i++) blade(false);   // lớp lá sau (tối)
+      for (let i = 0; i < K.n * 0.55; i++) blade(true);
+      // bông hạt: thân mảnh + bông hạt thuôn (cỏ trổ bông lâu ngày không cắt)
+      for (let i = 0; i < (K.heads || 0); i++) {
+        const x0 = ox + C * (0.25 + rnd() * 0.5), lean = (rnd() - 0.5) * 50, h = C * (0.75 + rnd() * 0.24);
+        const tx = x0 + lean, ty = oy + C - h;
+        g.strokeStyle = K.dry ? 'rgb(170,150,104)' : 'rgb(150,150,96)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, oy + C); g.quadraticCurveTo(x0 + lean * 0.3, oy + C - h * 0.6, tx, ty); g.stroke();
+        for (let j = 0; j < 14; j++) { const t = j / 14; g.fillStyle = `rgba(${190 + rnd() * 30 | 0},${172 + rnd() * 20 | 0},${118 + rnd() * 20 | 0},0.95)`; g.beginPath(); g.ellipse(tx - lean * 0.05 * t + (rnd() - 0.5) * 3, ty + t * 22, 1.6, 3, lean * 0.01, 0, 6.283); g.fill(); }
       }
       g.restore();
     });
     bladeTex = new THREE.CanvasTexture(c);
+    bladeTex.anisotropy = 4;
     return bladeTex;
   }
 
-  // Khóm cỏ: 5 tấm tỏa tròn, nghiêng ra ngoài (nhìn từ trên cao vẫn thấy thành khóm), pháp tuyến hướng lên như mặt đất
+  // Khóm cỏ: 9 tấm lá toả tròn, mỗi tấm cong 2 đoạn (gốc gần đứng, ngọn ngả ra ngoài như bụi cỏ thật), rộng hẹp /
+  // cao thấp khác nhau; pháp tuyến hướng lên như mặt đất
   function tuftGeometry() {
     const P = [], UV = [], NR = [], I = [];
-    const n = 7, rnd = rngOf(4242);
+    const n = 9, rnd = rngOf(4242);
     for (let k = 0; k < n; k++) {
-      const a = k / n * Math.PI * 2 + (rnd() - 0.5) * 0.8, ca = Math.cos(a), sa = Math.sin(a);
-      const tilt = 0.45 + rnd() * 0.55;      // độ ngả ra ngoài khác nhau từng tấm
-      const w = 0.35 + rnd() * 0.25;
-      const bx = ca * 0.08, bz = sa * 0.08;
-      const tx = ca * tilt, tz = sa * tilt;
+      const a = k / n * Math.PI * 2 + (rnd() - 0.5) * 0.7, ca = Math.cos(a), sa = Math.sin(a);
+      const tilt = 0.3 + rnd() * 0.55, w = 0.28 + rnd() * 0.26, hy = 0.6 + rnd() * 0.4;
       const px = -sa * w, pz = ca * w;
+      const pt = (t, lift) => { const lean = tilt * t * t, y = hy * (t * 0.98 + lift); return [ca * (0.06 + lean), y, sa * (0.06 + lean)]; };
       const o = P.length / 3;
-      const hy = 0.65 + rnd() * 0.35;
-      P.push(bx - px, 0, bz - pz, bx + px, 0, bz + pz, tx + px, hy, tz + pz, tx - px, hy, tz - pz);
-      UV.push(0, 0, 1, 0, 1, 1, 0, 1);
-      for (let q = 0; q < 4; q++) NR.push(0, 1, 0);
-      I.push(o, o + 1, o + 2, o, o + 2, o + 3);
+      for (const [t, v] of [[0, 0], [0.55, 0.55], [1, 1]]) {
+        const [x, y, z] = pt(t, 0), ww = 1 - t * 0.12;
+        P.push(x - px * ww, y, z - pz * ww, x + px * ww, y, z + pz * ww); UV.push(0, v, 1, v);
+        NR.push(0, 1, 0, 0, 1, 0);
+      }
+      I.push(o, o + 1, o + 3, o, o + 3, o + 2, o + 2, o + 3, o + 5, o + 2, o + 5, o + 4);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
@@ -91,13 +106,14 @@ const GroundCover = (() => {
       this.group.name = 'groundCover';
       terrain.group.add(this.group);   // dọn theo địa hình khi đổi bản đồ
       const maxCells = Math.ceil((2 * RADIUS / CELL) + 2) ** 2;
-      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density));
+      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5) + 90000;   // + cỏ dại dày trong căn cứ
       this.maxP = maxCells * PEBBLES_PER_CELL;
       // cỏ
-      const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+      const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.32, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });   // lá mảnh: ngưỡng thấp để xa không bị mỏng mất
       gm.onBeforeCompile = (sh) => {
         sh.uniforms.gTime = GroundShader && GroundShader.time ? GroundShader.time : { value: 0 };
-        sh.vertexShader = 'uniform float gTime;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+        sh.vertexShader = 'uniform float gTime;\nvarying float vBY;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+          vBY = uv.y;
           {
             float hv = fract(sin(dot(vec2(instanceMatrix[3][0], instanceMatrix[3][2]), vec2(12.9898, 78.233))) * 43758.5453);
             vUv = vUv * 0.5 + vec2(step(0.5, fract(hv * 2.0)), step(0.5, hv)) * 0.5;
@@ -109,8 +125,15 @@ const GroundCover = (() => {
             transformed.x += sw * uv.y;
             transformed.z += sw * 0.6 * uv.y;
           }`);
+        // ánh sáng: lá cỏ 2 mặt -> mặt sau bị lật pháp tuyến xuống dưới thành lá tối sẫm xen lá sáng chói. Cho mọi lá nhận
+        // sáng như mặt đất (pháp tuyến hướng lên), gốc khóm tối dần (lá che nhau), ngọn sáng
+        sh.fragmentShader = 'varying float vBY;\n' + sh.fragmentShader
+          .replace('#include <map_fragment>', `#include <map_fragment>
+            diffuseColor.rgb *= mix(0.38, 1.04, smoothstep(0.0, 0.9, vBY));`)
+          .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+            normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`);
       };
-      gm.customProgramCacheKey = () => 'grassTuft2';
+      gm.customProgramCacheKey = () => 'grassTuft4';
       this.grass = new THREE.InstancedMesh(tuftGeometry(), gm, this.maxT);
       this.grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxT * 3), 3);
       this.grass.count = 0; this.grass.frustumCulled = false; this.grass.receiveShadow = true; this.grass.castShadow = false;
@@ -179,6 +202,7 @@ const GroundCover = (() => {
       if (T.groundAtRaw(x, z) < 0.6 && (T.map.river || T.map.lakes.length)) return true;
       if (T.map.roadAt && T.map.roadAt(x, z)) return true;
       if (T.strongholdSet && T.strongholdSet.covers(x, z, 4)) return true;
+      if (T.landmarkSet && T.landmarkSet.covers(x, z, 4) && !(T.landmarkSet.overgrowth && T.landmarkSet.overgrowth(x, z))) return true;
       if (T.bridges.length && T.bridgeAt(x, z)) return true;
       return false;
     }
@@ -197,7 +221,9 @@ const GroundCover = (() => {
         // Cỏ mọc theo CỤM và MẢNG như ngoài đồng (không rắc đều từng khóm giống nhau -> hết cảm giác hoa văn lặp):
         // - mảng lớn (~150 m) dày / thưa / trống theo nhiễu; mỗi cụm 1-6 khóm sát nhau
         // - cả cụm chung cỡ & sắc độ (khô / xanh), từng khóm lệch nhẹ
-        const nClu = Math.max(1, Math.round(nTry / 2.6));
+        // ô nằm trong căn cứ bỏ hoang: cỏ dại um tùm -> rải dày gấp 2.6, từng khóm lọc theo mức mọc tại chỗ
+        const LS = this.T.landmarkSet, inBase = !!(LS && LS.overgrowth && LS.covers(ox + CELL / 2, oz + CELL / 2, CELL));
+        const nClu = Math.max(1, Math.round(nTry / 2.6 * (inBase ? OG : 1)));
         for (let k = 0; k < nClu; k++) {
           const cx = ox + rnd() * CELL, cz = oz + rnd() * CELL, ra = rnd(), rb = rnd(), rc = rnd(), rd = rnd();
           const pn = this.noise ? this.noise(cx / 170 + 0.37, cz / 170 + 0.11) : [0.5, 0.5, 0.5];
@@ -209,13 +235,15 @@ const GroundCover = (() => {
             const a = rnd() * 6.283, d = Math.sqrt(rnd()) * cr;
             const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, r1 = rnd(), r2 = rnd(), r3 = rnd();
             const M = this.masks(x, z);
-            if (r1 > M.grass * 1.15 * dens || this.blocked(x, z)) continue;
-            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3), wid = hgt * (0.7 + r3 * 0.5);
+            // trong căn cứ: mật độ / chiều cao theo mức cỏ dại tại chỗ (bãi cỏ cũ um tùm, sỏi & mặt đường thưa thấp)
+            const inside = inBase && !!LS.noFireAt(x, z, 0), og = inside ? LS.overgrowth(x, z) : null, mg = og ? 0.85 : M.grass;
+            if (inside ? (!og || r1 > og.k / 2.6) : (r1 > mg * 1.15 * dens / (inBase ? OG : 1) || this.blocked(x, z))) continue;
+            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : 1), wid = hgt * (0.7 + r3 * 0.5) * (og ? 1.25 : 1);
             const r4 = rnd(), r5 = rnd();
             e.set((r4 - 0.5) * 0.5, r3 * 6.283, (r5 - 0.5) * 0.5);
             m4.compose(v.set(x, M.h - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));
             gm.push(...m4.elements);
-            const dry = Math.max(0, Math.min(1, cDry + (r2 - 0.5) * 0.25 + (1 - M.grass) * 0.4)), kk = 1.0 + r1 * 0.22;
+            const dry = Math.max(0, Math.min(1, cDry + (r2 - 0.5) * 0.25 + (1 - mg) * 0.4)), kk = 1.0 + r1 * 0.22;
             for (let ch = 0; ch < 3; ch++) gc.push((B.grass[0][ch] + (B.grass[1][ch] - B.grass[0][ch]) * dry) * kk);
           }
         }
@@ -232,7 +260,7 @@ const GroundCover = (() => {
           for (let ch = 0; ch < 3; ch++) pc.push(B.pebble[ch] * kk);
         }
       }
-      c = { gm: new Float32Array(gm), gc: new Float32Array(gc), pm: new Float32Array(pm), pc: new Float32Array(pc) };
+      c = { gm: new Float32Array(gm), gc: new Float32Array(gc), pm: new Float32Array(pm), pc: new Float32Array(pc), dense: gm.length / 16 > TUFTS_PER_CELL * 4 };
       this.cache.set(key, c);
       return c;
     }
@@ -246,8 +274,10 @@ const GroundCover = (() => {
       const c0z = Math.floor((cz - RADIUS) / CELL), c1z = Math.floor((cz + RADIUS) / CELL);
       for (let j = c0z; j <= c1z; j++) for (let i = c0x; i <= c1x; i++) {
         const c = this.cellData(i, j);
-        const ng = c.gm.length / 16, npb = c.pm.length / 16;
-        if (ng && nt + ng <= this.maxT) { gA.set(c.gm, nt * 16); gC.set(c.gc, nt * 3); nt += ng; }
+        // ô cỏ dày (căn cứ bỏ hoang): đủ dày trong ~300 quanh tâm nhìn, xa hơn chỉ lấy 1/3 (các khóm rải ngẫu nhiên -> lấy phần đầu)
+        const far = c.dense && Math.hypot(i * CELL + CELL / 2 - cx, j * CELL + CELL / 2 - cz) > 300;
+        const ng = far ? Math.floor(c.gm.length / 16 / 3) : c.gm.length / 16, npb = c.pm.length / 16;
+        if (ng && nt + ng <= this.maxT) { gA.set(c.gm.subarray(0, ng * 16), nt * 16); gC.set(c.gc.subarray(0, ng * 3), nt * 3); nt += ng; }
         if (npb && np + npb <= this.maxP) { pA.set(c.pm, np * 16); pC.set(c.pc, np * 3); np += npb; }
       }
       // dọn ô quá xa khỏi bộ nhớ đệm

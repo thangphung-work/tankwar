@@ -443,7 +443,7 @@ class BallisticsSystem3D {
    * Thông số bay của một phát bắn theo SỐ LIỆU THẬT thu nhỏ đúng tỉ lệ (src/core/game_timing.js):
    * v0 / g theo "giây mô phỏng" (= giây thật x bulletSpeedMultiplier), k = hệ số cản theo quãng đường (đơn vị game).
    * Mọi loại đạn chịu trọng lực đầy đủ của thế giới thu nhỏ -> đường đạn là bản sao thu nhỏ của đường đạn thật
-   * (pháo tăng APFSDS bay gần như thẳng tới ~2 km game, lựu pháo cầu vồng phủ ~450–2700).
+   * (pháo tăng APFSDS bay gần như thẳng tới ~2 km game, lựu pháo cầu vồng phủ ~0.12–0.75 cạnh bản đồ).
    */
   roundParams(ammoType, shooter = null, chargeLevel = 1) {
     const type = shooter ? shooter.tankType : null;
@@ -469,7 +469,7 @@ class BallisticsSystem3D {
     return this.roundParams(ammoType, shooter).g;
   }
 
-  // Hệ số sơ tốc theo liều phóng lựu pháo (1 = đầy ... 5 = nhỏ nhất); phủ kín cự ly ~450 -> 2700
+  // Hệ số sơ tốc theo liều phóng lựu pháo (1 = đầy ... 5 = nhỏ nhất); phủ kín cự ly ~0.12 -> 0.75 cạnh bản đồ
   artyChargeMulOf(chargeLevel) {
     const z = Math.max(1, Math.min(5, Math.round(chargeLevel || 1)));
     const C = (typeof GameTiming !== 'undefined' && GameTiming.REAL.artyCharges) || [1, 0.8, 0.62, 0.44, 0.34];
@@ -651,7 +651,9 @@ class BallisticsSystem3D {
         // Phòng thử nghiệm ("luôn hiện mục tiêu"): mục tiêu đang hiện trên màn hình của người chơi cũng tính là thấy.
         // Trận thật vẫn bắt buộc tự nhìn thấy trực tiếp (tên lửa dẫn theo đường ngắm, đồng đội báo vị trí không đủ)
         const onScreen = !!(window.STRONGHOLD_LAB && shooter && shooter.isPlayer && target.group && target.group.visible && !target.isHiddenFromPlayer);
-        const seen = !(target._netHidden) && (!shooter || typeof TeamIntel === 'undefined' || TeamIntel.seesDirect(shooter, target) || onScreen);
+        // khói đa phổ (mục tiêu phóng khói lúc đang bị khóa): đầu dò mất mục tiêu, bay tới chỗ thấy lần cuối
+        const veiled = typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(target, s.shooterTeam);
+        const seen = !(target._netHidden) && !veiled && (!shooter || typeof TeamIntel === 'undefined' || TeamIntel.seesDirect(shooter, target) || onScreen);
         if (seen) {
           const ty = (target.y || (terrain ? terrain.getElevationAt(target.x, target.z) : 0)) + 7;
           // vận tốc mục tiêu (đơn vị / giây mô phỏng): xe chỉ dịch chuyển mỗi khung hình, đạn bước 3 lần / khung
@@ -1567,7 +1569,7 @@ BallisticsSystem3D.prototype.maxRangeFor = function (shooter) {
   if (!GT) return 1700;
   const t = shooter ? shooter.tankType : 'ALL_ROUNDER';
   switch (t) {
-    case 'ARTILLERY': return Math.round(GT.round('HE', 'ARTILLERY').eff);              // ~2700
+    case 'ARTILLERY': return Math.round(GT.round('HE', 'ARTILLERY').eff);              // ~0.75 cạnh bản đồ
     case 'GATLING': return Math.round(GT.round('GATLING_BULLET', 'GATLING').eff);       // 30mm ~1000
     case 'SCOUT': return Math.round(GT.round('ANTI_TANK_MISSILE', 'SCOUT').eff);        // tên lửa ~2000 (súng máy ~700)
     default: return Math.round(GT.round('AP', t).eff);                                  // pháo tăng APFSDS ~1750

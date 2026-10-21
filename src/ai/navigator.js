@@ -21,6 +21,7 @@ const Navigator = (() => {
     const wd = new Float32Array(nx * nz);   // độ sâu nước tại tâm ô (0 = cạn)
     const margin = 70;
     const SS = terrain.strongholdSet;
+    const OUT = terrain.map && terrain.map.outer;
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) {
         const x = -W / 2 + (i + 0.5) * CELL, z = -D / 2 + (j + 0.5) * CELL;
@@ -29,6 +30,8 @@ const Navigator = (() => {
         const ws = terrain.waterSurfaceAt ? terrain.waterSurfaceAt(x, z) : null;
         if (ws !== null && ws !== undefined) wd[k] = Math.max(0, ws - h[k]);
         if (Math.abs(x) > W / 2 - margin || Math.abs(z) > D / 2 - margin) { blocked[k] = 1; continue; }
+        // ngoài tường giữ xe trên sườn vành núi (spg.js)
+        if (OUT && OUT.rimFoot && Math.hypot(x, z) > OUT.rimFoot(x, z) + OUT.wall - 40) { blocked[k] = 1; continue; }
         // Tường bê tông cứ điểm: thử va chạm thân xe tại tâm ô (chỉ các ô gần cứ điểm)
         if (SS && SS.near && SS.near(x, z, 40)) {
           const r = terrain.resolveVehicleCollision(x, z, x, z, CLEAR, null);
@@ -64,6 +67,11 @@ const Navigator = (() => {
     for (const fort of terrain.horseshoeForts || []) for (const bl of fort.wallBlocks || []) {
       const r = bl.radius + INF;
       mark(bl.x, bl.z, r, (x, z) => Math.hypot(x - bl.x, z - bl.z) < r);
+    }
+    // Khối đặc của công trình bối cảnh (bệ phóng, tháp, bồn, xe, cột...): hộp xoay nới rộng như nhà
+    for (const q of terrain.landmarkSet ? terrain.landmarkSet.navBoxes() : []) {
+      const hu = q.hu + INF, hv = q.hv + INF;
+      mark(q.cx, q.cz, Math.hypot(hu, hv), (x, z) => { const dx = x - q.cx, dz = z - q.cz; return Math.abs(dx * q.ux + dz * q.uz) < hu && Math.abs(-dx * q.uz + dz * q.ux) < hv; });
     }
     G = { nx, nz, W, D, h, blocked, wd, terrain };
     grids.set(terrain, G);
@@ -163,7 +171,7 @@ const Navigator = (() => {
   }
 
   // Bộ nhớ đệm A* dùng lại cho mọi lần tìm đường trên cùng lưới: ô chỉ có giá trị khi stamp[k] === gen
-  // (thay cho tạo + điền 3 mảng 22 500 ô mỗi lần gọi)
+  // (thay cho tạo + điền 3 mảng ~50 000 ô mỗi lần gọi)
   const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
   let scratch = null;
   function scratchFor(N) {

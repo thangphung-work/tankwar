@@ -16,6 +16,8 @@
   if (q.get('lab') !== 'stronghold') return;
   window.STRONGHOLD_LAB = true;
   if (typeof MapGen !== 'undefined') MapGen.setLayout('STRONGHOLDS');
+  // landmark=nuke|bio|sam: chọn công trình giữa 3 cứ điểm (mặc định theo seed)
+  if (typeof MapGen !== 'undefined' && MapGen.setLandmark) MapGen.setLandmark(q.get('landmark'));
   // Chơi độc lập: không vào sảnh mạng
   try { window.NetTransport = undefined; } catch (e) { /* bỏ qua */ }
 
@@ -40,8 +42,8 @@
   ];
   // Phá bộ phận theo loại xe (VehicleDamage.debugAction), giống phòng thử chiến xa
   const PART_ACTIONS = {
-    ALL_ROUNDER: [['skirt', 'Váy xích'], ['applique', 'Giáp mũi'], ['track', 'Đứt xích'], ['ring', 'Kẹt tháp'], ['gun', 'Cong nòng'], ['optic', 'Kính ngắm'], ['engine', 'Động cơ'], ['antenna', 'Ăng-ten'], ['acc', 'Phụ kiện']],
-    GATLING: [['era', 'Nổ ERA'], ['cage', 'Lồng lưới'], ['feed', 'Máng đạn'], ['track', 'Đứt xích'], ['gun', 'Cụm nòng'], ['ring', 'Kẹt tháp'], ['engine', 'Động cơ'], ['antenna', 'Ăng-ten'], ['acc', 'Phụ kiện']],
+    ALL_ROUNDER: [['skirt', 'Váy xích'], ['applique', 'Bắn giáp mũi'], ['track', 'Đứt xích'], ['ring', 'Kẹt tháp'], ['gun', 'Cong nòng'], ['optic', 'Kính ngắm'], ['engine', 'Động cơ'], ['antenna', 'Ăng-ten'], ['acc', 'Phụ kiện']],
+    GATLING: [['era', 'Nổ 1 viên ERA'], ['cage', 'Lồng lưới'], ['feed', 'Máng đạn'], ['track', 'Đứt xích'], ['gun', 'Cụm nòng'], ['ring', 'Kẹt tháp'], ['engine', 'Động cơ'], ['antenna', 'Ăng-ten'], ['acc', 'Phụ kiện']],
     SCOUT: [['tire', 'Xẹp lốp'], ['wheel', 'Văng bánh'], ['glass', 'Vỡ kính'], ['sensor', 'Radar'], ['atgm', 'Ống tên lửa'], ['engine', 'Động cơ'], ['antenna', 'Ăng-ten'], ['acc', 'Phụ kiện']],
     ARTILLERY: [['tire', 'Xẹp lốp'], ['wheel', 'Văng bánh'], ['glass', 'Vỡ kính'], ['fuel', 'Thùng xăng'], ['ammo', 'Nổ hòm đạn'], ['hyd', 'Thủy lực'], ['frame', 'Méo khung'], ['gun', 'Cong nòng'], ['ring', 'Kẹt bàn xoay'], ['acc', 'Phụ kiện']]
   };

@@ -19,8 +19,9 @@ const GameTiming = {
   UNITS_PER_M: 8,      // tỉ lệ thân xe / vụ nổ
   ROAD_BONUS: 1.15,    // hệ số tốc độ trên đường nhựa tốt (terrain speedMult) -> tốc độ thật tối đa đạt được trên đường tốt
 
-  // Lựu pháo: 30 km thật -> ~2700 đơn vị (vừa bản đồ 3600); đạn bay 80 s thật -> ~5.7 s trong game
-  artyRangeScale: 0.09,
+  // Lựu pháo: 30 km thật -> ~0.75 cạnh bản đồ (2700 đơn vị trên bản đồ 3600, 4050 trên bản đồ 5400);
+  // đạn bay 80 s thật -> ~5.7 s trong game (tầm giãn theo bản đồ, thời gian bay giữ nguyên)
+  artyRangeScale: 0.09 * (typeof MapGen !== 'undefined' ? MapGen.SIZE / 3600 : 1),
   artyTimeScale: 0.07,
 
   G: 9.81,

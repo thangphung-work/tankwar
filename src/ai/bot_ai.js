@@ -10,6 +10,9 @@
  * - Cơ chế phân tán đội hình: Tự động giữ khoảng cách an toàn 50-70m với đồng đội, không chụm đầu dồn cục
  * - Cơ chế tự động lùi thoát kẹt: Nhận biết khi bị kẹt bờ tường công sự, vào số lùi bẻ lái thoát hiểm
  */
+// Xe t vừa phóng khói đa phổ lúc bị khóa: phe team không khóa / ngắm được t cho tới khi khói tan (Equipment.lockBlocked)
+const smokeVeiled = (t, team) => typeof Equipment !== 'undefined' && !!Equipment.lockBlocked && Equipment.lockBlocked(t, team);
+
 class BotAIController {
   constructor(unit) {
     this.unit = unit;
@@ -305,8 +308,8 @@ class BotAIController {
       }
     }
 
-    const zoneCenterX = zone.current.x - 1800;
-    const zoneCenterZ = zone.current.y - 1800;
+    const zoneCenterX = zone.current.x - zone.worldWidth / 2;
+    const zoneCenterZ = zone.current.y - zone.worldHeight / 2;
     const distToZone = Math.hypot(this.unit.x - zoneCenterX, this.unit.z - zoneCenterZ);
 
     // 0. CƠ CHẾ PHÁT HIỆN KẸT XE & TỰ ĐỘNG LÙI THOÁT HIỂM (ANTI-STUCK & REVERSE)
@@ -580,6 +583,7 @@ class BotAIController {
       // (xe trinh sát), hoặc đồng đội trinh sát báo vị trí
       const enemyUnits = (allUnits || []).filter(u => {
         if (u.isDead || u.team === this.unit.team) return false;
+        if (smokeVeiled(u, this.unit.team)) return false;   // mất khóa sau khói đa phổ: chỉ còn bắn mò theo vị trí kẻ vừa bắn mình
         if (typeof TeamIntel !== 'undefined') return TeamIntel.knows(this.unit, u);
         return !(u.isInBush && (u.revealTimer || 0) <= 0) || Math.hypot(u.x - this.unit.x, u.z - this.unit.z) <= 260;
       });
@@ -608,8 +612,8 @@ class BotAIController {
         });
 
         if (targetDetection) {
-          targetX = targetDetection.originX - 1800 + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
-          targetZ = targetDetection.originY - 1800 + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
+          targetX = targetDetection.originX - MapGen.HALF + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
+          targetZ = targetDetection.originY - MapGen.HALF + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
         } else if (enemyUnits.length > 0) {
           // đang giao chiến với xe nào mà vẫn thấy thì bắn tiếp xe đó (đã chỉnh được sai số qua các phát trước)
           const cur = this.eng && this.clock - this.eng.lastAt < 15 ? enemyUnits.find(u => u.id === this.eng.id && this.seesDirect(u)) : null;
@@ -642,6 +646,8 @@ class BotAIController {
         }
       }
 
+      // vùng cấm bắn (khu công trình giữa 3 cứ điểm): bot không nhắm bắn vào đó
+      if (targetX !== null && terrain && terrain.landmarkSet && terrain.landmarkSet.noFireAt(targetX, targetZ, 20)) targetX = targetZ = null;
       if (targetX !== null && targetZ !== null) {
         this.lastBallistics = ballistics;
         // Xe tự nhìn thấy: ngắm có đón đầu + sai số của bot (chỉnh dần qua từng phát); còn lại: bắn vào điểm phỏng chừng
@@ -734,6 +740,7 @@ class BotAIController {
   // Bot tự nhìn thấy xe đó (mắt / kính ngắm), không tính vị trí do đồng đội báo hay radar
   seesDirect(t) {
     if (!t || t.isDead) return false;
+    if (smokeVeiled(t, this.unit.team)) return false;   // khói đa phổ: kính ngắm / laser đo xa không khóa được
     if (typeof TeamIntel === 'undefined') return true;
     return TeamIntel.seesDirect(this.unit, t);
   }

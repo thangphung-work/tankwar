@@ -18,8 +18,8 @@ class ArtilleryGame3D {
   constructor() {
     this.container = domById('webgl-container');
 
-    this.worldWidth = 3600;
-    this.worldDepth = 3600;
+    this.worldWidth = MapGen.SIZE;
+    this.worldDepth = MapGen.SIZE;
 
     // 1. Khởi tạo Three.js Scene, Camera, Renderer
     this.scene = new THREE.Scene();
@@ -29,7 +29,7 @@ class ArtilleryGame3D {
       45,
       window.innerWidth / window.innerHeight,
       1,
-      6000
+      9000   // xa đủ để từ camera pháo binh trên cao vẫn thấy biển / đảo xa thay vì mảng trời bị cắt
     );
 
     // high-performance: máy có 2 card (laptop Intel + NVIDIA/AMD) chạy game bằng card rời thay vì card tích hợp
@@ -546,6 +546,7 @@ class ArtilleryGame3D {
     if (T.groundAtRaw && T.groundAtRaw(x, z) < -0.5) return false;
     if (T.bridges && T.bridges.length && T.bridgeAt(x, z)) return false;
     if (T.strongholdSet && T.strongholdSet.near(x, z, 60)) return false;
+    if (T.landmarkSet && T.landmarkSet.near(x, z, 40)) return false;
     for (const b of T.buildings || []) if (Math.hypot(x - b.x, z - b.z) < (b.radius || 30) + 40) return false;
     for (const r of T.boulders || []) if (Math.hypot(x - r.x, z - r.z) < (r.radius || 18) + 30) return false;
     for (const f of T.horseshoeForts || []) if (Math.hypot(x - f.x, z - f.z) < (f.outerRadius || 60) + 30) return false;
@@ -631,7 +632,7 @@ class ArtilleryGame3D {
         this.triggerPlayerFire();
       }
 
-      // Phím G: phóng lựu đạn khói (trang bị mua thêm)
+      // Phím G: phóng 1 loạt lựu đạn khói (cần Ống phóng lựu khói + lựu đạn khói trong kho)
       if (e.code === 'KeyG' && !e.repeat) this.triggerPlayerSmoke();
 
       // Phím B: pháo tự hành đổi cách bắn (tự chọn / luôn bắn thẳng / luôn bắn cầu vồng)
@@ -841,6 +842,7 @@ class ArtilleryGame3D {
   triggerPlayerAntiTank() {
     const P = this.player;
     if (!P || P.isDead || P.tankType !== 'SCOUT') return;
+    if (this.inNoFireZone()) { this.noFireWarn(); return; }
     if ((P.missileAmmoCount || 0) <= 0) {
       this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
@@ -883,6 +885,7 @@ class ArtilleryGame3D {
   // Kíp xe nhìn thấy mục tiêu bằng mắt / kính ngắm (không tính vị trí đồng đội báo hay radar)
   missileCanSee(shooter, t) {
     if (!shooter || !t || t.isDead) return false;
+    if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(t, shooter.team)) return false;   // khói đa phổ: đầu dò mù
     if (typeof TeamIntel === 'undefined') return true;
     // Phòng thử nghiệm ("luôn hiện mục tiêu"): mục tiêu đang hiện trên màn hình người chơi coi như nhìn thấy
     if (window.STRONGHOLD_LAB && shooter.isPlayer && t.group && t.group.visible && !t.isHiddenFromPlayer) return true;
@@ -949,6 +952,7 @@ class ArtilleryGame3D {
       for (const u of this.units) {
         if (!u || u.isDead || u.team === P.team || !u._lockOn) continue;
         if (u._lockOn.id !== P.id || now - u._lockOn.at > 3500) continue;
+        if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(P, u.team)) continue;   // khói đa phổ đã cắt tia khóa
         threats.push({ x: u.x, z: u.z, kind: u._lockOn.m === 2 ? 'mlock' : 'gun', hidden: !!u._netHidden });
       }
       for (const s of (this.ballistics && this.ballistics.activeShells) || []) {
@@ -1158,7 +1162,11 @@ class ArtilleryGame3D {
       && Math.hypot(u.x - this.player.x, u.z - this.player.z) <= maxLock);
     if (enemies.length === 0) {
       this.setLockedTarget(null);
-      this.addCombatLog('[[alert-triangle]] Không thấy xe địch nào trong tầm nhìn — cần xe trinh sát (radar) báo vị trí!', 'alert');
+      const EQ = typeof Equipment !== 'undefined' && Equipment.lockBlocked ? Equipment : null;
+      const veiled = EQ && this.units.some(u => u && !u.isDead && EQ.lockBlocked(u, this.player.team)
+        && Math.hypot(u.x - this.player.x, u.z - this.player.z) <= maxLock);
+      this.addCombatLog(veiled ? '[[lock-off]] Xe địch đang núp sau khói đa phổ — chưa khóa được cho tới khi khói tan'
+        : '[[alert-triangle]] Không thấy xe địch nào trong tầm nhìn — cần xe trinh sát (radar) báo vị trí!', 'alert');
       return;
     }
 
@@ -1348,6 +1356,8 @@ class ArtilleryGame3D {
   // (sương mù chiến tranh ẩn xe chưa phát hiện bằng group.visible, nên điều kiện thứ hai không làm lộ xe địch)
   canTarget(u) {
     if (!u || u.isDead || !this.player || u.team === this.player.team) return false;
+    // xe địch vừa phóng khói đa phổ lúc bị khóa: không khóa được cho tới khi khói tan
+    if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(u, this.player.team)) return false;
     if (typeof TeamIntel === 'undefined' || TeamIntel.knows(this.player, u)) return true;
     return !!(u.group && u.group.visible && !u.isHiddenFromPlayer);
   }
@@ -1890,10 +1900,25 @@ class ArtilleryGame3D {
     });
   }
 
+  // VÙNG CẤM BẮN (khu công trình giữa 3 cứ điểm): điểm rơi dự kiến hoặc xe đang khóa nằm trong đó -> không khai hỏa
+  inNoFireZone() {
+    const LS = this.terrain && this.terrain.landmarkSet;
+    if (!LS || !LS.noFireAt) return false;
+    const T = this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null;
+    return !!((this._lastTraj && LS.noFireAt(this._lastTraj.x, this._lastTraj.z, 8)) || (T && LS.noFireAt(T.x, T.z, 8)));
+  }
+  noFireWarn() {
+    const t = performance.now();
+    if (t - (this._nfzT || 0) < 1500) return;
+    this._nfzT = t;
+    this.addCombatLog('[[alert-triangle]] VÙNG CẤM BẮN — khu căn cứ giữa 3 cứ điểm, không được ngắm bắn vào đó!', 'alert');
+  }
+
   triggerPlayerFire() {
     if (!this.player || this.player.isDead) return;
     // xe tăng đang ngắm lên trời / khóa drone: Space bóp cò trạm súng máy phòng không (drone_air.js), không bắn pháo chính
     if (this._airAim && this.player.tankType === 'ALL_ROUNDER') return;
+    if (this.inNoFireZone()) { this.noFireWarn(); return; }
     // Xe trinh sát đang chọn ô tên lửa: Space phóng tên lửa dẫn hướng (súng máy nạp đạn không ảnh hưởng)
     if (this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE') {
       this.triggerPlayerAntiTank();
@@ -2899,8 +2924,8 @@ class ArtilleryGame3D {
       this.airdrop = null;
     }
 
-    const zoneCenterX = this.zone.current.x - 1800;
-    const zoneCenterZ = this.zone.current.y - 1800;
+    const zoneCenterX = this.zone.current.x - this.worldWidth / 2;
+    const zoneCenterZ = this.zone.current.y - this.worldDepth / 2;
 
     const r = Math.random() * (this.zone.current.radius * 0.65);
     const angle = Math.random() * Math.PI * 2;
@@ -3101,7 +3126,8 @@ class ArtilleryGame3D {
     }
     this.supplyCrates = [];
 
-    // Danh sách 11 vị trí rải rác chiến lược trên chiến trường 3600 x 3600
+    // Danh sách 11 vị trí rải rác chiến lược (bố cục gốc cho bản đồ 3600, giãn theo kích thước bản đồ)
+    const K = this.worldWidth / 3600;
     const crateLocations = [
       { x: 0, z: 0, type: 'ALL', name: 'TRUNG TÂM CHIẾN ĐỊA' },
       { x: -360, z: 520, type: 'REPAIR', name: 'CÔNG SỰ TÂY PHE XANH' },
@@ -3116,7 +3142,8 @@ class ArtilleryGame3D {
       { x: 650, z: 0, type: 'ALL', name: 'ĐÈO CÁT PHÍA ĐÔNG' }
     ];
 
-    crateLocations.forEach((loc, idx) => {
+    crateLocations.forEach((loc0, idx) => {
+      const loc = Object.assign({}, loc0, { x: loc0.x * K, z: loc0.z * K });
       const groundY = this.terrain.getElevationAt(loc.x, loc.z);
       const crateMesh = this.createSupplyCrateMesh(loc.type);
       crateMesh.position.set(loc.x, groundY + 7, loc.z);
@@ -4537,6 +4564,10 @@ class ArtilleryGame3D {
           if (dist > this.lockRangeFor(this.player)) {
             this.addCombatLog('[[alert-triangle]] Mục tiêu đã vượt quá cự ly ngắm bắn, đã hủy khóa!', 'alert');
             this.setLockedTarget(null);
+          } else if (typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(T, this.player.team)) {
+            this.addCombatLog('[[lock-off]] MẤT KHÓA — địch phóng khói đa phổ, kính ngắm nhiệt & laser đo xa bị mù. Không khóa lại được tới khi khói tan!', 'alert');
+            if (window.soundEngine && window.soundEngine.playTargetLost) window.soundEngine.playTargetLost();
+            this.setLockedTarget(null);
           } else if (this._lockLostT > 1.5) {
             this.addCombatLog('[[radar-2]] MẤT DẤU MỤC TIÊU — địch đã khuất tầm nhìn / núp bụi, không còn ai báo vị trí. Đã hủy khóa!', 'alert');
             this.setLockedTarget(null);
@@ -4579,7 +4610,10 @@ class ArtilleryGame3D {
       if (this.player.tankType === 'GATLING' || this.player.tankType === 'SCOUT') {
         // đang chọn ô tên lửa: Space chỉ để phóng tên lửa, không xả súng máy
         const missileSel = this.player.tankType === 'SCOUT' && this.player.selectedAmmo === 'ANTI_TANK_MISSILE';
-        this.player.isFiringGatling = !missileSel && !!(this.keys['Space'] || this.isPointerFiring);
+        const wantFire = !missileSel && !!(this.keys['Space'] || this.isPointerFiring);
+        const nfz = wantFire && this.inNoFireZone();
+        if (nfz) this.noFireWarn();
+        this.player.isFiringGatling = wantFire && !nfz;
       }
 
       // 1.2. LÁI XE CƠ ĐỘNG theo thân xe như xe thật: W / S ga tiến / lùi, A / D đánh lái trái / phải
@@ -4614,7 +4648,8 @@ class ArtilleryGame3D {
           engineDmg: D ? D.engine || 0 : 0,
           tracksBroken: D && D.trackTimer ? (D.trackTimer[0] > 0 ? 1 : 0) + (D.trackTimer[1] > 0 ? 1 : 0) : 0,
           flatTires: D ? cnt(D.flat) + cnt(D.gone) : 0,
-          stall: !!this.player.climbStall    // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
+          stall: !!this.player.climbStall,   // dốc quá cao, xe không leo nổi: máy gồng hết cỡ
+          turbo: typeof Equipment !== 'undefined' && Equipment.has(this.player, 'turbo')   // động cơ tăng áp: turbo rít to, có van xả áp
         });
         // Tiếng lội nước theo độ sâu & tốc độ thật (src/core/audio/wading.js)
         if (window.soundEngine.updateWading) {
@@ -4871,8 +4906,8 @@ class ArtilleryGame3D {
 
     // 4. Cập nhật radar phản pháo & vòng bo
     this.radar.update(dt, {
-      x: this.player ? this.player.x + 1800 : 1800,
-      y: this.player ? this.player.z + 1800 : 1800
+      x: (this.player ? this.player.x : 0) + this.worldWidth / 2,
+      y: (this.player ? this.player.z : 0) + this.worldDepth / 2
     });
     this.zone.update(dt, this.units, this.worldWidth / 2, this.worldDepth / 2);
 
@@ -5050,6 +5085,9 @@ class ArtilleryGame3D {
           this._lastAim = { x: ax, y: (tgt === this._aimPoint ? this.terrain.getElevationAt(ax, az) + 2 : (tgt.y || 0) + 10), z: az, d: Math.round(Math.hypot(ax - this.player.x, az - this.player.z)) };
           this._aimMiss = miss;
         }
+        // vùng cấm bắn: điểm rơi / xe đang khóa nằm trong khu căn cứ -> đường đạn đỏ, không khai hỏa được
+        const noFire = this.inNoFireZone();
+        if (noFire) aimState = 'blocked';
         this._aimState = aimState;
         if (!tgt && this._aimCover) this._aimCover.hit = null;
         const col = WorldMarkers.stateColor(aimState === 'covered' ? 'blocked' : aimState, isWall);
@@ -5076,7 +5114,10 @@ class ArtilleryGame3D {
         this.updateArtyModeUI();
         const trajModeHint = domById('traj-mode-hint');
         if (trajModeHint) {
-          if (isWall) {
+          if (noFire) {
+            trajModeHint.textContent = '[VÙNG CẤM BẮN — KHÔNG ĐƯỢC KHAI HỎA]';
+            trajModeHint.style.color = '#ff3b30';
+          } else if (isWall) {
             trajModeHint.textContent = '[CẢNH BÁO: BỊ CHẮN TƯỜNG]';
             trajModeHint.style.color = '#ff3b30';
           } else if (this.player.canElevate === false || this.player.tankType === 'GATLING') {
@@ -5856,9 +5897,14 @@ class ArtilleryGame3D {
       this.addCombatLog('[[cloud]] Xe chưa lắp ống phóng lựu khói — lắp trong Kho vũ khí (nhóm PHỤ KIỆN) ở sảnh', 'tip');
       return;
     }
-    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói' + this.stockNote('SMOKE'), 'alert'); return; }
-    Equipment.triggerSmoke(this, P);
-    this.addCombatLog(`[[cloud]] Đã phóng màn khói — địch không nhìn xuyên qua được (còn ${P.smokeLeft})`, 'tip');
+    if (!(P.smokeLeft > 0)) { this.addCombatLog('[[cloud]] Đã hết lựu đạn khói trong ống phóng' + this.stockNote('SMOKE'), 'alert'); return; }
+    if (!Equipment.smokeSides(P)) { this.addCombatLog('[[alert-triangle]] Cả hai cụm ống phóng lựu khói đã bị bắn hỏng!', 'alert'); return; }
+    if (P._smokeAt && performance.now() - P._smokeAt < Equipment.SMOKE_GAP) return;   // loạt trước vừa bắn (chống bấm đúp)
+    const r = Equipment.triggerSmoke(this, P);
+    if (!r) return;
+    const one = r.m !== 3 ? (Equipment.smokeSides(P) === 3 ? ' (quả cuối, 1 bên)' : ' (1 bên ống phóng đã hỏng)') : '';
+    this.addCombatLog(`[[cloud]] Đã bắn ${Equipment.smokeCount(r.m)} quả lựu đạn khói${one} — trong ống còn ${P.smokeLeft} quả`, 'tip');
+    if (r.k) this.addCombatLog('[[lock-off]] Đang bị khóa: khói đa phổ sẽ cắt tia khóa của địch khi khói nở', 'tip');
     this.syncEquipmentChips();
   }
 
