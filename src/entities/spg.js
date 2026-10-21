@@ -1945,7 +1945,8 @@ class SPGUnit3D {
     this.turretGroup.rotation.y = this._turretYaw;
 
     // 14. NÂNG HẠ NÒNG PHÁO 3D THEO ELEVATION (Xe 6 nòng cận chiến nòng cố định ở 0 độ)
-    if (!this.canElevate) {
+    // (bản sao xe của máy khác: góc nòng lấy từ gói mạng, không để máy tính hỏa lực kéo về 0°)
+    if (!this.canElevate && !this._netProxy) {
       // Xe 6 nòng: hệ điều khiển hỏa lực tự nâng / hạ nòng nhắm đúng tâm mục tiêu (người lái chỉ xoay tháp)
       let want = 0;
       const T = this.fcsTarget;

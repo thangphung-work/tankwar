@@ -809,6 +809,19 @@ class BallisticsSystem3D {
           break;
         }
 
+        // DRONE ĐỊCH TRÊN KHÔNG (game.js cập nhật airTargets mỗi khung hình): đạn bay qua sát thân drone là trúng;
+        // bay sượt qua gần thì báo onAirNear một lần (tiếng đạn rít qua micro drone)
+        if (this.airTargets && this.airTargets.length && s.timeAlive > 0.004) {
+          const ah = this.airTargetHit(s, prevX, prevY, prevZ);
+          if (ah) {
+            s.x = ah.x; s.y = ah.y; s.z = ah.z;
+            this.removeShellMesh(s, i);
+            if (this.onAirHit) this.onAirHit(s, ah.target, ah);
+            impacted = true;
+            break;
+          }
+        }
+
         // KIỂM TRA ĐẠN CHÙM NỔ TRÊN KHÔNG (CLUSTER AIRBURST)
         if (s.ammoType === 'CLUSTER' && s.vy < -12 && s.timeAlive > 0.3) {
           const groundElev = terrain.getElevationAt(s.x, s.z);
@@ -1070,6 +1083,26 @@ class BallisticsSystem3D {
         });
       }
     }
+  }
+
+  // Đoạn bay (prev -> hiện tại) đi qua drone địch nào trong bán kính trúng: trả { target, x, y, z } (điểm gần nhất)
+  // airTargets: [{ x, y, z (tâm thân), r (bán kính trúng), nearR (bán kính đạn rít qua), team, ... }]
+  airTargetHit(s, x0, y0, z0) {
+    const sx = s.x - x0, sy = s.y - y0, sz = s.z - z0, L2 = sx * sx + sy * sy + sz * sz;
+    let best = null, bd = Infinity;
+    for (const T of this.airTargets) {
+      if (s.shooterTeam && T.team === s.shooterTeam) continue;
+      let t = L2 > 1e-6 ? ((T.x - x0) * sx + (T.y - y0) * sy + (T.z - z0) * sz) / L2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const cx = x0 + sx * t, cy = y0 + sy * t, cz = z0 + sz * t;
+      const d = Math.hypot(cx - T.x, cy - T.y, cz - T.z);
+      if (d <= T.r && d < bd) { bd = d; best = { target: T, x: cx, y: cy, z: cz, d }; }
+      else if (T.nearR && d <= T.nearR && this.onAirNear) {
+        const seen = s._airNear || (s._airNear = new Set());
+        if (!seen.has(T)) { seen.add(T); this.onAirNear(s, T, d); }
+      }
+    }
+    return best;
   }
 
   removeShellMesh(shell, index) {

@@ -186,6 +186,104 @@ SoundEngine.mixin(class {
   }
 
   /**
+   * Tiếng cánh quạt của drone KHÁC đang bay (nghe từ xe mình): d = khoảng cách tới drone gần nhất (null: không có),
+   * pos = vị trí drone (lệch trái / phải). Tiếng "vo vo" cao, nhỏ dần theo khoảng cách, lọc trầm khi ở xa.
+   */
+  updateDroneAmbient(d, pos) {
+    if (!this.ctx) return;
+    const A = this.droneAmb;
+    if ((d === null || this.isMuted) && !A) return;
+    const t = this.ctx.currentTime;
+    if (d === null || this.isMuted) { A.out.gain.setTargetAtTime(0, t, 0.25); return; }
+    if (!A) {
+      const ctx = this.ctx, out = ctx.createGain();
+      out.gain.value = 0;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1800;
+      out.connect(lp);
+      let node = lp;
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      if (pan) { lp.connect(pan); node = pan; }
+      node.connect(this.masterGain);
+      // 2 cặp rotor lệch nhau vài Hz -> tiếng phách "ào ào" của quadcopter nghe từ xa
+      const oscs = [196, 203, 211, 189].map(f => {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        const g = ctx.createGain();
+        g.gain.value = 0.22;
+        o.connect(g);
+        g.connect(out);
+        o.start(t);
+        return o;
+      });
+      const ns = ctx.createBufferSource();
+      ns.buffer = this.pinkNoiseBuffer || this.noiseBuffer;
+      ns.loop = true;
+      const nf = ctx.createBiquadFilter();
+      nf.type = 'bandpass';
+      nf.frequency.value = 1400;
+      nf.Q.value = 0.7;
+      const ng = ctx.createGain();
+      ng.gain.value = 0.35;
+      ns.connect(nf);
+      nf.connect(ng);
+      ng.connect(out);
+      ns.start(t);
+      this.droneAmb = { out, lp, pan, oscs, ns, jit: 0 };
+      return;
+    }
+    const near = Math.max(0, 1 - d / 1000);
+    A.out.gain.setTargetAtTime(0.05 * near * near, t, 0.2);
+    A.lp.frequency.setTargetAtTime(600 + 2400 * near, t, 0.3);
+    if (A.pan && pos) {
+      const sp = this.spatial(d, pos);
+      A.pan.pan.setTargetAtTime(sp.pan * 0.8, t, 0.2);
+    }
+    A.jit += ((Math.random() - 0.5) * 0.04 - A.jit) * 0.1;
+    A.oscs.forEach((o, i) => o.frequency.setTargetAtTime([196, 203, 211, 189][i] * (1 + A.jit), t, 0.1));
+  }
+
+  /**
+   * Drone bị đạn bắn trúng. hard = trúng drone của mình (nghe qua micro: tiếng "keng" kim loại vỡ + nhiễu sóng chập chờn);
+   * ngược lại: tiếng "tách" nhỏ nghe từ xa khi đạn mình trúng drone địch
+   */
+  playDroneHit(hard = true) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime + 0.005;
+    const bus = this.uiBus || this.masterGain;
+    if (!hard) {
+      const out = this.voice({ gain: 0.35, wet: 0.1 });
+      this.metal(out, t, { f0: 1900 + Math.random() * 500, ratios: [1, 2.7], decay: 0.05, gain: 0.25, click: 0.8 });
+      return;
+    }
+    const out = this.voice({ gain: 0.7, wet: 0.05 });
+    this.snap(out, t, 0.9, 9000, 4);
+    this.metal(out, t + 0.004, { f0: 900 + Math.random() * 600, ratios: [1, 2.3, 4.1], decay: 0.12, gain: 0.35, click: 1 });
+    this.burst(out, t + 0.01, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 3200, Q: 0.9, gain: 0.35, attack: 0.002, dur: 0.18 });
+    // nhiễu sóng vô tuyến chập chờn (hình mất vài khung)
+    this.burst(bus, t + 0.02, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 2400, Q: 0.7, filter2: 'highpass', freq2: 700, gain: 0.05, attack: 0.003, dur: 0.35 });
+  }
+
+  /** Drone của mình bị bắn hạ: nổ chát trong micro, rotor gào lên rồi tắt, nhiễu trắng kéo dài (mất tín hiệu) */
+  playDroneLost() {
+    if (!this.ready()) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.01;
+    const bus = this.uiBus || this.masterGain;
+    const out = this.voice({ gain: 0.9, wet: 0.08 });
+    this.snap(out, t, 1.2, 8000, 5);
+    this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'lowpass', freq: 2600, freqEnd: 400, sweep: 0.4, drive: 2, gain: 0.7, attack: 0.002, dur: 0.5 });
+    this.metal(out, t + 0.01, { f0: 700, ratios: [1, 2.6, 4.9], decay: 0.3, gain: 0.3, click: 1 });
+    // rotor mất cân bằng: gào lên rồi tụt
+    this.tone(out, t + 0.05, { type: 'sawtooth', freq: 260, freqEnd: 70, gain: 0.08, attack: 0.01, hold: 0.25, dur: 0.6, filter: 'lowpass', filterFreq: 1800 });
+    // màn hình mất tín hiệu: nhiễu trắng "xèèè" ~2.6 s
+    this.burst(bus, t + 0.25, { buffer: this.noiseBuffer, filter: 'highpass', freq: 500, gain: 0.07, attack: 0.02, dur: 2.6 });
+    this.tone(bus, t + 0.4, { type: 'square', freq: 1400, gain: 0.014, attack: 0.002, hold: 0.12, dur: 0.05, filter: 'lowpass', filterFreq: 3500 });
+    this.tone(bus, t + 0.6, { type: 'square', freq: 900, gain: 0.014, attack: 0.002, hold: 0.3, dur: 0.08, filter: 'lowpass', filterFreq: 3500 });
+  }
+
+  /**
    * Kết nối dữ liệu drone: 'up' bắt tín hiệu (nhiễu sóng + 2 bíp số lên giọng), 'hop' chuyển vùng xa (nhiễu ngắn),
    * 'down' ngắt (bíp xuống giọng + nhiễu tắt)
    */

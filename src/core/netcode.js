@@ -897,6 +897,10 @@
       sub('PARTS', (d, from) => this.onParts(d, from));
       sub('MATCH', (d, from) => this.onMatch(d, from));
       sub('SUPPLY', (d, from) => { if (from === this.net.hostId && !this.net.isHost && game.supplyManager && game.supplyManager.onNet) game.supplyManager.onNet(d); });
+      // drone trinh sát của xe pháo: trạng thái / vị trí, phát trúng (máy người bắn báo), bị bắn hạ (drone_air.js)
+      sub('DRONE', (d, from) => { if (game.onNetDrone) game.onNetDrone(d, from, this); });
+      sub('DRONE_HIT', (d, from) => { if (game.onNetDroneHit) game.onNetDroneHit(d, from, this); });
+      sub('DRONE_DOWN', (d, from) => { if (game.onNetDroneDown) game.onNetDroneDown(d, from, this); });
       sub('ENVSUM', (d, from) => this.onEnvSum(d, from));
       sub('ENVSTATE', (d, from) => this.onEnvState(d, from));
       sub('ENVFIX', (d, from) => this.onEnvFix(d, from));

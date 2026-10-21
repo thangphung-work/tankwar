@@ -1,0 +1,721 @@
+/**
+ * DRONE TRINH SÁT TRÊN CHIẾN TRƯỜNG (gắn thêm phương thức vào ArtilleryGame3D — xem cuối game.js)
+ * - Đồng bộ mạng: máy điều khiển xe pháo gửi trạng thái drone (đậu / cất cánh / bay / bay về / mất) + vị trí khi bay
+ *   ~10 lần/giây; máy khác thấy drone đậu trên nóc cabin, bay trên trời (nội suy trễ ~120 ms), nghe tiếng cánh quạt
+ * - Bắn hạ được: đạn bay qua sát thân drone là trúng (ballistics.js airTargetHit). Như sát thương xe, MÁY CỦA NGƯỜI BẮN
+ *   quyết định trúng (gửi DRONE_HIT); máy điều khiển drone trừ "thân drone", hết thì drone rơi (DRONE_DOWN)
+ * - Mất drone: pháo không còn mắt ngắm cầu vồng (chỉ bắn thẳng tự vệ trong tầm nhìn), phải hồi sinh mới có drone mới
+ * - Xe 6 nòng / xe trinh sát: nhấp lên trời = nâng nòng bắn lên hướng đó; nhấp đúng drone địch đang thấy = khóa drone
+ *   (máy tính hỏa lực tự đón đầu + nâng hạ nòng). Radar / Tab / tự khóa KHÔNG khóa drone — phải tự phát hiện bằng mắt.
+ */
+const DroneAir = (() => {
+  const C = {
+    HIT_R: 6.5,          // bán kính trúng quanh tâm thân drone (sải cánh quạt ~1.5 m = 12 đv)
+    NEAR_R: 42,          // đạn bay qua trong bán kính này: tiếng rít qua micro drone
+    CENTER_Y: 2.8,       // tâm thân drone trên gốc mô hình (đáy càng đáp)
+    // phần "thân drone" mất mỗi phát trúng (1 = rơi): 30mm ~8 phát, 12.7mm ~5 phát, đạn cháy ~4 phát, đạn pháo 1 phát
+    DMG: { GATLING_BULLET: 0.13, SCOUT_BULLET: 0.21, INCENDIARY: 0.26 },
+    SEE_R: 1500,         // đội có xe trong bán kính ngang này thì thấy drone địch bay (drone bay cao, dễ lộ)
+    BOT_SEE_R: 1100,     // bot tự phát hiện drone trong bán kính này
+    SEND_FLY: 0.1, SEND_IDLE: 1.0,
+    INTERP: 0.12, EXTRAP: 0.35,
+    DOCK_VIEW: 1300,     // drone đậu trên nóc xe khác chỉ vẽ khi camera trong khoảng này
+    AA_TYPES: { GATLING: 1, SCOUT: 1 }
+  };
+  const ST = ['docked', 'launching', 'flying', 'returning', 'lost'];
+  const airborne = s => s === 'launching' || s === 'flying' || s === 'returning';
+  const wrapPi = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+  const nowS = () => performance.now() / 1000;
+
+  const methods = {
+    /** Trận mới: dọn drone / xác drone / khói của trận trước */
+    resetDroneWorld() {
+      const drop = m => { if (m && m.parent) m.parent.remove(m); };
+      if (this._otherDrones) this._otherDrones.forEach(R => drop(R.model));
+      this._otherDrones = new Map();
+      (this._droneFalls || []).forEach(f => drop(f.m));
+      this._droneFalls = [];
+      (this._droneSmoke || []).forEach(p => { drop(p.m); p.m.material.dispose(); });
+      this._droneSmoke = [];
+      this._airList = [];
+      this._airAim = null;
+      this._droneSentCode = undefined;
+      if (this._airLockEl) this._airLockEl.hidden = true;
+      if (this.ballistics && this.ballistics.airTargets) this.ballistics.airTargets.length = 0;
+    },
+
+    // ---------- DANH SÁCH DRONE ĐANG BAY ----------
+    /** Drone đang bay trên trời (mọi phe, cả drone của mình). Mỗi phần tử: x, y (đáy), z, wvx/wvy/wvz, team, owner, key */
+    airDroneList() { return this._airList || []; },
+
+    droneIsAirborne(dr) { return !!dr && airborne(dr.state) && !(dr.owner && dr.owner.isDead); },
+
+    /** Phe team có thấy drone này không: drone phe mình, hoặc có xe phe mình còn sống trong bán kính SEE_R */
+    droneSeenByTeam(dr, team) {
+      if (!dr || dr.team === team) return true;
+      const r2 = C.SEE_R * C.SEE_R;
+      for (const u of this.units) {
+        if (u.isDead || u.team !== team) continue;
+        const dx = u.x - dr.x, dz = u.z - dr.z;
+        if (dx * dx + dz * dz <= r2) return true;
+      }
+      return false;
+    },
+
+    unitById(id) {
+      for (const u of this.units) if (u.id === id) return u;
+      return null;
+    },
+
+    // ---------- MỖI KHUNG HÌNH (trước khi cập nhật đạn) ----------
+    updateDroneWorld(dt) {
+      const P = this.player;
+      const list = this._airList || (this._airList = []);
+      list.length = 0;
+      let own = null;
+      if (P && P.tankType === 'ARTILLERY') {
+        own = this.droneState();
+        own.key = 'own'; own.team = P.team; own.owner = P;
+        this.trackDroneVel(own, dt);
+        if (this.droneIsAirborne(own)) list.push(own);
+      }
+      this.updateOtherDrones(dt, list);
+      // mục tiêu trên không cho đạn
+      const B = this.ballistics;
+      if (B) {
+        const AT = B.airTargets || (B.airTargets = []);
+        AT.length = 0;
+        const viewing = this._sight && this._sight.arty;
+        for (const dr of list) {
+          const T = dr._at || (dr._at = { dr });
+          T.x = dr.x; T.y = dr.y + C.CENTER_Y; T.z = dr.z;
+          T.r = C.HIT_R; T.team = dr.team;
+          T.nearR = dr === own && viewing ? C.NEAR_R : 0;
+          AT.push(T);
+        }
+        if (!B.onAirHit) B.onAirHit = (s, T, h) => this.onDroneShot(s, T.dr, h);
+        if (!B.onAirNear) B.onAirNear = (s, T, d) => this.onDroneNearMiss(s, T.dr, d);
+      }
+      this.updateDroneFalls(dt);
+      this.sendDroneState(dt);
+      this.flushDroneHits();
+      this.updateDroneAmbient(list);
+      this.updateAirLockOverlay();
+    },
+
+    // vận tốc thật của drone (ước lượng từ dịch chuyển, lọc nhẹ) — dùng để đón đầu
+    trackDroneVel(dr, dt) {
+      if (!(dt > 0)) return;
+      if (dr._px === undefined || !airborne(dr.state)) { dr.wvx = dr.wvy = dr.wvz = 0; }
+      else {
+        const ivx = (dr.x - dr._px) / dt, ivy = (dr.y - dr._py) / dt, ivz = (dr.z - dr._pz) / dt;
+        if (Math.hypot(ivx, ivz) < 2500) {
+          const k = 1 - Math.exp(-dt * 6);
+          dr.wvx += (ivx - dr.wvx) * k; dr.wvy += (ivy - dr.wvy) * k; dr.wvz += (ivz - dr.wvz) * k;
+        }
+      }
+      dr._px = dr.x; dr._py = dr.y; dr._pz = dr.z;
+    },
+
+    // Drone của các xe pháo khác: bot / xe của máy khác. Đậu thì gắn lên nóc cabin (theo xe), bay thì nội suy từ gói mạng
+    otherDrone(u) {
+      const M = this._otherDrones || (this._otherDrones = new Map());
+      let R = M.get(u.id);
+      if (!R) {
+        R = { key: 'u' + u.id, unit: u, owner: u, team: u.team, state: 'docked', hp: 1, samples: [], x: u.x, y: u.y || 0, z: u.z, yaw: 0,
+          wvx: 0, wvy: 0, wvz: 0, model: null, net: false, seen: false };
+        M.set(u.id, R);
+      }
+      return R;
+    },
+
+    updateOtherDrones(dt, list) {
+      if (typeof ReconDrone === 'undefined') return;
+      const cam = this.camera, myTeam = this.player ? this.player.team : null, t = nowS();
+      for (const u of this.units) {
+        if (u === this.player || u.tankType !== 'ARTILLERY') continue;
+        const R = this.otherDrone(u);
+        R.team = u.team;
+        // xe bot (không có gói mạng): drone luôn đậu; hồi sinh / xe chết không đổi gì
+        if (!R.net && R.state !== 'docked' && !u.isDead) R.state = 'docked';
+        if (airborne(R.state)) {
+          this.interpDrone(R, t);
+          this.trackDroneVel(R, dt);
+          if (!u.isDead || R.net) list.push(R);
+          R.seen = myTeam === null || this.droneSeenByTeam(R, myTeam);
+          if (!R.model) R.model = ReconDrone.build(u.team);
+          const m = R.model;
+          if (m.parent !== this.scene) this.scene.add(m);
+          m.visible = R.seen;
+          if (R.seen) {
+            m.position.set(R.x, R.y, R.z);
+            const tilt = Math.min(0.25, Math.hypot(R.wvx, R.wvz) / 2400);
+            m.rotation.set(-tilt, R.yaw, 0);
+            ReconDrone.animate(m, dt, 1);
+          }
+          continue;
+        }
+        R.seen = false;
+        R._px = undefined;
+        const ch = u.chassisGroup;
+        const showDock = R.state === 'docked' && !u.isDead && ch && u.group && u.group.visible && !u.isHiddenFromPlayer
+          && cam && Math.hypot(cam.position.x - u.x, cam.position.z - u.z) < C.DOCK_VIEW;
+        if (showDock) {
+          if (!R.model) R.model = ReconDrone.build(u.team);
+          const m = R.model;
+          if (m.parent !== ch) { ch.add(m); m.rotation.set(0, 0, 0); }
+          m.position.set(ReconDrone.PAD.x, ReconDrone.PAD.y, ReconDrone.PAD.z);
+          m.visible = true;
+          ReconDrone.animate(m, dt, 0);
+        } else if (R.model) R.model.visible = false;
+        R.x = u.x; R.z = u.z; R.y = (u.y || 0) + ReconDrone.PAD.y;
+      }
+    },
+
+    // nội suy vị trí drone từ gói mạng (trễ C.INTERP), ngoại suy tối đa C.EXTRAP khi gói đến muộn
+    interpDrone(R, t) {
+      const S = R.samples;
+      if (!S.length) return;
+      const rt = t - C.INTERP;
+      let a = S[0], b = null;
+      for (let i = S.length - 1; i >= 0; i--) { if (S[i].t <= rt) { a = S[i]; b = S[i + 1] || null; break; } }
+      if (b) {
+        const k = Math.max(0, Math.min(1, (rt - a.t) / Math.max(1e-3, b.t - a.t)));
+        R.x = a.x + (b.x - a.x) * k; R.y = a.y + (b.y - a.y) * k; R.z = a.z + (b.z - a.z) * k;
+        R.yaw = a.w + wrapPi(b.w - a.w) * k;
+        return;
+      }
+      const L = S[S.length - 1], Pv = S.length > 1 ? S[S.length - 2] : null;
+      if (rt <= L.t || !Pv) { R.x = L.x; R.y = L.y; R.z = L.z; R.yaw = L.w; return; }
+      const span = Math.max(1e-3, L.t - Pv.t), e = Math.min(C.EXTRAP, rt - L.t);
+      R.x = L.x + (L.x - Pv.x) / span * e; R.y = L.y + (L.y - Pv.y) / span * e; R.z = L.z + (L.z - Pv.z) / span * e;
+      R.yaw = L.w;
+    },
+
+    // ---------- ĐẠN TRÚNG / BAY SƯỢT QUA DRONE ----------
+    onDroneShot(s, dr, h) {
+      if (!dr) return;
+      const fx = this.ballistics && this.ballistics.fx;
+      const micro = !!C.DMG[s.ammoType];
+      const sp = Math.hypot(s.vx, s.vy, s.vz) || 1;
+      if (fx) {
+        try {
+          if (micro && fx.spawnBulletSurfaceImpact) {
+            const D = new THREE.Vector3(s.vx / sp, s.vy / sp, s.vz / sp);
+            fx.spawnBulletSurfaceImpact(new THREE.Vector3(h.x, h.y, h.z), D.clone().negate(), D, s.ammoType, 'steel', {});
+          } else if (fx.spawn) fx.spawn(h.x, h.y, h.z, s.ammoType, 'AIR', {});
+        } catch (e) { /* hiệu ứng phụ */ }
+      }
+      const shooter = this.unitById(s.shooterId);
+      const NS = this.netSync && !this.netSync.detached ? this.netSync : null;
+      const auth = !s.netRemote && (!NS || (shooter && NS.owns(shooter)));
+      const dmg = C.DMG[s.ammoType] || 1;
+      if (dr.key === 'own') {
+        if (auth) this.damageOwnDrone(dmg, shooter);
+        else this.droneHitFX(true);   // đạn từ bản sao trên máy mình: chỉ hình / tiếng, sát thương do máy người bắn báo
+        return;
+      }
+      const SE = window.soundEngine, P = this.player;
+      if (SE && SE.playDroneHit && P && Math.hypot(P.x - h.x, P.z - h.z) < 1300) SE.playDroneHit(false);
+      if (!auth || !dr.net || !shooter) return;
+      dr.pend = (dr.pend || 0) + dmg;
+      dr.pendBy = shooter;
+      if (shooter === P) this._droneHitMark = 0.35;
+    },
+
+    onDroneNearMiss(s, dr, d) {
+      if (!dr || dr.key !== 'own') return;
+      const S = this._sight;
+      if (!S || !S.arty) return;
+      const SE = window.soundEngine;
+      if (SE && SE.playFlyby) SE.playFlyby(s.ammoType === 'GATLING_BULLET' ? 'cannon30' : C.DMG[s.ammoType] ? 'mg' : 'shell', d, null);
+      S.jolt = Math.max(S.jolt || 0, 0.18 * (1 - d / C.NEAR_R) + 0.05);
+      S.underFire = 2.2;
+    },
+
+    // gửi gộp các phát trúng drone của máy khác (~10 lần/giây) cho máy điều khiển drone đó
+    flushDroneHits() {
+      const M = this._otherDrones, NS = this.netSync;
+      if (!M || !NS || NS.detached) return;
+      const t = nowS();
+      M.forEach(R => {
+        if (!(R.pend > 0) || t - (R.hitSentAt || 0) < 0.1) return;
+        R.hitSentAt = t;
+        NS.net.send('DRONE_HIT', { o: R.unit.netId, a: R.pendBy && R.pendBy.netId !== undefined ? R.pendBy.netId : -1, d: Math.round(R.pend * 1000) });
+        R.pend = 0;
+      });
+    },
+
+    // ---------- DRONE CỦA MÌNH BỊ BẮN ----------
+    damageOwnDrone(dmg, attacker) {
+      const D = this.droneState();
+      if (!airborne(D.state)) return;
+      D.hp = Math.max(0, (D.hp === undefined ? 1 : D.hp) - dmg);
+      this.droneHitFX(true);
+      if (D.hp <= 0) { this.destroyOwnDrone(attacker); return; }
+      const t = nowS();
+      if (!(this._sight && this._sight.arty) && t - (this._droneHitLogAt || 0) > 2.5) {
+        this._droneHitLogAt = t;
+        this.addCombatLog(`[[alert-triangle]] DRONE TRINH SÁT ĐANG BỊ BẮN! Thân drone còn ${Math.round(D.hp * 100)}%`, 'alert');
+      }
+    },
+
+    /** Hình drone giật, nhiễu trắng chớp qua (trúng đạn) */
+    droneHitFX(hard) {
+      const S = this._sight, SE = window.soundEngine, t = nowS();
+      if (t - (this._droneFxAt || 0) < 0.07) return;
+      this._droneFxAt = t;
+      if (SE && SE.playDroneHit) SE.playDroneHit(!!(S && S.arty));
+      if (!S || !S.arty) return;
+      S.glitch = Math.max(S.glitch || 0, hard ? 0.42 : 0.2);
+      S.underFire = 2.5;
+      S.jolt = Math.max(S.jolt || 0, 0.35);
+      const st = this._uavEl && this._uavEl.stat;
+      if (st) { st.style.animation = 'none'; void st.offsetWidth; st.style.animation = ''; }
+    },
+
+    /** Drone mình bị bắn hạ (attacker) hoặc rơi vì xe mình bị hạ (attacker = null, why = 'link') */
+    destroyOwnDrone(attacker, why) {
+      const P = this.player, D = this.droneState();
+      if (D.state === 'lost') return;
+      const wasUp = airborne(D.state);
+      D.state = 'lost'; D.hp = 0;
+      if (wasUp) this.startDroneFall(P.team, D.x, D.y, D.z, D.wvx || 0, D.wvz || 0, D.yaw || 0, true);
+      if (D.model) D.model.visible = false;
+      const SE = window.soundEngine;
+      if (why !== 'link') {
+        if (SE && SE.playDroneLost) SE.playDroneLost();
+        if (SE && SE.updateDrone) SE.updateDrone(false);
+        this.addCombatLog(`[[alert-triangle]] DRONE TRINH SÁT ĐÃ BỊ ${attacker ? attacker.name : 'ĐỊCH'} BẮN HẠ — mất mắt ngắm cầu vồng, chỉ còn bắn thẳng tự vệ. Hồi sinh để nhận drone mới`, 'alert');
+        const S = this._sight;
+        if (S && S.arty) S.dying = { t: 0, x: D.x, y: D.y, z: D.z, yaw: D.yaw || 0 };
+        // mất mắt: bỏ điểm ngắm / mục tiêu ở ngoài tầm bắn thẳng
+        const AD = typeof BallisticsSystem3D !== 'undefined' ? BallisticsSystem3D.ARTY_DIRECT : { max: 800 };
+        const far = (x, z) => Math.hypot(x - P.x, z - P.z) > AD.max;
+        if (this._aimPoint && far(this._aimPoint.x, this._aimPoint.z)) { this._aimPoint = null; this._lockTrack = null; }
+        if (this.lockedTarget && far(this.lockedTarget.x, this.lockedTarget.z)) this.setLockedTarget(null);
+      }
+      const NS = this.netSync;
+      if (NS && !NS.detached && P.netId !== undefined) {
+        NS.net.send('DRONE_DOWN', { o: P.netId, a: attacker && attacker.netId !== undefined ? attacker.netId : -1,
+          p: [Math.round(D.x * 10), Math.round(D.y * 10), Math.round(D.z * 10)], v: [Math.round((D.wvx || 0) * 10), Math.round((D.wvz || 0) * 10)], up: wasUp ? 1 : 0 });
+        this._droneSendAcc = 99;   // gửi ngay trạng thái mất drone
+      }
+    },
+
+    /** Pháo mất drone: không ngắm cầu vồng / khóa mục tiêu ngoài tầm bắn thẳng. true = chặn (đã báo) */
+    artyAimBlocked(x, z) {
+      const P = this.player;
+      if (!P || P.tankType !== 'ARTILLERY' || !this._drone || this._drone.unit !== P || this._drone.state !== 'lost') return false;
+      const AD = typeof BallisticsSystem3D !== 'undefined' ? BallisticsSystem3D.ARTY_DIRECT : { max: 800 };
+      if (Math.hypot(x - P.x, z - P.z) <= AD.max) return false;
+      const t = nowS();
+      if (t - (this._blindLogAt || 0) > 1.5) {
+        this._blindLogAt = t;
+        this.addCombatLog(`[[eye-off]] MẤT DRONE — không còn mắt ngắm cầu vồng. Chỉ bắn thẳng được địch trong ${AD.max}M; hồi sinh để có drone mới`, 'alert');
+      }
+      return true;
+    },
+
+    // ---------- DRONE RƠI ----------
+    startDroneFall(team, x, y, z, vx, vz, yaw, own) {
+      if (typeof ReconDrone === 'undefined') return;
+      const m = ReconDrone.build(team);
+      m.position.set(x, y, z);
+      m.rotation.set(0, yaw, 0);
+      this.scene.add(m);
+      const F = this._droneFalls || (this._droneFalls = []);
+      F.push({ m, x, y, z, vx: vx * 0.6, vy: 20, vz: vz * 0.6, spin: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 4), tumble: 1.5 + Math.random() * 2, t: 0, puff: 0, own, ground: false, gT: 0 });
+      const fx = this.ballistics && this.ballistics.fx;
+      try { if (fx && fx.spawn) fx.spawn(x, y + C.CENTER_Y, z, 'CLUSTER_SUBMUNITION', 'AIR', {}); } catch (e) { /* hiệu ứng phụ */ }
+      const P = this.player, SE = window.soundEngine;
+      if (P && SE && SE.playExplosionAtDistance && !(own && this._sight && this._sight.arty)) {
+        SE.playExplosionAtDistance(Math.hypot(P.x - x, (P.y || 0) - y, P.z - z), 'AIRBURST', 'CLUSTER_SUBMUNITION', { x, z });
+      }
+    },
+
+    updateDroneFalls(dt) {
+      const F = this._droneFalls;
+      if (!F || !F.length) return;
+      const T = this.terrain, G = 78, fx = this.ballistics && this.ballistics.fx;
+      for (let i = F.length - 1; i >= 0; i--) {
+        const f = F[i], m = f.m;
+        f.t += dt;
+        if (!f.ground) {
+          f.vy -= G * dt;
+          f.vx *= 1 - dt * 0.4; f.vz *= 1 - dt * 0.4;
+          f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt;
+          m.position.set(f.x, f.y, f.z);
+          m.rotation.y += f.spin * dt;
+          m.rotation.x += f.tumble * dt * 0.6;
+          m.rotation.z += f.tumble * dt;
+          ReconDrone.animate(m, dt, Math.max(0, 0.6 - f.t * 0.4));
+          // vệt khói đen kéo theo
+          if ((f.puff -= dt) <= 0) { f.puff = 0.05; this.droneSmokePuff(f.x, f.y + 2, f.z, 1); }
+          const gy = T ? T.getElevationAt(f.x, f.z) : 0;
+          if (f.y <= gy) {
+            f.ground = true;
+            f.y = gy; m.position.y = gy + 0.5;
+            m.rotation.set(0.35, m.rotation.y, 1.2);
+            ReconDrone.animate(m, 1, 0);
+            m.traverse(o => { if (o.isMesh && o.material && o.material.color && !o.material.transparent) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.35); } });
+            try { if (fx && fx.spawn) fx.spawn(f.x, gy + 1, f.z, 'GATLING_BULLET', 'GROUND', {}); } catch (e) { /* hiệu ứng phụ */ }
+            const P = this.player, SE = window.soundEngine;
+            if (P && SE && SE.playExplosionAtDistance) SE.playExplosionAtDistance(Math.hypot(P.x - f.x, P.z - f.z), 'GROUND', 'GATLING_BULLET', { x: f.x, z: f.z });
+          }
+        } else {
+          f.gT += dt;
+          if (f.gT < 6 && (f.puff -= dt) <= 0) { f.puff = 0.25; this.droneSmokePuff(f.x, f.y + 2, f.z, 0.7); }
+          if (f.gT > 15) {
+            this.scene.remove(m);
+            m.traverse(o => { if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); } });
+            F.splice(i, 1);
+            continue;
+          }
+        }
+        // drone mình đang rơi khi màn hình drone còn mở: camera nằm trong drone -> ẩn mô hình
+        m.visible = !(f.own && this._sight && this._sight.arty);
+      }
+      this.updateDroneSmoke(dt);
+    },
+
+    droneSmokePuff(x, y, z, k) {
+      const L = this._droneSmoke || (this._droneSmoke = []);
+      if (L.length > 90) return;
+      const geo = this._droneSmokeGeo || (this._droneSmokeGeo = new THREE.SphereGeometry(1, 6, 5));
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2a2826, transparent: true, opacity: 0.55, depthWrite: false }));
+      m.position.set(x + (Math.random() - 0.5) * 2, y, z + (Math.random() - 0.5) * 2);
+      m.scale.setScalar(2.2 * k);
+      this.scene.add(m);
+      L.push({ m, life: 1.4, max: 1.4, k });
+    },
+
+    updateDroneSmoke(dt) {
+      const L = this._droneSmoke;
+      if (!L) return;
+      for (let i = L.length - 1; i >= 0; i--) {
+        const p = L[i];
+        p.life -= dt;
+        if (p.life <= 0) { this.scene.remove(p.m); p.m.material.dispose(); L.splice(i, 1); continue; }
+        const a = 1 - p.life / p.max;
+        p.m.scale.setScalar((2.2 + a * 7) * p.k);
+        p.m.position.y += dt * 6;
+        p.m.material.opacity = 0.55 * (1 - a);
+      }
+    },
+
+    // ---------- MẠNG ----------
+    sendDroneState(dt) {
+      const NS = this.netSync, P = this.player;
+      if (!NS || NS.detached || !P || P.tankType !== 'ARTILLERY' || P.netId === undefined) return;
+      const D = this.droneState();
+      const code = Math.max(0, ST.indexOf(D.state));
+      const up = airborne(D.state);
+      this._droneSendAcc = (this._droneSendAcc || 0) + dt;
+      if (this._droneSentCode === code && this._droneSendAcc < (up ? C.SEND_FLY : C.SEND_IDLE)) return;
+      this._droneSendAcc = 0;
+      this._droneSentCode = code;
+      const m = { i: P.netId, s: code, h: Math.round(Math.max(0, D.hp === undefined ? 1 : D.hp) * 100) };
+      if (up) { m.x = Math.round(D.x * 10); m.y = Math.round(D.y * 10); m.z = Math.round(D.z * 10); m.w = Math.round(wrapPi(D.yaw || 0) * 100); }
+      NS.net.send('DRONE', m);
+    },
+
+    onNetDrone(d, from, NS) {
+      if (!d) return;
+      const u = NS.byNetId[d.i];
+      if (!u || u === this.player || u.tankType !== 'ARTILLERY' || NS.ownerOf(u) !== from) return;
+      const R = this.otherDrone(u);
+      R.net = true;
+      const prev = R.state, st = ST[d.s] || 'docked';
+      R.hp = (d.h || 0) / 100;
+      if (airborne(st) && typeof d.x === 'number') {
+        const s = { t: nowS(), x: d.x / 10, y: d.y / 10, z: d.z / 10, w: (d.w || 0) / 100 };
+        if (!airborne(prev)) { R.samples.length = 0; R.x = s.x; R.y = s.y; R.z = s.z; R.yaw = s.w; }
+        R.samples.push(s);
+        if (R.samples.length > 8) R.samples.shift();
+      }
+      // gói DRONE_DOWN bị mất: vẫn cho drone rơi từ chỗ cuối cùng
+      if (st === 'lost' && airborne(prev) && !R.fell) { R.fell = true; this.startDroneFall(u.team, R.x, R.y, R.z, R.wvx || 0, R.wvz || 0, R.yaw || 0, false); }
+      if (st !== 'lost') R.fell = false;
+      R.state = st;
+      if (st === 'lost' && R.model) R.model.visible = false;
+    },
+
+    onNetDroneHit(d, from, NS) {
+      if (!d || !this.player) return;
+      const o = NS.byNetId[d.o];
+      if (o !== this.player) return;
+      const a = typeof d.a === 'number' && d.a >= 0 ? NS.byNetId[d.a] : null;
+      if (a && NS.ownerOf(a) !== from) return;
+      if (a && a.team === this.player.team) return;
+      this.damageOwnDrone(Math.max(0, Math.min(3, (d.d || 0) / 1000)), a);
+    },
+
+    onNetDroneDown(d, from, NS) {
+      if (!d) return;
+      const u = NS.byNetId[d.o];
+      if (!u || u === this.player || NS.ownerOf(u) !== from) return;
+      const R = this.otherDrone(u);
+      const a = typeof d.a === 'number' && d.a >= 0 ? NS.byNetId[d.a] : null;
+      if (d.up && !R.fell && d.p) {
+        R.fell = true;
+        this.startDroneFall(u.team, d.p[0] / 10, d.p[1] / 10, d.p[2] / 10, (d.v ? d.v[0] : 0) / 10, (d.v ? d.v[1] : 0) / 10, R.yaw || 0, false);
+      }
+      R.state = 'lost';
+      R.samples.length = 0;
+      if (R.model) R.model.visible = false;
+      if (this._airAim && this._airAim.dr === R) this._airAim = null;
+      if (!a) return;
+      const P = this.player;
+      if (a === P) {
+        this.addCombatLog(`[[target-arrow]] ĐÃ BẮN HẠ DRONE TRINH SÁT CỦA ${u.name}! Pháo địch mất mắt ngắm`, 'tip');
+        if (window.soundEngine && window.soundEngine.playTargetLockSound) window.soundEngine.playTargetLockSound();
+      } else if (P && (u.team === P.team || a.team === P.team)) {
+        this.addCombatLog(`[[alert-triangle]] ${a.name} đã bắn hạ drone trinh sát của ${u.name}`, u.team === P.team ? 'alert' : 'tip');
+      }
+    },
+
+    // ---------- TIẾNG CÁNH QUẠT DRONE KHÁC ----------
+    updateDroneAmbient(list) {
+      const SE = window.soundEngine, P = this.player;
+      if (!SE || !SE.updateDroneAmbient) return;
+      let best = null, bd = 1000;
+      if (P && !P.isDead && !(this._sight && this._sight.arty)) {
+        for (const dr of list) {
+          if (dr.key === 'own' && dr.state === 'launching') continue;   // pha cất cánh đã có tiếng riêng
+          const d = Math.hypot(dr.x - P.x, dr.y - (P.y || 0), dr.z - P.z);
+          if (d < bd) { bd = d; best = dr; }
+        }
+      }
+      SE.updateDroneAmbient(best ? bd : null, best ? { x: best.x, z: best.z } : null);
+    },
+
+    // ---------- PHÒNG KHÔNG: XE 6 NÒNG / XE TRINH SÁT ----------
+    canShootAir(P) { return !!(P && C.AA_TYPES[P.tankType]); },
+
+    /** Drone địch (đang thấy) gần con trỏ nhất trên màn hình (≤ 40 px). mouse: tọa độ chuẩn hóa, r: khung canvas */
+    pickDroneAt(mouse, r) {
+      const P = this.player;
+      if (!P) return null;
+      const v = this._pickV || (this._pickV = new THREE.Vector3());
+      let best = null, bp = 40;
+      for (const dr of this.airDroneList()) {
+        if (dr.team === P.team || dr.key === 'own' || !dr.seen) continue;
+        v.set(dr.x, dr.y + C.CENTER_Y, dr.z).project(this.camera);
+        if (v.z > 1) continue;
+        const px = Math.hypot((v.x - mouse.x) * r.width / 2, (v.y - mouse.y) * r.height / 2);
+        if (px < bp) { bp = px; best = dr; }
+      }
+      return best;
+    },
+
+    /** Nhấp lên trời (tia không chạm đất, hướng lên): nâng nòng bắn theo đúng hướng con trỏ */
+    aimAtSky(ray) {
+      const P = this.player;
+      const m = P.getMuzzleWorldTransform ? P.getMuzzleWorldTransform().position : { x: P.x, y: (P.y || 0) + 20, z: P.z };
+      const px = ray.origin.x + ray.direction.x * 900, py = ray.origin.y + ray.direction.y * 900, pz = ray.origin.z + ray.direction.z * 900;
+      const dx = px - m.x, dy = py - m.y, dz = pz - m.z, hd = Math.hypot(dx, dz);
+      if (hd < 1) return;
+      const az = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360;
+      const el = Math.max(-5, Math.min(60, Math.atan2(dy, hd) * 180 / Math.PI));
+      this.setAirAim({ kind: 'sky', az, el });
+    },
+
+    setAirAim(A) {
+      const P = this.player;
+      if (!P || !A) return;
+      if (this.lockedTarget) this.setLockedTarget(null);
+      this._aimPoint = null;
+      this._lockTrack = null;
+      P.fcsTarget = null;
+      A.solT = 0;
+      this._airAim = A;
+      if (P.tankType === 'SCOUT' && P.selectedAmmo === 'ANTI_TANK_MISSILE' && this.selectAmmoType) this.selectAmmoType('SCOUT_BULLET');
+      if (A.kind === 'drone') {
+        const d = Math.round(Math.hypot(A.dr.x - P.x, A.dr.y - (P.y || 0), A.dr.z - P.z));
+        this.addCombatLog(`[[lock]] ĐÃ KHÓA DRONE ĐỊCH // CỰ LY ${d}M — máy tính hỏa lực tự đón đầu & nâng nòng. Giữ Space để xả đạn`, 'tip');
+        if (window.soundEngine && window.soundEngine.playTargetLockSound) window.soundEngine.playTargetLockSound();
+      } else {
+        this.addCombatLog(`[[crosshair]] Nâng nòng bắn lên trời ${Math.round(A.el)}° — nhấp vào drone địch để khóa & đón đầu`, 'tip');
+      }
+    },
+
+    clearAirAim(msg) {
+      if (!this._airAim) return;
+      this._airAim = null;
+      const P = this.player;
+      if (P) { P.fcsTarget = null; P.aimAz = P.aimEl = undefined; }
+      if (msg) this.addCombatLog(msg, 'alert');
+      if (this._airLockEl) this._airLockEl.hidden = true;
+    },
+
+    /**
+     * Nghiệm bắn vào điểm trên không đang bay (tx..tz, vận tốc tvx..tvz): mô phỏng đúng đường đạn súng (trọng lực + cản + gió)
+     * rồi chỉnh góc nòng / điểm đón đầu theo thời gian đạn bay. Trả { az, el (độ, thế giới), t (giây), dist, reach }
+     */
+    airShotSolution(shooter, ammo, tx, ty, tz, tvx, tvy, tvz) {
+      const B = this.ballistics;
+      if (!B || !B.roundParams) return null;
+      const rp = B.roundParams(ammo, shooter), M = B.bulletSpeedMultiplier || 1;
+      const mz = shooter.getMuzzleWorldTransform ? shooter.getMuzzleWorldTransform().position : { x: shooter.x, y: (shooter.y || 0) + 20, z: shooter.z };
+      let t = Math.hypot(tx - mz.x, ty - mz.y, tz - mz.z) / Math.max(1, rp.v0 * M);
+      let az = 0, el, dist = 0, travel = 0;
+      for (let it = 0; it < 3; it++) {
+        const ax = tx + tvx * t, ay = ty + tvy * t, azp = tz + tvz * t;
+        const dx = ax - mz.x, dy = ay - mz.y, dz = azp - mz.z, hd = Math.max(1, Math.hypot(dx, dz));
+        az = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360;
+        if (el === undefined) el = Math.atan2(dy, hd) * 180 / Math.PI;
+        dist = Math.hypot(hd, dy);
+        let tSim = t * M;
+        for (let k = 0; k < 3; k++) {
+          const r = this.simBulletAt(rp, az, el, hd);
+          if (!r) break;
+          el += Math.atan2(dy - r.y, hd) * 180 / Math.PI;
+          tSim = r.t; travel = r.travel;
+        }
+        t = tSim / M;
+      }
+      return { az, el, t, dist, reach: !rp.maxTravel || travel <= rp.maxTravel };
+    },
+
+    // bay thử một viên đạn (cùng bước tích phân với đạn thật) tới khi đi được hd theo phương ngang: { y, t, travel }
+    simBulletAt(rp, azDeg, elDeg, hd) {
+      const B = this.ballistics;
+      const a = azDeg * Math.PI / 180, e = elDeg * Math.PI / 180, ca = Math.sin(a), cz = -Math.cos(a);
+      const p = this._simP || (this._simP = {});
+      p.x = 0; p.y = 0; p.z = 0; p.k = rp.k; p.g = rp.g; p.burnTravel = 0; p.travel = 0;
+      p.vx = rp.v0 * Math.cos(e) * ca; p.vy = rp.v0 * Math.sin(e); p.vz = rp.v0 * Math.cos(e) * cz;
+      const h = 1 / 90;
+      let t = 0, prevH = 0, prevY = 0, travel = 0;
+      for (let i = 0; i < 400; i++) {
+        const x0 = p.x, y0 = p.y, z0 = p.z;
+        B.integrateFlight(p, h);
+        p.x += p.vx * h; p.y += p.vy * h; p.z += p.vz * h;
+        t += h;
+        travel += Math.hypot(p.x - x0, p.y - y0, p.z - z0);
+        const along = p.x * ca + p.z * cz;
+        if (along >= hd) {
+          const k = (hd - prevH) / Math.max(1e-6, along - prevH);
+          return { y: prevY + (p.y - prevY) * k, t: t - h * (1 - k), travel };
+        }
+        prevH = along; prevY = p.y;
+      }
+      return null;
+    },
+
+    /** Mỗi khung hình khi đang ngắm trời / khóa drone. false = đã thôi (quay lại cơ chế ngắm thường) */
+    updatePlayerAirAim(dt, manual) {
+      const P = this.player, A = this._airAim;
+      if (!A || !P || P.isDead || !this.canShootAir(P)) { this._airAim = null; return false; }
+      if (manual) { this.clearAirAim(); return false; }
+      const B = this.ballistics;
+      const ammo = P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (P.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
+      let az = A.az, el = A.el;
+      if (A.kind === 'drone') {
+        const dr = A.dr;
+        if (!this.droneIsAirborne(dr) || !dr.seen) { this.clearAirAim('[[radar-2]] MẤT DẤU DRONE ĐỊCH — đã hủy khóa'); return false; }
+        A.solT -= dt;
+        if (A.solT <= 0 || !A.sol) {
+          A.solT = 0.1;
+          A.sol = this.airShotSolution(P, ammo, dr.x, dr.y + C.CENTER_Y, dr.z, dr.wvx || 0, dr.wvy || 0, dr.wvz || 0);
+        }
+        const S = A.sol;
+        if (!S) return true;
+        az = S.az; el = S.el;
+        const cap = B.maxTravelFor ? B.maxTravelFor(ammo, P) : 900;
+        A.state = el > 60 ? 'high' : (!S.reach || S.dist > cap) ? 'far' : 'track';
+        A.lead = { x: dr.x + (dr.wvx || 0) * S.t, y: dr.y + C.CENTER_Y + (dr.wvy || 0) * S.t, z: dr.z + (dr.wvz || 0) * S.t };
+        A.dist = S.dist;
+        if (S.dist > cap * 1.8) { this.clearAirAim('[[alert-triangle]] Drone địch đã ra quá xa tầm súng — đã hủy khóa'); return false; }
+      }
+      el = Math.max(-5, Math.min(60, el));
+      if (P.aimTo) P.aimTo(az, el); else { P.aimAz = az; P.aimEl = el; }
+      if (P.canElevate === false || P.tankType === 'GATLING') {
+        const r = az * Math.PI / 180;
+        P.fcsTarget = { x: P.x + Math.sin(r) * 800, z: P.z - Math.cos(r) * 800, y: (P.y || 0) + 800 * Math.tan(el * Math.PI / 180), el };
+      }
+      // nòng đã khớp hướng nghiệm chưa (đo hướng thật của nòng)
+      if (P.getMuzzleWorldTransform) {
+        const d = P.getMuzzleWorldTransform().direction;
+        const baz = (Math.atan2(d.x, -d.z) * 180 / Math.PI + 360) % 360, bel = Math.asin(Math.max(-1, Math.min(1, d.y))) * 180 / Math.PI;
+        A.on = Math.abs(((baz - az + 540) % 360) - 180) < 1.2 && Math.abs(bel - el) < 1.2;
+        A.barrelEl = bel;
+      }
+      return true;
+    },
+
+    // khung khóa drone địch (HTML): góc ngoặc quanh drone + chấm điểm đón đầu + cự ly / trạng thái
+    updateAirLockOverlay() {
+      const A = this._airAim;
+      let el = this._airLockEl;
+      if (!A || A.kind !== 'drone' || !this.player || this.player.isDead) { if (el && !el.hidden) el.hidden = true; return; }
+      if (!el) {
+        if (!document.getElementById('air-lock-style')) {
+          const st = document.createElement('style');
+          st.id = 'air-lock-style';
+          st.textContent = [
+            '#air-lock{position:fixed;inset:0;pointer-events:none;z-index:6;font-family:"Chakra Petch",system-ui,sans-serif;--ac:#ffb020}',
+            '#air-lock .al-box{position:absolute;left:0;top:0;width:44px;height:44px;margin:-22px 0 0 -22px;',
+            'background:linear-gradient(var(--ac),var(--ac)) 0 0/12px 2px,linear-gradient(var(--ac),var(--ac)) 0 0/2px 12px,',
+            'linear-gradient(var(--ac),var(--ac)) 100% 0/12px 2px,linear-gradient(var(--ac),var(--ac)) 100% 0/2px 12px,',
+            'linear-gradient(var(--ac),var(--ac)) 0 100%/12px 2px,linear-gradient(var(--ac),var(--ac)) 0 100%/2px 12px,',
+            'linear-gradient(var(--ac),var(--ac)) 100% 100%/12px 2px,linear-gradient(var(--ac),var(--ac)) 100% 100%/2px 12px;background-repeat:no-repeat;filter:drop-shadow(0 0 2px #000)}',
+            '#air-lock .al-txt{position:absolute;left:0;top:0;margin:28px 0 0 -90px;width:180px;text-align:center;color:var(--ac);font-size:11px;font-weight:600;letter-spacing:.08em;text-shadow:0 0 3px #000,0 0 6px #000;white-space:nowrap}',
+            '#air-lock .al-lead{position:absolute;left:0;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border:2px solid var(--ac);border-radius:50%;box-sizing:border-box;filter:drop-shadow(0 0 2px #000)}',
+            '#air-lock .al-line{position:absolute;left:0;top:0;height:1px;background:var(--ac);opacity:.55;transform-origin:0 50%}'
+          ].join('');
+          document.head.appendChild(st);
+        }
+        el = this._airLockEl = document.createElement('div');
+        el.id = 'air-lock';
+        el.innerHTML = '<div class="al-line"></div><div class="al-box"></div><div class="al-lead"></div><div class="al-txt"></div>';
+        el._box = el.querySelector('.al-box'); el._lead = el.querySelector('.al-lead'); el._txt = el.querySelector('.al-txt'); el._line = el.querySelector('.al-line');
+        document.body.appendChild(el);
+      }
+      const dr = A.dr, cam = this.camera, W = window.innerWidth, H = window.innerHeight;
+      const v = this._alV || (this._alV = new THREE.Vector3());
+      v.set(dr.x, dr.y + C.CENTER_Y, dr.z).project(cam);
+      if (v.z > 1 || Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) { if (!el.hidden) el.hidden = true; return; }
+      if (el.hidden) el.hidden = false;
+      const sx = (v.x * 0.5 + 0.5) * W, sy = (-v.y * 0.5 + 0.5) * H;
+      el._box.style.transform = el._txt.style.transform = 'translate(' + Math.round(sx) + 'px,' + Math.round(sy) + 'px)';
+      let lx = sx, ly = sy;
+      if (A.lead) {
+        v.set(A.lead.x, A.lead.y, A.lead.z).project(cam);
+        if (v.z <= 1) { lx = (v.x * 0.5 + 0.5) * W; ly = (-v.y * 0.5 + 0.5) * H; }
+      }
+      el._lead.style.transform = 'translate(' + Math.round(lx) + 'px,' + Math.round(ly) + 'px)';
+      const ll = Math.hypot(lx - sx, ly - sy);
+      el._line.style.width = Math.round(ll) + 'px';
+      el._line.style.transform = 'translate(' + Math.round(sx) + 'px,' + Math.round(sy) + 'px) rotate(' + Math.atan2(ly - sy, lx - sx) + 'rad)';
+      const col = A.state === 'high' || A.state === 'far' ? '#ff5a4a' : A.on ? '#5cf08a' : '#ffb020';
+      if (el._c !== col) { el._c = col; el.style.setProperty('--ac', col); }
+      const txt = 'DRONE ĐỊCH · ' + Math.round(A.dist || 0) + ' M · ' + (A.state === 'high' ? 'QUÁ CAO — LÙI XE RA XA'
+        : A.state === 'far' ? 'NGOÀI TẦM SÚNG' : A.on ? 'ĐÃ NGẮM TRÚNG' : 'ĐANG XOAY THÁP') + (this._droneHitMark > 0 ? ' · TRÚNG!' : '');
+      if (el._txt.textContent !== txt) el._txt.textContent = txt;
+    },
+
+    // ---------- MÀN HÌNH DRONE KHI BỊ BẮN HẠ: hình lật nhào, rồi nhiễu trắng "MẤT TÍN HIỆU" ----------
+    updateDroneDeathCam(dt, S) {
+      const cam = this.camera, K = S.dying;
+      K.t += dt;
+      const F = this._droneFalls && this._droneFalls.find(f => f.own);
+      const x = F ? F.x : K.x, y = F ? F.y : K.y, z = F ? F.z : K.z;
+      cam.position.set(x, y + 1, z);
+      const yaw = K.yaw + K.t * 5.5, pitch = -0.9 + Math.sin(K.t * 7) * 0.5;
+      cam.lookAt(x - Math.sin(yaw) * Math.cos(pitch) * 100, y + 1 + Math.sin(pitch) * 100, z - Math.cos(yaw) * Math.cos(pitch) * 100);
+      cam.rotateZ(K.t * 9);
+      const el = this._sightEl, dead = el && el.querySelector('.gs-dead');
+      if (dead && K.t > 0.7 && dead.hidden) dead.hidden = false;
+      this.renderer.domElement.style.transform = K.t < 0.7 ? 'translate(' + Math.round((Math.random() - 0.5) * 24) + 'px,' + Math.round((Math.random() - 0.5) * 18) + 'px)' : '';
+      if (K.t > 3.4) {
+        this.setSightMode(false);
+        this.addCombatLog('[[eye-off]] Mất tín hiệu drone — về camera xe pháo', 'alert');
+      }
+    }
+  };
+
+  return { C, ST, airborne, methods };
+})();
+
+if (typeof window !== 'undefined') window.DroneAir = DroneAir;
