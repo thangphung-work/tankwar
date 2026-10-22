@@ -103,7 +103,10 @@ class BattleTerrain3D {
       this.backdrop = Backdrop.build(this);
       if (this.backdrop) this.group.add(this.backdrop.group);
     }
+    // cột khói xa ngoài chiến trường (làng / kho đang cháy sau vành núi)
+    this.plumes = typeof WeatherFX !== 'undefined' && WeatherFX.plumes && this.map.scars ? WeatherFX.plumes(this.group, this.map.scars.plumes, this.atmosphere) : null;
     this.buildRocks();
+    this.buildScars();
     this.buildBridges();   // + hệ thống phá hủy cảnh vật (EnvDamage): đá tảng có máu, cầu sập, vết đạn tích tụ
     this.buildBushes();
 
@@ -170,28 +173,48 @@ class BattleTerrain3D {
     };
     const p = Object.assign({}, PAL[this.mapType] || PAL.DESERT);
     // Giờ vàng / sáng sớm: chân trời ấm hơn, trời đậm hơn
-    const warm = sun.timeOfDay === 'golden' ? 0.55 : sun.timeOfDay === 'morning' ? 0.25 : 0;
+    const dusk = sun.timeOfDay === 'dusk';
+    const warm = sun.timeOfDay === 'golden' ? 0.55 : sun.timeOfDay === 'morning' ? 0.25 : dusk ? 0.8 : 0;
     const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
     // (sương chỉ ngả ấm nhẹ: sương cam đậm làm cả nửa dưới bầu trời và cảnh xa vàng ệch)
     if (warm) { p.horizon = mix(p.horizon, 0xf0b888, warm * 0.45); p.fog = mix(p.fog, 0xe8c8a8, warm * 0.3); p.zenith = mix(p.zenith, 0x35558f, warm * 0.35); }
+    // chạng vạng: trời tối dần, thiên đỉnh xanh thẫm, sương xám tím
+    if (dusk) { p.zenith = mix(p.zenith, 0x1c2a4a, 0.55); p.horizon = mix(p.horizon, 0xb07a5a, 0.35); p.fog = mix(p.fog, 0x6a6474, 0.45); p.ground = mix(p.ground, 0x2a2622, 0.4); }
+    // THỜI TIẾT (MapGen.weatherFor): âm u / mưa / sương mù / bão cát — trời xám hoặc vàng đục, sương dày, nắng yếu
+    const W = this.map.weather || { kind: 'clear', fogK: 1, sunK: 1, skyK: 1, overcast: 0, hazeK: 0 };
+    if (W.hazeK) {
+      p.fog = mix(p.fog, W.haze, W.hazeK);
+      p.horizon = mix(p.horizon, W.haze, W.hazeK * 0.85);
+      p.zenith = mix(p.zenith, W.dust ? 0x9a8460 : 0x7c848e, W.overcast * 0.8);
+      if (dusk) { p.fog = mix(p.fog, 0x4a4650, 0.4); p.horizon = mix(p.horizon, 0x4a4650, 0.4); p.zenith = mix(p.zenith, 0x22262e, 0.5); }
+    }
+    p.density *= W.fogK || 1;
+    p.weather = W;
     p.sun = sun;
     // Hướng mặt trời (từ mặt đất nhìn lên mặt trời)
     p.sunDir = new THREE.Vector3(Math.cos(sun.elevation) * Math.sin(sun.azimuth), Math.sin(sun.elevation), Math.cos(sun.elevation) * Math.cos(sun.azimuth)).normalize();
     const elevK = Math.min(1, sun.elevation / 0.9);
     p.sunColor = new THREE.Color(0xffe2b0).lerp(new THREE.Color(0xfff6e8), elevK).getHex();
+    if (dusk) p.sunColor = mix(p.sunColor, 0xff9a5c, 0.6);
     // Tổng ánh sáng trên mặt đất phẳng giữa trưa ~1.5 (cũ ~2.2 -> nền sáng bị cắt trắng / lá cây xanh neon).
     // Nắng trực tiếp chiếm phần lớn, ánh trời tán xạ ít hơn: vùng bóng còn ~35% vùng nắng (trước ~45-50% -> cảnh phẳng
     // như trời âm u, khối nhà / xe không nổi). Bóng vẫn có sắc trời xanh nhạt (ánh trời), không đen kịt
-    p.sunIntensity = (0.75 + 0.25 * elevK) * p.sunK * 1.2;
-    p.skyIntensity = (0.68 + 0.1 * elevK) * p.skyK * 0.78;
+    // chạng vạng: nắng yếu hẳn (đi qua lớp khí quyển dày), ánh trời tối -> cảnh tối, bóng đổ dài
+    const duskK = dusk ? 0.55 : 1;
+    p.sunIntensity = (0.75 + 0.25 * elevK) * p.sunK * 1.2 * duskK * (W.sunK || 1);
+    p.skyIntensity = (0.68 + 0.1 * elevK) * p.skyK * 0.78 * (dusk ? 0.7 : 1) * (W.skyK || 1);
     p.ambientIntensity = 0.08;
+    // trời âm u: ánh trời tán xạ ngả xám trung tính (không còn sắc xanh của trời quang)
+    if (W.overcast) p.skyTint = W.dust ? 0xd8c4a0 : 0xd0d4d8;
     // bóng mây trôi: độ đậm (phần nắng bị che) & ngưỡng độ phủ — sa mạc trời quang ít mây, rừng / sông hồ mây nhiều
-    const CL = { DESERT: [0.3, 0.66], URBAN: [0.4, 0.6], JUNGLE: [0.45, 0.56], HIGHLAND: [0.4, 0.6], RIVER_LAKE: [0.42, 0.58] }[this.mapType] || [0.4, 0.6];
+    const CL = W.cloud || { DESERT: [0.3, 0.66], URBAN: [0.4, 0.6], JUNGLE: [0.45, 0.56], HIGHLAND: [0.4, 0.6], RIVER_LAKE: [0.42, 0.58] }[this.mapType] || [0.4, 0.6];
     p.cloudK = CL[0]; p.cloudCover = CL[1];
     this.atmosphere = p;
     this.scene.background = new THREE.Color(p.horizon);
     this.scene.fog = new THREE.FogExp2(p.fog, p.density);
     if (typeof SkySystem !== 'undefined') this.sky = SkySystem.create(this.group, p);
+    // mưa / bão cát: hạt bay quanh camera (game.js cập nhật theo camera mỗi khung hình); dọn cùng nhóm địa hình
+    this.weatherFx = typeof WeatherFX !== 'undefined' ? WeatherFX.build(this.group, p.weather) : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -388,6 +411,39 @@ class BattleTerrain3D {
       ctx.strokeStyle = '#3d4a3c';
       BattleTerrain3D.strokeRiver(ctx, M.river, toPx, sc);
       for (const L of M.lakes) { ctx.fillStyle = '#3d4a3c'; ctx.beginPath(); ctx.arc(toPx(L.x), toPx(L.z), L.r * sc, 0, 6.283); ctx.fill(); }
+    }
+    // DẤU VẾT CHIẾN TRẬN CŨ (MapGen scars): vệt cháy sém (mép loang lổ, đen ở giữa) rồi hố đạn (đất tươi hất lên quanh
+    // miệng hố, lòng hố tối ẩm). Vẽ sau đường để hố / vết cháy ven đường lấn nhẹ lên mép đường
+    const SC = M.scars;
+    if (SC) {
+      const rr = MapGen.mulberry32((this.seed ^ 0x51ca7) >>> 0);
+      const soot = this.mapType === 'DESERT' ? '38,30,22' : this.mapType === 'URBAN' ? '30,30,30' : '24,22,16';
+      for (const b of SC.burns) {
+        const cx = toPx(b.x), cz = toPx(b.z), r = b.r * sc;
+        // vài đốm chồng lên nhau -> mảng cháy không tròn đều
+        for (let k = 0; k < 6; k++) {
+          const a = b.rot + k * 1.13, d = r * 0.45 * rr(), rk = r * (0.45 + 0.4 * rr());
+          const x = cx + Math.cos(a) * d, y = cz + Math.sin(a) * d;
+          const gr = ctx.createRadialGradient(x, y, 0, x, y, rk);
+          gr.addColorStop(0, `rgba(${soot},0.5)`); gr.addColorStop(0.6, `rgba(${soot},0.28)`); gr.addColorStop(1, `rgba(${soot},0)`);
+          ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, rk, 0, 6.283); ctx.fill();
+        }
+      }
+      const ejecta = { DESERT: '150,116,78', URBAN: '96,88,76', JUNGLE: '92,70,44', HIGHLAND: '110,96,72', RIVER_LAKE: '104,84,56' }[this.mapType] || '110,90,64';
+      for (const c of SC.craters) {
+        const cx = toPx(c.x), cz = toPx(c.z), r = Math.max(1.5, c.r * sc);
+        // đất hất lên (vành ngoài, loang theo vài hướng), lòng hố tối, đáy đọng ẩm
+        for (let k = 0; k < 5; k++) {
+          const a = c.rot + k * 1.257 + rr() * 0.5, d = r * (0.3 + 0.5 * rr()), rk = r * (1.3 + 0.6 * rr());
+          const x = cx + Math.cos(a) * d, y = cz + Math.sin(a) * d;
+          const gr = ctx.createRadialGradient(x, y, 0, x, y, rk);
+          gr.addColorStop(0, `rgba(${ejecta},0.4)`); gr.addColorStop(1, `rgba(${ejecta},0)`);
+          ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, rk, 0, 6.283); ctx.fill();
+        }
+        const gr = ctx.createRadialGradient(cx, cz, 0, cx, cz, r);
+        gr.addColorStop(0, 'rgba(34,28,20,0.75)'); gr.addColorStop(0.65, 'rgba(52,42,30,0.55)'); gr.addColorStop(1, 'rgba(70,58,42,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(cx, cz, r, 0, 6.283); ctx.fill();
+      }
     }
     // Nền bê tông dưới boong-ke
     for (const k of M.bunkers) { ctx.fillStyle = 'rgba(110,106,96,0.55)'; ctx.beginPath(); ctx.arc(toPx(k.x), toPx(k.z), 62 * sc, 0, 6.283); ctx.fill(); }
@@ -1041,6 +1097,81 @@ ${sea ? 'varying float vDep;' : ''}
     }
     im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
     this.group.add(im);
+  }
+
+  // ---------------------------------------------------------------------------
+  // DẤU VẾT CHIẾN TRẬN CŨ (MapGen scars): hố đạn cũ & vệt cháy sém dán sát mặt đất. Mỗi dấu là một mảnh lưới 9 x 9
+  // bám độ cao địa hình (lòng hố đã khắc vào lưới độ cao), gộp chung một mesh + một ảnh atlas vẽ bằng canvas
+  // ---------------------------------------------------------------------------
+  buildScars() {
+    const SC = this.map.scars;
+    if (!SC || (!SC.craters.length && !SC.burns.length)) return;
+    const rnd = MapGen.mulberry32((this.seed ^ 0x2c4f1e) >>> 0);
+    // atlas 2 ô: [0] hố đạn (lòng tối, gờ đất hất lên vón cục, tia đất văng), [1] vết cháy sém (loang lổ, mép rách)
+    const W = 512, cv = document.createElement('canvas');
+    cv.width = W * 2; cv.height = W;
+    const g = cv.getContext('2d');
+    const blob = (x, y, r, col, a) => {
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, `rgba(${col},${a})`); gr.addColorStop(1, `rgba(${col},0)`);
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+    };
+    {
+      const c = W / 2;
+      // tia đất văng ra ngoài
+      for (let i = 0; i < 26; i++) {
+        const a = rnd() * 6.283, L = W * (0.24 + 0.2 * rnd());
+        for (let k = 0; k < 6; k++) { const d = L * (0.55 + 0.45 * k / 5); blob(c + Math.cos(a) * d, c + Math.sin(a) * d, W * (0.03 + 0.03 * rnd()), '74,60,44', 0.28); }
+      }
+      // gờ đất tươi quanh miệng hố
+      for (let i = 0; i < 60; i++) { const a = rnd() * 6.283, d = W * (0.16 + 0.1 * rnd()); blob(c + Math.cos(a) * d, c + Math.sin(a) * d, W * (0.04 + 0.05 * rnd()), '92,74,52', 0.42); }
+      // lòng hố: tối dần vào đáy, đáy đọng ẩm
+      blob(c, c, W * 0.22, '40,32,24', 0.85);
+      blob(c, c, W * 0.12, '22,18,14', 0.8);
+      for (let i = 0; i < 18; i++) { const a = rnd() * 6.283, d = W * 0.13 * rnd(); blob(c + Math.cos(a) * d, c + Math.sin(a) * d, W * 0.03, '18,14,10', 0.5); }
+    }
+    {
+      const c = W + W / 2;
+      for (let i = 0; i < 70; i++) {
+        const a = rnd() * 6.283, d = W * 0.3 * Math.sqrt(rnd());
+        blob(c + Math.cos(a) * d, W / 2 + Math.sin(a) * d, W * (0.05 + 0.1 * rnd()), '14,12,10', 0.22 + 0.2 * rnd());
+      }
+      // tro xám lấm tấm, cỏ cháy dở màu nâu ở mép
+      for (let i = 0; i < 40; i++) { const a = rnd() * 6.283, d = W * (0.2 + 0.2 * rnd()); blob(c + Math.cos(a) * d, W / 2 + Math.sin(a) * d, W * 0.035, '96,72,40', 0.25); }
+      for (let i = 0; i < 30; i++) { const a = rnd() * 6.283, d = W * 0.25 * rnd(); blob(c + Math.cos(a) * d, W / 2 + Math.sin(a) * d, W * 0.02, '120,116,108', 0.3); }
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = 4;
+    // ghép các mảnh lưới: crater cỡ 2.6 r (gồm đất văng), vết cháy cỡ 2 r
+    const G = 8, list = [];
+    for (const c of SC.craters) list.push({ x: c.x, z: c.z, s: c.r * 2.6, rot: c.rot, u0: 0 });
+    for (const b of SC.burns) list.push({ x: b.x, z: b.z, s: b.r * 2, rot: b.rot, u0: 0.5 });
+    const nv = (G + 1) * (G + 1), pos = new Float32Array(list.length * nv * 3), uv = new Float32Array(list.length * nv * 2);
+    const idx = [];
+    list.forEach((d, n) => {
+      const cs = Math.cos(d.rot), sn = Math.sin(d.rot), o = n * nv;
+      for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+        const u = i / G - 0.5, v = j / G - 0.5, k = o + j * (G + 1) + i;
+        const x = d.x + (u * cs - v * sn) * d.s, z = d.z + (u * sn + v * cs) * d.s;
+        pos[k * 3] = x; pos[k * 3 + 1] = this.groundAtRaw(x, z) + 0.35; pos[k * 3 + 2] = z;
+        uv[k * 2] = d.u0 + (i / G) * 0.5; uv[k * 2 + 1] = j / G;
+        if (i < G && j < G) idx.push(k, k + G + 1, k + 1, k + 1, k + G + 1, k + G + 2);
+      }
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    // hố nổ mới trong trận khoét mặt đất: dấu cũ chỗ đó cũng bị khoét theo (không lơ lửng che lòng hố mới)
+    if (typeof ExplosionFX !== 'undefined' && ExplosionFX.installGroundHoles) ExplosionFX.installGroundHoles(mat);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'warScars';
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 1;
+    this.group.add(mesh);
+    this.scarMesh = mesh;
   }
 
   // ---------------------------------------------------------------------------

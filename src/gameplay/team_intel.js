@@ -69,8 +69,15 @@ const TeamIntel = (() => {
     if (eqRadar(u)) return Equipment.EQ_RADAR_RANGE || 600;
     return u.reconRadius || RADAR_RANGE;
   }
+  // Thời tiết của bản đồ (MapGen.weatherFor): mưa / sương mù / bão cát rút ngắn tầm mắt thường & vùng nhìn drone
+  // (radar không bị ảnh hưởng); máy chủ dùng cùng hệ số (server_auth.js)
+  function weather() {
+    const W = game && game.terrain && game.terrain.map && game.terrain.map.weather;
+    return W || null;
+  }
   function sightRange(u) {
-    let r = SIGHT[u.tankType] || 500;
+    const W = weather();
+    let r = (SIGHT[u.tankType] || 500) * (W ? W.sightK || 1 : 1);
     // Mất kính ngắm / kính chỉ huy: tầm quan sát giảm
     if (u.dmg && u.dmg.lost) {
       if (u.dmg.lost.has('opticGunner')) r *= 0.85;
@@ -130,12 +137,12 @@ const TeamIntel = (() => {
     if (!list || !list.length) return false;
     const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
     const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
-    const bc = bushCover(t);
+    const bc = bushCover(t), W = weather(), droneK = W ? W.droneK || 1 : 1;
     for (const dr of list) {
       if (dr.team !== team || !game.droneIsAirborne(dr)) continue;
       const yaw = dr.yaw || 0, cx = dr.x - Math.sin(yaw) * DRONE_AHEAD, cz = dr.z - Math.cos(yaw) * DRONE_AHEAD;
       const d = Math.hypot(t.x - cx, t.z - cz);
-      let r = DRONE_SIGHT;
+      let r = DRONE_SIGHT * droneK;
       if (bc && bc.spot) r = Math.min(r, bc.spot);   // trinh sát núp bụi: chỉ lộ khi drone ở gần
       if (d > r * (EQ ? EQ.camoFactor(t) : 1)) continue;
       // tán rừng rậm che xe bên dưới (trừ khi vừa nổ súng); màn khói che khuất
@@ -425,7 +432,7 @@ const TeamIntel = (() => {
 
   return {
     SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, DRONE_SIGHT, DRONE_AHEAD, bushCover, bushBanner, droneSees,
-    bind, reset, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
+    bind, reset, update, weather, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
     get time() { return time; },
     get reports() { return reports; }
   };

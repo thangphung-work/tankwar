@@ -9,7 +9,8 @@
  * - Thử hiệu ứng ngay trong game thật (HUD thật): bắn mọi loại đạn vào xe mục tiêu / xe mình (trúng, nổ sát bên, loạt),
  *   phá từng bộ phận, phá hủy xe, bắn vào xác, giữ xác xe — đi qua đúng game.handleShellImpact & VehicleDamage
  *
- * Tham số URL: map=HIGHLAND|DESERT|JUNGLE|URBAN|RIVER_LAKE, seed=<số>, tank=ALL_ROUNDER|GATLING|ARTILLERY|SCOUT
+ * Tham số URL: map=HIGHLAND|DESERT|JUNGLE|URBAN|RIVER_LAKE, seed=<số>, tank=ALL_ROUNDER|GATLING|ARTILLERY|SCOUT,
+ *   weather=clear|overcast|rain|fog|dust
  */
 (function () {
   const q = new URLSearchParams(location.search);
@@ -18,6 +19,8 @@
   if (typeof MapGen !== 'undefined') MapGen.setLayout('STRONGHOLDS');
   // landmark=nuke|bio|sam|power|radar: ép công trình giữa 3 cứ điểm (mặc định theo bản đồ: MapGen MAP_LANDMARK)
   if (typeof MapGen !== 'undefined' && MapGen.setLandmark) MapGen.setLandmark(q.get('landmark'));
+  // weather=clear|overcast|rain|fog|dust: ép thời tiết (mặc định theo seed: MapGen.weatherFor)
+  if (typeof MapGen !== 'undefined' && MapGen.setWeather) MapGen.setWeather(q.get('weather'));
   // Chơi độc lập: không vào sảnh mạng
   try { window.NetTransport = undefined; } catch (e) { /* bỏ qua */ }
 

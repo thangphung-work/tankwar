@@ -464,6 +464,15 @@ class ArtilleryGame3D {
     this._playerDeaths = 0;
     this.addCombatLog(`[[rocket]] XUẤT TRẬN THÀNH CÔNG! Chào mừng ${myName} vào chiến địa!`, 'tip');
     this.addCombatLog('[[swords]] Chiếm 1 cứ điểm A, B hoặc C rồi đứng giữ đủ 60 giây để thắng — hoặc hạ nhiều địch hơn khi hết giờ', 'system');
+    // thời tiết của bản đồ: báo cho người chơi (tầm mắt phát hiện địch giảm) + tiếng mưa / gió bão
+    const W = M && M.weather;
+    if (window.soundEngine && window.soundEngine.setWeather) window.soundEngine.setWeather(W ? W.kind : 'clear');
+    if (W && W.kind !== 'clear') {
+      const icon = { overcast: 'cloud', rain: 'cloud-rain', fog: 'mist', dust: 'wind' }[W.kind] || 'cloud';
+      const cut = Math.round((1 - (W.sightK || 1)) * 100);
+      this.addCombatLog(`[[${icon}]] THỜI TIẾT: ${W.name}` + (cut > 0 ? ` — tầm mắt phát hiện địch giảm ${cut}%, radar không bị ảnh hưởng` : ''), 'system');
+    }
+    if (M && M.sun && M.sun.timeOfDay === 'dusk') this.addCombatLog('[[sunset]] CHẠNG VẠNG — trời tối dần, bóng đổ dài', 'system');
     if (window.GameMenu && GameMenu.maybeShowFirstHint) GameMenu.maybeShowFirstHint();
   }
 
@@ -5690,6 +5699,11 @@ class ArtilleryGame3D {
       this.terrain.sky.mesh.updateMatrix();
       this.terrain.sky.mesh.updateMatrixWorld(true);
     }
+    // mưa / bão cát quanh camera, bay theo gió hiện tại
+    if (this.terrain && this.terrain.weatherFx) {
+      this.terrain.weatherFx.update(dt, this.camera, this.ballistics && this.ballistics.wind, this.renderer.domElement.clientHeight);
+    }
+    if (this.terrain && this.terrain.plumes) this.terrain.plumes.update(dt, this.ballistics && this.ballistics.wind);
 
     // 6. Cập nhật hệ thống hiệu ứng nổ 3D, khói bụi, sóng xung kích, mảnh văng & vết sém mờ dần
     if (this.effectsManager && this.effectsManager.fx) this.effectsManager.fx.update(dt);
@@ -6904,6 +6918,7 @@ class ArtilleryGame3D {
     this.updateAmmoUI();
 
     // Mở lại Sảnh Chờ Ghép Trận Nhiều Người Chơi
+    if (window.soundEngine && window.soundEngine.setWeather) window.soundEngine.setWeather('clear');
     if (this.matchmaking) {
       this.isGameStarted = false;
       // [NET] Gỡ đồng bộ trận cũ, rời phòng mạng, hiện lại sảnh (chờ bấm "TÌM TRẬN ĐẤU")

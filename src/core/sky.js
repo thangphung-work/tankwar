@@ -14,6 +14,9 @@ const SkySystem = (() => {
         fogC: { value: new THREE.Color(atm.fog || atm.horizon) },
         sunDir: { value: atm.sunDir.clone() },
         sunColor: { value: new THREE.Color(atm.sunColor) },
+        // thời tiết: tầng mây xám phủ trời (0..1) — che đĩa mặt trời, mây tích lẫn vào tầng mây
+        overcast: { value: atm.weather ? atm.weather.overcast || 0 : 0 },
+        deck: { value: new THREE.Color(atm.weather && atm.weather.haze ? atm.weather.haze : 0x9aa0a6).lerp(new THREE.Color(atm.horizon), 0.35) },
         time: { value: 0 }
       },
       vertexShader: `
@@ -24,7 +27,8 @@ const SkySystem = (() => {
           gl_Position = projectionMatrix * p;
         }`,
       fragmentShader: `
-        uniform vec3 zenith, horizon, ground, sunDir, sunColor, fogC;
+        uniform vec3 zenith, horizon, ground, sunDir, sunColor, fogC, deck;
+        uniform float overcast;
         varying vec3 vDir;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) {
@@ -56,6 +60,13 @@ const SkySystem = (() => {
             c = smoothstep(0.58, 0.85, c) * smoothstep(0.05, 0.3, h) * 0.4 * (1.0 - cov);
             col = mix(col, mix(vec3(1.0), sunColor, 0.25) * (0.85 + 0.25 * cs), c);
           }
+          if (overcast > 0.0) {
+            // tầng mây xám dày (âm u / mưa / sương / bão cát): phủ kín trời, chỗ dày chỗ mỏng, mặt trời chỉ là quầng mờ
+            vec2 ud = d.xz / (max(h, 0.0) + 0.18) * 0.9;
+            float dn = noise(ud + 2.1) * 0.55 + noise(ud * 2.6 - 4.3) * 0.3 + noise(ud * 6.3) * 0.15;
+            vec3 dc = deck * (0.82 + 0.3 * dn) + sunColor * pow(cs, 6.0) * 0.18 * (1.0 - overcast * 0.6);
+            col = mix(col, mix(dc, fogC, pow(smoothstep(0.35, -0.02, h), 1.2)), overcast * smoothstep(-0.05, 0.03, h + 0.04));
+          }
           gl_FragColor = vec4(col, 1.0);
         }`
     });
@@ -78,6 +89,7 @@ const SkySystem = (() => {
     if (hemi) {
       // ánh trời ngả xanh rõ hơn (vùng bóng lạnh màu, vùng nắng ấm -> tương phản nóng / lạnh như ảnh chụp ngoài trời)
       hemi.color.setHex(atm.zenith).lerp(new THREE.Color(0xffffff), 0.32);
+      if (atm.skyTint) hemi.color.lerp(new THREE.Color(atm.skyTint), 0.6);   // trời âm u: ánh trời xám trung tính
       hemi.groundColor.setHex(atm.ground || 0x806a50);
       hemi.intensity = atm.skyIntensity;
     }

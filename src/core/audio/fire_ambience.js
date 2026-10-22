@@ -383,12 +383,53 @@ SoundEngine.mixin(class {
       out.gain.setTargetAtTime(0.04, t, 2);
     }
     const A = this.ambience;
-    if (t >= A.next) {
-      // cơn gió mới: mạnh / nhẹ ngẫu nhiên, gió mạnh thì "hú" cao hơn
-      const s = Math.random();
-      A.gg.gain.setTargetAtTime(0.02 + s * 0.12, t, 0.8 + Math.random() * 1.2);
-      A.gf.frequency.setTargetAtTime(450 + s * 700, t, 1.5);
-      A.next = t + 2.5 + Math.random() * 4;
+    const wk = this.weatherKind || 'clear', storm = wk === 'dust' ? 1 : wk === 'rain' ? 0.4 : 0;
+    if (A.kind !== wk) {
+      // đổi thời tiết (vào trận map khác): nền gió to hơn khi bão; mưa thêm lớp tiếng mưa rào
+      A.kind = wk;
+      A.out.gain.setTargetAtTime(0.04 * (1 + storm * 1.6), t, 1.5);
+      this.setRainLayer(wk === 'rain', t);
     }
+    if (t >= A.next) {
+      // cơn gió mới: mạnh / nhẹ ngẫu nhiên, gió mạnh thì "hú" cao hơn; bão cát: cơn gió dồn dập, rít cao
+      const s = Math.min(1, Math.random() + storm * 0.35);
+      A.gg.gain.setTargetAtTime(0.02 + s * (0.12 + storm * 0.1), t, 0.8 + Math.random() * 1.2);
+      A.gf.frequency.setTargetAtTime(450 + s * (700 + storm * 500), t, 1.5);
+      A.next = t + (2.5 + Math.random() * 4) * (1 - storm * 0.45);
+    }
+  }
+
+  // Thời tiết của trận: 'clear' | 'overcast' | 'rain' | 'fog' | 'dust' (MapGen.weatherFor) — tiếng mưa / gió bão
+  setWeather(kind) {
+    this.weatherKind = kind || 'clear';
+    // rời trận (về sảnh: không còn nhịp updateAmbience) -> tắt tiếng mưa ngay
+    if (this.ctx && this.rainLayer && this.weatherKind !== 'rain') this.rainLayer.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.8);
+  }
+
+  // Tiếng mưa rào: nhiễu hồng lọc thông cao (rào rào trên mặt đất, lá cây, thân xe) + lớp hạt to lộp độp dải trung
+  setRainLayer(on, t) {
+    const ctx = this.ctx;
+    if (!ctx || !this.pinkNoiseBuffer) return;
+    if (!on) { if (this.rainLayer) this.rainLayer.out.gain.setTargetAtTime(0, t, 1.2); return; }
+    if (!this.rainLayer) {
+      const out = ctx.createGain();
+      out.gain.value = 0;
+      out.connect(this.masterGain);
+      const mk = (type, f, q, g) => {
+        const src = ctx.createBufferSource();
+        src.buffer = this.pinkNoiseBuffer;
+        src.loop = true;
+        const flt = ctx.createBiquadFilter();
+        flt.type = type; flt.frequency.value = f; flt.Q.value = q;
+        const gn = ctx.createGain();
+        gn.gain.value = g;
+        src.connect(flt); flt.connect(gn); gn.connect(out);
+        src.start(0, Math.random() * 2);
+      };
+      mk('highpass', 2400, 0.4, 0.9);
+      mk('bandpass', 900, 0.7, 0.35);
+      this.rainLayer = { out };
+    }
+    this.rainLayer.out.gain.setTargetAtTime(0.07, t, 1.5);
   }
 });

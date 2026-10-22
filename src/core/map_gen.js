@@ -59,6 +59,37 @@ const MapGen = (() => {
   const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
   let layout = 'STRONGHOLDS';   // 'CLASSIC' | 'STRONGHOLDS' — trận thật dùng 3 cứ điểm bê tông trên 3 đồi
 
+  // THỜI TIẾT theo (loại map, seed): mọi máy (và máy chủ) cùng thời tiết. fogK: nhân mật độ sương, sunK / skyK: nhân
+  // nắng trực tiếp / ánh trời tán xạ, cloud: bóng mây trôi [độ đậm, ngưỡng phủ] (null = theo map), overcast: tầng mây
+  // xám phủ trời (0..1, che đĩa mặt trời), haze: màu sương pha vào, sightK: nhân tầm mắt thường phát hiện địch,
+  // droneK: nhân vùng nhìn của drone trinh sát (khớp server_auth.js qua MapGen.weatherFor)
+  const WEATHER = {
+    clear: { name: 'TRỜI QUANG', fogK: 1, sunK: 1, skyK: 1, cloud: null, overcast: 0, haze: 0, hazeK: 0, sightK: 1, droneK: 1 },
+    overcast: { name: 'TRỜI ÂM U', fogK: 1.35, sunK: 0.42, skyK: 1.3, cloud: [0.18, 0.5], overcast: 0.85, haze: 0x9aa0a6, hazeK: 0.45, sightK: 0.92, droneK: 1 },
+    rain: { name: 'MƯA', fogK: 2.4, sunK: 0.28, skyK: 1.2, cloud: [0.12, 0.45], overcast: 1, haze: 0x8a9096, hazeK: 0.6, sightK: 0.78, droneK: 0.85, rain: 1 },
+    fog: { name: 'SƯƠNG MÙ', fogK: 3.8, sunK: 0.5, skyK: 1.25, cloud: [0, 0.6], overcast: 0.55, haze: 0xc4c8ca, hazeK: 0.75, sightK: 0.6, droneK: 0.7 },
+    dust: { name: 'BÃO CÁT', fogK: 3.2, sunK: 0.55, skyK: 1.05, cloud: [0, 0.6], overcast: 0.5, haze: 0xc6a473, hazeK: 0.8, sightK: 0.68, droneK: 0.75, dust: 1 }
+  };
+  // tỉ lệ từng loại thời tiết theo chiến địa
+  const WEATHER_ODDS = {
+    DESERT: { clear: 0.6, overcast: 0.08, dust: 0.32 },
+    URBAN: { clear: 0.45, overcast: 0.25, rain: 0.2, fog: 0.1 },
+    JUNGLE: { clear: 0.35, overcast: 0.2, rain: 0.3, fog: 0.15 },
+    HIGHLAND: { clear: 0.45, overcast: 0.2, rain: 0.15, fog: 0.2 },
+    RIVER_LAKE: { clear: 0.45, overcast: 0.2, rain: 0.15, fog: 0.2 }
+  };
+  let weatherKind = null;           // null = theo seed; đặt cố định để thử (setWeather)
+  function weatherFor(type, seed) {
+    const odds = WEATHER_ODDS[type] || WEATHER_ODDS.DESERT;
+    let kind = WEATHER[weatherKind] ? weatherKind : null;
+    if (!kind) {
+      let u = mulberry32(((seed >>> 0) ^ hashStr(type || '') ^ 0x3e47a1c5) >>> 0)();
+      kind = 'clear';
+      for (const k in odds) { if (u < odds[k]) { kind = k; break; } u -= odds[k]; }
+    }
+    return Object.assign({ kind }, WEATHER[kind]);
+  }
+
   // ---------------------------------------------------------------------------
   // NGẪU NHIÊN CÓ SEED + NHIỄU GRADIENT 2D
   // ---------------------------------------------------------------------------
@@ -1135,6 +1166,101 @@ const MapGen = (() => {
       }
     }
 
+    // 5c''. DẤU VẾT CHIẾN TRẬN CÓ SẴN trước khi vào trận (bộ số ngẫu nhiên riêng): chiến trường đã qua nhiều đợt pháo
+    //      kích — các cụm hố đạn cũ (hố lớn khắc vào địa hình: lòng chảo + gờ đất hất lên), vệt cháy sém, một đoàn xe
+    //      bị phục kích nằm dọc một con đường, vài xác xe còn đang cháy, cột khói xa ngoài chiến trường
+    const scars = { craters: [], burns: [], plumes: [] };
+    {
+      const wr = mulberry32((seed ^ 0xc4a7e5d1) >>> 0), WR = (a, b) => a + wr() * (b - a);
+      const craterOK = (x, z, r) => clearOfKeys(x, z, r + 10) && roadClear(x, z, r + 4) && freeOf(x, z, r) && !isWater(x, z) && slopeAt(x, z) < 0.3;
+      const addCrater = (x, z, r, d) => {
+        if (!craterOK(x, z, r) || scars.craters.some(c => Math.hypot(c.x - x, c.z - z) < (c.r + r) * 0.8)) return false;
+        scars.craters.push({ x, z, r, d, rot: WR(0, 6.28) });
+        return true;
+      };
+      // đợt pháo kích: cụm hố quanh một tâm (vùng giữa hai phe, quanh cứ điểm, ven đường)
+      const nCl = Math.round(WR(14, 22) * (type === 'URBAN' ? 0.7 : 1) * AREA / 4);
+      for (let k = 0, t = 0; k < nCl && t < nCl * 8; t++) {
+        let cx, cz;
+        const u = wr();
+        if (u < 0.45) { cx = WR(-1300, 1300) * K; cz = WR(-650, 650) * K; }
+        else if (u < 0.75 && strongholds.length) {
+          const c = strongholds[Math.floor(wr() * strongholds.length)], a = WR(0, 6.28), dd = WR(keyR + 80, keyR + 520);
+          cx = c.x + Math.cos(a) * dd; cz = c.z + Math.sin(a) * dd;
+        } else if (roads.length) {
+          const rd = roads[Math.floor(wr() * roads.length)], p = rd.pts[Math.floor(wr() * rd.pts.length)], sd = wr() < 0.5 ? 1 : -1;
+          cx = p[0] + sd * WR(rd.width, rd.width + 140); cz = p[1] + WR(-60, 60);
+        } else continue;
+        if (!clearOfKeys(cx, cz, 0)) continue;
+        const n = Math.floor(WR(4, 11)), spread = WR(70, 180);
+        for (let i = 0; i < n; i++) {
+          const a = WR(0, 6.28), dd = Math.sqrt(wr()) * spread;
+          // hố lựu pháo 155 mm cũ: ~3-5 m (r 12-20 đv), sâu ~1 m, đã sụt lở bớt; thỉnh thoảng hố bom lớn
+          const big = wr() < 0.12;
+          const r = big ? WR(34, 52) : WR(12, 20);
+          addCrater(cx + Math.cos(a) * dd, cz + Math.sin(a) * dd, r, r * (big ? 0.26 : 0.22));
+        }
+        // đất cháy sém quanh tâm đợt pháo (cỏ khô bén lửa)
+        if (wr() < 0.55 && clearOfKeys(cx, cz, 40)) scars.burns.push({ x: cx, z: cz, r: spread * WR(0.6, 1.1), rot: WR(0, 6.28) });
+        k++;
+      }
+      // hố rải rác lẻ tẻ khắp lòng chảo
+      for (let i = 0, n = Math.round(40 * AREA / 4); i < n; i++) addCrater(WR(-1500, 1500) * K, WR(-1300, 1300) * K, WR(11, 18), WR(2.4, 4));
+      // ĐOÀN XE BỊ PHỤC KÍCH: 3-4 xác xe nối nhau dọc một đoạn đường + hố đạn hai bên đường
+      if (roads.length) {
+        for (let t = 0; t < 30; t++) {
+          const rd = roads[Math.floor(wr() * roads.length)];
+          if (rd.pts.length < 40 || rd.access) continue;
+          const i0 = Math.floor(WR(0.2, 0.7) * (rd.pts.length - 30));
+          const at = j => rd.pts[Math.min(rd.pts.length - 1, i0 + j)];
+          if (!clearOfKeys(at(0)[0], at(0)[1], 60) || !clearOfKeys(at(28)[0], at(28)[1], 60)) continue;
+          const n = Math.floor(WR(3, 5));
+          let placed = 0;
+          for (let j = 0; j < n; j++) {
+            const a = at(j * 7), b = at(j * 7 + 1), L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, tx = (b[0] - a[0]) / L, tz = (b[1] - a[1]) / L;
+            // xe trúng đạn văng lệch khỏi tim đường, mũi xe xoay lung tung
+            const sd = wr() < 0.5 ? 1 : -1, off = rd.width / 2 + WR(4, 14);
+            const x = a[0] - tz * sd * off, z = a[1] + tx * sd * off;
+            if (isWater(x, z) || !freeOf(x, z, 16) || slopeAt(x, z) > 0.35) continue;
+            props.wrecks.push({ x, z, angle: Math.atan2(tz, tx) + WR(-0.9, 0.9), kind: j === 0 ? 'apc' : pick(wr, ['truck', 'truck', 'apc', 'tank']),
+              tilt: WR(-0.08, 0.08), roll: WR(-0.12, 0.12), turretRot: WR(-1.5, 1.5), smoke: wr() < 0.5, fire: wr() < 0.3 });
+            occupied.push({ x, z, r: 20 });
+            scars.burns.push({ x, z, r: WR(26, 40), rot: WR(0, 6.28) });
+            for (let c = 0; c < 2; c++) addCrater(x + WR(-60, 60), z + WR(-60, 60), WR(12, 18), 3);
+            placed++;
+          }
+          if (placed >= 2) break;
+        }
+      }
+      // xác xe bỏ lại: nền cháy sém dưới xe, một số xác vẫn còn cháy âm ỉ (lửa + khói)
+      for (const w of props.wrecks) {
+        if (w.fire === undefined) w.fire = w.smoke && wr() < 0.4;
+        if (!scars.burns.some(b => Math.hypot(b.x - w.x, b.z - w.z) < 10)) scars.burns.push({ x: w.x, z: w.z, r: WR(22, 34), rot: WR(0, 6.28) });
+      }
+      for (const c of scars.craters) occupied.push({ x: c.x, z: c.z, r: c.r * 0.9 });
+      // khắc hố vào lưới độ cao (lưới ~16 đv / ô: chỉ hố đủ lớn mới thấy rõ, hố nhỏ chủ yếu là vết vẽ trên nền đất)
+      for (const c of scars.craters) {
+        if (c.r < 14) continue;
+        const R2 = c.r * 1.6;
+        const i0 = Math.max(0, Math.floor((c.x - R2 + HALF) / CELL)), i1 = Math.min(RES, Math.ceil((c.x + R2 + HALF) / CELL));
+        const j0 = Math.max(0, Math.floor((c.z - R2 + HALF) / CELL)), j1 = Math.min(RES, Math.ceil((c.z + R2 + HALF) / CELL));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const q = Math.hypot(-HALF + i * CELL - c.x, -HALF + j * CELL - c.z) / c.r;
+          // lòng chảo (cos) + gờ đất hất lên quanh miệng hố, tắt dần ra ngoài
+          const bowl = q < 1 ? -c.d * (0.5 + 0.5 * Math.cos(q * Math.PI)) : 0;
+          const rim = c.d * 0.35 * Math.exp(-((q - 1.05) ** 2) / 0.06);
+          heights[j * N + i] += bowl + rim;
+        }
+      }
+      // cột khói xa: làng / rừng / kho đang cháy ngoài chiến trường (sau chân vành núi), thấy từ mọi nơi trên bản đồ
+      const nP = Math.floor(WR(2, 5));
+      for (let i = 0; i < nP; i++) {
+        const a = WR(0, 6.28), cs = Math.cos(a), sn = Math.sin(a);
+        const d = rimFoot(cs * 2000, sn * 2000) + WR(200, 1500);   // trong tầm nhìn xa của camera (9000)
+        scars.plumes.push({ x: cs * d, z: sn * d, h: WR(900, 1700), w: WR(90, 170), dark: WR(0.4, 1) });
+      }
+    }
+
     // 5d. Bụi rậm (vùng ngụy trang) + cây
     const bushes = sample(Math.round(B.bushes * AREA), 260, 3000 * AREA, (x, z) => {
       const r = R(55, 90);
@@ -1215,14 +1341,16 @@ const MapGen = (() => {
     }
 
     // 6. MẶT TRỜI THEO GIỜ TRONG NGÀY
-    const tod = pick(rng, ['morning', 'noon', 'afternoon', 'afternoon', 'golden']);
-    const elevDeg = { morning: R(20, 32), noon: R(52, 66), afternoon: R(34, 46), golden: R(12, 19) }[tod];
+    const tod = pick(rng, ['morning', 'noon', 'afternoon', 'afternoon', 'golden', 'dusk']);
+    // dusk: chạng vạng — mặt trời sát chân trời, cảnh tối & ngả cam, bóng đổ rất dài
+    const elevDeg = { morning: R(20, 32), noon: R(52, 66), afternoon: R(34, 46), golden: R(12, 19), dusk: R(4, 8) }[tod];
     const sun = { timeOfDay: tod, elevation: elevDeg * Math.PI / 180, azimuth: R(0, Math.PI * 2) };
+    const weather = weatherFor(type, seed);
 
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return {
       type, seed, size: SIZE, res: RES, cell: CELL, heights, surface,
-      bases, capture: CAP, roads, river, lakes, bridges, bunkers, strongholds, landmarks, layout, buildings, rocks, bushes, trees, forests, props, sun,
+      bases, capture: CAP, roads, river, lakes, bridges, bunkers, strongholds, landmarks, layout, buildings, rocks, bushes, trees, forests, props, sun, weather, scars,
       genMs: Math.round(ms),
       // độ cao cảnh nền tại điểm bất kỳ (kể cả ngoài bản đồ): cùng công thức với lưới trong bản đồ -> nối liền ở mép
       outer: { rimFoot, wall: RIM_WALL, sea: OUT.sea, seaLevel: OUT.sea ? 0.2 : null, ext: OUTER_EXT, heightAt: (x, z) => riverCut ? riverCut(x, z, baseHeight(x, z)) : baseHeight(x, z) },
@@ -1549,7 +1677,7 @@ const MapGen = (() => {
   // Bộ nhớ đệm: sinh 1 lần cho mỗi (loại, seed), dùng lại khi vào trận
   const cache = new Map();
   function get(type, seed) {
-    const key = type + ':' + (seed >>> 0) + ':' + layout + ':' + (landmarkKind || '');
+    const key = type + ':' + (seed >>> 0) + ':' + layout + ':' + (landmarkKind || '') + ':' + (weatherKind || '');
     if (!cache.has(key)) {
       if (cache.size > 4) cache.delete(cache.keys().next().value);
       cache.set(key, generate(type, seed));
@@ -1558,8 +1686,9 @@ const MapGen = (() => {
   }
 
   function setLandmark(k) { landmarkKind = LANDMARK_KINDS[k] ? k : null; }
+  function setWeather(k) { weatherKind = WEATHER[k] ? k : null; }
   function setLayout(l) { layout = l === 'STRONGHOLDS' ? 'STRONGHOLDS' : 'CLASSIC'; }
-  return { generate, get, setLayout, getLayout: () => layout, STRONGHOLD_SITES, LANDMARK_SITE, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
+  return { generate, get, setLayout, getLayout: () => layout, STRONGHOLD_SITES, LANDMARK_SITE, setLandmark, setWeather, weatherFor, WEATHER, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
 })();
 
 if (typeof window !== 'undefined') window.MapGen = MapGen;
