@@ -1205,11 +1205,16 @@ const DroneAir = (() => {
         if (el === undefined) el = Math.atan2(dy, hd) * 180 / Math.PI;
         dist = Math.hypot(hd, dy);
         let tSim = t * M;
-        for (let k = 0; k < 3; k++) {
+        // chỉnh góc nòng theo chênh lệch GÓC NHÌN (tới mục tiêu và tới điểm đạn bay qua ở cùng cự ly ngang): hệ số ~1 ở
+        // mọi góc ngóc. Trước đây cộng atan(Δy / cự ly) — đúng khi bắn gần ngang, nhưng ngóc cao (drone bay trên đầu)
+        // thì chỉnh quá tay 1/cos²(góc) lần (~3 lần ở 56°) -> góc nhảy qua lại, kẹt ở nghiệm sai, bắn mãi không trúng
+        for (let k = 0; k < 6; k++) {
           const r = this.simBulletAt(rp, az, el, hd);
           if (!r) break;
-          el += Math.atan2(dy - r.y, hd) * 180 / Math.PI;
+          const de = (Math.atan2(dy, hd) - Math.atan2(r.y, hd)) * 180 / Math.PI;
+          el = Math.max(-30, Math.min(89, el + de));
           tSim = r.t; travel = r.travel;
+          if (Math.abs(de) < 0.01) break;
         }
         t = tSim / M;
       }
