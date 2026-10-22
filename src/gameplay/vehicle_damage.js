@@ -53,7 +53,7 @@ const VehicleDamage = (() => {
     if (tag === 'atgm') return 'atgm';
     if (tag === 'fuelTank') return 'fuel';
     if (tag === 'ammoBoxes') return 'ammo';
-    if (tag === 'dozer' || tag === 'spareTrack' || tag === 'rcws' || tag === 'jammer') return 'heavyAcc';
+    if (tag === 'dozer' || tag === 'spareTrack' || tag === 'rcws' || tag === 'jammer' || tag === 'agl' || tag === 'rocketPod' || tag === 'sradar' || tag === 'rjam' || tag === 'kamiRack') return 'heavyAcc';
     return 'acc';
   }
 
@@ -83,7 +83,7 @@ const VehicleDamage = (() => {
     skirt: 'VÁY XÍCH', cheek: 'MODULE GIÁP MÁ THÁP', applique: 'GIÁP TĂNG CƯỜNG MŨI', appliqueF: 'TẤM GIÁP TĂNG CƯỜNG MŨI', cageRear: 'LỒNG CHỐNG RPG ĐUÔI XE',
     cageTurret: 'LỒNG CHỐNG RPG ĐUÔI THÁP', era: 'GẠCH GIÁP PHẢN ỨNG NỔ', opticGunner: 'KÍNH NGẮM PHÁO THỦ', opticCdr: 'KÍNH TOÀN CẢNH CHỈ HUY',
     feed: 'MÁNG TIẾP ĐẠN', sensor: 'RADAR TRINH SÁT', aaRadar: 'RADAR PHÒNG KHÔNG', atgm: 'ỐNG PHÓNG TÊN LỬA', fuelTank: 'BÌNH NHIÊN LIỆU', ammoBoxes: 'THÙNG ĐẠN TRÊN SÀN',
-    dozer: 'LƯỠI ỦI', spareTrack: 'MẮT XÍCH DỰ PHÒNG', rcws: 'TRẠM SÚNG MÁY ĐIỀU KHIỂN TỪ XA', jammer: 'MÁY PHÁ SÓNG CHỐNG UAV', mirror: 'GƯƠNG CHIẾU HẬU', lamp: 'CỤM ĐÈN PHA',
+    dozer: 'LƯỠI ỦI', spareTrack: 'MẮT XÍCH DỰ PHÒNG', rcws: 'TRẠM SÚNG MÁY ĐIỀU KHIỂN TỪ XA', jammer: 'MÁY PHÁ SÓNG CHỐNG UAV', agl: 'SÚNG PHÓNG LỰU NÓC THÁP', rocketPod: 'GIÀN ROCKET NÓC THÁP', sradar: 'RADAR TRÊN CHÂN ĐẾ', rjam: 'MÁY PHÁ KHÓA RADAR', kamiRack: 'ỐNG PHÓNG UAV CẢM TỬ', vshield: 'KHIÊN GIÁP CHỮ V', mirror: 'GƯƠNG CHIẾU HẬU', lamp: 'CỤM ĐÈN PHA',
     smoke: 'ỐNG PHÓNG LỰU ĐẠN KHÓI', bin: 'THÙNG ĐỒ', box: 'HỘP DỤNG CỤ', can: 'CAN NHIÊN LIỆU', cans: 'CAN NHIÊN LIỆU', rail: 'LAN CAN NÓC',
     railRear: 'LAN CAN NÓC', stowage: 'GIỎ ĐỒ ĐUÔI THÁP', tool: 'DỤNG CỤ DÃ CHIẾN', flap: 'TẤM CHẮN BÙN', shield: 'TẤM CHẮN SÚNG MÁY',
     travelLock: 'GIÁ KHÓA NÒNG', spare: 'BÁNH DỰ PHÒNG', generator: 'MÁY PHÁT ĐIỆN', tarpRoll: 'CUỘN BẠT', searchlight: 'ĐÈN CHIẾU', meteo: 'CỘT KHÍ TƯỢNG',
@@ -437,6 +437,25 @@ const VehicleDamage = (() => {
       fieldChanged(u, true);
       spawnDebris(u, copy, impulse, { mat: debrisMatOf(tag) });
     }
+    return true;
+  }
+
+  // Xe còn bộ phận `tag` (có trên mô hình & chưa bị bắn văng / dùng mất)
+  function hasPart(u, tag) {
+    const d = state(u);
+    return !d.lost.has(tag) && !!((u.partRegistry && u.partRegistry[tag]) || (u.partGroups && u.partGroups[tag]));
+  }
+
+  // Gỡ bộ phận khỏi xe KHÔNG văng mảnh (kíp xe tháo ra dùng: lốp dự phòng lắp vào bánh hỏng, đoạn xích dự phòng nối xích)
+  function stowTag(u, tag) {
+    if (VIS_ONLY || !hasPart(u, tag)) return false;
+    const d = state(u);
+    const entries = u.partRegistry && u.partRegistry[tag], grp = u.partGroups && u.partGroups[tag];
+    d.lost.add(tag);
+    u.group.updateMatrixWorld(true);
+    if (entries && entries.length) cutParts(u, entries, partCenter(u, tag));
+    else if (grp) { grp.visible = false; d.hiddenGroups.push(grp); }
+    fieldChanged(u, true);
     return true;
   }
 
@@ -956,6 +975,12 @@ const VehicleDamage = (() => {
         spawnDebris(u, holder, impulse.clone().multiplyScalar(0.6), { mat: 'whip' });
       });
     }
+    // Liên lạc vô tuyến: gãy 1 cần -> mất liên lạc đồng đội (radioLost); gãy HẾT -> mất cả bản đồ số trên xe (mapLost:
+    // minimap tắt, không mở được bản đồ chiến thuật). Xem TeamIntel / game.js
+    if (!VIS_ONLY && d.hiddenAnt.length) {
+      d.radioLost = true;
+      if (u.antennaSets.every(set => set.whips.every(w => w.hidden))) d.mapLost = true;
+    }
   }
 
   // MẶT ĐỠ CỦA VỎ XE: bản đồ độ cao thật của vỏ — thân trong hệ chassisGroup, tháp trong hệ turretGroup (xoay / gục theo
@@ -1383,6 +1408,10 @@ const VehicleDamage = (() => {
     // gốc: kíp xe nối xích ~18 s, mỗi lần đứt lại thêm 8 s (thiếu mắt xích dự phòng) — nhân hệ số nhịp game
     const ts = typeof GameTiming !== 'undefined' ? GameTiming.timerScale : 0.5;
     d.trackTimer[side] = (18 + 8 * (d.trackBreaks[side] - 1)) * ts;
+    // còn đoạn xích dự phòng trên xe: thay nguyên đoạn thay vì chắp mắt xích cũ -> nhanh hơn ~40%, dùng xong là hết
+    if (hasPart(u, 'spareTrack')) { d.trackTimer[side] *= 0.6; d.useSpareTrack = true; }
+    d.trackTime0 = d.trackTime0 || [0, 0];
+    d.trackTime0[side] = d.trackTimer[side];
     d.trackWear[side] = 0.6;
     if (u.trackSystem && u.trackSystem.breakSide) {
       const lz = point ? (u.chassisGroup || u.group).worldToLocal(point.clone()).z : 0;
@@ -1430,7 +1459,14 @@ const VehicleDamage = (() => {
   function damageGun(u, events) {
     if (VIS_ONLY) return false;
     const d = state(u);
-    if (d.gun) return false;
+    if (d.gun) {
+      // trúng pháo / súng lần nữa khi đã hư: nòng thủng, khóa nòng kẹt -> không bắn được nữa
+      if (d.gunDead || Math.random() > 0.5) return false;
+      d.gunDead = true;
+      events.push({ type: 'gunDead', text: u.tankType === 'SCOUT' ? 'SÚNG MÁY BỊ PHÁ HỦY — không bắn được' : u.tankType === 'GATLING' ? 'CỤM 6 NÒNG BỊ PHÁ HỦY — không bắn được'
+        : u.tankType === 'ARTILLERY' ? 'LỰU PHÁO BỊ PHÁ HỦY — không bắn được' : 'PHÁO CHÍNH BỊ PHÁ HỦY — không bắn được' });
+      return true;
+    }
     d.gun = true;
     const bg = u.barrelGroup || u.gatlingCluster;
     if (bg && !d.gunBent) {
@@ -1511,7 +1547,20 @@ const VehicleDamage = (() => {
     } else if (kind === 'atgm') {
       events.push({ type: 'atgm', text: `${name} BỊ PHÁ — mất tên lửa chống tăng` });
     } else if (kind === 'heavyAcc') {
-      events.push({ type: 'acc', text: tag === 'jammer' ? `VĂNG ${name} — hết phá sóng drone` : `VĂNG ${name}` });
+      events.push({ type: 'acc', text: tag === 'rcws' ? `VĂNG ${name} — mất súng máy nóc tháp`
+        : tag === 'jammer' ? `VĂNG ${name} — hết phá sóng drone`
+        : tag === 'agl' || tag === 'rocketPod' ? `VĂNG ${name} — mất vũ khí nóc tháp`
+        : tag === 'sradar' ? `VĂNG ${name} — mất radar dò tìm`
+        : tag === 'rjam' ? `VĂNG ${name} — hết phá khóa radar`
+        : tag === 'kamiRack' ? `VĂNG ${name} — không phóng được UAV cảm tử`
+        : tag === 'spareTrack' ? `VĂNG ${name} — đứt xích sẽ nối lâu hơn` : `VĂNG ${name}` });
+    } else if (tag === 'spare') {
+      sfx('tire', sp, 1.1);
+      events.push({ type: 'acc', text: 'NỔ LỐP DỰ PHÒNG — không còn lốp để thay' });
+    } else if (tag === 'meteo') {
+      events.push({ type: 'acc', text: 'HỎNG CỘT KHÍ TƯỢNG — mất số liệu gió, lựu pháo kém chụm hơn' });
+    } else if (tag === 'generator') {
+      events.push({ type: 'acc', text: 'HỎNG MÁY PHÁT ĐIỆN — drone sạc pin chậm gấp đôi' });
     }
   }
 
@@ -2461,7 +2510,8 @@ const VehicleDamage = (() => {
     ANTI_TANK_MISSILE: { mm: 1300, loss: 0, kind: 'CE', big: true, tandem: true, postK: { heavy: 0.5 } },   // cỡ Kornet-EM
     GATLING_BULLET: { mm: 110, loss: 0.35, kind: 'KE', big: false }, // 30mm xuyên dưới cỡ / nổ-cháy: thủng sườn tăng ở cự ly gần
     INCENDIARY: { mm: 40, loss: 0.35, kind: 'KE', big: false },
-    SCOUT_BULLET: { mm: 28, loss: 0.5, kind: 'KE', big: false }     // 12.7mm xuyên giáp
+    // 12.7mm xuyên giáp (lõi thép cứng): không xuyên vẫn gây chút chấn động / mảnh bong mặt trong (nonpen, đạn nhỏ khác 0.02)
+    SCOUT_BULLET: { mm: 32, loss: 0.5, kind: 'KE', big: false, nonpen: 0.05 }
   };
   const PEN_HEAVY = { HE: { mm: 70, loss: 0, kind: 'HE', big: true }, AP: { mm: 300, loss: 0.03, kind: 'KE', big: true }, NORMAL: { mm: 70, loss: 0, kind: 'HE', big: true } };
   // Đạn cao cấp "nổ lõm 2 tầng" (Equipment.PREMIUM.heat_tandem) thay đạn thường bằng đạn nổ lõm thật của pháo tăng
@@ -2525,7 +2575,7 @@ const VehicleDamage = (() => {
     } else if (ratio >= 0.8) {
       mul = Math.max(floor, sizeK * (ratio - 0.8) / 0.2 * 0.35);  // xuyên một phần: mảnh bong mặt trong giáp
     } else {
-      mul = Math.max(floor, P.kind === 'CE' ? 0.04 : 0.02);        // không xuyên: chấn động / mảnh vỡ trong
+      mul = Math.max(floor, P.kind === 'CE' ? 0.04 : (P.nonpen || 0.02));        // không xuyên: chấn động / mảnh vỡ trong
     }
     // Hệ số cân bằng sau khi xuyên theo cấp giáp xe (vd đạn thường / tên lửa vào xe tăng chủ lực)
     if (penetrated && P.postK) mul *= P.postK[A.cls] || 1;
@@ -2555,6 +2605,8 @@ const VehicleDamage = (() => {
     const events = [];
     if (u && u.group && u.isDead && u.dmg) return onWreckHit(u, opts);
     if (!u || !u.group || u.isDead) return { mul: 1, events };
+    // khiên hồi sinh: không đứt xích / hỏng pháo / văng phụ kiện (takeDamage cũng không trừ máu)
+    if (u.invulnerableTimer > 0) return { mul: 1, events, shielded: true };
     markGroups(u);
     const d = state(u);
     const A = ARMOR[u.tankType] || ARMOR.ALL_ROUNDER;
@@ -2576,7 +2628,9 @@ const VehicleDamage = (() => {
     if (plate) plate.ricochet = hit.ricochet;
     const armorHit = plate || hit;
     const armorOnTurret = plate ? isOnTurret(u, plate.object) : onTurret;
-    const face = !hit ? 'side' : plate ? faceOf(u, plate, armorOnTurret, dir) : cageHit ? faceFromDir(u, dir, onTurret, hit) : faceOf(u, hit, onTurret, dir);
+    let face = !hit ? 'side' : plate ? faceOf(u, plate, armorOnTurret, dir) : cageHit ? faceFromDir(u, dir, onTurret, hit) : faceOf(u, hit, onTurret, dir);
+    // tên lửa tấn công đỉnh đang bổ nhào: đầu nổ lõm kích nổ ngay trên nóc (giáp mỏng nhất) dù chạm mép tháp / mũi
+    if (opts.topAttack && hit && !cageHit) { face = 'top'; hit.faceCos = Math.max(hit.faceCos || 0, 0.8); hit.sloped = false; }
 
     // Xuyên giáp: độ xuyên của đạn vs giáp mặt bị trúng (nghiêng theo góc chạm), vùng trúng, cỡ đạn vs cỡ xe
     const tag0 = tagAtHit(hit);
@@ -2592,12 +2646,13 @@ const VehicleDamage = (() => {
       if (intercepted) {
         events.push({ type: 'aps', text: `HỆ THỐNG ĐÁNH CHẶN ĐÃ BẮN HẠ ${opts.ammo === 'RPG' ? 'ĐẠN RPG' : 'TÊN LỬA'} (còn ${EQ.apsLeft(u)} lần)` });
         FX = null;
+        state(u).last = { at: Date.now(), intercepted: true, events, ammo: opts.ammo };   // phòng thử đạn đọc lại
         return { mul: 0, events, intercepted: true };
       }
       events.push({ type: 'apsMiss', text: 'Hệ thống đánh chặn bắn trượt!' });
     }
     // Trúng lồng thép còn nguyên (Equipment.slatHit): chặn hẳn một số loại đạn, các loại khác bị giảm sát thương bên dưới
-    const SH = EQ && EQ.slatHit && tag0 && !d.lost.has(tag0) ? EQ.slatHit(tag0, opts.ammo, !!opts.heavy, !VIS_ONLY) : null;
+    const SH = EQ && EQ.slatHit && tag0 && !d.lost.has(tag0) ? EQ.slatHit(tag0, opts.gl40 ? 'GL40' : opts.ammo, !!opts.heavy, !VIS_ONLY) : null;
     if (SH && SH.defeated) {
       // Lồng thép bóp méo đầu đạn nổ lõm / kích nổ sớm bom con: đầu nổ không tạo được luồng xuyên, chỉ xé lồng
       if (detachTag(u, tag0, dir.clone().multiplyScalar(40))) onPartLost(u, tag0, partKind(tag0), events, fx, point);
@@ -2652,7 +2707,7 @@ const VehicleDamage = (() => {
     const impulse = dir.clone().multiplyScalar(cls === 'small' ? 25 : cls === 'cannon' ? 40 : 70);
     const tag = tagAtHit(hit);
     // Phát trúng gần nhất: hiệu ứng phá hủy (explosion_fx.killInfo) dựa vào vùng trúng / hướng đạn để chọn kiểu xe chết
-    d.last = { cls, heavy: !!opts.heavy, point: point.clone(), zone: AO.zone, pen: !!AO.pen, onTurret, onGun, face, tag: tag0, dir: dir.clone(), ammo: opts.ammo, at: Date.now() };
+    d.last = { cls, heavy: !!opts.heavy, point: point.clone(), zone: AO.zone, pen: !!AO.pen, onTurret, onGun, face, tag: tag0, dir: dir.clone(), ammo: opts.ammo, at: Date.now(), armorMm: AO.armor, penMm: AO.penMm, ratio: AO.ratio, events };
 
     // Xả đạn liên thanh dồn vào cùng một chỗ: giáp bị đục dần tới khi thủng (giáp càng dày càng lâu)
     let boredThrough = false;
@@ -2700,6 +2755,27 @@ const VehicleDamage = (() => {
         mul = Math.max(mul, (POSTPEN.small[A.cls] || 1) * 0.5);
         if (A.cls !== 'heavy') addFire(u, point, 0.7, rand(8, 16));
         events.push({ type: 'spall', text: 'MẢNG GIÁP BỊ ĐẠN LIÊN THANH ĐỤC VỠ BUNG RA' });
+      }
+      // SẤY DỒN MỘT CHỖ (ô ~1 m): mỗi viên trúng lại vùng đó làm lớp giáp / thiết bị quanh đó yếu dần -> sát thương mỗi viên
+      // tăng dần (tối đa x2,5 sau ~25 viên); rải đạn khắp xe thì không được cộng dồn
+      const key2 = Math.round(gl.x / 8) + ',' + Math.round(gl.y / 8) + ',' + Math.round(gl.z / 8);
+      d.zone8 = d.zone8 || {};
+      const n8 = (d.zone8[key2] = (d.zone8[key2] || 0) + 1);
+      mul *= 1 + Math.min(1.5, 0.06 * (n8 - 1));
+      // ... và phụ kiện ngoài nằm trong vùng đó (đèn, hộp, kính, radar, ăng-ten trạm súng...) cứ ~5 viên lại có cơ hội bị
+      // băm nát / bắn văng dù viên đạn không trúng thẳng vào nó
+      if (n8 % 5 === 0 && Math.random() < (cls === 'cannon' ? 0.7 : 0.5)) {
+        let best = null, bd = 9;
+        for (const tg of Object.keys(u.partRegistry || {}).concat(Object.keys(u.partGroups || {}))) {
+          if (d.lost.has(tg)) continue;
+          const k = partKind(tg);
+          if (k !== 'acc' && k !== 'optic' && k !== 'sensor' && k !== 'feed' && k !== 'atgm' && !(k === 'heavyAcc' && cls === 'cannon')) continue;
+          const wp = partWorld(u, tg);
+          const dd = wp ? wp.distanceTo(point) : 1e9;
+          if (dd < bd) { bd = dd; best = tg; }
+        }
+        if (best && detachTag(u, best, impulse.clone().multiplyScalar(0.8))) onPartLost(u, best, partKind(best), events, fx, point);
+        if (Math.random() < 0.3) breakAntennas(u, point, 10, 0.6, impulse);
       }
       if (n >= need) {
         boredThrough = true;
@@ -2759,6 +2835,10 @@ const VehicleDamage = (() => {
     }
     // Ăng-ten trúng đạn / sóng nổ gần
     if (cls !== 'small' || Math.random() < 0.15) breakAntennas(u, point, cls === 'small' ? 4 : cls === 'cannon' ? 7 : 16, cls === 'small' ? 0.5 : 0.9, impulse);
+    // Gãy ăng-ten: mất liên lạc vô tuyến — đồng đội không còn thấy vị trí xe trên bản đồ, xe không báo vị trí địch được (TeamIntel)
+    { const dd = state(u);
+      if (dd.radioLost && !dd._radioEv) { dd._radioEv = true; events.push({ type: 'radio', text: 'GÃY ĂNG-TEN — mất liên lạc: đồng đội không thấy vị trí xe, không báo được vị trí địch' }); }
+      if (dd.mapLost && !dd._mapEv) { dd._mapEv = true; events.push({ type: 'map', text: 'MẤT HẾT ĂNG-TEN — mất bản đồ số: tắt minimap, không mở được bản đồ chiến thuật' }); } }
 
     // 2. Sóng nổ (đạn nổ / nổ lõm) bóc phụ kiện quanh điểm chạm
     if (cls === 'blast' || cls === 'heat') {
@@ -2812,7 +2892,7 @@ const VehicleDamage = (() => {
         const ts = trackSideAt(u, local, 6);
         const side = ts >= 0 ? ts : local.x < 0 ? 0 : 1;
         const near = onRun ? 1 : 0.6;
-        const pTrack = { small: 0, cannon: 0, kinetic: 0.45, heat: 0.55, blast: opts.heavy ? 0.75 : 0.5 }[cls] * near;
+        const pTrack = { small: 0.01, cannon: 0.02, kinetic: 0.45, heat: 0.55, blast: opts.heavy ? 0.75 : 0.5 }[cls] * near;
         if (d.trackTimer[side] <= 0 && !VIS_ONLY) {
           const wBefore = d.trackWear[side] || 0;
           d.trackWear[side] = wBefore + { small: 0.012, cannon: 0.34, kinetic: 1, heat: 1, blast: 0.8 }[cls] * near;
@@ -2854,6 +2934,7 @@ const VehicleDamage = (() => {
 
     recompute(u);
     FX = null;
+    if (d.last) d.last.mul = mul;   // phòng thử đạn (range_lab.js) đọc lại phát trúng gần nhất
     return { mul, events, noFire: !!(SH && SH.noFire) };
   }
 
@@ -2891,6 +2972,7 @@ const VehicleDamage = (() => {
     const events = [];
     if (u && u.group && u.isDead && u.dmg) return onWreckHit(u, Object.assign({ splash: true }, opts));
     if (!u || !u.group || u.isDead) return { mul: 1, events };
+    if (u.invulnerableTimer > 0) return { mul: 1, events, shielded: true };
     const d = state(u);
     const A = ARMOR[u.tankType] || ARMOR.ALL_ROUNDER;
     const cls = ammoClass(opts.ammo);
@@ -3343,9 +3425,14 @@ const VehicleDamage = (() => {
         for (let s = 0; s < 2; s++) {
           if (d.trackTimer[s] > 0) {
             d.trackTimer[s] = Math.max(0, d.trackTimer[s] - dt);
-            if (d.trackTimer[s] === 0) { changed = true; if (u.trackSystem && u.trackSystem.repairSide) u.trackSystem.repairSide(s); }
+            if (d.trackTimer[s] === 0) {
+              changed = true;
+              if (u.trackSystem && u.trackSystem.repairSide) u.trackSystem.repairSide(s);
+              if (d.useSpareTrack) { d.useSpareTrack = false; stowTag(u, 'spareTrack'); }
+            }
           }
         }
+        if (tireChange(u, d, dt)) changed = true;
         const fk = (typeof Equipment !== 'undefined' && Equipment.fireMul) ? Equipment.fireMul(u) : 1;
         for (let i = d.fires.length - 1; i >= 0; i--) { const f = d.fires[i]; f.t += dt * fk; if (f.t > f.life) d.fires.splice(i, 1); }
         douseFires(u, d, dt, fx);
@@ -3365,6 +3452,37 @@ const VehicleDamage = (() => {
         if (changed) recompute(u);
       }
     }
+  }
+
+  // THAY LỐP DỰ PHÒNG: xe bánh lốp còn lốp dự phòng ('spare') có bánh xịt / nát / văng -> dừng xe (không bắn) đủ lâu thì kíp
+  // xe thay lốp: thanh sửa chữa đầy dần (d.tireFix 0..1, chạy thì dừng lại, không mất tiến độ); xong -> bánh hỏng nặng nhất
+  // lành lại, lốp dự phòng biến mất khỏi chỗ gắn trên xe. Lốp dự phòng bị bắn nổ / văng mất thì không thay được nữa
+  const TIRE_FIX_S = 10;
+  function tireChange(u, d, dt) {
+    const ws = u.wheelSet;
+    if (!ws || !hasPart(u, 'spare')) { d.tireFix = 0; d.tireFixOn = false; return false; }
+    let worst = -1, ws0 = 0;
+    for (let i = 0; i < ws.positions.length; i++) {
+      const w = d.gone[i] ? 3 : (d.shred && d.shred[i]) ? 2 : d.flat[i] ? 1 : 0;
+      if (w > ws0) { ws0 = w; worst = i; }
+    }
+    if (worst < 0) { d.tireFix = 0; d.tireFixOn = false; return false; }
+    const still = Math.abs(u.speed || 0) < 2 && !u.isFiringGatling && !(u.reloadTimer > (u.reloadDuration || 0) - 0.3);
+    d.tireFixOn = still;
+    if (!still) return false;
+    d.tireFix = Math.min(1, (d.tireFix || 0) + dt / (TIRE_FIX_S * (typeof GameTiming !== 'undefined' ? GameTiming.timerScale * 2 : 1)));
+    if (d.tireFix < 1 || VIS_ONLY) return false;
+    d.tireFix = 0; d.tireFixOn = false;
+    delete d.flat[worst]; delete d.flatAnim[worst];
+    if (d.shred) delete d.shred[worst];
+    if (d.gone[worst]) { delete d.gone[worst]; ws.gone[worst] = 0; ws.update(); }
+    if (ws.setFlat) ws.setFlat(worst, 0);
+    stowTag(u, 'spare');
+    const names = ws.positions.length > 4 ? WHEEL_NAMES_6 : WHEEL_NAMES_4;
+    if (u.isPlayer && typeof window !== 'undefined' && window.game && window.game.addCombatLog) {
+      window.game.addCombatLog(`[[tire]] Đã thay lốp dự phòng vào bánh ${names[worst] || ''} — hết lốp dự phòng`, 'tip');
+    }
+    return true;
   }
 
   // Tia dò từ một hướng ngẫu nhiên phía trên / bên sườn vào thân xe (phòng thử)
@@ -3448,7 +3566,7 @@ const VehicleDamage = (() => {
       case 'atgm': lose(/^atgm$/); break;
       case 'fuel': lose(/^fuelTank$/); break;
       case 'ammo': lose(/^ammoBoxes$/); break;
-      case 'acc': lose(/^(mirror|lamp|bin|box|can|cans|rail|railRear|smoke|tool|flap|stowage|shield|travelLock|spare|generator|tarpRoll|searchlight|meteo|rcws|jammer)/); break;
+      case 'acc': lose(/^(mirror|lamp|bin|box|can|cans|rail|railRear|smoke|tool|flap|stowage|shield|travelLock|spare|generator|tarpRoll|searchlight|meteo|rcws|jammer|agl|rocketPod|sradar|rjam|kamiRack)/); break;
       case 'antenna': breakAntennas(u, null, 0, 0.6, new THREE.Vector3(0, 30, 0)); events.push({ type: 'acc', text: 'Gãy văng cần ăng-ten' }); break;
       case 'track': {
         const side = Math.random() < 0.5 ? 0 : 1;
@@ -3610,10 +3728,76 @@ const VehicleDamage = (() => {
     return events;
   }
 
+  // ---------------------------------------------------------------------------
+  // GIÁP MUA THÊM HỎNG GIỮ SANG TRẬN SAU (account.js / máy chủ armor_cond): mỗi món giáp chia thành "đơn vị" sửa được —
+  // gạch ERA / tấm ghép / tấm khiên chữ V: từng khối (segmentsOf, chỉ số ổn định vì mọi máy dựng cùng hình); tấm lồng
+  // thép, bệ APS: cả bộ phận. Khóa đơn vị: 'tag#i' (khối) hoặc 'tag' (cả bộ phận)
+  // ---------------------------------------------------------------------------
+  const ARMOR_ITEM_TAGS = { era: /^eraKit/, applique: /^appliqueKit/, vshield: /^appliqueVS/, slat: /^cageKit/, aps: /^apsKit$/ };
+  function armorTagsOf(u, item) {
+    const re = ARMOR_ITEM_TAGS[item];
+    if (!re) return [];
+    const all = new Set([...Object.keys(u.partRegistry || {}), ...Object.keys(u.partGroups || {})]);
+    return [...all].filter(t => re.test(t)).sort();
+  }
+  /** { món: { total: số đơn vị, gone: [khóa đơn vị đã mất] } } — chỉ món đang có trên xe */
+  function armorUnits(u) {
+    const out = {};
+    if (!u || !u.group) return out;
+    const d = state(u);
+    for (const item in ARMOR_ITEM_TAGS) {
+      const tags = armorTagsOf(u, item);
+      if (!tags.length) continue;
+      const R = { total: 0, gone: [] };
+      for (const tag of tags) {
+        if (segmented(tag) && u.partRegistry && u.partRegistry[tag]) {
+          const segs = segmentsOf(u, tag);
+          R.total += segs.length;
+          for (const sg of segs) if (sg.gone) R.gone.push(tag + '#' + sg.i);
+        } else {
+          R.total += 1;
+          if (d.lost.has(tag)) R.gone.push(tag);
+        }
+      }
+      if (R.total) out[item] = R;
+    }
+    return out;
+  }
+  // Khối thiếu sẵn khi xuất kích (chưa sửa từ trận trước): gỡ im lặng — không mảnh văng, không tiếng, không thông báo
+  function quietBreakSeg(u, tag, sg) {
+    if (sg.gone) return;
+    const d = state(u), segs = segmentsOf(u, tag);
+    sg.gone = true; sg.hp = 0;
+    u.group.updateMatrixWorld(true);
+    const holder = cutParts(u, sg.parts);
+    holder.traverse(o => { if (o.isMesh && o.userData.ownGeo) o.geometry.dispose(); });
+    u._partCenters = null;
+    fieldChanged(u, true);
+    const left = segs.filter(x => !x.gone).length;
+    if (!left || (/^appliqueKit/.test(tag) && left <= segs.length / 2)) d.lost.add(tag);
+  }
+  /** Áp danh sách đơn vị giáp đang thiếu (kit.d: { món: [khóa] }) lên xe vừa dựng / vừa hồi sinh */
+  function applyArmorMissing(u, miss) {
+    if (!u || !miss || typeof miss !== 'object' || !u.group) return;
+    for (const item in miss) {
+      if (!ARMOR_ITEM_TAGS[item] || !Array.isArray(miss[item])) continue;
+      for (const key of miss[item]) {
+        const k = String(key), h = k.indexOf('#'), tag = h < 0 ? k : k.slice(0, h);
+        if (!ARMOR_ITEM_TAGS[item].test(tag)) continue;
+        if (h >= 0) {
+          if (!u.partRegistry || !u.partRegistry[tag]) continue;
+          const sg = segmentsOf(u, tag)[+k.slice(h + 1)];
+          if (sg) quietBreakSeg(u, tag, sg);
+        } else stowTag(u, tag);
+      }
+    }
+  }
+
   return {
+    ARMOR_ITEM_TAGS, armorUnits, applyArmorMissing,
     ARMOR, ammoClass, extinguisherSound, onDirectHit, onSplash, onDestroyed, onDetonate, reset, update, recompute, summary, state,
     visualOnly, digest, applyDigest, addFire, logDoused,
-    detachTag, flatTire, blowWheel, breakTrack, bendTag, sfx, debugAction,
+    detachTag, stowTag, hasPart, flatTire, blowWheel, breakTrack, bendTag, sfx, debugAction,
     crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, hatchHoles, armorOutcome, ARMOR_MM, PEN,
     setGroundProvider(fn) { groundProvider = fn; },
     get debrisCount() { return debrisList.length; }

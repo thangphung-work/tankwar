@@ -303,7 +303,7 @@ class TankInspector {
               <div class="ti-stage-foot">
                 <div class="ti-range-readout" id="ti-range-readout" aria-live="polite"></div>
                 <div class="ti-range-bar" id="ti-range-bar" aria-label="Chọn bãi thử"></div>
-                <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>G</kbd> thả khói</span><span><i class="ti ti-mouse" aria-hidden="true"></i> nhấp trái ngắm + bắn · nhấp phải lái tới · kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
+                <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc (cần động cơ)</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>G</kbd> thả khói</span><span><i class="ti ti-mouse" aria-hidden="true"></i> nhấp trái ngắm + bắn · nhấp phải lái tới · kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
               </div>
               <div class="ti-toast" id="ti-toast" role="status"></div>
               <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><button id="ti-range-enter" class="ti-range-enter" title="Phòng thử đạn trên game thật: camera, kính ngắm Ctrl, HUD, đường đạn y như trong trận — bản đồ thật có làng, xe mục tiêu, với đúng xe + bộ trang bị đang lắp"><i class="ti ti-target-arrow" aria-hidden="true"></i> PHÒNG THỬ ĐẠN</button><button id="ti-range-old" class="ti-lab-link" title="Sân thử cũ trong màn xem xe: bia drone bay, kính ngắm phòng không, nhiều kiểu địa hình"><i class="ti ti-drone" aria-hidden="true"></i> BIA DRONE</button><a class="ti-lab-link ti-lab-detail" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng: quỹ đạo, tốc độ chậm, bắn vào tường / tòa nhà / xe bia / boong-ke"><i class="ti ti-flask" aria-hidden="true"></i> THỬ ĐẠN CHI TIẾT ↗</a><button id="ti-wall-reset-btn" class="ti-lab-link ti-wall-btn" title="Tường tự dựng lại sau 5 giây không trúng đạn"><i class="ti ti-wall" aria-hidden="true"></i> DỰNG LẠI TƯỜNG</button></div>
@@ -698,6 +698,11 @@ class TankInspector {
     if (!u || u.tankType !== 'ARTILLERY' || !u.chassisGroup || typeof ReconDrone === 'undefined' || !ReconDrone.buildDock) return;
     const ch = u.chassisGroup;
     if (!u._droneDock || u._droneDock.parent !== ch) { u._droneDock = ReconDrone.buildDock(); ch.add(u._droneDock); }
+    // UAV cảm tử (ô UAV): ống phóng trên chân đế mô-đun thay đế sạc + drone trinh sát
+    const kami = u.uavKind === 'kami';
+    u._droneDock.visible = !kami;
+    if (u._viewDrone) u._viewDrone.visible = !kami;
+    if (kami) return;
     if (!u._viewDrone) u._viewDrone = ReconDrone.build(u.team);
     if (u._viewDrone.parent !== ch) {
       ch.add(u._viewDrone);
@@ -1146,7 +1151,7 @@ class TankInspector {
     let dBody = this._sndBody === undefined ? 0 : wrap(ba - this._sndBody);
     if (Math.abs(dBody) > 0.5) dBody = 0;
     this._sndBody = ba;
-    if (se.updateEngine) se.updateEngine(Math.abs(u.speed) / (u.baseMaxSpeed || 1), boost, u.engineLoad || 1, { turn: dBody / dt, tankType: u.tankType, turbo: typeof Equipment !== 'undefined' && Equipment.has(u, 'turbo') });
+    if (se.updateEngine) se.updateEngine(Math.abs(u.speed) / (u.baseMaxSpeed || 1), boost, u.engineLoad || 1, { turn: dBody / dt, tankType: u.tankType, engine: u.engineId || 'stock', boostLvl: u._eng ? u._eng.lvl : 0 });
     if (se.updateTurretDrive && u._turretYaw !== undefined) {
       const ty = -(u.azimuth || 0) * Math.PI / 180;   // hướng tháp trong thế giới (như trong trận)
       let dy = this._sndTurret === undefined ? 0 : wrap(ty - this._sndTurret);
@@ -1584,6 +1589,20 @@ class TankInspector {
       this.keys[e.code] = false;
     }, true);
     window.addEventListener('blur', () => { this.keys = {}; });
+    // Phím 4 (món nóc tháp / phá khóa) khi đang mở phòng xem: không lọt sang trận đang chạy phía sau; thử món nóc tháp
+    // đầy đủ ở PHÒNG THỬ ĐẠN (trận thật)
+    window.addEventListener('keydown', (e) => {
+      if (!this.isOpen || (e.code !== 'Digit4' && e.code !== 'Numpad4')) return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement && document.activeElement.tagName)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      // bãi bắn drone: súng máy nóc tháp / súng xe 6 nòng, trinh sát = kính ngắm phòng không; món khác (phóng lựu, rocket,
+      // máy phá sóng...) thử đầy đủ ở PHÒNG THỬ ĐẠN
+      const u = this.activeUnit;
+      if (this.rangeMode && this.raSightOK && this.raSightOK(u)) this.setSight(!this.sight);
+      else if (this.toast) this.toast('Món trên nóc tháp (phím 4): thử đầy đủ trong PHÒNG THỬ ĐẠN — bắn bia, bia bắn trả, đổi trang bị miễn phí');
+    }, true);
     // G: thả khói thử (chặn luôn phím G của trận để mở phòng xem giữa trận không phóng khói thật)
     window.addEventListener('keydown', (e) => {
       if (!this.isOpen || e.code !== 'KeyG') return;
@@ -1598,6 +1617,10 @@ class TankInspector {
     // Phòng thử đạn chạy trên game thật (range_lab.js): mang theo xe đang xem; bản đồ lần trước
     if (rIn) rIn.addEventListener('click', () => {
       rIn.blur();
+      // báo ngay là đã nhận lệnh: trang mới mất một lúc mới bắt đầu tải
+      rIn.disabled = true;
+      rIn.textContent = 'ĐANG TẢI…';
+      document.body.style.cursor = 'progress';
       let map = 'HIGHLAND';
       try { map = localStorage.getItem('rg-map') || map; } catch (e) { /* bỏ qua */ }
       location.href = 'index.html?lab=range&tank=' + encodeURIComponent(this.currentTankType || 'ALL_ROUNDER') + '&map=' + encodeURIComponent(map);
@@ -1727,10 +1750,16 @@ class TankInspector {
         if (this.sight) this.setSight(false);
         else if (this.rangeMode) this.exitRangeMode();
         else this.close();
-      } else if ((e.key === 'i' || e.key === 'I') && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+      } else if (e.code === 'KeyI' && !e.repeat && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
         if (this.isOpen) {
           this.close();
         } else {
+          // đang giữa trận: không mở bằng phím (lỡ tay bấm I là che kín màn hình trong khi trận vẫn chạy)
+          const g = window.game;
+          if (g && g.isGameStarted && !g.isGameOver) {
+            if (typeof g.addCombatLog === 'function') g.addCombatLog('[[lock]] Phòng xem xe chỉ mở được ở sảnh, không mở giữa trận', 'tip');
+            return;
+          }
           // Lấy loại xe đang chọn từ sảnh chờ
           let initialType = 'ALL_ROUNDER';
           if (window.matchmakingController && window.matchmakingController.selectedTankType) {

@@ -224,7 +224,10 @@ const Account = (() => {
       if (n > 0) a[k] = n;
     }
     const p = ((A.owned && A.owned[tank]) || []).filter(id => Equipment.PREMIUM[id]);
-    return { kit: Equipment.sanitize({ m: lo.m, p, a }, tank), stock };
+    // giáp hỏng chưa sửa (máy chủ armor_cond): xe ra trận thiếu đúng các khối đó
+    const cond = (A.cond && A.cond[tank]) || {}, d = {};
+    for (const it in cond) if (cond[it] && Array.isArray(cond[it].gone) && cond[it].gone.length) d[it] = cond[it].gone;
+    return { kit: Equipment.sanitize({ m: lo.m, p, a, d }, tank), stock };
   }
   function owns(tank, id) {
     const o = profile && profile.armory && profile.armory.owned && profile.armory.owned[tank];
@@ -240,6 +243,13 @@ const Account = (() => {
     setProfile(r.profile, false);
     armoryChanged();
     return r.profile;
+  }
+  // Sửa giáp hỏng: what = { item } | { all: true } -> { cost, units }
+  async function repair(tank, what) {
+    const r = await api('shop/repair', Object.assign({ tank }, what));
+    setProfile(r.profile, false);
+    armoryChanged();
+    return r;
   }
   // Trả lại n viên đạn mua thêm (hoàn đúng giá)
   async function sell(tank, ammo, n) {
@@ -258,6 +268,9 @@ const Account = (() => {
     return r.profile;
   }
   const adsLeft = () => (profile && profile.ads ? profile.ads.left : 0);
+  const adsBonus = () => (profile && profile.ads ? profile.ads.bonus || 0 : 0);
+  // số vật tư 1 lượt xem nhận được lúc này (hết lượt đầy đủ -> thưởng nửa)
+  const adAmmoN = (A) => adsLeft() > 0 ? A.ad : Math.max(1, Math.ceil(A.ad * Equipment.AD.BONUS_MUL));
   async function watchAd(tank, what, label) {
     if (!profile) throw Object.assign(new Error('Đăng nhập để nhận thưởng quảng cáo'), { status: 401 });
     if (!window.AdProvider) return { status: 'unavailable' };
@@ -456,17 +469,71 @@ const Account = (() => {
     try {
       await flushAmmo(P);   // trừ kho phần đạn chưa báo (đạn đã báo lúc hồi sinh không trừ lại)
       const ammoUsed = {};
-      const r = await api('match-result', { result, kills: P.kills || 0, deaths: g._playerDeaths || 0, damage: P.damageDealt || 0, shots: P.shotsFired || 0,
+      // giáp mua thêm đã vỡ trong trận (hợp mọi lần xuất kích) -> máy chủ lưu, kho đồ hiện nút Sửa
+      const armorGone = Equipment.noteArmor ? Equipment.noteArmor(P) || {} : {};
+      const r = await api('match-result', { armorGone,
+        result, kills: P.kills || 0, deaths: g._playerDeaths || 0, damage: P.damageDealt || 0, shots: P.shotsFired || 0,
         tankType: P.tankType, mapType: mm.selectedMapType || (g.terrain && g.terrain.mapType), durationSec, ammoUsed, kdPlace: g._kdPlace || 0 });
       setProfile(r.profile, false);
       armoryChanged();
       const kd = r.kdPlace && r.kdBonus ? ` <span class="acc-kd">(có thưởng hạng ${r.kdPlace}: +${fmtSilver(r.kdBonus.silver)} Bạc)</span>` : '';
       if (line) line.innerHTML = `<b>+${r.gained} kinh nghiệm</b> · <b class="silver"><i class="ti ti-coins"></i> +${fmtSilver(r.silver)} Bạc</b>${kd}${r.levelUp ? ` · <span class="up">LÊN CẤP: ${esc(r.profile.rankText)}!</span>` : ` · ${esc(r.profile.rankText)}`}`
         + (r.verified ? ' <span class="acc-verified" title="Số hạ gục / sát thương lấy theo máy chủ"><i class="ti ti-shield-check"></i> Đã đối chiếu máy chủ</span>' : '');
+      renderUpkeep(line, P.tankType, r.silver + (r.kdBonus ? r.kdBonus.silver : 0));
       renderResupply(line, P.tankType);
     } catch (e) {
       if (line) line.textContent = e.status === 400 ? e.message : 'Không lưu được kết quả: ' + e.message;
     }
+  }
+
+  // BẢO DƯỠNG SAU TRẬN: giáp hỏng chưa sửa + vật tư thiếu so với 1 lần xuất kích -> một nút "NẠP ĐẠN & SỬA XE" trả hết bằng Bạc
+  function renderUpkeep(after, tank, earned) {
+    let box = $('#acc-upkeep');
+    if (box) box.remove();
+    if (!after || !profile || typeof Equipment === 'undefined') return;
+    const plan = () => {
+      const A = profile.armory || {}, cond = (A.cond && A.cond[tank]) || {}, stock = (A.stock && A.stock[tank]) || {};
+      const shop = Equipment.AMMO_SHOP[tank] || {}, lo = loadoutOf(tank);
+      let armorN = 0, armorCost = 0;
+      for (const it in cond) { const c = cond[it]; if (c && c.gone && c.gone.length) { armorN += c.gone.length; armorCost += c.gone.length * (c.unit || 0); } }
+      const buys = [];
+      let ammoCost = 0;
+      for (const k in shop) {
+        if (shop[k].gear && !(lo.m || []).includes(shop[k].gear)) continue;
+        const need = Math.max(0, shop[k].max - (stock[k] || 0));
+        if (need > 0) { buys.push({ k, n: need }); ammoCost += need * shop[k].price; }
+      }
+      return { armorN, armorCost, buys, ammoCost, total: armorCost + ammoCost };
+    };
+    box = document.createElement('div');
+    box.id = 'acc-upkeep';
+    box.className = 'acc-resupply acc-upkeep';
+    let note = '';
+    const draw = () => {
+      const p = plan();
+      if (!p.total) { box.innerHTML = `<span class="acc-rs-title ok"><i class="ti ti-circle-check"></i> Xe sẵn sàng: giáp nguyên vẹn, đủ đạn 1 lần xuất kích</span>`; return; }
+      const parts = [];
+      if (p.armorN) parts.push(`giáp hỏng <b>${p.armorN}</b> khối (${fmtSilver(p.armorCost)} Bạc)`);
+      if (p.buys.length) parts.push(`nạp đầy ${p.buys.map(b => `${b.n} ${esc(Equipment.AMMO_SHOP[tank][b.k].name.toLowerCase())}`).join(', ')} (${fmtSilver(p.ammoCost)} Bạc)`);
+      const can = (profile.silver | 0) >= p.total;
+      box.innerHTML = `<span class="acc-rs-title"><i class="ti ti-tool"></i> BẢO DƯỠNG XE</span><span class="acc-rs-left">Thu trận này <b>+${fmtSilver(earned || 0)}</b> Bạc · ${parts.join(' · ')}</span>`
+        + `<button class="eqp-btn" data-up="go"${can ? '' : ' disabled'} title="${can ? 'Sửa giáp & mua đạn bằng Bạc' : 'Không đủ Bạc'}"><i class="ti ti-tool"></i> NẠP ĐẠN & SỬA XE · ${fmtSilver(p.total)} Bạc</button>`
+        + (note ? `<span class="acc-rs-left">${esc(note)}</span>` : '');
+    };
+    draw();
+    box.addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-up]');
+      if (!b || b.disabled) return;
+      b.disabled = true; note = '';
+      const p = plan();
+      try {
+        if (p.armorN) await repair(tank, { all: true });
+        for (const it of p.buys) for (let left = it.n; left > 0; left -= 100) await buy(tank, { ammo: it.k, n: Math.min(100, left) });   // máy chủ nhận tối đa 100 viên / lần
+        if (window.soundEngine && window.soundEngine.playUiPurchase) window.soundEngine.playUiPurchase(false);
+      } catch (e) { note = e.message; }
+      draw();
+    });
+    after.after(box);
   }
 
   // TIẾP TẾ SAU TRẬN: vật tư của xe vừa chơi còn ít hơn 1 lần xuất kích -> nút xem quảng cáo nhận thêm ngay
@@ -483,12 +550,12 @@ const Account = (() => {
     box.className = 'acc-resupply';
     let note = '';
     const draw = () => {
-      const left = adsLeft();
+      const left = adsLeft() + adsBonus();
       box.innerHTML = `<span class="acc-rs-title"><i class="ti ti-package"></i> KHO SẮP CẠN</span>`
         + low.map(k => { const A = shop[k], have = ((profile.armory.stock[tank] || {})[k]) || 0;
-          return `<button class="eqp-btn ad" data-rs="${k}"${left > 0 ? '' : ' disabled'} title="Xem 1 quảng cáo: +${A.ad} ${esc(A.name.toLowerCase())}">
-            <i class="ti ti-player-play-filled"></i> +${A.ad} ${esc(A.name)} <small>(còn ${have})</small></button>`; }).join('')
-        + `<span class="acc-rs-left">${note ? esc(note) : left > 0 ? `Còn ${left}/${Equipment.AD.DAILY} lượt quảng cáo hôm nay` : 'Hết lượt quảng cáo hôm nay'}</span>`;
+          return `<button class="eqp-btn ad" data-rs="${k}"${left > 0 ? '' : ' disabled'} title="Xem 1 quảng cáo: +${adAmmoN(A)} ${esc(A.name.toLowerCase())}">
+            <i class="ti ti-player-play-filled"></i> +${adAmmoN(A)} ${esc(A.name)} <small>(còn ${have})</small></button>`; }).join('')
+        + `<span class="acc-rs-left">${note ? esc(note) : adsLeft() > 0 ? `Còn ${adsLeft()}/${Equipment.AD.DAILY} lượt quảng cáo hôm nay` : left > 0 ? `Lượt thêm (thưởng nửa): còn ${left}` : 'Hết lượt quảng cáo hôm nay'}</span>`;
     };
     draw();
     box.addEventListener('click', async (ev) => {
@@ -530,6 +597,6 @@ const Account = (() => {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
-  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, sell, flushAmmo, adStart, claim, watchAd, adsLeft, freeOf, adProgressOf, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
+  return { get profile() { return profile; }, get online() { return online; }, api, kitFor, loadoutOf, owns, buy, sell, repair, flushAmmo, adStart, claim, watchAd, adsLeft, adsBonus, adAmmoN, freeOf, adProgressOf, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
 })();
 window.Account = Account;

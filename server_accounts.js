@@ -49,6 +49,11 @@ const crypto = require('crypto');
 const Equipment = require('./src/core/equipment.js');
 
 const DATA_DIR = process.env.ACCOUNTS_DIR ? path.resolve(process.env.ACCOUNTS_DIR) : path.join(__dirname, 'data');
+// Chỉ để test local: DEV_INFINITE_SILVER=1 (hoặc chạy server với --dev) -> mua gì cũng không trừ Bạc,
+// ví hiện 999.999.999. Đặt DEV_INFINITE_SILVER=0 để tắt ngay cả khi --dev.
+const INFINITE_SILVER = process.env.DEV_INFINITE_SILVER === '1'
+  || (process.argv.includes('--dev') && process.env.DEV_INFINITE_SILVER !== '0');
+if (INFINITE_SILVER) console.warn('[ACC] DEV_INFINITE_SILVER bật: Bạc vô hạn (chỉ dùng khi test)');
 const DB_FILE = path.join(DATA_DIR, 'accounts.db');
 const LEGACY_JSON = path.join(DATA_DIR, 'accounts.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backup');
@@ -146,6 +151,11 @@ function openDb() {
       tank TEXT NOT NULL, item TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, tank, item)
     ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS armor_cond (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tank TEXT NOT NULL, item TEXT NOT NULL, total INTEGER NOT NULL DEFAULT 0, gone TEXT NOT NULL DEFAULT '[]',
+      PRIMARY KEY (user_id, tank, item)
+    ) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS purchases (
       id INTEGER PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -209,12 +219,18 @@ function openDb() {
     loadoutsOf: P('SELECT tank, data FROM loadouts WHERE user_id = ?'),
     loadoutGet: P('SELECT data FROM loadouts WHERE user_id = ? AND tank = ?'),
     setLoadout: P('INSERT INTO loadouts (user_id, tank, data) VALUES (?, ?, ?) ON CONFLICT (user_id, tank) DO UPDATE SET data = excluded.data'),
-    spend: P('UPDATE users SET silver = silver - ? WHERE id = ? AND silver >= ?'),
+    spend: INFINITE_SILVER ? P('UPDATE users SET silver = silver - 0 * ? WHERE id = ? AND ? >= 0') : P('UPDATE users SET silver = silver - ? WHERE id = ? AND silver >= ?'),
     addSilver: P('UPDATE users SET silver = silver + ? WHERE id = ?'),
-    addPurchase: P('INSERT INTO purchases (user_id, at, tank, item, qty, cost) VALUES (?, ?, ?, ?, ?, ?)')
+    addPurchase: P('INSERT INTO purchases (user_id, at, tank, item, qty, cost) VALUES (?, ?, ?, ?, ?, ?)'),
+    // giáp mua thêm hỏng giữ sang trận sau (khóa đơn vị đã mất, JSON) — kho đồ có nút Sửa
+    condOf: P('SELECT tank, item, total, gone FROM armor_cond WHERE user_id = ?'),
+    condGet: P('SELECT total, gone FROM armor_cond WHERE user_id = ? AND tank = ? AND item = ?'),
+    condSet: P('INSERT INTO armor_cond (user_id, tank, item, total, gone) VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id, tank, item) DO UPDATE SET total = excluded.total, gone = excluded.gone'),
+    condDel: P('DELETE FROM armor_cond WHERE user_id = ? AND tank = ? AND item = ?')
   };
   migrateLegacyJson();
   refundRetiredAmmo();
+  refundRetiredItems();
   Q.sessionPurge.run(Date.now());
   console.log(`[ACC] SQLite ${path.basename(DB_FILE)}: ${Q.countUsers.get().n} tài khoản`);
   return true;
@@ -248,6 +264,33 @@ function refundRetiredAmmo() {
     }
   });
   if (users) console.log(`[ACC] Hoàn ${silver} Bạc cho ${users} kho đạn đã ngừng bán`);
+}
+
+// Món trang bị đã thôi bán (Equipment.RETIRED_ITEMS, vd 'turbo' thay bằng ô ĐỘNG CƠ): hoàn giá cho mỗi xe đã mua (bỏ
+// qua món nhận bằng quảng cáo? — sổ mua không phân biệt, hoàn đủ giá cho mọi bản sở hữu), xóa khỏi kho & bộ đồ đang lắp.
+// Chỉ đụng tới bản ghi còn tồn tại -> không hoàn 2 lần
+function refundRetiredItems() {
+  const R = Equipment.RETIRED_ITEMS || {};
+  let users = 0, silver = 0;
+  tx(() => {
+    for (const item in R) {
+      const only = R[item] && typeof R[item] === 'object' ? R[item].tanks : null;
+      const price = (only ? R[item].price : R[item]) | 0;
+      const hit = (tank) => !only || only.includes(tank);
+      const rows = db.prepare('SELECT user_id, tank FROM owned WHERE item = ?').all(item).filter(r => hit(r.tank));
+      for (const r of rows) {
+        if (price) { Q.addSilver.run(price, r.user_id); Q.addPurchase.run(r.user_id, Date.now(), r.tank, 'refund:' + item, -1, -price); }
+        users++; silver += price;
+      }
+      for (const r of rows) db.prepare('DELETE FROM owned WHERE user_id = ? AND tank = ? AND item = ?').run(r.user_id, r.tank, item);
+      for (const r of db.prepare('SELECT user_id, tank, data FROM loadouts').all()) {
+        if (!hit(r.tank)) continue;
+        let d; try { d = JSON.parse(r.data); } catch (e) { continue; }
+        if (d && Array.isArray(d.m) && d.m.includes(item)) { d.m = d.m.filter(x => x !== item); Q.setLoadout.run(r.user_id, r.tank, JSON.stringify(d)); }
+      }
+    }
+  });
+  if (users) console.log(`[ACC] Hoàn ${silver} Bạc cho ${users} món trang bị đã thôi bán`);
 }
 
 // Nhập dữ liệu từ bản lưu JSON cũ (accounts.json) sang SQLite — chỉ 1 lần
@@ -393,9 +436,14 @@ function publicProfile(u) {
   }
   for (const r of Q.adProgOf.all(u.id)) (adProgress[r.tank] || (adProgress[r.tank] = {}))[r.item] = r.n;
   for (const r of Q.loadoutsOf.all(u.id)) { try { loadouts[r.tank] = JSON.parse(r.data); } catch (e) {} }
+  const cond = {};
+  for (const r of Q.condOf.all(u.id)) {
+    let g = []; try { g = JSON.parse(r.gone) || []; } catch (e) {}
+    if (g.length) (cond[r.tank] || (cond[r.tank] = {}))[r.item] = { total: r.total, gone: g, unit: Equipment.repairUnitPrice(r.item, r.total) };
+  }
   return {
-    silver: u.silver | 0, armory: { owned, stock, free, loadouts, adProgress },
-    ads: { left: adsLeft(u.id), daily: Equipment.AD.DAILY },
+    silver: INFINITE_SILVER ? 999999999 : u.silver | 0, armory: { owned, stock, free, loadouts, adProgress, cond },
+    ads: { left: adsLeft(u.id), daily: Equipment.AD.DAILY, bonus: adsBonusLeft(u.id), bonusMax: Equipment.AD.BONUS },
     username: u.username, displayName: u.display_name, createdAt: u.created_at,
     xp: u.xp, level: li.level, rank: li.rank, tier: li.tier, rankText: `${li.rank} Cấp ${li.tier}`, xpInLevel: li.xpInLevel, xpToNext: li.xpToNext,
     lastTank: u.last_tank, lastMap: u.last_map, settings, stats, history
@@ -411,6 +459,12 @@ function adsLeft(userId) {
   if (!Q) return 0;
   const r = Q.adDayGet.get(userId, adDay());
   return Math.max(0, Equipment.AD.DAILY - ((r && r.n) || 0));
+}
+// lượt "thưởng nửa" còn lại (sau khi hết DAILY lượt đầy đủ)
+function adsBonusLeft(userId) {
+  if (!Q) return 0;
+  const r = Q.adDayGet.get(userId, adDay()), AD = Equipment.AD;
+  return Math.max(0, Math.min(AD.BONUS, AD.DAILY + AD.BONUS - ((r && r.n) || 0)));
 }
 const online = new Map();   // userId -> { mk (mã trận), kills, deaths, damage, at }
 function noteOnline(userId, matchKey, kills, deaths, damage) {
@@ -577,6 +631,9 @@ async function handle(req, res) {
             let cur = {};
             try { cur = JSON.parse((Q.loadoutGet.get(u.id, tank) || {}).data || '{}'); } catch (e) {}
             const k = cleanLoadout(u.id, tank, cur);
+            // ô nóc tháp chỉ 1 bệ gắn: món vừa mua thay món đang gắn
+            const mc = Equipment.MODULES[id].cat;
+            if ((Equipment.MOUNT_CATS || ['roof']).includes(mc)) k.m = k.m.filter(x => !(Equipment.MODULES[x] && Equipment.MODULES[x].cat === mc));
             if (k.m.length < Equipment.SLOTS && !k.m.includes(id)) { k.m.push(id); Q.setLoadout.run(u.id, tank, JSON.stringify(k)); }
           }
           return true;
@@ -602,6 +659,31 @@ async function handle(req, res) {
       return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
     }
     // ---- TRẢ LẠI ĐẠN MUA THÊM (bấm nhầm / đổi ý): trừ kho nếu còn đủ, hoàn đúng giá đã trả ----
+    // SỬA GIÁP: { tank, item } một món hoặc { tank, all: true } mọi món của xe — trả Bạc theo số đơn vị thiếu
+    if (url === '/api/shop/repair') {
+      const tank = String(b.tank || '');
+      if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
+      const items = b.all ? Q.condOf.all(u.id).filter(r => r.tank === tank).map(r => r.item) : [String(b.item || '')];
+      let cost = 0, n = 0;
+      const rows = [];
+      for (const item of items) {
+        const row = Q.condGet.get(u.id, tank, item);
+        if (!row || !Equipment.ARMOR_REPAIR[item]) continue;
+        let g = []; try { g = JSON.parse(row.gone) || []; } catch (e) {}
+        if (!g.length) continue;
+        cost += g.length * Equipment.repairUnitPrice(item, row.total); n += g.length;
+        rows.push(item);
+      }
+      if (!rows.length) return send(res, 409, { error: 'Giáp còn nguyên, không cần sửa' });
+      const ok = tx(() => {
+        if (Number(Q.spend.run(cost, u.id, cost).changes) !== 1) return false;
+        for (const item of rows) Q.condDel.run(u.id, tank, item);
+        Q.addPurchase.run(u.id, Date.now(), tank, 'repair:' + rows.join('+'), n, cost);
+        return true;
+      });
+      if (!ok) return send(res, 402, { error: `Không đủ Bạc (cần ${cost})` });
+      return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)), cost, units: n });
+    }
     if (url === '/api/shop/sell') {
       const tank = String(b.tank || '');
       if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
@@ -639,7 +721,7 @@ async function handle(req, res) {
       const tank = String(b.tank || '');
       if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
       const now = Date.now(), AD = Equipment.AD;
-      if (adsLeft(u.id) <= 0) return send(res, 429, { error: `Hôm nay bạn đã xem đủ ${AD.DAILY} quảng cáo có thưởng — quay lại vào ngày mai` });
+      if (adsLeft(u.id) + adsBonusLeft(u.id) <= 0) return send(res, 429, { error: `Hôm nay bạn đã xem đủ ${AD.DAILY + AD.BONUS} quảng cáo có thưởng — quay lại vào ngày mai` });
       const last = adLastAt.get(u.id) || 0;
       if (now - last < AD.COOLDOWN_SEC * 1000) return send(res, 429, { error: `Chờ ${Math.ceil((AD.COOLDOWN_SEC * 1000 - (now - last)) / 1000)} giây rồi xem quảng cáo tiếp` });
       let kind, key;
@@ -655,6 +737,8 @@ async function handle(req, res) {
         const it = Equipment.MODULES[key] || Equipment.PREMIUM[key];
         if (!it || Equipment.isFree(key) || !Equipment.compatible(key, tank)) return send(res, 400, { error: 'Món này không cần mở khóa / xe này không lắp được' });
         if (Q.ownedHas.get(u.id, tank, key)) return send(res, 409, { error: 'Bạn đã có món này cho xe này rồi' });
+        if (it.noAd || !Equipment.adsToUnlock(key)) return send(res, 400, { error: 'Món này chỉ mua được bằng Bạc' });
+        if (adsLeft(u.id) <= 0) return send(res, 429, { error: `Hết ${AD.DAILY} lượt mở khóa hôm nay — lượt xem thêm chỉ nhận vật tư` });
         kind = 'item';
       }
       const token = crypto.randomBytes(12).toString('hex');
@@ -673,12 +757,12 @@ async function handle(req, res) {
       const day = adDay(now);
       const reward = tx(() => {
         const used = ((Q.adDayGet.get(u.id, day) || {}).n) || 0;
-        if (used >= AD.DAILY) return { error: 'limit' };
+        if (used >= AD.DAILY + AD.BONUS || (p.kind === 'item' && used >= AD.DAILY)) return { error: 'limit' };
         Q.adDayAdd.run(u.id, day);
         if (p.kind === 'ammo') {
           const A = Equipment.AMMO_SHOP[p.tank][p.key];
           const have = ((Q.stockGet.get(u.id, p.tank, p.key) || {}).n) || 0;
-          const n = Math.max(0, Math.min(A.ad, stockCap(A) - have));
+          const n = Math.max(0, Math.min(Equipment.adAmmoN(A, used), stockCap(A) - have));
           if (n > 0) Q.addStockFree.run(u.id, p.tank, p.key, n);
           Q.addPurchase.run(u.id, now, p.tank, 'ad:' + p.key, n, 0);
           return { kind: 'ammo', tank: p.tank, ammo: p.key, n };
@@ -694,12 +778,16 @@ async function handle(req, res) {
         if (Equipment.MODULES[p.key]) {
           let cur = {};
           try { cur = JSON.parse((Q.loadoutGet.get(u.id, p.tank) || {}).data || '{}'); } catch (e) {}
-          const k = cleanLoadout(u.id, p.tank, Object.assign({}, cur, { m: (cur.m || []).concat([p.key]) }));
+          // món ô nóc tháp vừa mở khóa thay món đang gắn (chỉ 1 bệ)
+          const mc = Equipment.MODULES[p.key] && Equipment.MODULES[p.key].cat;
+          const roofK = (Equipment.MOUNT_CATS || ['roof']).includes(mc);
+          const keep = (cur.m || []).filter(x => !(roofK && Equipment.MODULES[x] && Equipment.MODULES[x].cat === mc));
+          const k = cleanLoadout(u.id, p.tank, Object.assign({}, cur, { m: keep.concat([p.key]) }));
           Q.setLoadout.run(u.id, p.tank, JSON.stringify(k));
         }
         return { kind: 'item', tank: p.tank, item: p.key, progress: need, need, unlocked: true };
       });
-      if (reward.error === 'limit') return send(res, 429, { error: `Hôm nay bạn đã xem đủ ${AD.DAILY} quảng cáo có thưởng` });
+      if (reward.error === 'limit') return send(res, 429, { error: `Hôm nay bạn đã hết lượt quảng cáo có thưởng` });
       if (reward.error) return send(res, 409, { error: 'Bạn đã có món này cho xe này rồi' });
       adLastAt.set(u.id, now);
       if (adLastAt.size > 50000) adLastAt.clear();
@@ -753,6 +841,19 @@ async function handle(req, res) {
         for (const ammo in Equipment.AMMO_SHOP[tank] || {}) {
           const n = Math.round(clampN(used[ammo], 0, 5000));
           if (n > 0) Q.useStock.run(n, u.id, tank, ammo);
+        }
+        // giáp mua thêm vỡ trong trận: cộng dồn vào danh sách đơn vị thiếu (không vượt tổng số đơn vị của món)
+        const ag = b.armorGone && typeof b.armorGone === 'object' ? b.armorGone : {};
+        for (const item in ag) {
+          const R = ag[item];
+          if (!Equipment.ARMOR_REPAIR[item] || !R || !Equipment.compatible(item, tank)) continue;
+          const keys = (Equipment.sanitizeGone({ [item]: R.gone }, null) || {})[item] || [];
+          if (!keys.length) continue;
+          const row = Q.condGet.get(u.id, tank, item);
+          let prev = []; try { prev = row ? JSON.parse(row.gone) || [] : []; } catch (e) {}
+          const total = Math.round(clampN(R.total, 1, 400)) || (row && row.total) || keys.length;
+          const all = [...new Set([...prev, ...keys])].slice(0, total);
+          Q.condSet.run(u.id, tank, item, Math.max(total, (row && row.total) || 0), JSON.stringify(all));
         }
         return true;
       });

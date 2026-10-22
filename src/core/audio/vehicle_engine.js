@@ -481,20 +481,23 @@ SoundEngine.mixin(class {
     const tk = (1 + climb * 0.06) * (1 + surge * 0.1) * (truck ? 1.15 : 1);
     // máy đang gồng (đạp ga): to, đặc, gằn hẳn lên; nhả ga / không tải giữ nguyên tiếng tròn, nhỏ
     const grunt = Math.max(0, thr - 0.25) / 0.75;
-    const eg = (0.012 + rpm * 0.014 + thr * 0.018 + grunt * 0.022) * tk;
+    // Loại động cơ (ô ĐỘNG CƠ): tỉ lệ tiếng nổ piston / tăng áp / tuabin / mô-tơ điện (ENGINE_PROFILES cuối file)
+    const PF = SoundEngine.ENGINE_PROFILES[o.engine] || SoundEngine.ENGINE_PROFILES[o.turbo ? 'tdiesel' : 'stock'];
+    const bl = Math.max(0, Math.min(1, o.boostLvl || 0));
+    const eg = (0.012 + rpm * 0.014 + thr * 0.018 + grunt * 0.022) * tk * PF.piston;
     // nhánh gằn máy + cộng hưởng ống xả chỉ mở khi đạp ga; nhả ga / không tải: tắt
     if (e.satIn) {
       e.satIn.gain.setTargetAtTime(6 * grunt, t, tc);
-      e.satOut.gain.setTargetAtTime(0.05 * grunt * tk, t, tc);
+      e.satOut.gain.setTargetAtTime(0.05 * grunt * tk * PF.piston, t, tc);
       e.pipe.frequency.setTargetAtTime(Math.min(115, Math.max(70, fireHz * 0.75)), t, tc);
       e.pipe.gain.setTargetAtTime(4 * grunt + 1.5 * climb, t, tc);
     }
     e.engineGain.gain.setTargetAtTime(eg, t, tc);
-    e.combGain.gain.setTargetAtTime((0.06 + rpm * 0.12 + thr * 0.24) * (1 + dmg * 0.35) * tk, t, tc);
+    e.combGain.gain.setTargetAtTime((0.06 + rpm * 0.12 + thr * 0.24) * (1 + dmg * 0.35) * tk * PF.piston, t, tc);
     if (e.combFilter) e.combFilter.frequency.setTargetAtTime(200 + rpm * 300 + thr * 260, t, tc);
     // Động cơ tăng áp (trang bị): bộ tăng áp lớn hơn, áp suất cao hơn -> tiếng rít của máy nén cao & rõ hẳn,
     // gió hút vào ồn hơn; đang ở áp cao mà nhả ga thì van xả áp mở "PSSHH" (playTurboBlowOff)
-    const tku = o.turbo ? 1 : 0;
+    const tku = PF.turbo;
     e.turbo.frequency.setTargetAtTime(1500 + tb * (2600 + 1900 * tku), t, 0.08);
     // Turbo hỏng: tiếng rít mất hẳn
     e.turboGain.gain.setTargetAtTime(dmg >= 2 ? 0 : Math.max(0, tb - 0.2) * (isBoost ? 0.009 : 0.0055) * (1 + 1.8 * tku), t, 0.1);
@@ -502,7 +505,9 @@ SoundEngine.mixin(class {
       e.airGain.gain.setTargetAtTime(dmg >= 2 ? 0.002 : (0.002 + tb * 0.016 * (1 + 0.6 * tku)) * (wheeled ? 0.8 : 1), t, 0.1);
       e.airFilter.frequency.setTargetAtTime(1700 + tb * (2300 + 900 * tku), t, 0.1);
     }
-    if (tku && dmg < 2) {
+    // lớp riêng của từng loại máy: tuabin khí rít phản lực, mô-tơ điện hybrid, tầng tăng áp thứ hai
+    this.updateEngineLayers(PF, rpm, thr, tb, bl, sr, dmg, t);
+    if (tku && PF.blowOff && dmg < 2) {
       // nhả ga đột ngột khi turbo đang quay nhanh: van xả áp mở
       const prev = this._thrPrevBO === undefined ? thr : this._thrPrevBO;
       if (prev - thr > 0.2 && tb > 0.5 && t - (this._blowOffT || 0) > 1.6) { this._blowOffT = t; this.playTurboBlowOff(tb); }
@@ -513,7 +518,7 @@ SoundEngine.mixin(class {
       e.mechGain.gain.setTargetAtTime((0.006 + rpm * 0.026) * (wheeled ? 0.75 : 1), t, tc);
       e.mechFilter.frequency.setTargetAtTime(450 + rpm * 900, t, tc);
     }
-    e.exhaustGain.gain.setTargetAtTime((0.04 + rpm * 0.07 + thr * 0.15 + grunt * 0.1) * (1 + dmg * 0.3) * tk, t, tc);
+    e.exhaustGain.gain.setTargetAtTime((0.04 + rpm * 0.07 + thr * 0.15 + grunt * 0.1) * (1 + dmg * 0.3) * tk * PF.piston, t, tc);
     if (e.exhaustFilter) e.exhaustFilter.frequency.setTargetAtTime((200 + rpm * 260 + thr * 320) * choke, t, tc);
     if (e.pulseSmooth) e.pulseSmooth.frequency.setTargetAtTime(fireHz * 1.1, t, tc);
     // Độ lệch nhịp nổ: không tải chao rõ (máy "lục bục"), vòng tua cao đều hơn; máy hư chao mạnh
@@ -749,5 +754,98 @@ SoundEngine.mixin(class {
     this.burst(out, t + 0.05, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, Q: 2.5, gain: 0.07, attack: 0.001, dur: 0.035 });
     this.burst(out, t + 0.05, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 260, gain: up ? 0.1 : 0.18, attack: 0.002, dur: 0.08 });
     if (tankType === 'ARTILLERY' && up) this.burst(out, t + 0.02, { filter: 'highpass', freq: 3000, gain: 0.05, attack: 0.01, dur: 0.18 });   // xe tải: xả hơi bộ ly hợp
+  }
+});
+
+// ===========================================================================
+// GIỌNG MÁY THEO ĐỘNG CƠ LẮP (ô ĐỘNG CƠ — equipment.js): turbo — độ to / cao của tiếng rít tăng áp, piston — độ lớn tiếng
+// nổ & ống xả, blowOff — van xả áp khi nhả ga, twin — tầng tăng áp thứ hai rít cao hơn, jet — tuabin khí, elec — mô-tơ điện
+// ===========================================================================
+SoundEngine.ENGINE_PROFILES = {
+  stock: { turbo: 0, piston: 1, blowOff: false },
+  tdiesel: { turbo: 1, piston: 1.05, blowOff: true },
+  twinturbo: { turbo: 1.5, piston: 1.15, blowOff: true, twin: true },
+  // tuabin khí kiểu AGT-1500: gần như không còn nhịp nổ piston, tiếng rít máy nén cao vút + luồng khí xả ù ù
+  turbine: { turbo: 0, piston: 0.28, blowOff: false, jet: true },
+  // hybrid: mô-tơ điện rít theo tốc độ bánh, diesel (máy phát) chạy êm
+  hybrid: { turbo: 0.4, piston: 0.7, blowOff: false, elec: true }
+};
+
+SoundEngine.mixin(class {
+  // Các lớp tiếng phụ dựng khi cần (một lần), điều khiển mỗi khung hình theo vòng tua / ga / mức tăng tốc thật (bl)
+  updateEngineLayers(PF, rpm, thr, tb, bl, sr, dmg, t) {
+    const e = this.engine, ctx = this.ctx;
+    if (!e || !ctx || !e.habitHi) return;
+    const L = e.layers || (e.layers = {});
+    const mk = (type, f) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.start(); return o; };
+    const g0 = () => { const g = ctx.createGain(); g.gain.value = 0; return g; };
+    const noise = (buf, ftype, f, Q) => {
+      const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.start(0, Math.random() * 2);
+      const fl = ctx.createBiquadFilter(); fl.type = ftype; fl.frequency.value = f; fl.Q.value = Q; s.connect(fl);
+      return { s, fl };
+    };
+    const dt = L.lastT ? Math.min(0.1, Math.max(0.001, t - L.lastT)) : 0.016;
+    L.lastT = t;
+    // --- TUABIN KHÍ: trục máy nén có quán tính lớn — rít lên chậm (~1 s) khi đạp ga / tăng tốc, nhả ga còn rít trớn lâu
+    if (PF.jet && !L.jet) {
+      const J = L.jet = { a: mk('sine', 3000), b: mk('sine', 7000), ga: g0(), gb: g0(), gr: g0(), gh: g0() };
+      J.a.connect(J.ga); J.b.connect(J.gb);
+      J.roar = noise(this.pinkNoiseBuffer, 'bandpass', 900, 0.6); J.roar.fl.connect(J.gr);
+      J.hiss = noise(this.noiseBuffer, 'highpass', 3800, 0.7); J.hiss.fl.connect(J.gh);
+      for (const g of [J.ga, J.gb, J.gr, J.gh]) g.connect(e.habitHi);
+    }
+    if (L.jet) {
+      const J = L.jet, on = PF.jet ? 1 : 0;
+      const tgt = 0.3 + rpm * 0.4 + thr * 0.12 + bl * 0.3;
+      L.jetS = (L.jetS || 0.3) + (tgt - (L.jetS || 0.3)) * Math.min(1, dt * (tgt > (L.jetS || 0) ? 0.9 : 0.45));
+      const S = L.jetS, dk = dmg >= 2 ? 0.35 : dmg ? 0.7 : 1;
+      J.a.frequency.setTargetAtTime(2100 + S * 3900, t, 0.1);
+      J.b.frequency.setTargetAtTime((2100 + S * 3900) * 2.37, t, 0.1);
+      J.ga.gain.setTargetAtTime(on * (0.003 + S * 0.012) * dk, t, 0.12);
+      J.gb.gain.setTargetAtTime(on * (0.001 + S * 0.004) * dk, t, 0.12);
+      J.roar.fl.frequency.setTargetAtTime(500 + S * 900, t, 0.15);
+      J.gr.gain.setTargetAtTime(on * (0.012 + S * 0.05 + bl * 0.03), t, 0.15);
+      J.gh.gain.setTargetAtTime(on * (0.002 + S * 0.01), t, 0.15);
+    }
+    // --- MÔ-TƠ ĐIỆN (hybrid): rít biến tần cao dần theo tốc độ bánh, gằn khi đạp ga / tăng tốc
+    if (PF.elec && !L.elec) {
+      const M = L.elec = { m: mk('sine', 300), i: mk('square', 900), gm: g0(), gi: g0(), lp: ctx.createBiquadFilter() };
+      M.lp.type = 'lowpass'; M.lp.frequency.value = 5000;
+      M.m.connect(M.gm); M.i.connect(M.lp); M.lp.connect(M.gi);
+      M.gm.connect(e.habitHi); M.gi.connect(e.habitHi);
+    }
+    if (L.elec) {
+      const M = L.elec, on = PF.elec ? 1 : 0, fm = 160 + sr * 2500 + bl * 300;
+      M.m.frequency.setTargetAtTime(fm, t, 0.08);
+      M.i.frequency.setTargetAtTime(fm * 3.02, t, 0.08);
+      M.gm.gain.setTargetAtTime(on * (0.002 + thr * 0.007 + bl * 0.008) * (dmg >= 2 ? 0.4 : 1), t, 0.08);
+      M.gi.gain.setTargetAtTime(on * (0.0006 + thr * 0.0015 + bl * 0.002), t, 0.08);
+    }
+    // --- TĂNG ÁP KÉP: tầng áp cao quay nhanh hơn, rít cao hơn tầng đầu ~1.4 lần
+    if (PF.twin && !L.twin) {
+      const W = L.twin = { o: mk('sine', 2500), g: g0() };
+      W.o.connect(W.g); W.g.connect(e.habitHi);
+    }
+    if (L.twin) {
+      L.twin.o.frequency.setTargetAtTime((1500 + tb * 4500) * 1.42, t, 0.08);
+      L.twin.g.gain.setTargetAtTime(PF.twin && dmg < 2 ? Math.max(0, tb - 0.3) * (0.005 + bl * 0.006) : 0, t, 0.1);
+    }
+  }
+
+  // Quá nhiệt động cơ: còi báo 2 tông + hơi nóng xì qua lưới tản nhiệt; nguội lại: 1 tiếng bíp nhẹ
+  playEngineOverheat(on) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.voice({ gain: 0.6, wet: 0.08 });
+    if (on) {
+      for (let i = 0; i < 3; i++) {
+        this.tone(out, t + i * 0.32, { type: 'square', freq: 880, gain: 0.05, attack: 0.005, hold: 0.12, dur: 0.05, filter: 'lowpass', filterFreq: 2500 });
+        this.tone(out, t + i * 0.32 + 0.16, { type: 'square', freq: 660, gain: 0.05, attack: 0.005, hold: 0.12, dur: 0.05, filter: 'lowpass', filterFreq: 2500 });
+      }
+      this.burst(out, t + 0.05, { filter: 'highpass', freq: 2600, gain: 0.12, attack: 0.08, dur: 1.6 });
+      this.burst(out, t + 0.05, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1200, Q: 0.8, gain: 0.08, attack: 0.1, dur: 1.4 });
+    } else {
+      this.tone(out, t, { freq: 1320, gain: 0.04, attack: 0.005, dur: 0.12 });
+    }
   }
 });

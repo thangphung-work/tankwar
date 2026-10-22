@@ -37,6 +37,14 @@
 
 .hx-map canvas { display: block; width: 100%; height: 100%; opacity: 0.95; }
 .hx-map:hover { border-color: rgba(190, 196, 184, 0.45); }
+/* Xe gãy hết ăng-ten: mất bản đồ số — màn nhiễu, chữ MẤT TÍN HIỆU */
+.hx-map.map-lost { cursor: not-allowed; }
+.hx-map.map-lost canvas { visibility: hidden; }
+.hx-map.map-lost::after {
+  content: 'MẤT TÍN HIỆU'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font: 700 12px/1 var(--font-tech); letter-spacing: 2px; color: rgba(255, 90, 70, 0.85);
+  background: repeating-linear-gradient(0deg, rgba(200, 210, 192, 0.07) 0 1px, transparent 1px 3px), rgba(10, 12, 11, 0.85);
+}
 
 .hx-map-n,
 .hx-map-key {
@@ -708,3 +716,6 @@
   .hx-ammo .ammo-tab { width: 48px; }
   .hx-ammo-name { display: none; }
 }
+
+/* nhiệt động cơ: quá nhiệt nhấp nháy (game.js engine-heat-tag) */
+.hx-chip.hx-blink { animation: hx-blink 0.6s infinite; }

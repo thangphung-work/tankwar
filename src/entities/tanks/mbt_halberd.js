@@ -119,7 +119,8 @@
         if (!u.isDead) {
           scanTime += dt;
           turretParts.periHead.rotation.y = Math.sin(scanTime * 0.35) * 1.4;
-          if (unit.rcwsTurret) unit.rcwsTurret.rotation.y = Math.sin(scanTime * 0.22 + 1.3) * 0.9;
+          // trạm vũ khí nóc tháp chưa từng nhận lệnh (phòng xem xe): quét qua lại; trong trận drone_air.updateRCWS điều khiển
+          if (unit.rcwsTurret && !u._rcws) unit.rcwsTurret.rotation.y = Math.sin(scanTime * 0.22 + 1.3) * 0.9;
         }
       }
     };
@@ -839,69 +840,11 @@
       }
     }
 
-    // Máy phá sóng chống UAV PHÁT CHÙM ĐỊNH HƯỚNG trên nóc phía nạp đạn (thay trạm súng máy 7.62mm). Kiểu tổ hợp gây nhiễu
-    // định hướng gắn xe: đế chống rung + hộp nguồn / máy phát cố định trên nóc (lá tản nhiệt, đầu nối cáp), bệ xoay ngang
-    // mang chạc ngóc (bộ phận phát duy nhất là mảng ăng-ten tấm định hướng — liên lạc dùng ăng-ten radio sẵn của xe);
-    // khối ngóc là MẢNG ĂNG-TEN TẤM phẳng lớn (radome 2 x 2 phần tử, viền gân) chĩa
-    // về một hướng, kèm camera ngắm nhỏ bên phải và hộp khuếch đại sau tấm. Đầu phát quay / ngóc theo hướng chùm
-    // (ew_jammer.js), đèn trạng thái đỏ nhấp nháy khi đang phát. Kích thước thật (8 đv = 1 m): tấm ~0.45 x 0.4 m
-    const jam = new THREE.Group();
-    jam.position.set(6.2, ROOF, 9.0);
-    const jb = new VehicleKit.PartBatch(DECK_Y + ROOF);
-    const radome = new THREE.MeshStandardMaterial({ color: 0xbab8a7, roughness: 0.8, metalness: 0.0 });
-    // Đế chống rung + cục cao su
-    jb.box(4.4, 0.28, 3.8, D, [0, 0.14, 0]);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) jb.cyl(0.3, 0.34, 0.36, 10, M.rubber || D, [sx * 1.75, 0.46, sz * 1.45]);
-    // Hộp nguồn / máy phát: thân thấp, nắp, lá tản nhiệt hai bên, đầu nối, cửa thăm sau
-    jb.box(3.6, 1.3, 3.0, P, [0, 1.3, 0.2]);
-    jb.box(3.8, 0.18, 3.2, P, [0, 2.02, 0.2]);
-    for (const sx of [-1, 1]) for (let k = 0; k < 6; k++) jb.box(0.12, 1.0, 2.4, D, [sx * 1.86, 1.3, -0.8 + k * 0.4]);
-    jb.box(2.2, 0.9, 0.08, D, [0, 1.3, 1.72]);
-    for (let k = 0; k < 3; k++) jb.cyl(0.14, 0.14, 0.3, 10, D, [-0.8 + k * 0.8, 0.85, 1.78], 'z');
-    // bó cáp xuống nóc tháp
-    jb.strut([-1.3, 0.8, 1.6], [-1.8, 0.2, 2.4], 0.12, D);
-    jb.build(jam);
-    // Bệ xoay ngang (theo hướng chùm)
-    const head = new THREE.Group();
-    head.position.set(0, 2.1, -0.2);
-    const hb = new VehicleKit.PartBatch(DECK_Y + ROOF + 2.1);
-    hb.cyl(1.05, 1.15, 0.32, 18, D, [0, 0.16, 0]);
-    hb.cyl(0.75, 0.9, 0.7, 16, P, [0, 0.62, 0]);
-    hb.box(2.9, 0.24, 1.0, P, [0, 1.05, 0]);
-    for (const sx of [-1, 1]) {
-      hb.box(0.24, 1.2, 0.9, P, [sx * 1.33, 1.7, 0]);
-      hb.cyl(0.28, 0.28, 0.12, 12, D, [sx * 1.5, 2.15, 0], 'x');
-    }
-    hb.build(head);
-    // Khối ngóc: mảng ăng-ten tấm định hướng chĩa về phía trước (-Z)
-    const tilt = new THREE.Group();
-    tilt.position.set(0, 2.15, 0);
-    const jt = new VehicleKit.PartBatch(DECK_Y + ROOF + 4.25);
-    jt.box(3.4, 3.1, 0.5, radome, [0, 0.2, -0.35]);                       // tấm radome
-    jt.box(3.55, 0.16, 0.6, D, [0, 1.8, -0.35]); jt.box(3.55, 0.16, 0.6, D, [0, -1.4, -0.35]);   // viền gân trên / dưới
-    for (const sx of [-1, 1]) jt.box(0.16, 3.3, 0.6, D, [sx * 1.77, 0.2, -0.35]);
-    jt.box(0.06, 2.9, 0.06, D, [0, 0.2, -0.62]); jt.box(3.2, 0.06, 0.06, D, [0, 0.2, -0.62]);   // vạch chia 2 x 2 phần tử
-    jt.box(2.4, 2.0, 0.7, D, [0, 0.2, 0.25]);                               // hộp khuếch đại sau tấm
-    for (let k = 0; k < 4; k++) jt.box(2.2, 0.08, 0.5, D, [0, -0.5 + k * 0.45, 0.65]);   // lá tản nhiệt sau hộp
-    jt.box(0.7, 0.6, 1.0, P, [1.6, -1.0, 0.05]);                            // camera ngắm nhỏ bên phải
-    jt.cyl(0.16, 0.16, 0.08, 12, M.lens, [1.6, -1.0, -0.47], 'z');
-    jt.build(tilt);
-    head.add(tilt);
-    jam.add(head);
-    // đèn trạng thái mặt sau hộp nguồn (vật liệu riêng mỗi xe: ew_jammer.js đổi màu / nhấp nháy)
-    const ledMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x33ff55, emissiveIntensity: 0.7, roughness: 0.4 });
-    for (const x of [-0.5, 0.5]) {
-      const led = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.12, 10), ledMat);
-      led.rotation.x = Math.PI / 2;
-      led.position.set(x, 1.75, 1.79);
-      jam.add(led);
-    }
-    turret.add(jam);
-    // trạm súng máy đã bỏ (DroneAir / bot / ô [4] tự bỏ qua khi không có rcwsGun)
-    unit.rcwsTurret = null;
-    unit.rcwsGun = null;
-    unit.jammer = { group: jam, head, tilt, ledMat };
-    VehicleKit.registerPartGroup(unit, 'jammer', jam);
+    // Ô NÓC THÁP: bệ gắn phía nạp đạn, người chơi chọn món ở kho trang bị (Equipment, nhóm 'roof'). Mô hình dựng sẵn món
+    // mặc định (máy phá sóng); Equipment.equip gọi unit.mountRoof(mã món) để gỡ món cũ, dựng món khác đúng chỗ đó
+    const roofCtx = { parent: turret, seat: [ROOF_SEAT[0], TUR_ROOF, ROOF_SEAT[1]], yBase: DECK_Y + TUR_ROOF, M, P, D, unit, rnd };
+    unit.mountRoof = (id) => { if (window.RoofMounts) RoofMounts.mount(roofCtx, id); };
+    unit.mountRoof('ewjam');
 
     // Cửa hất đế liều phóng trên nóc đuôi tháp (bên nạp đạn, giữa 2 tấm xả áp hộc đạn): liều phóng cháy hết, còn lại đế
     // thép — kíp nạp đạn tống ra ngoài qua cửa nhỏ này sau mỗi phát như cửa hất đế trên nóc tháp T-72 (modelAnimator: cửa
@@ -923,6 +866,12 @@
 
     return { periHead, ejFlap };
   }
+
+  // ===========================================================================
+  // Ô NÓC THÁP: CÁC MÓN GẮN ĐƯỢC TRÊN BỆ PHÍA NẠP ĐẠN (chọn ở kho trang bị — Equipment nhóm 'roof'). Chân đế mô-đun & các
+  // món dùng chung mọi xe: roof_mounts.js
+  // ===========================================================================
+  const ROOF_SEAT = [6.2, 9.0];   // tâm bệ gắn trên nóc tháp (x, z hệ tháp)
 
   // ===========================================================================
   // PHÁO CHÍNH 120MM L/55

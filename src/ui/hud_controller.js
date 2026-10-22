@@ -280,7 +280,7 @@ class HUDController {
     } else if (ammoType === 'GATLING_BULLET') {
       name = 'ĐẠN 30MM NỔ-CHÁY 6 NÒNG (TẦM ~1000M · XÉ GIÁP NHẸ, YẾU VỚI XE TĂNG)';
     } else if (ammoType === 'SCOUT_BULLET') {
-      name = 'ĐẠN SÚNG MÁY 12.7MM (TẦM ~700M · THỦNG LỐP, PHỤ KIỆN, GIÁP NHẸ)';
+      name = 'ĐẠN XUYÊN GIÁP 12.7MM (TẦM ~700M · THỦNG LỐP, PHÁ PHỤ KIỆN NGOÀI, XUYÊN GIÁP NHẸ)';
     }
 
     this.addCombatLog(`Đã nạp: ${name}`, 'tip');
@@ -304,7 +304,8 @@ class HUDController {
         case 'INCENDIARY': return { name: 'ĐẠN CHÁY', qty: p.incendiaryAmmoCount || 0, color: '#ff6a2b' };
         case 'ANTI_TANK_MISSILE': return { name: 'TÊN LỬA', qty: p.missileAmmoCount || 0, color: '#ff8c42' };
         case 'GATLING_BULLET': return { name: '30MM', qty: Infinity, color: '#ffd166' };
-        case 'SCOUT_BULLET': return { name: '12.7MM', qty: Infinity, color: '#ffd166' };
+        case 'SCOUT_BULLET': return p.mainGun && p.mainGun.kind === 'agl' ? { name: 'LỰU 40MM', qty: Infinity, color: '#e8b36a' }
+          : p.mainGun && p.mainGun.kind === 'rocket' ? { name: 'ROCKET', qty: Infinity, color: '#ff8c42' } : { name: '12.7MM', qty: Infinity, color: '#ffd166' };
         default: return { name: 'THƯỜNG', qty: Infinity, color: '#e4edf2' };
       }
     };
@@ -315,32 +316,45 @@ class HUDController {
     }
 
     const list = ammos.map(type => ({ type, ...info(type) }));
-    // Xe tăng: ô [4] súng máy 7.62mm nóc tháp — số đạn còn trong dây, đang thay hộp thì hiện "NẠP"
-    const mg = p.tankType === 'ALL_ROUNDER' && p.rcwsGun;
+    // Xe tăng: ô [4] vũ khí trên bệ nóc tháp (súng máy / súng phóng lựu / giàn rocket) — số đạn còn, đang nạp thì "NẠP",
+    // bị bắn văng thì "HỎNG"
+    const mg = !!p.rcwsGun;
     if (mg) {
-      const S = p._rcws;
-      list.push({ type: 'MG762', name: 'SÚNG MÁY', qty: S ? (S.reload > 0 ? 'NẠP' : S.mag) : 200, color: '#c8d6a0', mg: true });
+      const S = p._rcws, cfg = typeof DroneAir !== 'undefined' && DroneAir.roofCfg ? DroneAir.roofCfg(p) : { mag: 200 };
+      const RW = { agl: ['PHÓNG LỰU', '#e8b36a'], rocket: ['ROCKET', '#ff8c42'] }[p.roofWeapon] || ['SÚNG MÁY', '#c8d6a0'];
+      const lostRoof = p.dmg && p.dmg.lost && p.dmg.lost.has(p._roofTag || 'rcws');
+      const qty = lostRoof ? 'HỎNG' : S ? (S.reload > 0 ? 'NẠP' : S.mag) : cfg.mag;
+      list.push({ type: 'MG762', name: RW[0], qty, color: RW[1], mg: true, key: 4 });
     }
     // Xe tăng: ô [4] máy phá sóng chống UAV — đang phát: giây còn lại; tắt: % pin (dưới mức bật được thì "SẠC")
-    const ew = p.tankType === 'ALL_ROUNDER' && p.jammer && typeof EWJammer !== 'undefined';
+    const ew = p.jammer && typeof EWJammer !== 'undefined';
     const ewOn = ew && this.game.jamming && this.game.jamming(p);
     if (ew) {
       const J = p._jam || { e: 1 }, EC = EWJammer.C, lost = !this.game.canJam(p);
       const qty = lost ? 'HỎNG' : ewOn ? `${Math.ceil(J.e * EC.ON)}S` : J.e < EC.MIN ? `SẠC ${Math.round(J.e * 100)}%` : `${Math.round(J.e * 100)}%`;
-      list.push({ type: 'EW', name: ewOn ? 'ĐANG PHÁ SÓNG' : 'PHÁ SÓNG', qty, color: '#7fd3ff', ew: true });
+      list.push({ type: 'EW', name: ewOn ? 'ĐANG PHÁ SÓNG' : 'PHÁ SÓNG', qty, color: '#7fd3ff', ew: true, key: 4 });
+    }
+    // Xe 6 nòng: ô [4] máy phá khóa radar tầm gần (lock_jammer.js) — bật / tắt, không chiếm cò pháo chính
+    const lj = p.lockJammer && typeof LockJammer !== 'undefined';
+    const ljOn = lj && this.game.lockJamming && this.game.lockJamming(p);
+    if (lj) {
+      const L = p._lj || { e: 1 }, LC = LockJammer.C, lost = !this.game.canLockJam(p);
+      const qty = lost ? 'HỎNG' : ljOn ? `${Math.ceil(L.e * LC.ON)}S` : L.e < LC.MIN ? `SẠC ${Math.round(L.e * 100)}%` : `${Math.round(L.e * 100)}%`;
+      list.push({ type: 'LJ', name: ljOn ? 'ĐANG PHÁ KHÓA' : 'PHÁ KHÓA', qty, color: '#ff9f6b', lj: true, key: 4 });
     }
     // Chỉ dựng lại khi có thay đổi (hàm này được gọi mỗi khung hình; dựng lại liên tục làm nút mất cú nhấp)
-    const sig = p.selectedAmmo + (p.mgActive ? '+mg' : '') + (p.ewActive ? '+ews' : '') + (ewOn ? '+ew' : '') + '|' + list.map(a => a.type + ':' + a.qty).join(',');
+    const sig = p.selectedAmmo + (p.mgActive ? '+mg' : '') + (p.ewActive ? '+ews' : '') + (ewOn ? '+ew' : '') + (ljOn ? '+lj' : '') + '|' + list.map(a => a.type + ':' + a.qty).join(',');
     if (ammoContainer._sig === sig) return;
     ammoContainer._sig = sig;
 
     ammoContainer.innerHTML = list.map((a, idx) => {
-      const isActive = a.ew ? !!p.ewActive : a.mg ? !!p.mgActive : (!p.mgActive && !p.ewActive && p.selectedAmmo === a.type);
+      const isActive = a.lj ? !!ljOn : a.ew ? !!p.ewActive : a.mg ? !!p.mgActive : (!p.mgActive && !p.ewActive && p.selectedAmmo === a.type);
+      const hk = a.key || idx + 1;   // ô món trên chân đế nóc tháp luôn là phím [4]
       const qtyStr = typeof a.qty === 'string' ? a.qty : a.qty === Infinity ? '∞' : `×${a.qty}`;
       const empty = typeof a.qty === 'number' && a.qty !== Infinity && a.qty <= 0;
       return `
-        <button class="ammo-tab ${isActive ? 'active' : ''} ${empty ? 'empty' : ''}" data-ammo="${a.type}" id="ammo-tab-${a.type}" title="[${idx + 1}] ${a.name}" style="--ammo: ${a.color}">
-          <span class="hx-ammo-key">${idx + 1}</span>
+        <button class="ammo-tab ${isActive ? 'active' : ''} ${empty ? 'empty' : ''}" data-ammo="${a.type}" id="ammo-tab-${a.type}" title="[${hk}] ${a.name}" style="--ammo: ${a.color}">
+          <span class="hx-ammo-key">${hk}</span>
           <svg class="hx-ammo-icon" viewBox="0 0 24 24">
             <path d="M12 2.5 L15 8 L9 8 Z" fill="${a.color}"/>
             <rect x="9" y="8" width="6" height="10.5" fill="#5b6b78"/>
@@ -366,6 +380,10 @@ class HUDController {
     if (ew) {
       const btn = document.getElementById('ammo-tab-EW');
       if (btn) btn.addEventListener('click', () => this.game.selectJammer());
+    }
+    if (lj) {
+      const btn = document.getElementById('ammo-tab-LJ');
+      if (btn) btn.addEventListener('click', () => this.game.toggleLockJammer());
     }
   }
 
@@ -419,8 +437,9 @@ class HUDController {
 
     if (fireMainText) {
       if (this.game.player.mgActive) {
-        const S = this.game.player._rcws;
-        fireMainText.textContent = S && S.reload > 0 ? 'SÚNG MÁY [THAY HỘP]' : `SÚNG MÁY [${S ? S.mag : 200}]`;
+        const P = this.game.player, S = P._rcws, cfg = typeof DroneAir !== 'undefined' && DroneAir.roofCfg ? DroneAir.roofCfg(P) : { mag: 200 };
+        const nm = P.roofWeapon === 'agl' ? 'PHÓNG LỰU' : P.roofWeapon === 'rocket' ? 'ROCKET' : 'SÚNG MÁY';
+        fireMainText.textContent = S && S.reload > 0 ? `${nm} [NẠP]` : `${nm} [${S ? S.mag : cfg.mag}]`;
         fireMainText.style.color = '#c8d6a0';
       } else if (this.game.player.selectedAmmo === 'AP') {
         fireMainText.textContent = `XUYÊN PHÁ [${this.game.player.apAmmoCount}]`;

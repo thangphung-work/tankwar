@@ -1832,7 +1832,8 @@
     HE: { kind: 'blast', charge: 2.2, size: 2.5, fire: 2.4, dirt: 2.4, crater: 26, depth: 1.3, sparks: 2.0, linger: 1.6 },
     AP: { kind: 'kinetic', size: 0.85, fire: 0, dirt: 1.4, crater: 0, sparks: 2.0, linger: 0 },
     CLUSTER: { kind: 'blast', charge: 1.6, size: 1.8, fire: 1.7, dirt: 1.6, crater: 18, depth: 0.85, sparks: 1.4, linger: 0.5 },
-    CLUSTER_SUBMUNITION: { kind: 'bomblet', charge: 0.03, size: 0.65, fire: 1.0, dirt: 0.8, crater: 6.5, depth: 0.4, sparks: 1.3, linger: 0 },
+    // bom con: chớp & cầu lửa to hơn hẳn cỡ thuốc nổ (đầu nổ lõm + vòng zirconi cháy sáng), nhiều tia lửa / mảnh văng
+    CLUSTER_SUBMUNITION: { kind: 'bomblet', charge: 0.03, size: 0.85, fire: 1.45, dirt: 1.1, crater: 6.5, depth: 0.4, sparks: 2.0, linger: 0.15 },
     RPG: { kind: 'heat', charge: 0.7, size: 1.1, fire: 1.3, dirt: 0.7, crater: 8, depth: 0.6, sparks: 1.8, linger: 0.6 },
     // đầu nổ lõm kép ~4-5 kg thuốc nổ (RPG-7 ~0,7 kg): chớp & khói lớn hơn hẳn RPG, hố nông (luồng phụt dồn về một điểm)
     ANTI_TANK_MISSILE: { kind: 'heat', charge: 4.5, size: 1.9, fire: 1.8, dirt: 1.0, crater: 10, depth: 0.65, sparks: 2.4, linger: 0.5 },
@@ -5388,7 +5389,24 @@
     }
 
     // Phóng tên lửa từ ống: chớp nhỏ ở miệng ống, luồng phụt ngược + khói trắng dày phía sau ống
-    missileLaunch(tip, dir, rear) {
+    missileLaunch(tip, dir, rear, opts) {
+      if (opts && opts.soft) {
+        // PHÓNG MỀM (soft launch, kiểu Javelin / Spike — xe có người đứng sau ống): liều đẩy nhỏ hất quả ra khỏi ống, không
+        // lửa phụt ngược; đuôi ống chỉ phì một nhúm khói xám mỏng; động cơ chính mới bùng cháy cách miệng ống vài mét
+        for (let i = 0; i < 5; i++) {
+          const g = rand(0.72, 0.85), back = dir.clone().negate(), sp = rand(4, 12);
+          this.smoke.add({ x: rear.x, y: rear.y, z: rear.z, vx: back.x * sp + rand(-2, 2), vy: rand(0.5, 3), vz: back.z * sp + rand(-2, 2),
+            size: rand(1.2, 2.0), grow: 4, drag: 3, grav: -1, life: rand(0.8, 1.4), alpha: 0.35, fadeIn: 0.02, c0: [g, g, g], cell: 0 });
+        }
+        for (let i = 0; i < 4; i++) {
+          const g = rand(0.8, 0.9), sp = rand(3, 8);
+          this.smoke.add({ x: tip.x, y: tip.y, z: tip.z, vx: dir.x * sp + rand(-2, 2), vy: rand(0.5, 2), vz: dir.z * sp + rand(-2, 2),
+            size: rand(1.5, 2.4), grow: 5, drag: 3, grav: -1, life: rand(0.8, 1.3), alpha: 0.35, fadeIn: 0.02, c0: [g, g, g], cell: 0 });
+        }
+        const ig = { x: tip.x + dir.x * 40, y: tip.y + dir.y * 40, z: tip.z + dir.z * 40 };
+        this.fire.add({ x: ig.x, y: ig.y, z: ig.z, vx: dir.x * 20, vy: dir.y * 20, vz: dir.z * 20, size: 4, grow: 14, life: 0.1, alpha: 1, fadeIn: 0.004, c0: [1, 0.85, 0.6], cell: 3, floor: false });
+        return;
+      }
       this.fire.add({ x: tip.x, y: tip.y, z: tip.z, vx: dir.x * 30, vy: dir.y * 30, vz: dir.z * 30, size: 6, grow: 20, life: 0.08, alpha: 1, fadeIn: 0.004, c0: [1, 0.9, 0.7], cell: 3, floor: false });
       const back = dir.clone().negate();
       for (let i = 0; i < 10; i++) {
@@ -6501,7 +6519,8 @@
         fx = Math.cos(a); fz = Math.sin(a);
       }
       if (custom) sinT = 1;
-      const e = kind === 'gouge' ? 4.5 + 2.5 * (1 - sinT) : 1 + 1.1 * Math.pow(1 - sinT, 1.6);   // độ thuôn dài theo hướng bay
+      // opts.elong: hố thuôn dài cố định (hào xe ủi đào — game.js updateDig)
+      const e = opts.elong || (kind === 'gouge' ? 4.5 + 2.5 * (1 - sinT) : 1 + 1.1 * Math.pow(1 - sinT, 1.6));   // độ thuôn dài theo hướng bay
       const d = da * (0.45 + 0.55 * sinT);                          // bắn là là: hố nông
       const blast = {
         x, z, fx, fz, sinT, ra, d, kind, heavy,

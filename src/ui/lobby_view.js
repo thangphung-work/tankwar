@@ -12,23 +12,23 @@
   const SKILLS = {
     ALL_ROUNDER: [
       { icon: 'stack-2', name: 'Đa dạng đạn', desc: 'Đạn thường, xuyên giáp, nổ mạnh — đổi theo mục tiêu', key: '1·2·3' },
-      { icon: 'cloud', name: 'Thả khói', desc: 'Màn khói che mắt địch ~15 giây', key: 'G' },
+      { icon: 'tool', name: 'Đa dạng trang bị', desc: 'Lắp thêm nóc tháp, động cơ, giáp — tùy lối chơi' },
       { icon: 'leaf', name: 'Núp bụi giảm radar', desc: 'Radar địch phải vào gần mới bắt được' }
     ],
     GATLING: [
-      { icon: 'drone-off', name: 'Phòng không', desc: 'Khóa và bắn hạ drone trinh sát địch', key: 'F' },
-      { icon: 'crosshair', name: 'Máy tính hỏa lực', desc: 'Nòng tự nâng, đón đầu mục tiêu kể cả trên trời', key: 'Tab' },
-      { icon: 'flame', name: 'Đạn cháy 30mm', desc: 'Xe địch trúng đạn bốc cháy', key: '2' }
+      { icon: 'drone-off', name: 'Phòng không', desc: 'Khóa và bắn hạ drone địch', key: 'F' },
+      { icon: 'bulldozer', name: 'Ủi đất che chắn', desc: 'Đắp ụ đất làm công sự chắn đạn cho đội' },
+      { icon: 'flame', name: 'Sát thương tích lũy', desc: 'Xả đạn liên tục, càng bắn lâu địch càng nát', key: '2' }
     ],
     ARTILLERY: [
-      { icon: 'drone', name: 'Drone trinh sát', desc: 'Soi địch cho cả đội, ngắm bắn qua camera drone', key: 'Ctrl' },
+      { icon: 'drone', name: 'Phóng drone', desc: 'Soi địch cho cả đội, ngắm bắn qua camera drone', key: 'Ctrl' },
       { icon: 'chart-arcs', name: 'Tầm bắn xa nhất', desc: 'Bắn cầu vồng qua đồi, xa tới 3.300 m' },
       { icon: 'grain', name: 'Hỏa lực hạng nặng', desc: 'Lựu pháo 155mm, đạn chùm phủ cả vùng', key: '2' }
     ],
     SCOUT: [
-      { icon: 'leaf', name: 'Núp bụi', desc: 'Trong bụi, địch chỉ thấy khi tới thật gần' },
-      { icon: 'rocket', name: 'Tên lửa chống tăng', desc: 'Tự bay tới xe địch xa 2 km', key: '3' },
-      { icon: 'gauge', name: 'Nhanh & nhìn xa', desc: '85 km/h, tầm nhìn xa nhất trận, có radar' }
+      { icon: 'eye', name: 'Trinh sát, du kích', desc: 'Soi địch cho cả đội, đánh nhanh rút gọn' },
+      { icon: 'rocket', name: 'Hỏa lực chống tăng', desc: 'Tên lửa tự bay tới xe địch xa 2 km', key: '3' },
+      { icon: 'gauge', name: 'Tầm nhìn xa, tốc độ cao', desc: '85 km/h, tầm nhìn xa nhất trận, có radar' }
     ]
   };
 
@@ -132,6 +132,10 @@
     window.addEventListener('armory-changed', () => { renderHero(); fitHero(); });
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  // Script nạp sớm (ngay sau phần HTML sảnh) nên vẽ luôn, không chờ cả đống script game phía sau;
+  // tới DOMContentLoaded vẽ lại để hàng trang bị có dữ liệu tài khoản
+  if ($('.hero-info')) {
+    init();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { renderHero(); fitHero(); });
+  } else document.addEventListener('DOMContentLoaded', init);
 })();

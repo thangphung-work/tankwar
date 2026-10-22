@@ -119,6 +119,7 @@ class MatchmakingController {
     this.state = 'SEARCHING';
     this.searchTime = 0;
     this.isHost = true;
+    this.roomHops = 0;
     this.resetRoster();
     this.setSearchView(true);
 
@@ -127,7 +128,7 @@ class MatchmakingController {
     if (typeof NetTransport !== 'undefined') {
       this.netPending = true;
       if (!this.net) this.initNetwork();
-      else this.net.rejoin();
+      else { this.net.prefMap = this.selectedMapType; this.net.rejoin(); }
     } else {
       this.netPending = false;
       this.schedulePrepareMap();
@@ -286,6 +287,7 @@ class MatchmakingController {
     }
 
     this.net = new NetTransport({ room: 'spg_tactical_lobby_v2', name: this.myName });
+    this.net.prefMap = this.selectedMapType;
     window.netTransport = this.net;
 
     const lobbyTypes = ['DISCOVER_ROOM', 'DISCOVER_ROOM_ACK', 'ROOM_FULL', 'ROOM_UPDATE', 'MAP_CHANGE', 'MAP_REQUEST',
@@ -359,10 +361,10 @@ class MatchmakingController {
     let attempts = 0;
     const discover = () => {
       if (this.hasReceivedHostAck || this.isHost || this.state === 'IN_GAME' || !this.net.isOnline) return;
-      if (attempts >= 3) {
+      // 5 lần x 1,5 giây: chủ phòng vừa mở phòng có thể đang dựng bản đồ (đơ vài giây) nên trả lời chậm
+      if (attempts >= 5) {
         // Chủ phòng không phản hồi: chơi độc lập để không bị kẹt ở sảnh
-        console.warn('Chủ phòng không phản hồi. Chuyển sang chế độ chơi độc lập.');
-        this.net.goOffline('host did not answer DISCOVER_ROOM');
+        this.tryNextRoom('host did not answer DISCOVER_ROOM');
         return;
       }
       attempts++;
@@ -379,12 +381,32 @@ class MatchmakingController {
     discover();
   }
 
+  // Phòng hiện tại không nhận (đầy / sắp vào trận / chủ phòng im lặng): sang phòng chờ khác thay vì chơi một mình
+  tryNextRoom(reason) {
+    if (!this.net) return;
+    clearTimeout(this.discoverTimer);
+    if (this.net.mode === 'ws' && this.net.isOnline && (this.roomHops || 0) < 3) {
+      this.roomHops = (this.roomHops || 0) + 1;
+      this.netPending = true;
+      this.hasReceivedHostAck = false;
+      this.isHost = true;
+      this.resetRoster();
+      this.renderLobby();
+      this.net.rejoin(this.net.roomName);
+      return;
+    }
+    console.warn('Không vào được phòng nào. Chuyển sang chế độ chơi độc lập.');
+    this.net.goOffline(reason);
+  }
+
   // Trở thành chủ phòng (mở phòng mới, hoặc được bầu lại khi chủ phòng cũ rời đi)
   becomeHost() {
     this.isHost = true;
     this.netPending = false;
     this.hasReceivedHostAck = true;
     clearTimeout(this.discoverTimer);
+    // Chủ phòng cũ có thể đã khóa phòng (rời mạng đúng lúc đếm ngược) -> mở lại cho người mới vào
+    if (this.net && this.net.isOnline) this.net.lockRoom(false);
     // Giải phóng các slot của người chơi không còn trong phòng
     const present = (id) => id === this.myPeerId || (this.net && this.net.peers.has(id));
     this.slots.forEach(s => {
@@ -531,6 +553,7 @@ class MatchmakingController {
       this.selectedMapType = mapType;
     }
     this.mapSeed = seed;
+    if (this.net && this.isHost && !this.netPending) this.net.setMap(this.selectedMapType);
     this.setMapSelectionUI(this.selectedMapType);
     this.schedulePrepareMap();
   }
@@ -615,7 +638,7 @@ class MatchmakingController {
     if (this.overlay) this.overlay.classList.remove('hidden');
     this.music('lobby');
     this.renderLobby();
-    this.prepareSelectedMap();
+    // Không dựng bản đồ ở sảnh: vào phòng của người khác sẽ phải dựng lại -> dựng khi đã chốt phòng
   }
 
   // Chủ phòng phát lệnh xuất trận cho mọi máy
@@ -692,7 +715,7 @@ class MatchmakingController {
 
     // 2.b. Phòng đã đủ 20 người thật
     else if (msg.type === 'ROOM_FULL') {
-      if (!this.isHost && this.net) this.net.goOffline('room full');
+      if (!this.isHost && this.net && fromHost && this.state !== 'IN_GAME' && this.state !== 'IDLE') this.tryNextRoom('room full');
     }
 
     // 3. Đồng bộ danh sách slot, loại bản đồ và hạt giống từ chủ phòng
@@ -786,9 +809,10 @@ class MatchmakingController {
         if (this.state === 'SEARCHING' && this.searchTime >= this.maxWaitTime) this.state = 'FILLING_BOTS';
 
         if (this.state === 'FILLING_BOTS') {
-          const emptySlot = this.slots.find(slot => !slot.isHuman && !slot.peerId && !slot.ready);
-          if (emptySlot) {
-            this.fillBotSlot(emptySlot);
+          // Lấp nhanh: tối đa 5 bot mỗi nhịp (20 chỗ ~1 giây thay vì ~5 giây)
+          const empty = this.slots.filter(slot => !slot.isHuman && !slot.peerId && !slot.ready).slice(0, 5);
+          if (empty.length) {
+            empty.forEach(slot => this.fillBotSlot(slot));
             this.renderLobby();
             this.broadcastRoomUpdate();
           }

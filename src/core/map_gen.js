@@ -5,14 +5,14 @@
  *
  * Kết quả: lưới độ cao + mặt phủ (đường / nước / bê tông), mạng đường A* bám địa hình (có ổ gà, gợn sóng),
  * sông hồ, vị trí boong-ke, nhà cửa, cây, bụi, đá, cầu và mặt trời theo giờ trong ngày.
- * Quy ước tọa độ giống game: bản đồ SIZE x SIZE (8100) tâm tại gốc, phe XANH ở z dương, phe ĐỎ ở z âm.
+ * Quy ước tọa độ giống game: bản đồ SIZE x SIZE (16200) tâm tại gốc, phe XANH ở z dương, phe ĐỎ ở z âm.
  */
 const MapGen = (() => {
-  const SIZE = 8100;
-  const RES = 504;                 // số ô lưới mỗi cạnh (~16 đơn vị / ô)
+  const SIZE = 16200;
+  const RES = 672;                 // số ô lưới mỗi cạnh (~24 đơn vị / ô: bản đồ gấp đôi, giữ số đỉnh vừa sức máy)
   const HALF = SIZE / 2;
   const CELL = SIZE / RES;
-  const OUTER_EXT = 13200;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
+  const OUTER_EXT = 17400;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
   // Bố cục gốc thiết kế cho bản đồ 3600: K giãn khoảng cách giữa các điểm chiến thuật, AREA nhân số lượng vật thể
   // (giữ mật độ cây / đá / làng như cũ); kích thước từng vật thể, đồi, đường... giữ nguyên
   const K = SIZE / 3600, AREA = K * K;
@@ -63,7 +63,7 @@ const MapGen = (() => {
     bio: { hu: 300, hv: 470, back: 50 },
     // trận địa tên lửa phòng không
     sam: { hu: 320, hv: 520, back: 60 },
-    // trạm biến áp / phát điện cao thế
+    // trung tâm năng lượng nguyên tử (lò nhiệt hạch tokamak)
     power: { hu: 320, hv: 520, back: 60 },
     // đài điều khiển radar vệ tinh
     radar: { hu: 320, hv: 520, back: 60 }
@@ -1513,12 +1513,11 @@ const MapGen = (() => {
     return h;
   }
 
-  // ===== TRẠM BIẾN ÁP / PHÁT ĐIỆN CAO THẾ (thành phố) =====
+  // ===== TRUNG TÂM NĂNG LƯỢNG NGUYÊN TỬ (thành phố) =====
   function detailPower(L) {
-    // trạm biến áp 500/220 kV ngoài trời (AIS) + khối phát điện tua-bin khí chu trình đơn: chỉ đắp thêm bờ bao đất
-    // quanh bồn dầu nhiên liệu của tua-bin (đê ngăn tràn tròn: tâm f/r, bán kính đỉnh R, nửa rộng chân w, cao h 1.6 m).
-    // Mương cáp / hố dầu MBA dựng bằng bê tông nổi trên nền sỏi (không khoét địa hình: mặt sân phủ kín)
-    L.bund = { f: 88, r: 395, R: 34, w: 12, h: 13 };
+    // tổ hợp lò nhiệt hạch: mọi nhà dựng nổi trên sân bê tông; chỉ đắp thêm đê đất tròn quanh bồn nước chữa cháy
+    // (tâm f/r, bán kính đỉnh R, nửa rộng chân w, cao h 1.6 m)
+    L.bund = { f: 190, r: 412, R: 14, w: 6, h: 9 };
   }
   function moundPower(L, f, r) {
     const B = L.bund, d = Math.hypot(f - B.f, r - B.r);

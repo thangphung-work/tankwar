@@ -4,7 +4,8 @@
  *
  * Vai trò: xe 6 nòng bắn HẠ drone từ xa (có radar); xe tăng chỉ TỰ VỆ — phá sóng, không phá hủy drone:
  *  - [4] / nhấp ô PHÁ SÓNG: chọn máy phá sóng làm vũ khí (như súng máy cũ; [4] lần nữa / [1]-[3] về pháo chính).
- *    Ngắm tâm kính (kính ngóc lên trời được) vào drone, GIỮ Space / chuột trái mới phát chùm; nhả là tắt.
+ *    Khóa drone địch (Tab / nhấp vào drone / ngắm tâm kính trúng drone rồi bấm), GIỮ Space / chuột trái mới phát chùm,
+ *    chưa khóa hoặc drone còn ngoài tầm (gần hơn radar phòng không 6 nòng) thì không phát; nhả là tắt.
  *    Pin: phát liên tục tối đa ~12 s, sạc lại đầy ~30 s; cần >= 25% mới bắt đầu phát được
  *  - đầu phát mảng ăng-ten tấm trên bệ xoay bám tâm kính: chùm hình nón hẹp ±15°; drone (mọi phe, kể cả đồng đội) nằm
  *    trong chùm, cách ~950: hình camera nhiễu sọc, giữ trong chùm ~2.5 s là mất liên lạc điều khiển -> drone tự bay về
@@ -75,15 +76,17 @@ const EWJammer = (() => {
       return best;
     },
 
-    // [4] máy phá sóng + nhấp đúng drone địch (góc nhìn ngoài): đầu phát khóa bám drone đó
+    jamRange() { return C.R; },
+
+    // drone đang khóa bằng cơ chế khóa phòng không chung (DroneAir.setAirAim)
+    jamLocked() { const A = this._airAim; return A && A.kind === 'drone' ? A.dr : null; },
+
+    // [4] máy phá sóng: khóa drone (Tab / nhấp vào drone / tâm kính sượt drone) — như xe phòng không, kính lia bám drone
     jamLockDrone(dr) {
       const P = this.player;
-      if (!P || !P.ewActive || !dr) return;
-      this.jamState(P).lockDr = dr;
-      const d = Math.round(Math.hypot(dr.x - P.x, dr.y - (P.y || 0), dr.z - P.z));
-      this.addCombatLog(`[[target]] ĐẦU PHÁT BÁM DRONE ĐỊCH // CỰ LY ${d}M${d > C.R ? ' (ngoài tầm chùm ~' + C.R + 'M — chờ nó tới gần)' : ''} — giữ Space để phát chùm`, 'tip');
-      const SE = window.soundEngine;
-      if (SE && SE.playTargetLockSound) SE.playTargetLockSound();
+      if (!P || !P.ewActive || !dr || !this.setAirAim) return;
+      const S = this._sight;
+      this.setAirAim({ kind: 'drone', dr, hard: !!(S && !S.arty) });
     },
 
     // Hướng đầu phát muốn chĩa. Người chơi: drone đã nhấp khóa, không thì drone địch gần hướng ngắm (tự bám), không có
@@ -94,8 +97,7 @@ const EWJammer = (() => {
         const S = this._sight, sight = !!(S && !S.arty && S.aimPitch !== undefined), J = this.jamState(u);
         const baseAz = sight ? (S.aimYaw !== undefined ? S.aimYaw : S.yaw) : (this._camYaw !== undefined ? this._camYaw : this.jamTurretYaw(u));
         const baseEl = sight ? S.aimPitch : 0.35;
-        let dr = J.lockDr;
-        if (dr && (!this.droneIsAirborne || !this.droneIsAirborne(dr) || !dr.seen || Math.hypot(dr.x - u.x, dr.z - u.z) > C.R * 2)) dr = J.lockDr = null;
+        let dr = J.lockDr = this.jamLocked();
         if (!dr) dr = this.jamAssistDrone(u, baseAz, baseEl, sight);
         J.track = dr || null;
         if (dr) return this.jamAimAt(u, dr);
@@ -128,12 +130,12 @@ const EWJammer = (() => {
 
     // xe tăng có máy phá sóng còn dùng được (chưa bị bắn văng)
     canJam(u) {
-      return !!(u && u.tankType === 'ALL_ROUNDER' && u.jammer && !u.isDead && !(u.dmg && u.dmg.lost && u.dmg.lost.has('jammer')));
+      return !!(u && u.jammer && !u.isDead && !(u.dmg && u.dmg.lost && u.dmg.lost.has('jammer')));
     },
 
     // xe u đang phát sóng (xe máy mình điều khiển: theo trạng thái; xe máy khác: theo gói mạng còn hạn)
     jamming(u) {
-      if (!u || u.isDead || u.tankType !== 'ALL_ROUNDER') return false;
+      if (!u || u.isDead || !u.jammer) return false;
       const J = u._jam;
       if (!J) return false;
       if (J.remoteUntil !== undefined && !this.jamLocal(u)) return J.remoteUntil > nowS();
@@ -150,7 +152,7 @@ const EWJammer = (() => {
     // [4] / nhấp ô PHÁ SÓNG: chọn máy phá sóng làm vũ khí (Space / chuột trái giữ để phát), bấm lại để về pháo chính
     selectJammer(on) {
       const P = this.player;
-      if (!P || P.isDead || P.tankType !== 'ALL_ROUNDER' || !P.jammer) return;
+      if (!P || P.isDead || !P.jammer) return;
       const want = on === undefined ? !P.ewActive : !!on;
       if (want === !!P.ewActive) return;
       if (want && !this.canJam(P)) { this.addCombatLog('[[alert-triangle]] Máy phá sóng trên nóc tháp đã bị bắn văng — không phá sóng được nữa', 'alert'); return; }
@@ -163,9 +165,20 @@ const EWJammer = (() => {
           S.aimPitch = Math.max(S.aimPitch || 0, 0.45);
           if (S.vPitch !== undefined) S.vPitch = Math.max(S.vPitch, S.aimPitch - 0.25);
         }
-        this.addCombatLog(`[[antenna-bars-5]] MÁY PHÁ SÓNG — chùm định hướng ±15°, tầm ~${C.R}: ngắm tâm kính vào drone (gần là đầu phát tự bám; góc nhìn ngoài: nhấp vào drone), GIỮ Space / chuột trái để phát, giữ drone trong chùm ~${C.LINK} s là nó mất liên lạc, bị ép bay về (cả drone phe mình). Đang phát: xe bị địch dò ra vị trí. Pin ${Math.round(J.e * 100)}% · [4] về pháo chính`, 'tip');
+        // như xe phòng không: thấy drone địch trong tầm chùm thì khóa luôn
+        if (this.airDroneList && this.droneIsAirborne) {
+          let best = null, bd = C.R * 1.3;
+          for (const d of this.airDroneList()) {
+            if (d.team === P.team || d.key === 'own' || !d.seen || !this.droneIsAirborne(d)) continue;
+            const r = Math.hypot(d.x - P.x, d.y - (P.y || 0), d.z - P.z);
+            if (r < bd) { bd = r; best = d; }
+          }
+          if (best) this.jamLockDrone(best);
+        }
+        this.addCombatLog(`[[antenna-bars-5]] MÁY PHÁ SÓNG — chùm định hướng ±15°, tầm ~${C.R}: KHÓA drone địch (Tab / nhấp vào drone) rồi GIỮ Space / chuột trái để phát — chưa khóa thì không phát, giữ drone trong chùm ~${C.LINK} s là nó mất liên lạc, bị ép bay về (cả drone phe mình). Đang phát: xe bị địch dò ra vị trí. Pin ${Math.round(J.e * 100)}% · [4] về pháo chính`, 'tip');
       } else {
         J.on = false; J.lockDr = null; J.track = null;
+        if (this._airAim && this.clearAirAim) this.clearAirAim();
         if (S) { S.aimPitch = Math.min(S.aimPitch, 0.08); if (S.vPitch !== undefined) S.vPitch = Math.min(S.vPitch, 0.08); }
         this.addCombatLog('[[target-arrow]] Về pháo chính 120mm', 'tip');
       }
@@ -176,10 +189,35 @@ const EWJammer = (() => {
     },
     toggleJammer() { this.selectJammer(); },
 
-    // Người chơi: đang chọn máy phá sóng + giữ Space / chuột trái -> phát (cần đủ pin mới bắt đầu được)
+    // [Tab] khi cầm máy phá sóng: khóa drone địch (đang thấy, đang bay) gần nhất; bấm tiếp đổi sang drone kế tiếp
+    jamCycleDrone() {
+      const P = this.player;
+      if (!P || !P.ewActive || !this.airDroneList || !this.droneIsAirborne) return;
+      const list = this.airDroneList()
+        .filter(d => d.team !== P.team && d.key !== 'own' && d.seen && this.droneIsAirborne(d) && Math.hypot(d.x - P.x, d.z - P.z) <= C.R * 2)
+        .sort((a, b) => Math.hypot(a.x - P.x, a.z - P.z) - Math.hypot(b.x - P.x, b.z - P.z));
+      if (!list.length) { this.addCombatLog('[[drone-off]] Không thấy drone địch nào quanh xe để khóa', 'alert'); return; }
+      const i = list.indexOf(this.jamLocked());
+      this.jamLockDrone(list[(i + 1) % list.length]);
+    },
+
+    // Người chơi: đang chọn máy phá sóng + giữ Space / chuột trái -> phát, nhưng chỉ khi đã KHÓA drone địch (như xe 6 nòng)
+    // và drone đó đã vào tầm chùm. Chưa khóa mà đầu phát đang tự bám drone trong kính thì bấm là khóa luôn drone đó
     playerJammer(u, J) {
       const held = !!(u.ewActive && this.keys && (this.keys.Space || this.isPointerFiring));
-      if (!held) { J.on = false; J.warned = false; return; }
+      if (!held) { J.on = false; J.warned = false; J.noLockT = 0; return; }
+      if (!this.jamLocked() && J.track) this.jamLockDrone(J.track);
+      const dr = J.lockDr = this.jamLocked();
+      if (!dr) {
+        J.on = false;
+        if (!J.noLockT || nowS() - J.noLockT > 2) { J.noLockT = nowS(); this.addCombatLog('[[target-off]] Chưa khóa drone — bấm Tab / nhấp vào drone địch để khóa rồi mới phát chùm được', 'alert'); }
+        return;
+      }
+      if (Math.hypot(dr.x - u.x, (dr.y || 0) - (u.y || 0), dr.z - u.z) > C.R) {
+        J.on = false;
+        if (!J.noLockT || nowS() - J.noLockT > 2) { J.noLockT = nowS(); this.addCombatLog(`[[antenna-bars-off]] Drone khóa còn ngoài tầm phá sóng ~${C.R}M — chờ nó tới gần`, 'alert'); }
+        return;
+      }
       if (J.on || !this.canJam(u)) return;
       if (J.e >= C.MIN) { J.on = true; return; }
       if (!J.warned) {
@@ -194,7 +232,7 @@ const EWJammer = (() => {
       if (!(dt > 0) || !this.units) return;
       const NS = this.netSync && !this.netSync.detached ? this.netSync : null;
       for (const u of this.units) {
-        if (u.tankType !== 'ALL_ROUNDER' || !u.jammer) continue;
+        if (!u.jammer) continue;
         const J = this.jamState(u);
         if (this.jamLocal(u)) {
           if (!this.canJam(u)) J.on = false;
@@ -329,6 +367,7 @@ const EWJammer = (() => {
           g.translate(0, -L / 2, 0); g.rotateX(Math.PI / 2);   // đỉnh nón tại đầu phát, mở về phía -Z
           JM.beam = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x8fdcff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
           JM.beam.renderOrder = 3; JM.beam.frustumCulled = false;
+          if (JM.beamScale) JM.beam.scale.setScalar(JM.beamScale);   // đầu phát nằm trên chân đế đã phóng to
           JM.tilt.add(JM.beam);
         }
         const want = on ? (mine ? 0.06 : 0.045) + 0.02 * Math.sin(t * 9) : mine && u.ewActive ? 0.018 : 0;
@@ -416,7 +455,7 @@ const EWJammer = (() => {
       G.onNetAAmg = function (d, from, NS) {
         if (d && d.j !== undefined) {
           const u = NS && NS.byNetId ? NS.byNetId[d.i] : null;
-          if (!u || u === this.player || NS.owns(u) || NS.ownerOf(u) !== from || u.tankType !== 'ALL_ROUNDER') return;
+          if (!u || u === this.player || NS.owns(u) || NS.ownerOf(u) !== from || !u.jammer) return;
           const J = this.jamState(u);
           J.remoteUntil = d.j ? nowS() + C.TTL : 0;
           if (d.a !== undefined) J.az = d.a / 100;

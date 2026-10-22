@@ -13,7 +13,7 @@
  */
 
 (function () {
-  if (typeof TankModelBuilder === 'undefined' || typeof VehicleKit === 'undefined') return;
+  if (typeof VehicleKit === 'undefined') return;
 
   const TRACK_X = 12.6;
   const TRACK_W = 5.6;
@@ -28,9 +28,11 @@
   const HULL_HALF_W = 15.2;
   const ROOF_Y = 14.2;
   const SPONSON_Y = 9.6;
-  const GLACIS_SLOPE = (ROOF_Y - SPONSON_Y) / (30.6 - 14.5);
+  // Mũi thân xe: khối giáp đúc dày dựng cao (mặt trước gần đứng cao ~0.35 m trên đường sườn), giáp mũi trên thoải lên nóc
+  const NOSE_Z = -31.6, NOSE_Y = 12.2;
+  const GLACIS_SLOPE = (ROOF_Y - NOSE_Y) / (-14.5 - NOSE_Z);
   const GLACIS_ANGLE = Math.atan(GLACIS_SLOPE);
-  const glacisY = (z) => SPONSON_Y + (z + 30.6) * GLACIS_SLOPE;
+  const glacisY = (z) => NOSE_Y + (z - NOSE_Z) * GLACIS_SLOPE;
   const RADAR_RPS = 1.0;   // radar cảnh giới phòng không quay 60 vòng/phút
 
   function buildHailstorm(builder) {
@@ -60,6 +62,14 @@
     unit.strobeLight = null;
     unit.radarDish = null;
     unit.rcwsTurret = null;
+
+    // Ô MŨI XE (lưỡi ủi mặc định / khiên chữ V) & ô NÓC THÁP (chân đế mô-đun sau nắp tháp bên phải: súng phóng lựu,
+    // radar, máy phá khóa radar — roof_mounts.js; để trống = không gắn gì). Equipment.equip thay theo bộ đồ
+    const frontCtx = { chassis, M, unit, wear };
+    unit.mountFront = (id) => mountFront(frontCtx, id);
+    unit.mountFront('dozer');
+    const roofCtx = { parent: unit.turretGroup, seat: [6.6, 5.6, 5.8], yBase: ROOF_Y + 5.6, M, P: M.paint, D: M.dark, unit, rnd };
+    unit.mountRoof = (id) => { if (window.RoofMounts) RoofMounts.mount(roofCtx, id); };
 
     let lastYaw = null;
     let scanTime = rnd() * 10;
@@ -92,6 +102,125 @@
     };
 
     return { hullW: HULL_HALF_W * 2 };
+  }
+
+  // ===========================================================================
+  // Ô MŨI XE: LƯỠI ỦI (mặc định) HOẶC KHIÊN GIÁP CHỮ V — cụm riêng trước mũi xe, Equipment.equip gọi unit.mountFront(id).
+  // Dựng với PartBatch.registry để tag hư hại (dozer / appliqueVSL / appliqueVSR) chạy như bộ phận dựng cùng thân xe
+  // ===========================================================================
+  function mountFront(ctx, id) {
+    const u = ctx.unit;
+    if (u.frontId === id) return;
+    if (u._frontGroup) {
+      if (u._frontGroup.parent) u._frontGroup.parent.remove(u._frontGroup);
+      u._frontGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      for (const t of u._frontTags || []) { if (u.partRegistry) delete u.partRegistry[t]; if (u.partGroups) delete u.partGroups[t]; }
+    }
+    u._frontGroup = null; u._frontTags = []; u.frontId = id;
+    const build = id === 'dozer' ? buildDozer : id === 'vshield' ? buildVShield : null;
+    if (!build) return;
+    const g = new THREE.Group();
+    ctx.chassis.add(g);
+    const hb = new VehicleKit.PartBatch();
+    const PB = VehicleKit.PartBatch, prev = PB.registry;
+    PB.registry = u.partRegistry || (u.partRegistry = {});
+    try { build(hb, ctx); hb.build(g, [0, 5, -34]); } finally { PB.registry = prev; }
+    u._frontGroup = g;
+    u._frontTags = id === 'dozer' ? ['dozer'] : ['appliqueVSL', 'appliqueVSR'];
+    if (id === 'dozer') VehicleKit.registerPartGroup(u, 'dozer', g);
+  }
+
+  // Lưỡi ủi thủy lực phía trước (mặt lõm, lưỡi cắt thép, gân gia cường)
+  function buildDozer(hb, ctx) {
+    const { M, wear } = ctx, D = M.dark, J = wear.jitter;
+    hb.setTag('dozer');
+    const front = [], back = [];
+    for (let i = 0; i <= 8; i++) {
+      const y = 1.0 + i * (7.6 / 8);
+      const k = (y - 4.8) / 3.8;
+      const z = -36.8 + 1.5 * (1 - k * k);
+      front.push([z, y]);
+      back.unshift([z + 0.6, y]);
+    }
+    hb.add(VehicleKit.sideProfile(front.concat(back), 31.6, 0.08), M.paintDusty);
+    // Lưỡi cắt thép thay rời từng đoạn bắt bu-lông: mòn không đều, một đoạn mẻ cụt; mặt lưỡi bị đá cào trơ thép
+    for (let k = 0; k < 4; k++) {
+      const chip = k === wear.edgeChip;
+      const h = chip ? 0.28 : 0.5 - Math.abs(J()) * 0.12;
+      hb.box(7.8, h, 0.8, M.steel, [-11.85 + k * 7.9, 0.9 + h / 2 + (chip ? 0.22 : 0), -36.55 + J() * 0.08], [J() * 0.04, 0, J() * 0.015]);
+      for (const dx of [-2.6, 0, 2.6]) hb.cyl(0.15, 0.15, 0.16, 6, D, [-11.85 + k * 7.9 + dx, 1.22, -37.0], 'z');
+    }
+    for (let k = 0; k < 7; k++) {
+      const y = 2.0 + Math.abs(J()) * 2.4, x = J() * 26;
+      const kk = (y - 4.8) / 3.8;
+      hb.box(0.12 + Math.abs(J()) * 0.2, 0.8 + Math.abs(J()) * 1.4, 0.05, M.steel, [x, y, -36.85 + 1.5 * (1 - kk * kk)], [Math.atan(-0.79 * kk), 0, J() * 0.5]);
+    }
+    // Tấm thép vá hàn ngoài thực địa trên mặt lưỡi (cắt tay, đặt lệch)
+    {
+      const y = 6.0, kk = (y - 4.8) / 3.8, zf = -36.8 + 1.5 * (1 - kk * kk) - 0.12;
+      const rot = [Math.atan(-0.79 * kk), 0, 0.06 + J() * 0.06];
+      const F = frameAt([J() * 18, y, zf], rot);
+      hb.box(3.4, 1.8, 0.16, M.paint, F(0, 0, 0), rot);
+      const c = [[-1.75, -0.95], [1.72, -0.9], [1.78, 0.92], [-1.7, 0.98]];
+      for (let q = 0; q < 4; q++) hb.weld(F(c[q][0], c[q][1], -0.08), F(c[(q + 1) % 4][0], c[(q + 1) % 4][1], -0.08), M.paintDusty, 0.1);
+    }
+    hb.box(31.8, 0.35, 0.9, M.paintDusty, [0, 8.7, -36.5]);
+    for (const x of [-13, -6.5, 0, 6.5, 13]) hb.box(0.45, 6.4, 0.9, M.paintDusty, [x, 4.8, -35.0]);
+    for (const s of [-1, 1]) {
+      // Tay đẩy lưỡi ủi + giá bản lề
+      hb.beam([s * 8.4, 3.8, -34.5], [s * 8.4, 5.6, -28.2], 1.2, 1.2, M.paintDusty);
+      hb.box(2.0, 1.6, 1.4, D, [s * 8.4, 5.6, -28.4]);
+      // Xi-lanh thủy lực: vỏ sơn + cần piston thép bóng
+      const p0 = [s * 5.0, 9.0, -30.2], p1 = [s * 5.0, 7.4, -34.9];
+      const mid = [s * 5.0, 8.2, -32.6];
+      hb.strut(p0, mid, 0.62, M.paintDusty, 10);
+      hb.strut(mid, p1, 0.3, M.steel, 8);
+      hb.box(1.2, 1.0, 1.0, D, [s * 5.0, 9.0, -30.0]);
+    }
+    hb.setTag(null);
+  }
+
+  // Khiên giáp chữ V: 2 tấm thép cán dày (~28 cm quy đổi) ghép mũi nhọn trước mũi xe, ngả ra sau, cao tới gần ngang nóc
+  // giáp mũi — khối thép trơn liền, mép vát lớn, mép trên cuộn tròn dày, mũi là khối thép đúc bo; gân & tay đỡ giấu mặt
+  // trong. Dấu thời gian ít mà đậm: vết đạn nảy cày rãnh trần thép, một mảng muội cháy, bùn bám chân, một tấm vá hàn đè
+  // lên lỗ thủng cũ. Tag appliqueVSL / appliqueVSR: tấm giáp phân đoạn — bị bắn mòn dần rồi bung (vehicle_damage.js),
+  // còn tấm nào thì mặt trước còn được che (Equipment.vshieldUp)
+  function buildVShield(hb, ctx) {
+    const { M, wear } = ctx, P = M.paint, D = M.dark, J = wear.jitter;
+    const NOSE = [0, -40.2], BACK_X = 15.6, BACK_Z = -33.4, Y0 = 1.2, Y1 = 12.4, H = Y1 - Y0, LEAN = 0.24, T = 2.2;
+    const len = Math.hypot(BACK_X, BACK_Z - NOSE[1]), yaw = Math.atan2(BACK_Z - NOSE[1], BACK_X);
+    for (const s of [-1, 1]) {
+      hb.setTag(s < 0 ? 'appliqueVSL' : 'appliqueVSR');
+      const rot = [LEAN, -s * yaw, 0, 'YXZ'];   // xoay Y dương đưa đầu +x ra trước -> tấm phải phải xoay âm để đuôi lùi về sau
+      const F = frameAt([s * BACK_X / 2, Y0 + H / 2, (NOSE[1] + BACK_Z) / 2], rot);
+      hb.box(len, H, T, P, F(0, 0, 0), rot);          // tấm thép chính (vát mép lớn)
+      hb.cyl(T * 0.55, T * 0.55, len - 0.4, 14, P, F(0, H / 2 - 0.1, 0.05), 'x', rot);     // mép trên cuộn tròn dày
+      hb.box(len - 0.6, 0.9, T + 0.3, P, F(0, -H / 2 + 0.45, 0.05), rot);   // chân tấm dày
+      // gân đứng & tay đỡ hàn vào thân — mặt trong, nhìn trước không thấy
+      for (let k = 0; k < 3; k++) hb.box(0.6, H * 0.8, 0.5, D, F(-len / 2 + 3 + k * (len - 6) / 2, -0.4, T / 2 + 0.25), rot);
+      for (const k of [0.3, 0.75]) {
+        const p0 = F(-len / 2 + k * len, -H * 0.1, T / 2 + 0.4);
+        hb.beam(p0, [p0[0] * 0.88, 7.0, -31.0], 1.0, 1.0, D);
+      }
+      hb.box(len * 0.94, 0.9, 0.08, M.paintDusty, F(0, -H / 2 + 0.6, -T / 2 - 0.02), rot);   // bùn bám chân tấm
+      // vết đạn nảy cày rãnh (thép trần) + một mảng muội cháy
+      for (let k = 0; k < 2; k++) hb.box(1.0 + Math.abs(J()) * 1.4, 0.16, 0.06, M.steel, F(J() * len * 0.7, J() * H * 0.5, -T / 2 - 0.02), [rot[0], rot[1], J() * 0.7, 'YXZ']);
+      hb.box(2.8, 1.8, 0.05, M.soot || D, F(J() * len * 0.5, J() * H * 0.3, -T / 2 - 0.03), rot);
+    }
+    // tấm vá hàn đè lỗ thủng cũ trên một tấm (ngẫu nhiên)
+    {
+      const s = J() > 0 ? 1 : -1, rot = [LEAN, -s * yaw, 0.06, 'YXZ'];
+      const F = frameAt([s * BACK_X * 0.5, Y0 + H * 0.5, NOSE[1] + (BACK_Z - NOSE[1]) * 0.5], rot);
+      hb.setTag(s < 0 ? 'appliqueVSL' : 'appliqueVSR');
+      hb.box(2.8, 2.2, 0.3, P, F(0, 0, -T / 2 - 0.12), rot);
+      const c = [[-1.4, -1.1], [1.4, -1.05], [1.42, 1.1], [-1.38, 1.12]];
+      for (let q = 0; q < 4; q++) hb.weld(F(c[q][0], c[q][1], -T / 2 - 0.28), F(c[(q + 1) % 4][0], c[(q + 1) % 4][1], -T / 2 - 0.28), M.paintDusty, 0.1);
+    }
+    // mũi: khối thép đúc bo tròn liền hai tấm, khe nhìn của lái xe
+    hb.setTag('appliqueVSL');
+    hb.cyl(1.9, 2.2, H, 10, P, [NOSE[0], Y0 + H / 2, NOSE[1] + 1.2], 'y', [LEAN, 0, 0]);
+    hb.box(1.5, 0.22, 0.5, D, [0, Y1 - 2.0, NOSE[1] - 0.25 + H * 0.22], [LEAN, 0, 0]);
+    hb.setTag(null);
   }
 
   // ---------------------------------------------------------------------------
@@ -154,15 +283,21 @@
     const P = M.paint, D = M.dark;
     const J = wear.jitter;
 
-    // Thân trên: giáp mũi dài thoải -> nóc phẳng -> đuôi vát
+    // Thân trên: mặt mũi đúc dày gần đứng -> giáp mũi trên thoải -> nóc phẳng -> đuôi vát. Mép vát lớn (thép đúc mài bo)
     hb.add(VehicleKit.sideProfile([
-      [-30.6, SPONSON_Y], [-14.5, ROOF_Y], [27.8, ROOF_Y], [29.4, 13.2], [29.4, SPONSON_Y]
-    ], HULL_HALF_W * 2, 0.22), P);
-
-    // Bồn thân dưới giữa hai dải xích
+      [NOSE_Z + 0.3, SPONSON_Y - 0.4], [NOSE_Z - 0.5, NOSE_Y - 1.4], [NOSE_Z, NOSE_Y], [-14.5, ROOF_Y],
+      [27.8, ROOF_Y], [29.4, 13.2], [29.4, SPONSON_Y]
+    ], HULL_HALF_W * 2, 0.55), P);
+    // Gờ mũi: dải thép đúc bo tròn chạy ngang mép trên khối mũi (đường gãy giữa mặt mũi & giáp mũi trên)
+    hb.cyl(0.75, 0.75, HULL_HALF_W * 2 - 0.6, 14, P, [0, NOSE_Y - 0.35, NOSE_Z + 0.15], 'x');
+    // Bồn thân dưới giữa hai dải xích: tấm mũi dưới dốc lên gặp khối mũi
     hb.add(VehicleKit.sideProfile([
-      [-30.6, 9.8], [-27.4, 4.3], [27.8, 4.3], [29.2, 6.2], [29.2, 9.8]
-    ], 18.8, 0.2), M.paintDusty);
+      [NOSE_Z + 0.3, SPONSON_Y - 0.2], [-27.4, 4.3], [27.8, 4.3], [29.2, 6.2], [29.2, 9.8]
+    ], 18.8, 0.3), M.paintDusty);
+    // Vết đời trên khối mũi: 2 vết đạn nảy cày rãnh, muội loang, bùn bám chân mũi
+    for (let k = 0; k < 2; k++) hb.box(1.2 + Math.abs(J()) * 1.4, 0.14, 0.06, M.steel, [J() * 20, NOSE_Y - 1.2 + J() * 1.2, NOSE_Z - 0.62], [0.06, 0, J() * 0.5]);
+    hb.box(3.2, 1.2, 0.05, M.soot || D, [J() * 16, NOSE_Y - 1.0, NOSE_Z - 0.6], [0.06, 0, 0]);
+    hb.box(18.4, 0.7, 0.08, M.paintDusty, [0, SPONSON_Y - 0.1, NOSE_Z + 0.05], [0.25, 0, 0]);
 
     // Mắt xích dự phòng treo trên giáp mũi (vừa là giáp bổ sung). Một ô trống — mắt đã tháo ra thay ngoài thực địa
     // chưa bù lại; các mắt còn lại treo lệch, xô nghiêng theo thanh giữ
@@ -435,52 +570,7 @@
       hb.box(0.6, 0.4, 55.8, P, [s * 15.75, 10.45, -1.3]);
     }
 
-    // Lưỡi ủi thủy lực phía trước (mặt lõm, lưỡi cắt thép, gân gia cường)
-    hb.setTag('dozer');
-    const front = [], back = [];
-    for (let i = 0; i <= 8; i++) {
-      const y = 1.0 + i * (7.6 / 8);
-      const k = (y - 4.8) / 3.8;
-      const z = -36.8 + 1.5 * (1 - k * k);
-      front.push([z, y]);
-      back.unshift([z + 0.6, y]);
-    }
-    hb.add(VehicleKit.sideProfile(front.concat(back), 31.6, 0.08), M.paintDusty);
-    // Lưỡi cắt thép thay rời từng đoạn bắt bu-lông: mòn không đều, một đoạn mẻ cụt; mặt lưỡi bị đá cào trơ thép
-    for (let k = 0; k < 4; k++) {
-      const chip = k === wear.edgeChip;
-      const h = chip ? 0.28 : 0.5 - Math.abs(J()) * 0.12;
-      hb.box(7.8, h, 0.8, M.steel, [-11.85 + k * 7.9, 0.9 + h / 2 + (chip ? 0.22 : 0), -36.55 + J() * 0.08], [J() * 0.04, 0, J() * 0.015]);
-      for (const dx of [-2.6, 0, 2.6]) hb.cyl(0.15, 0.15, 0.16, 6, D, [-11.85 + k * 7.9 + dx, 1.22, -37.0], 'z');
-    }
-    for (let k = 0; k < 7; k++) {
-      const y = 2.0 + Math.abs(J()) * 2.4, x = J() * 26;
-      const kk = (y - 4.8) / 3.8;
-      hb.box(0.12 + Math.abs(J()) * 0.2, 0.8 + Math.abs(J()) * 1.4, 0.05, M.steel, [x, y, -36.85 + 1.5 * (1 - kk * kk)], [Math.atan(-0.79 * kk), 0, J() * 0.5]);
-    }
-    // Tấm thép vá hàn ngoài thực địa trên mặt lưỡi (cắt tay, đặt lệch)
-    {
-      const y = 6.0, kk = (y - 4.8) / 3.8, zf = -36.8 + 1.5 * (1 - kk * kk) - 0.12;
-      const rot = [Math.atan(-0.79 * kk), 0, 0.06 + J() * 0.06];
-      const F = frameAt([J() * 18, y, zf], rot);
-      hb.box(3.4, 1.8, 0.16, M.paint, F(0, 0, 0), rot);
-      const c = [[-1.75, -0.95], [1.72, -0.9], [1.78, 0.92], [-1.7, 0.98]];
-      for (let q = 0; q < 4; q++) hb.weld(F(c[q][0], c[q][1], -0.08), F(c[(q + 1) % 4][0], c[(q + 1) % 4][1], -0.08), M.paintDusty, 0.1);
-    }
-    hb.box(31.8, 0.35, 0.9, M.paintDusty, [0, 8.7, -36.5]);
-    for (const x of [-13, -6.5, 0, 6.5, 13]) hb.box(0.45, 6.4, 0.9, M.paintDusty, [x, 4.8, -35.0]);
-    for (const s of [-1, 1]) {
-      // Tay đẩy lưỡi ủi + giá bản lề
-      hb.beam([s * 8.4, 3.8, -34.5], [s * 8.4, 5.6, -28.2], 1.2, 1.2, M.paintDusty);
-      hb.box(2.0, 1.6, 1.4, D, [s * 8.4, 5.6, -28.4]);
-      // Xi-lanh thủy lực: vỏ sơn + cần piston thép bóng
-      const p0 = [s * 5.0, 9.0, -30.2], p1 = [s * 5.0, 7.4, -34.9];
-      const mid = [s * 5.0, 8.2, -32.6];
-      hb.strut(p0, mid, 0.62, M.paintDusty, 10);
-      hb.strut(mid, p1, 0.3, M.steel, 8);
-      hb.box(1.2, 1.0, 1.0, D, [s * 5.0, 9.0, -30.0]);
-    }
-    hb.setTag(null);
+    // (lưỡi ủi / khiên chữ V trước mũi: ô MŨI XE — mountFront, dựng thành cụm riêng)
 
     // Tay đòn treo, giá bánh dẫn hướng, hộp truyền lực cuối phía trước
     for (const s of [-1, 1]) {
@@ -982,6 +1072,22 @@
     }
     if (gun.omega < 0.05) gun.omega = 0;
     gun.cluster.rotation.z += Math.min(gun.omega * dt, MAX_VISUAL_STEP);
+    // THAY BĂNG ĐẠN (hết 450 viên): cụm nòng dừng hẳn, khói thuốc phóng còn đọng trong nòng nóng bốc ra đầu nòng; cuối lúc nạp
+    // (băng mới kéo vào bộ tiếp đạn) mô-tơ quay chậm từng nấc cho viên đầu băng vào ổ — khớp tiếng magOut / magIn (cockpit_cues)
+    const reloading = !u.isDead && (u.gatlingMag || 0) <= 0 && u.reloadTimer > 0 && u.reloadDuration > 0;
+    if (reloading) {
+      const pr = 1 - u.reloadTimer / u.reloadDuration;
+      if (pr > 0.82) gun.cluster.rotation.z += dt * (Math.sin(pr * 60) > 0 ? 2.2 : 0.3);   // quay từng nấc khi nạp viên đầu
+      gun.reSmokeT = (gun.reSmokeT || 0) - dt;
+      const G = typeof window !== 'undefined' && window.game, fx = G && G.effectsManager && G.effectsManager.fx;
+      if (pr < 0.35 && gun.reSmokeT <= 0 && fx && fx.smoke && u.getMuzzleWorldTransform) {
+        gun.reSmokeT = 0.12;
+        const M = u.getMuzzleWorldTransform(), p = M.position, d = M.direction;
+        const k = 1 - pr / 0.35;
+        fx.smoke.add({ x: p.x + d.x * 1.5, y: p.y + d.y * 1.5, z: p.z + d.z * 1.5, vx: d.x * 3 + (Math.random() - 0.5) * 2, vy: 3 + Math.random() * 3, vz: d.z * 3 + (Math.random() - 0.5) * 2,
+          size: 1 + Math.random(), grow: 3, drag: 1, grav: -2, life: 1.2 + Math.random(), alpha: 0.3 * k, fadeIn: 0.05, c0: [0.62, 0.6, 0.57], cell: 0, floor: false });
+      }
+    }
     const spin = gun.omega / MAX_SPIN;
     u.gatlingVisualSpin = spin; // âm thanh mô-tơ dùng chung tốc độ đã làm mượt
 
@@ -1018,5 +1124,16 @@
     }
   }
 
-  TankModelBuilder.registerModel('GATLING', buildHailstorm);
+  // Ảnh kho đồ (equipment_thumbs.html): dựng riêng món ô MŨI XE với vật liệu cho sẵn
+  window.HailstormFront = {
+    build(id, M) {
+      const g = new THREE.Group(), hb = new VehicleKit.PartBatch();
+      const ctx = { M, wear: rollWear(VehicleKit.mulberry32((Math.random() * 1e9) | 0)) };
+      (id === 'vshield' ? buildVShield : buildDozer)(hb, ctx);
+      hb.build(g, [0, 5, -34]);
+      return g;
+    }
+  };
+
+  if (typeof TankModelBuilder !== 'undefined') TankModelBuilder.registerModel('GATLING', buildHailstorm);
 })();

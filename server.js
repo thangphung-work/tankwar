@@ -50,6 +50,10 @@ function serveFile(req, res) {
   if (reqPath === '/' || reqPath === '') {
     reqPath = '/index.html';
   }
+  // Bản phát hành (npm run build): trang chính dùng dist/index.html (JS/CSS đã gộp, nén, đánh hash)
+  if (reqPath === '/index.html' && !dev.enabled && fs.existsSync(path.join(ROOT_DIR, 'dist', 'index.html'))) {
+    reqPath = '/dist/index.html';
+  }
 
   const filePath = path.normalize(path.join(ROOT_DIR, reqPath));
 
@@ -315,6 +319,10 @@ function wsSanitizeRoom(name) {
   return s || 'lobby';
 }
 
+function wsSanitizeMap(m) {
+  return typeof m === 'string' ? m.replace(/[^A-Z_]/g, '').slice(0, 20) : '';
+}
+
 function wsBroadcast(room, obj, exceptId) {
   const text = JSON.stringify(obj);
   room.members.forEach((member, id) => {
@@ -322,28 +330,30 @@ function wsBroadcast(room, obj, exceptId) {
   });
 }
 
-function wsJoinRoom(client, baseName, name, token) {
+function wsJoinRoom(client, baseName, name, token, skipList, prefMap) {
   if (client.room) wsLeaveRoom(client);
   client.name = typeof name === 'string' ? name.slice(0, 40) : '';
   // gắn tài khoản (nếu đã đăng nhập) -> thành tích trận mạng do máy chủ tự đếm
   client.userId = accounts.userIdFromToken ? accounts.userIdFromToken(token) : null;
   const base = wsSanitizeRoom(baseName);
+  // Phòng khách vừa bị từ chối (ROOM_FULL / chủ phòng không phản hồi): bỏ qua để sang phòng kế tiếp
+  const skip = new Set(Array.isArray(skipList) ? skipList.slice(0, 16).map(String) : []);
 
   // Ưu tiên phòng chờ đang mở (chưa khóa, còn chỗ) trong chuỗi base, base#2, base#3...
   // (phòng gốc có thể đã trống trong khi sảnh chờ thật đang ở base#2) -> chỉ tạo phòng mới khi không còn phòng nào để vào
   const roomNameAt = (n) => (n === 1 ? base : base + '#' + n);
-  let room = null;
+  // Ưu tiên mềm theo bản đồ: phòng mở cùng loại bản đồ -> phòng mở bất kỳ (khỏi chờ một mình) -> mở phòng mới với bản đồ của người vào
+  const map = wsSanitizeMap(prefMap);
+  const open = [];
   for (let n = 1; n < 1000; n++) {
     const existing = wsRooms.get(roomNameAt(n));
-    if (existing && !existing.locked && existing.members.size < WS_MAX_ROOM_SIZE) {
-      room = existing;
-      break;
-    }
+    if (existing && !existing.locked && !skip.has(existing.name) && existing.members.size < WS_MAX_ROOM_SIZE) open.push(existing);
   }
+  let room = (map && open.find(r => r.mapType === map)) || open[0] || null;
   if (!room) {
     for (let n = 1; n < 1000; n++) {
       if (!wsRooms.has(roomNameAt(n))) {
-        room = { name: roomNameAt(n), members: new Map(), hostId: null, locked: false };
+        room = { name: roomNameAt(n), members: new Map(), hostId: null, locked: false, mapType: map };
         wsRooms.set(room.name, room);
         break;
       }
@@ -383,7 +393,7 @@ function wsHandleMessage(client, msg) {
   const d = (msg.d && typeof msg.d === 'object') ? msg.d : {};
   switch (msg.t) {
     case '@join':
-      wsJoinRoom(client, d.room, d.name, d.tok);
+      wsJoinRoom(client, d.room, d.name, d.tok, d.skip, d.map);
       return;
     case '@leave':
       wsLeaveRoom(client);
@@ -391,6 +401,10 @@ function wsHandleMessage(client, msg) {
     case '@ping':
       // Đồng bộ đồng hồ: trả lại thời điểm gửi của máy khách + thời gian máy chủ
       client.sendJSON({ t: '@pong', d: { c: d.c, s: Date.now() } });
+      return;
+    case '@map':
+      // Chủ phòng báo loại bản đồ đang chọn -> dùng để ghép người mới vào đúng phòng
+      if (client.room && client.room.hostId === client.id) client.room.mapType = wsSanitizeMap(d.map);
       return;
     case '@lock':
     case '@unlock':

@@ -161,7 +161,8 @@ const EnvDamage = (() => {
         return P;
       }
       // rỗ / mẻ bê tông do đạn: dùng texture hố mẻ bê tông tươi có pháp tuyến của ExplosionFX nếu có
-      const pit = (kind === 'c_pock' || kind === 'c_chip') && typeof ExplosionFX !== 'undefined' && ExplosionFX._pitTex ? ExplosionFX._pitTex(kind === 'c_pock' ? 'concretePit' : 'concretePitHE', 0) : null;
+      // (đá tảng cũng vậy: texture vẽ tay hình sao răng cưa trắng trước đây trông như lá cây dán lên mặt đá, không có khối)
+      const pit = (kind === 'c_pock' || kind === 'c_chip' || kind === 'r_chip') && typeof ExplosionFX !== 'undefined' && ExplosionFX._pitTex ? ExplosionFX._pitTex(kind === 'c_pock' ? 'concretePit' : 'concretePitHE', 0) : null;
       const mat = pit
         ? new THREE.MeshStandardMaterial({ map: pit.map, normalMap: pit.normal, roughness: 0.92, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 })
         : new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
@@ -200,7 +201,11 @@ const EnvDamage = (() => {
         this._c.setRGB(t[0], t[1], t[2]);
         P.im.geometry.attributes.iMark.setXY(cell.idx, cell.variant, 1 + Math.min(1.2, 0.14 * (cell.hits - 1)));
         P.im.geometry.attributes.iMark.needsUpdate = true;
-      } else this._c.setRGB(cell.shade, cell.shade, cell.shade);
+      } else {
+        // mẻ đá: mặt vỡ tươi chỉ sáng hơn mặt đá phong hóa một chút (texture hố là bê tông mới, rất sáng) -> nhuộm xám ấm
+        const k = cell.kind === 'r_chip' ? 0.62 : 1;
+        this._c.setRGB(cell.shade * k, cell.shade * k * 0.97, cell.shade * k * 0.92);
+      }
       P.im.setColorAt(cell.idx, this._c);
       P.im.instanceMatrix.needsUpdate = true;
       P.im.instanceColor.needsUpdate = true;
@@ -420,9 +425,14 @@ const EnvDamage = (() => {
         n.normalize();
         const k = it.hp / it.maxHp;
         const sc = this.scaleK(it, k);
-        const px = it.x + n.x * it.r * 0.9 * sc, py = cy + n.y * it.h * 0.6 * sc, pz = it.z + n.z * it.r * 0.9 * sc;
+        // trúng trực tiếp: vết đúng chỗ đạn chạm (trước đây đặt trên hình trụ giả định quanh tâm đá -> đá méo thì vết
+        // lơ lửng ngoài mép hoặc chìm vào trong); nổ gần: vết ở phía điểm nổ như cũ
+        let px = it.x + n.x * it.r * 0.9 * sc, py = cy + n.y * it.h * 0.6 * sc, pz = it.z + n.z * it.r * 0.9 * sc;
+        if (direct) { px = x; py = y; pz = z; }
         if (it.hp > 0) {
-          this.attachScar(it, this.sys.scars.hit('r', 5, px, py, pz, n.x, n.y, n.z, A.e, () => 'r_chip', { e0: 0.3 }));
+          // đạn súng: mẻ nhỏ ~25-30 cm mỗi chỗ (12.7mm / 30mm vào đá cứng chỉ bóc một lớp), ô cộng dồn nhỏ để các phát tách nhau
+          const sa = smallArms(A);
+          this.attachScar(it, this.sys.scars.hit('r', sa ? 2.5 : 5, px, py, pz, n.x, n.y, n.z, A.e, () => 'r_chip', { e0: 0.3, sizeMul: sa ? 0.45 : 1 }));
           if (A.blast > 0.3) this.attachScar(it, this.sys.scars.hit('s', 10, px, py, pz, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: Math.min(1.4, it.r / 14) }));
           this.reshape(it, k);
           // vụn đá văng ra theo độ mạnh
@@ -457,7 +467,7 @@ const EnvDamage = (() => {
       if (it.boulder) {
         const bi = this.T.boulders.indexOf(it.boulder);
         if (bi >= 0) this.T.boulders.splice(bi, 1);
-        this.sys.navDirty = true;
+        this.sys.markNav(it.x, it.z, (it.boulder.radius || it.r || 18) + 60);
       }
       const cy = it.y + it.h * 0.4;
       if (this.sys.debris) {
@@ -682,7 +692,7 @@ const EnvDamage = (() => {
       sp.pose = { hinge, py: b.deckY, th: 0 };
       this.broken = (this.broken || 0) + 1;
       this.anims.push({ b, sp, pivot, t: 0, dur, ang, drop, freeSign, hinge, splashed: false });
-      this.sys.navDirty = true;
+      this.sys.markNav(mw.x, mw.z, Math.abs(sp.a1 - sp.a0) / 2 + (b.width || 60) + 60);
       this.sys.mapDirty = true;
       if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('collapse', { x: mw.x, y: b.deckY, z: mw.z }, 1.4, { mat: 'concrete', h: drop, floors: 1 });
       if (fx && fx.spawnDust && fx.palette) fx.spawnDust(mw.x, b.deckY, mw.z, 1.6, { micro: false }, fx.palette('WALL'), true, null);
@@ -759,8 +769,15 @@ const EnvDamage = (() => {
       this.debris = new Debris(this.group, T.rockTexture ? T.rockTexture() : null);
       this.rocks = new RockField(this, rockItems);
       this.bridges = new BridgeSet(this);
-      this.navDirty = false;
+      this.navBoxes = [];   // vùng lưới tìm đường cần tính lại (Navigator.invalidate theo vùng)
       this.mapDirty = false;
+    }
+
+    // Vật cản / mặt đường quanh (x, z) bán kính r vừa đổi: lưới tìm đường của bot tính lại riêng vùng này ở khung sau
+    markNav(x, z, r) {
+      if (this.navBoxes.length > 24) { this.navBoxes = [null]; return; }   // quá nhiều vùng trong 1 khung: dựng lại cả lưới
+      if (this.navBoxes[0] === null) return;
+      this.navBoxes.push({ x0: x - r, z0: z - r, x1: x + r, z1: z + r });
     }
 
     // Sóng nổ / đạn tác động lên đá tảng, cầu, bê tông & ụ đất cứ điểm. info: { t: loại va chạm, nx, nz: pháp tuyến tường }
@@ -783,7 +800,7 @@ const EnvDamage = (() => {
         // mái cứ điểm bị bào mòn -> sập từng ô (va chạm & che chắn đổi theo; xe bot phải tìm đường lại)
         if (SS.damagePanels) {
           const ev = SS.damagePanels(x, y, z, ammo, heavy, info, fx, A.r);
-          if (ev.length) { events.push(...ev); this.navDirty = true; }
+          if (ev.length) { events.push(...ev); this.markNav(x, z, Math.max(160, (A.r || 0) * 1.3 + 120)); }
         }
       }
       // Mặt cầu: vết đạn / vỡ bê tông cộng dồn trên mặt đường
@@ -944,9 +961,10 @@ const EnvDamage = (() => {
     update(dt, fx) {
       this.debris.update(dt, this._surf || (this._surf = (x, z) => this.surf(x, z)));
       this.bridges.update(dt, fx);
-      if (this.navDirty) {
-        this.navDirty = false;
-        if (typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(this.T);
+      if (this.navBoxes.length) {
+        const boxes = this.navBoxes;
+        this.navBoxes = [];
+        if (typeof Navigator !== 'undefined' && Navigator.invalidate) for (const b of boxes) Navigator.invalidate(this.T, b || undefined);
       }
       if (this.mapDirty) {
         this.mapDirty = false;

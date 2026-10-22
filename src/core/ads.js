@@ -47,6 +47,11 @@ const AdProvider = (() => {
     h5Loading = new Promise((resolve) => {
       window.adsbygoogle = window.adsbygoogle || [];
       window.adBreak = window.adConfig = function (o) { window.adsbygoogle.push(o); };
+      // index.html đã nạp adsbygoogle.js trong <head> (AdSense): dùng lại, không nạp lần hai
+      if (document.querySelector('script[src*="adsbygoogle.js"]')) {
+        try { window.adConfig({ preloadAdBreaks: 'on', sound: 'on' }); } catch (e) { /* bỏ qua */ }
+        return resolve(true);
+      }
       const s = document.createElement('script');
       s.async = true;
       s.crossOrigin = 'anonymous';

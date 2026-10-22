@@ -446,6 +446,22 @@ class BallisticsSystem3D {
    * (pháo tăng APFSDS bay gần như thẳng tới ~2 km game, lựu pháo cầu vồng phủ ~0.12–0.75 cạnh bản đồ).
    */
   roundParams(ammoType, shooter = null, chargeLevel = 1) {
+    // Xe trinh sát lắp vũ khí chính trên chân đế mô-đun (ô VŨ KHÍ CHÍNH): đạn súng thay bằng lựu 40mm HV / rocket ->
+    // đường đạn (cả máy tính hỏa lực ngắm theo đạn đang chọn) theo vũ khí thật đang lắp
+    const mw = shooter && shooter.mainGun && shooter.mainGun.kind;
+    if (mw && (ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY' || ammoType === 'GATLING_BULLET')) {
+      if (mw === 'rocket') {
+        const r = this.roundParams('RPG', null, chargeLevel);
+        r.maxTravel = BallisticsSystem3D.MAIN_ROCKET_TRAVEL;   // rocket giàn có động cơ dài hơn đạn B-40 vác vai
+        return r;
+      }
+      if (mw === 'agl') {
+        const r = this.roundParams('GATLING_BULLET', null, chargeLevel);
+        r.v0 *= BallisticsSystem3D.MAIN_AGL_V; r.k *= 0.6;   // quả lựu nặng, sơ tốc thấp: bay cầu vồng, ít bị cản
+        r.maxTravel = BallisticsSystem3D.MAIN_AGL_TRAVEL;    // quỹ đạo cầu vồng dài hơn đường bay căng của đạn 30mm
+        return r;
+      }
+    }
     const type = shooter ? shooter.tankType : null;
     const M = this.bulletSpeedMultiplier || 1;
     const GT = typeof GameTiming !== 'undefined' ? GameTiming : null;
@@ -500,6 +516,8 @@ class BallisticsSystem3D {
   }
 
   fireShell3D(shooter, azimuth, elevation, chargeLevel, ammoType = 'NORMAL') {
+    // xe vừa hồi sinh nổ súng là mất khiên bất tử (khiên để kịp rời điểm hồi sinh, không để bắn miễn phí)
+    if (shooter && shooter.invulnerableTimer > 0 && !shooter.isDead) shooter.invulnerableTimer = 0;
     const isDirectFire = this.isDirectFireShot(ammoType, elevation);
     const rp = this.roundParams(ammoType, shooter, chargeLevel);
     // Tên lửa / đạn phản lực rời ống phóng chậm rồi động cơ đẩy tăng tốc (không bắn ra với tốc độ hành trình)
@@ -579,7 +597,12 @@ class BallisticsSystem3D {
 
     this.scene.add(shellMesh);
 
+    // Đạn 30mm nổ trên không (đạn cao cấp 'ahead30'): máy tính hỏa lực đang khóa drone & radar phòng không còn -> nạp cự
+    // ly nổ = cự ly tới drone trừ một đoạn (nổ ngay trước drone, chùm bi phủ tới thân). game.js đặt shooter._abmRange
+    const abm = ammoType === 'GATLING_BULLET' && shooter && shooter._abmRange > 30 && shooter.ammoMods && shooter.ammoMods.GATLING_ABM
+      && !(shooter.dmg && shooter.dmg.lost && shooter.dmg.lost.has('aaRadar')) ? shooter._abmRange - 8 : 0;
     const shell = {
+      abm,
       id: Math.random().toString(36).substring(2, 9),
       // hạt giống quyết định nổ trên tán (tree burst); gửi kèm sự kiện bắn -> máy khác nổ cùng cây, cùng chỗ
       burstSeed: (Math.random() * 4294967296) >>> 0,
@@ -613,7 +636,10 @@ class BallisticsSystem3D {
     // Tên lửa có điều khiển: bám mục tiêu xe trinh sát chỉ định (khóa) hoặc điểm ngắm, động cơ đẩy tới tốc độ hành trình
     if (rp.guided) {
       const tg = shooter && shooter.missileTarget;
+      // tên lửa tấn công đỉnh (đạn cao cấp 'topatk' của xe trinh sát): vồng cao rồi bổ nhào xuống nóc (guideMissile)
+      const tm = shooter && shooter.ammoMods && shooter.ammoMods.ANTI_TANK_MISSILE;
       shell.guide = {
+        top: !!(tm && tm.top),
         cruise: rp.v0, turnAcc: rp.turnAcc, boostT: rp.boostT,
         targetId: tg && tg.unit ? tg.unit.id : null,
         point: tg && tg.point ? { x: tg.point.x, y: tg.point.y, z: tg.point.z } : null,
@@ -693,12 +719,18 @@ class BallisticsSystem3D {
       // bị gây nhiễu: điểm ngắm lắc ~3 m quanh xe (tất định theo thời gian bay -> mọi máy cùng đường bay), chỉ ~5 m cuối mới bám lại
       if (G.jam) { const ph = s.timeAlive * 2.3, k = Math.min(1, dh / 40); ax += Math.sin(ph) * 26 * k; az += Math.cos(ph * 0.77) * 26 * k; }
       // Bay cao hơn đường ngắm một chút, hạ thấp dần khi tới gần (lao thẳng vào thân xe)
-      const ay = P.y + Math.min(26, dh * 0.04);
+      let ay = P.y + Math.min(26, dh * 0.04);
+      // TẤN CÔNG ĐỈNH: leo vồng cao trên mục tiêu, còn cách ~DIVE thì bổ nhào gần thẳng đứng vào nóc xe (giáp mỏng nhất)
+      if (G.top) {
+        const DIVE = 85;
+        if (!G.dive && dh > DIVE) ay = P.y + Math.min(125, 30 + dh * 0.34);
+        else { G.dive = true; ay = P.y - 90; }   // chúc dốc (~60-70°) xuống nóc
+      }
       const hx = ax - s.x, hz = az - s.z, hl = Math.hypot(hx, hz) || 1;
       // Bám địa hình: dò mặt đất phía trước theo hướng tới mục tiêu (bán kính vòng ~380 đơn vị nên phải nhìn xa),
       // chọn độ dốc lớn nhất cần để vượt mọi gò / bờ đất cách mặt đất >= 13 đơn vị
       let slope = (ay - s.y) / hl;
-      if (terrain) {
+      if (terrain && !G.dive) {
         const CLEAR = 13;
         for (const d of [20, 45, 80, 130, 200, 290, 400]) {
           if (d > hl - 30) break;
@@ -827,6 +859,14 @@ class BallisticsSystem3D {
         // DRONE ĐỊCH TRÊN KHÔNG (game.js cập nhật airTargets mỗi khung hình): chỉ đạn súng máy / pháo 30mm liên thanh
         // (xe 6 nòng, xe trinh sát) bắn được — đạn pháo tăng / lựu pháo bay xuyên qua chỗ drone không tính.
         // Bay qua sát thân drone là trúng; sượt qua gần thì báo onAirNear một lần (tiếng đạn rít qua micro drone)
+        // ĐẠN 30MM NỔ TRÊN KHÔNG (lập trình ngòi): bay tới đúng cự ly máy tính hỏa lực đã nạp thì tự nổ, phóng chùm bi
+        // vonfram hình nón về phía trước — trúng drone nằm trong nón (abmBurst)
+        if (s.abm && s.travel >= s.abm) {
+          this.abmBurst(s);
+          this.removeShellMesh(s, i);
+          impacted = true;
+          break;
+        }
         if (this.airTargets && this.airTargets.length && s.timeAlive > 0.004 && BallisticsSystem3D.AIR_AMMO[s.ammoType]) {
           const ah = this.airTargetHit(s, prevX, prevY, prevZ);
           if (ah) {
@@ -1176,11 +1216,27 @@ class BallisticsSystem3D {
 
   // Đoạn bay (prev -> hiện tại) đi qua drone địch nào trong bán kính trúng: trả { target, x, y, z } (điểm gần nhất)
   // airTargets: [{ x, y, z (tâm thân), r (bán kính trúng), nearR (bán kính đạn rít qua), team, ... }]
+  abmBurst(s) {
+    const sp = Math.hypot(s.vx, s.vy, s.vz) || 1, dx = s.vx / sp, dy = s.vy / sp, dz = s.vz / sp;
+    if (this.fx && this.fx.spawn) { try { this.fx.spawn(s.x, s.y, s.z, 'GATLING_BULLET', 'AIR', {}); } catch (e) { /* hiệu ứng phụ */ } }
+    const A = typeof DroneAir !== 'undefined' && DroneAir.C.ABM ? DroneAir.C.ABM : { reach: 40, cone: 0.18, base: 3 };
+    const R = typeof DroneAir !== 'undefined' ? DroneAir.C.HIT_R : 4.5;
+    for (const T of this.airTargets || []) {
+      const rx = T.x - s.x, ry = T.y - s.y, rz = T.z - s.z;
+      const along = rx * dx + ry * dy + rz * dz;
+      if (along < -R || along > A.reach) continue;
+      const lat = Math.hypot(rx - dx * along, ry - dy * along, rz - dz * along);
+      if (lat > A.base + Math.max(0, along) * A.cone + R) continue;
+      // trong nón bi: sát thương mảnh (h.d > HIT_R -> FRAG_K phát trúng)
+      if (this.onAirHit) this.onAirHit(s, T, { target: T, x: T.x, y: T.y, z: T.z, d: R + 1 });
+    }
+  }
+
   airTargetHit(s, x0, y0, z0) {
     const sx = s.x - x0, sy = s.y - y0, sz = s.z - z0, L2 = sx * sx + sy * sy + sz * sz;
     let best = null, bd = Infinity;
     for (const T of this.airTargets) {
-      if (s.shooterTeam && T.team === s.shooterTeam) continue;
+      // drone phe mình / của chính mình cũng trúng đạn bay xuyên qua (không miễn nhiễm cùng phe)
       let t = L2 > 1e-6 ? ((T.x - x0) * sx + (T.y - y0) * sy + (T.z - z0) * sz) / L2 : 0;
       t = Math.max(0, Math.min(1, t));
       const cx = x0 + sx * t, cy = y0 + sy * t, cz = z0 + sz * t;
@@ -1443,7 +1499,8 @@ class BallisticsSystem3D {
     const arty = !!(shooterObj && shooterObj.tankType === 'ARTILLERY');
     const AD = BallisticsSystem3D.ARTY_DIRECT;
     const bodyTiltEl = arty && typeof shooterObj.barrelWorldOffset === 'function' ? shooterObj.barrelWorldOffset().el : 0;
-    const probe = shooterObj ? { tankType: shooterObj.tankType, selectedAmmo: shooterObj.selectedAmmo } : null;
+    // mainGun: vũ khí chính lắp trên chân đế mô-đun (xe trinh sát) -> mô phỏng đúng quả lựu / rocket (roundParams)
+    const probe = shooterObj ? { tankType: shooterObj.tankType, selectedAmmo: shooterObj.selectedAmmo, mainGun: shooterObj.mainGun || null } : null;
     // Đạn bay ra từ miệng nòng thật: lấy độ cao / tầm với của tâm quay nòng và chiều dài nòng đo trên mô hình 3D
     // (trước đây giả định cố định cao 18, trước 40 cho mọi xe -> pháo bắn thẳng lệch điểm rơi đáng kể)
     if (probe && typeof shooterObj.barrelGeometry === 'function') {
@@ -1461,7 +1518,7 @@ class BallisticsSystem3D {
       // không bao giờ khớp, kính ngắm báo "đang xoay tháp" mãi
       // Cầu vồng từ 25°: dưới đó đường đạn nhìn gần như thẳng (người chơi chọn bắn cầu vồng mà thấy bắn thẳng). Có 7 liều
       // phóng nên ở cự ly nào cũng có liều tới được trong 25-45° mà không phải nâng nòng 55-60° (đạn bay quá lâu)
-      const elMin = directArty ? this.minElevationFor(shooterObj, baseAz) + bodyTiltEl : (arty ? (lowFloor ? 10 : 25) : -10);
+      const elMin = directArty ? this.minElevationFor(shooterObj, baseAz) + bodyTiltEl : (arty ? (lowFloor ? 10 : 25) : (shooterObj && shooterObj.tankType === 'GATLING' ? this.minElevationFor(shooterObj, baseAz) : -10));
       let az = baseAz;
       const targetY = terrain && terrain.getElevationAt ? terrain.getElevationAt(targetX, targetZ) : 0;
       const ammo = (shooterObj && shooterObj.selectedAmmo) || 'NORMAL';
@@ -1716,6 +1773,10 @@ class BallisticsSystem3D {
 // (game_timing.js). Đạn pháo bay hết quỹ đạo (0).
 BallisticsSystem3D.prototype.maxTravelFor = function (ammoType, shooter = null) {
   if (typeof GameTiming === 'undefined') return 0;
+  // vũ khí chính trên chân đế mô-đun (xe trinh sát): tầm bay theo quả lựu / rocket thật đang lắp
+  if (shooter && shooter.mainGun && shooter.mainGun.kind && (ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY' || ammoType === 'GATLING_BULLET')) {
+    return this.roundParams(ammoType, shooter, 1).maxTravel || 0;
+  }
   const type = shooter ? shooter.tankType : (ammoType === 'INCENDIARY' ? 'GATLING' : null);
   return GameTiming.round(ammoType, type).maxTravel;
 };
@@ -1786,7 +1847,9 @@ BallisticsSystem3D.boreOrigin = function (P) {
 };
 // Độ cao điểm nhắm trên thân xe mục tiêu (so với gốc xe): ~giữa thân (30% chiều cao hộp mô hình), mặc định 9
 BallisticsSystem3D.unitAimHeight = function (u) {
-  if (typeof VehicleCollision !== 'undefined' && u && u.group) { const B = VehicleCollision.hullBox(u); if (B && isFinite(B.maxY)) return Math.max(4, Math.min(10, B.maxY * 0.3)); }   // hộp đo cả ăng-ten / trạm súng nóc -> lấy 30%, trần 10
+  // nhắm giữa khối xe (khoảng vòng tháp / giữa thân), như pháo thủ thật: trước đây 30% hộp, trần 10 -> điểm nhắm sát bánh
+  // xích, vòng khóa nằm dưới tâm kính. Hộp đo cả ăng-ten / trạm súng nóc nên vẫn lấy theo tỉ lệ & có trần
+  if (typeof VehicleCollision !== 'undefined' && u && u.group) { const B = VehicleCollision.hullBox(u); if (B && isFinite(B.maxY)) return Math.max(5, Math.min(13, B.maxY * 0.4)); }
   return 9;
 };
 
@@ -1853,11 +1916,25 @@ BallisticsSystem3D.prototype.inArtyBlind = function (shooter, azimuthDeg) {
 
 // Góc hạ nòng thấp nhất theo hướng tháp (azimuthDeg: hướng bắn trong thế giới; mặc định hướng tháp hiện tại)
 BallisticsSystem3D.prototype.minElevationFor = function (shooter, azimuthDeg) {
+  if (shooter && shooter.tankType === 'GATLING') return BallisticsSystem3D.gatlingMinElevation(shooter, azimuthDeg);
   if (!shooter || shooter.tankType !== 'ARTILLERY') return -10;
   const AD = BallisticsSystem3D.ARTY_DIRECT;
   const az = azimuthDeg !== undefined ? azimuthDeg : (shooter.azimuth || 0);
   // cùng quy ước với tháp pháo 3D: turretGroup.rotation.y = -az - bodyAngle (0 = nòng chỉ về đầu xe, qua cabin)
   return BallisticsSystem3D.artyMinElevation(-(az * Math.PI / 180) - (shooter.bodyAngle || 0));
+};
+
+// Xe 6 nòng: khối mũi đúc cao + khiên chữ V / lưỡi ủi chắn trước -> trong cung ±35° quanh mũi cụm nòng chỉ hạ tới -4°
+// (khiên) / -6° (lưỡi ủi / không lắp gì); ra hai bên / phía sau hạ hết -10°; chuyển dần trong 35-50° (vùng hạn chế góc hạ
+// nòng như xe tăng thật). Cùng quy ước tháp: turretGroup.rotation.y = -az - bodyAngle (0 = nòng chỉ về đầu xe)
+BallisticsSystem3D.gatlingMinElevation = function (shooter, azimuthDeg) {
+  const az = azimuthDeg !== undefined ? azimuthDeg : (shooter.azimuth || 0);
+  let rel = -(az * Math.PI / 180) - (shooter.bodyAngle || 0);
+  rel = Math.abs(Math.atan2(Math.sin(rel), Math.cos(rel)));
+  const lim = shooter.frontId === 'vshield' ? -4 : -6, A = 35 * Math.PI / 180, B = 50 * Math.PI / 180;
+  if (rel <= A) return lim;
+  if (rel >= B) return -10;
+  return lim + (-10 - lim) * (rel - A) / (B - A);
 };
 
 // BẮN THẲNG VÀO XE (opts.atUnit): nâng nòng một chút để đường đạn đi qua TÂM THÂN XE thay vì cắm đúng chân xe.
@@ -1880,7 +1957,14 @@ BallisticsSystem3D.prototype.aimCenterMass = function (sol, shooterY, dist, targ
 
 BallisticsSystem3D.prototype.maxElevationFor = function (shooter) {
   // pháo tăng phương Tây -10° / +20°; lựu pháo 155mm tối đa 70° (Archer / PzH 2000 / M109: 65-75°)
+  // súng phóng lựu 40mm HV trên chân đế xe trinh sát: ngóc tới 45° bắn cầu vồng tầm trung
+  if (shooter && shooter.mainGun && shooter.mainGun.kind === 'agl') return 45;
   return shooter && shooter.tankType === 'ARTILLERY' ? 70 : 20;
 };
+// Sơ tốc lựu 40mm HV (xe trinh sát) so với đạn 30mm của xe 6 nòng
+BallisticsSystem3D.MAIN_AGL_V = 0.42;
+// Quãng bay tối đa (tự hủy) của quả lựu 40mm HV / rocket giàn trên xe trinh sát (đơn vị game)
+BallisticsSystem3D.MAIN_AGL_TRAVEL = 1500;
+BallisticsSystem3D.MAIN_ROCKET_TRAVEL = 900;
 
 window.BallisticsSystem3D = BallisticsSystem3D;

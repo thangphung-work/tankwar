@@ -11,8 +11,11 @@
  *   lệch nhau 120° trong kè đất móng ngựa, tên lửa 10.6 m nằm trên ray nghiêng 35°, xe chỉ huy, xe điện, xe vận tải -
  *   nạp đạn chở tên lửa.
  *
- * Công trình không bị phá: thân xe / nòng pháo va vào khối đặc (hộp xoay như nhà), đạn chạm thì nổ trên bề mặt
- * (như tường bê tông), khối đặc chắn sóng nổ. Ụ đất / kè đất là địa hình thật (MapGen đã đắp vào lưới độ cao).
+ * Thân xe / nòng pháo va vào khối đặc (hộp xoay như nhà), đạn chạm thì nổ trên bề mặt (như tường bê tông), khối đặc chắn
+ * sóng nổ. Ụ đất / kè đất là địa hình thật (MapGen đã đắp vào lưới độ cao).
+ * PHÁ HỦY ĐƯỢC BẰNG ĐẠN PHÁO (LandmarkSet.damageAt): mỗi công trình có máu chung; đạn nổ trúng / nổ sát khối đặc trừ máu
+ * (lựu pháo ~7 phát, đạn nổ mạnh xe tăng ~15 phát, đạn súng gần như không xi nhê). Hư nặng: bốc khói, rồi cháy; hết máu:
+ * chuỗi nổ thứ cấp, cả công trình sụp xuống còn đống đổ nát cháy đen (khối va chạm thấp còn ~1/3), máy móc / đèn ngừng.
  *
  * Hệ toạ độ cục bộ mỗi công trình: f theo hướng mặt trước (angle), r vuông góc (-sin, cos), y tính từ cốt san nền G.
  * Nhóm hình: trục X cục bộ = f, trục Z cục bộ = r (như cứ điểm). Tỉ lệ 8 đơn vị = 1 m.
@@ -2238,6 +2241,14 @@ const Landmarks = (() => {
     return t0;
   }
 
+  // Máu công trình & sức phá theo loại đạn: p = sát thương tại điểm nổ, r = bán kính tác động (đv). Lựu pháo x2 sức phá
+  const LM_HP = 24;
+  const LM_POW = {
+    HE: { p: 1.7, r: 30 }, NORMAL: { p: 1.1, r: 22 }, CLUSTER: { p: 0.6, r: 20 }, CLUSTER_SUBMUNITION: { p: 0.45, r: 10 },
+    AP: { p: 0.35, r: 6 }, RPG: { p: 0.6, r: 12 }, ANTI_TANK_MISSILE: { p: 1.0, r: 16 },
+    GATLING_BULLET: { p: 0.012, r: 3 }, INCENDIARY: { p: 0.01, r: 3 }, SCOUT_BULLET: { p: 0.003, r: 2 }
+  };
+
   class LandmarkSet {
     constructor(parent, list, opts) {
       this.group = new THREE.Group();
@@ -2301,7 +2312,9 @@ const Landmarks = (() => {
           grp.add(rot);
           anim.radars.push(rot);
         }
-        const it = { L, anim, kind: L.kind, name: NAMES[L.kind] || (KINDS[L.kind] && KINDS[L.kind].name) || L.kind, x: L.x, z: L.z, G: L.G, boxes: K.solids, top: L.G + K.top, reach: Math.hypot(L.hu, L.hv) + 30 };
+        const hp0 = L.kind === 'nuke' ? LM_HP * 1.6 : LM_HP;
+        const it = { L, anim, grp, kind: L.kind, name: NAMES[L.kind] || (KINDS[L.kind] && KINDS[L.kind].name) || L.kind, x: L.x, z: L.z, G: L.G, boxes: K.solids, top: L.G + K.top, reach: Math.hypot(L.hu, L.hv) + 30,
+          hp: hp0, hp0, dead: false };
         this.items.push(it);
         this.boxes.push(...K.solids);
       }
@@ -2471,11 +2484,103 @@ const Landmarks = (() => {
       return null;
     }
     maxTop() { return this.items.reduce((a, it) => Math.max(a, it.top), -Infinity); }
+
+    // ĐẠN NỔ TRÚNG / SÁT CÔNG TRÌNH: trừ máu theo sức nổ & khoảng cách tới khối đặc gần nhất
+    damageAt(x, y, z, ammo, heavy, fx) {
+      const P = LM_POW[ammo] || LM_POW.NORMAL, pw = P.p * (heavy ? 2 : 1), R = P.r * (heavy ? 1.7 : 1);
+      if (pw <= 0) return [];
+      const ev = [];
+      for (const it of this.items) {
+        if (it.dead || Math.abs(x - it.x) > it.reach + R || Math.abs(z - it.z) > it.reach + R) continue;
+        let d = Infinity;
+        for (const q of it.boxes) {
+          const dx = x - q.cx, dz = z - q.cz, u = Math.abs(dx * q.ux + dz * q.uz) - q.hu, v = Math.abs(-dx * q.uz + dz * q.ux) - q.hv;
+          const dy = y < q.y0 ? q.y0 - y : y > q.y1 ? y - q.y1 : 0;
+          d = Math.min(d, Math.hypot(Math.max(0, u), Math.max(0, v), dy));
+        }
+        if (d > R) continue;
+        const prev = it.hp / it.hp0;
+        it.hp -= pw * Math.pow(1 - d / R, 1.2);
+        const k = Math.max(0, it.hp / it.hp0);
+        const G = typeof window !== 'undefined' && window.game;
+        if (k <= 0) { this.destroy(it, fx); ev.push({ type: 'landmark', name: it.name }); }
+        else if (prev > 0.5 && k <= 0.5 && G && G.addCombatLog) G.addCombatLog('[[building]] ' + it.name + ' hư hại nặng — bốc khói', 'tip');
+      }
+      return ev;
+    }
+
+    // Sập: chuỗi nổ thứ cấp (bồn nhiên liệu, đạn dược, máy biến áp), công trình đổ sụp xuống còn ~1/3 chiều cao, cháy đen.
+    // quiet: áp trạng thái từ mạng (vào trận giữa chừng) -> sập ngay, không nổ / không báo
+    destroy(it, fx, quiet) {
+      if (it.dead) return;
+      it.dead = true; it.hp = 0;
+      it.collapse = 0;
+      for (const q of it.boxes) q.y1 = q.y0 + (q.y1 - q.y0) * 0.35;   // khối va chạm còn đống đổ nát thấp
+      it.top = it.G + (it.top - it.G) * 0.35;
+      // cháy đen: bản sao vật liệu (không ảnh hưởng công trình khác dùng chung vật liệu)
+      const done = new Map();
+      it.grp.traverse(o => {
+        if (!o.isMesh || !o.material || Array.isArray(o.material)) return;
+        if (o.material.isMeshBasicMaterial && o.material.transparent) { o.visible = false; return; }   // tia đèn pha
+        let m = done.get(o.material);
+        if (!m) {
+          m = o.material.clone();
+          if (m.color) m.color.multiplyScalar(0.28);
+          if (m.emissive) m.emissiveIntensity = 0;
+          done.set(o.material, m);
+        }
+        o.material = m;
+      });
+      if (quiet) { it.collapse = 1; it.grp.scale.y = 0.35; it.grp.position.y = it.G - 2; return; }
+      if (fx && fx.spawn) {
+        it.boxes.slice(0, 7).forEach((q, n) => {
+          setTimeout(() => { try { fx.spawn(q.cx, q.y1 + 4, q.cz, 'HE', 'DIRECT_HIT', { heavy: n % 2 === 0 }); } catch (e) { /* hiệu ứng phụ */ } }, n * 180);
+        });
+      }
+      const G = typeof window !== 'undefined' && window.game, SE = typeof window !== 'undefined' && window.soundEngine;
+      if (SE && SE.playExplosionAtDistance && G && G.player) SE.playExplosionAtDistance(Math.hypot(G.player.x - it.x, G.player.z - it.z), 'BUILDING', 'HE', { x: it.x, z: it.z }, { heavy: true });
+      if (G && G.addCombatLog) G.addCombatLog('[[building]] ' + it.name + ' ĐÃ BỊ PHÁ HỦY — sụp đổ, bốc cháy', 'alert');
+    }
+
+    // đồng bộ mạng (terrain.envStateString): máu từng công trình (phần trăm, 0 = đã sập)
+    stateString() { return this.items.map(it => Math.max(0, Math.round(it.hp / it.hp0 * 100))).join(','); }
+    applyState(str, fx) {
+      String(str).split(',').forEach((v, i) => {
+        const it = this.items[i];
+        if (!it || v === '') return;
+        const k = +v / 100;
+        if (k <= 0) { if (!it.dead) this.destroy(it, fx, true); }
+        else if (k * it.hp0 < it.hp) it.hp = k * it.hp0;
+      });
+    }
     // Đèn hiệu xoay / nháy, đèn pha chòi gác quét qua lại, hơi nước bốc lên từ ống xả giếng phóng
     update(dt, fx, cam) {
       for (const it of this.items) {
         const A = it.anim;
         if (!A) continue;
+        // hư nặng / đã sập: khói đen bốc từ đỉnh, đã sập thì cháy âm ỉ; công trình đổ sụp dần trong ~2,5 s
+        const hk = it.hp / it.hp0;
+        if (it.dead && it.collapse < 1) {
+          it.collapse = Math.min(1, it.collapse + dt / 2.5);
+          const e = it.collapse * it.collapse;
+          it.grp.scale.y = 1 - 0.65 * e;
+          it.grp.position.y = it.G - 2 * e;
+        }
+        if ((it.dead || hk < 0.5) && fx && fx.smoke && !(cam && Math.hypot(cam.x - it.x, cam.z - it.z) > 2600)) {
+          it.smokeAcc = (it.smokeAcc || 0) + dt;
+          if (it.smokeAcc > (it.dead ? 0.15 : 0.4)) {
+            it.smokeAcc = 0;
+            const q = it.boxes[Math.floor(Math.random() * it.boxes.length)];
+            if (q) {
+              const g = 0.12 + Math.random() * 0.1;
+              fx.smoke.add({ x: q.cx + (Math.random() - 0.5) * q.hu, y: q.y1 + 2, z: q.cz + (Math.random() - 0.5) * q.hv, vx: (Math.random() - 0.5) * 3, vy: 10 + Math.random() * 8, vz: (Math.random() - 0.5) * 3,
+                size: 8 + Math.random() * 6, grow: 9, drag: 0.5, grav: -2, life: 6 + Math.random() * 3, alpha: 0.4, fadeIn: 0.3, c0: [g, g, g], cell: 0, floor: false });
+              if ((it.dead || hk < 0.25) && fx.fire && Math.random() < 0.5) fx.fire.add({ x: q.cx + (Math.random() - 0.5) * q.hu, y: q.y1 + 1, z: q.cz + (Math.random() - 0.5) * q.hv,
+                vx: 0, vy: 6 + Math.random() * 6, vz: 0, size: 5 + Math.random() * 4, grow: -1, drag: 1, grav: -4, life: 0.6 + Math.random() * 0.5, alpha: 0.9, fadeIn: 0.05, c0: [1, 0.55, 0.15], c1: [0.6, 0.12, 0.02], cell: 1, floor: false });
+            }
+          }
+        }
+        if (it.dead) continue;   // máy móc / radar / đèn ngừng hẳn
         A.t += dt;
         // căn cứ bỏ hoang: mất điện -> đèn hiệu tắt, radar đứng yên, đèn pha không quét, máy phát không xả hơi
         if (ABANDONED) { A.beacon.emissiveIntensity = 0; A.blink.emissiveIntensity = 0; continue; }

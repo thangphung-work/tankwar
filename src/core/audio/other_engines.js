@@ -165,6 +165,11 @@ SoundEngine.mixin(class {
       v.bedF.connect(bedAm);
       bedAm.connect(v.bedG);
       v.bedG.connect(v.mix);
+      // Tiếng rít riêng theo động cơ lắp (tăng áp / tuabin khí / mô-tơ điện hybrid) — xe máy zin: im
+      v.whO = osc(2000);
+      v.whG = gain(0);
+      v.whO.connect(v.whG);
+      v.whG.connect(v.mix);
       v.nextClank = 0;
       return v;
     } catch (err) {
@@ -218,9 +223,18 @@ SoundEngine.mixin(class {
       const choke = dmg >= 2 ? 0.6 : dmg === 1 ? 0.85 : 1;
       // Độ lớn nguồn: xe tăng chủ lực to nhất, xe tải 6x6 vừa, xe 4x4 nhỏ
       const K = truck ? 0.8 : wheeled ? 0.55 : 1;
-      const bodyLv = (0.04 + rpm * 0.04 + thr * 0.06) * K * (dmg >= 2 ? 0.7 : 1);
+      // động cơ lắp: tuabin gần như không còn nhịp nổ piston; hybrid êm hơn; mức tăng tốc ước theo vượt tốc độ thường
+      const eng = u.eng || 'stock', bk = Math.max(0, Math.min(1, (sr - 1) / 0.4));
+      const pk = eng === 'turbine' ? 0.3 : eng === 'hybrid' ? 0.75 : eng === 'twinturbo' ? 1.12 : 1;
+      let wf = 2000, wg = 0;
+      if (eng === 'turbine') { wf = 2300 + (rpm * 0.6 + bk * 0.4) * 3700; wg = 0.012 + rpm * 0.025 + bk * 0.015; }
+      else if (eng === 'hybrid') { wf = 180 + sr * 2500; wg = 0.004 + thr * 0.012 + bk * 0.01; }
+      else if (eng === 'tdiesel' || eng === 'twinturbo') { wf = (1600 + rpm * 3200) * (eng === 'twinturbo' ? 1.25 : 1); wg = Math.max(0, rpm - 0.3) * (0.006 + thr * 0.01) * (eng === 'twinturbo' ? 1.6 : 1); }
+      v.whO.frequency.setTargetAtTime(wf, t, tc);
+      v.whG.gain.setTargetAtTime(wg * K * (dmg >= 2 ? 0.4 : 1), t, tc);
+      const bodyLv = (0.04 + rpm * 0.04 + thr * 0.06) * K * (dmg >= 2 ? 0.7 : 1) * pk;
       v.orders.forEach((r, i) => r.g.gain.setTargetAtTime(bodyLv * r.a * (i ? 0.5 + thr * 0.8 : 1), t, tc));
-      v.exhG.gain.setTargetAtTime((0.08 + rpm * 0.1 + thr * 0.24) * (1 + dmg * 0.3) * K * (truck ? 1.25 : 1), t, tc);
+      v.exhG.gain.setTargetAtTime((0.08 + rpm * 0.1 + thr * 0.24) * (1 + dmg * 0.3) * K * (truck ? 1.25 : 1) * (eng === 'turbine' ? 0.5 : pk), t, tc);
       v.exhF.frequency.setTargetAtTime((170 + rpm * 200 + thr * 220) * choke, t, tc);
       // xích lăn (cả khi quay đầu tại chỗ) / lốp lăn: dải trung-thấp, to theo tốc độ
       v.bedF.frequency.setTargetAtTime(wheeled ? (truck ? 320 : 400) + sr * 300 : 450 + mv * 350, t, tc);

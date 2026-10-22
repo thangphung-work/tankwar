@@ -25,7 +25,12 @@
   const ROOF_Y = 15.4;
   const CAB_CH = 0.6;          // mép nóc cabin vát chéo 45° quanh 4 phía (~7 cm) như thân xe bọc thép hàn tấm
   const CAB_FRONT = -9.4;      // chân kính chắn gió
-  const RING_Z = 2.6;          // vị trí lỗ nóc gắn súng
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const RING_Z = 1.6;          // vị trí lỗ nóc gắn súng (dời lên trước: nắp mở dựng phía sau không vướng đồ nóc sau)
+  const HATCH_R = 3.4;         // bán kính lỗ nóc (vừa một người đứng)
+  const HINGE_Z = HATCH_R + 0.45, LID_OPEN = 2.6;   // bản lề ngay mép sau vòng; nắp mở ngả hẳn ra sau (~150°) tựa trên nóc, chừa chỗ xoay người bắn   // bản lề lùi xa về đuôi xe: nắp mở không chắn chỗ xoay người bắn   // trục bản lề nắp (lùi sau vòng), góc nắp khi mở
+  const GUN_Y = 1.8, GUN_Z = -4.5;   // khớp ngóc súng máy: trên chốt ở mép trước lỗ nóc, tay cầm ngang ngực xạ thủ
+  const ATGM_AT = new THREE.Vector3(2.9, 0.7, -0.4);   // ống tên lửa trên khối ngóc súng (bên phải, ngoài tấm chắn)
   const TIRE_LUG = 0.5;        // chiều cao gai lốp
   const TIRE_BEAD = 2.3;       // bán kính mép vành
 
@@ -53,6 +58,11 @@
     const mg = buildRingMount(chassis, M, unit);
     // xạ thủ đứng ở lỗ nóc vòng súng (hình người, nạp đạn thủ công, có thể hy sinh) — vehicle_crew.js
     if (typeof VehicleCrew !== 'undefined') VehicleCrew.attachScoutGunner(unit, unit.turretGroup, mg);
+    // Ô VŨ KHÍ CHÍNH: súng 12.7 mặc định; Equipment.equip đổi sang trạm trên chân đế mô-đun (roof_mounts.js) theo bộ đồ
+    unit._hmg = { pivot: unit.barrelPivot, barrel: unit.barrelGroup, muzzle: unit.muzzleTipLocal.clone(), mount: mg.hmgMount, parts: mg.hmgParts, mg };
+    const weaponCtx = { key: 'weapon', asMain: true, parent: unit.turretGroup, seat: [0, 0.25, -0.9], yBase: ROOF_Y, M, P: M.paint, D: M.dark, unit, rnd };
+    unit.mountWeapon = (id) => mountWeapon(weaponCtx, id);
+    unit.setTopAttack = (on) => setTopAttack(unit, M, on);
 
     unit.roadWheels = [];
     unit.strobeLight = null;
@@ -80,22 +90,48 @@
           scanTime += dt;
           sensor.head.rotation.y = Math.sin(scanTime * 0.4) * 1.2;
         }
+        // vũ khí chính trên chân đế mô-đun: khối ngóc giật lùi rồi về, đầu đạn rocket trong ống theo số quả còn lại
+        if (u.mainGun) {
+          const G = u.mainGun;
+          if (G.recoil) G.recoil.position.z *= Math.exp(-dt * 14);
+          if (G.rounds) {
+            // đang nạp lại giàn: đầu đạn hiện dần từng ống theo tiến độ nạp
+            const left = u.reloadTimer > 0 && u.gatlingMag <= 0 ? Math.floor((1 - u.reloadTimer / Math.max(0.1, u.reloadDuration || 1)) * G.rounds.length) : u.gatlingMag;
+            G.rounds.forEach((m, i) => { m.visible = i >= G.rounds.length - left; });
+          }
+        }
         // Nạp đạn súng máy: nòng ngóc lên, lật nắp khóa nòng, tháo hộp đạn rỗng, lắp hộp mới, đóng nắp
         const reloading = !u.isDead && u.gatlingMag <= 0 && u.reloadTimer > 0 && u.reloadDuration > 0;
         const pr = reloading ? 1 - u.reloadTimer / u.reloadDuration : 1;
         const seg = (a, b) => Math.max(0, Math.min(1, (pr - a) / (b - a)));
         const sm = x => x * x * (3 - 2 * x);
         const tilt = reloading ? sm(seg(0, 0.12)) * (1 - sm(seg(0.88, 1))) : 0;
-        mg.barrel.rotation.x = 0.2 * tilt;
-        mg.cover.rotation.x = reloading ? -1.2 * sm(seg(0.08, 0.2)) * (1 - sm(seg(0.8, 0.9))) : 0;
+        // súng đang lắp: 12.7 (mặc định) hoặc phóng lựu cầm tay trên cùng chốt (u._mgParts — nắp / hộp đạn riêng)
+        const K = u._mgParts || mg;
+        if (!u._mgParts) mg.barrel.rotation.x = 0.2 * tilt;
+        // TRÌNH TỰ THAY ĐẠN (pr 0..1, khớp MG_KEYS bên vehicle_crew):
+        //  0.08-0.20 lật nắp khóa nòng | 0.20-0.42 tháo hộp rỗng thả xuống khoang | 0.44-0.56 cúi xuống khoang móc hộp mới
+        //  0.56-0.68 nhấc hộp lên qua lỗ nóc, đặt vào khay | 0.68-0.74 mở nắp hộp | 0.74-0.86 kéo dây đạn đặt vào khay nạp
+        //  0.86-0.92 sập nắp khóa nòng | 0.93-1 kéo tay lên đạn
+        K.cover.rotation.x = reloading ? -1.2 * sm(seg(0.08, 0.2)) * (1 - sm(seg(0.86, 0.92))) : 0;
         let off = 0, rz = 0, vis = true;
         if (reloading) {
           if (pr < 0.44) { off = sm(seg(0.2, 0.42)); rz = off * 0.7; vis = pr < 0.42; }
-          else { off = 1 - sm(seg(0.46, 0.76)); rz = -off * 0.4; }
+          else { off = 1 - sm(seg(0.5, 0.68)); rz = -off * 0.4; vis = pr > 0.5; }
         }
-        mg.ammo.position.set(mg.ammo0.x - 0.9 * off, mg.ammo0.y - 2.0 * off, mg.ammo0.z + 0.3 * off);
-        mg.ammo.rotation.z = rz;
-        mg.ammo.visible = vis;
+        K.ammo.position.set(K.ammo0.x - 0.9 * off, K.ammo0.y - 3.2 * off, K.ammo0.z + 0.3 * off);
+        K.ammo.rotation.z = rz;
+        K.ammo.visible = vis;
+        if (K.ammoLid) {
+          // nắp hộp: hộp cũ đang mở (dây đạn đã kéo hết); hộp mới đóng tới lúc xạ thủ lật ra
+          const lidOpen = !reloading ? 1 : pr < 0.44 ? 1 : sm(seg(0.68, 0.74));
+          K.ammoLid.rotation.z = 1.9 * lidOpen;
+          // dây đạn: số mắt xích hiện theo đoạn đã kéo vào súng; đầu dây (cho tay xạ thủ bám)
+          const feed = !reloading ? 1 : pr < 0.2 ? 1 : pr < 0.74 ? 0 : sm(seg(0.74, 0.86));
+          const n = K.links.length, shown = Math.round(feed * n);
+          K.links.forEach((l, i) => { l.visible = i < shown; });
+          K.beltTip = K.beltPts.getPointAt(Math.max(0, Math.min(1, feed)));
+        }
         // Chớp lửa đầu nòng súng máy (spg.js đặt gatlingShotFlash = 1 mỗi phát)
         let f = u.gatlingShotFlash || 0;
         if (u.isDead) f = 0;
@@ -580,42 +616,204 @@
     chassis.add(turret);
 
     const tb = new VehicleKit.PartBatch(ROOF_Y);
-    tb.add(new THREE.TorusGeometry(2.3, 0.32, 8, 24), M.dark, [0, 0.3, 0], [Math.PI / 2, 0, 0]);
-    tb.cyl(2.1, 2.1, 0.1, 24, M.dark, [0, 0.12, 0]);
-    // Nắp lỗ nóc mở dựng phía sau
-    tb.cyl(2.0, 2.0, 0.3, 20, M.paint, [0, 2.1, 2.6], 'z', [0.25, 0, 0]);
-    // Trụ súng
-    tb.cyl(0.35, 0.45, 2.4, 10, M.dark, [0, 1.3, -1.2]);
-    // Tấm chắn đạn: 2 cánh nghiêng hai bên khe súng + tấm trên
-    tb.setTag('shield');
-    for (const s of [-1, 1]) tb.box(1.9, 2.3, 0.22, M.paint, [s * 1.35, 2.8, -2.7], [0.18, s * 0.28, 0]);
-    tb.box(4.8, 0.7, 0.22, M.paint, [0, 4.15, -2.72], [0.18, 0, 0]);
-    tb.box(4.8, 0.5, 0.22, M.paint, [0, 1.85, -2.6], [0.18, 0, 0]);
-    tb.setTag(null);
+    // Lỗ nóc cỡ người thật (Ø ~0.85 m, 8 đv = 1 m): vòng xoay có tay nắm, lòng lỗ tối; xạ thủ đứng giữa lỗ (HATCH_R)
+    // vòng xoay 2 tầng (vòng đế bắt bu-lông vào nóc + vòng bi xoay trên), gioăng cao su mép lỗ, tay nắm xoay vòng
+    tb.add(new THREE.TorusGeometry(HATCH_R + 0.35, 0.22, 6, 36), M.dark, [0, 0.12, 0], [Math.PI / 2, 0, 0]);
+    tb.add(new THREE.TorusGeometry(HATCH_R + 0.05, 0.3, 8, 36), M.paint, [0, 0.42, 0], [Math.PI / 2, 0, 0]);
+    tb.add(new THREE.TorusGeometry(HATCH_R - 0.22, 0.09, 6, 36), M.rubber || M.dark, [0, 0.62, 0], [Math.PI / 2, 0, 0]);
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * Math.PI * 2;
+      tb.cyl(0.08, 0.08, 0.1, 6, M.dark, [Math.sin(a) * (HATCH_R + 0.45), 0.36, Math.cos(a) * (HATCH_R + 0.45)]);
+    }
+    for (const a of [1.2, 5.1]) {
+      tb.box(0.18, 0.18, 0.9, M.dark, [Math.sin(a) * (HATCH_R - 0.1), 0.85, Math.cos(a) * (HATCH_R - 0.1)], [0, a + Math.PI / 2, 0]);
+      tb.box(0.14, 0.4, 0.14, M.dark, [Math.sin(a) * (HATCH_R - 0.1), 0.65, Math.cos(a) * (HATCH_R - 0.1)]);
+    }
+    // bản lề nắp ở mép sau: 2 tai bản lề + thanh xoắn trợ lực, cữ chặn nắp khi mở
+    tb.box(2.6, 0.2, 0.9, M.paint, [0, 0.42, HINGE_Z]);   // tấm đế bản lề
+    for (const s of [-1, 1]) tb.box(0.4, 0.55, 0.6, M.dark, [s * 0.9, 0.65, HINGE_Z]);
+    tb.cyl(0.13, 0.13, 2.6, 10, M.dark, [0, 0.85, HINGE_Z], 'x');
+    tb.box(0.25, 0.5, 0.25, M.dark, [1.5, 0.7, HINGE_Z + 0.35]);   // cữ chặn nắp
     tb.build(turret);
 
+    // LÒNG HỐ: nóc xe là khối đặc nên phải "khoét" bằng mặt nạ độ sâu: đĩa vô hình ngay trên mặt nóc đẩy độ sâu ra xa nhất
+    // (xóa mặt nóc trong vòng lỗ), rồi vẽ ống khoang bên trong — nhìn qua lỗ thấy thành khoang, sàn, ghế treo, hộp đạn.
+    // Thứ tự vẽ: nóc / xe (0) -> mặt nạ (1) -> lòng khoang (2) -> xạ thủ & đồ thò xuống lỗ (3)
+    const holeR = HATCH_R - 0.25, DEPTH = 8.5;
+    // mặt nạ STENCIL: đĩa vô hình trên miệng lỗ đánh dấu stencil = 1 ở những điểm ảnh nhìn thấy miệng lỗ (bị súng / tấm
+    // chắn che thì không) -> lòng khoang chỉ vẽ trong vùng đó, không xét độ sâu (vẽ đè lên mặt nóc như thể nóc bị khoét)
+    const holeGeo = new THREE.CircleGeometry(holeR, 32);
+    const mask = new THREE.Mesh(holeGeo, new THREE.MeshBasicMaterial({
+      colorWrite: false, depthWrite: false, stencilWrite: true, stencilRef: 1,
+      stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp
+    }));
+    mask.rotation.x = -Math.PI / 2; mask.position.y = 0.04; mask.renderOrder = 1;
+    mask.userData.isFxDecal = true;
+    turret.add(mask);
+    // lượt 2: trong vùng stencil, xóa độ sâu về xa nhất (mặt nóc không còn che) -> lòng khoang & chân xạ thủ vẽ với độ
+    // sâu bình thường, che khuất nhau đúng
+    const clear = new THREE.Mesh(holeGeo, new THREE.ShaderMaterial({
+      vertexShader: 'void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'void main(){ gl_FragColor = vec4(0.0); gl_FragDepthEXT = 1.0; }',
+      extensions: { fragDepth: true }, colorWrite: false, depthFunc: THREE.AlwaysDepth, transparent: true,
+      stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc,
+      stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp
+    }));
+    // chạy ở lượt vẽ trong suốt (sau mọi lớp phủ / vết bẩn / decal trong suốt trên nóc) -> không bị lớp nào vẽ đè lại
+    clear.rotation.x = -Math.PI / 2; clear.position.y = 0.04; clear.renderOrder = 10;
+    clear.userData.isFxDecal = true;
+    turret.add(clear);
+    const pit = new THREE.Group();
+    pit.renderOrder = 2;
+    // thành khoang: tối dần xuống sâu (màu đỉnh theo độ sâu)
+    const wallGeo = new THREE.CylinderGeometry(holeR, holeR, DEPTH, 28, 6, true);
+    const wc = [], wp = wallGeo.attributes.position;
+    for (let i = 0; i < wp.count; i++) { const k = 0.3 * Math.pow((wp.getY(i) + DEPTH / 2) / DEPTH, 2.2) + 0.02; wc.push(k * 0.62, k * 0.66, k * 0.55); }
+    wallGeo.setAttribute('color', new THREE.Float32BufferAttribute(wc, 3));
+    const pitMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide });
+    const wall = new THREE.Mesh(wallGeo, pitMat);
+    wall.position.y = -DEPTH / 2;
+    pit.add(wall);
+    const dark = new THREE.MeshStandardMaterial({ color: 0x151612, roughness: 1 });
+    const inner = new THREE.MeshStandardMaterial({ color: 0x2c2e27, roughness: 0.9 });
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(holeR, 28), dark);
+    floor.rotation.x = -Math.PI / 2; floor.position.y = -DEPTH + 0.02;
+    pit.add(floor);
+    // vành lót trong miệng lỗ (thép dày lộ ra) + vòng bu-lông
+    const liner = new THREE.Mesh(new THREE.CylinderGeometry(holeR + 0.01, holeR + 0.01, 0.7, 28, 1, true), new THREE.MeshStandardMaterial({ color: 0x4a4c40, roughness: 0.8, side: THREE.DoubleSide }));
+    liner.position.y = -0.3;
+    pit.add(liner);
+    // ghế treo xạ thủ (đai vải căng ngang khoang), bậc đứng, hộp đạn & ống rocket dự phòng xếp đáy khoang, thùng bộ đàm
+    const pk = new VehicleKit.PartBatch(ROOF_Y - 4);
+    pk.box(holeR * 1.9, 0.12, 1.0, inner, [0, -4.6, 0.6]);
+    pk.box(0.18, 0.18, holeR * 1.9, inner, [0, -5.0, -1.2]);
+    pk.box(2.0, 0.25, 1.2, inner, [0.4, -6.3, -0.8]);
+    pk.box(1.1, 1.0, 1.5, M.paint, [-1.6, -DEPTH + 0.5, 0.6]);
+    pk.box(1.1, 1.0, 1.5, M.paint, [-1.5, -DEPTH + 1.5, 0.7], [0, 0.2, 0]);
+    pk.cyl(0.45, 0.45, 3.2, 10, M.paint, [1.4, -DEPTH + 0.5, 0.2], 'z');
+    pk.box(1.4, 1.3, 0.8, inner, [0.9, -2.4, holeR - 0.4]);
+    pk.box(0.3, 0.3, 0.06, M.lens || dark, [0.6, -2.2, holeR - 0.82]);
+    pk.build(pit);
+    const stencilMat = (m) => { const c = m.clone(); Object.assign(c, { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp, transparent: true, opacity: 1, depthWrite: true }); return c; };
+    // thứ tự vẽ (không xét độ sâu): thành khoang -> đáy -> đồ đạc trong khoang -> vành lót miệng lỗ
+    pit.traverse(o => {
+      if (!o.isMesh) return;
+      o.material = stencilMat(o.material);
+      o.renderOrder = o === wall ? 11 : o === floor ? 11.1 : o === liner ? 11.3 : 11.2;
+      o.castShadow = false; o.receiveShadow = false; o.userData.isFxDecal = true;
+    });
+    turret.add(pit);
+
+    // NẮP LỖ NÓC: thép dày có gân chữ thập, gioăng mép, tay khóa xoay trong, quai nắm ngoài, kính tiềm vọng nhỏ.
+    // Bản lề lùi hẳn ra sau vòng (2 tay đòn nối nắp -> trục bản lề trên tấm đế sau): mở dựng ra sau không đè lưng xạ
+    // thủ / đồ sau lưng. Đóng khi xạ thủ ngồi hẳn trong xe (giàn rocket bắn từ trong), chỉ mở khi nhô lên — vehicle_crew
+    const lid = new THREE.Group();
+    lid.position.set(0, 0.85, HINGE_Z);
+    const lb = new VehicleKit.PartBatch(ROOF_Y + 0.7);
+    const LC = -HINGE_Z, R = HATCH_R - 0.1;
+    // thân nắp: thép đúc dày, mặt ngoài hơi vồng, mép vát; mặt trong phẳng có gioăng cao su
+    lb.cyl(R - 0.25, R, 0.22, 36, M.paint, [0, 0.11, LC]);
+    lb.cyl(R - 0.7, R - 0.25, 0.14, 36, M.paint, [0, 0.29, LC]);
+    lb.cyl(R, R - 0.08, 0.16, 36, M.paint, [0, -0.08, LC]);
+    lb.add(new THREE.TorusGeometry(R - 0.35, 0.09, 6, 36), M.rubber || M.dark, [0, -0.17, LC], [Math.PI / 2, 0, 0]);   // gioăng
+    // mặt ngoài: quai nắm chữ U gập, 4 đầu bu-lông bản lề, gờ chặn nước
+    lb.box(0.16, 0.22, 1.1, M.dark, [-1.2, 0.46, LC - 0.6]);
+    for (const z of [-1.1, -0.1]) lb.box(0.16, 0.22, 0.16, M.dark, [-1.2, 0.4, LC + z]);
+    for (const x of [-1.1, -0.4, 0.4, 1.1]) lb.cyl(0.09, 0.09, 0.08, 8, M.dark, [x, 0.25, LC + R - 0.45]);
+    // mặt trong: tay quay khóa trung tâm + 2 lẫy chốt chạy ra mép, tấm đệm đầu, móc giữ nắp mở
+    lb.cyl(0.32, 0.32, 0.16, 16, M.dark, [0, -0.26, LC]);
+    lb.box(2.0, 0.1, 0.22, M.dark, [0, -0.3, LC], [0, 0.4, 0]);
+    for (const sx of [-1, 1]) lb.box(0.35, 0.16, 0.45, M.dark, [sx * Math.cos(0.4) * 1.15, -0.27, LC - sx * Math.sin(0.4) * 1.15]);
+    lb.box(1.4, 0.12, 0.9, M.canvasDark || M.dark, [0.4, -0.24, LC + 1.0]);
+    lb.box(0.3, 0.3, 0.2, M.dark, [0, -0.25, LC - R + 0.35]);
+    // quai kéo chữ U mặt trong (xạ thủ nắm kéo sập nắp từ trong lỗ)
+    lb.box(0.9, 0.1, 0.12, M.dark, [0, -0.5, LC * 0.45]);
+    for (const x of [-0.42, 0.42]) lb.box(0.12, 0.32, 0.12, M.dark, [x, -0.36, LC * 0.45]);
+    // 2 tai bản lề liền nắp
+    for (const s of [-1, 1]) lb.box(0.45, 0.4, 0.7, M.dark, [s * 0.9, 0.0, -0.25]);
+    lb.build(lid);
+    turret.add(lid);
+    unit.hatchLid = lid;
+    lid.userData.open = LID_OPEN;
+    lid.rotation.x = LID_OPEN;   // mặc định mở (xạ thủ đứng súng); 0 = đóng nằm phẳng trên vòng
+    // Trụ súng (chốt trên mép trước vòng) + tấm chắn đạn (2 cánh nghiêng hai bên khe súng + tấm trên / dưới): cụm riêng —
+    // lắp vũ khí chính khác lên chân đế mô-đun thì tháo cả cụm (mountWeapon)
+    const hmgMount = new THREE.Group();
+    turret.add(hmgMount);
+    const sb = new VehicleKit.PartBatch(ROOF_Y);
+    sb.cyl(0.35, 0.5, GUN_Y, 10, M.dark, [0, GUN_Y / 2, GUN_Z]);
+    sb.box(1.0, 0.4, 1.4, M.dark, [0, 0.35, GUN_Z]);                     // đế chốt bắt vào vòng
+    sb.setTag('shield');
+    const SZ = GUN_Z - 1.5;
+    // 2 tấm trước vát chéo RA SAU từ khe súng (mũi tên chĩa về trước, làm trượt đạn) — không gập vào trong
+    for (const s of [-1, 1]) sb.box(1.9, 2.3, 0.22, M.paint, [s * 1.35, 2.8, SZ], [0.18, -s * 0.28, 0]);
+    // CÁNH CHẮN HAI BÊN: tấm thép vát chéo ra sau mỗi bên (che sườn xạ thủ khỏi đạn bắn chéo), gân tăng cứng, lỗ quan sát
+    for (const s of [-1, 1]) {
+      const th = s * 0.62, L = 2.5, x0 = s * 2.2, z0 = SZ + 0.26, cx = x0 + Math.sin(th) * L / 2, cz = z0 + Math.cos(th) * L / 2;
+      sb.box(0.22, 2.6, L, M.paint, [cx, 2.75, cz], [0, th, s * -0.06]);
+      sb.box(0.3, 0.16, L, M.dark, [cx + s * 0.05, 4.02, cz], [0, th, 0]);                                // mép trên gờ
+      sb.box(0.26, 0.4, 0.5, M.dark, [cx - Math.sin(th) * 0.4, 3.3, cz - Math.cos(th) * 0.4], [0, th, 0]);   // khe quan sát
+      sb.box(0.5, 0.22, 0.22, M.dark, [x0 + s * 0.05, 2.75, z0 + 0.05], [0, th, 0]);                        // bản lề nối tấm trước
+    }
+    sb.box(4.8, 0.7, 0.22, M.paint, [0, 4.15, SZ - 0.02], [0.18, 0, 0]);
+    sb.box(4.8, 0.5, 0.22, M.paint, [0, 0.9, SZ + 0.1], [0.18, 0, 0]);
+    for (const s of [-1, 1]) sb.box(0.16, 0.16, 1.5, M.dark, [s * 0.6, 1.0, GUN_Z - 0.75]);   // giằng tấm chắn về trụ
+    sb.setTag(null);
+    sb.build(hmgMount);
+
     const pivot = new THREE.Group();
-    pivot.position.set(0, 2.9, -1.2);
+    pivot.position.set(0, GUN_Y, GUN_Z);
     unit.barrelPivot = pivot;
     turret.add(pivot);
-    const cb = new VehicleKit.PartBatch(ROOF_Y + 2.9);
+    const cb = new VehicleKit.PartBatch(ROOF_Y + GUN_Y);
     cb.box(0.4, 0.9, 0.6, M.dark, [0, -0.6, 0]);
     cb.box(0.3, 0.5, 0.9, M.dark, [-0.55, -0.35, 0.4]);  // khay đỡ hộp đạn
     cb.build(pivot);
     // Hộp đạn 100 viên rời (thay khi nạp đạn)
     const ammo = new THREE.Group();
-    ammo.position.set(-1.2, -0.3, 0.4);
+    ammo.position.set(-1.15, 0.05, 0.25);   // sát khay, cao hơn: súng ngóc lên hộp không chúi vào vòng tháp
     const amb = new VehicleKit.PartBatch(ROOF_Y + 2.6);
-    amb.box(1.4, 1.4, 1.6, M.paint, [0, 0, 0]);
-    amb.box(1.45, 0.12, 1.65, M.dark, [0, 0.72, 0]);
-    amb.box(0.5, 0.12, 0.2, M.dark, [0, 0.82, 0]);           // quai xách
+    amb.box(1.4, 1.3, 1.6, M.paint, [0, -0.05, 0]);
+    amb.box(1.46, 0.08, 1.66, M.dark, [0, -0.5, 0]);          // gờ đáy
+    for (const z of [-0.5, 0.5]) amb.box(1.44, 1.1, 0.06, M.dark, [0, -0.05, z]);   // gân dập hai bên
     amb.build(ammo);
+    // nắp hộp đạn (bản lề cạnh ngoài, lật mở để kéo dây đạn) + quai xách
+    const ammoLid = new THREE.Group();
+    ammoLid.position.set(-0.72, 0.62, 0);
+    const alb = new VehicleKit.PartBatch(ROOF_Y + 3.3);
+    alb.box(1.45, 0.12, 1.65, M.dark, [0.72, 0.05, 0]);
+    alb.box(0.5, 0.1, 0.2, M.dark, [0.72, 0.16, 0]);
+    alb.box(0.2, 0.2, 0.3, M.dark, [1.4, 0.0, 0]);             // lẫy khóa
+    alb.build(ammoLid);
+    ammo.add(ammoLid);
     pivot.add(ammo);
+    // DÂY ĐẠN 12.7: mắt xích + đầu đạn từ miệng hộp vào khay nạp bên trái khóa nòng (hiện dần khi xạ thủ kéo dây vào súng)
+    const belt = new THREE.Group();
+    pivot.add(belt);
+    const beltPts = new THREE.CatmullRomCurve3([V3(-1.15, 0.75, 0.3), V3(-1.0, 1.0, 0.4), V3(-0.7, 0.85, 0.5), V3(-0.42, 0.3, 0.55)]);
+    // vỏ đạn đồng xỉn ám dầu / muội (không bóng vàng như mới), đầu đạn đen (xuyên giáp), mắt xích thép sẫm
+    const brass = new THREE.MeshStandardMaterial({ color: 0x5e4a26, roughness: 0.55, metalness: 0.55 });
+    const tipM = new THREE.MeshStandardMaterial({ color: 0x1c1b19, roughness: 0.5, metalness: 0.4 });
+    const linkM = new THREE.MeshStandardMaterial({ color: 0x1e1e1c, roughness: 0.6, metalness: 0.5 });
+    const rnd = new THREE.CylinderGeometry(0.065, 0.07, 0.42, 8), tipG = new THREE.ConeGeometry(0.055, 0.18, 8), lnk = new THREE.BoxGeometry(0.5, 0.06, 0.1);
+    const links = [];
+    for (let i = 0; i < 9; i++) {
+      const g = new THREE.Group(), t = i / 8, pt = beltPts.getPointAt(t), tan = beltPts.getTangentAt(t);
+      const r = new THREE.Mesh(rnd, brass); r.rotation.x = Math.PI / 2; r.position.z = 0.04; g.add(r);
+      const tp = new THREE.Mesh(tipG, tipM); tp.rotation.x = -Math.PI / 2; tp.position.z = -0.26; g.add(tp);
+      const l = new THREE.Mesh(lnk, linkM); l.rotation.y = Math.PI / 2; g.add(l);
+      g.position.copy(pt); g.lookAt(pt.clone().add(new THREE.Vector3(tan.z, 0, -tan.x)));
+      belt.add(g); links.push(g);
+    }
+    // hộp đạn & dây đạn đi qua lỗ nóc khi thay: vẽ ở lượt trong suốt sau lòng hố (vật liệu riêng)
+    const overPit = (root) => root.traverse(o => { if (o.isMesh) { const m0 = o.material, m = m0.clone(); m.onBeforeCompile = m0.onBeforeCompile; m.customProgramCacheKey = m0.customProgramCacheKey; m.userData = Object.assign({}, m0.userData); m.transparent = true; m.opacity = 1; o.material = m; o.renderOrder = 12; } });
+    overPit(ammo); overPit(belt);
+    const hmgParts = [...pivot.children, belt];   // giá súng + hộp đạn + dây đạn (ẩn khi lắp vũ khí khác)
 
     // Ống phóng tên lửa chống tăng gắn bên phải giá súng (cố định, dùng lại): phóng xong nắp trước bung (lòng ống đen), luồng
     // phụt ngược sau ống (ExplosionFX.missileLaunch); xạ thủ mở nắp sau nạp quả mới từ phía sau vào (modelAnimator)
     const atgm = new THREE.Group();
-    atgm.position.set(1.7, 0.5, -0.4);
+    atgm.position.copy(ATGM_AT);   // ngoài cánh tấm chắn (trước đây ống đâm xuyên tấm chắn)
     const ab = new VehicleKit.PartBatch(ROOF_Y + 3.4);
     ab.box(0.7, 0.7, 1.2, M.dark, [0, -0.75, -0.6]);
     ab.box(1.1, 0.16, 3.2, M.dark, [0, -0.62, -0.8]);           // máng đỡ ống
@@ -657,9 +855,17 @@
     const barrel = new THREE.Group();
     unit.barrelGroup = barrel;
     pivot.add(barrel);
-    const gb = new VehicleKit.PartBatch(ROOF_Y + 2.9);
+    const gb = new VehicleKit.PartBatch(ROOF_Y + GUN_Y);
     gb.box(0.8, 0.95, 3.2, M.dark, [0, 0, 0.6]);
     gb.box(0.25, 0.6, 0.9, M.dark, [0, 0.2, 2.6]);
+    // tấm đáy sau + 2 tay cầm chữ D (kiểu M2) và lẫy bóp cò giữa — chỗ hai bàn tay xạ thủ nắm (vehicle_crew GRIP)
+    gb.box(1.1, 0.8, 0.14, M.dark, [0, 0, 2.25]);
+    for (const s of [-1, 1]) {
+      gb.cyl(0.11, 0.11, 0.75, 8, M.dark, [s * 0.45, 0.0, 3.3]);
+      gb.box(0.12, 0.12, 1.1, M.dark, [s * 0.45, 0.36, 2.8]);
+      gb.box(0.12, 0.12, 1.1, M.dark, [s * 0.45, -0.36, 2.8]);
+    }
+    gb.box(0.3, 0.25, 0.12, M.dark, [0, 0.0, 2.4]);
     gb.cyl(0.27, 0.27, 2.0, 10, M.dark, [0, 0.05, -2.0], 'z');
     gb.cyl(0.17, 0.17, 6.6, 10, M.dark, [0, 0.05, -5.6], 'z');
     gb.cyl(0.26, 0.24, 1.0, 10, M.dark, [0, 0.05, -9.3], 'z');
@@ -691,8 +897,238 @@
     }
     flash.visible = false;
     barrel.add(flash);
-    return { flash, flashMat, ammo, ammo0: ammo.position.clone(), cover, barrel };
+    hmgParts.push(barrel);
+    return { flash, flashMat, ammo, ammo0: ammo.position.clone(), ammoLid, belt, links, beltPts, cover, barrel, hmgMount, hmgParts };
   }
+
+  // ===========================================================================
+  // Ô VŨ KHÍ CHÍNH (vòng tháp): súng máy 12.7mm có tấm chắn (mặc định) hoặc trạm vũ khí trên chân đế mô-đun dùng chung
+  // (roof_mounts.js — súng phóng lựu 40mm HV / giàn rocket 8 ống). Chân đế đặt trên vòng tháp, quay theo tháp; khối ngóc
+  // của trạm thành nòng mới (spg.js ngóc / giật / tính đầu nòng qua barrelPivot / barrelGroup), ống tên lửa chống tăng
+  // chuyển sang bắt bên khối ngóc mới. Equipment.equip gọi unit.mountWeapon(id)
+  // ===========================================================================
+  function mountWeapon(ctx, id) {
+    const u = ctx.unit, H = u._hmg;
+    if (!H || u.weaponId === id || !window.RoofMounts) return;
+    const atgm = u.antiTankLauncherMesh;
+    u.group.updateMatrixWorld(true);
+    // trả ống tên lửa về chỗ cố định trên giá súng 12.7 trước khi gỡ trạm (đặt thẳng vị trí: khối ngóc cũ có thể đang ngóc)
+    if (atgm && atgm.parent !== H.pivot) { H.pivot.add(atgm); atgm.position.copy(ATGM_AT); atgm.rotation.set(0, 0, 0); }
+    u.mainGun = null;
+    // xe trinh sát là vòng súng CÓ NGƯỜI: phóng lựu & rocket dựng riêng trên chốt súng mép trước lỗ nóc (không dùng trạm
+    // điều khiển từ xa của RoofMounts — bệ to đè lên lỗ nóc, chỗ xạ thủ đứng)
+    if (u._manned) { u._manned.parent && u._manned.parent.remove(u._manned); u._manned.traverse(o => { if (o.geometry) o.geometry.dispose(); }); u._manned = null; }
+    u._mgParts = null;
+    const manned = id === 'sagl' || id === 'agl' ? buildMannedAGL : id === 'srocket' || id === 'rocket' ? buildMannedRockets : null;
+    RoofMounts.mount(ctx, manned || id === 'hmg' ? 'none' : id);
+    if (manned) manned(ctx);
+    const G = u.mainGun, on = !!G;
+    // phóng lựu giữ trụ + tấm chắn của súng 12.7 (cùng chốt); giàn rocket có trụ riêng, bỏ tấm chắn (chắn đường rocket)
+    H.mount.visible = !on || G.kind === 'agl';
+    for (const p of H.parts) p.visible = !on;
+    if (u.crew) u.crew.mg = u._mgParts || H.mg;
+    if (on) {
+      // khối ngóc của trạm = nòng mới; thêm nhóm giật lùi bên trong (spg.js đặt barrelGroup.position.z khi bắn)
+      const pivot = G.pivot, recoil = new THREE.Group();
+      while (pivot.children.length) recoil.add(pivot.children[0]);
+      pivot.add(recoil);
+      G.recoil = recoil;
+      u.barrelPivot = pivot; u.barrelGroup = recoil; u.muzzleTipLocal = G.muzzle.clone();
+      u.group.updateMatrixWorld(true);
+      // giàn rocket thay luôn ống tên lửa chống tăng (không bắn tên lửa nữa); vũ khí khác giữ ống, bắt sang khối ngóc mới
+      if (atgm && G.kind !== 'rocket') pivot.attach(atgm);
+    } else {
+      u.barrelPivot = H.pivot; u.barrelGroup = H.barrel; u.muzzleTipLocal = H.muzzle.clone();
+    }
+    // nhịp bắn / dây đạn / thời gian nạp theo vũ khí đang lắp (spg.js SPGUnit3D.MAIN_WEAPONS)
+    const cfg = on && typeof SPGUnit3D !== 'undefined' ? SPGUnit3D.MAIN_WEAPONS[G.kind] : null;
+    const gt = (x) => (typeof GameTiming !== 'undefined' && GameTiming.t ? GameTiming.t(x) : x * 0.5);
+    u.gatlingMagMax = cfg ? cfg.mag : 100;
+    u.gatlingMag = u.gatlingMagMax;
+    u.reloadDuration = gt(cfg ? cfg.reload : 8);
+    u._noAtgm = !!(on && G.kind === 'rocket');
+    if (atgm) atgm.visible = !u._noAtgm;
+    u.availableAmmos = u._noAtgm ? ['SCOUT_BULLET'] : on ? ['SCOUT_BULLET', 'ANTI_TANK_MISSILE'] : ['SCOUT_BULLET', 'INCENDIARY', 'ANTI_TANK_MISSILE'];
+    if ((on && u.selectedAmmo === 'INCENDIARY') || (u._noAtgm && u.selectedAmmo === 'ANTI_TANK_MISSILE')) u.selectedAmmo = 'SCOUT_BULLET';
+    u.weaponId = id;
+  }
+
+  // Súng phóng lựu tự động 40mm cầm tay kiểu Mk 19 trên nôi Mk 64, lắp vào ĐÚNG chốt + tấm chắn của súng 12.7 (vòng súng
+  // có người): thân hộp vuông dài, nắp trên bản lề trước (lật khi nạp), ống áo nòng khoan lỗ + loa, khay & máng cấp đạn
+  // trái, cửa nhả mắt xích phải, 2 tay cầm chữ D + lẫy cò bướm sau tấm hậu (chỗ xạ thủ nắm — vehicle_crew), tay kéo lên
+  // đạn, thước ngắm lá. Hộp 48 quả treo bên trái (thay khi nạp)
+  function buildMannedAGL(ctx) {
+    const u = ctx.unit, M = ctx.M, P = M.paint, D = M.dark, soot = M.soot || D;
+    const root = new THREE.Group();
+    ctx.parent.add(root);
+    u._manned = root;
+    const pivot = new THREE.Group();
+    pivot.position.set(0, GUN_Y, GUN_Z);
+    root.add(pivot);
+    const b = new VehicleKit.PartBatch(ROOF_Y + GUN_Y);
+    // nôi: khay đỡ dưới thân súng, hai má ôm trục ngóc trên đầu trụ
+    b.box(1.5, 0.28, 2.8, D, [0, -0.68, 0.5]);
+    for (const s of [-1, 1]) {
+      b.box(0.16, 0.85, 1.1, D, [s * 0.8, -0.4, 0]);
+      b.cyl(0.22, 0.22, 0.2, 10, D, [s * 0.92, -0.4, 0], 'x');
+    }
+    // thân súng: hộp dài vuông vức, gờ mép nắp, đường ghép
+    b.box(1.25, 1.0, 3.7, P, [0, 0, 0.55]);
+    b.box(1.29, 0.08, 3.74, D, [0, -0.3, 0.55]);
+    b.box(0.08, 0.5, 1.0, D, [0.66, -0.08, -0.1]);               // cửa nhả mắt xích (phải)
+    b.box(0.35, 0.4, 1.1, D, [-0.8, 0.18, -0.15]);               // khay cấp đạn (trái)
+    b.box(1.12, 0.9, 0.16, D, [0, 0, 2.45]);                     // tấm hậu
+    for (const s of [-1, 1]) {
+      // tay cầm chữ D
+      b.cyl(0.11, 0.11, 0.75, 8, D, [s * 0.45, 0.0, 3.3]);
+      b.box(0.12, 0.12, 0.95, D, [s * 0.45, 0.36, 2.87]);
+      b.box(0.12, 0.12, 0.95, D, [s * 0.45, -0.36, 2.87]);
+      // tay kéo lên đạn hai bên
+      b.box(0.1, 0.1, 0.7, D, [s * 0.7, 0.15, 1.55]);
+      b.box(0.1, 0.32, 0.12, D, [s * 0.76, 0.15, 1.95]);
+    }
+    b.box(0.55, 0.16, 0.12, D, [0, 0.0, 2.72]);                  // lẫy cò bướm
+    // nòng: ống áo tản nhiệt khoan lỗ, nòng ló, loa che lửa có rãnh
+    b.cyl(0.34, 0.34, 3.0, 14, P, [0, 0.05, -2.75], 'z');
+    for (let k0 = 0; k0 < 4; k0++) {
+      const z = -1.6 - k0 * 0.7;
+      for (let k = 0; k < 6; k++) {
+        const a = k * Math.PI / 3 + (k0 % 2 ? Math.PI / 6 : 0);
+        b.box(0.12, 0.05, 0.22, D, [Math.cos(a) * 0.335, 0.05 + Math.sin(a) * 0.335, z], [0, 0, a + Math.PI / 2]);
+      }
+    }
+    b.cyl(0.36, 0.36, 0.14, 14, D, [0, 0.05, -4.25], 'z');       // vành đầu ống áo
+    b.cyl(0.2, 0.2, 0.6, 12, D, [0, 0.05, -4.6], 'z');
+    b.cyl(0.27, 0.25, 0.5, 12, soot, [0, 0.05, -5.1], 'z');
+    for (const s of [-1, 1]) b.box(0.06, 0.12, 0.3, D, [s * 0.26, 0.05, -5.1]);
+    // thước ngắm lá (khung + lá dựng) trên nóc bên trái, đầu ruồi trước
+    b.box(0.12, 0.08, 0.5, D, [-0.42, 0.56, 1.5]);
+    b.box(0.08, 0.55, 0.06, D, [-0.42, 0.85, 1.5]);
+    b.box(0.32, 0.06, 0.06, D, [-0.42, 1.1, 1.5]);
+    b.box(0.08, 0.3, 0.08, D, [-0.42, 0.62, -1.0]);
+    // máng cấp đạn từ hộp lên khay
+    b.box(0.5, 0.16, 0.8, D, [-1.15, 0.12, -0.15], [0, 0, 0.6]);
+    b.build(pivot);
+    // nắp trên (bản lề mép trước, lật lên khi nạp dây đạn mới — modelAnimator)
+    const cover = new THREE.Group();
+    cover.position.set(0, 0.52, -0.55);
+    const cb = new VehicleKit.PartBatch(ROOF_Y + GUN_Y + 0.5);
+    cb.box(1.2, 0.1, 2.6, P, [0, 0.05, 1.3]);
+    cb.box(0.3, 0.14, 0.2, D, [0, 0.14, 2.5]);                  // chốt khóa nắp
+    cb.cyl(0.07, 0.07, 1.1, 8, D, [0, 0.02, 0], 'x');           // bản lề
+    cb.build(cover);
+    pivot.add(cover);
+    // hộp đạn 48 quả treo trái: thân, nắp gờ, quai, nhãn lô bạc màu
+    const ammo = new THREE.Group();
+    ammo.position.set(-1.75, -0.35, 0.3);
+    const ab = new VehicleKit.PartBatch(ROOF_Y + GUN_Y);
+    ab.box(1.0, 1.25, 1.7, P, [0, 0, 0]);
+    ab.box(1.06, 0.08, 1.76, D, [0, 0.64, 0]);
+    ab.box(0.12, 0.12, 0.6, D, [0, 0.74, 0]);
+    ab.box(0.04, 0.5, 0.6, M.canvas || P, [-0.52, 0, 0.1]);
+    ab.build(ammo);
+    ammo.traverse(o => { if (o.isMesh) o.renderOrder = 3; });
+    pivot.add(ammo);
+    u.mainGun = { pivot, muzzle: new THREE.Vector3(0, 0.05, -5.4), kind: 'agl' };
+    u._mgParts = { cover, ammo, ammo0: ammo.position.clone(), barrel: pivot };
+  }
+
+  // Hộp phóng rocket 8 ống (4 x 2) trên trụ chạc chữ U riêng ở mép trước lỗ nóc: vỏ tôn bọc kín bó ống (thấy miệng / đuôi
+  // từng ống ở hai đầu), khung mép trước / sau, 3 đai gân, quai cẩu, giắc + cáp điện phóng xuống trụ, nhãn lô, kính ngắm
+  // phản xạ trên chạc trái. Xạ thủ bắn từ trong xe (thụp hẳn xuống lỗ), chỉ trèo lên nhét rocket vào đuôi ống khi hết giàn
+  function buildMannedRockets(ctx) {
+    const u = ctx.unit, M = ctx.M, P = M.paint, D = M.dark, soot = M.soot || D;
+    const root = new THREE.Group();
+    ctx.parent.add(root);
+    u._manned = root;
+    const PY = 3.5, cols = 4, rows = 2, pitch = 1.0, rowP = 0.95;
+    const W = cols * pitch + 0.2, Hh = rows * rowP + 0.2, Lf = -4.0, Lr = 2.0, Lc = (Lf + Lr) / 2, L = Lr - Lf;
+    // trụ + chạc chữ U
+    const pb = new VehicleKit.PartBatch(ROOF_Y);
+    pb.box(1.4, 0.4, 1.6, D, [0, 0.35, GUN_Z]);
+    pb.cyl(0.42, 0.55, 1.9, 10, D, [0, 1.15, GUN_Z]);
+    pb.box(W + 0.9, 0.3, 1.0, P, [0, 2.15, GUN_Z]);
+    for (const s of [-1, 1]) {
+      pb.box(0.28, 1.5, 0.9, P, [s * (W / 2 + 0.3), 2.85, GUN_Z]);
+      pb.cyl(0.3, 0.3, 0.14, 12, D, [s * (W / 2 + 0.5), PY, GUN_Z], 'x');
+    }
+    // kính ngắm phản xạ trên tay chạc trái
+    pb.box(0.4, 0.45, 0.6, D, [-(W / 2 + 0.3), 3.85, GUN_Z + 0.4]);
+    pb.box(0.32, 0.3, 0.04, M.glass || D, [-(W / 2 + 0.3), 4.15, GUN_Z + 0.2], [0.3, 0, 0]);
+    pb.build(root);
+    const pivot = new THREE.Group();
+    pivot.position.set(0, PY, GUN_Z);
+    root.add(pivot);
+    const b = new VehicleKit.PartBatch(ROOF_Y + PY);
+    const tubes = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) tubes.push([(c - (cols - 1) / 2) * pitch, ((rows - 1) / 2 - r) * rowP]);
+    for (const [tx, ty] of tubes) {
+      b.cyl(0.42, 0.42, L, 14, D, [tx, ty, Lc], 'z');            // ống (chỉ lộ ở hai đầu)
+      b.cyl(0.34, 0.34, 0.06, 14, soot, [tx, ty, Lf - 0.02], 'z');   // lòng miệng ống ám muội
+      b.cyl(0.34, 0.34, 0.06, 14, soot, [tx, ty, Lr + 0.02], 'z');
+    }
+    // vỏ tôn 4 mặt bọc bó ống
+    b.box(W, 0.08, L - 0.1, P, [0, Hh / 2, Lc]);
+    b.box(W, 0.08, L - 0.1, P, [0, -Hh / 2, Lc]);
+    for (const s of [-1, 1]) b.box(0.08, Hh, L - 0.1, P, [s * W / 2, 0, Lc]);
+    // khung mép trước / sau + 3 đai gân
+    for (const z of [Lf + 0.1, Lr - 0.1, Lc - 1.6, Lc, Lc + 1.6]) {
+      const t = z === Lf + 0.1 || z === Lr - 0.1 ? 0.2 : 0.14;
+      b.box(W + 0.14, 0.14, t, D, [0, Hh / 2 + 0.03, z]); b.box(W + 0.14, 0.14, t, D, [0, -Hh / 2 - 0.03, z]);
+      for (const s of [-1, 1]) b.box(0.14, Hh + 0.14, t, D, [s * (W / 2 + 0.03), 0, z]);
+    }
+    // quai cẩu trên nóc, giắc điện phóng bên trái + cáp xuống trụ, nhãn lô, vệt muội trước miệng
+    for (const z of [Lc - 1.0, Lc + 1.0]) {
+      b.box(0.1, 0.28, 0.1, D, [-0.5, Hh / 2 + 0.16, z]); b.box(0.1, 0.28, 0.1, D, [0.5, Hh / 2 + 0.16, z]);
+      b.box(1.1, 0.1, 0.1, D, [0, Hh / 2 + 0.3, z]);
+    }
+    b.cyl(0.18, 0.18, 0.25, 10, D, [-W / 2 - 0.12, -0.3, Lr - 0.8], 'x');
+    b.strut([-W / 2 - 0.2, -0.3, Lr - 0.8], [-0.4, -1.9, 0.5], 0.05, D, 5);
+    b.box(1.4, 0.5, 0.03, M.canvas || P, [W / 2 * 0.2, 0, 0]);
+    b.box(0.03, 0.5, 1.4, M.canvas || P, [W / 2 + 0.05, 0.1, Lc + 0.6]);
+    b.box(W * 0.5, 0.03, 0.9, soot, [0.3, Hh / 2 + 0.05, Lf + 0.5]);
+    // trunnion
+    b.cyl(0.2, 0.2, W + 0.9, 10, D, [0, 0, 0], 'x');
+    b.build(pivot);
+    // đầu đạn nhìn thấy trong miệng ống (ẩn khi ống đó đã phóng)
+    const noseGeo = new THREE.ConeGeometry(0.27, 0.6, 12);
+    noseGeo.rotateX(-Math.PI / 2);
+    const rounds = tubes.map(([tx, ty]) => {
+      const m = new THREE.Mesh(noseGeo, M.canvasDark || D);
+      m.position.set(tx, ty, Lf + 0.25);
+      pivot.add(m);
+      return m;
+    });
+    const muzzles = tubes.map(([tx, ty]) => new THREE.Vector3(tx, ty, Lf - 0.05));
+    // ống tên lửa chống tăng bắt ra ngoài tay chạc phải
+    u.mainGun = { pivot, muzzle: new THREE.Vector3(0, 0, Lf - 0.05), muzzles, rounds, rear: Lr, kind: 'rocket', atgmAt: new THREE.Vector3(W / 2 + 1.25, -1.0, -0.5) };
+  }
+
+  // Tên lửa tấn công đỉnh (đạn cao cấp 'topatk'): ống phóng kiểu Javelin — ống to hơn bọc đệm, khối ngắm nhiệt CLU gắn
+  // bên trái ống (thấu kính, tấm che nắng, quai), dây đeo bạt; ống cũ vẫn giữ cơ cấu nạp (animateAtgmReload)
+  function setTopAttack(u, M, on) {
+    const A = u.atgmCan;
+    if (!A || !!u._topLook === !!on) return;
+    if (u._topLook) { u._topLook.parent && u._topLook.parent.remove(u._topLook); u._topLook = null; }
+    if (!on) { A.can.scale.set(1, 1, 1); return; }
+    A.can.scale.set(1.28, 1.28, 1.08);   // ống Javelin to hơn ống tên lửa thường
+    const g = new THREE.Group();
+    const b = new VehicleKit.PartBatch(ROOF_Y + 3.4);
+    // khối CLU (ngắm nhiệt / ngày) bên trái ống
+    b.box(1.0, 0.9, 1.5, M.paint, [-0.95, 0.15, 0.6]);
+    b.box(1.06, 0.1, 1.56, M.dark, [-0.95, 0.62, 0.6]);
+    b.cyl(0.24, 0.24, 0.1, 14, M.glass, [-0.95, 0.15, -0.17], 'z');
+    b.box(0.6, 0.12, 0.4, M.dark, [-0.95, 0.45, -0.25], [0.3, 0, 0]);       // tấm che nắng ống kính
+    b.cyl(0.07, 0.07, 0.6, 6, M.dark, [-1.48, 0.15, 0.6], 'z');              // quai cầm
+    b.box(0.5, 0.42, 0.25, M.dark, [-0.95, 0.15, 1.42]);                     // hộp pin
+    // đai bạt + dây đeo, đệm cao su hai đầu ống
+    for (const z of [-2.6, 1.4]) b.cyl(0.66, 0.66, 0.42, 14, M.rubber || M.dark, [0, 0, z], 'z');
+    b.box(0.08, 0.08, 3.8, M.canvasDark || M.dark, [0.55, -0.5, -0.4], [0, 0, 0.3]);
+    b.build(g);
+    A.can.parent.add(g);
+    u._topLook = g;
+  }
+
 
   TankModelBuilder.registerModel('SCOUT', buildMarten);
 })();

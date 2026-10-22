@@ -293,8 +293,9 @@
       headGlow(group, 2.4, 0xff7a3a, 'incendiary', -L / 2);
     } else {
       // vạch đường đỏ cam (chất cháy strontium): vệt mảnh, đầu sáng
-      addTracer(group, scout ? 15 : 19, scout ? 0.42 : 0.55, 0xff5a2a, 'bullet' + key, -L / 2);
-      headGlow(group, scout ? 1.5 : 1.9, 0xff8a52, 'bullet' + key, -L / 2);
+      // 12.7mm: liều vạch đường nhỏ -> vệt rất mảnh (~6 cm, trước ~13 cm trông như thanh sáng đặc), lõi vàng nóng ở đầu
+      addTracer(group, scout ? 15 : 19, scout ? 0.2 : 0.55, scout ? 0xff6e38 : 0xff5a2a, 'bullet' + key, -L / 2);
+      headGlow(group, scout ? 1.1 : 1.9, scout ? 0xffa060 : 0xff8a52, 'bullet' + key, -L / 2);
     }
     return L;
   }

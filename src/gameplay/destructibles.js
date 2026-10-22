@@ -33,7 +33,8 @@ const Destructibles = (() => {
     HE: { power: 1.7, radius: 32, heat: 0.8 },
     AP: { power: 1.0, radius: 4.2, heat: 0.6, pierce: true },   // xuyên động năng: phá tập trung, vùng ảnh hưởng nhỏ
     CLUSTER: { power: 1.2, radius: 30, heat: 0.6 },
-    CLUSTER_SUBMUNITION: { power: 0.55, radius: 13, heat: 0.5 },
+    // bom con DPICM: vỏ thép mảnh + vòng zirconi gây cháy -> tia lửa nóng bắn vào tán cây khô là bén lửa ngay
+    CLUSTER_SUBMUNITION: { power: 0.55, radius: 13, heat: 0.6, fire: true },
     RPG: { power: 1.3, radius: 15, heat: 0.7, pierce: true },
     ANTI_TANK_MISSILE: { power: 1.5, radius: 18, heat: 0.75, pierce: true },
     GATLING_BULLET: { power: 0.07, radius: 3.5, heat: 0.1 },
@@ -1810,6 +1811,28 @@ const Destructibles = (() => {
     return (leafy ? '#define TREE_LEAFY\n' : '') + (tint ? 'attribute vec3 tint;\nvarying vec3 vTint;\n' : '') +
       'attribute float burn;\nvarying float vBurn;\nvarying vec3 vLP;\nuniform float uWind;\n' + vs;
   }
+  // Nhìn qua kính ngắm khi xe núp trong bụi / dưới tán cây: lá ngay sát ống kính che kín cả kính (thật ra kính nhô lên khỏi
+  // bụi / pháo thủ vạch lá ra). Bỏ vẽ phần tán lá & bụi nằm trong bán kính quanh camera kính ngắm.
+  // xyz = vị trí camera, w = bán kính (0 = tắt). game.js đặt mỗi khung hình khi đang ngắm.
+  const SIGHT_CULL = { value: new THREE.Vector4(0, 0, 0, 0) };
+  function sightCull(mat) {
+    const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+    mat.onBeforeCompile = (sh, r) => {
+      if (prev) prev.call(mat, sh, r);
+      sh.uniforms.uSightCull = SIGHT_CULL;
+      sh.vertexShader = 'varying vec3 vSCW;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+  #ifdef USE_INSTANCING
+    vSCW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+  #else
+    vSCW = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  #endif`);
+      sh.fragmentShader = 'uniform vec4 uSightCull;\nvarying vec3 vSCW;\n' + sh.fragmentShader.replace('void main() {', `void main() {
+  if (uSightCull.w > 0.0 && distance(vSCW, uSightCull.xyz) < uSightCull.w) discard;`);
+    };
+    mat.customProgramCacheKey = () => (prevKey ? prevKey.call(mat) : '') + '_sc';
+    return mat;
+  }
+
   function treeMat(mat, mode) {
     mat.onBeforeCompile = sh => {
       sh.uniforms.uWind = WIND;
@@ -2309,9 +2332,9 @@ const Destructibles = (() => {
           let crownMat = null, crownMap = null;
           if (v.crown) {
             crownMap = v.crownKind === 'frond' ? leafTex('frond') : foliageTex(v.crownKind);
-            crownMat = treeMat(new THREE.MeshStandardMaterial({
+            crownMat = sightCull(treeMat(new THREE.MeshStandardMaterial({
               map: crownMap, alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0
-            }), 'leaf');
+            }), 'leaf'));
           }
           return { v, trunkMat, stumpMat, crownMat, crownMap };
         });
@@ -2986,6 +3009,24 @@ const Destructibles = (() => {
         this.fell(it, vx, vz, fx, { crush: true, v: Math.hypot(vx, vz), brk: RNG() < 0.5 ? 0 : rand(lo, lo + 3) });
       }
     }
+    // Xe trinh sát 4x4 nhẹ (~10 tấn) húc cây: không đủ sức bật gốc như xe xích 40-60 tấn — bị thân cây chặn lại
+    // (terrain.resolveVehicleCollision), cây rung mạnh, lá & cành nhỏ rụng xuống, một phần rơi đọng trên xe.
+    // Trả về danh sách cây vừa bị húc (mỗi cây nghỉ 0,7 s để xe tì vào cây không rụng lá liên tục mỗi khung hình)
+    brush(x, z, r, vx, vz, fx, now) {
+      const out = [];
+      const sp = Math.hypot(vx, vz);
+      for (const it of this.near(x, z, r + 6)) {
+        if (it.fallen || it.kind === 'cactus') continue;
+        if (Math.hypot(it.x - x, it.z - z) > r + (it.trunkR || 1.5)) continue;
+        if (it._brushT !== undefined && now - it._brushT < 0.7) continue;
+        it._brushT = now;
+        const k = Math.min(1, 0.3 + sp / 60);
+        this.push(it, vx || (it.x - x), vz || (it.z - z), 0.02 + 0.05 * k);
+        if (it.ci >= 0 && !it.crownGone) this.stripLeaves(it, 0.02 + 0.03 * k, it.x, it.y + it.height * 0.7, it.z, fx);
+        out.push(it);
+      }
+      return out;
+    }
     update(dt, fx) {
       if (this.delayed && this.delayed.length) {
         for (let i = this.delayed.length - 1; i >= 0; i--) {
@@ -3238,9 +3279,11 @@ const Destructibles = (() => {
   // sd: sức phá KẾT CẤU mỗi phát trúng thẳng (mảng tường bền 1.0 -> nứt toác dần, cột gần điểm trúng nứt theo; xem strain / checkStructure)
   // kg: khối lượng thuốc nổ quy TNT — nổ BÊN TRONG nhà: sóng xung kích + áp suất tích tụ trong phòng kín thổi bật vách (confinedBlast)
   const BLD = {
-    SCOUT_BULLET: { hole: 0, crater: 0.9, chip: 0.34, soot: 0, glass: 1.5, sp: 0, sr: 0, kin: true, ric: 0.4, sd: 0.002 },
-    GATLING_BULLET: { hole: 0, crater: 1.5, chip: 0.55, soot: 1.8, glass: 4, sp: 0.02, sr: 3, kin: true, ric: 0.36, sd: 0.004 },
-    INCENDIARY: { hole: 0, crater: 1.3, chip: 0.4, soot: 3.5, glass: 3, sp: 0.01, sr: 3, kin: true, ric: 0.36, sd: 0.003 },
+    // đạn súng: sp đủ để xả tập trung vào nóc / sàn thì băm thủng dần (12.7mm ~180 viên một ô mái bằng, 30mm nổ-mảnh
+    // ~20 viên — trước đây 12.7mm không làm hư gì, 30mm ~200 viên do sức nổ dưới ngưỡng tính của blastNear)
+    SCOUT_BULLET: { hole: 0, crater: 0.9, chip: 0.34, soot: 0, glass: 1.5, sp: 0.025, sr: 2, kin: true, ric: 0.4, sd: 0.002 },
+    GATLING_BULLET: { hole: 0, crater: 1.5, chip: 0.55, soot: 1.8, glass: 4, sp: 0.08, sr: 3, kin: true, ric: 0.36, sd: 0.004 },
+    INCENDIARY: { hole: 0, crater: 1.3, chip: 0.4, soot: 3.5, glass: 3, sp: 0.06, sr: 3, kin: true, ric: 0.36, sd: 0.003 },
     // Cỡ lỗ theo thực tế trên tường bê tông ~27 cm (gạch đất / gỗ / tôn: x WM.k lớn hơn):
     //  APFSDS: lỗ vào ~30 cm, vành bóc lở ~70 cm, mặt sau toác rộng hơn · RPG-7: lỗ ~20 cm, vành ~60 cm
     //  tên lửa chống tăng (đầu nổ kép): lỗ ~35 cm · đạn con DPICM: lỗ ~15 cm
@@ -3738,9 +3781,10 @@ const Destructibles = (() => {
           const pool = bx === 1 ? pools.full : i === 0 ? pools.n : i === bx - 1 ? pools.p : pools.mid;
           const m = mk(pool, (xa + xb) / 2, y, 0, xb - xa, sy, sz, 0, 'roof', floors, (xb - xa) / 2, hy, hz);
           m.ly = ly; m.ti = i; m.slice = true;
-          // một ô mái = cả dải ~3,3 m x hai mái dốc: một phát đạn tăng chỉ đục một lỗ ~1-2 m (vết lỗ, xem damageAt) chứ không
-          // thổi bay cả dải -> máu ô mái ~2,6 lần (2-3 phát nổ phá / 1 phát lựu pháo mới sụp cả dải)
-          m.hp *= 2.6; m.hp0 = m.hp;
+          // một ô mái = cả dải ~3,3 m x hai mái dốc: bền hơn ô mái bằng một chút (x1,6). Trước đây x2,6: không phát 120 mm
+          // nào (kể cả nổ mạnh) phá nổi một dải -> trông như nóc nhà bất tử. Giờ: nổ mạnh / đạn thường bắn dốc 1 phát sụp dải,
+          // đạn sượt / bắn là là 2 phát, lựu pháo 1 phát sụp cả dải & lan sang dải bên
+          m.hp *= 1.6; m.hp0 = m.hp;
           if (c0) { m.c = c0.clone(); pool.color(m.idx, m.c); } else c0 = m.c;
           B.roofMods.push(m);
         }
@@ -7867,7 +7911,7 @@ const Destructibles = (() => {
           .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal = normal * faceDirection;', ''));
       };
       m.customProgramCacheKey = () => 'bushFoliage1';
-      return m;
+      return sightCull(m);
     }
     // Bụi cây thấp (khối đơn vị, đáy y ~ -0.2): vòm thẻ lá dày; dùng texture lá nhạt màu, màu thật do instanceColor từng bụi
     function bushGeometry(seed) {
@@ -7887,7 +7931,7 @@ const Destructibles = (() => {
     return { leafTex, foliageMat, bushGeometry };
   })();
 
-  return { buildingInfo: BLD_INFO, Foliage, TreeField, BuildingSet, BunkerSet, ConcreteWall, SingleBuilding, BlockStructure, FractureKit, ammoInfo, BK, segCircleT, withSeed };
+  return { buildingInfo: BLD_INFO, SIGHT_CULL, Foliage, TreeField, BuildingSet, BunkerSet, ConcreteWall, SingleBuilding, BlockStructure, FractureKit, ammoInfo, BK, segCircleT, withSeed };
 })();
 
 if (typeof window !== 'undefined') window.Destructibles = Destructibles;

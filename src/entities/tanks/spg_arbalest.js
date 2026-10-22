@@ -90,6 +90,15 @@
     const deploy = buildDeployGear(chassis, M);
     updateDeployGear(deploy, 0);
     const turretParts = buildTurret(chassis, M, unit, rnd);
+    // Ô UAV: UAV trinh sát (đế sạc + drone trên nóc cabin — drone_air.js gắn trong trận) hoặc UAV cảm tử phóng từ ống trên
+    // chân đế mô-đun dùng chung (roof_mounts.js) đặt đúng chỗ đế sạc. Equipment.equip gọi unit.mountUav(id)
+    const uavCtx = { key: 'uav', parent: chassis, seat: [6.1, CAB_ROOF, -25.6], yBase: CAB_ROOF, M, P: M.paint, D: M.dark, unit, rnd };
+    unit.uavKind = 'recon';
+    unit.mountUav = (id) => {
+      if (!window.RoofMounts) return;
+      RoofMounts.mount(uavCtx, id === 'kami' ? 'kami' : 'none');
+      unit.uavKind = id === 'kami' ? 'kami' : 'recon';
+    };
     const gun = buildHowitzer(unit, M);
     // Nòng thật theo trục giả ngay lập tức (giới hạn khi vắt qua cabin): spg.js gọi khi thử góc nòng (chạm trần hầm / tường)
     // trong cùng khung hình — không thì phép thử đo nòng ở góc khung trước
@@ -255,14 +264,9 @@
     hb.box(5.0, 2.2, 1.8, D, [0, 7.6, -38.8]);
     hb.cyl(0.9, 0.9, 3.8, 12, M.steel, [0, 7.6, -39.2], 'x');
 
-    // Nóc cabin: cửa nóc, đèn quay, ăng-ten, giá khóa nòng hành quân
+    // Nóc cabin: cửa nóc, đèn quay, giá khóa nòng hành quân (ăng-ten liên lạc chỉ còn 2 cần trên tháp pháo)
     hb.cyl(1.9, 2.0, 0.4, 18, P, [-4.6, CAB_ROOF + 0.2, -27.0]);
     hb.box(1.0, 0.35, 0.6, D, [-4.6, CAB_ROOF + 0.35, -25.0]);
-    hb.cyl(0.4, 0.45, 0.6, 8, D, [7.6, CAB_ROOF + 0.3, -31.5]);
-    const cabAnt = new VehicleKit.AntennaSet(D, chassis);
-    cabAnt.add([7.6, CAB_ROOF + 0.6, -31.5], 11, { tilt: [0.1, 0], r0: 0.08, r1: 0.045 });
-    cabAnt.build();
-    (unit.antennaSets || (unit.antennaSets = [])).push(cabAnt);
     hb.setTag('travelLock');
     for (const s of [-1, 1]) hb.beam([s * 3.4, CAB_ROOF, -21.6], [s * 1.6, CAB_ROOF + 2.3, -21.6], 0.5, 0.5, P);
     hb.box(4.2, 0.5, 1.2, P, [0, CAB_ROOF + 2.4, -21.6]);
