@@ -11,8 +11,6 @@
 .ti-controls-hint kbd { display: inline-block; margin-right: 4px; padding: 1px 6px; font: 700 11px var(--font-mono); color: var(--tc-bright); background: var(--tc-bg); border: 1px solid var(--tc-line-2); border-bottom-width: 2px; }
 .ti-controls-hint #ti-autorotate-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 0; font: 700 11px var(--font-tech); letter-spacing: .8px; color: var(--tc-dim); background: transparent; border: 1px solid var(--tc-line-2); cursor: pointer; }
 .ti-controls-hint #ti-autorotate-toggle.active { color: var(--tc-accent-2); border-color: var(--tc-accent); }
-.ti-wall-btn { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-.ti-wall-btn .ti { font-size: 13px; }
 
 /* ---- DẢI TRANG BỊ ---- */
 .ti-equip-dock { position: relative; z-index: 6; flex: 0 0 auto; display: flex; flex-direction: column; background: var(--tc-bg-2); border-top: 1px solid var(--tc-line-2); color: var(--tc-text); }
