@@ -62,6 +62,7 @@
       update(dt, u) {
         if (dt <= 0) return;
         if (u.antennaSets) for (const a of u.antennaSets) a.update(dt);
+        animateAtgmReload(u, dt);
         const yaw = u.group.rotation.y;
         let dYaw = lastYaw === null ? 0 : yaw - lastYaw;
         lastYaw = yaw;
@@ -112,6 +113,64 @@
       }
     };
     return { hullW: HALF_W * 2 };
+  }
+
+  // NẠP ỐNG PHÓNG TÊN LỬA (theo antiTankCooldown): phóng xong ống rỗng nằm trên máng (nắp trước bung, lòng ống đen) ->
+  // tháo chốt, ống trượt lùi & ngóc lên -> vứt sang bên rơi xuống đất -> ống mới đưa từ giá chở trên nóc lên, trượt vào
+  // máng, sập chốt (giật nhẹ). Hết tên lửa thì để máng trống
+  function animateAtgmReload(u, dt) {
+    const A = u.atgmCan;
+    if (!A) return;
+    const cd = u.antiTankCooldown || 0, max = u.antiTankCooldownMax || 1;
+    const S = A.st || (A.st = { last: 0, phase: 'idle', tossed: false });
+    if (cd > S.last + 0.05 && !u.isDead) { S.phase = 'reload'; S.tossed = false; }
+    S.last = cd;
+    const sm = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+    const can = A.can;
+    if (S.phase !== 'reload') {
+      can.position.set(0, 0, 0); can.rotation.set(0, 0, 0);
+      const has = (u.missileAmmoCount || 0) > 0 || u.missileAmmoCount === undefined;
+      can.visible = has; A.capCover.visible = true; A.capOpen.visible = false;
+      return;
+    }
+    const pr = cd > 0 ? 1 - cd / max : 1;
+    const more = (u.missileAmmoCount || 0) > 0;
+    if (pr < 0.3) {
+      // ống rỗng: trượt lùi + ngóc lên rồi vứt
+      can.visible = true; A.capCover.visible = false; A.capOpen.visible = true;
+      const k = sm((pr - 0.12) / 0.16);
+      can.position.set(0.2 * k, 0.5 * k, 1.6 * k);
+      can.rotation.set(0.3 * k, 0, -0.25 * k);
+    } else {
+      if (!S.tossed) { S.tossed = true; tossCanister(u, A); }
+      if (!more) { can.visible = false; if (cd <= 0) S.phase = 'idle'; return; }
+      // ống mới: từ giá chở phía sau / dưới đưa lên, trượt vào máng, sập chốt
+      const k = sm((pr - 0.5) / 0.3);
+      can.visible = pr > 0.5;
+      A.capCover.visible = true; A.capOpen.visible = false;
+      const jolt = pr > 0.8 && pr < 0.88 ? Math.sin((pr - 0.8) / 0.08 * Math.PI) * 0.08 : 0;
+      can.position.set(0, -1.8 * (1 - k) - jolt, 3.2 * (1 - k));
+      can.rotation.set(-0.35 * (1 - k), 0, 0);
+    }
+    if (cd <= 0) S.phase = 'idle';
+  }
+
+  let CAN_GEO = null;
+  function tossCanister(u, A) {
+    if (typeof ReloadFX === 'undefined' || !u.scene) return;
+    if (!CAN_GEO) { CAN_GEO = new THREE.CylinderGeometry(0.6, 0.6, 5.6, 12); CAN_GEO.rotateX(Math.PI / 2); CAN_GEO.userData.shared = true; }
+    const mat = A.paint.clone(); mat.userData.own = true;
+    const m = new THREE.Mesh(CAN_GEO, mat);
+    m.castShadow = true;
+    m.userData.half = 0.6;
+    A.can.updateWorldMatrix(true, false);
+    const pos = new THREE.Vector3(0, 0, -0.8).applyMatrix4(A.can.matrixWorld);
+    A.can.getWorldQuaternion(m.quaternion);
+    // vứt sang phải xe (trục +X của giá) và hơi ra sau
+    const q = new THREE.Quaternion();
+    A.can.parent.getWorldQuaternion(q);
+    const side = new THREE.Vector3(1, 0, 0.3).applyQuaternion(q);
+    ReloadFX.toss(u.scene, m, pos, { x: side.x * 9, y: 8, z: side.z * 9 }, { x: 0.6, y: 0.4, z: -2.2 }, 10);
   }
 
   // Cắt vát góc đa giác [x, z]: mỗi đỉnh thay bằng 2 đỉnh lùi k đơn vị theo hai cạnh kề (góc đứng thân xe vát chéo)
@@ -608,15 +667,29 @@
     amb.build(ammo);
     pivot.add(ammo);
 
-    // Ống phóng tên lửa chống tăng gắn bên phải giá súng
+    // Ống phóng tên lửa chống tăng gắn bên phải giá súng: giá đỡ cố định + ỐNG CHỨA-PHÓNG rời (can) — bắn xong ống rỗng
+    // (nắp trước bung, lòng ống đen) được tháo vứt xuống, ống mới lắp vào (modelAnimator)
     const atgm = new THREE.Group();
     atgm.position.set(1.7, 0.5, -0.4);
     const ab = new VehicleKit.PartBatch(ROOF_Y + 3.4);
-    ab.cyl(0.6, 0.6, 5.6, 14, M.paint, [0, 0, -0.8], 'z');
-    ab.cyl(0.62, 0.62, 0.22, 14, M.dark, [0, 0, -3.65], 'z');
-    ab.cyl(0.64, 0.64, 0.3, 14, M.dark, [0, 0, 2.0], 'z');
     ab.box(0.7, 0.7, 1.2, M.dark, [0, -0.75, -0.6]);
+    ab.box(1.1, 0.16, 3.2, M.dark, [0, -0.62, -0.8]);           // máng đỡ ống
     ab.build(atgm);
+    const can = new THREE.Group();
+    const cnb = new VehicleKit.PartBatch(ROOF_Y + 3.4);
+    cnb.cyl(0.6, 0.6, 5.6, 14, M.paint, [0, 0, -0.8], 'z');
+    cnb.cyl(0.62, 0.62, 0.22, 14, M.dark, [0, 0, -3.65], 'z');
+    cnb.cyl(0.64, 0.64, 0.3, 14, M.dark, [0, 0, 2.0], 'z');
+    cnb.box(0.22, 0.3, 0.9, M.dark, [0, 0.66, -0.6]);           // quai xách
+    cnb.build(can);
+    // nắp trước (còn đạn) / lòng ống đen ám khói (đã phóng)
+    const capCover = new THREE.Mesh(new THREE.CircleGeometry(0.56, 14), M.dark);
+    capCover.position.set(0, 0, -3.77); capCover.rotation.y = Math.PI;
+    const capOpen = new THREE.Mesh(new THREE.CircleGeometry(0.5, 14), new THREE.MeshBasicMaterial({ color: 0x070605 }));
+    capOpen.position.set(0, 0, -3.78); capOpen.rotation.y = Math.PI; capOpen.visible = false;
+    can.add(capCover, capOpen);
+    atgm.add(can);
+    unit.atgmCan = { can, capCover, capOpen, paint: M.paint, dark: M.dark };
     pivot.add(atgm);
     unit.antiTankLauncherMesh = atgm;
     VehicleKit.registerPartGroup(unit, 'atgm', atgm);

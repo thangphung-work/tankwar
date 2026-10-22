@@ -78,10 +78,24 @@
     // -------------------------------------------------------------------------
     let lastYaw = null;
     let scanTime = rnd() * 10;
+    let lastRl = 0, ejT = -1, ejDone = true;
     unit.modelAnimator = {
       update(dt, u) {
         if (dt <= 0) return;
         if (u.antennaSets) for (const a of u.antennaSets) a.update(dt);
+        // NẠP ĐẠN sau mỗi phát (reloadTimer vừa nhảy lên): ~0.3 s cửa hất đuôi tháp bật mở, đế liều phóng thép văng ra
+        // sau lưng tháp kèm khói thuốc phóng, cửa sập lại ~1.1 s; kíp nạp đạn lấy viên mới từ hộc đuôi tháp (âm thanh)
+        const rl = u.reloadTimer || 0;
+        if (rl > lastRl + 0.05 && !u.isDead) { ejT = 0; ejDone = false; }
+        lastRl = rl;
+        const flap = turretParts.ejFlap;
+        if (ejT >= 0 && flap) {
+          ejT += dt;
+          const sm = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+          flap.rotation.x = -1.4 * sm((ejT - 0.22) / 0.1) * (1 - sm((ejT - 0.9) / 0.25));
+          if (!ejDone && ejT >= 0.3) { ejDone = true; ejectStub(u, flap); }
+          if (ejT > 1.2) { ejT = -1; flap.rotation.x = 0; }
+        }
         const yaw = u.group.rotation.y;
         let dYaw = lastYaw === null ? 0 : yaw - lastYaw;
         lastYaw = yaw;
@@ -111,6 +125,31 @@
     };
 
     return { hullW: HULL_HALF_W * 2 };
+  }
+
+  // Đế liều phóng 120mm (thép, Ø ~13 cm, cao ~8 cm) văng ra khỏi cửa hất đuôi tháp
+  let STUB_GEO = null;
+  function ejectStub(u, flap) {
+    if (typeof ReloadFX === 'undefined' || !u.scene || !flap) return;
+    if (!STUB_GEO) {
+      STUB_GEO = new THREE.CylinderGeometry(0.55, 0.55, 0.65, 12);
+      STUB_GEO.userData.shared = true;
+    }
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8a7a5c, metalness: 0.75, roughness: 0.4 });
+    mat.userData.own = true;
+    const m = new THREE.Mesh(STUB_GEO, mat);
+    m.castShadow = true;
+    m.userData.half = 0.4;
+    flap.updateWorldMatrix(true, false);
+    const pos = new THREE.Vector3(0, 0.5, 0).applyMatrix4(flap.parent.matrixWorld);
+    // tung lên rồi ra sau tháp (trục +Z của tháp trong thế giới), rơi xuống sàn động cơ / đất
+    const q = new THREE.Quaternion();
+    flap.parent.getWorldQuaternion(q);
+    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    const sp = 12 + Math.random() * 7;
+    const vel = { x: back.x * sp + (Math.random() - 0.5) * 5, y: 24 + Math.random() * 7, z: back.z * sp + (Math.random() - 0.5) * 5 };
+    ReloadFX.toss(u.scene, m, pos, vel, { x: 9 + Math.random() * 8, y: Math.random() * 4, z: (Math.random() - 0.5) * 10 }, 9);
+    ReloadFX.puff(u, pos, { x: back.x * 0.4, y: 1, z: back.z * 0.4 }, 3);
   }
 
   // ---------------------------------------------------------------------------
@@ -864,7 +903,25 @@
     unit.jammer = { group: jam, head, tilt, ledMat };
     VehicleKit.registerPartGroup(unit, 'jammer', jam);
 
-    return { periHead };
+    // Cửa hất đế liều phóng trên nóc đuôi tháp (bên nạp đạn, giữa 2 tấm xả áp hộc đạn): liều phóng cháy hết, còn lại đế
+    // thép — kíp nạp đạn tống ra ngoài qua cửa nhỏ này sau mỗi phát như cửa hất đế trên nóc tháp T-72 (modelAnimator: cửa
+    // bật ngửa, đế văng lên ra sau tháp, khói thuốc xì theo). Cửa sau tháp bị giỏ đồ che nên đặt trên nóc
+    const ej = new THREE.Group();
+    ej.position.set(1.6, ROOF + 0.02, 12.2);
+    const eb = new VehicleKit.PartBatch(DECK_Y + ROOF);
+    eb.box(2.8, 0.14, 2.4, D, [0, 0.07, 0]);           // khung cửa
+    eb.build(ej);
+    const ejFlap = new THREE.Group();                   // cánh cửa, bản lề ở mép trước
+    ejFlap.position.set(0, 0.14, -1.1);
+    const fb = new VehicleKit.PartBatch(DECK_Y + ROOF);
+    fb.box(2.4, 0.22, 2.1, P, [0, 0.11, 1.05]);
+    fb.box(0.6, 0.18, 0.22, D, [0, 0.3, 1.8]);          // tay kéo
+    fb.cyl(0.13, 0.13, 2.3, 8, D, [0, 0.08, 0], 'x');    // trục bản lề
+    fb.build(ejFlap);
+    ej.add(ejFlap);
+    turret.add(ej);
+
+    return { periHead, ejFlap };
   }
 
   // ===========================================================================
