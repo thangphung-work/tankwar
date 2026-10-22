@@ -638,6 +638,45 @@ const VehicleKit = (() => {
     return t;
   }
 
+  // Tấm chắn bùn cao su sau bánh (UV 0..1 trên mặt tấm, đỉnh ảnh = mép trên): màng bụi dày dần xuống dưới, lớp bùn
+  // bánh hắt vón cục ở nửa dưới (mép răng cưa, lõi sát mép đáy còn ướt sẫm), vết bắn thưa dần lên trên, vệt bùn chảy dọc
+  function getMudFlapTexture() {
+    if (TEX_CACHE.__mudFlap) return TEX_CACHE.__mudFlap;
+    if (typeof document === 'undefined') return null;
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(size, size);
+    const film = makeFbm(4, 4, 401), clod = makeFbm(8, 3, 409), splat = makeFbm(24, 2, 419);
+    const drip = makeFbm(32, 2, 431), grain = makeFbm(64, 2, 421);
+    const rubber = [38, 37, 35], dust = [112, 99, 80], mud = [84, 68, 50], wet = [46, 38, 29];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const nx = x / size, ny = y / size, p = (y * size + x) * 4;
+        const g = grain(nx, ny), c = clod(nx, ny);
+        const f = Math.max(0, Math.min(0.75, 0.12 + 0.45 * ny * ny + (film(nx, ny) - 0.5) * 0.3));
+        const crust = smooth01(-0.03, 0.03, ny - (0.6 + (0.5 - c) * 0.55));
+        const wetK = smooth01(0.78, 0.95, ny + (c - 0.5) * 0.3);
+        const sp = smooth01(0.66, 0.72, splat(nx, ny) + ny * 0.22 - 0.06);
+        const dr = smooth01(0.6, 0.72, drip(nx, ny * 0.06)) * smooth01(0.2, 0.55, ny);
+        for (let k = 0; k < 3; k++) {
+          let v = rubber[k] * (0.9 + g * 0.2);
+          v += (dust[k] - v) * f;
+          v += (mud[k] * (0.85 + g * 0.3) - v) * Math.max(dr * 0.55, sp * 0.85);
+          v += (mud[k] * (0.8 + g * 0.4) - v) * crust * 0.95;
+          v += (wet[k] * (0.9 + g * 0.2) - v) * crust * wetK * 0.75;
+          img.data[p + k] = Math.max(0, Math.min(255, v));
+        }
+        img.data[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(canvas);
+    TEX_CACHE.__mudFlap = t;
+    return t;
+  }
+
   /**
    * Kính cabin chống đạn bám bụi (map + roughnessMap theo UV mặt hộp, 0..1 trên mỗi ô kính): kính dày tối, không
    * nhìn xuyên vào trong; đọc ra là mặt kính nhờ phản chiếu trời (getGlassEnvCube) + lớp bụi dày ở mép & đáy,
@@ -978,6 +1017,9 @@ const VehicleKit = (() => {
       // này phải có thuộc tính color -> chỉ dùng cho hình từ tireGeometry
       mats.tire = new THREE.MeshStandardMaterial({ color: 0xffffff, map: getTireTexture(), roughness: 0.92, metalness: 0.0, vertexColors: true });
       mats.tire.userData.surface = 'rubber';
+      // Tấm chắn bùn cao su bám bùn bánh hắt (hình hộp mỏng không vát: UV 0..1 mỗi mặt)
+      mats.mudFlap = new THREE.MeshStandardMaterial({ color: 0xffffff, map: getMudFlapTexture(), roughness: 0.95, metalness: 0.0 });
+      mats.mudFlap.userData.surface = 'rubber';
       // Kính cabin bụi bám, kính chắn gió có cung gạt nước
       const genv = getGlassEnvCube();
       for (const [k, kind] of [['glassWindL', 'windL'], ['glassWindR', 'windR'], ['glassDusty', 'side']]) {
