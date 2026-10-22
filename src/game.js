@@ -464,6 +464,15 @@ class ArtilleryGame3D {
     this._playerDeaths = 0;
     this.addCombatLog(`[[rocket]] XUẤT TRẬN THÀNH CÔNG! Chào mừng ${myName} vào chiến địa!`, 'tip');
     this.addCombatLog('[[swords]] Chiếm 1 cứ điểm A, B hoặc C rồi đứng giữ đủ 60 giây để thắng — hoặc hạ nhiều địch hơn khi hết giờ', 'system');
+    // thời tiết của bản đồ: báo cho người chơi (tầm mắt phát hiện địch giảm) + tiếng mưa / gió bão
+    const W = M && M.weather;
+    if (window.soundEngine && window.soundEngine.setWeather) window.soundEngine.setWeather(W ? W.kind : 'clear');
+    if (W && W.kind !== 'clear') {
+      const icon = { overcast: 'cloud', rain: 'cloud-rain', fog: 'mist', dust: 'wind' }[W.kind] || 'cloud';
+      const cut = Math.round((1 - (W.sightK || 1)) * 100);
+      this.addCombatLog(`[[${icon}]] THỜI TIẾT: ${W.name}` + (cut > 0 ? ` — tầm mắt phát hiện địch giảm ${cut}%, radar không bị ảnh hưởng` : ''), 'system');
+    }
+    if (M && M.sun && M.sun.timeOfDay === 'dusk') this.addCombatLog('[[sunset]] CHẠNG VẠNG — trời tối dần, bóng đổ dài', 'system');
     if (window.GameMenu && GameMenu.maybeShowFirstHint) GameMenu.maybeShowFirstHint();
     this.startIntroCamera();
   }
@@ -2112,9 +2121,15 @@ class ArtilleryGame3D {
     const M = this._autoMarker;
     if (!M || (!M.visible && !this.autoDrive)) return;
     if (this.autoDrive && M.parent === this.scene) {
-      const p = M.position;
-      WorldMarkers.placeOnGround(M, this.terrain, this.autoDrive.x, this.autoDrive.z, null,
-        M.userData.r0 = WorldMarkers.sizeFor(this.camera, p.x, p.y, p.z, 12, 0.026), 0);
+      const p = M.position, AD = this.autoDrive, Y = M.userData;
+      // mũi tên hướng hành quân: hướng từ chỗ xe lúc đặt điểm tới điểm (không xoay lung tung khi xe tới gần)
+      if (Y.tx !== AD.x || Y.tz !== AD.z) {
+        Y.tx = AD.x; Y.tz = AD.z;
+        const P = this.player;
+        Y.yaw = P ? Math.atan2(-(AD.x - P.x), -(AD.z - P.z)) : 0;
+      }
+      WorldMarkers.placeOnGround(M, this.terrain, AD.x, AD.z, null,
+        M.userData.r0 = WorldMarkers.sizeFor(this.camera, p.x, p.y, p.z, 12, 0.026), Y.yaw || 0);
       // vừa đặt: bung to rồi thu về đúng cỡ
       const k = 1 - M.userData.pop;
       M.scale.setScalar(M.userData.r0 * (1 + k * k * 0.6));
@@ -4699,9 +4714,18 @@ class ArtilleryGame3D {
     if (L && !L.out) {
       const st = this._aimState;
       const col = st === 'on' ? '#5cf08a' : (st === 'blocked' || st === 'covered' || L.wall) ? '#ff5a4a' : '#ffb020';
-      const miss = ax !== null ? Math.round(Math.hypot(L.x - ax, L.z - az)) : null;
+      // điểm rơi đã lọc mượt (cùng chỗ với dấu điểm rơi trên mặt đất) -> nhãn không giật theo dao động nhỏ của nòng
+      const R = this._retSmooth && this.reticle3D && this.reticle3D.visible ? this._retSmooth : L;
       const what = this._clusterFP && this._clusterFP.F ? 'TÂM VÙNG RẢI' : L.wall ? 'ĐẠN CHẠM VẬT CẢN' : 'ĐIỂM RƠI';
-      place(T.imp, L.x, L.y + 2, L.z, what + (miss !== null ? ' · LỆCH ' + miss + ' M' : '') + (L.ft ? ' · BAY ' + L.ft.toFixed(1) + ' S' : ''), col);
+      const ft = L.ft ? ' · BAY ' + L.ft.toFixed(1) + ' S' : '';
+      if (st === 'on' && ax !== null && !L.wall) {
+        // đã ngắm trúng: điểm rơi trùng mục tiêu -> gộp vào một nhãn, không để 2 nhãn chồng nhau
+        place(T.imp, null);
+        place(T.tgt, ax, (this.terrain ? this.terrain.getElevationAt(ax, az) : 0) + 4, az, 'ĐÃ NGẮM TRÚNG · ' + Math.round(Math.hypot(ax - P.x, az - P.z)).toLocaleString() + ' M' + ft, '#5cf08a');
+      } else {
+        const miss = ax !== null ? Math.round(Math.hypot(R.x - ax, R.z - az) / 5) * 5 : null;   // làm tròn 5 m: số không nhảy liên tục
+        place(T.imp, R.x, (R.y || 0) + 2, R.z, what + (miss !== null ? ' · LỆCH ' + miss + ' M' : '') + ft, col);
+      }
     } else place(T.imp, null);
     const D = this.droneState();
     // ĐỊCH ÁP SÁT XE MÌNH (đã biết vị trí: kíp xe thấy / radar / đồng đội báo, trong vòng cảnh giới quanh xe):
@@ -6922,6 +6946,11 @@ class ArtilleryGame3D {
       this.terrain.sky.mesh.updateMatrix();
       this.terrain.sky.mesh.updateMatrixWorld(true);
     }
+    // mưa / bão cát quanh camera, bay theo gió hiện tại
+    if (this.terrain && this.terrain.weatherFx) {
+      this.terrain.weatherFx.update(dt, this.camera, this.ballistics && this.ballistics.wind, this.renderer.domElement.clientHeight);
+    }
+    if (this.terrain && this.terrain.plumes) this.terrain.plumes.update(dt, this.ballistics && this.ballistics.wind);
 
     // 6. Cập nhật hệ thống hiệu ứng nổ 3D, khói bụi, sóng xung kích, mảnh văng & vết sém mờ dần
     if (this.effectsManager && this.effectsManager.fx) this.effectsManager.fx.update(dt);
@@ -7103,6 +7132,7 @@ class ArtilleryGame3D {
         const tr = this._lockTrack;
         let aimState = 'free';
         let passAt = null;   // đạn lướt qua thân xe mục tiêu (điểm rơi xuống đất nằm sau xe): vòng ngắm đặt tại xe
+        let aimPt = null;    // điểm chỉ định (có đón đầu) — dấu điểm rơi neo vào đây khi nòng đã ngắm trúng
         this._lastAim = null;   // điểm cần trúng (có đón đầu) — tâm kính ngắm bắn đặt vào đây
         if (tgt) {
           // điểm cần trúng: đón đầu đầy đủ (nòng có thể chưa bám tới khi máy tính hỏa lực chưa tính xong đón đầu)
@@ -7142,6 +7172,7 @@ class ArtilleryGame3D {
             aimState = MB && (Math.abs(MB.daz) > 0.12 || Math.abs(MB.del) > 0.06) ? 'slew' : 'free';
           }
           if (passes) passAt = { x: ax, y: (tgt.y || this.terrain.getElevationAt(ax, az)), z: az };
+          aimPt = { x: ax, y: this.terrain.getElevationAt(ax, az), z: az };
           // điểm hiển thị = đúng điểm pháo nhắm trên thân xe (unitAimHeight), không phải mốc +10 cố định
           this._lastAim = { x: ax, y: (tgt === this._aimPoint ? this.terrain.getElevationAt(ax, az) + 2 : (tgt.y || 0) + (tgt.tankType ? this.unitAimHeight(tgt) : 10)), z: az, d: Math.round(Math.hypot(ax - this.player.x, az - this.player.z)) };
           this._aimMiss = miss;
@@ -7155,8 +7186,16 @@ class ArtilleryGame3D {
         WorldMarkers.setTrajectory(this.trajectoryLine, traj.points, col, this.camera, this.renderer.domElement.clientHeight);
 
         if (this.reticle3D) {
-          // dấu điểm rơi nằm sát mặt đất (nghiêng theo dốc), cỡ theo khoảng cách camera; bị chắn: dấu X
-          const ip = passAt || traj.impactPoint;
+          // dấu điểm rơi nằm sát mặt đất (nghiêng theo dốc), cỡ theo khoảng cách camera; bị chắn: dấu X.
+          // Đã ngắm trúng điểm / xe chỉ định: neo đúng vào điểm chỉ định (điểm rơi dự đoán dao động vài mét theo nhún
+          // thân xe, nòng bám từng nấc, gió giật -> trước đây vòng rung liên tục). Đang xoay nòng: lọc mượt điểm rơi dự đoán
+          // để dấu trượt êm về phía điểm chỉ định thay vì giật từng khung hình; nhảy xa (đổi mục tiêu) thì đặt thẳng
+          const raw = (aimState === 'on' && aimPt && !passAt && !isWall && !(tgt && tgt.hy !== undefined)) ? aimPt : (passAt || traj.impactPoint);
+          const RS = this._retSmooth || (this._retSmooth = { x: raw.x, y: raw.y, z: raw.z });
+          const jump = Math.hypot(raw.x - RS.x, raw.z - RS.z);
+          const kS = jump > 400 || !this.reticle3D.visible ? 1 : 1 - Math.exp(-dt * (aimState === 'on' ? 20 : 9));
+          RS.x += (raw.x - RS.x) * kS; RS.y += (raw.y - RS.y) * kS; RS.z += (raw.z - RS.z) * kS;
+          const ip = RS;
           const rr = WorldMarkers.sizeFor(this.camera, ip.x, ip.y, ip.z, 12, 0.026);
           const tp = traj.points, nTp = tp.length;
           // chạm mặt "đất" dựng đứng (mặt trước ụ cứ điểm, vách ta-luy...): coi như tường, dấu áp theo pháp tuyến mặt đó
@@ -7178,7 +7217,7 @@ class ArtilleryGame3D {
           this.reticle3D.visible = true;
           this.updateSpreadRing(dt, this.reticle3D.position, col);
           if ((isWall || steepN) && this.spreadRing) this.spreadRing.visible = false;   // vòng tản mát nằm ngang: không hợp khi trúng tường
-          this.updateBlastZone(dt, isOut || isWall || steepN ? null : (passAt || traj.impactPoint), FP.F, tgt);
+          this.updateBlastZone(dt, isOut || isWall || steepN ? null : ip, FP.F, tgt);
           // nổ trúng tường / vách ngay trước mũi cũng tính sát xe (vùng nổ không vẽ khi trúng tường)
           if ((isWall || steepN) && !isOut && this.player) {
             const ip2 = passAt || traj.impactPoint, BP2 = BallisticsSystem3D.blastProfile ? BallisticsSystem3D.blastProfile(this.player.tankType === 'ARTILLERY' ? 'HE' : (this.player.selectedAmmo || 'NORMAL'), this.player.tankType === 'ARTILLERY') : null;
@@ -8251,6 +8290,7 @@ class ArtilleryGame3D {
     this.updateAmmoUI();
 
     // Mở lại Sảnh Chờ Ghép Trận Nhiều Người Chơi
+    if (window.soundEngine && window.soundEngine.setWeather) window.soundEngine.setWeather('clear');
     if (this.matchmaking) {
       this.isGameStarted = false;
       // [NET] Gỡ đồng bộ trận cũ, rời phòng mạng, hiện lại sảnh (chờ bấm "TÌM TRẬN ĐẤU")

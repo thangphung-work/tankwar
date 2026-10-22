@@ -9,7 +9,7 @@
       var src = new URLSearchParams(location.search);
       var dst = new URLSearchParams();
       dst.set('lab', 'stronghold');
-      ['map', 'seed', 'tank'].forEach(function (k) { if (src.get(k)) dst.set(k, src.get(k)); });
+      ['map', 'seed', 'tank', 'weather', 'landmark'].forEach(function (k) { if (src.get(k)) dst.set(k, src.get(k)); });
       location.replace('index.html?' + dst.toString());
     })();
   </script>

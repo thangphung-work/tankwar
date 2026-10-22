@@ -9,8 +9,8 @@
  * - Xe trinh sát KHÓA mục tiêu đang nằm trong vùng radar -> liên tục BÁO VỊ TRÍ cho đồng đội (bản đồ, khung 3D,
  *   đồng đội khóa & bắn được mục tiêu đó, kể cả pháo tự hành bắn xa ngoài tầm nhìn).
  * - Radar bị bắn hỏng (mất cụm cảm biến) -> mất toàn bộ chức năng radar.
- * - Drone trinh sát của pháo tự hành đang bay: xe địch trong DRONE_SIGHT quanh hình chiếu drone bị lộ cho cả phe
- *   (danh sách drone của DroneAir — game.airDroneList; máy chủ lọc tầm nhìn khớp server_auth.js DRONE_SIGHT).
+ * - Drone trinh sát của xe pháo đang bay (drone_air.js): camera nhìn chếch xuống phía trước, xe địch trong vùng nhìn bị
+ *   lộ cho CẢ PHE (hình truyền về). Nhìn từ trên cao: bụi chỉ che được xe trinh sát, tán rừng rậm & khói vẫn che.
  */
 const TeamIntel = (() => {
   // Tầm nhìn trực tiếp (kính ngắm / quan sát bằng mắt) theo loại xe — 1 đơn vị game hiển thị là "1 m"
@@ -40,8 +40,9 @@ const TeamIntel = (() => {
   // still: hệ số tầm nhìn của địch khi xe đứng yên trong bụi (dưới ~6% tốc độ tối đa; máy chủ dung sai 8%)
   const BUSH_STILL = 0.6;
   const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL }, GATLING: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL } };
-  // Drone trinh sát đang bay soi thấy xe địch trong bán kính này quanh hình chiếu drone (khớp server_auth.js DRONE_SIGHT)
-  const DRONE_SIGHT = 420;
+  // Vùng nhìn của drone trinh sát (khớp server_auth.js DRONE_SIGHT / DRONE_AHEAD): tròn bán kính DRONE_SIGHT, tâm lệch
+  // DRONE_AHEAD về phía trước drone (camera chúc ~52° ở độ cao bay ~50 m: giữa khung hình nằm trước drone)
+  const DRONE_SIGHT = 520, DRONE_AHEAD = 250;
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -71,8 +72,15 @@ const TeamIntel = (() => {
     if (eqRadar(u)) return Equipment.EQ_RADAR_RANGE || 600;
     return u.reconRadius || RADAR_RANGE;
   }
+  // Thời tiết của bản đồ (MapGen.weatherFor): mưa / sương mù / bão cát rút ngắn tầm mắt thường & vùng nhìn drone
+  // (radar không bị ảnh hưởng); máy chủ dùng cùng hệ số (server_auth.js)
+  function weather() {
+    const W = game && game.terrain && game.terrain.map && game.terrain.map.weather;
+    return W || null;
+  }
   function sightRange(u) {
-    let r = SIGHT[u.tankType] || 500;
+    const W = weather();
+    let r = (SIGHT[u.tankType] || 500) * (W ? W.sightK || 1 : 1);
     // Mất kính ngắm / kính chỉ huy: tầm quan sát giảm
     if (u.dmg && u.dmg.lost) {
       if (u.dmg.lost.has('opticGunner')) r *= 0.85;
@@ -130,17 +138,24 @@ const TeamIntel = (() => {
     return v;
   }
 
-  // Drone trinh sát của phe đang bay soi thấy xe t (camera nhìn từ trên xuống, báo cho cả phe). Xe trinh sát núp bụi
-  // chỉ lộ khi drone ở gần (BUSH_COVER.spot)
+  // Drone trinh sát phe `team` đang bay nhìn thấy xe t
   function droneSees(team, t) {
-    if (!game || !game.airDroneList || !t) return false;
-    const list = game.airDroneList();
-    if (!list.length) return false;
-    const bc = bushCover(t);
-    const r = bc && bc.spot ? Math.min(DRONE_SIGHT, bc.spot) : DRONE_SIGHT;
+    const list = game && game.airDroneList ? game.airDroneList() : null;
+    if (!list || !list.length) return false;
+    const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
+    const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
+    const bc = bushCover(t), W = weather(), droneK = W ? W.droneK || 1 : 1;
     for (const dr of list) {
       if (dr.team !== team || !game.droneIsAirborne(dr)) continue;
-      if (Math.hypot(t.x - dr.x, t.z - dr.z) <= r) return true;
+      const yaw = dr.yaw || 0, cx = dr.x - Math.sin(yaw) * DRONE_AHEAD, cz = dr.z - Math.cos(yaw) * DRONE_AHEAD;
+      const d = Math.hypot(t.x - cx, t.z - cz);
+      let r = DRONE_SIGHT * droneK;
+      if (bc && bc.spot) r = Math.min(r, bc.spot);   // trinh sát núp bụi: chỉ lộ khi drone ở gần
+      if (d > r * (EQ ? EQ.camoFactor(t) : 1)) continue;
+      // tán rừng rậm che xe bên dưới (trừ khi vừa nổ súng); màn khói che khuất
+      if ((t.forestDens || 0) >= dense && d > FOREST_SPOT && !((t.revealTimer || 0) > 0)) continue;
+      if (EQ && EQ.smokeBlocks && EQ.smokeBlocks(dr.x, dr.z, t.x, t.z)) continue;
+      return true;
     }
     return false;
   }
@@ -437,8 +452,8 @@ const TeamIntel = (() => {
   }
 
   return {
-    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, DRONE_SIGHT,
-    bind, reset, bushCover, bushBanner, droneSees, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
+    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, DRONE_SIGHT, DRONE_AHEAD, bushCover, bushBanner, droneSees,
+    bind, reset, update, weather, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
     get time() { return time; },
     get reports() { return reports; }
   };

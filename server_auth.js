@@ -33,8 +33,9 @@ const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;
 // gần hơn (still), pháo tự hành không núp được
 const BUSH_SPOT = 260, BUSH_RADAR = 0.7, BUSH_STILL = 0.6;
 const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL }, GATLING: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL } };
-// Drone trinh sát của xe pháo đang bay: soi thấy xe địch trong DRONE_SIGHT quanh hình chiếu drone (khớp TeamIntel.DRONE_SIGHT)
-const DRONE_SIGHT = 420, DRONE_TTL_MS = 1500;
+// Drone trinh sát xe pháo đang bay: thấy xe địch trong DRONE_SIGHT quanh tâm vùng nhìn (lệch DRONE_AHEAD về phía trước)
+// (khớp TeamIntel.DRONE_SIGHT / DRONE_AHEAD); vị trí lấy từ gói DRONE, hết hạn nếu lâu không có gói mới
+const DRONE_SIGHT = 520, DRONE_AHEAD = 250, DRONE_TTL_MS = 1500, DRONE_UP = new Set([1, 2, 3]);   // launching / flying / returning
 const REVEAL_MS = 4500;        // vừa nổ súng: lộ vị trí (bụi / rừng không che) — dài hơn thời gian lộ phía máy khách (tối đa 4 s)
 const SPOT_MS = 4500;          // báo cáo vị trí của trinh sát
 const FAR = 1500;              // xa hơn mức này: gửi nửa tần số
@@ -77,7 +78,7 @@ for (const t of m.trees) {
   const k = Math.floor(t.x / ${DC}) * 100000 + Math.floor(t.z / ${DC});
   dens[k] = (dens[k] || 0) + w;
 }
-parentPort.postMessage(dens);
+parentPort.postMessage({ dens, weather: m.weather || null });
 `;
 function forestFor(type, seed, layout) {
   const key = type + '|' + seed + '|' + layout;
@@ -86,7 +87,15 @@ function forestFor(type, seed, layout) {
     if (!Worker) return resolve(null);
     try {
       const w = new Worker(WORKER_SRC, { eval: true, workerData: { file: path.join(__dirname, 'src', 'core', 'map_gen.js'), type, seed, layout } });
-      w.once('message', (o) => { const m = new Map(); for (const k in o) m.set(Number(k), o[k]); resolve(m); w.terminate(); });
+      w.once('message', (o) => {
+        const m = new Map();
+        for (const k in o.dens) m.set(Number(k), o.dens[k]);
+        // thời tiết (MapGen.weatherFor): hệ số tầm mắt / vùng nhìn drone khớp TeamIntel phía máy khách
+        const W = o.weather || {};
+        m.sightK = Number.isFinite(W.sightK) ? W.sightK : 1;
+        m.droneK = Number.isFinite(W.droneK) ? W.droneK : 1;
+        resolve(m); w.terminate();
+      });
       w.once('error', (e) => { console.warn('[AUTH] Không dựng được bản đồ rừng:', e.message); resolve(null); });
     } catch (e) { resolve(null); }
   });
@@ -133,7 +142,7 @@ function initMatch(room, d, fromId) {
     S: [],                 // trạng thái đầy đủ từng xe (lượng tử hóa như gói REMOTE_UNIT_SYNC)
     meta: [],              // { lastT, hpAuth, deadAt, revealUntil, dmg: [[t, amount]], tick }
     spotted: { BLUE: new Map(), RED: new Map() },   // xe -> hết hạn báo cáo
-    drones: new Map(),     // xe pháo -> { x, z, until } drone đang bay
+    drones: new Map(),     // xe pháo -> { cx, cz, until } tâm vùng nhìn drone đang bay
     vis: { BLUE: new Set(), RED: new Set() },
     sent: new Map(),       // máy nhận -> Map(xe -> trạng thái đã gửi | {hid:1})
     dirty: new Set(),      // xe có trạng thái mới chờ gửi ở nhịp tới
@@ -198,13 +207,15 @@ function updateVisibility(M, now) {
       // cờ ngụy trang chỉ tin khi xe có lắp lưới và thật sự đứng yên (chống gửi cờ giả để tàng hình khi chạy)
       const camo = !revealed && (s.f & F_CAMO) && e.cm && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08;
       // xe to đứng yên trong bụi (dung sai 8% tốc độ tối đa như cờ ngụy trang): mắt thường phải vào gần hơn; lấy cái mạnh hơn
-      // giữa bụi & lưới ngụy trang (khớp TeamIntel.seesDirect)
+      // giữa bụi & lưới ngụy trang (khớp TeamIntel.seesDirect). Thời tiết chỉ rút tầm mắt thường / drone (radar không đổi);
+      // chưa dựng xong bản đồ: coi như trời quang
       const still = bush && bush.still && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08 ? bush.still : 1;
-      const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = Math.min(still, camo ? CAMO_SIGHT : 1);
-      // drone trinh sát phe mình soi từ trên xuống (bụi che trinh sát / rừng rậm che như mắt thường)
+      const wk = M.dens ? M.dens.sightK || 1 : 1, dk = M.dens ? M.dens.droneK || 1 : 1;
+      const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = Math.min(still, camo ? CAMO_SIGHT : 1) * wk;
+      // drone trinh sát phe mình soi từ trên xuống (bụi chỉ che trinh sát, tán rừng rậm che như mắt thường)
       if (drones.some(dr => {
-        const d = Math.hypot(ex - dr.x, ez - dr.z);
-        return d < DRONE_SIGHT + MARGIN && !(bush && bush.spot && d > bush.spot + MARGIN) && !(inForest && d > FOREST_SPOT + MARGIN);
+        const d = Math.hypot(ex - dr.cx, ez - dr.cz);
+        return d < DRONE_SIGHT * (camo ? CAMO_SIGHT : 1) * dk + MARGIN && !(bush && bush.spot && d > bush.spot + MARGIN) && !(inForest && d > FOREST_SPOT + MARGIN);
       })) { set.add(e.i); continue; }
       for (const u of mine) {
         const v = M.S[u.i], vx = v.x / 10, vz = v.z / 10, d = Math.hypot(ex - vx, ez - vz);
@@ -461,15 +472,13 @@ function handle(room, client, msg) {
       return false;
     }
     case 'DRONE': {
-      // trạng thái drone trinh sát: chỉ máy điều khiển xe pháo đó
+      // trạng thái drone trinh sát: chỉ máy điều khiển xe pháo đó; drone đang bay trong tầm tín hiệu -> soi xe địch cho phe
       const d = msg.d || {}, r = M.byIdx.get(d.i), st = M.S[d.i];
       if (!r || r.type !== 'ARTILLERY' || ownerOf(room, r) !== client.id) return true;
-      // drone đang bay (s: 1 cất cánh / 2 bay / 3 bay về; x, z nhân 10): ghi vị trí để drone soi xe địch cho cả phe
-      // (updateVisibility). Drone không bay quá xa xe (tầm tín hiệu) — xa hơn coi như không soi
-      const up = d.s >= 1 && d.s <= 3 && Number.isFinite(d.x) && Number.isFinite(d.z);
-      const dx = up ? d.x / 10 : 0, dz = up ? d.z / 10 : 0;
-      if (up && st && !(st.f & F_DEAD) && Math.hypot(dx - st.x / 10, dz - st.z / 10) <= (MAX_RANGE.ARTILLERY || 3200) + 600) {
-        M.drones.set(d.i, { x: dx, z: dz, until: now + DRONE_TTL_MS });
+      if (DRONE_UP.has(d.s) && [d.x, d.z].every(Number.isFinite) && st && !(st.f & F_DEAD)
+        && Math.hypot(d.x / 10 - st.x / 10, d.z / 10 - st.z / 10) <= (MAX_RANGE.ARTILLERY || 3200) + 800) {
+        const yaw = (d.w || 0) / 100, x = d.x / 10, z = d.z / 10;
+        M.drones.set(d.i, { cx: x - Math.sin(yaw) * DRONE_AHEAD, cz: z - Math.cos(yaw) * DRONE_AHEAD, until: now + DRONE_TTL_MS });
       } else M.drones.delete(d.i);
       return false;
     }

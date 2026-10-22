@@ -441,7 +441,8 @@ const Props = (() => {
           this.T.boulders.push({ x: w.x + ca * f, z: w.z + sa * f, radius: w.kind === 'truck' ? 6.5 : 8.5, height: w.kind === 'truck' ? 12 : 13, wreck: true });
         }
         this.wrecks.push(w);
-        if (w.smoke) this.smokers.push(w._smoker = { x: w.x, y: gy + 10, z: w.z, phase: hash(w.x | 0) * 3 });
+        // fire: xác xe còn cháy âm ỉ (lửa liếm quanh khoang máy + khói đen dày hơn)
+        if (w.smoke || w.fire) this.smokers.push(w._smoker = { x: w.x, y: gy + 10, z: w.z, phase: hash(w.x | 0) * 3, fire: !!w.fire });
       }
       this.wreckIM = {};
       for (const g in inst) {
@@ -601,15 +602,34 @@ const Props = (() => {
     }
     update(dt, fx, cam) {
       if (!fx || !fx.smoke || !this.smokers.length) return;
+      // lửa: nhịp riêng dày hơn khói (lưỡi lửa sống ngắn), chỉ khi camera ở gần
+      if (fx.fire) {
+        this.fireAcc = (this.fireAcc || 0) + dt;
+        if (this.fireAcc >= 0.07) {
+          this.fireAcc = 0;
+          for (const s of this.smokers) {
+            if (!s.fire || (cam && Math.hypot(cam.x - s.x, cam.z - s.z) > 1100)) continue;
+            const fl = 0.6 + 0.4 * Math.sin(s.phase * 2.3 + Math.random());
+            fx.fire.add({ x: s.x + (Math.random() - 0.5) * 9, y: s.y - 3 + Math.random() * 2, z: s.z + (Math.random() - 0.5) * 9,
+              vx: (Math.random() - 0.5) * 2, vy: 6 + Math.random() * 6, vz: (Math.random() - 0.5) * 2,
+              size: 2.2 + Math.random() * 2.2 * fl, grow: 1.5, drag: 0.6, grav: -3, life: 0.45 + Math.random() * 0.4, alpha: 0.85 * fl, fadeIn: 0.04,
+              c0: [1, 0.78, 0.4], c1: [0.9, 0.3, 0.06], cell: 1, floor: false });
+          }
+        }
+      }
       this.smokeAcc += dt;
       if (this.smokeAcc < 0.22) return;
       const step = this.smokeAcc; this.smokeAcc = 0;
+      // tiếng lửa cháy của xác xe đang cháy ở gần (nguồn âm liên tục, báo ~4 lần / giây)
+      const SE = typeof window !== 'undefined' && window.soundEngine && window.soundEngine.fireSource ? window.soundEngine : null;
+      if (SE && cam) for (const s of this.smokers) if (s.fire && Math.hypot(cam.x - s.x, cam.z - s.z) < 450) SE.fireSource(s, s, 0.45);
       for (const s of this.smokers) {
         if (cam && Math.hypot(cam.x - s.x, cam.z - s.z) > 1700) continue;
         s.phase += step;
         const k = 0.6 + 0.4 * Math.sin(s.phase * 0.7);
         fx.smoke.add({ x: s.x + (Math.random() - 0.5) * 6, y: s.y, z: s.z + (Math.random() - 0.5) * 6, vx: (Math.random() - 0.5) * 3, vy: 7 + Math.random() * 5, vz: (Math.random() - 0.5) * 3,
-          size: 4 + Math.random() * 3, grow: 6, drag: 0.5, grav: -2, life: 5 + Math.random() * 3, alpha: 0.32 * k, fadeIn: 0.3, c0: [0.12, 0.11, 0.1], c1: [0.36, 0.35, 0.34], cell: 0, floor: false });
+          size: 4 + Math.random() * 3, grow: 6, drag: 0.5, grav: -2, life: 5 + Math.random() * 3, alpha: (s.fire ? 0.5 : 0.32) * k, fadeIn: 0.3,
+          c0: s.fire ? [0.06, 0.055, 0.05] : [0.12, 0.11, 0.1], c1: [0.36, 0.35, 0.34], cell: 0, floor: false });
       }
     }
     /** Vẽ lên bản đồ chiến thuật: ruộng, hào ẩn xe, xác xe */
