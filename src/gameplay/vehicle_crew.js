@@ -1032,8 +1032,9 @@ const VehicleCrew = (() => {
   function attachScoutGunner(unit, turret, mg) {
     hook();
     const F = buildFigure(unit.team);
-    // đứng GIỮA lỗ nóc (tâm vòng = gốc turret, bán kính 3.4), hông dưới mép nóc; tay cầm súng cách ngực ~0.1 m
-    F.base = V(0, -0.9, 2.4);   // lùi về sau trong lỗ: tay ôm súng có khoảng cách tự nhiên với ngực
+    // đứng trong lỗ nóc (tâm vòng = gốc turret, bán kính 3.4), hông dưới mép nóc; chỗ đứng theo vị trí súng (recon_marten
+    // mg.stand): tay ôm súng có khoảng cách tự nhiên với ngực
+    F.base = mg && mg.stand ? mg.stand.clone() : V(0, -0.9, 2.4);
     F.root.position.copy(F.base);
     turret.add(F.root);
     unit.crew = { gunner: F, mg, turret, kind: 'scout' };
@@ -1041,6 +1042,8 @@ const VehicleCrew = (() => {
   }
 
   const wp = (obj, x, y, z) => obj.localToWorld(V(x, y, z));
+  // điểm trong lòng xe / quanh lỗ nóc tính theo chỗ đứng xạ thủ (x, z lệch so với F.base; y theo mặt nóc)
+  const ws = (T, F, x, y, z) => wp(T, F.base.x + x, y, F.base.z + z);
   const lerpV = (a, b, k) => a.clone().lerp(b, k);
 
   // khung hình chính: [mốc thời gian, hàm(ctx) -> { L, R (Vector3 thế giới), rise, bend, twist }]; nội suy mượt giữa 2 mốc liền kề
@@ -1144,7 +1147,8 @@ const VehicleCrew = (() => {
     const behind = V(0, 0, 5.4);   // ngay sau đuôi ống, thẳng trục ống
     if (pr < AT.newUp[0] && u.turretGroup) {
       const lift = sm((pr - AT.lift[0]) / (AT.lift[1] - AT.lift[0]));
-      const hw = u.turretGroup.localToWorld(V(-0.3, -1.8 + 3.2 * lift, 0.9));
+      const G = u.crew && u.crew.gunner, hz = G ? G.base.z - 1.5 : 0.9;
+      const hw = u.turretGroup.localToWorld(V(-0.3, -1.8 + 3.2 * lift, hz));
       const hl = A.can.worldToLocal(hw);
       A._hatchTop = A._hatchTop || hl.clone();
       if (lift >= 0.99) A._hatchTop.copy(hl);
@@ -1273,7 +1277,7 @@ const VehicleCrew = (() => {
       // nắm đúng 2 tay cầm chữ D sau khóa nòng (recon_marten buildRingMount)
       gripL: wp(P, -0.45, 0.0, 3.3), gripR: wp(P, 0.45, 0.0, 3.3),
       // cúi xuống lòng xe lấy đạn: trước bụng, dưới mép nóc
-      hatchL: wp(T, -0.7, -1.2, 0.6), hatchR: wp(T, 0.6, -1.2, 0.7)
+      hatchL: ws(T, F, -0.7, -1.2, -1.8), hatchR: ws(T, F, 0.6, -1.2, -1.7)
     };
     let tgt;
     const mgReload = !u.isDead && u.gatlingMag <= 0 && u.reloadTimer > 0 && u.reloadDuration > 0;
@@ -1302,7 +1306,7 @@ const VehicleCrew = (() => {
     const dt0 = C.down ? C.down.t : 99;
     if ((gDead || u.isDead) && dt0 < 2.4) {
       // trúng đạn: giật ngửa ra sau 0.25 s rồi gục về trước lên súng, hai tay buông thõng
-      tgt = dt0 < 0.25 ? pose(c.gripL, c.gripR, 0.1, -0.45, 0.25) : pose(wp(T, -1.0, 0.6, 0.9), wp(T, 1.0, 0.4, 0.8), -0.5, 1.0, 0.18);
+      tgt = dt0 < 0.25 ? pose(c.gripL, c.gripR, 0.1, -0.45, 0.25) : pose(ws(T, F, -1.0, 0.6, -1.5), ws(T, F, 1.0, 0.4, -1.6), -0.5, 1.0, 0.18);
     } else if (gDead || u.isDead) {
       // đổ sụp xuống lòng xe (thi thể được kéo xuống), người dự bị chuẩn bị lên
       tgt = pose(c.hatchL, c.hatchR, u.isDead ? -0.5 : -3.6, u.isDead ? 1.0 : 0.6, 0.3);
@@ -1312,7 +1316,7 @@ const VehicleCrew = (() => {
         tubeL: wp(can, 0.25, 0.62, 1.2),
         capH: wp(A.rearCap, 0, -1.15, 0.2),
         spentL: wp(spentOf(A), -0.35, 0.1, 2.3), spentR: wp(spentOf(A), 0.38, 0.0, 2.25),
-        tossL: wp(T, 3.6, 4.6, 1.6), tossR: wp(T, 3.9, 4.1, 0.4),
+        tossL: ws(T, F, 3.6, 4.6, -0.8), tossR: ws(T, F, 3.9, 4.1, -2.0),
         // tay ôm ngoài vỏ quả: trái đỡ dưới thân trước, phải đỡ dưới thân sau rồi chuyển ra tì đuôi quả để đẩy
         misL: wp(A.missile, 0, -0.56, -1.4), misR: atPr < 0.67 ? wp(A.missile, 0, -0.56, 0.4) : wp(A.missile, 0, 0.05, 1.42)
       });
@@ -1330,8 +1334,8 @@ const VehicleCrew = (() => {
       const pr = 1 - u.reloadTimer / u.reloadDuration;
       Object.assign(c, {
         coverH: wp(mg.cover, 0, 0.3, 1.55),
-        boxH: mg.ammo.visible ? wp(mg.ammo, 0, 0.95, 0) : wp(T, -0.9, -1.2, 0.8),
-        boxH2: mg.ammo.visible ? wp(mg.ammo, 0.6, 0.6, 0.2) : wp(T, -0.2, -1.2, 0.8),
+        boxH: mg.ammo.visible ? wp(mg.ammo, 0, 0.95, 0) : ws(T, F, -0.9, -1.2, -1.6),
+        boxH2: mg.ammo.visible ? wp(mg.ammo, 0.6, 0.6, 0.2) : ws(T, F, -0.2, -1.2, -1.6),
         chargeF: wp(P, 0.6, 0.15, 0.9), chargeB: wp(P, 0.6, 0.15, 1.9),
         lidH: mg.ammoLid ? wp(mg.ammoLid, 1.35, 0.1, 0.0) : wp(mg.cover, 0, 0.3, 1.55),
         beltT: mg.beltTip ? wp(P, mg.beltTip.x, mg.beltTip.y + 0.12, mg.beltTip.z) : wp(P, -0.5, 0.4, 0.6)
