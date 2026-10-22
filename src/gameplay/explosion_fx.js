@@ -5512,6 +5512,13 @@
       } else if (ammoType === 'INCENDIARY') {
         // Đạn cháy: vệt đỏ rực trên mô hình + tàn lửa đỏ rơi rớt dọc đường bay (chỉ viên vạch đường đang cháy)
         if (info.tracer !== false && Math.random() < 0.5) this.fire.add({ x, y, z, vx: rand(-4, 4), vy: rand(-3, 3), vz: rand(-4, 4), size: rand(0.5, 0.9), grow: -0.3, drag: 2, grav: 30, life: rand(0.15, 0.35), alpha: 1, fadeIn: 0.005, c0: [1, 0.45, 0.12], c1: [0.7, 0.08, 0.02], cell: 1, floor: false });
+      } else if (info.gl) {
+        // Quả lựu 40mm: không vạch đường — chỉ một vệt khí xoáy mờ rất mảnh sau đuôi (đủ để mắt bám theo đường vồng)
+        if (Math.random() < 0.55) this.smoke.add({
+          x: x + rand(-0.15, 0.15), y: y + rand(-0.15, 0.15), z: z + rand(-0.15, 0.15), vx: rand(-0.3, 0.3), vy: rand(0.1, 0.5), vz: rand(-0.3, 0.3),
+          size: rand(0.5, 0.8), grow: rand(1.6, 2.4), drag: 1.6, grav: -0.2, life: rand(0.45, 0.7),
+          alpha: 0.14, fadeIn: 0.02, fadePow: 1.3, c0: [0.78, 0.78, 0.76], cell: 0, floor: false
+        });
       } else if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
         // Đạn nhỏ: vệt vạch đường đã có trên mô hình, không cần khói
       } else {

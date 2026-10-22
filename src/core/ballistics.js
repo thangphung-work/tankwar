@@ -558,9 +558,14 @@ class BallisticsSystem3D {
       const p = Dispersion.perturb(shooter, ammoType, elevation, vx, vy, vz, stream, range);
       vx = p.vx; vy = p.vy; vz = p.vz;
     }
-    const shellMesh = this.createShell155Mesh(isDirectFire, ammoType, !!(shooter && shooter.tankType === 'ARTILLERY'), tracer);
+    // Lựu 40mm (súng phóng lựu: vũ khí chính trên chân đế xe trinh sát / trạm nóc tháp xe tăng) vẫn bắn theo hệ đạn 30mm
+    // (ammoType GATLING_BULLET + cờ gl40 do bên gọi gắn) nhưng HÌNH là quả lựu thật: không vạch đường, thấy ngay từ miệng
+    // nòng, bay tới khi chạm (không tự biến mất giữa trời khi hết maxTravel như đạn vạch đường)
+    const gl40 = ammoType === 'GATLING_BULLET' && !!shooter && ((shooter.mainGun && shooter.mainGun.kind === 'agl') || (!!shooter._launchOverride && shooter.roofWeapon === 'agl'));
+    if (gl40) tracer = false;
+    const shellMesh = this.createShell155Mesh(isDirectFire, gl40 ? 'GL40' : ammoType, !!(shooter && shooter.tankType === 'ARTILLERY'), tracer);
     // đạn súng: liều vạch đường chỉ bén cháy sau khi rời nòng ~10 m (như đạn thật) -> không có đốm lửa sát miệng nòng
-    const smallArms = ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
+    const smallArms = !gl40 && (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY');
     if (smallArms) shellMesh.visible = false;
     // Đạn APFSDS: 3 mảnh guốc đạn tách khỏi mũi tên urani ngay khi rời nòng
     if (ammoType === 'AP' && this.fx && this.fx.sabotDiscard) {
@@ -600,8 +605,10 @@ class BallisticsSystem3D {
       trailTimer: 0,
       tracer,
       ignite: smallArms ? 80 : 0,
-      exploded: false
+      exploded: false,
+      gl: gl40
     };
+    if (gl40) shell.maxTravel = 0;
 
     // Tên lửa có điều khiển: bám mục tiêu xe trinh sát chỉ định (khóa) hoặc điểm ngắm, động cơ đẩy tới tốc độ hành trình
     if (rp.guided) {
@@ -1084,7 +1091,7 @@ class BallisticsSystem3D {
           s.mesh.traverse(o => { if (o.userData.tracer) o.visible = false; });
         }
         this.fx.trail(tailPos.x, tailPos.y, tailPos.z, s.ammoType, s.lastTailPos.x, s.lastTailPos.y, s.lastTailPos.z,
-          { travel: s.travel || 0, tracer: s.tracer !== false, burnedOut: !!s.burnedOut, guided: !!s.guide });
+          { travel: s.travel || 0, tracer: s.tracer !== false, burnedOut: !!s.burnedOut, guided: !!s.guide, gl: !!s.gl });
         s.lastTailPos.copy(tailPos);
       } else if (!this.fx && s.trailTimer >= 0.018) {
         s.trailTimer = 0;

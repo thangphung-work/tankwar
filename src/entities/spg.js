@@ -1424,9 +1424,14 @@ class SPGUnit3D {
 
     // 1. Phục hồi giật nòng pháo & nhún giảm chấn thân xe
     if (this.barrelRecoil > 0) {
-      this.barrelRecoil = Math.max(0, this.barrelRecoil - dt * 38);
+      // súng phóng lựu 40mm trên chân đế: cả súng lùi trên giá có lò xo giảm giật rồi đẩy về (~0.12 s) và nòng hất lên;
+      // súng máy 12.7 lùi ngắn về nhanh; pháo (lùi cả chục đơn vị) về theo tốc độ hãm lùi của pháo
+      const agl = this.mainGun && this.mainGun.kind === 'agl';
+      const back = agl ? 5 : this.tankType === 'SCOUT' ? 9 : 38;
+      this.barrelRecoil = Math.max(0, this.barrelRecoil - dt * back);
       this.barrelGroup.position.z = this.barrelRecoil;
-    }
+      if (agl) this.barrelGroup.rotation.x = this.barrelRecoil * 0.075;
+    } else if (this.mainGun && this.mainGun.kind === 'agl' && this.barrelGroup.rotation.x) this.barrelGroup.rotation.x = 0;
     this.updateRecoilRock(dt);
 
     // 2. Dao động máy nổ không tải (Idle vibration)

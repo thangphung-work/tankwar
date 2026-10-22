@@ -22,56 +22,134 @@ const VehicleCrew = (() => {
   const UP = V(0, 1, 0);
 
   // ---------- HÌNH NGƯỜI ----------
+  // Quân phục / mũ bọc vải rằn ri (texture vẽ tay: nền + mảng loang 3 màu), áo giáp & găng trơn
   const MATS = {};
+  function camoTex(base, spots) {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = base; g.fillRect(0, 0, 128, 128);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (const col of spots) {
+      g.fillStyle = col;
+      for (let i = 0; i < 26; i++) {
+        const x = rnd() * 128, y = rnd() * 128, r = 4 + rnd() * 10;
+        g.beginPath();
+        for (let k = 0; k < 7; k++) {
+          const a = k / 7 * Math.PI * 2, rr = r * (0.6 + rnd() * 0.6);
+          k ? g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.7) : g.moveTo(x + rr, y);
+        }
+        g.fill();
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
   function mats(team) {
     if (MATS[team]) return MATS[team];
-    const std = (c, r = 0.9) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0 });
+    const red = team === 'RED';
+    const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.92, metalness: 0 }, o));
+    const camo = camoTex(red ? '#6b5a3c' : '#5d6443', red ? ['#4a3b25', '#8a7752', '#2f2618'] : ['#3f4630', '#7a7d58', '#2a2e1f']);
     return (MATS[team] = {
-      uni: std(team === 'RED' ? 0x4a3d2a : 0x3a422b),     // quân phục
-      vest: std(team === 'RED' ? 0x3b3122 : 0x2e3523),    // áo giáp
-      helm: std(team === 'RED' ? 0x413726 : 0x343c28, 0.7),
-      skin: std(0xc49a74, 0.8),
-      glove: std(0x1d1c19),
-      dead: std(0x2a201a)
+      uni: std({ map: camo }),
+      vest: std({ color: red ? 0x4d412c : 0x434a32, roughness: 0.85 }),
+      pouch: std({ color: red ? 0x3e3423 : 0x363c28, roughness: 0.85 }),
+      helm: std({ map: camo, roughness: 0.8 }),
+      skin: std({ color: 0xc49572, roughness: 0.7 }),
+      glove: std({ color: 0x24221e, roughness: 0.75 }),
+      boot: std({ color: 0x1c1a17 }),
+      lens: std({ color: 0x1a2a33, roughness: 0.15, metalness: 0.6 }),
+      strap: std({ color: 0x1f1e1a }),
+      dead: std({ color: 0x3a2c1f })
     });
   }
 
-  // Kích thước người thật (8 đv = 1 m): vai rộng ~0.45 m, thân ~0.55 m, cánh tay trên 0.29 m, cẳng tay 0.27 m
+  // khối tròn xoay dạng viên nhộng (three r128 chưa có CapsuleGeometry): đứng dọc +Y từ 0 tới len
+  const GEO = {};
+  function capsule(r, len, key) {
+    if (GEO[key]) return GEO[key];
+    const pts = [];
+    for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 + i / 6 * Math.PI / 2; pts.push(new THREE.Vector2(Math.cos(a) * r, r + Math.sin(a) * r)); }
+    for (let i = 0; i <= 6; i++) { const a = i / 6 * Math.PI / 2; pts.push(new THREE.Vector2(Math.cos(a) * r, len - r + Math.sin(a) * r)); }
+    return (GEO[key] = new THREE.LatheGeometry(pts, 12));
+  }
+  // thân người tròn xoay theo mặt cắt (hông -> eo -> ngực -> vai), dẹt trước-sau
+  function torsoGeo() {
+    if (GEO.torso) return GEO.torso;
+    const prof = [[0.0, -2.2], [1.35, -2.2], [1.45, -1.4], [1.3, -0.3], [1.38, 0.6], [1.62, 1.6], [1.72, 2.5], [1.55, 3.1], [1.0, 3.55], [0.55, 3.7], [0.0, 3.72]];
+    const g = new THREE.LatheGeometry(prof.map(p => new THREE.Vector2(p[0], p[1])), 16);
+    g.scale(1, 1, 0.62);
+    return (GEO.torso = g);
+  }
+
+  // Kích thước người thật (8 đv = 1 m): vai ~0.45 m, thân ~0.5 m, cánh tay trên 0.29 m, cẳng tay 0.27 m
   const ARM_UP = 2.3, ARM_FORE = 2.15;
   function buildFigure(team) {
     const M = mats(team);
     const root = new THREE.Group();
     const torso = new THREE.Group();          // gốc ở hông (khớp hông): nghiêng (cúi) / vặn người
     root.add(torso);
+    const chest = new THREE.Group();          // phần ngực (phồng xẹp theo nhịp thở)
+    torso.add(chest);
     const meshes = [];
-    const add = (parent, geo, mat, x, y, z) => {
+    const add = (parent, geo, mat, x, y, z, rx, ry, rz) => {
       const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z); m.castShadow = true;
+      m.position.set(x, y, z);
+      if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0);
+      m.castShadow = true;
       parent.add(m); meshes.push(m);
       return m;
     };
-    add(torso, new THREE.BoxGeometry(2.9, 2.4, 1.45), M.uni, 0, -1.0, 0);          // hông (chìm trong lỗ nóc)
-    add(torso, new THREE.BoxGeometry(3.1, 3.4, 1.55), M.uni, 0, 1.8, 0);           // ngực
-    add(torso, new THREE.BoxGeometry(3.3, 2.6, 1.8), M.vest, 0, 2.0, 0.02);      // áo giáp
-    add(torso, new THREE.BoxGeometry(1.0, 0.7, 0.9), M.skin, 0, 3.75, 0);         // cổ
+    const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+    // thân + thắt lưng
+    add(chest, torsoGeo(), M.uni, 0, 0, 0);
+    add(torso, new THREE.CylinderGeometry(1.42, 1.42, 0.4, 16), M.strap, 0, -0.9, 0).scale.set(1, 1, 0.66);
+    // áo giáp: tấm trước / sau ôm ngực, cổ áo, quai vai, túi băng đạn + túi bộ đàm, ống ăng-ten roi bộ đàm sau vai
+    add(chest, box(2.9, 2.3, 0.55), M.vest, 0, 1.75, -0.78, -0.06);
+    add(chest, box(2.9, 2.4, 0.5), M.vest, 0, 1.8, 0.8, 0.05);
+    for (const sx of [-1, 1]) {
+      add(chest, box(0.7, 0.32, 2.0), M.vest, sx * 1.0, 3.0, 0);
+      add(chest, box(0.42, 1.5, 0.3), M.vest, sx * 1.45, 1.7, 0, 0, 0, sx * 0.08);
+    }
+    for (let i = -1; i <= 1; i++) add(chest, box(0.72, 0.85, 0.38), M.pouch, i * 0.82, 1.0, -1.14);
+    add(chest, box(0.6, 0.4, 0.3), M.pouch, 0.75, 2.25, -1.12);
+    add(chest, box(0.8, 1.1, 0.5), M.pouch, -0.7, 1.9, 1.2);                       // túi sau / bộ đàm
+    add(chest, new THREE.CylinderGeometry(0.04, 0.05, 3.2, 5), M.strap, -1.0, 4.0, 1.25, 0.15);
+    add(chest, new THREE.CylinderGeometry(0.75, 0.9, 0.5, 12), M.vest, 0, 3.5, 0).scale.set(1, 1, 0.8);   // cổ áo
+    // vai tròn
+    for (const sx of [-1, 1]) add(chest, new THREE.SphereGeometry(0.62, 10, 8), M.uni, sx * 1.62, 3.0, 0);
+    // cổ + đầu
+    add(chest, new THREE.CylinderGeometry(0.42, 0.48, 0.8, 10), M.skin, 0, 3.85, 0.05);
     const head = new THREE.Group();
-    head.position.set(0, 4.0, 0);
-    torso.add(head);
-    add(head, new THREE.BoxGeometry(1.45, 1.7, 1.55), M.skin, 0, 0.75, 0);
-    const hel = add(head, new THREE.SphereGeometry(1.08, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), M.helm, 0, 1.2, 0.05);
-    hel.scale.set(1, 0.85, 1.05);
-    add(head, new THREE.BoxGeometry(2.0, 0.18, 2.1), M.helm, 0, 1.2, 0.08);      // vành mũ
-    // tay: cánh tay trên / cẳng tay dựng dọc +Y từ gốc khớp (con của root để IK tính trong không gian root)
+    head.position.set(0, 4.15, 0.05);
+    chest.add(head);
+    const skull = add(head, new THREE.SphereGeometry(0.88, 14, 12), M.skin, 0, 0.78, 0);
+    skull.scale.set(0.86, 1.06, 0.98);
+    add(head, box(0.75, 0.45, 0.6), M.skin, 0, 0.2, -0.32);                        // hàm / cằm
+    add(head, box(0.18, 0.32, 0.25), M.skin, 0, 0.66, -0.88, 0.25);                 // mũi
+    for (const sx of [-1, 1]) add(head, box(0.12, 0.34, 0.24), M.skin, sx * 0.76, 0.72, 0.05);   // tai
+    // mũ sắt bọc vải: chỏm cầu + mép cong, quai cằm, kính chắn gió kéo lên mép trước mũ, giá gắn kính đêm
+    const hel = add(head, new THREE.SphereGeometry(1.06, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.56), M.helm, 0, 0.98, 0.04);
+    hel.scale.set(0.98, 0.92, 1.06);
+    add(head, new THREE.TorusGeometry(1.0, 0.08, 6, 20), M.helm, 0, 0.9, 0.04, Math.PI / 2).scale.set(0.98, 1.08, 1);
+    for (const sx of [-1, 1]) add(head, box(0.07, 0.95, 0.12), M.strap, sx * 0.78, 0.4, -0.15, 0, 0, sx * 0.12);
+    add(head, new THREE.CylinderGeometry(1.03, 1.03, 0.22, 18, 1, true), M.strap, 0, 1.42, 0.04);
+    for (const sx of [-1, 1]) add(head, box(0.5, 0.32, 0.18), M.lens, sx * 0.3, 1.5, -0.98, -0.3);
+    add(head, box(0.42, 0.32, 0.2), M.strap, 0, 1.78, -0.97, -0.4);
+    // tay: cánh tay trên / cẳng tay (viên nhộng, tay áo rằn ri), khớp khuỷu tròn, găng tay có ngón cái
     const arms = [-1, 1].map(s => {
       const up = new THREE.Group(), fore = new THREE.Group(), hand = new THREE.Group();
       root.add(up, fore, hand);
-      add(up, new THREE.BoxGeometry(0.85, ARM_UP, 0.85), M.uni, 0, ARM_UP / 2, 0);
-      add(fore, new THREE.BoxGeometry(0.72, ARM_FORE, 0.72), M.uni, 0, ARM_FORE / 2, 0);
-      add(hand, new THREE.BoxGeometry(0.6, 0.65, 0.5), M.glove, 0, 0, 0);
-      return { s, up, fore, hand, sh: V(s * 1.65, 3.25, 0) };   // vai (hệ thân)
+      add(up, capsule(0.46, ARM_UP + 0.3, 'up'), M.uni, 0, -0.15, 0);
+      add(fore, capsule(0.38, ARM_FORE + 0.2, 'fore'), M.uni, 0, -0.1, 0);
+      add(fore, new THREE.CylinderGeometry(0.42, 0.42, 0.35, 10), M.glove, 0, ARM_FORE - 0.15, 0);   // cổ găng
+      add(hand, box(0.55, 0.7, 0.42), M.glove, 0, 0.25, 0);
+      add(hand, box(0.2, 0.42, 0.22), M.glove, s * -0.3, 0.12, -0.15, 0, 0, s * 0.4);              // ngón cái
+      return { s, up, fore, hand, sh: V(s * 1.62, 3.0, 0) };   // vai (hệ ngực)
     });
     for (const m of meshes) m.userData.crewRole = 'gunner';
-    return { root, torso, head, arms, meshes, M, rise: 0, bend: 0, twist: 0 };
+    return { root, torso, chest, head, arms, meshes, M, rise: 0, bend: 0, twist: 0, roll: 0, look: 0, lookP: 0, t: Math.random() * 10 };
   }
 
   // IK 2 khớp trong hệ root: vai S -> khuỷu E -> bàn tay T; khuỷu bẻ về phía pole
@@ -83,7 +161,7 @@ const VehicleCrew = (() => {
     if (L > 1e-5) obj.quaternion.setFromUnitVectors(UP, _d.multiplyScalar(1 / L));
   }
   function solveArm(F, arm, targetW, poleL) {
-    const S = F.torso.localToWorld(arm.sh.clone());
+    const S = F.chest.localToWorld(arm.sh.clone());
     F.root.worldToLocal(S);
     const T = F.root.worldToLocal(targetW.clone());
     const a = ARM_UP, b = ARM_FORE;
@@ -294,17 +372,41 @@ const VehicleCrew = (() => {
     // thân người: nhô lên / cúi / vặn mượt (không giật cục khi đổi hoạt cảnh)
     const k = 1 - Math.exp(-dt * (gDead ? 3 : 10));
     F.rise += (tgt.rise - F.rise) * k; F.bend += (tgt.bend - F.bend) * k; F.twist += (tgt.twist - F.twist) * k;
-    F.root.position.set(F.base.x, F.base.y + F.rise, F.base.z);
-    F.torso.rotation.set(-F.bend, F.twist, gDead ? 0.12 : 0, 'YXZ');
-    F.head.rotation.x = gDead ? -0.6 : -F.bend * 0.3;
+    // CHUYỂN ĐỘNG TỰ NHIÊN: xe tăng / giảm tốc -> người ngả ra sau / chúi về trước, ôm cua -> nghiêng theo quán tính,
+    // thở (ngực phồng xẹp), bóp cò -> vai rung theo súng; đầu đảo nhìn quanh khi rảnh, cúi nhìn tay khi nạp đạn
+    F.t += dt;
+    const spd = u.speed || 0, yaw = u.bodyAngle || 0;
+    const acc = F.lastSpd === undefined ? 0 : (spd - F.lastSpd) / dt;
+    let yr = F.lastYaw === undefined ? 0 : yaw - F.lastYaw;
+    while (yr > Math.PI) yr -= Math.PI * 2;
+    while (yr < -Math.PI) yr += Math.PI * 2;
+    F.lastSpd = spd; F.lastYaw = yaw;
+    const kl = 1 - Math.exp(-dt * 4);
+    F.leanF = (F.leanF || 0) + (Math.max(-0.2, Math.min(0.2, acc * 0.0011)) - (F.leanF || 0)) * kl;
+    F.roll += (Math.max(-0.16, Math.min(0.16, (yr / dt) * spd * 0.0009)) - F.roll) * kl;
+    const firing = !gDead && !!u.isFiringGatling;
+    const jit = firing ? (Math.random() - 0.5) * 0.035 : 0;
+    F.root.position.set(F.base.x, F.base.y + F.rise + (firing ? (Math.random() - 0.5) * 0.06 : 0), F.base.z);
+    F.root.visible = F.rise > -2.9;   // đã chui hẳn vào xe: ẩn để không lòi qua nóc
+    F.torso.rotation.set(-F.bend + F.leanF + jit, F.twist, (gDead ? 0.12 : 0) + F.roll, 'YXZ');
+    const br = Math.sin(F.t * 1.7);
+    F.chest.scale.set(1 + br * 0.01, 1 + br * 0.012, 1 + br * 0.025);
+    // hướng nhìn: nạp đạn -> cúi nhìn việc tay đang làm; bắn -> nhìn thẳng theo súng; rảnh -> đảo mắt quan sát
+    const busy = !gDead && tgt !== null && (mgReload || (S.at && A && atPr < 1));
+    const wantYaw = gDead ? 0.2 : busy ? -F.twist * 0.25 : firing ? 0 : 0.45 * Math.sin(F.t * 0.31) + 0.22 * Math.sin(F.t * 0.83 + 1.1);
+    const wantPitch = gDead ? -0.7 : busy ? -0.45 : firing ? 0.02 : 0.08 * Math.sin(F.t * 0.52);
+    F.look += (wantYaw - F.look) * (1 - Math.exp(-dt * 3));
+    F.lookP += (wantPitch - F.lookP) * (1 - Math.exp(-dt * 3));
+    F.head.rotation.set(F.lookP + F.bend * 0.55 - F.leanF * 0.5, F.look, -F.roll * 0.5, 'YXZ');
     F.root.updateMatrixWorld(true);
     const H = F.hT || (F.hT = [tgt.L.clone(), tgt.R.clone()]);
     const kh = 1 - Math.exp(-dt * 16);
     H[0].lerp(tgt.L, kh); H[1].lerp(tgt.R, kh);
     // khuỷu tay bẻ ra hai bên (tư thế ôm tay cầm súng máy), hơi xuống
     for (const arm of F.arms) solveArm(F, arm, H[arm.s < 0 ? 0 : 1], V(arm.s * 7, 1.6, 0.6));
-    if (gDead && !F.deadTint) { F.deadTint = true; for (const m of F.meshes) if (m.material === F.M.uni || m.material === F.M.vest) m.material = F.M.dead; }
-    else if (!gDead && F.deadTint) { F.deadTint = false; for (const m of F.meshes) if (m.material === F.M.dead) m.material = F.M.uni; }
+    // hy sinh: quân phục / áo giáp sẫm màu (máu, bụi); hồi sinh trả lại vật liệu gốc
+    if (gDead && !F.deadTint) { F.deadTint = true; for (const m of F.meshes) if (m.material === F.M.uni || m.material === F.M.vest) { m.userData.mat0 = m.material; m.material = F.M.dead; } }
+    else if (!gDead && F.deadTint) { F.deadTint = false; for (const m of F.meshes) if (m.userData.mat0) { m.material = m.userData.mat0; m.userData.mat0 = null; } }
   }
 
   // Ảnh hưởng của kíp xe lên xe (xe máy mình điều khiển): xạ thủ hy sinh -> súng & tên lửa vô hiệu, không nạp; lái xe hy sinh
@@ -345,7 +447,7 @@ const VehicleCrew = (() => {
       ? { type: 'crew', text: `XẠ THỦ ${how || 'TRÚNG ĐẠN'} HY SINH — súng máy & tên lửa không còn người điều khiển` }
       : { type: 'crew', text: `LÁI XE ${how || 'TRÚNG ĐẠN'} HY SINH — xe mất khả năng cơ động` };
   }
-  const exposure = u => (u.crew && u.crew.gunner ? (u.crew.gunner.rise > 0.8 ? 1 : 0.5) : 0);
+  const exposure = u => (u.crew && u.crew.gunner ? (u.crew.gunner.rise > 0.8 ? 1 : u.crew.gunner.rise < -2.5 ? 0 : 0.5) : 0);
 
   function onHit(u, opts, r) {
     if (!u || u.isDead || !u.crew || u.crew.kind !== 'scout' || !r || !r.events || r.intercepted) return;

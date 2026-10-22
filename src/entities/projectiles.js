@@ -139,7 +139,8 @@
     CLUSTER_SUBMUNITION: 0.65,
     RPG: 0.6, ANTI_TANK_MISSILE: 0.6,
     GATLING_BULLET: 0.42, INCENDIARY: 0.42,     // 30mm (lòng nòng Hailstorm ~0.2)
-    SCOUT_BULLET: 0.4
+    SCOUT_BULLET: 0.4,
+    GL40: 0.45                                  // lựu 40mm (thân ~Ø0.9 đv — phóng to chút cho mắt thấy được khi bay)
   };
 
   // Thân đạn pháo tròn xoay: r = bán kính thân, L = dài tổng
@@ -230,6 +231,20 @@
     return 3;
   }
 
+  // Quả lựu 40mm nổ mảnh - nổ lõm (HEDP, kiểu M430): thân lùn ô-liu, mũi bầu vàng đồng (ngòi chạm), đai dẫn động đồng
+  // khớp rãnh xoắn nòng, đáy đen. Sơ tốc thấp (~240 m/s) nên mắt người THẤY được quả lựu bay vồng — không có vạch đường
+  function grenade(group) {
+    mesh(shared('glbody', () => new THREE.CylinderGeometry(1.0, 0.96, 1.5, 18)), M.olive(), group, [0, -0.15, 0]);
+    mesh(shared('glnose', () => {
+      const pts = [[1.0, 0], [0.98, 0.25], [0.85, 0.6], [0.6, 0.95], [0.32, 1.15], [0.0, 1.22]].map(p => new THREE.Vector2(p[0], p[1]));
+      return new THREE.LatheGeometry(pts, 18);
+    }), M.brass(), group, [0, 0.6, 0]);
+    mesh(shared('glband', () => new THREE.CylinderGeometry(1.04, 1.04, 0.22, 18, 1, true)), M.copper(), group, [0, -0.7, 0]);
+    mesh(shared('glbase', () => new THREE.CylinderGeometry(0.9, 0.9, 0.12, 18)), M.black(), group, [0, -0.95, 0]);
+    mesh(shared('glstripe', () => new THREE.CylinderGeometry(1.01, 1.01, 0.12, 18, 1, true)), M.yellow(), group, [0, 0.35, 0]);
+    return 2.9;
+  }
+
   function missile(group) {
     const L = 10;
     const y0 = -L / 2;
@@ -294,6 +309,7 @@
     ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng có điều khiển', desc: 'Đầu nổ lõm: luồng phụt nóng chảy, chớp trắng chói, khói đen đặc, tia lửa nhiều.' },
     GATLING_BULLET: { name: 'Đạn 30mm nổ - cháy - vạch đường', desc: 'Mỗi phát nổ một chớp nhỏ, tia đất tóe theo hướng bay, để lại lỗ đạn trên đất / tường.' },
     SCOUT_BULLET: { name: 'Đạn súng máy hạng nặng', desc: 'Đạn nhỏ có vạch đường: tóe đất, bụi mỏng.' },
+    GL40: { name: 'Lựu 40mm nổ mảnh - nổ lõm', desc: 'Sơ tốc thấp, bay vồng thấy được bằng mắt, không vạch đường. Ngòi chạm: nổ đanh, khói xám, mảnh văng bán kính ~5 m.' },
     INCENDIARY: { name: 'Đạn cháy', desc: 'Mũi đỏ, vạch đường cam đậm: bùng lửa, văng tàn cháy, lửa bám cháy thêm một lúc.' }
   };
 
@@ -307,6 +323,7 @@
         case 'CLUSTER_SUBMUNITION': L = bomblet(g); break;
         case 'RPG':
         case 'ANTI_TANK_MISSILE': L = missile(g); break;
+        case 'GL40': L = grenade(g); break;
         case 'GATLING_BULLET':
         case 'SCOUT_BULLET':
         case 'INCENDIARY': L = smallRound(g, ammoType, opts.tracer !== false, opts.scale === undefined); break;
