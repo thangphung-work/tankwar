@@ -6,6 +6,8 @@
  *   'lobby'      sảnh chờ: chủ đề chính đi qua các đoạn mở đầu -> dồn dần -> cao trào -> lắng, lặp lại
  *   'search'     đang tìm trận: tối thiểu đoạn "dồn dần" + tiếng tích tắc móc đơn
  *   'countdown'  đếm ngược: cao trào + vê trống dồn + tiếng xoáy dâng lên
+ *   'hangar'     màn xem xe 3D / kho trang bị: nhạc xưởng cơ khí — trầm nền tối, nhịp máy dập, tiếng kim loại va,
+ *                bánh răng lách cách, xì thủy lực, chuông kim loại hát chủ đề chậm
  *   'battle'     trong trận: tắt nhạc sảnh, chỉ phát tiếng kèn mở trận rồi im (không có nhạc nền trong trận)
  *   'victory' | 'defeat' | 'draw'   đoạn kết ngắn rồi im
  *   'off'        tắt
@@ -47,8 +49,25 @@
         [2, 0, 67, 12], [2, 12, 64, 4], [3, 0, 62, 16],
         [4, 0, 62, 3], [4, 3, 62, 1], [4, 4, 69, 12], [5, 0, 74, 8], [5, 8, 72, 4], [5, 12, 70, 4],
         [6, 0, 72, 8], [6, 8, 67, 8], [7, 0, 69, 16]]
+    },
+    // kho xưởng: i - i - VI - VI - iv - iv - Vsus - V, chậm và nặng; chuông kim loại hát chủ đề thưa (xem _mzHangarStep)
+    hangar: {
+      bpm: 92, gain: 0.34, chords: [Dm, Dm, Bb, Bb, Gm, Gm, ch(45, [50, 52, 57], 5), A],
+      melody: [[0, 0, 74, 8], [0, 8, 69, 8], [1, 0, 72, 6], [1, 6, 69, 4], [1, 12, 65, 4],
+        [2, 0, 70, 8], [2, 8, 65, 8], [3, 0, 74, 6], [3, 6, 72, 4], [3, 12, 70, 4],
+        [4, 0, 70, 8], [4, 8, 67, 8], [5, 0, 74, 6], [5, 6, 70, 4], [5, 12, 67, 4],
+        [6, 0, 69, 16], [7, 0, 73, 8], [7, 8, 76, 8]],
+      order: ['idle', 'work', 'full', 'full', 'idle', 'work', 'full', 'work'], loopFrom: 4
     }
   };
+  // Các đoạn nhạc kho xưởng. pulse: trầm máy chạy móc đơn; press: máy dập (phách 1, nhịp 3-3-2); clank: kim loại va;
+  // servo: bánh răng lách cách; bell: chuông kim loại hát chủ đề; hiss: xì thủy lực mỗi 4 ô nhịp
+  const HANGAR = {
+    idle: { pad: 0.6, drone: 0.9, padLp: 800, pulse: 0, press: 0, clank: 0.6, servo: 0.5, bell: 0.7, hiss: 1 },
+    work: { pad: 0.7, drone: 1, padLp: 1100, pulse: 0.75, press: 0.7, clank: 0.8, servo: 0.8, bell: 0.8, hiss: 1 },
+    full: { pad: 0.8, drone: 1, padLp: 1500, pulse: 1, press: 1, clank: 1, servo: 1, bell: 1, hiss: 1 }
+  };
+  const SERVO = [1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1];
 
   // Dây chạy móc kép: độ lệch (nửa cung) so với nốt trầm quãng tám 3; 'm' = quãng ba của hợp âm. Nhấn nhịp 3-3-3-3-4
   const OST = [0, 0, 12, 0, 0, 7, 0, 0, 12, 0, 0, 7, 0, 'm', 7, 12];
@@ -171,6 +190,8 @@
         if (mode === 'countdown') this._mzCountdown(t);
         // về sảnh: xe mình đã tắt máy (sau trận về sảnh có thể còn tiếng máy treo)
         if (mode === 'lobby' && prev !== 'search' && prev !== 'countdown' && prev !== 'off') this._mzSilenceVehicles();
+      } else if (mode === 'hangar') {
+        if (!S || S.kind !== 'hangar') this._mzStart('hangar', t + 0.1, prev === 'off' ? 2.5 : 1.4);
       } else if (mode === 'battle') {
         this._mzStop(0.25);
         M.heat = 0.3;
@@ -285,6 +306,16 @@
         // vào đoạn cao trào: một tiếng "ẦM" trầm mở màn
         if (sec === 'full' && S.prevSec !== 'full') this._mzImpact(S.out, t, 0.8);
         S.prevSec = sec;
+      } else if (S.kind === 'hangar') {
+        if (S.barIn === 0) {
+          S.phrase++;
+          const o = def.order;
+          S.sec = S.phrase < o.length ? o[S.phrase] : o[def.loopFrom + (S.phrase - def.loopFrom) % (o.length - def.loopFrom)];
+        }
+        L = Object.assign({}, HANGAR[S.sec] || HANGAR.idle);
+        // vào đoạn đầy đủ: một cú máy dập lớn mở màn
+        if (S.sec === 'full' && S.prevSec !== 'full') this._mzPress(S.out, t, 1.3);
+        S.prevSec = S.sec;
       } else {
         // trận đánh: mức theo độ ác liệt; chỉ hạ mức ở đầu cặp ô nhịp để không chập chờn
         let want = 0;
@@ -315,6 +346,7 @@
       const S = M.song;
       const s = i % 16;
       if (s === 0) this._mzBar(S, t);
+      if (S.kind === 'hangar') { this._mzHangarStep(S, s, t); return; }
       const L = S.L, c = S.chord, sd = M.stepDur;
       // dây chạy dồn
       if (L.ost && (L.ost === 2 || s % 2 === 0)) {
@@ -349,6 +381,99 @@
         else if (s === 6) this._mzPiano(S.out, t, c.t[1] + 12, L.piano * 0.7);
         else if (s === 10) this._mzPiano(S.out, t, c.t[2] + 12, L.piano * 0.6);
       }
+    }
+
+    // một bước móc kép của nhạc kho xưởng
+    _mzHangarStep(S, s, t) {
+      const M = this._mz;
+      const L = S.L, c = S.chord, sd = M.stepDur;
+      // trầm máy chạy: móc đơn, nhấn 3-3-2 (bước 0, 6, 12), nhảy quãng tám ở bước 6 và 14
+      if (L.pulse && s % 2 === 0) {
+        const acc = s === 0 || s === 6 || s === 12;
+        this._mzPulse(S.out, t, c.b + 12 + (s === 6 || s === 14 ? 12 : 0), sd * 1.8, L.pulse * (acc ? 1 : 0.6));
+      }
+      // máy dập: phách 1 (đoạn đầy đủ thêm bước 10)
+      if (L.press && (s === 0 || (L.press >= 1 && s === 10))) this._mzPress(S.out, t, L.press * (s === 0 ? 1 : 0.7));
+      // kim loại va: bước 6 mỗi ô nhịp, bước 14 ô nhịp lẻ — cao độ theo hợp âm
+      if (L.clank && (s === 6 || (s === 14 && S.bar % 2 === 1))) {
+        this._mzMetal(S.out, t, mtof(c.b + 24 + (s === 6 ? 7 : 12)), L.clank * (s === 6 ? 0.8 : 0.55), s === 6 ? 1.1 : 0.7);
+      }
+      // bánh răng lách cách
+      if (L.servo && SERVO[s]) this._mzServo(S.out, t, L.servo * (s % 4 === 0 ? 1 : 0.6), s % 4 === 0 ? 1.3 : 1);
+      // xì thủy lực + tiếng khóa "cạch" khi xả xong
+      if (L.hiss && S.bar % 4 === 3 && s === 8) this._mzHiss(S.out, t, L.hiss);
+      // chuông kim loại hát chủ đề
+      if (L.bell) {
+        for (const n of S.def.melody) if (n[0] === S.barIn && n[1] === s) this._mzBell(S.out, t, n[2], L.bell, n[3] * sd);
+      }
+    }
+
+    // trầm máy: răng cưa + vuông quãng tám dưới, lọc mở nhanh rồi đóng ("vừm" của động cơ / băng chuyền)
+    _mzPulse(dest, t, m, dur, lv) {
+      const ctx = this.ctx;
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.Q.value = 3;
+      f.frequency.setValueAtTime(180, t);
+      f.frequency.linearRampToValueAtTime(900 + 500 * lv, t + 0.015);
+      f.frequency.setTargetAtTime(220, t + 0.02, dur * 0.3);
+      const g = ctx.createGain();
+      const peak = 0.075 * lv;
+      g.gain.value = 0;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(peak, t + 0.005);
+      g.gain.setTargetAtTime(0.0001, t + dur * 0.5, dur * 0.25);
+      f.connect(g);
+      g.connect(dest);
+      const fr = mtof(m);
+      for (const [type, mul, det] of [['sawtooth', 1, -6], ['sawtooth', 1, 6], ['square', 0.5, 0]]) {
+        const o = ctx.createOscillator();
+        o.type = type;
+        o.frequency.value = fr * mul;
+        o.detune.value = det;
+        o.connect(f);
+        o.start(t);
+        o.stop(t + dur + 0.6);
+      }
+    }
+
+    // máy dập thủy lực: cú nện trầm + tiếng thép đập + đuôi rền
+    _mzPress(dest, t, vel) {
+      this.tone(dest, t, { freq: 96, freqEnd: 38, sweep: 0.2, gain: 0.5 * vel, attack: 0.002, dur: 0.8 });
+      this.burst(dest, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 260, gain: 0.3 * vel, attack: 0.003, dur: 0.45 });
+      this.burst(dest, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 950, Q: 1.6, gain: 0.26 * vel, attack: 0.001, dur: 0.09 });
+      this._mzMetal(dest, t, 172, 0.55 * vel, 0.9);
+    }
+
+    // kim loại va (đe / ống thép): các họa âm lệch không hài hòa tắt dần + tiếng gõ ngắn
+    _mzMetal(dest, t, f0, vel, decay) {
+      const P = [[1, 1, 1], [2.76, 0.5, 0.7], [5.4, 0.28, 0.45], [8.93, 0.14, 0.3]];
+      for (const [mul, a, d] of P) {
+        this.tone(dest, t, { freq: f0 * mul * (1 + (Math.random() - 0.5) * 0.004), gain: 0.05 * a * vel, attack: 0.001, dur: decay * d });
+      }
+      this.burst(dest, t, { filter: 'bandpass', freq: 4200, Q: 2, gain: 0.08 * vel, attack: 0.0005, dur: 0.025 });
+    }
+
+    // bánh răng / cóc: tiếng tách khô dải hẹp
+    _mzServo(dest, t, vel, p) {
+      this.burst(dest, t, { filter: 'bandpass', freq: 3100 * p, Q: 9, gain: 0.11 * vel, attack: 0.0005, dur: 0.022 });
+      this.burst(dest, t, { filter: 'highpass', freq: 8000, gain: 0.025 * vel, attack: 0.0005, dur: 0.015 });
+    }
+
+    // xì thủy lực: nhiễu quét xuống ~1,2 s rồi "cạch" khóa chốt
+    _mzHiss(dest, t, vel) {
+      this.burst(dest, t, { filter: 'bandpass', freq: 7200, freqEnd: 1700, sweep: 1.1, Q: 1.3, gain: 0.1 * vel, attack: 0.05, dur: 1.3 });
+      this.burst(dest, t, { filter: 'highpass', freq: 9000, gain: 0.04 * vel, attack: 0.01, dur: 0.3 });
+      this._mzMetal(dest, t + 1.15, 236, 0.45 * vel, 0.5);
+    }
+
+    // chuông kim loại: họa âm kiểu chuông thép (lệch nhẹ khỏi hài hòa) ngân dài, vào tiếng mềm
+    _mzBell(dest, t, m, lv, dur) {
+      const f = mtof(m), hold = Math.max(0.6, dur);
+      for (const [mul, a, d] of [[1, 1, 1], [2.01, 0.38, 0.6], [2.76, 0.22, 0.4], [5.4, 0.07, 0.18]]) {
+        this.tone(dest, t, { freq: f * mul, gain: 0.05 * a * lv, attack: 0.004, dur: (1.2 + hold * 1.4) * d });
+      }
+      this.tone(dest, t, { type: 'triangle', freq: f * 0.5, gain: 0.018 * lv, attack: 0.01, dur: hold * 1.2 });
     }
 
     // đếm ngược 3 giây: vê trống dồn + tiếng xoáy dâng

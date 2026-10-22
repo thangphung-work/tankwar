@@ -24,9 +24,13 @@
 <div id="grid"></div>
 <script src="three.min.js?v=20261019i"></script>
 <script src="src/core/sky.js?v=20261020tone1"></script>
-<script src="src/core/equipment.js?v=20261021snd1"></script>
-<script src="src/entities/projectiles.js?v=20261019trc1"></script>
+<script src="src/core/equipment.js?v=20261022eco1"></script>
+<script src="src/entities/projectiles.js?v=20261022trc2"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261021lamp2"></script>
+<script src="src/entities/tanks/roof_mounts.js?v=20261022kami2"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261022eco1"></script>
+<script src="src/entities/recon_drone.js"></script>
+<script src="src/gameplay/kamikaze_uav.js?v=20261022kami2"></script>
 <script>
 (function () {
   const OUT = 256, RS = 512;
@@ -299,6 +303,73 @@
   // ===================== DANH SÁCH ẢNH =====================
   const ITEMS = [];
   for (const id in MODULE_BUILD) ITEMS.push({ id, build: MODULE_BUILD[id], kind: 'module' });
+  // Món gắn trên chân đế mô-đun (roof_mounts.js): dựng đúng mô hình trên xe, sơn & vết chiến trường như xe thật
+  if (window.RoofMounts) {
+    const RM = VehicleKit.createMaterials('BLUE', { battle: 1 });
+    RM.soot = RM.soot || RM.dark;
+    for (const id of RoofMounts.ids()) ITEMS.push({ id, build: () => RoofMounts.build(id, RM), kind: 'module' });
+    // ô MŨI XE xe 6 nòng (fsv_hailstorm.js): lưỡi ủi / khiên chữ V
+    if (window.HailstormFront) for (const id of ['dozer', 'vshield']) ITEMS.push({ id, build: () => HailstormFront.build(id, RM), kind: 'module', rotY: Math.PI });
+    // ô VŨ KHÍ CHÍNH xe trinh sát: súng máy 12.7mm trên trụ có tấm chắn (mặc định)
+    ITEMS.push({ id: 'hmg', kind: 'module', build: () => batchGroup(b => {
+      const RP = RM.paint, RD = RM.dark, RS2 = RM.steel;
+      b.cyl(0.45, 0.55, 2.6, 10, RD, [0, 1.3, 0.6]);
+      for (const s of [-1, 1]) b.box(1.9, 2.3, 0.22, RP, [s * 1.35, 3.3, -0.9], [0.18, s * 0.28, 0]);
+      b.box(4.8, 0.7, 0.22, RP, [0, 4.65, -0.92], [0.18, 0, 0]);
+      b.box(4.8, 0.5, 0.22, RP, [0, 2.35, -0.8], [0.18, 0, 0]);
+      b.box(1.3, 1.0, 3.6, RD, [0, 3.1, 0.9]);                         // hộp khóa nòng
+      b.cyl(0.2, 0.2, 7.4, 10, RS2, [0, 3.2, -3.4], 'z');               // nòng
+      b.cyl(0.36, 0.36, 1.6, 10, RD, [0, 3.2, -1.2], 'z');              // ống tản nhiệt gốc nòng
+      b.cyl(0.3, 0.3, 0.8, 8, RD, [0, 3.2, -7.0], 'z');                 // loa che lửa
+      b.box(1.2, 1.3, 1.9, RP, [1.3, 2.9, 0.9]);                        // hộp đạn
+      b.box(0.5, 0.22, 1.4, RM.soot || RD, [0.3, 3.65, 0.9]);           // vệt muội trên nắp
+      b.cyl(0.08, 0.08, 1.4, 6, RD, [0, 3.4, 2.9], 'z');                // tay cầm sau
+    }) });
+  }
+  // ô ĐỘNG CƠ: khối máy diesel V (nguyên bản) + bộ tăng áp / tăng áp kép + két làm mát / tuabin khí / máy phát + mô-tơ điện
+  const engBlock = (b, k = 1) => {
+    b.box(7 * k, 3.4 * k, 4.2 * k, MAT.oliveDark, [0, 1.7 * k, 0]);                                  // thân máy
+    for (const s of [-1, 1]) b.box(7.2 * k, 0.9 * k, 1.6 * k, MAT.black, [0, 3.7 * k, s * 1.3 * k], [s * 0.35, 0, 0]);   // nắp quy-lát chữ V
+    for (let i = 0; i < 6; i++) for (const s of [-1, 1]) b.cyl(0.18 * k, 0.18 * k, 0.6 * k, 6, MAT.steel, [-2.9 * k + i * 1.16 * k, 3.2 * k, s * 2.25 * k], 'z');   // ống góp xả
+    b.cyl(1.3 * k, 1.3 * k, 0.5 * k, 18, MAT.black, [-3.8 * k, 1.9 * k, 0], 'x');                   // pu-li / quạt
+    b.box(1.4 * k, 1.0 * k, 3.2 * k, MAT.steel, [3.6 * k, 1.2 * k, 0]);                              // vỏ ly hợp
+  };
+  const turbo = (b, x, y, z, r = 1) => {
+    b.cyl(0.95 * r, 0.95 * r, 0.9 * r, 18, MAT.alu, [x, y, z], 'z');                                   // vỏ ốc máy nén
+    b.cyl(0.8 * r, 0.8 * r, 0.8 * r, 18, MAT.copper, [x, y, z + 0.85 * r], 'z');                       // vỏ tuabin khí xả (cháy màu đồng)
+    b.cyl(0.42 * r, 0.42 * r, 1.4 * r, 12, MAT.alu, [x, y + 0.2 * r, z - 1.0 * r], 'z');               // ống hút gió
+  };
+  const ENGINES = {
+    stock: () => batchGroup(b => { engBlock(b); b.cyl(0.9, 0.9, 1.6, 14, MAT.black, [1.2, 4.6, 0], 'x'); }, 0),
+    tdiesel: () => batchGroup(b => { engBlock(b); turbo(b, 1.2, 4.6, 2.6); }, 0),
+    twinturbo: () => batchGroup(b => {
+      engBlock(b); turbo(b, -0.8, 4.7, 2.7, 0.85); turbo(b, 1.8, 4.7, 2.7, 1.05);
+      b.box(4.6, 2.6, 0.6, MAT.black, [0.4, 5.4, -1.8]);                                              // két làm mát khí nạp
+      for (let i = 0; i < 9; i++) b.box(4.4, 0.06, 0.62, MAT.alu, [0.4, 4.3 + i * 0.27, -1.8]);
+      b.cyl(0.3, 0.3, 2.2, 8, MAT.redPaint, [-2.6, 5.4, -1.8], 'x');                                   // ống phun nước
+    }, 0),
+    turbine: () => batchGroup(b => {
+      b.cyl(2.1, 2.1, 7.5, 24, MAT.alu, [0, 2.3, 0], 'x');                                             // thân tuabin
+      b.cyl(2.6, 2.1, 1.2, 24, MAT.steel, [-4.3, 2.3, 0], 'x');                                        // miệng hút gió loe
+      b.cyl(1.6, 1.6, 0.3, 24, MAT.black, [-4.95, 2.3, 0], 'x');
+      for (let i = 0; i < 5; i++) b.cyl(2.2, 2.2, 0.18, 24, MAT.steel, [-2.6 + i * 1.3, 2.3, 0], 'x');   // vành ghép tầng nén
+      b.box(3.2, 3.0, 3.4, MAT.oliveDark, [4.6, 1.6, 0]);                                               // hộp số / bộ thu hồi nhiệt
+      b.cyl(1.0, 1.3, 2.2, 16, MAT.copper, [4.6, 4.0, 0], 'y');                                         // ống xả nóng
+      b.box(2.2, 1.4, 1.6, MAT.black, [0, 0.7, 2.4]);                                                   // hộp phụ tùng
+    }, 0),
+    hybrid: () => batchGroup(b => {
+      engBlock(b, 0.75);
+      b.cyl(1.6, 1.6, 3.2, 22, MAT.steel, [4.4, 1.7, 0], 'x');                                          // mô-tơ / máy phát điện
+      for (let i = 0; i < 8; i++) b.box(3.0, 0.12, 0.3, MAT.alu, [4.4, 1.7 + Math.sin(i * 0.785) * 1.62, Math.cos(i * 0.785) * 1.62], [i * 0.785, 0, 0]);   // gân tản nhiệt
+      b.box(4.2, 1.6, 2.8, MAT.black, [0, 0.8, -3.6]);                                                  // khối pin đệm
+      b.cyl(0.22, 0.22, 3.4, 8, MAT.amber, [2.3, 2.6, -1.6], 'z');                                      // cáp cao áp cam
+      b.cyl(0.22, 0.22, 3.4, 8, MAT.amber, [2.9, 2.6, -1.6], 'z');
+    }, 0)
+  };
+  for (const id in ENGINES) ITEMS.push({ id, build: ENGINES[id], kind: 'module' });
+  // ô UAV lựu pháo: drone trinh sát quadcopter (mặc định) / UAV cảm tử cánh gập (ảnh vật tư UAV cảm tử)
+  if (window.ReconDrone) ITEMS.push({ id: 'recon', build: () => ReconDrone.build('BLUE'), kind: 'module' });
+  if (window.KamiUAV) ITEMS.push({ id: 'uav_kami', build: () => { const g = KamiUAV.build('BLUE'); KamiUAV.animate(g, 1, 1, 0); return g; }, kind: 'module' });
   const AMMO = {
     ALL_ROUNDER: ['NORMAL', 'AP', 'HE'], GATLING: ['GATLING_BULLET', 'INCENDIARY'],
     ARTILLERY: ['NORMAL', 'HE', 'CLUSTER'], SCOUT: ['SCOUT_BULLET', 'INCENDIARY', 'RPG', 'ANTI_TANK_MISSILE']
@@ -306,6 +377,24 @@
   for (const t in AMMO) for (const a of AMMO[t]) ITEMS.push({ id: 'ammo_' + t + '_' + a, build: () => ammoModel(t, a), kind: 'ammo' });
   const PREM = { ap_du: ['ALL_ROUNDER', 'AP'], heat_tandem: ['ALL_ROUNDER', 'NORMAL'], apds30: ['GATLING', 'GATLING_BULLET'], slap127: ['SCOUT', 'SCOUT_BULLET'], he_frag: ['ARTILLERY', 'HE'] };
   for (const id in PREM) ITEMS.push({ id: 'prem_' + id, build: () => ammoModel(PREM[id][0], PREM[id][1], id), kind: 'ammo' });
+  // tên lửa tấn công đỉnh (xe trinh sát): ống phóng kiểu Javelin bọc đệm cao su + khối ngắm nhiệt CLU, sơn có vết dùng
+  ITEMS.push({ id: 'prem_topatk', kind: 'module', build: () => batchGroup(b => {
+    const RM = VehicleKit.createMaterials('BLUE', { battle: 1 });
+    b.cyl(0.9, 0.9, 9.6, 18, RM.paint, [0, 3, 0], 'z');
+    for (const z of [-4.4, 4.2]) b.cyl(1.12, 1.12, 1.0, 18, RM.rubber || RM.dark, [0, 3, z], 'z');
+    b.cyl(0.95, 0.95, 0.25, 18, RM.dark, [0, 3, -4.95], 'z');
+    b.box(1.6, 1.5, 2.6, RM.paint, [-1.75, 3.2, -0.6]);
+    b.box(1.7, 0.16, 2.7, RM.dark, [-1.75, 4.0, -0.6]);
+    b.cyl(0.42, 0.42, 0.16, 16, RM.glass || RM.dark, [-1.75, 3.2, -1.95], 'z');
+    b.box(1.0, 0.18, 0.7, RM.dark, [-1.75, 3.75, -2.1], [0.3, 0, 0]);
+    b.box(0.8, 0.7, 0.4, RM.dark, [-1.75, 3.1, 0.9]);
+    b.cyl(0.11, 0.11, 1.0, 6, RM.dark, [-2.7, 3.2, -0.6], 'z');
+    b.box(0.12, 0.12, 6.4, RM.canvasDark || RM.dark, [0.95, 2.2, 0], [0, 0, 0.3]);
+    b.box(0.9, 0.5, 0.05, RM.soot || RM.dark, [0.4, 3.8, 2.0], [0, 0, 0.5]);
+  }, 0) });
+
+  const ONLY = new URLSearchParams(location.search).get('only');
+  if (ONLY) { const keep = new Set(ONLY.split(',')); for (let i = ITEMS.length - 1; i >= 0; i--) if (!keep.has(ITEMS[i].id)) ITEMS.splice(i, 1); }
 
   // ===================== CHỤP =====================
   const box = new THREE.Box3(), sph = new THREE.Sphere(), v = new THREE.Vector3();
@@ -322,7 +411,7 @@
       obj.rotation.set(0, 0, -0.95);
       holder.rotation.y = -0.35;
     } else {
-      holder.rotation.y = -0.55;
+      holder.rotation.y = -0.55 + (item.rotY || 0);   // rotY: món nhìn từ trước (mũi xe hướng -z)
     }
     scene.add(holder);
     holder.updateMatrixWorld(true);

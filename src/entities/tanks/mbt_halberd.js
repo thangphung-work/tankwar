@@ -30,12 +30,22 @@
   const SPROCKET = { z: 26.4, y: 5.3, r: 2.7 };
   const HULL_HALF_W = 15.0;
   const DECK_Y = 12.8;
+  const HULL_CH = 0.85;       // mép vát chéo 45° quanh thân trên (sàn / giáp mũi / đuôi giáp hông) ~10 cm
+  const DECK_EDGE = HULL_HALF_W - HULL_CH;   // mép sàn phẳng, ngoài đó là dải vát
   const GLACIS_SLOPE = 0.34;  // dy/dz của giáp mũi trên
   const GLACIS_ANGLE = Math.atan(GLACIS_SLOPE);
   const RETURN_ROLLER_Z = [-17, -5.5, 6, 17.5];
   const RETURN_ROLLER_R = 0.95;
 
   const glacisY = (z) => 9.4 + (z + 31) * GLACIS_SLOPE;
+
+  // Mặt cắt hông tháp (giáp nghiêng gãy khúc): chân -> gờ sống -> mép nóc
+  const TUR_BASE = 0.6, TUR_RIDGE = 3.2, TUR_ROOF = 7.0, TUR_ROOF_CH = 1.0;
+  const TUR_RIDGE_X = 11.6;   // nửa bề ngang tại gờ sống (rộng nhất)
+  const TUR_UNDER = 1.9;      // tấm dưới hắt vào trong
+  const TUR_LEAN = 1.1;       // tấm trên ngả vào trong
+  const TUR_UP_TILT = Math.atan2(TUR_LEAN, TUR_ROOF - TUR_ROOF_CH - TUR_RIDGE);   // góc nghiêng tấm trên so với phương đứng
+  const turUpX = (y) => TUR_RIDGE_X - (y - TUR_RIDGE) * Math.tan(TUR_UP_TILT);    // hông tấm trên (đoạn thẳng z -11.5..8.5)
 
   function buildHalberd(builder) {
     const unit = builder.unit;
@@ -68,10 +78,24 @@
     // -------------------------------------------------------------------------
     let lastYaw = null;
     let scanTime = rnd() * 10;
+    let lastRl = 0, ejT = -1, ejDone = true;
     unit.modelAnimator = {
       update(dt, u) {
         if (dt <= 0) return;
         if (u.antennaSets) for (const a of u.antennaSets) a.update(dt);
+        // NẠP ĐẠN sau mỗi phát (reloadTimer vừa nhảy lên): ~0.3 s cửa hất đuôi tháp bật mở, đế liều phóng thép văng ra
+        // sau lưng tháp kèm khói thuốc phóng, cửa sập lại ~1.1 s; kíp nạp đạn lấy viên mới từ hộc đuôi tháp (âm thanh)
+        const rl = u.reloadTimer || 0;
+        if (rl > lastRl + 0.05 && !u.isDead) { ejT = 0; ejDone = false; }
+        lastRl = rl;
+        const flap = turretParts.ejFlap;
+        if (ejT >= 0 && flap) {
+          ejT += dt;
+          const sm = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+          flap.rotation.x = -1.4 * sm((ejT - 0.22) / 0.1) * (1 - sm((ejT - 0.9) / 0.25));
+          if (!ejDone && ejT >= 0.3) { ejDone = true; ejectStub(u, flap); }
+          if (ejT > 1.2) { ejT = -1; flap.rotation.x = 0; }
+        }
         const yaw = u.group.rotation.y;
         let dYaw = lastYaw === null ? 0 : yaw - lastYaw;
         lastYaw = yaw;
@@ -95,12 +119,38 @@
         if (!u.isDead) {
           scanTime += dt;
           turretParts.periHead.rotation.y = Math.sin(scanTime * 0.35) * 1.4;
-          if (unit.rcwsTurret) unit.rcwsTurret.rotation.y = Math.sin(scanTime * 0.22 + 1.3) * 0.9;
+          // trạm vũ khí nóc tháp chưa từng nhận lệnh (phòng xem xe): quét qua lại; trong trận drone_air.updateRCWS điều khiển
+          if (unit.rcwsTurret && !u._rcws) unit.rcwsTurret.rotation.y = Math.sin(scanTime * 0.22 + 1.3) * 0.9;
         }
       }
     };
 
     return { hullW: HULL_HALF_W * 2 };
+  }
+
+  // Đế liều phóng 120mm (thép, Ø ~13 cm, cao ~8 cm) văng ra khỏi cửa hất đuôi tháp
+  let STUB_GEO = null;
+  function ejectStub(u, flap) {
+    if (typeof ReloadFX === 'undefined' || !u.scene || !flap) return;
+    if (!STUB_GEO) {
+      STUB_GEO = new THREE.CylinderGeometry(0.55, 0.55, 0.65, 12);
+      STUB_GEO.userData.shared = true;
+    }
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8a7a5c, metalness: 0.75, roughness: 0.4 });
+    mat.userData.own = true;
+    const m = new THREE.Mesh(STUB_GEO, mat);
+    m.castShadow = true;
+    m.userData.half = 0.4;
+    flap.updateWorldMatrix(true, false);
+    const pos = new THREE.Vector3(0, 0.5, 0).applyMatrix4(flap.parent.matrixWorld);
+    // tung lên rồi ra sau tháp (trục +Z của tháp trong thế giới), rơi xuống sàn động cơ / đất
+    const q = new THREE.Quaternion();
+    flap.parent.getWorldQuaternion(q);
+    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    const sp = 12 + Math.random() * 7;
+    const vel = { x: back.x * sp + (Math.random() - 0.5) * 5, y: 24 + Math.random() * 7, z: back.z * sp + (Math.random() - 0.5) * 5 };
+    ReloadFX.toss(u.scene, m, pos, vel, { x: 9 + Math.random() * 8, y: Math.random() * 4, z: (Math.random() - 0.5) * 10 }, 9);
+    ReloadFX.puff(u, pos, { x: back.x * 0.4, y: 1, z: back.z * 0.4 }, 3);
   }
 
   // ---------------------------------------------------------------------------
@@ -154,7 +204,7 @@
     hb.add(VehicleKit.sideProfile([
       [-31.0, 9.4], [-21.0, DECK_Y], [20.5, DECK_Y], [28.4, 12.4],
       [29.4, 11.4], [29.4, 9.4]
-    ], HULL_HALF_W * 2, 0.22), P);
+    ], HULL_HALF_W * 2, HULL_CH), P);
 
     // Bồn thân dưới nằm giữa hai dải xích, tấm mũi dưới vát chống mìn
     hb.add(VehicleKit.sideProfile([
@@ -191,12 +241,13 @@
 
     // Đường ghép tấm giáp trên sàn trước + mối hàn nổi chạy dọc mép giáp mũi / sàn và hai mép hông giáp mũi
     hb.box(26, 0.06, 0.14, D, [0, DECK_Y + 0.02, -15.0]);
-    hb.weld([-14.6, DECK_Y + 0.02, -21.0], [14.6, DECK_Y + 0.02, -21.0], P, 0.12);
+    hb.weld([-DECK_EDGE + 0.1, DECK_Y + 0.02, -21.0], [DECK_EDGE - 0.1, DECK_Y + 0.02, -21.0], P, 0.12);
     for (const s of [-1, 1]) {
-      hb.weld([s * 14.92, 9.5, -30.9], [s * 14.92, DECK_Y - 0.05, -21.1], P, 0.12);
+      // mối hàn chạy theo đường gãy giữa giáp mũi và dải vát mép
+      hb.weld([s * DECK_EDGE, glacisY(-30.2) + 0.02, -30.2], [s * DECK_EDGE, DECK_Y + 0.02, -21.1], P, 0.12);
       // Vòng cẩu hai góc mũi (hàn vào mép giáp mũi)
-      hb.box(0.9, 0.5, 1.1, P, [s * 14.1, glacisY(-29.6) + 0.25, -29.6], [-GLACIS_ANGLE, 0, 0]);
-      hb.add(new THREE.TorusGeometry(0.42, 0.14, 5, 10), M.steel, [s * 14.1, glacisY(-29.6) + 0.75, -29.6], [0, Math.PI / 2, 0]);
+      hb.box(0.9, 0.5, 1.1, P, [s * 13.4, glacisY(-29.6) + 0.25, -29.6], [-GLACIS_ANGLE, 0, 0]);
+      hb.add(new THREE.TorusGeometry(0.42, 0.14, 5, 10), M.steel, [s * 13.4, glacisY(-29.6) + 0.75, -29.6], [0, Math.PI / 2, 0]);
     }
 
     // Cụm đèn pha 2 bóng có khung bảo vệ ở 2 góc mũi. Một cụm đã bị va: bóng lớn vỡ còn hốc tối, khung bảo vệ
@@ -258,17 +309,17 @@
       const loose = wear.cableLoose === s;
       const pts = [[x, y, -14.0]];
       for (const z of [-11.5, -9, -4, 1, 6, 11]) pts.push([x + (z === -9 || z === 1 || z === 11 ? 0 : J() * 0.35), y, z]);
-      if (loose) pts.push([x + s * 0.45, y, 13.4], [s * 15.15, y - 0.05, 14.7], [s * 15.75, y - 0.95, 15.3], [s * 15.8, y - 2.4, 15.7]);
+      if (loose) pts.push([x + s * 0.45, y, 13.4], [s * 15.1, y - 0.8, 14.7], [s * 15.7, y - 1.35, 15.3], [s * 15.8, y - 2.6, 15.7]);
       else pts.push([x + J() * 0.3, y, 13.8], [x, y, 16.0]);
       rope(hb, pts, 0.28, M.steel, 8);
       hb.add(new THREE.TorusGeometry(0.75, 0.22, 6, 12), M.steel, [x, y, -14.6], [Math.PI / 2, 0, 0]);
-      if (loose) hb.add(new THREE.TorusGeometry(0.75, 0.22, 6, 12), M.steel, [s * 15.8, y - 3.15, 15.75], [0.1, Math.PI / 2, 0]);
+      if (loose) hb.add(new THREE.TorusGeometry(0.75, 0.22, 6, 12), M.steel, [s * 15.8, y - 3.3, 15.75], [0.1, Math.PI / 2, 0]);
       else hb.add(new THREE.TorusGeometry(0.75, 0.22, 6, 12), M.steel, [x, y, 16.6], [Math.PI / 2, 0, 0]);
       for (const z of [-9, 1, 11]) hb.box(0.9, 0.55, 0.5, D, [x, DECK_Y + 0.25, z]);
       // Nắp miệng rót nhiên liệu hai góc sau sàn (bản lề + quai vặn), vệt dầu loang do shader vết chiến trường vẽ
-      hb.cyl(0.75, 0.82, 0.24, 14, P, [s * 13.6, DECK_Y + 0.12, 22.6]);
-      hb.box(0.9, 0.16, 0.22, M.steel, [s * 13.6, DECK_Y + 0.3, 22.6], [0, 0.5, 0]);
-      hb.box(0.5, 0.22, 0.5, D, [s * 13.6, DECK_Y + 0.11, 21.65]);
+      hb.cyl(0.75, 0.82, 0.24, 14, P, [s * 13.2, DECK_Y + 0.12, 22.6]);
+      hb.box(0.9, 0.16, 0.22, M.steel, [s * 13.2, DECK_Y + 0.3, 22.6], [0, 0.5, 0]);
+      hb.box(0.5, 0.22, 0.5, D, [s * 13.2, DECK_Y + 0.11, 21.65]);
       // Xẻng và xà beng dã chiến
       hb.setTag('tool' + (s < 0 ? 'L' : 'R'));
       hb.cyl(0.13, 0.13, 6.5, 6, M.canvasDark, [s * 11.6, DECK_Y + 0.2, 21.5], 'z');
@@ -505,43 +556,71 @@
     const tb = new VehicleKit.PartBatch(DECK_Y);
     const P = M.paint, D = M.dark;
     const ROOF = 7.0;
+    const ROOF_CH = 1.0;   // mép nóc tháp vát chéo 45° (~12 cm) như tháp hàn tấm thật
 
     // Vòng bi tháp pháo
-    tb.cyl(9.6, 9.8, 0.7, 32, D, [0, 0.35, 0]);
+    tb.cyl(9.4, 9.6, 0.7, 32, D, [0, 0.35, 0]);
 
-    // Thân tháp đa diện, sườn vát nghiêng vào trong
-    tb.add(VehicleKit.loft(
-      [[-10.6, -11.5], [10.6, -11.5], [11.2, -4], [11.2, 8], [10.2, 16.5], [9.4, 17.6],
-       [-9.4, 17.6], [-10.2, 16.5], [-11.2, 8], [-11.2, -4]],
-      [[-9.9, -11.0], [9.9, -11.0], [10.5, -4], [10.5, 8], [9.6, 16.2], [8.8, 17.2],
-       [-8.8, 17.2], [-9.6, 16.2], [-10.5, 8], [-10.5, -4]],
-      0.6, ROOF
-    ), P);
+    // Thân tháp giáp nghiêng gãy khúc (mặt cắt hình thoi dẹt): đạn bắn ngang gặp tấm nào cũng xiên góc -> dễ trượt.
+    // Tấm dưới hắt mạnh vào trong (undercut ~36°) về vòng bi, gờ sống chạy ngang hông, tấm trên ngả vào trong ~21°
+    // lên tới mép nóc vát. Mặt trước tháp đứng (khuất sau giáp nêm, chỉ lộ ở khe nòng).
+    const RIDGE = [[-11.6, -11.5], [11.6, -11.5], [11.6, 8.5], [10.6, 16.8], [9.7, 18.0],
+      [-9.7, 18.0], [-10.6, 16.8], [-11.6, 8.5]];
+    // độ hắt vào của từng cạnh (cạnh i: đỉnh i -> i+1): trước, hông P, góc sau P, vát đuôi P, đuôi, vát đuôi T, góc sau T, hông T
+    const UNDER = [0, TUR_UNDER, TUR_UNDER, 1.2, 1.2, 1.2, TUR_UNDER, TUR_UNDER];
+    const LEAN = [0, TUR_LEAN, TUR_LEAN, 0.7, 0.7, 0.7, TUR_LEAN, TUR_LEAN];
+    tb.add(VehicleKit.loftRings([
+      { pts: VehicleKit.insetPolygon(RIDGE, UNDER), y: TUR_BASE },
+      { pts: RIDGE, y: TUR_RIDGE },
+      { pts: VehicleKit.insetPolygon(RIDGE, LEAN), y: ROOF }
+    ], ROOF_CH), P);
+    // Mối hàn chạy dọc gờ sống (đường ghép tấm trên - tấm dưới)
+    for (const s of [-1, 1]) tb.weld([s * 11.62, TUR_RIDGE, -11.2], [s * 11.62, TUR_RIDGE, 8.3], P, 0.12);
 
-    // Giáp nêm hình mũi tên hai bên nòng (nóc dốc xuống phía trước)
+    // Giáp nêm hình mũi tên hai bên nòng: cùng mặt cắt gờ sống với thân tháp, mặt mũi tên vát chéo cả trên lẫn dưới,
+    // nóc dốc xuống phía trước. Thứ tự đỉnh: chân sau trong, chân sau ngoài, hông, mũi ngoài, mũi trong (khe nòng)
     for (const s of [-1, 1]) {
-      const pts = [[s * 3.4, -11.4], [s * 10.9, -11.4], [s * 10.9, -12.7], [s * 4.2, -19.2]];
-      tb.add(VehicleKit.loft(pts, pts, 0.9, [ROOF, ROOF, ROOF - 0.5, 4.6]), P);
-      // Hàng bu-lông gắn module
-      for (let i = 0; i < 4; i++) {
-        const k = (i + 0.5) / 4;
-        const x = s * (10.9 + (4.2 - 10.9) * k), z = -12.7 + (-19.2 + 12.7) * k;
-        tb.cyl(0.2, 0.2, 0.2, 6, D, [x, (ROOF - 0.5) + (4.6 - ROOF + 0.5) * k - 0.25, z]);
+      // Khối giáp má kiểu Abrams: nhìn từ trên mặt trước xuôi mạnh ra sau về phía ngoài (mũi trong nhô sát khe nòng),
+      // nhìn ngang mặt trước gần như một tấm phẳng ngả hẳn về sau (đáy hầu như không hắt vào), nóc dốc nhẹ xuống phía mũi
+      const W = [[s * 3.1, -11.4], [s * 11.6, -11.4], [s * 11.6, -14.0], [s * 3.1, -19.8]];
+      const SLOPE = 0.11;
+      const yTop = (z) => ROOF + Math.min(0, z + 11.4) * SLOPE;
+      const topPts = VehicleKit.insetPolygon(W, [0, TUR_LEAN, 2.4, 0]);
+      tb.add(VehicleKit.loftRings([
+        { pts: VehicleKit.insetPolygon(W, [0, TUR_UNDER, 0.25, 0]), y: TUR_BASE },
+        { pts: W, y: TUR_RIDGE },
+        { pts: topPts, y: topPts.map(([, z]) => yTop(z)) }
+      ], 0.25), P);
+      tb.weld([s * 11.62, TUR_RIDGE, -11.5], [s * 11.62, TUR_RIDGE, -13.9], P, 0.12);
+      tb.weld([s * 11.5, TUR_RIDGE, -14.05], [s * 3.2, TUR_RIDGE, -19.75], P, 0.12);
+      // Hàng bu-lông gắn khối giáp: trên nóc, song song mép trước
+      const inner = VehicleKit.insetPolygon(W, [0, 1.9, 3.2, 0]);
+      for (let i = 0; i < 5; i++) {
+        const k = (i + 0.5) / 5;
+        const x = inner[2][0] + (inner[3][0] - inner[2][0]) * k, z = inner[2][1] + (inner[3][1] - inner[2][1]) * k;
+        tb.cyl(0.2, 0.2, 0.22, 6, D, [x, yTop(z) + 0.02, z], 'y', [-SLOPE, 0, 0]);
       }
-      // Module giáp má tháp
+      // Module giáp má tháp: tấm giáp bắt bu-lông ốp trên tấm hông trên, nghiêng theo mặt tháp
       tb.setTag('cheek' + (s < 0 ? 'L' : 'R'));
-      const cheek = [[s * 10.9, -12.6], [s * 12.4, -11.0], [s * 12.4, -0.6], [s * 10.9, -0.6]];
-      tb.add(VehicleKit.loft(cheek, cheek, 1.2, [6.6, 6.6, 6.4, 6.4]), P);
-      for (let i = 0; i < 3; i++) tb.cyl(0.18, 0.18, 0.2, 6, D, [s * 12.5, 5.6, -9.5 + i * 4], 'x');
+      const rot = [0, 0, s * TUR_UP_TILT];
+      const nx = Math.cos(TUR_UP_TILT), ny = Math.sin(TUR_UP_TILT);   // pháp tuyến mặt trên (hướng ra ngoài)
+      const ux = -Math.sin(TUR_UP_TILT), uy = Math.cos(TUR_UP_TILT);  // hướng lên dọc mặt
+      const yc = 4.55, xc = turUpX(yc);
+      const on = (out, up, z) => [s * (xc + nx * out + ux * up), yc + ny * out + uy * up, z];
+      tb.box(0.55, 2.5, 10.4, P, on(0.27, 0, -6.4), rot);
+      for (const z of [-10.6, -8.0, -4.8, -2.2]) {
+        for (const up of [-0.95, 0.95]) tb.cyl(0.17, 0.17, 0.2, 6, D, on(0.6, up, z), 'x', rot);
+      }
+      tb.seam(on(0.56, -1.2, -6.4), on(0.56, 1.2, -6.4), [s * nx, ny, 0], D);
       tb.setTag(null);
     }
 
     // Kính ngắm pháo thủ có hộp giáp và cửa chớp (nóc trước phải)
     tb.setTag('opticGunner');
-    tb.box(3.4, 2.2, 3.8, P, [7.0, ROOF + 1.1, -8.4]);
-    tb.box(2.4, 1.0, 0.12, M.glass, [7.0, ROOF + 1.3, -10.33]);
-    tb.box(1.3, 1.5, 0.14, P, [5.5, ROOF + 1.4, -10.6], [0, 0.7, 0]);
-    tb.box(1.3, 1.5, 0.14, P, [8.5, ROOF + 1.4, -10.6], [0, -0.7, 0]);
+    tb.box(3.4, 2.2, 3.8, P, [7.0, ROOF + 1.1, -7.9]);
+    tb.box(2.4, 1.0, 0.12, M.glass, [7.0, ROOF + 1.3, -9.83]);
+    tb.box(1.3, 1.5, 0.14, P, [5.5, ROOF + 1.4, -10.1], [0, 0.7, 0]);
+    tb.box(1.3, 1.5, 0.14, P, [8.5, ROOF + 1.4, -10.1], [0, -0.7, 0]);
     tb.setTag(null);
 
     // Nắp chỉ huy với vòng kính tiềm vọng (trái) & nắp nạp đạn (phải)
@@ -574,12 +653,12 @@
     VehicleKit.registerPartGroup(unit, 'opticCdr', periHead);
 
     // Tay nắm leo tháp hai bên mép nóc
-    for (const s of [-1, 1]) tb.grabHandle([s * 9.4, ROOF, 7.0], 'z', 2.8, 0.6, P);
+    for (const s of [-1, 1]) tb.grabHandle([s * 8.9, ROOF, 7.0], 'z', 2.8, 0.6, P);
 
     // Tấm xả áp hộc đạn trên nóc đuôi tháp
     tb.box(16.2, 0.06, 0.16, D, [0, ROOF + 0.03, 8.6]);
-    tb.box(16.2, 0.06, 0.16, D, [0, ROOF + 0.03, 16.2]);
-    for (const x of [-8.1, -2.7, 2.7, 8.1]) tb.box(0.16, 0.06, 7.6, D, [x, ROOF + 0.03, 12.4]);
+    tb.box(16.2, 0.06, 0.16, D, [0, ROOF + 0.03, 15.6]);
+    for (const x of [-8.1, -2.7, 2.7, 8.1]) tb.box(0.16, 0.06, 7.0, D, [x, ROOF + 0.03, 12.1]);
 
     // Tấm vải nhận diện phe (nhìn rõ từ trên không): buộc vội, lệch, một góc gió lật gập lên
     tb.box(5.0, 0.08, 3.4, M.idPanel, [-4.6, ROOF + 0.08, 12.4], [0, 0.04 + J() * 0.1, 0]);
@@ -617,12 +696,13 @@
     // miệng ống ám muội, một nắp còn treo lủng lẳng trên dây giữ
     for (const s of [-1, 1]) {
       tb.setTag('smoke' + (s < 0 ? 'L' : 'R'));
-      tb.box(0.45, 1.4, 4.4, P, [s * 11.35, 5.7, 2.4]);
+      const sdx = turUpX(5.4) + 0.24 - 11.35;   // bệ ốp sát tấm hông trên đang ngả vào trong
+      tb.box(0.45, 1.4, 4.4, P, [s * (11.35 + sdx), 5.4, 2.4], [0, 0, s * TUR_UP_TILT]);
       const rot = [-0.45, 0, -s * 0.85];
       const ax = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]));
       const fired = wear.smokeFired === s;
       for (let i = 0; i < 4; i++) {
-        const c = [s * 11.95, 6.25, 0.8 + i * 1.05];
+        const c = [s * (11.95 + sdx), 5.95, 0.8 + i * 1.05];
         const at = (d) => [c[0] + ax.x * d, c[1] + ax.y * d, c[2] + ax.z * d];
         tb.cyl(0.4, 0.4, 1.7, 10, D, c, 'y', rot);
         if (fired && i !== 3) {
@@ -666,8 +746,8 @@
     // Tấm thép vá hàn ngoài thực địa che vết trúng đạn cũ trên hông tháp: cắt tay không vuông vức, đặt lệch,
     // đường hàn vòng quanh mép, sơn dặm khác tông
     {
-      const s = wear.patchSide, y = 3.4, x = s * (11.2 - (y - 0.6) * (0.7 / 6.4) + 0.12);
-      const rot = [0.04, 0, s * Math.atan2(0.7, 6.4) + 0.05];
+      const s = wear.patchSide, y = 4.6, x = s * (turUpX(y) + 0.12);
+      const rot = [0.04, 0, s * (TUR_UP_TILT + 0.05)];
       const F = frameAt([x, y, 4.6], rot);
       tb.box(0.22, 2.3, 3.3, M.paintDusty, F(0, 0, 0), rot);
       const corners = [[1.1, -1.6], [1.18, 1.55], [-1.12, 1.65], [-1.15, -1.5]];
@@ -718,33 +798,30 @@
     tb.jerrycan([-3.6, by0 + 1.4, 19.9], Math.PI / 2, 1.2, 2.8, 2.0, P, D);
     tb.jerrycan([6.2, by0 + 1.7, 21.35], Math.PI / 2 + 0.08, 1.2, 2.8, 2.0, M.paintDusty, D);
     // dây chằng chéo qua đống đồ, đầu buộc vào khung giỏ
-    rope(tb, [[-bx, by1, bz0 + 0.3], [-4.0, by1 + 0.45, 18.4], [0.5, by1 + 0.32, 18.3], [4.2, by1 + 0.45, 18.7], [bx, by1, bz1]], 0.07, M.canvasDark, 4);
-    rope(tb, [[-bx, by1, bz1], [-3.2, by1 + 0.3, 19.4], [2.6, by1 + 0.28, 19.7], [bx, by1, bz0 + 0.3]], 0.07, M.canvasDark, 4);
+    // (dây căng thẳng giữa các điểm -> đặt điểm ngay mép trên từng món: ba lô, tấm đệm, thùng gỗ để dây vắt qua chứ không xuyên)
+    rope(tb, [[-bx, by1, bz0 + 0.3], [-7.3, by1 + 1.0, 18.2], [-4.5, by1 + 1.05, 18.4], [-3.4, by1 + 0.34, 18.4],
+      [2.3, by1 + 0.38, 18.5], [3.9, by1 + 0.62, 18.6], [6.5, by1 + 0.62, 18.9], [bx, by1, bz1]], 0.07, M.canvasDark, 4);
+    rope(tb, [[-bx, by1, bz1], [-7.1, by1 + 0.95, 19.6], [-4.6, by1 + 0.95, 19.5], [-3.5, by1 + 0.25, 19.5],
+      [3.7, by1 + 0.6, 19.55], [6.5, by1 + 0.6, 19.4], [bx, by1, bz0 + 0.3]], 0.07, M.canvasDark, 4);
     tb.setTag(null);
 
-    // --- Chi tiết bề mặt tháp: ghép tấm module má, mối hàn, bu-lông, móc cẩu ---
-    const SIDE_TILT = Math.atan2(0.7, 6.4);
-    const sideX = (y) => 11.2 - (y - 0.6) * (0.7 / 6.4);
+    // --- Chi tiết bề mặt tháp: mối hàn, bu-lông, móc cẩu (module má đã dựng cùng giáp nêm) ---
+    const ROOF_EDGE = TUR_RIDGE_X - TUR_LEAN - ROOF_CH;   // mép nóc phẳng, ngoài đó là dải vát
     for (const s of [-1, 1]) {
-      const rot = [0, 0, s * SIDE_TILT];
-      // Module giáp má: chia 2 tấm, viền bu-lông trên/dưới
-      tb.seam([s * 12.42, 1.5, -6.2], [s * 12.42, 6.4, -6.2], [s, 0, 0], D);
-      tb.boltRow([s * 12.4, 6.15, -11.0], [s * 12.4, 6.15, -1.2], 8, 'x', D, 0.16, s);
-      tb.boltRow([s * 12.4, 1.65, -11.0], [s * 12.4, 1.65, -1.2], 8, 'x', D, 0.16, s);
-      tb.weld([s * 12.2, 6.62, -11.0], [s * 12.2, 6.62, -0.7], P, 0.1);
-      // Hông tháp sau module: đường ghép ngang, bu-lông mép nóc, mối hàn nóc - hông
-      tb.seam([s * (sideX(2.4) + 0.02), 2.4, -0.4], [s * (sideX(2.4) + 0.02), 2.4, 8.4], [s, 0, 0], D);
-      tb.boltRow([s * sideX(6.5), 6.5, -0.2], [s * sideX(6.5), 6.5, 7.6], 6, 'x', D, 0.15, s, rot);
-      tb.weld([s * (sideX(ROOF) - 0.04), ROOF + 0.02, -4.0], [s * (sideX(ROOF) - 0.04), ROOF + 0.02, 8.0], P);
-      // Mối hàn chân giáp nêm với mặt trước tháp
-      tb.weld([s * 3.6, ROOF + 0.02, -11.2], [s * 10.6, ROOF + 0.02, -11.2], P, 0.1);
+      const rot = [0, 0, s * TUR_UP_TILT];
+      // Hông tháp sau module má: bu-lông viền trên tấm hông trên
+      tb.boltRow([s * turUpX(5.3), 5.3, -0.2], [s * turUpX(5.3), 5.3, 7.6], 6, 'x', D, 0.15, s, rot);
+      // mối hàn theo đường gãy nóc phẳng - dải vát mép
+      tb.weld([s * ROOF_EDGE, ROOF + 0.02, -4.0], [s * ROOF_EDGE, ROOF + 0.02, 8.0], P);
+      // Mối hàn mép trước nóc (sau dải vát nối xuống chân giáp nêm)
+      tb.weld([s * 3.6, ROOF + 0.02, -11.5 + ROOF_CH], [s * (ROOF_EDGE - 0.2), ROOF + 0.02, -11.5 + ROOF_CH], P, 0.1);
       // Móc cẩu nóc tháp (trước & sau)
-      for (const z of [-9.8, 15.6]) {
-        tb.box(1.0, 0.35, 0.6, P, [s * 8.4, ROOF + 0.15, z]);
-        tb.add(new THREE.TorusGeometry(0.5, 0.16, 5, 10), M.steel, [s * 8.4, ROOF + 0.5, z], [0, Math.PI / 2, 0]);
+      for (const [x, z] of [[8.4, -9.4], [8.0, 15.0]]) {
+        tb.box(1.0, 0.35, 0.6, P, [s * x, ROOF + 0.15, z]);
+        tb.add(new THREE.TorusGeometry(0.5, 0.16, 5, 10), M.steel, [s * x, ROOF + 0.5, z], [0, Math.PI / 2, 0]);
       }
       // Bu-lông viền nóc dọc hai mép
-      tb.boltRow([s * 9.6, ROOF, -8.4], [s * 9.6, ROOF, 15.2], 12, 'y', D, 0.14);
+      tb.boltRow([s * (ROOF_EDGE - 0.4), ROOF, -8.4], [s * (ROOF_EDGE - 0.4), ROOF, 14.2], 12, 'y', D, 0.14);
     }
     // Nấm thông gió quạt hút khí thuốc phóng trên nóc giữa
     tb.cyl(0.55, 0.6, 0.6, 12, P, [1.4, ROOF + 0.3, 5.6]);
@@ -763,54 +840,38 @@
       }
     }
 
-    // Trạm vũ khí điều khiển từ xa (súng máy 7.62mm phòng không) trên nóc phía nạp đạn — kiểu trạm hộp như Protector /
-    // CROWS: chân đế xoay + 2 càng đỡ trục ngóc; khối ngóc gồm hộp súng ở giữa-trái (súng máy + loa che lửa), hộp camera
-    // ngày / ảnh nhiệt + đo xa laser bên phải, hộp dây đạn treo bên trái; tất cả ngóc theo nòng
-    const rcws = new THREE.Group();
-    rcws.position.set(6.2, ROOF, 9.0);
-    const rb = new VehicleKit.PartBatch(DECK_Y + ROOF);
-    rb.cyl(1.15, 1.25, 0.35, 14, D, [0, 0.18, 0]);              // vòng xoay
-    rb.box(1.9, 0.55, 1.9, P, [0, 0.62, 0.15]);                  // bệ (mô-tơ quay, điện)
-    rb.box(1.5, 0.3, 1.5, D, [0, 0.98, 0.15]);
-    for (const s of [-1, 1]) {                                    // 2 càng đỡ trục ngóc
-      rb.box(0.22, 1.25, 0.8, P, [s * 0.98, 1.6, 0.0]);
-      rb.cyl(0.24, 0.24, 0.12, 10, D, [s * 1.1, 2.05, 0.0], 'x');
-    }
-    rb.box(0.5, 0.35, 0.5, D, [0.6, 1.2, 0.95]);                 // hộp điều khiển phía sau
-    rb.build(rcws);
-    const rcwsGun = new THREE.Group();
-    rcwsGun.position.set(0, 2.05, 0.0);
-    const gb = new VehicleKit.PartBatch(DECK_Y + ROOF + 2.05);
-    // hộp súng (vỏ che thân súng) + thân súng máy, nòng, loa che lửa
-    gb.box(0.62, 0.6, 2.2, P, [-0.3, 0.05, -0.15]);
-    gb.box(0.5, 0.08, 1.9, D, [-0.3, 0.39, -0.15]);              // nắp hộp súng
-    gb.cyl(0.13, 0.13, 0.7, 8, D, [-0.3, 0.12, -1.55], 'z');     // ống áo nòng
-    gb.cyl(0.075, 0.075, 2.3, 8, D, [-0.3, 0.12, -2.85], 'z');   // nòng
-    gb.cyl(0.13, 0.11, 0.42, 8, D, [-0.3, 0.12, -4.2], 'z');     // loa che lửa
-    // hộp dây đạn treo bên trái + máng dẫn dây đạn
-    gb.box(0.48, 0.62, 0.95, P, [-0.95, -0.12, 0.1]);
-    gb.box(0.2, 0.12, 0.5, D, [-0.7, 0.22, -0.2]);
-    // hộp camera ngày / ảnh nhiệt + đo xa laser bên phải, có mái che
-    gb.box(0.82, 0.78, 1.25, P, [0.55, 0.08, -0.25]);
-    gb.box(0.95, 0.08, 1.45, D, [0.55, 0.52, -0.3]);
-    gb.box(0.7, 0.62, 0.06, D, [0.55, 0.08, -0.89]);
-    gb.cyl(0.17, 0.17, 0.06, 12, M.lens, [0.42, 0.18, -0.93], 'z');   // camera ngày
-    gb.cyl(0.13, 0.13, 0.06, 10, M.glass, [0.72, 0.18, -0.93], 'z');  // ảnh nhiệt
-    gb.cyl(0.06, 0.06, 0.06, 8, M.lens, [0.55, -0.12, -0.93], 'z');   // đo xa laser
-    gb.build(rcwsGun);
-    rcws.add(rcwsGun);
-    // Các số đo trên dựng nhỏ ~1/2 cỡ thật (súng chỉ ~0.67 m). Trạm thật cỡ Protector cho súng 7.62mm: dài ~1.2 m,
-    // cao ~0.6 m, vòng đế ~0.6 m -> phóng cả cụm. Nòng, đạn, ngắm bắn drone đều tính qua matrixWorld của rcwsGun
-    // (rcwsMuzzleLocal ở hệ cục bộ) nên tự theo tỉ lệ mới.
-    rcws.scale.setScalar(2.1);
-    turret.add(rcws);
-    unit.rcwsTurret = rcws;
-    unit.rcwsGun = rcwsGun;
-    unit.rcwsMuzzleLocal = new THREE.Vector3(-0.3, 0.12, -4.42);
-    VehicleKit.registerPartGroup(unit, 'rcws', rcws);
+    // Ô NÓC THÁP: bệ gắn phía nạp đạn, người chơi chọn món ở kho trang bị (Equipment, nhóm 'roof'). Mô hình dựng sẵn món
+    // mặc định (máy phá sóng); Equipment.equip gọi unit.mountRoof(mã món) để gỡ món cũ, dựng món khác đúng chỗ đó
+    const roofCtx = { parent: turret, seat: [ROOF_SEAT[0], TUR_ROOF, ROOF_SEAT[1]], yBase: DECK_Y + TUR_ROOF, M, P, D, unit, rnd };
+    unit.mountRoof = (id) => { if (window.RoofMounts) RoofMounts.mount(roofCtx, id); };
+    unit.mountRoof('ewjam');
 
-    return { periHead };
+    // Cửa hất đế liều phóng trên nóc đuôi tháp (bên nạp đạn, giữa 2 tấm xả áp hộc đạn): liều phóng cháy hết, còn lại đế
+    // thép — kíp nạp đạn tống ra ngoài qua cửa nhỏ này sau mỗi phát như cửa hất đế trên nóc tháp T-72 (modelAnimator: cửa
+    // bật ngửa, đế văng lên ra sau tháp, khói thuốc xì theo). Cửa sau tháp bị giỏ đồ che nên đặt trên nóc
+    const ej = new THREE.Group();
+    ej.position.set(1.6, ROOF + 0.02, 12.2);
+    const eb = new VehicleKit.PartBatch(DECK_Y + ROOF);
+    eb.box(2.8, 0.14, 2.4, D, [0, 0.07, 0]);           // khung cửa
+    eb.build(ej);
+    const ejFlap = new THREE.Group();                   // cánh cửa, bản lề ở mép trước
+    ejFlap.position.set(0, 0.14, -1.1);
+    const fb = new VehicleKit.PartBatch(DECK_Y + ROOF);
+    fb.box(2.4, 0.22, 2.1, P, [0, 0.11, 1.05]);
+    fb.box(0.6, 0.18, 0.22, D, [0, 0.3, 1.8]);          // tay kéo
+    fb.cyl(0.13, 0.13, 2.3, 8, D, [0, 0.08, 0], 'x');    // trục bản lề
+    fb.build(ejFlap);
+    ej.add(ejFlap);
+    turret.add(ej);
+
+    return { periHead, ejFlap };
   }
+
+  // ===========================================================================
+  // Ô NÓC THÁP: CÁC MÓN GẮN ĐƯỢC TRÊN BỆ PHÍA NẠP ĐẠN (chọn ở kho trang bị — Equipment nhóm 'roof'). Chân đế mô-đun & các
+  // món dùng chung mọi xe: roof_mounts.js
+  // ===========================================================================
+  const ROOF_SEAT = [6.2, 9.0];   // tâm bệ gắn trên nóc tháp (x, z hệ tháp)
 
   // ===========================================================================
   // PHÁO CHÍNH 120MM L/55
@@ -824,7 +885,7 @@
     // Tấm chắn pháo (mantlet) + súng máy đồng trục
     const mb = new VehicleKit.PartBatch(DECK_Y + 3.9);
     const mPts = [[-3.25, 1.5], [3.25, 1.5], [3.25, -2.8], [2.4, -4.3], [-2.4, -4.3], [-3.25, -2.8]];
-    mb.add(VehicleKit.loft(mPts, mPts, -2.7, 2.5), M.paint);
+    mb.add(VehicleKit.loft(mPts, mPts, -2.7, 2.5, 0.45), M.paint);
     mb.cyl(1.75, 1.75, 1.2, 18, M.paint, [0, 0, -4.9], 'z');
     // Bạt che khe nòng (chống bụi lọt vào khe tấm chắn), nếp gấp vải
     mb.cyl(1.42, 1.9, 1.3, 16, M.canvasDark, [0, 0, -6.1], 'z');

@@ -338,7 +338,7 @@ const RangeAir = (() => {
 
     // ---------- KÍNH NGẮM XẠ THỦ ----------
     raSightOK(u) {
-      return !!(u && !u.isDead && (u.tankType === 'GATLING' || u.tankType === 'SCOUT' || (u.tankType === 'ALL_ROUNDER' && u.rcwsGun)));
+      return !!(u && !u.isDead && (u.tankType === 'GATLING' || u.tankType === 'SCOUT' || (u.tankType === 'ALL_ROUNDER' && u.rcwsGun && (!u.roofWeapon || u.roofWeapon === 'rcws'))));
     },
 
     setSight(on) {

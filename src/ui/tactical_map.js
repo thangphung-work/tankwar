@@ -76,7 +76,7 @@ class TacticalMapController {
 
     window.addEventListener('keydown', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
-      if (e.key === 'm' || e.key === 'M') this.toggle();
+      if (e.code === 'KeyM' && !e.repeat) this.toggle();
       else if (!this.isOpen) return;
       else if (e.key === 'Escape') this.toggle(false);
       else if (e.code === 'Space') { e.preventDefault(); this.game.triggerPlayerFire(); }
@@ -88,8 +88,23 @@ class TacticalMapController {
     window.addEventListener('resize', () => { if (this.isOpen) this.resizeCanvas(); });
   }
 
+  // Xe mình gãy hết ăng-ten: mất bản đồ số (vehicle_damage breakAntennas -> dmg.mapLost)
+  mapLost() {
+    const me = this.game && this.game.player;
+    return !!(me && !me.isDead && me.dmg && me.dmg.mapLost);
+  }
+
   toggle(forceState) {
-    this.isOpen = forceState !== undefined ? forceState : !this.isOpen;
+    const want = forceState !== undefined ? forceState : !this.isOpen;
+    if (want && this.mapLost()) {
+      const now = performance.now();
+      if (!this._lostWarnT || now - this._lostWarnT > 1500) {
+        this._lostWarnT = now;
+        if (this.game.addCombatLog) this.game.addCombatLog('[[antenna-bars-off]] Mất hết ăng-ten — không có tín hiệu, không mở được bản đồ', 'alert');
+      }
+      return;
+    }
+    this.isOpen = want;
     if (this.isOpen) {
       this.modal.classList.remove('hidden');
       this.resizeCanvas();
@@ -239,6 +254,7 @@ class TacticalMapController {
   lockFromMinimap(e) {
     const g = this.game, me = g.player, cv = document.getElementById('aow-minimap-canvas');
     if (!cv || !me || me.isDead || !g.units || !g.worldWidth) return false;
+    if (this.mapLost()) return true;   // nuốt cú nhấp (không mở bản đồ — toggle tự báo)
     const r = cv.getBoundingClientRect();
     if (!r.width || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return false;
     const css = r.width / cv.width, sc = cv.width / g.worldWidth;
@@ -268,7 +284,7 @@ class TacticalMapController {
 
   driveFromMinimap(e) {
     const g = this.game, cv = document.getElementById('aow-minimap-canvas');
-    if (!cv || !g.player || g.player.isDead || !g.worldWidth) return;
+    if (!cv || !g.player || g.player.isDead || !g.worldWidth || this.mapLost()) return;
     const r = cv.getBoundingClientRect();
     if (!r.width) return;
     const css = r.width / cv.width, sc = cv.width / g.worldWidth;
@@ -322,7 +338,7 @@ class TacticalMapController {
     if (cap > 0) res = { min: 0, max: cap, kind: 'direct' };
     else {
       const flat = { getElevationAt: () => 0, checkHorseshoeCollision: () => ({ hit: false }), waterSurfaceAt: () => null };
-      const probe = { tankType: unit.tankType, selectedAmmo: ammo };
+      const probe = { tankType: unit.tankType, selectedAmmo: ammo, mainGun: unit.mainGun || null };
       const arty = unit.tankType === 'ARTILLERY';
       const elMax = B.maxElevationFor ? B.maxElevationFor(unit) : 85;
       let max = 0, min = Infinity;

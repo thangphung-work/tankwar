@@ -26,7 +26,7 @@ const EnvDamage = (() => {
     CLUSTER: { kin: 0.1, blast: 0.6, r: 18, e: 0.8 }
   };
   // Hệ số vật liệu: [động năng, sức nổ, đạn cỡ nhỏ (súng máy / 30mm chỉ làm sứt mẻ bề mặt)]
-  const MAT = { rock: [0.5, 1.0, 0.35], bridge: [0.35, 0.8, 0.1] };
+  const MAT = { rock: [0.9, 1.0, 0.35], bridge: [0.35, 0.8, 0.1] };
   const smallArms = (A) => A.blast < 0.1 && A.kin < 0.1;
 
   function ammoOf(ammo, heavy) {
@@ -34,6 +34,15 @@ const EnvDamage = (() => {
     if (!heavy) return a;
     // lựu pháo 155mm: thuốc nổ gấp ~4 lần đạn 120mm
     return { kin: a.kin * 1.5, blast: a.blast * 2.6, r: a.r * 1.7, e: a.e * 2.5 };
+  }
+  // khung toạ độ của một mặt bê tông theo pháp tuyến: n, t (ngang), b (dọc theo mặt, hướng lên)
+  function faceFrame(nx, ny, nz) {
+    const n = new THREE.Vector3(nx, ny || 0, nz).normalize();
+    const t = new THREE.Vector3(-n.z, 0, n.x);
+    if (t.lengthSq() < 1e-6) t.set(1, 0, 0); else t.normalize();
+    const b = new THREE.Vector3().crossVectors(n, t);
+    if (b.y < 0) b.negate();
+    return { n, t, b };
   }
   const isBullet = (ammo) => ammo === 'SCOUT_BULLET' || ammo === 'GATLING_BULLET' || ammo === 'INCENDIARY';
   const hash3 = (x, y, z) => { let h = (Math.round(x * 7) * 374761393 + Math.round(y * 7) * 668265263 + Math.round(z * 7) * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -152,10 +161,12 @@ const EnvDamage = (() => {
         return P;
       }
       // rỗ / mẻ bê tông do đạn: dùng texture hố mẻ bê tông tươi có pháp tuyến của ExplosionFX nếu có
-      const pit = (kind === 'c_pock' || kind === 'c_chip') && typeof ExplosionFX !== 'undefined' && ExplosionFX._pitTex ? ExplosionFX._pitTex(kind === 'c_pock' ? 'concretePit' : 'concretePitHE', 0) : null;
+      // (đá tảng cũng vậy: texture vẽ tay hình sao răng cưa trắng trước đây trông như lá cây dán lên mặt đá, không có khối)
+      const pit = (kind === 'c_pock' || kind === 'c_chip' || kind === 'r_chip') && typeof ExplosionFX !== 'undefined' && ExplosionFX._pitTex ? ExplosionFX._pitTex(kind === 'c_pock' ? 'concretePit' : 'concretePitHE', 0) : null;
       const mat = pit
         ? new THREE.MeshStandardMaterial({ map: pit.map, normalMap: pit.normal, roughness: 0.92, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 })
         : new THREE.MeshLambertMaterial({ map: texture(kind), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+      if ((kind[0] === 'c' || kind === 'soot') && typeof Strongholds !== 'undefined' && Strongholds.holeDiscard) Strongholds.holeDiscard(mat);
       const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, cap);
       im.count = 0; im.frustumCulled = false; im.renderOrder = 3; im.receiveShadow = true;
       im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
@@ -190,7 +201,11 @@ const EnvDamage = (() => {
         this._c.setRGB(t[0], t[1], t[2]);
         P.im.geometry.attributes.iMark.setXY(cell.idx, cell.variant, 1 + Math.min(1.2, 0.14 * (cell.hits - 1)));
         P.im.geometry.attributes.iMark.needsUpdate = true;
-      } else this._c.setRGB(cell.shade, cell.shade, cell.shade);
+      } else {
+        // mẻ đá: mặt vỡ tươi chỉ sáng hơn mặt đá phong hóa một chút (texture hố là bê tông mới, rất sáng) -> nhuộm xám ấm
+        const k = cell.kind === 'r_chip' ? 0.62 : 1;
+        this._c.setRGB(cell.shade * k, cell.shade * k * 0.97, cell.shade * k * 0.92);
+      }
       P.im.setColorAt(cell.idx, this._c);
       P.im.instanceMatrix.needsUpdate = true;
       P.im.instanceColor.needsUpdate = true;
@@ -221,6 +236,7 @@ const EnvDamage = (() => {
       cell.e += energy;
       cell.hits++;
       if (opts.tint) cell.tint = opts.tint;
+      if (opts.maxSize) cell.maxSize = Math.min(cell.maxSize || Infinity, opts.maxSize);
       if (opts.stretch) { cell.stretch = Math.max(cell.stretch || 1, opts.stretch); cell.rot = opts.rot !== undefined ? opts.rot : cell.rot; }
       const kind = tierFn(cell.e);
       if (cell.kind && cell.kind !== kind) this.unplace(cell);
@@ -228,6 +244,7 @@ const EnvDamage = (() => {
       const base = BASE_SIZE[kind] || 4;
       // càng nhiều phát dồn vào một chỗ vết càng rộng & đậm (log để không phình vô hạn)
       cell.size = base * Math.min(2.4, 1 + 0.45 * Math.log2(1 + cell.e / (opts.e0 || energy || 0.1) / 3)) * (opts.sizeMul || 1);
+      if (cell.maxSize) cell.size = Math.min(cell.size, cell.maxSize);
       cell.shade = Math.max(0.42, 1 - 0.06 * (cell.hits - 1));
       this.place(cell);
       return cell;
@@ -344,8 +361,9 @@ const EnvDamage = (() => {
       this.items = items || [];
       this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._p = new THREE.Vector3(); this._s = new THREE.Vector3();
       for (const it of this.items) {
-        // máu theo thể tích (đá to vài phát lựu pháo / hàng chục phát pháo tăng; súng máy 12.7mm gần như không sứt)
-        it.maxHp = it.hp = Math.max(0.35, Math.pow(Math.min(it.r, 26) / 10, 2) * (Math.min(it.h, 30) / 10) * 2.4);
+        // máu theo cỡ đá: đá nhỏ 1-2 phát pháo tăng, tảng to nhất ~9 phát nổ phá / ~13 phát xuyên giáp, 2-3 phát lựu pháo;
+        // súng máy 12.7mm gần như không sứt. (Trước đây máu ~ thể tích: tảng lớn ~50 máu = ~40 phát pháo tăng mới vỡ)
+        it.maxHp = it.hp = Math.max(0.35, Math.pow(Math.min(it.r, 26) / 10, 1.5) * Math.sqrt(Math.min(it.h, 30) / 10) * 1.6);
         it.alive = true;
         // mặt đất nguyên thuỷ dưới chân đá (5 điểm) -> hố bom khoét dưới đá thì đá lún theo
         it.pos0 = it.pos.clone(); it.y0 = it.y; it.dy = 0;
@@ -407,9 +425,14 @@ const EnvDamage = (() => {
         n.normalize();
         const k = it.hp / it.maxHp;
         const sc = this.scaleK(it, k);
-        const px = it.x + n.x * it.r * 0.9 * sc, py = cy + n.y * it.h * 0.6 * sc, pz = it.z + n.z * it.r * 0.9 * sc;
+        // trúng trực tiếp: vết đúng chỗ đạn chạm (trước đây đặt trên hình trụ giả định quanh tâm đá -> đá méo thì vết
+        // lơ lửng ngoài mép hoặc chìm vào trong); nổ gần: vết ở phía điểm nổ như cũ
+        let px = it.x + n.x * it.r * 0.9 * sc, py = cy + n.y * it.h * 0.6 * sc, pz = it.z + n.z * it.r * 0.9 * sc;
+        if (direct) { px = x; py = y; pz = z; }
         if (it.hp > 0) {
-          this.attachScar(it, this.sys.scars.hit('r', 5, px, py, pz, n.x, n.y, n.z, A.e, () => 'r_chip', { e0: 0.3 }));
+          // đạn súng: mẻ nhỏ ~25-30 cm mỗi chỗ (12.7mm / 30mm vào đá cứng chỉ bóc một lớp), ô cộng dồn nhỏ để các phát tách nhau
+          const sa = smallArms(A);
+          this.attachScar(it, this.sys.scars.hit('r', sa ? 2.5 : 5, px, py, pz, n.x, n.y, n.z, A.e, () => 'r_chip', { e0: 0.3, sizeMul: sa ? 0.45 : 1 }));
           if (A.blast > 0.3) this.attachScar(it, this.sys.scars.hit('s', 10, px, py, pz, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: Math.min(1.4, it.r / 14) }));
           this.reshape(it, k);
           // vụn đá văng ra theo độ mạnh
@@ -444,7 +467,7 @@ const EnvDamage = (() => {
       if (it.boulder) {
         const bi = this.T.boulders.indexOf(it.boulder);
         if (bi >= 0) this.T.boulders.splice(bi, 1);
-        this.sys.navDirty = true;
+        this.sys.markNav(it.x, it.z, (it.boulder.radius || it.r || 18) + 60);
       }
       const cy = it.y + it.h * 0.4;
       if (this.sys.debris) {
@@ -669,7 +692,7 @@ const EnvDamage = (() => {
       sp.pose = { hinge, py: b.deckY, th: 0 };
       this.broken = (this.broken || 0) + 1;
       this.anims.push({ b, sp, pivot, t: 0, dur, ang, drop, freeSign, hinge, splashed: false });
-      this.sys.navDirty = true;
+      this.sys.markNav(mw.x, mw.z, Math.abs(sp.a1 - sp.a0) / 2 + (b.width || 60) + 60);
       this.sys.mapDirty = true;
       if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('collapse', { x: mw.x, y: b.deckY, z: mw.z }, 1.4, { mat: 'concrete', h: drop, floors: 1 });
       if (fx && fx.spawnDust && fx.palette) fx.spawnDust(mw.x, b.deckY, mw.z, 1.6, { micro: false }, fx.palette('WALL'), true, null);
@@ -746,8 +769,15 @@ const EnvDamage = (() => {
       this.debris = new Debris(this.group, T.rockTexture ? T.rockTexture() : null);
       this.rocks = new RockField(this, rockItems);
       this.bridges = new BridgeSet(this);
-      this.navDirty = false;
+      this.navBoxes = [];   // vùng lưới tìm đường cần tính lại (Navigator.invalidate theo vùng)
       this.mapDirty = false;
+    }
+
+    // Vật cản / mặt đường quanh (x, z) bán kính r vừa đổi: lưới tìm đường của bot tính lại riêng vùng này ở khung sau
+    markNav(x, z, r) {
+      if (this.navBoxes.length > 24) { this.navBoxes = [null]; return; }   // quá nhiều vùng trong 1 khung: dựng lại cả lưới
+      if (this.navBoxes[0] === null) return;
+      this.navBoxes.push({ x0: x - r, z0: z - r, x1: x + r, z1: z + r });
     }
 
     // Sóng nổ / đạn tác động lên đá tảng, cầu, bê tông & ụ đất cứ điểm. info: { t: loại va chạm, nx, nz: pháp tuyến tường }
@@ -759,8 +789,19 @@ const EnvDamage = (() => {
       const SS = this.T.strongholdSet;
       if (SS) this.fragmentScars(SS, x, y, z, ammo, heavy);
       if (SS && SS.covers(x, z, 8)) {
-        if (info.t === 'WALL') this.concreteHit(x, y, z, info.nx, info.nz, ammo, A);
+        if (info.t === 'WALL') {
+          const ny = info.ny || 0;
+          const room = this.wallRoom(SS, x, y, z, info.nx, info.nz, ny);
+          const c1 = this.concreteHit(x, y, z, info.nx, info.nz, ammo, A, false, room, ny);
+          const hole = this.concreteCrater(SS, x, y, z, info.nx, info.nz, ammo, heavy, room, c1, ny);
+          this.concretePits(SS, x, y, z, info.nx, info.nz, ammo, A, fx, hole, ny);
+        }
         else if (A.blast > 0.15 && A.r > 0) scorchMound(SS, x, y, z, Math.max(6, A.r * 0.9), A.blast);
+        // mái cứ điểm bị bào mòn -> sập từng ô (va chạm & che chắn đổi theo; xe bot phải tìm đường lại)
+        if (SS.damagePanels) {
+          const ev = SS.damagePanels(x, y, z, ammo, heavy, info, fx, A.r);
+          if (ev.length) { events.push(...ev); this.markNav(x, z, Math.max(160, (A.r || 0) * 1.3 + 120)); }
+        }
       }
       // Mặt cầu: vết đạn / vỡ bê tông cộng dồn trên mặt đường
       if (!isBullet(ammo) && info.t === 'GROUND') {
@@ -809,15 +850,81 @@ const EnvDamage = (() => {
     }
 
     // Bê tông (cứ điểm / mặt cầu): rỗ đạn -> mẻ vỡ -> bong mảng lộ cốt thép, cộng dồn theo ô 5 đơn vị
-    concreteHit(x, y, z, nx, nz, ammo, A, up = false) {
+    concreteHit(x, y, z, nx, nz, ammo, A, up = false, room = Infinity, ny = 0) {
       let n;
       if (up || nx === undefined || nx === null || (!nx && !nz)) n = { x: 0, y: 1, z: 0 };
-      else { const l = Math.hypot(nx, nz) || 1; n = { x: nx / l, y: 0, z: nz / l }; }
-      const tier = (e) => e < 0.35 ? 'c_pock' : e < 1.3 ? 'c_chip' : 'c_spall';
-      const c1 = this.scars.hit('c', ammo === 'SCOUT_BULLET' || ammo === 'INCENDIARY' ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2 });
-      const c2 = (A.blast > 0.3 || ammo === 'INCENDIARY') ? this.scars.hit('s', 12, x, y, z, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: ammo === 'INCENDIARY' ? 0.35 : Math.min(1.6, 0.6 + A.r / 40) }) : null;
+      else { const l = Math.hypot(nx, ny, nz) || 1; n = { x: nx / l, y: ny / l, z: nz / l }; }
+      // tường cứ điểm: hố thật khoét vào tường (concreteCrater) -> vết dán chỉ làm vành mẻ / nứt quanh hố, không dán mảng bong
+      const spallE = up ? 1.3 : Infinity;
+      const tier = (e) => e < 0.35 ? 'c_pock' : e < spallE ? 'c_chip' : 'c_spall';
+      // tường cứ điểm: mảng bong tối đa ~2,2 m và không chìa quá mép tường (cửa, góc, đỉnh)
+      const ms = up ? undefined : Math.min(18, room * 2);
+      const c1 = this.scars.hit('c', ammo === 'SCOUT_BULLET' || ammo === 'INCENDIARY' ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2, maxSize: ms });
+      const c2 = (A.blast > 0.3 || ammo === 'INCENDIARY') ? this.scars.hit('s', 12, x, y, z, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: ammo === 'INCENDIARY' ? 0.35 : Math.min(1.6, 0.6 + A.r / 40), maxSize: ms && ms * 1.3 }) : null;
       // mặt cầu: vết bám nhịp cầu (võng / rơi theo nhịp)
       if (up) { this.bridges.tagScar(c1, x, z); this.bridges.tagScar(c2, x, z); }
+      return c1;
+    }
+
+    // Hố đạn thật trên tường cứ điểm (Strongholds.addCrater): đạn pháo / tên lửa khoét hố ngay phát đầu, đạn súng chỉ đục
+    // được hố khi dồn nhiều phát vào một chỗ (ô vết cộng dồn năng lượng). Mảnh bê tông vỡ văng ra rơi xuống chân tường
+    concreteCrater(SS, x, y, z, nx, nz, ammo, heavy, room, cell, ny = 0) {
+      if (!SS.addCrater || (!nx && !nz)) return null;
+      let k = 1;
+      if (isBullet(ammo)) {
+        const e = cell ? cell.e : 0;
+        if (e < 0.45) return null;
+        k = Math.min(1.6, 0.8 + (e - 0.45) * 0.6);
+      }
+      const h = SS.addCrater(x, y, z, nx, ny, nz, ammo, heavy, room, k);
+      if (h && this.debris) {
+        const l = Math.hypot(nx, nz) || 1, ox = nx / l * 1.5, oz = nz / l * 1.5;
+        const big = !isBullet(ammo);
+        this.debris.burst(x + ox, y, z + oz, big ? Math.min(14, 4 + Math.round(h.R * 1.4)) : 1, big ? Math.max(0.5, h.R * 0.11) : 0.35, [0.6, 0.58, 0.54], big ? 80 : 40, 0.5);
+      }
+      return h;
+    }
+
+    // Khoảng trống quanh điểm trúng trên mặt tường tới mép gần nhất (cửa, góc, đỉnh tường): vết dán không chìa ra ngoài khoảng không
+    wallRoom(SS, x, y, z, nx, nz, ny = 0) {
+      if (!nx && !nz) return Infinity;
+      const F = faceFrame(nx, ny, nz), n = F.n, t = F.t, b = F.b;
+      const on = (px, py, pz) => { const h = SS.segmentHit(px + n.x * 3, py + n.y * 3, pz + n.z * 3, px - n.x * 2, py - n.y * 2, pz - n.z * 2); return h && h.type === 'WALL'; };
+      const at = (u, v) => on(x + t.x * u + b.x * v, y + t.y * u + b.y * v, z + t.z * u + b.z * v);
+      for (const d of [2, 4, 7, 11]) {
+        if (!at(d, 0) || !at(-d, 0) || !at(0, d) || !at(0, -d)) return Math.max(1.2, d - 1);
+      }
+      return Infinity;
+    }
+
+    // Tường bê tông cứ điểm: hố rỗ 3D thật (lõm có bóng đổ, như tường nhà) ngoài vết dán phẳng — vết dán xám trên nền bê tông
+    // xám gần như không thấy từ tầm bắn xe tăng. Hư hại chỉ ở bề mặt: pháo chính mẻ 1 hố ~40-60 cm + vài rỗ mảnh văng quanh,
+    // đạn súng 1 rỗ nhỏ; kết cấu, va chạm không đổi. Rỗ nào rơi ra ngoài mặt tường (mép cửa, góc) thì bỏ
+    concretePits(SS, x, y, z, nx, nz, ammo, A, fx, hole, ny = 0) {
+      const L = fx && fx.wallPits;
+      if (!L || (!nx && !nz)) return;
+      if (!L._holeMat && typeof Strongholds !== 'undefined' && Strongholds.holeDiscard) {
+        L._holeMat = true;
+        for (const P of [L.s, L.he]) for (const ly of P.layers || []) Strongholds.holeDiscard(ly.im.material);
+      }
+      const F = faceFrame(nx, ny, nz), n = F.n, t = F.t, b = F.b;   // t: ngang trên mặt, b: dọc theo mặt (đứng / dốc mặt vát)
+      let sd = (Math.floor(x * 10) * 73856093 ^ Math.floor(y * 10) * 19349663 ^ Math.floor(z * 10) * 83492791) >>> 0;
+      const rnd = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+      const tint = [0.86, 0.84, 0.8];
+      const put = (u, v, size, he) => {
+        const px = x + t.x * u + b.x * v, py = y + t.y * u + b.y * v, pz = z + t.z * u + b.z * v;
+        const h = SS.segmentHit(px + n.x * 4, py + n.y * 4, pz + n.z * 4, px - n.x * 3, py - n.y * 3, pz - n.z * 3);
+        if (!h || h.type !== 'WALL' || (SS.inHole && SS.inHole(h.x, h.y, h.z, size * 0.5))) return;
+        (he ? L.he : L.s).add(new THREE.Vector3(h.x, h.y, h.z), n, size, null, null, 0.85 + rnd() * 0.3, tint);
+      };
+      if (isBullet(ammo)) { put(0, 0, ammo === 'GATLING_BULLET' ? 2.8 : 2.1, ammo === 'GATLING_BULLET'); return; }
+      if (!hole) put(0, 0, 3.6 * Math.min(1.5, 0.55 + A.e * 0.42), true);
+      // rỗ mảnh văng quanh hố chính (thưa dần ra ngoài)
+      const k = Math.round(3 + A.blast * 3);
+      for (let i = 0; i < k; i++) {
+        const a = rnd() * 6.283, d = 3 + Math.pow(rnd(), 0.7) * (5 + A.r * 0.35);
+        put(Math.cos(a) * d, Math.sin(a) * d * 0.8, 1.4 + rnd() * 1.3, rnd() < 0.35);
+      }
     }
 
     // Đạn súng chạm đất (gọi từ hiệu ứng nổ, mọi máy tự vẽ): vết nhỏ theo loại đạn, cộng dồn theo ô ~2.5 đơn vị
@@ -854,9 +961,10 @@ const EnvDamage = (() => {
     update(dt, fx) {
       this.debris.update(dt, this._surf || (this._surf = (x, z) => this.surf(x, z)));
       this.bridges.update(dt, fx);
-      if (this.navDirty) {
-        this.navDirty = false;
-        if (typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(this.T);
+      if (this.navBoxes.length) {
+        const boxes = this.navBoxes;
+        this.navBoxes = [];
+        if (typeof Navigator !== 'undefined' && Navigator.invalidate) for (const b of boxes) Navigator.invalidate(this.T, b || undefined);
       }
       if (this.mapDirty) {
         this.mapDirty = false;

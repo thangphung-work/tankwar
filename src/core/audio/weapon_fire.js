@@ -178,7 +178,7 @@ SoundEngine.mixin(class {
     // Đạn chùm tách vỏ trên không: chỉ là liều đẩy nhỏ thổi bật đáy đạn cho bom con văng ra — "BỤP" đanh, nhỏ hơn hẳn
     // một quả đạn nổ phá (trước đây to ngang đạn 120mm); tiếng nổ lớn là chuỗi bom con chạm đất ngay sau đó
     else if (ammoType === 'CLUSTER') k = hitType === 'AIRBURST' ? 0.6 : 1.1;
-    else if (ammoType === 'CLUSTER_SUBMUNITION') k = 0.45;
+    else if (ammoType === 'CLUSTER_SUBMUNITION') k = 0.65;   // bom con: "ĐÙNG" đanh, chuỗi nổ dồn dập dọc vùng rải
     const air = hitType === 'AIRBURST';
     const near = Math.max(0, 1 - distance / 900);
     // Cỡ vụ nổ (thời lượng, độ trầm) tách khỏi mức to: đạn 155 dài & trầm hơn, thêm tầng đất rung — mức to chỉ nhích
@@ -206,7 +206,7 @@ SoundEngine.mixin(class {
       const W = this.stereoSpread(out, 0.6);
       // Sóng xung kích + quả cầu lửa dựng theo vật lý (synthGunshot 'blast…'): hai biến thể khác nhau cho 2 kênh trái/phải
       // lệch 0,6 ms -> vụ nổ có bề rộng. Bề mặt mềm (bao cát, nước) nuốt âm cao: lọc bớt
-      const bk = heavy ? 'blast155' : ammoType === 'HE' ? 'blast120' : ammoType === 'ANTI_TANK_MISSILE' ? 'blastATGM' : (heat || (ammoType === 'CLUSTER' && air)) ? 'blastRPG' : ammoType === 'CLUSTER_SUBMUNITION' ? 'blast30' : 'blastN';
+      const bk = heavy ? 'blast155' : ammoType === 'HE' ? 'blast120' : ammoType === 'ANTI_TANK_MISSILE' ? 'blastATGM' : (heat || (ammoType === 'CLUSTER' && air)) ? 'blastRPG' : ammoType === 'CLUSTER_SUBMUNITION' ? 'blastRPG' : 'blastN';
       let bDest = [W.L, W.R];
       // Bề mặt mềm (bao cát, nước) nuốt một phần năng lượng nổ, không chỉ mất âm cao: hạ cả mức. Chỉ lọc tối mà giữ nguyên
       // mức thì sau tầng giới hạn đỉnh tiếng nổ nghẹt lại TO hơn nổ trên đất (đỉnh tròn bị ép ít hơn) — đo được +4..6 dB

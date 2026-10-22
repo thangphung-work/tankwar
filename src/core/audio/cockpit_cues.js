@@ -27,10 +27,17 @@ SoundEngine.mixin(class {
    *   'open'  khóa nòng mở, ống dẫn hướng khí xả xì
    *   'fetch' băng chuyền ổ đạn xoay chọn đạn: mô-tơ servo rít + các nấc khóa "cạch" đều
    *   'ram'   tay đẩy xích nạp đạn rít, đầu đạn đóng chặt vào đai dẫn hướng "KENG" -> đẩy các module liều phóng -> khóa nòng đóng
-   * - GATLING (băng đạn 300 viên không mắt xích) 'magOut' / 'magIn'; SCOUT (hộp đạn 12.7mm có dây đạn) 'magOut' / 'magIn'
+   * - GATLING (băng đạn 450 viên không mắt xích) 'magOut' / 'magIn'; SCOUT (hộp đạn 12.7mm có dây đạn) 'magOut' / 'magIn'
+   * - MG762 (trạm súng máy 7.62mm điều khiển từ xa trên nóc tháp xe tăng): kíp xe phải mở nắp tháp, với tay ra thay hộp
+   *   'magOut' nắp tháp bật mở + gió / tiếng ngoài trời tràn vào, nắp hộp tiếp đạn bật, hộp rỗng rút ra
+   *   'magIn'  hộp mới cài khay, dây đạn nhỏ lách tách, đóng nắp, mô-tơ lên đạn điện "rè-cạch", nắp tháp đóng sập
+   * - ATGM (ống phóng tên lửa trên nóc xe trinh sát) 'out' ống phóng rỗng nhả chốt, bật ra / 'in' ống mới trượt vào giá,
+   *   chốt khóa, giắc điện cắm, con quay đầu dò quay lên (rít cao dần) rồi bíp sẵn sàng
+   * ammo (xe tăng): đạn mũi tên AP nhẹ & dài (tiếng trượt dài, cao) / đạn nổ HE nặng (cộc trầm hơn)
+   * charge (lựu pháo): số module liều phóng đẩy vào buồng theo liều đang chọn (liều 1 nhiều module -> nhiều tiếng đẩy)
    * lead: số giây còn lại tới lúc nạp xong — các tiếng cuối được dồn vào đúng khoảng đó.
    */
-  playReloadPhase(tankType = 'ALL_ROUNDER', phase = 'ram', lead = 0.6) {
+  playReloadPhase(tankType = 'ALL_ROUNDER', phase = 'ram', lead = 0.6, opt = null) {
     if (!this.ready()) return;
     const t = this.ctx.currentTime;
     const out = this.voice({ bus: this.weaponBus, gain: 0.55, wet: 0.03 });
@@ -62,8 +69,13 @@ SoundEngine.mixin(class {
         motor(t, 340, 0.45 * k, 0.04);
         slide(t + 0.02, 500, 1100, 0.35 * k, 0.12);
         clunk(t + 0.4 * k, 700, 1.0, 0.12);            // đai dẫn hướng đầu đạn cắm vào rãnh xoắn
-        slide(t + 0.55 * k, 400, 700, 0.2 * k, 0.1);    // đẩy các module liều phóng
-        clunk(t + 0.62 * k, 380, 0.35, 0);
+        // đẩy các module liều phóng: liều mạnh (1) nhiều module, liều nhỏ ít — mỗi module một tiếng trượt + chạm
+        const nMod = Math.max(1, Math.min(5, opt && opt.modules ? opt.modules : 3));
+        for (let i = 0; i < nMod; i++) {
+          const tm = t + (0.5 + i * 0.12 / Math.max(1, nMod / 3)) * k;
+          slide(tm, 400, 700, 0.09 * k, 0.08);
+          clunk(tm + 0.08 * k, 380 + i * 25, 0.28, 0);
+        }
         clunk(t + Math.max(0.75 * k, L - 0.08), 450, 1.1, 0.1);   // khóa nòng đóng
       }
       return;
@@ -81,6 +93,41 @@ SoundEngine.mixin(class {
         motor(t + 0.6, 300, Math.max(0.15, Math.min(0.7, L - 0.7)), 0.03);
         for (let i = 0; i < 10; i++) clunk(t + 0.65 + i * 0.055 + R() * 0.01, 1200 + R() * 400, 0.12, 0);
         clunk(t + Math.max(0.9, L - 0.1), 600, 0.8, 0.06);
+      }
+      return;
+    }
+    if (tankType === 'MG762') {
+      if (phase === 'magOut') {
+        // nắp tháp bật mở (thép dày, bản lề lò xo) + tiếng ngoài trời tràn vào khoang
+        clunk(t + 0.15, 380, 0.8, 0.2);
+        this.burst(out, t + 0.2, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 600, Q: 0.5, gain: 0.07, attack: 0.25, dur: 1.4 });
+        clunk(t + 0.7, 1700, 0.3, 0.03);              // nắp hộp tiếp đạn bật
+        slide(t + 0.85, 1200, 800, 0.2, 0.06);        // rút hộp rỗng
+        clunk(t + 1.1, 900, 0.3, 0);
+      } else if (phase === 'magIn') {
+        clunk(t, 800, 0.35, 0);                       // hộp mới cài khay
+        for (let i = 0; i < 8; i++) clunk(t + 0.12 + i * 0.03 + R() * 0.01, 2800 + R() * 700, 0.05, 0);   // dây đạn 7.62 nhỏ
+        clunk(t + 0.45, 1800, 0.45, 0.04);            // đóng nắp hộp tiếp đạn
+        motor(t + 0.6, 520, 0.35, 0.035);             // mô-tơ lên đạn điện của trạm vũ khí
+        clunk(t + 0.95, 1500, 0.5, 0.04);
+        clunk(t + Math.max(1.05, L - 0.05), 360, 0.95, 0.25);   // nắp tháp đóng sập
+      }
+      return;
+    }
+    if (tankType === 'ATGM') {
+      if (phase === 'out') {
+        // ống phóng rỗng (composite nhẹ) nhả chốt, bật khỏi giá: "cạch" + tiếng ống rỗng "boong" nhẹ
+        clunk(t + 0.2, 1500, 0.45, 0.05);
+        this.burst(out, t + 0.45, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 240, Q: 3, gain: 0.25, attack: 0.002, dur: 0.18 });
+        slide(t + 0.5, 700, 400, 0.4, 0.07);
+      } else if (phase === 'in') {
+        // ống mới trượt vào giá, chốt khóa, giắc điện cắm "tách", con quay đầu dò quay lên, bíp sẵn sàng
+        slide(t, 400, 800, 0.5, 0.1);
+        clunk(t + 0.55, 900, 0.7, 0.06);
+        clunk(t + 0.8, 3000, 0.12, 0);
+        this.tone(out, t + 0.9, { freq: 600, freqEnd: 2600, sweep: Math.max(0.3, L - 1.2), gain: 0.03, attack: 0.1, hold: Math.max(0.2, L - 1.2), dur: 0.15 });
+        this.tone(out, t + Math.max(1.3, L - 0.15), { freq: 1900, gain: 0.05, attack: 0.005, dur: 0.07 });
+        this.tone(out, t + Math.max(1.42, L - 0.03), { freq: 1900, gain: 0.05, attack: 0.005, dur: 0.07 });
       }
       return;
     }
@@ -117,8 +164,10 @@ SoundEngine.mixin(class {
       clunk(t + 1.35, 420, 0.8, 0.06);                // cửa hộc đạn đóng sập
     } else if (phase === 'ram') {
       const k = L / 0.6;
-      slide(t, 600, 1000, 0.25 * k, 0.12);
-      clunk(t + 0.28 * k, 520, 0.6, 0.04);            // đạn ngồi khít buồng
+      // đạn mũi tên AP: dài & nhẹ hơn -> trượt dài, tiếng chạm cao; đạn nổ HE nặng đầu -> chạm trầm, đục
+      const am = opt && opt.ammo, ap = am === 'AP', he = am === 'HE';
+      slide(t, ap ? 750 : 600, ap ? 1300 : 1000, (ap ? 0.32 : 0.25) * k, 0.12);
+      clunk(t + (ap ? 0.33 : 0.28) * k, ap ? 680 : he ? 420 : 520, he ? 0.8 : 0.6, 0.04);   // đạn ngồi khít buồng
       clunk(t + Math.max(0.36 * k, L - 0.05), 430, 1.15, 0.12);   // khóa nòng đóng sập
     }
   }

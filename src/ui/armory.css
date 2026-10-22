@@ -11,8 +11,6 @@
 .ti-controls-hint kbd { display: inline-block; margin-right: 4px; padding: 1px 6px; font: 700 11px var(--font-mono); color: var(--tc-bright); background: var(--tc-bg); border: 1px solid var(--tc-line-2); border-bottom-width: 2px; }
 .ti-controls-hint #ti-autorotate-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 0; font: 700 11px var(--font-tech); letter-spacing: .8px; color: var(--tc-dim); background: transparent; border: 1px solid var(--tc-line-2); cursor: pointer; }
 .ti-controls-hint #ti-autorotate-toggle.active { color: var(--tc-accent-2); border-color: var(--tc-accent); }
-.ti-wall-btn { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-.ti-wall-btn .ti { font-size: 13px; }
 
 /* ---- DẢI TRANG BỊ ---- */
 .ti-equip-dock { position: relative; z-index: 6; flex: 0 0 auto; display: flex; flex-direction: column; background: var(--tc-bg-2); border-top: 1px solid var(--tc-line-2); color: var(--tc-text); }
@@ -45,7 +43,8 @@
 .eqd-note { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 12.5px; line-height: 1.4; color: var(--tc-faint); border-left: 1px solid var(--tc-line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eqd-note .ti { color: var(--tc-accent); flex-shrink: 0; }
 .eqd-note b { color: var(--tc-bright); }
-.eqd-note.msg { color: var(--tc-text); background: var(--tc-panel-2); flex-wrap: wrap; white-space: normal; }
+.eqd-note.msg { color: var(--tc-text); background: var(--tc-panel-2); }
+.eqd-note-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eqd-note .eqp-btn { margin-left: 4px; }
 
 /* thẻ đồ GỌN cuộn ngang (con lăn chuột cuộn ngang được): ảnh 3D vuông bên trái, tên + 1 dòng tác dụng bên phải.
@@ -86,7 +85,7 @@
 .eqd-q.add { color: var(--tc-bg); background: var(--tc-accent); border-color: var(--tc-accent); }
 .eqd-q.add:hover:not(:disabled) { color: var(--tc-bg); background: var(--tc-accent-2); }
 .eqd-q:disabled { opacity: .35; cursor: not-allowed; }
-.eqd-q.wide { display: inline-flex; align-items: center; gap: 4px; font: 700 11px var(--font-tech); letter-spacing: .5px; }
+.eqd-q.wide { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; white-space: nowrap; flex: 0 0 auto; font: 700 11px var(--font-tech); letter-spacing: .3px; }
 .eqd-price { margin-left: auto; font: 600 10.5px var(--font-mono); color: var(--tc-faint); white-space: nowrap; }
 /* phản hồi khi mua / trả: số nhảy, Bạc trừ bay lên */
 .eqd-stock.bump b, .eqd-silver.bump { display: inline-block; color: var(--tc-accent-2); animation: eqdBump .5s ease; }
@@ -164,3 +163,10 @@
 .eqd-warn { font: 700 10px var(--font-tech); letter-spacing: 1px; color: #e8c547; }
 .eqd-card.out .eqd-warn { color: #f87171; }
 .eqd-card.out .eqd-stock b { color: #f87171; }
+
+/* giáp hỏng chưa sửa (armory_ui.js condOf / repairAll) */
+.eqd-tab .eqd-hurt { background: rgba(232,140,60,.18); color: #f0a050; margin-left: 2px; }
+.eqd-card.hurt { box-shadow: inset 0 0 0 1px rgba(240,160,80,.55); }
+.eqd-card.hurt .eqd-warn { color: #f0a050; }
+.eqd-fixall { display: inline-flex; align-items: center; gap: 6px; color: #f0b060; margin-right: 8px; }
+.eqd-fixall .eqp-btn { margin-left: 4px; }

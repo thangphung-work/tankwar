@@ -122,6 +122,18 @@ class BotAIController {
     } else {
       if (!sol || Math.hypot(px - t.x, pz - t.z) > 1) sol = solve(px, pz) || sol;
       if (!sol) return null;
+      // pháo / súng bắn thẳng: nhắm giữa thân xe địch (điểm 3D) như người chơi, không nhắm mặt đất dưới gầm — bộ giải
+      // theo điểm mặt đất coi đường tới chân xe đâm vào gò trước mặt (đường tới thân xe vẫn thông) -> nòng hạ thấp,
+      // đạn cắm xuống gò. Lựu pháo / xe 6 nòng (máy tính hỏa lực riêng) giữ nguyên
+      if (U.tankType !== 'ARTILLERY' && U.tankType !== 'GATLING' && U.canElevate !== false && ballistics.elevationThrough && typeof BallisticsSystem3D !== 'undefined') {
+        const r3 = ballistics.elevationThrough(U, px, (t.y || 0) + BallisticsSystem3D.unitAimHeight(t), pz, terrain, sol.elevation);
+        if (r3) {
+          // giữ phần bù gió của bộ giải, chỉ đổi gốc hướng từ tâm xe sang trục tháp
+          const azC = (Math.atan2(px - U.x, -(pz - U.z)) * 180 / Math.PI + 360) % 360;
+          const az = (sol.azimuth + ((r3.az - azC + 540) % 360 - 180) + 360) % 360;
+          sol = Object.assign({}, sol, { elevation: Math.round(r3.el * 100) / 100, azimuth: Math.round(az * 10) / 10, reachable: true, aim3d: true });
+        }
+      }
       E.last = { px, pz, dist: dNew, at: this.clock, sol: Object.assign({}, sol) };
     }
     E.tf = Math.min(12, (sol.flightTime || 0) / (ballistics.bulletSpeedMultiplier || 1));
@@ -152,7 +164,7 @@ class BotAIController {
   updateAntiAir(dt, ballistics) {
     const U = this.unit, G = typeof window !== 'undefined' ? window.game : null;
     const tank = U.tankType === 'ALL_ROUNDER';
-    if ((U.tankType !== 'GATLING' && U.tankType !== 'SCOUT' && !(tank && U.rcwsGun)) || U.isDead || !G || !G.airDroneList || !G.airShotSolution) {
+    if ((U.tankType !== 'GATLING' && U.tankType !== 'SCOUT' && !(tank && U.rcwsGun && (!U.roofWeapon || U.roofWeapon === 'rcws'))) || U.isDead || !G || !G.airDroneList || !G.airShotSolution) {
       if (this.aa) { this.aa = null; U.isFiringGatling = false; U._aa = null; }
       return false;
     }
@@ -223,12 +235,41 @@ class BotAIController {
     return true;
   }
 
+  /**
+   * Xe tăng gắn súng phóng lựu / giàn rocket ở ô nóc tháp: trạm vũ khí bám xe địch đang giao chiến mà bot tự nhìn thấy
+   * (nghiệm đường đạn thật của vũ khí đó, có sai số theo tay nghề), bắn khi bệ đã quay khớp hướng; pháo chính vẫn tự do
+   */
+  updateRoofWeapon(dt, T) {
+    const U = this.unit, G = typeof window !== 'undefined' ? window.game : null;
+    if (!U.rcwsGun || !U.roofWeapon || U.roofWeapon === 'rcws' || typeof DroneAir === 'undefined') return;
+    const R = DroneAir.roofCfg(U), reach = U.roofWeapon === 'rocket' ? 650 : 950;
+    const ok = !U.isDead && G && G.airShotSolution && T && !T.isDead && Math.hypot(T.x - U.x, T.z - U.z) < reach && this.seesDirect(T);
+    if (!ok) { if (this.roofT) { this.roofT = null; U._aa = null; } return; }
+    const st = this.roofT && this.roofT.u === T ? this.roofT
+      : (this.roofT = { u: T, solT: 0, sol: null, bias: (Math.random() - 0.5) * 2.4 * this.skill, t: -(0.4 + Math.random() * 0.6) });
+    st.t += dt;
+    if ((st.solT -= dt) <= 0) {
+      st.solT = 0.2;
+      const y = (T.y || this.unit.y || 0) + 8;
+      st.sol = G.airShotSolution(U, R.ammo, T.x, y, T.z, 0, 0, 0);
+      st.bias *= 0.85;   // thấy điểm nổ thì chỉnh dần về mục tiêu
+    }
+    const S = st.sol;
+    if (!S) return;
+    const az = (S.az + st.bias + 360) % 360, el = Math.max(R.elMin, Math.min(R.elMax, S.el));
+    const v = G.aaMuzzle(U).direction;
+    const baz = (Math.atan2(v.x, -v.z) * 180 / Math.PI + 360) % 360, bel = Math.asin(Math.max(-1, Math.min(1, v.y))) * 180 / Math.PI;
+    const on = Math.abs(((baz - az + 540) % 360) - 180) < 1.5 && Math.abs(bel - el) < 1.5;
+    U._aa = { az, el, firing: st.t > 0 && on, until: performance.now() / 1000 + 0.3 };
+  }
+
   update(dt, terrain, ballistics, radar, zone, allUnits, airdrop = null, supplyCrates = null, capturePoints = null) {
     this.unit.aiTimer -= dt;
     this.clock += dt;
     this.updateAntiAir(dt, ballistics);
     // bám mục tiêu đang giao chiến / đang chờ bắn để ước lượng vận tốc (đón đầu)
     const trkU = (this.pendingShot && this.pendingShot.tu) || this.burstUnit || this.lockUnit;
+    this.updateRoofWeapon(dt, trkU);
     if (trkU) this.trackTarget(trkU, dt);
     // Xả loạt liên thanh: bám theo mục tiêu (ngắm lại ~5 lần/giây); hết loạt khi mục tiêu chết / khuất
     if (this.burstUnit) {
@@ -349,14 +390,19 @@ class BotAIController {
       return;
     }
 
-    // ƯU TIÊN 1: Chạy vào vòng bo an toàn nếu đang ở ngoài hoặc sát mép bo
-    if (distToZone > zone.current.radius * 0.78) {
+    // ƯU TIÊN 1: Chạy vào vòng bo an toàn nếu đang ở ngoài / sát mép bo, hoặc sắp bị vòng kế tiếp bỏ lại.
+    // Trước đây ngưỡng 0,78 bán kính: vòng cuối ôm cứ điểm A/C ở ~0,92 bán kính -> bot ở A/C bỏ cờ, ngừng bắn
+    const soon = zone.next && (zone.state === 'shrinking' || (zone.state === 'waiting' && zone.timer < 20));
+    const safe = soon ? zone.next : zone.current;
+    const safeX = safe.x - zone.worldWidth / 2, safeZ = safe.y - zone.worldHeight / 2;
+    const distToSafe = Math.hypot(this.unit.x - safeX, this.unit.z - safeZ);
+    if (distToZone > zone.current.radius - 40 || distToSafe > safe.radius - Math.min(120, safe.radius * 0.15)) {
       // Pháo tự hành phải nhổ chân chống để chạy bo
       if (this.unit.tankType === 'ARTILLERY') {
         this.unit.isDeployed = false;
         this.assignedCampPos = null;
       }
-      this.driveTowards(zoneCenterX, zoneCenterZ, dt, false, allUnits);
+      this.driveTowards(safeX, safeZ, dt, false, allUnits);
       return;
     }
 
@@ -380,8 +426,10 @@ class BotAIController {
     if (this.unit.tankType === 'ARTILLERY') {
       const isBlue = (this.unit.team === 'BLUE');
       if (!this.assignedCampPos && typeof this.unit.spawnX === 'number') {
-        // Xuất phát ở vị trí ngẫu nhiên trên bản đồ: lập trận địa ngay quanh chỗ xuất phát
-        this.assignedCampPos = { x: this.unit.spawnX, z: this.unit.spawnZ };
+        // Xuất phát ở vị trí ngẫu nhiên trên bản đồ: lập trận địa ngay quanh chỗ xuất phát;
+        // chỗ xuất phát đã nằm ngoài vòng bo an toàn (vừa chạy bo vào) -> lập trận địa tại chỗ đang đứng, không quay ra lại
+        const spawnSafe = Math.hypot(this.unit.spawnX - safeX, this.unit.spawnZ - safeZ) < safe.radius - 150;
+        this.assignedCampPos = spawnSafe ? { x: this.unit.spawnX, z: this.unit.spawnZ } : { x: this.unit.x, z: this.unit.z };
       }
       if (!this.assignedCampPos) {
         // Chọn vị trí trận địa tuyến sau phù hợp với phe
@@ -606,15 +654,8 @@ class BotAIController {
         targetZ = this.unit.lastAttackerPos.z + (Math.random() - 0.5) * 40;
         this.unit.lastAttackerPos = null;
       } else {
-        const targetDetection = radar.detections.find(d => {
-          const shooterUnit = (allUnits || []).find(u => u.id === d.shooterId);
-          return shooterUnit && shooterUnit.team !== this.unit.team && d.alpha > 0.35;
-        });
-
-        if (targetDetection) {
-          targetX = targetDetection.originX - MapGen.HALF + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
-          targetZ = targetDetection.originY - MapGen.HALF + (Math.random() - 0.5) * targetDetection.currentRadius * 0.4;
-        } else if (enemyUnits.length > 0) {
+        // (không còn radar phản pháo: phát bắn chỉ để lại dấu vị trí trên bản đồ, bot không tự bắn trả vào dấu đó)
+        if (enemyUnits.length > 0) {
           // đang giao chiến với xe nào mà vẫn thấy thì bắn tiếp xe đó (đã chỉnh được sai số qua các phát trước)
           const cur = this.eng && this.clock - this.eng.lastAt < 15 ? enemyUnits.find(u => u.id === this.eng.id && this.seesDirect(u)) : null;
           const targetEnemy = cur || enemyUnits[Math.floor(Math.random() * enemyUnits.length)];
@@ -702,8 +743,8 @@ class BotAIController {
               const scootAngle = Math.random() * Math.PI * 2;
               const scootDist = 180 + Math.random() * 200;
               this.unit.aiShootAndScootDest = {
-                x: Math.max(-1500, Math.min(1500, this.unit.x + Math.cos(scootAngle) * scootDist)),
-                z: Math.max(-1500, Math.min(1500, this.unit.z + Math.sin(scootAngle) * scootDist))
+                x: this.unit.clampToMap(this.unit.x + Math.cos(scootAngle) * scootDist, 'x'),
+                z: this.unit.clampToMap(this.unit.z + Math.sin(scootAngle) * scootDist, 'z')
               };
               this.unit.aiState = 'fleeing';
             }

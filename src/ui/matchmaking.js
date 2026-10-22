@@ -119,16 +119,19 @@ class MatchmakingController {
     this.state = 'SEARCHING';
     this.searchTime = 0;
     this.isHost = true;
+    this.roomHops = 0;
     this.resetRoster();
-    this.prepareSelectedMap();
     this.setSearchView(true);
 
+    // Chưa dựng bản đồ ở đây: vào được phòng có sẵn thì dựng bản đồ của chủ phòng (DISCOVER_ROOM_ACK),
+    // không có phòng / mất mạng thì máy này làm chủ phòng và dựng bản đồ mình đã chọn (becomeHost)
     if (typeof NetTransport !== 'undefined') {
       this.netPending = true;
       if (!this.net) this.initNetwork();
-      else this.net.rejoin();
+      else { this.net.prefMap = this.selectedMapType; this.net.rejoin(); }
     } else {
       this.netPending = false;
+      this.schedulePrepareMap();
     }
     this.renderLobby();
     this.startSearchingLoop();
@@ -139,6 +142,9 @@ class MatchmakingController {
     if (this.state !== 'SEARCHING' && this.state !== 'FILLING_BOTS') return;
     clearInterval(this.searchInterval);
     clearTimeout(this.discoverTimer);
+    clearTimeout(this._prepareTimer);
+    this._prepareTimer = null;
+    this.buildingMap = false;
     if (this.net) this.net.leave();
     this.state = 'IDLE';
     this.netPending = false;
@@ -176,6 +182,7 @@ class MatchmakingController {
     let text;
     if (this.state === 'COUNTDOWN') text = 'ĐÃ ĐỦ NGƯỜI · TRẬN ĐẤU SẮP BẮT ĐẦU';
     else if (this.netPending) text = 'ĐANG KẾT NỐI...';
+    else if (this.buildingMap) text = 'ĐANG DỰNG BẢN ĐỒ...';
     else text = 'ĐANG TÌM TRẬN ĐẤU...';
     this.statusTextEl.textContent = text;
   }
@@ -280,6 +287,7 @@ class MatchmakingController {
     }
 
     this.net = new NetTransport({ room: 'spg_tactical_lobby_v2', name: this.myName });
+    this.net.prefMap = this.selectedMapType;
     window.netTransport = this.net;
 
     const lobbyTypes = ['DISCOVER_ROOM', 'DISCOVER_ROOM_ACK', 'ROOM_FULL', 'ROOM_UPDATE', 'MAP_CHANGE', 'MAP_REQUEST',
@@ -353,10 +361,10 @@ class MatchmakingController {
     let attempts = 0;
     const discover = () => {
       if (this.hasReceivedHostAck || this.isHost || this.state === 'IN_GAME' || !this.net.isOnline) return;
-      if (attempts >= 3) {
+      // 5 lần x 1,5 giây: chủ phòng vừa mở phòng có thể đang dựng bản đồ (đơ vài giây) nên trả lời chậm
+      if (attempts >= 5) {
         // Chủ phòng không phản hồi: chơi độc lập để không bị kẹt ở sảnh
-        console.warn('Chủ phòng không phản hồi. Chuyển sang chế độ chơi độc lập.');
-        this.net.goOffline('host did not answer DISCOVER_ROOM');
+        this.tryNextRoom('host did not answer DISCOVER_ROOM');
         return;
       }
       attempts++;
@@ -373,12 +381,32 @@ class MatchmakingController {
     discover();
   }
 
+  // Phòng hiện tại không nhận (đầy / sắp vào trận / chủ phòng im lặng): sang phòng chờ khác thay vì chơi một mình
+  tryNextRoom(reason) {
+    if (!this.net) return;
+    clearTimeout(this.discoverTimer);
+    if (this.net.mode === 'ws' && this.net.isOnline && (this.roomHops || 0) < 3) {
+      this.roomHops = (this.roomHops || 0) + 1;
+      this.netPending = true;
+      this.hasReceivedHostAck = false;
+      this.isHost = true;
+      this.resetRoster();
+      this.renderLobby();
+      this.net.rejoin(this.net.roomName);
+      return;
+    }
+    console.warn('Không vào được phòng nào. Chuyển sang chế độ chơi độc lập.');
+    this.net.goOffline(reason);
+  }
+
   // Trở thành chủ phòng (mở phòng mới, hoặc được bầu lại khi chủ phòng cũ rời đi)
   becomeHost() {
     this.isHost = true;
     this.netPending = false;
     this.hasReceivedHostAck = true;
     clearTimeout(this.discoverTimer);
+    // Chủ phòng cũ có thể đã khóa phòng (rời mạng đúng lúc đếm ngược) -> mở lại cho người mới vào
+    if (this.net && this.net.isOnline) this.net.lockRoom(false);
     // Giải phóng các slot của người chơi không còn trong phòng
     const present = (id) => id === this.myPeerId || (this.net && this.net.peers.has(id));
     this.slots.forEach(s => {
@@ -489,10 +517,20 @@ class MatchmakingController {
     });
   }
 
-  // Người chơi bấm chọn bản đồ: chủ phòng (hoặc chơi độc lập) sinh hạt giống mới; khách gửi yêu cầu cho chủ phòng
+  // Người chơi bấm chọn bản đồ: khách gửi yêu cầu cho chủ phòng; ở sảnh chỉ ghi nhận lựa chọn (chưa dựng gì)
   selectMap(mapType) {
     if (this.isNetGuest()) {
       this.net.sendTo(this.net.hostId, 'MAP_REQUEST', { mapType });
+      return;
+    }
+    if (this.state === 'IDLE') {
+      // Chưa biết sẽ vào phòng của ai: bấm "TÌM TRẬN ĐẤU" mới chốt bản đồ (phòng có sẵn -> bản đồ chủ phòng).
+      // Chọn lại đúng loại đang dựng sẵn thì giữ hạt giống đó để khỏi dựng lại.
+      const t = mapType || 'DESERT', T = this.game && this.game.terrain;
+      this.selectedMapType = t;
+      this.mapSeed = (T && T.built && T.mapType === t) ? (T.seed >>> 0)
+        : (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
+      this.setMapSelectionUI(t);
       return;
     }
     this.selectMapAsHost(mapType);
@@ -515,18 +553,25 @@ class MatchmakingController {
       this.selectedMapType = mapType;
     }
     this.mapSeed = seed;
+    if (this.net && this.isHost && !this.netPending) this.net.setMap(this.selectedMapType);
     this.setMapSelectionUI(this.selectedMapType);
     this.schedulePrepareMap();
   }
 
-  // Dựng bản đồ 3D mất ~0.5 s và chặn luồng chính: đổi giao diện ngay, dựng sau khi người chơi ngừng bấm.
-  // Mọi chỗ cần bản đồ thật (tìm trận, đếm ngược, xuất trận) đều gọi prepareSelectedMap() trực tiếp -> dựng ngay nếu còn chờ.
+  // Dựng bản đồ 3D mất vài giây và chặn luồng chính -> chỉ dựng khi đã chốt phòng (vào phòng có sẵn / tự mở phòng),
+  // trước đó hiện "ĐANG DỰNG BẢN ĐỒ..." cho kịp vẽ. Ở sảnh không dựng gì.
+  // Đếm ngược / xuất trận gọi prepareSelectedMap() trực tiếp -> dựng ngay nếu còn chờ.
   schedulePrepareMap() {
     clearTimeout(this._prepareTimer);
+    this._prepareTimer = null;
+    this.buildingMap = false;
+    if (this.state === 'IDLE' || this.preparedMapKey === this.selectedMapType + ':' + (this.mapSeed >>> 0)) return;
+    this.buildingMap = true;
+    this.updateSearchHUD();
     this._prepareTimer = setTimeout(() => {
       this._prepareTimer = null;
       this.prepareSelectedMap();
-    }, 400);
+    }, 60);
   }
 
   setMapSelectionUI(mapType) {
@@ -539,6 +584,7 @@ class MatchmakingController {
   prepareSelectedMap(force) {
     clearTimeout(this._prepareTimer);
     this._prepareTimer = null;
+    if (this.buildingMap) { this.buildingMap = false; this.updateSearchHUD(); }
     const key = this.selectedMapType + ':' + (this.mapSeed >>> 0);
     const game = this.game;
     if (!game) return false; // Game chưa khởi tạo: onGameAttached() sẽ dựng sau
@@ -559,7 +605,17 @@ class MatchmakingController {
   // Được game.js gọi khi ArtilleryGame3D liên kết với sảnh chờ
   onGameAttached(game) {
     this.game = game || this.game;
-    if (this.state !== 'IN_GAME') this.prepareSelectedMap();
+    if (this.state === 'IN_GAME') return;
+    // Ở sảnh: nhận luôn bản đồ game vừa dựng lúc khởi động (cùng loại thì lấy hạt giống của nó), không dựng lại
+    const T = this.game && this.game.terrain;
+    if (this.state === 'IDLE') {
+      if (T && T.built && T.mapType === this.selectedMapType) {
+        this.mapSeed = T.seed >>> 0;
+        this.preparedMapKey = this.selectedMapType + ':' + this.mapSeed;
+      }
+      return;
+    }
+    this.prepareSelectedMap();
   }
 
   // Được game.js gọi khi quay về sảnh sau trận (restartMatch)
@@ -582,7 +638,7 @@ class MatchmakingController {
     if (this.overlay) this.overlay.classList.remove('hidden');
     this.music('lobby');
     this.renderLobby();
-    this.prepareSelectedMap();
+    // Không dựng bản đồ ở sảnh: vào phòng của người khác sẽ phải dựng lại -> dựng khi đã chốt phòng
   }
 
   // Chủ phòng phát lệnh xuất trận cho mọi máy
@@ -659,7 +715,7 @@ class MatchmakingController {
 
     // 2.b. Phòng đã đủ 20 người thật
     else if (msg.type === 'ROOM_FULL') {
-      if (!this.isHost && this.net) this.net.goOffline('room full');
+      if (!this.isHost && this.net && fromHost && this.state !== 'IN_GAME' && this.state !== 'IDLE') this.tryNextRoom('room full');
     }
 
     // 3. Đồng bộ danh sách slot, loại bản đồ và hạt giống từ chủ phòng
@@ -753,9 +809,10 @@ class MatchmakingController {
         if (this.state === 'SEARCHING' && this.searchTime >= this.maxWaitTime) this.state = 'FILLING_BOTS';
 
         if (this.state === 'FILLING_BOTS') {
-          const emptySlot = this.slots.find(slot => !slot.isHuman && !slot.peerId && !slot.ready);
-          if (emptySlot) {
-            this.fillBotSlot(emptySlot);
+          // Lấp nhanh: tối đa 5 bot mỗi nhịp (20 chỗ ~1 giây thay vì ~5 giây)
+          const empty = this.slots.filter(slot => !slot.isHuman && !slot.peerId && !slot.ready).slice(0, 5);
+          if (empty.length) {
+            empty.forEach(slot => this.fillBotSlot(slot));
             this.renderLobby();
             this.broadcastRoomUpdate();
           }

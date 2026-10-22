@@ -1,7 +1,7 @@
 /**
- * Hệ thống Radar Phản Pháo (Counter-Battery Radar)
- * Tự động phát hiện vị trí xuất phát phát bắn, khoanh vùng tọa độ nghi vấn
- * và mở rộng bán kính tìm kiếm theo vận tốc cơ động của xe pháo.
+ * DẤU LỘ VỊ TRÍ KHI KHAI HỎA (trước đây là "radar phản pháo" — đã bỏ: không còn khóa vị trí, không cảnh báo, bot không
+ * bắn trả theo dấu này). Mỗi phát bắn chỉ để lại một chấm mờ dần trên bản đồ tại chỗ xe vừa khai hỏa (chớp lửa đầu nòng).
+ * (Giữ tên lớp CounterBatteryRadar để không phải sửa các chỗ gọi registerShot / renderOnTacticalMap)
  */
 class CounterBatteryRadar {
   constructor() {
@@ -54,8 +54,7 @@ class CounterBatteryRadar {
       const d = this.detections[i];
       d.timeElapsed += dt;
 
-      // Khoanh vùng nhỏ gọn tinh tế (tối đa chỉ 85 mét, không mở rộng tràn bản đồ)
-      d.currentRadius = Math.min(85, 40 + d.timeElapsed * 8);
+      d.currentRadius = 0;   // chỉ còn chấm vị trí, không khoanh vùng tìm kiếm
       d.alpha = Math.max(0, 1 - (d.timeElapsed / this.maxAge));
 
       if (d.isPlayer && d.timeElapsed < 5) {
@@ -82,14 +81,7 @@ class CounterBatteryRadar {
       ctx.save();
       const baseColor = d.isPlayer ? '255, 140, 0' : '255, 60, 60';
 
-      // 1. Chỉ vẽ viền mỏng nhẹ nét đứt mờ (KHÔNG fill màu đỏ đặc)
-      ctx.strokeStyle = `rgba(${baseColor}, ${0.55 * d.alpha})`;
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      void r;
 
       // 2. Chấm đỏ nhỏ gọn ở tâm phát bắn ban đầu
       ctx.fillStyle = `rgba(${baseColor}, ${0.9 * d.alpha})`;

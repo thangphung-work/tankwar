@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js --dev"
+    "dev": "node --watch server.js --dev",
+    "build": "node build.js",
+    "prod": "node build.js && node server.js"
   },
   "keywords": [
     "game",
@@ -16,5 +18,8 @@
     "tactical"
   ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.25.10"
+  }
 }

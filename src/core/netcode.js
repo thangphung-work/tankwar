@@ -225,6 +225,17 @@
       }
     }
 
+    // Vào phòng: kèm phòng cần bỏ qua + loại bản đồ muốn chơi (máy chủ ưu tiên phòng cùng bản đồ)
+    _sendJoin() {
+      this._sendRaw({ t: '@join', d: { room: this.roomBase, name: this.name, tok: this._accountToken(), skip: this._skipRooms || [], map: this.prefMap || '' } });
+    }
+
+    // Loại bản đồ: trước khi vào phòng = bản đồ muốn chơi; chủ phòng = bản đồ của phòng (báo máy chủ)
+    setMap(mapType) {
+      this.prefMap = mapType || '';
+      if (this.mode === 'ws' && this.isHost) this._sendRaw({ t: '@map', d: { map: this.prefMap } });
+    }
+
     // Khóa phòng khi đang trong trận: người mới vào sẽ được xếp sang phòng khác
     lockRoom(flag) {
       this.locked = !!flag;
@@ -233,7 +244,8 @@
     }
 
     // Rời phòng hiện tại và vào lại sảnh (dùng khi quay về sảnh sau trận)
-    rejoin() {
+    // skipRoom: tên phòng vừa bị từ chối -> máy chủ xếp sang phòng khác
+    rejoin(skipRoom) {
       if (!this.isOnline) {
         if (this.mode === 'offline') setTimeout(() => this._emit('$ready', this._readyInfo(), this.myId), 0);
         return;
@@ -243,7 +255,8 @@
       this.peers.clear();
       if (this.mode === 'ws') {
         this._sendRaw({ t: '@leave', d: null });
-        this._sendRaw({ t: '@join', d: { room: this.roomBase, name: this.name, tok: this._accountToken() } });
+        if (skipRoom) { this._skipRooms = (this._skipRooms || []).concat(skipRoom).slice(-8); } else this._skipRooms = [];
+        this._sendJoin();
       } else if (this.mode === 'bc') {
         this._bcClose();
         this._bcRoomIndex = 1;
@@ -320,7 +333,8 @@
         clearTimeout(failTimer);
         this._trace('ws open');
         this.mode = 'ws';
-        this._sendRaw({ t: '@join', d: { room: this.roomBase, name: this.name, tok: this._accountToken() } });
+        this._skipRooms = [];
+        this._sendJoin();
       };
       ws.onmessage = (ev) => this._onWsMessage(ev.data);
       ws.onerror = () => {};
