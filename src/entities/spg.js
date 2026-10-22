@@ -267,7 +267,7 @@ class SPGUnit3D {
       // Xe trinh sát 4x4 giáp nhẹ: chỉ chống đạn súng bộ binh & mảnh, nhanh và linh hoạt nhất
       this.baseMaxHp = 1.6;   // máu yếu nhất trận: đánh du kích, bắn tên lửa rồi rút
       this.maxHp = 1.6;
-      this.baseMaxSpeed = vehicleTopSpeed('SCOUT', 174); // xe nhanh nhất: 100 km/h đường tốt
+      this.baseMaxSpeed = vehicleTopSpeed('SCOUT', 148); // xe nhanh nhất: 85 km/h đường tốt (xe 4x4 bọc thép, nặng hơn xe dân sự)
       this.acceleration = this.baseMaxSpeed * 0.589;      // xe 4x4 nhẹ: 0 -> 50% ~1.0 s, 0 -> 90% ~2.2 s
       this.turnRate = 2.6;
       this.climbMax = 1.05;      // 4x4 việt dã: leo địa hình rất tốt

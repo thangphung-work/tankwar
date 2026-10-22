@@ -28,7 +28,7 @@
     SCOUT: [
       { icon: 'leaf', name: 'Núp bụi', desc: 'Trong bụi, địch chỉ thấy khi tới thật gần' },
       { icon: 'rocket', name: 'Tên lửa chống tăng', desc: 'Tự bay tới xe địch xa 2 km', key: '3' },
-      { icon: 'gauge', name: 'Nhanh & nhìn xa', desc: '100 km/h, tầm nhìn xa nhất trận, có radar' }
+      { icon: 'gauge', name: 'Nhanh & nhìn xa', desc: '85 km/h, tầm nhìn xa nhất trận, có radar' }
     ]
   };
 

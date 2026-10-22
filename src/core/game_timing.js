@@ -28,7 +28,7 @@ const GameTiming = {
 
   // Số liệu thật tham chiếu
   REAL: {
-    topSpeedKmh: { ALL_ROUNDER: 70, GATLING: 70, ARTILLERY: 70, SCOUT: 100 },     // đường tốt
+    topSpeedKmh: { ALL_ROUNDER: 70, GATLING: 70, ARTILLERY: 70, SCOUT: 85 },      // đường tốt (trinh sát 4x4 bọc thép: 85, trước 100 — chạy thường quá nhanh)
     // Đạn: v sơ tốc (m/s) · k hệ số cản (1/m, dv/dt = -k·v²) · eff tầm hiệu quả (m) · max tầm tự hủy / cháy hết vạch đường (m, 0 = bay hết quỹ đạo)
     rounds: {
       TANK_AP: { v: 1650, k: 3.6e-5, eff: 3500, max: 0 },       // APFSDS 120mm: mất ~60 m/s mỗi km

@@ -18,7 +18,7 @@ let Worker = null;
 try { ({ Worker } = require('worker_threads')); } catch (e) { Worker = null; }
 
 const SIGHT = { ALL_ROUNDER: 520, GATLING: 480, ARTILLERY: 620, SCOUT: 720 };   // khớp TeamIntel
-const BASE_SPEED = { ALL_ROUNDER: 122, GATLING: 122, ARTILLERY: 122, SCOUT: 174 };   // = GameTiming.baseVehicleSpeed (70 / 70 / 70 / 100 km/h thật)
+const BASE_SPEED = { ALL_ROUNDER: 122, GATLING: 122, ARTILLERY: 122, SCOUT: 148 };   // = GameTiming.baseVehicleSpeed (70 / 70 / 70 / 85 km/h thật)
 const MAX_HP = { ALL_ROUNDER: 3.2, GATLING: 4.0, ARTILLERY: 2.2, SCOUT: 1.6 };
 const MAX_RANGE = { ARTILLERY: 3200 };      // tầm bắn tối đa + dư (đơn vị game)
 const DEFAULT_RANGE = 2400;   // tên lửa dẫn hướng 2000 + mục tiêu chạy; đạn tăng bay quá tầm hiệu quả 1750
