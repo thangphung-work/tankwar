@@ -430,36 +430,109 @@ const ReconDrone = (() => {
     return g;
   }
 
-  // ---------- LỬA (drone bốc cháy / xác cháy): ngọn lửa hình nón cộng sáng, ngoài cam trong vàng ----------
-  let FLAME = null;
-  function flameKit() {
-    if (FLAME) return FLAME;
-    const cone = (r, h) => { const g = new THREE.ConeGeometry(r, h, 7, 1, true); g.translate(0, h / 2, 0); return g; };
-    // màu đặc (không cộng sáng): giữa ban ngày trên nền cát / trời sáng lửa vẫn rực, không bị trắng bệch
-    const mat = (c, op) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide });
-    FLAME = { outer: cone(0.75, 2.4), inner: cone(0.42, 1.4), core: new THREE.SphereGeometry(0.6, 8, 6), mOut: mat(0xff4a0a, 0.8), mIn: mat(0xffc21a, 0.95), mCore: mat(0xffe27a, 0.95) };
-    return FLAME;
+  // ---------- LỬA CHÁY XÁC / DRONE BỐC CHÁY ----------
+  // Ngọn lửa thật: nhiều đốm lửa mềm (billboard luôn quay về camera) sinh ở gốc, vừa bốc lên vừa nở ra rồi tan, đổi màu
+  // từ lõi trắng vàng -> cam -> đỏ sẫm; chồng cộng sáng nên chỗ dày lửa sáng rực, mép lửa lưỡi liếm. Tàn đỏ sáng nằm ở
+  // gốc (pin li-ion / vỏ nhựa cháy), khói đen đặc cuộn lên phía trên. Mỗi đốm có pha / tốc độ riêng -> không lặp nhịp.
+  let FIRE_TEX = null, SMOKE_TEX = null;
+  // 3 kiểu lưỡi lửa (thẳng / cong trái / cong phải): đáy tròn đầy, thân thuôn, đầu nhọn liếm lên; mép nhòe, lõi đặc
+  function fireTex(v) {
+    if (!FIRE_TEX) {
+      FIRE_TEX = [0, -1, 1].map(bend => {
+        const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+        const g = c.getContext('2d');
+        const tongue = (w, top, a) => {
+          g.beginPath();
+          g.moveTo(32 + bend * 10, top);
+          g.bezierCurveTo(32 + bend * 4 + w * 0.35, top + 34, 32 + w, 78, 32 + w * 0.8, 100);
+          g.bezierCurveTo(32 + w * 0.6, 122, 32 - w * 0.6, 122, 32 - w * 0.8, 100);
+          g.bezierCurveTo(32 - w, 78, 32 + bend * 4 - w * 0.35, top + 34, 32 + bend * 10, top);
+          g.closePath();
+          const rg = g.createRadialGradient(32, 100, 2, 32, 92, 70);
+          rg.addColorStop(0, `rgba(255,255,255,${a})`); rg.addColorStop(0.45, `rgba(255,255,255,${a * 0.8})`); rg.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = rg; g.fill();
+        };
+        g.filter = 'blur(4px)'; tongue(24, 6, 0.55);
+        g.filter = 'blur(2px)'; tongue(15, 30, 0.9);
+        const T = new THREE.CanvasTexture(c);
+        return T;
+      });
+    }
+    return FIRE_TEX[(v || 0) % 3];
   }
-
+  function smokeTex() {
+    if (SMOKE_TEX) return SMOKE_TEX;
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d');
+    for (let k = 0; k < 5; k++) {
+      const x = 22 + Math.random() * 20, y = 22 + Math.random() * 20, r = 14 + Math.random() * 10;
+      const rg = g.createRadialGradient(x, y, 0, x, y, r);
+      rg.addColorStop(0, 'rgba(255,255,255,0.55)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
+    }
+    SMOKE_TEX = new THREE.CanvasTexture(c);
+    return SMOKE_TEX;
+  }
+  const FL_N = 9, SM_N = 4;
   function buildFlame() {
-    const K = flameKit(), g = new THREE.Group();
-    const o = new THREE.Mesh(K.outer, K.mOut), i = new THREE.Mesh(K.inner, K.mIn), c = new THREE.Mesh(K.core, K.mCore);
-    c.scale.set(1, 0.6, 1);
-    o.renderOrder = 1; i.renderOrder = 2; c.renderOrder = 2;
-    for (const m of [o, i, c]) { m.userData.shared = true; g.add(m); }
-    g.userData = { o, i, seed: Math.random() * 100 };
+    const g = new THREE.Group(), parts = [], smoke = [];
+    for (let i = 0; i < FL_N; i++) {
+      // 3 đốm lõi cộng sáng (rực), còn lại màu đặc: giữa ban ngày trên nền cát / trời sáng lửa vẫn cam đỏ, không trắng bệch
+      const m = new THREE.SpriteMaterial({ map: fireTex(i), color: 0xffaa33, transparent: true, depthWrite: false, blending: i < 3 ? THREE.AdditiveBlending : THREE.NormalBlending });
+      const sp = new THREE.Sprite(m);
+      sp.renderOrder = 2;
+      g.add(sp);
+      parts.push({ sp, ph: i / FL_N + Math.random() * 0.1, sp0: 1.6 + Math.random() * 0.9, ox: (Math.random() - 0.5) * 1.4, oz: (Math.random() - 0.5) * 1.4, w: 1.6 + Math.random() * 1.0 });
+    }
+    // tàn đỏ sáng ở gốc
+    const em = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTex(0), color: 0xff5a14, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    em.renderOrder = 2; g.add(em);
+    for (let i = 0; i < SM_N; i++) {
+      const m = new THREE.SpriteMaterial({ map: smokeTex(), color: 0x1d1a17, transparent: true, depthWrite: false, opacity: 0 });
+      const sp = new THREE.Sprite(m);
+      sp.renderOrder = 1;
+      g.add(sp);
+      smoke.push({ sp, ph: i / SM_N, rot: Math.random() * 6.28 });
+    }
+    g.userData = { parts, smoke, em, seed: Math.random() * 100 };
     return g;
   }
 
-  /** k: cỡ lửa (0 = tắt); ngọn lửa luôn bốc thẳng lên (đặt hướng theo thế giới, không theo drone đang lộn nhào) */
+  /** k: cỡ lửa (0 = tắt); lửa luôn bốc thẳng lên (đặt theo thế giới, không theo drone đang lộn nhào) */
   function animateFlame(f, t, k) {
     f.visible = k > 0.02;
     if (!f.visible) return;
-    const U = f.userData, a = t * 11 + U.seed;
-    const fl = 0.75 + 0.25 * Math.sin(a) * Math.sin(a * 1.7 + 1.3);
-    U.o.scale.set(k * (0.9 + 0.15 * Math.sin(a * 2.3)), k * fl * 1.15, k * (0.9 + 0.15 * Math.cos(a * 1.9)));
-    U.i.scale.set(k, k * (0.7 + 0.3 * Math.sin(a * 2.9 + 0.5)), k);
-    U.o.rotation.y = a * 0.3;
+    const U = f.userData;
+    if (!U.parts) return;
+    const H = 4.2 * k, tt = t + U.seed;
+    // gió nhẹ làm ngọn lửa ngả theo một phía, lắc chậm
+    const lean = Math.sin(tt * 0.7) * 0.5 + 0.4;
+    for (const P of U.parts) {
+      const q = (tt * P.sp0 * 0.55 + P.ph) % 1;            // tuổi đốm lửa 0 -> 1
+      const rise = Math.pow(q, 0.8);
+      const sz = k * P.w * (0.55 + 0.9 * Math.sin(Math.PI * Math.min(1, q * 1.15))) * (1 - 0.45 * q);
+      P.sp.position.set(P.ox * k * (1 - q * 0.6) + lean * q * q * k * 1.2, rise * H + 0.2 * k, P.oz * k * (1 - q * 0.6));
+      P.sp.scale.set(sz, sz * (1.5 + 0.6 * (1 - q)), 1);
+      P.sp.material.rotation = -lean * q * 0.35 + 0.12 * Math.sin(tt * 5.3 + P.ph * 20);   // lưỡi lửa ngả theo gió, lắc liếm
+      // màu: trắng vàng (gốc) -> cam -> đỏ sẫm (ngọn); mờ dần lúc tan
+      const c = P.sp.material.color;
+      if (q < 0.3) c.setRGB(1, 0.85 - q * 0.6, 0.45 - q * 1.0);
+      else c.setRGB(1 - (q - 0.3) * 0.5, 0.67 - (q - 0.3) * 0.75, 0.15 - (q - 0.3) * 0.2);
+      P.sp.material.opacity = Math.min(1, q * 6) * (1 - q) * (0.85 + 0.15 * Math.sin(tt * 23 + P.ph * 40)) * (P.sp.material.blending === THREE.NormalBlending ? 1.25 : 1);
+    }
+    const em = U.em;
+    const fl = 0.8 + 0.2 * Math.sin(tt * 17) * Math.sin(tt * 9.3);
+    em.position.set(0, 0.15 * k, 0);
+    em.scale.set(2.4 * k * fl, 1.4 * k * fl, 1);
+    em.material.opacity = 0.9;
+    for (const S of U.smoke) {
+      const q = (tt * 0.32 + S.ph) % 1;
+      const sz = k * (2.5 + q * 7);
+      S.sp.position.set(lean * q * k * 4, H * 0.8 + q * 9 * k, 0);
+      S.sp.scale.set(sz, sz, 1);
+      S.sp.material.rotation = S.rot + q * 1.5;
+      S.sp.material.opacity = Math.min(1, q * 4) * (1 - q) * 0.55;
+    }
   }
 
   return { PAD, DOCK, CENTER_Y, build, animate, buildDock, animateDock, buildDebris, buildFlame, animateFlame };

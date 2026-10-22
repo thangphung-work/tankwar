@@ -32,8 +32,8 @@
       desc: 'Gạch nổ phủ mũi, sườn và tháp — khắc tinh của đạn nổ lõm. Trúng gạch: phá hủy hẳn RPG, bom con đạn chùm (không mất máu); tên lửa đầu nổ kép chỉ giảm 15%, đạn xuyên giáp giảm 40%. Đạn nổ phá 120mm (không phải nổ lõm) làm gạch nổ nhưng chỉ giảm 20%, lựu pháo 155mm giảm 15%. Đạn súng máy / 30mm không làm gạch nổ. Mảng gạch đã nổ thì mất.'
     },
     slat: {
-      name: 'Giáp lồng chống RPG', icon: 'grid-dots', cat: 'armor', price: 1800, tanks: ALL, speed: 0.98,
-      desc: 'Lồng thép bắt bằng tay đỡ quanh sườn và đuôi xe (xe pháo: che cả cabin). Trúng lồng: chặn hẳn ~1/4 tên lửa và ~6/10 bom con đạn chùm; đạn nổ phá còn 75% sát thương, đạn 30mm 70%, đạn cháy 60% và không làm xe bén lửa; đạn xuyên giáp xuyên qua. Nổ gần: mảnh văng -15%, ít thủng lốp / đứt xích / văng phụ kiện hơn một nửa, đạn cháy không bén vào vỏ.'
+      name: 'Giáp lồng chống RPG', icon: 'grid-dots', cat: 'armor', price: 1800, tanks: ['ALL_ROUNDER', 'GATLING', 'ARTILLERY'], speed: 0.98,
+      desc: 'Lồng thép bắt bằng tay đỡ quanh sườn và đuôi xe (xe pháo: che cả cabin), thêm mái lồng trùm nóc chống UAV cảm tử bổ nhào. Trúng lồng: chặn hẳn ~6/10 RPG / UAV cảm tử, ~1/4 tên lửa, ~6/10 bom con đạn chùm, ~1/2 lựu đạn 40mm của súng phóng lựu (lọt qua còn 50%); đạn nổ phá còn 75% sát thương, đạn 30mm 70%, đạn cháy 60% và không làm xe bén lửa; đạn xuyên giáp xuyên qua. Nổ gần: mảnh văng -15%, ít thủng lốp / đứt xích / văng phụ kiện hơn một nửa, đạn cháy không bén vào vỏ.'
     },
     applique: {
       name: 'Tấm giáp tăng cường', icon: 'shield', cat: 'armor', adv: true, price: 3800, tanks: ALL, speed: 0.94, accel: 0.94,
@@ -60,10 +60,6 @@
       name: 'Bình chữa cháy tự động', icon: 'fire-extinguisher', cat: 'gear', price: 1200, tanks: ALL,
       desc: 'Cảm biến lửa + bình khí dập lửa trong khoang: dập lửa trên xe nhanh gấp 2,5 lần, cháy gây sát thương giảm một nửa. Đạn cháy: sát thương -20%, khó bén lửa hơn hẳn (còn ~40%), bén thì cháy ngắn hơn. Đạn xuyên giáp lọt vào khoang: dập ngay chớp lửa thuốc phóng / dầu -> sát thương -8% (trúng kho đạn -15%), ít bốc cháy hơn một nửa.'
     },
-    turbo: {
-      name: 'Động cơ tăng áp', icon: 'engine', cat: 'gear', adv: true, price: 3000, tanks: ALL, speed: 1.08, accel: 1.15,
-      desc: 'Tăng áp & chỉnh hộp số: tốc độ tối đa +8%, tăng tốc nhanh hơn 15%.'
-    },
     radar: {
       name: 'Radar dò tìm', icon: 'radar-2', cat: 'gear', adv: true, price: 5000, tanks: ['ALL_ROUNDER', 'GATLING', 'ARTILLERY'],
       desc: 'Radar nhỏ trên nóc tháp quét quanh xe: bắt được xe địch trong bán kính ~75 m kể cả khi núp bụi, hiện chấm trên bản đồ. Xe trinh sát đã có radar riêng.'
@@ -71,16 +67,121 @@
     jammer: {
       name: 'Máy gây nhiễu', icon: 'antenna-bars-off', cat: 'gear', adv: true, price: 5000, tanks: ALL,
       desc: 'Tổ hợp gây nhiễu quang - điện tử (kiểu Shtora): 2 đèn hồng ngoại nhấp nháy làm rối máy bám tên lửa của xe phóng + phát nhiễu radar. Đầu dò tên lửa địch mất gấp đôi thời gian mới khóa được bạn, tên lửa đang bay bị dẫn chập chờn (lắc ~3 m quanh xe, chỉ bám lại ở đoạn cuối), radar địch cứ 2 vòng quét mới bắt được bạn 1 lần. Không tác dụng với đạn pháo / đạn súng thường (không có dẫn hướng).'
+    },
+    // --- Ô NÓC THÁP xe tăng (1 món, chỗ phía nạp đạn): chọn [4] trong trận. Để trống = máy phá sóng (ROOF_DEFAULT) ---
+    ewjam: {
+      name: 'Máy phá sóng chống UAV', icon: 'drone-off', cat: 'roof', price: 0, tanks: ['ALL_ROUNDER'],
+      desc: 'Mảng ăng-ten phát chùm định hướng trên bệ xoay. Phím [4], ngắm tâm kính vào drone rồi GIỮ Space: drone trong chùm (~950, hẹp ±15°) nhiễu hình rồi mất liên lạc, bị ép bay về; chiếu trúng xe có radar khóa mục tiêu thì radar đó mù vài giây. Pin phát ~12 s, sạc đầy ~30 s. Đang phát thì địch dò ra vị trí xe. Không bắn hạ được gì. Mặc định khi ô nóc để trống.'
+    },
+    rcws: {
+      name: 'Trạm súng máy 7.62mm', icon: 'crosshair', cat: 'roof', price: 2200, tanks: ['ALL_ROUNDER'],
+      desc: 'Súng máy điều khiển từ xa có camera ngày / nhiệt, quay độc lập với tháp. Phím [4], giữ Space xả ~11 phát/giây, dây 200 viên, thay hộp 5 s. Bắn rơi drone (~7 phát trúng), quét xe giáp mỏng / phụ kiện ngoài; gần như vô hại với xe tăng. Chọn xong tự ngóc lên trời phòng không, nhấp vào drone để khóa & đón đầu.'
+    },
+    agl: {
+      name: 'Súng phóng lựu tự động 40mm', icon: 'bomb', cat: 'roof', adv: true, price: 3400, tanks: ['ALL_ROUNDER', 'GATLING'],
+      desc: 'Súng phóng lựu liên thanh trên bệ điều khiển từ xa. Phím [4], giữ Space bắn ~5 quả/giây theo đường cầu vồng thấp (tầm ~1.500), dây 32 quả, thay hộp 7 s. Mỗi quả nổ mảnh bán kính nhỏ: phá xe giáp mỏng, xe đứng sau vật cản thấp, làm hỏng phụ kiện ngoài; yếu với giáp xe tăng.'
+    },
+    rocket: {
+      name: 'Giàn rocket 4 ống', icon: 'rocket', cat: 'roof', adv: true, price: 3800, tanks: ['ALL_ROUNDER'],
+      desc: 'Hộp 4 ống rocket không điều khiển đầu nổ lõm gắn trên bệ xoay. Phím [4], bấm Space phóng 1 quả về chỗ đang ngắm; hết 4 quả nạp lại cả hộp ~20 s. Xuyên giáp tốt như RPG, bay chậm hơn đạn pháo nên khó trúng xa; hệ thống đánh chặn chủ động của địch bắn hạ được.'
+    },
+    // --- Ô NÓC THÁP xe 6 nòng (chân đế mô-đun sau nắp tháp; để trống = không mang gì) ---
+    sradar: {
+      name: 'Radar dò tìm trên chân đế', icon: 'radar-2', cat: 'roof', adv: true, price: 4200, tanks: ['GATLING'],
+      desc: 'Ăng-ten mảng quay tròn trên chân đế nóc tháp, tác dụng như Radar dò tìm (nhóm PHỤ KIỆN) mà không chiếm ô phụ kiện: bắt được xe địch trong bán kính ~75 m kể cả khi núp bụi, báo vị trí cho đồng đội. Bị bắn văng thì mất radar.'
+    },
+    rjam: {
+      name: 'Máy phá khóa radar tầm gần', icon: 'radar-off', cat: 'roof', adv: true, price: 4800, tanks: ['GATLING'],
+      desc: 'Bó ăng-ten phát nhiễu đa hướng trên chân đế nóc tháp. Phím [4] bật / tắt (pin ~10 s, sạc ~25 s). Đang phát: xe địch trong ~650 không khóa được xe bạn (khóa đang có bị bẻ gãy), tên lửa dẫn đường đang lao tới mất dẫn hướng, radar địch nhiễu hạt. Đổi lại địch dò phương thấy vị trí xe bạn.'
+    },
+    // --- Ô MŨI XE xe 6 nòng: lưỡi ủi (mặc định) hoặc khiên chữ V ---
+    dozer: {
+      name: 'Lưỡi ủi thủy lực', icon: 'shovel', cat: 'front', price: 0, tanks: ['GATLING'],
+      desc: 'Lưỡi ủi bắt trên 2 tay đẩy trước mũi xe. Giữ X để đào: xe ủi đất đắp ụ chắn trước mặt và hạ mình xuống hố (đất hút phần lớn mảnh văng, đạn phải xuyên qua ụ). Mặc định khi ô mũi xe để trống.'
+    },
+    vshield: {
+      name: 'Khiên giáp chữ V', icon: 'shield-chevron', cat: 'front', adv: true, price: 3600, tanks: ['GATLING'], speed: 0.93, accel: 0.9,
+      desc: 'Hai tấm thép dày ghép mũi nhọn trước mũi xe, tay đỡ bắt vào thân: giáp mặt trước dày thêm ~40%, đạn bắn thẳng dễ trượt / nảy, mảnh nổ trước mũi giảm mạnh. Tấm bị bắn mòn dần rồi bung. Nặng: tốc độ -7%, tăng tốc -10%. Mất khả năng đào ụ đất.'
+    },
+    // --- Ô VŨ KHÍ CHÍNH xe trinh sát (vòng tháp): súng máy 12.7mm (mặc định) hoặc trạm vũ khí trên chân đế mô-đun ---
+    hmg: {
+      name: 'Súng máy 12.7mm', icon: 'crosshair', cat: 'weapon', price: 0, tanks: ['SCOUT'],
+      desc: 'Súng máy hạng nặng trên vòng tháp có tấm chắn: giữ Space xả đạn, dây 100 viên. Thủng lốp, phá phụ kiện, xuyên giáp nhẹ, bắn rơi drone. Mặc định khi ô vũ khí chính để trống.'
+    },
+    sagl: {
+      name: 'Súng phóng lựu tự động 40mm HV', icon: 'bomb', cat: 'weapon', adv: true, price: 4600, tanks: ['SCOUT'],
+      desc: 'Trạm súng phóng lựu sơ tốc cao trên chân đế mô-đun thay súng máy: giữ Space ~4 quả/giây, dây 48 quả, nạp 8 s. Lựu nổ mạnh hơn bản xe tăng (~1,3×). Ngóc được tới 45°: bắn cầu vồng tầm trung vào xe núp sau đồi / nhà. Không bắn drone.'
+    },
+    srocket: {
+      name: 'Giàn rocket 8 ống', icon: 'rocket', cat: 'weapon', adv: true, price: 4000, tanks: ['SCOUT'],
+      desc: 'Giàn 8 ống rocket không điều khiển đầu nổ lõm trên chân đế mô-đun thay súng máy: giữ Space phóng lần lượt (~1 quả / 0,6 s), hết giàn nạp lại ~25 s. Xuyên giáp như RPG — đủ đánh sườn / đuôi xe tăng; bay chậm, khó trúng xa.'
+    },
+    // --- Ô UAV lựu pháo: UAV trinh sát (mặc định) hoặc UAV cảm tử ---
+    recon: {
+      name: 'UAV trinh sát', icon: 'drone', cat: 'uav', price: 0, tanks: ['ARTILLERY'],
+      desc: 'Drone 4 cánh đậu trên nóc cabin: Ctrl để phóng, bay quan sát và chỉ điểm cho pháo bắn cầu vồng tới hết tầm. Pin ~90 s, sạc lại khi đậu. Mặc định khi ô UAV để trống.'
+    },
+    // --- Ô ĐỘNG CƠ: máy nguyên bản (mặc định) không tăng tốc được; lắp động cơ mới giữ Shift tăng tốc. boost: spd / acc —
+    // hệ số tốc độ tối đa / gia tốc khi tăng tốc hết cỡ, heat — số giây giữ Shift liên tục tới quá nhiệt (nhả nguội nhanh
+    // gấp đôi), spool — thời gian lên công suất (tuabin trễ, mô-tơ điện tức thì). Rất đắt, chỉ mua bằng Bạc (noAd) ---
+    stock: {
+      name: 'Động cơ diesel nguyên bản', icon: 'engine', cat: 'engine', price: 0, tanks: ALL,
+      desc: 'Máy zin của xe: chạy đúng tốc độ thiết kế, KHÔNG có chế độ tăng tốc (giữ Shift không nhanh hơn). Mặc định khi ô động cơ để trống.'
+    },
+    tdiesel: {
+      name: 'Diesel tăng áp', icon: 'engine', cat: 'engine', adv: true, noAd: true, price: 12000, tanks: ALL,
+      boost: { spd: 1.25, acc: 1.3, heat: 14, spool: 0.35 },
+      desc: 'Bộ tăng áp khí xả + bơm cao áp chỉnh lại: giữ Shift vượt tốc +25%, gia tốc +30%. Gằn hết ga ~14 s là nóng máy, quá nhiệt phải nhả ga chờ nguội. Rít turbo, nhả ga xì van xả áp.'
+    },
+    twinturbo: {
+      name: 'Diesel tăng áp kép + làm mát phun nước', icon: 'engine', cat: 'engine', adv: true, noAd: true, price: 20000, tanks: ALL,
+      boost: { spd: 1.38, acc: 1.45, heat: 20, spool: 0.45 },
+      desc: 'Hai bộ tăng áp nối tầng + két làm mát khí nạp phun nước: tăng tốc +38%, gia tốc +45%, chịu được ~20 s hết ga. Rít hai tầng, gầm dày hơn hẳn.'
+    },
+    turbine: {
+      name: 'Tuabin khí 1.500 mã lực', icon: 'engine', cat: 'engine', adv: true, noAd: true, price: 32000, tanks: ['ALL_ROUNDER', 'GATLING'],
+      boost: { spd: 1.5, acc: 1.7, heat: 28, spool: 0.6 },
+      desc: 'Thay khối diesel bằng tuabin khí (kiểu AGT-1500 xe tăng chủ lực): tăng tốc +50%, gia tốc +70%, chạy hết ga ~28 s mới nóng. Lên công suất trễ ~0,6 s; tiếng rít phản lực cao vút, gần như không còn tiếng nổ piston.'
+    },
+    hybrid: {
+      name: 'Diesel-điện hybrid', icon: 'engine', cat: 'engine', adv: true, noAd: true, price: 28000, tanks: ['SCOUT', 'ARTILLERY'],
+      boost: { spd: 1.45, acc: 1.8, heat: 26, spool: 0.05 },
+      desc: 'Máy phát diesel + mô-tơ điện ở từng cụm bánh, pin đệm: mô-men tức thì (gia tốc +80%), tăng tốc +45%, ~26 s mới nóng. Rít mô-tơ điện & biến tần, diesel chạy êm phía sau.'
+    },
+    kami: {
+      name: 'UAV cảm tử', icon: 'drone-off', cat: 'uav', adv: true, price: 4400, tanks: ['ARTILLERY'],
+      desc: 'Đạn bay lảng vảng cánh gập phóng từ ống trên chân đế mô-đun (thay drone trinh sát). Ctrl phóng, bay như drone, Space để bổ nhào vào điểm giữa màn hình / xe đang khóa: trúng nóc là hạ hoặc gần hạ cả xe tăng. Mỗi drone dùng 1 lần (vật tư UAV cảm tử). Mất drone trinh sát: pháo chỉ bắn được trong tầm nhìn thẳng.'
     }
   };
+  // Ô 1 món để trống: xe mang món mặc định của ô đó (như trước khi có ô): xe tăng — máy phá sóng, xe 6 nòng — lưỡi ủi,
+  // xe trinh sát — súng máy 12.7mm, lựu pháo — UAV trinh sát. Xe 6 nòng để trống nóc tháp = không mang gì
+  const SLOT_DEFAULT = { roof: { ALL_ROUNDER: 'ewjam' }, front: { GATLING: 'dozer' }, weapon: { SCOUT: 'hmg' }, uav: { ARTILLERY: 'recon' },
+    engine: { ALL_ROUNDER: 'stock', GATLING: 'stock', ARTILLERY: 'stock', SCOUT: 'stock' } };
+  // Món đã thôi bán: máy chủ hoàn Bạc cho ai đã mua (server_accounts.js) — 'turbo' (tăng áp +8%) thay bằng ô ĐỘNG CƠ
+  // giá trị: số = thôi bán cho mọi xe; { price, tanks } = chỉ thôi bán cho các xe đó (giáp lồng bỏ khỏi xe trinh sát)
+  const RETIRED_ITEMS = { turbo: 3000, slat: { price: 1800, tanks: ['SCOUT'] } };
+  const ROOF_DEFAULT = SLOT_DEFAULT.roof;
   // Nhóm trong bảng chọn trang bị & số ô tối đa mỗi nhóm (đạn cao cấp không chiếm ô)
   const catSize = (c) => Object.keys(MODULES).filter(id => MODULES[id].cat === c).length;
   const CATS = {
     armor: { name: 'GIÁP', icon: 'shield-half-filled', slots: UNLIMITED_SLOTS ? catSize('armor') : 2 },
     ammo: { name: 'ĐẠN', icon: 'rocket', slots: 0 },
-    gear: { name: 'PHỤ KIỆN', icon: 'cpu', slots: UNLIMITED_SLOTS ? catSize('gear') : 2 }
+    gear: { name: 'PHỤ KIỆN', icon: 'cpu', slots: UNLIMITED_SLOTS ? catSize('gear') : 2 },
+    roof: { name: 'NÓC THÁP', icon: 'arrow-bar-to-up', slots: 1 },   // chỉ 1 bệ gắn trên nóc, kể cả khi mở hết ô
+    front: { name: 'MŨI XE', icon: 'shield-chevron', slots: 1 },
+    weapon: { name: 'VŨ KHÍ CHÍNH', icon: 'crosshair', slots: 1 },
+    uav: { name: 'UAV', icon: 'drone', slots: 1 },
+    engine: { name: 'ĐỘNG CƠ', icon: 'engine', slots: 1 }
   };
-  const SLOTS = CATS.armor.slots + CATS.gear.slots;   // tổng số ô các nhóm
+  // Nhóm 1 bệ gắn (chọn món khác là thay món cũ): nóc tháp, mũi xe, vũ khí chính, UAV, động cơ
+  const MOUNT_CATS = ['roof', 'front', 'weapon', 'uav', 'engine'];
+  const SLOTS = Object.keys(CATS).reduce((n, c) => n + CATS[c].slots, 0);   // tổng số ô các nhóm
+  /** Món đang gắn ở ô 1 bệ `cat` của bộ đồ (để trống -> mặc định theo xe; xe không có ô đó -> null) */
+  function slotOf(kit, tank, cat) {
+    const m = kit && Array.isArray(kit.m) ? kit.m.find(id => MODULES[id] && MODULES[id].cat === cat && MODULES[id].tanks.includes(tank)) : null;
+    return m || (SLOT_DEFAULT[cat] && SLOT_DEFAULT[cat][tank]) || null;
+  }
+  function roofOf(kit, tank) { return slotOf(kit, tank, 'roof'); }
   // Trang bị có sẵn theo xe (không chiếm ô, không cần mua): xe tăng đa dụng luôn có ống phóng lựu khói
   const BUILTIN = { ALL_ROUNDER: ['smoke'] };
   const builtin = (tank, id) => !!(BUILTIN[tank] && BUILTIN[tank].includes(id));
@@ -91,24 +192,28 @@
     ap_du: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'AP', name: 'Đạn xuyên lõi hợp kim nặng', icon: 'arrow-big-right-lines', price: 4500, pen: 1.22, loss: 0.6, desc: 'Đạn xuyên giáp xuyên sâu hơn 22%, mũi tên dài & nặng hơn nên giữ tốc độ tốt: bắn xa chỉ mất ~60% sức xuyên so với đạn thường.' },
     heat_tandem: { tank: 'ALL_ROUNDER', cat: 'ammo', adv: true, ammo: 'NORMAL', name: 'Đạn nổ lõm 2 tầng', icon: 'flame', price: 3500, pen: 1.1, tandem: true, splash: 0.6, desc: 'Thay đạn nổ phá thường bằng đạn nổ lõm có đầu nổ mồi: xuyên ~530mm, phá gạch giáp nổ trước. Đổi lại sức ép / mảnh nổ lan yếu hơn đạn nổ phá (~60%).' },
     apds30: { tank: 'GATLING', cat: 'ammo', adv: true, ammo: 'GATLING_BULLET', name: 'Đạn 30mm xuyên dưới cỡ', icon: 'arrow-big-right-lines', price: 3800, pen: 1.36, splash: 0, desc: 'Đạn 30mm lõi tungsten: xuyên sâu hơn 36%, đục thủng sườn xe tăng nhanh hơn. Lõi đặc không có thuốc nổ: hết mảnh nổ lan khi bắn trượt sát xe.' },
+    // ammo: khóa riêng (không thay đạn nổ - mảnh / xuyên dưới cỡ đã mua): chỉ thêm ngòi lập trình cho đạn 30mm thường
+    ahead30: { tank: 'GATLING', cat: 'ammo', adv: true, ammo: 'GATLING_ABM', name: 'Đạn 30mm nổ trên không', icon: 'drone-off', price: 4200, desc: 'Ngòi lập trình theo cự ly radar đo được: khi khóa drone, mỗi viên tự nổ ngay trước drone, phóng chùm bi vonfram hình nón — bắn drone hiệu quả hơn hẳn. Cần radar phòng không còn hoạt động; bắn xe như đạn thường.' },
+    // tên lửa tấn công đỉnh (kiểu Javelin): vồng cao rồi bổ nhào trúng nóc xe — ballistics.guideMissile đọc .top
+    topatk: { tank: 'SCOUT', cat: 'ammo', adv: true, ammo: 'ANTI_TANK_MISSILE', top: true, name: 'Tên lửa chống tăng tấn công đỉnh', icon: 'arrow-big-down-lines', price: 7500, desc: 'Thay tên lửa chống tăng thường bằng loại tấn công đỉnh (bắn-và-quên kiểu Javelin): ống phóng có khối ngắm nhiệt CLU, tên lửa vồng lên cao rồi bổ nhào gần thẳng đứng xuống NÓC xe — nơi giáp mỏng nhất, gần như chắc hạ xe tăng. Bắn được qua vật cản thấp; bay lâu hơn nên địch có thời gian né / thả khói.' },
     slap127: { tank: 'SCOUT', cat: 'ammo', adv: true, ammo: 'SCOUT_BULLET', name: 'Đạn 12.7mm SLAP', icon: 'arrow-big-right-lines', price: 2600, pen: 1.6, desc: 'Đạn 12.7mm xuyên dưới cỡ có đai nhựa: xuyên sâu gấp 1,6 lần.' },
     he_frag: { tank: 'ARTILLERY', cat: 'ammo', adv: true, ammo: 'HE', name: 'Lựu đạn mảnh định sẵn', icon: 'atom-2', price: 3500, splash: 1.15, desc: 'Vỏ đạn 155mm khía rãnh tạo mảnh đều: sát thương nổ lan +15%.' }
   };
 
   // VẬT TƯ TIÊU HAO (đạn đặc chủng + lựu đạn khói): giá 1 viên (Bạc), bán theo gói `pack` viên, tối đa `max` viên mang
   // theo mỗi lần xuất kích, `ad` = số viên nhận được khi xem 1 quảng cáo tiếp tế.
-  // CÂN BẰNG KHAN HIẾM: mang đủ 1 lần xuất kích tốn ~450–520 Bạc ở MỌI xe (trước đây xe 6 nòng 150, trinh sát 930);
-  // 1 trận 10 phút (~3 lần xuất kích) dùng hết ~1.400–1.700 Bạc, trong khi 1 trận chỉ kiếm ~650–1.650 Bạc
-  // -> phải tính toán lúc nào dùng đạn đặc chủng; thiếu thì xem quảng cáo tiếp tế (mỗi lần ≈ 150–250 Bạc giá trị).
+  // CÂN BẰNG (2026-10): mang đủ 1 lần xuất kích tốn ~250–400 Bạc; trận 10 phút xài vừa phải ~300–500, xài hết cỡ ~600–900,
+  // trong khi 1 trận kiếm ~800 (thua) – 1.500 (thắng) – 2.500 (xuất sắc) -> chơi đều tay vẫn dư ~40–60% để dành mở khóa
+  // trang bị (3–6 trận / món), động cơ (10–25 trận), sửa giáp (~100–400 / trận bị đánh nhiều). Quảng cáo tiếp tế vẫn có.
   // gear: chỉ nạp khi xe có lắp mô-đun đó (lựu đạn khói cần Ống phóng lựu khói).
   // Lựu đạn khói: mỗi ống phóng chứa 1 quả -> mang tối đa = tổng số ống 2 bên (SMOKE_TUBES), 1 loạt = mỗi bên 1 quả
   const SMOKE_TUBES = { ALL_ROUNDER: 4, GATLING: 3, ARTILLERY: 3, SCOUT: 3 };
-  const smokeItem = (tank) => ({ name: 'Lựu đạn khói', price: 25, pack: 2, max: 2 * SMOKE_TUBES[tank], ad: 4, gear: 'smoke' });
+  const smokeItem = (tank) => ({ name: 'Lựu đạn khói', price: 15, pack: 2, max: 2 * SMOKE_TUBES[tank], ad: 4, gear: 'smoke' });
   const AMMO_SHOP = {
-    ALL_ROUNDER: { AP: { name: 'Đạn xuyên giáp', price: 45, pack: 5, max: 6, ad: 5 }, HE: { name: 'Đạn nổ mạnh', price: 30, pack: 5, max: 6, ad: 6 }, SMOKE: smokeItem('ALL_ROUNDER') },
-    ARTILLERY: { HE: { name: 'Lựu đạn nổ mạnh 155', price: 40, pack: 5, max: 6, ad: 5 }, CLUSTER: { name: 'Đạn chùm 155', price: 70, pack: 2, max: 4, ad: 3 } },
-    GATLING: { INCENDIARY: { name: 'Đạn cháy 30mm', price: 3, pack: 50, max: 150, ad: 75 }, SMOKE: smokeItem('GATLING') },
-    SCOUT: { INCENDIARY: { name: 'Đạn cháy 12.7mm', price: 1, pack: 50, max: 90, ad: 90 }, ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng', price: 80, pack: 1, max: 3, ad: 3 }, SMOKE: smokeItem('SCOUT') }
+    ALL_ROUNDER: { AP: { name: 'Đạn xuyên giáp', price: 30, pack: 5, max: 6, ad: 5 }, HE: { name: 'Đạn nổ mạnh', price: 20, pack: 5, max: 6, ad: 6 }, SMOKE: smokeItem('ALL_ROUNDER') },
+    ARTILLERY: { HE: { name: 'Lựu đạn nổ mạnh 155', price: 25, pack: 5, max: 6, ad: 5 }, CLUSTER: { name: 'Đạn chùm 155', price: 45, pack: 2, max: 4, ad: 3 }, KAMIKAZE: { name: 'UAV cảm tử', price: 150, pack: 1, max: 2, ad: 1, gear: 'kami' } },
+    GATLING: { INCENDIARY: { name: 'Đạn cháy 30mm', price: 2, pack: 50, max: 150, ad: 75 }, SMOKE: smokeItem('GATLING') },
+    SCOUT: { INCENDIARY: { name: 'Đạn cháy 12.7mm', price: 1, pack: 50, max: 90, ad: 90 }, ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng', price: 60, pack: 1, max: 3, ad: 3 }, SMOKE: smokeItem('SCOUT') }
   };
   // Đạn đã ngừng bán (xe không còn ô bắn loại này): máy chủ tự hoàn đúng giá cho số còn trong kho rồi xóa khỏi kho
   // (RPG của xe trinh sát: đã thay bằng tên lửa chống tăng). Chỉ hoàn phần mua bằng Bạc, không hoàn phần nhận từ quảng cáo
@@ -117,20 +222,24 @@
 
   // QUẢNG CÁO CÓ THƯỞNG (máy chủ kiểm tra): tối đa DAILY lượt / ngày / tài khoản, mỗi lượt cách nhau COOLDOWN_SEC,
   // phải xem ít nhất MIN_SEC giây (mạng quảng cáo thật có quảng cáo ngắn); khung quảng cáo mẫu dài MOCK_SEC giây.
-  const AD = { DAILY: 12, MIN_SEC: 5, COOLDOWN_SEC: 10, MOCK_SEC: 15 };
+  // Quá DAILY lượt: thêm BONUS lượt "thưởng nửa" (chỉ vật tư, được ceil(ad * BONUS_MUL)) -> xem thêm vẫn có lợi
+  // nhưng giảm dần; tổng trần cứng DAILY + BONUS / ngày chặn cày thưởng bằng cách gọi API liên tục.
+  const AD = { DAILY: 20, BONUS: 20, BONUS_MUL: 0.5, MIN_SEC: 5, COOLDOWN_SEC: 45, MOCK_SEC: 15 };
+  const adAmmoN = (A, used) => used < AD.DAILY ? A.ad : Math.max(1, Math.ceil(A.ad * AD.BONUS_MUL));
   /** Số quảng cáo phải xem để mở khóa 1 món nâng cao cho 1 xe (~1 quảng cáo / 1.500 Bạc giá trị) */
   function adsToUnlock(id) {
     const it = MODULES[id] || PREMIUM[id];
+    if (it && it.noAd) return 0;   // động cơ: chỉ mua bằng Bạc
     return it ? Math.max(1, Math.round((it.price || 0) / 1500)) : 0;
   }
   // Đạn đặc chủng miễn phí mỗi lần xuất kích: KHÔNG CÒN — ngoài đạn chính (không giới hạn), mọi loại đạn khác phải
   // mua bằng Bạc (đạn đã mua tự mang theo tới mức tối đa mỗi lần xuất kích). Giữ đủ khóa để startLife đặt lại số đạn.
   // Đạn miễn phí mỗi lần xuất kích (cộng thêm số mua): xe trinh sát luôn có 2 tên lửa để còn đánh được xe giáp;
   // xe tăng đa dụng luôn có 2 đạn xuyên giáp + 2 đạn nổ mạnh + 2 lựu đạn khói (đổi loại đạn theo mục tiêu là sở trường)
-  const BASE_AMMO = { ALL_ROUNDER: { AP: 2, HE: 2, SMOKE: 2 }, ARTILLERY: { HE: 0, CLUSTER: 0 }, GATLING: { INCENDIARY: 0, SMOKE: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2, SMOKE: 0 } };
+  const BASE_AMMO = { ALL_ROUNDER: { AP: 2, HE: 2, SMOKE: 2 }, ARTILLERY: { HE: 0, CLUSTER: 0, KAMIKAZE: 1 }, GATLING: { INCENDIARY: 0, SMOKE: 0 }, SCOUT: { INCENDIARY: 0, ANTI_TANK_MISSILE: 2, SMOKE: 0 } };
   // Xe do máy điều khiển không mua sắm: mang cơ số như trước khi có cửa hàng để trận không dễ đi
-  const BOT_AMMO = { ALL_ROUNDER: { AP: 1, HE: 1, SMOKE: 6 }, ARTILLERY: { HE: 4, CLUSTER: 3 }, GATLING: { INCENDIARY: 80, SMOKE: 6 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1, SMOKE: 6 } };   // + đạn miễn phí (BASE_AMMO): trinh sát 3 tên lửa (tối đa 3), xe tăng 3 AP / 3 HE / 8 khói
-  const AMMO_PROP = { AP: 'apAmmoCount', HE: 'heAmmoCount', CLUSTER: 'clusterAmmoCount', INCENDIARY: 'incendiaryAmmoCount', RPG: 'rpgAmmoCount', ANTI_TANK_MISSILE: 'missileAmmoCount', SMOKE: 'smokeLeft' };
+  const BOT_AMMO = { ALL_ROUNDER: { AP: 1, HE: 1, SMOKE: 6 }, ARTILLERY: { HE: 4, CLUSTER: 3, KAMIKAZE: 0 }, GATLING: { INCENDIARY: 80, SMOKE: 6 }, SCOUT: { INCENDIARY: 45, ANTI_TANK_MISSILE: 1, SMOKE: 6 } };   // + đạn miễn phí (BASE_AMMO): trinh sát 3 tên lửa (tối đa 3), xe tăng 3 AP / 3 HE / 8 khói
+  const AMMO_PROP = { AP: 'apAmmoCount', HE: 'heAmmoCount', CLUSTER: 'clusterAmmoCount', INCENDIARY: 'incendiaryAmmoCount', RPG: 'rpgAmmoCount', ANTI_TANK_MISSILE: 'missileAmmoCount', SMOKE: 'smokeLeft', KAMIKAZE: 'kamikazeCount' };
 
   function compatible(id, tank) {
     const m = MODULES[id];
@@ -163,13 +272,34 @@
       const n = Math.floor(Number(kit.a && kit.a[k]) || 0);
       if (n > 0) out.a[k] = Math.min(shop[k].max, n);
     }
+    // d: đơn vị giáp đang thiếu (hỏng từ trận trước, chưa sửa) của các món giáp đang lắp — { món: ['eraKitL#3', 'cageKitB'] }
+    const dd = sanitizeGone(kit.d, out.m);
+    if (dd) out.d = dd;
     return out;
+  }
+  // Món giáp hỏng giữ sang trận sau & khóa đơn vị hợp lệ (vehicle_damage.js ARMOR_ITEM_TAGS)
+  const ARMOR_REPAIR = { era: 'gạch', applique: 'tấm', vshield: 'khối', slat: 'tấm lồng', aps: 'bệ phóng' };
+  const UNIT_KEY = /^[A-Za-z]{3,16}(#\d{1,3})?$/;
+  function sanitizeGone(d, items) {
+    if (!d || typeof d !== 'object') return null;
+    let out = null;
+    for (const item in d) {
+      if (!ARMOR_REPAIR[item] || (items && !items.includes(item)) || !Array.isArray(d[item])) continue;
+      const keys = [...new Set(d[item].map(String).filter(k => UNIT_KEY.test(k)))].slice(0, 300);
+      if (keys.length) (out || (out = {}))[item] = keys;
+    }
+    return out;
+  }
+  /** Giá sửa 1 đơn vị giáp: trọn món vỡ hết ≈ 30% giá mua, tối thiểu 15 Bạc / đơn vị */
+  function repairUnitPrice(item, total) {
+    const p = (MODULES[item] && MODULES[item].price) || 0;
+    return Math.max(15, Math.round(p * 0.3 / Math.max(1, total || 1)));
   }
 
   // Xe do máy điều khiển: 2-4 mô-đun ngẫu nhiên theo hạt giống chung (mọi máy trong phòng ra cùng kết quả),
   // cùng giới hạn ô như người chơi -> trang bị bot ngang ngửa người chơi
   function botKit(tank, rnd) {
-    const pool = Object.keys(MODULES).filter(id => compatible(id, tank) && id !== 'aps');
+    const pool = Object.keys(MODULES).filter(id => compatible(id, tank) && id !== 'aps' && id !== 'kami' && MODULES[id].cat !== 'engine');   // bot không lái UAV cảm tử
     const n = 2 + Math.floor(rnd() * 3);
     const m = [];
     while (m.length < n && pool.length) {
@@ -177,12 +307,18 @@
       const c = MODULES[id].cat;
       if (m.filter(x => MODULES[x].cat === c).length < ((CATS[c] && CATS[c].slots) || 0)) m.push(id);
     }
+    // động cơ: bot thường có máy tăng áp, ít bot có máy xịn nhất
+    const er = rnd();
+    const top = tank === 'SCOUT' || tank === 'ARTILLERY' ? 'hybrid' : 'turbine';
+    const eng = er < 0.25 ? null : er < 0.7 ? 'tdiesel' : er < 0.9 ? 'twinturbo' : top;
+    if (eng && compatible(eng, tank)) m.push(eng);
     return { m, p: [], a: Object.assign({}, BOT_AMMO[tank] || {}) };
   }
 
   // Bạc nhận được sau trận (máy chủ tính)
   function silverFor(result, kills, damage, durSec) {
-    return Math.round(250 + (result === 'win' ? 300 : result === 'draw' ? 150 : 0) + kills * 90 + damage * 30 + Math.min(durSec, 900) / 3);
+    // 400 cơ bản + thắng 400 / hòa 200 + 120 / hạ + 40 / máu gây ra + 20 / phút trận (tối đa 15 phút)
+    return Math.round(400 + (result === 'win' ? 400 : result === 'draw' ? 200 : 0) + kills * 120 + damage * 40 + Math.min(durSec, 900) / 3);
   }
 
   // Thưởng top 3 hạ gục / bị hạ (K/D) cả trận, cộng thêm vào thưởng trận: [hạng 1, hạng 2, hạng 3]
@@ -198,13 +334,14 @@
       .slice(0, 3);
   }
 
-  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AD, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD };
+  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, RETIRED_ITEMS, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AD, adAmmoN, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD, ROOF_DEFAULT, SLOT_DEFAULT, MOUNT_CATS, roofOf, slotOf, ARMOR_REPAIR, sanitizeGone, repairUnitPrice, noteArmor };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================
   // PHẦN TRONG TRẬN (TRÌNH DUYỆT)
   // ===========================================================================
-  const has = (u, id) => !!(u && ((u.kit && u.kit.m && u.kit.m.indexOf(id) >= 0) || builtin(u.tankType, id)));
+  // radar dò tìm trên chân đế nóc tháp (sradar) có tác dụng như radar phụ kiện (khi chưa bị bắn văng)
+  const has = (u, id) => !!(u && ((u.kit && u.kit.m && (u.kit.m.indexOf(id) >= 0 || (id === 'radar' && u.kit.m.indexOf('sradar') >= 0 && !lost(u, 'sradar')))) || builtin(u.tankType, id)));
   const lost = (u, tag) => !!(u && u.dmg && u.dmg.lost && u.dmg.lost.has(tag));
   const APS_CHARGES = 2;
 
@@ -219,6 +356,8 @@
     // Đạn cao cấp
     u.ammoMods = {};
     for (const id of u.kit.p) { const P = PREMIUM[id]; u.ammoMods[P.ammo] = P; }
+    // tên lửa tấn công đỉnh: ống phóng kiểu Javelin trên mô hình xe trinh sát
+    if (u.setTopAttack) { try { u.setTopAttack(!!(u.ammoMods.ANTI_TANK_MISSILE && u.ammoMods.ANTI_TANK_MISSILE.top)); } catch (e) { console.warn('[EQ] ống tấn công đỉnh', e); } }
     // Chỉ số (tốc độ / gia tốc) — áp trước khi hệ thống hư hại chụp chỉ số gốc
     let sp = 1, ac = 1;
     for (const id of u.kit.m) { sp *= MODULES[id].speed || 1; ac *= MODULES[id].accel || 1; }
@@ -228,6 +367,19 @@
     // Ống phóng lựu khói có sẵn trên mô hình chỉ hiện khi đã lắp trang bị khói (bật / tắt thấy ngay trên xe)
     try { setStockSmoke(u, has(u, 'smoke')); } catch (e) { console.warn('[EQ] Không ẩn được ống khói', e); }
     try { buildVisuals(u); } catch (e) { console.warn('[EQ] Không gắn được hình trang bị', e); }
+    // Ô 1 bệ (nóc tháp / mũi xe / vũ khí chính / UAV): mô hình xe dựng sẵn món mặc định, bộ đồ chọn món khác thì thay
+    // (u.mountRoof / mountFront / mountWeapon / mountUav do file mô hình xe cung cấp; 'none' = gỡ trống)
+    for (const c of MOUNT_CATS) {
+      const fn = u['mount' + c[0].toUpperCase() + c.slice(1)];
+      if (typeof fn !== 'function') continue;
+      try { fn(slotOf(u.kit, u.tankType, c) || 'none'); } catch (e) { console.warn('[EQ] Không gắn được món ô ' + c, e); }
+    }
+    // Động cơ: thông số tăng tốc + nhiệt (spg.js engineBoost), giọng máy (vehicle_engine.js / other_engines.js)
+    u.engineId = slotOf(u.kit, u.tankType, 'engine') || 'stock';
+    u.engineSpec = (MODULES[u.engineId] && MODULES[u.engineId].boost) || null;
+    u._eng = { heat: 0, lock: false, lvl: 0 };
+    // Giáp hỏng từ trận trước chưa sửa: xe ra trận thiếu đúng các khối đó (mọi máy cùng áp theo kit.d)
+    applyGone(u);
     startLife(u);
   }
 
@@ -262,10 +414,40 @@
     if (!n) return 0;
     return Math.max(0, Math.min(n, n - (u[AMMO_PROP[k]] || 0)));
   }
+  function applyGone(u) {
+    if (!u || !u.kit || !u.kit.d || typeof VehicleDamage === 'undefined' || !VehicleDamage.applyArmorMissing) return;
+    try { VehicleDamage.applyArmorMissing(u, u.kit.d); } catch (e) { console.warn('[EQ] Không áp được giáp thiếu', e); }
+  }
+  /**
+   * Gom đơn vị giáp đã mất trong trận (hợp các lần xuất kích + phần thiếu sẵn): gọi trước VehicleDamage.reset khi hồi sinh
+   * và lúc báo kết quả trận. Trả về { món: { total, gone: [...] } } để gửi máy chủ (account.js reportMatch)
+   */
+  function noteArmor(u) {
+    if (!u || !u._eq || typeof VehicleDamage === 'undefined' || !VehicleDamage.armorUnits) return null;
+    const A = u._eq.armor || (u._eq.armor = {});
+    if (!u._eq.armorInit) {
+      u._eq.armorInit = true;
+      const d0 = (u.kit && u.kit.d) || {};
+      for (const it in d0) (A[it] || (A[it] = { total: 0, gone: new Set() })).gone = new Set(d0[it]);
+    }
+    let cur = {};
+    try { cur = VehicleDamage.armorUnits(u); } catch (e) { cur = {}; }
+    for (const it in cur) {
+      if (!ARMOR_REPAIR[it] || !has(u, it)) continue;
+      const R = A[it] || (A[it] = { total: 0, gone: new Set() });
+      R.total = Math.max(R.total, cur[it].total);
+      for (const k of cur[it].gone) R.gone.add(k);
+    }
+    const out = {};
+    for (const it in A) if (A[it].gone.size) out[it] = { total: A[it].total, gone: [...A[it].gone] };
+    return out;
+  }
   function onRespawn(u) {
     const E = u && u._eq;
     if (!E) return;
     for (const k in E.loaded) E.used[k] = (E.used[k] || 0) + lifeUsed(u, k);
+    if (u._eng) { u._eng.heat = 0; u._eng.lock = false; u._eng.lvl = 0; }   // xe mới: máy nguội
+    applyGone(u);   // xe hồi sinh về đúng tình trạng giáp lúc xuất kích (không phải nguyên vẹn)
     startLife(u);
     // đạn mua đã bắn ở lần xuất kích trước: báo máy chủ trừ kho ngay, không đợi hết trận
     if (E.local && typeof window !== 'undefined' && window.Account && Account.flushAmmo) Account.flushAmmo(u);
@@ -318,15 +500,21 @@
   }
   // Giáp dày thêm trên mặt được che: sườn +45%, mũi / tháp +20% (tác dụng với mọi loại đạn qua độ xuyên)
   function armorMul(u, face, onTurret) {
-    if (!appliqueCovers(u, face, onTurret)) return 1;
-    return !onTurret && (face === 'sideL' || face === 'sideR') ? 1.45 : 1.2;
+    let k = !appliqueCovers(u, face, onTurret) ? 1 : !onTurret && (face === 'sideL' || face === 'sideR') ? 1.45 : 1.2;
+    if (!onTurret && face === 'front' && vshieldUp(u)) k *= 1.4;   // khiên chữ V trước mũi (xe 6 nòng)
+    return k;
   }
+  // Khiên giáp chữ V trước mũi xe 6 nòng (ô MŨI XE): còn ít nhất một tấm thì che mặt trước thân xe
+  function vshieldUp(u) { return has(u, 'vshield') && !(lost(u, 'appliqueVSL') && lost(u, 'appliqueVSR')); }
+  // ngoài độ dày: tấm thép xiên chữ V làm đạn nhỏ vỡ / nảy, hứng mảnh & sức nổ phía trước
+  const VSHIELD_DIRECT = { small: 0.35, cannon: 0.55, blast: 0.6, kinetic: 0.9, heat: 0.9 };
   // Ngoài độ dày, tấm giáp còn hấp thụ: đạn súng máy / 30mm vỡ vụn trên lớp gốm, sức nổ & mảnh của đạn nổ phá dồn
   // vào tấm ngoài. Đạn xuyên giáp & nổ lõm chỉ bị cản bằng độ dày (đã tính ở armorMul)
   const APPLIQUE_DIRECT = { small: 0.4, cannon: 0.6, blast: 0.7, kinetic: 1, heat: 1 };
   const APPLIQUE_SPLASH = { small: 0.6, cannon: 0.6, blast: 0.85, kinetic: 0.85, heat: 0.85 };
   function appliqueDamageMul(u, face, onTurret, cls) {
-    return appliqueCovers(u, face, onTurret) ? (APPLIQUE_DIRECT[cls] || 1) : 1;
+    const k = appliqueCovers(u, face, onTurret) ? (APPLIQUE_DIRECT[cls] || 1) : 1;
+    return !onTurret && face === 'front' && vshieldUp(u) ? k * (VSHIELD_DIRECT[cls] || 1) : k;
   }
   function appliqueSplashMul(u, cls) {
     return has(u, 'applique') ? (APPLIQUE_SPLASH[cls] || 1) : 1;
@@ -379,6 +567,7 @@
     CLUSTER_SUBMUNITION: { defeat: 0.6, mul: 0.5 },    // bom con nổ lõm nhỏ
     NORMAL: { mul: 0.75 }, HE: { mul: 0.75 }, CLUSTER: { mul: 0.75 },   // đạn nổ trên lồng, cách vỏ -> sức ép & mảnh yếu đi
     GATLING_BULLET: { mul: 0.7 },                     // đạn 30mm nổ-mảnh kích nổ trên nan
+    GL40: { defeat: 0.5, mul: 0.5 },                  // quả lựu 40mm nổ lõm-mảnh (HEDP): nan bóp méo / kích nổ sớm cách vỏ
     INCENDIARY: { mul: 0.6, noFire: true },
     SCOUT_BULLET: { mul: 0.9 },
     AP: { mul: 1 }                                    // mũi tên xuyên giáp xuyên thẳng qua nan
@@ -420,10 +609,12 @@
     return Math.abs(t.speed || 0) < (t.baseMaxSpeed || 120) * 0.06;
   }
   // Hệ số tầm nhìn của địch tới xe này: phải vào gần hơn ~35% mới thấy / mới khóa được
-  function camoFactor(t) { return camoHidden(t) ? 0.65 : 1; }
+  // Lá cây rơi đọng trên xe trinh sát khi húc cây (LeafCover): ngụy trang tự nhiên, yếu hơn lưới — lấy cái mạnh hơn
+  const leafK = (t, k) => typeof LeafCover !== 'undefined' ? LeafCover.factor(t, k) : 1;
+  function camoFactor(t) { return Math.min(camoHidden(t) ? 0.65 : 1, leafK(t, 0.25)); }
   // Lưới ngụy trang + xe ĐỨNG YÊN (chưa vừa nổ súng): radar địch chỉ bắt được trong ~60% tầm quét
   // (lá cây & lưới tản sóng làm vết radar yếu, lẫn vào nền cây cối). Chạy là mất tác dụng.
-  function camoRadarFactor(t) { return camoHidden(t) ? 0.6 : 1; }
+  function camoRadarFactor(t) { return Math.min(camoHidden(t) ? 0.6 : 1, leafK(t, 0.2)); }
   function fireMul(u) { return has(u, 'fireext') ? 2.5 : 1; }
   function burnDamageMul(u) { return has(u, 'fireext') ? 0.5 : 1; }
   // Bình chữa cháy tự động phun ngay khi cảm biến thấy chớp lửa trong khoang:
@@ -458,33 +649,6 @@
   const REAL_ROOF = { ALL_ROUNDER: 7.0, GATLING: 5.6, ARTILLERY: 9.6, SCOUT: 15.4 };
   // Chỗ trống trên nóc để gắn radar dò tìm / máy gây nhiễu [x, z] (tránh nắp, kính, ăng-ten, tấm nhận diện)
   const ROOF_SPOT = { ALL_ROUNDER: { radar: [-3.0, 16.0], jam: [3.2, 16.0] }, GATLING: { radar: [-4.5, 9.6], jam: [4.6, 10.8] }, ARTILLERY: { radar: [-2.8, 12.9], jam: [-7.0, 2.0] }, SCOUT: { jam: [3.4, 12.8] } };
-  // Giáp lồng (đo bề mặt thật từng mô hình bằng tia quét): mỗi tấm = khung + nan thép dẹt cách vỏ ~2 đơn vị,
-  // bắt vào thân bằng tay đỡ. side: mặt phẳng x = ±at, trải theo z a0..a1; end: mặt phẳng z = at, trải theo x a0..a1.
-  // hull / hullTop: mặt vỏ chỗ tay đỡ dưới / trên bắt vào; bottomFree: mép dưới không có gì để bắt -> giằng chéo
-  // từ tay đỡ trên xuống; arms: vị trí tay đỡ (mặc định cách đều ~6.5); skip: khoảng không đặt tay đỡ.
-  // Không có tấm nào lọt vào vòng quay của tháp (tháp quét được mọi hướng).
-  const CAGE = {
-    ALL_ROUNDER: [
-      { kind: 'side', at: 17.6, a0: 2, a1: 32.6, y0: 5.0, y1: 13.6, hull: 15.6, hullTop: 15.0, tag: 'cageKit' },
-      { kind: 'end', at: 32.6, a0: -17.6, a1: 17.6, y0: 5.0, y1: 13.6, hull: 30.2, hullTop: 28.8, tag: 'cageKitB', arms: [-13.5, -5.5, 5.5, 13.5] }
-    ],
-    // Hailstorm có sẵn lồng đuôi + 2 cánh lồng sau: lắp thêm lồng 2 sườn nối tới cánh lồng
-    GATLING: [
-      { kind: 'side', at: 18.6, a0: -4, a1: 26.6, y0: 4.6, y1: 14.4, hull: 17.0, hullTop: 15.2, tag: 'cageKit' }
-    ],
-    // Xe pháo: lồng che cabin + khoang máy (cao tới gần nóc cabin), mặt trước cabin dưới kính, sườn sàn sau thấp
-    // dưới tầm quay của tháp; đuôi xe để trống cho lưỡi càng
-    ARTILLERY: [
-      { kind: 'side', at: 12.6, a0: -33.4, a1: -18.9, y0: 12.9, y1: 21.4, hull: 10.7, hullTop: 10.8, tag: 'cageKit' },
-      { kind: 'side', at: 12.6, a0: -18.5, a1: -11.4, y0: 13.4, y1: 21.4, hull: 9.6, hullTop: 9.1, tag: 'cageKit' },
-      { kind: 'side', at: 12.9, a0: -10.6, a1: 36.8, y0: 6.6, y1: 13.4, hull: 10.4, bottomFree: true, tag: 'cageKit', skip: [[31.5, 35.8]] },
-      { kind: 'end', at: -41.2, a0: -10.6, a1: 10.6, y0: 10.7, y1: 15.2, hull: -37.4, hullTop: -37.0, tag: 'cageKitF', arms: [-9.4, -3.2, 3.2, 9.4] }
-    ],
-    SCOUT: [
-      { kind: 'side', at: 10.2, a0: -6.2, a1: 20.6, y0: 6.4, y1: 14.8, hull: 8.0, hullTop: 7.6, tag: 'cageKit' },
-      { kind: 'end', at: 20.6, a0: -10.2, a1: 10.2, y0: 6.4, y1: 14.8, hull: 18.2, hullTop: 17.8, tag: 'cageKitB', arms: [-8.6, -1.6, 1.6, 8.6] }
-    ]
-  };
   // Bình chữa cháy gắn ngoài (bình đỏ trên giá kẹp): [x, y đáy, z, trục ('y' đứng | 'z' nằm dọc xe), hướng mặt giá (pháp tuyến tấm đỡ)]
   const EXT_SPOT = {
     ALL_ROUNDER: [[-9.0, 7.6, 30.9, 'y', [0, 0, -1]], [9.0, 7.6, 30.9, 'y', [0, 0, -1]]],
@@ -507,39 +671,326 @@
     return (matCache[key] = { era, plate: era, steel, net, net2, sensor, ext, rubber: M.rubber || steel, metal: M.steel || steel });
   }
 
-  // Một tấm giáp lồng (xem CAGE). s: ±1 cho tấm sườn
-  function cagePanel(b, P, M, s) {
-    const steel = M.steel, side = P.kind === 'side';
-    const at = side ? s * P.at : P.at, nrm = side ? s : Math.sign(P.at);
-    const span = P.a1 - P.a0, mid = (P.a0 + P.a1) / 2, H = P.y1 - P.y0, yc = (P.y0 + P.y1) / 2;
-    const pos = (a, y, plane = at) => side ? [plane, y, a] : [a, y, plane];
-    const box = (along, h, normal, p) => side ? b.box(normal, h, along, steel, p) : b.box(along, h, normal, steel, p);
-    // nan thép dẹt (bản rộng quay theo pháp tuyến, như lồng RPG thật) + khung 3 thanh ngang, 2 cột góc
-    const n = Math.max(2, Math.round(span / 1.25));
-    for (let i = 1; i < n; i++) box(0.16, H - 0.2, 0.62, pos(P.a0 + span * i / n, yc));
-    for (const y of [P.y0 + 0.2, yc, P.y1 - 0.2]) box(span + 0.3, 0.32, 0.36, pos(mid, y));
-    for (const a of [P.a0, P.a1]) box(0.42, H + 0.1, 0.42, pos(a, yc));
-    // tay đỡ bắt vào vỏ xe (đế bắt bu-lông trên vỏ), mép dưới tự do thì giằng chéo
-    let arms = P.arms;
-    if (!arms) {
-      const k = Math.max(1, Math.round(span / 6.5));
-      arms = [];
-      for (let i = 0; i <= k; i++) arms.push(P.a0 + 0.5 + (span - 1) * i / k);
-    }
-    const hT = P.hullTop !== undefined ? P.hullTop : P.hull;
-    const sgn = side ? s : 1;
-    const arm = (a, y, hull) => {
-      const h = sgn * hull, len = Math.abs(at - h);
-      if (len < 0.05) return;
-      box(0.3, 0.3, len, pos(a, y, (at + h) / 2));
-      box(1.1, 1.1, 0.22, pos(a, y, h + nrm * 0.11));
+  // ---------------------------------------------------------------------------
+  // GIÁP LỒNG ÔM THÂN XE (tự đo bằng tia quét trên đúng mô hình đang dựng)
+  // ---------------------------------------------------------------------------
+  // Mỗi mặt (sườn, đuôi, mũi cabin, sàn máy, sườn / đuôi / nóc tháp) quét lưới tia từ ngoài vào để lấy bề mặt vỏ, rồi dựng
+  // tấm lồng cách vỏ CAGE_GAP: mép trên / dưới đi theo đúng đường viền thân, tấm chia khúc ~7 đơn vị (mỗi khúc một mặt phẳng
+  // bám chỗ nhô nhất của khúc đó), tay đỡ bắt bu-lông vào vỏ. Chỗ nào có phụ kiện nhô ra (đèn, hộp đồ, ống khói, bình chữa
+  // cháy, kính ngắm, nắp, bệ vũ khí...) thì khoét ô chừa lại. Không tấm nào lọt vào vòng quay của tháp.
+  // plan.hull: dải cao [y0, y1] mặt thân; sides / rear / front: mặt cần che (front: [y0, y1] riêng — mũi cabin xe pháo);
+  // deck: mái lồng sàn máy (ngoài vòng quay tháp); roofHull: xe không tháp — mái lồng trên nóc thân.
+  // plan.tur: sides / rear / roof của tháp; front: phần trước tháp để trống (má tháp, nòng pháo)
+  const CAGE_GAP = 1.8;   // ~0,22 m — khoảng cách nan tới vỏ như lồng RPG thật
+  const CAGE_PLAN = {
+    ALL_ROUNDER: { hull: { y0: 5.0, y1: 14.5, sides: true, rear: true, deck: true }, tur: { sides: true, rear: true, roof: true, front: 0.32 } },
+    // Hailstorm có sẵn lồng đuôi + 2 cánh lồng sau trên mô hình
+    GATLING: { hull: { y0: 4.6, y1: 15.5, sides: true, rear: false, deck: true }, tur: { sides: true, rear: true, roof: true, front: 0.3 } },
+    // xe pháo: đuôi xe để trống cho lưỡi càng; mũi cabin che dưới kính
+    ARTILLERY: { hull: { y0: 6.6, y1: 23, sides: true, rear: false, front: [10.7, 15.2], deck: false }, tur: { sides: true, rear: true, roof: true, front: 0.25 } },
+  };
+  // Ô chừa bệ vũ khí trên nóc (bệ xoay nằm ngoài mô hình gốc nên tia quét không thấy): [x, z, nửa cạnh]
+  const CAGE_HOLE = { ALL_ROUNDER: [6.2, 9.0, 3.8], GATLING: [6.6, 5.8, 3.8] };
+
+  // Bộ quét tia trong hệ tọa độ `host` (bỏ các nhánh trong `skip`, kíp xe, phần đang ẩn)
+  function cageCaster(host, skip) {
+    host.updateMatrixWorld(true);
+    const meshes = [];
+    host.traverse(o => {
+      if (!o.isMesh || !o.geometry) return;
+      for (let p = o; p; p = p.parent) {
+        if (skip.has(p) || p.visible === false || (p.userData && p.userData.crewRole)) return;
+        if (p === host) break;
+      }
+      meshes.push(o);
+    });
+    const rc = new THREE.Raycaster(), O = new THREE.Vector3(), E = new THREE.Vector3();
+    return (o, d) => {
+      host.localToWorld(O.set(o[0], o[1], o[2]));
+      host.localToWorld(E.set(o[0] + d[0], o[1] + d[1], o[2] + d[2]));
+      rc.set(O, E.sub(O).normalize()); rc.far = 400;
+      const h = rc.intersectObjects(meshes, false);
+      return h.length ? host.worldToLocal(h[0].point.clone()) : null;
     };
-    for (const a of arms) {
-      if (P.skip && P.skip.some(([lo, hi]) => a > lo && a < hi)) continue;
-      const yt = P.y1 - 0.45, yb = P.y0 + 0.45;
-      arm(a, yt, hT);
-      if (P.bottomFree) b.strut(pos(a, yt, sgn * hT), pos(a, yb, at), 0.13, steel, 5);
-      else arm(a, yb, P.hull);
+  }
+
+  const median = (v) => { const s = v.slice().sort((a, b) => a - b); return s[s.length >> 1]; };
+  const nearest = (arr, key, val) => arr.reduce((q, w) => Math.abs(w[key] - val) < Math.abs(q[key] - val) ? w : q);
+
+  // Tấm lồng đứng. f = { axis: 'x' (mặt sườn, chạy dọc z) | 'z' (mặt mũi / đuôi, chạy ngang x), s: ±1 hướng ra ngoài,
+  // a0, a1, y0, y1, extra (bề dày giáp gắn thêm phải chừa), keep(a, y, c) -> false nếu ô lọt vào vòng quay tháp }
+  function cageWall(b, M, cast, f) {
+    const st = M.steel, X = f.axis === 'x', s = f.s, gap = CAGE_GAP + (f.extra || 0);
+    const pos = (a, y, c) => X ? [s * c, y, a] : [a, y, s * c];
+    const box = (along, h, nrm, p) => X ? b.box(nrm, h, along, st, p) : b.box(along, h, nrm, st, p);
+    const DA = 1.2, DY = 0.7, cols = [];
+    for (let a = f.a0; a <= f.a1 + 1e-6; a += DA) {
+      const cells = [];
+      for (let y = f.y0; y <= f.y1 + 1e-6; y += DY) {
+        const h = cast(X ? [s * 90, y, a] : [a, y, s * 130], X ? [-s, 0, 0] : [0, 0, -s]);
+        cells.push({ y, v: h ? s * (X ? h.x : h.z) : null });
+      }
+      const vals = cells.map(c => c.v).filter(v => v !== null);
+      if (vals.length < 3) { cols.push(null); continue; }
+      const m = median(vals);
+      for (const c of cells) if (c.v !== null && c.v < m - 2.5) c.v = null;   // tia lọt qua mép, chạm sâu bên trong
+      const body = cells.filter(c => c.v !== null && c.v <= m + 1.4);       // vỏ (bỏ phụ kiện nhô ra)
+      if (body.length < 3) { cols.push(null); continue; }
+      const bv = body.map(c => c.v).sort((x, y) => x - y);   // mặt vỏ: phân vị 75% (tay nắm, bản lề nhỏ nhô ra -> khoét, không đẩy cả tấm ra xa)
+      cols.push({ a, cells, base: bv[Math.floor(bv.length * 0.75)], lo: body[0].y, hi: body[body.length - 1].y });
+    }
+    // chia khúc liền nhau, mỗi khúc dài ~7
+    const runs = [];
+    let cur = [];
+    for (const c of cols) { if (c) cur.push(c); else { if (cur.length > 2) runs.push(cur); cur = []; } }
+    if (cur.length > 2) runs.push(cur);
+    for (const run of runs) {
+      // cả dãy tấm liền nhau cao bằng nhau (mép trên / dưới thẳng một đường)
+      const rLo = median(run.map(c => c.lo)) - 0.2, rHi = Math.min(f.y1, median(run.map(c => c.hi))) + 0.3;
+      const k = Math.max(1, Math.round((run.length - 1) * DA / 7));
+      for (let i = 0; i < k; i++) {
+        const seg = run.slice(Math.floor(i * (run.length - 1) / k), Math.floor((i + 1) * (run.length - 1) / k) + 1);
+        if (seg.length > 1) panel(seg, rLo, rHi);
+      }
+    }
+    function panel(seg, pLo, pHi) {
+      const plane = Math.max(...seg.map(c => c.base)) + gap;
+      // phụ kiện nhô qua mặt lồng / ô lọt vào vòng quay tháp -> khoét
+      const blocked = (c, y) => c.cells.some(e => e.v !== null && e.v > plane - 0.45 && Math.abs(e.y - y) < DY * 0.9)
+        || (f.keep && !f.keep(c.a, y, plane));
+      // nan dẹt (bản rộng theo pháp tuyến) cách ~1,2, mép theo đường viền thân, cắt khúc quanh chỗ khoét
+      const tops = [];
+      for (const c of seg) {
+        const lo = pLo, hi = pHi;
+        let start = null;
+        for (let y = lo; y <= hi + 1e-6; y += DY / 2) {
+          const bad = blocked(c, y);
+          if (!bad && start === null) start = y;
+          if (bad && start !== null) { if (y - start > 0.6) box(0.16, y - start, 0.6, pos(c.a, (start + y) / 2, plane)); start = null; }
+        }
+        if (start !== null && hi - start > 0.6) box(0.16, hi - start, 0.6, pos(c.a, (start + hi) / 2, plane));
+        tops.push({ c, lo, hi });
+      }
+      // thanh khung trên / giữa / dưới đi theo đường viền (bỏ đoạn đi qua chỗ khoét)
+      for (let i = 0; i + 1 < tops.length; i++) {
+        const A = tops[i], B = tops[i + 1];
+        for (const t of [0.04, 0.5, 0.96]) {
+          const ya = A.lo + (A.hi - A.lo) * t, yb = B.lo + (B.hi - B.lo) * t;
+          if (blocked(A.c, ya) || blocked(B.c, yb)) continue;
+          const th = t === 0.5 ? 0.22 : 0.3;   // thép dẹt khung: mép trên / dưới dày, thanh giữa mảnh
+          box(Math.abs(B.c.a - A.c.a) + 0.02, th, th, pos((A.c.a + B.c.a) / 2, (ya + yb) / 2, plane));
+        }
+      }
+      // cột 2 đầu khúc + tay đỡ bắt vào vỏ (trên & dưới) ở 2 đầu và giữa khúc
+      for (const c of [seg[0], seg[seg.length - 1]]) if (!blocked(c, (pLo + pHi) / 2)) box(0.36, pHi - pLo + 0.1, 0.36, pos(c.a, (pLo + pHi) / 2, plane));
+      for (const c of [seg[0], seg[seg.length >> 1], seg[seg.length - 1]]) {
+        for (const y of [pHi - 0.6, pLo + 0.6]) {
+          if (blocked(c, y)) continue;
+          const e = nearest(c.cells.filter(q => q.v !== null), 'y', y);
+          const shell = e ? e.v : c.base, len = plane - shell;
+          if (len < 0.1) continue;
+          box(0.26, 0.26, len, pos(c.a, y, (plane + shell) / 2));
+          box(0.9, 0.9, 0.18, pos(c.a, y, shell + 0.09));
+        }
+      }
+    }
+  }
+
+  // Mái lồng nằm ngang (nóc tháp / nóc thân / sàn máy) — khung chữ nhật gọn kiểu lồng chống UAV thật:
+  // quét tia từ trên xuống tìm mặt nóc phẳng (độ cao phổ biến), lấy hình chữ nhật lớn nhất nằm gọn trên mặt đó, cách nóc
+  // ~0,2 m. Khung viền thép hộp, nan dẹt chạy ngang đều 1 đơn vị, 2 thanh dọc đỡ; chỗ nhô lên (kính ngắm, nắp, ăng-ten),
+  // bệ vũ khí (holes) và vùng keep() = false thành ô vuông khoét có viền. Chân chống thẳng ở góc + giữa cạnh dài
+  function cageRoof(b, M, cast, x0, x1, z0, z1, holes, keep) {
+    const st = M.steel, D = 0.5, G = [];
+    const nx = Math.round((x1 - x0) / D), nz = Math.round((z1 - z0) / D), all = [];
+    for (let j = 0; j <= nz; j++) {
+      const row = [], z = z0 + j * D;
+      for (let i = 0; i <= nx; i++) {
+        const x = x0 + i * D, h = cast([x, 120, z], [0, -1, 0]);
+        row.push(h ? h.y : null);
+        if (h) all.push(h.y);
+      }
+      G.push(row);
+    }
+    if (all.length < 20) return;
+    const ref = median(all.filter(y => y >= median(all))), yt = ref + 1.7;
+    const flat = (i, j) => { const y = G[j][i]; return y !== null && y > ref - 0.6; };
+    // hình chữ nhật: hàng nào có đoạn nóc phẳng liền -> mép trái / phải; lấy dải hàng liền nhau dài nhất có bề rộng >= 60%
+    const span = G.map((row, j) => {
+      let best = null, a = null;
+      for (let i = 0; i <= nx + 1; i++) {
+        const ok = i <= nx && flat(i, j);
+        if (ok && a === null) a = i;
+        if (!ok && a !== null) { if (!best || i - 1 - a > best[1] - best[0]) best = [a, i - 1]; a = null; }
+      }
+      return best;
+    });
+    const wMax = Math.max(0, ...span.map(s => (s ? s[1] - s[0] : 0)));
+    let run = null, cur = null;
+    span.forEach((s, j) => {
+      const ok = s && s[1] - s[0] >= wMax * 0.6;
+      if (ok && !cur) cur = [j, j];
+      else if (ok) cur[1] = j;
+      if ((!ok || j === span.length - 1) && cur) { if (!run || cur[1] - cur[0] > run[1] - run[0]) run = cur; cur = null; }
+    });
+    if (!run || run[1] - run[0] < 4) return;
+    const rows = span.slice(run[0], run[1] + 1);
+    const iL = median(rows.map(s => s[0])), iR = median(rows.map(s => s[1]));
+    const X0 = x0 + iL * D + 0.3, X1 = x0 + iR * D - 0.3, Z0 = z0 + run[0] * D + 0.3, Z1 = z0 + run[1] * D - 0.3;
+    if (X1 - X0 < 3 || Z1 - Z0 < 3) return;
+    // ô khoét: chỗ nhô qua mặt lồng / không phải nóc phẳng / lỗ cho trước / ngoài keep -> gom thành hình chữ nhật có viền
+    const cut = [];
+    const bad = (x, z) => {
+      const i = Math.round((x - x0) / D), j = Math.round((z - z0) / D), y = G[j] && G[j][i];
+      return y === null || y === undefined || y < ref - 0.6 || y > yt - 0.35 || (keep && !keep(x, z, yt));
+    };
+    const seen = new Set();
+    for (let z = Z0; z <= Z1; z += D) for (let x = X0; x <= X1; x += D) {
+      const k = Math.round(x / D) + ',' + Math.round(z / D);
+      if (seen.has(k) || !bad(x, z)) continue;
+      // lan ra các ô xấu liền kề (4 hướng) -> hình bao
+      const st2 = [[x, z]], box = [x, x, z, z];
+      seen.add(k);
+      while (st2.length) {
+        const [cx, cz] = st2.pop();
+        box[0] = Math.min(box[0], cx); box[1] = Math.max(box[1], cx); box[2] = Math.min(box[2], cz); box[3] = Math.max(box[3], cz);
+        for (const [dx, dz] of [[D, 0], [-D, 0], [0, D], [0, -D]]) {
+          const nx2 = cx + dx, nz2 = cz + dz, kk = Math.round(nx2 / D) + ',' + Math.round(nz2 / D);
+          if (nx2 < X0 - 1e-6 || nx2 > X1 + 1e-6 || nz2 < Z0 - 1e-6 || nz2 > Z1 + 1e-6 || seen.has(kk) || !bad(nx2, nz2)) continue;
+          seen.add(kk); st2.push([nx2, nz2]);
+        }
+      }
+      cut.push([box[0] - 0.5, box[1] + 0.5, box[2] - 0.5, box[3] + 0.5]);
+    }
+    for (const [hx, hz, r] of holes) cut.push([hx - r, hx + r, hz - r, hz + r]);
+    const inCut = (x, z) => cut.some(c => x > c[0] && x < c[1] && z > c[2] && z < c[3]);
+    // đoạn thẳng [a, b] theo trục x ở độ sâu z (hoặc theo z ở x) trừ các ô khoét
+    const pieces = (a, bb, fixed, alongX) => {
+      const out = [];
+      let s = null;
+      for (let t = a; t <= bb + 1e-6; t += 0.1) {
+        const free = !(alongX ? inCut(t, fixed) : inCut(fixed, t));
+        if (free && s === null) s = t;
+        if ((!free || t + 0.1 > bb + 1e-6) && s !== null) { const e = free ? t : t - 0.1; if (e - s > 0.4) out.push([s, e]); s = null; }
+      }
+      return out;
+    };
+    const W = X1 - X0, L = Z1 - Z0, xm = (X0 + X1) / 2, zm = (Z0 + Z1) / 2;
+    // khung viền
+    for (const z of [Z0, Z1]) for (const [a, c] of pieces(X0, X1, z, true)) b.box(c - a + 0.3, 0.3, 0.3, st, [(a + c) / 2, yt, z]);
+    for (const x of [X0, X1]) for (const [a, c] of pieces(Z0, Z1, x, false)) b.box(0.3, 0.3, c - a + 0.3, st, [x, yt, (a + c) / 2]);
+    // nan ngang đều
+    const n = Math.round(L / 1.0);
+    for (let k = 1; k < n; k++) {
+      const z = Z0 + L * k / n;
+      for (const [a, c] of pieces(X0, X1, z, true)) b.box(c - a, 0.36, 0.12, st, [(a + c) / 2, yt, z]);
+    }
+    // 2 thanh dọc đỡ nan (nằm dưới nan)
+    for (const x of [X0 + W / 3, X0 + W * 2 / 3]) for (const [a, c] of pieces(Z0, Z1, x, false)) b.box(0.22, 0.22, c - a, st, [x, yt - 0.28, (a + c) / 2]);
+    // viền ô khoét
+    for (const c of cut) {
+      const a0 = Math.max(X0, c[0]), a1 = Math.min(X1, c[1]), b0 = Math.max(Z0, c[2]), b1 = Math.min(Z1, c[3]);
+      if (a1 - a0 < 0.3 || b1 - b0 < 0.3) continue;
+      for (const z of [b0, b1]) if (z > Z0 + 0.2 && z < Z1 - 0.2) b.box(a1 - a0 + 0.24, 0.24, 0.24, st, [(a0 + a1) / 2, yt, z]);
+      for (const x of [a0, a1]) if (x > X0 + 0.2 && x < X1 - 0.2) b.box(0.24, 0.24, b1 - b0 + 0.24, st, [x, yt, (b0 + b1) / 2]);
+    }
+    // chân chống thẳng xuống nóc: 4 góc + giữa 2 cạnh dài (+ thêm nếu dài)
+    const legs = [];
+    const kz = Math.max(1, Math.round(L / 7));
+    for (let k = 0; k <= kz; k++) for (const x of [X0, X1]) legs.push([x, Z0 + L * k / kz]);
+    for (const x of [xm]) for (const z of [Z0, Z1]) legs.push([x, z]);
+    for (const [x, z] of legs) {
+      if (inCut(x, z)) continue;
+      const i = Math.round((x - x0) / D), j = Math.round((z - z0) / D), y = G[j] && G[j][i];
+      if (y === null || y === undefined || yt - y < 0.3) continue;
+      b.box(0.26, yt - y, 0.26, st, [x, (yt + y) / 2, z]);
+      b.box(0.8, 0.12, 0.8, st, [x, y + 0.06, z]);
+    }
+  }
+
+  // Vòng quay của tháp trong hệ tọa độ thân: tâm, bán kính quét (bỏ nòng) và mép dưới tháp
+  function turretSweep(u) {
+    const tg = u.turretGroup, ch = u.chassisGroup;
+    if (!tg || !ch) return null;
+    ch.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(ch.matrixWorld).invert(), tInv = new THREE.Matrix4().copy(tg.matrixWorld).invert();
+    const c = new THREE.Vector3().setFromMatrixPosition(tg.matrixWorld).applyMatrix4(inv);
+    let R = 0, bot = Infinity;
+    const v = new THREE.Vector3(), l = new THREE.Vector3();
+    tg.traverse(o => {
+      if (!o.isMesh || !o.geometry) return;
+      for (let p = o; p && p !== tg; p = p.parent) if (p === u.barrelGroup || p === u.barrelPivot) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const bb = o.geometry.boundingBox;
+      for (let i = 0; i < 8; i++) {
+        v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(o.matrixWorld);
+        l.copy(v).applyMatrix4(tInv);
+        R = Math.max(R, Math.hypot(l.x, l.z));
+        bot = Math.min(bot, v.applyMatrix4(inv).y);
+      }
+    });
+    return { x: c.x, z: c.z, R: R + 1.5, bot: bot - 0.6 };
+  }
+
+  // Dựng cả bộ giáp lồng của xe (buildVisuals, khi có món 'slat')
+  function buildCage(u, hull, tur, M, F, T) {
+    const plan = CAGE_PLAN[u.tankType];
+    if (!plan || !u.chassisGroup) return;
+    const skipH = new Set(), skipT = new Set();
+    if (u.turretGroup) skipH.add(u.turretGroup);
+    for (const k in (u._mounts || {})) if (u._mounts[k].group) { skipH.add(u._mounts[k].group); skipT.add(u._mounts[k].group); }
+    if (u.barrelGroup) skipT.add(u.barrelGroup);
+    const H = plan.hull, castH = cageCaster(u.chassisGroup, skipH);
+    const extraH = (has(u, 'applique') ? 1.9 : 0) + (has(u, 'era') ? 1.2 : 0);
+    const sw = T && u.turretGroup ? turretSweep(u) : null;
+    // ô thân nằm trong vòng quay của tháp mà cao hơn mép dưới tháp -> bỏ
+    const keepH = (x, y, z) => !sw || y < sw.bot || Math.hypot(x - sw.x, z - sw.z) > sw.R;
+    const zA = F.zF - 4, zB = F.zR + 4, xW = F.hw + 4;
+    if (H.sides) for (const s of [-1, 1]) {
+      hull.setTag(s < 0 ? 'cageKitL' : 'cageKitR');
+      cageWall(hull, M, castH, { axis: 'x', s, a0: zA, a1: zB, y0: H.y0, y1: H.y1, extra: extraH, keep: (a, y, c) => keepH(s * c, y, a) });
+    }
+    if (H.rear) {
+      hull.setTag('cageKitB');
+      cageWall(hull, M, castH, { axis: 'z', s: 1, a0: -xW, a1: xW, y0: H.y0, y1: H.y1, keep: (a, y, c) => keepH(a, y, c) });
+    }
+    if (H.front) {
+      hull.setTag('cageKitF');
+      cageWall(hull, M, castH, { axis: 'z', s: -1, a0: -xW, a1: xW, y0: H.front[0], y1: H.front[1], keep: (a, y, c) => keepH(a, y, -c) });
+    }
+    if (H.deck && sw) {
+      // mái lồng sàn máy phía sau, ngoài vòng quay tháp (UAV hay nhắm sàn máy)
+      hull.setTag('cageKitD');
+      cageRoof(hull, M, castH, -F.hw + 0.8, F.hw - 0.8, sw.z + sw.R * 0.5, F.zR - 0.8, [], (x, z, y) => keepH(x, y, z));
+    }
+    if (H.roofHull) {
+      hull.setTag('cageKitT');
+      const hole = CAGE_HOLE[u.tankType];
+      cageRoof(hull, M, castH, -F.hw + 0.8, F.hw - 0.8, F.zF + 4, F.zR - 1, hole ? [hole] : []);
+    }
+    if (!plan.tur || !T || !u.turretGroup) return;
+    const P = plan.tur, castT = cageCaster(u.turretGroup, skipT);
+    const len = T.zR - T.zF, zf = T.zF + len * P.front, extraT = has(u, 'era') ? 1.2 : 0;
+    const ry = REAL_ROOF[u.tankType] || T.h;   // lồng sườn / đuôi tháp dừng ở mép nóc, mái lồng phủ bên trên
+    if (P.sides) for (const s of [-1, 1]) {
+      tur.setTag(s < 0 ? 'cageKitTL' : 'cageKitTR');
+      cageWall(tur, M, castT, { axis: 'x', s, a0: zf, a1: T.zR + 3, y0: -1, y1: ry, extra: extraT });
+    }
+    if (P.rear) {
+      tur.setTag('cageKitTB');
+      cageWall(tur, M, castT, { axis: 'z', s: 1, a0: -T.hw - 2, a1: T.hw + 2, y0: -1, y1: ry });
+    }
+    if (P.roof) {
+      tur.setTag('cageKitT');
+      const holes = CAGE_HOLE[u.tankType] ? [CAGE_HOLE[u.tankType]] : [];
+      if (has(u, 'aps')) {   // 2 cụm radar + ống đánh chặn ở 2 góc nóc tháp
+        const tx = T.hw - 2.2, tz = T.zF + len * 0.55;
+        for (const s of [-1, 1]) holes.push([s * tx, tz, 3.0], [s * (tx - 3), tz, 2.2]);
+      }
+      const spot = ROOF_SPOT[u.tankType] || {};
+      if (has(u, 'radar') && spot.radar) holes.push([spot.radar[0], spot.radar[1], 2.4]);
+      if (has(u, 'jammer') && spot.jam) holes.push([spot.jam[0], spot.jam[1], 2.2]);
+      cageRoof(tur, M, castT, -T.hw - 1, T.hw + 1, zf, T.zR + 2, holes);
     }
   }
 
@@ -968,7 +1419,7 @@
       wheelCurtain(11.6, 11.2, -32.6, 30.4);
     } else {
     // Giáp mũi xe xích: lá phủ dọc mép trên & sườn giáp mũi, chừa giữa (kính tiềm vọng lái xe)
-    const gl = u.tankType === 'ALL_ROUNDER' ? (z) => Math.min(12.8, 9.4 + (z + 31) * 0.34) : (z) => Math.min(14.2, 9.6 + (z + 30.6) * 0.286);
+    const gl = u.tankType === 'ALL_ROUNDER' ? (z) => Math.min(12.8, 9.4 + (z + 31) * 0.34) : (z) => Math.min(14.2, 12.2 + (z + 31.6) * 0.117);   // xe 6 nòng: khối mũi đúc cao (fsv_hailstorm.js NOSE_Y)
     for (let z = F.zF + 1.5; z < z0 + 1; z += R(2.0, 2.5)) {
       for (let x = -F.hw + 2.6; x <= F.hw - 2.6; x += R(2.7, 3.3)) {
         if (Math.abs(x) < 3.4) continue;
@@ -1250,14 +1701,8 @@
         for (let x = -T.hw * 0.62; x + 2.9 <= T.hw * 0.62 + 0.01; x += 3.2) tur.box(2.9, T.h * 0.36, 0.9, M.era, [x + 1.45, T.h * 0.36, T.zF - 0.5]);
       }
     }
-    if (has(u, 'slat') && CAGE[u.tankType]) {
-      // Lồng thép chống RPG: tấm khung + nan dẹt cách vỏ ~2 đơn vị, tay đỡ bắt bu-lông vào thân (xem CAGE)
-      for (const P of CAGE[u.tankType]) {
-        if (P.kind === 'side') {
-          for (const s of [-1, 1]) { hull.setTag(P.tag + (s < 0 ? 'L' : 'R')); cagePanel(hull, P, M, s); }
-        } else { hull.setTag(P.tag); cagePanel(hull, P, M, 1); }
-      }
-    }
+    // Giáp lồng ôm thân xe + mái lồng chống UAV (tự đo bề mặt mô hình — xem buildCage)
+    if (has(u, 'slat')) buildCage(u, hull, tur, M, F, T);
     if (has(u, 'fireext') && EXT_SPOT[u.tankType]) {
       // Bình chữa cháy xách tay gắn ngoài (hệ thống dập lửa tự động nằm trong khoang)
       hull.setTag('fireextKit');
@@ -1602,7 +2047,11 @@
 
   function update(dt, game) {
     // ăng-ten radar dò tìm quay tròn (~2.4 s một vòng)
-    if (game && game.units) for (const u of game.units) if (u._eqRadarHead && !u.isDead) u._eqRadarHead.rotation.y += dt * 2.6;
+    if (game && game.units) for (const u of game.units) {
+      if (u.isDead) continue;
+      if (u._eqRadarHead) u._eqRadarHead.rotation.y += dt * 2.6;
+      if (u.roofRadarHead && !lost(u, 'sradar')) u.roofRadarHead.rotation.y += dt * 2.2;   // radar trên chân đế nóc tháp
+    }
     // lưới lá: ẩn cành / lá trên nòng khi xe ở xa; xe đang bị ẩn (sương mù chiến tranh) vẫn cho lá rơi xong
     if (game && game.units) for (const u of game.units) {
       if (!u._camoLeaf) continue;

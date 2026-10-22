@@ -126,10 +126,34 @@ const CLIENT_JS = `(function () {
   var here = decodeURI(location.pathname).replace(/^\\//, '') || 'index.html';
   var es = new EventSource('/__dev/events');
 
+  // Đang chơi / thử (trận, phòng thử, phòng xem xe 3D): KHÔNG tải lại giữa chừng (bị văng khỏi trận mỗi lần lưu tệp) ->
+  // hiện nhãn "có bản mới", tự tải lại khi về sảnh hoặc khi bấm vào nhãn
+  var pending = null, badge = null;
+  function busy() {
+    var g = window.game;
+    if (window.tankInspector && window.tankInspector.isOpen) return true;
+    return !!(g && g.isGameStarted && !g.isGameOver);
+  }
+  function requestReload(why) {
+    if (!busy()) { console.info('[dev] ' + why + ' -> tải lại trang'); location.reload(); return; }
+    pending = why;
+    console.info('[dev] ' + why + ' -> chờ về sảnh mới tải lại');
+    if (!badge) {
+      badge = document.createElement('button');
+      badge.type = 'button';
+      badge.textContent = 'Có bản mới · bấm để tải lại';
+      badge.style.cssText = 'position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99999;font:600 12px/1 Arial,sans-serif;' +
+        'padding:6px 12px;border:1px solid rgba(231,166,58,.8);background:rgba(20,16,10,.85);color:#ffd9a0;cursor:pointer;border-radius:3px';
+      badge.onclick = function () { location.reload(); };
+      document.body.appendChild(badge);
+    }
+  }
+  setInterval(function () { if (pending && !busy()) { console.info('[dev] ' + pending + ' -> tải lại trang'); location.reload(); } }, 1500);
+
   es.addEventListener('hello', function (e) {
     var d = JSON.parse(e.data);
     // Máy chủ vừa khởi động lại (sửa server*.js hoặc tệp dùng chung) -> tải lại cho đồng bộ
-    if (boot && boot !== d.boot) { console.info('[dev] Máy chủ khởi động lại -> tải lại trang'); location.reload(); return; }
+    if (boot && boot !== d.boot) { requestReload('Máy chủ khởi động lại'); return; }
     boot = d.boot;
     console.info('[dev] Hot reload đang bật');
   });
@@ -146,8 +170,7 @@ const CLIENT_JS = `(function () {
       console.info('[dev] Đã áp dụng CSS: ' + css.join(', '));
       return;
     }
-    console.info('[dev] Thay đổi: ' + files.join(', ') + ' -> tải lại trang');
-    location.reload();
+    requestReload('Thay đổi: ' + files.join(', '));
   });
 
   // Thay stylesheet bằng bản mới; chờ bản mới tải xong mới gỡ bản cũ để không bị nháy

@@ -5,14 +5,14 @@
  *
  * Kết quả: lưới độ cao + mặt phủ (đường / nước / bê tông), mạng đường A* bám địa hình (có ổ gà, gợn sóng),
  * sông hồ, vị trí boong-ke, nhà cửa, cây, bụi, đá, cầu và mặt trời theo giờ trong ngày.
- * Quy ước tọa độ giống game: bản đồ SIZE x SIZE (8100) tâm tại gốc, phe XANH ở z dương, phe ĐỎ ở z âm.
+ * Quy ước tọa độ giống game: bản đồ SIZE x SIZE (16200) tâm tại gốc, phe XANH ở z dương, phe ĐỎ ở z âm.
  */
 const MapGen = (() => {
-  const SIZE = 8100;
-  const RES = 504;                 // số ô lưới mỗi cạnh (~16 đơn vị / ô)
+  const SIZE = 16200;
+  const RES = 672;                 // số ô lưới mỗi cạnh (~24 đơn vị / ô: bản đồ gấp đôi, giữ số đỉnh vừa sức máy)
   const HALF = SIZE / 2;
   const CELL = SIZE / RES;
-  const OUTER_EXT = 13200;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
+  const OUTER_EXT = 17400;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
   // Bố cục gốc thiết kế cho bản đồ 3600: K giãn khoảng cách giữa các điểm chiến thuật, AREA nhân số lượng vật thể
   // (giữ mật độ cây / đá / làng như cũ); kích thước từng vật thể, đồi, đường... giữ nguyên
   const K = SIZE / 3600, AREA = K * K;
@@ -31,6 +31,20 @@ const MapGen = (() => {
     { id: 'B', x: 0, z: -400 * K, angle: Math.PI / 2, hill: 96 },
     { id: 'C', x: 620 * K, z: 330 * K, angle: Math.PI * 7 / 6, hill: 58 }
   ];
+  // LỐI VÀO CỬA HẦM CỨ ĐIỂM (hệ cục bộ cứ điểm: f dọc trục xuyên qua tính ra từ tâm, r ngang; 8 đơn vị = 1 m).
+  // Khớp Strongholds.S (strongholds.js): END = HB + RUN = 206 là mép cuối sân bê tông giữa 2 tường cánh.
+  //  - sân phễu bê tông (hardstand) dài APRON = 13 m: miệng rộng HW0 (phủ cả chân 2 tường cánh, ~46 m) thu dần kiểu
+  //    loa kèn về cổ NECK (nửa rộng 3,75 m -> mặt bê tông 7,5 m)
+  //  - đường vào ROAD_W = 6,5 m (2 làn xe quân sự 3,5-3,7 m) chạy THẲNG theo trục hầm STRAIGHT = 19 m từ cổ phễu ra tới
+  //    điểm nhập APP; mọi tuyến A* tới miệng hầm đó đều dồn về APP rồi nhập chung một đường vào
+  const PORTAL = { END: 206, APRON: 104, NECK: 30, HW0: 184.2, STRAIGHT: 152, ROAD_W: 52 };
+  PORTAL.NECK_F = PORTAL.END + PORTAL.APRON;          // 310
+  PORTAL.APP = PORTAL.NECK_F + PORTAL.STRAIGHT;       // 462
+  // nửa bề rộng mặt bê tông sân phễu tại |f| (loa kèn: loe gắt sát miệng hầm, gần cổ gần như song song)
+  const portalHalf = af => {
+    const u = Math.max(0, Math.min(1, (af - PORTAL.END) / PORTAL.APRON));
+    return PORTAL.NECK + (PORTAL.HW0 - PORTAL.NECK) * Math.pow(1 - u, 2.2);
+  };
   // CÔNG TRÌNH BỐI CẢNH lớn ở giữa 3 cứ điểm (landmarks.js + src/gameplay/landmarks/*.js dựng hình): mỗi bản đồ 1 công
   // trình cố định (MAP_LANDMARK) — đảo / sông hồ: căn cứ tên lửa hạt nhân, sa mạc: trận địa phòng không, thành phố: trạm
   // biến áp cao thế, rừng: hầm vũ khí sinh học, cao nguyên: đài điều khiển radar vệ tinh.
@@ -49,7 +63,7 @@ const MapGen = (() => {
     bio: { hu: 300, hv: 470, back: 50 },
     // trận địa tên lửa phòng không
     sam: { hu: 320, hv: 520, back: 60 },
-    // trạm biến áp / phát điện cao thế
+    // trung tâm năng lượng nguyên tử (lò nhiệt hạch tokamak)
     power: { hu: 320, hv: 520, back: 60 },
     // đài điều khiển radar vệ tinh
     radar: { hu: 320, hv: 520, back: 60 }
@@ -379,9 +393,13 @@ const MapGen = (() => {
           const x = -HALF + ix * CELL, z = -HALF + iz * CELL, i = iz * N + ix;
           for (const c of strongholds) {
             const dx = x - c.x, dz = z - c.z, d0 = Math.hypot(dx, dz);
-            if (d0 > 820) continue;
+            if (d0 > 940) continue;
             const ang = Math.atan2(dz, dx);
-            const d = d0 * (1 + 0.16 * Math.sin(ang * 3 + c.G) + 0.1 * noise(Math.cos(ang) * 1.7 + c.x * 0.01, Math.sin(ang) * 1.7));
+            // sống đồi thoải chạy dọc trục hầm ra mỗi miệng: đỉnh bằng kéo dài tới ~48 m theo trục (đường vào thẳng, gần
+            // như bằng phẳng trước cửa hầm), sườn dọc trục thoải hơn -> đường lên đồi men theo sống đồi về điểm nhập
+            const ca = Math.cos(c.angle), sa = Math.sin(c.angle), fA = Math.abs(dx * ca + dz * sa), rA = Math.abs(-dx * sa + dz * ca);
+            const ax = Math.exp(-(rA / 180) * (rA / 180)) * smooth(150, 300, fA);
+            const d = d0 * (1 - 0.25 * ax) * (1 + (1 - 0.8 * ax) * (0.16 * Math.sin(ang * 3 + c.G) + 0.1 * noise(Math.cos(ang) * 1.7 + c.x * 0.01, Math.sin(ang) * 1.7)));
             // sườn đồi phía giáp mặt bằng công trình ở giữa thoải dần ra (không lấn vào mặt bằng)
             const k = (1 - smooth(290, 680, d)) * (landmarks.length ? smooth(10, 220, lmOut(landmarks[0], x, z)) : 1);
             if (k > 0) heights[i] = lerp(heights[i], c.G + (k < 0.98 ? noise(x * 0.02, z * 0.02) * 2.5 * (1 - k) : 0), k);
@@ -521,6 +539,29 @@ const MapGen = (() => {
     // 3. MẠNG ĐƯỜNG
     const roads = [];
     const bridges = [];
+    // Đường vào cửa hầm cứ điểm: đoạn thẳng theo trục hầm từ điểm nhập APP tới dưới cổ sân phễu (sân bê tông phủ lên
+    // phần cuối). portal: { id, sg } để vẽ vai đường sỏi / rãnh thoát nước & nhận diện ở terrain.js
+    const portalAxis = (c, sg) => ({ ux: Math.cos(c.angle) * sg, uz: Math.sin(c.angle) * sg });
+    const portalApp = (c, sg) => { const a = portalAxis(c, sg); return { x: c.x + a.ux * PORTAL.APP, z: c.z + a.uz * PORTAL.APP }; };
+    const portalRoad = (c, sg, kind) => {
+      const a = portalAxis(c, sg), f0 = PORTAL.APP, f1 = PORTAL.NECK_F - 1, n = Math.ceil((f0 - f1) / 14);
+      const pts = [];
+      for (let i = 0; i <= n; i++) { const f = f0 + (f1 - f0) * i / n; pts.push([c.x + a.ux * f, c.z + a.uz * f]); }
+      const rd = { pts, width: PORTAL.ROAD_W, kind, access: true, portal: { id: c.id, sg } };
+      roads.push(rd);
+      return rd;
+    };
+    // Vùng cấm tuyến A* quanh cứ điểm (ụ đất, sân phễu, đoạn đường thẳng vào cửa): đường không bò qua đồi cứ điểm và
+    // chỉ được tới miệng hầm từ PHÍA NGOÀI điểm nhập (không đi song song chồng lên đường vào)
+    const portalBlocked = (x, z, gcell) => {
+      for (const c of strongholds) {
+        const dx = x - c.x, dz = z - c.z, ca = Math.cos(c.angle), sa = Math.sin(c.angle);
+        const f = Math.abs(dx * ca + dz * sa), r = Math.abs(-dx * sa + dz * ca);
+        if (f < PORTAL.APP - gcell * 1.5 && r < 250) return true;
+        if (f < PORTAL.APP - gcell * 0.3 && r < gcell * 0.9) return true;
+      }
+      return false;
+    };
     if (type === 'URBAN') {
       // Lưới phố không đều, xoay nhẹ cả lưới; đại lộ chính chạy qua 3 cứ điểm
       const rot = R(-0.12, 0.12), cr = Math.cos(rot), sr = Math.sin(rot);
@@ -541,6 +582,40 @@ const MapGen = (() => {
       for (const q of lines) seg(tf(q, -1560 * K), tf(q, 1560 * K), Math.abs(q) < 140 ? 44 : 32, 'asphalt');
       for (const q of linesV) seg(tf(-1560 * K, q), tf(1560 * K, q), Math.abs(q) < 60 ? 52 : 32, 'asphalt');
       roads.urbanGrid = { lines, linesV, rot };
+      if (SH) {
+        // Phố không chạy xuyên đồi cứ điểm (trước đây mặt đường nhựa lộ qua sân bê tông / chui dưới ụ đất): cắt bỏ đoạn
+        // trong vùng đồi, rồi mỗi miệng hầm có đường vào thẳng theo trục + đoạn nối ra phố gần nhất
+        const ug = roads.urbanGrid, keep = [];
+        const nearSH = (x, z) => portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 370);
+        for (const rd of roads) {
+          let run = [];
+          const flush = () => { if (run.length >= 2) keep.push(Object.assign({}, rd, { pts: run })); run = []; };
+          for (const p of rd.pts) { if (nearSH(p[0], p[1])) flush(); else run.push(p); }
+          flush();
+        }
+        roads.length = 0; roads.push(...keep); roads.urbanGrid = ug;
+        const grid = keep.slice();
+        for (const c of strongholds) for (const sg of [1, -1]) {
+          portalRoad(c, sg, 'asphalt');
+          const A = portalApp(c, sg), ax = portalAxis(c, sg);
+          // điểm phố gần nhất phía ngoài (ưu tiên phía trước miệng hầm), nối bằng đoạn thẳng xuất phát theo trục
+          let best = null, bd = Infinity;
+          for (const rd of grid) for (const p of rd.pts) {
+            const dx = p[0] - A.x, dz = p[1] - A.z, d = Math.hypot(dx, dz);
+            const fw = (dx * ax.ux + dz * ax.uz) / (d || 1);
+            const score = d * (1.25 - 0.25 * fw);
+            if (score < bd) { bd = score; best = p; }
+          }
+          if (best && Math.hypot(best[0] - A.x, best[1] - A.z) > 20) {
+            const B2 = [A.x + ax.ux * 40, A.z + ax.uz * 40];
+            const pts = [];
+            const add = (a, b) => { const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 14)); for (let i = pts.length ? 1 : 0; i <= n; i++) pts.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]); };
+            add([A.x - ax.ux * 40, A.z - ax.uz * 40], B2);
+            add(B2, best);
+            roads.push({ pts: resample(chaikin(chaikin(pts)), 14), width: 44, kind: 'asphalt', access: true, portalLink: true });
+          }
+        }
+      }
     } else {
       // Tìm đường A* trên lưới thô: ưu tiên chỗ thoải, tránh nước, tận dụng đường có sẵn (tạo ngã ba tự nhiên)
       const G = Math.round(72 * K), gc = SIZE / G;
@@ -554,7 +629,11 @@ const MapGen = (() => {
       if (landmarks.length) for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
         if (landmarks.some(L => lmOut(L, -HALF + i * gc, -HALF + j * gc) < 64)) lmCell[j * (G + 1) + i] = 1;
       }
-      const route = (a, b, w, kind, noReuse = false) => {
+      // ô cấm quanh cứ điểm (xem portalBlocked); ô đích luôn được phép
+      const shCell = new Uint8Array((G + 1) * (G + 1));
+      if (SH) for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) if (portalBlocked(-HALF + i * gc, -HALF + j * gc, gc)) shCell[j * (G + 1) + i] = 1;
+      // tail / head: các điểm nối thêm sau đích / trước điểm đầu (trước khi bo cong) -> tuyến nhập tiếp tuyến vào đường vào cửa hầm
+      const route = (a, b, w, kind, noReuse = false, tail = null, head = null) => {
         const [sx, sz] = toCell(a.x, a.z), [ex, ez] = toCell(b.x, b.z);
         const W = G + 1, idx = (i, j) => j * W + i;
         const gScore = new Float32Array(W * W).fill(Infinity), came = new Int32Array(W * W).fill(-1);
@@ -575,6 +654,7 @@ const MapGen = (() => {
             if (ni < 2 || nj < 2 || ni > G - 2 || nj > G - 2) continue;
             const n = idx(ni, nj);
             if (lmCell[n]) continue;               // mặt bằng công trình: đường đi vòng
+            if (shCell[n] && !(ni === ex && nj === ez)) continue;   // đồi cứ điểm / đường vào cửa hầm
             const len = Math.hypot(di, dj) * gc;
             const slope = Math.abs(gh[n] - gh[cur]) / len;
             let c = len * (1 + slope * slope * 260 + slope * 8);
@@ -592,6 +672,8 @@ const MapGen = (() => {
         path.reverse();
         path[0] = [a.x, a.z];
         path[path.length - 1] = [b.x, b.z];
+        if (tail) for (const q of tail) path.push(q);
+        if (head) path.unshift(...head);
         // Bo cong Chaikin + chia lại mỗi ~14 đơn vị
         let sm = path;
         for (let k = 0; k < 3; k++) sm = chaikin(sm);
@@ -601,17 +683,22 @@ const MapGen = (() => {
       const B0 = bases.blue, R0 = bases.red;
       const sideA = rng() < 0.5;
       if (SH) {
-        // Đường lên đồi dẫn tới 2 miệng xuyên qua của mỗi cứ điểm
-        const mouth = (c, sg) => ({ x: c.x + Math.cos(c.angle) * sg * 258, z: c.z + Math.sin(c.angle) * sg * 258 });
+        // Đường lên đồi dẫn tới 2 miệng xuyên qua của mỗi cứ điểm. Mỗi miệng hầm: 1 đường vào thẳng theo trục hầm (rộng
+        // 6,5 m) từ điểm nhập APP tới cổ sân phễu bê tông; mọi tuyến tới miệng đó dồn về APP (A* đi chung đường cũ rẻ hơn
+        // -> các tuyến nhập nhau từ sớm), đoạn cuối nối tiếp tuyến vào đường vào (không cắm chéo, không chạy song song)
         const [cA, cB, cC] = strongholds;
-        route(B0, mouth(cB, 1), 36, B.roadKind);
-        route(R0, mouth(cB, -1), 36, B.roadKind);
-        route(mouth(cA, 1), mouth(cB, 1), 32, B.roadKind);
-        route(mouth(cC, 1), mouth(cB, 1), 32, B.roadKind);
-        route(B0, mouth(cA, -1), 28, B.roadKind);
-        route(B0, mouth(cC, -1), 28, B.roadKind);
-        route(R0, mouth(cA, -1), 26, B.roadKind);
-        route(R0, mouth(cC, -1), 26, B.roadKind);
+        for (const c of strongholds) for (const sg of [1, -1]) portalRoad(c, sg, B.roadKind);
+        const mouth = (c, sg) => portalApp(c, sg);
+        const tailOf = (c, sg) => { const a = portalAxis(c, sg), A = portalApp(c, sg); return [[A.x - a.ux * 35, A.z - a.uz * 35], [A.x - a.ux * 70, A.z - a.uz * 70]]; };
+        const toMouth = (from, c, sg, w, head) => route(from, mouth(c, sg), w, B.roadKind, false, tailOf(c, sg), head);
+        toMouth(B0, cB, 1, 36);
+        toMouth(R0, cB, -1, 36);
+        toMouth(mouth(cA, 1), cB, 1, 32, tailOf(cA, 1).reverse());
+        toMouth(mouth(cC, 1), cB, 1, 32, tailOf(cC, 1).reverse());
+        toMouth(B0, cA, -1, 28);
+        toMouth(B0, cC, -1, 28);
+        toMouth(R0, cA, -1, 26);
+        toMouth(R0, cC, -1, 26);
         // đường nhánh từ ngay mép khu đất (trước cổng) nhập vào mạng đường (đi chung đường cũ -> nhập vào tuyến gần nhất);
         // đánh dấu access: không bị đẩy / cắt khi né mặt bằng công trình -> nối liền tới cổng
         for (const L of landmarks) {
@@ -622,7 +709,7 @@ const MapGen = (() => {
           pts.push([b.x, b.z]);
           const n0 = roads.length;
           roads.push({ pts, width: 24, kind: B.roadKind });
-          route(b, mouth(cB, 1), 24, B.roadKind);
+          toMouth(b, cB, 1, 24);
           for (let i = n0; i < roads.length; i++) roads[i].access = true;
         }
       } else {
@@ -830,6 +917,46 @@ const MapGen = (() => {
         }
       }
     }
+    // LỐI VÀO CỬA HẦM: san nền theo trắc dọc thiết kế (không còn bám mặt đồi lồi lõm):
+    //  - sân phễu bê tông: gần như phẳng, dốc nhẹ ra ngoài (<= 0,6 m trên 13 m) để nước mặt chảy XA cửa hầm
+    //  - đường vào: nền đào / đắp theo đường cong trơn (Hermite) từ cổ phễu xuống tới chỗ gặp lại địa hình tự nhiên sau
+    //    điểm nhập; mặt cắt ngang phẳng, ta-luy đào / đắp hai bên ~1:2
+    //  - 2 rãnh thoát nước nông (~0,25 m) hai bên đường vào, chạy từ cổ phễu xuôi dốc ra ngoài
+    for (const c of strongholds) {
+      const ca = Math.cos(c.angle), sa = Math.sin(c.angle), FE = PORTAL.APP + 90, Rr = FE + 40;
+      const i0 = Math.max(0, Math.floor((c.x - Rr + HALF) / CELL)), i1 = Math.min(RES, Math.ceil((c.x + Rr + HALF) / CELL));
+      const j0 = Math.max(0, Math.floor((c.z - Rr + HALF) / CELL)), j1 = Math.min(RES, Math.ceil((c.z + Rr + HALF) / CELL));
+      const hw = PORTAL.ROAD_W / 2;
+      // trắc dọc mỗi miệng hầm: h(f) tính từ tâm cứ điểm ra ngoài
+      const prof = [1, -1].map(sg => {
+        const at = (f, r) => H(c.x + ca * sg * f - sa * r, c.z + sa * sg * f + ca * r);
+        const hT = (at(FE, -14) + at(FE, 0) + at(FE, 14)) / 3;
+        const s1 = Math.max(-0.35, Math.min(0.35, (at(FE + 30, 0) - at(FE - 30, 0)) / 60));
+        const dN = Math.max(0, Math.min(5, (c.G - hT) * 0.1));
+        const L = FE - PORTAL.NECK_F, p0 = c.G - dN, m0 = -dN * 1.5 / PORTAL.APRON;
+        return f => {
+          if (f <= PORTAL.END) return c.G;
+          if (f <= PORTAL.NECK_F) return c.G - dN * Math.pow((f - PORTAL.END) / PORTAL.APRON, 1.5);
+          const t = Math.min(1, (f - PORTAL.NECK_F) / L), t2 = t * t, t3 = t2 * t;
+          return (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * L * m0 + (-2 * t3 + 3 * t2) * hT + (t3 - t2) * L * s1;
+        };
+      });
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = -HALF + i * CELL, z = -HALF + j * CELL, dx = x - c.x, dz = z - c.z;
+        const f0 = dx * ca + dz * sa, f = Math.abs(f0), r = Math.abs(-dx * sa + dz * ca);
+        if (f < PORTAL.END - 6 || f > FE || r > PORTAL.HW0 + 80) continue;
+        const k = j * N + i, tgt = prof[f0 >= 0 ? 0 : 1](f);
+        // mặt bằng phẳng: lòng sân phễu (+ lề) / lòng đường + rãnh; ra ngoài là ta-luy dài theo độ chênh đào đắp
+        const flat = Math.max(portalHalf(Math.min(f, PORTAL.NECK_F)) + 6, hw + 18);
+        const bank = 24 + 2.2 * Math.abs(heights[k] - tgt);
+        const w = (1 - smooth(flat, flat + bank, r)) * (1 - smooth(PORTAL.APP, FE, f));
+        if (w > 0) heights[k] = lerp(heights[k], tgt, w);
+        if (f > PORTAL.NECK_F - 18 && r > hw && r < hw + 30) {
+          const dd = (r - hw - 14) / 5.5;
+          heights[k] -= 2.1 * Math.exp(-dd * dd) * smooth(PORTAL.NECK_F - 18, PORTAL.NECK_F + 10, f) * (1 - smooth(PORTAL.APP, FE, f));
+        }
+      }
+    }
     // Đô thị: nền vỉa hè / sân bê tông giữa các tòa nhà
     if (type === 'URBAN') for (let i = 0; i < surface.length; i++) if (surface[i] === 0) surface[i] = 3;
 
@@ -843,6 +970,15 @@ const MapGen = (() => {
       if (Math.abs(x) < SPAWN.halfX + r && ((z > SPAWN.blue.z0 - r && z < SPAWN.blue.z1 + r) || (z > SPAWN.red.z0 - r && z < SPAWN.red.z1 + r))) return false;
       return true;
     }
+    // xa đường vào cửa hầm / đoạn nối ra phố (đô thị: nhà xếp theo ô phố, không tự né các đường này)
+    const portalRoads = roads.filter(rd => rd.portal || rd.portalLink);
+    const portalClear = (x, z, r) => {
+      for (const rd of portalRoads) for (let i = 0; i < rd.pts.length - 1; i++) {
+        const a = rd.pts[i], b = rd.pts[i + 1];
+        if (segDist(x, z, a[0], a[1], b[0], b[1]).d < rd.width / 2 + r + 10) return false;
+      }
+      return true;
+    };
     const roadClear = (x, z, r) => { const nr = nearestRoad(x, z, r + 60); return !nr || nr.d > nr.road.width / 2 + r + 4; };
     const slopeAt = (x, z) => {
       const e = 12;
@@ -940,6 +1076,7 @@ const MapGen = (() => {
           const put = (pu, pv, w, d, floors, kind) => {
             const [bx, bz] = tf(pu, pv);
             if (!clearOfKeys(bx, bz, Math.max(w, d) * 0.5) || !freeOf(bx, bz, Math.max(w, d) * 0.5)) return false;
+            if (!portalClear(bx, bz, Math.hypot(w, d) * 0.5)) return false;   // không xây đè đường vào cửa hầm cứ điểm
             buildings.push({ x: bx, z: bz, w, d, floors, angle: -g.rot, kind });
             return true;
           };
@@ -1376,12 +1513,11 @@ const MapGen = (() => {
     return h;
   }
 
-  // ===== TRẠM BIẾN ÁP / PHÁT ĐIỆN CAO THẾ (thành phố) =====
+  // ===== TRUNG TÂM NĂNG LƯỢNG NGUYÊN TỬ (thành phố) =====
   function detailPower(L) {
-    // trạm biến áp 500/220 kV ngoài trời (AIS) + khối phát điện tua-bin khí chu trình đơn: chỉ đắp thêm bờ bao đất
-    // quanh bồn dầu nhiên liệu của tua-bin (đê ngăn tràn tròn: tâm f/r, bán kính đỉnh R, nửa rộng chân w, cao h 1.6 m).
-    // Mương cáp / hố dầu MBA dựng bằng bê tông nổi trên nền sỏi (không khoét địa hình: mặt sân phủ kín)
-    L.bund = { f: 88, r: 395, R: 34, w: 12, h: 13 };
+    // tổ hợp lò nhiệt hạch: mọi nhà dựng nổi trên sân bê tông; chỉ đắp thêm đê đất tròn quanh bồn nước chữa cháy
+    // (tâm f/r, bán kính đỉnh R, nửa rộng chân w, cao h 1.6 m)
+    L.bund = { f: 190, r: 412, R: 14, w: 6, h: 9 };
   }
   function moundPower(L, f, r) {
     const B = L.bund, d = Math.hypot(f - B.f, r - B.r);
@@ -1518,7 +1654,7 @@ const MapGen = (() => {
 
   function setLandmark(k) { landmarkKind = LANDMARK_KINDS[k] ? k : null; }
   function setLayout(l) { layout = l === 'STRONGHOLDS' ? 'STRONGHOLDS' : 'CLASSIC'; }
-  return { generate, get, setLayout, getLayout: () => layout, STRONGHOLD_SITES, LANDMARK_SITE, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
+  return { generate, get, setLayout, getLayout: () => layout, STRONGHOLD_SITES, PORTAL, portalHalf, LANDMARK_SITE, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
 })();
 
 if (typeof window !== 'undefined') window.MapGen = MapGen;

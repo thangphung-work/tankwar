@@ -17,15 +17,23 @@ const Navigator = (() => {
     if (G) return G;
     const W = terrain.width, D = terrain.depth;
     const nx = Math.ceil(W / CELL), nz = Math.ceil(D / CELL);
-    const h = new Float32Array(nx * nz), blocked = new Uint8Array(nx * nz);
-    const wd = new Float32Array(nx * nz);   // độ sâu nước tại tâm ô (0 = cạn)
+    G = { nx, nz, W, D, h: new Float32Array(nx * nz), blocked: new Uint8Array(nx * nz), wd: new Float32Array(nx * nz), terrain };
+    fillRegion(G, terrain, 0, 0, nx - 1, nz - 1);
+    grids.set(terrain, G);
+    return G;
+  }
+
+  // Tính (lại) độ cao, độ sâu nước, ô chặn cho các ô [i0..i1] x [j0..j1]: mặt đất + mọi vật cản tĩnh chạm vùng đó
+  function fillRegion(G, terrain, i0, j0, i1, j1) {
+    const { nx, W, D, h, blocked, wd } = G;
     const margin = 70;
     const SS = terrain.strongholdSet;
     const OUT = terrain.map && terrain.map.outer;
-    for (let j = 0; j < nz; j++) {
-      for (let i = 0; i < nx; i++) {
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
         const x = -W / 2 + (i + 0.5) * CELL, z = -D / 2 + (j + 0.5) * CELL;
         const k = j * nx + i;
+        blocked[k] = 0; wd[k] = 0;
         h[k] = terrain.getVehicleGroundAt ? terrain.getVehicleGroundAt(x, z) : terrain.getElevationAt(x, z);
         const ws = terrain.waterSurfaceAt ? terrain.waterSurfaceAt(x, z) : null;
         if (ws !== null && ws !== undefined) wd[k] = Math.max(0, ws - h[k]);
@@ -40,10 +48,13 @@ const Navigator = (() => {
       }
     }
     // Vật cản tĩnh: tô kín mọi ô chạm vào hình vật cản đã nới rộng thêm nửa bề ngang xe (không để lọt góc nhà)
+    // (chỉ trong vùng đang tính; vật cản nằm ngoài vùng thì bỏ qua)
     const INF = 22;
     const mark = (cx, cz, R, inside) => {
-      const [i0, j0] = cellOf({ nx, nz, W, D }, cx - R - CELL, cz - R - CELL), [i1, j1] = cellOf({ nx, nz, W, D }, cx + R + CELL, cz + R + CELL);
-      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      let [a0, b0] = cellOf(G, cx - R - CELL, cz - R - CELL), [a1, b1] = cellOf(G, cx + R + CELL, cz + R + CELL);
+      if (a1 < i0 || a0 > i1 || b1 < j0 || b0 > j1) return;
+      a0 = Math.max(a0, i0); b0 = Math.max(b0, j0); a1 = Math.min(a1, i1); b1 = Math.min(b1, j1);
+      for (let j = b0; j <= b1; j++) for (let i = a0; i <= a1; i++) {
         const x = -W / 2 + (i + 0.5) * CELL, z = -D / 2 + (j + 0.5) * CELL;
         // tâm ô hoặc 4 góc ô nằm trong vùng cấm
         const hc = CELL * 0.5;
@@ -73,13 +84,20 @@ const Navigator = (() => {
       const hu = q.hu + INF, hv = q.hv + INF;
       mark(q.cx, q.cz, Math.hypot(hu, hv), (x, z) => { const dx = x - q.cx, dz = z - q.cz; return Math.abs(dx * q.ux + dz * q.uz) < hu && Math.abs(-dx * q.uz + dz * q.ux) < hv; });
     }
-    G = { nx, nz, W, D, h, blocked, wd, terrain };
-    grids.set(terrain, G);
-    return G;
   }
 
-  // Làm mới lưới (vd nhà sập thành đống đổ nát mới) — gọi khi cần
-  function invalidate(terrain) { grids.delete(terrain); }
+  /**
+   * Làm mới lưới sau khi địa hình / vật cản đổi (đá vỡ, cầu sập, mái cứ điểm sập...).
+   * box = { x0, z0, x1, z1 }: chỉ tính lại các ô trong vùng đó (vài trăm ô) thay vì dựng lại cả lưới ~455 nghìn ô
+   * (trước đây mỗi lần mái sập là khựng hàng chục - hàng trăm ms đúng lúc đánh nhau ở cứ điểm). Không có box: dựng lại hết.
+   */
+  function invalidate(terrain, box) {
+    const G = grids.get(terrain);
+    if (!G) return;
+    if (!box) { grids.delete(terrain); return; }
+    const [i0, j0] = cellOf(G, box.x0 - CELL, box.z0 - CELL), [i1, j1] = cellOf(G, box.x1 + CELL, box.z1 + CELL);
+    fillRegion(G, terrain, i0, j0, i1, j1);
+  }
 
   const cellOf = (G, x, z) => [Math.max(0, Math.min(G.nx - 1, Math.floor((x + G.W / 2) / CELL))), Math.max(0, Math.min(G.nz - 1, Math.floor((z + G.D / 2) / CELL)))];
   const centerOf = (G, i, j) => ({ x: -G.W / 2 + (i + 0.5) * CELL, z: -G.D / 2 + (j + 0.5) * CELL });
@@ -292,12 +310,14 @@ const Navigator = (() => {
       if (nav.extra.size > 60) nav.extra = new Set([...nav.extra].slice(-60));
     }
     if (moved) nav.extra = null;
-    if (moved || nav.replanT <= 0 || !nav.path || stuck) {
+    // Không tìm được đường (findPath trả null): chờ ~1,5 s rồi mới thử lại. Trước đây điều kiện !nav.path chạy lại A*
+    // (tới 60000 ô) ở MỌI khung hình chừng nào đích còn không tới được -> 1 bot kẹt đích là tụt khung hình liên tục
+    if (moved || nav.replanT <= 0 || nav.path === undefined || stuck) {
       nav.tx = tx; nav.tz = tz;
       nav.path = findPath(terrain, unit, tx, tz, nav.extra);
       nav.idx = 0;
-      nav.replanT = 3 + Math.random();
-      nav.minT = 0.5;
+      nav.replanT = nav.path ? 3 + Math.random() : 1.2 + Math.random() * 0.6;
+      nav.minT = nav.path ? 0.5 : 1.2;
     }
     let p = null;
     if (nav.path && nav.path.length) {

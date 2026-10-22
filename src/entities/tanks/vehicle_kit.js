@@ -1702,11 +1702,123 @@ const VehicleKit = (() => {
   }
 
   /**
+   * Co đa giác [x, z] vào trong d đơn vị (mỗi cạnh tịnh tiến song song, đỉnh mới = giao hai cạnh kề).
+   * d: một số cho mọi cạnh, hoặc mảng theo cạnh (cạnh i nối đỉnh i -> i+1; số âm = nở ra ngoài).
+   * Cạnh ngắn bị co mất hướng (đảo chiều) -> tự giảm d cho tới khi đa giác còn hợp lệ.
+   */
+  function insetPolygon(pts, d) {
+    const n = pts.length;
+    let a2 = 0;
+    for (let i = 0; i < n; i++) {
+      const p = pts[i], q = pts[(i + 1) % n];
+      a2 += p[0] * q[1] - q[0] * p[1];
+    }
+    const sgn = a2 > 0 ? 1 : -1;
+    const nrm = [], dir = [];
+    for (let i = 0; i < n; i++) {
+      const p = pts[i], q = pts[(i + 1) % n];
+      const dx = q[0] - p[0], dz = q[1] - p[1], l = Math.hypot(dx, dz) || 1;
+      dir.push([dx / l, dz / l]);
+      nrm.push([sgn * -dz / l, sgn * dx / l]);   // pháp tuyến hướng vào trong
+    }
+    const dist = Array.isArray(d) ? d : pts.map(() => d);
+    // Đỉnh i = giao của cạnh (i-1) và cạnh i sau khi tịnh tiến; hai cạnh gần song song -> dời theo trung bình
+    const at = (k) => pts.map((p, i) => {
+      const h = (i - 1 + n) % n;
+      const d0 = dist[h] * k, d1 = dist[i] * k;
+      const a0 = [p[0] + nrm[h][0] * d0, p[1] + nrm[h][1] * d0];
+      const a1 = [p[0] + nrm[i][0] * d1, p[1] + nrm[i][1] * d1];
+      const e0 = dir[h], e1 = dir[i];
+      const cr = e0[0] * e1[1] - e0[1] * e1[0];
+      if (Math.abs(cr) < 1e-4) return [(a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2];
+      const t = ((a1[0] - a0[0]) * e1[1] - (a1[1] - a0[1]) * e1[0]) / cr;
+      return [a0[0] + e0[0] * t, a0[1] + e0[1] * t];
+    });
+    for (let tries = 0, k = 1; tries < 8; tries++, k *= 0.75) {
+      const out = at(k);
+      let ok = true;
+      for (let i = 0; i < n && ok; i++) {
+        const j = (i + 1) % n;
+        const ox = pts[j][0] - pts[i][0], oz = pts[j][1] - pts[i][1];
+        if (ox * ox + oz * oz < 1e-6) continue;
+        ok = ox * (out[j][0] - out[i][0]) + oz * (out[j][1] - out[i][1]) > 0;
+      }
+      if (ok) return out;
+    }
+    return pts.map(p => p.slice());
+  }
+
+  /**
+   * Khối giáp nhiều tầng: rings = [{ pts, y }, ...] từ đáy lên (cùng số đỉnh [x, z]; y là số hoặc mảng theo đỉnh).
+   * Mỗi cặp vành kề nhau sinh một dải mặt phẳng -> dựng được mặt giáp nghiêng gãy khúc kiểu tháp pháo thật:
+   * tấm dưới vát hắt vào trong (undercut), gờ sống ở giữa, tấm trên ngả vào trong. Đa giác lõm (khe nòng) dùng được.
+   * chamfer > 0: mép nóc vát chéo 45°.
+   */
+  function loftRings(rings, chamfer = 0) {
+    const n = rings[0].pts.length;
+    const R = rings.map(r => ({ pts: r.pts, y: Array.isArray(r.y) ? (i) => r.y[i] : () => r.y }));
+    const last = R[R.length - 1], prev = R[R.length - 2];
+    let minH = Infinity;
+    for (let i = 0; i < n; i++) minH = Math.min(minH, last.y(i) - prev.y(i));
+    const c = Math.min(chamfer, minH * 0.45);
+    if (c > 0.01) {
+      const top = last;
+      R[R.length - 1] = { pts: top.pts, y: (i) => top.y(i) - c };
+      R.push({ pts: insetPolygon(top.pts, c), y: top.y });
+    }
+    // Hướng ra ngoài của từng cạnh theo chiều quấn đa giác (đúng cả với đa giác lõm)
+    const p0 = R[0].pts;
+    let a2 = 0;
+    for (let i = 0; i < n; i++) {
+      const p = p0[i], q = p0[(i + 1) % n];
+      a2 += p[0] * q[1] - q[0] * p[1];
+    }
+    const sgn = a2 > 0 ? 1 : -1;
+
+    const verts = [];
+    for (let r = 0; r < R.length - 1; r++) {
+      const A = R[r], B = R[r + 1];
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const b0 = [A.pts[i][0], A.y(i), A.pts[i][1]];
+        const b1 = [A.pts[j][0], A.y(j), A.pts[j][1]];
+        const t0 = [B.pts[i][0], B.y(i), B.pts[i][1]];
+        const t1 = [B.pts[j][0], B.y(j), B.pts[j][1]];
+        const ex = p0[j][0] - p0[i][0], ez = p0[j][1] - p0[i][1];
+        const out = [sgn * ez, 0, -sgn * ex];
+        pushTri(verts, b0, b1, t1, out);
+        pushTri(verts, b0, t1, t0, out);
+      }
+    }
+    const capTris = (ring, dir) => {
+      const pts = ring.pts;
+      const contour = pts.map(p => new THREE.Vector2(p[0], p[1]));
+      const tris = THREE.ShapeUtils.triangulateShape(contour, []);
+      for (const t of tris) {
+        pushTri(verts,
+          [pts[t[0]][0], ring.y(t[0]), pts[t[0]][1]],
+          [pts[t[1]][0], ring.y(t[1]), pts[t[1]][1]],
+          [pts[t[2]][0], ring.y(t[2]), pts[t[2]][1]],
+          dir);
+      }
+    };
+    capTris(R[R.length - 1], [0, 1, 0]);
+    capTris(R[0], [0, -1, 0]);
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  /**
    * Khối lăng trụ vát (loft) giữa đa giác đáy và đa giác đỉnh (cùng số đỉnh, tọa độ [x, z]).
    * yTop có thể là số hoặc mảng độ cao từng đỉnh -> mặt nóc nghiêng.
+   * chamfer > 0: mép nóc vát chéo 45° (dải thép vát chạy quanh nóc như tháp pháo / thân xe hàn thật);
+   * kích thước ngoài giữ nguyên, nóc phẳng co vào trong đúng chamfer đơn vị.
    * Pháp tuyến phẳng từng mặt => cạnh giáp sắc nét như thép tấm hàn.
    */
-  function loft(bottom, top, yBottom, yTop) {
+  function loft(bottom, top, yBottom, yTop, chamfer = 0) {
     const n = bottom.length;
     const yt = (i) => (Array.isArray(yTop) ? yTop[i] : yTop);
     let cx = 0, cz = 0;
@@ -1714,20 +1826,36 @@ const VehicleKit = (() => {
     cx /= n; cz /= n;
     const cy = (yBottom + (Array.isArray(yTop) ? yTop.reduce((s, v) => s + v, 0) / n : yTop)) / 2;
 
-    const verts = [];
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const b0 = [bottom[i][0], yBottom, bottom[i][1]];
-      const b1 = [bottom[j][0], yBottom, bottom[j][1]];
-      const t0 = [top[i][0], yt(i), top[i][1]];
-      const t1 = [top[j][0], yt(j), top[j][1]];
-      const mx = (b0[0] + b1[0] + t0[0] + t1[0]) / 4 - cx;
-      const my = (b0[1] + b1[1] + t0[1] + t1[1]) / 4 - cy;
-      const mz = (b0[2] + b1[2] + t0[2] + t1[2]) / 4 - cz;
-      const out = [mx, my * 0.2, mz];
-      pushTri(verts, b0, b1, t1, out);
-      pushTri(verts, b0, t1, t0, out);
+    // Các vành từ đáy lên: [đáy] -> [đỉnh hông] -> (nóc co vào trong nếu vát)
+    let minH = Infinity;
+    for (let i = 0; i < n; i++) minH = Math.min(minH, yt(i) - yBottom);
+    const c = Math.min(chamfer, minH * 0.45);
+    const rings = [{ pts: bottom, y: () => yBottom }];
+    if (c > 0.01) {
+      rings.push({ pts: top, y: (i) => yt(i) - c });
+      rings.push({ pts: insetPolygon(top, c), y: yt });
+    } else {
+      rings.push({ pts: top, y: yt });
     }
+
+    const verts = [];
+    for (let r = 0; r < rings.length - 1; r++) {
+      const A = rings[r], B = rings[r + 1];
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const b0 = [A.pts[i][0], A.y(i), A.pts[i][1]];
+        const b1 = [A.pts[j][0], A.y(j), A.pts[j][1]];
+        const t0 = [B.pts[i][0], B.y(i), B.pts[i][1]];
+        const t1 = [B.pts[j][0], B.y(j), B.pts[j][1]];
+        const mx = (b0[0] + b1[0] + t0[0] + t1[0]) / 4 - cx;
+        const my = (b0[1] + b1[1] + t0[1] + t1[1]) / 4 - cy;
+        const mz = (b0[2] + b1[2] + t0[2] + t1[2]) / 4 - cz;
+        const out = [mx, my * 0.2, mz];
+        pushTri(verts, b0, b1, t1, out);
+        pushTri(verts, b0, t1, t0, out);
+      }
+    }
+    top = rings[rings.length - 1].pts;
     const capTris = (pts, yf, dir) => {
       const contour = pts.map(p => new THREE.Vector2(p[0], p[1]));
       const tris = THREE.ShapeUtils.triangulateShape(contour, []);
@@ -2315,6 +2443,8 @@ const VehicleKit = (() => {
     mergeGeometries,
     PartBatch,
     loft,
+    loftRings,
+    insetPolygon,
     sideProfile,
     WheelSet,
     TrackSystem,

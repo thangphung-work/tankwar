@@ -196,7 +196,8 @@ SoundEngine.mixin(class {
     };
     if (!list.length) return make();
     // cú chạm vỏ đạn rơi dày (hàng chục lần/giây): cần nhiều biến thể hơn để tai không nhận ra mẫu lặp
-    const maxV = (kind.startsWith('case') || kind === 'link127') ? 10 : 4;
+    // súng máy ~10 phát/giây: 4 biến thể lặp lại dễ nghe ra nhịp "máy", cần nhiều hơn
+    const maxV = (kind.startsWith('case') || kind === 'link127') ? 10 : kind === 'mg127' ? 8 : 4;
     if (list.length < maxV && !list.pending) {
       list.pending = true;
       this.whenIdle(() => { list.pending = false; if (list.length < maxV) make(); });
@@ -509,8 +510,10 @@ SoundEngine.mixin(class {
       pan: (!remote && !scout) ? (Math.random() - 0.5) * 0.25 : sp.pan });   // 6 nòng xoay: mỗi phát lệch nhẹ trái/phải -> loạt đạn rộng, dày
 
     if (!this.playSample('gatling_shot', out, t, { gain: 1.0, vary: 0.06 })) {
-      if (scout && !remote) {
-        // Đại liên 12.7mm ngay trên nóc xe mình: một "bản ghi" phát bắn dựng theo vật lý (xem synthGunshot)
+      if (scout) {
+        // Súng máy 12.7mm / 7.62mm: một "bản ghi" phát bắn dựng theo vật lý (xem synthGunshot) — cả súng của mình lẫn của
+        // xe khác (trước đây xe khác dùng cụm nhiễu lọc: nghe "xì / bè", lệch hẳn tiếng súng của mình).
+        // Xe khác ở xa: voice() đã lọc mất âm cao, hạ mức, thêm vọng theo cự ly
         const src = this.ctx.createBufferSource();
         src.buffer = this.gunshotBuffer('mg127');
         src.playbackRate.value = p * 0.8;
@@ -522,14 +525,6 @@ SoundEngine.mixin(class {
           this.tone(out, t, { freq: 95, freqEnd: 55, sweep: 0.07, gain: 0.5, attack: 0.002, dur: 0.1 });
           this.burst(out, t + 0.03, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, Q: 3, gain: 0.12, attack: 0.001, dur: 0.03 });
         }
-      } else if (scout) {
-        // Súng máy 12.7mm: tiếng "ĐÙNG" đanh, khô của đạn súng trường cỡ lớn — nhiều dải trung-cao, ít siêu trầm hơn pháo 30mm
-        this.snap(out, t, 0.75, 9500 * p, 5);
-        this.burst(out, t, { filter: 'bandpass', freq: 1700 * p, Q: 0.7, drive: 4, gain: 0.75, attack: 0.0006, dur: 0.06 });
-        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 1100 * p, freqEnd: 180, sweep: 0.12, drive: 3, gain: 0.9, attack: 0.001, dur: 0.2 });
-        this.tone(out, t, { freq: 110 * p, freqEnd: 50, sweep: 0.08, drive: 2, gain: 0.45, attack: 0.001, dur: 0.12 });
-        // khóa nòng giật lùi - lên đạn: tiếng "cạch" cơ khí ngay sau phát nổ (chỉ nghe được khi là súng của mình)
-        if (!remote) this.burst(out, t + 0.028, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2300, Q: 2, gain: 0.07, attack: 0.0005, dur: 0.02 });
       } else {
         // Pháo 30mm: mỗi phát là một cú "ĐÙNG" nhỏ có thân dày 200-600 Hz, tắt nhanh trong ~40 ms để 30 phát/giây
         // vẫn tách nhịp thành tiếng xé "BRRRT" (đuôi dài làm cả loạt nhòe thành bức tường ồn).

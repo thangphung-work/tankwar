@@ -18,19 +18,21 @@ let Worker = null;
 try { ({ Worker } = require('worker_threads')); } catch (e) { Worker = null; }
 
 const SIGHT = { ALL_ROUNDER: 520, GATLING: 480, ARTILLERY: 620, SCOUT: 720 };   // khớp TeamIntel
-const BASE_SPEED = { ALL_ROUNDER: 122, GATLING: 122, ARTILLERY: 122, SCOUT: 174 };   // = GameTiming.baseVehicleSpeed (70 / 70 / 70 / 100 km/h thật)
+const BASE_SPEED = { ALL_ROUNDER: 122, GATLING: 122, ARTILLERY: 122, SCOUT: 148 };   // = GameTiming.baseVehicleSpeed (70 / 70 / 70 / 85 km/h thật)
 const MAX_HP = { ALL_ROUNDER: 3.2, GATLING: 4.0, ARTILLERY: 2.2, SCOUT: 1.6 };
 const MAX_RANGE = { ARTILLERY: 3200 };      // tầm bắn tối đa + dư (đơn vị game)
 const DEFAULT_RANGE = 2400;   // tên lửa dẫn hướng 2000 + mục tiêu chạy; đạn tăng bay quá tầm hiệu quả 1750
 const RADAR_RANGE = 950;
 const EQ_RADAR_RANGE = 600;   // radar lắp thêm (Equipment.EQ_RADAR_RANGE)
+const EW_DETECT = 2400;        // dò phương xe đang phát sóng phá UAV (ew_jammer.js EWJammer.C.DETECT)
 const MARGIN = 120;            // nới tầm nhìn: gửi sớm 1 chút để xe hiện ra mượt, không giật
 const CLOSE = 260;             // xe ở rất gần luôn được gửi (va chạm, bắn mò cự ly gần)
 const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;
 // Bụi rậm chỉ thu ngắn tầm phát hiện, tùy loại xe (khớp TeamIntel.BUSH_COVER; BUSH_SPOT = CLOSE):
-// trinh sát núp thật (mắt thường BUSH_SPOT, radar 40%), xe tăng / 6 nòng chỉ giảm tầm radar, pháo tự hành không núp được
-const BUSH_SPOT = 260, BUSH_RADAR = 0.7;
-const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
+// trinh sát núp thật (mắt thường BUSH_SPOT, radar 40%), xe tăng / 6 nòng giảm tầm radar + đứng yên thì mắt thường phải vào
+// gần hơn (still), pháo tự hành không núp được
+const BUSH_SPOT = 260, BUSH_RADAR = 0.7, BUSH_STILL = 0.6;
+const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL }, GATLING: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL } };
 // Drone trinh sát của xe pháo đang bay: soi thấy xe địch trong DRONE_SIGHT quanh hình chiếu drone (khớp TeamIntel.DRONE_SIGHT)
 const DRONE_SIGHT = 420, DRONE_TTL_MS = 1500;
 const REVEAL_MS = 4500;        // vừa nổ súng: lộ vị trí (bụi / rừng không che) — dài hơn thời gian lộ phía máy khách (tối đa 4 s)
@@ -188,12 +190,17 @@ function updateVisibility(M, now) {
       const sp = M.spotted[team].get(e.i);
       if (sp && sp > now) { set.add(e.i); continue; }
       const ex = s.x / 10, ez = s.z / 10, m = meta(M, e.i), revealed = m.revealUntil > now;
+      // xe tăng đang phát sóng phá UAV: lộ với mọi xe địch trong tầm dò phương
+      if (m.jamUntil > now && mine.some(u => Math.hypot(ex - M.S[u.i].x / 10, ez - M.S[u.i].z / 10) < EW_DETECT)) { set.add(e.i); continue; }
       const inForest = !revealed && densityAt(M.dens, ex, ez) >= FOREST_DENSE;
       // núp bụi chưa nổ súng: radar / mắt thường phải vào gần hơn tùy loại xe (BUSH_COVER; + MARGIN để hiện mượt)
       const bush = !revealed && (s.f & F_BUSH) ? BUSH_COVER[e.type] || null : null;
       // cờ ngụy trang chỉ tin khi xe có lắp lưới và thật sự đứng yên (chống gửi cờ giả để tàng hình khi chạy)
       const camo = !revealed && (s.f & F_CAMO) && e.cm && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08;
-      const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = camo ? CAMO_SIGHT : 1;
+      // xe to đứng yên trong bụi (dung sai 8% tốc độ tối đa như cờ ngụy trang): mắt thường phải vào gần hơn; lấy cái mạnh hơn
+      // giữa bụi & lưới ngụy trang (khớp TeamIntel.seesDirect)
+      const still = bush && bush.still && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08 ? bush.still : 1;
+      const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = Math.min(still, camo ? CAMO_SIGHT : 1);
       // drone trinh sát phe mình soi từ trên xuống (bụi che trinh sát / rừng rậm che như mắt thường)
       if (drones.some(dr => {
         const d = Math.hypot(ex - dr.x, ez - dr.z);
@@ -477,8 +484,13 @@ function handle(room, client, msg) {
     case 'AA_MG': {
       // trạm súng phòng không xe tăng: chỉ máy điều khiển xe đó; đang bóp cò thì tính như vừa bắn (cho phát trúng drone)
       const d = msg.d || {}, r = M.byIdx.get(d.i), st = M.S[d.i];
-      if (!r || r.type !== 'ALL_ROUNDER' || ownerOf(room, r) !== client.id || (st && (st.f & F_DEAD))) return true;
+      // trạm vũ khí / máy phá sóng trên chân đế mô-đun: xe tăng, xe 6 nòng (ô NÓC THÁP)
+      if (!r || (r.type !== 'ALL_ROUNDER' && r.type !== 'GATLING') || ownerOf(room, r) !== client.id || (st && (st.f & F_DEAD))) return true;
       if (d.f) M.lastFireBy.set(client.id, now);
+      // máy phá sóng chống UAV đang phát (trường j): địch dò phương thấy xe trong tầm EW_DETECT (updateVisibility)
+      if (d.j !== undefined) meta(M, d.i).jamUntil = d.j ? now + 1300 : 0;
+      // máy phá khóa radar xe 6 nòng đang phát (trường lj): cũng lộ vị trí như trên
+      if (d.lj !== undefined) meta(M, d.i).jamUntil = d.lj ? now + 1300 : 0;
       return false;
     }
     case 'DRONE_LOCK': {

@@ -33,10 +33,13 @@ const TeamIntel = (() => {
   const BUSH_RADAR = 0.7;
   // Bụi che theo loại xe (khớp server_auth.js BUSH_COVER):
   //  - xe trinh sát: núp bụi thật sự — mắt thường chỉ thấy trong BUSH_SPOT, radar chỉ bắt được trong 40% bán kính
-  //  - xe tăng / xe 6 nòng: xe to, bụi không che được mắt — chỉ làm radar địch phải vào gần hơn (70% bán kính)
+  //  - xe tăng / xe 6 nòng: xe to, bụi chỉ che một phần — chạy thì địch vẫn thấy như thường, ĐỨNG YÊN thì mắt thường phải
+  //    vào gần hơn (still: 60% tầm nhìn); radar địch phải vào gần hơn (70% bán kính)
   //  - pháo tự hành: thân xe tải + nòng dài, không núp bụi được (không có mục nào)
   // spot: tầm mắt thường thấy được xe núp bụi (0 = bụi không che mắt); radar: hệ số bán kính radar bắt được
-  const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR }, GATLING: { spot: 0, radar: BUSH_RADAR } };
+  // still: hệ số tầm nhìn của địch khi xe đứng yên trong bụi (dưới ~6% tốc độ tối đa; máy chủ dung sai 8%)
+  const BUSH_STILL = 0.6;
+  const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL }, GATLING: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL } };
   // Drone trinh sát đang bay soi thấy xe địch trong bán kính này quanh hình chiếu drone (khớp server_auth.js DRONE_SIGHT)
   const DRONE_SIGHT = 420;
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
@@ -89,7 +92,9 @@ const TeamIntel = (() => {
     if ((u.revealTimer || 0) > 0) return { html: `BỊ LỘ VỊ TRÍ DO VỪA KHAI HỎA · ${u.revealTimer.toFixed(1)}S`, warn: true, cover: true };
     const bc = BUSH_COVER[u.tankType];
     if (!bc) return { html: 'XE PHÁO KHÔNG NÚP BỤI ĐƯỢC · ĐỊCH VẪN THẤY RÕ', warn: true, cover: false };
-    if (!bc.spot) return { html: 'TRONG BỤI · ĐỊCH VẪN NHÌN THẤY, RADAR ĐỊCH PHẢI VÀO GẦN MỚI BẮT ĐƯỢC', warn: false, cover: true };
+    if (!bc.spot) return Math.abs(u.speed || 0) < (u.baseMaxSpeed || 120) * 0.06
+      ? { html: 'NÚP BỤI · ĐỨNG YÊN: ĐỊCH PHẢI VÀO GẦN HƠN MỚI THẤY', warn: false, cover: true }
+      : { html: 'TRONG BỤI · ĐANG CHẠY: ĐỊCH VẪN NHÌN THẤY — DỪNG LẠI ĐỂ NÚP', warn: true, cover: true };
     return { html: 'ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN', warn: false, cover: true };
   }
 
@@ -101,7 +106,9 @@ const TeamIntel = (() => {
     let r = sightRange(viewer);
     const bc = bushCover(t);
     if (bc && bc.spot) r = Math.min(r, bc.spot);
-    if (d > r * (EQ ? EQ.camoFactor(t) : 1)) return false;
+    // xe to đứng yên trong bụi: phải vào gần hơn (lưới / lá ngụy trang mạnh hơn thì lấy cái mạnh hơn, không cộng dồn)
+    const still = bc && bc.still && Math.abs(t.speed || 0) < (t.baseMaxSpeed || 120) * 0.06 ? bc.still : 1;
+    if (d > r * Math.min(still, EQ ? EQ.camoFactor(t) : 1)) return false;
     // màn khói chắn giữa 2 xe: không nhìn thấy (radar trinh sát vẫn bắt được — xem radarContact)
     if (EQ && EQ.smokeBlocks(viewer.x, viewer.z, t.x, t.z)) return false;
     const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
@@ -151,14 +158,26 @@ const TeamIntel = (() => {
     return r;
   }
 
-  /** Xe `viewer` có biết vị trí của `t` không (đồng minh luôn biết) */
+  const radioLost = u => !!(u && u.dmg && u.dmg.radioLost);
+  /** Xe `viewer` có biết vị trí của `t` không (đồng minh biết qua vô tuyến, trừ khi xe đó gãy ăng-ten) */
+  // Xe tăng đang phát sóng phá UAV (ew_jammer.js): địch dò phương bắt được vị trí trong tầm EW DETECT
+  function jamDetect(viewer, t) {
+    // (cả máy phá khóa radar của xe 6 nòng — lock_jammer.js)
+    if (!game || !((game.jamming && game.jamming(t)) || (game.lockJamming && game.lockJamming(t)))) return false;
+    const R = typeof EWJammer !== 'undefined' ? EWJammer.C.DETECT : 2400;
+    return Math.hypot(t.x - viewer.x, t.z - viewer.z) < R;
+  }
+
   function knows(viewer, t) {
     if (!viewer || !t) return false;
-    if (t === viewer || t.team === viewer.team) return true;
+    if (t === viewer) return true;
+    // đồng minh: biết vị trí qua liên lạc vô tuyến — xe gãy ăng-ten chỉ còn thấy khi nhìn tận mắt
+    if (t.team === viewer.team) return !radioLost(t) || t.isDead || seesDirect(viewer, t);
     if (t.isDead) return true;     // xác xe thì ai cũng thấy
     if (t._netHidden) return false;   // máy chủ không gửi vị trí (khuất tầm nhìn cả phe)
     if (seesDirect(viewer, t)) return true;
     if (droneSees(viewer.team, t)) return true;
+    if (jamDetect(viewer, t)) return true;
     if (radarContact(viewer, t)) return true;
     if (reportOf(viewer.team, t)) return true;
     return false;
@@ -167,10 +186,11 @@ const TeamIntel = (() => {
   /** Mức thông tin để vẽ: 'direct' | 'radar' | 'report' | null */
   function knowledge(viewer, t) {
     if (!viewer || !t) return null;
-    if (t.team === viewer.team || t.isDead) return 'direct';
+    if (t === viewer || t.isDead) return 'direct';
+    if (t.team === viewer.team) return (!radioLost(t) || seesDirect(viewer, t)) ? 'direct' : null;
     if (t._netHidden) return null;
     if (seesDirect(viewer, t) || droneSees(viewer.team, t)) return 'direct';
-    if (radarContact(viewer, t)) return 'radar';
+    if (radarContact(viewer, t) || jamDetect(viewer, t)) return 'radar';
     if (reportOf(viewer.team, t)) return 'report';
     return null;
   }
@@ -180,6 +200,7 @@ const TeamIntel = (() => {
   // ---------------------------------------------------------------------------
   function report(spotter, target, fromNet) {
     if (!spotter || !target || target.isDead || spotter.team === target.team) return;
+    if (radioLost(spotter)) return;   // gãy ăng-ten: không gửi được báo cáo
     const key = spotter.team + '|' + target.id;
     const prev = reports.get(key);
     const fresh = !prev || time - prev.t > REPORT_TTL;
