@@ -51,6 +51,8 @@
     unit.wheelSet = wheels;
     const sensor = buildRoofSensor(chassis, M, unit);
     const mg = buildRingMount(chassis, M, unit);
+    // xạ thủ đứng ở lỗ nóc vòng súng (hình người, nạp đạn thủ công, có thể hy sinh) — vehicle_crew.js
+    if (typeof VehicleCrew !== 'undefined') VehicleCrew.attachScoutGunner(unit, unit.turretGroup, mg);
 
     unit.roadWheels = [];
     unit.strobeLight = null;
@@ -62,7 +64,8 @@
       update(dt, u) {
         if (dt <= 0) return;
         if (u.antennaSets) for (const a of u.antennaSets) a.update(dt);
-        animateAtgmReload(u, dt);
+        // kíp xe: xạ thủ (tư thế / nạp đạn thủ công / thương vong) + ống phóng tên lửa nạp kiểu TOW — vehicle_crew.js
+        if (u.crew && typeof VehicleCrew !== 'undefined') VehicleCrew.animate(u, dt);
         const yaw = u.group.rotation.y;
         let dYaw = lastYaw === null ? 0 : yaw - lastYaw;
         lastYaw = yaw;
@@ -113,46 +116,6 @@
       }
     };
     return { hullW: HALF_W * 2 };
-  }
-
-  // NẠP ỐNG PHÓNG TÊN LỬA (theo antiTankCooldown) — ống cố định, không tháo: phóng xong nắp trước bung (lòng ống đen), khói
-  // thuốc phóng còn xì ra hai đầu ống ~1 s; giữa chừng xạ thủ mở nắp khóa sau, đẩy quả tên lửa mới từ phía sau vào lòng ống,
-  // đóng nắp (giật nhẹ khi sập chốt), nắp trước khép lại = đã nạp. Hết tên lửa thì để ống rỗng
-  function animateAtgmReload(u, dt) {
-    const A = u.atgmCan;
-    if (!A) return;
-    const cd = u.antiTankCooldown || 0, max = u.antiTankCooldownMax || 1;
-    const S = A.st || (A.st = { last: 0, phase: 'idle', t: 0, puffs: 0 });
-    if (cd > S.last + 0.05 && !u.isDead) { S.phase = 'reload'; S.t = 0; S.puffs = 0; }
-    S.last = cd;
-    const sm = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
-    const empty = u.missileAmmoCount !== undefined && u.missileAmmoCount <= 0;
-    if (S.phase !== 'reload') {
-      A.rearCap.rotation.x = 0; A.missile.visible = false; A.can.position.z = 0;
-      A.capCover.visible = !empty; A.capOpen.visible = empty;
-      return;
-    }
-    S.t += dt;
-    // khói thuốc phóng còn rỉ ra miệng & đuôi ống sau khi phóng
-    if (S.puffs < 3 && S.t > 0.15 + S.puffs * 0.35 && typeof ReloadFX !== 'undefined' && u.getLauncherWorldTransform) {
-      S.puffs++;
-      const L = u.getLauncherWorldTransform();
-      ReloadFX.puff(u, L.position, { x: L.direction.x * 0.3, y: 0.6, z: L.direction.z * 0.3 }, 1);
-      if (L.rear) ReloadFX.puff(u, L.rear, { x: -L.direction.x * 0.3, y: 0.6, z: -L.direction.z * 0.3 }, 1);
-    }
-    const pr = cd > 0 ? 1 - cd / max : 1;
-    const load = !empty;
-    A.capOpen.visible = !(load && pr >= 0.86); A.capCover.visible = !A.capOpen.visible;
-    if (load) {
-      // nắp sau mở 0.42-0.5, đóng 0.8-0.86; tên lửa trượt vào 0.5-0.8 (từ sau đuôi ống ra phía trước)
-      A.rearCap.rotation.x = -1.6 * sm((pr - 0.42) / 0.08) * (1 - sm((pr - 0.8) / 0.06));
-      const k = sm((pr - 0.5) / 0.3);
-      A.missile.visible = pr > 0.48 && pr < 0.82;
-      A.missile.position.z = 5.2 * (1 - k);
-      // sập chốt: cả ống giật nhẹ
-      A.can.position.z = pr > 0.8 && pr < 0.88 ? Math.sin((pr - 0.8) / 0.08 * Math.PI) * 0.1 : 0;
-    } else { A.rearCap.rotation.x = 0; A.missile.visible = false; A.can.position.z = 0; }
-    if (cd <= 0) S.phase = 'idle';
   }
 
   // Cắt vát góc đa giác [x, z]: mỗi đỉnh thay bằng 2 đỉnh lùi k đơn vị theo hai cạnh kề (góc đứng thân xe vát chéo)
