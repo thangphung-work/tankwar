@@ -285,6 +285,12 @@
       // Tấm chắn bùn cao su sau bánh sau
       hb.setTag('flap' + (s < 0 ? 'L' : 'R'));
       hb.box(TIRE_W + 0.2, 2.6, 0.12, M.rubber, [s * WHEEL_X, 3.6, AXLES[1].z + WHEEL_R + 1.4], [0.08, 0, 0]);
+      // Tấm chắn bùn cao su sau bánh trước: treo dưới thân ngay sau đuôi vè, lùi xa hơn bánh sau để bánh đánh lái không quệt;
+      // thanh kẹp thép ở mép trên
+      hb.setTag('flapF' + (s < 0 ? 'L' : 'R'));
+      const ffz = AXLES[0].z + WHEEL_R + 1.6;
+      hb.box(TIRE_W + 0.2, 2.6, 0.12, M.rubber, [s * WHEEL_X, 3.8, ffz], [0.08, 0, 0]);
+      hb.box(TIRE_W + 0.3, 0.32, 0.22, M.steel, [s * WHEEL_X, 4.95, ffz - 0.06]);
     }
     hb.setTag(null);
 
