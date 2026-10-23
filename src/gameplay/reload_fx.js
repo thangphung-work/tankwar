@@ -3,8 +3,7 @@
  *  - toss(): vỏ / vật rời văng ra khỏi xe (đế liều phóng xe tăng, ống phóng tên lửa rỗng) — rơi theo trọng lực, nảy & lăn
  *    trên mặt đất / nóc xe rồi nằm lại vài giây, mờ dần biến mất
  *  - puff(): khói thuốc phóng xì ra ở cửa hất vỏ / khóa nòng (dùng chung pool khói của xe, SpgFXPool)
- *  - KÍP XE BÁO SẴN SÀNG (xe người chơi): nạp xong là nghe tiếng bộ đàm nội bộ + giọng kíp xe (giọng tiếng Việt của
- *    trình duyệt nếu có) + dòng báo ngắn dưới tâm ngắm — như pháo thủ / nạp đạn hô "SẴN SÀNG!" sau mỗi phát
+ *  - KÍP XE BÁO SẴN SÀNG (xe người chơi): nạp xong hiện dòng báo ngắn dưới tâm ngắm (chỉ chữ, không âm thanh)
  * Mô hình xe (mbt_halberd.js, recon_marten.js) gọi toss / puff từ modelAnimator; vòng lặp game gọi update qua ArtilleryGame3D.update
  */
 const ReloadFX = (() => {
@@ -95,31 +94,6 @@ const ReloadFX = (() => {
   }
 
   // ---------- KÍP XE BÁO SẴN SÀNG ----------
-  let viVoice, voiceChecked = false;
-  function pickVoice() {
-    if (voiceChecked) return viVoice;
-    const S = window.speechSynthesis;
-    if (!S || !S.getVoices) { voiceChecked = true; return null; }
-    const vs = S.getVoices();
-    if (!vs.length) return null;   // danh sách giọng nạp chậm: hỏi lại lần sau
-    voiceChecked = true;
-    viVoice = vs.find(v => /^vi/i.test(v.lang)) || null;
-    return viVoice;
-  }
-  if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.addEventListener) {
-    window.speechSynthesis.addEventListener('voiceschanged', () => { voiceChecked = false; pickVoice(); });
-  }
-
-  // tiếng bộ đàm nội bộ: bấm nút nói (tách), xì nhiễu ngắn, nhả nút (tách)
-  function intercom() {
-    const SE = window.soundEngine;
-    if (!SE || !SE.ctx || !SE.tone || (SE.ready && !SE.ready())) return;
-    const bus = SE.uiBus || SE.masterGain, t = SE.ctx.currentTime + 0.01;
-    SE.tone(bus, t, { type: 'square', freq: 2200, gain: 0.012, attack: 0.001, hold: 0.008, dur: 0.02, filter: 'bandpass', filterFreq: 2400 });
-    SE.tone(bus, t + 0.03, { type: 'sawtooth', freq: 900, freqEnd: 700, gain: 0.006, attack: 0.004, hold: 0.06, dur: 0.05, filter: 'bandpass', filterFreq: 1500 });
-    SE.tone(bus, t + 0.62, { type: 'square', freq: 1700, gain: 0.01, attack: 0.001, hold: 0.008, dur: 0.02, filter: 'bandpass', filterFreq: 2000 });
-  }
-
   let callEl = null, callT = 0;
   function showCall(text) {
     if (!callEl) {
@@ -140,19 +114,9 @@ const ReloadFX = (() => {
     callT = 1.6;
   }
 
-  /** who: 'NẠP ĐẠN' / 'PHÁO THỦ'..., text: chữ trên màn hình, say: câu nói (giọng tiếng Việt nếu trình duyệt có) */
-  function crewCall(who, text, say) {
-    intercom();
+  /** who: 'NẠP ĐẠN' / 'PHÁO THỦ'..., text: chữ trên màn hình (không phát tiếng bộ đàm / giọng đọc) */
+  function crewCall(who, text) {
     showCall('<i>' + who + ':</i>' + text);
-    const S = window.speechSynthesis, v = pickVoice();
-    if (S && v && say) {
-      try {
-        S.cancel();
-        const u = new SpeechSynthesisUtterance(say);
-        u.voice = v; u.lang = v.lang; u.rate = 1.25; u.pitch = 0.9; u.volume = 0.85;
-        setTimeout(() => S.speak(u), 60);
-      } catch (e) { /* trình duyệt chặn đọc */ }
-    }
   }
 
   // Theo dõi xe người chơi: hết thời gian nạp (pháo chính / tên lửa / băng đạn) -> kíp xe báo sẵn sàng
@@ -166,13 +130,14 @@ const ReloadFX = (() => {
       const T = P.tankType;
       if (T === 'ALL_ROUNDER') {
         const a = P.selectedAmmo;
-        const nm = a === 'AP' ? 'XUYÊN GIÁP' : a === 'HE' ? 'NỔ MẠNH' : 'ĐẠN THƯỜNG';
-        crewCall('NẠP ĐẠN', nm + ' — SẴN SÀNG!', (a === 'AP' ? 'Xuyên giáp' : a === 'HE' ? 'Nổ mạnh' : 'Đạn thường') + ', sẵn sàng!');
-      } else if (T === 'ARTILLERY') crewCall('PHÁO THỦ', 'ĐÃ NẠP ĐẠN & LIỀU — PHÁO SẴN SÀNG!', 'Pháo sẵn sàng!');
-      else if (T === 'GATLING') crewCall('PHÁO THỦ', 'ĐÃ THAY BĂNG — SẴN SÀNG!', 'Đã thay băng, sẵn sàng!');
-      else if (T === 'SCOUT') crewCall('XẠ THỦ', 'ĐÃ THAY HỘP ĐẠN — SẴN SÀNG!', 'Đã thay hộp, sẵn sàng!');
+        const nm = a === 'AP' ? 'XUYÊN GIÁP' : a === 'HE' ? 'NỔ MẠNH' : 'ĐA NĂNG';
+        crewCall('NẠP ĐẠN', nm + ' — SẴN SÀNG!');
+      } else if (T === 'ARTILLERY') crewCall('PHÁO THỦ', 'ĐÃ NẠP ĐẠN & LIỀU — PHÁO SẴN SÀNG!');
+      else if (T === 'GATLING') crewCall('PHÁO THỦ', 'ĐÃ THAY BĂNG — SẴN SÀNG!');
+      // (bóp cò giữa lượt nạp: dừng nạp, hộp / giàn chưa đầy -> không báo)
+      else if (T === 'SCOUT' && P.gatlingMag >= P.gatlingMagMax) crewCall('XẠ THỦ', P.mainGun && P.mainGun.kind === 'rocket' ? 'ĐÃ NẠP ĐẦY GIÀN — SẴN SÀNG!' : 'ĐÃ THAY HỘP ĐẠN — SẴN SÀNG!');
     }
-    if (W.at > 0 && at <= 0 && P.tankType === 'SCOUT' && (P.missileAmmoCount || 0) > 0) crewCall('XẠ THỦ', 'ĐÃ NẠP ỐNG PHÓNG — TÊN LỬA SẴN SÀNG!', 'Tên lửa sẵn sàng!');
+    if (W.at > 0 && at <= 0 && P.tankType === 'SCOUT' && (P.missileAmmoCount || 0) > 0) crewCall('XẠ THỦ', 'ĐÃ NẠP ỐNG PHÓNG — TÊN LỬA SẴN SÀNG!');
     W.rl = rl; W.at = at;
   }
 

@@ -160,12 +160,13 @@ SoundEngine.mixin(class {
   // opts.heavy: đạn pháo 155mm (~6.6 kg thuốc nổ, gấp ~2.5 lần đạn HE 120mm của xe tăng) -> nổ to, trầm, dài hơn hẳn
   playExplosionAtDistance(distance, hitType = 'GROUND', ammoType = 'NORMAL', pos = null, opts = {}) {
     if (!this.ready()) return;
+    this._hitMat = hitType === 'BUILDING' && opts ? opts.mat : undefined;   // vật liệu tường nhà -> surfaceHit
     if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY') {
-      this.playGatlingImpact(distance, hitType, ammoType === 'INCENDIARY', pos, ammoType === 'SCOUT_BULLET');
+      this.playGatlingImpact(distance, hitType, ammoType === 'INCENDIARY', pos, ammoType === 'SCOUT_BULLET', opts);   // opts.thin: xe vỏ mỏng
       return;
     }
     // Đạn xuyên động năng không có thuốc nổ: không có tiếng nổ, chỉ có tiếng va chạm
-    if (ammoType === 'AP') { this.noteBlast(distance, 0.6); this.playKineticImpact(distance, hitType, pos); return; }
+    if (ammoType === 'AP') { this.noteBlast(distance, 0.6); this.playKineticImpact(distance, hitType, pos, opts); return; }   // opts.du: lõi urani nghèo
 
     const sp = this.spatial(distance, pos);
     const t = this.ctx.currentTime + sp.delay;
@@ -240,12 +241,16 @@ SoundEngine.mixin(class {
         // 155mm: khối đất hàng tấn bị hất tung -> cú "HỰ" thứ hai trễ ~60 ms (phản xạ nền + đất đổ), đất rung trầm kéo dài
         this.burst(out, t + 0.06, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 480, Q: 0.7, drive: 2, gain: 2.4 * k, attack: 0.004, dur: 0.45 });
         this.burst(out, t + 0.02, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 170, drive: 2, gain: 1.1 * k, attack: 0.03, dur: 1.3 });
+      } else if (ammoType === 'ANTI_TANK_MISSILE') {
+        // đầu nổ lõm kép ~4-5 kg: cú "HỰ" thứ hai của liều nổ chính ngay sau liều mồi (~25 ms) + trầm rung đất ngắn hơn 155mm
+        this.burst(out, t + 0.025, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 560, Q: 0.7, drive: 2, gain: 1.8 * k, attack: 0.003, dur: 0.32 });
+        this.burst(out, t + 0.015, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 190, drive: 2, gain: 0.9 * k, attack: 0.02, dur: 0.9 });
       }
     }
     if (distance < 700 * Z) this.duck(0.3 + 0.5 * (distance / (700 * Z)), heavy ? 1.6 : 1.0);
     // Nổ sát xe mình (< ~55 m, 155mm < ~70 m): lớp áp suất ép ngực + trầm rơi sâu + mảnh vụn rơi hai bên tai
     const closeR = 450 * Z;
-    if (distance < closeR && hitType !== 'WATER') this.closeBlastLayer(t, 1 - distance / closeR, sp.pan, heavy || ammoType === 'HE', k);
+    if (distance < closeR && hitType !== 'WATER') this.closeBlastLayer(t, 1 - distance / closeR, sp.pan, heavy || ammoType === 'HE' || ammoType === 'ANTI_TANK_MISSILE', k);
 
     // Rền cuộn lan xa + tiếng dội địa hình (nhỏ hơn hẳn phát nổ chính, kéo dài)
     const roll = this.voice({ gain: sp.gain * 0.8 * lvl, lowpass: Math.min(sp.lowpass, 500), wet: 0.95, pan: sp.pan * 0.5 });

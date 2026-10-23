@@ -124,6 +124,13 @@ SoundEngine.mixin(class {
    */
   updateTurretDrive(rate, tankType = 'ALL_ROUNDER', jammed = false) {
     if (!this.ctx || this.isMuted) return;
+    // vòng súng quay tay của xe trinh sát: không có mô-tơ — tiếng riêng (updateRingTraverse), tắt kênh mô-tơ
+    if (tankType === 'SCOUT_RING') {
+      if (this.turretDrive) { this.turretDrive.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05); this.turretDrive.moving = false; this.turretDrive.env = 0; }
+      this.updateRingTraverse(rate);
+      return;
+    }
+    if (this.ringDrive) this.updateRingTraverse(0);
     const td = this.ensureTurretDrive();
     if (!td) return;
     const t = this.ctx.currentTime;
@@ -190,6 +197,97 @@ SoundEngine.mixin(class {
       this.burst(o, t + 0.12, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, gain: 0.1, attack: 0.001, dur: 0.06 });
     }
     td.moving = moving;
+  }
+
+  // ===========================================================================
+  // 6b'. VÒNG SÚNG QUAY TAY (xe trinh sát: xạ thủ tì người đẩy vòng súng / súng 12.7 trên giá) — CƠ HỌC, KHÔNG MÔ-TƠ:
+  //   vòng bi lăn trên rãnh vòng thép "rrr" trầm khô, đổi cao độ theo tốc độ; sạn bụi trong rãnh lạo xạo không đều;
+  //   phụ kiện thép quanh vòng (chốt hãm, quai, nắp lỗ) lách cách ngẫu nhiên; thỉnh thoảng rít ma sát khi lia chậm;
+  //   dừng tay: vòng còn trôi theo quán tính rồi xạ thủ ghì lại "cộc" khẽ. Không có tiếng "vù" cao độ đều của mô-tơ
+  // ===========================================================================
+  ensureRingDrive() {
+    if (this.ringDrive || !this.ctx || !this.pinkNoiseBuffer) return this.ringDrive;
+    const ctx = this.ctx;
+    let nb = this.pinkNoiseBuffer;
+    try { nb = this.ensureFireBuffers().pink; } catch (e) { /* dùng bộ đệm chung */ }
+    const out = ctx.createGain(); out.gain.value = 0;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90; hp.Q.value = 0.6;
+    out.connect(hp); hp.connect(this.vehicleBus);
+    const loop = (rate) => { const s = ctx.createBufferSource(); s.buffer = nb; s.loop = true; s.playbackRate.value = rate; s.start(ctx.currentTime, Math.random() * nb.duration); return s; };
+    // điều biên ngẫu nhiên (không tuần hoàn): nhiễu lọc rất thấp -> độ lớn chao lên xuống như bi lăn qua chỗ mòn / sạn
+    const amp = (src, f, depth) => {
+      const lf = ctx.createBiquadFilter(); lf.type = 'lowpass'; lf.frequency.value = f;
+      const d = ctx.createGain(); d.gain.value = depth;
+      const g = ctx.createGain(); g.gain.value = 1;
+      const n = loop(0.6 + Math.random() * 0.3); n.connect(lf); lf.connect(d); d.connect(g.gain);
+      src.connect(g);
+      return g;
+    };
+    // 1. bi lăn trên rãnh: dải trầm-trung khô
+    const r1 = loop(0.9), rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.frequency.value = 420; rf.Q.value = 1.3;
+    r1.connect(rf);
+    const rg = ctx.createGain(); rg.gain.value = 0;
+    amp(rf, 14, 2.2).connect(rg); rg.connect(out);
+    // 2. sạn / bụi trong rãnh lạo xạo: dải cao, hẹp, điều biên nhanh không đều
+    const r2 = loop(1.13), gfl = ctx.createBiquadFilter(); gfl.type = 'bandpass'; gfl.frequency.value = 2600; gfl.Q.value = 2.2;
+    r2.connect(gfl);
+    const gg = ctx.createGain(); gg.gain.value = 0;
+    amp(gfl, 40, 3).connect(gg); gg.connect(out);
+    this.ringDrive = { out, rf, rg, gfl, gg, spin: 0, env: 0, moving: false, tickT: 0, creakT: 0, rateS: 0, disp: 0 };
+    return this.ringDrive;
+  }
+
+  updateRingTraverse(rate) {
+    if (!this.ctx || this.isMuted) return;
+    const rd = this.ensureRingDrive();
+    if (!rd) return;
+    const t = this.ctx.currentTime;
+    const dtR = rd.lastT ? Math.min(0.1, Math.max(0.001, t - rd.lastT)) : 0.016;
+    rd.lastT = t;
+    const r = Math.abs(rate || 0);
+    rd.rateS += ((r > 0.008 ? r : 0) - rd.rateS) * Math.min(1, dtR * 8);
+    rd.disp = rd.disp * Math.exp(-dtR / 0.25) + (rate || 0) * dtR;
+    const net = Math.abs(rd.disp) / 0.25;
+    const moving = rd.moving ? rd.rateS > 0.01 && net > 0.007 : rd.rateS > 0.02 && net > 0.02;
+    const k = Math.min(1, rd.rateS / 1.75);   // turretRates SCOUT 100°/s
+    // vòng nặng có quán tính: lăn lên / trôi xuống mượt (không bật tắt)
+    rd.spin += ((moving ? Math.pow(k, 0.7) : 0) - rd.spin) * Math.min(1, dtR * (moving ? 7 : 3));
+    rd.env += ((moving ? 1 : 0) - rd.env) * Math.min(1, dtR * (moving ? 12 : 3.5));
+    const s = rd.spin;
+    rd.rf.frequency.setTargetAtTime(330 + 380 * s, t, 0.08);
+    rd.rg.gain.setTargetAtTime(1.6 * (0.35 + 0.65 * s), t, 0.06);
+    rd.gfl.frequency.setTargetAtTime(2200 + 1200 * s, t, 0.08);
+    rd.gg.gain.setTargetAtTime(0.5 * (0.2 + 0.8 * s), t, 0.06);
+    rd.out.gain.setTargetAtTime(rd.env * 0.05, t, 0.04);
+    const R = Math.random;
+    if (moving && rd.env > 0.3) {
+      // phụ kiện thép quanh vòng lách cách: càng lia nhanh càng dày
+      rd.tickT -= dtR;
+      if (rd.tickT <= 0) {
+        rd.tickT = 0.08 + R() * (0.45 - 0.3 * s);
+        const o = this.voice({ bus: this.vehicleBus, gain: 0.4, wet: 0.05 });
+        this.playCaseHit(o, t + R() * 0.02, 'debrisLink', 1.4 + R() * 0.8, 0.02 + 0.03 * s * R(), 8000);
+      }
+      // lia chậm: ma sát rãnh vòng rít khẽ "kít" (lia nhanh thì bi lăn át đi)
+      rd.creakT -= dtR;
+      if (rd.creakT <= 0) {
+        rd.creakT = 0.6 + R() * 1.4;
+        if (s < 0.5 && R() < 0.6) {
+          const o = this.voice({ bus: this.vehicleBus, gain: 0.35, wet: 0.04 });
+          const f = 900 + R() * 700;
+          this.burst(o, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f, freqEnd: f * (0.9 + R() * 0.25), sweep: 0.2, Q: 7, gain: 0.06, attack: 0.03, dur: 0.12 + R() * 0.15 });
+        }
+      }
+    }
+    // xạ thủ ghì vòng lại sau một lần lia: "cộc" khẽ của khối súng + vòng
+    if (rd.moving && !moving && t - (rd.startT || 0) > 0.25 && t - (rd.stopT || -9) > 0.4) {
+      rd.stopT = t;
+      const o = this.voice({ bus: this.vehicleBus, gain: 0.45, wet: 0.04 });
+      this.burst(o, t + 0.08, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, gain: 0.08, attack: 0.002, dur: 0.06 });
+      this.playCaseHit(o, t + 0.085, 'debrisMetal', 1.2, 0.04, 6000);
+    }
+    if (moving && !rd.moving) rd.startT = t;
+    rd.moving = moving;
   }
 
   // ===========================================================================
@@ -270,6 +368,20 @@ SoundEngine.mixin(class {
     const t = this.ctx.currentTime;
     const dtR = ed.lastT ? Math.min(0.1, Math.max(0.001, t - ed.lastT)) : 0.016;
     ed.lastT = t;
+    // súng trên giá quay tay (xe trinh sát): ngóc / chúc bằng tay quanh chốt nôi súng — không bơm, chỉ ma sát chốt khẽ
+    if (tankType === 'SCOUT_RING') {
+      ed.out.gain.setTargetAtTime(0, t, 0.05);
+      ed.moving = false;
+      const r = Math.abs(rate || 0);
+      ed.pinT = (ed.pinT || 0) - dtR;
+      if (r > 0.05 && ed.pinT <= 0) {
+        ed.pinT = 0.35 + Math.random() * 0.6;
+        const o = this.voice({ bus: this.vehicleBus, gain: 0.3, wet: 0.03 });
+        const f = 1300 + Math.random() * 600;
+        this.burst(o, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f, freqEnd: f * 1.1, sweep: 0.15, Q: 5, gain: 0.035, attack: 0.02, dur: 0.1 });
+      }
+      return;
+    }
     // Pháo chính xe tăng: bơm điện-thủy lực; pháo 155: giá pháo nặng, bơm lớn trầm và chậm; pháo 6 nòng: mô-tơ điện servo;
     // trạm súng máy trinh sát: servo nhỏ, rất khẽ. maxR = turretRates().elevate (rad/s); att = thời gian bơm lên áp
     const P = {

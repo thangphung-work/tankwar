@@ -14,7 +14,12 @@ const SkySystem = (() => {
         fogC: { value: new THREE.Color(atm.fog || atm.horizon) },
         sunDir: { value: atm.sunDir.clone() },
         sunColor: { value: new THREE.Color(atm.sunColor) },
-        time: { value: 0 }
+        time: { value: 0 },
+        // trời mưa: tầng mây xám kín trời (0..1), ánh chớp (0..1) & hướng tia sét
+        overcast: { value: atm.overcast || 0 },
+        storm: { value: atm.storm || 0 },   // độ đen mây giông (0..1)
+        flash: { value: 0 },
+        flashDir: { value: new THREE.Vector3(0, 1, 0) }
       },
       vertexShader: `
         varying vec3 vDir;
@@ -24,7 +29,8 @@ const SkySystem = (() => {
           gl_Position = projectionMatrix * p;
         }`,
       fragmentShader: `
-        uniform vec3 zenith, horizon, ground, sunDir, sunColor, fogC;
+        uniform vec3 zenith, horizon, ground, sunDir, sunColor, fogC, flashDir;
+        uniform float time, overcast, storm, flash;
         varying vec3 vDir;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) {
@@ -55,6 +61,30 @@ const SkySystem = (() => {
             float c = noise(uv + 13.7) * 0.6 + noise(uv * 2.7) * 0.3 + noise(uv * 6.1) * 0.1;
             c = smoothstep(0.58, 0.85, c) * smoothstep(0.05, 0.3, h) * 0.4 * (1.0 - cov);
             col = mix(col, mix(vec3(1.0), sunColor, 0.25) * (0.85 + 0.25 * cs), c);
+          }
+          if (overcast > 0.0) {
+            // Mây mưa kín trời: chân mây thấp xám cuộn trôi theo gió, chỗ mây dày sẫm hơn, sát chân trời tan vào màn mưa;
+            // chớp: cả tầng mây loé sáng, sáng nhất phía tia sét
+            vec2 uo = d.xz / (max(h, 0.0) + 0.1) * 0.8 + vec2(time * 0.006, time * 0.0035);
+            float n = noise(uo) * 0.5 + noise(uo * 2.3 + 3.1) * 0.3 + noise(uo * 5.2 + 1.7) * 0.2;
+            vec3 oc = mix(horizon, zenith, pow(clamp(h, 0.0, 1.0), 0.6)) * (0.82 + 0.34 * n);
+            if (storm > 0.0) {
+              // MÂY ĐEN GIÔNG: khối mây lớn trôi chậm — lõi dày sẫm gần đen, khe mây mỏng sáng hơn; chân mây thấp phía xa
+              // cuộn thành dải sẫm; sát chân trời vẫn sáng (màn mưa xa) để cảnh nền & xe đứng xa còn tách khỏi trời
+              vec2 ub = d.xz / (max(h, 0.0) + 0.15) * 0.3 + vec2(time * 0.004, time * 0.0024);
+              float m = noise(ub) * 0.55 + noise(ub * 2.2 + 5.3) * 0.3 + noise(ub * 4.7 + 2.1) * 0.15;
+              float core = smoothstep(0.38, 0.72, m), up = smoothstep(0.02, 0.4, h);
+              oc *= mix(1.0, 0.62 + 0.38 * n, storm * 0.8);
+              oc *= 1.0 - storm * up * (0.3 + 0.42 * core);
+              vec2 ur = normalize(d.xz + 1e-4) * 5.0 + vec2(h * 11.0 + time * 0.003, h * 23.0);
+              float band = smoothstep(0.03, 0.1, h) * (1.0 - smoothstep(0.16, 0.34, h));
+              oc *= 1.0 - storm * band * 0.32 * smoothstep(0.4, 0.75, noise(ur) * 0.65 + noise(ur * 2.6) * 0.35);
+              oc = mix(oc, oc * vec3(0.9, 0.95, 1.08), storm * up);   // mây giông ngả xanh chàm
+            }
+            oc = mix(oc, fogC, pow(smoothstep(0.3, -0.02, h), 1.3));
+            float fl = flash * (0.3 + 0.7 * pow(max(dot(d, normalize(flashDir)), 0.0), 3.0));
+            oc += vec3(0.85, 0.88, 1.0) * fl * (0.6 + 0.9 * n);
+            col = mix(col, oc, overcast);
           }
           gl_FragColor = vec4(col, 1.0);
         }`

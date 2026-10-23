@@ -90,6 +90,59 @@ SoundEngine.mixin(class {
   }
 
   // ===========================================================================
+  // BỆ TÊN LỬA ĐỘT NÓC (phóng nguội)
+  // ===========================================================================
+  // Khí nén cao áp tống quả nặng ~25 kg ra khỏi ống: "THỤP" trầm dày đập vào ngực (áp suất xả đột ngột), nắp xốp vỡ "bốp",
+  // hơi xả xì xé dài, đuôi ống phụt ngược "phù". Không có lửa — tiếng gầm thật đến sau, lúc động cơ đánh lửa
+  // (playMissileIgnite)
+  playTopMissileLaunch(distance = 0, pos = null) {
+    if (!this.ready()) return;
+    const remote = distance > 0;
+    const sp = remote ? this.spatial(distance, pos) : { gain: 1, lowpass: 20000, wet: 0.35, delay: 0, pan: 0 };
+    if (sp.gain < 0.04) return;
+    const t = this.ctx.currentTime + sp.delay;
+    const out = this.voice({ gain: sp.gain, lowpass: sp.lowpass, wet: Math.max(0.35, sp.wet), pan: sp.pan });
+    const v = 0.94 + Math.random() * 0.12;
+    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300 * v, drive: 2.6, gain: 2.0, attack: 0.002, dur: 0.24 });
+    this.tone(out, t, { freq: 78 * v, freqEnd: 34, sweep: 0.22, gain: 1.1, attack: 0.002, dur: 0.3 });
+    this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 420 * v, Q: 0.8, drive: 2, gain: 1.4, attack: 0.002, dur: 0.18 });
+    this.snap(out, t, 0.5, 3800, 2.2);
+    // nắp xốp đầu ống vỡ tung
+    this.burst(out, t + 0.004, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2600, Q: 0.7, gain: 0.9, attack: 0.001, dur: 0.07 });
+    // hơi khí nén xì xé, nhỏ dần
+    this.burst(out, t + 0.02, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2400, freqEnd: 600, sweep: 0.55, Q: 0.6, gain: 0.75, attack: 0.01, dur: 0.75 });
+    this.burst(out, t + 0.03, { buffer: this.noiseBuffer, filter: 'highpass', freq: 3500, gain: 0.22, attack: 0.02, dur: 0.5 });
+    // đuôi ống phụt ngược
+    this.burst(out, t + 0.012, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 520, gain: 0.8, attack: 0.004, dur: 0.35 });
+    if (!remote) {
+      this.duck(0.3, 0.7);
+      if (this.interior && this.interiorShot) this.interiorShot('missile', t);
+    }
+  }
+
+  // Động cơ tên lửa nhiên liệu rắn bắt lửa giữa không trung cách xe vài chục mét: "ĐÙNG – XOẠC" — tiếng nổ mồi đanh, rồi
+  // ngay lập tức tiếng gầm phản lực dải rộng bùng lên rất to (sau đó kênh tiếng bám viên đạn — startMissileTrack — giữ
+  // tiếng gầm theo tên lửa bay đi), rền dội địa hình
+  playMissileIgnite(distance = 0, pos = null) {
+    if (!this.ready()) return;
+    const sp = this.spatial(Math.max(1, distance), pos);
+    if (sp.gain < 0.04) return;
+    const t = this.ctx.currentTime + sp.delay;
+    const out = this.voice({ gain: sp.gain, lowpass: sp.lowpass, wet: Math.min(0.9, sp.wet + 0.25), pan: sp.pan });
+    const W = this.stereoSpread ? this.stereoSpread(out, 0.5) : { L: out, R: out };
+    this.snap(out, t, 0.7, 7000, 2.4);
+    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, drive: 2.4, gain: 1.8, attack: 0.002, dur: 0.22 });
+    this.tone(out, t, { freq: 64, freqEnd: 38, sweep: 0.3, gain: 0.9, attack: 0.003, dur: 0.38 });
+    // gầm phản lực bùng lên rồi lắng về mức kênh tiếng bám viên đạn (hai kênh lệch nhau cho rộng)
+    this.burst(W.L, t + 0.01, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, freqEnd: 650, sweep: 0.9, Q: 0.5, drive: 1.8, gain: 2.0, attack: 0.012, dur: 1.0 });
+    this.burst(W.R, t + 0.016, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1200, freqEnd: 800, sweep: 0.9, Q: 0.5, drive: 1.8, gain: 1.8, attack: 0.012, dur: 0.95 });
+    this.burst(out, t + 0.01, { buffer: this.crackleBuffer, filter: 'lowpass', freq: 2200, gain: 1.1, attack: 0.01, dur: 0.8 });
+    this.burst(out, t + 0.02, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 200, drive: 1.6, gain: 1.0, attack: 0.03, dur: 1.2 });
+    if (this.playTerrainEchoes) this.playTerrainEchoes(t, 0.4 * Math.sqrt(sp.gain), sp.lowpass);
+    if (distance < 600) this.duck(0.25 + 0.4 * distance / 600, 1.0);
+  }
+
+  // ===========================================================================
   // UAV CẢM TỬ
   // ===========================================================================
   playKamiLaunch(distance = 0, pos = null) {

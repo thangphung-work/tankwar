@@ -435,8 +435,10 @@ bool shInHole(vec3 wp, vec3 wn) {
   // [bán kính, độ sâu] hố theo loại đạn (8 đv = 1 m): pháo tăng 120 mm ~ hố 55 cm sâu 25 cm, lựu pháo 155 mm ~ 80 cm sâu
   // 35 cm, đạn xuyên / đầu nổ lõm: lỗ hẹp mà sâu; đạn súng chỉ khoét được khi dồn nhiều phát vào một chỗ
   const CRATER = {
-    SCOUT_BULLET: [0.8, 0.3], INCENDIARY: [0.8, 0.3], GATLING_BULLET: [1.3, 0.6],
-    AP: [1.5, 3.4], RPG: [1.8, 2.8], ANTI_TANK_MISSILE: [2.3, 3.6],
+    SCOUT_BULLET: [0.8, 0.3], INCENDIARY_HMG: [0.8, 0.3], INCENDIARY: [1.2, 0.5], GATLING_BULLET: [1.3, 0.6],
+    // đạn xuyên / đầu nổ lõm: miệng nhỏ, lõi khoan hẹp sâu (APFSDS ~0,8 m, RPG ~0,7 m, tên lửa ~0,9 m vào bê tông), quanh
+    // miệng chỉ bóc lở nông (xem jet trong buildCrater) — khác hẳn hố chảo nông rộng của đạn nổ
+    AP: [1.2, 6.5], RPG: [1.6, 5.5], ANTI_TANK_MISSILE: [2.0, 7],
     CLUSTER_SUBMUNITION: [2.2, 1.0], CLUSTER: [3.4, 1.4], NORMAL: [4.4, 2.0], HE: [6.4, 2.8]
   };
 
@@ -448,7 +450,7 @@ bool shInHole(vec3 wp, vec3 wn) {
   //    cốt thép đứt thõng xuống, đống đổ nát dưới sàn, bụi mù lúc sập
   //  Đồng bộ: máu ô cộng dồn theo gói ENV_HIT (mọi máy như nhau) + chuỗi trạng thái môi trường cho máy vào giữa trận
   // ===========================================================================
-  const MAX_CUTS = 54;
+  const MAX_CUTS = 90;   // 3 cứ điểm x (18 ô mái + 12 đoạn tường cánh)
   const CUT_U = {
     uCutA: { value: Array.from({ length: MAX_CUTS }, () => new THREE.Vector4()) },   // tâm x, z, y0, y1
     uCutB: { value: Array.from({ length: MAX_CUTS }, () => new THREE.Vector4()) },   // trục f (x, z), trục r (x, z)
@@ -492,12 +494,20 @@ bool shInCut(vec3 wp) {
   const FR_LV = [0, 0.18, 0.36, 0.55, 0.74, 1];
   // máu ô mái theo số phát pháo tăng (đạn nổ thường = 1): ô đầu hầm (gờ mặt tiền lộ ra) 9, ô giữa (đất phủ + dầm) 12
   const PANEL_HP = [9, 12, 12, 12, 12, 9];
+  // TƯỜNG CÁNH (tường chắn đất bê tông cốt thép dày 2,25 m loe 2 bên mỗi đầu hầm): mỗi tường chia 3 đoạn dọc, mỗi đoạn có
+  // máu (cùng thang với ô mái). Đoạn sát miệng hầm cao ~8 m chịu nhiều nhất, đoạn chân ụ thấp yếu nhất. Đạn nổ 120 mm khoét
+  // ~0,3 m bê tông mỗi phát -> ~14 phát mới toác đoạn đầu; lựu pháo 155 (x2) ~5 phát; mũi tên / đầu nổ lõm chỉ khoan lỗ.
+  // Đoạn vỡ: tường biến mất, đất ụ phía sau sụt tràn vào kênh thành dốc đất (SLUMP_IN) — đạn bay qua, xe leo được nếu đủ thoải
+  const WING_SEG = 3, WING_HP = [14, 10, 6], SLUMP_IN = 14;
   const PANEL_DMG = {
-    SCOUT_BULLET: 0.003, INCENDIARY: 0.004, GATLING_BULLET: 0.015, AP: 0.7, RPG: 0.8, ANTI_TANK_MISSILE: 1.1,
+    // đạn xuyên / đầu nổ lõm chỉ khoan lỗ hẹp qua lớp đất + bản bê tông dày, gần như không làm sập ô mái (trước 0,7 / 0,8 / 1,1)
+    SCOUT_BULLET: 0.003, INCENDIARY_HMG: 0.003, INCENDIARY: 0.012, GATLING_BULLET: 0.015, AP: 0.15, RPG: 0.3, ANTI_TANK_MISSILE: 0.45,
     CLUSTER_SUBMUNITION: 0.25, CLUSTER: 0.6, NORMAL: 1.0, HE: 1.5
   };
 
   // opts: { shadeDir: [x, z] hướng nắng nằm ngang (mặt quay ngược hướng này là mặt khuất nắng) }
+  // Mực nước ngập lòng hầm khi mưa (cao độ cục bộ; -999 = không ngập) — dùng chung mọi cứ điểm, xem setFlood
+  const FLOOD_L = { value: -999 };
   function weatherMat(mat, kind, mapType, opts = {}) {
     const G = GRIME[mapType] || GRIME.HIGHLAND;
     const E = EARTH[mapType] || EARTH.HIGHLAND;
@@ -512,6 +522,7 @@ bool shInCut(vec3 wp) {
       sh.uniforms.uWK = { value: new THREE.Vector4(G.mk, G.lk, G.wet, G.weed) };
       sh.uniforms.uSoil = { value: new THREE.Vector3(E.dirt[0] / 255 * 0.95, E.dirt[1] / 255 * 0.95, E.dirt[2] / 255 * 0.95) };
       sh.uniforms.uShadeDir = { value: new THREE.Vector2(sd[0], sd[1]).normalize() };
+      sh.uniforms.uFloodL = FLOOD_L;
       // nắp hầm: nửa dài mặt trên theo f, theo r, cao độ đỉnh ụ, bước mạch co giãn
       sh.uniforms.uPad = { value: new THREE.Vector4(S.HB - 7 - S.BEVEL, S.WI - 2 - S.BEVEL, S.CREST, (S.HB - 7 - S.BEVEL) / 2) };
       sh.vertexShader = 'attribute float aFloorY;\nattribute float aSand;\nattribute float aTopY;\nvarying vec3 vShWP;\nvarying vec3 vShWN;\nvarying vec3 vShLP;\nvarying float vShLY, vShFY, vShSand, vShTY;\n' +
@@ -520,7 +531,7 @@ bool shInCut(vec3 wp) {
   vShWN = normalize(mat3(modelMatrix) * objectNormal);
   vShLY = transformed.y; vShFY = aFloorY; vShSand = aSand; vShTY = aTopY; vShLP = transformed;`);
       sh.fragmentShader = `uniform vec3 uSand; uniform float uSandK; uniform vec4 uShDim;
-uniform vec3 uMoss; uniform vec3 uLich; uniform vec4 uWK; uniform vec3 uSoil; uniform vec2 uShadeDir; uniform vec4 uPad;
+uniform vec3 uMoss; uniform vec3 uLich; uniform vec4 uWK; uniform vec3 uSoil; uniform vec2 uShadeDir; uniform vec4 uPad; uniform float uFloodL;
 varying vec3 vShWP; varying vec3 vShWN; varying vec3 vShLP; varying float vShLY, vShFY, vShSand, vShTY;
 float shH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -640,6 +651,16 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       float cal = down * uT * (1.0 - smoothstep(3.5, 9.0, nb)) * smoothstep(0.5, 0.75, m2 * 0.7 + n4 * 0.3) * (0.3 + 0.7 * uWK.z);
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.83, 0.82, 0.78), cal * 0.5);
       shWet = wetW;
+      if (uFloodL > -900.0) {
+        // HẦM NGẬP: chân tường dưới & sát mặt nước thấm ẩm sẫm (mao dẫn lên ~0,5-1 m, mép loang), vạch cặn bùn / váng
+        // ngay trên mực nước (nước dao động để lại)
+        float hw = vShLY - uFloodL;
+        float wl = (1.0 - smoothstep(0.0, 4.0 + 5.0 * m2, hw)) * wk;
+        float ln = (1.0 - smoothstep(0.0, 0.45, abs(hw - 0.9 - 0.7 * n3))) * wk;
+        diffuseColor.rgb *= 1.0 - 0.4 * wl;
+        diffuseColor.rgb = mix(diffuseColor.rgb, uSoil * 0.75, ln * 0.4);
+        shWet = max(shWet, wl);
+      }
       // NẮP HẦM: đất trôi từ ụ lên mép tấm, mạch co giãn & vết nứt sẫm có cỏ dại, vệt vũng nước khô, rêu ở mép
       if (pad > 0.5) {
         vec2 lp = vShLP.xz;
@@ -806,6 +827,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       this.holes = [];
       HOLE_U.uHoleCount.value = 0;
       CUT_U.uCutCount.value = 0;
+      FLOOD_L.value = -999;
       this.craterGroup = new THREE.Group();
       this.craterGroup.name = 'stronghold_craters';
       this.group.add(this.craterGroup);
@@ -854,6 +876,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       for (const K of this.items) {
         if (Math.abs(x - K.x) > S.REACH || Math.abs(z - K.z) > S.REACH) continue;
         const L = this.local(K, x, z), af = Math.abs(L.f), ar = Math.abs(L.r);
+        const sl = K.nWing ? this.slumpAt(K, L.f, L.r) : null;
+        if (sl !== null) return K.G + sl;
         if (af <= S.END && inCut(af, ar)) return K.G + floorY(af);
         const h = moundH(L.f, L.r);
         if (h !== null && h > 0) return K.G + h;
@@ -869,6 +893,9 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (Math.abs(x - K.x) > S.REACH || Math.abs(z - K.z) > S.REACH) continue;
         const L = this.local(K, x, z), af = Math.abs(L.f), ar = Math.abs(L.r);
         const h = moundH(L.f, L.r);
+        // dốc đất sụt chỗ tường cánh vỡ: bánh xe đi theo mặt dốc (leo được hay không do giới hạn leo dốc của xe)
+        const sl = K.nWing ? this.slumpAt(K, L.f, L.r) : null;
+        if (sl !== null) return K.G + sl;
         const onTop = refY !== undefined && refY - K.G > 8;
         // đậu trên nóc đúng chỗ mái sập: rơi xuống lòng hầm
         if (onTop && K.nDown && this.cutAt(K, L.f, L.r)) return K.G + floorY(af);
@@ -922,6 +949,54 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       return null;
     }
 
+    // TRỜI MƯA: lòng hầm (sàn hạ thấp D, chỗ trũng nhất của kênh xe chạy — nước mưa từ 2 dốc chảy dồn vào) ngập nước
+    // sâu `depth` đơn vị; mặt nước trải tới chỗ dốc nhô lên khỏi mặt nước, mép nước mờ dần theo độ sâu (Weather.floodMaterial)
+    setFlood(depth, mat) {
+      if (!(depth > 0) || !mat) return;
+      const L = -S.D + Math.min(depth, S.D - 1);
+      let fW = S.HB;
+      while (fW < S.RAMP_END && floorY(fW) < L + 0.4) fW += 1;
+      const rW = cutHalf(fW) + 2;
+      const NF = 40, NR = 6;
+      const pos = [], nrm = [], aS = [], idx = [];
+      for (let j = 0; j <= NR; j++) for (let i = 0; i <= NF; i++) {
+        const f = -fW + 2 * fW * i / NF, r = -rW + 2 * rW * j / NR;
+        pos.push(f, L, r); nrm.push(0, 1, 0); aS.push(floorY(Math.abs(f)));
+      }
+      for (let j = 0; j < NR; j++) for (let i = 0; i < NF; i++) {
+        const a = j * (NF + 1) + i, b = a + 1, c = a + NF + 1, d = c + 1;
+        idx.push(a, b, c, b, d, c);
+      }
+      mat.userData.lvl.value.set(L, L);
+      mat.userData.fill.value = 1;
+      FLOOD_L.value = L;
+      for (const K of this.items) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+        // độ cao đáy (thế giới) dưới từng đỉnh: mép nước trên dốc mờ dần, không lộ đường cắt thẳng
+        geo.setAttribute('aS', new THREE.Float32BufferAttribute(aS.map(y => y + K.G), 1));
+        geo.setIndex(idx);
+        geo.computeBoundingSphere();
+        const m = new THREE.Mesh(geo, mat);
+        m.name = 'stronghold_flood';
+        m.renderOrder = 3;
+        m.receiveShadow = true;
+        K.group.add(m);
+        K.flood = { L, fW, mesh: m };
+      }
+    }
+    // Mặt nước ngập lòng hầm tại (x, z) (null = không ngập / sàn cao hơn mặt nước)
+    floodAt(x, z) {
+      for (const K of this.items) {
+        const F = K.flood;
+        if (!F || Math.abs(x - K.x) > S.REACH || Math.abs(z - K.z) > S.REACH) continue;
+        const Lc = this.local(K, x, z), af = Math.abs(Lc.f), ar = Math.abs(Lc.r);
+        if (af < F.fW && inCut(af, ar) && floorY(af) < F.L - 0.2) return K.G + F.L;
+      }
+      return null;
+    }
+
     // Điểm (x, y, z) nằm trong bê tông? (mái, tường bên, tường cánh). m: lề an toàn (kiểm tra nòng pháo)
     // Trả về { K, normal } hoặc null. Phần đất đắp do surfaceAt + kiểm tra chạm đất lo.
     concreteAt(x, y, z, m = 0) {
@@ -955,7 +1030,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (af > S.END + 2) continue;
         // tường cánh loe
         const ch = cutHalf(af);
-        if (ar >= ch - m && ar <= ch + S.WING_T) {
+        if (ar >= ch - m && ar <= ch + S.WING_T && !(K.nWing && this.wingDownAt(K, L.f, L.r))) {
           // đỉnh tường xiên thẳng, mép trong vát chéo
           const top0 = Math.max(0.5, wingLine(af)) + 1.5;
           const top = top0 - Math.max(0, wingBevel(top0, floorY(af) - 2) - (ar - ch));
@@ -1035,7 +1110,36 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       }
       return null;
     }
+    initWings(K) {
+      K.wings = []; K.nWing = 0;
+      const L = S.RUN / WING_SEG, ks = (K.id.charCodeAt(0) || 65) * 0.517;
+      for (const sf of [-1, 1]) for (const sr of [-1, 1]) for (let s = 0; s < WING_SEG; s++) {
+        K.wings.push({ sf, sr, s, a0: S.HB + s * L, a1: S.HB + (s + 1) * L, hp: WING_HP[s], max: WING_HP[s], down: false, seed: ks + K.wings.length * 1.91 });
+      }
+    }
+    // đoạn tường cánh chứa điểm cục bộ (f, r) (null nếu ngoài phạm vi tường cánh)
+    wingAt(K, f, r) {
+      const af = Math.abs(f);
+      if (!K.wings || af <= S.HB || af > S.END) return null;
+      const s = Math.min(WING_SEG - 1, Math.floor((af - S.HB) / (S.RUN / WING_SEG)));
+      return K.wings[((f < 0 ? 0 : 1) * 2 + (r < 0 ? 0 : 1)) * WING_SEG + s];
+    }
+    wingDownAt(K, f, r) { if (!K.nWing) return false; const w = this.wingAt(K, f, r); return !!(w && w.down); }
+    // Dốc đất sụt chỗ đoạn tường cánh đã vỡ (cao độ cục bộ so với cốt nền), null nếu không phải chỗ đó: từ sàn kênh cách mép
+    // tường SLUMP_IN lên tới đỉnh tường cũ ở mặt ngoài tường (đất ụ phía sau đổ xuống)
+    slumpAt(K, f, r) {
+      if (!K.nWing) return null;
+      const af = Math.abs(f), ar = Math.abs(r);
+      if (af <= S.HB || af > S.END) return null;
+      const ch = cutHalf(af);
+      if (ar < ch - SLUMP_IN || ar > ch + S.WING_T + 1) return null;
+      if (!this.wingDownAt(K, f, r)) return null;
+      const fl = floorY(af), top = Math.max(fl + 1, Math.max(0.5, wingLine(af)) + 1.5);
+      const t = clamp01((ar - (ch - SLUMP_IN)) / (SLUMP_IN + S.WING_T));
+      return fl + (top - fl) * Math.pow(t, 1.3);
+    }
     initPanels(K) {
+      this.initWings(K);
       K.panels = [];
       K.nDown = 0;
       const ks = (K.id.charCodeAt(0) || 65) * 0.731;
@@ -1049,7 +1153,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
      * blastR: bán kính sóng nổ của loại đạn. Trả về sự kiện sập [{ type: 'strongholdCollapse', id }]
      */
     damagePanels(x, y, z, ammo, heavy, info, fx, blastR) {
-      const base = (PANEL_DMG[ammo] || 0) * (heavy ? 2 : 1);
+      const base = (PANEL_DMG[ammo] || 0) * (heavy ? 2.1 : 1);   // lựu pháo 155: x2,1 (cùng hệ số mọi bảng phá cảnh vật)
       const events = [];
       if (!base) return events;
       for (const K of this.items) {
@@ -1065,7 +1169,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           const j = rc < PANEL_R[1] ? 0 : rc <= PANEL_R[2] ? 1 : 2;
           direct = K.panels[i * 3 + j];
           // nổ trên nóc: lớp đất phủ dày 1 m đỡ bớt
-          if (yy > S.CEIL + S.ROOF && af < S.HB - S.LIP_T) dk *= 0.8;
+          // (đạn nổ: đất tơi hấp thụ một phần sóng nổ; đạn xuyên / nổ lõm: lớp đất 1 m làm tán luồng phụt, mất phần lớn sức)
+          if (yy > S.CEIL + S.ROOF && af < S.HB - S.LIP_T) dk *= ammo === 'NORMAL' || ammo === 'HE' || ammo === 'CLUSTER' ? 0.6 : 0.35;
         }
         const R = Math.max(0, blastR || 0) * 1.3;
         for (const p of K.panels) {
@@ -1083,8 +1188,90 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           p.hp -= d;
           if (p.hp <= 0) { this.collapsePanel(K, p, fx, false); events.push({ type: 'strongholdCollapse', id: K.id }); }
         }
+        // TƯỜNG CÁNH: trúng thẳng mặt tường (phía kênh) ăn đủ, nổ gần ăn theo khoảng cách; nổ trên ụ đất phía sau tường chỉ
+        // dội qua lớp đất (x0,3)
+        const R2 = Math.max(0, blastR || 0) * 1.3;
+        for (const w of K.wings || []) {
+          if (w.down) continue;
+          const sgn = Math.sign(L.f) === w.sf && Math.sign(L.r) === w.sr;
+          let d = 0;
+          const fa = Math.max(w.a0, Math.min(w.a1, af)), ch = cutHalf(fa);
+          const dF = af < w.a0 ? w.a0 - af : af > w.a1 ? af - w.a1 : 0;
+          const dR = ar < ch ? ch - ar : ar > ch + S.WING_T ? ar - ch - S.WING_T : 0;
+          const top = Math.max(0.5, wingLine(fa)) + 1.5, fl = floorY(fa);
+          const dY = yy > top ? yy - top : yy < fl ? fl - yy : 0;
+          const dd = sgn ? Math.hypot(dF, dR, dY) : Infinity;
+          if (dd < 3 && info && info.t === 'WALL') d = base;
+          else if (R2 > 0 && dd < R2) d = base * 0.35 * (1 - dd / R2) * (ar > ch + S.WING_T ? 0.3 : 1);
+          if (d <= 0) continue;
+          w.hp -= d;
+          if (w.hp <= 0) { this.collapseWing(K, w, fx, false); events.push({ type: 'strongholdWall', id: K.id }); }
+        }
       }
       return events;
+    }
+    // Đoạn tường cánh vỡ toác: bỏ hình đoạn tường (vùng sập trong shader), đất ụ sụt thành dốc tràn vào kênh, bê tông vỡ +
+    // cốt thép nằm ngổn ngang dưới chân, bụi mù. silent: áp trạng thái từ mạng (không bụi / tiếng)
+    collapseWing(K, w, fx, silent) {
+      if (w.down) return;
+      w.down = true; w.hp = 0;
+      K.nWing = (K.nWing || 0) + 1;
+      this.syncCuts();
+      // hố đạn trên đoạn tường vừa mất: bỏ
+      const keep = [];
+      for (const h of this.holes) {
+        const Lh = this.local(K, h.p.x, h.p.z);
+        if (this.wingAt(K, Lh.f, Lh.r) === w && Math.abs(Lh.r) > cutHalf(Math.abs(Lh.f)) - 3) { if (h.mesh) { this.craterGroup.remove(h.mesh); this.disposeCrater(h); } } else keep.push(h);
+      }
+      if (keep.length !== this.holes.length) { this.holes = keep; this.syncHoles(); }
+      this.buildSlump(K, w);
+      // gạch đá bê tông dưới chân đoạn tường (phía kênh)
+      const am = (w.a0 + w.a1) / 2, rc = w.sr * (cutHalf(am) - 7);
+      this.addRubble(K, { f0: w.sf * w.a0, f1: w.sf * w.a1, r0: rc - 6, r1: rc + 6, seed: w.seed });
+      if (silent) return;
+      const wp = this.toWorld(K, w.sf * am, w.sr * (cutHalf(am) + S.WING_T / 2)), yC = K.G + Math.max(2, wingLine(am) * 0.6);
+      const rnd = (a, b) => a + Math.random() * (b - a);
+      if (fx && fx.smoke) for (let k = 0; k < 26; k++) {
+        const v = rnd(0.85, 1.05);
+        fx.smoke.add({ x: wp.x + rnd(-16, 16), y: yC + rnd(-4, 14), z: wp.z + rnd(-16, 16), vx: rnd(-14, 14), vy: rnd(6, 26), vz: rnd(-14, 14),
+          size: rnd(20, 34), grow: rnd(6, 10), drag: 0.6, grav: -0.6, life: rnd(10, 18), alpha: 0.7, fadeIn: 0.2, c0: [0.7 * v, 0.66 * v, 0.6 * v], cell: 2, delay: rnd(0, 0.4) });
+      }
+      if (fx && fx.hardRocks) for (let k = 0; k < 16; k++) {
+        const a = Math.random() * 6.283, sp = rnd(10, 40);
+        fx.hardRocks.add({ x: wp.x + rnd(-10, 10), y: yC + rnd(0, 10), z: wp.z + rnd(-10, 10), vx: Math.cos(a) * sp, vy: rnd(10, 35), vz: Math.sin(a) * sp, size: rnd(1.5, 4), life: rnd(3, 6), c: [0.5, 0.49, 0.46] });
+      }
+      if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('collapse', { x: wp.x, y: yC, z: wp.z }, 1.1, { mat: 'concrete', h: 30, floors: 1 });
+    }
+    // Dốc đất sụt (cùng hình với slumpAt): lưới dải dọc đoạn tường, mặt đất ụ màu đất đắp, gồ ghề nhẹ
+    buildSlump(K, w) {
+      const E = EARTH[this.mapType] || EARTH.HIGHLAND, NF = 8, NR = 6;
+      const pos = [], col = [], idx = [];
+      for (let i = 0; i <= NF; i++) {
+        const af = w.a0 + (w.a1 - w.a0) * i / NF, ch = cutHalf(af);
+        for (let j = 0; j <= NR; j++) {
+          const ar = ch - SLUMP_IN + (SLUMP_IN + S.WING_T + 1) * j / NR;
+          const h = this.slumpAt(K, w.sf * af, w.sr * ar);
+          const n = (Math.sin(af * 0.37 + ar * 0.21 + w.seed) + Math.sin(af * 0.13 - ar * 0.41)) * 0.6 * (j > 0 && j < NR ? 1 : 0);
+          const p = this.toWorld(K, w.sf * af, w.sr * ar);
+          pos.push(p.x, K.G + (h !== null ? h : floorY(af)) + n, p.z);
+          const k = 0.62 + 0.12 * Math.sin(af * 0.7 + ar);
+          col.push(E.dirt[0] / 255 * k, E.dirt[1] / 255 * k, E.dirt[2] / 255 * k);
+        }
+      }
+      for (let i = 0; i < NF; i++) for (let j = 0; j < NR; j++) {
+        const a = i * (NR + 1) + j, b = a + NR + 1;
+        if (w.sf * w.sr > 0) idx.push(a, b, a + 1, a + 1, b, b + 1); else idx.push(a, a + 1, b, a + 1, b + 1, b);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, this._slumpMat || (this._slumpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide })));
+      m.castShadow = true; m.receiveShadow = true;
+      m.name = 'stronghold_slump';
+      this.group.add(m);
+      w.slumpMesh = m;
     }
     // Ô mái sập: va chạm / che chắn đổi ngay (cutAt), cập nhật vùng bỏ điểm ảnh, mép gãy, đống đổ nát, hố đạn trong vùng sập
     collapsePanel(K, p, fx, silent) {
@@ -1135,6 +1322,18 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         A[n].set(w.x, w.z, K.G + S.CEIL - 2.2, K.G + S.TOP + 2);
         B[n].set(K.fx, K.fz, K.rx, K.rz);
         C[n].set((f1 - f0) / 2, (p.r1 - p.r0) / 2, p.seed, 0);
+        n++;
+      }
+      // đoạn tường cánh đã vỡ: hộp quay theo hướng tường loe (dọc tường, ngang tường), cao từ dưới sàn tới trên đỉnh tường
+      for (const K of this.items) for (const w of K.wings || []) {
+        if (!w.down || n >= MAX_CUTS) continue;
+        const am = (w.a0 + w.a1) / 2, rm = cutHalf(am) + S.WING_T / 2;
+        const c = this.toWorld(K, w.sf * am, w.sr * rm);
+        const ln = Math.hypot(1, S.SPLAY), df = w.sf / ln, dr = w.sr * S.SPLAY / ln;   // dọc tường (cục bộ f, r)
+        const ux = K.fx * df + K.rx * dr, uz = K.fz * df + K.rz * dr;
+        A[n].set(c.x, c.z, K.G + floorY(w.a1) - 4, K.G + Math.max(0.5, wingLine(w.a0)) + 4);
+        B[n].set(ux, uz, -uz, ux);
+        C[n].set((w.a1 - w.a0) / 2 * ln, S.WING_T / 2 - 1.5, w.seed, 0);
         n++;
       }
       CUT_U.uCutCount.value = n;
@@ -1281,13 +1480,21 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     }
     // ĐỒNG BỘ (máy vào giữa trận): máu từng ô mái, 0 = đã sập
     stateString() {
-      return this.items.map(K => K.id + ':' + (K.panels || []).map(p => Math.max(0, Math.round(p.hp * 10))).join(',')).join(';');
+      return this.items.map(K => K.id + ':' + (K.panels || []).map(p => Math.max(0, Math.round(p.hp * 10))).join(',')
+        + '/' + (K.wings || []).map(w => Math.max(0, Math.round(w.hp * 10))).join(',')).join(';');
     }
     applyState(str, fx) {
       for (const part of String(str || '').split(';')) {
-        const [id, list] = part.split(':');
+        const [id, both] = part.split(':');
         const K = this.items.find(k => k.id === id);
-        if (!K || !list) continue;
+        if (!K || !both) continue;
+        const [list, wl] = both.split('/');
+        if (wl && K.wings) wl.split(',').forEach((v, n) => {
+          const w = K.wings[n], hp = Number(v) / 10;
+          if (!w || v === '' || !isFinite(hp)) return;
+          if (hp <= 0) this.collapseWing(K, w, fx, true);
+          else w.hp = Math.min(w.hp, hp);
+        });
         list.split(',').forEach((v, n) => {
           const p = K.panels[n], hp = Number(v) / 10;
           if (!p || !isFinite(hp)) return;
@@ -1310,6 +1517,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const r = C[0] * (heavy ? 1.35 : 1) * k, d = C[1] * (heavy ? 1.4 : 1) * k;
       const maxR = Math.max(0.8, Math.min(15, room * 1.05)), maxD = 7;
       const blast = ammo === 'AP' || C[0] < 1.4 ? 0 : 1;
+      const jet = ammo === 'AP' || ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE';
       const face = new THREE.Vector3(x, y, z).addScaledVector(n, -0.15);
       // hố cũ cùng mặt ở sát bên: dồn vào (rộng & sâu thêm)
       let best = null, bd = Infinity;
@@ -1329,13 +1537,14 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         h.R = Math.min(h.maxR, Math.max(h.R, Math.sqrt(h.R * h.R + 0.45 * r * r), bd * (1 - w) + r * 0.7));
         h.D = Math.min(maxD, Math.max(h.D, d) + d * 0.35);
         h.blast = Math.max(h.blast, blast);
+        h.jet = h.jet && jet;   // đạn nổ dồn vào lỗ khoan: thành hố chảo
         this.buildCrater(h);
         this.syncHoles();
         return h;
       }
       // hạt giống lấy từ toạ độ (như các vết khác) -> mọi máy có cùng hình hố
       const seed = (((Math.floor(x * 10) * 73856093) ^ (Math.floor(y * 10) * 19349663) ^ (Math.floor(z * 10) * 83492791)) >>> 0) % 100000 / 100000 * 6.283;
-      const h = { p: face, n, R: Math.min(r, maxR), D: d, seed, maxR, blast, mesh: null };
+      const h = { p: face, n, R: Math.min(r, maxR), D: d, seed, maxR, blast, jet, mesh: null };
       if (this.holes.length >= MAX_HOLES) { const o = this.holes.shift(); if (o.mesh) { this.craterGroup.remove(o.mesh); this.disposeCrater(o); } }
       this.holes.push(h);
       this.buildCrater(h);
@@ -1386,7 +1595,9 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       };
       const depthAt = (x, y, r) => {
         // thành hố dốc gần đứng sát mép (bê tông vỡ giòn), đáy lòng chảo; mảng vỡ khối nhô / lõm theo nhiễu 2 tầng
-        const base = Math.pow(Math.max(0, 1 - Math.pow(r, 3)), 0.55);
+        let base = Math.pow(Math.max(0, 1 - Math.pow(r, 3)), 0.55);
+        // lỗ khoan của đạn xuyên / luồng nổ lõm: miệng bóc lở nông (~1/3 sâu), lõi hẹp sâu hoắm ở giữa
+        if (h.jet) base = Math.max(0.35 * base, Math.exp(-Math.pow(r / 0.22, 2)));
         const n = (vn(x / 1.3, y / 1.3) - 0.5) * 0.55 + (vn(x / 0.55 + 7, y / 0.55) - 0.5) * 0.25;
         return -D * base * (1 + n) - 0.02;
       };
@@ -1570,6 +1781,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
             continue;
           }
           if (inCut(af, ar) && af <= S.END + 40) continue;
+          // đoạn tường cánh đã vỡ: không còn tường chặn (dốc đất sụt — xe leo được thì leo, xem vehicleFloorAt)
+          if (K.nWing && af > S.HB && af < S.END && this.wingDownAt(K, L.f, L.r)) continue;
           // Ở ngoài kênh: ụ đất leo được (giới hạn dốc theo loại xe), chỉ tường cánh bê tông là chặn
           if (!centerIn && !(af > S.HB && af < S.END && ar < cutHalf(af) + S.WING_T)) continue;
           const wingBand = af > S.HB && af < S.END && ar < cutHalf(af) + S.WING_T;

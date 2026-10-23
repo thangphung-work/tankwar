@@ -15,7 +15,9 @@ const EnvDamage = (() => {
   // e: năng lượng để lại vết trên bề mặt (vết cộng dồn theo ô)
   const AMMO = {
     SCOUT_BULLET: { kin: 0.02, blast: 0, r: 0, e: 0.05 },
-    INCENDIARY: { kin: 0.03, blast: 0.02, r: 3, e: 0.08 },
+    // đạn cháy 30mm (xe 6 nòng) ~ đạn 30mm thường; INCENDIARY_HMG: đạn cháy 12.7mm (xe trinh sát) ~ đạn 12.7 thường
+    INCENDIARY: { kin: 0.05, blast: 0.04, r: 4, e: 0.1 },
+    INCENDIARY_HMG: { kin: 0.02, blast: 0.01, r: 2, e: 0.06 },
     GATLING_BULLET: { kin: 0.06, blast: 0.05, r: 4, e: 0.12 },
     AP: { kin: 1.0, blast: 0, r: 0, e: 0.6 },
     NORMAL: { kin: 0.35, blast: 1.0, r: 20, e: 1.2 },
@@ -26,14 +28,15 @@ const EnvDamage = (() => {
     CLUSTER: { kin: 0.1, blast: 0.6, r: 18, e: 0.8 }
   };
   // Hệ số vật liệu: [động năng, sức nổ, đạn cỡ nhỏ (súng máy / 30mm chỉ làm sứt mẻ bề mặt)]
-  const MAT = { rock: [0.9, 1.0, 0.35], bridge: [0.35, 0.8, 0.1] };
+  // Cầu bê tông cốt thép: đạn súng chỉ để vết, không trừ máu nhịp (trước 0,1: ~11.700 viên 12.7 vẫn sập được nhịp)
+  const MAT = { rock: [0.9, 1.0, 0.35], bridge: [0.35, 0.8, 0] };
   const smallArms = (A) => A.blast < 0.1 && A.kin < 0.1;
 
   function ammoOf(ammo, heavy) {
     const a = AMMO[ammo] || AMMO.NORMAL;
     if (!heavy) return a;
-    // lựu pháo 155mm: thuốc nổ gấp ~4 lần đạn 120mm
-    return { kin: a.kin * 1.5, blast: a.blast * 2.6, r: a.r * 1.7, e: a.e * 2.5 };
+    // lựu pháo 155mm: ~3 lần thuốc nổ đạn 120mm -> sức phá x2,1, tầm x1,45 (cùng hệ số với Destructibles HEAVY_K)
+    return { kin: a.kin * 1.5, blast: a.blast * 2.1, r: a.r * 1.45, e: a.e * 2.5 };
   }
   // khung toạ độ của một mặt bê tông theo pháp tuyến: n, t (ngang), b (dọc theo mặt, hướng lên)
   function faceFrame(nx, ny, nz) {
@@ -44,7 +47,8 @@ const EnvDamage = (() => {
     if (b.y < 0) b.negate();
     return { n, t, b };
   }
-  const isBullet = (ammo) => ammo === 'SCOUT_BULLET' || ammo === 'GATLING_BULLET' || ammo === 'INCENDIARY';
+  const isInc = (ammo) => ammo === 'INCENDIARY' || ammo === 'INCENDIARY_HMG';
+  const isBullet = (ammo) => ammo === 'SCOUT_BULLET' || ammo === 'GATLING_BULLET' || isInc(ammo);
   const hash3 = (x, y, z) => { let h = (Math.round(x * 7) * 374761393 + Math.round(y * 7) * 668265263 + Math.round(z * 7) * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 
@@ -132,7 +136,8 @@ const EnvDamage = (() => {
   // số vết giữ lại mỗi loại (mỗi vết là 1 ô cộng dồn ~2.5 đơn vị; đầy thì ô cũ nhất bị thay) — đủ cho cả trận xả đạn liên thanh
   const POOL_CAP = { g_pock: 3000, g_hei: 3000, g_burn: 1200, c_pock: 2000, c_chip: 1200, c_spall: 400, soot: 600, r_chip: 800 };
   // vết đạn trên đất (g_*): 12.7mm lỗ phễu ~5 cm + quạt cát ~30 cm; 30mm nổ-mảnh hố ~25 cm + muội & rỗ mảnh ~0,8 m (8 đơn vị = 1 m)
-  const BASE_SIZE = { g_pock: 2.6, g_hei: 6.5, g_burn: 5.5, c_pock: 2.4, c_chip: 4.8, c_spall: 13, soot: 18, r_chip: 5 };
+  // g_hei: vết cháy 30mm nổ-mảnh trên đất ~0,55 m (trước 6,5 đv ~0,8 m — to ngang vết bom con)
+  const BASE_SIZE = { g_pock: 2.6, g_hei: 4.5, g_burn: 5.5, c_pock: 2.4, c_chip: 4.8, c_spall: 13, soot: 18, r_chip: 5 };
 
   const GROUND_MARK = { g_pock: 'pock', g_hei: 'hei', g_burn: 'burn' };
   const DEF_TINT = [0.84, 0.79, 0.72];
@@ -265,7 +270,8 @@ const EnvDamage = (() => {
   }
 
   // ------------------------------------------------------------------ MẢNH VỠ / ĐÁ VỤN (rơi rồi nằm lại)
-  const DEB_VK = Math.sqrt(98 / 260);
+  // trọng lực thật theo tỉ lệ thế giới (8 đv = 1 m -> 78,5 đv/s², cùng GRAV của explosion_fx / ballistics); trước đây 98 (x1,25)
+  const DEB_G = 78.5, DEB_VK = Math.sqrt(DEB_G / 260);
   class Debris {
     constructor(parent, map, cap = 420) {
       const geo = new THREE.IcosahedronGeometry(1, 0);
@@ -316,7 +322,7 @@ const EnvDamage = (() => {
         const i = this.next; this.next = (this.next + 1) % this.cap;
         this.im.count = Math.max(this.im.count, i + 1);
         const old = this.live.findIndex(p => p.i === i); if (old >= 0) this.live.splice(old, 1);
-        // vận tốc truyền vào theo trọng lực cũ 260 -> thu √(98/260): giữ tầm văng, thời gian bay như thật (g ×1,25)
+        // vận tốc truyền vào theo trọng lực cũ 260 -> thu √(g/260): giữ tầm văng & độ cao, thời gian bay như thật
         const a = Math.random() * 6.283, sp = speed * DEB_VK * (0.3 + Math.random() * 0.8);
         const s = size * (0.45 + Math.random() * 0.7);
         const part = { i, x, y, z, vx: Math.cos(a) * sp, vy: speed * DEB_VK * up * (0.3 + Math.random() * 0.9), vz: Math.sin(a) * sp,
@@ -333,12 +339,13 @@ const EnvDamage = (() => {
       for (let j = this.live.length - 1; j >= 0; j--) {
         const p = this.live[j];
         p.t += dt;
-        p.vy -= 98 * dt;
+        p.vy -= DEB_G * dt;
         p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
         p.rx += p.w * dt; p.rz += p.w * 0.7 * dt;
-        // gần đất mới dò đủ các đỉnh (mảnh nằm nghiêng trên dốc không cắm một nửa vào sườn dốc)
+        // gần đất mới dò đủ các đỉnh (mảnh nằm nghiêng trên dốc không cắm một nửa vào sườn dốc) — và chỉ khi đang rơi xuống:
+        // vừa nảy lên thì đang rời đất, khỏi dò 12 điểm mỗi khung
         const g0 = groundAt(p.x, p.z), ext = Math.max(p.s, p.sy);
-        const gy = p.y - g0 > ext * 1.3 ? g0 + ext : this.contactY(p, groundAt);
+        const gy = p.y - g0 > ext * 1.3 ? g0 + ext : p.vy > 0 && p.y > g0 ? g0 - ext : this.contactY(p, groundAt);
         let rest = false;
         if (p.y <= gy) {
           p.y = gy;
@@ -414,8 +421,12 @@ const EnvDamage = (() => {
         if (y > top + A.r + 4 || y < it.y - 8 - A.r) continue;
         const surf = Math.max(0, dxz - it.r * 0.85), dy = Math.max(0, y - top);
         const dist = Math.hypot(surf, dy);
-        const direct = dist < 3;
-        let dmg = sk * ((direct ? A.kin * mk : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) : 0));
+        // đạn nổ trên xe đậu sát đá / nổ cận đích: không phải trúng thẳng vào đá (chỉ sức nổ lan)
+        const direct = dist < 3 && info.t !== 'DIRECT_HIT' && info.t !== 'PROXIMITY';
+        // đạn xuyên động năng (không có thuốc nổ): mũi tên khoan một lỗ / bóc một mảng, hiếm khi chẻ đôi được tảng đá lớn
+        // như đạn nổ (trước đây ~12 phát AP chẻ tảng lớn nhất, gần bằng 8 phát nổ mạnh)
+        const kinK = A.blast < 0.05 && A.kin > 0.5 ? 0.4 : 1;
+        let dmg = sk * ((direct ? A.kin * mk * kinK : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) : 0));
         if (dmg <= 0.0005) continue;
         it.hp -= dmg;
         // vết mẻ / ám khói trên mặt đá, ngay phía điểm nổ
@@ -534,7 +545,9 @@ const EnvDamage = (() => {
             grp.add(railG); rails.push(railG);
           }
           root.add(grp);
-          const maxHp = 6 + len * 0.04;
+          // nhịp cầu bê tông cốt thép: đạn nổ 120 mm chỉ khoét thủng mặt cầu, phải dồn ~15-22 phát mới gãy dầm; lựu pháo 155 trúng
+          // thẳng ~8 quả, tên lửa ~17 (trước đây x1: 7 phát HE đã cắt cầu — ngoài đời phải đặt mìn phá hoặc dội pháo dồn dập)
+          const maxHp = (6 + len * 0.04) * 2.5;
           spans.push({ a0, a1, len, grp, rails, hp: maxHp, maxHp, state: 'ok', sag: 0 });
         }
         T.group.add(root);
@@ -606,18 +619,25 @@ const EnvDamage = (() => {
     damageAt(x, y, z, A, info, fx, events) {
       const [mk, mb, ms] = MAT.bridge;
       const sk = smallArms(A) ? ms : 1;
+      if (!sk) return;
       for (const b of this.items) {
         const L = this.local(b, x, z);
         if (Math.abs(L.across) > b.width / 2 + A.r + 4 || Math.abs(L.along) > b.length / 2 + A.r + 4) continue;
         if (y > b.deckY + 30 + A.r || y < b.deckY - 40 - A.r) continue;
+        // nhịp chứa điểm nổ theo chiều dọc cầu (nửa mở [a0, a1)): chỉ nhịp này nhận động năng trúng thẳng & đủ sức nổ.
+        // Nhịp kề chung trụ (a1 nhịp trước = a0 nhịp sau) chỉ chịu 60% sức nổ — trước đây bắn đúng khớp trụ thì cả 2 nhịp
+        // cùng khoảng cách 0, ăn đủ sát thương: cắt cầu nhanh gấp đôi
+        const own = b.spans.find(sp => L.along >= sp.a0 && L.along < sp.a1) || null;
         for (const sp of b.spans) {
           if (sp.state !== 'ok') continue;
           const da = Math.max(0, sp.a0 - L.along, L.along - sp.a1);
           const dc = Math.max(0, Math.abs(L.across) - b.width / 2);
           const dy = Math.max(0, (b.deckY - 4) - y, y - (b.deckY + 1.5));
           const dist = Math.hypot(da, dc, dy);
-          const direct = dist < 2.5;
-          const dmg = sk * ((direct ? A.kin * mk : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) : 0));
+          const mine = !own || sp === own;
+          // đạn trúng xe đang chạy trên cầu / nổ cận đích: chỉ sức nổ lan tới mặt cầu, không tính động năng trúng thẳng
+          const direct = dist < 2.5 && mine && info.t !== 'DIRECT_HIT' && info.t !== 'PROXIMITY';
+          const dmg = sk * ((direct ? A.kin * mk : 0) + (A.r > 0 && dist < A.r ? A.blast * mb * Math.pow(1 - dist / A.r, 2) * (mine ? 1 : 0.6) : 0));
           if (dmg <= 0.0005) continue;
           sp.hp -= dmg;
           if (sp.hp <= 0) { this.collapse(b, sp, L.along, fx, events); continue; }
@@ -727,7 +747,17 @@ const EnvDamage = (() => {
   }
 
   // ------------------------------------------------------------------ ỤN ĐẤT CỨ ĐIỂM: cháy sém + lõm dần (chỉ hình ảnh)
-  function scorchMound(SS, x, y, z, R, amount) {
+  // Hố trên lớp đất đắp phủ cứ điểm theo loại đạn [bán kính, sâu] (đv): đất đắp tơi nên hố như hố bom ngoài đồng (nhỏ hơn
+  // chút vì đất đầm chặt), nhưng đáy chạm bản bê tông bên dưới nên không sâu quá ~1 m. Trước đây dùng bán kính sóng nổ
+  // (to gấp mấy lần hố) với độ lún vài cm -> chỉ là một vệt mờ, không đọc ra là hố đạn
+  const MOUND_CRATER = { NORMAL: [8, 3.2], HE: [9, 3.6], CLUSTER: [5, 1.4], CLUSTER_SUBMUNITION: [2.6, 1], RPG: [3.4, 1.4], ANTI_TANK_MISSILE: [4.4, 1.8], AP: [2.4, 1.1] };
+  function moundCrater(ammo, heavy) {
+    const C = MOUND_CRATER[ammo];
+    if (!C) return null;
+    return heavy ? [C[0] * 1.5, C[1] * 1.6] : C;
+  }
+  // R: bán kính lòng hố, depth: độ sâu đào thêm (cộng dồn, chặn ở ~1 m dưới mặt ụ gốc), burn: mức cháy sém (0 = đạn xuyên)
+  function scorchMound(SS, x, y, z, R, depth, burn) {
     if (!SS || !SS.items) return;
     for (const K of SS.items) {
       if (Math.abs(x - K.x) > 260 || Math.abs(z - K.z) > 260) continue;
@@ -738,19 +768,23 @@ const EnvDamage = (() => {
       m.updateMatrixWorld(true);
       const L = m.worldToLocal(new THREE.Vector3(x, y, z));
       let any = false;
+      const RR = R * 1.35;
       for (let i = 0; i < P.count; i++) {
         const dx = P.getX(i) - L.x, dz = P.getZ(i) - L.z;
         const d2 = dx * dx + dz * dz;
-        if (d2 > R * R) continue;
-        const d = Math.sqrt(d2), w = 1 - d / R;
+        if (d2 > RR * RR) continue;
+        const d = Math.sqrt(d2), w = Math.max(0, 1 - d / RR);
         // tâm cháy đen, vành đất bị hất (nâu), tích dần theo số phát
-        const burn = Math.min(0.75, amount * w * w * 0.7);
+        const sc = Math.min(0.75, burn * w * w * 0.8);
         const r0 = C.getX(i), g0 = C.getY(i), b0 = C.getZ(i);
         // ụ đất dùng shader mặt đất: màu đỉnh là hệ số nhân lên màu địa hình (1 = nguyên màu) -> đích cháy là hệ số tối / ngả nâu
         const mul = g.userData.tintMul, inner = d < R * 0.5;
         const tr = mul ? (inner ? 0.26 : 0.64) : inner ? 0.11 : 0.36, tg = mul ? (inner ? 0.22 : 0.5) : inner ? 0.09 : 0.27, tb = mul ? (inner ? 0.2 : 0.42) : inner ? 0.07 : 0.18;
-        C.setXYZ(i, r0 + (tr - r0) * burn, g0 + (tg - g0) * burn, b0 + (tb - b0) * burn);
-        const ny = Math.max(g.userData.y0[i] - 3.5, P.getY(i) - amount * 1.4 * w * w);
+        C.setXYZ(i, r0 + (tr - r0) * sc, g0 + (tg - g0) * sc, b0 + (tb - b0) * sc);
+        // lòng hố hình chảo (sâu nhất ở tâm), vành đất hất lên quanh miệng
+        const u = d / R;
+        const dy = u < 1 ? -depth * (1 - u * u) : depth * 0.22 * Math.sin(Math.PI * (u - 1) / 0.35);
+        const ny = Math.max(g.userData.y0[i] - 8, Math.min(g.userData.y0[i] + 1.5, P.getY(i) + dy));
         P.setY(i, ny);
         any = true;
       }
@@ -796,7 +830,13 @@ const EnvDamage = (() => {
           const hole = this.concreteCrater(SS, x, y, z, info.nx, info.nz, ammo, heavy, room, c1, ny);
           this.concretePits(SS, x, y, z, info.nx, info.nz, ammo, A, fx, hole, ny);
         }
-        else if (A.blast > 0.15 && A.r > 0) scorchMound(SS, x, y, z, Math.max(6, A.r * 0.9), A.blast);
+        else if (SS.surfaceInfo && SS.surfaceInfo(x, z)) {
+          // sàn hầm / dốc / sân bê tông: vết rỗ, mẻ, bong mảng + muội như mặt bê tông (trước đây đạn nổ / AP không để lại gì)
+          if (!isBullet(ammo)) this.concreteHit(x, y, z, 0, 0, ammo, A, true);
+        } else {
+          const MC = moundCrater(ammo, heavy);
+          if (MC) scorchMound(SS, x, y, z, MC[0], MC[1], A.blast > 0.15 ? A.blast : 0);
+        }
         // mái cứ điểm bị bào mòn -> sập từng ô (va chạm & che chắn đổi theo; xe bot phải tìm đường lại)
         if (SS.damagePanels) {
           const ev = SS.damagePanels(x, y, z, ammo, heavy, info, fx, A.r);
@@ -859,8 +899,8 @@ const EnvDamage = (() => {
       const tier = (e) => e < 0.35 ? 'c_pock' : e < spallE ? 'c_chip' : 'c_spall';
       // tường cứ điểm: mảng bong tối đa ~2,2 m và không chìa quá mép tường (cửa, góc, đỉnh)
       const ms = up ? undefined : Math.min(18, room * 2);
-      const c1 = this.scars.hit('c', ammo === 'SCOUT_BULLET' || ammo === 'INCENDIARY' ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2, maxSize: ms });
-      const c2 = (A.blast > 0.3 || ammo === 'INCENDIARY') ? this.scars.hit('s', 12, x, y, z, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: ammo === 'INCENDIARY' ? 0.35 : Math.min(1.6, 0.6 + A.r / 40), maxSize: ms && ms * 1.3 }) : null;
+      const c1 = this.scars.hit('c', ammo === 'SCOUT_BULLET' || isInc(ammo) ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2, maxSize: ms });
+      const c2 = (A.blast > 0.3 || isInc(ammo)) ? this.scars.hit('s', 12, x, y, z, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: isInc(ammo) ? 0.35 : Math.min(1.6, 0.6 + A.r / 40), maxSize: ms && ms * 1.3 }) : null;
       // mặt cầu: vết bám nhịp cầu (võng / rơi theo nhịp)
       if (up) { this.bridges.tagScar(c1, x, z); this.bridges.tagScar(c2, x, z); }
       return c1;
@@ -933,10 +973,13 @@ const EnvDamage = (() => {
       const y = this.surf(x, z);   // trong hố bom: vết nằm trên lòng hố nhìn thấy, không lơ lửng ở lưới vật lý
       const br = this.bridges.at(x, z);
       if (br) { this.concreteHit(x, br.y, z, 0, 0, ammo, ammoOf(ammo, false), true); return true; }
+      // sàn / dốc / sân bê tông cứ điểm: vết đạn trên bê tông (sứt, rỗ), không phải lỗ đất
+      const SS = T.strongholdSet;
+      if (SS && SS.surfaceInfo && SS.surfaceInfo(x, z)) { this.concreteHit(x, y, z, 0, 0, ammo, ammoOf(ammo, false), true); return true; }
       const e = 1.5, hx = this.surf(x + e, z) - this.surf(x - e, z), hz = this.surf(x, z + e) - this.surf(x, z - e);
       const n = new THREE.Vector3(-hx / (2 * e), 1, -hz / (2 * e)).normalize();
       const A = ammoOf(ammo, false);
-      const kind = ammo === 'INCENDIARY' ? 'g_burn' : ammo === 'GATLING_BULLET' ? 'g_hei' : 'g_pock';
+      const kind = isInc(ammo) ? 'g_burn' : ammo === 'GATLING_BULLET' ? 'g_hei' : 'g_pock';
       // đạn bay xiên: vết kéo dài theo hướng bay
       // trục +u của vết = hướng bay trên mặt đất (vết xoay quanh pháp tuyến: trục x cục bộ -> (cos r, 0, -sin r))
       let opts = { e0: A.e, tint };

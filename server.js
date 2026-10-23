@@ -335,6 +335,10 @@ function wsJoinRoom(client, baseName, name, token, skipList, prefMap) {
   client.name = typeof name === 'string' ? name.slice(0, 40) : '';
   // gắn tài khoản (nếu đã đăng nhập) -> thành tích trận mạng do máy chủ tự đếm
   client.userId = accounts.userIdFromToken ? accounts.userIdFromToken(token) : null;
+  // số liệu xếp phe (cấp / trận thắng / tổng trận) đọc từ CSDL -> chủ phòng chia phe theo số này, không theo máy khách tự khai
+  let skill = null;
+  try { skill = accounts.skillOf ? accounts.skillOf(client.userId) : null; } catch (e) { skill = null; }
+  client.skill = skill;
   const base = wsSanitizeRoom(baseName);
   // Phòng khách vừa bị từ chối (ROOM_FULL / chủ phòng không phản hồi): bỏ qua để sang phòng kế tiếp
   const skip = new Set(Array.isArray(skipList) ? skipList.slice(0, 16).map(String) : []);
@@ -362,13 +366,13 @@ function wsJoinRoom(client, baseName, name, token, skipList, prefMap) {
   if (!room) return;
 
   const peers = [];
-  room.members.forEach((m) => peers.push({ id: m.id, name: m.name }));
+  room.members.forEach((m) => peers.push({ id: m.id, name: m.name, k: m.skill || null }));
   room.members.set(client.id, client);
   client.room = room;
   if (!room.hostId) room.hostId = client.id;
 
-  client.sendJSON({ t: '@welcome', d: { id: client.id, room: room.name, hostId: room.hostId, peers, s: Date.now() } });
-  wsBroadcast(room, { t: '@peer_join', d: { id: client.id, name: client.name } }, client.id);
+  client.sendJSON({ t: '@welcome', d: { id: client.id, room: room.name, hostId: room.hostId, peers, k: client.skill || null, s: Date.now() } });
+  wsBroadcast(room, { t: '@peer_join', d: { id: client.id, name: client.name, k: client.skill || null } }, client.id);
 }
 
 function wsLeaveRoom(client) {

@@ -9,6 +9,9 @@
  * - Xe xích bẻ lái trượt ngang (skid-steer): vệt bị miết nhòe hoa; quay tại chỗ cày thành vùng đất nát rộng.
  * - Độ lún & màu theo mặt đất (cát lún sâu, bùn sẫm ướt, cỏ dập, đường nhựa chỉ còn vệt cao su mờ, lội nước không để vết),
  *   giữ khá lâu rồi mờ dần.
+ * - Trời mưa: đất sũng nước lún sâu hơn, đất lật lên sẫm hơn; trời âm u nên thành rãnh sáng tối dịu (ánh trời tản, không có
+ *   nắng gắt). Nước mưa đọng dần trong rãnh (lớp nước riêng): khe gân xích / hoa lốp ngập trước, rồi cả lòng rãnh thành dải
+ *   nước đục phản chiếu trời xám, lăn tăn giọt mưa; cát thấm nhanh nên ít đọng, đất bùn đọng nhiều.
  */
 const TireTracks = (() => {
   const SEG = 2.2;          // khoảng cách giữa 2 điểm vệt (đơn vị game)
@@ -26,18 +29,21 @@ const TireTracks = (() => {
   };
   const BERM = 1.35;        // dải vẽ rộng hơn dải tiếp đất để chứa gờ đất bị ép dồn ra hai bên
 
-  // Theo mặt đất: k = độ đậm chung, d = độ lún (nhân hmax), c = hệ số màu đất bị nén / xới (nhân lên màu đất)
+  // Theo mặt đất: k = độ đậm chung, d = độ lún (nhân hmax), c = hệ số màu đất bị nén / xới (nhân lên màu đất),
+  // w = khả năng giữ nước mưa trong rãnh (cát thấm nhanh, đất sét / bùn đọng nhiều, mặt cứng không có rãnh)
   const SURF = {
-    SAND: { k: 1.0, d: 1.0, c: [0.9, 0.87, 0.82] },          // cát: lún sâu, màu gần như cũ (vết hiện nhờ bóng đổ)
-    JUNGLE_SOIL: { k: 0.95, d: 1.1, c: [0.68, 0.64, 0.6] },  // đất rừng ẩm: lún, đất ướt lật lên sẫm
-    GRASS: { k: 0.85, d: 0.5, c: [0.78, 0.8, 0.66] },         // cỏ bị dập: nông, cỏ úa sẫm lộ đất
-    ROAD: { k: 0.85, d: 0.55, c: [0.84, 0.8, 0.74] },         // đường đất
-    MOUNTAIN: { k: 0.5, d: 0.2, c: [0.88, 0.87, 0.85] },      // đất đá cứng: hằn rất nông
-    URBAN_ROAD: { k: 0.3, d: 0, c: [0.62, 0.62, 0.62] },      // nhựa / bê tông: chỉ vệt cao su, bụi
-    BRIDGE: { k: 0.2, d: 0, c: [0.62, 0.62, 0.62] },
-    WATER: { k: 0, d: 0, c: [1, 1, 1] }
+    SAND: { k: 1.0, d: 1.0, c: [0.9, 0.87, 0.82], w: 0.45 },          // cát: lún sâu, màu gần như cũ (vết hiện nhờ bóng đổ)
+    JUNGLE_SOIL: { k: 0.95, d: 1.1, c: [0.68, 0.64, 0.6], w: 1.1 },  // đất rừng ẩm: lún, đất ướt lật lên sẫm
+    GRASS: { k: 0.85, d: 0.5, c: [0.78, 0.8, 0.66], w: 0.85 },        // cỏ bị dập: nông, cỏ úa sẫm lộ đất
+    ROAD: { k: 0.85, d: 0.55, c: [0.84, 0.8, 0.74], w: 0.95 },        // đường đất
+    MOUNTAIN: { k: 0.5, d: 0.2, c: [0.88, 0.87, 0.85], w: 0.25 },     // đất đá cứng: hằn rất nông
+    URBAN_ROAD: { k: 0.3, d: 0, c: [0.62, 0.62, 0.62], w: 0 },        // nhựa / bê tông: chỉ vệt cao su, bụi
+    BRIDGE: { k: 0.2, d: 0, c: [0.62, 0.62, 0.62], w: 0 },
+    WATER: { k: 0, d: 0, c: [1, 1, 1], w: 0 }
   };
-  const ROAD_NAME_K = [[/BÙN/, 1.0, 1.3, [0.6, 0.56, 0.52]], [/SỎI/, 0.6, 0.35, [0.9, 0.89, 0.86]], [/NHỰA/, 0.3, 0, [0.6, 0.6, 0.6]]];
+  const ROAD_NAME_K = [[/BÙN/, 1.0, 1.3, [0.6, 0.56, 0.52], 1.2], [/SỎI/, 0.6, 0.35, [0.9, 0.89, 0.86], 0.4], [/NHỰA/, 0.3, 0, [0.6, 0.6, 0.6], 0]];
+  // đất sũng nước mưa: lún sâu thêm (theo độ mềm của đất), đất lật lên sẫm thêm
+  const WET_DEPTH = 0.45, WET_COL = 0.8;
 
   // ---------------------------------------------------------------------------
   // BẢN ĐỒ ĐỘ CAO HOA XÍCH / HOA LỐP (lặp theo chiều dọc)
@@ -113,11 +119,13 @@ const TireTracks = (() => {
   const timeU = { value: 0 };
   const sunU = { value: new THREE.Vector3(0.4, 0.8, 0.3).normalize() };
   const fogU = { value: 0 };
-  const MATS = {};
+  const fogCU = { value: new THREE.Color(0.6, 0.62, 0.64) };
+  const wetU = { value: 0 };
+  const MATS = {}, WMATS = {};
   function material(kind) {
     if (MATS[kind]) return MATS[kind];
     const m = new THREE.ShaderMaterial({
-      uniforms: { map: { value: makeTex(kind) }, uTime: timeU, uLife: { value: LIFE }, uSun: sunU, uFog: fogU, uTex: { value: new THREE.Vector2(1 / TW, 1 / TH) } },
+      uniforms: { map: { value: makeTex(kind) }, uTime: timeU, uLife: { value: LIFE }, uSun: sunU, uFog: fogU, uWet: wetU, uTex: { value: new THREE.Vector2(1 / TW, 1 / TH) } },
       vertexShader: `
         attribute float aBirth; attribute float aStr; attribute vec3 aCol; attribute vec3 aDir; attribute vec4 aGeo;
         varying vec2 vUv; varying float vA; varying vec3 vCol; varying vec2 vTU; varying vec2 vTV; varying vec4 vGeo; varying float vFogD; varying vec2 vW;
@@ -137,7 +145,7 @@ const TireTracks = (() => {
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
-        uniform sampler2D map; uniform vec3 uSun; uniform float uFog; uniform vec2 uTex;
+        uniform sampler2D map; uniform vec3 uSun; uniform float uFog; uniform vec2 uTex; uniform float uWet;
         varying vec2 vUv; varying float vA; varying vec3 vCol; varying vec2 vTU; varying vec2 vTV; varying vec4 vGeo; varying float vFogD; varying vec2 vW;
         // xích trượt ngang -> hoa bị miết nhòe dọc vệt (lấy trung bình 5 điểm dọc v); trượt mạnh thì mất hẳn hoa
         vec2 H(vec2 uv) {
@@ -174,12 +182,14 @@ const TireTracks = (() => {
             g += ch * vec2(churn(vW + vec2(0.35, 0.0)) - n0, churn(vW + vec2(0.0, 0.35)) - n0) / 0.35;
           }
           vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
-          // chiếu sáng tương đối so với mặt đất phẳng (nắng + ánh trời): thành rãnh hướng nắng sáng lên, phía kia tối
-          float amb = 0.6;
-          float lit = (amb + max(dot(n, uSun), 0.0)) / (amb + max(uSun.y, 0.0));
+          // chiếu sáng tương đối so với mặt đất phẳng (nắng + ánh trời): thành rãnh hướng nắng sáng lên, phía kia tối.
+          // Trời mưa âm u: không có nắng trực tiếp — ánh trời tản từ trên xuống, thành rãnh chỉ sẫm dịu theo độ nghiêng
+          vec3 Ls = normalize(mix(uSun, vec3(0.0, 1.0, 0.0), 0.75 * uWet));
+          float amb = mix(0.6, 1.4, uWet);
+          float lit = (amb + max(dot(n, Ls), 0.0)) / (amb + max(Ls.y, 0.0));
           // đáy rãnh / khe gân hẹp nhận ít ánh trời hơn (che khuất)
           lit *= 1.0 - 0.18 * clamp((0.5 - c.r) * 2.0, 0.0, 1.0) * clamp(vGeo.w, 0.0, 1.0);
-          vec3 m = lit * mix(vec3(1.0), vCol, c.g);
+          vec3 m = lit * mix(vec3(1.0), vCol * mix(1.0, ${WET_COL.toFixed(2)}, uWet), c.g);
           m = mix(vec3(1.0), m, fade);
           // nhân lên màu mặt đất (2x multiply: 0.5 = giữ nguyên); khung hình lưu giá trị đã nén gamma
           gl_FragColor = vec4(pow(max(m, vec3(0.0)), vec3(0.6)) * 0.5, 1.0);
@@ -195,12 +205,81 @@ const TireTracks = (() => {
     return (MATS[kind] = m);
   }
 
+  // NƯỚC MƯA ĐỌNG TRONG RÃNH (chỉ khi trời mưa): cùng lưới với vệt, vẽ đè lên sau. Mực nước dâng theo tuổi vệt & khả năng
+  // giữ nước của đất (aHold): đầu tiên chỉ khe gân guốc xích / rãnh hoa lốp (chỗ sâu nhất) có nước, ~45 s sau cả lòng rãnh
+  // thành dải nước. Nước đục phù sa: thân nước sẫm, cái mắt thấy chủ yếu là trời xám phản chiếu (Fresnel — nhìn xiên sáng
+  // loáng, nhìn thẳng xuống tối), lăn tăn vòng sóng giọt mưa
+  function waterMaterial(kind) {
+    if (WMATS[kind]) return WMATS[kind];
+    const W = typeof Weather !== 'undefined' ? Weather : null;
+    const m = new THREE.ShaderMaterial({
+      uniforms: { map: { value: makeTex(kind) }, uTime: timeU, uLife: { value: LIFE }, uFog: fogU, uFogC: fogCU,
+        uSkyH: { value: W && W.SKYH ? W.SKYH : new THREE.Color(0.55, 0.57, 0.6) }, uSkyZ: { value: W && W.SKYZ ? W.SKYZ : new THREE.Color(0.42, 0.45, 0.48) } },
+      vertexShader: `
+        attribute float aBirth; attribute float aStr; attribute vec4 aGeo; attribute float aHold;
+        varying vec2 vUv; varying float vA; varying float vLvl; varying float vSlip; varying vec3 vWP; varying float vFogD;
+        uniform float uTime; uniform float uLife;
+        void main() {
+          vUv = uv;
+          float age = uTime - aBirth;
+          vA = aStr * clamp((uLife - age) / (uLife * 0.35), 0.0, 1.0) * step(0.01, aHold);
+          // mực nước theo độ cao bản đồ hoa (R: 0.5 mặt đất, ~0.22 lòng rãnh, ~0.03 đáy khe gân)
+          vLvl = min(0.3, 0.06 + 0.22 * clamp(age / 45.0, 0.0, 1.0) * aHold);
+          vSlip = aGeo.z;
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWP = wp.xyz;
+          vec4 mv = viewMatrix * wp;
+          vFogD = -mv.z;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform sampler2D map; uniform float uTime; uniform float uFog; uniform vec3 uFogC; uniform vec3 uSkyH; uniform vec3 uSkyZ;
+        varying vec2 vUv; varying float vA; varying float vLvl; varying float vSlip; varying vec3 vWP; varying float vFogD;
+        vec2 h2(vec2 p) { vec3 q = fract(p.xyx * vec3(0.1031, 0.1030, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }
+        // vòng sóng giọt mưa (ô ~0,3 m, mỗi ô một giọt / chu kỳ ~1 s): độ dốc mặt nước
+        vec2 drops(vec2 p, float t) {
+          vec2 acc = vec2(0.0), q = p / 2.6, b = floor(q);
+          for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+            vec2 id = b + vec2(float(i), float(j)), h = h2(id + 5.1);
+            float tt = t * (0.9 + 0.5 * h.y) + h.x * 7.0, ph = fract(tt);
+            vec2 d = (q - id - h2(id + floor(tt) * 7.31)) * 2.6;
+            float r = length(d), x = r - ph * 1.7;
+            acc += d / max(r, 1e-3) * sin(x * 10.0) * exp(-x * x * 7.0) * (1.0 - ph) * (1.0 - ph) * 0.4;
+          }
+          return acc;
+        }
+        void main() {
+          float fogF = 1.0 - exp(-uFog * uFog * vFogD * vFogD);
+          if (vA * (1.0 - fogF) < 0.01) discard;
+          // xích trượt / quay tại chỗ: hoa bị miết, lòng rãnh nát -> nước đọng loang theo mức mip thô
+          float r = mix(texture2D(map, vUv).r, texture2D(map, vUv, 4.5).r, smoothstep(0.35, 0.8, vSlip));
+          float a = smoothstep(0.0, 0.03, vLvl - r) * vA;
+          if (a < 0.01) discard;
+          vec3 V = normalize(cameraPosition - vWP);
+          float near = 1.0 - smoothstep(60.0, 220.0, vFogD);
+          vec2 g = drops(vWP.xz, uTime) * near;
+          vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
+          float F = 0.03 + 0.97 * pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 5.0);
+          vec3 R = reflect(-V, n);
+          vec3 sky = R.y < 0.0 ? uSkyH * 0.45 : mix(uSkyH, uSkyZ, sqrt(clamp(R.y, 0.0, 1.0)));
+          vec3 body = vec3(0.075, 0.066, 0.05);
+          vec3 col = mix(body, sky * 0.9, F);
+          col = mix(col, uFogC, fogF);
+          gl_FragColor = vec4(col, a * mix(0.8, 1.0, F));
+        }`,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3
+    });
+    return (WMATS[kind] = m);
+  }
+
   // ---------------------------------------------------------------------------
   // MỘT VỆT (dải băng liên tục, bộ đệm tuyến tính có dời khối khi đầy)
   // ---------------------------------------------------------------------------
   class Line {
     constructor(scene, kind, width, tile, lx, lz) {
-      this.lx = lx; this.lz = lz; this.w = width; this.tile = tile; this.slip = 0;
+      this.lx = lx; this.lz = lz; this.w = width; this.tile = tile; this.slip = 0; this.kind = kind; this.scene = scene; this.water = null;
       const N = MAX_PTS * 2;   // bộ đệm gấp đôi: đầy thì dời nửa sau về đầu
       this.N = N;
       const V = N * 2;
@@ -211,6 +290,7 @@ const TireTracks = (() => {
       this.col = new Float32Array(V * 3);
       this.dir = new Float32Array(V * 3);
       this.geo4 = new Float32Array(V * 4);
+      this.hold = new Float32Array(V);
       const idx = new Uint16Array((N - 1) * 6);
       for (let k = 0; k < N - 1; k++) {
         const a = k * 2, b = a + 1, c = a + 2, d = a + 3;
@@ -224,6 +304,7 @@ const TireTracks = (() => {
       g.setAttribute('aCol', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
       g.setAttribute('aDir', new THREE.BufferAttribute(this.dir, 3).setUsage(THREE.DynamicDrawUsage));
       g.setAttribute('aGeo', new THREE.BufferAttribute(this.geo4, 4).setUsage(THREE.DynamicDrawUsage));
+      g.setAttribute('aHold', new THREE.BufferAttribute(this.hold, 1).setUsage(THREE.DynamicDrawUsage));
       g.setIndex(new THREE.BufferAttribute(idx, 1));
       g.setDrawRange(0, 0);
       this.geo = g;
@@ -238,8 +319,8 @@ const TireTracks = (() => {
     }
 
     // (dx, dz): hướng dải (theo chiều chạy), vcoord: tọa độ dọc hoa (tăng theo hướng mũi xe), sg: +1 tiến / -1 lùi,
-    // width: bề rộng dải vẽ, slip: độ trượt 0..1, depth: độ lún (đơn vị game)
-    writePoint(x, z, dx, dz, y0, y1, vcoord, str, col, t, sg, width, slip, depth) {
+    // width: bề rộng dải vẽ, slip: độ trượt 0..1, depth: độ lún (đơn vị game), hold: khả năng giữ nước mưa (0 = trời khô)
+    writePoint(x, z, dx, dz, y0, y1, vcoord, str, col, t, sg, width, slip, depth, hold = 0) {
       if (this.head >= this.N) this.shift();
       const k = this.head++;
       const nx = -dz, nz = dx, hw = width / 2;
@@ -251,6 +332,7 @@ const TireTracks = (() => {
       U[v * 2] = 0; U[v * 2 + 1] = vv; U[v * 2 + 2] = 1; U[v * 2 + 3] = vv;
       this.birth[v] = this.birth[v + 1] = t;
       this.str[v] = this.str[v + 1] = str;
+      this.hold[v] = this.hold[v + 1] = hold;
       for (let i = 0; i < 2; i++) {
         const o3 = (v + i) * 3, o4 = (v + i) * 4;
         this.col[o3] = col[0]; this.col[o3 + 1] = col[1]; this.col[o3 + 2] = col[2];
@@ -264,7 +346,7 @@ const TireTracks = (() => {
     shift() {
       const keep = MAX_PTS, from = this.head - keep;
       const mv = (arr, n) => arr.copyWithin(0, from * 2 * n, this.head * 2 * n);
-      mv(this.pos, 3); mv(this.uv, 2); mv(this.birth, 1); mv(this.str, 1); mv(this.col, 3); mv(this.dir, 3); mv(this.geo4, 4);
+      mv(this.pos, 3); mv(this.uv, 2); mv(this.birth, 1); mv(this.str, 1); mv(this.col, 3); mv(this.dir, 3); mv(this.geo4, 4); mv(this.hold, 1);
       this.head = keep;
       this.fullUpload = true;
     }
@@ -277,7 +359,7 @@ const TireTracks = (() => {
     flush() {
       if (this.dMin === undefined && !this.fullUpload) return;
       const a = this.geo.attributes;
-      for (const [name, n] of [['position', 3], ['uv', 2], ['aBirth', 1], ['aStr', 1], ['aCol', 3], ['aDir', 3], ['aGeo', 4]]) {
+      for (const [name, n] of [['position', 3], ['uv', 2], ['aBirth', 1], ['aStr', 1], ['aCol', 3], ['aDir', 3], ['aGeo', 4], ['aHold', 1]]) {
         const at = a[name];
         if (this.fullUpload) { at.updateRange.offset = 0; at.updateRange.count = -1; }
         else { at.updateRange.offset = this.dMin * n; at.updateRange.count = (this.dMax - this.dMin) * n; }
@@ -291,8 +373,21 @@ const TireTracks = (() => {
       this.geo.setDrawRange(first * 6, quads * 6);
     }
 
+    // lớp nước đọng trong rãnh: dựng khi trời mưa (dùng chung lưới với vệt)
+    setWet(on) {
+      if (on && !this.water) {
+        this.water = new THREE.Mesh(this.geo, waterMaterial(this.kind));
+        this.water.frustumCulled = false;
+        this.water.renderOrder = 2;
+        this.water.name = 'tireTrackWater';
+        this.scene.add(this.water);
+      }
+      if (this.water) this.water.visible = !!on;
+    }
+
     dispose() {
       if (this.mesh.parent) this.mesh.parent.remove(this.mesh);
+      if (this.water && this.water.parent) this.water.parent.remove(this.water);
       this.geo.dispose();
     }
   }
@@ -300,7 +395,7 @@ const TireTracks = (() => {
   function surfaceOf(info) {
     if (!info) return SURF.GRASS;
     if (info.type === 'ROAD' || info.type === 'URBAN_ROAD') {
-      for (const [re, k, d, c] of ROAD_NAME_K) if (re.test(info.name || '')) return { k, d, c };
+      for (const [re, k, d, c, w] of ROAD_NAME_K) if (re.test(info.name || '')) return { k, d, c, w };
     }
     return SURF[info.type] || SURF.GRASS;
   }
@@ -330,6 +425,7 @@ const TireTracks = (() => {
     }
     const f = u.scene.fog;
     fogU.value = f && f.isFogExp2 ? f.density : 0;
+    if (f && f.color) fogCU.value.copy(f.color);
   }
 
   /** Gọi mỗi khung từ spg.js */
@@ -342,14 +438,18 @@ const TireTracks = (() => {
     }
     if (u.isDead) { for (const L of u._tt) L.last = null; return; }
     syncLight(u, terrain);
+    const wet = !!(terrain && terrain.weather && terrain.weather.rain);
+    wetU.value = wet ? 1 : 0;
     const a = u.bodyAngle || 0, c = Math.cos(a), s = Math.sin(a);
     const fx = -Math.sin(a), fz = -Math.cos(a);
     const sf = surfaceOf(info);
     // vệt xích in theo mặt nhìn thấy (trong / quanh hố bom là lòng hố & gờ đất, không phải lưới vật lý thô)
     const gAt = u.inCrater && terrain.vehicleSurfaceAt ? (x, z) => terrain.vehicleSurfaceAt(x, z, u._suspY)
       : terrain.getVehicleGroundAt ? (x, z) => terrain.getVehicleGroundAt(x, z, u._suspY) : (x, z) => terrain.getElevationAt(x, z);
+    const hold = wet ? (sf.w !== undefined ? sf.w : 0.8) : 0;
     u._tt.forEach((L) => {
       const cfg = L.cfg;
+      if (wet !== !!(L.water && L.water.visible)) L.setWet(wet);
       // vị trí điểm tiếp đất của vệt trong thế giới
       const x = u.x + L.lx * c + L.lz * s;
       const z = u.z - L.lx * s + L.lz * c;
@@ -389,14 +489,15 @@ const TireTracks = (() => {
       const y0 = gAt(px - mz * hw, pz + mx * hw) + 0.14, y1 = gAt(px + mz * hw, pz - mx * hw) + 0.14;
       const br = u.trackBroken && (L.lx < 0 ? u.trackBroken[0] : u.trackBroken[1]);
       const str = brk ? 0 : sf.k * (br ? 0.45 : 1) * (u.isInBush ? 0.7 : 1);
-      const depth = cfg.hmax * (sf.d !== undefined ? sf.d : 1) * (1 + 0.4 * slip);
+      const sd = sf.d !== undefined ? sf.d : 1;
+      const depth = cfg.hmax * sd * (1 + 0.4 * slip) * (wet ? 1 + WET_DEPTH * Math.min(1, sd) : 1);
       const vc = L.last.v + (brk ? 0 : sg * d);
       if (brk || L.last.zero) {
         // cặp điểm cường độ 0 để không nối vệt qua chỗ ngắt
-        L.writePoint(L.last.x, L.last.z, mx, mz, y0, y1, L.last.v, 0, sf.c, t, sg, width, slip, depth);
-        L.writePoint(px, pz, mx, mz, y0, y1, vc, 0, sf.c, t, sg, width, slip, depth);
+        L.writePoint(L.last.x, L.last.z, mx, mz, y0, y1, L.last.v, 0, sf.c, t, sg, width, slip, depth, hold);
+        L.writePoint(px, pz, mx, mz, y0, y1, vc, 0, sf.c, t, sg, width, slip, depth, hold);
       }
-      if (!brk) L.writePoint(px, pz, mx, mz, y0, y1, vc, str, sf.c, t, sg, width, slip, depth);
+      if (!brk) L.writePoint(px, pz, mx, mz, y0, y1, vc, str, sf.c, t, sg, width, slip, depth, hold);
       L.last = { x, z, v: vc, dx: mx, dz: mz, zero: brk, a, sg };
     });
     for (const L of u._tt) L.flush();

@@ -20,28 +20,39 @@ const GameTiming = {
   ROAD_BONUS: 1.15,    // hệ số tốc độ trên đường nhựa tốt (terrain speedMult) -> tốc độ thật tối đa đạt được trên đường tốt
 
   // Lựu pháo: 30 km thật -> ~0.75 cạnh bản đồ (2700 đơn vị trên bản đồ 3600, 4050 trên bản đồ 5400);
-  // đạn bay 80 s thật -> ~5.7 s trong game (tầm giãn theo bản đồ, thời gian bay giữ nguyên)
+  // đạn bay ~97 s thật (góc 50°, đỉnh ~12 km — không khí loãng dần theo độ cao) -> ~5.7 s trong game như trước
+  // (trước đây 0.07 với mô hình không khí đặc đều: 82 s thật). Tầm giãn theo bản đồ, thời gian bay giữ nguyên
   artyRangeScale: 0.09 * (typeof MapGen !== 'undefined' ? MapGen.SIZE / 3600 : 1),
-  artyTimeScale: 0.07,
+  artyTimeScale: 0.059,
 
   G: 9.81,
 
   // Số liệu thật tham chiếu
   REAL: {
-    topSpeedKmh: { ALL_ROUNDER: 70, GATLING: 70, ARTILLERY: 70, SCOUT: 85 },      // đường tốt (trinh sát 4x4 bọc thép: 85, trước 100 — chạy thường quá nhanh)
+    topSpeedKmh: { ALL_ROUNDER: 70, GATLING: 65, ARTILLERY: 70, SCOUT: 85 },      // đường tốt (trinh sát 4x4 bọc thép: 85, trước 100 — chạy thường quá nhanh; xe 6 nòng nặng nhất, tháp cụm 6 nòng + hòm đạn: 65)
     // Đạn: v sơ tốc (m/s) · k hệ số cản (1/m, dv/dt = -k·v²) · eff tầm hiệu quả (m) · max tầm tự hủy / cháy hết vạch đường (m, 0 = bay hết quỹ đạo)
+    // life (đạn súng): vạch đường cháy hết ở `max` nhưng đầu đạn vẫn bay tiếp, vẫn sát thương — bỏ ở `life` m hoặc khi tụt dưới
+    //   minV m/s (đạn 12.7 / 30mm thật còn nguy hiểm tới 2-3 km, chỉ là không còn thấy vệt sáng)
+    // wc (đạn phản lực): hệ số quay mũi theo gió (1/s) khi động cơ còn cháy — cánh đuôi xoay mũi vào luồng gió ngang, lực đẩy
+    //   kéo đạn NGƯỢC chiều gió (gia tốc ngang = -wc · gió ngang); hết nhiên liệu thì bị gió đẩy xuôi như đạn thường
+    // hRho (lựu pháo): độ cao thang mật độ khí quyển (m) — cản k·e^(-h/hRho), h tính từ điểm bắn
     rounds: {
       TANK_AP: { v: 1650, k: 3.6e-5, eff: 3500, max: 0 },       // APFSDS 120mm: mất ~60 m/s mỗi km
       TANK_NORMAL: { v: 1140, k: 1.0e-4, eff: 3000, max: 0 },   // đạn nổ phá tiêu chuẩn 120mm
       TANK_HE: { v: 950, k: 1.1e-4, eff: 4000, max: 0 },        // HE-FRAG 120mm
       // 30×173 HEI-T: ~1080 m/s, còn ~800 m/s ở 1 km (đầu đạn nổ nhẹ, cản lớn hơn đạn tăng)
-      GATLING_BULLET: { v: 1080, k: 3.0e-4, eff: 2000, max: 2000 },   // 30mm nổ-mảnh (vạch đường cháy hết)
-      INCENDIARY: { v: 1050, k: 3.1e-4, eff: 1800, max: 1800 },       // 30mm cháy
-      SCOUT_BULLET: { v: 890, k: 5.5e-4, eff: 1400, max: 1400 },      // 12.7mm
-      SCOUT_INCENDIARY: { v: 880, k: 5.6e-4, eff: 1300, max: 1300 },  // 12.7mm xuyên-cháy
-      RPG: { v: 290, k: 1.2e-3, eff: 500, max: 920, burnM: 500 },     // đạn phản lực không điều khiển, tự hủy ở 920 m
+      GATLING_BULLET: { v: 1080, k: 3.0e-4, eff: 2000, max: 2000, life: 3000, minV: 250 },   // 30mm nổ-mảnh (vạch đường cháy hết ở 2 km)
+      INCENDIARY: { v: 1050, k: 3.1e-4, eff: 1800, max: 1800, life: 3000, minV: 250 },       // 30mm cháy
+      SCOUT_BULLET: { v: 890, k: 5.5e-4, eff: 1400, max: 1400, life: 2500, minV: 250 },      // 12.7mm (vạch đường M17 tắt ~1,4-1,5 km)
+      SCOUT_INCENDIARY: { v: 880, k: 5.6e-4, eff: 1300, max: 1300, life: 2500, minV: 250 },  // 12.7mm xuyên-cháy
+      RPG: { v: 290, k: 1.2e-3, eff: 500, max: 920, burnM: 500, wc: 0.75 },   // đạn phản lực không điều khiển, tự hủy ở 920 m
+      // rocket giàn 8 ống xe trinh sát (kiểu 70mm Hydra / S-8): ~650 m/s khi cháy hết liều ~400 m, thân dài thon cản ít hơn
+      // B-40 nhiều; tự hủy ở 1,8 km (= BallisticsSystem3D.MAIN_ROCKET_TRAVEL). Đạn bay vẫn là 'RPG' (đầu nổ lõm)
+      ROCKET_POD: { v: 650, k: 4.0e-4, eff: 1500, max: 1800, burnM: 400, wc: 0.6 },
       ANTI_TANK_MISSILE: { v: 300, k: 0, eff: 4000, max: 4000, guided: true, turnG: 12, boostS: 0.6 }, // tên lửa dẫn hướng bán tự động
-      ARTY: { v: 945, k: 3.81e-5, eff: 30000, max: 0 }                // lựu pháo 155mm L/52 liều 1 (base-bleed): 30 km ở góc ~37°
+      // lựu pháo 155mm L/52 liều 1 (base-bleed): không khí loãng dần lên cao (thang 7,5 km) -> góc xa nhất ~50°, đỉnh ~12 km,
+      // bay ~97 s, 30 km. Trước đây cản đều mọi độ cao: góc xa nhất chỉ ~37°, đỉnh 8 km như bắn trong không khí đặc
+      ARTY: { v: 945, k: 7.4e-5, hRho: 7500, eff: 30000, max: 0 }
     },
     // Liều phóng lựu pháo (hệ số sơ tốc): liều 1 = đầy 30 km ... liều 7 = nhỏ nhất. Liều 6-7 (trước đây chỉ tới 5: góc 70° vẫn
     // rơi ~1100 đv) để bắn cầu vồng góc cao thật sự ở cự ly 400-1100 thay vì đường gần thẳng 10-15°
@@ -75,11 +86,11 @@ const GameTiming = {
   },
 
   /**
-   * Thông số bay trong game (đơn vị game, giây thật): { v, g, k, maxTravel, eff, guided, key }
-   * chargeMul: hệ số sơ tốc theo liều phóng lựu pháo
+   * Thông số bay trong game (đơn vị game, giây thật): { v, g, k, maxTravel, eff, guided, key, windMul, ... }
+   * chargeMul: hệ số sơ tốc theo liều phóng lựu pháo · keyOverride: dùng hẳn một dòng bảng đạn (vd 'ROCKET_POD')
    */
-  round(ammo, tankType, chargeMul = 1) {
-    const key = this.roundKey(ammo, tankType);
+  round(ammo, tankType, chargeMul = 1, keyOverride = null) {
+    const key = keyOverride && this.REAL.rounds[keyOverride] ? keyOverride : this.roundKey(ammo, tankType);
     const R = this.REAL.rounds[key];
     const arty = key === 'ARTY';
     const r = arty ? this.artyRangeScale : this.rangeScale;
@@ -91,11 +102,18 @@ const GameTiming = {
       k: R.k / r,
       maxTravel: R.max ? R.max * r : 0,
       eff: R.eff * r,
-      guided: !!R.guided
+      guided: !!R.guided,
+      // Gió (ballistics.wind, đv/s = m/s thật theo tỉ lệ bắn thẳng r/τ = 1) đổi sang tỉ lệ riêng của lựu pháo: gió 8 m/s thật
+      // trong thế giới lựu pháo là 8·(r/τ) đv/s. Trước đây cộng thẳng -> đạn 155 dạt gió chỉ ~2/3 thực tế
+      windMul: (r / tau) / (this.rangeScale / this.timerScale)
     };
     if (R.turnG) out.turnAcc = R.turnG * this.G * r / (tau * tau);
     if (R.boostS) out.boostT = R.boostS * tau;
     if (R.burnM) out.burnTravel = R.burnM * r;
+    if (R.wc) out.wc = R.wc / tau;                 // 1/giây game
+    if (R.life) out.lifeTravel = R.life * r;
+    if (R.minV) out.minV = R.minV * r / tau;
+    if (R.hRho) out.hRho = R.hRho * r;             // đơn vị game
     return out;
   }
 };

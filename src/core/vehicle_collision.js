@@ -80,9 +80,13 @@ const VehicleCollision = (() => {
     return o;
   }
 
-  // SAT hai hình chữ nhật xoay (mặt bằng). Trả về vector đẩy A ra khỏi B {x, z, d} hoặc null
-  function obbPush(acx, acz, aux, auz, ahu, ahv, b) {
-    const axes = [aux, auz, -auz, aux, b.ux, b.uz, -b.uz, b.ux];
+  // SAT hai hình chữ nhật xoay (mặt bằng). Trả về vector đẩy A ra khỏi B {x, z, d} hoặc null.
+  // `out`: ghi vào object có sẵn (không cấp phát mỗi lần gọi); bỏ trống thì tạo object mới
+  const AXES = new Float64Array(8);
+  function obbPush(acx, acz, aux, auz, ahu, ahv, b, out) {
+    const axes = AXES;
+    axes[0] = aux; axes[1] = auz; axes[2] = -auz; axes[3] = aux;
+    axes[4] = b.ux; axes[5] = b.uz; axes[6] = -b.uz; axes[7] = b.ux;
     const bvx = -b.uz, bvz = b.ux, avx = -auz, avz = aux;
     const tx = b.cx - acx, tz = b.cz - acz;
     let best = Infinity, nx = 0, nz = 0;
@@ -95,7 +99,17 @@ const VehicleCollision = (() => {
       if (ov <= 0) return null;
       if (ov < best) { best = ov; const s = dist > 0 ? -1 : 1; nx = ax * s; nz = az * s; }
     }
-    return { x: nx * best, z: nz * best, d: best };
+    const o = out || {};
+    o.x = nx * best; o.z = nz * best; o.d = best;
+    return o;
+  }
+
+  // Ô nhớ tạm cho hullPush / barrelPush (kết quả chỉ dùng ngay trong lượt resolve, không giữ qua lần gọi sau)
+  const _pTmp = { x: 0, z: 0, d: 0 }, _hullBest = { x: 0, z: 0, d: 0 }, _barBest = { x: 0, z: 0, d: 0 };
+  function keepDeeper(p, best, slot) {
+    if (!p || (best && p.d <= best.d)) return best;
+    slot.x = p.x; slot.z = p.z; slot.d = p.d;
+    return slot;
   }
 
   // Thân xe tại (x, z) chồng lên hộp nào sâu nhất -> vector đẩy
@@ -109,8 +123,7 @@ const VehicleCollision = (() => {
     let best = null;
     for (const b of boxes) {
       if (b.y1 <= bot || b.y0 >= top) continue;
-      const p = obbPush(cx, cz, ux, uz, hu, hv, b);
-      if (p && (!best || p.d > best.d)) best = p;
+      best = keepDeeper(obbPush(cx, cz, ux, uz, hu, hv, b, _pTmp), best, _hullBest);
     }
     return best;
   }
@@ -134,8 +147,7 @@ const VehicleCollision = (() => {
       const bx = seg.x0 + (seg.x1 - seg.x0) * t1, bz = seg.z0 + (seg.z1 - seg.z0) * t1;
       const L = Math.hypot(bx - ax, bz - az);
       const ux = L > 1e-4 ? (bx - ax) / L : 1, uz = L > 1e-4 ? (bz - az) / L : 0;
-      const p = obbPush((ax + bx) / 2, (az + bz) / 2, ux, uz, L / 2 + BARREL_R * 0.5, BARREL_R, b);
-      if (p && (!best || p.d > best.d)) best = p;
+      best = keepDeeper(obbPush((ax + bx) / 2, (az + bz) / 2, ux, uz, L / 2 + BARREL_R * 0.5, BARREL_R, b, _pTmp), best, _barBest);
     }
     return best;
   }

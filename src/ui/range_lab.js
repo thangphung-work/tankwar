@@ -16,7 +16,11 @@
  * - Bất tử: hư hại bộ phận / giáp vẫn chạy đủ, máu chỉ không xuống dưới 10%; bảng PHÁT TRÚNG đọc mặt giáp, độ dày,
  *   độ xuyên, hệ số, sát thương của từng phát
  *
- * Tham số URL: map=HIGHLAND|RIVER_LAKE|JUNGLE|DESERT|URBAN, seed=<số>, tank=ALL_ROUNDER|GATLING|ARTILLERY|SCOUT
+ * - ĐỒNG TRỐNG (mặc định): san phẳng một vùng tròn bán kính 1 km (không cây / nhà / đá), chỉ có xe bạn + 1 xe bia;
+ *   chọn loại xe bia, trang bị bia, cự ly và hướng bia (mũi / chéo / sườn / đuôi). Bố trí LÀNG: 4 bia quanh làng như cũ
+ *
+ * Tham số URL: map=HIGHLAND|RIVER_LAKE|JUNGLE|DESERT|URBAN, seed=<số>, tank=ALL_ROUNDER|GATLING|ARTILLERY|SCOUT,
+ *   field=flat|village
  */
 (function () {
   const q = new URLSearchParams(location.search);
@@ -27,11 +31,22 @@
 
   const MAPS = [['HIGHLAND', 'Đồng cỏ'], ['RIVER_LAKE', 'Sông hồ'], ['JUNGLE', 'Rừng'], ['DESERT', 'Sa mạc'], ['URBAN', 'Đô thị']];
   const TYPES = [['ALL_ROUNDER', 'HALBERD MK.3'], ['GATLING', 'HAILSTORM R6'], ['ARTILLERY', 'ARBALEST 155'], ['SCOUT', 'MARTEN R4']];
-  let BIOME = (q.get('map') || 'HIGHLAND').toUpperCase();
+  // vào từ thanh chuyển lab (không kèm ?map=): dùng lại bản đồ đã chọn lần trước
+  let lsMap = null;
+  try { lsMap = localStorage.getItem('rg-map'); } catch (e) { /* bỏ qua */ }
+  let BIOME = (q.get('map') || lsMap || 'HIGHLAND').toUpperCase();
   if (!MAPS.some(m => m[0] === BIOME)) BIOME = 'HIGHLAND';
   const SEED = (parseInt(q.get('seed'), 10) || 20261022) >>> 0;
   let tankType = (q.get('tank') || 'ALL_ROUNDER').toUpperCase();
   if (!TYPES.some(t => t[0] === tankType)) tankType = 'ALL_ROUNDER';
+  // Bố trí bãi thử: 'flat' = đồng trống san phẳng + 1 bia, 'village' = 4 bia quanh làng
+  let lsField = null;
+  try { lsField = localStorage.getItem('rg-field'); } catch (e) { /* bỏ qua */ }
+  const FIELD = (q.get('field') || lsField || 'flat') === 'village' ? 'village' : 'flat';
+  // phải bật trước khi game sinh bản đồ (map_gen.js nạp trước file này, game.js nạp sau)
+  if (window.MapGen && MapGen.setTestField) MapGen.setTestField(FIELD === 'flat');
+  // game dựng thẳng bản đồ này ngay lúc khởi tạo (game.js) -> prepareMap bên dưới không phải dựng lại
+  window.BOOT_MAP = { type: BIOME, seed: SEED };
 
   // Màn chờ: nạp script + dựng bản đồ mất vài giây, trước đây chỉ thấy trang trống / sảnh lóe lên
   const loader = (() => {
@@ -59,19 +74,29 @@
     };
   })();
 
-  const lab = { g: null, dummies: [], home: null, village: null, god: true, fireBack: false, fireMode: 'off', dummyArmor: 0, keepWreck: false, log: [], hits: [], kit: null, kamis: [] };
+  const lab = { g: null, dummies: [], home: null, village: null, field: FIELD, spots: [], dummyType: FIELD === 'flat' ? 'ALL_ROUNDER' : null,
+    dummyKit: { m: [], p: [], a: {} }, dist: q.get('ew') === '1' ? 1300 : 400, face: 0, god: true, fireBack: false, fireMode: 'off', keepWreck: false, dummyJam: false, log: [], hits: [], kit: null, kamis: [], kamiOn: true, kamiSky: [], kamiT: 2, kamiKills: 0 };
   // Vũ khí bia bắn trả: [mã, tên]
   const FIRE_MODES = [['off', 'Tắt'], ['ap', 'Pháo AP'], ['heat', 'Pháo nổ lõm'], ['rpg', 'RPG'], ['atgm', 'Tên lửa'], ['top', 'Tên lửa đỉnh'],
     ['mg', 'Súng 12.7'], ['agl', 'Lựu 40mm'], ['kami', 'UAV cảm tử']];
   const ARMOR_SETS = [['Không giáp', []], ['ERA + lồng thép', ['era', 'slat']], ['Tấm ghép + APS', ['applique', 'spall', 'aps']]];
+  // Đồng trống: cự ly bia (m) · hướng bia so với xe bạn (rad quay thân: 0 = mũi xe hướng về bạn)
+  const DISTS = [100, 200, 400, 700, 1000, 1400];
+  const FACES = [[0, 'Mũi'], [Math.PI / 4, 'Chéo 45°'], [Math.PI / 2, 'Sườn'], [Math.PI, 'Đuôi']];
+  const typeName = t => (TYPES.find(x => x[0] === t) || [t, t])[1];
   const deg = r => r * 180 / Math.PI;
 
   // ---------------------------------------------------------------------------
   // KHỞI ĐỘNG: chờ game dựng xong -> dựng bản đồ -> vào trận thử
   // ---------------------------------------------------------------------------
+  let bootWait = 0;
   function boot() {
     const g = window.game;
-    if (!g || !g.terrain || !g.matchmaking) { setTimeout(boot, 60); return; }
+    if (!g || !g.terrain || !g.matchmaking) {
+      // khởi tạo game lỗi (Console có "Lỗi khi khởi động") thì đợi mãi vô ích: báo ngay trên màn chờ
+      if ((bootWait += 60) > 30000 && !window._labBootErr) { window._labBootErr = true; loader.stage('KHÔNG KHỞI ĐỘNG ĐƯỢC — xem Console (F12)'); }
+      setTimeout(boot, 60); return;
+    }
     const mm = g.matchmaking;
     mm.selectedMapType = BIOME; mm.mapSeed = SEED; mm.state = 'IN_GAME';
     mm.preparedMapKey = BIOME + ':' + SEED;
@@ -82,20 +107,34 @@
   }
 
   function start(g, mm) {
+    try { startInner(g, mm); } catch (err) {
+      console.error('[LAB] Lỗi dựng phòng thử:', err);
+      loader.stage('LỖI: ' + (err && err.message || err) + ' — xem Console (F12)');
+    }
+  }
+
+  function startInner(g, mm) {
+    const t0 = performance.now();
     g.prepareMap(BIOME, SEED);
+    console.info(`[BOOT] prepareMap: ${Math.round(performance.now() - t0)} ms`);
     const ov = document.getElementById('matchmaking-overlay');
     if (ov) ov.classList.add('hidden');
     mm.selectedTankType = tankType;
     if (mm.music) mm.music('battle');
     g.startMatchWithSlots([{ id: 0, team: 'BLUE', title: 'THỬ ĐẠN', name: 'XE THỬ ĐẠN', isHuman: true, isMe: true, peerId: 'lab-me', tankType, ready: true }], 'lab-me');
+    g._intro = null;   // bỏ đoạn camera lượn quanh căn cứ 6 s lúc mở màn: vào thẳng sau lưng xe
+    console.info(`[BOOT] Vào trận (startMatchWithSlots): ${Math.round(performance.now() - t0)} ms`);
     setup(g);
+    console.info(`[BOOT] Dựng phòng thử xong: ${Math.round(performance.now() - t0)} ms · tổng từ lúc mở trang ${Math.round(performance.now())} ms`);
+    // khung hình đầu tiên (biên dịch shader / tải texture lên GPU dồn vào đây)
+    const tf = performance.now();
+    requestAnimationFrame(() => requestAnimationFrame(() => console.info(`[BOOT] Khung hình đầu: ${Math.round(performance.now() - tf)} ms`)));
   }
 
   function setup(g) {
     lab.g = g;
     // Luật trận thường không áp dụng trong phòng thử
     g.matchDuration = 1e9;
-    if (g.zone) g.zone.update = function () {};
     g.airdropTimer = 1e9;
     if (g.supplyManager) g.supplyManager.airdropTimer = 1e9;
     g.respawnWaitPenalty = 3;
@@ -131,6 +170,8 @@
     spawnUAVs(g);
     addLog('Ctrl: kính ngắm như trong trận · Tab: khóa mục tiêu · Space / chuột trái: bắn · M: bản đồ', 'info');
     window.rangeLab = lab;
+    syncUrl();
+    if (lab.field === 'flat') addLog('[[square]] Đồng trống: chọn xe bia, cự ly, hướng và trang bị bia ở bảng bên phải', 'info');
     loader.done();
   }
 
@@ -165,7 +206,20 @@
   }
 
   function placeAll() {
-    const g = lab.g, V = lab.village = findVillage();
+    const g = lab.g, F = lab.field === 'flat' && g.terrain.map && g.terrain.map.testField;
+    if (lab.field === 'flat' && !F) { lab.field = 'village'; lab.dummyType = null; }
+    if (F) {
+      // ĐỒNG TRỐNG: xe bạn ở mép vùng phẳng, bia phía trước theo hướng về giữa bản đồ (nền xa có núi đồi)
+      const L = Math.hypot(F.x, F.z) || 1, ux = -F.x / L, uz = -F.z / L;
+      const sx = F.x - ux * 720, sz = F.z - uz * 720;
+      lab.fieldDir = { x: ux, z: uz };
+      lab.home = { x: sx, z: sz, a: Math.atan2(-ux, -uz), az: (deg(Math.atan2(ux, -uz)) + 360) % 360 };
+      lab.village = null;
+      teleport();
+      spawnDummies();
+      return;
+    }
+    const V = lab.village = findVillage();
     // chỗ xuất phát: vòng quanh làng ở 520-760, ưu tiên hướng về giữa bản đồ
     const toC = Math.atan2(-V.z, -V.x);
     let spawn = null;
@@ -180,14 +234,13 @@
     lab.home = { x: spawn.x, z: spawn.z, a: Math.atan2(-dx, -dz), az: (deg(Math.atan2(dx, -dz)) + 360) % 360 };
     teleport();
     // mục tiêu: giữa đồng (~220), cạnh nhà, sau nhà, trong làng — lệch góc để không xếp hàng dọc
-    for (const d of lab.dummies) { d.isDead = true; if (d.group && d.group.parent) d.group.parent.remove(d.group); }
-    g.units = g.units.filter(u => !lab.dummies.includes(u));
-    lab.dummies = [];
     const D = Math.hypot(dx, dz), ux = dx / D, uz = dz / D;
     // ?ew=1: thử máy phá sóng — chỉ 1 xe tăng địch (tự bật phá sóng khi drone mình bay tới gần, ew_jammer.js)
+    if (q.get('ew') === '1') lab.dummyJam = true;
     const plan = q.get('ew') === '1' ? [[1300, 0, 'ALL_ROUNDER']]
       : [[220, -0.18, 'ALL_ROUNDER'], [D - 90, 0.12, 'GATLING'], [D + 40, -0.06, 'ALL_ROUNDER'], [D + 170, 0.2, 'ARTILLERY']];
-    plan.forEach(([r0, off, type], i) => {
+    lab.spots = [];
+    plan.forEach(([r0, off, type]) => {
       let p = null;
       for (let k = 0; k < 160 && !p; k++) {
         const r = r0 + (k % 5) * 22 - 44, o = off + (Math.floor(k / 5) % 2 ? 1 : -1) * Math.floor(k / 10) * 0.05;
@@ -195,11 +248,35 @@
         const x = spawn.x + vx * r, z = spawn.z + vz * r;
         if (openSpot(x, z, k < 80 ? 22 : 10, k >= 80)) p = { x, z };
       }
-      if (!p) return;
-      const tx = spawn.x - p.x, tz = spawn.z - p.z;
-      mkDummy(`MỤC TIÊU ${i + 1}`, { x: p.x, z: p.z, a: Math.atan2(-tx, -tz), az: (deg(Math.atan2(tx, -tz)) + 360) % 360 }, type);
+      if (p) lab.spots.push({ x: p.x, z: p.z, type });
+    });
+    spawnDummies();
+  }
+
+  // Dựng lại xe bia theo lựa chọn hiện tại (loại xe, trang bị, cự ly, hướng) — xe bạn đứng yên chỗ cũ
+  function spawnDummies() {
+    const g = lab.g, h = lab.home;
+    for (const d of lab.dummies) {
+      d.isDead = true;
+      if (d.group && d.group.parent) d.group.parent.remove(d.group);
+      if (d.trackMarks) d.trackMarks.forEach(m => m.mesh && g.scene.remove(m.mesh));
+    }
+    g.units = g.units.filter(u => !lab.dummies.includes(u));
+    g.respawnQueue = (g.respawnQueue || []).filter(it => !lab.dummies.includes(it.unit));
+    if (g.lockedTarget && lab.dummies.includes(g.lockedTarget)) g.lockedTarget = null;
+    lab.dummies = [];
+    if (!h) return;
+    const spots = lab.field === 'flat' && lab.fieldDir
+      ? [{ x: h.x + lab.fieldDir.x * lab.dist, z: h.z + lab.fieldDir.z * lab.dist, type: 'ALL_ROUNDER' }]
+      : lab.spots;
+    spots.forEach((p, i) => {
+      const type = lab.dummyType || p.type;
+      const tx = h.x - p.x, tz = h.z - p.z, a = Math.atan2(-tx, -tz) + lab.face;
+      // tháp quay theo thân (azimuth theo hướng thế giới: az = -bodyAngle)
+      mkDummy(`MỤC TIÊU ${i + 1} · ${typeName(type)}`, { x: p.x, z: p.z, a, az: ((deg(-a) % 360) + 360) % 360 }, type);
     });
     if (g.updateAliveCount) g.updateAliveCount();
+    renderStatus();
   }
 
   function mkDummy(name, s, type) {
@@ -207,10 +284,10 @@
     const u = new SPGUnit3D(g.scene, { name, isPlayer: false, team: 'RED', tankType: type, x: s.x, z: s.z, bodyAngle: s.a, azimuth: s.az, elevation: 0, charge: 2 });
     u.updateAI = () => {};          // đứng yên, không tự lái / tự bắn
     u._labHome = s;
-    // bia mang giáp (thử đạn mình xuyên ERA / lồng thép / tấm ghép, APS bắn chặn)
-    const set = ARMOR_SETS[lab.dummyArmor] && ARMOR_SETS[lab.dummyArmor][1];
-    if (set && set.length && typeof Equipment !== 'undefined') {
-      try { Equipment.equip(u, { m: set.filter(id => Equipment.compatible(id, type)), p: [], a: {} }, null); } catch (e) { /* bỏ qua */ }
+    u._noJam = !lab.dummyJam;       // xe tăng bia: máy phá sóng tự bật khi drone mình bay tới gần (ew_jammer.js)
+    // trang bị bia (bảng TRANG BỊ BIA): món nào không hợp loại xe thì bỏ qua
+    if (typeof Equipment !== 'undefined') {
+      try { Equipment.equip(u, Equipment.sanitize(lab.dummyKit, type), null); } catch (e) { console.warn('[LAB] trang bị bia', e); }
     }
     place(u, s.x, s.z, s.a, s.az);
     g.units.push(u);
@@ -337,7 +414,7 @@
 
   function syncUrl() {
     const u = new URL(location.href);
-    u.searchParams.set('lab', 'range'); u.searchParams.set('map', BIOME); u.searchParams.set('tank', tankType);
+    u.searchParams.set('lab', 'range'); u.searchParams.set('map', BIOME); u.searchParams.set('tank', tankType); u.searchParams.set('field', FIELD);
     history.replaceState(null, '', u.toString());
   }
 
@@ -345,25 +422,36 @@
   // MỖI KHUNG HÌNH
   // ---------------------------------------------------------------------------
   let uiT = 0;
-  // Phòng thử: không giới hạn đạn (mọi loại đạn đặc biệt, tên lửa, dây đạn trạm súng nóc) — kho đạn luôn đầy lại
+  // Phòng thử: đạn đặc biệt / tên lửa trừ bình thường như trong trận; loại nào bắn hết thì sau AMMO_REFILL_S giây
+  // kho tự nạp đầy lại (trạm súng nóc tự thay hộp theo cơ chế riêng của nó)
   const AMMO_KEYS = ['apAmmoCount', 'heAmmoCount', 'clusterAmmoCount', 'incendiaryAmmoCount', 'missileAmmoCount', 'specialAmmoCount'];
-  function refillAmmo(u) {
+  const AMMO_REFILL_S = 4;
+  function refillAmmo(u, dt) {
     if (!u || u.isDead) return;
+    if (!u._labAmmoFull) { u._labAmmoFull = {}; u._labAmmoWait = {}; }
     let changed = false;
     for (const k of AMMO_KEYS) {
       if (u[k] === undefined) continue;
-      const full = u._labAmmoFull ? u._labAmmoFull[k] : undefined;
-      if (!u._labAmmoFull) u._labAmmoFull = {};
-      if (full === undefined) u._labAmmoFull[k] = Math.max(u[k], k === 'incendiaryAmmoCount' ? 80 : 3);
-      if (u[k] < u._labAmmoFull[k]) { u[k] = u._labAmmoFull[k]; changed = true; }
+      // lần đầu: chốt mốc đầy (tối thiểu vài phát để thử mọi loại) và nạp ngay, không báo
+      if (u._labAmmoFull[k] === undefined) { u._labAmmoFull[k] = Math.max(u[k], k === 'incendiaryAmmoCount' ? 80 : 3); u[k] = u._labAmmoFull[k]; changed = true; }
+      if (u[k] > 0) { u._labAmmoWait[k] = 0; continue; }
+      if (!u._labAmmoWait[k]) addLog(`[[hourglass]] Hết đạn — tự nạp lại sau ${AMMO_REFILL_S} s`, 'info');
+      u._labAmmoWait[k] = (u._labAmmoWait[k] || 0) + dt;
+      if (u._labAmmoWait[k] >= AMMO_REFILL_S) { u[k] = u._labAmmoFull[k]; u._labAmmoWait[k] = 0; changed = true; }
     }
-    if (u._rcws && typeof DroneAir !== 'undefined' && DroneAir.C && DroneAir.C.RCWS) { u._rcws.mag = DroneAir.C.RCWS.mag; u._rcws.reload = 0; }
+    // bệ tên lửa đột nóc (trận thật: 2 quả mỗi lần xuất kích, không nạp): phóng hết và quả cuối đã nổ thì lắp ống mới
+    const R = u._rcws, A = u.roofWeapon === 'atgm' && typeof DroneAir !== 'undefined' ? DroneAir.C.ROOF.atgm : null;
+    if (A && R && R.mag <= 0 && !(u.missileInFlight && u.missileInFlight())) {
+      if (!u._labAmmoWait.atgm) addLog(`[[hourglass]] Hết tên lửa đột nóc — tự lắp ống mới sau ${AMMO_REFILL_S} s`, 'info');
+      u._labAmmoWait.atgm = (u._labAmmoWait.atgm || 0) + dt;
+      if (u._labAmmoWait.atgm >= AMMO_REFILL_S) { R.mag = A.mag; u._labAmmoWait.atgm = 0; changed = true; }
+    }
     if (changed) { const g = lab.g; try { g.updateAmmoUI(); } catch (e) { /* bỏ qua */ } }
   }
 
   function tick(dt) {
     const g = lab.g, p = g.player;
-    refillAmmo(p);
+    refillAmmo(p, dt);
     if (lab.fireMode !== 'off') fireBackTick(dt);
     updateKamis(dt);
     for (const d of lab.dummies) {
@@ -396,6 +484,7 @@
   // BIA BẮN TRẢ THEO VŨ KHÍ CHỌN: bia còn sống gần nhất (pháo tăng: bia xe tăng gần nhất) bắn vào xe mình
   // ---------------------------------------------------------------------------
   function nearestDummy(p, tankOnly) {
+    if (tankOnly && !lab.dummies.some(d => !d.isDead && d.tankType === 'ALL_ROUNDER')) tankOnly = false;   // không có bia xe tăng: bia nào cũng bắn
     let best = null, bd = 1800;
     for (const d of lab.dummies) {
       if (d.isDead || (tankOnly && d.tankType !== 'ALL_ROUNDER')) continue;
@@ -493,22 +582,36 @@
     for (let i = lab.kamis.length - 1; i >= 0; i--) {
       const K = lab.kamis[i];
       if (!p || p.isDead) { g.scene.remove(K.m); lab.kamis.splice(i, 1); continue; }
-      const ty = (p.y || 0) + 9, dx = p.x - K.x, dz = p.z - K.z, hd = Math.hypot(dx, dz);
+      // máy gây nhiễu của xe mình (vùng nhiễu vô hướng ew_jammer.js OMNI_R): UAV trong vùng ~0,7 s là mất điều khiển, chao lệch
+      // khỏi xe rồi cắm xuống đất bên cạnh
+      const OR = typeof EWJammer !== 'undefined' ? EWJammer.C.OMNI_R : 0;
+      if (!K.miss && OR && g.jamOmniHits && g.jamOmniHits(p, K.d, K) && (K.jam = (K.jam || 0) + dt) >= 0.7) {
+        const a = Math.atan2(K.x - p.x, K.z - p.z) + (Math.random() < 0.5 ? -1 : 1) * (0.9 + Math.random() * 0.5), r = 70 + Math.random() * 40;
+        K.miss = { x: p.x + Math.sin(a) * r, z: p.z + Math.cos(a) * r };
+        addLog('[[antenna-bars-off]] Máy gây nhiễu của xe bạn cắt liên lạc UAV cảm tử — UAV chao lệch, đâm xuống bên cạnh!', 'hit');
+      }
+      const tX = K.miss ? K.miss.x : p.x, tZ = K.miss ? K.miss.z : p.z;
+      const ty = K.miss ? g.terrain.getElevationAt(tX, tZ) - 4 : (p.y || 0) + 9, dx = tX - K.x, dz = tZ - K.z, hd = Math.hypot(dx, dz);
       const dive = hd < 160;
       K.v = Math.min(dive ? 420 : 160, K.v + dt * (dive ? 400 : 60));
       const wantY = dive ? ty : Math.max(ty + 45, g.terrain.getElevationAt(K.x, K.z) + 40);
       const dy = wantY - K.y, L = Math.hypot(dx, dy, dz) || 1;
-      K.x += dx / L * K.v * dt; K.y += dy / L * K.v * dt; K.z += dz / L * K.v * dt;
+      K.vx = dx / L * K.v; K.vy = dy / L * K.v; K.vz = dz / L * K.v;
+      K.x += K.vx * dt; K.y += K.vy * dt; K.z += K.vz * dt;
+      // hệ thống đánh chặn (APS) của xe mình bắn hạ UAV khi lao vào vùng chặn
+      if (g.apsVsKami && g.apsVsKami(K, K.d, dt)) {
+        if (g.kamiAirBurst) g.kamiAirBurst(K.d.team, K.x, K.y, K.z, K.vx, K.vy, K.vz, Math.atan2(-dx, -dz), false);
+        addLog('[[shield-bolt]] APS của xe bạn đã bắn hạ UAV cảm tử của bia!', 'hit');
+        g.scene.remove(K.m);
+        lab.kamis.splice(i, 1);
+        continue;
+      }
       K.m.position.set(K.x, K.y, K.z);
       K.m.rotation.set(dive ? -0.9 : -0.1, Math.atan2(-dx, -dz), 0);
       KamiUAV.animate(K.m, dt, 1, 1);
       if (Math.hypot(p.x - K.x, ty - K.y, p.z - K.z) < 10 || K.y < g.terrain.getElevationAt(K.x, K.z) + 1) {
-        const pos = new THREE.Vector3(p.x, (p.y || 0) + 24, p.z), dir = new THREE.Vector3(0.02, -1, 0.02).normalize();
-        const C = KamiUAV.C || { direct: 3.4, splash: 1.5, blast: { radius: 46, core: 14 } };
-        K.d._launchOverride = { position: pos, direction: dir };
-        let sh = null;
-        try { sh = B.fireShell3D(K.d, 0, -88, 1, 'RPG'); } finally { K.d._launchOverride = null; }
-        if (sh) { sh.vx = dir.x * 360; sh.vy = dir.y * 360; sh.vz = dir.z * 360; sh.roofDirect = C.direct; sh.roofSplash = C.splash; sh.roofBlast = C.blast; sh.kami = true; }
+        // đầu nổ kích hoạt ngay chỗ UAV chạm, theo hướng đang lao (cùng luật UAV cảm tử của người chơi — kamikaze_uav.js)
+        KamiUAV.fireWarhead(B, K.d, new THREE.Vector3(K.x, K.y, K.z), new THREE.Vector3(dx / L, dy / L, dz / L));
         g.scene.remove(K.m);
         lab.kamis.splice(i, 1);
       }
@@ -559,14 +662,15 @@
     const P = lab.g.player;
     return lab.kit || (P && P.kit ? JSON.parse(JSON.stringify(P.kit)) : { m: [], p: [], a: {} });
   }
-  function toggleItem(id) {
-    const Eq = Equipment, type = lab.g.player.tankType, k = curKit();
+  // Lắp / tháo một món trong bộ đồ `kit` của xe `type` -> bộ đồ mới đã lọc hợp lệ
+  function toggleIn(kit, id, type) {
+    const Eq = Equipment, k = JSON.parse(JSON.stringify(kit || { m: [], p: [], a: {} }));
     k.m = k.m || []; k.p = k.p || [];
     if (Eq.PREMIUM[id]) {
       k.p = k.p.includes(id) ? k.p.filter(x => x !== id) : k.p.concat(id);
     } else {
       const M = Eq.MODULES[id];
-      if (!M) return;
+      if (!M) return null;
       if (k.m.includes(id)) k.m = k.m.filter(x => x !== id);
       else {
         if ((Eq.MOUNT_CATS || []).includes(M.cat)) k.m = k.m.filter(x => !(Eq.MODULES[x] && Eq.MODULES[x].cat === M.cat));
@@ -576,15 +680,31 @@
         k.m.push(id);
       }
     }
-    lab.kit = Eq.sanitize(k, type);
-    rebuildPlayer(type);
-    const nm = (Eq.MODULES[id] || Eq.PREMIUM[id]).name;
-    addLog(`[[tool]] Thử: ${nm} ${(lab.kit.m.includes(id) || lab.kit.p.includes(id)) ? 'đã lắp' : 'đã tháo'}`, 'info');
+    return Eq.sanitize(k, type);
   }
-  function renderKit() {
-    const el = root && root.querySelector('#rg-kit'), P = lab.g && lab.g.player;
-    if (!el || !P || typeof Equipment === 'undefined') return;
-    const Eq = Equipment, type = P.tankType, k = P.kit || { m: [], p: [] };
+  const itemName = id => (Equipment.MODULES[id] || Equipment.PREMIUM[id]).name;
+  const kitHas = (k, id) => k.m.includes(id) || k.p.includes(id);
+  function toggleItem(id) {
+    const type = lab.g.player.tankType, k = toggleIn(curKit(), id, type);
+    if (!k) return;
+    lab.kit = k;
+    rebuildPlayer(type);
+    addLog(`[[tool]] Thử: ${itemName(id)} ${kitHas(lab.kit, id) ? 'đã lắp' : 'đã tháo'}`, 'info');
+  }
+  // Trang bị bia: lắp theo loại xe bia đang chọn (bố trí làng, xe bia hỗn hợp: theo xe tăng; món không hợp xe nào thì xe đó bỏ qua)
+  const dummyKitType = () => lab.dummyType || 'ALL_ROUNDER';
+  function toggleDummyItem(id) {
+    const k = toggleIn(lab.dummyKit, id, dummyKitType());
+    if (!k) return;
+    lab.dummyKit = k;
+    spawnDummies();
+    renderUI();
+    addLog(`[[shield]] Bia: ${itemName(id)} ${kitHas(k, id) ? 'đã lắp' : 'đã tháo'}`, 'info');
+  }
+  // Bảng nút trang bị (mọi nhóm + đạn cao cấp) cho xe `type` với bộ đồ `k`
+  function kitGrid(type, k) {
+    const Eq = Equipment;
+    k = k || { m: [], p: [] };
     let h = '';
     for (const c in Eq.CATS) {
       if (c === 'ammo') continue;
@@ -603,7 +723,19 @@
       for (const id of prem) h += `<button data-kit="${id}" class="${(k.p || []).includes(id) ? 'on' : ''}">${Eq.PREMIUM[id].name}</button>`;
       h += '</div>';
     }
-    el.innerHTML = h;
+    return h;
+  }
+  function renderKit() {
+    const el = root && root.querySelector('#rg-kit'), P = lab.g && lab.g.player;
+    if (!el || !P || typeof Equipment === 'undefined') return;
+    el.innerHTML = kitGrid(P.tankType, P.kit);
+  }
+  function renderDummyKit() {
+    const el = root && root.querySelector('#rg-dkit');
+    if (!el || typeof Equipment === 'undefined') return;
+    const t = dummyKitType();
+    el.innerHTML = (lab.dummyType ? '' : `<div class="kc" style="color:var(--tc-text)">Chọn theo ${typeName(t)} — xe bia khác loại chỉ lắp món hợp với nó</div>`)
+      + kitGrid(t, Equipment.sanitize(lab.dummyKit, t));
   }
   function renderHits() {
     const el = root && root.querySelector('#rg-hits');
@@ -636,8 +768,12 @@
       #rg-lab .rg-head>.ti{font-size:22px;color:var(--tc-accent)}
       #rg-lab h1{margin:0;font-size:14px;font-weight:700;letter-spacing:2px;color:var(--tc-bright)}
       #rg-lab .rg-sub{font-size:10.5px;color:var(--tc-dim)}
-      #rg-lab .rg-head a{margin-left:auto;display:flex;align-items:center;gap:4px;padding:4px 8px;font-size:11px;font-weight:600;color:var(--tc-dim);text-decoration:none;border:1px solid var(--tc-line)}
-      #rg-lab .rg-head a:hover{color:var(--tc-text);border-color:var(--tc-line-2)}
+      #rg-lab nav{display:flex;gap:3px;padding:7px 12px 8px;border-bottom:1px solid var(--tc-line)}
+      #rg-lab nav a{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:3px;padding:4px 3px;font-size:10.5px;font-weight:600;letter-spacing:.3px;white-space:nowrap;
+        color:var(--tc-dim);text-decoration:none;border:1px solid var(--tc-line);background:rgba(200,210,192,.03)}
+      #rg-lab nav a:hover{color:var(--tc-text);border-color:var(--tc-line-2)}
+      #rg-lab nav a.home{flex:0 0 26px}
+      #rg-lab nav a.on{color:var(--tc-accent-2);border-color:var(--tc-accent);background:var(--tc-accent-soft);pointer-events:none}
       #rg-lab .rg-body{flex:1;min-height:0;overflow:auto;padding:4px 12px 12px}
       #rg-lab .lbl{margin:9px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:1.4px;color:var(--tc-dim)}
       #rg-lab .row{display:flex;flex-wrap:wrap;gap:4px}
@@ -652,7 +788,7 @@
       #rg-lab .log{margin-top:8px;display:grid;gap:3px;font-size:11px;color:var(--tc-dim)}
       #rg-lab .log .ok{color:var(--tc-ok)}#rg-lab .log .hit{color:var(--tc-red)}
       #rg-lab .kc{margin:6px 0 2px;font-size:9.5px;letter-spacing:1.2px;color:var(--tc-dim)}
-      #rg-lab #rg-kit button,#rg-lab #rg-fm button{min-width:0;font-size:10.5px;padding:4px 5px}
+      #rg-lab #rg-kit button,#rg-lab #rg-dkit button,#rg-lab #rg-fm button,#rg-lab #rg-dist button,#rg-lab #rg-face button,#rg-lab #rg-dtypes button,#rg-lab #rg-da button{min-width:0;font-size:10.5px;padding:4px 5px}
       #rg-lab .hits{margin-top:4px;display:grid;gap:4px;font-size:10.5px;line-height:1.35;color:var(--tc-text)}
       #rg-lab .hits div{padding:3px 5px;background:rgba(200,210,192,.05);border-left:2px solid var(--tc-accent)}
       #rg-lab .hits .dim{color:var(--tc-dim);border-left-color:var(--tc-line)}
@@ -667,22 +803,39 @@
     document.body.appendChild(root);
     root.innerHTML = `
       <div class="rg-head"><i class="ti ti-target-arrow" aria-hidden="true"></i><div><h1>PHÒNG THỬ ĐẠN</h1>
-        <div class="rg-sub">Lái & bắn như trong trận — <kbd>Ctrl</kbd> kính ngắm</div></div>
-        <a href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i> Sảnh</a></div>
+        <div class="rg-sub">Lái & bắn như trong trận — <kbd>Ctrl</kbd> kính ngắm</div></div></div>
+      <nav>
+        <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+        <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+        <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+        <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+        <a class="on" href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
+      </nav>
       <div class="rg-body">
-        <div class="lbl">XE</div><div class="row" id="rg-types"></div>
+        <div class="lbl">XE CỦA BẠN</div><div class="row" id="rg-types"></div>
         <div class="lbl">BẢN ĐỒ</div><div class="row" id="rg-maps"></div>
+        <div class="lbl">THỜI TIẾT</div><div class="row" id="rg-wx"></div>
+        <div class="lbl">BỐ TRÍ</div><div class="row" id="rg-field"></div>
+        <div class="lbl">XE BIA</div><div class="row" id="rg-dtypes"></div>
+        <div id="rg-flatopts">
+          <div class="lbl">CỰ LY BIA</div><div class="row" id="rg-dist"></div>
+        </div>
+        <div class="lbl">HƯỚNG BIA</div><div class="row" id="rg-face"></div>
+        <details id="rg-dkitbox"><summary class="lbl">TRANG BỊ BIA <span style="font-weight:400">▾</span></summary>
+          <div class="row" id="rg-da"></div>
+          <div id="rg-dkit"></div></details>
         <div class="lbl">BÃI THỬ</div>
         <div class="row">
           <button id="rg-home"><i class="ti ti-home" aria-hidden="true"></i> Về chỗ xuất phát</button>
           <button id="rg-revive"><i class="ti ti-heart-plus" aria-hidden="true"></i> Hồi sinh mục tiêu</button>
           <button id="rg-god">Bất tử</button><button id="rg-wreck">Giữ xác mục tiêu</button>
+          <button id="rg-jam" title="Xe tăng bia tự phá sóng drone của bạn khi bay tới gần"><i class="ti ti-antenna-bars-5" aria-hidden="true"></i> Bia phá sóng drone</button>
+          <button id="rg-kamisky" title="UAV cảm tử địch bay lượn ngẫu nhiên trên trời, liên tục có chiếc mới bay vào — thử bắn hạ"><i class="ti ti-rocket" aria-hidden="true"></i> UAV cảm tử bay</button>
           <button id="rg-repair"><i class="ti ti-tool" aria-hidden="true"></i> Sửa xe</button>
           <button id="rg-rebuild" class="go"><i class="ti ti-refresh" aria-hidden="true"></i> Dựng lại bản đồ</button>
         </div>
         <div class="lbl">BIA BẮN TRẢ XE BẠN</div><div class="row" id="rg-fm"></div>
-        <div class="lbl">BIA MANG GIÁP</div><div class="row" id="rg-da"></div>
-        <details id="rg-kitbox"><summary class="lbl">TRANG BỊ THỬ <span style="font-weight:400">(miễn phí, không lưu) ▾</span></summary>
+        <details id="rg-kitbox" open><summary class="lbl">TRANG BỊ THỬ <span style="font-weight:400">(miễn phí, không lưu) ▾</span></summary>
           <div class="row"><button id="rg-kit-reset"><i class="ti ti-user" aria-hidden="true"></i> Về bộ đồ tài khoản</button></div>
           <div id="rg-kit"></div></details>
         <div class="lbl">PHÁT TRÚNG</div><div class="hits" id="rg-hits"></div>
@@ -691,6 +844,18 @@
       </div>`;
     const types = root.querySelector('#rg-types');
     for (const [id, name] of TYPES) { const b = document.createElement('button'); b.dataset.type = id; b.textContent = name; b.onclick = () => swapVehicle(id); types.appendChild(b); }
+    // thời tiết theo hạt giống bản đồ (Weather.forMap): đổi = chọn hạt giống khớp ý rồi tải lại trang
+    const wx = root.querySelector('#rg-wx'), WX = typeof Weather !== 'undefined' ? Weather : null;
+    const rainNow = !!(WX && WX.forMap(BIOME, SEED).rain);
+    for (const [id, name, icon] of [['clear', 'Nắng', 'sun'], ['rain', 'Mưa giông', 'cloud-storm']]) {
+      const b = document.createElement('button'); b.innerHTML = `<i class="ti ti-${icon}" aria-hidden="true"></i> ${name}`;
+      if ((id === 'rain') === rainNow) b.classList.add('on');
+      b.onclick = () => {
+        if (!WX || (id === 'rain') === rainNow) return;
+        const u = new URL(location.href); u.searchParams.set('seed', WX.seedFor(BIOME, id)); u.searchParams.set('map', BIOME); u.searchParams.set('tank', tankType); location.href = u.toString();
+      };
+      wx.appendChild(b);
+    }
     const maps = root.querySelector('#rg-maps');
     for (const [id, name] of MAPS) {
       const b = document.createElement('button'); b.dataset.map = id; b.textContent = name;
@@ -705,12 +870,48 @@
       b.onclick = () => { lab.fireMode = id; lab._fbT = 0.8; lab._burst = 0; renderUI(); if (id !== 'off') addLog(`[[target-arrow]] Bia bắn trả bằng: ${name}`, 'hit'); };
       fm.appendChild(b);
     }
+    // BỐ TRÍ: đổi phải sinh lại bản đồ (đồng trống san phẳng địa hình) -> tải lại trang
+    const fld = root.querySelector('#rg-field');
+    for (const [id, name, ic] of [['flat', 'Đồng trống · 1 bia', 'square'], ['village', 'Làng · 4 bia', 'building-community']]) {
+      const b = document.createElement('button'); b.dataset.field = id; b.innerHTML = `<i class="ti ti-${ic}" aria-hidden="true"></i> ${name}`;
+      b.onclick = () => {
+        if (id === FIELD) return;
+        try { localStorage.setItem('rg-field', id); } catch (e) { /* bỏ qua */ }
+        const u = new URL(location.href); u.searchParams.set('field', id); u.searchParams.set('map', BIOME); u.searchParams.set('tank', tankType); location.href = u.toString();
+      };
+      fld.appendChild(b);
+    }
+    const dts = root.querySelector('#rg-dtypes');
+    for (const [id, name] of (lab.field === 'flat' ? [] : [[null, 'Hỗn hợp']]).concat(TYPES)) {
+      const b = document.createElement('button'); b.dataset.dtype = id || ''; b.textContent = name;
+      b.onclick = () => {
+        if (lab.dummyType === id) return;
+        lab.dummyType = id;
+        spawnDummies(); renderUI(); renderDummyKit();
+        addLog(`[[tank]] Xe bia: ${name}`, 'info');
+      };
+      dts.appendChild(b);
+    }
+    const dist = root.querySelector('#rg-dist');
+    for (const m of DISTS) {
+      const b = document.createElement('button'); b.dataset.dist = m; b.textContent = m + ' m';
+      b.onclick = () => { if (lab.dist === m) return; lab.dist = m; spawnDummies(); renderUI(); addLog(`[[ruler-measure]] Cự ly bia: ${m} m`, 'info'); };
+      dist.appendChild(b);
+    }
+    const face = root.querySelector('#rg-face');
+    FACES.forEach(([rad, name], i) => {
+      const b = document.createElement('button'); b.dataset.face = i; b.textContent = name;
+      b.onclick = () => { if (lab.face === rad) return; lab.face = rad; spawnDummies(); renderUI(); addLog(`[[rotate]] Bia quay ${name.toLowerCase()} về phía bạn`, 'info'); };
+      face.appendChild(b);
+    });
     const da = root.querySelector('#rg-da');
-    ARMOR_SETS.forEach(([name], i) => {
-      const b = document.createElement('button'); b.dataset.da = i; b.textContent = name;
-      b.onclick = () => { if (lab.dummyArmor === i) return; lab.dummyArmor = i; placeAll(); renderUI(); addLog(`[[shield]] Bia: ${name}`, 'info'); };
+    ARMOR_SETS.forEach(([name, set]) => {
+      const b = document.createElement('button'); b.textContent = name;
+      b.onclick = () => { lab.dummyKit = { m: set.slice(), p: [], a: {} }; spawnDummies(); renderUI(); renderDummyKit(); addLog(`[[shield]] Bia: ${name}`, 'info'); };
       da.appendChild(b);
     });
+    root.querySelector('#rg-dkit').addEventListener('click', e => { const b = e.target.closest('[data-kit]'); if (b) { toggleDummyItem(b.dataset.kit); renderDummyKit(); } });
+    renderDummyKit();
     root.querySelector('#rg-repair').onclick = repairPlayer;
     root.querySelector('#rg-kit-reset').onclick = () => { lab.kit = null; rebuildPlayer(lab.g.player.tankType); addLog('[[user]] Về bộ đồ tài khoản', 'info'); };
     root.querySelector('#rg-kit').addEventListener('click', e => { const b = e.target.closest('[data-kit]'); if (b) toggleItem(b.dataset.kit); });
@@ -718,6 +919,17 @@
     renderHits();
     root.querySelector('#rg-god').onclick = () => { lab.god = !lab.god; renderUI(); };
     root.querySelector('#rg-wreck').onclick = () => { lab.keepWreck = !lab.keepWreck; renderUI(); };
+    root.querySelector('#rg-jam').onclick = () => {
+      lab.dummyJam = !lab.dummyJam;
+      for (const d of lab.dummies) d._noJam = !lab.dummyJam;
+      renderUI();
+      addLog(lab.dummyJam ? '[[antenna-bars-5]] Bia phá sóng drone: BẬT' : '[[antenna-bars-off]] Bia phá sóng drone: TẮT — bay drone thoải mái', 'info');
+    };
+    root.querySelector('#rg-kamisky').onclick = () => {
+      lab.kamiOn = !lab.kamiOn; lab.kamiT = 1;
+      renderUI();
+      addLog(lab.kamiOn ? '[[rocket]] UAV cảm tử bay ngẫu nhiên: BẬT — liên tục có chiếc mới bay vào' : '[[rocket]] UAV cảm tử bay ngẫu nhiên: TẮT', 'info');
+    };
     root.querySelector('#rg-rebuild').onclick = rebuildMap;
     renderUI();
     renderStatus();
@@ -737,14 +949,17 @@
     for (let i = 0; i < UAV_N; i++) {
       const a = Math.random() * Math.PI * 2, d = 500 + Math.random() * 900;
       const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-      lab.uavs.push({ key: 'lab' + i, lab: true, team: 'RED', state: 'flying', hp: 1, net: false, seen: true,
+      const R = { key: 'lab' + i, lab: true, team: 'RED', state: 'flying', hp: 1, net: false, seen: true,
         x, z, y: g.terrain.getElevationAt(x, z) + 200 + Math.random() * 250, yaw: Math.random() * 6.28,
-        wvx: 0, wvy: 0, wvz: 0, model: null, cx, cz, wp: null, sp: 60 + Math.random() * 90, alt: 0 });
+        wvx: 0, wvy: 0, wvz: 0, model: null, cx, cz, wp: null, sp: 60 + Math.random() * 90, alt: 0 };
+      R.onHit = (dmg, shooter) => labDroneDamage(g, R, dmg, shooter);
+      lab.uavs.push(R);
     }
     const origOther = g.updateOtherDrones;
     g.updateOtherDrones = function (dt, list) {
       origOther.call(this, dt, list);
       for (const R of lab.uavs) if (R.hp > 0) { flyUAV(this, R, dt); list.push(R); }
+      kamiSkyTick(this, dt, list);
     };
     const origShot = g.onDroneShot;
     g.onDroneShot = function (s, dr, h) {
@@ -753,16 +968,98 @@
       const C = DroneAir.C;
       const dmg = (s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0)) * (h && h.d > C.HIT_R ? (C.FRAG_K || 0.5) : 1);
       if (!dmg) return;
-      dr.hp -= dmg;
-      if (this.player && s.shooterId === this.player.id) this._droneHitMark = 0.35;
-      if (dr.hp > 0) return;
-      if (dr.model && dr.model.parent) dr.model.parent.remove(dr.model);
-      this.startDroneFall(dr.team, dr.x, dr.y, dr.z, dr.wvx, dr.wvz, dr.yaw, false);
-      if (this._airAim && this._airAim.dr === dr) this._airAim = null;
-      const left = lab.uavs.filter(u => u.hp > 0).length;
-      addLog(`[[drone-off]] Đã bắn rơi UAV · còn ${left}/${UAV_N}`, 'ok');
+      labDroneDamage(this, dr, dmg, this.unitById ? this.unitById(s.shooterId) : null);
     };
     addLog(`[[drone]] ${UAV_N} UAV địch đang bay trên trời — nhấp vào drone để khóa, giữ Space xả đạn`, 'info');
+  }
+
+  // drone bia trúng đạn / sóng nổ: trừ thân, hết thì hạ — drone 4 cánh rơi cháy, UAV cảm tử nổ nhỏ trên trời
+  function labDroneDamage(g, dr, dmg, shooter) {
+    if (!dr || dr.hp <= 0 || !(dmg > 0)) return;
+    dr.hp -= dmg;
+    if (g.player && shooter === g.player) g._droneHitMark = 0.35;
+    if (dr.hp > 0) return;
+    if (dr.model && dr.model.parent) dr.model.parent.remove(dr.model);
+    if (g._airAim && g._airAim.dr === dr) g._airAim = null;
+    if (dr.kami) {
+      if (g.kamiAirBurst) g.kamiAirBurst(dr.team, dr.x, dr.y, dr.z, dr.wvx, dr.wvy, dr.wvz, dr.yaw, false);
+      lab.kamiKills++;
+      addLog(`[[rocket]] Đã bắn hạ UAV cảm tử · tổng ${lab.kamiKills}`, 'ok');
+      return;
+    }
+    g.startDroneFall(dr.team, dr.x, dr.y, dr.z, dr.wvx, dr.wvz, dr.yaw, false);
+    const left = lab.uavs.filter(u => u.hp > 0).length;
+    addLog(`[[drone-off]] Đã bắn rơi UAV · còn ${left}/${UAV_N}`, 'ok');
+  }
+
+  // ---------------------------------------------------------------------------
+  // UAV CẢM TỬ BAY NGẪU NHIÊN (nút "UAV cảm tử bay"): cánh cố định, động cơ tên lửa (vệt khói), bay nhanh lượn quanh bãi thử
+  // ở nhiều độ cao; luôn giữ tối đa KAMI_SKY.max chiếc, cứ vài giây lại có chiếc mới bay vào; hết nhiên liệu thì bay khỏi
+  // bãi. Bắn hạ (súng phòng không / súng máy / sóng nổ) thì nổ nhỏ trên trời — kamikaze_uav.js kamiAirBurst
+  // ---------------------------------------------------------------------------
+  const KAMI_SKY = { max: 5, every: 3, life: [35, 55] };
+  const KAMI_OWNER = { uavKind: 'kami', isDead: false, team: 'RED', name: 'UAV CẢM TỬ' };   // radar bắt xa hơn (airDetectMul)
+  function kamiSkyTick(g, dt, list) {
+    const L = lab.kamiSky, p = g.player;
+    for (let i = L.length - 1; i >= 0; i--) {
+      const R = L[i];
+      const gone = R.hp <= 0 || !lab.kamiOn || !p || (R.exit && Math.hypot(R.x - p.x, R.z - p.z) > 2600);
+      if (gone) {
+        if (R.model && R.model.parent) R.model.parent.remove(R.model);
+        if (g._airAim && g._airAim.dr === R) g._airAim = null;
+        L.splice(i, 1);
+        continue;
+      }
+      flyKami(g, R, dt);
+      list.push(R);
+    }
+    if (!lab.kamiOn || !p || typeof KamiUAV === 'undefined') return;
+    if (L.length >= KAMI_SKY.max) { lab.kamiT = Math.max(lab.kamiT, 1.2); return; }
+    if ((lab.kamiT -= dt) > 0) return;
+    lab.kamiT = KAMI_SKY.every * (0.6 + Math.random() * 0.8);
+    // bay vào từ ngoài rìa bãi thử, mũi hướng về phía xe mình (lệch ngẫu nhiên)
+    const a = Math.random() * Math.PI * 2, d = 1300 + Math.random() * 500;
+    const x = p.x + Math.cos(a) * d, z = p.z + Math.sin(a) * d;
+    const R = { key: 'labk' + (lab.kamiSeq = (lab.kamiSeq || 0) + 1), lab: true, kami: true, team: 'RED', owner: KAMI_OWNER,
+      state: 'flying', hp: 1, net: false, seen: true, x, z, y: g.terrain.getElevationAt(x, z) + 180 + Math.random() * 300,
+      yaw: Math.atan2(-(p.x - x), -(p.z - z)) + (Math.random() - 0.5) * 0.8, roll: 0, vy: 0, wvx: 0, wvy: 0, wvz: 0, model: null,
+      wp: null, alt: 0, sp: 135 + Math.random() * 50, life: KAMI_SKY.life[0] + Math.random() * (KAMI_SKY.life[1] - KAMI_SKY.life[0]) };
+    R.onHit = (dmg, shooter) => labDroneDamage(g, R, dmg, shooter);
+    L.push(R);
+  }
+  function flyKami(g, R, dt) {
+    const T = g.terrain, p = g.player;
+    R.life -= dt;
+    if (R.life <= 0 && !R.exit) {   // hết nhiên liệu bay thử: bay thẳng ra khỏi bãi
+      R.exit = true;
+      const a = Math.atan2(R.z - p.z, R.x - p.x);
+      R.wp = { x: p.x + Math.cos(a) * 4000, z: p.z + Math.sin(a) * 4000 };
+    }
+    if (!R.exit && (!R.wp || Math.hypot(R.wp.x - R.x, R.wp.z - R.z) < 120)) {
+      const a = Math.random() * Math.PI * 2, d = 200 + Math.random() * 1100;
+      R.wp = { x: p.x + Math.cos(a) * d, z: p.z + Math.sin(a) * d };
+      R.alt = 140 + Math.random() * 380;
+      R.sp = 135 + Math.random() * 55;
+    }
+    let dyaw = Math.atan2(-(R.wp.x - R.x), -(R.wp.z - R.z)) - R.yaw;
+    while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+    while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+    R.yaw += Math.max(-0.9 * dt, Math.min(0.9 * dt, dyaw));
+    R.roll += (Math.max(-0.6, Math.min(0.6, dyaw * 1.2)) - R.roll) * (1 - Math.exp(-dt * 3));   // nghiêng cánh theo cú rẽ
+    const gy = T.getElevationAt(R.x, R.z);
+    R.vy = Math.max(-45, Math.min(45, (gy + (R.alt || 300) - R.y) * 0.8));
+    R.x += -Math.sin(R.yaw) * R.sp * dt;
+    R.z += -Math.cos(R.yaw) * R.sp * dt;
+    R.y = Math.max(R.y + R.vy * dt, gy + 60);
+    g.trackDroneVel(R, dt);
+    if (!R.model) R.model = KamiUAV.build(R.team);
+    const m = R.model;
+    if (m.parent !== g.scene) g.scene.add(m);
+    m.visible = true;
+    m.position.set(R.x, R.y, R.z);
+    m.rotation.set(Math.atan2(R.vy, R.sp), R.yaw, R.roll);
+    KamiUAV.animate(m, dt, 1, 0.8);
+    if (g.kamiTrailModel) g.kamiTrailModel(m, dt);
   }
 
   // Bay lượn ngẫu nhiên: chọn điểm đến bất kỳ quanh bãi thử, bay tới đó (quay đầu dần, lên xuống độ cao) rồi chọn điểm mới
@@ -801,9 +1098,15 @@
     root.querySelectorAll('#rg-types button').forEach(b => b.classList.toggle('on', b.dataset.type === tankType));
     root.querySelectorAll('#rg-maps button').forEach(b => b.classList.toggle('on', b.dataset.map === BIOME));
     root.querySelectorAll('#rg-fm button').forEach(b => b.classList.toggle('on', b.dataset.fm === lab.fireMode));
-    root.querySelectorAll('#rg-da button').forEach(b => b.classList.toggle('on', +b.dataset.da === lab.dummyArmor));
+    root.querySelectorAll('#rg-field button').forEach(b => b.classList.toggle('on', b.dataset.field === lab.field));
+    root.querySelectorAll('#rg-dtypes button').forEach(b => b.classList.toggle('on', b.dataset.dtype === (lab.dummyType || '')));
+    root.querySelectorAll('#rg-dist button').forEach(b => b.classList.toggle('on', +b.dataset.dist === lab.dist));
+    root.querySelectorAll('#rg-face button').forEach(b => b.classList.toggle('on', FACES[+b.dataset.face][0] === lab.face));
+    root.querySelector('#rg-flatopts').style.display = lab.field === 'flat' ? '' : 'none';
     root.querySelector('#rg-god').classList.toggle('on', lab.god);
     root.querySelector('#rg-wreck').classList.toggle('on', lab.keepWreck);
+    root.querySelector('#rg-jam').classList.toggle('on', lab.dummyJam);
+    root.querySelector('#rg-kamisky').classList.toggle('on', lab.kamiOn);
   }
 
   function renderStatus() {

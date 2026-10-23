@@ -179,7 +179,10 @@ const VehicleCrew = (() => {
       webD: std({ color: 0x5c4f38, roughness: 0.6 }),
       headset: std({ color: 0x2b2d27, roughness: 0.6 }),
       lip: std({ color: 0x9a6a52 }),
-      dead: cloth({ map: camo, color: 0x9a6a62 })   // áo rằn ri thẫm máu
+      // hy sinh: quân phục vẫn rằn ri (cùng tỉ lệ vân), chỉ sẫm & ngả đỏ nhẹ (thấm máu, bụi); áo giáp: bản sẫm của chính nó.
+      // Trước đây nhân nâu đỏ đậm và thay cả áo giáp trơn bằng vải rằn ri -> cả người như bị nhuộm nâu
+      dead: cloth({ map: (() => { const t = camo.clone(); t.needsUpdate = true; t.repeat.set(1.5, 1.5); return t; })(), color: 0xb89890 }),
+      deadVest: cloth({ color: red ? 0x3f3426 : 0x3a3a2a, roughness: 0.9, side: THREE.DoubleSide })
     });
   }
 
@@ -635,6 +638,68 @@ const VehicleCrew = (() => {
     g.computeVertexNormals();
     return (GEO.neck = g);
   }
+  // CỔ ÁO quân phục thường: vành vải mỏng ôm gốc cổ, cao hơn chút sau gáy, hở chữ V phía trước; mép trên gập viền gọn.
+  // (trước đây là cổ giáp độn dày ~0.2 + cuộn mép 0.17, dựng cao sau gáy -> nhìn như phao cổ.) Quét mặt cắt (tường mỏng +
+  // mép tròn nhỏ) quanh cổ theo góc φ (φ = 0 phía trước, -Z), hai đầu ở cổ trước thu tròn lại
+  const COLLAR_GAP = 0.55;
+  function collarCurve(f) {
+    const bk = (1 - Math.cos(f)) / 2;   // 0 trước -> 1 sau gáy
+    // ôm sát cổ (khăn quấn cổ r ~0.6 ở y 3.7): mép trên chỉ cách cổ ~0.04, chân cổ áo đặt trên gốc cổ — không đứng cách
+    // cổ như cái phễu (trước đây r 1.0 -> 0.8, nhìn từ trên xuống thành vành phao dày)
+    return { bk, yB: 3.4, yT: 3.62 + 0.16 * Math.pow(bk, 0.8), rB: 0.8, rT: 0.64 + 0.05 * bk };
+  }
+  const collarXZ = (f, r) => [Math.sin(f) * r, -Math.cos(f) * r * 0.86 + 0.08];
+  function collarGeo() {
+    if (GEO.collar) return GEO.collar;
+    const NA = 44, K = 6, NS = 9, f0 = COLLAR_GAP, f1 = Math.PI * 2 - COLLAR_GAP;
+    const pos = [], uv = [], idx = [];
+    let NC = 0;
+    for (let i = 0; i <= NA; i++) {
+      const f = f0 + (f1 - f0) * i / NA, C = collarCurve(f);
+      // mặt cắt (r, y): vải mỏng ~0.08 từ chân B lên đỉnh T, mép gập viền tròn nhỏ; nếp vải lượn rất nhẹ
+      const dr = C.rT - C.rB, dy = C.yT - C.yB, L = Math.hypot(dr, dy), d = [dr / L, dy / L], n = [d[1], -d[0]];
+      const quilt = 0.006 * Math.pow(Math.abs(Math.sin(f * 5)), 0.6), w = 0.04 + quilt, rho = 0.055 + quilt * 0.5, Lc = L - rho;
+      const h = l => w + (rho - w) * sm((l - (Lc - 0.1)) / 0.1);
+      const ct = [];
+      for (let j = 0; j < K; j++) { const l = Lc * j / K; ct.push([C.rB + d[0] * l - n[0] * h(l), C.yB + d[1] * l - n[1] * h(l)]); }
+      const cr = C.rB + d[0] * Lc, cy = C.yB + d[1] * Lc;
+      for (let j = 0; j < NS; j++) { const t = Math.PI * j / (NS - 1); ct.push([cr - n[0] * rho * Math.cos(t) + d[0] * rho * Math.sin(t), cy - n[1] * rho * Math.cos(t) + d[1] * rho * Math.sin(t)]); }
+      for (let j = K - 1; j >= 0; j--) { const l = Lc * j / K; ct.push([C.rB + d[0] * l + n[0] * h(l), C.yB + d[1] * l + n[1] * h(l)]); }
+      // hai đầu cổ trước: mặt cắt thu dần về tâm thành đầu tròn
+      const e = Math.min(1, Math.min(f - f0, f1 - f) / 0.28), sc = Math.sqrt(1 - (1 - e) * (1 - e));
+      const mr = (C.rB + cr) / 2, my = (C.yB + cy) / 2;
+      let arc = 0;
+      ct.forEach((q, j) => {
+        const r = mr + (q[0] - mr) * sc, y = my + (q[1] - my) * sc;
+        if (j) arc += Math.hypot(q[0] - ct[j - 1][0], q[1] - ct[j - 1][1]);
+        const [x, z] = collarXZ(f, r);
+        pos.push(x, y, z);
+        uv.push(f * 0.9 * 0.55, arc * 0.55);   // UV theo kích thước thật (rằn ri cùng cỡ với áo)
+      });
+      NC = ct.length;
+    }
+    for (let i = 0; i < NA; i++) for (let j = 0; j < NC; j++) {
+      const a = i * NC + j, b = a + NC, c = i * NC + (j + 1) % NC, dd = c + NC;
+      idx.push(a, b, c, b, dd, c);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return (GEO.collar = g);
+  }
+  // viền bọc mép cổ áo: dải băng dệt chạy dọc đỉnh cuộn
+  function collarBindGeo() {
+    if (GEO.collarBind) return GEO.collarBind;
+    const pts = [];
+    for (let i = 0; i <= 40; i++) {
+      const f = COLLAR_GAP + 0.12 + (Math.PI * 2 - 2 * COLLAR_GAP - 0.24) * i / 40, C = collarCurve(f);
+      const [x, z] = collarXZ(f, C.rT - 0.02);
+      pts.push(V(x, C.yT + 0.01, z));
+    }
+    return (GEO.collarBind = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 60, 0.022, 5, false));
+  }
   // tai: vành tai, hõm tai, dái tai
   function earGeo() {
     if (GEO.ear) return GEO.ear;
@@ -825,12 +890,10 @@ const VehicleCrew = (() => {
     for (const sx of [-1, 1]) add(chest, new THREE.SphereGeometry(0.56, 16, 12), M.uni, sx * 1.4, 2.72, 0).scale.set(0.95, 0.72, 1.12);   // vai dày, ôm vào thân
     // cổ áo đứng của áo chiến đấu (dưới khăn), khóa kéo ngực
     // cổ áo đứng (kiểu combat shirt) ôm gốc cổ, mở hở chữ V phía trước + khóa kéo; xương quai xanh nổi nhẹ hai bên
-    {
-      const cg = new THREE.CylinderGeometry(0.62, 0.7, 0.42, 22, 1, true, 0.35, Math.PI * 2 - 0.7), cu = cg.attributes.uv;
-      for (let i = 0; i < cu.count; i++) cu.setXY(i, cu.getX(i) * 1.1, cu.getY(i) * 0.12);   // UV đúng tỉ lệ (hết vệt sọc ngang)
-      const col = add(chest, cg, M.uni, 0, 3.72, 0.06);
-      col.rotation.y = Math.PI; col.scale.set(1, 1, 0.9);
-    }
+    // (bỏ lớp cổ áo trụ thứ hai — chồng lên cổ áo dưới thành vành dày hai lớp)
+    // cổ áo quân phục mỏng ôm gốc cổ + đường viền gập mép trên (cùng vải rằn ri áo)
+    add(chest, collarGeo(), M.uni, 0, 0, 0);
+    add(chest, collarBindGeo(), M.uni, 0, 0, 0);   // đường gập mép (cùng vải, không viền sẫm như cổ giáp)
     // cổ + đầu
     // cổ: thon từ gốc cổ (cơ thang) lên dưới hàm, khăn quấn có ngấn
     add(chest, neckGeo(), M.gaiter, 0, 0, 0.08);   // cổ quấn khăn: một khối liền loe xuống vai, nếp vải chùng mềm
@@ -1041,6 +1104,19 @@ const VehicleCrew = (() => {
     return F;
   }
 
+  // ẨN / HIỆN KÍP XE (phòng thử): ẩn = gỡ hình người (xạ thủ, người dự bị, vệt máu) khỏi tháp -> không vẽ, đạn không trúng,
+  // không tính thương vong. Hoạt cảnh ống phóng / súng vẫn chạy như thường
+  function setShown(u, on) {
+    const C = u && u.crew;
+    if (!C) return;
+    C.off = !on;
+    for (const o of [C.gunner && C.gunner.root, C.mate && C.mate.root, C.stains]) {
+      if (!o) continue;
+      if (!on) { if (o.parent) o.parent.remove(o); }
+      else if (o.parent !== C.turret) C.turret.add(o);
+    }
+  }
+
   const wp = (obj, x, y, z) => obj.localToWorld(V(x, y, z));
   // điểm trong lòng xe / quanh lỗ nóc tính theo chỗ đứng xạ thủ (x, z lệch so với F.base; y theo mặt nóc)
   const ws = (T, F, x, y, z) => wp(T, F.base.x + x, y, F.base.z + z);
@@ -1074,34 +1150,85 @@ const VehicleCrew = (() => {
     [0.75, c => pose(c.boxH, c.beltT, 0, 0.15)],              // bốc đầu dây đạn
     [0.86, c => pose(c.coverH, c.beltT, 0, 0.1)],             // kéo dây đặt vào khay nạp (tay trái giữ nắp)
     [0.90, c => pose(c.gripL, c.coverH)],                     // sập nắp
-    [0.93, c => pose(c.gripL, c.chargeB)],
-    [0.955, c => pose(c.gripL, c.chargeF)],
-    [0.975, c => pose(c.gripL, c.chargeB)],
+    // kéo lên đạn 2 lần: nắm tay kéo ở chỗ nghỉ phía trước rồi mới lùi (tay bám theo tay kéo — chargePull). Thân người dồn
+    // sức: với ra trước khi nắm, ngả ra sau theo cú giật (lò xo khối khóa nòng 12.7 rất cứng) — c.chBend theo hành trình tay
+    [0.92, c => pose(c.gripL, c.chargeH, 0, c.chBend, c.chTwist)],
+    [0.974, c => pose(c.gripL, c.chargeH, 0, c.chBend, c.chTwist)],
     [1.00, c => pose(c.gripL, c.gripR)]
   ];
+  // TAY KÉO LÊN ĐẠN theo tiến độ nạp (0 = chỗ nghỉ phía trước, 1 = lùi hết): kéo lùi chậm, buông là lò xo bật về gần như
+  // tức thì; kéo 2 lần như súng M2 thật (lần 1 đưa viên đầu lên, lần 2 đẩy vào buồng đạn). recon_marten đẩy tay kéo theo
+  const CHARGE_KEYS = [[0.92, 0], [0.94, 1], [0.944, 0], [0.955, 0], [0.97, 1], [0.974, 0]];
+  // NHỊP THẬT CỦA LƯỢT THAY HỘP: MG_KEYS / CHARGE_KEYS / hoạt cảnh recon_marten / tiếng (spg SCOUT_RELOAD_STEPS) đều viết
+  // theo "mốc hoạt cảnh" a. Bảng này đổi tiến độ thời gian t (0..1 theo reloadTimer) -> a, để các bước nặng có đủ thời
+  // gian như người thật: cúi xuống lòng xe móc hộp đạn 13 kg ~0.8 s, nhấc lên qua lỗ nóc ~0.85 s, mỗi lần kéo tay kéo
+  // lên đạn 12.7 ~0.3 s (lò xo khối khóa nòng cứng). Trước đây t = a: cả lượt ~4 s, mỗi lần kéo tay kéo chỉ 0.08 s.
+  // Cặp [t, a] (ở 6 s nạp: 0.05 = 0.3 s)
+  const MG_WARP = [
+    [0, 0], [0.05, 0.08], [0.13, 0.20],   // tay rời tay cầm | lật nắp khóa nòng
+    [0.31, 0.42], [0.33, 0.44],           // tháo hộp rỗng, lùi về lỗ nóc, thả xuống khoang
+    [0.46, 0.56], [0.60, 0.68],           // cúi hẳn xuống móc hộp mới | nhấc lên qua lỗ, đặt vào khay
+    [0.65, 0.74], [0.77, 0.86],           // lật nắp hộp | kéo dây đạn đặt vào khay nạp
+    [0.82, 0.92],                         // sập nắp khóa nòng
+    [0.875, 0.94], [0.88, 0.944], [0.895, 0.955], [0.935, 0.97], [0.94, 0.974],   // kéo lên đạn 2 lần
+    [1, 1]                                // tay về tay cầm, nòng hạ về
+  ];
+  function warpBy(T, x, i, j) {
+    if (x <= T[0][i]) return T[0][j];
+    for (let k = 1; k < T.length; k++) {
+      if (x <= T[k][i]) return T[k - 1][j] + (T[k][j] - T[k - 1][j]) * (x - T[k - 1][i]) / Math.max(1e-6, T[k][i] - T[k - 1][i]);
+    }
+    return T[T.length - 1][j];
+  }
+  const mgWarp = (t) => warpBy(MG_WARP, t, 0, 1);     // tiến độ thời gian -> mốc hoạt cảnh
+  const mgUnwarp = (a) => warpBy(MG_WARP, a, 1, 0);   // mốc hoạt cảnh -> tiến độ thời gian (canh tiếng)
+  // mốc hoạt cảnh thay hộp hiện tại của xe (1 = không nạp)
+  function mgReloadPr(u) {
+    if (!(u.reloadDuration > 0) || !(u.reloadTimer > 0)) return 1;
+    return mgWarp(Math.max(0, Math.min(1, 1 - u.reloadTimer / u.reloadDuration)));
+  }
+  function chargePull(pr) {
+    const n = CHARGE_KEYS.length;
+    if (pr <= CHARGE_KEYS[0][0] || pr >= CHARGE_KEYS[n - 1][0]) return 0;
+    for (let i = 0; i < n - 1; i++) {
+      const [a, va] = CHARGE_KEYS[i], [b, vb] = CHARGE_KEYS[i + 1];
+      if (pr < b) return va + (vb - va) * sm((pr - a) / (b - a));
+    }
+    return 0;
+  }
 
   // Nạp tên lửa kiểu TOW (pr 0..1 theo antiTankCooldown). Mốc chuyển động của ống phóng: xem animateLauncher
-  const AT = { capOpen: [0.20, 0.26], spentOut: [0.26, 0.42], toss: 0.45, grab: [0.50, 0.56], lift: [0.56, 0.62], newUp: [0.62, 0.67], push: [0.67, 0.80], capClose: [0.80, 0.86] };
+  // RÚT VỎ RỖNG & ĐẨY QUẢ MỚI: động tác dứt khoát của kíp thạo việc — nắm chắc, trụ người (khựng ngắn) rồi giật / tống một
+  // phát: vỏ rỗng giật ra ~0.4 s (vọt nhanh, chậm lại cuối tầm tay), quả mới tống vào ~0.3 s (tăng tốc, đập khựng vào chốt
+  // hãm — ống phóng giật nảy). Trước đây trượt đều ~1 s mỗi động tác, nhìn lừ đừ
+  const AT = { capOpen: [0.16, 0.21], spentGrab: 0.25, spentOut: [0.27, 0.34], toss: 0.42, grab: [0.47, 0.53], lift: [0.53, 0.60], newUp: [0.60, 0.66], push: [0.69, 0.75], capClose: [0.79, 0.84], ready: 0.9 };
+  // ống tên lửa trên giá cố định thấp (ngang hông người đứng): đứng lên bậc vừa phải (rise 1.1), không trèo cao
   const AT_KEYS = [
     // lúc phóng & dẫn tên lửa: thụp xuống sau tấm chắn (chỉ nhô mắt), chỉ đứng lên khi bắt đầu nạp quả mới
     [0.00, c => pose(c.gripL, c.gripR, -1.4, 0.1)],
-    [0.12, c => pose(c.gripL, c.gripR, -1.4, 0.1)],
-    [0.20, c => pose(c.tubeL, c.capH, 1.6, 0.05, -0.55)],
-    [0.26, c => pose(c.tubeL, c.capH, 1.6, 0.05, -0.55)],
-    [0.30, c => pose(c.spentL, c.spentR, 1.6, 0.1, -0.55)],
-    [0.42, c => pose(c.spentL, c.spentR, 1.6, 0.0, -0.75)],
-    [0.46, c => pose(c.tossL, c.tossR, 1.6, -0.05, -0.9)],
+    [0.10, c => pose(c.gripL, c.gripR, -1.4, 0.1)],
+    [0.16, c => pose(c.tubeL, c.capH, 1.1, 0.05, -0.55)],
+    [0.21, c => pose(c.tubeL, c.capH, 1.1, 0.05, -0.55)],
+    // nắm đuôi vỏ rỗng, trụ người hơi đổ tới -> giật mạnh ra sau, người ngả theo
+    [0.25, c => pose(c.spentL, c.spentR, 1.1, 0.16, -0.55)],
+    [0.27, c => pose(c.spentL, c.spentR, 1.1, 0.18, -0.55)],
+    [0.34, c => pose(c.spentL, c.spentR, 1.1, -0.12, -0.75)],
+    [0.43, c => pose(c.tossL, c.tossR, 1.1, -0.05, -0.9)],
     // cúi xuống lòng xe, ôm quả tên lửa mới (trong ống chứa) nhấc lên qua lỗ nóc, xoay ra sau ống phóng
-    [0.50, c => pose(c.hatchL, c.hatchR, 0.3, 0.75, -0.3)],
-    [0.56, c => pose(c.misL, c.misR, 0.2, 0.8, -0.3)],
-    [0.62, c => pose(c.misL, c.misR, 1.2, 0.3, -0.45)],
-    [0.67, c => pose(c.misL, c.misR, 1.6, 0.12, -0.55)],
-    [0.80, c => pose(c.tubeL, c.misR, 1.6, 0.18, -0.55)],
-    [0.83, c => pose(c.tubeL, c.capH, 1.6, 0.1, -0.55)],
-    [0.87, c => pose(c.tubeL, c.capH, 1.6, 0.05, -0.55)],
-    [0.96, c => pose(c.gripL, c.gripR)],
+    [0.47, c => pose(c.hatchL, c.hatchR, 0.3, 0.75, -0.3)],
+    [0.53, c => pose(c.misL, c.misR, 0.2, 0.8, -0.3)],
+    [0.60, c => pose(c.misL, c.misR, 0.9, 0.3, -0.45)],
+    [0.66, c => pose(c.misL, c.misR, 1.1, 0.12, -0.55)],
+    // kề đuôi quả vào miệng ống, lùi vai lấy đà -> tống một phát, người lao theo
+    [0.69, c => pose(c.misL, c.misR, 1.1, 0.0, -0.55)],
+    [0.75, c => pose(c.tubeL, c.misR, 1.1, 0.3, -0.55)],
+    [0.79, c => pose(c.tubeL, c.capH, 1.1, 0.1, -0.55)],
+    [0.85, c => pose(c.tubeL, c.capH, 1.1, 0.05, -0.55)],
+    [0.93, c => pose(c.gripL, c.gripR)],
     [1.00, c => pose(c.gripL, c.gripR)]
   ];
+  const easeOut = x => 1 - Math.pow(1 - c01(x), 3);   // giật: vọt nhanh, chậm lại cuối tầm tay
+  const easeIn = x => Math.pow(c01(x), 2.2);          // tống: tăng tốc tới cuối, khựng hẳn ở chốt hãm
 
   // vỏ chứa rỗng (đẩy ra từ đuôi ống) — tạo khi cần trong ống phóng
   function spentOf(A) {
@@ -1137,11 +1264,11 @@ const VehicleCrew = (() => {
     const open = sm((pr - AT.capOpen[0]) / (AT.capOpen[1] - AT.capOpen[0])) * (1 - sm((pr - AT.capClose[0]) / (AT.capClose[1] - AT.capClose[0])));
     A.rearCap.rotation.x = -1.6 * open;
     // vỏ rỗng: nằm trong ống tới lúc rút; trượt lùi ra sau; vứt đi ở mốc toss
-    const so = sm((pr - AT.spentOut[0]) / (AT.spentOut[1] - AT.spentOut[0]));
+    const so = easeOut((pr - AT.spentOut[0]) / (AT.spentOut[1] - AT.spentOut[0]));
     spent.position.set(0, 0, -0.9 + 5.6 * so);
     spent.visible = pr < AT.toss && so > 0.02;
     const load = has && !dead;
-    const up = sm((pr - AT.newUp[0]) / (AT.newUp[1] - AT.newUp[0])), push = sm((pr - AT.push[0]) / (AT.push[1] - AT.push[0]));
+    const up = sm((pr - AT.newUp[0]) / (AT.newUp[1] - AT.newUp[0])), push = easeIn((pr - AT.push[0]) / (AT.push[1] - AT.push[0]));
     A.missile.visible = load && pr > AT.grab[0] && push < 0.97;
     // quả mới lấy từ lòng xe: nằm trong lỗ nóc (sâu dưới mép) -> được nhấc thẳng lên khỏi lỗ -> đưa ra sau đuôi ống
     const behind = V(0, 0, 5.4);   // ngay sau đuôi ống, thẳng trục ống
@@ -1157,8 +1284,51 @@ const VehicleCrew = (() => {
       if (up < 1) A.missile.position.copy(A._hatchTop || behind).lerp(behind, up);
       else A.missile.position.set(0, 0, 5.4 * (1 - push));
     }
-    A.can.position.z = pr > AT.capClose[0] && pr < AT.capClose[1] + 0.02 ? Math.sin(c01((pr - AT.capClose[0]) / 0.08) * Math.PI) * 0.1 : 0;
+    // ống phóng giật nảy trên giá: quả mới đập vào chốt hãm (mạnh, tắt nhanh) / vỏ rỗng bị giật bật ra / nắp đóng (nhẹ)
+    const kick = (a, amp, w) => (pr > a && pr < a + w ? Math.sin(c01((pr - a) / w) * Math.PI) * amp * (1 - c01((pr - a) / w)) : 0);
+    A.can.position.z = kick(AT.push[1], -0.22, 0.03) + kick(AT.spentOut[0], 0.12, 0.025) + kick(AT.capClose[0], 0.1, 0.05);
     A.capOpen.visible = !(load && pr >= AT.capClose[1]); A.capCover.visible = !A.capOpen.visible;
+  }
+
+  // nạp giàn rocket: pha của quả đang nạp (0..1) — mốc RK_PH
+  function rocketPhase(u, G) {
+    const n = G.muzzles.length, pr = 1 - u.reloadTimer / u.reloadDuration;
+    return pr * n - Math.min(n - 1, Math.floor(pr * n));
+  }
+  // NHỊP NẠP 1 QUẢ ROCKET: cúi lấy ở lòng xe -> nhấc lên qua lỗ nóc & bê ra sau giàn -> kề mũi quả vào ĐÚNG miệng sau ống
+  // của nó (nằm thẳng trục ống) -> trụ người -> tống một phát dứt khoát tới chốt hãm (đầu đạn trong ống hiện đúng lúc này —
+  // recon_marten, ống giật khựng) -> buông tay. (Trước đây quả trên tay biến mất ngay lúc bắt đầu đẩy, tay đẩy vào khoảng
+  // không, quả ngắn hơn quả trong ống & không nằm đúng trục ống)
+  const RK_PH = { lift: 0.3, align: 0.6, entry: 0.7, push: 0.78, seat: 0.92 };
+  // tâm quả (trục z của giàn) theo pha: kề miệng ống (1/3 quả đã vào) -> trượt vào tới chỗ nằm
+  function rocketZ(G, ph) {
+    const RL = G.roundLen || 5.65, seat = G.seatZ !== undefined ? G.seatZ : -1.1, rear = G.rear !== undefined ? G.rear : 2;
+    const entry = rear + RL / 2 - RL * 0.3;
+    const e = Math.pow(c01((ph - RK_PH.push) / (RK_PH.seat - RK_PH.push)), 2.2);   // tăng tốc tới cuối, khựng ở chốt
+    return entry + (seat - entry) * e;
+  }
+  function carryRocket(C, T, G, ph, hand, m) {
+    let R = C.rocket;
+    const show = ph >= RK_PH.lift && ph < RK_PH.seat;
+    if (!show) { if (R) R.visible = false; return; }
+    if (!R) {
+      R = C.rocket = G.makeRound ? G.makeRound() : new THREE.Group();
+      // đi qua lỗ nóc: vẽ ở lượt trong suốt sau lòng hố như xạ thủ
+      R.traverse(o => { if (o.isMesh) { const m0 = o.material, mm = m0.clone(); mm.transparent = true; mm.opacity = 1; o.material = mm; o.renderOrder = 12; } });
+      T.add(R);
+    }
+    R.visible = true;
+    const RL = G.roundLen || 5.65;
+    const tq = T.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const q = G.pivot.getWorldQuaternion(new THREE.Quaternion());
+    R.quaternion.copy(tq.multiply(q));
+    // bê trên tay: hai tay ôm nửa sau quả (tâm quả ở trước giữa hai tay)
+    const fwd = V(0, 0, -1).applyQuaternion(q);
+    const held = hand[0].clone().add(hand[1]).multiplyScalar(0.5).addScaledVector(fwd, RL / 2 - 0.9);
+    // nằm đúng trục ống của nó
+    const onAxis = m ? G.pivot.localToWorld(V(m.x, m.y, rocketZ(G, ph))) : held;
+    const k = sm(c01((ph - RK_PH.align) / (RK_PH.entry - RK_PH.align)));
+    R.position.copy(T.worldToLocal(held.lerp(onAxis, k)));
   }
 
   let SPENT_GEO = null;
@@ -1178,6 +1348,79 @@ const VehicleCrew = (() => {
   }
 
   const REPLACE_T = 7.5;   // giây từ lúc xạ thủ hy sinh tới khi người dự bị lên thay
+  // KÉO XÁC: người dự bị nhô lên trong khoang từ MATE_IN, nắm quai vai áo giáp xác từ PULL_T, giật 3 nhịp kéo xuống
+  // (deadPull: 0 -> 1); trèo lên thay: F.newbie > CLIMB_T là đang bám mép lỗ đu người lên
+  const MATE_IN = 1.4, PULL_T = 1.95, CLIMB_T = 0.75;
+  const TUGS = [[2.05, 0.3], [2.7, 0.35], [3.3, 0.35]];
+  function deadPull(t) {
+    let g = 0;
+    for (const [t0, a] of TUGS) g += a * sm(Math.max(0, Math.min(1, (t - t0) / 0.2)));
+    return g;
+  }
+  // đổi quân phục / áo giáp sang bản thẫm máu (on) hoặc trả lại vật liệu gốc
+  function deadTint(F, on) {
+    F.deadTint = on;
+    for (const m of F.meshes) {
+      if (on) {
+        if (m.material === F.M.uni) { m.userData.mat0 = m.material; m.material = F.M.dead; }
+        else if (m.material === F.M.vest) { m.userData.mat0 = m.material; m.material = F.M.deadVest || F.M.vest; }
+      } else if (m.userData.mat0) { m.material = m.userData.mat0; m.userData.mat0 = null; }
+    }
+  }
+  // người dự bị: dựng lần đầu khi cần (xe bot không tốn thêm hình người tới khi xạ thủ hy sinh), đứng sau xạ thủ trong khoang
+  function ensureMate(u, C) {
+    if (C.mate) return C.mate;
+    const M = buildFigure(u.team);
+    M.base = (C.gunner && C.gunner.base ? C.gunner.base : V(0, -0.9, 2.4)).clone();
+    M.root.position.copy(M.base); M.root.visible = false;
+    M.rise = -4.4; M.mateOn = false;
+    C.turret.add(M.root);
+    return (C.mate = M);
+  }
+  // Hoạt cảnh người dự bị kéo xác: lỗ nóc chỉ vừa MỘT người (~0,85 m) -> người dự bị đứng DƯỚI NÓC phía sau (khuất, đầu
+  // thấp hơn mặt nóc), chỉ hai cánh tay vươn vào lòng lỗ túm thắt lưng sau của xác, ngồi thụp theo từng nhịp giật kéo xác tụt
+  // xuống (xác tụt theo — xem tư thế hy sinh). Trước đây đứng ngay sau lưng xác trong lỗ -> hai thân người lồng vào nhau
+  // Chỉ hiện 2 cánh tay của hình người (người dự bị ở trong khoang dưới nóc: thân & đầu không bao giờ lộ ra ngoài — nóc thân
+  // xe phía sau thấp hơn vành tháp nên để cả người thì mũ chọc xuyên nóc). armsOnly(F, false) trả lại cả người
+  function armsOnly(F, on) {
+    if (!F.armMesh) {
+      const arm = new Set();
+      for (const a of F.arms) for (const g of [a.up, a.fore, a.hand]) if (g) g.traverse(o => arm.add(o));
+      F.armMesh = new Set(F.meshes.filter(m => arm.has(m)));
+    }
+    if (F.armsOnly === on) return;
+    F.armsOnly = on;
+    for (const m of F.meshes) if (!F.armMesh.has(m)) m.visible = !on;
+  }
+  function animateMate(u, C, D, dt0, dt) {
+    const M = C.mate;
+    if (!M || M === D) return;
+    const on = !!(C.down && C.down.pull) && !u.isDead && dt0 >= MATE_IN && dt0 < PULL_T + 2.1;
+    M.root.visible = on;
+    armsOnly(M, true);
+    if (!on) { M.mateOn = false; M.rise = -4.4; return; }
+    if (!M.mateOn) { M.mateOn = true; M.hT = null; M.rise = -4.4; }
+    // dưới nóc sau lỗ: đầu (cả mũ) nằm hẳn ngoài bán kính lỗ (>= ~4) và dưới mặt nóc -> từ ngoài chỉ thấy 2 cánh tay vươn
+    // vào lòng lỗ; mỗi nhịp giật ngồi thụp thêm
+    const wantRise = -4.6 - (dt0 < PULL_T ? 0 : 1.1 * deadPull(dt0));
+    M.rise += (wantRise - M.rise) * (1 - Math.exp(-dt * (dt0 < PULL_T ? 5 : 8)));
+    M.root.position.set(M.base.x + 0.3, M.base.y + M.rise, M.base.z + 5.1);
+    M.root.rotation.y = 0;
+    M.torso.rotation.set(-0.2, 0, 0, 'YXZ');
+    M.head.rotation.set(0.35, 0, 0, 'YXZ');
+    M.root.updateMatrixWorld(true);
+    D.root.updateMatrixWorld(true);
+    // thắt lưng sau của xác (hai bên hông, phía lưng)
+    const grab = D.arms.map(a => D.root.localToWorld(V(a.s * 0.75, 0.35, 0.6)));
+    const H = M.hT || (M.hT = grab.map(g => g.clone().add(V(0, -1.5, 0))));
+    const kh = 1 - Math.exp(-dt * (dt0 < PULL_T ? 9 : 30));
+    for (let i = 0; i < 2; i++) H[i].lerp(grab[i], kh);
+    for (const arm of M.arms) {
+      const sh = M.chest.localToWorld(arm.sh.clone()); M.root.worldToLocal(sh);
+      solveArm(M, arm, H[arm.s < 0 ? 0 : 1], sh.add(V(arm.s * 2.2, -2.4, 0.6)));
+    }
+  }
+  const GUNNERS = 2;       // số người đứng súng mỗi xe trinh sát (xạ thủ + 1 dự bị)
   let BLOOD = null;
   // Máu: tia máu văng (giọt rơi theo trọng lực) từ ngực / đầu + vệt máu đọng trên tấm chắn súng & nóc quanh lỗ
   function bloodBurst(u, C) {
@@ -1190,7 +1433,16 @@ const VehicleCrew = (() => {
     const at = F.chest.localToWorld(V(0, 2.6, -0.9));
     const q = new THREE.Quaternion(); u.turretGroup.getWorldQuaternion(q);
     const back = V(0, 0.3, 1).applyQuaternion(q);
-    for (let i = 0; i < 14; i++) {
+    // sương máu: đám hơi đỏ sẫm phụt ra sau lưng chỗ trúng, loãng & tan nhanh (thấy rõ cả từ xa, khác khói súng)
+    if (typeof SpgFXPool !== 'undefined' && u.fxParticles && u.scene) {
+      for (let k = 0; k < 4; k++) {
+        const p = SpgFXPool.acquire(u.scene, 'smoke', 0x7a0b09, 0.55);
+        p.position.copy(at);
+        u.fxParticles.push({ mesh: p, base: 0.7 + k * 0.35, vx: back.x * (4 + k * 2.5) + (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
+          vz: back.z * (4 + k * 2.5) + (Math.random() - 0.5) * 2, scale: 0.6, alpha: 0.55, growSpeed: 2.2, rotSpeed: (Math.random() - 0.5), drag: 3, life: 0.7 + k * 0.15 });
+      }
+    }
+    for (let i = 0; i < 22; i++) {
       const m = new THREE.Mesh(BLOOD.geo, BLOOD.mat);
       const sc = 0.5 + Math.random(); m.scale.setScalar(sc); m.userData.half = 0.05;
       ReloadFX.toss(u.scene, m, at.clone(), { x: back.x * (3 + Math.random() * 6) + (Math.random() - 0.5) * 5, y: 2 + Math.random() * 5, z: back.z * (3 + Math.random() * 6) + (Math.random() - 0.5) * 5 }, { x: 0, y: 0, z: 0 }, 2.5);
@@ -1209,6 +1461,15 @@ const VehicleCrew = (() => {
     C.stains.visible = true;
   }
 
+  // Tiếng xạ thủ hy sinh: xe mình nghe rõ (kèm tín hiệu bộ đàm báo thương vong); xe khác nghe theo khoảng cách
+  function gunnerDownSound(u) {
+    const se = window.soundEngine, g = window.game;
+    if (!se || !se.playGunnerDown || !g) return;
+    const L = g.audioListener ? g.audioListener() : g.player;
+    const own = u === g.player, d = own || !L ? 0 : Math.hypot(u.x - L.x, u.z - L.z);
+    if (d < 700) se.playGunnerDown(d, { x: u.x, z: u.z }, own);
+  }
+
   function bloodDrip(u, C, t) {
     const F = C.gunner;
     if (!F || !BLOOD || typeof ReloadFX === 'undefined' || !u.scene) return;
@@ -1223,22 +1484,46 @@ const VehicleCrew = (() => {
   function animate(u, dt) {
     const C = u.crew;
     if (!C || !(dt > 0)) return;
-    const d = u.dmg, F = C.gunner;
+    const d = u.dmg;
+    let F = C.gunner;
     let gDead = !!(d && d.lost && d.lost.has('crewGunner'));
     const dDead = !!(d && d.lost && d.lost.has('crewDriver'));
     // XẠ THỦ HY SINH -> gục lên súng (máu bắn) -> đổ sụp xuống lòng xe -> xạ thủ dự bị (lái xe phụ) trèo lên thay sau
     // REPLACE_T giây. Trong lúc đó súng & tên lửa không ai điều khiển. Chạy trên mọi máy theo cờ 'crewGunner' đồng bộ
     const DN = C.down;
+    // 2 người đứng súng mỗi xe (xạ thủ chính + 1 dự bị). Đếm theo lần chuyển sang "hy sinh" — mọi máy thấy cùng cờ
+    // 'crewGunner' nên cùng đếm được; hồi sinh xe đặt lại (spg.respawn)
+    if (C.left === undefined) { C.left = GUNNERS; C.max = GUNNERS; }
+    C.replaceT = REPLACE_T;
     if (gDead && !u.isDead) {
-      if (!DN) { C.down = { t: 0 }; bloodBurst(u, C); }
+      if (!DN) {
+        C.down = { t: 0 };
+        if (C.left > 1) ensureMate(u, C);   // người dự bị (kéo xác xuống rồi trèo lên thay)
+        C.left = Math.max(0, C.left - 1);
+        C.down.pull = C.left > 0;   // còn người dự bị: kéo xác xuống rồi lên thay
+        bloodBurst(u, C);
+        gunnerDownSound(u);
+        if (u.isPlayer && window.game) window.game.addCombatLog(C.left > 0 ? '[[user-x]] XẠ THỦ HY SINH — người dự bị sẽ lên thay (còn ' + C.left + '/' + C.max + ')' : '[[user-x]] XẠ THỦ CUỐI CÙNG HY SINH — không còn ai đứng súng & nạp tên lửa tới khi xe hồi sinh', 'alert');
+      }
       else {
         DN.t += dt;
         // máu rỉ: giọt nhỏ chảy từ vết thương xuống người / nóc trong ~5 s, vệt máu loang rộng dần
         DN.drip = (DN.drip || 0) - dt;
         if (DN.t < 5.5 && DN.drip <= 0) { DN.drip = 0.18 + Math.random() * 0.2; bloodDrip(u, C, DN.t); }
-        if (DN.t >= REPLACE_T && !dDead) {
+        if (DN.t >= REPLACE_T && !dDead && C.left > 0) {
           d.lost.delete('crewGunner'); C.down = null; gDead = false;
-          if (C.gunner) { C.gunner.rise = -3.3; C.gunner.newbie = 1.2; }
+          // NGƯỜI DỰ BỊ LÊN THAY: đổi hình người đứng súng sang người dự bị (người khác hẳn, không phải xác cũ sống lại);
+          // xác nằm lại trong khoang (ẩn), lần sau dùng lại làm người dự bị
+          const M = C.mate;
+          if (M) {
+            const old = F;
+            if (old.deadTint) deadTint(old, false);
+            old.root.visible = false; old.rise = -3.6; old.hT = null; old.yaw = 0; old.root.rotation.y = 0;
+            C.mate = old; F = C.gunner = M; M.mateOn = false; M.hT = null;
+            armsOnly(M, false);   // người dự bị lên thay: hiện cả người
+          }
+          // trèo lên: tay bám mép lỗ, đu người lên (F.newbie > CLIMB_T) rồi mới nắm tay cầm súng
+          if (C.gunner) { C.gunner.rise = -3.4; C.gunner.newbie = 1.7; C.gunner.root.visible = true; }
           if (u.isPlayer && window.game) window.game.addCombatLog('[[user-check]] Xạ thủ dự bị đã lên vị trí — súng & tên lửa hoạt động lại', 'tip');
         }
       }
@@ -1279,8 +1564,9 @@ const VehicleCrew = (() => {
       // cúi xuống lòng xe lấy đạn: trước bụng, dưới mép nóc
       hatchL: ws(T, F, -0.7, -1.2, -1.8), hatchR: ws(T, F, 0.6, -1.2, -1.7)
     };
-    let tgt;
-    const mgReload = !u.isDead && u.gatlingMag <= 0 && u.reloadTimer > 0 && u.reloadDuration > 0;
+    let tgt, onGrip = false;
+    // (nạp thông minh: thay đạn cả khi hộp / giàn còn đạn — spg scoutSmartReload)
+    const mgReload = !u.isDead && u.reloadTimer > 0 && u.reloadDuration > 0;
     // giàn rocket trên chân đế là trạm điều khiển từ xa: xạ thủ ngồi trong xe, chỉ trèo ra khi hết giàn để nhét đạn
     const G = u.mainGun && u.mainGun.kind === 'rocket' ? u.mainGun : null;
     // XE NGƯỜI CHƠI — CHẾ ĐỘ LÁI: không ngắm / khóa mục tiêu / bắn / nạp -> xạ thủ chui xuống đóng nắp (chậm 1.5 s sau khi
@@ -1288,28 +1574,44 @@ const VehicleCrew = (() => {
     // chưa lên tới súng thì chưa bắn được (crewHidden). Xe bot / xe máy khác luôn đứng súng
     {
       const g = window.game;
-      const combat = !u.isPlayer || !g || !!g._sight || !!(g.lockedTarget && !g.lockedTarget.isDead) || !!u.isFiringGatling
+      // (khóa drone bằng radar / ngắm trời cũng là đang chiến đấu: trước đây xạ thủ vẫn chui trong xe -> vòng súng bị giữ,
+      //  máy tính hỏa lực tính điểm đón đầu nhưng súng không quay theo drone)
+      // người chơi bấm H: xạ thủ chui vào xe & ở yên trong xe (bỏ qua mọi lý do nhô lên) tới khi bấm lại
+      const stay = u.isPlayer && !!u._crewStay && !gDead;
+      const combat = !stay && (!u.isPlayer || !g || !!g._sight || !!(g.lockedTarget && !g.lockedTarget.isDead) || !!g._airAim || !!u.isFiringGatling
         || performance.now() - (u._wantUpT || 0) < 1500
-        || mgReload || (S.at && A && atPr < 1);
+        || mgReload || (S.at && A && atPr < 1));
       C.combatT = combat ? Math.max(0, C.combatT || 0) + dt : Math.min(0, C.combatT || 0) - dt;
       if (C.hidden === undefined) C.hidden = !combat;
-      if (C.hidden && C.combatT > 0.35) C.hidden = false;
+      if (stay) {
+        if (!C.hidden) { C.hidden = true; C.hideT = 0; }
+        // ở trong xe không thao tác được bên ngoài: thay đạn / nạp tên lửa / nạp giàn dừng tại chỗ
+        if (u.reloadTimer > 0) u.reloadTimer += dt;
+        if (u.antiTankCooldown > 0 && S.at) u.antiTankCooldown += dt;
+      }
+      else if (C.hidden && C.combatT > 0.35) C.hidden = false;
       else if (!C.hidden && C.combatT < -8) C.hidden = true;   // thôi chiến đấu ~8 s mới chui vào xe
       // lên tới súng rồi còn cần ~0.6 s áp vai, lấy đường ngắm mới bắn được (nhảy lên là bóp cò ngay thì không thật)
       C.readyT = !C.hidden && F.rise > -2.0 && Math.abs(F.rise - (F.tgtRise || 0)) < 0.35 ? (C.readyT || 0) + dt : 0;
       if (d) d.crewHidden = !gDead && !G && (!!C.hidden || C.readyT < 0.6);
       // người còn ở trong xe (chưa lên tới vòng súng): tháp không ai quay (spg.js)
       // ghi lên xe (u.dmg chỉ có sau khi xe bị trúng đạn lần đầu -> trước đây cờ không có tác dụng, tháp vẫn tự quay)
-      u._crewInside = !gDead && !G && (!!C.hidden || F.rise < -1.2);
+      // (thụp sau tấm chắn lúc phóng / dẫn tên lửa — trước mốc mở nắp ống: vẫn cầm kính, tháp vẫn quay bám mục tiêu)
+      const guiding = !!(S.at && A && atPr < AT.capOpen[0]);
+      u._crewInside = !gDead && !G && (!!C.hidden || (F.rise < -1.2 && !guiding));
       u._crewHidden = !gDead && !G && (!!C.hidden || C.readyT < 0.6);
     }
     const dt0 = C.down ? C.down.t : 99;
-    if ((gDead || u.isDead) && dt0 < 2.4) {
-      // trúng đạn: giật ngửa ra sau 0.25 s rồi gục về trước lên súng, hai tay buông thõng
-      tgt = dt0 < 0.25 ? pose(c.gripL, c.gripR, 0.1, -0.45, 0.25) : pose(ws(T, F, -1.0, 0.6, -1.5), ws(T, F, 1.0, 0.4, -1.6), -0.5, 1.0, 0.18);
-    } else if (gDead || u.isDead) {
-      // đổ sụp xuống lòng xe (thi thể được kéo xuống), người dự bị chuẩn bị lên
-      tgt = pose(c.hatchL, c.hatchR, u.isDead ? -0.5 : -3.6, u.isDead ? 1.0 : 0.6, 0.3);
+    if (gDead || u.isDead) {
+      // HY SINH: giật ngửa 0,22 s (tay bật khỏi tay cầm) -> khuỵu gối, gục về trước lên mép lỗ nghiêng sang bên, hai tay
+      // buông thõng qua mép -> (còn người dự bị) bị kéo xuống khoang theo 3 nhịp giật: người ngửa ra sau, hai tay bị kéo
+      // hất lên mép lỗ. Xe bị phá hủy: gục lại trên súng
+      const pulling = gDead && !u.isDead && !!(C.mate && C.down && C.down.pull) && dt0 >= PULL_T, pull = pulling ? deadPull(dt0) : 0;
+      if (dt0 < 0.22) tgt = pose(lerpV(c.gripL, ws(T, F, -1.3, 2.2, -1.0), 0.4), lerpV(c.gripR, ws(T, F, 1.3, 2.0, -1.0), 0.4), 0.1, -0.45, 0.25);
+      // gục vừa phải: đầu cúi gằm nhưng vẫn trong lòng lỗ (cúi sâu hơn thì đầu cắm xuyên vành lỗ phía trước), hai cẳng tay
+      // vắt lên vành trước
+      else if (!pulling) tgt = pose(ws(T, F, -1.4, 0.5, -2.5), ws(T, F, 1.25, 0.35, -2.6), -0.55, 0.55, 0.3);
+      else tgt = pose(ws(T, F, -1.6, 1.0 + 0.8 * pull, 0.2), ws(T, F, 1.5, 1.2 + 0.8 * pull, 0.4), -0.55 - 3.2 * pull, 0.55 - 0.95 * Math.min(1, pull * 2.2), 0.3 * (1 - pull));
     } else if (S.at && A && atPr < 1) {
       const can = A.can;
       Object.assign(c, {
@@ -1318,26 +1620,48 @@ const VehicleCrew = (() => {
         spentL: wp(spentOf(A), -0.35, 0.1, 2.3), spentR: wp(spentOf(A), 0.38, 0.0, 2.25),
         tossL: ws(T, F, 3.6, 4.6, -0.8), tossR: ws(T, F, 3.9, 4.1, -2.0),
         // tay ôm ngoài vỏ quả: trái đỡ dưới thân trước, phải đỡ dưới thân sau rồi chuyển ra tì đuôi quả để đẩy
-        misL: wp(A.missile, 0, -0.56, -1.4), misR: atPr < 0.67 ? wp(A.missile, 0, -0.56, 0.4) : wp(A.missile, 0, 0.05, 1.42)
+        misL: wp(A.missile, 0, -0.56, -1.4), misR: atPr < AT.newUp[1] ? wp(A.missile, 0, -0.56, 0.4) : wp(A.missile, 0, 0.05, 1.42)
       });
       tgt = track(AT_KEYS, atPr, c);
     } else if (G && mgReload) {
       // nạp lại giàn: mỗi quả = cúi xuống cửa nóc lấy đạn -> đẩy vào đuôi ống kế tiếp (đầu đạn hiện dần — recon_marten)
       const n = G.muzzles.length, pr = 1 - u.reloadTimer / u.reloadDuration;
       const i = Math.min(n - 1, Math.floor(pr * n)), ph = pr * n - i, m = G.muzzles[n - 1 - i];
+      C.rkTube = m;
+      C.fastHands = ph >= RK_PH.align && ph < RK_PH.seat + 0.04;   // tay bám sát đuôi quả khi tống nhanh
       const rz = G.rear !== undefined ? G.rear : 1.24;   // đuôi ống (hộp phóng có người của xe trinh sát: G.rear)
-      const tube = wp(G.pivot, m.x, m.y, rz + 0.3), tubeIn = wp(G.pivot, m.x, m.y, rz - 0.2);
-      tgt = ph < 0.4 ? pose(c.hatchL, c.hatchR, 0.4, 0.7) : ph < 0.7 ? pose(lerpV(tube, c.hatchL, 0.15), tube, 1.4, 0.15) : pose(tubeIn, tubeIn, 1.4, 0.2);
+      const RL = G.roundLen || 5.65, tz = rocketZ(G, ph) + RL / 2;   // đuôi quả đang nạp (trên trục ống)
+      const tube = wp(G.pivot, m.x, m.y, rz + 0.3);
+      // hai tay ôm đuôi quả: tay phải tì đáy đuôi (đẩy), tay trái đỡ bên hông thân quả
+      const tailR = wp(G.pivot, m.x + 0.12, m.y - 0.05, tz + 0.12), tailL = wp(G.pivot, m.x - 0.3, m.y - 0.12, tz - 0.6);
+      tgt = ph < RK_PH.lift ? pose(c.hatchL, c.hatchR, 0.4, 0.7)                                         // cúi xuống lòng xe lấy quả
+        : ph < RK_PH.align ? pose(lerpV(tube, c.hatchL, 0.15), tube, 1.4, 0.15)                         // nhấc lên, bê ra sau giàn
+        : ph < RK_PH.push ? pose(tailL, tailR, 1.4, ph < RK_PH.entry ? 0.12 : 0.02)                      // kề mũi vào miệng ống, lùi vai lấy đà
+        : ph < RK_PH.seat ? pose(tailL, tailR, 1.4, 0.02 + 0.33 * c01((ph - RK_PH.push) / (RK_PH.seat - RK_PH.push)))   // tống, người lao theo
+        : pose(wp(G.pivot, m.x - 0.3, m.y, rz + 0.25), wp(G.pivot, m.x + 0.15, m.y, rz + 0.2), 1.4, 0.25);   // buông tay ở miệng ống
     } else if (G) {
       tgt = pose(c.hatchL, c.hatchR, -3.2, 0);   // ngồi thụp trong xe, giàn tự xoay ngắm
     } else if (mgReload && mg) {
-      const pr = 1 - u.reloadTimer / u.reloadDuration;
+      const pr = mgReloadPr(u);
+      // tay kéo lên đạn: chỗ nghỉ phía trước / lùi hết (theo súng đang lắp). Tay về trước chậm hơn tay kéo bật về -> đọc ra
+      // là buông tay cho lò xo đẩy, không phải đẩy tay kéo về
+      const ca = mg.chargeAt || { x: 0.56, y: 0.12, z: 1.12, len: 1.0 };
+      const hp = pr < 0.92 || pr >= 0.97 ? (pr >= 0.97 ? 1 : 0) : pr < 0.94 ? sm((pr - 0.92) / 0.02) : pr < 0.952 ? 1 - sm((pr - 0.94) / 0.012) : pr < 0.955 ? 0 : sm((pr - 0.955) / 0.015);
+      // buông tay kéo: bàn tay bật khỏi thanh nắm (ra ngoài, hơi lên) rồi mới đưa về trước nắm lại / về tay cầm — tay kéo
+      // lò xo đập về một mình, không phải tay đẩy nó về
+      const away = pr < 0.94 ? 0 : pr < 0.944 ? sm((pr - 0.94) / 0.004) : pr < 0.95 ? 1 : pr < 0.955 ? 1 - sm((pr - 0.95) / 0.005) : pr < 0.97 ? 0 : sm(Math.min(1, (pr - 0.97) / 0.004));
+      // thân: tay kéo nằm giữa thành hộp khóa nòng, xa hơn tầm tay người đứng thẳng sau tay cầm (vai -> tay kéo ~4.9, tay
+      // dài 4.45) -> chồm người qua súng, vai phải đưa tới để nắm (hp 0), rồi vừa kéo vừa ngả người về, vai phải lùi (hp 1)
+      c.chBend = 0.5 - 0.22 * hp;
+      c.chTwist = 0.22 - 0.3 * hp;
+      // đang nắm tay kéo: bàn tay bám sát thanh nắm (bộ lọc mượt thường làm tay trễ ~0.2 sau tay kéo đang chạy)
+      if (pr >= 0.92 && pr < 0.974 && away < 0.01) C.fastHands = true;
       Object.assign(c, {
-        coverH: wp(mg.cover, 0, 0.3, 1.55),
+        coverH: mg.coverAt ? mg.cover.localToWorld(mg.coverAt.clone()) : wp(mg.cover, 0, 0.3, 1.55),
         boxH: mg.ammo.visible ? wp(mg.ammo, 0, 0.95, 0) : ws(T, F, -0.9, -1.2, -1.6),
         boxH2: mg.ammo.visible ? wp(mg.ammo, 0.6, 0.6, 0.2) : ws(T, F, -0.2, -1.2, -1.6),
-        chargeF: wp(P, 0.6, 0.15, 0.9), chargeB: wp(P, 0.6, 0.15, 1.9),
-        lidH: mg.ammoLid ? wp(mg.ammoLid, 1.35, 0.1, 0.0) : wp(mg.cover, 0, 0.3, 1.55),
+        chargeH: wp(mg.charge ? mg.charge.parent : P, ca.x + 0.28 * away, ca.y + 0.12 * away, ca.z + ca.len * hp),   // 12.7: theo thân súng đang hạ dần
+        lidH: mg.ammoLid ? wp(mg.ammoLid, mg.lidEdge || 1.35, 0.1, 0.0) : wp(mg.cover, 0, 0.3, 1.55),
         beltT: mg.beltTip ? wp(P, mg.beltTip.x, mg.beltTip.y + 0.12, mg.beltTip.z) : wp(P, -0.5, 0.4, 0.6)
       });
       tgt = track(MG_KEYS, pr, c);
@@ -1349,14 +1673,22 @@ const VehicleCrew = (() => {
       const ht = C.hideT || 0, lz = u.hatchLid ? -(u.hatchLid.position.z) * 0.45 : 0;
       // hai tay cùng nắm quai chữ U (không chống lên vành: tay đè xuyên vành khi thụp xuống)
       const pull = u.hatchLid ? wp(u.hatchLid, 0.3, -0.55, lz) : c.hatchR, rim = u.hatchLid ? wp(u.hatchLid, -0.3, -0.55, lz) : c.hatchL;
-      tgt = ht < 0.25 ? pose(c.gripL, c.gripR, -0.2, 0, 0)
-        : ht < 0.7 ? pose(rim, pull, -0.3, -0.25, 0.7)
-        : ht < 1.55 ? pose(rim, pull, -0.3 - 2.9 * sm((ht - 0.7) / 0.55), 0.35, 0.6)
-        : pose(c.hatchL, c.hatchR, -3.3, 0);
+      // QUAY NGƯỜI RA SAU (bản lề nắp ở sau lưng): buông súng, cả người xoay tại chỗ ~180° quanh trục đứng (F.yaw — xoay
+      // nguyên khối người ở tâm lỗ, không vặn thân: vặn vai thì vai / tay quét xuyên thành vòng) -> nắm quai bằng hai tay
+      // trước mặt, đẩy nắp dựng đứng, rồi vừa thụp xuống vừa kéo sập. Trước đây đứng quay lưng với tay ngoặt ra sau đầu.
+      // Đã quay lại thì tay trái ở phía +x của tháp -> nắm bên +x của quai (không bắt chéo tay)
+      tgt = ht < 0.1 ? pose(c.gripL, c.gripR, -0.2, 0, 0)
+        : ht < 0.7 ? pose(pull, rim, -0.3, 0.12, 0)
+        : ht < 1.55 ? pose(pull, rim, -0.3 - 2.9 * sm((ht - 0.7) / 0.55), 0.35, 0)
+        : pose(ws(T, F, 0.7, -1.2, 1.8), ws(T, F, -0.6, -1.2, 1.7), -3.3, 0);   // ngồi trong xe, tay trước bụng (đã quay ra sau)
+    } else if (F.newbie > CLIMB_T) {
+      // NGƯỜI DỰ BỊ TRÈO LÊN: hai tay bám mép trước lỗ nóc, đu người nhô lên (chưa với tới súng)
+      tgt = pose(ws(T, F, -1.8, 0.45, -1.1), ws(T, F, 1.8, 0.45, -1.1), -1.3, 0.45, 0);
     } else {
       // tay cầm hạ thấp khi súng ngóc lên (đuôi súng chúi xuống): xạ thủ khuỵu thấp người theo, không để tay đè lên vòng
       const gy = T.worldToLocal(c.gripL.clone()).y;
       tgt = pose(c.gripL, c.gripR, Math.max(-1.6, Math.min(0.8, (gy - 1.8) * 0.9)), Math.max(0, (1.8 - gy) * 0.12));
+      onGrip = true;
     }
 
     // NẮP LỖ NÓC: chỉ mở khi xạ thủ cần nhô lên (đứng súng / trèo ra nhét rocket); ngồi hẳn trong xe thì đóng. Nắp mở gần
@@ -1380,7 +1712,7 @@ const VehicleCrew = (() => {
     F.tgtRise = tgt.rise;
     // thân người: nhô lên / cúi / vặn mượt (không giật cục khi đổi hoạt cảnh)
     if (F.newbie > 0) F.newbie -= dt;
-    const k = 1 - Math.exp(-dt * (gDead ? (dt0 < 2.4 ? 3 : 2.2) : F.newbie > 0 ? 3 : 10));
+    const k = 1 - Math.exp(-dt * (gDead ? (dt0 < 0.22 ? 9 : dt0 >= PULL_T && C.down && C.down.pull ? 7 : 3) : F.newbie > 0 ? 4 : 10));
     F.rise += (tgt.rise - F.rise) * k; F.bend += (tgt.bend - F.bend) * k; F.twist += (tgt.twist - F.twist) * k;
     // CHUYỂN ĐỘNG TỰ NHIÊN: xe tăng / giảm tốc -> người ngả ra sau / chúi về trước, ôm cua -> nghiêng theo quán tính,
     // thở (ngực phồng xẹp), bóp cò -> vai rung theo súng; đầu đảo nhìn quanh khi rảnh, cúi nhìn tay khi nạp đạn
@@ -1402,8 +1734,17 @@ const VehicleCrew = (() => {
     F.kick = (F.kick || 0) * Math.exp(-dt * RC.decay);
     // giật chỉ truyền vào tay (tay cầm lùi theo súng) + vai hơi nhún; thân người đứng vững
     const jit = F.kick * RC.amp * 0.15;
-    F.root.position.set(F.base.x, F.base.y + F.rise, F.base.z);
-    F.root.visible = F.rise > -2.9;   // đã chui hẳn vào xe: ẩn để không lòi qua nóc
+    // thụp xuống: người dịch về phía tâm lỗ (chỗ đứng lệch về mép sau mà thụp thẳng thì lưng / tay quệt thành vòng)
+    const hiding = C.hidden && !gDead && lid;
+    F.dz = (F.dz || 0) + ((hiding && C.hideT > 0.7 ? -F.base.z * 0.42 : 0) - (F.dz || 0)) * (1 - Math.exp(-dt * 4));
+    F.hp = (F.hp || 0) + ((hiding && C.hideT > 0.25 ? 1 : 0) - (F.hp || 0)) * (1 - Math.exp(-dt * 8));
+    F.root.position.set(F.base.x, F.base.y + F.rise, F.base.z + F.dz);
+    // cả người quay ra sau để đóng nắp (C.hidden); nhô lên lại thì quay về phía súng (~0,35 s)
+    const bodyYaw = hiding && C.hideT > 0.08 ? Math.PI : 0;
+    F.yaw = (F.yaw || 0) + (bodyYaw - (F.yaw || 0)) * (1 - Math.exp(-dt * 8));
+    F.root.rotation.y = F.yaw;
+    // đã chui hẳn vào xe: ẩn để không lòi qua nóc — đang kéo nắp thì giữ tới khi nắp sập hẳn (tay không biến mất giữa chừng)
+    F.root.visible = F.rise > -2.9 || (hiding && lid.rotation.x > 0.06);
     F.torso.rotation.set(-F.bend + F.leanF + jit, F.twist, (gDead ? 0.12 : 0) + F.roll, 'YXZ');
     const br = Math.sin(F.t * 1.7);
     F.chest.scale.set(1 + br * 0.01, 1 + br * 0.012, 1 + br * 0.025);
@@ -1416,22 +1757,34 @@ const VehicleCrew = (() => {
     F.head.rotation.set(F.lookP + F.bend * 0.55 - F.leanF * 0.5, F.look, -F.roll * 0.5, 'YXZ');
     F.root.updateMatrixWorld(true);
     const H = F.hT || (F.hT = [tgt.L.clone(), tgt.R.clone()]);
-    const kh = 1 - Math.exp(-dt * 16);
+    const kh = 1 - Math.exp(-dt * (C.fastHands ? 45 : 16));
+    C.fastHands = false;
     H[0].lerp(tgt.L, kh); H[1].lerp(tgt.R, kh);
-    // tay cầm lùi theo cụm súng giật (12.7: giật ngắn rung; 40 mm: đẩy lùi dài, hồi chậm)
-    if (firing && P) {
-      const back = V(0, 0, 1).transformDirection(P.matrixWorld).multiplyScalar(F.kick * (gk === 'agl' ? 0.45 : 0.22));
-      const sh = (Math.random() - 0.5) * RC.shake * 2;
-      H[0].add(back).y += sh; H[1].add(back).y += sh;
+    // tay nắm tay cầm đi đúng theo cụm súng giật / hất lên (12.7: lùi ngắn rung; 40 mm: lùi dài trên giá lò xo, nòng hất) —
+    // lấy độ dời thật của tay cầm (nhóm giật so với khớp ngóc), cộng SAU bộ lọc mượt (không bị lọc mất, không tích lũy).
+    // Trước đây cộng một độ lùi ước lượng vào luôn trạng thái tay: lệch với súng, tay cầm trượt xuyên qua bàn tay
+    const hand = [H[0].clone(), H[1].clone()], BG = u.barrelGroup;
+    // 12.7: tay cầm nằm trên nhóm giật cả súng (mg.kick — súng nảy / lệch trên chốt giá) -> tay theo đúng chỗ cầm.
+    // (Bỏ rung ngẫu nhiên riêng cho tay: súng không rung theo nên tay trượt khỏi tay cầm)
+    const KG = (mg && mg.kick) || BG;
+    if (onGrip && BG && BG !== P && BG.parent === P) {
+      hand[0].add(wp(KG, -0.45, 0, 3.3).sub(c.gripL));
+      hand[1].add(wp(KG, 0.45, 0, 3.3).sub(c.gripR));
     }
-    // khuỷu tay chĩa xuống & hơi ra ngoài, về sau (người thật ôm tay cầm súng máy) — không vắt ngược qua vai
+    carryRocket(C, T, G, G && mgReload && !gDead ? rocketPhase(u, G) : -1, hand, C.rkTube);
+    // khuỷu tay chĩa xuống & hơi ra ngoài, về sau (người thật ôm tay cầm súng máy) — không vắt ngược qua vai.
+    // Kéo nắp (tay với lên quai sau đầu): khuỷu hếch lên & về trước, khép sát thân — khuỷu ra ngang / ra sau là cắm
+    // xuyên vành lỗ khi người thụp xuống
     for (const arm of F.arms) {
       const sh = F.chest.localToWorld(arm.sh.clone()); F.root.worldToLocal(sh);
-      solveArm(F, arm, H[arm.s < 0 ? 0 : 1], sh.add(V(arm.s * 3.5, -2.2, 1.5)));
+      const hp = F.hp || 0;
+      solveArm(F, arm, hand[arm.s < 0 ? 0 : 1], sh.add(V(arm.s * (3.5 - 2.6 * hp), -2.2 + 4.2 * hp, 1.5 - 3.3 * hp)));
     }
+    // người dự bị kéo xác xuống khoang (chỉ khi còn người dự bị)
+    animateMate(u, C, F, dt0, dt);
     // hy sinh: quân phục / áo giáp sẫm màu (máu, bụi); hồi sinh trả lại vật liệu gốc
-    if (gDead && !F.deadTint) { F.deadTint = true; for (const m of F.meshes) if (m.material === F.M.uni || m.material === F.M.vest) { m.userData.mat0 = m.material; m.material = F.M.dead; } }
-    else if (!gDead && F.deadTint) { F.deadTint = false; for (const m of F.meshes) if (m.userData.mat0) { m.material = m.userData.mat0; m.userData.mat0 = null; } }
+    if (gDead && !F.deadTint) deadTint(F, true);
+    else if (!gDead && F.deadTint) deadTint(F, false);
     if (!gDead && C.stains && C.stains.visible && !(F.newbie > 0)) C.stains.visible = false;
   }
 
@@ -1478,12 +1831,14 @@ const VehicleCrew = (() => {
   const exposure = u => (u.crew && u.crew.gunner ? (u.crew.gunner.rise > 0.8 ? 1 : u.crew.gunner.rise < -2.5 ? 0 : 0.5) : 0);
 
   function onHit(u, opts, r) {
-    if (!u || u.isDead || !u.crew || u.crew.kind !== 'scout' || !r || !r.events || r.intercepted || r.shielded) return;
+    if (!u || u.isDead || !u.crew || u.crew.off || u.crew.kind !== 'scout' || !r || !r.events || r.intercepted || r.shielded) return;
     const VD = window.VehicleDamage, d = VD.state(u), hit = opts && opts.hit;
     if (hit && hit.object && hit.object.userData && hit.object.userData.crewRole === 'gunner') {
       if (!hit.ricochet) killCrew(u, 'gunner', r.events, 'TRÚNG ĐẠN');
       return;
     }
+    // đạn nổ trúng thẳng thân xe (tấm chắn súng, nóc, giá súng...) ngay cạnh xạ thủ: mảnh văng
+    if (hit && hit.point) fragKill(u, hit.point.x, hit.point.y, hit.point.z, opts, hitBlastRadius(opts), r.events);
     const AO = d.lastOutcome;
     if (!AO || !AO.pen || AO.zone !== 'crew' || r.mul <= 0) return;
     const cls = VD.ammoClass(opts.ammo);
@@ -1496,15 +1851,35 @@ const VehicleCrew = (() => {
   }
 
   function onSplash(u, opts, r) {
-    if (!u || u.isDead || !u.crew || !u.crew.gunner || !r || !r.events || r.shielded) return;
+    if (!u || u.isDead || !u.crew || u.crew.off || !u.crew.gunner || !r || !r.events || r.shielded) return;
     const d = window.VehicleDamage.state(u);
     if (d.lost.has('crewGunner')) return;
+    fragKill(u, opts.x, opts.y, opts.z, opts, opts.radius, r.events);
+  }
+
+  // Mảnh văng của một vụ nổ tại (x, y, z) với xạ thủ đang nhô người khỏi lỗ nóc. Dùng cho cả nổ trượt cạnh xe (onSplash) lẫn
+  // đạn nổ trúng thẳng thân xe ngay cạnh người (onHit — trước đây trúng thẳng xe thì không tính mảnh cho người đứng sát)
+  function fragKill(u, x, y, z, opts, radius, events) {
+    if (!u.crew || !u.crew.gunner) return;
+    const d = window.VehicleDamage.state(u);
+    if (d.lost.has('crewGunner')) return;
+    const cls = opts.gl40 ? 'gl40' : window.VehicleDamage.ammoClass(opts.ammo);
+    // đạn súng 12.7 không có thuốc nổ: chỉ trúng thẳng người mới tính. Đạn nổ 30mm & lựu 40mm nổ sát xạ thủ: mảnh hạ được
+    if (cls === 'small' || !(radius > 0)) return;
+    // tầm mảnh sát thương với người (phần bán kính nổ) & độ chết theo loại đạn
+    const reach = cls === 'gl40' ? 0.75 : cls === 'cannon' ? 0.55 : 0.85, k = cls === 'gl40' ? 1.0 : cls === 'cannon' ? 0.5 : 1;
+    const h = u.crew.gunner.head.getWorldPosition(V(0, 0, 0)), b = u.crew.gunner.chest.getWorldPosition(V(0, 0, 0));
+    const dist = Math.min(Math.hypot(h.x - x, h.y - y, h.z - z), Math.hypot(b.x - x, b.y - y, b.z - z));
+    // shieldK: vật che giữa điểm nổ và xe (game.js blastShield — tường, gò đất, cây, ụ đất...) chặn mảnh cả với người
+    const sk = opts.shieldK === undefined ? 1 : Math.max(0, opts.shieldK);
+    const p = exposure(u) * Math.pow(c01(1 - dist / (radius * reach)), 1.3) * k * sk * (opts.heavy ? 1.2 : 1);
+    if (Math.random() < p) killCrew(u, 'gunner', events, 'TRÚNG MẢNH NỔ');
+  }
+  // bán kính nổ (đv) của đạn trúng thẳng thân xe — để tính mảnh với xạ thủ đứng sát
+  function hitBlastRadius(opts) {
+    if (opts.gl40) return 26;
     const cls = window.VehicleDamage.ammoClass(opts.ammo);
-    if (cls === 'small' || cls === 'cannon' || !(opts.radius > 0)) return;
-    const h = u.crew.gunner.head.getWorldPosition(V(0, 0, 0));
-    const dist = Math.hypot(h.x - opts.x, h.y - opts.y, h.z - opts.z);
-    const p = exposure(u) * Math.pow(c01(1 - dist / (opts.radius * 0.85)), 1.3) * (opts.heavy ? 1.2 : 1);
-    if (Math.random() < p) killCrew(u, 'gunner', r.events, 'TRÚNG MẢNH NỔ');
+    return cls === 'cannon' ? 10 : cls === 'heat' ? 24 : cls === 'blast' ? (opts.heavy ? 60 : 36) : 0;
   }
 
   // gắn vào VehicleDamage: tính thương vong trên máy có quyền với phát bắn (không chạy ở lượt chỉ vẽ hình), báo khi nhận
@@ -1544,7 +1919,7 @@ const VehicleCrew = (() => {
   }
   hook();
 
-  return { attachScoutGunner, animate, buildFigure, hook, AT };
+  return { attachScoutGunner, setShown, animate, buildFigure, hook, AT, chargePull, mgReloadPr, mgWarp, mgUnwarp };
 })();
 
 if (typeof window !== 'undefined') window.VehicleCrew = VehicleCrew;

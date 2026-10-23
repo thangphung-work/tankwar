@@ -114,8 +114,9 @@ const WadingFX = (() => {
     p.t = 0;
     p.rot = p.rot !== undefined ? p.rot : Math.random() * 6.283;
     p.rotV = p.rotV !== undefined ? p.rotV : rand(-0.3, 0.3);
-    if (L.parts.length >= MAX) L.parts.shift();
-    L.parts.push(p);
+    // đầy: thay tại chỗ một hạt trong 1/4 cũ nhất (mảng giữ thứ tự theo tuổi) — shift() dời cả mảng mỗi hạt mới
+    if (L.parts.length >= MAX) L.parts[L.ev = ((L.ev || 0) + 1) % Math.max(1, MAX >> 2)] = p;
+    else L.parts.push(p);
   }
 
   // Cập nhật lớp hạt — gọi từ mọi xe mỗi khung, chỉ chạy 1 lần / khung hình
@@ -305,12 +306,21 @@ const WadingFX = (() => {
   // Xe ra khỏi nước
   function leave(u) { if (u._wadeFx) u._wadeFx.wasIn = false; }
 
+  // Trời mưa, bánh / xích lăn qua vũng nước trên mặt đất (spg.js spawnMudSpray): vòng sóng loang trên mặt vũng
+  function puddleRing(scene, x, y, z, k) {
+    if (!layerFor(scene)) return;
+    add({ kind: 1, x: x + rand(-2, 2), y, z: z + rand(-2, 2), vx: 0, vz: 0, size: rand(3, 5), grow: rand(14, 22) * Math.min(1.4, k), drag: 0,
+      alpha: 0.28 * Math.min(1, k), life: rand(0.9, 1.4), fadeIn: 0.03, rotV: 0 });
+  }
+
   /**
    * Khai hỏa sát mặt nước: luồng khí thuốc phóng từ đầu nòng ép mặt nước thành vòng sóng xung kích chạy nhanh,
    * xé mặt nước thành màn bụi nước hình nón theo hướng bắn, mặt nước dưới đầu nòng bị thổi phẳng trắng xoá.
    * tip: đầu nòng (THREE.Vector3), dir: hướng bắn (đơn vị). Không có nước trong tầm thì không làm gì.
    */
   function muzzleBlast(u, tip, dir) {
+    // trời mưa: luồng khí đầu nòng quất gợn sóng trên vũng nước dưới / trước nòng, thổi dạt màn mưa (Weather)
+    if (typeof Weather !== 'undefined' && tip && dir) Weather.blast(tip.x + dir.x * 14, tip.z + dir.z * 14, u.tankType === 'ARTILLERY' ? 0.8 : u.tankType === 'SCOUT' ? 0.3 : 0.55);
     const T = window.game && window.game.terrain;
     if (!T || !T.waterSurfaceAt || !u.scene || !tip || !dir) return;
     const hl = Math.hypot(dir.x, dir.z) || 1, hx = dir.x / hl, hz = dir.z / hl;
@@ -358,7 +368,7 @@ const WadingFX = (() => {
     }
   }
 
-  return { emit, leave, frame, dims, muzzleBlast };
+  return { emit, leave, frame, dims, muzzleBlast, puddleRing };
 })();
 
 if (typeof window !== 'undefined') window.WadingFX = WadingFX;

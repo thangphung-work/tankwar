@@ -18,7 +18,7 @@ class MatchmakingController {
     // Danh tính người chơi hiện tại
     this.myPeerId = 'pilot_' + Math.random().toString(36).substring(2, 8);
     // Chưa đăng nhập: chỉ là khách (account.js thay bằng tên hiển thị khi đăng nhập)
-    this.guestName = 'KHÁCH ' + (1000 + Math.floor(Math.random() * 9000));
+    this.guestName = 'GUEST ' + (1000 + Math.floor(Math.random() * 9000));
     this.myName = this.guestName;
 
     this.selectedTankType = 'ALL_ROUNDER'; // 'ALL_ROUNDER' | 'GATLING' | 'ARTILLERY'
@@ -52,22 +52,22 @@ class MatchmakingController {
     ];
 
     this.botNamesPool = [
-      'BÁO ĐEN SA MẠC', 'TỬ THẦN TẦM XA', 'THIẾT GIÁP ĐỒNG NAI', 'HỎA LỰC HẮC BÁO',
-      'BÃO CÁT CHIẾN THUẬT', 'THỢ SĂN LIÊN BANG', 'PHÁO THỦ ĐẠI BÀNG', 'SẤM SÉT VÔ HÌNH',
-      'ĐẠI BÀNG LỬA', 'CHIẾN XA BẮC CỰC', 'HỔ CÁP THIẾT GIÁP', 'PHÁO BINH THẦN TỐC',
-      'XẠ THỦ RỪNG RẬM', 'KỴ BINH VÔ DIỆN', 'TIA CHỚP BĂNG GIÁ', 'SÓI XÁM CAO NGUYÊN',
-      'HỎA THẦN VÂY HÃM', 'MÃNH THÚ ĐÔ THỊ', 'THIÊN PHÁO SÔNG HỒ', 'KẺ TRỪNG PHẠT 01',
-      'CHIẾN THẦN 02', 'BẠCH MÃ CHIẾN TƯỚNG', 'SƯ TỬ SA MẠC', 'BẢO LÂM XẠ THỦ',
-      'ĐẠI BÀNG GÃY CÁNH', 'LONG THẦN THIẾT GIÁP', 'CHIẾN BINH THÉP', 'XẠ THỦ ĐỈNH NÚI',
-      'THẦN ƯNG TẦM XA', 'BÁO ĐỐM TÀNG HÌNH', 'ĐẠI PHÁO TỬ THẦN', 'SÓI TUYẾT DÃ CHIẾN'
-    ];
+      'BLACK PANTHER', 'LONG-RANGE REAPER', 'IRON VANGUARD', 'HELLFIRE LEOPARD',
+      'SANDSTORM', 'FEDERAL HUNTER', 'HAWKEYE GUNNER', 'PHANTOM BOLT',
+      'FIRE EAGLE', 'ARCTIC CRUSADER', 'IRON SCORPION', 'SWIFT BATTERY',
+      'JUNGLE SHARPSHOOTER', 'FACELESS RIDER', 'FROST LIGHTNING', 'HIGHLAND GREY WOLF',
+      'SIEGE INFERNO', 'URBAN BEAST', 'LAKE THUNDER', 'PUNISHER 01',
+      'ARES 02', 'WHITE STALLION', 'DESERT LION', 'FOREST GUNNER',
+      'BROKEN WING', 'IRON DRAGON', 'STEEL WARRIOR', 'PEAK MARKSMAN',
+      'FAR-SIGHT FALCON', 'STEALTH JAGUAR', 'DOOM CANNON', 'SNOW YETI'
+    ];   // dự phòng khi thiếu bot_profiles.js
 
     // Bản mẫu để làm mới sảnh khi quay lại sau trận (chế độ nhiều người chơi)
     this.slotTemplate = JSON.parse(JSON.stringify(this.slots));
     this.botNamesTemplate = this.botNamesPool.slice();
 
     // Hạt giống bản đồ: chế độ độc lập tự sinh cục bộ, chế độ mạng do chủ phòng quyết định
-    this.mapSeed = (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
+    this.mapSeed = this.newMapSeed(this.selectedMapType);
     this.preparedMapKey = null;
     this.net = null;
 
@@ -192,6 +192,7 @@ class MatchmakingController {
   }
 
   initElements() {
+    this.setWeatherUI();
     this.overlay = document.getElementById('matchmaking-overlay');
     this.timerEl = document.getElementById('mm-timer-val');
     this.statusTextEl = document.getElementById('mm-status-text');
@@ -249,6 +250,13 @@ class MatchmakingController {
         return;
       }
 
+      // 3.b. Chọn thời tiết
+      const wxBtn = e.target.closest('.mm-wx-btn');
+      if (wxBtn) {
+        this.selectWeather(wxBtn.getAttribute('data-wx') || 'random');
+        return;
+      }
+
       // 3. Thẻ chọn bản đồ chiến địa
       const mapCard = e.target.closest('.mm-map-card');
       if (mapCard) {
@@ -295,6 +303,8 @@ class MatchmakingController {
     lobbyTypes.forEach(type => {
       this.net.on(type, (data, from) => this.handleChannelMessage(Object.assign({}, data || {}, { type, _from: from })));
     });
+    this.net.on('@slots', (d, from) => this.onServerSlots(d, from));
+    this.net.on('@receipt', (d, from) => this.onMatchReceipt(d, from));
     this.net.on('$ready', () => this.onNetReady());
     this.net.on('$peer_leave', (d, id) => this.onPeerLeave(id));
     this.net.on('$host', () => this.onHostChange());
@@ -312,7 +322,10 @@ class MatchmakingController {
   // Ghi bộ trang bị của mình vào slot của mình (chủ phòng gửi đi cùng ROOM_UPDATE / lệnh xuất trận)
   refreshMyKit() {
     const me = this.slots && this.slots.find(s => s.isMe);
-    if (me) me.kit = this.myKit(me.tankType || this.selectedTankType);
+    if (me) {
+      me.kit = this.myKit(me.tankType || this.selectedTankType);
+      me.rating = this.myRating();   // điểm xếp phe (cấp + tỉ lệ thắng) đi kèm slot
+    }
   }
   // Tài khoản vừa đổi trang bị (mua / lắp): báo phòng
   onArmoryChanged() {
@@ -373,7 +386,8 @@ class MatchmakingController {
         peerId: this.myPeerId,
         name: this.myName,
         tankType: mySlot ? mySlot.tankType : this.selectedTankType,
-        kit: this.myKit(mySlot ? mySlot.tankType : this.selectedTankType)
+        kit: this.myKit(mySlot ? mySlot.tankType : this.selectedTankType),
+        rating: this.myRating()
       });
       clearTimeout(this.discoverTimer);
       this.discoverTimer = setTimeout(discover, 1500);
@@ -463,10 +477,73 @@ class MatchmakingController {
     }
   }
 
-  // Người mới vào phòng: xếp vào phe đang ít người thật hơn (hòa thì phe Xanh), ưu tiên ô còn trống rồi mới thay bot
+  /**
+   * Điểm xếp phe (src/core/team_balance.js — máy chủ dùng cùng công thức để kiểm tra):
+   * lợi thế so với 1 bot (0.3 .. 2.5; 1 = cấp 10 thắng 50%), từ cấp + tỉ lệ thắng. Khách = người mới (cấp 1).
+   * game.balanceBotSkill dùng cùng thang này để bù bot.
+   */
+  static rating(level, wins, matches) { return TeamBalance.rating(level, wins, matches); }
+  static cleanRating(v) { return TeamBalance.clean(v); }
+  myRating() {
+    const k = this.net && this.net.getPeerSkill ? this.net.getPeerSkill(this.myPeerId) : undefined;
+    if (k !== undefined) return TeamBalance.ratingOfSkill(k);
+    const p = window.Account && Account.profile, st = (p && p.stats) || {};
+    return TeamBalance.rating(p && p.level, st.wins, st.matches);
+  }
+  // Điểm của người chơi khác (chủ phòng gọi): chạy qua máy chủ thì lấy số liệu máy chủ đọc từ tài khoản (khách = người mới),
+  // bỏ qua số máy khách tự khai; chỉ khi không có máy chủ xác nhận (nhiều tab / máy chủ cũ) mới dùng số tự khai
+  peerRating(peerId, claimed) {
+    const k = this.net && this.net.getPeerSkill ? this.net.getPeerSkill(peerId) : undefined;
+    return k !== undefined ? TeamBalance.ratingOfSkill(k) : TeamBalance.clean(claimed);
+  }
+
+  /**
+   * Chia lại người chơi thật ngay trước đếm ngược (chủ phòng / chơi đơn), TeamBalance.improve:
+   * - hai phe chênh nhau tối đa 1 người thật
+   * - từ cách ngồi hiện tại, đổi chỗ từng cặp / chuyển từng người miễn giảm chênh lệch tổng điểm (cấp + tỉ lệ thắng)
+   *   hơn 0.15 điểm -> ít người phải đổi phe; máy chủ kiểm tra lại đúng tiêu chí này (TeamBalance.check)
+   * - người đổi phe đổi chỗ với người đổi theo chiều ngược lại, hoặc với 1 bot bên phe kia (loại xe bot chia lại ở balanceRoster)
+   */
+  rebalanceHumans(seed) {
+    let st = seed >>> 0;
+    const rnd = () => {
+      st = (st + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(st ^ (st >>> 15), st | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const H = this.slots.filter(s => s.isHuman);
+    if (!H.length) return;
+    const w = H.map(s => TeamBalance.clean(s.rating));
+    const blue0 = H.map(s => s.team === 'BLUE');
+    TeamBalance.applySplit(this.slots, H, blue0, TeamBalance.improve(w, blue0), rnd);
+  }
+
+  // Máy chủ sửa cách chia phe / trang bị chủ phòng gửi (tin '@slots' do chính máy chủ phát, không có người gửi)
+  onServerSlots(d, from) {
+    if (from || !d || !Array.isArray(d.slots) || this.state === 'IN_GAME' || this.state === 'IDLE') return;
+    this.slots = d.slots;
+    this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
+    this.renderLobby();
+  }
+
+  // Biên nhận trận do máy chủ phát lúc hết trận (mã cuối chuỗi băm sự kiện, server_auth.js chainAdd): giữ 30 trận gần nhất
+  // trong máy -> khi khiếu nại / tra soát, đối chiếu với nhật ký matches.log của máy chủ (sửa nhật ký là lệch mã)
+  onMatchReceipt(d, from) {
+    if (from || !d || typeof d.h !== 'string') return;
+    try {
+      const K = 'tankwar_match_receipts', list = JSON.parse(localStorage.getItem(K) || '[]');
+      list.push({ t: Date.now(), m: String(d.m).slice(0, 24), n: d.n | 0, h: d.h.slice(0, 64), w: String(d.w).slice(0, 8), k: d.k });
+      localStorage.setItem(K, JSON.stringify(list.slice(-30)));
+    } catch (e) {}
+  }
+
+  // Người mới vào phòng: xếp vào phe đang ít người thật hơn (hòa thì bốc ngẫu nhiên), ưu tiên ô còn trống rồi mới thay bot
+  // (chỉ là chỗ ngồi tạm trong lúc chờ: rebalanceHumans chia lại lần cuối khi bắt đầu đếm ngược)
   pickSlotForNewHuman() {
     const humans = team => this.slots.filter(s => s.team === team && s.isHuman).length;
-    const order = humans('RED') < humans('BLUE') ? ['RED', 'BLUE'] : ['BLUE', 'RED'];
+    const hb = humans('BLUE'), hr = humans('RED');
+    const order = (hr < hb || (hr === hb && Math.random() < 0.5)) ? ['RED', 'BLUE'] : ['BLUE', 'RED'];
     for (const team of order) {
       const s = this.slots.find(x => x.team === team && !x.peerId && !x.isHuman && !x.ready)
         || this.slots.find(x => x.team === team && !x.peerId && !x.isHuman);
@@ -483,6 +560,8 @@ class MatchmakingController {
     slot.ready = false;
     slot.ping = 0;
     slot.kit = null;
+    slot.botId = null;
+    slot.rating = null;
   }
 
   onPeerLeave(peerId) {
@@ -513,7 +592,8 @@ class MatchmakingController {
     this.net.sendTo(this.net.hostId, 'SLOT_UPDATE', {
       name: this.myName,
       tankType: mySlot ? mySlot.tankType : this.selectedTankType,
-      kit: this.myKit(mySlot ? mySlot.tankType : this.selectedTankType)
+      kit: this.myKit(mySlot ? mySlot.tankType : this.selectedTankType),
+      rating: this.myRating()
     });
   }
 
@@ -528,16 +608,41 @@ class MatchmakingController {
       // Chọn lại đúng loại đang dựng sẵn thì giữ hạt giống đó để khỏi dựng lại.
       const t = mapType || 'DESERT', T = this.game && this.game.terrain;
       this.selectedMapType = t;
-      this.mapSeed = (T && T.built && T.mapType === t) ? (T.seed >>> 0)
-        : (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
+      this.mapSeed = (T && T.built && T.mapType === t && this.seedFitsWeather(t, T.seed)) ? (T.seed >>> 0) : this.newMapSeed(t);
       this.setMapSelectionUI(t);
       return;
     }
     this.selectMapAsHost(mapType);
   }
 
+  // Hạt giống bản đồ mới khớp lựa chọn thời tiết ở sảnh (thời tiết suy ra từ hạt giống -> mọi máy cùng mưa / nắng)
+  newMapSeed(mapType) {
+    if (typeof Weather !== 'undefined') return Weather.seedFor(mapType || 'DESERT');
+    return (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
+  }
+  seedFitsWeather(mapType, seed) {
+    return typeof Weather === 'undefined' || Weather.matches(mapType, seed >>> 0, Weather.pref());
+  }
+  // Nút thời tiết ở sảnh: ghi nhớ lựa chọn; bản đồ đang chọn không khớp thì đổi hạt giống (khách: chủ phòng quyết định)
+  selectWeather(pref) {
+    if (typeof Weather === 'undefined') return;
+    Weather.setPref(pref);
+    this.setWeatherUI();
+    if (this.isNetGuest() || this.seedFitsWeather(this.selectedMapType, this.mapSeed)) return;
+    if (this.state === 'IDLE') { this.mapSeed = this.newMapSeed(this.selectedMapType); return; }
+    this.selectMapAsHost(this.selectedMapType);
+  }
+  setWeatherUI() {
+    const p = typeof Weather !== 'undefined' ? Weather.pref() : 'random';
+    document.querySelectorAll('.mm-wx-btn').forEach(b => {
+      const on = b.getAttribute('data-wx') === p;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  }
+
   selectMapAsHost(mapType) {
-    const seed = (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
+    const seed = this.newMapSeed(mapType || 'DESERT');
     this.applyMapSelection(mapType || 'DESERT', seed);
     if (this.net && this.net.isOnline) {
       this.net.send('MAP_CHANGE', { mapType: this.selectedMapType, mapSeed: this.mapSeed });
@@ -568,10 +673,20 @@ class MatchmakingController {
     if (this.state === 'IDLE' || this.preparedMapKey === this.selectedMapType + ':' + (this.mapSeed >>> 0)) return;
     this.buildingMap = true;
     this.updateSearchHUD();
-    this._prepareTimer = setTimeout(() => {
-      this._prepareTimer = null;
-      this.prepareSelectedMap();
-    }, 60);
+    // Sinh dữ liệu bản đồ (MapGen) trong luồng phụ trước, xong mới dựng 3D: luồng chính chỉ còn khựng phần dựng hình.
+    // Đổi bản đồ / đã dựng thẳng (đếm ngược) trong lúc chờ thì bỏ qua kết quả cũ
+    const key = this.selectedMapType + ':' + (this.mapSeed >>> 0);
+    this._prepareKey = key;
+    const build = () => {
+      if (this._prepareKey !== key || !this.buildingMap) return;
+      clearTimeout(this._prepareTimer);
+      this._prepareTimer = setTimeout(() => {
+        this._prepareTimer = null;
+        this.prepareSelectedMap();
+      }, 60);
+    };
+    if (typeof MapGen !== 'undefined' && MapGen.prefetch) MapGen.prefetch(this.selectedMapType, this.mapSeed >>> 0).then(build, build);
+    else build();
   }
 
   setMapSelectionUI(mapType) {
@@ -609,7 +724,7 @@ class MatchmakingController {
     // Ở sảnh: nhận luôn bản đồ game vừa dựng lúc khởi động (cùng loại thì lấy hạt giống của nó), không dựng lại
     const T = this.game && this.game.terrain;
     if (this.state === 'IDLE') {
-      if (T && T.built && T.mapType === this.selectedMapType) {
+      if (T && T.built && T.mapType === this.selectedMapType && this.seedFitsWeather(T.mapType, T.seed)) {
         this.mapSeed = T.seed >>> 0;
         this.preparedMapKey = this.selectedMapType + ':' + this.mapSeed;
       }
@@ -676,9 +791,11 @@ class MatchmakingController {
         slot.isHuman = true;
         slot.peerId = from;
         slot.isMe = false;
-        slot.name = msg.name || 'CHIẾN BINH MỚI';
+        slot.botId = null;   // thay chỗ bot: bỏ hồ sơ bot của ô này
+        slot.name = msg.name || 'NEW RECRUIT';
         if (msg.tankType) slot.tankType = msg.tankType;
         slot.kit = this.cleanKit(msg.kit, slot.tankType);
+        slot.rating = this.peerRating(from, msg.rating);
         slot.ready = true;
         slot.ping = Math.round(this.net.getPeerRtt(from)) || Math.floor(12 + Math.random() * 25);
         this.renderLobby();
@@ -753,6 +870,7 @@ class MatchmakingController {
           if (typeof msg.name === 'string' && msg.name.trim()) slot.name = msg.name.trim().slice(0, 40);
           if (msg.tankType) slot.tankType = msg.tankType;
           slot.kit = this.cleanKit(msg.kit, slot.tankType);
+          if (msg.rating !== undefined) slot.rating = this.peerRating(from, msg.rating);
           this.renderLobby();
           this.broadcastRoomUpdate();
         }
@@ -828,8 +946,11 @@ class MatchmakingController {
   }
 
   fillBotSlot(slot) {
-    const randomBotName = this.botNamesPool.shift() || `CHIẾN BINH #${slot.id + 1}`;
-    slot.name = randomBotName;
+    // Hồ sơ bot (src/ai/bot_profiles.js): ưu tiên xe sở trường đúng loại xe của ô, không trùng trong phòng
+    const used = new Set(this.slots.map(s => s.botId).filter(Boolean));
+    const prof = (typeof BotProfiles !== 'undefined') ? BotProfiles.pick(slot.tankType, used) : null;
+    slot.botId = prof ? prof.id : null;
+    slot.name = prof ? prof.name : (this.botNamesPool.shift() || `WARRIOR #${slot.id + 1}`);
     slot.isHuman = false;
     slot.ready = true;
     slot.ping = Math.floor(6 + Math.random() * 12);
@@ -856,9 +977,13 @@ class MatchmakingController {
   beginCountdown() {
     if (this.state === 'COUNTDOWN' || this.state === 'IN_GAME') return;
     clearInterval(this.searchInterval);
-    this.renderLobby(); // cân bằng đội hình lần cuối trước khi gửi
     // Hạt giống vị trí xuất phát ngẫu nhiên của trận này (mọi máy dùng chung -> cùng vị trí)
     this.spawnSeed = (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
+    this.refreshMyKit();   // điểm xếp phe của chính mình (tài khoản có thể vừa nạp xong)
+    // điểm người khác: lấy lại theo số liệu máy chủ (nếu có) ngay trước khi chia, không dùng số còn sót từ lúc chờ
+    this.slots.forEach(s => { if (s.isHuman && !s.isMe && s.peerId) s.rating = this.peerRating(s.peerId, s.rating); });
+    this.rebalanceHumans(this.spawnSeed);
+    this.renderLobby(); // cân bằng đội hình lần cuối trước khi gửi
     if (this.net && this.net.isOnline && this.isHost) {
       this.net.lockRoom(true);
       this.refreshMyKit();

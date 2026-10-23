@@ -27,12 +27,11 @@ SoundEngine.mixin(class {
    *   'open'  khóa nòng mở, ống dẫn hướng khí xả xì
    *   'fetch' băng chuyền ổ đạn xoay chọn đạn: mô-tơ servo rít + các nấc khóa "cạch" đều
    *   'ram'   tay đẩy xích nạp đạn rít, đầu đạn đóng chặt vào đai dẫn hướng "KENG" -> đẩy các module liều phóng -> khóa nòng đóng
-   * - GATLING (băng đạn 450 viên không mắt xích) 'magOut' / 'magIn'; SCOUT (hộp đạn 12.7mm có dây đạn) 'magOut' / 'magIn'
+   * - GATLING (băng đạn 450 viên không mắt xích) 'magOut' / 'magIn'. Xe trinh sát (SCOUT) KHÔNG dùng hàm này: xem playScoutReload
    * - MG762 (trạm súng máy 7.62mm điều khiển từ xa trên nóc tháp xe tăng): kíp xe phải mở nắp tháp, với tay ra thay hộp
    *   'magOut' nắp tháp bật mở + gió / tiếng ngoài trời tràn vào, nắp hộp tiếp đạn bật, hộp rỗng rút ra
    *   'magIn'  hộp mới cài khay, dây đạn nhỏ lách tách, đóng nắp, mô-tơ lên đạn điện "rè-cạch", nắp tháp đóng sập
-   * - ATGM (ống phóng tên lửa trên nóc xe trinh sát) 'out' ống phóng rỗng nhả chốt, bật ra / 'in' ống mới trượt vào giá,
-   *   chốt khóa, giắc điện cắm, con quay đầu dò quay lên (rít cao dần) rồi bíp sẵn sàng
+   * - Ống phóng tên lửa trên nóc xe trinh sát: xem playAtgmReload (từng bước theo hoạt cảnh)
    * ammo (xe tăng): đạn mũi tên AP nhẹ & dài (tiếng trượt dài, cao) / đạn nổ HE nặng (cộc trầm hơn)
    * charge (lựu pháo): số module liều phóng đẩy vào buồng theo liều đang chọn (liều 1 nhiều module -> nhiều tiếng đẩy)
    * lead: số giây còn lại tới lúc nạp xong — các tiếng cuối được dồn vào đúng khoảng đó.
@@ -114,42 +113,6 @@ SoundEngine.mixin(class {
       }
       return;
     }
-    if (tankType === 'ATGM') {
-      if (phase === 'out') {
-        // ống phóng rỗng (composite nhẹ) nhả chốt, bật khỏi giá: "cạch" + tiếng ống rỗng "boong" nhẹ
-        clunk(t + 0.2, 1500, 0.45, 0.05);
-        this.burst(out, t + 0.45, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 240, Q: 3, gain: 0.25, attack: 0.002, dur: 0.18 });
-        slide(t + 0.5, 700, 400, 0.4, 0.07);
-      } else if (phase === 'in') {
-        // ống mới trượt vào giá, chốt khóa, giắc điện cắm "tách", con quay đầu dò quay lên, bíp sẵn sàng
-        slide(t, 400, 800, 0.5, 0.1);
-        clunk(t + 0.55, 900, 0.7, 0.06);
-        clunk(t + 0.8, 3000, 0.12, 0);
-        this.tone(out, t + 0.9, { freq: 600, freqEnd: 2600, sweep: Math.max(0.3, L - 1.2), gain: 0.03, attack: 0.1, hold: Math.max(0.2, L - 1.2), dur: 0.15 });
-        this.tone(out, t + Math.max(1.3, L - 0.15), { freq: 1900, gain: 0.05, attack: 0.005, dur: 0.07 });
-        this.tone(out, t + Math.max(1.42, L - 0.03), { freq: 1900, gain: 0.05, attack: 0.005, dur: 0.07 });
-      }
-      return;
-    }
-    if (tankType === 'SCOUT') {
-      if (phase === 'magOut') {
-        // lật nắp khóa nòng "cạch", tháo hộp đạn rỗng
-        clunk(t + 0.3, 1400, 0.4, 0.05);
-        this.burst(out, t + 0.31, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900, Q: 1.5, gain: 0.08, attack: 0.02, dur: 0.12 });
-        clunk(t + 0.9, 500, 0.5, 0);
-      } else if (phase === 'magIn') {
-        // lắp hộp đạn mới, đặt dây đạn lên khay (mắt xích lách cách), đóng nắp "CẠCH", kéo tay kéo lên đạn 2 lần
-        clunk(t, 450, 0.5, 0);
-        for (let i = 0; i < 6; i++) clunk(t + 0.15 + i * 0.04 + R() * 0.015, 2200 + R() * 600, 0.08, 0);
-        clunk(t + 0.5, 1300, 0.7, 0.06);
-        const rack = Math.max(0.75, L - 0.45);
-        slide(rack, 900, 1500, 0.12, 0.12);
-        clunk(rack + 0.13, 1100, 0.8, 0.05);
-        slide(rack + 0.25, 900, 1500, 0.1, 0.1);
-        clunk(rack + 0.36, 1100, 0.7, 0.05);
-      }
-      return;
-    }
     // ALL_ROUNDER: pháo 120mm nạp tay
     if (phase === 'open') {
       clunk(t + 0.32, 480, 1.0, 0.1);
@@ -169,6 +132,363 @@ SoundEngine.mixin(class {
       slide(t, ap ? 750 : 600, ap ? 1300 : 1000, (ap ? 0.32 : 0.25) * k, 0.12);
       clunk(t + (ap ? 0.33 : 0.28) * k, ap ? 680 : he ? 420 : 520, he ? 0.8 : 0.6, 0.04);   // đạn ngồi khít buồng
       clunk(t + Math.max(0.36 * k, L - 0.05), 430, 1.15, 0.12);   // khóa nòng đóng sập
+    }
+  }
+
+  /**
+   * Xe trinh sát: xạ thủ đứng ở lỗ nóc thay đạn bằng tay ngoài trời — không phải khối khóa nòng thép nặng trong khoang
+   * xe tăng (clunk của playReloadPhase), mà là đồ thép nhỏ: nắp khóa nòng lò xo, hộp đạn thép rỗng ruột, dây mắt xích,
+   * tay kéo lên đạn. spg.js gọi từng bước đúng lúc hoạt cảnh (recon_marten / vehicle_crew MG_KEYS) tới mốc đó, nên tiếng
+   * luôn khớp hình kể cả khi nạp bị dừng (xạ thủ hy sinh) hay đổi thời gian nạp.
+   * step: 'coverOpen' | 'boxOut' | 'boxDrop' | 'boxGrab' | 'boxSeat' | 'lidOpen' | 'belt' | 'coverClose' | 'pull' | 'release'
+   *       | 'chamber' (lần buông thứ 2: đẩy viên vào buồng) | giàn rocket: 'rLift' | 'rPush' | 'rSeat'
+   * kind: 'hmg' (12.7 mặc định) | 'agl' (phóng lựu 40mm: nắp, hộp, mắt xích to & nặng hơn -> trầm hơn) | 'rocket'
+   * dur: thời gian còn lại của bước (s) để kéo dài / co tiếng trượt cho khớp hình
+   */
+  /**
+   * Nạp ống phóng tên lửa trên nóc xe trinh sát — từng bước đúng lúc hoạt cảnh (vehicle_crew AT) tới mốc, spg.js gọi.
+   * Toàn tiếng cơ khí ngoài trời: chốt, ống composite rỗng, thép đập thép. Không còn tiếng "con quay rít cao dần + bíp"
+   * (sóng sin quét 600 -> 2600 Hz nghe thành tiếng huýt giả, đầu dò thật không rít to tới mức nghe được ngoài xe)
+   * step: 'capOpen' | 'yank' (giật vỏ rỗng ra) | 'toss' (vứt vỏ) | 'lift' (nhấc quả mới qua lỗ nóc) | 'push' (tống vào ống)
+   *       | 'seat' (đập vào chốt hãm) | 'capClose' | 'ready' (giắc điện / rơ-le hệ điều khiển)
+   */
+  playAtgmReload(step) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    const out = this.voice({ bus: this.weaponBus, gain: 0.55, wet: 0.1 });
+    const R = Math.random;
+    const click = (tt, f, g) => {
+      this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f * 2.2, Q: 1.4, gain: g * 0.9, attack: 0.0004, dur: 0.018 });
+      this.metal(out, tt, { f0: f, ratios: [1, 2.3, 4.1], decay: 0.06, gain: g * 0.35, click: 0.6 });
+    };
+    // ống composite / vỏ chứa rỗng: "bộp" rỗng, khô (không ngân như thép)
+    const tube = (tt, rate, g, lp = 0) => this.playCaseHit(out, tt, 'debrisCan', rate, g, lp);
+    // vật dài trượt trong ống: xẹt nhanh, cao độ đi theo tốc độ
+    const rush = (tt, f0, f1, d, g) => this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f0, freqEnd: f1, sweep: d, Q: 1.6, gain: g, attack: d * 0.15, dur: d });
+    // cú đập nặng (thân người + quả 30 kg dồn vào): "THỤC" trầm khô
+    const thud = (tt, f, g) => this.burst(out, tt, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: f, drive: 2, gain: g, attack: 0.001, dur: 0.09 });
+    switch (step) {
+      case 'capOpen':
+        click(t, 1600, 0.35);                                        // gạt lẫy nắp đuôi
+        this.playCaseHit(out, t + 0.12, 'debrisMetal', 0.9, 0.12);   // nắp bật hết bản lề
+        break;
+      case 'yank':
+        click(t, 1300, 0.3);                                         // nhả chốt giữ vỏ
+        rush(t + 0.01, 900, 450, 0.3, 0.16);                         // vỏ rỗng vọt ra khỏi ống
+        tube(t + 0.02, 1.25, 0.14);
+        thud(t + 0.3, 300, 0.25);                                    // tay hãm lại cuối tầm
+        break;
+      case 'toss':
+        tube(t + 0.32, 1.0, 0.3, 6000);                              // vỏ rỗng rơi xuống đất / nóc xe "bộp"
+        tube(t + 0.5 + R() * 0.05, 1.12, 0.1, 5000);                 // nảy lăn
+        break;
+      case 'lift':
+        tube(t, 1.3, 0.08, 4500);                                    // ống chứa quả mới cạ mép lỗ nóc
+        rush(t + 0.05, 500, 380, 0.25, 0.04);
+        break;
+      case 'push':
+        rush(t, 380, 1000, 0.32, 0.18);                              // quả mới tống vào ống, tăng tốc
+        break;
+      case 'seat':
+        thud(t, 260, 1.0);                                           // đập vào chốt hãm: "THỤC"
+        this.playCaseHit(out, t, 'debrisMetalHull', 0.75, 0.35);     // giá phóng thép rung theo
+        tube(t + 0.004, 0.9, 0.25);
+        click(t + 0.03, 1800, 0.55);                                 // chốt hãm sập "CẠCH"
+        if (this.duck) this.duck(0.85, 0.15);
+        break;
+      case 'capClose':
+        this.playCaseHit(out, t, 'debrisMetal', 0.85, 0.2);          // đóng sập nắp đuôi
+        click(t + 0.015, 1500, 0.4);
+        break;
+      case 'ready':
+        click(t, 3200, 0.14);                                        // giắc điện cắm
+        // rơ-le hệ điều khiển đóng: 2 tiếng "tách" khô trong hộp điện (không còn bíp / rít)
+        this.burst(out, t + 0.18, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 4200, Q: 2, gain: 0.12, attack: 0.0003, dur: 0.008 });
+        this.burst(out, t + 0.26, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3800, Q: 2, gain: 0.1, attack: 0.0003, dur: 0.008 });
+        break;
+    }
+  }
+
+  /**
+   * Xạ thủ trên nóc trúng đạn / mảnh hy sinh — khớp hoạt cảnh vehicle_crew (giật ngửa 0.25 s -> gục lên súng -> 2.4 s đổ
+   * sụp xuống lòng xe):
+   *  (1) đạn / mảnh vào người qua áo giáp: "phập" đục ướt + tiếng tấm giáp bị đập; (2) GIỌNG NGƯỜI (vox — tổng hợp formant,
+   *  không phải sóng quét): "hự!" bật hơi lúc trúng, rồi tùy phát: chết ngay (chỉ còn hơi thở hắt ra) / gào đau "áaa!" rồi
+   *  rên "ựa…" / rên ư ử gục xuống; giọng nhỏ & tắt nhanh theo khoảng cách hơn tiếng súng (tai người ngoài ~30 m khó nghe
+   *  rõ); (3) mũ sắt / súng cá nhân va vào súng 12.7 & tấm chắn "cộp-keng", dây đạn lách cách;
+   *  (4) thân người trượt xuống lòng xe: sột soạt vải + đồ trên áo giáp, rơi "huỵch" đục vào sàn thép.
+   * own: xe mình — nghe rõ trong khoang + tín hiệu bộ đàm báo thương vong (2 tiếng bíp trầm, rè sóng)
+   */
+  playGunnerDown(distance = 0, pos = null, own = false) {
+    if (!this.ready()) return;
+    const sp = own ? { gain: 1, lowpass: 20000, wet: 0.1, delay: 0, pan: 0 } : this.spatial(distance, pos);
+    if (sp.gain < 0.04) return;
+    const t = this.ctx.currentTime + (sp.delay || 0);
+    const out = this.voice({ bus: own ? this.weaponBus : null, gain: sp.gain * (own ? 0.8 : 0.6), lowpass: sp.lowpass, wet: Math.max(0.1, sp.wet || 0), pan: sp.pan || 0 });
+    const R = Math.random;
+    // (1) trúng người: thụp đục ướt (dải trầm, tắt rất nhanh) + giáp mềm / tấm gốm bị đập "bộp"
+    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 520, drive: 1.8, gain: 0.9, attack: 0.0008, dur: 0.06 });
+    this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1100, Q: 1.2, gain: 0.35, attack: 0.0005, dur: 0.035 });
+    this.burst(out, t + 0.004, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3200, Q: 2, gain: 0.12, attack: 0.0003, dur: 0.012 });
+    // (2) GIỌNG: chỉ nghe được ở gần (xe mình / trong ~280 đv) — tiếng người nhỏ hơn hẳn tiếng súng, tắt nhanh theo khoảng cách
+    if (own || distance < 280) {
+      const vg = own ? 1 : Math.max(0, 1 - distance / 280) * 0.9;
+      const vo = this.voice({ bus: own ? this.weaponBus : null, gain: sp.gain * 0.22 * vg, lowpass: own ? 9000 : Math.min(sp.lowpass, 6500), wet: Math.max(0.12, sp.wet || 0), pan: sp.pan || 0 });
+      const k = 0.92 + R() * 0.16;   // mỗi người một giọng (cao / trầm chút)
+      // "hự!": hơi bị ép bật khỏi ngực khi trúng — ngắn, gắng, tắc cổ họng (dừng đột ngột)
+      this.vox(vo, t + 0.03, { dur: 0.17, f0: [[0, 185 * k], [0.3, 230 * k], [1, 150 * k]], vowel: [[0, 640, 1190, 2390], [1, 420, 1300, 2400]],
+        amp: [[0.06, 0.9], [0.55, 0.75], [0.8, 0.5], [0.86, 0.0001]], breath: 0.4, rough: 0.35 });
+      const r = R();
+      if (r < 0.35) {
+        // gào đau "áaa-ạ!": cao, căng, rè cổ — rồi rên hắt "ựa…" khi gục lên súng
+        this.vox(vo, t + 0.24, { dur: 0.75, f0: [[0, 290 * k], [0.15, 410 * k], [0.6, 370 * k], [1, 240 * k]], vowel: [[0, 700, 1150, 2450], [0.7, 730, 1100, 2450], [1, 600, 1200, 2400]],
+          amp: [[0.05, 1], [0.6, 0.85], [1, 0.0001]], breath: 0.3, rough: 0.7, gain: 0.9 });
+        this.vox(vo, t + 1.15, { dur: 1.1, f0: [[0, 150 * k], [0.25, 165 * k], [1, 92 * k]], vowel: [[0, 330, 1350, 2400], [0.4, 520, 1450, 2450], [1, 640, 1190, 2390]],
+          amp: [[0.15, 0.55], [0.5, 0.45], [1, 0.0001]], breath: 0.55, rough: 0.45 });
+      } else if (r < 0.75) {
+        // rên "ư… ựa": trầm, đứt quãng, hơi thở nặng — yếu dần trong lúc đổ người
+        this.vox(vo, t + 0.45, { dur: 0.9, f0: [[0, 160 * k], [0.3, 175 * k], [1, 105 * k]], vowel: [[0, 330, 1350, 2400], [1, 560, 1300, 2420]],
+          amp: [[0.2, 0.6], [0.55, 0.5], [1, 0.0001]], breath: 0.5, rough: 0.4 });
+        this.vox(vo, t + 1.75, { dur: 0.75, f0: [[0, 140 * k], [1, 88 * k]], vowel: [[0, 360, 1300, 2400], [1, 600, 1200, 2400]],
+          amp: [[0.25, 0.35], [1, 0.0001]], breath: 0.65, rough: 0.35 });
+      } else {
+        // chết ngay: chỉ còn hơi thở hắt ra (không cao độ)
+        this.burst(vo, t + 0.3, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 650, freqEnd: 420, sweep: 0.45, Q: 2.5, gain: 0.12, attack: 0.03, dur: 0.45 });
+      }
+    }
+    // (3) gục lên súng: mũ sắt / súng cá nhân đập vào thân súng & tấm chắn, dây đạn rung
+    const tg = t + 0.32 + R() * 0.06;
+    this.playCaseHit(out, tg, 'debrisMetal', 0.85, 0.35);
+    this.burst(out, tg, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 300, gain: 0.35, attack: 0.002, dur: 0.07 });
+    this.playCaseHit(out, tg + 0.09 + R() * 0.04, 'debrisMetal', 1.4, 0.14);
+    for (let i = 0; i < 4; i++) this.playCaseHit(out, tg + 0.03 + i * 0.05 + R() * 0.02, 'debrisLink', 1.7 + R() * 0.5, 0.04, 9000);
+    // (4) ~2.4 s: thân người trượt khỏi vòng súng xuống lòng xe
+    const tf = t + 2.35;
+    this.burst(out, tf, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1500, Q: 0.8, gain: 0.08, attack: 0.08, dur: 0.35 });   // vải sột soạt
+    for (let i = 0; i < 3; i++) this.playCaseHit(out, tf + 0.1 + i * 0.09 + R() * 0.03, 'debrisLink', 1.2 + R() * 0.4, 0.05, 7000);    // đồ trên áo giáp
+    this.burst(out, tf + 0.42, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 200, drive: 1.6, gain: own ? 0.9 : 0.6, attack: 0.003, dur: 0.14 });   // rơi xuống sàn
+    this.playCaseHit(out, tf + 0.43, 'debrisMetalHull', 0.7, own ? 0.3 : 0.2);
+    if (own) {
+      // bộ đàm trong mũ: rè sóng + 2 tiếng bíp trầm báo thương vong
+      const rv = this.voice({ bus: this.uiBus || this.weaponBus, gain: 0.45, wet: 0.02 });
+      const tr = t + 0.55;
+      this.burst(rv, tr, { buffer: this.crackleBuffer || this.pinkNoiseBuffer, filter: 'bandpass', freq: 1800, Q: 0.8, gain: 0.12, attack: 0.005, dur: 0.18 });
+      this.tone(rv, tr + 0.2, { type: 'square', freq: 520, gain: 0.025, attack: 0.004, dur: 0.12, filter: 'lowpass', filterFreq: 1800 });
+      this.tone(rv, tr + 0.42, { type: 'square', freq: 390, gain: 0.025, attack: 0.004, dur: 0.18, filter: 'lowpass', filterFreq: 1800 });
+      if (this.duck) this.duck(0.7, 0.5);
+    }
+  }
+
+  /**
+   * CƠ CẤU SÚNG MÁY ĐẬP THÉP (nắp sập, khối khóa nòng đập chốt): khối thép dày ăn khớp với thân hộp khóa nòng — tiếng
+   * đặc, ngắn, dày ở dải trung cao, gần như không ngân (mặt tiếp xúc ép chặt hãm rung ngay). Trước đây có lớp modal ngân
+   * 0,2-0,3 s -> nghe như nắp nồi / chuông "keng". Lớp: xung đanh | "chát" 2-4 kHz | "cạch" thân ~1 kHz | thụp trầm | ngân
+   * cực ngắn của hộp khóa nòng (50-90 ms). o: { gain, mass (0..1: nặng -> trầm, thụp to), bright (0..1: đanh) }
+   */
+  gunMech(H, t, { gain = 1, mass = 0.5, bright = 0.6, p = 1 } = {}) {
+    const R = Math.random;
+    this.snap(H, t, 0.3 * gain * (0.6 + bright), 6000 + 3000 * bright, 1.8);
+    this.burst(H, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: (2600 + 1200 * bright) * p, Q: 1.1, gain: 0.5 * gain * (0.5 + bright), attack: 0.0002, dur: 0.014 });
+    this.burst(H, t + 0.001, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: (950 + R() * 250) * p, Q: 2.2, drive: 1.4, gain: 0.55 * gain, attack: 0.0004, dur: 0.028 });
+    this.burst(H, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: (170 + 140 * (1 - mass)) * p, drive: 1.8, gain: (0.35 + 0.55 * mass) * gain, attack: 0.0008, dur: 0.05 + 0.03 * mass });
+    this.modal(H, t, { f0: (1250 + R() * 200 - 350 * mass) * p, ratios: [1, 2.31, 3.86, 5.62], T: 0.05 + 0.04 * mass, gain: 0.07 * gain, hard: 1, tilt: 0.8, fall: 0.6 });
+  }
+
+  /**
+   * MA SÁT THÉP TRƯỢT TRÊN THÉP (khối khóa nòng / tay kéo chạy trong rãnh): chuỗi hạt cọ vụn rời rạc, mật độ & cao độ theo
+   * tốc độ trượt, nền nhám dải trung thấp — nghe "rrrạch" nhám như cơ khí thật, không phải tiếng "vút" quét nhiễu mượt.
+   * d: thời gian trượt; speed: 'up' (tăng tốc: kéo tay) | 'fast' (lò xo phóng về); n: số hạt
+   */
+  gunRasp(H, t, d, { gain = 1, speed = 'up', n = 0, p = 1 } = {}) {
+    const R = Math.random, N = n || Math.max(6, Math.round(d * (speed === 'fast' ? 260 : 120)));
+    for (let i = 0; i < N; i++) {
+      const u = speed === 'up' ? Math.sqrt((i + R() * 0.8) / N) : (i + R() * 0.8) / N;   // kéo: hạt dày dần
+      const tt = t + u * d, k = speed === 'up' ? 0.5 + 0.5 * u : 1;
+      this.burst(H, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: (2200 + R() * 3600) * p * (0.85 + 0.3 * k), Q: 3 + R() * 3, gain: (0.05 + R() * 0.07) * gain * k, attack: 0.0003, dur: 0.003 + R() * 0.006 });
+    }
+    // nền nhám: thân hộp khóa nòng cộng hưởng theo ma sát
+    this.burst(H, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 700 * p, freqEnd: (speed === 'up' ? 1100 : 900) * p, sweep: d, Q: 1.6, gain: 0.05 * gain, attack: d * 0.3, dur: d });
+  }
+
+  /**
+   * GIỌNG NGƯỜI tổng hợp formant: nguồn rung thanh quản (răng cưa, run giọng chậm + rung nhanh, rè dưới bội khi gào) trộn
+   * hơi thở (nhiễu hồng), lọc qua 3 cộng hưởng khoang miệng F1-F3 theo nguyên âm, đi theo đường cao độ / nguyên âm / âm
+   * lượng. Không dùng sóng quét đơn (nghe như còi). Giọng nam trưởng thành.
+   * o: { dur, f0: [[tỉ lệ 0..1, Hz], ...], vowel: [[tỉ lệ, F1, F2, F3], ...], amp: [[tỉ lệ, mức], ...], breath, rough, gain }
+   */
+  vox(dest, t, o) {
+    const ctx = this.ctx, D = o.dur, R = Math.random, end = t + D + 0.05;
+    const at = (list, i) => list.forEach(([k, ...v], j) => { if (j) i(t + k * D, v); });
+    const src = ctx.createOscillator(); src.type = 'sawtooth';
+    src.frequency.setValueAtTime(o.f0[0][1], t);
+    at(o.f0, (tt, [hz]) => src.frequency.linearRampToValueAtTime(hz, tt));
+    // run giọng (vibrato chậm 5-7 Hz) + rung nhanh không đều (đau / gắng sức)
+    const lfo = (type, f, depth) => { const l = ctx.createOscillator(); l.type = type; l.frequency.value = f; const g = ctx.createGain(); g.gain.value = depth; l.connect(g); g.connect(src.frequency); l.start(t); l.stop(end); };
+    lfo('sine', 5 + R() * 2, o.f0[0][1] * 0.03);
+    lfo('triangle', 13 + R() * 11, o.f0[0][1] * (0.012 + 0.04 * (o.rough || 0)));
+    const mix = ctx.createGain();
+    const sg = ctx.createGain(); sg.gain.value = 1;
+    src.connect(sg); sg.connect(mix);
+    if (o.rough) {
+      // rè thanh quản khi gào: dưới bội (nửa tần số) + méo nhẹ
+      const sub = ctx.createOscillator(); sub.type = 'sawtooth';
+      sub.frequency.setValueAtTime(o.f0[0][1] / 2, t);
+      at(o.f0, (tt, [hz]) => sub.frequency.linearRampToValueAtTime(hz / 2, tt));
+      const sgg = ctx.createGain(); sgg.gain.value = 0.35 * o.rough;
+      const ws = ctx.createWaveShaper(); ws.curve = this.getShaper(1.5 + o.rough);
+      sub.connect(sgg); sgg.connect(ws); ws.connect(mix);
+      sub.start(t); sub.stop(end);
+    }
+    const nz = ctx.createBufferSource(); nz.buffer = this.pinkNoiseBuffer; nz.loop = true;
+    const ng = ctx.createGain(); ng.gain.value = (o.breath || 0.2) * 2.2;
+    nz.connect(ng); ng.connect(mix);
+    // độ dốc phổ giọng: bớt chói răng cưa
+    const tilt = ctx.createBiquadFilter(); tilt.type = 'lowpass'; tilt.frequency.value = 3800; tilt.Q.value = 0.5;
+    mix.connect(tilt);
+    const env = ctx.createGain(); env.gain.value = 0;
+    [[1, 1.0, 70], [2, 0.5, 100], [3, 0.22, 150]].forEach(([fi, amp, bw]) => {
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(o.vowel[0][fi], t);
+      at(o.vowel, (tt, v) => bp.frequency.linearRampToValueAtTime(v[fi - 1], tt));
+      bp.Q.value = o.vowel[0][fi] / bw;
+      const g = ctx.createGain(); g.gain.value = amp * 3.2;
+      tilt.connect(bp); bp.connect(g); g.connect(env);
+    });
+    const G = o.gain || 1;
+    env.gain.setValueAtTime(0.0001, t);
+    o.amp.forEach(([k, a]) => env.gain.linearRampToValueAtTime(Math.max(0.0001, a * G), t + k * D));
+    env.connect(dest);
+    src.start(t); src.stop(end); nz.start(t, R() * 2); nz.stop(end);
+  }
+
+  playScoutReload(step, kind = 'hmg', dur = 0.3) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime;
+    // ngoài trời, cách cabin một lớp nóc mở: ít ù khoang, có chút vang không gian
+    const out = this.voice({ bus: this.weaponBus, gain: 0.5, wet: 0.1 });
+    const R = Math.random;
+    const p = kind === 'agl' ? 0.78 : 1;      // độ cao tiếng theo cỡ súng
+    // chốt / lẫy thép nhỏ: "tách" khô
+    const click = (tt, f, g) => {
+      this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f * 2.2, Q: 1.4, gain: g * 0.9, attack: 0.0004, dur: 0.018 });
+      this.metal(out, tt, { f0: f, ratios: [1, 2.3, 4.1], decay: 0.06, gain: g * 0.35, click: 0.6 });
+    };
+    // thép đập thép (nắp sập, khối khóa nòng bật về): "cạch" đanh, có tí ngân của thân súng
+    const snapSteel = (tt, rate, g) => {
+      this.playCaseHit(out, tt, 'debrisMetal', rate * p, g);
+      this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2600 * p, Q: 1, gain: g * 0.5, attack: 0.0003, dur: 0.02 });
+    };
+    // hộp đạn thép (vỏ mỏng, rỗng ruột khi hết đạn -> "boong"; đầy đạn -> đục hơn)
+    const can = (tt, rate, g, hull = false, lp = 0) => this.playCaseHit(out, tt, hull ? 'debrisCanHull' : 'debrisCan', rate * p, g, lp);
+    // mắt xích dây đạn lách cách
+    const links = (tt, n, span, g) => {
+      for (let i = 0; i < n; i++) this.playCaseHit(out, tt + (i + R() * 0.6) * span / n, 'debrisLink', (1.5 + R() * 0.6) * p, g * (0.6 + R() * 0.5), 9000);
+    };
+    // kim loại trượt trên kim loại
+    const scrape = (tt, f0, f1, d, g) => this.burst(out, tt, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: f0 * p, freqEnd: f1 * p, sweep: d, Q: 2.2, gain: g, attack: d * 0.25, dur: d });
+    const D = Math.max(0.05, dur);
+    switch (step) {
+      case 'coverOpen':
+        click(t, 2100, 0.35);                         // ấn lẫy nắp
+        scrape(t + 0.02, 1300, 900, 0.1, 0.05);       // bản lề
+        snapSteel(t + Math.min(0.2, D * 0.7), 1.3, 0.12);   // nắp dựng hết cỡ, chạm chốt chặn
+        break;
+      case 'boxOut':
+        click(t, 1700, 0.3);                          // nhả kẹp hộp khỏi khay
+        scrape(t + 0.05, 800, 550, Math.min(0.35, D), 0.06);
+        can(t + 0.06, 1.25, 0.06);
+        links(t + 0.1, 3, 0.25, 0.05);                // đuôi dây rỗng lủng lẳng
+        break;
+      case 'boxDrop':
+        // hộp rỗng thả rơi xuống sàn lòng xe: "boong" rỗng, nghe vọng lên từ khoang qua lỗ nóc
+        can(t + 0.16, 1.0, 0.45, true, 5200);
+        can(t + 0.34 + R() * 0.04, 1.08, 0.12, true, 4200);
+        break;
+      case 'boxGrab':
+        click(t, 1300, 0.18);                         // quai hộp bật lên
+        can(t + 0.08, 0.8, 0.1, false, 5000);         // hộp đầy kéo lê trên sàn
+        links(t + 0.12, 3, 0.2, 0.035);               // đạn trong hộp xô nhau
+        break;
+      case 'boxSeat':
+        can(t, 0.82, 0.32);                           // đặt hộp đầy lên khay
+        links(t + 0.02, 2, 0.06, 0.04);
+        click(t + Math.min(0.14, D * 0.6), 1800, 0.35);   // kẹp hộp khóa vào khay
+        break;
+      case 'lidOpen':
+        click(t, 2000, 0.3);                          // lẫy nắp hộp
+        this.burst(out, t + 0.03, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, gain: 0.25, attack: 0.002, dur: 0.05 });   // gioăng cao su bật "bụp"
+        this.playCaseHit(out, t + 0.12, 'debrisMetal', 1.6 * p, 0.05);   // nắp lật ngửa chạm thành hộp
+        break;
+      case 'belt': {
+        // bốc đầu dây, kéo dây qua miệng hộp đặt vào khay nạp: mắt xích lách cách dày rồi thưa
+        const d = Math.min(0.6, D);
+        links(t, 11, d, 0.06);
+        scrape(t + 0.02, 1500, 2200, d * 0.9, 0.035);
+        click(t + d, 2400, 0.2);                      // viên đầu tì vào lẫy giữ đạn
+        break;
+      }
+      // ---- 3 tiếng "đinh" của lượt thay đạn: cơ cấu thép dày đập nhau (gunMech — đặc, ngắn, không ngân như nồi), ma sát
+      //      trượt nhám (gunRasp), lẫy / lò xo ăn khớp tích-tách. Kênh to hơn, vang nhẹ hơn các tiếng lặt vặt khác
+      case 'coverClose': {
+        const H = this.voice({ bus: this.weaponBus, gain: 0.8, wet: 0.12 });
+        const ti = t + 0.06;
+        // tay ấn nắp xuống: bản lề cọ khô ngắn (nắp M2 nặng ~1 kg, đóng bằng cú ấn dứt khoát)
+        this.gunRasp(H, t, 0.05, { gain: 0.5, speed: 'fast', n: 6, p });
+        // SẬP: nắp thép đập lên mép hộp khóa nòng — "CẠCH" đặc, thụp vừa
+        this.gunMech(H, ti, { gain: 0.85, mass: 0.35, bright: 0.7, p });
+        // lẫy khóa nắp trượt vào khấc lò xo: "tách" kép ngay sau cú sập
+        click(ti + 0.016, 2400, 0.3);
+        click(ti + 0.03, 1800, 0.18);
+        links(ti + 0.008, 2, 0.05, 0.03);             // dây đạn dưới nắp bị ép lách cách
+        break;
+      }
+      case 'pull': {
+        // KÉO KHÓA NÒNG: găng tay chộp tay kéo -> giật lùi: khối khóa nòng ~10 kg trượt trong rãnh, ma sát nhám dày dần theo
+        // tốc độ (lò xo đẩy về bị nén cứng dần) -> cuối hành trình khối khóa nòng chạm đệm đuôi "thục" đục (có đệm giảm chấn,
+        // không đanh như lúc phóng về)
+        const H = this.voice({ bus: this.weaponBus, gain: 0.75, wet: 0.1 });
+        const d = Math.max(0.08, Math.min(0.35, D));
+        this.burst(H, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 900, gain: 0.12, attack: 0.001, dur: 0.03 });   // tay chộp tay kéo
+        click(t + 0.004, 1500, 0.16);
+        this.gunRasp(H, t + 0.012, d, { gain: 1, speed: 'up', p });
+        // cuối hành trình: chạm đệm đuôi — đục, nặng, ít chói
+        this.gunMech(H, t + d + 0.012, { gain: 0.55, mass: 0.8, bright: 0.25, p });
+        if (kind !== 'agl') links(t + d * 0.7, 1, 0.01, 0.06);   // viên đầu bị rút khỏi dây
+        break;
+      }
+      case 'release':
+      case 'chamber': {
+        // BUÔNG: lò xo phóng khối khóa nòng về trước (~0,03 s rít nhám rất nhanh) đập khóa "CHÁT" — cú to nhất của lượt thay
+        // đạn, cả giá súng rung theo; lần 2 (chamber) khối khóa nòng đẩy viên đạn đồng vào buồng ngay trước cú đập, đập chắc
+        // hơn, rồi lẫy khóa nòng ăn khớp — tiếng "đã tai" báo súng sẵn sàng
+        const ch = step === 'chamber';
+        const H = this.voice({ bus: this.weaponBus, gain: ch ? 0.95 : 0.85, wet: 0.14 });
+        this.gunRasp(H, t, 0.026, { gain: 0.7, speed: 'fast', p });
+        const ti = t + 0.028;
+        if (ch) this.playCaseHit(H, ti - 0.01, 'debrisLink', 2.4 * p, 0.1, 9000);   // đầu đạn đồng trượt vào buồng
+        this.gunMech(H, ti, { gain: ch ? 1.15 : 1, mass: 0.75, bright: 0.9, p });
+        this.playCaseHit(H, ti, 'debrisMetalHull', 0.95 * p, ch ? 0.22 : 0.16);   // giá súng / vòng súng rung theo
+        click(ti + 0.007, 1300, 0.22);                 // tay kéo đập đầu rãnh phía trước
+        if (ch) {
+          click(ti + 0.022, 2100, 0.3);                // lẫy khóa nòng ăn khớp
+          if (this.duck) this.duck(0.82, 0.18);        // khoảnh khắc "súng sẵn sàng" nổi lên trên các tiếng khác
+        }
+        break;
+      }
+      // giàn rocket: mỗi quả cúi xuống lòng xe nhấc lên -> bê ra đuôi ống -> đẩy vào ống, chốt hãm ăn khớp
+      case 'rLift':
+        can(t, 1.35, 0.08, true, 4500);               // ống quả rocket cạ vào mép lỗ nóc
+        scrape(t + 0.05, 600, 400, 0.25, 0.04);
+        break;
+      case 'rPush':
+        can(t, 1.2, 0.07);                            // đuôi quả chạm miệng ống
+        scrape(t + 0.03, 450, 900, Math.min(0.6, D), 0.08);   // quả trượt dọc ống
+        break;
+      case 'rSeat':
+        this.playCaseHit(out, t, 'debrisMetal', 0.85, 0.18);   // quả chạm đáy ống
+        click(t + 0.06, 1900, 0.3);                   // chốt hãm giữ quả bật lên
+        click(t + 0.15, 3200, 0.12);                  // giắc điện đánh lửa cắm vào
+        break;
     }
   }
 

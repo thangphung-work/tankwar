@@ -2243,10 +2243,14 @@ const Landmarks = (() => {
 
   // Máu công trình & sức phá theo loại đạn: p = sát thương tại điểm nổ, r = bán kính tác động (đv). Lựu pháo x2 sức phá
   const LM_HP = 24;
+  // Máu theo loại công trình (nhân LM_HP): hầm phóng hạt nhân / hầm sinh học bê tông chìm dưới đất bền nhất; trung tâm năng
+  // lượng nhà xưởng lớn; đài radar & căn cứ phòng không chủ yếu là khí tài lộ thiên (chảo radar, bệ phóng, xe) — yếu hơn hẳn.
+  // soft: khí tài lộ thiên — đạn súng 30 mm / 12.7 băm được (x3 sức phá); loại còn lại đạn súng chỉ rỗ mặt (tối đa 15% máu)
+  const LM_KIND = { nuke: { hp: 1.6 }, bio: { hp: 1.3 }, power: { hp: 1.2 }, radar: { hp: 0.65, soft: true }, sam: { hp: 0.6, soft: true } };
   const LM_POW = {
     HE: { p: 1.7, r: 30 }, NORMAL: { p: 1.1, r: 22 }, CLUSTER: { p: 0.6, r: 20 }, CLUSTER_SUBMUNITION: { p: 0.45, r: 10 },
-    AP: { p: 0.35, r: 6 }, RPG: { p: 0.6, r: 12 }, ANTI_TANK_MISSILE: { p: 1.0, r: 16 },
-    GATLING_BULLET: { p: 0.012, r: 3 }, INCENDIARY: { p: 0.01, r: 3 }, SCOUT_BULLET: { p: 0.003, r: 2 }
+    AP: { p: 0.35, r: 6 }, RPG: { p: 0.6, r: 12 }, ANTI_TANK_MISSILE: { p: 1.2, r: 16 },
+    GATLING_BULLET: { p: 0.012, r: 3 }, INCENDIARY: { p: 0.011, r: 3 }, INCENDIARY_HMG: { p: 0.003, r: 2 }, SCOUT_BULLET: { p: 0.003, r: 2 }
   };
 
   class LandmarkSet {
@@ -2312,7 +2316,7 @@ const Landmarks = (() => {
           grp.add(rot);
           anim.radars.push(rot);
         }
-        const hp0 = L.kind === 'nuke' ? LM_HP * 1.6 : LM_HP;
+        const hp0 = LM_HP * ((LM_KIND[L.kind] || {}).hp || 1);
         const it = { L, anim, grp, kind: L.kind, name: NAMES[L.kind] || (KINDS[L.kind] && KINDS[L.kind].name) || L.kind, x: L.x, z: L.z, G: L.G, boxes: K.solids, top: L.G + K.top, reach: Math.hypot(L.hu, L.hv) + 30,
           hp: hp0, hp0, dead: false };
         this.items.push(it);
@@ -2325,6 +2329,7 @@ const Landmarks = (() => {
     // Hướng a (cục bộ f/r) là hướng mũi xe; mẫu xe có mũi hướng -Z
     placeVehicle(grp, K, v) {
       K.solid(v.f, v.r, v.hf, v.hr, 0, 34, v.a);
+      K.solids[K.solids.length - 1].veh = true;   // xe đỗ: lúc căn cứ sập chỉ cháy đen, không sụp như nhà (collapsePlan)
       if (typeof TankModelBuilder === 'undefined') return;
       const u = { tankType: v.type, team: 'BLUE', scene: grp, id: 'lm_' + v.type + '_' + Math.round(v.f) + '_' + Math.round(v.r) };
       try { TankModelBuilder.buildModel(u); } catch (e) { return; }
@@ -2487,20 +2492,29 @@ const Landmarks = (() => {
 
     // ĐẠN NỔ TRÚNG / SÁT CÔNG TRÌNH: trừ máu theo sức nổ & khoảng cách tới khối đặc gần nhất
     damageAt(x, y, z, ammo, heavy, fx) {
-      const P = LM_POW[ammo] || LM_POW.NORMAL, pw = P.p * (heavy ? 2 : 1), R = P.r * (heavy ? 1.7 : 1);
+      // lựu pháo 155: sức phá x2,1, tầm x1,45 (luật tỉ lệ nổ, cùng hệ số với Destructibles HEAVY_K)
+      const P = LM_POW[ammo] || LM_POW.NORMAL, pw = P.p * (heavy ? 2.1 : 1), R = P.r * (heavy ? 1.45 : 1);
       if (pw <= 0) return [];
       const ev = [];
+      const small = P.p < 0.05;
       for (const it of this.items) {
         if (it.dead || Math.abs(x - it.x) > it.reach + R || Math.abs(z - it.z) > it.reach + R) continue;
-        let d = Infinity;
+        // sức phá lấy theo khối gần nhất có "giá trị": tường rào / lan can mỏng thấp chỉ tính 20% (trước đây bắn sập hàng rào
+        // bao quanh cũng trừ máu cả căn cứ như trúng nhà chính)
+        let f = 0;
         for (const q of it.boxes) {
           const dx = x - q.cx, dz = z - q.cz, u = Math.abs(dx * q.ux + dz * q.uz) - q.hu, v = Math.abs(-dx * q.uz + dz * q.ux) - q.hv;
           const dy = y < q.y0 ? q.y0 - y : y > q.y1 ? y - q.y1 : 0;
-          d = Math.min(d, Math.hypot(Math.max(0, u), Math.max(0, v), dy));
+          const d = Math.hypot(Math.max(0, u), Math.max(0, v), dy);
+          if (d > R) continue;
+          const w = Math.min(q.hu, q.hv) <= 3 || q.y1 - q.y0 <= 6 ? 0.2 : 1;
+          f = Math.max(f, w * Math.pow(1 - d / R, 1.2));
         }
-        if (d > R) continue;
+        if (f <= 0) continue;
+        const KD = LM_KIND[it.kind] || {};
         const prev = it.hp / it.hp0;
-        it.hp -= pw * Math.pow(1 - d / R, 1.2);
+        it.hp -= pw * f * (small && KD.soft ? 3 : 1);
+        if (small && !KD.soft) it.hp = Math.max(it.hp, Math.min(prev * it.hp0, it.hp0 * 0.85));
         const k = Math.max(0, it.hp / it.hp0);
         const G = typeof window !== 'undefined' && window.game;
         if (k <= 0) { this.destroy(it, fx); ev.push({ type: 'landmark', name: it.name }); }
@@ -2515,7 +2529,8 @@ const Landmarks = (() => {
       if (it.dead) return;
       it.dead = true; it.hp = 0;
       it.collapse = 0;
-      for (const q of it.boxes) q.y1 = q.y0 + (q.y1 - q.y0) * 0.35;   // khối va chạm còn đống đổ nát thấp
+      for (const q of it.boxes) { if (q.y1o === undefined) q.y1o = q.y1; q.y1 = q.y0 + (q.y1o - q.y0) * 0.35; }   // khối va chạm còn đống đổ nát thấp
+      this.collapsePlan(it);
       it.top = it.G + (it.top - it.G) * 0.35;
       // cháy đen: bản sao vật liệu (không ảnh hưởng công trình khác dùng chung vật liệu)
       const done = new Map();
@@ -2531,7 +2546,7 @@ const Landmarks = (() => {
         }
         o.material = m;
       });
-      if (quiet) { it.collapse = 1; it.grp.scale.y = 0.35; it.grp.position.y = it.G - 2; return; }
+      if (quiet) { it.collapse = 1; this.collapseStep(it, 1); return; }
       if (fx && fx.spawn) {
         it.boxes.slice(0, 7).forEach((q, n) => {
           setTimeout(() => { try { fx.spawn(q.cx, q.y1 + 4, q.cz, 'HE', 'DIRECT_HIT', { heavy: n % 2 === 0 }); } catch (e) { /* hiệu ứng phụ */ } }, n * 180);
@@ -2540,6 +2555,82 @@ const Landmarks = (() => {
       const G = typeof window !== 'undefined' && window.game, SE = typeof window !== 'undefined' && window.soundEngine;
       if (SE && SE.playExplosionAtDistance && G && G.player) SE.playExplosionAtDistance(Math.hypot(G.player.x - it.x, G.player.z - it.z), 'BUILDING', 'HE', { x: it.x, z: it.z }, { heavy: true });
       if (G && G.addCombatLog) G.addCombatLog('[[building]] ' + it.name + ' ĐÃ BỊ PHÁ HỦY — sụp đổ, bốc cháy', 'alert');
+    }
+
+    /**
+     * Kế hoạch sập theo từng khối đặc (it.boxes) — lưới công trình đã gộp theo vật liệu cho cả khu nên không xoay được từng
+     * nhà; thay vào đó dời từng đỉnh theo khối chứa nó (tính một lần lúc sập, nội suy trong collapseStep):
+     *  - khối thấp & rộng (nhà xưởng, nhà điều hành, hầm, bồn): các tầng sụp chồng xuống còn ~30-40% chiều cao, phần trên
+     *    xô lệch toả ra ngoài, gợn lồi lõm như đống bê tông gãy, cả khối nghiêng nhẹ về một phía
+     *  - khối mảnh cao (tháp, ống khói, cột ăng-ten, giàn radar): gãy ngang thân ở ~30-50% chiều cao, phần trên gục đổ
+     *    nghiêng 30-60° về một phía, chân còn đứng hơi xiêu
+     * Trước đây cả khu bị ép dẹt theo chiều đứng (scale.y 0.35) — trông như bọt biển bị nén. Đỉnh ngoài mọi khối (sân bê tông,
+     * chi tiết mặt đất) giữ nguyên. Chỉ là hình (không ảnh hưởng va chạm / đồng bộ)
+     */
+    collapsePlan(it) {
+      const B = it.boxes.map((q, n) => {
+        const H = Math.max(1, q.y1o - q.y0), W = Math.max(q.hu, q.hv) * 2;
+        const h = hash(n * 31 + Math.round(it.x)), a = hash(n * 17 + Math.round(it.z) + 5) * TAU;
+        return { q, H, vol: q.hu * q.hv * H, slender: H > W * 1.6 && H > 30, brk: q.y0 + H * (0.3 + 0.2 * h), ang: 0.55 + 0.5 * hash(n * 7 + 3),
+          dx: Math.cos(a), dz: Math.sin(a), lean: 0.03 + 0.07 * h, keep: 0.3 + 0.1 * hash(n + 11) };
+      });
+      const V = new THREE.Vector3(), inv = new THREE.Matrix4(), plan = [];
+      it.grp.updateMatrixWorld(true);
+      it.grp.traverse(o => {
+        if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position) return;
+        const pa = o.geometry.attributes.position, n = pa.count, orig = new Float32Array(pa.array.length), tgt = new Float32Array(pa.array.length);
+        orig.set(pa.array); tgt.set(pa.array);
+        inv.copy(o.matrixWorld).invert();
+        let moved = false;
+        for (let i = 0; i < n; i++) {
+          V.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld);
+          // khối đặc nhỏ nhất chứa đỉnh (khối lồng nhau: lấy khối sát nhất)
+          let b = null;
+          for (const c of B) {
+            const q = c.q, dx = V.x - q.cx, dz = V.z - q.cz;
+            if (V.y < q.y0 - 0.5 || V.y > q.y1o + 0.8) continue;
+            if (Math.abs(dx * q.ux + dz * q.uz) > q.hu + 0.8 || Math.abs(-dx * q.uz + dz * q.ux) > q.hv + 0.8) continue;
+            if (!b || c.vol < b.vol) b = c;
+          }
+          if (!b || b.q.veh) continue;
+          const q = b.q;
+          let x = V.x, y = V.y, z = V.z;
+          if (b.slender) {
+            if (y > b.brk) {
+              // phần trên gục quanh chỗ gãy: quay quanh trục nằm ngang vuông góc hướng đổ
+              const al = (x - q.cx) * b.dx + (z - q.cz) * b.dz, up = y - b.brk, c = Math.cos(b.ang), sn = Math.sin(b.ang);
+              const al2 = al * c + up * sn, up2 = -al * sn + up * c;
+              x += b.dx * (al2 - al); z += b.dz * (al2 - al); y = b.brk + up2 - b.H * 0.04;
+            } else {
+              const t = (y - q.y0) * b.lean * 0.5;
+              x += b.dx * t; z += b.dz * t;
+            }
+          } else {
+            const t = (y - q.y0) / b.H;
+            const ny = q.y0 + (y - q.y0) * b.keep + Math.sin(x * 0.21 + z * 0.17) * Math.cos(x * 0.13 - z * 0.19) * b.H * 0.05 * t;
+            const spread = 0.1 * t;
+            x += (x - q.cx) * spread + b.dx * (ny - q.y0) * b.lean;
+            z += (z - q.cz) * spread + b.dz * (ny - q.y0) * b.lean;
+            y = ny;
+          }
+          V.set(x, y, z).applyMatrix4(inv);
+          tgt[i * 3] = V.x; tgt[i * 3 + 1] = V.y; tgt[i * 3 + 2] = V.z;
+          moved = true;
+        }
+        // hình có thể dùng chung với nơi khác (xe đỗ dựng từ TankModelBuilder dùng chung lưới với xe trong trận): tách bản riêng
+        if (moved) { o.geometry = o.geometry.clone(); plan.push({ o, orig, tgt }); }
+      });
+      it.plan = plan;
+    }
+    collapseStep(it, e) {
+      if (!it.plan) return;
+      for (const P of it.plan) {
+        const pa = P.o.geometry.attributes.position, a = pa.array;
+        for (let i = 0; i < a.length; i++) a[i] = P.orig[i] + (P.tgt[i] - P.orig[i]) * e;
+        pa.needsUpdate = true;
+        if (e >= 1) { P.o.geometry.computeVertexNormals(); P.o.geometry.computeBoundingSphere(); }
+      }
+      if (e >= 1) it.plan = null;   // xong: bỏ bản sao toạ độ
     }
 
     // đồng bộ mạng (terrain.envStateString): máu từng công trình (phần trăm, 0 = đã sập)
@@ -2561,10 +2652,8 @@ const Landmarks = (() => {
         // hư nặng / đã sập: khói đen bốc từ đỉnh, đã sập thì cháy âm ỉ; công trình đổ sụp dần trong ~2,5 s
         const hk = it.hp / it.hp0;
         if (it.dead && it.collapse < 1) {
-          it.collapse = Math.min(1, it.collapse + dt / 2.5);
-          const e = it.collapse * it.collapse;
-          it.grp.scale.y = 1 - 0.65 * e;
-          it.grp.position.y = it.G - 2 * e;
+          it.collapse = Math.min(1, it.collapse + dt / 2.8);
+          this.collapseStep(it, it.collapse * it.collapse);   // tăng tốc dần như vật rơi
         }
         if ((it.dead || hk < 0.5) && fx && fx.smoke && !(cam && Math.hypot(cam.x - it.x, cam.z - it.z) > 2600)) {
           it.smokeAcc = (it.smokeAcc || 0) + dt;

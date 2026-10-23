@@ -1,7 +1,7 @@
 /**
  * PHÒNG THỬ NGHIỆM BẢN ĐỒ CỨ ĐIỂM (mở bằng stronghold_lab.html -> index.html?lab=stronghold)
  *
- * - Bản đồ bố cục "3 cứ điểm trên 3 đồi" (A, B, C hình tam giác), không vòng bo, không giới hạn thời gian
+ * - Bản đồ bố cục "3 cứ điểm trên 3 đồi" (A, B, C hình tam giác), không giới hạn thời gian
  * - Xe người chơi thả ngay ngoài miệng cứ điểm A; đổi loại xe tại chỗ; dịch chuyển tới miệng / trong khoang A, B, C
  * - 4 xe mục tiêu đứng sẵn trong khoang B và C (đứng yên, tùy chọn bắn trả) để thử góc bắn & vùng bảo vệ
  * - Hiện vùng bảo vệ (hộp xanh) + quạt góc bắn của nòng pháo xe đang lái ở từng chỗ đứng trong khoang
@@ -74,9 +74,6 @@
     const K = id => set.items.find(k => k.id === id);
     // Luật trận thường không áp dụng trong phòng thử
     g.matchDuration = 1e9;
-    lab.zoneUpdate = g.zone.update.bind(g.zone);
-    lab.zone = false;
-    g.zone.update = function (dt, units, ox, oz) { if (lab.zone) lab.zoneUpdate(dt, units, ox, oz); };
     g.airdropTimer = 1e9;
     if (g.supplyManager) g.supplyManager.airdropTimer = 1e9;
     g.respawnWaitPenalty = 3;
@@ -153,7 +150,9 @@
 
   function preparePlayer(u) {
     u._labAmmo = {};
-    for (const k of Object.keys(u)) if (/AmmoCount$|^gatlingMag$/.test(k) && typeof u[k] === 'number') u._labAmmo[k] = u[k];
+    u._labAmmoWait = {};
+    // hộp đạn súng máy / gatling tự thay theo cơ chế riêng của xe, chỉ giữ mốc đầy cho các kho đạn
+    for (const k of Object.keys(u)) if (/AmmoCount$/.test(k) && typeof u[k] === 'number') u._labAmmo[k] = u[k];
     const td = u.takeDamage.bind(u);
     u.takeDamage = function (amount, attacker, source) {
       if (lab.god) return { blocked: false, killed: false, prevHp: this.hp, currentHp: this.hp };
@@ -318,12 +317,21 @@
   // ---------------------------------------------------------------------------
   // MỖI KHUNG HÌNH
   // ---------------------------------------------------------------------------
-  let uiT = 0, ammoT = 0;
+  let uiT = 0;
+  // Đạn trừ bình thường; loại nào bắn hết thì sau AMMO_REFILL_S giây kho tự nạp đầy lại
+  const AMMO_REFILL_S = 4;
   function tick(dt) {
     const g = lab.g, p = g.player;
-    // Nạp đầy đạn liên tục
-    ammoT += dt;
-    if (ammoT > 1 && p && p._labAmmo) { ammoT = 0; for (const k in p._labAmmo) if (p[k] < p._labAmmo[k]) p[k] = p._labAmmo[k]; }
+    if (p && !p.isDead && p._labAmmo) {
+      let changed = false;
+      for (const k in p._labAmmo) {
+        if (!(p._labAmmo[k] > 0) || p[k] > 0) { p._labAmmoWait[k] = 0; continue; }   // loại xe không mang: bỏ qua
+        if (!p._labAmmoWait[k]) addLog(`[[hourglass]] Hết đạn — tự nạp lại sau ${AMMO_REFILL_S} s`, 'info');
+        p._labAmmoWait[k] = (p._labAmmoWait[k] || 0) + dt;
+        if (p._labAmmoWait[k] >= AMMO_REFILL_S) { p[k] = p._labAmmo[k]; p._labAmmoWait[k] = 0; changed = true; }
+      }
+      if (changed) { try { g.updateAmmoUI(); } catch (e) { /* bỏ qua */ } }
+    }
     // Mục tiêu bắn trả
     for (const d of lab.dummies) {
       if (d.isDead) continue;
@@ -506,6 +514,7 @@
           <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
           <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
           <a class="on" href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+          <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
         </nav>
       </div>
       <div class="shl-scroll">
@@ -520,7 +529,7 @@
       <div class="lbl">Tùy chọn</div>
       <div class="row">
         <button id="shl-fire">Mục tiêu bắn trả</button><button id="shl-god">Bất tử</button>
-        <button id="shl-ov">Vùng bảo vệ & góc bắn</button><button id="shl-reveal">Luôn hiện mục tiêu</button><button id="shl-zone">Bo thu hẹp</button><button id="shl-revive">Hồi sinh mục tiêu</button>
+        <button id="shl-ov">Vùng bảo vệ & góc bắn</button><button id="shl-reveal">Luôn hiện mục tiêu</button><button id="shl-revive">Hồi sinh mục tiêu</button>
       </div>
       <h3><span class="n">02</span> THỬ HIỆU ỨNG</h3>
       <div class="lbl">Mục tiêu</div>
@@ -554,7 +563,6 @@
     root.querySelector('#shl-fire').onclick = () => { lab.fireBack = !lab.fireBack; renderUI(); addLog(lab.fireBack ? 'Mục tiêu bắt đầu bắn trả xe bạn' : 'Mục tiêu ngừng bắn', 'info'); };
     root.querySelector('#shl-god').onclick = () => { lab.god = !lab.god; renderUI(); };
     root.querySelector('#shl-reveal').onclick = () => { lab.reveal = !lab.reveal; renderUI(); };
-    root.querySelector('#shl-zone').onclick = () => { lab.zone = !lab.zone; renderUI(); addLog(lab.zone ? 'Bật bo: vòng an toàn co dần về quanh 3 cứ điểm (pha chờ 80 s)' : 'Tắt bo', 'info'); };
     root.querySelector('#shl-ov').onclick = () => { lab.overlay = !lab.overlay; rebuildOverlay(); renderUI(); };
     root.querySelector('#shl-revive').onclick = () => {
       for (const d of lab.dummies) revive(d);
@@ -596,7 +604,6 @@
     root.querySelector('#shl-god').classList.toggle('on', lab.god);
     root.querySelector('#shl-ov').classList.toggle('on', lab.overlay);
     root.querySelector('#shl-reveal').classList.toggle('on', lab.reveal);
-    root.querySelector('#shl-zone').classList.toggle('on', lab.zone);
     root.querySelectorAll('#shl-fx-ammo button').forEach(b => b.classList.toggle('on', b.dataset.fxAmmo === lab.fxAmmo));
     root.querySelector('#shl-wreck').classList.toggle('on', lab.keepWreck);
   }

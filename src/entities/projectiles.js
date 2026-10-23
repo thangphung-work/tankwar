@@ -6,7 +6,8 @@
  *   vạch màu nhận dạng chuẩn NATO (xanh ô-liu + vạch vàng = nổ phá), ống vạch đường phát sáng ở đáy
  * - Đạn xuyên giáp dưới cỡ APFSDS: mũi tên vonfram dài mảnh + 6 cánh đuôi nhôm
  * - Đạn chùm DPICM: vỏ mang 155mm có hình thoi vàng + bộ tăng tầm đáy; bom con có dải dù ổn định
- * - Tên lửa chống tăng: thân ô-liu, đầu dò + cần kích nổ, 4 cánh giữa + 4 cánh đuôi, lửa động cơ
+ * - Rocket / RPG: thân ô-liu, đầu dò + cần kích nổ, 4 cánh giữa + 4 cánh đuôi, lửa động cơ
+ * - Tên lửa chống tăng có điều khiển: thân tròn xoay liền, đầu dò ảnh nhiệt vòm kính, cánh giữa vuốt ngược, cánh lái đuôi
  * - Đạn 30mm / súng máy: đầu đạn nhỏ + vệt vạch đường sáng kéo dài (thứ mắt người thực sự nhìn thấy)
  *
  * Không gắn đèn PointLight vào đạn (thêm/xóa đèn liên tục làm Three.js biên dịch lại shader -> giật).
@@ -33,7 +34,7 @@
     black: () => mat('black', () => new THREE.MeshStandardMaterial({ color: 0x1b1c1d, roughness: 0.6, metalness: 0.3 })),
     steel: () => mat('steel', () => new THREE.MeshStandardMaterial({ color: 0x8e9194, roughness: 0.32, metalness: 0.85 })),
     copper: () => mat('copper', () => new THREE.MeshStandardMaterial({ color: 0xb4693b, roughness: 0.3, metalness: 0.9 })),
-    tungsten: () => mat('tungsten', () => new THREE.MeshStandardMaterial({ color: 0x3f423a, roughness: 0.38, metalness: 0.85 })), // lõi urani nghèo
+    tungsten: () => mat('tungsten', () => new THREE.MeshStandardMaterial({ color: 0x3f423a, roughness: 0.38, metalness: 0.85 })), // lõi mũi tên (vonfram; bản cao cấp: urani nghèo)
     alu: () => mat('alu', () => new THREE.MeshStandardMaterial({ color: 0xb9bdc1, roughness: 0.35, metalness: 0.8 })),
     brass: () => mat('brass', () => new THREE.MeshStandardMaterial({ color: 0xc09a45, roughness: 0.35, metalness: 0.85 })),
     ribbon: () => mat('ribbon', () => new THREE.MeshStandardMaterial({ color: 0xe8e4d8, roughness: 0.9, metalness: 0, side: THREE.DoubleSide })),
@@ -273,6 +274,48 @@
     return L;
   }
 
+  // Tên lửa chống tăng có điều khiển (kiểu Spike / Javelin): thân tròn xoay liền mạch — mũi vòm thuôn mang đầu dò ảnh nhiệt
+  // kính sẫm bóng, đuôi vát thu vào loa phụt; vạch vàng đầu nổ lõm + gờ ghép các khoang (đầu nổ / điều khiển / động cơ),
+  // máng cáp dọc thân; 4 cánh giữa mỏng vuốt ngược bung ra khi rời ống, 4 cánh lái đuôi nhỏ lệch 45°, loa phụt thép
+  // Cánh hình thang trong mặt phẳng (bán kính, trục bay): gốc bám thân từ root0 tới root1, mút cánh từ tip0 tới tip1
+  function atgmWing(root0, root1, tip0, tip1, span, r0) {
+    const s = new THREE.Shape();
+    s.moveTo(0, root0); s.lineTo(0, root1); s.lineTo(span, tip1); s.lineTo(span, tip0); s.lineTo(0, root0);
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.06, bevelEnabled: false });
+    g.translate(r0, 0, -0.03);
+    return g;
+  }
+  function atgm(group) {
+    const L = 10, y0 = -L / 2;
+    mesh(shared('atgmBody', () => new THREE.LatheGeometry([
+      [0.001, -5.0], [0.46, -5.0], [0.58, -4.75], [0.7, -4.4], [0.7, 3.0], [0.68, 3.6], [0.6, 4.15], [0.47, 4.55], [0.38, 4.72], [0.001, 4.72]
+    ].map(p => new THREE.Vector2(p[0], p[1])), 26)), M.olive(), group);
+    // đầu dò ảnh nhiệt: vòm kính sẫm + vành giữ
+    mesh(shared('atgmDome', () => new THREE.SphereGeometry(0.37, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2)), M.glass(), group, [0, 4.7, 0]);
+    mesh(ring('atgmDomeRim', 0.4, 0.08), M.black(), group, [0, 4.69, 0]);
+    // vạch vàng đầu nổ lõm, gờ ghép khoang
+    mesh(ring('atgmBand', 0.712, 0.32), M.yellow(), group, [0, 2.35, 0]);
+    for (const y of [3.0, 1.2, -1.6]) mesh(ring('atgmSeam', 0.715, 0.06), M.oliveDark(), group, [0, y, 0]);
+    // máng cáp dọc thân
+    mesh(shared('atgmRace', () => new THREE.BoxGeometry(0.16, 5.6, 0.1)), M.oliveDark(), group, [0, 0.4, 0.73]);
+    // cánh giữa vuốt ngược (lệch 45°) + cánh lái đuôi
+    const wing = shared('atgmWing', () => atgmWing(-0.4, 1.9, -0.15, 0.75, 1.15, 0.66));
+    const fin = shared('atgmFin', () => atgmWing(-4.85, -3.75, -4.75, -4.3, 0.75, 0.55));
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      mesh(wing, M.oliveDark(), group, [0, 0, 0], [0, a + Math.PI / 4, 0]);
+      mesh(fin, M.oliveDark(), group, [0, 0, 0], [0, a, 0]);
+    }
+    // loa phụt
+    mesh(shared('atgmNozzle', () => new THREE.CylinderGeometry(0.36, 0.48, 0.45, 16, 1, true)), M.steel(), group, [0, y0 - 0.2, 0]);
+    mesh(shared('atgmThroat', () => new THREE.CircleGeometry(0.36, 14).rotateX(Math.PI / 2)), M.black(), group, [0, y0 - 0.02, 0]);
+    // Lửa động cơ: ngọn lửa dài + lõi trắng nóng + quầng sáng tròn quanh loa phụt (thấy rõ từ mọi góc)
+    addTracer(group, 10, 3.2, 0xffb060, 'atgm', y0 - 0.4);
+    addTracer(group, 4.5, 1.6, 0xffffff, 'atgmcore', y0 - 0.4);
+    headGlow(group, 9, 0xffa050, 'atgmglow', y0 - 1.0);
+    return L;
+  }
+
   // tracer = false: viên thường trong băng đạn (không có vệt sáng; băng đạn thật cứ vài viên mới có 1 viên vạch đường)
   // flight = true: viên đang bay — đạn 12.7 / 30mm bay ~900–1100 m/s, mắt người không thấy thân đạn, chỉ thấy liều
   // vạch đường cháy ở đáy đạn: đốm lửa đỏ cam + vệt sáng ngắn (lưu ảnh trên võng mạc). Viên thường: không thấy gì.
@@ -301,15 +344,18 @@
   }
 
   const INFO = {
-    NORMAL: { name: 'Đạn pháo tiêu chuẩn 120mm', desc: 'Đạn nổ phá đa năng: thân ô-liu sẫm có vạch vàng, ngòi nổ chạm. Nổ vừa, tung đất và mảnh văng.' },
+    // đạn tiêu chuẩn của xe tăng đời mới: đạn đa năng (kiểu M1147 AMP) — nổ phá có ngòi nhiều chế độ, xé thủng giáp mỏng,
+    // phá tường / công sự, diệt bộ binh; không xuyên giáp trước xe tăng (đó là việc của đạn xuyên giáp)
+    NORMAL: { name: 'Đạn đa năng 120mm (AMP)', desc: 'Đạn nổ phá đa năng: thân ô-liu sẫm có vạch vàng, ngòi nổ chạm. Xé thủng giáp mỏng, sườn / đuôi xe tăng, phá tường; không xuyên giáp trước xe tăng.' },
     HE: { name: 'Đạn nổ mạnh (HE)', desc: 'Lượng nổ lớn: 2 vạch vàng. Cầu lửa to, cột đất cao, sóng xung kích quét bụi, hố sâu, lửa cháy âm ỉ.' },
-    AP: { name: 'Đạn xuyên giáp APFSDS lõi urani nghèo', desc: 'Chỉ xe tăng bắn được. Mũi tên urani nghèo có cánh, không thuốc nổ nhưng tự bốc cháy khi va chạm: chớp trắng gắt, mảnh kim loại cháy sáng văng theo hướng bay, mây bụi oxit trắng xám, xé đất thành rãnh dài.' },
-    CLUSTER: { name: 'Đạn chùm 155mm', desc: 'Kích nổ trên không tầm cao: bung tỏa 18 bom con dù rơi rải thảm, gây chuỗi vụ nổ thứ cấp dồn dập khắp diện rộng.' },
+    AP: { name: 'Đạn xuyên giáp APFSDS', desc: 'Chỉ xe tăng bắn được. Lõi hợp kim vonfram: vỡ vụn tóe tia lửa cam, bụi kim loại xám, không tự cháy. Bản cao cấp lõi urani nghèo tự bốc cháy khi va chạm: chớp trắng gắt, mảnh kim loại cháy sáng văng theo hướng bay, mây bụi oxit trắng xám, xé đất thành rãnh dài.' },
+    CLUSTER: { name: 'Đạn chùm 155mm', desc: 'Kích nổ trên không tầm cao: bung tỏa 32 bom con dù rơi rải thảm, gây chuỗi vụ nổ thứ cấp dồn dập khắp diện rộng.' },
     CLUSTER_SUBMUNITION: { name: 'Bom con đạn chùm', desc: 'Bom con nhỏ có dải dù định hướng: rơi từ trên trời xuống, phát nổ đanh gọn, chớp lửa và mảnh văng.' },
     RPG: { name: 'Tên lửa chống tăng (HEAT)', desc: 'Đầu nổ lõm có cần kích nổ: luồng kim loại nóng chảy phụt thẳng, chớp trắng chói, khói đen đặc.' },
     ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng có điều khiển', desc: 'Đầu nổ lõm: luồng phụt nóng chảy, chớp trắng chói, khói đen đặc, tia lửa nhiều.' },
-    GATLING_BULLET: { name: 'Đạn 30mm nổ - cháy - vạch đường', desc: 'Mỗi phát nổ một chớp nhỏ, tia đất tóe theo hướng bay, để lại lỗ đạn trên đất / tường.' },
-    SCOUT_BULLET: { name: 'Đạn súng máy hạng nặng', desc: 'Đạn nhỏ có vạch đường: tóe đất, bụi mỏng.' },
+    // băng đạn hỗn hợp như pháo 30mm xe chiến đấu thật: xen kẽ đạn xuyên giáp (thủng sườn xe tăng ở gần) & đạn nổ mảnh cháy
+    GATLING_BULLET: { name: 'Đạn 30mm hỗn hợp (xuyên giáp + nổ mảnh cháy)', desc: 'Băng xen kẽ đạn xuyên giáp và đạn nổ mảnh cháy có vạch đường: thủng giáp mỏng, sườn / đuôi xe tăng ở cự ly gần; mỗi phát nổ một chớp nhỏ.' },
+    SCOUT_BULLET: { name: 'Đạn 12.7mm xuyên giáp', desc: 'Lõi thép cứng có vạch đường: thủng vỏ xe nhẹ, phá kính ngắm / thiết bị ngoài; dội ra khỏi giáp xe tăng.' },
     GL40: { name: 'Lựu 40mm nổ mảnh - nổ lõm', desc: 'Sơ tốc thấp, bay vồng thấy được bằng mắt, không vạch đường. Ngòi chạm: nổ đanh, khói xám, mảnh văng bán kính ~5 m.' },
     INCENDIARY: { name: 'Đạn cháy', desc: 'Mũi đỏ, vạch đường cam đậm: bùng lửa, văng tàn cháy, lửa bám cháy thêm một lúc.' }
   };
@@ -322,8 +368,8 @@
       switch (ammoType) {
         case 'AP': L = apfsds(g); break;
         case 'CLUSTER_SUBMUNITION': L = bomblet(g); break;
-        case 'RPG':
-        case 'ANTI_TANK_MISSILE': L = missile(g); break;
+        case 'RPG': L = missile(g); break;
+        case 'ANTI_TANK_MISSILE': L = atgm(g); break;
         case 'GL40': L = grenade(g); break;
         case 'GATLING_BULLET':
         case 'SCOUT_BULLET':

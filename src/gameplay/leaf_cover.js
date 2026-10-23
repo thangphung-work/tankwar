@@ -2,7 +2,7 @@
  * LÁ CÂY ĐỌNG TRÊN XE TRINH SÁT — ngụy trang tự nhiên
  *
  * Xe trinh sát húc / cọ vào cây (Destructibles.brush): cây không đổ, lá & cành nhỏ rụng, một phần rơi đọng lại trên nóc,
- * nắp capo, giá súng. Lá phủ càng dày (cover 0..1) thì khi xe ĐỨNG YÊN và chưa vừa nổ súng, địch phải vào gần hơn mới
+ * nắp capo, giá hàng (không đọng trên cụm tháp súng / lỗ nóc). Lá phủ càng dày (cover 0..1) thì khi xe ĐỨNG YÊN và chưa vừa nổ súng, địch phải vào gần hơn mới
  * thấy / radar mới bắt được (Equipment.camoFactor / camoRadarFactor). Yếu hơn lưới ngụy trang thật (lá thưa, không che
  * kín đường viền xe): đầy lá -> tầm nhìn địch còn 75%, radar 80% (lưới: 65% / 60%).
  * Chạy nhanh: gió thổi lá bay dần; để lâu lá cũng tự tuột / héo rơi (~4 phút).
@@ -37,13 +37,17 @@ const LeafCover = (() => {
 
   function state(u) { return u._leaf || (u._leaf = { cover: 0, shown: 0, mesh: null, spots: null }); }
 
-  // Chỗ lá có thể đọng: dò tia từ trên xuống mô hình thân xe (lá nằm trên mặt nóc, capo, giá hàng — không lơ lửng)
+  // Chỗ lá có thể đọng: dò tia từ trên xuống mô hình thân xe (lá nằm trên mặt nóc, capo, giá hàng — không lơ lửng).
+  // Tia trúng cụm tháp (vòng xoay, lỗ nóc, nắp, súng, xạ thủ) thì bỏ: lỗ nóc chỉ "khoét" bằng stencil nên đĩa mặt nạ,
+  // đáy & đồ trong khoang vẫn là mesh thật (lá sẽ nằm trong lòng khoang / lơ lửng trên miệng lỗ), còn lá gắn theo thân
+  // xe không xoay theo tháp. Mesh hiệu ứng (decal, mặt nạ) cũng bỏ.
   function findSpots(u) {
     const G = u.chassisGroup;
     if (!G || typeof THREE === 'undefined') return null;
     G.updateMatrixWorld(true);
-    const targets = [];
+    const targets = [], skip = new Set();
     G.traverse(o => { if (o.isMesh && !o.userData.leafCover && o.visible) targets.push(o); });
+    if (u.turretGroup) u.turretGroup.traverse(o => skip.add(o));
     const box = new THREE.Box3().setFromObject(G);
     if (box.isEmpty()) return null;
     const rc = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), spots = [];
@@ -52,7 +56,7 @@ const LeafCover = (() => {
       const x = box.min.x + Math.random() * (box.max.x - box.min.x), z = box.min.z + Math.random() * (box.max.z - box.min.z);
       rc.set(new THREE.Vector3(x, box.max.y + 5, z), down);
       const h = rc.intersectObjects(targets, false)[0];
-      if (!h || !h.face) continue;
+      if (!h || !h.face || skip.has(h.object) || h.object.userData.isFxDecal) continue;
       nm.getNormalMatrix(h.object.matrixWorld);
       const n = h.face.normal.clone().applyMatrix3(nm).normalize();
       if (n.y < 0.45) continue;   // mặt quá dốc: lá không đọng được
@@ -113,12 +117,42 @@ const LeafCover = (() => {
     im.instanceColor.needsUpdate = true;
   }
 
+  /**
+   * Sóng xung kích (ExplosionFX.spawnShock) tại (x, y, z), bán kính còn thổi bạt R: lá đọng trên xe trinh sát bị thổi bay
+   * đúng lúc mặt sóng tới (arrival(d) -> s) — gần thì bay sạch, xa còn bám lại một phần. layer: bể hạt để vẽ lá bay
+   */
+  function blast(units, x, y, z, R, arrival, layer) {
+    for (const u of units) {
+      const S = u && u._leaf;
+      if (!S || S.cover <= 0.02 || u.isDead) continue;
+      const uy = u.group ? u.group.position.y : (u.y || 0);
+      const dx = u.x - x, dz = u.z - z, d = Math.hypot(dx, uy + 10 - y, dz);
+      if (d > R) continue;
+      const k = 1 - d / R, lose = Math.min(1, 1.6 * k), t = arrival ? arrival(d) : 0;
+      (S.pend || (S.pend = [])).push({ t, lose });
+      if (!layer) continue;
+      const dh = Math.hypot(dx, dz) || 1, ox = dx / dh, oz = dz / dh;
+      for (let i = Math.round(S.cover * lose * 30); i > 0; i--) {
+        const sp = (30 + Math.random() * 50) * (0.4 + 0.6 * k), g = 0.75 + Math.random() * 0.45;
+        layer.add({ x: u.x + (Math.random() - 0.5) * 14, y: uy + 9 + Math.random() * 5, z: u.z + (Math.random() - 0.5) * 14,
+          vx: ox * sp + (Math.random() - 0.5) * 10, vy: 8 + Math.random() * 18, vz: oz * sp + (Math.random() - 0.5) * 10,
+          size: 0.6 + Math.random() * 0.7, grow: 0, drag: 2.2, grav: 18, life: 2 + Math.random() * 1.5, alpha: 0.95, fadeIn: 0.01,
+          c0: [0.32 * g, 0.42 * g, 0.18 * g], cell: 2, delay: t });
+      }
+    }
+  }
+
   function update(units, dt) {
     if (!units) return;
     for (const u of units) {
       const S = u._leaf;
       if (!S || (!S.cover && !S.shown)) continue;
       if (u.isDead) S.cover = 0;
+      // lá bị sóng xung kích thổi bay: rời xe đúng lúc mặt sóng tới (cùng lúc hạt lá bay hiện ra)
+      if (S.pend) for (let i = S.pend.length - 1; i >= 0; i--) {
+        const P = S.pend[i];
+        if ((P.t -= dt) <= 0) { S.cover *= 1 - P.lose; S.pend.splice(i, 1); }
+      }
       const fast = Math.abs(u.speed || 0) > (u.baseMaxSpeed || 100) * 0.4;
       S.cover = Math.max(0, S.cover - dt * (fast ? DECAY_FAST : DECAY_IDLE));
       if (S.mesh) {
@@ -140,7 +174,7 @@ const LeafCover = (() => {
 
   function cover(u) { return (u && u._leaf && u._leaf.cover) || 0; }
 
-  return { brush, update, factor, cover };
+  return { brush, blast, update, factor, cover };
 })();
 
 if (typeof window !== 'undefined') window.LeafCover = LeafCover;

@@ -122,7 +122,9 @@ const RangeAir = (() => {
       if (!hit) hit = { point: new THREE.Vector3(s.x, s.y, s.z), normal: new THREE.Vector3(0, 1, 0), object: null, hitType: type === 'WATER' ? 'WATER' : 'GROUND' };
       const sp = Math.hypot(s.vx, s.vy, s.vz) || 1;
       const dist = u ? Math.hypot(hit.point.x - u.x, hit.point.y - (u.y || 0), hit.point.z - u.z) : 300;
-      this.spawnTestImpact({ x: hit.point.x, y: hit.point.y, z: hit.point.z, ammoType: s.ammoType, dist, hit, dir: new THREE.Vector3(s.vx / sp, s.vy / sp, s.vz / sp) });
+      // quả lựu 40mm (bay theo hệ đạn 30mm, cờ gl40): nổ / phá tường theo cỡ quả lựu như trong trận (game.handleShellImpact fxAmmo)
+      const ammoType = s.gl40 ? 'CLUSTER_SUBMUNITION' : s.ammoType;
+      this.spawnTestImpact({ x: hit.point.x, y: hit.point.y, z: hit.point.z, ammoType, dist, hit, dir: new THREE.Vector3(s.vx / sp, s.vy / sp, s.vz / sp) });
     },
 
     // ---------- BẬT / TẮT BIA DRONE ----------
@@ -841,7 +843,7 @@ const RangeAir = (() => {
         ammoN = u.gatlingMag !== undefined ? u.gatlingMag : 0; ammoMax = u.gatlingMagMax || 1;
         if (u.tankType === 'GATLING') heat = u.barrelHeat || 0;
         if (u.isOverheated) status = 'QUÁ NHIỆT';
-        else if (u.reloadTimer > 0 && ammoN <= 0) status = 'NẠP ĐẠN ' + u.reloadTimer.toFixed(1) + ' S';
+        else if (u.reloadTimer > 0 && (ammoN <= 0 || u.tankType === 'SCOUT')) status = 'NẠP ĐẠN ' + u.reloadTimer.toFixed(1) + ' S';
         else if (u.isFiringGatling) status = 'ĐANG BẮN';
       }
       const bad = status !== 'SẴN SÀNG' && status !== 'ĐANG BẮN';

@@ -231,8 +231,8 @@
   }
 
   // Giàn rocket không điều khiển trên trạm xoay: hộp ống có gân tăng cứng, miệng ống ám muội, thấy đầu đạn trong ống (bắn
-  // quả nào ống đó trống — u.roofRounds), nắp đuôi ống, khối ngắm nhỏ ngoài chạc bên phải. opt.cols x opt.rows ống
-  // (xe tăng 2 x 2, xe trinh sát 4 x 2). Một nắp miệng ống bị mất (miệng trần ám muội), dây chằng cáp điện phóng
+  // quả nào ống đó trống — mainGun.rounds), nắp đuôi ống, khối ngắm nhỏ ngoài chạc bên phải. opt.cols x opt.rows ống
+  // (vũ khí chính xe trinh sát 4 x 2). Một nắp miệng ống bị mất (miệng trần ám muội), dây chằng cáp điện phóng
   function buildRoofRockets(seat, ctx, opt = {}) {
     const { M, P, D, unit } = ctx, rnd = rndOf(ctx);
     const cols = opt.cols || 2, rows = opt.rows || 2, pitch = 1.1, rowP = 0.96;
@@ -280,6 +280,127 @@
     unit.roofMuzzles = muzzles;
     unit.rcwsMuzzleLocal = new THREE.Vector3(0, cy, -2.0);
     unit.roofWeapon = 'rocket';
+    return 'rocketPod';
+  }
+
+  // Bệ tên lửa đột nóc 2 ống (kiểu Spike-LR trên trạm Samson / Javelin trên Protector): 2 ống phóng composite KÍN nằm
+  // trong HỘP GIÁP vát cạnh (sàn, vách hai bên dán tấm giáp bắt bu-lông, mái vát 2 mép, mái che chìa ra trước che miệng
+  // ống); đầu ống thò ra trước hộp có vạch màu đạn + đệm giảm chấn cao su xẻ rãnh, đuôi ống thò sau hộp có vành đuôi
+  // và cửa xả khí nén ám muội (khí nén đẩy tên lửa ra rồi động cơ mới đánh lửa). Nóc hộp: ray Picatinny, 2 tai móc cẩu,
+  // tay nắm, chóp ăng-ten GPS. Khối ngắm điện quang bọc giáp ngoài chạc phải (camera ngày / ảnh nhiệt / chỉ thị laser,
+  // cửa chớp giáp lật lên), cụm 4 ống phóng lựu khói mỗi bên chân đế. Nắp đầu ống (u.roofRounds) bật văng khi phóng —
+  // còn nắp là ống còn tên lửa. Dấu dùng: một bu-lông tấm giáp mất, muội khói dưới mái che, sơn tróc mép vát, nhãn bạc màu
+  function buildRoofTopAtk(seat, ctx) {
+    const { M, P, D, unit } = ctx, rnd = rndOf(ctx);
+    const arm = 1.4, R = M.rubber || D, S = M.soot || D;
+    const gun = stationBase(seat, ctx, arm);
+    const gb = new VehicleKit.PartBatch(ctx.yBase + 4.3);
+    const L = 4.6, R0 = 0.46, zc = -0.3, zF = zc - L / 2, zB = zc + L / 2, cy = 0.74;
+    const tubes = [[-0.58, cy], [0.58, cy]];
+    // hộp giáp: dài từ zs0 tới zs1 (giữa thân ống), lòng rộng ôm 2 ống — nằm gọn giữa 2 tay chạc
+    const zs0 = zF + 0.95, zs1 = zB - 0.4, sL = zs1 - zs0, sz = (zs0 + zs1) / 2;
+    const xw = 1.16, yF = cy - R0 - 0.12, yW = cy + 0.3, yT = cy + R0 + 0.14, xT = 0.74;
+    gb.box(2.5, 0.22, 2.2, D, [0, -0.24, 0.0]);                    // nôi ôm trục ngóc
+    gb.box(1.7, 0.24, 2.0, P, [0, -0.02, 0.0]);                    // gối đỡ nôi -> sàn hộp
+    gb.box(xw * 2, 0.12, sL, P, [0, yF, sz]);                      // sàn hộp
+    for (const s of [-1, 1]) {
+      gb.box(0.12, yW - yF, sL, P, [s * xw, (yW + yF) / 2, sz]);    // vách bên
+      gb.beam([s * xw, yW - 0.02, sz - 0.22], [s * xT, yT, sz - 0.22], 0.12, sL + 0.45, P);   // mép vát mái (chìa theo mái che)
+      gb.box(0.07, 0.62, sL - 0.7, P, [s * (xw + 0.09), (yW + yF) / 2 + 0.02, sz + 0.1]);   // tấm giáp dán vách
+      gb.box(0.04, 0.05, sL - 0.7, D, [s * (xw + 0.1), (yW + yF) / 2 + 0.36, sz + 0.1]);    // gờ mép tấm giáp
+      for (const z of [zs0 + 0.55, sz + 0.1, zs1 - 0.35]) for (const y of [yF + 0.16, yW - 0.12]) {
+        if (s < 0 && z === sz + 0.1 && y === yF + 0.16) continue;   // một con bu-lông đã mất
+        gb.cyl(0.05, 0.05, 0.06, 6, D, [s * (xw + 0.14), y, z], 'x');
+      }
+      for (const z of [zs1 - 0.5, zs1]) gb.box(0.2, 0.05, 0.05, D, [s * (xw + 0.2), yW - 0.05, z]);   // tay nắm vách
+      gb.strut([s * (xw + 0.29), yW - 0.05, zs1 - 0.52], [s * (xw + 0.29), yW - 0.05, zs1 + 0.02], 0.035, D, 6);
+    }
+    gb.box(xT * 2 + 0.04, 0.12, sL + 0.45, P, [0, yT, sz - 0.22]);  // mái — chìa 0.45 ra trước thành mái che miệng ống
+    gb.box(xT * 2 + 0.1, 0.05, 0.08, D, [0, yT - 0.06, zs0 - 0.45]);   // gờ mép mái che
+    gb.box(1.2, 0.03, 0.4, S, [0, yT - 0.075, zs0 - 0.2]);          // muội khói phóng ám dưới mái che
+    for (const z of [zs0 + 0.02, zs1 - 0.02]) gb.box(xw * 2 - 0.1, yW - yF, 0.05, D, [0, (yW + yF) / 2 + 0.06, z]);   // vách ngăn đầu / đuôi (ống xuyên qua)
+    for (const z of [zs0, zs1]) {                                   // khung viền miệng hộp trước / sau
+      gb.box(xw * 2 + 0.16, 0.12, 0.1, D, [0, yF - 0.02, z]);
+      for (const s of [-1, 1]) gb.box(0.14, yW - yF + 0.08, 0.1, D, [s * (xw + 0.02), (yW + yF) / 2, z]);
+    }
+    // ray Picatinny dọc nóc (gắn kính / đèn), 2 tai móc cẩu, chóp ăng-ten GPS, roi ăng-ten liên lạc
+    gb.box(0.22, 0.06, 1.7, D, [0, yT + 0.09, sz + 0.2]);
+    for (let k = 0; k < 11; k++) gb.box(0.28, 0.04, 0.06, D, [0, yT + 0.13, sz - 0.6 + k * 0.16]);
+    for (const z of [zs0 + 0.35, zs1 - 0.3]) for (const s of [-1, 1]) {
+      gb.box(0.06, 0.18, 0.2, D, [s * 0.5, yT + 0.12, z]);
+      gb.cyl(0.07, 0.07, 0.08, 8, S, [s * 0.5, yT + 0.16, z], 'x');
+    }
+    gb.cyl(0.16, 0.18, 0.1, 12, M.canvasDark || D, [0.42, yT + 0.11, zs1 - 0.7]);
+    gb.cyl(0.03, 0.03, 0.12, 6, D, [-0.45, yT + 0.12, zs1 - 0.75]);
+    gb.strut([-0.45, yT + 0.16, zs1 - 0.75], [-0.5, yT + 1.2, zs1 - 0.6], 0.018, D, 4, 0.012);
+    gb.box(0.4, 0.04, 0.25, M.paintDusty || P, [0.95, yT - 0.12, zs0 + 0.6], [0, 0, -0.84]);   // sơn tróc mép vát
+    tubes.forEach(([tx, ty], i) => {
+      gb.cyl(R0, R0, L, 16, P, [tx, ty, zc], 'z');                 // ống phóng kín
+      gb.cyl(R0 + 0.012, R0 + 0.012, 0.16, 16, M.canvas || P, [tx, ty, zs0 - 0.3], 'z');   // vạch màu đạn (nổ lõm)
+      gb.cyl(R0 + 0.13, R0 + 0.13, 0.42, 16, R, [tx, ty, zF + 0.21], 'z');                 // đệm giảm chấn đầu ống
+      for (const z of [zF + 0.1, zF + 0.32]) gb.cyl(R0 + 0.15, R0 + 0.15, 0.05, 16, D, [tx, ty, z], 'z');   // rãnh đệm
+      gb.cyl(R0 + 0.06, R0 + 0.06, 0.12, 16, D, [tx, ty, zs0 - 0.08], 'z');   // vòng kẹp ống ở miệng hộp
+      gb.cyl(R0 + 0.12, R0 + 0.1, 0.36, 16, R, [tx, ty, zB - 0.18], 'z');      // vành đuôi
+      gb.cyl(R0 * 0.72, R0 * 0.72, 0.05, 14, S, [tx, ty, zB + 0.01], 'z');     // đáy ống: cửa xả khí nén ám muội
+      gb.box(0.05, 0.12, 0.16, D, [tx, ty + R0 + 0.12, zB - 0.18]);           // đầu nối cáp phóng đuôi ống
+      if (!i) gb.box(0.32, 0.03, 0.5, M.canvas || P, [tx, ty + R0 + 0.005, zs0 - 0.62], [0, 0, (rnd() - 0.5) * 0.06]);   // nhãn lô bạc màu
+    });
+    // ống dẫn khí nén + bó cáp phóng từ đuôi ống xuống bệ
+    for (const [tx] of tubes) gb.strut([tx, cy + R0 + 0.16, zB - 0.18], [tx * 0.4, yF - 0.05, zs1 + 0.1], 0.04, R, 5);
+    gb.strut([0, yF - 0.05, zs1 + 0.1], [-arm - 0.2, -0.6, 0.6], 0.06, M.canvasDark || D, 6);
+    // khối ngắm điện quang bọc giáp ngoài chạc phải: tay đỡ ôm trục ngóc, thân vát, mái che chìa trước, cửa chớp lật lên
+    const sx = arm + 0.78, sy = 0.32;
+    gb.box(0.6, 0.24, 0.6, D, [arm + 0.3, 0.0, -0.1]);
+    gb.box(0.2, 0.5, 0.5, D, [arm + 0.42, sy * 0.5, -0.15]);
+    gb.box(0.7, 0.78, 1.2, P, [sx, sy, -0.2]);
+    gb.box(0.7, 0.3, 0.42, P, [sx, sy - 0.32, -0.88], [-0.75, 0, 0]);   // cằm vát
+    gb.box(0.6, 0.48, 0.06, D, [sx, sy + 0.08, -0.82]);              // mặt cửa kính lõm
+    gb.box(0.84, 0.07, 1.55, P, [sx, sy + 0.42, -0.36]);             // mái che
+    for (const s of [-1, 1]) gb.box(0.06, 0.5, 0.42, P, [sx + s * 0.39, sy + 0.17, -0.94], [0, s * 0.2, 0]);   // má che
+    gb.cyl(0.13, 0.13, 0.06, 14, M.lens, [sx - 0.14, sy + 0.14, -0.86], 'z');   // camera ngày
+    gb.cyl(0.11, 0.11, 0.06, 12, M.glass, [sx + 0.15, sy + 0.14, -0.86], 'z');  // ảnh nhiệt
+    gb.cyl(0.07, 0.07, 0.3, 10, D, [sx, sy - 0.07, -0.9], 'z');               // ống chỉ thị laser
+    gb.cyl(0.05, 0.05, 0.04, 10, M.lens, [sx, sy - 0.07, -1.06], 'z');
+    gb.hinge([sx, sy + 0.38, -1.06], 'x', 0.56, D, 0.035, 2);
+    gb.box(0.62, 0.05, 0.4, P, [sx, sy + 0.44, -1.24], [0.3, 0, 0]);   // cửa chớp giáp lật mở chìa thành mái che kính
+    for (let k = 0; k < 4; k++) gb.box(0.05, 0.5, 0.08, D, [sx + 0.37, sy - 0.02, -0.05 + 0.18 * (k - 1.5)]);   // lá tản nhiệt
+    gb.box(0.2, 0.2, 0.12, D, [sx, sy, 0.46]);                       // đầu nối cáp sau khối ngắm
+    gb.strut([sx, sy, 0.52], [xw + 0.1, yF + 0.2, 0.7], 0.035, R, 5);
+    gb.build(gun);
+    // cụm 4 ống phóng lựu khói mỗi bên chân đế (quay theo bệ, không ngóc theo hộp phóng): ngóc lên, xòe ra ngoài
+    const sb = new VehicleKit.PartBatch(ctx.yBase);
+    for (const s of [-1, 1]) {
+      const bx = s * (arm + 0.36);
+      sb.box(0.36, 0.42, 0.5, D, [bx, 1.3, 0.25]);
+      for (const [ox, oy] of [[-0.11, -0.1], [0.11, -0.1], [-0.11, 0.12], [0.11, 0.12]]) {
+        const rot = [0.45, s * 0.3, 0];
+        const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(rot[0], rot[1], 0));
+        const c = [bx + ox + dir.x * 0.3, 1.3 + oy + dir.y * 0.3, 0.05 + dir.z * 0.3];
+        sb.cyl(0.095, 0.095, 0.5, 10, P, c, 'z', rot);
+        sb.cyl(0.07, 0.07, 0.02, 10, S, [c[0] + dir.x * 0.25, c[1] + dir.y * 0.25, c[2] + dir.z * 0.25], 'z', rot);
+      }
+    }
+    sb.build(gun.parent);
+    // nắp đầu ống: bật văng khi phóng (drone_air.js roofMissileEjectFx) — nắp xốp có rãnh xẻ chữ thập (vỡ khi tên lửa
+    // xuyên ra) + quai giật; con của nắp ẩn / hiện theo nắp
+    const capGeo = new THREE.CylinderGeometry(R0 + 0.1, R0 + 0.1, 0.1, 16);
+    capGeo.rotateX(Math.PI / 2);
+    const capMat = M.canvasDark || D;
+    const scoreGeo = new THREE.BoxGeometry(R0 * 1.7, 0.035, 0.03);
+    unit.roofRounds = tubes.map(([tx, ty]) => {
+      const m = new THREE.Mesh(capGeo, capMat);
+      m.position.set(tx, ty, zF - 0.04);
+      for (const a of [Math.PI / 4, -Math.PI / 4]) {
+        const sc = new THREE.Mesh(scoreGeo, D);
+        sc.position.z = -0.055; sc.rotation.z = a;
+        m.add(sc);
+      }
+      gun.add(m);
+      return m;
+    });
+    unit.roofMuzzles = tubes.map(([tx, ty]) => new THREE.Vector3(tx, ty, zF - 0.3));
+    unit.rcwsMuzzleLocal = new THREE.Vector3(0, cy, zF - 0.3);
+    unit.roofWeapon = 'atgm';
     return 'rocketPod';
   }
 
@@ -407,7 +528,8 @@
   }
 
   const ROOF_BUILDERS = {
-    ewjam: buildRoofJammer, rcws: buildRoofRCWS, agl: buildRoofAGL, rocket: buildRoofRockets,
+    // 'rocket': mã món trong kho giữ nguyên (đồ đã mua) — nay là bệ tên lửa đột nóc 2 ống, không còn giàn rocket 4 ống
+    ewjam: buildRoofJammer, rcws: buildRoofRCWS, agl: buildRoofAGL, rocket: buildRoofTopAtk,
     sradar: buildRoofRadar, rjam: buildRoofLockJammer,
     // vũ khí chính xe trinh sát (ctx.asMain) & ống phóng UAV cảm tử lựu pháo — cùng chân đế
     sagl: (seat, ctx) => buildRoofAGL(seat, ctx, { hv: true }),

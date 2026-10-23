@@ -50,6 +50,7 @@ const GameMenu = (() => {
       }
     }
     g.gfxShadows = P.shadows;
+    g.gfxTier = S.gfx;   // mật độ hạt mưa theo mức đồ họa (Weather)
     g.gfxGrass = P.grass;
     let rebuild = false;
     const type = P.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
@@ -175,10 +176,11 @@ const GameMenu = (() => {
       [K('Space'), 'Bắn (giữ để xả liên thanh); xe trinh sát chọn ô tên lửa thì phóng tên lửa'],
       [K('Tab'), 'Khóa / đổi mục tiêu tiếp theo (đang cầm máy phá sóng: đổi drone địch)'],
       [`${K('1')} ${K('2')} ${K('3')} hoặc ${K('Q')} ${K('E')} ${K('R')}`, 'Đổi loại đạn'],
-      [K('4'), 'Vũ khí trên nóc tháp (nếu lắp): máy phá sóng chống UAV, máy phá khóa radar, súng máy / phóng lựu / rocket. Bấm lại để về pháo chính'],
+      [K('4'), 'Vũ khí trên nóc tháp (nếu lắp): máy phá sóng chống UAV, máy phá khóa radar, súng máy / phóng lựu / tên lửa đột nóc (khóa xe địch, giữ laser rồi Space). Bấm lại để về pháo chính'],
       [K('F'), 'Xe 6 nòng / trinh sát: khóa phòng không drone địch (bấm lại để thôi). Màn drone pháo tự hành: đánh dấu mục tiêu ở tâm màn hình'],
       [`Giữ ${K('X')}`, 'Ủi ụ đất che mũi xe (cần lưỡi ủi)'],
       [K('G'), 'Phóng lựu đạn khói (cần trang bị)'],
+      [K('H'), 'Xe trinh sát: xạ thủ chui vào xe đóng nắp & ở yên trong xe (tránh đạn, mảnh) — bấm lại để ra đứng súng. Trong xe không bắn / nạp đạn được'],
       [K('B'), 'Pháo tự hành: đổi cách bắn (tự chọn / bắn thẳng / bắn cầu vồng)'],
       [`${K('←')} ${K('→')} ${K('↑')} ${K('↓')}`, 'Xoay tháp / nâng hạ nòng bằng tay'],
       [K('M'), 'Bản đồ lớn (nhấp xe địch để khóa, nhấp đúp để ngắm điểm thật xa, chuột phải để lái xe tới)'],

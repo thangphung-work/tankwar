@@ -66,7 +66,7 @@ class CounterBatteryRadar {
       }
     }
 
-    // Băng cảnh báo (#warning-banner) do game.js quản lý (đạn lao xuống / ngoài bo / bị radar khóa).
+    // Băng cảnh báo (#warning-banner) do game.js quản lý (đạn lao xuống / bị radar khóa).
     // Trước đây chỗ này chạy sau game.js và ẩn băng mỗi khung hình -> cảnh báo đạn lao xuống không bao giờ hiện.
     this.playerIsTracked = playerIsTracked;
   }

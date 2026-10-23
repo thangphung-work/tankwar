@@ -481,6 +481,50 @@ function notePlace(userId, matchKey, place) {
   if (o && o.mk === matchKey) o.place = place;
   else if (place) { noteOnline(userId, matchKey, 0, 0, 0); online.get(userId).place = place; }
 }
+// Số liệu xếp phe do máy chủ đọc từ CSDL (máy khách không tự khai được): { lv: cấp, w: trận thắng, m: tổng trận };
+// null = khách / chưa đăng nhập. server.js gửi kèm khi vào phòng, chủ phòng tính điểm (MatchmakingController.rating)
+function skillOf(userId) {
+  if (!db || !userId) return null;
+  const u = Q.userById.get(userId);
+  if (!u) return null;
+  let w = 0, m = 0;
+  for (const r of Q.statsOf.all(userId)) { w += r.wins; m += r.matches; }
+  return { lv: levelInfo(u.xp).level, w, m };
+}
+// Trang bị người chơi mang vào trận (chủ phòng gửi kèm slot, máy khách tự khai) -> lọc theo kho đồ thật trong CSDL:
+// mô-đun miễn phí hoặc đã sở hữu, đạn cao cấp đã sở hữu, đạn mua thêm không quá số còn trong kho, giáp hỏng theo
+// armor_cond (không tự "sửa" giáp bằng cách giấu). Khách: chỉ mô-đun miễn phí. Gọi 1 lần / người / lần bắt đầu trận
+function verifyKit(userId, tank, kit) {
+  const k = Equipment.sanitize(kit, tank);
+  delete k.d;
+  if (!db || !userId) {
+    k.m = k.m.filter(id => Equipment.isFree(id));
+    k.p = []; k.a = {};
+    return k;
+  }
+  k.m = k.m.filter(id => Equipment.isFree(id) || Q.ownedHas.get(userId, tank, id));
+  k.p = k.p.filter(id => Q.ownedHas.get(userId, tank, id));
+  for (const a of Object.keys(k.a)) {
+    const have = (Q.stockGet.get(userId, tank, a) || {}).n || 0;
+    if (have > 0) k.a[a] = Math.min(k.a[a], have); else delete k.a[a];
+  }
+  const gone = {};
+  for (const r of Q.condOf.all(userId)) {
+    if (r.tank !== tank) continue;
+    let g = []; try { g = JSON.parse(r.gone) || []; } catch (e) {}
+    if (g.length) gone[r.item] = g;
+  }
+  const dd = Equipment.sanitizeGone(gone, k.m);
+  if (dd) k.d = dd;
+  return k;
+}
+// Kết quả trận mạng do máy chủ xác định (server_auth.js endMatch): 'win' | 'loss' | 'draw'
+function noteResult(userId, matchKey, result) {
+  let o = online.get(userId);
+  if (!o || o.mk !== matchKey) { noteOnline(userId, matchKey, 0, 0, 0); o = online.get(userId); }
+  o.result = result;
+  o.at = Date.now();   // hạn đối chiếu (15 phút) tính từ lúc hết trận, không phải lần bắn trúng cuối
+}
 function userIdFromToken(token) {
   if (!db || typeof token !== 'string' || !/^[A-Za-z0-9_\-]{20,100}$/.test(token)) return null;
   const s = Q.sessionGet.get(sha(token));
@@ -802,7 +846,7 @@ async function handle(req, res) {
     if (url === '/api/match-result') {
       const now = Date.now(), dur = clampN(b.durationSec, 0, 1800);
       if (dur < 45) return send(res, 400, { error: 'Trận quá ngắn, không tính' });
-      const result = ['win', 'loss', 'draw'].includes(b.result) ? b.result : 'loss';
+      let result = ['win', 'loss', 'draw'].includes(b.result) ? b.result : 'loss';
       // giới hạn sát thực tế theo thời lượng trận (10 phút: tối đa 25 hạ gục, sát thương ~ số hạ gục x máu xe dày nhất + phần lẻ)
       let kills = Math.round(clampN(b.kills, 0, Math.min(25, dur / 24 + 1)));
       let deaths = Math.round(clampN(b.deaths, 0, 60));
@@ -819,6 +863,10 @@ async function handle(req, res) {
         damage = Math.min(damage, Math.round((o.damage + 0.5) * 10) / 10);
         deaths = Math.max(deaths, o.deaths);
         kdPlace = o.place || 0;
+        // thắng / thua trận mạng theo máy chủ; trận mạng chưa có kết quả máy chủ (chủ phòng rời giữa chừng, máy khách
+        // tự kết thúc) thì không được tính thắng
+        if (o.result) result = o.result;
+        else if (result === 'win') result = 'draw';
         online.delete(u.id);
       }
       if (kills < 1) kdPlace = 0;
@@ -877,4 +925,4 @@ if (openDb()) {
   process.on('SIGINT', () => { closeDb(); process.exit(0); });
   process.on('SIGTERM', () => { closeDb(); process.exit(0); });
 }
-module.exports = { handle, DATA_DIR, levelInfo, noteOnline, notePlace, userIdFromToken };
+module.exports = { handle, DATA_DIR, levelInfo, noteOnline, notePlace, noteResult, userIdFromToken, skillOf, verifyKit };

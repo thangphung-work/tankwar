@@ -213,7 +213,7 @@ SoundEngine.mixin(class {
 
   // Dựng sẵn mỗi loại 1-2 biến thể ngay sau khi khởi tạo, từng mẫu một lúc trình duyệt rảnh
   warmGunshots() {
-    const jobs = ['blast120', 'blastN', 'blast155', 'blastRPG', 'blastATGM', 'blast30', 'hitDirt', 'hitSteel', 'mg127', 'case127', 'case30', 'hitSteelHeavy', 'blastAmmo',
+    const jobs = ['blast120', 'blastN', 'blast155', 'blastRPG', 'blastATGM', 'blast30', 'hitDirt', 'hitSteel', 'hitSteel127', 'mg127', 'case127', 'case30', 'hitSteelHeavy', 'blastAmmo',
       'debrisPlate', 'debrisMetal', 'debrisLink', 'hullBlast', 'hullTick', 'debrisPlateHull', 'debrisMetalHull', 'debrisCan',
       'debrisLinkHull', 'debrisCanHull', 'turretLand', 'sheetMetal', 'rebar',
       'blast120', 'blastN', 'blast155', 'blastRPG', 'blast30'];
@@ -254,7 +254,7 @@ SoundEngine.mixin(class {
       // kho đạn xe kích nổ: hàng chục kg thuốc phóng + thuốc nổ, nổ dây chuyền -> sóng dài, cầu lửa lớn & lâu
       blastAmmo: [0.009, 0.6, 420, 0.32, 1.6]
     }[kind];
-    const HIT = { hitSteel: 0.3, hitSteelHeavy: 0.7, hitDirt: 0.3, case127: 0.5, case30: 0.6, link127: 0.2 }[kind] || (STEEL[kind] && STEEL[kind].len);
+    const HIT = { hitSteel: 0.3, hitSteel127: 0.35, hitSteelHeavy: 0.7, hitDirt: 0.3, case127: 0.5, case30: 0.6, link127: 0.2 }[kind] || (STEEL[kind] && STEEL[kind].len);
     const N = Math.round((BP ? BP[4] : HIT || 0.32) * SR);
     const y = new Float32Array(N);
     const v = (a) => 1 + (R() - 0.5) * a;
@@ -316,17 +316,31 @@ SoundEngine.mixin(class {
       // không khí xé rối sau mặt sóng
       { const i0 = Math.round(0.002 * SR), L = Math.round(T * 20 * SR), ta = Math.exp(-2 * Math.PI * 900 / SR); let xp = 0, yp = 0;
         for (let i = 0; i < L && i0 + i < N; i++) { const n = (R() * 2 - 1) * Math.exp(-i / (T * 5 * SR)) * 0.4; const o = ta * (yp + n - xp); xp = n; yp = o; y[i0 + i] += o; } }
-    } else if (kind === 'hitSteel' || kind === 'hitSteelHeavy') {
+    } else if (kind === 'hitSteel' || kind === 'hitSteelHeavy' || kind === 'hitSteel127') {
       // Đầu đạn đập vào giáp thép: xung tiếp xúc cực ngắn (va cứng -> sáng) gõ vào hàng chục mode của tấm giáp dày.
       // Giáp dày + bắt chặt nên tắt nhanh: "TÁNG / CHÁT" đanh, không ngân như chuông.
       // Đạn xuyên giáp 120mm (heavy): cú va lớn hơn hẳn, mode trầm hơn, kèm cú thụp cả khối xe và tiếng xé thép
-      const heavyHit = kind === 'hitSteelHeavy';
-      const x = new Float32Array(N), i0 = Math.round(0.002 * SR), L = Math.max(2, Math.round((heavyHit ? 0.00018 : 0.00012) * SR));
+      // Đạn 12.7mm (~45 g, ~850 m/s, ~16 kJ — như búa tạ quai vào giáp): lõi thép + vỏ đồng vỡ tan trên mặt giáp.
+      // Mẫu 'hitSteel' cũ (mode từ 700 Hz, tắt 0,1 s) chỉ ra tiếng "tinh" mỏng như gõ thìa. Cú va đủ mạnh để gõ cả các mode
+      // trầm của tấm giáp (từ ~250 Hz) + xung áp suất của đầu đạn vỡ vụn "CHÁT" + thân xe rung "thụp" ngắn
+      const heavyHit = kind === 'hitSteelHeavy', mgHit = kind === 'hitSteel127';
+      const x = new Float32Array(N), i0 = Math.round(0.002 * SR), L = Math.max(2, Math.round((heavyHit ? 0.00018 : mgHit ? 0.0001 : 0.00012) * SR));
       for (let i = 0; i < L; i++) x[i0 + i] += Math.PI / (2 * L) * Math.sin(Math.PI * (i + 0.5) / L);
-      ring(x, heavyHit ? modes(60, 180, 8500, 0.3, 0.035) : modes(40, 700, 9000, 0.1, 0.02), heavyHit ? 1.4 : 1);
+      ring(x, heavyHit ? modes(60, 180, 8500, 0.3, 0.035) : mgHit ? modes(55, 260, 8500, 0.17, 0.022) : modes(40, 700, 9000, 0.1, 0.02), heavyHit ? 1.4 : 1);
       // mảnh kim loại / sơn tróc bắn ra: "xẹt" ngắn dải cao
-      { const L2 = Math.round(0.03 * SR), ta = Math.exp(-2 * Math.PI * 2000 / SR); let xp = 0, yp = 0;
-        for (let i = 0; i < L2; i++) { const n = (R() * 2 - 1) * Math.exp(-i / (0.006 * SR)) * 0.25; const o = ta * (yp + n - xp); xp = n; yp = o; y[i0 + i] += o; } }
+      { const L2 = Math.round((mgHit ? 0.045 : 0.03) * SR), ta = Math.exp(-2 * Math.PI * 2000 / SR); let xp = 0, yp = 0;
+        for (let i = 0; i < L2; i++) { const n = (R() * 2 - 1) * Math.exp(-i / ((mgHit ? 0.009 : 0.006) * SR)) * (mgHit ? 0.4 : 0.25); const o = ta * (yp + n - xp); xp = n; yp = o; y[i0 + i] += o; } }
+      if (mgHit) {
+        let pk0 = 0; for (let i = 0; i < N; i++) pk0 = Math.max(pk0, Math.abs(y[i]));
+        // đầu đạn vỡ vụn: xung áp suất rất ngắn, dải rộng -> phần "CHÁT" đập vào tai trước cả tiếng thép ngân
+        friedlander(y, 0.002, pk0 * 0.9, 0.00018 * v(0.3), 1.3);
+        // thân xe rung "thụp": năng lượng dưới ~350 Hz, tắt ~25 ms (không có cao độ -> không thành tiếng trống)
+        const th = new Float32Array(N);
+        for (let i = 0; i < Math.round(0.15 * SR); i++) { const tt = i / SR; th[i0 + i] = (R() * 2 - 1) * (1 - Math.exp(-tt / 0.0008)) * Math.exp(-tt / 0.025); }
+        onePoleLP(th, 350); onePoleLP(th, 350);
+        let m = 0; for (let i = 0; i < N; i++) m = Math.max(m, Math.abs(th[i]));
+        for (let i = 0; i < N; i++) y[i] += th[i] / (m || 1) * pk0 * 0.55;
+      }
       if (heavyHit) {
         // cả khối xe 60 tấn rung "THỤP" + thép bị xé rít
         const th = new Float32Array(N);

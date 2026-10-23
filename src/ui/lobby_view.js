@@ -11,7 +11,7 @@
   // Kỹ năng riêng của từng xe (đều là cơ chế có thật trong trận) — lời lẽ ngắn, dễ hiểu
   const SKILLS = {
     ALL_ROUNDER: [
-      { icon: 'stack-2', name: 'Đa dạng đạn', desc: 'Đạn thường, xuyên giáp, nổ mạnh — đổi theo mục tiêu', key: '1·2·3' },
+      { icon: 'stack-2', name: 'Đa dạng đạn', desc: 'Đạn đa năng, xuyên giáp, nổ mạnh — đổi theo mục tiêu', key: '1·2·3' },
       { icon: 'tool', name: 'Đa dạng trang bị', desc: 'Lắp thêm nóc tháp, động cơ, giáp — tùy lối chơi' },
       { icon: 'leaf', name: 'Núp bụi giảm radar', desc: 'Radar địch phải vào gần mới bắt được' }
     ],

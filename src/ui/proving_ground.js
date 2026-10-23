@@ -407,24 +407,99 @@ const ProvingGround = (() => {
   // ---------------------------------------------------------------------------
   // SÂN THỬ
   // ---------------------------------------------------------------------------
+  // Trạng thái riêng của 1 bãi đã dựng (mỗi bãi 1 nhóm root) — cất / lấy ra nguyên bộ khi đổi bãi (xem use / prebuild)
+  const LAYER_KEYS = ['id', 'root', 'H', 'n', 'half', 'ground', 'boulders', 'own', 'trees', 'props', 'buildingSet', 'bunkerSet'];
+
   class Field {
     constructor(scene) {
       this.scene = scene;
-      this.root = new THREE.Group();
-      this.root.name = 'proving-ground';
-      scene.add(this.root);
-      this.id = null;
-      this.boulders = [];     // đá tảng + xác xe: { x, z, radius, height } — chắn xe & chắn đạn
-      this.own = [];          // geometry / material / texture do sân tự tạo (giải phóng khi đổi bãi)
+      this.base = new THREE.Group();
+      this.base.name = 'proving-ground';
+      scene.add(this.base);
+      this.cache = {};        // bãi dựng sẵn đang ẩn: id -> trạng thái (LAYER_KEYS)
+      this.reset();
     }
 
     get preset() { return PRESETS[this.id] || PRESETS.flat; }
     get R() { return this.preset.R; }
     get mapType() { return this.preset.mapType; }
 
+    reset() {
+      this.id = null;
+      this.root = null;
+      this.H = null;
+      this.ground = null;
+      this.boulders = [];     // đá tảng + xác xe: { x, z, radius, height } — chắn xe & chắn đạn
+      this.own = [];          // geometry / material / texture do sân tự tạo (giải phóng khi đổi bãi)
+      this.trees = null;
+      this.props = null;
+      this.buildingSet = this.bunkerSet = null;
+    }
+    snap() { const s = {}; for (const k of LAYER_KEYS) s[k] = this[k]; return s; }
+    restore(s) { for (const k of LAYER_KEYS) this[k] = s[k]; }
+
+    // Bãi không có vật thể phá được (bãi phẳng): bắn / lái không làm thay đổi gì -> cất lại dùng tiếp, khỏi dựng lại
+    keepable(id) { return !!PRESETS[id] && !PRESETS[id].objects; }
+
+    // Đổi sang bãi id: lấy bãi dựng sẵn (prebuild) nếu có — gần như tức thì — không thì dựng mới.
+    // Bãi đang dùng: bãi phẳng thì cất lại, bãi có vật thể (có thể đã bị phá) thì giải phóng.
+    use(id) {
+      if (!PRESETS[id]) id = 'flat';
+      if (this.root && this.id === id) return;
+      if (this.root) {
+        if (this.keepable(this.id) && !this.cache[this.id]) { this.root.visible = false; this.cache[this.id] = this.snap(); }
+        else this.clear();
+      }
+      const s = this.cache[id];
+      if (s) {
+        delete this.cache[id];
+        this.restore(s);
+        this.root.visible = true;
+      } else this.buildLayer(id);
+    }
+
+    // Dựng mới hẳn bãi id (nút "Dựng lại": nhà / cây / rào về nguyên trạng)
     build(id) {
       if (!PRESETS[id]) id = 'flat';
+      this.drop(id);
       this.clear();
+      this.buildLayer(id);
+    }
+
+    // Dựng sẵn bãi id ở dạng ẩn (lúc máy rảnh), bãi đang dùng giữ nguyên. Trả về nhóm root của bãi vừa dựng.
+    prebuild(id) {
+      if (!PRESETS[id] || this.id === id || this.cache[id]) return null;
+      const cur = this.snap();
+      try {
+        this.buildLayer(id);
+        this.root.visible = false;
+        this.cache[id] = this.snap();
+        return this.root;
+      } catch (e) {
+        this.clear();
+        throw e;
+      } finally {
+        this.restore(cur);
+      }
+    }
+
+    // Giải phóng bãi dựng sẵn id (bỏ trống id: mọi bãi dựng sẵn trừ các bãi trong keep)
+    drop(id, keep) {
+      for (const k of Object.keys(this.cache)) {
+        if (id ? k !== id : (keep && keep.includes(k))) continue;
+        const cur = this.snap();
+        this.restore(this.cache[k]);
+        this.clear();
+        this.restore(cur);
+        delete this.cache[k];
+      }
+    }
+
+    buildLayer(id) {
+      this.reset();
+      this.root = new THREE.Group();
+      this.root.name = 'pg-' + id;
+      this.base.add(this.root);
       this.id = id;
       const P = this.preset;
       const rng = mulberry32((P.seed || 1) * 7919 + 1);
@@ -444,6 +519,7 @@ const ProvingGround = (() => {
       this.root.updateMatrixWorld(true);
     }
 
+    // Giải phóng bãi đang dùng
     clear() {
       // nhà / boong-ke tự tạo hình khối & vật liệu riêng: giải phóng như terrain.clearTerrain (dựng lại nhiều lần không rò bộ nhớ)
       for (const S of [this.buildingSet, this.bunkerSet]) {
@@ -453,19 +529,15 @@ const ProvingGround = (() => {
           if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
         });
       }
-      while (this.root.children.length) this.root.remove(this.root.children[0]);
+      if (this.root) this.base.remove(this.root);
       for (const r of this.own) { try { r.dispose(); } catch (e) { /* bỏ qua */ } }
-      this.own = [];
-      this.boulders = [];
-      this.trees = null;
-      this.props = null;
-      this.buildingSet = this.bunkerSet = null;
-      this.H = null;
+      this.reset();
     }
 
     dispose() {
+      this.drop();
       this.clear();
-      if (this.root.parent) this.root.parent.remove(this.root);
+      if (this.base.parent) this.base.parent.remove(this.base);
     }
 
     // ---- LƯỚI ĐỘ CAO (mặt đất vẽ và mặt đất xe chạy dùng chung một lưới -> bánh xe không lơ lửng / chìm)
@@ -753,7 +825,7 @@ const ProvingGround = (() => {
       if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx);
       if (this.props) this.props.damageAt(x, y, z, ammo, heavy, fx);
       if (this.buildingSet) this.buildingSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {});
-      if (this.bunkerSet) this.bunkerSet.damageAt(x, y, z, ammo, heavy, fx);
+      if (this.bunkerSet) this.bunkerSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {});
     }
     // Đạn bay qua tán cây: lá rụng, cây rung
     passSegment(a, b, ammo, fx) {

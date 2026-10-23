@@ -354,7 +354,6 @@ body, html {
 
 .legend-color.friendly { background: #00e5ff; }
 .legend-color.radar-area { background: rgba(255, 59, 48, 0.6); }
-.legend-color.zone-safe { background: #4cd964; }
 .legend-color.bunker { background: #78826d; }
 .legend-color.hill { background: #b45309; }
 
@@ -1400,7 +1399,6 @@ body, html {
 .tm-ic.range { border: 1.5px solid #ccd1c7; background: rgba(204, 209, 199, 0.08); }
 .tm-ic.dead { border: 1.5px dashed #ff5a50; }
 .tm-ic.sight { border: 1px dashed rgba(255, 255, 255, 0.6); }
-.tm-ic.zone { border: 2px solid #ccd1c7; }
 .tm-ic.bush { background: rgba(70, 150, 70, 0.45); border: 1px dashed rgba(120, 200, 110, 0.8); }
 .tm-ic.crate { background: var(--tc-accent); border-radius: 2px; transform: scale(0.75); }
 

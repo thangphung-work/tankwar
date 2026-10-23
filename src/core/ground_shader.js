@@ -345,13 +345,21 @@ const GroundShader = (() => {
     const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
     const hv = (i, j) => H[Math.max(0, Math.min(S, j)) * NN + Math.max(0, Math.min(S, i))];
     const W = N + 2, hb = new Float32Array(W * W);
-    for (let j = -1; j <= N; j++) for (let i = -1; i <= N; i++) {
-      const gx = (i + 0.5) * px / cell, gz = (j + 0.5) * px / cell, ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz;
-      const r0 = cr(hv(ix - 1, iz - 1), hv(ix, iz - 1), hv(ix + 1, iz - 1), hv(ix + 2, iz - 1), fx);
-      const r1 = cr(hv(ix - 1, iz), hv(ix, iz), hv(ix + 1, iz), hv(ix + 2, iz), fx);
-      const r2 = cr(hv(ix - 1, iz + 1), hv(ix, iz + 1), hv(ix + 1, iz + 1), hv(ix + 2, iz + 1), fx);
-      const r3 = cr(hv(ix - 1, iz + 2), hv(ix, iz + 2), hv(ix + 1, iz + 2), hv(ix + 2, iz + 2), fx);
-      hb[(j + 1) * W + (i + 1)] = cr(r0, r1, r2, r3, fz);
+    // Nội suy bậc ba tách 2 chiều: nội suy theo x cho từng HÀNG LƯỚI một lần (rowX[hàng][cột ảnh]) rồi mỗi điểm ảnh chỉ còn
+    // nội suy theo z giữa 4 hàng — cùng phép tính, cùng thứ tự với nội suy 16 điểm trước đây (kết quả y hệt) nhưng ít
+    // đọc lưới hơn ~4 lần (bản đồ 16200: 2048² điểm ảnh, trước đây ~1 s riêng bước này)
+    const z0 = Math.floor(-0.5 * px / cell) - 1, z1 = Math.floor((N + 0.5) * px / cell) + 2, rowX = new Map();
+    const colIx = new Int32Array(W), colFx = new Float64Array(W);
+    for (let i = -1; i <= N; i++) { const gx = (i + 0.5) * px / cell, ix = Math.floor(gx); colIx[i + 1] = ix; colFx[i + 1] = gx - ix; }
+    for (let r = z0; r <= z1; r++) {
+      const R = new Float64Array(W);
+      for (let c = 0; c < W; c++) { const ix = colIx[c]; R[c] = cr(hv(ix - 1, r), hv(ix, r), hv(ix + 1, r), hv(ix + 2, r), colFx[c]); }
+      rowX.set(r, R);
+    }
+    for (let j = -1; j <= N; j++) {
+      const gz = (j + 0.5) * px / cell, iz = Math.floor(gz), fz = gz - iz;
+      const A = rowX.get(iz - 1), B = rowX.get(iz), C = rowX.get(iz + 1), D = rowX.get(iz + 2), o = (j + 1) * W;
+      for (let c = 0; c < W; c++) hb[o + c] = cr(A[c], B[c], C[c], D[c], fz);
     }
     const data = new Uint8Array(N * N * 4), ny = new Float32Array(N * N);
     // Độ lõm / lồi của địa hình (kênh alpha): hõm trũng giữ ẩm -> cỏ xanh đậm, tối hơn; gờ lồi khô -> vàng nhạt hơn.
@@ -362,7 +370,13 @@ const GroundShader = (() => {
       const dx = (hb[(j + 1) * W + i + 2] - hb[(j + 1) * W + i]) / (2 * px), dz = (hb[(j + 2) * W + i + 1] - hb[j * W + i + 1]) / (2 * px);
       const l = Math.hypot(dx, 1, dz), nx = -dx / l, nyy = 1 / l, nz = -dz / l, k = (j * N + i) * 4;
       data[k] = (nx * 0.5 + 0.5) * 255; data[k + 1] = (nyy * 0.5 + 0.5) * 255; data[k + 2] = (nz * 0.5 + 0.5) * 255;
-      const cav = cavOf(i, j, 40) * 0.6 + cavOf(i, j, 14) * 0.4;
+      // điểm ảnh cách mép > 40: đọc thẳng (khỏi kẹp chỉ số) — cùng kết quả với cavOf
+      let cav;
+      if (i >= 40 && j >= 40 && i < N - 40 && j < N - 40) {
+        const o = (j + 1) * W + i + 1, c = hb[o], w40 = 40 * W, w14 = 14 * W;
+        cav = ((hb[o - 40] + hb[o + 40] + hb[o - w40] + hb[o + w40]) * 0.25 - c) / (40 * px) * 0.6
+          + ((hb[o - 14] + hb[o + 14] + hb[o - w14] + hb[o + w14]) * 0.25 - c) / (14 * px) * 0.4;
+      } else cav = cavOf(i, j, 40) * 0.6 + cavOf(i, j, 14) * 0.4;
       data[k + 3] = Math.max(0, Math.min(255, 128 + cav * 420));
       ny[j * N + i] = nyy;
     }
@@ -396,6 +410,12 @@ const GroundShader = (() => {
     // rõ ràng (nắng song song với đỉnh gợn thì gợn gần như vô hình)
     const sunD = opts.terrain && opts.terrain.atmosphere && opts.terrain.atmosphere.sunDir;
     const windA = sunD ? Math.atan2(sunD.z, sunD.x) + 0.35 : 0.65;
+    // Trời mưa (Weather): mặt đất tự lo độ ướt (vũng ở chỗ trũng, thấm sẫm theo loại đất), bỏ lớp ướt chung.
+    // G_PUD: lượng vũng; G_WETC: màu sẫm khi thấm nước; G_WETR: độ nhám khi ướt (cát vẫn mờ, bê tông / đất bóng hơn)
+    const rain = typeof Weather !== 'undefined' && Weather.glsl;
+    if (rain) Weather.markDry(mat);
+    const RW = { DESERT: [0.35, '0.52, 0.5, 0.48', 0.72], URBAN: [0.85, '0.6, 0.6, 0.62', 0.4], JUNGLE: [1.0, '0.66, 0.7, 0.64', 0.5],
+      HIGHLAND: [0.7, '0.68, 0.7, 0.68', 0.52], RIVER_LAKE: [0.9, '0.66, 0.69, 0.64', 0.5] }[opts.mapType] || [0.7, '0.68, 0.7, 0.68', 0.52];
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, {
         gBase: { value: L.base }, gDirt: { value: L.dirt }, gRock: { value: L.rock }, gFine: { value: L.fine },
@@ -414,6 +434,9 @@ const GroundShader = (() => {
       );
       sh.fragmentShader = `uniform sampler2D gBase, gDirt, gRock, gFine, gNoise, gNrm, gBldOcc;
 uniform vec2 gTerr;
+#define G_PUD ${RW[0].toFixed(3)}
+#define G_WETC vec3(${RW[1]})
+#define G_WETR ${RW[2].toFixed(3)}
 uniform vec4 gBldGrid;
 #if __VERSION__ >= 300
 #define GTEXG(s, uv, dx, dy) textureGrad(s, uv, dx, dy)
@@ -733,6 +756,28 @@ float gTuftH(vec2 p) {
     cSand *= mix(1.0, 1.06, smoothstep(1.2, 3.0, yW));                                         // bờ cao: khô sáng hơn
     col = mix(col, cSand, smoothstep(0.0, 0.6, gSand));
   }
+  float gRainW = 0.0, gPud = 0.0;
+  vec3 gDrops = vec3(0.0);${rain ? `
+  if (skyWetU.x > 0.0) {
+    // có mái che (gầm cầu, lòng hầm): khô; ngoài bản đồ (cảnh nền) luôn ướt
+    float gOpen = skyWetU.w > 0.0 ? 1.0 - smoothstep(10.0, 16.0, skyWetTop(wp) - vGW.y) * gInMap : 1.0;
+    gRainW = skyWetU.x * gOpen;
+    // VŨNG NƯỚC: đọng ở hõm trũng & chỗ bằng (mép vũng lượn theo nhiễu), đất trống đọng nhiều hơn cỏ; không đọng trên dốc / đá
+    float pn = texture2D(gNoise, wr1 / 41.0 + 0.23).r * 0.6 + texture2D(gNoise, wr2 / 12.0 + 0.61).g * 0.4;
+    // (hõm lớn không thành một tấm gương liền: nhiễu nhỏ cắt vụn thành nhiều vũng, chừa gờ đất / khóm cỏ nhô lên)
+    float lvl = cav * 1.3 + (pn - 0.5) * 1.3 + (texture2D(gNoise, wr3 / 4.3 + 0.71).b - 0.5) * 0.45 + t2 * 0.18 - slope * 3.0 - t3;
+    gPud = smoothstep(0.36 - 0.22 * G_PUD, 0.5 - 0.22 * G_PUD, lvl) * gRainW * gInMap * (1.0 - t3);
+    // THẤM ƯỚT: đất / cát sẫm hẳn, cỏ sẫm ít hơn; lấm tấm vệt mưa (đốm ướt đậm nhạt li ti chỗ thấm nhiều chỗ ít)
+    float spk = smoothstep(0.55, 0.75, texture2D(gNoise, wp / 1.7 + 0.37).r * 0.6 + texture2D(gNoise, wp / 0.6 + 0.11).g * 0.4);
+    col *= mix(vec3(1.0), G_WETC * (1.0 - 0.12 * spk), gRainW);
+    col *= 1.0 - 0.12 * t2 * gRainW;
+    // giọt mưa vừa đập xuống: đốm sẫm lấm tấm trên đất, vòng sóng loang trên vũng (pháp tuyến bên dưới)
+    float gRd = length(vViewPosition);
+    if (gRd < 300.0) gDrops = skyRainDrops(wp, skyWetU.y, skyWetU.z) * (1.0 - gRd / 300.0) * gRainW;
+    col *= 1.0 - 0.2 * gDrops.z * (1.0 - gPud);
+    // nước vũng đục phù sa: thân nước sẫm (cái mắt thấy chủ yếu là trời phản chiếu, xem lights_fragment_end)
+    col = mix(col, col * 0.45 + vec3(0.018, 0.017, 0.013), gPud * 0.85);
+  }` : ''}
   diffuseColor.rgb *= col;
 
 `)
@@ -758,9 +803,23 @@ float gTuftH(vec2 p) {
       float k = 0.2 / e * (1.0 - smoothstep(0.18, 0.4, slope)) * (1.0 - max(t2, t3));
       nW = normalize(nW - vec3(rx - gRip0, 0.0, rz - gRip0) * k);
     }` : ''}
-    normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
-  }`)
-        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+${rain ? `    if (gRainW > 0.0) {
+      nW = normalize(mix(nW, vec3(0.0, 1.0, 0.0), clamp(gPud * 1.2, 0.0, 1.0)));     // mặt vũng phẳng lặng
+      nW = normalize(nW + vec3(-gDrops.x, 0.0, -gDrops.y) * (0.15 + 0.85 * gPud));   // vòng sóng giọt mưa
+      vec2 gBl = skyBlastRip(wp).xy;                                                       // sóng xung kích vụ nổ / đầu nòng
+      nW = normalize(nW + vec3(-gBl.x, 0.0, -gBl.y) * (0.2 + 0.8 * gPud));
+    }
+` : ''}    normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+  }`).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  roughnessFactor = mix(roughnessFactor, ${rain ? 'G_WETR' : 'roughnessFactor'}, gRainW);
+  roughnessFactor = mix(roughnessFactor, 0.04, gPud);`)
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>${rain ? `
+  if (gRainW > 0.0) {
+    // mặt đất ướt / vũng nước phản chiếu trời mây xám (nhìn xiên sáng loáng, nhìn thẳng xuống tối)
+    vec3 gR = reflect(-geometry.viewDir, geometry.normal);
+    float gF = 0.02 + 0.98 * pow(1.0 - clamp(dot(geometry.normal, geometry.viewDir), 0.0, 1.0), 5.0);
+    reflectedLight.indirectSpecular += skyWetSky(dot(viewMatrix[1].xyz, gR)) * gF * (gPud * 1.05 + gRainW * 0.22);
+  }` : ''}
   // (bóng mây trôi: tính chung cho mọi vật liệu trong chunk chiếu sáng, xem SkySystem.installCloudShadows)
   {
     float vao = gVehAO(vGW.xz);
@@ -778,7 +837,7 @@ float gTuftH(vec2 p) {
     }
   }`);
     };
-    mat.customProgramCacheKey = () => 'groundPBR13:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '');
+    mat.customProgramCacheKey = () => 'groundPBR13:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '') + (rain ? ':rain' : '');
     mat.needsUpdate = true;
     return mat;
   }

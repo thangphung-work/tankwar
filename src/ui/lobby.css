@@ -338,6 +338,35 @@
   text-overflow: ellipsis;
 }
 
+/* Chọn thời tiết trận đấu (Ngẫu nhiên / Nắng / Mưa) — nằm cuối dòng tiêu đề bảng chiến địa */
+.mm-weather-seg {
+  margin-left: auto;
+  display: flex;
+  align-self: center;
+  border: 1px solid var(--lb-line);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.mm-wx-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--lb-dim);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--lb-line);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mm-wx-btn:first-child { border-left: 0; }
+.mm-wx-btn:hover { color: var(--lb-accent-2); }
+.mm-wx-btn.active { color: var(--lb-accent-2); background: var(--lb-accent-soft); }
+.mm-wx-btn .ti { font-size: 14px; }
+
 /* --------------------------------------------------------------------------
    01 — XE XUẤT TRẬN
    -------------------------------------------------------------------------- */

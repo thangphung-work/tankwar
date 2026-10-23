@@ -513,11 +513,11 @@ const Account = (() => {
       const p = plan();
       if (!p.total) { box.innerHTML = `<span class="acc-rs-title ok"><i class="ti ti-circle-check"></i> Xe sẵn sàng: giáp nguyên vẹn, đủ đạn 1 lần xuất kích</span>`; return; }
       const parts = [];
-      if (p.armorN) parts.push(`giáp hỏng <b>${p.armorN}</b> khối (${fmtSilver(p.armorCost)} Bạc)`);
+      if (p.armorN) parts.push(`mua lại <b>${p.armorN}</b> khối giáp bị phá (${fmtSilver(p.armorCost)} Bạc)`);
       if (p.buys.length) parts.push(`nạp đầy ${p.buys.map(b => `${b.n} ${esc(Equipment.AMMO_SHOP[tank][b.k].name.toLowerCase())}`).join(', ')} (${fmtSilver(p.ammoCost)} Bạc)`);
       const can = (profile.silver | 0) >= p.total;
       box.innerHTML = `<span class="acc-rs-title"><i class="ti ti-tool"></i> BẢO DƯỠNG XE</span><span class="acc-rs-left">Thu trận này <b>+${fmtSilver(earned || 0)}</b> Bạc · ${parts.join(' · ')}</span>`
-        + `<button class="eqp-btn" data-up="go"${can ? '' : ' disabled'} title="${can ? 'Sửa giáp & mua đạn bằng Bạc' : 'Không đủ Bạc'}"><i class="ti ti-tool"></i> NẠP ĐẠN & SỬA XE · ${fmtSilver(p.total)} Bạc</button>`
+        + `<button class="eqp-btn" data-up="go"${can ? '' : ' disabled'} title="${can ? 'Mua lại giáp bị phá & mua đạn bằng Bạc' : 'Không đủ Bạc'}"><i class="ti ti-tool"></i> NẠP ĐẠN & BÙ GIÁP ·${fmtSilver(p.total)} Bạc</button>`
         + (note ? `<span class="acc-rs-left">${esc(note)}</span>` : '');
     };
     draw();

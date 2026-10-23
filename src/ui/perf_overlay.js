@@ -68,6 +68,38 @@
     return { obj, meshes, lights, casters, transp };
   }
 
+  // MẠNG (trận nhiều người): ping, lưu lượng / giây (chênh từ lần hiện trước, ~1 s), trễ hiển thị xe người khác
+  // (bộ đệm nội suy thích ứng theo độ giật gói), số xe đang nội suy / đoán tiếp vị trí (gói trễ) / đứng chờ (mất gói lâu)
+  const N = { last: null, at: 0 };
+  function netStats() {
+    const net = window.netTransport, sync = window.netSync;
+    if (!net || !net.isOnline) return '';
+    const st = net.stats || {}, t = now();
+    let rate = '';
+    if (N.last && t > N.at) {
+      const k = 1000 / (t - N.at);
+      rate = `vào ${((st.recv - N.last.recv) * k).toFixed(0)} gói · ${((st.bytesIn - N.last.bytesIn) * k / 1024).toFixed(1)} KB/s   ` +
+        `ra ${((st.sent - N.last.sent) * k).toFixed(0)} gói · ${((st.bytesOut - N.last.bytesOut) * k / 1024).toFixed(1)} KB/s`;
+    }
+    N.last = { recv: st.recv || 0, sent: st.sent || 0, bytesIn: st.bytesIn || 0, bytesOut: st.bytesOut || 0 }; N.at = t;
+    let bufLine = '';
+    if (sync && !sync.detached && Array.isArray(sync.buffers)) {
+      const m = { interp: 0, extrap: 0, hold: 0 };
+      let dl = 0, dmax = 0, jit = 0, nb = 0;
+      sync.buffers.forEach((b, i) => {
+        const u = sync.byNetId[i];
+        if (!b || !u || u.isDead || (sync.owns && sync.owns(u))) return;   // chỉ xe máy khác điều khiển
+        if (m[b.mode] !== undefined) m[b.mode]++;
+        dl += b.delay || 0; dmax = Math.max(dmax, b.delay || 0); jit = Math.max(jit, b.jitter || 0); nb++;
+      });
+      if (nb) bufLine = `Trễ hiển thị TB ${(dl / nb).toFixed(0)} ms · tối đa ${dmax.toFixed(0)} ms · giật gói ${jit.toFixed(0)} ms\n` +
+        `Xe từ xa ${nb}: nội suy ${m.interp} · đoán tiếp ${m.extrap} · đứng chờ ${m.hold}\n`;
+    }
+    return `--- mạng (${net.mode}${net.isHost ? ', chủ phòng' : ''}) ---\n` +
+      `Ping ${Math.round(net.rtt || 0)} ms   người trong phòng ${(net.peers ? net.peers.size : 0) + 1}\n` +
+      (rate ? rate + '\n' : '') + bufLine;
+  }
+
   function show() {
     const g = window.game;
     if (!g || !S.el) return;
@@ -88,6 +120,7 @@
       (typeof GfxQuality !== 'undefined'
         ? `GPU ${GfxQuality.gpuMs === null ? (GfxQuality.timerSupported ? '...' : 'không đo được') : GfxQuality.gpuMs.toFixed(1) + ' ms'} · nhịp màn hình ${GfxQuality.refreshMs.toFixed(1)} ms · độ nét ${g.renderer.getPixelRatio().toFixed(2)} (tối đa ${GfxQuality.maxRatio.toFixed(2)})\n`
         : '') +
+      netStats() +
       `--- thời gian CPU trung bình mỗi khung ---\n` + rows.join('\n');
     for (const k in S.T) { S.T[k].ms = 0; S.T[k].n = 0; }
     S.frames = 0;

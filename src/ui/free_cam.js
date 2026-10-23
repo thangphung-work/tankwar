@@ -40,7 +40,6 @@
     g.startMatchWithSlots([{ id: 0, team: 'BLUE', title: 'FREE CAM', name: 'FREE CAM', isHuman: true, isMe: true, peerId: 'cam-me', tankType: 'SCOUT', ready: true }], 'cam-me');
     // không có luật trận
     g.matchDuration = 1e9;
-    if (g.zone) g.zone.update = function () {};
     g.airdropTimer = 1e9;
     if (g.supplyManager) g.supplyManager.airdropTimer = 1e9;
     const P = g.player;

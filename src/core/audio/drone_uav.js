@@ -185,6 +185,13 @@ SoundEngine.mixin(class {
     else { beep(t, 1320, 0.05); beep(t + 0.12, 1320, 0.05); beep(t + 0.24, 1320, 0.05); }
   }
 
+  // UAV cảm tử sắp hết nhiên liệu: một tiếng "tít" ngắn; urg 0..1 càng gần cạn càng cao & to (nhịp do kamikaze_uav.js)
+  playKamiFuelBeep(urg = 0) {
+    if (!this.ready()) return;
+    const bus = this.uiBus || this.masterGain, t = this.ctx.currentTime + 0.01;
+    this.tone(bus, t, { type: 'square', freq: 1500 + 500 * urg, gain: 0.014 + 0.01 * urg, attack: 0.003, hold: 0.045, dur: 0.03, filter: 'lowpass', filterFreq: 3500 });
+  }
+
   /**
    * Tiếng cánh quạt của các drone đang bay nghe từ xe mình dưới đất (tối đa 2 chiếc gần nhất, mỗi chiếc 1 giọng).
    * list: [{ d (đv), pos {x, z}, vr (vận tốc lại gần, m/s; dương = đang lao tới), speed (đv/s), climb (đv/s) }]

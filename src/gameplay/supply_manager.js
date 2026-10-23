@@ -41,12 +41,11 @@ class SupplyManager {
 
     let dropX = px, dropZ = pz;
     if (typeof dropX !== 'number' || typeof dropZ !== 'number') {
-      const zoneCenterX = this.game.zone.current.x - this.game.worldWidth / 2;
-      const zoneCenterZ = this.game.zone.current.y - this.game.worldDepth / 2;
-      const r = Math.random() * (this.game.zone.current.radius * 0.65);
+      const A = this.game.battleArea();
+      const r = Math.random() * (A.r * 0.65);
       const angle = Math.random() * Math.PI * 2;
-      dropX = zoneCenterX + Math.cos(angle) * r;
-      dropZ = zoneCenterZ + Math.sin(angle) * r;
+      dropX = A.x + Math.cos(angle) * r;
+      dropZ = A.z + Math.sin(angle) * r;
       // không thả dù vào khu căn cứ vùng cấm bắn giữa 3 cứ điểm
       const LS = this.game.terrain && this.game.terrain.landmarkSet;
       if (LS && LS.outside) [dropX, dropZ] = LS.outside(dropX, dropZ, 60);

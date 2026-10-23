@@ -535,7 +535,16 @@ const ReconDrone = (() => {
     }
   }
 
-  return { PAD, DOCK, CENTER_Y, build, animate, buildDock, animateDock, buildDebris, buildFlame, animateFlame };
+  /** Gỡ ngọn lửa khỏi cảnh & hủy vật liệu riêng của nó (14 SpriteMaterial / ngọn — animateFlame đổi màu / độ mờ từng
+   *  đốm nên không dùng chung được). Ảnh lửa / khói dùng chung, không hủy */
+  function disposeFlame(f) {
+    if (!f) return;
+    if (f.parent) f.parent.remove(f);
+    f.traverse(o => { if (o.isSprite && o.material) o.material.dispose(); });
+    if (f.userData) f.userData.parts = null;   // animateFlame gọi nhầm sau khi hủy: bỏ qua
+  }
+
+  return { PAD, DOCK, CENTER_Y, build, animate, buildDock, animateDock, buildDebris, buildFlame, animateFlame, disposeFlame };
 })();
 
 if (typeof window !== 'undefined') window.ReconDrone = ReconDrone;

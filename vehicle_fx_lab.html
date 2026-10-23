@@ -29,6 +29,7 @@
       <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
       <a class="on" href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
       <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+      <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
     </nav>
   </header>
 
@@ -179,11 +180,11 @@
 
 <script src="three.min.js"></script>
 <script src="src/core/audio/sound_engine.js?v=20261022sh1"></script>
-<script src="src/core/audio/weapon_fire.js?v=20261022cl1"></script>
+<script src="src/core/audio/weapon_fire.js?v=20261023msl2"></script>
 <script src="src/core/audio/destruction.js?v=20261022sh1"></script>
-<script src="src/core/audio/impacts.js?v=20261022sh1"></script>
+<script src="src/core/audio/impacts.js?v=20261023apfs1"></script>
 <script src="src/core/audio/incoming.js?v=20261020m8"></script>
-<script src="src/core/audio/cockpit_cues.js?v=20261022rl1"></script>
+<script src="src/core/audio/cockpit_cues.js?v=20261022vox1"></script>
 <script src="src/core/audio/vehicle_engine.js?v=20261022eco1"></script>
 <script src="src/core/audio/vehicle_destroyed.js?v=20261021mg1"></script>
 <script src="src/core/audio/other_engines.js?v=20261022eco1"></script>
@@ -195,20 +196,20 @@
 <script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
 <script src="src/core/audio/ui_sounds.js?v=20261022sh1"></script>
 <script src="src/entities/tank_models.js?v=20261022sh1"></script>
-<script src="src/core/game_timing.js?v=20261022sh1"></script>
+<script src="src/core/game_timing.js?v=20261023bal1"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261022mud1"></script>
-<script src="src/entities/tanks/roof_mounts.js?v=20261022kami2"></script>
+<script src="src/entities/tanks/roof_mounts.js?v=20261023msl1"></script>
 <script src="src/entities/tanks/mbt_halberd.js?v=20261022mod2"></script>
 <script src="src/entities/tanks/fsv_hailstorm.js?v=20261022eco1"></script>
 <script src="src/entities/tanks/spg_arbalest.js?v=20261022mod2"></script>
-<script src="src/entities/tanks/recon_marten.js?v=20261022mrg1"></script>
-<script src="src/entities/projectiles.js?v=20261022trc2"></script>
-<script src="src/gameplay/tire_tracks.js?v=20261022sh1"></script>
-<script src="src/entities/spg.js?v=20261022fix1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261022dz4"></script>
-<script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261022fix1"></script>
-<script src="src/core/equipment.js?v=20261022eco1"></script>
+<script src="src/entities/tanks/recon_marten.js?v=20261022pit1"></script>
+<script src="src/entities/projectiles.js?v=20261023msl2"></script>
+<script src="src/gameplay/tire_tracks.js?v=20261022wetmud1"></script>
+<script src="src/entities/spg.js?v=20261023bal1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261023msl2"></script>
+<script src="src/gameplay/wading_fx.js?v=20261022wetmud1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261023eqfix1"></script>
+<script src="src/core/equipment.js?v=20261023eqfix1"></script>
 <script src="src/gameplay/camo_fire.js?v=20261021wet1"></script>
 
 <script>
@@ -716,6 +717,7 @@
       soundEngine.playRocketLaunch();
     } else if (window.soundEngine) {
       soundEngine.playExplosionAtDistance(40, 'DIRECT_HIT', 'RPG');
+      if (soundEngine.playArmorOutcome) soundEngine.playArmorOutcome(40, null, { cls: 'heat', pen: true });   // luồng phụt xuyên vào khoang
     }
 
     activeRockets.push({
@@ -1297,6 +1299,8 @@
 
   // Khởi tạo xe ban đầu
   loadUnit(state.tankType, state.team);
+  // móc cho script chụp ảnh tự động (CDP): đổi xe, đặt camera
+  window.__lab = { loadUnit, orbit, updateCamera, state, get unit() { return activeUnit; } };
 
   // ===========================================================================
   // VÒNG LẶP CHÍNH MÔ PHỎNG CHIẾN XA VÀ HIỆU ỨNG HẠT

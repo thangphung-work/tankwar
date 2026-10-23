@@ -26,16 +26,32 @@ const Dispersion = (() => {
     TANK_HE:          { mil: 0.45, mv: 0.0015, bloom: 0.5, bloomMax: 0.5, bloomDecay: 0.6 },
     GATLING_BULLET:   { mil: 1.2, mv: 0.004, bloom: 0.02, bloomMax: 0.6, bloomDecay: 0.4 },  // 30 mm 6 nòng: tản rộng, nở theo loạt
     INCENDIARY:       { mil: 1.2, mv: 0.004, bloom: 0.02, bloomMax: 0.6, bloomDecay: 0.4 },
-    SCOUT_BULLET:     { mil: 1.9, mv: 0.005, bloom: 0.1, bloomMax: 1.2, bloomDecay: 0.7 },   // súng máy 12.7 mm trên giá
-    SCOUT_INCENDIARY: { mil: 1.9, mv: 0.005, bloom: 0.1, bloomMax: 1.2, bloomDecay: 0.7 },
+    // súng máy 12.7 mm trên giá xoay tay: xạ thủ tì vai ghì súng -> vài viên đầu loạt khá chụm; xả dài súng nảy dần (nở
+    // +0.6/s, tự co 0.35/s -> loạt ngắn 5-10 viên gần như không nở, xả >3 s mới tới trần). Trước đây 1.9 + nở 1.0/s: ngay
+    // loạt 10 viên đã tản x2, trúng xe ở 400 đv chỉ ~20%
+    SCOUT_BULLET:     { mil: 1.4, mv: 0.005, bloom: 0.06, bloomMax: 0.8, bloomDecay: 0.35 },
+    SCOUT_INCENDIARY: { mil: 1.4, mv: 0.005, bloom: 0.06, bloomMax: 0.8, bloomDecay: 0.35 },
+    // lựu 40mm súng phóng lựu cầm tay trên giá (xe trinh sát): mỗi phát giật nặng, nhịp chậm (~4 phát/s) -> nở nhanh theo
+    // loạt; sơ tốc dao động lớn hơn đạn súng -> lệch tầm. (+ độ lệch riêng của súng MAIN_WEAPONS.agl.spread.) Trước đây
+    // dùng chung bảng súng máy 12.7
+    GL40:             { mil: 0.8, mv: 0.012, bloom: 0.1, bloomMax: 0.7, bloomDecay: 0.5 },
     RPG:              { mil: 3.0, mv: 0.010, bloom: 0, bloomMax: 0, bloomDecay: 1 },
     ANTI_TANK_MISSILE:{ mil: 0.06, mv: 0, bloom: 0, bloomMax: 0, bloomDecay: 1 },               // dẫn đường: gần như không tản
-    ARTY_DIRECT:      { mil: 0.55, mv: 0.0020, bloom: 0.4, bloomMax: 0.4, bloomDecay: 0.5 },  // lựu pháo hạ nòng bắn thẳng
+    // lựu pháo hạ nòng bắn thẳng: ngắm bằng kính bắn thẳng đơn giản, không máy tính hỏa lực / ổn định như pháo tăng, nòng
+    // giật dài -> kém chụm rõ (tỉ lệ SCALE như mục tiêu mặt đất, không phải GUN_SCALE): hạ chân chống ngắm đủ lâu trúng xe
+    // tăng ~95% ở 300 đv, ~65% ở 600, ~35% ở 800 (vừa dừng / đang quay thấp hơn nhiều) — trúng là hạ (đạn 155 to; phải trúng
+    // thật vào thân xe, không có ngòi cận đích: ballistics), bắn trượt thì lộ vị trí & chờ nạp
+    ARTY_DIRECT:      { mil: 1.25, mv: 0.0020, bloom: 0.4, bloomMax: 0.4, bloomDecay: 0.5 },
     CLUSTER_SUBMUNITION: { mil: 0, mv: 0, bloom: 0, bloomMax: 0, bloomDecay: 1 }
   };
   // Lựu pháo bắn cầu vồng: σ hướng (mrad, đã theo tỉ lệ game) và σ sơ tốc — tầm ~ v² nên lệch dọc ≈ 2·mv·cự ly,
-  // lệch ngang ≈ defl·cự ly -> vùng rơi là hình bầu dục dài theo hướng bắn
-  const ARTY_LOB = { defl: 5, el: 1.0, mv: 0.012, bloom: 0.3, bloomMax: 0.3, bloomDecay: 0.4 };
+  // lệch ngang ≈ defl·cự ly -> vùng rơi là hình bầu dục dài theo hướng bắn.
+  // Theo số liệu bắn thật lựu pháo 155 mm đạn không điều khiển (có khí tượng & đo đạc tốt): ~15 km lệch tầm 1σ ~60 m, lệch
+  // hướng ~20 m. Quy đổi tỉ lệ game (tầm nén artyRangeScale, thân xe 8 đv/m) -> defl 29, mv 0.045 (đứng chắc chân ~x0.7).
+  // Trúng thẳng một chiếc xe chỉ còn vài % mỗi quả ở tầm xa — lựu pháo diệt xe vỏ mỏng bằng mảnh văng (BallisticsSystem3D
+  // .blastProfile: lõi ~6 m, tầm mảnh ~25 m), xe tăng chủ lực thì chỉ hỏng xích / kính / bộ phận ngoài trừ khi trúng thẳng.
+  // Trước đây defl 5, mv 0.012: chụm gấp ~4-6 lần thực tế (~20% trúng thẳng xe tăng ở 10 km)
+  const ARTY_LOB = { defl: 29, el: 1.0, mv: 0.045, bloom: 0.3, bloomMax: 0.3, bloomDecay: 0.4 };
 
   // BẮN CÀNG XA CÀNG KÉM CHỤM HƠN TỈ LỆ THUẬN: ngoài độ lệch góc (sai lệch tại đích tăng đều theo cự ly), đạn bay càng lâu
   // càng chịu thêm sai số khí tượng (gió giật, mật độ / nhiệt độ không khí dọc đường bay), nhiệt độ thuốc phóng, sai số đo
@@ -46,8 +62,21 @@ const Dispersion = (() => {
   // bắn xa không văng lệch tầm cả trăm đơn vị; lệch dọc = VERT_K x lệch ngang
   const GUN_SCALE = 9, VERT_K = 0.55;
   // pháo tăng 120 nòng trơn có ổn định & máy tính hỏa lực: chụm hơn lựu pháo hạ nòng (~1.2 đv lệch ngang 1σ ở 800 đv
-  // khi đứng yên) — đạn đi đúng chỗ tâm kính / vạch cự ly chỉ, chạy / quay tháp vẫn tản rõ (hệ số nhân)
-  const TANK_SCALE = 5;
+  // khi đứng yên) — đạn đi đúng chỗ tâm kính / vạch cự ly chỉ, chạy / quay tháp vẫn tản rõ (hệ số nhân).
+  // x9 (~0,56 σ thật theo tỉ lệ x16): đứng yên trúng xe tăng ~95% ở 2 km thật, ~75% ở 3,5 km; đang chạy ~65% ở 2,5 km —
+  // sát số liệu xe tăng có máy tính hỏa lực. Trước đây x5: trúng gần 100% tới 3,5 km kể cả khi đang chạy
+  const TANK_SCALE = 9;
+  // SÚNG MÁY (12.7 xe trinh sát, 7.62 trạm nóc tháp) BẮN MẶT ĐẤT: σ thật x MG_SCALE (thay cho SCALE 16). x16 làm chùm đạn
+  // ~±9 đv (1σ) ở 400 đv -> trúng xe được nhưng gần như không trúng nổi phụ kiện ngoài cỡ 0.3-0.6 m (kính, radar, ống khói,
+  // đèn, thùng...) — mà phá phụ kiện ngoài là việc chính của súng 12.7. x10: ~±5.6 đv ở 400 (~800 m thật): loạt ngắn ngắm
+  // kỹ vẫn trúng thân xe phần lớn, phụ kiện ngoài khi ở gần; xả xa / chạy / quay tháp tản rõ — súng máy trên giá xoay tay
+  // không chụm như pháo có ổn định (trước đây x6: trúng ~100% ở 800 m). Bắn drone (nòng > 8°) giữ bảng riêng AIR_K_MG
+  const MG_SCALE = 10;
+  // PHÁO 30MM 6 NÒNG (xe Hailstorm) BẮN MẶT ĐẤT: tháp có ổn định + máy tính hỏa lực nhưng cụm 6 nòng rung theo loạt ->
+  // σ thật x GATLING_SCALE. Trước đây x16 (như mục tiêu chung): ở 600 đv đứng yên chỉ ~46%/viên trúng xe, kém cả súng
+  // máy 12.7 cầm tay trên giá (~94%). x10: ~77% đứng yên, ~33% chạy hết tốc ở 600 đv — vẫn tản rộng hơn 12.7 mỗi mrad
+  // (bù lại bằng nhịp bắn). Trạm phóng lựu nóc tháp (bắn theo hệ đạn 30mm) giữ x16 + độ lệch riêng của bệ
+  const GATLING_SCALE = 10;
   const AIR_K = 0.4, AIR_K_MG = 0.7;   // súng liên thanh bắn lên trời vào drone (xem sigma)
 
   // ẢNH HƯỞNG CỦA CHUYỂN ĐỘNG theo dòng xe (pháo tăng có ổn định pháo 2 trục -> ít bị ảnh hưởng nhất):
@@ -101,6 +130,12 @@ const Dispersion = (() => {
     if (!u._disp) u._disp = { bloom: 0, rate: 0, still: 0, az: u.azimuth || 0, el: u.elevation || 0, body: u.bodyAngle || 0, burst: 0, shots: 0 };
     return u._disp;
   }
+  // Trạm vũ khí nóc tháp (súng máy / phóng lựu, drone_air: u._roofShot): độ nở theo loạt & số loạt riêng — trước đây cộng
+  // chung vào pháo chính, xả súng máy nóc làm phát pháo kế tiếp kém chụm tới x1.8
+  function roofStateOf(u) {
+    if (!u._dispRoof) u._dispRoof = { bloom: 0, burst: 0, decay: 1 };
+    return u._dispRoof;
+  }
   const wrap180 = d => ((d % 360) + 540) % 360 - 180;
 
   /** Gọi mỗi khung hình cho mỗi xe (spg.update): đo tốc độ quay tháp / thân, thời gian đứng ngắm, độ nở giảm dần */
@@ -119,12 +154,14 @@ const Dispersion = (() => {
     if (sp < 0.04 && S.rate < 3) S.still += dt; else S.still = 0;
     const P = profileFor(u, u.selectedAmmo, u.elevation);
     S.bloom = Math.max(0, S.bloom - dt * (P.bloomDecay || 1));
+    if (u._dispRoof) u._dispRoof.bloom = Math.max(0, u._dispRoof.bloom - dt * u._dispRoof.decay);
   }
 
   /** Bảng σ cho loại đạn của xe; elevation để phân biệt lựu pháo bắn cầu vồng / hạ nòng bắn thẳng */
   function profileFor(u, ammo, elevation) {
     const type = u && u.tankType;
     let a = ammo || 'NORMAL';
+    if (type === 'SCOUT' && u.mainGun && u.mainGun.kind === 'agl' && a !== 'ANTI_TANK_MISSILE') return PROFILE.GL40;
     if (type === 'GATLING' && a !== 'INCENDIARY') a = 'GATLING_BULLET';
     if (type === 'SCOUT' && a !== 'INCENDIARY' && a !== 'ANTI_TANK_MISSILE' && a !== 'RPG') a = 'SCOUT_BULLET';
     const key = typeof GameTiming !== 'undefined' ? GameTiming.roundKey(a, type) : 'TANK_NORMAL';
@@ -160,19 +197,22 @@ const Dispersion = (() => {
     return { amp: V.sway * (M.move + 0.6 * M.turn + M.jolt), hz: V.swayHz };
   }
 
-  /** Hệ số nhân độ tản mát hiện tại của xe (1 = đứng yên vừa dừng tay) */
-  function multiplier(u) {
+  /** Hệ số nhân độ tản mát hiện tại của xe (1 = đứng yên vừa dừng tay); bs: trạng thái độ nở riêng (trạm nóc tháp) */
+  function multiplier(u, bs) {
     if (!u) return 1;
     const S = stateOf(u);
     const V = vehOf(u);
     const M = motionTerms(u, V, S);
     let m = (1 + M.move) * (1 + M.turn) * (1 + M.jolt);
-    m *= 1 + S.bloom;
+    m *= 1 + (bs || S).bloom;
     m *= 1 - V.settleGain * Math.min(1, S.still / V.settleT);
     if (u.tankType === 'ARTILLERY' && !u.isDeployed) m *= 1.8;   // chưa hạ chân chống: cả xe giật nảy theo phát bắn
     const d = u.dmg;
     if (d && d.lost && d.lost.has && d.lost.has('opticGunner')) m *= 1.7;   // vỡ kính ngắm pháo thủ: ngắm qua kính dự phòng
-    if (d && d.gun) m *= 1.25;                                               // pháo / súng bị bắn trúng, cong lệch
+    if (d && d.gun) m *= 1.15;                                               // cơ cấu pháo hư (bộ hãm lùi, ổn định)
+    // nòng cong: ngoài độ lệch cố định theo hướng cong (spg.getMuzzleWorldTransform boreDir), đạn ra khỏi ống méo kém chụm
+    // — chỗ cong càng sát miệng nòng đạn càng chao đầu (vehicle_damage applyBend: boreSpread 1,3 ở gốc .. 2,0 ở miệng nòng)
+    if (d && d.boreSpread && !u._roofShot) m *= d.boreSpread;
     // cột khí tượng xe pháo bị bắn hỏng: máy tính hỏa lực mất số liệu gió / nhiệt độ / áp suất -> lựu pháo kém chụm
     if (d && d.lost && d.lost.has && d.lost.has('meteo') && u.tankType === 'ARTILLERY') m *= 1.3;
     return m;
@@ -181,17 +221,17 @@ const Dispersion = (() => {
   /**
    * σ hiện tại cho phát bắn tiếp theo: { lat, vert } (rad) và mv (tỉ lệ sơ tốc), lob = lựu pháo cầu vồng
    */
-  function sigma(u, ammo, elevation, range) {
+  function sigma(u, ammo, elevation, range, bs) {
     const a = ammo !== undefined ? ammo : (u && u.selectedAmmo), el = elevation !== undefined ? elevation : (u && u.elevation);
     const P = profileFor(u, a, el);
-    const m = multiplier(u);
+    const m = multiplier(u, bs);
     const r = rangeMul(u, a, P, range);
     if (P === ARTY_LOB) return { lat: P.defl * 1e-3 * m * r, vert: P.el * 1e-3 * m * r, mv: P.mv * m * r, lob: true, mul: m, rmul: r };
     // pháo tăng nòng dài có ổn định + máy tính hỏa lực: tỉ lệ game riêng nhỏ hơn (GUN_SCALE) và lệch dọc nhỏ hơn lệch
     // ngang (VERT_K) — đường đạn rất căng (rơi xiên ~1° ở 900 đv) nên mỗi mrad lệch dọc thành hàng chục-trăm đv lệch
     // tầm trên mặt đất; trước đây σ x16 cả hai chiều -> bắn điểm mặt đất ở 600-1000 đv rơi lệch tầm cả trăm đv
     // Lựu pháo hạ nòng bắn thẳng cũng đường đạn căng như pháo tăng: σ x16 cả chiều dọc làm điểm rơi lệch tầm ~110 đv
-    // ở 800 đv -> dùng cùng tỉ lệ; vẫn kém chụm hơn pháo tăng nhờ σ gốc lớn hơn (0.55 so với 0.30-0.45)
+    // ở 800 đv -> lệch dọc theo VERT_K như pháo tăng; lệch ngang theo SCALE (kém chụm hẳn pháo tăng — xem PROFILE.ARTY_DIRECT)
     // Súng liên thanh bắn lên trời (chống drone, nòng > 8°): σ x16 theo tỉ lệ "xe nhìn to như ở cự ly x16" làm chùm đạn
     // ~±24 đv ở 1000 đv quanh drone bán kính trúng 4,5 đv -> mỗi viên ~2%, xả hết băng không rơi nổi một chiếc.
     // Drone không bị nén theo tỉ lệ thân xe như mục tiêu mặt đất -> giảm còn 40% (~10%/viên ở 1000 đv, ~35% ở 500 đv)
@@ -204,7 +244,9 @@ const Dispersion = (() => {
     }
     const gun = P === PROFILE.TANK_AP || P === PROFILE.TANK_NORMAL || P === PROFILE.TANK_HE || P === PROFILE.ARTY_DIRECT;
     const tank = P === PROFILE.TANK_AP || P === PROFILE.TANK_NORMAL || P === PROFILE.TANK_HE;
-    const s = P.mil * (tank ? TANK_SCALE : gun ? GUN_SCALE : SCALE) * 1e-3 * m * r;
+    const mg = P === PROFILE.SCOUT_BULLET || P === PROFILE.SCOUT_INCENDIARY;
+    const gat = (P === PROFILE.GATLING_BULLET || P === PROFILE.INCENDIARY) && u && u.tankType === 'GATLING';
+    const s = P.mil * (tank ? TANK_SCALE : P === PROFILE.ARTY_DIRECT ? SCALE : gun ? GUN_SCALE : mg ? MG_SCALE : gat ? GATLING_SCALE : SCALE) * 1e-3 * m * r;
     return { lat: s, vert: gun ? s * VERT_K : s, mv: P.mv * m * r, lob: false, mul: m, rmul: r };
   }
 
@@ -249,15 +291,16 @@ const Dispersion = (() => {
       if (sp0 > 1e-6) elevation = Math.max(elevation || 0, Math.asin(Math.max(-1, Math.min(1, vy / sp0))) * 180 / Math.PI);
     }
     const P = profileFor(u, ammo, elevation);
-    const s = sigma(u, ammo, elevation, stream ? 0 : range);
+    const B = u._roofShot ? roofStateOf(u) : S;   // trạm nóc tháp: độ nở / số loạt riêng
+    const s = sigma(u, ammo, elevation, stream ? 0 : range, B);
     // hạt giống: đạn liên thanh = (mã xe, số loạt, viên thứ mấy) để mọi máy rải cùng chùm; pháo: đếm phát của xe
     // (vận tốc thật được gửi kèm phát bắn nên máy khác không cần tự tính lại)
     let seed;
     if (stream) {
-      if ((u._beltIdx || 0) <= 1) S.burst++;
+      if ((u._beltIdx || 0) <= 1) B.burst++;
       // mã xe chung giữa các máy = số thứ tự trong đội hình trận (netId); chơi đơn dùng id
-      const key = u.netId !== undefined ? 'n' + u.netId : u.id;
-      seed = hashStr(key) ^ Math.imul(S.burst, 0x9E3779B1) ^ Math.imul(u._beltIdx || 0, 0x85EBCA77);
+      const key = (u._roofShot ? 'r' : '') + (u.netId !== undefined ? 'n' + u.netId : u.id);
+      seed = hashStr(key) ^ Math.imul(B.burst, 0x9E3779B1) ^ Math.imul(u._beltIdx || 0, 0x85EBCA77);
     } else {
       seed = hashStr(u.id) ^ Math.imul(++S.shots, 0xC2B2AE3D) ^ ((Math.random() * 4294967296) >>> 0);
     }
@@ -274,7 +317,8 @@ const Dispersion = (() => {
     dx += rx * a + ux * b; dy += uy * b; dz += rz * a + uz * b;
     const dl = Math.hypot(dx, dy, dz) || 1;
     const nsp = sp * (1 + gauss(r) * s.mv);
-    S.bloom = Math.min(P.bloomMax || 0, S.bloom + (P.bloom || 0));
+    B.bloom = Math.min(P.bloomMax || 0, B.bloom + (P.bloom || 0));
+    if (B !== S) B.decay = P.bloomDecay || 1;
     return { vx: dx / dl * nsp, vy: dy / dl * nsp, vz: dz / dl * nsp };
   }
 

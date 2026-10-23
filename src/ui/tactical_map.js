@@ -2,7 +2,7 @@
  * BẢN ĐỒ TÁC CHIẾN (phím M) — toàn màn hình, phong cách bản đồ quân sự
  * - Nền địa hình dựng riêng: đổ bóng địa hình + đường đồng mức + đường sá, sông hồ, rừng, nhà (tông trầm, dễ đọc ký hiệu)
  * - Đơn vị theo ký hiệu NATO: ta = khung chữ nhật xanh, địch = hình thoi đỏ; nét đứt = vết radar / báo cáo; "?" = vị trí cuối
- * - Cứ điểm OBJ A/B/C: vòng tiến độ chiếm + màu phe giữ; vòng bo; tầm bắn có vạch chia hướng
+ * - Cứ điểm OBJ A/B/C: vòng tiến độ chiếm + màu phe giữ; tầm bắn có vạch chia hướng
  * - Nhấp vào xe địch đang hiện: KHÓA xe đó (như nhấp chuột vào xe trong màn hình 3D — nòng tự ngắm & đón đầu)
  * - Nhấp chỗ trống: chọn mục tiêu (khoảng cách & bắn tới được không hiện ngay tại mục tiêu) · Nhấp đúp: ngắm vào đó · Space: bắn
  * - Nhấp chuột phải: xe tự lái tới điểm đó (tự tìm đường) · Giữ chuột phải + kéo: kéo bản đồ
@@ -250,14 +250,14 @@ class TacticalMapController {
     return best;
   }
 
-  // Nhấp lên bản đồ nhỏ góc màn hình (vẽ toàn bản đồ, tỉ lệ đều theo bề rộng canvas)
+  // Nhấp lên minimap radar góc màn hình (vòng tròn quanh xe mình — RadarMinimap.view): chỉ khóa được xe đang vẽ trong vòng
   lockFromMinimap(e) {
     const g = this.game, me = g.player, cv = document.getElementById('aow-minimap-canvas');
-    if (!cv || !me || me.isDead || !g.units || !g.worldWidth) return false;
+    if (!cv || !me || me.isDead || !g.units || !g.worldWidth || typeof RadarMinimap === 'undefined') return false;
     if (this.mapLost()) return true;   // nuốt cú nhấp (không mở bản đồ — toggle tự báo)
     const r = cv.getBoundingClientRect();
     if (!r.width || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return false;
-    const css = r.width / cv.width, sc = cv.width / g.worldWidth;
+    const css = r.width / cv.width, V = RadarMinimap.view(g, cv);
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     let best = null, bd = coarse ? 18 : 12;
@@ -265,7 +265,9 @@ class TacticalMapController {
       if (!g.canTarget(u)) continue;
       const pos = this.shownPos(u);
       if (!pos) continue;
-      const d = Math.hypot((pos.x + g.worldWidth / 2) * sc * css - mx, (pos.z + g.worldDepth / 2) * sc * css - my);
+      const s = V.toScreen(pos.x, pos.z);
+      if (Math.hypot(s.x - V.cx, s.y - V.cy) > V.Rpx) continue;
+      const d = Math.hypot(s.x * css - mx, s.y * css - my);
       if (d < bd) { bd = d; best = u; }
     }
     if (!best) return false;
@@ -284,11 +286,11 @@ class TacticalMapController {
 
   driveFromMinimap(e) {
     const g = this.game, cv = document.getElementById('aow-minimap-canvas');
-    if (!cv || !g.player || g.player.isDead || !g.worldWidth || this.mapLost()) return;
+    if (!cv || !g.player || g.player.isDead || !g.worldWidth || this.mapLost() || typeof RadarMinimap === 'undefined') return;
     const r = cv.getBoundingClientRect();
     if (!r.width) return;
-    const css = r.width / cv.width, sc = cv.width / g.worldWidth;
-    this.driveTo((e.clientX - r.left) / css / sc - g.worldWidth / 2, (e.clientY - r.top) / css / sc - g.worldDepth / 2);
+    const css = r.width / cv.width, p = RadarMinimap.toWorld(g, cv, (e.clientX - r.left) / css, (e.clientY - r.top) / css);
+    this.driveTo(p.x, p.z);
   }
 
   // Đường lái tự động + dấu đích (cờ nhỏ, cự ly còn lại); vừa đặt đích thì có vòng sáng thu lại
@@ -404,7 +406,7 @@ class TacticalMapController {
     };
     let hmin = Infinity, hmax = -Infinity;
     for (let i = 0; i < H.length; i++) { const v = H[i]; if (v < hmin) hmin = v; if (v > hmax) hmax = v; }
-    const water = !!(M.river || (M.lakes && M.lakes.length));
+    const water = !!(M.river || (M.lakes && M.lakes.length) || (M.canals && M.canals.length));
     // 1. Đổ bóng địa hình + thang màu theo độ cao (tông trầm, ít bão hòa)
     const img = g.createImageData(N, N), D = img.data;
     const px = size / N;
@@ -472,6 +474,10 @@ class TacticalMapController {
     for (const Lk of M.lakes || []) {
       g.fillStyle = '#2a4458'; g.beginPath(); g.arc(P(Lk.x), P(Lk.z), Lk.r * sc, 0, Math.PI * 2); g.fill();
     }
+    for (const c of M.canals || []) {   // kênh đào đô thị
+      g.strokeStyle = '#2a4458'; g.lineWidth = c.hw * 2 * sc; g.lineCap = 'butt';
+      g.beginPath(); g.moveTo(P(c.pts[0][0]), P(c.pts[0][1])); g.lineTo(P(c.pts[1][0]), P(c.pts[1][1])); g.stroke();
+    }
     // 4. Rừng: chấm cây
     g.fillStyle = 'rgba(24, 40, 26, 0.75)';
     for (const t of M.trees || []) { if (t.kind === 'cactus' || t.kind === 'deadTree') continue; g.fillRect(P(t.x) - 1, P(t.z) - 1, 2.2, 2.2); }
@@ -528,7 +534,6 @@ class TacticalMapController {
 
     this.drawGrid(ctx, o, S);
     this.drawBushes(ctx, k);
-    ctx.save(); ctx.translate(o.x, o.y); g.zone.renderOnTacticalMap(ctx, k); ctx.restore();
     ctx.save(); ctx.translate(o.x, o.y); g.radar.renderOnTacticalMap(ctx, k); ctx.restore();
     this.drawObjectives(ctx, k);
     this.drawCrates(ctx);

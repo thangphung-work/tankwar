@@ -410,6 +410,12 @@ SoundEngine.mixin(class {
             this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 180, Q: 0.8, gain: 0.45 * kk, attack: 0.006, dur: 0.09 });
             this.burst(out, t + 0.01, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2200, Q: 0.6, gain: 0.2 * kk, attack: 0.01, dur: 0.18 });
             break;
+          case 'bag':
+            // bao cát: khối nặng mềm nện "huỵch" trầm + cát rào rào đổ ra, không có tiếng kim loại
+            dirt(1.0, 120);
+            this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 260, Q: 0.7, drive: 1.3, gain: 0.55 * kk, attack: 0.004, dur: 0.12 });
+            this.burst(out, t + 0.02, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3200, Q: 0.5, gain: 0.12 * kk, attack: 0.02, dur: 0.35 });
+            break;
           case 'whip':
             // roi ăng-ten (thanh mảnh, nhẹ): "tinh" cao, ngân rung của thanh tự do
             this.modal(out, t, { f0: 900 * pr, ratios: BAR, T: ringT(0.35, 0.8), gain: 0.045 * kk, hard: 0.6, tilt: 0.3 });

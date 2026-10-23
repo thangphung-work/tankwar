@@ -2478,6 +2478,7 @@ const VehicleKit = (() => {
 
   return {
     UV_SCALE,
+    getEnvCube,         // bản đồ phản chiếu trời / đất dùng chung (ô tô trên phố: props.js)
     getPaintTextures,
     createMaterials,
     tireGeometry,

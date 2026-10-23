@@ -14,7 +14,7 @@
  */
 const TeamIntel = (() => {
   // Tầm nhìn trực tiếp (kính ngắm / quan sát bằng mắt) theo loại xe — 1 đơn vị game hiển thị là "1 m"
-  const SIGHT = { ALL_ROUNDER: 520, GATLING: 480, ARTILLERY: 620, SCOUT: 720 };
+  const SIGHT = { ALL_ROUNDER: 520, GATLING: 520, ARTILLERY: 620, SCOUT: 720 };   // xe 6 nòng: kính ngắm phòng không + radar dẫn bắn nhìn ngang xe tăng (trước 480)
   const RADAR_RANGE = 950;                     // bán kính radar trinh sát
   const RADAR_RPS = 0.4;                       // 0.4 vòng/giây (1 vòng 2.5 s)
   const CONTACT_TTL = 1 / RADAR_RPS + 0.8;     // vết radar giữ hơn 1 vòng quét một chút
@@ -78,6 +78,9 @@ const TeamIntel = (() => {
       if (u.dmg.lost.has('opticGunner')) r *= 0.85;
       if (u.dmg.lost.has('opticCdr')) r *= 0.85;
     }
+    // trời mưa: màn mưa + sương mù dày -> phải tới gần hơn mới nhận ra xe địch (thời tiết theo hạt giống bản đồ,
+    // mọi máy cùng hệ số; máy chủ lọc theo tầm nhìn nắng — rộng hơn, không bao giờ giấu bớt thứ máy khách cần)
+    if (typeof Weather !== 'undefined') r *= Weather.sightK();
     return r;
   }
   // Bụi đang che xe t (đang trong bụi, chưa vừa nổ súng, loại xe núp được): { spot, radar } | null

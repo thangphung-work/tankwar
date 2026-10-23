@@ -32,7 +32,11 @@ const EWJammer = (() => {
     SEND: 0.5,       // nhịp báo trạng thái đang phát cho máy khác (s)
     TTL: 1.3,        // máy khác coi là đang phát tới khi hết hạn gói cuối + chừng này
     BLIND_IN: 0.4,   // radar địch nằm trong chùm bấy nhiêu giây thì bị phá sóng
-    BLIND: 3.0       // radar bị phá sóng: không khóa được mục tiêu tới bấy nhiêu giây sau khi ra khỏi chùm
+    BLIND: 3.0,      // radar bị phá sóng: không khóa được mục tiêu tới bấy nhiêu giây sau khi ra khỏi chùm
+    // MÁY GÂY NHIỄU (trang bị 'jammer'): ngoài nhiễu đầu dò tên lửa / radar còn phát nhiễu liên lạc drone vô hướng quanh xe
+    // (kiểu "vòm" chống FPV / UAV cảm tử) — tự động, không cần ngắm. Drone địch lọt vào bán kính này (3D) là nhiễu hình,
+    // lệnh chập chờn; UAV cảm tử nằm trong đó ~0,7 s là mất điều khiển, chao lệch hướng rồi đâm xuống (kamikaze_uav.js)
+    OMNI_R: 300
   };
   const nowS = () => performance.now() / 1000;
   const SIG_TXT = 'SẮP RA NGOÀI TẦM TÍN HIỆU';
@@ -77,6 +81,13 @@ const EWJammer = (() => {
     },
 
     jamRange() { return C.R; },
+
+    // xe u (phe khác P) lắp máy gây nhiễu còn nguyên, drone d nằm trong vùng nhiễu vô hướng OMNI_R quanh xe
+    jamOmniHits(u, P, d) {
+      if (!u || u.isDead || u.team === P.team || typeof Equipment === 'undefined' || !Equipment.has || !Equipment.has(u, 'jammer')) return false;
+      if (u.dmg && u.dmg.lost && u.dmg.lost.has('jammerKit')) return false;
+      return Math.hypot(d.x - u.x, (d.y || 0) - ((u.y || 0) + 9), d.z - u.z) <= C.OMNI_R;
+    },
 
     // drone đang khóa bằng cơ chế khóa phòng không chung (DroneAir.setAirAim)
     jamLocked() { const A = this._airAim; return A && A.kind === 'drone' ? A.dr : null; },
@@ -330,6 +341,7 @@ const EWJammer = (() => {
 
     // Bot xe tăng: drone địch bay vào tầm ~1 s (kíp xe kịp phát hiện) thì bật; không còn drone nào quanh ~2 s thì tắt cho đỡ lộ
     botJammer(u, J, dt) {
+      if (u._noJam) { J.on = false; return; }   // phòng thử đạn: tắt phá sóng của bia để thử drone
       if (!this.airDroneList || !this.droneIsAirborne) return;
       let near = false, close = false;
       for (const d of this.airDroneList()) {
@@ -388,18 +400,20 @@ const EWJammer = (() => {
       if (!P || P.tankType !== 'ARTILLERY' || !this.droneState || !this.droneIsAirborne) return;
       const D = this.droneState();
       const S = this._sight && this._sight.arty ? this._sight : null;
-      let jam = null;
+      let jam = null, omni = false;
       if (this.droneIsAirborne(D)) {
         for (const u of this.units) {
-          if (!this.jamming(u)) continue;
-          if (this.inJamBeam(u, u._jam, D)) { jam = u; break; }
+          if (this.jamming(u) && this.inJamBeam(u, u._jam, D)) { jam = u; break; }
+          if (this.jamOmniHits(u, P, D)) { jam = u; omni = true; break; }
         }
       }
+      D.jamOmni = omni;   // UAV cảm tử: vùng nhiễu vô hướng quanh xe làm mất điều khiển nhanh hơn chùm định hướng
       const T = this._droneTags;
       if (jam) {
         // vừa lọt vào chùm: báo trục trặc do nhiễu điện từ (một lần mỗi lượt bị chiếu)
         if (!(D.jamT > 0.05)) {
-          this.addCombatLog('[[alert-triangle]] DRONE TRỤC TRẶC — NHIỄU ĐIỆN TỪ: hình nhiễu sọc, lệnh điều khiển chập chờn, drone giật / trôi dạt, báo pin loạn. Bay ra khỏi chùm phá sóng ngay!', 'alert');
+          this.addCombatLog(omni ? `[[alert-triangle]] DRONE LỌT VÀO VÙNG GÂY NHIỄU QUANH ${jam.name || 'XE ĐỊCH'} — hình nhiễu sọc, lệnh điều khiển chập chờn. Kéo ra xa ngay!`
+            : '[[alert-triangle]] DRONE TRỤC TRẶC — NHIỄU ĐIỆN TỪ: hình nhiễu sọc, lệnh điều khiển chập chờn, drone giật / trôi dạt, báo pin loạn. Bay ra khỏi chùm phá sóng ngay!', 'alert');
           if (window.soundEngine && window.soundEngine.playDroneBattery) window.soundEngine.playDroneBattery('warn');
         }
         D.jamT = (D.jamT || 0) + dt;

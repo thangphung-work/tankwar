@@ -32,21 +32,23 @@ const ArmoryUI = (() => {
   // ---------------------------------------------------------------------------
   // ẢNH TRANG BỊ: render sẵn từ mô hình 3D thật (equipment_thumbs.html) -> assets/equipment/<id>.webp
   // ---------------------------------------------------------------------------
-  const IMG_V = '2';   // đổi khi render lại ảnh (máy chủ cache ảnh)
+  const IMG_V = '6';   // đổi khi render lại ảnh (máy chủ cache ảnh)
   const imgUrl = (id) => `assets/equipment/${id}.webp?v=${IMG_V}`;
   const imgTag = (id, alt) => `<img class="eqd-img" src="${imgUrl(id)}" alt="${esc(alt || '')}" loading="lazy" decoding="async" draggable="false">`;
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)
   const SHORT = {
     era: 'Chặn đạn nổ lõm / RPG, giảm xuyên; đạn nổ phá chỉ −20%', slat: 'Chặn ~1/4 tên lửa, ~6/10 bom con; giảm nổ, mảnh văng, chống bén lửa', applique: 'Giáp sườn +45%, mũi +20%, nặng hơn',
-    spall: 'Mảnh vỡ vào kíp xe −20%, máy móc −10%; không đỡ trúng thẳng kho đạn', aps: 'Tự bắn hạ RPG / tên lửa (2 lần)', smoke: 'Phím G: tường khói ~15 giây, cắt khóa của địch (cần lựu đạn khói, 1 ống 1 quả)',
-    camo: 'Đứng yên: khó bị thấy & bị radar bắt', fireext: 'Dập lửa ×2,5, cháy ½; đạn cháy -20%, xuyên giáp -8%', turbo: 'Tốc độ +8%, tăng tốc +15%',
-    radar: 'Thấy xe địch quanh ~75 m, kể cả núp bụi', jammer: 'Tên lửa địch khóa chậm gấp đôi',
+    spall: 'Mảnh vỡ vào kíp xe −20%, máy móc −10%; không đỡ trúng thẳng kho đạn', aps: 'Tự bắn hạ RPG / UAV cảm tử / tên lửa giữa đường bay (2 lượt)', smoke: 'Phím G: tường khói ~15 giây, cắt khóa của địch (cần lựu đạn khói, 1 ống 1 quả)',
+    camo: 'Đứng yên: khó bị thấy & bị radar bắt', fireext: 'Trong khoang: dập lửa ×2,5, cháy ½; đạn cháy -20%, xuyên giáp -8% (trừ lõi urani)', turbo: 'Tốc độ +8%, tăng tốc +15%',
+    radar: 'Thấy xe địch quanh ~600M, kể cả núp bụi', jammer: 'Tên lửa địch khóa chậm gấp đôi; UAV cảm tử lao gần (~300M) mất điều khiển',
     // ô NÓC THÁP (phím [4] trong trận)
     ewjam: 'Phím [4]: chùm phá sóng ép drone địch bay về (mặc định)', rcws: 'Phím [4]: súng máy bắn rơi drone, quét xe giáp mỏng',
-    agl: 'Phím [4]: lựu đạn 40mm cầu vồng, nổ mảnh xe giáp mỏng', rocket: 'Phím [4]: 4 rocket nổ lõm, xuyên giáp như RPG',
-    sradar: 'Ăng-ten mảng quay: thấy xe địch quanh ~75 m, kể cả núp bụi', rjam: 'Phím [4]: ~10 s cắt khóa radar & tên lửa dẫn đường địch quanh ~80 m, lộ hướng',
+    agl: 'Phím [4]: lựu đạn 40mm cầu vồng, nổ mảnh xe giáp mỏng', rocket: 'Phím [4]: khóa laser, 2 tên lửa bổ nhào xuống nóc (-90% máu)',
+    rjam: 'Phím [4]: ~10 s cắt khóa radar & tên lửa dẫn đường địch quanh ~650M, lộ hướng',
     // ô MŨI XE / VŨ KHÍ CHÍNH / UAV
-    dozer: 'Phím X: ủi ụ đất che thân (mặc định)', vshield: 'Khiên thép chữ V: giáp mũi ×1,4, đỡ mảnh nổ; xe chậm ~7%, không ủi đất',
+    dozer: 'Phím X: ủi ụ đất che thân (mặc định)', vshield: 'Khiên thép chữ V cách quãng: làm chệch đạn, nổ lõm yếu hẳn; bao cát đối trọng sau đuôi đỡ đạn vào đuôi; xe chậm ~10%, không ủi đất',
+    mag300: 'Băng 300 viên, thay hòm ~6 s (mặc định)', mag450: 'Băng 450 viên, thay hòm ~8 s',
+    mag650: 'Băng 650 viên, hòm to nhô cao, thay hòm ~10,5 s',
     hmg: 'Súng máy 12.7mm có tấm chắn (mặc định)', sagl: 'Lựu 40mm HV tự động 48 quả, ngóc 45° bắn cầu vồng tầm trung',
     srocket: 'Giàn 8 rocket nổ lõm phóng lần lượt, nạp cả giàn ~25 s',
     recon: 'Drone trinh sát Ctrl: mắt cho phát bắn cầu vồng (mặc định)', kami: 'Ctrl phóng, Space bổ nhào: trúng nóc là hạ / gần hạ xe tăng (vật tư UAV cảm tử)',
@@ -92,16 +94,19 @@ const ArmoryUI = (() => {
   }
 
   // Phòng xem vừa dựng xe mới: lắp bộ trang bị đang dùng để xem trước, vẽ lại bảng
+  // Lắp bộ trang bị đang dùng lên xe xem trước — gọi 1 lần lúc dựng xe (tank_inspector.js createPreviewUnit, kể cả xe
+  // dựng sẵn ở nền); equip nhân dồn chỉ số tốc độ nên không gọi lại trên cùng một xe
+  function equipPreview(u, tank) {
+    const Eq = E();
+    if (!u || !Eq) return;
+    // Luôn lắp (kể cả bộ rỗng): xe xem trước phải khớp đúng bộ đang chọn — vd. chưa lắp ống phóng khói thì
+    // ống khói có sẵn trên mô hình được gỡ đi
+    const k = (A() && A().kitFor) ? A().kitFor(tank).kit : null;
+    Eq.equip(u, k || { m: [], p: [], a: {} }, null);
+    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.missileAmmoCount = u.rpgAmmoCount = 9999;
+  }
   function onTankLoaded(inspector, tank) {
     insp = inspector;
-    const u = inspector.activeUnit, Eq = E();
-    if (u && Eq) {
-      // Luôn lắp (kể cả bộ rỗng): xe xem trước phải khớp đúng bộ đang chọn — vd. chưa lắp ống phóng khói thì
-      // ống khói có sẵn trên mô hình được gỡ đi
-      const k = (A() && A().kitFor) ? A().kitFor(tank).kit : null;
-      Eq.equip(u, k || { m: [], p: [], a: {} }, null);
-      u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.missileAmmoCount = u.rpgAmmoCount = 9999;
-    }
     render();
   }
   function rebuildPreview() {
@@ -171,6 +176,7 @@ const ArmoryUI = (() => {
     const MOUNT_NOTE = {
       roof: '<i class="ti ti-keyboard"></i> Món trên nóc tháp dùng bằng phím <b>4</b> trong trận (bấm lại 4 hoặc 1–3 để về vũ khí chính) — chọn món khác là thay luôn món đang gắn',
       front: '<i class="ti ti-shield-chevron"></i> Mũi xe: lưỡi ủi (giữ <b>X</b> đào ụ đất) hoặc khiên chữ V (giáp trước dày hơn, xe chậm hơn) — chọn món khác là thay luôn',
+      mag: '<i class="ti ti-box"></i> Hộp đạn: 2 hòm đạn 30mm hai bên tháp — hòm càng to băng càng dài nhưng thay hòm càng lâu. Chọn món khác là thay luôn',
       weapon: '<i class="ti ti-crosshair"></i> Vũ khí chính trên vòng tháp: giữ <b>Space</b> để bắn — chọn món khác là thay luôn',
       uav: '<i class="ti ti-drone"></i> UAV: bấm <b>Ctrl</b> trong trận để phóng (UAV cảm tử: <b>Space</b> để bổ nhào) — chọn món khác là thay luôn',
       engine: '<i class="ti ti-engine"></i> Động cơ: máy zin không tăng tốc được; lắp động cơ mới giữ <b>Shift</b> để tăng tốc — máy nóng dần, quá nhiệt phải nhả ga. Chỉ mua bằng Bạc'
@@ -266,16 +272,16 @@ const ArmoryUI = (() => {
     const swap = (Eq.MOUNT_CATS || ['roof']).includes(M.cat);   // ô 1 bệ: chọn món khác là thay luôn món đang gắn
     if (equipped) { act = isDefault ? 'none' : 'unequip'; cls = ' on'; }
     else { act = 'equip'; if (full && !swap) cls = ' full'; }
-    // giáp hỏng chưa sửa: thiếu bao nhiêu khối + nút Sửa (giá theo số khối)
+    // giáp bị phá chưa mua lại (vật tư tiêu hao): thiếu bao nhiêu khối + nút Mua lại (giá mua theo số khối)
     const CD = condOf(tank, id);
     if (CD) {
       const unitName = (Eq.ARMOR_REPAIR && Eq.ARMOR_REPAIR[id]) || 'khối', cost = CD.gone.length * (CD.unit || 0);
       const left = Math.max(0, CD.total - CD.gone.length);
       return card({ img: id, name: M.name, cls: cls + ' hurt', tag: M.adv ? 'NÂNG CAO' : '',
         line: `<span class="eqd-warn">CÒN ${left}/${CD.total} ${unitName}</span> · ${esc(SHORT[id] || '')}`,
-        extra: `<div class="eqd-qty"><button class="eqd-q add wide" data-act="repair" data-item="${id}" title="Lắp lại ${CD.gone.length} ${unitName} đã hỏng (${fmt(CD.unit)} Bạc / ${unitName})"><i class="ti ti-tool"></i> Sửa ${CD.gone.length} ${unitName} · ${fmt(cost)} Bạc</button></div>`,
+        extra: `<div class="eqd-qty"><button class="eqd-q add wide" data-act="repair" data-item="${id}" title="Mua lại ${CD.gone.length} ${unitName} đã bị phá (${fmt(CD.unit)} Bạc / ${unitName})"><i class="ti ti-shopping-cart"></i> Mua lại ${CD.gone.length} ${unitName} · ${fmt(cost)} Bạc</button></div>`,
         attrs: ` role="button" tabindex="0" aria-pressed="${equipped}" data-act="${act}" data-item="${id}"`,
-        tip: `${M.name}: hỏng ${CD.gone.length}/${CD.total} ${unitName} ở trận trước — chưa sửa thì xe ra trận thiếu đúng chỗ đó. Sửa: ${fmt(CD.unit)} Bạc / ${unitName}` });
+        tip: `${M.name}: ${CD.gone.length}/${CD.total} ${unitName} bị phá ở trận trước — giáp là vật tư tiêu hao, chưa mua lại thì xe ra trận thiếu đúng chỗ đó. Mua lại: ${fmt(CD.unit)} Bạc / ${unitName}` });
     }
     const hint = isDefault ? 'Món mặc định khi ô nóc tháp để trống' : equipped ? 'Bấm để gỡ' : full && !swap ? 'Nhóm đã đủ ô — gỡ bớt một món trước' : swap && full ? 'Bấm để thay món đang gắn trên nóc tháp' : 'Bấm để trang bị';
     return card({ img: id, name: M.name, line: esc(SHORT[id] || M.desc), cls, tag: M.adv ? 'NÂNG CAO' : '',
@@ -368,7 +374,7 @@ const ArmoryUI = (() => {
     try {
       const r = await Acc.repair(tank, id ? { item: id } : { all: true });
       flash = { k: id || 'repair', cost: r.cost };
-      msg = `<i class="ti ti-circle-check"></i> Đã lắp lại <b>${r.units}</b> khối giáp${id && Eq.MODULES[id] ? ` (${esc(Eq.MODULES[id].name)})` : ''} — trừ ${fmt(r.cost)} Bạc`;
+      msg = `<i class="ti ti-circle-check"></i> Đã mua lại <b>${r.units}</b> khối giáp${id && Eq.MODULES[id] ? ` (${esc(Eq.MODULES[id].name)})` : ''} — trừ ${fmt(r.cost)} Bạc`;
       rebuildPreview();
       const se = window.soundEngine;
       if (se && se.playUiPurchase) se.playUiPurchase(false);
@@ -407,6 +413,6 @@ const ArmoryUI = (() => {
     finally { busy = false; render(); }
   }
 
-  return { attach, onTankLoaded, show, render };
+  return { attach, onTankLoaded, equipPreview, show, render };
 })();
 window.ArmoryUI = ArmoryUI;

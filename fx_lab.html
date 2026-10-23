@@ -29,6 +29,7 @@
       <a class="on" href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
       <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
       <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+      <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
     </nav>
   </header>
 
@@ -38,6 +39,11 @@
     <div class="unit-grid" id="unitRow"></div>
     <div class="row col mt2" id="ammoList"></div>
     <div class="lab-desc" id="ammoDesc"></div>
+    <div class="lab-status mt" id="gunStat" style="display:none"></div>
+    <div class="row mt2" id="crewRow">
+      <button class="btn on" data-crew="1"><i class="ti ti-user" aria-hidden="true"></i>Hiện kíp lái</button>
+      <button class="btn" data-crew="0"><i class="ti ti-user-off" aria-hidden="true"></i>Ẩn kíp lái</button>
+    </div>
   </section>
 
   <section class="lab-sec">
@@ -76,6 +82,8 @@
       <button class="btn" data-camo="0">Không lưới</button>
       <button class="btn" id="camoReset">Thay lưới mới</button>
     </div>
+    <div class="lab-sub cfg mt" data-for="VEHICLE">Giáp lắp thêm trên xe bia (bấm để bật / tắt)</div>
+    <div class="row cfg" data-for="VEHICLE" id="armorRow"></div>
     <div class="lab-field cfg mt" data-for="VEHICLE">
       <span>Xoay xe mục tiêu</span>
       <input type="range" id="yawS" min="-180" max="180" step="5" value="0">
@@ -149,16 +157,17 @@
   <span><kbd>Cuộn</kbd> zoom</span>
   <span><kbd>Space</kbd> bắn</span>
   <span><kbd>V</kbd> đổi xe</span>
-  <span><kbd>1-3</kbd> chọn đạn</span>
+  <span><kbd>1-8</kbd> chọn đạn</span>
   <span><kbd>S</kbd> quay chậm</span>
+  <span><kbd>K</kbd> ẩn / hiện kíp lái</span>
 </div>
 <div class="lab-frame lab-inset" id="inset"><div class="lbl" id="insetLbl"></div></div>
 
 <script src="three.min.js"></script>
 <script src="src/core/audio/sound_engine.js?v=20261022sh1"></script>
-<script src="src/core/audio/weapon_fire.js?v=20261022cl1"></script>
+<script src="src/core/audio/weapon_fire.js?v=20261023msl2"></script>
 <script src="src/core/audio/destruction.js?v=20261022sh1"></script>
-<script src="src/core/audio/impacts.js?v=20261022sh1"></script>
+<script src="src/core/audio/impacts.js?v=20261023apfs1"></script>
 <script src="src/core/audio/incoming.js?v=20261020m8"></script>
 <script src="src/core/audio/cockpit_cues.js?v=20261022rl1"></script>
 <script src="src/core/audio/vehicle_engine.js?v=20261022eco1"></script>
@@ -167,43 +176,64 @@
 <script src="src/core/audio/fire_ambience.js?v=20261022sh1"></script>
 <script src="src/core/audio/turret_drives.js?v=20261022sh1"></script>
 <script src="src/core/audio/gatling.js?v=20261022mg1"></script>
+<script src="src/core/audio/module_weapons.js?v=20261023msl2"></script>
 <script src="src/core/audio/wading.js?v=20261020mouse1"></script>
 <script src="src/core/audio/music.js?v=20261022sh1"></script>
 <script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
 <script src="src/core/audio/ui_sounds.js?v=20261022sh1"></script>
 <script src="src/entities/tank_models.js?v=20261022sh1"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261022mud1"></script>
-<script src="src/entities/tanks/roof_mounts.js?v=20261022kami2"></script>
+<script src="src/entities/tanks/roof_mounts.js?v=20261023msl1"></script>
 <script src="src/entities/tanks/mbt_halberd.js?v=20261022mod2"></script>
 <script src="src/entities/tanks/fsv_hailstorm.js?v=20261022eco1"></script>
 <script src="src/entities/tanks/spg_arbalest.js?v=20261022mod2"></script>
-<script src="src/entities/tanks/recon_marten.js?v=20261022mrg1"></script>
-<script src="src/core/game_timing.js?v=20261022sh1"></script>
-<script src="src/core/ballistics.js?v=20261022fix1"></script>
-<script src="src/entities/projectiles.js?v=20261022trc2"></script>
-<script src="src/gameplay/tire_tracks.js?v=20261022sh1"></script>
-<script src="src/entities/spg.js?v=20261022fix1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261022dz4"></script>
-<script src="src/gameplay/wading_fx.js?v=20261020wade6"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261022fix1"></script>
-<script src="src/core/equipment.js?v=20261022eco1"></script>
+<script src="src/entities/tanks/recon_marten.js?v=20261022atg1"></script>
+<script src="src/core/game_timing.js?v=20261023bal1"></script>
+<script src="src/core/ballistics.js?v=20261023bal1"></script>
+<script src="src/entities/projectiles.js?v=20261023msl2"></script>
+<script src="src/gameplay/tire_tracks.js?v=20261022wetmud1"></script>
+<script src="src/entities/spg.js?v=20261023bal1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261023msl2"></script>
+<script src="src/gameplay/wading_fx.js?v=20261022wetmud1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261023eqfix1"></script>
+<script src="src/core/equipment.js?v=20261023eqfix1"></script>
+<script src="src/gameplay/vehicle_crew.js?v=20261023crew1"></script>
+<script src="src/gameplay/drone_air.js?v=20261023msl2"></script>
+<script src="src/gameplay/kamikaze_uav.js?v=20261022topatk3"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
 <script src="src/gameplay/destructibles.js?v=20261022rf1"></script>
 <script>
 (function () {
   // ===========================================================================
   // DANH SÁCH ĐẠN: mỗi loại gắn với xe phóng thật của game
+  // kit: trang bị lắp lên xe bắn khi chọn loại này (Equipment.equip: m = mô-đun, p = đạn cao cấp) — mỗi bộ một xe riêng
+  // grp: 'prem' đạn cao cấp · 'acc' vũ khí phụ kiện (nóc tháp / vũ khí chính mô-đun / UAV)
+  // roof: bắn từ trạm vũ khí trên nóc tháp (drone_air.js C.RCWS / C.ROOF) · kami: UAV cảm tử (kamikaze_uav.js)
+  // dist: cự ly đặt xe bắn riêng (đv)
   // ===========================================================================
   const AMMO = [
-    { key: 'NORMAL', ammo: 'NORMAL', unit: 'ALL_ROUNDER', label: 'Đạn pháo tiêu chuẩn 120mm', who: 'Halberd MK.3', path: 'direct' },
+    { key: 'NORMAL', ammo: 'NORMAL', unit: 'ALL_ROUNDER', label: 'Đạn đa năng 120mm (AMP)', who: 'Halberd MK.3', path: 'direct' },
     { key: 'AP', ammo: 'AP', unit: 'ALL_ROUNDER', label: 'Xuyên giáp APFSDS 120mm', who: 'Halberd MK.3', path: 'direct' },
     { key: 'HE', ammo: 'HE', unit: 'ALL_ROUNDER', label: 'Nổ mạnh HE 120mm', who: 'Halberd MK.3', path: 'direct' },
-    { key: 'G30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm nổ-cháy-vạch đường', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'AP_DU', ammo: 'AP', unit: 'ALL_ROUNDER', label: 'Xuyên giáp lõi urani nghèo', who: 'Halberd MK.3 · đạn cao cấp', path: 'direct', kit: { p: ['ap_du'] }, grp: 'prem' },
+    { key: 'HEAT2', ammo: 'NORMAL', unit: 'ALL_ROUNDER', label: 'Nổ lõm 2 tầng 120mm', who: 'Halberd MK.3 · đạn cao cấp', path: 'direct', kit: { p: ['heat_tandem'] }, grp: 'prem' },
+    { key: 'RCWS', ammo: 'SCOUT_BULLET', unit: 'ALL_ROUNDER', label: 'Trạm súng máy 7.62mm', who: 'Halberd MK.3 · nóc tháp, giữ để xả', path: 'bullet', rapid: true, roof: 'rcws', kit: { m: ['rcws'] }, grp: 'acc' },
+    { key: 'AGL_MBT', ammo: 'GATLING_BULLET', unit: 'ALL_ROUNDER', label: 'Súng phóng lựu 40mm', who: 'Halberd MK.3 · nóc tháp, giữ để xả', path: 'bullet', rapid: true, roof: 'agl', kit: { m: ['agl'] }, grp: 'acc' },
+    { key: 'TOPMSL', ammo: 'ANTI_TANK_MISSILE', unit: 'ALL_ROUNDER', label: 'Tên lửa đột nóc', who: 'Halberd MK.3 · nóc tháp, vồng cao rồi bổ nhào', path: 'missile', roof: 'atgm', kit: { m: ['rocket'] }, grp: 'acc', dist: 760 },
+    { key: 'G30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm hỗn hợp xuyên giáp - nổ mảnh', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
     { key: 'INC', ammo: 'INCENDIARY', unit: 'GATLING', label: 'Đạn cháy 30mm', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'APDS30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm xuyên dưới cỡ', who: 'Hailstorm R6 · đạn cao cấp, giữ để xả', path: 'bullet', rapid: true, kit: { p: ['apds30'] }, grp: 'prem' },
+    { key: 'AGL_FSV', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Súng phóng lựu 40mm', who: 'Hailstorm R6 · nóc tháp, giữ để xả', path: 'bullet', rapid: true, roof: 'agl', kit: { m: ['agl'] }, grp: 'acc' },
     { key: 'HE155', ammo: 'HE', unit: 'ARTILLERY', label: 'Nổ mạnh HE 155mm', who: 'Arbalest 155 · bắn cầu vồng', path: 'arc', heavy: true },
     { key: 'CLUSTER', ammo: 'CLUSTER', unit: 'ARTILLERY', label: 'Đạn chùm DPICM 155mm', who: 'Arbalest 155 · nổ trên không', path: 'arc', heavy: true },
-    { key: 'MG', ammo: 'SCOUT_BULLET', unit: 'SCOUT', label: 'Đạn súng máy hạng nặng', who: 'Marten R4 · giữ để xả', path: 'bullet', rapid: true },
-    { key: 'RPG', ammo: 'RPG', unit: 'SCOUT', label: 'Tên lửa chống tăng HEAT', who: 'Marten R4', path: 'missile' }
+    { key: 'HEFRAG', ammo: 'HE', unit: 'ARTILLERY', label: 'Lựu đạn mảnh định sẵn 155mm', who: 'Arbalest 155 · đạn cao cấp', path: 'arc', heavy: true, kit: { p: ['he_frag'] }, grp: 'prem' },
+    { key: 'KAMI', ammo: 'RPG', unit: 'ARTILLERY', label: 'UAV cảm tử', who: 'Arbalest 155 · ống phóng trên nóc cabin', path: 'kami', kami: true, kit: { m: ['kami'] }, grp: 'acc', dist: 900 },
+    { key: 'MG', ammo: 'SCOUT_BULLET', unit: 'SCOUT', label: 'Đạn 12.7mm xuyên giáp', who: 'Marten R4 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'SLAP', ammo: 'SCOUT_BULLET', unit: 'SCOUT', label: 'Đạn 12.7mm SLAP', who: 'Marten R4 · đạn cao cấp, giữ để xả', path: 'bullet', rapid: true, kit: { p: ['slap127'] }, grp: 'prem' },
+    { key: 'ATGM', ammo: 'ANTI_TANK_MISSILE', unit: 'SCOUT', label: 'Tên lửa chống tăng', who: 'Marten R4 · dẫn theo đường ngắm', path: 'missile', dist: 620 },
+    { key: 'TOPATK', ammo: 'ANTI_TANK_MISSILE', unit: 'SCOUT', label: 'Tên lửa tấn công đỉnh', who: 'Marten R4 · đạn cao cấp, bắn & quên', path: 'missile', kit: { p: ['topatk'] }, grp: 'prem', dist: 760 },
+    { key: 'SAGL', ammo: 'GATLING_BULLET', unit: 'SCOUT', label: 'Súng phóng lựu 40mm HV', who: 'Marten R4 · vũ khí chính, giữ để xả', path: 'bullet', rapid: true, kit: { m: ['sagl'] }, grp: 'acc' },
+    { key: 'SROCKET', ammo: 'RPG', unit: 'SCOUT', label: 'Giàn rocket 8 ống', who: 'Marten R4 · vũ khí chính, giữ để phóng loạt', path: 'missile', rapid: true, kit: { m: ['srocket'] }, grp: 'acc' }
   ];
 
   const state = {
@@ -270,7 +300,7 @@
   // Vị trí bệ phóng & mục tiêu
   const TARGET = new THREE.Vector3(0, 0, 0);
   const LAUNCH_DIR = new THREE.Vector3(-1, 0, 0.42).normalize();
-  const LAUNCH_DIST = { direct: 380, arc: 640, bullet: 300, missile: 420 };
+  const LAUNCH_DIST = { direct: 380, arc: 640, bullet: 300, missile: 420, kami: 900 };
 
   // ===========================================================================
   // HỆ THỐNG CÔNG TRÌNH PHÁ HỦY CHÂN THỰC: TƯỜNG BÊ TÔNG 60 KHỐI & TÒA NHÀ 4 TẦNG
@@ -795,7 +825,20 @@
   // Lưới lá ngụy trang trên xe bia (thử đạn cháy làm lưới bắt lửa): ?camo=0 để bỏ
   let labCamo = new URLSearchParams(location.search).get('camo') !== '0';
   const labLeaf = new URLSearchParams(location.search).get('leaf');   // green | dry (mặc định theo phe: phe đỏ = lá khô)
-  function equipTarget(u) { if (labLeaf) u._foliageKind = labLeaf; if (typeof Equipment !== 'undefined') Equipment.equip(u, { m: labCamo ? ['camo'] : [], p: [], a: {} }, {}); }
+  // Giáp lắp thêm trên xe bia (giáp phản ứng nổ, lồng thép, tấm giáp, lót chống mảnh): VehicleDamage tự xử lý khi trúng
+  const TARGET_ARMOR = ['era', 'slat', 'applique', 'spall'];
+  const labArmor = new Set();
+  function equipTarget(u) {
+    if (labLeaf) u._foliageKind = labLeaf;
+    if (typeof Equipment !== 'undefined') {
+      const m = (labCamo ? ['camo'] : []).concat([...labArmor].filter(id => Equipment.compatible(id, u.tankType)));
+      Equipment.equip(u, { m, p: [], a: {} }, {});
+    }
+    applyCrew(u);
+  }
+  // Kíp lái (xạ thủ trên nóc xe trinh sát — vehicle_crew.js): ẩn để soi xe / hiệu ứng không bị người che. ?crew=0 để ẩn sẵn
+  let labCrew = new URLSearchParams(location.search).get('crew') !== '0';
+  function applyCrew(u) { if (u && u.crew && typeof VehicleCrew !== 'undefined' && VehicleCrew.setShown) VehicleCrew.setShown(u, labCrew); }
   equipTarget(targetTank);
 
   // Đổi dòng xe mục tiêu để thử kiểu hư hại riêng của từng xe
@@ -1361,16 +1404,34 @@
   // ===========================================================================
   // BỆ PHÓNG: XE THẬT CỦA GAME
   // ===========================================================================
+  // Mỗi bộ trang bị (sel.kit) một xe riêng: xe gốc (không lắp gì) dùng chung cho các loại đạn thường của dòng xe đó
   const launchers = {};
-  function getLauncher(type) {
-    if (launchers[type]) return launchers[type];
+  function getLauncher(sel) {
+    const type = sel.unit, id = sel.kit ? type + ':' + sel.key : type;
+    if (launchers[id]) return launchers[id];
     const u = new SPGUnit3D(scene, { tankType: type, team: 'BLUE', isPlayer: true, x: 0, z: 0, bodyAngle: 0 });
     u.alwaysFX = true;
+    if (sel.kit && typeof Equipment !== 'undefined') {
+      try { Equipment.equip(u, { m: sel.kit.m || [], p: sel.kit.p || [], a: {} }, {}); } catch (e) { console.warn('[FX LAB] lắp trang bị', sel.key, e); }
+    }
     hideOverlays(u);
-    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.rpgAmmoCount = 99999;
+    applyCrew(u);
+    // (sau equip: startLife nạp lại số đạn theo bộ đồ)
+    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.rpgAmmoCount = u.missileAmmoCount = 99999;
     if (type === 'ARTILLERY') { u.deployProgress = 2; u.isDeployed = true; }
+    // đường đạn của súng trên bệ nóc tháp (drone_air.js aaRound): suy từ đạn 12.7mm / 30mm như trong trận
+    if (sel.roof && BAL && typeof DroneAir !== 'undefined') {
+      const C = DroneAir.C, M = BAL.bulletSpeedMultiplier;
+      if (sel.roof === 'rcws') {
+        const rp = BAL.roundParams('SCOUT_BULLET', u);
+        u._labP = { SCOUT_BULLET: { v0: rp.v0 * C.RCWS.v, drag: 1, g: rp.g, k: rp.k * C.RCWS.k, mult: M } };
+      } else if (sel.roof === 'agl') {
+        const rp = BAL.roundParams('GATLING_BULLET', u);
+        u._labP = { GATLING_BULLET: { v0: rp.v0 * C.ROOF.agl.v, drag: 1, g: rp.g, k: rp.k, mult: M } };
+      }
+    }
     u.group.visible = false;
-    launchers[type] = u;
+    launchers[id] = u;
     return u;
   }
 
@@ -1378,7 +1439,8 @@
   function placeLauncher() {
     const sel = state.sel;
     Object.values(launchers).forEach(u => { u.group.visible = false; });
-    launcher = getLauncher(sel.unit);
+    launcher = getLauncher(sel);
+    launcher._labRoof = null;
     const d = launchDistance(sel, launcher);
     state.launchD = d;
     const p = LAUNCH_DIR.clone().multiplyScalar(d);
@@ -1433,6 +1495,7 @@
   const BAL = (typeof BallisticsSystem3D !== 'undefined') ? new BallisticsSystem3D(new THREE.Scene()) : null;
   function shotParams(shooter, ammo, elevDeg) {
     if (!BAL) return { v0: 1800, drag: 0, g: 60, k: 0, mult: 1 };
+    if (shooter && shooter._labP && shooter._labP[ammo]) return shooter._labP[ammo];   // súng trên bệ nóc tháp
     const direct = BAL.isDirectFireShot(ammo, elevDeg);
     const rp = BAL.roundParams(ammo, shooter);   // số liệu thật thu nhỏ theo game_timing.js (g / cản riêng từng loại đạn)
     return { v0: rp.v0, drag: 1, g: rp.g, k: rp.k, mult: BAL.bulletSpeedMultiplier };
@@ -1482,7 +1545,7 @@
   function depressMin() { return state.target === 'PIT' || state.target === 'POND' ? -24 : -6; }
   function solveElevation(shooter, ammo, arc, y0, dXZ, yT) {
     const minEl = depressMin();
-    const key = [shooter.tankType, ammo, arc, Math.round(y0), Math.round(dXZ), Math.round(yT), minEl].join('|');
+    const key = [shooter.tankType, state.sel.key, ammo, arc, Math.round(y0), Math.round(dXZ), Math.round(yT), minEl].join('|');
     if (elevCache.key === key) return elevCache.el;
     const f = el => heightAtDist(shooter, ammo, el, y0, dXZ) - yT;
     let lo = null, hi = null;
@@ -1509,7 +1572,8 @@
     }
     state.predictedRange = null;
     // Hố sâu / hồ nước dưới mặt đất: bắn thẳng phải tới gần để góc đạn đủ dốc vượt qua mép bờ
-    if ((state.target === 'PIT' || state.target === 'POND') && sel.path !== 'arc') return HOLE_SPEC[state.target].R * 0.55 + 34;   // đầu xe dừng ngay sau gờ, không chìa ra miệng hố
+    if ((state.target === 'PIT' || state.target === 'POND') && sel.path !== 'arc' && !sel.kami && sel.roof !== 'atgm') return HOLE_SPEC[state.target].R * 0.55 + 34;   // đầu xe dừng ngay sau gờ, không chìa ra miệng hố
+    if (sel.dist) return sel.dist;
     if (sel.path === 'arc') return Math.max(LAUNCH_DIST.arc, Math.min(7000, rangeAt(shooter, ammo, 55, 14)));
     return LAUNCH_DIST[sel.path];
   }
@@ -1547,15 +1611,32 @@
   // Tốc độ bay (đơn vị game/giây, ~8 đơn vị = 1 m) — tốc độ cao xé gió uy lực, vừa kịp quan sát vệt vạch đường
   const SPEED = { direct: 3800, ap: 4800, bullet: 3600, missile: 1400 };
 
-  function launchProjectile(shooter, ammoType) {
+  // Quả lựu 40mm (vũ khí chính xe trinh sát / trạm nóc tháp): sát thương gốc & vùng nổ riêng (SPGUnit3D.MAIN_WEAPONS.agl,
+  // DroneAir.C.ROOF.agl); hình / tiếng nổ theo cỡ bom con như trong trận (game.js fxAmmo)
+  function gl40Cfg(shooter, roof) {
+    if (roof && typeof DroneAir !== 'undefined') return DroneAir.C.ROOF.agl;
+    if (shooter && shooter.mainGun && shooter.mainGun.kind === 'agl') return SPGUnit3D.MAIN_WEAPONS.agl;
+    return null;
+  }
+  const gauss = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, Math.random()))) * Math.cos(2 * Math.PI * Math.random());
+
+  // opts: { muzzle, spread (rad, lệch chuẩn quanh hướng nòng), roofAgl, direct (sát thương gốc trúng thẳng) }
+  function launchProjectile(shooter, ammoType, opts = {}) {
     const sel = state.sel;
     shooter.group.updateMatrixWorld(true);
-    const m = shooter._launchOverride || shooter.getMuzzleWorldTransform();
+    // tên lửa có điều khiển (ống phóng xe trinh sát): dẫn theo đường ngắm / tự bám tới mục tiêu
+    if (ammoType === 'ANTI_TANK_MISSILE') return launchGuided(shooter, shooter._launchOverride || shooter.getMuzzleWorldTransform(), {});
+    const m = opts.muzzle || shooter._launchOverride || shooter.getMuzzleWorldTransform();
     const start = m.position.clone();
     const fireDir = m.direction.clone().normalize();
 
-    // Đạn súng máy / Gatling có độ rung lắc vi mô của nòng pháo
-    if (sel.rapid) {
+    if (opts.spread) {
+      // bệ súng nhẹ trên nóc tháp rung theo từng phát (drone_air.js roofScatter)
+      const ax = Math.atan2(fireDir.x, -fireDir.z) + gauss() * opts.spread;
+      const ae = Math.asin(Math.max(-1, Math.min(1, fireDir.y))) + gauss() * opts.spread;
+      fireDir.set(Math.sin(ax) * Math.cos(ae), Math.sin(ae), -Math.cos(ax) * Math.cos(ae));
+    } else if (sel.rapid) {
+      // Đạn súng máy / Gatling có độ rung lắc vi mô của nòng pháo
       fireDir.x += (Math.random() - 0.5) * 0.015;
       fireDir.y += (Math.random() - 0.5) * 0.01;
       fireDir.z += (Math.random() - 0.5) * 0.015;
@@ -1567,19 +1648,142 @@
     const P = shotParams(shooter, ammoType, elevDeg);
     const v = fireDir.clone().multiplyScalar(P.v0);
     const g = new THREE.Vector3(0, -P.g, 0);
+    const GL = ammoType === 'GATLING_BULLET' ? gl40Cfg(shooter, opts.roofAgl) : null;
 
-    const mesh = ProjectileModels.create(ammoType, { heavy: !!sel.heavy });
+    const mesh = ProjectileModels.create(GL ? 'GL40' : ammoType, { heavy: !!sel.heavy });
     mesh.position.copy(start);
     // Mũi đạn (+Y) xoay đúng theo trục nòng pháo ngay từ khung hình đầu tiên
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), fireDir);
     scene.add(mesh);
 
     if (ammoType === 'AP') fx.sabotDiscard(start.x, start.y, start.z, v.x, v.y, v.z);
-    projectiles.push({
+    const p = {
       mesh, start, v, g, t: 0, T: 60, ammo: ammoType, heavy: !!sel.heavy,
       trail: 0, wobble: Math.random() * 6, airburst: ammoType === 'CLUSTER', prev: start.clone(),
-      numeric: true, pos: start.clone(), vel: v.clone(), P
-    });
+      numeric: true, pos: start.clone(), vel: v.clone(), P, shooter,
+      du: ammoType === 'AP' && !!(shooter.ammoMods && shooter.ammoMods.AP && shooter.ammoMods.AP.du),
+      direct: opts.direct
+    };
+    if (GL) Object.assign(p, { gl40: true, fxAmmo: 'CLUSTER_SUBMUNITION', direct: GL.direct, splash: GL.splash, blastR: GL.blast.radius });
+    projectiles.push(p);
+    return p;
+  }
+
+  // Hơi khí nén / khói phóng (ống phóng tên lửa đột nóc, ống UAV cảm tử)
+  function puff(at, dir, n, speed, size, col) {
+    if (!fx.smoke) return;
+    for (let i = 0; i < n; i++) {
+      const sp = speed * (0.5 + Math.random()), c = col || 0.93;
+      fx.smoke.add({ x: at.x, y: at.y, z: at.z, vx: dir.x * sp + (Math.random() - 0.5) * 6, vy: dir.y * sp + Math.random() * 3, vz: dir.z * sp + (Math.random() - 0.5) * 6,
+        size: size * (0.7 + Math.random() * 0.6), grow: 5, drag: 2.4, grav: -1, life: 0.9 + Math.random() * 0.8, alpha: 0.5, fadeIn: 0.02, c0: [c, c, c], cell: 0 });
+    }
+  }
+
+  // TÊN LỬA CÓ ĐIỀU KHIỂN: dùng đúng hàm dẫn của game (BallisticsSystem3D.guideMissile) — rời ống chậm (0.3 tốc độ hành
+  // trình) rồi động cơ đẩy; bám xe bia (khi bắn xe) hoặc điểm ngắm. o: { loft, cold, coldG } của bệ đột nóc nóc tháp
+  function launchGuided(shooter, muzzle, o) {
+    const rp = BAL ? BAL.roundParams('ANTI_TANK_MISSILE', shooter) : { v0: 300, turnAcc: 3000, boostT: 0.3, maxTravel: 4000 };
+    const M = BAL ? BAL.bulletSpeedMultiplier || 1 : 1;
+    const tm = shooter.ammoMods && shooter.ammoMods.ANTI_TANK_MISSILE;
+    const dir = muzzle.direction.clone().normalize(), pos = muzzle.position.clone();
+    const veh = state.target === 'VEHICLE' && targetTank.group.visible && !targetTank.isDead;
+    const aim = aimPoint(false), v0 = rp.v0 * 0.3;
+    const s = {
+      x: pos.x, y: pos.y, z: pos.z, vx: dir.x * v0, vy: dir.y * v0, vz: dir.z * v0, timeAlive: 0, shooterId: shooter.id, cold: !!o.cold,
+      guide: {
+        top: !!(o.loft || (tm && tm.top)), fnf: !o.loft && !!(tm && tm.top),
+        cruise: rp.v0, turnAcc: rp.turnAcc, boostT: rp.boostT,
+        targetId: veh ? targetTank.id : null, point: { x: aim.x, y: aim.y, z: aim.z }, lost: false
+      }
+    };
+    if (o.loft) Object.assign(s.guide, { loft: o.loft, cold: o.cold * M, coldG: o.coldG });
+    const mesh = ProjectileModels.create('ANTI_TANK_MISSILE');
+    mesh.position.copy(pos);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    if (s.cold) mesh.traverse(o => { if (o.userData.tracer) o.visible = false; });   // phóng nguội: động cơ chưa cháy
+    if (o.loft) mesh.scale.multiplyScalar(1.45);   // tên lửa bệ đột nóc: vừa khít ống phóng (drone_air.js ROOF_MSL_SCALE)
+    scene.add(mesh);
+    const p = { mesh, ammo: 'ANTI_TANK_MISSILE', heavy: false, t: 0, T: 40, trail: 0, prev: pos.clone(), start: pos.clone(), guided: s,
+      travel: 0, maxTravel: rp.maxTravel || 4000, shooter, topMsl: !!o.loft };
+    projectiles.push(p);
+    return s;
+  }
+  function stepGuided(p, dt) {
+    const s = p.guided, M = BAL ? BAL.bulletSpeedMultiplier || 1 : 1;
+    const n = Math.max(1, Math.ceil(dt / 0.0056)), h = dt * M / n, units = [p.shooter, targetTank];
+    const wasCold = s.cold;
+    for (let i = 0; i < n; i++) {
+      s.timeAlive += h;
+      if (BAL) BAL.guideMissile(s, h, units, terrain);
+      s.x += s.vx * h; s.y += s.vy * h; s.z += s.vz * h;
+      p.travel += Math.hypot(s.vx, s.vy, s.vz) * h;
+    }
+    // phóng nguội xong: động cơ đánh lửa — cụm khói mồi lửa phụt sau đuôi
+    if (wasCold && !s.cold) {
+      const sp = Math.hypot(s.vx, s.vy, s.vz) || 1, dir = new THREE.Vector3(s.vx / sp, s.vy / sp, s.vz / sp);
+      fx.missileIgnite(new THREE.Vector3(s.x, s.y, s.z), dir);
+      const SE = state.audioReady && window.soundEngine;
+      if (SE && SE.playMissileIgnite) SE.playMissileIgnite(camera.position.distanceTo(new THREE.Vector3(s.x, s.y, s.z)), { x: s.x, z: s.z });
+      p.mesh.traverse(o => { if (o.userData.tracer) o.visible = true; });
+    }
+  }
+
+  // UAV CẢM TỬ (kamikaze_uav.js): khí nén đẩy khỏi ống -> bung cánh, động cơ đánh lửa, ngóc lên lấy độ cao bay về phía
+  // mục tiêu -> mục tiêu nằm dưới góc diveLos thì chúc mũi bổ nhào; đầu nổ lõm ~3 kg kích nổ đúng điểm chạm
+  function launchKami(u) {
+    const C = KamiUAV.C, R = u.kamiRack;
+    u.group.updateMatrixWorld(true);
+    let pos, dir;
+    if (R && R.tilt) {
+      pos = R.tubes[0].clone().applyMatrix4(R.tilt.matrixWorld);
+      dir = new THREE.Vector3(0, 0, -1).transformDirection(R.tilt.matrixWorld);
+    } else {
+      pos = u.group.position.clone().add(new THREE.Vector3(0, 30, 0));
+      dir = new THREE.Vector3(-Math.sin(u.bodyAngle), 0.5, -Math.cos(u.bodyAngle)).normalize();
+    }
+    const m = KamiUAV.build('BLUE');
+    m.rotation.order = 'YXZ';
+    m.position.copy(pos);
+    scene.add(m);
+    puff(pos, dir, 8, 26, 1.4);
+    puff(pos.clone().addScaledVector(dir, -6), dir.clone().negate(), 5, 14, 1.2);
+    const SE = window.soundEngine;
+    if (state.audioReady && SE && SE.playKamiLaunch) SE.playKamiLaunch(0, null);
+    projectiles.push({ mesh: m, ammo: 'RPG', fxAmmo: 'ANTI_TANK_MISSILE', kami: true, heavy: false, t: 0, T: 40, trail: 0,
+      prev: pos.clone(), pos: pos.clone(), start: pos.clone(), aim: aimPoint(false), shooter: u,
+      kf: { v: dir.clone().multiplyScalar(C.ejectV), motor: false, dive: false },
+      direct: C.direct, splash: C.splash, blastR: C.blast.radius });
+  }
+  function stepKami(p, dt) {
+    const C = KamiUAV.C, K = p.kf, v = K.v;
+    if (!K.motor && (p.t >= C.motorT || p.pos.distanceTo(p.start) >= C.motorDist)) K.motor = true;
+    if (!K.motor) v.y -= 78 * dt;   // chưa có lực đẩy: rơi chúc theo đà
+    else {
+      const A = p.aim, dx = A.x - p.pos.x, dz = A.z - p.pos.z, dh = Math.hypot(dx, dz) || 1;
+      if (!K.dive && Math.atan2(p.pos.y - A.y, dh) > C.diveLos) K.dive = true;
+      const want = K.dive ? new THREE.Vector3(A.x - p.pos.x, A.y - p.pos.y, A.z - p.pos.z).normalize()
+        : new THREE.Vector3(dx / dh, Math.max(-0.35, Math.min(0.6, (A.y + C.safeAlt - p.pos.y) / 120)), dz / dh).normalize();
+      let sp = v.length() || 1;
+      const dir = v.clone().divideScalar(sp);
+      const ang = Math.acos(Math.max(-1, Math.min(1, dir.dot(want))));
+      const rate = K.dive ? C.attackPitch : C.attackTurn;
+      if (ang > 1e-4) dir.lerp(want, Math.min(1, rate * dt / ang)).normalize();
+      const vt = K.dive ? C.maxV : C.cruise;
+      sp += Math.max(-80 * dt, Math.min((K.dive ? 220 : 90) * dt, vt - sp));
+      v.copy(dir).multiplyScalar(sp);
+    }
+    p.pos.addScaledVector(v, dt);
+    const m = p.mesh, hz = Math.hypot(v.x, v.z);
+    m.position.copy(p.pos);
+    m.rotation.set(Math.atan2(v.y, hz), Math.atan2(-v.x, -v.z), 0);
+    const W = C.wingT, open = Math.max(0, Math.min(1, (p.t - W[0]) / (W[1] - W[0])));
+    KamiUAV.animate(m, dt, open, K.motor ? (K.dive ? 1 : 0.7) : 0);
+    // động cơ tên lửa đẩy tốc độ thấp: vệt khói xám mảnh kéo dài sau đuôi
+    if (K.motor) {
+      const tail = p.pos.clone().addScaledVector(v.clone().normalize(), -3);
+      if (p.lastTail) fx.trail(tail.x, tail.y, tail.z, 'RPG', p.lastTail.x, p.lastTail.y, p.lastTail.z, { guided: true, travel: 999 });
+      p.lastTail = tail;
+    }
   }
 
   // Dò tia đoạn đường bay giữa 2 khung hình vào mặt đất / tường / tòa nhà / xe mục tiêu
@@ -1642,37 +1846,48 @@
 
   const SPLASH_R = { NORMAL: 35, HE: 50, AP: 7, CLUSTER_SUBMUNITION: 25, RPG: 38, GATLING_BULLET: 10, INCENDIARY: 14, SCOUT_BULLET: 10 };
   function applyHit(p, hit, vel) {
+    // fa: loại đạn cho HÌNH / TIẾNG NỔ / PHÁ CẢNH VẬT (quả lựu 40mm nổ cỡ bom con, đầu nổ UAV cảm tử cỡ tên lửa — game.js
+    // fxAmmo); p.ammo: loại đạn cho giáp / sát thương (VehicleDamage)
+    const fa = p.fxAmmo || p.ammo;
+    // tên lửa đột nóc (bệ nóc tháp) / tấn công đỉnh (đạn cao cấp xe trinh sát)
+    const G = p.guided && p.guided.guide;
+    const topMsl = !!(G && (p.topMsl || G.top));
+    const vd = (o) => Object.assign({ ammo: p.ammo, heavy: p.heavy, dir: vel, fx, shooter: p.shooter, gl40: !!p.gl40, kami: !!p.kami, du: !!p.du, topMsl,
+      topAttack: !!(G && G.dive) && vel.y < -0.5 * vel.length() }, o);
     if (hit.hitType === 'WATER') {
-      fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, 12, vel ? { x: vel.x, y: vel.y, z: vel.z } : null);
-      playBoom(hit.point, 'WATER', p.ammo, p.heavy);
+      fx.waterBurst(hit.point.x, hit.point.y, hit.point.z, fa, p.heavy, 12, vel ? { x: vel.x, y: vel.y, z: vel.z } : null);
+      playBoom(hit.point, 'WATER', fa, p.heavy);
       return;
     }
     const onBerm = EX.berm && hit.object === EX.berm.mesh;
     // Nhà: lỗ thủng / bóc lở / muội khoét thẳng vào hình tường -> không dán vết tạm lên mặt nhà
-    const res = fx.impactSurface(p.ammo, hit.hitType === 'BUILDING' ? Object.assign({}, hit, { object: null }) : hit, vel, { heavy: p.heavy, noCrater: onBerm, noHoles: onBerm });
-    playBoom(hit.point, hit.hitType, p.ammo, p.heavy);
+    const res = fx.impactSurface(fa, hit.hitType === 'BUILDING' ? Object.assign({}, hit, { object: null }) : hit, vel, { heavy: p.heavy, noCrater: onBerm, noHoles: onBerm, du: !!p.du });
+    playBoom(hit.point, hit.hitType, fa, p.heavy);
     // Cảnh vật quanh điểm nổ: cây cháy / đổ, boong-ke vỡ, ụ đất lõm
-    if (EX.trees && EX.trees.group.visible) EX.trees.tf.damageAt(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, fx);
-    if (EX.bunker && EX.bunker.group.visible) EX.bunker.set.damageAt(hit.point.x, hit.point.y, hit.point.z, p.ammo, p.heavy, fx);
+    if (EX.trees && EX.trees.group.visible) EX.trees.tf.damageAt(hit.point.x, hit.point.y, hit.point.z, fa, p.heavy, fx);
+    if (EX.bunker && EX.bunker.group.visible) EX.bunker.set.damageAt(hit.point.x, hit.point.y, hit.point.z, fa, p.heavy, fx);
     if (EX.berm && EX.berm.mesh.visible && hit.object === EX.berm.mesh) {
-      const A = Destructibles.ammoInfo(p.ammo, p.heavy);
+      const A = Destructibles.ammoInfo(fa, p.heavy);
       if (p.ammo === 'AP') EX.berm.dig(hit.point, 2.4, 7.5, false, true);                       // xuyên động năng: lỗ nhỏ nhưng cắm sâu
       else if (A.power > 0.3) EX.berm.dig(hit.point, A.radius * 0.55, A.power * 4.2, true);     // hố nổ khoét sâu
       else EX.berm.dig(hit.point, 1.6 + A.power * 4, 0.9 + A.power * 4, false, true);         // đạn nhỏ: lỗ rỗ đất từng phát, xả nhiều thành vùng cày nát
     }
 
+    // vùng nổ lan: quả lựu 40mm / đầu nổ UAV cảm tử có bán kính riêng (roofBlast)
+    const splashR = (p.blastR || SPLASH_R[p.ammo] || 30) * (p.heavy && p.ammo === 'HE' ? 1.8 : 1);
     if (hit.hitType !== 'DIRECT_HIT' && targetTank.group.visible && targetTank.isDead && typeof VehicleDamage !== 'undefined') {
-      const R = (SPLASH_R[p.ammo] || 30) * (p.heavy && p.ammo === 'HE' ? 1.8 : 1);
+      const R = splashR;
       const dist = Math.hypot(hit.point.x - targetTank.group.position.x, hit.point.z - targetTank.group.position.z);
-      if (dist < R) logDamage(VehicleDamage.onSplash(targetTank, { x: hit.point.x, y: hit.point.y, z: hit.point.z, ammo: p.ammo, heavy: p.heavy, dist, radius: R, fx }).events);
+      if (dist < R) logDamage(VehicleDamage.onSplash(targetTank, vd({ x: hit.point.x, y: hit.point.y, z: hit.point.z, dist, radius: R })).events);
     }
     if (hit.hitType !== 'DIRECT_HIT' && targetTank.group.visible && !targetTank.isDead && typeof VehicleDamage !== 'undefined') {
-      const R = (SPLASH_R[p.ammo] || 30) * (p.heavy && p.ammo === 'HE' ? 1.8 : 1);
+      const R = splashR;
       const dist = Math.hypot(hit.point.x - targetTank.group.position.x, hit.point.z - targetTank.group.position.z);
       if (dist < R) {
-        const r = VehicleDamage.onSplash(targetTank, { x: hit.point.x, y: hit.point.y, z: hit.point.z, ammo: p.ammo, heavy: p.heavy, dist, radius: R, fx });
+        const r = VehicleDamage.onSplash(targetTank, vd({ x: hit.point.x, y: hit.point.y, z: hit.point.z, dist, radius: R }));
         logDamage(r.events);
-        targetTank.hp = Math.max(0, targetTank.hp - (DMG[p.ammo] || 0.5) * 0.45 * r.mul * (1 - dist / R * 0.5));
+        const base = p.splash !== undefined ? p.splash : (DMG[p.ammo] || 0.5) * 0.45;
+        targetTank.hp = Math.max(0, targetTank.hp - base * r.mul * (1 - dist / R * 0.5));
         if (targetTank.hp <= 0) { targetTank.isDead = true; fx.onVehicleDestroyed(targetTank, vel, hit.point); }
         fx.trackVehicle(targetTank);
         updateHpLabel();
@@ -1681,43 +1896,52 @@
 
     // Nổ trên đất / trên không sát tường hay nhà (đạn con, lựu đạn pháo rơi cạnh): sóng nổ & mảnh văng vẫn phá kết cấu
     if (hit.hitType !== 'WALL' && hit.hitType !== 'BUILDING' && p.ammo !== 'AP') {
-      const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
+      const sp = STRUCT_POWER[fa] || STRUCT_POWER.NORMAL;
       const rad = sp.radius * (p.heavy ? 1.7 : 1), pow = sp.power * (p.heavy ? 1.8 : 1) * 0.7;
-      if (wall.group.visible) wall.damageAt(hit.point, rad, pow, p.ammo, fx);
-      if (building.visible) building.damageAt(hit.point, rad, pow, p.ammo, fx, { heavy: p.heavy, hitType: hit.hitType, dir: vel });
+      if (wall.group.visible) wall.damageAt(hit.point, rad, pow, fa, fx);
+      if (building.visible) building.damageAt(hit.point, rad, pow, fa, fx, { heavy: p.heavy, hitType: hit.hitType, dir: vel });
       if (wall.group.visible || building.visible) updateHpLabel();
     }
     if (hit.hitType === 'WALL') {
-      const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
+      const sp = STRUCT_POWER[fa] || STRUCT_POWER.NORMAL;
       const rad = sp.radius * (p.heavy ? 1.7 : 1);
       const pow = sp.power * (p.heavy ? 1.85 : 1);
-      if (wall.group.visible) { const wr = wall.damageAt(hit.point, rad, pow, p.ammo, fx); p._pierced = !!(wr && wr.pierced); }
+      if (wall.group.visible) { const wr = wall.damageAt(hit.point, rad, pow, fa, fx); p._pierced = !!(wr && wr.pierced); }
       else if (EX.bunker && EX.bunker.group.visible) p._pierced = !!(EX.bunker.set.S && EX.bunker.set.S.lastPierced);
       updateHpLabel();
     } else if (hit.hitType === 'BUILDING') {
-      const sp = STRUCT_POWER[p.ammo] || STRUCT_POWER.NORMAL;
+      const sp = STRUCT_POWER[fa] || STRUCT_POWER.NORMAL;
       const rad = sp.radius * (p.heavy ? 1.6 : 1);
       const pow = sp.power * (p.heavy ? 1.75 : 1);
-      building.damageAt(hit.point, rad, pow, p.ammo, fx, { heavy: p.heavy, hitType: 'BUILDING', dir: vel });
+      building.damageAt(hit.point, rad, pow, fa, fx, { heavy: p.heavy, hitType: 'BUILDING', dir: vel });
       updateHpLabel();
     } else if (hit.hitType === 'DIRECT_HIT' && targetTank.isDead && typeof VehicleDamage !== 'undefined') {
-      logDamage(VehicleDamage.onDirectHit(targetTank, { hit, ammo: p.ammo, heavy: p.heavy, dir: vel, fx }).events);
+      logDamage(VehicleDamage.onDirectHit(targetTank, vd({ hit })).events);
     } else if (hit.hitType === 'DIRECT_HIT' && !targetTank.isDead) {
       // đạn nảy khỏi giáp nghiêng: VehicleDamage tự giảm sát thương (như trong game)
       if (res && res.ricochet) hit.ricochet = true;
       targetTank.lastHitDir = vel.clone();
       targetTank.lastHitPoint = hit.point.clone();
       // Giáp theo cấp + hướng + ERA, hỏng hóc bộ phận đúng điểm chạm (cùng hệ thống với game)
-      let mul = 1;
+      let mul = 1, r = null;
       if (typeof VehicleDamage !== 'undefined') {
-        const r = VehicleDamage.onDirectHit(targetTank, { hit, ammo: p.ammo, heavy: p.heavy, dir: vel, fx });
+        r = VehicleDamage.onDirectHit(targetTank, vd({ hit }));
         mul = r.mul;
-        logDamage(r.events);
       }
-      // lựu pháo 155mm trúng thẳng: cùng sát thương gốc như trong game (game.js handleShellImpact)
-      let dmg = (p.heavy ? (p.ammo === 'AP' ? 4.6 : 4.5) : (DMG[p.ammo] || 0.5)) * mul;
+      // lựu pháo 155mm trúng thẳng: cùng sát thương gốc như trong game (game.js handleShellImpact); vũ khí phụ kiện có
+      // sát thương gốc riêng (p.direct: quả lựu 40mm, súng 7.62mm trạm nóc, đầu nổ UAV cảm tử)
+      let dmg = (p.heavy ? (p.ammo === 'AP' ? 4.6 : 4.5) : p.direct !== undefined ? p.direct : (DMG[p.ammo] || 0.5)) * mul;
       // lựu pháo trúng thẳng (không nảy / không bị chặn): hạ gục như trong game
       if (p.heavy && p.ammo !== 'AP' && mul > 0 && !hit.ricochet) dmg = Math.max(dmg, targetTank.hp + 0.05);
+      // TÊN LỬA ĐỘT NÓC bổ nhào trúng nóc (game.js): mất 90-95% máu tối đa, mái lồng chống UAV đỡ bớt còn 80-85%, xe giáp
+      // mỏng hạ gọn. Gạch giáp nổ phá hẳn đầu đạn (mul = 0): 0
+      if (topMsl && G.dive && (p.topMsl || vel.y < -0.5 * vel.length()) && mul > 0 && typeof DroneAir !== 'undefined') {
+        const cage = typeof Equipment !== 'undefined' && Equipment.roofCage && Equipment.roofCage(targetTank);
+        const D = DroneAir.C.ROOF.atgm.dmg, rr = D[cage ? 'cage' : 'bare'];
+        dmg = (targetTank.maxHp || 3) * (D.kill.includes(targetTank.tankType) ? 1.05 : rr[0] + Math.random() * (rr[1] - rr[0]));
+        if (r) r.events.push({ type: 'topMsl', text: cage ? 'TÊN LỬA ĐỘT NÓC XUYÊN QUA MÁI LỒNG — lồng chỉ đỡ bớt chút ít' : 'TÊN LỬA ĐỘT NÓC BỔ NHÀO TRÚNG NÓC — luồng nổ lõm xuyên thẳng xuống khoang' });
+      }
+      if (r) logDamage(r.events);
       targetTank.hp = Math.max(0, targetTank.hp - dmg);
       if (targetTank.hp <= 0) {
         targetTank.isDead = true;
@@ -1734,7 +1958,22 @@
       p.t += dt;
       const t = p.t;
       let pos, vel;
-      if (p.numeric) {
+      if (p.kf) {
+        stepKami(p, dt);
+        pos = p.pos.clone(); vel = p.kf.v.clone();
+      } else if (p.guided) {
+        stepGuided(p, dt);
+        const s = p.guided;
+        pos = new THREE.Vector3(s.x, s.y, s.z); vel = new THREE.Vector3(s.vx, s.vy, s.vz);
+        // hết tầm: tên lửa tự hủy nổ trên không
+        if (p.travel > p.maxTravel) {
+          fx.spawn(pos.x, pos.y, pos.z, 'CLUSTER_SUBMUNITION', 'AIR', {});
+          playBoom(pos, 'AIRBURST', 'CLUSTER_SUBMUNITION');
+          scene.remove(p.mesh);
+          projectiles.splice(i, 1);
+          continue;
+        }
+      } else if (p.numeric) {
         // Tích phân từng bước (có lực cản không khí)
         if (p.P) stepShot(p.P, p.pos, p.vel, dt);
         else { p.vel.addScaledVector(p.g, dt).multiplyScalar(Math.exp(-p.drag * dt)); p.pos.addScaledVector(p.vel, dt); }
@@ -1798,7 +2037,7 @@
       }
       const hit = collide(p.prev, pos);
       // Chạm nước góc thấp: đạn nảy khỏi mặt nước bay tiếp (cùng luật với trận thật: BallisticsSystem3D.waterSkip)
-      if (hit && hit.hitType === 'WATER' && BAL && BAL.waterSkip) {
+      if (hit && hit.hitType === 'WATER' && BAL && BAL.waterSkip && !p.guided && !p.kf) {
         if (p._bs === undefined) p._bs = (Math.random() * 4294967296) >>> 0;
         const sh = { ammoType: p.ammo, isDirectFire: state.sel.path !== 'arc', isHeavyArty: !!p.heavy, burstSeed: p._bs, skips: p.skips || 0,
           x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z };
@@ -1833,21 +2072,49 @@
         continue;
       }
       p.prev.copy(pos);
+      if (p.kf) continue;   // UAV cảm tử tự đặt hướng thân / vệt khói (stepKami)
       p.mesh.position.copy(pos);
       if (vel.lengthSq() > 1e-4) p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vel.clone().normalize());
-      if (p.ammo !== 'RPG' && p.ammo !== 'CLUSTER_SUBMUNITION') p.mesh.rotateY(p.t * 40);
+      if (p.ammo !== 'RPG' && p.ammo !== 'CLUSTER_SUBMUNITION' && p.ammo !== 'ANTI_TANK_MISSILE') p.mesh.rotateY(p.t * 40);
       const tail = new THREE.Vector3(0, -(p.mesh.userData.length || 10) * 0.45, 0);
       p.mesh.localToWorld(tail);
       if (!p.lastTail) p.lastTail = tail.clone();
+      // tên lửa phóng nguội (bệ đột nóc) chưa đánh lửa: chưa có lửa / khói đuôi
+      if (p.guided && p.guided.cold) { p.lastTail.copy(tail); continue; }
 
       const isMissile = (p.ammo === 'RPG' || p.ammo === 'ANTI_TANK_MISSILE');
       p.trail += dt;
       if (isMissile || p.trail >= 0.02) {
         p.trail = 0;
-        fx.trail(tail.x, tail.y, tail.z, p.ammo, p.lastTail.x, p.lastTail.y, p.lastTail.z);
+        fx.trail(tail.x, tail.y, tail.z, p.ammo, p.lastTail.x, p.lastTail.y, p.lastTail.z, { guided: !!p.guided, travel: p.travel || 0, gl: !!p.gl40 });
         p.lastTail.copy(tail);
       }
     }
+  }
+
+  // Tiếng động cơ + tiếng rít bám theo tên lửa bệ đột nóc đang bay (sight_audio.js — như game.js updateMissileSounds);
+  // tên lửa xe trinh sát đã có đoạn tiếng bay dựng sẵn trong playMissileLaunch
+  const liveSnd = new Set();
+  function missileSounds(dt) {
+    const SE = state.audioReady && window.soundEngine;
+    if (!(dt > 0)) return;
+    const seen = new Set();
+    if (SE && SE.startMissileTrack) for (const p of projectiles) {
+      if (!p.guided || !p.topMsl) continue;
+      const s = p.guided, d = camera.position.distanceTo(p.mesh.position);
+      if (!p.snd) {
+        if (p.sndTried) continue;
+        p.sndTried = true;
+        p.snd = SE.startMissileTrack(0, { big: true });
+        if (!p.snd) continue;
+        p.snd.prevD = d;
+      }
+      seen.add(p.snd); liveSnd.add(p.snd);
+      const vr = (p.snd.prevD - d) / dt;
+      p.snd.prevD = d;
+      SE.updateMissileTrack(p.snd, { dist: d, pos: { x: s.x, z: s.z }, vr, speed: Math.hypot(s.vx, s.vy, s.vz), burning: !s.cold });
+    }
+    for (const h of liveSnd) if (!seen.has(h)) { if (SE) SE.stopMissileTrack(h); liveSnd.delete(h); }
   }
 
   function playBoom(pos, hitType, ammo, heavy) {
@@ -1869,6 +2136,16 @@
     const aimYaw = Math.atan2(-aimDx, -aimDz) - (state.manualAzi || 0) * Math.PI / 180;
     u.group.rotation.y = aimYaw;
     u.bodyAngle = aimYaw;
+
+    // Vũ khí phụ kiện (trạm nóc tháp / ống phóng UAV cảm tử): pháo chính nằm yên, bệ phụ kiện tự ngắm & bắn
+    if (sel.roof || sel.kami) {
+      if (u.barrelPivot) { u.barrelPivot.rotation.x = sel.kami ? 0.3 : 0.02; u.elevation = u.barrelPivot.rotation.x * 180 / Math.PI; }
+      u.group.updateMatrixWorld(true);
+      if (sel.kami) kamiTick(u, dt, wantFire);
+      else if (u.rcwsGun && typeof DroneAir !== 'undefined') roofTick(u, dt, wantFire, aim);
+      finishLauncher(u, dt);
+      return;
+    }
 
     const m = (typeof u.getMuzzleWorldTransform === 'function') ? u.getMuzzleWorldTransform() : { position: u.group.position.clone().add(new THREE.Vector3(0, 12, 0)) };
     const dx = aim.x - m.position.x;
@@ -1893,9 +2170,17 @@
       u.updateGatling(dt, wantFire, stubBallistics, stubRadar);
     } else {
       if (u.reloadTimer > 0) u.reloadTimer = Math.max(0, u.reloadTimer - dt);
-      if (wantFire && u.reloadTimer <= 0) u.fire(stubBallistics, stubRadar);
+      // tên lửa chống tăng xe trinh sát: ống phóng có hồi nạp riêng (antiTankCooldown ~11 s) — phòng thử nạp tức thì,
+      // giữ nhịp phóng ~2,5 s / quả
+      const atgm = sel.ammo === 'ANTI_TANK_MISSILE';
+      if (atgm) { u.antiTankCooldown = 0; u.missileAmmoCount = 99; }
+      if (wantFire && u.reloadTimer <= 0 && u.fire(stubBallistics, stubRadar) && atgm) u.reloadTimer = 2.5;
     }
+    finishLauncher(u, dt);
+  }
 
+  // Giật nòng, dao động thân xe, khói nòng, hạt hiệu ứng, hoạt cảnh mô hình (chung mọi kiểu bắn)
+  function finishLauncher(u, dt) {
     if (u.barrelRecoil > 0 && u.barrelGroup) {
       u.barrelRecoil = Math.max(0, u.barrelRecoil - dt * 38);
       u.barrelGroup.position.z = u.barrelRecoil;
@@ -1905,6 +2190,116 @@
     if (u.barrelSmokeTimer > 0) { u.barrelSmokeTimer -= dt; if (Math.random() < 0.4) u.spawnBarrelSmokePuff(stubBallistics.wind); }
     u.updateFXParticles(dt);
     if (u.modelAnimator) u.modelAnimator.update(dt, u);
+  }
+
+  // ---------------------------------------------------------------------------
+  // TRẠM VŨ KHÍ TRÊN BỆ NÓC THÁP (drone_air.js updateRCWS / fireRCWS / fireRoofAGL / fireRoofMissile): bệ quay / ngóc
+  // thẳng vào điểm ngắm, nhịp bắn / hộp đạn / thời gian nạp theo DroneAir.C.RCWS / C.ROOF. Bệ tên lửa đột nóc ngóc
+  // launchEl, mỗi lần bóp cò phóng 1 quả (2 ống; phòng thử: phóng hết thì tự lắp ống mới)
+  // ---------------------------------------------------------------------------
+  const _rq = new THREE.Quaternion(), _rv = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);
+  // k >= 0: miệng ống thứ k của bệ tên lửa; -1: miệng nòng súng / tâm khối ngắm
+  function roofMuzzle(u, k) {
+    u.rcwsGun.updateWorldMatrix(true, false);
+    const M = u.rcwsGun.matrixWorld, loc = k >= 0 && u.roofMuzzles ? u.roofMuzzles[k] : u.rcwsMuzzleLocal;
+    return { position: loc.clone().applyMatrix4(M), direction: new THREE.Vector3(0, 0, -1).transformDirection(M) };
+  }
+  function aimRoof(u, aim, R) {
+    const sel = state.sel, man = state.manualElev !== null && state.manualElev !== undefined;
+    for (let pass = 0; pass < 2; pass++) {   // lần 2: giải lại từ miệng nòng sau khi bệ đã quay đúng hướng
+      const m = roofMuzzle(u, -1);
+      const dx = aim.x - m.position.x, dz = aim.z - m.position.z, dh = Math.hypot(dx, dz) || 1;
+      let el = sel.roof === 'atgm' ? R.launchEl : man ? state.manualElev : solveElevation(u, sel.ammo, false, m.position.y, dh, aim.y);
+      el = Math.max(Math.min(R.elMin, depressMin()), Math.min(R.elMax, el));
+      const e = el * Math.PI / 180;
+      _rv.set(dx / dh * Math.cos(e), Math.sin(e), dz / dh * Math.cos(e));
+      if (state.manualAzi) _rv.applyAxisAngle(_Y, -state.manualAzi * Math.PI / 180);
+      // hướng thế giới -> khung tọa độ của tháp pháo mang bệ
+      const par = u.rcwsTurret.parent;
+      if (par) { par.updateWorldMatrix(true, false); par.getWorldQuaternion(_rq); _rv.applyQuaternion(_rq.invert()); }
+      u.rcwsTurret.rotation.y = Math.atan2(-_rv.x, -_rv.z);
+      u.rcwsGun.rotation.x = Math.atan2(_rv.y, Math.hypot(_rv.x, _rv.z));
+    }
+  }
+  function roofTick(u, dt, wantFire, aim) {
+    const sel = state.sel, C = DroneAir.C, R = sel.roof === 'rcws' ? C.RCWS : C.ROOF[sel.roof];
+    const S = u._labRoof || (u._labRoof = { t: R.rof, mag: R.mag, reload: 0, cd: 0 });
+    u._rcws = S;   // có lệnh điều khiển: mô hình thôi quay bệ quét cảnh giới (mbt_halberd.js)
+    aimRoof(u, aim, R);
+    // nắp đầu ống còn trên ống nào thì ống đó còn tên lửa
+    if (u.roofRounds) { const n = u.roofRounds.length; for (let i = 0; i < n; i++) u.roofRounds[i].visible = i >= n - S.mag; }
+    u.isFiringAAmg = false;
+    if (S.reload > 0) {
+      S.reload -= dt;
+      if (S.reload <= 0) { S.reload = 0; S.mag = R.mag; }
+      return;
+    }
+    if (sel.roof === 'atgm') {
+      if (S.cd > 0) S.cd -= dt;
+      if (wantFire && !(S.cd > 0) && S.mag > 0) {
+        fireRoofAtgm(u, R, S);
+        S.cd = 1.2;
+        if (S.mag <= 0) S.reload = 6;
+      }
+      return;
+    }
+    if (!wantFire || S.mag <= 0) { S.t = R.rof; return; }
+    u.isFiringAAmg = true;
+    S.t += dt;
+    while (S.t >= R.rof && S.mag > 0) {
+      S.t -= R.rof;
+      fireRoofGun(u, sel.roof, R);
+      if (--S.mag <= 0) {
+        S.reload = R.reload;
+        const SE = state.audioReady && window.soundEngine;
+        if (SE && SE.playReloadPhase) SE.playReloadPhase('MG762', 'magOut');
+      }
+    }
+  }
+  function fireRoofGun(u, kind, R) {
+    const m = roofMuzzle(u, -1), SE = state.audioReady && window.soundEngine;
+    if (kind === 'agl') {
+      launchProjectile(u, 'GATLING_BULLET', { muzzle: m, spread: R.spread, roofAgl: true });
+      puff(m.position, m.direction, 2, 10, 0.9, 0.75);
+      if (SE && SE.playGrenadeLauncher) SE.playGrenadeLauncher(0, null, u.id);
+    } else {
+      // đạn 7.62mm: suy từ đạn 12.7mm (chậm hơn, cản lớn — u._labP), gần như vô hại với xe bọc thép
+      launchProjectile(u, 'SCOUT_BULLET', { muzzle: m, spread: R.spread, direct: R.dmgVehicle });
+      if (SE && SE.playGatlingShot) SE.playGatlingShot('MG762', 0, null, null, { interval: R.rof });
+    }
+  }
+  function fireRoofAtgm(u, R, S) {
+    const n = u.roofMuzzles ? u.roofMuzzles.length : 0;
+    const k = n ? Math.max(0, Math.min(n - 1, R.mag - Math.max(1, S.mag))) : -1;
+    const m = roofMuzzle(u, k);
+    launchGuided(u, m, { loft: R.loft, cold: R.coldT, coldG: R.coldG });
+    S.mag = Math.max(0, S.mag - 1);
+    // phóng nguội: hơi khí nén trắng phụt ra miệng ống & phụt ngược ở đuôi ống
+    fx.missileColdLaunch(m.position, m.direction, m.position.clone().addScaledVector(m.direction, -10));
+    const SE = state.audioReady && window.soundEngine;
+    if (SE && (SE.playTopMissileLaunch || SE.playKamiLaunch)) (SE.playTopMissileLaunch || SE.playKamiLaunch).call(SE, 0, null);
+  }
+  // Ống phóng UAV cảm tử trên nóc cabin lựu pháo: mỗi lần bóp cò phóng 1 chiếc (phòng thử: nạp lại 2,5 s)
+  function kamiTick(u, dt, wantFire) {
+    if (typeof KamiUAV === 'undefined') return;
+    const S = u._labRoof || (u._labRoof = { cd: 0 });
+    if (S.cd > 0) S.cd -= dt;
+    if (wantFire && !(S.cd > 0)) { launchKami(u); S.cd = 2.5; }
+  }
+  // Dòng trạng thái vũ khí đang chọn (hộp đạn / đang nạp)
+  function gunStatus() {
+    const u = launcher, sel = state.sel;
+    if (!u) return '';
+    const S = u._labRoof;
+    if (sel.kami) return S && S.cd > 0 ? `Đang nạp UAV mới vào ống… ${S.cd.toFixed(1)} s` : 'UAV sẵn sàng — Space để phóng';
+    if (sel.roof) {
+      if (!S) return '';
+      if (S.reload > 0) return `${sel.roof === 'atgm' ? 'Đang lắp ống phóng mới' : 'Đang thay hộp đạn'}… ${S.reload.toFixed(1)} s`;
+      const R = sel.roof === 'rcws' ? DroneAir.C.RCWS : DroneAir.C.ROOF[sel.roof];
+      return sel.roof === 'atgm' ? `Ống phóng còn ${S.mag} / ${R.mag} quả` : `Hộp đạn ${S.mag} / ${R.mag}`;
+    }
+    if (sel.rapid && u.gatlingMagMax) return u.reloadTimer > 0 ? `Đang thay băng đạn… ${u.reloadTimer.toFixed(1)} s` : `Băng đạn ${u.gatlingMag} / ${u.gatlingMagMax}`;
+    return '';
   }
 
   // ===========================================================================
@@ -1992,7 +2387,8 @@
     SCOUT: { name: 'Marten R4', role: 'Trinh sát', icon: 'radar-2' }
   };
   const UNITS = Object.keys(UNIT_GROUP);
-  const PATH_NOTE = { direct: 'bắn thẳng', arc: 'bắn cầu vồng', bullet: 'giữ để xả', missile: 'có dẫn đường' };
+  const PATH_NOTE = { direct: 'bắn thẳng', arc: 'bắn cầu vồng', bullet: 'giữ để xả', missile: 'có dẫn đường', kami: 'bay tới rồi bổ nhào' };
+  const GROUP_NAME = { prem: 'Đạn cao cấp', acc: 'Vũ khí phụ kiện' };
   const unitRow = document.getElementById('unitRow');
   unitRow.innerHTML = UNITS.map(u => {
     const g = UNIT_GROUP[u];
@@ -2001,10 +2397,14 @@
   const visibleAmmo = () => AMMO.map((a, i) => i).filter(i => AMMO[i].unit === state.unit);
   function renderAmmoList() {
     unitRow.querySelectorAll('.btn').forEach(b => b.classList.toggle('on', b.dataset.unit === state.unit));
+    let grp = null;
     list.innerHTML = visibleAmmo().map((i, n) => {
       const a = AMMO[i];
       const note = (a.who.split('·')[1] || '').trim() || PATH_NOTE[a.path] || '';
-      return `<button class="btn${a === state.sel ? ' on' : ''}" data-i="${i}"><kbd class="ammo-key">${n + 1}</kbd>${a.label}${note ? `<small>${note}</small>` : ''}</button>`;
+      // tiêu đề nhóm: đạn thường -> đạn cao cấp -> vũ khí phụ kiện
+      const head = (a.grp || null) !== grp ? `<div class="lab-sub mt">${GROUP_NAME[a.grp] || ''}</div>` : '';
+      grp = a.grp || null;
+      return `${head}<button class="btn${a === state.sel ? ' on' : ''}" data-i="${i}"><kbd class="ammo-key">${n + 1}</kbd>${a.label}${note ? `<small>${note}</small>` : ''}</button>`;
     }).join('');
   }
   function selectUnit(u) {
@@ -2082,6 +2482,7 @@
   window.addEventListener('keydown', e => {
     if (e.code === 'Space') { e.preventDefault(); initAudio(); if (!e.repeat) setFiring(true); }
     else if (/^Digit[1-9]$/.test(e.code)) { const i = visibleAmmo()[+e.code.slice(5) - 1]; if (i !== undefined) { initAudio(); selectAmmo(i); } }
+    else if (e.code === 'KeyK') setCrew(!labCrew);
     else if (e.code === 'KeyV') { initAudio(); selectUnit(UNITS[(UNITS.indexOf(state.unit) + 1) % UNITS.length]); }
     else if (e.code === 'KeyS') { const order = [1, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01]; const next = order[(order.indexOf(state.speed) + 1) % order.length]; document.querySelector(`#speedRow [data-speed="${next}"]`).click(); }
   });
@@ -2098,7 +2499,8 @@
   window.addEventListener('resize', resize);
   resize();
 
-  let last = performance.now();
+  let last = performance.now(), statT = 0;
+  const gunStatEl = document.getElementById('gunStat');
   function frame(now) {
     requestAnimationFrame(frame);
     const rawDt = Math.min(0.05, Math.max(0, (now - last) / 1000));
@@ -2115,7 +2517,15 @@
     }
 
     if (launcher) simulateLauncher(launcher, dt);
+    statT += rawDt;
+    if (statT > 0.15) {
+      statT = 0;
+      const t = gunStatus();
+      gunStatEl.style.display = t ? '' : 'none';
+      if (gunStatEl.textContent !== t) gunStatEl.textContent = t;
+    }
     updateProjectiles(dt);
+    missileSounds(dt);
     fx.update(dt);
     building.update(dt);
     if (EX.trees) EX.trees.tf.update(dt, fx);
@@ -2170,7 +2580,32 @@
     rebuildTarget();
   }));
   document.getElementById('camoReset').addEventListener('click', rebuildTarget);
+  // Giáp lắp thêm cho xe bia: chỉ hiện món lắp được trên dòng xe đang làm bia
+  function renderArmorRow() {
+    const row = document.getElementById('armorRow');
+    if (!row || typeof Equipment === 'undefined') return;
+    row.innerHTML = TARGET_ARMOR.filter(id => Equipment.compatible(id, targetTank.tankType))
+      .map(id => `<button class="btn${labArmor.has(id) ? ' on' : ''}" data-arm="${id}">${Equipment.MODULES[id].name}</button>`).join('');
+  }
+  document.getElementById('armorRow').addEventListener('click', e => {
+    const b = e.target.closest('[data-arm]');
+    if (!b) return;
+    const id = b.dataset.arm;
+    if (labArmor.has(id)) labArmor.delete(id); else labArmor.add(id);
+    renderArmorRow();
+    rebuildTarget();
+  });
+  document.querySelectorAll('#vehRow [data-veh]').forEach(b => b.addEventListener('click', renderArmorRow));
+  renderArmorRow();
   if (!labCamo) document.querySelectorAll('#camoRow [data-camo]').forEach(x => x.classList.toggle('on', x.dataset.camo === '0'));
+  function setCrew(on) {
+    labCrew = on;
+    document.querySelectorAll('#crewRow [data-crew]').forEach(x => x.classList.toggle('on', (x.dataset.crew === '1') === on));
+    applyCrew(targetTank);
+    Object.values(launchers).forEach(applyCrew);
+  }
+  document.querySelectorAll('#crewRow [data-crew]').forEach(b => b.addEventListener('click', () => setCrew(b.dataset.crew === '1')));
+  if (!labCrew) setCrew(false);
   window.__fxLab = { collide, applyHit, wall, building, EX, ground, LAUNCH_DIR, orbit, state, fx, projectiles, selectAmmo, setFiring, launchers, camPreset, renderer, camera, scene, setTargetType, get targetTank() { return targetTank; }, get launcher() { return launcher; }, get EX() { return EX; } };
 })();
 </script>

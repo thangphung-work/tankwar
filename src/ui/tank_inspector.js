@@ -47,7 +47,7 @@ class TankInspector {
         ammoList: [
           { name: 'Đạn Tiêu Chuẩn', desc: 'Đạn pháo thông dụng, uy lực nổ cân bằng và tốc độ bay ổn định.' },
           { name: 'Đạn Nổ Mạnh', desc: 'Sức ép nổ lớn, dọn dẹp cụm kẻ địch và phá hủy chướng ngại vật hiệu quả.' },
-          { name: 'Đạn Xuyên Giáp Lõi Urani Nghèo', desc: 'Mũi tên APFSDS tự bốc cháy khi xuyên giáp. Chỉ xe tăng chủ lực bắn được.' }
+          { name: 'Đạn Xuyên Giáp Lõi Vonfram', desc: 'Mũi tên APFSDS hợp kim vonfram, vỡ vụn tóe tia lửa khi xuyên giáp (bản cao cấp lõi urani nghèo: xuyên sâu hơn, mảnh tự bốc cháy). Chỉ xe tăng chủ lực bắn được.' }
         ]
       },
       GATLING: {
@@ -128,6 +128,136 @@ class TankInspector {
   init() {
     this.createDomElements();
     this.bindEvents();
+    this.spares = {};        // xe dựng sẵn (ẩn trong cảnh) theo 'loại|phe' — xem pumpSpares
+    this._lastActive = 0;    // lần cuối người xem thao tác (chuột / phím) — xem animate, pumpSpares
+    this.schedulePrewarm(2500);   // trang vừa tải: chờ game dựng xong rồi mới dựng sẵn phòng xem
+  }
+
+  // DỰNG SẴN Ở NỀN: lần mở đầu phải tạo WebGL, bãi thử, tường thử, dựng xe và biên dịch shader -> khựng vài giây;
+  // đổi tab xe / màu sơn cũng dựng lại cả mô hình. Lúc máy rảnh dựng trước mỗi loại xe 1 chiếc (ẩn trong cảnh,
+  // shader biên dịch sẵn): mở phòng / đổi tab / "Về bệ" chỉ việc lấy ra hiện lên. Lấy chiếc nào thì dựng bù chiếc đó.
+  schedulePrewarm(delayMs = 0) {
+    clearTimeout(this._prewarmTimer);
+    if (this._prewarmIdle && typeof cancelIdleCallback === 'function') cancelIdleCallback(this._prewarmIdle);
+    this._prewarmTimer = setTimeout(() => {
+      const run = () => { this._prewarmIdle = null; this.pumpSpares(); };
+      if (typeof requestIdleCallback === 'function') this._prewarmIdle = requestIdleCallback(run, { timeout: 4000 });
+      else run();
+    }, delayMs);
+  }
+
+  kitSig(tankType) {
+    const A = window.Account;
+    try { return JSON.stringify(A && A.kitFor ? A.kitFor(tankType).kit : null); } catch (e) { return ''; }
+  }
+
+  // lưới ngụy trang theo bãi đang chọn (sân thử) — xe dựng sẵn phải khớp
+  foliageKey() {
+    return this.rangeMode && this.field && this.field.mapType ? this.field.mapType : '';
+  }
+
+  // xe dựng sẵn theo 'loại|phe|lưới ngụy trang' ('' = màn thông tin xe, bãi phẳng)
+  spareKey(tankType, team, fol) { return tankType + '|' + team + '|' + fol; }
+
+  spareOk(s, tankType) {
+    return !!s && s.sig === this.kitSig(tankType);
+  }
+
+  dropSpare(key) {
+    const s = this.spares[key];
+    if (!s) return;
+    if (s.unit.group) this.scene.remove(s.unit.group);
+    delete this.spares[key];
+  }
+
+  // Dựng 1 xe mới đứng trên bệ: đúng màu sơn + bộ trang bị đang lắp, đạn đặc biệt không giới hạn
+  createPreviewUnit(tankType, team, fol = this.foliageKey()) {
+    const u = new SPGUnit3D(this.scene, {
+      tankType: tankType,
+      team: team,
+      isPlayer: true,
+      x: 0,
+      z: 0,
+      bodyAngle: 0
+    });
+    u.alwaysFX = true;
+    u.idleVibeAmp = 0;   // xe đứng yên trên bệ: không rung máy nổ (nhìn gần thấy cả xe run)
+    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.missileAmmoCount = 9999;
+    // Tinh chỉnh riêng cho phòng trưng bày: Ẩn thanh máu 3D
+    if (u.hpBgMesh) u.hpBgMesh.visible = false;
+    if (u.hpBarMesh) u.hpBarMesh.visible = false;
+    if (u.reactiveArmorMesh) u.reactiveArmorMesh.visible = false;
+    // Sân thử: lưới ngụy trang theo địa hình bãi đang chọn (sa mạc, rừng, đồi...) như trong trận theo bản đồ
+    if (fol) u._foliageKind = fol;
+    if (window.ArmoryUI && ArmoryUI.equipPreview) ArmoryUI.equipPreview(u, tankType);
+    return u;
+  }
+
+  // Việc dựng sẵn cần làm, theo thứ tự ưu tiên: xe đang chọn -> bãi thử đã chọn lần trước + xe đó trên bãi ấy
+  // (vào PHÒNG THỬ ĐẠN tức thì) -> các xe còn lại. Đang ở phòng thử đạn: chỉ xe đang xem cho nút "Về bệ".
+  spareTasks() {
+    const team = this.currentTeam;
+    if (this.rangeMode) return [{ type: this.currentTankType, team, fol: this.foliageKey() }];
+    const mm = window.matchmakingController;
+    const first = this.isOpen ? this.currentTankType : ((mm && mm.selectedTankType) || this.currentTankType);
+    const tasks = [{ type: first, team, fol: '' }];
+    if (typeof ProvingGround !== 'undefined') {
+      const rid = this.savedRange();
+      tasks.push({ field: rid }, { type: first, team, fol: ProvingGround.PRESETS[rid].mapType });
+    }
+    for (const t of Object.keys(this.tankSpecs)) if (t !== first) tasks.push({ type: t, team, fol: '' });
+    return tasks;
+  }
+
+  // Làm 1 việc dựng sẵn còn thiếu mỗi lượt (mỗi việc tốn vài trăm ms -> rải ra lúc rảnh, không dồn một lúc)
+  pumpSpares() {
+    if (typeof SPGUnit3D === 'undefined' || this.inLiveMatch()) return;   // giữa trận: không dựng (khựng khung hình trận)
+    // đang mở phòng mà người xem vừa thao tác: chờ họ ngừng tay rồi mới dựng (tránh giật lúc xoay / lái)
+    if (this.isOpen && performance.now() - this._lastActive < 1500) { this.schedulePrewarm(1500); return; }
+    try {
+      this.initThreeScene();
+      if (!this.scene) return;
+      const tasks = this.spareTasks();
+      // bỏ xe / bãi dựng sẵn không còn cần (đổi phe, đổi bãi đã chọn...) cho đỡ tốn bộ nhớ
+      // (ở phòng thử đạn thì giữ nguyên: thoát ra màn thông tin xe là dùng ngay)
+      if (!this.rangeMode) {
+        const want = new Set(tasks.filter(t => t.type).map(t => this.spareKey(t.type, t.team, t.fol)));
+        for (const key in this.spares) if (!want.has(key)) this.dropSpare(key);
+        if (this.field) this.field.drop(null, tasks.filter(t => t.field).map(t => t.field));
+      }
+      const task = tasks.find(t => t.field
+        ? this.field && this.field.id !== t.field && !this.field.cache[t.field]
+        : !this.spareOk(this.spares[this.spareKey(t.type, t.team, t.fol)], t.type));
+      if (!task) return;
+      // vật vừa dựng (ẩn) — biên dịch shader ngay bây giờ (compile duyệt cả vật thể ẩn), không phải ở khung hình
+      // đầu tiên sau khi hiện ra. Phòng đang đóng (overlay ẩn): vẽ thử 1 khung cho hiện ra để nạp luôn texture /
+      // hình khối lên GPU
+      let obj;
+      if (task.field) {
+        obj = this.field.prebuild(task.field);
+      } else {
+        const key = this.spareKey(task.type, task.team, task.fol);
+        this.dropSpare(key);
+        const u = this.createPreviewUnit(task.type, task.team, task.fol);
+        this.spares[key] = { unit: u, sig: this.kitSig(task.type) };
+        obj = u.group;
+      }
+      if (obj) {
+        this.updateCameraPosition();
+        this.renderer.compile(this.scene, this.camera);
+        if (!this.isOpen) {
+          const cur = this.activeUnit && this.activeUnit.group;
+          if (cur) cur.visible = false;
+          obj.visible = true;
+          this.renderer.render(this.scene, this.camera);
+          if (cur) cur.visible = true;
+        }
+        obj.visible = false;
+      }
+      this.schedulePrewarm(this.isOpen ? 1200 : 300);
+    } catch (e) {
+      console.warn('[Phòng xem xe] Dựng sẵn lỗi', e);
+    }
   }
 
   // Tạo và nhúng DOM Modal vào trang
@@ -344,14 +474,15 @@ class TankInspector {
     this.camera = new THREE.PerspectiveCamera(38, width / height, 1, 2800);
     this.updateCameraPosition();
 
+    // Khử răng cưa theo cài đặt đồ họa của game (game_menu.js) — trước đây luôn bật
     this.renderer = new THREE.WebGLRenderer({
       canvas: canvas,
-      antialias: true,
+      antialias: !(window.GameMenu && GameMenu.wantAntialias && GameMenu.wantAntialias() === false),
       alpha: true,
       powerPreference: 'high-performance'
     });
+    this.renderer.setPixelRatio(this.viewPixelRatio());
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // Cùng chuẩn màu với renderer trong trận: output Linear, màu hex / texture canvas dùng thẳng.
@@ -436,18 +567,34 @@ class TankInspector {
       if (!this.renderer || !this.camera) return;
       const r = (canvas.parentElement || canvas).getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return;
+      const dpr = this.viewPixelRatio();
+      if (Math.abs(this.renderer.getPixelRatio() - dpr) > 0.01) this.renderer.setPixelRatio(dpr);
       this.camera.aspect = r.width / r.height;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(r.width, r.height);
     };
+    this._fit = fit;   // dựng sẵn lúc overlay ẩn (khung 0x0 -> 800x600): mở ra thì khớp lại ngay
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(canvas.parentElement || canvas);
     else window.addEventListener('resize', fit);
 
     this.setupMouseControls(canvas);
   }
 
+  // Độ nét: tối đa 1.5 như renderer trong trận (trước đây tới 2 -> màn nét cao vẽ gần gấp đôi số điểm ảnh),
+  // mức đồ họa thấp của game (renderer trận hạ độ nét) thì phòng xem hạ theo
+  viewPixelRatio() {
+    let dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const gr = window.game && window.game.renderer;
+    if (gr && gr !== this.renderer && gr.getPixelRatio) dpr = Math.min(dpr, Math.max(0.75, gr.getPixelRatio()));
+    return dpr;
+  }
+
   // Chuột: kéo trái xoay camera 360°, cuộn thu phóng; nhấp trái (không kéo) ngắm + bắn vào điểm đó, nhấp phải lái xe tới điểm đó
   setupMouseControls(canvas) {
+    // người xem đang thao tác: vẽ đủ khung (animate) + hoãn dựng xe ở nền (pumpSpares)
+    const poke = () => { this._lastActive = performance.now(); };
+    ['pointerdown', 'pointermove', 'wheel'].forEach(ev => canvas.addEventListener(ev, poke, { passive: true }));
+    window.addEventListener('keydown', () => { if (this.isOpen) poke(); });
     canvas.addEventListener('pointerdown', (e) => {
       if (this.sight) { this.raSightPointerDown(e, canvas); return; }   // kính ngắm xạ thủ (range_air.js)
       if (e.button !== 0) return;
@@ -657,36 +804,28 @@ class TankInspector {
       return;
     }
 
-    // Khởi tạo xe mới bằng lớp SPGUnit3D có sẵn
-    this.activeUnit = new SPGUnit3D(this.scene, {
-      tankType: tankType,
-      team: team,
-      isPlayer: true,
-      x: 0,
-      z: 0,
-      bodyAngle: 0
-    });
-    this.activeUnit.alwaysFX = true;
-    this.activeUnit.idleVibeAmp = 0;   // xe đứng yên trên bệ: không rung máy nổ (nhìn gần thấy cả xe run)
+    // Lấy xe dựng sẵn (pumpSpares) nếu còn khớp bộ trang bị / bãi thử, không thì dựng mới; rồi dựng bù ở nền
+    const key = this.spareKey(tankType, team, this.foliageKey()), spare = this.spares[key];
+    let u;
+    if (this.spareOk(spare, tankType)) {
+      delete this.spares[key];
+      u = spare.unit;
+      u.group.visible = true;
+    } else {
+      this.dropSpare(key);
+      u = this.createPreviewUnit(tankType, team);
+    }
+    this.activeUnit = u;
+    this.schedulePrewarm(this.isOpen ? 2000 : 300);
     this.testFiring = false;
     this.camFocus = { x: 0, z: 0 };
     this._sndBody = this._sndTurret = undefined;
-    // Phòng xem: đạn đặc biệt không giới hạn để thử thoải mái
-    const u = this.activeUnit;
-    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.missileAmmoCount = 9999;
     this.pendingImpacts = [];
     this.renderAmmoTestChips();
 
-    // Tinh chỉnh riêng cho phòng trưng bày: Ẩn thanh máu 3D
-    if (this.activeUnit.hpBgMesh) this.activeUnit.hpBgMesh.visible = false;
-    if (this.activeUnit.hpBarMesh) this.activeUnit.hpBarMesh.visible = false;
-    if (this.activeUnit.reactiveArmorMesh) this.activeUnit.reactiveArmorMesh.visible = false;
-
     // Cập nhật thông số kỹ thuật bên phải
     this.updateSpecPanel(tankType);
-    // Sân thử: lưới ngụy trang theo địa hình bãi đang chọn (sa mạc, rừng, đồi...) như trong trận theo bản đồ
-    if (this.rangeMode && this.field && this.field.mapType) u._foliageKind = this.field.mapType;
-    // Lắp bộ trang bị đang dùng lên xe xem trước + vẽ lại trang cửa hàng / trang bị
+    // Vẽ lại trang cửa hàng / trang bị (bộ trang bị đã lắp lên xe lúc dựng — createPreviewUnit)
     if (window.ArmoryUI) ArmoryUI.onTankLoaded(this, tankType);
     this.syncViewDrone(0);
   }
@@ -804,6 +943,14 @@ class TankInspector {
     this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
 
     const nowMs = performance.now();
+    // Chỉ đứng ngắm (camera tự xoay chậm, xe đứng yên, không khói / đạn): vẽ ~30 khung / giây thay vì 60 — đỡ nóng máy.
+    // Bãi thử / kính ngắm / đang thao tác / xe còn chạy / hiệu ứng còn bay: vẽ đủ khung
+    const u0 = this.activeUnit;
+    const busy = this.rangeMode || this.sight || this.isMouseDown || this.testFiring || this.driveTo || this.mouseShot ||
+      nowMs - this._lastActive < 1500 || (this.pendingImpacts && this.pendingImpacts.length) ||
+      Object.values(this.keys || {}).some(Boolean) || (u0 && Math.abs(u0.speed || 0) > 0.05);
+    if (busy) this._busyUntil = nowMs + 2500;   // còn khói / giật nòng / xe trôi chậm dần sau khi ngừng tay
+    if (nowMs > (this._busyUntil || 0) && this.lastFrameMs && nowMs - this.lastFrameMs < 30) return;
     const dt = Math.min(0.05, Math.max(0, (nowMs - (this.lastFrameMs || nowMs)) / 1000));
     this.lastFrameMs = nowMs;
 
@@ -903,7 +1050,7 @@ class TankInspector {
   ensureField() {
     if (this.field || !this.scene || typeof ProvingGround === 'undefined') return this.field || null;
     this.field = new ProvingGround.Field(this.scene);
-    this.field.build(this.rangeMode ? this.savedRange() : 'flat');   // màn thông tin xe: luôn bãi phẳng + tường thử
+    this.field.use(this.rangeMode ? this.savedRange() : 'flat');   // màn thông tin xe: luôn bãi phẳng + tường thử
     this.renderRangeBar();
     return this.field;
   }
@@ -939,7 +1086,7 @@ class TankInspector {
     const ro = document.getElementById('ti-range-readout');
     if (ro) { ro.innerHTML = ''; this._roHtml = ''; }
     if (!opts.closing) this.setRange('flat', { silent: true });
-    else if (this.field && this.field.id !== 'flat') { this.clearTestImpacts(); if (this.smoke) this.smoke.clear(); this.field.build('flat'); if (this.testWall) this.resetTestWall(); }
+    else if (this.field && this.field.id !== 'flat') { this.clearTestImpacts(); if (this.smoke) this.smoke.clear(); this.field.use('flat'); if (this.testWall) this.resetTestWall(); }
   }
 
   // Đổi bãi thử: dựng lại mặt đất + vật thể, dọn hố / vết đạn / khói / vệt xích cũ, đưa xe về bệ
@@ -950,7 +1097,8 @@ class TankInspector {
     this.clearTestImpacts();
     if (this.smoke) this.smoke.clear();
     if (this.activeUnit && typeof TireTracks !== 'undefined') TireTracks.clear(this.activeUnit);
-    try { this.field.build(id); } catch (e) { console.warn('[Sân thử] Lỗi dựng bãi', id, e); this.field.build('flat'); }
+    // bãi dựng sẵn ở nền (pumpSpares) thì chỉ việc bật lên
+    try { this.field.use(id); } catch (e) { console.warn('[Sân thử] Lỗi dựng bãi', id, e); this.field.build('flat'); }
     if (this.testWall) this.resetTestWall();
     this.camGroundY = undefined;
     this.loadTankModel(this.currentTankType, this.currentTeam);
@@ -1069,8 +1217,12 @@ class TankInspector {
         maxLobElevationFor: BP ? (sh) => BP.maxLobElevationFor.call(null, sh) : () => 20,
         fireShell3D: (shooter, az, el, charge, ammoType) => {
           // bia drone / kính ngắm: đạn súng bay bằng hệ đường đạn thật (trúng drone, vạch đường) — range_air.js
-          const B = this.rangeMode && ((this._ra && this._ra.on) || this.sight) && typeof BallisticsSystem3D !== 'undefined' &&
-            BallisticsSystem3D.AIR_AMMO[ammoType] && this.raBallistics ? this.raBallistics() : null;
+          // súng phóng lựu trên chân đế xe trinh sát (bắn qua hệ đạn 30mm, spg fireMainModule): luôn bay bằng hệ đường đạn
+          // thật — quả lựu bay cầu vồng, chạm tường / đất nổ đúng cỡ quả lựu (range_air raOnImpact). Trước đây đi đường bắn
+          // thử giả lập như một viên 30mm: bay căng, nổ bé, tường bê tông gần như không sứt
+          const gl = !!(shooter && shooter.mainGun && shooter.mainGun.kind === 'agl' && ammoType === 'GATLING_BULLET');
+          const B = typeof BallisticsSystem3D !== 'undefined' && this.raBallistics
+            && (gl || (this.rangeMode && ((this._ra && this._ra.on) || this.sight) && BallisticsSystem3D.AIR_AMMO[ammoType])) ? this.raBallistics() : null;
           if (B) return B.fireShell3D(shooter, az, el, charge, ammoType);
           this.queueTestImpact(shooter, ammoType || 'NORMAL');
           return {};
@@ -1157,10 +1309,10 @@ class TankInspector {
       let dy = this._sndTurret === undefined ? 0 : wrap(ty - this._sndTurret);
       if (Math.abs(dy) > 0.5) dy = 0;
       this._sndTurret = ty;
-      se.updateTurretDrive(dy / dt, u.tankType, false);
+      se.updateTurretDrive(dy / dt, u.tankType === 'SCOUT' && !(u.mainGun && u.mainGun.kind === 'rocket') ? 'SCOUT_RING' : u.tankType, false);   // trinh sát: vòng súng quay tay
     }
     // bơm nâng hạ nòng (Z / X), cùng hàm trong trận
-    if (se.updateElevationDrive) se.updateElevationDrive(se.elevationRate(this._sndElev || (this._sndElev = {}), u, dt), u.tankType);
+    if (se.updateElevationDrive) se.updateElevationDrive(se.elevationRate(this._sndElev || (this._sndElev = {}), u, dt), u.tankType === 'SCOUT' && !(u.mainGun && u.mainGun.kind === 'rocket') ? 'SCOUT_RING' : u.tankType);
   }
 
   syncAutoRotateBtn() {
@@ -1483,7 +1635,11 @@ class TankInspector {
       t.classList.toggle('active', t.getAttribute('data-tank-type') === tankType);
     });
 
-    this.loadTankModel(tankType, this.currentTeam);
+    if (this._fit) this._fit();
+
+    this.loadTankModel(tankType, this.currentTeam);   // lấy xe dựng sẵn ở nền (pumpSpares) nếu có
+    this.lastFrameMs = 0;
+    this._lastActive = performance.now();
     this.animate();
   }
 
@@ -1512,6 +1668,7 @@ class TankInspector {
       const se = window.soundEngine;
       if (!this.isOpen && se && typeof se.setMusicMode === 'function') se.setMusicMode(this._musicBefore || 'lobby');
     }, 150);
+    this.schedulePrewarm(800);   // dựng bù xe dựng sẵn còn thiếu cho lần mở sau
   }
 
   // Gắn sự kiện click và phím tắt

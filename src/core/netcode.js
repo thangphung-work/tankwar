@@ -36,7 +36,7 @@
     MAX_LAG_COMP_MS: 400,          // Bù trễ đạn tối đa
     DAMAGE_GUARD_MS: 1500,         // Sau sự kiện sát thương, tạm bỏ qua máu/giáp ERA trong gói trạng thái
     RESPAWN_CONFIRM_MS: 1000,      // Gói "còn sống" phải mới hơn thời điểm chết ít nhất 1s mới hồi sinh bản sao
-    WORLD_SYNC_MS: 1000,           // Chủ phòng gửi gió + vòng bo mỗi giây
+    WORLD_SYNC_MS: 1000,           // Chủ phòng gửi gió mỗi giây
     MATCH_SYNC_MS: 500,            // Chủ phòng gửi đồng hồ trận, tỉ số, cờ cứ điểm 2 lần / giây
     ENV_SUM_MS: 5000,              // Chủ phòng gửi "dấu vân tay" trạng thái công trình / cây mỗi 5 giây
     STALE_MS: 450                  // Bản sao không có gói mới quá lâu: vị trí chỉ là phỏng đoán -> không tính trúng đạn
@@ -147,6 +147,13 @@
       if (this.traceLog.length > 60) this.traceLog.shift();
     }
     getPeerRtt(id) { const p = this.peers.get(id); return p && p.rtt ? p.rtt : 0; }
+    // Số liệu xếp phe máy chủ xác nhận: { lv, w, m } | null (khách) | undefined (không có máy chủ xác nhận: BroadcastChannel / máy chủ cũ)
+    getPeerSkill(id) {
+      if (this.mode !== 'ws') return undefined;
+      if (id === this.myId) return this.mySkill;
+      const p = this.peers.get(id);
+      return p ? p.k : undefined;
+    }
 
     on(type, fn) {
       (this.handlers[type] = this.handlers[type] || []).push(fn);
@@ -385,7 +392,9 @@
           this.roomName = d.room;
           this.hostId = d.hostId;
           this.peers.clear();
-          (d.peers || []).forEach(p => this.peers.set(p.id, { id: p.id, name: p.name, rtt: 0, lastSeen: localNow() }));
+          // k = số liệu xếp phe máy chủ đọc từ tài khoản ({ lv, w, m } | null = khách); máy chủ cũ không gửi -> undefined
+          this.mySkill = d.k;
+          (d.peers || []).forEach(p => this.peers.set(p.id, { id: p.id, name: p.name, k: p.k, rtt: 0, lastSeen: localNow() }));
           if (!this.clockSynced && typeof d.s === 'number') this.clockOffset = d.s - localNow();
           this.ready = true;
           this._startPing();
@@ -393,7 +402,7 @@
           return;
         }
         case '@peer_join':
-          this.peers.set(d.id, { id: d.id, name: d.name, rtt: 0, lastSeen: localNow() });
+          this.peers.set(d.id, { id: d.id, name: d.name, k: d.k, rtt: 0, lastSeen: localNow() });
           this._emit('$peer_join', d, d.id);
           return;
         case '@peer_leave':
@@ -795,16 +804,50 @@
   // Mô phỏng cùng công thức với BallisticsSystem3D.updateShells3D (gió, cản, trọng lực), không xét va chạm;
   // dừng sớm nếu sắp chạm đất / sắp nổ chùm / hết tầm để khung hình kế tiếp tự xử lý va chạm như thường.
   // ==========================================
+  // Đoạn bay bù trễ (a -> b) chạm vật cản / thân xe? (cứ điểm, nhà, bao cát / đá / công sự, thân cây, hộp thân xe — đạn
+  // ngòi cận đích: nới rộng quanh xe địch). Trước đây bù trễ tới 400 ms (~660 đv) không xét gì ngoài mặt đất / nước ->
+  // đạn hiện ra phía sau tường / xuyên qua xe
+  function shellPathBlocked(ballistics, s, ax, ay, az, bx, by, bz, terrain) {
+    if (terrain) {
+      if (terrain.strongholdSegmentHit && terrain.strongholdSegmentHit(ax, ay, az, bx, by, bz)) return true;
+      if (terrain.buildingSegmentHit && terrain.buildingSegmentHit(ax, ay, az, bx, by, bz)) return true;
+      if (ballistics.obstacleSegmentHit) {
+        const ceil = terrain.shotCeiling ? terrain.shotCeiling() : Infinity;
+        if (ballistics.obstacleSegmentHit(terrain, ax, ay, az, bx, by, bz, !!terrain.buildingSegmentHit, ceil)) return true;
+      }
+    }
+    const veg = terrain && terrain.trees;
+    if (veg && veg.trunkHit && veg.trunkHit(ax, ay, az, bx, by, bz)) return true;
+    const units = ballistics._lastUnits;
+    const SB = typeof Strongholds !== 'undefined' && Strongholds.segUnitBox;
+    if (units && SB) {
+      const BS = typeof BallisticsSystem3D !== 'undefined' ? BallisticsSystem3D : null;
+      const prox = BS && BS.PROX_FUZE && BS.PROX_FUZE[s.ammoType] ? (BS.PROX_PAD_HEAVY || 24) : 0;
+      for (const u of units) {
+        if (!u || u.id === s.shooterId || u._netHidden || u._netStale) continue;
+        if (u.isDead && !(u.dmg && u.group && u.group.visible)) continue;
+        const pad = prox && !u.isDead && (!s.shooterTeam || u.team !== s.shooterTeam) ? prox : 1.0;
+        if (SB(u, ax, ay, az, bx, by, bz, pad) >= 0) return true;
+      }
+    }
+    return false;
+  }
+
   function advanceShell(ballistics, s, seconds, terrain) {
     if (!ballistics || !s || !(seconds > 0)) return;
     const mult = ballistics.bulletSpeedMultiplier || 1;
     let remaining = seconds * mult;
     const maxStep = 0.006 * mult;
     const wind = ballistics.wind || { vx: 0, vz: 0 };
+    // dò va chạm theo từng khúc ~24 đv (gộp nhiều bước nhỏ): khúc nào chạm vật cản / xe -> lùi về đầu khúc, dừng bù trễ để
+    // vòng bay thật (updateShells3D) xử lý va chạm đúng chỗ
+    const snap = () => ({ x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, timeAlive: s.timeAlive, travel: s.travel });
+    let chunk = snap();
+    let blocked = false;
     while (remaining > 1e-6) {
       const h = Math.min(maxStep, remaining);
       remaining -= h;
-      const save = { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, timeAlive: s.timeAlive, travel: s.travel };
+      const save = snap();
 
       s.timeAlive = (s.timeAlive || 0) + h;
       // Cùng vật lý với BallisticsSystem3D: tên lửa dẫn hướng tự lái, đạn thường bay theo g / k riêng của phát bắn
@@ -840,7 +883,15 @@
         Object.assign(s, save);
         break;
       }
+      const cdx = s.x - chunk.x, cdy = s.y - chunk.y, cdz = s.z - chunk.z;
+      if (cdx * cdx + cdy * cdy + cdz * cdz >= 24 * 24) {
+        if (shellPathBlocked(ballistics, s, chunk.x, chunk.y, chunk.z, s.x, s.y, s.z, terrain)) { Object.assign(s, chunk); blocked = true; break; }
+        chunk = snap();
+      }
     }
+    // khúc cuối (hết thời gian bù / dừng vì sắp chạm đất) chưa dò
+    if (!blocked && (s.x !== chunk.x || s.y !== chunk.y || s.z !== chunk.z) &&
+        shellPathBlocked(ballistics, s, chunk.x, chunk.y, chunk.z, s.x, s.y, s.z, terrain)) Object.assign(s, chunk);
     if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
   }
 
@@ -849,7 +900,7 @@
   // Mô hình chủ quyền:
   //  - Mỗi xe có 1 máy chủ quyền (owner): xe người chơi -> máy của người đó; bot / xe của người đã thoát -> chủ phòng
   //  - Máy chủ quyền mô phỏng xe (lái, AI) và phát trạng thái; máy khác chỉ hiển thị nội suy (xe bản sao)
-  //  - Sát thương do máy bắn quyết định (máy chủ quyền của xe bắn); vùng bo do máy chủ quyền của xe bị trúng quyết định
+  //  - Sát thương do máy bắn quyết định (máy chủ quyền của xe bắn); nổ kho đạn / ngập nước do máy chủ quyền của xe bị trúng quyết định
   //  - Máy nhận áp dụng sự kiện DAMAGE, không tự tính sát thương cho đạn của máy khác
   // ==========================================
   const GUN_STREAM_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 }; // Đạn liên thanh: đồng bộ bằng cờ bắn
@@ -879,6 +930,9 @@
       this.worldAcc = 0;
       this.pendingFires = [];
       this.pendingDamage = new Map();
+      this._wShells = [];       // nhân chứng: đạn bản sao của xe khác -> khoảng cách gần nhất tới xe mình (witnessTick)
+      this._wPend = [];         // nhân chứng: phát trúng xe mình chờ đối chiếu với đạn bản sao
+      this._wAt = {};           // nhân chứng: lần ghi nhận gần nhất theo kẻ bắn (giãn cách báo cáo)
       this.pendingParts = new Set();   // xe vừa bị máy này bắn trúng -> gửi trạng thái hư hại bộ phận
       this.lastParts = {};             // bản tóm tắt bộ phận đã gửi gần nhất theo xe
       this.matchAcc = 0;
@@ -909,6 +963,7 @@
       sub('WORLD', (d, from) => this.onWorld(d, from));
       sub('SPOT', (d, from) => this.onSpot(d, from));
       sub('SMOKE', (d, from) => this.onSmoke(d, from));
+      sub('DIG', (d, from) => this.onDig(d, from));
       sub('LOCK', (d, from) => this.onLock(d, from));
       sub('ENV_HIT', (d, from) => this.onEnvHit(d, from));
       sub('PARTS', (d, from) => this.onParts(d, from));
@@ -938,6 +993,7 @@
         this.net.send('@match', {
           mapType: T ? T.mapType : '', seed: T ? (T.seed >>> 0) : 0,
           layout: (typeof MapGen !== 'undefined' && MapGen.getLayout) ? MapGen.getLayout() : 'CLASSIC',
+          sig: T && T.map && T.map.sig ? T.map.sig : '',   // chữ ký bản đồ: máy chủ so với bản tự sinh, báo máy sinh lệch
           roster: this.byNetId.map((u, i) => ({ i, team: u.team, type: u.tankType, peer: u === game.player ? this.net.myId : (u.peerId || null),
             rd: (typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar')) ? 1 : 0,   // radar lắp thêm: máy chủ mở rộng tầm nhìn
             cm: (typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'camo')) ? 1 : 0 }))   // lưới ngụy trang (cờ F_CAMO chỉ được tin khi xe có lắp)
@@ -1042,7 +1098,7 @@
       let auth;
       if (this._impactDepth > 0) auth = true;               // Trong vụ nổ do máy này có chủ quyền
       else if (attacker) auth = this.owns(attacker);
-      else if (source === 'ZONE' || source === 'WATER') auth = this.owns(unit);   // Vùng bo / ngập nước: máy chủ quyền của xe bị trúng
+      else if (source === 'ZONE' || source === 'WATER') auth = this.owns(unit);   // Nổ kho đạn / ngập nước: máy chủ quyền của xe bị trúng
       else auth = true;                                     // Cháy âm ỉ: chỉ máy chủ quyền phát bắn mới châm lửa
       if (!auth) return { blocked: false, killed: false, prevHp: unit.hp, currentHp: unit.hp, netIgnored: true };
 
@@ -1070,7 +1126,7 @@
         });
         return;
       }
-      // Sát thương nhỏ liên tục (súng máy, vùng bo, cháy): gộp theo (xe bị trúng, kẻ bắn, nguồn) mỗi nhịp gửi
+      // Sát thương nhỏ liên tục (súng máy, cháy): gộp theo (xe bị trúng, kẻ bắn, nguồn) mỗi nhịp gửi
       const key = victim.netId + ':' + aid + ':' + src;
       const p = this.pendingDamage.get(key);
       if (p) {
@@ -1127,6 +1183,8 @@
         if (!victim.isDead) victim.invulnerableTimer = savedInv;
       }
       if (!res) return;
+      // nhân chứng: xe mình bị xe máy khác điều khiển bắn trúng -> lát nữa đối chiếu với đạn bản sao của xe đó
+      if (attacker && victim === this.game.player && !this.owns(attacker) && (d.s === 'S' || d.s === 'D')) this.witnessHit(d.a, d.v);
 
       if (res.blocked) {
         if (typeof game.addCombatLog === 'function') {
@@ -1188,7 +1246,11 @@
           bs: typeof s.burstSeed === 'number' ? s.burstSeed >>> 0 : undefined,   // hạt giống nổ trên tán
           // tên lửa dẫn hướng: xe mục tiêu (netId) hoặc điểm ngắm -> máy khác lái tên lửa giống hệt
           tg: s.guide && s.guide.targetId ? this.netIdOfUnitId(s.guide.targetId) : undefined,
-          gp: s.guide && !s.guide.targetId && s.guide.point ? [Math.round(s.guide.point.x), Math.round(s.guide.point.y), Math.round(s.guide.point.z)] : undefined
+          // tên lửa đánh drone: xe chủ drone (netId) — máy khác dẫn theo đúng drone đó
+          ad: s.guide && s.guide.airOwner !== undefined && s.guide.airOwner !== null ? this.netIdOfUnitId(s.guide.airOwner) : undefined,
+          gp: s.guide && !s.guide.targetId && !(s.guide.airOwner !== undefined && s.guide.airOwner !== null) && s.guide.point ? [Math.round(s.guide.point.x), Math.round(s.guide.point.y), Math.round(s.guide.point.z)] : undefined,
+          // tên lửa đột nóc từ bệ nóc tháp xe tăng (drone_air.fireRoofMissile): máy khác phóng từ đúng ống, phóng nguội + vồng cao
+          tk: s.topMsl ? 1 : undefined
         });
       });
     }
@@ -1207,13 +1269,19 @@
 
       let shell = null;
       this._applyingRemoteFire = true;
+      // vận tốc thật ghi đè ngay sau -> fireShell3D bỏ mô phỏng cự ly + tản mát (không làm lệch độ nở của xe bản sao)
+      ballistics._remoteShot = true;
       // Tên lửa dẫn hướng: cùng mục tiêu / điểm ngắm như trên máy bắn
-      if (d.tg !== undefined || d.gp) {
+      if (d.ad !== undefined) {
+        const ou = this.byNetId[d.ad];
+        unit.missileTarget = ou ? { air: ou } : null;
+      } else if (d.tg !== undefined || d.gp) {
         const tu = d.tg !== undefined ? this.byNetId[d.tg] : null;
         unit.missileTarget = tu ? { unit: tu } : (d.gp ? { point: { x: d.gp[0], y: d.gp[1], z: d.gp[2] } } : null);
       } else if (ammo === 'ANTI_TANK_MISSILE') unit.missileTarget = null;
       try {
-        if (!unit.isDead) shell = this.refireOnProxy(unit, ammo, az, el, d.ch || 1);
+        if (d.tk && !unit.isDead && this.game.fireRoofMissile) shell = this.game.fireRoofMissile(unit, true);
+        else if (!unit.isDead) shell = this.refireOnProxy(unit, ammo, az, el, d.ch || 1);
         if (!shell) {
           // Dự phòng: tạo viên đạn trực tiếp từ tư thế đầu nòng gửi kèm (không có hiệu ứng khai hỏa)
           const dir = (typeof THREE !== 'undefined') ? new THREE.Vector3(vx, vy, vz).normalize() : null;
@@ -1228,8 +1296,11 @@
         console.warn('[NET] Không tái hiện được phát bắn từ xa:', e);
       } finally {
         this._applyingRemoteFire = false;
+        ballistics._remoteShot = false;
       }
       if (!shell) return;
+      this._wTrackNext = { a: d.i, art: unit.tankType === 'ARTILLERY' };
+      if (d.tk && !shell.topMsl && this.game.roofMissileProfile) this.game.roofMissileProfile(shell);
 
       shell.netRemote = true;
       shell.ammoType = ammo;
@@ -1248,12 +1319,74 @@
       if (!(lagMs >= 0) || lagMs > 1500) lagMs = this.net.latency || 0; // Đồng hồ chưa đồng bộ: dùng trễ ước lượng
       lagMs = clamp(lagMs, 0, NET_CONFIG.MAX_LAG_COMP_MS);
       advanceShell(ballistics, shell, lagMs / 1000, this.game.terrain);
+      if (this._wTrackNext) { this.witnessTrack(shell, this._wTrackNext.a, this._wTrackNext.art, { x: px, y: py, z: pz }); this._wTrackNext = null; }
       if (shell.mesh) {
         shell.mesh.position.set(shell.x, shell.y, shell.z);
         if (typeof THREE !== 'undefined') {
           const dir = new THREE.Vector3(shell.vx, shell.vy, shell.vz);
           if (dir.lengthSq() > 0.01) shell.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
         }
+      }
+    }
+
+    // ---------- NHÂN CHỨNG CHÉO (chống bắn xuyên địa hình / "đạn ma") ----------
+    // Mỗi phát bắn của máy khác đều có 1 viên đạn bản sao bay trên máy này (cùng vật lý, gió, địa hình). Máy khác báo bắn
+    // trúng xe của máy này mà không viên bản sao nào của kẻ bắn bay tới gần (cắm vào đồi / nhà trên đường bay) -> báo
+    // máy chủ 1 tin WITNESS nhỏ. Máy chủ chỉ đếm, đối chiếu với phát trúng nó đã kiểm tra, cần nhiều nhân chứng khác nhau
+    // mới ghi nghi vấn (server_auth.js onWitness). Chi phí: vài phép tính / khung cho số đạn đang bay.
+    // from: điểm đầu nòng (gói bắn) — đoạn từ đó tới vị trí sau bù trễ cũng tính (bù trễ có thể nhảy cả trăm đơn vị)
+    witnessTrack(shell, a, art, from) {
+      const P = this.game.player;
+      if (!P) return;
+      const w = { s: shell, a, art, t: localNow(), minD: Infinity, l: from || { x: shell.x, y: shell.y, z: shell.z } };
+      this.witnessMeasure(w, P, shell);
+      this._wShells.push(w);
+      if (this._wShells.length > 200) this._wShells.shift();
+    }
+    // Khoảng cách gần nhất từ tâm xe mình tới ĐOẠN đạn bay từ lần đo trước tới điểm q (đạn nhanh đi cả trăm đơn vị / khung)
+    witnessMeasure(w, P, q) {
+      const T = this.game.terrain, l = w.l;
+      const px = P.x, pz = P.z, py = (P.y !== undefined ? P.y : (T && T.getElevationAt ? T.getElevationAt(px, pz) : 0)) + 10;
+      const dx = q.x - l.x, dy = q.y - l.y, dz = q.z - l.z, L2 = dx * dx + dy * dy + dz * dz;
+      const k = L2 > 1e-6 ? clamp(((px - l.x) * dx + (py - l.y) * dy + (pz - l.z) * dz) / L2, 0, 1) : 0;
+      const d = Math.hypot(l.x + dx * k - px, l.y + dy * k - py, l.z + dz * k - pz);
+      if (d < w.minD) w.minD = d;
+      w.l = { x: q.x, y: q.y, z: q.z };
+    }
+    witnessHit(a, v) {
+      const t = localNow();
+      if (t - (this._wAt[a] || 0) < 2000) return;   // gộp các phát trúng dồn dập của cùng kẻ bắn
+      this._wAt[a] = t;
+      this._wPend.push({ a, v, t });
+    }
+    witnessTick(dt) {
+      const P = this.game.player, B = this.game.ballistics, t = localNow();
+      if (P && B && this._wShells.length) {
+        const live = new Set(B.activeShells || []), mul = (B.bulletSpeedMultiplier || 1) * Math.min(0.1, dt || 0.016) * 1.5;
+        for (const w of this._wShells) {
+          if (w.done) continue;
+          const s = w.s;
+          if (!live.has(s)) {
+            // đạn vừa nổ / biến mất ở khung này: tính nốt đoạn bay cuối (theo vận tốc cuối, rộng tay 1,5 khung)
+            w.done = true;
+            this.witnessMeasure(w, P, { x: w.l.x + (s.vx || 0) * mul, y: w.l.y + (s.vy || 0) * mul, z: w.l.z + (s.vz || 0) * mul });
+            continue;
+          }
+          this.witnessMeasure(w, P, s);
+        }
+      }
+      while (this._wShells.length && t - this._wShells[0].t > 20000) this._wShells.shift();
+      // chờ 2,5 s sau phát trúng (đạn bản sao đến muộn hơn theo độ trễ mạng) rồi mới xét
+      for (let i = this._wPend.length - 1; i >= 0; i--) {
+        const p = this._wPend[i];
+        if (t - p.t < 2500) continue;
+        this._wPend.splice(i, 1);
+        const mine = this._wShells.filter(w => w.a === p.a && w.t >= p.t - 15000 && w.t <= p.t + 1500);
+        if (!mine.length) continue;   // không có đạn bản sao để đối chiếu (gói bắn thiếu dữ liệu): không kết luận
+        const best = Math.min(...mine.map(w => w.minD));
+        // ngưỡng rộng tay: người bắn thấy xe mình trễ 0,1-0,35 s (+ ping) -> đạn bản sao bay tới chỗ xe mình đứng lúc trước;
+        // xe nhanh nhất ~150 đv/s -> lệch tới ~80 đv. Chỉ bắt "đạn ma" rõ ràng (cắm đồi / nhà ở xa, bay lệch hẳn)
+        if (best > (mine[0].art ? 220 : 130)) this.net.send('WITNESS', { a: p.a, v: p.v, d: Math.round(best) });
       }
     }
 
@@ -1428,22 +1561,13 @@
       if (typeof this.game.updateAliveCount === 'function') this.game.updateAliveCount();
     }
 
-    // Chủ phòng phát gió + vòng bo để mọi máy cùng quỹ đạo đạn và cùng vùng an toàn
+    // Chủ phòng phát gió để mọi máy cùng quỹ đạo đạn
     sendWorld() {
       const g = this.game;
       const w = g.ballistics && g.ballistics.wind;
-      const z = g.zone;
       const r1 = v => Math.round((v || 0) * 10) / 10;
       const data = {};
       if (w) data.w = [r1(w.direction), r1(w.speed)];
-      if (z && z.current && z.next) {
-        data.z = [
-          r1(z.current.x), r1(z.current.y), r1(z.current.radius),
-          r1(z.next.x), r1(z.next.y), r1(z.next.radius),
-          r1(z.shrinkStart ? z.shrinkStart.x : z.current.x), r1(z.shrinkStart ? z.shrinkStart.y : z.current.y), r1(z.shrinkStart ? z.shrinkStart.radius : z.current.radius),
-          z.phase, z.state, r1(z.timer), z.damagePerSecond, z.waitTime, z.shrinkTime
-        ];
-      }
       this.net.send('WORLD', data);
     }
 
@@ -1457,6 +1581,7 @@
       const m = { x: q(d.x), y: q(d.y), z: q(d.z), a: d.a, h: d.h ? 1 : 0, t: d.t, s: d.s >>> 0, dx: q(d.dx), dy: q(d.dy), dz: q(d.dz), os: d.os ? 1 : 0 };
       if (typeof d.nx === 'number') { m.nx = Math.round(d.nx * 100) / 100; m.nz = Math.round(d.nz * 100) / 100; }   // pháp tuyến tường bê tông (vết đạn)
       if (typeof d.ny === 'number') m.ny = Math.round(d.ny * 100) / 100;                                              // trúng sàn / mái nhà
+      if (d.c) m.c = 1;                                                                                                  // đạn cháy 12.7mm (không phải 30mm)
       this.net.send('ENV_HIT', m);
     }
 
@@ -1477,6 +1602,29 @@
       if (this.detached || !unit || unit.netId === undefined || !r) return;
       this.net.send('SMOKE', { i: unit.netId, x: r.x, z: r.z, a: r.a, m: r.m || 3, k: r.k ? 1 : 0 });
     }
+    // Xe 6 nòng ủi đất (game.js startDig / updateDig / endDig): o = 'f' lưỡi đang hạ (k: mức đắp, m: đang đẩy tới),
+    // 'b' bờ / luống đất cố định, 'p' hào, 'e' nâng lưỡi (keep: ụ trước lưỡi ở lại tại x, z, a)
+    sendDig(m) {
+      const P = this.game && this.game.player;
+      if (this.detached || !m || !P || P.netId === undefined) return;
+      const q = v => Math.round(v * 10) / 10, q3 = v => Math.round(v * 1000) / 1000;
+      const o = { i: P.netId, o: m.o };
+      for (const k of ['x', 'z', 'L', 'W', 'H', 'r', 'd', 'e']) if (typeof m[k] === 'number') o[k] = q(m[k]);
+      for (const k of ['a', 'ux', 'uz', 'k']) if (typeof m[k] === 'number') o[k] = q3(m[k]);
+      for (const k of ['c', 'm', 'w', 'keep']) if (m[k] !== undefined) o[k] = m[k] | 0;
+      this.net.send('DIG', o);
+    }
+    onDig(d, from) {
+      if (this.detached || !d || !this.game || typeof this.game.onNetDig !== 'function') return;
+      const u = this.byNetId[d.i];
+      if (!u || this.ownerOf(u) !== from || u.tankType !== 'GATLING') return;
+      const need = { f: [], b: ['x', 'z', 'a', 'L', 'W', 'H', 'k'], p: ['x', 'z', 'r', 'ux', 'uz', 'd', 'e'], e: d.keep ? ['x', 'z', 'a', 'k'] : [] }[d.o];
+      if (!need || !need.every(k => Number.isFinite(d[k]))) return;
+      if (d.o === 'b' && (d.L > 60 || d.W > 30 || d.H > 30)) return;
+      if (d.o === 'p' && (d.r > 400 || d.d > 20 || d.e > 12)) return;
+      this.game.onNetDig(u, d);
+    }
+
     onSmoke(d, from) {
       if (this.detached || !d) return;
       const u = this.byNetId[d.i];
@@ -1535,19 +1683,6 @@
         w.nextChange = 999; // Gió do chủ phòng quyết định
         if (typeof g.ballistics.updateWindVectors === 'function') g.ballistics.updateWindVectors();
       }
-      const z = g.zone;
-      if (z && d.z && d.z.length >= 15) {
-        const a = d.z;
-        z.current = { x: a[0], y: a[1], radius: a[2] };
-        z.next = { x: a[3], y: a[4], radius: a[5] };
-        z.shrinkStart = { x: a[6], y: a[7], radius: a[8] };
-        z.phase = a[9];
-        z.state = a[10];
-        z.timer = a[11] - (this.net.latency || 0) / 1000;
-        z.damagePerSecond = a[12];
-        z.waitTime = a[13];
-        z.shrinkTime = a[14];
-      }
     }
 
     // ---------- VÒNG LẶP MỖI KHUNG HÌNH ----------
@@ -1598,6 +1733,7 @@
     postUpdate(dt) {
       if (this.detached) return;
       const now = this.net.now();
+      if (this.net.mode === 'ws') this.witnessTick(dt);
       this.byNetId.forEach((u, idx) => {
         if (!u) return;
         if (u.isDead && !u._netWasDead) { u._netDeathAt = now; this.lastParts[idx] = undefined; }

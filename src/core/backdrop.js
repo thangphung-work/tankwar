@@ -277,7 +277,7 @@ const Backdrop = (() => {
     const mat = new THREE.MeshStandardMaterial({ map: T.groundTexture, vertexColors: true, roughness: T.mapType === 'URBAN' ? 0.82 : 0.95, metalness: 0.0 });
     if (typeof GroundShader !== 'undefined') {
       // biển: dải cát rộng hơn ven sông (bãi biển cao tới ~4 đơn vị trên mặt nước)
-      GroundShader.apply(mat, { mapType: T.mapType, macroCanvas: T.groundCanvas, water: O.sea || !!(T.map.river || T.map.lakes.length), waterLvl: O.sea ? 3.0 : undefined, terrain: T, ownNormals: true });
+      GroundShader.apply(mat, { mapType: T.mapType, macroCanvas: T.groundCanvas, water: O.sea || (T.hasWater ? T.hasWater() : !!(T.map.river || T.map.lakes.length)), waterLvl: O.sea ? 3.0 : undefined, terrain: T, ownNormals: true });
       const base = mat.onBeforeCompile, key = mat.customProgramCacheKey;
       mat.onBeforeCompile = (sh, r) => {
         base(sh, r);

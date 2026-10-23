@@ -74,6 +74,19 @@ const GroundCover = (() => {
 
   // Khóm cỏ: 9 tấm lá toả tròn, mỗi tấm cong 2 đoạn (gốc gần đứng, ngọn ngả ra ngoài như bụi cỏ thật), rộng hẹp /
   // cao thấp khác nhau; pháp tuyến hướng lên như mặt đất
+  // Sóng xung kích quét qua thảm cỏ (ExplosionFX.spawnShock -> shock): 4 vụ nổ gần nhất (x, z, lúc nổ theo đồng hồ
+  // GroundShader, bán kính phần nhìn thấy R) + độ cao tâm nổ trên mặt đất. Shader tính mặt sóng y như ShockLayer
+  // (tốc độ trung bình 700 đv/s, chậm dần về 0,6 lần rồi lan đều) -> cỏ rạp đúng lúc vỏ sóng trên màn hình quét qua
+  const SHOCKS = [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, -99, 0));
+  const SHOCK_H = [0, 0, 0, 0];
+  let shockI = 0;
+  function shock(x, z, R, h = 0) {
+    const t = GroundShader && GroundShader.time ? GroundShader.time.value : 0;
+    const i = shockI++ % 4;
+    SHOCKS[i].set(x, z, t, R);
+    SHOCK_H[i] = h;
+  }
+
   function tuftGeometry() {
     const P = [], UV = [], NR = [], I = [];
     const n = 9, rnd = rngOf(4242);
@@ -112,7 +125,10 @@ const GroundCover = (() => {
       const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.32, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });   // lá mảnh: ngưỡng thấp để xa không bị mỏng mất
       gm.onBeforeCompile = (sh) => {
         sh.uniforms.gTime = GroundShader && GroundShader.time ? GroundShader.time : { value: 0 };
-        sh.vertexShader = 'uniform float gTime;\nvarying float vBY;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+        sh.uniforms.uWindV = (typeof Weather !== 'undefined' && Weather.WINDV) || { value: new THREE.Vector4(0.8, 0.6, 1, 0) };
+        sh.uniforms.uShock = { value: SHOCKS };
+        sh.uniforms.uShockH = { value: SHOCK_H };
+        sh.vertexShader = 'uniform float gTime;\nuniform vec4 uWindV;\nuniform vec4 uShock[4];\nuniform float uShockH[4];\nvarying float vBY;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
           vBY = uv.y;
           {
             float hv = fract(sin(dot(vec2(instanceMatrix[3][0], instanceMatrix[3][2]), vec2(12.9898, 78.233))) * 43758.5453);
@@ -121,9 +137,33 @@ const GroundCover = (() => {
           {
             // lay theo gió: ngọn đung đưa, gốc đứng yên; mỗi khóm lệch pha theo vị trí
             vec3 ip = vec3(instanceMatrix[3][0], 0.0, instanceMatrix[3][2]);
-            float sw = sin(gTime * 1.9 + ip.x * 0.045 + ip.z * 0.031) * 0.16 + sin(gTime * 3.7 + ip.x * 0.11) * 0.05;
+            float sw = (sin(gTime * 1.9 + ip.x * 0.045 + ip.z * 0.031) * 0.16 + sin(gTime * 3.7 + ip.x * 0.11) * 0.05) * (0.6 + 0.4 * uWindV.z);
             transformed.x += sw * uv.y;
             transformed.z += sw * 0.6 * uv.y;
+            // gió mạnh / cơn giật (mưa giông): cả khóm rạp xuôi gió — hướng gió thế giới đổi về toạ độ cục bộ khóm cỏ
+            float ln = (max(uWindV.z - 1.0, 0.0) * 0.07 + uWindV.w * 0.22 * (0.8 + 0.4 * sin(gTime * 5.3 + ip.x * 0.07))) * uv.y;
+            vec3 lw = vec3(uWindV.x, 0.0, uWindV.y) * ln;
+            transformed += vec3(dot(instanceMatrix[0].xyz, lw), dot(instanceMatrix[1].xyz, lw), dot(instanceMatrix[2].xyz, lw)) / max(dot(instanceMatrix[0].xyz, instanceMatrix[0].xyz), 1e-6);
+            // sóng xung kích quét qua: khóm cỏ rạp ra xa tâm nổ đúng lúc mặt sóng tới, bật ngược về phía tâm (pha áp suất
+            // âm) rồi lắc tắt dần; gần tâm rạp sát đất, xa dần còn rung nhẹ
+            for (int i = 0; i < 4; i++) {
+              vec4 b = uShock[i];
+              float age = gTime - b.z;
+              if (b.w <= 0.0 || age < 0.0 || age > 3.0) continue;
+              vec2 dv = ip.xz - b.xy;
+              float r = length(dv), d = length(vec2(r, uShockH[i]));
+              float R = b.w, dur = max(0.06, R / 700.0), p = age / dur;
+              float rf = p <= 1.0 ? R * (0.4 * (1.0 - pow(1.0 - p, 3.0)) + 0.6 * p) : R * (1.0 + 0.6 * (p - 1.0));
+              float past = rf - d;
+              float amp = clamp(1.0 - d / (2.2 * R), 0.0, 1.0);
+              if (past <= 0.0 || amp <= 0.0) continue;
+              float tau = past / (0.6 * R / dur);
+              float lean = 0.95 * amp * amp * smoothstep(0.0, 3.0, past) * exp(-tau * 2.2) * cos(tau * 6.0);
+              vec3 dw = vec3(dv.x, 0.0, dv.y) / max(r, 1.0);
+              vec3 ld = vec3(dot(instanceMatrix[0].xyz, dw), dot(instanceMatrix[1].xyz, dw), dot(instanceMatrix[2].xyz, dw)) * inversesqrt(max(dot(instanceMatrix[0].xyz, instanceMatrix[0].xyz), 1e-6));
+              transformed += ld * lean * uv.y;
+              transformed.y -= 0.35 * abs(lean) * uv.y;
+            }
           }`);
         // ánh sáng: lá cỏ 2 mặt -> mặt sau bị lật pháp tuyến xuống dưới thành lá tối sẫm xen lá sáng chói. Cho mọi lá nhận
         // sáng như mặt đất (pháp tuyến hướng lên), gốc khóm tối dần (lá che nhau), ngọn sáng
@@ -133,7 +173,7 @@ const GroundCover = (() => {
           .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
             normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`);
       };
-      gm.customProgramCacheKey = () => 'grassTuft4';
+      gm.customProgramCacheKey = () => 'grassTuft6';
       this.grass = new THREE.InstancedMesh(tuftGeometry(), gm, this.maxT);
       this.grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxT * 3), 3);
       this.grass.count = 0; this.grass.frustumCulled = false; this.grass.receiveShadow = true; this.grass.castShadow = false;
@@ -199,12 +239,56 @@ const GroundCover = (() => {
       if (!this.mask) this.buildMask();
       const M = this.mask, i = Math.floor((x + M.half) / M.G), j = Math.floor((z + M.half) / M.G);
       if (i >= 0 && j >= 0 && i < M.n && j < M.n && M.m[j * M.n + i]) return true;
-      if (T.groundAtRaw(x, z) < 0.6 && (T.map.river || T.map.lakes.length)) return true;
+      if (T.groundAtRaw(x, z) < 0.6 && (T.hasWater ? T.hasWater() : (T.map.river || T.map.lakes.length))) return true;
       if (T.map.roadAt && T.map.roadAt(x, z)) return true;
+      if (T.streetscape && T.streetscape.covers(x, z)) return true;   // vỉa hè đô thị (cao hơn mặt đất 15 cm)
       if (T.strongholdSet && T.strongholdSet.covers(x, z, 4)) return true;
       if (T.landmarkSet && T.landmarkSet.covers(x, z, 4) && !(T.landmarkSet.overgrowth && T.landmarkSet.overgrowth(x, z))) return true;
       if (T.bridges.length && T.bridgeAt(x, z)) return true;
+      // nền ụ đất xe ủi (đất đã bị lưỡi ủi cạo, kể cả chỗ ụ bị nổ khoét thủng)
+      if (T.berms && T.berms.length) for (const b of T.berms) {
+        if (!b.mesh || b.k < 0.05) continue;
+        const dx = x - b.x, dz = z - b.z;
+        if (Math.abs(dx * b.cx + dz * b.cz) < b.L && Math.abs(dx * b.fx + dz * b.fz) < b.W) return true;
+      }
       return false;
+    }
+
+    // Hố nổ chạm ô (x0..x1, z0..z1): các phát nổ (ExplosionFX craters[].blasts) để xét cỏ trong / quanh hố
+    blastsIn(x0, z0, x1, z1) {
+      const T = this.T;
+      const fx = typeof ExplosionFX !== 'undefined' && ExplosionFX.forScene ? ExplosionFX.forScene(T.scene) : null;
+      if (!fx || !fx.craters || !fx.craters.length) return null;
+      let out = null;
+      for (const c of fx.craters) {
+        if (!c.surf || !c.blasts) continue;
+        for (const b of c.blasts) {
+          const r = Math.max(b.A, b.B) * 2.4 + b.shift;
+          if (b.x + r < x0 || b.x - r > x1 || b.z + r < z0 || b.z - r > z1) continue;
+          (out || (out = [])).push(b);
+        }
+      }
+      return out;
+    }
+    // Ảnh hưởng hố nổ lên khóm cỏ tại (x, z): rho = khoảng cách chuẩn hoá tới tâm hố gần nhất (< 1 lòng hố, ~1-1,3 gờ đất
+    // vùi, 1,3-2,3 vùng lửa cháy sém). Hố rãnh cày AP không có lửa
+    blastRho(L, x, z) {
+      let best = 9, gouge = false;
+      for (const b of L) {
+        const bx = b.x + b.fx * b.shift, bz = b.z + b.fz * b.shift, dx = x - bx, dz = z - bz;
+        const a = dx * b.fx + dz * b.fz, l = -dx * b.fz + dz * b.fx;
+        const rho = Math.hypot(a / b.A, l / b.B);
+        if (rho < best) { best = rho; gouge = b.kind === 'gouge'; }
+      }
+      return { rho: best, gouge };
+    }
+    // Mặt đất mới (hố nổ / hố bị lấp / ụ đất bị khoét): các ô cỏ chạm vùng tính lại, rải lại quanh tâm nhìn hiện tại
+    reground(x0, z0, x1, z1) {
+      if (!this.cache) return;
+      let hit = false;
+      for (let j = Math.floor(z0 / CELL); j <= Math.floor(z1 / CELL); j++)
+        for (let i = Math.floor(x0 / CELL); i <= Math.floor(x1 / CELL); i++) if (this.cache.delete(i + ',' + j)) hit = true;
+      if (hit && this.lastCx !== null) this.rebuild(this.lastCx * CELL, this.lastCz * CELL);
     }
 
     // Dữ liệu 1 ô (tính 1 lần, lưu lại): ma trận + màu của khóm cỏ & đá vụn
@@ -215,6 +299,10 @@ const GroundCover = (() => {
       const B = this.B, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
       const gm = [], gc = [], pm = [], pc = [];
       const ox = i * CELL, oz = j * CELL, half = this.T.width / 2 - 70;
+      // hố nổ trong ô: cỏ lòng hố bị hất tung, gờ hố bị đất văng vùi, quanh hố cháy sém / rạp. Mặt đất lấy theo mặt hố nhìn
+      // thấy (T.surfaceAt) để khóm cỏ còn lại không lơ lửng trên lòng hố / chìm dưới gờ
+      const BL = this.blastsIn(ox - 4, oz - 4, ox + CELL + 4, oz + CELL + 4);
+      const surfH = (x, z, h) => BL && this.T.surfaceAt ? this.T.surfaceAt(x, z, true) : h;
       if (Math.abs(ox) <= half && Math.abs(oz) <= half) {
         const rnd = rngOf((i * 73856093) ^ (j * 19349663) ^ 0x5bd1e995);
         const nTry = Math.round(TUFTS_PER_CELL * B.density);
@@ -238,13 +326,29 @@ const GroundCover = (() => {
             // trong căn cứ: mật độ / chiều cao theo mức cỏ dại tại chỗ (bãi cỏ cũ um tùm, sỏi & mặt đường thưa thấp)
             const inside = inBase && !!LS.noFireAt(x, z, 0), og = inside ? LS.overgrowth(x, z) : null, mg = og ? 0.85 : M.grass;
             if (inside ? (!og || r1 > og.k / 2.6) : (r1 > mg * 1.15 * dens / (inBase ? OG : 1) || this.blocked(x, z))) continue;
-            const hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : 1), wid = hgt * (0.7 + r3 * 0.5) * (og ? 1.25 : 1);
+            let hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : 1), wid = hgt * (0.7 + r3 * 0.5) * (og ? 1.25 : 1);
             const r4 = rnd(), r5 = rnd();
-            e.set((r4 - 0.5) * 0.5, r3 * 6.283, (r5 - 0.5) * 0.5);
-            m4.compose(v.set(x, M.h - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));
+            // hố nổ: lòng hố & gờ đất vùi không còn cỏ; vùng lửa quanh hố cỏ cháy trụi / sém đen, rạp thấp (gần hố cháy nặng hơn)
+            let burnt = 0;
+            if (BL) {
+              const H = this.blastRho(BL, x, z);
+              if (H.rho < 1.3) continue;
+              if (!H.gouge && H.rho < 2.3) {
+                burnt = 1 - smooth(1.3, 2.3, H.rho);
+                if (r5 < burnt * 0.55) continue;                  // cháy trụi tận gốc
+                hgt *= 1 - 0.6 * burnt; wid *= 1 + 0.15 * burnt;  // lá cháy cụt, xơ xác
+              }
+            }
+            e.set((r4 - 0.5) * (0.5 + burnt * 0.8), r3 * 6.283, (r5 - 0.5) * (0.5 + burnt * 0.8));
+            m4.compose(v.set(x, surfH(x, z, M.h) - 0.3, z), q.setFromEuler(e), sc.set(wid * (0.65 + r4 * 0.7), hgt, wid * (0.65 + r5 * 0.7)));
             gm.push(...m4.elements);
             const dry = Math.max(0, Math.min(1, cDry + (r2 - 0.5) * 0.25 + (1 - mg) * 0.4)), kk = 1.0 + r1 * 0.22;
-            for (let ch = 0; ch < 3; ch++) gc.push((B.grass[0][ch] + (B.grass[1][ch] - B.grass[0][ch]) * dry) * kk);
+            for (let ch = 0; ch < 3; ch++) {
+              const g0 = (B.grass[0][ch] + (B.grass[1][ch] - B.grass[0][ch]) * dry) * kk;
+              // sém: ngả vàng úa -> than đen theo mức cháy
+              const sg = burnt > 0.5 ? [0.09, 0.08, 0.07][ch] : [0.42, 0.33, 0.2][ch];
+              gc.push(burnt > 0 ? g0 + (sg - g0) * Math.min(1, burnt * 1.4) : g0);
+            }
           }
         }
         for (let k = 0; k < PEBBLES_PER_CELL; k++) {
@@ -252,9 +356,10 @@ const GroundCover = (() => {
           const M = this.masks(x, z);
           const clump = this.noise ? this.noise(x / 90 + 0.21, z / 90 + 0.63)[1] : 0.5;
           if (r1 > Math.min(1, M.rough * B.pebbleK * Math.max(0, clump - 0.35) * 2.6) || this.blocked(x, z)) continue;
+          if (BL && this.blastRho(BL, x, z).rho < 1.3) continue;   // lòng hố / gờ: đá vụn bị hất đi, vùi dưới đất văng
           const s = 0.7 + r2 * r2 * 2.8;
           e.set((r3 - 0.5) * 0.6, r2 * 6.283, (r1 - 0.5) * 0.6);
-          m4.compose(v.set(x, M.h - s * 0.12, z), q.setFromEuler(e), sc.set(s * (0.8 + r3 * 0.5), s, s));
+          m4.compose(v.set(x, surfH(x, z, M.h) - s * 0.12, z), q.setFromEuler(e), sc.set(s * (0.8 + r3 * 0.5), s, s));
           pm.push(...m4.elements);
           const kk = 0.72 + r3 * 0.45;
           for (let ch = 0; ch < 3; ch++) pc.push(B.pebble[ch] * kk);
@@ -301,7 +406,7 @@ const GroundCover = (() => {
     }
   }
 
-  return { Cover, CELL, RADIUS };
+  return { Cover, CELL, RADIUS, shock };
 })();
 
 if (typeof window !== 'undefined') window.GroundCover = GroundCover;

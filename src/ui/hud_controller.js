@@ -268,7 +268,8 @@ class HUDController {
 
     let name = 'ĐẠN CƠ BẢN 120MM (ST 1.6)';
     if (ammoType === 'AP') {
-      name = 'ĐẠN XUYÊN GIÁP APFSDS LÕI URANI NGHÈO (ST 2.3 · BAY NHANH, XUYÊN SÂU, HỎNG BỘ PHẬN BÊN TRONG)';
+      const du = this.game.player.ammoMods && this.game.player.ammoMods.AP && this.game.player.ammoMods.AP.du;   // đạn cao cấp lõi urani nghèo
+      name = du ? 'ĐẠN XUYÊN GIÁP APFSDS LÕI URANI NGHÈO (ST 2.3 · XUYÊN SÂU +22%, MẢNH TỰ BỐC CHÁY)' : 'ĐẠN XUYÊN GIÁP APFSDS LÕI VONFRAM (ST 2.3 · BAY NHANH, XUYÊN SÂU, HỎNG BỘ PHẬN BÊN TRONG)';
     } else if (ammoType === 'HE') {
       name = this.game.player.tankType === 'ARTILLERY' ? 'ĐẠN NỔ MẠNH 155MM (ST 3.6 · NỔ LAN 135M)' : 'ĐẠN NỔ MẠNH 120MM (ST 2.0 · NỔ LAN 75M)';
     } else if (ammoType === 'CLUSTER') {
@@ -276,7 +277,7 @@ class HUDController {
     } else if (ammoType === 'INCENDIARY') {
       name = 'ĐẠN CHÁY (ST 0.16 · THIÊU ĐỐT, CHÁY THỦNG BÌNH XĂNG XE NHẸ)';
     } else if (ammoType === 'ANTI_TANK_MISSILE') {
-      name = 'TÊN LỬA CHỐNG TĂNG DẪN HƯỚNG (KHÓA XE ĐỊCH ĐANG NHÌN THẤY RỒI BẤM SPACE · GIỮ XE SỐNG TỚI KHI TRÚNG)';
+      name = 'TÊN LỬA DẪN HƯỚNG (KHÓA XE ĐỊCH / DRONE ĐANG NHÌN THẤY RỒI BẤM SPACE · GIỮ TIA DẪN TỚI KHI TRÚNG)';
     } else if (ammoType === 'GATLING_BULLET') {
       name = 'ĐẠN 30MM NỔ-CHÁY 6 NÒNG (TẦM ~1000M · XÉ GIÁP NHẸ, YẾU VỚI XE TĂNG)';
     } else if (ammoType === 'SCOUT_BULLET') {
@@ -316,12 +317,12 @@ class HUDController {
     }
 
     const list = ammos.map(type => ({ type, ...info(type) }));
-    // Xe tăng: ô [4] vũ khí trên bệ nóc tháp (súng máy / súng phóng lựu / giàn rocket) — số đạn còn, đang nạp thì "NẠP",
+    // Xe tăng: ô [4] vũ khí trên bệ nóc tháp (súng máy / súng phóng lựu / tên lửa đột nóc) — số đạn còn, đang nạp thì "NẠP",
     // bị bắn văng thì "HỎNG"
     const mg = !!p.rcwsGun;
     if (mg) {
       const S = p._rcws, cfg = typeof DroneAir !== 'undefined' && DroneAir.roofCfg ? DroneAir.roofCfg(p) : { mag: 200 };
-      const RW = { agl: ['PHÓNG LỰU', '#e8b36a'], rocket: ['ROCKET', '#ff8c42'] }[p.roofWeapon] || ['SÚNG MÁY', '#c8d6a0'];
+      const RW = { agl: ['PHÓNG LỰU', '#e8b36a'], atgm: ['ĐỘT NÓC', '#ff8c42'] }[p.roofWeapon] || ['SÚNG MÁY', '#c8d6a0'];
       const lostRoof = p.dmg && p.dmg.lost && p.dmg.lost.has(p._roofTag || 'rcws');
       const qty = lostRoof ? 'HỎNG' : S ? (S.reload > 0 ? 'NẠP' : S.mag) : cfg.mag;
       list.push({ type: 'MG762', name: RW[0], qty, color: RW[1], mg: true, key: 4 });
@@ -438,7 +439,7 @@ class HUDController {
     if (fireMainText) {
       if (this.game.player.mgActive) {
         const P = this.game.player, S = P._rcws, cfg = typeof DroneAir !== 'undefined' && DroneAir.roofCfg ? DroneAir.roofCfg(P) : { mag: 200 };
-        const nm = P.roofWeapon === 'agl' ? 'PHÓNG LỰU' : P.roofWeapon === 'rocket' ? 'ROCKET' : 'SÚNG MÁY';
+        const nm = P.roofWeapon === 'agl' ? 'PHÓNG LỰU' : P.roofWeapon === 'atgm' ? 'ĐỘT NÓC' : 'SÚNG MÁY';
         fireMainText.textContent = S && S.reload > 0 ? `${nm} [NẠP]` : `${nm} [${S ? S.mag : cfg.mag}]`;
         fireMainText.style.color = '#c8d6a0';
       } else if (this.game.player.selectedAmmo === 'AP') {
@@ -808,9 +809,6 @@ class HUDController {
 
     // Dựng nền bản đồ
     ctx.drawImage(this.game.terrain.mapCanvas, 0, 0, w, h);
-
-    // Vòng bo
-    this.game.zone.renderOnTacticalMap(ctx, scale);
 
     // Vùng khoanh radar
     this.radar.renderOnTacticalMap(ctx, scale);

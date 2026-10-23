@@ -66,6 +66,7 @@ const WorldMarkers = (() => {
         attribute float aSide, aS;
         uniform float uK;
         varying float vSide, vS;
+        varying vec3 vW;
         void main() {
           vec4 wp = modelMatrix * vec4(position, 1.0);
           vec3 toCam = cameraPosition - wp.xyz;
@@ -74,7 +75,7 @@ const WorldMarkers = (() => {
           float sl = length(sd);
           sd = sl > 1e-4 ? sd / sl : vec3(1.0, 0.0, 0.0);
           wp.xyz += sd * aSide * max(0.22, dist * uK);
-          vSide = aSide; vS = aS;
+          vSide = aSide; vS = aS; vW = wp.xyz;
           gl_Position = projectionMatrix * viewMatrix * wp;
         }
       `,
@@ -82,6 +83,7 @@ const WorldMarkers = (() => {
         uniform vec3 uColor;
         uniform float uLen, uTime, uPeriod, uOpacity;
         varying float vSide, vS;
+        varying vec3 vW;
         void main() {
           float a = abs(vSide);
           float aw = fwidth(vSide);
@@ -96,6 +98,9 @@ const WorldMarkers = (() => {
           core = max(core, dotK);
           // mờ dần sát miệng nòng; đoạn cuối trước điểm rơi nhạt bớt
           float f = smoothstep(2.0, 36.0, vS) * (1.0 - 0.5 * smoothstep(uLen * 0.85, uLen, vS));
+          // đoạn bay sát / xuyên qua ống kính (đạn cầu vồng rơi về phía camera): bề rộng tối thiểu 0.22 phình kín màn
+          // hình thành vệt màu -> mờ hẳn khi gần camera (đo từng điểm ảnh, đoạn dài cắt ngang camera cũng mờ đúng chỗ)
+          f *= smoothstep(12.0, 48.0, length(cameraPosition - vW));
           float alpha = max(core * 0.85, halo * 0.32) * f * uOpacity;
           if (alpha < 0.01) discard;
           gl_FragColor = vec4(mix(uColor * 0.14, uColor, core), alpha);

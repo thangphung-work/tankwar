@@ -75,8 +75,12 @@ SoundEngine.mixin(class {
   // ===========================================================================
   // 2. TIẾNG TÊN LỬA BÁM THEO VIÊN ĐẠN THẬT
   // ===========================================================================
-  /** Mở kênh tiếng động cơ cho một tên lửa / đạn phản lực. delay: số giây tới lúc động cơ hành trình bắt lửa */
-  startMissileTrack(delay = 0) {
+  /**
+   * Mở kênh tiếng động cơ cho một tên lửa / đạn phản lực. delay: số giây tới lúc động cơ hành trình bắt lửa.
+   * opts.big: tên lửa bệ đột nóc (động cơ to hơn quả ATGM xe trinh sát) — gầm trầm dày hơn, rít to hơn
+   */
+  startMissileTrack(delay = 0, opts = null) {
+    const big = !!(opts && opts.big);
     if (!this.ready()) return null;
     this._trackN = this._trackN || 0;
     if (this._trackN >= 6) return null;
@@ -94,7 +98,7 @@ SoundEngine.mixin(class {
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
     const hg = ctx.createGain(); hg.gain.value = 0.2;
     const low = loop(this.brownNoiseBuffer);
-    const lowF = ctx.createBiquadFilter(); lowF.type = 'lowpass'; lowF.frequency.value = 260;
+    const lowF = ctx.createBiquadFilter(); lowF.type = 'lowpass'; lowF.frequency.value = big ? 200 : 260;
     const lg = ctx.createGain(); lg.gain.value = 0.7;
     const crk = loop(this.crackleBuffer);
     const crkF = ctx.createBiquadFilter(); crkF.type = 'lowpass'; crkF.frequency.value = 1500;
@@ -109,6 +113,20 @@ SoundEngine.mixin(class {
     rough.connect(rlp); rlp.connect(rd); rd.connect(am.gain);
     am.connect(air);
     hiss.connect(hp); hp.connect(hg); hg.connect(air);   // xé gió không bị điều biên theo ngọn lửa
+    // TIẾNG RÍT: luồng khí siêu âm phụt qua loa phụt rít cao dải hẹp (~2 kHz, rung nhẹ theo ngọn lửa) + tiếng rít xé gió
+    // dải hẹp cao hơn khi lao nhanh — cả hai lệch cao độ theo Doppler (lao lại gần rít lên, vụt qua rồi tụt xuống)
+    const wh = ctx.createOscillator(); wh.type = 'sawtooth'; wh.frequency.value = big ? 1750 : 2100;
+    const vib = ctx.createOscillator(); vib.frequency.value = 6.5;
+    const vibG = ctx.createGain(); vibG.gain.value = 30;
+    vib.connect(vibG); vibG.connect(wh.frequency);
+    const whBp = ctx.createBiquadFilter(); whBp.type = 'bandpass'; whBp.Q.value = 3; whBp.frequency.value = big ? 1900 : 2300;
+    const whG = ctx.createGain(); whG.gain.value = 0;
+    wh.connect(whBp); whBp.connect(whG); whG.connect(air);
+    const scr = loop(this.noiseBuffer);
+    const scrBp = ctx.createBiquadFilter(); scrBp.type = 'bandpass'; scrBp.Q.value = 8; scrBp.frequency.value = 3400;
+    const scrG = ctx.createGain(); scrG.gain.value = 0;
+    scr.connect(scrBp); scrBp.connect(scrG); scrG.connect(air);
+    wh.start(t); vib.start(t);
     air.connect(env);
     let tail = env;
     let pan = null;
@@ -116,7 +134,8 @@ SoundEngine.mixin(class {
     tail.connect(this.weaponBus);
     let send = null;
     if (this.reverb) { send = ctx.createGain(); send.gain.value = 0.25; tail.connect(send); send.connect(this.reverb); }
-    return { t0: t + Math.max(0, delay), env, air, bp, hp, rg, lg, cg, hg, pan, send, srcs: [roar, hiss, low, crk, rough], done: false };
+    return { t0: t + Math.max(0, delay), env, air, bp, hp, rg, lg, cg, hg, pan, send, big, wh, whBp, whG, scrBp, scrG,
+      srcs: [roar, hiss, low, crk, rough, wh, vib, scr], done: false };
   }
 
   /**
@@ -129,7 +148,7 @@ SoundEngine.mixin(class {
     const sp = this.spatial(o.dist, o.pos);
     const m = Math.max(0, o.dist) / 8;
     // gần thì to hẳn (tên lửa lao sát / vừa rời ống), xa nhỏ dần
-    let g = 1 / (1 + m / 20);
+    let g = (h.big ? 1.3 : 1) / (1 + m / 20);
     if (this.interior) g *= 0.75;
     // Doppler: lại gần rít cao, vụt qua rồi tụt trầm (chặn biên để tai còn nghe ra)
     const c = 343, vr = Math.max(-300, Math.min(300, o.vr || 0));
@@ -141,8 +160,15 @@ SoundEngine.mixin(class {
     h.air.frequency.setTargetAtTime(this.interior ? Math.min(lp, 2600) : lp, at, tc);
     h.bp.frequency.setTargetAtTime(1150 * dop, at, tc);
     h.hp.frequency.setTargetAtTime(2600 * dop, at, tc);
-    h.rg.gain.setTargetAtTime(1.5 * burn, at, 0.06);
-    h.lg.gain.setTargetAtTime(0.7 * burn, at, 0.06);
+    h.rg.gain.setTargetAtTime((h.big ? 2.0 : 1.5) * burn, at, 0.06);
+    h.lg.gain.setTargetAtTime((h.big ? 1.3 : 0.7) * burn, at, 0.06);
+    if (h.wh) {
+      h.wh.frequency.setTargetAtTime((h.big ? 1750 : 2100) * dop, at, tc);
+      h.whBp.frequency.setTargetAtTime((h.big ? 1900 : 2300) * dop, at, tc);
+      h.whG.gain.setTargetAtTime((h.big ? 0.1 : 0.07) * burn, at, 0.06);
+      h.scrBp.frequency.setTargetAtTime(3400 * dop, at, tc);
+      h.scrG.gain.setTargetAtTime((h.big ? 0.4 : 0.28) * burn + 0.3 * wind, at, 0.06);
+    }
     h.cg.gain.setTargetAtTime(0.18 * burn, at, 0.06);
     h.hg.gain.setTargetAtTime(0.2 + 0.25 * wind * (1 - burn), at, 0.06);   // tắt máy: chỉ còn tiếng xé gió
     if (h.pan) h.pan.pan.setTargetAtTime(sp.pan, now, tc);
