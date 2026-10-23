@@ -1416,6 +1416,12 @@
       #include <fog_fragment>
     }`;
 
+  // MỨC CHI TIẾT HIỆU ỨNG (chỉ phần HÌNH — không đổi trạng thái trận): hiệu ứng ở xa / ngoài khung nhìn chỉ sinh một phần
+  // (hoặc không) hạt khói / lửa / mảnh / tia. LOD.keep = tỉ lệ hạt được giữ cho hiệu ứng đang dựng (ExplosionFX.withLod đặt
+  // tạm rồi trả lại). Vết lâu dài (hố bom, lỗ tường, vết cháy) & âm thanh không bị ảnh hưởng. LOD.stat: bộ đếm cho bảng đo
+  const LOD = { keep: 1, stat: { full: 0, part: 0, skip: 0, drop: 0 } };
+  const lodDrop = () => { if (LOD.keep >= 1) return false; if (LOD.keep <= 0 || Math.random() >= LOD.keep) { LOD.stat.drop++; return true; } return false; };
+
   class ParticleLayer {
     constructor(scene, max, additive) {
       this.max = max;
@@ -1459,6 +1465,7 @@
      * p: { x,y,z, vx,vy,vz, size, grow, drag, grav, life, alpha, fadeIn, c0:[r,g,b], c1:[r,g,b], cell, rot, rotV, delay, floor, ax, az }
      */
     add(p) {
+      if (lodDrop()) return;
       // Bể đầy: thay một hạt trong 1/4 cũ nhất (mảng giữ thứ tự theo tuổi) thay vì bỏ hạt mới
       // -> khói tên lửa / vụ nổ mới vẫn hiện khi chiến trường đang mù mịt khói
       let slot = -1;
@@ -1656,6 +1663,7 @@
      *      e    : hệ số nảy theo pháp tuyến (mặc định 0,32), slide: false = chạm đất là nằm luôn không trượt }
      */
     add(r) {
+      if (lodDrop()) return;
       let slot = -1;
       if (this.rocks.length >= this.max) {
         // Đầy: thay TẠI CHỖ viên nằm yên sắp hết hạn nhất (không bỏ mảnh mới đang bay). Không splice: dồn mảng làm
@@ -1830,6 +1838,7 @@
     }
     // r: { x, y, z, vx, vy, vz, size, floor? (độ cao sàn phòng: mảnh bay vào trong nhà nằm lại trên sàn), life? }
     add(r) {
+      if (lodDrop()) return;
       let slot = -1;
       if (this.parts.length >= this.max) {
         // đầy: thay tại chỗ mảnh nằm yên sắp hết hạn nhất (không splice -> không lệch chỉ số instance phía sau)
@@ -3912,9 +3921,14 @@
     },
 
     _updateVehicles(dt) {
+      try { this._updateVehiclesLod(dt); } finally { LOD.keep = 1; }
+    },
+    _updateVehiclesLod(dt) {
       for (let i = this.vehicles.length - 1; i >= 0; i--) {
         const u = this.vehicles[i];
         if (!u.group || !u.group.parent) { this.vehicles.splice(i, 1); continue; }
+        // khói / lửa xe hư, xác cháy: theo mức chi tiết (tháp văng, mảnh rơi vẫn mô phỏng đủ — chỉ bớt hạt)
+        LOD.keep = this.lodAt(u.x, (u.y || 0) + 12, u.z, 60);
         const type = u.tankType || 'ALL_ROUNDER';
         const ratio = u.maxHp ? Math.max(0, u.hp / u.maxHp) : 1;
 
@@ -4316,6 +4330,7 @@
       scene.add(this.mesh);
     }
     add(o) {
+      if (lodDrop()) return;
       if (this.items.length >= this.max) this.items.shift();
       o.t = 0;
       this.items.push(o);
@@ -4617,6 +4632,38 @@
 
     // mat: vật liệu tường nhà bị trúng (Destructibles: concrete / adobe / stone / wood / metal) -> màu bụi & mảnh vỡ đúng
     // vật liệu; đá tảng: màu đá của bản đồ (sa thạch vàng ở sa mạc, đá xám ở cao nguyên...), không phải bụi xi măng
+    /**
+     * Tỉ lệ hạt giữ lại cho hiệu ứng tại (x, y, z) bán kính r, theo camera đang vẽ: khoảng cách hiệu dụng = khoảng cách x (góc
+     * nhìn / 45°) — kính ngắm phóng to (góc nhìn hẹp) thì vụ nổ xa vẫn hiện đủ chi tiết như ở gần. Ngoài khung nhìn: bỏ hết
+     * (sát bên camera vẫn giữ ít — khói bay vào khung). 1 = đủ, 0 = không sinh hạt
+     */
+    lodAt(x, y, z, r = 30) {
+      const g = typeof window !== 'undefined' && window.game, cam = g && g.camera;
+      if (this.lodOff || !cam || !cam.isPerspectiveCamera) return 1;   // lodOff: bảng đo F10 — so sánh khi vẽ đủ mọi nơi
+      const now = performance.now();
+      if (!this._lodFr || now - this._lodT > 15) {
+        this._lodT = now;
+        const F = this._lodFr || (this._lodFr = new THREE.Frustum()), M = this._lodM || (this._lodM = new THREE.Matrix4());
+        cam.updateMatrixWorld();
+        M.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+        F.setFromProjectionMatrix(M);
+        this._lodZoom = Math.max(0.08, (cam.fov || 45) / 45);
+      }
+      const cp = cam.position, d = Math.hypot(x - cp.x, y - cp.y, z - cp.z) * this._lodZoom;
+      const S = this._lodS || (this._lodS = new THREE.Sphere());
+      S.center.set(x, y, z); S.radius = r + 40;
+      if (!this._lodFr.intersectsSphere(S)) return d < 250 ? 0.25 : 0;
+      return d < 900 ? 1 : d < 1800 ? 0.45 : d < 3000 ? 0.18 : 0;
+    }
+    // chạy fn với tỉ lệ hạt theo vị trí (lồng nhau: lấy mức thấp hơn)
+    withLod(x, y, z, r, fn) {
+      const prev = LOD.keep, k = this.lodAt(x, y, z, r);
+      LOD.keep = Math.min(prev, k);
+      LOD.stat[k >= 1 ? 'full' : k > 0 ? 'part' : 'skip']++;
+      try { return fn(); } finally { LOD.keep = prev; }
+    }
+    lodStats() { return LOD.stat; }
+
     palette(hitType, mat) {
       if (hitType === 'BOULDER') {
         const t = this.terrainOf(), base = PALETTES[(t && t.mapType) || 'DESERT'] || PALETTES.DESERT, r = base.rock;
@@ -4953,6 +5000,8 @@
       const fire = () => {
         if (P.isDead) return;
         g.addJolt(mag, 0.004 * cw * k);
+        // màn hình: bụi đất tràn mép phía vụ nổ (không chồng lên hiệu ứng trúng thẳng vừa phát)
+        if (g.playerHitFx && mag > 2 && !(g._hullHitAt && performance.now() - g._hullHitAt < 300)) g.playerHitFx('blast', { x: x - P.x, z: z - P.z }, mag);
         const SE = window.soundEngine;
         // xe mình vừa trúng thẳng: tiếng trong khoang đã phát (armorHitSound) -> không chồng thêm tiếng vỏ xe
         if (SE && SE.playHullBlast && mag > 1.5 && !(g._hullHitAt && performance.now() - g._hullHitAt < 300)) {
@@ -4970,7 +5019,7 @@
       this.fire.add({ x, y, z, vx: 0, vy: 0, vz: 0, size: 20 * s, grow: 30 * s, life: 0.06, alpha: 1, fadeIn: 0.005, c0: inc ? [0.95, 0.97, 1] : [1, 0.95, 0.8], cell: 3, floor: false });
       // đĩa lửa vàng nhạt quanh lõi chớp; đầu nổ lõm (HEAT) không có — năng lượng dồn vào luồng phụt, chớp trắng riêng (spawnHeatJet)
       if (prof.kind !== 'heat') this.fire.add({ x, y, z, vx: 0, vy: 0, vz: 0, size: 14 * s, grow: 20 * s, life: prof.micro ? 0.08 : 0.09, alpha: 0.9, fadeIn: 0.005, c0: inc ? [1, 0.96, 0.85] : [1, 0.88, 0.65], cell: 1, floor: false });
-      if (!prof.micro && typeof SpgFXPool !== 'undefined' && SpgFXPool.muzzleLight) {
+      if (!prof.micro && LOD.keep >= 0.5 && typeof SpgFXPool !== 'undefined' && SpgFXPool.muzzleLight) {
         const l = SpgFXPool.muzzleLight(this.scene);
         if (l) {
           l.position.set(x, y + 10 * s, z);
@@ -6015,7 +6064,7 @@
     }
     // Đèn thật chớp ngắn (đánh lửa động cơ, nổ)
     flashLight(x, y, z, rgb, dist, life, peak) {
-      if (typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;
+      if (LOD.keep < 0.5 || typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;
       const l = SpgFXPool.muzzleLight(this.scene);
       if (!l) return;
       l.position.set(x, y, z);
@@ -6229,7 +6278,7 @@
     }
 
     addLight(x, y, z, s, life) {
-      if (typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;
+      if (LOD.keep < 0.5 || typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;   // xa / ngoài khung nhìn: bỏ đèn chớp
       const l = SpgFXPool.muzzleLight(this.scene);
       if (!l) return;
       l.position.set(x, y, z);
@@ -8339,11 +8388,12 @@
       const TK = this.tickers;
       if (TK && TK.length) for (let i = TK.length - 1; i >= 0; i--) if (!TK[i](dt)) TK.splice(i, 1);
 
-      // Lửa âm ỉ tại chỗ: liên tục nhả ngọn lửa nhỏ + khói
-      for (let i = this.emitters.length - 1; i >= 0; i--) {
+      // Lửa âm ỉ tại chỗ: liên tục nhả ngọn lửa nhỏ + khói (theo mức chi tiết tại chỗ cháy — ở xa / sau lưng camera bớt hạt)
+      try { for (let i = this.emitters.length - 1; i >= 0; i--) {
         const e = this.emitters[i];
         e.t += dt;
         if (e.t > e.dur) { this.emitters.splice(i, 1); continue; }
+        LOD.keep = this.lodAt(e.x, e.y + 4, e.z, 20);
         const strength = 1 - Math.max(0, (e.t - e.dur * 0.6) / (e.dur * 0.4));
         e.acc += dt * e.rate * strength;
         while (e.acc >= 1) {
@@ -8362,7 +8412,7 @@
             });
           }
         }
-      }
+      } } finally { LOD.keep = 1; }
 
       for (let i = this.lights.length - 1; i >= 0; i--) {
         const L = this.lights[i];
@@ -8503,6 +8553,24 @@
   }
 
   Object.assign(ExplosionFX.prototype, DamageMixin);
+
+  // MỨC CHI TIẾT theo chỗ xảy ra cho các điểm vào hiệu ứng lớn (xem lodAt): vụ nổ, đạn trúng xe, mảnh phụt sau tường, luồng
+  // nổ lõm, cột nước, vệt đuôi đạn, kính vỡ, đạn nảy, xe bị hạ. Hố bom / vết lâu dài bên trong vẫn tạo đủ (không qua lớp hạt)
+  const LOD_AT = {
+    spawn: a => [a[0], a[1], a[2], 40], glassBurst: a => [a[0], a[1], a[2], 15], groundSkipFx: a => [a[0], a[1], a[2], 15],
+    waterBurst: a => [a[0], a[1], a[2], 40], waterSkip: a => [a[0], a[1], a[2], 20], trail: a => [a[0], a[1], a[2], 8],
+    spallCone: a => a[0] ? [a[0].x, a[0].y, a[0].z, 25] : null, heatPierce: a => a[0] ? [a[0].x, a[0].y, a[0].z, 25] : null,
+    impactSurface: a => a[1] && a[1].point ? [a[1].point.x, a[1].point.y, a[1].point.z, 30] : null,
+    onVehicleDestroyed: a => a[0] ? [a[0].x, (a[0].y || 0) + 12, a[0].z, 80] : null
+  };
+  for (const name in LOD_AT) {
+    const orig = ExplosionFX.prototype[name], at = LOD_AT[name];
+    if (typeof orig !== 'function') continue;
+    ExplosionFX.prototype[name] = function (...args) {
+      const q = at(args);
+      return q ? this.withLod(q[0], q[1], q[2], q[3], () => orig.apply(this, args)) : orig.apply(this, args);
+    };
+  }
 
   // Dò tia theo đường bay vào mô hình xe để lấy đúng điểm chạm + pháp tuyến bề mặt
   // ---------------------------------------------------------------------------

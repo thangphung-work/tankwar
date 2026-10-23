@@ -756,6 +756,9 @@ class BallisticsSystem3D {
       g: rp.g,
       k: rp.k,
       dragMul: rp.k / this.dragCoeff,
+      // (độ cao điểm bắn cho cản theo độ cao, quay mũi theo gió khi động cơ cháy, tỉ lệ gió lựu pháo, tầm bay còn sát thương
+      //  sau khi vạch đường tắt / tốc độ tối thiểu còn sát thương của đạn súng)
+      y0: startY, hRho: rp.hRho || 0, wc: rp.wc || 0, windMul: rp.windMul || 1, lifeTravel: rp.lifeTravel || 0, minV: rp.minV || 0,
       spinAngle: 0,
       trailTimer: 0,
       tracer,
@@ -1087,11 +1090,23 @@ class BallisticsSystem3D {
    */
   integrateFlight(s, h) {
     const burning = s.burnTravel && (s.travel || 0) < s.burnTravel;
-    const k = burning ? 0 : (s.k !== undefined ? s.k : this.dragCoeff * (s.dragMul || 1));
-    const g = (s.g !== undefined ? s.g : this.gravityFor(s.ammoType, s.isDirectFire)) * (burning ? 0.25 : 1);
+    let k = burning ? 0 : (s.k !== undefined ? s.k : this.dragCoeff * (s.dragMul || 1));
+    // lựu pháo: không khí loãng dần lên cao (thang mật độ hRho) -> cản giảm theo e^(-độ cao / hRho) tính từ điểm bắn
+    if (s.hRho && k) { const hh = s.y - (s.y0 !== undefined ? s.y0 : s.y); if (hh > 0) k *= Math.exp(-hh / s.hRho); }
+    // động cơ rocket đang cháy: lực đẩy dọc trục bù cản & giữ tốc độ, nhưng trọng lực vẫn kéo đủ (trước đây x0,25 — đạn bay
+    // gần như không rơi trong 500 m đầu)
+    const g = s.g !== undefined ? s.g : this.gravityFor(s.ammoType, s.isDirectFire);
     // vận tốc đạn ở đây theo "giây mô phỏng" (= giây thật x bulletSpeedMultiplier) -> gió (đv / giây thật, HUD ghi M/S) cũng
-    // phải chia cùng hệ số. Trước đây cộng thẳng: gió thổi mạnh gấp 3,2 lần con số hiển thị
-    const w = this.wind, wk = 1 / (this.bulletSpeedMultiplier || 1), wx = ((w && w.vx) || 0) * wk, wz = ((w && w.vz) || 0) * wk;
+    // phải chia cùng hệ số. Trước đây cộng thẳng: gió thổi mạnh gấp 3,2 lần con số hiển thị. Lựu pháo: thêm tỉ lệ gió riêng
+    // (windMul) theo tỉ lệ tầm / thời gian của lựu pháo
+    const w = this.wind, wk = (s.windMul || 1) / (this.bulletSpeedMultiplier || 1), wx = ((w && w.vx) || 0) * wk, wz = ((w && w.vz) || 0) * wk;
+    // RPG / rocket khi động cơ còn cháy: thân có cánh đuôi quay mũi NGƯỢC VÀO gió ngang (lực đẩy theo mũi kéo đạn lệch về
+    // phía gió thổi tới) — hết liều thì trôi xuôi gió như đạn thường
+    if (burning && s.wc && (wx || wz)) {
+      const sp = Math.hypot(s.vx, s.vz) || 1, ux = s.vx / sp, uz = s.vz / sp, along = wx * ux + wz * uz;
+      const cx = wx - along * ux, cz = wz - along * uz;
+      s.vx -= s.wc * cx * h; s.vz -= s.wc * cz * h;
+    }
     // gia tốc đầu bước (cản theo vận tốc so với gió + trọng lực) -> vận tốc giữa bước -> gia tốc giữa bước
     let ax = s.vx - wx, az = s.vz - wz, d = k * Math.sqrt(ax * ax + s.vy * s.vy + az * az) * h * 0.5;
     const mx = s.vx - d * ax, my = s.vy - d * s.vy - g * h * 0.5, mz = s.vz - d * az;
@@ -1178,7 +1193,11 @@ class BallisticsSystem3D {
             break;
           }
         }
-        if (s.maxTravel && s.travel > s.maxTravel) {
+        // đạn súng: vạch đường tắt ở maxTravel nhưng đầu đạn còn bay & còn sát thương tới lifeTravel (hoặc khi chậm dưới minV)
+        if (s.maxTravel && s.travel > s.maxTravel && s.lifeTravel > s.maxTravel && s.travel <= s.lifeTravel
+          && !(s.minV && Math.hypot(s.vx, s.vy, s.vz) < s.minV)) {
+          if (!s.tracerOut) { s.tracerOut = true; s.tracer = false; if (s.mesh) s.mesh.visible = false; }
+        } else if (s.maxTravel && s.travel > s.maxTravel) {
           if ((s.ammoType === 'RPG' || s.ammoType === 'ANTI_TANK_MISSILE') && this.fx && this.fx.spawn) {
             this.fx.spawn(s.x, s.y, s.z, 'CLUSTER_SUBMUNITION', 'AIR', { charge: s.ammoType === 'ANTI_TANK_MISSILE' ? 4.5 : 0.7 });   // sóng xung kích theo đầu nổ thật
             // tên lửa hết tầm tự hủy: có chớp nổ thì phải có tiếng nổ (trước đây nổ câm)
@@ -1788,7 +1807,7 @@ class BallisticsSystem3D {
    */
   simulateShot(x, y, z, vx, vy, vz, rp, isDirectFire, terrain, opts = null) {
     const h = 0.035 * this.bulletSpeedMultiplier;
-    const s = { x, y, z, vx, vy, vz, k: rp.k, g: rp.g, burnTravel: rp.burnTravel || 0, travel: 0 };
+    const s = { x, y, z, vx, vy, vz, k: rp.k, g: rp.g, burnTravel: rp.burnTravel || 0, travel: 0, y0: y, hRho: rp.hRho || 0, wc: rp.wc || 0, windMul: rp.windMul || 1 };
     const pts = opts && opts.points ? [new THREE.Vector3(x, y, z)] : null;
     const cluster = !!(opts && opts.ammo === 'CLUSTER');
     const limX = BallisticsSystem3D.fieldHalf(terrain, 'width'), limZ = BallisticsSystem3D.fieldHalf(terrain, 'depth');
@@ -2324,7 +2343,8 @@ class BallisticsSystem3D {
     // bay trong không gian 3D theo hướng az (gió có hướng), x = cự ly ngang dọc hướng bắn
     const ar = (typeof az === 'number' ? az : 0) * Math.PI / 180, ux = Math.sin(ar), uz = -Math.cos(ar);
     const vh = rp.v0 * Math.cos(elRad);
-    const s = { x: ux * x, y: y0, z: uz * x, vx: ux * vh, vy: rp.v0 * Math.sin(elRad), vz: uz * vh, k: rp.k, g: rp.g, burnTravel: rp.burnTravel || 0, travel: 0 };
+    const s = { x: ux * x, y: y0, z: uz * x, vx: ux * vh, vy: rp.v0 * Math.sin(elRad), vz: uz * vh, k: rp.k, g: rp.g, burnTravel: rp.burnTravel || 0, travel: 0,
+      y0, hRho: rp.hRho || 0, wc: rp.wc || 0, windMul: rp.windMul || 1 };
     const dt = 0.01 * (this.bulletSpeedMultiplier || 1);
     for (let i = 0; i < 4000; i++) {
       const px = s.x, py = s.y, pz = s.z;
@@ -2592,8 +2612,10 @@ BallisticsSystem3D.prototype.maxElevationFor = function (shooter) {
   if (shooter && shooter.mainGun && shooter.mainGun.kind === 'agl') return 45;
   return shooter && shooter.tankType === 'ARTILLERY' ? 70 : 20;
 };
-// Sơ tốc lựu 40mm HV (xe trinh sát) so với đạn 30mm của xe 6 nòng
-BallisticsSystem3D.MAIN_AGL_V = 0.42;
+// Sơ tốc lựu 40mm HV (xe trinh sát) so với đạn 30mm của xe 6 nòng: Mk19 / Mk47 ~241 m/s (= 0,223 x 1080), cản x1,5 đạn
+// 30mm (~4,5e-4 / m: quả lựu tù, nặng 0,34 kg) -> xa nhất ~2,2 km, tới 1,5 km mất ~9 s (trước đây 0,42: 454 m/s, bay 6,6 km)
+BallisticsSystem3D.MAIN_AGL_V = 0.223;
+BallisticsSystem3D.MAIN_AGL_K = 1.5;
 // Quãng bay tối đa (tự hủy) của quả lựu 40mm HV / rocket giàn trên xe trinh sát (đơn vị game)
 BallisticsSystem3D.MAIN_AGL_TRAVEL = 1500;
 BallisticsSystem3D.MAIN_ROCKET_TRAVEL = 900;

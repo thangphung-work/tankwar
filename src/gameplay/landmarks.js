@@ -2531,6 +2531,8 @@ const Landmarks = (() => {
       it.collapse = 0;
       for (const q of it.boxes) { if (q.y1o === undefined) q.y1o = q.y1; q.y1 = q.y0 + (q.y1o - q.y0) * 0.35; }   // khối va chạm còn đống đổ nát thấp
       this.collapsePlan(it);
+      // ngoài tầm nhìn / quá xa: sập thẳng tới hình cuối (bỏ hoạt cảnh nội suy đỉnh lưới mỗi khung ~2,8 s)
+      if (!quiet && fx && fx.lodAt && fx.lodAt(it.x, it.G + 30, it.z, it.reach) <= 0) { it.collapse = 1; this.collapseStep(it, 1); }
       it.top = it.G + (it.top - it.G) * 0.35;
       // cháy đen: bản sao vật liệu (không ảnh hưởng công trình khác dùng chung vật liệu)
       const done = new Map();

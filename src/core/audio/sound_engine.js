@@ -6,7 +6,8 @@
  * - Không gian: hồi âm ngoài trời bằng ConvolverNode với impulse response sinh thủ tục
  *   (phản xạ sớm từ mặt đất/địa hình + đuôi vang tắt dần, mất âm cao theo thời gian)
  * - Khoảng cách: nhỏ dần, mất âm cao do không khí hấp thụ, càng xa càng "ướt" (nghe vọng nhiều hơn),
- *   trễ theo tốc độ âm thanh với nguồn ngoài tầm nhìn camera; âm thanh nổi trái/phải theo vị trí
+ *   trễ theo tốc độ âm thanh (cùng tỉ lệ nén với đường đạn), bị đồi / nhà / cứ điểm / rừng che thì nghẹt & vọng hơn;
+ *   âm thanh nổi trái/phải theo vị trí; ngân sách tiếng: tiếng xa / nhỏ nhường chỗ khi quá nhiều tiếng cùng lúc
  * - Tiếng súng/pháo/nổ: xung nén đầu nòng (N-wave) + sức ép nổ từ nhiễu băng rộng có méo bão hòa
  *   + sóng trầm chấn động + rền cuộn — không dùng sóng tuần hoàn quét tần số kiểu "pew pew"
  * - Kim loại (nạp đạn, trúng giáp, vỏ đạn, khóa nòng): tổng hợp cộng hưởng nhiều mode bất hòa âm
@@ -40,6 +41,85 @@ function viewPan(dx, dz, lim) {
   return Math.max(-lim, Math.min(lim, side / (Math.abs(side) + Math.abs(fwd) + 60)));
 }
 
+// TRỄ ÂM THANH: cùng tỉ lệ nén với đường đạn (quãng đường x rangeScale, thời gian x timerScale — game_timing.js) nên thứ
+// tự tới tai đúng như thật: đạn pháo ~1700 m/s tới trước, tiếng nổ đầu nòng / tiếng nổ trúng (343 m/s) tới sau, ánh chớp
+// xa trước, tiếng ùng sau. Cảnh ngay trước mặt (< 250 đơn vị) phát luôn để khớp hình; trần 4 s
+const SOUND_NEAR = 250, SOUND_DELAY_MAX = 4;
+function soundDelay(d) {
+  const T = typeof GameTiming !== 'undefined' ? GameTiming : null;
+  const c = 343 * (T ? T.rangeScale / T.timerScale : 1);
+  return Math.min(SOUND_DELAY_MAX, Math.max(0, d - SOUND_NEAR) / c);
+}
+
+// CHE KHUẤT ÂM: đồi / bờ dốc, ụ đất & bê tông cứ điểm, nhà, rừng rậm nằm giữa nguồn và tai. Âm trầm nhiễu xạ vòng qua
+// vật cản nên chủ yếu mất âm cao (rào chắn thật: ~10-15 dB ở 2-4 kHz, chỉ 3-5 dB ở 125 Hz) và phần tới tai là tiếng dội
+// nhiều hơn. 0 = thoáng .. 1 = khuất hẳn sau đồi. Lưu theo ô 24 đơn vị (nguồn & tai) trong 0.25 s: loạt mảnh vỡ / đạn
+// liên thanh cùng chỗ chỉ dò một lần
+const OCC_CELL = 24, OCC_TTL = 250, _occCache = new Map();
+function occlusionAt(T, sx, sy, sz, lx, ly, lz) {
+  const q = v => Math.round(v / OCC_CELL);
+  const key = q(sx) + ',' + q(sy) + ',' + q(sz) + '|' + q(lx) + ',' + q(ly) + ',' + q(lz);
+  const now = performance.now(), c = _occCache.get(key);
+  if (c && now - c.t < OCC_TTL) return c.o;
+  if (_occCache.size > 400) _occCache.clear();
+  const o = occlusionTrace(T, sx, sy, sz, lx, ly, lz);
+  _occCache.set(key, { t: now, o });
+  return o;
+}
+function occlusionTrace(T, sx, sy, sz, lx, ly, lz) {
+  const dx = lx - sx, dy = ly - sy, dz = lz - sz, len = Math.hypot(dx, dz);
+  if (len < 60) return 0;
+  let o = 0;
+  // địa hình + ụ đất / bê tông cứ điểm: dò các điểm giữa đường (bỏ hai đầu: nguồn nằm sát đất không tính là bị chắn)
+  const SS = T.strongholdSet, n = Math.max(4, Math.min(16, Math.ceil(len / 80)));
+  for (let i = 1; i < n; i++) {
+    const t = i / n, x = sx + dx * t, y = sy + dy * t, z = sz + dz * t;
+    if (T.getHeightAt(x, z) > y + 6) return 1;
+    if (SS && o < 0.75) {
+      const sf = SS.surfaceAt ? SS.surfaceAt(x, z) : null;
+      if ((sf !== null && sf > y + 2) || (SS.concreteAt && SS.concreteAt(x, y, z))) o = 0.75;
+    }
+  }
+  // nhà còn đứng (khối hộp thu vào 2 đơn vị: nguồn sát mặt tường ngoài không tính)
+  const BS = T.buildingSet;
+  if (BS && BS.items && BS.toLocal && o < 0.8) {
+    const mnx = Math.min(sx, lx), mxx = Math.max(sx, lx), mnz = Math.min(sz, lz), mxz = Math.max(sz, lz);
+    for (const B of BS.items) {
+      if (B.collapsed) continue;
+      const r = Math.hypot(B.halfW, B.halfD);
+      if (mxx < B.x - r || mnx > B.x + r || mxz < B.z - r || mnz > B.z + r) continue;
+      if (segBox(BS.toLocal(B, sx, sy, sz), BS.toLocal(B, lx, ly, lz), B.halfW - 2, B.hitTop || 0, B.halfD - 2)) { o = 0.8; break; }
+    }
+  }
+  // rừng rậm: tán lá & thân cây hút / tán xạ âm cao (~10 dB qua 50 m rừng dày)
+  if (o < 0.5 && T.forestLOS) {
+    const L = T.forestLOS(sx, sz, lx, lz, 800);
+    if (L > 0) o = Math.max(o, Math.min(0.5, L / 800));
+  }
+  return o;
+}
+// đoạn a -> b (toạ độ riêng của nhà) cắt khối [-hx, hx] x [0, hy] x [-hz, hz]?
+function segBox(a, b, hx, hy, hz) {
+  let t0 = 0, t1 = 1;
+  const A = [a.x, a.y, a.z], D = [b.x - a.x, b.y - a.y, b.z - a.z], LO = [-hx, 0, -hz], HI = [hx, hy, hz];
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(D[k]) < 1e-9) { if (A[k] < LO[k] || A[k] > HI[k]) return false; continue; }
+    let u = (LO[k] - A[k]) / D[k], v = (HI[k] - A[k]) / D[k];
+    if (u > v) { const w = u; u = v; v = w; }
+    if (u > t0) t0 = u;
+    if (v < t1) t1 = v;
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+// NGÂN SÁCH TIẾNG (chỉ tiếng ngoài chiến trường đi bus mặc định — tiếng xe mình, buồng lái, giao diện luôn phát): mọi
+// tiếng dưới -48 dB tới tai bỏ luôn; khi tiếng mới dồn dập (nhà sập, mảnh rơi, cháy nổ, liên thanh cùng lúc) ngưỡng
+// nâng dần theo số tiếng đã phát trong 1 s qua (24 tiếng/s trở xuống: -48 dB; 48: -30 dB; ~80: -16 dB là trần) -> tiếng
+// xa / nhỏ nhường chỗ cho tiếng gần / to. Tiếng bị bỏ vẫn trả nút gain nhưng không nối tới loa: Web Audio chỉ xử lý các
+// nhánh có đường tới loa nên nhánh đó không tốn công tính
+const VOICE_SOFT = 24, VOICE_MIN = 0.004, VOICE_MAXTHR = 0.15;
+
 class SoundEngine {
   constructor() {
     this.ctx = null;
@@ -50,6 +130,10 @@ class SoundEngine {
     this.compressor = null;
     this.limiter = null;
     this.reverb = null;
+    // ngân sách tiếng (thời điểm bắt đầu các tiếng đã phát trong 1 s qua) & bộ đếm cho bảng đo F9
+    this._vWin = [];
+    this._vHead = 0;
+    this.audioStats = { made: 0, culled: 0, occl: 0 };
     this.weaponBus = null;
     this.vehicleBus = null;
     this.uiBus = null;
@@ -383,19 +467,48 @@ class SoundEngine {
     // Không khí + mặt đất hấp thụ âm cao (theo suy hao khí quyển thật: 8 kHz mất ~3 dB sau ~30 m, 4 kHz ~100 m,
     // 2 kHz ~300 m): ~100 m còn dưới ~4 kHz, ~300 m ~1.5 kHz, ~600 m chỉ còn tiếng "ục" trầm và rền
     const lowpass = Math.max(380, Math.min(18000, 4200 * Math.pow(100 / Math.max(1, m), 0.9)));
-    const wet = Math.min(0.9, 0.12 + m / 240);
-    // Nguồn trong tầm nhìn camera phát ngay để khớp hình; ngoài màn hình mới trễ theo tốc độ âm thanh
-    const delay = Math.min(1.0, Math.max(0, d - 600) / 8 / 343);
-    let pan = 0;
+    let wet = Math.min(0.9, 0.12 + m / 240);
+    const delay = soundDelay(d);
+    let pan = 0, occ = 0;
     // tai nghe: xe mình, hoặc micro drone khi đang xem qua camera drone (game.audioListener)
     const g = window.game, me = g && (g.audioListener ? g.audioListener() : g.player);
     if (pos && me) {
       pan = viewPan(pos.x - me.x, pos.z - me.z, 0.85);
+      occ = this.occlusion(pos, me, d);
     }
+    // bị che: mất tới ~5 dB tổng & phần lớn âm cao, nghe vọng hơn (tiếng tới tai chủ yếu là tiếng dội / nhiễu xạ)
+    const og = 1 - 0.45 * occ, olp = occ > 0 ? Math.max(300, lowpass * (1 - 0.7 * occ)) : lowpass;
+    if (occ > 0) wet = Math.min(0.95, wet + 0.25 * occ);
     // Đang nhìn qua kính ngắm = ngồi trong xe (sight_audio.js setInterior): vỏ thép chặn âm cao, tiếng ngoài nhỏ và
     // ít hồi âm ngoài trời hơn
-    if (this.interior) return { gain: gain * 0.72, lowpass: Math.min(lowpass, 2600), wet: wet * 0.6, delay, pan };
-    return { gain, lowpass, wet, delay, pan };
+    if (this.interior) return { gain: gain * og * 0.72, lowpass: Math.min(olp, 2600), wet: wet * 0.6, delay, pan, occ };
+    return { gain: gain * og, lowpass: olp, wet, delay, pan, occ };
+  }
+
+  // Mức che khuất 0..1 giữa nguồn pos {x, z[, y]} và tai (xe mình: cao ~2.5 m trên thân xe; micro drone: đúng vị trí camera)
+  occlusion(pos, me, d) {
+    const T = window.game && window.game.terrain;
+    if (!T || !T.getHeightAt || !(d > 60)) return 0;
+    const sy = Number.isFinite(pos.y) ? pos.y + 6 : T.getHeightAt(pos.x, pos.z) + 8;
+    const ly = me.isVector3 ? me.y : (Number.isFinite(me.y) ? me.y : T.getHeightAt(me.x, me.z)) + 20;
+    const o = occlusionAt(T, pos.x, sy, pos.z, me.x, ly, me.z);
+    if (o > 0) this.audioStats.occl++;
+    return o;
+  }
+
+  // Có cho tiếng ngoài chiến trường mức `level` (gain tới tai) phát không — xem NGÂN SÁCH TIẾNG đầu file
+  voiceAllowed(level) {
+    const now = this.ctx.currentTime, W = this._vWin;
+    let h = this._vHead;
+    while (h < W.length && now - W[h] > 1) h++;
+    if (h > 256) { W.splice(0, h); h = 0; }
+    this._vHead = h;
+    const n = W.length - h, S = this.audioStats;
+    const thr = Math.min(VOICE_MAXTHR, VOICE_MIN * Math.pow(2, Math.max(0, n - VOICE_SOFT) / 8));
+    if (!(level >= thr)) { S.culled++; return false; }
+    W.push(now);
+    S.made++;
+    return true;
   }
 
   // Kênh phát cho một sự kiện: gain -> lọc không khí -> pan -> bus, kèm nhánh gửi hồi âm
@@ -403,6 +516,8 @@ class SoundEngine {
     const ctx = this.ctx;
     const input = ctx.createGain();
     input.gain.value = gain;
+    // tiếng chiến trường dưới ngưỡng ngân sách: trả nút treo (không nối tới loa -> không tốn công xử lý)
+    if (!bus && !this.voiceAllowed(gain)) return input;
     let node = input;
     if (lowpass < 19000) {
       const lp = ctx.createBiquadFilter();

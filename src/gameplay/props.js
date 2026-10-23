@@ -209,6 +209,8 @@ const Props = (() => {
   // "trước" của vật (cần đèn vươn ra phố / đầu xe / dọc tuyến dây điện / lưng nhà chờ / vào trong lô cây xăng),
   // quay theo góc angle của MapGen (+z -> (sin a, cos a)). Đổ / bẹp tính theo băm toạ độ (không RNG) -> mọi máy như nhau
   // ---------------------------------------------------------------------------
+  // màu sơn theo mẫu (danh mục MapGen.CAR_CATALOG tag fixedColor -> map gửi color = -1)
+  const CAR_FIXED_COL = { taxi: 0xe8b820 };
   const CAR_COL = [0xe8e8e6, 0xb8bcc0, 0x26282c, 0x9e2a26, 0x2c4c7c, 0x6c7074, 0x2e4a36, 0xc8b894, 0x1e2a44, 0x5e2228, 0x8aa8c0, 0x7a6a58];
   const SMAT = {
     paint: { color: 0xffffff, roughness: 0.4, metalness: 0.4 },
@@ -221,15 +223,22 @@ const Props = (() => {
     metal: { color: 0x8a8f92, roughness: 0.5, metalness: 0.6 },
     dark: { color: 0x2a2d30, roughness: 0.6, metalness: 0.35 },
     concrete: { color: 0xb4b0a6, roughness: 0.92, metalness: 0 },
-    glow: { color: 0xfff2cc, emissive: 0x6a5c38, roughness: 0.4, metalness: 0 },
-    red: { color: 0xd02a20, emissive: 0x7a0c08, roughness: 0.4, metalness: 0 },
+    glow: { color: 0xd8d2c0, emissive: 0x0c0b08, roughness: 0.3, metalness: 0 },   // đèn pha xe bỏ hoang: tắt (hết ắc quy)
+    red: { color: 0x9a2018, emissive: 0x100202, roughness: 0.3, metalness: 0 },
     amber: { color: 0xc08a20, emissive: 0x2a1800, roughness: 0.4, metalness: 0 },
     green: { color: 0x1f8a40, emissive: 0x0a2a12, roughness: 0.4, metalness: 0 },
     roofBlue: { color: 0x3e5f80, roughness: 0.6, metalness: 0.3 },
     panel: { color: 0x9fc0cc, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.35, depthWrite: false },
     ad: { color: 0xe8e4d4, emissive: 0x26241c, roughness: 0.5, metalness: 0 },
     white: { color: 0xeeeeea, roughness: 0.55, metalness: 0.1 },
-    brand: { color: 0xc8241c, roughness: 0.5, metalness: 0.1 }
+    brand: { color: 0xc8241c, roughness: 0.5, metalness: 0.1 },
+    // thành phố ma mất điện: kính đèn giao thông tắt, chỉ còn màu kính bám bụi; bóng đèn đường tắt
+    lensR: { color: 0x5a1a14, roughness: 0.25, metalness: 0.1 },
+    lensA: { color: 0x5a4216, roughness: 0.25, metalness: 0.1 },
+    lensG: { color: 0x1a4428, roughness: 0.25, metalness: 0.1 },
+    sigBody: { color: 0x2b2c2a, roughness: 0.7, metalness: 0.3 },
+    sigPole: { color: 0x575b58, roughness: 0.55, metalness: 0.55 },
+    deadLamp: { color: 0x8c8a82, roughness: 0.35, metalness: 0.1 }
   };
   // phần: [hình 'box' | 'cyl', vật liệu, x, y, z, sx, sy, sz, rx, ry, rz] (hộp / trụ đơn vị tâm tại gốc)
   const P = (g, m, x, y, z, sx, sy, sz, rx, ry, rz) => [g, m, x, y, z, sx, sy, sz, rx || 0, ry || 0, rz || 0];
@@ -567,18 +576,48 @@ const Props = (() => {
   CAR_DIM.taxi = CAR_DIM.sedan;
   // động lượng (tấn x đv/s) cần để húc gãy / đổ: cột đèn thép, đèn giao thông, nhà chờ, cột điện bê tông cốt thép
   const BREAK_P = { lamp: 140, signal: 190, busStop: 230, pole: 420 };
+  // cụm 3 đèn tại (x, y, z) quay mặt +x (fx = 1) hoặc -x; tilt: cụm treo lệch (khớp treo gỉ gãy 1 bên)
+  function signalHead(x, y, z, fx, tilt) {
+    const out = [], H = 9.6, rz = tilt || 0;
+    const at = (dy) => [x - Math.sin(rz) * dy, y + Math.cos(rz) * dy];
+    out.push(P('box', 'sigBody', x, y, z, 2.4, H, 2.8, 0, 0, rz));
+    out.push(P('box', 'white', x - fx * 1.35, y, z, 0.12, H + 2.4, 5.6, 0, 0, rz));       // viền phản quang tấm hắt
+    out.push(P('box', 'sigBody', x - fx * 1.28, y, z, 0.16, H + 2.0, 5.2, 0, 0, rz));     // tấm hắt đen
+    [[3.1, 'lensR'], [0, 'lensA'], [-3.1, 'lensG']].forEach(([dy, m]) => {
+      const [px, py] = at(dy);
+      out.push(P('cyl', m, px + fx * 1.25, py, z, 1.05, 0.3, 1.05, 0, 0, Math.PI / 2 + rz));
+      out.push(P('box', 'sigBody', px + fx * 2.1, py + 1.2, z, 1.8, 0.14, 2.5, 0, 0, rz - fx * 0.18));   // mái chụp
+      for (const sz of [-1, 1]) out.push(P('box', 'sigBody', px + fx * 2.0, py + 0.3, z + sz * 1.2, 1.6, 1.8, 0.1, 0, 0, rz));
+    });
+    return out;
+  }
+  function signalParts(variant) {
+    const p = [
+      P('cyl', 'concrete', 0, 0.8, 0, 2.2, 1.6, 2.2),                 // bệ móng
+      P('cyl', 'sigPole', 0, 2.2, 0, 1.5, 1.4, 1.5),                  // chân đế bắt bu lông
+      P('cyl', 'sigPole', 0, 25, 0, 1.0, 48, 1.0), P('cyl', 'sigPole', 0, 49.2, 0, 1.15, 0.6, 1.15),
+      P('box', 'sigPole', 0, 45.5, 11, 1.0, 1.1, 22), P('box', 'sigPole', 0, 45.6, 29, 0.7, 0.8, 16),   // cần vươn thon dần
+      P('box', 'sigPole', 0, 41.5, 6.5, 0.45, 0.45, 15.5, -0.52, 0, 0),                                   // thanh chống xiên
+      P('box', 'sigBody', 0, 44.6, 33.6, 0.4, 1.6, 0.4),                                                  // khớp treo
+      P('box', 'sigBody', 0.9, 13, 0, 1.4, 6, 3.2),                                                        // hộp điều khiển
+      P('box', 'sigBody', 0, 19, 1.6, 2.2, 4.8, 2.2), P('box', 'lensR', 0, 20.1, 2.75, 1.4, 1.4, 0.1), P('box', 'lensG', 0, 17.9, 2.75, 1.4, 1.4, 0.1)   // đèn đi bộ
+    ];
+    p.push(...signalHead(0, 39.2, 34, 1, variant ? 0.32 : 0));
+    p.push(...signalHead(-1.2, 30, 0, -1, 0));      // cụm phụ trên cột (hướng xe phía bên kia)
+    return p;
+  }
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const impact = (...a) => { if (typeof spgImpact === 'function') spgImpact(...a); };
   const gameFx = () => { const g = typeof window !== 'undefined' && window.game; return g && g.effectsManager && g.effectsManager.fx || null; };
   const STREET = {
     // đèn đường cao 9 m, cần vươn 1,8 m ra lòng đường
     lamp: { rad: 1.6, h: 72, walk: true, parts: [P('cyl', 'metal', 0, 2, 0, 1.3, 4, 1.3), P('cyl', 'metal', 0, 36, 0, 0.7, 72, 0.7),
-      P('box', 'metal', 0, 71, 7, 0.5, 0.5, 14), P('box', 'dark', 0, 70.5, 14.5, 2.2, 1.2, 5), P('box', 'glow', 0, 69.8, 14.5, 1.6, 0.2, 4)] },
-    // đèn giao thông: cột 5,8 m, cần vươn 4,5 m ra trên lòng đường, đèn 3 màu quay 2 chiều xe, đèn đi bộ trên thân cột
-    signal: { rad: 2, h: 46, walk: true, parts: [P('cyl', 'dark', 0, 23, 0, 0.9, 46, 0.9), P('box', 'dark', 0, 44, 18, 0.7, 0.7, 36),
-      P('box', 'dark', 0, 38.5, 34, 2.4, 8.6, 2.6), P('box', 'dark', 0, 19, 1.4, 2, 4.6, 2),
-      P('box', 'red', 1.3, 41.4, 34, 0.3, 1.9, 1.9), P('box', 'amber', 1.3, 38.5, 34, 0.3, 1.9, 1.9), P('box', 'green', 1.3, 35.6, 34, 0.3, 1.9, 1.9),
-      P('box', 'red', -1.3, 41.4, 34, 0.3, 1.9, 1.9), P('box', 'amber', -1.3, 38.5, 34, 0.3, 1.9, 1.9), P('box', 'green', -1.3, 35.6, 34, 0.3, 1.9, 1.9)] },
+      P('box', 'metal', 0, 71, 7, 0.5, 0.5, 14), P('box', 'dark', 0, 70.5, 14.5, 2.2, 1.2, 5), P('box', 'deadLamp', 0, 69.8, 14.5, 1.6, 0.2, 4)] },
+    // đèn giao thông kiểu cần vươn: bệ bê tông, cột thép mạ kẽm 6 m, cần vươn thon dần 4,8 m + thanh chống xiên; cụm đèn
+    // chính treo trên lòng đường quay về dòng xe tới (+x): vỏ đèn, tấm hắt sau viền trắng phản quang, 3 kính tròn có chụp
+    // che nắng (mái + 2 má); cụm phụ trên thân cột cho làn sát lề, đèn đi bộ, hộp điều khiển. Mất điện: kính tắt.
+    signal: { rad: 2, h: 48, walk: true, parts: signalParts(false) },
+    signalB: { rad: 2, h: 48, walk: true, parts: signalParts(true) },
     // cột điện bê tông 10 m, xà ngang vuông góc tuyến dây
     pole: { rad: 2, h: 82, walk: true, parts: [P('box', 'concrete', 0, 41, 0, 1.9, 82, 1.9), P('box', 'dark', 0, 77, 0, 16, 0.9, 0.9)] },
     // nhà chờ xe buýt: mái, vách kính sau lưng, ghế, bảng quảng cáo bên hông
@@ -599,13 +638,20 @@ const Props = (() => {
       const D = data, S = (x, z) => T.groundAtRaw(x, z);
       const add = (o, parts) => { o.parts = parts; o.seed = ((o.x * 7) ^ (o.z * 13)) | 0; this.items.push(o); this.addGrid(o); };
       for (const l of D.lamps || []) add({ type: 'lamp', x: l.x, z: l.z, angle: l.angle }, STREET.lamp.parts);
-      for (const l of D.signals || []) add({ type: 'signal', x: l.x, z: l.z, angle: l.angle }, STREET.signal.parts);
+      for (const l of D.signals || []) {
+        // bỏ hoang lâu năm: cột hơi nghiêng, ~1/3 cụm đèn treo lệch
+        const o = { type: 'signal', x: l.x, z: l.z, angle: l.angle }, hs = hash((l.x * 13) ^ (l.z * 7));
+        o.roll = (hs - 0.5) * 0.05; o.pitch = (hash(hs * 9999 | 0) - 0.5) * 0.04;
+        add(o, (hs * 7 % 1) < 0.33 ? STREET.signalB.parts : STREET.signal.parts);
+      }
       const poles = (D.poles || []).map(l => { const o = { type: 'pole', x: l.x, z: l.z, angle: l.angle, link: l.link }; add(o, STREET.pole.parts); return o; });
       for (const l of D.busStops || []) add({ type: 'busStop', x: l.x, z: l.z, angle: l.angle }, STREET.busStop.parts);
       for (const c of D.cars || []) {
         const o = { type: 'car', x: c.x, z: c.z, angle: c.angle, kind: c.kind, rad: 9, c: 0, d: 0, roll: 0, pitch: 0, skew: 0, squeeze: 0 };
-        o.color = new THREE.Color(c.kind === 'taxi' ? 0xe8b820 : CAR_COL[c.color % CAR_COL.length]);
+        o.color = new THREE.Color(CAR_FIXED_COL[c.kind] !== undefined && (c.color < 0 || c.kind === 'taxi') ? CAR_FIXED_COL[c.kind] : CAR_COL[Math.max(0, c.color) % CAR_COL.length]);
+        // mẫu chưa có model trong CAR -> vẽ tạm bằng sedan (thêm mẫu vào danh mục trước, dựng model sau vẫn chạy)
         add(o, CAR[c.kind] || CAR.sedan);
+        if (c.seed !== undefined) o.seed = c.seed | 0;   // seed biến thể từ map (bụi / gỉ / hư hại), không phụ thuộc vị trí
         this.abandon(o);
       }
       // mái che cây xăng + cột bơm; cầu vượt bộ hành — vật cố định (cột / chân cầu chặn xe như đá tảng)

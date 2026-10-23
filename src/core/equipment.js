@@ -71,7 +71,7 @@
     // --- Ô NÓC THÁP xe tăng (1 món, chỗ phía nạp đạn): chọn [4] trong trận. Để trống = máy phá sóng (ROOF_DEFAULT) ---
     ewjam: {
       name: 'Máy phá sóng chống UAV', icon: 'drone-off', cat: 'roof', price: 0, tanks: ['ALL_ROUNDER'],
-      desc: 'Mảng ăng-ten phát chùm định hướng trên bệ xoay. Phím [4], ngắm tâm kính vào drone rồi GIỮ Space: drone trong chùm (~950, hẹp ±15°) nhiễu hình rồi mất liên lạc, bị ép bay về; chiếu trúng xe có radar khóa mục tiêu thì radar đó mù vài giây. Pin phát ~12 s, sạc đầy ~30 s. Đang phát thì địch dò ra vị trí xe. Không bắn hạ được gì. Mặc định khi ô nóc để trống.'
+      desc: 'Mảng ăng-ten phát chùm định hướng trên bệ xoay. Phím [4], ngắm tâm kính vào drone rồi GIỮ Space: drone trong chùm (~550, hẹp ±8°, đầu phát bám drone khóa nhưng quay chậm) nhiễu hình rồi mất liên lạc, bị ép bay về; chiếu trúng xe có radar khóa mục tiêu thì radar đó mù vài giây. Pin phát ~12 s, sạc đầy ~30 s. Đang phát thì địch dò ra vị trí xe. Không bắn hạ được gì. Mặc định khi ô nóc để trống.'
     },
     rcws: {
       name: 'Trạm súng máy 7.62mm', icon: 'crosshair', cat: 'roof', price: 2200, tanks: ['ALL_ROUNDER'],

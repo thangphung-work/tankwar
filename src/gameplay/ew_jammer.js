@@ -7,8 +7,8 @@
  *    Khóa drone địch (Tab / nhấp vào drone / ngắm tâm kính trúng drone rồi bấm), GIỮ Space / chuột trái mới phát chùm,
  *    chưa khóa hoặc drone còn ngoài tầm (gần hơn radar phòng không 6 nòng) thì không phát; nhả là tắt.
  *    Pin: phát liên tục tối đa ~12 s, sạc lại đầy ~30 s; cần >= 25% mới bắt đầu phát được
- *  - đầu phát mảng ăng-ten tấm trên bệ xoay bám tâm kính: chùm hình nón hẹp ±15°; drone (mọi phe, kể cả đồng đội) nằm
- *    trong chùm, cách ~950: hình camera nhiễu sọc, giữ trong chùm ~2.5 s là mất liên lạc điều khiển -> drone tự bay về
+ *  - đầu phát mảng ăng-ten tấm trên bệ xoay bám tâm kính: chùm hình nón hẹp ±8°; drone (mọi phe, kể cả đồng đội) nằm
+ *    trong chùm, cách ~550: hình camera nhiễu sọc, giữ trong chùm ~2.5 s là mất liên lạc điều khiển -> drone tự bay về
  *    xe (ra khỏi chùm thì mức nhiễu tụt dần). Phải ngắm trúng & giữ — khó hơn xe 6 nòng
  *  - chùm chiếu trúng xe địch có radar khóa mục tiêu (trinh sát, 6 nòng) ~0.4 s: radar xe đó mất khóa & không khóa
  *    được mục tiêu (trinh sát: cả xe lẫn drone; 6 nòng: drone) tới ~3 s sau khi ra khỏi chùm
@@ -19,11 +19,11 @@
  */
 const EWJammer = (() => {
   const C = {
-    R: 950,          // tầm chùm phá sóng (đv, 3D)
-    HALF: 0.27,      // nửa độ mở chùm theo phương ngang (rad, ~15°)
+    R: 550,          // tầm chùm phá sóng (đv, 3D) — vừa phải, phải để drone vào khá gần
+    HALF: 0.14,      // nửa độ mở chùm (rad, ~8°) — hẹp, đầu phát lệch khỏi drone là mất tác dụng
     EL_MIN: -0.1, EL_MAX: 1.3,   // giới hạn ngóc đầu phát (rad)
     SLEW: 1.8,       // tốc độ quay / ngóc đầu phát của bot (rad/s)
-    SLEW_P: 4.0,     // ... của người chơi (bám tâm kính)
+    SLEW_P: 1.4,     // ... của người chơi (bám drone khóa / tâm kính) — chậm: drone lượn gắt sát xe thoát được chùm
     ON: 12,          // pin đầy bật liên tục được bấy nhiêu giây
     CHARGE: 30,      // sạc từ cạn tới đầy (s)
     MIN: 0.25,       // pin tối thiểu để bật
@@ -67,7 +67,7 @@ const EWJammer = (() => {
     jamAssistDrone(u, az, el, sight) {
       if (!this.airDroneList || !this.droneIsAirborne) return null;
       const ce = Math.cos(el), ax = -Math.sin(az) * ce, ay = Math.sin(el), azz = -Math.cos(az) * ce;
-      let best = null, ba = sight ? C.HALF * 1.2 : C.HALF * 1.8;
+      let best = null, ba = sight ? C.HALF * 0.6 : C.HALF * 1.0;
       for (const d of this.airDroneList()) {
         if (d.team === u.team || d.key === 'own' || !d.seen || !this.droneIsAirborne(d)) continue;
         const dx = d.x - u.x, dy = d.y - ((u.y || 0) + 6), dz = d.z - u.z, r = Math.hypot(dx, dy, dz);
@@ -186,7 +186,7 @@ const EWJammer = (() => {
           }
           if (best) this.jamLockDrone(best);
         }
-        this.addCombatLog(`[[antenna-bars-5]] MÁY PHÁ SÓNG — chùm định hướng ±15°, tầm ~${C.R}: KHÓA drone địch (Tab / nhấp vào drone) rồi GIỮ Space / chuột trái để phát — chưa khóa thì không phát, giữ drone trong chùm ~${C.LINK} s là nó mất liên lạc, bị ép bay về (cả drone phe mình). Đang phát: xe bị địch dò ra vị trí. Pin ${Math.round(J.e * 100)}% · [4] về pháo chính`, 'tip');
+        this.addCombatLog(`[[antenna-bars-5]] MÁY PHÁ SÓNG — chùm định hướng ±8°, tầm ~${C.R}: KHÓA drone địch (Tab / nhấp vào drone) rồi GIỮ Space / chuột trái để phát — chưa khóa thì không phát, giữ drone trong chùm ~${C.LINK} s là nó mất liên lạc, bị ép bay về (cả drone phe mình). Đang phát: xe bị địch dò ra vị trí. Pin ${Math.round(J.e * 100)}% · [4] về pháo chính`, 'tip');
       } else {
         J.on = false; J.lockDr = null; J.track = null;
         if (this._airAim && this.clearAirAim) this.clearAirAim();

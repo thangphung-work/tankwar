@@ -3593,6 +3593,20 @@ class SPGUnit3D {
     this.barrelSmokeTimer = 2.5;
 
     this.reloadTimer = this.reloadDuration;
+    // LỰU PHÁO NÓNG NÒNG: nạp tự động bắn loạt nhanh được (~8 phát / phút) nhưng không giữ mãi — sau ~8 phát trong 1 phút (thật)
+    // nòng & buồng đạn quá nóng (nguy cơ đạn tự cháy trong buồng), phải giãn nhịp còn ~2-3 phát / phút tới khi nguội bớt
+    if (this.tankType === 'ARTILLERY') {
+      const now = performance.now() / 1000, win = gameTime(60);
+      this._artyShots = (this._artyShots || []).filter(t => now - t < win);
+      this._artyShots.push(now);
+      if (this._artyShots.length > 8) {
+        this.reloadTimer = this.reloadDuration * 2.8;
+        if (this.isPlayer && window.game && window.game.addCombatLog && (!this._heatLogT || now - this._heatLogT > 20)) {
+          this._heatLogT = now;
+          window.game.addCombatLog('[[flame]] Nòng pháo quá nóng sau loạt bắn dồn dập — phải giãn nhịp bắn chờ nòng nguội', 'alert');
+        }
+      }
+    }
     this.shotsFired++;
 
     if (window.soundEngine) {

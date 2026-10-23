@@ -938,6 +938,7 @@
       this.matchAcc = 0;
       this.envAcc = 0;
       this.envMismatch = 0;
+      this.envSynced = false;          // đã khớp trạng thái công trình với chủ phòng lần nào chưa (vào trận giữa chừng)
       this._impactDepth = 0;
       this._applyingRemote = false;
       this._applyingRemoteFire = false;
@@ -1871,34 +1872,87 @@
       for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
       return h >>> 0;
     }
+    // NÉN CHUỖI TRẠNG THÁI: đoạn lặp của mẫu 1-4 ký tự (cây còn nguyên '000...', công trình '100,100,...', nhà nguyên
+    // vẹn) -> '~' + độ dài mẫu + mẫu + số lần (cơ số 36) + '~'. Chuỗi trạng thái không dùng '~'. Bản đồ còn nguyên chỉ
+    // còn vài chục ký tự; càng phá nhiều càng dài nhưng vẫn ngắn hơn hẳn chuỗi gốc
+    static packEnv(str) {
+      let out = '', i = 0;
+      const n = str.length;
+      while (i < n) {
+        let best = 0, bp = 0;
+        for (let p = 1; p <= 4 && i + p * 2 <= n; p++) {
+          const pat = str.substr(i, p);
+          let r = 1;
+          while (str.startsWith(pat, i + r * p)) r++;
+          if (r * p >= 8 && r * p > best * bp) { best = r; bp = p; }
+        }
+        if (bp) { out += '~' + bp + str.substr(i, bp) + best.toString(36) + '~'; i += best * bp; }
+        else out += str[i++];
+      }
+      return out;
+    }
+    static unpackEnv(str, limit = 4000000) {
+      let out = '', i = 0;
+      while (i < str.length) {
+        const c = str[i];
+        if (c !== '~') { out += c; i++; continue; }
+        const p = +str[i + 1], e = str.indexOf('~', i + 2 + p);
+        if (!(p >= 1 && p <= 4) || e < 0) return null;
+        const r = parseInt(str.slice(i + 2 + p, e), 36);
+        if (!(r > 0) || out.length + r * p > limit) return null;
+        out += str.substr(i + 2, p).repeat(r);
+        i = e + 1;
+      }
+      return out;
+    }
+    // Chuỗi gửi đi chỉ gồm các mục trong `mask` (bit k = mục k của envStateString: nhà, cây, cứ điểm, công trình đặc
+    // biệt, lửa, xác xe) — mục khác để trống, applyEnvState bỏ qua mục trống
+    static envPart(parts, mask) {
+      return NetGameSync.packEnv(parts.map((p, k) => (mask >> k) & 1 ? p : '').join('#'));
+    }
+    static envOf(d) {
+      if (typeof d.z === 'string') return d.z.length > 200000 ? null : NetGameSync.unpackEnv(d.z);
+      return typeof d.s === 'string' && d.s.length <= 200000 ? d.s : null;   // máy bản cũ: chuỗi đầy đủ không nén
+    }
     sendEnvSum() {
       if (this.detached || !this.net.isHost) return;
       const st = this.envState();
-      if (st) this.net.send('ENVSUM', { h: NetGameSync.hash(st) });
+      // dấu vân tay chung (máy bản cũ) + từng mục -> máy lệch chỉ gửi đúng mục lệch
+      if (st) this.net.send('ENVSUM', { h: NetGameSync.hash(st), hs: st.split('#').map(p => NetGameSync.hash(p)) });
     }
     onEnvSum(d, from) {
       if (this.detached || !d || this.net.isHost || from !== this.net.hostId) return;
       const st = this.envState();
       if (!st) return;
-      if (NetGameSync.hash(st) === d.h) { this.envMismatch = 0; return; }
-      // lệch 2 lần liên tiếp (loại trừ sự kiện đang trên đường truyền) -> gửi trạng thái của mình cho chủ phòng gộp
-      if (++this.envMismatch >= 2) {
+      if (NetGameSync.hash(st) === d.h) { this.envMismatch = 0; this.envSynced = true; return; }
+      const parts = st.split('#');
+      let mask = 0;
+      if (Array.isArray(d.hs)) parts.forEach((p, k) => { if (NetGameSync.hash(p) !== d.hs[k]) mask |= 1 << k; });
+      if (!mask) mask = (1 << parts.length) - 1;
+      // lệch 2 lần liên tiếp (loại trừ sự kiện đang trên đường truyền) -> gửi các mục lệch cho chủ phòng gộp. Máy mới vào
+      // trận giữa chừng (chưa khớp lần nào): gửi ngay ở lần lệch đầu -> thấy nhà sập / cây đổ / xác nát sau 1 nhịp 5 s
+      if (++this.envMismatch >= 2 || !this.envSynced) {
         this.envMismatch = 0;
-        this.net.sendTo(this.net.hostId, 'ENVSTATE', { s: st });
+        this.envSynced = true;
+        this.net.sendTo(this.net.hostId, 'ENVSTATE', { z: NetGameSync.envPart(parts, mask), k: mask });
       }
     }
     onEnvState(d, from) {
-      if (this.detached || !d || !this.net.isHost || typeof d.s !== 'string' || d.s.length > 200000) return;
-      const T = this.game.terrain;
-      if (!T || !T.applyEnvState) return;
-      T.applyEnvState(d.s, this.game.effectsManager && this.game.effectsManager.fx);
-      this.net.send('ENVFIX', { s: this.envState() });   // phát bản hợp nhất cho mọi máy
+      if (this.detached || !d || !this.net.isHost) return;
+      const s = NetGameSync.envOf(d), T = this.game.terrain;
+      if (s === null || !T || !T.applyEnvState) return;
+      T.applyEnvState(s, this.game.effectsManager && this.game.effectsManager.fx);
+      // phát bản hợp nhất cho mọi máy (máy khác cũng có thể thiếu đúng phần vừa gộp) — chỉ các mục máy kia báo lệch
+      const mask = typeof d.k === 'number' && d.k > 0 ? d.k : 63;
+      this.net.send('ENVFIX', { z: NetGameSync.envPart(this.envState().split('#'), mask), k: mask });
     }
     onEnvFix(d, from) {
-      if (this.detached || !d || this.net.isHost || from !== this.net.hostId || typeof d.s !== 'string') return;
-      const T = this.game.terrain;
-      if (T && T.applyEnvState) T.applyEnvState(d.s, this.game.effectsManager && this.game.effectsManager.fx);
+      if (this.detached || !d || this.net.isHost || from !== this.net.hostId) return;
+      const s = NetGameSync.envOf(d), T = this.game.terrain;
+      if (s === null) return;
+      if (T && T.applyEnvState) T.applyEnvState(s, this.game.effectsManager && this.game.effectsManager.fx);
       this.envMismatch = 0;
+      this.envSynced = true;
     }
 
     // ---------- HÒM TIẾP TẾ (chủ phòng quyết định) ----------

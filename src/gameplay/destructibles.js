@@ -3311,7 +3311,7 @@ const Destructibles = (() => {
         // thân cháy sém đen dần từ lúc bén lửa, than hồng rực trong vết nứt
         this.trunkColor(it, it.tint.clone().lerp(TREE_COLORS.charred, clamp01(a / (Dc + Dt * 0.6))));
         this.setBurn(it, null, 0.3 + 0.7 * I);
-        if (fx) this.emitFire(it, I, crownOn, dt, fx);
+        if (fx) { if (fx.withLod) fx.withLod(it.x, it.y + (it.height || 40) * 0.6, it.z, 30, () => this.emitFire(it, I, crownOn, dt, fx)); else this.emitFire(it, I, crownOn, dt, fx); }
         if (a >= Dc + Dt) {
           this.burning.splice(i, 1);
           // Cháy rụi: lá cháy sạch, trơ khung thân + cành than đen
@@ -4909,7 +4909,8 @@ const Destructibles = (() => {
           // Dựng lại hình tường chỉ là phần hiển thị (va chạm & đồng bộ mạng dùng lưới ô). Trúng thẳng: dựng ngay cho lỗ
           // thủng hiện tức thì; nổ gần (kính vỡ, rỗ mảnh văng, bóc lở): gom lại dựng trong update() — một loạt pháo /
           // chùm bom con quanh một tòa nhà không còn dựng lại hình từng quả (~8-25 ms mỗi lần)
-          if (direct && direct.B === B) { B.dmgPending = false; this.rebuildDamage(B); }
+          // (nhà ngoài khung nhìn / quá xa: chỉ đánh dấu, dựng lại hình khi vào tầm nhìn — lưới ô va chạm đã đổi ngay)
+          if (direct && direct.B === B && this.inView(B, fx)) { B.dmgPending = false; this.rebuildDamage(B); }
           else B.dmgPending = true;
           const ev = this.checkStructure(B, fx);
           if (ev) events.push(ev);
@@ -6260,7 +6261,8 @@ const Destructibles = (() => {
           if (!B.collapsed) withSeed((B.seedG ^ Math.imul(F.step, 7919) ^ 0x51f3) >>> 0, () => this.burnStep(B, F.step, fx));
         }
         if (F.t > F.dur + 30) { this.fires.splice(i, 1); F.done = true; continue; }
-        if (fx && !this._syncing) this.emitHouseFire(B, F, dt, fx, budget);
+        // lửa / khói nhà cháy theo mức chi tiết (ở xa / sau lưng camera bớt hạt; tác động kết cấu ở trên vẫn chạy đủ)
+        if (fx && !this._syncing) { if (fx.withLod) fx.withLod(B.x, B.y + 20, B.z, Math.max(B.halfW, B.halfD) + 20, () => this.emitHouseFire(B, F, dt, fx, budget)); else this.emitHouseFire(B, F, dt, fx, budget); }
       }
     }
     burnStep(B, k, fx) {
@@ -6863,6 +6865,11 @@ const Destructibles = (() => {
         dustBurst(fx, x, y + 2, z, Math.min(6, 2 + Math.round(R / 3)), 10 + R, B.WM.dust);
       }
     }
+    // nhà có đang trong tầm nhìn camera không (dùng mức chi tiết của hệ hiệu ứng; không có thì coi như thấy)
+    inView(B, fx) {
+      fx = fx || (typeof window !== 'undefined' && window.game && window.game.effectsManager && window.game.effectsManager.fx);
+      return !(fx && fx.lodAt) || fx.lodAt(B.x, B.y + (B.topY || 30) / 2, B.z, Math.hypot(B.halfW, B.halfD, (B.topY || 30) / 2)) > 0;
+    }
     rubbleY(B) {
       const p = B.rubbleMesh.geometry.attributes.position, a = p.array, k = Math.max(0.001, B.rubbleT || 0);
       for (let i = 0; i < p.count; i++) a[i * 3 + 1] = B.rubbleOff[i] + B.rubbleTop[i] * k;
@@ -6937,6 +6944,7 @@ const Destructibles = (() => {
       let built = false;
       for (const B of this.items) {
         if (!B.dmgPending) continue;
+        if (!this.inView(B, fx)) continue;   // ngoài tầm nhìn: hoãn dựng hình tới khi camera quay tới
         B.dmgWait = (B.dmgWait || 0) + dt;
         if (built || B.dmgWait < 0.25) continue;
         built = true;

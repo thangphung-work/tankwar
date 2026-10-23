@@ -1491,7 +1491,7 @@ const DroneAir = (() => {
       // (đổi sang súng phóng lựu / giàn rocket giữa chừng: không bắn drone được nữa -> thôi khóa)
       if (!A || !P || P.isDead || !this.canShootAir(P) || (this.airAimAllowed && !this.airAimAllowed(P) && !P.ewActive)) { this._airAim = null; return false; }
       if (manual) { this.clearAirAim(); return false; }
-      // xe tăng cầm máy phá sóng: không có đạn — đầu phát tự chĩa vào drone (ew_jammer.js), tháp quay theo, pháo chính đứng yên
+      // xe tăng cầm máy phá sóng: không có đạn — đầu phát tự chĩa vào drone (ew_jammer.js), tháp & pháo chính đứng yên
       if (P.tankType === 'ALL_ROUNDER' && P.ewActive) return this.updateJamAirAim(P, A);
       // xe trinh sát chọn tên lửa: kính ngắm chĩa thẳng vào drone (tia dẫn), không tính bắn đón cho đạn súng
       if (P.tankType === 'SCOUT' && P.selectedAmmo === 'ANTI_TANK_MISSILE') {
@@ -1587,7 +1587,7 @@ const DroneAir = (() => {
         A.lead = { x: dr.x, y: dr.y + C.CENTER_Y, z: dr.z };
         A.state = dist > R ? 'far' : 'track';
       }
-      if (P.aimTo) P.aimTo(az);
+      // đầu phát trên bệ xoay riêng tự bám drone (ew_jammer.js) — tháp & pháo chính đứng yên, không quay theo
       A.on = A.kind === 'drone' && A.state === 'track';
       return true;
     },

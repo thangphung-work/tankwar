@@ -71,6 +71,52 @@ function MapGenFactory() {
     // đài điều khiển radar vệ tinh
     radar: { hu: 320, hv: 520, back: 60 }
   };
+  // DANH MỤC XE DÂN SỰ — nguồn duy nhất để rải xe trên bản đồ. Phải nằm trong MapGenFactory: luồng phụ (Blob) và
+  // server (worker_threads) chỉ chạy đúng mã nguồn file này, rải xe theo cùng rng -> mọi máy cùng 1 bộ xe.
+  // Thêm mẫu xe mới: thêm 1 dòng ở đây + dựng model cùng id (props.js CAR / CivilCars); chưa có model thì vẽ tạm bằng sedan.
+  //   w: độ phổ biến; size: small | mid | large (ngõ hẹp nhiều xe nhỏ, bãi / phố lớn nhiều xe to);
+  //   tags: work (khu kho xưởng), taxi (đại lộ / trung tâm), fixedColor (màu sơn theo mẫu, không lấy bảng màu)
+  const CAR_CATALOG = [
+    { id: 'sedan', w: 3.0, size: 'mid' },
+    { id: 'hatch', w: 2.0, size: 'small' },
+    { id: 'suv', w: 1.2, size: 'large' },
+    { id: 'van', w: 0.8, size: 'large', tags: ['work'] },
+    { id: 'pickup', w: 0.8, size: 'large', tags: ['work'] },
+    { id: 'taxi', w: 0.5, size: 'mid', tags: ['taxi', 'fixedColor'] }
+  ];
+  const CAR_COLORS = 12;      // số màu trong bảng màu sơn (props.js CAR_COL)
+  const CAR_KINDS_MAX = 8;    // tối đa số mẫu xe trong 1 bản đồ: mỗi mẫu là 1 bộ hình riêng (lệnh vẽ, bộ nhớ) -> giới hạn khi N lớn
+  // hệ số theo chỗ đặt xe (ctx: cls phố / use ô đất / lot bãi đỗ)
+  const carCtxK = (c, ctx) => {
+    let k = 1;
+    const tags = c.tags || [];
+    if (ctx.cls === 'local' || ctx.cls === 'alley') k *= c.size === 'small' ? 1.6 : c.size === 'large' ? 0.55 : 1;
+    if (ctx.cls === 'avenue' && tags.includes('taxi')) k *= 2.5;
+    if (ctx.use === 'industrial') k *= tags.includes('work') ? 3 : 0.7;
+    if (ctx.use === 'suburb') k *= c.size === 'large' ? 1.5 : 1;
+    if ((ctx.use === 'suburb' || ctx.use === 'industrial') && tags.includes('taxi')) k *= 0.2;
+    return k;
+  };
+  // bảng mẫu xe của 1 bản đồ: rút không lặp theo trọng số, tối đa CAR_KINDS_MAX mẫu
+  const carPalette = (rng) => {
+    const pool = CAR_CATALOG.slice(), out = [];
+    while (pool.length && out.length < CAR_KINDS_MAX) {
+      let t = rng() * pool.reduce((a, c) => a + c.w, 0), i = 0;
+      while (i < pool.length - 1 && (t -= pool[i].w) > 0) i++;
+      out.push(pool.splice(i, 1)[0]);
+    }
+    return out;
+  };
+  // 1 xe: mẫu theo trọng số x ngữ cảnh, màu, seed biến thể riêng (bụi / gỉ / hư hại) — đúng 3 lần rng mỗi xe
+  const pickCar = (rng, palette, ctx) => {
+    let tot = 0;
+    const ws = palette.map(c => { const v = c.w * carCtxK(c, ctx || {}); tot += v; return v; });
+    let t = rng() * tot, i = 0;
+    while (i < ws.length - 1 && (t -= ws[i]) > 0) i++;
+    const c = palette[i], color = Math.floor(rng() * CAR_COLORS), seed = (rng() * 4294967296) >>> 0;
+    return { kind: c.id, color: (c.tags || []).includes('fixedColor') ? -1 : color, seed };
+  };
+
   const MAP_LANDMARK = { RIVER_LAKE: 'nuke', DESERT: 'sam', URBAN: 'power', JUNGLE: 'bio', HIGHLAND: 'radar' };
   let landmarkKind = null;          // null = theo seed; đặt cố định để thử (setLandmark)
   const LM_BLEND = 100;            // dải chuyển tiếp từ mặt bằng san nền ra địa hình tự nhiên
@@ -662,7 +708,7 @@ function MapGenFactory() {
         if (Math.abs(vc) > VEND + 40) { roads.push(rd); continue; }   // ngoài đoạn có kênh
         if (L.cls === 'avenue' || L.cls === 'main') {
           const dx = cr - L.b * sr, dz = sr + L.b * cr;   // hướng tuyến trong toạ độ thế giới
-          bridges.push({ x: bx, z: bz, angle: Math.atan2(dx, dz), length: 2 * (CH + URB.canal.walk) + 24, width: rd.width + Math.round(rd.walk * 1.5), urban: true });
+          bridges.push({ x: bx, z: bz, angle: Math.atan2(dx, dz), length: 2 * (CH + URB.canal.walk) + 24, width: rd.width + Math.round(rd.walk * 1.5), walk: Math.round(rd.walk * 0.75), lanes: rd.lanes, urban: true });
           roads.push(rd);
         } else {
           // phố thường cụt ở bờ kênh (dừng ở mép lối dạo)
@@ -1012,15 +1058,16 @@ function MapGenFactory() {
       }
     }
 
-    // 3b'. KÊNH ĐÀO ĐÔ THỊ: lòng kênh đáy -12 (nước sâu ~1,5 m), bờ dốc gần đứng trong 1 ô lưới (tường kè bê tông dựng
-    //      hình ở terrain.js che mặt dốc); 2 đầu kênh cắt thẳng (cống ngầm)
+    // 3b'. KÊNH ĐÀO ĐÔ THỊ: lòng kênh đáy -12 (nước sâu ~1,5 m), lòng kênh sâu hết tới chân tường kè (hw), sườn đất (1 ô lưới)
+    //      nằm SAU tường, dưới mặt lát lối dạo (streetscape + terrain.canalQuayAt giữ cao độ bờ) -> tường kè đứng lộ hẳn ra mặt nước,
+    //      không còn bãi đất dốc trước chân tường; 2 đầu kênh cắt thẳng (cống ngầm)
     for (const c of canals) {
       const ca = Math.cos(c.rot), sa = Math.sin(c.rot);
       for (let j = 0; j <= RES; j++) for (let i = 0; i <= RES; i++) {
         const x = -HALF + i * CELL, z = -HALF + j * CELL, v = -x * sa + z * ca, d = Math.abs(x * ca + z * sa - c.a);
         if (Math.abs(v) > c.vEnd + 24 || d > c.hw + 8) continue;
         const k = j * N + i, e = 1 - smooth(c.vEnd - 12, c.vEnd + 12, Math.abs(v));
-        const bed = lerp(heights[k], -12, (1 - smooth(c.hw - 24, c.hw + 4, d)) * e);
+        const bed = lerp(heights[k], -12, (1 - smooth(c.hw - 4, c.hw + 16, d)) * e);
         if (bed < heights[k]) heights[k] = bed;
         if (heights[k] < 0) surface[k] = 2;
       }
@@ -1253,7 +1300,7 @@ function MapGenFactory() {
     // cars (xe con đỗ), busStops (nhà chờ xe buýt), crossings (vạch qua đường + vạch dừng), footbridges (cầu vượt bộ hành),
     // junctions (mảng nhựa lòng ngã tư)
     const props = { fences: [], fields: [], wrecks: [], sandbags: [], pits: [], canopies: [], lamps: [], signals: [], poles: [], cars: [], busStops: [], crossings: [], footbridges: [], junctions: [] };
-    const urbanTrees = [], urbanCars = [];   // cây / xe đỗ trong lô (công viên, sân vườn, bãi xe) — gom vào trees / props.cars sau
+    const urbanTrees = [], urbanCars = [], ghostCars = [];   // cây / xe đỗ trong lô (công viên, sân vườn, bãi xe) — gom vào trees / props.cars sau
     // Hào ẩn xe (hull-down): hố đào sâu ~1.3 m, ụ đất đắp phía trước & 2 bên, dốc lên xuống phía sau.
     // Xe đỗ trong hào chỉ lộ tháp pháo về phía trước. Đặt trên chỗ đất cao của mỗi bên, quay mặt về phía địch.
     function carvePit(P) {
@@ -1364,7 +1411,7 @@ function MapGenFactory() {
           for (let q = 40; q < front.across - 30; q += 96) for (let s = 24; s < front.len - 24; s += 22) {
             if (rng() > 0.72) continue;
             const [x, z] = at(front, s, q);
-            urbanCars.push({ x, z, angle: front.ang + (rng() < 0.5 ? 0 : Math.PI), lot: true });
+            urbanCars.push({ x, z, angle: front.ang + (rng() < 0.5 ? 0 : Math.PI), lot: true, use });
           }
           fenceAll('hedge', front);
           continue;
@@ -1400,7 +1447,7 @@ function MapGenFactory() {
           const dB = Math.min(140, back.across * 0.38), wing = E[(front.k + 1) % 4];
           putE(back, back.len / 2, 20 + dB / 2, back.len * 0.7, dB, Math.floor(R(6, 10)), 'hospital');
           putE(wing, wing.len * 0.45, 20 + 50, Math.min(220, wing.len - dB - 160), 100, Math.floor(R(4, 6)), 'hospital');
-          for (let s = 40; s < front.len - 40; s += 22) if (rng() < 0.6) { const [x, z] = at(front, s, 40); urbanCars.push({ x, z, angle: front.ang, lot: true }); }
+          for (let s = 40; s < front.len - 40; s += 22) if (rng() < 0.6) { const [x, z] = at(front, s, 40); urbanCars.push({ x, z, angle: front.ang, lot: true, use }); }
           continue;
         }
         if (use === 'industrial') {
@@ -1802,7 +1849,42 @@ function MapGenFactory() {
               if (rng() > fill) continue;
               const [x, z] = p0(s, side, C.cw / 2 - 10), [wx, wz] = p0(s, side, C.cw / 2 + 4);
               if (!onWalk(wx, wz) || !freeOf(x, z, 12) || !clearOfKeys(x, z, 0)) continue;
-              urbanCars.push({ x, z, angle: side > 0 ? ln.ang + Math.PI : ln.ang });
+              urbanCars.push({ x, z, angle: side > 0 ? ln.ang + Math.PI : ln.ang, cls });
+            }
+          });
+        }
+        {
+          // THÀNH PHỐ MA: xe bị bỏ lại giữa lòng đường khi dân chạy loạn — lẻ tẻ chéo làn, có chỗ dồn cả đoạn tắc (xe nối
+          // đuôi lệch hàng), có xe húc nhau / leo nửa lên vỉa hè. Chừa ngã tư & cầu; tối thiểu 1 làn còn lọt xe tăng
+          // (xe lệch hẳn sang 1 nửa lòng đường)
+          const rate = cls === 'avenue' ? 0.2 : cls === 'main' ? 0.15 : 0.09, half = C.cw / 2;
+          const nearBridge = (x, z) => bridges.some(b => Math.hypot(b.x - x, b.z - z) < b.length / 2 + 40);
+          const put = (s, side, off, ang) => {
+            const [x, z] = p0(s, side, off);
+            if (nearX(ln, s, 30) || !onRoad(...ln.P(s), cls) || nearBridge(x, z) || !freeOf(x, z, 10) || !clearOfKeys(x, z, 0)) return false;
+            if (ghostCars.some(c => Math.hypot(c.x - x, c.z - z) < 30)) return false;
+            const c = { x, z, angle: ang, cls };
+            ghostCars.push(c); urbanCars.push(c);
+            return true;
+          };
+          along(ln, 64, R(0, 64), s => {
+            if (rng() > rate) return;
+            const side = rng() < 0.5 ? 1 : -1, dir = side > 0 ? ln.ang + Math.PI : ln.ang;   // theo chiều làn bên phải
+            const r = rng();
+            if (r < 0.5) {
+              // xe lẻ: dừng lệch làn, mũi xe chéo
+              put(s, side, R(8, half - 12), dir + R(-0.45, 0.45) + (rng() < 0.1 ? Math.PI : 0));
+            } else if (r < 0.75 && cls !== 'local') {
+              // đoạn tắc: 2-5 xe nối đuôi trong 1 làn, lệch nhau, khoảng cách không đều
+              const n = 2 + Math.floor(rng() * 4), sg = side > 0 ? -1 : 1;
+              for (let k = 0, ss = s; k < n; k++, ss += sg * R(40, 56)) put(ss, side, R(14, half - 18), dir + R(-0.22, 0.22));
+            } else if (r < 0.88) {
+              // 2 xe húc nhau giữa đường: xe sau đâm vào hông / đuôi xe trước, cả 2 xoay lệch
+              const a = dir + R(-0.6, 0.6);
+              if (put(s, side, R(10, half - 14), a)) put(s + (side > 0 ? -1 : 1) * R(32, 38), side, R(6, half - 10), a + R(-0.9, 0.9));
+            } else {
+              // xe leo nửa lên vỉa hè (đỗ vội / lao lên tránh)
+              put(s, side, half + R(-2, 4), dir + R(-0.35, 0.35) * (rng() < 0.5 ? 1 : -1));
             }
           });
         }
@@ -1865,8 +1947,15 @@ function MapGenFactory() {
         for (let n = 0; n < 3 && cand.length; n++) props.footbridges.push(cand.splice(Math.floor(rng() * cand.length), 1)[0]);
       }
       // cây (vỉa hè, công viên, sân vườn) + xe đỗ (phố + bãi) vào danh sách chung
-      const CAR = ['sedan', 'sedan', 'sedan', 'hatch', 'hatch', 'suv', 'van', 'pickup', 'taxi'];
-      for (const c of urbanCars) props.cars.push({ x: c.x, z: c.z, angle: c.angle + R(-0.03, 0.03), kind: CAR[Math.floor(rng() * CAR.length)], color: Math.floor(rng() * 12) });
+      // mẫu xe theo danh mục (CAR_CATALOG): bảng mẫu của bản đồ -> chọn theo ngữ cảnh chỗ đặt; carKinds: các mẫu thực
+      // có mặt -> phía vẽ chỉ dựng hình những mẫu này
+      const palette = carPalette(rng), kinds = new Set();
+      for (const c of urbanCars) {
+        const p = pickCar(rng, palette, { cls: c.cls, use: c.use, lot: c.lot });
+        kinds.add(p.kind);
+        props.cars.push({ x: c.x, z: c.z, angle: c.angle + R(-0.03, 0.03), kind: p.kind, color: p.color, seed: p.seed });
+      }
+      props.carKinds = [...kinds];
       for (const t of urbanTrees) {
         if (!clearOfKeys(t.x, t.z, 4) || isWater(t.x, t.z) || (!t.street && !freeOf(t.x, t.z, 4))) continue;
         trees.push({ x: t.x, z: t.z, kind: t.kind, s: t.street ? R(0.85, 1.1) : R(0.8, 1.3), rot: R(0, 6.28) });
@@ -2346,7 +2435,7 @@ function MapGenFactory() {
     return p;
   }
 
-  return { generate, get, prefetch, toPlain, hydrate, setLayout, setTestField, getLayout: () => layout, STRONGHOLD_SITES, PORTAL, portalHalf, LANDMARK_SITE, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
+  return { generate, get, prefetch, toPlain, hydrate, setLayout, setTestField, getLayout: () => layout, STRONGHOLD_SITES, PORTAL, portalHalf, LANDMARK_SITE, CAR_CATALOG, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
 }
 const MapGen = MapGenFactory();
 

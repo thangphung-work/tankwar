@@ -501,14 +501,17 @@ class BattleTerrain3D {
     const key = kind + this.mapType + (plain ? ':plain' : '');
     if (BattleTerrain3D._roadTex[key]) return BattleTerrain3D._roadTex[key];
     const c = document.createElement('canvas');
-    c.width = 128; c.height = 256;
+    // vẽ theo hệ 128 x 256 nhưng canvas x4 (512 x 1024): đường phố 9-15 m mỗi px ~2-3 cm, hết nhoè mảng
+    const RS = 4;
+    c.width = 128 * RS; c.height = 256 * RS;
     const g = c.getContext('2d');
+    g.scale(RS, RS);
     const sp = (n, cols, s0, s1) => { for (let i = 0; i < n; i++) { g.fillStyle = cols[i % cols.length]; const s = s0 + Math.random() * (s1 - s0); g.fillRect(Math.random() * 128, Math.random() * 256, s, s); } };
     // biến thể nhựa đô thị theo số làn (map_gen: road.lanes): asphalt4 = đại lộ 4 làn (vạch vàng đôi giữa, vạch trắng
     // đứt phân làn), asphalt0 = ngõ không kẻ vạch
     if (kind === 'asphalt4' || kind === 'asphalt0') {
-      g.fillStyle = '#3c3e41'; g.fillRect(0, 0, 128, 256);
-      sp(5000, ['rgba(20,20,22,0.35)', 'rgba(120,120,118,0.25)'], 1, 2);
+      g.fillStyle = '#3f3e3c'; g.fillRect(0, 0, 128, 256);
+      sp(9000, ['rgba(20,20,22,0.3)', 'rgba(120,120,118,0.22)'], 0.3, 0.8);
       if (kind === 'asphalt4') {
         for (const x of [16, 48, 80, 112]) {
           const gr = g.createLinearGradient(x - 9, 0, x + 9, 0);
@@ -525,11 +528,11 @@ class BattleTerrain3D {
         gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, 'rgba(26,26,28,0.2)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
         g.fillStyle = gr; g.fillRect(50, 0, 28, 256);
       }
-      sp(900, ['rgba(60,62,65,0.8)'], 1, 3);
+      sp(2400, ['rgba(60,62,65,0.8)'], 0.3, 0.9);
     } else if (kind === 'asphalt') {
       // Chỉ hạt nhựa + vạch kẻ (theo UV); ổ gà / vá / vết dầu / nứt rải theo tọa độ thế giới trong shader -> không lặp
-      g.fillStyle = '#3c3e41'; g.fillRect(0, 0, 128, 256);
-      sp(5000, ['rgba(20,20,22,0.35)', 'rgba(120,120,118,0.25)'], 1, 2);
+      g.fillStyle = '#3f3e3c'; g.fillRect(0, 0, 128, 256);
+      sp(9000, ['rgba(20,20,22,0.3)', 'rgba(120,120,118,0.22)'], 0.3, 0.8);
       if (!plain) {
         // Vệt bánh xe mòn bóng trên 2 làn
         for (const x of [34, 94]) {
@@ -540,7 +543,7 @@ class BattleTerrain3D {
         g.fillStyle = 'rgba(220,214,190,0.85)'; g.fillRect(6, 0, 3, 256); g.fillRect(119, 0, 3, 256);
         g.fillStyle = 'rgba(232,196,90,0.9)'; g.fillRect(62, 0, 4, 120);
         // Sơn vạch mòn loang lổ
-        sp(900, ['rgba(60,62,65,0.8)'], 1, 3);
+        sp(2400, ['rgba(60,62,65,0.8)'], 0.3, 0.9);
       }
     } else {
       const base = kind === 'mud' ? '#4f3e2b' : kind === 'gravel' ? '#67625a' : (this.mapType === 'DESERT' ? '#a8885e' : '#706048');
@@ -556,6 +559,11 @@ class BattleTerrain3D {
         for (let i = 0; i < 70; i++) { const y = Math.random() * 256, xx = x + (Math.random() - 0.5) * 12, l = 2 + Math.random() * 4; g.beginPath(); g.moveTo(xx - l, y); g.lineTo(xx + l, y + (Math.random() - 0.3) * 3); g.stroke(); }
       }
       // Vũng nước / ổ gà / mép đường loang ra cỏ: rải theo tọa độ thế giới trong roadShader (không lặp, mép không thẳng tắp)
+    }
+    if (kind.startsWith('asphalt')) {
+      // cốt liệu mịn ở độ phân giải gốc: đá dăm sáng / bitum tối lấm tấm 1-2 px
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      for (let i = 0; i < 90000; i++) { g.fillStyle = Math.random() < 0.5 ? 'rgba(18,18,18,0.28)' : 'rgba(150,148,142,0.22)'; g.fillRect(Math.random() * c.width, Math.random() * c.height, 1 + Math.random(), 1 + Math.random()); }
     }
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -711,10 +719,12 @@ class BattleTerrain3D {
 
   // Chống lặp mặt đường: texture UV chỉ giữ hạt + vạch kẻ / vệt bánh; ổ gà, mảng vá, vết dầu, vũng nước, nứt,
   // độ sáng tầng thấp và mép đường lởm chởm đều tính theo tọa độ thế giới + hash -> mỗi đoạn đường một khác
-  roadShader(m, kind) {
+  // junction: mảng nhựa lòng ngã tư (streetscape) dùng chung shader mặt đường -> hạt, tông loang, bụi, nứt liền mạch qua
+  // mép ngã tư; không có mép đường (không cắt mép / không dải rãnh), không có vạch
+  roadShader(m, kind, junction) {
     const desert = this.mapType === 'DESERT';
     const C = {
-      asphalt: { cell: 11, prob: 0.6, e0: 0.006, ea: 0.022, cr: 0.02, tint: [0.8, 0.8, 0.82], hole: 0.5, puddle: 0.5 },
+      asphalt: { cell: 11, prob: this.mapType === 'URBAN' ? 0.22 : 0.6, e0: 0.006, ea: 0.022, cr: 0.02, tint: [0.8, 0.8, 0.82], hole: 0.5, puddle: 0.5 },
       dirt: { cell: 9, prob: 0.45, e0: 0.02, ea: 0.09, cr: 0.05, tint: desert ? [1.08, 1.04, 0.95] : [0.84, 0.88, 0.72], hole: 0.62, puddle: desert ? 0.0 : 0.35 },
       gravel: { cell: 9, prob: 0.45, e0: 0.018, ea: 0.08, cr: 0.05, tint: [0.88, 0.9, 0.8], hole: 0.66, puddle: 0.25 },
       mud: { cell: 8, prob: 0.6, e0: 0.02, ea: 0.1, cr: 0.06, tint: [0.8, 0.86, 0.68], hole: 0.55, puddle: 1.0 }
@@ -722,7 +732,7 @@ class BattleTerrain3D {
     if (!C) return;
     const f = v => (+v).toFixed(4);
     const defs = `#define RD_CELL ${f(C.cell)}\n#define RD_PROB ${f(C.prob)}\n#define RD_E0 ${f(C.e0)}\n#define RD_EA ${f(C.ea)}\n#define RD_CR ${f(C.cr)}\n` +
-      `#define RD_TINT vec3(${C.tint.map(f).join(',')})\n#define RD_HOLE ${f(C.hole)}\n#define RD_PUDDLE ${f(C.puddle)}\n` + (kind === 'asphalt' ? '#define RD_ASPHALT\n' : '') +
+      `#define RD_TINT vec3(${C.tint.map(f).join(',')})\n#define RD_HOLE ${f(C.hole)}\n#define RD_PUDDLE ${f(C.puddle)}\n` + (kind === 'asphalt' ? '#define RD_ASPHALT\n' : '') + (kind === 'asphalt' && this.mapType === 'URBAN' ? '#define RD_CURB\n' : '') + (junction ? '#define RD_JUNC\n' : '') +
       // lượng vũng khi mưa: đường đất / bùn đọng nhiều, sỏi thoát nước, sa mạc cát thấm nhanh
       `#define RD_RAIN ${f({ asphalt: 0.8, dirt: desert ? 0.35 : 1.0, gravel: 0.5, mud: 1.3 }[kind] || 0.6)}\n`;
     const rain = typeof Weather !== 'undefined' && Weather.glsl;
@@ -738,19 +748,36 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
 ` + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
   vec2 rw = vRoadW.xz;
   float rdFar = clamp(length(vViewPosition) / 260.0, 0.0, 1.0);
-  float rdWet = 0.0;
+  float rdWet = 0.0, rdPaint = 0.0;
   {
     // Ngã giao: đường nhựa lấy texture trơn (không vạch sơn) thay cho vạch; mọi loại: mép không lởm chởm đè lên lòng đường kia
     float rdJn = smoothstep(0.3, 0.8, vRdJ);
 #ifdef RD_ASPHALT
+#ifndef RD_JUNC
     diffuseColor.rgb = mix(diffuseColor.rgb, mapTexelToLinear(texture2D(rdPlain, vUv)).rgb, rdJn);
 #endif
+#endif
+#ifdef RD_ASPHALT
+    // vạch sơn (texel sáng / vàng hẳn so với nhựa ~0,25; texture đường giữ hệ sRGB) — đánh dấu trước khi các lớp bẩn / loang làm đổi tông
+    rdPaint = smoothstep(0.45, 0.6, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)));
+#endif
     // Mép đường lởm chởm theo nhiễu (không thẳng tắp), dải sát mép ngả màu nền (cỏ / cát / bụi)
+#ifdef RD_JUNC
+    float rdE = 0.5;
+#else
     float rdE = min(vUv.x, 1.0 - vUv.x);
+#endif
     float eN = rdN(rw * 0.07) * 0.6 + rdN(rw * 0.31 + 3.0) * 0.4;
     float rdM = rdE - (RD_E0 + RD_EA * eN) + (rdN(rw * 0.9 + 11.0) - 0.5) * RD_CR + rdJn * 0.5;
+#ifdef RD_CURB
+    // phố có bó vỉa: mép nhựa thẳng chạy tới chân bó vỉa (không lởm chởm lộ đất), dải rãnh thoát nước sát mép bám bụi sẫm
+    rdM = rdE + rdJn * 0.5;
+    diffuseColor.rgb *= mix(0.78, 1.0, max(smoothstep(0.0, 0.035, rdE), rdJn));   // trong lòng ngã tư không có bó vỉa -> không rãnh
+#endif
     if (rdM < 0.0) discard;
+#ifndef RD_CURB
     diffuseColor.rgb *= mix(RD_TINT, vec3(1.0), smoothstep(0.0, 0.07, rdM));
+#endif
     float rdMul = 1.0, rdPatch = 0.0, rdTone = 1.0;
     vec2 c0 = floor(rw / RD_CELL);
     for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
@@ -773,8 +800,8 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
         vec2 b = abs(q) - vec2(1.2 + 3.5 * sz, 0.9 + 2.2 * rdH(cid + 8.8)) + wob * 0.25;
         float sd = length(max(b, 0.0)) + min(max(b.x, b.y), 0.0);
         float ins = 1.0 - smoothstep(-0.05, 0.05, sd);
-        if (ins > rdPatch) { rdPatch = ins; rdTone = rdH(cid + 9.9) < 0.6 ? 0.74 : 1.16; }
-        rdMul *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.12, abs(sd)));
+        if (ins > rdPatch) { rdPatch = ins; rdTone = rdH(cid + 9.9) < 0.6 ? 0.84 : 1.07; }
+        rdMul *= 1.0 - 0.16 * (1.0 - smoothstep(0.0, 0.07, abs(sd)));
       } else {                 // vết dầu loang
         float dd = length(q / vec2(1.0, 0.6)) / (0.8 + 2.2 * sz) + wob * 0.3;
         float k = 1.0 - smoothstep(0.3, 1.0, dd);
@@ -797,16 +824,49 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
 #endif
     }
 #ifdef RD_ASPHALT
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.235, 0.243, 0.255) * rdTone * (0.94 + 0.12 * rdN(rw * 0.6)), rdPatch);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * rdTone * (0.94 + 0.12 * rdN(rw * 0.6)), rdPatch);
     // nứt mạng theo đường đồng mức nhiễu, chỉ ở vài vùng, mờ dần khi ở xa (khỏi nhấp nháy)
-    float cn = rdN(rw * 0.08) + 0.5 * rdN(rw * 0.21 + 7.0);
-    float crack = (1.0 - smoothstep(0.0, 0.02, abs(cn - 0.75))) * smoothstep(0.5, 0.7, rdN(rw * 0.025 + 3.0)) * (1.0 - rdFar);
-    rdMul *= 1.0 - 0.5 * crack;
+    vec2 cq = rw * 0.16 + (vec2(rdN(rw * 0.9), rdN(rw * 0.9 + 5.3)) - 0.5) * 0.7;
+    float c1 = abs(rdN(cq) - 0.5), c2 = abs(rdN(cq * 2.7 + 13.0) - 0.5);
+    float cw = 0.012 + 0.02 * rdFar;
+    float crack = max(1.0 - smoothstep(0.0, cw, c1), (1.0 - smoothstep(0.0, cw * 0.8, c2)) * 0.7);
+    crack *= smoothstep(0.52, 0.68, rdN(rw * 0.02 + 3.0)) * (1.0 - rdFar);
+    rdMul *= 1.0 - 0.38 * crack;
+    // cốt liệu đá dăm: hạt sáng tối lấm tấm ~3-6 cm gần máy quay (mờ dần ra xa tránh nhấp nháy), mặt nhựa không nhoè mảng
+    float ag = rdH(floor(rw * 2.6)) * 0.6 + rdH(floor(rw * 5.3) + 17.0) * 0.4;
+    diffuseColor.rgb *= 1.0 + (ag - 0.5) * 0.22 * (1.0 - smoothstep(0.1, 0.45, rdFar));
+    diffuseColor.rgb *= 0.93 + 0.14 * rdN(rw * 1.3 + 2.0);
 #endif
     diffuseColor.rgb *= rdMul;
     // Độ sáng / sắc tầng thấp: từng quãng đường cũ mới khác nhau
     float lf = rdN(rw * 0.011) * 0.6 + rdN(rw * 0.043 + 17.0) * 0.4;
+    #ifdef RD_CURB
+    diffuseColor.rgb *= (0.92 + 0.16 * lf) * (0.97 + 0.06 * rdN(rw * 0.21 + 5.0));
+    {
+      // THÀNH PHỐ MA (bỏ hoang nhiều năm): vạch sơn bạc phai mất từng đoạn; lớp bụi đất phủ mỏng loang lổ; cát bụi + lá
+      // mục dồn thành dải dọc chân bó vỉa (mép không đều); cỏ dại mọc trong vết nứt / mạch vá / rãnh; lá khô, rác vụn
+      vec3 dirt = vec3(0.30, 0.27, 0.22);
+      float paint = smoothstep(0.45, 0.6, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)));
+      float fade = smoothstep(0.3, 0.75, rdN(rw * 0.05 + 21.0) * 0.7 + rdN(rw * 0.6 + 4.0) * 0.3);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.2, 0.19) * (0.9 + 0.2 * lf), paint * (0.35 + 0.55 * fade));
+      float dust = smoothstep(0.4, 0.85, rdN(rw * 0.03 + 50.0) * 0.6 + rdN(rw * 0.15 + 8.0) * 0.4);
+      diffuseColor.rgb = mix(diffuseColor.rgb, dirt * (0.9 + 0.2 * rdN(rw * 0.9)), 0.12 + 0.3 * dust);
+      float drift = (1.0 - smoothstep(0.02, 0.07 + 0.09 * rdN(rw * 0.08 + 3.0) + 0.05 * rdN(rw * 0.5), rdE)) * (1.0 - rdJn);
+      diffuseColor.rgb = mix(diffuseColor.rgb, dirt * (0.85 + 0.3 * rdN(rw * 2.0 + 1.0)), drift * 0.85);
+      float weedN = rdN(rw * 0.7 + 30.0) * 0.6 + rdN(rw * 3.0 + 9.0) * 0.4;
+      float weed = max(crack * 1.6, drift * 0.9 * smoothstep(0.45, 0.7, rdN(rw * 0.12 + 77.0))) * smoothstep(0.45, 0.7, weedN);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.22, 0.09) * (0.75 + 0.5 * rdN(rw * 4.0)), clamp(weed, 0.0, 1.0) * 0.85);
+      // lá khô / giấy vụn: đốm nhỏ theo ô lưới thế giới, dày hơn sát lề
+      vec2 lc = floor(rw * 1.6);
+      float lh = rdH(lc + 3.0);
+      vec2 lo = fract(rw * 1.6) - 0.5 - (vec2(rdH(lc + 7.0), rdH(lc + 9.0)) - 0.5) * 0.5;
+      float leaf = step(lh, 0.06 + 0.3 * drift) * (1.0 - smoothstep(0.12, 0.2, length(lo * vec2(1.0, 1.7)))) * (1.0 - rdFar);
+      diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.36, 0.24, 0.12), vec3(0.5, 0.48, 0.42), step(0.8, rdH(lc + 1.0))), leaf * 0.9);
+      rdWet *= 1.0 - drift * 0.5;
+    }
+#else
     diffuseColor.rgb *= (0.84 + 0.32 * lf) * (0.94 + 0.12 * rdN(rw * 0.21 + 5.0));
+#endif
     diffuseColor.rgb *= mix(vec3(1.03, 1.0, 0.96), vec3(0.97, 0.99, 1.03), rdN(rw * 0.02 + 40.0));${rain ? `
     if (skyWetU.x > 0.0) {
       // mưa: ổ gà / chỗ lún đầy nước, vũng loang dọc vệt bánh xe & chỗ mặt đường võng (không đọng dưới gầm cầu / mái che)
@@ -817,11 +877,29 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
       rdWet = clamp(max(rdWet * 1.8, rp), 0.0, 1.0) * rdOpen * skyWetU.x;
       diffuseColor.rgb *= 1.0 - 0.3 * rdWet;
     }` : ''}
+#ifdef RD_ASPHALT
+    if (rdPaint > 0.0) {
+      // VẠCH SƠN NHIỆT DẺO: không phải mảng màu phẳng — hạt cát / bi thuỷ tinh lấm tấm (hạt sáng tối ~1 cm), mặt sơn sần
+      // theo hạt đá nhựa bên dưới, mép vạch mòn lởm chởm, bánh xe mài tróc thành mảng nhỏ lộ nhựa sẫm
+      float pg = rdH(floor(rw * 14.0)) * 0.6 + rdH(floor(rw * 31.0) + 5.0) * 0.4;
+      float near = 1.0 - smoothstep(0.08, 0.5, rdFar);
+      diffuseColor.rgb *= mix(1.0, 0.72 + 0.42 * pg, rdPaint * near);
+      diffuseColor.rgb *= mix(1.0, 0.86 + 0.18 * rdN(rw * 2.2 + 3.0), rdPaint);
+      float chip = smoothstep(0.62, 0.7, rdN(rw * 1.6 + 31.0) * 0.55 + rdN(rw * 6.5 + 2.0) * 0.3 + rdH(floor(rw * 9.0)) * 0.15);
+      float edge = smoothstep(0.3, 0.9, rdPaint) ;   // mép vạch (rdPaint < 1): dễ tróc hơn
+      float bare = clamp(chip + (1.0 - edge) * 0.45 * smoothstep(0.5, 0.75, rdN(rw * 5.0 + 9.0)), 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.045, 0.044, 0.042) * (0.8 + 0.4 * rdN(rw * 3.0)), rdPaint * bare * 0.9);
+      // bụi đường bám vào sơn (sơn trắng / vàng ngả xám)
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.33))) * vec3(1.0, 0.97, 0.92), rdPaint * 0.25);
+    }
+#endif
     diffuseColor.rgb *= 1.0 - 0.25 * rdWet;
   }`).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  roughnessFactor *= 0.86 + 0.24 * rdN(vRoadW.xz * 0.35) - 0.12 * (1.0 - smoothstep(0.08, 0.16, abs(abs(vUv.x - 0.5) - 0.22)));
+  roughnessFactor = mix(roughnessFactor, 0.92, rdPaint * 0.8);
   roughnessFactor = mix(roughnessFactor, 0.14, rdWet);`);
     };
-    m.customProgramCacheKey = () => 'roadW3:' + kind + ':' + this.mapType + (rain ? ':rain' : '');
+    m.customProgramCacheKey = () => 'roadW3:' + kind + (junction ? ':j' : '') + ':' + this.mapType + (rain ? ':rain' : '');
   }
 
   // ---------------------------------------------------------------------------
@@ -830,6 +908,10 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
   // bản đồ có mặt nước (sông / hồ / kênh đào đô thị): bật mặt nước, lội nước, đáy ướt
   hasWater() { const M = this.map; return !!(M && (M.river || M.lakes.length || (M.canals && M.canals.length))); }
 
+  // mực nước: sông hồ +0,2; kênh đào đô thị hạ thấp -5,5 (bờ kè cao ~1,2 m trên mặt nước như kênh phố thật — trước đây
+  // bờ chỉ cao hơn nước ~0,5 m: gầm cầu không có chỗ, dầm cầu chìm sát mặt nước)
+  get waterLevel() { const M = this.map; return M && !M.river && !(M.lakes && M.lakes.length) && M.canals && M.canals.length ? -5.5 : 0.2; }
+
   buildWater() {
     if (!this.hasWater()) return;
     const { mat, U } = this.waterMaterial(false);
@@ -837,7 +919,7 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     const geo = new THREE.PlaneGeometry(this.width, this.depth, 1, 1);
     geo.rotateX(-Math.PI / 2);
     this.waterMesh = new THREE.Mesh(geo, mat);
-    this.waterMesh.position.y = 0.2;
+    this.waterMesh.position.y = this.waterLevel;
     this.waterMesh.renderOrder = 2;
     this.group.add(this.waterMesh);
   }
@@ -904,7 +986,7 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     if (!sea) {
       const dd = new Uint8Array(N * N * 4);
       for (let i = 0; i < N * N; i++) {
-        const v = Math.round((Math.max(-2, Math.min(14, 0.2 - this.heightData[i])) + 2) / 16 * 255);
+        const v = Math.round((Math.max(-2, Math.min(14, this.waterLevel - this.heightData[i])) + 2) / 16 * 255);
         dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v; dd[i * 4 + 3] = 255;
       }
       depthTex = new THREE.DataTexture(dd, N, N, THREE.RGBAFormat);
@@ -916,7 +998,13 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
       wSky: { value: skyRefl }, wNrm: { value: this.waterNormal || this.waterNormalMap() }, wDepth: { value: depthTex }, wT: this.waterTime,
       wMap: { value: new THREE.Vector4(this.width, this.depth, S, N) },
       wShallow: { value: bodyCol.clone().lerp(new THREE.Color(0x6a6650), 0.55) },
-      wFoam: { value: new THREE.Color(0xc4ccc9) }
+      wFoam: { value: new THREE.Color(0xc4ccc9) },
+      // phản chiếu: trời chân trời -> đỉnh theo hướng tia phản xạ; sát chân trời là bóng bờ (nhà phố / cây ven sông), không phải trời
+      wHor: { value: new THREE.Color(atm.horizon).multiplyScalar(0.9) }, wZen: { value: new THREE.Color(atm.zenith).multiplyScalar(0.9) },
+      wBank: { value: new THREE.Color({ URBAN: 0x3a3936, JUNGLE: 0x1c2616, DESERT: 0x5a5244 }[this.mapType] || 0x26301e) },
+      wBankK: { value: sea ? 0.0 : this.mapType === 'URBAN' ? 0.85 : 0.6 },
+      wSun: { value: new THREE.Vector3(atm.sunDir.x, atm.sunDir.y, atm.sunDir.z).normalize() },
+      wSunK: { value: (atm.sunK !== undefined ? atm.sunK : 1) * (this.weather && this.weather.rain ? 0.25 : 1) }
     };
     const rain = typeof Weather !== 'undefined' && Weather.glsl;
     if (rain) Weather.markDry(mat);
@@ -926,6 +1014,7 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
   vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;${sea ? '\n  vDep = aDep;' : ''}`);
       sh.fragmentShader = `uniform vec3 wSky; uniform sampler2D wNrm; uniform sampler2D wDepth; uniform float wT; uniform vec4 wMap;
 uniform vec3 wShallow; uniform vec3 wFoam; varying vec3 vWPos;
+uniform vec3 wHor; uniform vec3 wZen; uniform vec3 wBank; uniform float wBankK; uniform vec3 wSun; uniform float wSunK;
 ${sea ? 'varying float vDep;' : ''}
 ` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
   // độ sâu nước tại điểm này: ven bờ màu bùn nhạt, trong hơn (thấy đáy)
@@ -944,7 +1033,7 @@ ${sea ? 'varying float vDep;' : ''}
   vec2 wn2 = texture2D(wNrm, mat2(0.342, -0.94, 0.94, 0.342) * wp / 23.0 - vec2(wT * 0.018, -wT * 0.011)).xy * 2.0 - 1.0;
   // gợn lăn tăn rất nhỏ gần máy quay: vệt nắng vỡ thành lấp lánh thay vì mảng trắng loá
   vec2 wn3 = texture2D(wNrm, mat2(-0.5, 0.866, -0.866, -0.5) * wp / 7.0 + vec2(wT * 0.035, wT * 0.027)).xy * 2.0 - 1.0;
-  vec2 wg = wn0 * 0.12 + (wn1 * 0.55 + wn2 * 0.45) * 0.2 * (1.0 - wFar * 0.85) + wn3 * 0.13 * (1.0 - smoothstep(120.0, 520.0, wDist));
+  vec2 wg = wn0 * 0.12 + (wn1 * 0.55 + wn2 * 0.45) * 0.26 * (1.0 - wFar * 0.85) + wn3 * 0.18 * (1.0 - smoothstep(120.0, 520.0, wDist));
   wg *= 1.0 - wFar * 0.5;
   float wDrop = 0.0;${rain ? `
   if (skyWetU.x > 0.0) {
@@ -960,9 +1049,17 @@ ${sea ? 'varying float vDep;' : ''}
   }` : ''}
   normal = normalize((viewMatrix * vec4(normalize(vec3(-wg.x, 1.0, -wg.y)), 0.0)).xyz);`).replace('#include <tonemapping_fragment>', `
   {
-    float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 4.0);
-    float refl = 0.05 + 0.55 * fres;
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, wSky, refl);
+    float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);
+    float refl = min(0.85, 0.02 + 0.98 * fres);
+    // tia phản xạ theo toạ độ thế giới: trời sáng dần về chân trời, sát chân trời là bóng bờ tối (nhà / cây), gợn sóng
+    // làm bóng bờ rung vỡ; vệt nắng lấp lánh trên đỉnh gợn
+    vec3 wN = normalize(vec3(-wg.x, 1.0, -wg.y)), wV = normalize(vWPos - cameraPosition), wR = reflect(wV, wN);
+    float ry = clamp(wR.y, 0.0, 1.0);
+    vec3 envC = mix(wHor, wZen, sqrt(ry));
+    envC = mix(envC, wBank * (0.8 + 0.4 * wn2.x), wBankK * (1.0 - smoothstep(0.03, 0.3, ry + wn1.y * 0.05)));
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, envC, refl);
+    float glint = pow(max(dot(wR, wSun), 0.0), 420.0) * 6.0 + pow(max(dot(wR, wSun), 0.0), 40.0) * 0.12;
+    gl_FragColor.rgb += vec3(1.0, 0.96, 0.88) * glint * wSunK * (1.0 - wFar * 0.6);
     gl_FragColor.a = mix(gl_FragColor.a, 1.0, fres * 0.6);
     gl_FragColor.rgb += wSky * wDrop * 0.25;
     // viền bọt ven bờ: dải mỏng lăn tăn theo gợn sóng, dày mỏng không đều
@@ -975,7 +1072,7 @@ ${sea ? 'varying float vDep;' : ''}
       // biển xa hòa hẳn vào sương trước khi chạm mặt phẳng cắt xa của camera (không lộ mép cắt)
       if (sea) BattleTerrain3D.applyFarFade(sh, true);
     };
-    mat.customProgramCacheKey = () => 'waterWorld3' + (sea ? ':sea' : '') + (rain ? ':rain' : '');
+    mat.customProgramCacheKey = () => 'waterWorld4' + (sea ? ':sea' : '') + (rain ? ':rain' : '');
     return { mat, U };
   }
 
@@ -1207,6 +1304,7 @@ ${sea ? 'varying float vDep;' : ''}
     if (this.propSet) this.propSet.update(dt, fx, this.camPos || null);
     if (this.landmarkSet) this.landmarkSet.update(dt, fx, this.camPos || null);
     if (this.envDamage) this.envDamage.update(dt, fx);
+    if (this.streetscape && this.streetscape.junk) this.streetscape.junk.update(dt);   // thùng rác / bao rác bị sóng nổ hất văng
     if (this.waterTime) this.waterTime.value += dt;   // sóng mặt nước trôi theo thời gian (sông hồ + biển)
   }
 
@@ -1216,6 +1314,7 @@ ${sea ? 'varying float vDep;' : ''}
     if (this.envDamage) events.push(...this.envDamage.damageAt(x, y, z, ammo, heavy, fx, info || {}));
     if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx);
     if (this.propSet) this.propSet.damageAt(x, y, z, ammo, heavy, fx);
+    if (this.streetscape && this.streetscape.junk) this.streetscape.junk.blast(x, y, z, ammo, heavy);
     if (this.buildingSet) events.push(...this.buildingSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {}));
     if (this.bunkerSet) events.push(...this.bunkerSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {}));
     if (this.landmarkSet && this.landmarkSet.damageAt) events.push(...this.landmarkSet.damageAt(x, y, z, ammo, heavy, fx));
@@ -1327,6 +1426,18 @@ ${sea ? 'varying float vDep;' : ''}
     // Nội suy theo đúng 2 tam giác của lưới (khớp mặt đất hiển thị, xe không lún / lơ lửng)
     if (fx + fz <= 1) return h[i] + (h[i + 1] - h[i]) * fx + (h[i + N] - h[i]) * fz;
     return h[i + N + 1] + (h[i + N] - h[i + N + 1]) * (1 - fx) + (h[i + 1] - h[i + N + 1]) * (1 - fz);
+  }
+
+  // Mặt lát kè + lối dạo bờ kênh đô thị: lưới địa hình (~24 đv/ô) không dựng được bờ đứng, sườn đất lòng kênh nằm sau tường
+  // kè (map_gen 3b') -> trên dải bờ (từ tường kè ra 40) lấy cao độ bờ phía ngoài; null nếu không ở dải bờ kênh
+  canalQuayAt(x, z) {
+    for (const c of this.map.canals || []) {
+      const ca = Math.cos(c.rot), sa = Math.sin(c.rot), u = x * ca + z * sa - c.a, v = -x * sa + z * ca;
+      if (Math.abs(v) > c.vEnd || Math.abs(u) < c.hw || Math.abs(u) > c.hw + 40) continue;
+      const ub = c.a + Math.sign(u) * (c.hw + 48);
+      return this.groundAtRaw(ub * ca - v * sa, ub * sa + v * ca);
+    }
+    return null;
   }
 
   // Mặt đất kể cả ụ đất do xe ủi đắp (addBerm): xe leo lên được, đạn bắn vào thì chạm "đất", che tầm nhìn như gò
@@ -1598,6 +1709,10 @@ ${sea ? 'varying float vDep;' : ''}
       const fy = this.envDamage && this.envDamage.bridges.brokenDeckAt ? this.envDamage.bridges.brokenDeckAt(x, z) : null;
       if (fy !== null) return Math.max(g, fy);
     }
+    if (this.map && this.map.canals && this.map.canals.length) {
+      const q = this.canalQuayAt(x, z);
+      if (q !== null && q > g) return q;
+    }
     return g;
   }
 
@@ -1662,7 +1777,7 @@ ${sea ? 'varying float vDep;' : ''}
       if (c !== null) return c;
     }
     if (!this.waterMesh) return null;
-    if (this.groundAtRaw(x, z) >= 0.1) return null;
+    if (this.groundAtRaw(x, z) >= this.waterLevel - 0.1) return null;
     if (this.bridges.length && this.bridgeAt(x, z)) return null;
     return this.waterMesh.position.y;
   }

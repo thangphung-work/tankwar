@@ -47,6 +47,13 @@
     if (typeof TeamIntel !== 'undefined') wrap(TeamIntel, 'update', '  · Tình báo / radar');
     if (typeof VehicleDamage !== 'undefined') wrap(VehicleDamage, 'update', '  · Hư hại xe');
     if (g.terrain) wrap(g.terrain, 'update', '  · Địa hình (cây cháy, nước)');
+    const T = g.terrain || {};
+    if (T.buildingSet) wrap(T.buildingSet, 'update', '    - nhà: sập / cháy / dựng hình');
+    if (T.trees) wrap(T.trees, 'update', '    - cây: cháy / đổ');
+    if (T.envDamage) wrap(T.envDamage, 'update', '    - đá / cầu / vết đạn');
+    if (T.landmarkSet) wrap(T.landmarkSet, 'update', '    - công trình đặc biệt');
+    if (T.propSet) wrap(T.propSet, 'update', '    - rào / bao cát / xác xe');
+    if (g.terrain) wrap(g.terrain, 'damageAt', '  · Phá hủy cảnh vật (mỗi vụ nổ)');
     wrap(g, 'handleShellImpact', '  · Xử lý trúng đạn');
     wrap(g, 'updateHUDValues', '  · HUD');
     wrap(g, 'renderAOWMinimap', '  · Bản đồ nhỏ');
@@ -66,6 +73,37 @@
       }
     });
     return { obj, meshes, lights, casters, transp };
+  }
+
+  // HIỆU ỨNG & PHÁ HỦY: hạt đang sống từng lớp, mức chi tiết (vẽ đủ / bớt / bỏ mỗi giây, số hạt đã lược), đám cháy, nhà chờ
+  // dựng hình. F10: tắt / bật mức chi tiết để so trước - sau ngay trong trận
+  let lodPrev = null;
+  function fxStats(g) {
+    const fx = g.effectsManager && g.effectsManager.fx;
+    if (!fx) return '';
+    const n = (L, k) => (L && L[k] ? L[k].length : 0);
+    const parts = `khói ${n(fx.smoke, 'parts')} · lửa ${n(fx.fire, 'parts')} · màn khói ${n(fx.screen, 'parts')} · đá vụn ${n(fx.rocks, 'rocks') + n(fx.hardRocks, 'rocks')} · kính ${n(fx.glass, 'parts')} · vệt mảnh ${n(fx.streaks, 'items')}`;
+    let lod = '';
+    if (fx.lodStats) {
+      const st = fx.lodStats(), p = lodPrev || st;
+      lod = `Chi tiết ${fx.lodOff ? 'TẮT (vẽ đủ mọi nơi)' : 'BẬT'} — hiệu ứng/s: đủ ${st.full - p.full} · bớt ${st.part - p.part} · bỏ ${st.skip - p.skip} · hạt đã lược ${st.drop - p.drop}\n`;
+      lodPrev = { full: st.full, part: st.part, skip: st.skip, drop: st.drop };
+    }
+    const B = g.terrain && g.terrain.buildingSet, tr = g.terrain && g.terrain.trees;
+    const fires = B && B.fires ? B.fires.length : 0, pend = B && B.items ? B.items.filter(b => b.dmgPending).length : 0;
+    return `--- hiệu ứng & phá hủy (F10 bật/tắt chi tiết) ---\n` + `Hạt: ${parts}\n` + lod +
+      `Lửa âm ỉ ${fx.emitters ? fx.emitters.length : 0} · nhà cháy ${fires} · cây cháy ${tr && tr.burning ? tr.burning.length : 0} · nhà chờ dựng hình ${pend}\n`;
+  }
+
+  // ÂM THANH: tiếng chiến trường đã phát / bị bỏ vì dưới ngưỡng ngân sách / bị che khuất (mỗi giây)
+  let audPrev = null;
+  function audioStats() {
+    const SE = window.soundEngine, st = SE && SE.audioStats;
+    if (!st) return '';
+    const p = audPrev || st;
+    audPrev = { made: st.made, culled: st.culled, occl: st.occl };
+    return `Âm thanh/s: phát ${st.made - p.made} · bỏ (nhỏ, dồn dập) ${st.culled - p.culled} · bị che ${st.occl - p.occl}
+`;
   }
 
   // MẠNG (trận nhiều người): ping, lưu lượng / giây (chênh từ lần hiện trước, ~1 s), trễ hiển thị xe người khác
@@ -120,7 +158,7 @@
       (typeof GfxQuality !== 'undefined'
         ? `GPU ${GfxQuality.gpuMs === null ? (GfxQuality.timerSupported ? '...' : 'không đo được') : GfxQuality.gpuMs.toFixed(1) + ' ms'} · nhịp màn hình ${GfxQuality.refreshMs.toFixed(1)} ms · độ nét ${g.renderer.getPixelRatio().toFixed(2)} (tối đa ${GfxQuality.maxRatio.toFixed(2)})\n`
         : '') +
-      netStats() +
+      netStats() + fxStats(g) + audioStats() +
       `--- thời gian CPU trung bình mỗi khung ---\n` + rows.join('\n');
     for (const k in S.T) { S.T[k].ms = 0; S.T[k].n = 0; }
     S.frames = 0;
@@ -162,7 +200,15 @@
     }
   }
 
-  window.addEventListener('keydown', e => { if (e.code === 'F9') { e.preventDefault(); toggle(); } });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'F9') { e.preventDefault(); toggle(); }
+    // F10: tắt mức chi tiết hiệu ứng (vẽ đủ mọi vụ nổ ở mọi nơi như trước) để so sánh — chỉ khi bảng đo đang mở
+    if (e.code === 'F10' && S.on) {
+      e.preventDefault();
+      const fx = window.game && window.game.effectsManager && window.game.effectsManager.fx;
+      if (fx) fx.lodOff = !fx.lodOff;
+    }
+  });
   if (new URLSearchParams(location.search).get('perf') === '1') {
     const wait = () => { if (window.game && window.game.renderer) toggle(true); else setTimeout(wait, 300); };
     wait();

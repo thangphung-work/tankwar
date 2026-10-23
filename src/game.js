@@ -2033,7 +2033,11 @@ class ArtilleryGame3D {
     // hướng tính từ trục quay tháp (nòng nằm trên trục giữa tháp), không phải tâm thân xe: vòng tháp lệch khỏi tâm xe vài
     // đơn vị -> tính từ tâm xe thì đường nòng song song lệch, đạn rơi lệch ngang ~2-3 đv khi tháp quay chéo
     const bo = this.boreOrigin(P);
-    const want = (Math.atan2(aimX - bo.x, -(aimZ - bo.z)) * 180 / Math.PI + (tr.windAz || 0) - off.az + 720) % 360;
+    // súng máy 12.7 / súng phóng lựu trên vòng súng xoay tay của xe trinh sát: không có cảm biến gió / máy tính hỏa lực ->
+    // không tự xoay bù gió ngang (xạ thủ tự bù theo chỉ số gió trên HUD); góc nâng theo cự ly vẫn có (vạch cự ly trên thước
+    // ngắm). Tên lửa dẫn đường không bị gió; giàn rocket điều khiển từ xa có máy tính hỏa lực -> vẫn bù
+    const manualMount = P.tankType === 'SCOUT' && !(P.mainGun && P.mainGun.kind === 'rocket') && P.selectedAmmo !== 'ANTI_TANK_MISSILE';
+    const want = (Math.atan2(aimX - bo.x, -(aimZ - bo.z)) * 180 / Math.PI + (manualMount ? 0 : (tr.windAz || 0)) - off.az + 720) % 360;
     const diff = ((want - P.azimuth + 540) % 360) - 180;
     // xe trinh sát ngắm tự do: giá súng nhẹ xoay tay -> súng theo tâm kính tức thì như game bắn súng (không trễ theo tốc độ quay)
     const fps = T.free && P.tankType === 'SCOUT';
@@ -3612,7 +3616,10 @@ class ArtilleryGame3D {
         for (const ev of envEvents) if (ev.type === 'strongholdWall') this.addCombatLog(`[[building]] Một đoạn tường cánh cứ điểm ${ev.id} vỡ toác — đất ụ sụt xuống kênh, mở lối vào bên sườn!`, 'alert');
       }
     };
-    if (typeof Destructibles !== 'undefined' && Destructibles.withSeed) Destructibles.withSeed(d.s >>> 0, run); else run();
+    // phần HÌNH của vụ phá (gạch đá, bụi, kính vỡ, mảnh) theo mức chi tiết tại chỗ nổ: ở xa / ngoài khung nhìn bớt hoặc bỏ
+    // hạt — trạng thái phá hủy (ô tường, máu, sập) vẫn tính đủ & giống mọi máy (hạt hình dùng Math.random, không đụng RNG chung)
+    const runL = () => (fxSys && fxSys.withLod ? fxSys.withLod(d.x, d.y, d.z, 120, run) : run());
+    if (typeof Destructibles !== 'undefined' && Destructibles.withSeed) Destructibles.withSeed(d.s >>> 0, runL); else runL();
     if (fromNet && fxSys && fxSys.syncCrater && (d.t === 'GROUND' || !d.t)) fxSys.syncCrater(d.x, d.y, d.z, d.a, !!d.h, { x: d.dx || 0, y: d.dy || -1, z: d.dz || 0 });
   }
 
@@ -4030,6 +4037,8 @@ class ArtilleryGame3D {
             : ric ? [3.5, 0.006]
               : res.pen ? [heavy ? 10 : 8.5, heavy ? 0.02 : 0.016] : [heavy ? 7 : 5.5, heavy ? 0.013 : 0.01];
       if (this.addJolt) this.addJolt(J[0], J[1]);
+      // màn hình: lóe / viền theo hướng đạn tới (đạn súng lóe nhẹ, dội giáp chớp sáng + bụi, bị xuyên viền đỏ đậm)
+      if (this.playerHitFx) this.playerHitFx(small ? 'small' : res.pen ? 'pen' : ric ? 'ric' : 'hit', { x: -(shell.vx || 0), z: -(shell.vz || 0) }, J[0]);
       this._hullHitAt = performance.now();   // tiếng sóng nổ quét vỏ (ExplosionFX.playerBlastJolt) không chồng lên tiếng trúng
       if (SE && SE.playHullHit) SE.playHullHit(a, { pen: !!res.pen, ric, dud: !!res.dud, du: !!shell.du, heavy: !!shell.isHeavyArty });
       return;
@@ -5675,6 +5684,66 @@ class ArtilleryGame3D {
    * (rad) — cả xe bị đẩy nên hình nhảy theo hướng bất kỳ, không chỉ nảy lên như lúc bắn. Hệ điều hành bật "giảm chuyển
    * động" (prefers-reduced-motion): rung nhẹ hẳn
    */
+  /**
+   * Hiệu ứng màn hình khi xe mình bị trúng / nổ sát: lớp phủ không chặn chuột, sáng lên từ mép màn hình phía hướng đạn tới
+   * (from: hướng tới nguồn đạn / tâm nổ trên mặt phẳng ngang, thế giới) rồi tắt dần.
+   *  small: đạn súng dội vỏ — lóe vàng nhạt rất nhẹ, 0,25 s · ric / hit: đạn lớn dội giáp — chớp trắng ấm + bụi xám, 0,5-0,7 s
+   *  pen: bị xuyên — chớp trắng rồi viền đỏ thẫm khắp mép, 1,6 s (choáng, máu) · blast: nổ sát — bụi đất nâu tràn mép, 1,2 s
+   */
+  playerHitFx(kind, from, mag = 5) {
+    if (typeof document === 'undefined') return;
+    let el = this._hitFxEl;
+    if (!el) {
+      el = this._hitFxEl = document.createElement('div');
+      el.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:40;opacity:0;mix-blend-mode:normal';
+      document.body.appendChild(el);
+    }
+    // vị trí nguồn trên màn hình: chiếu hướng tới lên trục trước / phải của camera (trước = mép trên)
+    let px = 50, py = 50;
+    const cam = this.camera;
+    if (cam && from && (from.x || from.z)) {
+      const f = new THREE.Vector3(); cam.getWorldDirection(f); f.y = 0;
+      if (f.lengthSq() > 1e-6) {
+        f.normalize();
+        const l = Math.hypot(from.x, from.z), sx = from.x / l, sz = from.z / l;
+        const fw = sx * f.x + sz * f.z, rt = sx * -f.z + sz * f.x;
+        px = 50 + rt * 48; py = 50 - fw * 48;
+      }
+    }
+    const k = Math.min(1, Math.max(0.15, mag / 10));
+    const C = { small: [255, 236, 190, 0.16, 0.25], ric: [255, 242, 220, 0.38, 0.5], hit: [255, 232, 200, 0.5, 0.7], pen: [150, 10, 6, 0.75, 1.6], blast: [120, 92, 60, 0.55, 1.2] }[kind] || [255, 230, 200, 0.4, 0.6];
+    const [r, g, b, a0, dur] = C, a = a0 * (kind === 'small' ? 1 : 0.6 + 0.4 * k);
+    let bg = `radial-gradient(ellipse at ${px}% ${py}%, rgba(${r},${g},${b},${a}) 0%, rgba(${r},${g},${b},0) 55%)`;
+    if (kind === 'pen') bg = `radial-gradient(ellipse at ${px}% ${py}%, rgba(255,245,230,${0.55 * k}) 0%, rgba(255,245,230,0) 35%), radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(${r},${g},${b},${a}) 100%)`;
+    else if (kind === 'blast') bg += `, radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(${r},${g},${b},${a * 0.8}) 100%)`;
+    else if (kind === 'hit' || kind === 'ric') bg += `, radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(110,104,96,${a * 0.5}) 100%)`;
+    // bị xuyên: mảnh giáp vỡ & khí nổ trong khoang phụt ra cửa nóc / khe tháp — chớp mảnh nóng đỏ rồi khói bụi xám cuộn ra
+    // (thấy cả ở góc nhìn trưởng xe ngồi cửa nóc lẫn camera bám đuôi)
+    const fx = kind === 'pen' && this.effectsManager && this.effectsManager.fx, P = this.player;
+    if (fx && P && !P.isDead) {
+      const v = new THREE.Vector3();
+      if (P.barrelPivot) { P.barrelPivot.updateWorldMatrix(true, false); P.barrelPivot.getWorldPosition(v); } else v.set(P.x, (P.y || 0) + 20, P.z);
+      v.y += 6;
+      const R = Math.random;
+      if (fx.fire) for (let i = 0; i < 14; i++) {
+        const a = R() * 6.283, sp = 20 + R() * 60;
+        fx.fire.add({ x: v.x, y: v.y, z: v.z, vx: Math.cos(a) * sp * 0.6, vy: 25 + R() * 50, vz: Math.sin(a) * sp * 0.6, size: 0.8 + R() * 0.9, grow: -0.4, drag: 0.8, grav: 78.5,
+          life: 0.3 + R() * 0.4, alpha: 1, fadeIn: 0.005, c0: [1, 0.85, 0.55], c1: [1, 0.4, 0.1], cell: 3 });
+      }
+      if (fx.smoke) for (let i = 0; i < 10; i++) {
+        const g = 0.32 + R() * 0.14;
+        fx.smoke.add({ x: v.x + (R() - 0.5) * 4, y: v.y, z: v.z + (R() - 0.5) * 4, vx: (R() - 0.5) * 10, vy: 10 + R() * 16, vz: (R() - 0.5) * 10,
+          size: 4 + R() * 4, grow: 7, drag: 1.2, grav: -2, life: 2 + R() * 2, alpha: 0.6, fadeIn: 0.05, c0: [g, g * 0.97, g * 0.93], cell: 2, delay: R() * 0.3, floor: false });
+      }
+    }
+    el.style.transition = 'none';
+    el.style.background = bg;
+    el.style.opacity = '1';
+    void el.offsetWidth;   // áp ngay trạng thái sáng rồi mới cho tắt dần
+    el.style.transition = `opacity ${dur}s ease-out`;
+    el.style.opacity = '0';
+  }
+
   addJolt(mag, kick = 0) {
     if (!(mag > 0)) return;
     if (this._reduceMotion === undefined) this._reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
