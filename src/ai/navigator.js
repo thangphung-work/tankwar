@@ -7,7 +7,7 @@
  * - Bám đường: hướng tới điểm kế tiếp, tự tính lại khi mục tiêu đổi / bị kẹt.
  */
 const Navigator = (() => {
-  const CELL = 24;
+  const CELL = 36;
   const CLEAR = 20;           // bán kính an toàn thân xe khi thử va chạm
   const WADE_DEPTH = 9;       // mặc định khi xe không có wadeMax: nước sâu hơn ~1.1 m (8 đơn vị = 1 m) xe không lội qua
   const grids = new WeakMap(); // terrain -> lưới cơ sở (độ cao + ô chặn)
@@ -34,6 +34,7 @@ const Navigator = (() => {
         const x = -W / 2 + (i + 0.5) * CELL, z = -D / 2 + (j + 0.5) * CELL;
         const k = j * nx + i;
         blocked[k] = 0; wd[k] = 0;
+        if (Math.abs(x) > W / 2 - margin || Math.abs(z) > D / 2 - margin || (OUT && OUT.rimFoot && Math.hypot(x, z) > OUT.rimFoot(x, z) + OUT.wall - 40)) { h[k] = 0; blocked[k] = 1; continue; }
         h[k] = terrain.getVehicleGroundAt ? terrain.getVehicleGroundAt(x, z) : terrain.getElevationAt(x, z);
         const ws = terrain.waterSurfaceAt ? terrain.waterSurfaceAt(x, z) : null;
         if (ws !== null && ws !== undefined) wd[k] = Math.max(0, ws - h[k]);
@@ -221,7 +222,7 @@ const Navigator = (() => {
     const upMax = climb * 0.92, downMax = -Math.max(1.2, climb * 1.4);
     stamp[start] = gen; cost[start] = 0; from[start] = -1; H.push(start, hz(start));
     let found = false, iter = 0;
-    while (H.size && iter++ < 60000) {
+    while (H.size && iter++ < 18000) {
       const k = H.pop();
       if (closed[k] === gen) continue;
       closed[k] = gen;
@@ -394,7 +395,7 @@ const Navigator = (() => {
   // Tính sẵn lưới cơ sở (quét va chạm cả bản đồ, vài trăm ms) lúc chờ ghép trận — trước đây tính ở lần tìm đường
   // đầu tiên của bot, rơi đúng giây đầu trận. Trả về thời gian tính (ms), 0 nếu đã có / bản đồ chưa dựng
   function warm(terrain) {
-    if (!terrain || !terrain.built || !terrain.resolveVehicleCollision || grids.has(terrain)) return 0;
+    if (!terrain || !terrain.built || !terrain.detailsReady || !terrain.resolveVehicleCollision || grids.has(terrain)) return 0;
     const t0 = performance.now();
     baseGrid(terrain);
     return Math.round(performance.now() - t0);

@@ -64,6 +64,10 @@
     if (ov) ov.classList.add('hidden');
     mm.selectedTankType = tankType;
     g.startMatchWithSlots([{ id: 0, team: 'BLUE', title: 'THỬ NGHIỆM', name: 'XE THỬ NGHIỆM', isHuman: true, isMe: true, peerId: 'lab-me', tankType, ready: true }], 'lab-me');
+    g._intro = null;
+    const introHud = document.getElementById('tactical-intro-hud');
+    if (introHud) introHud.classList.add('hidden');
+    document.body.classList.remove('intro-active');
     setup(g);
   }
 
@@ -463,8 +467,8 @@
       #sh-lab h1{margin:0;font-size:14px;font-weight:700;letter-spacing:2px;color:var(--tc-bright)}
       #sh-lab .shl-sub{font-size:10.5px;color:var(--tc-dim)}
       #sh-lab .shl-sub .ti{color:var(--tc-ok);font-size:9px}
-      #sh-lab nav{display:flex;gap:4px;margin-top:8px}
-      #sh-lab nav a{flex:1 1 0;display:flex;align-items:center;justify-content:center;gap:4px;padding:4px 5px;font-size:11px;font-weight:600;letter-spacing:.6px;white-space:nowrap;
+      #sh-lab nav{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+      #sh-lab nav a{flex:1 1 22%;display:flex;align-items:center;justify-content:center;gap:4px;padding:4px 5px;font-size:11px;font-weight:600;letter-spacing:.5px;white-space:nowrap;
         color:var(--tc-dim);text-decoration:none;border:1px solid var(--tc-line);background:rgba(200,210,192,.03)}
       #sh-lab nav a:hover{color:var(--tc-text);border-color:var(--tc-line-2)}
       #sh-lab nav a.home{flex:0 0 28px}
@@ -511,8 +515,13 @@
         </div></div>
         <nav>
           <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
-          <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
+          <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả</a>
+          <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+          <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+          <a href="test_car.html"><i class="ti ti-car" aria-hidden="true"></i> Ô tô</a>
+          <a href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
           <a class="on" href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+          <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
         </nav>
       </div>
       <div class="shl-scroll">

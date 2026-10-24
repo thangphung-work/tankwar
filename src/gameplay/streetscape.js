@@ -772,6 +772,7 @@ float grN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
       }
     };
     for (const B of M.blocks) {
+      if (B.spawn) continue;   // Khu vực xuất phát: không rải rác để tránh xe vừa xuất hiện đã đè trúng
       const C = B.curb, Lq = B.lot;
       curB = B;
       for (let k = 0; k < 4; k++) {
@@ -1169,42 +1170,138 @@ float bagCrinkle(vec3 p, float s) {
     burstBag(it, dx, dz, d, k) {
       it.gone = true; it.s = 0; this.write(it);
       const S = this.ims.scrap, c = new THREE.Color(), hl = Math.hypot(dx, dz) || 1;
-      for (let q = 0; q < 14; q++) {
+      const count = Math.min(6, this.SCRAP);   // giảm mảnh vụn xuống 6 mảnh để tránh lag
+      for (let q = 0; q < count; q++) {
         const h = (z) => hash(Math.round(it.x * 13 + it.z * 7) + q * 31 + z);
         const p = this.scraps[S.n % this.SCRAP]; S.n++;
-        const col = q < 4 ? it.col : LIT[Math.floor(h(1) * LIT.length)];
+        const col = q < 2 ? it.col : LIT[Math.floor(h(1) * LIT.length)];
         S.im.setColorAt(p.i, c.setRGB(col[0], col[1], col[2])); if (S.im.instanceColor) S.im.instanceColor.needsUpdate = true;
-        const a = Math.atan2(dz, dx) + (h(2) - 0.5) * 2.4, sp = (30 + 90 * h(3)) * Math.min(1.5, k);
-        Object.assign(p, { x: it.x + (h(4) - 0.5) * 2, y: it.y + 1, z: it.z + (h(5) - 0.5) * 2, rx: h(6) * 6, ry: h(7) * 6, rz: 0, s: q < 4 ? 1.2 + h(8) * 1.4 : 0.5 + h(8) * 1.2,
-          v: [Math.cos(a) * sp, 20 + 50 * h(9) * Math.min(1.5, k), Math.sin(a) * sp], w: [(h(10) - 0.5) * 14, (h(11) - 0.5) * 10, (h(12) - 0.5) * 14], flutter: true, bounce: 1 });
+        const a = Math.atan2(dz, dx) + (h(2) - 0.5) * 2.4, sp = (10 + 20 * h(3)) * Math.min(1.0, k);
+        // Mảnh rác chỉ văng nhẹ sát mặt đường (cao 1 - 2.5 m), không phóng vọt lên trời
+        Object.assign(p, {
+          x: it.x + (h(4) - 0.5) * 1.5, y: it.y + 0.3, z: it.z + (h(5) - 0.5) * 1.5,
+          rx: h(6) * 6, ry: h(7) * 6, rz: 0, s: q < 2 ? 0.9 + h(8) * 0.7 : 0.4 + h(8) * 0.5,
+          v: [Math.cos(a) * sp, 1.2 + 3.2 * h(9) * Math.min(1.0, k), Math.sin(a) * sp],
+          w: [(h(10) - 0.5) * 8, (h(11) - 0.5) * 6, (h(12) - 0.5) * 8], flutter: true, bounce: 0
+        });
         this.moving.add(p);
       }
+    }
+    // Xe chạy qua / húc vào đồ vật trên vỉa hè (gọi mỗi khung từ spg.js): túi rác bị xích / bánh đè thì rách tung, thùng
+    // các-tông bẹp dí, thùng rác nhựa bị húc văng (xe xích đè lên thùng đang nằm thì bẹp hẳn), container nặng chỉ bị ủi
+    // trượt + móp. Hộp thân xe như va chạm ô tô (VehicleCollision.hullBox); đồ vật đang bay thì bỏ qua
+    crush(unit, x, z, dt) {
+      if (!unit || unit.isDead || !dt || !this.items.length) return;
+      const VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
+      const a = unit.bodyAngle || 0, ca = Math.cos(a), sa = Math.sin(a);
+      let cx = x, cz = z, hu = 14, hv = 22;
+      if (VC && VC.hullBox) {
+        const B = VC.hullBox(unit);
+        if (B && isFinite(B.maxX - B.minX)) {
+          const lcx = (B.minX + B.maxX) / 2, lcz = (B.minZ + B.maxZ) / 2;
+          cx = x + lcx * ca + lcz * sa; cz = z - lcx * sa + lcz * ca; hu = (B.maxX - B.minX) / 2; hv = (B.maxZ - B.minZ) / 2;
+        }
+      }
+      const R = Math.hypot(hu, hv) + 6, ux = ca, uz = -sa;
+      const sp = unit.speed || 0, v = Math.abs(sp), fx = -Math.sin(a) * Math.sign(sp || 1), fz = -Math.cos(a) * Math.sign(sp || 1);
+      const tracked = !unit.isWheeled, mU = unit.mass || 40;
+      const c0 = Math.floor((cx - R) / this.cell), c1 = Math.floor((cx + R) / this.cell), r0 = Math.floor((cz - R) / this.cell), r1 = Math.floor((cz + R) / this.cell);
+      let hit = null;
+      for (let i = c0; i <= c1; i++) for (let j = r0; j <= r1; j++) for (const it of this.grid.get(i * 65536 + j) || []) {
+        if (it.gone || it.v || it.type === 'scrap') continue;
+        if (Math.abs(it.y - this.T.groundAtRaw(it.x, it.z)) > 30) continue;   // đồ vật trên cao (không cùng tầng với xe)
+        const J = JK[it.type], half = (J && J.half ? J.half : 1) * (it.s || 1);
+        const tx = it.x - cx, tz = it.z - cz, lu = tx * ux + tz * uz, lv = -tx * uz + tz * ux;
+        if (Math.abs(lu) > hu + half || Math.abs(lv) > hv + half) continue;
+        const under = Math.abs(lu) < hu - half * 0.3 && Math.abs(lv) < hv - half * 0.3;   // nằm hẳn dưới gầm / dưới xích
+        const h = (q) => hash(Math.round(it.x * 7 + it.z * 3) + q);
+        if (it.type.startsWith('bag')) {
+          // túi rác: xe đè khi đứng yên hoặc chạy chậm thì bẹp dí; chỉ khi húc mạnh ở tốc độ cao (v > 20) mới rách văng
+          if (under && !it.flat && v <= 20) {
+            it.flat = true; it.squash = 0.16; it.ry += (h(1) - 0.5) * 0.5; this.write(it); hit = hit || it; continue;
+          }
+          if (v > 20) { this.burstBag(it, fx, fz, 1, Math.min(1.0, 0.25 + v / 70)); hit = hit || it; continue; }
+          this.kick(it, fx, fz, 10 + v * 0.6, 3, h);
+        } else if (it.type.startsWith('box')) {
+          // thùng các-tông: bị đè là bẹp dí, húc thì văng nhẹ
+          if (under && !it.flat) { it.flat = true; it.squash = 0.18; it.ry += (h(1) - 0.5) * 0.6; this.write(it); hit = hit || it; continue; }
+          if (!it.flat && v > 3) { it.squash = Math.min(it.squash || 1, 0.6); this.kick(it, fx, fz, 18 + v * 1.1, 10, h); hit = hit || it; }
+        } else if (it.type === 'bin' || it.type === 'binLid') {
+          // thùng rác nhựa: xe xích đè lên thùng đang nằm (hoặc đè thẳng từ trên) thì bẹp hẳn; còn lại bị húc văng lăn đi
+          const lying = Math.abs(it.rz) > 0.8 || Math.abs(it.rx) > 0.8;
+          if (under && tracked && (lying || v < 6) && !it.flat) {
+            it.flat = true; it.dent = 0.45; it.squash = 0.35; it.lidOff = true; this.write(it); hit = hit || it; continue;
+          }
+          if (!it.flat && v > 2) {
+            it.dent = Math.max(0.7, (it.dent || 1) - 0.06 - v * 0.002);
+            this.kick(it, fx, fz, 20 + v * 1.3, 14, h); hit = hit || it;
+          }
+        } else if (it.type === 'dump') {
+          // container rác ~ 200 kg: bị ủi trượt theo xe, móp vỏ; xe khựng nhẹ theo khối lượng
+          if (v > 1.5) {
+            const k = mU / (mU + J.m);
+            it.dent = Math.max(0.6, (it.dent || 1) - 0.03 * Math.min(3, v / 15));
+            this.kick(it, fx, fz, Math.min(90, v * k * 1.05), 0.6, h, 0.6);
+            if (!unit._netProxy) unit.speed *= Math.pow(0.97, dt * 60);
+            hit = hit || it;
+          }
+        }
+      }
+      if (hit && (!this._crushSnd || hit !== this._crushSnd.it || performance.now() - this._crushSnd.t > 350)) {
+        this._crushSnd = { it: hit, t: performance.now() };
+        const kind = hit.type === 'dump' ? 'sheetMetal' : hit.type.startsWith('bag') ? 'leafStrip' : hit.type.startsWith('box') ? 'woodBreak' : 'sheetMetal';
+        if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt)
+          window.soundEngine.secondaryAt(kind, { x: hit.x, y: hit.y + 2, z: hit.z }, hit.type === 'dump' ? 0.6 : 0.3, { h: 3 });
+      }
+      for (const t in this.ims) if (this.ims[t].dirty) { this.ims[t].im.instanceMatrix.needsUpdate = true; this.ims[t].dirty = false; }
+      if (this.aoDirty) { this.ao.instanceMatrix.needsUpdate = true; this.aoDirty = false; }
+    }
+    // hất đồ vật theo hướng (dx, dz) với tốc độ sp, nảy lên up; spin: hệ số xoay
+    kick(it, dx, dz, sp, up, h, spin = 1) {
+      const J = JK[it.type], m = Math.sqrt(J ? J.m : 1), s = Math.min(140, sp / m) * (0.85 + 0.3 * h(11));
+      const side = (h(12) - 0.5) * 0.6;
+      it.v = [(dx - dz * side) * s, up * (0.6 + 0.6 * h(13)) / m, (dz + dx * side) * s];
+      const w = 5 * spin / m;
+      it.w = [(h(14) - 0.5) * w, (h(15) - 0.5) * w, (h(16) - 0.5) * w];
+      it.bounce = 0;
+      this.moving.add(it);
     }
     update(dt) {
       if (!this.moving.size) return;
       const G = 78.4;
       for (const it of this.moving) {
-        // giấy / nilon: rơi chậm, bị không khí hãm, chao lượn; vật nặng rơi theo trọng lực
-        if (it.flutter) { it.v[1] -= G * 0.35 * dt; const dr = Math.exp(-2.5 * dt); it.v[0] *= dr; it.v[2] *= dr; it.v[1] = Math.max(it.v[1], -14); it.v[0] += Math.sin(it.y * 0.7 + it.i) * 6 * dt; }
-        else it.v[1] -= G * dt;
-        it.x += it.v[0] * dt; it.y += it.v[1] * dt; it.z += it.v[2] * dt;
-        it.rx += it.w[0] * dt; it.ry += it.w[1] * dt; it.rz += it.w[2] * dt;
-        const J = JK[it.type], g = this.rest(it.x, it.z), lie = it.type === 'bin' ? 2.4 : 0;
-        if (it.y <= g + (it.flutter ? 0.03 : lie * 0.3)) {
-          const spd = Math.hypot(it.v[0], it.v[1], it.v[2]);
-          if (!it.flutter && it.bounce < 2 && spd > 18) {
-            it.bounce++; it.y = g + lie * 0.3; it.v = [it.v[0] * 0.45, -it.v[1] * 0.25, it.v[2] * 0.45]; it.w = it.w.map(a => a * 0.5);
-          } else {
-            // nằm lại: thùng rác lăn nằm ngang, thùng các-tông / container dựng lại trên đáy, mảnh rác nằm phẳng
-            it.y = g + (it.flutter ? 0.04 : 0);
-            if (it.type === 'bin') { const up = Math.abs(Math.cos(it.rx) * Math.cos(it.rz)); if (up < 0.8 || it.v[1] < -30) { it.rx = 0; it.rz = Math.PI / 2; it.y = g + 2.4; } else { it.rx = 0; it.rz = 0; } }
-            else if (it.type === 'binLid') { it.rx = (hash(it.i) - 0.5) * 0.2; it.rz = 0; }
-            else if (it.type === 'scrap') { it.rx = 0; it.rz = 0; }
-            else { it.rx *= 0.1; it.rz *= 0.1; }
-            it.v = null; this.moving.delete(it);
-            // ô lưới mới (đồ vật lăn sang ô khác)
-            if (it.gk !== undefined) { const L = this.grid.get(it.gk), ix = L ? L.indexOf(it) : -1; if (ix >= 0) L.splice(ix, 1); }
-            if (it.type !== 'scrap') { const k = it.gk = this.key(it.x, it.z); (this.grid.get(k) || this.grid.set(k, []).get(k)).push(it); }
+        // giấy / nilon: rơi tự nhiên, không tính toán vỉa hè đa giác để tránh đứng hình
+        if (it.flutter) {
+          it.v[1] -= G * 0.6 * dt;
+          const dr = Math.exp(-2.5 * dt);
+          it.v[0] *= dr; it.v[2] *= dr;
+          it.x += it.v[0] * dt; it.y += it.v[1] * dt; it.z += it.v[2] * dt;
+          it.rx += it.w[0] * dt; it.ry += it.w[1] * dt; it.rz += it.w[2] * dt;
+          const g = this.T.groundAtRaw(it.x, it.z) + 0.12;
+          if (it.y <= g) {
+            it.y = g; it.rx = 0; it.rz = 0; it.v = null;
+            this.moving.delete(it);
+          }
+        } else {
+          it.v[1] -= G * dt;
+          it.x += it.v[0] * dt; it.y += it.v[1] * dt; it.z += it.v[2] * dt;
+          it.rx += it.w[0] * dt; it.ry += it.w[1] * dt; it.rz += it.w[2] * dt;
+          const J = JK[it.type], g = this.rest(it.x, it.z), lie = it.type === 'bin' ? 2.4 : 0;
+          if (it.y <= g + lie * 0.3) {
+            const spd = Math.hypot(it.v[0], it.v[1], it.v[2]);
+            if (it.bounce < 2 && spd > 18) {
+              it.bounce++; it.y = g + lie * 0.3; it.v = [it.v[0] * 0.45, -it.v[1] * 0.25, it.v[2] * 0.45]; it.w = it.w.map(a => a * 0.5);
+            } else {
+              // nằm lại: thùng rác lăn nằm ngang, thùng các-tông / container dựng lại trên đáy
+              it.y = g + (lie * 0.3);
+              if (it.type === 'bin') { const up = Math.abs(Math.cos(it.rx) * Math.cos(it.rz)); if (up < 0.8 || it.v[1] < -30) { it.rx = 0; it.rz = Math.PI / 2; it.y = g + 2.4; } else { it.rx = 0; it.rz = 0; } }
+              else if (it.type === 'binLid') { it.rx = (hash(it.i) - 0.5) * 0.2; it.rz = 0; }
+              else { it.rx *= 0.1; it.rz *= 0.1; }
+              it.v = null; this.moving.delete(it);
+              // ô lưới mới (đồ vật lăn sang ô khác)
+              if (it.gk !== undefined) { const L = this.grid.get(it.gk), ix = L ? L.indexOf(it) : -1; if (ix >= 0) L.splice(ix, 1); }
+              const k = it.gk = this.key(it.x, it.z); (this.grid.get(k) || this.grid.set(k, []).get(k)).push(it);
+            }
           }
         }
         this.write(it);
@@ -1395,6 +1492,6 @@ float bagCrinkle(vec3 p, float s) {
     return { group, covers, junk: junkSet };
   }
 
-  return { build, CURB_H };
+  return { build, CURB_H, junkProtos, bottleProtos, BAG_COL, BIN_COL, DUMP_COL, bagCrumple, junkTex, junkNormal };
 })();
 if (typeof window !== 'undefined') window.Streetscape = Streetscape;

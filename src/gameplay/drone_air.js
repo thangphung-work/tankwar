@@ -51,10 +51,11 @@ const DroneAir = (() => {
       // nổ mảnh bán kính nhỏ. direct / splash: sát thương gốc trúng thẳng / nổ sát (trước khi tính giáp), blast: vùng nổ
       agl: { rof: 0.2, mag: 32, reload: 7, yawRate: 1.4, pitchRate: 1.0, elMin: -8, elMax: 45, v: 0.3, spread: 0.012,
         direct: 0.32, splash: 0.5, blast: { radius: 26, core: 6 }, name: 'Súng phóng lựu 40mm', ammo: 'AGL40' },
-      // Bệ tên lửa đột nóc 2 ống (kiểu Javelin / MMP trên tháp): 2 quả mỗi lần xuất kích, không nạp lại. Khóa xe địch
-      // bằng tia laser của khối ngắm (giữ lockT giây, phải tự nhìn thấy), bấm Space phóng 1 quả: khí nén đẩy ra khỏi ống
-      // (coldT giây chưa đánh lửa), động cơ cháy -> vút lên đỉnh vồng -> bổ nhào gần thẳng đứng xuống nóc (ballistics
-      // guideMissile G.loft). Bệ ngóc launchEl lúc chờ phóng. Chỉ đánh xe trong minR..maxR (gần hơn không kịp vồng lên).
+      // Bệ tên lửa đột nóc 2 ống (kiểu Javelin trên tháp): 2 quả mỗi lần xuất kích, không nạp lại. Khóa xe địch bằng đầu
+      // dò ảnh nhiệt (giữ tâm ngắm trên xe lockT giây, lệch tâm tụt về 0; không khóa được khi địch trong khói/bụi), bấm Space
+      // phóng 1 quả: khí nén đẩy ra khỏi ống (coldT giây chưa đánh lửa), động cơ cháy -> vút lên đỉnh vồng -> bổ nhào gần thẳng
+      // đứng xuống nóc (ballistics guideMissile G.loft). Bắn-và-quên: xe phóng rút được ngay, đầu dò tự bám mục tiêu (mất
+      // dấu khi địch thả khói hoặc vào bụi). Bệ ngóc launchEl lúc chờ phóng. Chỉ đánh xe trong minR..maxR (gần hơn không kịp vồng lên).
       // dmg: phần máu tối đa mất khi trúng nóc — bare: không có mái lồng, cage: mái lồng chống UAV còn nguyên; kill: xe giáp
       // mỏng trúng là hạ gọn
       atgm: { mag: 2, reload: 0, rof: 1, yawRate: 1.0, pitchRate: 0.7, elMin: -5, elMax: 30, launchEl: 20,
@@ -881,7 +882,13 @@ const DroneAir = (() => {
       const R = C.ROOF.atgm, G = shell.guide;
       shell.isAntiTank = true;
       shell.topMsl = true;   // handleShellImpact: trúng nóc mất R.dmg phần máu tối đa
-      if (G) { G.top = true; G.loft = R.loft; G.cold = R.coldT * (this.ballistics.bulletSpeedMultiplier || 1); G.coldG = R.coldG; }
+      if (G) {
+        G.top = true;
+        G.fnf = true;   // bắn-và-quên kiểu Javelin: đầu dò ảnh nhiệt tự bám, xe phóng rút được ngay
+        G.loft = R.loft;
+        G.cold = R.coldT * (this.ballistics.bulletSpeedMultiplier || 1);
+        G.coldG = R.coldG;
+      }
       shell.cold = true;     // chưa đánh lửa: ẩn lửa đuôi, chưa nhả khói (ballistics guideMissile đánh lửa)
       // tên lửa bệ đột nóc to hơn quả ATGM của xe trinh sát (mô hình chung): dài ~1,1 m, Ø ~15 cm — vừa khít ống phóng
       // dài ~1,2 m trên bệ (roof_mounts.js), không còn bé tí trong ống

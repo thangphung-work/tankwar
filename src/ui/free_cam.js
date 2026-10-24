@@ -38,6 +38,10 @@
     if (ov) ov.classList.add('hidden');
     g.matchmaking.selectedTankType = 'SCOUT';
     g.startMatchWithSlots([{ id: 0, team: 'BLUE', title: 'FREE CAM', name: 'FREE CAM', isHuman: true, isMe: true, peerId: 'cam-me', tankType: 'SCOUT', ready: true }], 'cam-me');
+    g._intro = null;
+    const introHud = document.getElementById('tactical-intro-hud');
+    if (introHud) introHud.classList.add('hidden');
+    document.body.classList.remove('intro-active');
     // không có luật trận
     g.matchDuration = 1e9;
     g.airdropTimer = 1e9;

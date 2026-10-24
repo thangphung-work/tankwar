@@ -430,7 +430,7 @@ const EnvDamage = (() => {
         const surf = Math.max(0, dxz - it.r * 0.85), dy = Math.max(0, y - top);
         const dist = Math.hypot(surf, dy);
         // đạn nổ trên xe đậu sát đá / nổ cận đích: không phải trúng thẳng vào đá (chỉ sức nổ lan)
-        const direct = dist < 3 && info.t !== 'DIRECT_HIT' && info.t !== 'PROXIMITY';
+        const direct = (dist < 3 || info.t === 'BOULDER') && info.t !== 'DIRECT_HIT' && info.t !== 'PROXIMITY';
         // đạn xuyên động năng (không có thuốc nổ): mũi tên khoan một lỗ / bóc một mảng, hiếm khi chẻ đôi được tảng đá lớn
         // như đạn nổ (trước đây ~12 phát AP chẻ tảng lớn nhất, gần bằng 8 phát nổ mạnh)
         const kinK = A.blast < 0.05 && A.kin > 0.5 ? 0.4 : 1;
@@ -1325,7 +1325,7 @@ const EnvDamage = (() => {
       T.group.add(this.group);
       this.scars = new Scars(this.group);
       this.debris = new Debris(this.group, T.rockTexture ? T.rockTexture() : null);
-      this.rocks = new RockField(this, rockItems);
+      this.rocks = new RockField(this, rockItems || (T && T.rockItems) || []);
       this.bridges = new BridgeSet(this);
       this.navBoxes = [];   // vùng lưới tìm đường cần tính lại (Navigator.invalidate theo vùng)
       this.mapDirty = false;

@@ -528,17 +528,30 @@
     }
     // Tay nắm leo lên nóc sau
     for (const s of [-1, 1]) hb.grabHandle([s * 9.5, ROOF_Y, 23.6], 'z', 2.6, 0.6, P);
-    // Giá can nhiên liệu: một can đã đổ vào xe, chỗ trống còn dây đai buông thõng; các can còn lại xô lệch
+    // Giá can nhiên liệu 3 ngăn bằng thép hàn: một can đã đổ vào xe, chỗ trống còn dây đai buông thõng; các can còn lại xô lệch
     hb.setTag('cans');
+    hb.box(4.7, 0.14, 2.45, D, [-2.55, ROOF_Y + 0.08, 26.85]); // khay đáy đỡ 3 can
+    hb.box(4.7, 0.45, 0.12, D, [-2.55, ROOF_Y + 0.30, 28.02]); // thành chắn sau khay
+    hb.box(4.7, 0.45, 0.12, D, [-2.55, ROOF_Y + 0.30, 25.68]); // thành chắn trước khay
+    for (const rx of [-4.82, -3.30, -1.82, -0.28]) {
+      hb.box(0.10, 1.95, 0.22, D, [rx, ROOF_Y + 1.05, 25.74]); // trụ đứng ngăn can
+      hb.box(0.10, 0.55, 2.45, D, [rx, ROOF_Y + 0.32, 26.85]); // vách ngăn đáy
+    }
     for (let i = 0; i < 3; i++) {
       const cx = -4.0 + i * 1.45;
       if (i === wear.canMissing) {
-        hb.box(0.1, 1.6, 0.06, M.canvasDark, [cx + 0.1, ROOF_Y + 1.25, 25.85], [0.15, 0, J() * 0.3]);
+        hb.box(0.12, 1.6, 0.06, M.canvasDark, [cx + 0.1, ROOF_Y + 1.25, 25.85], [0.15, 0, J() * 0.3]);
+        hb.box(0.18, 0.22, 0.10, M.steel, [cx + 0.1, ROOF_Y + 0.48, 25.95], [0.2, 0, J() * 0.3]); // khóa cài đai treo lủng lẳng
         continue;
       }
-      hb.jerrycan([cx + J() * 0.1, ROOF_Y + 1.5, 26.9 + J() * 0.2], J() * 0.12, 1.3, 3.0, 2.2, i === 1 ? M.paintDusty : P, D);
+      const jx = cx + J() * 0.1, jz = 26.9 + J() * 0.16;
+      hb.jerrycan([jx, ROOF_Y + 1.54, jz], J() * 0.12, 1.3, 3.0, 2.2, i === 1 ? M.paintDusty : P, D);
+      // Dây đai vải bạt + khóa gài thép buộc vòng qua thân can
+      hb.box(0.22, 0.06, 2.32, M.canvasDark, [jx, ROOF_Y + 3.06, jz]);
+      hb.box(0.22, 2.65, 0.06, M.canvasDark, [jx, ROOF_Y + 1.72, jz + 1.15]);
+      hb.box(0.26, 0.32, 0.12, M.steel, [jx, ROOF_Y + 1.65, jz + 1.19]);
     }
-    hb.box(4.6, 0.3, 0.3, D, [-2.55, ROOF_Y + 2.1, 25.75]);
+    hb.box(4.65, 0.26, 0.26, D, [-2.55, ROOF_Y + 2.1, 25.74]);
     hb.setTag(null);
 
     // Lưới ngụy trang cuộn tròn buộc trên nóc sau bên phải: phồng xẹp không đều, thắt lại ở chỗ dây chằng
@@ -825,28 +838,38 @@
 
     // (2 hòm đạn hai bên tháp + máng tiếp đạn: ô HỘP ĐẠN — mountMag, dựng thành cụm riêng theo cỡ băng)
 
-    // Kính ngắm pháo thủ (trước trái) có cửa chớp giáp
+    // Kính ngắm pháo thủ (trước trái) có cửa chớp giáp, mí che mưa và cần gạt nước
     tb.setTag('opticGunner');
     tb.box(3.0, 2.0, 3.2, P, [-5.6, TROOF + 1.0, -6.0]);
+    tb.box(3.2, 0.14, 3.4, D, [-5.6, TROOF + 2.05, -6.05]);
+    tb.box(2.5, 0.12, 0.45, P, [-5.6, TROOF + 1.72, -7.78], [0.18, 0, 0]);
     tb.box(2.2, 0.9, 0.12, M.glass, [-5.6, TROOF + 1.2, -7.65]);
+    tb.box(0.08, 0.82, 0.08, D, [-5.6, TROOF + 1.2, -7.72]);
+    tb.strut([-6.2, TROOF + 1.65, -7.73], [-6.55, TROOF + 0.95, -7.73], 0.04, D, 4);
     tb.box(1.2, 1.4, 0.14, P, [-7.0, TROOF + 1.3, -7.9], [0, 0.7, 0]);
     tb.box(1.2, 1.4, 0.14, P, [-4.2, TROOF + 1.3, -7.9], [0, -0.7, 0]);
     tb.setTag('searchlight');
 
-    // Đèn chiếu hồng ngoại / ánh sáng trắng có cửa chớp (trước phải)
+    // Đèn chiếu hồng ngoại / ánh sáng trắng có cửa chớp, gân tản nhiệt và cáp nguồn (trước phải)
     tb.box(1.4, 1.0, 1.6, D, [6.4, TROOF + 0.5, -6.8]);
     tb.cyl(1.15, 1.15, 2.2, 16, P, [6.4, TROOF + 1.9, -7.0], 'z');
+    for (const zf of [-6.4, -7.0, -7.6]) tb.cyl(1.21, 1.21, 0.10, 16, D, [6.4, TROOF + 1.9, zf], 'z'); // đai tản nhiệt thân đèn
     tb.cyl(0.95, 0.95, 0.1, 16, M.lens, [6.4, TROOF + 1.9, -8.12], 'z');
     tb.box(2.6, 0.2, 0.2, D, [6.4, TROOF + 3.1, -8.1]);
+    tb.strut([5.5, TROOF + 1.7, -6.6], [5.8, TROOF + 0.3, -6.2], 0.06, M.rubber, 5); // cáp điện đèn pha
     tb.setTag(null);
 
-    // Kính toàn cảnh trưởng xe trên trụ (đầu xoay quét)
+    // Kính toàn cảnh trưởng xe trên trụ (đầu xoay quét 2 kênh ngày/nhiệt)
     tb.cyl(0.85, 1.0, 2.2, 12, P, [5.8, TROOF + 1.1, 1.6]);
+    tb.cyl(1.12, 1.12, 0.20, 12, D, [5.8, TROOF + 0.10, 1.6]);
     const periHead = new THREE.Group();
     periHead.position.set(5.8, TROOF + 2.95, 1.6);
     const ph = new VehicleKit.PartBatch(ROOF_Y + TROOF + 2.95);
     ph.box(2.2, 1.5, 2.2, P, [0, 0, 0]);
     ph.box(1.5, 0.7, 0.1, M.glass, [0, 0.1, -1.13]);
+    ph.box(0.07, 0.72, 0.11, D, [0.12, 0.1, -1.14]);
+    ph.cyl(0.26, 0.26, 0.12, 10, M.lens, [-0.38, 0.1, -1.13], 'z');
+    ph.box(1.75, 0.11, 0.35, D, [0, 0.52, -1.20], [0.2, 0, 0]);
     ph.box(2.4, 0.18, 2.4, D, [0, 0.8, 0]);
     ph.build(periHead);
     turret.add(periHead);
@@ -879,11 +902,12 @@
     ant.build();
     (unit.antennaSets || (unit.antennaSets = [])).push(ant);
 
-    // Ống phóng lựu đạn khói 3 ống mỗi bên ở góc sau tháp, miệng ống có nắp cao su chống bụi. Bên đã bắn:
-    // nắp bị thổi bay, miệng ống ám muội, một nắp còn treo lủng lẳng trên dây giữ
+    // Ống phóng lựu đạn khói 3 ống mỗi bên ở góc sau tháp, miệng ống có nắp cao su chống bụi, chân ống có hộp đấu dây điểm hỏa.
+    // Bên đã bắn: nắp bị thổi bay, miệng ống ám muội, một nắp còn treo lủng lẳng trên dây giữ
     for (const s of [-1, 1]) {
       tb.setTag('smoke' + (s < 0 ? 'L' : 'R'));
       tb.box(0.45, 1.3, 3.4, P, [s * 9.95, 4.5, 8.8], [0, s * -0.25, 0]);
+      tb.box(0.32, 0.38, 0.55, D, [s * 10.1, 4.05, 10.2], [0, s * -0.25, 0]); // hộp điện điểm hỏa
       const rot = [-0.35, 0, -s * 0.85];
       const ax = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]));
       const fired = wear.smokeFired === s;
@@ -891,6 +915,8 @@
         const c = [s * 10.5, 5.0, 7.7 + i * 1.05];
         const at = (d) => [c[0] + ax.x * d, c[1] + ax.y * d, c[2] + ax.z * d];
         tb.cyl(0.4, 0.4, 1.6, 10, D, c, 'y', rot);
+        tb.cyl(0.44, 0.44, 0.15, 10, P, at(-0.42), 'y', rot); // đai kẹp ống
+        tb.strut(at(-0.72), [s * 10.05, 4.25, 7.75 + i * 1.0], 0.035, M.rubber, 4); // dây điện điểm hỏa
         if (fired && i !== 2) {
           tb.cyl(0.3, 0.3, 0.06, 10, M.soot, at(0.79), 'y', rot);
           if (i === 0) {

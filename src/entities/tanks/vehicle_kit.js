@@ -1487,26 +1487,47 @@ const VehicleKit = (() => {
       return this;
     }
 
-    // Can nhiên liệu 20 L kiểu NATO: thân dập gân chữ X trên hai mặt lớn, vai vát, tay xách 3 quai,
-    // nắp rót ở góc. pos = tâm can; bề dày t theo trục X cục bộ, cao h, rộng d; rotY quay quanh trục đứng.
+    // Can nhiên liệu 20 L kiểu NATO: thân hai nửa dập ghép có gờ mép hàn giữa, mặt hông dập gân chữ X
+    // kèm ô vuông trung tâm, vai vát, tay xách 3 quai, cổ rót nghiêng kèm nắp cam-lock có chốt gài.
+    // pos = tâm can; bề dày t theo trục X cục bộ, cao h, rộng d; rotY quay quanh trục đứng.
     jerrycan(pos, rotY, t, h, d, mat, dark) {
       const c = Math.cos(rotY), sn = Math.sin(rotY);
       const P = (lx, ly, lz) => [pos[0] + lx * c + lz * sn, pos[1] + ly, pos[2] - lx * sn + lz * c];
-      this.box(t, h * 0.88, d, mat, P(0, -h * 0.06, 0), [0, rotY, 0]);
-      this.box(t * 0.9, h * 0.08, d * 0.94, mat, P(0, h * 0.42, 0), [0, rotY, 0]);
-      // Gân chữ X dập nổi
-      const ang = Math.atan2(d * 0.7, h * 0.66), L = Math.hypot(h * 0.66, d * 0.7);
+      const dk = dark || mat;
+      // Thân chính + vai vát + đế dập gờ chịu lực
+      this.box(t, h * 0.86, d, mat, P(0, -h * 0.05, 0), [0, rotY, 0]);
+      this.box(t * 0.88, h * 0.09, d * 0.93, mat, P(0, h * 0.41, 0), [0, rotY, 0]);
+      this.box(t * 0.96, h * 0.05, d * 0.96, dk, P(0, -h * 0.48, 0), [0, rotY, 0]);
+      // Gờ mép hàn dập ghép hai nửa vỏ thép chạy dọc giữa mặt trước, mặt sau và đáy
+      this.box(0.05, h * 0.88, d + 0.07, dk, P(0, -h * 0.05, 0), [0, rotY, 0]);
+      // Gân chữ X dập nổi + ô vuông tâm + khung gờ viền hai mặt bên
+      const ang = Math.atan2(d * 0.68, h * 0.64), L = Math.hypot(h * 0.64, d * 0.68);
       for (const sx of [-1, 1]) {
-        for (const k of [-1, 1]) this.box(0.07, L, Math.max(0.12, d * 0.06), mat, P(sx * (t / 2 + 0.025), -h * 0.06, 0), [k * ang, rotY, 0, 'YXZ']);
-        // gờ viền quanh mặt
-        this.box(0.06, h * 0.08, d * 0.86, mat, P(sx * (t / 2 + 0.02), h * 0.3, 0), [0, rotY, 0]);
-        this.box(0.06, h * 0.08, d * 0.86, mat, P(sx * (t / 2 + 0.02), -h * 0.42, 0), [0, rotY, 0]);
+        const xFace = sx * (t / 2 + 0.024);
+        for (const k of [-1, 1]) {
+          this.box(0.07, L, Math.max(0.11, d * 0.058), mat, P(xFace, -h * 0.05, 0), [k * ang, rotY, 0, 'YXZ']);
+        }
+        // Ô vuông dập nổi ở giao điểm chữ X (đặc trưng can quân sự 20L)
+        this.box(0.08, h * 0.16, d * 0.18, mat, P(xFace + sx * 0.008, -h * 0.05, 0), [0, rotY, 0]);
+        // Gờ viền ngang trên/dưới và dọc trước/sau quanh mặt hông
+        this.box(0.06, h * 0.065, d * 0.86, mat, P(xFace, h * 0.30, 0), [0, rotY, 0]);
+        this.box(0.06, h * 0.065, d * 0.86, mat, P(xFace, -h * 0.40, 0), [0, rotY, 0]);
+        this.box(0.055, h * 0.66, d * 0.06, mat, P(xFace, -h * 0.05, d * 0.40), [0, rotY, 0]);
+        this.box(0.055, h * 0.66, d * 0.06, mat, P(xFace, -h * 0.05, -d * 0.40), [0, rotY, 0]);
       }
-      // Tay xách 3 quai + nắp rót
-      const hy = h * 0.46 + 0.05;
-      this.box(t * 0.28, 0.14, d * 0.62, mat, P(0, hy + h * 0.07, -d * 0.12), [0, rotY, 0]);
-      for (const k of [-0.38, -0.12, 0.14]) this.box(t * 0.24, h * 0.07, 0.13, mat, P(0, hy + h * 0.03, k * d), [0, rotY, 0]);
-      this.cyl(t * 0.2, t * 0.22, h * 0.07, 8, dark || mat, P(0, hy + h * 0.02, d * 0.36));
+      // Cụm tay xách 3 ống thép tròn (cầm tay thật hơn thanh hộp đặc) + vách chân quai
+      const hy = h * 0.45 + 0.04;
+      for (const sx of [-0.34, 0, 0.34]) {
+        this.cyl(0.055, 0.055, d * 0.56, 6, mat, P(sx * t, hy + h * 0.08, -d * 0.13), 'z', [0, rotY, 0]);
+      }
+      for (const kz of [-0.40, -0.13, 0.14]) {
+        this.box(t * 0.78, h * 0.08, 0.09, mat, P(0, hy + h * 0.035, kz * d), [0, rotY, 0]);
+      }
+      // Cổ vòi rót + nắp bật cam-lock + tai gài & chốt khóa
+      this.cyl(t * 0.21, t * 0.24, h * 0.08, 8, dk, P(0, hy + h * 0.02, d * 0.34));
+      this.box(t * 0.44, 0.06, d * 0.16, mat, P(0, hy + h * 0.068, d * 0.34), [0, rotY, 0]);
+      this.box(t * 0.26, 0.08, d * 0.18, dk, P(0, hy + h * 0.085, d * 0.29), [-0.22, rotY, 0, 'YXZ']);
+      this.cyl(0.04, 0.04, t * 0.52, 6, dk, P(0, hy + h * 0.055, d * 0.41), 'x', [0, rotY, 0]);
       return this;
     }
 

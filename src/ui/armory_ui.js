@@ -179,7 +179,7 @@ const ArmoryUI = (() => {
       engine: '<i class="ti ti-engine"></i> Động cơ: máy zin không tăng tốc được; lắp động cơ mới giữ <b>Shift</b> để tăng tốc — máy nóng dần, quá nhiệt phải nhả ga. Chỉ mua bằng Bạc'
     };
     const note = msg || (isMount(cat) ? (MOUNT_NOTE[cat] || '') + adNote
-      : cat === 'gear' ? '<i class="ti ti-keyboard"></i> Bấm <b>G</b> để phóng khói — thử ngay ở khung xe phía trên hoặc trong <b>PHÒNG THỬ ĐẠN</b>' + adNote
+      : cat === 'gear' ? '<i class="ti ti-keyboard"></i> Bấm <b>G</b> để phóng khói — thử ngay ở khung xe phía trên hoặc trong <b>THAO TRƯỜNG</b>' + adNote
       : cat === 'ammo' ? silver + adNote
       : Eq.ALL_FREE ? '<i class="ti ti-gift"></i> Mọi trang bị đều miễn phí'
       : `<i class="ti ti-lock"></i> Đồ nâng cao: mua bằng Bạc hoặc xem quảng cáo để mở khóa vĩnh viễn${adNote}`);

@@ -781,9 +781,8 @@ class BallisticsSystem3D {
       const tm = shooter && shooter.ammoMods && shooter.ammoMods.ANTI_TANK_MISSILE;
       shell.guide = {
         top: !!(tm && tm.top),
-        // bắn-và-quên (đạn cao cấp 'topatk' xe trinh sát, kiểu Javelin): đầu dò ảnh nhiệt trên tên lửa tự bám sau khi phóng —
-        // không cần xe phóng còn sống / còn nhìn thấy mục tiêu (guideMissile). Tên lửa thường & bệ đột nóc xe tăng: dẫn theo
-        // đường ngắm / laser của xe phóng
+        // bắn-và-quên (đạn cao cấp 'topatk' xe trinh sát & bệ đột nóc xe tăng, kiểu Javelin): đầu dò ảnh nhiệt trên tên lửa tự
+        // bám sau khi phóng — không cần xe phóng còn sống / giữ đường ngắm (guideMissile). Tên lửa thường: dẫn theo đường ngắm / laser
         fnf: !!(tm && tm.top),
         cruise: rp.v0, turnAcc: rp.turnAcc, boostT: rp.boostT,
         targetId: tg && tg.unit ? tg.unit.id : null,
@@ -851,8 +850,9 @@ class BallisticsSystem3D {
         // Phòng thử nghiệm ("luôn hiện mục tiêu"): mục tiêu đang hiện trên màn hình của người chơi cũng tính là thấy.
         // Trận thật vẫn bắt buộc tự nhìn thấy trực tiếp (tên lửa dẫn theo đường ngắm, đồng đội báo vị trí không đủ)
         const onScreen = !!(window.STRONGHOLD_LAB && shooter && shooter.isPlayer && target.group && target.group.visible && !target.isHiddenFromPlayer);
-        // khói đa phổ (mục tiêu phóng khói lúc đang bị khóa): đầu dò mất mục tiêu, bay tới chỗ thấy lần cuối
-        const veiled = typeof Equipment !== 'undefined' && Equipment.lockBlocked && Equipment.lockBlocked(target, s.shooterTeam);
+        // khói đa phổ (mục tiêu phóng khói lúc đang bị khóa) hoặc màn khói che giữa tên lửa và mục tiêu: đầu dò mất mục tiêu, bay tới chỗ thấy lần cuối
+        const veiled = typeof Equipment !== 'undefined' && ((Equipment.lockBlocked && Equipment.lockBlocked(target, s.shooterTeam))
+          || (Equipment.smokeBlocks && Equipment.smokeBlocks(s.x, s.z, target.x, target.z)));
         // bắn-và-quên: đầu dò ảnh nhiệt trên tên lửa tự nhìn — mất dấu khi mục tiêu lẩn vào bụi rậm (chưa vừa nổ súng) / rừng rậm
         const seekerLost = !!G.fnf && ((target.isInBush && !((target.revealTimer || 0) > 0))
           || (target.forestDens || 0) >= (typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10));
@@ -2068,6 +2068,20 @@ class BallisticsSystem3D {
     const dz = targetZ - shooterZ;
     const dist = Math.hypot(dx, dz);
     const baseAz = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360;
+
+    // BỘ ĐỆM ĐƯỜNG NGẮM (Aim Cache): Tiết kiệm 90% chi phí tích phân Euler cho 20 xe
+    if (!this._aimCache) this._aimCache = new Map();
+    const cacheNow = performance.now();
+    const targetY0 = terrain && terrain.getElevationAt ? terrain.getElevationAt(targetX, targetZ) : 0;
+    const distKey = Math.round(dist / 3.5);
+    const dyKey = Math.round((targetY0 - shooterY) / 2);
+    const tType = shooterObj ? shooterObj.tankType : 'ALL';
+    const tAmmo = shooterObj ? shooterObj.selectedAmmo : 'NORMAL';
+    const cacheKey = `${tType}:${tAmmo}:${distKey}:${dyKey}:${opts && opts.preferLob ? 1 : 0}`;
+    const cached = this._aimCache.get(cacheKey);
+    if (cached && (cacheNow - cached.t < 350)) {
+      return Object.assign({}, cached.res, { azimuth: baseAz });
+    }
     const ux = dist > 0 ? dx / dist : 0, uz = dist > 0 ? dz / dist : -1;
 
     // Chọn góc nòng THẤP NHẤT mà đạn thật sự rơi tới điểm chỉ định:
@@ -2126,7 +2140,7 @@ class BallisticsSystem3D {
       };
       const hint = opts && typeof opts.hintEl === 'number' ? opts.hintEl : null;
       const solveEl = (from, to) => {
-        const step = lobArty ? 2.0 : (directArty ? 0.5 : 1.0);
+        const step = lobArty ? 2.5 : (directArty ? 1.0 : 1.5);
         let prev = null, prevEl = from, best = null, bestEl = from, obstacle = false, found = false;
         const els = [];
         for (let el = from; el < to - 1e-6; el += step) els.push(el);
@@ -2285,11 +2299,23 @@ class BallisticsSystem3D {
     for (const f of tries) {
       const r = f();
       if (!r) continue;
-      if (r.reachable) return fin(r);
+      if (r.reachable) {
+        const solFin = fin(r);
+        if (solFin && solFin.reachable && this._aimCache) {
+          if (this._aimCache.size > 200) this._aimCache.clear();
+          this._aimCache.set(cacheKey, { t: cacheNow, res: Object.assign({}, solFin) });
+        }
+        return solFin;
+      }
       if (!first) first = r;
     }
     // không quỹ đạo nào tới: trả nghiệm của quỹ đạo ưu tiên (ngoài cự ly bắn thẳng: nghiệm thẳng gần nhất để nòng vẫn chỉ về mục tiêu)
-    return fin(first || solveFor(1, true));
+    const finalSol = fin(first || solveFor(1, true));
+    if (finalSol && finalSol.reachable && this._aimCache) {
+      if (this._aimCache.size > 200) this._aimCache.clear();
+      this._aimCache.set(cacheKey, { t: cacheNow, res: Object.assign({}, finalSol) });
+    }
+    return finalSol;
   }
 
   // LỰU PHÁO BẮN THẲNG: chọn góc nòng để đạn bay căng ngang TÂM THÂN XE mục tiêu (không phải chân xe trên mặt đất —

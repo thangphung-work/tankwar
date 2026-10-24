@@ -15,7 +15,7 @@ const Backdrop = (() => {
     const outer = [];
     let p = half, st = cell;
     while (p < ext) {
-      st = Math.min(p > 8000 ? 600 : 260, st * 1.085);   // ngoài ~8000 đã chìm trong sương: lưới thưa hơn
+      st = Math.min(p > half + 4200 ? 460 : 185, st * 1.055);   // vùng núi gần mép dày hơn để dáng núi tròn trịa
       p = ext - (p + st) < st * 0.4 ? ext : p + st;
       outer.push(p);
     }
@@ -121,7 +121,7 @@ const Backdrop = (() => {
       const px = x + (rnd() - 0.5) * SP * 0.9, pz = z + (rnd() - 0.5) * SP * 0.9, r1 = rnd(), r2 = rnd(), r3 = rnd();
       // ngoài tầm xe (xe bị giữ trong ±(nửa bản đồ - 60), lòng thung lũng kết thúc ở chân vành núi MapGen rimFoot)
       // bìa rừng theo chân vành núi, lượn sóng
-      if (Math.hypot(px, pz) < O.rimFoot(px, pz) + 206 + 130 * nz(px * 0.0016 + 4, pz * 0.0016)) continue;
+      if (Math.hypot(px, pz) < O.rimFoot(px, pz) - 50 + 90 * nz(px * 0.0016 + 4, pz * 0.0016)) continue;
       const fm = smooth(-0.08, 0.28, MapGen.fbm(nz, px * 0.0024, pz * 0.0024, 3));
       if (r1 > Math.pow(fm, F.pow)) continue;
       const h = H(px, pz);
@@ -222,8 +222,8 @@ const Backdrop = (() => {
       const l = Math.hypot(dx, 1, dz);
       nrm[v * 3] = -dx / l; nrm[v * 3 + 1] = 1 / l; nrm[v * 3 + 2] = -dz / l;
       // uv bám mép bản đồ: sắc tầng lớn ở mép kéo dài ra (shader tự làm trung tính dần ngoài bản đồ)
-      uv[v * 2] = 0.5 + Math.max(-half, Math.min(half, x)) / T.width;
-      uv[v * 2 + 1] = 0.5 - Math.max(-half, Math.min(half, z)) / T.depth;
+      uv[v * 2] = 0.5 + x / T.width;
+      uv[v * 2 + 1] = 0.5 - z / T.depth;
       const dOut = Math.hypot(x - Math.max(-half, Math.min(half, x)), z - Math.max(-half, Math.min(half, z)));
       const k = smooth(150, 700, dOut);   // sát mép giữ đúng màu mặt đất trong bản đồ
       let r = 1, g = 1, b = 1;
@@ -241,8 +241,10 @@ const Backdrop = (() => {
         r = (1 + 0.08 * red) * (1 + (band - 1) * k); g = (1 - 0.04 * red) * (1 + (band - 1) * k); b = (1 - 0.12 * red) * (1 + (band - 1) * k);
       }
       if (T.mapType === 'HIGHLAND') {
-        // đỉnh núi cao: đá sáng / tuyết đọng lốm đốm
-        const sn = smooth(560, 760, h + nz(x * 0.004, z * 0.004) * 60) * (1 - smooth(0.55, 0.85, slope) * 0.6);
+        // sườn dốc lộ đá granite xám sáng, đỉnh cao có vệt đá sáng / tuyết đọng lốm đốm
+        const rockK = smooth(0.3, 0.6, slope) * k;
+        r = r * (1 - 0.15 * rockK) + 0.12 * rockK; g = g * (1 - 0.15 * rockK) + 0.12 * rockK; b = b * (1 - 0.1 * rockK) + 0.14 * rockK;
+        const sn = smooth(500, 720, h + nz(x * 0.004, z * 0.004) * 60) * (1 - smooth(0.55, 0.85, slope) * 0.5);
         r += (1.45 - r) * sn; g += (1.45 - g) * sn; b += (1.55 - b) * sn;
       }
       if (seaLvl !== null) {

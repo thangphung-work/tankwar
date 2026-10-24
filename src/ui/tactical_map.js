@@ -434,7 +434,7 @@ class TacticalMapController {
   // ---------------------------------------------------------------------------
   buildBase() {
     const T = this.game.terrain, M = T.map;
-    const N = 1536, size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData;
+    const N = 512, size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData;
     const c = document.createElement('canvas'); c.width = c.height = N;
     const g = c.getContext('2d');
     const cell = size / S;

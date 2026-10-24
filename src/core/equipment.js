@@ -84,7 +84,7 @@
     // mã 'rocket' giữ nguyên cho đồ đã mua: trước là giàn rocket 4 ống không điều khiển, nay là bệ tên lửa đột nóc 2 ống
     rocket: {
       name: 'Bệ tên lửa đột nóc 2 ống', icon: 'arrow-big-down-lines', cat: 'roof', adv: true, price: 6500, tanks: ['ALL_ROUNDER'],
-      desc: 'Hai ống tên lửa chống tăng tấn công đỉnh trên bệ xoay, có khối ngắm chiếu laser chỉ thị mục tiêu. Phím [4], khóa xe địch và giữ tia laser ~2,5 s rồi bấm Space: khí nén đẩy tên lửa ra khỏi ống, động cơ đánh lửa, vút lên cao rồi bổ nhào xuống NÓC xe — xe tăng / xe 6 nòng mất 90–95% máu (có mái lồng: 80–85%), xe trinh sát / pháo tự hành hạ gọn. Chỉ 2 quả mỗi lần xuất kích, không nạp lại. Cự ly 300–1.600; phải nhìn thấy mục tiêu tới lúc trúng; khói, bụi rậm, hệ thống đánh chặn chủ động của địch đều cản được.'
+      desc: 'Hai ống tên lửa chống tăng tấn công đỉnh trên bệ xoay kiểu Javelin (bắn-và-quên): đầu dò ảnh nhiệt tự bám mục tiêu sau khi phóng, xe phóng rút được ngay. Phím [4], chọn xe địch (nhấp chuột / Tab) và giữ tâm ngắm trên xe ~2,5 s để đầu dò khóa (lệch tâm thanh khóa tụt về 0; không khóa được khi địch trong khói hoặc bụi), bấm Space phóng: khí nén đẩy tên lửa ra khỏi ống, động cơ đánh lửa vút lên cao rồi bổ nhào xuống NÓC xe — xe tăng / xe 6 nòng mất 90–95% máu (có mái lồng: 80–85%), xe trinh sát / pháo tự hành hạ gọn. Chỉ 2 quả mỗi lần xuất kích, không nạp lại. Cự ly 300–1.600; mất dấu nếu địch thả khói hoặc lẩn vào bụi rậm / rừng.'
     },
     // --- Ô NÓC THÁP xe 6 nòng (chân đế mô-đun sau nắp tháp; để trống = không mang gì) ---
     rjam: {
@@ -2294,7 +2294,7 @@
       const v_up = { x: -sinL * nhx, y: cosL, z: -sinL * nhz };
       const N = { x: cosL * nhx, y: sinL, z: cosL * nhz };
       const thick = 0.48;
-      const eraOut = thick / 2 + 0.05 + (app ? 1.1 : 0);
+      const eraOut = thick / 2 + 0.05;
 
       const rows = [
         { dup: 0.95, tList: [0.18, 0.48, 0.78], w: 2.7, h: 1.45 },

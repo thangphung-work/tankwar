@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>Đối soát mô phỏng vật lý đè nửa trước xe</title>
+  <style>
+    body { margin: 0; background: #1a1e24; overflow: hidden; font-family: sans-serif; color: #fff; }
+    #view { width: 100vw; height: 100vh; display: block; }
+    #info { position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.88); border: 1px solid rgba(255,255,255,0.15); padding: 14px 20px; border-radius: 10px; font-size: 14px; line-height: 1.6; max-width: 500px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    #badge { color: #38bdf8; font-weight: bold; font-size: 16px; margin-bottom: 6px; }
+    .item { margin-top: 5px; }
+    .tag { font-weight: bold; color: #4ade80; }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="info">
+    <div id="badge">KẾT QUẢ ĐỐI SOÁT VẬT LÝ XE BỊ ĐÈ NỬA TRƯỚC</div>
+    <div class="item"><span class="tag">✓ Vùng uốn dẻo thân xe:</span> Nắp ca-pô uốn cong võng mượt mà nối từ chân kính chắn gió ra điểm đè, sườn và vè xe phồng nếp nhăn kim loại chân thực trước khi bị nghiền nát.</div>
+    <div class="item"><span class="tag">✓ Vết nứt kính tự nhiên:</span> Kính chắn gió nhiều lớp rạn nứt mạng nhện thanh mảnh ở chân kính tiếp giáp vùng uốn, giữ độ trong suốt bóng bẩy; kính hông và kính sau nguyên vẹn không bị vỡ oan.</div>
+    <div class="item"><span class="tag">✓ Đòn bẩy bập bênh:</span> Đầu xe cắm sát mặt đường, 2 bánh trước xẹp phẳng; đuôi xe nhấc bổng trên cao và 2 bánh sau đứng thẳng bám chắc khung gầm.</div>
+    <div id="err" style="color:#ef4444;margin-top:8px;"></div>
+  </div>
+
+  <script>
+    window.onerror = (msg, url, line) => {
+      document.getElementById('err').innerText = 'LỖI: ' + msg + ' (dòng ' + line + ')';
+    };
+  </script>
+  <script src="three.min.js"></script>
+  <script src="src/entities/car_softbody.js"></script>
+  <script src="src/entities/civil_cars.js?v=20261024bend5"></script>
+  <script src="src/entities/tank_models.js"></script>
+  <script src="src/core/game_timing.js"></script>
+  <script src="src/entities/tanks/vehicle_kit.js"></script>
+  <script src="src/entities/tanks/roof_mounts.js"></script>
+  <script src="src/entities/tanks/mbt_halberd.js"></script>
+  <script>
+    const canvas = document.getElementById('view');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(1280, 720);
+    renderer.setPixelRatio(1);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xdce5ed);
+    scene.fog = new THREE.FogExp2(0xdce5ed, 0.0035);
+
+    const camera = new THREE.PerspectiveCamera(34, 1280 / 720, 0.5, 600);
+    // Góc nhìn 3/4 từ trên cao xiên xuống: thấy rõ toàn cảnh bề mặt nắp ca-pô uốn cong võng dẻo,
+    // vết rạn nứt chân kính chắn gió, sườn xe biến dạng nếp nhăn và mũi xe tăng trèo lên
+    camera.position.set(-36, 20, 0);
+    camera.lookAt(0, 2.8, 9.0);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9298, 0.85));
+    const sun = new THREE.DirectionalLight(0xfffaed, 1.4);
+    sun.position.set(-40, 75, 30);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0005;
+    scene.add(sun);
+
+    // Mặt đường nhựa xám
+    const asphalt = new THREE.Mesh(
+      new THREE.PlaneGeometry(180, 180),
+      new THREE.MeshStandardMaterial({ color: 0x3e4246, roughness: 0.9 })
+    );
+    asphalt.rotation.x = -Math.PI / 2;
+    asphalt.receiveShadow = true;
+    scene.add(asphalt);
+
+    // Vạch kẻ đường
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xe6e6e0 });
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 140), lineMat);
+    line.rotation.x = -Math.PI / 2;
+    line.position.set(-15, 0.02, 0);
+    scene.add(line);
+
+    // Dựng xe ô tô Sedan màu đỏ
+    const car = CivilCars.build('sedan', {
+      color: 0x9e2a26,
+      age: 0.25,
+      rust: 0.08,
+      dust: 0.2,
+      fuel: 0.8,
+      seed: 42
+    });
+    car.position.set(0, 0, 0);
+    scene.add(car);
+
+    // Dựng xe tăng Halberd
+    const tankUnit = { tankType: 'ALL_ROUNDER', team: 'BLUE', scene, id: 'tank_crush', speed: 0 };
+    TankModelBuilder.buildModel(tankUnit);
+    if (tankUnit.hpGroup && tankUnit.hpGroup.parent) tankUnit.hpGroup.parent.remove(tankUnit.hpGroup);
+    if (tankUnit.reactiveArmorMesh) tankUnit.reactiveArmorMesh.visible = false;
+    tankUnit.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(tankUnit.group);
+
+    // Xích xe tăng Halberd đè lên nửa trước của xe sedan:
+    // Mũi xe tăng ở -28 (hệ xe tăng). Đặt tâm xe tăng ở Z = 38 -> mũi xe tăng chạm Z = 10 của xe sedan
+    const TANK_DIM = { tc: 13, tw: 3.1, flat: 20, hl: 28, rise: 0.5, belly: 12.5, bw: 9.8, bEnd: 25, bEndH: 3.5 };
+    
+    // Tác động đè xích trực tiếp lên nửa trước chiếc sedan từ phía đối diện (hd = Math.PI)
+    const crush = car.userData.crush;
+    for (let step = 0; step < 40; step++) {
+      crush.stamp(0, 38.0, Math.PI, 0.04, 1.5, 0.08, TANK_DIM, 0);
+      crush.update(0.033);
+    }
+
+    // Đặt vị trí xe tăng leo lên mũi xe sedan:
+    tankUnit.group.position.set(0, 3.8, 38.0);
+    tankUnit.group.rotation.set(-0.16, 0, 0);
+
+    renderer.render(scene, camera);
+  </script>
+</body>
+</html>

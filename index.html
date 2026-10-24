@@ -11,7 +11,7 @@
   <meta name="theme-color" content="#10140c">
   <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
   <link rel="stylesheet" href="src/ui/theme.css?v=20261020mo2">
-  <link rel="stylesheet" href="style.css?v=20261020pg3">
+  <link rel="stylesheet" href="style.css?v=20261024smooth1">
   <link rel="stylesheet" href="src/ui/lobby.css?v=20261022rain1">
   <link rel="stylesheet" href="hud.css?v=20261023qc2">
   <link rel="stylesheet" href="src/ui/account.css?v=20261020ad1">
@@ -31,7 +31,7 @@
     document.write('<div id="range-lab-loading" style="position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#0b0f0c;color:#d6e2c8;font:600 14px/1.4 system-ui,sans-serif;letter-spacing:.12em;transition:opacity .35s">'
       + '<style>@keyframes rlspin{to{transform:rotate(360deg)}}</style>'
       + '<div style="width:46px;height:46px;border-radius:50%;border:3px solid rgba(214,226,200,.18);border-top-color:#ffb700;animation:rlspin .8s linear infinite"></div>'
-      + '<div style="font-size:18px;color:#ffb700">PHÒNG THỬ ĐẠN</div><div id="range-lab-stage">ĐANG TẢI…</div></div>');
+      + '<div style="font-size:18px;color:#ffb700">THAO TRƯỜNG DIỄN TẬP</div><div id="range-lab-stage">ĐANG TẢI…</div></div>');
   }
 </script>
   <div id="game-container">
@@ -197,7 +197,7 @@
       <div class="game-over-card">
         <div id="game-over-title" class="victory-title">CHIẾN THẮNG ÁP ĐẢO!</div>
         <div id="game-over-subtitle" class="victory-sub">Bạn là đội pháo tự hành sống sót duy nhất trên chiến trường.</div>
-        
+
         <div class="stats-summary">
           <div class="summary-item">
             <span class="summary-label">SỐ LƯỢT KHAI HỎA:</span>
@@ -362,7 +362,7 @@
             </div>
 
             <div class="mm-map-cards-row">
-              <div class="mm-map-card active" data-map-type="DESERT">
+              <div class="mm-map-card" data-map-type="DESERT">
                 <div class="map-thumbnail" style="background-image: url('assets/lobby_desert.jpg');"></div>
                 <div class="map-meta">
                   <span class="map-index">01</span>
@@ -372,7 +372,7 @@
                 <span class="map-check-badge"><i class="ti ti-check" aria-hidden="true"></i></span>
               </div>
 
-              <div class="mm-map-card" data-map-type="URBAN">
+              <div class="mm-map-card active" data-map-type="URBAN">
                 <div class="map-thumbnail" style="background-image: url('assets/lobby_urban.jpg');"></div>
                 <div class="map-meta">
                   <span class="map-index">02</span>
@@ -448,26 +448,138 @@
 
       </div>
 
-      <!-- MÀN CHỜ GHÉP TRẬN: bản đồ trận đấu hiển thị bên dưới, đủ người thì đếm ngược 3 giây rồi vào trận -->
+      <!-- MÀN CHỜ GHÉP TRẬN: KÊNH TRUYỀN HÌNH QUÂN SỰ TỪ MÁY BAY TRINH SÁT DRONE -->
       <div id="mm-search-hud" class="mm-search-hud hidden">
-        <div class="mm-sh-map">
-          <span class="mm-sh-map-lbl">CHIẾN ĐỊA</span>
-          <span class="mm-sh-map-name" id="mm-sh-map-name">SA MẠC LỬA</span>
+        <video id="mm-recon-video" class="mm-recon-video hidden" autoplay muted loop playsinline></video>
+        <!-- Lớp phủ hiệu ứng video cam quân sự: hạt nhiễu vô tuyến, sọc quét & viền tối góc -->
+        <div class="mm-sh-noise"></div>
+        <div class="mm-sh-scanlines"></div>
+        <div class="mm-sh-vignette"></div>
+        <div class="mm-sh-glitch"></div>
+
+        <!-- Khung ngắm & góc kính ngắm quang học -->
+        <div class="mm-sh-reticle-corner top-left"></div>
+        <div class="mm-sh-reticle-corner top-right"></div>
+        <div class="mm-sh-reticle-corner bottom-left"></div>
+        <div class="mm-sh-reticle-corner bottom-right"></div>
+        <div class="mm-sh-center-crosshair"></div>
+
+        <!-- Thông số bay Drone trinh sát (Góc trên bên trái) -->
+        <div class="mm-drone-telemetry-tl">
+          <div class="mm-drone-id">DRONE CAM 01</div>
+          <div class="mm-drone-stat">ALT &nbsp;<b id="mm-tele-alt">1240m</b></div>
+          <div class="mm-drone-stat">SPD &nbsp;<b id="mm-tele-spd">220kph</b></div>
         </div>
+
+        <!-- Thước đo la bàn chia vạch chỉ hướng (Chính giữa trên) -->
+        <div class="mm-drone-compass">
+          <div class="mm-compass-arrow">▼</div>
+          <div class="mm-compass-track" id="mm-compass-track">
+            <span>·</span><span>·</span><span>·</span><span class="cardinal">N</span><span>·</span><span>·</span><span>·</span><span class="cardinal">E</span><span>·</span><span>·</span><span>·</span><span class="cardinal">S</span><span>·</span><span>·</span><span>·</span><span class="cardinal">W</span><span>·</span><span>·</span><span>·</span><span class="cardinal">N</span>
+          </div>
+        </div>
+
+        <!-- Tọa độ trinh sát & Mục tiêu chiến lược (Góc trên bên phải) -->
+        <div class="mm-drone-target-tr">
+          <div class="mm-target-row">TARGET: &nbsp;<b id="mm-target-name">NUCLEAR BASE</b></div>
+          <div class="mm-target-row">GRID: &nbsp;<b id="mm-target-grid">43-7-12</b></div>
+          <div class="mm-target-row">STATUS: &nbsp;<b id="mm-target-status">ĐANG TRINH SÁT</b></div>
+        </div>
+
+        <!-- Đèn nhấp nháy ghi hình & thời gian REC (Góc dưới bên trái) -->
+        <div class="mm-drone-rec-bl">
+          <span class="mm-rec-dot"></span>
+          <span class="mm-rec-label">REC</span>
+          <span class="mm-rec-time" id="mm-rec-timer">00:00:12</span>
+        </div>
+
+        <!-- Thông số ống kính quang điện tử (Góc dưới bên phải) -->
+        <div class="mm-drone-optics-br">
+          <div class="mm-optics-row">200M 4.2x</div>
+          <div class="mm-optics-row">QUANG NHIỆT: <span>TẮT</span></div>
+          <div class="mm-optics-row">HỒNG NGOẠI: <span>TẮT</span></div>
+        </div>
+
+        <!-- Hộp đàm thoại của Bộ Chỉ Huy Chiến Thuật -->
+        <div id="mm-briefing-box" class="mm-sh-briefing">
+          <div class="mm-briefing-top">
+            <div class="mm-briefing-avatar-box">
+              <img src="assets/commander_avatar.jpg" alt="Commander" class="mm-briefing-avatar-img">
+              <div class="mm-avatar-scanline"></div>
+            </div>
+            <div class="mm-briefing-top-info">
+              <span class="mm-briefing-title">COMMANDER</span>
+            </div>
+            <span class="mm-briefing-close">✕</span>
+          </div>
+          <div class="mm-briefing-body">
+            <div class="mm-comm-section">
+              <span class="mm-comm-speaker">Command:</span>
+              <div id="mm-briefing-text" class="mm-comm-msg"></div>
+            </div>
+            <div id="mm-briefing-reply" class="mm-comm-reply hidden">
+              <span class="mm-comm-speaker squad">Striker-1:</span>
+              <span class="mm-comm-reply-text">Rõ! Tiến hành ngay, thưa chỉ huy!</span>
+            </div>
+            <div class="mm-comm-status">
+              <span class="mm-typing-dots">•••</span> đang nhập
+            </div>
+          </div>
+        </div>
+
+        <!-- Bộ đếm ngược xuất kích -->
         <div id="mm-countdown" class="mm-countdown hidden">
           <span class="mm-cd-num" id="mm-cd-num">3</span>
           <span class="mm-cd-lbl">CHUẨN BỊ XUẤT KÍCH</span>
         </div>
+
+        <!-- Thanh tiến trình tìm trận / dựng bản đồ phía dưới -->
         <div class="mm-sh-panel">
-          <div class="mm-sh-radar"><div class="radar-scanner"></div><div class="radar-dot"></div></div>
+          <div class="mm-sh-radar"><canvas id="mm-radar-canvas" width="104" height="104"></canvas></div>
           <div class="mm-sh-info">
-            <span class="mm-sh-status" id="mm-status-text">ĐANG TÌM NGƯỜI CHƠI...</span>
+            <span class="mm-sh-status" id="mm-status-text">ĐANG DỰNG BẢN ĐỒ...</span>
             <div class="mm-sh-progress"><div id="mm-search-progress"></div></div>
-            <span class="mm-sh-meta"><b id="mm-sh-count">1/20</b> chiến binh · <span id="mm-timer-val">00:00</span></span>
+            <span class="mm-sh-meta"><b id="mm-sh-count">11/20</b> Chiến lược · <span id="mm-timer-val">08:00</span></span>
           </div>
           <div class="mm-sh-actions">
             <button id="mm-cancel-search-btn" class="mm-sh-btn" title="Hủy tìm trận, quay lại sảnh">HỦY</button>
           </div>
+        </div>
+      </div>
+
+      <!-- HUD TRINH SÁT CHIẾN THUẬT MỞ MÀN (Lia qua 3 Cứ Điểm A, B, C) -->
+      <div id="tactical-intro-hud" class="tactical-intro-hud hidden">
+        <div class="ti-scanlines"></div>
+        <div class="ti-video-noise"></div>
+        <div class="ti-vignette"></div>
+        <div class="ti-top-bar">
+          <div class="ti-tag"><span class="ti-dot"></span> DRONE CAM 01 · LIVE TACTICAL FEED</div>
+          <button id="ti-skip-btn" class="ti-skip-btn">BỎ QUA [Phím Cách / Chuột]</button>
+        </div>
+        <div class="ti-telemetry">
+        <span>ALT <b id="ti-tele-alt">1,240M</b></span><span>SPD <b id="ti-tele-spd">219KPH</b></span><span>GRID <b id="ti-tele-grid">43-7-12</b></span>
+        </div>
+        <div class="ti-command-panel">
+          <div class="ti-command-head">
+            <img src="assets/commander_avatar.jpg" alt="Chỉ huy">
+            <div><b>COMMANDER</b><small>KÊNH CHỈ HUY MÃ HÓA</small></div>
+          </div>
+          <div class="ti-command-copy"><b>Chỉ huy:</b> <span id="ti-command-text"></span><i class="ti-type-cursor">█</i></div>
+          <div id="ti-command-reply" class="ti-command-reply hidden"><b>Chiến sĩ [Striker-1]:</b> <span id="ti-reply-text">Rõ! Đã khóa tọa độ mục tiêu, sẵn sàng xuất kích!</span></div>
+          <div class="ti-command-status" id="ti-command-status">••• ĐANG NHẬP</div>
+        </div>
+        <div class="ti-target-frame">
+          <div class="ti-corner tl"></div>
+          <div class="ti-corner tr"></div>
+          <div class="ti-corner bl"></div>
+          <div class="ti-corner br"></div>
+          <div class="ti-crosshair"></div>
+          <div class="ti-point-badge" id="ti-point-badge">CỨ ĐIỂM ALPHA [A]</div>
+          <div class="ti-point-task" id="ti-point-task">Chiếm giữ hành lang phía Tây, cắt đứt tuyến chi viện của địch</div>
+        </div>
+        <div class="ti-bottom-bar">
+          <span id="ti-status-sub">HỆ THỐNG TRÍ TUỆ CHIẾN TRƯỜNG ĐANG ĐỒNG BỘ MỤC TIÊU...</span>
+          <div class="ti-load-track"><i id="ti-load-progress"></i></div>
         </div>
       </div>
     </div>
@@ -504,10 +616,10 @@
   <script src="src/core/audio/music.js?v=20261021hangar1"></script>
   <script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
   <script src="src/core/audio/ui_sounds.js?v=20261022sh1"></script>
-  <script src="src/core/map_gen.js?v=20261024wreck1"></script>
+  <script src="src/core/map_gen.js?v=20261024real1"></script>
   <script src="src/core/sky.js?v=20261022storm1"></script>
   <script src="src/core/weather.js?v=20261024lag3"></script>
-  <script src="src/gameplay/destructibles.js?v=20261023city1"></script>
+  <script src="src/gameplay/destructibles.js?v=20261024real1"></script>
   <script src="src/gameplay/props.js?v=20261023city1"></script>
   <script src="src/gameplay/streetscape.js?v=20261023city1"></script>
   <script src="src/gameplay/strongholds.js?v=20261024wreck1"></script>
@@ -522,7 +634,7 @@
   <script src="src/gameplay/env_damage.js?v=20261022fix2"></script>
   <script src="src/core/ground_shader.js?v=20261022perf1"></script>
   <script src="src/core/ground_cover.js?v=20261024lag3"></script>
-  <script src="src/core/terrain.js?v=20261024lag3"></script>
+  <script src="src/core/terrain.js?v=20261024real1"></script>
   <script src="src/core/backdrop.js?v=20261023city1"></script>
   <script src="src/entities/projectiles.js?v=20261023msl2"></script>
   <script src="src/core/ballistics.js?v=20261024wreck1"></script>
@@ -536,11 +648,12 @@
   <script src="src/entities/tanks/fsv_hailstorm.js?v=20261023sbag2"></script>
   <script src="src/entities/tanks/spg_arbalest.js?v=20261022mod2"></script>
   <script src="src/entities/tanks/recon_marten.js?v=20261024rocket1"></script>
-  <script src="src/ai/navigator.js?v=20261024lag2"></script>
+  <script src="src/ai/navigator.js?v=20261024smooth1"></script>
   <script src="src/ai/bot_profiles.js?v=20261023bp2"></script>
   <script src="src/ai/bot_ai.js?v=20261023bp1"></script>
   <script src="src/entities/recon_drone.js?v=20261021mrg26"></script>
   <script src="src/entities/spg.js?v=20261024lag2"></script>
+  <script src="src/entities/car_softbody.js?v=20261024sb1"></script>
   <script src="src/entities/civil_cars.js?v=20261024sedanrear1"></script>
 
   <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
@@ -572,13 +685,14 @@
   <script src="src/core/net_codec.js?v=20261019n1"></script>
   <script src="src/core/team_balance.js?v=20261023tb1"></script>
   <script src="src/core/netcode.js?v=20261024wreck1"></script>
-  <script src="src/ui/matchmaking.js?v=20261023wit1"></script>
+  <script src="src/ui/matchmaking.js?v=20261024smooth1"></script>
   <script src="src/ui/account.js?v=20261022mag1"></script>
 
   <!-- Phòng thử nghiệm cứ điểm (chỉ chạy khi mở index.html?lab=stronghold / stronghold_lab.html) -->
-  <script src="src/ui/stronghold_lab.js?v=20261022nav1"></script>
-  <script src="src/ui/range_lab.js?v=20261022field1"></script>
+  <script src="src/ui/stronghold_lab.js?v=20261024nav1"></script>
+  <script src="src/ui/range_lab.js?v=20261024nav1"></script>
   <script src="src/ui/free_cam.js?v=20261022fc7"></script>
+  <script src="src/ui/recon_recorder.js?v=20261024r1"></script>
   <script src="src/core/gfx_quality.js?v=20261022sh1"></script>
   <script src="src/ui/perf_overlay.js?v=20261024bvh1"></script>
 
@@ -587,7 +701,7 @@
   <script src="src/ui/motion.js?v=20261020mo2"></script>
   <script src="src/gameplay/drone_air.js?v=20261023msl2"></script>
   <script src="src/ui/range_air.js?v=20261022mod2"></script>
-  <script src="src/game.js?v=20261024sight2"></script>
+  <script src="src/game.js?v=20261024crater2"></script>
   <script src="src/gameplay/ew_jammer.js?v=20261022mod2"></script>
   <script src="src/gameplay/lock_jammer.js?v=20261022mod2"></script>
   <script src="src/gameplay/kamikaze_uav.js?v=20261024wreck1"></script>

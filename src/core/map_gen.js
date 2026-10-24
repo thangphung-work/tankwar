@@ -12,28 +12,69 @@
 // Toàn bộ module nằm trong 1 hàm tự chứa (không dùng biến ngoài) -> MapGenFactory.toString() dựng được luồng phụ
 function MapGenFactory() {
   const SIZE = 16200;
-  const RES = 672;                 // số ô lưới mỗi cạnh (~24 đơn vị / ô: bản đồ gấp đôi, giữ số đỉnh vừa sức máy)
+  // 672² đỉnh cộng normals/texture khiến main thread đứng hàng chục giây khi dựng mesh.
+  // 192 vẫn đủ cho địa hình chiến thuật; va chạm dùng nội suy nên thế trận không đổi.
+  const RES = 192;
   const HALF = SIZE / 2;
   const CELL = SIZE / RES;
   const OUTER_EXT = 17400;         // nửa cạnh vùng cảnh nền ngoài bản đồ (xem Backdrop); >= HALF + tầm nhìn camera (9000)
   // Bố cục gốc thiết kế cho bản đồ 3600: K giãn khoảng cách giữa các điểm chiến thuật, AREA nhân số lượng vật thể
   // (giữ mật độ cây / đá / làng như cũ); kích thước từng vật thể, đồi, đường... giữ nguyên
-  const K = SIZE / 3600, AREA = K * K;
+  // Không nhân mật độ đạo cụ theo toàn bộ diện tích 20,25 lần: phần lớn nằm ngoài tầm nhìn
+  // và làm Urban tạo quá nhiều nhà/cây/xe trong một frame. Giữ trần 5x để còn độ hùng vĩ
+  // nhưng đủ nhẹ cho trình duyệt dựng mà không báo "page isn't responding".
+  const K = SIZE / 3600, AREA = 1;
   const O0 = HALF - 1800;          // cảnh ngoài bản đồ (vành núi, bờ biển, đảo xa) dời ra theo mép bản đồ
   const RIM_WALL = 650;            // tường giữ xe vô hình nằm trên sườn vành núi: cách chân núi bấy nhiêu (spg.js)
 
   // Điểm chiến thuật cố định của luật chơi
   const CAPTURE = [{ x: -800 * K, z: 0 }, { x: 0, z: 0 }, { x: 800 * K, z: 0 }];
   const SPAWN = { blue: { z0: 800 * K, z1: 1180 * K }, red: { z0: -1180 * K, z1: -800 * K }, halfX: 430 * K };
-  // Bố cục "3 cứ điểm trên 3 đồi" (hình tam giác): trục xuyên qua của 3 khoang lệch nhau đúng 120° (B dọc trục z,
-  // A -30°, C 210°) -> 3 trục gặp nhau giữa tam giác, miệng +1 của cả 3 hầm cùng nhìn vào khu công trình ở giữa.
-  // angle: hướng trục xuyên qua của khoang (cos -> x, sin -> z); hill: độ cao đỉnh đồi so với nền xung quanh
-  const STRONGHOLD_SITES = [
-    // giãn rộng (A, C lùi về phía xanh, B lùi về phía đỏ, chân đồi vẫn ngoài khu xuất kích) chừa chỗ cho công trình ở giữa
-    { id: 'A', x: -620 * K, z: 330 * K, angle: -Math.PI / 6, hill: 72 },
-    { id: 'B', x: 0, z: -400 * K, angle: Math.PI / 2, hill: 96 },
-    { id: 'C', x: 620 * K, z: 330 * K, angle: Math.PI * 7 / 6, hill: 58 }
+  // Các biến thể bố cục cứ điểm chiến thuật (được bốc ngẫu nhiên theo hạt giống bản đồ seed)
+  const STRONGHOLD_LAYOUT_VARIANTS = [
+    {
+      name: 'FRONTLINE',
+      label: 'TIỀN TUYẾN DÀN NGANG',
+      desc: 'Ba cứ điểm dàn ngang ranh giới giữa bản đồ — hai phe cách đều, đua tốc độ chiếm đóng',
+      sites: [
+        { id: 'A', x: -750 * K, z: 0, angle: Math.PI / 2, hill: 68 },
+        { id: 'B', x: 0, z: 0, angle: Math.PI / 2, hill: 76 },
+        { id: 'C', x: 750 * K, z: 0, angle: Math.PI / 2, hill: 68 }
+      ],
+      landmark: { x: 0, z: -215 * K, angle: -Math.PI / 2 }
+    },
+    {
+      name: 'DIAGONAL',
+      label: 'GỌNG KÌM SO LE',
+      desc: 'Cứ điểm A và C bố trí so le chéo cánh, cứ điểm B ở trung tâm làm tâm điểm tranh chấp',
+      sites: [
+        { id: 'A', x: -660 * K, z: 350 * K, angle: -Math.PI / 4, hill: 72 },
+        { id: 'B', x: 0, z: 0, angle: Math.PI / 2, hill: 80 },
+        { id: 'C', x: 660 * K, z: -350 * K, angle: Math.PI * 3 / 4, hill: 72 }
+      ],
+      landmark: { x: 0, z: 205 * K, angle: Math.PI / 2 }
+    },
+    {
+      name: 'FORTRESS',
+      label: 'TAM GIÁC PHÁO ĐÀI',
+      desc: 'Cứ điểm B nằm trên đỉnh đồi pháo đài cao khống chế thung lũng, hai tiền đồn A và C yểm trợ',
+      sites: [
+        { id: 'A', x: -620 * K, z: 330 * K, angle: -Math.PI / 6, hill: 72 },
+        { id: 'B', x: 0, z: -400 * K, angle: Math.PI / 2, hill: 96 },
+        { id: 'C', x: 620 * K, z: 330 * K, angle: Math.PI * 7 / 6, hill: 58 }
+      ],
+      landmark: { x: 0, z: 85 * K, angle: -Math.PI / 2 }
+    }
   ];
+
+  function pickStrongholdVariant(seed) {
+    const s = ((seed >>> 0) ^ 0x7f4a7c15);
+    const idx = Math.abs((s * 1103515245 + 12345) >>> 16) % STRONGHOLD_LAYOUT_VARIANTS.length;
+    return STRONGHOLD_LAYOUT_VARIANTS[idx];
+  }
+
+  // Tương thích ngược: mẫu mặc định tam giác pháo đài
+  const STRONGHOLD_SITES = STRONGHOLD_LAYOUT_VARIANTS[2].sites;
   // LỐI VÀO CỬA HẦM CỨ ĐIỂM (hệ cục bộ cứ điểm: f dọc trục xuyên qua tính ra từ tâm, r ngang; 8 đơn vị = 1 m).
   // Khớp Strongholds.S (strongholds.js): END = HB + RUN = 206 là mép cuối sân bê tông giữa 2 tường cánh.
   //  - sân phễu bê tông (hardstand) dài APRON = 13 m: miệng rộng HW0 (phủ cả chân 2 tường cánh, ~46 m) thu dần kiểu
@@ -54,11 +95,7 @@ function MapGenFactory() {
   // Đặt tại trọng tâm tam giác A B C; mặt trước nhìn về cứ điểm B. angle: hướng mặt trước (cos -> x, sin -> z);
   // hu / hv: nửa dài mặt bằng san nền theo trục trước-sau / ngang
   // (8 đơn vị = 1 m: căn cứ hầm phóng 80 x 130 m, hầm sinh học 50 x 40 m, trận địa 48 x 48 m)
-  const LANDMARK_SITE = {
-    x: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.x, 0) / 3),
-    z: Math.round(STRONGHOLD_SITES.reduce((a, c) => a + c.z, 0) / 3),
-    angle: -Math.PI / 2
-  };
+  const LANDMARK_SITE = STRONGHOLD_LAYOUT_VARIANTS[2].landmark;
   const LANDMARK_KINDS = {
     // căn cứ hầm phóng tên lửa hạt nhân
     nuke: { hu: 320, hv: 520, back: 60 },
@@ -80,6 +117,7 @@ function MapGenFactory() {
     { id: 'sedan', w: 3.0, size: 'mid' },
     { id: 'hatch', w: 2.0, size: 'small' },
     { id: 'suv', w: 1.2, size: 'large' },
+    { id: 'dump', w: 1.3, size: 'large', tags: ['work'] },
     { id: 'van', w: 0.8, size: 'large', tags: ['work'] },
     { id: 'pickup', w: 0.8, size: 'large', tags: ['work'] },
     { id: 'taxi', w: 0.5, size: 'mid', tags: ['taxi', 'fixedColor'] }
@@ -195,7 +233,7 @@ function MapGenFactory() {
   const BIOME = {
     DESERT: { roadKind: 'dirt', bunkers: 7, trees: 150, rocks: 70, bushes: 14, villages: 3, treeKinds: ['palm', 'palm', 'cactus', 'deadTree', 'acacia'] },
     URBAN: { roadKind: 'asphalt', bunkers: 5, trees: 220, rocks: 18, bushes: 10, villages: 0, treeKinds: ['broadleaf', 'broadleaf', 'cypress'] },
-    JUNGLE: { roadKind: 'mud', bunkers: 5, trees: 1700, rocks: 40, bushes: 30, villages: 2, treeKinds: ['jungle', 'jungle', 'palm', 'broadleaf', 'jungle'] },
+    JUNGLE: { roadKind: 'mud', bunkers: 5, trees: 780, rocks: 40, bushes: 24, villages: 2, treeKinds: ['jungle', 'jungle', 'palm', 'broadleaf', 'jungle'] },
     HIGHLAND: { roadKind: 'gravel', bunkers: 6, trees: 760, rocks: 140, bushes: 14, villages: 2, treeKinds: ['pine', 'pine', 'pine', 'deadTree'] },
     RIVER_LAKE: { roadKind: 'dirt', bunkers: 5, trees: 650, rocks: 36, bushes: 18, villages: 3, treeKinds: ['broadleaf', 'broadleaf', 'cypress', 'willow'] }
   };
@@ -210,14 +248,19 @@ function MapGenFactory() {
     seed = (seed >>> 0) || 1;
     const B = BIOME[type];
     const SH = layout === 'STRONGHOLDS';
-    const CAP = SH ? STRONGHOLD_SITES.map(c => ({ x: c.x, z: c.z })) : CAPTURE;
+    const variant = SH ? pickStrongholdVariant(seed) : null;
+    const strongholdSites = variant ? variant.sites : STRONGHOLD_SITES;
+    const landmarkSite = variant ? variant.landmark : LANDMARK_SITE;
+    const layoutVariant = variant ? variant.name : 'CLASSIC';
+    const layoutLabel = variant ? variant.label : 'TRUYỀN THỐNG';
+    const layoutDesc = variant ? variant.desc : '';
+    const CAP = SH ? strongholdSites.map(c => ({ x: c.x, z: c.z })) : CAPTURE;
     const keyR = SH ? 345 : 110;   // bán kính cấm đặt cây / nhà / đá quanh cứ điểm
-    // Công trình bối cảnh (chỉ bố cục 3 cứ điểm): G (cốt san nền) tính sau khi tìm tuyến đường, trước khi khắc đường
+    // Công trình bối cảnh: G (cốt san nền) tính sau khi tìm tuyến đường, trước khi khắc đường
     const lmKind = LANDMARK_KINDS[landmarkKind] ? landmarkKind : MAP_LANDMARK[type];
-    // back: lùi tâm công trình ra sau (xa cứ điểm B mà mặt trước nhìn về) cho mặt bằng lớn không lấn chân đồi B
-    const lmFx = Math.cos(LANDMARK_SITE.angle), lmFz = Math.sin(LANDMARK_SITE.angle), lmBack = LANDMARK_KINDS[lmKind].back || 0;
-    const landmarks = SH ? [landmarkDetail(Object.assign({ kind: lmKind }, LANDMARK_SITE, LANDMARK_KINDS[lmKind],
-      { x: LANDMARK_SITE.x - lmFx * lmBack, z: LANDMARK_SITE.z - lmFz * lmBack, fx: lmFx, fz: lmFz }))] : [];
+    const lmFx = Math.cos(landmarkSite.angle), lmFz = Math.sin(landmarkSite.angle), lmBack = LANDMARK_KINDS[lmKind].back || 0;
+    const landmarks = SH ? [landmarkDetail(Object.assign({ kind: lmKind }, landmarkSite, LANDMARK_KINDS[lmKind],
+      { x: landmarkSite.x - lmFx * lmBack, z: landmarkSite.z - lmFz * lmBack, fx: lmFx, fz: lmFz }))] : [];
     // khoảng cách ra ngoài mặt bằng san nền (hình chữ nhật xoay, 0 = bên trong)
     const lmOut = (L, x, z) => {
       const dx = x - L.x, dz = z - L.z;
@@ -285,6 +328,14 @@ function MapGenFactory() {
       } else if (type === 'URBAN') {
         h = 4 + fbm(noise, wx * 0.0006, wz * 0.0006, 3) * 7;
         h = lerp(4, h, 0.5 + 0.5 * fl);
+        // Sườn thung lũng ở 2 đầu khu vực xuất phát: nâng cao thoai thoải 18 - 24 m nhìn bao quát xuống thành phố
+        const az = Math.abs(z);
+        if (az > 620) {
+          const slope = smooth(620, 1150, az);
+          h += slope * slope * (20 + fbm(noise, wx * 0.001, wz * 0.001, 2) * 5);
+        }
+        // Nền đất chiến địa mấp mô tự nhiên do bom đạn cày xới ở khu đô thị
+        h += fbm(noise2, x * 0.012, z * 0.012, 2) * 1.5;
         // nền phố không trũng dưới mực nước kênh (đô thị có mặt nước khi có kênh đào: chỗ đất < 0,1 thành vũng ngập)
         h = Math.max(4, h);
       } else if (type === 'JUNGLE') {
@@ -315,7 +366,7 @@ function MapGenFactory() {
     // Bán kính tối thiểu của lòng thung lũng theo hướng: đủ ôm đồi cứ điểm (+ chân đồi) và khu xuất kích hai phe theo
     // hướng đó; hướng trống thì núi được lấn vào tới ~0.56 nửa bản đồ
     const KEYS = [];
-    for (const c of STRONGHOLD_SITES) KEYS.push([c.x, c.z, 820]);
+    for (const c of strongholdSites) KEYS.push([c.x, c.z, 820]);
     for (const L of landmarks) KEYS.push([L.x, L.z, Math.hypot(L.hu, L.hv) + LM_BLEND + 200]);
     for (const zc of [(SPAWN.blue.z0 + SPAWN.blue.z1) / 2, (SPAWN.red.z0 + SPAWN.red.z1) / 2])
       for (const xc of [-SPAWN.halfX, 0, SPAWN.halfX]) KEYS.push([xc, zc, 360]);
@@ -375,8 +426,11 @@ function MapGenFactory() {
       // chân dốc mềm (độ dốc tăng dần từ 0) -> không có nếp gãy tròn nơi đồng bằng chạm chân núi
       const se = s * s / (s + 90);
       let r = pk * (1 - Math.exp(-se * 0.6 / pk));
-      // sống núi, yên ngựa, khe suối: gồ ghề tăng dần khi lên cao
-      r *= lerp(1, 0.35 + 1.25 * ridged(on, x * 0.0013, z * 0.0013, 5), smooth(60, 700, s));
+      // sống núi, yên ngựa, khe suối: dải sống núi uốn lượn liên hoàn, đỉnh bo tròn tự nhiên, không nhọn hoắt thành chóp nón
+      const rRidge1 = ridged(on, x * 0.00045 + 5.2, z * 0.00045 - 3.1, 4);
+      const rRidge2 = fbm(on, x * 0.00085 - 1.7, z * 0.00085 + 4.2, 3);
+      const rRidge = 0.62 + 0.62 * (1 - Math.exp(-rRidge1 * 2.2)) + 0.18 * (rRidge2 - 0.5);
+      r *= lerp(1, rRidge, smooth(60, 700, s));
       // qua đỉnh vành thì đổ xuống phía ngoài
       // đỉnh vành luôn ngoài tường giữ xe trên sườn núi (chân núi + WALL, xem spg.js): không leo qua núi xuống biển
       const crest = foot + 1250 + 230 * angN(x, z, 2.3, 5.7) + 150 * angN(x, z, 5.9, 1.9);
@@ -428,9 +482,12 @@ function MapGenFactory() {
       } else {
         // các dãy núi nối tiếp nhau tới chân trời
         // khối núi lớn nhỏ không đều: có dãy cao vút (đỉnh tuyết), có vùng đồi thấp / thung lũng rộng giữa các dãy
-        const rv = ridged(on, x * 0.00028 + 4, z * 0.00028, 6) * 0.75 + ridged(on, x * 0.0009 - 2, z * 0.0009 + 5, 4) * 0.25;
-        const amp = 300 + 1100 * smooth(-0.35, 0.45, fbm(on, x * 0.00016 + 8, z * 0.00016 - 3, 2));
-        h += Math.pow(rv, 1.8) * amp * smooth(3200 + O0, 4600 + O0, d);
+        // khối núi lớn nhỏ uốn lượn bề thế: có dãy cao vút, có vùng đồi thấp / thung lũng rộng giữa các dãy
+        const rv1 = ridged(on, x * 0.00024 + 4, z * 0.00024, 5);
+        const rv2 = ridged(on, x * 0.00055 - 2, z * 0.00055 + 5, 4);
+        const massShape = (1 - Math.exp(-rv1 * 2.4)) * 0.72 + (1 - Math.exp(-rv2 * 2.0)) * 0.28;
+        const amp = 350 + 950 * smooth(-0.35, 0.45, fbm(on, x * 0.00016 + 8, z * 0.00016 - 3, 2));
+        h += massShape * amp * smooth(3200 + O0, 4600 + O0, d);
       }
       return h;
     }
@@ -445,7 +502,7 @@ function MapGenFactory() {
     // 1b. BA NGỌN ĐỒI CỨ ĐIỂM: đỉnh bằng phẳng (cốt nền G) rộng ~200, sườn thoải xe leo được, chân đồi lượn sóng tự nhiên
     const strongholds = [];
     if (SH && !light) {
-      for (const c of STRONGHOLD_SITES) {
+      for (const c of strongholdSites) {
         let base = 0, n = 0;
         for (let a = 0; a < 12; a++) { base += H(c.x + Math.cos(a * 0.5236) * 300, c.z + Math.sin(a * 0.5236) * 300); n++; }
         strongholds.push({ id: c.id, x: c.x, z: c.z, angle: c.angle, G: Math.round((base / n + c.hill) * 10) / 10 });
@@ -652,7 +709,7 @@ function MapGenFactory() {
       // kênh. Kênh dừng (cống ngầm) cách khu xuất kích 2 phe ~500, quá đó trục kênh là phố chính. Toạ độ (u, v) = lưới xoay góc rot; trục U: u = a + b·v (chạy dọc v), trục V: v = a + b·u
       const rot = R(-0.12, 0.12), cr = Math.cos(rot), sr = Math.sin(rot);
       const tf = (u, v) => [u * cr - v * sr, u * sr + v * cr];
-      const EXT = 1560 * K;
+      const EXT = Math.round(980 * K);
       // cw: bề rộng lòng đường, walk: vỉa hè mỗi bên, lanes: số làn kẻ vạch, r: bán kính bo bó vỉa góc phố
       const URB = {
         avenue: { cw: 120, walk: 32, lanes: 4, r: 64 },   // đại lộ: 15 m, 4 làn, vỉa hè 4 m
@@ -665,9 +722,9 @@ function MapGenFactory() {
         for (const dir of [1, -1]) {
           let q = L[0].a, n = 0;
           for (;;) {
-            const gap = R(880, 1320), nx = q + dir * gap;
+            const gap = R(1280, 1780), nx = q + dir * gap;
             if (Math.abs(nx) > EXT) break;
-            if (gap > 1040) L.push({ a: q + dir * gap * R(0.44, 0.56), cls: 'local' });   // chia đôi khoảng rộng
+            if (gap > 1520 && Math.abs(q) < 1800) L.push({ a: q + dir * gap * R(0.44, 0.56), cls: 'local' });   // chia đôi khoảng rộng
             n++;
             L.push({ a: nx, cls: n % 3 === 0 ? 'avenue' : 'main' });   // cứ 3 phố chính có 1 đại lộ vành đai
             q = nx;
@@ -725,7 +782,7 @@ function MapGenFactory() {
       };
       const offC = L => URB[L.cls].cw / 2, offL = L => URB[L.cls].cw / 2 + URB[L.cls].walk;
       // đồi cứ điểm (sườn tới ~680 từ tâm): không lát phố / xây ô phố trên sườn dốc, chỉ có đường nối lên miệng hầm
-      const nearSH = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 720));
+      const nearSH = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 520));
       const inSpawn = (x, z) => Math.abs(x) < SPAWN.halfX + 40 && ((z > SPAWN.blue.z0 - 40 && z < SPAWN.blue.z1 + 40) || (z > SPAWN.red.z0 - 40 && z < SPAWN.red.z1 + 40));
       const blocks = [];
       for (let i = 0; i < lu.length - 1; i++) for (let j = 0; j < lv.length - 1; j++) {
@@ -736,7 +793,7 @@ function MapGenFactory() {
         const cx = (curb[0][0] + curb[1][0] + curb[2][0] + curb[3][0]) / 4, cz = (curb[0][1] + curb[1][1] + curb[2][1] + curb[3][1]) / 4;
         const probe = curb.concat(curb.map((p, k) => [(p[0] + curb[(k + 1) % 4][0]) / 2, (p[1] + curb[(k + 1) % 4][1]) / 2]), [[cx, cz]]);
         if (probe.some(p => Math.hypot(p[0], p[1]) > rimFoot(p[0], p[1]) - 50 || nearSH(p[0], p[1]))) continue;
-        if (landmarks.some(L => probe.some(p => lmOut(L, p[0], p[1]) < 60) || lmOut(L, cx, cz) < 700)) continue;
+        if (landmarks.some(L => probe.some(p => lmOut(L, p[0], p[1]) < 36) || lmOut(L, cx, cz) < 140)) continue;
         const side = [S.cls, E.cls, N.cls, W.cls];
         const len = k => Math.hypot(curb[(k + 1) % 4][0] - curb[k][0], curb[(k + 1) % 4][1] - curb[k][1]);
         // góc k nằm giữa cạnh k-1 và cạnh k: bo theo phố nhỏ hơn trong 2 phố
@@ -752,7 +809,8 @@ function MapGenFactory() {
       for (const B of blocks) {
         if (B.use) continue;
         const d = Math.hypot(B.cx, B.cz), n = fbm(noise2, B.cx * 0.0004 + 3.1, B.cz * 0.0004 - 1.7, 2);
-        B.use = d < 1900 ? 'cbd' : (Math.abs(B.cx) > 3600 && d > 3000 && n > 0.12) ? 'industrial' : d > 4700 ? 'suburb' : 'mixed';
+        const nearLm = landmarks.some(L => lmOut(L, B.cx, B.cz) < 680);
+        B.use = nearLm ? 'industrial' : (d < 1900 ? 'cbd' : (Math.abs(B.cx) > 3600 && d > 3000 && n > 0.12) ? 'industrial' : d > 4700 ? 'suburb' : 'mixed');
       }
       // chọn ngẫu nhiên n ô thoả điều kiện, chưa làm lô đặc biệt
       const pickBlocks = (n, ok) => {
@@ -789,7 +847,7 @@ function MapGenFactory() {
       // nhựa bò lên sườn núi, dốc dựng) và đoạn xuyên đồi cứ điểm (mặt đường nhựa lộ qua sân bê tông / chui dưới ụ đất)
       {
         const ug = roads.urbanGrid, keep = [];
-        const nearSH = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 700));
+        const nearSH = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 520));
         const cut = (x, z) => Math.hypot(x, z) > rimFoot(x, z) - 30 || nearSH(x, z);
         for (const rd of roads) {
           let run = [];
@@ -828,6 +886,44 @@ function MapGenFactory() {
             add(B2, best);
             roads.push({ pts: resample(chaikin(chaikin(pts)), 14), width: 44, kind: 'asphalt', access: true, portalLink: true, cls: 'main', walk: 0, lanes: 2 });
           }
+        }
+      }
+      // Tuyến đường đại lộ chính tiếp cận thẳng vào cổng căn cứ chiến lược (URBAN Landmark Access)
+      if (landmarks.length) {
+        const grid = roads.slice();
+        for (const L of landmarks) {
+          const G0 = [L.x + L.fx * L.hu, L.z + L.fz * L.hu];
+          const D_straight = 120;
+          const G1 = [L.x + L.fx * (L.hu + D_straight), L.z + L.fz * (L.hu + D_straight)];
+          let best = null, bd = Infinity;
+          for (const rd of grid) for (const p of rd.pts) {
+            const dx = p[0] - G1[0], dz = p[1] - G1[1], d = Math.hypot(dx, dz);
+            if (d > 2400) continue;
+            const dot = (dx * L.fx + dz * L.fz) / (d || 1);
+            const score = d * (1.2 - 0.4 * Math.max(0, dot));
+            if (score < bd) { bd = score; best = p; }
+          }
+          const pts = [];
+          const add = (a, b) => {
+            const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 14));
+            for (let i = pts.length ? 1 : 0; i <= n; i++) pts.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]);
+          };
+          add(G0, G1);
+          if (best && Math.hypot(best[0] - G1[0], best[1] - G1[1]) > 20) {
+            const mid = [G1[0] + L.fx * 50, G1[1] + L.fz * 50];
+            add(G1, mid);
+            add(mid, best);
+          }
+          roads.push({
+            pts: resample(chaikin(chaikin(pts)), 14),
+            width: 44,
+            kind: 'asphalt',
+            access: true,
+            landmarkLink: true,
+            cls: 'avenue',
+            walk: 8,
+            lanes: 4
+          });
         }
       }
     } else {
@@ -877,7 +973,7 @@ function MapGenFactory() {
               const ni = ci + di, nj = cj + dj;
               if (ni < 2 || nj < 2 || ni > G - 2 || nj > G - 2) continue;
               const n = idx(ni, nj);
-              if (lmCell[n]) continue;               // mặt bằng công trình: đường đi vòng
+              if (lmCell[n] && Math.hypot(ni - ex, nj - ez) > 6 && Math.hypot(ni - sx, nj - sz) > 6) continue; // mặt bằng công trình: đường đi vòng
               if (shCell[n] && !(ni === ex && nj === ez)) continue;   // đồi cứ điểm / đường vào cửa hầm
               const len = (di && dj ? Math.SQRT2 : 1) * gc;
               const slope = Math.abs(gh[n] - gh[cur]) / len;
@@ -1044,6 +1140,7 @@ function MapGenFactory() {
     if (landmarks.length && type === 'URBAN') {
       const keep = [];
       for (const rd of roads) {
+        if (rd.access) { keep.push(rd); continue; }
         let run = [];
         const flush = () => { if (run.length >= 2) keep.push(Object.assign({}, rd, { pts: run })); run = []; };
         for (const p of rd.pts) {
@@ -1293,11 +1390,11 @@ function MapGenFactory() {
 
     // 5a. Boong-ke móng ngựa cũ đã bỏ: điểm tựa phòng thủ giờ là các cứ điểm bê tông dưới ụ đất (strongholds)
     const bunkers = [];
+    const wr = mulberry32((seed ^ 0x6b1d2e37) >>> 0), WR = (a, b) => a + wr() * (b - a);
     // 5a''. TÀN TÍCH TRẬN ĐÁNH QUANH CỨ ĐIỂM (strongholds.js dựng hình): xác xe bị hạ (mô hình xe thật + hư hại thật) và
     // hố bom lớn nhỏ trên sườn đồi. Bộ số ngẫu nhiên riêng theo hạt giống bản đồ -> mỗi bản đồ một kiểu, mọi máy giống
     // nhau, không làm lệch phần còn lại của bản đồ. Đặt trước nhà / đá / cây (các vật đó né tàn tích)
     if (strongholds.length) {
-      const wr = mulberry32((seed ^ 0x6b1d2e37) >>> 0), WR = (a, b) => a + wr() * (b - a);
       // [loại xe, bán kính chiếm chỗ]: xe tăng Halberd, xe chi viện Hailstorm, pháo tự hành Arbalest, xe trinh sát Marten
       const KINDS = [['ALL_ROUNDER', 28], ['ALL_ROUNDER', 28], ['GATLING', 28], ['ARTILLERY', 34], ['SCOUT', 18]];
       const KILLS = ['det', 'det', 'burn', 'burn', 'crew', 'blast'];
@@ -1352,6 +1449,30 @@ function MapGenFactory() {
       }
     }
     for (const c of strongholds) occupied.push({ x: c.x, z: c.z, r: 330 });
+
+    // Hố bom chiến trường rải rác trên đường phố và quảng trường đô thị (bản đồ URBAN bị bom đạn tàn phá)
+    if (type === 'URBAN' && strongholds.length > 0) {
+      const sh0 = strongholds[0]; // cứ điểm trung tâm B
+      const nUrbanCraters = 22 + Math.floor(wr() * 10);
+      for (let t = 0; t < nUrbanCraters * 30 && sh0.craters.length < 40; t++) {
+        const uDist = WR(80, 880);
+        const uAng = wr() * Math.PI * 2;
+        const ux = Math.cos(uAng) * uDist;
+        const uz = Math.sin(uAng) * uDist;
+        if (isWater(ux, uz)) continue;
+        if (Math.hypot(ux, uz) < 70) continue; // né lòng cứ điểm B
+        const R0 = WR(26, 60);
+        const d0 = WR(5, 12);
+        if (sh0.craters.some(q => Math.hypot(q.x - ux, q.z - uz) < (q.R + R0) * 0.75)) continue;
+        sh0.craters.push({
+          x: Math.round(ux),
+          z: Math.round(uz),
+          R: Math.round(R0),
+          d: Math.round(d0 * 10) / 10,
+          a: Math.round(WR(0, 6.28) * 100) / 100
+        });
+      }
+    }
 
     // 5a'. CÔNG TRÌNH PHỤ / VẬT CẢN (props.js dựng hình): hàng rào, ruộng, xác xe, bao cát, hào ẩn xe
     // đô thị thêm: canopies (mái che cây xăng), lamps (đèn đường), signals (đèn giao thông), poles (cột điện + dây),
@@ -1466,7 +1587,7 @@ function MapGenFactory() {
         }
         if (use === 'parking') {
           // bãi đỗ xe: hàng chỗ đỗ vuông góc mép trước (rộng 2,75 m, sâu 5 m), lối đi giữa các hàng
-          for (let q = 40; q < front.across - 30; q += 96) for (let s = 24; s < front.len - 24; s += 22) {
+          for (let q = 40; q < front.across - 30; q += 120) for (let s = 32; s < front.len - 32; s += 44) {
             if (rng() > 0.72) continue;
             const [x, z] = at(front, s, q);
             urbanCars.push({ x, z, angle: front.ang + (rng() < 0.5 ? 0 : Math.PI), lot: true, use });
@@ -1716,7 +1837,7 @@ function MapGenFactory() {
     // 5c'. Xác xe bỏ lại (xe tăng / xe tải / xe bọc thép cháy rụi): ven đường & giữa chiến trường
     {
       stage('wrecks');
-      const nW = Math.round((type === 'URBAN' ? 8 : Math.floor(R(7, 11))) * AREA);
+      const nW = Math.round((type === 'URBAN' ? 18 : Math.floor(R(7, 11))) * AREA);
       for (let t = 0, n = 0; n < nW && t < nW * 8; t++) {
         let x, z, ang;
         if (rng() < 0.6 && roads.length) {
@@ -1729,8 +1850,8 @@ function MapGenFactory() {
         } else {
           x = R(-1200, 1200) * K; z = R(-700, 700) * K; ang = R(0, 6.28);
         }
-        if (!clearOfKeys(x, z, 30) || !freeOf(x, z, 20) || isWater(x, z) || slopeAt(x, z) > 0.35 || !roadClear(x, z, 8) || STRONGHOLD_SITES.some(s => Math.hypot(x - s.x, z - s.z) < 380)) continue;
-        props.wrecks.push({ x, z, angle: ang, kind: pick(rng, ['tank', 'tank', 'truck', 'apc']), tilt: R(-0.06, 0.06), roll: R(-0.08, 0.08), turretRot: R(-1.2, 1.2), smoke: rng() < 0.35 });
+        if (!clearOfKeys(x, z, 30) || !freeOf(x, z, 20) || isWater(x, z) || slopeAt(x, z) > 0.35 || !roadClear(x, z, 8) || strongholdSites.some(s => Math.hypot(x - s.x, z - s.z) < 380)) continue;
+        props.wrecks.push({ x, z, angle: ang, kind: pick(rng, type === 'URBAN' ? ['tank', 'tank', 'tank', 'apc', 'dump'] : ['tank', 'tank', 'dump', 'apc']), tilt: R(-0.06, 0.06), roll: R(-0.08, 0.08), turretRot: R(-1.2, 1.2), smoke: rng() < 0.65 });
         occupied.push({ x, z, r: 20 });
         n++;
       }
@@ -1759,7 +1880,7 @@ function MapGenFactory() {
     // Cây phân bố theo mặt nạ rừng / ốc đảo / ven sông
     stage('trees');
     let attempts = 0;
-    const nTrees = type === 'URBAN' ? 0 : Math.round(B.trees * AREA);   // đô thị: cây vỉa hè / công viên đặt ở 5e
+    const nTrees = type === 'URBAN' ? 280 : Math.round(B.trees * AREA);   // đô thị: thêm cây phòng hộ ven căn cứ + vỉa hè
     while (trees.length < nTrees && attempts < nTrees * 12) {
       attempts++;
       const x = R(-1560, 1560) * K, z = R(-1560, 1560) * K;
@@ -1769,7 +1890,8 @@ function MapGenFactory() {
         p = smooth(0.25, 0.5, forestMask(x, z)) * 0.9 + 0.04;
       } else if (type === 'URBAN') {
         const nr = nearestRoad(x, z, 60);
-        p = nr && nr.d > nr.road.width / 2 + 3 && nr.d < nr.road.width / 2 + 10 ? 0.5 : 0.01; // hàng cây vỉa hè
+        const nearLm = landmarks.some(L => { const o = lmOut(L, x, z); return o > 30 && o < 260; });
+        p = nearLm ? 0.65 : (nr && nr.d > nr.road.width / 2 + 3 && nr.d < nr.road.width / 2 + 10 ? 0.5 : 0.03);
       } else if (type === 'RIVER_LAKE') {
         const rn = river ? river.near(x, z) : null, dr = rn ? rn.d - rn.hw : 1e9;
         p = (dr > 10 && dr < 140 ? 0.55 : 0) + smooth(0.1, 0.45, forestMask(x, z)) * 0.6;
@@ -1857,7 +1979,7 @@ function MapGenFactory() {
         });
         lines.push({ L, isU, dx, dz, nx: -dz, nz: dx, P, X, ang: Math.atan2(dx, dz) });
       }
-      const EXT = 1560 * K;
+      const EXT = Math.round(980 * K);
       const nearX = (ln, s, pad) => ln.X.some(x => Math.abs(s - x.s) < U[x.cls].cw / 2 + U[x.cls].walk + pad);
       const onRoad = (x, z, cls) => { const nr = nearestRoad(x, z, 10); return nr && nr.road.cls === cls; };
       const along = (ln, sp, phase, fn) => { for (let s = -EXT + phase; s < EXT; s += sp) fn(s); };
@@ -1868,7 +1990,7 @@ function MapGenFactory() {
         const C = U[cls], p0 = (s, side, off) => { const c = ln.P(s); return [c[0] + ln.nx * side * off, c[1] + ln.nz * side * off]; };
         if (cls === 'avenue' || cls === 'main') {
           // đèn đường 2 bên, cách 35-37 m, cần đèn vươn ra lòng đường; cây vỉa hè xen giữa 2 cột đèn
-          const sp = cls === 'avenue' ? 280 : 296, ph = R(0, sp);
+          const sp = cls === 'avenue' ? 380 : 420, ph = R(0, sp);
           along(ln, sp, ph, s => {
             if (nearX(ln, s, 14) || !onRoad(...ln.P(s), cls)) return;
             for (const side of [1, -1]) {
@@ -1900,13 +2022,13 @@ function MapGenFactory() {
         }
         if (cls === 'local' || cls === 'main') {
           // xe con đỗ dọc bó vỉa (chiều xe theo chiều lưu thông bên phải), thưa dần ở phố chính
-          const fill = cls === 'local' ? 0.17 : 0.11;
+          const fill = cls === 'local' ? 0.08 : 0.05;
           along(ln, 48, R(0, 48), s => {
             if (nearX(ln, s, 44) || !onRoad(...ln.P(s), cls)) return;
             for (const side of [1, -1]) {
               if (rng() > fill) continue;
               const [x, z] = p0(s, side, C.cw / 2 - 10), [wx, wz] = p0(s, side, C.cw / 2 + 4);
-              if (!onWalk(wx, wz) || !freeOf(x, z, 12) || !clearOfKeys(x, z, 0)) continue;
+              if (urbanCars.length >= 260 || !onWalk(wx, wz) || !freeOf(x, z, 12) || !clearOfKeys(x, z, 0)) continue;
               urbanCars.push({ x, z, angle: side > 0 ? ln.ang + Math.PI : ln.ang, cls });
             }
           });
@@ -1915,11 +2037,11 @@ function MapGenFactory() {
           // THÀNH PHỐ MA: xe bị bỏ lại giữa lòng đường khi dân chạy loạn — lẻ tẻ chéo làn, có chỗ dồn cả đoạn tắc (xe nối
           // đuôi lệch hàng), có xe húc nhau / leo nửa lên vỉa hè. Chừa ngã tư & cầu; tối thiểu 1 làn còn lọt xe tăng
           // (xe lệch hẳn sang 1 nửa lòng đường)
-          const rate = cls === 'avenue' ? 0.2 : cls === 'main' ? 0.15 : 0.09, half = C.cw / 2;
+          const rate = cls === 'avenue' ? 0.11 : cls === 'main' ? 0.08 : 0.05, half = C.cw / 2;
           const nearBridge = (x, z) => bridges.some(b => Math.hypot(b.x - x, b.z - z) < b.length / 2 + 40);
           const put = (s, side, off, ang) => {
             const [x, z] = p0(s, side, off);
-            if (nearX(ln, s, 30) || !onRoad(...ln.P(s), cls) || nearBridge(x, z) || !freeOf(x, z, 10) || !clearOfKeys(x, z, 0)) return false;
+            if (urbanCars.length >= 260 || nearX(ln, s, 30) || !onRoad(...ln.P(s), cls) || nearBridge(x, z) || !freeOf(x, z, 10) || !clearOfKeys(x, z, 0)) return false;
             if (ghostCars.some(c => Math.hypot(c.x - x, c.z - z) < 30)) return false;
             const c = { x, z, angle: ang, cls };
             ghostCars.push(c); urbanCars.push(c);
@@ -2029,7 +2151,7 @@ function MapGenFactory() {
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return {
       type, seed, size: SIZE, res: RES, cell: CELL, heights, surface,
-      bases, capture: CAP, roads, river, lakes, canals, blocks: roads.urbanGrid ? roads.urbanGrid.blocks : [], bridges, bunkers, strongholds, landmarks, layout, buildings, rocks, bushes, trees, forests, props, sun,
+      bases, capture: CAP, roads, river, lakes, canals, blocks: roads.urbanGrid ? roads.urbanGrid.blocks : [], bridges, bunkers, strongholds, landmarks, layout, layoutVariant, layoutLabel, layoutDesc, buildings, rocks, bushes, trees, forests, props, sun,
       genMs: Math.round(ms),
       sig: mapSig(heights, [trees, rocks, bushes, buildings, props.wrecks, props.pits, props.cars, props.lamps], roads),
       outer: { rimFoot, wall: RIM_WALL, sea: OUT.sea, seaLevel: OUT.sea ? 0.2 : null, ext: OUTER_EXT, heightAt },
@@ -2380,6 +2502,9 @@ function MapGenFactory() {
     }
     return cache.get(fullKey);
   }
+  function has(type, seed) {
+    return cache.has(cacheKey(type, seed) + (testField ? ':field' : ''));
+  }
 
   // ---------------------------------------------------------------------------
   // ĐỒNG TRỐNG CHO PHÒNG THỬ ĐẠN (range_lab.js, setTestField(true)): chọn vùng tròn ít dốc, không sông hồ, xa cứ điểm /
@@ -2422,7 +2547,9 @@ function MapGenFactory() {
       const d = Math.hypot(i * C - H - cx, j * C - H - cz);
       if (d >= R + BL) continue;
       const k = 1 - smooth(R, R + BL, d), at = j * N + i;
-      m.heights[at] = lerp(m.heights[at], h0, k);
+      // Giữ lại độ lượn sóng nhấp nhô vi mô tự nhiên nhẹ để mặt đất không phẳng lì giả tạo
+      const microRelief = (Math.sin(i * 0.38) * Math.cos(j * 0.34) * 0.28 + Math.sin(i * 0.16 + j * 0.2) * 0.32);
+      m.heights[at] = lerp(m.heights[at], h0 + microRelief, k);
       if (k > 0.5 && m.surface[at] === 3) m.surface[at] = 0;   // nền bê tông đô thị -> đất tự nhiên
     }
     const pad = R + 80;
@@ -2513,7 +2640,7 @@ function MapGenFactory() {
     return p;
   }
 
-  return { generate, get, prefetch, toPlain, hydrate, setLayout, setTestField, getLayout: () => layout, STRONGHOLD_SITES, PORTAL, portalHalf, LANDMARK_SITE, CAR_CATALOG, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
+  return { generate, get, has, prefetch, toPlain, hydrate, setLayout, setTestField, getLayout: () => layout, STRONGHOLD_SITES, STRONGHOLD_LAYOUT_VARIANTS, pickStrongholdVariant, PORTAL, portalHalf, LANDMARK_SITE, CAR_CATALOG, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
 }
 const MapGen = MapGenFactory();
 

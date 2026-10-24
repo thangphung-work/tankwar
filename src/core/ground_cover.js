@@ -26,6 +26,8 @@ const GroundCover = (() => {
     return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
   const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const _tm = new THREE.Matrix4(), _tp = new THREE.Vector3(), _tq = new THREE.Quaternion(), _ts = new THREE.Vector3(), _ta = new THREE.Vector3(), _tq2 = new THREE.Quaternion();
+  const hash2 = (x, z) => { let h = (Math.round(x * 7) ^ Math.round(z * 13)) | 0; h = Math.imul(h ^ (h >>> 15), 1 | h); return ((h ^ (h >>> 14)) >>> 0) / 4294967296; };
 
   // Texture lá cỏ: nhiều ngọn từ gốc tỏa lên, nền trong suốt (alpha test)
   let bladeTex = null;
@@ -366,9 +368,80 @@ const GroundCover = (() => {
           for (let ch = 0; ch < 3; ch++) pc.push(B.pebble[ch] * kk);
         }
       }
-      c = { gm: new Float32Array(gm), gc: new Float32Array(gc), pm: new Float32Array(pm), pc: new Float32Array(pc), dense: gm.length / 16 > TUFTS_PER_CELL * 4 };
+      c = { gm: new Float32Array(gm), gc: new Float32Array(gc), pm: new Float32Array(pm), pc: new Float32Array(pc), dense: gm.length / 16 > TUFTS_PER_CELL * 4, off: -1, n: 0, poff: -1 };
+      const ML = this.marks && this.marks.get(key);
+      if (ML) for (const mk of ML) this.applyMark(c, mk, false);
       this.cache.set(key, c);
       return c;
+    }
+
+    // XE ĐI QUA: khóm cỏ dưới thân xe rạp sát đất xuôi chiều xe chạy, dập nát sẫm màu; sỏi bị ép lún
+    trample(m) {
+      if (!this.marks) this.marks = new Map();
+      const R = Math.hypot(m.hu, m.hv) + 2;
+      let lo = Infinity, hi = -1, plo = Infinity, phi = -1;
+      for (let j = Math.floor((m.cz - R) / CELL); j <= Math.floor((m.cz + R) / CELL); j++)
+        for (let i = Math.floor((m.cx - R) / CELL); i <= Math.floor((m.cx + R) / CELL); i++) {
+          const key = i + ',' + j;
+          let L = this.marks.get(key);
+          if (!L) this.marks.set(key, L = []);
+          L.push(m);
+          if (L.length > 160) L.shift();
+          const c = this.cache && this.cache.get(key);
+          if (!c) continue;
+          const r = this.applyMark(c, m, true);
+          if (r.g0 <= r.g1) { lo = Math.min(lo, r.g0); hi = Math.max(hi, r.g1); }
+          if (r.p0 <= r.p1) { plo = Math.min(plo, r.p0); phi = Math.max(phi, r.p1); }
+        }
+      const up = (a, s, e) => { a.updateRange.offset = s * a.itemSize; a.updateRange.count = (e - s + 1) * a.itemSize; a.needsUpdate = true; };
+      if (hi >= 0) { up(this.grass.instanceMatrix, lo, hi); up(this.grass.instanceColor, lo, hi); }
+      if (phi >= 0) up(this.peb.instanceMatrix, plo, phi);
+      this.marksN = (this.marksN || 0) + 1;
+      if (this.marksN > 20000) { this.marks.clear(); this.marksN = 0; }
+    }
+    applyMark(c, m, live) {
+      const res = { g0: Infinity, g1: -1, p0: Infinity, p1: -1 };
+      const inLane = (x, z) => {
+        const tx = x - m.cx, tz = z - m.cz, lu = tx * m.ux + tz * m.uz, lv = -tx * m.uz + tz * m.ux;
+        if (Math.abs(lv) > m.hv || Math.abs(lu) > m.hu) return 0;
+        return Math.abs(lu) > m.hu - m.lane * 2 ? 1 : 0.45;
+      };
+      const M = _tm, P = _tp, Q = _tq, S = _ts, ax = _ta.set(m.dz, 0, -m.dx).normalize();
+      if (c.flat === undefined) c.flat = new Float32Array(c.gm.length / 16);
+      const gA = live ? this.grass.instanceMatrix.array : null, gC = live ? this.grass.instanceColor.array : null;
+      for (let k = 0; k < c.gm.length / 16; k++) {
+        const x = c.gm[k * 16 + 12], z = c.gm[k * 16 + 14], f = inLane(x, z);
+        if (f <= c.flat[k] + 0.05) continue;
+        const prev = c.flat[k];
+        c.flat[k] = f;
+        M.fromArray(c.gm, k * 16).decompose(P, Q, S);
+        const add = f - prev;
+        Q.premultiply(_tq2.setFromAxisAngle(ax, 1.25 * add + (hash2(x, z) - 0.5) * 0.3 * add));
+        S.y *= Math.max(0.2, 1 - 0.75 * add); S.x *= 1 + 0.2 * add; S.z *= 1 + 0.2 * add;
+        M.compose(P, Q, S).toArray(c.gm, k * 16);
+        for (let ch = 0; ch < 3; ch++) c.gc[k * 3 + ch] *= 1 - 0.28 * add;
+        if (live && c.off >= 0 && k < c.n) {
+          const o = c.off + k;
+          gA.set(c.gm.subarray(k * 16, k * 16 + 16), o * 16);
+          gC.set(c.gc.subarray(k * 3, k * 3 + 3), o * 3);
+          if (o < res.g0) res.g0 = o; if (o > res.g1) res.g1 = o;
+        }
+      }
+      if (c.pflat === undefined) c.pflat = new Uint8Array(c.pm.length / 16);
+      const pA = live ? this.peb.instanceMatrix.array : null;
+      for (let k = 0; k < c.pm.length / 16; k++) {
+        if (c.pflat[k]) continue;
+        const x = c.pm[k * 16 + 12], z = c.pm[k * 16 + 14];
+        if (inLane(x, z) < 1) continue;
+        c.pflat[k] = 1;
+        c.pm[k * 16 + 13] -= 0.6 * Math.hypot(c.pm[k * 16 + 4], c.pm[k * 16 + 5], c.pm[k * 16 + 6]);
+        if (live && c.poff >= 0) {
+          const o = c.poff + k;
+          pA[o * 16 + 13] = c.pm[k * 16 + 13];
+          if (o < res.p0) res.p0 = o; if (o > res.p1) res.p1 = o;
+        }
+      }
+      return res;
     }
 
     // Ô quanh tâm xếp từ gần ra xa (tính 1 lần): tâm nhìn nhảy xa (đổi sang kính ngắm pháo, hồi sinh, lia camera) thì gần
@@ -401,8 +474,8 @@ const GroundCover = (() => {
         // ô cỏ dày (căn cứ bỏ hoang): đủ dày trong ~300 quanh tâm nhìn, xa hơn chỉ lấy 1/3 (các khóm rải ngẫu nhiên -> lấy phần đầu)
         const far = c.dense && Math.hypot(i * CELL + CELL / 2 - cx, j * CELL + CELL / 2 - cz) > 300;
         const ng = far ? Math.floor(c.gm.length / 16 / 3) : c.gm.length / 16, npb = c.pm.length / 16;
-        if (ng && nt + ng <= this.maxT) { gA.set(c.gm.subarray(0, ng * 16), nt * 16); gC.set(c.gc.subarray(0, ng * 3), nt * 3); nt += ng; }
-        if (npb && np + npb <= this.maxP) { pA.set(c.pm, np * 16); pC.set(c.pc, np * 3); np += npb; }
+        if (ng && nt + ng <= this.maxT) { gA.set(c.gm.subarray(0, ng * 16), nt * 16); gC.set(c.gc.subarray(0, ng * 3), nt * 3); c.off = nt; c.n = ng; nt += ng; } else { c.off = -1; c.n = 0; }
+        if (npb && np + npb <= this.maxP) { pA.set(c.pm, np * 16); pC.set(c.pc, np * 3); c.poff = np; np += npb; } else c.poff = -1;
       }
       // dọn ô quá xa khỏi bộ nhớ đệm
       if (this.cache.size > 6000) {

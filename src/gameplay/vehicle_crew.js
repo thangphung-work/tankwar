@@ -190,7 +190,9 @@ const VehicleCrew = (() => {
       velcro: cloth({ color: 0x8a7a56, roughness: 1 }),
       skin: std({ color: 0x684735, roughness: 0.9 }),
       skinV: std({ color: 0xc2aa98, vertexColors: true, roughness: 0.88 }),
-      glove: std({ color: 0x5b503f, roughness: 0.96, normalMap: leatherNormal(), normalScale: new THREE.Vector2(0.65, 0.65) }),
+      // găng chiến thuật sẫm hơn quân phục (ô liu đen / nâu sẫm theo phe), vải tổng hợp + da lòng bàn tay
+      glove: std({ color: red ? 0x3a3125 : 0x2c2f24, roughness: 0.93, normalMap: leatherNormal(), normalScale: new THREE.Vector2(0.55, 0.55) }),
+      gloveP: std({ color: red ? 0x2e271e : 0x23251d, roughness: 0.8, normalMap: leatherNormal(), normalScale: new THREE.Vector2(0.4, 0.4) }),
       knuck: std({ color: 0x171714, roughness: 0.82 }),
       pad: std({ color: red ? 0x554a38 : 0x3e4235, roughness: 0.88, side: THREE.DoubleSide, normalMap: leatherNormal(), normalScale: new THREE.Vector2(0.3, 0.3) }),
       boot: std({ color: 0x1c1a17 }),
@@ -235,7 +237,7 @@ const VehicleCrew = (() => {
     if (GEO[key]) return GEO[key];
     const L = kind === 'up' ? ARM_UP : ARM_FORE;
     const prof = kind === 'up'
-      ? [[0, -0.12], [0.42, -0.1], [0.6, 0.05], [0.63, 0.2], [0.6, 0.45], [0.53, 0.8], [0.51, 1.15], [0.47, 1.6], [0.42, 2.0], [0.42, 2.3], [0.32, 2.52], [0, 2.58]]
+      ? [[0, -0.05], [0.36, -0.03], [0.5, 0.1], [0.54, 0.3], [0.54, 0.55], [0.51, 0.85], [0.5, 1.15], [0.47, 1.6], [0.42, 2.0], [0.42, 2.3], [0.32, 2.52], [0, 2.58]]
       : [[0, -0.3], [0.3, -0.25], [0.44, -0.05], [0.47, 0.35], [0.45, 0.8], [0.4, 1.3], [0.35, 1.7], [0.33, 2.0], [0.2, 2.12], [0, 2.14]];
     const thick = kind === 'up' ? 1.12 : 1.08;   // bắp tay / cẳng tay to hơn
     const g = new THREE.LatheGeometry(prof.map(q => new THREE.Vector2(q[0] * thick, q[1] * L / (kind === 'up' ? 2.3 : 2.15))), 16);
@@ -653,7 +655,8 @@ const VehicleCrew = (() => {
   // ngả về trước như cổ người; nếp vải chùng xuống thành vòng lượn không đều (không phải vòng tròn đều)
   function neckGeo() {
     if (GEO.neck) return GEO.neck;
-    const prof = [[0.0, 3.28], [0.68, 3.3], [0.64, 3.4], [0.53, 3.52], [0.44, 3.66], [0.4, 3.78], [0.0, 3.8]];
+    // cổ người ~12 cm + khăn mỏng: r ~0.5; chỉ loe ở gốc (cơ thang) chui dưới cổ áo. Bản cũ r 0.64 -> 0.53 suốt cổ: ống phồng như phao
+    const prof = [[0.0, 3.28], [0.62, 3.3], [0.55, 3.4], [0.48, 3.52], [0.44, 3.66], [0.42, 3.78], [0.0, 3.8]];
     const g = new THREE.LatheGeometry(prof.map(q => new THREE.Vector2(q[0], q[1])), 28), p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
@@ -661,7 +664,7 @@ const VehicleCrew = (() => {
       if (r < 1e-4) continue;
       const h = Math.max(0, Math.min(1, (y - 3.3) / 0.5));
       // nếp chùng: lượn theo góc (thấp ở trước, cao ở sau), biên độ lớn ở dưới
-      const fold = (0.025 + 0.02 * (1 - h)) * Math.sin(y * 24 + 2.2 * Math.sin(a) + Math.sin(a * 3) * 0.8);
+      const fold = (0.014 + 0.012 * (1 - h)) * Math.sin(y * 24 + 2.2 * Math.sin(a) + Math.sin(a * 3) * 0.8);
       const k = (r + fold) / r;
       x *= k; z *= k * 0.9;
       z -= 0.07 * h;   // cổ chỉ ngả nhẹ về trước, không chui sâu vào hàm
@@ -766,10 +769,17 @@ const VehicleCrew = (() => {
       if (z < 0) {
         const ax = Math.abs(x);
         z *= 0.97 + 0.03 * Math.min(1, ax / 0.6);
-        z -= 0.24 * G2(x, 0.13) * G2(y + 0.28, 0.13);                  // vải căng qua đầu mũi (mũi cao)
-        z -= 0.2 * G2(x, 0.09) * G2(y + 0.1, 0.22);                    // sống mũi thẳng đứng, cao
-        z -= 0.2 * G2(x, 0.36) * G2(y + 1.06, 0.15);
-        z -= 0.08 * G2(x, 0.32) * G2(y + 0.72, 0.28);                  // miệng / cằm nhô ra trước                  // cằm nhô rõ dưới khăn
+        // mũi dưới khăn: sống hẹp (~1/4 bề ngang mặt) cao dần từ dưới kính xuống đầu mũi, đầu mũi tròn gọn; vải từ đầu
+        // mũi căng chéo xuống môi / cằm (không ôm lõm vào nhân trung) và loe sang hai bên má thành mặt phẳng vải.
+        // (trước đây khối mũi rộng σ 0.13 + sống mũi kéo dài σ 0.22 -> nhìn nghiêng thành cái mõm vát.)
+        const tipY = -0.38, below = Math.max(0, tipY - y);
+        z -= (0.15 + 0.07 * Math.max(0, Math.min(1, (0.0 - y) / 0.38))) * G2(x, 0.07) * G2(y + 0.16, 0.25);   // sống mũi
+        z -= 0.11 * G2(x, 0.08) * G2(y - tipY, 0.08);                  // đầu mũi
+        z -= 0.05 * G2(Math.abs(x) - 0.09, 0.06) * G2(y + 0.41, 0.06); // cánh mũi
+        z -= 0.12 * Math.exp(-below / 0.45) * G2(x, 0.11 + 0.35 * below) * (below > 0 ? 1 : G2(y - tipY, 0.08));   // vải căng từ đầu mũi xuống
+        // nửa dưới khối cầu cong vào rất nhanh -> bù miệng / cằm ra trước để mặt nghiêng gần thẳng đứng dưới mũi (không vát mỏ)
+        z -= 0.26 * G2(x, 0.34) * G2(y + 1.08, 0.17);                  // cằm nhô rõ dưới khăn
+        z -= 0.14 * G2(x, 0.34) * G2(y + 0.7, 0.26);                   // miệng / môi nhô ra trước
         z += 0.14 * G2(x, 0.4) * G2(y + 1.34, 0.1);                   // vải thụt vào dưới cằm (cổ)
         z -= 0.06 * G2(Math.abs(x) - 0.45, 0.12) * G2(y + 0.9, 0.18);  // đường hàm hai bên
       }
@@ -780,7 +790,7 @@ const VehicleCrew = (() => {
       x *= k; z *= k; y -= y < -1.2 ? 0.05 : 0;
       // mép trên khăn: trước ngang sống mũi (dưới goggle), hai bên dưới tai, sau gáy dưới mép mũ — đỉnh vượt mép thì dồn
       // xuống đúng mép (mép khăn liền mạch, không răng cưa)
-      const cut = z < 0 ? -0.2 + 0.12 * Math.exp(-(x / 0.15) * (x / 0.15)) - 0.06 * Math.pow(Math.min(1, Math.abs(x) / 0.75), 3) : -0.3;   // trước: ngay dưới mép kính; sau gáy: kéo cao lên tận mép mũ
+      const cut = z < 0 ? -0.2 + 0.22 * Math.exp(-(x / 0.15) * (x / 0.15)) - 0.06 * Math.pow(Math.min(1, Math.abs(x) / 0.75), 3) : -0.3;   // trước: ngay dưới mép kính; sau gáy: kéo cao lên tận mép mũ
       const over = y > cut;
       if (over) y = cut;
       p.setXYZ(i, x, y + 0.72, z);
@@ -804,6 +814,14 @@ const VehicleCrew = (() => {
     return (GEO.torso = g);
   }
 
+  // ống vải vai (cơ delta): đứng dọc +Y từ 0 (gốc trên thân, r 0.6) tới 1 (bắp tay, r 0.5) — solveArm kéo dài theo khoảng cách
+  function deltGeo() {
+    if (GEO.delt) return GEO.delt;
+    const prof = [[0.0, -0.08], [0.42, -0.06], [0.58, 0.08], [0.6, 0.35], [0.56, 0.7], [0.5, 1.0], [0.36, 1.1], [0.0, 1.12]];
+    const g = new THREE.LatheGeometry(prof.map(q => new THREE.Vector2(q[0], q[1])), 16);
+    g.scale(1, 1, 0.9);
+    return (GEO.delt = g);
+  }
   // Kích thước người thật (8 đv = 1 m): vai ~0.45 m, thân ~0.5 m, cánh tay trên 0.29 m, cẳng tay 0.27 m
   const ARM_UP = 2.3, ARM_FORE = 2.15;
   function buildFigure(team) {
@@ -881,9 +899,12 @@ const VehicleCrew = (() => {
     for (let r = 0; r < 3; r++) add(chest, new THREE.CylinderGeometry(1.62, 1.62, 0.05, 24, 1, true, Math.PI * 1.3, Math.PI * 0.4), M.strap, 0, 1.0 + r * 0.32, 0).scale.set(1, 1, 0.64);
     // quai vai: dải vải dệt dẹt mỏng (~4 cm bản, vài mm dày) vắt sát qua vai nối mép trên hai tấm, khóa nhựa chỉnh dây
     for (const sx of [-1, 1]) {
-      const c = new THREE.CatmullRomCurve3([V(sx * 0.86, 3.4, -1.16), V(sx * 1.02, 3.66, -0.6), V(sx * 1.06, 3.7, 0.15), V(sx * 0.92, 3.4, 1.1)]);
-      add(chest, strapGeo(c, 0.4, 0.05, 'shoulder' + sx, V(sx * 0.85, 2.4, 0)), M.web2, 0, 0, 0);
-      add(chest, rbox(0.46, 0.12, 0.08), M.knuck, sx * 0.86, 3.4, -0.85, -0.9, 0, 0);
+      // (tọa độ trước khi kéo áo giáp sát thân bên dưới: y -0.22, x * 0.955, z * 0.91) — đi dọc cơ thang giữa cổ và đầu vai,
+      // bám mặt thân. Trước đây vắt qua điểm x ~1.05 nằm ngoài khối vai -> quai vồng lơ lửng trên vai như cái quai xách
+      const c = new THREE.CatmullRomCurve3([V(sx * 0.84, 3.3, -1.12), V(sx * 0.84, 3.52, -0.66), V(sx * 0.84, 3.72, -0.33), V(sx * 0.84, 3.79, 0.11),
+        V(sx * 0.84, 3.67, 0.44), V(sx * 0.84, 3.45, 0.77), V(sx * 0.84, 3.32, 1.12)]);
+      add(chest, strapGeo(c, 0.4, 0.05, 'shoulder' + sx, V(sx * 0.8, 2.4, 0)), M.web2, 0, 0, 0);
+      add(chest, rbox(0.46, 0.12, 0.08), M.knuck, sx * 0.84, 3.53, -0.66, -0.75, 0, 0);
     }
     // MẶT TRƯỚC (như áo giáp thật kiểu JPC + placard): BẢNG DÁN NGỰC trên (velcro, túi bản đồ khoá kéo, khoá cài quai
     // vai), HÀNG TÚI BỤNG rộng dưới: 3 túi băng đạn súng trường giữa (thấy đáy băng đạn cong + dây kéo), 2 túi băng đạn
@@ -1108,25 +1129,30 @@ const VehicleCrew = (() => {
       // GĂNG TAY CHIẾN THUẬT: cổ găng ôm cổ tay có quai dán, mu bàn tay ốp đốt cứng, lòng bàn tay da, 4 ngón 3 đốt cong
       // ôm quanh tay cầm (tay cầm dọc theo trục Z của bàn tay), ngón cái ôm chéo phía trên
       // Cổ găng thu từ tay áo sang bàn tay; lòng bàn tay phải có bề dày thật để không biến thành một lát phẳng khi nhìn ngang.
-      add(hand, new THREE.CylinderGeometry(0.32, 0.37, 0.36, 12), M.glove, 0, -0.12, 0);
-      add(hand, new THREE.TorusGeometry(0.34, 0.035, 5, 12), M.strap, 0, -0.04, 0, Math.PI / 2);
-      add(hand, new THREE.SphereGeometry(0.34, 14, 11), M.glove, 0.035, 0.25, 0).scale.set(0.72, 0.96, 1.02);   // khối lòng + mu bàn tay
-      add(hand, new THREE.SphereGeometry(0.27, 12, 9), M.knuck, 0.22, 0.34, 0).scale.set(0.46, 0.72, 0.98);     // ốp mu bàn tay
-      add(hand, rbox(0.09, 0.32, 0.44), M.glove, -0.19, 0.27, 0);                                            // đệm lòng bàn tay ôm phía gần cán
+      // GĂNG: cổ găng ôm cổ tay + quai dán; bàn tay dẹt như tay thật (dày ~3 cm, rộng ~8.5 cm — bản cũ là một quả cầu dày gần
+      // bằng bề ngang); mu tay ốp đốt cao su thấp cùng tông sẫm; 4 ngón 3 đốt thon dần, có khe giữa ngón; lòng bàn tay da
+      add(hand, new THREE.CylinderGeometry(0.29, 0.33, 0.34, 12), M.glove, 0, -0.1, 0).scale.set(0.82, 1, 1);
+      add(hand, new THREE.TorusGeometry(0.3, 0.03, 5, 12), M.gloveP, 0, -0.02, 0, Math.PI / 2).scale.set(0.82, 1, 1);
+      add(hand, rbox(0.06, 0.16, 0.2), M.gloveP, 0.25, -0.06, 0.04);                       // quai dán cổ găng
+      add(hand, rbox(0.27, 0.56, 0.6), M.glove, 0.0, 0.26, 0);                               // bàn tay
+      add(hand, rbox(0.05, 0.46, 0.5), M.gloveP, -0.13, 0.26, 0);                            // lòng bàn tay da
+      add(hand, rbox(0.06, 0.2, 0.56), M.gloveP, 0.14, 0.47, 0);                             // ốp đốt cao su thấp
       for (let f = 0; f < 4; f++) {
-        const z = (f - 1.5) * 0.145, r = f === 3 ? 0.07 : 0.08, k = f === 3 ? 0.86 : 1;
-        // Ba đốt tạo móc chữ C; đầu ngón về phía lòng bàn tay nên cán nằm lọt giữa đệm lòng và đầu ngón.
-        const p0 = V(0.12, 0.47, z), p1 = V(0.01, 0.61 * k, z), p2 = V(-0.19 * k, 0.53, z), p3 = V(-0.27 * k, 0.3, z);
-        seg(hand, p0, p1, r + 0.012, M.glove); seg(hand, p1, p2, r, M.glove); seg(hand, p2, p3, r - 0.006, M.glove);
-        add(hand, new THREE.SphereGeometry(0.065, 8, 6), M.knuck, 0.14, 0.5, z);       // đệm đốt
+        const z = (f - 1.5) * 0.152, r = f === 3 ? 0.06 : 0.068, k = f === 3 ? 0.86 : f === 1 ? 1.04 : 1;
+        // Ba đốt tạo móc chữ C; đầu ngón về phía lòng bàn tay nên cán nằm lọt giữa lòng tay và đầu ngón.
+        const p0 = V(0.06, 0.52, z), p1 = V(0.0, 0.68 * k, z), p2 = V(-0.19 * k, 0.6 * k, z), p3 = V(-0.26 * k, 0.4, z);
+        seg(hand, p0, p1, r, M.glove); seg(hand, p1, p2, r * 0.93, M.glove); seg(hand, p2, p3, r * 0.86, M.gloveP);
       }
-      const tz = s * 0.34;
-      // Ngón cái đối lực, vòng chéo về đầu ngón trỏ thay vì chìa thẳng ra cạnh bàn tay.
-      seg(hand, V(0.05, 0.14, tz * 0.55), V(-0.08, 0.29, tz), 0.09, M.glove);
-      seg(hand, V(-0.08, 0.29, tz), V(-0.22, 0.36, tz * 0.62), 0.078, M.glove);
+      const tz = s * 0.33;
+      // Ngón cái đối lực từ gò cái, vòng chéo về đầu ngón trỏ thay vì chìa thẳng ra cạnh bàn tay.
+      seg(hand, V(-0.02, 0.12, tz * 0.6), V(-0.1, 0.3, tz), 0.078, M.glove);
+      seg(hand, V(-0.1, 0.3, tz), V(-0.22, 0.4, tz * 0.6), 0.066, M.gloveP);
       for (const m of hand.userData.segs || []) meshes.push(m);
       hand.scale.setScalar(0.92);   // bàn tay chiến sĩ trưởng thành, không lọt thỏm cạnh tay cầm 12.7 mm
-      return { s, up, fore, hand, pocket, sh: V(s * 1.5, 2.76, 0) };   // vai (hệ ngực)
+      // CƠ DELTA / VAI ÁO: ống vải thuôn nối từ đầu vai trên thân sang bắp tay — đổi hướng theo tay mỗi khung (solveArm),
+      // vai không còn là quả cầu đầu cánh tay tách khỏi thân khi giơ tay / đưa tay ra trước
+      const delt = add(root, deltGeo(), M.uni, 0, 0, 0);
+      return { s, up, fore, hand, pocket, delt, sh: V(s * 1.5, 2.76, 0) };   // vai (hệ ngực)
     });
     // vẽ sau lòng hố lỗ nóc (recon_marten: mặt nạ độ sâu khoét nóc) -> phần người dưới mép nóc vẫn thấy qua lỗ
     // vẽ ở lượt trong suốt SAU lòng hố lỗ nóc (recon_marten: renderOrder 10-11) -> phần người dưới mép nóc vẫn thấy qua lỗ
@@ -1163,7 +1189,17 @@ const VehicleCrew = (() => {
     // Khi nắm cán, target là tâm lòng bàn tay chứ không phải cổ tay. Lùi cổ tay theo hướng với tới để
     // lòng bàn tay và các ngón thực sự bao quanh cán, thay vì chỉ chạm mép ngoài của nó.
     const reach = G.clone().sub(S).normalize();
-    const T = gripAxisW ? G.clone().addScaledVector(reach, -0.35) : G;
+    // Nắm cán: tâm cán phải lọt vào giữa móc chữ C của 4 ngón (hệ bàn tay ~(-0.12, 0.48) — phía lòng tay, ngang đốt giữa),
+    // không xuyên giữa khối lòng bàn tay. Trục cán đổi chiều cho tay trái để mu bàn tay hai bên cùng quay ra ngoài, ngón cái
+    // hai tay cùng ở phía trên (ấn lẫy cò bướm). Dựng hệ trục bàn tay trước rồi lùi cổ tay theo đó
+    let HB = null, T = G;
+    if (gripAxisW) {
+      const invRoot = new THREE.Matrix4().copy(F.root.matrixWorld).invert();
+      const ax = gripAxisW.clone().transformDirection(invRoot).multiplyScalar(arm.s < 0 ? -1 : 1);
+      const hz = ax.addScaledVector(reach, -ax.dot(reach)).normalize(), hx = V().crossVectors(reach, hz).normalize();
+      HB = { hx, hy: reach.clone(), hz };
+      T = G.clone().addScaledVector(reach, -0.44).addScaledVector(hx, 0.11);
+    }
     const a = ARM_UP, b = ARM_FORE;
     const ST = T.clone().sub(S);
     let d = ST.length();
@@ -1178,18 +1214,23 @@ const VehicleCrew = (() => {
     const E = S.clone().addScaledVector(dir, a * cosA).addScaledVector(pv, a * sinA);
     // +X của cánh tay / cẳng tay = phía mỏm khuỷu (chiều bẻ khuỷu); bàn tay: +X ra phía ngoài thân (mu bàn tay)
     aim(arm.up, S, E, pv);
+    if (arm.delt) {
+      // gốc trên thân (đầu vai, lấn vào trong thân) -> điểm trên bắp tay cách khớp vai ~0.75
+      const A = F.root.worldToLocal(F.chest.localToWorld(V(arm.s * 1.12, 2.86, 0.02)));
+      const B = S.clone().addScaledVector(E.clone().sub(S).normalize(), 0.75);
+      const d = B.sub(A), L = d.length();
+      arm.delt.position.copy(A);
+      arm.delt.quaternion.setFromUnitVectors(UP, d.multiplyScalar(1 / Math.max(1e-4, L)));
+      arm.delt.scale.set(1, Math.max(0.2, L), 1);
+    }
     if (arm.pocket) {
       const lat = V(arm.s, 0.35, 0).applyQuaternion(arm.up.quaternion.clone().invert());
       arm.pocket.rotation.y = Math.atan2(-lat.z, lat.x);
     }
     aim(arm.fore, E, Tc, pv);
-    if (gripAxisW) {
-      const hy = G.clone().sub(Tc).normalize();
-      const invRoot = new THREE.Matrix4().copy(F.root.matrixWorld).invert();
-      const hz = gripAxisW.clone().transformDirection(invRoot).addScaledVector(hy, -gripAxisW.clone().transformDirection(invRoot).dot(hy)).normalize();
-      const hx = V().crossVectors(hy, hz).normalize();
+    if (HB) {
       arm.hand.position.copy(Tc);
-      arm.hand.quaternion.setFromRotationMatrix(_m.makeBasis(hx, hy, hz));
+      arm.hand.quaternion.setFromRotationMatrix(_m.makeBasis(HB.hx, HB.hy, HB.hz));
     } else aim(arm.hand, Tc, Tc.clone().addScaledVector(Tc.clone().sub(E).normalize(), 1), V(arm.s, 0, 0));
   }
 
@@ -1234,32 +1275,41 @@ const VehicleCrew = (() => {
     const A = f0(ctx), B = f1(ctx);
     return {
       L: lerpV(A.L, B.L, k), R: lerpV(A.R, B.R, k),
-      rise: A.rise + (B.rise - A.rise) * k, bend: A.bend + (B.bend - A.bend) * k, twist: A.twist + (B.twist - A.twist) * k
+      rise: A.rise + (B.rise - A.rise) * k, bend: A.bend + (B.bend - A.bend) * k, twist: A.twist + (B.twist - A.twist) * k,
+      lz: (A.lz || 0) + ((B.lz || 0) - (A.lz || 0)) * k
     };
   }
 
-  const pose = (L, R, rise = 0, bend = 0, twist = 0) => ({ L, R, rise, bend, twist });
+  const pose = (L, R, rise = 0, bend = 0, twist = 0, lz = 0) => ({ L, R, rise, bend, twist, lz });
 
-  // Thay hộp đạn súng máy (pr 0..1 theo reloadTimer — đồng bộ với hoạt cảnh nắp / hộp trong recon_marten)
+  // Thay hộp đạn súng máy (pr 0..1 theo reloadTimer — đồng bộ với hoạt cảnh nắp / hộp trong recon_marten).
+  // Khay hộp đạn nằm sát chốt súng, cách chỗ đứng ~6 đv: xạ thủ đứng lên bậc, CHỒM NGƯỜI tới (lz < 0) để tay làm việc ở tầm
+  // khuỷu gập — trước đây đứng nguyên chỗ duỗi thẳng tay, ôm hộp 13 kg bằng hai cánh tay thẳng đơ. Hộp luôn có hai tay: tay
+  // phải nắm quai trên nắp, tay trái đỡ dưới mép đáy; kéo sát ngực rồi mới đổi hướng. Hộp rỗng quăng qua mạn trái, hộp mới
+  // lấy từ giá trong khoang, nhấc thẳng đứng giữa lòng lỗ lên ngang ngực rồi mới đưa ra khay (c.r0: tư thế đứng súng)
   const MG_KEYS = [
-    [0.00, c => pose(c.gripL, c.gripR)],
-    [0.07, c => pose(c.gripL, c.coverH, 0, 0.04)],            // tay phải nhấc nắp khóa nòng
-    [0.14, c => pose(c.beltT, c.coverH, 0, 0.12)],            // tay trái nhấc dây cũ khỏi khay nạp
-    [0.24, c => pose(c.beltT, c.coverH, 0, 0.18, -0.08)],     // kéo dây cũ ra hẳn, tay phải vẫn giữ nắp
-    [0.28, c => pose(c.boxH, c.boxH2, 0, 0.22, -0.12)],       // đổi sang nắm quai và đáy hộp rỗng
-    [0.44, c => pose(c.boxH, c.boxH2, -0.36, 0.62, -0.16)],   // hạ hộp nặng xuống khoang, không buông rơi
-    [0.49, c => pose(c.hatchL, c.hatchR, -0.95, 0.82)],       // hai tay xuống khoang tìm đúng quai hộp mới
-    [0.55, c => pose(c.boxH, c.boxH2, -0.95, 0.82, 0.10)],    // ôm hộp mới bằng hai tay
-    [0.70, c => pose(c.boxH, c.boxH2, -0.02, 0.26, -0.12)],   // nhấc qua lỗ và ghì hộp vào khay
-    [0.75, c => pose(c.boxH, c.lidH, 0, 0.12)],               // một tay giữ hộp, một tay lật nắp
-    [0.79, c => pose(c.boxH, c.beltT, 0, 0.16)],              // bốc đầu dây mới
-    [0.88, c => pose(c.coverH, c.beltT, 0, 0.12)],            // đặt dây vào khay, tay trái đỡ nắp khóa nòng
-    [0.92, c => pose(c.gripL, c.coverH, 0, 0.08)],            // sập và ép nắp khóa nòng vào chốt
+    [0.00, c => pose(c.gripL, c.gripR, c.r0)],
+    [0.07, c => pose(c.gripL, c.coverH, c.r0 + 0.2, 0.3, 0, -0.7)],              // tay phải nhấc nắp khóa nòng
+    [0.14, c => pose(c.beltT, c.coverH, c.r0 + 0.3, 0.42, -0.05, -0.9)],         // tay trái nhấc dây cũ khỏi khay nạp
+    [0.24, c => pose(c.beltT, c.coverH, c.r0 + 0.3, 0.45, -0.08, -1.0)],         // kéo dây cũ ra hẳn, tay phải vẫn giữ nắp
+    [0.28, c => pose(c.boxH2, c.boxH, c.r0 + 0.35, 0.55, -0.12, -1.2)],          // tay phải nắm quai, tay trái luồn đỡ đáy hộp
+    [0.33, c => pose(c.boxH2, c.boxH, c.r0 + 0.3, 0.45, -0.12, -1.0)],           // nhấc hộp khỏi chốt khay
+    [0.40, c => pose(c.boxH2, c.boxH, c.r0, 0.15, -0.3, -0.3)],                  // kéo hộp về sát ngực trái, đứng thẳng lại
+    [0.43, c => pose(c.tossL, c.tossR, c.r0 + 0.1, 0.05, -0.55, -0.2)],          // lấy đà, quăng hộp rỗng qua mạn trái
+    [0.47, c => pose(c.restL, c.restR, c.r0, 0.1, -0.2, 0)],
+    [0.53, c => pose(c.boxH2, c.boxH, c.r0 - 1.6, 0.85, 0.05, 0.25)],            // cúi xuống giá đạn trong khoang, nắm hộp mới
+    [0.55, c => pose(c.boxH2, c.boxH, c.r0 - 1.6, 0.85, 0.05, 0.25)],
+    [0.62, c => pose(c.boxH2, c.boxH, c.r0 - 0.2, 0.25, -0.1, 0)],               // nhấc thẳng lên ngang ngực, giữa lòng lỗ
+    [0.70, c => pose(c.boxH2, c.boxH, c.r0 + 0.35, 0.55, -0.12, -1.2)],          // chồm tới đặt hộp lên khay, ghì vào chốt
+    [0.75, c => pose(c.boxH, c.lidH, c.r0 + 0.3, 0.45, 0, -1.1)],                // một tay giữ hộp, một tay lật nắp
+    [0.79, c => pose(c.boxH, c.beltT, c.r0 + 0.3, 0.45, 0, -1.0)],               // bốc đầu dây mới
+    [0.88, c => pose(c.coverH, c.beltT, c.r0 + 0.25, 0.4, 0, -0.9)],             // đặt dây vào khay, tay trái đỡ nắp khóa nòng
+    [0.92, c => pose(c.gripL, c.coverH, c.r0 + 0.2, 0.3, 0, -0.7)],              // sập và ép nắp khóa nòng vào chốt
     // kéo lên đạn 2 lần: nắm tay kéo ở chỗ nghỉ phía trước rồi mới lùi (tay bám theo tay kéo — chargePull). Thân người dồn
     // sức: với ra trước khi nắm, ngả ra sau theo cú giật (lò xo khối khóa nòng 12.7 rất cứng) — c.chBend theo hành trình tay
-    [0.92, c => pose(c.gripL, c.chargeH, 0, c.chBend, c.chTwist)],
-    [0.974, c => pose(c.gripL, c.chargeH, 0, c.chBend, c.chTwist)],
-    [1.00, c => pose(c.gripL, c.gripR)]
+    [0.92, c => pose(c.gripL, c.chargeH, c.r0, c.chBend, c.chTwist, -0.6)],
+    [0.974, c => pose(c.gripL, c.chargeH, c.r0, c.chBend, c.chTwist, -0.6)],
+    [1.00, c => pose(c.gripL, c.gripR, c.r0)]
   ];
   // TAY KÉO LÊN ĐẠN theo tiến độ nạp (0 = chỗ nghỉ phía trước, 1 = lùi hết): kéo lùi chậm, buông là lò xo bật về gần như
   // tức thì; kéo 2 lần như súng M2 thật (lần 1 đưa viên đầu lên, lần 2 đẩy vào buồng đạn). recon_marten đẩy tay kéo theo
@@ -1592,7 +1642,7 @@ const VehicleCrew = (() => {
     if (!C || !(dt > 0)) return;
     const d = u.dmg;
     let F = C.gunner;
-    C.loadShift = 0; C.loadZ = 0;
+    C.loadShift = 0; C.loadZ = 0; C.lean = 0;
     let gDead = !!(d && d.lost && d.lost.has('crewGunner'));
     const dDead = !!(d && d.lost && d.lost.has('crewDriver'));
     // XẠ THỦ HY SINH -> gục lên súng (máu bắn) -> đổ sụp xuống lòng xe -> xạ thủ dự bị (lái xe phụ) trèo lên thay sau
@@ -1683,7 +1733,8 @@ const VehicleCrew = (() => {
     const c = {
       // nắm đúng 2 tay cầm chữ D sau khóa nòng (recon_marten buildRingMount)
       // neo trực tiếp vào nhóm giật của súng: tay đi cùng tay cầm khi súng hất/lệch, không cần bù tọa độ về sau
-      gripL: gripNode.localToWorld(gripLAt.clone()), gripR: gripNode.localToWorld(gripRAt.clone()), gripAxis,
+      gripL: gripNode.localToWorld(gripLAt.clone()), gripR: gripNode.localToWorld(gripRAt.clone()), gripAxis, lift: (mg && mg.lift) || 0,
+      r0: ((mg && mg.lift) || 0) + 0.8,   // tư thế đứng súng (súng nằm ngang): mốc độ cao cho các động tác thao tác súng
       // cúi xuống lòng xe lấy đạn: trước bụng, dưới mép nóc
       hatchL: ws(T, F, -0.7, -1.2, -1.8), hatchR: ws(T, F, 0.6, -1.2, -1.7)
     };
@@ -1798,29 +1849,36 @@ const VehicleCrew = (() => {
       if (pr >= 0.92 && pr < 0.974 && away < 0.01) C.fastHands = true;
       Object.assign(c, {
         coverH: mg.coverAt ? mg.cover.localToWorld(mg.coverAt.clone()) : wp(mg.cover, 0, 0.3, 1.55),
-        boxH: mg.ammo.visible ? wp(mg.ammo, 0, 0.95, 0) : ws(T, F, -0.9, -1.2, -1.6),
-        boxH2: mg.ammo.visible ? wp(mg.ammo, 0.6, 0.6, 0.2) : ws(T, F, -0.2, -1.2, -1.6),
+        // tay phải: cổ tay trên quai nắp hộp (bàn tay chúc xuống nắm quai); tay trái: cổ tay dưới mép đáy phía sau, bàn tay luồn
+        // ra trước đỡ đáy. Hộp đã quăng đi / chưa lấy: tay để trước ngực
+        boxH: mg.ammo.visible ? wp(mg.ammo, 0.02, 0.88, 0.22) : ws(T, F, 0.5, 1.6, -1.5),
+        boxH2: mg.ammo.visible ? wp(mg.ammo, -0.12, -0.62, 0.58) : ws(T, F, -0.8, 1.5, -1.4),
+        tossL: ws(T, F, -3.4, 4.4, -2.6), tossR: ws(T, F, -3.0, 4.9, -1.8),
+        restL: ws(T, F, -0.9, 1.5, -1.4), restR: ws(T, F, 0.6, 1.4, -1.5),
         chargeH: wp(mg.charge ? mg.charge.parent : P, ca.x + 0.28 * away, ca.y + 0.12 * away, ca.z + ca.len * hp),   // 12.7: theo thân súng đang hạ dần
         lidH: mg.ammoLid ? wp(mg.ammoLid, mg.lidEdge || 1.35, 0.1, 0.0) : wp(mg.cover, 0, 0.3, 1.55),
         beltT: mg.beltTip ? wp(P, mg.beltTip.x, mg.beltTip.y + 0.12, mg.beltTip.z) : wp(P, -0.5, 0.4, 0.6)
       });
       tgt = track(MG_KEYS, pr, c);
+      C.loadZ = tgt.lz;
     } else if (C.hidden) {
       // CHUI VÀO XE & ĐÓNG NẮP: với tay phải ra sau nắm quai mép nắp (gần bản lề) -> vừa hạ người vừa kéo nắp sập theo,
       // tay bám quai tới khi nắp đóng hẳn rồi mới buông xuống
       // nắp có thanh xoắn trợ lực: xạ thủ quay người ra sau, đẩy nắp dựng đứng rồi nắm quai chữ U mặt trong, vừa thụp
       // xuống vừa kéo sập nắp; tay kia chống lên mép vòng
-      const ht = C.hideT || 0, lz = u.hatchLid ? -(u.hatchLid.position.z) * 0.45 : 0;
+      const ht = C.hideT || 0, lz = u.hatchLid ? -(u.hatchLid.position.z) * (u.hatchLid.userData.grip || 0.45) : 0;
       // hai tay cùng nắm quai chữ U (không chống lên vành: tay đè xuyên vành khi thụp xuống)
-      const pull = u.hatchLid ? wp(u.hatchLid, 0.3, -0.55, lz) : c.hatchR, rim = u.hatchLid ? wp(u.hatchLid, -0.3, -0.55, lz) : c.hatchL;
+      // (đích IK là cổ tay, bàn tay chìa thêm ~0.6 theo cẳng tay -> đặt cổ tay dưới thanh quai, không thì bàn tay xuyên lên mặt nắp)
+      const pull = u.hatchLid ? wp(u.hatchLid, 0.3, -1.05, lz) : c.hatchR, rim = u.hatchLid ? wp(u.hatchLid, -0.3, -1.05, lz) : c.hatchL;
       // QUAY NGƯỜI RA SAU (bản lề nắp ở sau lưng): buông súng, cả người xoay tại chỗ ~180° quanh trục đứng (F.yaw — xoay
       // nguyên khối người ở tâm lỗ, không vặn thân: vặn vai thì vai / tay quét xuyên thành vòng) -> nắm quai bằng hai tay
       // trước mặt, đẩy nắp dựng đứng, rồi vừa thụp xuống vừa kéo sập. Trước đây đứng quay lưng với tay ngoặt ra sau đầu.
       // Đã quay lại thì tay trái ở phía +x của tháp -> nắm bên +x của quai (không bắt chéo tay)
       tgt = ht < 0.1 ? pose(c.gripL, c.gripR, -0.2, 0, 0)
         : ht < 0.7 ? pose(pull, rim, -0.3, 0.12, 0)
-        : ht < 1.55 ? pose(pull, rim, -0.3 - 2.9 * sm((ht - 0.7) / 0.55), 0.35, 0)
-        : pose(ws(T, F, 0.7, -1.2, 1.8), ws(T, F, -0.6, -1.2, 1.7), -3.3, 0);   // ngồi trong xe, tay trước bụng (đã quay ra sau)
+        // thụp sâu (~ -4.8 như người dự bị ngồi khoang): thụp nông thì đỉnh mũ còn cao hơn mặt dưới nắp -> mũ lòi qua nắp
+        : ht < 1.55 ? pose(pull, rim, -0.3 - 4.5 * sm((ht - 0.7) / 0.6), 0.35, 0)
+        : pose(ws(T, F, 0.7, -1.2, 1.8), ws(T, F, -0.6, -1.2, 1.7), -4.8, 0);   // ngồi trong xe, tay trước bụng (đã quay ra sau)
     } else if (F.newbie > 0) {
       // NGƯỜI DỰ BỊ TRÈO LÊN: bám mép -> kéo vai qua vành -> chống một tay đứng dậy -> chuyển từng tay sang súng.
       // Giữ ít nhất một điểm tựa ở mọi pha, tránh model nổi thẳng từ khoang lên rồi cả hai tay cùng "teleport" vào tay cầm.
@@ -1832,9 +1890,16 @@ const VehicleCrew = (() => {
       else if (cl < 0.9) tgt = pose(c.gripL, c.gripR, -0.6 + (cl - 0.72) / 0.18 * 0.5, 0.12, 0);
       else { tgt = pose(c.gripL, c.gripR, 0, 0, 0); onGrip = true; }
     } else {
-      // tay cầm hạ thấp khi súng ngóc lên (đuôi súng chúi xuống): xạ thủ khuỵu thấp người theo, không để tay đè lên vòng
-      const gy = T.worldToLocal(c.gripL.clone()).y;
-      tgt = pose(c.gripL, c.gripR, Math.max(-1.6, Math.min(0.8, (gy - 1.8) * 0.9)), Math.max(0, (1.8 - gy) * 0.12));
+      // tay cầm hạ thấp khi súng ngóc lên (đuôi súng chúi xuống): xạ thủ khuỵu thấp người theo, không để tay đè lên vòng.
+      // Ngóc cao (bắn drone, tới 70°): tay cầm vừa thấp vừa chồm ra ngoài mép trước lỗ nóc -> thụp xuống thì vai / lưng /
+      // tay cắm xuyên vành. Như xạ thủ thật: đứng lên bậc, chồm người qua mép trước, ấn tay cầm xuống
+      // (mg.lift: trụ súng cao hơn bản đầu -> mọi độ cao tay cầm dời lên đúng chừng đó, xạ thủ đứng cao lên theo)
+      const L = c.lift, gl = T.worldToLocal(c.gripL.clone()), gy = gl.y - L;
+      const ahead = c01((-(gl.z - F.base.z) - 3.55) / 1.6);   // tay cầm vượt chỗ cầm bình thường (z -3.3 so với chỗ đứng)
+      const crouch = Math.max(-1.6, Math.min(0.8, (gy - 1.8) * 0.9));
+      tgt = pose(c.gripL, c.gripR, L + crouch + (0.55 - crouch) * sm(ahead), Math.max(0, (1.8 - gy) * 0.12) + 0.55 * ahead);
+      C.loadZ = -1.1 * sm(ahead);
+      C.lean = sm(ahead);
       onGrip = true;
     }
 
@@ -1847,7 +1912,7 @@ const VehicleCrew = (() => {
         // nắp do tay xạ thủ kéo: đóng theo nhịp hạ người (xem tư thế "chui vào xe" ở trên)
         C.hideT = (C.hideT || 0) + dt;
         const ht = C.hideT, vert = Math.PI / 2 + 0.15;
-        lid.rotation.x = ht < 0.7 ? open + (vert - open) * sm((ht - 0.25) / 0.45) : vert * (1 - sm((ht - 0.82) / 0.75));   // nắp sập theo sau đầu (người thụp xuống trước)
+        lid.rotation.x = ht < 0.7 ? open + (vert - open) * sm((ht - 0.25) / 0.45) : vert * (1 - sm((ht - 0.9) / 0.75));   // nắp sập theo sau đầu (người thụp xuống trước)
       } else {
         C.hideT = 0;
         const up = gDead || tgt.rise > -2.4;
@@ -1886,7 +1951,8 @@ const VehicleCrew = (() => {
     const jit = F.kick * RC.body;
     // thụp xuống: người dịch về phía tâm lỗ (chỗ đứng lệch về mép sau mà thụp thẳng thì lưng / tay quệt thành vòng)
     const hiding = C.hidden && !gDead && lid;
-    F.dz = (F.dz || 0) + ((hiding && C.hideT > 0.7 ? -F.base.z * 0.42 : 0) - (F.dz || 0)) * (1 - Math.exp(-dt * 4));
+    // (lùi về tâm ngay khi quay người: đứng sát mép sau mà kéo nắp thì khuỷu ra ngang chạm / lòi ra ngoài vành phía bản lề)
+    F.dz = (F.dz || 0) + ((hiding && C.hideT > 0.2 ? -F.base.z * 0.7 : 0) - (F.dz || 0)) * (1 - Math.exp(-dt * 4));
     F.hp = (F.hp || 0) + ((hiding && C.hideT > 0.25 ? 1 : 0) - (F.hp || 0)) * (1 - Math.exp(-dt * 8));
     const loadK = 1 - Math.exp(-dt * 9);
     F.loadX = (F.loadX || 0) + ((C.loadShift || 0) - (F.loadX || 0)) * loadK;
@@ -1915,15 +1981,23 @@ const VehicleCrew = (() => {
     // Quan sát theo điểm nhìn rời rạc: giữ một hướng vài giây, đảo nhanh sang hướng khác rồi lại dừng. Chuyển động sin liên tục khiến đầu
     // lắc đều như robot. Khi thao tác / bắn vẫn khóa mắt vào công việc hoặc đường ngắm.
     F.gazeT = (F.gazeT || 0) - dt;
-    if (F.gazeT <= 0 && !busy && !firing && !gDead && !(F.newbie > 0)) {
+    // ĐANG CHIẾN ĐẤU (bóp cò, vừa bắn xong một loạt, mở kính ngắm / khóa mục tiêu / ngắm trời): mắt dán theo đường ngắm dọc
+    // nòng — không đảo nhìn quanh giữa các loạt bắn. Trước đây chỉ khóa nhìn đúng lúc đang bóp cò, buông cò là đầu lại quay
+    C.fireHold = firing ? 3 : Math.max(0, (C.fireHold || 0) - dt);
+    const gm = window.game;
+    const aiming = onGrip && !gDead && !busy && !C.hidden && (firing || C.fireHold > 0
+      || (u.isPlayer && !!gm && (!!gm._sight || !!(gm.lockedTarget && !gm.lockedTarget.isDead) || !!gm._airAim)));
+    // ngẩng / cúi theo góc ngóc của súng (đầu ngả theo đường ngắm qua thước ngắm, không ngửa hết cỡ theo nòng)
+    const aimPitch = Math.max(-0.3, Math.min(0.7, (P ? P.rotation.x : 0) * 0.7 + 0.02));
+    if (F.gazeT <= 0 && !busy && !aiming && !gDead && !(F.newbie > 0)) {
       F.gazeT = 1.2 + Math.random() * 3.4;
       F.gazeYaw = (Math.random() - 0.5) * 0.92;
       F.gazePitch = (Math.random() - 0.5) * 0.16 - 0.01;
       F.gazeFast = 0.16 + Math.random() * 0.12;
     }
-    const wantYaw = gDead ? deadSide * 0.28 : F.newbie > 0 ? -0.12 : busy ? -F.twist * 0.25 : firing ? 0 : (F.gazeYaw || 0);
-    const wantPitch = gDead ? -0.7 : F.newbie > 0 ? -0.32 : busy ? -0.45 : firing ? 0.02 : (F.gazePitch || 0);
-    const lookRate = busy || firing || gDead ? 5 : (F.gazeFast > 0 ? 9 : 2.6);
+    const wantYaw = gDead ? deadSide * 0.28 : F.newbie > 0 ? -0.12 : busy ? -F.twist * 0.25 : aiming ? 0 : (F.gazeYaw || 0);
+    const wantPitch = gDead ? -0.7 : F.newbie > 0 ? -0.32 : busy ? -0.45 : aiming ? aimPitch : (F.gazePitch || 0);
+    const lookRate = busy || aiming || gDead ? 7 : (F.gazeFast > 0 ? 9 : 2.6);
     F.gazeFast = Math.max(0, (F.gazeFast || 0) - dt);
     F.look += (wantYaw - F.look) * (1 - Math.exp(-dt * lookRate));
     F.lookP += (wantPitch - F.lookP) * (1 - Math.exp(-dt * lookRate));
@@ -1950,8 +2024,9 @@ const VehicleCrew = (() => {
       // Hai khuỷu không bao giờ đối xứng tuyệt đối: tay thuận khép sát hơn, tay đỡ mở và thấp hơn. Sai khác nhỏ này đồng thời
       // làm vai / cẳng tay đọc rõ hơn khi nắm súng, bê hộp hay giữ rocket.
       const support = arm.s < 0 ? 1 : 0;
-      const pole = sh.add(V(arm.s * (3.5 - 2.6 * hp) * (support ? 1.04 : 0.92),
-        -2.2 + 4.2 * hp - (support ? 0.14 : -0.05), 1.5 - 3.3 * hp + (support ? 0.12 : -0.08)));
+      // chồm qua mép trước (súng ngóc cao): khuỷu ra ngang thay vì chĩa xuống — chĩa xuống là cắm vào vành phía trước
+      const pole = sh.add(V(arm.s * (3.5 - 3.1 * hp + 1.2 * C.lean) * (support ? 1.04 : 0.92),
+        -2.2 + 4.2 * hp + 2.0 * C.lean - (support ? 0.14 : -0.05), 1.5 - 3.3 * hp + (support ? 0.12 : -0.08)));
       solveArm(F, arm, hand[arm.s < 0 ? 0 : 1], pole, onGrip ? c.gripAxis : null);
     }
     // người dự bị kéo xác xuống khoang (chỉ khi còn người dự bị)
@@ -2002,7 +2077,13 @@ const VehicleCrew = (() => {
       ? { type: 'crew', text: `XẠ THỦ ${how || 'TRÚNG ĐẠN'} HY SINH — súng & tên lửa tạm ngừng, người dự bị lên thay sau vài giây` }
       : { type: 'crew', text: `LÁI XE ${how || 'TRÚNG ĐẠN'} HY SINH — xe mất khả năng cơ động` };
   }
-  const exposure = u => (u.crew && u.crew.gunner ? (u.crew.gunner.rise > 0.8 ? 1 : u.crew.gunner.rise < -2.5 ? 0 : 0.5) : 0);
+  // (trụ súng cao thêm mg.lift: xạ thủ & tấm chắn cùng nâng lên chừng đó -> mức lộ người tính trên độ nhô so với tấm chắn)
+  const exposure = u => {
+    const G = u.crew && u.crew.gunner;
+    if (!G) return 0;
+    const r = G.rise - ((u.crew.mg && u.crew.mg.lift) || 0);
+    return G.rise < -2.5 ? 0 : r > 0.8 ? 1 : 0.5;
+  };
 
   function onHit(u, opts, r) {
     if (!u || u.isDead || !u.crew || u.crew.off || u.crew.kind !== 'scout' || !r || !r.events || r.intercepted || r.shielded) return;

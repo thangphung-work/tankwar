@@ -9,6 +9,330 @@
  *   đủ 20/20 -> đếm ngược 3 giây -> vào trận
  * - Đồng bộ hành động di chuyển, ngắm bắn và khai hỏa giữa các người chơi thực
  */
+/**
+ * RadarSweepWidget: Hiệu ứng radar quét tác chiến chiến thuật
+ * - Mỗi chấm trên radar TƯƠNG ĐƯƠNG 1 NGƯỜI CHƠI / CHIẾN BINH THỰC TẾ trong phòng
+ * - Người chơi thoát -> chấm của người đó biến mất ngay lập tức
+ * - Xe của mình: chấm vàng hổ phách có vòng sáng nổi bật ở tâm
+ * - Phe Xanh: chấm xanh cyan, Phe Đỏ: chấm đỏ
+ * - Người thật có vòng hào quang lớn hơn máy (bot)
+ * - Khi kim quét quay lướt qua, chấm bừng sáng rồi mờ dần
+ */
+class RadarSweepWidget {
+  constructor(canvas) {
+    this.canvas = canvas;
+    if (!this.canvas) return;
+    this.ctx = this.canvas.getContext('2d');
+    this.w = this.canvas.width;  // 104
+    this.h = this.canvas.height; // 104
+    this.cx = this.w / 2;
+    this.cy = this.h / 2;
+    this.radius = this.w / 2 - 4; // 48
+    this.angle = 0;
+    this.speed = Math.PI * 1.25; // ~1.6 giây một vòng quay
+    this.animId = null;
+    this.lastTime = 0;
+    this.blips = new Map(); // slotId -> blip object
+  }
+
+  // Toạ độ cố định theo từng slot (0..19) để không bị nhảy loạn xạ
+  // Phe Xanh (0..9) ở góc Tây/Nam, Phe Đỏ (10..19) ở góc Đông/Bắc
+  slotPosition(slot) {
+    const id = slot.id;
+    const isBlue = (slot.team === 'BLUE');
+    const baseAngle = isBlue
+      ? Math.PI * 0.75 + (id / 10) * Math.PI * 0.95
+      : -Math.PI * 0.25 + ((id - 10) / 10) * Math.PI * 0.95;
+    const dist = 14 + ((id * 7 + 11) % 27); // 14..41px
+    return {
+      baseAngle,
+      dist,
+      x: this.cx + Math.cos(baseAngle) * dist,
+      y: this.cy + Math.sin(baseAngle) * dist
+    };
+  }
+
+  // Đồng bộ 1-1 với danh sách slot người chơi thực tế
+  syncSlots(slots) {
+    if (!slots || !Array.isArray(slots)) return;
+    const activeIds = new Set();
+
+    slots.forEach(slot => {
+      if (!slot.ready) return; // Chưa sẵn sàng / chỗ trống -> không hiện
+      activeIds.add(slot.id);
+
+      let b = this.blips.get(slot.id);
+      if (!b) {
+        // Người chơi mới vào: tạo chấm mới và bừng sáng ngay
+        const pos = this.slotPosition(slot);
+        const col = slot.isMe
+          ? { r: 245, g: 196, b: 107 } // vàng kim hổ phách cho xe của mình
+          : slot.team === 'BLUE'
+            ? { r: 56, g: 189, b: 248 } // xanh cyan cho phe ta
+            : { r: 248, g: 113, b: 113 }; // đỏ cho phe địch
+        b = {
+          slotId: slot.id,
+          isMe: !!slot.isMe,
+          isHuman: !!slot.isHuman,
+          team: slot.team,
+          x: pos.x,
+          y: pos.y,
+          angle: (Math.atan2(pos.y - this.cy, pos.x - this.cx) + Math.PI * 2) % (Math.PI * 2),
+          r: pos.dist,
+          size: slot.isMe ? 3.6 : (slot.isHuman ? 3.0 : 2.2),
+          alpha: 1.0, // bừng sáng khi vừa vào
+          color: col,
+          jitterX: 0,
+          jitterY: 0,
+          phase: Math.random() * Math.PI * 2
+        };
+        this.blips.set(slot.id, b);
+      } else {
+        b.isHuman = !!slot.isHuman;
+        b.isMe = !!slot.isMe;
+      }
+    });
+
+    // Nếu người chơi thoát -> XOÁ CHẤM NGAY LẬP TỨC
+    for (const id of Array.from(this.blips.keys())) {
+      if (!activeIds.has(id)) {
+        this.blips.delete(id);
+      }
+    }
+  }
+
+  start() {
+    if (this.animId) return;
+    this.lastTime = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.08, (t - this.lastTime) / 1000);
+      this.lastTime = t;
+      this.update(dt);
+      this.draw();
+      this.animId = requestAnimationFrame(loop);
+    };
+    this.animId = requestAnimationFrame(loop);
+  }
+
+  stop() {
+    if (this.animId) {
+      cancelAnimationFrame(this.animId);
+      this.animId = null;
+    }
+  }
+
+  update(dt) {
+    const prevAngle = this.angle;
+    this.angle = (this.angle + this.speed * dt) % (Math.PI * 2);
+
+    for (const b of this.blips.values()) {
+      b.phase += dt * 2.2;
+      b.jitterX = Math.sin(b.phase) * 0.7;
+      b.jitterY = Math.cos(b.phase * 0.8) * 0.7;
+
+      // Tia quét đi qua vị trí góc của chấm mục tiêu
+      let swept = false;
+      if (prevAngle <= this.angle) {
+        swept = (b.angle >= prevAngle && b.angle <= this.angle);
+      } else {
+        swept = (b.angle >= prevAngle || b.angle <= this.angle);
+      }
+      if (swept) {
+        b.alpha = 1.0;
+      } else {
+        b.alpha = Math.max(0.2, b.alpha - dt * 0.65);
+      }
+    }
+  }
+
+  draw() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.clearRect(0, 0, this.w, this.h);
+
+    const cx = this.cx, cy = this.cy, R = this.radius;
+
+    ctx.save();
+
+    // 1. Vòng cự ly nét đứt
+    ctx.strokeStyle = 'rgba(231, 166, 58, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 0.38, 0, Math.PI * 2);
+    ctx.arc(cx, cy, R * 0.72, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Vòng ngoài cùng
+    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(231, 166, 58, 0.45)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Trục chữ thập mảnh
+    ctx.strokeStyle = 'rgba(231, 166, 58, 0.18)';
+    ctx.beginPath();
+    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
+    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
+    ctx.stroke();
+
+    // 2. Vệt quét rẻ quạt (Phosphor trail)
+    const trailAngle = Math.PI * 0.42;
+    const startAngle = this.angle - trailAngle;
+    const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, R);
+    grad.addColorStop(0, 'rgba(231, 166, 58, 0.25)');
+    grad.addColorStop(1, 'rgba(231, 166, 58, 0.04)');
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, R, startAngle, this.angle, false);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // 3. Tia quét phát sáng
+    const lx = cx + Math.cos(this.angle) * R;
+    const ly = cy + Math.sin(this.angle) * R;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(lx, ly);
+    ctx.strokeStyle = 'rgba(255, 230, 160, 0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = 'rgba(255, 220, 120, 0.8)';
+    ctx.shadowBlur = 5;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // 4. Vẽ từng người chơi / chiến binh thực tế
+    for (const b of this.blips.values()) {
+      const px = b.x + b.jitterX;
+      const py = b.y + b.jitterY;
+      const col = b.color;
+
+      // Xe của mình: có vòng sáng bao quanh nổi bật
+      if (b.isMe) {
+        ctx.beginPath();
+        ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${col.r}, ${col.g}, ${col.b}, ${Math.max(0.35, b.alpha * 0.85)})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // Người chơi thật: có vòng hào quang
+      if (b.isHuman && b.alpha > 0.3) {
+        ctx.beginPath();
+        ctx.arc(px, py, b.size * 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${col.r}, ${col.g}, ${col.b}, ${b.alpha * 0.28})`;
+        ctx.fill();
+      }
+
+      // Nhân sáng trung tâm
+      ctx.beginPath();
+      ctx.arc(px, py, b.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${col.r}, ${col.g}, ${col.b}, ${b.alpha})`;
+      ctx.shadowColor = `rgba(${col.r}, ${col.g}, ${col.b}, ${b.alpha})`;
+      ctx.shadowBlur = b.alpha > 0.5 ? (b.isMe ? 10 : 7) : 2;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Tâm radar
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 220, 120, 0.9)';
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// Kho Kịch Bản Nhiệm Vụ Chiến Thuật Phong Phú Theo Từng Bản Đồ
+const MISSION_BRIEFINGS = {
+  DESERT: [
+    {
+      code: 'MÃ HIỆU: BÃO CÁT #21',
+      text: 'Chỉ huy trưởng gửi các phân đội thiết giáp: Vệ tinh phát hiện đoàn tiếp vận của địch đang tìm cách chuyển kho tên lửa chiến thuật qua vành đai cát. Cứ điểm A là nút thắt tiếp vận duy nhất. Cứ điểm B chứa trạm tiếp dầu mật. Chiếm giữ A và bảo vệ B bằng mọi giá, tiêu diệt mọi lực lượng đối kháng!'
+    },
+    {
+      code: 'MÃ HIỆU: PHƯỢNG HOÀNG LỬA #07',
+      text: 'Mệnh lệnh tác chiến khẩn cấp: Lực lượng phản kích của địch đang tập kết quy mô lớn ở phía Bắc hoang mạc. Toàn đội phải lập tức triển khai đội hình mũi nhọn. Chiếm cứ điểm C để khống chế tầm nhìn pháo binh và chốt chặn cứ điểm B ngăn mũi thọc sâu của thiết giáp địch!'
+    },
+    {
+      code: 'MÃ HIỆU: HẮC BÁO #44',
+      text: 'Mệnh lệnh tác chiến số 104: Tình báo chiến trường xác nhận cứ điểm B là boong-ke chỉ huy ngầm của đối phương. Yêu cầu toàn phân đội phối hợp hỏa lực: mũi cơ động đánh tạt sườn chiếm A, mũi chủ lực thọc thẳng vào cứ điểm B bẻ gãy đài chỉ huy!'
+    },
+    {
+      code: 'MÃ HIỆU: CÁT VÀNG #92',
+      text: 'Thông điệp mã hóa từ tiền tuyến: Bão cát sắp nổi lên làm hạn chế tầm nhìn. Địch đang tranh thủ thời cơ di chuyển cụm pháo tự hành vào cứ điểm A. Toàn đội lập tức xuất kích, chiếm lĩnh các cao điểm cát và dập tắt hỏa lực đối phương!'
+    }
+  ],
+  URBAN: [
+    {
+      code: 'MÃ HIỆU: PHƯỢNG HOÀNG #07',
+      text: 'Đội hình, mục tiêu của chúng ta là chiếm đóng căn cứ hạt nhân. Đây là vị trí chiến lược, địch sẽ phản ứng mạnh. Giữ đội hình, tiến vào qua hướng Bắc. Có thắc mắc gì không?'
+    },
+    {
+      code: 'MÃ HIỆU: BÌNH MINH ĐEN #77',
+      text: 'Gửi các chiến binh: Thành phố đã bị phong tỏa hoàn toàn. Địch đã rải các cụm hỏa điểm bắn tỉa và pháo kích dọc các đại lộ chính. Căn cứ mật tại cứ điểm B đang giải mã tài liệu tác chiến tối mật. Cần chiếm cứ điểm A và C để khóa chặt hai đầu cầu vượt, bảo vệ tuyệt đối căn cứ mật!'
+    },
+    {
+      code: 'MÃ HIỆU: BỨC TƯỜNG THÉP #15',
+      text: 'Phòng tác chiến quân khu ban bố tình trạng đặc biệt: Đô thị đã thành chiến địa đổ nát. Địch sử dụng các tòa nhà cao tầng làm trận địa phục kích. Nhiệm vụ tối thượng: Thọc sâu chiếm lĩnh cứ điểm B, biến quảng trường trung tâm thành pháo đài thép và quét sạch tàn quân đối phương!'
+    },
+    {
+      code: 'MÃ HIỆU: CẮT NẮP HẦM #33',
+      text: 'Lệnh từ Tổng hành dinh: Các đơn vị trinh sát ghi nhận địch đang vận chuyển đầu đạn xuyên phá vào ga tàu điện ngầm dưới cứ điểm B. Mũi thiết giáp nhanh chóng đánh chiếm cứ điểm A mở đường, đồng thời chốt giữ cứ điểm C cắt đứt viện binh!'
+    },
+    {
+      code: 'MÃ HIỆU: ĐÔ THỊ THÉP #81',
+      text: 'Mệnh lệnh tác chiến nội đô: Tận dụng các dãy phố đổ nát làm vật che chắn. Chia làm hai mũi kẹp chặt đại lộ trung tâm, tiến đánh cứ điểm B trước khi máy bay trinh sát của đối phương phát hiện vị trí xuất kích của chúng ta!'
+    }
+  ],
+  JUNGLE: [
+    {
+      code: 'MÃ HIỆU: LƯỚI RỪNG XANH #08',
+      text: 'Mệnh lệnh hành quân: Tầm nhìn trong rừng hạn chế nghiêm trọng dưới tán cây rậm rạp. Địch đã bố trí các trận địa mìn và phục kích chống tăng. Cứ điểm B là đài tiếp sóng viễn thông mật của Bộ tư lệnh. Giữ vững liên lạc tại B và kiểm soát hành lang A - C!'
+    },
+    {
+      code: 'MÃ HIỆU: MẮT THẦN RỪNG GIÀ #52',
+      text: 'Chỉ huy trưởng gửi toàn đơn vị: Vệ tinh hồng ngoại phát hiện căn cứ tiếp tế bí mật của địch giấu dưới thung lũng rừng. Đột kích đánh chiếm cứ điểm B, làm chủ các cao điểm xung quanh để bẻ gãy đợt phản công của bộ binh cơ giới địch!'
+    },
+    {
+      code: 'MÃ HIỆU: BÁO ĐEN RỪNG THẲM #19',
+      text: 'Thông báo tác chiến khẩn: Lực lượng trinh sát địch đang lùng sục kho đạn dã chiến của chúng ta gần cứ điểm C. Toàn đội khẩn trương cơ động qua rừng thưa, dàn hỏa lực phục kích và bảo vệ bằng được tuyến phòng thủ!'
+    }
+  ],
+  HIGHLAND: [
+    {
+      code: 'MÃ HIỆU: ĐỈNH GIÓ #12',
+      text: 'Mệnh lệnh tác chiến: Địa hình cao nguyên hiểm trở dốc đứng. Bên nào khống chế được mỏm cao tại cứ điểm B sẽ kiểm soát toàn bộ hỏa lực pháo tầm xa. Toàn đội bằng mọi giá phải cơ động chiếm đỉnh cao B trước khi thiết giáp địch kịp dàn hàng ngang!'
+    },
+    {
+      code: 'MÃ HIỆU: LANG TRẮNG #88',
+      text: 'Bộ tham mưu chỉ đạo: Cứ điểm B là pháo đài phòng không chiến lược. Chiếm giữ B sẽ vô hiệu hóa hoàn toàn máy bay do thám của địch. Hãy chia mũi kẹp ép đối phương từ hai hướng A và C!'
+    },
+    {
+      code: 'MÃ HIỆU: MÂY ĐEN CAO NGUYÊN #63',
+      text: 'Cảnh báo tác chiến: Địch đang dồn thê đội thiết giáp vượt qua hẻm núi tiến về cao nguyên. Cứ điểm A và B là chốt chặn huyết mạch. Giữ vững trận địa, tập trung hỏa lực hạ gục những xe đi đầu!'
+    }
+  ],
+  RIVER_LAKE: [
+    {
+      code: 'MÃ HIỆU: BẾN NƯỚC SÂU #66',
+      text: 'Mệnh lệnh vượt sông: Cây cầu duy nhất nối đôi bờ nằm ngay cạnh cứ điểm B. Lực lượng thủy bộ và thiết giáp của địch đang tiến về ngã ba sông. Chiếm giữ bàn đạp B, chốt chặn hai đầu ngạn A và C để bảo toàn vành đai phòng thủ!'
+    },
+    {
+      code: 'MÃ HIỆU: CÁ MẬP THÉP #03',
+      text: 'Thông báo tác chiến: Địch đang dồn hỏa lực vào cù lao trung tâm cứ điểm B. Toàn đội dàn hàng ngang vượt bùn cạn, thiết lập lá chắn hỏa lực chiếm lĩnh cứ điểm B và đè bẹp mũi thọc sâu của đối phương!'
+    },
+    {
+      code: 'MÃ HIỆU: SÓNG THẦN #75',
+      text: 'Chỉ thị từ hạm đội yểm trợ: Địch đã thiết lập hệ thống radar quét ven bờ sông. Chiếm cứ điểm A để vô hiệu hóa trạm điều hành hỏa lực, sau đó toàn lực thọc sâu bảo vệ căn cứ chỉ huy tại B!'
+    }
+  ]
+};
+
 class MatchmakingController {
   constructor(game) {
     this.game = game;
@@ -22,7 +346,7 @@ class MatchmakingController {
     this.myName = this.guestName;
 
     this.selectedTankType = 'ALL_ROUNDER'; // 'ALL_ROUNDER' | 'GATLING' | 'ARTILLERY'
-    this.selectedMapType = 'DESERT'; // 'DESERT' | 'URBAN' | 'JUNGLE' | 'HIGHLAND' | 'RIVER_LAKE'
+    this.selectedMapType = 'URBAN'; // 'DESERT' | 'URBAN' | 'JUNGLE' | 'HIGHLAND' | 'RIVER_LAKE'
 
     // Danh sách 20 vị trí chiến đấu (10 Phe Xanh vs 10 Phe Đỏ)
     this.slots = [
@@ -75,7 +399,7 @@ class MatchmakingController {
     this.isHost = true;
     this.netPending = false; // Đang kết nối / chờ chủ phòng nhận vào: chưa được tự lấp bot hay xuất trận
     this.searchTime = 0; // Đếm số giây tìm kiếm
-    this.maxWaitTime = 8; // 8 giây chờ người chơi thực rồi mới lấp máy (người chơi không thấy phân biệt người / máy)
+    this.maxWaitTime = 2.5; // Chờ người chơi thực 2.5 giây rồi lấp máy để vào trận nhanh
     this.tickMs = 250;
     this.state = 'IDLE'; // IDLE -> SEARCHING -> FILLING_BOTS -> COUNTDOWN -> IN_GAME
     this.countdown = 3;
@@ -122,6 +446,7 @@ class MatchmakingController {
     this.roomHops = 0;
     this.resetRoster();
     this.setSearchView(true);
+    this.startBriefingTypewriter(this.selectedMapType);
 
     // Chưa dựng bản đồ ở đây: vào được phòng có sẵn thì dựng bản đồ của chủ phòng (DISCOVER_ROOM_ACK),
     // không có phòng / mất mạng thì máy này làm chủ phòng và dựng bản đồ mình đã chọn (becomeHost)
@@ -139,6 +464,13 @@ class MatchmakingController {
 
   // Nút "HỦY": rời phòng chờ, quay lại sảnh (không hủy được khi đã đếm ngược)
   cancelSearch() {
+    this.stopBriefingTypewriter();
+    const reconVideoEl = document.getElementById('mm-recon-video');
+    if (reconVideoEl) {
+      reconVideoEl.pause();
+      reconVideoEl.classList.add('hidden');
+    }
+
     if (this.state !== 'SEARCHING' && this.state !== 'FILLING_BOTS') return;
     clearInterval(this.searchInterval);
     clearTimeout(this.discoverTimer);
@@ -161,15 +493,144 @@ class MatchmakingController {
   setSearchView(on) {
     if (this.overlay) this.overlay.classList.toggle('mm-searching', !!on);
     document.body.classList.toggle('mm-searching', !!on);
+    const briefingBg = {
+      DESERT: 'assets/lobby_desert.jpg', URBAN: 'assets/lobby_urban.jpg',
+      JUNGLE: 'assets/lobby_jungle.jpg', HIGHLAND: 'assets/lobby_highland.jpg',
+      RIVER_LAKE: 'assets/lobby_river_lake.jpg'
+    }[this.selectedMapType] || 'assets/lobby_urban.jpg';
+    document.documentElement.style.setProperty('--briefing-bg', `url("${briefingBg}")`);
     if (this.searchHudEl) {
       this.searchHudEl.classList.toggle('hidden', !on);
       this.searchHudEl.classList.remove('is-counting');
+      const T = this.game && this.game.terrain;
+      this.searchHudEl.classList.toggle('mm-3d-ready', !!(on && T && T.previewReady && this.preparedMapKey === this.selectedMapType + ':' + (this.mapSeed >>> 0)));
     }
     if (this.countdownEl) this.countdownEl.classList.add('hidden');
+    const reconVideo = document.getElementById('mm-recon-video');
+    if (reconVideo) {
+      if (on) {
+        const mapLower = (this.selectedMapType || 'urban').toLowerCase();
+        const primarySrc = 'assets/recon_' + mapLower + '.webm';
+        const fallbackSrc = 'assets/recon_briefing.webm';
+        reconVideo.oncanplay = () => { reconVideo.classList.remove('hidden'); };
+        reconVideo.onerror = () => {
+          if (reconVideo.src && !reconVideo.src.endsWith(fallbackSrc)) {
+            reconVideo.src = fallbackSrc;
+            reconVideo.play().catch(() => {});
+          } else {
+            reconVideo.classList.add('hidden');
+          }
+        };
+        reconVideo.src = primarySrc;
+        reconVideo.play().catch(() => {});
+      } else {
+        reconVideo.pause();
+        reconVideo.classList.add('hidden');
+        reconVideo.src = '';
+      }
+    }
+
+    if (this.radarWidget) {
+      if (on) {
+        this.radarWidget.syncSlots(this.slots);
+        this.radarWidget.start();
+      } else {
+        this.radarWidget.stop();
+      }
+    }
   }
 
   // Cập nhật bảng trạng thái ghép trận
+  onPreviewReady() {
+    if (this.searchHudEl && this.state !== 'IDLE') this.searchHudEl.classList.add('mm-3d-ready');
+    this.updateSearchHUD();
+  }
+  playTypewriterTick() {
+    try {
+      const se = window.soundEngine;
+      const ctx = se && (se.ctx || se.audioCtx);
+      if (!ctx || ctx.state !== 'running') return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const t = ctx.currentTime;
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(820 + Math.random() * 360, t);
+      gain.gain.setValueAtTime(0.015, t);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.014);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.015);
+    } catch (e) {}
+  }
+
+  startBriefingTypewriter(mapType) {
+    this.stopBriefingTypewriter();
+    const list = (typeof MISSION_BRIEFINGS !== 'undefined' && MISSION_BRIEFINGS[mapType]) || (typeof MISSION_BRIEFINGS !== 'undefined' && MISSION_BRIEFINGS.DESERT) || [];
+    if (!list.length) return;
+    const briefing = (mapType === "URBAN" && list[0]) ? list[0] : list[Math.floor(Math.random() * list.length)];
+    const codeEl = document.getElementById('mm-briefing-code');
+    const textEl = document.getElementById('mm-briefing-text');
+    const replyEl = document.getElementById('mm-briefing-reply');
+    if (codeEl) codeEl.textContent = briefing.code;
+    if (replyEl) replyEl.classList.add('hidden');
+    if (!textEl) return;
+
+    textEl.innerHTML = '<span class="mm-briefing-cursor">█</span>';
+    const text = briefing.text;
+    let idx = 0;
+    this._typewriterTimer = setInterval(() => {
+      if (idx < text.length) {
+        idx++;
+        textEl.innerHTML = text.substring(0, idx) + '<span class="mm-briefing-cursor">█</span>';
+        if (idx % 2 === 0) {
+          this.playTypewriterTick();
+        }
+      } else {
+        this.stopBriefingTypewriter();
+        if (replyEl) replyEl.classList.remove('hidden');
+      }
+    }, 22);
+  }
+
+  stopBriefingTypewriter() {
+    if (this._typewriterTimer) {
+      clearInterval(this._typewriterTimer);
+      this._typewriterTimer = null;
+    }
+  }
+
+  updateSatelliteCoords() {
+    const coordsEl = document.getElementById('mm-sh-sat-coords');
+    if (!coordsEl) return;
+    const t = performance.now() * 0.001;
+    const latSec = (4 + Math.sin(t * 0.2) * 2).toFixed(1);
+    const lonSec = (12 + Math.cos(t * 0.15) * 3).toFixed(1);
+    const alt = Math.floor(1450 + Math.sin(t * 0.3) * 15);
+    coordsEl.textContent = `TỌA ĐỘ: 16°28'${latSec}"B 107°34'${lonSec}"Đ · ĐỘ CAO: ${alt}M · KÊNH MÃ HÓA`;
+  }
+
+  updateDroneTelemetry() {
+    const t = performance.now() * 0.001;
+    const altEl = document.getElementById('mm-tele-alt');
+    const spdEl = document.getElementById('mm-tele-spd');
+    const recTimerEl = document.getElementById('mm-rec-timer');
+    const targetNameEl = document.getElementById('mm-target-name');
+    if (altEl) altEl.textContent = Math.floor(1240 + Math.sin(t * 0.3) * 6) + 'm';
+    if (spdEl) spdEl.textContent = Math.floor(220 + Math.cos(t * 0.25) * 4) + 'kph';
+    if (recTimerEl) {
+      const sec = Math.floor(this.searchTime || 0);
+      recTimerEl.textContent = `00:${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+    }
+    if (targetNameEl) {
+      const names = { URBAN: 'NUCLEAR BASE', DESERT: 'RADAR SITE B', JUNGLE: 'BIO LAB ZERO', HIGHLAND: 'HIGHLAND RADAR', RIVER_LAKE: 'RIVER DAM' };
+      targetNameEl.textContent = names[this.selectedMapType] || 'TACTICAL BASE';
+    }
+  }
+
   updateSearchHUD() {
+    this.updateSatelliteCoords();
+    this.updateDroneTelemetry();
     if (!this.searchHudEl || this.state === 'IDLE' || this.state === 'IN_GAME') return;
     const filled = this.slots.filter(s => s.ready).length;
     const total = this.slots.length;
@@ -178,6 +639,7 @@ class MatchmakingController {
     const t = Math.floor(this.searchTime);
     if (this.timerEl) this.timerEl.textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
     if (this.mapNameEl) this.mapNameEl.textContent = this.mapName(this.selectedMapType);
+    if (this.radarWidget) this.radarWidget.syncSlots(this.slots);
     if (!this.statusTextEl) return;
     let text;
     if (this.state === 'COUNTDOWN') text = 'ĐÃ ĐỦ NGƯỜI · TRẬN ĐẤU SẮP BẮT ĐẦU';
@@ -203,6 +665,10 @@ class MatchmakingController {
     this.countdownNumEl = document.getElementById('mm-cd-num');
     this.countEl = document.getElementById('mm-sh-count');
     this.mapNameEl = document.getElementById('mm-sh-map-name');
+    const radarCanvas = document.getElementById('mm-radar-canvas');
+    if (radarCanvas) {
+      this.radarWidget = new RadarSweepWidget(radarCanvas);
+    }
 
     if (this.nameInput) {
       this.nameInput.value = this.myName;
@@ -374,9 +840,8 @@ class MatchmakingController {
     let attempts = 0;
     const discover = () => {
       if (this.hasReceivedHostAck || this.isHost || this.state === 'IN_GAME' || !this.net.isOnline) return;
-      // 5 lần x 1,5 giây: chủ phòng vừa mở phòng có thể đang dựng bản đồ (đơ vài giây) nên trả lời chậm
-      if (attempts >= 5) {
-        // Chủ phòng không phản hồi: chơi độc lập để không bị kẹt ở sảnh
+      // Thử 1 lần x 1,0 giây: chủ phòng không phản hồi thì tự làm chủ phòng ngay
+      if (attempts >= 1) {
         this.tryNextRoom('host did not answer DISCOVER_ROOM');
         return;
       }
@@ -390,27 +855,16 @@ class MatchmakingController {
         rating: this.myRating()
       });
       clearTimeout(this.discoverTimer);
-      this.discoverTimer = setTimeout(discover, 1500);
+      this.discoverTimer = setTimeout(discover, 1000);
     };
     discover();
   }
 
   // Phòng hiện tại không nhận (đầy / sắp vào trận / chủ phòng im lặng): sang phòng chờ khác thay vì chơi một mình
   tryNextRoom(reason) {
-    if (!this.net) return;
     clearTimeout(this.discoverTimer);
-    if (this.net.mode === 'ws' && this.net.isOnline && (this.roomHops || 0) < 3) {
-      this.roomHops = (this.roomHops || 0) + 1;
-      this.netPending = true;
-      this.hasReceivedHostAck = false;
-      this.isHost = true;
-      this.resetRoster();
-      this.renderLobby();
-      this.net.rejoin(this.net.roomName);
-      return;
-    }
-    console.warn('Không vào được phòng nào. Chuyển sang chế độ chơi độc lập.');
-    this.net.goOffline(reason);
+    // Chủ phòng không phản hồi: tự làm chủ phòng độc lập để lấp bot vào trận ngay
+    this.becomeHost();
   }
 
   // Trở thành chủ phòng (mở phòng mới, hoặc được bầu lại khi chủ phòng cũ rời đi)
@@ -704,10 +1158,28 @@ class MatchmakingController {
     const game = this.game;
     if (!game) return false; // Game chưa khởi tạo: onGameAttached() sẽ dựng sau
     if (!force && this.preparedMapKey === key) return true;
+    // Tuyệt đối không để MapGen.get() rơi về generate() đồng bộ trên main thread.
+    // Briefing/cinemagraph tiếp tục chạy trong khi worker sinh dữ liệu map.
+    if (!force && typeof MapGen !== 'undefined' && MapGen.has && !MapGen.has(this.selectedMapType, this.mapSeed >>> 0)) {
+      this.buildingMap = true;
+      this.updateSearchHUD();
+      const waitKey = key;
+      if (this._waitingMapKey !== waitKey) {
+        this._waitingMapKey = waitKey;
+        MapGen.prefetch(this.selectedMapType, this.mapSeed >>> 0).then(ok => {
+          if (this._waitingMapKey !== waitKey) return;
+          this._waitingMapKey = null;
+          if (ok) this.prepareSelectedMap(true);
+        });
+      }
+      return false;
+    }
     this.preparedMapKey = key;
     try {
       if (typeof game.prepareMap === 'function') {
         game.prepareMap(this.selectedMapType, this.mapSeed >>> 0);
+        // Dùng chính cảnh 3D vừa dựng làm phim briefing, che phần làm nóng còn lại.
+        // Cảnh 3D nhẹ sẽ quay quanh căn cứ chính dưới lớp #mm-search-hud; tour A-B-C chạy khi vào trận.
       } else if (typeof game.changeMap === 'function') {
         game.changeMap(this.selectedMapType);
       }
@@ -775,8 +1247,8 @@ class MatchmakingController {
 
     // 1. Khách mới xin vào phòng
     if (msg.type === 'DISCOVER_ROOM') {
-      if (this.isHost && from && (this.state === 'COUNTDOWN' || this.state === 'IN_GAME')) {
-        // Trận sắp bắt đầu: báo đầy để máy kia tự chơi với máy / tìm phòng khác
+      if (this.isHost && from && (this.state === 'COUNTDOWN' || this.state === 'IN_GAME' || this.state === 'IDLE')) {
+        // Trận sắp bắt đầu hoặc chủ phòng đang ở sảnh: báo đầy để máy kia tự chơi hoặc sang phòng mới
         this.net.sendTo(from, 'ROOM_FULL', {});
         return;
       }
@@ -923,14 +1395,21 @@ class MatchmakingController {
       this.searchTime += step;
 
       if (this.isHost) {
-        // Hết thời gian chờ người chơi thực -> lấp dần máy vào chỗ trống
-        if (this.state === 'SEARCHING' && this.searchTime >= this.maxWaitTime) this.state = 'FILLING_BOTS';
+        // Nếu không có người chơi nào khác đã sẵn sàng trong phòng -> lấp máy vào luôn lập tức
+        const hasOtherReadyHumans = this.slots.some(s => s.isHuman && !s.isMe && s.ready);
+
+        if (this.state === 'SEARCHING' && !hasOtherReadyHumans) {
+          this.state = 'FILLING_BOTS';
+        }
 
         if (this.state === 'FILLING_BOTS') {
-          // Lấp nhanh: tối đa 5 bot mỗi nhịp (20 chỗ ~1 giây thay vì ~5 giây)
-          const empty = this.slots.filter(slot => !slot.isHuman && !slot.peerId && !slot.ready).slice(0, 5);
+          // Lấp nhanh: tối đa 10 bot mỗi nhịp
+          const empty = this.slots.filter(slot => !slot.isHuman && !slot.peerId && !slot.ready).slice(0, 10);
           if (empty.length) {
-            empty.forEach(slot => this.fillBotSlot(slot));
+            empty.forEach(slot => {
+              this.fillBotSlot(slot);
+              if (this.radarWidget) this.radarWidget.addBlip();
+            });
             this.renderLobby();
             this.broadcastRoomUpdate();
           }
@@ -1035,6 +1514,16 @@ class MatchmakingController {
 
   // Kích hoạt trận đấu
   launchGame() {
+    // Countdown có thể kết thúc trước worker map. Giữ màn briefing hoạt động và chỉ
+    // chuyển vào trận khi dữ liệu đã sẵn, tránh sinh map đồng bộ làm treo tab.
+    if (!this.prepareSelectedMap()) {
+      this.buildingMap = true;
+      this.updateSearchHUD();
+      clearTimeout(this._launchWaitTimer);
+      this._launchWaitTimer = setTimeout(() => this.launchGame(), 120);
+      return;
+    }
+    this.stopBriefingTypewriter();
     this.state = 'IN_GAME';
     clearInterval(this.searchInterval);
     clearInterval(this.countdownTimer);

@@ -26,9 +26,9 @@ const WorldMarkers = (() => {
     vec2 rot(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
     // nét vẽ: lõi màu + viền tối mảnh (đọc rõ trên cát sáng lẫn rừng tối); bề dày tối thiểu ~1 pixel
     void ink(float d, float fillD, float w, float pw, out float core, out float halo) {
-      w = max(w, pw * 0.7);
+      w = max(w, pw * 0.55);
       core = max(1.0 - smoothstep(w - pw * 0.5, w + pw * 0.5, d), 1.0 - smoothstep(-pw * 0.5, pw * 0.5, fillD));
-      float o = pw * 1.7;
+      float o = pw * 1.15;
       halo = max(1.0 - smoothstep(w + o - pw * 0.5, w + o + pw * 0.5, d), 1.0 - smoothstep(o - pw * 0.5, o + pw * 0.5, fillD));
     }
   `;
@@ -174,7 +174,7 @@ const WorldMarkers = (() => {
         uSpin: { value: 0 },
         uPop: { value: 1 },        // điểm đến: 0 -> 1 gợn sóng khi vừa đặt
         uOpacity: { value: 1 },
-        uThick: { value: 0.022 }
+        uThick: { value: 0.015 }
       },
       vertexShader: `
         varying vec2 vP;
@@ -191,14 +191,18 @@ const WorldMarkers = (() => {
           float r = length(p);
           float d = 1e3, fillD = 1e3, extra = 0.0;
           if (uKind < 0.5) {
-            // ĐIỂM RƠI: vòng tròn áp trên bề mặt + chấm tâm; bị chắn: vòng + dấu X
-            d = abs(r - 0.58);
-            if (uState < 0.5) {
-              fillD = r - 0.08;
-            } else {
-              vec2 a = abs(p);
-              d = min(d, sdSeg(a, vec2(0.0), vec2(0.3)));
+            // ĐIỂM RƠI ĐẠN: Thiết kế tối giản, tinh tế, sạch mắt
+            vec2 a = abs(p);
+            float gap = 0.07;
+            if (min(a.x, a.y) > gap) {
+              d = abs(r - 0.50);
             }
+            // 4 vạch chữ thập thanh mảnh chĩa vào tâm (để hở tâm để nhìn rõ mục tiêu)
+            vec2 f = a; if (f.x > f.y) f = f.yx;
+            d = min(d, sdSeg(f, vec2(0.0, 0.18), vec2(0.0, 0.65)));
+
+            // Chấm định vị tâm quang học nhỏ gọn, sắc nét
+            fillD = r - 0.025;
           } else if (uKind < 1.5) {
             // ĐIỂM ĐẾN: ô vuông vát góc + 4 chevron chụm vào tâm (nhịp nhẹ), thoi nhỏ ở giữa
             vec2 a = abs(p);
@@ -215,17 +219,15 @@ const WorldMarkers = (() => {
             float rw = max(uThick * 0.8, pw * 0.7);
             extra = (1.0 - smoothstep(rw - pw * 0.5, rw + pw * 0.5, abs(r - rr))) * (1.0 - uPop) * 0.9;
           } else {
-            // ĐIỂM NGẮM: vòng tròn áp trên bề mặt (mặt đất / tường / mái), vòng ngoài nét đứt xoay chậm, 4 vạch chỉ vào tâm
-            // (cố định theo bề mặt), chấm tâm
-            d = abs(r - 0.6);
-            float ang = atan(p.y, p.x) + uSpin;
-            float seg = fract(ang * 10.0 / 6.2832);
-            float outer = abs(r - 0.86);
-            if (seg > 0.55) outer = 1e3;
-            d = min(d, outer);
-            vec2 a = abs(p); vec2 f = a; if (f.x > f.y) f = f.yx;
-            d = min(d, sdSeg(f, vec2(0.0, 0.34), vec2(0.0, 0.5)));
-            fillD = r - 0.06;
+            // ĐIỂM CHỈ ĐỊNH MỤC TIÊU:
+            // 4 góc ngoặc vuông [  ] định vị thanh gọn
+            vec2 a = abs(p);
+            float B = 0.48, L = 0.14, c = 0.04;
+            float dL = min(sdSeg(a, vec2(B - L, B), vec2(B - c, B)), sdSeg(a, vec2(B - c, B), vec2(B, B - c)));
+            dL = min(dL, sdSeg(a, vec2(B, B - c), vec2(B, B - L)));
+            d = dL;
+            // Chấm định vị tâm nhỏ
+            fillD = r - 0.024;
           }
           float core, halo;
           ink(d, fillD, uThick, pw, core, halo);
@@ -289,7 +291,7 @@ const WorldMarkers = (() => {
       _q.setFromRotationMatrix(_m);
     } else _q.setFromUnitVectors(_up, _n);
     mesh.quaternion.copy(_q);
-    mesh.position.set(x + _n.x * 3.2, y + _n.y * 3.2, z + _n.z * 3.2);
+    mesh.position.set(x + _n.x * 0.45, y + _n.y * 0.45, z + _n.z * 0.45);
     mesh.scale.setScalar(radius);
   }
 

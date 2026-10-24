@@ -118,16 +118,16 @@ html, body {
 }
 
 .lab-nav a {
-  flex: 1 1 0;
+  flex: 1 1 22%;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 5px 6px;
+  padding: 5px 5px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.5px;
   white-space: nowrap;
   color: var(--tc-dim);
   text-decoration: none;
@@ -137,8 +137,9 @@ html, body {
 }
 
 .lab-nav a:hover { color: var(--tc-text); border-color: var(--tc-line-2); }
+.lab-nav { flex-wrap: wrap; }
 .lab-nav a .ti { font-size: 14px; }
-.lab-nav a.home { flex: 0 0 32px; }
+.lab-nav a.home { flex: 0 0 28px; }
 .lab-nav a.on {
   color: var(--tc-accent-2);
   border-color: var(--tc-accent);
@@ -489,7 +490,7 @@ input[type=range]:focus { outline: none; }
   right: 10px;
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.5px;
   color: var(--tc-bright);
   text-shadow: 0 1px 3px #000;
 }

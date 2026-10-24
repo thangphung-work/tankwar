@@ -468,6 +468,18 @@ float gMotF(vec2 p) {
   vec2 a = mat2(0.94, 0.342, -0.342, 0.94) * p, b = mat2(0.866, -0.5, 0.5, 0.866) * p;
   return noTile(gNoise, a / 26.0 + 0.13, 0.31).g * 0.6 + noTile(gNoise, b / 9.0 + 0.71, 0.77).r * 0.4;
 }
+// Địa tầng vách đá tự nhiên (strata) và rãnh xói mòn (gullies) cho sườn núi
+float gCliffStrata(vec3 pos) {
+  float stWarp = (texture2D(gNoise, pos.xz * 0.00045 + 0.17).r - 0.5) * 32.0;
+  float stH = pos.y + stWarp;
+  float stL = sin(stH * 0.08) * 0.5 + 0.5;
+  float stM = sin(stH * 0.26 + sin(stH * 0.13) * 1.5) * 0.5 + 0.5;
+  return mix(0.78, 1.25, stL * 0.65 + stM * 0.35);
+}
+float gCliffGully(vec3 pos, vec3 norm) {
+  vec2 gP = vec2(dot(pos.xz, vec2(-norm.z, norm.x)) * 0.016, pos.y * 0.005);
+  return smoothstep(0.38, 0.72, texture2D(gNoise, gP + 0.38).g);
+}
 uniform vec3 gMacroAvg;
 uniform float gTime, gWaterLvl;
 uniform vec4 gVehA[${VEH_N}]; uniform vec4 gVehB[${VEH_N}]; uniform int gVehN;
@@ -677,14 +689,11 @@ float gTuftH(vec2 p) {
     float cn = texture2D(gNoise, wr2 / 95.0 + 0.33).g;
     float crk = 1.0 - smoothstep(0.0, fwidth(cn) * 1.3 + 0.0015, abs(cn - 0.5));
     cBase *= 1.0 - crk * 0.4 * smoothstep(0.45, 0.7, uz.g);
-    // sân bê tông đổ theo tấm ~4.5 m: mỗi tấm lệch màu nhẹ (mẻ đổ / độ mòn khác nhau), mạch co giãn mảnh sẫm giữa các tấm
+    // Mặt đất đô thị chiến trường: đất cày xới, mảng bụi đất loang tự nhiên (không kẻ ô vuông lặp lại)
     {
-      vec2 sp = wp / 36.0, sid = floor(sp), sf = fract(sp), hs = gH2(sid + 3.7);
-      cBase *= (0.955 + 0.09 * hs.x) * vec3(1.0, 1.0 - 0.01 * hs.y, 1.0 - 0.02 * hs.y);
-      float aaJ = max(fwidth(sp.x), fwidth(sp.y));
-      vec2 dj = min(sf, 1.0 - sf);
-      float joint = (1.0 - smoothstep(0.005, 0.005 + aaJ * 1.5, min(dj.x, dj.y))) * (1.0 - smoothstep(0.03, 0.08, aaJ));
-      cBase *= 1.0 - joint * 0.32;
+      vec3 mudN = texture2D(gNoise, wr2 / 70.0 + 0.41).rgb;
+      float mud = smoothstep(0.35, 0.72, mudN.r * 0.6 + mudN.g * 0.4);
+      cBase = mix(cBase, cSoil * 0.92, mud * 0.45);
     }
     cBase = gUrbanDetail(wp, cBase);
   }` : desert ? `// cát: màu trung bình + hạt mịn 2 tỉ lệ (độ tương phản thấp), sắc cát đổi rất nhẹ theo mảng trăm mét
@@ -717,7 +726,21 @@ float gTuftH(vec2 p) {
   vec3 cFine = g2(gFine, wr2, 34.0);
   // đá: chiếu 3 phía theo pháp tuyến (vách dốc không bị kéo giãn)
   vec3 bw = pow(abs(nrm), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
-  vec3 cRock = noTile(gRock, vGW.zy / 52.0, 0.21).rgb * bw.x + g2(gRock, wr1, 52.0) * bw.y + noTile(gRock, vGW.xy / 52.0, 0.67).rgb * bw.z;
+  vec3 cRock = noTile(gRock, vGW.zy / 48.0, 0.21).rgb * bw.x + g2(gRock, wr1, 48.0) * bw.y + noTile(gRock, vGW.xy / 48.0, 0.67).rgb * bw.z;
+  // Địa tầng vách đá tự nhiên & rãnh xói mòn sườn núi:
+  float cStrata = gCliffStrata(vGW);
+  float cGully = gCliffGully(vGW, nrm);
+  cRock *= cStrata;
+  cRock = mix(cRock, cRock * vec3(0.68, 0.66, 0.7), cGully * 0.42);
+  float cMacroCliff = texture2D(gNoise, (vGW.xz + vec2(vGW.y * 0.35, -vGW.y * 0.25)) / 220.0).r;
+  cRock *= mix(vec3(0.9, 0.91, 0.95), vec3(1.12, 1.1, 1.05), cMacroCliff);
+  ${opts.mapType === 'HIGHLAND' ? `// Vách đá cao nguyên: đá granite xám hoa cương sáng, đỉnh cao có vệt đá sáng đón nắng
+  cRock = mix(cRock, vec3(0.52, 0.51, 0.53) * cStrata, 0.38);
+  float cPeakH = smoothstep(260.0, 560.0, vGW.y) * (1.0 - cGully * 0.45);
+  cRock = mix(cRock, vec3(1.35, 1.38, 1.45) * cStrata, cPeakH * 0.52);` : ''}
+  ${desert ? `// Núi bàn sa mạc: địa tầng sa thạch nhiều màu sắc sảo
+  vec3 cMesa = mix(vec3(0.82, 0.46, 0.32), vec3(0.72, 0.55, 0.4), sin(vGW.y * 0.08) * 0.5 + 0.5);
+  cRock = mix(cRock, cMesa * cStrata, 0.52);` : ''}
   // mặt nạ trộn: độ dốc -> đá; nhiễu tầng lớn -> mảng đất trống / bãi sỏi; ven nước -> bùn đất
   float wDirt = smoothstep(0.5, 0.82, nz.r * 0.55 + nz2.g * 0.45 + (nz2.b - 0.5) * 0.2) * 0.85;
   wDirt = max(wDirt, smoothstep(gWaterLvl + 6.0, gWaterLvl, vGW.y) * 0.85);
@@ -807,6 +830,9 @@ float gTuftH(vec2 p) {
     // pháp tuyến mượt + mô đất lồi lõm tính bằng hiệu số trên mặt phẳng thế giới (không phụ thuộc tam giác / điểm ảnh)
     float m0 = gMotF(wp), mx = gMotF(wp + vec2(1.8, 0.0)), mz = gMotF(wp + vec2(0.0, 1.8));
     float fadeB = clamp(1.0 - length(vViewPosition) / 4500.0, 0.35, 1.0);
+    // Gờ đá địa tầng nổi khối trên sườn núi dốc:
+    float stHN = vGW.y + (texture2D(gNoise, wp * 0.00045 + 0.17).r - 0.5) * 32.0;
+    float dStrata = (cos(stHN * 0.26) * 0.24 + cos(stHN * 0.08) * 0.16) * smoothstep(0.22, 0.55, slope);
     vec3 nW = normalize(nrm - vec3(mx - m0, 0.0, mz - m0) * ${desert ? '0.9' : urban ? '0.25' : '1.8'} * fadeB * (1.0 - 0.92 * smoothstep(0.0, 0.6, gSand)));
     {
       // khóm cỏ (cao ~0.55 đơn vị) và sỏi / cục đất (~0.25) nổi khối: bước sai phân >= cỡ 1 điểm ảnh trên mặt đất
@@ -830,7 +856,8 @@ ${rain ? `    if (gRainW > 0.0) {
       vec2 gBl = skyBlastRip(wp).xy;                                                       // sóng xung kích vụ nổ / đầu nòng
       nW = normalize(nW + vec3(-gBl.x, 0.0, -gBl.y) * (0.2 + 0.8 * gPud));
     }
-` : ''}    normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+` : ''}    nW = normalize(nW + vec3(nrm.x * dStrata * 0.32, dStrata * 0.42, nrm.z * dStrata * 0.32));
+    normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
   }`).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
   roughnessFactor = mix(roughnessFactor, ${rain ? 'G_WETR' : 'roughnessFactor'}, gRainW);
   roughnessFactor = mix(roughnessFactor, 0.04, gPud);`)

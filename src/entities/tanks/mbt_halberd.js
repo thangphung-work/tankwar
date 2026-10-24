@@ -320,11 +320,19 @@
       hb.cyl(0.75, 0.82, 0.24, 14, P, [s * 13.2, DECK_Y + 0.12, 22.6]);
       hb.box(0.9, 0.16, 0.22, M.steel, [s * 13.2, DECK_Y + 0.3, 22.6], [0, 0.5, 0]);
       hb.box(0.5, 0.22, 0.5, D, [s * 13.2, DECK_Y + 0.11, 21.65]);
-      // Xẻng và xà beng dã chiến
+      // Xẻng công binh (cán gỗ, tay nắm chữ D, lưỡi thép vát) và xà beng dã chiến kèm khóa kẹp sàn
       hb.setTag('tool' + (s < 0 ? 'L' : 'R'));
-      hb.cyl(0.13, 0.13, 6.5, 6, M.canvasDark, [s * 11.6, DECK_Y + 0.2, 21.5], 'z');
-      hb.box(1.3, 0.12, 1.6, D, [s * 11.6, DECK_Y + 0.2, 25.4]);
-      hb.cyl(0.12, 0.12, 7.5, 6, D, [s * 10.6, DECK_Y + 0.18, 20.0], 'z');
+      hb.cyl(0.13, 0.13, 6.2, 6, M.wood, [s * 11.6, DECK_Y + 0.22, 21.4], 'z');
+      hb.box(0.55, 0.14, 0.14, D, [s * 11.6, DECK_Y + 0.22, 18.15]);
+      hb.cyl(0.08, 0.08, 0.55, 5, M.wood, [s * 11.6, DECK_Y + 0.22, 17.85], 'x');
+      hb.box(1.35, 0.10, 1.65, M.steel, [s * 11.6, DECK_Y + 0.20, 25.3], [-0.08, 0, 0]);
+      hb.cyl(0.18, 0.14, 0.5, 6, D, [s * 11.6, DECK_Y + 0.22, 24.45], 'z');
+      hb.cyl(0.12, 0.12, 7.4, 6, M.steel, [s * 10.6, DECK_Y + 0.20, 20.0], 'z');
+      hb.box(0.28, 0.10, 0.65, M.steel, [s * 10.6, DECK_Y + 0.26, 23.9], [0.28, 0, 0]);
+      for (const zc of [19.4, 22.8]) {
+        hb.box(1.45, 0.28, 0.22, D, [s * 11.1, DECK_Y + 0.22, zc]);
+        hb.box(0.18, 0.36, 0.26, M.steel, [s * 11.1, DECK_Y + 0.38, zc]);
+      }
       hb.setTag(null);
     }
 
@@ -615,12 +623,17 @@
       tb.setTag(null);
     }
 
-    // Kính ngắm pháo thủ có hộp giáp và cửa chớp (nóc trước phải)
+    // Kính ngắm pháo thủ có hộp giáp, mí che mưa, cần gạt nước và cửa chớp (nóc trước phải)
     tb.setTag('opticGunner');
     tb.box(3.4, 2.2, 3.8, P, [7.0, ROOF + 1.1, -7.9]);
+    tb.box(3.6, 0.16, 4.1, D, [7.0, ROOF + 2.24, -7.95]);
+    tb.box(2.8, 0.14, 0.55, P, [7.0, ROOF + 1.92, -10.0], [0.18, 0, 0]);
     tb.box(2.4, 1.0, 0.12, M.glass, [7.0, ROOF + 1.3, -9.83]);
+    tb.box(0.08, 0.85, 0.08, D, [7.0, ROOF + 1.3, -9.91]);
+    tb.strut([6.3, ROOF + 1.82, -9.92], [5.85, ROOF + 1.05, -9.92], 0.045, D, 4);
     tb.box(1.3, 1.5, 0.14, P, [5.5, ROOF + 1.4, -10.1], [0, 0.7, 0]);
     tb.box(1.3, 1.5, 0.14, P, [8.5, ROOF + 1.4, -10.1], [0, -0.7, 0]);
+    tb.boltRow([5.45, ROOF + 2.26, -9.6], [8.55, ROOF + 2.26, -9.6], 4, 'y', D, 0.11);
     tb.setTag(null);
 
     // Nắp chỉ huy với vòng kính tiềm vọng (trái) & nắp nạp đạn (phải)
@@ -640,13 +653,18 @@
     tb.setTag(null);
     tb.box(0.8, 0.45, 0.4, M.glass, [5.4, ROOF + 0.25, 0.4]);
 
-    // Kính toàn cảnh trưởng xe trên trụ cao (đầu kính xoay quét)
+    // Kính toàn cảnh trưởng xe trên trụ cao (đầu kính xoay quét có cửa sổ ảnh nhiệt + quang học ngày + gạt mưa)
     tb.cyl(0.9, 1.05, 2.4, 12, P, [-6.6, ROOF + 1.2, -6.2]);
+    tb.cyl(1.18, 1.18, 0.22, 12, D, [-6.6, ROOF + 0.12, -6.2]);
     const periHead = new THREE.Group();
     periHead.position.set(-6.6, ROOF + 3.15, -6.2);
     const ph = new VehicleKit.PartBatch(DECK_Y + ROOF + 3.15);
     ph.box(2.3, 1.6, 2.3, P, [0, 0, 0]);
     ph.box(1.6, 0.75, 0.1, M.glass, [0, 0.1, -1.18]);
+    ph.box(0.08, 0.78, 0.12, D, [0.15, 0.1, -1.19]);
+    ph.cyl(0.28, 0.28, 0.14, 10, M.lens, [-0.42, 0.1, -1.18], 'z');
+    ph.box(1.85, 0.12, 0.38, D, [0, 0.56, -1.26], [0.2, 0, 0]);
+    ph.strut([0.52, 0.48, -1.24], [0.32, -0.15, -1.24], 0.04, D, 4);
     ph.box(2.5, 0.18, 2.5, D, [0, 0.85, 0]);
     ph.build(periHead);
     turret.add(periHead);
@@ -671,12 +689,12 @@
     tb.add(new THREE.TorusGeometry(0.76, 0.05, 4, 16), M.canvasDark, [-8.0, ROOF + 0.06, 6.4], [Math.PI / 2 + 0.18, 0, -0.12]);
     tb.setTag('boxR');
     for (let i = 0; i < 2; i++) {
-      const c = [3.0 + i * 0.05, ROOF, 11.6 + i * 1.25], r = 0.06 + J() * 0.2;
+      const c = [5.4 + i * 0.05, ROOF, 12.65 + i * 1.25], r = 0.06 + J() * 0.2;
       tb.box(1.9, 1.15, 1.05, M.paintDusty, [c[0], c[1] + 0.575, c[2]], [0, r, 0]);
       tb.box(1.98, 0.12, 1.12, M.paintDusty, [c[0], c[1] + 1.2, c[2]], [0, r, 0]);
       tb.box(0.7, 0.1, 0.18, M.steel, [c[0], c[1] + 1.32, c[2]], [0, r, 0]);
     }
-    tb.box(0.25, 0.06, 2.8, M.canvasDark, [3.0, ROOF + 1.28, 12.2], [0, 0.08, 0]);
+    tb.box(0.25, 0.06, 2.8, M.canvasDark, [5.4, ROOF + 1.28, 13.25], [0, 0.08, 0]);
     tb.setTag(null);
 
     // Cảm biến gió ngang + 2 cần ăng-ten
@@ -692,12 +710,13 @@
     ant.build();
     (unit.antennaSets || (unit.antennaSets = [])).push(ant);
 
-    // Cụm phóng lựu đạn khói 4 ống mỗi bên, miệng ống có nắp cao su chống bụi. Bên đã bắn: nắp bị thổi bay,
-    // miệng ống ám muội, một nắp còn treo lủng lẳng trên dây giữ
+    // Cụm phóng lựu đạn khói 4 ống mỗi bên, miệng ống có nắp cao su chống bụi, chân ống có hộp đấu điện & cáp điểm hỏa.
+    // Bên đã bắn: nắp bị thổi bay, miệng ống ám muội, một nắp còn treo lủng lẳng trên dây giữ
     for (const s of [-1, 1]) {
       tb.setTag('smoke' + (s < 0 ? 'L' : 'R'));
       const sdx = turUpX(5.4) + 0.24 - 11.35;   // bệ ốp sát tấm hông trên đang ngả vào trong
       tb.box(0.45, 1.4, 4.4, P, [s * (11.35 + sdx), 5.4, 2.4], [0, 0, s * TUR_UP_TILT]);
+      tb.box(0.32, 0.42, 0.65, D, [s * (11.55 + sdx), 4.95, 4.35], [0, 0, s * TUR_UP_TILT]); // hộp nối cáp điểm hỏa
       const rot = [-0.45, 0, -s * 0.85];
       const ax = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]));
       const fired = wear.smokeFired === s;
@@ -705,6 +724,8 @@
         const c = [s * (11.95 + sdx), 5.95, 0.8 + i * 1.05];
         const at = (d) => [c[0] + ax.x * d, c[1] + ax.y * d, c[2] + ax.z * d];
         tb.cyl(0.4, 0.4, 1.7, 10, D, c, 'y', rot);
+        tb.cyl(0.44, 0.44, 0.16, 10, P, at(-0.45), 'y', rot); // đai thép giữ ống
+        tb.strut(at(-0.78), [s * (11.52 + sdx), 5.15, 0.9 + i * 1.0], 0.035, M.rubber, 4); // dây điểm hỏa
         if (fired && i !== 3) {
           tb.cyl(0.3, 0.3, 0.06, 10, M.soot, at(0.84), 'y', rot);
           if (i === 1) {
@@ -850,7 +871,7 @@
     // thép — kíp nạp đạn tống ra ngoài qua cửa nhỏ này sau mỗi phát như cửa hất đế trên nóc tháp T-72 (modelAnimator: cửa
     // bật ngửa, đế văng lên ra sau tháp, khói thuốc xì theo). Cửa sau tháp bị giỏ đồ che nên đặt trên nóc
     const ej = new THREE.Group();
-    ej.position.set(1.6, ROOF + 0.02, 12.2);
+    ej.position.set(0.3, ROOF + 0.02, 11.8);
     const eb = new VehicleKit.PartBatch(DECK_Y + ROOF);
     eb.box(2.8, 0.14, 2.4, D, [0, 0.07, 0]);           // khung cửa
     eb.build(ej);

@@ -64,7 +64,7 @@
     el.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#0b0f0c;color:#d6e2c8;font:600 14px/1.4 system-ui,sans-serif;letter-spacing:.12em;transition:opacity .35s';
     el.innerHTML = '<style>@keyframes rlspin{to{transform:rotate(360deg)}}</style>'
       + '<div style="width:46px;height:46px;border-radius:50%;border:3px solid rgba(214,226,200,.18);border-top-color:#ffb700;animation:rlspin .8s linear infinite"></div>'
-      + '<div style="font-size:18px;color:#ffb700">PHÒNG THỬ ĐẠN</div><div id="range-lab-stage">ĐANG KHỞI ĐỘNG…</div>';
+      + '<div style="font-size:18px;color:#ffb700">THAO TRƯỜNG DIỄN TẬP</div><div id="range-lab-stage">ĐANG KHỞI ĐỘNG…</div>';
     (document.body || document.documentElement).appendChild(el);
     return {
       stage(t) { const s = document.getElementById('range-lab-stage'); if (s) s.textContent = t; },
@@ -129,6 +129,9 @@
     if (mm.music) mm.music('battle');
     g.startMatchWithSlots([{ id: 0, team: 'BLUE', title: 'THỬ ĐẠN', name: 'XE THỬ ĐẠN', isHuman: true, isMe: true, peerId: 'lab-me', tankType, ready: true }], 'lab-me');
     g._intro = null;   // bỏ đoạn camera lượn quanh căn cứ 6 s lúc mở màn: vào thẳng sau lưng xe
+    const introHud = document.getElementById('tactical-intro-hud');
+    if (introHud) introHud.classList.add('hidden');
+    document.body.classList.remove('intro-active');
     console.info(`[BOOT] Vào trận (startMatchWithSlots): ${Math.round(performance.now() - t0)} ms`);
     setup(g);
     console.info(`[BOOT] Dựng phòng thử xong: ${Math.round(performance.now() - t0)} ms · tổng từ lúc mở trang ${Math.round(performance.now())} ms`);
@@ -211,6 +214,82 @@
     return { x: near.reduce((s, o) => s + o.x, 0) / near.length, z: near.reduce((s, o) => s + o.z, 0) / near.length, n: near.length };
   }
 
+  
+  // ---------------------------------------------------------------------------
+  // CỌC MỐC CỰ LY TRƯỜNG BẮN (100M, 200M, 400M, 700M, 1000M, 1400M)
+  // ---------------------------------------------------------------------------
+  function decorateRangeBattlefield(g) {
+    if (lab.field !== 'flat' || !lab.home || !lab.fieldDir) return;
+
+    if (lab.decorationsGroup) {
+      if (lab.decorationsGroup.parent) lab.decorationsGroup.parent.remove(lab.decorationsGroup);
+      lab.decorationsGroup.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+      });
+    }
+
+    const grp = new THREE.Group();
+    grp.name = 'range-decorations';
+    g.scene.add(grp);
+    lab.decorationsGroup = grp;
+
+    const h = lab.home, dir = lab.fieldDir;
+    const side = { x: -dir.z, z: dir.x };
+    const T = g.terrain;
+    const getGround = (x, z) => (T.getElevationAt ? T.getElevationAt(x, z) : 0);
+
+    // Cọc mốc cự ly tác xạ đặt bên lề trái đường bắn
+    const markerDists = [100, 200, 400, 700, 1000, 1400];
+    markerDists.forEach(d => {
+      const mx = h.x + dir.x * d + side.x * -24;
+      const mz = h.z + dir.z * d + side.z * -24;
+      const my = getGround(mx, mz);
+
+      const mGroup = new THREE.Group();
+      mGroup.position.set(mx, my, mz);
+      mGroup.rotation.y = Math.atan2(dir.x, dir.z);
+
+      // Cột thép vàng cảnh báo
+      const poleGeo = new THREE.CylinderGeometry(0.2, 0.2, 5.2, 12);
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0xd4a337, roughness: 0.4, metalness: 0.6 });
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.y = 2.6;
+      mGroup.add(pole);
+
+      // Bảng chữ số cự ly
+      const cvs = document.createElement('canvas');
+      cvs.width = 256; cvs.height = 128;
+      const ctx = cvs.getContext('2d');
+      ctx.fillStyle = '#111812';
+      ctx.fillRect(0, 0, 256, 128);
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#eab308';
+      ctx.strokeRect(5, 5, 246, 118);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 54px monospace, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(d + ' M', 128, 64);
+
+      const boardTex = new THREE.CanvasTexture(cvs);
+      const boardMat = new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.35, metalness: 0.3 });
+      const boardGeo = new THREE.BoxGeometry(4.8, 2.4, 0.25);
+      const board = new THREE.Mesh(boardGeo, boardMat);
+      board.position.set(0, 4.4, 0);
+      mGroup.add(board);
+
+      // Chóp nón phản quang
+      const capGeo = new THREE.ConeGeometry(0.35, 0.6, 8);
+      const capMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+      const cap = new THREE.Mesh(capGeo, capMat);
+      cap.position.y = 5.4;
+      mGroup.add(cap);
+
+      grp.add(mGroup);
+    });
+  }
+
   function placeAll() {
     const g = lab.g, F = lab.field === 'flat' && g.terrain.map && g.terrain.map.testField;
     if (lab.field === 'flat' && !F) { lab.field = 'village'; lab.dummyType = null; }
@@ -223,6 +302,7 @@
       lab.village = null;
       teleport();
       spawnDummies();
+      decorateRangeBattlefield(g);
       return;
     }
     const V = lab.village = findVillage();
@@ -413,6 +493,7 @@
       const P = g.player;
       if (P) place(P, P.x, P.z, P.bodyAngle, P.azimuth);
       for (const d of lab.dummies) revive(d);
+      decorateRangeBattlefield(g);
       if (g._cam) g._cam.unit = null;
       addLog('[[check]] Đã dựng lại bản đồ', 'ok');
     }, 60);
@@ -458,6 +539,7 @@
   function tick(dt) {
     const g = lab.g, p = g.player;
     refillAmmo(p, dt);
+    if (lab.rangeProps) lab.rangeProps.update(dt, g.effectsManager && g.effectsManager.fx, g.camera);
     if (lab.fireMode !== 'off') fireBackTick(dt);
     updateKamis(dt);
     for (const d of lab.dummies) {
@@ -774,8 +856,8 @@
       #rg-lab .rg-head>.ti{font-size:22px;color:var(--tc-accent)}
       #rg-lab h1{margin:0;font-size:14px;font-weight:700;letter-spacing:2px;color:var(--tc-bright)}
       #rg-lab .rg-sub{font-size:10.5px;color:var(--tc-dim)}
-      #rg-lab nav{display:flex;gap:3px;padding:7px 12px 8px;border-bottom:1px solid var(--tc-line)}
-      #rg-lab nav a{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:3px;padding:4px 3px;font-size:10.5px;font-weight:600;letter-spacing:.3px;white-space:nowrap;
+      #rg-lab nav{display:flex;flex-wrap:wrap;gap:3px;padding:7px 12px 8px;border-bottom:1px solid var(--tc-line)}
+      #rg-lab nav a{flex:1 1 22%;display:flex;align-items:center;justify-content:center;gap:3px;padding:4px 3px;font-size:10.5px;font-weight:600;letter-spacing:.3px;white-space:nowrap;
         color:var(--tc-dim);text-decoration:none;border:1px solid var(--tc-line);background:rgba(200,210,192,.03)}
       #rg-lab nav a:hover{color:var(--tc-text);border-color:var(--tc-line-2)}
       #rg-lab nav a.home{flex:0 0 26px}
@@ -808,11 +890,16 @@
     root.addEventListener('mousedown', e => { if (e.target.tagName === 'BUTTON') e.preventDefault(); });
     document.body.appendChild(root);
     root.innerHTML = `
-      <div class="rg-head"><i class="ti ti-target-arrow" aria-hidden="true"></i><div><h1>PHÒNG THỬ ĐẠN</h1>
+      <div class="rg-head"><i class="ti ti-target-arrow" aria-hidden="true"></i><div><h1>THAO TRƯỜNG DIỄN TẬP</h1>
         <div class="rg-sub">Lái & bắn như trong trận — <kbd>Ctrl</kbd> kính ngắm</div></div></div>
       <nav>
         <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
-        <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
+        <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả</a>
+        <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+        <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+        <a href="test_car.html"><i class="ti ti-car" aria-hidden="true"></i> Ô tô</a>
+        <a href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
+        <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
         <a class="on" href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
       </nav>
       <div class="rg-body">

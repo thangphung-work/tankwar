@@ -521,7 +521,12 @@
         for (const k of ['sideP', 'sideN']) K.add('glass', new THREE.PlaneGeometry(F[k].len - 20, 10), mul(F[k].m, M4(0, B.H - 18, 0.3)));
         // mái dốc 2 phía (trục dọc r) + mái lấy sáng thông gió dọc nóc
         const rf = 14;
-        for (const s of [-1, 1]) K.box('corrGray', fc + s * W / 4, B.H + rf / 2, rc, Math.hypot(W / 2, rf) + 1, 1, D + 4, 0, 24, 0, s * Math.atan2(rf, W / 2));
+        for (const s of [-1, 1]) K.box('corrGray', fc + s * W / 4, B.H + rf / 2, rc, Math.hypot(W / 2, rf) + 1, 1, D + 4, 0, 24, 0, -s * Math.atan2(rf, W / 2));
+        const gableSh = new THREE.Shape();
+        gableSh.moveTo(-W / 2, 0); gableSh.lineTo(0, rf); gableSh.lineTo(W / 2, 0); gableSh.closePath();
+        const gableGeo = new THREE.ShapeGeometry(gableSh);
+        K.add('corrGray', gableGeo, M4(fc, B.H, B.r0, 0, Math.PI, 0));
+        K.add('corrGray', gableGeo.clone(), M4(fc, B.H, B.r1, 0, 0, 0));
         K.box('louver', fc, B.H + rf + 3, rc, 10, 6, D - 30); K.box('steelGray', fc, B.H + rf + 6.5, rc, 14, 1, D - 28, 0, 24);
         const fr = F.front.m;
         K.add('shutter', new THREE.BoxGeometry(40, 60, 1.2), mul(fr, M4(40, 30, 0.8)));
@@ -711,13 +716,7 @@
           K.add('void', new THREE.CircleGeometry(R, 9), M4(f, y + 0.5, r, -Math.PI / 2, 0, 0));
           for (let k = 0; k < 8; k++) { const a = k * TAU / 8 + H(r + k); K.box('corrGray', f + Math.cos(a) * R, y + 2, r + Math.sin(a) * R, R * 0.8, 0.5, R * 0.5, -a, 24, 0, 0.8); }
         };
-        roofHole(-150, AH.H + 4, 240, 18);                                            // nhà lắp ráp: thủng mái
-        hole(-110, 210, AH.r1 + 0.6, 14, 0);                                          // + thủng vách hông, muội loang
-        hole(TB.f1 + 0.6, 96, 220, 12, Math.PI / 2);                                  // nhà tua-bin: thủng vách mặt đường
-        hole(PC.f1 + 0.6, 50, -230, 9, Math.PI / 2, 'conc');                          // nhà biến đổi điện: lỗ xuyên tường bê tông
-        roofHole(-170, HC.H + 4, -280, 12);                                           // nhà triti: thủng mái
-        // gạch đá / tôn rơi dưới chân các lỗ thủng
-        for (const [f, r] of [[TB.f1 + 8, 220], [PC.f1 + 8, -230], [-110, AH.r1 + 8]]) for (let k = 0; k < 16; k++) K.add(H(k) < 0.4 ? 'corrGray' : 'concDark', new THREE.DodecahedronGeometry(0.8 + H(k + f) * 2, 0), M4(f + (H(k + r) - 0.5) * 14, 1.2, r + (H(k + f + 3) - 0.5) * 22, H(k) * 3, H(k + 2) * 3, 0, 1.4, 0.5, 1));
+        // Đã gỡ bỏ các đĩa đen giả lỗ thủng đè lên tường và biển hiệu công trình
       }
       // bảng tên trung tâm cạnh cổng (2 trụ bê tông), biển phóng xạ trên rào trong
       K.cbox('concDark', 222, 10, -(G + 8) - 22, 3, 20, 3, 0.3); K.cbox('concDark', 222, 10, -(G + 8) + 22, 3, 20, 3, 0.3);

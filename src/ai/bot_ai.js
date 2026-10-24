@@ -144,8 +144,8 @@ class BotAIController {
     // -> chỉ xoay theo phương vị mới, giữ góc nòng cũ (không giải lại quỹ đạo — đỡ tốn máy khi bám xe đang chạy)
     const bear = (x, z) => Math.atan2(x - U.x, -(z - U.z)) * 180 / Math.PI;
     const L0 = E.last, dNew = Math.hypot(px - U.x, pz - U.z);
-    const fresh = L0 && this.clock - L0.at < 0.6;   // nghiệm vừa giải chưa tới 0.6 s: dùng lại kể cả khi cự ly đổi chút ít
-    if (!full && !sol && L0 && (fresh || Math.abs(dNew - L0.dist) < Math.max(6, dNew * 0.02)) && Math.hypot(px - L0.px, pz - L0.pz) < dNew * 0.15) {
+    const fresh = L0 && (this.clock - L0.at < (U.tankType === 'ARTILLERY' ? 0.8 : 0.45));
+    if (!sol && L0 && (fresh || (!full && Math.abs(dNew - L0.dist) < Math.max(8, dNew * 0.03) && Math.hypot(px - L0.px, pz - L0.pz) < dNew * 0.15))) {
       sol = Object.assign({}, L0.sol, { azimuth: (L0.sol.azimuth + bear(px, pz) - bear(L0.px, L0.pz) + 720) % 360 });
     } else {
       if (!sol || Math.hypot(px - t.x, pz - t.z) > 1) sol = solve(px, pz) || sol;
@@ -340,7 +340,7 @@ class BotAIController {
         let corrected = false;
         if ((this.burstCorrT = (this.burstCorrT || 0) + 0.3) >= 0.6) { this.burstCorrT = 0; if (this.eng && this.eng.id === B.id) { this.correctAfterShot(this.eng); corrected = true; } }
         // ngắm lại khi vừa chỉnh sai số hoặc mục tiêu đã nhích đi
-        if (corrected || this.burstAx === undefined || Math.hypot(B.x - this.burstAx, B.z - this.burstAz) > 4) {
+        if (corrected || this.burstAx === undefined || Math.hypot(B.x - this.burstAx, B.z - this.burstAz) > 12) {
           this.burstAx = B.x; this.burstAz = B.z;
           const a = this.aimAtUnit(B, this.lastBallistics, terrain);
           if (a) this.applyAim(a.sol, a.x, a.z, terrain);
@@ -358,7 +358,7 @@ class BotAIController {
         const arty = this.unit.tankType === 'ARTILLERY';
         // xe khác: ~3 lần/giây, chỉ khi mục tiêu đã nhích đi (xe đứng yên thì nghiệm cũ vẫn đúng — đỡ tốn máy)
         S.reaim = arty ? 1.0 : 0.3;
-        if (S.ax === undefined || Math.hypot(S.tu.x - S.ax, S.tu.z - S.az) > (arty ? 25 : 4)) {
+        if (S.ax === undefined || Math.hypot(S.tu.x - S.ax, S.tu.z - S.az) > (arty ? 30 : 12)) {
           S.ax = S.tu.x; S.az = S.tu.z;
           const a = this.aimAtUnit(S.tu, S.ballistics, terrain);
           if (a) this.applyAim(a.sol, a.x, a.z, terrain);

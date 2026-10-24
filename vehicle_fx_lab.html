@@ -7,7 +7,7 @@
 <link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
 <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
 <link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
-<link rel="stylesheet" href="src/ui/lab.css?v=20261020lab2">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261024nav1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -26,8 +26,14 @@
     </div>
     <nav class="lab-nav">
       <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
-      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
-      <a class="on" href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Hiệu ứng xe</a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả</a>
+      <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+      <a class="on" href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+      <a href="test_car.html"><i class="ti ti-car" aria-hidden="true"></i> Ô tô</a>
+      <a href="scenery_lab.html"><i class="ti ti-trees" aria-hidden="true"></i> Cảnh vật</a>
+      <a href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
+      <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+      <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
     </nav>
   </header>
 
@@ -821,10 +827,65 @@
 
   // Bộ phận có thể phá của từng loại xe (đúng cấu tạo thật của mẫu xe)
   const PART_ACTIONS = {
-    ALL_ROUNDER: [['skirt', '<i class="ti ti-shield" aria-hidden="true"></i>Bong tấm váy xích'], ['applique', '<i class="ti ti-wall" aria-hidden="true"></i>Bắn xuyên giáp tăng cường mũi (3 phát mới bung)'], ['track', '<i class="ti ti-link" aria-hidden="true"></i>Đứt xích'], ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt vòng quay tháp'], ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Cong nòng pháo'], ['optic', '<i class="ti ti-telescope" aria-hidden="true"></i>Vỡ kính ngắm'], ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'], ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']],
-    GATLING: [['era', '<i class="ti ti-bomb" aria-hidden="true"></i>Kích nổ 1 viên gạch ERA'], ['cage', '<i class="ti ti-grid-dots" aria-hidden="true"></i>Bung lồng giáp lưới'], ['feed', '<i class="ti ti-link" aria-hidden="true"></i>Đứt máng tiếp đạn'], ['track', '<i class="ti ti-link" aria-hidden="true"></i>Đứt xích'], ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Kẹt / cong cụm nòng'], ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt vòng quay tháp'], ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'], ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']],
-    SCOUT: [['tire', '<i class="ti ti-wheel" aria-hidden="true"></i>Thủng xẹp lốp'], ['wheel', '<i class="ti ti-bomb" aria-hidden="true"></i>Văng bánh (nổ mạnh)'], ['glass', '<i class="ti ti-window" aria-hidden="true"></i>Vỡ kính cabin'], ['sensor', '<i class="ti ti-antenna" aria-hidden="true"></i>Hỏng cụm radar / cảm biến'], ['atgm', '<i class="ti ti-rocket" aria-hidden="true"></i>Phá ống phóng tên lửa'], ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'], ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']],
-    ARTILLERY: [['tire', '<i class="ti ti-wheel" aria-hidden="true"></i>Thủng xẹp lốp'], ['wheel', '<i class="ti ti-bomb" aria-hidden="true"></i>Văng bánh (nổ mạnh)'], ['glass', '<i class="ti ti-window" aria-hidden="true"></i>Vỡ kính cabin'], ['fuel', '<i class="ti ti-gas-station" aria-hidden="true"></i>Thủng thùng nhiên liệu'], ['ammo', '<i class="ti ti-package" aria-hidden="true"></i>Nổ hòm đạn'], ['hyd', '<i class="ti ti-tool" aria-hidden="true"></i>Hỏng thủy lực càng'], ['frame', '<i class="ti ti-truck" aria-hidden="true"></i>Vặn méo khung gầm'], ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Cong nòng pháo'], ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt bàn xoay pháo'], ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện']]
+    ALL_ROUNDER: [
+      ['skirt', '<i class="ti ti-shield" aria-hidden="true"></i>Bong tấm váy xích'],
+      ['applique', '<i class="ti ti-wall" aria-hidden="true"></i>Bắn xuyên giáp tăng cường mũi (3 phát mới bung)'],
+      ['track', '<i class="ti ti-link" aria-hidden="true"></i>Đứt xích'],
+      ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt vòng quay tháp'],
+      ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Cong nòng pháo'],
+      ['optic', '<i class="ti ti-telescope" aria-hidden="true"></i>Vỡ kính ngắm'],
+      ['smoke', '<i class="ti ti-cloud" aria-hidden="true"></i>Bắn nổ ống phóng lựu đạn khói'],
+      ['stowage', '<i class="ti ti-luggage" aria-hidden="true"></i>Bắn tung giỏ đồ / hộp dụng cụ'],
+      ['lamp', '<i class="ti ti-bulb" aria-hidden="true"></i>Bắn vỡ đèn pha & gương'],
+      ['roof', '<i class="ti ti-target" aria-hidden="true"></i>Phá trạm súng / thiết bị nóc tháp'],
+      ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'],
+      ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'],
+      ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện ngẫu nhiên']
+    ],
+    GATLING: [
+      ['era', '<i class="ti ti-bomb" aria-hidden="true"></i>Kích nổ 1 viên gạch ERA'],
+      ['cage', '<i class="ti ti-grid-dots" aria-hidden="true"></i>Bung lồng giáp lưới'],
+      ['feed', '<i class="ti ti-link" aria-hidden="true"></i>Đứt máng tiếp đạn'],
+      ['can', '<i class="ti ti-gas-station" aria-hidden="true"></i>Bắn nổ giá can nhiên liệu (cháy nổ)'],
+      ['smoke', '<i class="ti ti-cloud" aria-hidden="true"></i>Bắn nổ ống phóng lựu đạn khói'],
+      ['lamp', '<i class="ti ti-bulb" aria-hidden="true"></i>Bắn vỡ đèn chiếu & đèn pha'],
+      ['stowage', '<i class="ti ti-luggage" aria-hidden="true"></i>Bắn tung thùng đồ / cuộn bạt'],
+      ['track', '<i class="ti ti-link" aria-hidden="true"></i>Đứt xích'],
+      ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Kẹt / cong cụm nòng'],
+      ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt vòng quay tháp'],
+      ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'],
+      ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'],
+      ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện ngẫu nhiên']
+    ],
+    SCOUT: [
+      ['tire', '<i class="ti ti-wheel" aria-hidden="true"></i>Thủng xẹp lốp'],
+      ['wheel', '<i class="ti ti-bomb" aria-hidden="true"></i>Văng bánh (nổ mạnh)'],
+      ['glass', '<i class="ti ti-window" aria-hidden="true"></i>Vỡ kính cabin'],
+      ['sensor', '<i class="ti ti-antenna" aria-hidden="true"></i>Hỏng cụm radar / cảm biến'],
+      ['atgm', '<i class="ti ti-rocket" aria-hidden="true"></i>Phá nổ ống phóng tên lửa'],
+      ['can', '<i class="ti ti-gas-station" aria-hidden="true"></i>Bắn nổ can nhiên liệu 20L (cháy)'],
+      ['generator', '<i class="ti ti-bolt" aria-hidden="true"></i>Bắn nổ máy phát điện (chập cháy)'],
+      ['smoke', '<i class="ti ti-cloud" aria-hidden="true"></i>Bắn nổ ống phóng lựu đạn khói'],
+      ['lamp', '<i class="ti ti-bulb" aria-hidden="true"></i>Bắn vỡ cụm đèn & gương'],
+      ['engine', '<i class="ti ti-flame" aria-hidden="true"></i>Hỏng động cơ'],
+      ['antenna', '<i class="ti ti-antenna" aria-hidden="true"></i>Gãy ăng-ten'],
+      ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện ngẫu nhiên']
+    ],
+    ARTILLERY: [
+      ['tire', '<i class="ti ti-wheel" aria-hidden="true"></i>Thủng xẹp lốp'],
+      ['wheel', '<i class="ti ti-bomb" aria-hidden="true"></i>Văng bánh (nổ mạnh)'],
+      ['glass', '<i class="ti ti-window" aria-hidden="true"></i>Vỡ kính cabin'],
+      ['fuel', '<i class="ti ti-gas-station" aria-hidden="true"></i>Nổ thủng bình dầu & can xăng'],
+      ['ammo', '<i class="ti ti-package" aria-hidden="true"></i>Nổ hòm đạn dự trữ'],
+      ['smoke', '<i class="ti ti-cloud" aria-hidden="true"></i>Bắn nổ ống phóng lựu đạn khói'],
+      ['stowage', '<i class="ti ti-luggage" aria-hidden="true"></i>Bắn toác tủ đồ & hộp dụng cụ'],
+      ['lamp', '<i class="ti ti-bulb" aria-hidden="true"></i>Bắn vỡ đèn pha & gương'],
+      ['hyd', '<i class="ti ti-tool" aria-hidden="true"></i>Hỏng thủy lực càng'],
+      ['frame', '<i class="ti ti-truck" aria-hidden="true"></i>Vặn méo khung gầm'],
+      ['gun', '<i class="ti ti-tool" aria-hidden="true"></i>Cong nòng pháo'],
+      ['ring', '<i class="ti ti-settings" aria-hidden="true"></i>Kẹt bàn xoay pháo'],
+      ['acc', '<i class="ti ti-box" aria-hidden="true"></i>Văng phụ kiện ngẫu nhiên']
+    ]
   };
   const partHistory = [];
   function partLog(lines) {

@@ -223,14 +223,14 @@ const VehicleCollision = (() => {
     const h0 = a[i0] + (a[i0 + 3] - a[i0]) * tx, h1 = a[i1] + (a[i1 + 3] - a[i1]) * tx;
     return G.oy + h0 + (h1 - h0) * tz;
   }
-  function debrisHeight(list, x, z, refY, step) {
+  function debrisHeight(list, x, z, refY, step, outMat) {
     let h = -Infinity;
     for (let i = 0; i < list.length; i++) {
       const d = list[i];
       if (d.grid) { const g = gridHeight(d, x, z); if (g > h) h = g; continue; }
       if (d.bump) {
         const ex = x - d.x, ez = z - d.z, q = 1 - (ex * ex + ez * ez) / (d.r * d.r);
-        if (q > 0) { const g = d.base + (d.top - d.base) * Math.sqrt(q); if (g > h) h = g; }
+        if (q > 0) { const g = d.base + (d.top - d.base) * Math.sqrt(q); if (g > h) { h = g; if (d.mat && outMat) outMat.mat = d.mat; } }
         continue;
       }
       if (d.y1 <= h || d.y1 > refY + step + 1 || d.y0 > refY + step) continue;
@@ -277,13 +277,13 @@ const VehicleCollision = (() => {
     const fx = -Math.sin(ang), fz = -Math.cos(ang), rx = Math.cos(ang), rz = -Math.sin(ang);
     const S = o.S || (o.S = new Float32Array(32)), H = o.H || (o.H = new Float32Array(32));
     const sup = o.sup || (o.sup = {});
-    let yl = 0, yr = 0, sl = 0, lift = 0;
+    let yl = 0, yr = 0, sl = 0, lift = 0, touchedMat = null;
     const g0 = groundAt(x, z);
     for (let side = -1; side <= 1; side += 2) {
       for (let i = 0; i < n; i++) {
         const s = -sr + (sf + sr) * i / (n - 1);
         const px = x + fx * s + rx * side * 14, pz = z + fz * s + rz * side * 14;
-        const g = groundAt(px, pz), d = debrisHeight(list, px, pz, refY, step);
+        const matHolder = { mat: null }; const g = groundAt(px, pz), d = debrisHeight(list, px, pz, refY, step, matHolder); if (matHolder.mat) touchedMat = matHolder.mat;
         S[i] = s; H[i] = d > g ? d : g;
         if (d - g > lift) lift = d - g;
       }
@@ -294,7 +294,7 @@ const VehicleCollision = (() => {
     const c = (yl + yr) / 2;
     o.center = c; o.left = yl; o.right = yr; o.slope = sl;
     o.front = c + sl * 18; o.rear = c - sl * 18;
-    o.g0 = g0; o.lift = lift;
+    o.g0 = g0; o.lift = lift; o.mat = touchedMat;
     return o;
   }
 

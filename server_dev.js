@@ -18,7 +18,9 @@ const ROOT_DIR = __dirname;
 const BOOT_ID = Date.now().toString(36);
 // Chỉ báo các loại tệp trình duyệt dùng; bỏ qua .md, .bat, cơ sở dữ liệu...
 const WATCH_EXT = /\.(html|js|css|json|png|jpe?g|gif|svg|ico|webp|wav|mp3|ogg|m4a|woff2?|ttf)$/i;
-const IGNORE_DIRS = ['.git', 'node_modules', 'data', 'deploy', '.claude'];
+// Generated screenshots are outputs, not browser source assets. Watching them creates
+// noisy change events and can cause pointless reloads while capture tools are running.
+const IGNORE_DIRS = ['.git', 'node_modules', 'data', 'deploy', '.claude', 'shots', '_shots'];
 // Tệp chỉ chạy phía máy chủ: node --watch tự khởi động lại, tab tải lại theo BOOT_ID
 const SERVER_ONLY = /^server[^/]*\.js$/i;
 const DEBOUNCE_MS = 120;

@@ -1,0 +1,1566 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phòng Thử Cảnh Vật</title>
+<link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
+<link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+<link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261024nav1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script>
+window.addEventListener('error', function(e) {
+  console.error('[SceneryLab]', e.error || e.message);
+});
+</script>
+<style>
+  .lab-field { margin: 3px 0; }
+  .lab-field > span:first-child { width: 100px; }
+  .lab-field select, .lab-field input[type=number] {
+    flex: 1; min-width: 0; padding: 4px 6px;
+    font: 500 12px var(--font-tech); color: var(--tc-text);
+    background: rgba(0, 0, 0, 0.3); border: 1px solid var(--tc-line); border-radius: 0; outline: none;
+  }
+  .lab-field select:focus, .lab-field input[type=number]:focus { border-color: var(--tc-accent); }
+  .lab-field select option { background: var(--tc-bg-2); }
+  .lab-field input[type=checkbox] { accent-color: var(--tc-accent); margin: 0; }
+  .lab-field .btn { width: auto; flex: 0 0 auto; padding: 4px 7px; }
+  .lab-field .btn .ti { margin: 0; }
+  .lab-field .note { color: var(--tc-faint); font-size: 10.5px; }
+  .lab-val { width: 34px; }
+  .lab-log { max-height: 120px; }
+  .lab-log b { color: var(--tc-accent-2); font-weight: 500; }
+  .lab-info-row b .hot { color: var(--tc-red); }
+  #crosshair { position: fixed; z-index: 5; pointer-events: none; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 2px solid var(--tc-red); border-radius: 50%; display: none; }
+  #crosshair::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; background: var(--tc-red); border-radius: 50%; }
+  .shooting #view { cursor: none; }
+  .badge-category {
+    display: inline-block; padding: 2px 7px; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.8px; border: 1px solid var(--tc-line-2); background: rgba(0,0,0,0.25);
+    color: var(--tc-accent-2); margin-bottom: 6px;
+  }
+  .ground-indicator {
+    position: absolute; pointer-events: none;
+    border: 1px dashed rgba(231, 166, 58, 0.5);
+    border-radius: 50%; transition: all 0.2s;
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="crosshair"></div>
+
+<aside class="lab-panel">
+  <header class="lab-head">
+    <div class="lab-brand">
+      <i class="ti ti-trees lab-emblem" aria-hidden="true"></i>
+      <div>
+        <h1>PHÒNG THỬ CẢNH VẬT</h1>
+        <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Cây cối · Thùng rác · Cột đèn · Hàng rào · Ruộng đồng · Xác xe · Bao cát · Đá tảng</div>
+      </div>
+    </div>
+    <nav class="lab-nav">
+      <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả</a>
+      <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+      <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+      <a href="test_car.html"><i class="ti ti-car" aria-hidden="true"></i> Ô tô</a>
+      <a class="on" href="scenery_lab.html"><i class="ti ti-trees" aria-hidden="true"></i> Cảnh vật</a>
+      <a href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
+      <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+      <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
+    </nav>
+  </header>
+
+  <div class="lab-scroll">
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">01</span><h2>Chọn cảnh vật</h2><small id="prop-count"></small></div>
+    <label class="lab-field">
+      <span>Phân loại</span>
+      <select id="sel-cat">
+        <option value="ALL">Tất cả danh mục</option>
+        <option value="TREES">Cây cối &amp; Bụi rậm (11 món)</option>
+        <option value="STREET_JUNK">Thùng rác &amp; Đồ vỉa hè (9 món)</option>
+        <option value="URBAN_PROPS">Hạ tầng đô thị (6 món)</option>
+        <option value="RURAL_FENCE">Hàng rào &amp; Ruộng đồng (8 món)</option>
+        <option value="MILITARY">Chiến trường &amp; Công sự (6 món)</option>
+      </select>
+    </label>
+    <div class="lab-field">
+      <span>Mẫu vật</span>
+      <select id="sel-item"></select>
+      <button class="btn" onclick="stepItem(-1)" title="Vật trước"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+      <button class="btn" onclick="stepItem(1)" title="Vật sau"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+    </div>
+    <label class="lab-field"><span>Chỉ xem vật này</span><input type="checkbox" id="o-solo"><span class="note">soi chi tiết 360° ở giữa sân</span></label>
+    <div class="lab-label">Chuột trái</div>
+    <div class="grid2">
+      <button class="btn on" id="mode-select" onclick="setMode('select')"><i class="ti ti-pointer" aria-hidden="true"></i>Chọn vật</button>
+      <button class="btn" id="mode-shoot" onclick="setMode('shoot')"><i class="ti ti-crosshair" aria-hidden="true"></i>Bắn đạn</button>
+    </div>
+    <div class="row mt">
+      <button class="btn on" id="btn-focus" onclick="focusSel()" title="Xoay camera 360° quanh vật đang chọn"><i class="ti ti-360-view" aria-hidden="true"></i>Xem 360°</button>
+      <button class="btn" id="btn-overview" onclick="overview()" title="Nhìn toàn bộ bãi thử"><i class="ti ti-world" aria-hidden="true"></i>Toàn cảnh</button>
+      <button class="btn" onclick="resetAll()"><i class="ti ti-refresh" aria-hidden="true"></i>Dựng lại cả bãi</button>
+    </div>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">02</span><h2>Tương tác &amp; Phá huỷ</h2></div>
+    <div class="grid2">
+      <button class="btn" onclick="rebuildSel()"><i class="ti ti-refresh" aria-hidden="true"></i>Dựng lại vật này</button>
+      <button class="btn btn-fire" onclick="blastSel()"><i class="ti ti-bomb" aria-hidden="true"></i>Kích nổ tại gốc</button>
+    </div>
+    <div class="grid2 mt">
+      <button class="btn btn-danger" onclick="igniteSel()"><i class="ti ti-flame" aria-hidden="true"></i>Châm lửa đốt</button>
+      <button class="btn" onclick="crushSel()"><i class="ti ti-arrow-bar-to-down" aria-hidden="true"></i>Húc / cán bẹp</button>
+    </div>
+    <label class="lab-field mt">
+      <span>Loại đạn bắn</span>
+      <select id="ammo">
+        <option value="NORMAL">Pháo thường 120mm</option>
+        <option value="HE">Pháo nổ mạnh HE 120mm</option>
+        <option value="AP">Đạn xuyên giáp AP</option>
+        <option value="INCENDIARY">Đạn cháy</option>
+        <option value="GATLING_BULLET">Đạn Gatling 30mm</option>
+        <option value="SCOUT_BULLET">Đại liên 12.7mm</option>
+        <option value="CLUSTER">Đạn pháo chùm</option>
+        <option value="RPG">Đạn tên lửa RPG</option>
+        <option value="ANTI_TANK_MISSILE">Tên lửa chống tăng</option>
+      </select>
+    </label>
+    <div class="lab-box-note">Bấm phím <kbd>Space</kbd> hoặc chuột trái để khai hoả. Nếu đã thả xe tăng, đạn sẽ khai hoả trực tiếp từ nòng xe tăng về hướng xe nhìn. Phím <kbd>X</kbd> để phanh gấp.</div>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">03</span><h2>Môi trường &amp; Thời tiết</h2></div>
+    <label class="lab-field">
+      <span>Địa hình</span>
+      <select id="biome">
+        <option value="DESERT">Sa mạc cát khô cằn</option>
+        <option value="URBAN">Đô thị bê tông xám</option>
+        <option value="JUNGLE" selected>Rừng rậm nhiệt đới</option>
+        <option value="HIGHLAND">Vùng cao nguyên đá</option>
+        <option value="RIVER_LAKE">Đồng bằng sông hồ</option>
+      </select>
+    </label>
+    <label class="lab-field">
+      <span>Cường độ gió</span>
+      <input type="range" id="wind-speed" min="0" max="2.5" step="0.1" value="1.0">
+      <span class="lab-val" id="v-wind">1.0x</span>
+    </label>
+    <label class="lab-field">
+      <span>Bóng đổ</span>
+      <input type="checkbox" id="cast-shadows" checked>
+      <span class="note">bóng thời gian thực</span>
+    </label>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">04</span><h2>Xe tăng lái thử</h2></div>
+    <label class="lab-field">
+      <span>Mẫu xe</span>
+      <select id="t-type">
+        <option value="ALL_ROUNDER">Halberd · Tăng chủ lực có lưỡi ủi</option>
+        <option value="GATLING">Hailstorm · Xe phòng không 6 nòng</option>
+      </select>
+    </label>
+    <button class="btn btn-fire mt" id="t-drop" onclick="toggleTank()"><i class="ti ti-tank" aria-hidden="true"></i>THẢ XE TĂNG LÁI</button>
+    <label class="lab-field mt"><span>Camera bám xe</span><input type="checkbox" id="t-follow" checked><span class="note">phím <kbd>C</kbd> bật / tắt</span></label>
+    <div class="lab-box-note">Dùng phím <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> để lái xe tăng húc đổ cây cối, tông rào gỗ, cày nát bao cát và va quẹt thùng rác.</div>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">05</span><h2>Nhật ký tương tác</h2><small>cháy · gãy đổ · vỡ nát · biến dạng</small></div>
+    <div class="lab-log" id="log"></div>
+  </section>
+  </div>
+</aside>
+
+<div class="lab-info">
+  <div class="badge-category" id="i-cat">CẢNH VẬT</div>
+  <div class="lab-info-title"><i class="ti ti-box" aria-hidden="true"></i><span id="sel-title">—</span></div>
+  <div class="lab-info-row"><span>Chủng loại</span><b id="i-kind">—</b></div>
+  <div class="lab-info-row"><span>Trạng thái</span><b id="i-status">—</b></div>
+  <div class="lab-info-row"><span>Kích thước</span><b id="i-size">—</b></div>
+  <div class="lab-info-row"><span>Đặc tính</span><b id="i-feat">—</b></div>
+
+  <div class="lab-info-title mt2"><i class="ti ti-gauge" aria-hidden="true"></i><span>HIỆU NĂNG</span></div>
+  <div class="lab-info-row"><span>Khung hình (FPS)</span><b id="i-fps">—</b></div>
+  <div class="lab-info-row"><span>Thời gian vẽ JS</span><b id="i-ms">—</b></div>
+  <div class="lab-info-row"><span>Lượt vẽ GPU (Calls)</span><b id="i-calls">—</b></div>
+  <div class="lab-info-row"><span>Tổng số tam giác</span><b id="i-tris">—</b></div>
+</div>
+
+<div class="lab-keys">
+  <span><kbd>Space</kbd> hoặc <kbd>Chuột trái</kbd> khai hoả</span>
+  <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> lái xe tăng</span>
+  <span><kbd>X</kbd> phanh gấp</span>
+  <span><kbd>Chuột phải</kbd> trượt lia</span>
+  <span><kbd>Cuộn chuột</kbd> phóng to / thu nhỏ</span>
+  <span><kbd>C</kbd> bám xe tăng</span>
+</div>
+
+<script src="three.min.js"></script>
+<script src="src/gameplay/destructibles.js"></script>
+<script src="src/gameplay/streetscape.js"></script>
+<script src="src/entities/car_softbody.js"></script>
+<script src="src/entities/civil_cars.js"></script>
+<script src="src/entities/tank_models.js"></script>
+<script src="src/gameplay/props.js"></script>
+<script src="src/core/game_timing.js"></script>
+<script src="src/entities/tanks/vehicle_kit.js"></script>
+<script src="src/entities/tanks/roof_mounts.js"></script>
+<script src="src/entities/tanks/mbt_halberd.js"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js"></script>
+<script>
+// =============================================================================
+// DANH MỤC TẤT CẢ CẢNH VẬT TRONG GAME
+// =============================================================================
+const CATALOG = [
+  // --- CÂY CỐI & BỤI RẬM
+  { id: 'tree_palm', cat: 'TREES', name: 'Cây Dừa / Cọ', kind: 'palm', size: 'Cao 14m · Tán rộng 8m', feat: 'Thân cong vươn, tán tàu dừa lay gió mạnh, cháy sém lá khi dính lửa', group: 'tree' },
+  { id: 'tree_pine', cat: 'TREES', name: 'Cây Thông Kim', kind: 'pine', size: 'Cao 16m · Tán chóp 7m', feat: 'Dáng kim tự tháp nhiều tầng cành, thân đứng thẳng tắp, dễ bắt lửa đạn cháy', group: 'tree' },
+  { id: 'tree_cypress', cat: 'TREES', name: 'Cây Trắc Bá / Bách', kind: 'cypress', size: 'Cao 12m · Tán hẹp 4m', feat: 'Tán thon nhọn phong cách công viên, thân dẻo dai lay chuyển nhẹ', group: 'tree' },
+  { id: 'tree_cactus', cat: 'TREES', name: 'Xương Rồng Saguaro', kind: 'cactus', size: 'Cao 8m · Nhánh ngang 3m', feat: 'Đặc trưng hoang mạc cằn cỗi, thân mọng nước có gờ dọc và tay vươn', group: 'tree' },
+  { id: 'tree_dead', cat: 'TREES', name: 'Cây Khô Trơ Trụi', kind: 'deadTree', size: 'Cao 11m · Cành khẳng khiu', feat: 'Cành nhánh gãy cụt không lá, dễ quật đổ và gãy vụn khi trúng mảnh đạn', group: 'tree' },
+  { id: 'tree_acacia', cat: 'TREES', name: 'Cây Keo Tán Ô', kind: 'acacia', size: 'Cao 10m · Tán rộng 12m', feat: 'Tán xoè dẹt ngang kiểu xavan đồng cỏ, thân phân nhánh nghiêng tự nhiên', group: 'tree' },
+  { id: 'tree_willow', cat: 'TREES', name: 'Cây Liễu Rủ', kind: 'willow', size: 'Cao 11m · Nhánh rủ 9m', feat: 'Các dải cành mảnh rủ dài đung đưa mềm mại bên mặt nước', group: 'tree' },
+  { id: 'tree_jungle', cat: 'TREES', name: 'Đại Thụ Rừng Nhiệt Đới', kind: 'jungle', size: 'Cao 22m · Tán rộng 16m', feat: 'Cây cổ thụ gốc bạnh to lớn, cành vươn đồ sộ, cần hỏa lực cực mạnh mới hạ được', group: 'tree' },
+  { id: 'tree_broadleaf', cat: 'TREES', name: 'Cây Lá Rộng (Bàng / Sồi)', kind: 'broadleaf', size: 'Cao 13m · Tán tròn 10m', feat: 'Vòm lá tròn sum suê đầy sức sống, đổi sắc độ theo từng vùng bản đồ', group: 'tree' },
+  { id: 'tree_plane', cat: 'TREES', name: 'Cây Bóng Mát Vỉa Hè', kind: 'plane', size: 'Cao 9m · Cắt tỉa gọn', feat: 'Trồng dọc lề đường đô thị, thân bọc bảo vệ chân cây', group: 'tree' },
+  { id: 'bush_dense', cat: 'TREES', name: 'Bụi Rậm Ngụy Trang', kind: 'bush', size: 'Cao 2.5m · Rộng 4m', feat: 'Bụi cây rậm rạp ẩn giấu xe tăng, thân mềm ép rạp khi xe chạy qua', group: 'bush' },
+
+  // --- THÙNG RÁC & ĐỒ VỈA HÈ
+  { id: 'junk_bin', cat: 'STREET_JUNK', name: 'Thùng Rác Nhựa 240L (Đóng nắp)', kind: 'bin', size: 'Cao 1.3m · Bánh xe cao su', feat: 'Vỏ nhựa bền, sóng nổ hất văng lật nghiêng, xe tăng tông lăn lông lốc', group: 'junk' },
+  { id: 'junk_bin_open', cat: 'STREET_JUNK', name: 'Thùng Rác Nhựa (Hé mở nắp)', kind: 'bin_open', size: 'Cao 1.4m · Nắp lật mở', feat: 'Nắp gập hé lộ mép túi rác bên trong, dễ bung nắp khi va chạm', group: 'junk' },
+  { id: 'junk_bin_tipped', cat: 'STREET_JUNK', name: 'Thùng Rác Nhựa (Đổ nằm)', kind: 'bin_tipped', size: 'Nằm ngang · Vết trượt', feat: 'Nằm lăn trên mặt vỉa hè, vết xước mòn rỉ sét đáy bánh xe', group: 'junk' },
+  { id: 'junk_dump', cat: 'STREET_JUNK', name: 'Thùng Rác Container Kim Loại', kind: 'dump', size: 'Rộng 2.4m · Dài 1.6m · Cao 1.5m', feat: 'Khối thép hàn nặng nề có nắp gập và vấu móc cẩu, sóng nổ làm móp méo sườn', group: 'junk' },
+  { id: 'junk_bag_pile', cat: 'STREET_JUNK', name: 'Đống Túi Rác Nilon Buộc Túm', kind: 'bags', size: 'Cụm 4-6 túi · Nilon nhiều màu', feat: 'Chất liệu nilon nhăn phản xạ ánh sáng, sóng nổ xé rách tung toé mảnh vụn', group: 'junk' },
+  { id: 'junk_box', cat: 'STREET_JUNK', name: 'Thùng Các-tông Đóng Kín', kind: 'box', size: 'Kích thước 0.8m · Dán băng keo', feat: 'Bìa các-tông nâu có nếp gấp dán mép, sóng nổ ép bẹp lún', group: 'junk' },
+  { id: 'junk_box_open', cat: 'STREET_JUNK', name: 'Thùng Các-tông Mở Nắp', kind: 'boxOpen', size: 'Kích thước 0.9m · Tai nắp xoè', feat: 'Nắp bìa mở toang lộ lòng thùng, văng xa khi có luồng gió mạnh', group: 'junk' },
+  { id: 'junk_box_crushed', cat: 'STREET_JUNK', name: 'Thùng Các-tông Ngấm Nước Bẹp Dúm', kind: 'boxCrushed', size: 'Dày 0.25m · Móp méo bẹp rữa', feat: 'Bìa ngấm nước mưa loang lổ, biến dạng nằm dẹp lép trên vỉa hè', group: 'junk' },
+  { id: 'junk_bottles', cat: 'STREET_JUNK', name: 'Lon Nước Ngọt & Chai Lọ Móp Vụn', kind: 'cans', size: 'Rải rác cụm lon chai', feat: 'Lon nhôm móp bẹp, chai nhựa PET trong suốt, chai thủy tinh sứt mẻ', group: 'junk' },
+
+  // --- HẠ TẦNG ĐÔ THỊ
+  { id: 'prop_lamp', cat: 'URBAN_PROPS', name: 'Cột Đèn Chiếu Sáng Đô Thị', kind: 'lamp', size: 'Cao 9.5m · Cần vươn 3m', feat: 'Cột thép ống thon có chao đèn cao áp, xe húc gãy gập thân cột rơi chao đèn', group: 'prop' },
+  { id: 'prop_signal', cat: 'URBAN_PROPS', name: 'Cột Đèn Giao Thông Ngã Tư', kind: 'signal', size: 'Cao 6.5m · Cần vươn ngang 6m', feat: 'Cần vươn mang hộp đèn 3 màu đỏ vàng xanh, sập đổ gãy khớp khi trúng pháo', group: 'prop' },
+  { id: 'prop_pole', cat: 'URBAN_PROPS', name: 'Cột Điện Bê Tông Kèm Dây', kind: 'pole', size: 'Cao 10m · Xà sứ cách điện', feat: 'Cột bê tông ly tâm mang dây dẫn căng nối tiếp, gãy đôi làm đứt dây cáp', group: 'prop' },
+  { id: 'prop_bus_stop', cat: 'URBAN_PROPS', name: 'Nhà Chờ Xe Buýt Đô Thị', kind: 'busStop', size: 'Dài 5m · Cao 2.8m · Kính che', feat: 'Khung thép kính an toàn kèm băng ghế chờ, mảnh kính văng tung khi trúng đạn', group: 'prop' },
+  { id: 'prop_curb_walk', cat: 'URBAN_PROPS', name: 'Mảng Vỉa Hè Lát Gạch & Bó Vỉa Đá', kind: 'sidewalk', size: 'Mảng 12m x 6m · Cao 15cm', feat: 'Gạch lát lát so le gờ sáng, đá bó vỉa mép bo tròn bám theo góc cua đường', group: 'prop' },
+  { id: 'prop_canopy', cat: 'URBAN_PROPS', name: 'Mái Che Trụ Bơm Xăng Dầu', kind: 'canopy', size: 'Dài 14m · Rộng 8m · Cao 5m', feat: 'Khung dầm thép chịu lực nâng mái phẳng, dễ bốc cháy nổ lớn khi bắt lửa', group: 'prop' },
+
+  // --- HÀNG RÀO & NÔNG THÔN
+  { id: 'fence_wood', cat: 'RURAL_FENCE', name: 'Hàng Rào Gỗ Mộc Nan Đan', kind: 'wood', size: 'Nhịp dài 4m · Cao 1.5m', feat: 'Nan gỗ đóng cọc mộc mạc, xe húc gãy tung tóe mảnh dăm gỗ', group: 'fence' },
+  { id: 'fence_bamboo', cat: 'RURAL_FENCE', name: 'Hàng Rào Tre Đan Làng Quê', kind: 'bamboo', size: 'Nhịp dài 4m · Cao 1.6m', feat: 'Thân tre bánh tẻ dẻo dai đan chéo, gãy dập tạo âm thanh rôm rốp', group: 'fence' },
+  { id: 'fence_stone', cat: 'RURAL_FENCE', name: 'Tường Đá Xếp Khan Tự Nhiên', kind: 'stone', size: 'Nhịp dài 4m · Cao 1.3m · Rộng 0.5m', feat: 'Các phiến đá cuội xám xếp chồng không vữa, chịu được đạn nhỏ, pháo bắn sập đổ đá', group: 'fence' },
+  { id: 'fence_mud', cat: 'RURAL_FENCE', name: 'Tường Đất Đắp Trộn Rơm', kind: 'mud', size: 'Nhịp dài 4m · Cao 1.4m', feat: 'Tường đất nâu đặc quánh phong cách thôn dã, vỡ vụn thành từng tảng đất khô', group: 'fence' },
+  { id: 'fence_hedge', cat: 'RURAL_FENCE', name: 'Bờ Rào Cây Xanh Cắt Tỉa', kind: 'hedge', size: 'Nhịp dài 4m · Cao 1.8m · Dày 0.8m', feat: 'Bụi cây xanh xén vuông vắn bao quanh vườn, xe cán bẹp rạp lá', group: 'fence' },
+  { id: 'field_rice', cat: 'RURAL_FENCE', name: 'Thửa Ruộng Lúa Nước Bậc Thang', kind: 'rice', size: 'Mặt ruộng 20m x 15m', feat: 'Luống mạ xanh ngắt xen kẽ vệt nước lấp lánh bám sát địa hình dốc', group: 'field' },
+  { id: 'field_wheat', cat: 'RURAL_FENCE', name: 'Thửa Ruộng Lúa Mì Chín Vàng', kind: 'wheat', size: 'Mặt ruộng 20m x 15m', feat: 'Màu vàng óng ả thẳng hàng tăm tắp, dập dềnh lượn sóng theo gió thoảng', group: 'field' },
+  { id: 'field_hay', cat: 'RURAL_FENCE', name: 'Đồng Rơm Khô & Các Cuộn Rơm', kind: 'hay', size: 'Mặt đồng kèm 4 cuộn rơm tròn', feat: 'Cuộn rơm hình trụ tròn rải rác trên đồng cỏ khô, xe tăng có thể húc lăn cuộn rơm', group: 'field' },
+
+  // --- CHIẾN TRƯỜNG & CÔNG SỰ
+  { id: 'mil_sandbag', cat: 'MILITARY', name: 'Ụ Bao Cát Phòng Ngự 2 Tầng', kind: 'sandbag', size: 'Đoạn dài 8m · Xếp 2 tầng', feat: 'Chắn đạn thẳng và giảm chấn sóng nổ, xe tăng nặng cán qua bị lún xẹp bẹp', group: 'sandbag' },
+  { id: 'mil_wreck_tank', cat: 'MILITARY', name: 'Xác Xe Tăng Cháy Bốc Khói', kind: 'wreck_tank', size: 'Dài 7.5m · Rộng 3.6m · Khói âm ỉ', feat: 'Vỏ thép ám muội đen tro, tháp pháo lệch góc bốc khói đen cuồn cuộn, nổ tan khi trúng pháo', group: 'wreck' },
+  { id: 'mil_wreck_apc', cat: 'MILITARY', name: 'Xác Xe Bọc Thép Cháy Rụi', kind: 'wreck_apc', size: 'Dài 6.2m · Rộng 2.8m', feat: 'Khung gầm xe chiến đấu bộ binh biến dạng, cửa hậu bung mở trơ xương thép', group: 'wreck' },
+  { id: 'mil_wreck_truck', cat: 'MILITARY', name: 'Xác Xe Tải Hậu Cần Cháy', kind: 'wreck_truck', size: 'Dài 7.8m · Thùng xe cháy rỗng', feat: 'Cabin móp sập, lốp cháy trơ vành la-zăng sắt, thùng hàng cháy rụi', group: 'wreck' },
+  { id: 'mil_rock_boulder', cat: 'MILITARY', name: 'Khối Đá Tảng Tự Nhiên Rêu Phong', kind: 'boulder', size: 'Cao 3.8m · Rộng 4.5m', feat: 'Vật cản tự nhiên kiên cố, sứt mẻ gãy vụn dần theo từng loạt đạn pháo bắn phá', group: 'boulder' },
+  { id: 'mil_bunker', cat: 'MILITARY', name: 'Lô Cốt Bê Tông Cốt Thép', kind: 'bunker', size: 'Đường kính 7m · Cao 3.2m', feat: 'Mái vòm bê tông dốc chống pháo, lỗ châu mai hẹp góc nhìn phòng ngự', group: 'bunker' }
+];
+
+const $ = id => document.getElementById(id);
+const canvas = $('view');
+
+// =============================================================================
+// THIẾT LẬP SCENE & RENDERER & CAMERA
+// =============================================================================
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9db89a);
+scene.fog = new THREE.FogExp2(0x9db89a, 0.0028);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.5, 1200);
+camera.position.set(0, 45, 90);
+
+// Ánh sáng môi trường & Mặt trời
+const hemiLight = new THREE.HemisphereLight(0xf4f9ff, 0x546252, 0.85);
+scene.add(hemiLight);
+
+const sun = new THREE.DirectionalLight(0xfffaea, 1.35);
+sun.position.set(100, 150, 80);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { near: 10, far: 450, left: -160, right: 160, top: 160, bottom: -160 });
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+
+// Sân thử nghiệm tổng hợp
+const groundSize = 420;
+const groundGeo = new THREE.PlaneGeometry(groundSize, groundSize, 32, 32);
+groundGeo.rotateX(-Math.PI / 2);
+
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x48583c,
+  roughness: 0.96,
+  metalness: 0.04
+});
+const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+groundMesh.receiveShadow = true;
+scene.add(groundMesh);
+
+// Vạch kẻ và lối đi chia phân khu
+const pathMat = new THREE.MeshStandardMaterial({ color: 0x685f4e, roughness: 0.9 });
+const lineMat = new THREE.MeshBasicMaterial({ color: 0xa4b094, transparent: true, opacity: 0.35 });
+
+function createPathway(w, d, x, z) {
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), pathMat);
+  p.rotation.x = -Math.PI / 2;
+  p.position.set(x, 0.03, z);
+  p.receiveShadow = true;
+  scene.add(p);
+  return p;
+}
+// Trục đường chính giữa bãi
+createPathway(16, groundSize * 0.85, 0, 0);
+createPathway(groundSize * 0.85, 12, 0, 0);
+
+// Bục tròn trưng bày trung tâm cho chế độ Solo 360°
+const podiumGeo = new THREE.CylinderGeometry(24, 26, 0.8, 48);
+const podiumMat = new THREE.MeshStandardMaterial({ color: 0x333b38, roughness: 0.8, metalness: 0.2 });
+const podium = new THREE.Mesh(podiumGeo, podiumMat);
+podium.position.set(0, 0.4, 0);
+podium.receiveShadow = true;
+podium.castShadow = true;
+scene.add(podium);
+
+const ringGeo = new THREE.RingGeometry(23.5, 24, 48);
+ringGeo.rotateX(-Math.PI / 2);
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xe7a63a, side: THREE.DoubleSide });
+const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+ringMesh.position.set(0, 0.82, 0);
+scene.add(ringMesh);
+
+// Vòng tròn đánh dấu vật đang chọn dưới mặt đất
+const selRingGeo = new THREE.RingGeometry(4.2, 4.8, 36);
+selRingGeo.rotateX(-Math.PI / 2);
+const selRingMat = new THREE.MeshBasicMaterial({ color: 0x64b5f6, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
+const selRing = new THREE.Mesh(selRingGeo, selRingMat);
+selRing.position.set(0, 0.1, 0);
+selRing.visible = false;
+scene.add(selRing);
+
+// =============================================================================
+// ĐỐI TƯỢNG MÔ PHỎNG ĐỊA HÌNH NHẸ (MOCK TERRAIN) ĐỂ KHỞI TẠO CÁC MODULE GAME
+// =============================================================================
+const mockTerrain = {
+  width: groundSize,
+  depth: groundSize,
+  segments: 32,
+  group: new THREE.Group(),
+  scene: scene,
+  mapType: 'JUNGLE',
+  seed: 42,
+  boulders: [],
+  groundAtRaw(x, z) {
+    // Khu vực xác xe (z: 95..120): nâng thêm 0.4 để bánh xích tiếp xúc chuẩn mặt đất không bị lún ngập gầm
+    if (z > 95 && z < 120 && x > 5) return 0.4;
+    return 0;
+  },
+  surfaceAt(x, z) { return this.groundAtRaw(x, z); },
+  leafColors() {
+    if (this.mapType === 'DESERT') return [0xb8a86c, 0x8f7d45, 0x6d5e32];
+    if (this.mapType === 'URBAN') return [0x5f6e52, 0x48563c, 0x3b4632];
+    if (this.mapType === 'HIGHLAND') return [0x687858, 0x4d5b3f, 0x3b4630];
+    if (this.mapType === 'RIVER_LAKE') return [0x426830, 0x305022, 0x223816];
+    return [0x2f6024, 0x234d19, 0x183811]; // JUNGLE
+  },
+  map: {
+    trees: [],
+    props: { fences: [], fields: [], sandbags: [], wrecks: [], lamps: [], signals: [], poles: [], busStops: [] },
+    buildings: [],
+    bunkers: [],
+    blocks: [],
+    canals: [],
+    sun: { x: 100, y: 150, z: 80 }
+  }
+};
+scene.add(mockTerrain.group);
+
+// =============================================================================
+// BỐ TRÍ VỊ TRÍ CÁC VẬT TRÊN SÂN BÃI (GRID LAYOUT)
+// =============================================================================
+// Chia thành 5 dãy khu vực xung quanh trục đường chính:
+// Khu 1 (TREES): Hàng bên Tây Bắc (x = -80..-20, z = -120..-30)
+// Khu 2 (STREET_JUNK): Hàng bên Đông Bắc (x = 30..90, z = -120..-30)
+// Khu 3 (URBAN_PROPS): Dọc vỉa hè phía Đông (x = 40..110, z = 10..70)
+// Khu 4 (RURAL_FENCE): Cánh đồng phía Tây Nam (x = -120..-30, z = 20..110)
+// Khu 5 (MILITARY): Tuyến phòng ngự phía Nam (x = -60..60, z = 90..140)
+
+const propInstances = [];
+let selectedInstance = null;
+let soloMode = false;
+
+// Đặt tọa độ mặc định trên sân cho từng mẫu vật
+const POSITIONS = {
+  // Cây cối (dãy 1)
+  tree_palm: { x: -85, z: -110 },
+  tree_pine: { x: -85, z: -75 },
+  tree_cypress: { x: -85, z: -40 },
+  tree_cactus: { x: -85, z: -5 },
+  tree_dead: { x: -55, z: -110 },
+  tree_acacia: { x: -55, z: -75 },
+  tree_willow: { x: -55, z: -40 },
+  tree_jungle: { x: -55, z: -5 },
+  tree_broadleaf: { x: -25, z: -110 },
+  tree_plane: { x: -25, z: -75 },
+  bush_dense: { x: -25, z: -40 },
+
+  // Đồ rác & Vỉa hè (dãy 2)
+  junk_bin: { x: 35, z: -110 },
+  junk_bin_open: { x: 35, z: -85 },
+  junk_bin_tipped: { x: 35, z: -60 },
+  junk_dump: { x: 35, z: -35 },
+  junk_bag_pile: { x: 65, z: -110 },
+  junk_box: { x: 65, z: -85 },
+  junk_box_open: { x: 65, z: -60 },
+  junk_box_crushed: { x: 65, z: -35 },
+  junk_bottles: { x: 95, z: -85 },
+
+  // Đô thị (dãy 3)
+  prop_lamp: { x: 35, z: 25 },
+  prop_signal: { x: 35, z: 55 },
+  prop_pole: { x: 70, z: 25 },
+  prop_bus_stop: { x: 70, z: 55 },
+  prop_curb_walk: { x: 105, z: 40 },
+  prop_canopy: { x: 110, z: 80 },
+
+  // Hàng rào & Ruộng (dãy 4)
+  fence_wood: { x: -110, z: 30 },
+  fence_bamboo: { x: -110, z: 60 },
+  fence_stone: { x: -80, z: 30 },
+  fence_mud: { x: -80, z: 60 },
+  fence_hedge: { x: -50, z: 30 },
+  field_rice: { x: -110, z: 105 },
+  field_wheat: { x: -70, z: 105 },
+  field_hay: { x: -30, z: 105 },
+
+  // Chiến trường & Công sự (dãy 5)
+  mil_sandbag: { x: 15, z: 105 },
+  mil_rock_boulder: { x: 50, z: 105 },
+  mil_wreck_tank: { x: 85, z: 105 },
+  mil_wreck_apc: { x: 125, z: 105 },
+  mil_wreck_truck: { x: 165, z: 105 },
+  mil_bunker: { x: 80, z: 180 }
+};
+
+// =============================================================================
+// DỰNG CÁC ĐỐI TƯỢNG CẢNH VẬT BẰNG CÁC ENGINE CÓ SẴN TRONG GAME
+// =============================================================================
+let treeField = null;
+let propSet = null;
+let streetscape = null;
+
+// Biển tên 3D đặt trước mỗi vị trí trên sân
+function createLabelSprite(text, x, z, extraZ = 6.5) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(12, 18, 14, 0.75)';
+  ctx.fillRect(0, 0, 256, 64);
+  ctx.strokeStyle = '#e7a63a';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(2, 2, 252, 60);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 22px "Chakra Petch", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 32);
+
+  const tex = new THREE.CanvasTexture(c);
+  const sm = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const sprite = new THREE.Sprite(sm);
+  sprite.scale.set(8, 2, 1);
+  sprite.position.set(x, 1.2, z + extraZ);
+  scene.add(sprite);
+  return sprite;
+}
+
+// Xây dựng toàn bộ cảnh vật
+function buildAllProps() {
+  // Giải phóng đối tượng cũ nếu có
+  while (mockTerrain.group.children.length > 0) {
+    const obj = mockTerrain.group.children[0];
+    mockTerrain.group.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+  }
+  propInstances.length = 0;
+
+  // 1. CHUẨN BỊ DỮ LIỆU CÂY CỐI CHO Destructibles.TreeField
+  const treeList = [];
+  const treeEntries = CATALOG.filter(c => c.group === 'tree');
+  for (const item of treeEntries) {
+    const pos = POSITIONS[item.id] || { x: 0, z: 0 };
+    treeList.push({
+      x: pos.x,
+      z: pos.z,
+      kind: item.kind,
+      s: 1.0,
+      scale: 1.0,
+      rot: 0.2,
+      angle: 0.2
+    });
+  }
+
+  if (typeof Destructibles !== 'undefined') {
+    treeField = new Destructibles.TreeField(mockTerrain.group, treeList, (x, z) => 0);
+  }
+
+  // 2. CHUẨN BỊ BỤI RẬM
+  const bushItem = CATALOG.find(c => c.id === 'bush_dense');
+  if (bushItem && typeof Destructibles !== 'undefined' && Destructibles.Foliage) {
+    const bushPos = POSITIONS.bush_dense;
+    const bg = Destructibles.Foliage.bushGeometry(42);
+    const bm = Destructibles.Foliage.foliageMat ? Destructibles.Foliage.foliageMat(Destructibles.Foliage.leafTex('dense')) : new THREE.MeshStandardMaterial({ color: 0x3d6628, roughness: 0.9 });
+    const bushMesh = new THREE.Mesh(bg, bm);
+    bushMesh.position.set(bushPos.x, 0, bushPos.z);
+    bushMesh.scale.set(3.2, 3.2, 3.2);
+    bushMesh.castShadow = true;
+    bushMesh.receiveShadow = true;
+    mockTerrain.group.add(bushMesh);
+    bushItem._mesh = bushMesh;
+  }
+
+  // 3. CHUẨN BỊ DỮ LIỆU CHO Props.PropSet
+  const fenceList = [
+    { x0: POSITIONS.fence_wood.x - 7, z0: POSITIONS.fence_wood.z, x1: POSITIONS.fence_wood.x + 7, z1: POSITIONS.fence_wood.z, kind: 'wood' },
+    { x0: POSITIONS.fence_bamboo.x - 7, z0: POSITIONS.fence_bamboo.z, x1: POSITIONS.fence_bamboo.x + 7, z1: POSITIONS.fence_bamboo.z, kind: 'bamboo' },
+    { x0: POSITIONS.fence_stone.x - 7, z0: POSITIONS.fence_stone.z, x1: POSITIONS.fence_stone.x + 7, z1: POSITIONS.fence_stone.z, kind: 'stone' },
+    { x0: POSITIONS.fence_mud.x - 7, z0: POSITIONS.fence_mud.z, x1: POSITIONS.fence_mud.x + 7, z1: POSITIONS.fence_mud.z, kind: 'mud' },
+    { x0: POSITIONS.fence_hedge.x - 7, z0: POSITIONS.fence_hedge.z, x1: POSITIONS.fence_hedge.x + 7, z1: POSITIONS.fence_hedge.z, kind: 'hedge' }
+  ];
+
+  const fieldList = [
+    { x: POSITIONS.field_rice.x, z: POSITIONS.field_rice.z, w: 24, d: 18, angle: 0, crop: 'rice' },
+    { x: POSITIONS.field_wheat.x, z: POSITIONS.field_wheat.z, w: 24, d: 18, angle: 0, crop: 'wheat' },
+    { x: POSITIONS.field_hay.x, z: POSITIONS.field_hay.z, w: 28, d: 20, angle: 0, crop: 'hay' }
+  ];
+
+  const sandbagList = [
+    { x0: POSITIONS.mil_sandbag.x - 8, z0: POSITIONS.mil_sandbag.z, x1: POSITIONS.mil_sandbag.x + 8, z1: POSITIONS.mil_sandbag.z, layers: 2 }
+  ];
+
+  const wreckList = [
+    { x: POSITIONS.mil_wreck_tank.x, z: POSITIONS.mil_wreck_tank.z, angle: 0.35, kind: 'tank', smoke: true },
+    { x: POSITIONS.mil_wreck_apc.x, z: POSITIONS.mil_wreck_apc.z, angle: -0.4, kind: 'apc', smoke: false },
+    { x: POSITIONS.mil_wreck_truck.x, z: POSITIONS.mil_wreck_truck.z, angle: 0.1, kind: 'truck', smoke: false }
+  ];
+
+  const lampList = [{ x: POSITIONS.prop_lamp.x, z: POSITIONS.prop_lamp.z, angle: Math.PI / 2 }];
+  const signalList = [{ x: POSITIONS.prop_signal.x, z: POSITIONS.prop_signal.z, angle: 0 }];
+  const poleList = [{ x: POSITIONS.prop_pole.x, z: POSITIONS.prop_pole.z, angle: 0 }];
+  const busStopList = [{ x: POSITIONS.prop_bus_stop.x, z: POSITIONS.prop_bus_stop.z, angle: Math.PI }];
+  const canopyList = [{ x: POSITIONS.prop_canopy.x, z: POSITIONS.prop_canopy.z, w: 104, d: 64, angle: 0 }];
+
+  mockTerrain.map.props = {
+    fences: fenceList,
+    fields: fieldList,
+    sandbags: sandbagList,
+    wrecks: wreckList,
+    lamps: lampList,
+    signals: signalList,
+    poles: poleList,
+    busStops: busStopList,
+    canopies: canopyList
+  };
+
+  if (typeof Props !== 'undefined') {
+    propSet = new Props.PropSet(mockTerrain, mockTerrain.map.props);
+  }
+
+  // Khởi tạo khối ô phố đô thị có vỉa hè lát gạch và bó vỉa bo góc
+  const bx = 65, bz = -75, lotW = 60, lotD = 90, curbW = 76, curbD = 106;
+  const mockBlock = {
+    curb: [
+      [bx - curbW / 2, bz - curbD / 2],
+      [bx + curbW / 2, bz - curbD / 2],
+      [bx + curbW / 2, bz + curbD / 2],
+      [bx - curbW / 2, bz + curbD / 2]
+    ],
+    lot: [
+      [bx - lotW / 2, bz - lotD / 2],
+      [bx + lotW / 2, bz - lotD / 2],
+      [bx + lotW / 2, bz + lotD / 2],
+      [bx - lotW / 2, bz + lotD / 2]
+    ],
+    side: ['street', 'street', 'street', 'street'],
+    walk: [16, 16, 16, 16],
+    r: [8, 8, 8, 8],
+    cx: bx, cz: bz
+  };
+  mockTerrain.map.blocks = [mockBlock];
+
+  if (typeof Streetscape !== 'undefined') {
+    streetscape = Streetscape.build(mockTerrain);
+  }
+
+  // 4. CHUẨN BỊ ĐỒ RÁC & VỈA HÈ QUA Streetscape / Junk
+  buildJunkItems();
+
+  // 5. ĐÁ TẢNG & BOONG-KE
+  buildRockAndBunker();
+
+  // 6. TẠO CÁC INSTANCE OBJECT ĐỂ THEO DÕI & CHỌN
+  for (const item of CATALOG) {
+    const pos = POSITIONS[item.id] || { x: 0, z: 0 };
+    const extraZ = item.id === 'mil_bunker' ? 38 : item.id.startsWith('field_') ? 13 : 6.5;
+    const inst = {
+      spec: item,
+      pos: new THREE.Vector3(pos.x, 0, pos.z),
+      originPos: new THREE.Vector3(pos.x, 0, pos.z),
+      status: 'Nguyên vẹn',
+      isDestroyed: false,
+      isBurnt: false,
+      isBent: false,
+      labelSprite: createLabelSprite(item.name, pos.x, pos.z, extraZ)
+    };
+    propInstances.push(inst);
+  }
+
+  $('prop-count').textContent = `${CATALOG.length} món sẵn sàng`;
+  populateItemSelect();
+}
+
+// Xây dựng các đồ rác vỉa hè chuẩn từ module Streetscape
+function buildJunkItems() {
+  const junkGroup = new THREE.Group();
+  junkGroup.name = 'junk_showcase';
+
+  const hasSS = typeof Streetscape !== 'undefined' && Streetscape.junkProtos;
+  const protos = hasSS ? Streetscape.junkProtos() : null;
+  const bProtos = (hasSS && Streetscape.bottleProtos) ? Streetscape.bottleProtos() : null;
+
+  if (protos) {
+    // 1. Thùng rác nhựa 240L (Đóng nắp, Mở nắp, Đổ nằm)
+    const plasticMat = (col) => new THREE.MeshStandardMaterial({
+      color: new THREE.Color(col[0], col[1], col[2]),
+      roughness: 0.55, metalness: 0.05
+    });
+    const cGreen = (Streetscape.BIN_COL && Streetscape.BIN_COL[0]) || [0.16, 0.3, 0.18];
+    const cBlue = (Streetscape.BIN_COL && Streetscape.BIN_COL[3]) || [0.12, 0.2, 0.36];
+    const cGray = (Streetscape.BIN_COL && Streetscape.BIN_COL[2]) || [0.3, 0.31, 0.32];
+
+    const makeBin = (pos, openLid, tipped, col) => {
+      const g = new THREE.Group();
+      const mBody = new THREE.Mesh(protos.bin, plasticMat(col));
+      mBody.castShadow = true; mBody.receiveShadow = true;
+      g.add(mBody);
+
+      const mLid = new THREE.Mesh(protos.binLid, plasticMat(col));
+      mLid.castShadow = true; mLid.receiveShadow = true;
+      if (openLid) {
+        mLid.position.set(0, 8.5 - 1.2, -1.6);
+        mLid.rotation.x = -1.8;
+      } else {
+        mLid.position.set(0, 8.5, 0);
+      }
+      g.add(mLid);
+
+      if (tipped) {
+        g.position.set(pos.x, 2.4, pos.z);
+        g.rotation.z = Math.PI / 2;
+        g.rotation.y = 0.4;
+      } else {
+        g.position.set(pos.x, 0, pos.z);
+      }
+      return g;
+    };
+
+    junkGroup.add(makeBin(POSITIONS.junk_bin, false, false, cGreen));
+    junkGroup.add(makeBin(POSITIONS.junk_bin_open, true, false, cBlue));
+    junkGroup.add(makeBin(POSITIONS.junk_bin_tipped, false, true, cGray));
+
+    // 2. Container rác kim loại lớn
+    const cDump = (Streetscape.DUMP_COL && Streetscape.DUMP_COL[1]) || [0.18, 0.28, 0.42];
+    const dumpMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(cDump[0], cDump[1], cDump[2]),
+      roughness: 0.7, metalness: 0.35
+    });
+    const dumpMesh = new THREE.Mesh(protos.dump, dumpMat);
+    dumpMesh.position.set(POSITIONS.junk_dump.x, 0, POSITIONS.junk_dump.z);
+    dumpMesh.castShadow = true; dumpMesh.receiveShadow = true;
+    junkGroup.add(dumpMesh);
+
+    // 3. Đống túi rác nilon buộc túm (Túi nilon chân thực có gờ nổi, nếp nhăn, tai xách, cổ thắt)
+    const bagGeos = [protos.bag0, protos.bag1, protos.bag2, protos.bag3];
+    const bagGroup = new THREE.Group();
+    bagGroup.position.set(POSITIONS.junk_bag_pile.x, 0, POSITIONS.junk_bag_pile.z);
+    const bagColors = Streetscape.BAG_COL || [
+      [0.015, 0.016, 0.018],
+      [0.024, 0.025, 0.028],
+      [0.018, 0.048, 0.052],
+      [0.022, 0.038, 0.068],
+      [0.24, 0.21, 0.08],
+      [0.15, 0.16, 0.17]
+    ];
+
+    const pileOffsets = [
+      { x: 0, z: 0, y: 0, s: 2.2, geoIdx: 0, colIdx: 0, ry: 0.2 },
+      { x: 1.4, z: 0.8, y: 0, s: 2.0, geoIdx: 1, colIdx: 2, ry: 1.5 },
+      { x: -1.2, z: 0.9, y: 0, s: 2.1, geoIdx: 2, colIdx: 1, ry: 2.7 },
+      { x: 0.2, z: -1.4, y: 0, s: 1.9, geoIdx: 3, colIdx: 3, ry: 4.1 },
+      { x: 0.1, z: 0.2, y: 1.2, s: 1.8, geoIdx: 0, colIdx: 5, ry: 0.9 }
+    ];
+
+    for (const po of pileOffsets) {
+      const col = bagColors[po.colIdx % bagColors.length];
+      const bMat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(col[0], col[1], col[2]),
+        roughness: 0.28, metalness: 0.04
+      });
+      if (Streetscape.bagCrumple) Streetscape.bagCrumple(bMat);
+      const bMesh = new THREE.Mesh(bagGeos[po.geoIdx % bagGeos.length], bMat);
+      bMesh.position.set(po.x, po.y, po.z);
+      bMesh.rotation.y = po.ry;
+      bMesh.scale.set(po.s, po.s, po.s);
+      bMesh.castShadow = true; bMesh.receiveShadow = true;
+      bagGroup.add(bMesh);
+    }
+    junkGroup.add(bagGroup);
+
+    // 4. Thùng các-tông các loại
+    const cardMat = (darken = 1) => new THREE.MeshStandardMaterial({
+      color: new THREE.Color(0.7 * darken, 0.62 * darken, 0.5 * darken),
+      roughness: 0.82, metalness: 0.0
+    });
+    const makeCardBox = (pos, type) => {
+      const geo = type === 'crushed' ? protos.boxCrushed : type === 'open' ? protos.boxOpen : protos.box;
+      const m = new THREE.Mesh(geo, cardMat(type === 'crushed' ? 0.7 : 0.95));
+      m.position.set(pos.x, 0, pos.z);
+      m.scale.set(3.4, 3.4, 3.4);
+      m.castShadow = true; m.receiveShadow = true;
+      return m;
+    };
+    junkGroup.add(makeCardBox(POSITIONS.junk_box, 'normal'));
+    junkGroup.add(makeCardBox(POSITIONS.junk_box_open, 'open'));
+    junkGroup.add(makeCardBox(POSITIONS.junk_box_crushed, 'crushed'));
+
+    // 5. Vỏ lon nước ngọt & Chai lọ rải rác (Chuẩn 100% Streetscape với 24 mẫu lon móp bẹp, trầy xước sơn nhôm, nắp khoen)
+    if (bProtos && bProtos.length > 0) {
+      const bottleGroup = new THREE.Group();
+      bottleGroup.position.set(POSITIONS.junk_bottles.x, 0, POSITIONS.junk_bottles.z);
+
+      // Vật liệu nhôm cao cấp bắt sáng metallic, hiển thị đúng vertexColors từng nắp khoen, viền nhôm và vệt trầy xước
+      const mCan = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.36,
+        metalness: 0.78,
+        normalMap: (Streetscape.junkNormal && Streetscape.junkNormal('metal')) || null,
+        normalScale: new THREE.Vector2(0.25, 0.25)
+      });
+      const mPet = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.12,
+        metalness: 0.02,
+        transparent: true,
+        opacity: 0.68,
+        depthWrite: false
+      });
+      const mGlass = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.08,
+        metalness: 0.12,
+        transparent: true,
+        opacity: 0.82
+      });
+
+      // Bố trí cụm 16 vỏ lon và chai lọ đa dạng: lon móp sườn, lon bị giẫm bẹp zic-zac, lon cán dẹp dí, lon nguyên, chai PET, chai thủy tinh
+      const bottleLayout = [
+        // Nhóm vỏ lon nhôm (v: 0..23)
+        { pIdx: 18, x: -1.4, z: -0.6, stand: true, ry: 0.3 },   // Lon đỏ nguyên vẹn đứng thẳng
+        { pIdx: 19, x: 1.5, z: 0.4, stand: true, ry: 1.8 },    // Lon xanh pepsi nguyên vẹn đứng
+        { pIdx: 0,  x: -0.8, z: 0.7, stand: false, ry: 1.1 },   // Lon móp 1 bên nằm nghiêng
+        { pIdx: 2,  x: -0.2, z: -1.3, stand: false, ry: 2.7 },  // Lon xanh lá móp sườn
+        { pIdx: 4,  x: 0.9, z: -0.8, stand: false, ry: 0.4 },   // Lon vàng cam móp lăn
+        { pIdx: 6,  x: 0.2, z: 0.2, stand: false, ry: 1.9 },    // Lon bị giẫm nén dọc nếp gập ngang
+        { pIdx: 7,  x: -1.6, z: 0.9, stand: false, ry: 3.2 },   // Lon nén bẹp zic-zac
+        { pIdx: 9,  x: 1.1, z: 1.3, stand: false, ry: 0.7 },    // Lon nén bẹp sọc trắng
+        { pIdx: 12, x: -0.6, z: -0.4, stand: false, ry: 1.5 },  // Lon đỏ bị xe cán dẹp dí bẹp lép
+        { pIdx: 13, x: 0.5, z: -1.6, stand: false, ry: 2.4 },   // Lon xanh cán dẹp lép
+        { pIdx: 15, x: 1.8, z: -0.5, stand: false, ry: 0.9 },   // Lon vàng cán dẹt
+        { pIdx: 21, x: -1.2, z: -1.4, stand: false, ry: 3.8 },  // Lon đen bóng trầy xước kim loại
+        // Nhóm chai nhựa PET & chai thủy tinh
+        { pIdx: 24, x: -0.1, z: 1.4, stand: false, ry: 2.1 },   // Chai nhựa PET nắp xanh
+        { pIdx: 26, x: 0.7, z: 0.8, stand: false, ry: 0.5 },    // Chai nhựa PET nắp đỏ móp thành
+        { pIdx: 30, x: -1.8, z: -0.2, stand: false, ry: 1.2 },  // Chai bia thủy tinh xanh ngọc
+        { pIdx: 31, x: 1.3, z: -1.2, stand: false, ry: 2.9 }    // Chai thủy tinh nâu hổ phách
+      ];
+
+      for (const b of bottleLayout) {
+        const p = bProtos[b.pIdx % bProtos.length];
+        const mat = p.kind === 'can' ? mCan : p.kind === 'pet' ? mPet : mGlass;
+        const m = new THREE.Mesh(p.geo, mat);
+        const sc = 2.4;
+        if (b.stand) {
+          m.position.set(b.x, 0, b.z);
+          m.rotation.y = b.ry;
+        } else {
+          m.position.set(b.x, p.r * sc, b.z);
+          m.rotation.set(0, b.ry, Math.PI / 2);
+        }
+        m.scale.set(sc, sc, sc);
+        m.castShadow = p.kind !== 'pet';
+        m.receiveShadow = true;
+        bottleGroup.add(m);
+      }
+      junkGroup.add(bottleGroup);
+    }
+  }
+
+  mockTerrain.group.add(junkGroup);
+}
+
+function buildRockAndBunker() {
+  // Khối đá tảng tự nhiên đa giác sứt mẻ phủ rêu theo Biome (chuẩn như engine game)
+  const rockMesh = createRealisticBoulder(POSITIONS.mil_rock_boulder.x, POSITIONS.mil_rock_boulder.z, mockTerrain.mapType);
+  mockTerrain.group.add(rockMesh);
+
+  // Boong-ke bê tông cốt thép dày dặn bằng Destructibles.BunkerSet
+  if (typeof Destructibles !== 'undefined' && Destructibles.BunkerSet) {
+    mockTerrain.map.bunkers = [{ x: POSITIONS.mil_bunker.x, z: POSITIONS.mil_bunker.z, openAngle: 0, angle: 0 }];
+    // Cho cao độ nền của lô cốt là 2.0 để phần móng âm sâu 2 mét của công sự đặt vừa khít mặt đất, không bị chìm xuống cỏ
+    const bunkerSet = new Destructibles.BunkerSet(mockTerrain.group, mockTerrain.map.bunkers, (x, z) => 2.0);
+  } else {
+    // Dự phòng khối bê tông kiên cố
+    const bunkerGroup = new THREE.Group();
+    bunkerGroup.position.set(POSITIONS.mil_bunker.x, 0, POSITIONS.mil_bunker.z);
+    const bunkerBase = new THREE.CylinderGeometry(6, 7.5, 3.2, 16);
+    const bunkerMat = new THREE.MeshStandardMaterial({ color: 0x636862, roughness: 0.9 });
+    const bMesh = new THREE.Mesh(bunkerBase, bunkerMat);
+    bMesh.position.y = 1.6;
+    bMesh.castShadow = true;
+    bMesh.receiveShadow = true;
+    bunkerGroup.add(bMesh);
+    mockTerrain.group.add(bunkerGroup);
+  }
+}
+
+function createRealisticBoulder(x, z, mapType) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const base = { DESERT: '#8a6e54', HIGHLAND: '#64615a', URBAN: '#6c6963', JUNGLE: '#55524a', RIVER_LAKE: '#625e57' }[mapType] || '#666666';
+  g.fillStyle = base; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle = `rgba(${Math.random() < 0.55 ? '30,26,22' : '190,184,170'},${Math.random() * 0.2})`;
+    const s = 1 + Math.random() * 3;
+    g.fillRect(Math.random() * 128, Math.random() * 128, s, s);
+  }
+  g.strokeStyle = 'rgba(40,34,28,0.45)'; g.lineWidth = 1.2;
+  for (let k = 0; k < 12; k++) {
+    let px = Math.random() * 128, py = Math.random() * 128;
+    g.beginPath(); g.moveTo(px, py);
+    for (let s = 0; s < 4; s++) { px += (Math.random() - 0.5) * 30; py += (Math.random() - 0.5) * 30; g.lineTo(px, py); }
+    g.stroke();
+  }
+  if (mapType === 'JUNGLE' || mapType === 'RIVER_LAKE') {
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = 'rgba(60,90,40,0.35)'; g.beginPath(); g.arc(Math.random() * 128, Math.random() * 40, 3 + Math.random() * 6, 0, 6.3); g.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+
+  const topTint = { JUNGLE: [0.62, 0.8, 0.44], RIVER_LAKE: [0.72, 0.84, 0.56], HIGHLAND: [0.95, 0.97, 0.86], DESERT: [1.12, 1.0, 0.84], URBAN: [0.94, 0.93, 0.9] }[mapType] || [1, 1, 1];
+
+  let sd = 42 >>> 0;
+  const rnd = () => { sd = (sd + 0x6D2B79F5) >>> 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const waves = [];
+  for (let k = 0; k < 9; k++) {
+    const rz = rnd() * 2 - 1, a = rnd() * 6.283, r = Math.sqrt(1 - rz * rz), f = 1.4 * Math.pow(1.85, k % 5);
+    waves.push([Math.cos(a) * r * f, rz * f, Math.sin(a) * r * f, rnd() * 6.283, 0.2 / Math.pow(1.7, k % 5)]);
+  }
+  const cuts = [];
+  for (let k = 0; k < 4; k++) {
+    const rz = k === 0 ? 0.85 + rnd() * 0.15 : rnd() * 0.9 - 0.3, a = rnd() * 6.283, r = Math.sqrt(1 - rz * rz);
+    cuts.push([Math.cos(a) * r, rz, Math.sin(a) * r, 0.62 + rnd() * 0.2]);
+  }
+  const geo = new THREE.IcosahedronGeometry(1, 4);
+  const pos = geo.attributes.position;
+  const cols = new Float32Array(pos.count * 3);
+
+  for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i), vy = pos.getY(i), vz = pos.getZ(i);
+    let n = 0;
+    for (const w of waves) n += Math.sin(vx * w[0] + vy * w[1] + vz * w[2] + w[3]) * w[4];
+    let X = vx * (1 + n), Y = vy * (1 + n), Z = vz * (1 + n);
+    for (const ct of cuts) {
+      const d = X * ct[0] + Y * ct[1] + Z * ct[2];
+      if (d > ct[3]) { const s = ct[3] / d; X *= s; Y *= s; Z *= s; }
+    }
+    if (Y < -0.45) Y = -0.45 + (Y + 0.45) * 0.2;
+    pos.setXYZ(i, X, Y, Z);
+
+    const ny = Math.max(0, vy);
+    const moss = Math.pow(ny, 1.8);
+    cols[i * 3] = THREE.MathUtils.lerp(0.85, topTint[0], moss);
+    cols[i * 3 + 1] = THREE.MathUtils.lerp(0.85, topTint[1], moss);
+    cols[i * 3 + 2] = THREE.MathUtils.lerp(0.85, topTint[2], moss);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex, roughness: 0.92, metalness: 0.02, vertexColors: true
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.scale.set(4.8, 3.8, 4.2);
+  mesh.position.set(x, 1.8, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// =============================================================================
+// QUẢN LÝ GIAO DIỆN & TƯƠNG TÁC NGƯỜI DÙNG
+// =============================================================================
+function populateItemSelect() {
+  const catFilter = $('sel-cat').value;
+  const itemSelect = $('sel-item');
+  itemSelect.innerHTML = '';
+
+  const filtered = catFilter === 'ALL' ? CATALOG : CATALOG.filter(c => c.cat === catFilter);
+  for (const item of filtered) {
+    const opt = document.createElement('option');
+    opt.value = item.id;
+    opt.textContent = item.name;
+    itemSelect.appendChild(opt);
+  }
+
+  if (filtered.length > 0) {
+    selectItemById(filtered[0].id);
+  }
+}
+
+$('sel-cat').addEventListener('change', () => {
+  populateItemSelect();
+});
+
+$('sel-item').addEventListener('change', (e) => {
+  selectItemById(e.target.value);
+});
+
+function stepItem(dir) {
+  const itemSelect = $('sel-item');
+  let idx = itemSelect.selectedIndex + dir;
+  if (idx < 0) idx = itemSelect.options.length - 1;
+  if (idx >= itemSelect.options.length) idx = 0;
+  itemSelect.selectedIndex = idx;
+  selectItemById(itemSelect.value);
+}
+
+function selectItemById(id) {
+  const inst = propInstances.find(p => p.spec.id === id);
+  if (!inst) return;
+  selectedInstance = inst;
+
+  // Cập nhật nhẫn tròn đánh dấu
+  selRing.position.set(inst.pos.x, 0.1, inst.pos.z);
+  selRing.visible = true;
+
+  // Cập nhật bảng thông tin
+  $('sel-title').textContent = inst.spec.name;
+  $('i-cat').textContent = $('sel-cat').options[$('sel-cat').selectedIndex].text;
+  $('i-kind').textContent = inst.spec.kind;
+  $('i-status').innerHTML = inst.isDestroyed ? '<span class="hot">Gãy đổ / Vỡ nát</span>' : inst.isBurnt ? '<span class="hot">Bốc cháy</span>' : 'Nguyên vẹn';
+  $('i-size').textContent = inst.spec.size;
+  $('i-feat').textContent = inst.spec.feat;
+
+  if (soloMode) {
+    applySoloMode();
+  }
+}
+
+// Bật / tắt chế độ chỉ xem vật đang chọn ở giữa sân (Solo 360°)
+$('o-solo').addEventListener('change', (e) => {
+  soloMode = e.target.checked;
+  applySoloMode();
+});
+
+function applySoloMode() {
+  if (!selectedInstance) return;
+
+  if (soloMode) {
+    // Ẩn tất cả các vật khác, di chuyển vật chọn về tâm (0, 0, 0)
+    for (const inst of propInstances) {
+      const isCur = inst === selectedInstance;
+      if (inst.labelSprite) inst.labelSprite.visible = isCur;
+    }
+    // Đặt camera xoay quanh tâm bục
+    targetCam.set(0, 4, 0);
+    camDist = 18;
+    logEvent(`Chế độ xem riêng 360°: <b>${selectedInstance.spec.name}</b>`);
+  } else {
+    // Trở về vị trí gốc trên sân bãi
+    for (const inst of propInstances) {
+      if (inst.labelSprite) inst.labelSprite.visible = true;
+    }
+    targetCam.copy(selectedInstance.pos).add(new THREE.Vector3(0, 3, 0));
+    camDist = 28;
+    logEvent(`Xem toàn cảnh bãi thử`);
+  }
+}
+
+function focusSel() {
+  if (!selectedInstance) return;
+  targetCam.copy(selectedInstance.pos).add(new THREE.Vector3(0, 3, 0));
+  camDist = 24;
+}
+
+function overview() {
+  targetCam.set(0, 0, 0);
+  camDist = 180;
+  camAngleH = 0.8;
+  camAngleV = 0.85;
+}
+
+function resetAll() {
+  buildAllProps();
+  logEvent('Đã khôi phục và dựng lại toàn bộ cảnh vật trên sân');
+}
+
+function rebuildSel() {
+  if (!selectedInstance) return;
+  selectedInstance.isDestroyed = false;
+  selectedInstance.isBurnt = false;
+  selectedInstance.status = 'Nguyên vẹn';
+  $('i-status').textContent = 'Nguyên vẹn';
+  logEvent(`Đã dựng lại <b>${selectedInstance.spec.name}</b>`);
+}
+
+// Các nút tương tác phá huỷ
+function blastSel() {
+  if (!selectedInstance) return;
+  const p = selectedInstance.pos;
+  createExplosionEffect(p.x, 1, p.z, 2.5);
+
+  // Kích hoạt nổ qua API của các module game
+  if (treeField && treeField.damageAt) treeField.damageAt(p.x, 1, p.z, 'HE', true, null);
+  if (propSet && propSet.damageAt) propSet.damageAt(p.x, 1, p.z, 'HE', true, null);
+
+  selectedInstance.isDestroyed = true;
+  $('i-status').innerHTML = '<span class="hot">Bị nổ gãy / vỡ nát</span>';
+  logEvent(`Kích nổ pháo HE tại chân <b>${selectedInstance.spec.name}</b>`);
+}
+
+function igniteSel() {
+  if (!selectedInstance) return;
+  const p = selectedInstance.pos;
+  createFireEffect(p.x, 2, p.z);
+
+  if (treeField) treeField.ignite(p.x, p.z, 12, null);
+  selectedInstance.isBurnt = true;
+  $('i-status').innerHTML = '<span class="hot">Đang bốc cháy dữ dội</span>';
+  logEvent(`Châm lửa thiêu đốt <b>${selectedInstance.spec.name}</b>`);
+}
+
+function crushSel() {
+  if (!selectedInstance) return;
+  const p = selectedInstance.pos;
+  if (treeField) treeField.crush(p.x, p.z, 10, 8, 8, null);
+  if (propSet) propSet.crush(p.x, p.z, 10, 8, 8, null);
+
+  selectedInstance.isDestroyed = true;
+  $('i-status').innerHTML = '<span class="hot">Bị húc đổ rạp / cán bẹp</span>';
+  logEvent(`Cán bẹp húc đổ <b>${selectedInstance.spec.name}</b>`);
+}
+
+// =============================================================================
+// HIỆU ỨNG THỊ GIÁC ĐỒ HỌA (LỬA, KHÓI, NỔ)
+// =============================================================================
+const particles = [];
+
+function createExplosionEffect(x, y, z, scale = 1.0) {
+  // Đèn chớp nổ
+  const flash = new THREE.PointLight(0xffaa33, 8 * scale, 60 * scale);
+  flash.position.set(x, y + 2, z);
+  scene.add(flash);
+  setTimeout(() => scene.remove(flash), 120);
+
+  // Hạt mảnh nổ tung
+  for (let i = 0; i < 28 * scale; i++) {
+    const pGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+    const pMat = new THREE.MeshBasicMaterial({ color: Math.random() < 0.6 ? 0xff6600 : 0x333333 });
+    const p = new THREE.Mesh(pGeo, pMat);
+    p.position.set(x, y, z);
+    const spd = (12 + Math.random() * 24) * scale;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = (Math.random() - 0.2) * Math.PI;
+    p.userData = {
+      vx: Math.cos(theta) * Math.cos(phi) * spd,
+      vy: Math.max(8, Math.sin(phi) * spd),
+      vz: Math.sin(theta) * Math.cos(phi) * spd,
+      life: 1.0
+    };
+    scene.add(p);
+    particles.push(p);
+  }
+}
+
+function createFireEffect(x, y, z) {
+  for (let i = 0; i < 15; i++) {
+    const fGeo = new THREE.SphereGeometry(0.6 + Math.random() * 0.8, 6, 6);
+    const fMat = new THREE.MeshBasicMaterial({
+      color: Math.random() < 0.5 ? 0xff4400 : 0xffbb22,
+      transparent: true,
+      opacity: 0.85
+    });
+    const f = new THREE.Mesh(fGeo, fMat);
+    f.position.set(x + (Math.random() - 0.5) * 2, y, z + (Math.random() - 0.5) * 2);
+    f.userData = {
+      vx: (Math.random() - 0.5) * 2,
+      vy: 4 + Math.random() * 6,
+      vz: (Math.random() - 0.5) * 2,
+      life: 1.2
+    };
+    scene.add(f);
+    particles.push(f);
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.userData.life -= dt * 1.4;
+    p.position.x += p.userData.vx * dt;
+    p.position.y += p.userData.vy * dt;
+    p.position.z += p.userData.vz * dt;
+    p.userData.vy -= 28 * dt; // Trọng lực
+
+    if (p.position.y < 0.1) {
+      p.position.y = 0.1;
+      p.userData.vx *= 0.6;
+      p.userData.vz *= 0.6;
+    }
+
+    if (p.userData.life <= 0) {
+      scene.remove(p);
+      if (p.geometry) p.geometry.dispose();
+      particles.splice(i, 1);
+    }
+  }
+}
+
+// =============================================================================
+// THẢ XE TĂNG ĐỂ LÁI HÚC VÀ TÔNG ĐỔ CẢNH VẬT
+// =============================================================================
+let activeTank = null;
+let tankDropBtn = $('t-drop');
+const keys = {};
+let fireCooldown = 0;
+
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    keys['space'] = true;
+  }
+  if (e.key.toLowerCase() === 'c') {
+    $('t-follow').checked = !$('t-follow').checked;
+  }
+});
+window.addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+  if (e.code === 'Space') {
+    keys['space'] = false;
+  }
+});
+
+function toggleTank() {
+  if (activeTank) {
+    scene.remove(activeTank.group);
+    activeTank = null;
+    tankDropBtn.innerHTML = '<i class="ti ti-tank" aria-hidden="true"></i>THẢ XE TĂNG LÁI';
+    tankDropBtn.classList.remove('btn-danger');
+    tankDropBtn.classList.add('btn-fire');
+    logEvent('Đã thu hồi xe tăng');
+    return;
+  }
+
+  const tType = $('t-type').value;
+  const tank = {
+    x: 0, z: -10, y: 0,
+    angle: 0,
+    speed: 0,
+    turnSpeed: 0,
+    group: new THREE.Group()
+  };
+
+  // Dựng mô hình xe tăng bằng TankModelBuilder của game
+  if (typeof TankModelBuilder !== 'undefined') {
+    TankModelBuilder.buildModel({
+      group: tank.group,
+      scene: scene,
+      team: 'BLUE',
+      tankType: tType
+    });
+  } else {
+    // Khối hộp tạm nếu không có builder
+    const box = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 7), new THREE.MeshStandardMaterial({ color: 0x3d5236 }));
+    box.position.y = 1;
+    tank.group.add(box);
+  }
+
+  tank.group.position.set(tank.x, 0, tank.z);
+  scene.add(tank.group);
+  activeTank = tank;
+
+  tankDropBtn.innerHTML = '<i class="ti ti-x" aria-hidden="true"></i>THU HỒI XE TĂNG';
+  tankDropBtn.classList.remove('btn-fire');
+  tankDropBtn.classList.add('btn-danger');
+  logEvent(`Đã thả xe tăng <b>${tType === 'GATLING' ? 'Hailstorm Gatling' : 'Halberd MBT'}</b> vào sân`);
+}
+
+// Bắn đạn từ nòng xe tăng về phía trước
+function fireFromTank() {
+  if (!activeTank) return;
+  const ammoType = $('ammo').value;
+
+  const sinA = Math.sin(activeTank.angle);
+  const cosA = Math.cos(activeTank.angle);
+  const muzzleX = activeTank.x + sinA * 7.5;
+  const muzzleZ = activeTank.z + cosA * 7.5;
+  const muzzleY = 2.1;
+
+  // Chớp lửa nòng súng
+  createExplosionEffect(muzzleX, muzzleY, muzzleZ, ammoType === 'GATLING_BULLET' ? 0.35 : 0.65);
+
+  // Giật lùi xe tăng khi bắn pháo
+  if (ammoType !== 'GATLING_BULLET' && ammoType !== 'SCOUT_BULLET') {
+    activeTank.speed -= 2.2;
+  }
+
+  // Quét tia bắn phía trước xe tăng
+  const rayDir = new THREE.Vector3(sinA, -0.015, cosA).normalize();
+  const muzzlePos = new THREE.Vector3(muzzleX, muzzleY, muzzleZ);
+  const tankRay = new THREE.Raycaster(muzzlePos, rayDir, 0.5, 300);
+
+  const targets = [groundMesh, ...mockTerrain.group.children];
+  const hits = tankRay.intersectObjects(targets, true);
+
+  let hitPoint = null;
+  if (hits.length > 0) {
+    hitPoint = hits[0].point;
+  } else {
+    // Nếu không trúng vật nào thì nổ chạm đất cách 60 đơn vị
+    hitPoint = new THREE.Vector3(muzzleX + sinA * 60, 0, muzzleZ + cosA * 60);
+  }
+
+  createExplosionEffect(hitPoint.x, hitPoint.y + 0.5, hitPoint.z, ammoType === 'HE' ? 2.4 : 1.1);
+
+  if (treeField && treeField.damageAt) treeField.damageAt(hitPoint.x, hitPoint.y, hitPoint.z, ammoType, false, null);
+  if (propSet && propSet.damageAt) propSet.damageAt(hitPoint.x, hitPoint.y, hitPoint.z, ammoType, false, null);
+
+  logEvent(`Xe tăng khai hỏa <b>${$('ammo').options[$('ammo').selectedIndex].text}</b> trúng (${hitPoint.x.toFixed(0)}, ${hitPoint.z.toFixed(0)})`);
+}
+
+function updateTank(dt) {
+  if (!activeTank) return;
+
+  const maxSpeed = 32;
+  const accel = 45;
+  const turnRate = 2.4;
+
+  if (keys['w']) activeTank.speed = Math.min(maxSpeed, activeTank.speed + accel * dt);
+  else if (keys['s']) activeTank.speed = Math.max(-maxSpeed * 0.5, activeTank.speed - accel * dt);
+  else activeTank.speed *= Math.exp(-3.5 * dt);
+
+  if (keys['a']) activeTank.angle += turnRate * dt;
+  if (keys['d']) activeTank.angle -= turnRate * dt;
+  if (keys['x']) activeTank.speed *= Math.exp(-9 * dt); // Phím X: phanh gấp
+
+  activeTank.x += Math.sin(activeTank.angle) * activeTank.speed * dt;
+  activeTank.z += Math.cos(activeTank.angle) * activeTank.speed * dt;
+
+  activeTank.group.position.set(activeTank.x, 0, activeTank.z);
+  activeTank.group.rotation.y = activeTank.angle;
+
+  // Va chạm với cảnh vật khi xe chạy qua
+  if (Math.abs(activeTank.speed) > 4) {
+    const vx = Math.sin(activeTank.angle) * activeTank.speed;
+    const vz = Math.cos(activeTank.angle) * activeTank.speed;
+
+    if (treeField) treeField.crush(activeTank.x, activeTank.z, 5.5, vx, vz, null);
+    if (propSet) propSet.crush(activeTank.x, activeTank.z, 5.5, vx, vz, null);
+  }
+
+  // Camera bám theo xe tăng
+  if ($('t-follow').checked) {
+    targetCam.set(activeTank.x, 3.5, activeTank.z);
+  }
+}
+
+// =============================================================================
+// ĐIỀU KHIỂN CAMERA & CHẾ ĐỘ CHUỘT
+// =============================================================================
+let currentMode = 'select'; // 'select' hoặc 'shoot'
+let isMouseDown = false;
+let mouseX = 0, mouseY = 0;
+let camAngleH = 0.4, camAngleV = 0.55;
+let camDist = 70;
+const targetCam = new THREE.Vector3(0, 0, 0);
+
+function setMode(m) {
+  currentMode = m;
+  $('mode-select').classList.toggle('on', m === 'select');
+  $('mode-shoot').classList.toggle('on', m === 'shoot');
+  document.body.classList.toggle('shooting', m === 'shoot');
+  $('crosshair').style.display = m === 'shoot' ? 'block' : 'none';
+}
+
+window.addEventListener('mousemove', e => {
+  if (currentMode === 'shoot') {
+    $('crosshair').style.left = e.clientX + 'px';
+    $('crosshair').style.top = e.clientY + 'px';
+  }
+
+  if (!isMouseDown) return;
+  const dx = e.clientX - mouseX;
+  const dy = e.clientY - mouseY;
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+
+  if (e.buttons === 1 && currentMode === 'select') {
+    // Xoay quanh tâm
+    camAngleH -= dx * 0.008;
+    camAngleV = Math.max(0.1, Math.min(1.45, camAngleV + dy * 0.008));
+  } else if (e.buttons === 2) {
+    // Trượt lia camera
+    const ca = Math.cos(camAngleH), sa = Math.sin(camAngleH);
+    targetCam.x -= (ca * dx + sa * dy) * 0.15;
+    targetCam.z -= (-sa * dx + ca * dy) * 0.15;
+  }
+});
+
+window.addEventListener('mousedown', e => {
+  if (e.target.closest('.lab-panel') || e.target.closest('.lab-info') || e.target.closest('.lab-keys')) return;
+  isMouseDown = true;
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+
+  if (currentMode === 'shoot' && e.button === 0) {
+    if (fireCooldown <= 0) {
+      if (activeTank) fireFromTank();
+      else fireBulletFromCamera(e.clientX, e.clientY);
+      const ammoType = $('ammo').value;
+      fireCooldown = ammoType === 'GATLING_BULLET' ? 0.08 : ammoType === 'SCOUT_BULLET' ? 0.14 : 0.65;
+    }
+  } else if (currentMode === 'select' && e.button === 0) {
+    pickObject(e.clientX, e.clientY);
+  }
+});
+
+window.addEventListener('mouseup', () => { isMouseDown = false; });
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('wheel', e => {
+  camDist = Math.max(5, Math.min(350, camDist + e.deltaY * 0.08));
+});
+
+// Bắn đạn từ camera vào toạ độ chuột
+const raycaster = new THREE.Raycaster();
+const mouseVec = new THREE.Vector2();
+
+function fireAtTarget(tx, ty, tz, ammoType) {
+  createExplosionEffect(tx, ty, tz, ammoType === 'HE' ? 2.4 : 1.1);
+  if (treeField && treeField.damageAt) treeField.damageAt(tx, ty, tz, ammoType, false, null);
+  if (propSet && propSet.damageAt) propSet.damageAt(tx, ty, tz, ammoType, false, null);
+  if (selectedInstance) {
+    selectedInstance.isDestroyed = true;
+    $('i-status').innerHTML = '<span class="hot">Trúng đạn hư hại</span>';
+  }
+  logEvent(`Khai hoả đạn <b>${$('ammo').options[$('ammo').selectedIndex].text}</b> trúng thẳng vật đang xem 3D`);
+}
+
+function fireBulletFromCamera(cx, cy) {
+  mouseVec.x = (cx / innerWidth) * 2 - 1;
+  mouseVec.y = -(cy / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouseVec, camera);
+
+  const intersects = raycaster.intersectObjects([groundMesh, ...mockTerrain.group.children], true);
+  if (intersects.length > 0) {
+    const hit = intersects[0].point;
+    const ammoType = $('ammo').value;
+
+    createExplosionEffect(hit.x, hit.y, hit.z, ammoType === 'HE' ? 2.2 : 1.0);
+
+    if (treeField && treeField.damageAt) treeField.damageAt(hit.x, hit.y, hit.z, ammoType, false, null);
+    if (propSet && propSet.damageAt) propSet.damageAt(hit.x, hit.y, hit.z, ammoType, false, null);
+
+    logEvent(`Đạn <b>${$('ammo').options[$('ammo').selectedIndex].text}</b> bắn trúng toạ độ (${hit.x.toFixed(0)}, ${hit.z.toFixed(0)})`);
+  }
+}
+
+// Nhấp chọn vật thể
+function pickObject(cx, cy) {
+  mouseVec.x = (cx / innerWidth) * 2 - 1;
+  mouseVec.y = -(cy / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouseVec, camera);
+
+  // Tìm vật gần nhất với tia chiếu
+  let bestInst = null;
+  let minD = Infinity;
+
+  for (const inst of propInstances) {
+    const d = raycaster.ray.distanceToPoint(inst.pos);
+    if (d < 8 && d < minD) {
+      minD = d;
+      bestInst = inst;
+    }
+  }
+
+  if (bestInst) {
+    $('sel-item').value = bestInst.spec.id;
+    selectItemById(bestInst.spec.id);
+  }
+}
+
+// Cập nhật vị trí camera mượt mà
+function updateCamera() {
+  const ch = Math.cos(camAngleH), sh = Math.sin(camAngleH);
+  const cv = Math.cos(camAngleV), sv = Math.sin(camAngleV);
+
+  camera.position.x = targetCam.x + sh * cv * camDist;
+  camera.position.y = targetCam.y + sv * camDist;
+  camera.position.z = targetCam.z + ch * cv * camDist;
+  camera.lookAt(targetCam);
+}
+
+// =============================================================================
+// THAY ĐỔI BIOME MÔI TRƯỜNG & GIÓ
+// =============================================================================
+$('biome').addEventListener('change', e => {
+  const b = e.target.value;
+  mockTerrain.mapType = b;
+
+  if (b === 'DESERT') {
+    scene.background.set(0xdfcba4);
+    scene.fog.color.set(0xdfcba4);
+    groundMat.color.set(0xceb485);
+  } else if (b === 'URBAN') {
+    scene.background.set(0x9aa2a8);
+    scene.fog.color.set(0x9aa2a8);
+    groundMat.color.set(0x424647);
+  } else if (b === 'HIGHLAND') {
+    scene.background.set(0x8da0a8);
+    scene.fog.color.set(0x8da0a8);
+    groundMat.color.set(0x576352);
+  } else if (b === 'RIVER_LAKE') {
+    scene.background.set(0x9ec0b0);
+    scene.fog.color.set(0x9ec0b0);
+    groundMat.color.set(0x385532);
+  } else {
+    // JUNGLE
+    scene.background.set(0x88ad84);
+    scene.fog.color.set(0x88ad84);
+    groundMat.color.set(0x2f4d22);
+  }
+  buildAllProps();
+  logEvent(`Đã đổi địa hình: <b>${$('biome').options[$('biome').selectedIndex].text}</b>`);
+});
+
+$('wind-speed').addEventListener('input', e => {
+  $('v-wind').textContent = e.target.value + 'x';
+});
+
+$('cast-shadows').addEventListener('change', e => {
+  sun.castShadow = e.target.checked;
+});
+
+// Ghi nhật ký sự kiện
+function logEvent(html) {
+  const l = $('log');
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  l.prepend(d);
+  if (l.children.length > 25) l.removeChild(l.lastChild);
+}
+
+// =============================================================================
+// VÒNG LẶP CHÍNH & ĐO HIỆU NĂNG
+// =============================================================================
+let lastT = performance.now();
+let frames = 0, fpsTimer = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const t0 = performance.now();
+  const dt = Math.min(0.1, (t0 - lastT) * 0.001);
+  lastT = t0;
+
+  // Cập nhật các module game
+  if (treeField) treeField.update(dt, null, camera.position);
+  if (propSet) propSet.update(dt, null, camera.position);
+  if (streetscape && streetscape.junk) streetscape.junk.update(dt);
+
+  // Xử lý khai hoả bằng phím Space hoặc giữ chuột trái ở chế độ bắn
+  fireCooldown = Math.max(0, fireCooldown - dt);
+  const wantFire = !!(keys['space'] || (isMouseDown && currentMode === 'shoot'));
+  if (wantFire && fireCooldown <= 0) {
+    const ammoType = $('ammo').value;
+    if (activeTank) {
+      fireFromTank();
+    } else if (keys['space'] && selectedInstance && (soloMode || targetCam.distanceTo(selectedInstance.pos) < 6)) {
+      // Khi đang xem 3D xoay quanh một vật thể, bấm Space sẽ khai hoả thẳng vào vật thể đó
+      fireAtTarget(selectedInstance.pos.x, selectedInstance.pos.y + 1.2, selectedInstance.pos.z, ammoType);
+    } else {
+      fireBulletFromCamera(mouseX || innerWidth / 2, mouseY || innerHeight / 2);
+    }
+    // Nhịp bắn theo từng loại vũ khí
+    if (ammoType === 'GATLING_BULLET') fireCooldown = 0.08;
+    else if (ammoType === 'SCOUT_BULLET') fireCooldown = 0.14;
+    else fireCooldown = 0.65;
+  }
+
+  updateParticles(dt);
+  updateTank(dt);
+  updateCamera();
+
+  renderer.render(scene, camera);
+  const jsMs = performance.now() - t0;
+
+  // Đo FPS và hiệu năng
+  frames++;
+  if (t0 - fpsTimer >= 500) {
+    const fps = Math.round(frames * 1000 / (t0 - fpsTimer));
+    $('i-fps').textContent = fps;
+    $('i-ms').textContent = jsMs.toFixed(1) + ' ms';
+    $('i-calls').textContent = renderer.info.render.calls;
+    $('i-tris').textContent = renderer.info.render.triangles.toLocaleString();
+    frames = 0;
+    fpsTimer = t0;
+  }
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// Khởi động
+buildAllProps();
+overview();
+animate();
+</script>
+</body>
+</html>

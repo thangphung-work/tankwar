@@ -30,6 +30,8 @@ const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
   '.ogg': 'audio/ogg',
   '.m4a': 'audio/mp4',
+  '.webm': 'video/webm',
+  '.mp4': 'video/mp4',
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
   '.ttf': 'font/ttf'
@@ -532,6 +534,42 @@ function attachWebSocket(server) {
 
 function startServer(port) {
   const server = http.createServer((req, res) => {
+    if (req.url === '/api/save-video' && req.method === 'POST') {
+      const fileName = path.basename(req.headers['x-file-name'] || 'recon_briefing.webm');
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        try {
+          const buffer = Buffer.concat(chunks);
+          const savePath = path.join(ROOT_DIR, 'assets', fileName);
+          fs.writeFileSync(savePath, buffer);
+          console.log('[SERVER] Đã lưu video trinh sát:', savePath, '(' + buffer.length + ' bytes)');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, name: fileName, size: buffer.length }));
+        } catch (e) {
+          res.writeHead(500); res.end(e.message);
+        }
+      });
+      return;
+    }
+    if (req.url === '/api/save-screenshot' && req.method === 'POST') {
+      console.log('[SERVER HIT] save-screenshot');
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const json = JSON.parse(body);
+          const base64Data = json.data.replace(/^data:image\/\w+;base64,/, '');
+          const buffer = Buffer.from(base64Data, 'base64');
+          fs.writeFileSync('C:/Users/thang/.gemini/antigravity/brain/e2c61640-f3b5-407d-b528-65c64a891927/crater_screenshot.png', buffer);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, size: buffer.length }));
+        } catch (e) {
+          res.writeHead(500); res.end(e.message);
+        }
+      });
+      return;
+    }
     if (String(req.url || '').startsWith('/api/')) { accounts.handle(req, res); return; }
     if (dev.enabled && String(req.url || '').startsWith('/__dev/')) { dev.handle(req, res); return; }
     serveFile(req, res);

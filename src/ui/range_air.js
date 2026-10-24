@@ -86,8 +86,9 @@ const RangeAir = (() => {
       const a = this._raA || (this._raA = new THREE.Vector3()), b = this._raBv || (this._raBv = new THREE.Vector3());
       a.set(x0, y0, z0); b.set(x1, y1, z1);
       let best = null, bd = Infinity;
-      const wallG = this.testWallGroup, W = this.testWall;
-      if (wallG && wallG.visible && W && Math.min(z0, z1) < W.cz + W.hd + 4 && Math.max(z0, z1) > W.cz - W.hd - 4 && Math.min(y0, y1) < 60) {
+      const wallG = this.testWallGroup, walls = this.testWalls || (this.testWall ? [this.testWall] : []);
+      const inWallZone = walls.some(W => Math.min(z0, z1) < W.cz + W.hd + 8 && Math.max(z0, z1) > W.cz - W.hd - 8 && Math.abs((x0 + x1) / 2 - W.cx) < W.hw + 12);
+      if (wallG && wallG.visible && inWallZone && Math.min(y0, y1) < 70) {
         const len = a.distanceTo(b);
         if (len > 1e-4) {
           const ray = this._raRay || (this._raRay = new THREE.Raycaster());
@@ -96,7 +97,14 @@ const RangeAir = (() => {
           for (const it of ray.intersectObject(wallG, true)) {
             const mt = Array.isArray(it.object.material) ? it.object.material[0] : it.object.material;
             if (!it.object.visible || it.object.userData.isFxDecal || (mt && mt.isMeshBasicMaterial)) continue;
-            const n = it.face ? it.face.normal.clone().transformDirection(it.object.matrixWorld) : new THREE.Vector3(0, 0, 1);
+            let n = it.face ? it.face.normal.clone() : new THREE.Vector3(0, 0, 1);
+            if (it.object && it.object.isInstancedMesh && it.instanceId !== undefined) {
+              const instM = new THREE.Matrix4();
+              it.object.getMatrixAt(it.instanceId, instM);
+              const normM = new THREE.Matrix3().getNormalMatrix(instM);
+              n.applyMatrix3(normM).normalize();
+            }
+            n.transformDirection(it.object.matrixWorld).normalize();
             best = { point: it.point.clone(), normal: n, object: it.object, hitType: 'WALL', faceIndex: it.faceIndex, instanceId: it.instanceId };
             bd = it.distance;
             break;
@@ -117,7 +125,7 @@ const RangeAir = (() => {
     // đạn thật chạm đất / tường / nước: nổ bằng đúng hiệu ứng + âm thanh của phòng thử (spawnTestImpact)
     raOnImpact(s, type) {
       const u = this.activeUnit;
-      let hit = type === 'BUILDING' ? this._raHit : null;
+      let hit = (type === 'BUILDING' || type === 'WALL') ? this._raHit : null;
       this._raHit = null;
       if (!hit) hit = { point: new THREE.Vector3(s.x, s.y, s.z), normal: new THREE.Vector3(0, 1, 0), object: null, hitType: type === 'WATER' ? 'WATER' : 'GROUND' };
       const sp = Math.hypot(s.vx, s.vy, s.vz) || 1;
@@ -258,15 +266,40 @@ const RangeAir = (() => {
       return false;
     },
 
+    // rê chuột qua gần drone địch đang bay (≤ 40px): tự khóa như trong trận (_hoverLock)
+    raHoverPick(clientX, clientY) {
+      const R = this._ra, u = this.activeUnit;
+      if (!R || !R.on || !u || u.isDead || !this.camera) return false;
+      const G = this.raGame();
+      if (!G || !G.canShootAir(u) || (u.tankType === 'ALL_ROUNDER' && !u.mgActive)) return false;
+      const rc = this.renderer.domElement.getBoundingClientRect();
+      const mouse = { x: ((clientX - rc.left) / rc.width) * 2 - 1, y: -((clientY - rc.top) / rc.height) * 2 + 1 };
+      const v = this._raHV || (this._raHV = new THREE.Vector3());
+      let best = null, bp = 40;
+      for (const d of R.drones) {
+        if (d.dead) continue;
+        v.set(d.x, d.y + DroneAir.C.CENTER_Y, d.z).project(this.camera);
+        if (v.z > 1) continue;
+        const px = Math.hypot((v.x - mouse.x) * rc.width / 2, (v.y - mouse.y) * rc.height / 2);
+        if (px < bp) { bp = px; best = d; }
+      }
+      if (best) {
+        if (!(G._airAim && G._airAim.kind === 'drone' && G._airAim.dr === best)) G.setAirAim({ kind: 'drone', dr: best });
+        return true;
+      }
+      return false;
+    },
+
     // ---------- MỖI KHUNG HÌNH: TRƯỚC khi xe cập nhật (lệnh ngắm / cò) ----------
     // trả { keys: kính ngắm giữ phím Q E Z X, fire: bóp cò vũ khí chính của kính ngắm, noMain: không bắn pháo chính }
     raPre(dt, u) {
       const R = this._ra, S = this.sight;
-      if (!(R && R.on) && !S) return null;
+      if (!(R && R.on) && !S && !(u && u.mgActive)) return null;
       const G = this.raGame();
       if (!G || !u || u.isDead) return null;
       const K = this.keys || {};
-      const tank = u.tankType === 'ALL_ROUNDER';
+      if (S) S.rcws = !!(u.tankType === 'ALL_ROUNDER' && u.mgActive && u.rcwsGun);
+      const rcws = !!(u.tankType === 'ALL_ROUNDER' && (S ? S.rcws : u.mgActive) && u.rcwsGun);
       const out = { keys: !!S, fire: false, noMain: false };
       if (S) {
         if (S.track && !G._airAim) {
@@ -274,35 +307,39 @@ const RangeAir = (() => {
         }
         if (G._airAim) {
           // bám mục tiêu tự động: máy tính hỏa lực lái nòng (đón đầu); hướng ngắm tay đi theo để thôi bám không bị giật
-          G.keys = { Space: !!S.fire };   // xe tăng: chuột trái = súng máy nóc tháp (Space vẫn là pháo chính)
+          G.keys = { Space: !!(S.fire || this.testFiring) };
           G.updatePlayerAirAim(dt, false);
           if (!G._airAim) S.track = null;
           const A = G._airAim;
           if (A) { S.az = A.sol ? A.sol.az : S.az; S.el = A.sol ? A.sol.el : S.el; }
         }
         if (!G._airAim) {
-          // xoay / ngóc bằng phím (đúng tốc độ tháp / trạm súng)
-          const TR = tank ? { traverse: DroneAir.C.RCWS.yawRate * R2D, elevate: DroneAir.C.RCWS.pitchRate * R2D } : (u.turretRates ? u.turretRates() : { traverse: 42, elevate: 24 });
-          if (K.KeyQ) S.az = wrap360(S.az - TR.traverse * dt);
-          if (K.KeyE) S.az = wrap360(S.az + TR.traverse * dt);
-          if (K.KeyZ) S.el += TR.elevate * dt;
-          if (K.KeyX) S.el -= TR.elevate * dt;
-          S.el = Math.max(-8, Math.min(tank ? DroneAir.C.RCWS.elMax : 60, S.el));
-          if (tank) u._aa = { az: S.az, el: S.el, firing: !!S.fire, until: performance.now() / 1000 + 0.3 };
+          // xoay / ngóc bằng phím mũi tên (hoặc Q E Z X): đúng tốc độ tháp / trạm súng
+          const TR = rcws ? { traverse: DroneAir.C.RCWS.yawRate * R2D, elevate: DroneAir.C.RCWS.pitchRate * R2D } : (u.turretRates ? u.turretRates() : { traverse: 42, elevate: 24 });
+          if (K.ArrowLeft || (!this.rangeMode && K.KeyQ)) S.az = wrap360(S.az - TR.traverse * dt);
+          if (K.ArrowRight || (!this.rangeMode && K.KeyE)) S.az = wrap360(S.az + TR.traverse * dt);
+          if (K.ArrowUp || K.KeyZ) S.el += TR.elevate * dt;
+          if (K.ArrowDown || K.KeyX) S.el -= TR.elevate * dt;
+          const elMax = rcws ? DroneAir.C.RCWS.elMax : (this.testBallistics ? this.testBallistics.maxElevationFor(u) : 60);
+          S.el = Math.max(-10, Math.min(elMax, S.el));
+          if (rcws) u._aa = { az: S.az, el: S.el, firing: !!(S.fire || this.testFiring), until: performance.now() / 1000 + 0.3 };
           else if (u.tankType === 'GATLING') {
             u.aimTo(S.az);
             const r = S.az * D2R;
             u.fcsTarget = { x: u.x + Math.sin(r) * 800, z: u.z - Math.cos(r) * 800, y: (u.y || 0) + 800 * Math.tan(S.el * D2R), el: S.el };
           } else u.aimTo(S.az, S.el);
         }
-        out.fire = !tank && !!S.fire;
+        out.fire = !rcws && !!(S.fire || this.testFiring);
+        out.noMain = rcws;
         return out;
       }
-      // chế độ thường: khóa drone / ngắm trời như trong trận (Q E Z X = tự ngắm tay -> hủy khóa)
+      // chế độ thường: khóa drone / ngắm trời như trong trận (phím mũi tên = tự ngắm tay -> hủy khóa)
       if (G._airAim) {
         G.keys = { Space: !!this.testFiring };
-        const manual = !!(K.KeyQ || K.KeyE || K.KeyZ || K.KeyX);
-        if (G.updatePlayerAirAim(dt, manual)) out.noMain = tank;
+        const manual = !!(K.ArrowLeft || K.ArrowRight || K.ArrowUp || K.ArrowDown || (!this.rangeMode && (K.KeyQ || K.KeyE)) || K.KeyZ || K.KeyX);
+        if (G.updatePlayerAirAim(dt, manual)) out.noMain = u.tankType === 'ALL_ROUNDER';
+      } else if (rcws) {
+        out.noMain = true;
       }
       return out;
     },
@@ -310,11 +347,11 @@ const RangeAir = (() => {
     // ---------- SAU khi xe cập nhật: trạm súng, bia, đạn thật, khói / lửa / xác rơi, tiếng cánh quạt ----------
     raPost(dt, u) {
       const R = this._ra, S = this.sight;
-      if (!(R && R.on) && !S && !(this._raB && this._raB.activeShells.length) && !(this._raG && (this._raG._droneFalls || []).length)) return;
+      if (!(R && R.on) && !S && !(u && (u.mgActive || u._aa)) && !(this._raB && this._raB.activeShells.length) && !(this._raG && (this._raG._droneFalls || []).length)) return;
       const G = this.raGame();
       if (!G) return;
       if (u && u.tankType === 'ALL_ROUNDER' && !u.isDead) {
-        if (!S && !G._airAim) u._aa = null;
+        if (!S && !G._airAim && !u.mgActive) u._aa = null;
         G.updateRCWS(dt);
       }
       const B = G.ballistics;
@@ -340,19 +377,19 @@ const RangeAir = (() => {
 
     // ---------- KÍNH NGẮM XẠ THỦ ----------
     raSightOK(u) {
-      return !!(u && !u.isDead && (u.tankType === 'GATLING' || u.tankType === 'SCOUT' || (u.tankType === 'ALL_ROUNDER' && u.rcwsGun && (!u.roofWeapon || u.roofWeapon === 'rcws'))));
+      return !!(u && !u.isDead);
     },
 
     setSight(on) {
       const u = this.activeUnit;
-      if (on && !this.raSightOK(u)) { this.toast('Lựu pháo không có kính ngắm phòng không — chọn xe 6 nòng, trinh sát hoặc xe tăng'); on = false; }
+      if (on && !this.raSightOK(u)) on = false;
       const overlay = document.getElementById('tank-inspector-overlay');
       if (on && !this.sight) {
         const p = this.raSightPose(u);
         this.sight = {
           az: wrap360(Math.atan2(p.dir.x, -p.dir.z) * R2D), el: Math.asin(Math.max(-1, Math.min(1, p.dir.y))) * R2D,
           zoom: 0, fire: false, track: null, assist: this._raAssist !== false, R: 600, rT: 0,
-          rcws: u.tankType === 'ALL_ROUNDER', fov: ZOOM[0].fov, kick: 0
+          rcws: !!(u.tankType === 'ALL_ROUNDER' && u.mgActive && u.rcwsGun), fov: ZOOM[0].fov, kick: 0
         };
         this.driveTo = null; this.mouseShot = null;
         if (this.autoRotate) { this.autoRotate = false; this.syncAutoRotateBtn(); }
@@ -361,7 +398,11 @@ const RangeAir = (() => {
         if (overlay) overlay.classList.add('ti-sight-on');
         if (u.hpGroup) u.hpGroup.visible = false;
         this.resumeTestSound();
-        this.toast('<i class="ti ti-crosshair"></i> <b>Kính ngắm xạ thủ</b> — nhấp vào khung hình để khóa chuột, di chuột ngắm, giữ chuột trái bắn · cuộn / chuột phải: phóng đại · <b>T</b> bám mục tiêu · <b>L</b> dấu đón đầu · <b>V</b> / Esc thoát', 5200);
+        const canvas = document.getElementById('ti-canvas');
+        if (canvas && canvas.requestPointerLock && document.pointerLockElement !== canvas) {
+          try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* bỏ qua */ }
+        }
+        this.toast('<i class="ti ti-crosshair"></i> <b>Kính ngắm xạ thủ</b> — di chuột ngắm, nhấp / giữ chuột trái hoặc <b>Space</b> bắn · cuộn / chuột phải: phóng đại · <b>1 2 3</b> đổi đạn · <b>4</b> vũ khí nóc · <b>Ctrl / C / Esc</b> thoát', 4800);
       } else if (!on && this.sight) {
         this.sight = null;
         if (this.camera) { this.camera.fov = 38; this.camera.near = 1; this.camera.updateProjectionMatrix(); }
@@ -369,15 +410,15 @@ const RangeAir = (() => {
         if (overlay) overlay.classList.remove('ti-sight-on');
         const G = this._raG;
         if (G) G.clearAirAim();
-        if (u) { u._aa = null; u.fcsTarget = null; u.aimAz = u.aimEl = undefined; if (u.group) u.group.visible = true; }
+        if (u) { if (!u.mgActive) u._aa = null; u.fcsTarget = null; u.aimAz = u.aimEl = undefined; if (u.group) u.group.visible = true; }
       }
       this.raSyncBar();
     },
 
-    // vị trí kính ngắm + hướng nòng thật: xe tăng = camera ngày trên trạm súng; xe 6 nòng / trinh sát = kính ngắm cạnh nòng, ngóc theo nòng
+    // vị trí kính ngắm + hướng nòng thật: xe tăng đang bật [4] = camera trên trạm súng nóc; còn lại = kính ngắm pháo thủ cạnh nòng chính
     raSightPose(u) {
       const out = this._raPose || (this._raPose = { pos: new THREE.Vector3(), dir: new THREE.Vector3(), muzzle: new THREE.Vector3() });
-      if (u.tankType === 'ALL_ROUNDER' && u.rcwsGun) {
+      if (u.tankType === 'ALL_ROUNDER' && u.mgActive && u.rcwsGun) {
         u.rcwsGun.updateWorldMatrix(true, false);
         const M = u.rcwsGun.matrixWorld;
         out.pos.set(0.42, 0.18, -1.05).applyMatrix4(M);
@@ -394,7 +435,9 @@ const RangeAir = (() => {
       right.set(-out.dir.z, 0, out.dir.x).normalize();
       const up = right.clone().cross(out.dir).negate();
       if (up.y < 0) up.negate();
-      const side = u.tankType === 'GATLING' ? 3.4 : 2.2, hi = u.tankType === 'GATLING' ? 5.2 : 2.8, fwd = u.tankType === 'GATLING' ? 5 : 2;
+      const side = u.tankType === 'GATLING' ? 3.4 : u.tankType === 'ALL_ROUNDER' ? 2.8 : 2.2;
+      const hi = u.tankType === 'GATLING' ? 5.2 : u.tankType === 'ALL_ROUNDER' ? 3.8 : 2.8;
+      const fwd = u.tankType === 'GATLING' ? 5 : u.tankType === 'ALL_ROUNDER' ? 2.4 : 2;
       out.pos.copy(piv).addScaledVector(up, hi).addScaledVector(right, side).addScaledVector(out.dir, fwd);
       return out;
     },
@@ -433,9 +476,10 @@ const RangeAir = (() => {
       // ống ngắm hội tụ với nòng ở cự ly đo xa: tâm kính ngắm = điểm nòng chỉ tới ở cự ly đó
       const tgt = this._raTg || (this._raTg = new THREE.Vector3());
       tgt.copy(p.muzzle).addScaledVector(p.dir, Math.max(120, S.R || 600));
-      // rung hình theo phát bắn (súng nhỏ trên bệ nhẹ rung nhiều hơn)
-      const firing = S.rcws ? !!u.isFiringAAmg : !!u.isFiringGatling;
-      S.kick = firing ? Math.min(1, S.kick + dt * 8) : Math.max(0, S.kick - dt * 6);
+      // rung hình theo phát bắn (súng nhỏ trên bệ nhẹ rung nhiều hơn; pháo lớn giật mạnh lúc vừa khai hỏa)
+      const cannonJustFired = !S.rcws && (u.tankType === 'ALL_ROUNDER' || u.tankType === 'ARTILLERY') && u.reloadTimer > (u.reloadDuration || 2.5) - 0.16;
+      const firing = S.rcws ? !!u.isFiringAAmg : (!!u.isFiringGatling || cannonJustFired);
+      S.kick = cannonJustFired ? Math.max(S.kick, 0.9) : firing ? Math.min(1, S.kick + dt * 8) : Math.max(0, S.kick - dt * 6);
       const j = S.kick * (S.rcws ? 0.0035 : u.tankType === 'SCOUT' ? 0.0025 : 0.0016) * (S.R || 600);
       if (j > 0) tgt.x += (Math.random() - 0.5) * j, tgt.y += (Math.random() - 0.5) * j, tgt.z += (Math.random() - 0.5) * j;
       const fovT = ZOOM[S.zoom].fov;
@@ -832,12 +876,21 @@ const RangeAir = (() => {
       set(D.hull, 'transform', `rotate(${rel.toFixed(1)})`);
       // ---- KHUNG CHỮ ----
       let wpn, ammoN, ammoMax, status = 'SẴN SÀNG', heat = null;
+      const ammoLabels = { NORMAL: 'ĐẠN THƯỜNG', AP: 'XUYÊN GIÁP', HE: 'NỔ MẠNH', CLUSTER: 'ĐẠN CHÙM', ANTI_TANK_MISSILE: 'TÊN LỬA' };
       if (tank) {
         const rs = u._rcws || {};
-        wpn = 'SÚNG MÁY 7.62 · TRẠM VŨ KHÍ';
+        wpn = u.roofWeapon === 'agl' ? 'SÚNG PHÓNG LỰU 40MM · TRẠM VŨ KHÍ' : 'SÚNG MÁY 7.62 · TRẠM VŨ KHÍ';
         ammoN = rs.mag !== undefined ? rs.mag : DroneAir.C.RCWS.mag; ammoMax = DroneAir.C.RCWS.mag;
         if (rs.reload > 0) status = 'THAY HỘP ' + rs.reload.toFixed(1) + ' S';
         else if (u.isFiringAAmg) status = 'ĐANG BẮN';
+      } else if (u.tankType === 'ALL_ROUNDER' || u.tankType === 'ARTILLERY') {
+        const am = ammoLabels[u.selectedAmmo] || 'ĐẠN THƯỜNG';
+        wpn = (u.tankType === 'ARTILLERY' ? 'LỰU PHÁO 155MM · ' : 'PHÁO CHÍNH 120MM · ') + am;
+        const dur = u.reloadDuration || 2.5, rem = Math.max(0, u.reloadTimer || 0);
+        ammoMax = 100;
+        ammoN = rem > 0 ? Math.round(100 * (1 - rem / dur)) : 100;
+        if (u.tankType === 'ARTILLERY' && !u.isDeployed) status = 'DỪNG XE ĐỂ HẠ CÀNG';
+        else if (rem > 0) status = 'ĐANG NẠP ' + rem.toFixed(1) + ' S';
       } else {
         wpn = (u.tankType === 'GATLING' ? 'PHÁO 30MM 6 NÒNG' : 'SÚNG MÁY 12.7') + (u.selectedAmmo === 'INCENDIARY' ? ' · ĐẠN CHÁY' : '');
         ammoN = u.gatlingMag !== undefined ? u.gatlingMag : 0; ammoMax = u.gatlingMagMax || 1;
@@ -846,12 +899,13 @@ const RangeAir = (() => {
         else if (u.reloadTimer > 0 && (ammoN <= 0 || u.tankType === 'SCOUT')) status = 'NẠP ĐẠN ' + u.reloadTimer.toFixed(1) + ' S';
         else if (u.isFiringGatling) status = 'ĐANG BẮN';
       }
+      const isCannon = !tank && (u.tankType === 'ALL_ROUNDER' || u.tankType === 'ARTILLERY');
       const bad = status !== 'SẴN SÀNG' && status !== 'ĐANG BẮN';
       const wk = wpn + '|' + ammoN + '|' + status + '|' + (heat === null ? '' : Math.round(heat * 50));
       if (D._wk !== wk) {
         D._wk = wk;
         D.wpn.innerHTML = `<div class="n">${wpn}</div>` +
-          `<div class="row"><span>ĐẠN</span><div class="bar"><i style="width:${(100 * ammoN / ammoMax).toFixed(0)}%"></i></div><b>${ammoN}</b></div>` +
+          `<div class="row"><span>${isCannon ? 'NẠP' : 'ĐẠN'}</span><div class="bar"><i style="width:${(100 * ammoN / ammoMax).toFixed(0)}%"></i></div><b>${isCannon ? ammoN + '%' : ammoN}</b></div>` +
           (heat === null ? '' : `<div class="row"><span>NHIỆT</span><div class="bar heat"><i style="width:${(100 * heat).toFixed(0)}%"></i></div><b>${Math.round(heat * 100)}%</b></div>`) +
           `<div class="st${bad ? ' warn' : ''}">${status}</div>`;
       }
@@ -860,32 +914,45 @@ const RangeAir = (() => {
         `<i></i><b class="${S.track ? 'on' : ''}">${S.track ? 'BÁM MỤC TIÊU' : 'NGẮM TAY'}</b>` +
         (warn ? `<i></i><b class="warn">${warn}</b>` : '');
       if (D._lrf !== lrf) { D.lrf.innerHTML = lrf; D._lrf = lrf; }
-      const keys = `<b>CHUỘT</b> ngắm · <b>GIỮ TRÁI</b> bắn · <b>CUỘN</b> phóng đại<br><b>T</b> bám mục tiêu · <b>L</b> dấu đón đầu ${S.assist ? 'bật' : 'tắt'} · <b>V</b> thoát${tank ? '<br><b>SPACE</b> pháo chính' : ''}`;
+      const keys = `<b>CHUỘT</b> ngắm · <b>TRÁI / SPACE</b> bắn · <b>CUỘN</b> phóng đại<br><b>1 2 3</b> đổi đạn · <b>4</b> vũ khí nóc · <b>T</b> bám drone · <b>CTRL / C</b> thoát`;
       if (D._keys !== keys) { D.keys.innerHTML = keys; D._keys = keys; }
       const locked = document.pointerLockElement === D.canvas;
-      const hint = !locked && !S.dragging ? 'NHẤP VÀO KHUNG HÌNH ĐỂ CẦM SÚNG · hoặc kéo chuột để ngắm, Space bắn' : '';
+      const hint = !locked && !S.dragging ? 'NHẤP VÀO KHUNG HÌNH ĐỂ KHÓA CHUỘT NGẮM · hoặc kéo chuột để ngắm, Space bắn' : '';
       if (D._hint !== hint) { D.hint.textContent = hint; D._hint = hint; }
       D.hit.style.opacity = R && R.mark > 0 ? Math.min(1, R.mark / 0.15) : 0;
       D.msg.style.opacity = R && R.msg > 0 ? Math.min(1, R.msg / 0.4) : 0;
       if (R && R.msg > 0 && D.msg.textContent !== R.msgTxt) D.msg.textContent = R.msgTxt;
     },
 
-    // phím tắt phòng thử đạn: B bia drone, V kính ngắm, T bám mục tiêu, L dấu đón đầu
+    // phím tắt phòng thử đạn & màn mô hình 3D: B bia drone, Ctrl / C / V kính ngắm, T bám mục tiêu, L dấu đón đầu
     raBindKeys() {
       if (this._raKeys) return;
       this._raKeys = true;
+      let ctrlAlone = false;
       window.addEventListener('keydown', (e) => {
-        if (!this.isOpen || !this.rangeMode || e.repeat) return;
+        if (!this.isOpen) return;
         if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement && document.activeElement.tagName)) return;
+        if (e.key === 'Control') { if (!e.repeat) ctrlAlone = true; return; }
+        if (!e.repeat) ctrlAlone = false;
+        if (e.repeat) return;
         const c = e.code;
         if (c === 'KeyB') this.raSetDrones(!(this._ra && this._ra.on));
-        else if (c === 'KeyV') this.setSight(!this.sight);
+        else if (c === 'KeyV' || (c === 'KeyC' && !e.ctrlKey && !e.metaKey && !e.altKey)) this.setSight(!this.sight);
         else if (c === 'KeyT' && this.sight) this.raToggleTrack();
         else if (c === 'KeyL' && this.sight) { this.sight.assist = !this.sight.assist; this._raAssist = this.sight.assist; }
         else return;
         e.preventDefault();
         e.stopPropagation();
       }, true);
+      window.addEventListener('keyup', (e) => {
+        if (!this.isOpen || e.key !== 'Control') return;
+        const go = ctrlAlone;
+        ctrlAlone = false;
+        if (go && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement && document.activeElement.tagName)) {
+          this.setSight(!this.sight);
+        }
+      }, true);
+      window.addEventListener('pointerdown', () => { ctrlAlone = false; }, true);
       document.addEventListener('pointerlockchange', () => {
         const S = this.sight;
         if (S && document.pointerLockElement !== (this._raDom && this._raDom.canvas)) { S.fire = false; S.dragging = false; }

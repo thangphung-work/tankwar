@@ -268,6 +268,53 @@ function spgImpact(unit, mat, pos, vn, vt, mA, mB, first, other) {
         vx: (Math.random() - 0.5) * 14, vy: 3 + Math.random() * 8, vz: (Math.random() - 0.5) * 14, size: 1.6 + Math.random() * 2, grow: 3, drag: 2, grav: 3, life: 1.2 + Math.random(), alpha: 0.45, fadeIn: 0.02, c0: col, cell: 2 });
     }
   } else if (!first && vt > 10 && S && S.scrapeAt) S.scrapeAt(pos, { vt, mA, mat, self, key });
+
+  // BIẾN DẠNG MÓP MÉO VÀ VĂNG PHỤ KIỆN KHI ĐÂM NHAU (Tank vs Tank / Xe vs Xe / Xe vs Tường)
+  if (typeof VehicleDamage !== 'undefined' && pos) {
+    const isVehCrash = mat === 'vehicle' || mat === 'wreck';
+    const hitP = new THREE.Vector3(pos.x, pos.y, pos.z);
+    // 1. Va chạm mạnh (first và vn > 5.5) hoặc xung lực J lớn: làm móp sâu thật trên vỏ xe
+    if (first && (vn > 5.5 || J > 320)) {
+      const depth = Math.min(1.8, Math.max(0.18, J / 450 * 0.45));
+      const rad = Math.min(8.5, Math.max(3.2, Math.sqrt(J) * 0.28));
+      const crashDirA = other ? new THREE.Vector3(other.x - unit.x, 0, other.z - unit.z).normalize() : new THREE.Vector3(-Math.sin(unit.bodyAngle || 0), 0, -Math.cos(unit.bodyAngle || 0));
+      VehicleDamage.crumpleAt(unit, hitP, crashDirA, rad, depth);
+      if (other && other.group) {
+        const crashDirB = crashDirA.clone().negate();
+        VehicleDamage.crumpleAt(other, hitP, crashDirB, rad * 0.9, depth * (mA / Math.max(mB, 1)));
+      }
+      // Tia lửa thép va thép tóe sáng
+      if (VehicleDamage.sfx && isVehCrash) VehicleDamage.sfx('armorPlate', hitP, Math.min(1.3, 0.45 + J / 800));
+    }
+
+    // 2. Phụ kiện gắn quanh vùng va chạm (chắn bùn, đèn pha, gương, giá đồ, váy xích) bị bẻ quẹo hoặc giật bung
+    if (vn > 3.5 || (first && J > 200)) {
+      const checkStrip = (uTarget, awayDir) => {
+        if (!uTarget || !uTarget.group) return;
+        const dState = VehicleDamage.state(uTarget);
+        const tags = Object.keys(uTarget.partRegistry || {}).concat(Object.keys(uTarget.partGroups || {}));
+        for (const t of tags) {
+          if (dState.lost.has(t)) continue;
+          if (/^(skirt|flap|lamp|mirror|bin|box|can|cans|tool|dozer|shield|travelLock)/.test(t)) {
+            const pw = VehicleDamage.partWorld ? VehicleDamage.partWorld(uTarget, t) : null;
+            if (pw && pw.distanceTo(hitP) < 14) {
+              if (vn > 8.5 || J > 600) {
+                const imp = awayDir.clone().multiplyScalar(40).add(new THREE.Vector3(0, 18, 0));
+                if (VehicleDamage.detachTag(uTarget, t, imp, pw)) {
+                  VehicleDamage.onPartLost(uTarget, t, 'acc', [], spgFx(), pw);
+                }
+              } else if (!dState.bent.has(t)) {
+                VehicleDamage.bendTag(uTarget, t, awayDir.clone().multiplyScalar(30));
+              }
+            }
+          }
+        }
+      };
+      const awayA = other ? new THREE.Vector3(unit.x - other.x, 0.2, unit.z - other.z).normalize() : new THREE.Vector3(Math.sin(unit.bodyAngle || 0), 0.2, Math.cos(unit.bodyAngle || 0));
+      checkStrip(unit, awayA);
+      if (other && isVehCrash) checkStrip(other, awayA.clone().negate());
+    }
+  }
 }
 
 class SPGUnit3D {
@@ -1847,6 +1894,9 @@ class SPGUnit3D {
     if (PS) {
       const r = PS.vehicleContact(this, this.x, this.z, nextX, nextZ, dt, netPose);
       if (!netPose) { nextX = r.x; nextZ = r.z; }
+      // Thùng rác / bao rác / thùng các-tông trên vỉa hè: bị xe húc văng, cán bẹp, túi rách tung
+      const JKS = terrain.streetscape && terrain.streetscape.junk;
+      if (JKS && JKS.crush) JKS.crush(this, nextX, nextZ, dt);
     }
 
     // Giới hạn biên bản đồ
@@ -1974,9 +2024,34 @@ class SPGUnit3D {
     } else { this._landK = 0; this._landT = 0; }
     this.group.position.set(this.x, this.y, this.z);
 
-    // Làm mượt góc nghiêng thân xe theo dốc địa hình (Hệ thống giảm xóc nhún êm ái)
-    this.currentPitch += (slopePitch - this.currentPitch) * Math.min(1.0, dt * 8.0);
-    this.currentRoll  += (slopeRoll  - this.currentRoll)  * Math.min(1.0, dt * 8.0);
+    // Làm mượt góc nghiêng thân xe theo dốc địa hình và vật liệu bên dưới (bê tông cứng ngửa dốc chắc nịch, ô tô kim loại mềm lún mượt)
+    const matRate = sup && sup.mat === 'car' ? 12.0 : sup ? 10.0 : 8.0;
+    this.currentPitch += (slopePitch - this.currentPitch) * Math.min(1.0, dt * matRate);
+    this.currentRoll  += (slopeRoll  - this.currentRoll)  * Math.min(1.0, dt * matRate);
+
+    // Tiếng cọ xát và tia lửa khi xích sắt bò cày trượt trên nóc ô tô hoặc xác xe kim loại
+    if (sup && sup.mat === 'car' && Math.abs(this.speed || 0) > 3) {
+      this._trackGrindT = (this._trackGrindT || 0) - dt;
+      if (this._trackGrindT <= 0) {
+        this._trackGrindT = 0.12;
+        const fxObj = spgFx();
+        if (fxObj && fxObj.fire) {
+          const grindP = {
+            x: this.x + (Math.random() - 0.5) * 16,
+            y: (this.y || 0) + 2,
+            z: this.z + (Math.random() - 0.5) * 22
+          };
+          for (let q = 0; q < 5; q++) {
+            fxObj.fire.add({
+              x: grindP.x, y: grindP.y, z: grindP.z,
+              vx: (Math.random() - 0.5) * 25, vy: 5 + Math.random() * 20, vz: (Math.random() - 0.5) * 25,
+              size: 0.7 + Math.random() * 0.9, grow: -0.3, drag: 0.9, grav: 90, life: 0.25 + Math.random() * 0.25,
+              alpha: 1, fadeIn: 0.005, c0: [1, 0.9, 0.6], c1: [1, 0.4, 0.1], cell: 3
+            });
+          }
+        }
+      }
+    }
 
     // Group chính giữ thăng bằng theo trục Y chuẩn của thế giới (giúp thanh máu luôn ngay ngắn)
     this.group.rotation.set(0, this.bodyAngle, 0);
@@ -2367,24 +2442,28 @@ class SPGUnit3D {
 
     // bụi tung từ đúng dải xích / bánh sau của từng xe
     const sidesX = this._tt ? [...new Set(this._tt.map(L => L.lx))] : [-16.8, 16.8];
+    const backDist = this.speed >= 0 ? 16 : -16;
+    const throwBack = (this.speed || 0) * -0.22;
     for (let side of sidesX) {
-      const baseSize = (isBoosting ? 9 + Math.random() * 6 : 6 + Math.random() * 4) * dustMult;
-      const a0 = isBoosting ? 0.68 : 0.48;
-      const pMesh = SpgFXPool.acquire(this.scene, 'plane', dustColor, a0);
-      const offsetX = Math.cos(this.bodyAngle) * side + Math.sin(this.bodyAngle) * 16;
-      const offsetZ = -Math.sin(this.bodyAngle) * side - Math.cos(this.bodyAngle) * 16;
+      const baseSize = (isBoosting ? 8 + Math.random() * 5 : 5.5 + Math.random() * 3.5) * dustMult;
+      const a0 = isBoosting ? 0.6 : 0.42;
+      const pMesh = SpgFXPool.acquire(this.scene, 'dust', dustColor, a0);
+      const offsetX = Math.cos(this.bodyAngle) * side + Math.sin(this.bodyAngle) * backDist;
+      const offsetZ = -Math.sin(this.bodyAngle) * side + Math.cos(this.bodyAngle) * backDist;
 
       pMesh.position.set(this.x + offsetX, this.y + 1.2, this.z + offsetZ);
 
       this.fxParticles.push({
         mesh: pMesh,
         base: baseSize,
-        vx: wind ? wind.vx * 0.35 : 0,
-        vy: 3.8 + Math.random() * 4,
-        vz: wind ? wind.vz * 0.35 : 0,
+        vx: (wind ? wind.vx * 0.35 : 0) - Math.sin(this.bodyAngle) * throwBack + (Math.random() - 0.5) * 3,
+        vy: 2.8 + Math.random() * 3.6,
+        vz: (wind ? wind.vz * 0.35 : 0) - Math.cos(this.bodyAngle) * throwBack + (Math.random() - 0.5) * 3,
         scale: 1.0,
+        growSpeed: 3.2 + Math.random() * 1.8,
+        drag: 2.0,
         alpha: a0,
-        life: 0.85
+        life: 0.85 + Math.random() * 0.3
       });
     }
   }

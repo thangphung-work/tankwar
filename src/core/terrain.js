@@ -99,6 +99,7 @@ class BattleTerrain3D {
   }
 
   clearTerrain() {
+    this._detailToken = (this._detailToken || 0) + 1;
     while (this.group.children.length > 0) {
       const obj = this.group.children[0];
       this.group.remove(obj);
@@ -146,13 +147,18 @@ class BattleTerrain3D {
     this.segments = this.map.res;
     this.heightData = new Float32Array(this.map.heights);
     lap('mapgen');
-    // Hạ lưới đất dưới kênh xe chạy của các cứ điểm (sàn khoang / dốc bê tông nằm trên)
-    const SHL = this.map.strongholds || [];
-    if (SHL.length && typeof Strongholds !== 'undefined') Strongholds.carveHeights(this.heightData, this.segments, this.width, SHL);
     this.applyAtmosphere();
     lap('atmosphere');
-    this.initTerrainMesh();
-    lap('ground');
+    // Fast boot: mặt đất và các lớp chi tiết đều dựng bất đồng bộ theo từng nhịp nhỏ dưới nền
+    // để không chặn luồng chính hay làm giật video / hoạt ảnh gõ chữ của Chỉ huy.
+    this.built = true;
+    this.detailsReady = false;
+    this.buildMs = Math.round(performance.now() - t0);
+    this.buildSteps = steps;
+    this.buildTerrainDetailsAsync();
+    return;
+
+    /* Đường dựng đồng bộ cũ giữ lại làm tài liệu/tham chiếu cho các trang lab. */
     this.buildRoads();
     // đô thị: vỉa hè + bó vỉa bo góc, mảng nhựa ngã tư, vạch qua đường, kè kênh (streetscape.js)
     if (typeof Streetscape !== 'undefined') this.streetscape = Streetscape.build(this);
@@ -202,6 +208,10 @@ class BattleTerrain3D {
     if (typeof Props !== 'undefined' && this.map.props) this.propSet = new Props.PropSet(this, this.map.props);
     lap('props');
 
+    // Sóng xung kích bom tiền oanh tạc: phá hủy, sập nứt công trình và quật đổ cây cối quanh hố bom trước khi vào trận
+    this.prebakeCraterDamage();
+    lap('crater_shockwave');
+
     // Cỏ 3D + đá vụn quanh camera (rải theo vùng nhìn thấy, xem GroundCover.update)
     if (typeof GroundCover !== 'undefined' && typeof GroundShader !== 'undefined') this.groundCover = new GroundCover.Cover(this);
     lap('groundcover');
@@ -213,6 +223,144 @@ class BattleTerrain3D {
     this.buildMs = Math.round(performance.now() - t0);
     this.buildSteps = steps;
     console.info(`[MAP] Dựng ${this.mapType} #${this.seed}: ${this.buildMs} ms — ` + steps.filter(s => s[1] >= 5).map(s => s[0] + ' ' + s[1]).join(' · '));
+  }
+
+  buildTerrainDetailsAsync() {
+    const token = this._detailToken = (this._detailToken || 0) + 1;
+    this.previewReady = false;
+    const alive = () => token === this._detailToken && this.built && this.group;
+    const ground = (x, z) => this.groundAtRaw(x, z);
+    const SHL = this.map.strongholds || [];
+    const steps = [
+      ['ground_mesh', () => {
+        if (SHL.length && typeof Strongholds !== 'undefined') Strongholds.carveHeights(this.heightData, this.segments, this.width, SHL);
+        this.initTerrainMesh();
+      }],
+      ['landmarks_water', () => {
+        this.buildWater();
+        if ((this.map.landmarks || []).length && typeof Landmarks !== 'undefined')
+          this.landmarkSet = new Landmarks.LandmarkSet(this.group, this.map.landmarks, { groundAt: ground, sun: this.map.sun });
+      }],
+      ['strongholds_backdrop', () => {
+        if (SHL.length && typeof Strongholds !== 'undefined') {
+          this.strongholdSet = new Strongholds.StrongholdSet(this.group, SHL, {
+            mapType: this.mapType, groundAt: ground, sun: this.map.sun, boulders: this.boulders,
+            groundMaterial: o => this.groundLikeMaterial(o), worldSize: [this.width, this.depth], leafColors: this.leafColors()
+          });
+        }
+        if (typeof Backdrop !== 'undefined') {
+          this.backdrop = Backdrop.build(this);
+          if (this.backdrop) this.group.add(this.backdrop.group);
+        }
+      }],
+      ['roads', () => {
+        this.buildRoads();
+        this.previewReady = true;
+        if (typeof window !== 'undefined' && window.matchmakingController && typeof window.matchmakingController.onPreviewReady === 'function') {
+          try { window.matchmakingController.onPreviewReady(); } catch (e) {}
+        }
+        if (this.reconOnly) {
+          this.optimizeStaticScene();
+          this.detailsReady = true;
+          steps.length = 0;
+        }
+      }],
+      ['streetscape', () => {
+        if (typeof Streetscape !== 'undefined') this.streetscape = Streetscape.build(this);
+      }],
+      ['scenery', () => { this.buildRocks(); this.buildBridges(); this.buildBushes(); }],
+      ['bunkers_trees', () => {
+        if (typeof Destructibles === 'undefined') return;
+        Destructibles.withSeed((this.seed ^ 0x5eed1234) >>> 0, () => {
+          this.bunkerSet = new Destructibles.BunkerSet(this.group, this.map.bunkers, ground);
+          this.horseshoeForts = this.bunkerSet.items.map(k => k.fort);
+          this.trees = new Destructibles.TreeField(this.group, this.map.trees, (x, z) => this.surfaceAt(x, z, true));
+          this.trees.solidHit = (ax, ay, az, bx, by, bz) => !!this.buildingSegmentHit(ax, ay, az, bx, by, bz);
+          this.palmTrees = this.trees.items;
+        });
+      }],
+      ['buildings', () => {
+        if (typeof Destructibles === 'undefined') return;
+        Destructibles.withSeed((this.seed ^ 0x5eed5678) >>> 0, () => {
+          this.buildingSet = new Destructibles.BuildingSet(this.group, this.map.buildings, (x, z) => this.surfaceAt(x, z, true));
+          this.buildings = this.buildingSet.items.map(b => b.entry);
+        });
+      }],
+      ['props', () => { if (typeof Props !== 'undefined' && this.map.props) this.propSet = new Props.PropSet(this, this.map.props); }],
+      ['craters_cover', () => {
+        this.prebakeCraterDamage();
+        if (typeof GroundCover !== 'undefined' && typeof GroundShader !== 'undefined') this.groundCover = new GroundCover.Cover(this);
+      }],
+      ['finish', () => {
+        this.optimizeStaticScene();
+        this.renderPrecomputedMap();
+        this.detailsReady = true;
+        if (typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(this);
+        console.info(`[MAP] Chi tiết ${this.mapType} #${this.seed} đã dựng xong dưới nền`);
+      }]
+    ];
+    this._pendingDetailSteps = steps;
+    const next = () => {
+      if (!alive()) return;
+      const step = steps.shift();
+      if (!step) return;
+      const t0 = performance.now();
+      try { step[1](); } catch (e) { console.warn('[MAP] ' + step[0], e); }
+      const ms = Math.round(performance.now() - t0);
+      if (ms >= 8) console.info(`[MAP] ${step[0]} ${ms} ms`);
+      setTimeout(next, 24);
+    };
+    setTimeout(next, 16);
+  }
+
+  // Tính toán trước sóng xung kích bom đạn tiền oanh tạc:
+  // Tái sử dụng hệ thống phá hủy vật lý của game để tác động lên nhà cửa, cây cối, xe cộ quanh hố bom
+  prebakeCraterDamage() {
+    if (!this.map) return;
+    const craters = [];
+    for (const sh of this.map.strongholds || []) {
+      for (const c of sh.craters || []) craters.push(c);
+    }
+    if (this.map.props && this.map.props.craters) {
+      for (const c of this.map.props.craters) craters.push(c);
+    }
+    if (!craters.length) return;
+
+    // Tối ưu hóa: Chỉ tính toán sóng xung kích cho tối đa 8 hố bom gần công trình xây dựng nhất
+    const blds = this.map.buildings || [];
+    const targetCraters = [];
+    for (const c of craters) {
+      let nearBuilding = false;
+      for (const b of blds) {
+        if (Math.hypot(c.x - b.x, c.z - b.z) < 95) {
+          nearBuilding = true;
+          break;
+        }
+      }
+      if (nearBuilding) targetCraters.push(c);
+      if (targetCraters.length >= 8) break;
+    }
+
+    for (const c of targetCraters) {
+      const cy = this.getElevationAt(c.x, c.z);
+      const power = Math.max(2.8, (c.d || 8) * 0.45);
+
+      if (this.buildingSet) {
+        try {
+          this.buildingSet.damageAt(c.x, cy, c.z, 'HE', true, null, { power });
+        } catch (e) {}
+      }
+      if (this.trees) {
+        try {
+          this.trees.damageAt(c.x, cy, c.z, 'HE', true, null);
+        } catch (e) {}
+      }
+      if (this.propSet) {
+        try {
+          this.propSet.damageAt(c.x, cy, c.z, 'HE', true, null);
+        } catch (e) {}
+      }
+    }
   }
 
   optimizeStaticScene() {
@@ -378,11 +526,16 @@ class BattleTerrain3D {
 
   paintGround() {
     // ~3.5 đơn vị / điểm ảnh như bản đồ 3600 cũ (1024 px)
+    // Nền nhiễu địa hình biến thiên mượt tính ở 512px (~18ms), sau đó phóng mượt lên 2048px để vẽ đường/sân bê tông/cứ điểm sắc nét tuyệt đối
     const SZ = Math.min(2048, Math.round(this.width / 3600 * 4) * 256);
+    const BG_SZ = 512;
     const cv = document.createElement('canvas');
     cv.width = cv.height = SZ;
     const ctx = cv.getContext('2d');
-    const img = ctx.createImageData(SZ, SZ);
+    const bgCv = document.createElement('canvas');
+    bgCv.width = bgCv.height = BG_SZ;
+    const bgCtx = bgCv.getContext('2d');
+    const img = bgCtx.createImageData(BG_SZ, BG_SZ);
     const D = img.data;
     const M = this.map, N = M.res + 1, cell = M.cell;
     const half = this.width / 2;
@@ -407,12 +560,12 @@ class BattleTerrain3D {
     }[this.mapType] || null;
     const pal = P;
     const sun = this.atmosphere ? this.atmosphere.sunDir : new THREE.Vector3(0.4, 0.8, 0.3);
-    for (let py = 0; py < SZ; py++) {
-      const wz = (py + 0.5) / SZ * this.depth - half;
+    for (let py = 0; py < BG_SZ; py++) {
+      const wz = (py + 0.5) / BG_SZ * this.depth - half;
       const gz = (wz + half) / cell;
       const iz = Math.min(N - 2, Math.max(0, Math.floor(gz))), fz = gz - iz;
-      for (let px = 0; px < SZ; px++) {
-        const wx = (px + 0.5) / SZ * this.width - half;
+      for (let px = 0; px < BG_SZ; px++) {
+        const wx = (px + 0.5) / BG_SZ * this.width - half;
         const gx = (wx + half) / cell;
         const ix = Math.min(N - 2, Math.max(0, Math.floor(gx))), fx = gx - ix;
         const i0 = iz * N + ix;
@@ -442,11 +595,13 @@ class BattleTerrain3D {
         const nx = -dhx, nz = -dhz, ny = 1, nl = Math.hypot(nx, ny, nz);
         const lit = Math.max(0, (nx * sun.x + ny * sun.y + nz * sun.z) / nl);
         const shade = 0.82 + 0.22 * lit;
-        const k = (py * SZ + px) * 4;
+        const k = (py * BG_SZ + px) * 4;
         D[k] = Math.min(255, r * shade); D[k + 1] = Math.min(255, g * shade); D[k + 2] = Math.min(255, b * shade); D[k + 3] = 255;
       }
     }
-    ctx.putImageData(img, 0, 0);
+    bgCtx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(bgCv, 0, 0, SZ, SZ);
     const toPx = v => (v + half) / this.width * SZ;
     const sc = SZ / this.width;
     // Ốc đảo / thảm thực vật dưới tán cây và bụi rậm
@@ -1283,7 +1438,7 @@ ${sea ? 'varying float vDep;' : ''}
       im.setMatrixAt(k, m4);
       const col = new THREE.Color(1, 1, 1).multiplyScalar(0.74 + Math.random() * 0.26);
       im.setColorAt(k, col);
-      const boulder = r.r > 9 ? { x: r.x, z: r.z, radius: r.r * 0.9, height: r.h * 0.8 } : null;
+      const boulder = { x: r.x, z: r.z, radius: r.r * 0.9, height: r.h * 0.8 };
       if (boulder) this.boulders.push(boulder);
       // bản ghi cho EnvDamage: đá có máu, mẻ / nhỏ dần / vỡ tung theo loại đạn
       const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scale = new THREE.Vector3();
@@ -1294,7 +1449,8 @@ ${sea ? 'varying float vDep;' : ''}
   }
 
   buildBushes() {
-    this.bushClusters = this.map.bushes.map(b => ({ x: b.x, z: b.z, radius: b.r }));
+    this.bushClusters = this.map.bushes.map(b => ({ x: b.x, z: b.z, radius: b.r, origR: b.r }));
+    this.bushItems = [];
     // Bụi cây thấp dày đặc trong vùng ngụy trang (che thân xe)
     const total = this.map.bushes.length * 26;
     if (!total) return;
@@ -1330,12 +1486,88 @@ ${sea ? 'varying float vDep;' : ''}
         m4.compose(new THREE.Vector3(x, this.groundAtRaw(x, z) + s * 0.25, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6.3), new THREE.Vector3(s * 1.3, s, s * 1.2));
         const i = im.count++;
         im.setMatrixAt(i, m4);
-        im.setColorAt(i, new THREE.Color(leafCol[k & 1]).multiplyScalar(0.8 + Math.random() * 0.35));
+        const col = new THREE.Color(leafCol[k & 1]).multiplyScalar(0.8 + Math.random() * 0.35);
+        im.setColorAt(i, col);
+        b.aliveCount = (b.aliveCount || 0) + 1;
+        this.bushItems.push({ i, b, x, z, y: this.groundAtRaw(x, z), baseMat: m4.clone(), s, col0: col.clone(), broken: false, burnt: false });
       }
     }
     im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
     im.name = 'bushes';
+    this.bushIM = im;
     this.group.add(im);
+  }
+
+  // Bụi rậm ngụy trang bị xe cán qua: đè bẹp dí rạp xuống đất, gãy nát, xơ xác; dập nát nhiều thì mất tác dụng che giấu
+  crushBushes(x, z, radius, vx, vz, fx) {
+    if (!this.bushIM || !this.bushItems || !this.bushItems.length) return;
+    let hit = false;
+    const P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), M = new THREE.Matrix4();
+    const leafSfx = typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt;
+    for (const it of this.bushItems) {
+      if (it.broken) continue;
+      const d = Math.hypot(it.x - x, it.z - z);
+      if (d > radius + 4) continue;
+      it.broken = true;
+      it.b.aliveCount = Math.max(0, (it.b.aliveCount || 1) - 1);
+      if (it.b.aliveCount < 6) it.b.radius = Math.max(0, it.b.radius * 0.65);
+      M.copy(it.baseMat).decompose(P, Q, S);
+      // xe cán: bẹp dí sát đất (y còn 18%), xoè ngang bè ra
+      S.y *= 0.18; S.x *= 1.35; S.z *= 1.35;
+      P.y = it.y + 0.3;
+      M.compose(P, Q, S);
+      this.bushIM.setMatrixAt(it.i, M);
+      const deadCol = it.col0.clone().multiplyScalar(0.42);
+      this.bushIM.setColorAt(it.i, deadCol);
+      hit = true;
+      if (fx && fx.smoke) {
+        for (let k = 0; k < 3; k++) fx.smoke.add({ x: it.x + (Math.random() - 0.5) * 4, y: it.y + 1, z: it.z + (Math.random() - 0.5) * 4,
+          vx: (Math.random() - 0.5) * 4, vy: 2 + Math.random() * 3, vz: (Math.random() - 0.5) * 4, size: 1.2 + Math.random(), grow: 1.5, drag: 2, grav: 3, life: 0.8, alpha: 0.4, fadeIn: 0.02, c0: [0.35, 0.42, 0.22], cell: 2 });
+      }
+    }
+    if (hit) {
+      this.bushIM.instanceMatrix.needsUpdate = true;
+      this.bushIM.instanceColor.needsUpdate = true;
+      if (leafSfx) leafSfx('leafStrip', { x, y: this.groundAtRaw(x, z) + 1, z }, 0.5, { h: 2 });
+    }
+  }
+
+  // Bụi rậm trúng đạn nổ / đạn cháy: thổi bay hoặc thiêu rụi thành tro than đen
+  damageBushes(x, y, z, ammo, heavy, fx) {
+    if (!this.bushIM || !this.bushItems || !this.bushItems.length) return;
+    const R = (ammo === 'HE' ? 24 : ammo === 'INCENDIARY' ? 18 : 12) * (heavy ? 1.4 : 1);
+    const inc = ammo === 'INCENDIARY' || ammo === 'INCENDIARY_HMG' || ammo === 'CLUSTER_SUBMUNITION';
+    let hit = false;
+    const P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), M = new THREE.Matrix4();
+    for (const it of this.bushItems) {
+      if (it.burnt) continue;
+      const d = Math.hypot(it.x - x, it.z - z);
+      if (d > R) continue;
+      it.burnt = true; it.broken = true;
+      it.b.aliveCount = Math.max(0, (it.b.aliveCount || 1) - 1);
+      if (it.b.aliveCount < 8) it.b.radius = Math.max(0, it.b.radius * 0.5);
+      M.copy(it.baseMat).decompose(P, Q, S);
+      if (d < R * 0.45 && !inc) {
+        // nổ sát tâm: thổi bay sạch không còn dấu vết
+        S.set(0.001, 0.001, 0.001);
+      } else {
+        // cháy rụi: teo tóp còn trơ cành than đen
+        S.set(S.x * 0.35, S.y * 0.22, S.z * 0.35);
+        this.bushIM.setColorAt(it.i, new THREE.Color(0.08, 0.07, 0.06));
+      }
+      P.y = it.y + 0.2;
+      M.compose(P, Q, S);
+      this.bushIM.setMatrixAt(it.i, M);
+      hit = true;
+      if (fx && fx.smoke && Math.random() < 0.6) {
+        fx.smoke.add({ x: it.x, y: it.y + 2, z: it.z, vx: (Math.random() - 0.5) * 3, vy: 4 + Math.random() * 4, vz: (Math.random() - 0.5) * 3,
+          size: 2 + Math.random() * 2, grow: 3, drag: 1, grav: -1, life: 1.5, alpha: 0.5, fadeIn: 0.05, c0: [0.1, 0.09, 0.08], c1: [0.25, 0.24, 0.22], cell: 0 });
+      }
+    }
+    if (hit) {
+      this.bushIM.instanceMatrix.needsUpdate = true;
+      this.bushIM.instanceColor.needsUpdate = true;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1361,6 +1593,7 @@ ${sea ? 'varying float vDep;' : ''}
     if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx);
     if (this.propSet) this.propSet.damageAt(x, y, z, ammo, heavy, fx);
     if (this.streetscape && this.streetscape.junk) this.streetscape.junk.blast(x, y, z, ammo, heavy);
+    this.damageBushes(x, y, z, ammo, heavy, fx);
     if (this.buildingSet) events.push(...this.buildingSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {}));
     if (this.bunkerSet) events.push(...this.bunkerSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {}));
     if (this.landmarkSet && this.landmarkSet.damageAt) events.push(...this.landmarkSet.damageAt(x, y, z, ammo, heavy, fx));
@@ -1439,10 +1672,25 @@ ${sea ? 'varying float vDep;' : ''}
   noCraterAt(x, z) { return (this.strongholdSet ? !!this.strongholdSet.covers(x, z, 6) : false) || !!(this.bridges.length && this.bridgeAt(x, z)); }
 
   // Cây đổ khi xe húc
-  crushVegetation(x, z, radius, vx, vz, fx) {
+  crushVegetation(x, z, radius, vx, vz, fx, unit) {
     if (this.trees) this.trees.crush(x, z, radius, vx, vz, fx);
     // ... và húc đổ hàng rào / tường đá, cán bẹp bao cát
     if (this.propSet && Math.hypot(vx, vz) >= 6) this.propSet.crush(x, z, radius, vx, vz, fx);
+    // Bụi rậm ngụy trang bị đè bẹp
+    this.crushBushes(x, z, radius, vx, vz, fx);
+    // Cỏ 3D bị xích / bánh xe đè rạp sát đất xuôi chiều chạy
+    if (this.groundCover && unit && unit.bodyAngle !== undefined) {
+      const a = unit.bodyAngle || 0, sp = unit.speed || 0, tracked = !unit.isWheeled;
+      this.groundCover.trample({
+        cx: unit.x, cz: unit.z,
+        ux: Math.cos(a), uz: -Math.sin(a),
+        hu: (unit.tankType === 'SCOUT' ? 8 : 12),
+        hv: (unit.tankType === 'SCOUT' ? 14 : 20),
+        dx: -Math.sin(a) * Math.sign(sp || 1),
+        dz: -Math.cos(a) * Math.sign(sp || 1),
+        lane: tracked ? 4.5 : 3.0
+      });
+    }
   }
 
   // Xe trinh sát cọ / húc cây: cây đứng vững, chỉ rung & rụng lá (Destructibles.brush); hàng rào vẫn húc đổ, xương rồng

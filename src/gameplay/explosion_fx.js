@@ -2464,6 +2464,7 @@
     // thay vì chỉ một lưới -> vết gần mép tấm giáp, bu-lông, đường hàn không bị loại oan. Cho phép 1 điểm dò hụt;
     // trên xe luôn giữ tối thiểu ~30% cỡ vết (trước đây trả 0 -> gần như mọi lỗ đạn / hố móp trên xe bị bỏ)
     fitMarkSize(point, normal, object, size, root) {
+      if (!object || object.isInstancedMesh) return size;
       const n = normal.clone().normalize();
       const t1 = new THREE.Vector3().crossVectors(n, Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
       const t2 = new THREE.Vector3().crossVectors(n, t1);
@@ -2492,7 +2493,7 @@
       const parent = object.isInstancedMesh ? (object.parent || object) : object;
       parent.updateMatrixWorld(true);
       // Vết phẳng phải nằm khít bề mặt: trên mặt cong / chi tiết nhỏ (nòng pháo, ống, mép giáp) thu nhỏ lại, không lơ lửng
-      if (kind !== 'turretRing' && !opts.noFit && object.isMesh && normal) {
+      if (kind !== 'turretRing' && !opts.noFit && object.isMesh && !object.isInstancedMesh && !kind.startsWith('concrete') && normal) {
         size = this.fitMarkSize(point, normal, object, size, opts.unit && opts.unit.group);
         if (size <= 0) return null;
       }
@@ -2837,17 +2838,18 @@
           if (!ok) (sm ? this.wallPits.s : this.wallPits.he).add(p, n, sm ? 2.3 : 2.9);
         }
         else if (prof.kind === 'kinetic') {
-          this.addSurfaceMark(p, n, hit.object, 'concreteHole', 5.5);
+          this.addSurfaceMark(p, n, hit.object, 'concreteHole', 5.5, { noFit: true });
           // Mũi tên xuyên thủng tường: lõi urani vỡ vụn bốc cháy + bê tông phụt ra phía sau tường
           const exit = p.clone().addScaledVector(d, wT);
           this.spallCone(exit, d, 46, { spread: 0.42, dust: [0.72, 0.7, 0.66] });
-          this.spallCone(p, n, 12, { spread: 0.7, speed: 0.5, dust: [0.72, 0.7, 0.66] });
+          this.spallCone(p, n, 16, { spread: 0.7, speed: 0.6, dust: [0.72, 0.7, 0.66] });
         } else {
           // Đạn nổ / nổ lõm trên bê tông: hố sứt + muội khói dán khít mặt khối bị chạm (tự co lại khi gần mép khối,
           // không chìa ra ngoài không khí qua chỗ tường đã vỡ)
           const s = (prof.size || 1) * (opts.heavy ? 1.5 : 1);
           const isHeatImpact = prof.kind === 'heat' || ammoType === 'HEAT' || ammoType === 'HEAT120' || ammoType === 'RPG' || ammoType === 'ANTI_TANK_MISSILE' || (ammoType === 'NORMAL' && !!opts.tandem);   // đạn đa năng (AMP) nổ phá: không luồng phụt
-          this.addSurfaceMark(p, n, hit.object, 'concreteBlast', (isHeatImpact ? 4.5 : 6.5) * Math.pow(s, 0.6));
+          this.addSurfaceMark(p, n, hit.object, 'concreteBlast', (isHeatImpact ? 5.2 : 7.2) * Math.pow(s, 0.6), { noFit: true });
+          this.spallCone(p, n, 22, { spread: 0.8, speed: 0.75, dust: [0.74, 0.72, 0.68] });
           // Đầu nổ lõm: luồng kim loại nóng chảy xuyên thủng tường, phụt sáng ra mặt sau kèm bê tông vỡ
           if (isHeatImpact && !opts.noPierce) this.heatPierce(p, d, wT, { power: (ammoType === 'ANTI_TANK_MISSILE' || ammoType === 'HEAT120') ? 1.25 : 1 });
         }
@@ -4527,7 +4529,7 @@
       this.items = [];
       this.geo = new THREE.SphereGeometry(1, 36, 18);                                              // cầu đầy đủ
       this.capGeo = new THREE.SphereGeometry(1, 36, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);        // nửa cầu (mặt nước không che)
-      this.ringGeo = new THREE.RingGeometry(0.68, 1, 64);
+      this.ringGeo = new THREE.RingGeometry(0.72, 1.0, 64);
       this.ringGeo.rotateX(-Math.PI / 2);
       // Uniform dùng chung mọi vỏ sóng: ảnh khung hình chụp giữa lúc vẽ + kích thước bộ đệm vẽ
       this.uScene = { value: null };
@@ -4541,7 +4543,7 @@
       this._capture = (renderer) => this.capture(renderer);
     }
 
-    // Có làm khúc xạ không: tắt ở mức đồ hoạ "Thấp" hoặc khi máy không chụp được khung hình
+    // Có làm khúc xạ không: kiểm tra thiết lập đồ họa
     wantRefraction() {
       if (this.noCopy) return false;
       const gm = typeof window !== 'undefined' ? window.GameMenu : null;
@@ -4549,25 +4551,22 @@
       return !(S && S.gfx === 'low');
     }
 
-    // Gọi ngay trước khi vẽ vỏ sóng (vật trong suốt, sau mọi vật đặc): chép khung hình đang vẽ sang kết cấu,
-    // mỗi khung một lần cho mọi vỏ sóng
     capture(renderer) {
       if (!this.uUse.value || this.noCopy) return;
-      if (renderer.getRenderTarget && renderer.getRenderTarget() !== null) return;   // đang vẽ vào bộ đệm khác (bản đồ nhỏ...)
+      if (renderer.getRenderTarget && renderer.getRenderTarget() !== null) return;
       const frame = renderer.info && renderer.info.render ? renderer.info.render.frame : -2;
       if (frame === this._capFrame && renderer === this._capRenderer) return;
-      this._capFrame = frame; this._capRenderer = renderer;
-      const t0 = performance.now();
+      this._capFrame = frame;
+      this._capRenderer = renderer;
       try {
         renderer.getDrawingBufferSize(this._sz);
         const w = Math.max(1, Math.floor(this._sz.x)), h = Math.max(1, Math.floor(this._sz.y));
         let tex = this.uScene.value;
         if (!tex || tex.image.width !== w || tex.image.height !== h) {
           if (tex) tex.dispose();
-          // Cấp phát bộ đệm RGBA tương thích chuẩn WebGL2 tránh lỗi khi copy framebuffer
-          const data = new Uint8Array(w * h * 4);
-          tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
-          tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+          tex = new THREE.DataTexture(null, w, h, THREE.RGBFormat);
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
           tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
           tex.generateMipmaps = false;
           tex.needsUpdate = true;
@@ -4575,16 +4574,9 @@
         }
         this.uRes.value.set(w, h);
         renderer.copyFramebufferToTexture(this._org, tex);
-        const elapsed = performance.now() - t0;
-        if (elapsed > 4.5) {
-          // Thao tác copy framebuffer gây trễ pipeline trên GPU này -> tạm chuyển sang vành khí nén phát sáng
-          this._slowCopyCount = (this._slowCopyCount || 0) + 1;
-          if (this._slowCopyCount > 2) this.uUse.value = 0;
-        } else {
-          this._slowCopyCount = 0;
-        }
       } catch (e) {
-        this.noCopy = true; this.uUse.value = 0;   // máy không hỗ trợ -> quay về vành khí nén phát sáng
+        this.noCopy = true;
+        this.uUse.value = 0;
       }
     }
 
@@ -4592,33 +4584,58 @@
       return new THREE.ShaderMaterial({
         transparent: true, depthWrite: false, side: THREE.DoubleSide,
         uniforms: {
-          op: { value: 1 }, rad: { value: 1 }, tint: { value: new THREE.Color(0.92, 0.94, 0.98) },
-          tScene: this.uScene, res: this.uRes, useScene: this.uUse
+          op: { value: 1 },
+          rad: { value: 1 },
+          tint: { value: new THREE.Color(0.92, 0.90, 0.85) },
+          tScene: this.uScene,
+          res: this.uRes,
+          useScene: this.uUse
         },
-        vertexShader: 'varying vec3 vN; varying vec3 vV; varying float vD; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vD = max(1.0, -mv.z); gl_Position = projectionMatrix * mv; }',
+        vertexShader: [
+          'varying vec3 vN;',
+          'varying vec3 vV;',
+          'varying float vD;',
+          'void main() {',
+          '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+          '  vN = normalize(normalMatrix * normal);',
+          '  vV = normalize(-mv.xyz);',
+          '  vD = max(1.0, -mv.z);',
+          '  gl_Position = projectionMatrix * mv;',
+          '}'
+        ].join('\n'),
         fragmentShader: [
-          'uniform float op; uniform float rad; uniform vec3 tint; uniform sampler2D tScene; uniform vec2 res; uniform float useScene;',
-          'varying vec3 vN; varying vec3 vV; varying float vD;',
-          'void main(){',
+          'uniform float op;',
+          'uniform float rad;',
+          'uniform vec3 tint;',
+          'uniform sampler2D tScene;',
+          'uniform vec2 res;',
+          'uniform float useScene;',
+          'varying vec3 vN;',
+          'varying vec3 vV;',
+          'varying float vD;',
+          'void main() {',
           '  float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));',
-          // Vành sóng khí nén sắc nét
-          '  float rim = pow(f, 2.2);',
-          '  float rimSharp = smoothstep(0.25, 0.95, f);',
-          '  vec3 shockRimCol = mix(tint, vec3(1.0, 0.98, 0.92), rimSharp);',
+          '  float rim = pow(f, 2.4);',
           '  if (useScene < 0.5) {',
-          // Khi không dùng sao chép màn hình: vành màng khí nén trắng bạc phát sáng sắc nét
-          '    float alpha = (pow(f, 2.0) * 0.72 + rimSharp * 0.28) * op;',
-          '    gl_FragColor = vec4(shockRimCol, alpha); return;',
+          '    // Chế độ dự phòng mờ nhẹ không khí tự nhiên, không viền trắng đục',
+          '    float a = rim * 0.20 * op;',
+          '    gl_FragColor = vec4(tint, a);',
+          '    return;',
           '  }',
-          // Vỏ khí nén mỏng khúc xạ bẻ cong không gian phía sau
-          '  float amp = min(0.045, 0.12 * rad / vD) * op;',
+          '  // === BIẾN DẠNG HOẠT ẢNH KHÚC XẠ KHÔNG KHÍ CHÂN THỰC ===',
+          '  float amp = clamp(0.045 * rad / vD, 0.005, 0.032) * op;',
           '  vec2 uv = gl_FragCoord.xy / res;',
-          '  vec2 off = normalize(vN.xy + 1e-5) * rim * amp; off.x *= res.y / res.x;',
-          '  vec3 col = texture2D(tScene, clamp(uv - off, 0.001, 0.999)).rgb;',
-          // Khí nén viền trắng sáng rực rỡ kết hợp khúc xạ
-          '  col += shockRimCol * rimSharp * op * 0.75;',
-          '  float finalA = (smoothstep(0.02, 0.4, rim) * 0.85 + rimSharp * 0.15) * op;',
-          '  gl_FragColor = vec4(col, finalA);',
+          '  vec2 off = normalize(vN.xy + vec2(1e-5)) * rim * amp;',
+          '  off.x *= res.y / res.x;',
+          '  // Tán sắc ánh sáng nhẹ tạo độ sâu thấu kính nén',
+          '  float rCol = texture2D(tScene, clamp(uv - off * 1.04, 0.001, 0.999)).r;',
+          '  float gCol = texture2D(tScene, clamp(uv - off * 1.00, 0.001, 0.999)).g;',
+          '  float bCol = texture2D(tScene, clamp(uv - off * 0.96, 0.001, 0.999)).b;',
+          '  vec3 col = vec3(rCol, gCol, bCol);',
+          '  // Ánh sáng tán xạ nhẹ ở mép sóng, giữ sắc thái không khí tự nhiên',
+          '  col += tint * rim * op * 0.05;',
+          '  float alpha = smoothstep(0.01, 0.35, rim) * op;',
+          '  gl_FragColor = vec4(col, alpha);',
           '}'
         ].join('\n')
       });
@@ -4633,8 +4650,8 @@
     add(x, y, z, R, opts = {}) {
       if (typeof opts === 'number') opts = { dur: opts };
       this.uUse.value = this.wantRefraction() ? 1 : 0;
-      // Kéo dài thời gian hiển thị thị giác vừa đủ 0.35-0.65s để mắt người quan sát được trọn vẹn
-      const dur = opts.dur || Math.max(0.35, Math.min(0.65, R / 360));
+      // Kéo dài thời gian hiển thị thị giác vừa đủ 0.32-0.52s để mắt người quan sát được trọn vẹn
+      const dur = opts.dur || Math.max(0.32, Math.min(0.52, R / 240));
       const m = new THREE.Mesh(opts.hemi ? this.capGeo : this.geo, this.mat());
       m.position.set(x, y, z);
       m.renderOrder = 7;
@@ -4645,7 +4662,7 @@
       const gy = opts.ground !== undefined ? opts.ground : y;
       let rm = null;
       if (y - gy < R * 0.8) {
-        rm = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xe8d5be, transparent: true, opacity: 0, depthWrite: false }));
+        rm = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xd0c4b2, transparent: true, opacity: 0, depthWrite: false }));
         rm.position.set(x, gy + 0.4, z);
         rm.renderOrder = 7;
         rm.scale.setScalar(0.1);
@@ -4721,7 +4738,7 @@
             const rg = Math.sqrt(Math.max(0, r * r - it.h * it.h));
             it.rm.visible = rg > 0.5;
             it.rm.scale.setScalar(Math.max(0.1, rg * 1.02));
-            it.rm.material.opacity = 0.78 * fade;
+            it.rm.material.opacity = 0.38 * fade;
           }
         } else if (it.m) {
           // phần nhìn thấy đã tắt; mặt sóng vẫn lan tiếp (vô hình) để thổi khói xa
@@ -6213,7 +6230,12 @@
       rc.set(origin, dir);
       rc.far = far;
       u.group.updateMatrixWorld(true);
-      for (const h of rc.intersectObject(u.group, true)) {
+      const targets = [u.group];
+      if (typeof VehicleDamage !== 'undefined' && VehicleDamage.debrisObjectsOf) {
+        const debs = VehicleDamage.debrisObjectsOf(u);
+        for (let i = 0; i < debs.length; i++) targets.push(debs[i]);
+      }
+      for (const h of rc.intersectObjects(targets, true)) {
         const o = h.object;
         if (!o.visible || o.userData.isFxDecal || o === u.hpBarMesh || o === u.hpBgMesh || o === u.reactiveArmorMesh) continue;
         const m = Array.isArray(o.material) ? o.material[0] : o.material;
@@ -6732,7 +6754,7 @@
         const lateral = rand(28, 48);
         this.sabots.push({
           mesh: grp,
-          v: f.clone().multiplyScalar(Math.min(260, speed * rand(0.05, 0.08))).addScaledVector(radial, lateral),
+          v: f.clone().multiplyScalar(Math.min(450, speed * rand(0.14, 0.22))).addScaledVector(radial, lateral),
           w: new THREE.Vector3(rand(-14, 14), rand(-14, 14), rand(-14, 14)),
           t: 0, life: rand(4, 6), resting: false
         });
@@ -6754,9 +6776,9 @@
         if (sb.t > sb.life) { this.scene.remove(sb.mesh); this.sabots.splice(i, 1); continue; }
         if (!sb.resting) {
           // Lực cản rất lớn: guốc đạn nhẹ, mặt cản to -> mất tốc nhanh
-          const drag = Math.exp(-4.2 * dt);
+          const drag = Math.exp(-2.2 * dt);
           sb.v.multiplyScalar(drag);
-          sb.v.y -= 160 * dt;
+          sb.v.y -= 120 * dt;
           sb.mesh.position.addScaledVector(sb.v, dt);
           sb.mesh.rotation.x += sb.w.x * dt; sb.mesh.rotation.y += sb.w.y * dt; sb.mesh.rotation.z += sb.w.z * dt;
           const gy = this.groundAt(sb.mesh.position.x, sb.mesh.position.z) + 0.5;
@@ -7794,15 +7816,19 @@
       // độ cao tại tâm từng phát ngay trước khi nó nổ (nổ vào đáy hố cũ khoét tiếp từ đó)
       const tmp = { exc: 0, dep: 0, rho: 0, ca: 0, ej: 0, scorch: 0, jet: 0 };
       const heightAt = (px, pz, n) => {
-        let H = 0;
+        let H = 0, depAcc = 0;
         for (let i = 0; i < n; i++) {
           const b = blasts[i];
           tmp.jet = 0;
           evalBlast(b, px, pz, tmp);
-          if (tmp.exc < 0) H = Math.min(H, b._hc + tmp.exc * b._k);
-          H += tmp.dep;
+          if (tmp.exc < 0) {
+            const bowl = Math.max(0, 1 - Math.pow(tmp.rho, 1.8));
+            const Hc = b._hc * bowl + tmp.exc * b._k;
+            if (Hc < H) { H = Hc; depAcc = 0; }
+          }
+          depAcc += tmp.dep * Math.max(0.12, 1 - depAcc / Math.max(1, b.rimH * 1.5));
         }
-        return H;
+        return H + depAcc;
       };
       const deepest = Math.max(...blasts.map(b => b.d + b.jet));
       blasts.forEach((b, i) => {
@@ -7815,24 +7841,26 @@
       // ---- một lượt tính đầy đủ cho mỗi điểm: độ cao + các lớp màu ----
       const o = { exc: 0, dep: 0, rho: 0, ca: 0, ej: 0, scorch: 0, jet: 0 };
       const sample = (px, pz, res) => {
-        let H = 0, ej = 0, scorch = 0, jet = 0, fresh = 0, inBowl = 0, gul = 0, fan = 0, talus = 0, wall = 0;
+        let H = 0, depAcc = 0, ej = 0, scorch = 0, jet = 0, fresh = 0, inBowl = 0, gul = 0, fan = 0, talus = 0, wall = 0;
         for (let i = 0; i < blasts.length; i++) {
           const b = blasts[i];
           o.jet = 0;
           evalBlast(b, px, pz, o);
           if (o.exc < 0) {
-            const Hc = b._hc + o.exc * b._k;
-            if (Hc < H) { H = Hc; fresh = 1; ej *= 0.2; }   // mặt vừa bị khoét: đất cái mới lộ ra, lớp đất văng cũ bị hất đi
+            const bowl = Math.max(0, 1 - Math.pow(o.rho, 1.8));
+            const Hc = b._hc * bowl + o.exc * b._k;
+            if (Hc < H) { H = Hc; fresh = 1; ej *= 0.2; depAcc = 0; }   // mặt vừa bị khoét: đất cái mới lộ ra, lớp đất văng cũ bị hất đi
             inBowl = Math.max(inBowl, 1 - o.rho);
             fan = Math.max(fan, o.fan); talus = Math.max(talus, o.talus); wall = Math.max(wall, o.wall);
           }
           gul = Math.max(gul, o.gul);
-          H += o.dep;
+          depAcc += o.dep * Math.max(0.12, 1 - depAcc / Math.max(1, b.rimH * 1.5));
           ej = ej + o.ej * (1 - ej * 0.5);
           scorch = Math.max(scorch, o.scorch * (1 - inBowl * 0.2));
           jet = Math.max(jet, o.jet);
         }
-        res.H = H; res.ej = ej; res.scorch = scorch; res.jet = jet; res.fresh = fresh; res.inBowl = inBowl;
+        res.H = H + (H < -0.05 ? depAcc * smooth(0.85, 1.02, 1 - inBowl) : depAcc);
+        res.ej = ej; res.scorch = scorch; res.jet = jet; res.fresh = fresh; res.inBowl = inBowl;
         res.gul = gul; res.fan = fan; res.talus = talus; res.wall = wall;
         return res;
       };

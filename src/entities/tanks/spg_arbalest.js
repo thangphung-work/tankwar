@@ -337,10 +337,17 @@
       hb.box(3.8, 3.2, 0.15, M.rubber, [s * 9.0, 4.0, -20.2], [s < 0 ? 0.05 : -0.04, 0, 0]);
     }
 
-    // Thùng nhiên liệu, hộp ắc quy/dụng cụ, tủ đồ giữa hai cụm bánh
+    // Thùng nhiên liệu có cổ rót + nắp khóa + bậc bước, hộp ắc quy/dụng cụ, tủ đồ giữa hai cụm bánh
     hb.setTag('fuelTank');
     hb.cyl(1.75, 1.75, 9.0, 16, P, [-9.0, 9.0, -5.5], 'z');
-    for (const z of [-8.0, -3.0]) hb.cyl(1.82, 1.82, 0.3, 16, D, [-9.0, 9.0, z], 'z');
+    for (const z of [-8.0, -3.0]) {
+      hb.cyl(1.83, 1.83, 0.32, 16, D, [-9.0, 9.0, z], 'z');
+      hb.box(0.5, 3.8, 0.36, D, [-7.35, 9.0, z]); // giá đỡ bắt vào dầm dọc khung gầm
+    }
+    hb.cyl(0.32, 0.36, 0.55, 10, D, [-9.8, 10.65, -7.1], 'y', [0, 0, 0.38]); // cổ rót nhiên liệu nghiêng
+    hb.cyl(0.40, 0.40, 0.16, 10, M.steel, [-10.0, 10.92, -7.1], 'y', [0, 0, 0.38]); // nắp vặn bình xăng
+    hb.box(0.45, 0.12, 2.2, M.steel, [-10.65, 8.2, -5.5]); // bậc bước chân gắn ngoài đai bình xăng
+    hb.strut([-8.1, 10.5, -3.4], [-6.8, 10.8, -9.8], 0.08, M.rubber, 5); // ống dẫn dầu cao su bọc lưới
     hb.setTag(null);
     hb.box(3.2, 3.4, 8.0, P, [8.8, 9.2, -5.8]);
     hb.box(0.1, 0.1, 7.6, D, [10.42, 10.6, -5.8]);
@@ -348,6 +355,11 @@
       hb.setTag('box' + (s < 0 ? 'L' : 'R'));
       hb.box(3.2, 3.4, 4.6, P, [s * 8.8, 9.2, 3.0]);
       hb.box(0.1, 3.0, 0.1, D, [s * 10.42, 9.2, 3.0]);
+      for (const dz of [-1.15, 1.15]) {
+        hb.box(0.08, 2.2, 1.5, P, [s * 10.43, 9.2, 3.0 + dz]); // ô dập nổi cánh tủ
+        hb.box(0.16, 0.45, 0.26, M.steel, [s * 10.46, 9.3, 3.0 + dz * 0.45]); // tay khóa chữ T
+      }
+      hb.hinge([s * 10.42, 7.55, 3.0], 'z', 4.1, D, 0.12, 4);
       hb.setTag(null);
     }
 
@@ -797,11 +809,18 @@
     tb.box(0.25, 8.4, 0.25, M.steel, [9.95, 5.0, 8.3]);
     tb.box(0.25, 8.4, 0.25, M.steel, [9.95, 5.0, 10.5]);
 
-    // Can nhiên liệu dự phòng treo hai góc sau tháp (đai giữ sẫm màu) + tay nắm đầu thang leo
+    // Can nhiên liệu dự phòng treo hai góc sau tháp (khay chữ L + đai giữ có khóa gài) + tay nắm đầu thang leo
     for (const s of [-1, 1]) {
       tb.setTag('can' + (s < 0 ? 'L' : 'R'));
       tb.jerrycan([s * 6.0, 2.5, 15.35], Math.PI / 2, 1.3, 3.7, 2.7, P, D);
-      for (const y of [1.6, 3.3]) tb.box(2.9, 0.22, 0.08, D, [s * 6.0, y, 16.04]);
+      tb.box(2.85, 0.14, 1.45, D, [s * 6.0, 0.62, 15.35]); // khay đáy đỡ can
+      tb.box(2.85, 0.42, 0.10, D, [s * 6.0, 0.82, 16.05]); // gờ chặn đáy
+      for (const y of [1.6, 3.3]) {
+        tb.box(2.92, 0.22, 0.08, D, [s * 6.0, y, 16.04]);
+        tb.box(0.10, 0.22, 1.42, D, [s * 4.58, y, 15.35]);
+        tb.box(0.10, 0.22, 1.42, D, [s * 7.42, y, 15.35]);
+      }
+      tb.box(0.32, 0.36, 0.14, M.steel, [s * 6.0, 2.45, 16.08]); // khóa gài đai can
       tb.setTag(null);
     }
     tb.grabHandle([7.7, TOP, 9.4], 'z', 1.6, 0.55, P);
@@ -810,13 +829,17 @@
     // Tấm vải nhận diện phe trên nóc sau tháp
     tb.box(3.0, 0.08, 4.4, M.idPanel, [6.2, TOP + 0.06, 8.6], [0, 0.03, 0]);
 
-    // Kính toàn cảnh chỉ huy (đầu xoay quét), cột khí tượng có chén đo gió, vòm GPS, ăng-ten
+    // Kính toàn cảnh chỉ huy (đầu xoay quét 2 cửa sổ quang học), cột khí tượng có chén đo gió, vòm GPS, ăng-ten
     tb.cyl(0.8, 0.95, 2.0, 12, P, [-6.4, TOP + 1.0, -4.2]);
+    tb.cyl(1.08, 1.08, 0.18, 12, D, [-6.4, TOP + 0.09, -4.2]);
     const periHead = new THREE.Group();
     periHead.position.set(-6.4, TOP + 2.7, -4.2);
     const ph = new VehicleKit.PartBatch(DECK_Y + TOP + 2.7);
     ph.box(2.0, 1.4, 2.0, P, [0, 0, 0]);
     ph.box(1.4, 0.6, 0.1, M.glass, [0, 0.1, -1.03]);
+    ph.box(0.06, 0.62, 0.11, D, [0.10, 0.1, -1.04]);
+    ph.cyl(0.22, 0.22, 0.12, 10, M.lens, [-0.34, 0.1, -1.03], 'z');
+    ph.box(1.6, 0.10, 0.32, D, [0, 0.46, -1.10], [0.2, 0, 0]);
     ph.box(2.2, 0.16, 2.2, D, [0, 0.72, 0]);
     ph.build(periHead);
     turret.add(periHead);
@@ -843,21 +866,33 @@
     ant.build();
     (unit.antennaSets || (unit.antennaSets = [])).push(ant);
 
-    // Ống phóng lựu đạn khói hai góc trước tháp
+    // Ống phóng lựu đạn khói hai góc trước tháp (có nắp cao su chống bụi, đai kẹp và cáp điểm hỏa)
     for (const s of [-1, 1]) {
       tb.setTag('smoke' + (s < 0 ? 'L' : 'R'));
       tb.box(0.45, 1.2, 3.0, P, [s * 9.95, 7.6, -7.0], [0, s * 0.2, 0]);
+      tb.box(0.30, 0.36, 0.50, D, [s * 10.1, 7.15, -5.7], [0, s * 0.2, 0]);
+      const rot = [-0.45, 0, -s * 0.85];
+      const ax = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]));
       for (let i = 0; i < 3; i++) {
-        tb.cyl(0.36, 0.36, 1.5, 10, D, [s * 10.5, 8.1, -8.0 + i * 0.95], 'y', [-0.45, 0, -s * 0.85]);
+        const c = [s * 10.5, 8.1, -8.0 + i * 0.95];
+        const at = (d) => [c[0] + ax.x * d, c[1] + ax.y * d, c[2] + ax.z * d];
+        tb.cyl(0.36, 0.36, 1.5, 10, D, c, 'y', rot);
+        tb.cyl(0.40, 0.40, 0.14, 10, P, at(-0.38), 'y', rot);
+        tb.cyl(0.40, 0.40, 0.18, 10, M.rubber, at(0.78), 'y', rot);
+        tb.strut(at(-0.68), [s * 10.05, 7.35, -7.9 + i * 0.9], 0.032, M.rubber, 4);
       }
       tb.setTag(null);
     }
 
-    // Thùng đồ hai bên hông tháp
+    // Thùng đồ hai bên hông tháp (kèm gân tăng cứng, bản lề nắp và khóa gài thép)
     for (const s of [-1, 1]) {
       tb.setTag('bin' + (s < 0 ? 'L' : 'R'));
       tb.box(1.6, 3.4, 8.0, P, [s * 10.5, 3.2, 2.0]);
+      tb.box(1.7, 0.12, 8.1, P, [s * 10.52, 4.92, 2.0]);
       tb.box(1.7, 0.08, 8.1, D, [s * 10.52, 4.4, 2.0]);
+      tb.hinge([s * 9.75, 4.92, 2.0], 'z', 7.4, D, 0.12, 4);
+      for (const z of [-0.4, 2.0, 4.4]) tb.box(0.09, 2.5, 0.26, P, [s * 11.33, 2.95, z]);
+      for (const z of [-0.8, 4.8]) tb.box(0.14, 0.58, 0.42, M.steel, [s * 11.35, 4.15, z]);
       tb.setTag(null);
     }
 

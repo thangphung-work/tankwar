@@ -432,15 +432,13 @@ bool shInHole(vec3 wp, vec3 wn) {
     mat.needsUpdate = true;
     return mat;
   }
-  // [bán kính, độ sâu] hố theo loại đạn (8 đv = 1 m): pháo tăng 120 mm ~ hố 55 cm sâu 25 cm, lựu pháo 155 mm ~ 80 cm sâu
-  // 35 cm, đạn xuyên / đầu nổ lõm: lỗ hẹp mà sâu; đạn súng chỉ khoét được khi dồn nhiều phát vào một chỗ
+  // [bán kính, độ sâu] hố theo loại đạn trên bê tông cường độ cao: hố đục đanh gọn, không bị toét rộng
   const CRATER = {
-    // 30mm nổ-mảnh: mỗi phát mẻ ~25 cm sâu ~12 cm; dồn vào hố cũ thì sâu thêm (xem addCrater)
-    SCOUT_BULLET: [0.8, 0.3], INCENDIARY_HMG: [0.8, 0.3], INCENDIARY: [1.8, 0.9], GATLING_BULLET: [2.0, 1.0],
-    // đạn xuyên / đầu nổ lõm: miệng nhỏ, lõi khoan hẹp sâu (APFSDS ~0,8 m, RPG ~0,7 m, tên lửa ~0,9 m vào bê tông), quanh
-    // miệng chỉ bóc lở nông (xem jet trong buildCrater) — khác hẳn hố chảo nông rộng của đạn nổ
-    AP: [1.2, 6.5], RPG: [1.6, 5.5], ANTI_TANK_MISSILE: [2.0, 7],
-    CLUSTER_SUBMUNITION: [2.2, 1.0], CLUSTER: [3.4, 1.4], NORMAL: [4.4, 2.0], HE: [6.4, 2.8]
+    // 30mm nổ-mảnh: mỗi phát mẻ ~20 cm sâu ~9 cm; dồn vào hố cũ thì sâu thêm (xem addCrater)
+    SCOUT_BULLET: [0.65, 0.25], INCENDIARY_HMG: [0.65, 0.25], INCENDIARY: [1.4, 0.7], GATLING_BULLET: [1.5, 0.75],
+    // đạn xuyên / đầu nổ lõm: miệng nhỏ đanh gọn, lõi khoan hẹp sâu vào bê tông mác cao
+    AP: [1.0, 5.2], RPG: [1.3, 4.4], ANTI_TANK_MISSILE: [1.6, 5.5],
+    CLUSTER_SUBMUNITION: [1.7, 0.8], CLUSTER: [2.6, 1.1], NORMAL: [3.4, 1.5], HE: [4.8, 2.1]
   };
 
   // ===========================================================================
@@ -493,13 +491,10 @@ bool shInCut(vec3 wp) {
   const PANEL_R = [-70, -32, 32, 70];
   // các tầng mặt vỡ theo bề dày bản mái (tỉ lệ ROOF)
   const FR_LV = [0, 0.18, 0.36, 0.55, 0.74, 1];
-  // máu ô mái theo số phát pháo tăng (đạn nổ thường = 1): ô đầu hầm (gờ mặt tiền lộ ra) 9, ô giữa (đất phủ + dầm) 12
-  const PANEL_HP = [9, 12, 12, 12, 12, 9];
-  // TƯỜNG CÁNH (tường chắn đất bê tông cốt thép dày 2,25 m loe 2 bên mỗi đầu hầm): mỗi tường chia 3 đoạn dọc, mỗi đoạn có
-  // máu (cùng thang với ô mái). Đoạn sát miệng hầm cao ~8 m chịu nhiều nhất, đoạn chân ụ thấp yếu nhất. Đạn nổ 120 mm khoét
-  // ~0,3 m bê tông mỗi phát -> ~14 phát mới toác đoạn đầu; lựu pháo 155 (x2) ~5 phát; mũi tên / đầu nổ lõm chỉ khoan lỗ.
-  // Đoạn vỡ: tường biến mất, đất ụ phía sau sụt tràn vào kênh thành dốc đất (SLUMP_IN) — đạn bay qua, xe leo được nếu đủ thoải
-  const WING_SEG = 3, WING_HP = [14, 10, 6], SLUMP_IN = 14;
+  // máu ô mái theo số phát pháo tăng (đạn nổ thường = 1): bê tông cường độ cao ô đầu hầm 15, ô giữa 20 phát
+  const PANEL_HP = [15, 20, 20, 20, 20, 15];
+  // TƯỜNG CÁNH (tường chắn đất bê tông cốt thép dày 2,25 m loe 2 bên mỗi đầu hầm): tăng độ bền kết cấu
+  const WING_SEG = 3, WING_HP = [22, 16, 10], SLUMP_IN = 14;
   const PANEL_DMG = {
     // đạn xuyên / đầu nổ lõm chỉ khoan lỗ hẹp qua lớp đất + bản bê tông dày, gần như không làm sập ô mái (trước 0,7 / 0,8 / 1,1)
     // 30mm: ~300 phát trúng đoạn tường cánh yếu nhất / ~450 vào mặt tiền ô mái đầu hầm (trước 0,015: gấp đôi số đó)
@@ -1185,7 +1180,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
             const dxy = Math.hypot(Math.max(0, Math.abs(L.f - fc) - 16), Math.max(0, Math.abs(L.r - rc) - (p.r1 - p.r0) / 2));
             const dy = yy < S.CEIL ? S.CEIL - yy : yy > S.CREST ? yy - S.CREST : 0;
             const dd = Math.hypot(dxy, dy);
-            if (dd < R) d = base * 0.35 * (1 - dd / R);
+            if (dd < R) d = base * 0.22 * (1 - dd / R);
           }
           if (d <= 0) continue;
           p.hp -= d;
@@ -1205,7 +1200,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           const dY = yy > top ? yy - top : yy < fl ? fl - yy : 0;
           const dd = sgn ? Math.hypot(dF, dR, dY) : Infinity;
           if (dd < 3 && info && info.t === 'WALL') d = base;
-          else if (R2 > 0 && dd < R2) d = base * 0.35 * (1 - dd / R2) * (ar > ch + S.WING_T ? 0.3 : 1);
+          else if (R2 > 0 && dd < R2) d = base * 0.22 * (1 - dd / R2) * (ar > ch + S.WING_T ? 0.3 : 1);
           if (d <= 0) continue;
           w.hp -= d;
           if (w.hp <= 0) { this.collapseWing(K, w, fx, false); events.push({ type: 'strongholdWall', id: K.id }); }

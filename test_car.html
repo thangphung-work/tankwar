@@ -7,7 +7,7 @@
 <link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
 <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
 <link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
-<link rel="stylesheet" href="src/ui/lab.css?v=20261020lab2">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261024nav1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -54,8 +54,14 @@
     </div>
     <nav class="lab-nav">
       <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
-      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả</a>
+      <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+      <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
       <a class="on" href="test_car.html"><i class="ti ti-car" aria-hidden="true"></i> Ô tô</a>
+      <a href="scenery_lab.html"><i class="ti ti-trees" aria-hidden="true"></i> Cảnh vật</a>
+      <a href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
+      <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+      <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
     </nav>
   </header>
 
@@ -74,8 +80,8 @@
       <button class="btn" id="mode-shoot" onclick="setMode('shoot')"><i class="ti ti-crosshair" aria-hidden="true"></i>Bắn</button>
     </div>
     <div class="row mt">
-      <button class="btn" onclick="focusSel()"><i class="ti ti-focus-2" aria-hidden="true"></i>Nhìn xe</button>
-      <button class="btn" onclick="overview()"><i class="ti ti-world" aria-hidden="true"></i>Toàn cảnh</button>
+      <button class="btn on" id="btn-focus" onclick="focusSel()" title="Tâm camera bám xe đang chọn, kéo chuột xoay 360° quanh xe"><i class="ti ti-360-view" aria-hidden="true"></i>Nhìn xe 360°</button>
+      <button class="btn" id="btn-overview" onclick="overview()" title="Nhìn toàn bộ bãi đỗ"><i class="ti ti-world" aria-hidden="true"></i>Toàn cảnh</button>
       <button class="btn" onclick="resetAll()"><i class="ti ti-refresh" aria-hidden="true"></i>Dựng lại cả bãi</button>
     </div>
   </section>
@@ -134,11 +140,11 @@
 </div>
 
 <div class="lab-keys">
-  <span><kbd>Chuột trái</kbd> xoay</span>
-  <span><kbd>Chuột phải</kbd> trượt</span>
+  <span><kbd>Space</kbd> hoặc <kbd>Chuột trái</kbd> khai hoả</span>
+  <span><kbd>Chuột phải</kbd> trượt lia</span>
   <span><kbd>Cuộn</kbd> zoom</span>
   <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> lái xe tăng</span>
-  <span><kbd>Space</kbd> phanh</span>
+  <span><kbd>X</kbd> phanh</span>
   <span><kbd>C</kbd> camera bám</span>
 </div>
 
@@ -155,7 +161,8 @@
     // các mẫu xe trong game (map_gen CAR_CATALOG) — mẫu chưa có model riêng trong CivilCars thì vẽ tạm bằng sedan
     const KINDS = [
       { id: 'sedan', name: 'Sedan' }, { id: 'hatch', name: 'Hatchback' }, { id: 'suv', name: 'SUV' },
-      { id: 'van', name: 'Van' }, { id: 'pickup', name: 'Bán tải' }, { id: 'taxi', name: 'Taxi' }
+      { id: 'dump', name: 'Xe ben' }, { id: 'truck', name: 'Xe tải' }, { id: 'van', name: 'Van' }, { id: 'pickup', name: 'Bán tải' },
+      { id: 'taxi', name: 'Taxi' }
     ];
     const hasModel = id => !!CivilCars.SPEC[id] || id === 'taxi';
     const kindName = id => { const k = KINDS.find(k => k.id === id); return (k ? k.name : id) + (hasModel(id) ? '' : ' (tạm thân sedan)'); };
@@ -291,9 +298,9 @@
 
     // --- BẢNG CHỈNH: đổi thông số -> dựng lại xe đang chọn (trễ 150 ms khi kéo thanh trượt)
     $('o-slot').innerHTML = slots.map((s, i) => `<option value="${i}">${s.name} · ${kindName(s.opts.kind)} · ${s.z > 0 ? 'cũ' : 'mới'}</option>`).join('');
-    window.stepSel = d => { select(slots[(slots.indexOf(sel) + d + slots.length) % slots.length]); if (solo) focusSel(); };
-    $('o-slot').addEventListener('change', e => { e.target.blur(); select(slots[+e.target.value]); if (solo) focusSel(); });
-    $('o-solo').addEventListener('change', e => { e.target.blur(); solo = e.target.checked; applySolo(); if (!solo) overview(); });
+    window.stepSel = d => { select(slots[(slots.indexOf(sel) + d + slots.length) % slots.length]); if (solo || $('btn-focus').classList.contains('on')) focusSel(); else { target.set(sel.x, 3.5, sel.z); updateCamera(); } };
+    $('o-slot').addEventListener('change', e => { e.target.blur(); select(slots[+e.target.value]); if (solo || $('btn-focus').classList.contains('on')) focusSel(); else { target.set(sel.x, 3.5, sel.z); updateCamera(); } });
+    $('o-solo').addEventListener('change', e => { e.target.blur(); solo = e.target.checked; applySolo(); if (solo) focusSel(); else overview(); });
     $('o-kind').innerHTML = KINDS.map(k => `<option value="${k.id}">${kindName(k.id)}</option>`).join('');
     $('ammo').innerHTML = AMMO.map(([id, n]) => `<option value="${id}">${n} · ${id}</option>`).join('');
     $('ammo').value = 'HE';
@@ -388,9 +395,22 @@
       if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox') return;
       const k = e.key.toLowerCase();
       if (k === 'c') { $('t-follow').checked = !$('t-follow').checked; return; }
-      if ('wasd '.includes(k) || k.startsWith('arrow')) { keys[k] = true; if (tank) e.preventDefault(); }
+      if (e.code === 'Space') {
+        e.preventDefault();
+        keys['space'] = true;
+        if (cool <= 0) fireOnce();
+        if (MG[$('ammo').value]) firing = true;
+        return;
+      }
+      if ('wasdx'.includes(k) || k.startsWith('arrow')) { keys[k] = true; if (tank) e.preventDefault(); }
     });
-    window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+    window.addEventListener('keyup', e => {
+      keys[e.key.toLowerCase()] = false;
+      if (e.code === 'Space') {
+        keys['space'] = false;
+        if (MG[$('ammo').value]) firing = false;
+      }
+    });
     window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
     // lái: tối đa 60 đv/s tiến (~27 km/h), 25 lùi; quay tại chỗ được như xe xích
@@ -402,7 +422,7 @@
       const fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
       const turn = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0);
       let v = tank.speed;
-      if (keys[' ']) v -= Math.sign(v) * Math.min(Math.abs(v), BRAKE * dt);
+      if (keys.x) v -= Math.sign(v) * Math.min(Math.abs(v), BRAKE * dt);
       else if (fwd) v = Math.max(-VREV, Math.min(VMAX, v + fwd * (Math.sign(v) === -fwd ? BRAKE : ACC) * dt));
       else v -= Math.sign(v) * Math.min(Math.abs(v), 30 * dt);   // nhả ga: lực cản xích
       tank.speed = v;
@@ -449,6 +469,27 @@
           tank.barrelPivot.rotation.x = tank._el;
         }
       }
+      // Quet nong phao va cham voi cac xe xung quanh khi thap phao / nong phao vut qua
+      if (tank.barrelPivot) {
+        tank.turretGroup.updateMatrixWorld(true);
+        tank.barrelPivot.updateMatrixWorld(true);
+        const p0 = tank.barrelPivot.getWorldPosition(new THREE.Vector3());
+        let p1;
+        if (tank.barrelGroup && tank.muzzleTipLocal) {
+          tank.barrelGroup.updateMatrixWorld(true);
+          p1 = tank.barrelGroup.localToWorld(tank.muzzleTipLocal.clone());
+        } else {
+          const fwd = new THREE.Vector3(0, 0, -42).applyQuaternion(tank.barrelPivot.getWorldQuaternion(new THREE.Quaternion()));
+          p1 = p0.clone().add(fwd);
+        }
+        const bVel = tank._lastTip ? p1.clone().sub(tank._lastTip).divideScalar(Math.max(dt, 0.001)) : new THREE.Vector3(0, 0, 0);
+        tank._lastTip = p1.clone();
+
+        for (const s of slots) {
+          if (!s.g || !s.g.visible || !s.g.userData || !s.g.userData.crush) continue;
+          s.g.userData.crush.sweepBarrel(p0, p1, 1.25, bVel);
+        }
+      }
       tank.barrelRecoil = Math.max(0, tank.barrelRecoil - 60 * dt);
       tank.reloadTimer = Math.max(0, tank.reloadTimer - dt);
       if (tank.modelAnimator) tank.modelAnimator.update(dt, tank);
@@ -491,8 +532,15 @@
         tank.barrelRecoil = MG[ammo] ? 4 : 20;
         if (!MG[ammo]) tank.reloadTimer = 1.5;
       } else {
-        rcF.setFromCamera(mouseNdc, camera);
-        o = rcF.ray.origin.clone(); d = rcF.ray.direction.clone();
+        if (sel && sel.g && (solo || firstCarHit(rcF) === undefined)) {
+          // Chế độ xem 3D: bắn thẳng vào thân xe đang chọn
+          o = camera.position.clone();
+          const carCenter = sel.g.position.clone().add(new THREE.Vector3(0, 5, 0));
+          d = carCenter.sub(o).normalize();
+        } else {
+          rcF.setFromCamera(mouseNdc, camera);
+          o = rcF.ray.origin.clone(); d = rcF.ray.direction.clone();
+        }
       }
       if (spread) d.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(spread * 2)).normalize();
       rcF.set(o, d);
@@ -546,7 +594,7 @@
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('mousedown', e => {
       drag = { b: e.button, x: e.clientX, y: e.clientY, moved: 0 };
-      if (e.button === 0 && mode === 'shoot') firing = true;
+      if (e.button === 0 && mode === 'shoot' && MG[$('ammo').value]) firing = true;
     });
     canvas.addEventListener('mouseenter', () => { mouseIn = true; });
     canvas.addEventListener('mouseleave', () => { mouseIn = false; });
@@ -557,27 +605,46 @@
       if (!drag) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
-      if (drag.moved > 6 && drag.b === 0 && MG[$('ammo').value]) firing = false;   // kéo chuột = xoay camera, ngừng liên thanh
+      if (drag.moved > 5 && drag.b === 0) firing = false;   // kéo chuột trái = xoay camera 360° quanh xe, không bắn
       if (drag.b === 0) { camTheta -= dx * 0.008; camPhi += dy * 0.008; }
       else {
         const k = camDist * 0.0016, sn = Math.sin(camTheta), cs = Math.cos(camTheta);
         target.x += (-dx * cs - dy * sn) * k; target.z += (dx * sn - dy * cs) * k;
+        $('btn-focus').classList.remove('on'); $('btn-overview').classList.remove('on');
       }
       updateCamera();
     });
     window.addEventListener('mouseup', e => {
       const d = drag; drag = null;
       if (MG[$('ammo').value]) firing = false;   // súng máy: nhả chuột thì ngừng
-      if (!d || d.b !== 0 || d.moved > 4 || e.target !== canvas || mode !== 'select') return;
+      if (!d || d.b !== 0 || d.moved > 5 || e.target !== canvas) return;
+      if (mode === 'shoot') {
+        if (!MG[$('ammo').value] && cool <= 0) fireOnce();
+        return;
+      }
       const p = pickAt(e);
-      if (p) select(p.s);
+      if (p) { select(p.s); target.set(p.s.x, 3.5, p.s.z); $('btn-focus').classList.add('on'); $('btn-overview').classList.remove('on'); updateCamera(); }
     });
-    canvas.addEventListener('wheel', e => { e.preventDefault(); camDist = Math.max(12, Math.min(320, camDist * Math.exp(e.deltaY * 0.001))); updateCamera(); }, { passive: false });
+    canvas.addEventListener('wheel', e => { e.preventDefault(); camDist = Math.max(10, Math.min(320, camDist * Math.exp(e.deltaY * 0.001))); updateCamera(); }, { passive: false });
     window.addEventListener('resize', () => {
       renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     });
-    window.focusSel = () => { if (!sel) return; target.set(sel.x, 5, sel.z); camDist = 62; camPhi = 0.35; camTheta = sel.rot + 0.7; updateCamera(); };
-    window.overview = () => { target.set(0, 4, 0); camDist = 160; camTheta = 0.45; camPhi = 0.55; updateCamera(); };
+    window.focusSel = () => {
+      if (!sel) return;
+      $('t-follow').checked = false;
+      setMode('select');
+      target.set(sel.x, 3.5, sel.z);
+      camDist = 52; camPhi = 0.3; camTheta = sel.rot + 0.65;
+      $('btn-focus').classList.add('on'); $('btn-overview').classList.remove('on');
+      updateCamera();
+    };
+    window.overview = () => {
+      $('t-follow').checked = false;
+      target.set(0, 4, 0);
+      camDist = 160; camTheta = 0.45; camPhi = 0.55;
+      $('btn-focus').classList.remove('on'); $('btn-overview').classList.add('on');
+      updateCamera();
+    };
 
     // --- THỐNG KÊ XE ĐANG CHỌN
     let statT = 0;
@@ -593,7 +660,8 @@
 
     // --- VÒNG LẶP
     refreshLabels();
-    select(slots[4]);   // SUV dãy sau
+    const initSlot = slots.find(s => s.opts.kind === 'truck' && s.z < 0) || slots[6];
+    select(initSlot);   // Xe tải dãy sau (mới)
     overview();
     if (solo) focusSel();
     let last = performance.now();

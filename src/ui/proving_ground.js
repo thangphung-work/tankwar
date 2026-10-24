@@ -115,14 +115,33 @@ const ProvingGround = (() => {
   // Hàng bắn phía bắc (sau tường thử) để trống, cuối hàng có xác xe làm bia
   const inLane = (x, z) => Math.abs(x) < 75 && z < -150;
   const LANE_WRECKS = [
-    { x: 8, z: -330, angle: 0.35, kind: 'tank', turretRot: 0.6 },
-    { x: -26, z: -470, angle: -0.2, kind: 'truck', smoke: true }
+    // Rải rác theo chiều sâu trường bắn, cách xa tường và không đè lên nhau
+    { x: -65, z: -330, angle: 0.6, kind: 'apc', turretRot: -0.4 },
+    { x: 55, z: -400, angle: -0.5, kind: 'tank', turretRot: 0.7 },
+    { x: -10, z: -480, angle: 0.2, kind: 'dump', smoke: true }
+  ];
+
+  const LANE_CARS = [
+    // 1. Nhóm sườn trái thoáng đãng (cách xa tường thử, góc bắn trực diện cực thoáng):
+    { x: -125, z: -115, angle: 0.35, kind: 'sedan', color: 0 },
+    { x: -95, z: -195, angle: -0.4, kind: 'suv', color: 2 },
+    { x: -145, z: -270, angle: 1.57, kind: 'truck', color: 1 },
+
+    // 2. Nhóm sườn phải thoáng đãng:
+    { x: 115, z: -115, angle: -0.25, kind: 'taxi', color: -1 },
+    { x: 95, z: -195, angle: 0.4, kind: 'police', color: -1 },
+    { x: 145, z: -270, angle: -1.57, kind: 'van', color: 3 },
+
+    // 3. Nhóm cự ly xa phía sau (ở các khoảng hở sâu trong bãi bắn, không dồn cục):
+    { x: -45, z: -260, angle: 0.8, kind: 'sedan', color: 5 },
+    { x: 45, z: -320, angle: -0.6, kind: 'suv', color: 4 },
+    { x: -25, z: -390, angle: 0.1, kind: 'truck', color: 2 }
   ];
 
   const PRESETS = {
     flat: {
       name: 'Phẳng', icon: 'target-arrow', mapType: 'HIGHLAND', R: 380, base: 'PAD', rings: true, flat: true,
-      desc: 'Trường bắn phẳng như cũ: chỉ có tường thử'
+      desc: 'Bãi phẳng xem xe: chỉ có tường thử'
     },
 
     hills: {
@@ -148,7 +167,7 @@ const ProvingGround = (() => {
         return segDist(x, z, -330, 345, -120, 385).d < 40;
       },
       objects(rng, P) {
-        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS, { x: 360, z: 230, angle: 1.2, kind: 'apc', turretRot: 0.4 }], fences: [], sandbags: [], signs: [] };
+        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS, { x: 360, z: 230, angle: 1.2, kind: 'apc', turretRot: 0.4 }], cars: [...LANE_CARS], fences: [], sandbags: [], signs: [] };
         scatter(rng, P, 30, (x, z) => o.rocks.push({ x, z, r: 7 + rng() * 9, h: 6 + rng() * 10, rot: rng() * 6.28 }), 40);
         scatter(rng, P, 34, (x, z) => o.trees.push({ x, z, kind: rng() < 0.8 ? 'pine' : 'deadTree', s: 0.85 + rng() * 0.4, rot: rng() * 6.28 }), 26);
         for (const r of this.ramps) o.signs.push({ x: r.x - r.w / 2 - 14, z: r.z0 - 6, text: `DỐC ${deg(r.grade)}°`, sub: r.grade > 0.5 ? 'Pháo 6x6 không leo được' : 'Mọi xe leo được' });
@@ -183,7 +202,7 @@ const ProvingGround = (() => {
       },
       avoid(x, z) { return Math.abs(z - this.riverZ(x)) < 95 || Math.hypot(x + 320, z + 250) < 140 || Math.abs(x) < 22 && z > 150; },
       objects(rng, P) {
-        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS, { x: 230, z: this.riverZ(230) + 6, angle: 1.4, kind: 'tank', turretRot: -0.8, tilt: 0.05 }], fences: [], sandbags: [], signs: [] };
+        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS, { x: 230, z: this.riverZ(230) + 6, angle: 1.4, kind: 'tank', turretRot: -0.8, tilt: 0.05 }], cars: [...LANE_CARS], fences: [], sandbags: [], signs: [] };
         scatter(rng, P, 14, (x, z) => o.rocks.push({ x, z, r: 6 + rng() * 6, h: 5 + rng() * 6, rot: rng() * 6.28 }), 30);
         // cây ven sông & quanh ao
         for (let i = 0; i < 260 && o.trees.length < 46; i++) {
@@ -225,8 +244,8 @@ const ProvingGround = (() => {
       },
       avoid(x, z) { return Math.hypot(x - 330, z + 270) < 72; },
       objects(rng, P) {
-        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS], fences: [], sandbags: [], signs: [] };
-        for (const [x, z, a, kind] of [[-240, -300, 0.8, 'tank'], [380, 300, -0.6, 'truck'], [-60, 330, 2.1, 'apc'], [-420, 60, 1.0, 'tank']]) {
+        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS], cars: [...LANE_CARS], fences: [], sandbags: [], signs: [] };
+        for (const [x, z, a, kind] of [[-240, -300, 0.8, 'tank'], [380, 300, -0.6, 'dump'], [-60, 330, 2.1, 'apc'], [-420, 60, 1.0, 'tank']]) {
           o.wrecks.push({ x, z, angle: a, kind, turretRot: rng() * 2 - 1, smoke: rng() < 0.4, tilt: (rng() - 0.5) * 0.1 });
         }
         scatter(rng, P, 16, (x, z) => o.rocks.push({ x, z, r: 8 + rng() * 10, h: 6 + rng() * 10, rot: rng() * 6.28 }), 40);
@@ -278,7 +297,7 @@ const ProvingGround = (() => {
         F('mud', [[300, 450], [400, 380]]);
         F('hedge', [[-250, 300], [-150, 340], [-130, 420]]);
         o.sandbags.push({ x0: 150, z0: 250, x1: 230, z1: 250, layers: 2 }, { x0: -200, z0: 230, x1: -140, z1: 260, layers: 3 });
-        for (const [x, z, a, kind] of [[380, 180, 0.5, 'apc'], [-180, 470, 1.9, 'tank'], [100, -260, -0.4, 'truck']]) o.wrecks.push({ x, z, angle: a, kind, turretRot: rng() * 2 - 1, smoke: rng() < 0.3 });
+        for (const [x, z, a, kind] of [[380, 180, 0.5, 'apc'], [-180, 470, 1.9, 'tank'], [100, -260, -0.4, 'dump']]) o.wrecks.push({ x, z, angle: a, kind, turretRot: rng() * 2 - 1, smoke: rng() < 0.3 });
         scatter(rng, P, 12, (x, z) => o.rocks.push({ x, z, r: 6 + rng() * 7, h: 5 + rng() * 8, rot: rng() * 6.28 }), 30);
         o.signs.push({ x: 150 - 20, z: 300 - 26, text: 'RÀO GỖ', sub: 'Húc đổ / bắn đổ' });
         o.signs.push({ x: 60 - 16, z: 470 - 22, text: 'TƯỜNG ĐÁ' });
@@ -303,7 +322,7 @@ const ProvingGround = (() => {
       height(x, z) { return fbm(x, z, 120, 61) * 0.8; },
       avoid(x, z) { return false; },
       objects(rng, P) {
-        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS], fences: [], sandbags: [], signs: [], buildings: [], bunkers: [] };
+        const o = { rocks: [], trees: [], wrecks: [...LANE_WRECKS], cars: [...LANE_CARS], fences: [], sandbags: [], signs: [], buildings: [], bunkers: [] };
         // mặt nhà quay về bệ xe (angle = góc xoay quanh trục đứng như map_gen)
         const B = (x, z, w, d, floors, kind) => o.buildings.push({ x, z, w, d, floors, kind, angle: -Math.atan2(x, z) });
         // dãy phố hai bên hàng bắn (bắn thẳng từ bệ)
@@ -322,7 +341,7 @@ const ProvingGround = (() => {
         // boong-ke bê tông quay cửa về bệ
         for (const [x, z] of [[240, 340], [-250, 350], [-390, -300]]) o.bunkers.push({ x, z, openAngle: Math.atan2(-z, -x) });
         // xác xe trên phố, bao cát chắn đường
-        for (const [x, z, a, kind] of [[60, -300, 0.4, 'truck'], [300, -20, 1.6, 'apc'], [-300, -20, -1.4, 'tank'], [120, 330, 2.6, 'truck']]) {
+        for (const [x, z, a, kind] of [[60, -300, 0.4, 'dump'], [300, -20, 1.6, 'apc'], [-300, -20, -1.4, 'tank'], [120, 330, 2.6, 'dump']]) {
           o.wrecks.push({ x, z, angle: a, kind, turretRot: rng() * 2 - 1, smoke: rng() < 0.35 });
         }
         o.sandbags.push({ x0: -95, z0: -300, x1: -95, z1: -250, layers: 3 }, { x0: 95, z0: -300, x1: 95, z1: -250, layers: 3 }, { x0: 250, z0: 270, x1: 300, z1: 300, layers: 2 });
@@ -408,7 +427,7 @@ const ProvingGround = (() => {
   // SÂN THỬ
   // ---------------------------------------------------------------------------
   // Trạng thái riêng của 1 bãi đã dựng (mỗi bãi 1 nhóm root) — cất / lấy ra nguyên bộ khi đổi bãi (xem use / prebuild)
-  const LAYER_KEYS = ['id', 'root', 'H', 'n', 'half', 'ground', 'boulders', 'own', 'trees', 'props', 'buildingSet', 'bunkerSet'];
+  const LAYER_KEYS = ['id', 'root', 'H', 'n', 'half', 'ground', 'boulders', 'own', 'trees', 'props', 'buildingSet', 'bunkerSet', 'rockItems', 'envDamage', 'bushIM', 'bushItems', 'grass', 'grassItems'];
 
   class Field {
     constructor(scene) {
@@ -430,11 +449,24 @@ const ProvingGround = (() => {
       this.H = null;
       this.ground = null;
       this.boulders = [];     // đá tảng + xác xe: { x, z, radius, height } — chắn xe & chắn đạn
+      this.rockItems = [];    // danh sách đá cho EnvDamage.System
+      this.envDamage = null;
+      this.bridges = [];      // tương thích EnvDamage.System
+      this.T = this;
+      this.group = null;
       this.own = [];          // geometry / material / texture do sân tự tạo (giải phóng khi đổi bãi)
       this.trees = null;
       this.props = null;
+      this.bushIM = null;
+      this.bushItems = [];
+      this.grass = null;
+      this.grassItems = [];
       this.buildingSet = this.bunkerSet = null;
     }
+    groundAtRaw(x, z) { return this.groundAt(x, z); }
+    surfaceAt(x, z) { return this.groundAt(x, z); }
+    getElevationAt(x, z) { return this.groundAt(x, z); }
+    markNav(x, z, r) {}
     snap() { const s = {}; for (const k of LAYER_KEYS) s[k] = this[k]; return s; }
     restore(s) { for (const k of LAYER_KEYS) this[k] = s[k]; }
 
@@ -500,6 +532,7 @@ const ProvingGround = (() => {
       this.root = new THREE.Group();
       this.root.name = 'pg-' + id;
       this.base.add(this.root);
+      this.group = this.root;
       this.id = id;
       const P = this.preset;
       const rng = mulberry32((P.seed || 1) * 7919 + 1);
@@ -508,6 +541,8 @@ const ProvingGround = (() => {
       if (P.waterY !== undefined) this.buildWater(P);
       if (P.rings) this.buildRings();
       this.buildBerm(P);
+      this.buildGrass(P, rng);
+      this.buildBushes(P, rng);
       if (P.objects) {
         const o = P.objects(rng, P);
         this.buildRocks(o.rocks || [], rng);
@@ -650,6 +685,7 @@ const ProvingGround = (() => {
       const tex = grain();
       tex.repeat.set(n / 3, n / 3);
       const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: tex, roughness: 1, metalness: 0 });
+      if (typeof ExplosionFX !== 'undefined' && ExplosionFX.installGroundHoles) ExplosionFX.installGroundHoles(mat);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.receiveShadow = true;
       mesh.position.y = -0.04;
@@ -686,21 +722,251 @@ const ProvingGround = (() => {
     // ụ đất bao quanh: không cần mesh riêng (nằm trong lưới mặt đất) — chỉ ghi chú vào biên va chạm
     buildBerm() { /* xem rawHeight + collide */ }
 
+
+    // Dựng thảm cỏ 3D đan chéo (cross billboard) tự nhiên, ngọn cỏ lay nhẹ
+    buildGrass(P, rng) {
+      if (P.flat) return; // Không sinh cỏ trong trang xem xe 3D
+      const P_pos = [], UV = [], NR = [], I = [];
+      const bladesCount = 3;
+      for (let b = 0; b < bladesCount; b++) {
+        const ang = (b * Math.PI) / bladesCount;
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        const w = 2.4, h = 3.6;
+        const baseIdx = P_pos.length / 3;
+        P_pos.push(-ca * w, 0, -sa * w); UV.push(0, 0); NR.push(0, 1, 0);
+        P_pos.push(ca * w, 0, sa * w); UV.push(1, 0); NR.push(0, 1, 0);
+        P_pos.push(-ca * w * 1.15, h, -sa * w * 1.15); UV.push(0, 1); NR.push(0, 1, 0);
+        P_pos.push(ca * w * 1.15, h, sa * w * 1.15); UV.push(1, 1); NR.push(0, 1, 0);
+        I.push(baseIdx, baseIdx + 1, baseIdx + 2, baseIdx + 1, baseIdx + 3, baseIdx + 2);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(P_pos, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(NR, 3));
+      geo.setIndex(I);
+
+      let tex = null;
+      if (typeof document !== 'undefined') {
+        const c = document.createElement('canvas');
+        c.width = 128; c.height = 128;
+        const g = c.getContext('2d');
+        g.clearRect(0, 0, 128, 128);
+        for (let i = 0; i < 26; i++) {
+          const x0 = 12 + Math.random() * 104;
+          const lean = (Math.random() - 0.5) * 32;
+          const len = 65 + Math.random() * 56;
+          const gr = g.createLinearGradient(0, 128, 0, 128 - len);
+          gr.addColorStop(0, 'rgba(40, 58, 26, 1)');
+          gr.addColorStop(0.65, 'rgba(88, 122, 50, 0.95)');
+          gr.addColorStop(1, 'rgba(165, 180, 92, 0.9)');
+          g.fillStyle = gr;
+          g.beginPath();
+          g.moveTo(x0 - 2.5, 128);
+          g.quadraticCurveTo(x0 + lean * 0.3, 128 - len * 0.5, x0 + lean, 128 - len);
+          g.quadraticCurveTo(x0 + lean * 0.3 + 2, 128 - len * 0.5, x0 + 2.5, 128);
+          g.fill();
+        }
+        tex = new THREE.CanvasTexture(c);
+      }
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        alphaTest: 0.28,
+        side: THREE.DoubleSide,
+        roughness: 0.95,
+        metalness: 0
+      });
+
+      const count = 750;
+      const im = new THREE.InstancedMesh(geo, mat, count);
+      im.count = 0; im.receiveShadow = true; im.frustumCulled = false;
+      im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3).fill(1), 3);
+
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+      const grassItems = [];
+      const grassPal = P.mapType === 'DESERT'
+        ? [[0.72, 0.65, 0.44], [0.8, 0.72, 0.48], [0.62, 0.54, 0.36]]
+        : [[0.36, 0.48, 0.24], [0.46, 0.58, 0.28], [0.55, 0.52, 0.32], [0.3, 0.42, 0.2]];
+
+      for (let i = 0; i < count; i++) {
+        const ang = rng() * 6.283;
+        const dist = 36 + Math.sqrt(rng()) * (P.R * 0.88);
+        const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+        if (Math.hypot(x, z) < 32) continue;
+        const gy = this.groundAt(x, z);
+        if (P.waterY !== undefined && gy < P.waterY + 0.8) continue;
+
+        const s = 0.85 + rng() * 0.75;
+        m4.compose(
+          new THREE.Vector3(x, gy - 0.1, z),
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * 6.28),
+          new THREE.Vector3(s, s * (0.8 + rng() * 0.5), s)
+        );
+        const idx = im.count++;
+        im.setMatrixAt(idx, m4);
+        const col = new THREE.Color(...grassPal[idx % grassPal.length]).multiplyScalar(0.85 + rng() * 0.3);
+        im.setColorAt(idx, col);
+        grassItems.push({ idx, x, z, y: gy, s, col0: col.clone(), broken: false });
+      }
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      this.grass = im;
+      this.grassItems = grassItems;
+      this.root.add(im);
+      this.own.push(geo, mat);
+      if (tex) this.own.push(tex);
+    }
+
+    // Dựng bụi cây ngụy trang rậm rạp quanh các sườn đồi, bờ rào, mép tường
+    buildBushes(P, rng) {
+      if (P.flat) return; // Không sinh bụi cây trong trang xem xe 3D
+      if (typeof Destructibles === 'undefined' || !Destructibles.Foliage) return;
+      const F = Destructibles.Foliage;
+      const geo = F.bushGeometry ? F.bushGeometry(0xb05e5) : new THREE.IcosahedronGeometry(3, 1);
+      const leafKind = P.mapType === 'JUNGLE' ? 'broad' : P.mapType === 'DESERT' ? 'frond' : 'neutral';
+      const mat = F.foliageMat ? F.foliageMat(F.leafTex(leafKind)) : new THREE.MeshStandardMaterial({ color: 0x486932, roughness: 0.9 });
+
+      const count = 90;
+      const im = new THREE.InstancedMesh(geo, mat, count);
+      im.count = 0; im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
+      im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3).fill(1), 3);
+
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+      const bushItems = [];
+      const leafPal = P.mapType === 'DESERT'
+        ? [[0.65, 0.58, 0.38], [0.55, 0.5, 0.32]]
+        : [[0.28, 0.42, 0.22], [0.38, 0.48, 0.26], [0.22, 0.35, 0.18]];
+
+      for (let i = 0; i < count; i++) {
+        const ang = rng() * 6.283;
+        const dist = 75 + Math.sqrt(rng()) * (P.R * 0.85);
+        const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+        if (Math.hypot(x, z) < 45) continue;
+        const gy = this.groundAt(x, z);
+        if (P.waterY !== undefined && gy < P.waterY + 1) continue;
+
+        const s = 4.5 + rng() * 6.0;
+        m4.compose(
+          new THREE.Vector3(x, gy + s * 0.22, z),
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * 6.28),
+          new THREE.Vector3(s * 1.25, s * 0.95, s * 1.2)
+        );
+        const idx = im.count++;
+        im.setMatrixAt(idx, m4);
+        const col = new THREE.Color(...leafPal[idx % leafPal.length]).multiplyScalar(0.85 + rng() * 0.3);
+        im.setColorAt(idx, col);
+        bushItems.push({ idx, x, z, y: gy, s, col0: col.clone(), broken: false });
+      }
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      this.bushIM = im;
+      this.bushItems = bushItems;
+      this.root.add(im);
+      this.own.push(geo, mat);
+    }
+
+    crushBushes(x, z, radius, vx, vz, fx) {
+      if (!this.bushIM || !this.bushItems) return;
+      const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3();
+      let hit = false;
+      for (const it of this.bushItems) {
+        if (it.broken) continue;
+        const d = Math.hypot(it.x - x, it.z - z);
+        if (d > radius + 4) continue;
+        it.broken = true;
+        this.bushIM.getMatrixAt(it.idx, M);
+        M.decompose(P, Q, S);
+        S.set(S.x * 1.35, S.y * 0.18, S.z * 1.35);
+        P.y = it.y + 0.3;
+        M.compose(P, Q, S);
+        this.bushIM.setMatrixAt(it.idx, M);
+        const c = it.col0.clone().multiplyScalar(0.65);
+        this.bushIM.setColorAt(it.idx, c);
+        hit = true;
+      }
+      if (hit) {
+        this.bushIM.instanceMatrix.needsUpdate = true;
+        if (this.bushIM.instanceColor) this.bushIM.instanceColor.needsUpdate = true;
+      }
+    }
+
+    crushGrass(x, z, radius) {
+      if (!this.grass || !this.grassItems) return;
+      const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3();
+      let hit = false;
+      for (const it of this.grassItems) {
+        if (it.broken) continue;
+        const d = Math.hypot(it.x - x, it.z - z);
+        if (d > radius + 2) continue;
+        it.broken = true;
+        this.grass.getMatrixAt(it.idx, M);
+        M.decompose(P, Q, S);
+        S.set(S.x * 1.25, S.y * 0.12, S.z * 1.25);
+        M.compose(P, Q, S);
+        this.grass.setMatrixAt(it.idx, M);
+        const c = it.col0.clone().multiplyScalar(0.7);
+        this.grass.setColorAt(it.idx, c);
+        hit = true;
+      }
+      if (hit) {
+        this.grass.instanceMatrix.needsUpdate = true;
+        if (this.grass.instanceColor) this.grass.instanceColor.needsUpdate = true;
+      }
+    }
     buildRocks(list, rng) {
       if (!list.length) return;
+      this.rockItems = [];
       let map = null;
       try { if (typeof BattleTerrain3D !== 'undefined') map = BattleTerrain3D.prototype.rockTexture.call({ mapType: this.mapType }); } catch (e) { map = null; }
       const mat = new THREE.MeshStandardMaterial({ map, color: map ? 0xffffff : 0x77726a, roughness: 0.93, metalness: 0.02, flatShading: true });
       this.own.push(mat);
+      const topTint = [1.02, 1.04, 0.96];
       const variants = [0, 1, 2].map(v => {
-        const g0 = new THREE.IcosahedronGeometry(1, 1), g = g0.index ? g0.toNonIndexed() : g0;
-        const p = g.attributes.position, seed = v * 13.7 + 1;
+        let sd = (v + 1) * 2654435761 >>> 0;
+        const rnd = () => { sd = (sd + 0x6D2B79F5) >>> 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+        const waves = [];
+        for (let k = 0; k < 9; k++) {
+          const z = rnd() * 2 - 1, a = rnd() * 6.283, r = Math.sqrt(1 - z * z), f = 1.4 * Math.pow(1.85, k % 5);
+          waves.push([Math.cos(a) * r * f, z * f, Math.sin(a) * r * f, rnd() * 6.283, 0.2 / Math.pow(1.7, k % 5)]);
+        }
+        const cuts = [];
+        for (let k = 0; k < 4; k++) {
+          const z = k === 0 ? 0.85 + rnd() * 0.15 : rnd() * 0.9 - 0.3, a = rnd() * 6.283, r = Math.sqrt(1 - z * z);
+          cuts.push([Math.cos(a) * r, z, Math.sin(a) * r, 0.62 + rnd() * 0.2]);
+        }
+        const g = new THREE.IcosahedronGeometry(1, 4);
+        const p = g.attributes.position;
+        const disp = new Float32Array(p.count);
         for (let i = 0; i < p.count; i++) {
           const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-          const k = 1 + Math.sin(x * 3.1 + seed) * 0.18 + Math.sin(y * 4.3 + z * 2.2 + seed) * 0.14 + Math.sin(z * 5.7 - x * 1.3) * 0.1;
-          p.setXYZ(i, x * k, Math.max(-0.35, y * k * 0.8), z * k);
+          let n = 0;
+          for (const w of waves) n += Math.sin(x * w[0] + y * w[1] + z * w[2] + w[3]) * w[4];
+          let X = x * (1 + n), Y = y * (1 + n), Z = z * (1 + n);
+          for (const c of cuts) {
+            const dd = X * c[0] + Y * c[1] + Z * c[2] - c[3];
+            if (dd > 0) { X -= c[0] * dd * 0.9; Y -= c[1] * dd * 0.9; Z -= c[2] * dd * 0.9; }
+          }
+          Y = Math.max(-0.35, Y * 0.82);
+          disp[i] = Math.hypot(X, Y / 0.82, Z);
+          p.setXYZ(i, X, Y, Z);
         }
-        g.computeVertexNormals();
+        const key = i => Math.round(p.getX(i) * 1e4) + ',' + Math.round(p.getY(i) * 1e4) + ',' + Math.round(p.getZ(i) * 1e4);
+        const acc = new Map(), A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
+        for (let i = 0; i < p.count; i += 3) {
+          A.fromBufferAttribute(p, i); B.fromBufferAttribute(p, i + 1); C.fromBufferAttribute(p, i + 2);
+          const fn = B.clone().sub(A).cross(C.clone().sub(A));
+          for (let j = 0; j < 3; j++) { const k = key(i + j); const s = acc.get(k); if (s) s.add(fn); else acc.set(k, fn.clone()); }
+        }
+        const nrm = g.attributes.normal, col = new Float32Array(p.count * 3);
+        for (let i = 0; i < p.count; i++) {
+          const n = acc.get(key(i)).normalize();
+          nrm.setXYZ(i, n.x, n.y, n.z);
+          const ao = Math.max(0.45, Math.min(1.08, 0.62 + (disp[i] - 0.82) * 1.6)) * (0.72 + 0.28 * Math.min(1, (p.getY(i) + 0.35) / 0.5));
+          const up = Math.max(0, Math.min(1, (n.y - 0.55) * 2.6));
+          col[i * 3] = ao * (1 + (topTint[0] - 1) * up); col[i * 3 + 1] = ao * (1 + (topTint[1] - 1) * up); col[i * 3 + 2] = ao * (1 + (topTint[2] - 1) * up);
+        }
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        const uv = g.attributes.uv;
+        for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 0.8 + p.getZ(i) * 0.45, p.getY(i) * 0.9 + p.getZ(i) * 0.4 - p.getX(i) * 0.2);
         this.own.push(g);
         const im = new THREE.InstancedMesh(g, mat, list.length);
         im.count = 0; im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
@@ -719,10 +985,23 @@ const ProvingGround = (() => {
         m4.compose(new THREE.Vector3(r.x, y + r.h * 0.12, r.z), q.setFromEuler(e), new THREE.Vector3(r.r, r.h * 0.9, r.r * (0.75 + rng() * 0.4)));
         const k = im.count++;
         im.setMatrixAt(k, m4);
-        im.setColorAt(k, new THREE.Color(1, 1, 1).multiplyScalar(0.74 + rng() * 0.26));
-        this.boulders.push({ x: r.x, z: r.z, radius: r.r * 0.9, height: r.h * 0.8 + (y - this.groundAt(r.x, r.z)), rock: true });
+        const col = new THREE.Color(1, 1, 1).multiplyScalar(0.74 + rng() * 0.26);
+        im.setColorAt(k, col);
+        const boulder = { x: r.x, z: r.z, radius: r.r * 0.9, height: r.h * 0.8 + (y - this.groundAt(r.x, r.z)), rock: true };
+        if (boulder) this.boulders.push(boulder);
+        const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scale = new THREE.Vector3();
+        m4.decompose(pos, quat, scale);
+        this.rockItems.push({ x: r.x, z: r.z, y, r: r.r, h: r.h, im, k, pos, quat, scale, color: col, col: [col.r, col.g, col.b], boulder });
       });
       variants.forEach(im => { im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true; });
+      if (typeof EnvDamage !== 'undefined' && EnvDamage.System) {
+        try {
+          this.envDamage = new EnvDamage.System(this, this.rockItems);
+        } catch (err) {
+          console.warn('[Sân thử] Không khởi tạo được EnvDamage', err);
+          this.envDamage = null;
+        }
+      }
     }
 
     buildTrees(list) {
@@ -735,10 +1014,22 @@ const ProvingGround = (() => {
     // hàng rào / bao cát / xác xe: đúng lớp PropSet trong trận (cần nhóm cha, mặt đất, danh sách đá tảng)
     buildProps(o) {
       if (typeof Props === 'undefined' || !Props.PropSet) return;
-      const data = { fences: o.fences || [], sandbags: o.sandbags || [], wrecks: (o.wrecks || []).map(w => Object.assign({ tilt: 0, roll: 0, turretRot: 0 }, w)), fields: [] };
-      if (!data.fences.length && !data.sandbags.length && !data.wrecks.length) return;
-      const T = { group: this.root, groundAtRaw: (x, z) => this.groundAt(x, z), surfaceAt: (x, z) => this.groundAt(x, z), boulders: this.boulders };
-      try { this.props = new Props.PropSet(T, data); } catch (e) { console.warn('[Sân thử] Không dựng được hàng rào / xác xe', e); this.props = null; }
+      const data = {
+        fences: o.fences || [],
+        sandbags: o.sandbags || [],
+        wrecks: (o.wrecks || []).map(w => Object.assign({ tilt: 0, roll: 0, turretRot: 0 }, w)),
+        cars: o.cars || [],
+        fields: []
+      };
+      if (!data.fences.length && !data.sandbags.length && !data.wrecks.length && !data.cars.length) return;
+      const T = {
+        group: this.root,
+        groundAtRaw: (x, z) => this.groundAt(x, z),
+        surfaceAt: (x, z) => this.groundAt(x, z),
+        boulders: this.boulders,
+        vehicleObstacles: (x, z, unit) => this.structureBoxes(x, z, unit, [])
+      };
+      try { this.props = new Props.PropSet(T, data); } catch (e) { console.warn('[Sân thử] Không dựng được hàng rào / xác xe / xe dân sự', e); this.props = null; }
     }
 
     // nhà / boong-ke: đúng lớp trong trận, cùng hạt giống mỗi lần dựng (dựng lại ra y hệt)
@@ -819,10 +1110,16 @@ const ProvingGround = (() => {
     crush(x, z, radius, vx, vz, fx) {
       if (this.trees) this.trees.crush(x, z, radius, vx, vz, fx);
       if (this.props && Math.hypot(vx, vz) >= 6) this.props.crush(x, z, radius, vx, vz, fx);
+      this.crushBushes(x, z, radius, vx, vz, fx);
+      this.crushGrass(x, z, radius);
     }
-    // Sóng nổ / đạn: cây rung / đổ / cháy, rào đổ, nhà thủng / sập, boong-ke vỡ (info như terrain.damageAt)
+    // Sóng nổ / đạn: đá sứt mẻ/vỡ, cây rung / đổ / cháy / vỡ nát, rào đổ, nhà thủng / sập, boong-ke vỡ (info như terrain.damageAt)
     damageAt(x, y, z, ammo, heavy, fx, info) {
-      if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx);
+      if (this.envDamage) {
+        const ev = [];
+        this.envDamage.damageAt(x, y, z, ammo, heavy, fx, info, ev);
+      }
+      if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx, info);
       if (this.props) this.props.damageAt(x, y, z, ammo, heavy, fx);
       if (this.buildingSet) this.buildingSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {});
       if (this.bunkerSet) this.bunkerSet.damageAt(x, y, z, ammo, heavy, fx, null, info || {});
@@ -831,8 +1128,13 @@ const ProvingGround = (() => {
     passSegment(a, b, ammo, fx) {
       if (this.trees) this.trees.passSegment(a.x, a.y, a.z, b.x, b.y, b.z, ammo, fx);
     }
+    reground(x0, z0, x1, z1) {
+      if (this.trees && this.trees.reground) this.trees.reground(x0, z0, x1, z1);
+      if (this.envDamage && this.envDamage.reground) this.envDamage.reground(x0, z0, x1, z1);
+    }
     // cam: vị trí camera; focus: xe đang lái (nhà che xe thì cắt mái / tường như trong trận)
     update(dt, fx, cam, focus) {
+      if (this.envDamage) this.envDamage.update(dt, fx);
       if (this.trees) this.trees.update(dt, fx);
       if (this.props) this.props.update(dt, fx, cam || null);
       if (this.buildingSet) {
@@ -874,8 +1176,14 @@ const ProvingGround = (() => {
         if (py > gy + r.height || py < gy - 2) continue;
         take(t, 'BOULDER', new THREE.Vector3(px - r.x, 0.3, pz - r.z).normalize());
       }
-      // bao cát (kiểm tra điểm cuối đoạn — đoạn bay ngắn ~6 đơn vị)
-      if (this.props && this.props.hitTest(b.x, b.y, b.z)) take(1, 'GROUND', new THREE.Vector3(a.x - b.x, 0, a.z - b.z).normalize(), { sandbag: true });
+      // xe dân sự & bao cát
+      if (this.props) {
+        if (this.props.segmentHit) {
+          const ch = this.props.segmentHit(a, b);
+          if (ch) take(ch.t, 'BOULDER', ch.normal, { car: ch.car });
+        }
+        if (this.props.hitTest(b.x, b.y, b.z)) take(1, 'GROUND', new THREE.Vector3(a.x - b.x, 0, a.z - b.z).normalize(), { sandbag: true });
+      }
       // tường / sàn / mái nhà (pháp tuyến đúng mặt bị chạm)
       if (this.buildingSet) {
         const h = this.buildingSet.segmentHit(a.x, a.y, a.z, b.x, b.y, b.z);
