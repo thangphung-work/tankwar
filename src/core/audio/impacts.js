@@ -84,6 +84,7 @@ SoundEngine.mixin(class {
     };
     const steel = hitType === 'DIRECT_HIT';
     const thin = steel && !!(opts && opts.thin);
+    this._gMat = hitType === 'GROUND' || !hitType ? this.groundMatAt(pos) : null;
     if (!isMG) play('blast30', 1.6);
     if (thin) {
       // vỏ mỏng bị xuyên: cú va gọn nhẹ hơn + tấm thép rung "oang" ngắn + tiếng xé thủng "phập", mảnh lọt vào trong lạo xạo
@@ -95,7 +96,10 @@ SoundEngine.mixin(class {
       return;
     }
     if (steel) play(isMG ? 'hitSteel127' : 'hitSteel', isMG ? 0.95 : 1.3, isMG ? 1 : 0.85);
-    else if (isMG && hitType !== 'WATER') play('hitDirt', hitType === 'WALL' || hitType === 'BOULDER' ? 0.35 : 0.45, hitType === 'WALL' || hitType === 'BOULDER' ? 1.4 : 1);
+    else if (isMG && hitType !== 'WATER') {
+      const hardG = hitType === 'WALL' || hitType === 'BOULDER' || this._gMat === 'rock' || this._gMat === 'hard' || this._gMat === 'asphalt';
+      play('hitDirt', hardG ? 0.35 : this._gMat === 'sand' ? 0.3 : 0.45, hardG ? 1.4 : this._gMat === 'sand' ? 0.8 : 1);
+    }
 
     if (steel) {
       // mảnh thép tóe tia lửa (12.7mm: lõi thép + vỏ đồng vỡ vụn tóe chùm tia lửa rộng, ngắn hơn)
@@ -112,6 +116,16 @@ SoundEngine.mixin(class {
     }
     // tiếng vật liệu riêng (bê tông / nhà / gỗ / đá / bao cát / đất) + lớp đạn cháy
     this.surfaceHit(out, t, hitType, isMG ? 'b127' : 'b30', 1, isIncendiary);
+  }
+
+  // Loại mặt đất tại pos theo đúng bảng vật liệu hiệu ứng hình (ExplosionFX.surfacePalette): 'sand' | 'soil' | 'mud' |
+  // 'rock' | 'asphalt' ... -> tiếng đạn găm đất khớp với cái thấy (cát / bùn / sườn đá / đường nhựa)
+  groundMatAt(pos) {
+    const g = typeof window !== 'undefined' && window.game;
+    if (!pos || !g || !g.scene || typeof ExplosionFX === 'undefined' || !ExplosionFX.forScene) return null;
+    const fx = ExplosionFX.forScene(g.scene);
+    const pal = fx && fx.surfacePalette ? fx.surfacePalette(pos.x, pos.z, 'GROUND') : null;
+    return pal ? (pal.wet ? 'mud' : pal.mat || 'soil') : null;
   }
 
   /**
@@ -365,8 +379,28 @@ SoundEngine.mixin(class {
       }
       case 'WATER': case 'AIRBURST': break;   // nước / nổ trên không: hàm gọi tự xử lý
       default: {
-        // ĐẤT: tiếng "phụt" của đất bị xới (đạn nhỏ) — đạn lớn có lớp đất đá rơi riêng
-        if (bullet) {
+        // ĐẤT theo loại mặt đất chỗ trúng (groundMatAt): đạn nhỏ mỗi loại một tiếng — đạn lớn có lớp đất đá rơi riêng
+        const gm = bullet ? this._gMat : null;
+        if (gm === 'sand') {
+          // cát khô hút đạn: "phụt" nghẹt, trầm, không có tiếng vụn lạo xạo — chỉ tiếng cát rơi rào rào mảnh
+          this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, drive: 1.5, gain: 0.5, attack: 0.001, dur: 0.06 });
+          this.burst(out, t + 0.06, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 2600, Q: 0.6, gain: 0.12, attack: 0.08, dur: 0.45 });
+        } else if (gm === 'mud') {
+          // bùn ướt: "chạch" ướt dải trung + bùn rơi lộp độp
+          this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 750, freqEnd: 420, sweep: 0.05, Q: 1.6, drive: 2, gain: 0.55, attack: 0.001, dur: 0.07 });
+          for (let i = 0; i < 3; i++) this.burst(out, t + 0.12 + R() * 0.35, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 500 + R() * 300, Q: 3, gain: 0.12, attack: 0.002, dur: 0.04 });
+        } else if (gm === 'rock' || gm === 'hard') {
+          // sườn đá: "chát" đanh, đá vụn lách cách, đạn hay nảy rít
+          this.burst(out, t, { filter: 'bandpass', freq: 2800, Q: 1.2, drive: 3, gain: 0.45, attack: 0.0003, dur: 0.03 });
+          stones(t + 0.01, 3, 2000, 5500, 0.12, 0.25);
+          if (R() < (cls === 'b127' ? 0.4 : 0.15)) this.playRicochet(out, t + 0.005);
+        } else if (gm === 'asphalt') {
+          // mặt nhựa đường: "cạch" khô, vụn nhựa đá dăm tung lách tách
+          this.burst(out, t, { filter: 'bandpass', freq: 2100, Q: 1, drive: 2, gain: 0.35, attack: 0.0004, dur: 0.035 });
+          this.burst(out, t + 0.01, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 3200, Q: 0.7, gain: 0.45, attack: 0.004, dur: 0.18 });
+          if (cls === 'b127' && R() < 0.25) this.playRicochet(out, t + 0.005);
+        } else if (bullet) {
+          // đất thường: "phập" + đất vụn rơi lạo xạo
           this.burst(out, t + 0.005, { filter: 'bandpass', freq: 3000, Q: 0.7, gain: 0.25, attack: 0.008, dur: 0.2 });
           this.burst(out, t + 0.04, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2600, Q: 0.8, gain: 0.7, attack: 0.03, dur: 0.35 });
         }

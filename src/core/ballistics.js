@@ -578,6 +578,7 @@ class BallisticsSystem3D {
       }
       for (const f of T.horseshoeForts) this._segCircle(R, x0, y0, z0, dx, dy, dz, a, f.x, f.z, f.outerRadius + 15.5, -Infinity, Infinity);
       for (const rock of T.boulders) {
+        if (rock.noShot) continue;
         const rr = rock.radius + 0.5;
         if (rock.x + rr < mnX || rock.x - rr > mxX || rock.z + rr < mnZ || rock.z - rr > mxZ) continue;
         const gy = T.groundAtRaw ? T.groundAtRaw(rock.x, rock.z) : NaN;
@@ -856,7 +857,9 @@ class BallisticsSystem3D {
         const seekerLost = !!G.fnf && ((target.isInBush && !((target.revealTimer || 0) > 0))
           || (target.forestDens || 0) >= (typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10));
         const seen = !(target._netHidden) && !veiled && !seekerLost
-          && (G.fnf || !shooter || typeof TeamIntel === 'undefined' || TeamIntel.seesDirect(shooter, target) || onScreen);
+          && (G.fnf || !shooter || onScreen || ((typeof TeamIntel === 'undefined' || TeamIntel.seesDirect(shooter, target))
+            // đường ngắm thật như lúc khóa (game.hasLineOfSight): mục tiêu lách ra sau nhà / đồi -> bay tới chỗ thấy lần cuối
+            && (!this.missileLosOk || this.missileLosOk(shooter, target))));
         if (seen) {
           const ty = (target.y || (terrain ? terrain.getElevationAt(target.x, target.z) : 0)) + 7;
           // vận tốc mục tiêu (đơn vị / giây mô phỏng): xe chỉ dịch chuyển mỗi khung hình, đạn bước 3 lần / khung
@@ -1461,6 +1464,7 @@ class BallisticsSystem3D {
         if (envK === 1) {
           if (envH.normal) s.hitNormal = envH.normal;
           if (s.ammoType === 'CLUSTER') { this.clusterImpactBurst(s, i, terrain, allUnits, onImpact); impacted = true; break; }
+          if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
           if (onImpact) onImpact(s, envH.type);
           impacted = true;
@@ -1474,12 +1478,14 @@ class BallisticsSystem3D {
             s.hitNormal = { nx: (th.x - th.it.x) / nl, ny: 0, nz: (th.z - th.it.z) / nl };
             s.hitTree = th.it;
           }
+          if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
           if (onImpact) onImpact(s, 'TREE');
           impacted = true;
           break;
         }
         if (envK === 3) {
+          if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
           if (onImpact) onImpact(s, 'CANOPY');
           impacted = true;
@@ -1489,6 +1495,7 @@ class BallisticsSystem3D {
           // nhà: vật liệu tường (bê tông / gạch mộc / đá / gỗ / tôn) -> màu bụi, mảnh vỡ của hiệu ứng trúng đạn
           if (envK === 4) { s.hitNormal = { nx: envH.nx, ny: envH.ny, nz: envH.nz }; s.hitMat = envH.B && envH.B.st ? envH.B.st.mat : undefined; }
           if (s.ammoType === 'CLUSTER') { this.clusterImpactBurst(s, i, terrain, allUnits, onImpact); impacted = true; break; }
+          if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
           if (onImpact) onImpact(s, envK === 4 ? 'BUILDING' : (envH.type || 'WALL'));
           impacted = true;
@@ -1498,6 +1505,7 @@ class BallisticsSystem3D {
         // — trừ khi chạm nước góc rất thấp: đạn nảy lên khỏi mặt nước bay tiếp (waterSkip)
         if (envK === 6) {
           if (this.waterSkip(s, envWl, prevX, prevY, prevZ)) continue;
+          if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
           if (onImpact) onImpact(s, 'WATER');
           impacted = true;
@@ -1509,6 +1517,7 @@ class BallisticsSystem3D {
           // đạn chùm chạm đất khi chưa tách (bắn thẳng / tầm gần): ngòi chạm kích liều phóng, đạn con văng ra ngay mặt đất
           // (đạn mẹ không có đầu nổ phá — trước đây nổ như một quả HE, khoét hố ~1,75 m)
           if (s.ammoType === 'CLUSTER') { this.clusterImpactBurst(s, i, terrain, allUnits, onImpact); impacted = true; break; }
+          if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
           if (onImpact) onImpact(s, 'GROUND');
           impacted = true;

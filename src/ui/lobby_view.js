@@ -34,6 +34,8 @@
 
   function $(sel) { return document.querySelector(sel); }
 
+  const decoded = {};   // ảnh xe lớn đã giải mã sẵn theo src (giữ tham chiếu để trình duyệt không bỏ bản giải mã)
+
   function renderHero() {
     const card = $('.mm-class-card.active') || $('.mm-class-card');
     if (!card) return;
@@ -43,13 +45,23 @@
     const desc = card.querySelector('.card-tank-desc');
     const type = card.getAttribute('data-tank-type');
 
-    if (img && photo && img.getAttribute('src') !== photo.getAttribute('src')) {
-      img.setAttribute('src', photo.getAttribute('src'));
-      img.setAttribute('alt', photo.getAttribute('alt') || '');
-      // chạy lại hiệu ứng hiện ảnh
-      img.style.animation = 'none';
-      void img.offsetWidth;
-      img.style.animation = '';
+    const src = photo && photo.getAttribute('src');
+    if (img && photo && img.getAttribute('src') !== src && img.dataset.want !== src) {
+      img.dataset.want = src;
+      const alt = photo.getAttribute('alt') || '';
+      const swap = () => {
+        if (img.dataset.want !== src) return;   // đã bấm sang xe khác trong lúc chờ giải mã
+        img.setAttribute('src', src);
+        img.setAttribute('alt', alt);
+        // chạy lại hiệu ứng hiện ảnh
+        img.style.animation = 'none';
+        void img.offsetWidth;
+        img.style.animation = '';
+      };
+      // giải mã ảnh lớn ở luồng phụ trước rồi mới đổi (đổi thẳng src = giải mã đồng bộ lúc vẽ -> khựng khi bấm đổi xe)
+      const pre = decoded[src] || (decoded[src] = new Image());
+      if (!pre.src) pre.src = src;
+      if (pre.decode) pre.decode().then(swap, swap); else swap();
     }
     const roleEl = $('#mm-hero-role'), nameEl = $('#mm-hero-name'), descEl = $('#mm-hero-desc');
     if (roleEl) roleEl.textContent = card.getAttribute('data-role') || '';
@@ -128,6 +140,15 @@
       new MutationObserver(fn).observe(root, { subtree: true, attributes: true, attributeFilter: ['class'] });
     };
     watch($('.mm-class-cards-grid'), () => { renderHero(); fitHero(); });
+    // giải mã sẵn ảnh lớn của cả 4 xe lúc rảnh -> lần đầu bấm đổi xe cũng hiện ngay
+    const warm = () => document.querySelectorAll('.mm-class-card .card-tank-photo').forEach(p => {
+      const s = p.getAttribute('src');
+      if (!s || decoded[s]) return;
+      const im = decoded[s] = new Image();
+      im.src = s;
+      if (im.decode) im.decode().catch(() => {});
+    });
+    if (window.requestIdleCallback) requestIdleCallback(warm, { timeout: 3000 }); else setTimeout(warm, 1000);
     // lắp / tháo / mua trang bị, đăng nhập / đăng xuất -> cập nhật hàng trang bị
     window.addEventListener('armory-changed', () => { renderHero(); fitHero(); });
   }

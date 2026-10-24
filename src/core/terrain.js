@@ -25,7 +25,8 @@ const TERRAIN_BASE_INFO = {
 };
 
 class BattleTerrain3D {
-  constructor(scene, width = MapGen.SIZE, depth = MapGen.SIZE, mapType = 'DESERT', seed) {
+  // opts.defer: chưa dựng gì (built = false, mặt đất phẳng cao 0) — setMapType / prepare sẽ dựng khi cần
+  constructor(scene, width = MapGen.SIZE, depth = MapGen.SIZE, mapType = 'DESERT', seed, opts = {}) {
     this.scene = scene;
     this.width = width;
     this.depth = depth;
@@ -56,6 +57,7 @@ class BattleTerrain3D {
     this.mapCanvas.height = 1200;
     this.mapCtx = this.mapCanvas.getContext('2d');
 
+    if (opts.defer) { this.built = false; return; }
     this.buildTerrain();
   }
 
@@ -127,6 +129,8 @@ class BattleTerrain3D {
     this.mapType = t;
     this.seed = s;
     this.clearTerrain();
+    // lưới tìm đường lưu theo object terrain: dựng lại bản đồ trên cùng object -> bỏ lưới của bản đồ cũ
+    if (typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(this);
     this.buildTerrain();
     return true;
   }
@@ -134,39 +138,52 @@ class BattleTerrain3D {
 
   buildTerrain() {
     const t0 = performance.now();
+    // thời gian từng bước (ms) -> this.buildSteps + 1 dòng [MAP] trong Console: biết bước nào nặng mà tối ưu
+    const steps = [];
+    let tl = t0;
+    const lap = (name) => { const n = performance.now(); steps.push([name, Math.round(n - tl)]); tl = n; };
     this.map = MapGen.get(this.mapType, this.seed);
     this.segments = this.map.res;
     this.heightData = new Float32Array(this.map.heights);
+    lap('mapgen');
     // Hạ lưới đất dưới kênh xe chạy của các cứ điểm (sàn khoang / dốc bê tông nằm trên)
     const SHL = this.map.strongholds || [];
     if (SHL.length && typeof Strongholds !== 'undefined') Strongholds.carveHeights(this.heightData, this.segments, this.width, SHL);
     this.applyAtmosphere();
+    lap('atmosphere');
     this.initTerrainMesh();
+    lap('ground');
     this.buildRoads();
     // đô thị: vỉa hè + bó vỉa bo góc, mảng nhựa ngã tư, vạch qua đường, kè kênh (streetscape.js)
     if (typeof Streetscape !== 'undefined') this.streetscape = Streetscape.build(this);
+    lap('roads');
     this.buildWater();
+    lap('water');
     // Cảnh nền ngoài bản đồ: vành núi, bờ biển / biển cát / dãy núi, đảo xa tới chân trời (không còn khoảng trống ngoài mép)
     if (typeof Backdrop !== 'undefined') {
       this.backdrop = Backdrop.build(this);
       if (this.backdrop) this.group.add(this.backdrop.group);
     }
+    lap('backdrop');
     this.buildRocks();
     this.buildBridges();   // + hệ thống phá hủy cảnh vật (EnvDamage): đá tảng có máu, cầu sập, vết đạn tích tụ
     this.buildBushes();
+    lap('rocks+bridges+bushes');
 
     const ground = (x, z) => this.groundAtRaw(x, z);
     if (SHL.length && typeof Strongholds !== 'undefined') {
       // ụ đất / lớp đất phủ mái dùng chung shader + ảnh nền với mặt đất -> màu cứ điểm khớp màu địa hình từng map
       this.strongholdSet = new Strongholds.StrongholdSet(this.group, SHL, {
-        mapType: this.mapType, groundAt: ground, sun: this.map.sun,
+        mapType: this.mapType, groundAt: ground, sun: this.map.sun, boulders: this.boulders,
         groundMaterial: o => this.groundLikeMaterial(o), worldSize: [this.width, this.depth], leafColors: this.leafColors()
       });
       // trời mưa: lòng hầm (sàn hạ thấp 2,5 m, chỗ trũng nhất) ngập nước
       if (this.weather && this.weather.rain && this.strongholdSet.setFlood) this.strongholdSet.setFlood(this.weather.flood, Weather.floodMaterial(true, Strongholds.S));
     }
+    lap('strongholds');
     // Công trình bối cảnh giữa 3 cứ điểm (bệ phóng hạt nhân, hầm sinh học, trận địa phòng không)
     if ((this.map.landmarks || []).length && typeof Landmarks !== 'undefined') this.landmarkSet = new Landmarks.LandmarkSet(this.group, this.map.landmarks, { groundAt: ground, sun: this.map.sun });
+    lap('landmarks');
     // Dựng nhà / cây / boong-ke với hạt giống của bản đồ -> mọi máy có cùng hình dạng & độ bền từng mảng
     if (typeof Destructibles !== 'undefined') Destructibles.withSeed((this.seed ^ 0x5eed1234) >>> 0, () => {
       this.bunkerSet = new Destructibles.BunkerSet(this.group, this.map.bunkers, ground);
@@ -179,16 +196,23 @@ class BattleTerrain3D {
       this.trees.solidHit = (ax, ay, az, bx, by, bz) => !!this.buildingSegmentHit(ax, ay, az, bx, by, bz);
       this.palmTrees = this.trees.items;
     });
+    lap('buildings+trees');
 
     // Hàng rào, ruộng, xác xe, bao cát (props.js)
     if (typeof Props !== 'undefined' && this.map.props) this.propSet = new Props.PropSet(this, this.map.props);
+    lap('props');
 
     // Cỏ 3D + đá vụn quanh camera (rải theo vùng nhìn thấy, xem GroundCover.update)
     if (typeof GroundCover !== 'undefined' && typeof GroundShader !== 'undefined') this.groundCover = new GroundCover.Cover(this);
+    lap('groundcover');
     this.optimizeStaticScene();
+    lap('optimize');
     this.renderPrecomputedMap();
+    lap('minimap');
     this.built = true;
     this.buildMs = Math.round(performance.now() - t0);
+    this.buildSteps = steps;
+    console.info(`[MAP] Dựng ${this.mapType} #${this.seed}: ${this.buildMs} ms — ` + steps.filter(s => s[1] >= 5).map(s => s[0] + ' ' + s[1]).join(' · '));
   }
 
   optimizeStaticScene() {
@@ -212,11 +236,11 @@ class BattleTerrain3D {
     const sun = this.map.sun;
     const PAL = {
       // sunK / skyK: đặc trưng ánh sáng từng chiến địa (sa mạc nắng gắt, rừng ẩm nhiều ánh trời tán xạ, cao nguyên trong vắt)
-      DESERT: { zenith: 0x4a86cc, horizon: 0xd6dbd6, fog: 0xd5cfbd, density: 0.00022, ground: 0xb08a5a, sunK: 1.08, skyK: 0.9 },
-      URBAN: { zenith: 0x5c7fa8, horizon: 0xc4c6c4, fog: 0xb9bcbc, density: 0.00030, ground: 0x6a6a64, sunK: 0.95, skyK: 0.88 },
-      JUNGLE: { zenith: 0x5d8fb5, horizon: 0xb9cbb6, fog: 0xa9b7a2, density: 0.00036, ground: 0x4a4a32, sunK: 0.94, skyK: 1.06 },
-      HIGHLAND: { zenith: 0x3f7cc4, horizon: 0xc9d8e4, fog: 0xbfcfdc, density: 0.00020, ground: 0x6b6450, sunK: 1.04, skyK: 0.96 },
-      RIVER_LAKE: { zenith: 0x4c8bd0, horizon: 0xd2dfe4, fog: 0xc6d6da, density: 0.00026, ground: 0x5a6040, sunK: 1.0, skyK: 1.0 }
+      DESERT: { zenith: 0x4a86cc, horizon: 0xd6dbd6, fog: 0xd5cfbd, density: 0.00014, ground: 0xb08a5a, sunK: 1.08, skyK: 0.9 },
+      URBAN: { zenith: 0x5c7fa8, horizon: 0xc4c6c4, fog: 0xb9bcbc, density: 0.00018, ground: 0x6a6a64, sunK: 0.95, skyK: 0.88 },
+      JUNGLE: { zenith: 0x5d8fb5, horizon: 0xb9cbb6, fog: 0xa9b7a2, density: 0.00022, ground: 0x4a4a32, sunK: 0.94, skyK: 1.06 },
+      HIGHLAND: { zenith: 0x3f7cc4, horizon: 0xc9d8e4, fog: 0xbfcfdc, density: 0.00012, ground: 0x6b6450, sunK: 1.04, skyK: 0.96 },
+      RIVER_LAKE: { zenith: 0x4c8bd0, horizon: 0xd2dfe4, fog: 0xc6d6da, density: 0.00016, ground: 0x5a6040, sunK: 1.0, skyK: 1.0 }
     };
     const p = Object.assign({}, PAL[this.mapType] || PAL.DESERT);
     // Thời tiết theo hạt giống bản đồ (mọi máy giống nhau) — xem Weather.forMap
@@ -748,7 +772,7 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
 ` + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
   vec2 rw = vRoadW.xz;
   float rdFar = clamp(length(vViewPosition) / 260.0, 0.0, 1.0);
-  float rdWet = 0.0, rdPaint = 0.0;
+  float rdWet = 0.0, rdPaint = 0.0, rdAlli = 0.0;
   {
     // Ngã giao: đường nhựa lấy texture trơn (không vạch sơn) thay cho vạch; mọi loại: mép không lởm chởm đè lên lòng đường kia
     float rdJn = smoothstep(0.3, 0.8, vRdJ);
@@ -845,6 +869,25 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     {
       // THÀNH PHỐ MA (bỏ hoang nhiều năm): vạch sơn bạc phai mất từng đoạn; lớp bụi đất phủ mỏng loang lổ; cát bụi + lá
       // mục dồn thành dải dọc chân bó vỉa (mép không đều); cỏ dại mọc trong vết nứt / mạch vá / rãnh; lá khô, rác vụn
+      // NỨT DA CÁ SẤU (mặt nhựa mỏi, nhiều năm không bảo trì): lưới ô 15-40 cm (voronoi, biên ô uốn theo nhiễu), dày ở vệt
+      // bánh xe & từng mảng lớn; mảng nhựa bong hẳn lộ lớp đá dăm móng sáng xám, sần
+      vec2 vp = rw * 0.42 + (vec2(rdN(rw * 0.6), rdN(rw * 0.6 + 7.0)) - 0.5) * 0.7;
+      vec2 vi = floor(vp), vf = fract(vp);
+      float d1 = 8.0, d2 = 8.0;
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 gq = vec2(float(i), float(j)), o = vec2(rdH(vi + gq), rdH(vi + gq + 19.1));
+        float d = length(gq + o - vf);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+      }
+      float wheel = 1.0 - smoothstep(0.06, 0.16, abs(abs(vUv.x - 0.5) - 0.22));
+      float aMask = smoothstep(0.48, 0.66, rdN(rw * 0.018 + 60.0) * 0.7 + wheel * 0.3);
+      rdAlli = (1.0 - smoothstep(0.02, 0.055 + 0.05 * rdFar, d2 - d1)) * aMask * (1.0 - rdFar * 0.85);
+      diffuseColor.rgb *= 1.0 - 0.5 * rdAlli;
+      float spall = smoothstep(0.64, 0.69, rdN(rw * 0.09 + 80.0) * 0.6 + rdN(rw * 0.5 + 3.0) * 0.4) * (0.4 + 0.6 * aMask);
+      float spRim = smoothstep(0.6, 0.64, rdN(rw * 0.09 + 80.0) * 0.6 + rdN(rw * 0.5 + 3.0) * 0.4) - spall;
+      diffuseColor.rgb *= 1.0 - 0.35 * spRim;   // mép mảng bong: nhựa vỡ sẫm
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.4, 0.38, 0.34) * (0.7 + 0.55 * rdH(floor(rw * 6.0))), spall * 0.92);
+      rdWet = max(rdWet, spall * 0.4 * step(0.6, rdN(rw * 0.2 + 5.0)));   // hố bong đọng nước
       vec3 dirt = vec3(0.30, 0.27, 0.22);
       float paint = smoothstep(0.45, 0.6, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)));
       float fade = smoothstep(0.3, 0.75, rdN(rw * 0.05 + 21.0) * 0.7 + rdN(rw * 0.6 + 4.0) * 0.3);
@@ -854,7 +897,7 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
       float drift = (1.0 - smoothstep(0.02, 0.07 + 0.09 * rdN(rw * 0.08 + 3.0) + 0.05 * rdN(rw * 0.5), rdE)) * (1.0 - rdJn);
       diffuseColor.rgb = mix(diffuseColor.rgb, dirt * (0.85 + 0.3 * rdN(rw * 2.0 + 1.0)), drift * 0.85);
       float weedN = rdN(rw * 0.7 + 30.0) * 0.6 + rdN(rw * 3.0 + 9.0) * 0.4;
-      float weed = max(crack * 1.6, drift * 0.9 * smoothstep(0.45, 0.7, rdN(rw * 0.12 + 77.0))) * smoothstep(0.45, 0.7, weedN);
+      float weed = max(max(crack * 1.6, rdAlli * 0.9), drift * 0.9 * smoothstep(0.45, 0.7, rdN(rw * 0.12 + 77.0))) * smoothstep(0.45, 0.7, weedN);
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.22, 0.09) * (0.75 + 0.5 * rdN(rw * 4.0)), clamp(weed, 0.0, 1.0) * 0.85);
       // lá khô / giấy vụn: đốm nhỏ theo ô lưới thế giới, dày hơn sát lề
       vec2 lc = floor(rw * 1.6);
@@ -887,7 +930,9 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
       diffuseColor.rgb *= mix(1.0, 0.86 + 0.18 * rdN(rw * 2.2 + 3.0), rdPaint);
       float chip = smoothstep(0.62, 0.7, rdN(rw * 1.6 + 31.0) * 0.55 + rdN(rw * 6.5 + 2.0) * 0.3 + rdH(floor(rw * 9.0)) * 0.15);
       float edge = smoothstep(0.3, 0.9, rdPaint) ;   // mép vạch (rdPaint < 1): dễ tróc hơn
-      float bare = clamp(chip + (1.0 - edge) * 0.45 * smoothstep(0.5, 0.75, rdN(rw * 5.0 + 9.0)), 0.0, 1.0);
+      float cn2 = rdN(rw * 1.6 + 31.0) * 0.55 + rdN(rw * 6.5 + 2.0) * 0.3 + rdH(floor(rw * 9.0)) * 0.15;
+      float bare = clamp(chip + rdAlli * 1.4 + (1.0 - edge) * 0.45 * smoothstep(0.5, 0.75, rdN(rw * 5.0 + 9.0)), 0.0, 1.0);
+      diffuseColor.rgb *= 1.0 + 0.18 * (smoothstep(0.55, 0.61, cn2) - chip) * rdPaint;   // mép vảy sơn bong cong lên
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.045, 0.044, 0.042) * (0.8 + 0.4 * rdN(rw * 3.0)), rdPaint * bare * 0.9);
       // bụi đường bám vào sơn (sơn trắng / vàng ngả xám)
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.33))) * vec3(1.0, 0.97, 0.92), rdPaint * 0.25);
@@ -1311,6 +1356,7 @@ ${sea ? 'varying float vDep;' : ''}
   // Sóng nổ / đạn tác động lên cây, nhà, boong-ke tại điểm nổ
   damageAt(x, y, z, ammo, heavy, fx, info) {
     const events = [];
+    if (typeof Weather !== 'undefined' && Weather.shelterDirty) Weather.shelterDirty();   // mái che có thể đổi -> bản đồ hứng mưa
     if (this.envDamage) events.push(...this.envDamage.damageAt(x, y, z, ammo, heavy, fx, info || {}));
     if (this.trees) this.trees.damageAt(x, y, z, ammo, heavy, fx);
     if (this.propSet) this.propSet.damageAt(x, y, z, ammo, heavy, fx);
@@ -1868,6 +1914,7 @@ ${sea ? 'varying float vDep;' : ''}
       }
     }
     for (const rock of this.boulders) {
+      if (rock.noShot) continue;   // xác xe giữ lại: đạn trúng thẳng hộp thân xác (ballistics), không chặn bằng trụ tròn
       const rdx = x - rock.x, rdz = z - rock.z, rr = rock.radius;
       if (rdx > rr || rdx < -rr || rdz > rr || rdz < -rr) continue;
       if (rdx * rdx + rdz * rdz <= rr * rr) {

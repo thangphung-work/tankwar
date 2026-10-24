@@ -130,6 +130,11 @@ class TankInspector {
     this.bindEvents();
     this.spares = {};        // xe dựng sẵn (ẩn trong cảnh) theo 'loại|phe' — xem pumpSpares
     this._lastActive = 0;    // lần cuối người xem thao tác (chuột / phím) — xem animate, pumpSpares
+    // lần cuối người chơi thao tác ở sảnh (phòng xem xe đang đóng): mỗi lượt dựng sẵn chặn luồng chính vài trăm ms,
+    // trúng lúc bấm đổi xe / chọn bản đồ là khựng -> chờ người chơi ngừng tay rồi mới dựng (xem pumpSpares)
+    this._lobbyActive = 0;
+    const markLobby = () => { if (!this.isOpen) this._lobbyActive = performance.now(); };
+    ['pointermove', 'pointerdown', 'keydown', 'wheel'].forEach(ev => window.addEventListener(ev, markLobby, { capture: true, passive: true }));
     this.schedulePrewarm(2500);   // trang vừa tải: chờ game dựng xong rồi mới dựng sẵn phòng xem
   }
 
@@ -214,6 +219,12 @@ class TankInspector {
     if (typeof SPGUnit3D === 'undefined' || this.inLiveMatch()) return;   // giữa trận: không dựng (khựng khung hình trận)
     // đang mở phòng mà người xem vừa thao tác: chờ họ ngừng tay rồi mới dựng (tránh giật lúc xoay / lái)
     if (this.isOpen && performance.now() - this._lastActive < 1500) { this.schedulePrewarm(1500); return; }
+    // phòng đang đóng: người chơi đang thao tác ở sảnh, hoặc đang tìm trận / dựng bản đồ -> hoãn
+    if (!this.isOpen) {
+      const mm = window.matchmakingController;
+      if (mm && mm.state && mm.state !== 'IDLE') { this.schedulePrewarm(3000); return; }
+      if (performance.now() - this._lobbyActive < 1500) { this.schedulePrewarm(1500); return; }
+    }
     try {
       this.initThreeScene();
       if (!this.scene) return;
@@ -436,7 +447,7 @@ class TankInspector {
                 <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc (cần động cơ)</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>G</kbd> thả khói</span><span><i class="ti ti-mouse" aria-hidden="true"></i> nhấp trái ngắm + bắn · nhấp phải lái tới · kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
               </div>
               <div class="ti-toast" id="ti-toast" role="status"></div>
-              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><button id="ti-range-enter" class="ti-range-enter" title="Phòng thử đạn trên game thật: camera, kính ngắm Ctrl, HUD, đường đạn y như trong trận — bản đồ thật có làng, xe mục tiêu, với đúng xe + bộ trang bị đang lắp"><i class="ti ti-target-arrow" aria-hidden="true"></i> PHÒNG THỬ ĐẠN</button><a class="ti-lab-link ti-lab-detail" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng: quỹ đạo, tốc độ chậm, bắn vào tường / tòa nhà / xe bia / boong-ke"><i class="ti ti-flask" aria-hidden="true"></i> THỬ ĐẠN CHI TIẾT ↗</a></div>
+              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><button id="ti-range-enter" class="ti-range-enter" title="Vào trường bắn thử đạn tức thì: lái xe, bắn bia drone, thử sức xuyên tường, đổi địa hình — VÀO NGAY LẬP TỨC TRONG 0.1 GIÂY"><i class="ti ti-target-arrow" aria-hidden="true"></i> PHÒNG THỬ ĐẠN</button><button id="ti-range-real-btn" class="ti-hint-toggle ti-range-enter" style="background:rgba(255,183,0,0.12);border-color:#ffb700;color:#ffb700" title="Chiến trường lớn 2km: có làng mạc, xe bia AI bắn trả, đo độ dày giáp chi tiết"><i class="ti ti-map-2" aria-hidden="true"></i> BIA CHIẾN ĐẤU ↗</button><a class="ti-lab-link ti-lab-detail" href="fx_lab.html" target="_blank" rel="noopener" title="Trang riêng: quỹ đạo, tốc độ chậm, bắn vào tường / tòa nhà / xe bia / boong-ke"><i class="ti ti-flask" aria-hidden="true"></i> THỬ ĐẠN CHI TIẾT ↗</a><a class="ti-lab-link" href="labs.html" target="_blank" rel="noopener" title="Mọi phòng thử: đạn, hiệu ứng xe, ô tô, drone, cứ điểm, camera tự do"><i class="ti ti-layout-grid" aria-hidden="true"></i> PHÒNG THỬ NGHIỆM ↗</a></div>
               <div class="ti-range-head"><button id="ti-range-exit" class="ti-range-exit" title="Về màn thông tin xe [ESC]"><i class="ti ti-chevron-left" aria-hidden="true"></i> THOÁT</button><div class="ti-range-title"><b>PHÒNG THỬ ĐẠN</b><span id="ti-range-tank"></span></div></div>
             </div>
             <div class="ti-equip-dock" id="ti-equip-dock" aria-label="Chọn trang bị"></div>
@@ -1543,7 +1554,7 @@ class TankInspector {
     const hard = ht === 'BOULDER' || ht === 'BUILDING' || ht === 'BUNKER';
     const fxType = ht === 'BUILDING' ? 'BUILDING' : hard ? 'BOULDER' : ht === 'WATER' ? 'AIRBURST' : 'GROUND';
     const dir = p.dir || new THREE.Vector3(0, 0, -1), bn = p.hit && p.hit.bn;
-    if (hitWall && fx && fx.fx && fx.fx.impactSurface) fx.fx.impactSurface(p.ammoType, p.hit, dir, {});
+    if (hitWall && fx && fx.fx && fx.fx.impactSurface) fx.fx.impactSurface(p.ammoType, p.hit, dir, { wallThick: (typeof Destructibles !== 'undefined' && Destructibles.ConcreteWall) ? Destructibles.ConcreteWall.THICK : 1.6 });
     else if (fx) fx.createImpactEffects(p.x, p.y, p.z, p.ammoType, fxType, bn ? { dir: { x: dir.x, y: dir.y, z: dir.z }, normal: bn } : undefined);
     if (se && typeof se.playExplosionAtDistance === 'function') se.playExplosionAtDistance(p.dist, hitWall || hard ? 'WALL' : ht === 'WATER' ? 'AIRBURST' : 'GROUND', p.ammoType);
     // cây rung / đổ / cháy, hàng rào đổ, nhà thủng / sập, boong-ke vỡ theo sức nổ (như terrain.damageAt trong trận)
@@ -1552,6 +1563,7 @@ class TankInspector {
     // Sức phá kết cấu theo loại đạn (như phòng thử đạn): trúng thẳng tường, hoặc nổ trên đất sát chân tường
     if (W && W.wall.visible && p.ammoType !== 'CLUSTER') {
       const SP = { NORMAL: [24, 1.8], HE: [38, 2.8], AP: [3.6, 4.2], CLUSTER_SUBMUNITION: [12, 0.9], RPG: [20, 2.2], ANTI_TANK_MISSILE: [20, 2.6],
+        HEAT: [22, 2.6], HEAT120: [24, 2.8],
         GATLING_BULLET: [3.2, 0.2], INCENDIARY: [3.8, 0.24], SCOUT_BULLET: [1.8, 0.09] }[p.ammoType] || [24, 1.8];
       const pt = new THREE.Vector3(p.x, p.y, p.z);
       const near = Math.abs(p.x - W.cx) < W.hw + SP[0] && Math.abs(p.z - W.cz) < W.hd + SP[0];
@@ -1769,12 +1781,17 @@ class TankInspector {
       if (!e.repeat) this.testSmoke();
     }, true);
     const rIn = document.getElementById('ti-range-enter'), rOut = document.getElementById('ti-range-exit');
-    // Phòng thử đạn chạy trên game thật (range_lab.js): mang theo xe đang xem; bản đồ lần trước
+    const rReal = document.getElementById('ti-range-real-btn');
+    // Phòng thử đạn tức thì (ProvingGround): mở ngay trong 0.1s không cần tải lại trang
     if (rIn) rIn.addEventListener('click', () => {
       rIn.blur();
-      // báo ngay là đã nhận lệnh: trang mới mất một lúc mới bắt đầu tải
-      rIn.disabled = true;
-      rIn.textContent = 'ĐANG TẢI…';
+      this.enterRangeMode();
+    });
+    // Phòng thử đạn chạy trên game thật (range_lab.js): mang theo xe đang xem sang map lớn 2km
+    if (rReal) rReal.addEventListener('click', () => {
+      rReal.blur();
+      rReal.disabled = true;
+      rReal.textContent = 'ĐANG TẢI…';
       document.body.style.cursor = 'progress';
       let map = 'HIGHLAND';
       try { map = localStorage.getItem('rg-map') || map; } catch (e) { /* bỏ qua */ }

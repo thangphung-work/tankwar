@@ -652,8 +652,8 @@
     turret.add(periHead);
     VehicleKit.registerPartGroup(unit, 'opticCdr', periHead);
 
-    // Tay nắm leo tháp hai bên mép nóc
-    for (const s of [-1, 1]) tb.grabHandle([s * 8.9, ROOF, 7.0], 'z', 2.8, 0.6, P);
+    // Tay nắm leo tháp hai bên mép nóc (bên phải chừa khoảng trống cho chân đế bệ vũ khí nóc)
+    for (const s of [-1, 1]) tb.grabHandle([s * 8.9, ROOF, s > 0 ? 5.2 : 7.0], 'z', s > 0 ? 2.0 : 2.8, 0.6, P);
 
     // Tấm xả áp hộc đạn trên nóc đuôi tháp
     tb.box(16.2, 0.06, 0.16, D, [0, ROOF + 0.03, 8.6]);

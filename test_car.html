@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phòng Thử Ô Tô</title>
+<link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
+<link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+<link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261020lab2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* riêng trang ô tô: ô chọn / nhập số / màu theo tông bàn tác chiến, ô màu sơn, tâm ngắm chế độ bắn */
+  .lab-field { margin: 3px 0; }
+  .lab-field > span:first-child { width: 92px; }
+  .lab-field select, .lab-field input[type=number] {
+    flex: 1; min-width: 0; padding: 4px 6px;
+    font: 500 12px var(--font-tech); color: var(--tc-text);
+    background: rgba(0, 0, 0, 0.3); border: 1px solid var(--tc-line); border-radius: 0; outline: none;
+  }
+  .lab-field select:focus, .lab-field input[type=number]:focus { border-color: var(--tc-accent); }
+  .lab-field select option { background: var(--tc-bg-2); }
+  .lab-field input[type=color] { flex: 1; height: 24px; padding: 0 2px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--tc-line); cursor: pointer; }
+  .lab-field input[type=checkbox] { accent-color: var(--tc-accent); margin: 0; }
+  .lab-field .btn { width: auto; flex: 0 0 auto; padding: 4px 7px; }
+  .lab-field .btn .ti { margin: 0; }
+  .lab-field .note { color: var(--tc-faint); font-size: 10.5px; }
+  .lab-val { width: 34px; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 6px; }
+  .sw { width: 19px; height: 19px; cursor: pointer; border: 1px solid var(--tc-line-2); }
+  .sw.on { outline: 2px solid var(--tc-accent); outline-offset: 1px; }
+  .lab-log { max-height: 130px; }
+  .lab-log b { color: var(--tc-accent-2); font-weight: 500; }
+  .lab-info-row b .hot { color: var(--tc-red); }
+  #crosshair { position: fixed; z-index: 5; pointer-events: none; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 2px solid var(--tc-red); border-radius: 50%; display: none; }
+  #crosshair::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; background: var(--tc-red); border-radius: 50%; }
+  .shooting #view { cursor: none; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="crosshair"></div>
+
+<aside class="lab-panel">
+  <header class="lab-head">
+    <div class="lab-brand">
+      <i class="ti ti-car-crash lab-emblem" aria-hidden="true"></i>
+      <div>
+        <h1>BÃI ĐỖ THỬ Ô TÔ</h1>
+        <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Thân xe mềm móp dẻo · xe tăng cán bẹp · trúng đạn bốc cháy</div>
+      </div>
+    </div>
+    <nav class="lab-nav">
+      <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
+      <a class="on" href="test_car.html"><i class="ti ti-car" aria-hidden="true"></i> Ô tô</a>
+    </nav>
+  </header>
+
+  <div class="lab-scroll">
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">01</span><h2>Chọn xe</h2><small id="build-status"></small></div>
+    <div class="lab-field">
+      <span>Ô đỗ</span><select id="o-slot"></select>
+      <button class="btn" onclick="stepSel(-1)" title="Xe trước"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+      <button class="btn" onclick="stepSel(1)" title="Xe sau"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+    </div>
+    <label class="lab-field"><span>Chỉ xe này</span><input type="checkbox" id="o-solo" checked><span class="note">ẩn + không dựng các xe khác</span></label>
+    <div class="lab-label">Chuột trái</div>
+    <div class="grid2">
+      <button class="btn on" id="mode-select" onclick="setMode('select')"><i class="ti ti-pointer" aria-hidden="true"></i>Chọn xe</button>
+      <button class="btn" id="mode-shoot" onclick="setMode('shoot')"><i class="ti ti-crosshair" aria-hidden="true"></i>Bắn</button>
+    </div>
+    <div class="row mt">
+      <button class="btn" onclick="focusSel()"><i class="ti ti-focus-2" aria-hidden="true"></i>Nhìn xe</button>
+      <button class="btn" onclick="overview()"><i class="ti ti-world" aria-hidden="true"></i>Toàn cảnh</button>
+      <button class="btn" onclick="resetAll()"><i class="ti ti-refresh" aria-hidden="true"></i>Dựng lại cả bãi</button>
+    </div>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">02</span><h2>Thông số xe</h2></div>
+    <label class="lab-field"><span>Loại xe</span><select id="o-kind"></select></label>
+    <div class="lab-label">Màu sơn</div>
+    <div class="swatches" id="swatches"></div>
+    <label class="lab-field"><span>Màu tuỳ chọn</span><input type="color" id="o-color"></label>
+    <label class="lab-field"><span>Tuổi xe</span><input type="range" id="o-age" min="0" max="1" step="0.01"><span class="lab-val" id="v-age"></span></label>
+    <label class="lab-field"><span>Gỉ sét</span><input type="range" id="o-rust" min="0" max="1" step="0.01"><span class="lab-val" id="v-rust"></span></label>
+    <label class="lab-field"><span>Bụi bẩn</span><input type="range" id="o-dust" min="0" max="1" step="0.01"><span class="lab-val" id="v-dust"></span></label>
+    <label class="lab-field"><span>Xăng trong bình</span><input type="range" id="o-fuel" min="0" max="1" step="0.01"><span class="lab-val" id="v-fuel"></span></label>
+    <div class="lab-field"><span>Seed biến thể</span><input type="number" id="o-seed" min="1" step="1"><button class="btn" onclick="randomSeed()" title="Seed ngẫu nhiên"><i class="ti ti-dice-5" aria-hidden="true"></i></button></div>
+    <label class="lab-field"><span>Xác cháy sẵn</span><input type="checkbox" id="o-burnt"></label>
+    <label class="lab-field"><span>Bẹp sẵn</span><input type="range" id="o-crush" min="0" max="1" step="0.01"><span class="lab-val" id="v-crush"></span></label>
+    <div class="grid2 mt">
+      <button class="btn" onclick="rebuildSel()"><i class="ti ti-refresh" aria-hidden="true"></i>Dựng lại xe này</button>
+      <button class="btn btn-danger" onclick="igniteSel()"><i class="ti ti-flame" aria-hidden="true"></i>Châm lửa xe này</button>
+    </div>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">03</span><h2>Hỏa lực</h2></div>
+    <label class="lab-field"><span>Loại đạn</span><select id="ammo"></select></label>
+    <div class="lab-box-note">Chế độ <b>Bắn</b>: bấm / giữ chuột trái — bắn từ nòng xe tăng nếu đã thả xe tăng, không thì từ camera. Đạn súng máy bắn liên thanh.</div>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">04</span><h2>Xe tăng cán</h2></div>
+    <label class="lab-field"><span>Mẫu xe</span><select id="t-type"><option value="ALL_ROUNDER">Halberd · tăng chủ lực</option><option value="GATLING">Hailstorm · xe hoả lực Gatling</option></select></label>
+    <button class="btn btn-fire mt" id="t-drop" onclick="toggleTank()"><i class="ti ti-tank" aria-hidden="true"></i>THẢ XE TĂNG</button>
+    <label class="lab-field mt"><span>Camera bám</span><input type="checkbox" id="t-follow" checked><span class="note"><kbd>C</kbd> bật / tắt</span></label>
+    <div class="lab-box-note">Chỉ có xe xích: trong game Marten và Arbalest là xe bánh lốp, chỉ húc đẩy chứ không cán bẹp ô tô.</div>
+  </section>
+
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">05</span><h2>Sự kiện</h2><small>crunch · glass · tire · ignite…</small></div>
+    <div class="lab-log" id="log"></div>
+  </section>
+  </div>
+</aside>
+
+<div class="lab-info">
+  <div class="lab-info-title"><i class="ti ti-car" aria-hidden="true"></i><span id="sel-title">—</span></div>
+  <div class="lab-info-row"><span>Mức bẹp</span><b id="i-crush">—</b></div>
+  <div class="lab-info-row"><span>Trạng thái</span><b id="i-fire">—</b></div>
+  <div class="lab-info-row"><span>Dựng hình</span><b id="i-build">—</b></div>
+  <div class="lab-info-row"><span>Đầu xe hướng</span><b id="i-dir">—</b></div>
+  <div class="lab-info-title mt2"><i class="ti ti-gauge" aria-hidden="true"></i><span>HIỆU NĂNG</span></div>
+  <div class="lab-info-row"><span>Khung hình</span><b id="i-fps">—</b></div>
+  <div class="lab-info-row"><span>JS mỗi khung</span><b id="i-ms">—</b></div>
+  <div class="lab-info-row"><span>Draw call (gồm bóng)</span><b id="i-calls">—</b></div>
+  <div class="lab-info-row"><span>Tam giác</span><b id="i-tris">—</b></div>
+</div>
+
+<div class="lab-keys">
+  <span><kbd>Chuột trái</kbd> xoay</span>
+  <span><kbd>Chuột phải</kbd> trượt</span>
+  <span><kbd>Cuộn</kbd> zoom</span>
+  <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> lái xe tăng</span>
+  <span><kbd>Space</kbd> phanh</span>
+  <span><kbd>C</kbd> camera bám</span>
+</div>
+
+  <script src="three.min.js"></script>
+  <script src="src/entities/car_softbody.js"></script>
+  <script src="src/entities/civil_cars.js"></script>
+  <script src="src/entities/tank_models.js"></script>
+  <script src="src/core/game_timing.js"></script>
+  <script src="src/entities/tanks/vehicle_kit.js"></script>
+  <script src="src/entities/tanks/roof_mounts.js"></script>
+  <script src="src/entities/tanks/mbt_halberd.js"></script>
+  <script src="src/entities/tanks/fsv_hailstorm.js"></script>
+  <script>
+    // các mẫu xe trong game (map_gen CAR_CATALOG) — mẫu chưa có model riêng trong CivilCars thì vẽ tạm bằng sedan
+    const KINDS = [
+      { id: 'sedan', name: 'Sedan' }, { id: 'hatch', name: 'Hatchback' }, { id: 'suv', name: 'SUV' },
+      { id: 'van', name: 'Van' }, { id: 'pickup', name: 'Bán tải' }, { id: 'taxi', name: 'Taxi' }
+    ];
+    const hasModel = id => !!CivilCars.SPEC[id] || id === 'taxi';
+    const kindName = id => { const k = KINDS.find(k => k.id === id); return (k ? k.name : id) + (hasModel(id) ? '' : ' (tạm thân sedan)'); };
+    // bảng màu sơn (props.js CAR_COL) + vàng taxi
+    const CAR_COL = [0xe8e8e6, 0xb8bcc0, 0x26282c, 0x9e2a26, 0x2c4c7c, 0x6c7074, 0x2e4a36, 0xc8b894, 0x1e2a44, 0x5e2228, 0x8aa8c0, 0x7a6a58, 0xe8b820];
+    // loại đạn (khoá AMMO trong civil_cars.js)
+    const AMMO = [
+      ['SCOUT_BULLET', 'Súng máy trinh sát'], ['GATLING_BULLET', 'Gatling'], ['INCENDIARY_HMG', 'Đại liên đạn cháy'], ['INCENDIARY', 'Đạn cháy'],
+      ['AP', 'Xuyên giáp (AP)'], ['CLUSTER_SUBMUNITION', 'Bom chùm con'], ['CLUSTER', 'Đạn chùm'], ['RPG', 'RPG'],
+      ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng'], ['NORMAL', 'Pháo thường'], ['HE', 'Pháo HE']
+    ];
+    const $ = id => document.getElementById(id);
+
+    const canvas = $('view');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xdce5ed);
+    scene.fog = new THREE.FogExp2(0xdce5ed, 0.0035);
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.5, 900);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9298, 0.75));
+    const sun = new THREE.DirectionalLight(0xfffaed, 1.4);
+    sun.position.set(60, 90, 50);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(sun.shadow.camera, { near: 10, far: 300, left: -100, right: 100, top: 100, bottom: -100 });
+    sun.shadow.bias = -0.0005;
+    scene.add(sun);
+
+    // --- BÃI ĐỖ: mặt nhựa, 2 dãy ô đỗ quay mặt ra lối đi giữa, vỉa hè + bó vỉa bao quanh
+    const BAY_W = 22, BAY_D = 50, NB = KINDS.length, ROW_Z = 33;
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ color: 0x8d918f, roughness: 0.95 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; ground.receiveShadow = true; scene.add(ground);
+    const lotW = NB * BAY_W + 40, lotD = 2 * (ROW_Z + BAY_D / 2) + 20;
+    const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(lotW, lotD), new THREE.MeshStandardMaterial({ color: 0x3e4246, roughness: 0.9, metalness: 0.05 }));
+    asphalt.rotation.x = -Math.PI / 2; asphalt.receiveShadow = true; scene.add(asphalt);
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xe6e6e0 }), yelMat = new THREE.MeshBasicMaterial({ color: 0xe0b020 });
+    const strip = (w, d, x, z, m) => { const s = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m); s.rotation.x = -Math.PI / 2; s.position.set(x, 0.02, z); scene.add(s); return s; };
+    const x0 = -NB * BAY_W / 2;
+    for (const sz of [-1, 1]) {
+      const zc = sz * ROW_Z;
+      for (let i = 0; i <= NB; i++) strip(0.6, BAY_D, x0 + i * BAY_W, zc, lineMat);
+      strip(NB * BAY_W + 0.6, 0.6, 0, zc + sz * BAY_D / 2, lineMat);
+      for (let i = 0; i < NB; i++) strip(4, 0.8, x0 + (i + 0.5) * BAY_W, zc + sz * (BAY_D / 2 - 3), yelMat);   // vạch chặn bánh
+    }
+    for (let x = -lotW / 2 + 10; x < lotW / 2 - 10; x += 14) strip(7, 0.6, x + 3.5, 0, yelMat);   // vạch giữa lối đi
+    const curbMat = new THREE.MeshStandardMaterial({ color: 0xb8b6ae, roughness: 0.9 });
+    for (const [w, d, x, z] of [[lotW + 2, 1.6, 0, -lotD / 2], [lotW + 2, 1.6, 0, lotD / 2], [1.6, lotD, -lotW / 2, 0], [1.6, lotD, lotW / 2, 0]]) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, d), curbMat); c.position.set(x, 0.6, z); c.castShadow = c.receiveShadow = true; scene.add(c);
+    }
+
+    // --- XE TRONG BÃI: dãy sau (z < 0) xe mới, dãy trước (z > 0) xe cũ dần; đầu xe hướng ra lối đi
+    const slots = [];
+    let sel = null;
+    const defaultOpts = (kind, row, i) => {
+      const old = row === 1;
+      return {
+        kind, color: kind === 'taxi' ? 0xe8b820 : CAR_COL[(i * 5 + row * 3) % 12],
+        age: old ? 0.5 + 0.08 * i : 0.15, rust: old ? 0.2 + 0.12 * i : 0.05, dust: old ? 0.5 + 0.06 * i : 0.15,
+        fuel: 0.7, seed: 1 + i + row * 17, burnt: false, crush: 0
+      };
+    };
+    KINDS.forEach((k, i) => {
+      for (const row of [0, 1]) {
+        const s = { x: x0 + (i + 0.5) * BAY_W, z: (row ? 1 : -1) * ROW_Z, rot: row ? Math.PI : 0, opts: defaultOpts(k.id, row, i), g: null, name: '' };
+        s.name = (row ? 'B' : 'A') + (i + 1);
+        slots.push(s);
+      }
+    });
+    const disposeObj = o => o.traverse(m => {
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) (Array.isArray(m.material) ? m.material : [m.material]).forEach(mt => mt.dispose());
+    });
+    function buildSlot(s) {
+      if (s.g) { scene.remove(s.g); disposeObj(s.g); }
+      const o = s.opts, opts = { color: o.color, age: o.age, rust: o.rust, dust: o.dust, fuel: o.fuel, seed: o.seed, burnt: o.burnt };
+      if (o.crush > 0) { opts.crush = o.crush; opts.track = { angle: 0.3, offset: -2 }; }
+      const t0 = performance.now();
+      s.g = CivilCars.build(o.kind, opts);
+      s.buildMs = performance.now() - t0;
+      s.g.position.set(s.x, 0, s.z); s.g.rotation.y = s.rot;
+      s.g.userData.slot = s;
+      s.g.visible = !solo || s === sel;
+      // chi tiết nhỏ (ốc, gạt mưa, đèn...) không đổ bóng: bóng không thấy được mà shadow pass phải vẽ lại cả trăm mesh
+      s.g.traverse(m => {
+        if (!m.isMesh || !m.castShadow) return;
+        if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+        if (m.geometry.boundingSphere.radius < 1.5) m.castShadow = false;
+      });
+      scene.add(s.g); s.g.updateMatrixWorld(true);
+      // hộp bao lọc raycast: tia không trúng hộp thì khỏi duyệt từng tam giác của xe (nới rộng cho thân móp / bè ra)
+      s.box = new THREE.Box3().setFromObject(s.g).expandByScalar(3);
+      if (s === sel) placeMarker();
+    }
+    // dựng dần mỗi khung hình 1 xe (mỗi xe ~2 s) để trang hiện ngay, không treo cả lúc
+    let buildQueue = [];
+    // chế độ từng xe: chỉ dựng + hiện xe đang chọn, xe khác ẩn và không chạy mô phỏng
+    let solo = true;
+    function applySolo() {
+      for (const s of slots) if (s.g) s.g.visible = !solo || s === sel;
+      buildQueue = solo ? (sel && !sel.g ? [sel] : []) : slots.filter(s => !s.g);
+    }
+    // hot reload (server_dev): đã cán / bắn / đổi xe thì không tự tải lại trang, chỉ hiện nhãn "có bản mới"
+    let dirty = false;
+    window.devBusy = () => dirty;
+
+    // --- CHỌN XE: khung sáng dưới xe đang chọn
+    const marker = new THREE.Mesh(new THREE.RingGeometry(0, 1, 4, 1), new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.25, depthWrite: false }));
+    marker.rotation.x = -Math.PI / 2; marker.renderOrder = -1; scene.add(marker);
+    const markerEdge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => new THREE.Vector3(x, 0, z))), new THREE.LineBasicMaterial({ color: 0x58a6ff }));
+    scene.add(markerEdge);
+    function placeMarker() {
+      const hx = BAY_W / 2 - 1.2, hz = BAY_D / 2 - 1.2;
+      marker.geometry.dispose(); marker.geometry = new THREE.PlaneGeometry(hx * 2, hz * 2);
+      marker.position.set(sel.x, 0.04, sel.z);
+      markerEdge.scale.set(hx, 1, hz); markerEdge.position.set(sel.x, 0.06, sel.z);
+    }
+    function select(s) {
+      sel = s; placeMarker();
+      $('o-slot').value = slots.indexOf(s);
+      if (solo) applySolo();
+      const o = s.opts;
+      $('o-kind').value = o.kind; $('o-color').value = '#' + new THREE.Color(o.color).getHexString();
+      for (const k of ['age', 'rust', 'dust', 'fuel', 'crush']) $('o-' + k).value = o[k];
+      $('o-seed').value = o.seed; $('o-burnt').checked = o.burnt;
+      refreshLabels(); refreshSwatches();
+    }
+
+    // --- BẢNG CHỈNH: đổi thông số -> dựng lại xe đang chọn (trễ 150 ms khi kéo thanh trượt)
+    $('o-slot').innerHTML = slots.map((s, i) => `<option value="${i}">${s.name} · ${kindName(s.opts.kind)} · ${s.z > 0 ? 'cũ' : 'mới'}</option>`).join('');
+    window.stepSel = d => { select(slots[(slots.indexOf(sel) + d + slots.length) % slots.length]); if (solo) focusSel(); };
+    $('o-slot').addEventListener('change', e => { e.target.blur(); select(slots[+e.target.value]); if (solo) focusSel(); });
+    $('o-solo').addEventListener('change', e => { e.target.blur(); solo = e.target.checked; applySolo(); if (!solo) overview(); });
+    $('o-kind').innerHTML = KINDS.map(k => `<option value="${k.id}">${kindName(k.id)}</option>`).join('');
+    $('ammo').innerHTML = AMMO.map(([id, n]) => `<option value="${id}">${n} · ${id}</option>`).join('');
+    $('ammo').value = 'HE';
+    $('swatches').innerHTML = CAR_COL.map(c => `<div class="sw" data-c="${c}" style="background:#${c.toString(16).padStart(6, '0')}"></div>`).join('');
+    const refreshSwatches = () => document.querySelectorAll('.sw').forEach(e => e.classList.toggle('on', sel && +e.dataset.c === sel.opts.color));
+    const refreshLabels = () => {
+      for (const k of ['age', 'rust', 'dust', 'fuel', 'crush']) $('v-' + k).textContent = (+$('o-' + k).value).toFixed(2);
+    };
+    let rebuildTimer = 0;
+    const applyOpts = (now) => {
+      if (!sel) return;
+      const o = sel.opts;
+      o.kind = $('o-kind').value; o.seed = Math.max(1, $('o-seed').value | 0); o.burnt = $('o-burnt').checked;
+      for (const k of ['age', 'rust', 'dust', 'fuel', 'crush']) o[k] = +$('o-' + k).value;
+      refreshLabels();
+      clearTimeout(rebuildTimer);
+      dirty = true;
+      rebuildTimer = setTimeout(() => { buildSlot(sel); log(sel, 'dựng lại (' + sel.buildMs.toFixed(0) + ' ms)'); }, now ? 0 : 150);
+    };
+    for (const k of ['age', 'rust', 'dust', 'fuel', 'crush']) $('o-' + k).addEventListener('input', () => applyOpts(false));
+    for (const k of ['kind', 'seed', 'burnt']) $('o-' + k).addEventListener('change', () => applyOpts(true));
+    $('o-color').addEventListener('input', e => { sel.opts.color = new THREE.Color(e.target.value).getHex(); refreshSwatches(); applyOpts(false); });
+    $('swatches').addEventListener('click', e => {
+      if (!e.target.dataset.c) return;
+      sel.opts.color = +e.target.dataset.c; $('o-color').value = '#' + new THREE.Color(sel.opts.color).getHexString();
+      refreshSwatches(); applyOpts(true);
+    });
+    window.randomSeed = () => { $('o-seed').value = 1 + Math.floor(Math.random() * 9999); applyOpts(true); };
+    window.rebuildSel = () => { if (sel && sel.g) { buildSlot(sel); log(sel, 'dựng lại, xoá hư hại'); } };
+    window.resetAll = () => {
+      slots.forEach((s, i) => {
+        s.opts = defaultOpts(KINDS[Math.floor(i / 2)].id, s.z > 0 ? 1 : 0, Math.floor(i / 2));
+        if (solo && s !== sel && s.g) { scene.remove(s.g); disposeObj(s.g); s.g = null; }   // xe ẩn: dựng lại khi được chọn
+      });
+      buildQueue = solo ? [sel] : slots.slice(); dirty = false; select(sel); log(null, 'dựng lại cả bãi'); };
+
+    // --- NHẬT KÝ SỰ KIỆN (crush.drain: crunch / glass / tire / ignite / fuelBlast ...)
+    const logEl = $('log');
+    function log(s, msg) {
+      const d = document.createElement('div');
+      d.innerHTML = (s ? `<b>${s.name}</b> ` : '') + msg;
+      logEl.appendChild(d);
+      while (logEl.childNodes.length > 80) logEl.removeChild(logEl.firstChild);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // --- XE TĂNG: mô hình thật của game (TankModelBuilder) dựng tĩnh như xe đỗ trong landmarks.js — bỏ thanh máu,
+    // vỏ giáp phản ứng; mũi mô hình hướng -Z. Hộp va chạm cán của CarSoftBody cố định (2 dải xích ±11,2, dài 37) như trong game
+    const tanks = {};
+    function getTank(type) {
+      if (tanks[type]) return tanks[type];
+      const u = { tankType: type, team: 'BLUE', scene, id: 'lab_' + type, speed: 0 };
+      TankModelBuilder.buildModel(u);
+      if (u.hpGroup && u.hpGroup.parent) u.hpGroup.parent.remove(u.hpGroup);
+      if (u.reactiveArmorMesh) u.reactiveArmorMesh.visible = false;
+      u.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      u.group.visible = false;
+      return (tanks[type] = u);
+    }
+    // gầm thật của từng mẫu (đo từ mô hình, đv): tâm dải xích ±13, xích rộng 6, đoạn chạm đất ~44, 2 đầu cong lên tới
+    // mũi / đuôi; gầm giữa 2 xích cao ~13, tấm thân dưới mũi / đuôi thấp ~4-5
+    const TANK_DIM = {
+      ALL_ROUNDER: { tc: 13, tw: 3.1, flat: 22, hl: 30, rise: 0.4, belly: 12.5, bw: 9.8, bEnd: 27, bEndH: 3.5 },
+      GATLING: { tc: 13, tw: 3.2, flat: 21, hl: 30, rise: 0.3, belly: 13, bw: 9.8, bEnd: 27.5, bEndH: 4.5 }
+    };
+    const sup4 = [0, 0, 0, 0];
+    let tank = null;   // unit xe tăng đang lái
+    const keys = {};
+    const LOT_X = lotW / 2 - 22, LOT_Z = lotD / 2 - 22;
+    // thả xe tăng: xuất hiện ở đầu lối đi giữa, mũi hướng +x (hd: hướng mũi, tiến = (sin hd, cos hd))
+    function deploy(type, pose) {
+      if (tank) tank.group.visible = false;
+      tank = getTank(type);
+      Object.assign(tank, pose || { px: -LOT_X + 10, pz: 0, hd: Math.PI / 2 }, { speed: 0, _pose: { c: 0, p: 0, q: 0 }, _yaw: 0, _el: 0, barrelRecoil: 0, reloadTimer: 0 });
+      tank.group.visible = true;
+      dirty = true;
+      $('t-drop').classList.add('on'); $('t-drop').innerHTML = '<i class="ti ti-tank" aria-hidden="true"></i>CẤT XE TĂNG';
+      if ($('t-follow').checked) { camDist = 110; camPhi = 0.32; camTheta = tank.hd + Math.PI; }
+      setMode('shoot');
+    }
+    window.toggleTank = () => {
+      if (tank) {
+        tank.group.visible = false; tank = null;
+        $('t-drop').classList.remove('on'); $('t-drop').innerHTML = '<i class="ti ti-tank" aria-hidden="true"></i>THẢ XE TĂNG';
+        return;
+      }
+      deploy($('t-type').value);
+    };
+    $('t-type').addEventListener('change', e => { e.target.blur(); if (tank) deploy(e.target.value, { px: tank.px, pz: tank.pz, hd: tank.hd }); });
+    $('t-follow').addEventListener('change', e => e.target.blur());
+    window.addEventListener('keydown', e => {
+      if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox') return;
+      const k = e.key.toLowerCase();
+      if (k === 'c') { $('t-follow').checked = !$('t-follow').checked; return; }
+      if ('wasd '.includes(k) || k.startsWith('arrow')) { keys[k] = true; if (tank) e.preventDefault(); }
+    });
+    window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+    window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+    // lái: tối đa 60 đv/s tiến (~27 km/h), 25 lùi; quay tại chỗ được như xe xích
+    const VMAX = 60, VREV = 25, ACC = 45, BRAKE = 110, TURN = 0.9;
+    const _v = new THREE.Vector3(), aimP = new THREE.Vector3(), mouseNdc = new THREE.Vector2(0, 0);
+    let mouseIn = false;
+    function tankStep(dt) {
+      if (!tank || dt <= 0) return;
+      const fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
+      const turn = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0);
+      let v = tank.speed;
+      if (keys[' ']) v -= Math.sign(v) * Math.min(Math.abs(v), BRAKE * dt);
+      else if (fwd) v = Math.max(-VREV, Math.min(VMAX, v + fwd * (Math.sign(v) === -fwd ? BRAKE : ACC) * dt));
+      else v -= Math.sign(v) * Math.min(Math.abs(v), 30 * dt);   // nhả ga: lực cản xích
+      tank.speed = v;
+      tank.hd += turn * TURN * dt * (v < -1 ? -1 : 1);
+      const nx = tank.px + Math.sin(tank.hd) * v * dt, nz = tank.pz + Math.cos(tank.hd) * v * dt;
+      tank.px = Math.max(-LOT_X, Math.min(LOT_X, nx)); tank.pz = Math.max(-LOT_Z, Math.min(LOT_Z, nz));
+      if (tank.px !== nx || tank.pz !== nz) tank.speed *= 0.5;   // chạm bó vỉa
+      // đè mọi xe nằm dưới thân xe tăng; xích bò trên đống xác -> thân xe tăng nhô lên chút
+      // xe tăng nằm trên đống xác: độ cao đỡ dưới 4 góc gầm (phần khung / khối máy không ép dẹt được) -> mặt phẳng đáy xích
+      // c + p·dọc + q·ngang nằm trên cả 4 góc; lên nhanh (xích bò lên xác), xuống chậm hơn
+      const D = TANK_DIM[tank.tankType], near = [];
+      _v.set(tank.px, 0, tank.pz);
+      const need = [0, 0, 0, 0];
+      for (const s of slots) {
+        if (!s.g || !s.g.visible) continue;
+        const lp = s.g.worldToLocal(_v.clone());
+        if (Math.hypot(lp.x, lp.z) > D.hl + 30) continue;
+        const hdL = tank.hd - s.g.rotation.y, q4 = s.g.userData.crush.support(lp.x, lp.z, hdL, D, sup4);
+        for (let k = 0; k < 4; k++) need[k] = Math.max(need[k], q4[k]);
+        near.push([s, lp, hdL]);
+      }
+      const F = Math.max(need[0], need[2]), B = Math.max(need[1], need[3]), L = Math.max(need[0], need[1]), R = Math.max(need[2], need[3]);
+      const p = (F - B) / D.flat, q = (R - L) / (2 * D.tc);
+      let c = 0;
+      for (let k = 0; k < 4; k++) c = Math.max(c, need[k] - p * (k & 1 ? -D.flat / 2 : D.flat / 2) - q * (k & 2 ? D.tc : -D.tc));
+      const pose = tank._pose, kUp = Math.min(1, dt * 18), kDn = Math.min(1, dt * 5);
+      pose.c += (c - pose.c) * (c > pose.c ? kUp : kDn);
+      pose.p += (p - pose.p) * kUp; pose.q += (q - pose.q) * kUp;
+      for (const [s, lp, hdL] of near) s.g.userData.crush.stamp(lp.x, lp.z, hdL, dt, pose.c, pose.p, D, pose.q);
+      tank.group.position.set(tank.px, pose.c, tank.pz);
+      // mũi mô hình hướng -Z: ngóc mũi = xoay +x; bên phải xe tăng là trục -X mô hình -> phải cao = xoay -z
+      tank.group.rotation.set(Math.atan(pose.p), tank.hd + Math.PI, -Math.atan(pose.q), 'YXZ');
+      tank.group.updateMatrixWorld(true);
+      // tháp pháo + nòng quay dần về điểm ngắm (mũi -Z trong hệ tháp)
+      if (mouseIn && tank.turretGroup) {
+        const lp = tank.group.worldToLocal(aimP.clone());
+        let d = Math.atan2(-lp.x, -lp.z) - tank._yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        tank._yaw += Math.sign(d) * Math.min(Math.abs(d), 1.6 * dt);
+        tank.turretGroup.rotation.y = tank._yaw;
+        if (tank.barrelPivot) {
+          const q = tank.barrelPivot.getWorldPosition(new THREE.Vector3());
+          const el = Math.atan2(aimP.y - q.y, Math.hypot(aimP.x - q.x, aimP.z - q.z));
+          tank._el += (Math.max(-0.12, Math.min(0.35, el)) - tank._el) * Math.min(1, dt * 6);
+          tank.barrelPivot.rotation.x = tank._el;
+        }
+      }
+      tank.barrelRecoil = Math.max(0, tank.barrelRecoil - 60 * dt);
+      tank.reloadTimer = Math.max(0, tank.reloadTimer - dt);
+      if (tank.modelAnimator) tank.modelAnimator.update(dt, tank);
+    }
+
+    // --- BẮN: tia trong hệ xe con (CivilCars shoot) + vệt đạn
+    const tracers = [];
+    function tracer(a, b) {
+      const start = a.clone().lerp(b, Math.max(0, 1 - 60 / Math.max(1, a.distanceTo(b))));
+      const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([start, b]), new THREE.LineBasicMaterial({ color: 0xffd27a, transparent: true }));
+      scene.add(ln); tracers.push({ ln, t: 0.12 });
+    }
+    function fire(s, oW, dW, ammo) {
+      // đổi điểm đầu + hướng từ hệ thế giới sang hệ xe con
+      const inv = new THREE.Matrix4().copy(s.g.matrixWorld).invert();
+      const o = oW.clone().applyMatrix4(inv), d = dW.clone().transformDirection(inv);
+      const hit = s.g.userData.crush.shoot(o.x, o.y, o.z, d.x, d.y, d.z, ammo);
+      if (!hit) log(s, ammo + ': trượt thân xe');
+      return hit;
+    }
+    const slotOf = o => { while (o && !o.userData.slot) o = o.parent; return o ? o.userData.slot : null; };
+    const carsOnRay = rc => slots.filter(s => s.g && s.g.visible && s.box && rc.ray.intersectsBox(s.box)).map(s => s.g);
+    const firstCarHit = rc => rc.intersectObjects(carsOnRay(rc), true).find(h => h.object.visible && slotOf(h.object));
+    const MG = { SCOUT_BULLET: 1, GATLING_BULLET: 1, INCENDIARY_HMG: 1, INCENDIARY: 1 };
+    let firing = false, cool = 0;
+    const rcF = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    // điểm ngắm dưới con trỏ: xe gần nhất, không trúng xe thì mặt đất
+    function updateAim() {
+      rcF.setFromCamera(mouseNdc, camera);
+      const h = firstCarHit(rcF);
+      if (h) aimP.copy(h.point); else if (!rcF.ray.intersectPlane(groundPlane, aimP)) rcF.ray.at(300, aimP);
+    }
+    function fireOnce() {
+      const ammo = $('ammo').value, spread = MG[ammo] ? 0.008 : 0;
+      dirty = true;
+      let o, d;
+      if (tank) {
+        o = tank.barrelGroup && tank.muzzleTipLocal ? tank.barrelGroup.localToWorld(tank.muzzleTipLocal.clone()) : tank.group.position.clone().setY(10);
+        d = aimP.clone().sub(o).normalize();
+        tank.barrelRecoil = MG[ammo] ? 4 : 20;
+        if (!MG[ammo]) tank.reloadTimer = 1.5;
+      } else {
+        rcF.setFromCamera(mouseNdc, camera);
+        o = rcF.ray.origin.clone(); d = rcF.ray.direction.clone();
+      }
+      if (spread) d.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(spread * 2)).normalize();
+      rcF.set(o, d);
+      const h = firstCarHit(rcF);
+      tracer(o, h ? h.point : o.clone().addScaledVector(d, 300));
+      if (h) { const s = slotOf(h.object); if (s !== sel) select(s); fire(s, o, d, ammo); }
+      cool = MG[ammo] ? 0.07 : 0.8;
+    }
+    function shotsStep(dt) {
+      cool -= dt;
+      if (firing && cool <= 0) { fireOnce(); if (!MG[$('ammo').value]) firing = false; }
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        const tr = tracers[i];
+        tr.t -= dt; tr.ln.material.opacity = Math.max(0, tr.t / 0.12);
+        if (tr.t <= 0) { scene.remove(tr.ln); tr.ln.geometry.dispose(); tr.ln.material.dispose(); tracers.splice(i, 1); }
+      }
+    }
+    window.igniteSel = () => { if (sel && sel.g) { dirty = true; sel.g.userData.crush.ignite(0, 5, 10); log(sel, 'châm lửa khoang máy'); } };
+
+    // --- CHUỘT: chọn / bắn
+    let mode = 'select';
+    window.setMode = (m) => {
+      mode = m;
+      $('mode-select').classList.toggle('on', m === 'select'); $('mode-shoot').classList.toggle('on', m === 'shoot');
+      document.body.classList.toggle('shooting', m === 'shoot');
+      $('crosshair').style.display = m === 'shoot' ? 'block' : 'none';
+    };
+    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+    function pickAt(e) {
+      const r = canvas.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      const h = ray.intersectObjects(carsOnRay(ray), true).find(h => h.object.visible);
+      if (!h) return null;
+      let o = h.object; while (o && !o.userData.slot) o = o.parent;
+      return o ? { s: o.userData.slot } : null;
+    }
+
+    // --- CAMERA: kéo trái xoay, kéo phải trượt, cuộn phóng
+    const target = new THREE.Vector3(0, 4, 0);
+    let camDist = 160, camTheta = 0.45, camPhi = 0.55;
+    function updateCamera() {
+      camPhi = Math.max(0.06, Math.min(Math.PI / 2 - 0.02, camPhi));
+      camera.position.set(
+        target.x + camDist * Math.sin(camTheta) * Math.cos(camPhi),
+        target.y + camDist * Math.sin(camPhi),
+        target.z + camDist * Math.cos(camTheta) * Math.cos(camPhi));
+      camera.lookAt(target);
+    }
+    let drag = null;
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('mousedown', e => {
+      drag = { b: e.button, x: e.clientX, y: e.clientY, moved: 0 };
+      if (e.button === 0 && mode === 'shoot') firing = true;
+    });
+    canvas.addEventListener('mouseenter', () => { mouseIn = true; });
+    canvas.addEventListener('mouseleave', () => { mouseIn = false; });
+    window.addEventListener('mousemove', e => {
+      const r = canvas.getBoundingClientRect();
+      mouseNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      if (mode === 'shoot') { const ch = $('crosshair'); ch.style.left = (e.clientX - r.left) + 'px'; ch.style.top = (e.clientY - r.top) + 'px'; }
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
+      if (drag.moved > 6 && drag.b === 0 && MG[$('ammo').value]) firing = false;   // kéo chuột = xoay camera, ngừng liên thanh
+      if (drag.b === 0) { camTheta -= dx * 0.008; camPhi += dy * 0.008; }
+      else {
+        const k = camDist * 0.0016, sn = Math.sin(camTheta), cs = Math.cos(camTheta);
+        target.x += (-dx * cs - dy * sn) * k; target.z += (dx * sn - dy * cs) * k;
+      }
+      updateCamera();
+    });
+    window.addEventListener('mouseup', e => {
+      const d = drag; drag = null;
+      if (MG[$('ammo').value]) firing = false;   // súng máy: nhả chuột thì ngừng
+      if (!d || d.b !== 0 || d.moved > 4 || e.target !== canvas || mode !== 'select') return;
+      const p = pickAt(e);
+      if (p) select(p.s);
+    });
+    canvas.addEventListener('wheel', e => { e.preventDefault(); camDist = Math.max(12, Math.min(320, camDist * Math.exp(e.deltaY * 0.001))); updateCamera(); }, { passive: false });
+    window.addEventListener('resize', () => {
+      renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    });
+    window.focusSel = () => { if (!sel) return; target.set(sel.x, 5, sel.z); camDist = 62; camPhi = 0.35; camTheta = sel.rot + 0.7; updateCamera(); };
+    window.overview = () => { target.set(0, 4, 0); camDist = 160; camTheta = 0.45; camPhi = 0.55; updateCamera(); };
+
+    // --- THỐNG KÊ XE ĐANG CHỌN
+    let statT = 0;
+    function refreshStats() {
+      if (!sel || !sel.g) return;
+      const c = sel.g.userData.crush;
+      $('sel-title').textContent = (sel.name + ' · ' + kindName(sel.opts.kind)).toUpperCase();
+      $('i-crush').textContent = (c.amount || 0).toFixed(2);
+      $('i-fire').innerHTML = c.burning ? '<span class="hot">Đang cháy</span>' : 'Không cháy';
+      $('i-build').textContent = sel.buildMs.toFixed(0) + ' ms';
+      $('i-dir').textContent = sel.rot ? '−z' : '+z';
+    }
+
+    // --- VÒNG LẶP
+    refreshLabels();
+    select(slots[4]);   // SUV dãy sau
+    overview();
+    if (solo) focusSel();
+    let last = performance.now();
+    // FPS / thời gian JS mỗi khung / draw call (gồm cả shadow pass) / số tam giác
+    let pfT = 0, pfN = 0, pfMs = 0;
+    function perfStep(dt, ms) {
+      pfT += dt; pfN++; pfMs += ms;
+      if (pfT < 0.5) return;
+      const i = renderer.info.render;
+      $('i-fps').textContent = (pfN / pfT).toFixed(0) + ' fps';
+      $('i-ms').textContent = (pfMs / pfN).toFixed(1) + ' ms';
+      $('i-calls').textContent = i.calls;
+      $('i-tris').textContent = (i.triangles / 1000).toFixed(0) + 'k';
+      pfT = pfN = pfMs = 0;
+    }
+    function animate(t) {
+      requestAnimationFrame(animate);
+      const f0 = performance.now();
+      const dt = Math.max(0, Math.min(0.05, (t - last) / 1000)); last = t;
+      if (buildQueue.length) {
+        const s = buildQueue.shift();
+        buildSlot(s); last = performance.now();
+        $('build-status').textContent = buildQueue.length ? 'đang dựng… còn ' + buildQueue.length : '';
+      }
+      // điểm ngắm chỉ cần cho tháp pháo / bắn — chế độ chọn xe không có xe tăng thì khỏi raycast mỗi khung
+      if (mouseIn && (tank || mode === 'shoot')) updateAim();
+      tankStep(dt);
+      shotsStep(dt);
+      if (tank && $('t-follow').checked) {
+        target.lerp(_v.set(tank.px, 6, tank.pz), Math.min(1, dt * 6));
+        if (!drag && Math.abs(tank.speed) > 2) { let d = tank.hd + Math.PI - camTheta; d = Math.atan2(Math.sin(d), Math.cos(d)); camTheta += d * Math.min(1, dt * 1.5); }
+        updateCamera();
+      }
+      for (const s of slots) {
+        if (!s.g || !s.g.visible) continue;
+        const c = s.g.userData.crush;
+        c.update(dt);
+        const ev = c.drain();
+        if (ev.length) {
+          // gộp sự kiện trùng (vd. crunch liên tục khi cán)
+          const cnt = {}; for (const e of ev) cnt[e] = (cnt[e] || 0) + 1;
+          log(s, Object.entries(cnt).map(([e, n]) => n > 1 ? e + ' ×' + n : e).join(', '));
+        }
+      }
+      if ((statT -= dt) <= 0) { statT = 0.25; refreshStats(); }
+      renderer.render(scene, camera);
+      perfStep(dt, performance.now() - f0);
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

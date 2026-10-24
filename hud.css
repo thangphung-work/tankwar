@@ -386,6 +386,34 @@
 .hx-artymode small { font-size: 9px; color: var(--hx-muted); }
 .hx-artymode:hover { background: rgba(255, 255, 255, 0.08); }
 
+/* Phím mở vòng lệnh radio nhanh */
+.hx-quick-command-hint {
+  gap: 6px;
+  color: #8fd3ff;
+  border-color: rgba(143, 211, 255, 0.55);
+  background: rgba(10, 30, 40, 0.76);
+}
+.hx-quick-command-hint kbd {
+  min-width: 14px;
+  height: 13px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font: 700 9px/1 var(--font-mono);
+  color: #061014;
+  background: #8fd3ff;
+  border: 0;
+  border-radius: 1px;
+  box-shadow: 0 0 7px rgba(143, 211, 255, 0.28);
+}
+.hx-quick-command-hint b {
+  font-size: 9px;
+  letter-spacing: 0.45px;
+  color: #dff5ff;
+}
+
 .hx-bar {
   display: flex;
   align-items: stretch;
@@ -721,3 +749,63 @@
 
 /* nhiệt động cơ: quá nhiệt nhấp nháy (game.js engine-heat-tag) */
 .hx-chip.hx-blink { animation: hx-blink 0.6s infinite; }
+
+/* --------------------------------------------------------------------------
+   LỆNH NHANH BỘ ĐÀM (quick_comms.js): vòng chọn giữ Z, dấu ghim lệnh, dòng nhật ký
+   -------------------------------------------------------------------------- */
+.hx-log .log-entry.radio { border-left-color: #8fd3ff; color: #e3f4ff; }
+.hx-log .log-entry.radio .ti { color: #8fd3ff; }
+
+.qc-wheel {
+  position: fixed; width: 0; height: 0; z-index: 1200; pointer-events: none;
+  font-family: var(--font-tech); opacity: 0; transform: scale(0.85);
+  transition: opacity 0.09s ease-out, transform 0.09s ease-out;
+  --sel: transparent;
+}
+.qc-wheel.on { opacity: 1; transform: scale(1); }
+.qc-wheel::before {   /* đĩa nền */
+  content: ''; position: absolute; left: 0; top: 0; width: 350px; height: 350px; transform: translate(-50%, -50%);
+  border-radius: 50%; background: radial-gradient(circle, rgba(8, 11, 10, 0.25) 18%, rgba(8, 11, 10, 0.72) 19%, rgba(8, 11, 10, 0.6) 70%, rgba(8, 11, 10, 0) 71%);
+  border: 1px solid rgba(223, 228, 217, 0.12);
+}
+.qc-item {
+  position: absolute; left: 0; top: 0; width: 86px; padding: 7px 3px 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  color: rgba(223, 228, 217, 0.72); text-align: center; border-radius: 6px;
+  border: 1px solid transparent; transition: background 0.07s, color 0.07s, border-color 0.07s;
+}
+.qc-item .ti { font-size: 22px; color: var(--c); opacity: 0.8; }
+.qc-item b { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.1; }
+.qc-item.sel { background: rgba(10, 13, 12, 0.92); border-color: var(--c); color: #fff; box-shadow: 0 0 14px -4px var(--c); }
+.qc-item.sel .ti { opacity: 1; }
+.qc-hub {
+  position: absolute; left: 0; top: 0; width: 96px; height: 96px; transform: translate(-50%, -50%); border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1.5px solid var(--sel); background: rgba(8, 11, 10, 0.55);
+}
+.qc-hub-k { font-size: 9px; letter-spacing: 0.3em; color: rgba(223, 228, 217, 0.45); }
+.qc-hub-l { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: #fff; max-width: 84px; text-align: center; line-height: 1.15; }
+.qc-dir {   /* kim chỉ hướng lệnh đang chọn */
+  position: absolute; left: 0; top: 0; width: 0; height: 140px; opacity: 0; transition: opacity 0.07s;
+}
+.qc-dir::after {
+  content: ''; position: absolute; left: -6px; top: 6px;
+  border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 8px solid var(--sel);
+}
+
+.qc-pins { position: fixed; inset: 0; z-index: 9; pointer-events: none; overflow: hidden; }
+.qc-pin {
+  position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center;
+  font-family: var(--font-tech); color: #fff; white-space: nowrap; will-change: transform;
+  margin-left: -60px; width: 120px; margin-top: -30px;
+}
+.qc-pin .ti {
+  font-size: 17px; color: var(--c); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 11, 10, 0.8); border: 1.5px solid var(--c); border-radius: 50%;
+}
+.qc-pin b { margin-top: 2px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: var(--c); text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+.qc-pin span { font-family: var(--font-mono); font-size: 9.5px; color: rgba(255, 255, 255, 0.8); text-shadow: 0 1px 2px #000; }
+.qc-pin.fresh .ti { animation: qc-ping 0.6s ease-out 2; }
+.qc-pin.edge { transform-origin: center; }
+.qc-pin.edge b { display: none; }
+@keyframes qc-ping { 0% { box-shadow: 0 0 0 0 var(--c); } 100% { box-shadow: 0 0 0 14px transparent; } }

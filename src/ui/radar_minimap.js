@@ -238,6 +238,10 @@ const RadarMinimap = (() => {
         ctx.restore();
       }, fmtD(Math.hypot(far.x - P.x, far.z - P.z)), far.col);
     }
+    // lệnh bộ đàm của đồng đội (quick_comms.js): trong vùng nhìn vẽ đúng chỗ, ngoài vùng thành chấm chỉ hướng trên mép
+    if (typeof QuickComms !== 'undefined') {
+      QuickComms.drawOnMap(ctx, toScreen, { inside, rim: (x, z, draw, label, col) => rimMark(ctx, V, x, z, draw, label, col) });
+    }
 
     // VÙNG CẢNH BÁO ngoài vùng nhìn: cung đỏ trên mép vòng phủ đúng góc của vùng + mũi tên + cự ly
     for (const T of threats.values()) {

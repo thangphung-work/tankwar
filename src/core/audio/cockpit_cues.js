@@ -393,6 +393,16 @@ SoundEngine.mixin(class {
         scrape(t + 0.02, 1300, 900, 0.1, 0.05);       // bản lề
         snapSteel(t + Math.min(0.2, D * 0.7), 1.3, 0.12);   // nắp dựng hết cỡ, chạm chốt chặn
         break;
+      case 'beltOut': {
+        // Nhấc dây cũ khỏi khay rồi kéo phần đuôi rỗng về hộp: ít mắt xích hơn dây mới, nhịp rời rạc và có cú viên
+        // cuối / lẫy giữ bật khỏi khay. Tách riêng khỏi `belt` để không nghe như đang lắp dây hai lần.
+        const d = Math.min(0.42, D);
+        click(t, 1850, 0.16);
+        links(t + 0.025, 6, d * 0.82, 0.045);
+        scrape(t + 0.035, 2100, 1150, d * 0.72, 0.022);
+        click(t + d * 0.86, 2700, 0.13);
+        break;
+      }
       case 'boxOut':
         click(t, 1700, 0.3);                          // nhả kẹp hộp khỏi khay
         scrape(t + 0.05, 800, 550, Math.min(0.35, D), 0.06);
@@ -400,17 +410,18 @@ SoundEngine.mixin(class {
         links(t + 0.1, 3, 0.25, 0.05);                // đuôi dây rỗng lủng lẳng
         break;
       case 'boxDrop':
-        // hộp rỗng thả rơi xuống sàn lòng xe: "boong" rỗng, nghe vọng lên từ khoang qua lỗ nóc
-        can(t + 0.16, 1.0, 0.45, true, 5200);
-        can(t + 0.34 + R() * 0.04, 1.08, 0.12, true, 4200);
+        // Xạ thủ vẫn đỡ hộp tới sát sàn: cú chạm đầu nặng vừa phải, sau đó cạnh hộp nghiêng chạm sàn một lần.
+        // Không còn tiếng "ném hộp" quá lớn so với chuyển động hình.
+        can(t + 0.11, 0.92, 0.30, true, 4300);
+        can(t + 0.25 + R() * 0.035, 1.12, 0.09, true, 3500);
         break;
       case 'boxGrab':
         click(t, 1300, 0.18);                         // quai hộp bật lên
-        can(t + 0.08, 0.8, 0.1, false, 5000);         // hộp đầy kéo lê trên sàn
-        links(t + 0.12, 3, 0.2, 0.035);               // đạn trong hộp xô nhau
+        can(t + 0.08, 0.72, 0.075, false, 4200);       // hộp đầy chỉ xê nhẹ trước khi được nhấc
+        links(t + 0.12, 4, 0.22, 0.026);               // khối dây đạn nặng xô đục, không leng keng lớn
         break;
       case 'boxSeat':
-        can(t, 0.82, 0.32);                           // đặt hộp đầy lên khay
+        can(t, 0.76, 0.25);                           // đáy hộp đầy đặt lên khay: trầm, ngắn
         links(t + 0.02, 2, 0.06, 0.04);
         click(t + Math.min(0.14, D * 0.6), 1800, 0.35);   // kẹp hộp khóa vào khay
         break;
@@ -476,18 +487,28 @@ SoundEngine.mixin(class {
         break;
       }
       // giàn rocket: mỗi quả cúi xuống lòng xe nhấc lên -> bê ra đuôi ống -> đẩy vào ống, chốt hãm ăn khớp
+      case 'rOpen':
+        click(t, 1750, 0.2);                           // bóp / giật lẫy nắp đuôi
+        this.gunRasp(out, t + 0.025, Math.min(0.16, D), { gain: 0.32, speed: 'fast', p: 0.8 });
+        this.playCaseHit(out, t + Math.min(0.18, D * 0.8), 'debrisMetal', 1.05, 0.1); // nắp chạm cữ mở
+        break;
       case 'rLift':
-        can(t, 1.35, 0.08, true, 4500);               // ống quả rocket cạ vào mép lỗ nóc
-        scrape(t + 0.05, 600, 400, 0.25, 0.04);
+        can(t, 1.35, 0.055, true, 4200);              // đệm thân quả chạm nhẹ mép lỗ nóc
+        scrape(t + 0.05, 520, 360, 0.2, 0.028);
         break;
       case 'rPush':
-        can(t, 1.2, 0.07);                            // đuôi quả chạm miệng ống
-        scrape(t + 0.03, 450, 900, Math.min(0.6, D), 0.08);   // quả trượt dọc ống
+        can(t, 1.2, 0.06);                            // vành quả tì vào miệng ống
+        scrape(t + 0.03, 420, 760, Math.min(0.48, D), 0.065); // đai dẫn hướng trượt trong ống
         break;
       case 'rSeat':
-        this.playCaseHit(out, t, 'debrisMetal', 0.85, 0.18);   // quả chạm đáy ống
-        click(t + 0.06, 1900, 0.3);                   // chốt hãm giữ quả bật lên
-        click(t + 0.15, 3200, 0.12);                  // giắc điện đánh lửa cắm vào
+        this.playCaseHit(out, t, 'debrisMetal', 0.82, 0.14);  // đai chặn quả chạm vai trong ống
+        click(t + 0.045, 1850, 0.24);                 // chốt giữ quả bật vào rãnh
+        click(t + 0.11, 3000, 0.1);                   // tiếp điểm điện đánh lửa ăn khớp
+        break;
+      case 'rLock':
+        this.gunRasp(out, t, 0.055, { gain: 0.28, speed: 'fast', p: 0.9 });
+        this.playCaseHit(out, t + 0.045, 'debrisMetalHull', 1.0, 0.12); // nắp đuôi ép sát vành ống
+        click(t + 0.07, 2200, 0.25);                  // lẫy khóa nắp
         break;
     }
   }

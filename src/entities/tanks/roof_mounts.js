@@ -194,27 +194,39 @@
     const gun = stationBase(seat, ctx, 1.75, !ctx.asMain);
     const gb = new VehicleKit.PartBatch(ctx.yBase + 4.3);
     gb.box(2.7, 0.22, 1.5, D, [0, -0.28, 0.05]);                // nôi súng
-    gb.box(0.95, 0.75, 1.9, P, [0, 0.15, 0.05]);                // thân súng
-    gb.box(0.97, 0.06, 1.55, D, [0, 0.54, 0.15]);               // khe nắp trên
-    gb.cyl(0.07, 0.07, 0.9, 8, D, [0, 0.58, 0.85], 'x');        // bản lề nắp
-    gb.box(0.8, 0.5, 0.12, D, [0, 0.12, 1.05]);                 // tấm hậu (cụm lò xo đẩy)
-    gb.box(0.1, 0.32, 0.5, D, [0.5, 0.0, -0.1]);                // cửa nhả vỏ / mắt xích bên phải
-    const L = hv ? 1.35 : 1;                                     // bản HV: nòng dài hơn
-    gb.cyl(0.24, 0.24, 0.95 * L, 14, P, [0, 0.12, -0.88 - 0.475 * L], 'z');   // ống áo tản nhiệt
-    for (const k0 of [0, 1, 2]) {
-      const z = -1.0 - k0 * 0.3 * L;
-      for (let k = 0; k < 6; k++) {
-        const a = k * Math.PI / 3 + (k0 === 1 ? Math.PI / 6 : 0);
-        gb.cyl(0.07, 0.07, 0.05, 6, D, [Math.cos(a) * 0.235, 0.12 + Math.sin(a) * 0.235, z], 'y', [0, 0, a - Math.PI / 2]);
-      }
+    // hộp khóa nòng: thân dưới, mặt trước vát, gân dọc hai bên, nắp trên nhô gờ có bản lề sau + chốt khóa trước
+    gb.box(0.9, 0.5, 1.9, P, [0, 0.05, 0.05]);                  // thân dưới
+    gb.box(0.9, 0.24, 1.5, P, [0, 0.42, 0.25]);                 // nắp trên (lùi sau, chừa mặt vát)
+    gb.box(0.9, 0.3, 0.42, P, [0, 0.36, -0.55], [-0.55, 0, 0]); // mặt trước vát
+    gb.box(0.96, 0.04, 1.54, D, [0, 0.3, 0.25]);                // khe ghép nắp
+    gb.cyl(0.06, 0.06, 0.94, 8, D, [0, 0.55, 0.98], 'x');       // bản lề nắp sau
+    gb.box(0.22, 0.08, 0.14, D, [0, 0.56, -0.38]);              // chốt khóa nắp
+    for (const s of [-1, 1]) {
+      gb.box(0.05, 0.08, 1.7, D, [s * 0.47, 0.12, 0.05]);       // gân dọc
+      gb.box(0.05, 0.08, 1.7, D, [s * 0.47, -0.1, 0.05]);
     }
-    const zB = -0.88 - 0.95 * L;                                  // đầu ống áo
-    gb.cyl(0.14, 0.14, 0.5, 12, D, [0, 0.12, zB - 0.22], 'z');   // nòng 40mm
+    gb.box(0.7, 0.42, 0.1, D, [0, 0.12, 1.04]);                 // tấm hậu
+    gb.cyl(0.14, 0.16, 0.22, 12, P, [0, 0.12, 1.18], 'z');      // ống đệm giật (lò xo đẩy)
+    gb.box(0.06, 0.26, 0.44, D, [0.47, 0.02, -0.15]);           // cửa nhả mắt xích bên phải
+    gb.box(0.36, 0.2, 0.26, P, [0, 0.12, -0.92]);               // đai ốc giữ nòng trước hộp khóa
+    const L = hv ? 1.35 : 1;                                     // bản HV: nòng dài hơn
+    // ống áo tản nhiệt mảnh, xẻ khe dài (kiểu Mk 19): khe tối dọc thân, đai giữ hai đầu
+    const zJ0 = -1.05, jl = 1.0 * L, zJ = zJ0 - jl / 2;
+    gb.cyl(0.15, 0.15, jl, 16, P, [0, 0.12, zJ], 'z');
+    for (const z of [zJ0 - 0.04, zJ0 - jl + 0.04]) gb.cyl(0.17, 0.17, 0.08, 16, D, [0, 0.12, z], 'z');
+    for (let k = 0; k < 6; k++) {
+      const a = k * Math.PI / 3 + Math.PI / 6;
+      gb.box(0.05, 0.02, jl * 0.62, D, [Math.cos(a) * 0.145, 0.12 + Math.sin(a) * 0.145, zJ], [0, 0, a - Math.PI / 2]);
+    }
+    const zB = zJ0 - jl;                                          // đầu ống áo
+    gb.cyl(0.1, 0.1, 0.36, 12, D, [0, 0.12, zB - 0.18], 'z');    // nòng 40mm lộ ra
+    const zM = zB - (hv ? 0.72 : 0.42);                           // miệng nòng
     if (hv) {
-      // loa giảm giật 2 tầng (lỗ xả khí hai bên), ám muội
-      gb.cyl(0.2, 0.2, 0.42, 12, M.soot || D, [0, 0.12, zB - 0.66], 'z');
-      for (const s of [-1, 1]) gb.box(0.06, 0.16, 0.12, D, [s * 0.2, 0.12, zB - 0.6]);
-    } else gb.cyl(0.17, 0.15, 0.16, 12, M.soot || D, [0, 0.12, zB - 0.52], 'z');
+      // loa giảm giật: ống có 2 hàng lỗ xả khí hai bên, ám muội
+      gb.cyl(0.13, 0.13, 0.36, 12, M.soot || D, [0, 0.12, zM + 0.18], 'z');
+      for (const s of [-1, 1]) for (const dz of [0.1, 0.24]) gb.box(0.04, 0.09, 0.07, D, [s * 0.125, 0.12, zM + dz]);
+    } else gb.cyl(0.115, 0.1, 0.08, 12, M.soot || D, [0, 0.12, zM + 0.04], 'z');   // vành miệng
+    gb.cyl(0.075, 0.075, 0.02, 12, M.black || M.soot || D, [0, 0.12, zM - 0.005], 'z');   // lòng nòng tối
     const can = hv ? [1.0, 1.1, 1.5] : [0.8, 0.95, 1.3];          // hộp đạn 48 / 32 quả
     gb.box(can[0], can[1], can[2], P, [-0.75 - can[0] / 2, -0.05, 0.15], [0, 0, (rnd() - 0.5) * 0.04]);
     gb.box(can[0] + 0.06, 0.07, can[2] + 0.06, D, [-0.75 - can[0] / 2, can[1] / 2 - 0.05, 0.15]);
@@ -223,7 +235,7 @@
     gb.box(0.45, 0.2, 0.7, D, [-0.62, 0.3, 0.0], [0, 0, 0.35]); // máng cấp đạn
     stationSensor(gb, ctx, 1.05);
     gb.build(gun);
-    const muzzle = new THREE.Vector3(0, 0.12, zB - (hv ? 0.9 : 0.6));
+    const muzzle = new THREE.Vector3(0, 0.12, zM - 0.05);
     if (ctx.asMain) { unit.mainGun = { pivot: gun, muzzle, kind: 'agl' }; return null; }
     unit.rcwsMuzzleLocal = muzzle;
     unit.roofWeapon = 'agl';
@@ -335,13 +347,20 @@
     gb.strut([-0.45, yT + 0.16, zs1 - 0.75], [-0.5, yT + 1.2, zs1 - 0.6], 0.018, D, 4, 0.012);
     gb.box(0.4, 0.04, 0.25, M.paintDusty || P, [0.95, yT - 0.12, zs0 + 0.6], [0, 0, -0.84]);   // sơn tróc mép vát
     tubes.forEach(([tx, ty], i) => {
-      gb.cyl(R0, R0, L, 16, P, [tx, ty, zc], 'z');                 // ống phóng kín
+      // Ống phóng chính kéo dài từ zF đến zB - 0.06 (đuôi thụt nhẹ vào trong vành đệm cao su)
+      const tubeL = L - 0.06, tubeZc = zc - 0.03;
+      gb.cyl(R0, R0, tubeL, 16, P, [tx, ty, tubeZc], 'z');                 // ống phóng kín
       gb.cyl(R0 + 0.012, R0 + 0.012, 0.16, 16, M.canvas || P, [tx, ty, zs0 - 0.3], 'z');   // vạch màu đạn (nổ lõm)
-      gb.cyl(R0 + 0.13, R0 + 0.13, 0.42, 16, R, [tx, ty, zF + 0.21], 'z');                 // đệm giảm chấn đầu ống
+      gb.cyl(R0 + 0.13, R0 + 0.13, 0.42, 16, R, [tx, ty, zF + 0.21], 'z', null, true);     // đệm giảm chấn đầu ống (rỗng ruột)
       for (const z of [zF + 0.1, zF + 0.32]) gb.cyl(R0 + 0.15, R0 + 0.15, 0.05, 16, D, [tx, ty, z], 'z');   // rãnh đệm
       gb.cyl(R0 + 0.06, R0 + 0.06, 0.12, 16, D, [tx, ty, zs0 - 0.08], 'z');   // vòng kẹp ống ở miệng hộp
-      gb.cyl(R0 + 0.12, R0 + 0.1, 0.36, 16, R, [tx, ty, zB - 0.18], 'z');      // vành đuôi
-      gb.cyl(R0 * 0.72, R0 * 0.72, 0.05, 14, S, [tx, ty, zB + 0.01], 'z');     // đáy ống: cửa xả khí nén ám muội
+      // Vành đệm cao su đuôi: ống rỗng ôm ngoài (open = true để không sinh nắp đáy đặc trùng z với đáy ống)
+      gb.cyl(R0 + 0.12, R0 + 0.1, 0.38, 16, R, [tx, ty, zB - 0.17], 'z', null, true);
+      // Nắp đáy bảo vệ đuôi ống phóng bằng kim loại/cao su đen
+      gb.cyl(R0, R0, 0.05, 16, D, [tx, ty, zB - 0.02], 'z');
+      // Đĩa cửa xả khí nén ám muội: nhô lùi hẳn ra sau nắp đáy, cách biệt rõ ràng tránh z-fighting
+      gb.cyl(R0 * 0.72, R0 * 0.68, 0.04, 14, S, [tx, ty, zB + 0.04], 'z');
+      gb.cyl(R0 * 0.35, R0 * 0.35, 0.03, 10, D, [tx, ty, zB + 0.07], 'z');     // van xả áp tâm cửa xả
       gb.box(0.05, 0.12, 0.16, D, [tx, ty + R0 + 0.12, zB - 0.18]);           // đầu nối cáp phóng đuôi ống
       if (!i) gb.box(0.32, 0.03, 0.5, M.canvas || P, [tx, ty + R0 + 0.005, zs0 - 0.62], [0, 0, (rnd() - 0.5) * 0.06]);   // nhãn lô bạc màu
     });
@@ -355,7 +374,7 @@
     gb.box(0.7, 0.78, 1.2, P, [sx, sy, -0.2]);
     gb.box(0.7, 0.3, 0.42, P, [sx, sy - 0.32, -0.88], [-0.75, 0, 0]);   // cằm vát
     gb.box(0.6, 0.48, 0.06, D, [sx, sy + 0.08, -0.82]);              // mặt cửa kính lõm
-    gb.box(0.84, 0.07, 1.55, P, [sx, sy + 0.42, -0.36]);             // mái che
+    gb.box(0.84, 0.09, 1.55, P, [sx, sy + 0.435, -0.36]);            // mái che (đáy tiếp xúc phẳng nóc thân hộp)
     for (const s of [-1, 1]) gb.box(0.06, 0.5, 0.42, P, [sx + s * 0.39, sy + 0.17, -0.94], [0, s * 0.2, 0]);   // má che
     gb.cyl(0.13, 0.13, 0.06, 14, M.lens, [sx - 0.14, sy + 0.14, -0.86], 'z');   // camera ngày
     gb.cyl(0.11, 0.11, 0.06, 12, M.glass, [sx + 0.15, sy + 0.14, -0.86], 'z');  // ảnh nhiệt
@@ -363,7 +382,7 @@
     gb.cyl(0.05, 0.05, 0.04, 10, M.lens, [sx, sy - 0.07, -1.06], 'z');
     gb.hinge([sx, sy + 0.38, -1.06], 'x', 0.56, D, 0.035, 2);
     gb.box(0.62, 0.05, 0.4, P, [sx, sy + 0.44, -1.24], [0.3, 0, 0]);   // cửa chớp giáp lật mở chìa thành mái che kính
-    for (let k = 0; k < 4; k++) gb.box(0.05, 0.5, 0.08, D, [sx + 0.37, sy - 0.02, -0.05 + 0.18 * (k - 1.5)]);   // lá tản nhiệt
+    for (let k = 0; k < 4; k++) gb.box(0.08, 0.5, 0.08, D, [sx + 0.39, sy - 0.02, -0.05 + 0.18 * (k - 1.5)]);   // lá tản nhiệt nhô rõ ngoài sườn
     gb.box(0.2, 0.2, 0.12, D, [sx, sy, 0.46]);                       // đầu nối cáp sau khối ngắm
     gb.strut([sx, sy, 0.52], [xw + 0.1, yF + 0.2, 0.7], 0.035, R, 5);
     gb.build(gun);
@@ -503,11 +522,29 @@
     st.add(tilt);
     const kb = new VehicleKit.PartBatch(ctx.yBase + 2.1);
     const tubes = [], caps = [];
+    // lòng ống: trụ hở lật mặt vào trong (nhìn từ miệng thấy thành trong + đáy, không thấy xuyên ra ngoài)
+    const bore = new THREE.CylinderGeometry(0.4, 0.4, 4.2, 16, 1, true).toNonIndexed();
+    {
+      const p = bore.attributes.position, n = bore.attributes.normal;
+      for (let i = 0; i < p.count; i += 3) {
+        for (const a of [p, n]) {
+          const t = [a.getX(i + 1), a.getY(i + 1), a.getZ(i + 1)];
+          a.setXYZ(i + 1, a.getX(i + 2), a.getY(i + 2), a.getZ(i + 2));
+          a.setXYZ(i + 2, t[0], t[1], t[2]);
+        }
+      }
+      for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+      bore.rotateX(-Math.PI / 2);
+    }
+    const lip = new THREE.RingGeometry(0.4, 0.47, 16).rotateY(Math.PI);   // mặt trước vành miệng (quay về -z)
     for (const x of [-0.55, 0.55]) {
-      kb.cyl(0.44, 0.44, 4.4, 16, P, [x, 0, -0.1], 'z');                  // ống composite
+      kb.cyl(0.44, 0.44, 4.4, 16, P, [x, 0, -0.1], 'z', null, true);      // ống composite (hở hai đầu)
       for (const z of [-1.8, -0.2, 1.4]) kb.cyl(0.48, 0.48, 0.14, 16, D, [x, 0, z], 'z');   // đai ống
       kb.cyl(0.47, 0.47, 0.2, 16, D, [x, 0, 2.2], 'z');                   // đáy ống (cửa khí nén)
-      kb.cyl(0.47, 0.44, 0.16, 16, D, [x, 0, -2.3], 'z');                 // vành miệng ống
+      kb.cyl(0.47, 0.44, 0.16, 16, D, [x, 0, -2.3], 'z', null, true);     // vành miệng ống (rỗng)
+      kb.add(lip, D, [x, 0, -2.38]);
+      kb.add(bore, x > 0 ? (M.soot || D) : D, [x, 0, -0.28]);            // lòng ống (ống phải ám muội — đã phóng nhiều lần)
+      kb.cyl(0.4, 0.4, 0.04, 16, M.soot || D, [x, 0, 1.8], 'z');          // đáy lòng ống (mặt piston khí nén)
       kb.box(0.5, 0.05, 0.16, M.steel || D, [x, 0.46, -0.2 + (rnd() - 0.5) * 0.4]);   // băng dính bạc quấn đai
       tubes.push([x, 0, -2.45]);
       // nắp nhựa đầu ống: nhóm riêng, bật văng khi phóng (kamikaze_uav.js)
@@ -520,7 +557,6 @@
       tilt.add(cap);
       caps.push(cap);
     }
-    kb.cyl(0.3, 0.3, 0.04, 14, M.soot || D, [0.55, 0, -2.4], 'z');        // muội trong miệng ống bên phải (đã phóng nhiều lần)
     kb.box(0.04, 0.3, 1.0, M.canvas || P, [-1.0, 0.1, 0.4], [0, 0, (rnd() - 0.5) * 0.1]);   // nhãn cảnh báo bạc màu
     kb.build(tilt);
     unit.kamiRack = { group: seat, tilt, tubes: tubes.map(p => new THREE.Vector3(p[0], p[1], p[2])), caps };

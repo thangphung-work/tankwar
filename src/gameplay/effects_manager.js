@@ -168,7 +168,7 @@ class EffectsManager {
         const ringGeo = new THREE.RingGeometry(3, 10, 32);
         ringGeo.rotateX(-Math.PI / 2);
         const ringMat = new THREE.MeshBasicMaterial({
-          color: idx === 0 ? 0xff4400 : 0xffaa33,
+          color: idx === 0 ? 0xe0cba4 : 0xcdb68e,
           transparent: true,
           opacity: 0.85,
           depthWrite: false,

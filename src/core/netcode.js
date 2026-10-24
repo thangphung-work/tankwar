@@ -963,6 +963,7 @@
       sub('DAMAGE', (d, from) => this.onDamage(d, from));
       sub('WORLD', (d, from) => this.onWorld(d, from));
       sub('SPOT', (d, from) => this.onSpot(d, from));
+      sub('QCMD', (d, from) => this.onCommand(d, from));
       sub('SMOKE', (d, from) => this.onSmoke(d, from));
       sub('DIG', (d, from) => this.onDig(d, from));
       sub('LOCK', (d, from) => this.onLock(d, from));
@@ -1532,9 +1533,11 @@
 
     respawnProxy(unit, q) {
       if (typeof unit.respawn !== 'function') return;
+      const game = this.game;
+      // xác của xe máy khác cũng nằm lại suốt trận như xe máy mình (game.updateRespawnQueue)
+      if (unit.isDead && typeof game.keepWreck === 'function') game.keepWreck(unit);
       unit.respawn(q.x / 10, q.z / 10);
       unit.bodyAngle = q.b / 1000;
-      const game = this.game;
       if (game.respawnQueue) {
         for (let i = game.respawnQueue.length - 1; i >= 0; i--) {
           if (game.respawnQueue[i].unit === unit) game.respawnQueue.splice(i, 1);
@@ -1595,6 +1598,21 @@
     sendSpot(spotter, target) {
       if (this.detached || !spotter || !target || spotter.netId === undefined || target.netId === undefined) return;
       this.net.send('SPOT', { s: spotter.netId, t: target.netId });
+    }
+
+    // Lệnh nhanh bộ đàm (quick_comms.js): c = số lệnh, x / z = điểm chỉ định, t = xe địch được ghim, o = cứ điểm.
+    // Máy chủ chỉ chuyển cho máy cùng phe với xe gửi
+    sendCommand(unit, d) {
+      if (this.detached || !unit || unit.netId === undefined || !d) return;
+      this.net.send('QCMD', Object.assign({ i: unit.netId }, d));
+    }
+    onCommand(d, from) {
+      if (this.detached || !d || typeof global.QuickComms === 'undefined') return;
+      const u = this.byNetId[d.i];
+      if (!u || u.isDead || this.ownerOf(u) !== from || !Number.isInteger(d.c)) return;
+      if (d.x !== undefined && !(Number.isFinite(d.x) && Number.isFinite(d.z))) return;
+      const tg = Number.isInteger(d.t) ? this.byNetId[d.t] : null;
+      global.QuickComms.receive(u, { c: d.c, x: d.x, z: d.z, o: typeof d.o === 'string' ? d.o : '' }, tg && tg.team !== u.team ? tg : null);
     }
 
     // Màn khói (trang bị): máy điều khiển xe phóng -> mọi máy dựng cùng đám khói (che tầm nhìn như nhau).

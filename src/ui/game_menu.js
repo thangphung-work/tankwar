@@ -182,6 +182,7 @@ const GameMenu = (() => {
       [K('G'), 'Phóng lựu đạn khói (cần trang bị)'],
       [K('H'), 'Xe trinh sát: xạ thủ chui vào xe đóng nắp & ở yên trong xe (tránh đạn, mảnh) — bấm lại để ra đứng súng. Trong xe không bắn / nạp đạn được'],
       [K('B'), 'Pháo tự hành: đổi cách bắn (tự chọn / bắn thẳng / bắn cầu vồng)'],
+      [`Giữ ${K('Z')}`, 'Lệnh nhanh bộ đàm cho đồng đội: trỏ chuột vào chỗ / xe địch trước, giữ Z, rê chuột chọn lệnh (trỏ trên bản đồ lớn [M] hoặc minimap để ghim chỗ xa; ATTACK, DEFEND, ENEMY SPOTTED, FOCUS FIRE, NEED BACKUP, FALL BACK, AFFIRMATIVE, NEGATIVE), thả Z để phát. Esc / chuột phải để hủy'],
       [`${K('←')} ${K('→')} ${K('↑')} ${K('↓')}`, 'Xoay tháp / nâng hạ nòng bằng tay'],
       [K('M'), 'Bản đồ lớn (nhấp xe địch để khóa, nhấp đúp để ngắm điểm thật xa, chuột phải để lái xe tới)'],
       [`Trong bản đồ: ${K('F')} ${K('0')} ${K('+')} ${K('-')}`, 'Về xe mình / đặt lại khung nhìn / phóng to / thu nhỏ'],

@@ -330,9 +330,39 @@ function wsBroadcast(room, obj, exceptId) {
   });
 }
 
-function wsJoinRoom(client, baseName, name, token, skipList, prefMap) {
+const ipCountryCache = new Map();
+
+function getClientIp(req, socket) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd && typeof fwd === 'string') {
+    const first = fwd.split(',')[0].trim();
+    if (first) return first;
+  }
+  return req.headers['x-real-ip'] || (socket && socket.remoteAddress) || '';
+}
+
+function detectCountry(req, ip) {
+  const cfCountry = req.headers['cf-ipcountry'];
+  if (cfCountry && typeof cfCountry === 'string' && cfCountry.length === 2 && cfCountry !== 'XX') {
+    return cfCountry.toUpperCase();
+  }
+  const cleanIp = String(ip || '').replace(/^.*:/, '');
+  if (ipCountryCache.has(cleanIp)) return ipCountryCache.get(cleanIp);
+  if (!cleanIp || cleanIp === '1' || cleanIp === '127.0.0.1' || cleanIp.startsWith('192.168.') || cleanIp.startsWith('10.') || cleanIp.startsWith('172.')) {
+    ipCountryCache.set(cleanIp, 'VN');
+    return 'VN';
+  }
+  return 'VN';
+}
+
+function wsJoinRoom(client, baseName, name, token, skipList, prefMap, clientCountry) {
   if (client.room) wsLeaveRoom(client);
   client.name = typeof name === 'string' ? name.slice(0, 40) : '';
+  if (clientCountry && typeof clientCountry === 'string' && clientCountry.length === 2) {
+    client.country = clientCountry.toUpperCase();
+  }
+  const myCountry = client.country || 'VN';
+
   // gắn tài khoản (nếu đã đăng nhập) -> thành tích trận mạng do máy chủ tự đếm
   client.userId = accounts.userIdFromToken ? accounts.userIdFromToken(token) : null;
   // số liệu xếp phe (cấp / trận thắng / tổng trận) đọc từ CSDL -> chủ phòng chia phe theo số này, không theo máy khách tự khai
@@ -344,20 +374,29 @@ function wsJoinRoom(client, baseName, name, token, skipList, prefMap) {
   const skip = new Set(Array.isArray(skipList) ? skipList.slice(0, 16).map(String) : []);
 
   // Ưu tiên phòng chờ đang mở (chưa khóa, còn chỗ) trong chuỗi base, base#2, base#3...
-  // (phòng gốc có thể đã trống trong khi sảnh chờ thật đang ở base#2) -> chỉ tạo phòng mới khi không còn phòng nào để vào
   const roomNameAt = (n) => (n === 1 ? base : base + '#' + n);
-  // Ưu tiên mềm theo bản đồ: phòng mở cùng loại bản đồ -> phòng mở bất kỳ (khỏi chờ một mình) -> mở phòng mới với bản đồ của người vào
   const map = wsSanitizeMap(prefMap);
   const open = [];
   for (let n = 1; n < 1000; n++) {
     const existing = wsRooms.get(roomNameAt(n));
     if (existing && !existing.locked && !skip.has(existing.name) && existing.members.size < WS_MAX_ROOM_SIZE) open.push(existing);
   }
-  let room = (map && open.find(r => r.mapType === map)) || open[0] || null;
+
+  // Thuật toán ưu tiên ghép trận:
+  // 1. Cùng Quốc Gia (IP) + Cùng loại bản đồ
+  // 2. Cùng Quốc Gia (IP) khác bản đồ
+  // 3. Khác Quốc Gia nhưng cùng bản đồ
+  // 4. Phòng mở bất kỳ còn chỗ
+  let room = (map ? open.find(r => r.country === myCountry && r.mapType === map) : null)
+    || open.find(r => r.country === myCountry)
+    || (map ? open.find(r => r.mapType === map) : null)
+    || open[0]
+    || null;
+
   if (!room) {
     for (let n = 1; n < 1000; n++) {
       if (!wsRooms.has(roomNameAt(n))) {
-        room = { name: roomNameAt(n), members: new Map(), hostId: null, locked: false, mapType: map };
+        room = { name: roomNameAt(n), members: new Map(), hostId: null, locked: false, mapType: map, country: myCountry };
         wsRooms.set(room.name, room);
         break;
       }
@@ -366,13 +405,13 @@ function wsJoinRoom(client, baseName, name, token, skipList, prefMap) {
   if (!room) return;
 
   const peers = [];
-  room.members.forEach((m) => peers.push({ id: m.id, name: m.name, k: m.skill || null }));
+  room.members.forEach((m) => peers.push({ id: m.id, name: m.name, k: m.skill || null, country: m.country || 'VN' }));
   room.members.set(client.id, client);
   client.room = room;
   if (!room.hostId) room.hostId = client.id;
 
-  client.sendJSON({ t: '@welcome', d: { id: client.id, room: room.name, hostId: room.hostId, peers, k: client.skill || null, s: Date.now() } });
-  wsBroadcast(room, { t: '@peer_join', d: { id: client.id, name: client.name, k: client.skill || null } }, client.id);
+  client.sendJSON({ t: '@welcome', d: { id: client.id, room: room.name, hostId: room.hostId, peers, k: client.skill || null, country: myCountry, s: Date.now() } });
+  wsBroadcast(room, { t: '@peer_join', d: { id: client.id, name: client.name, k: client.skill || null, country: myCountry } }, client.id);
 }
 
 function wsLeaveRoom(client) {

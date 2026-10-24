@@ -29,7 +29,7 @@ const Destructibles = (() => {
 
   // Sức phá & bán kính tác động lên công trình / cây theo loại đạn
   const AMMO = {
-    NORMAL: { power: 1.0, radius: 22, heat: 0.5 },
+    NORMAL: { power: 1.0, radius: 20, heat: 0.85, pierce: true },
     HE: { power: 1.7, radius: 32, heat: 0.8 },
     AP: { power: 1.0, radius: 4.2, heat: 0.6, pierce: true },   // xuyên động năng: phá tập trung, vùng ảnh hưởng nhỏ
     // đạn mẹ chạm đất khi chưa tách (bắn thẳng / tầm quá gần): chỉ có liều phóng đạn con nhỏ, không phải đầu nổ phá.
@@ -40,6 +40,8 @@ const Destructibles = (() => {
     // RPG-7 ~0,7 kg thuốc nổ: sức nổ kém đạn 120 mm (~1,5-2 kg) — trước đây 1,3 (mạnh hơn đạn tăng)
     RPG: { power: 0.8, radius: 15, heat: 0.7, pierce: true },
     ANTI_TANK_MISSILE: { power: 1.5, radius: 18, heat: 0.75, pierce: true },
+    HEAT: { power: 1.1, radius: 18, heat: 0.9, pierce: true },
+    HEAT120: { power: 1.25, radius: 20, heat: 0.95, pierce: true },
     GATLING_BULLET: { power: 0.07, radius: 3.5, heat: 0.1 },
     INCENDIARY: { power: 0.08, radius: 5, heat: 1.0, fire: true },
     // đạn cháy 12.7mm của xe trinh sát (game.applyEnvDamage đổi INCENDIARY -> INCENDIARY_HMG theo cỡ nòng): sức phá như
@@ -544,18 +546,20 @@ const Destructibles = (() => {
           // 3) dải bẩn ngay dưới mép mái (bụi mái dồn xuống theo nước mưa)
           float topBand = (1.0 - smoothstep(0.0, 26.0, ht)) * inB * wall * (0.6 + 0.4 * gNoise(vec2(hx * 0.08, 1.7)));
           gc *= 1.0 - 0.28 * topBand;
-          // 4) chân tường ngấm ẩm: mép trên lượn sóng, vệt muối trắng ở mép, sát đất bùn hắt
-          float edge = 7.0 + 11.0 * gFbm(vec2(hx * 0.04, 2.3));
-          float damp = (1.0 - smoothstep(edge - 5.0, edge + 1.5, hb)) * inB;
-          float salt = exp(-pow((hb - edge - 0.5) / 1.3, 2.0)) * inB * wall;
-          float splash = (1.0 - smoothstep(0.0, 4.5 + 2.0 * gNoise(vec2(hx * 0.3, 0.0)), hb)) * inB;
-          gc = mix(gc, gc * vec3(0.55, 0.52, 0.44), damp * 0.9);
-          gc = mix(gc, vec3(0.78, 0.76, 0.7) * max(lum, 0.35), salt * 0.25);
-          gc = mix(gc, vec3(0.24, 0.2, 0.15), splash * 0.55);
+          // 4) chân tường: chỉ tác động trên mặt đất (hb >= 0), vệt bụi cát nhẹ sát đất, không đen lem nhem
+          float inGround = inB * step(0.0, hb);
+          float edge = 1.6 + 2.2 * gFbm(vec2(hx * 0.06, 2.3));
+          float damp = (1.0 - smoothstep(max(0.0, edge - 1.2), edge + 0.6, hb)) * inGround;
+          float salt = exp(-pow((hb - edge) / 0.8, 2.0)) * inGround * wall;
+          float splash = (1.0 - smoothstep(0.0, 1.6 + 1.2 * gNoise(vec2(hx * 0.35, 0.0)), hb)) * inGround;
+          gc = mix(gc, gc * vec3(0.86, 0.83, 0.78), damp * 0.45);
+          gc = mix(gc, vec3(0.86, 0.84, 0.8) * max(lum, 0.45), salt * 0.18);
+          vec3 sandDust = mix(vec3(0.72, 0.65, 0.54), gc * 0.85, 0.4);
+          gc = mix(gc, sandDust, splash * 0.35);
           // 5) rêu / tảo xanh sẫm bám chỗ ẩm: chân tường, theo vệt nước, mặt nằm ngang
           float mossN = gFbm(vec2(hx * 0.09 + 4.0, y * 0.09));
-          float moss = smoothstep(0.42, 0.72, mossN) * (damp * 0.9 + streak * 0.35 + (1.0 - wall) * 0.35 * smoothstep(0.55, 0.8, gPatch)) * uMoss;
-          gc = mix(gc, vec3(0.2, 0.25, 0.13) * (0.55 + 0.6 * lum), clamp(moss, 0.0, 1.0) * 0.6);
+          float moss = smoothstep(0.48, 0.76, mossN) * (damp * 0.5 + streak * 0.25 + (1.0 - wall) * 0.25 * smoothstep(0.6, 0.85, gPatch)) * uMoss;
+          gc = mix(gc, vec3(0.3, 0.33, 0.22) * (0.65 + 0.5 * lum), clamp(moss, 0.0, 1.0) * 0.4);
           // 6) bong vữa: mảng mép sắc, nhiều hơn ở chỗ ẩm (chân tường, dưới mái); chỉ trên nền tường sáng
           if (uPeel > 0.0) {
             float pn = gFbm(vec2(hx * 0.06 + 13.0, y * 0.075)) + gNoise(vec2(hx * 0.4, y * 0.4)) * 0.08;
@@ -580,8 +584,8 @@ const Destructibles = (() => {
             gc = mix(gc, vec3(0.34, 0.17, 0.07) * (0.7 + 0.5 * gNoise(vec2(hx * 0.7, y * 0.7))), rust * 0.55);
           }
           diffuseColor.rgb = mix(diffuseColor.rgb, gc, uGrime);
-          // che khuất ánh trời sát chân tường (góc tường - đất nhận ít ánh trời tán xạ)
-          gAOk = mix(1.0, mix(0.5, 1.0, smoothstep(0.0, 14.0, hb)), inB * wall);
+          // che khuất ánh trời sát chân tường (tiếp giáp chân tường - đất, chỉ giảm nhẹ góc hẹp sát đất)
+          gAOk = mix(1.0, mix(0.82, 1.0, smoothstep(0.0, 2.2, max(0.0, hb))), inGround * wall);
         }`).replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         reflectedLight.indirectDiffuse *= gAOk;`);
     };
@@ -832,8 +836,11 @@ const Destructibles = (() => {
   }
   // Vỏ cây 128x256, lặp liền mạch cả 2 chiều (rãnh nứt chạy tuần hoàn theo chiều dọc)
   function barkTex(kind) {
-    return canvasTex('bark2_' + kind, 128, 256, (g, w, h) => {
-      const base = { palm: '#7b6d58', pine: '#6a4634', dead: '#857d70', cactus: '#55683c' }[kind] || '#5b4c3d';
+    const isCactus = kind === 'cactus';
+    const key = isCactus ? 'bark2_cactus_v3' : 'bark2_' + kind;
+    const tw = isCactus ? 256 : 128, th = isCactus ? 512 : 256;
+    return canvasTex(key, tw, th, (g, w, h) => {
+      const base = { palm: '#7b6d58', pine: '#6a4634', dead: '#857d70', cactus: '#3c523e' }[kind] || '#5b4c3d';
       g.fillStyle = base; g.fillRect(0, 0, w, h);
       // vết loang sáng tối lớn (vỏ không đều màu)
       for (let i = 0; i < 26; i++) {
@@ -864,11 +871,88 @@ const Destructibles = (() => {
           for (let x = 0; x < w; x += 10) { g.fillStyle = 'rgba(30,20,12,0.3)'; g.fillRect(x + rand(-2, 2), yy - 4, 3, 5); }
         }
       } else if (kind === 'cactus') {
-        for (let x = 0; x < w; x += 16) {
-          g.fillStyle = 'rgba(20,40,10,0.45)'; g.fillRect(x, 0, 4, h);
-          g.fillStyle = 'rgba(190,210,150,0.25)'; g.fillRect(x + 8, 0, 2, h);
-          for (let y = 4; y < h; y += 10) { g.fillStyle = 'rgba(235,230,200,0.7)'; g.fillRect(x + 1, y, 2, 2); }
+        // Xương rồng Saguaro: 16 múi rãnh dọc, lớp sáp phấn mờ sương (glaucous wax), khe rãnh sẫm bóng râm, sống múi lồi sáng phấn, ổ gai đệm bông xốp và gai nhọn hổ phách
+        const numRibs = 16;
+        const ribW = w / numRibs;
+        for (let i = 0; i < numRibs; i++) {
+          const rx = i * ribW;
+          const cx = rx + ribW * 0.5;
+
+          // Khe rãnh sẫm màu bóng râm sâu
+          const grTrough = g.createLinearGradient(rx - 3.5, 0, rx + 3.5, 0);
+          grTrough.addColorStop(0, 'rgba(14, 22, 12, 0)');
+          grTrough.addColorStop(0.5, 'rgba(10, 18, 8, 0.82)');
+          grTrough.addColorStop(1, 'rgba(14, 22, 12, 0)');
+          g.fillStyle = grTrough;
+          g.fillRect(rx - 3.5, 0, 7, h);
+          if (rx - 3.5 < 0) g.fillRect(rx - 3.5 + w, 0, 7, h);
+
+          // Sống múi nổi sáng phủ lớp sáp phấn mờ ô-liu
+          const grRidge = g.createLinearGradient(cx - ribW * 0.46, 0, cx + ribW * 0.46, 0);
+          grRidge.addColorStop(0, 'rgba(80, 115, 75, 0)');
+          grRidge.addColorStop(0.5, 'rgba(110, 148, 95, 0.45)');
+          grRidge.addColorStop(1, 'rgba(80, 115, 75, 0)');
+          g.fillStyle = grRidge;
+          g.fillRect(cx - ribW * 0.46, 0, ribW * 0.92, h);
+
+          // Sống gờ đỉnh múi sáng phấn thanh mảnh
+          g.fillStyle = 'rgba(165, 205, 140, 0.38)';
+          g.fillRect(cx - 0.75, 0, 1.5, h);
+
+          // Chuỗi ổ gai (areoles) đệm bông xốp và chùm gai nhọn dọc theo sống múi
+          const yStep = 14;
+          for (let y = 7; y < h; y += yStep) {
+            const ay = y + ((i % 2) ? 7 : 0);
+            if (ay >= h) continue;
+
+            // Đệm nỉ tơ bông ổ gai hình bầu dục màu kem xám sa mạc
+            g.fillStyle = 'rgba(28, 22, 14, 0.42)';
+            g.beginPath();
+            g.ellipse(cx, ay + 0.6, 2.2, 2.8, 0, 0, Math.PI * 2);
+            g.fill();
+
+            g.fillStyle = 'rgba(238, 232, 212, 0.94)';
+            g.beginPath();
+            g.ellipse(cx, ay, 1.8, 2.3, 0, 0, Math.PI * 2);
+            g.fill();
+
+            // Lõi tâm sẫm của ổ gai
+            g.fillStyle = 'rgba(95, 82, 60, 0.88)';
+            g.beginPath();
+            g.arc(cx, ay, 0.85, 0, Math.PI * 2);
+            g.fill();
+
+            // Gai chính ở tâm dài chúc xuống, gốc ngà voi mũi chuyển nâu hổ phách
+            g.strokeStyle = 'rgba(248, 242, 220, 0.98)';
+            g.lineWidth = 1.1;
+            g.beginPath();
+            g.moveTo(cx, ay);
+            g.lineTo(cx, ay + 4.8);
+            g.stroke();
+
+            // Chóp gai nhọn màu nâu mật ong / hổ phách
+            g.strokeStyle = 'rgba(115, 75, 35, 0.88)';
+            g.lineWidth = 0.9;
+            g.beginPath();
+            g.moveTo(cx, ay + 3.2);
+            g.lineTo(cx, ay + 5.0);
+            g.stroke();
+
+            // Các gai phụ tỏa 6 hướng ra hai bên sườn múi
+            g.strokeStyle = 'rgba(228, 222, 195, 0.78)';
+            g.lineWidth = 0.8;
+            g.beginPath();
+            g.moveTo(cx, ay); g.lineTo(cx - 3.4, ay + 2.6);
+            g.moveTo(cx, ay); g.lineTo(cx + 3.4, ay + 2.6);
+            g.moveTo(cx, ay); g.lineTo(cx - 3.0, ay - 2.4);
+            g.moveTo(cx, ay); g.lineTo(cx + 3.0, ay - 2.4);
+            g.moveTo(cx, ay); g.lineTo(cx - 2.2, ay + 0.2);
+            g.moveTo(cx, ay); g.lineTo(cx + 2.2, ay + 0.2);
+            g.stroke();
+          }
         }
+        // Bụi phấn sa mạc li ti mờ sương trên mặt thân
+        speckle(g, w, h, 280, ['rgba(255, 255, 240, 0.08)', 'rgba(25, 38, 20, 0.12)'], 1, 2);
       } else if (kind === 'pine') {
         // vỏ thông: mảng vảy lớn đỏ nâu, viền nứt sẫm
         for (let y = 0; y < h; y += 14) for (let x = (y / 14) % 2 ? 0 : 10; x < w; x += 20) {
@@ -1766,19 +1850,42 @@ const Destructibles = (() => {
       float twS2 = max(dot(instanceMatrix[0].xyz, instanceMatrix[0].xyz), 1e-6);
       float twPh = twP.x * 0.011 + twP.z * 0.013;
       float twH = max(position.y, 0.0);
-      float twG = 0.45 + sin(uWind * 0.55 + twPh) * 0.5 + sin(uWind * 1.31 + twPh * 2.3) * 0.25;
+      float twK = uWindV.z;
+      // Nhịp uốn chính của thân cây theo gió
+      float twG = 0.55 + sin(uWind * (0.8 + 0.35 * twK) + twPh) * 0.45 + sin(uWind * (1.7 + 0.5 * twK) + twPh * 2.1) * 0.22;
       // cây nghiêng / đã đổ nằm trên đất thì không lay theo gió (chỉ cây đứng mới cong ngọn)
       float twUp = clamp(instanceMatrix[1].y / sqrt(twS2), 0.0, 1.0);
       twUp *= twUp * twUp;
-      // gió mạnh / cơn giật: ngả hẳn xuôi gió (không chỉ đung đưa quanh thế đứng), dao động nhanh hơn
-      float twK = uWindV.z;
-      twG = twG * (0.75 + 0.25 * min(twK, 2.0)) + max(twK - 1.0, 0.0) * 0.35 + sin(uWind * 4.1 + twPh * 3.7) * uWindV.w * 0.3;
-      vec3 twW = vec3(uWindV.x, 0.0, uWindV.y) * (twG * twH * twH * 0.00032 * twUp * (0.6 + 0.4 * twK));
+      // Gió mạnh / giật gió: ngả hẳn xuôi gió, dao động nhanh và mạnh hơn
+      twG = twG * (0.8 + 0.25 * min(twK, 2.5)) + max(twK - 1.0, 0.0) * 0.4 + sin(uWind * 3.6 + twPh * 3.2) * uWindV.w * 0.35;
+      vec3 twW = vec3(uWindV.x, 0.0, uWindV.y) * (twG * pow(twH, 1.85) * 0.0016 * twUp * (0.65 + 0.45 * twK));
+
+      // 1) CÀNH NHÁNH & CÁNH XƯƠNG RỒNG:
+      // Các phần cành nhánh vươn ngang ra khỏi trục thân sẽ nhún nhảy và lắc lư theo gió
+      float twBranchR = length(position.xz);
+      float twBranchFlex = smoothstep(0.6, 5.0, twBranchR);
+      if (twBranchFlex > 0.01) {
+        float bWave = sin(uWind * (1.9 + 0.7 * twK) + twBranchR * 1.6 + twPh * 4.0);
+        float bBounce = sin(uWind * (2.4 + 0.6 * twK) + position.x * 0.8 + position.z * 0.8) * 0.32;
+        vec3 branchMotion = vec3(
+          uWindV.x * 0.25 * bWave + 0.1 * sin(uWind * 3.1 + position.y),
+          bBounce * (0.7 + 0.5 * twK),
+          uWindV.y * 0.25 * bWave + 0.1 * cos(uWind * 2.8 + position.y)
+        ) * twBranchFlex * (0.8 + 0.6 * twK + 1.1 * uWindV.w) * twUp;
+        twW += branchMotion;
+      }
+
+      // 2) TÁN LÁ & TÀU LÁ CỌ: rung rinh xào xạc theo gió
       #ifdef TREE_LEAFY
-        float twF = smoothstep(4.0, 22.0, twH) * (0.06 + 0.14 * twUp) * (0.7 + 0.3 * twK + 0.9 * uWindV.w);
-        twW += vec3(sin(uWind * 2.7 + position.x * 0.45 + twPh * 5.0), 0.5 * sin(uWind * 3.4 + position.z * 0.5 + position.y * 0.3),
-          cos(uWind * 2.3 + position.z * 0.4 + twPh * 3.0)) * twF;
+        float twF = smoothstep(3.0, 20.0, twH) * (0.16 + 0.28 * twUp) * (0.8 + 0.5 * twK + 1.2 * uWindV.w);
+        float leafSpd = 3.2 + 1.6 * twK;
+        twW += vec3(
+          sin(uWind * leafSpd + position.x * 0.5 + twPh * 5.0),
+          0.6 * sin(uWind * (leafSpd * 1.2) + position.z * 0.6 + position.y * 0.4),
+          cos(uWind * (leafSpd * 0.9) + position.z * 0.5 + twPh * 3.2)
+        ) * twF;
       #endif
+
       transformed += vec3(dot(instanceMatrix[0].xyz, twW), dot(instanceMatrix[1].xyz, twW), dot(instanceMatrix[2].xyz, twW)) / twS2;
     #endif`;
   // Thẻ lá billboard: mọi đỉnh của thẻ nằm ở tâm thẻ, nới ra theo 'corner' trong không gian camera -> thẻ luôn quay mặt
@@ -2062,7 +2169,8 @@ const Destructibles = (() => {
   function limb(out, p0, p1, r0, r1, o = {}) {
     const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2], L = Math.hypot(dx, dy, dz) || 1;
     const sides = o.sides || 7, segs = o.segs || Math.max(1, Math.min(6, Math.round(L / 7)));
-    const g = new THREE.CylinderGeometry(1, 1, L, sides, segs, true);
+    // Đóng kín hai đầu hình trụ để khi cành gập khúc không bao giờ bị rỗng ruột nhìn xuyên thấu
+    const g = new THREE.CylinderGeometry(1, 1, L, sides, segs, o.open !== undefined ? o.open : false);
     const p = g.attributes.position, uv = g.attributes.uv;
     const bend = o.bend || 0, ph = rand(0, 6.283), wob = o.wobble !== undefined ? o.wobble : 0.12, circ = 2 * Math.PI * r0;
     for (let i = 0; i < p.count; i++) {
@@ -2112,7 +2220,11 @@ const Destructibles = (() => {
     const branchesTo = (clumps, from, r0) => {
       for (const c of clumps) {
         const a = from(c), b = [c[0] * 0.8, c[1] - c[4] * 0.3, c[2] * 0.8];
-        limb(T, a, b, r0, r0 * 0.35, { sides: 5, segs: 2, bend: rand(0.3, 1.2), wobble: 0.2 });
+        const dir = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        const dL = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+        // Cắm sâu gốc cành con vào thân mẹ để mép nối không bị hở
+        const start = [a[0] - (dir[0] / dL) * 0.45, a[1] - (dir[1] / dL) * 0.45, a[2] - (dir[2] / dL) * 0.45];
+        limb(T, start, b, r0, r0 * 0.35, { sides: 5, segs: 2, bend: rand(0.3, 1.2), wobble: 0.2 });
       }
     };
     const clumpsOut = (clumps, o) => { for (const c of clumps) foliageClump(C, c[0], c[1], c[2], c[3], c[4], c[5], o); };
@@ -2200,14 +2312,248 @@ const Destructibles = (() => {
       foliageClump(C, rand(-0.6, 0.6), 28, rand(-0.6, 0.6), 5.0, 8.5, 5.0, { size: 4.2, core: 0.7 });
       foliageClump(C, rand(-0.4, 0.4), 38.5, rand(-0.4, 0.4), 3.2, 7, 3.2, { size: 3.6, core: 0.7 });
     } else if (kind === 'cactus') {
-      barkKind = 'cactus'; crownKind = null; height = 22;
-      T.push(place(new THREE.CylinderGeometry(1.6, 1.8, 20, 10), [0, 10, 0]), place(new THREE.SphereGeometry(1.6, 10, 5, 0, 6.3, 0, Math.PI / 2), [0, 20, 0]));
-      for (const s of [-1, 1]) {
-        if (RNG() < 0.8) {
-          const h0 = rand(6, 11);
-          T.push(place(new THREE.CylinderGeometry(1.0, 1.0, 4, 8), [s * 3, h0, 0], [0, 0, Math.PI / 2]));
-          T.push(place(new THREE.CylinderGeometry(1.0, 1.1, 7, 8), [s * 5, h0 + 3.4, 0]), place(new THREE.SphereGeometry(1.0, 8, 4, 0, 6.3, 0, Math.PI / 2), [s * 5, h0 + 6.9, 0]));
+      barkKind = 'cactus'; crownKind = null;
+      const numRibs = 16;
+      const ribDepth = 0.14;
+      const mainH = rand(20, 24);
+      height = mainH + 2.0;
+
+      // Hàm tạo thân chính xương rồng Saguaro liền khối (không chắp vá nắp hộp, không lộ ngấn cắt)
+      const makeSaguaroTrunk = (H, rBot, rMid, rTop, ribs, radSegs, hSegs, depth) => {
+        const positions = [];
+        const uvs = [];
+        const tints = [];
+        const indices = [];
+
+        const domeH = rTop * 0.95;
+        const colH = H - domeH;
+        const totalRings = hSegs + 10; // hSegs cho thân, 10 vòng cho vòm ngọn
+
+        // Tạo các vòng lát cắt (rings)
+        for (let j = 0; j <= totalRings; j++) {
+          let y, R, D, swayX, swayZ;
+          if (j <= hSegs) {
+            // Phần thân trụ
+            const t = j / hSegs;
+            y = t * colH;
+            // Gốc hơi loe nhẹ cắm cát, giữa thân phình nhẹ tự nhiên
+            if (y < 2.0) {
+              R = rBot - (rBot - rMid) * (y / 2.0);
+            } else {
+              R = rMid - (rMid - rTop) * Math.pow(t, 1.35);
+            }
+            D = depth;
+            // Độ lượn hữu cơ nhẹ của thân
+            swayX = Math.sin(t * Math.PI) * 0.22;
+            swayZ = Math.cos(t * 1.5) * 0.12;
+          } else {
+            // Phần vòm đỉnh ngọn liền mạch
+            const u = (j - hSegs) / 10;
+            y = colH + u * domeH;
+            R = rTop * Math.sqrt(Math.max(0, 1 - u * u));
+            D = depth * Math.max(0, 1 - Math.pow(u, 1.3));
+            swayX = Math.sin(Math.PI) * 0.22 * (1 - u);
+            swayZ = Math.cos(1.5) * 0.12 * (1 - u);
+          }
+
+          // Độ lõm nhẹ tự nhiên ở tâm rốn ngọn Saguaro (apical meristem depression)
+          if (j === totalRings) {
+            y -= 0.18;
+            R = 0.05;
+            D = 0;
+          }
+
+          for (let i = 0; i <= radSegs; i++) {
+            const frac = i / radSegs;
+            const theta = frac * Math.PI * 2;
+            const cosV = Math.cos(ribs * theta);
+            const pleat = Math.sign(cosV) * Math.pow(Math.abs(cosV), 0.82) * D;
+            const effR = Math.max(0.01, R * (1 + pleat));
+
+            const vx = swayX + effR * Math.cos(theta);
+            const vz = swayZ + effR * Math.sin(theta);
+            positions.push(vx, y, vz);
+
+            // UV: u chạy quanh chu vi, v chạy dọc thân theo tỷ lệ gai
+            uvs.push(frac, y / 8.0);
+
+            // Tint: Chân gốc già cỗi hóa gỗ (cork collar) ngả nâu sa mạc; rãnh múi có bóng râm tự nhiên
+            let tr = 1.0, tg = 1.0, tb = 1.0;
+            if (y < 2.6) {
+              const baseK = Math.max(0, 1 - y / 2.6);
+              tr = 1.0 - baseK * 0.35;
+              tg = 1.0 - baseK * 0.44;
+              tb = 1.0 - baseK * 0.58;
+            }
+            // Ambient occlusion nhẹ trong lòng rãnh sâu
+            const ao = 0.88 + 0.12 * Math.max(0, cosV);
+            tints.push(tr * ao, tg * ao, tb * ao);
+          }
         }
+
+        // Tạo mặt lưới tam giác (indices)
+        for (let j = 0; j < totalRings; j++) {
+          for (let i = 0; i < radSegs; i++) {
+            const a = j * (radSegs + 1) + i;
+            const b = (j + 1) * (radSegs + 1) + i;
+            const c = (j + 1) * (radSegs + 1) + (i + 1);
+            const d = j * (radSegs + 1) + (i + 1);
+            indices.push(a, b, d);
+            indices.push(b, c, d);
+          }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+        geo.setAttribute('tint', new THREE.BufferAttribute(new Float32Array(tints), 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        return geo;
+      };
+
+      // 1. Dựng thân chính Saguaro
+      const rBot = 1.88, rMid = 1.82, rTop = 1.62;
+      const trunkGeo = makeSaguaroTrunk(mainH, rBot, rMid, rTop, numRibs, 32, 28, ribDepth);
+      T.push(place(trunkGeo, [0, 0, 0]));
+      stemN = 1;
+
+      // Nụ nỉ bông tơ đỉnh ngọn cây (apical crown tuft)
+      const tuftGeo = new THREE.CylinderGeometry(0.55, 0.15, 0.35, 12);
+      tuftGeo.scale(1.0, 0.7, 1.0);
+      tintAll(tuftGeo, [1.12, 1.08, 0.92]);
+      T.push(place(tuftGeo, [0, mainH - 0.05, 0]));
+
+      // 2. Hàm tạo cành tay có MÚI DỌC 3D VÀ UV CHUẨN XÁC DỌC CÀNH (triệt tiêu 100% sọc ngang Michelin)
+      const makeSaguaroArm = (side, h0, reach, armLen, rArm, zTilt) => {
+        // Đường spline tim cành uốn cong chữ U mềm mại
+        const p0 = new THREE.Vector3(side * 1.1, h0 - 0.25, 0);
+        const p1 = new THREE.Vector3(side * 2.2, h0 + 0.15, zTilt * 0.3);
+        const p2 = new THREE.Vector3(side * (reach - 0.45), h0 + 1.65, zTilt * 0.7);
+        const p3 = new THREE.Vector3(side * reach, h0 + 3.5, zTilt);
+        const p4 = new THREE.Vector3(side * reach, h0 + 3.5 + armLen, zTilt);
+        const curve = new THREE.CatmullRomCurve3([p0, p1, p2, p3, p4]);
+
+        const nSteps = 26;
+        const radSegs = 28;
+        const ribs = 14;
+        const ribD = 0.13;
+        const totalLen = curve.getLength();
+
+        const positions = [];
+        const uvs = [];
+        const tints = [];
+        const indices = [];
+
+        // Tính các mặt cắt vuông góc dọc spline
+        let prevN = new THREE.Vector3(0, 0, 1);
+        for (let j = 0; j <= nSteps; j++) {
+          const t = j / nSteps;
+          const pt = curve.getPoint(t);
+          const tangent = curve.getTangent(t).normalize();
+
+          // Hệ trục trực chuẩn song song (Parallel transport frame) để cành không bị xoắn vặn
+          let normal = new THREE.Vector3().crossVectors(tangent, prevN);
+          if (normal.lengthSq() < 1e-4) {
+            normal = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0));
+          }
+          normal.normalize();
+          const binormal = new THREE.Vector3().crossVectors(tangent, normal).normalize();
+          prevN = binormal;
+
+          // Bán kính lát cắt: Khớp vai (t < 0.2) phình to ăn sâu vào thân; thân giữa đều; đỉnh vuốt tròn liền khối
+          let R, D;
+          if (t < 0.2) {
+            R = rArm * (1.32 - 0.32 * (t / 0.2));
+            D = ribD;
+          } else if (t <= 0.88) {
+            R = rArm;
+            D = ribD;
+          } else {
+            // Vuốt tròn mái vòm đỉnh cành mượt mà
+            const u = (t - 0.88) / 0.12;
+            R = rArm * Math.sqrt(Math.max(0, 1 - u * u));
+            D = ribD * Math.max(0, 1 - Math.pow(u, 1.3));
+          }
+
+          if (j === nSteps) {
+            R = 0.04;
+            D = 0;
+          }
+
+          for (let i = 0; i <= radSegs; i++) {
+            const frac = i / radSegs;
+            const phi = frac * Math.PI * 2;
+            const cosV = Math.cos(ribs * phi);
+            const pleat = Math.sign(cosV) * Math.pow(Math.abs(cosV), 0.82) * D;
+            const effR = Math.max(0.01, R * (1 + pleat));
+
+            // Vị trí đỉnh trong không gian 3D
+            const vx = pt.x + effR * (Math.cos(phi) * normal.x + Math.sin(phi) * binormal.x);
+            const vy = pt.y + effR * (Math.cos(phi) * normal.y + Math.sin(phi) * binormal.y);
+            const vz = pt.z + effR * (Math.cos(phi) * normal.z + Math.sin(phi) * binormal.z);
+            positions.push(vx, vy, vz);
+
+            // UV: u chạy quanh chu vi cành (14 múi dọc), v chạy dọc cành từ gốc lên ngọn!
+            uvs.push(frac, (t * totalLen) / 8.0);
+
+            // Tint: Bóng râm tự nhiên trong rãnh múi
+            const ao = 0.88 + 0.12 * Math.max(0, cosV);
+            tints.push(ao, ao, ao);
+          }
+        }
+
+        // Tạo mặt lưới tam giác
+        for (let j = 0; j < nSteps; j++) {
+          for (let i = 0; i < radSegs; i++) {
+            const a = j * (radSegs + 1) + i;
+            const b = (j + 1) * (radSegs + 1) + i;
+            const c = (j + 1) * (radSegs + 1) + (i + 1);
+            const d = j * (radSegs + 1) + (i + 1);
+            indices.push(a, b, d);
+            indices.push(b, c, d);
+          }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+        geo.setAttribute('tint', new THREE.BufferAttribute(new Float32Array(tints), 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+
+        return {
+          geo,
+          topPos: [side * reach, h0 + 3.5 + armLen, zTilt]
+        };
+      };
+
+      // 3. Phân bổ cành nhánh Saguaro phong phú và bất đối xứng tự nhiên
+      const armSides = [];
+      if (RNG() < 0.88) armSides.push(-1);
+      if (RNG() < 0.85) armSides.push(1);
+      if (armSides.length === 0) armSides.push(RNG() < 0.5 ? -1 : 1);
+
+      let armIdx = 0;
+      for (const s of armSides) {
+        // Cành so le cao thấp không đối xứng cứng nhắc
+        const h0 = armIdx === 0 ? rand(7.2, 9.8) : rand(10.2, 12.5);
+        const reach = rand(3.9, 4.9);
+        const armLen = rand(6.8, 10.5);
+        const rArm = rand(1.02, 1.14);
+        const zTilt = rand(-0.35, 0.35);
+
+        const arm = makeSaguaroArm(s, h0, reach, armLen, rArm, zTilt);
+        T.push(place(arm.geo, [0, 0, 0]));
+
+        // Nụ nỉ bông tơ trên đỉnh cành
+        if (RNG() < 0.8) {
+          const armTuft = new THREE.CylinderGeometry(0.38, 0.12, 0.28, 10);
+          armTuft.scale(1.0, 0.7, 1.0);
+          tintAll(armTuft, [1.12, 1.08, 0.92]);
+          T.push(place(armTuft, [arm.topPos[0], arm.topPos[1] - 0.04, arm.topPos[2]]));
+        }
+        armIdx++;
       }
     } else if (kind === 'deadTree') {
       barkKind = 'dead'; crownKind = null; height = 34;
@@ -2219,21 +2565,44 @@ const Destructibles = (() => {
         const p0 = lerp3([0, 0, 0], top, t);
         const p1 = [p0[0] + Math.cos(a) * Math.cos(el) * L, p0[1] + Math.sin(el) * L, p0[2] + Math.sin(a) * Math.cos(el) * L];
         const r0 = 0.55 * (1.1 - t * 0.5);
-        limb(T, p0, p1, r0, 0.12, { sides: 5, segs: 2, bend: rand(0.3, 1), wobble: 0.3 });
+        const dir = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+        const dL = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+        const start0 = [p0[0] - (dir[0] / dL) * 0.55, p0[1] - (dir[1] / dL) * 0.55, p0[2] - (dir[2] / dL) * 0.55];
+        limb(T, start0, p1, r0, 0.12, { sides: 5, segs: 2, bend: rand(0.3, 1), wobble: 0.3 });
         for (let k = 0; k < 2; k++) {
           const q = lerp3(p0, p1, rand(0.5, 0.85)), a2 = a + rand(-1, 1), L2 = L * rand(0.3, 0.5), e2 = el + rand(-0.2, 0.5);
-          limb(T, q, [q[0] + Math.cos(a2) * Math.cos(e2) * L2, q[1] + Math.sin(e2) * L2, q[2] + Math.sin(a2) * Math.cos(e2) * L2], r0 * 0.45, 0.06, { sides: 4, segs: 1, wobble: 0 });
+          const p2 = [q[0] + Math.cos(a2) * Math.cos(e2) * L2, q[1] + Math.sin(e2) * L2, q[2] + Math.sin(a2) * Math.cos(e2) * L2];
+          const dir2 = [p2[0] - q[0], p2[1] - q[1], p2[2] - q[2]];
+          const dL2 = Math.hypot(dir2[0], dir2[1], dir2[2]) || 1;
+          const start1 = [q[0] - (dir2[0] / dL2) * 0.35, q[1] - (dir2[1] / dL2) * 0.35, q[2] - (dir2[2] / dL2) * 0.35];
+          limb(T, start1, p2, r0 * 0.45, 0.06, { sides: 4, segs: 1, wobble: 0 });
         }
       }
     } else if (kind === 'acacia') {
       barkKind = 'oak'; crownKind = 'dry'; height = 30; crownY = 17;
       // thân ngắn, chạc 3 cành xòe chữ V, tán phẳng như cái ô nhiều tầng mỏng
       const fork = [rand(-1, 1), 11, rand(-1, 1)];
-      limb(T, [0, 0, 0], fork, 1.4, 0.9, { flare: 0.5, bend: rand(0.4, 1.2) });
+      // Thân chính vươn lên tới chạc cây và đâm sâu vào tâm fork
+      const fDir = [fork[0], fork[1], fork[2]];
+      const fL = Math.hypot(fDir[0], fDir[1], fDir[2]) || 1;
+      const forkExt = [fork[0] + (fDir[0] / fL) * 0.6, fork[1] + (fDir[1] / fL) * 0.6, fork[2] + (fDir[2] / fL) * 0.6];
+      limb(T, [0, 0, 0], forkExt, 1.45, 0.95, { flare: 0.5, bend: rand(0.3, 0.9) });
+
+      // Khối bướu chạc cây (branch fork burl) bao bọc hoàn toàn giao điểm giữa thân mẹ và 3 cành con
+      const forkNode = new THREE.SphereGeometry(1.35, 8, 7);
+      forkNode.scale(1.15, 1.35, 1.15);
+      tintAll(forkNode, [0.92, 0.92, 0.92]);
+      T.push(place(forkNode, fork));
+
       const mains = [];
       for (let m = 0; m < 3; m++) {
         const a = m * 2.094 + rand(-0.3, 0.3), e = [fork[0] + Math.cos(a) * 6.5, 18.5, fork[2] + Math.sin(a) * 6.5];
-        limb(T, fork, e, 0.8, 0.45, { sides: 6, segs: 2, bend: rand(0.3, 0.9) }); mains.push(e);
+        const dir = [e[0] - fork[0], e[1] - fork[1], e[2] - fork[2]];
+        const dL = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+        // Cắm sâu gốc cành con vào sâu trong lòng thân mẹ 0.85 đơn vị để triệt tiêu hoàn toàn góc hở
+        const start = [fork[0] - (dir[0] / dL) * 0.85, fork[1] - (dir[1] / dL) * 0.85, fork[2] - (dir[2] / dL) * 0.85];
+        limb(T, start, e, 0.92, 0.45, { sides: 6, segs: 2, bend: rand(0.25, 0.7) });
+        mains.push(e);
       }
       const clumps = [];
       for (let k = 0; k < 6; k++) { const a = k / 6 * 6.283 + rand(-0.3, 0.3), d = k === 0 ? 0 : rand(6, 10.5); clumps.push([Math.cos(a) * d, 22.5 + rand(-1, 1.2), Math.sin(a) * d, rand(6, 8), 2.1, rand(6, 8)]); }
@@ -2318,7 +2687,10 @@ const Destructibles = (() => {
   const TREE_CHUNK = 1350;   // cạnh ô vùng chia rừng cây (bản đồ 5400 -> 4 x 4 ô)
   // LOD cây: ô cây có mép gần nhất cách camera quá TREE_LOD_DIST (đã quy đổi theo độ phóng đại kính ngắm) vẽ bản xa;
   // trễ ±TREE_LOD_HYST tránh nhấp nháy khi camera đứng sát ngưỡng
-  const TREE_LOD_DIST = 1300, TREE_LOD_HYST = 120;
+  // Bản đầy đủ chỉ cần trong vùng người chơi còn đọc được cành/lá riêng lẻ. Ở xa hơn,
+  // silhouette vẫn giữ nguyên nhờ tán LOD phóng lớn nhưng số thẻ lá giảm còn 1/4.
+  // Ngưỡng cũ 3600 khiến gần như cả bản đồ rừng luôn dùng cây đầy đủ khi nhìn từ drone.
+  const TREE_LOD_DIST = 1150, TREE_LOD_HYST = 180;
   // bản xa giữ 1 trong TREE_LOD_CARDS thẻ lá, phóng to TREE_LOD_GROW lần (4 -> 1/4 thẻ, ~1,8² ≈ 3,2 lần diện tích mỗi thẻ)
   const TREE_LOD_CARDS = 4, TREE_LOD_GROW = 1.8;
   // Cắt khung nhìn theo khối bao cả ô cây (toạ độ cục bộ của nhóm cây); tia dò trúng từng cây vẫn dùng khối bao gốc
@@ -2449,7 +2821,9 @@ const Destructibles = (() => {
               m.instanceMatrix = P.mesh.instanceMatrix;
               if (P.mesh.instanceColor) m.instanceColor = P.mesh.instanceColor;
               m.count = 0;
-              m.castShadow = P.mesh.castShadow; m.receiveShadow = P.mesh.receiveShadow;
+              // Cây xa vẫn nhận bóng môi trường nhưng không tham gia shadow pass động. Bóng từng
+              // cành/lá ở cự ly này không còn đọc được, trong khi chi phí tam giác gần gấp đôi.
+              m.castShadow = false; m.receiveShadow = P.mesh.receiveShadow;
               m.customDepthMaterial = P.mesh.customDepthMaterial;
               m.onBeforeRender = P.mesh.onBeforeRender;
               m.frustumCulled = true;
@@ -2676,7 +3050,7 @@ const Destructibles = (() => {
       const A = ammoInfo(ammo, heavy);
       const blasty = A.power >= 0.5;
       // Sóng nổ lan xa hơn vùng sát thương: cây rung lắc theo khoảng cách
-      const Rw = blasty ? A.radius * 5 + 20 : A.radius * 2 + 6;
+      const Rw = blasty ? A.radius * 2.8 + 12 : A.radius * 1.8 + 6;
       const R = A.radius * 2.2 + 6;
       const SW = 2700;   // sóng xung kích ~340 m/s (8 đv = 1 m): cây xa lắc / đổ muộn hơn cây gần một chút
       // có ExplosionFX: hẹn theo phần NHÌN THẤY của mặt sóng (đã làm chậm cho mắt kịp thấy) -> cây lắc, lá bay, cây đổ
@@ -2690,7 +3064,10 @@ const Destructibles = (() => {
         // nhà chắn giữa điểm nổ và cây: sóng nổ & mảnh văng bị chặn phần lớn
         const sh = (this.solidHit && d > 14 && this.solidHit(x, y + 2, z, it.x, it.y + Math.min(it.trunkH, 24), it.z)) ? 0.3 : 1;
         const kw = (1 - d / Rw) * sh;
-        if (!it.fallen) { const mag = (blasty ? 0.55 : 0.08) * kw * kw * A.power; this.later(delay, () => { if (!it.fallen) this.push(it, dx, dz, mag); }); }
+        if (!it.fallen) {
+          const mag = Math.min(0.24, (blasty ? 0.3 : 0.06) * kw * kw * A.power);
+          this.later(delay, () => { if (!it.fallen) this.push(it, dx, dz, mag); });
+        }
         if (d > R) continue;
         const k = (1 - d / R) * sh, fl = FLAM[it.kind] !== undefined ? FLAM[it.kind] : 1;
         // cây đổ đang cháy / đã cháy: không tính nhiệt & gãy nữa, nhưng sóng nổ vẫn hất tàn lửa của nó đi
@@ -2711,7 +3088,9 @@ const Destructibles = (() => {
         // nổ ngay trong tán của cây này (tree burst): sức nổ dồn vào cành ngọn -> trụi tán, mạnh thì gãy phăng phần ngọn
         const cn = it.V.info.canopy, inCrown = !it.fallen && cn && y > it.y + it.trunkH * 0.85 && d < cn.rc * it.s;
         if (inCrown && blasty) this.stripLeaves(it, 0.15 + 0.35 * k, x, y, z, fx, delay);
-        if (!it.fallen && (inCrown ? k * A.power > 1.1 * weak : (k * A.power > 0.85 * weak || (d < A.radius * 0.8 * (2 - weak) && A.power > 0.5) || shred))) {
+        // Đạn nổ mạnh HE 120mm hoặc đạn pháo hạng nặng sát cây: bẻ gãy đổ cây ngay lập tức
+        const heKill = blasty && A.power >= 1.5 && d < A.radius * 1.15 * (2 - weak);
+        if (!it.fallen && (heKill || (inCrown ? k * A.power > 0.9 * weak : (k * A.power > 0.75 * weak || (d < A.radius * 0.9 * (2 - weak) && A.power > 0.5) || shred)))) {
           const st = it.V.info.stem, direct = d < it.trunkR + 3;
           const brk = inCrown ? Math.max(st.top * 0.5, Math.min(st.top * 0.92, (y - (it.y - 0.6)) / it.s - rand(2, 6)))
             : shred && !direct ? rand(Math.min(3, st.top * 0.3), st.top * 0.6) : this.breakAt(it, y, d);
@@ -2785,9 +3164,10 @@ const Destructibles = (() => {
       if (mag < 0.003) return;
       const l = Math.hypot(dx, dz) || 1;
       if (!it.sw) it.sw = { ax: 0, az: 0, vx: 0, vz: 0 };
-      // nghiêng ra xa tâm nổ: quay quanh trục vuông góc hướng đẩy
-      it.sw.vx += (dz / l) * mag * 6;
-      it.sw.vz += (-dx / l) * mag * 6;
+      // nghiêng ra xa tâm nổ: quay quanh trục vuông góc hướng đẩy, giới hạn xung lực vừa phải
+      const pMag = Math.min(0.25, mag);
+      it.sw.vx = Math.max(-2.0, Math.min(2.0, it.sw.vx + (dz / l) * pMag * 2.8));
+      it.sw.vz = Math.max(-2.0, Math.min(2.0, it.sw.vz + (-dx / l) * pMag * 2.8));
       if (!it.swaying) { it.swaying = true; this.swaying.push(it); }
     }
 
@@ -3218,19 +3598,19 @@ const Destructibles = (() => {
       for (let i = this.swaying.length - 1; i >= 0; i--) {
         const it = this.swaying[i];
         if (it.fallen) { it.swaying = false; this.swaying.splice(i, 1); continue; }
-        const W = it.sw, k = 30 / Math.max(0.6, it.s * it.height / 40), c = 2.2;
+        const W = it.sw, k = 32 / Math.max(0.6, it.s * it.height / 40), c = 6.8;
         const n = Math.max(1, Math.ceil(dt / 0.01)), h = dt / n;
         for (let q = 0; q < n; q++) {
           W.vx += (-k * W.ax - c * W.vx) * h; W.vz += (-k * W.az - c * W.vz) * h;
           W.ax += W.vx * h; W.az += W.vz * h;
         }
-        W.ax = Math.max(-0.5, Math.min(0.5, W.ax)); W.az = Math.max(-0.5, Math.min(0.5, W.az));
+        W.ax = Math.max(-0.2, Math.min(0.2, W.ax)); W.az = Math.max(-0.2, Math.min(0.2, W.az));
         // ma trận nháp dùng chung (Pool.set chép vào bộ đệm instance, không giữ tham chiếu) — không cấp phát mỗi khung
         const m = _tM.makeRotationFromEuler(_tE.set(W.ax, 0, W.az)).multiply(_tT.makeRotationY(it.rot));
         m.scale(_tS.set(it.s, it.s, it.s)).setPosition(it.x, it.y - 0.6, it.z);
         it.V.trunk.set(it.ti, m);
         if (it.ci >= 0 && !it.crownGone) it.V.crown.set(it.ci, m);
-        if (Math.abs(W.ax) + Math.abs(W.az) + Math.abs(W.vx) * 0.1 + Math.abs(W.vz) * 0.1 < 0.002) {
+        if (Math.abs(W.ax) + Math.abs(W.az) + Math.abs(W.vx) * 0.05 + Math.abs(W.vz) * 0.05 < 0.008) {
           it.swaying = false; this.swaying.splice(i, 1);
           W.ax = W.az = W.vx = W.vz = 0;
           it.V.trunk.set(it.ti, it.base); if (it.ci >= 0 && !it.crownGone) it.V.crown.set(it.ci, it.base);
@@ -3761,6 +4141,7 @@ const Destructibles = (() => {
       }
       const concW = { U: this.grimeU, moss: 0.7 };
       this.slabPool = new Pool(this.group, unit, facadeGrime(new THREE.MeshStandardMaterial({ map: slabTex(), roughness: 0.92 }), 0.9, concW), slabs, { color: true });
+      this.basePool = new Pool(this.group, unit, new THREE.MeshStandardMaterial({ map: slabTex(), roughness: 0.92 }), plans.length, { color: true });
       this.colPool = new Pool(this.group, unit, facadeGrime(new THREE.MeshStandardMaterial({ map: concreteTex(), roughness: 0.9 }), 0.9, concW), cols, { color: true });
       // Mái dốc thật (chìa mái, dày mái, bờ nóc, đầu hồi là tường) + vòm nhà kho có vách đầu hồi; ngói / tôn trải theo mét thật
       const rep = t => { const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.needsUpdate = true; return c; };
@@ -3888,19 +4269,38 @@ const Destructibles = (() => {
 
     commitAll() {
       for (const k in this.panelKits) this.panelKits[k].commit();
-      [this.slabPool, this.colPool, this.slabChunkPool, this.bitPool, this.tankPool, this.acPool, this.rodPool, this.dishPool].forEach(pl => pl.commit());
+      [this.slabPool, this.basePool, this.colPool, this.slabChunkPool, this.bitPool, this.tankPool, this.acPool, this.rodPool, this.dishPool].forEach(pl => pl.commit());
       for (const k in this.roofPools) { this.roofPools[k].commit(); this.archPools[k].commit(); }
       if (this.rd) for (const k in this.rd) for (const pl of [].concat(this.rd[k])) pl.commit();
     }
 
     buildOne(P) {
       const { b, st, bx, bz, floors } = P;
-      const gy = this.groundAt(b.x, b.z);
       const WM = WALLMAT[st.mat || 'concrete'];
       const W = bx * st.bay, D = bz * st.bay, FH = st.floorH, T = WM.T;
-      const base = new THREE.Matrix4().makeRotationY(b.angle || 0).setPosition(b.x, gy - 1.5, b.z);
+      const ang = b.angle || 0, cosA = Math.cos(ang), sinA = Math.sin(ang);
+      const hw = W / 2, hd = D / 2;
+      const gCenter = this.groundAt(b.x, b.z);
+      // Khảo sát độ cao mặt đất tại 9 điểm quanh móng và tâm nhà
+      const samplePts = [
+        [0, 0],
+        [-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd],
+        [0, -hd], [0, hd], [-hw, 0], [hw, 0]
+      ];
+      let gMin = gCenter, gMax = gCenter;
+      for (const [lx, lz] of samplePts) {
+        const wx = b.x + lx * cosA - lz * sinA;
+        const wz = b.z + lx * sinA + lz * cosA;
+        const gh = this.groundAt(wx, wz);
+        if (gh < gMin) gMin = gh;
+        if (gh > gMax) gMax = gh;
+      }
+      // Nâng nhẹ cốt nền nếu đất dốc ở một phía để sàn trệt không bị đất cao tràn vào
+      const slopeRise = Math.max(0, gMax - gCenter);
+      const gy = gCenter + Math.min(slopeRise * 0.45, 6.0);
+      const base = new THREE.Matrix4().makeRotationY(ang).setPosition(b.x, gy - 1.5, b.z);
       const color = new THREE.Color(st.colors[Math.floor(RNG() * st.colors.length)]);
-      const B = { x: b.x, z: b.z, y: gy, w: W, d: D, bx, bz, floors, FH, T, st, WM, base, color, mods: [], collapsed: false, angle: b.angle || 0, kind: b.kind,
+      const B = { x: b.x, z: b.z, y: gy, w: W, d: D, bx, bz, floors, FH, T, st, WM, base, color, mods: [], collapsed: false, angle: ang, kind: b.kind, gMin,
         hpTotal: 0, walls: [], levels: [], wgrid: { x1: [], 'x-1': [], z1: [], 'z-1': [] }, roofMods: null, dmgPanels: new Set(), cut: false, cutHold: 0, seedG: Math.floor(RNG() * 1e6) };
       const kit = this.panelKits[P.gT], kitUp = this.panelKits[P.uT] || kit, sideKit = st.sideTex && this.panelKits[st.sideTex];
       // vách hông kín của nhà ống: cạnh dài (bx > bz -> 2 mặt z là vách hông, ngược lại 2 mặt x)
@@ -3966,7 +4366,12 @@ const Destructibles = (() => {
         if (f === floors - 1 && flatRoof) continue;
         B.levels.push(this.tileLevel(B, mk, 1.5 + (f + 1) * FH, 1.6, 'slab', f, 0.6));
       }
-      mk(this.slabPool, 0, 1.0, 0, W + 2, 2.2, D + 2, 0, 'base', -1);
+      // MÓNG NHÀ KIÊN CỐ: cắm sâu xuống dưới điểm đất thấp nhất quanh nhà, không bao giờ bị hở đáy trên sườn dốc
+      const worldTop = gy + 0.6;
+      const drop = Math.max(0, worldTop - gMin);
+      const foundThick = Math.max(16.0, drop + 10.0);
+      const foundY = 2.1 - foundThick / 2;
+      mk(this.basePool, 0, foundY, 0, W + 1.2, foundThick, D + 1.2, 0, 'base', -1);
       const topY = 1.5 + floors * FH;
       // Mái dốc / vòm: một ô mái mỗi khoang dọc sống mái (trục X) -> đạn đục thủng đúng chỗ trúng, ô mất chỗ tựa thì sụp
       // riêng (xem checkStructure); ô đầu nhà gồm cả phần mái chìa. Cả mái chung một màu (không loang sọc theo ô)
@@ -7374,7 +7779,10 @@ const Destructibles = (() => {
         q.hp -= dmg;
         // đạn nhỏ không xuyên nổi bề dày khối: chỉ rỗ mặt, không làm yếu kết cấu (trước đây mài được tới 20% máu: ~200 viên
         // 30 mm rồi 4 phát nổ là vỡ tường 1,5 m). Khối đã bị đạn nổ làm yếu sẵn thì đạn nhỏ không trừ thêm
-        if (small && !canBore) q.hp = Math.max(q.hp, Math.min(hp0, q.hpMax * 0.8));
+        // Ngoại lệ đạn 30mm nổ-mảnh (xe 6 nòng): mỗi phát bóc ~10-15 cm bê tông, xả dồn vào một khối (~250-300 phát trúng
+        // khối tường 1,5 m) thì đục dần tới vỡ — trước đây kẹt ở 80% máu nên sấy mãi tường không suy suyển. 12.7mm vẫn chỉ rỗ mặt
+        const gouge = ammo === 'GATLING_BULLET' || ammo === 'INCENDIARY';
+        if (small && !canBore && !gouge) q.hp = Math.max(q.hp, Math.min(hp0, q.hpMax * 0.8));
         // Đạn xuyên (APFSDS / luồng nổ lõm) trúng thẳng khối: khoét thủng xuyên qua tường đúng chỗ chạm — chỉ khi bề dày
         // khối không vượt sức xuyên của đạn (RPG-7 ~0,9 m bê tông, tên lửa chống tăng ~1,7 m, APFSDS ~2 m)
         const punch = pierce && direct && !small && canBore;
@@ -8014,7 +8422,7 @@ const Destructibles = (() => {
   // ===========================================================================
   // DÙNG CHO PHÒNG THỬ ĐẠN: 1 bức tường bê tông thẳng / 1 tòa nhà 4 tầng (cùng cơ chế với game)
   // ===========================================================================
-  const LAB_POWER = { NORMAL: 1.8, HE: 2.8, AP: 4.2, CLUSTER: 1.6, CLUSTER_SUBMUNITION: 0.9, RPG: 2.2, ANTI_TANK_MISSILE: 2.6 };
+  const LAB_POWER = { NORMAL: 1.8, HE: 2.8, AP: 4.2, CLUSTER: 1.6, CLUSTER_SUBMUNITION: 0.9, RPG: 2.2, ANTI_TANK_MISSILE: 2.6, HEAT: 2.6, HEAT120: 2.8 };
   class ConcreteWall {
     constructor(scene, opts = {}) {
       this.scene = scene;

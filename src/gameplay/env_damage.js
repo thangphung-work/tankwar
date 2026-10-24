@@ -1437,9 +1437,11 @@ const EnvDamage = (() => {
       if (!SS.addCrater || (!nx && !nz)) return null;
       let k = 1;
       if (isBullet(ammo)) {
-        const e = cell ? cell.e : 0;
-        if (e < 0.45) return null;
-        k = Math.min(1.6, 0.8 + (e - 0.45) * 0.6);
+        // 30mm nổ-mảnh mẻ được hố ngay từ phát thứ 2 dồn vào một ô (loạt gatling tản rộng: trước đây cần 4 phát cùng ô
+        // 62 cm nên sấy cả băng gần như không ô nào đủ -> tường không có hố); 12.7mm phải dồn ~9 phát mới mẻ
+        const e = cell ? cell.e : 0, thr = ammo === 'GATLING_BULLET' || ammo === 'INCENDIARY' ? 0.2 : 0.45;
+        if (e < thr) return null;
+        k = Math.min(1.6, 0.8 + (e - thr) * 0.6);
       }
       const h = SS.addCrater(x, y, z, nx, ny, nz, ammo, heavy, room, k);
       if (h && this.debris) {

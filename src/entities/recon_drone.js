@@ -127,18 +127,170 @@ const ReconDrone = (() => {
     return [[fw - c, hl], [-fw + c, hl], [-fw, hl - c], [-hw, -hl + c], [-hw + c, -hl], [hw - c, -hl], [hw, -hl + c], [fw, hl - c]];
   }
 
-  // mặt phẳng lá cánh quạt (nhìn từ trên): gốc hẹp, phình ~40% bán kính, mũi thon tròn
-  function bladeGeo(R) {
-    const sh = new THREE.Shape(), r0 = 0.22, c = [0.16, 0.34, 0.3, 0.22, 0.12];
-    sh.moveTo(r0, -c[0] / 2);
-    [0.35, 0.6, 0.82, 0.96].forEach((t, i) => sh.lineTo(r0 + (R - r0) * t, -c[i + 1] * 0.45));
-    sh.quadraticCurveTo(R + 0.04, 0, R * 0.96, c[4] * 0.5);
-    [0.82, 0.6, 0.35].forEach((t, i) => sh.lineTo(r0 + (R - r0) * t, c[3 - i] * 0.55));
-    sh.lineTo(r0, c[0] / 2);
+  // mặt phẳng lá cánh quạt (nhìn từ trên): gốc hẹp, phình ~40% bán kính, mũi thon tròn.
+  // Màu theo đỉnh: lá đen, MŨI SƠN VÀNG (vạch an toàn cho tổ bay mặt đất — quay nhanh thành vòng vàng trên đĩa mờ)
+  // tip = true: chỉ mảnh mũi (từ ~88% bán kính), dày + rộng hơn lá chút để phủ lên lá không chập mặt
+  function bladeGeo(R, tip) {
+    const sh = new THREE.Shape(), r0 = 0.22, ts = [0.35, 0.6, 0.82, 0.88, 0.96], c = [0.16, 0.34, 0.3, 0.22, 0.2, 0.12];
+    const X = t => r0 + (R - r0) * t, w = tip ? 1.06 : 1;
+    const i0 = tip ? 3 : 0;   // mảnh mũi bắt đầu ở ts[3] = 0.88
+    // mép dưới (gốc -> mũi), vòng cong đầu lá, mép trên (mũi -> gốc)
+    if (tip) sh.moveTo(X(ts[i0]), -c[i0 + 1] * 0.45 * w);
+    else sh.moveTo(r0, -c[0] / 2);
+    for (let i = tip ? i0 + 1 : 0; i < ts.length; i++) sh.lineTo(X(ts[i]), -c[i + 1] * 0.45 * w);
+    sh.quadraticCurveTo(R + 0.04 * w, 0, R * 0.96, c[5] * 0.5 * w);
+    for (let i = ts.length - 2; i >= i0; i--) sh.lineTo(X(ts[i]), c[i + 1] * 0.55 * w);
+    if (!tip) sh.lineTo(r0, c[0] / 2);
     sh.closePath();
-    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.04, bevelEnabled: false });
+    const g = new THREE.ExtrudeGeometry(sh, { depth: tip ? 0.05 : 0.04, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
+    if (tip) g.translate(0, -0.005, 0);
+    const n = g.attributes.position.count, col = new Float32Array(n * 3), k = new THREE.Color(tip ? 0xb89a3c : 0x151617);
+    for (let i = 0; i < n; i++) { col[i * 3] = k.r; col[i * 3 + 1] = k.g; col[i * 3 + 2] = k.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     return g;
+  }
+
+  // ---------- TEXTURE VẼ TAY (canvas, dựng 1 lần): sơn ngụy trang dùng lâu ngày, nhựa khung bám bụi, ký hiệu sơn xịt ----------
+  // hàm ngẫu nhiên có hạt giống: mọi lần tải trang ra cùng một hình
+  const seeded = s => () => (s = (s * 16807) % 2147483647) / 2147483647;
+  // vẽ lặp ở 9 ô kề nhau -> texture ghép liền mạch khi lặp
+  const tiled = (S, fn) => { for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) fn(ox, oy); };
+
+  // Vỏ giáp: nền ô-liu, mảng loang xanh đậm / nâu đất mép nhòe, bụi lấm tấm, vết trầy lộ lớp lót sẫm (mép sáng do
+  // sơn bong), vết va chạm sứt mẻ, vệt mưa bẩn chảy dọc
+  let SHELL_TEX = null;
+  function shellTexture() {
+    if (SHELL_TEX || typeof document === 'undefined') return SHELL_TEX;
+    const S = 256, cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const x = cv.getContext('2d'), rnd = seeded(91);
+    x.fillStyle = '#454a31'; x.fillRect(0, 0, S, S);
+    x.filter = 'blur(7px)';
+    for (let i = 0; i < 16; i++) {
+      const px = rnd() * S, py = rnd() * S, rx = 18 + rnd() * 34, ry = 9 + rnd() * 20, a = rnd() * Math.PI;
+      x.fillStyle = i % 3 === 0 ? 'rgba(92,82,54,0.42)' : 'rgba(40,44,28,0.62)';
+      tiled(S, (ox, oy) => { x.beginPath(); x.ellipse(px + ox, py + oy, rx, ry, a, 0, Math.PI * 2); x.fill(); });
+    }
+    x.filter = 'none';
+    for (let i = 0; i < 2600; i++) {   // bụi cát lấm tấm + đốm bẩn
+      const v = rnd();
+      x.fillStyle = v < 0.6 ? `rgba(160,150,118,${0.04 + rnd() * 0.09})` : `rgba(22,22,16,${0.06 + rnd() * 0.14})`;
+      x.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 1.5, 1 + rnd() * 1.5);
+    }
+    for (let i = 0; i < 22; i++) {     // vệt mưa bẩn chảy dọc
+      const px = rnd() * S, py = rnd() * S, L = 20 + rnd() * 50, gr = x.createLinearGradient(0, py, 0, py + L);
+      gr.addColorStop(0, 'rgba(28,26,18,0.16)'); gr.addColorStop(1, 'rgba(28,26,18,0)');
+      x.fillStyle = gr; tiled(S, (ox, oy) => x.fillRect(px + ox, py + oy, 1.5 + rnd() * 3, L));
+    }
+    for (let i = 0; i < 46; i++) {     // vết trầy: lõi sẫm (lớp lót) + mép sáng (sơn bong)
+      const px = rnd() * S, py = rnd() * S, a = rnd() * Math.PI * 2, L = 4 + rnd() * 16;
+      const ex = px + Math.cos(a) * L, ey = py + Math.sin(a) * L;
+      x.lineCap = 'round';
+      x.strokeStyle = 'rgba(150,148,124,0.45)'; x.lineWidth = 1.6;
+      x.beginPath(); x.moveTo(px, py + 0.7); x.lineTo(ex, ey + 0.7); x.stroke();
+      x.strokeStyle = 'rgba(30,31,24,0.7)'; x.lineWidth = 0.8;
+      x.beginPath(); x.moveTo(px, py); x.lineTo(ex, ey); x.stroke();
+    }
+    for (let i = 0; i < 30; i++) {     // sứt mẻ do va đập / mảnh văng
+      const px = rnd() * S, py = rnd() * S, r = 1 + rnd() * 2.6;
+      x.fillStyle = 'rgba(140,138,116,0.5)';
+      x.beginPath(); x.arc(px + 0.6, py + 0.6, r + 0.8, 0, Math.PI * 2); x.fill();
+      x.fillStyle = 'rgba(32,32,25,0.9)';
+      x.beginPath();
+      for (let k = 0; k < 6; k++) { const aa = k / 6 * Math.PI * 2, rr = r * (0.6 + rnd() * 0.6); x[k ? 'lineTo' : 'moveTo'](px + Math.cos(aa) * rr, py + Math.sin(aa) * rr); }
+      x.closePath(); x.fill();
+    }
+    SHELL_TEX = new THREE.CanvasTexture(cv);
+    SHELL_TEX.wrapS = SHELL_TEX.wrapT = THREE.RepeatWrapping;
+    SHELL_TEX.repeat.set(0.55, 0.55);
+    SHELL_TEX.anisotropy = 4;
+    return SHELL_TEX;
+  }
+
+  // Nhựa khung / càng: xám đen bám bụi đất nâu nhạt, vết mài mòn bóng
+  let GRIME_TEX = null;
+  function grimeTexture() {
+    if (GRIME_TEX || typeof document === 'undefined') return GRIME_TEX;
+    const S = 128, cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const x = cv.getContext('2d'), rnd = seeded(37);
+    x.fillStyle = '#222420'; x.fillRect(0, 0, S, S);
+    x.filter = 'blur(4px)';
+    for (let i = 0; i < 10; i++) {
+      const px = rnd() * S, py = rnd() * S, r = 8 + rnd() * 18;
+      x.fillStyle = 'rgba(92,80,58,0.28)';
+      tiled(S, (ox, oy) => { x.beginPath(); x.arc(px + ox, py + oy, r, 0, Math.PI * 2); x.fill(); });
+    }
+    x.filter = 'none';
+    for (let i = 0; i < 900; i++) {
+      x.fillStyle = rnd() < 0.7 ? `rgba(120,104,78,${0.08 + rnd() * 0.2})` : `rgba(80,82,84,${0.1 + rnd() * 0.2})`;
+      x.fillRect(rnd() * S, rnd() * S, 1, 1);
+    }
+    GRIME_TEX = new THREE.CanvasTexture(cv);
+    GRIME_TEX.wrapS = GRIME_TEX.wrapT = THREE.RepeatWrapping;
+    GRIME_TEX.repeat.set(0.7, 0.7);
+    return GRIME_TEX;
+  }
+
+  // Ký hiệu sơn xịt (atlas 256x128, nền trong suốt): các ô [u0, v0, u1, v1] theo pixel
+  const DECAL = {
+    serial: [0, 0, 256, 40],      // số hiệu khung "UAS-R 07" (sơn trắng ngà qua khuôn chữ, bong tróc)
+    tally: [0, 40, 128, 84],      // vạch đếm số lần xuất kích
+    hazard: [128, 40, 256, 84],   // băng sọc vàng đen cảnh báo vùng cánh quạt (quấn tay đòn)
+    arrow: [0, 84, 128, 128]      // mũi tên chỉ hướng bay "FWD" trên nắp
+  };
+  let DECAL_TEX = null;
+  function decalTexture() {
+    if (DECAL_TEX || typeof document === 'undefined') return DECAL_TEX;
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 128;
+    const x = cv.getContext('2d'), rnd = seeded(5);
+    const paint = 'rgba(214,206,170,0.92)';
+    x.fillStyle = paint; x.textBaseline = 'middle';
+    x.font = 'bold 30px "Arial Narrow", Arial, sans-serif';
+    // khuôn chữ sơn xịt: các nét đứt cầu nối của khuôn (vạch dọc mảnh xoá đi)
+    x.fillText('UAS-R  07', 12, 21);
+    x.font = 'bold 13px Arial, sans-serif';
+    x.fillText('18 ARTY', 176, 22);
+    // vạch đếm: 3 nhóm 5 vạch gạch chéo + 2 vạch lẻ
+    x.strokeStyle = paint; x.lineWidth = 3.2; x.lineCap = 'butt';
+    let px = 10;
+    for (let gI = 0; gI < 3; gI++) {
+      for (let k = 0; k < 4; k++) { x.beginPath(); x.moveTo(px + k * 6, 48); x.lineTo(px + k * 6 + rnd() * 1.5, 76); x.stroke(); }
+      x.beginPath(); x.moveTo(px - 3, 70); x.lineTo(px + 22, 52); x.stroke();
+      px += 34;
+    }
+    for (let k = 0; k < 2; k++) { x.beginPath(); x.moveTo(px + k * 6, 48); x.lineTo(px + k * 6, 76); x.stroke(); }
+    // băng sọc vàng đen
+    x.save(); x.beginPath(); x.rect(128, 40, 128, 44); x.clip();
+    x.fillStyle = '#1b1b18'; x.fillRect(128, 40, 128, 44);
+    x.fillStyle = '#c9a53a';
+    for (let k = -2; k < 12; k++) { x.beginPath(); x.moveTo(128 + k * 16, 84); x.lineTo(136 + k * 16, 84); x.lineTo(152 + k * 16, 40); x.lineTo(144 + k * 16, 40); x.closePath(); x.fill(); }
+    x.restore();
+    // mũi tên hướng bay + chữ FWD
+    x.fillStyle = paint;
+    x.beginPath(); x.moveTo(14, 106); x.lineTo(40, 92); x.lineTo(40, 100); x.lineTo(70, 100); x.lineTo(70, 112); x.lineTo(40, 112); x.lineTo(40, 120); x.closePath(); x.fill();
+    x.font = 'bold 16px Arial, sans-serif'; x.fillText('FWD', 76, 107);
+    // bong tróc: đục lỗ ngẫu nhiên trên lớp sơn (trừ băng sọc: chỉ trầy nhẹ)
+    x.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 900; i++) {
+      const yy = rnd() * 128, xx = rnd() * 256, hz = xx >= 128 && yy >= 40 && yy < 84;
+      if (hz && rnd() < 0.6) continue;
+      x.fillStyle = `rgba(0,0,0,${0.4 + rnd() * 0.6})`;
+      x.fillRect(xx, yy, 1 + rnd() * 2.5, 1 + rnd() * 2);
+    }
+    for (let k = 0; k < 9; k++) { x.fillStyle = 'rgba(0,0,0,1)'; x.fillRect(12 + k * 25 + rnd() * 6, 8, 1.6, 26); }   // cầu nối khuôn chữ
+    x.globalCompositeOperation = 'source-over';
+    DECAL_TEX = new THREE.CanvasTexture(cv);
+    DECAL_TEX.anisotropy = 4;
+    return DECAL_TEX;
+  }
+  // gán toạ độ texture của lưới về một ô atlas (mọi mặt dùng chung ô)
+  function atlasUV(geo, cell) {
+    const uv = geo.attributes.uv, [x0, y0, x1, y1] = cell;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (x0 + uv.getX(i) * (x1 - x0)) / 256, 1 - (y1 - uv.getY(i) * (y1 - y0)) / 128);
+    return geo;
   }
 
   // vệt mờ đĩa cánh quạt khi quay nhanh: vành ngoài đậm hơn, giữa trong suốt, vài vòng mảnh
@@ -158,24 +310,46 @@ const ReconDrone = (() => {
     x.fillRect(0, 0, S, S);
     x.strokeStyle = 'rgba(200,205,210,0.06)';
     [0.42, 0.62, 0.8].forEach(k => { x.lineWidth = 1.2; x.beginPath(); x.arc(c, c, k * S / 2, 0, Math.PI * 2); x.stroke(); });
+    // mũi cánh sơn vàng quay nhanh -> vòng vàng mờ sát mép đĩa
+    x.strokeStyle = 'rgba(190,160,70,0.42)'; x.lineWidth = 5;
+    x.beginPath(); x.arc(c, c, 0.93 * S / 2 - 2, 0, Math.PI * 2); x.stroke();
     DISC_TEX = new THREE.CanvasTexture(cv);
     return DISC_TEX;
   }
 
   function materials() {
     const std = (color, roughness, metalness, extra) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness, metalness }, extra || {}));
+    // texture vẽ canvas chỉ có khi chạy trong trình duyệt; không có thì về màu phẳng như cũ
+    const shellTex = shellTexture(), grimeTex = grimeTexture(), decalTex = decalTexture();
     return {
-      shell: std(0x4a4f34, 0.8, 0.05),      // vỏ giáp composite sơn xanh ô-liu quân sự, mờ
-      dark: std(0x262824, 0.7, 0.12),       // khung / nhựa kỹ thuật xám đen
+      // vỏ giáp composite sơn ngụy trang ô-liu dùng lâu ngày: loang, bạc, trầy tróc, bám bụi
+      shell: shellTex ? std(0xffffff, 0.86, 0.04, { map: shellTex }) : std(0x4a4f34, 0.8, 0.05),
+      // khung / nhựa kỹ thuật xám đen bám bụi đất
+      dark: grimeTex ? std(0xffffff, 0.74, 0.1, { map: grimeTex }) : std(0x262824, 0.7, 0.12),
       carbon: std(0x202224, 0.38, 0.35),    // ống sợi carbon
       metal: std(0x3a3d40, 0.32, 0.75),     // chuông mô-tơ nhôm anode
-      prop: std(0x151617, 0.45, 0.05, { side: THREE.DoubleSide }),
+      prop: std(0xffffff, 0.45, 0.05, { side: THREE.DoubleSide, vertexColors: true }),   // lá đen, mũi vàng (màu đỉnh)
+      tape: std(0x4f5145, 0.93, 0),         // băng keo vải dán vá dã chiến
+      strap: std(0x2f3127, 0.96, 0),        // dây đai nylon giữ pin, dây rút bó cáp
+      decal: new THREE.MeshStandardMaterial({ map: decalTex, transparent: true, roughness: 0.9, metalness: 0, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -2, visible: !!decalTex }),
       glass: std(0x0a1216, 0.06, 0.7, { emissive: 0x06121a, emissiveIntensity: 0.25 }),
       rubber: std(0x111111, 0.95, 0),
       lamp: new THREE.MeshBasicMaterial({ vertexColors: true }),   // đèn hàng không (màu theo đỉnh)
       teamB: new THREE.MeshBasicMaterial({ color: 0x40a0ff }),
       teamR: new THREE.MeshBasicMaterial({ color: 0xff4040 })
     };
+  }
+
+  // ống bọc vuông quanh thanh a -> b tại t (0..1) dọc thanh, dài len, cạnh w (dây rút, băng keo, băng sọc);
+  // cell: ô atlas ký hiệu cho mọi mặt
+  function sleeve(B, a, b, t, len, w, mat, cell) {
+    const A = new THREE.Vector3(...a), d = new THREE.Vector3(...b).sub(A);
+    const c = A.clone().addScaledVector(d, t), g = new THREE.BoxGeometry(w, len, w);
+    if (cell) atlasUV(g, cell);
+    g.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())));
+    g.translate(c.x, c.y - B.dy, c.z);
+    B.add(g, mat);
   }
 
   // vị trí 4 mô-tơ [x, z] (trước trái, trước phải, sau trái, sau phải) và độ cao đế mô-tơ
@@ -206,8 +380,30 @@ const ReconDrone = (() => {
     for (const sx of [-1, 1]) B.add(new THREE.BoxGeometry(0.08, 0.1, 0.08), M.metal, [sx * 0.42, 2.72, 2.35]);
     // module định vị / liên lạc vệ tinh: hộp vuông vát dẹt
     B.add(slab(0.8, 0.8, 0.18, 1, 0.16, 0.03), M.dark, [0, 2.86, -0.55]);
-    // 2 ăng-ten vây liên lạc
-    for (const sx of [-1, 1]) B.add(new THREE.BoxGeometry(0.07, 0.48, 0.32), M.dark, [sx * 0.62, 2.95, 1.05], [0, 0, sx * 0.14]);
+    // 2 ăng-ten roi liên lạc (radio mạng MANET): đế ren + cần mềm ngả về sau chếch ra ngoài + chóp cao su
+    for (const sx of [-1, 1]) {
+      B.add(new THREE.CylinderGeometry(0.09, 0.1, 0.16, 8), M.dark, [sx * 0.62, 2.74, 1.05]);
+      B.tube([sx * 0.62, 2.3, 1.05], [sx * 0.86, 3.35, 1.62], 0.028, M.strap, 5);   // tube nhận toạ độ thật (đã trừ dy)
+      B.add(new THREE.CylinderGeometry(0.045, 0.045, 0.14, 6), M.rubber, [sx * 0.87, 3.9, 1.645], [0.5, 0, -sx * 0.22]);
+    }
+    // đèn chớp hồng ngoại (nhận diện ta / địch qua kính nhìn đêm) bắt trên ray
+    B.add(new THREE.BoxGeometry(0.22, 0.12, 0.22), M.dark, [0, 2.96, 0.8]);
+    B.add(new THREE.BoxGeometry(0.15, 0.05, 0.15), M.glass, [0, 3.04, 0.8]);
+    // dây đai nylon giữ pin (pin rút hay văng khi đáp mạnh) + khoá cài
+    for (const sz of [1.72, 2.18]) {
+      B.add(new THREE.BoxGeometry(1.36, 0.035, 0.15), M.strap, [0, 2.715, sz]);
+      for (const sx of [-1, 1]) B.add(new THREE.BoxGeometry(0.035, 0.52, 0.15), M.strap, [sx * 0.668, 2.46, sz]);
+    }
+    B.add(new THREE.BoxGeometry(0.2, 0.05, 0.19), M.metal, [0.32, 2.74, 1.72]);
+    // băng keo vá chéo trên nắp giáp mũi trái (vết mảnh văng)
+    B.add(new THREE.BoxGeometry(0.58, 0.02, 0.17), M.tape, [-0.42, 2.668, -0.72], [0, 0.4, 0]);
+    B.add(new THREE.BoxGeometry(0.5, 0.02, 0.15), M.tape, [-0.42, 2.674, -0.7], [0, -0.55, 0]);
+    // ký hiệu sơn xịt: số hiệu khung 2 bên hông nắp giáp (mặt hông vát chếch 0.124 rad theo đường viền), vạch đếm xuất kích + mũi tên FWD trên 2 vai nắp giáp
+    for (const sx of [-1, 1]) {
+      B.add(atlasUV(new THREE.PlaneGeometry(1.4, 0.21), DECAL.serial), M.decal, [sx * 0.905, 2.45, 0.4], [0, sx * (Math.PI / 2 + 0.124), 0]);
+    }
+    B.add(atlasUV(new THREE.PlaneGeometry(0.4, 0.14), DECAL.tally), M.decal, [0.66, 2.668, 0.78], [-Math.PI / 2, 0, 0]);
+    B.add(atlasUV(new THREE.PlaneGeometry(0.42, 0.145), DECAL.arrow), M.decal, [-0.66, 2.668, 0.78], [-Math.PI / 2, -Math.PI / 2, 0, 'YXZ']);
     // lưới tản nhiệt 2 bên hông
     for (const sx of [-1, 1]) for (let i = 0; i < 5; i++) B.add(new THREE.BoxGeometry(0.05, 0.36, 0.08), M.metal, [sx * 1.05, 1.75, -0.6 + i * 0.2]);
     // camera tránh vật cản: cặp mắt kép trên mặt mũi vát / đuôi / đáy (khung vuông + kính)
@@ -248,6 +444,12 @@ const ReconDrone = (() => {
       B.add(new THREE.BoxGeometry(0.55, 0.4, 0.55), M.dark, [bx, 1.36, bz], [0, Math.atan2(sx, sz), 0]);   // khớp gập
       B.add(new THREE.CylinderGeometry(0.09, 0.09, 0.5, 6), M.metal, [bx, 1.36, bz]);                        // chốt bản lề
       B.bar([bx, 1.38, bz], [mx, my - 0.1, mz], 0.26, M.carbon);
+      // dây pha mô-tơ chạy dưới tay đòn, bó bằng 2 dây rút; băng sọc cảnh báo cánh quạt quấn sát đế mô-tơ;
+      // tay đòn sau phải từng gãy, quấn băng keo vá
+      B.tube([bx, 1.2, bz], [mx * 0.93, my - 0.3, mz * 0.93], 0.045, M.strap, 5);
+      for (const t of [0.3, 0.62]) sleeve(B, [bx, 1.38, bz], [mx, my - 0.1, mz], t, 0.05, 0.31, M.strap);
+      sleeve(B, [bx, 1.38, bz], [mx, my - 0.1, mz], 0.8, 0.3, 0.29, M.decal, DECAL.hazard);
+      if (sx > 0 && sz > 0) sleeve(B, [bx, 1.38, bz], [mx, my - 0.1, mz], 0.47, 0.36, 0.3, M.tape);
       // đế mô-tơ vuông vát + chuông mô-tơ + vòng khe gió + chóp ốc giữ cánh quạt (tròn đều -> không quay theo cánh)
       B.add(roundedSlab(chamferOutline(0.8, 0.8, 0.18, 1), 0.2, 0.03), M.dark, [mx, my - 0.18, mz]);
       B.add(new THREE.CylinderGeometry(0.33, 0.35, 0.3, 12), M.metal, [mx, my + 0.17, mz]);
@@ -259,7 +461,7 @@ const ReconDrone = (() => {
     const blades = {};
     for (const dir of [1, -1]) {
       const BL = batcher();
-      for (const k of [0, 1]) BL.add(bladeGeo(PROP_R), M.prop, [0, 0, 0], [dir * 0.16, k * Math.PI, 0, 'YXZ']);   // xoắn quanh trục lá rồi quay lá 2 nửa vòng
+      for (const k of [0, 1]) for (const tip of [false, true]) BL.add(bladeGeo(PROP_R, tip), M.prop, [0, 0, 0], [dir * 0.16, k * Math.PI, 0, 'YXZ']);   // xoắn quanh trục lá rồi quay lá 2 nửa vòng; mũi vàng phủ lên
       blades[dir] = BL.merge();
     }
     // đĩa mờ cánh quạt 4 rotor gộp 1 lưới (đĩa tròn đều nên không cần quay)

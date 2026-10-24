@@ -141,7 +141,7 @@
     RPG: 0.6, ANTI_TANK_MISSILE: 0.6,
     GATLING_BULLET: 0.42, INCENDIARY: 0.42,     // 30mm (lòng nòng Hailstorm ~0.2)
     SCOUT_BULLET: 0.4,
-    GL40: 0.45                                  // lựu 40mm (thân ~Ø0.9 đv — phóng to chút cho mắt thấy được khi bay)
+    GL40: 0.15                                  // lựu 40mm: thân Ø~0.31 đv (≈40mm) — vừa lòng nòng AGL (Ø0.075 x 2.1 x 2)
   };
 
   // Thân đạn pháo tròn xoay: r = bán kính thân, L = dài tổng

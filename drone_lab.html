@@ -4,40 +4,64 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Phòng Thử Drone Trinh Sát</title>
+<link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
+<link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+<link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261020lab2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --panel: rgba(8, 20, 36, 0.9);
-    --line: #174b6e;
-    --accent: #14c8ff;
-    --text: #e2eef7;
-    --muted: #8aa7be;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #0b1117; color: var(--text); font: 13px/1.4 "Segoe UI", -apple-system, Arial, sans-serif; overflow: hidden; user-select: none; }
-  #view { position: fixed; inset: 0; display: block; outline: none; touch-action: none; }
-  #panel { position: fixed; top: 12px; left: 12px; width: 250px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
-  #panel h1 { margin: 0 0 8px; font-size: 14px; letter-spacing: .06em; color: var(--accent); }
-  #panel button { display: block; width: 100%; margin: 4px 0; padding: 7px 8px; background: rgba(6, 28, 48, .9); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; text-align: left; cursor: pointer; }
-  #panel button.on { border-color: var(--accent); color: #fff; box-shadow: inset 3px 0 0 var(--accent); }
-  #stats { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; white-space: pre-line; }
-  #hint { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; text-shadow: 0 0 3px #000; }
-  @media (max-width: 600px) { #panel { width: auto; right: 12px; } }
+  /* bảng số lượt vẽ / tam giác: giữ xuống dòng của chuỗi thống kê */
+  #stats { white-space: pre-line; font: 11.5px/1.6 var(--font-mono); color: var(--tc-accent-2); }
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
-<div id="panel">
-  <h1>DRONE TRINH SÁT · PHÒNG THỬ</h1>
-  <button data-k="spin">Cánh quạt quay</button>
-  <button data-k="dock">Trên đế sạc nóc cabin</button>
-  <button data-k="lid">Nhả kẹp càng (cất cánh)</button>
-  <button data-k="team">Phe: XANH</button>
-  <button data-k="many">Thử tải: 20 drone</button>
-  <button data-k="hurt">Thân hỏng: nguyên vẹn</button>
-  <button data-k="kill">Bắn nổ drone</button>
-  <div id="stats"></div>
+<aside class="lab-panel" id="panel">
+  <header class="lab-head">
+    <div class="lab-brand">
+      <i class="ti ti-drone lab-emblem" aria-hidden="true"></i>
+      <div>
+        <h1>DRONE TRINH SÁT</h1>
+        <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Mô hình drone + đế sạc nóc cabin · hỏng / cháy / nổ · đo lượt vẽ</div>
+      </div>
+    </div>
+    <nav class="lab-nav">
+      <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
+      <a class="on" href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
+    </nav>
+  </header>
+  <div class="lab-scroll">
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">01</span><h2>Mô hình &amp; đế sạc</h2></div>
+    <div class="row col">
+      <button class="btn" data-k="spin">Cánh quạt quay</button>
+      <button class="btn" data-k="dock">Trên đế sạc nóc cabin</button>
+      <button class="btn" data-k="lid">Nhả kẹp càng (cất cánh)</button>
+      <button class="btn" data-k="team">Phe: XANH</button>
+    </div>
+  </section>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">02</span><h2>Hư hại &amp; tải</h2></div>
+    <div class="row col">
+      <button class="btn" data-k="hurt">Thân hỏng: nguyên vẹn</button>
+      <button class="btn btn-danger" data-k="kill">Bắn nổ drone</button>
+      <button class="btn" data-k="many">Thử tải: 20 drone</button>
+    </div>
+  </section>
+  <section class="lab-sec">
+    <div class="lab-sec-h"><span class="lab-num">03</span><h2>Hiệu năng</h2></div>
+    <div class="lab-box"><div id="stats"></div></div>
+  </section>
+  </div>
+</aside>
+<div class="lab-keys">
+  <span><kbd>Kéo chuột</kbd> xoay</span>
+  <span><kbd>Cuộn</kbd> gần / xa</span>
+  <span><kbd>Chuột phải</kbd> kéo nâng / hạ điểm nhìn</span>
 </div>
-<div id="hint">Kéo chuột: xoay · Lăn chuột: gần / xa · Chuột phải kéo: nâng / hạ điểm nhìn</div>
 <script src="three.min.js"></script>
 <script src="src/entities/recon_drone.js"></script>
 <script>window.ArtilleryGame3D = window.ArtilleryGame3D || {};</script>
@@ -155,7 +179,7 @@
 
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    renderer.setSize(w, h, false);
+    renderer.setSize(w, h);
     cam.aspect = w / h;
     cam.updateProjectionMatrix();
   }

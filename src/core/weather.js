@@ -813,7 +813,8 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
   // ===========================================================================
   // CẬP NHẬT / VẼ
   // ===========================================================================
-  let near = null, far = null, col = null, splash = null, tier = null, scene = null, time = 0, shelterFor = null, shelterT = 0;
+  // shelterDirtyAt: lúc cảnh vật bị phá gần nhất (terrain.damageAt) — mái che có thể đã đổi
+  let near = null, far = null, col = null, splash = null, tier = null, scene = null, time = 0, shelterFor = null, shelterT = 0, shelterDirtyAt = -1e9;
   let driftX = 0, driftZ = 0;
   const curW = () => { const g = window.game, T = g && g.terrain; return T && T.weather; };
   const COUNTS = { low: [3500, 2500, 400], medium: [6000, 5000, 700], high: [9000, 9000, 1100], ultra: [12000, 12000, 1500] };
@@ -888,9 +889,11 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
     ensureLayers(G);
     setVisible(true);
     time += dt;
-    // bản đồ hứng mưa: dựng khi đổi bản đồ, làm lại vài giây một lần (nhà sập, mái thủng)
+    // bản đồ hứng mưa: dựng khi đổi bản đồ; làm lại vài giây một lần CHỈ trong ~25 s sau khi cảnh vật bị phá (nhà sập,
+    // mái thủng — sập kéo dài vài giây sau phát nổ). Mỗi lần dựng vẽ lại cả địa hình + nhà cửa toàn bản đồ (không lọc theo
+    // camera) -> trước đây cứ 8 s khựng một nhịp suốt trận mưa dù không có gì đổi
     shelterT += dt;
-    if (shelterFor !== T.map || shelterT > 8) { buildShelter(G.renderer, T); shelterFor = T.map; shelterT = 0; }
+    if (shelterFor !== T.map || (shelterT > 8 && performance.now() - shelterDirtyAt < 25000)) { buildShelter(G.renderer, T); shelterFor = T.map; shelterT = 0; }
     const cam = G.camera.position;
     const dir = G.camera.getWorldDirection(new THREE.Vector3());
     const hl = Math.hypot(dir.x, dir.z) || 1;
@@ -1032,6 +1035,7 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
 
   if (typeof THREE !== 'undefined') { installChunks(); installMist(); }
   return {
+    shelterDirty() { shelterDirtyAt = performance.now(); },
     forMap, pref, setPref, seedFor, matches, markDry, floodMaterial, addCraterPool, craterWaterAt, update, beforeRender, afterRender, sightK, buildShelter, blast,
     WINDV, gust, rainK, puddleAt, SKYH, SKYZ,
     U: WET, get glsl() { return glsl; }, get flash() { return flash; },

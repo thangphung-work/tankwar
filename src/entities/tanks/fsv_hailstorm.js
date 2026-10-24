@@ -1106,26 +1106,44 @@
     blur.visible = false;
     barrel.add(blur);
 
-    // Chớp lửa đầu nòng: 1 đĩa nhìn thẳng + 2 cánh lửa dọc theo nòng
-    const flashTex = VehicleKit.getMuzzleFlashTexture();
-    const flashMat = new THREE.MeshBasicMaterial({
-      map: flashTex, color: 0xffffff, transparent: true, opacity: 0,
+    // Chớp lửa đầu nòng: pháo xoay chỉ khai hỏa ở MỘT vị trí cố định của vòng nòng (nòng nào quay tới đó thì nổ) ->
+    // gắn vào barrel (không quay theo cluster), lệch khỏi trục đúng bằng bán kính vòng nòng.
+    // 1 đĩa nhìn dọc nòng + 3 lưỡi lửa dọc nòng xếp 60° quanh trục (nhìn góc nào cũng ra hình ngọn lửa); mỗi phát
+    // đổi biến thể texture / cỡ / góc xoay
+    const atlas = VehicleKit.getAutocannonFlashAtlas();
+    const mkMat = (map) => new THREE.MeshBasicMaterial({
+      map, color: 0xffffff, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
     });
+    const flashMat = mkMat(atlas.front), sideMat = mkMat(atlas.side);
+    const quadGeos = (w, h, tipAtOrigin) => [0, 1, 2, 3].map(q => {
+      const g = new THREE.PlaneGeometry(w, h), uv = g.attributes.uv;
+      const u0 = (q % 2) * 0.5, v0 = (q >> 1) ? 0 : 0.5;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * 0.5, v0 + uv.getY(i) * 0.5);
+      // lưỡi lửa: dựng dọc trục -Z, đỉnh ảnh (miệng nòng) ở gốc tọa độ
+      if (tipAtOrigin) { g.rotateX(Math.PI / 2); g.translate(0, 0, -h / 2); }
+      return g;
+    });
+    const discGeos = quadGeos(5.2, 5.2, false), sideGeos = quadGeos(4.2, 11, true);
     const flash = new THREE.Group();
-    flash.position.z = z1 - 1.2;
-    const disc = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 6.5), flashMat);
+    const FIRE_STATION = Math.PI * 0.5;   // vị trí khai hỏa trên vòng nòng (12 giờ)
+    flash.position.set(Math.cos(FIRE_STATION) * ringR, Math.sin(FIRE_STATION) * ringR, z1 - 0.15);
+    const disc = new THREE.Mesh(discGeos[0], flashMat);
+    disc.position.z = -0.5;
     flash.add(disc);
-    for (const rz of [0, Math.PI / 2]) {
-      const petal = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 9.5), flashMat);
-      petal.rotation.set(Math.PI / 2, 0, rz);
-      petal.position.z = -3.6;
-      flash.add(petal);
+    const petals = [];
+    for (let k = 0; k < 3; k++) {
+      const arm = new THREE.Group();
+      arm.rotation.z = k * Math.PI / 3;
+      const petal = new THREE.Mesh(sideGeos[k], sideMat);
+      arm.add(petal);
+      flash.add(arm);
+      petals.push(petal);
     }
     flash.visible = false;
     barrel.add(flash);
 
-    return { cluster, heatMat, blur, blurMat, flash, flashMat, omega: 0 };
+    return { cluster, heatMat, blur, blurMat, flash, flashMat, sideMat, disc, petals, discGeos, sideGeos, omega: 0 };
   }
 
   // ===========================================================================
@@ -1168,6 +1186,7 @@
     // Hiệu ứng tàng hình (spg.js) có thể bật depthWrite cho mọi vật liệu -> giữ tắt cho lớp trong suốt
     gun.blurMat.depthWrite = false;
     gun.flashMat.depthWrite = false;
+    gun.sideMat.depthWrite = false;
 
     // Vòng mờ đậm dần khi quay > 45% công suất, ngả màu nóng theo nhiệt độ nòng
     const blurK = Math.max(0, (spin - 0.45) / 0.55);
@@ -1179,22 +1198,53 @@
       gun.blurMat.color.setRGB(0.17 + e.r * hot * 0.8, 0.165 + e.g * hot * 0.5, 0.155 + e.b * hot * 0.3);
     }
 
-    // Chớp lửa: bùng lên mỗi viên đạn (spg.js đặt gatlingShotFlash = 1), tắt rất nhanh
+    // Chớp lửa: bùng lên mỗi viên đạn (spg.js đặt gatlingShotFlash = 1) rồi tắt gần như ngay (chớp thật ~1-2 ms: ở 30
+    // phát/s khung hình có khung không, nhấp nháy như phim quay thật). Mỗi phát khác hẳn nhau: biến thể texture, cỡ, độ dài
+    // lưỡi lửa, góc xoay; thỉnh thoảng một phát khí thuốc phóng bén lửa lần hai (lưỡi lửa dài vọt ra)
     let f = u.gatlingShotFlash || 0;
     if (u.isDead) f = 0;
     if (f > 0.02) {
       if (f >= 0.999) {
-        const k = 0.75 + Math.random() * 0.5;
-        gun.flash.scale.set(k, k, 0.8 + Math.random() * 0.6);
-        gun.flash.rotation.z = Math.random() * Math.PI;
+        const R = Math.random;
+        const big = R() < 0.15, k = (0.6 + R() * 0.55) * (big ? 1.2 : 1);
+        gun.flash.scale.set(k, k, (0.65 + R() * 0.6) * (big ? 1.5 : 1));
+        gun.flash.rotation.z = R() * Math.PI * 2;
+        gun.disc.geometry = gun.discGeos[(R() * 4) | 0];
+        for (const p of gun.petals) p.geometry = gun.sideGeos[(R() * 4) | 0];
+        gun.flashPeak = 0.75 + R() * 0.25;
+        muzzleSmoke(gun, u);
       }
       gun.flash.visible = true;
-      gun.flashMat.opacity = Math.min(1, f) * stealth;
-      u.gatlingShotFlash = f * Math.exp(-dt * 28);
+      const o = Math.min(1, f) * (gun.flashPeak || 1) * stealth;
+      gun.flashMat.opacity = o;
+      gun.sideMat.opacity = o * 0.9;
+      u.gatlingShotFlash = f * Math.exp(-dt * 60);
     } else {
       gun.flash.visible = false;
       u.gatlingShotFlash = 0;
     }
+  }
+
+  // Khói thuốc phóng: mỗi phát một túm xám nhạt phụt ra trước miệng nòng, hãm nhanh rồi bốc lên -> xả liên tục thành làn
+  // khói mỏng đọng trước cụm nòng. Chỉ khi xe trong tầm nhìn gần
+  const _sp = new THREE.Vector3(), _sd = new THREE.Vector3();
+  function muzzleSmoke(gun, u) {
+    gun.smokeT = (gun.smokeT || 0) + 1;
+    if (gun.smokeT < 2) return;                 // 30 phát/s -> ~15 túm/s là đủ dày
+    gun.smokeT = 0;
+    const G = typeof window !== 'undefined' && window.game, fx = G && G.effectsManager && G.effectsManager.fx;
+    if (!fx || !fx.smoke) return;
+    if (!u.alwaysFX && typeof SpgFXPool !== 'undefined' && !SpgFXPool.isNearView(u.x, u.z, 700)) return;
+    const m = gun.flash.matrixWorld;
+    _sp.setFromMatrixPosition(m);
+    _sd.setFromMatrixColumn(m, 2).normalize().negate();
+    const R = Math.random, sp = 14 + R() * 12, g = 0.66 + R() * 0.08;
+    fx.smoke.add({
+      x: _sp.x + _sd.x * 2, y: _sp.y + _sd.y * 2, z: _sp.z + _sd.z * 2,
+      vx: _sd.x * sp + (R() - 0.5) * 3, vy: _sd.y * sp + 1 + R() * 2, vz: _sd.z * sp + (R() - 0.5) * 3,
+      size: 0.7 + R() * 0.5, grow: 3.5, drag: 4, grav: -1.5, life: 0.9 + R() * 0.6, alpha: 0.16 + R() * 0.08,
+      fadeIn: 0.03, c0: [g, g * 0.98, g * 0.95], cell: 0, floor: false
+    });
   }
 
   // ===========================================================================

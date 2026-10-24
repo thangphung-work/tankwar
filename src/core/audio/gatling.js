@@ -5,32 +5,30 @@
 
 // Va chạm thép dựng theo vật lý (synthGunshot): tc = thời gian tiếp xúc (s), len = độ dài mẫu (s),
 // m = các nhóm mode [số mode, tần thấp, tần cao (Hz), t60 mode thấp, t60 mode cao (s), mức]. '…Hull' = rơi trên vỏ thép xe
-const LOW_HULL = [18, 55, 420, 0.14, 0.05, 0.6];   // vỏ xe bị gõ rung trầm theo
+const LOW_HULL = [20, 45, 320, 0.12, 0.04, 0.8];   // vỏ xe bị gõ rung trầm theo
 const STEEL = {
-  // tấm giáp / váy xích / gạch ERA (thép dày, nặng)
-  // (rơi đất: mode thấp biên độ lớn bị đất ép tắt nhanh nhất; chạm bằng mép / góc trước nên xung ngắn hơn chạm cả mặt)
-  debrisPlate: { tc: 0.0018, len: 0.25, m: [[70, 150, 5000, 0.045, 0.025, 1]] },
-  debrisPlateHull: { tc: 0.0004, len: 1.3, m: [[70, 110, 8000, 0.8, 0.04, 1], [18, 55, 420, 0.14, 0.05, 1.2]] },
-  // phụ kiện thép nhỏ: hộp đồ, đèn, lan can, giá súng, vỏ kính ngắm
-  debrisMetal: { tc: 0.0012, len: 0.22, m: [[30, 350, 7000, 0.1, 0.018, 1]] },
-  debrisMetalHull: { tc: 0.00018, len: 0.75, m: [[45, 300, 9000, 0.45, 0.03, 1], LOW_HULL] },
-  // vỏ rỗng (bình nhiên liệu, ống phóng): vỏ mỏng + khoang khí cộng hưởng "boong" đục
-  debrisCan: { tc: 0.0015, len: 0.35, m: [[35, 240, 6000, 0.22, 0.03, 1], [3, 170, 320, 0.12, 0.08, 1.5]] },
-  debrisCanHull: { tc: 0.00025, len: 0.9, m: [[45, 240, 8000, 0.6, 0.04, 1], [3, 170, 320, 0.25, 0.15, 1.5], LOW_HULL] },
-  // mắt xích thép đúc: khối đặc nhỏ -> "cạch" đanh, mode cao
-  debrisLink: { tc: 0.0007, len: 0.25, m: [[20, 600, 8000, 0.14, 0.02, 1]] },
-  debrisLinkHull: { tc: 0.00012, len: 0.7, m: [[25, 600, 9000, 0.5, 0.03, 1], LOW_HULL] },
-  // đạn nổ / va đập lớn lên thân xe: giáp dày hàng chục mm bắt chặt vào khung, đầy thiết bị bên trong -> rung tắt nhanh,
-  // "CHÁT-THỤP" nặng chứ không ngân như chuông; cả khối xe hàng chục tấn rung trầm theo
-  hullBlast: { tc: 0.0003, len: 0.9, m: [[80, 70, 7000, 0.45, 0.025, 1], [25, 40, 300, 0.25, 0.08, 1.4]] },
-  // đạn nhỏ đập vỏ xe (nghe trong khoang): "tạch / keng" khô, tắt nhanh
-  hullTick: { tc: 0.00008, len: 0.35, m: [[40, 500, 9000, 0.18, 0.02, 1], [15, 80, 500, 0.08, 0.04, 0.8]] },
-  // tôn / khung thép mỏng: tấm rộng mỏng, mode thấp dày đặc ngân lâu -> "oàng" rung rinh
-  sheetMetal: { tc: 0.0006, len: 1.6, m: [[90, 50, 6000, 1.2, 0.08, 1]] },
-  // khối tháp thép hàng chục tấn đập xuống đất: tiếp xúc rất lâu -> chỉ còn "RẦM" trầm đục, ít âm thép
-  turretLand: { tc: 0.008, len: 1.0, m: [[50, 45, 2500, 0.35, 0.03, 1], [20, 30, 200, 0.3, 0.1, 1.5]] },
-  // thanh cốt thép đứt bật: thanh dài mảnh -> ngân có cao độ thật (mode uốn của thanh tự do)
-  rebar: { tc: 0.0001, len: 0.8, m: [[24, 700, 9000, 0.4, 0.03, 1]] }
+  // tấm giáp / váy xích / gạch ERA (thép dày, nặng): va đập đục, nặng trịch, dải cao bị triệt tiêu nhanh
+  debrisPlate: { tc: 0.003, len: 0.2, m: [[45, 90, 1600, 0.03, 0.012, 1]] },
+  debrisPlateHull: { tc: 0.0008, len: 0.4, m: [[50, 80, 2000, 0.07, 0.016, 1], [20, 45, 320, 0.12, 0.04, 1.2]] },
+  // phụ kiện thép nhỏ: hộp đồ, đèn, lan can... tiếng chạm "cộc" đanh gọn, không có đuôi rít
+  debrisMetal: { tc: 0.0025, len: 0.16, m: [[25, 180, 1800, 0.035, 0.01, 1]] },
+  debrisMetalHull: { tc: 0.0006, len: 0.32, m: [[30, 180, 2200, 0.06, 0.015, 1], LOW_HULL] },
+  // vỏ rỗng (bình nhiên liệu, ống phóng): khoang khí cộng hưởng "thùng / boong" đục, không leng keng
+  debrisCan: { tc: 0.003, len: 0.22, m: [[25, 140, 1500, 0.05, 0.015, 1], [3, 110, 240, 0.07, 0.03, 1.2]] },
+  debrisCanHull: { tc: 0.001, len: 0.4, m: [[30, 140, 1800, 0.08, 0.02, 1], [3, 110, 240, 0.12, 0.06, 1.2], LOW_HULL] },
+  // mắt xích thép đúc: khối đặc nặng -> "cạch" đanh gọn, tắt tức thì
+  debrisLink: { tc: 0.002, len: 0.14, m: [[20, 220, 2000, 0.03, 0.01, 1]] },
+  debrisLinkHull: { tc: 0.0005, len: 0.3, m: [[25, 220, 2400, 0.06, 0.015, 1], LOW_HULL] },
+  // đạn nổ / va đập lớn lên thân xe: khối thép hàng chục tấn rung "THỤP", giáp bắt chặt triệt tiêu âm cao
+  hullBlast: { tc: 0.0006, len: 0.65, m: [[60, 50, 2200, 0.12, 0.015, 1], [25, 35, 200, 0.18, 0.06, 1.6]] },
+  // đạn nhỏ đập vỏ xe (nghe trong khoang): "tạch" khô, tắt nhanh
+  hullTick: { tc: 0.0001, len: 0.25, m: [[30, 350, 4500, 0.08, 0.012, 0.8], [15, 70, 420, 0.06, 0.03, 0.8]] },
+  // tôn / khung thép mỏng: tấm rộng mỏng rung dải trung-trầm
+  sheetMetal: { tc: 0.001, len: 0.8, m: [[60, 50, 2400, 0.25, 0.03, 1]] },
+  // khối tháp thép hàng chục tấn đập xuống đất: chấn động địa chấn "RẦM" cực trầm, không ngân chuông
+  turretLand: { tc: 0.012, len: 0.9, m: [[40, 35, 1200, 0.12, 0.018, 1], [25, 25, 160, 0.35, 0.12, 2.0]] },
+  // thanh cốt thép đứt bật
+  rebar: { tc: 0.0003, len: 0.45, m: [[20, 400, 3500, 0.12, 0.02, 1]] }
 };
 
 SoundEngine.mixin(class {
@@ -533,6 +531,19 @@ SoundEngine.mixin(class {
         src.playbackRate.value = p * 0.8;
         src.connect(out);
         src.start(t);
+        if (!mg762) {
+          // Một phát 12.7 có ba mốc nghe tách được: sóng nổ đầu nòng, thân áp lực ngắn và khóa nòng chạy sau đó.
+          // Lớp này giữ cú bắn "đanh và nặng" mà không kéo đuôi mọi phát thành tiếng ù liên tục khi bắn loạt.
+          this.snap(out, t, remote ? 0.18 : 0.28, (remote ? 2600 : 4300) * p, 3.2);
+          this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 155 * p, Q: 0.75,
+            gain: remote ? 0.36 : 0.62, attack: 0.0007, dur: remote ? 0.07 : 0.052 });
+          if (!remote) {
+            this.gunMech(out, t + 0.024 + Math.random() * 0.004, { gain: 0.12, mass: 0.42, bright: 0.55, p: 1 });
+            // phản xạ đầu tiên từ mặt đất / thân xe, nhỏ và lệch thời gian để từng phát không giống hệt nhau
+            this.burst(out, t + 0.055 + Math.random() * 0.025, { buffer: this.pinkNoiseBuffer, filter: 'bandpass',
+              freq: 720 + Math.random() * 280, Q: 0.8, gain: 0.055, attack: 0.002, dur: 0.065 });
+          }
+        }
         if (inside) {
           // thân tháp thép rung theo cú giật của bệ súng: tiếng "thụp" trầm dội trong khoang + khung bệ lách cách
           this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, freqEnd: 90, sweep: 0.09, drive: 2, gain: 1.3, attack: 0.002, dur: 0.14 });
@@ -565,14 +576,37 @@ SoundEngine.mixin(class {
         // Đại liên 12.7mm trên nóc xe: vỏ đồng thau văng lên nóc thép, nảy leng keng + mắt xích dây đạn
         // (mẫu dựng theo vật lý: ống kim loại rỗng rung + nảy vài lần, synthGunshot 'case127')
         // (7.62mm: vỏ nhỏ, nhẹ — rơi thưa hơn trong tai vì nhỏ tiếng; dùng chung mẫu vỏ / mắt xích)
-        if (Math.random() < (mg762 ? 0.5 : 0.8)) this.dropCasing(t + 0.22 + Math.random() * 0.3, 'case127', inside);
-        if (Math.random() < (mg762 ? 0.4 : 0.6)) this.dropCasing(t + 0.15 + Math.random() * 0.25, 'link127', inside);
+        // 12.7 trên xe trinh sát có vỏ / mắt xích 3D thật; recon_marten gọi playEjectedCasingHit đúng lúc vật thể chạm nóc.
+        // Trạm 7.62 điều khiển từ xa không có mô phỏng đó nên vẫn dùng lịch rơi ước lượng.
+        if (mg762 && Math.random() < 0.5) this.dropCasing(t + 0.18 + Math.random() * 0.25, 'case127', inside);
+        if (mg762 && Math.random() < 0.4) this.dropCasing(t + 0.13 + Math.random() * 0.22, 'link127', inside);
       } else if (Math.random() < 0.3) {
         // Pháo 6 nòng 30mm: vỏ đạn thoát qua máng dưới hộp pháo, rơi thẳng xuống đất cạnh xe (không nảy trên nóc).
         // Giữa tiếng gầm 30 phát/giây chỉ còn nghe lộp cộp đục, rất nhỏ — trước đây ~10 vỏ/giây nảy ngân trên nóc thép
         // thành tràng "leng keng" như chuông gió, lấn cả tiếng súng
         this.dropChuteCasing(t + 0.18 + Math.random() * 0.2, 0.55);
       }
+    }
+  }
+
+  /** Va chạm của chính vỏ / mắt xích 3D trên xe trinh sát; gọi tại khung hình vật thể chạm nóc. */
+  playEjectedCasingHit(kind = 'case127', strength = 1, pan = 0, roof = true) {
+    if (!this.ready()) return;
+    const t = this.ctx.currentTime, link = kind === 'link127';
+    this._caseHitTimes = (this._caseHitTimes || []).filter(x => t - x < 0.045);
+    if (this._caseHitTimes.length >= 4) return; // loạt dài: giữ thành cụm lách cách, không thành màn nhiễu trắng
+    this._caseHitTimes.push(t);
+    const k = Math.max(0.16, Math.min(1.25, strength));
+    const out = this.voice({ bus: this.vehicleBus, gain: (link ? 0.055 : 0.105) * k,
+      wet: roof ? 0.055 : 0.025, lowpass: roof ? 12500 : 3600, pan: Math.max(-0.8, Math.min(0.8, pan)) });
+    if (roof) {
+      this.playCaseHit(out, t, kind, 0.94 + Math.random() * 0.14, 0.78 + 0.22 * k);
+      // tấm nóc thép đáp lại bằng một tiếng "tộp" rất ngắn; mắt xích gần như không kích rung tấm.
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: link ? 520 : 760,
+        gain: link ? 0.055 : 0.13, attack: 0.0005, dur: link ? 0.018 : 0.032 });
+    } else {
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: link ? 850 : 1100,
+        gain: link ? 0.12 : 0.2, attack: 0.0005, dur: 0.022 });
     }
   }
 

@@ -132,7 +132,7 @@ class TacticalMapController {
   // TỌA ĐỘ (tỉ lệ đều, phóng to / kéo)
   // ---------------------------------------------------------------------------
   get worldSize() { return this.game.terrain ? this.game.terrain.width : MapGen.SIZE; }
-  get k() { return (Math.min(this.cssW, this.cssH) - 40) / this.worldSize * this.view.zoom; }
+  get k() { return Math.max(this.cssW, this.cssH) / this.worldSize * this.view.zoom; }
 
   worldToScreen(wx, wz) {
     const k = this.k;
@@ -154,7 +154,8 @@ class TacticalMapController {
   }
   zoomAt(sx, sy, f) {
     const before = this.localToWorld(sx, sy);
-    this.view.zoom = Math.max(1, Math.min(6, this.view.zoom * f));
+    const minZ = Math.min(1, (Math.min(this.cssW, this.cssH) - 40) / Math.max(this.cssW, this.cssH));
+    this.view.zoom = Math.max(minZ, Math.min(6, this.view.zoom * f));
     const k = this.k;
     this.view.cx = before.x - (sx - this.cssW / 2) / k;
     this.view.cz = before.z - (sy - this.cssH / 2) / k;
@@ -167,7 +168,15 @@ class TacticalMapController {
     this.view.cx = p.x; this.view.cz = p.z;
     this.clampView();
   }
-  resetView() { this.view = { zoom: 1, cx: 0, cz: 0 }; }
+  resetView() {
+    const minZ = Math.min(1, (Math.min(this.cssW, this.cssH) - 40) / Math.max(this.cssW, this.cssH));
+    if (Math.abs(this.view.zoom - 1) < 0.05 && this.view.cx === 0 && this.view.cz === 0) {
+      this.view = { zoom: minZ, cx: 0, cz: 0 };
+    } else {
+      this.view = { zoom: 1, cx: 0, cz: 0 };
+    }
+    this.clampView();
+  }
 
   // ---------------------------------------------------------------------------
   // CHUỘT: nhấp chọn mục tiêu (đo từ xe), Shift + kéo: đo 2 điểm, chuột phải: kéo bản đồ
@@ -250,15 +259,11 @@ class TacticalMapController {
     return best;
   }
 
-  // Nhấp lên minimap radar góc màn hình (vòng tròn quanh xe mình — RadarMinimap.view): chỉ khóa được xe đang vẽ trong vòng
-  lockFromMinimap(e) {
-    const g = this.game, me = g.player, cv = document.getElementById('aow-minimap-canvas');
-    if (!cv || !me || me.isDead || !g.units || !g.worldWidth || typeof RadarMinimap === 'undefined') return false;
-    if (this.mapLost()) return true;   // nuốt cú nhấp (không mở bản đồ — toggle tự báo)
-    const r = cv.getBoundingClientRect();
-    if (!r.width || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return false;
+  // Xe địch đang vẽ trong vòng minimap radar gần điểm (clientX, clientY); null nếu không trúng xe nào
+  minimapEnemyAt(cv, clientX, clientY) {
+    const g = this.game, r = cv.getBoundingClientRect();
     const css = r.width / cv.width, V = RadarMinimap.view(g, cv);
-    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const mx = clientX - r.left, my = clientY - r.top;
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     let best = null, bd = coarse ? 18 : 12;
     for (const u of g.units) {
@@ -270,9 +275,43 @@ class TacticalMapController {
       const d = Math.hypot(s.x * css - mx, s.y * css - my);
       if (d < bd) { bd = d; best = u; }
     }
+    return best;
+  }
+
+  // Nhấp lên minimap radar góc màn hình (vòng tròn quanh xe mình — RadarMinimap.view): chỉ khóa được xe đang vẽ trong vòng
+  lockFromMinimap(e) {
+    const g = this.game, me = g.player, cv = document.getElementById('aow-minimap-canvas');
+    if (!cv || !me || me.isDead || !g.units || !g.worldWidth || typeof RadarMinimap === 'undefined') return false;
+    if (this.mapLost()) return true;   // nuốt cú nhấp (không mở bản đồ — toggle tự báo)
+    const r = cv.getBoundingClientRect();
+    if (!r.width || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return false;
+    const best = this.minimapEnemyAt(cv, e.clientX, e.clientY);
     if (!best) return false;
     this.lockFromMap(best);
     return true;
+  }
+
+  // Điểm chỉ định cho lệnh bộ đàm (quick_comms.js) khi con trỏ nằm trên bản đồ lớn đang mở hoặc trong vòng minimap:
+  // { x, z, enemy } theo tọa độ thế giới; null nếu con trỏ không ở trên bản đồ nào (hoặc bản đồ đang mất tín hiệu)
+  pickAt(clientX, clientY) {
+    const g = this.game;
+    if (!g.player || !g.units || !g.worldWidth || this.mapLost()) return null;
+    const inRect = (r) => r.width && clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    if (this.isOpen) {
+      const r = this.canvas.getBoundingClientRect();
+      if (!inRect(r)) return null;
+      const p = this.screenToWorld(clientX, clientY);
+      return { x: p.x, z: p.z, enemy: this.enemyAt(clientX - r.left, clientY - r.top) };
+    }
+    const cv = document.getElementById('aow-minimap-canvas');
+    if (!cv || typeof RadarMinimap === 'undefined') return null;
+    const r = cv.getBoundingClientRect();
+    if (!inRect(r)) return null;
+    const css = r.width / cv.width, V = RadarMinimap.view(g, cv);
+    const px = (clientX - r.left) / css, py = (clientY - r.top) / css;
+    if (Math.hypot(px - V.cx, py - V.cy) > V.Rpx) return null;   // góc vuông ngoài vòng radar
+    const p = RadarMinimap.toWorld(g, cv, px, py);
+    return { x: p.x, z: p.z, enemy: this.minimapEnemyAt(cv, clientX, clientY) };
   }
 
   // Lái tự động tới điểm chọn trên bản đồ: cùng cơ chế chuột phải xuống đất trong màn hình 3D
@@ -541,6 +580,7 @@ class TacticalMapController {
     if (g.player && !g.player.isDead) this.drawRanges(ctx, k);
     this.drawIntel(ctx, k);
     this.drawDrive(ctx);
+    if (typeof QuickComms !== 'undefined') QuickComms.drawOnMap(ctx, (x, z) => this.worldToScreen(x, z));
     if (g.player) this.drawPlayer(ctx);
     this.drawLock(ctx);
     this.drawTarget(ctx);

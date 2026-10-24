@@ -52,10 +52,19 @@
     }
     const hud = document.getElementById('hud-overlay');
     if (hud) hud.style.display = 'none';
+    function hideAim() {
+      if (g.reticle3D) g.reticle3D.visible = false;
+      if (g.lockReticle3D) g.lockReticle3D.visible = false;
+      if (g.spreadRing) g.spreadRing.visible = false;
+      if (g._blastZone) g._blastZone.visible = false;
+      if (g.trajectoryLine) g.trajectoryLine.visible = false;
+      if (g._aimAnchor) g._aimAnchor.visible = false;
+      if (g._driveMarker) g._driveMarker.visible = false;
+    }
     const origUpdate = g.update;
-    g.update = function (dt) { fly(dt); origUpdate.call(this, dt); followPlayer(); };
+    g.update = function (dt) { fly(dt); origUpdate.call(this, dt); followPlayer(); hideAim(); };
     const origRender = g.render;
-    g.render = function () { applyCam(); origRender.call(this); };
+    g.render = function () { applyCam(); hideAim(); origRender.call(this); };
     g.camera.far = Math.max(g.camera.far, 20000);
     g.camera.updateProjectionMatrix();
     buildUI();

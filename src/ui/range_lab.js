@@ -45,8 +45,9 @@
   const FIELD = (q.get('field') || lsField || 'flat') === 'village' ? 'village' : 'flat';
   // phải bật trước khi game sinh bản đồ (map_gen.js nạp trước file này, game.js nạp sau)
   if (window.MapGen && MapGen.setTestField) MapGen.setTestField(FIELD === 'flat');
-  // game dựng thẳng bản đồ này ngay lúc khởi tạo (game.js) -> prepareMap bên dưới không phải dựng lại
-  window.BOOT_MAP = { type: BIOME, seed: SEED };
+  // Không dựng bản đồ đồng bộ ngay trong constructor game: thao tác đó chặn main thread nên
+  // spinner cũng đứng im. boot() sinh dữ liệu map trong Worker trước, rồi mới dựng mesh.
+  window.BOOT_MAP = null;
 
   // Màn chờ: nạp script + dựng bản đồ mất vài giây, trước đây chỉ thấy trang trống / sảnh lóe lên
   const loader = (() => {
@@ -101,9 +102,14 @@
     mm.selectedMapType = BIOME; mm.mapSeed = SEED; mm.state = 'IN_GAME';
     mm.preparedMapKey = BIOME + ':' + SEED;
     clearInterval(mm.searchInterval);
-    loader.stage('ĐANG DỰNG BẢN ĐỒ…');
-    // nhường một nhịp cho trình duyệt vẽ chữ trước khi dựng bản đồ (chạy liền một mạch, chặn khung hình)
-    setTimeout(() => start(g, mm), 30);
+    loader.stage('ĐANG SINH ĐỊA HÌNH NỀN…');
+    // MapGen chạy trong Worker để animation loading và giao diện không bị treo. Nếu trình
+    // duyệt không hỗ trợ Worker, prepareMap bên dưới tự rơi về đường đồng bộ cũ.
+    const prep = window.MapGen && MapGen.prefetch ? MapGen.prefetch(BIOME, SEED) : Promise.resolve(false);
+    prep.catch(() => false).then(() => {
+      loader.stage('ĐANG DỰNG CẢNH 3D…');
+      requestAnimationFrame(() => setTimeout(() => start(g, mm), 20));
+    });
   }
 
   function start(g, mm) {
@@ -806,9 +812,7 @@
         <div class="rg-sub">Lái & bắn như trong trận — <kbd>Ctrl</kbd> kính ngắm</div></div></div>
       <nav>
         <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
-        <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
-        <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
-        <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
+        <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
         <a class="on" href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
       </nav>
       <div class="rg-body">

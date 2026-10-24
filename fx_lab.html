@@ -26,10 +26,8 @@
     </div>
     <nav class="lab-nav">
       <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
       <a class="on" href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
-      <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
-      <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
-      <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
     </nav>
   </header>
 
@@ -1974,10 +1972,22 @@
           continue;
         }
       } else if (p.numeric) {
-        // Tích phân từng bước (có lực cản không khí)
-        if (p.P) stepShot(p.P, p.pos, p.vel, dt);
-        else { p.vel.addScaledVector(p.g, dt).multiplyScalar(Math.exp(-p.drag * dt)); p.pos.addScaledVector(p.vel, dt); }
-        pos = p.pos.clone(); vel = p.vel.clone();
+        // Tích phân chia bước phụ để đạn siêu tốc (APFSDS) không bị nhảy cóc qua vật cản
+        const spMag = p.vel.length();
+        const subSteps = Math.max(1, Math.min(16, Math.ceil(spMag * dt / 8)));
+        const sdt = dt / subSteps;
+        let subHit = null;
+        for (let sIdx = 0; sIdx < subSteps; sIdx++) {
+          if (p.P) stepShot(p.P, p.pos, p.vel, sdt);
+          else { p.vel.addScaledVector(p.g, sdt).multiplyScalar(Math.exp(-p.drag * sdt)); p.pos.addScaledVector(p.vel, sdt); }
+          pos = p.pos.clone(); vel = p.vel.clone();
+          subHit = collide(p.prev, pos);
+          if (subHit) break;
+          p.prev.copy(pos);
+        }
+        if (subHit) {
+          p._hitCache = subHit;
+        }
       } else {
         pos = p.start.clone().addScaledVector(p.v, t).addScaledVector(p.g, 0.5 * t * t);
         if (p.ammo === 'RPG') pos.y += Math.sin(t * 9 + p.wobble) * 0.8;
@@ -2035,7 +2045,8 @@
           }
         }
       }
-      const hit = collide(p.prev, pos);
+      const hit = p._hitCache || collide(p.prev, pos);
+      p._hitCache = null;
       // Chạm nước góc thấp: đạn nảy khỏi mặt nước bay tiếp (cùng luật với trận thật: BallisticsSystem3D.waterSkip)
       if (hit && hit.hitType === 'WATER' && BAL && BAL.waterSkip && !p.guided && !p.kf) {
         if (p._bs === undefined) p._bs = (Math.random() * 4294967296) >>> 0;
@@ -2055,12 +2066,19 @@
       }
       if (hit || p.t >= p.T) {
         const h = hit || { point: pos, normal: new THREE.Vector3(0, 1, 0), object: null, unit: null, hitType: 'GROUND' };
+        // Đặt mesh của đạn cắm vào đúng bề mặt va chạm trước khi kích hoạt nổ
+        if (hit && p.mesh) {
+          const dir = vel.clone().normalize();
+          p.mesh.position.copy(hit.point);
+          if (vel.lengthSq() > 1e-4) p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        }
         applyHit(p, h, vel);
         // Đạn xuyên động năng xuyên thủng tường / vách nhà: còn ~65% vận tốc, bay tiếp phá vách phía sau
         if (hit && p.ammo === 'AP' && (hit.hitType === 'WALL' && p._pierced) && (p.pen === undefined ? 2 : p.pen) > 0) {
           p.pen = (p.pen === undefined ? 2 : p.pen) - 1;
           const dir = vel.clone().normalize();
-          const exit = hit.point.clone().addScaledVector(dir, hit.hitType === 'WALL' ? 14 : 3);
+          const wallThick = (wall.group.userData && wall.group.userData.wallThick) || 1.6;
+          const exit = hit.point.clone().addScaledVector(dir, hit.hitType === 'WALL' ? (wallThick + 0.3) : 3);
           p.numeric = true; p.pos = exit.clone(); p.vel = vel.clone().multiplyScalar(0.65); p.drag = 0.05;
           if (p.P) p.P = Object.assign({}, p.P, { drag: p.P.drag * 1.5 });
           p.prev.copy(exit); p.T = p.t + 3;

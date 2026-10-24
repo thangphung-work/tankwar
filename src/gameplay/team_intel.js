@@ -114,6 +114,9 @@ const TeamIntel = (() => {
     if (d > r * Math.min(still, EQ ? EQ.camoFactor(t) : 1)) return false;
     // màn khói chắn giữa 2 xe: không nhìn thấy (radar trinh sát vẫn bắt được — xem radarContact)
     if (EQ && EQ.smokeBlocks(viewer.x, viewer.z, t.x, t.z)) return false;
+    // khói âm ỉ của xác xe tàn tích quanh cứ điểm
+    const SS = game && game.terrain && game.terrain.strongholdSet;
+    if (SS && SS.smokeBlocks && SS.smokeBlocks(viewer.x, viewer.z, t.x, t.z)) return false;
     const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
     if ((t.forestDens || 0) >= dense && d > FOREST_SPOT && !((t.revealTimer || 0) > 0)) return false;
     if (forestBlocked(viewer, t)) return false;

@@ -178,6 +178,33 @@ const SpgFXPool = {
     return l;
   },
 
+  // NGÂN SÁCH BỤI / KHÓI XE: mỗi hạt là 1 Sprite / Mesh riêng = 1 lượt vẽ trong suốt (không gộp được vì độ mờ từng hạt
+  // khác nhau) — 10 xe chạy trên cát ~500 lượt vẽ + tô chồng nhiều lớp. Quá ngưỡng: xe ở xa thưa bụi trước, xe gần vẫn đủ;
+  // quá hẳn thì bỏ hạt mới. Đếm tổng hạt đang sống của mọi xe, cache 0,1 s
+  FX_SOFT: 220, FX_HARD: 360,
+  _live: 0, _liveAt: 0,
+  liveCount() {
+    const now = performance.now();
+    if (now - this._liveAt < 100) return this._live;
+    this._liveAt = now;
+    const g = window.game || window.artilleryGame;
+    let n = 0;
+    if (g && g.units) for (const u of g.units) if (u.fxParticles) n += u.fxParticles.length;
+    return (this._live = n);
+  },
+  // true = bỏ hạt bụi / khói xe này. dist: cự ly tới xe người chơi (gần ưu tiên giữ)
+  thin(dist) {
+    const n = this.liveCount();
+    if (n < this.FX_SOFT) return false;
+    if (n >= this.FX_HARD) return true;
+    const k = (n - this.FX_SOFT) / (this.FX_HARD - this.FX_SOFT);   // 0..1
+    return Math.random() < k * Math.min(1, dist / 350);
+  },
+  distToPlayer(x, z) {
+    const g = window.game || window.artilleryGame, p = g && g.player;
+    return p ? Math.hypot(x - p.x, z - p.z) : 0;
+  },
+
   isNearView(x, z, range = 1100) {
     const g = window.game || window.artilleryGame;
     const p = g && g.player;
@@ -464,20 +491,14 @@ class SPGUnit3D {
 
     // Dựng mô hình 3D khí tài qua TankModelBuilder
     if (typeof TankModelBuilder !== 'undefined') {
+      // ghi lại các thuộc tính do mô hình đặt lên xe (detachWreck gỡ đúng các thuộc tính này trước khi dựng mô hình mới)
+      const pre = Object.assign({}, this);
       TankModelBuilder.buildModel(this);
+      this._modelKeys = Object.keys(this).filter(k => this[k] !== pre[k]);
     } else {
       this.initMesh3D();
     }
-    // Tối ưu bóng đổ: chi tiết rất nhỏ (bu-lông, móc kéo, ăng-ten mảnh...) không đổ bóng — từ camera trên cao không thấy
-    // khác biệt nhưng bớt hàng chục lượt vẽ trong bản đồ bóng mỗi khung hình
-    if (this.group) {
-      this.group.traverse(o => {
-        if (!o.isMesh || !o.castShadow || o.isInstancedMesh || !o.geometry) return;
-        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-        const bs = o.geometry.boundingSphere;
-        if (bs && bs.radius * Math.max(o.scale.x, o.scale.y, o.scale.z) < 1.6) o.castShadow = false;
-      });
-    }
+    this.trimShadows();
 
     // Khởi tạo bộ não trí tuệ nhân tạo Bot AI
     if (!this.isPlayer && typeof BotAIController !== 'undefined') {
@@ -487,6 +508,7 @@ class SPGUnit3D {
 
   initMesh3D() {
     this.group = new THREE.Group();
+    this.group.userData.vehicleUnit = this;
 
     // Màu sơn quân sự Art of War 3 theo 2 phe tác chiến:
     // - Phe Xanh: Sơn trắng bạc ngụy trang công nghệ cao, sọc xanh dương, đèn LED xanh neon
@@ -2332,6 +2354,7 @@ class SPGUnit3D {
   // HIỆU ỨNG BỤI CÁT CUỘN TRÒN TỪ XÍCH XE THÍCH ỨNG THEO ĐỊA HÌNH
   spawnDustPuff(terrain, wind, isBoosting, terrainInfo = null) {
     if (!this.alwaysFX && !SpgFXPool.isNearView(this.x, this.z)) return;
+    if (!this.alwaysFX && SpgFXPool.thin(SpgFXPool.distToPlayer(this.x, this.z))) return;
     const dustMult = terrainInfo ? (terrainInfo.dustMult || 1.0) : 1.0;
     let dustColor = 0xd8ba73; // Mặc định vàng cát
     if (terrainInfo) {
@@ -2458,6 +2481,7 @@ class SPGUnit3D {
   // HIỆU ỨNG KHÓI ỐNG XẢ DIESEL PHỤT RA TỪ ĐUÔI XE (KHI LEO DỐC NẶNG KHÓI ĐEN DÀY)
   spawnExhaustPuff(isBoosting, isHeavyLoad = false) {
     if (!SpgFXPool.isNearView(this.x, this.z, 900)) return;
+    if (!this.alwaysFX && SpgFXPool.thin(SpgFXPool.distToPlayer(this.x, this.z))) return;
     const size = (isBoosting || isHeavyLoad) ? 3.6 + Math.random() * 2.2 : 2.0 + Math.random() * 1.2;
     // Khói diesel xốp mềm tự nhiên thay vì bọc cầu thô cứng. Tuabin khí cháy sạch: khí xả nóng gần trong suốt, xám nhạt;
     // hybrid chạy điện lúc nhẹ tải nên khói mỏng hơn
@@ -4299,6 +4323,97 @@ class SPGUnit3D {
     this.group.visible = true;
   }
 
+  // Tối ưu bóng đổ: chi tiết rất nhỏ (bu-lông, móc kéo, ăng-ten mảnh...) không đổ bóng — từ camera trên cao không thấy
+  // khác biệt nhưng bớt hàng chục lượt vẽ trong bản đồ bóng mỗi khung hình
+  trimShadows() {
+    if (!this.group) return;
+    this.group.traverse(o => {
+      if (!o.isMesh || !o.castShadow || o.isInstancedMesh || !o.geometry) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      const bs = o.geometry.boundingSphere;
+      if (bs && bs.radius * Math.max(o.scale.x, o.scale.y, o.scale.z) < 1.6) o.castShadow = false;
+    });
+  }
+
+  // Xác xe nằm lại suốt trận: ngay trước khi xuất kích lại, tách nguyên mô hình đang có (móp, cháy sém, tháp văng, bánh /
+  // xích rơi — cùng toàn bộ trạng thái hư hại VehicleDamage) thành một "xác" độc lập, vẫn bắn rã tiếp được như lúc vừa bị
+  // hạ, rồi dựng mô hình mới cho xe. Trả về xác (cùng lớp, isDead, id riêng) hoặc null nếu không tách được (respawn khi đó
+  // trả mô hình cũ về nguyên vẹn như trước)
+  detachWreck() {
+    if (!this.isDead || !this.group || !this.group.parent || !this.group.visible || !this._modelKeys || typeof TankModelBuilder === 'undefined') return null;
+    // tình trạng giáp lắp thêm của lần xuất kích này: ghi trước khi bộ hư hại chuyển sang xác
+    if (typeof Equipment !== 'undefined' && Equipment.noteArmor && this._eq && this._eq.local) Equipment.noteArmor(this);
+    const W = Object.assign(Object.create(Object.getPrototypeOf(this)), this);
+    this._wreckN = (this._wreckN || 0) + 1;
+    W.id = `${this.id}~wreck${this._wreckN}`;
+    W.wreckOf = this;
+    W.isWreckHulk = true;
+    W.isPlayer = false; W.isRemotePlayer = false; W._netProxy = false; W.botAI = null;
+    delete W.netId;
+    if (W.hpGroup) W.hpGroup.visible = false;
+    if (W.reactiveArmorMesh) W.reactiveArmorMesh.visible = false;
+
+    // Gỡ khỏi xe mọi tham chiếu vào mô hình cũ (kể cả tháp đã văng khỏi thân): thuộc tính do mô hình đặt (_modelKeys),
+    // trạng thái hư hại / lưới lá ngụy trang, và mọi thuộc tính khác còn trỏ vào đối tượng 3D cũ (cụm gắn thêm trong trận)
+    const old = new Set();
+    for (const root of [this.group, this.turretGroup]) if (root && root.isObject3D) root.traverse(o => old.add(o));
+    const refsOld = (v, depth) => {
+      if (!v || typeof v !== 'object') return false;
+      if (v.isObject3D) return old.has(v);
+      if (depth <= 0) return false;
+      const proto = Object.getPrototypeOf(v);
+      const vals = Array.isArray(v) ? v : (proto === Object.prototype || proto === null ? Object.values(v) : null);
+      if (!vals) return false;
+      for (let i = 0; i < vals.length && i < 32; i++) if (refsOld(vals[i], depth - 1)) return true;
+      return false;
+    };
+    if (typeof VehicleDamage !== 'undefined' && VehicleDamage.handOver) VehicleDamage.handOver(this, W);
+    const drop = new Set(this._modelKeys.concat(['camoFire', '_cfStatic', '_groupsMarked', 'partGroups', '_eqBuilt', '_eqRadarHead', '_stockSmokeHidden']));
+    const removed = {};
+    for (const k of Object.keys(this)) {
+      if (k === '_modelKeys' || !(drop.has(k) || refsOld(this[k], 3))) continue;
+      removed[k] = this[k];
+      delete this[k];
+    }
+    this.fxDestroyed = false;
+    this.fxWreck = null;
+    this._killSource = null;
+
+    try {
+      TankModelBuilder.buildModel(this);
+    } catch (err) {
+      console.warn('[SPG] detachWreck: không dựng được mô hình mới, giữ mô hình cũ', err);
+      if (this.group && this.group !== W.group && this.group.parent) this.group.parent.remove(this.group);
+      Object.assign(this, removed);
+      this.dmg = W.dmg; this.fxDestroyed = W.fxDestroyed; this.fxWreck = W.fxWreck; this._killSource = W._killSource;
+      return null;
+    }
+    this.trimShadows();
+    this.group.position.set(this.x, this.y || 0, this.z);
+    this.group.rotation.y = this.bodyAngle || 0;
+    if (typeof Equipment !== 'undefined' && Equipment.refit) Equipment.refit(this);
+
+    // Vật liệu dùng chung giữa xác và mô hình mới (bộ vật liệu đệm theo phe...): xác lấy bản riêng giữ màu cháy sém,
+    // bản chung trả màu gốc — không thì xe mới ra trận đen thui theo xác
+    const fresh = new Set();
+    this.group.traverse(o => { if (o.material) for (const m of [].concat(o.material)) fresh.add(m); });
+    const swap = new Map();
+    const own = m => {
+      if (!m || !fresh.has(m)) return m;
+      let c = swap.get(m);
+      if (!c) { c = m.clone(); c.userData = Object.assign({}, m.userData); swap.set(m, c); }
+      return c;
+    };
+    for (const root of [W.group, W.turretGroup]) {
+      if (root && root.isObject3D) root.traverse(o => { if (o.material) o.material = Array.isArray(o.material) ? o.material.map(own) : own(o.material); });
+    }
+    if (swap.size) {
+      for (const m of swap.keys()) if (m.userData && m.userData.fxOrigColor) { m.color.copy(m.userData.fxOrigColor); delete m.userData.fxOrigColor; }
+      if (W.fxWreck && W.fxWreck.charMats) W.fxWreck.charMats = W.fxWreck.charMats.map(m => swap.get(m) || m);
+    }
+    return W;
+  }
+
   // Kẹp toạ độ trong biên bản đồ thật (trước đây kẹp cứng ±1600 của bản đồ 3600 cũ -> bot ở cứ điểm A/C x≈±2790
   // hễ né đạn là phóng hơn 1000 đơn vị về giữa bản đồ, bỏ cứ điểm)
   clampToMap(v, axis) {
@@ -4346,17 +4461,17 @@ SPGUnit3D.MAIN_WEAPONS = {
 // Mốc tiếng thay đạn xe trinh sát theo mốc hoạt cảnh 0..1 (chưa qua VehicleCrew MG_WARP) — PHẢI khớp hoạt cảnh recon_marten (nắp / hộp / dây đạn) và
 // vehicle_crew (MG_KEYS, CHARGE_KEYS: kéo 0.92 -> buông 0.944, kéo 0.955 -> buông 0.974)
 SPGUnit3D.SCOUT_RELOAD_STEPS = [
-  [0.08, 'coverOpen'], [0.20, 'boxOut'], [0.41, 'boxDrop'], [0.52, 'boxGrab'], [0.67, 'boxSeat'], [0.70, 'lidOpen'],
-  [0.75, 'belt'], [0.905, 'coverClose'], [0.92, 'pull'], [0.944, 'release'], [0.955, 'pull'], [0.974, 'chamber']
+  [0.08, 'coverOpen'], [0.14, 'beltOut'], [0.28, 'boxOut'], [0.46, 'boxDrop'], [0.54, 'boxGrab'], [0.70, 'boxSeat'], [0.75, 'lidOpen'],
+  [0.79, 'belt'], [0.915, 'coverClose'], [0.92, 'pull'], [0.944, 'release'], [0.955, 'pull'], [0.974, 'chamber']
 ];
 // giàn rocket: pha trong lượt nạp mỗi quả (vehicle_crew rocketPhase / carryRocket)
 // (khớp VehicleCrew RK_PH: nhấc 0.3 · tống 0.78 -> chốt 0.92)
-SPGUnit3D.SCOUT_ROCKET_STEPS = [[0.3, 'rLift'], [0.78, 'rPush'], [0.92, 'rSeat']];
+SPGUnit3D.SCOUT_ROCKET_STEPS = [[0.06, 'rOpen'], [0.34, 'rLift'], [0.76, 'rPush'], [0.90, 'rSeat'], [0.98, 'rLock']];
 // Nạp thông minh xe trinh sát (scoutSmartReload): ngừng bắn bao lâu (giây) thì tự thay đạn · mốc hoạt cảnh hộp cũ bắt đầu
-// rời khay (khớp recon_marten / MG_KEYS 0.20 — trước mốc này bóp cò thì sập nắp bắn tiếp) · thời gian sập nắp (giây)
+// rời khay (khớp recon_marten / MG_KEYS 0.28 — trước mốc này bóp cò thì sập nắp bắn tiếp) · thời gian sập nắp (giây)
 SPGUnit3D.SCOUT_IDLE_RELOAD = 4;
 SPGUnit3D.SCOUT_EMPTY_WAIT = 1.2;   // bắn hết đạn: chờ bấy nhiêu giây rồi xạ thủ mới bắt đầu thay
-SPGUnit3D.MG_BOX_OUT = 0.2;
+SPGUnit3D.MG_BOX_OUT = 0.28;
 SPGUnit3D.MG_ABORT_T = 0.22;
 SPGUnit3D.RK_ABORT_T = 1.2;   // giàn rocket: bóp cò lúc đang nạp -> xạ thủ chui về xe bấy nhiêu giây rồi giàn mới phóng
 window.SPGUnit3D = SPGUnit3D;

@@ -1293,6 +1293,64 @@ function MapGenFactory() {
 
     // 5a. Boong-ke móng ngựa cũ đã bỏ: điểm tựa phòng thủ giờ là các cứ điểm bê tông dưới ụ đất (strongholds)
     const bunkers = [];
+    // 5a''. TÀN TÍCH TRẬN ĐÁNH QUANH CỨ ĐIỂM (strongholds.js dựng hình): xác xe bị hạ (mô hình xe thật + hư hại thật) và
+    // hố bom lớn nhỏ trên sườn đồi. Bộ số ngẫu nhiên riêng theo hạt giống bản đồ -> mỗi bản đồ một kiểu, mọi máy giống
+    // nhau, không làm lệch phần còn lại của bản đồ. Đặt trước nhà / đá / cây (các vật đó né tàn tích)
+    if (strongholds.length) {
+      const wr = mulberry32((seed ^ 0x6b1d2e37) >>> 0), WR = (a, b) => a + wr() * (b - a);
+      // [loại xe, bán kính chiếm chỗ]: xe tăng Halberd, xe chi viện Hailstorm, pháo tự hành Arbalest, xe trinh sát Marten
+      const KINDS = [['ALL_ROUNDER', 28], ['ALL_ROUNDER', 28], ['GATLING', 28], ['ARTILLERY', 34], ['SCOUT', 18]];
+      const KILLS = ['det', 'det', 'burn', 'burn', 'crew', 'blast'];
+      const inValley = (x, z, r) => {
+        if (Math.hypot(x, z) > rimFoot(x, z) - 90 - r) return false;
+        for (const L of landmarks) if (lmOut(L, x, z) < r + 34) return false;
+        if (Math.abs(x) < SPAWN.halfX + r && ((z > SPAWN.blue.z0 - r && z < SPAWN.blue.z1 + r) || (z > SPAWN.red.z0 - r && z < SPAWN.red.z1 + r))) return false;
+        return true;
+      };
+      for (const c of strongholds) {
+        const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
+        const toW = (f, r) => [c.x + f * ca - r * sa, c.z + f * sa + r * ca];
+        // ngoài khối hầm + sân phễu, không chắn đường thẳng vào cửa hầm, không lấn sang đồi cứ điểm khác
+        const offCore = (f, r, rad) => !(Math.abs(f) < 230 + rad && Math.abs(r) < 140 + rad) && !(Math.abs(f) < PORTAL.APP + 40 && Math.abs(r) < 60 + rad);
+        const farOthers = (x, z, rad) => strongholds.every(o => o === c || Math.hypot(x - o.x, z - o.z) > 360 + rad);
+        const okAt = (x, z, rad, slope) => inValley(x, z, rad) && farOthers(x, z, rad) && !isWater(x, z) && slopeAt(x, z) < slope &&
+          roadClear(x, z, rad * 0.6) && portalClear(x, z, rad * 0.6) && freeOf(x, z, rad);
+        c.wrecks = []; c.craters = [];
+        const nW = 4 + Math.floor(wr() * 3);
+        for (let t = 0; c.wrecks.length < nW && t < nW * 40; t++) {
+          const th = wr() * Math.PI * 2, dist = WR(290, 640);
+          const f = Math.cos(th) * dist, r = Math.sin(th) * dist;
+          const [type, rad] = pick(wr, KINDS);
+          if (!offCore(f, r, rad)) continue;
+          const [x, z] = toW(f, r);
+          if (!okAt(x, z, rad, 0.3) || c.wrecks.some(w => Math.hypot(w.x - x, w.z - z) < 75)) continue;
+          const kill = pick(wr, KILLS);
+          // tháp văng (nổ kho đạn): rơi cách thân vài mét, phải nằm trên đất trống
+          let turret = null;
+          if (type !== 'SCOUT' && kill === 'det' && wr() < (type === 'ALL_ROUNDER' ? 0.6 : 0.35)) {
+            const ta = wr() * Math.PI * 2, td = WR(30, 52), tx = x + Math.cos(ta) * td, tz = z + Math.sin(ta) * td;
+            if (okAt(tx, tz, 12, 0.4) && inValley(tx, tz, 12)) turret = { x: Math.round(tx), z: Math.round(tz), yaw: WR(0, 6.28), roll: WR(-1, 1), flip: wr() < 0.3 };
+          }
+          c.wrecks.push({ x: Math.round(x), z: Math.round(z), angle: WR(0, 6.28), type, team: wr() < 0.5 ? 'BLUE' : 'RED', kill, turret, tRot: WR(-1.6, 1.6), seed: (wr() * 4294967296) >>> 0 });
+          occupied.push({ x, z, r: rad });
+          if (turret) occupied.push({ x: turret.x, z: turret.z, r: 12 });
+        }
+        // hố bom: 1-2 hố lớn (bom / lựu pháo cỡ lớn ~4-5 m) + vài hố nhỏ (lựu pháo / cối ~1,5-2,5 m)
+        const nBig = 1 + Math.floor(wr() * 2), nC = nBig + 3 + Math.floor(wr() * 3);
+        for (let t = 0; c.craters.length < nC && t < nC * 40; t++) {
+          const big = c.craters.length < nBig;
+          const th = wr() * Math.PI * 2, dist = WR(250, 660);
+          const f = Math.cos(th) * dist, r = Math.sin(th) * dist;
+          const R0 = big ? WR(58, 80) : WR(22, 40), rad = R0 * 0.7;
+          if (!offCore(f, r, rad)) continue;
+          const [x, z] = toW(f, r);
+          // trong vòng ụ đất cứ điểm (occupied r 330 chưa ghi) hố vẫn được phép: chỉ né đường / nước / dốc gắt
+          if (!okAt(x, z, rad, 0.4) || c.craters.some(q => Math.hypot(q.x - x, q.z - z) < (q.R + R0) * 0.9)) continue;
+          c.craters.push({ x: Math.round(x), z: Math.round(z), R: Math.round(R0), d: Math.round((big ? WR(12, 16) : WR(5, 9)) * 10) / 10, a: Math.round(WR(0, 6.28) * 100) / 100 });
+          occupied.push({ x, z, r: rad });
+        }
+      }
+    }
     for (const c of strongholds) occupied.push({ x: c.x, z: c.z, r: 330 });
 
     // 5a'. CÔNG TRÌNH PHỤ / VẬT CẢN (props.js dựng hình): hàng rào, ruộng, xác xe, bao cát, hào ẩn xe
@@ -1671,7 +1729,7 @@ function MapGenFactory() {
         } else {
           x = R(-1200, 1200) * K; z = R(-700, 700) * K; ang = R(0, 6.28);
         }
-        if (!clearOfKeys(x, z, 30) || !freeOf(x, z, 20) || isWater(x, z) || slopeAt(x, z) > 0.35 || !roadClear(x, z, 8)) continue;
+        if (!clearOfKeys(x, z, 30) || !freeOf(x, z, 20) || isWater(x, z) || slopeAt(x, z) > 0.35 || !roadClear(x, z, 8) || STRONGHOLD_SITES.some(s => Math.hypot(x - s.x, z - s.z) < 380)) continue;
         props.wrecks.push({ x, z, angle: ang, kind: pick(rng, ['tank', 'tank', 'truck', 'apc']), tilt: R(-0.06, 0.06), roll: R(-0.08, 0.08), turretRot: R(-1.2, 1.2), smoke: rng() < 0.35 });
         occupied.push({ x, z, r: 20 });
         n++;
@@ -2367,8 +2425,27 @@ function MapGenFactory() {
       m.heights[at] = lerp(m.heights[at], h0, k);
       if (k > 0.5 && m.surface[at] === 3) m.surface[at] = 0;   // nền bê tông đô thị -> đất tự nhiên
     }
-    const pad = R + 80, out = o => Math.hypot(o.x - cx, o.z - cz) > pad + (o.r || o.radius || (o.w ? Math.max(o.w, o.d || 0) / 2 : 0));
-    for (const k of ['trees', 'rocks', 'bushes', 'buildings', 'bunkers', 'props', 'forests']) if (Array.isArray(m[k])) m[k] = m[k].filter(out);
+    const pad = R + 80;
+    const radiusOf = o => o.r || o.radius || (o.w ? Math.max(o.w, o.d || 0) / 2 : 0) || 0;
+    // Phòng thử đồng trống không cần dựng nguyên cả bản đồ 5,4 km phía ngoài bãi. Giữ một
+    // vành cảnh quan dày quanh bãi để đường chân trời vẫn tự nhiên, rồi thưa dần chi tiết
+    // nhỏ ở xa. Hash theo tọa độ giúp kết quả ổn định, không làm lệch RNG đồng bộ của map.
+    const density = { trees: 0.34, rocks: 0.3, bushes: 0.22, buildings: 0.72, bunkers: 0.7, props: 0.42, forests: 0.5 };
+    const salt = { trees: 11, rocks: 23, bushes: 37, buildings: 41, bunkers: 53, props: 67, forests: 79 };
+    const hash = (o, s) => {
+      let h = (Math.imul(Math.round(o.x || 0), 73856093) ^ Math.imul(Math.round(o.z || 0), 19349663) ^ s) >>> 0;
+      h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15;
+      return (h >>> 0) / 4294967296;
+    };
+    for (const k of ['trees', 'rocks', 'bushes', 'buildings', 'bunkers', 'props', 'forests']) if (Array.isArray(m[k])) {
+      m[k] = m[k].filter(o => {
+        const d = Math.hypot((o.x || 0) - cx, (o.z || 0) - cz), r = radiusOf(o);
+        if (d <= pad + r) return false;                 // lõi bãi thử phải sạch
+        if (d > 2700 + r) return false;                 // đã có backdrop + sương che đường chân trời
+        if (d < 1850 + r) return true;                  // vành cảnh gần giữ nguyên chi tiết
+        return hash(o, salt[k]) < density[k];           // xa: giữ silhouette, thưa tiểu tiết
+      });
+    }
     m.testField = { x: cx, z: cz, r: R, h: h0 };
   }
   function setTestField(on) { testField = on ? { r: 1000, blend: 350 } : null; }
@@ -2402,10 +2479,11 @@ function MapGenFactory() {
   let workerURL = null;
   const pending = new Map();
   function prefetch(type, seed) {
-    const key = cacheKey(type, seed);
+    const field = !!testField;
+    const key = cacheKey(type, seed) + (field ? ':field' : '');
     if (cache.has(key)) return Promise.resolve(true);
     if (pending.has(key)) return pending.get(key);
-    if (testField || typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') return Promise.resolve(false);
+    if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') return Promise.resolve(false);
     const lay = layout, lmk = landmarkKind;
     const p = new Promise(resolve => {
       let w;
@@ -2414,7 +2492,7 @@ function MapGenFactory() {
           // gọi thẳng biểu thức hàm (không dựa vào tên: bản build rút gọn đổi tên MapGenFactory)
           const src = 'const MapGen = (' + MapGenFactory.toString() + ')();\n' +
             'onmessage = e => { const d = e.data; let m;\n' +
-            '  try { MapGen.setLayout(d.layout); MapGen.setLandmark(d.landmark); m = MapGen.generate(d.type, d.seed); }\n' +
+            '  try { MapGen.setLayout(d.layout); MapGen.setLandmark(d.landmark); MapGen.setTestField(!!d.field); m = d.field ? MapGen.get(d.type, d.seed) : MapGen.generate(d.type, d.seed); }\n' +
             '  catch (err) { postMessage({ error: String(err && err.stack || err) }); return; }\n' +
             '  postMessage({ map: MapGen.toPlain(m) }, [m.heights.buffer, m.surface.buffer]); };\n';
           workerURL = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
@@ -2429,7 +2507,7 @@ function MapGenFactory() {
         catch (err) { console.warn('[MapGen] Không nhận được bản đồ từ luồng phụ:', err); done(false); }
       };
       w.onerror = e => { console.warn('[MapGen] Luồng phụ lỗi, sẽ sinh trên luồng chính:', e && e.message); if (e && e.preventDefault) e.preventDefault(); done(false); };
-      w.postMessage({ type, seed, layout: lay, landmark: lmk });
+      w.postMessage({ type, seed, layout: lay, landmark: lmk, field });
     });
     pending.set(key, p);
     return p;

@@ -278,6 +278,8 @@ const Navigator = (() => {
    * Bám đường: nav ={ tx, tz, path, idx, replanT, stuckT, lastD } (tự tạo). Trả về { dx, dz, arrived, dist }
    * Tự tính lại đường khi mục tiêu đổi > 50 đơn vị, mỗi ~3 s, hoặc khi bị kẹt.
    */
+  const PATH_BUDGET = 2;
+  let pathWin = 0, pathRuns = 0;
   function steer(unit, nav, terrain, tx, tz, dt, arriveR = 26) {
     const dGoal = Math.hypot(tx - unit.x, tz - unit.z);
     if (dGoal < arriveR) return { dx: 0, dz: 0, arrived: true, dist: dGoal };
@@ -312,7 +314,15 @@ const Navigator = (() => {
     if (moved) nav.extra = null;
     // Không tìm được đường (findPath trả null): chờ ~1,5 s rồi mới thử lại. Trước đây điều kiện !nav.path chạy lại A*
     // (tới 60000 ô) ở MỌI khung hình chừng nào đích còn không tới được -> 1 bot kẹt đích là tụt khung hình liên tục
-    if (moved || nav.replanT <= 0 || nav.path === undefined || stuck) {
+    // NGÂN SÁCH CHUNG: tối đa PATH_BUDGET lần tìm đường / 16 ms cho mọi bot — nhiều bot cùng tính lại một khung (đích
+    // không tới được: A* duyệt tới 60000 ô ~5-10 ms / lần) cộng dồn thành cú khựng. Quá ngân sách: chạy tiếp đường cũ,
+    // thử lại ở khung sau (đường mới trễ vài chục ms, không ai thấy)
+    const now = performance.now();
+    if (now - pathWin > 16) { pathWin = now; pathRuns = 0; }
+    if ((moved || nav.replanT <= 0 || nav.path === undefined || stuck) && pathRuns >= PATH_BUDGET) {
+      nav.replanT = Math.min(nav.replanT, 0.02);
+    } else if (moved || nav.replanT <= 0 || nav.path === undefined || stuck) {
+      pathRuns++;
       nav.tx = tx; nav.tz = tz;
       nav.path = findPath(terrain, unit, tx, tz, nav.extra);
       nav.idx = 0;
@@ -381,7 +391,16 @@ const Navigator = (() => {
     return null;
   }
 
-  return { findPath, steer, invalidate, nearestDrivable, CELL };
+  // Tính sẵn lưới cơ sở (quét va chạm cả bản đồ, vài trăm ms) lúc chờ ghép trận — trước đây tính ở lần tìm đường
+  // đầu tiên của bot, rơi đúng giây đầu trận. Trả về thời gian tính (ms), 0 nếu đã có / bản đồ chưa dựng
+  function warm(terrain) {
+    if (!terrain || !terrain.built || !terrain.resolveVehicleCollision || grids.has(terrain)) return 0;
+    const t0 = performance.now();
+    baseGrid(terrain);
+    return Math.round(performance.now() - t0);
+  }
+
+  return { findPath, steer, invalidate, nearestDrivable, warm, CELL };
 })();
 
 if (typeof window !== 'undefined') window.Navigator = Navigator;

@@ -905,8 +905,9 @@ class BotAIController {
 
 // Sai số ngắm của bot (σ, nhân tay nghề 0.8–1.25): az / el theo mrad đã theo tỉ lệ game (cùng hệ với dispersion.js),
 // range = sai ước lượng cự ly (tỉ lệ), lead = sai ước lượng vận tốc mục tiêu khi đón đầu (tỉ lệ).
+// Xe có máy tính hỏa lực: σ ngắm ~4-5 lần độ tản của pháo, sai đón đầu ~12% (trước đây 12 mrad / 35%: như ngắm tay).
 // Sau mỗi phát: sai số còn keep (giữ lại) + một phần ngẫu nhiên mới jitter -> 2–3 phát là chỉnh gần trúng.
-BotAIController.AIM_ERR = { az: 12, el: 12, range: 0.04, lead: 0.35, keep: 0.5, jitter: 0.3 };
+BotAIController.AIM_ERR = { az: 5, el: 5, range: 0.04, lead: 0.12, keep: 0.5, jitter: 0.3 };
 
 if (typeof window !== 'undefined') {
   window.BotAIController = BotAIController;

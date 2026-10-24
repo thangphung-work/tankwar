@@ -313,7 +313,7 @@ const KamiUAV = (() => {
       const P = this.player, SB = typeof Strongholds !== 'undefined' && Strongholds.segUnitBox;
       if (ax === undefined) { ax = D.x; ay = D.y; az = D.z; }
       let best = null, bt = 2;
-      for (const u of this.units || []) {
+      for (const u of (this.shotUnits ? this.shotUnits() : this.units) || []) {
         if (u === P || (u.isDead && !(u.dmg && u.group && u.group.visible))) continue;
         if (Math.hypot(u.x - D.x, u.z - D.z) > 120) continue;
         let t = -1;

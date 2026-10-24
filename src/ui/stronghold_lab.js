@@ -90,7 +90,7 @@
         if (lab.keepWreck && !it.unit.isPlayer) continue;   // giữ xác xe mục tiêu để thử hiệu ứng xác
         it.timer -= dt;
         if (it.timer > 0) continue;
-        const h = it.unit._labHome || { x: it.unit.x, z: it.unit.z, a: it.unit.bodyAngle, az: it.unit.azimuth };
+        if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(it.unit);
         it.unit.respawn(h.x, h.z);
         place(it.unit, h.x, h.z, h.a, h.az);
         if (it.unit.isPlayer) { const b = document.getElementById('player-respawn-banner'); if (b) b.classList.add('hidden'); }
@@ -511,10 +511,8 @@
         </div></div>
         <nav>
           <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
-          <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
-          <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+          <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả phòng thử</a>
           <a class="on" href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
-          <a href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
         </nav>
       </div>
       <div class="shl-scroll">

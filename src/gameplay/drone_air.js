@@ -390,25 +390,46 @@ const DroneAir = (() => {
       const auth = !s.netRemote && (!NS || (shooter && NS.owns(shooter)));
       const a = s.ammoType;
       // lựu 40mm (gl40) bay theo mã đạn 30mm nhưng đầu nổ mảnh lớn hơn hẳn: tính riêng, không lấy hệ số đạn 30mm
-      const base = s.isHeavyArty ? 1.6 : s.gl40 ? 0.4 : a === 'HE' ? 1.3 : a === 'NORMAL' || a === 'CLUSTER' ? 1.1 : a === 'RPG' || a === 'ANTI_TANK_MISSILE' ? 1.0
-        : a === 'CLUSTER_SUBMUNITION' ? 0.6 : a === 'GATLING_BULLET' || a === 'INCENDIARY' ? 0.12 : a === 'AP' ? 0.1 : 0;
+      const base = s.isHeavyArty ? 2.2 : s.gl40 ? 0.5 : a === 'HE' ? 1.6 : a === 'NORMAL' || a === 'CLUSTER' ? 1.2 : a === 'RPG' || a === 'ANTI_TANK_MISSILE' ? 1.1
+        : a === 'CLUSTER_SUBMUNITION' ? 0.7 : a === 'GATLING_BULLET' || a === 'INCENDIARY' ? 0.15 : a === 'AP' ? 0.1 : 0;
       if (!base) return;
-      // drone lơ lửng trên không: sức ép lan tự do hơn mặt đất -> bán kính ảnh hưởng ~1.2 lần
-      const R = radius * 1.2;
+      // drone lơ lửng trên không: sức ép lan tự do hơn mặt đất -> bán kính ảnh hưởng ~1.3 lần
+      const R = radius * 1.3;
       for (const dr of list) {
-        const d = Math.hypot(dr.x - x, dr.y + C.CENTER_Y - y, dr.z - z);
+        const d = Math.max(1, Math.hypot(dr.x - x, dr.y + C.CENTER_Y - y, dr.z - z));
         if (d > R) continue;
-        const dmg = Math.round(base * Math.min(1, (core || R * 0.3) / Math.max(1, d)) * (1 - Math.pow(d / R, 2)) * 1000) / 1000;
-        if (dmg < 0.01) continue;
+
+        // 1. Tác động lực đẩy gió của sóng xung kích (Shockwave wind blast push)
+        const pushK = Math.max(0, 1 - d / R);
+        const pushVel = (s.isHeavyArty ? 220 : a === 'HE' ? 160 : 100) * pushK;
+        const dirX = (dr.x - x) / d, dirY = (dr.y + C.CENTER_Y - y) / d, dirZ = (dr.z - z) / d;
+        dr.wvx = (dr.wvx || 0) + dirX * pushVel;
+        dr.wvy = (dr.wvy || 0) + Math.max(0.3, dirY) * pushVel * 0.7;
+        dr.wvz = (dr.wvz || 0) + dirZ * pushVel;
+        if (dr.key === 'own') {
+          dr.vx = (dr.vx || 0) + dirX * pushVel;
+          dr.vy = (dr.vy || 0) + Math.max(0.3, dirY) * pushVel * 0.7;
+          dr.vz = (dr.vz || 0) + dirZ * pushVel;
+        }
+
+        // 2. Sát thương mảnh văng & sức ép nổ: trong vùng lõi (core) xé toạc drone rơi ngay
+        let dmg = 0;
+        const cR = core || (s.isHeavyArty ? 48 : R * 0.35);
+        if (d <= cR) {
+          dmg = Math.max(1.0, base);
+        } else {
+          dmg = Math.round(base * (cR / d) * Math.pow(1 - d / R, 1.2) * 1000) / 1000;
+        }
+        if (dmg < 0.02) continue;
         this.hurtDrone(dr, dmg, shooter, auth);
       }
     },
 
-    // trừ "thân drone" theo đúng chủ quyền: drone mình (máy người bắn quyết định), drone bia phòng thử, drone máy khác (gửi gộp)
+    // trừ "thân drone" theo đúng chủ quyền: drone mình tự trừ khi lọt vùng nổ, drone bia phòng thử, drone máy khác (gửi gộp)
     hurtDrone(dr, dmg, shooter, auth) {
       if (dr.key === 'own') {
-        if (auth) this.damageOwnDrone(dmg, shooter);
-        else this.droneHitFX(true);
+        // Drone của người chơi: luôn tự trừ máu khi dính nổ của bất kỳ viên đạn nào
+        this.damageOwnDrone(dmg, shooter);
       } else if (dr.onHit) {   // drone bia của phòng thử đạn (range_lab.js) tự trừ thân
         if (auth) dr.onHit(dmg, shooter);
       } else if (auth && dr.net && shooter) {
@@ -512,8 +533,10 @@ const DroneAir = (() => {
     // ---------- DRONE TRÊN BẢN ĐỒ NHỎ / BẢN ĐỒ CHIẾN THUẬT ----------
     // Drone phe mình luôn hiện (xanh); drone địch chỉ hiện khi phe mình đang thấy (đỏ) — radar mặt đất không bắt drone,
     // radar phòng không xe 6 nòng (AA_RADAR_R) và radar trinh sát (SCOUT_AIR_R, ngắn hơn).
-    // Ký hiệu: dấu X 4 cánh quạt trong vòng tròn + vạch hướng bay; drone đang bị mình khóa: vòng khóa vàng;
-    // bản đồ lớn có nhãn UAV + độ cao
+    // Ký hiệu kiểu APP-6 (cùng bộ với xe trên tactical_map.js): khung KHÔNG QUÂN hở đáy — vòm (ta) / mái nhọn (địch) —
+    // trong là hình UAV chữ V; vạch dự báo dài theo tốc độ (vị trí sau LEAD_S giây), vệt các điểm đã bay qua,
+    // drone phe mình có đường datalink nét đứt về xe điều khiển; drone đang bị mình khóa: khung góc vàng + TRK.
+    // Bản đồ lớn có khối nhãn: UAV / LM (UAV cảm tử) · độ cao · tốc độ, dòng trạng thái EW (bị phá sóng) / DMG (hư hại)
     drawDronesOnMap(ctx, toScreen, big) {
       const P = this.player;
       if (!P) return;
@@ -534,32 +557,108 @@ const DroneAir = (() => {
           ctx.restore();
         }
       }
+      const LEAD_S = 4, TRAIL_DT = 0.45, TRAIL_N = big ? 14 : 7;
       for (const dr of this.airDroneList()) {
         const ally = dr.team === P.team;
-        if (!ally && !dr.seen) continue;
-        const s = toScreen(dr.x, dr.z), r = big ? 7 : 4.2;
-        const col = ally ? '#5fb0dc' : '#ff6a5c';
+        // vệt bay: lấy mẫu theo thời gian (cả 2 bản đồ cùng gọi — chỉ thêm khi đủ TRAIL_DT); hạ cánh rồi bay lại thì bỏ vệt cũ
+        // drone địch: chỉ ghi vệt lúc phe mình đang thấy (không lộ quãng đã bay khi còn ẩn)
+        const tr = dr._mapTrail || (dr._mapTrail = []);
+        if (!ally && !dr.seen) { tr.length = 0; continue; }
+        const lastT = tr.length ? tr[tr.length - 1].t : -1e9;
+        if (t - lastT > 1.5) tr.length = 0;
+        if (t - lastT >= TRAIL_DT) { tr.push({ x: dr.x, z: dr.z, t }); if (tr.length > 14) tr.shift(); }
+        const kami = !!(dr.owner && dr.owner.uavKind === 'kami');
+        const col = ally ? '#5fb0dc' : '#e0675c';
+        const fill = ally ? 'rgba(95,176,220,0.28)' : 'rgba(224,103,92,0.28)';
+        const soft = ally ? 'rgba(95,176,220,' : 'rgba(224,103,92,';
+        const jam = (dr.emiT || 0) > 0, hurt = dr.hp !== undefined && dr.hp < 0.5;
+        // bị phá sóng: ký hiệu giật / chập chờn như vệt radar mất bám
+        let s = toScreen(dr.x, dr.z);
+        if (jam) s = { x: s.x + (Math.random() - 0.5) * 3, y: s.y + (Math.random() - 0.5) * 3 };
+        const r = big ? 9 : 5.5;
         ctx.save();
-        ctx.translate(s.x, s.y);
-        ctx.strokeStyle = col; ctx.fillStyle = ally ? 'rgba(95,176,220,0.25)' : 'rgba(255,106,92,0.25)'; ctx.lineWidth = big ? 1.6 : 1.1;
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        // 4 cánh quạt
-        ctx.lineWidth = big ? 1.3 : 0.9;
-        const k = r * 0.62;
-        ctx.beginPath(); ctx.moveTo(-k, -k); ctx.lineTo(k, k); ctx.moveTo(k, -k); ctx.lineTo(-k, k); ctx.stroke();
-        for (const [ax, ay] of [[-k, -k], [k, -k], [-k, k], [k, k]]) { ctx.beginPath(); ctx.arc(ax, ay, r * 0.28, 0, Math.PI * 2); ctx.stroke(); }
-        // vạch hướng bay (theo vận tốc)
+        // datalink: xe điều khiển -> drone (chỉ phe mình, bản đồ lớn)
+        const O = dr.owner;
+        if (big && ally && O && !O.isDead) {
+          const o = toScreen(O.x, O.z);
+          ctx.strokeStyle = jam ? 'rgba(255,190,90,0.5)' : soft + '0.35)'; ctx.lineWidth = 1;
+          ctx.setLineDash(jam ? [2, 5] : [5, 4]); ctx.lineDashOffset = -t * 18;
+          ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(s.x, s.y); ctx.stroke();
+          ctx.setLineDash([]); ctx.lineDashOffset = 0;
+        }
+        // vệt các điểm đã bay qua, mờ dần
+        const n0 = Math.max(0, tr.length - TRAIL_N);
+        for (let i = n0; i < tr.length - 1; i++) {
+          const p = toScreen(tr[i].x, tr[i].z), a = (i - n0 + 1) / (tr.length - n0);
+          ctx.fillStyle = soft + (0.55 * a).toFixed(2) + ')';
+          ctx.beginPath(); ctx.arc(p.x, p.y, big ? 1.6 : 1.1, 0, Math.PI * 2); ctx.fill();
+        }
+        // vạch dự báo: vị trí sau LEAD_S giây nếu giữ hướng / tốc độ, vạch ngang ở đầu
         const sp = Math.hypot(dr.wvx || 0, dr.wvz || 0);
-        if (sp > 20) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo((dr.wvx / sp) * r * 2.2, (dr.wvz / sp) * r * 2.2); ctx.stroke(); }
+        if (sp > 20) {
+          const e = toScreen(dr.x + (dr.wvx || 0) * LEAD_S, dr.z + (dr.wvz || 0) * LEAD_S);
+          const dx = e.x - s.x, dy = e.y - s.y, L0 = Math.hypot(dx, dy);
+          if (L0 > r) {
+            // phóng to bản đồ thì vạch dài theo, nhưng không dài quá ~5 lần ký hiệu (che xe / drone khác)
+            const L = Math.min(L0, r * 5), ux = dx / L0, uy = dy / L0;
+            const bx = s.x + ux * r * 0.9, by = s.y + uy * r * 0.9, ex = s.x + ux * L, ey = s.y + uy * L;
+            ctx.strokeStyle = col; ctx.lineWidth = big ? 1.4 : 1;
+            ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey);
+            const w = big ? 3.5 : 2.2;
+            ctx.moveTo(ex - uy * w, ey + ux * w); ctx.lineTo(ex + uy * w, ey - ux * w); ctx.stroke();
+          }
+        }
+        ctx.translate(s.x, s.y);
+        if (jam) ctx.globalAlpha = 0.55 + 0.45 * Math.abs(Math.sin(t * 23));
+        // khung không quân hở đáy: vòm (ta) / mái nhọn (địch)
+        ctx.lineWidth = big ? 1.6 : 1.1; ctx.strokeStyle = col; ctx.fillStyle = fill;
+        if (hurt) ctx.setLineDash([3, 2]);
+        ctx.beginPath();
+        if (ally) { ctx.moveTo(-r, r * 0.55); ctx.lineTo(-r, r * 0.1); ctx.arc(0, r * 0.1, r, Math.PI, 0); ctx.lineTo(r, r * 0.55); }
+        else { ctx.moveTo(-r, r * 0.55); ctx.lineTo(-r, -r * 0.05); ctx.lineTo(0, -r * 1.05); ctx.lineTo(r, -r * 0.05); ctx.lineTo(r, r * 0.55); }
+        ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+        // hình UAV chữ V; UAV cảm tử thêm đầu nổ (chấm dưới mũi V)
+        ctx.fillStyle = '#eef6fb';
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.66, -r * 0.2); ctx.lineTo(0, r * 0.12); ctx.lineTo(r * 0.66, -r * 0.2);
+        ctx.lineTo(r * 0.66, -r * 0.02); ctx.lineTo(0, r * 0.32); ctx.lineTo(-r * 0.66, -r * 0.02); ctx.closePath(); ctx.fill();
+        if (kami) { ctx.beginPath(); ctx.arc(0, r * 0.5, big ? 1.7 : 1.1, 0, Math.PI * 2); ctx.fill(); }
+        ctx.globalAlpha = 1;
+        // đang bị mình khóa: khung góc vàng nhịp thở
         if (A && A.dr === dr) {
+          const q = r + 4 + Math.sin(t * 6), c = q * 0.45;
           ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.4;
-          ctx.beginPath(); ctx.arc(0, 0, r + 3 + Math.sin(t * 6), 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath();
+          for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+            ctx.moveTo(sx * q, sy * (q - c)); ctx.lineTo(sx * q, sy * q); ctx.lineTo(sx * (q - c), sy * q);
+          }
+          ctx.stroke();
         }
         if (big) {
-          ctx.fillStyle = ally ? 'rgba(160,225,245,0.95)' : 'rgba(255,150,150,0.95)';
-          ctx.font = '10px Share Tech Mono, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          // khối nhãn bên phải ký hiệu: loại · độ cao (cùng đơn vị với HUD drone) · tốc độ; dòng trạng thái
           const gy = this.terrain ? this.terrain.getElevationAt(dr.x, dr.z) : 0;
-          ctx.fillText('UAV · CAO ' + Math.round(Math.max(0, dr.y - gy)) + 'M', r + 4, 0);   // cùng đơn vị với HUD drone
+          const alt = Math.round(Math.max(0, dr.y - gy)), kmh = Math.round(sp / 8 * 3.6);
+          const st = [];
+          if (A && A.dr === dr) st.push(['TRK', '#ffd166']);
+          if (jam) st.push(['EW', '#ffbe5a']);
+          if (hurt) st.push(['DMG', '#ff8a6a']);
+          ctx.font = 'bold 10px Share Tech Mono, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          const x0 = r + 10, l1 = kami ? 'LM' : 'UAV', l2 = 'ALT ' + alt + 'M  ' + kmh + 'KM/H';
+          ctx.font = '10px Share Tech Mono, monospace';
+          const w = Math.max(ctx.measureText(l2).width, 30) + 8, h = st.length ? 37 : 26;
+          ctx.fillStyle = 'rgba(8,12,11,0.62)'; ctx.fillRect(x0 - 3, -13, w, h);
+          ctx.fillStyle = col; ctx.fillRect(x0 - 3, -13, 2, h);
+          ctx.fillStyle = ally ? 'rgba(170,228,248,0.98)' : 'rgba(255,165,155,0.98)';
+          ctx.font = 'bold 10px Share Tech Mono, monospace'; ctx.fillText(l1 + (ally ? '' : ' · HOSTILE'), x0 + 1, -6);
+          ctx.font = '10px Share Tech Mono, monospace'; ctx.fillStyle = 'rgba(225,232,222,0.9)'; ctx.fillText(l2, x0 + 1, 6);
+          let sx = x0 + 1;
+          for (const [txt, c] of st) {
+            ctx.font = 'bold 9px Share Tech Mono, monospace';
+            const tw = ctx.measureText(txt).width + 6;
+            ctx.strokeStyle = c; ctx.lineWidth = 1; ctx.strokeRect(sx, 13, tw, 10);
+            ctx.fillStyle = c; ctx.fillText(txt, sx + 3, 18.5);
+            sx += tw + 3;
+          }
         }
         ctx.restore();
       }

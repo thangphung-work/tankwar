@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="assets/icon-180.png?v=2">
   <meta name="theme-color" content="#10140c">
   <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
-  <link rel="stylesheet" href="dist/style.c205d6cc12.css?v=c205d6cc12">
+  <link rel="stylesheet" href="dist/style.18b5975af8.css?v=18b5975af8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -114,8 +114,12 @@
           <span id="arty-deploy-tag" class="hx-chip hidden"></span>
           <span id="arty-drone-tag" class="hx-chip hidden"><span class="dr-txt"></span><span class="dr-bat"><i></i></span></span>
           <button id="arty-mode-btn" class="hx-chip hx-artymode" hidden title="Cách bắn của pháo [B]: tự chọn / luôn bắn thẳng / luôn bắn cầu vồng"></button>
+          <span class="hx-chip hx-quick-command-hint" title="Giữ Z để mở vòng lệnh radio nhanh">
+            <kbd>Z</kbd><b>LỆNH NHANH</b>
+          </span>
           <span id="scout-missile-tag" class="hx-chip hidden"></span>
           <span id="scout-radar-tag" class="hx-chip hidden"></span>
+          <span id="scout-crew-tag" class="hx-chip hidden"></span>
           <span id="engine-heat-tag" class="hx-chip hidden" title="Nhiệt động cơ: giữ Shift tăng tốc làm máy nóng dần, quá nhiệt phải nhả ga chờ nguội"></span>
         </div>
 
@@ -276,7 +280,7 @@
             <!-- Xe đang chọn (lobby_view.js điền theo thẻ đang chọn) -->
             <div class="mm-vehicle-hero">
               <div class="hero-photo">
-                <img id="mm-hero-img" src="assets/tank_allrounder.jpg" alt="HALBERD MK.3">
+                <img id="mm-hero-img" src="assets/tank_allrounder.webp" alt="HALBERD MK.3">
                 <span class="hero-corner tl"></span><span class="hero-corner tr"></span>
                 <span class="hero-corner bl"></span><span class="hero-corner br"></span>
                 <span class="hero-reticle" aria-hidden="true"></span>
@@ -297,7 +301,7 @@
 
             <div class="mm-class-cards-grid">
               <div class="mm-class-card active" data-tank-type="ALL_ROUNDER" data-role="XE CHỦ LỰC" data-armor="5" data-fire="4" data-range="3" data-speed="3">
-                <div class="card-img-frame"><img src="assets/tank_allrounder.jpg" alt="HALBERD MK.3" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_allrounder.webp" alt="HALBERD MK.3" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">01</span>
                   <h3 class="card-tank-name">HALBERD MK.3</h3>
@@ -307,7 +311,7 @@
               </div>
 
               <div class="mm-class-card" data-tank-type="GATLING" data-role="YỂM TRỢ HỎA LỰC" data-armor="3" data-fire="5" data-range="2" data-speed="3">
-                <div class="card-img-frame"><img src="assets/tank_gatling.jpg" alt="HAILSTORM R6" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_gatling.webp" alt="HAILSTORM R6" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">02</span>
                   <h3 class="card-tank-name">HAILSTORM R6</h3>
@@ -317,7 +321,7 @@
               </div>
 
               <div class="mm-class-card" data-tank-type="ARTILLERY" data-role="PHÁO TẦM XA" data-armor="2" data-fire="5" data-range="5" data-speed="2">
-                <div class="card-img-frame"><img src="assets/tank_artillery.jpg" alt="ARBALEST 155" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_artillery.webp" alt="ARBALEST 155" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">03</span>
                   <h3 class="card-tank-name">ARBALEST 155</h3>
@@ -327,7 +331,7 @@
               </div>
 
               <div class="mm-class-card" data-tank-type="SCOUT" data-role="TRINH SÁT" data-armor="2" data-fire="3" data-range="3" data-speed="5">
-                <div class="card-img-frame"><img src="assets/tank_scout.jpg" alt="MARTEN R4" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_scout.webp" alt="MARTEN R4" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">04</span>
                   <h3 class="card-tank-name">MARTEN R4</h3>
@@ -344,6 +348,11 @@
               <span class="hdr-num-badge">02</span>
               <h2 class="hdr-heading">CHỌN CHIẾN ĐỊA</h2>
               <span class="hdr-subheading">Mỗi nơi một lối đánh</span>
+              <div class="mm-weather-seg" role="radiogroup" aria-label="Thời tiết" title="Thời tiết trận đấu (chủ phòng quyết định)">
+                <button type="button" class="mm-wx-btn" data-wx="random" role="radio"><i class="ti ti-arrows-shuffle" aria-hidden="true"></i> Ngẫu nhiên</button>
+                <button type="button" class="mm-wx-btn" data-wx="clear" role="radio"><i class="ti ti-sun" aria-hidden="true"></i> Nắng</button>
+                <button type="button" class="mm-wx-btn" data-wx="rain" role="radio"><i class="ti ti-cloud-storm" aria-hidden="true"></i> Mưa</button>
+              </div>
             </div>
 
             <div class="mm-map-cards-row">
@@ -419,6 +428,7 @@
             <span class="sc-chip"><kbd>G</kbd> Xả khói</span>
             <span class="sc-chip"><kbd>Lăn chuột</kbd> Đổi tầm nhìn</span>
             <span class="sc-chip"><kbd>M</kbd> Bản đồ</span>
+            <span class="sc-chip"><kbd>Giữ Z</kbd> Lệnh bộ đàm</span>
           </div>
 
           <button id="mm-find-match-btn" class="mm-action-launch-btn">
@@ -458,10 +468,10 @@
   </div>
 
   <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
-  <script src="dist/app1.5002eaa4b5.js?v=5002eaa4b5"></script>
+  <script src="dist/app1.cd8ceb2a13.js?v=cd8ceb2a13"></script>
   <script>
     window.ADS_CONFIG = { provider: 'auto', h5Client: 'ca-pub-1406451403469107', h5Test: true, allowMock: true };
   </script>
-  <script src="dist/app2.e4be82628a.js?v=e4be82628a"></script>
+  <script src="dist/app2.6612a0a01d.js?v=6612a0a01d"></script>
 </body>
 </html>

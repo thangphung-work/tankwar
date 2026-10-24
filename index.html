@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="src/ui/theme.css?v=20261020mo2">
   <link rel="stylesheet" href="style.css?v=20261020pg3">
   <link rel="stylesheet" href="src/ui/lobby.css?v=20261022rain1">
-  <link rel="stylesheet" href="hud.css?v=20261022mm1">
+  <link rel="stylesheet" href="hud.css?v=20261023qc2">
   <link rel="stylesheet" href="src/ui/account.css?v=20261020ad1">
   <link rel="stylesheet" href="src/ui/armory.css?v=20261022note1">
   <link rel="stylesheet" href="src/ui/game_menu.css?v=20261020gpu1">
@@ -120,6 +120,9 @@
           <span id="arty-deploy-tag" class="hx-chip hidden"></span>
           <span id="arty-drone-tag" class="hx-chip hidden"><span class="dr-txt"></span><span class="dr-bat"><i></i></span></span>
           <button id="arty-mode-btn" class="hx-chip hx-artymode" hidden title="Cách bắn của pháo [B]: tự chọn / luôn bắn thẳng / luôn bắn cầu vồng"></button>
+          <span class="hx-chip hx-quick-command-hint" title="Giữ Z để mở vòng lệnh radio nhanh">
+            <kbd>Z</kbd><b>LỆNH NHANH</b>
+          </span>
           <span id="scout-missile-tag" class="hx-chip hidden"></span>
           <span id="scout-radar-tag" class="hx-chip hidden"></span>
           <span id="scout-crew-tag" class="hx-chip hidden"></span>
@@ -283,7 +286,7 @@
             <!-- Xe đang chọn (lobby_view.js điền theo thẻ đang chọn) -->
             <div class="mm-vehicle-hero">
               <div class="hero-photo">
-                <img id="mm-hero-img" src="assets/tank_allrounder.jpg" alt="HALBERD MK.3">
+                <img id="mm-hero-img" src="assets/tank_allrounder.webp" alt="HALBERD MK.3">
                 <span class="hero-corner tl"></span><span class="hero-corner tr"></span>
                 <span class="hero-corner bl"></span><span class="hero-corner br"></span>
                 <span class="hero-reticle" aria-hidden="true"></span>
@@ -304,7 +307,7 @@
 
             <div class="mm-class-cards-grid">
               <div class="mm-class-card active" data-tank-type="ALL_ROUNDER" data-role="XE CHỦ LỰC" data-armor="5" data-fire="4" data-range="3" data-speed="3">
-                <div class="card-img-frame"><img src="assets/tank_allrounder.jpg" alt="HALBERD MK.3" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_allrounder.webp" alt="HALBERD MK.3" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">01</span>
                   <h3 class="card-tank-name">HALBERD MK.3</h3>
@@ -314,7 +317,7 @@
               </div>
 
               <div class="mm-class-card" data-tank-type="GATLING" data-role="YỂM TRỢ HỎA LỰC" data-armor="3" data-fire="5" data-range="2" data-speed="3">
-                <div class="card-img-frame"><img src="assets/tank_gatling.jpg" alt="HAILSTORM R6" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_gatling.webp" alt="HAILSTORM R6" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">02</span>
                   <h3 class="card-tank-name">HAILSTORM R6</h3>
@@ -324,7 +327,7 @@
               </div>
 
               <div class="mm-class-card" data-tank-type="ARTILLERY" data-role="PHÁO TẦM XA" data-armor="2" data-fire="5" data-range="5" data-speed="2">
-                <div class="card-img-frame"><img src="assets/tank_artillery.jpg" alt="ARBALEST 155" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_artillery.webp" alt="ARBALEST 155" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">03</span>
                   <h3 class="card-tank-name">ARBALEST 155</h3>
@@ -334,7 +337,7 @@
               </div>
 
               <div class="mm-class-card" data-tank-type="SCOUT" data-role="TRINH SÁT" data-armor="2" data-fire="3" data-range="3" data-speed="5">
-                <div class="card-img-frame"><img src="assets/tank_scout.jpg" alt="MARTEN R4" class="card-tank-photo" /></div>
+                <div class="card-img-frame"><img src="assets/tank_scout.webp" alt="MARTEN R4" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
                   <span class="card-index">04</span>
                   <h3 class="card-tank-name">MARTEN R4</h3>
@@ -431,6 +434,7 @@
             <span class="sc-chip"><kbd>G</kbd> Xả khói</span>
             <span class="sc-chip"><kbd>Lăn chuột</kbd> Đổi tầm nhìn</span>
             <span class="sc-chip"><kbd>M</kbd> Bản đồ</span>
+            <span class="sc-chip"><kbd>Giữ Z</kbd> Lệnh bộ đàm</span>
           </div>
 
           <button id="mm-find-match-btn" class="mm-action-launch-btn">
@@ -471,9 +475,11 @@
 
   <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
   <script src="src/ui/icons.js?v=20261020lock1"></script>
-  <script src="src/ui/lobby_view.js?v=20261022sk1"></script>
+  <script src="src/ui/lobby_view.js?v=20261023lag1"></script>
   <script src="three.min.js?v=20261019i"></script>
-  <script src="src/core/equipment.js?v=20261023sbag2"></script>
+  <script src="three-mesh-bvh.js?v=0.5.24"></script>
+  <script src="src/core/raycast_bvh.js?v=20261024bvh1"></script>
+  <script src="src/core/equipment.js?v=20261024wreck1"></script>
   <script src="src/gameplay/camo_fire.js?v=20261021wet1"></script>
   <script src="src/gameplay/leaf_cover.js?v=20261022lf1"></script>
 
@@ -483,7 +489,7 @@
   <script src="src/core/audio/destruction.js?v=20261023sbag2"></script>
   <script src="src/core/audio/impacts.js?v=20261023apfs1"></script>
   <script src="src/core/audio/incoming.js?v=20261020m8"></script>
-  <script src="src/core/audio/cockpit_cues.js?v=20261022vox1"></script>
+  <script src="src/core/audio/cockpit_cues.js?v=20261024rocket1"></script>
   <script src="src/core/audio/vehicle_engine.js?v=20261022eco1"></script>
   <script src="src/core/audio/vehicle_destroyed.js?v=20261021mg1"></script>
   <script src="src/core/audio/other_engines.js?v=20261022eco1"></script>
@@ -491,20 +497,20 @@
   <script src="src/core/audio/rain_ambience.js?v=20261022rain1"></script>
   <script src="src/core/audio/turret_drives.js?v=20261022sh1"></script>
   <script src="src/core/audio/drone_uav.js?v=20261022kfuel1"></script>
-  <script src="src/core/audio/gatling.js?v=20261022mg1"></script>
+  <script src="src/core/audio/gatling.js?v=20261024scoutsnd2"></script>
   <script src="src/core/audio/module_weapons.js?v=20261023msl2"></script>
   <script src="src/core/audio/sight_audio.js?v=20261023msl2"></script>
   <script src="src/core/audio/wading.js?v=20261020mouse1"></script>
   <script src="src/core/audio/music.js?v=20261021hangar1"></script>
   <script src="src/core/audio/battle_drama.js?v=20261020m8"></script>
   <script src="src/core/audio/ui_sounds.js?v=20261022sh1"></script>
-  <script src="src/core/map_gen.js?v=20261023city1"></script>
+  <script src="src/core/map_gen.js?v=20261024wreck1"></script>
   <script src="src/core/sky.js?v=20261022storm1"></script>
-  <script src="src/core/weather.js?v=20261022wetmud1"></script>
+  <script src="src/core/weather.js?v=20261024lag3"></script>
   <script src="src/gameplay/destructibles.js?v=20261023city1"></script>
   <script src="src/gameplay/props.js?v=20261023city1"></script>
   <script src="src/gameplay/streetscape.js?v=20261023city1"></script>
-  <script src="src/gameplay/strongholds.js?v=20261022rain2"></script>
+  <script src="src/gameplay/strongholds.js?v=20261024wreck1"></script>
   <script src="src/gameplay/landmarks.js?v=20261022lm4"></script>
   <script src="src/gameplay/landmarks/bio.js?v=20261022sh1"></script>
   <script src="src/gameplay/landmarks/sam.js?v=20261022sh5"></script>
@@ -515,11 +521,11 @@
   <script src="src/core/dispersion.js?v=20261023bal1"></script>
   <script src="src/gameplay/env_damage.js?v=20261022fix2"></script>
   <script src="src/core/ground_shader.js?v=20261022perf1"></script>
-  <script src="src/core/ground_cover.js?v=20261023city1"></script>
-  <script src="src/core/terrain.js?v=20261023city1"></script>
+  <script src="src/core/ground_cover.js?v=20261024lag3"></script>
+  <script src="src/core/terrain.js?v=20261024lag3"></script>
   <script src="src/core/backdrop.js?v=20261023city1"></script>
   <script src="src/entities/projectiles.js?v=20261023msl2"></script>
-  <script src="src/core/ballistics.js?v=20261023bal1"></script>
+  <script src="src/core/ballistics.js?v=20261024wreck1"></script>
   <script src="src/core/radar.js?v=20261022cbr0"></script>
 
   <!-- 2. Tầng Thực Thể & Trí Tuệ Nhân Tạo (Entities & AI) -->
@@ -529,31 +535,33 @@
   <script src="src/entities/tanks/mbt_halberd.js?v=20261022mod2"></script>
   <script src="src/entities/tanks/fsv_hailstorm.js?v=20261023sbag2"></script>
   <script src="src/entities/tanks/spg_arbalest.js?v=20261022mod2"></script>
-  <script src="src/entities/tanks/recon_marten.js?v=20261022pit1"></script>
-  <script src="src/ai/navigator.js?v=20261022fix2"></script>
+  <script src="src/entities/tanks/recon_marten.js?v=20261024rocket1"></script>
+  <script src="src/ai/navigator.js?v=20261024lag2"></script>
   <script src="src/ai/bot_profiles.js?v=20261023bp2"></script>
   <script src="src/ai/bot_ai.js?v=20261023bp1"></script>
   <script src="src/entities/recon_drone.js?v=20261021mrg26"></script>
-  <script src="src/entities/spg.js?v=20261023bal1"></script>
+  <script src="src/entities/spg.js?v=20261024lag2"></script>
+  <script src="src/entities/civil_cars.js?v=20261024sedanrear1"></script>
 
   <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
   <script src="src/gameplay/capture_points.js?v=20261021map54"></script>
   <script src="src/gameplay/supply_manager.js?v=20261021mrg1"></script>
-  <script src="src/gameplay/explosion_fx.js?v=20261023city1"></script>
+  <script src="src/gameplay/explosion_fx.js?v=20261024lag2"></script>
   <script src="src/gameplay/wading_fx.js?v=20261022wetmud1"></script>
-  <script src="src/gameplay/vehicle_damage.js?v=20261023sbag2"></script>
-  <script src="src/gameplay/team_intel.js?v=20261023bal1"></script>
+  <script src="src/gameplay/vehicle_damage.js?v=20261024wreck1"></script>
+  <script src="src/gameplay/team_intel.js?v=20261024wreck1"></script>
   <script src="src/gameplay/tire_tracks.js?v=20261022wetmud1"></script>
   <script src="src/gameplay/effects_manager.js?v=20261019i"></script>
   <script src="src/gameplay/world_markers.js?v=20261022sh1"></script>
+  <script src="src/gameplay/quick_comms.js?v=20261023qc2"></script>
 
   <!-- 4. Tầng Giao Diện Người Dùng (UI & Sảnh Chờ) -->
   <script src="src/ui/hud_controller.js?v=20261023apfs1"></script>
-  <script src="src/ui/tactical_map.js?v=20261023city1"></script>
-  <script src="src/ui/radar_minimap.js?v=20261022mm1"></script>
+  <script src="src/ui/tactical_map.js?v=20261023qc2"></script>
+  <script src="src/ui/radar_minimap.js?v=20261023qc1"></script>
   <script src="src/ui/lens_rain.js?v=20261022gust1"></script>
   <script src="src/ui/proving_ground.js?v=20261022pre1"></script>
-  <script src="src/ui/tank_inspector.js?v=20261023apfs1"></script>
+  <script src="src/ui/tank_inspector.js?v=20261023lag1"></script>
   <!-- Quảng cáo có thưởng (src/core/ads.js): điền mã nhà xuất bản AdSense (H5 Games Ads) vào h5Client để phát quảng cáo thật;
        để trống = khung quảng cáo mẫu (thử luồng nhận thưởng). Chạy thật: h5Test: false. -->
   <script>
@@ -563,7 +571,7 @@
   <script src="src/ui/armory_ui.js?v=20261023msl1"></script>
   <script src="src/core/net_codec.js?v=20261019n1"></script>
   <script src="src/core/team_balance.js?v=20261023tb1"></script>
-  <script src="src/core/netcode.js?v=20261023wit1"></script>
+  <script src="src/core/netcode.js?v=20261024wreck1"></script>
   <script src="src/ui/matchmaking.js?v=20261023wit1"></script>
   <script src="src/ui/account.js?v=20261022mag1"></script>
 
@@ -572,19 +580,19 @@
   <script src="src/ui/range_lab.js?v=20261022field1"></script>
   <script src="src/ui/free_cam.js?v=20261022fc7"></script>
   <script src="src/core/gfx_quality.js?v=20261022sh1"></script>
-  <script src="src/ui/perf_overlay.js?v=20261023net1"></script>
+  <script src="src/ui/perf_overlay.js?v=20261024bvh1"></script>
 
   <!-- 5. Bộ Điều Phối Trò Chơi (Main Game Engine) -->
-  <script src="src/ui/game_menu.js?v=20261022topatk1"></script>
+  <script src="src/ui/game_menu.js?v=20261023qc2"></script>
   <script src="src/ui/motion.js?v=20261020mo2"></script>
   <script src="src/gameplay/drone_air.js?v=20261023msl2"></script>
   <script src="src/ui/range_air.js?v=20261022mod2"></script>
-  <script src="src/game.js?v=20261023lv1"></script>
+  <script src="src/game.js?v=20261024sight2"></script>
   <script src="src/gameplay/ew_jammer.js?v=20261022mod2"></script>
   <script src="src/gameplay/lock_jammer.js?v=20261022mod2"></script>
-  <script src="src/gameplay/kamikaze_uav.js?v=20261022topatk3"></script>
+  <script src="src/gameplay/kamikaze_uav.js?v=20261024wreck1"></script>
   <script src="src/gameplay/reload_fx.js?v=20261022rf1"></script>
-  <script src="src/gameplay/vehicle_crew.js?v=20261022pull2"></script>
+  <script src="src/gameplay/vehicle_crew.js?v=20261024wrapgear2"></script>
   <script src="src/gameplay/grenade40.js?v=20261022gl1"></script>
 </body>
 </html>

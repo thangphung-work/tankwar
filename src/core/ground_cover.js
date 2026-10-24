@@ -7,7 +7,7 @@
  */
 const GroundCover = (() => {
   const CELL = 40;              // ô rải
-  const RADIUS = 720;           // bán kính quanh tâm khung nhìn
+  const RADIUS = 720;           // bán kính quanh tâm khung nhìn (720 đơn vị ~ 90m đủ bao trọn tầm nhìn quanh xe, tối ưu FPS)
   const TUFTS_PER_CELL = 16;
   const PEBBLES_PER_CELL = 7;
   const OG = 7;                 // hệ số rải dày trong ô thuộc căn cứ bỏ hoang (cỏ dại um tùm)
@@ -17,7 +17,8 @@ const GroundCover = (() => {
     RIVER_LAKE: { grass: [[0.33, 0.42, 0.21], [0.51, 0.5, 0.31]], density: 1.1, pebble: [0.43, 0.4, 0.36], pebbleK: 0.8, tuftH: [5, 10] },
     JUNGLE: { grass: [[0.25, 0.33, 0.17], [0.38, 0.38, 0.22]], density: 1.2, pebble: [0.36, 0.33, 0.28], pebbleK: 0.6, tuftH: [6, 11] },
     DESERT: { grass: [[0.74, 0.66, 0.42], [0.82, 0.72, 0.5]], density: 0.04, pebble: [0.68, 0.57, 0.44], pebbleK: 0.35, tuftH: [3, 6] },
-    URBAN: { grass: [[0.35, 0.39, 0.23], [0.49, 0.47, 0.31]], density: 0.35, pebble: [0.43, 0.42, 0.4], pebbleK: 1.1, tuftH: [3, 6] }
+    // thành phố ma: cỏ dại cao um tùm trên đất trống (xanh lẫn úa)
+    URBAN: { grass: [[0.3, 0.38, 0.18], [0.52, 0.48, 0.28]], density: 0.85, pebble: [0.43, 0.42, 0.4], pebbleK: 1.1, tuftH: [4, 11] }
   };
 
   function rngOf(seed) {
@@ -119,7 +120,7 @@ const GroundCover = (() => {
       this.group.name = 'groundCover';
       terrain.group.add(this.group);   // dọn theo địa hình khi đổi bản đồ
       const maxCells = Math.ceil((2 * RADIUS / CELL) + 2) ** 2;
-      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5) + 90000;   // + cỏ dại dày trong căn cứ
+      this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5) + 18000;   // + cỏ dại dày trong căn cứ
       this.maxP = maxCells * PEBBLES_PER_CELL;
       // cỏ
       const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.32, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });   // lá mảnh: ngưỡng thấp để xa không bị mỏng mất
@@ -370,6 +371,16 @@ const GroundCover = (() => {
       return c;
     }
 
+    // Ô quanh tâm xếp từ gần ra xa (tính 1 lần): tâm nhìn nhảy xa (đổi sang kính ngắm pháo, hồi sinh, lia camera) thì gần
+    // như cả ~1400 ô phải rải mới — trước đây rải hết trong 1 khung (khựng lớn). Giờ mỗi khung rải ô mới tới ~4 ms, gần
+    // trước xa sau; ô xa chưa rải tạm để trống, khung sau rải tiếp (cỏ mọc dần ra xa thay vì đứng hình)
+    static ring() {
+      if (Cover._ring) return Cover._ring;
+      const r = Math.ceil(RADIUS / CELL) + 1, out = [];
+      for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) out.push([di, dj, di * di + dj * dj]);
+      out.sort((a, b) => a[2] - b[2]);
+      return (Cover._ring = out);
+    }
     rebuild(cx, cz) {
       if (!this.cache) this.cache = new Map();
       const gA = this.grass.instanceMatrix.array, gC = this.grass.instanceColor.array;
@@ -377,8 +388,16 @@ const GroundCover = (() => {
       let nt = 0, np = 0;
       const c0x = Math.floor((cx - RADIUS) / CELL), c1x = Math.floor((cx + RADIUS) / CELL);
       const c0z = Math.floor((cz - RADIUS) / CELL), c1z = Math.floor((cz + RADIUS) / CELL);
-      for (let j = c0z; j <= c1z; j++) for (let i = c0x; i <= c1x; i++) {
-        const c = this.cellData(i, j);
+      const ci = Math.floor(cx / CELL), cj = Math.floor(cz / CELL), t0 = performance.now();
+      this.pending = false;
+      for (const [di, dj] of Cover.ring()) {
+        const i = ci + di, j = cj + dj;
+        if (i < c0x || i > c1x || j < c0z || j > c1z) continue;
+        let c = this.cache.get(i + ',' + j);
+        if (!c) {
+          if (performance.now() - t0 > 4) { this.pending = true; continue; }
+          c = this.cellData(i, j);
+        }
         // ô cỏ dày (căn cứ bỏ hoang): đủ dày trong ~300 quanh tâm nhìn, xa hơn chỉ lấy 1/3 (các khóm rải ngẫu nhiên -> lấy phần đầu)
         const far = c.dense && Math.hypot(i * CELL + CELL / 2 - cx, j * CELL + CELL / 2 - cz) > 300;
         const ng = far ? Math.floor(c.gm.length / 16 / 3) : c.gm.length / 16, npb = c.pm.length / 16;
@@ -393,14 +412,16 @@ const GroundCover = (() => {
         }
       }
       this.grass.count = nt; this.peb.count = np;
-      this.grass.instanceMatrix.needsUpdate = true; this.grass.instanceColor.needsUpdate = true;
-      this.peb.instanceMatrix.needsUpdate = true; this.peb.instanceColor.needsUpdate = true;
+      // chỉ tải lên GPU phần đang dùng (bộ đệm cỡ tối đa ~57k khóm = ~5 MB mỗi lần dựng lại)
+      const up = (a, n) => { a.updateRange.offset = 0; a.updateRange.count = Math.max(1, n) * a.itemSize; a.needsUpdate = true; };
+      up(this.grass.instanceMatrix, nt); up(this.grass.instanceColor, nt);
+      up(this.peb.instanceMatrix, np); up(this.peb.instanceColor, np);
     }
 
     // focus: tâm vùng camera nhìn thấy trên mặt đất
     update(focusX, focusZ) {
       const cx = Math.round(focusX / CELL), cz = Math.round(focusZ / CELL);
-      if (cx === this.lastCx && cz === this.lastCz) return;
+      if (cx === this.lastCx && cz === this.lastCz && !this.pending) return;   // pending: còn ô xa chưa rải (rebuild)
       this.lastCx = cx; this.lastCz = cz;
       this.rebuild(cx * CELL, cz * CELL);
     }

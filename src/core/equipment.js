@@ -406,6 +406,22 @@
     startLife(u);
   }
 
+  // Mô hình xe vừa dựng lại (xác cũ tách ra nằm lại chiến trường — SPG.detachWreck): gắn lại phần HÌNH của bộ trang bị
+  // (ống phóng, hòm đạn, giáp lắp thêm, món ở các ô bệ). Chỉ số / kho đạn giữ nguyên; giáp thiếu do onRespawn áp
+  function refit(u) {
+    if (!u || !u.kit) return;
+    if (u.setTopAttack) { try { u.setTopAttack(!!(u.ammoMods && u.ammoMods.ANTI_TANK_MISSILE && u.ammoMods.ANTI_TANK_MISSILE.top)); } catch (e) { console.warn('[EQ] ống tấn công đỉnh', e); } }
+    try { setStockSmoke(u, has(u, 'smoke')); } catch (e) { console.warn('[EQ] Không ẩn được ống khói', e); }
+    if (typeof u.mountMag === 'function') { try { u.mountMag(slotOf(u.kit, u.tankType, 'mag') || 'none'); } catch (e) { console.warn('[EQ] Không gắn được hộp đạn', e); } }
+    try { buildVisuals(u); } catch (e) { console.warn('[EQ] Không gắn được hình trang bị', e); }
+    for (const c of MOUNT_CATS) {
+      if (c === 'mag') continue;
+      const fn = u['mount' + c[0].toUpperCase() + c.slice(1)];
+      if (typeof fn !== 'function') continue;
+      try { fn(slotOf(u.kit, u.tankType, c) || 'none'); } catch (e) { console.warn('[EQ] Không gắn được món ô ' + c, e); }
+    }
+  }
+
   // Mỗi lần xuất kích: nạp lại đạn đặc chủng (miễn phí + mua thêm), khói, đánh chặn
   function startLife(u) {
     const E = u._eq;
@@ -2267,14 +2283,39 @@
     }
     if (!u.turretGroup) return;
     for (const s of [-1, 1]) {
-      // mặt trước khối giáp mũi tên: hàng dưới đứng, hàng trên ngả về sau theo mặt nghiêng
+      // mặt trước khối giáp má tháp: 2 hàng gạch nổ ốp phẳng sát mặt vát nghiêng
       tur.setTag('eraKitTF');
-      const A = [s * HB.wedge[0][0], HB.wedge[0][1]], B = [s * HB.wedge[1][0], HB.wedge[1][1]];
-      for (const t of [0.2, 0.5, 0.8]) {
-        const lo = faceAt(A, B, t, (app ? 1.1 : 0) + 0.3);
-        tur.box(lo.len * 0.28, 2.0, 0.5, M.era, [lo.p[0], 1.95, lo.p[1]], [0, lo.yaw, 0]);
-        const up = faceAt(A, B, t, 0.3 - 1.2);
-        tur.box(up.len * 0.28, 2.6, 0.5, M.era, [up.p[0], HB.ridgeY + 1.55, up.p[1]], [-HB.wedgeLean, up.yaw, 0, 'YXZ']);
+      const lean = HB.wedgeLean;
+      const yaw = s * 2.5428088;
+      const rot = [-lean, yaw, 0, 'YXZ'];
+      const sinL = Math.sin(lean), cosL = Math.cos(lean);
+      const L = Math.hypot(8.5, 5.8);
+      const nhx = s * 5.8 / L, nhz = -8.5 / L;
+      const v_up = { x: -sinL * nhx, y: cosL, z: -sinL * nhz };
+      const N = { x: cosL * nhx, y: sinL, z: cosL * nhz };
+      const thick = 0.48;
+      const eraOut = thick / 2 + 0.05 + (app ? 1.1 : 0);
+
+      const rows = [
+        { dup: 0.95, tList: [0.18, 0.48, 0.78], w: 2.7, h: 1.45 },
+        { dup: 2.65, tList: [0.18, 0.48, 0.78], w: 2.7, h: 1.45 }
+      ];
+      for (const row of rows) {
+        for (const t of row.tList) {
+          const x0 = s * (3.1 + 8.5 * t);
+          const y0 = HB.ridgeY;
+          const z0 = -19.8 + 5.8 * t;
+          const px = x0 + row.dup * v_up.x + eraOut * N.x;
+          const py = y0 + row.dup * v_up.y + eraOut * N.y;
+          const pz = z0 + row.dup * v_up.z + eraOut * N.z;
+          tur.box(row.w, row.h, thick, M.era, [px, py, pz], rot);
+          for (const dt of [-0.85, 0.85]) {
+            const bx = px + dt * (s * 8.5 / L) + (thick / 2 + 0.03) * N.x;
+            const by = py + (thick / 2 + 0.03) * N.y;
+            const bz = pz + dt * (5.8 / L) + (thick / 2 + 0.03) * N.z;
+            tur.cyl(0.09, 0.09, 0.1, 6, M.steel, [bx, by, bz], 'z', rot);
+          }
+        }
       }
       // hông tháp: 1 hàng gạch dọc module má tháp (trên tấm composite nếu có)
       tur.setTag(s < 0 ? 'eraKitTL' : 'eraKitTR');
@@ -2864,7 +2905,7 @@
   }
 
   return Object.assign(API, {
-    has, equip, onRespawn, paidUsed, ammoDelta, startLife,
+    has, equip, refit, onRespawn, paidUsed, ammoDelta, startLife,
     armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, vshieldDeflectP, vshieldHeatMul, vshieldSplashMul, sandbagLeft, sandbagSplashMul, eraEffect, penMul, penLossMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, roofCage, apsLeft, apsEngageP, apsEngage, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul, extHitMul, extFireChance, extIgniteMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, smokeSides, smokeMax, smokeCount, lockBlocked, SMOKE_GAP, SMOKE_LIFE, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump, apsPod, apsLauncher, radarMast, radarHead, RADAR_MAST_H,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)

@@ -65,21 +65,55 @@ const CarSoftBody = (() => {
       for (const [, i] of near.slice(0, 6)) link(w, i, 'wheel');
     }
     const V = new Float32Array(N * 3), Pp = new Float32Array(N * 3), lam = new Float32Array(C.length);
-    // độ dày tối thiểu của đống xác (phần không ép dẹt được): sàn + khung gầm ~12 cm, sườn chồng lên ghế / nội thất ép
-    // chặt ~22 cm, mui chồng trên cùng ~30 cm; khoang máy có khối động cơ + hộp số (~45-55 cm), quanh cầu sau ~30 cm
-    const block = (z) => z > S.axleF - 5 ? 1.6 * Math.min(1, (z - (S.axleF - 5)) / 2) : Math.abs(z - S.axleR) < 3 ? 0.6 : 0;
-    const minY = role.map((r, i) => r === 3 ? S.r : (r === 0 ? 1.0 : r === 1 ? 1.75 : 2.4) + block(R[3 * i + 2]) * (r === 0 ? 0.6 : 1));
+    // độ dày tối thiểu của đống xác xe bị nghiền nát (phần không thể ép dẹt thành giấy):
+    // sàn + khung dầm thép hộp ~15 cm (1.15 đv), sườn + giàn ghế kim loại nén ~23 cm (1.85 đv),
+    // mui tôn nẹp gập nhiều lớp ~31 cm (2.45 đv); khoang máy có khối động cơ gang thép đặc + hộp số (~48-53 cm, ~3.8-4.25 đv),
+    // quanh cầu sau + bình xăng + cụm giảm xóc (~35-41 cm, ~2.8-3.3 đv)
+    const engineBlock = (z) => z > S.axleF - 5.5 ? 1.8 * Math.min(1.0, Math.max(0.0, (z - (S.axleF - 5.5)) / 2.5)) : 0;
+    const rearBlock = (z) => Math.abs(z - S.axleR) < 3.5 ? 0.85 * Math.max(0.0, 1.0 - Math.abs(z - S.axleR) / 3.5) : 0;
+    const extraBlock = (z) => engineBlock(z) + rearBlock(z);
+    const baseThickness = [1.15, 1.85, 2.45, S.r];
+    const minY = role.map((r, i) => {
+      if (r === 3) return S.r;
+      const eb = extraBlock(R[3 * i + 2]);
+      return baseThickness[r] + eb * (r === 0 ? 0.5 : r === 1 ? 0.75 : 1.0);
+    });
     const tireFlat = new Float32Array(4);          // độ xẹp lốp (0..1) từng bánh
     let colliders = [], awake = 0, tankV = [0, 0];
     // hộp xích: tâm (cx, cz), trục dọc (fx, fz), nửa dài hl, nửa rộng hw, đáy h(al) = b0 + slope*al, 2 đầu cong lên
-    const setTank = (tx, tz, hd, c0 = 0, slope = 0, vx = 0, vz = 0) => {
+    // D: kích thước gầm xe tăng (đv) — tc tâm dải xích, tw nửa bề rộng xích, flat nửa đoạn xích chạm đất, hl nửa dài cả dải
+    // (2 đầu cong lên với độ dốc rise), belly gầm giữa 2 xích (nửa rộng bw), bEnd / bEndH: tấm thân dưới mũi / đuôi thấp hơn.
+    // Không truyền -> hộp chung cũ của game (xích ±11,2, dài 37, gầm 3,4)
+    const DEF_DIM = { tc: 11.2, tw: 2.6, flat: 14, hl: 18.5, rise: 1.6, belly: 3.4, bw: 8.6 };
+    // c0: đáy xích tại tâm, slope: dốc dọc (đv / đv, + mũi cao), roll: dốc ngang (+ bên phải cao)
+    const setTank = (tx, tz, hd, c0 = 0, slope = 0, vx = 0, vz = 0, D = DEF_DIM, roll = 0) => {
       const fx = Math.sin(hd), fz = Math.cos(hd), rx = fz, rz = -fx;
       colliders = [
-        { cx: tx + rx * 11.2, cz: tz + rz * 11.2, fx, fz, hl: 18.5, hw: 2.6, b0: c0, s: slope, ramp: 1 },
-        { cx: tx - rx * 11.2, cz: tz - rz * 11.2, fx, fz, hl: 18.5, hw: 2.6, b0: c0, s: slope, ramp: 1 },
-        { cx: tx, cz: tz, fx, fz, hl: 19, hw: 8.6, b0: c0 + 3.4, s: slope, ramp: 0.5 }
+        { cx: tx + rx * D.tc, cz: tz + rz * D.tc, fx, fz, hl: D.hl, hw: D.tw, b0: c0 + roll * D.tc, s: slope, flat: D.flat, rise: D.rise },
+        { cx: tx - rx * D.tc, cz: tz - rz * D.tc, fx, fz, hl: D.hl, hw: D.tw, b0: c0 - roll * D.tc, s: slope, flat: D.flat, rise: D.rise },
+        D.bEnd === undefined
+          ? { cx: tx, cz: tz, fx, fz, hl: D.hl + 0.5, hw: D.bw, b0: c0 + D.belly, s: slope, flat: D.hl - 4, rise: 0.8 }
+          : { cx: tx, cz: tz, fx, fz, hl: D.hl, hw: D.bw, b0: c0 + D.belly, s: slope, flat: D.bEnd, endH: D.bEndH - D.belly }
       ];
-      tankV = [vx, vz]; awake = 1.5;
+      tankV = [vx, vz]; awake = 1.5; realDim = D !== DEF_DIM;
+    };
+    // điểm khung bị đè xuống tới đâu thì thôi (sàn / khối máy không ép dẹt hết; bánh xe: lốp xẹp + vành bẹp sát đất)
+    // (hộp chung cũ của game: tâm bánh giữ ở bán kính lốp như trước)
+    let realDim = false;
+    const floorOf = i => role[i] === 3 && realDim ? Math.max(0.6, S.r * 0.3) : minY[i];
+    // độ cao đỡ dưới 4 góc gầm xe tăng [trái-trước, trái-sau, phải-trước, phải-sau]: điểm khung cứng nhất nằm dưới mỗi nửa
+    // dải xích -> xe tăng phải nằm trên đống xác cao chừng đó (không nghiền xác xuyên qua xích)
+    const support = (tx, tz, hd, D = DEF_DIM, out = [0, 0, 0, 0]) => {
+      const fx = Math.sin(hd), fz = Math.cos(hd);
+      realDim = D !== DEF_DIM;
+      out[0] = out[1] = out[2] = out[3] = 0;
+      for (let i = 0; i < N; i++) {
+        const dx = P[3 * i] - tx, dz = P[3 * i + 2] - tz, al = dx * fx + dz * fz, lt = dx * fz - dz * fx;
+        if (Math.abs(al) > D.hl || Math.abs(Math.abs(lt) - D.tc) > D.tw) continue;
+        const k = (lt > 0 ? 2 : 0) + (al > 0 ? 0 : 1), h = floorOf(i) - Math.max(0, Math.abs(al) - D.flat) * D.rise;
+        if (h > out[k]) out[k] = h;
+      }
+      return out;
     };
     let hStep = 1 / 300, fric = 0;
     const collide = (i) => {
@@ -87,25 +121,27 @@ const CarSoftBody = (() => {
       for (const c of colliders) {
         const dx = x - c.cx, dz = z - c.cz, al = dx * c.fx + dz * c.fz, lt = -dx * c.fz + dz * c.fx;
         if (Math.abs(lt) > c.hw || Math.abs(al) > c.hl) continue;
-        const end = Math.max(0, Math.abs(al) - (c.hl - 4.5)) * c.ramp * 1.6;   // đầu xích cong lên
-        const hb = c.b0 + c.s * al + end;
+        // đầu xích cong lên (bánh dẫn / bánh căng); gầm: tấm thân dưới mũi / đuôi thấp hơn giữa gầm
+        const end = c.endH !== undefined ? (Math.abs(al) > c.flat ? c.endH : 0) : Math.max(0, Math.abs(al) - c.flat) * c.rise;
+        const hb = c.b0 + c.s * al + end, fl = floorOf(i);
         if (y > hb) {
           // đè xuống + miết kéo theo xe tăng (ma sát xích - tôn)
-          const drop = y - Math.max(minY[i], hb);
-          y = Math.max(minY[i], hb);
-          if (role[i] === 1 || role[i] === 2) { const sx = Math.sign(R[3 * i]) || 0; x += sx * Math.min(0.5, drop * 0.22); }
+          const drop = y - Math.max(fl, hb);
+          y = Math.max(fl, hb);
+          if (role[i] === 1 || role[i] === 2) { const sx = Math.sign(R[3 * i]) || 0; x += sx * Math.min(1.4, drop * 0.35); }
           // mặt xích chạm đất đứng yên so với mặt đường (xích lăn, không trượt) -> chỉ xô nhẹ xác xe
           x += tankV[0] * hStep * 0.02 * fric; z += tankV[1] * hStep * 0.02 * fric;
           if (role[i] === 3) { const w = wheelIds.indexOf(i); if (w >= 0) tireFlat[w] = Math.max(tireFlat[w], Math.min(1, (S.r - hb) / (S.r * 0.65))); }
         }
       }
-      // mặt đất + ma sát (lốp xẹp: tâm bánh hạ xuống)
+      // mặt đất + ma sát (lốp xẹp: tâm bánh hạ xuống sát đất, triệt tiêu bật nảy)
       let my = minY[i];
-      if (role[i] === 3) { const w = wheelIds.indexOf(i); my = S.r * (1 - 0.62 * tireFlat[w]); }
+      if (role[i] === 3) { const w = wheelIds.indexOf(i); my = Math.max(0.48, S.r * (1 - 0.72 * tireFlat[w])); }
       if (y < my) {
         y = my;
         const px = Pp[3 * i], pz = Pp[3 * i + 2];
         x = px + (x - px) * 0.4; z = pz + (z - pz) * 0.4;
+        Pp[3 * i + 1] = my;   // triệt tiêu vận tốc ảo đập sàn bật ngược lên
       }
       P[3 * i] = x; P[3 * i + 1] = y; P[3 * i + 2] = z;
     };
@@ -144,12 +180,14 @@ const CarSoftBody = (() => {
         }
         for (let i = 0; i < N; i++) {
           V[3 * i] = (P[3 * i] - Pp[3 * i]) / h; V[3 * i + 1] = (P[3 * i + 1] - Pp[3 * i + 1]) / h; V[3 * i + 2] = (P[3 * i + 2] - Pp[3 * i + 2]) / h;
-          V[3 * i] *= 0.985; V[3 * i + 1] *= 0.985; V[3 * i + 2] *= 0.985;
+          // Kim loại biến dạng dẻo: dập tắt dao động cực nhanh, không rung nhún đàn hồi như đệm lò xo
+          const damp = 0.88;
+          V[3 * i] *= damp; V[3 * i + 1] *= damp; V[3 * i + 2] *= damp;
           mv = Math.max(mv, Math.abs(P[3 * i] - Pp[3 * i]) + Math.abs(P[3 * i + 1] - Pp[3 * i + 1]) + Math.abs(P[3 * i + 2] - Pp[3 * i + 2]));
         }
       }
       colliders = [];
-      if (mv > 0.02) awake = Math.max(awake, 0.3);
+      if (mv > 0.05) awake = Math.max(awake, 0.18);
       maxK = 0;
       for (let i = 0; i < N; i++) maxK = Math.max(maxK, nodeK(i));
       moved = moved || mv > 0.002;
@@ -190,12 +228,14 @@ const CarSoftBody = (() => {
         const dx = P[3 * i] - x, dy = P[3 * i + 1] - y, dz = P[3 * i + 2] - z, d = Math.hypot(dx, dy, dz);
         if (d > Rr) continue;
         const k = v * (1 - d / Rr) / (d + 0.5);
-        V[3 * i] += dx * k; V[3 * i + 1] += dy * k * 0.6 - v * 0.15 * (1 - d / Rr); V[3 * i + 2] += dz * k;
+        V[3 * i] += dx * k * 0.6;
+        V[3 * i + 1] += Math.max(-50, Math.min(25, dy * k * 0.2)) - v * 0.12 * (1 - d / Rr);
+        V[3 * i + 2] += dz * k * 0.6;
       }
-      awake = Math.max(awake, 1.5);
+      awake = Math.max(awake, 0.6);
     };
     return {
-      setTank, step, impulse, bind, dispOf, dispAt, wheelPos, nodeK,
+      setTank, support, step, impulse, bind, dispOf, dispAt, wheelPos, nodeK,
       get maxK() { return maxK; }, get awake() { return awake > 0; },
       consumeMoved() { const m = moved; moved = false; return m; },
       tireFlat, nodes: N, links: C.length

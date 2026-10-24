@@ -77,6 +77,19 @@ const ArmoryUI = (() => {
       // scrollLeft vài chục px thì trình duyệt kéo về thẻ cũ -> trông như cuộn không ăn). Rê ở đâu trên dải cũng được.
       let wheelAcc = 0;
       dock.addEventListener('wheel', e => {
+        const bar = e.target.closest('.eqd-bar');
+        if (bar) {
+          if (bar.scrollWidth > bar.clientWidth) {
+            const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+            const dx = e.deltaMode === 1 ? e.deltaX * 33 : e.deltaX;
+            const delta = Math.abs(dy) >= Math.abs(dx) ? dy : dx;
+            if (Math.abs(delta) > 0) {
+              e.preventDefault();
+              bar.scrollLeft += delta;
+            }
+          }
+          return;
+        }
         const strip = $('.eqd-strip', dock);
         if (!strip || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || strip.scrollWidth <= strip.clientWidth) return;
         e.preventDefault();
@@ -140,9 +153,11 @@ const ArmoryUI = (() => {
     // Số ô mỗi nhóm; chế độ không giới hạn ô (Equipment.UNLIMITED_SLOTS) = số món hợp với xe này
     const capOf = (c) => Eq.UNLIMITED_SLOTS ? Object.keys(Eq.MODULES).filter(id => Eq.MODULES[id].cat === c && Eq.compatible(id, tank)).length : Eq.CATS[c].slots;
     const C = Eq.CATS[cat], cap = capOf(cat), on = inCat(cat), full = cap && on.length >= cap;
-    const keepScroll = ($('.eqd-strip', root) || {}).scrollLeft || 0, sameCat = root.dataset.cat === cat && root.dataset.tank === tank;
+    const keepScroll = ($('.eqd-strip', root) || {}).scrollLeft || 0;
+    const keepBarScroll = ($('.eqd-bar', root) || {}).scrollLeft || 0;
+    const sameCat = root.dataset.cat === cat && root.dataset.tank === tank;
 
-    // Hàng trên: nhóm · ô đang lắp · lời nhắn
+    // Hàng trên: nhóm tab cuộn ngang · lời nhắn
     let h = '<div class="eqd-bar"><div class="eqd-tabs" role="tablist">';
     for (const c in Eq.CATS) {
       const K = Eq.CATS[c];
@@ -151,24 +166,6 @@ const ArmoryUI = (() => {
       const badge = (K.slots ? `<em>${inCat(c).length}/${capOf(c)}</em>` : '') + (hurt ? '<em class="eqd-hurt" title="Có giáp bị hỏng chưa sửa"><i class="ti ti-tool"></i></em>' : '');
       h += `<button class="eqd-tab${c === cat ? ' on' : ''}" role="tab" aria-selected="${c === cat}" data-act="cat" data-item="${c}"><i class="ti ti-${K.icon}"></i><span>${K.name}</span>${badge}</button>`;
     }
-    h += '</div><div class="eqd-slots">';
-    if (C.slots && Eq.UNLIMITED_SLOTS) {
-      // Không giới hạn ô -> đếm số món đang dùng + nút trang bị / tháo cả nhóm
-      h += `<span class="eqd-lbl">ĐANG TRANG BỊ <b>${on.length}/${cap}</b></span>`;
-      h += on.length < cap
-        ? '<button class="eqp-btn" data-act="equipAll"><i class="ti ti-checks"></i> TRANG BỊ TẤT CẢ</button>'
-        : '<button class="eqp-btn" data-act="unequipAll"><i class="ti ti-x"></i> THÁO TẤT CẢ</button>';
-    } else if (C.slots) {
-      h += '<span class="eqd-lbl">ĐANG TRANG BỊ</span>';
-      for (let i = 0; i < C.slots; i++) {
-        const id = on[i], M = id && Eq.MODULES[id];
-        // ô nóc tháp để trống: xe vẫn mang món mặc định (máy phá sóng)
-        const defId = isMount(cat) && !M && Eq.slotOf ? Eq.slotOf(lo, tank, cat) : null, DM = defId && Eq.MODULES[defId];
-        h += M ? `<button class="eqd-slot on" data-act="unequip" data-item="${id}" title="Bấm để tháo (về món mặc định)"><i class="ti ti-${M.icon}"></i><span>${esc(M.name)}</span><i class="ti ti-x eqd-x"></i></button>`
-          : DM ? `<span class="eqd-slot on" title="Ô trống: xe mang món mặc định"><i class="ti ti-${DM.icon}"></i><span>${esc(DM.name)} · mặc định</span></span>`
-          : '<span class="eqd-slot"><i class="ti ti-plus"></i><span>Ô trống</span></span>';
-      }
-    } else h += '<span class="eqd-lbl">Đạn chính miễn phí · đạn khác mua lẻ từng viên</span>';
     h += '</div>';
     // số Bạc đã hiện ở góc trên màn xem xe (#ti-silver) -> ở đây chỉ nhắc cách dùng + số Bạc vừa trừ / hoàn bay lên
     const silver = prof() ? `<i class="ti ti-coins"></i> Đạn đã mua tự mang theo mỗi lần xuất kích${flash && flash.cost ? `<span class="eqd-float${flash.cost < 0 ? ' up' : ''}">${flash.cost > 0 ? '−' : '+'}${fmt(Math.abs(flash.cost))} Bạc</span>` : ''}` : '<i class="ti ti-user"></i> Đăng nhập để mua đạn bằng Bạc';
@@ -245,6 +242,7 @@ const ArmoryUI = (() => {
     flash = null;   // hiệu ứng chỉ chạy 1 lần ngay sau giao dịch
     root.dataset.cat = cat; root.dataset.tank = tank;
     if (sameCat && keepScroll) $('.eqd-strip', root).scrollLeft = keepScroll;
+    if (keepBarScroll) $('.eqd-bar', root).scrollLeft = keepBarScroll;
   }
 
   // Thẻ gọn: ảnh vuông bên trái, tên + 1 dòng tác dụng (+ nút số lượng cho đạn); mô tả đầy đủ ở tooltip
@@ -301,7 +299,12 @@ const ArmoryUI = (() => {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled || busy || !insp) return;
     const act = b.dataset.act, id = b.dataset.item, tank = insp.currentTankType, Acc = A(), Eq = E();
-    if (act === 'cat') { cat = id; msg = ''; render(); return; }
+    if (act === 'cat') {
+      cat = id; msg = ''; render();
+      const tabEl = $(`[data-act="cat"][data-item="${id}"]`, $('#ti-equip-dock'));
+      if (tabEl && tabEl.scrollIntoView) tabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      return;
+    }
     if (act === 'login') { if (Acc && Acc.showLogin) Acc.showLogin(); return; }
     if (!Eq || !Acc) return;
     if (act === 'claim') { await adFlow(tank, { item: id }); return; }

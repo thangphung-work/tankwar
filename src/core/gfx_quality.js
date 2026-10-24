@@ -130,9 +130,13 @@ const GfxQuality = (() => {
     holdT -= dt;
     const budget = refreshMs * 0.85;   // chừa chỗ cho trình duyệt ghép hình
     const gpuBound = gpuMs > cpuMs * 1.25 + 2;   // GPU thật sự là phần chậm (không phải đang chờ CPU)
+    // Một số driver/WebGL đồng bộ hàng đợi khi GPU tụt rất sâu: thời gian JS gửi lệnh khi đó
+    // cũng phình lên, khiến phép so với cpuMs kết luận nhầm là nghẽn CPU. GPU vượt ngân sách
+    // hơn 60% là bằng chứng đủ mạnh để hạ độ nét dù renderer.submit đang bị block theo.
+    const severeGpu = gpuMs > budget * 1.6;
     // dư sức: GPU xong sớm hẳn, hoặc GPU chỉ đang chờ CPU gửi lệnh mà vẫn trong ngân sách
     const spare = gpuMs < budget * 0.55 || (!gpuBound && gpuMs < budget);
-    if (gpuMs > budget && gpuBound) { overT += dt; underT = 0; }
+    if (gpuMs > budget && (gpuBound || severeGpu)) { overT += dt; underT = 0; }
     else if (spare) { underT += dt; overT = 0; }
     else { overT = 0; underT = 0; }
     const now = performance.now();

@@ -125,6 +125,8 @@ const CLIENT_JS = `(function () {
   var boot = null;
   var here = decodeURI(location.pathname).replace(/^\\//, '') || 'index.html';
   var es = new EventSource('/__dev/events');
+  // used() tra danh sách tệp đã nạp: mặc định trình duyệt chỉ giữ 250 mục, game nạp nhiều hơn
+  try { performance.setResourceTimingBufferSize(20000); } catch (e) {}
 
   // Đang chơi / thử (trận, phòng thử, phòng xem xe 3D): KHÔNG tải lại giữa chừng (bị văng khỏi trận mỗi lần lưu tệp) ->
   // hiện nhãn "có bản mới", tự tải lại khi về sảnh hoặc khi bấm vào nhãn
@@ -132,6 +134,8 @@ const CLIENT_JS = `(function () {
   function busy() {
     var g = window.game;
     if (window.tankInspector && window.tankInspector.isOpen) return true;
+    // trang thử tự khai báo đang có trạng thái cần giữ (vd. test_car.html: xe đã bị cán / bắn)
+    if (typeof window.devBusy === 'function' ? window.devBusy() : window.devBusy) return true;
     return !!(g && g.isGameStarted && !g.isGameOver);
   }
   function requestReload(why) {
@@ -158,11 +162,23 @@ const CLIENT_JS = `(function () {
     console.info('[dev] Hot reload đang bật');
   });
 
+  // trang đã nạp tệp f chưa: thẻ <script> / <link> hoặc bất kỳ yêu cầu tải nào (ảnh, âm thanh, fetch)
+  function used(f) {
+    var hit = function (url) { try { return decodeURI(new URL(url, location.href).pathname).replace(/^\\//, '') === f; } catch (e) { return false; } };
+    var els = document.querySelectorAll('script[src], link[href]');
+    for (var i = 0; i < els.length; i++) if (hit(els[i].src || els[i].href)) return true;
+    var rs = performance.getEntriesByType('resource');
+    for (var j = 0; j < rs.length; j++) if (hit(rs[j].name)) return true;
+    return false;
+  }
+
   es.addEventListener('change', function (e) {
     var d = JSON.parse(e.data);
     var files = d.files.filter(function (f) {
       // Sửa trang HTML khác (vd. fx_lab.html) thì không làm phiền trang đang mở
-      return !/\\.html$/i.test(f) || f === here;
+      if (/\\.html$/i.test(f)) return f === here;
+      // tệp trang này chưa từng nạp (script / ảnh / âm thanh của trang khác) -> bỏ qua
+      return used(f);
     });
     if (!files.length) return;
     var css = files.filter(function (f) { return /\\.css$/i.test(f); });

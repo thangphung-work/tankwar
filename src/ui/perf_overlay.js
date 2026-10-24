@@ -15,8 +15,9 @@
       if (!S.on) return f.apply(this, arguments);
       const t0 = now();
       try { return f.apply(this, arguments); } finally {
-        const r = S.T[label] || (S.T[label] = { ms: 0, n: 0 });
-        r.ms += now() - t0; r.n++;
+        const r = S.T[label] || (S.T[label] = { ms: 0, n: 0, max: 0 });
+        const d = now() - t0;
+        r.ms += d; r.n++; if (d > r.max) r.max = d;   // lần chạy lâu nhất: thấy được cú khựng đơn lẻ (trung bình làm chìm mất)
       }
     };
     w.__perf = true;
@@ -29,6 +30,11 @@
     wrap(g, 'update', 'Logic (tổng)');
     wrap(g, 'render', 'Vẽ khung hình (tổng)');
     wrap(g.renderer, 'render', '  · renderer.render (GPU submit)');
+    wrap(g, 'updateChaseCamera', '  - Camera + occlusion');
+    wrap(g, 'updateSightCamera', '  - Sight camera');
+    wrap(g, 'updateUnitLOD', '  - Unit / structure LOD');
+    wrap(g, 'updateDetailLOD', '  - Scene detail LOD');
+    wrap(g, 'updateShadowLOD', '  - Shadow LOD');
     if (typeof SPGUnit3D !== 'undefined') {
       wrap(SPGUnit3D.prototype, 'update', '  · Xe: update');
       wrap(SPGUnit3D.prototype, 'updateFXParticles', '    - khói / bụi xe');
@@ -47,6 +53,7 @@
     if (typeof TeamIntel !== 'undefined') wrap(TeamIntel, 'update', '  · Tình báo / radar');
     if (typeof VehicleDamage !== 'undefined') wrap(VehicleDamage, 'update', '  · Hư hại xe');
     if (g.terrain) wrap(g.terrain, 'update', '  · Địa hình (cây cháy, nước)');
+    if (g.terrain) wrap(g.terrain, 'updateBuildingView', '    - camera building cutaway');
     const T = g.terrain || {};
     if (T.buildingSet) wrap(T.buildingSet, 'update', '    - nhà: sập / cháy / dựng hình');
     if (T.trees) wrap(T.trees, 'update', '    - cây: cháy / đổ');
@@ -147,7 +154,7 @@
     const p50 = fr.length ? fr[Math.floor(fr.length * 0.5)] : 0, p95 = fr.length ? fr[Math.floor(fr.length * 0.95)] : 0;
     const n = Math.max(1, S.frames);
     const rows = Object.entries(S.T).sort((a, b) => b[1].ms - a[1].ms)
-      .map(([k, v]) => `${k.padEnd(34)} ${(v.ms / n).toFixed(2).padStart(6)} ms/khung`);
+      .map(([k, v]) => `${k.padEnd(34)} ${(v.ms / n).toFixed(2).padStart(6)} ms/khung · lâu nhất ${(v.max || 0).toFixed(1).padStart(5)} ms`);
     S.el.textContent =
       `HIỆU NĂNG (F9 tắt)\n` +
       `FPS ${S.fps.toFixed(0)}   khung p50 ${p50.toFixed(1)} ms · p95 ${p95.toFixed(1)} ms\n` +
@@ -158,9 +165,11 @@
       (typeof GfxQuality !== 'undefined'
         ? `GPU ${GfxQuality.gpuMs === null ? (GfxQuality.timerSupported ? '...' : 'không đo được') : GfxQuality.gpuMs.toFixed(1) + ' ms'} · nhịp màn hình ${GfxQuality.refreshMs.toFixed(1)} ms · độ nét ${g.renderer.getPixelRatio().toFixed(2)} (tối đa ${GfxQuality.maxRatio.toFixed(2)})\n`
         : '') +
+      (window.RaycastBVH ? (b => `Dò tia BVH: ${b.built} lưới · ${(b.tris / 1000).toFixed(0)}k tam giác · chờ dựng ${b.queued}
+`)(RaycastBVH.stats()) : '') +
       netStats() + fxStats(g) + audioStats() +
       `--- thời gian CPU trung bình mỗi khung ---\n` + rows.join('\n');
-    for (const k in S.T) { S.T[k].ms = 0; S.T[k].n = 0; }
+    for (const k in S.T) { S.T[k].ms = 0; S.T[k].n = 0; S.T[k].max = 0; }
     S.frames = 0;
     S.frameMs.length = 0;
   }

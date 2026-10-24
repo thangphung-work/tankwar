@@ -162,18 +162,20 @@ class CapturePointsManager {
     group.add(orbMesh);
 
     // 6. Lá cờ hiệu cứ điểm tung bay (Hiển thị màu phe)
-    const flagGeo = new THREE.PlaneGeometry(9, 5);
+    const flagGeo = new THREE.PlaneGeometry(9, 5, 20, 10);
+    flagGeo.translate(4.5, 0, 0);
     const flagMat = new THREE.MeshStandardMaterial({
       color: 0xe2e8f0,
       side: THREE.DoubleSide,
-      roughness: 0.6
+      roughness: 0.85
     });
     const flagMesh = new THREE.Mesh(flagGeo, flagMat);
-    flagMesh.position.set(4.8, 19.5, 0);
+    flagMesh.position.set(0.3, 19.5, 0);
     flagMesh.castShadow = true;
     group.add(flagMesh);
     cp.flagMesh = flagMesh;
     cp.flagMat = flagMat;
+    cp.flagBase0 = flagGeo.attributes.position.array.slice();
 
     // 7. Khối ký hiệu chữ cái A, B, C xoay nhẹ trên không
     const markerGeo = new THREE.BoxGeometry(3.5, 3.5, 3.5);
@@ -280,8 +282,40 @@ class CapturePointsManager {
       if (cp.markerMesh) {
         cp.markerMesh.rotation.y += dt * 0.8;
       }
-      if (cp.flagMesh) {
-        cp.flagMesh.rotation.y = Math.sin(Date.now() * 0.003) * 0.25;
+      if (cp.flagMesh && cp.flagBase0) {
+        cp.flagT = (cp.flagT || 0) + dt;
+        const ft = cp.flagT;
+        const bw = this.game.ballistics && this.game.ballistics.wind;
+        const gst = typeof Weather !== 'undefined' && Weather.gust ? Weather.gust() : null;
+        const wx = (bw ? bw.vx || 0 : 3.5) + (gst ? gst.x || 0 : 0);
+        const wz = (bw ? bw.vz || 0 : 2.0) + (gst ? gst.z || 0 : 0);
+        const windSpd = Math.hypot(wx, wz) || 4.0;
+        const windAng = Math.atan2(wz, wx);
+        const windNorm = Math.min(2.5, windSpd / 6.5);
+        const freq = 4.0 + 5.0 * windNorm;
+        const waveAmp = 0.9 + 1.3 * Math.min(1.4, windNorm);
+        const droop = Math.max(0.15, 1.2 * (1.1 - Math.min(1.0, windNorm * 1.1)));
+
+        // Xoay lá cờ theo chiều gió thổi
+        let dAng = (windAng - cp.flagMesh.rotation.y) % (Math.PI * 2);
+        if (dAng > Math.PI) dAng -= Math.PI * 2;
+        if (dAng < -Math.PI) dAng += Math.PI * 2;
+        cp.flagMesh.rotation.y += dAng * Math.min(1.0, dt * 4.0);
+
+        const pos = cp.flagMesh.geometry.attributes.position, a = pos.array, b = cp.flagBase0;
+        const W = 9;
+        for (let i = 0; i < a.length; i += 3) {
+          const bx = b[i], by = b[i + 1], k = Math.min(1.0, Math.max(0.0, bx / W));
+          const kWave = Math.pow(k, 1.2);
+          const w1 = Math.sin(bx * 0.35 - ft * freq + by * 0.12) * (1.6 * waveAmp) * kWave;
+          const w2 = Math.sin(bx * 0.85 - ft * (freq * 1.9) + by * 0.3) * (0.5 * waveAmp) * kWave;
+          const w3 = Math.sin(bx * 1.2 - ft * (freq * 2.5)) * (0.28 * windNorm) * kWave;
+          a[i + 2] = w1 + w2 + w3;
+          a[i + 1] = by - kWave * kWave * droop + Math.sin(bx * 0.4 - ft * 4.5) * (0.3 * windNorm) * kWave;
+          a[i] = bx - Math.abs(a[i + 2]) * 0.1 * kWave;
+        }
+        pos.needsUpdate = true;
+        cp.flagMesh.geometry.computeVertexNormals();
       }
 
       // Đổi màu sắc 3D theo chủ sở hữu và trạng thái

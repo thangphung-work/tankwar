@@ -2427,6 +2427,85 @@ const VehicleKit = (() => {
     return t;
   }
 
+  // Atlas chớp lửa pháo tự động (2x2 biến thể / texture, đổi ngẫu nhiên mỗi phát):
+  //  front: nhìn dọc nòng — lõi nhỏ, 4-6 lưỡi khí cháy phụt lệch không đều, mép rách lốm đốm (không phải quả cầu tròn)
+  //  side : nhìn ngang — lưỡi lửa từ miệng nòng (đỉnh ảnh) loe ra phía trước, sáng nhất cách miệng một đoạn, đuôi tõe
+  //  thành các lưỡi. Màu tối đa vàng-cam (thuốc phóng ban ngày), chỉ lõi rất nhỏ ngả trắng
+  function getAutocannonFlashAtlas() {
+    if (TEX_CACHE.__acFlash) return TEX_CACHE.__acFlash;
+    if (typeof document === 'undefined') return null;
+    const hash = (x, y, s) => {
+      const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const vnoise = (x, y, s) => {
+      const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+      const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+      const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
+      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    };
+    const fbm = (x, y, s) => 0.5 * vnoise(x, y, s) + 0.3 * vnoise(x * 2.1, y * 2.1, s + 7) + 0.2 * vnoise(x * 4.3, y * 4.3, s + 13);
+    const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    // cường độ -> màu (alpha = cường độ; blending cộng nên màu tối tự mờ đi)
+    const put = (D, i, k, hot) => {
+      k = Math.max(0, Math.min(1, k));
+      const w = sstep(0.72, 1.0, k * hot);
+      D[i] = 255;
+      D[i + 1] = Math.round(255 * Math.min(1, 0.26 + 0.42 * k + 0.3 * w));
+      D[i + 2] = Math.round(255 * Math.min(1, 0.03 + 0.1 * k * k + 0.5 * w));
+      D[i + 3] = Math.round(255 * k * 0.85);
+    };
+    const mk = (draw) => {
+      const S = 256, cv = document.createElement('canvas');
+      cv.width = cv.height = S;
+      const ctx = cv.getContext('2d'), img = ctx.createImageData(S, S);
+      draw(img.data, S);
+      ctx.putImageData(img, 0, 0);
+      const t = new THREE.CanvasTexture(cv);
+      return t;
+    };
+    const front = mk((D, S) => {
+      const C = S / 2;
+      for (let q = 0; q < 4; q++) {
+        const ox = (q % 2) * C, oy = (q >> 1) * C, s = q * 17 + 3;
+        const nL = 4 + (q % 3), lobes = [];
+        for (let k = 0; k < nL; k++) lobes.push({ a: (k / nL) * Math.PI * 2 + (hash(k, q, 1) - 0.5) * 1.1, len: 0.45 + hash(k, q, 2) * 0.5, p: 5 + hash(k, q, 3) * 10 });
+        for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) {
+          const dx = (x + 0.5) / C * 2 - 1, dy = (y + 0.5) / C * 2 - 1, r = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+          let R = 0.2 + 0.1 * fbm(Math.cos(th) * 2 + 5, Math.sin(th) * 2 + 5, s);
+          for (const L of lobes) R += L.len * Math.pow(Math.max(0, Math.cos(th - L.a)), L.p);
+          const n = fbm(dx * 5 + q * 9, dy * 5, s);
+          let k = 1 - sstep(0.25, 1.0, r / R + (n - 0.5) * 0.55);
+          k *= 0.55 + 0.6 * fbm(dx * 9, dy * 9 + q * 4, s + 5);
+          k += 0.9 * Math.exp(-r * r * 90);
+          k *= 1 - sstep(0.85, 0.98, r);
+          put(D, ((oy + y) * S + ox + x) * 4, k, 1.15 - r * 1.2);
+        }
+      }
+    });
+    const side = mk((D, S) => {
+      const C = S / 2;
+      for (let q = 0; q < 4; q++) {
+        const ox = (q % 2) * C, oy = (q >> 1) * C, s = q * 23 + 11;
+        const peak = 0.3 + hash(q, 1, 9) * 0.15;
+        for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) {
+          const u = (x + 0.5) / C * 2 - 1, t = (y + 0.5) / C;          // t: 0 = miệng nòng (đỉnh ảnh) -> 1 = mũi lửa
+          let W = 0.1 + 0.75 * Math.sin(Math.PI * Math.pow(t, 0.7)) * (0.7 + 0.6 * fbm(t * 5, 1, s));
+          W = Math.max(0.05, W);
+          const n = fbm(u * 3 + q * 7, t * 9, s);                     // vệt kéo dài dọc trục -> lưỡi lửa
+          let k = 1 - sstep(0.2, 1.0, Math.abs(u) / W + (n - 0.5) * 0.7);
+          k *= sstep(0.0, 0.05, t) * (1 - sstep(0.45, 0.95, t + (fbm(u * 4, t * 6, s + 3) - 0.5) * 0.5));
+          k *= 0.45 + 0.65 * Math.exp(-Math.pow((t - peak) / 0.2, 2));
+          k *= 0.6 + 0.55 * fbm(u * 8, t * 14 + q, s + 9);
+          k *= 1 - sstep(0.9, 1.0, Math.abs(u));
+          put(D, ((oy + y) * S + ox + x) * 4, k, 1.2 - t * 1.1);
+        }
+      }
+    });
+    TEX_CACHE.__acFlash = { front, side };
+    return TEX_CACHE.__acFlash;
+  }
+
   // Decal chữ số hiệu chiến thuật (nền trong suốt; sơn trắng đã bạc, ngả màu như ngoài chiến trường)
   // worn = true: chữ sơn phai tróc lỗ chỗ, xước ngang, nửa dưới mờ bụi (xe đã qua chiến trường)
   function createStencilDecal(text, w, h, color = 'rgba(214,210,194,0.72)', worn = false) {
@@ -2497,6 +2576,7 @@ const VehicleKit = (() => {
     samplePath,
     createStencilDecal,
     getMuzzleFlashTexture,
+    getAutocannonFlashAtlas,
     orientBetween,
     bezier3,
     mulberry32

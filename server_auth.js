@@ -215,6 +215,15 @@ function teamOfClient(M, clientId) {
   for (const r of M.roster) if (r.peer === clientId) return r.team;
   return null;   // người xem / chưa có xe: nhận đầy đủ
 }
+// Chuyển tin cho các máy cùng phe `team` (trừ máy gửi); người xem chưa có xe vẫn nhận
+function sendTeam(room, M, team, fromId, msg) {
+  const out = JSON.stringify({ t: msg.t, f: fromId, d: msg.d === undefined ? null : msg.d });
+  room.members.forEach((member, id) => {
+    if (id === fromId) return;
+    const t = teamOfClient(M, id);
+    if (!t || t === team) member.sendText(out);
+  });
+}
 function meta(M, i) { return M.meta[i] || (M.meta[i] = { lastT: 0, hpAuth: null, deadAt: 0, revealUntil: 0, dmg: [], tick: 0, fires: [], lastFire: 0 }); }
 function flag(M, client, why) {
   // đếm theo (máy, loại vi phạm) -> mỗi loại đều được ghi nhật ký lần đầu (rồi mỗi 50 lần)
@@ -809,7 +818,21 @@ function handle(room, client, msg) {
       const d = msg.d || {}, sr = M.byIdx.get(d.s), tr = M.byIdx.get(d.t);
       if (!sr || !tr || sr.type !== 'SCOUT' || ownerOf(room, sr) !== client.id) return true;
       M.spotted[sr.team].set(d.t, now + SPOT_MS);
-      return false;
+      sendTeam(room, M, sr.team, client.id, msg);   // phe địch không được biết mình vừa bị trinh sát phát hiện
+      return true;
+    }
+    case 'QCMD': {
+      // lệnh nhanh bộ đàm (quick_comms.js): chỉ người lái xe đó, xe còn sống, tối đa 4 lệnh / 6 s, chỉ gửi cho phe mình
+      const d = msg.d || {}, r = M.byIdx.get(d.i), st = r && M.S[d.i];
+      if (!r || r.peer !== client.id || !st || (st.f & F_DEAD)) return true;
+      if (!Number.isInteger(d.c) || d.c < 0 || d.c > 7) return true;
+      if (d.x !== undefined && !(Number.isFinite(d.x) && Number.isFinite(d.z) && Math.abs(d.x) < 1e5 && Math.abs(d.z) < 1e5)) return true;
+      const q = client._qcmd || (client._qcmd = []);
+      while (q.length && now - q[0] > 6000) q.shift();
+      if (q.length >= 4) return true;
+      q.push(now);
+      sendTeam(room, M, r.team, client.id, { t: 'QCMD', d: { i: d.i, c: d.c, x: d.x, z: d.z, t: Number.isInteger(d.t) ? d.t : undefined, o: typeof d.o === 'string' ? d.o.slice(0, 1) : undefined } });
+      return true;
     }
     default:
       return false;
