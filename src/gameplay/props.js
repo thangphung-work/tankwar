@@ -960,22 +960,18 @@ const Props = (() => {
   // thân ~150 kJ, SUV / van / bán tải khung cứng hơn, xe tải sắt-xi dầm thép chữ U gấp nhiều lần
   const CRUSH_KJ = { sedan: 150, taxi: 150, hatch: 120, suv: 220, van: 230, pickup: 260, dump: 650, truck: 650 };
   // Đoạn nòng s ({x0..z1}, bán kính ~1,3 đv, bỏ 1/4 sát chốt nằm trên nóc xe) ngập vào hộp ô tô o (mặt bằng xoay + từ mặt
-  // đường tới nóc top) chỗ nào sâu nhất: { d: độ ngập, t: vị trí trên nòng, (nx, ny, nz): hướng ô tô bị nòng ép tới =
-  // pháp tuyến mặt bị tì hướng vào trong xe (sườn / đầu xe: ngang; nóc: chúc xuống) } | null
+  // đường tới nóc top) chỗ nào sâu nhất: { d: độ ngập, t: vị trí trên nòng, side: ngập qua sườn / đầu xe (không phải qua
+  // nóc) } | null
   function barrelInCar(s, o, top) {
     const D = CAR_DIM[o.kind] || CAR_DIM.sedan, ca = Math.cos(o.angle), sa = Math.sin(o.angle), r = 1.3, bot = o.y - 1;
     let best = null;
     for (let i = 0; i <= 12; i++) {
       const t = 0.25 + 0.75 * i / 12, x = s.x0 + (s.x1 - s.x0) * t - o.x, y = s.y0 + (s.y1 - s.y0) * t, z = s.z0 + (s.z1 - s.z0) * t - o.z;
       const lx = x * ca - z * sa, lz = x * sa + z * ca;
-      const px = D.hw + r - Math.abs(lx), pz = D.hl + r - Math.abs(lz), pT = top + r - y, pB = y - bot + r;
-      const d = Math.min(px, pz, pT, pB);
+      const pS = Math.min(D.hw + r - Math.abs(lx), D.hl + r - Math.abs(lz)), d = Math.min(pS, top + r - y, y - bot + r);
       if (d <= 0 || (best && d <= best.d)) continue;
       best = best || {};
-      best.d = d; best.t = t;
-      if (d === px) { const g = lx > 0 ? -1 : 1; best.nx = g * ca; best.ny = 0; best.nz = -g * sa; }
-      else if (d === pz) { const g = lz > 0 ? -1 : 1; best.nx = g * sa; best.ny = 0; best.nz = g * ca; }
-      else { best.nx = 0; best.nz = 0; best.ny = d === pT ? -1 : 1; }
+      best.d = d; best.t = t; best.side = d === pS;
     }
     return best;
   }
@@ -2042,53 +2038,62 @@ const Props = (() => {
         if (o.type !== 'car' || (o.c || 0) >= 0.7) continue;
         const top = this.carTop(o);
         if (Math.min(S1.y0, S1.y1) > top + 3) continue;
-        const h = barrelInCar(S1, o, top);
+        const hb = barrelInCar(S1, o, top);
         // vừa tì ở khung trước: giữ tiếp xúc tới sát mặt (không nhả / chạm xen kẽ từng khung -> tháp ì đều tay)
-        if (!h || h.d < (o._bcU === unit.id && now - o._bcT < 120 ? 0.02 : 0.3)) continue;
-        const D = CAR_DIM[o.kind] || CAR_DIM.sedan;
-        // điểm chạm: tư thế khung này / tư thế tháp khung trước (cùng vị trí thân xe) / cả xe khung trước
-        const t = h.t, pt = k => fresh ? at(S0, t, k) : P[k] + (P[k + 3] - P[k]) * t;
-        let dv = [at(S1, t, 0) - pt(0), at(S1, t, 1) - pt(1), at(S1, t, 2) - pt(2)];
-        const dT = Math.hypot(at(S1, t, 0) - at(S0, t, 0), at(S1, t, 1) - at(S0, t, 1), at(S1, t, 2) - at(S0, t, 2));
-        // phần dịch chuyển đi VÀO ô tô (theo pháp tuyến mặt bị tì) — lùi ra / cà dọc thì không đẩy
-        let into = dv[0] * h.nx + dv[1] * h.ny + dv[2] * h.nz;
+        if (!hb || hb.d < (o._bcU === unit.id && now - o._bcT < 120 ? 0.02 : 0.3)) continue;
         if (o.civilPending) this.upgradeToCivilCar(o);
         const api = o.group && o.group.userData && o.group.userData.crush;
+        // điểm chạm trên thân nòng (t) và quãng nó đi trong khung: so với cả xe khung trước (dv) / chỉ do tháp xoay, nòng nâng
+        // hạ (dT, cùng vị trí thân xe)
+        let t = hb.t;
+        const pt = k => fresh ? at(S0, t, k) : P[k] + (P[k + 3] - P[k]) * t;
+        const step = () => [at(S1, t, 0) - pt(0), at(S1, t, 1) - pt(1), at(S1, t, 2) - pt(2)];
+        let dv = step();
         if (api && api.sweepBarrel) {
           V[0].set(S1.x0, S1.y0, S1.z0); V[1].set(S1.x1, S1.y1, S1.z1); V[2].set(dv[0] / dt, dv[1] / dt, dv[2] / dt);
-          // hộp chạm nhưng hình thật chưa (nòng lướt trên capô / cốp thấp hơn nóc): bỏ qua
+          // hộp chạm nhưng hình thật chưa (nòng lướt trên capô / cốp / thùng thấp hơn nóc cabin): bỏ qua
           if (!api.sweepBarrel(V[0], V[1], 1.25, V[2])) continue;
+          const q = api.lastHit;   // chỗ nòng ngập sâu nhất vào hình thật
+          if (q) {
+            const ex = S1.x1 - S1.x0, ey = S1.y1 - S1.y0, ez = S1.z1 - S1.z0;
+            t = clamp(((q.x - S1.x0) * ex + (q.y - S1.y0) * ey + (q.z - S1.z0) * ez) / (ex * ex + ey * ey + ez * ez || 1), 0.25, 1);
+            dv = step();
+          }
         }
+        const D = CAR_DIM[o.kind] || CAR_DIM.sedan;
+        const dT = Math.hypot(at(S1, t, 0) - at(S0, t, 0), at(S1, t, 1) - at(S0, t, 1), at(S1, t, 2) - at(S0, t, 2));
         const sp = Math.hypot(dv[0], dv[1], dv[2]) / dt, byHull = Math.hypot(dv[0], dv[1], dv[2]) > dT * 1.5;
+        // ô tô bị đẩy theo chiều điểm chạm đang quét ngang (tháp xoay: vuông góc thân nòng; thân xe lao tới: đầu nòng húc dọc
+        // trục) khi điểm đó đi VÀO ô tô (về phía tâm xe) — lùi ra / cà dọc thì chỉ cạ. Ép từ trên xuống (hạ nòng xuống nóc /
+        // capô): ô tô không nhường xuống đất được
+        let hl = Math.hypot(dv[0], dv[2]);
+        const inward = dv[0] * (o.x - at(S1, t, 0)) + dv[2] * (o.z - at(S1, t, 2)) > 0, down = dv[1] < -0.005 && -dv[1] > hl * 1.5;
         let moved = 0, stuck = false;
-        if (window.__bcDbg) window.__bcDbg.push([+h.d.toFixed(2), +h.t.toFixed(2), +h.nx.toFixed(2), h.ny, +h.nz.toFixed(2), dv.map(v => +v.toFixed(2)), +into.toFixed(3), +dT.toFixed(2), fresh]);
-        if (!proxy && into > 0.005) {
-          if (Math.abs(h.ny) > 0.5) stuck = true;   // nòng ép xuống nóc / capô: ô tô không nhường xuống đất được
+        if (!proxy && (down || (inward && hl > 0.005))) {
+          if (down) stuck = true;
           else {
             const mC = D.m * (this.moving.has(o) ? 1 : 1.6) * (1 + (o.c || 0));
-            // tháp ì lại khi gạt: chỉ đi được fT phần cú xoay lệnh (mô-tơ quay tháp gạt nổi ~1 tấn ma sát lốp mỗi nhịp)
+            // tháp ì lại khi gạt: chỉ đi được fT phần cú xoay lệnh (mô-tơ quay tháp gạt nổi ~0,6 tấn ma sát lốp mỗi nhịp:
+            // xe con đỗ ~1/4 tốc độ quay, xe tải ben ~1/8)
             if (dT > 0.01 && !held) {
-              const fT = clamp(0.9 / mC, 0.15, 0.7), dy = Math.atan2(Math.sin(yaw - yaw0), Math.cos(yaw - yaw0));
+              const fT = clamp(0.6 / mC, 0.08, 0.6), dy = Math.atan2(Math.sin(yaw - yaw0), Math.cos(yaw - yaw0));
               yaw = yaw0 + dy * fT; el = el0 + (el - el0) * fT;
               turretTo(unit, yaw, el); seg(yaw, el, S1);
-              dv = [at(S1, t, 0) - pt(0), at(S1, t, 1) - pt(1), at(S1, t, 2) - pt(2)];
-              into = dv[0] * h.nx + dv[1] * h.ny + dv[2] * h.nz;
+              dv = step(); hl = Math.hypot(dv[0], dv[2]);
             }
-            // dời ô tô theo pháp tuyến mặt bị tì: quãng điểm chạm lấn vào + một phần đang ngập; lệch tâm thì ô tô xoay
-            const want = Math.max(0, into) + Math.min(1.2, Math.max(0, h.d - 0.2) * 0.35);
-            const Fx = h.nx * want, Fz = h.nz * want, rx = at(S1, t, 0) - o.x, rz = at(S1, t, 2) - o.z, I = (D.hl * D.hl + D.hw * D.hw) / 3;
+            // dời ô tô theo chiều quét: quãng điểm chạm đi được + một phần đang lấn qua sườn / đầu xe; lệch tâm thì ô tô xoay
+            const want = hl + (hb.side ? Math.min(0.6, Math.max(0, hb.d - 0.2) * 0.35) : 0);
+            const nx = dv[0] / (hl || 1), nz = dv[2] / (hl || 1), Fx = nx * want, Fz = nz * want;
+            const rx = at(S1, t, 0) - o.x, rz = at(S1, t, 2) - o.z, I = (D.hl * D.hl + D.hw * D.hw) / 3;
             moved = this.moveCar(o, Fx, Fz, clamp((rz * Fx - rx * Fz) / I * 0.9, -0.08, 0.08), unit);
             if (want > 0.05 && moved < want * 0.4) stuck = true;
             // công ma sát lốp ô tô (~0,6 trọng lượng x quãng trượt): thân xe lao tới mất đà tương ứng
             if (moved > 0 && byHull) this.absorbCrush(unit, 0.6 * mC * 9.81 * moved / 8);
           }
           if (stuck) {
-            // giữ tư thế khung trước như chạm tường (thử giữ riêng hướng tháp / góc nâng trước)
+            // giữ tư thế khung trước như chạm tường; chỉ ép xuống nóc thì tháp vẫn xoay, nòng không hạ thêm
             if (dT > 0.01) {
-              const h0 = barrelInCar(S0, o, top), d0 = h0 ? h0.d : 0;
-              let pick = [yaw0, el0];
-              for (const c of [[yaw, el0], [yaw0, el]]) { const hh = barrelInCar(seg(c[0], c[1], tmp), o, top); if (!hh || hh.d <= Math.max(0.3, d0 + 0.01)) { pick = c; break; } }
-              yaw = pick[0]; el = pick[1];
+              if (down) el = Math.max(el, el0); else { yaw = yaw0; el = el0; }
               turretTo(unit, yaw, el); seg(yaw, el, S1);
               unit.barrelWallBlocked = held = true;
             }
@@ -2100,11 +2105,13 @@ const Props = (() => {
         const first = !(o._bcU === unit.id && now - o._bcT < 350);
         o._bcU = unit.id; o._bcT = now;
         const pos = { x: at(S1, t, 0), y: at(S1, t, 1), z: at(S1, t, 2) }, self = !!unit.isPlayer, key = unit.id + '|bcar|' + o.seed;
+        // cú nện: tốc độ lao vào; tiếng cà: quãng nòng THỰC đi trong khung (tháp đứng khựng tì vào ô tô kẹt thì im)
+        const vNow = held ? Math.hypot(...step()) / dt : sp;
         if (first && sp > 3) {
           if (SE && SE.collideAt) SE.collideAt(pos, { vn: sp, mA: m * (byHull ? 0.6 : 0.1), mB: D.m, mat: 'car', self, yield: !stuck, key, barrel: true });
           const g = typeof window !== 'undefined' && window.game;
           if (self && g) g.cameraShake = Math.max(g.cameraShake || 0, Math.min(2.5, sp / 30));
-        } else if (!first && sp > 6 && SE && SE.scrapeAt) SE.scrapeAt(pos, { vt: sp, mA: m * 0.1, mat: 'car', self, key });
+        } else if (!first && vNow > 6 && SE && SE.scrapeAt) SE.scrapeAt(pos, { vt: vNow, mA: m * 0.1, mat: 'car', self, key });
         if (moved / dt > 4) sfx('carSlide', o.x, o.y + 1, o.z, clamp(moved / dt / 50, 0.3, 0.9));
       }
       keep();
