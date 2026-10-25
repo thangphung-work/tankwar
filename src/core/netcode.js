@@ -1838,7 +1838,7 @@
         d.sh = set.items.map(K => [K.id, Math.round((K.capture || 0) * 10) / 10, K.owner || '']);
       }
       const cpm = g.capturePointsManager;
-      if (cpm && cpm.netState) d.cp = cpm.netState();   // đồng hồ giữ cứ điểm (thắng khi giữ đủ 60 s)
+      if (cpm && cpm.netState) d.cp = cpm.netState();   // đồng hồ chung giữ đồng thời A/B/C đủ 90 s
       if (end) d.end = end;
       return d;
     }

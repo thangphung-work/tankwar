@@ -644,7 +644,7 @@ class BotAIController {
       if (!this._holdOff) { const a = Math.random() * Math.PI * 2, r = 0.1 + Math.random() * 0.2; this._holdOff = { c: Math.cos(a) * r, s: Math.sin(a) * r }; }
       const holdAt = (cp) => ({ x: cp.x + this._holdOff.c * cp.radius, z: cp.z + this._holdOff.s * cp.radius });
 
-      // 1. Tình huống khẩn cấp: Địch sắp giữ đủ 60s để thắng!
+      // Đồng hồ chỉ chạy khi địch sở hữu cả A/B/C: phá bất kỳ một điểm để reset.
       let urgentEnemyCp = null;
       let maxHoldTime = 0;
       for (const cp of capturePoints) {

@@ -850,9 +850,9 @@ class HUDController {
         ctx.textBaseline = 'middle';
         ctx.fillText(cp.id, cx, cz);
 
-        // Vòng đếm thời gian giữ 60s
+        // Vòng đồng hồ kiểm soát đồng thời A/B/C.
         if (cp.owner !== 'NEUTRAL') {
-          const holdRatio = Math.min(1, cp.holdTimer / 60.0);
+          const holdRatio = Math.min(1, cp.holdTimer / (cp.holdGoal || 90));
           ctx.strokeStyle = '#e7a63a';
           ctx.lineWidth = 1.8;
           ctx.setLineDash([]);

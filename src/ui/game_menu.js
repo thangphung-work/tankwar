@@ -175,6 +175,7 @@ const GameMenu = (() => {
       ['<i class="ti ti-mouse"></i> Chuột phải', 'Tự lái tới điểm đó (tự tìm đường)'],
       [K('Space'), 'Bắn (giữ để xả liên thanh); xe trinh sát chọn ô tên lửa thì phóng tên lửa'],
       [K('Tab'), 'Khóa / đổi mục tiêu tiếp theo (đang cầm máy phá sóng: đổi drone địch)'],
+      [K('T'), 'Hủy khóa mục tiêu & điểm ngắm chuột — tháp / nòng về thẳng mũi xe (giữ theo thân xe tới khi ngắm lại)'],
       [`${K('1')} ${K('2')} ${K('3')} hoặc ${K('Q')} ${K('E')} ${K('R')}`, 'Đổi loại đạn'],
       [K('4'), 'Vũ khí trên nóc tháp (nếu lắp): máy phá sóng chống UAV, máy phá khóa radar, súng máy / phóng lựu / tên lửa đột nóc (khóa bằng đầu dò, giữ tâm ngắm rồi Space). Bấm lại để về pháo chính'],
       [K('F'), 'Xe 6 nòng / trinh sát: khóa phòng không drone địch (bấm lại để thôi). Màn drone pháo tự hành: đánh dấu mục tiêu ở tâm màn hình'],

@@ -803,7 +803,7 @@ const GLSL_WEATHER = `
   vec3 Nn = normalize(vObjN);
   float x = vRest.x, y = vRest.y, z = vRest.z, ax = abs(x);
   vec3 cO = diffuseColor.rgb; float mO = metalness, rO = roughness, ccO = 1.0;
-  cO *= 1.0 - 0.85 * fillAA(holeD - 0.05);   // khe hở quanh cụm đèn / lưới
+  cO *= 1.0 - 0.85 * fillAA(holeD - 0.035);   // khe hở quanh cụm đèn / lưới (~4 mm)
   float seam = 0.0, gap = 0.07, hoodEdge = vRef.x - 0.95;
   if (abs(Nn.x) > 0.45) {
     float yIn = step(uB.x, y) * step(y, vRef.z - 0.3);
@@ -1208,6 +1208,8 @@ const GLSL_WEATHER = `
     const L = (rings.length - 1) * n; for (let i = 0; i < n; i++) idx.push(L + i, L + (i + 1) % n, c);
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     if (colorFn) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    // toạ độ mặt chiếu (u, v) của cụm làm uv: vùng màu kính, vân quang học, mặt khía chóa đèn hậu
+    if (uvs) { const uv = []; rings.forEach((R, k) => R.forEach((p, i) => uv.push(uvs[k][i][0], uvs[k][i][1]))); uv.push(...uvs[uvs.length - 1].c); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); }
     g.setIndex(idx); g.computeVertexNormals();
     // quay mặt ra phía người nhìn
     const N = g.attributes.normal; let s = 0; for (let i = 0; i < N.count; i++) s += N.getX(i) * faceDir.x + N.getY(i) * faceDir.y + N.getZ(i) * faceDir.z;
@@ -1237,8 +1239,9 @@ const GLSL_WEATHER = `
     const uvs = ringsUV.map(R => R); uvs.push({ c: P.cuv }); uvs[uvs.length - 1].c = P.cuv;
     const add = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = false; m.receiveShadow = true; parent.add(m); return m; };
     const back = sinkRings(rings, d, depth), backC = center.clone().addScaledVector(d, -depth);
-    add(stripGeometry(rings[0], back[0], true), M.wall);                         // thành lỗ
-    add(capGeometry(back, backC, d, null), F.backMat ? M[F.backMat] : M.wall);   // đáy lõm
+    const tl = F.kind === 'tail';
+    add(stripGeometry(rings[0], back[0], true), tl && M.tailWall ? M.tailWall : M.wall);                    // thành lỗ
+    add(capGeometry(back, backC, d, null, tl ? uvs : null), F.backMat ? M[F.backMat] : M.wall);   // đáy lõm (đèn hậu: chóa khía cần uv)
     const at = (u, v, inset) => { const p = P.hit(u, v); return p ? p.addScaledVector(d, -inset) : null; };
     const orient = (m, dir) => { m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); return m; };
     if (F.kind === 'head') {
@@ -1317,61 +1320,59 @@ const GLSL_WEATHER = `
       const u0 = Math.min(...outline.map(p => p[0])), u1 = Math.max(...outline.map(p => p[0]));
       const v0 = Math.min(...outline.map(p => p[1])), v1 = Math.max(...outline.map(p => p[1]));
       const rimPts = outline.map(p => at(p[0], p[1], depth * 0.06)).filter(Boolean);
-      if (rimPts.length > 6) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts, true), 96, 0.045, 6, true), M.wall);
-      // khoang đèn trong cụm hậu: ô chóa phản xạ dẹt bo góc nằm sát đáy hốc (không phải viên tròn lồi nổi giữa kính)
-      const cell = (u, v, rx, ry, mat) => {
-        const p = at(u, v, depth * 0.75); if (!p) return;
-        const m = add(roundBox(2 * rx, 2 * ry, 0.06, Math.min(rx, ry) * 0.5), mat); m.position.copy(p);
-        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), d.clone().negate()); m.rotateZ(0);
+      // khe tôn quanh cụm đèn: gioăng tối mảnh ~3 mm (trước đây viền đen dày như nét vẽ hoạt hình)
+      if (rimPts.length > 6) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts, true), 96, 0.022, 5, true), M.wall);
+      const isRed = (u, v) => lensKind(F.lensColor ? F.lensColor(u, v) : [0.76, 0.02, 0.014]) === 'red';
+      // dải dẫn sáng LED (acrylic mờ, đèn tắt) theo đường fn(t) -> [u, v]: chỉ chạy trong vùng kính đỏ — đoạn liền dài nhất,
+      // không xuyên qua ô đèn lùi / xi nhan
+      const guide = (fn, n, rad, mat) => {
+        let run = [], best = [];
+        for (let i = 0; i <= n; i++) {
+          const [u, v] = fn(i / n), p = isRed(u, v) ? at(u, v, depth * 0.42) : null;
+          if (p) run.push(p); else { if (run.length > best.length) best = run; run = []; }
+        }
+        if (run.length > best.length) best = run;
+        if (best.length > 5) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(best), best.length * 2, rad, 7, false), mat);
       };
+      // chóa crôm lõm hình bầu dục + bóng đèn + đui sau từng ô kính không đỏ (đèn lùi: kính trong, xi nhan: kính hổ
+      // phách); đèn kiểu cũ (không dải LED) thì vùng đỏ cũng là chóa + bóng. Trục chóa: X ngang theo cụm, Y lún vào trong
+      const X = P.U.clone(), Y = d.clone().negate(), Zv = new THREE.Vector3().crossVectors(X, Y).normalize();
+      const rot = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Zv)), up = new THREE.Vector3(0, 1, 0);
+      const bowl = z => {
+        const p = at(z.cu, z.cv, depth * 0.22); if (!p) return;
+        const rx = Math.max(0.1, z.hu * 0.76), ry = Math.max(0.1, z.hv * 0.76), rd = Math.min(depth * 0.72, Math.min(rx, ry) * 0.95), r = Math.min(rx, ry) * 0.3;
+        const b = add(new THREE.SphereGeometry(1, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), M.chromeIn);
+        b.quaternion.copy(rot); b.position.copy(p); b.scale.set(rx, rd, ry);
+        add(new THREE.SphereGeometry(r, 14, 10), M.bulb).position.copy(p).addScaledVector(d, -rd * 0.5);
+        const sock = add(new THREE.CylinderGeometry(r * 0.5, r * 0.6, rd * 0.45, 10), M.wall);
+        sock.quaternion.setFromUnitVectors(up, d); sock.position.copy(p).addScaledVector(d, -rd * 0.85);
+      };
+      for (const z of lampZones(F, outline, u0, u1, v0, v1)) if (z.kind !== 'red' || !F.style) bowl(z);
       if (F.style === 'sedanBlade') {
         // Hai nét LED gãy nhẹ chạy ngang, dồn cụm sáng về góc ngoài như sedan hạng D hiện đại.
-        for (const vr of [0.34, 0.7]) {
-          const pts = [];
-          for (let i = 0; i <= 20; i++) {
-            const t = i / 20, u = u0 + (u1 - u0) * (0.07 + t * 0.86);
-            const v = v0 + (v1 - v0) * (vr - 0.1 * Math.sin(t * Math.PI));
-            const p = at(u, v, depth * 0.4); if (p) pts.push(p);
-          }
-          if (pts.length > 5) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 44, vr < 0.5 ? 0.055 : 0.07, 7, false), vr < 0.5 ? M.tailGuide : M.tailBrake);
-        }
-        cell(u0 * 0.18 + u1 * 0.82, v0 * 0.72 + v1 * 0.28, (u1 - u0) * 0.08, (v1 - v0) * 0.11, M.tailReverse);
+        for (const vr of [0.34, 0.7]) guide(t => [u0 + (u1 - u0) * (0.07 + t * 0.86), v0 + (v1 - v0) * (vr - 0.1 * Math.sin(t * Math.PI))], 24, vr < 0.5 ? 0.055 : 0.07, vr < 0.5 ? M.tailGuide : M.tailBrake);
       } else if (F.style === 'vertical') {
-        // Đồ họa LED dựng đứng: hai nét ôm theo chiều cao cụm đèn, khoang đèn lùi ở đáy.
-        for (const ur of [0.3, 0.67]) {
-          const pts = [];
-          for (let i = 0; i <= 18; i++) {
-            const t = i / 18, u = u0 + (u1 - u0) * ur;
-            const v = v0 + (v1 - v0) * (0.12 + t * 0.76);
-            const p = at(u, v, depth * 0.4); if (p) pts.push(p);
-          }
-          if (pts.length > 5) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.06, 7, false), M.tailBrake);
-        }
-        cell((u0 + u1) * 0.5, v0 * 0.8 + v1 * 0.2, (u1 - u0) * 0.22, (v1 - v0) * 0.07, M.tailReverse);
+        // Đồ họa LED dựng đứng: hai nét ôm theo chiều cao cụm đèn (ô đèn lùi / xi nhan ở đáy có chóa riêng).
+        for (const ur of [0.3, 0.67]) guide(t => [u0 + (u1 - u0) * ur, v0 + (v1 - v0) * (0.08 + t * 0.84)], 22, 0.06, M.tailBrake);
       } else if (F.style === 'blade') {
         // Hai thanh LED mảnh thay cho các bóng tròn lớn, hợp với mảng ốp ngang của cốp SUV.
-        for (const vr of [0.36, 0.68]) {
-          const pts = [];
-          for (let i = 0; i <= 18; i++) {
-            const t = i / 18, u = u0 + (u1 - u0) * (0.07 + t * 0.86);
-            const v = v0 + (v1 - v0) * (vr + 0.045 * Math.sin(t * Math.PI));
-            const p = at(u, v, depth * 0.42); if (p) pts.push(p);
-          }
-          if (pts.length > 5) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.055, 7, false), M.tailBrake);
-        }
-        cell(u0 * 0.16 + u1 * 0.84, v0 * 0.68 + v1 * 0.32, (u1 - u0) * 0.075, (v1 - v0) * 0.12, M.tailReverse);
-      } else {
-        cell(u0 * 0.72 + u1 * 0.28, (v0 + v1) * 0.5, (u1 - u0) * 0.22, (v1 - v0) * 0.3, M.tailBrake);
-        cell(u0 * 0.34 + u1 * 0.66, v0 * 0.62 + v1 * 0.38, (u1 - u0) * 0.12, (v1 - v0) * 0.2, M.tailAmber);
-        cell(u0 * 0.18 + u1 * 0.82, v0 * 0.7 + v1 * 0.3, (u1 - u0) * 0.1, (v1 - v0) * 0.18, M.tailReverse);
+        for (const vr of [0.36, 0.68]) guide(t => [u0 + (u1 - u0) * (0.07 + t * 0.86), v0 + (v1 - v0) * (vr + 0.045 * Math.sin(t * Math.PI))], 22, 0.055, M.tailBrake);
       }
-      add(capGeometry(rings, center, d, F.lensColor, uvs), M.tailLens).userData.lens = true;
-      if (!F.style) {
-        for (const sc of [0.62, 0.32]) {
-          const pts = outline.map(p => { const u = P.cuv[0] + (p[0] - P.cuv[0]) * sc, v = P.cuv[1] + (p[1] - P.cuv[1]) * (sc + 0.25); return at(u, v, depth * 0.35); }).filter(Boolean);
-          if (pts.length > 6) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 80, 0.06, 6, true), M.tailGuide);
-        }
+      // KÍNH 2 lớp chung một lưới (vỡ kính / bẹp theo xe khoét, uốn cả hai): lọc màu (nhân màu chóa bạc + dải dẫn sáng phía
+      // sau thành đỏ rực) rồi lớp bóng mặt ngoài (cộng phản chiếu trời, vệt nắng; màu đỉnh = bụi phủ, dày ở mép dưới)
+      const dustFn = (u, v) => {
+        const k = (M.tailDust || 0) * 0.2 * (0.5 + 0.5 * Math.sin(u * 7.3 + v * 3.1 + (M.tailSeed || 0)) ** 2) * (1 + 0.9 * Math.max(0, Math.min(1, (v0 + (v1 - v0) * 0.4 - v) / ((v1 - v0) * 0.4))));
+        return [0.42 * k, 0.39 * k, 0.33 * k];
+      };
+      const lg = capGeometry(rings, center, d, dustFn, uvs), nR = rings[0].length, ea = new Float32Array(lg.attributes.position.count);
+      for (let i = 0; i < nR; i++) { ea[i] = 1; ea[i + nR] = 0.3; }
+      lg.setAttribute('aEdge', new THREE.BufferAttribute(ea, 1));
+      if (!M.tailLens || M.tailLens.userData.F !== F) {
+        M.tailLens = tailFilterMaterial(F._zone || (F._zone = lensZoneTexture(F, u0, u1, v0, v1)), u0, u1, v0, v1, age, M.tailDust || 0, M.tailSeed || 0);
+        M.tailLens.userData.F = F;
       }
+      const lens = add(lg, M.tailLens); lens.userData.lens = true;
+      if (M.tailGloss) { const gl = new THREE.Mesh(lg, M.tailGloss); gl.castShadow = false; gl.raycast = () => {}; lens.add(gl); }
     } else if (F.kind === 'grille') {
       // nan ngang lùi vào trong + viền crôm có độ dày quanh miệng lưới (SUV: nan kép mạ crom to bản uy lực)
       const [v0, v1] = [Math.min(...outline.map(p => p[1])), Math.max(...outline.map(p => p[1]))], hw = Math.max(...outline.map(p => p[0]));
@@ -1409,6 +1410,118 @@ const GLSL_WEATHER = `
         const ring = add(new THREE.TorusGeometry(F.r * 0.76, 0.035, 6, 28), M.chromeIn); ring.position.copy(p);
       }
     }
+  }
+  // ---------------------------------------------------------------------------
+  // ĐÈN HẬU THẬT: kính acrylic nhuộm màu là bộ LỌC (nhân màu mọi thứ phía sau nó) chứ không phải tấm nhựa đục phủ lên —
+  // chóa mạ bạc bên trong hắt trời / nắng qua kính đỏ thành đỏ hồng ngọc rực, lấm tấm lấp lánh theo các ô khía; mặt ngoài
+  // nhẵn bóng phản chiếu như kính (lớp cộng riêng). Đèn xe bỏ hoang tắt vẫn đỏ rực dưới nắng như ngoài đời
+  // ---------------------------------------------------------------------------
+  // mặt khía "gối" (pillow optics) của chóa phản xạ: ô ~1 cm, mỗi ô vồng lên hắt một hướng
+  let PILLOW_TEX = null;
+  function pillowNormalTexture() {
+    if (PILLOW_TEX) return PILLOW_TEX;
+    const N = 128, C = 16, d = new Uint8Array(N * N * 4), R = mulberry(4417), tilt = [];
+    for (let k = 0; k < 64; k++) tilt.push([(R() - 0.5) * 0.3, (R() - 0.5) * 0.3]);   // mỗi ô nghiêng lệch chút (khuôn ép không đều)
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const cx = ((x % C) + 0.5) / C * 2 - 1, cy = ((y % C) + 0.5) / C * 2 - 1, tl = tilt[((y / C) | 0) * 8 + ((x / C) | 0)];
+      const nx = 1.1 * cx * cx * cx * (1 - cy ** 4) + tl[0], ny = 1.1 * cy * cy * cy * (1 - cx ** 4) + tl[1], l = Math.hypot(nx, ny, 1), i = (y * N + x) * 4;
+      d[i] = (nx / l * 0.5 + 0.5) * 255; d[i + 1] = (ny / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+    }
+    const t = PILLOW_TEX = new THREE.DataTexture(d, N, N, THREE.RGBAFormat);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+    t.repeat.set(2.6, 3.3);   // uv = toạ độ mặt chiếu (đv): 8 ô / ô ảnh -> ô ~0,048 x 0,038 đv (6 x 5 mm)
+    t.needsUpdate = true;
+    return t;
+  }
+  // điểm (u, v) trong đường biên (chẵn - lẻ)
+  function inOutline(P, u, v) {
+    let c = false;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) if ((P[i][1] > v) !== (P[j][1] > v) && u < (P[j][0] - P[i][0]) * (v - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0]) c = !c;
+    return c;
+  }
+  // vùng kính theo màu (F.lensColor): 'red' đèn hậu / phanh, 'amber' xi nhan, 'clear' đèn lùi -> hộp bao (u, v) của từng vùng
+  const lensKind = c => c[1] > 0.62 && c[2] > 0.55 ? 'clear' : c[0] > 0.6 && c[1] > 0.28 && c[2] < 0.4 ? 'amber' : 'red';
+  function lampZones(F, outline, u0, u1, v0, v1) {
+    const NU = 48, NV = 18, Z = {};
+    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+      const u = u0 + (u1 - u0) * (i + 0.5) / NU, v = v0 + (v1 - v0) * (j + 0.5) / NV;
+      if (!inOutline(outline, u, v)) continue;
+      const k = lensKind(F.lensColor ? F.lensColor(u, v) : [0.76, 0.02, 0.014]), b = Z[k] || (Z[k] = { kind: k, n: 0, a: [1e9, 1e9, -1e9, -1e9] });
+      b.n++; b.a[0] = Math.min(b.a[0], u); b.a[1] = Math.min(b.a[1], v); b.a[2] = Math.max(b.a[2], u); b.a[3] = Math.max(b.a[3], v);
+    }
+    const hu = (u1 - u0) / NU / 2, hv = (v1 - v0) / NV / 2;
+    return Object.values(Z).filter(b => b.n >= 4).map(b => ({ kind: b.kind, cu: (b.a[0] + b.a[2]) / 2, cv: (b.a[1] + b.a[3]) / 2, hu: (b.a[2] - b.a[0]) / 2 + hu, hv: (b.a[3] - b.a[1]) / 2 + hv }));
+  }
+  // bảng độ truyền qua của kính theo vùng (ảnh 128 x 64 phủ hộp bao cụm đèn): ranh giới vùng sắc nét theo điểm ảnh
+  // thay vì nội suy màu đỉnh thưa (trước đây vùng kính trong loang mờ vào vùng đỏ thành mảng trắng đục)
+  function lensZoneTexture(F, u0, u1, v0, v1) {
+    const W = 128, H = 64, d = new Uint8Array(W * H * 4);
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const c = F.lensColor ? F.lensColor(u0 + (u1 - u0) * (i + 0.5) / W, v0 + (v1 - v0) * (j + 0.5) / H) : [0.76, 0.02, 0.014], k = (j * W + i) * 4;
+      d[k] = Math.min(255, c[0] * 255); d[k + 1] = Math.min(255, c[1] * 255); d[k + 2] = Math.min(255, c[2] * 255); d[k + 3] = 255;
+    }
+    const t = new THREE.DataTexture(d, W, H, THREE.RGBAFormat);
+    t.magFilter = t.minFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+    return t;
+  }
+  // lớp LỌC MÀU của kính: nhân màu khung hình (blend DstColor x 0) với độ truyền qua của vùng kính; vân gối mặt trong kính,
+  // mép kính dày sẫm hơn, phai màu theo tuổi (đỏ ngả hồng cam), bụi bám mép dưới cản bớt sáng. Sương mù kéo về 1 (không lọc)
+  function tailFilterMaterial(zoneTex, u0, u1, v0, v1, age, dust, seed) {
+    const m = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uZone: { value: null }, uBox: { value: new THREE.Vector4(u0, v0, 1 / (u1 - u0), 1 / (v1 - v0)) }, uAge: { value: new THREE.Vector3(age, dust, seed) } }]),
+      vertexShader: `
+        attribute float aEdge;
+        varying vec2 vUv; varying float vEdge; varying vec3 vP;
+        #include <fog_pars_vertex>
+        void main() {
+          vUv = uv; vEdge = aEdge; vP = position;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
+        }`,
+      fragmentShader: `
+        uniform sampler2D uZone; uniform vec4 uBox; uniform vec3 uAge;
+        varying vec2 vUv; varying float vEdge; varying vec3 vP;
+        #include <fog_pars_fragment>
+        float lfH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float lfN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(lfH(i), lfH(i + vec2(1.0, 0.0)), f.x), mix(lfH(i + vec2(0.0, 1.0)), lfH(i + vec2(1.0, 1.0)), f.x), f.y); }
+        void main() {
+          vec2 zt = (vUv - uBox.xy) * uBox.zw;
+          vec3 T = texture2D(uZone, zt).rgb;
+          float red = clamp((T.r - T.g) * 1.5, 0.0, 1.0), clr = clamp((T.g - 0.45) * 3.0, 0.0, 1.0);
+          // gân ngang mảnh mặt trong kính ô đèn lùi (vùng màu: vân nằm ở chóa khía phía sau); xa thì tắt (không rằn ri)
+          float rib = smoothstep(0.3, 0.5, abs(fract(vUv.y * 30.0) - 0.5)) * clamp(1.0 - fwidth(vUv.y) * 70.0, 0.0, 1.0);
+          T *= 1.0 - 0.12 * rib * clr;
+          T *= 1.0 - 0.22 * vEdge;                       // kính dày ở mép (gờ ép gioăng)
+          // phai màu nắng: đỏ ngả hồng cam, lọt thêm xanh lục / lam
+          float fade = uAge.x * (0.55 + 0.45 * lfN(vP.xy * 1.3 + uAge.z));
+          T = mix(T, T * 0.8 + vec3(0.12, 0.06, 0.055), fade * 0.55 * red);
+          // bụi bám (dày ở mép dưới / quanh gioăng): cản bớt ánh sáng qua kính
+          float dn = lfN(vP.xy * 3.1 + vP.z * 2.3 + uAge.z * 3.0);
+          float du = clamp(uAge.y * (0.3 + 0.9 * dn) * (0.55 + 0.7 * smoothstep(0.65, 0.0, zt.y) + 0.4 * vEdge), 0.0, 0.85);
+          T *= 1.0 - 0.42 * du;
+          gl_FragColor = vec4(T, 1.0);
+          ${THREE.ShaderChunk.fog_fragment.replace('fogColor', 'vec3(1.0)')}
+        }`,
+      fog: true, transparent: true, depthWrite: false, toneMapped: false, extensions: { derivatives: true },
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.DstColorFactor, blendDst: THREE.ZeroFactor
+    });
+    m.uniforms.uZone.value = zoneTex;
+    return m;
+  }
+  // lớp BÓNG mặt ngoài kính đèn: chỉ cộng phần phản xạ (acrylic nhẵn F0 ~4%: nhìn thẳng thấy rõ bên trong, nhìn xiên / dưới
+  // nắng loáng trời và vệt nắng), cũ thì xước mờ dần. dusty: màu đỉnh = lớp bụi phủ (cộng sáng mờ). Sương mù kéo về 0
+  function tailGlossMaterial(env, age, dusty) {
+    const m = new THREE.MeshPhysicalMaterial({ color: dusty ? 0xffffff : 0x000000, vertexColors: !!dusty, roughness: 0.05 + 0.2 * age, metalness: 0, clearcoat: 0, envMap: env, envMapIntensity: 1.6, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    m.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', THREE.ShaderChunk.fog_fragment.replace('fogColor', 'vec3(0.0)')); };
+    m.customProgramCacheKey = () => 'civTailGloss';
+    return m;
+  }
+  // bảng màu kính 1 ô (kính phẳng một màu: đèn hộp xe tải)
+  function tintTexture(c) {
+    const t = new THREE.DataTexture(new Uint8Array([c[0] * 255, c[1] * 255, c[2] * 255, 255]), 1, 1, THREE.RGBAFormat);
+    t.needsUpdate = true;
+    return t;
   }
   function honeyTexture() {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
@@ -2947,11 +3060,29 @@ const GLSL_WEATHER = `
     const stripe = plain(0xffffff, 0.45, 0.1, { map: stripeTexture(), color: burnt ? 0x3a3028 : 0xffffff });
     box([14.0, 0.9, 0.55], stripe, [0, 3.35, -20.75], 0.06);
     for (const sx of [-1, 1]) { blk([0.5, 2.0, 0.5], chassisMat, [sx * railX, 4.1, -20.5]); rod([sx * railX, 4.9, -18.8], [sx * railX, 3.6, -20.5], 0.12, chassisMat); }
+    // mỗi ngăn đèn: chóa mạ bạc khía gối + chóa crôm lõm nông + bóng đèn, che bằng kính phẳng lọc màu (trong / hổ phách /
+    // đỏ) + lớp bóng mặt ngoài như đèn hậu xe con (trước đây là 3 khối nhựa màu đặc)
+    const tRefl = burnt ? mats.black : plain(new THREE.Color(0xc4c6c8).lerp(new THREE.Color(0x857f75), age * 0.6), 0.3 + 0.25 * age, 0.9, { normalMap: pillowNormalTexture(), normalScale: new THREE.Vector2(0.5, 0.5) });
+    tRefl.userData.noWear = true;   // nằm sau kính: không gỉ loang như tôn
+    const tBulb = plain(burnt ? 0x2a2622 : 0xd8dcdc, 0.3, 0.1), tGloss = tailGlossMaterial(env, age, false), tLens = {};
+    const tLensMat = k => tLens[k] || (tLens[k] = tailFilterMaterial(tintTexture({ clear: [0.9, 0.9, 0.86], amber: [0.95, 0.5, 0.08], red: [0.78, 0.025, 0.018] }[k]), 0, 1, 0, 1, age, 0.3 + 0.6 * age, seed % 10));
     for (const sx of [-1, 1]) {
       const lx = sx * 5.1, ly = 5.35, lz = -20.62;
       blk([0.3, 1.6, 0.3], chassisMat, [sx * 5.1, 6.5, -20.3]);
       box([2.8, 1.1, 0.35], mats.black, [lx, ly, lz], 0.08);
-      for (const [dx, mat] of [[-0.82, mats.tailReverse], [0, mats.tailAmber], [0.82, mats.tailBrake]]) box([0.72, 0.85, 0.08], mat, [lx + sx * dx, ly, lz - 0.18], 0.04);
+      for (const [dx, k] of [[-0.82, 'clear'], [0, 'amber'], [0.82, 'red']]) {
+        const x = lx + sx * dx;
+        const rf = new THREE.PlaneGeometry(0.68, 0.82), ruv = rf.attributes.uv;
+        for (let i = 0; i < ruv.count; i++) ruv.setXY(i, ruv.getX(i) * 0.68, ruv.getY(i) * 0.82);   // uv theo đv: ô khía ~6 mm
+        add(rf, tRefl, [x, ly, lz - 0.185], [0, Math.PI, 0]);
+        const bw = add(new THREE.SphereGeometry(0.3, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), mats.chrome, [x, ly, lz - 0.275], [Math.PI / 2, 0, 0]);
+        bw.scale.set(1, 0.28, 1);
+        add(new THREE.SphereGeometry(0.075, 10, 8), tBulb, [x, ly, lz - 0.235]);
+        if (burnt) continue;   // xác cháy: kính nhựa chảy rụng hết
+        const lens = add(new THREE.PlaneGeometry(0.72, 0.86), tLensMat(k), [x, ly, lz - 0.285], [0, Math.PI, 0]);
+        lens.castShadow = false;
+        const gl = new THREE.Mesh(lens.geometry, tGloss); gl.raycast = () => {}; lens.add(gl);
+      }
       for (const dy of [-0.28, 0.28]) blk([2.85, 0.06, 0.18], edge, [lx, ly + dy, lz - 0.24]);
       blk([0.06, 1.15, 0.18], edge, [lx, ly, lz - 0.24]);
     }
@@ -3911,7 +4042,9 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       reflector: plain(0x101216, 0.22, 0.35, { side: THREE.DoubleSide }),
       // xe bỏ hoang: đèn tắt (hết ắc quy) -> bóng / dải LED là nhựa trắng đục mờ sau kính, không tự sáng
       bulb: plain(0xd8dcdc, 0.3, 0.1, { emissive: 0x0a0a0a }),
-      tailBack: plain(opts.burnt ? 0x1c1412 : 0x3f0909, 0.48, 0.45, { side: THREE.DoubleSide }),
+      // chóa đèn hậu mạ bạc khía gối (nhìn qua kính đỏ thành đỏ rực lấp lánh), cũ thì xỉn mờ; xác cháy: muội đen
+      tailBack: opts.burnt ? plain(0x1c1412, 0.85, 0.2, { side: THREE.DoubleSide }) : plain(new THREE.Color(0xc9cbcd).lerp(new THREE.Color(0x8c877e), age * 0.6), 0.28 + 0.25 * age, 0.92, { side: THREE.DoubleSide, normalMap: pillowNormalTexture(), normalScale: new THREE.Vector2(0.75, 0.75), envMapIntensity: 1.15 }),
+      tailWall: plain(opts.burnt ? 0x15110f : new THREE.Color(0x9d9fa1).lerp(new THREE.Color(0x77736b), age * 0.6), 0.38, 0.85, { side: THREE.DoubleSide }),   // vách vỏ đèn mạ bạc mờ: mép cụm vẫn đỏ, không viền đen
       chrome: mats.chrome,
       slat: plain(0x161616, 0.55, 0.25),
       projLens: new THREE.MeshPhysicalMaterial({ color: 0xd6effc, roughness: 0.02, metalness: 0.06, clearcoat: 1, clearcoatRoughness: 0.02, transmission: 0.52, opacity: 0.95, transparent: true, envMap: env, envMapIntensity: 2.4 }),
@@ -3920,11 +4053,16 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       // đèn sương mù: kính khía rãnh trước chóa crôm — xám bạc ánh kim, không phải quả cầu trắng
       fogLens: new THREE.MeshPhysicalMaterial({ color: opts.burnt ? 0x1e1a17 : new THREE.Color(0x8e979b).lerp(new THREE.Color(0x8c8676), age * 0.5), roughness: opts.burnt ? 0.9 : 0.12 + age * 0.3, metalness: opts.burnt ? 0.05 : 0.45, clearcoat: opts.burnt ? 0 : 0.8, clearcoatRoughness: 0.05 + 0.3 * age, envMap: env, envMapIntensity: opts.burnt ? 0.1 : 1.0 }),
       chromeIn: plain(opts.burnt ? 0x2a2420 : 0xd4d8dc, opts.burnt ? 0.85 : 0.10 + 0.2 * age, opts.burnt ? 0.3 : 0.92, { side: THREE.DoubleSide }),
-      tailGuide: new THREE.MeshStandardMaterial({ color: 0x681010, emissive: 0x090000, roughness: 0.56 }),
-      tailBrake: plain(0x7a0c0a, 0.36, 0.18, { emissive: 0x080000 }),
+      // dải dẫn sáng LED (acrylic mờ, đèn tắt): sau kính đỏ thành vạch đỏ hồng sáng hơn nền chóa
+      tailGuide: plain(0xb4aaa6, 0.5, 0, { envMapIntensity: 0.5 }),
+      tailBrake: plain(0xc4bab5, 0.42, 0, { envMapIntensity: 0.6 }),
       tailAmber: plain(new THREE.Color(0xc0620e).lerp(new THREE.Color(0x8a5a2a), age * 0.5), 0.3, 0.15, { emissive: 0x0c0600 }),
       tailReverse: plain(new THREE.Color(0xa9aeb0).lerp(new THREE.Color(0x8c8678), age * 0.5), 0.22, 0.55, { envMapIntensity: 0.9 }),   // chóa đèn lùi mạ bạc
-      tailLens: new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0xd8d2cc).lerp(new THREE.Color(0x8a8078), age * 0.4), vertexColors: true, transparent: true, opacity: 0.52, roughness: 0.16 + 0.28 * age, metalness: 0, clearcoat: 0.68, clearcoatRoughness: 0.14 + 0.25 * age, envMap: env, envMapIntensity: 0.7, depthWrite: false }),
+      // kính đèn hậu: lớp lọc màu dựng theo vùng kính của cụm (buildFeature -> tailFilterMaterial); lớp bóng mặt ngoài cộng
+      // phản chiếu (acrylic nhẵn, F0 ~4%, cũ thì xước mờ dần); màu đỉnh = bụi phủ (sáng thêm, mờ đi)
+      tailLens: null, tailDust: W.dust, tailSeed: W.seed,
+      tailGloss: tailGlossMaterial(env, age, true),
+      tailShard: plain(0x8a1410, 0.12, 0.1, { transparent: true, opacity: 0.85, envMapIntensity: 0.8 }),
       honey: plain(0x0c0c0c, 0.7, 0.1, { map: honeyTexture(), alphaTest: 0.5, side: THREE.DoubleSide })
     };
     // mỗi cụm đèn một nhóm riêng (nhận diện khi đèn bị vỡ: va chạm, trúng đạn, hư sẵn)
@@ -4727,7 +4865,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       }
       const glassBits = plain(0x9fb8b2, 0.04, 0.5, { envMapIntensity: 2.0, transparent: true, opacity: 0.85 });
       const L = S.plan[S.plan.length - 1][0] - S.plan[0][0];
-      for (const [mat, n, s0, s1] of [[mats.paint, 12, 0.5, 1.7], [mats.black, 9, 0.4, 1.3], [M.tailLens, 3, 0.25, 0.6], [M.headLens, 3, 0.25, 0.6], [glassBits, 160, 0.08, 0.38]]) {
+      for (const [mat, n, s0, s1] of [[mats.paint, 12, 0.5, 1.7], [mats.black, 9, 0.4, 1.3], [M.tailShard, 3, 0.25, 0.6], [M.headLens, 3, 0.25, 0.6], [glassBits, 160, 0.08, 0.38]]) {
         for (let i = 0; i < n; i++) {
           // văng ra quanh thân, nhiều nhất về phía bị đẩy bè (hướng ngang của vệt xích)
           let x = (rnd() - 0.5) * 24, z = (rnd() - 0.5) * (L + 8);
@@ -5601,7 +5739,8 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       put([mats.black, mats.dark, mats.wiper, mats.dash, M.wall, M.slat, M.reflector, wellMat], 'plastic');
       put([mats.paint], 'paint');
       put([mats.seat], 'interior');
-      put([M.headLens, M.tailLens, M.fogLens], 'lens');
+      put([M.headLens, M.fogLens], 'lens');   // (kính đèn hậu tự phai / bám bụi trong tailFilterMaterial)
+      put([M.tailWall], 'chrome');
       g.traverse(o => {
         if (!o.isMesh) return;
         for (const m of Array.isArray(o.material) ? o.material : [o.material]) {

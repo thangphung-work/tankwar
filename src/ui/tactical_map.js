@@ -866,7 +866,7 @@ class TacticalMapController {
     return (g.capturePoints || []).map(cp => ({
       id: cp.id, x: cp.x, z: cp.z, r: cp.radius,
       owner: cp.owner || null,
-      progress: cp.owner ? (cp.holdTimer || 0) / (cp.holdGoal || 60) : (cp.captureProgress || 0) / 100,
+      progress: cp.owner ? (cp.holdTimer || 0) / (cp.holdGoal || 90) : (cp.captureProgress || 0) / 100,
       team: cp.owner || cp.capTeam || null,
       contested: !!cp.isDisputed
     }));

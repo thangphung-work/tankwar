@@ -151,7 +151,7 @@ class ArtilleryGame3D {
     // Hệ thống các hòm tiếp tế rải rác trên bản đồ chiến trường
     this.supplyCrates = [];
 
-    // Hệ thống 3 Cứ Điểm Chiến Lược A, B, C (Chiếm giữ 60s liên tục là thắng ngay)
+    // Giữ đồng thời cả A/B/C đủ 90 giây liên tục mới thắng bằng cứ điểm.
     this.capturePoints = [];
 
     // Vụ nổ & Sóng chấn động 3D
@@ -169,7 +169,7 @@ class ArtilleryGame3D {
     this.matchStartTime = Date.now();
     this.isGameOver = false;
 
-    // THỂ THỨC ĐẤU ĐỘI DEATHMATCH: CHIẾN ĐẤU TRONG 10 PHÚT (600 GIÂY), HOẶC GIỮ CỨ ĐIỂM QUÁ 1 PHÚT LÀ THẮNG
+    // Trận 10 phút, hoặc thắng sớm khi sở hữu đồng thời A/B/C đủ 90 giây liên tục.
     this.matchDuration = 600; // 10 phút thi đấu = 600 giây
     this.respawnWaitPenalty = 10.0; // Mỗi lần hồi sinh bị phạt chờ 10 giây
     this.maxTeamLives = Infinity; // Hồi sinh vô hạn lần
@@ -651,7 +651,7 @@ class ArtilleryGame3D {
     const layLabel = this.terrain && this.terrain.map && this.terrain.map.layoutLabel;
     const layDesc = this.terrain && this.terrain.map && this.terrain.map.layoutDesc;
     if (layLabel) this.addCombatLog('[[flag]] THẾ TRẬN: ' + layLabel + (layDesc ? ' — ' + layDesc : ''), 'tip');
-    this.addCombatLog('[[swords]] Chiếm 1 cứ điểm A, B hoặc C rồi đứng giữ đủ 60 giây để thắng — hoặc hạ nhiều địch hơn khi hết giờ', 'system');
+    this.addCombatLog('[[swords]] Kiểm soát cả A, B, C cùng lúc đủ 90 giây liên tục để thắng — mất một điểm sẽ reset; hoặc hạ nhiều địch hơn khi hết giờ', 'system');
     if (window.GameMenu && GameMenu.maybeShowFirstHint) GameMenu.maybeShowFirstHint();
     // Tour căn cứ/A/B/C nằm trong video trinh sát màn chờ. Bắt đầu gameplay
     // trực tiếp sau lưng xe, tránh vẽ toàn cảnh rộng khi 20 xe vừa khởi tạo.
@@ -1573,6 +1573,9 @@ class ArtilleryGame3D {
 
       // Phím B: pháo tự hành đổi cách bắn (tự chọn / luôn bắn thẳng / luôn bắn cầu vồng)
       if (e.code === 'KeyB' && !e.repeat) this.cycleArtyFireMode();
+
+      // Phím T: hủy khóa mục tiêu & điểm ngắm chuột, tháp / nòng về tư thế mặc định (thẳng mũi xe)
+      if (e.code === 'KeyT' && !e.repeat) this.resetTurretAim();
 
       // Phím Tab: Tự động khóa mục tiêu hoặc chuyển đổi sang xe địch tiếp theo
       if (e.code === 'Tab') {
@@ -2522,6 +2525,22 @@ class ArtilleryGame3D {
     const next = order[(order.findIndex(it => it.key === curKey) + 1) % order.length];
     if (next.dr) this.setAirAim({ kind: 'drone', dr: next.dr });   // tự ghi nhật ký "đã khóa drone" + tiếng khóa
     else this.setLockedTarget(next.u, true);
+  }
+
+  // [T] Hủy hết lệnh ngắm (khóa xe địch, khóa drone, điểm ngắm mặt đất, kính ngắm) rồi đưa tháp về thẳng mũi xe,
+  // nòng về 0°. Tháp giữ theo thân xe (không tự khóa địch áp sát) tới khi người chơi ngắm lại: chuột, Tab, mũi tên
+  resetTurretAim() {
+    const P = this.player;
+    if (!this.isGameStarted || !P || P.isDead) return;
+    if (this._sight && this.setSightMode) this.setSightMode(false);
+    if (this._airAim && this.clearAirAim) this.clearAirAim();
+    if (this.lockedTarget) this.setLockedTarget(null);
+    this._aimPoint = null;
+    this._manualAim = false;
+    P.fcsTarget = null;
+    this._turretHome = true;
+    this.syncHUDControls();
+    this.addCombatLog('[[rotate-clockwise]] HỦY NGẮM — tháp về thẳng mũi xe. Nhấp chuột / [TAB] để ngắm lại.', 'tip');
   }
 
   setLockedTarget(target, isManualCycle = false) {
@@ -9028,6 +9047,9 @@ class ArtilleryGame3D {
         }
       }
 
+      // [T] tháp về mặc định: người chơi ngắm lại bằng bất kỳ cách nào (mũi tên, chuột, Tab, kính ngắm) là thôi giữ tháp
+      if (this._turretHome && (turretChanged || this.lockedTarget || this._aimPoint || this._airAim || this._sight)) this._turretHome = false;
+
       if (turretChanged) {
         this.scoutGunnerUp(this.player);   // xe trinh sát: xoay súng bằng phím mũi tên -> xạ thủ lên súng
         // tự xoay bằng phím: hủy lệnh ngắm đang quay dở và điểm ngắm mặt đất
@@ -9122,6 +9144,12 @@ class ArtilleryGame3D {
         if (this.lockReticle3D) this.lockReticle3D.visible = false;
         this._mgAirT = (this._mgAirT || 0) - dt;
         if (this._mgAirT <= 0 && !this._sight) { this._mgAirT = 1.2; this.mgAirReady(); }
+      } else if (this._turretHome) {
+        // [T] tháp về thẳng mũi xe, nòng 0° và bám theo thân xe khi xe quay; không tự khóa địch áp sát
+        if (this.lockReticle3D) this.lockReticle3D.visible = false;
+        const P = this.player;
+        P.aimAz = ((-(P.bodyAngle || 0) * 180 / Math.PI) % 360 + 360) % 360;
+        P.aimEl = 0;
       } else {
         // Chưa khóa: tự động khóa khi có xe địch áp sát gần (bán kính <= 360m) mà mình nhìn thấy
         this.autoLockCooldown = Math.max(0, (this.autoLockCooldown || 0) - dt);
@@ -10461,8 +10489,8 @@ class ArtilleryGame3D {
     const won = String(winningTeam).toUpperCase() === this.myTeam();
     const where = String(cpName || 'cứ điểm').replace(/\s*\(.*\)\s*$/, '');
     const sub = won
-      ? `Đội bạn giữ vững ${where} đủ 60 giây.`
-      : `Đội địch đã giữ ${where} đủ 60 giây.`;
+      ? 'Đội bạn đã giữ cả ba cứ điểm A/B/C cùng lúc đủ 90 giây liên tục.'
+      : 'Đội địch đã giữ cả ba cứ điểm A/B/C cùng lúc đủ 90 giây liên tục.';
     this.addCombatLog(won ? `[[trophy]] ĐỘI BẠN THẮNG — giữ vững ${where}!` : `[[flag]] ĐỘI ĐỊCH THẮNG — họ đã giữ ${where}`, won ? 'victory' : 'defeat');
     this.showMatchResult(won ? 'win' : 'loss', sub);
   }

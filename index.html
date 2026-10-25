@@ -64,7 +64,7 @@
           <span class="hx-alive red" title="Số xe Phe Đỏ còn chiến đấu"><b id="red-units-count">10</b> XE</span>
           <div class="hx-momentum"><i id="kill-momentum-blue" style="width: 50%;"></i><i id="kill-momentum-red" style="width: 50%;"></i></div>
         </div>
-        <div class="hx-cps" id="capture-points-dock" title="Giữ một cứ điểm liên tục 60 giây là THẮNG NGAY">
+        <div class="hx-cps" id="capture-points-dock" title="Kiểm soát cả A, B, C cùng lúc đủ 90 giây liên tục để thắng; mất một điểm sẽ reset">
           <div class="cp-card neutral" id="cp-card-a">
             <span class="hx-cp-mark">A</span>
             <div class="hx-cp-bar"><div class="cp-bar-fill" id="cp-bar-a"></div></div>
@@ -465,6 +465,7 @@
             <span class="sc-chip"><kbd>Chuột phải</kbd> Lái tới điểm</span>
             <span class="sc-chip"><kbd>Space</kbd> Bắn</span>
             <span class="sc-chip"><kbd>Tab</kbd> Khóa mục tiêu</span>
+            <span class="sc-chip"><kbd>T</kbd> Hủy ngắm, tháp về giữa</span>
             <span class="sc-chip"><kbd>Ctrl</kbd> Ngắm bắn</span>
             <span class="sc-chip"><kbd>1 2 3</kbd> Đổi đạn</span>
             <span class="sc-chip"><kbd>4</kbd> Súng máy (xe tăng)</span>
@@ -645,8 +646,8 @@
   <!-- 1. Tầng Nền Tảng Cốt Lõi (Core Systems) -->
   <script src="src/core/audio/sound_engine.js?v=20261022sh1"></script>
   <script src="src/core/audio/weapon_fire.js?v=20261023msl2"></script>
-  <script src="src/core/audio/destruction.js?v=20261023sbag2"></script>
-  <script src="src/core/audio/impacts.js?v=20261023apfs1"></script>
+  <script src="src/core/audio/destruction.js?v=20261025bc1"></script>
+  <script src="src/core/audio/impacts.js?v=20261025bc1"></script>
   <script src="src/core/audio/incoming.js?v=20261020m8"></script>
   <script src="src/core/audio/cockpit_cues.js?v=20261024rocket1"></script>
   <script src="src/core/audio/vehicle_engine.js?v=20261022eco1"></script>
@@ -668,9 +669,9 @@
   <script src="src/core/weather.js?v=20261024lag3"></script>
   <script src="src/gameplay/weathering.js?v=20261025wx1"></script>
   <script src="src/gameplay/destructibles.js?v=20261025tower1"></script>
-  <script src="src/gameplay/props.js?v=20261025age1"></script>
+  <script src="src/gameplay/props.js?v=20261025bc1"></script>
   <script src="src/gameplay/streetscape.js?v=20261025lod1"></script>
-  <script src="src/gameplay/barrel_sweep.js?v=20261025bs1"></script>
+  <script src="src/gameplay/barrel_sweep.js?v=20261025bc1"></script>
   <script src="src/gameplay/strongholds.js?v=20261024wreck1"></script>
   <script src="src/gameplay/landmarks.js?v=20261025grime2"></script>
   <script src="src/gameplay/landmarks/bio.js?v=20261025veg1"></script>
@@ -701,9 +702,9 @@
   <script src="src/ai/bot_profiles.js?v=20261023bp2"></script>
   <script src="src/ai/bot_ai.js?v=20261025bd2"></script>
   <script src="src/entities/recon_drone.js?v=20261021mrg26"></script>
-  <script src="src/entities/spg.js?v=20261025ammo1"></script>
+  <script src="src/entities/spg.js?v=20261025bc1"></script>
   <script src="src/entities/car_softbody.js?v=20261024sb1"></script>
-  <script src="src/entities/civil_cars.js?v=20261025age1"></script>
+  <script src="src/entities/civil_cars.js?v=20261025tl1"></script>
 
   <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
   <script src="src/gameplay/capture_points.js?v=20261021map54"></script>
