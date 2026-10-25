@@ -1516,6 +1516,27 @@ body, html {
 }
 @keyframes tm-hint-fade { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
 
+/* Bảng chú giải ký hiệu bản đồ tác chiến (nút i / phím L — tactical_map.js toggleLegend) */
+.tactical-map-overlay .tm-toolbar button.on { border-color: #7fe3f5; color: #7fe3f5; }
+.tm-legend {
+  position: absolute; left: 30px; top: 232px; z-index: 5; width: 250px; max-height: calc(100% - 320px); overflow-y: auto;
+  display: block;   /* đè .tm-legend cũ của bảng bên (đã bỏ) */
+  padding: 10px 12px 12px; background: rgba(10, 12, 10, 0.88); border: 1px solid rgba(239, 240, 238, 0.2);
+  font-family: var(--font-tech); font-size: 11.5px; color: rgba(232, 236, 230, 0.88); pointer-events: auto;
+}
+.tm-legend.hidden { display: none; }
+.tm-legend-title { font-weight: 700; letter-spacing: 3px; font-size: 12px; color: #eff0ee; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.tm-legend-title span { font-family: var(--font-mono); letter-spacing: 0; color: rgba(239, 240, 238, 0.45); font-weight: 400; }
+.tm-legend-sub { margin: 7px 0 3px; font-size: 10px; letter-spacing: 2px; color: rgba(231, 166, 58, 0.85); font-weight: 700; }
+.tm-legend ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tm-legend li { display: flex; align-items: center; gap: 8px; line-height: 1.25; }
+.tm-legend li svg { flex: none; width: 20px; height: 20px; }
+.tm-legend ul.tm-legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; }
+.tm-legend-grid-help { display: flex; gap: 9px; align-items: flex-start; line-height: 1.3; font-size: 11px; }
+.tm-legend-grid-help svg { flex: none; width: 42px; height: 42px; }
+.tm-legend-grid-help b { color: #7fe3f5; font-family: var(--font-mono); }
+@media (max-height: 640px) { .tm-legend { top: 64px; left: 72px; max-height: calc(100% - 140px); } }
+
 /* ==========================================================================
    MÀN CHỜ GHÉP TRẬN: sảnh ẩn đi, bản đồ trận đấu quay toàn cảnh bên dưới
    ========================================================================== */
@@ -1529,7 +1550,8 @@ body, html {
 .matchmaking-overlay.mm-searching .mm-backdrop-fx { display: none; }
 body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hidden; }
 .mm-search-hud.mm-3d-ready::before, .mm-search-hud.mm-video-playing::before { opacity: 0; transition: opacity 0.45s ease; }
-.mm-recon-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; pointer-events: none; filter: saturate(0.78) contrast(1.12) brightness(0.82); }
+/* hình trinh sát thời chiến: bạc màu, ngả nâu phim cũ, tương phản gắt */
+.mm-recon-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; pointer-events: none; filter: saturate(0.5) sepia(0.28) contrast(1.22) brightness(0.8); }
 .mm-recon-video.hidden { display: none !important; }
 
 .mm-search-hud {
@@ -1683,10 +1705,36 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
   position: absolute;
   inset: -20px;
   pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
-  opacity: 0.75;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E");
+  opacity: 0.85;
   animation: mm-drone-noise 0.2s steps(4) infinite;
   z-index: 1;
+}
+/* lớp hạt phim thứ hai, hạt to và nhảy lệch nhịp với lớp trên -> nhiễu "sống" thay vì một tấm ảnh trượt qua lại */
+.mm-sh-noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.55' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.12'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  animation: mm-drone-noise 0.13s steps(3) infinite reverse;
+}
+/* phim cũ: độ sáng chập chờn rất nhẹ */
+.mm-sh-vignette::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  animation: mm-film-flicker 0.9s steps(6) infinite;
+}
+@keyframes mm-film-flicker {
+  0%, 100% { opacity: 0; }
+  17% { opacity: 0.05; }
+  33% { opacity: 0.01; }
+  50% { opacity: 0.07; }
+  67% { opacity: 0.02; }
+  83% { opacity: 0.04; }
 }
 @keyframes mm-drone-noise {
   0% { transform: translate(0, 0); }
@@ -1709,6 +1757,65 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
   );
   opacity: 0.7;
   z-index: 1;
+  overflow: hidden;
+}
+/* dải nhiễu sáng trôi dọc màn hình (sóng vô tuyến chập chờn) */
+.mm-sh-scanlines::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14vh;
+  top: -14vh;
+  background: linear-gradient(to bottom, transparent, rgba(220, 230, 210, 0.06) 45%, rgba(255, 255, 255, 0.09) 50%, rgba(220, 230, 210, 0.06) 55%, transparent);
+  animation: mm-roll-band 7.5s linear infinite;
+}
+@keyframes mm-roll-band {
+  from { transform: translateY(0); }
+  to { transform: translateY(128vh); }
+}
+
+/* ---- giật hình / mất tín hiệu (startSignalFx trong matchmaking.js bật thoáng qua) ---- */
+.mm-sh-tear {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--mm-ty, 40%);
+  height: 7px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  background: repeating-linear-gradient(to right, rgba(255, 255, 255, 0.5) 0 3px, rgba(0, 0, 0, 0.4) 3px 7px, rgba(255, 255, 255, 0.15) 7px 13px);
+  box-shadow: 0 9px 0 -4px rgba(255, 255, 255, 0.18), 0 -14px 0 -5px rgba(0, 0, 0, 0.35);
+}
+.mm-sh-sigwarn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 14px;
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #ffcf6b;
+  background: rgba(10, 8, 4, 0.72);
+  border: 1px solid rgba(255, 207, 107, 0.45);
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+}
+.mm-search-hud.mm-sig-glitch .mm-recon-video {
+  transform: translateX(var(--mm-gx, 6px)) skewX(-1.2deg);
+  filter: saturate(0.35) sepia(0.3) contrast(1.45) brightness(0.95) hue-rotate(-12deg);
+}
+.mm-search-hud.mm-sig-glitch .mm-sh-tear { opacity: 1; }
+.mm-search-hud.mm-sig-glitch .mm-sh-noise { opacity: 1; }
+.mm-search-hud.mm-sig-drop .mm-recon-video { filter: grayscale(1) contrast(1.6) brightness(0.45); }
+.mm-search-hud.mm-sig-drop .mm-sh-sigwarn { opacity: 1; }
+.mm-search-hud.mm-sig-drop .mm-sh-noise::after { opacity: 1; mix-blend-mode: normal; }
+@media (prefers-reduced-motion: reduce) {
+  .mm-sh-noise, .mm-sh-noise::after, .mm-sh-scanlines::after, .mm-sh-vignette::after { animation: none; }
 }
 
 .mm-sh-vignette {
@@ -2033,7 +2140,127 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
   letter-spacing: 2px;
   animation: mm-rec-pulse 1s infinite alternate;
 }
+
+/* ---- lệnh chỉ huy kiểu điện báo thời chiến (startBriefingTypewriter) ---- */
+.mm-briefing-top-info { display: flex; flex-direction: column; gap: 2px; }
+.mm-briefing-code {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  color: #ffcf6b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mm-sh-briefing .mm-comm-msg {
+  color: #d6dfcb;
+  text-shadow: 0 0 6px rgba(190, 230, 170, 0.18);
+}
+.mm-briefing-cursor {
+  display: inline-block;
+  margin-left: 1px;
+  color: #d6dfcb;
+  animation: mm-cursor-blink 0.9s steps(1) infinite;
+}
+@keyframes mm-cursor-blink { 50% { opacity: 0; } }
+.mm-briefing-noise { color: #ffcf6b; opacity: 0.85; }
+.mm-comm-status[data-state="link"] { color: #ffcf6b; }
+.mm-comm-status[data-state="link"] .mm-typing-dots { color: #ffcf6b; animation-duration: 0.35s; }
+.mm-comm-status[data-state="done"] { color: #5cf08a; letter-spacing: 0.5px; }
+.mm-comm-status[data-state="done"] .mm-typing-dots { display: none; }
+/* đang bắt sóng: khung chập chờn; nhiễu sóng chen ngang: chữ rung lệch, nhòe */
+.mm-sh-briefing.is-linking { animation: mm-link-flicker 0.24s steps(2) infinite; }
+@keyframes mm-link-flicker { 50% { border-color: rgba(255, 207, 107, 0.5); opacity: 0.86; } }
+.mm-sh-briefing.is-static .mm-comm-msg {
+  transform: translateX(2px);
+  text-shadow: -2px 0 rgba(255, 90, 70, 0.35), 2px 0 rgba(90, 200, 255, 0.35);
+  opacity: 0.8;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mm-sh-briefing.is-linking, .mm-briefing-cursor { animation: none; }
+}
 @keyframes mm-fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+
+/* OPORD dã chiến: bảng lệnh giấy dầu/terminal, ít lớp blur để nhẹ hơn trên nền 3D. */
+.mm-sh-briefing {
+  top: 132px;
+  left: 28px;
+  width: min(410px, calc(100vw - 56px));
+  gap: 9px;
+  padding: 0 14px 13px;
+  background:
+    linear-gradient(135deg, rgba(121, 137, 78, .07), transparent 42%),
+    rgba(8, 12, 10, .94);
+  border: 1px solid rgba(167, 181, 112, .42);
+  border-left: 3px solid #b8a75a;
+  box-shadow: 8px 12px 0 rgba(0, 0, 0, .22), 0 18px 44px rgba(0, 0, 0, .38);
+  backdrop-filter: none;
+  clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 15px, 100% 100%, 0 100%);
+}
+.mm-sh-briefing::before { border-color: #d2bd62; }
+.mm-sh-briefing::after { border-color: rgba(210, 189, 98, .55); }
+.mm-order-classification {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 -14px;
+  padding: 5px 14px 4px;
+  color: #15170f;
+  background: #b8a75a;
+  font: 900 9px/1 var(--font-mono);
+  letter-spacing: 1.4px;
+}
+.mm-order-classification b { font: inherit; }
+.mm-briefing-top { gap: 11px; padding-bottom: 2px; }
+.mm-briefing-avatar-box { width: 45px; height: 45px; border-color: rgba(210, 189, 98, .55); }
+.mm-briefing-avatar-img { filter: grayscale(1) contrast(1.22) sepia(.28); }
+.mm-briefing-kicker {
+  color: #899178;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 1.5px;
+}
+.mm-briefing-title { color: #e8e4cf; font-size: 14px; letter-spacing: 2.4px; }
+.mm-briefing-code { color: #d2bd62; font-size: 9px; }
+.mm-briefing-seal {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border: 1px solid rgba(210, 189, 98, .55);
+  border-radius: 50%;
+  color: #d2bd62;
+  font: 900 10px var(--font-mono);
+  box-shadow: inset 0 0 0 3px #080c0a, inset 0 0 0 4px rgba(210, 189, 98, .25);
+}
+.mm-order-meta {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr .75fr;
+  border-block: 1px solid rgba(167, 181, 112, .2);
+  background: rgba(159, 167, 112, .035);
+}
+.mm-order-meta span {
+  padding: 6px 7px;
+  color: #d6d8c8;
+  font: 700 9px/1.25 var(--font-mono);
+  letter-spacing: .5px;
+  border-right: 1px solid rgba(167, 181, 112, .16);
+}
+.mm-order-meta span:last-child { border-right: 0; }
+.mm-order-meta i { display: block; margin-bottom: 3px; color: #737b68; font-style: normal; font-size: 7px; letter-spacing: 1.1px; }
+.mm-comm-section { position: relative; padding-left: 16px; }
+.mm-comm-section::before { content: ''; position: absolute; left: 2px; top: 3px; bottom: 2px; width: 2px; background: #b8a75a; }
+.mm-comm-speaker { color: #b8a75a; font-size: 8px; letter-spacing: 1.5px; }
+.mm-sh-briefing .mm-comm-msg { color: #e0e3d3; font-size: 11.5px; line-height: 1.55; text-shadow: none; }
+.mm-comm-reply { padding: 7px 8px; border: 1px solid rgba(99, 151, 103, .24); background: rgba(70, 119, 75, .08); }
+.mm-comm-speaker.squad { color: #72a777; font-size: 8px; }
+.mm-comm-reply-text { color: #cbd9c6; }
+.mm-comm-status { color: #b8a75a; font-size: 8px; letter-spacing: 1.4px; }
+.mm-typing-dots { color: #b8a75a; }
+.mm-comm-status[data-state="link"] { color: #d2bd62; }
+.mm-comm-status[data-state="done"] { color: #72a777; }
+@media (max-width: 600px) {
+  .mm-sh-briefing { top: 108px; left: 18px; width: calc(100vw - 36px); }
+  .mm-order-meta { grid-template-columns: 1.1fr 1fr .7fr; }
+}
 
 /* ==========================================================================
    HUD TRINH SÁT MỞ MÀN (CHUYỂN GÓC QUA 3 CỨ ĐIỂM A, B, C)

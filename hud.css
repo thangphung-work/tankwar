@@ -30,15 +30,15 @@
   height: 180px;
   pointer-events: auto;
   cursor: pointer;
-  /* minimap radar tròn quanh xe mình (src/ui/radar_minimap.js) */
+  /* minimap radar tròn quanh xe mình (src/ui/radar_minimap.js) — viền la bàn vẽ trong canvas */
   border-radius: 50%;
-  border: 1px solid var(--hx-line);
   background: #0f110e;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 6px 18px rgba(0, 0, 0, 0.42);
+  transition: box-shadow 0.15s;
 }
 
-.hx-map canvas { display: block; width: 100%; height: 100%; border-radius: 50%; opacity: 0.95; }
-.hx-map:hover { border-color: rgba(190, 196, 184, 0.45); }
+.hx-map canvas { display: block; width: 100%; height: 100%; border-radius: 50%; }
+.hx-map:hover { box-shadow: 0 0 0 1px rgba(190, 196, 184, 0.5), 0 6px 18px rgba(0, 0, 0, 0.42); }
 /* Xe gãy hết ăng-ten: mất bản đồ số — màn nhiễu, chữ MẤT TÍN HIỆU */
 .hx-map.map-lost { cursor: not-allowed; }
 .hx-map.map-lost canvas { visibility: hidden; }
@@ -48,7 +48,6 @@
   background: repeating-linear-gradient(0deg, rgba(200, 210, 192, 0.07) 0 1px, transparent 1px 3px), rgba(10, 12, 11, 0.85);
 }
 
-.hx-map-n,
 .hx-map-key {
   position: absolute;
   font-family: var(--font-mono);
@@ -58,15 +57,40 @@
   text-shadow: 0 0 3px #000, 0 0 3px #000;
 }
 
-.hx-map-n { top: -12px; left: 50%; transform: translateX(-50%); color: var(--hx-amber); font-weight: 700; }
+/* bán kính vùng quan sát (radar_minimap.js ghi chữ): huy hiệu trên viền, góc 7h30 */
+.hx-map-range {
+  position: absolute;
+  left: 14.64%;
+  top: 85.36%;
+  transform: translate(-50%, -50%);
+  padding: 2px 5px;
+  font: 600 9px/1 var(--font-mono);
+  color: rgba(223, 228, 217, 0.85);
+  background: rgba(14, 17, 15, 0.94);
+  border: 1px solid rgba(190, 196, 184, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.hx-map-range:empty, .hx-map.map-lost .hx-map-range { display: none; }
 
+/* phím mở bản đồ lớn: huy hiệu tròn nằm trên viền, góc 4h30 */
 .hx-map-key {
-  top: 4px;
-  right: 4px;
-  padding: 2px 4px;
+  left: 85.36%;
+  top: 85.36%;
+  width: 17px;
+  height: 17px;
+  margin: -8.5px 0 0 -8.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
   color: var(--hx-text);
-  background: rgba(9, 11, 9, 0.75);
-  border: 1px solid var(--hx-line);
+  background: rgba(14, 17, 15, 0.94);
+  border: 1px solid rgba(190, 196, 184, 0.35);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   text-shadow: none;
 }
 
@@ -107,11 +131,25 @@
 .hx-log .log-entry.feed { border-left-color: rgba(255,255,255,0.25); color: rgba(238, 239, 236, 0.72); font-size: 0.92em; }
 
 /* --------------------------------------------------------------------------
+   THƯỚC LA BÀN (TRÊN CÙNG GIỮA) — canvas vẽ trong src/ui/compass_tape.js
+   -------------------------------------------------------------------------- */
+.hx-compass {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 46vw);
+  height: 40px;
+  pointer-events: none;
+}
+.hx-compass canvas { display: block; width: 100%; height: 100%; }
+
+/* --------------------------------------------------------------------------
    TỶ SỐ · ĐỒNG HỒ · CỨ ĐIỂM (TRÊN GIỮA)
    -------------------------------------------------------------------------- */
 .hx-top {
   position: absolute;
-  top: var(--hx-gap);
+  top: calc(var(--hx-gap) + 34px);   /* chừa chỗ thước la bàn */
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -230,7 +268,7 @@
    -------------------------------------------------------------------------- */
 .hx-alerts {
   position: absolute;
-  top: 90px;
+  top: 124px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -739,6 +777,7 @@
    -------------------------------------------------------------------------- */
 @media (max-width: 900px) {
   .hx-map { width: 130px; height: 130px; }
+  .hx-compass { width: min(320px, 52vw); }
   .hx-log { top: calc(var(--hx-gap) + 138px); width: 240px; }
   .hx-veh { width: 150px; }
   .hx-target { width: 180px; }

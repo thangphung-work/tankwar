@@ -53,43 +53,11 @@ class SupplyManager {
     }
     const groundY = this.game.terrain.getElevationAt(dropX, dropZ);
 
-    const airdropGroup = new THREE.Group();
+    // Túi hàng bạt kiểu A-22 trên đế gỗ + dù tròn ô liu (src/gameplay/supply_crate_model.js); đáy hòm ở y = -9
+    const { group: airdropGroup, chute: parachuteGroup } = SupplyCrateModel.airdrop();
+    airdropGroup.rotation.y = Math.random() * Math.PI * 2;
 
-    // 1. Khối thùng hàng quân sự
-    const crateGeo = new THREE.BoxGeometry(22, 18, 22);
-    const crateMat = new THREE.MeshLambertMaterial({ color: 0x2e6b3c });
-    const crateMesh = new THREE.Mesh(crateGeo, crateMat);
-    crateMesh.castShadow = true;
-    airdropGroup.add(crateMesh);
-
-    const stripeGeo = new THREE.BoxGeometry(22.4, 4, 22.4);
-    const stripeMat = new THREE.MeshLambertMaterial({ color: 0xb8901c });   // sơn vàng mờ, không tự phát sáng
-    const stripeMesh = new THREE.Mesh(stripeGeo, stripeMat);
-    airdropGroup.add(stripeMesh);
-
-    // 2. Chiếc dù quân sự
-    const parachuteGroup = new THREE.Group();
-    parachuteGroup.position.y = 35;
-
-    const canopyGeo = new THREE.ConeGeometry(26, 20, 16, 1, true);
-    canopyGeo.rotateX(Math.PI);
-    const canopyMat = new THREE.MeshBasicMaterial({ color: 0xfffae6, side: THREE.DoubleSide });
-    const canopyMesh = new THREE.Mesh(canopyGeo, canopyMat);
-    parachuteGroup.add(canopyMesh);
-
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x888888 });
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      const lineGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, -25, 0),
-        new THREE.Vector3(Math.cos(a) * 24, 0, Math.sin(a) * 24)
-      ]);
-      const line = new THREE.Line(lineGeo, lineMat);
-      parachuteGroup.add(line);
-    }
-    airdropGroup.add(parachuteGroup);
-
-    // Định vị: không dùng cột sáng; tiếp đất là xịt khói tín hiệu vàng (emitSignalSmoke)
+    // Định vị: không dùng cột sáng; tiếp đất thì ống khói đỏ bung cạnh hòm (emitSignalSmoke)
 
     airdropGroup.position.set(dropX, groundY + 650, dropZ);
     this.game.scene.add(airdropGroup);
@@ -103,7 +71,8 @@ class SupplyManager {
       groundY: groundY,
       landed: false,
       collected: false,
-      smokeAcc: 0
+      smokeAcc: 0,
+      t: Math.random() * 10
     };
 
     if (window.soundEngine) {
@@ -129,17 +98,38 @@ class SupplyManager {
     if (!drop.landed) {
       drop.y -= 75 * dt;
       drop.mesh.position.y = drop.y;
+      drop.t += dt;
+      drop.mesh.rotation.x = Math.sin(drop.t * 0.9) * 0.05;
+      drop.mesh.rotation.z = Math.sin(drop.t * 0.7 + 1.3) * 0.06;
 
       if (drop.y <= drop.groundY + 9) {
         drop.y = drop.groundY + 9;
         drop.mesh.position.y = drop.y;
         drop.landed = true;
         drop.mesh.remove(drop.parachuteGroup);
+        drop.mesh.rotation.x = drop.mesh.rotation.z = 0;
+        // dù xẹp đổ xuôi chiều gió, nằm trên đất cạnh hòm (toạ độ trong nhóm hòm: đáy hòm y = -9)
+        const W = this.game.ballistics && this.game.ballistics.wind, wl = W ? Math.hypot(W.vx, W.vz) : 0;
+        const wa = wl > 0.1 ? Math.atan2(W.vz, W.vx) : Math.random() * Math.PI * 2;
+        const yaw = drop.mesh.rotation.y, c = Math.cos(yaw), sn = Math.sin(yaw), wx = Math.cos(wa) * 19, wz = Math.sin(wa) * 19;
+        const lx = wx * c - wz * sn, lz = wx * sn + wz * c;   // hướng gió đổi sang toạ độ trong nhóm hòm
+        const heap = SupplyCrateModel.collapsedChute({ x: -19, y: 16.4, z: 0 });   // dây dù vắt về móc trên nóc hòm
+        heap.position.set(lx, -9, lz);
+        heap.rotation.y = -Math.atan2(lz, lx);
+        drop.mesh.add(heap);
+        // ống khói đỏ phía đầu gió: khói bạt qua hòm, dễ nhận từ xa; đầu phụt quay ra ngoài
+        const cn = SupplyCrateModel.canister(0xa8392a), d = Math.hypot(lx, lz) || 1, cx = -lx / d * 11, cz = -lz / d * 11;
+        cn.position.set(cx, -9, cz); cn.rotation.y = -Math.atan2(cz, cx);
+        drop.mesh.add(cn);
+        drop.mesh.updateMatrixWorld(true);
+        const sp = drop.mesh.localToWorld(new THREE.Vector3(cx + cx / 11 * 0.6, -9 + 0.36, cz + cz / 11 * 0.6));
+        drop.smoke = { x: sp.x, y: sp.y, z: sp.z };
         this.game.addCombatLog('[[package]] HÒM TIẾP TẾ ĐÃ TIẾP ĐẤT! TRANH ĐOẠT HỎA LỰC NGAY!', 'tip');
       }
     } else {
-      // Đã tiếp đất: xịt khói tín hiệu vàng từ nóc thùng cho tới khi có xe nhặt
-      this.emitSignalSmoke(drop, drop.x, drop.groundY + 19, drop.z, dt, true);
+      // Đã tiếp đất: ống khói đỏ cạnh hòm xịt khói cho tới khi có xe nhặt
+      const sp = drop.smoke || { x: drop.x, y: drop.groundY, z: drop.z };
+      this.emitSignalSmoke(drop, sp.x, sp.y, sp.z, dt, true, 'red');
 
       // Kiểm tra xe nào nhặt được hòm (chỉ chủ phòng xét; phần thưởng bốc thăm tại chủ phòng rồi báo đi)
       if (!this.isAuthority()) return;
@@ -167,6 +157,11 @@ class SupplyManager {
     const labels = ['2 VIÊN ĐẠN XUYÊN PHÁ (BẮN PHÁT CHẾT LUÔN)!', '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!', 'GIÁP PHẢN ỨNG NỔ (PHÁ HỦY 1 PHÁT RPG / ĐẠN PHÁO TRÚNG THẲNG)!',
       'HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU VÀ HỒI ĐẦY MÁU)!', 'ĐỘNG CƠ TĂNG ÁP TỐC ĐỘ (+65% TỐC ĐỘ DI CHUYỂN TRONG 20S)!'];
     let lootMsg = labels[lootRoll] || labels[0];
+    // hòm thả dù luôn kèm kiện đạn: nạp đầy cơ số đạn mang theo (AmmoLoad)
+    if (this.ownsUnit(unit) && typeof AmmoLoad !== 'undefined') {
+      const add = AmmoLoad.resupply(unit, 1);
+      if (add && unit.isPlayer) lootMsg += ` · NẠP ĐẦY CƠ SỐ (${add.toUpperCase()})`;
+    }
     if (this.ownsUnit(unit)) {
       if (lootRoll === 0) {
         unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
@@ -196,48 +191,62 @@ class SupplyManager {
   }
 
   /**
-   * Khói tín hiệu vàng như lựu đạn khói đánh dấu thật (8 đv = 1 m): miệng ống xịt đặc ở gốc, bốc lên,
-   * nở rộng, bạt theo gió (game.ballistics.wind) rồi loãng nhạt dần ở trên cao; có ít khói nặng tràn sát đất.
-   * Dùng lại lớp hạt instanced của ExplosionFX (bể fx.signal riêng, 1 lần vẽ) -> không tạo mesh / vật liệu mới.
-   * em: đối tượng giữ nhịp phát ({ smokeAcc, smokeN }); big: hòm thả dù (cột khói to & dày hơn).
+   * Khói tín hiệu như lựu đạn khói màu thật (kiểu M18, 8 đv = 1 m) phụt từ đầu ống nằm trên đất cạnh hòm:
+   * - khói màu nặng, ấm ít: phụt ra đặc, sát gốc màu đậm; bốc lên chậm (~0.5 m/s), bạt mạnh theo gió
+   *   (game.ballistics.wind), nở rộng, loãng và nhạt / ngả xám dần khi tan
+   * - một phần khói nặng tràn sát đất xuôi gió
+   * - màu tính sẵn như đã được chiếu sáng (hạt không nhận đèn): không vượt 1 -> không tự phát sáng thành quả cầu
+   * Hạt nhỏ, phát dày -> cột khói liền mạch (không thành chuỗi cục tròn). Lớp hạt instanced fx.signal của ExplosionFX
+   * (1 lần vẽ, không tạo mesh mới); ở xa / ngoài khung nhìn chỉ phát một phần (fx.withLod).
+   * em: đối tượng giữ nhịp phát ({ smokeAcc }); big: hòm thả dù (khói dày, cao hơn); col: 'yellow' | 'red'
    */
-  emitSignalSmoke(em, x, y, z, dt, big) {
+  emitSignalSmoke(em, x, y, z, dt, big, col) {
     const fx = this.game.effectsManager && this.game.effectsManager.fx;
     const layer = fx && (fx.signal || fx.smoke);
     if (!layer) return;
-    const every = big ? 0.15 : 0.26;
-    em.smokeAcc = (em.smokeAcc || 0) + dt;
-    if (em.smokeAcc < every) return;
+    const rate = big ? 13 : 7;                       // hạt / giây
+    em.smokeAcc = (em.smokeAcc || 0) + dt * rate;
+    if (em.smokeAcc < 1) return;
     const W = this.game.ballistics && this.game.ballistics.wind;
-    const wx = W ? W.vx : 0, wz = W ? W.vz : 0;
-    const R = Math.random, k = big ? 1.3 : 1;
-    let n = 0;
-    while (em.smokeAcc >= every && n < 3) {
-      em.smokeAcc -= every;
-      n++;
-      const age = em.smokeAcc;                     // hạt phát trễ trong khung dài: đẩy trước theo tuổi để cột khói không vón cục
-      const vy = (15 + R() * 5) * k, vx = (R() - 0.5) * 3 + wx * 0.25, vz = (R() - 0.5) * 3 + wz * 0.25;
-      const drag = 0.45, sat = 0.9 + R() * 0.1;
-      layer.add({
-        x: x + (R() - 0.5) * 1.5 + vx * age, y: y + vy * age, z: z + (R() - 0.5) * 1.5 + vz * age,
-        vx, vy, vz, ax: wx * drag, az: wz * drag,  // vận tốc ngang tiến dần tới tốc độ gió
-        size: (4.5 + R() * 2.5) * k, grow: (4 + R() * 1.5) * k, drag, grav: -2.6,
-        life: 8 + R() * 3, alpha: 0.9, fadeIn: 0.12, fadePow: 1.6,
-        c0: [1.65 * sat, 1.3 * sat, 0.2], c1: [1.3, 1.18, 0.7], colorRate: 1.3, cell: 0, floor: false
-      });
-      // khói nặng tràn ra quanh gốc, lăn sát đất theo chiều gió
-      em.smokeN = (em.smokeN || 0) + 1;
-      if (em.smokeN % 3 === 0) {
-        const a = R() * Math.PI * 2, sp = 3 + R() * 3;
+    const wx = W ? W.vx : 0, wz = W ? W.vz : 0, wl = Math.hypot(wx, wz);
+    const ux = wl > 0.1 ? wx / wl : 0, uz = wl > 0.1 ? wz / wl : 0;
+    const R = Math.random, k = big ? 1.25 : 1;
+    // màu khói M18 dưới ánh ngày: đậm ở gốc -> nhạt, ngả xám khi loãng
+    const C0 = col === 'red' ? [0.74, 0.27, 0.21] : [0.88, 0.71, 0.26], C1 = col === 'red' ? [0.72, 0.6, 0.57] : [0.78, 0.75, 0.62];
+    const emit = () => {
+      let n = 0;
+      while (em.smokeAcc >= 1 && n < 4) {
+        em.smokeAcc -= 1; n++;
+        const age = (em.smokeAcc / rate) || 0, j = 0.9 + R() * 0.1;
+        // luồng phụt: bắn ra khỏi miệng ống + lên, rồi gió cuốn đi
+        const out = 1.2 + R() * 2, vx = ux * out + (R() - 0.5) * 2.2, vz = uz * out + (R() - 0.5) * 2.2, vy = (4.5 + R() * 3) * k;
         layer.add({
-          x: x + Math.cos(a) * 3, y: y - 2, z: z + Math.sin(a) * 3,
-          vx: Math.cos(a) * sp, vy: 1 + R() * 1.5, vz: Math.sin(a) * sp, ax: wx * 0.6, az: wz * 0.6,
-          size: 7 * k, grow: 3.5 * k, drag: 0.6, grav: -0.3,
-          life: 4 + R() * 2, alpha: 0.55, fadeIn: 0.2, c0: [1.55, 1.25, 0.25], c1: [1.3, 1.15, 0.6], cell: 0, floor: false
+          x: x + vx * age, y: y + 0.2 + vy * age, z: z + vz * age, vx, vy, vz, ax: wx * 0.4, az: wz * 0.4,
+          size: (1.5 + R() * 1.1) * k, grow: (2.8 + R() * 1.4) * k, drag: 0.5, grav: -1.8,
+          life: (6.5 + R() * 2.5) * (big ? 1.35 : 1), alpha: 0.72, fadeIn: 0.1, fadePow: 1.5,
+          c0: [C0[0] * j, C0[1] * j, C0[2] * j], c1: C1, colorRate: 0.55, cell: 0, floor: false
         });
+        // khói nặng loang sát đất xuôi gió (1/5 số hạt, mỏng)
+        if (R() < 0.2) {
+          const a = R() * Math.PI * 2, sp = 1 + R() * 2;
+          layer.add({
+            x: x + Math.cos(a) * 0.6, y: y + 0.3, z: z + Math.sin(a) * 0.6, vx: Math.cos(a) * sp + ux * 2, vy: 0.4 + R() * 0.6, vz: Math.sin(a) * sp + uz * 2,
+            ax: wx * 0.7, az: wz * 0.7, size: (2 + R()) * k, grow: 2.6 * k, drag: 0.7, grav: -0.12,
+            life: 3 + R() * 1.5, alpha: 0.35, fadeIn: 0.15, fadePow: 1.2, c0: [C0[0] * 0.95, C0[1] * 0.95, C0[2] * 0.95], c1: C1, colorRate: 0.7, cell: 0, floor: false
+          });
+        }
       }
-    }
-    if (em.smokeAcc > every) em.smokeAcc = 0;
+      if (em.smokeAcc > 1) em.smokeAcc = 0;
+    };
+    if (fx.withLod) fx.withLod(x, y, z, big ? 40 : 28, emit); else emit();
+  }
+
+  // Vị trí đầu ống khói (thế giới) của hòm mặt đất — ống M18 nằm cạnh pallet (SupplyCrateModel.SMOKE.crate)
+  placeCrateExtras(crate) {
+    const m = crate.mesh, o = typeof SupplyCrateModel !== 'undefined' && SupplyCrateModel.SMOKE ? SupplyCrateModel.SMOKE.crate : { x: 0, y: 8, z: 0 };
+    m.updateMatrixWorld(true);
+    const p = m.localToWorld(new THREE.Vector3(o.x, o.y, o.z));
+    crate.smoke = { x: p.x, y: p.y, z: p.z };
   }
 
   // =========================================================================
@@ -272,9 +281,15 @@ class SupplyManager {
       // hòm rơi vào khu căn cứ (vùng cấm bắn) -> dời ra ngoài hàng rào
       const LS = this.game.terrain && this.game.terrain.landmarkSet;
       if (LS && LS.outside) [loc.x, loc.z] = LS.outside(loc.x, loc.z, 40);
-      const groundY = this.game.terrain.getElevationAt(loc.x, loc.z);
+      const T = this.game.terrain, groundY = T.getElevationAt(loc.x, loc.z);
       const crateMesh = this.createSupplyCrateMesh(loc.type);
-      crateMesh.position.set(loc.x, groundY + 7, loc.z);
+      // pallet đặt sát đất (gốc hình = mặt đất), mỗi hòm một hướng (cố định theo thứ tự -> mọi máy như nhau), nghiêng theo dốc
+      const dx = (T.getElevationAt(loc.x + 7, loc.z) - T.getElevationAt(loc.x - 7, loc.z)) / 14;
+      const dz = (T.getElevationAt(loc.x, loc.z + 7) - T.getElevationAt(loc.x, loc.z - 7)) / 14;
+      crateMesh.rotation.order = 'XZY';
+      const tilt = (v) => Math.max(-0.25, Math.min(0.25, Math.atan(v)));   // dốc đứng: nghiêng tối đa ~14° (pallet không dựng ngược)
+      crateMesh.rotation.set(-tilt(dz), (idx * 2.399) % (Math.PI * 2), tilt(dx));
+      crateMesh.position.set(loc.x, groundY - 0.2, loc.z);
       this.game.scene.add(crateMesh);
 
       this.supplyCrates.push({
@@ -289,59 +304,16 @@ class SupplyManager {
         smokeAcc: Math.random() * 0.2,
         mesh: crateMesh
       });
+      this.placeCrateExtras(this.supplyCrates[this.supplyCrates.length - 1]);
     });
+    // điểm tiếp tế hậu phương mỗi phe (xe hậu cần + kho đạn sau khu xuất kích): đứng trong vùng nạp đạn nhanh
+    if (typeof SupplyDepot !== 'undefined') { try { SupplyDepot.init(this.game); } catch (e) { console.warn('[DEPOT]', e); } }
   }
 
+  // Hình hòm theo loại: pallet hàng tiếp tế quân sự (src/gameplay/supply_crate_model.js), gốc = mặt đất giữa pallet.
+  // Không cột sáng / vòng neon: hòm đánh dấu bằng khói tín hiệu vàng từ ống M18 nằm cạnh pallet (emitSignalSmoke)
   createSupplyCrateMesh(type = 'ALL') {
-    const group = new THREE.Group();
-
-    const crateW = 18;
-    const crateH = 14;
-    const crateD = 18;
-
-    let bodyColor = 0x1e3a1e;
-    let stripeColor = 0x00e5ff;
-    if (type === 'AMMO') {
-      bodyColor = 0x3d2806;
-      stripeColor = 0xfbbf24;
-    } else if (type === 'REPAIR') {
-      bodyColor = 0x1e293b;
-      stripeColor = 0x34d399;
-    } else if (type === 'SPEED') {
-      bodyColor = 0x1e1e38;
-      stripeColor = 0x38bdf8;
-    } else {
-      bodyColor = 0x3b1c1c;
-      stripeColor = 0xfacc15;
-    }
-
-    const crateGeo = new THREE.BoxGeometry(crateW, crateH, crateD);
-    const crateMat = new THREE.MeshLambertMaterial({ color: bodyColor });
-    const crateMesh = new THREE.Mesh(crateGeo, crateMat);
-    crateMesh.castShadow = true;
-    group.add(crateMesh);
-
-    const edgeGeo = new THREE.BoxGeometry(crateW + 0.6, 2.5, crateD + 0.6);
-    const edgeMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(stripeColor).multiplyScalar(0.62) });   // vạch sơn nhận dạng, không phát sáng
-    const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
-    group.add(edgeMesh);
-
-    const crossMat = new THREE.MeshLambertMaterial({ color: 0xc9c4b4, side: THREE.DoubleSide });
-    const cross1Geo = new THREE.PlaneGeometry(8, 2.2);
-    cross1Geo.rotateX(-Math.PI / 2);
-    const cross1 = new THREE.Mesh(cross1Geo, crossMat);
-    cross1.position.y = crateH / 2 + 0.1;
-    group.add(cross1);
-
-    const cross2Geo = new THREE.PlaneGeometry(2.2, 8);
-    cross2Geo.rotateX(-Math.PI / 2);
-    const cross2 = new THREE.Mesh(cross2Geo, crossMat);
-    cross2.position.y = crateH / 2 + 0.1;
-    group.add(cross2);
-
-    // Không còn cột sáng / vòng sáng neon: hòm đánh dấu bằng khói tín hiệu vàng (emitSignalSmoke)
-
-    return group;
+    return SupplyCrateModel.crate(type);
   }
 
   updateSupplyCrates(dt) {
@@ -349,8 +321,9 @@ class SupplyManager {
 
     for (const crate of this.supplyCrates) {
       if (crate.active) {
-        // Hòm nằm yên trên đất (không xoay / nhấp nhô), xịt khói tín hiệu vàng từ nóc
-        this.emitSignalSmoke(crate, crate.x, crate.baseY + 8, crate.z, dt, false);
+        // Hòm nằm yên trên đất (không xoay / nhấp nhô); ống khói vàng cạnh pallet xịt khói tín hiệu
+        const sp = crate.smoke || { x: crate.x, y: crate.baseY, z: crate.z };
+        this.emitSignalSmoke(crate, sp.x, sp.y, sp.z, dt, false, 'yellow');
 
         if (!this.isAuthority()) continue;   // chỉ chủ phòng xét ai nhặt được
         for (const unit of this.game.units) {
@@ -410,6 +383,11 @@ class SupplyManager {
     } else if (crate.type === 'SPEED') {
       if (own) unit.speedBoostTimer = 20.0;
       rewardMsg = 'TĂNG TỐC ĐỘ DI CHUYỂN +65% TRONG 20S!';
+    }
+    // hòm ĐẠN / TỔNG HỢP: nạp bù cơ số đạn mang theo (đạn pháo / băng / hộp vũ khí nóc) — AmmoLoad
+    if (own && (crate.type === 'AMMO' || crate.type === 'ALL') && typeof AmmoLoad !== 'undefined') {
+      const add = AmmoLoad.resupply(unit, crate.type === 'AMMO' ? 0.6 : 0.4);
+      if (add && unit.isPlayer) rewardMsg += ` CƠ SỐ: ${add.toUpperCase()}`;
     }
     if (unit.isPlayer) {
       this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM HÒM TIẾP TẾ [${crate.name}]: +${rewardMsg}`, 'tip');

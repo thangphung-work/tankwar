@@ -20,6 +20,9 @@ const DroneAir = (() => {
     // phần "thân drone" mất mỗi phát trúng (1 = rơi): drone nhựa / sợi carbon rất mỏng manh —
     // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát (đạn pháo không bắn được mục tiêu trên không)
     DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
+    // đạn 12.7 nổ-cháy-xuyên Mk211 (s.heiap): ngòi chạm nổ ngay trên vỏ nhựa / sợi carbon. Viên đi qua lõi thân (pin, mạch,
+    // động cơ — trong HEIAP_CORE x HIT_R quanh tâm) là rơi; trúng cánh / cần quạt ở rìa thì mất HEIAP_EDGE
+    HEIAP_CORE: 0.55, HEIAP_EDGE: 0.6,
     // Mảnh văng của đạn 30mm nổ trên không (đạn lập trình ngòi 'ahead30', ballistics abmBurst) trúng drone: sát thương
     // bằng FRAG_K phát trúng thẳng. Đạn 30mm thường dùng ngòi chạm: bay sượt qua không nổ, không có mảnh
     FRAG_K: 0.5,
@@ -269,12 +272,17 @@ const DroneAir = (() => {
         if (u === this.player || u.tankType !== 'ARTILLERY') continue;
         const R = this.otherDrone(u);
         R.team = u.team;
-        // xe bot (không có gói mạng): drone luôn đậu; hồi sinh / xe chết không đổi gì
-        // (drone bị bắn nát ngay trên đế — game.hitDockedDrone: mất tới khi xe chết & hồi sinh mới có drone mới)
-        if (!R.net && R.state === 'lost' && u.isDead) R.state = 'docked';
-        if (!R.net && R.state !== 'docked' && R.state !== 'lost' && !u.isDead) R.state = 'docked';
+        // xe bot do máy này chạy: AI tự lái drone trinh sát / UAV cảm tử (bot_drones.js) — vị trí đặt thẳng, không nội suy gói
+        const botAuth = !!(this.updateBotDrone && this.botDroneAuth && this.botDroneAuth(u));
+        if (botAuth) { R.net = false; this.updateBotDrone(R, u, dt); }
+        else {
+          // xe không có gói mạng & không có AI drone: drone luôn đậu; hồi sinh / xe chết không đổi gì
+          // (drone bị bắn nát ngay trên đế — game.hitDockedDrone: mất tới khi xe chết & hồi sinh mới có drone mới)
+          if (!R.net && R.state === 'lost' && u.isDead) R.state = 'docked';
+          if (!R.net && R.state !== 'docked' && R.state !== 'lost' && !u.isDead) R.state = 'docked';
+        }
         if (airborne(R.state)) {
-          this.interpDrone(R, t, dt);
+          if (!botAuth) this.interpDrone(R, t, dt);
           this.trackDroneVel(R, dt);
           if (!u.isDead || R.net) list.push(R);
           R.seen = myTeam === null || this.droneSeenByTeam(R, myTeam);
@@ -285,16 +293,24 @@ const DroneAir = (() => {
           const m = R.model;
           if (m.parent !== this.scene) this.scene.add(m);
           m.visible = R.seen;
+          // UAV cảm tử: gói mạng không có góc nghiêng — suy ra từ tốc độ đổi hướng (vòng rẽ phối hợp, KamiUAV.bankFor)
+          let roll = 0;
+          if (kami && dt > 0) {
+            const w = R._kyaw === undefined ? 0 : wrapPi(R.yaw - R._kyaw) / dt;
+            R._kyaw = R.yaw;
+            R._kw = (R._kw || 0) + (w - (R._kw || 0)) * (1 - Math.exp(-dt * 4));
+            roll = KamiUAV.bankFor(R._kw, Math.hypot(R.wvx, R.wvz), KamiUAV.C.attackBank);
+          }
           if (R.seen) {
             m.position.set(R.x, R.y, R.z);
             const tilt = Math.min(0.25, Math.hypot(R.wvx, R.wvz) / 2400);
-            m.rotation.set(kami ? Math.atan2(R.wvy || 0, Math.hypot(R.wvx, R.wvz) || 1) : -tilt, R.yaw, 0);
+            m.rotation.set(kami ? Math.atan2(R.wvy || 0, Math.hypot(R.wvx, R.wvz) || 1) : -tilt, R.yaw, roll);
             if (kami) { KamiUAV.animate(m, dt, 1, 1); if (this.kamiTrailModel) this.kamiTrailModel(m, dt); } else ReconDrone.animate(m, dt, 1);
           }
           continue;
         }
         R.seen = false;
-        R._px = undefined;
+        R._px = undefined; R._kyaw = undefined; R._kw = 0;
         const ch = u.chassisGroup;
         const showDock = R.state === 'docked' && u.uavKind !== 'kami' && !u.isDead && ch && u.group && u.group.visible && !u.isHiddenFromPlayer
           && cam && Math.hypot(cam.position.x - u.x, cam.position.z - u.z) < C.DOCK_VIEW;
@@ -353,7 +369,12 @@ const DroneAir = (() => {
       const shooter = this.unitById(s.shooterId);
       const NS = this.netSync && !this.netSync.detached ? this.netSync : null;
       const auth = !s.netRemote && (!NS || (shooter && NS.owns(shooter)));
-      const dmg = (s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0)) * (h && h.d > C.HIT_R ? C.FRAG_K : 1);
+      // (h.d chỉ là khoảng cách ở cuối bước đạn vừa lọt vùng trúng ~ sát rìa; h.dl: khoảng cách gần nhất của đường đạn tới tâm)
+      const hd = h ? (h.dl !== undefined ? h.dl : h.d) : Infinity;
+      const dmg = s.heiap ? (hd < C.HIT_R * C.HEIAP_CORE ? 1 : C.HEIAP_EDGE)
+        : (s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0)) * (h && h.d > C.HIT_R ? C.FRAG_K : 1);
+      // Mk211: chớp nổ-cháy nhỏ ngay trên thân drone
+      if (s.heiap && fx && fx.spawnIncendiarySplash) { try { fx.spawnIncendiarySplash(h.x, h.y, h.z, 0.7); } catch (e) { /* hiệu ứng phụ */ } }
       if (!dmg) return;
       if (dr.key === 'own') {
         if (auth) this.damageOwnDrone(dmg, shooter);
@@ -362,6 +383,8 @@ const DroneAir = (() => {
       }
       const SE = window.soundEngine, P = this.player;
       if (SE && SE.playDroneHit && P && Math.hypot(P.x - h.x, P.z - h.z) < 1300) SE.playDroneHit(false);
+      // drone của bot do máy này lái (bot_drones.js): trừ thân ngay tại đây
+      if (dr.onHit && !dr.net) { if (auth) dr.onHit(dmg, shooter); if (shooter === P) this._droneHitMark = 0.35; return; }
       if (!auth || !dr.net || !shooter) return;
       dr.pend = (dr.pend || 0) + dmg;
       dr.pendBy = shooter;
@@ -431,7 +454,7 @@ const DroneAir = (() => {
       if (dr.key === 'own') {
         // Drone của người chơi: luôn tự trừ máu khi dính nổ của bất kỳ viên đạn nào
         this.damageOwnDrone(dmg, shooter);
-      } else if (dr.onHit) {   // drone bia của phòng thử đạn (range_lab.js) tự trừ thân
+      } else if (dr.onHit && !dr.net) {   // drone bia của phòng thử đạn (range_lab.js) / drone bot do máy này lái tự trừ thân
         if (auth) dr.onHit(dmg, shooter);
       } else if (auth && dr.net && shooter) {
         dr.pend = (dr.pend || 0) + dmg;
@@ -740,7 +763,12 @@ const DroneAir = (() => {
           S.reload -= dt;
           // thay hộp đạn: tiếng lắp hộp mới + dây đạn + kéo khóa lên đạn canh rơi đúng lúc thay xong
           if (u === this.player && prev > 1.3 && S.reload <= 1.3 && window.soundEngine && window.soundEngine.playReloadPhase) window.soundEngine.playReloadPhase('MG762', 'magIn', S.reload);
-          if (S.reload <= 0) S.mag = R.mag;
+          // hộp mới rút từ cơ số mang theo (AmmoLoad): hết cơ số thì bệ câm tới khi được tiếp tế
+          if (S.reload <= 0) S.mag = typeof AmmoLoad !== 'undefined' ? AmmoLoad.fillRoof(u, R.mag) : R.mag;
+        } else if (S.mag <= 0 && typeof AmmoLoad !== 'undefined' && AmmoLoad.roofCanReload(u)) {
+          // hết hộp mà cơ số còn (vừa được tiếp tế / tên lửa đột nóc: kíp xe ra lắp cặp ống mới) -> thay hộp
+          S.reload = AmmoLoad.roofReloadTime(u, R.reload);
+          if (u === this.player) this.addCombatLog(`[[hourglass]] ${R.name}: đang lắp ${R === C.ROOF.atgm ? 'ống phóng mới' : 'hộp đạn mới'} (${S.reload.toFixed(0)} s)`, 'tip');
         }
         // bệ tên lửa đột nóc: nắp đầu ống còn trên ống nào thì ống đó còn tên lửa (phóng là nắp bật văng — hồi sinh có ống mới)
         if (u.roofRounds) {
@@ -758,8 +786,10 @@ const DroneAir = (() => {
           S.t -= R.rof;
           this.fireRCWS(u);
           if (--S.mag <= 0) {
-            S.reload = R.reload;
-            if (u === this.player) {
+            const dry = typeof AmmoLoad !== 'undefined' && AmmoLoad.tracks(u) && !AmmoLoad.roofCanReload(u);
+            S.reload = dry ? 0 : R.reload;
+            if (dry) { if (u === this.player) AmmoLoad.dryNote(u, 'roof'); }
+            else if (u === this.player) {
               this.addCombatLog(R === C.RCWS ? '[[hourglass]] Súng máy phòng không 7.62mm hết dây đạn — đang thay hộp (5 s)'
                 : `[[hourglass]] ${R.name} hết đạn — đang nạp lại (${R.reload} s)`, 'alert');
               if (window.soundEngine && window.soundEngine.playReloadPhase) window.soundEngine.playReloadPhase('MG762', 'magOut');   // mở nắp tháp, tháo hộp rỗng (súng 7.62 có tiếng riêng)
@@ -1395,9 +1425,14 @@ const DroneAir = (() => {
     onNetDroneHit(d, from, NS) {
       if (!d || !this.player) return;
       const o = NS.byNetId[d.o];
-      if (o !== this.player) return;
       const a = typeof d.a === 'number' && d.a >= 0 ? NS.byNetId[d.a] : null;
       if (a && NS.ownerOf(a) !== from) return;
+      // máy khác bắn trúng drone của bot do máy này lái (bot_drones.js)
+      if (o && o !== this.player && this.botDroneAuth && this.botDroneAuth(o) && this.botDroneHurt) {
+        this.botDroneHurt(o, Math.max(0, Math.min(1, (d.d || 0) / 1000)), a);
+        return;
+      }
+      if (o !== this.player) return;
       // đồng đội bắn trúng drone mình: vẫn mất máu (không miễn nhiễm cùng phe)
       this.damageOwnDrone(Math.max(0, Math.min(1, (d.d || 0) / 1000)), a);
     },
@@ -1574,7 +1609,9 @@ const DroneAir = (() => {
       p.vx = rp.v0 * Math.cos(e) * ca; p.vy = rp.v0 * Math.sin(e); p.vz = rp.v0 * Math.cos(e) * cz;
       const h = 1 / 90;
       let t = 0, prevH = 0, prevY = 0, travel = 0;
-      for (let i = 0; i < 400; i++) {
+      // đủ bước cho đạn tới hết đời bay (lifeTravel) — trước đây 400 bước (~4.4 s mô phỏng): đạn 12.7 chưa tới ~900 đv đã hết
+      // bước -> không có nghiệm, súng chĩa thẳng vào drone không bù đạn rơi (ở 1000 đv đạn đi thấp hơn drone ~30 đv)
+      for (let i = 0; i < 1600; i++) {
         const x0 = p.x, y0 = p.y, z0 = p.z;
         B.integrateFlight(p, h);
         p.x += p.vx * h; p.y += p.vy * h; p.z += p.vz * h;
@@ -1615,7 +1652,7 @@ const DroneAir = (() => {
         if (!this.droneIsAirborne(dr) || !dr.seen) { this.clearAirAim('[[radar-2]] MẤT DẤU DRONE ĐỊCH — đã hủy khóa'); return false; }
         A.solT -= dt;
         if (A.solT <= 0 || !A.sol) {
-          A.solT = 0.1;
+          A.solT = 0.05;   // (0.1 s: drone bay ngang dịch ~10 đv giữa 2 lần tính -> loạt đạn trễ sau đuôi drone)
           A.sol = this.airShotSolution(P, ammo, dr.x, dr.y + C.CENTER_Y, dr.z, dr.wvx || 0, dr.wvy || 0, dr.wvz || 0);
         }
         const S = A.sol;

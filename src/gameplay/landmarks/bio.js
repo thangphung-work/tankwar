@@ -21,6 +21,7 @@
  */
 (function () {
   const KINDS = window.LandmarkKinds = window.LandmarkKinds || {};
+  const DMAP = new WeakMap();   // L.mound -> Map(chỉ số nút lưới -> phần bị hạ), xem surface
   KINDS.bio = {
     name: 'HẦM NGHIÊN CỨU VŨ KHÍ SINH HỌC', icon: '☣', color: '#ff8a5c',
     // cổng -> giàn rửa xe -> sân cửa hầm; trục ngang trước; 2 đường dịch vụ 2 bên gò (nhà động vật / máy phát, lò đốt)
@@ -32,13 +33,82 @@
       slabs: [[160, 202, 232, 334], [98, -24, 130, 24], [-58, -264, -12, -220]],
       noGrow: [[-132, -12, -52, 62]]
     },
+    // Mặt đất riêng quanh sân khoét (cao độ cục bộ so với cốt sân; null = dùng lưới địa hình). Lưới địa hình (84 đv/ô)
+    // quanh sân bị map_gen hạ theo mặt phẳng dốc (moundBio) -> ở đây dựng lại đúng mặt đất cũ: nội suy (cùng 2 tam giác
+    // như terrain.groundAtRaw) phần bị hạ của từng nút (L.mound.orig) cộng vào cao độ lưới t; trong sân = 0 (vách khoét
+    // đứng tại mép sân). Trước mũi gò chỗ lưới trũng xuống, gò cũ ở đó = mặt bằng -> tự về cốt sân.
+    surface(L, f, r, t, x, z) {
+      const M = L.mound;
+      if (!M || !M.orig || typeof MapGen === 'undefined') return null;
+      if (f > M.pf && f < M.pe + 120 && Math.abs(r) < M.pr) return 0;   // + trước mũi gò: hết gờ cỏ nội suy giữa sân
+      let dm = DMAP.get(M);
+      if (!dm) { dm = new Map(); for (let i = 0; i < M.orig.length; i += 2) dm.set(M.orig[i], M.orig[i + 1]); DMAP.set(M, dm); }
+      const S = MapGen.RES, W = MapGen.SIZE, N = S + 1, gx = (x + W / 2) / W * S, gz = (z + W / 2) / W * S;
+      const ix = Math.max(0, Math.min(S - 1, Math.floor(gx))), iz = Math.max(0, Math.min(S - 1, Math.floor(gz)));
+      const fx = Math.max(0, Math.min(1, gx - ix)), fz = Math.max(0, Math.min(1, gz - iz)), i = iz * N + ix, d = (k) => dm.get(k) || 0;
+      let dh;
+      if (fx + fz <= 1) { const a = d(i), b = d(i + 1), c = d(i + N); if (!a && !b && !c) return null; dh = a + (b - a) * fx + (c - a) * fz; }
+      else { const a = d(i + N + 1), b = d(i + N), c = d(i + 1); if (!a && !b && !c) return null; dh = a + (b - a) * (1 - fx) + (c - a) * (1 - fz); }
+      return t + dh;
+    },
     build(K, group, anim, api) {
-      const { TAU, hash, canvas, texOf, speckle, blotch, ageCanvas, concPair, ribPair, biohazard, warnSign, ABANDONED, roadNet, MAT, decalT, doorMats,
+      const { TAU, hash, canvas, texOf, speckle, blotch, ageCanvas, concPair, ribPair, biohazard, warnSign, ABANDONED, metalize, roadNet, MAT, decalT, doorMats,
         M4, boxGeo, apron, meshFenceMat, fence, sandbags, drum, camoNet, heli, secKit, perimeter, officeBlock, stack, vTank, milTruck } = api;
       const SITE = KINDS.bio.site;
       const L = K.L, M = L.mound, F0 = M.face - 14, F1 = M.face + 22, CUT = M.cut;   // tường mặt tiền f: -4..32
       apron(group, L, -L.hu, L.hu, -L.hv, L.hv, 'bio');
       roadNet(group, SITE.roads, SITE.junctions, { bars: [[140, 0, 2.4, 32]], words: [['STOP', 146, 0, Math.PI / 2, 16]] });
+      // NẮP ĐẤT GÒ (lưới mịn 4 đv, cùng shader + ảnh nền với mặt đất): phủ lên chỗ lưới địa hình thô bị hạ quanh sân khoét,
+      // dựng đúng vách khoét đứng tại mép sân (mép nằm trong thân tường chắn đất / sau cửa áp lực trong). Chỉ dựng ô nào
+      // cao hơn mặt sân; nâng 0.15 + polygonOffset để không nhấp nháy chỗ trùng mặt đất
+      {
+        const T = K.terrain, gmat = T && T.groundLikeMaterial && T.groundLikeMaterial();
+        if (gmat && M.pf !== undefined) {
+          gmat.polygonOffset = true; gmat.polygonOffsetFactor = -1; gmat.polygonOffsetUnits = -2;
+          const ST = 4, fa = M.fc - M.af - 4, fb = M.fc + M.af + 8, rb = M.ar + 8;
+          const nf = Math.ceil((fb - fa) / ST), nr = Math.ceil(rb * 2 / ST), N1 = nr + 1;
+          const pos = new Float32Array((nf + 1) * N1 * 3), uvs = new Float32Array((nf + 1) * N1 * 2), hgt = new Float32Array((nf + 1) * N1);
+          for (let i = 0; i <= nf; i++) for (let j = 0; j <= nr; j++) {
+            const f = fa + i * ST, r = -rb + j * ST, k = i * N1 + j, [x, z] = K.W(f, r);
+            hgt[k] = K.earth(f, r);
+            pos.set([f, hgt[k] + 0.15, r], k * 3); uvs.set([0.5 + x / T.width, 0.5 - z / T.depth], k * 2);
+          }
+          const idx = [];
+          for (let i = 0; i < nf; i++) for (let j = 0; j < nr; j++) {
+            const a = i * N1 + j, b = a + N1, q = [a, b, b + 1, a + 1];
+            // phủ kín cả gò (bỏ ô trùng lưới địa hình -> mép răng cưa lệch màu vì shader mặt đất tô theo độ lõm / pháp
+            // tuyến nướng sẵn của lưới thô); mép nắp ở chân gò chìm dưới mặt sân bê tông
+            if (q.every(v => hgt[v] < 0.6)) continue;
+            idx.push(a, a + 1, b, b, a + 1, b + 1);
+          }
+          if (idx.length) {
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2)); g.setIndex(idx);
+            // pháp tuyến từ cao độ làm mờ (~16 đv, như pháp tuyến lưới địa hình thô bị san mượt): shader mặt đất chọn cỏ /
+            // đất / đá theo độ dốc pháp tuyến -> nắp đất cùng màu cỏ sườn gò quanh đó, không thành dải đất trọc; vách khoét
+            // đứng nằm trong thân tường nên pháp tuyến mờ ở đó không lộ
+            const hb = Float32Array.from(hgt), tmp = new Float32Array(hb.length), R = 4;
+            for (let pass = 0; pass < 2; pass++) for (const [di, dj] of [[1, 0], [0, 1]]) {
+              for (let i = 0; i <= nf; i++) for (let j = 0; j <= nr; j++) {
+                let s = 0, n = 0;
+                for (let q = -R; q <= R; q++) { const ii = i + q * di, jj = j + q * dj; if (ii < 0 || ii > nf || jj < 0 || jj > nr) continue; s += hb[ii * N1 + jj]; n++; }
+                tmp[i * N1 + j] = s / n;
+              }
+              hb.set(tmp);
+            }
+            const nrm = new Float32Array(pos.length), D = 2;
+            for (let i = 0; i <= nf; i++) for (let j = 0; j <= nr; j++) {
+              const i0 = Math.max(0, i - D), i1 = Math.min(nf, i + D), j0 = Math.max(0, j - D), j1 = Math.min(nr, j + D);
+              const gf = (hb[i1 * N1 + j] - hb[i0 * N1 + j]) / ((i1 - i0) * ST), gr = (hb[i * N1 + j1] - hb[i * N1 + j0]) / ((j1 - j0) * ST), l = Math.hypot(gf, 1, gr);
+              nrm.set([-gf / l, 1 / l, -gr / l], (i * N1 + j) * 3);
+            }
+            g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+            const cap = new THREE.Mesh(g, gmat); cap.name = 'bio_mound_cap'; cap.receiveShadow = true; cap.castShadow = true;
+            cap.userData.ground = true;   // LandmarkSet.groundMeshes: tia chuột ngắm mặt đất trúng nắp đất, không xuyên xuống lưới hạ
+            group.add(cap);
+          }
+        }
+      }
       const kit = secKit(K, anim), { iF, iR, G, mul, win, acUnit, booth, tower, pillbox, hesco } = kit;
       perimeter(K, kit);
       const HP = Math.PI / 2;
@@ -60,19 +130,36 @@
           const gr = g.createLinearGradient(0, 0, 0, l); gr.addColorStop(0, 'rgba(34,40,26,0.5)'); gr.addColorStop(0.5, 'rgba(40,48,30,0.24)'); gr.addColorStop(1, 'rgba(40,48,30,0)');
           g.fillStyle = gr; g.fillRect(x, 0, wd, l);
         }
-        // rêu xanh: dày dần về chân ô ảnh (= chân tường khi hộp dựng từ mặt đất)
-        for (let i = 0; i < 170; i++) {
-          const x = hash(i + 12100) * N, y = (1 - Math.pow(hash(i + 12101), 2.4)) * N, r = 6 + hash(i + 12102) * 34, k = hash(i + 12103);
-          wrap((ox, oy) => blotch(g, x + ox, y + oy, r, k < 0.55 ? '72,94,40' : k < 0.85 ? '52,70,34' : '96,104,58', 0.34));
+        // rêu xanh + địa y: mảng loang theo nhiễu giá trị lặp liền (không vẽ vòng tròn — đốm tròn đều nhìn như chấm bi),
+        // dày dần về chân ô ảnh (= chân tường khi hộp dựng từ mặt đất), mép mảng răng cưa theo nhiễu tần số cao
+        {
+          const vn = (x, y, P, sd) => {
+            const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+            const hh = (a, b) => hash(((a % P + P) % P) * 131 + ((b % P + P) % P) * 7919 + sd);
+            return hh(xi, yi) * (1 - sx) * (1 - sy) + hh(xi + 1, yi) * sx * (1 - sy) + hh(xi, yi + 1) * (1 - sx) * sy + hh(xi + 1, yi + 1) * sx * sy;
+          };
+          const fbm = (u, v, sd) => vn(u * 4, v * 4, 4, sd) * 0.5 + vn(u * 8, v * 8, 8, sd + 1) * 0.3 + vn(u * 16, v * 16, 16, sd + 2) * 0.14 + vn(u * 32, v * 32, 32, sd + 3) * 0.06;
+          const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+          const img = g.getImageData(0, 0, N, N), D = img.data;
+          for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+            const u = x / N, v = y / N, p = (y * N + x) * 4;
+            const m = sm(0.5, 0.66, fbm(u, v, 12100) + Math.pow(v, 2.2) * 0.32 - 0.08) * 0.8, hue = fbm(u, v, 12150);
+            const mr = 46 + hue * 44, mg = 64 + hue * 46, mb = 28 + hue * 22;
+            const li = sm(0.72, 0.8, vn(u * 40, v * 40, 40, 12500)) * sm(0.45, 0.6, fbm(u, v, 12520)) * 0.45;   // địa y xám xanh
+            const mo = sm(0.76, 0.83, vn(u * 56, v * 56, 56, 12540)) * 0.35;   // mốc đen
+            for (let c = 0; c < 3; c++) {
+              let val = D[p + c];
+              val += ([mr, mg, mb][c] - val) * m;
+              val += ([172, 180, 148][c] - val) * li;
+              val += ([30, 32, 26][c] - val) * mo;
+              D[p + c] = val;
+            }
+          }
+          g.putImageData(img, 0, 0);
         }
         for (let i = 0; i < 2400; i++) {
           const x = hash(i + 12300) * N, y = (1 - Math.pow(hash(i + 12301), 1.8)) * N;
           g.fillStyle = hash(i + 12302) < 0.6 ? 'rgba(66,92,36,0.55)' : 'rgba(104,120,60,0.5)'; g.fillRect(x, y, 1 + hash(i + 12303) * 2.5, 1 + hash(i + 12304) * 2);
-        }
-        // địa y đốm xám xanh nhạt + mốc đen
-        for (let i = 0; i < 160; i++) {
-          const x = hash(i + 12500) * N, y = hash(i + 12501) * N, r = 1.5 + hash(i + 12502) * 5;
-          g.fillStyle = hash(i + 12503) < 0.7 ? 'rgba(176,184,150,0.5)' : 'rgba(30,32,26,0.45)'; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
         }
         const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
         MAT.bioMoss = new THREE.MeshStandardMaterial({ map: t, bumpMap: b0, bumpScale: 0.5, color: 0xb6b8aa, roughness: 0.97 });
@@ -117,17 +204,112 @@
           for (let i = 0; i < 30; i++) blotch(q, hash(i + 13410) * w, hash(i + 13411) * h, 4 + hash(i + 13412) * 8, '80,100,50', 0.4);
         }, true) });
       }
+      // Thực vật bỏ hoang thêm: búi cỏ tranh / cỏ dại (lá mảnh, xanh lẫn rơm khô), cụm lá dài rủ (cây non / huyết dụ dại,
+      // vài lá úa), lá chuối rừng (gân giữa, rách xơ theo gân phụ, mép cháy nâu), 2 kiểu màn dây leo rủ (thân bò uốn
+      // lượn, lá tim to nhỏ, dày ở trên thưa dần xuống, mép dưới lởm chởm)
+      if (!MAT.bioGrass) {
+        const mk = (key, w, h, draw) => new THREE.MeshStandardMaterial({ map: texOf(key, w, h, draw), side: THREE.DoubleSide, alphaTest: 0.42, roughness: 0.88 });
+        const gcol = (k, dry) => { const v = hash(k); return dry ? `rgb(${150 + v * 40 | 0},${136 + v * 30 | 0},${80 + v * 20 | 0})` : `rgb(${46 + v * 50 | 0},${72 + v * 56 | 0},${26 + v * 22 | 0})`; };
+        MAT.bioGrass = mk('bioGrass', 128, 128, (q, w, h) => {
+          q.clearRect(0, 0, w, h); q.lineCap = 'round';
+          for (let i = 0; i < 70; i++) {
+            const x0 = w / 2 + (hash(i + 17000) - 0.5) * w * 0.35, len = h * (0.45 + hash(i + 17001) * 0.53), lean = (hash(i + 17002) - 0.5) * 1.3, bend = (hash(i + 17003) - 0.5) * 0.9;
+            q.strokeStyle = gcol(i + 17004, hash(i + 17005) < 0.28); q.lineWidth = 1 + hash(i + 17006) * 1.6;
+            q.beginPath(); q.moveTo(x0, h); q.quadraticCurveTo(x0 + lean * len * 0.4, h - len * 0.6, x0 + (lean + bend) * len * 0.6, h - len); q.stroke();
+          }
+          for (let i = 0; i < 6; i++) { const x = w * (0.3 + hash(i + 17100) * 0.4), y = h * (0.05 + hash(i + 17101) * 0.3); q.fillStyle = 'rgba(176,160,110,0.9)'; q.beginPath(); q.ellipse(x, y, 1.5, 5, (hash(i) - 0.5), 0, TAU); q.fill(); }   // bông cỏ
+        });
+        MAT.bioLeaf2 = mk('bioLeaf2', 256, 256, (q, w, h) => {
+          q.clearRect(0, 0, w, h);
+          for (let i = 0; i < 34; i++) {
+            const a = -HP + (hash(i + 17200) - 0.5) * 2.9, len = 70 + hash(i + 17201) * 70, wd = 5 + hash(i + 17202) * 5, droop = 0.6 + hash(i + 17203) * 0.9;
+            const dead = hash(i + 17204) < 0.15, x0 = w / 2, y0 = h * 0.62;
+            const tx = x0 + Math.cos(a) * len, ty = y0 + Math.sin(a) * len * 0.7 + len * droop * 0.45;
+            q.fillStyle = dead ? `rgb(${130 + hash(i) * 30 | 0},${110 + hash(i) * 20 | 0},60)` : gcol(i + 17205, false);
+            q.beginPath(); q.moveTo(x0, y0); q.quadraticCurveTo((x0 + tx) / 2 - wd, (y0 + ty) / 2 - len * 0.25, tx, ty); q.quadraticCurveTo((x0 + tx) / 2 + wd, (y0 + ty) / 2 - len * 0.2, x0, y0); q.fill();
+          }
+        });
+        MAT.bioBanana = mk('bioBanana', 64, 256, (q, w, h) => {
+          q.clearRect(0, 0, w, h);
+          const half = (y) => Math.sin(Math.PI * Math.min(1, y / h * 1.05)) * w * 0.46;
+          for (let y = 0; y < h; y++) {
+            const hw = half(y), tear = Math.floor(y / 9);   // rách xơ theo gân phụ: cứ vài dải bị khuyết một bên
+            for (const sd of [-1, 1]) {
+              if (hash(tear * 2 + (sd > 0 ? 1 : 0) + 17300) < 0.3) continue;
+              const l = hw * (hash(tear * 5 + sd + 17310) < 0.25 ? 0.5 : 1);
+              const g = q.createLinearGradient(w / 2, 0, w / 2 + sd * l, 0); g.addColorStop(0, '#3a5424'); g.addColorStop(0.8, '#46602a'); g.addColorStop(1, '#6e6232');
+              q.fillStyle = g; q.fillRect(sd > 0 ? w / 2 : w / 2 - l, y, l, 1);
+            }
+          }
+          q.fillStyle = '#7e8a52'; q.fillRect(w / 2 - 1.5, 0, 3, h);
+        });
+        const vineTex = (key, sd0) => mk(key, 128, 256, (q, w, h) => {
+          q.clearRect(0, 0, w, h);
+          for (let i = 0; i < 16; i++) {
+            let x = hash(sd0 + i * 3) * w, y = -4; const len = h * (0.3 + Math.pow(hash(sd0 + i * 3 + 1), 0.7) * 0.7);
+            q.strokeStyle = 'rgba(70,60,40,0.9)'; q.lineWidth = 1.2;
+            while (y < len) {
+              const nx = x + (hash(x * 0.7 + y + sd0) - 0.5) * 7, ny = y + 4;
+              q.beginPath(); q.moveTo(x, y); q.lineTo(nx, ny); q.stroke(); x = nx; y = ny;
+              const dens = 1 - y / len * 0.7;
+              if (hash(x + y * 1.3 + sd0) < 0.55 * dens + 0.2) {
+                const sz = (2.5 + hash(y + i + sd0) * 4.5) * (1.1 - y / h * 0.5), a = (hash(y * 3 + i) - 0.5) * 2.4, k = hash(y * 0.7 + i * 11 + sd0);
+                q.fillStyle = k < 0.12 ? 'rgb(128,118,62)' : `rgb(${36 + k * 40 | 0},${58 + k * 48 | 0},${24 + k * 18 | 0})`;
+                q.save(); q.translate(x + (hash(y + i) - 0.5) * 6, y); q.rotate(a); q.beginPath(); q.moveTo(0, 0); q.bezierCurveTo(-sz, -sz * 0.6, -sz * 0.8, sz, 0, sz * 1.3); q.bezierCurveTo(sz * 0.8, sz, sz, -sz * 0.6, 0, 0); q.fill(); q.restore();
+              }
+            }
+          }
+        });
+        MAT.bioVineA = vineTex('bioVineA', 17400); MAT.bioVineB = vineTex('bioVineB', 17600);
+      }
       // Vỏ công-te-nơ ISO tôn sóng (đỏ gỉ / xanh quân đội), vết tràn hoá chất (vũng loang trong suốt)
       if (!MAT.bioContR) {
         const [t, b] = ribPair('rib_v', false, 16, 236);
         MAT.bioContR = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 0.8, color: 0x8a4430, roughness: 0.75, metalness: 0.3 });
         MAT.bioContG = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 0.8, color: 0x5c6648, roughness: 0.75, metalness: 0.3 });
-        MAT.bioSpill = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, roughness: 0.35, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
-          map: texOf('bioSpill', 128, 128, (q, w, h) => {
-            q.clearRect(0, 0, w, h);
-            for (let i = 0; i < 22; i++) { const a = hash(i + 13600) * TAU, d = hash(i + 13601) * 34; blotch(q, w / 2 + Math.cos(a) * d, h / 2 + Math.sin(a) * d, 10 + hash(i + 13602) * 26, i % 3 ? '46,52,30' : '92,70,30', 0.55); }
-            q.strokeStyle = 'rgba(160,150,90,0.4)'; q.lineWidth = 1.5; q.beginPath(); q.ellipse(w / 2, h / 2, 40, 34, 0.3, 0, TAU); q.stroke();
+        // vết tràn khô: 1 mảng liền, mép lượn theo nhiễu góc, viền ngấn đậm (chỗ chất lỏng dừng lại khô trước), lòng nhạt
+        // loang không đều, 1 lưỡi chảy theo dốc; trước đây 22 đốm tròn rời -> lốm đốm da báo
+        MAT.bioSpill = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+          map: texOf('bioSpill2', 128, 128, (q, w, h) => {
+            const img = q.createImageData(w, h), D = img.data;
+            const rad = (a) => 0.62 + 0.13 * Math.sin(a * 2 + 0.6) + 0.08 * Math.sin(a * 5 + 2.3) + 0.05 * Math.sin(a * 9 + 4.1) + 0.2 * Math.pow(Math.max(0, Math.cos(a - 0.8)), 6);
+            for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+              const dx = (x + 0.5) / w * 2 - 1, dy = (y + 0.5) / h * 2 - 1, a = Math.atan2(dy, dx), t = Math.hypot(dx, dy) / rad(a), p = (y * w + x) * 4;
+              if (t >= 1) { D[p + 3] = 0; continue; }
+              const rim = Math.exp(-Math.pow((t - 0.93) / 0.05, 2)), mot = 0.5 + 0.3 * Math.sin(dx * 9 + Math.sin(dy * 7) * 2) + 0.2 * hash(x * 3.7 + y * 91.1);
+              const al = (0.22 + 0.2 * mot) * (1 - Math.pow(t, 8)) + rim * 0.38;
+              D[p] = 58 + mot * 24 - rim * 18; D[p + 1] = 56 + mot * 18 - rim * 16; D[p + 2] = 36 + mot * 8 - rim * 10; D[p + 3] = Math.round(Math.min(1, al) * 255);
+            }
+            q.putImageData(img, 0, 0);
           }) });
+      }
+      // ---- BỒN / THIẾT BỊ BỎ HOANG TRONG RỪNG ẨM: ảnh nền lặp ô 24 đv (mạch hàn vành, loang mờ; inox / nhôm có vân chải)
+      //      + lớp phong hoá shader theo hướng mặt (tảo đen chảy từ nóc xuống mặt đứng, rêu chân + mặt hướng lên, bụi lá
+      //      mục mặt trên, sơn bạc phấn, gỉ loang ít) — không còn trắng tinh như mới sơn
+      if (!MAT.bioTank) {
+        const wx = (m, o) => typeof Weathering !== 'undefined' ? Weathering.apply(m, 'paint', Object.assign({ space: 'world', streak: 1, moss: 1, stain: 0.75, fade: 0.35, dust: 0.6, grimeH: 7, rust: 0.18, chip: 0.25 }, o)) : m;
+        const shellTex = (key, base, brushed) => texOf(key, 256, 256, (q, w, h) => {
+          q.fillStyle = base; q.fillRect(0, 0, w, h);
+          if (brushed) for (let y = 0; y < h; y++) { q.fillStyle = `rgba(${hash(y + 16000) < 0.5 ? '255,255,255' : '60,62,62'},${0.04 + hash(y + 16001) * 0.07})`; q.fillRect(0, y, w, 1); }
+          for (let i = 0; i < 18; i++) for (const ox of [-w, 0, w]) blotch(q, hash(i + 16100) * w + ox, hash(i + 16101) * h, 20 + hash(i + 16102) * 50, hash(i + 16103) < 0.5 ? '120,116,104' : '255,255,250', 0.12);
+          q.fillStyle = 'rgba(70,68,62,0.28)'; q.fillRect(0, 0, w, 2); q.fillRect(0, h / 2, w, 1.5);   // mạch hàn vành (ô 24 đv = 2 vành 1.5 m)
+          q.fillRect(w * 0.3, 0, 1.5, h / 2); q.fillRect(w * 0.8, h / 2, 1.5, h / 2);
+          speckle(q, w, h, 900, ['rgba(110,106,96,1)', 'rgba(250,250,246,1)'], 1, 2, 16200);
+        }, true);
+        const met = (o) => metalize ? metalize(new THREE.MeshStandardMaterial(o)) : new THREE.MeshStandardMaterial(o);
+        MAT.bioTank = wx(new THREE.MeshStandardMaterial({ color: 0xd8d4c8, map: shellTex('bioTankSh', '#e8e6de'), roughness: 0.8, metalness: 0.05 }));   // thép sơn trắng
+        MAT.bioInox = wx(met({ color: 0xb4b8b6, map: shellTex('bioInoxSh', '#d6d8d6', true), roughness: 0.48, metalness: 0.55 }), { rust: 0.04, chip: 0, fade: 0.1, stain: 0.85 });   // inox chải
+        MAT.bioAlu = wx(met({ color: 0xa4a8a6, map: shellTex('bioAluSh', '#d0d2ce', true), roughness: 0.62, metalness: 0.4 }), { rust: 0, chip: 0, fade: 0.25, stain: 0.9 });   // nhôm / tôn mạ kẽm
+        // vải bạt lều dã chiến: sợi dệt chéo, mốc đen thành cụm, ố nước viền vàng, bạc nắng
+        MAT.bioCanvas = wx(new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: 0.97, metalness: 0, map: texOf('bioCanvas', 256, 256, (q, w, h) => {
+          q.fillStyle = '#6e6c50'; q.fillRect(0, 0, w, h);
+          for (let y = 0; y < h; y += 2) { q.fillStyle = `rgba(${y % 4 ? '40,44,28' : '120,124,90'},0.18)`; q.fillRect(0, y, w, 1); }
+          for (let x = 0; x < w; x += 2) { q.fillStyle = `rgba(${x % 4 ? '40,44,28' : '120,124,90'},0.12)`; q.fillRect(x, 0, 1, h); }
+          for (let i = 0; i < 12; i++) for (const ox of [-w, 0, w]) blotch(q, hash(i + 16300) * w + ox, hash(i + 16301) * h, 24 + hash(i + 16302) * 40, hash(i + 16303) < 0.5 ? '150,146,110' : '70,74,52', 0.22);
+          for (let c = 0; c < 6; c++) { const cx = hash(c + 16400) * w, cy = hash(c + 16401) * h; for (let i = 0; i < 26; i++) blotch(q, cx + (hash(c * 40 + i + 16410) - 0.5) * 50, cy + (hash(c * 40 + i + 16411) - 0.5) * 40, 1.5 + hash(c * 40 + i + 16412) * 6, '24,26,20', 0.5); }
+          for (let i = 0; i < 4; i++) { q.strokeStyle = 'rgba(150,126,70,0.35)'; q.lineWidth = 2; q.beginPath(); q.ellipse(hash(i + 16500) * w, hash(i + 16501) * h, 20 + hash(i + 16502) * 30, 12 + hash(i + 16503) * 20, hash(i) * 3, 0, TAU); q.stroke(); }
+        }, true) }), { rust: 0, chip: 0, streak: 0.5, fade: 0.7, moss: 0.35, dust: 0.8 });
+        for (const k of ['bioTank', 'bioInox', 'bioAlu', 'bioCanvas']) MAT[k].userData.tile = 24;
       }
       // ---- BẢNG KÝ HIỆU GỘP 1 ẢNH (atlas 2048 x 2048): mọi biển song ngữ / nhãn / ký hiệu của hầm dùng chung 1 vật liệu
       //      (1 lệnh vẽ thay vì mỗi biển 1 vật liệu); mặt phẳng ánh xạ UV vào ô của biển
@@ -266,40 +448,89 @@
       const flange = (p, R, axis) => K.add('steelDark', new THREE.CylinderGeometry(R * 1.5, R * 1.5, 0.6, 10), M4(p[0], p[1], p[2], axis === 'r' ? HP : 0, 0, axis === 'f' ? HP : 0));
       const spill = (f, r, s, a, y) => K.add(MAT.bioSpill, new THREE.PlaneGeometry(s, s * (0.6 + hash(f * 3 + r) * 0.5)), M4(f, (y || 0) + 0.72, r, -HP, 0, a || 0));
 
-      // ---- THỰC VẬT (cây bụi, dương xỉ, cây non mọc hoang): chỉ hình, không va chạm
+      // ---- THỰC VẬT bỏ hoang (chỉ hình, không va chạm): bụi nhiều lớp lệch nghiêng 2 kiểu lá, dương xỉ, búi cỏ, chuối rừng,
+      //      cây non (thân cong 3 đoạn, cành chẽ, tán = nhiều cụm thẻ lá xoay ngẫu nhiên), dây leo rủ + bò lên từ chân tường
+      const gy = (f, r, y0) => y0 === undefined ? K.earth(f, r) : y0;
       const bush = (f, r, s, sd, y0, m) => {
-        const y = y0 === undefined ? K.earth(f, r) : y0, a0 = hash(sd) * TAU, w = s * (1.2 + hash(sd + 1) * 0.6), hh = s * (0.8 + hash(sd + 2) * 0.5);
-        for (let k = 0; k < 3; k++) K.add(m || 'bioLeaf', new THREE.PlaneGeometry(w, hh), M4(f, y + hh * 0.42, r, (hash(sd + k + 3) - 0.5) * 0.25, a0 + k * Math.PI / 3, 0));
+        const y = gy(f, r, y0), a0 = hash(sd) * TAU, n = 3 + Math.floor(hash(sd + 5) * 3), mm = m || (hash(sd + 6) < 0.35 ? MAT.bioLeaf2 : 'bioLeaf');
+        for (let k = 0; k < n; k++) {
+          const w = s * (0.9 + hash(sd + k * 3 + 1) * 0.8), hh = s * (0.6 + hash(sd + k * 3 + 2) * 0.6), ox = (hash(sd + k * 3 + 7) - 0.5) * s * 0.4, oz = (hash(sd + k * 3 + 8) - 0.5) * s * 0.4;
+          K.add(mm, new THREE.PlaneGeometry(w, hh), M4(f + ox, y + hh * 0.4, r + oz, (hash(sd + k + 3) - 0.5) * 0.5, a0 + k * Math.PI / n + (hash(sd + k + 9) - 0.5) * 0.4, (hash(sd + k + 11) - 0.5) * 0.3));
+        }
+        if (s > 6 && hash(sd + 12) < 0.5) { const t = s * 0.7; K.add(mm, new THREE.PlaneGeometry(t * 1.2, t * 1.2), M4(f, y + s * 0.62, r, -HP + (hash(sd + 13) - 0.5) * 0.4, 0, hash(sd + 14) * TAU)); }   // tầng lá trên cùng
       };
       const fern = (f, r, s, sd, y0) => {
-        const y = y0 === undefined ? K.earth(f, r) : y0, a0 = hash(sd) * TAU;
-        for (let k = 0; k < 2; k++) K.add('bioFern', new THREE.PlaneGeometry(s * 1.5, s), M4(f, y + s / 2 - 0.3, r, 0, a0 + k * HP, 0));
+        const y = gy(f, r, y0), a0 = hash(sd) * TAU, n = 2 + (hash(sd + 1) < 0.5 ? 1 : 0);
+        for (let k = 0; k < n; k++) K.add('bioFern', new THREE.PlaneGeometry(s * 1.5, s), M4(f, y + s / 2 - 0.3, r, (hash(sd + k + 2) - 0.5) * 0.3, a0 + k * Math.PI / n, 0));
+      };
+      // búi cỏ tranh / cỏ dại: 2 thẻ chéo, nghiêng nhẹ
+      const tuft = (f, r, s, sd, y0) => {
+        const y = gy(f, r, y0), a0 = hash(sd) * TAU, w = s * (0.9 + hash(sd + 1) * 0.7);
+        for (let k = 0; k < 2; k++) K.add(MAT.bioGrass, new THREE.PlaneGeometry(w, s), M4(f, y + s / 2 - 0.2, r, (hash(sd + k + 2) - 0.5) * 0.35, a0 + k * HP, 0));
+      };
+      // chuối rừng: thân giả + 6-8 tàu lá cong vồng lên rồi rủ xuống (lá uốn theo cung, rách xơ), 1-2 lá khô rũ sát thân
+      const banana = (f, r, H, sd) => {
+        const y = K.earth(f, r) - 0.3, st = H * 0.45;
+        K.add('bioBark', new THREE.CylinderGeometry(0.7, 1.1, st, 7), M4(f, y + st / 2, r, (hash(sd) - 0.5) * 0.1, 0, (hash(sd + 1) - 0.5) * 0.1));
+        const n = 6 + Math.floor(hash(sd + 2) * 3);
+        for (let k = 0; k < n; k++) {
+          const L = H * (0.55 + hash(sd + k * 3 + 3) * 0.3), wl = L * 0.32, ph0 = 0.9 + hash(sd + k * 3 + 4) * 0.4, c = 1.5 + hash(sd + k * 3 + 5) * 1.2, dead = k >= n - 1 && hash(sd + 9) < 0.7;
+          const g = new THREE.PlaneGeometry(wl, L, 1, 8), P = g.attributes.position;
+          for (let v = 0; v < P.count; v++) {
+            const x = P.getX(v), sl = P.getY(v) + L / 2, a0 = dead ? -1.2 : ph0, cc = dead ? 0.3 : c;
+            P.setXYZ(v, x, L / cc * (Math.cos(a0 - cc * sl / L) - Math.cos(a0)), L / cc * (Math.sin(a0) - Math.sin(a0 - cc * sl / L)));   // góc lá giảm dần theo chiều dài: vồng lên rồi rủ
+          }
+          g.computeVertexNormals();
+          K.add(MAT.bioBanana, g, M4(f, y + st - 0.5, r, 0, k * TAU / n + hash(sd + k + 20) * 0.5, 0));
+        }
       };
       const tree = (f, r, H, sd) => {
-        const y = K.earth(f, r) - 1, base = M4(f, y, r, (hash(sd) - 0.5) * 0.22, hash(sd + 9) * TAU, (hash(sd + 1) - 0.5) * 0.22);
-        K.add('bioBark', new THREE.CylinderGeometry(0.45, 1.2, H, 7), at(base, 0, H / 2, 0));
-        for (let k = 0; k < 2; k++) { const a = hash(sd + k + 20) * TAU; K.add('bioBark', new THREE.CylinderGeometry(0.2, 0.45, H * 0.35, 5), at(base, Math.cos(a) * 3, H * 0.72, Math.sin(a) * 3, Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7)); }
-        for (let k = 0; k < 4; k++) {
-          const a = hash(sd + k * 3 + 30) * TAU, d = k ? 6 + hash(sd + k * 3 + 31) * 7 : 0, cy = H - 3 + hash(sd + k * 3 + 32) * 7, s = 16 + hash(sd + k + 40) * 10;
-          const cm = at(base, Math.cos(a) * d, cy, Math.sin(a) * d, 0, a, 0);
-          for (let j = 0; j < 3; j++) K.add('bioLeaf', new THREE.PlaneGeometry(s * 1.3, s), mul(cm, M4(0, 0, 0, 0.2 * (j - 1), j * Math.PI / 3, 0)));
-          K.add('bioLeaf', new THREE.PlaneGeometry(s * 1.3, s * 1.3), mul(cm, M4(0, s * 0.12, 0, -HP, 0, 0)));
+        const y0 = K.earth(f, r) - 1, crowns = [];
+        let m = M4(f, y0, r, 0, hash(sd + 9) * TAU, 0);
+        for (let k = 0; k < 3; k++) {   // thân cong: 3 đoạn nghiêng lệch dần, cành chẽ ở 2 đoạn trên
+          const L2 = H * (k < 2 ? 0.36 : 0.3), r0 = 1.2 * (1 - k * 0.28), r1 = 1.2 * (1 - (k + 1) * 0.28);
+          m = mul(m, M4(0, 0, 0, (hash(sd + k * 2) - 0.5) * 0.28, 0, (hash(sd + k * 2 + 1) - 0.5) * 0.28));
+          K.add('bioBark', new THREE.CylinderGeometry(r1, r0, L2, 7), mul(m, M4(0, L2 / 2, 0)));
+          if (k) for (let b = 0; b < 2; b++) {
+            const a = hash(sd + k * 7 + b) * TAU, bl = H * (0.18 + hash(sd + k * 7 + b + 3) * 0.16), tilt = 0.6 + hash(sd + k * 5 + b) * 0.5;
+            const bm = mul(m, M4(0, L2 * (0.45 + b * 0.4), 0, 0, a, tilt));
+            K.add('bioBark', new THREE.CylinderGeometry(0.15, 0.35, bl, 5), mul(bm, M4(0, bl / 2, 0)));
+            crowns.push(mul(bm, M4(0, bl, 0)));
+          }
+          m = mul(m, M4(0, L2, 0));
         }
+        crowns.push(m);
+        crowns.forEach((cm, ci) => {   // mỗi cụm tán: 5-7 thẻ lá xoay ngẫu nhiên trong khối elip quanh đầu cành
+          const S = (ci === crowns.length - 1 ? 16 : 11) + hash(sd + ci * 13) * 6, n = 6 + Math.floor(hash(sd + ci * 13 + 1) * 3);
+          for (let j = 0; j < n; j++) {
+            const q = sd + ci * 31 + j * 5, sz = S * (0.7 + hash(q + 3) * 0.6);
+            K.add(hash(q + 4) < 0.3 ? MAT.bioLeaf2 : 'bioLeaf', new THREE.PlaneGeometry(sz * 1.2, sz), mul(cm, M4((hash(q) - 0.5) * S * 0.9, (hash(q + 1) - 0.3) * S * 0.6, (hash(q + 2) - 0.5) * S * 0.9, (hash(q + 5) - 0.5) * 1.6, hash(q + 6) * TAU, (hash(q + 7) - 0.5) * 0.8)));
+          }
+        });
       };
-      // dải cây bụi dọc chân tường (f0, r0) -> (f1, r1), lệch ra ngoài (nf, nr)
+      // dải cây bụi dọc chân tường (f0, r0) -> (f1, r1), lệch ra ngoài (nf, nr): bụi / dương xỉ / chuối thành đám, có
+      // khoảng trống, búi cỏ chen giữa
       const shrubs = (f0, r0, f1, r1, nf, nr, sd, step, s0) => {
         const len = Math.hypot(f1 - f0, r1 - r0);
-        for (let t = hash(sd) * 6, i = 0; t < len; t += (step || 10) + hash(sd + i * 7) * 9, i++) {
-          const p = t / len, o = 2 + hash(sd + i * 3) * 5, f = f0 + (f1 - f0) * p + nf * o, r = r0 + (r1 - r0) * p + nr * o;
-          if (hash(sd + i * 5 + 1) < 0.35) fern(f, r, (s0 || 8) * (0.8 + hash(sd + i) * 0.6), sd + i * 11, 0); else bush(f, r, (s0 || 8) * (0.8 + hash(sd + i) * 0.7), sd + i * 13, 0);
+        for (let t = hash(sd) * 6, i = 0; t < len; t += (step || 10) * (0.5 + hash(sd + i * 7) * 1.4), i++) {
+          const p = t / len, o = 2 + hash(sd + i * 3) * 6, f = f0 + (f1 - f0) * p + nf * o, r = r0 + (r1 - r0) * p + nr * o, k = hash(sd + i * 5 + 1), sz = (s0 || 8) * (0.7 + hash(sd + i) * 0.8);
+          if (k < 0.12) continue;   // khoảng trống
+          if (k < 0.4) fern(f, r, sz, sd + i * 11, 0); else if (k < 0.47 && sz > 6) banana(f, r, sz * 3.2, sd + i * 17); else bush(f, r, sz, sd + i * 13, 0);
+          for (let j = 0; j < 2; j++) tuft(f + (hash(sd + i * 9 + j) - 0.5) * 8, r + (hash(sd + i * 9 + j + 1) - 0.5) * 8, 2.5 + hash(sd + i * 9 + j + 2) * 3, sd + i * 23 + j, 0.4);
         }
       };
-      // dây leo rủ từ mép trên (f0, r0) -> (f1, r1) ở cao độ yTop, lệch ra (nf, nr)
+      // dây leo rủ từ mép trên (f0, r0) -> (f1, r1) ở cao độ yTop, lệch ra (nf, nr): mảng rộng hẹp dài ngắn khác nhau chồng
+      // mép, lệch khỏi tường, nghiêng nhẹ, có khoảng trống; tường thấp (yTop < 60) thêm dây bò lên từ chân
       const vines = (f0, r0, f1, r1, yTop, nf, nr, sd, step, hMax) => {
         const len = Math.hypot(f1 - f0, r1 - r0), ang = Math.atan2(r1 - r0, f1 - f0);
-        for (let t = hash(sd) * 6, i = 0; t < len; t += (step || 9) + hash(sd + i * 3) * 10, i++) {
-          const hh = Math.min(hMax || 99, 10 + hash(sd + i * 5 + 1) * 30), ww = 7 + hash(sd + i * 5 + 2) * 7, p = t / len, o = 0.35 + hash(sd + i * 5 + 3) * 0.5;
-          K.add('vine', new THREE.PlaneGeometry(ww, hh), M4(f0 + (f1 - f0) * p + nf * o, yTop - hh / 2 + 1, r0 + (r1 - r0) * p + nr * o, 0, -ang, 0));
+        for (let t = hash(sd) * 6, i = 0; t < len; i++) {
+          const ww = 5 + hash(sd + i * 5 + 2) * 12, hh = Math.min(hMax || 99, 6 + Math.pow(hash(sd + i * 5 + 1), 0.8) * 34), p = Math.min(1, (t + ww / 2) / len), o = 0.3 + hash(sd + i * 5 + 3) * 1.1;
+          if (hash(sd + i * 7 + 4) > 0.18) K.add(hash(sd + i + 50) < 0.5 ? MAT.bioVineA : MAT.bioVineB, new THREE.PlaneGeometry(ww, hh), M4(f0 + (f1 - f0) * p + nf * o, yTop - hh / 2 + 1.5, r0 + (r1 - r0) * p + nr * o, (hash(sd + i + 60) - 0.5) * 0.16, -ang + (hash(sd + i + 70) - 0.5) * 0.25, 0));
+          t += ww * (0.45 + hash(sd + i * 3) * 0.6) + (step || 9) * 0.3;
+        }
+        if (yTop < 60) for (let t = hash(sd + 99) * 20, i = 0; t < len; t += 18 + hash(sd + i * 11 + 98) * 30, i++) {
+          const hh = Math.min(yTop - 1, 8 + hash(sd + i * 11 + 97) * 22), ww = 4 + hash(sd + i * 11 + 96) * 7, p = t / len, o = 0.25 + hash(sd + i * 11 + 95) * 0.5;
+          K.add(MAT.bioVineB, new THREE.PlaneGeometry(ww, hh), M4(f0 + (f1 - f0) * p + nf * o, hh / 2, r0 + (r1 - r0) * p + nr * o, Math.PI, -ang, 0));   // lật ngược: dày ở chân, thưa dần lên
         }
       };
 
@@ -307,25 +538,26 @@
       // phuy cứu hộ (overpack) vàng Ø 0.75 m: thân, vành lăn, nắp vặn, nhãn chất thải sinh học; tip: đổ nghiêng
       const overpack = (f, r, ry, tip, y0) => {
         const b = M4(f, (y0 || 0) + (tip ? 3 : 0), r, 0, ry || 0, tip ? HP : 0);
-        K.add('yellow', new THREE.CylinderGeometry(3, 2.8, 8.4, 14), at(b, 0, tip ? 0 : 4.2, 0));
-        for (const y of [2.8, 5.6]) K.add('steelDark', new THREE.TorusGeometry(3, 0.25, 4, 14), at(b, 0, tip ? y - 4.2 : y, 0, HP, 0, 0));
-        K.add('yellow', new THREE.CylinderGeometry(3.3, 3.3, 1, 14), at(b, 0, tip ? 4.4 : 8.6, 0));
+        // phuy cứu hộ HDPE: thân + 2 gân lăn đúc liền thân + nắp vặn — toàn bộ là nhựa (không gỉ)
+        K.add('plasticYellow', new THREE.CylinderGeometry(3, 2.8, 8.4, 14), at(b, 0, tip ? 0 : 4.2, 0));
+        for (const y of [2.8, 5.6]) K.add('plasticYellow', new THREE.TorusGeometry(3, 0.3, 4, 14), at(b, 0, tip ? y - 4.2 : y, 0, HP, 0, 0));
+        K.add('plasticYellow', new THREE.CylinderGeometry(3.3, 3.3, 1, 14), at(b, 0, tip ? 4.4 : 8.6, 0));
         K.add(ATL, uvSlot(new THREE.CylinderGeometry(3.05, 2.9, 2.6, 8, 1, true, 0.4, 1.6), 'drum'), at(b, 0, tip ? 0.2 : 4.4, 0));
       };
       // bồn IBC 1000 L: bình nhựa trắng đục trong lồng thép ống, pa-lét, van xả đáy
       const ibc = (f, r, ry, y0) => {
         const b = M4(f, y0 || 0, r, 0, ry || 0, 0);
         K.add('steelDark', new THREE.BoxGeometry(9.6, 1.2, 8), at(b, 0, 0.6, 0));
-        K.add('steelWhite', new THREE.BoxGeometry(9, 8, 7.4), at(b, 0, 5.4, 0));
+        K.add('plasticWhite', new THREE.BoxGeometry(9, 8, 7.4), at(b, 0, 5.4, 0));   // bình HDPE (khung lồng thép mới gỉ)
         for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) K.add('steelGray', new THREE.BoxGeometry(0.35, 8.6, 0.35), at(b, x * 4.7, 5.4, z * 3.9));
         for (const y of [3.2, 6.4, 9.6]) { for (const z of [-3.9, 3.9]) K.add('steelGray', new THREE.BoxGeometry(9.6, 0.3, 0.3), at(b, 0, y, z)); for (const x of [-4.7, 4.7]) K.add('steelGray', new THREE.BoxGeometry(0.3, 0.3, 8), at(b, x, y, 0)); }
         K.add('steelDark', new THREE.CylinderGeometry(0.5, 0.5, 1.6, 8), at(b, 5.2, 2.4, 0, 0, 0, HP));
-        K.add('steelGray', new THREE.CylinderGeometry(1.4, 1.4, 0.6, 10), at(b, 0, 9.7, 0));
+        K.add('plasticWhite', new THREE.CylinderGeometry(1.4, 1.4, 0.6, 10), at(b, 0, 9.7, 0));   // nắp vặn nhựa
       };
       // thùng rác y tế có bánh (đỏ), nắp đen, nhãn
       const redBin = (f, r, ry, tip) => {
         const b = M4(f, tip ? 3 : 0, r, 0, ry || 0, tip ? 1.35 : 0);
-        K.add('steelRed', new THREE.BoxGeometry(6, 8, 5.4), at(b, 0, 4.6, 0));
+        K.add('plasticRed', new THREE.BoxGeometry(6, 8, 5.4), at(b, 0, 4.6, 0));   // thùng nhựa đúc
         K.add('rubber', new THREE.BoxGeometry(6.6, 0.8, 6), at(b, 0, 9, 0, tip ? 0 : -0.15, 0, 0));
         for (const z of [-2, 2]) K.add('rubber', new THREE.CylinderGeometry(0.9, 0.9, 0.8, 8), at(b, -2.6, 0.9, z, HP, 0, 0));
         signM('drum', 4.6, 2.3, at(b, 3.02, 5.6, 0, 0, HP, 0));
@@ -406,7 +638,7 @@
       K.add('steelDark', new THREE.TorusGeometry(3, 0.5, 6, 16), M4(-4.8, 18, 0, 0, HP, 0));
       K.add('glass', new THREE.CircleGeometry(2, 14), M4(-5, 30, 0, 0, HP, 0));
       for (const s of [-1, 1]) for (const fo of [-2, 8]) K.box('lampRed', fo, 40, s * (DW - 0.4), 2, 1.2, 0.6);
-      K.box('concDark', F0 - 12, (DH + M.h) / 2 + 0.4, 0, 26, M.h - DH + 0.8, CUT * 2 + 10);   // mái lòng hầm sau mặt tiền (che rãnh khoét gò)
+      K.box('concDark', F0 - 12, (DH + M.h) / 2 + 0.4, 0, 26, M.h - DH + 0.8, CUT * 2 + 10);   // mái lòng hầm sau mặt tiền (che dốc gò đổ về mặt tiền)
       // biển tên + biểu tượng + chiếu sáng, camera, loa báo động, lưới hút gió, ống điện + hộp đấu ốp tường
       sign('main', F1 + 0.5, 79.5, 0, 100, 25);
       for (const s of [-1, 1]) {
@@ -598,9 +830,32 @@
           const f = tf - 12 + k * 8;
           K.add('steelGray', new THREE.TorusGeometry(10, 0.3, 4, 12, Math.PI), M4(f, 0, tr, k === 3 ? -1.2 : 0, HP, 0, 1, k === 2 ? 0.45 : 1, 1));
         }
-        const tg = new THREE.PlaneGeometry(26, 22, 6, 8); tg.rotateX(-HP);
-        { const P = tg.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), u = z / 10.5; P.setY(i, Math.max(0.6, 10.2 * Math.sqrt(Math.max(0, 1 - u * u)) * (x > 2 ? 0.45 : 1) - Math.max(0, x - 6) * 0.25 + (hash(i * 3) - 0.5) * 1.2)); } tg.computeVertexNormals(); }
-        K.add('tarp', tg, M4(tf, 0, tr, 0, 0, 0));
+        // bạt: đỉnh vắt qua 4 khung (cao 10 / 8.6 cong / 4.5 bẹp / 3.6 đổ), võng xuống giữa 2 khung, 2 đầu rủ chạm đất; mặt cắt
+        // ngang ôm vòm, ngoài vòm trải lùng nhùng trên đất; nếp nhăn chéo (vải chùng chỗ thấp nhiều hơn), 1 mảng rách
+        {
+          const TX = [[-12, 10], [-4, 8.6], [4, 4.5], [12, 3.6]];
+          const ridge = (x) => {
+            if (x <= -12) return Math.max(0, 10 - (-12 - x) * 4);
+            if (x >= 12) return Math.max(0, 3.6 - (x - 12) * 2);
+            let k = 0; while (x > TX[k + 1][0]) k++;
+            const t = (x - TX[k][0]) / 8, h = TX[k][1] + (TX[k + 1][1] - TX[k][1]) * t;
+            return h - Math.sin(Math.PI * t) * (1.6 + 0.22 * h);
+          };
+          const tg = new THREE.PlaneGeometry(30, 26, 45, 39); tg.rotateX(-HP);
+          const P = tg.attributes.position, uv = tg.attributes.uv;
+          for (let i = 0; i < P.count; i++) {
+            const x = P.getX(i), z = P.getZ(i), u = z / 10.5, arch = Math.sqrt(Math.max(0, 1 - u * u)), hr = ridge(x);
+            const slack = 1 - 0.6 * arch * Math.min(1, hr / 8);
+            const wr = (0.45 * Math.sin(x * 1.3 + z * 0.55) * Math.sin(z * 0.8 + 1.1) + 0.25 * Math.sin(x * 2.9 - z * 1.7)) * slack + (hash(i * 3 + 16600) - 0.5) * 0.25;
+            P.setY(i, Math.max(0.3 + Math.max(0, wr) * 0.5, hr * Math.pow(arch, 0.8) + wr));
+            uv.setXY(i, (x + 15) / 24, (z + 13) / 24);
+          }
+          // mảng rách (bỏ tam giác trong vùng elip răng cưa trên sườn bạt)
+          const I = [], idx = tg.index.array, inTear = (a) => { const x = P.getX(a) - 6, z = P.getZ(a) - 3.5; return x * x / 10 + z * z / 4 < 0.8 + hash(a * 7 + 16700) * 0.5; };
+          for (let t = 0; t < idx.length; t += 3) if (!(inTear(idx[t]) && inTear(idx[t + 1]) && inTear(idx[t + 2]))) I.push(idx[t], idx[t + 1], idx[t + 2]);
+          tg.setIndex(I); tg.computeVertexNormals();
+          K.add(MAT.bioCanvas, tg, M4(tf, 0, tr, 0, 0, 0));
+        }
         for (let i = 0; i < 7; i++) overpack(84 + (i % 4) * 6.6, -30 - Math.floor(i / 4) * 7, hash(i + 80) * 3, i === 6, 0);
         overpack(100, -24, 0.6, true); spill(96, -40, 16, 0.3);
         K.solid(94, -34, 12, 8, 0, 9);
@@ -627,11 +882,17 @@
         for (const rr of [hr - 12, hr + 12]) {
           for (let i = 0; i < 4; i++) {
             const f = hf - 24 + i * 11;
-            K.cbox('steelWhite', f, y + 12, rr, 10, 16, 12, 0.4);
+            // hộp lọc túi kín (bag-in / bag-out) inox: cửa bảo dưỡng chữ nhật ép kín bằng 4 núm vặn, quanh cửa là vành
+            // kẹp túi PVC nhô ra (thay lọc qua túi, không mở hộp ra ngoài); ống đo chênh áp trên nóc
+            K.cbox(MAT.bioInox, f, y + 12, rr, 10, 16, 12, 0.4);
             for (const s of [-1, 1]) {
-              K.add('steelGray', new THREE.CylinderGeometry(2.6, 2.6, 1.2, 14), M4(f, y + 12, rr + s * 6.4, HP, 0, 0));
-              K.add('rubber', new THREE.CylinderGeometry(2, 2, 1.3, 12), M4(f, y + 12, rr + s * 6.6, HP, 0, 0));
+              const z = rr + s * 6.2;
+              K.box(MAT.bioInox, f, y + 12.4, z, 7.2, 10.4, 0.5);
+              for (const [w, hh, dy] of [[8.4, 0.7, -5.7], [8.4, 0.7, 6.5]]) K.box('steelGray', f, y + 12.4 + dy, z + s * 0.5, w, hh, 1.4);
+              for (const dx of [-4.2, 4.2]) K.box('steelGray', f + dx, y + 12.8, z + s * 0.5, 0.7, 12.9, 1.4);
+              for (const [dx, dy] of [[-2.8, -3.8], [2.8, -3.8], [-2.8, 4.6], [2.8, 4.6]]) K.add('steelDark', new THREE.CylinderGeometry(0.55, 0.45, 1.2, 6), M4(f + dx, y + 12.4 + dy, z + s * 0.7, HP, 0, 0));
             }
+            K.add('steelGray', new THREE.CylinderGeometry(0.25, 0.25, 3, 5), M4(f - 2.5, y + 21.4, rr + 3));
             for (const yy of [6, 18]) K.box('steelDark', f + 5.1, y + yy, rr, 0.4, 0.8, 8);
             K.box('steelWhite', f + 5.2, y + 15, rr - 3, 0.6, 2, 2);
           }
@@ -724,19 +985,33 @@
         }
         K.cbox('concDark', fB - 5, pts[N][1] + 0.3, r, 10, 1.2, 8, 0.3);
       }
-      // cây bụi / dương xỉ / cây non mọc hoang trên gò (dày ở sườn, thưa trên nóc; tránh thiết bị)
+      // gò bỏ hoang ~25 năm: cây non / bụi / chuối rừng / dương xỉ mọc thành đám (cây tiên phong mọc cụm quanh 1 cây mẹ),
+      // giữa các đám là cỏ tranh phủ dày (sườn và chân gò dày, nóc gò đất mỏng thưa hơn); tránh thiết bị (keep) và mặt tiền
       if (ABANDONED) {
         const free = (f, r, pad) => !keep.some(([kf, kr, kd]) => Math.hypot(f - kf, r - kr) < kd + pad);
         const inMound = (f, r) => { const u = (f - M.fc) / M.af, v = r / M.ar; return Math.pow(Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6), 1 / 6); };
+        const ok = (f, r, pad) => inMound(f, r) < 0.98 && !(f > F0 - 30 && Math.abs(r) < FW + 10) && free(f, r, pad);
         let nt = 0;
-        for (let i = 0; i < 420; i++) {
-          const f = M.fc + (hash(i * 3 + 14000) * 2 - 1) * M.af, r = (hash(i * 3 + 14001) * 2 - 1) * M.ar, d = inMound(f, r);
-          if (d > 0.98 || (f > F0 - 30 && Math.abs(r) < FW + 10) || !free(f, r, 4)) continue;
-          const slope = d > 0.68, k = hash(i + 14002);
-          if (!slope && k > 0.45) continue;   // nóc gò: thưa hơn (cỏ dại phủ)
-          if (k < 0.07 && nt < 14 && free(f, r, 14)) { tree(f, r, 44 + hash(i + 14003) * 40, i * 17 + 14004); nt++; }
-          else if (k < 0.45) bush(f, r, 7 + hash(i + 14005) * 9, i * 7 + 14006);
-          else fern(f, r, 6 + hash(i + 14007) * 6, i * 5 + 14008);
+        for (let c = 0; c < 36; c++) {
+          const cf = M.fc + (hash(c * 3 + 14000) * 2 - 1) * M.af * 0.95, cr = (hash(c * 3 + 14001) * 2 - 1) * M.ar * 0.95;
+          if (!ok(cf, cr, 6)) continue;
+          const R = 10 + hash(c + 14002) * 16;
+          if (nt < 18 && hash(c + 14003) < (inMound(cf, cr) > 0.6 ? 0.6 : 0.35) && free(cf, cr, 14)) { tree(cf, cr, 34 + hash(c + 14004) * 46, c * 17 + 14005); nt++; }
+          const nb = 3 + Math.floor(hash(c + 14006) * 5);
+          for (let j = 0; j < nb; j++) {
+            const q = c * 11 + j + 14010, a = hash(q) * TAU, rr = R * Math.sqrt(hash(q + 1)), f = cf + Math.cos(a) * rr, r = cr + Math.sin(a) * rr, k = hash(q + 2);
+            if (!ok(f, r, 3)) continue;
+            if (k < 0.18) banana(f, r, 18 + hash(q + 3) * 14, q * 7 + 1);
+            else if (k < 0.45) fern(f, r, 6 + hash(q + 4) * 6, q * 5 + 2);
+            else bush(f, r, 6 + hash(q + 5) * 9, q * 7 + 3);
+          }
+        }
+        for (let i = 0; i < 1500; i++) {
+          const f = M.fc + (hash(i * 3 + 14500) * 2 - 1) * M.af, r = (hash(i * 3 + 14501) * 2 - 1) * M.ar;
+          // mọc thành mảng (nhiễu thưa dày), mảng cỏ cao trên sườn, nóc gò thưa và thấp hơn
+          const patch = 0.5 + 0.5 * Math.sin(f * 0.045 + 0.6) * Math.sin(r * 0.038 + 2.1), top = inMound(f, r) < 0.6;
+          if (!ok(f, r, 2) || hash(i + 14502) > patch + 0.15 || (top && hash(i + 14505) < 0.3)) continue;
+          tuft(f, r, (top ? 3.5 : 4.5) + hash(i + 14503) * (top ? 3 : 5) * (0.6 + patch * 0.6), i * 7 + 14504);
         }
       }
 
@@ -744,7 +1019,7 @@
       // NHÀ KIỂM SOÁT RA VÀO + PHÒNG THAY ĐỒ (2 tầng) cạnh sân, biển song ngữ, dây leo
       // =====================================================================================================
       officeBlock(K, kit, 104, -150, 0, 56, 84, 2, null);
-      sign('access', 132.4, 31, -150, 56, 9.3);
+      sign('access', 132.4, 20.5, -150, 48, 8);   // giữa 2 tầng (trên mái đua sảnh, dưới dãy cửa sổ tầng 2)
       eyewash(68, -150, Math.PI);
       if (ABANDONED) { vines(132.6, -190, 132.6, -110, 38, 1, 0, 400, 11, 18); vines(76, -191.6, 132, -191.6, 38, 0, -1, 410, 10, 24); shrubs(76, -193, 132, -193, 0, -1, 420, 10, 7); }
 
@@ -758,7 +1033,7 @@
         for (const s2 of [-1, 1]) { K.cbox('concDark', f, 3, r + s2 * 47, 66, 4.4, 2, 0.3); K.cbox('concDark', f + s2 * 32, 3, r, 2, 4.4, 96, 0.3); }
         const tf = f - 10;
         for (const z of [-30, 0, 30]) {
-          vTank(K, tf, r + z, 11, 40, z * 0.1);
+          vTank(K, tf, r + z, 11, 40, z * 0.1, MAT.bioInox);   // kill tank inox
           for (const y of [10, 22, 34]) K.add('steelGray', new THREE.TorusGeometry(11.1, 0.35, 4, 28), M4(tf, y, r + z, HP, 0, 0));
           K.cyl('olive', tf, 45.4, r + z, 2.2, 2.2, 5, 12); K.cyl('steelGray', tf, 50.4, r + z, 1.4, 1.4, 1.2, 8);
           K.box('steelWhite', tf + 4, 47, r + z, 3, 3, 3);
@@ -781,8 +1056,8 @@
         K.cbox('steelWhite', f + 22, 9, r, 18, 18, 40, 0.5); K.cbox('steelGray', f + 22, 18.8, r, 20, 1.6, 42, 0.3);
         K.box('steelGray', f + 31.2, 7.5, r + 8, 0.6, 13, 6);
         K.box('louver', f + 31.2, 13, r - 8, 0.5, 6, 10);
-        K.add('steelWhite', new THREE.CylinderGeometry(4, 4, 24, 16), M4(f + 18, 8, r + 36, 0, 0, HP));
-        for (const s2 of [-1, 1]) { K.add('steelWhite', new THREE.SphereGeometry(4, 12, 6), M4(f + 18 + s2 * 12, 8, r + 36, 0, 0, 0, 0.35, 1, 1)); K.cbox('concDark', f + 18 + s2 * 8, 2.4, r + 36, 3, 4.8, 8, 0.3); }
+        K.add(MAT.bioInox, new THREE.CylinderGeometry(4, 4, 24, 16), M4(f + 18, 8, r + 36, 0, 0, HP));
+        for (const s2 of [-1, 1]) { K.add(MAT.bioInox, new THREE.SphereGeometry(4, 12, 6), M4(f + 18 + s2 * 12, 8, r + 36, 0, 0, 0, 0.35, 1, 1)); K.cbox('concDark', f + 18 + s2 * 8, 2.4, r + 36, 3, 4.8, 8, 0.3); }
         for (const x of [-6, 6]) K.cyl('steelGray', f + 18 + x, 12, r + 36, 1, 1, 4, 8);
         K.cbox('steelWhite', f + 26, 7, r - 34, 6, 12, 8, 0.4);
         for (const z of [-41, -19]) K.box('steelGray', f + 34, 8, r + z, 0.5, 16, 0.5);
@@ -801,8 +1076,9 @@
         K.cbox('conc', fm, 0.6, (r0 + r1) / 2, f1 - f0 - 4, 1.2, r1 - r0 - 4, 0.4);
         for (const [tr, R, H] of [[134, 8, 62], [174, 6.4, 46]]) {
           const tf = 210;
-          K.cyl('concDark', tf, 0, tr, R + 4, R + 4, 2, 20); K.cyl('steelWhite', tf, 2, tr, R, R, H, 20);
-          K.add('steelWhite', new THREE.SphereGeometry(R, 20, 8, 0, TAU, 0, HP), M4(tf, H + 2, tr));
+          K.cyl('concDark', tf, 0, tr, R + 4, R + 4, 2, 20); K.cyl(MAT.bioTank, tf, 2, tr, R, R, H, 20);
+          // đầu bồn chỏm dẹt (elip 2:1 như bình chịu áp thật), không phải nửa cầu kiểu viên nhộng
+          K.add(MAT.bioTank, new THREE.SphereGeometry(R, 20, 8, 0, TAU, 0, HP), M4(tf, H + 2, tr, 0, 0, 0, 1, 0.42, 1));
           for (let k = 0; k < 4; k++) { const a = k * HP + 0.4; K.beam('steelGray', [tf + Math.cos(a) * (R + 3), 0, tr + Math.sin(a) * (R + 3)], [tf + Math.cos(a) * (R - 0.4), 14, tr + Math.sin(a) * (R - 0.4)], 1); }
           K.cyl('steelGray', tf - R - 0.8, 3, tr, 0.5, 0.5, H - 4, 6);
           K.box('steelWhite', tf - R - 1, 14, tr + 3, 1.6, 2.6, 2.6);
@@ -811,7 +1087,7 @@
         signCyl('ln2', 210, 32, 134, 8.06, 10.5, 4, Math.PI + 0.7);
         // giàn hoá hơi: dãy ống cánh nhôm đứng (phủ băng trắng), ống góp đỉnh / đáy
         for (const z of [134, 172]) {
-          for (let i = 0; i < 7; i++) for (let j = 0; j < 3; j++) { const x = 184 + j * 4, zz = z + (i - 3) * 2.4; K.cyl('steelWhite', x, 1.6, zz, 0.9, 1.1, 28, 6); for (let a = 0; a < 2; a++) K.box('steelWhite', x, 15, zz, 0.2, 26, 2.4, a * HP); }
+          for (let i = 0; i < 7; i++) for (let j = 0; j < 3; j++) { const x = 184 + j * 4, zz = z + (i - 3) * 2.4; K.cyl(MAT.bioAlu, x, 1.6, zz, 0.9, 1.1, 28, 6); for (let a = 0; a < 2; a++) K.box(MAT.bioAlu, x, 15, zz, 0.2, 26, 2.4, a * HP); }
           K.box('steelGray', 188, 30.4, z, 12, 1, 18); K.box('steelGray', 188, 1.2, z, 12, 1.2, 18);
           pipeRun('steelGray', [[194, 3, z], [201, 3, z]], 0.8);
           K.solid(188, z, 7, 9, 0, 31);
@@ -908,9 +1184,9 @@
         {
           const sf = -40, sr = -211, SH = 30;
           for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) { K.box('steelGray', sf + x * 4.6, 7, sr + z * 4.6, 1, 14, 1); K.cbox('concDark', sf + x * 4.6, 0.6, sr + z * 4.6, 2.6, 1.2, 2.6, 0.2); }
-          K.add('steelWhite', new THREE.ConeGeometry(6.6, 9, 18, 1, true), M4(sf, 12, sr, Math.PI, 0, 0));
-          K.cyl('steelWhite', sf, 16.5, sr, 6.6, 6.6, SH, 18);
-          K.add('steelWhite', new THREE.ConeGeometry(6.8, 4, 18), M4(sf, SH + 18.5, sr));
+          K.add(MAT.bioAlu, new THREE.ConeGeometry(6.6, 9, 18, 1, true), M4(sf, 12, sr, Math.PI, 0, 0));
+          K.cyl(MAT.bioAlu, sf, 16.5, sr, 6.6, 6.6, SH, 18);
+          K.add(MAT.bioAlu, new THREE.ConeGeometry(6.8, 4, 18), M4(sf, SH + 18.5, sr));
           for (let y = 4; y < SH + 16; y += 2.4) K.box('steelGray', sf + 7.6, y, sr, 0.3, 0.3, 2.4);
           for (const s2 of [-1, 1]) K.box('steelGray', sf + 7.6, (SH + 20) / 2, sr + s2 * 1.2, 0.3, SH + 16, 0.3);
           pipe('steelGray', [sf, 7.5, sr], [fb - 1, AH - 2, ar + 10], 0.9);   // vít tải thức ăn vào đầu hồi nhà
@@ -957,13 +1233,16 @@
         for (let y = 14; y < H; y += 24) for (const [a, b, c2, d] of [[-12, -12, 12, -12], [12, -12, 12, 12], [12, 12, -12, 12], [-12, 12, -12, -12]]) {
           K.beam('olive', [f + a, y, r + b], [f + c2, y, r + d], 0.9); K.beam('olive', [f + a, y, r + b], [f + c2, y + 24, r + d], 0.6); K.beam('olive', [f + c2, y, r + d], [f + a, y + 24, r + b], 0.6);
         }
-        K.add('tankShell', new THREE.CylinderGeometry(19, 19, 30, 28, 1, true), M4(f, H + 18, r));
-        K.add('steelWhite', new THREE.ConeGeometry(19.4, 8, 28), M4(f, H + 37, r));
+        K.add(MAT.bioTank, new THREE.CylinderGeometry(19, 19, 30, 28, 1, true), M4(f, H + 18, r));
+        K.add(MAT.bioTank, new THREE.ConeGeometry(19.4, 8, 28), M4(f, H + 37, r));
         K.cyl('steelGray', f, H + 2, r, 21, 21, 1, 28);
         for (let i = 0; i < 24; i++) { const a = i * TAU / 24; K.box('steelGray', f + Math.cos(a) * 20.6, H + 5.5, r + Math.sin(a) * 20.6, 0.3, 6, 0.3); }
         K.add('steelGray', new THREE.TorusGeometry(20.6, 0.25, 3, 28), M4(f, H + 8.5, r, HP, 0, 0));
         K.add('steelGray', new THREE.CylinderGeometry(1.4, 1.4, H, 8), M4(f, H / 2 + 3, r));
+        // thang: bậc + 2 thanh dọc từ đất lên sàn bồn, giằng vào thanh ngang mặt giàn mỗi 24 đv
         for (let y = 4; y < H; y += 2.4) K.add('steelGray', new THREE.BoxGeometry(0.3, 0.3, 2.6), M4(f + 13.2, y, r));
+        for (const s2 of [-1, 1]) K.add('steelGray', new THREE.BoxGeometry(0.35, H, 0.35), M4(f + 13.2, H / 2 + 2, r + s2 * 1.3));
+        for (let y = 14; y < H; y += 24) K.box('steelGray', f + 12.6, y, r, 1.4, 0.3, 2.9);
         K.solid(f, r, 21, 21, 0, H + 42);
         if (ABANDONED) vines(f - 19.5, r - 12, f - 19.5, r + 12, H + 32, -1, 0, 510, 8, 20);
       }
@@ -997,7 +1276,10 @@
         K.add('olive', new THREE.CylinderGeometry(10, 10, 40, 24), M4(tf, 15, tr, 0, 0, HP));
         for (const s2 of [-1, 1]) K.add('olive', new THREE.SphereGeometry(10, 18, 8), M4(tf + s2 * 20, 15, tr, 0, 0, 0, 0.3, 1, 1));
         K.cyl('steelDark', tf - 6, 24.6, tr, 2.4, 2.4, 1.4, 12); K.cyl('steelGray', tf + 8, 24.6, tr, 0.5, 0.5, 6, 6); K.add('steelGray', new THREE.SphereGeometry(1, 8, 6), M4(tf + 8, 31, tr));
-        for (let y = 2; y < 25; y += 2.4) K.box('steelGray', tf + 24, y, tr - 8, 0.3, 0.3, 2.6);
+        // thang đầu bồn: bậc + 2 thanh dọc đứng trên sàn bờ bao + 2 thanh giằng bắt vào chỏm bồn
+        for (let y = 2.4; y < 25; y += 2.4) K.box('steelGray', tf + 24, y, tr - 8, 0.3, 0.3, 2.6);
+        for (const s2 of [-1, 1]) K.box('steelGray', tf + 24, 13.8, tr - 8 + s2 * 1.3, 0.35, 24.4, 0.35);
+        for (const y of [8, 19]) K.box('steelGray', tf + 22.4, y, tr - 8, 3.2, 0.3, 0.3);
         K.cbox('olive', tf - 34, 7, tr + 6, 8, 12, 8, 0.4);
         pipeRun('steelGray', [[tf - 20, 8, tr + 4], [tf - 30, 8, tr + 4]], 0.7);
         signM('genset', 20, 4.2, M4(tf, 15, tr + 10.15, 0, 0, 0));
@@ -1096,6 +1378,38 @@
       anim.vehicles.push({ type: 'ARTILLERY', f: 90, r: 280, a: 0, chassis: true, cargo: 'jp8', hf: 50, hr: 13 });
       anim.vehicles.push({ type: 'GATLING', f: 196, r: -236, a: HP, ty: 0.8, hf: 43, hr: 32 });
       camoNet(K, M4(196, 0, -236, 0, 0.1, 0), 52, 76, 44, 5);
+
+      // =====================================================================================================
+      // CỎ DẠI MỌC QUA KHE NỨT: dọc 2 mép đường nhựa (mép vỡ) + 1 vết nứt lượn dọc lòng đường; sân sỏi / bãi bê tông rải búi
+      // cỏ theo mảng (nhiễu thưa dày), dày hơn sát mép; vài bụi non. Tránh chân khối đặc (nhà, bồn...)
+      // =====================================================================================================
+      if (ABANDONED) {
+        const sol = K.lsolids || [], Y = 0.45;
+        const freeAt = (f, r, pad) => !sol.some(q => { if (q.y0 > 6) return false; const c = Math.cos(q.rot), s2 = Math.sin(q.rot), df = f - q.f, dr = r - q.r; return Math.abs(df * c + dr * s2) < q.hf + pad && Math.abs(-df * s2 + dr * c) < q.hr + pad; });
+        SITE.roads.forEach(([pts, wd], ri) => {
+          for (let s = 0; s + 1 < pts.length; s++) {
+            const [fa, ra] = pts[s], [fb, rb] = pts[s + 1], len = Math.hypot(fb - fa, rb - ra), uf = (fb - fa) / len, ur = (rb - ra) / len;
+            for (const side of [-1, 1, 0]) {
+              const sd = 18000 + ri * 97 + s * 13 + side * 5;
+              let off = side ? side * (wd / 2 - 1) : (hash(sd) - 0.5) * wd * 0.4;
+              for (let t = hash(sd + 1) * 8, i = 0; t < len; t += (side ? 5 : 9) + hash(sd + i * 3 + 2) * (side ? 9 : 16), i++) {
+                if (!side) off += (hash(sd + i * 3 + 3) - 0.5) * 1.5;
+                const o = side ? off - side * hash(sd + i * 3 + 4) * 2 : off, f = fa + uf * t - ur * o, r = ra + ur * t + uf * o;
+                if (freeAt(f, r, 1)) tuft(f, r, (side ? 2.4 : 1.6) + hash(sd + i * 3 + 5) * (side ? 3.4 : 2), sd + i * 7, Y);
+              }
+            }
+          }
+        });
+        SITE.gravel(L.hu).concat(SITE.slabs).forEach(([fa, ra, fb, rb], ai) => {
+          const cnt = Math.round(Math.abs((fb - fa) * (rb - ra)) / 160);
+          for (let i = 0; i < cnt; i++) {
+            const sd = 19000 + ai * 211 + i * 5, u = hash(sd), v = hash(sd + 1), f = Math.min(fa, fb) + u * Math.abs(fb - fa), r = Math.min(ra, rb) + v * Math.abs(rb - ra);
+            const edge = Math.min(u, 1 - u, v, 1 - v), patch = 0.5 + 0.5 * Math.sin(f * 0.05 + 1.3) * Math.sin(r * 0.043 + 0.7);
+            if (hash(sd + 2) > patch * 0.9 + (edge < 0.08 ? 0.4 : 0) || !freeAt(f, r, 1.5)) continue;
+            if (hash(sd + 3) < 0.06) bush(f, r, 3 + hash(sd + 4) * 3, sd + 9, Y); else tuft(f, r, 1.8 + hash(sd + 5) * 3, sd + 7, Y);
+          }
+        });
+      }
 
       // =====================================================================================================
       // CANH PHÒNG: tháp canh, lô cốt, tường rọ đá; biển nguy hiểm sinh học song ngữ trên rào ngoài

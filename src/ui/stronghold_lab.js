@@ -74,6 +74,8 @@
   function setup(g) {
     lab.g = g;
     const set = g.terrain.strongholdSet;
+    // địa hình dựng chi tiết bất đồng bộ (terrain.buildTerrainDetailsAsync): cứ điểm có sau khi vào trận vài nhịp -> chờ
+    if (!set && !g.terrain.detailsReady) { setTimeout(() => setup(g), 150); return; }
     if (!set) { console.warn('Bản đồ không có cứ điểm'); return; }
     const K = id => set.items.find(k => k.id === id);
     // Luật trận thường không áp dụng trong phòng thử
@@ -136,9 +138,10 @@
     const orig = g.handleShellImpact;
     g.handleShellImpact = function (shell, hitType, target) {
       const before = this.units.map(u => u.hp);
-      const exp = this.units.map(u => this.terrain.shelterFactor(u));
+      // phần thân xe nhìn thấy điểm nổ (bê tông cứ điểm che phần còn lại)
+      const exp = this.units.map(u => this.terrain.shelterFactor(u, { x: shell.x, y: shell.y + 2, z: shell.z }));
       orig.call(this, shell, hitType, target);
-      if (shell.absorbedBy) addLog(`[[shield]] ${shell.absorbedBy.name}: bê tông chặn đạn (${ammoName(shell.ammoType)})`, 'ok');
+      if (hitType === 'WALL' && this.units.some((u, i) => u !== this.player && exp[i] === 0 && this.terrain.shelterOf(u) && Math.hypot(u.x - shell.x, u.z - shell.z) < 200)) addLog(`[[shield]] Bê tông cứ điểm chặn đạn (${ammoName(shell.ammoType)})`, 'ok');
       this.units.forEach((u, i) => {
         const d = before[i] - u.hp;
         if (d > 0.0005) addLog(`[[bomb]] ${u.name} -${d.toFixed(2)} máu · ${hitType === 'DIRECT_HIT' && u === target ? 'trúng trực tiếp' : 'sức ép nổ'} · thân lộ ${Math.round(exp[i] * 100)}%`, 'hit');

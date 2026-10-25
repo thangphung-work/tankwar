@@ -39,7 +39,7 @@ SoundEngine.mixin(class {
     // Giới hạn tần suất để không dồn dập khi nhiều sự kiện cùng lúc
     const now = this.ctx.currentTime;
     this._secLast = this._secLast || {};
-    const gap = kind === 'flare' ? 0.5 : kind === 'cookoffSmall' ? 0.025 : kind === 'metalCrush' ? 0.35 : kind === 'armorPlate' ? 0.25 : (kind === 'debrisLand' || kind === 'snap') ? 0.07 : kind === 'debrisHit' ? 0.02 : kind === 'debrisScrape' ? 0.06 : kind === 'debris' ? 0.3 : BREAK_MAT[kind] || kind === 'glass' || kind === 'leafStrip' ? 0.12 : 0.15;
+    const gap = kind === 'flare' ? 0.5 : kind === 'cookoffSmall' ? 0.025 : kind === 'metalCrush' ? 0.35 : kind === 'carCrush' ? 0.16 : kind === 'carSlide' ? 0.22 : kind === 'armorPlate' ? 0.25 : (kind === 'debrisLand' || kind === 'snap') ? 0.07 : kind === 'debrisHit' ? 0.02 : kind === 'debrisScrape' ? 0.06 : kind === 'debris' ? 0.3 : BREAK_MAT[kind] || kind === 'glass' || kind === 'leafStrip' ? 0.12 : 0.15;
     // Cây đổ: một quả nổ quật đổ cả cụm cây cùng lúc, mỗi cây chạm đất một thời điểm riêng -> cho tối đa 3 cây / 0.3 s
     if (kind === 'treeFall') {
       this._treeT = (this._treeT || []).filter(x => now - x < 0.3);
@@ -149,7 +149,7 @@ SoundEngine.mixin(class {
     // Thứ bậc độ to như ngoài đời (cùng khoảng cách): nổ đạn pháo > kho đạn / gạch ERA > nhà sập > tháp rơi, thép oằn
     // > nổ lốp > xích đứt > mảnh rơi. Thiếu bậc này thì nổ lốp to ngang đạn 155 và tiếng nổ chính mất uy lực
     const LEVEL = {
-      cookoff: 0.25, cookoffSmall: 0.3, era: 0.3, fuel: 0.2, flare: 0.22, collapse: 0.11, turretLand: 0.08, metalCrush: 0.25,
+      cookoff: 0.25, cookoffSmall: 0.3, era: 0.3, fuel: 0.2, flare: 0.22, collapse: 0.11, turretLand: 0.08, metalCrush: 0.25, carCrush: 0.32, carSlide: 0.3,
       tire: 0.2, trackSnap: 0.35, concrete: 0.3, treeFall: 0.25, armorPlate: 0.35, snap: 0.5, debris: 0.45, debrisLand: 0.45, debrisHit: 0.42, debrisScrape: 0.3,
       masonry: 0.3, adobe: 0.3, woodBreak: 0.32, sheetMetal: 0.26, rockSplit: 0.25, leafStrip: 0.35, slabImpact: 0.14, splashBig: 0.12,
       apsFire: 0.3, apsKill: 0.22, slat: 0.4, fireExt: 0.45, camoRustle: 0.5, steamDouse: 0.4, waterSkip: 0.35
@@ -295,6 +295,30 @@ SoundEngine.mixin(class {
         this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 700, freqEnd: 150, sweep: 0.1, drive: 4, gain: 1.1 * k, attack: 0.0008, dur: 0.16 });
         this.burst(out, t + 0.005, { filter: 'highpass', freq: 2200, gain: 0.45 * k, attack: 0.002, dur: 0.5 });
         this.burst(out, t + 0.04, { buffer: this.crackleBuffer, filter: 'lowpass', freq: 900, gain: 0.5 * k, attack: 0.01, dur: 0.3 });
+        break;
+      }
+      case 'carCrush': {
+        // Ô tô bị xích / gầm xe tăng ép bẹp: tôn mỏng nhăn nheo "rắc-rắc-rộp" liên hồi (mỗi nếp gấp 1 tiếng giòn cao), khung
+        // xe / trụ cửa oằn rên trầm, nhựa cản / taplô vỡ lách tách, lò xo giảm xóc "bụp" khi bị ép hết hành trình. Không có
+        // tiếng thép giáp "boong" (tôn ô tô dày < 1 mm)
+        const n = 4 + Math.round(5 * k);
+        for (let i = 0; i < n; i++) {
+          const ti = t + Math.pow(Math.random(), 0.7) * (0.25 + 0.35 * k);
+          this.burst(out, ti, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 900 + Math.random() * 2200, freqEnd: 500 + Math.random() * 600, sweep: 0.04, Q: 2.5 + Math.random() * 3, drive: 2, gain: (0.25 + 0.35 * Math.random()) * k, attack: 0.0008, dur: 0.03 + Math.random() * 0.05 });
+        }
+        this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 190, drive: 2.5, gain: 0.9 * k, attack: 0.01, dur: 0.35 + 0.2 * k });
+        this.burst(out, t + 0.04, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 520, freqEnd: 330, sweep: 0.5, Q: 7, drive: 1.6, gain: 0.45 * k, attack: 0.06, dur: 0.55 });
+        this.burst(out, t + 0.02, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 1800, Q: 0.8, gain: 0.55 * k, attack: 0.01, dur: 0.3 + 0.2 * k });
+        this.playCaseHit(out, t + 0.01, 'sheetMetal', 1.1 + Math.random() * 0.25, 0.35 * k);
+        if (k > 0.5) this.tone(out, t + 0.08 + Math.random() * 0.1, { type: 'sine', freq: 95, freqEnd: 55, sweep: 0.08, gain: 0.35 * k, attack: 0.002, dur: 0.1 });   // giảm xóc dập hết hành trình
+        break;
+      }
+      case 'carSlide': {
+        // Ô tô đỗ (phanh tay / số) bị húc trượt ngang: lốp miết nhựa đường "ực-ực" rung giật + rít ngắn, sỏi lạo xạo dưới lốp
+        const n = 3 + Math.round(3 * k);
+        for (let i = 0; i < n; i++) this.burst(out, t + i * (0.045 + Math.random() * 0.02), { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 380 + Math.random() * 160, Q: 4, drive: 1.5, gain: 0.35 * k, attack: 0.004, dur: 0.05 });
+        this.burst(out, t, { filter: 'bandpass', freq: 1400 + Math.random() * 500, Q: 9, gain: 0.18 * k, attack: 0.02, dur: 0.25 });
+        this.burst(out, t + 0.02, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2400, Q: 0.7, gain: 0.25 * k, attack: 0.02, dur: 0.3 });
         break;
       }
       case 'tireHiss': {

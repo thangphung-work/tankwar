@@ -42,6 +42,9 @@ const TeamIntel = (() => {
   const BUSH_COVER = { SCOUT: { spot: BUSH_SPOT, radar: 0.4 }, ALL_ROUNDER: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL }, GATLING: { spot: 0, radar: BUSH_RADAR, still: BUSH_STILL } };
   // Drone trinh sát đang bay soi thấy xe địch trong bán kính này quanh hình chiếu drone (khớp server_auth.js DRONE_SIGHT)
   const DRONE_SIGHT = 420;
+  // Xe đỗ dưới tán cây còn lá (chưa vừa nổ súng): drone nhìn từ trên xuống chỉ thấy khi bay gần như ngay trên đầu
+  // (nhìn chéo qua kẽ lá). Mắt thường dưới mặt đất nhìn ngang dưới tán: không đổi (khớp server_auth.js CANOPY_SPOT)
+  const CANOPY_SPOT = 120;
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -59,8 +62,9 @@ const TeamIntel = (() => {
     time = 0;
   }
 
-  // Radar lắp thêm (trang bị 'radar') trên xe không phải trinh sát
-  const eqRadar = u => typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar');
+  // Radar lắp thêm (trang bị 'radar') trên xe không phải trinh sát — cụm radar (tag 'radarKit') bị bắn văng thì mất
+  const eqRadar = u => typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar')
+    && !(u.dmg && u.dmg.lost && u.dmg.lost.has('radarKit'));
   function hasRadar(u) {
     if (!u || u.isDead) return false;
     if (u.tankType !== 'SCOUT') return eqRadar(u);
@@ -91,8 +95,17 @@ const TeamIntel = (() => {
 
   // Dòng báo trạng thái bụi cho xe người chơi: { html, warn, cover } | null (không ở trong bụi)
   function bushBanner(u) {
-    if (!u || u.isDead || !u.isInBush) return null;
-    if ((u.revealTimer || 0) > 0) return { html: `BỊ LỘ VỊ TRÍ DO VỪA KHAI HỎA · ${u.revealTimer.toFixed(1)}S`, warn: true, cover: true };
+    if (!u || u.isDead) return null;
+    // lộ do lưỡi ủi đang đẩy đất (game.js updateDig: bụi đất bốc cao + máy gầm) hay do vừa nổ súng
+    // (trời mưa: không bụi, chỉ còn tiếng máy)
+    const why = (u._digRevealT || 0) > performance.now() ? (u._digRevealWet ? 'ĐANG ỦI ĐẤT (TIẾNG MÁY)' : 'ĐANG ỦI ĐẤT (BỤI + TIẾNG MÁY)') : 'VỪA KHAI HỎA';
+    // dưới tán cây (không trong bụi): chỉ báo chữ, cover: false -> không bật lớp phủ lá núp bụi
+    if (!u.isInBush) {
+      if (!u.underCanopy) return null;
+      if ((u.revealTimer || 0) > 0) return { html: `DƯỚI TÁN CÂY · BỊ LỘ DO ${why} · ${u.revealTimer.toFixed(1)}S`, warn: true, cover: false };
+      return { html: 'DƯỚI TÁN CÂY · DRONE ĐỊCH PHẢI BAY SÁT MỚI THẤY', warn: false, cover: false };
+    }
+    if ((u.revealTimer || 0) > 0) return { html: `BỊ LỘ VỊ TRÍ DO ${why} · ${u.revealTimer.toFixed(1)}S`, warn: true, cover: true };
     const bc = BUSH_COVER[u.tankType];
     if (!bc) return { html: 'XE PHÁO KHÔNG NÚP BỤI ĐƯỢC · ĐỊCH VẪN THẤY RÕ', warn: true, cover: false };
     if (!bc.spot) return Math.abs(u.speed || 0) < (u.baseMaxSpeed || 120) * 0.06
@@ -106,7 +119,8 @@ const TeamIntel = (() => {
     const dx = t.x - viewer.x, dz = t.z - viewer.z, d = Math.sqrt(dx * dx + dz * dz);
     const EQ = typeof Equipment !== 'undefined' && Equipment.camoFactor ? Equipment : null;
     // lưới ngụy trang: phải tới gần hơn mới nhận ra xe đứng yên / chạy chậm
-    let r = sightRange(viewer);
+    // đứng cao hơn mục tiêu: nhìn xa hơn (elevK)
+    let r = sightRange(viewer) * elevK(viewer, t);
     const bc = bushCover(t);
     if (bc && bc.spot) r = Math.min(r, bc.spot);
     // xe to đứng yên trong bụi: phải vào gần hơn (lưới / lá ngụy trang mạnh hơn thì lấy cái mạnh hơn, không cộng dồn)
@@ -120,7 +134,70 @@ const TeamIntel = (() => {
     const dense = typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FOREST_DENSE : 10;
     if ((t.forestDens || 0) >= dense && d > FOREST_SPOT && !((t.revealTimer || 0) > 0)) return false;
     if (forestBlocked(viewer, t)) return false;
+    if (buildingBlocked(viewer, t)) return false;
+    if (terrainBlocked(viewer, t)) return false;
     return true;
+  }
+
+  // ĐỊA HÌNH: đồi / gò / vách núi bàn / đụn cát chắn đường ngắm thì không thấy (nấp sau sườn dốc ngược, trồi nửa thân sau
+  // gờ đất mới có tác dụng); đứng cao hơn mục tiêu thì nhìn xa hơn. Dò trên lưới độ cao gốc của bản đồ (map.heights —
+  // máy chủ server_auth.js dò cùng lưới với cùng hằng số nhưng nới rộng hơn: luôn gửi đủ thứ máy khách thấy).
+  // Đường ngắm: kính ngắm (EYE_H trên đất) -> nóc tháp pháo mục tiêu (TGT_H: tháp pháo ló qua gờ là thấy)
+  const EYE_H = 18, TGT_H = 18, LOS_STEP = 42, LOS_END = 40, LOS_TOL = 1;
+  // đứng cao hơn mục tiêu: tầm nhìn +1% mỗi 3,2 đv chênh cao (0,4 m), tối đa +35% (cao hơn ~14 m — đỉnh đồi cứ điểm
+  // ~+20%, vách núi bàn ~+30%)
+  const ELEV_K = 320, ELEV_MAX = 0.35;
+  function mapH(x, z) {
+    const M = game && game.terrain && game.terrain.map;
+    return M && M.heights && typeof MapGen !== 'undefined' ? MapGen.sampleH(M.heights, x, z) : null;
+  }
+  function elevK(viewer, t) {
+    const hv = mapH(viewer.x, viewer.z), ht = mapH(t.x, t.z);
+    return hv === null || ht === null ? 1 : 1 + Math.min(ELEV_MAX, Math.max(0, hv - ht) / ELEV_K);
+  }
+  function terrainBlocked(viewer, t) {
+    const key = 't' + viewer.id + '|' + t.id;
+    const c = losCache.get(key);
+    if (c && time - c.t < LOS_TTL) return c.v;
+    const v = terrainLine(viewer.x, viewer.z, t.x, t.z);
+    losCache.set(key, { t: time, v });
+    if (losCache.size > 2000) losCache.clear();
+    return v;
+  }
+  function terrainLine(x1, z1, x2, z2) {
+    const h1 = mapH(x1, z1), h2 = mapH(x2, z2);
+    if (h1 === null || h2 === null) return false;
+    const dx = x2 - x1, dz = z2 - z1, d = Math.hypot(dx, dz), ya = h1 + EYE_H, yb = h2 + TGT_H;
+    for (let s = LOS_END; s < d - LOS_END; s += LOS_STEP) {
+      const k = s / d;
+      if (mapH(x1 + dx * k, z1 + dz * k) > ya + (yb - ya) * k + LOS_TOL) return true;
+    }
+    return false;
+  }
+  // Đường ngắm từ chỗ (x1, z1) tới xe đứng ở (x2, z2) bị đồi núi / nhà chắn? (không nhớ tạm — bot dò chỗ nấp)
+  function lineBlocked(x1, z1, x2, z2) {
+    if (terrainLine(x1, z1, x2, z2)) return true;
+    const terr = game && game.terrain;
+    if (!terr || !terr.buildingSegmentHit || !terr.buildings || !terr.buildings.length) return false;
+    const gy = (x, z) => (terr.getElevationAt ? terr.getElevationAt(x, z) : 0);
+    return !!terr.buildingSegmentHit(x1, gy(x1, z1) + 18, z1, x2, gy(x2, z2) + 10, z2);
+  }
+
+  // Nhà còn đứng chắn giữa 2 xe (phố / làng): không thấy — nhà chặn đạn thì cũng chặn tầm mắt (trước đây trong thành phố
+  // vẫn nhìn & khóa được xe ở bên kia dãy nhà). Đường ngắm từ kính ngắm (~2,3 m trên đất) tới giữa thân xe kia (~1,2 m).
+  // Radar trinh sát / drone không bị nhà che (xem radarContact / droneSees). Máy chủ lọc rộng hơn (không xét nhà) —
+  // vẫn luôn gửi đủ thứ máy khách cần
+  function buildingBlocked(viewer, t) {
+    const terr = game && game.terrain;
+    if (!terr || !terr.buildingSegmentHit || !terr.buildings || !terr.buildings.length) return false;
+    const key = 'b' + viewer.id + '|' + t.id;
+    const c = losCache.get(key);
+    if (c && time - c.t < LOS_TTL) return c.v;
+    const gy = u => (terr.getElevationAt ? terr.getElevationAt(u.x, u.z) : 0);
+    const v = !!terr.buildingSegmentHit(viewer.x, gy(viewer) + 18, viewer.z, t.x, gy(t) + 10, t.z);
+    losCache.set(key, { t: time, v });
+    if (losCache.size > 2000) losCache.clear();
+    return v;
   }
 
   // Đường ngắm xuyên rừng rậm quá dày -> không thấy (nhớ tạm theo cặp xe)
@@ -143,7 +220,8 @@ const TeamIntel = (() => {
     const list = game.airDroneList();
     if (!list.length) return false;
     const bc = bushCover(t);
-    const r = bc && bc.spot ? Math.min(DRONE_SIGHT, bc.spot) : DRONE_SIGHT;
+    let r = bc && bc.spot ? Math.min(DRONE_SIGHT, bc.spot) : DRONE_SIGHT;
+    if (t.underCanopy && !((t.revealTimer || 0) > 0)) r = Math.min(r, CANOPY_SPOT);
     for (const dr of list) {
       if (dr.team !== team || !game.droneIsAirborne(dr)) continue;
       if (Math.hypot(t.x - dr.x, t.z - dr.z) <= r) return true;
@@ -342,7 +420,10 @@ const TeamIntel = (() => {
   // ---------------------------------------------------------------------------
   function drawOnMap(ctx, viewer, units, toScreen, pxPerUnit, opts) {
     if (!viewer) return;
-    const o = Object.assign({ dot: 3.2, playerDot: 4.5, labels: false }, opts || {});
+    // opts.outline: viền tối quanh chấm xe (nền địa hình chi tiết như minimap); opts.sightRing: false = không vẽ vòng tầm nhìn
+    // (minimap radar: mép vòng chính là tầm nhìn); playerDot: 0 = không vẽ chấm xe mình (nơi gọi tự vẽ biểu tượng riêng)
+    const o = Object.assign({ dot: 3.2, playerDot: 4.5, labels: false, outline: false, sightRing: true }, opts || {});
+    const rim = (x, y, r) => { if (o.outline && r > 0) { ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, r + 0.5, 0, TWO_PI); ctx.stroke(); } };
     const pulse = 0.5 + 0.5 * Math.sin(time * 6);
     ctx.save();
     // Vùng nhìn của mình + radar quét (xe trinh sát)
@@ -351,7 +432,7 @@ const TeamIntel = (() => {
       ctx.strokeStyle = 'rgba(255,255,255,0.22)';
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.arc(s.x, s.y, sightRange(viewer) * pxPerUnit, 0, TWO_PI); ctx.stroke();
+      if (o.sightRing) { ctx.beginPath(); ctx.arc(s.x, s.y, sightRange(viewer) * pxPerUnit, 0, TWO_PI); ctx.stroke(); }
       ctx.setLineDash([]);
       if (hasRadar(viewer)) {
         const R = radarRange(viewer) * pxPerUnit;
@@ -402,7 +483,8 @@ const TeamIntel = (() => {
       const r = u === viewer ? o.playerDot : o.dot;
       if (ally) {
         ctx.fillStyle = u.team === 'BLUE' ? '#00e5ff' : '#ff3b30';
-        ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, TWO_PI); ctx.fill();
+        if (r > 0) { ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, TWO_PI); ctx.fill(); }
+        rim(s.x, s.y, r);
         if (u !== viewer && u.intelLock && hasRadar(u) && reportOf(u.team, u.intelLock)) {
           // đường liên kết từ xe trinh sát đến mục tiêu đang báo
           const t = toScreen(u.intelLock.x, u.intelLock.z);
@@ -414,7 +496,8 @@ const TeamIntel = (() => {
       const col = u.team === 'BLUE' ? '0,229,255' : '255,59,48';
       if (lv === 'direct') {
         ctx.fillStyle = `rgb(${col})`;
-        ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, TWO_PI); ctx.fill();
+        if (r > 0) { ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, TWO_PI); ctx.fill(); }
+        rim(s.x, s.y, r);
       } else if (lv === 'radar') {
         // vết radar: ô vuông rỗng mờ dần theo thời gian kể từ lần quét
         const c = radarContact(viewer, u);
@@ -443,7 +526,8 @@ const TeamIntel = (() => {
   }
 
   return {
-    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, DRONE_SIGHT,
+    SIGHT, RADAR_RANGE, BUSH_SPOT, BUSH_RADAR, BUSH_COVER, DRONE_SIGHT, CANOPY_SPOT,
+    EYE_H, TGT_H, LOS_STEP, LOS_END, ELEV_K, ELEV_MAX, elevK, terrainBlocked, lineBlocked,
     bind, reset, bushCover, bushBanner, droneSees, update, knows, knowledge, report, hasRadar, radarRange, sightRange, seesDirect, radarContact, reportOf, drawOnMap, typeName,
     get time() { return time; },
     get reports() { return reports; }

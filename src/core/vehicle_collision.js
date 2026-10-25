@@ -233,6 +233,16 @@ const VehicleCollision = (() => {
         if (q > 0) { const g = d.base + (d.top - d.base) * Math.sqrt(q); if (g > h) { h = g; if (d.mat && outMat) outMat.mat = d.mat; } }
         continue;
       }
+      if (d.ridge) {
+        // thân cây nằm: gờ tròn dọc đoạn a -> b, bán kính & đỉnh nhỏ dần về phía ngọn. Khúc to hơn bậc leo của xe
+        // không thành mặt đỡ (bánh / xích không bò lên nổi) — nó chặn xe như vật cản (TreeField.vehicleBoxes)
+        if (d.ta > refY + step + 1 && d.tb > refY + step + 1) continue;
+        const sx = d.bx - d.ax, sz = d.bz - d.az, L2 = sx * sx + sz * sz || 1;
+        const t = Math.max(0, Math.min(1, ((x - d.ax) * sx + (z - d.az) * sz) / L2));
+        const ex = x - d.ax - sx * t, ez = z - d.az - sz * t, r = d.ra + (d.rb - d.ra) * t, q = 1 - (ex * ex + ez * ez) / (r * r);
+        if (q > 0) { const g = d.ta + (d.tb - d.ta) * t - r * (1 - Math.sqrt(q)); if (g > h) { h = g; if (outMat) outMat.mat = 'wood'; } }
+        continue;
+      }
       if (d.y1 <= h || d.y1 > refY + step + 1 || d.y0 > refY + step) continue;
       const tx = x - d.cx, tz = z - d.cz;
       if (Math.abs(tx * d.ux + tz * d.uz) <= d.hu && Math.abs(-tx * d.uz + tz * d.ux) <= d.hv) h = d.y1;
@@ -314,7 +324,60 @@ const VehicleCollision = (() => {
     return out;
   }
 
-  return { resolve, barrelDepth, barrelSegment, blockBoxes, blockDebris, debrisHeight, trackSupport, stepOf, hullBox, reach, obbPush };
+  // ---------------------------------------------------------------------------
+  // HÚC VẬT CÓ SỨC CHỊU (cây, tường rào, xác xe) — đơn vị SI: tấn -> kg, đv/s -> m/s (8 đv = 1 m)
+  // Lực xe dồn lên vật = lực kéo bám đất (μ·m·g: xe 60 tấn ~410 kN, 4x4 10 tấn ~60 kN) + lực va (động lượng theo
+  // pháp tuyến tiêu hết trong ~0,5 s vật oằn / gãy). impact: phần động lượng thành lực phá — mũi xe xích bọc thép dày = 1,
+  // đầu xe tải / 4x4 móp trước nên nhỏ hơn
+  // ---------------------------------------------------------------------------
+  const G_SI = 9.81, UNIT_M = 8, RAM_T = 0.5;
+  function tractive(unit) { return (unit.isWheeled ? 0.6 : 0.7) * (unit.mass || 40) * 1000 * G_SI; }
+  function ramForce(unit, vn, impact) {
+    const Fi = vn > 0 ? (unit.mass || 40) * 1000 * (vn / UNIT_M) / RAM_T * (impact === undefined ? 1 : impact) : 0;
+    return tractive(unit) + Fi;
+  }
+  // Tốc độ lăn thật / unit.speed (bùn, dốc, đống đổ nát: spg.js _terrainMul) — đà thật của xe tính theo tốc độ lăn thật
+  function rollMul(unit) { const m = unit._terrainMul; return m > 0 && m < 1.5 ? m : 1; }
+  // Tốc độ (unit.speed, giữ dấu) còn lại sau khi tiêu năng lượng E (J) để phá vật có lực chịu F (N). Lực kéo đã đủ phá vật
+  // (xe tì ép đổ): phần lớn công phá do động cơ đang đẩy làm, đà xe chỉ hụt ~1/3 — xe tăng bò chậm không khựng đứng ở
+  // mỗi nhịp tường; phải nhờ đà mới phá được (húc) thì đà trả trọn E
+  function speedAfter(unit, speed, E, F) {
+    if (F !== undefined && tractive(unit) >= F) E *= 0.35;
+    const k = rollMul(unit), v = Math.abs(speed) * k / UNIT_M, v2 = v * v - 2 * E / ((unit.mass || 40) * 1000);
+    return Math.sign(speed) * (v2 > 0 ? Math.sqrt(v2) : 0) * UNIT_M / k;
+  }
+  // Hộp thân xe trong thế giới khi tâm ở (x, z), hướng ang (như spgVehObb ở spg.js)
+  function vehObb(unit, x, z, ang, out) {
+    const B = hullBox(unit), ca = Math.cos(ang), sa = Math.sin(ang), o = out || {};
+    const lcx = (B.minX + B.maxX) / 2, lcz = (B.minZ + B.maxZ) / 2;
+    o.cx = x + lcx * ca + lcz * sa; o.cz = z - lcx * sa + lcz * ca; o.ux = ca; o.uz = -sa;
+    o.hu = (B.maxX - B.minX) / 2; o.hv = (B.maxZ - B.minZ) / 2;
+    return o;
+  }
+  // Vòng tròn (cx, cz, r) với hộp o: gap < 0 là chồng vào nhau; (nx, nz): pháp tuyến từ vật ra phía xe
+  function circleGap(o, cx, cz, r, out) {
+    const res = out || {};
+    const tx = cx - o.cx, tz = cz - o.cz, lu = tx * o.ux + tz * o.uz, lv = -tx * o.uz + tz * o.ux;
+    const cu = lu < -o.hu ? -o.hu : lu > o.hu ? o.hu : lu, cv = lv < -o.hv ? -o.hv : lv > o.hv ? o.hv : lv;
+    if (cu === lu && cv === lv) {
+      // tâm vật nằm trong hộp: đẩy ra theo mặt hộp gần nhất
+      const eu = o.hu - Math.abs(lu), ev = o.hv - Math.abs(lv);
+      if (eu < ev) { const s = lu >= 0 ? -1 : 1; res.nx = s * o.ux; res.nz = s * o.uz; res.gap = -(eu + r); }
+      else { const s = lv >= 0 ? -1 : 1; res.nx = -s * o.uz; res.nz = s * o.ux; res.gap = -(ev + r); }
+      return res;
+    }
+    const dx = o.cx + cu * o.ux - cv * o.uz - cx, dz = o.cz + cu * o.uz + cv * o.ux - cz, d = Math.hypot(dx, dz) || 1e-6;
+    res.nx = dx / d; res.nz = dz / d; res.gap = d - r;
+    return res;
+  }
+  // Tốc độ lăn thật của xe áp vào vật theo pháp tuyến n (từ vật ra phía xe), đv/s; <= 0: đang lùi xa / trượt ngang
+  function approach(unit, nx, nz) {
+    const a = unit.bodyAngle || 0, sp = (unit.speed || 0) * rollMul(unit);
+    return (Math.sin(a) * nx + Math.cos(a) * nz) * sp;
+  }
+
+  return { resolve, barrelDepth, barrelSegment, blockBoxes, blockDebris, debrisHeight, trackSupport, stepOf, hullBox, reach, obbPush,
+    tractive, ramForce, speedAfter, vehObb, circleGap, approach };
 })();
 
 if (typeof window !== 'undefined') window.VehicleCollision = VehicleCollision;

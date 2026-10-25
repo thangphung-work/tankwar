@@ -906,7 +906,7 @@
   const GUN_STREAM_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 }; // Đạn liên thanh: đồng bộ bằng cờ bắn
   const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z', WATER: 'W' };
   const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE', W: 'WATER' };
-  const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16;
+  const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16, F_CANOPY = 32;
 
   class NetGameSync {
     static attach(game, net, slots) {
@@ -1313,6 +1313,9 @@
       if (typeof d.bs === 'number') shell.burstSeed = d.bs >>> 0;
       shell.x = px; shell.y = py; shell.z = pz;
       shell.vx = vx; shell.vy = vy; shell.vz = vz;
+      // sơ tốc thật lúc rời nòng: mốc sức xuyên còn lại khi xuyên vật (ballistics penetrateEnv) — gán TRƯỚC khi bù trễ cho
+      // đạn bay trước (nếu không, lần cập nhật đầu lấy tốc độ đã giảm làm mốc -> máy này tính sức xuyên cao hơn máy bắn)
+      shell.pv0 = Math.hypot(vx, vy, vz);
       shell.timeAlive = 0;
       shell.travel = 0;
 
@@ -1431,6 +1434,8 @@
       if (u.isDead) f |= F_DEAD;
       // lưới ngụy trang đang che (đứng yên, chưa bắn, lưới không cháy / chưa mất): máy chủ thu tầm nhìn của địch
       if (!u.isDead && typeof Equipment !== 'undefined' && Equipment.camoHidden && Equipment.camoHidden(u)) f |= F_CAMO;
+      // đỗ dưới tán cây còn lá: máy chủ thu tầm soi của drone địch (server_auth CANOPY_SPOT)
+      if (!u.isDead && u.underCanopy) f |= F_CANOPY;
       return {
         x: Math.round(u.x * 10),                         // 0.1 đơn vị
         z: Math.round(u.z * 10),
@@ -1586,6 +1591,7 @@
       if (typeof d.nx === 'number') { m.nx = Math.round(d.nx * 100) / 100; m.nz = Math.round(d.nz * 100) / 100; }   // pháp tuyến tường bê tông (vết đạn)
       if (typeof d.ny === 'number') m.ny = Math.round(d.ny * 100) / 100;                                              // trúng sàn / mái nhà
       if (d.c) m.c = 1;                                                                                                  // đạn cháy 12.7mm (không phải 30mm)
+      if (d.m) m.m = 1;                                                                                                  // đạn 7.62mm súng máy nóc tháp (không phải 12.7)
       this.net.send('ENV_HIT', m);
     }
 
@@ -1622,13 +1628,15 @@
       this.net.send('SMOKE', { i: unit.netId, x: r.x, z: r.z, a: r.a, m: r.m || 3, k: r.k ? 1 : 0 });
     }
     // Xe 6 nòng ủi đất (game.js startDig / updateDig / endDig): o = 'f' lưỡi đang hạ (k: mức đắp, m: đang đẩy tới),
-    // 'b' bờ / luống đất cố định, 'p' hào, 'e' nâng lưỡi (keep: ụ trước lưỡi ở lại tại x, z, a)
+    // 'b' bờ / luống đất cố định, 'p' hào, 'e' nâng lưỡi (keep: ụ trước lưỡi ở lại tại x, z, a), 'r' lưỡi rời đống đất
+    // (lùi ra rồi tiến lệch hướng: đống cũ ở lại như 'e', lưỡi vẫn hạ & gom đống mới), 'a' hạ lưỡi tì vào đống cũ tại x, z
+    // (đẩy / vun lại ụ đã sụt thay vì đắp chồng đống mới)
     sendDig(m) {
       const P = this.game && this.game.player;
       if (this.detached || !m || !P || P.netId === undefined) return;
       const q = v => Math.round(v * 10) / 10, q3 = v => Math.round(v * 1000) / 1000;
       const o = { i: P.netId, o: m.o };
-      for (const k of ['x', 'z', 'L', 'W', 'H', 'r', 'd', 'e']) if (typeof m[k] === 'number') o[k] = q(m[k]);
+      for (const k of ['x', 'z', 'L', 'W', 'H', 'r', 'd', 'e', 's', 'dl', 'rl']) if (typeof m[k] === 'number') o[k] = q(m[k]);
       for (const k of ['a', 'ux', 'uz', 'k']) if (typeof m[k] === 'number') o[k] = q3(m[k]);
       for (const k of ['c', 'm', 'w', 'keep']) if (m[k] !== undefined) o[k] = m[k] | 0;
       this.net.send('DIG', o);
@@ -1637,7 +1645,8 @@
       if (this.detached || !d || !this.game || typeof this.game.onNetDig !== 'function') return;
       const u = this.byNetId[d.i];
       if (!u || this.ownerOf(u) !== from || u.tankType !== 'GATLING') return;
-      const need = { f: [], b: ['x', 'z', 'a', 'L', 'W', 'H', 'k'], p: ['x', 'z', 'r', 'ux', 'uz', 'd', 'e'], e: d.keep ? ['x', 'z', 'a', 'k'] : [] }[d.o];
+      const need = { f: [], b: ['x', 'z', 'a', 'L', 'W', 'H', 'k'], p: ['x', 'z', 'r', 'ux', 'uz', 'd', 'e'], e: d.keep ? ['x', 'z', 'a', 'k'] : [],
+        r: d.keep ? ['x', 'z', 'a', 'k'] : [], a: ['x', 'z', 'k'] }[d.o];
       if (!need || !need.every(k => Number.isFinite(d[k]))) return;
       if (d.o === 'b' && (d.L > 60 || d.W > 30 || d.H > 30)) return;
       if (d.o === 'p' && (d.r > 400 || d.d > 20 || d.e > 12)) return;

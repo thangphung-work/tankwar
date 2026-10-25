@@ -141,15 +141,18 @@ SoundEngine.mixin(class {
    * Gọi mỗi khung hình cho xe người chơi có vũ khí liên thanh.
    * ratio: tốc độ quay nòng 0..1 (đã làm mượt quán tính), isFiring: đang nhả đạn, heat: nhiệt nòng 0..1
    */
-  updateGatlingMotor(ratio, isFiring, heat = 0, overheated = false, tankType = 'GATLING') {
+  // shotHz: nhịp bắn thực của xe (spg.js gatlingShotHz, đã tính hư hại bộ tiếp đạn) — nhịp đập mô-tơ, tiếng gầm và tốc độ
+  // quay cụm nòng nhìn thấy cùng một nhịp (6 nòng: 1 vòng = 6 phát) -> nghe một tràng "brrrt" liền, không 2 nhịp chọi nhau
+  updateGatlingMotor(ratio, isFiring, heat = 0, overheated = false, tankType = 'GATLING', shotHz = 0) {
     if (!this.ctx || this.isMuted) return;
     const mm = this.ensureGatlingMotor();
     if (!mm) return;
     const t = this.ctx.currentTime;
     const rotary = tankType === 'GATLING';
+    const hz = shotHz > 0 ? shotHz : 30.3;
 
     const motorHz = 85 + ratio * 640;
-    const revPerSec = ratio * (rotary ? 8.28 : 6.05); // ~52 rad/s ~ 8.3 vòng/giây khớp tốc độ xả đạn mới
+    const revPerSec = ratio * (rotary ? hz / 6 : 6.05);
     mm.m1.frequency.setTargetAtTime(motorHz, t, 0.04);
     mm.m2.frequency.setTargetAtTime(motorHz * 0.503, t, 0.04);
     mm.mf.frequency.setTargetAtTime(motorHz * 1.7, t, 0.04);
@@ -161,7 +164,7 @@ SoundEngine.mixin(class {
     mm.hg.gain.setTargetAtTime(hiss, t, 0.15);
 
     // Gầm tràng đạn: bật nhanh khi nhả đạn, tần số đồng bộ với tốc độ xả đạn dồn dập mới (~30.3 phát/giây)
-    mm.roarLfo.frequency.setTargetAtTime(tankType === 'SCOUT' ? 18.2 : 30.3, t, 0.05);
+    mm.roarLfo.frequency.setTargetAtTime(tankType === 'SCOUT' ? 18.2 : hz, t, 0.05);
     mm.roarGain.gain.setTargetAtTime(isFiring ? (rotary ? 0.14 : 0.05) : 0, t, isFiring ? 0.03 : 0.12);
 
     if (mm.firing && !isFiring && mm.burstShots >= 4) {

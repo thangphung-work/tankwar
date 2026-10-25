@@ -78,6 +78,10 @@ const Dispersion = (() => {
   const AIR_K = 0.4, AIR_K_MG = 0.45;
   // bám bắn drone: tháp lia đều theo mục tiêu, không phải giật tháp đổi mục tiêu -> chỉ tính 35% phạt quay tháp
   const AIR_TURN_K = 0.35;
+  // góc nòng (độ) từ đó đạn liên thanh tính là bắn trời (drone). Phải suy được từ hướng viên đạn: máy khác trong trận tự rải
+  // lại chùm đạn theo hạt giống (không biết xe bắn đang bám gì). 8° trước đây: drone bay thấp ở xa (nòng ngóc 6-8°) bị tính
+  // như bắn xe — tản rộng hơn ~1.4 lần, chịu đủ phạt quay tháp khi bám drone bay ngang. Bắn xe mặt đất hiếm khi ngóc > 5°
+  const AIR_EL = 5;
 
   // ẢNH HƯỞNG CỦA CHUYỂN ĐỘNG theo dòng xe (pháo tăng có ổn định pháo 2 trục -> ít bị ảnh hưởng nhất):
   //  move   : hệ số theo tốc độ (tỉ lệ so với tốc độ tối đa của xe) — chạy hết tốc: σ x (1 + move)
@@ -225,7 +229,7 @@ const Dispersion = (() => {
     const a = ammo !== undefined ? ammo : (u && u.selectedAmmo), el = elevation !== undefined ? elevation : (u && u.elevation);
     const P = profileFor(u, a, el);
     const stream = P === PROFILE.SCOUT_BULLET || P === PROFILE.SCOUT_INCENDIARY || P === PROFILE.GATLING_BULLET || P === PROFILE.INCENDIARY;
-    const m = multiplier(u, bs, stream && el > 8);
+    const m = multiplier(u, bs, stream && el > AIR_EL);
     const r = rangeMul(u, a, P, range);
     if (P === ARTY_LOB) return { lat: P.defl * 1e-3 * m * r, vert: P.el * 1e-3 * m * r, mv: P.mv * m * r, lob: true, mul: m, rmul: r };
     // pháo tăng nòng dài có ổn định + máy tính hỏa lực: tỉ lệ game riêng nhỏ hơn (GUN_SCALE) và lệch dọc nhỏ hơn lệch
@@ -236,7 +240,7 @@ const Dispersion = (() => {
     // Súng liên thanh bắn lên trời (chống drone, nòng > 8°): σ x16 theo tỉ lệ "xe nhìn to như ở cự ly x16" làm chùm đạn
     // ~±24 đv ở 1000 đv quanh drone bán kính trúng 4,5 đv -> mỗi viên ~2%, xả hết băng không rơi nổi một chiếc.
     // Drone không bị nén theo tỉ lệ thân xe như mục tiêu mặt đất -> giảm còn 40% (~10%/viên ở 1000 đv, ~35% ở 500 đv)
-    if (stream && el > 8) {
+    if (stream && el > AIR_EL) {
       // xe 6 nòng có radar & máy tính hỏa lực phòng không (radar hỏng: như súng thường); súng máy 12.7mm trên giá: kém hơn rõ
       const ak = (P === PROFILE.GATLING_BULLET || P === PROFILE.INCENDIARY) && !(u && u.dmg && u.dmg.lost && u.dmg.lost.has && u.dmg.lost.has('aaRadar')) ? AIR_K : AIR_K_MG;
       const s = P.mil * SCALE * ak * 1e-3 * m * r;

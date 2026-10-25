@@ -177,9 +177,14 @@ class TankInspector {
 
   // Dựng 1 xe mới đứng trên bệ: đúng màu sơn + bộ trang bị đang lắp, đạn đặc biệt không giới hạn
   createPreviewUnit(tankType, team, fol = this.foliageKey()) {
+    // Mỗi dòng xe / phe giữ một vẻ ngoài suốt phiên: đổi trang bị dựng lại xe nhưng vết hao mòn, số hiệu, bùn đất y nguyên
+    const seeds = this._lookSeeds || (this._lookSeeds = {});
+    const sk = tankType + '|' + team;
+    if (seeds[sk] == null) seeds[sk] = (Math.random() * 1e9) | 0;
     const u = new SPGUnit3D(this.scene, {
       tankType: tankType,
       team: team,
+      lookSeed: seeds[sk],
       isPlayer: true,
       x: 0,
       z: 0,

@@ -43,16 +43,24 @@ const KamiUAV = (() => {
     boost: 170,       // giữ Shift
     minV: 95, maxV: 300,   // chậm hơn minV thì thất tốc chúc mũi; lao dốc tối đa
     turn: 1.05,       // tốc độ rẽ khi nghiêng cánh hết cỡ (rad/s)
+    // rẽ phối hợp: góc nghiêng phải đủ để lực nâng bẻ hướng bay — tan(nghiêng) = tốc độ rẽ x tốc độ ngang / g
+    // (bay thường 1,05 rad/s cần nghiêng ~61°). Khung chịu tối đa bankMax: bay nhanh hơn thì vòng rẽ rộng ra
+    g: 78,            // gia tốc trọng trường (đv/s², 8 đv = 1 m)
+    bankMax: 1.22,    // nghiêng tối đa khi lái tay / lượn (rad, ~70°, ~2,9 g)
+    attackBank: 1.31, // tự lái lao vào mục tiêu được bẻ gắt hơn chút (rad, ~75°)
     pitchRate: 1.0,   // tốc độ chúc / ngóc mũi (rad/s)
     pitchMin: -1.35, pitchMax: 0.55,
     ceiling: 650,     // trần bay trên mặt đất (đv)
-    loiterR: 110,     // bán kính lượn vòng chờ lệnh khi đóng màn hình (đv)
+    loiterBank: 0.6,  // lượn vòng chờ lệnh khi đóng màn hình: nghiêng ~34° -> vòng bán kính ~340 đv (~43 m) ở tốc độ bay thường
+    loiterAlt: 120,   // ... giữ tối thiểu bấy nhiêu đv trên mặt đất
     lockR: 1300, lockCone: 0.2,   // khóa mục tiêu: cự ly / lệch tâm màn hình tối đa (rad)
     assistR: 260, assistCone: 0.35, assist: 0.9,   // đầu dò kéo mũi lúc lao sát mục tiêu đã khóa
     clickPx: 60,      // click cách xe bấy nhiêu px (hoặc trong khung vuông của xe) là khóa được
     attackTurn: 1.6, attackPitch: 2.0,   // tự lao vào mục tiêu: tốc độ bẻ hướng / chúc mũi tối đa (rad/s)
     diveLos: 0.8,     // tự lao: bay bằng tới khi mục tiêu nằm dưới góc này (rad, ~46°) rồi chúc đầu bổ nhào xuống
     attackLead: 3,    // đón đầu xe đang chạy tối đa bấy nhiêu giây bay
+    termR: 260,       // pha lao cuối: đã chúc đầu bổ nhào hoặc cách mục tiêu dưới bấy nhiêu đv -> đầu dò quang học trên UAV
+                      // tự bám, mất liên lạc (phá sóng) cũng không bỏ khóa / không mất điều khiển
     jamLose: 1.6,     // nằm trong chùm phá sóng bấy nhiêu giây thì mất điều khiển hẳn
     omniLose: 0.7,    // ... trong vùng nhiễu vô hướng quanh xe lắp máy gây nhiễu (ew_jammer.js OMNI_R, sát xe — nhiễu mạnh hơn)
     gimbalCone: 1.35, // camera mũi xoay đa hướng theo con trỏ trong hình nón (nửa góc, rad)
@@ -83,6 +91,10 @@ const KamiUAV = (() => {
     return shell;
   }
   const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+  // góc nghiêng cánh của vòng rẽ phối hợp: tốc độ rẽ w (rad/s, dương = yaw tăng) ở tốc độ ngang vh (đv/s), chặn ±max
+  const bankFor = (w, vh, max) => { const m = max || C.bankMax, b = Math.atan(w * vh / C.g); return b > m ? m : b < -m ? -m : b; };
+  // tốc độ rẽ do góc nghiêng roll sinh ra (ngược của bankFor)
+  const turnOf = (roll, vh) => C.g * Math.tan(Math.max(-1.45, Math.min(1.45, roll))) / Math.max(40, vh);
 
   // ---------- MÔ HÌNH (đạn bay lảng vảng cánh gập: thân trụ, 2 cặp cánh gập dọc thân bung ra, đuôi đứng gập ngang dựng
   // lên, động cơ tên lửa đẩy ở đuôi có loa phụt + lửa phụt, camera mũi, khoang đầu nổ lõm). Trong ống: cánh / đuôi gập
@@ -227,7 +239,7 @@ const KamiUAV = (() => {
       P.kamikazeCount--;
       const T = this.kamiTubeWorld(P);
       D.state = 'launching'; D.launchT = 0; D.fuel = 1; D.batt = 1; D.hp = 1; D.dive = null; D.fall = null; D.warned = 0;
-      D.thr = 0; D.kjam = 0; D.lock = null; D.boost = false; D.ignited = false; D.loop = null; D.trailP = null; D.gy = 0; D.gp = 0; D.gyT = D.gpT = undefined; D.attack = null;
+      D.thr = 0; D.kjam = 0; D.lock = null; D.boost = false; D.ignited = false; D.trailP = null; D.gy = 0; D.gp = 0; D.gyT = D.gpT = undefined; D.attack = null;
       D._apsTried = null;   // quả mới: radar APS của xe địch xét lại từ đầu
       if (D.model && D.model.userData.kami) for (const W of D.model.userData.kami.wings) W.w.visible = true;   // quả mới: đủ cánh
       // UAV gập cánh nằm trong ống: trượt ra khỏi miệng ống trong vài phần trăm giây đầu
@@ -436,14 +448,26 @@ const KamiUAV = (() => {
       D.thr = D.boost ? 1 : 0.7;
       const kr = 1 - Math.exp(-dt * 5);
       const gY = gr(D.x, D.z);
+      const vh = Math.max(40, D.v * Math.cos(D.pitch));   // tốc độ ngang: bổ nhào dốc thì rẽ cần nghiêng ít hơn
       if (inp.aim) {
         const dyaw = wrap(inp.aim.yaw - D.yaw), my = C.attackTurn * dt, mp = C.attackPitch * dt;
-        D.yaw = wrap(D.yaw + Math.max(-my, Math.min(my, dyaw)));
-        D.roll = (D.roll || 0) + (Math.max(-0.65, Math.min(0.65, dyaw * 1.5)) - (D.roll || 0)) * kr;   // nghiêng cánh theo cú bẻ (cùng chiều lái tay)
+        const dy = Math.max(-my, Math.min(my, dyaw));
+        D.yaw = wrap(D.yaw + dy);
+        // nghiêng cánh đúng bằng góc cú bẻ thực tế cần (cùng chiều lái tay)
+        D.roll = (D.roll || 0) + (bankFor(dt > 0 ? dy / dt : 0, vh, C.attackBank) - (D.roll || 0)) * kr;
         D.pitch += Math.max(-mp, Math.min(mp, inp.aim.pitch - D.pitch));
+      } else if (inp.loiter) {
+        // lượn chờ: nghiêng cánh dần vào vòng, rẽ từ hướng đang bay (không giật mũi); ngóc / chúc dần về góc giữ độ cao
+        const mp = C.attackPitch * dt;
+        D.roll = (D.roll || 0) + (-C.loiterBank - (D.roll || 0)) * kr;
+        D.yaw = wrap(D.yaw + turnOf(D.roll, vh) * dt);
+        D.pitch += Math.max(-mp, Math.min(mp, inp.loiter.pitch - D.pitch));
       } else {
-        D.roll = (D.roll || 0) + (-inp.turn * 0.65 - (D.roll || 0)) * kr;
-        D.yaw = wrap(D.yaw + (D.roll / 0.65) * C.turn * dt);
+        // nghiêng hết cỡ = góc cần cho tốc độ rẽ C.turn ở tốc độ này (chặn bankMax); tốc độ rẽ sinh ra từ góc nghiêng —
+        // ấn phím thì cánh nghiêng dần rồi mới vào cua
+        const bm = bankFor(C.turn, vh);
+        D.roll = (D.roll || 0) + (Math.max(-C.bankMax, Math.min(C.bankMax, -inp.turn * bm)) - (D.roll || 0)) * kr;
+        D.yaw = wrap(D.yaw + turnOf(D.roll, vh) * dt);
         D.pitch += inp.pitch * C.pitchRate * dt;
         // thả phím: giữ nguyên góc chúc (canh mũi vào xe không bị trôi), chỉ góc ngóc tự cân về bằng rất chậm
         // (dưới độ cao an toàn thì giữ cả góc ngóc: vừa phóng / vừa kéo lên khỏi đất cứ leo tiếp)
@@ -566,8 +590,10 @@ const KamiUAV = (() => {
             const los = Math.atan2(ay, Math.hypot(ax, az)), low = D.y - gr(D.x, D.z) < 50;
             inp.aim = { yaw: Math.atan2(-ax, -az), pitch: los < -C.diveLos ? los : Math.max(los, low ? 0.2 : 0) };
             inp.boost = true;
-            // bị phá sóng: lệnh dẫn đường mất từng lúc, mũi giật
-            const E = D.emiT > 0 && D._emi;
+            // pha lao cuối (đã bổ nhào / đã sát mục tiêu): đầu dò quang học trên UAV tự bám — giữ tới khi hủy lao
+            if (!D.attack.term && (los < -C.diveLos || dl < C.termR)) D.attack.term = true;
+            // bị phá sóng: lệnh dẫn đường mất từng lúc, mũi giật (pha lao cuối không cần liên lạc: không ảnh hưởng)
+            const E = D.emiT > 0 && !D.attack.term && D._emi;
             if (E) { if (E.drop) inp.aim = null; else { inp.aim.yaw += E.turn * 0.15; inp.aim.pitch += E.pitch * 0.15; } }
           } else if (dl < C.assistR) {
             const sp = D.v || 1, a = Math.acos(Math.max(-1, Math.min(1, (dx * D.vx + dy * D.vy + dz * D.vz) / (dl * sp))));
@@ -750,7 +776,7 @@ const KamiUAV = (() => {
       if (this._sightHdgEl) set(this._sightHdgEl, String(Math.round(((Math.atan2(-Math.sin(D.yaw), Math.cos(D.yaw)) * 180 / Math.PI) + 360) % 360) % 360).padStart(3, '0') + '°');
       if (this._sightRangeEl) set(this._sightRangeEl, Math.round((D.v || 0) / 8 * 3.6) + ' KM/H');
       const L = D.lock && !D.lock.isDead ? D.lock : null;
-      if (this._sightStateEl) set(this._sightStateEl, D.fall ? (D.fall.wing ? '⚠ GÃY CÁNH — MẤT CÂN BẰNG' : D.fall.jam ? '⚠ MẤT ĐIỀU KHIỂN — NHIỄU ĐIỆN TỪ' : '⚠ HẾT NHIÊN LIỆU — ĐANG RƠI') : L ? (D.attack ? 'ĐANG LAO VÀO ' : 'ĐÃ KHÓA ') + (L.name || 'XE ĐỊCH') : 'CHƯA KHÓA · CLICK VÀO XE ĐỂ KHÓA');
+      if (this._sightStateEl) set(this._sightStateEl, D.fall ? (D.fall.wing ? '⚠ GÃY CÁNH — MẤT CÂN BẰNG' : D.fall.jam ? '⚠ MẤT ĐIỀU KHIỂN — NHIỄU ĐIỆN TỪ' : '⚠ HẾT NHIÊN LIỆU — ĐANG RƠI') : L ? (D.attack ? (D.attack.term && D.emiT > 0 ? 'MẤT LIÊN LẠC · ĐẦU DÒ TỰ BÁM ' : 'ĐANG LAO VÀO ') : 'ĐÃ KHÓA ') + (L.name || 'XE ĐỊCH') : 'CHƯA KHÓA · CLICK VÀO XE ĐỂ KHÓA');
       const deg = (a) => Math.round(Math.abs(a || 0) * 180 / Math.PI);
       const cTxt = (D.gy || D.gp) ? 'CAMERA ' + (D.gy > 0 ? 'PHẢI ' : 'TRÁI ') + deg(D.gy) + '° · ' + (D.gp > 0 ? 'NGÓC ' : 'CHÚC ') + deg(D.gp) + '°' : 'CAMERA THẲNG MŨI';
       if (this._sightBlastEl) set(this._sightBlastEl, cTxt + ' · ĐẦU NỔ LÕM ' + C.blast.radius + ' M');
@@ -1026,7 +1052,9 @@ const KamiUAV = (() => {
         D.batt = D.fuel;   // máy khác / HUD chung đọc batt
         // máy phá sóng: nằm trong chùm (ew_jammer.js giữ D.emiT ~0.6) đủ lâu thì mất điều khiển hẳn
         if (D.emiT > 0.3) D.kjam = (D.kjam || 0) + dt; else D.kjam = Math.max(0, (D.kjam || 0) - dt);
-        if (D.kjam >= (D.jamOmni ? C.omniLose : C.jamLose)) {
+        // pha lao cuối: đầu dò tự bám mục tiêu đã khóa, mất liên lạc không làm mất điều khiển (hủy lao thì nhiễu tác dụng lại)
+        const term = !!(S && D.attack && D.attack.term && D.lock && !D.lock.isDead);
+        if (!term && D.kjam >= (D.jamOmni ? C.omniLose : C.jamLose)) {
           D.fall = { t: 0, spin: Math.random() < 0.5 ? -1 : 1, jam: true };
           D.lock = null; D.attack = null;
           // mất liên lạc giữa lúc lao: cánh lái giật lệch hẳn khỏi hướng đang lao -> trượt khỏi xe, cắm xuống đất bên cạnh
@@ -1053,22 +1081,18 @@ const KamiUAV = (() => {
         show(1);
         return;
       }
-      // màn hình đóng: lượn vòng tròn quanh chỗ đang bay chờ lệnh, nghiêng cánh vào tâm, giữ độ cao (máy khác vẫn thấy)
-      D.boost = false; D.thr = 0.7;
-      if (!D.loop || Math.hypot(D.x - D.loop.cx, D.z - D.loop.cz) > C.loiterR * 1.5) {
-        const a0 = Math.atan2(D.z, D.x);
-        D.loop = { cx: D.x - Math.cos(a0) * C.loiterR, cz: D.z - Math.sin(a0) * C.loiterR, a: a0 };
-      }
-      const w = C.cruise / C.loiterR;
-      D.loop.a += w * dt;
-      const nx = D.loop.cx + Math.cos(D.loop.a) * C.loiterR, nz = D.loop.cz + Math.sin(D.loop.a) * C.loiterR;
+      // màn hình đóng: bộ lái tự động lượn vòng chờ lệnh — nghiêng cánh dần vào vòng từ hướng đang bay (không giật mũi sang
+      // tiếp tuyến), tốc độ về bay thường, ngóc / chúc dần giữ độ cao; vẫn đâm xe / nhà / cây / đất như lúc lái (máy khác vẫn thấy)
       const gY = this.terrain ? this.terrain.getElevationAt(D.x, D.z) : 0;
-      const vy = Math.max(-15, Math.min(22, (Math.max(D.y, gY + 120) - D.y) * 0.8));
-      D.vx = (nx - D.x) / dt; D.vz = (nz - D.z) / dt; D.vy = vy;
-      D.x = nx; D.z = nz; D.y += vy * dt;
-      D.yaw = Math.atan2(-D.vx, -D.vz);
-      D.roll = -0.42;   // nghiêng cánh vào tâm vòng lượn
-      D.v = Math.hypot(D.vx, D.vz); D.pitch = 0;
+      const vyT = Math.max(-15, Math.min(22, (Math.max(D.y, gY + C.loiterAlt) - D.y) * 0.8));
+      const ax = D.x, ay = D.y, az = D.z;
+      this.kamiFly(dt, D, { turn: 0, pitch: 0, boost: false, loiter: { pitch: Math.asin(Math.max(-1, Math.min(1, vyT / Math.max(60, D.v || C.cruise)))) } });
+      if (this.kamiApsCheck(D, dt)) return;
+      const U = this.kamiHitUnit(D, ax, ay, az);
+      if (U) { this.kamiDetonate(D, U); return; }
+      if (this.kamiCrash(D, ax, ay, az)) return;
+      this.kamiWingStrike(D, ax, ay, az);
+      if (this.kamiGroundHit(D, ax, ay, az)) { this.kamiDetonate(D, null); return; }
       show(1);
     }
   };
@@ -1148,7 +1172,7 @@ const KamiUAV = (() => {
     }
   }
 
-  return { C, build, animate, methods, fireWarhead };
+  return { C, build, animate, methods, fireWarhead, bankFor };
 })();
 
 if (typeof window !== 'undefined') window.KamiUAV = KamiUAV;

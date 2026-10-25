@@ -160,7 +160,7 @@ SoundEngine.mixin(class {
   // opts.heavy: đạn pháo 155mm (~6.6 kg thuốc nổ, gấp ~2.5 lần đạn HE 120mm của xe tăng) -> nổ to, trầm, dài hơn hẳn
   playExplosionAtDistance(distance, hitType = 'GROUND', ammoType = 'NORMAL', pos = null, opts = {}) {
     if (!this.ready()) return;
-    this._hitMat = hitType === 'BUILDING' && opts ? opts.mat : undefined;   // vật liệu tường nhà -> surfaceHit
+    this._hitMat = (hitType === 'BUILDING' || hitType === 'BOULDER') && opts ? opts.mat : undefined;   // vật liệu tường nhà / vật cản thép -> surfaceHit
     if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY') {
       this.playGatlingImpact(distance, hitType, ammoType === 'INCENDIARY', pos, ammoType === 'SCOUT_BULLET', opts);   // opts.thin: xe vỏ mỏng
       return;

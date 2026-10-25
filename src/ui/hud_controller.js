@@ -295,19 +295,24 @@ class HUDController {
     const p = this.game.player;
     const ammos = p.availableAmmos || ['NORMAL', 'AP', 'HE'];
     const artyHe = p.tankType === 'ARTILLERY';
+    // cơ số đạn mang theo mỗi lần xuất kích (AmmoLoad): đạn thường / băng / hộp — xe không đếm (phòng thử): ∞
+    const AL = typeof AmmoLoad !== 'undefined' ? AmmoLoad : null;
+    const base = AL ? AL.left(p, 'main') : Infinity;
+    // súng băng: số viên trên súng + cơ số (làm tròn chục cho khỏi dựng lại ô mỗi viên)
+    const belt = () => { const t = base + (p.gatlingMag || 0); return t === Infinity || t < 100 ? t : Math.floor(t / 10) * 10; };
 
     // Tên ngắn, số lượng, màu nhận diện của từng loại đạn
     const info = (type) => {
       switch (type) {
         case 'AP': return { name: 'XUYÊN GIÁP', qty: p.apAmmoCount || 0, color: '#3cc8ff' };
-        case 'HE': return { name: 'NỔ MẠNH', qty: artyHe && !(p.heAmmoCount > 0) ? Infinity : (p.heAmmoCount || 0), color: '#ffb020' };
+        case 'HE': return { name: 'NỔ MẠNH', qty: artyHe && !(p.heAmmoCount > 0) ? base : (p.heAmmoCount || 0), color: '#ffb020' };
         case 'CLUSTER': return { name: 'ĐẠN CHÙM', qty: p.clusterAmmoCount || 0, color: '#5cf08a' };
         case 'INCENDIARY': return { name: 'ĐẠN CHÁY', qty: p.incendiaryAmmoCount || 0, color: '#ff6a2b' };
         case 'ANTI_TANK_MISSILE': return { name: 'TÊN LỬA', qty: p.missileAmmoCount || 0, color: '#ff8c42' };
-        case 'GATLING_BULLET': return { name: '30MM', qty: Infinity, color: '#ffd166' };
-        case 'SCOUT_BULLET': return p.mainGun && p.mainGun.kind === 'agl' ? { name: 'LỰU 40MM', qty: Infinity, color: '#e8b36a' }
-          : p.mainGun && p.mainGun.kind === 'rocket' ? { name: 'ROCKET', qty: Infinity, color: '#ff8c42' } : { name: '12.7MM', qty: Infinity, color: '#ffd166' };
-        default: return { name: 'THƯỜNG', qty: Infinity, color: '#e4edf2' };
+        case 'GATLING_BULLET': return { name: '30MM', qty: belt(), color: '#ffd166' };
+        case 'SCOUT_BULLET': return p.mainGun && p.mainGun.kind === 'agl' ? { name: 'LỰU 40MM', qty: belt(), color: '#e8b36a' }
+          : p.mainGun && p.mainGun.kind === 'rocket' ? { name: 'ROCKET', qty: belt(), color: '#ff8c42' } : { name: '12.7MM', qty: belt(), color: '#ffd166' };
+        default: return { name: 'THƯỜNG', qty: base, color: '#e4edf2' };
       }
     };
 
@@ -324,7 +329,7 @@ class HUDController {
       const S = p._rcws, cfg = typeof DroneAir !== 'undefined' && DroneAir.roofCfg ? DroneAir.roofCfg(p) : { mag: 200 };
       const RW = { agl: ['PHÓNG LỰU', '#e8b36a'], atgm: ['ĐỘT NÓC', '#ff8c42'] }[p.roofWeapon] || ['SÚNG MÁY', '#c8d6a0'];
       const lostRoof = p.dmg && p.dmg.lost && p.dmg.lost.has(p._roofTag || 'rcws');
-      const qty = lostRoof ? 'HỎNG' : S ? (S.reload > 0 ? 'NẠP' : S.mag) : cfg.mag;
+      const qty = lostRoof ? 'HỎNG' : S ? (S.reload > 0 ? 'NẠP' : S.mag <= 0 && AL && !(AL.left(p, 'roof') > 0) ? 'HẾT' : S.mag) : cfg.mag;
       list.push({ type: 'MG762', name: RW[0], qty, color: RW[1], mg: true, key: 4 });
     }
     // Xe tăng: ô [4] máy phá sóng chống UAV — đang phát: giây còn lại; tắt: % pin (dưới mức bật được thì "SẠC")

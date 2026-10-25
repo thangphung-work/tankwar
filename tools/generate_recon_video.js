@@ -11,8 +11,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const os = require('os');
 
-const ROOT_DIR = 'H:\\tankwar';
+const ROOT_DIR = path.resolve(__dirname, '..');
 const ASSETS_DIR = path.join(ROOT_DIR, 'assets');
 
 const MAP_LIST = ['URBAN', 'DESERT', 'JUNGLE', 'HIGHLAND', 'RIVER_LAKE'];
@@ -120,7 +121,7 @@ async function recordMap(chromePath, port, mapName) {
   console.log(`[RECORDER] Bắt đầu quay Flycam 360 căn cứ chiến lược: ${mapName}`);
   console.log(`==================================================`);
 
-  // Tốc độ quay chậm rãi, mượt mà 60 FPS: 24 giây trọn 1 vòng
+  // Tour quay sẵn căn cứ -> A -> B -> C, phát trong màn chờ thay tour 3D đầu trận.
   const url = `http://127.0.0.1:${port}/tools/recon_recorder.html?map=${mapName}&dur=45.0&auto=1`;
   const fileName = `recon_${mapName.toLowerCase()}.webm`;
   const targetFilePath = path.join(ASSETS_DIR, fileName);
@@ -128,6 +129,8 @@ async function recordMap(chromePath, port, mapName) {
   const startTime = Date.now();
 
   const chromeArgs = [
+    '--headless=new',
+    `--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'tankwar-recon-'))}`,
     `--app=${url}`,
     '--window-size=960,540',
     '--enable-webgl',
@@ -141,7 +144,7 @@ async function recordMap(chromePath, port, mapName) {
     '--force-device-scale-factor=1'
   ];
 
-  const browserProc = spawn(chromePath, chromeArgs, { stdio: 'ignore' });
+  const browserProc = spawn(chromePath, chromeArgs, { stdio: 'ignore', windowsHide: true });
 
   return new Promise((resolve) => {
     let checkInterval = setInterval(() => {
@@ -165,7 +168,7 @@ async function recordMap(chromePath, port, mapName) {
       console.warn(`[RECORDER] Hết thời gian chờ quay bản đồ ${mapName}`);
       try { browserProc.kill(); } catch (e) {}
       resolve(false);
-    }, 55000); // 55 giây đủ cho 24s quay 60 FPS + tải + nạp
+    }, 180000); // chờ dựng đủ cảnh trước khi quay; máy yếu có thể cần hơn 55 giây
   });
 }
 
@@ -182,8 +185,9 @@ async function main() {
   const { server, port } = await createTempServer(8765);
   console.log(`[RECORDER] Máy chủ ghi hình hoạt động tại: http://127.0.0.1:${port}`);
 
+  const failed = [];
   for (const mapName of targetMaps) {
-    await recordMap(chromePath, port, mapName);
+    if (!await recordMap(chromePath, port, mapName)) failed.push(mapName);
   }
 
   const urbanPath = path.join(ASSETS_DIR, 'recon_urban.webm');
@@ -192,10 +196,11 @@ async function main() {
     fs.copyFileSync(urbanPath, briefingPath);
   }
 
-  console.log(`\n[RECORDER] TẤT CẢ VIDEO FLYCAM CĂN CỨ ĐÃ HOÀN TẤT VÀ ĐƯỢC LƯU TẠI THƯ MỤC assets/`);
+  if (failed.length) console.error('[RECORDER] Chưa xuất được: ' + failed.join(', '));
+  else console.log(`\n[RECORDER] TẤT CẢ VIDEO FLYCAM CĂN CỨ ĐÃ HOÀN TẤT VÀ ĐƯỢC LƯU TẠI THƯ MỤC assets/`);
 
   server.close(() => {
-    process.exit(0);
+    process.exit(failed.length ? 1 : 0);
   });
 }
 

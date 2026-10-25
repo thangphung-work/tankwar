@@ -4,8 +4,10 @@
  * - Khoang bê tông dạng xuyên qua (2 đầu đều mở) chôn dưới ụ đất trên đỉnh đồi, đủ chỗ 2 xe đứng song song
  * - Lòng khoang võng xuống (sàn thấp hơn cốt nền 1.75 m): thân xe nằm khuất, chỉ tháp pháo cao hơn mặt đất
  * - Hai đầu có tường cánh loe rộng -> nòng pháo quét được góc rộng mà không chạm tường
- * - Bê tông + ụ đất KHÔNG bị phá bởi đạn thường; xe nằm trong khoang có mái che không nhận sát thương.
- *   Phần xe thò ra khỏi mép mái (vùng bảo vệ) thì bị bắn trúng và mất máu bình thường.
+ * - Tường bên / sàn / ụ đất không bị phá; mái (bê tông 3,25 m dưới 1 m đất) & tường cánh chỉ sập khi bị dội rất nhiều đạn
+ *   lớn vào một chỗ (lựu pháo 155 ~80 phát một ô mái). Che chắn theo HÌNH KHỐI THẬT: mái / tường / gờ chặn đạn & mảnh văng;
+ *   đạn bắn thẳng qua miệng hầm mở trúng xe bên trong, quả nổ trong lòng hầm / trước miệng hầm tới được phần xe nhìn thấy nó
+ *   (exposure với điểm nổ). Ô mái sập đè lên xe bên dưới.
  * - Nòng pháo không thể xuyên qua bê tông / ụ đất: tháp dừng ở mép tường, nòng tự hạ khi chạm trần
  *
  * Hệ tọa độ cục bộ mỗi cứ điểm: f dọc trục xuyên qua (hướng angle), r vuông góc, y tính từ cốt nền G.
@@ -435,7 +437,7 @@ bool shInHole(vec3 wp, vec3 wn) {
   // [bán kính, độ sâu] hố theo loại đạn trên bê tông cường độ cao: hố đục đanh gọn, không bị toét rộng
   const CRATER = {
     // 30mm nổ-mảnh: mỗi phát mẻ ~20 cm sâu ~9 cm; dồn vào hố cũ thì sâu thêm (xem addCrater)
-    SCOUT_BULLET: [0.65, 0.25], INCENDIARY_HMG: [0.65, 0.25], INCENDIARY: [1.4, 0.7], GATLING_BULLET: [1.5, 0.75],
+    SCOUT_BULLET: [0.65, 0.25], INCENDIARY_HMG: [0.65, 0.25], MG762: [0.45, 0.15], INCENDIARY: [1.4, 0.7], GATLING_BULLET: [1.5, 0.75],
     // đạn xuyên / đầu nổ lõm: miệng nhỏ đanh gọn, lõi khoan hẹp sâu vào bê tông mác cao
     AP: [1.0, 5.2], RPG: [1.3, 4.4], ANTI_TANK_MISSILE: [1.6, 5.5],
     CLUSTER_SUBMUNITION: [1.7, 0.8], CLUSTER: [2.6, 1.1], NORMAL: [3.4, 1.5], HE: [4.8, 2.1]
@@ -491,15 +493,21 @@ bool shInCut(vec3 wp) {
   const PANEL_R = [-70, -32, 32, 70];
   // các tầng mặt vỡ theo bề dày bản mái (tỉ lệ ROOF)
   const FR_LV = [0, 0.18, 0.36, 0.55, 0.74, 1];
-  // máu ô mái theo số phát pháo tăng (đạn nổ thường = 1): bê tông cường độ cao ô đầu hầm 15, ô giữa 20 phát
-  const PANEL_HP = [15, 20, 20, 20, 20, 15];
-  // TƯỜNG CÁNH (tường chắn đất bê tông cốt thép dày 2,25 m loe 2 bên mỗi đầu hầm): tăng độ bền kết cấu
-  const WING_SEG = 3, WING_HP = [22, 16, 10], SLUMP_IN = 14;
+  // máu ô mái theo số phát pháo tăng nổ thường (= 1) trúng thẳng mặt bê tông. Bản mái bê tông cốt thép dày 3,25 m dưới 1 m đất:
+  // đạn 120 mm nổ chạm chỉ bóc hố ~25-35 cm mỗi phát (công thức phá vật cản FM 5-34) — sập cả ô 4 x 5 m cần đục thủng nhiều chỗ
+  // qua 3 m bê tông: hàng trăm phát 120 mm; lựu pháo 155 dội tập trung ~70-90 phát trúng nóc một ô (đất phủ đỡ bớt).
+  // Trước đây 15-20 (sập sau ~20 phát 120 mm / ~10 phát 155) — mỏng như một bản sàn nhà
+  const PANEL_HP = [120, 160, 160, 160, 160, 120];
+  // TƯỜNG CÁNH (tường chắn đất bê tông cốt thép dày 2,25 m loe 2 bên mỗi đầu hầm, đất đắp phía sau): đoạn gần miệng hầm cao,
+  // dày đất đỡ nhất, đoạn cuối thấp
+  const WING_SEG = 3, WING_HP = [176, 128, 80], SLUMP_IN = 14;
   const PANEL_DMG = {
-    // đạn xuyên / đầu nổ lõm chỉ khoan lỗ hẹp qua lớp đất + bản bê tông dày, gần như không làm sập ô mái (trước 0,7 / 0,8 / 1,1)
-    // 30mm: ~300 phát trúng đoạn tường cánh yếu nhất / ~450 vào mặt tiền ô mái đầu hầm (trước 0,015: gấp đôi số đó)
-    SCOUT_BULLET: 0.003, INCENDIARY_HMG: 0.003, INCENDIARY: 0.025, GATLING_BULLET: 0.03, AP: 0.15, RPG: 0.3, ANTI_TANK_MISSILE: 0.45,
-    CLUSTER_SUBMUNITION: 0.25, CLUSTER: 0.6, NORMAL: 1.0, HE: 1.5
+    // Bê tông dày 2,25-3,25 m: đạn súng 12,7 / 7,62 chỉ rỗ mặt, không làm yếu kết cấu; 30 mm nổ mảnh chỉ mẻ ~10 cm mỗi phát
+    // (hàng chục nghìn phát mới sập một đoạn tường cánh — thực tế là không thể). Đạn xuyên / đầu nổ lõm chỉ khoan lỗ hầm hẹp
+    // (APFSDS ~2 m, RPG ~0,9 m, tên lửa ~1,7 m bê tông) — gần như không làm sập; lựu 40 mm / bom con (vài chục gam thuốc nổ)
+    // chỉ bóc vài cm. Trước đây 30 mm sập tường cánh sau ~330 phát, lựu 40 mm phá bằng 1/4 đạn 120 mm
+    SCOUT_BULLET: 0, INCENDIARY_HMG: 0, MG762: 0, INCENDIARY: 0.003, GATLING_BULLET: 0.004, AP: 0.05, RPG: 0.1, ANTI_TANK_MISSILE: 0.2,
+    CLUSTER_SUBMUNITION: 0.05, CLUSTER: 0.4, NORMAL: 1.0, HE: 1.5
   };
 
   // opts: { shadeDir: [x, z] hướng nắng nằm ngang (mặt quay ngược hướng này là mặt khuất nắng) }
@@ -1184,7 +1192,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           }
           if (d <= 0) continue;
           p.hp -= d;
-          if (p.hp <= 0) { this.collapsePanel(K, p, fx, false); events.push({ type: 'strongholdCollapse', id: K.id }); }
+          if (p.hp <= 0) { this.collapsePanel(K, p, fx, false); events.push({ type: 'strongholdCollapse', id: K.id, K, p }); }
         }
         // TƯỜNG CÁNH: trúng thẳng mặt tường (phía kênh) ăn đủ, nổ gần ăn theo khoảng cách; nổ trên ụ đất phía sau tường chỉ
         // dội qua lớp đất (x0,3)
@@ -1717,8 +1725,11 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       }
       return null;
     }
-    // Tỉ lệ thân xe nằm ngoài vùng mái che (0 = khuất hoàn toàn, 1 = lộ hoàn toàn)
-    exposure(unit) {
+    // Tỉ lệ thân xe bị lộ (0 = khuất hoàn toàn, 1 = lộ hoàn toàn). Không có điểm nổ: phần nằm ngoài vùng mái che (giao diện,
+    // nhật ký phòng thử). Có điểm nổ burst: phần thân xe NHÌN THẤY điểm nổ — đường thẳng không cắt bê tông / ụ đất / sàn của cứ
+    // điểm: nổ trong lòng hầm hay trước miệng hầm thì mảnh văng & sóng nổ tới được phần xe hướng ra đó, nổ trên nóc mái / sau
+    // tường thì bê tông chặn (trước đây xe nằm trọn dưới mái miễn nhiễm cả quả nổ ngay cạnh trong lòng hầm)
+    exposure(unit, burst) {
       if (!this.shelterOf(unit)) return 1;
       const B = unitBox(unit);
       const c = Math.cos(unit.bodyAngle || 0), s = Math.sin(unit.bodyAngle || 0);
@@ -1729,21 +1740,23 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const lz = B.minZ + (B.maxZ - B.minZ) * (0.05 + 0.9 * iz / 4);
         const wx = unit.x + lx * c + lz * s, wz = unit.z - lx * s + lz * c, wy = (unit.y || 0) + ly;
         n++;
-        if (!this.protectedAt(wx, wy, wz)) out++;
+        if (burst ? !this.segmentHit(burst.x, burst.y, burst.z, wx, wy, wz) : !this.protectedAt(wx, wy, wz)) out++;
       }
       return out / n;
     }
-    // Đạn đã lọt vào trong khoang (điểm P) theo hướng dir: lùi về điểm nó đi qua mép vùng bảo vệ (miệng khoang)
-    entryPoint(K, P, dir) {
-      const L = this.local(K, P.x, P.z);
-      const df = -(dir.x * K.fx + dir.z * K.fz), dr = -(dir.x * K.rx + dir.z * K.rz), dy = -dir.y;
-      let tMax = Infinity;
-      const slab = (p, d, lo, hi) => { if (Math.abs(d) < 1e-6) return; const t = d > 0 ? (hi - p) / d : (lo - p) / d; if (t < tMax) tMax = Math.max(0, t); };
-      slab(L.f, df, -S.HB, S.HB);
-      slab(L.r, dr, -S.WI, S.WI);
-      slab(P.y - K.G, dy, -S.D - 12, S.CEIL + 1);
-      if (!isFinite(tMax)) tMax = 0;
-      return { x: P.x - dir.x * tMax, y: P.y - dir.y * tMax, z: P.z - dir.z * tMax };
+    // Tỉ lệ thân xe nằm ngay dưới ô mái p (cứ điểm K) trong lòng hầm — xe bị bê tông + đất của ô vừa sập đè lên
+    underPanel(unit, K, p) {
+      const B = unitBox(unit);
+      const c = Math.cos(unit.bodyAngle || 0), s = Math.sin(unit.bodyAngle || 0);
+      let hit = 0, n = 0;
+      for (let ix = 0; ix <= 2; ix++) for (let iz = 0; iz <= 4; iz++) {
+        const lx = B.minX + (B.maxX - B.minX) * (0.1 + 0.8 * ix / 2), lz = B.minZ + (B.maxZ - B.minZ) * (0.05 + 0.9 * iz / 4);
+        const wx = unit.x + lx * c + lz * s, wz = unit.z - lx * s + lz * c, yy = (unit.y || 0) + B.maxY - K.G;
+        const L = this.local(K, wx, wz);
+        n++;
+        if (L.f >= p.f0 && L.f <= p.f1 && L.r >= p.r0 && L.r <= p.r1 && yy < S.CEIL + 1 && yy > -S.D - 12) hit++;
+      }
+      return hit / n;
     }
 
     // ---------------------------------------------------------------- va chạm xe

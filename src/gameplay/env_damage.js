@@ -15,6 +15,8 @@ const EnvDamage = (() => {
   // e: năng lượng để lại vết trên bề mặt (vết cộng dồn theo ô)
   const AMMO = {
     SCOUT_BULLET: { kin: 0.02, blast: 0, r: 0, e: 0.05 },
+    // 7.62mm súng máy nóc tháp (game.applyEnvDamage: SCOUT_BULLET + cờ m): ~0,3 sức phá 12.7, vết nhỏ hơn
+    MG762: { kin: 0.006, blast: 0, r: 0, e: 0.03 },
     // đạn cháy 30mm (xe 6 nòng) ~ đạn 30mm thường; INCENDIARY_HMG: đạn cháy 12.7mm (xe trinh sát) ~ đạn 12.7 thường
     INCENDIARY: { kin: 0.05, blast: 0.04, r: 4, e: 0.1 },
     INCENDIARY_HMG: { kin: 0.02, blast: 0.01, r: 2, e: 0.06 },
@@ -48,7 +50,7 @@ const EnvDamage = (() => {
     return { n, t, b };
   }
   const isInc = (ammo) => ammo === 'INCENDIARY' || ammo === 'INCENDIARY_HMG';
-  const isBullet = (ammo) => ammo === 'SCOUT_BULLET' || ammo === 'GATLING_BULLET' || isInc(ammo);
+  const isBullet = (ammo) => ammo === 'SCOUT_BULLET' || ammo === 'MG762' || ammo === 'GATLING_BULLET' || isInc(ammo);
   const hash3 = (x, y, z) => { let h = (Math.round(x * 7) * 374761393 + Math.round(y * 7) * 668265263 + Math.round(z * 7) * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 
@@ -1424,7 +1426,7 @@ const EnvDamage = (() => {
       const tier = (e) => e < 0.35 ? 'c_pock' : e < spallE ? 'c_chip' : 'c_spall';
       // tường cứ điểm: mảng bong tối đa ~2,2 m và không chìa quá mép tường (cửa, góc, đỉnh)
       const ms = up ? undefined : Math.min(18, room * 2);
-      const c1 = this.scars.hit('c', ammo === 'SCOUT_BULLET' || isInc(ammo) ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2, maxSize: ms });
+      const c1 = this.scars.hit('c', ammo === 'SCOUT_BULLET' || ammo === 'MG762' || isInc(ammo) ? 3 : 5, x, y, z, n.x, n.y, n.z, A.e, tier, { e0: 0.2, maxSize: ms });
       const c2 = (A.blast > 0.3 || isInc(ammo)) ? this.scars.hit('s', 12, x, y, z, n.x, n.y, n.z, A.e, () => 'soot', { sizeMul: isInc(ammo) ? 0.35 : Math.min(1.6, 0.6 + A.r / 40), maxSize: ms && ms * 1.3 }) : null;
       // mặt cầu: vết bám nhịp cầu (võng / rơi theo nhịp)
       if (up) { this.bridges.tagScar(c1, x, z); this.bridges.tagScar(c2, x, z); }

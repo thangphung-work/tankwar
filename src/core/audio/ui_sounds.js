@@ -286,6 +286,44 @@
       this.playUiClose();
     }
 
+    // ---- KÊNH CHỈ HUY (màn tìm trận): bắt sóng, máy điện báo gõ lệnh, nhiễu chập chờn, ngắt kênh ----
+    // bắt sóng: nhiễu lạo xạo dải tiếng nói phồng lên rồi lặng dần, vài tiếng lách tách
+    playCommandLinkUp() {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.7, 0.05);
+      this._uiNoiseAM(out, t, { buffer: this.crackleBuffer, freq: 1700, Q: 0.9, gain: 0.07, attack: 0.05, dur: 0.95, amHz: 13, amDepth: 0.9 });
+      this.burst(out, t + 0.9, { filter: 'bandpass', freq: 2200, Q: 1.2, gain: 0.07, attack: 0.001, dur: 0.06 });
+      this.tone(out, t + 0.98, { freq: 1240, gain: 0.03, attack: 0.003, dur: 0.09 });
+    }
+    // một phím máy điện báo: cạch kim loại khô + cộc thân máy (k: độ mạnh, phím cách / dấu câu nặng tay hơn)
+    playBriefingKey(k = 1) {
+      if (!this.ready()) return;
+      const now = this.ctx.currentTime;
+      if (now - (this._briefKeyT || 0) < 0.03) return;
+      this._briefKeyT = now;
+      const out = this.uiOut(0.5 * k, 0);
+      this.burst(out, now, { filter: 'bandpass', freq: rnd(2600, 3600), Q: 2.5, gain: 0.05, attack: 0.0004, dur: 0.012 });
+      this.tone(out, now, { freq: rnd(190, 240), freqEnd: 120, sweep: 0.03, gain: 0.035, attack: 0.001, dur: 0.035 });
+    }
+    // nhiễu sóng thoáng qua (đường truyền chập chờn): k 0..1
+    playRadioGlitch(k = 1) {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.6 * k, 0.03);
+      this.burst(out, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: rnd(1200, 2600), Q: 0.8, gain: 0.08, attack: 0.002, dur: rnd(0.08, 0.22) });
+      if (Math.random() < 0.5) this.tone(out, t + 0.02, { type: 'square', freq: rnd(380, 620), gain: 0.008, attack: 0.002, dur: 0.06, filter: 'lowpass', filterFreq: 1800 });
+    }
+    // hết lệnh: thả phím bộ đàm — xẹt nhiễu ngắn + bíp kết thúc
+    playCommandOver() {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.7, 0.05);
+      this.burst(out, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 1900, Q: 0.9, gain: 0.09, attack: 0.002, dur: 0.16 });
+      this.tone(out, t + 0.17, { freq: 1050, gain: 0.035, attack: 0.003, dur: 0.07 });
+      this.tone(out, t + 0.26, { freq: 1400, gain: 0.03, attack: 0.003, dur: 0.09 });
+    }
+
     // nhiễu có lọc + điều biên theo sóng sin (côn trùng rỉ rả, nước vỗ, nhiễu sóng vô tuyến)
     _uiNoiseAM(out, t, { buffer, filter = 'bandpass', freq, Q = 1, gain, attack = 0.1, dur, amHz, amDepth = 0.8 }) {
       const ctx = this.ctx;

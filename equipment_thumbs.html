@@ -132,6 +132,11 @@
         g.add(meshOf(new THREE.ConeGeometry(r * 0.32, L * 0.12, 16), MAT.red, [0, L * 0.43, 0]));
       }
       if (scout && type === 'inc') g.add(meshOf(new THREE.ConeGeometry(r * 0.62, L * 0.28, 16), MAT.red, [0, L * 0.36, 0]));
+      // Mk211 (Raufoss): mũi sơn xanh lá + đai bạc
+      if (scout && type === 'mk211') {
+        g.add(meshOf(new THREE.ConeGeometry(r * 0.84, L * 0.3, 18), MAT.green || std(0x3f6b2a, 0.5, 0.15), [0, L * 0.37, 0]));
+        g.add(meshOf(new THREE.CylinderGeometry(r * 1.03, r * 1.03, L * 0.08, 22), MAT.alu, [0, L * 0.12, 0]));
+      }
       g.add(p);
     }
     g.add(casing(r * 1.22, r * 1.02, caseLen, caseY));
@@ -154,7 +159,7 @@
   function ammoModel(tank, ammo, variant) {
     if (ammo === 'GATLING_BULLET' || ammo === 'SCOUT_BULLET' || ammo === 'INCENDIARY') {
       const cal = tank === 'SCOUT' ? '127' : '30';
-      return smallRoundModel(cal, variant === 'apds30' || variant === 'slap127' || variant === 'ahead30' ? variant : (ammo === 'INCENDIARY' ? 'inc' : 'std'));
+      return smallRoundModel(cal, variant === 'apds30' || variant === 'slap127' || variant === 'ahead30' || variant === 'mk211' ? variant : (ammo === 'INCENDIARY' ? 'inc' : 'std'));
     }
     if (ammo === 'RPG') return rpgModel();
     const heavy = tank === 'ARTILLERY';
@@ -492,7 +497,7 @@
     ARTILLERY: ['NORMAL', 'HE', 'CLUSTER'], SCOUT: ['SCOUT_BULLET', 'INCENDIARY', 'RPG', 'ANTI_TANK_MISSILE']
   };
   for (const t in AMMO) for (const a of AMMO[t]) ITEMS.push({ id: 'ammo_' + t + '_' + a, build: () => ammoModel(t, a), kind: 'ammo' });
-  const PREM = { ap_du: ['ALL_ROUNDER', 'AP'], heat_tandem: ['ALL_ROUNDER', 'NORMAL'], apds30: ['GATLING', 'GATLING_BULLET'], ahead30: ['GATLING', 'GATLING_BULLET'], slap127: ['SCOUT', 'SCOUT_BULLET'], he_frag: ['ARTILLERY', 'HE'] };
+  const PREM = { ap_du: ['ALL_ROUNDER', 'AP'], heat_tandem: ['ALL_ROUNDER', 'NORMAL'], apds30: ['GATLING', 'GATLING_BULLET'], ahead30: ['GATLING', 'GATLING_BULLET'], slap127: ['SCOUT', 'SCOUT_BULLET'], mk211: ['SCOUT', 'SCOUT_BULLET'], he_frag: ['ARTILLERY', 'HE'] };
   for (const id in PREM) ITEMS.push({ id: 'prem_' + id, build: () => ammoModel(PREM[id][0], PREM[id][1], id), kind: 'ammo' });
   // tên lửa tấn công đỉnh (xe trinh sát): ống phóng kiểu Javelin bọc đệm cao su + khối ngắm nhiệt CLU, sơn có vết dùng
   ITEMS.push({ id: 'prem_topatk', kind: 'module', build: () => batchGroup(b => {

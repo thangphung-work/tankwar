@@ -2,7 +2,7 @@
  * BỘ QUAY VIDEO FLYCAM 360 TRINH SÁT CỨ ĐIỂM CHIẾN THUẬT (recon_recorder.js)
  * 
  * - Mở tự động qua: index.html?lab=recon_record&map=URBAN|DESERT|JUNGLE|HIGHLAND|RIVER_LAKE
- * - Quay 360 độ quanh cứ điểm chiến lược
+ * - Quay tour căn cứ chiến lược và các cứ điểm A/B/C để dùng trong màn chờ
  * - Sử dụng MediaRecorder xuất tệp WebM lưu vào assets/recon_<map>.webm
  */
 (function () {
@@ -126,16 +126,8 @@
       if (g._driveMarker) g._driveMarker.visible = false;
     }
 
-    // Tâm xoay: Cứ điểm B hoặc Landmark trung tâm
+    // Cùng đường bay với công cụ quay độc lập, không chạy tour trong gameplay.
     const cps = g.capturePoints || [];
-    const cpB = cps.find(p => p.id === 'B') || { x: 0, z: 0 };
-    const landmark = g.terrain && g.terrain.map && (g.terrain.map.landmarks || [])[0];
-    const center = landmark || cpB;
-    const elev = g.terrain ? g.terrain.getElevationAt(center.x, center.z) : 0;
-
-    const R = 520;
-    const H = 260;
-    const lookTarget = new THREE.Vector3(center.x, elev + 20, center.z);
 
     let recorder = null;
     let chunks = [];
@@ -143,15 +135,8 @@
     let timer = 0;
     const WARMUP_TIME = 1.0;
 
-    function applyCam(rotT) {
-      const angle = rotT * Math.PI * 2 - Math.PI * 0.5;
-      const camX = center.x + Math.cos(angle) * R;
-      const camZ = center.z + Math.sin(angle) * R;
-      const camY = elev + H + Math.sin(angle * 2) * 20;
-
-      g.camera.position.set(camX, camY, camZ);
-      g.camera.lookAt(lookTarget);
-    }
+    const tour = ReconTour.create(g.terrain, cps);
+    function applyCam(rotT) { tour(g.camera, rotT); }
 
     const origUpdate = g.update;
     g.update = function (dt) {

@@ -105,6 +105,11 @@ class RadarSweepWidget {
     if (this.animId) return;
     this.lastTime = performance.now();
     const loop = (t) => {
+      // Chi tiết HUD nhỏ chỉ cần 30 FPS, tránh tranh tài nguyên với video và bản đồ 3D.
+      if (t - this.lastTime < 1000 / 30) {
+        this.animId = requestAnimationFrame(loop);
+        return;
+      }
       const dt = Math.min(0.08, (t - this.lastTime) / 1000);
       this.lastTime = t;
       this.update(dt);
@@ -493,12 +498,6 @@ class MatchmakingController {
   setSearchView(on) {
     if (this.overlay) this.overlay.classList.toggle('mm-searching', !!on);
     document.body.classList.toggle('mm-searching', !!on);
-    const briefingBg = {
-      DESERT: 'assets/lobby_desert.jpg', URBAN: 'assets/lobby_urban.jpg',
-      JUNGLE: 'assets/lobby_jungle.jpg', HIGHLAND: 'assets/lobby_highland.jpg',
-      RIVER_LAKE: 'assets/lobby_river_lake.jpg'
-    }[this.selectedMapType] || 'assets/lobby_urban.jpg';
-    document.documentElement.style.setProperty('--briefing-bg', `url("${briefingBg}")`);
     if (this.searchHudEl) {
       this.searchHudEl.classList.toggle('hidden', !on);
       this.searchHudEl.classList.remove('is-counting');
@@ -506,29 +505,8 @@ class MatchmakingController {
       this.searchHudEl.classList.toggle('mm-3d-ready', !!(on && T && T.previewReady && this.preparedMapKey === this.selectedMapType + ':' + (this.mapSeed >>> 0)));
     }
     if (this.countdownEl) this.countdownEl.classList.add('hidden');
-    const reconVideo = document.getElementById('mm-recon-video');
-    if (reconVideo) {
-      if (on) {
-        const mapLower = (this.selectedMapType || 'urban').toLowerCase();
-        const primarySrc = 'assets/recon_' + mapLower + '.webm';
-        const fallbackSrc = 'assets/recon_briefing.webm';
-        reconVideo.oncanplay = () => { reconVideo.classList.remove('hidden'); };
-        reconVideo.onerror = () => {
-          if (reconVideo.src && !reconVideo.src.endsWith(fallbackSrc)) {
-            reconVideo.src = fallbackSrc;
-            reconVideo.play().catch(() => {});
-          } else {
-            reconVideo.classList.add('hidden');
-          }
-        };
-        reconVideo.src = primarySrc;
-        reconVideo.play().catch(() => {});
-      } else {
-        reconVideo.pause();
-        reconVideo.classList.add('hidden');
-        reconVideo.src = '';
-      }
-    }
+    this.setReconVideo(on);
+    if (on) this.startSignalFx(); else this.stopSignalFx();
 
     if (this.radarWidget) {
       if (on) {
@@ -545,59 +523,186 @@ class MatchmakingController {
     if (this.searchHudEl && this.state !== 'IDLE') this.searchHudEl.classList.add('mm-3d-ready');
     this.updateSearchHUD();
   }
-  playTypewriterTick() {
-    try {
-      const se = window.soundEngine;
-      const ctx = se && (se.ctx || se.audioCtx);
-      if (!ctx || ctx.state !== 'running') return;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const t = ctx.currentTime;
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(820 + Math.random() * 360, t);
-      gain.gain.setValueAtTime(0.015, t);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.014);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.015);
-    } catch (e) {}
+  // âm thanh kênh chỉ huy (ui_sounds.js); máy chưa bật âm thanh thì im, không làm hỏng màn chờ
+  briefingSfx(fn, ...a) {
+    const se = window.soundEngine;
+    if (se && typeof se[fn] === 'function') { try { se[fn](...a); } catch (e) { /* bỏ qua */ } }
   }
 
+  // LỆNH TỪ CHỈ HUY qua bộ đàm thời chiến: bắt sóng (mã hiệu giải mã dần) -> máy điện báo gõ từng chữ, ngập ngừng ở
+  // dấu câu, thỉnh thoảng nhiễu sóng chen ký tự rác rồi tự sửa -> thả phím bộ đàm, tổ lái đáp "Rõ!"
   startBriefingTypewriter(mapType) {
     this.stopBriefingTypewriter();
     const list = (typeof MISSION_BRIEFINGS !== 'undefined' && MISSION_BRIEFINGS[mapType]) || (typeof MISSION_BRIEFINGS !== 'undefined' && MISSION_BRIEFINGS.DESERT) || [];
     if (!list.length) return;
     const briefing = (mapType === "URBAN" && list[0]) ? list[0] : list[Math.floor(Math.random() * list.length)];
+    const box = document.getElementById('mm-briefing-box');
     const codeEl = document.getElementById('mm-briefing-code');
     const textEl = document.getElementById('mm-briefing-text');
     const replyEl = document.getElementById('mm-briefing-reply');
-    if (codeEl) codeEl.textContent = briefing.code;
+    const statusEl = document.getElementById('mm-briefing-status');
+    const statusTxt = statusEl && statusEl.querySelector('.mm-comm-status-text');
     if (replyEl) replyEl.classList.add('hidden');
     if (!textEl) return;
 
-    textEl.innerHTML = '<span class="mm-briefing-cursor">█</span>';
+    const run = this._briefRun = { alive: true, timer: null };
+    const later = (fn, ms) => { run.timer = setTimeout(() => { if (run.alive) fn(); }, ms); };
+    const setStatus = (txt, st) => {
+      if (statusTxt) statusTxt.textContent = txt;
+      if (statusEl) statusEl.dataset.state = st;
+    };
+    const boxFlag = (cls, on) => { if (box) box.classList.toggle(cls, on); };
+
+    // chữ đã gõ là một text node + con trỏ: mỗi phím chỉ đổi dữ liệu node, không dựng lại HTML
+    textEl.textContent = '';
+    const typed = document.createTextNode('');
+    const noise = document.createElement('span');
+    noise.className = 'mm-briefing-noise';
+    const cursor = document.createElement('span');
+    cursor.className = 'mm-briefing-cursor';
+    cursor.textContent = '█';
+    textEl.append(typed, noise, cursor);
+
+    const GLYPH = '▓▒░#%&@$*/\\<>=+?0123456789ABCDEFX';
+    const junk = (n) => { let s = ''; for (let i = 0; i < n; i++) s += GLYPH[Math.floor(Math.random() * GLYPH.length)]; return s; };
+
+    // 1. BẮT SÓNG: mã hiệu hiện ra từ chuỗi ký tự rác, giải mã dần từ trái sang phải
+    const code = briefing.code || '';
+    boxFlag('is-linking', true);
+    setStatus('ĐANG BẮT SÓNG KÊNH CHỈ HUY', 'link');
+    this.briefingSfx('playCommandLinkUp');
+    const LINK_MS = 950, t0 = performance.now();
+    const decode = () => {
+      const k = Math.min(1, (performance.now() - t0) / LINK_MS);
+      const n = Math.floor(code.length * k);
+      if (codeEl) codeEl.textContent = code.slice(0, n) + junk(code.length - n).replace(/./g, (c, i) => (code[n + i] === ' ' ? ' ' : c));
+      if (k < 1) { later(decode, 45); return; }
+      boxFlag('is-linking', false);
+      setStatus('đang nhận lệnh', 'typing');
+      later(typeNext, 260);
+    };
+
+    // 2. GÕ LỆNH: nhịp người gõ điện báo — chữ thường nhanh, dấu câu dừng lại, nhiễu sóng thỉnh thoảng chen ngang
     const text = briefing.text;
-    let idx = 0;
-    this._typewriterTimer = setInterval(() => {
-      if (idx < text.length) {
-        idx++;
-        textEl.innerHTML = text.substring(0, idx) + '<span class="mm-briefing-cursor">█</span>';
-        if (idx % 2 === 0) {
-          this.playTypewriterTick();
-        }
-      } else {
-        this.stopBriefingTypewriter();
-        if (replyEl) replyEl.classList.remove('hidden');
+    let idx = 0, nextGlitch = 40 + Math.floor(Math.random() * 60);
+    const typeNext = () => {
+      if (idx >= text.length) { finish(); return; }
+      if (idx >= nextGlitch && text.length - idx > 12) {
+        nextGlitch = idx + 70 + Math.floor(Math.random() * 110);
+        noise.textContent = junk(2 + Math.floor(Math.random() * 4));
+        boxFlag('is-static', true);
+        this.briefingSfx('playRadioGlitch', 0.7);
+        later(() => { noise.textContent = ''; boxFlag('is-static', false); later(typeNext, 60); }, 110 + Math.random() * 140);
+        return;
       }
-    }, 22);
+      const ch = text[idx++];
+      typed.data = text.slice(0, idx);
+      if (ch !== ' ') this.briefingSfx('playBriefingKey', /[.,!?:;]/.test(ch) ? 1.3 : 1);
+      const pause = /[.!?]/.test(ch) ? 360 : /[,:;]/.test(ch) ? 170 : ch === ' ' ? 34 : 0;
+      later(typeNext, 20 + Math.random() * 22 + pause);
+    };
+
+    // 3. HẾT LỆNH: thả phím bộ đàm, con trỏ nháy chờ, tổ lái xác nhận
+    const finish = () => {
+      setStatus('HẾT · ĐÃ NHẬN LỆNH', 'done');
+      this.briefingSfx('playCommandOver');
+      later(() => {
+        if (replyEl) replyEl.classList.remove('hidden');
+        this.briefingSfx('playRadioChirp');
+        run.alive = false;
+      }, 650);
+    };
+
+    decode();
   }
 
   stopBriefingTypewriter() {
-    if (this._typewriterTimer) {
-      clearInterval(this._typewriterTimer);
-      this._typewriterTimer = null;
+    const run = this._briefRun;
+    if (run) { run.alive = false; clearTimeout(run.timer); this._briefRun = null; }
+    const box = document.getElementById('mm-briefing-box');
+    if (box) box.classList.remove('is-linking', 'is-static');
+  }
+
+  // NHIỄU ĐƯỜNG TRUYỀN trên hình trinh sát: mỗi vài giây hình giật ngang / xé sọc, đôi khi mất tín hiệu thoáng qua
+  startSignalFx() {
+    this.stopSignalFx();
+    const hud = this.searchHudEl;
+    if (!hud) return;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const tick = () => {
+      const drop = Math.random() < 0.22;
+      hud.style.setProperty('--mm-gx', ((Math.random() - 0.5) * (drop ? 26 : 14)).toFixed(1) + 'px');
+      hud.style.setProperty('--mm-ty', (15 + Math.random() * 70).toFixed(0) + '%');
+      if (!reduce) hud.classList.add('mm-sig-glitch');
+      if (drop) hud.classList.add('mm-sig-drop');
+      // đang gõ lệnh thì tiếng nhiễu đã có trong kênh chỉ huy -> chỉ thêm tiếng khi mất tín hiệu
+      if (drop || !this._briefRun) this.briefingSfx('playRadioGlitch', drop ? 0.6 : 0.3);
+      this._sigFxOff = setTimeout(() => hud.classList.remove('mm-sig-glitch', 'mm-sig-drop'), drop ? 380 : 120 + Math.random() * 140);
+      this._sigFxTimer = setTimeout(tick, 2600 + Math.random() * 4800);
+    };
+    this._sigFxTimer = setTimeout(tick, 1800);
+  }
+
+  stopSignalFx() {
+    clearTimeout(this._sigFxTimer);
+    clearTimeout(this._sigFxOff);
+    if (this.searchHudEl) this.searchHudEl.classList.remove('mm-sig-glitch', 'mm-sig-drop');
+  }
+
+  // Video trinh sát cứ điểm của bản đồ đang chọn (flycam 360 quay sẵn — recon_recorder.js); thiếu file thì dùng bản chung
+  setReconVideo(on) {
+    const briefingBg = {
+      DESERT: 'assets/lobby_desert.jpg', URBAN: 'assets/lobby_urban.jpg',
+      JUNGLE: 'assets/lobby_jungle.jpg', HIGHLAND: 'assets/lobby_highland.jpg',
+      RIVER_LAKE: 'assets/lobby_river_lake.jpg'
+    }[this.selectedMapType] || 'assets/lobby_urban.jpg';
+    document.documentElement.style.setProperty('--briefing-bg', `url("${briefingBg}")`);
+    const reconVideo = document.getElementById('mm-recon-video');
+    if (!reconVideo) return;
+    if (on) {
+      const mapLower = (this.selectedMapType || 'urban').toLowerCase();
+      const primarySrc = 'assets/recon_' + mapLower + '.webm?v=20261025tour1';
+      const fallbackSrc = 'assets/recon_briefing.webm?v=20261025tour1';
+      if (reconVideo.src && reconVideo.src.endsWith(primarySrc) && !reconVideo.paused) return;   // đang chiếu đúng bản đồ
+      const hideVideo = () => {
+        reconVideo.classList.add('hidden');
+        if (this.searchHudEl) this.searchHudEl.classList.remove('mm-video-playing');
+      };
+      hideVideo();
+      reconVideo.onplaying = () => {
+        reconVideo.classList.remove('hidden');
+        if (this.searchHudEl) this.searchHudEl.classList.add('mm-video-playing');
+      };
+      reconVideo.oncanplay = () => { reconVideo.play().catch(hideVideo); };
+      reconVideo.onerror = () => {
+        hideVideo();
+        if (reconVideo.src && !reconVideo.src.endsWith(fallbackSrc)) {
+          reconVideo.src = fallbackSrc;
+          reconVideo.play().catch(hideVideo);
+        } else {
+          reconVideo.classList.add('hidden');
+        }
+      };
+      reconVideo.src = primarySrc;
+      reconVideo.play().catch(hideVideo);
+    } else {
+      // gỡ onerror trước: bỏ nguồn cũng là một lỗi tải -> trước đây lại nhảy sang bản chung, video chạy ngầm trong trận
+      reconVideo.onerror = null;
+      reconVideo.oncanplay = null;
+      reconVideo.onplaying = null;
+      if (this.searchHudEl) this.searchHudEl.classList.remove('mm-video-playing');
+      reconVideo.pause();
+      reconVideo.classList.add('hidden');
+      reconVideo.removeAttribute('src');
+      reconVideo.load();
     }
+  }
+
+  // Vào phòng chủ khác / chủ phòng đổi bản đồ trong lúc chờ: video trinh sát và lệnh chỉ huy phải theo bản đồ mới
+  refreshBriefingForMap() {
+    if (this.state !== 'SEARCHING' && this.state !== 'FILLING_BOTS' && this.state !== 'COUNTDOWN') return;
+    this.setReconVideo(true);
+    this.startBriefingTypewriter(this.selectedMapType);
   }
 
   updateSatelliteCoords() {
@@ -1108,13 +1213,15 @@ class MatchmakingController {
   applyMapSelection(mapType, mapSeed) {
     if (!mapType) return;
     const seed = (typeof mapSeed === 'number' && isFinite(mapSeed)) ? (mapSeed >>> 0) : this.mapSeed;
-    if (mapType !== this.selectedMapType) {
+    const changed = mapType !== this.selectedMapType;
+    if (changed) {
       this.selectedMapType = mapType;
     }
     this.mapSeed = seed;
     if (this.net && this.isHost && !this.netPending) this.net.setMap(this.selectedMapType);
     this.setMapSelectionUI(this.selectedMapType);
     this.schedulePrepareMap();
+    if (changed) this.refreshBriefingForMap();
   }
 
   // Dựng bản đồ 3D mất vài giây và chặn luồng chính -> chỉ dựng khi đã chốt phòng (vào phòng có sẵn / tự mở phòng),
@@ -1362,8 +1469,10 @@ class MatchmakingController {
           this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
         }
         if (msg.mapType) {
+          const changed = msg.mapType !== this.selectedMapType;
           this.selectedMapType = msg.mapType;
           if (typeof msg.mapSeed === 'number') this.mapSeed = msg.mapSeed >>> 0;
+          if (changed) this.refreshBriefingForMap();
         }
         if (typeof msg.spawnSeed === 'number') this.spawnSeed = msg.spawnSeed >>> 0;
         if (msg.type === 'LAUNCH_GAME_NOW') this.launchGame();
@@ -1408,8 +1517,8 @@ class MatchmakingController {
           if (empty.length) {
             empty.forEach(slot => {
               this.fillBotSlot(slot);
-              if (this.radarWidget) this.radarWidget.addBlip();
             });
+            if (this.radarWidget) this.radarWidget.syncSlots(this.slots);
             this.renderLobby();
             this.broadcastRoomUpdate();
           }
@@ -1516,7 +1625,7 @@ class MatchmakingController {
   launchGame() {
     // Countdown có thể kết thúc trước worker map. Giữ màn briefing hoạt động và chỉ
     // chuyển vào trận khi dữ liệu đã sẵn, tránh sinh map đồng bộ làm treo tab.
-    if (!this.prepareSelectedMap()) {
+    if (!this.prepareSelectedMap() || (this.game && this.game.terrain && !this.game.terrain.detailsReady)) {
       this.buildingMap = true;
       this.updateSearchHUD();
       clearTimeout(this._launchWaitTimer);

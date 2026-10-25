@@ -30,42 +30,56 @@ function MapGenFactory() {
   // Điểm chiến thuật cố định của luật chơi
   const CAPTURE = [{ x: -800 * K, z: 0 }, { x: 0, z: 0 }, { x: 800 * K, z: 0 }];
   const SPAWN = { blue: { z0: 800 * K, z1: 1180 * K }, red: { z0: -1180 * K, z1: -800 * K }, halfX: 430 * K };
-  // Các biến thể bố cục cứ điểm chiến thuật (được bốc ngẫu nhiên theo hạt giống bản đồ seed)
+  // Các biến thể bố cục cứ điểm chiến thuật (được bốc ngẫu nhiên theo hạt giống bản đồ seed).
+  // CÂN BẰNG HAI PHE (Xanh z > 0, Đỏ z < 0): mỗi bố cục có phép đối xứng sym đổi chỗ hai phe — 'mirror' soi gương qua
+  // trục x (z -> -z), 'point' đối xứng qua tâm ((x, z) -> (-x, -z)). Phần luật chơi bất biến qua phép đó: vị trí cứ
+  // điểm, công trình, căn cứ, chỗ xuất phát (game.js), cốt đỉnh đồi cứ điểm, hào ẩn xe, sơ đồ mạng đường. Địa hình và
+  // vật thể vẫn ngẫu nhiên tự nhiên; bước cân bằng (5f) bù vật che cho phe thiếu trên từng hướng tiến / nửa map.
+  // Công trình bối cảnh nằm trên trục giữa (z = 0), mặt trước nhìn ngang (±x): không chắn đường của riêng phe nào
+  // (trước đây nó đứng chắn trước một phe). Bố cục 'point' chỉ có tâm là điểm bất biến (cứ điểm B đã chiếm) -> công
+  // trình đặt trên trục giữa, lệch về một cánh (gần đều hai phe, không đối xứng tuyệt đối)
   const STRONGHOLD_LAYOUT_VARIANTS = [
     {
       name: 'FRONTLINE',
       label: 'TIỀN TUYẾN DÀN NGANG',
       desc: 'Ba cứ điểm dàn ngang ranh giới giữa bản đồ — hai phe cách đều, đua tốc độ chiếm đóng',
+      sym: 'mirror',
       sites: [
         { id: 'A', x: -750 * K, z: 0, angle: Math.PI / 2, hill: 68 },
         { id: 'B', x: 0, z: 0, angle: Math.PI / 2, hill: 76 },
         { id: 'C', x: 750 * K, z: 0, angle: Math.PI / 2, hill: 68 }
       ],
-      landmark: { x: 0, z: -215 * K, angle: -Math.PI / 2 }
+      landmark: { x: 375 * K, z: 0, angle: Math.PI }
     },
     {
       name: 'DIAGONAL',
       label: 'GỌNG KÌM SO LE',
       desc: 'Cứ điểm A và C bố trí so le chéo cánh, cứ điểm B ở trung tâm làm tâm điểm tranh chấp',
+      sym: 'point',
       sites: [
         { id: 'A', x: -660 * K, z: 350 * K, angle: -Math.PI / 4, hill: 72 },
         { id: 'B', x: 0, z: 0, angle: Math.PI / 2, hill: 80 },
         { id: 'C', x: 660 * K, z: -350 * K, angle: Math.PI * 3 / 4, hill: 72 }
       ],
-      landmark: { x: 0, z: 205 * K, angle: Math.PI / 2 }
+      landmark: { x: 367 * K, z: 0, angle: Math.PI }
     },
     {
+      // Pháo đài B trên đồi cao ở một cánh, nằm trên trục giữa -> cách đều hai phe; mỗi phe một tiền đồn gần nhà (A xanh,
+      // C đỏ) ở cánh đối diện. (Bản cũ đặt B sát phe Đỏ, A + C sát phe Xanh: Đỏ tới mục tiêu gần nhất sớm hơn ~10 s.)
       name: 'FORTRESS',
       label: 'TAM GIÁC PHÁO ĐÀI',
-      desc: 'Cứ điểm B nằm trên đỉnh đồi pháo đài cao khống chế thung lũng, hai tiền đồn A và C yểm trợ',
+      desc: 'Cứ điểm B nằm trên đỉnh đồi pháo đài cao khống chế một cánh thung lũng, mỗi phe một tiền đồn A / C gần nhà',
+      sym: 'mirror',
       sites: [
-        { id: 'A', x: -620 * K, z: 330 * K, angle: -Math.PI / 6, hill: 72 },
-        { id: 'B', x: 0, z: -400 * K, angle: Math.PI / 2, hill: 96 },
-        { id: 'C', x: 620 * K, z: 330 * K, angle: Math.PI * 7 / 6, hill: 58 }
+        { id: 'A', x: 450 * K, z: 420 * K, angle: Math.PI / 4, hill: 66 },
+        { id: 'B', x: -700 * K, z: 0, angle: Math.PI / 2, hill: 96 },
+        { id: 'C', x: 450 * K, z: -420 * K, angle: -Math.PI / 4, hill: 66 }
       ],
-      landmark: { x: 0, z: 85 * K, angle: -Math.PI / 2 }
+      landmark: { x: 180 * K, z: 0, angle: Math.PI }
     }
   ];
+  // phép đối xứng đổi phe: điểm / hướng (góc) qua sym
+  const symPt = (sym, x, z) => sym === 'point' ? [-x, -z] : [x, -z];
 
   function pickStrongholdVariant(seed) {
     const s = ((seed >>> 0) ^ 0x7f4a7c15);
@@ -117,7 +131,7 @@ function MapGenFactory() {
     { id: 'sedan', w: 3.0, size: 'mid' },
     { id: 'hatch', w: 2.0, size: 'small' },
     { id: 'suv', w: 1.2, size: 'large' },
-    { id: 'dump', w: 1.3, size: 'large', tags: ['work'] },
+    { id: 'dump', w: 1.3, size: 'large', tags: ['work'] },
     { id: 'van', w: 0.8, size: 'large', tags: ['work'] },
     { id: 'pickup', w: 0.8, size: 'large', tags: ['work'] },
     { id: 'taxi', w: 0.5, size: 'mid', tags: ['taxi', 'fixedColor'] }
@@ -231,7 +245,8 @@ function MapGenFactory() {
     RIVER_LAKE: { peak: 340, sea: true, far: 'isle' }
   };
   const BIOME = {
-    DESERT: { roadKind: 'dirt', bunkers: 7, trees: 150, rocks: 70, bushes: 14, villages: 3, treeKinds: ['palm', 'palm', 'cactus', 'deadTree', 'acacia'] },
+    // sa mạc: cọ chỉ mọc quanh ốc đảo (xem 4b); ngoài đó keo gai / cây khô thưa thớt (sa mạc Bắc Phi - Trung Đông, không có xương rồng)
+    DESERT: { roadKind: 'dirt', bunkers: 7, trees: 150, rocks: 70, bushes: 14, villages: 3, treeKinds: ['acacia', 'acacia', 'deadTree'] },
     URBAN: { roadKind: 'asphalt', bunkers: 5, trees: 220, rocks: 18, bushes: 10, villages: 0, treeKinds: ['broadleaf', 'broadleaf', 'cypress'] },
     JUNGLE: { roadKind: 'mud', bunkers: 5, trees: 780, rocks: 40, bushes: 24, villages: 2, treeKinds: ['jungle', 'jungle', 'palm', 'broadleaf', 'jungle'] },
     HIGHLAND: { roadKind: 'gravel', bunkers: 6, trees: 760, rocks: 140, bushes: 14, villages: 2, treeKinds: ['pine', 'pine', 'pine', 'deadTree'] },
@@ -249,8 +264,15 @@ function MapGenFactory() {
     const B = BIOME[type];
     const SH = layout === 'STRONGHOLDS';
     const variant = SH ? pickStrongholdVariant(seed) : null;
-    const strongholdSites = variant ? variant.sites : STRONGHOLD_SITES;
-    const landmarkSite = variant ? variant.landmark : LANDMARK_SITE;
+    // phép đối xứng đổi phe của bản đồ (xem STRONGHOLD_LAYOUT_VARIANTS); bố cục cũ CLASSIC: soi gương
+    const SYM = variant ? variant.sym : 'mirror';
+    const symP = (x, z) => symPt(SYM, x, z);
+    // lật trái / phải theo seed (soi gương qua trục z, không đổi phe nào gần cứ điểm nào): pháo đài FORTRESS, công trình
+    // lúc ở cánh Đông lúc ở cánh Tây
+    const flipX = variant && ((seed >>> 3) & 1) ? -1 : 1;
+    const flipSite = s => flipX > 0 ? s : Object.assign({}, s, { x: -s.x, angle: Math.PI - s.angle });
+    const strongholdSites = variant ? variant.sites.map(flipSite) : STRONGHOLD_SITES;
+    const landmarkSite = variant ? flipSite(variant.landmark) : LANDMARK_SITE;
     const layoutVariant = variant ? variant.name : 'CLASSIC';
     const layoutLabel = variant ? variant.label : 'TRUYỀN THỐNG';
     const layoutDesc = variant ? variant.desc : '';
@@ -278,11 +300,11 @@ function MapGenFactory() {
     const surface = new Uint8Array(N * N);   // 0 tự nhiên, 1 đường, 2 nước, 3 nền bê tông đô thị
     const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-    // Căn cứ hai phe (vị trí xuất kích lệch ngẫu nhiên)
-    const bases = {
-      blue: { x: R(-260, 260) * K, z: R(960, 1060) * K },
-      red: { x: R(-260, 260) * K, z: R(-1060, -960) * K }
-    };
+    // Căn cứ hai phe (vị trí xuất kích lệch ngẫu nhiên): phe Đỏ là ảnh đối xứng của phe Xanh (vẫn rút đủ 4 số ngẫu
+    // nhiên như trước để không xê dịch chuỗi ngẫu nhiên phía sau)
+    const bases = { blue: { x: R(-260, 260) * K, z: R(960, 1060) * K } };
+    R(); R();
+    { const [x, z] = symP(bases.blue.x, bases.blue.z); bases.red = { x, z }; }
     const keyPts = CAP.concat([bases.blue, bases.red]);
 
     // Hệ số làm phẳng quanh điểm chiến thuật & khu xuất kích
@@ -303,28 +325,79 @@ function MapGenFactory() {
     const ox = R(-1000, 1000), oz = R(-1000, 1000);
     let river = null;
 
-    // 1. ĐỘ CAO NỀN
-    function baseHeight(x, z) {
+    // SA MẠC — ĐỤN CÁT NGANG GIÓ: gió thổi theo +u (hướng windA). Mặt cắt dọc gió bất đối xứng như đụn thật: sườn đón gió
+    // thoải (~70% bước đụn, dốc dần lên đỉnh), đỉnh sắc, sườn khuất gió dốc (~25-30°) đổ về phía xuôi gió. Sống đụn đứt thành
+    // từng khúc (độ cao đổi chậm dọc sống), hai đầu khúc thấp dần và lùi về phía xuôi gió -> dáng lưỡi liềm (sừng chĩa
+    // xuôi gió). Bước đụn ~560 (~7 ô lưới 84) để lưới độ cao dựng được dáng đụn; gợn cát nhỏ do shader vẽ cùng hướng gió
+    const DUNE_L = 560, DUNE_S = 0.71;
+    function duneH(x, z) {
+      const field = smooth(-0.15, 0.35, fbm(noise, (x + ox) * 0.00055, (z + oz) * 0.00055, 3));
+      if (field <= 0) return 0;
+      const wx = x + 180 * fbm(noise2, (x + ox) * 0.0007, (z + oz) * 0.0007, 3);
+      const wz = z + 180 * fbm(noise2, (x - oz) * 0.0007 + 40, (z + ox) * 0.0007, 3);
+      const u = wx * cw + wz * sw, v = -wx * sw + wz * cw;
+      // độ cao khúc sống đụn: đổi chậm dọc sống (v), gần như không đổi qua bề ngang một đụn (u)
+      const seg = smooth(-0.3, 0.3, noise(u * 0.0005 + 7.7, v * 0.0021 - 3.1));
+      if (seg <= 0) return 0;
+      const amp = field * seg * (0.8 + 0.4 * fbm(noise, u * 0.0004 - 2.3, v * 0.0009 + 5.1, 2));
+      // sừng lưỡi liềm: khúc đụn thấp dần (hai đầu) thì đỉnh lùi xuôi gió; sống đụn uốn nhẹ theo chiều dọc
+      const ph = (u - 160 * (1 - seg) + 90 * noise(v * 0.0013 + 1.9, u * 0.0003)) / DUNE_L;
+      const t = ph - Math.floor(ph);
+      const y = t < DUNE_S ? Math.pow(t / DUNE_S, 1.6) : Math.pow(1 - (t - DUNE_S) / (1 - DUNE_S), 1.25);
+      return y * 50 * amp;
+    }
+    // SA MẠC — NÚI BÀN: thềm sa thạch đỉnh bằng, vách cao ~14 m (sau lọc chống răng cưa, trên lưới 84 thành vách dốc
+    // ~0,8-1: xe nhẹ không leo thẳng lên), chân vách có sườn đá đổ (talus). Vài đoạn vách sạt thành dốc thoải = lối lên
+    // đỉnh. n: giá trị nhiễu (đá tảng dồn về chân vách, ốc đảo / đụn cát tránh núi bàn)
+    // Nhiễu tỉ lệ lớn, ít tầng: vài khối núi bàn rộng 1-2 km (~5% thung lũng) viền vách liền mạch; nhiễu nhiều tầng / tỉ lệ
+    // nhỏ cho ra lốm đốm khối bé tí mà gần như toàn bộ là vách dốc
+    const MESA = { h: 0, n: 0 }, MESA_T = 0.38;
+    function mesaAt(x, z) {
+      const n = fbm(noise2, (x - ox) * 0.0005, (z - oz) * 0.0005, 3);
+      MESA.n = n; MESA.h = 0;
+      if (n < MESA_T - 0.1) return MESA;
+      const ramp = smooth(0.15, 0.5, noise2(x * 0.0021 + 4.1, z * 0.0021 - 8.3));
+      const w = lerp(0.006, 0.05, ramp);
+      MESA.h = smooth(MESA_T - w, MESA_T + w, n) * 110 + smooth(MESA_T - 0.085, MESA_T - 0.005, n) * 12 + smooth(MESA_T + 0.085, MESA_T + 0.285, n) * 8;
+      return MESA;
+    }
+
+    // 1. ĐỘ CAO NỀN (địa hình ngẫu nhiên tự nhiên, không soi gương; công bằng hai phe do bước cân bằng sau khi sinh lo)
+    function baseHeight(x, z) { return outerLand(x, z, baseRaw(x, z) + rimRaise(x, z)); }
+    const mesaN = (x, z) => mesaAt(x, z).n;
+    function baseRaw(x, z) {
       const wx = x + 180 * fbm(noise2, (x + ox) * 0.0007, (z + oz) * 0.0007, 3);
       const wz = z + 180 * fbm(noise2, (x - oz) * 0.0007 + 40, (z + ox) * 0.0007, 3);
       const fl = flattenAt(x, z);
       let h;
       if (type === 'DESERT') {
         const u = wx * cw + wz * sw, v = -wx * sw + wz * cw;
-        const field = smooth(-0.15, 0.35, fbm(noise, (x + ox) * 0.00055, (z + oz) * 0.00055, 3));
-        let dune = Math.max(0, 1 - Math.abs(noise(u * 0.0042, v * 0.0016)));
-        dune = Math.pow(dune, 2.6) * 34 * field;
-        let ripples = fbm(noise, u * 0.012, v * 0.004, 2) * 3;
-        // ngoài bản đồ (cảnh nền, lưới thưa): cồn cát lớn thay cho cồn nhỏ / gợn (tránh lấy mẫu thưa thành hoa văn lặp)
+        // ngoài bản đồ (cảnh nền, lưới thưa): cồn cát lớn thay cho đụn nhỏ (tránh lấy mẫu thưa thành hoa văn lặp)
         const dFar = smooth(2500 + O0, 3300 + O0, Math.hypot(x, z));
-        if (dFar > 0) {
-          const big = Math.pow(Math.max(0, 1 - Math.abs(noise(u * 0.0011 + 3.3, v * 0.00045))), 2.2) * 70 * (0.4 + 0.6 * field);
-          dune = lerp(dune, big, dFar); ripples *= 1 - dFar;
+        // lọc trước khi lấy mẫu: trung bình 5 điểm trong ô lưới (84) -> sườn khuất gió / vách núi bàn hẹp hơn 1 ô không
+        // thành răng cưa (vách đứng lấy mẫu thẳng lên lưới thành dãy chóp tam giác dọc chân vách)
+        const q = CELL * 0.3;
+        const M = mesaAt(x, z), mN = M.n;
+        let mH = M.h;
+        if (dFar < 1 && mN > MESA_T - 0.16 && mN < MESA_T + 0.14) {
+          // vách núi bàn: lọc lều 3x3 rộng ~1 ô (đường viền vách đi mượt giữa các đỉnh lưới, không thành bậc thang)
+          const e = CELL * 0.5;
+          mH *= 4;
+          for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (dx || dz) mH += mesaAt(x + dx * e, z + dz * e).h * (dx && dz ? 1 : 2);
+          mH /= 16;
         }
-        const mesaN = fbm(noise2, (x - ox) * 0.0010, (z - oz) * 0.0010, 4);
-        const mesa = smooth(0.30, 0.38, mesaN) * 42 + smooth(0.38, 0.6, mesaN) * 6;
-        h = 6 + fbm(noise, wx * 0.0012, wz * 0.0012, 4) * 8 + dune + ripples;
-        h = h * lerp(0.35, 1, fl) + mesa * fl;
+        let dune = 0;
+        if (dFar < 1) dune = (duneH(x, z) * 2 + duneH(x + q, z + q) + duneH(x - q, z - q) + duneH(x + q, z - q) + duneH(x - q, z + q)) / 6;
+        if (dFar > 0) {
+          const field = smooth(-0.15, 0.35, fbm(noise, (x + ox) * 0.00055, (z + oz) * 0.00055, 3));
+          const big = Math.pow(Math.max(0, 1 - Math.abs(noise(u * 0.0011 + 3.3, v * 0.00045))), 2.2) * 70 * (0.4 + 0.6 * field);
+          dune = lerp(dune, big, dFar);
+        }
+        // đỉnh / chân vách núi bàn là đá: không có đụn cát
+        dune *= 1 - smooth(MESA_T - 0.07, MESA_T - 0.02, mN);
+        // nền cát cao ~20 (không trũng sát mực nước 0,2: shader tô bùn ướt ven nước ở dải độ cao < 8,5 — nước chỉ có ở ốc đảo)
+        h = 20 + fbm(noise, wx * 0.0012, wz * 0.0012, 4) * 8 + dune;
+        h = lerp(20, h, lerp(0.35, 1, fl)) + mH * fl;
       } else if (type === 'URBAN') {
         h = 4 + fbm(noise, wx * 0.0006, wz * 0.0006, 3) * 7;
         h = lerp(4, h, 0.5 + 0.5 * fl);
@@ -351,9 +424,8 @@ function MapGenFactory() {
       }
       // Gồ ghề vi mô của mặt đất tự nhiên (đất đá lồi lõm, không phẳng lì)
       h += fbm(noise2, x * 0.03, z * 0.03, 2) * 0.9 + noise(x * 0.075, z * 0.075) * 0.35;
-      // Vành núi bao quanh chiến trường (xe không ra được mép bản đồ) nối liền cảnh vật ngoài bản đồ
-      h += rimRaise(x, z);
-      return outerLand(x, z, h);
+      // (vành núi bao quanh chiến trường + cảnh ngoài bản đồ cộng ở baseHeight, sau bước đối xứng)
+      return h;
     }
 
     // 1a. VÀNH NÚI + CẢNH NGOÀI BẢN ĐỒ (dùng chung cho lưới trong bản đồ và cảnh nền bên ngoài -> mép nối liền).
@@ -364,16 +436,20 @@ function MapGenFactory() {
     const angN = (x, z, f, o) => { const d = Math.hypot(x, z) || 1; return on(x / d * f + o, z / d * f - o * 0.7); };
     const coastPhi = on(0.37, 9.1) * Math.PI * 2;   // hướng trục dài của đảo
     // Bán kính tối thiểu của lòng thung lũng theo hướng: đủ ôm đồi cứ điểm (+ chân đồi) và khu xuất kích hai phe theo
-    // hướng đó; hướng trống thì núi được lấn vào tới ~0.56 nửa bản đồ
+    // hướng đó; hướng trống thì mũi núi được lấn vào tới ~0.48 nửa bản đồ
     const KEYS = [];
     for (const c of strongholdSites) KEYS.push([c.x, c.z, 820]);
     for (const L of landmarks) KEYS.push([L.x, L.z, Math.hypot(L.hu, L.hv) + LM_BLEND + 200]);
-    for (const zc of [(SPAWN.blue.z0 + SPAWN.blue.z1) / 2, (SPAWN.red.z0 + SPAWN.red.z1) / 2])
+    // khu xuất kích: giữa + mép sau (mũi núi lấn sâu không được chạm phần sau khu xuất kích / kho căn cứ)
+    for (const zc of [(SPAWN.blue.z0 + SPAWN.blue.z1) / 2, SPAWN.blue.z1, (SPAWN.red.z0 + SPAWN.red.z1) / 2, SPAWN.red.z0])
       for (const xc of [-SPAWN.halfX, 0, SPAWN.halfX]) KEYS.push([xc, zc, 360]);
+    // sông hồ: sông chạy dọc một cánh (|x| ~1100-1220 K, chưa biết cánh nào lúc này) -> giữ cả hai cánh khỏi mũi núi để
+    // dòng sông nằm trong lòng thung lũng, không bò lên chân núi
+    if (type === 'RIVER_LAKE') for (const xs of [-1, 1]) for (const zc of [-1700, -600, 600, 1700]) KEYS.push([xs * 1170 * K, zc, 520]);
     const KM = new Float32Array(720);
     for (let a = 0; a < 720; a++) {
       const t = a / 720 * Math.PI * 2, c = Math.cos(t), sn = Math.sin(t);
-      let r = HALF * 0.56;
+      let r = HALF * 0.48;
       for (const [kx, kz, kr] of KEYS) {
         const along = kx * c + kz * sn, across = Math.abs(-kx * sn + kz * c);
         if (across < kr) r = Math.max(r, along + Math.sqrt(kr * kr - across * across));
@@ -385,22 +461,58 @@ function MapGenFactory() {
       const T0 = KM.slice();
       for (let a = 0; a < 720; a++) KM[a] = Math.max(T0[a], (T0[(a + 719) % 720] + T0[a] + T0[(a + 1) % 720]) / 3);
     }
+    // bảng theo góc t (n ô / vòng) -> chỉ số của góc đối xứng đổi phe (soi gương: -t, qua tâm: t + π)
+    const symIdx = (a, n) => SYM === 'point' ? (a + n / 2) % n : (n - a) % n;
+    { const T0 = KM.slice(); for (let a = 0; a < 720; a++) KM[a] = Math.max(T0[a], T0[symIdx(a, 720)]); }
     // CHÂN VÀNH NÚI = ranh giới thung lũng chiến trường: hình dạng ngẫu nhiên tự nhiên mỗi map (không tròn, không vuông):
     // lượn sóng nhiều tầng trên toạ độ bị bẻ cong + mũi núi lấn sâu ở chỗ ngẫu nhiên. Không lấn vào cứ điểm / khu xuất
     // kích, không chạm mép giữ xe.
     // Phần lượn sóng chỉ phụ thuộc HƯỚNG nhìn từ tâm (toạ độ bẻ cong = d * hàm của hướng) -> tính sẵn thành bảng theo
     // góc; rimFoot được gọi cho mọi đỉnh lưới + mọi lần đặt vật nên không tính lại 6 lần nhiễu mỗi lần gọi
-    const RFN = 8192, RFT = new Float32Array(RFN + 1);
+    // Dáng tổng thể theo seed (bộ số riêng, không xáo trộn phần khác). Trước đây chỉ có nhiễu lượn sóng ±5% quanh bán kính
+    // cố định -> thung lũng mọi map gần như tròn xoe. Giờ: thuôn dài theo một trục ngẫu nhiên, 2-4 mũi núi (sống núi
+    // nhọn dần vào trong) lấn sâu 1,3-2,7 km + 1-2 vịnh thung lũng ăn sâu vào núi ở hướng ngẫu nhiên, nhiễu lượn sóng mạnh hơn
+    const rsh = mulberry32((seed ^ 0x2f6b1c55) >>> 0), RSH = (a, b) => a + rsh() * (b - a);
+    const elong = RSH(0.05, 0.16), elongA = RSH(0, Math.PI);
+    const lobes = [];   // [hướng, nửa bề rộng góc, độ sâu (âm = mũi núi lấn vào, dương = vịnh ăn ra)]
+    for (let k = 0, n = 2 + Math.floor(rsh() * 3); k < n; k++) lobes.push([RSH(0, Math.PI * 2), RSH(0.09, 0.2), -RSH(1300, 2700)]);
+    for (let k = 0, n = 1 + Math.floor(rsh() * 2); k < n; k++) lobes.push([RSH(0, Math.PI * 2), RSH(0.16, 0.34), RSH(450, 950)]);
+    // ĐỘ CAO VÀNH NÚI THEO HƯỚNG: vành cao đều mọi phía làm lòng chiến trường thành đáy chảo kín (miệng núi lửa). Giờ cả
+    // vùng nghiêng về một phía (một bên núi cao, bên đối diện chỉ còn dải đồi thấp) + 1-3 khe đèo rộng nơi vành núi hạ
+    // gần hết -> nhìn ra được đồng bằng / biển cát / bờ biển bên ngoài. Tường giữ xe tính theo chân núi, không theo độ cao
+    const tiltA = RSH(0, Math.PI * 2), tiltK = RSH(0.35, 0.6);
+    const gaps = [];
+    for (let k = 0, n = 1 + Math.floor(rsh() * 3); k < n; k++) gaps.push([RSH(0, Math.PI * 2), RSH(0.12, 0.3), RSH(0.6, 0.85)]);
+    const RFN = 8192, RFT = new Float32Array(RFN + 1), RKT = new Float32Array(RFN + 1);
     for (let a = 0; a <= RFN; a++) {
       const t = a / RFN * Math.PI * 2, x = Math.cos(t), z = Math.sin(t);
       // bẻ cong toạ độ trước khi lấy nhiễu: đường chân núi méo theo vùng, không toả đều từ tâm
       const wx = x + 0.45 * on(x * 0.9 + 4.4, z * 0.9 - 2.2), wz = z + 0.45 * on(x * 0.9 - 7.1, z * 0.9 + 1.3);
-      // bán kính nền như nhau mọi hướng (không bám khung vuông), hình dạng do nhiễu quyết định; nền đủ nhỏ để
-      // phần lồi ra ít khi chạm giới hạn mép (chỗ đó bị ép phẳng thành cạnh thẳng)
-      // vài mũi núi lấn sâu vào lòng thung lũng ở chỗ ngẫu nhiên (mỗi map khác nhau)
-      RFT[a] = HALF * 0.79 + 340 * angN(wx, wz, 1.3, 11.3) + 210 * angN(wx, wz, 3.1, 3.1) + 80 * angN(wx, wz, 7.3, 5.5)
-        - 1100 * Math.pow(Math.max(0, angN(wx, wz, 2.4, 6.6) - 0.08), 1.3);
+      // bán kính nền như nhau mọi hướng (không bám khung vuông); nền đủ nhỏ để phần lồi ra ít khi chạm giới hạn mép
+      // (chỗ đó bị ép phẳng thành cạnh thẳng)
+      let r = HALF * 0.77 * (1 + elong * Math.cos(2 * (t - elongA)))
+        + 560 * angN(wx, wz, 1.3, 11.3) + 330 * angN(wx, wz, 3.1, 3.1) + 150 * angN(wx, wz, 7.3, 5.5) + 60 * angN(wx, wz, 15.1, 2.7);
+      // mũi núi / vịnh: chuông theo góc -> mũi núi thu hẹp dần về phía tâm như sống núi thật; tâm lệch nhẹ theo nhiễu
+      // -> sống mũi núi cong, không thẳng tắp hướng tâm
+      for (const [a0, w, d] of lobes) {
+        let da = Math.abs(t - a0 - 0.06 * angN(wx, wz, 4.2, a0)) % (Math.PI * 2);
+        da = Math.min(da, Math.PI * 2 - da) / w;
+        r += d * Math.exp(-da * da);
+      }
+      RFT[a] = r;
+      let k = (1 + tiltK * Math.cos(t - tiltA)) * (0.85 + 0.3 * (angN(wx, wz, 2.0, 8.8) + 0.5));
+      for (const [a0, w, dep] of gaps) {
+        let da = Math.abs(t - a0) % (Math.PI * 2);
+        da = Math.min(da, Math.PI * 2 - da) / w;
+        k *= 1 - dep * Math.exp(-da * da);
+      }
+      RKT[a] = Math.max(0.12, k);
     }
+    // hệ số độ cao vành núi theo hướng nhìn từ tâm (bảng RKT)
+    const rimK = (x, z) => {
+      const ur = ((Math.atan2(z, x) / (Math.PI * 2) + 1) % 1) * RFN, ir = Math.floor(ur);
+      return RKT[ir] + (RKT[ir + 1] - RKT[ir]) * (ur - ir);
+    };
     function rimFoot(x, z) {
       const u = (Math.atan2(z, x) / (Math.PI * 2) + 1) % 1;
       const ur = u * RFN, ir = Math.floor(ur), fr = ur - ir;
@@ -414,7 +526,7 @@ function MapGenFactory() {
       return -120 * Math.log(Math.exp(-f / 120) + Math.exp(-lim / 120));
     }
     // khoảng cách từ tâm tới mép giữ xe (hình vuông ±(HALF - 60)) theo hướng (x, z)
-    function boxDist(x, z) { return (HALF - 60) / Math.max(Math.abs(x), Math.abs(z), 1e-6) * Math.hypot(x, z); }
+    function boxDist(x, z) { const m = Math.max(Math.abs(x), Math.abs(z)); return m < 1e-3 ? HALF - 60 : (HALF - 60) / m * Math.hypot(x, z); }
     // đồng bằng ven biển chỉ bắt đầu sau chân núi + 900 (ngoài tường giữ xe)
     function coastIn(x, z) { return rimFoot(x, z) + 900; }
     function rimRaise(x, z) {
@@ -422,10 +534,13 @@ function MapGenFactory() {
       const s = d - foot;
       if (s <= 0) return 0;
       // chân vành: sườn đều dốc ~0.6 như trước, lên cao thì thoải dần về đỉnh (không còn mặt nón thẳng đuột)
-      const pk = OUT.peak * (0.8 + 0.5 * fbm(on, x * 0.0005 + 3, z * 0.0005, 3));
-      // chân dốc mềm (độ dốc tăng dần từ 0) -> không có nếp gãy tròn nơi đồng bằng chạm chân núi
-      const se = s * s / (s + 90);
-      let r = pk * (1 - Math.exp(-se * 0.6 / pk));
+      const rk = rimK(x, z), pk = OUT.peak * (0.8 + 0.5 * fbm(on, x * 0.0005 + 3, z * 0.0005, 3)) * rk;
+      // chân dốc mềm (độ dốc tăng dần từ 0) -> không có nếp gãy tròn nơi đồng bằng chạm chân núi. Đoạn vành thấp (đèo, phía
+      // đồi thấp) sườn cũng thoải theo: gò thấp mà sườn dốc 0.6 thì thành một gờ mảnh chạy vòng như bờ đê
+      // chân núi thoải dần ~300 (dải quạt bồi tích): chuyển từ đồng bằng sang sườn trong 1 ô lưới thì thành nếp gãy chạy
+      // vòng quanh map, nhìn từ xa / nắng xiên thấy rõ như một đường kẻ
+      const se = s * s / (s + 300);
+      let r = pk * (1 - Math.exp(-se * 0.6 * (0.25 + 0.75 * Math.min(1, rk)) / pk));
       // sống núi, yên ngựa, khe suối: dải sống núi uốn lượn liên hoàn, đỉnh bo tròn tự nhiên, không nhọn hoắt thành chóp nón
       const rRidge1 = ridged(on, x * 0.00045 + 5.2, z * 0.00045 - 3.1, 4);
       const rRidge2 = fbm(on, x * 0.00085 - 1.7, z * 0.00085 + 4.2, 3);
@@ -505,7 +620,15 @@ function MapGenFactory() {
       for (const c of strongholdSites) {
         let base = 0, n = 0;
         for (let a = 0; a < 12; a++) { base += H(c.x + Math.cos(a * 0.5236) * 300, c.z + Math.sin(a * 0.5236) * 300); n++; }
-        strongholds.push({ id: c.id, x: c.x, z: c.z, angle: c.angle, G: Math.round((base / n + c.hill) * 10) / 10 });
+        // đô thị: không đắp đồi giữa phố — chỉ một gò thấp ~3 m (cứ điểm bê tông dưới ụ đất trên quảng trường)
+        const hill = type === 'URBAN' ? c.hill * 0.3 : c.hill;
+        strongholds.push({ id: c.id, x: c.x, z: c.z, angle: c.angle, G: Math.round((base / n + hill) * 10) / 10 });
+      }
+      // CÂN BẰNG: cứ điểm và ảnh đối xứng đổi phe của nó (tiền đồn A <-> C) cùng cốt đỉnh đồi — lấy cái cao hơn để đồi
+      // nào cũng cao ít nhất hill so với đất quanh nó (địa hình ngẫu nhiên: trước đây tiền đồn A cao 144, C chỉ 82)
+      for (const c of strongholds) {
+        const [px, pz] = symP(c.x, c.z), p = strongholds.find(q => Math.hypot(q.x - px, q.z - pz) < 1);
+        if (p && p !== c) p.G = c.G = Math.max(c.G, p.G);
       }
       for (let iz = 0; iz < N; iz++) {
         for (let ix = 0; ix < N; ix++) {
@@ -664,7 +787,8 @@ function MapGenFactory() {
       for (const c of canals) if (Math.abs(-x * Math.sin(c.rot) + z * Math.cos(c.rot)) < c.vEnd) d = Math.min(d, Math.abs(x * Math.cos(c.rot) + z * Math.sin(c.rot) - c.a));
       return d;
     };
-    const isWater = (x, z) => river ? (((n) => n.d < n.hw)(river.near(x, z)) || lakes.some(L => Math.hypot(x - L.x, z - L.z) < L.r) || H(x, z) < 1.2)
+    // (hồ không cần sông: ao ốc đảo sa mạc, xem 4b)
+    const isWater = (x, z) => river || lakes.length ? ((river && ((n) => n.d < n.hw)(river.near(x, z))) || lakes.some(L => Math.hypot(x - L.x, z - L.z) < L.r) || H(x, z) < 1.2)
       : canals.length ? canalDist(x, z) < canals[0].hw + 4 : false;
     // cao độ bờ kênh phía gần điểm (x, z) — đường qua cầu bám cao độ bờ, không tụt xuống lòng kênh; -Infinity nếu xa kênh
     const canalBankH = (x, z) => {
@@ -717,14 +841,22 @@ function MapGenFactory() {
         local: { cw: 52, walk: 16, lanes: 2, r: 36 },     // phố thường: 6,5 m, vỉa hè 2 m
         canal: { cw: 150, walk: 28, lanes: 0, r: 0 }      // kênh: mặt nước 19 m, kè + lối dạo bờ kênh 3,5 m mỗi bên
       };
-      const mkLines = () => {
-        const L = [{ a: R(-50, 50), cls: 'avenue' }];
+      // lưới phố trùm qua mọi cứ điểm (+ 1 dãy ô phía ngoài): trước đây lưới dừng ở ~±3000 -> tiền đồn A / C (±3375) nằm
+      // giữa bãi cỏ ngoại ô. cov(axis): toạ độ lớn nhất của cứ điểm theo trục đó trong hệ (u, v) đã xoay
+      const cov = ax => Math.max(2200, ...strongholdSites.map(c => Math.abs(ax ? -c.x * sr + c.z * cr : c.x * cr + c.z * sr) + 500));
+      const mkLines = ax => {
+        const L = [{ a: R(-50, 50), cls: 'avenue' }], need = cov(ax);
         for (const dir of [1, -1]) {
           let q = L[0].a, n = 0;
           for (;;) {
             const gap = R(1280, 1780), nx = q + dir * gap;
-            if (Math.abs(nx) > EXT) break;
-            if (gap > 1520 && Math.abs(q) < 1800) L.push({ a: q + dir * gap * R(0.44, 0.56), cls: 'local' });   // chia đôi khoảng rộng
+            // (bố cục cứ điểm: lưới vừa đủ trùm cứ điểm + 1 dãy ô — phố trải tới ±4400 mọi phía làm số nhà phải dựng gấp
+            // đôi mà phần lớn nằm xa chỗ giao tranh)
+            const ext = SH ? need : EXT;
+            if (Math.abs(nx) > Math.min(ext + 1780, HALF * 0.85) || Math.abs(q) >= ext) break;
+            // chia đôi khoảng rộng ở vùng giữa thành phố (bố cục cứ điểm: vùng hẹp hơn — mỗi ô thêm ~0,37 triệu tam giác vỉa
+            // hè / bó vỉa; lõi ô đã có dãy nhà trong hẻm + ngõ xuyên)
+            if (gap > 1520 && Math.abs(q) < (SH ? 1300 : 1800)) L.push({ a: q + dir * gap * R(0.44, 0.56), cls: 'local' });
             n++;
             L.push({ a: nx, cls: n % 3 === 0 ? 'avenue' : 'main' });   // cứ 3 phố chính có 1 đại lộ vành đai
             q = nx;
@@ -734,7 +866,7 @@ function MapGenFactory() {
         for (const l of L) l.b = l.cls === 'avenue' ? 0 : R(-0.012, 0.012);
         return L;
       };
-      const lu = mkLines(), lv = mkLines();
+      const lu = mkLines(0), lv = mkLines(1);
       // kênh đào: thay 1 trục U (không phải đại lộ) ở cánh ngẫu nhiên, cách tâm 1350-1850 (ngoài mặt bằng công trình giữa)
       const want = (rng() < 0.5 ? -1 : 1) * R(1350, 1850);
       let ci = -1;
@@ -781,8 +913,8 @@ function MapGenFactory() {
         return tf(u, c + M.b * u);
       };
       const offC = L => URB[L.cls].cw / 2, offL = L => URB[L.cls].cw / 2 + URB[L.cls].walk;
-      // đồi cứ điểm (sườn tới ~680 từ tâm): không lát phố / xây ô phố trên sườn dốc, chỉ có đường nối lên miệng hầm
-      const nearSH = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 520));
+      // Ô phố giáp cứ điểm / công trình bối cảnh vẫn giữ (trước đây bỏ cả ô 1300-1800 -> cứ điểm nằm giữa bãi trống, phố
+      // không nhà chạy quanh): từng nhà tự né quảng trường quanh hầm (clearOfKeys) / khuôn viên công trình / đường vào cửa hầm
       const inSpawn = (x, z) => Math.abs(x) < SPAWN.halfX + 40 && ((z > SPAWN.blue.z0 - 40 && z < SPAWN.blue.z1 + 40) || (z > SPAWN.red.z0 - 40 && z < SPAWN.red.z1 + 40));
       const blocks = [];
       for (let i = 0; i < lu.length - 1; i++) for (let j = 0; j < lv.length - 1; j++) {
@@ -792,8 +924,7 @@ function MapGenFactory() {
         const curb = quad(offC), lot = quad(offL);
         const cx = (curb[0][0] + curb[1][0] + curb[2][0] + curb[3][0]) / 4, cz = (curb[0][1] + curb[1][1] + curb[2][1] + curb[3][1]) / 4;
         const probe = curb.concat(curb.map((p, k) => [(p[0] + curb[(k + 1) % 4][0]) / 2, (p[1] + curb[(k + 1) % 4][1]) / 2]), [[cx, cz]]);
-        if (probe.some(p => Math.hypot(p[0], p[1]) > rimFoot(p[0], p[1]) - 50 || nearSH(p[0], p[1]))) continue;
-        if (landmarks.some(L => probe.some(p => lmOut(L, p[0], p[1]) < 36) || lmOut(L, cx, cz) < 140)) continue;
+        if (probe.some(p => Math.hypot(p[0], p[1]) > rimFoot(p[0], p[1]) - 50)) continue;
         const side = [S.cls, E.cls, N.cls, W.cls];
         const len = k => Math.hypot(curb[(k + 1) % 4][0] - curb[k][0], curb[(k + 1) % 4][1] - curb[k][1]);
         // góc k nằm giữa cạnh k-1 và cạnh k: bo theo phố nhỏ hơn trong 2 phố
@@ -806,23 +937,33 @@ function MapGenFactory() {
       // Phân khu theo vị trí: trung tâm cao ốc (cbd), vành giữa hỗn hợp nhà ống / shophouse / chung cư (mixed), ngoại vi
       // biệt thự (suburb), 2 cánh Đông Tây có khu kho xưởng (industrial). Rồi các lô đặc biệt: công viên, quảng trường,
       // trường học, nhà thờ, chợ, bệnh viện, bãi đỗ xe, cây xăng ở góc phố lớn
+      // bán kính phân khu theo cỡ thật của thành phố (ô xa tâm nhất), không theo số cố định (thành phố thường chỉ tới
+      // ~4500 nên trước đây khu biệt thự d > 4700 / kho xưởng |x| > 3600 gần như không bao giờ có)
+      const Rc = Math.max(1, ...blocks.map(B => Math.hypot(B.cx, B.cz)));
       for (const B of blocks) {
         if (B.use) continue;
-        const d = Math.hypot(B.cx, B.cz), n = fbm(noise2, B.cx * 0.0004 + 3.1, B.cz * 0.0004 - 1.7, 2);
+        const d = Math.hypot(B.cx, B.cz) / Rc, n = fbm(noise2, B.cx * 0.0004 + 3.1, B.cz * 0.0004 - 1.7, 2);
         const nearLm = landmarks.some(L => lmOut(L, B.cx, B.cz) < 680);
-        B.use = nearLm ? 'industrial' : (d < 1900 ? 'cbd' : (Math.abs(B.cx) > 3600 && d > 3000 && n > 0.12) ? 'industrial' : d > 4700 ? 'suburb' : 'mixed');
+        B.use = nearLm ? 'industrial' : (d < 0.4 ? 'cbd' : (Math.abs(B.cx) / Rc > 0.7 && d > 0.62 && n > 0.05) ? 'industrial' : d > 0.8 ? 'suburb' : 'mixed');
       }
+      // ô sát cứ điểm là khu phố hỗn hợp dày nhà (biệt thự / kho xưởng thưa -> cứ điểm lại trơ trọi giữa bãi)
+      // (1300: cứ điểm B ở tâm nằm đúng ngã tư 2 đại lộ trung tâm, tâm 4 ô quanh nó cách ~960)
+      const nearSHB = B => SH && strongholds.some(c => Math.hypot(c.x - B.cx, c.z - B.cz) < 1300);
+      for (const B of blocks) if (nearSHB(B) && (B.use === 'suburb' || B.use === 'industrial') && !landmarks.some(L => lmOut(L, B.cx, B.cz) < 680)) B.use = 'mixed';
       // chọn ngẫu nhiên n ô thoả điều kiện, chưa làm lô đặc biệt
       const pickBlocks = (n, ok) => {
         const C = blocks.filter(B => ok(B) && !B.special), out = [];
         for (let k = 0; k < n && C.length; k++) { const B = C.splice(Math.floor(rng() * C.length), 1)[0]; B.special = true; out.push(B); }
         return out;
       };
-      for (const B of pickBlocks(Math.round(blocks.length * 0.08), B => B.use !== 'industrial' && !B.spawn)) B.use = 'park';
-      for (const B of pickBlocks(2, B => B.use === 'cbd')) B.use = 'plaza';
-      for (const [use, n, from] of [['school', 4, ['mixed', 'suburb']], ['church', 2, ['mixed', 'suburb']], ['market', 2, ['mixed']],
-        ['hospital', 1, ['mixed', 'cbd']], ['parking', 3, ['cbd', 'mixed']]])
-        for (const B of pickBlocks(n, B => from.includes(B.use) && !B.spawn)) B.use = use;
+      // ô sát cứ điểm không làm công viên / quảng trường / bãi đỗ xe (lô trống trải -> cứ điểm lại nằm giữa bãi trống)
+      // số lô đặc biệt co theo số ô phố (thành phố nhỏ ~30 ô: trước đây trường / chợ / bệnh viện / bãi xe chiếm hết ô hỗn hợp)
+      const nB = (max, f) => Math.max(1, Math.min(max, Math.round(blocks.length * f)));
+      for (const B of pickBlocks(Math.round(blocks.length * 0.08), B => B.use !== 'industrial' && !B.spawn && !nearSHB(B))) B.use = 'park';
+      for (const B of pickBlocks(2, B => B.use === 'cbd' && !nearSHB(B))) B.use = 'plaza';
+      for (const [use, n, from] of [['school', nB(4, 0.08), ['mixed', 'suburb']], ['church', nB(2, 0.04), ['mixed', 'suburb']], ['market', nB(2, 0.04), ['mixed']],
+        ['hospital', 1, ['mixed', 'cbd']], ['parking', nB(3, 0.06), ['cbd', 'mixed']]])
+        for (const B of pickBlocks(n, B => from.includes(B.use) && !B.spawn && !nearSHB(B))) B.use = use;
       // cây xăng: góc ô phố giáp 2 phố có ít nhất 1 phố lớn (khu hỗn hợp / ngoại vi / kho xưởng)
       for (const B of pickBlocks(5, B => ['mixed', 'suburb', 'industrial'].includes(B.use) && B.side.some(c => c === 'avenue' || c === 'main'))) {
         const ks = [0, 1, 2, 3].filter(k => [B.side[k], B.side[(k + 3) % 4]].some(c => c === 'avenue' || c === 'main') && B.side[k] !== 'canal' && B.side[(k + 3) % 4] !== 'canal');
@@ -839,7 +980,8 @@ function MapGenFactory() {
         const a = [lerp(C[k][0], C[k + 1][0], t), lerp(C[k][1], C[k + 1][1], t)], b = [lerp(C[(k + 3) % 4][0], C[k + 2][0], t), lerp(C[(k + 3) % 4][1], C[k + 2][1], t)];
         const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 14), pts = [];
         for (let i = 0; i <= n; i++) pts.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]);
-        roads.push({ pts, width: 24, kind: 'asphalt', cls: 'alley', walk: 0, lanes: 0 });
+        // hẻm xe hơi 5 m: xe tăng (rộng 2,75-4 m) luồn được qua giữa ô phố (trước đây ngõ 3 m — không xe nào lọt)
+        roads.push({ pts, width: 40, kind: 'asphalt', cls: 'alley', walk: 0, lanes: 0 });
         B.alley = { k, t };
       }
       roads.urbanGrid = { lu, lv, rot, URB, blocks, canal: canalL };
@@ -847,18 +989,33 @@ function MapGenFactory() {
       // nhựa bò lên sườn núi, dốc dựng) và đoạn xuyên đồi cứ điểm (mặt đường nhựa lộ qua sân bê tông / chui dưới ụ đất)
       {
         const ug = roads.urbanGrid, keep = [];
-        const nearSH = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 520));
-        const cut = (x, z) => Math.hypot(x, z) > rimFoot(x, z) - 30 || nearSH(x, z);
+        // quảng trường quanh hầm (đỉnh gò bằng phẳng ~345) + đường vào cửa hầm: không có phố chạy qua
+        const nearSH = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 360));
+        // phố chỉ có trong thành phố (giáp một ô phố, cách mép bó vỉa < 140): ngoài rìa không còn lưới phố trống không nhà;
+        // đại lộ vẫn chạy tiếp ra ngoại ô làm đường trục
+        const quadDist = (Q, x, z) => {
+          let inside = true, d = Infinity;
+          for (let k = 0; k < 4; k++) {
+            const a = Q[k], b = Q[(k + 1) % 4], ex = b[0] - a[0], ez = b[1] - a[1], L2 = ex * ex + ez * ez || 1;
+            if ((x - a[0]) * ez - (z - a[1]) * ex > 0) inside = false;
+            const t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / L2));
+            d = Math.min(d, Math.hypot(a[0] + ex * t - x, a[1] + ez * t - z));
+          }
+          return inside ? 0 : d;
+        };
+        // (mép bó vỉa có thể quấn ngược chiều kim đồng hồ: điểm trong theo cả 2 chiều)
+        const inCity = (x, z) => blocks.some(B => Math.hypot(B.cx - x, B.cz - z) < 1600 && Math.min(quadDist(B.curb, x, z), quadDist(B.curb.slice().reverse(), x, z)) < 140);
+        const cut = (rd, x, z) => Math.hypot(x, z) > rimFoot(x, z) - 30 || nearSH(x, z) || (rd.cls !== 'avenue' && !inCity(x, z));
         for (const rd of roads) {
           let run = [];
           const flush = () => { if (run.length >= 2) keep.push(Object.assign({}, rd, { pts: run })); run = []; };
-          for (const p of rd.pts) { if (cut(p[0], p[1])) flush(); else run.push(p); }
+          for (const p of rd.pts) { if (cut(rd, p[0], p[1])) flush(); else run.push(p); }
           flush();
         }
         roads.length = 0; roads.push(...keep); roads.urbanGrid = ug;
         for (let k = bridges.length - 1; k >= 0; k--) {
           const b = bridges[k];
-          if (b.urban && (cut(b.x, b.z) || !keep.some(rd => rd.pts.some(p => Math.hypot(p[0] - b.x, p[1] - b.z) < 30)))) bridges.splice(k, 1);
+          if (b.urban && (cut({ cls: 'main' }, b.x, b.z) || !keep.some(rd => rd.pts.some(p => Math.hypot(p[0] - b.x, p[1] - b.z) < 30)))) bridges.splice(k, 1);
         }
       }
       if (SH) {
@@ -1019,15 +1176,22 @@ function MapGenFactory() {
         for (const c of strongholds) for (const sg of [1, -1]) portalRoad(c, sg, B.roadKind);
         const mouth = (c, sg) => portalApp(c, sg);
         const tailOf = (c, sg) => { const a = portalAxis(c, sg), A = portalApp(c, sg); return [[A.x - a.ux * 35, A.z - a.uz * 35], [A.x - a.ux * 70, A.z - a.uz * 70]]; };
+        // Mạng đường CÙNG SƠ ĐỒ cho hai phe (sơ đồ bất biến qua phép đối xứng đổi phe), mỗi tuyến tự tìm theo địa hình
+        // thật. Tìm xen kẽ Xanh - Đỏ: không phe nào được nhập vào đường của phe kia trước cả loạt
         const toMouth = (from, c, sg, w, head) => route(from, mouth(c, sg), w, B.roadKind, false, tailOf(c, sg), head);
-        toMouth(B0, cB, 1, 36);
-        toMouth(R0, cB, -1, 36);
-        toMouth(mouth(cA, 1), cB, 1, 32, tailOf(cA, 1).reverse());
-        toMouth(mouth(cC, 1), cB, 1, 32, tailOf(cC, 1).reverse());
-        toMouth(B0, cA, -1, 28);
-        toMouth(B0, cC, -1, 28);
-        toMouth(R0, cA, -1, 26);
-        toMouth(R0, cC, -1, 26);
+        // miệng hầm của cứ điểm c gần điểm p hơn
+        const sgNear = (c, p) => { const a = mouth(c, 1), b = mouth(c, -1); return Math.hypot(a.x - p.x, a.z - p.z) <= Math.hypot(b.x - p.x, b.z - p.z) ? 1 : -1; };
+        const bB = sgNear(cB, B0), bR = sgNear(cB, R0);
+        // căn cứ -> miệng hầm phía nhà của cả 3 cứ điểm; tiền đồn -> miệng hầm phía nhà của B (miệng tiền đồn quay về
+        // phía B). Soi gương: A, C mỗi cái tự đối xứng -> cả 2 tiền đồn nối B ở cả 2 phía; qua tâm: A (Xanh) <-> C (Đỏ)
+        toMouth(B0, cB, bB, 36); toMouth(R0, cB, bR, 36);
+        for (const c of [cA, cC]) { toMouth(B0, c, sgNear(c, B0), 28); toMouth(R0, c, sgNear(c, R0), 28); }
+        const links = SYM === 'point' ? [[cA, bB], [cC, bR]] : [[cA, bB], [cA, bR], [cC, bB], [cC, bR]];
+        for (const [c, bm] of links) {
+          // miệng tiền đồn phía cùng phe với miệng B (soi gương: A nối B phía Xanh bằng miệng phía Xanh của A)
+          const tgt = mouth(cB, bm), sg = SYM === 'point' ? sgNear(c, cB) : sgNear(c, tgt);
+          toMouth(mouth(c, sg), cB, bm, 32, tailOf(c, sg).reverse());
+        }
         // đường nhánh từ ngay mép khu đất (trước cổng) nhập vào mạng đường (đi chung đường cũ -> nhập vào tuyến gần nhất);
         // đánh dấu access: không bị đẩy / cắt khi né mặt bằng công trình -> nối liền tới cổng
         for (const L of landmarks) {
@@ -1038,7 +1202,8 @@ function MapGenFactory() {
           pts.push([b.x, b.z]);
           const n0 = roads.length;
           roads.push({ pts, width: 24, kind: B.roadKind });
-          toMouth(b, cB, 1, 24);
+          // cổng nối cả hai miệng hầm B (phía Xanh và phía Đỏ) -> không nghiêng về phe nào
+          toMouth(b, cB, bB, 24); toMouth(b, cB, bR, 24);
           for (let i = n0; i < roads.length; i++) roads[i].access = true;
         }
       } else {
@@ -1274,8 +1439,15 @@ function MapGenFactory() {
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         const x = -HALF + i * CELL, z = -HALF + j * CELL, k = j * N + i;
         const dx = x - L.x, dz = z - L.z, f = dx * L.fx + dz * L.fz, r = -dx * L.fz + dz * L.fx;
-        const add = landmarkMound(L, f, r);
-        if (add > 0) heights[k] += add + (L.silo ? 0 : noise(x * 0.03, z * 0.03) * 1.6 * Math.min(1, add / 20));
+        const add = L.silo ? nukeCoarse(L, f, r) : landmarkMound(L, f, r), nz = (a) => a > 0 && !L.silo ? noise(x * 0.03, z * 0.03) * 1.6 * Math.min(1, a / 20) : 0;
+        // add < 0: hố hạ nền dưới sân khoét (hầm sinh học) — sàn thật là mặt sân bê tông (Landmarks surfaceAt)
+        // gò hầm sinh học: nút nào bị hạ nền thì lưu phần bị hạ (gò chưa hạ - đã hạ) vào L.mound.orig [k, dh, ...] ->
+        // nắp đất (landmarks/bio.js) dựng lại đúng mặt đất cũ, chỉ cắt đứng tại mép sân
+        if (L.mound && L.mound.pf !== undefined) {
+          const a0 = landmarkMound(L, f, r, 'orig');
+          if (Math.abs(a0 - add) > 0.01) (L.mound.orig || (L.mound.orig = [])).push(k, a0 + nz(a0) - add - nz(add));
+        }
+        if (add) heights[k] += add + nz(add);
       }
     }
     // Đỉnh đồi cứ điểm: trả lại mặt bằng phẳng tuyệt đối (đường lên đồi có thể đã khắc lệch)
@@ -1331,8 +1503,27 @@ function MapGenFactory() {
         }
       }
     }
-    // Đô thị: nền vỉa hè / sân bê tông giữa các tòa nhà
-    if (type === 'URBAN') for (let i = 0; i < surface.length; i++) if (surface[i] === 0) surface[i] = 3;
+    // Đô thị: nền vỉa hè / sân bê tông giữa các tòa nhà — chỉ trong các ô phố (mép bó vỉa nới 40); ngoài thành phố là đất
+    // tự nhiên (trước đây cả thung lũng lát bê tông tới chân núi). Ô phố là tứ giác lồi: điểm trong khi cùng phía mọi cạnh
+    if (type === 'URBAN' && roads.urbanGrid) {
+      for (const Bk of roads.urbanGrid.blocks) {
+        const Q = Bk.curb, xs = Q.map(p => p[0]), zs = Q.map(p => p[1]), M = 40;
+        const i0 = Math.max(0, Math.floor((Math.min(...xs) - M + HALF) / CELL)), i1 = Math.min(RES, Math.ceil((Math.max(...xs) + M + HALF) / CELL));
+        const j0 = Math.max(0, Math.floor((Math.min(...zs) - M + HALF) / CELL)), j1 = Math.min(RES, Math.ceil((Math.max(...zs) + M + HALF) / CELL));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const x = -HALF + i * CELL, z = -HALF + j * CELL, k = j * N + i;
+          if (surface[k] !== 0) continue;
+          let pos = 0, neg = 0;
+          for (let e = 0; e < 4; e++) {
+            const a = Q[e], b = Q[(e + 1) % 4], ex = b[0] - a[0], ez = b[1] - a[1], L = Math.hypot(ex, ez) || 1;
+            const s = ((x - a[0]) * ez - (z - a[1]) * ex) / L;   // khoảng cách có dấu tới cạnh
+            if (s > -M) pos++;
+            if (s < M) neg++;
+          }
+          if (pos === 4 || neg === 4) surface[k] = 3;
+        }
+      }
+    }
 
     // 5. ĐẶT VẬT THỂ (Poisson-disk + điều kiện)
     // chỗ đã chiếm {x,z,r}: lưới ô OCC, mỗi vật ghi vào mọi ô khung bao của nó phủ -> freeOf chỉ xét vài ô quanh điểm
@@ -1358,7 +1549,8 @@ function MapGenFactory() {
       if (Math.hypot(x, z) > rimFoot(x, z) - 90 - r) return false;   // chỉ trong lòng thung lũng (trước chân vành núi)
       for (const L of landmarks) if (lmOut(L, x, z) < r + 34) return false;
       for (const c of CAP) if (Math.hypot(x - c.x, z - c.z) < keyR + r) return false;
-      if (Math.abs(x) < SPAWN.halfX + r && ((z > SPAWN.blue.z0 - r && z < SPAWN.blue.z1 + r) || (z > SPAWN.red.z0 - r && z < SPAWN.red.z1 + r))) return false;
+      // khu xuất kích chừa trống — trừ đô thị: xe xuất phát ở rìa ngoại ô (game.js), không ở khu này -> phố vẫn có nhà
+      if (type !== 'URBAN' && Math.abs(x) < SPAWN.halfX + r && ((z > SPAWN.blue.z0 - r && z < SPAWN.blue.z1 + r) || (z > SPAWN.red.z0 - r && z < SPAWN.red.z1 + r))) return false;
       return true;
     }
     // xa đường vào cửa hầm / đoạn nối ra phố (đô thị: nhà xếp theo ô phố, không tự né các đường này)
@@ -1387,6 +1579,56 @@ function MapGenFactory() {
       }
       return out;
     }
+
+    // 4b. ỐC ĐẢO (sa mạc): 1-3 ao nước ở chỗ trũng giữa các đụn (không trên núi bàn), xa cứ điểm / khu xuất kích, cách
+    // đường một quãng (làng dựa vào ốc đảo nằm bên đường, xem 5b). Đào lòng chảo thoải xuống mặt nước (mực nước chung
+    // 0,2), đáy ao sâu ~1 m, bờ méo tự nhiên. Ghi vào lakes -> mặt nước, lội nước, bản đồ chiến thuật dùng chung như hồ
+    const oases = [];
+    const OASIS_BANK = 280;
+    if (type === 'DESERT') {
+      stage('oasis');
+      const nO = 1 + Math.floor(rng() * 2.6);
+      const okSite = (x, z, r) => {
+        if (!clearOfKeys(x, z, r + OASIS_BANK + 120) || mesaN(x, z) > MESA_T - 0.12) return null;
+        const nr = nearestRoad(x, z, 1300);
+        if (!nr || nr.d < r + OASIS_BANK + 70 || nr.road.portal || nr.road.access) return null;
+        // đoạn đường gần ao phải đủ chỗ dựng làng (không sát cứ điểm / khu xuất kích / công trình)
+        const rp = nr.road.pts[Math.min(nr.road.pts.length - 1, Math.round(nr.t))];
+        return clearOfKeys(rp[0], rp[1], 200) ? nr : null;
+      };
+      const cand = [];
+      for (let k = 0; k < 600; k++) {
+        const x = R(-HALF, HALF) * 0.8, z = R(-HALF, HALF) * 0.8, r = R(110, 160);
+        const nr = okSite(x, z, r);
+        if (!nr) continue;
+        let ring = 0;
+        for (let a = 0; a < 12; a++) ring += H(x + Math.cos(a * 0.5236) * 480, z + Math.sin(a * 0.5236) * 480);
+        // trũng hơn vùng xung quanh càng tốt, gần đường hơn một chút cũng tốt
+        cand.push({ x, z, r, score: H(x, z) - ring / 12 + nr.d * 0.006 });
+      }
+      cand.sort((a, b) => a.score - b.score);
+      for (const c of cand) {
+        if (oases.length >= nO) break;
+        if (oases.some(o => Math.hypot(o.x - c.x, o.z - c.z) < 2600)) continue;
+        oases.push({ x: c.x, z: c.z, r: c.r });
+      }
+      for (const O of oases) {
+        const Rr = O.r + OASIS_BANK + 50;
+        const i0 = Math.max(0, Math.floor((O.x - Rr + HALF) / CELL)), i1 = Math.min(RES, Math.ceil((O.x + Rr + HALF) / CELL));
+        const j0 = Math.max(0, Math.floor((O.z - Rr + HALF) / CELL)), j1 = Math.min(RES, Math.ceil((O.z + Rr + HALF) / CELL));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const x = -HALF + i * CELL, z = -HALF + j * CELL, k = j * N + i;
+          const dl = Math.hypot(x - O.x, z - O.z) + fbm(noise2, x * 0.006, z * 0.006, 2) * 40;
+          if (dl > O.r + OASIS_BANK) continue;
+          const bed = dl < O.r ? lerp(-8, -1.6, smooth(0, O.r, dl)) : lerp(-1.4, heights[k], smooth(O.r, O.r + OASIS_BANK, dl));
+          if (bed < heights[k]) heights[k] = bed;
+          if (heights[k] < 0.2) surface[k] = 2;
+        }
+        lakes.push({ x: O.x, z: O.z, r: O.r, oasis: true });
+      }
+    }
+    // khoảng cách tới mép nước ốc đảo gần nhất (Infinity nếu không có)
+    const oasisD = (x, z) => { let d = Infinity; for (const O of oases) d = Math.min(d, Math.hypot(x - O.x, z - O.z) - O.r); return d; };
 
     // 5a. Boong-ke móng ngựa cũ đã bỏ: điểm tựa phòng thủ giờ là các cứ điểm bê tông dưới ụ đất (strongholds)
     const bunkers = [];
@@ -1452,15 +1694,16 @@ function MapGenFactory() {
 
     // Hố bom chiến trường rải rác trên đường phố và quảng trường đô thị (bản đồ URBAN bị bom đạn tàn phá)
     if (type === 'URBAN' && strongholds.length > 0) {
-      const sh0 = strongholds[0]; // cứ điểm trung tâm B
+      // quanh cứ điểm B (bố cục FORTRESS: B ở một cánh, không ở tâm bản đồ) — toạ độ thế giới
+      const sh0 = strongholds.find(c => c.id === 'B') || strongholds[0];
       const nUrbanCraters = 22 + Math.floor(wr() * 10);
       for (let t = 0; t < nUrbanCraters * 30 && sh0.craters.length < 40; t++) {
         const uDist = WR(80, 880);
         const uAng = wr() * Math.PI * 2;
-        const ux = Math.cos(uAng) * uDist;
-        const uz = Math.sin(uAng) * uDist;
-        if (isWater(ux, uz)) continue;
-        if (Math.hypot(ux, uz) < 70) continue; // né lòng cứ điểm B
+        const ux = sh0.x + Math.cos(uAng) * uDist;
+        const uz = sh0.z + Math.sin(uAng) * uDist;
+        if (isWater(ux, uz) || Math.hypot(ux, uz) > rimFoot(ux, uz) - 120) continue;
+        if (Math.hypot(ux - sh0.x, uz - sh0.z) < 70) continue; // né lòng cứ điểm B
         const R0 = WR(26, 60);
         const d0 = WR(5, 12);
         if (sh0.craters.some(q => Math.hypot(q.x - ux, q.z - uz) < (q.R + R0) * 0.75)) continue;
@@ -1661,8 +1904,8 @@ function MapGenFactory() {
         const D = E.map(e => Math.max(60, Math.min(e.across / 2 - 6, cbd ? R(140, 200) : big(e.cls) ? R(120, 150) : R(100, 132))));
         if (B.alley) {   // dãy nhà song song ngõ không lấn ra ngõ
           const ka = B.alley.k, la = E[ka].len;
-          D[(ka + 3) % 4] = Math.min(D[(ka + 3) % 4], B.alley.t * la - 20);
-          D[(ka + 1) % 4] = Math.min(D[(ka + 1) % 4], (1 - B.alley.t) * la - 20);
+          D[(ka + 3) % 4] = Math.min(D[(ka + 3) % 4], B.alley.t * la - 28);
+          D[(ka + 1) % 4] = Math.min(D[(ka + 1) % 4], (1 - B.alley.t) * la - 28);
         }
         const gasK = B.gas === undefined ? -1 : B.gas, GW = 230, GD = 200;
         if (gasK >= 0) {
@@ -1672,10 +1915,51 @@ function MapGenFactory() {
           props.canopies.push({ x, z, angle: e.ang, w: 150, d: 100 });
           putE(e, 24 + 75, 24 + 100 + 24 + 30, 80, 60, 1, 'shop');
         }
+        // KHUÔN VIÊN CAO ỐC: một số ô trung tâm / ô mặt đại lộ có mặt tiền chính là khuôn viên riêng thay vì nhà sát vỉa hè —
+        // 1-2 cao ốc lùi vào 9-14 m sau sân trước lát đá (mặt sân dựng theo b.yard trong BuildingSet), dải cỏ + hàng cây sát mép
+        // lô, rào cây xanh chừa cổng thẳng lối vào sảnh từng toà, bãi đỗ xe hai bên sân. 3 cạnh còn lại vẫn là nhà mặt phố
+        // (chọn theo vị trí ô, không lấy số của rng chung -> các ô khác không đổi bố cục)
+        const hY = ((Math.sin(cx * 0.0123 + cz * 0.0457) * 43758.5453) % 1 + 1) % 1;
+        let yardK = -1;
+        if (!B.alley && gasK < 0 && (cbd ? hY < 0.4 : big(front.cls) && hY < 0.22)) {
+          const e = front, kp = (e.k + 3) % 4, kn = (e.k + 1) % 4;
+          const sb = 72 + 40 * ((hY * 7.31) % 1), dT = Math.min(140 + 40 * ((hY * 3.77) % 1), e.across / 2 - sb - 40);
+          const s0 = D[kp] + 40, s1 = e.len - D[kn] - 40;
+          if (dT >= 100 && s1 - s0 > 200) {
+            yardK = e.k;
+            D[e.k] = sb + dT + 24;   // nhà mặt phố 2 cạnh bên dừng sau khuôn viên; lõi ô bắt đầu sau dãy cao ốc
+            const gates = [];
+            for (let s = s0 + R(0, 40); s1 - s > 170;) {
+              const f = Math.min(R(170, 260), s1 - s), kind = cbd ? (rng() < 0.65 ? 'office' : 'apartment') : 'apartment';
+              const fl = Math.floor(cbd ? R(12, 21) : R(9, 15));
+              if (putE(e, s + f / 2, sb + dT / 2, f, dT, fl, kind)) {
+                buildings[buildings.length - 1].yard = { f: sb };   // sân trước sâu sb: từ mặt nhà tới mép lô
+                gates.push(s + f / 2);
+                // bãi đỗ xe 2 bên sân (đỗ vuông góc mép lô, trên mặt sân lát)
+                for (const side of [-1, 1]) for (let m = 0; m < 3; m++) {
+                  if (rng() < 0.3) continue;
+                  const [x, z] = at(e, s + f / 2 + side * (f / 2 + 16 + m * 20), 30 + (sb - 30) * 0.5);
+                  urbanCars.push({ x, z, angle: e.ang + (rng() < 0.5 ? 0 : Math.PI), lot: true, use });
+                }
+              }
+              s += f + R(150, 210);   // sân lát mỗi toà rộng hơn mặt nhà 9 m mỗi bên -> 2 sân kề nhau không chồng
+            }
+            // hàng cây trên dải cỏ sát mép lô (chừa trước cổng), rào cây xanh dọc mép lô chừa cổng rộng ~6,5 m
+            for (let s = s0; s < s1; s += R(46, 64)) {
+              if (gates.some(g => Math.abs(g - s) < 36)) continue;
+              const [x, z] = at(e, s, 17);
+              urbanTrees.push({ x, z, kind: rng() < 0.7 ? 'plane' : 'broadleaf' });
+            }
+            let a = s0 - 30;
+            for (const gx of gates) { if (gx - 26 > a + 10) wall(e, a, gx - 26, 6, 'hedge'); a = gx + 26; }
+            if (s1 + 30 > a + 10) wall(e, a, s1 + 30, 6, 'hedge');
+          }
+        }
         for (let k = 0; k < 4; k++) {
           const e = E[k], kp = (k + 3) % 4;
+          if (k === yardK) continue;   // mặt tiền khuôn viên đã xếp ở trên (cả 2 góc giáp nó để trống làm sân vườn)
           // nhà góc ở góc k (giữa cạnh k-1 và cạnh k): mặt tiền ra cả 2 phố
-          if (k !== gasK) {
+          if (k !== gasK && kp !== yardK) {
             const fl = cbd ? Math.floor(R(10, 20)) : Math.floor(R(4, 9));
             putE(e, D[kp] / 2, D[k] / 2, D[kp], D[k], fl, cbd ? 'office' : rng() < 0.75 ? 'shop' : 'apartment');
           }
@@ -1699,6 +1983,33 @@ function MapGenFactory() {
             if (rng() < 0.07) kind = 'ruin';
             if (!(cbd && rng() < 0.2)) putE(e, s + f / 2, d / 2, f - 0.6, d, fl, kind);   // trung tâm: chừa khoảng sân giữa các cao ốc
             s += f + (cbd ? R(30, 80) : 0);
+          }
+        }
+        // LÕI Ô PHỐ: ô rộng 1300-1800 mà dãy nhà mặt phố chỉ sâu 100-200 -> giữa ô là bãi trống gần 1000. Xếp thêm các dãy
+        // nhà trong hẻm (nhà ống / chung cư thấp; trung tâm: cao ốc), chừa hẻm 5,5 m giữa các dãy (xe tăng luồn được), vài
+        // chỗ để sân trống có cây. Hệ trục theo cạnh có ngõ xuyên (nếu có) để chừa đúng lối ngõ
+        // chỉ ở ô quanh cứ điểm (nơi giao tranh) và khu trung tâm: lấp cả thành phố làm số nhà / tam giác gấp đôi (đo:
+        // 491 -> 1600 nhà, 26 -> 48 triệu tam giác mỗi khung)
+        if (cbd || (SH && strongholds.some(c => Math.hypot(c.x - cx, c.z - cz) < 1500))) {
+          const k = B.alley ? B.alley.k : front.k, e = E[k], LANE = 44;
+          const s0 = D[(k + 3) % 4] + LANE, s1 = e.len - D[(k + 1) % 4] - LANE, q0 = D[k] + LANE, q1 = e.across - D[(k + 2) % 4] - LANE;
+          const gapS = B.alley && B.alley.k === k ? B.alley.t * e.len : -1e9;
+          // khối nhà trong lõi to (dãy nhà liền / chung cư thấp) & 1/3 chỗ để sân trống: đủ che chắn mà không nhân số nhà
+          // lên quá nhiều (đô thị nặng nhất về số nhà phải dựng)
+          for (let q = q0; q1 - q > 70;) {
+            const d = Math.min(R(84, 124), q1 - q);
+            for (let s = s0; s1 - s > 70;) {
+              const w = Math.min(R(110, 170), s1 - s), sc = s + w / 2, qc = q + d / 2;
+              if (Math.abs(sc - gapS) < w / 2 + 28) { s = gapS + 28 + 2; continue; }   // chừa ngõ xuyên
+              const [x, z] = at(e, sc, qc);
+              if (rng() < 0.33) { if (rng() < 0.6) urbanTrees.push({ x, z, kind: rng() < 0.7 ? 'broadleaf' : 'cypress' }); s += w + LANE; continue; }   // sân trống
+              if (freeOf(x, z, Math.max(w, d) * 0.5 + 6)) {
+                const kind = rng() < 0.08 ? 'ruin' : cbd ? (rng() < 0.6 ? 'office' : 'apartment') : (rng() < 0.6 ? 'tube' : rng() < 0.5 ? 'apartment' : 'shop');
+                put(x, z, w, d, cbd ? Math.floor(R(6, 14)) : Math.floor(R(2, 6)), e.ang, kind);
+              }
+              s += w + LANE;
+            }
+            q += d + LANE;
           }
         }
       }
@@ -1736,15 +2047,34 @@ function MapGenFactory() {
       // làng đặt vào nửa (xanh z > 0 / đỏ z < 0) đang ít nhà hơn: đường phân bố lệch (2 cứ điểm A, C nằm nửa xanh, đường
       // phe đỏ cũng vòng sang đó) nên chọn ngẫu nhiên theo đường thì nhà cửa che chắn dồn hết về một phe
       const housesOn = { 1: 0, '-1': 0 };
+      // sa mạc: làng đầu tiên mỗi ốc đảo nằm trên đoạn đường gần ao nhất (làng sa mạc sống nhờ nguồn nước), ruộng tưới
+      // (mỗi ốc đảo một hàng chờ các điểm đường gần ao nhất: điểm đầu không xây được — sườn đụn dốc, vướng vật — thì thử điểm kế)
+      const oasisQ = oases.map(O => {
+        const q = [];
+        for (const rd of roads) {
+          if (rd.pts.length < 6 || rd.portal || rd.access) continue;
+          for (let i = 3; i < rd.pts.length - 3; i += 3) { const d = Math.hypot(rd.pts[i][0] - O.x, rd.pts[i][1] - O.z); if (d < 1700) q.push({ rd, i0: i, d }); }
+        }
+        // các điểm thử cách nhau >= 240 (điểm sát nhau vướng cùng một vật cản)
+        const out = [];
+        for (const c of q.sort((a, b) => a.d - b.d)) {
+          const p = c.rd.pts[c.i0];
+          if (out.length < 10 && !out.some(o => Math.hypot(o.rd.pts[o.i0][0] - p[0], o.rd.pts[o.i0][1] - p[1]) < 240)) out.push(c);
+        }
+        return out;
+      }).filter(q => q.length);
       for (let v = 0, tries = 0; v < nVill && tries < 300; tries++) {
-        const rd = roads[Math.floor(rng() * roads.length)];
+        const ovQ = oasisQ[0] || null, ov = ovQ ? ovQ.shift() : null;
+        if (ovQ && !ovQ.length) oasisQ.shift();
+        const rd = ov ? ov.rd : roads[Math.floor(rng() * roads.length)];
         if (!rd) break;
         if (rd.pts.length < 6) continue;
         const want = housesOn[1] <= housesOn[-1] ? 1 : -1;
-        let i0 = Math.floor(R(0.15, 0.85) * rd.pts.length);
-        for (let k = 0; k < 6 && (rd.pts[i0][1] > 0 ? 1 : -1) !== want; k++) i0 = Math.floor(R(0.15, 0.85) * rd.pts.length);
+        let i0 = ov ? ov.i0 : Math.floor(R(0.15, 0.85) * rd.pts.length);
+        if (!ov) for (let k = 0; k < 6 && (rd.pts[i0][1] > 0 ? 1 : -1) !== want; k++) i0 = Math.floor(R(0.15, 0.85) * rd.pts.length);
         const p = rd.pts[i0];
-        if ((p[1] > 0 ? 1 : -1) !== want) continue;
+        if (!ov && (p[1] > 0 ? 1 : -1) !== want) continue;
+        const vCrops = ov ? ['veg', 'veg', 'dry'] : crops;
         if (!clearOfKeys(p[0], p[1], 120) || !freeOf(p[0], p[1], 150) || isWater(p[0], p[1])) continue;
         const span = R(220, 380);   // nhà thật to hơn -> làng trải dài hơn
         let placed = 0;
@@ -1786,7 +2116,7 @@ function MapGenFactory() {
           const rr = Math.hypot(fw, fd) / 2;
           if (!freeOf(x, z, rr * 0.85) || !clearOfKeys(x, z, rr) || !roadClear(x, z, fd / 2) || isWater(x, z) || slopeAt(x, z) > 0.2) continue;
           if (isWater(x + st.tx * fw / 2, z + st.tz * fw / 2) || isWater(x - st.tx * fw / 2, z - st.tz * fw / 2)) continue;
-          props.fields.push({ x, z, w: fw, d: fd, angle: Math.atan2(st.tz, st.tx), crop: pick(rng, crops) });
+          props.fields.push({ x, z, w: fw, d: fd, angle: Math.atan2(st.tz, st.tx), crop: pick(rng, vCrops) });
           fenceRect(x, z, st.tx * sd, st.tz * sd, fw / 2, fd / 2, borderKind, false);
           occupied.push({ x, z, r: rr * 0.9 });
         }
@@ -1799,6 +2129,7 @@ function MapGenFactory() {
             if (freeOf(ax, az, 14)) props.sandbags.push({ x0: ax - st.tx * 14, z0: az - st.tz * 14, x1: ax + st.tx * 14 + nx * 6, z1: az + st.tz * 14 + nz * 6, layers: 3 });
           }
         }
+        if (ovQ && oasisQ[0] === ovQ) oasisQ.shift();   // ốc đảo này đã có làng
         v++;
       }
       // Kho / nhà chứa trong căn cứ phía sau khu xuất kích
@@ -1819,9 +2150,11 @@ function MapGenFactory() {
     const rocks = [];
     const clusterN = Math.max(4, Math.floor(B.rocks * AREA / 7));
     // số lần thử theo số cụm cần đặt (giới hạn cũ 400 lần có từ bản đồ nhỏ: HIGHLAND cần 405 cụm không bao giờ đủ)
-    for (let c = 0, tries = 0; c < clusterN && tries < clusterN * 12; tries++) {
+    for (let c = 0, tries = 0; c < clusterN && tries < clusterN * (type === 'DESERT' ? 40 : 12); tries++) {
       const cx = R(-1450, 1450) * K, cz = R(-1450, 1450) * K;
       if (!clearOfKeys(cx, cz, 60) || isWater(cx, cz) || !freeOf(cx, cz, 50)) continue;
+      // sa mạc: đá sa thạch là đá vỡ từ vách núi bàn lăn xuống -> dồn ở sườn đá đổ chân vách, ít khi giữa biển cát / trên đỉnh
+      if (type === 'DESERT') { const mn = mesaN(cx, cz); if (!(mn > MESA_T - 0.12 && mn < MESA_T - 0.005) && rng() > 0.15) continue; }
       const n = Math.floor(R(3, 10));
       for (let k = 0; k < n; k++) {
         const a = R(0, 6.28), dd = R(0, 70);
@@ -1859,9 +2192,12 @@ function MapGenFactory() {
 
     // 5d. Bụi rậm (vùng ngụy trang) + cây
     stage('bushes');
-    const bushes = sample(type === 'URBAN' ? 0 : Math.round(B.bushes * AREA), 260, 3000 * AREA, (x, z) => {
+    // ô lưới thuộc khu phố (sân / vỉa hè trong ô phố — xem nền bê tông đô thị ở trên)
+    const inCityCell = (x, z) => type === 'URBAN' && surface[Math.round((z + HALF) / CELL) * N + Math.round((x + HALF) / CELL)] === 3;
+    // đô thị: bụi rậm / bãi cỏ dại ở ngoại ô (ngoài khu phố)
+    const bushes = sample(Math.round(B.bushes * AREA), 260, 3000 * AREA, (x, z) => {
       const r = R(55, 90);
-      if (!clearOfKeys(x, z, r * 0.6) || isWater(x, z) || !roadClear(x, z, r * 0.4)) return false;
+      if (!clearOfKeys(x, z, r * 0.6) || isWater(x, z) || !roadClear(x, z, r * 0.4) || inCityCell(x, z)) return false;
       return { r };
     });
     const trees = [];
@@ -1874,24 +2210,39 @@ function MapGenFactory() {
         const a = R(0, 6.28), dd = Math.sqrt(rng()) * b.r * 0.9;
         const x = b.x + Math.cos(a) * dd, z = b.z + Math.sin(a) * dd;
         if (!treeOK(x, z, 4)) continue;
-        trees.push({ x, z, kind: pick(rng, B.treeKinds), s: R(0.8, 1.25), rot: R(0, 6.28) });
+        trees.push({ x, z, kind: type === 'DESERT' && oasisD(x, z) < 450 ? 'palm' : pick(rng, B.treeKinds), s: R(0.8, 1.25), rot: R(0, 6.28) });
+      }
+    }
+    // Ốc đảo: rặng cọ quanh ao, dày sát mép nước, thưa dần ra rìa chảo trũng
+    if (oases.length) {
+      stage('oasisPalms');
+      for (const O of oases) {
+        const n = Math.round(R(40, 60) * O.r / 135);
+        for (let k = 0, t = 0; k < n && t < n * 6; t++) {
+          const a = R(0, 6.28), dd = O.r + 12 + Math.pow(rng(), 1.8) * 300;
+          const x = O.x + Math.cos(a) * dd, z = O.z + Math.sin(a) * dd;
+          if (!treeOK(x, z, 3.5) || slopeAt(x, z) > 0.4) continue;
+          trees.push({ x, z, kind: 'palm', s: R(0.75, 1.3), rot: R(0, 6.28) });
+          k++;
+        }
       }
     }
     // Cây phân bố theo mặt nạ rừng / ốc đảo / ven sông
     stage('trees');
     let attempts = 0;
-    const nTrees = type === 'URBAN' ? 280 : Math.round(B.trees * AREA);   // đô thị: thêm cây phòng hộ ven căn cứ + vỉa hè
+    // đô thị: thêm cây phòng hộ ven căn cứ + vỉa hè; sa mạc: cọ ốc đảo đã trồng, thêm ~45 cây lẻ ngoài ốc đảo
+    const nTrees = type === 'URBAN' ? 280 : type === 'DESERT' ? trees.length + Math.round(B.trees * AREA * 0.3) : Math.round(B.trees * AREA);
     while (trees.length < nTrees && attempts < nTrees * 12) {
       attempts++;
       const x = R(-1560, 1560) * K, z = R(-1560, 1560) * K;
       let p;
       if (type === 'DESERT') {
-        // Ốc đảo: cây cọ quanh trũng ẩm; xương rồng / cây khô rải rác
-        p = smooth(0.25, 0.5, forestMask(x, z)) * 0.9 + 0.04;
+        // ngoài ốc đảo (cọ đã trồng ở trên): keo gai / cây khô lẻ loi, mọc nhiều hơn ở chỗ trũng (lòng khe cạn giữ ẩm)
+        p = 0.12 + 0.5 * smooth(0, -6, H(x, z) - H(x + 200, z) * 0.5 - H(x - 200, z) * 0.5);
       } else if (type === 'URBAN') {
         const nr = nearestRoad(x, z, 60);
         const nearLm = landmarks.some(L => { const o = lmOut(L, x, z); return o > 30 && o < 260; });
-        p = nearLm ? 0.65 : (nr && nr.d > nr.road.width / 2 + 3 && nr.d < nr.road.width / 2 + 10 ? 0.5 : 0.03);
+        p = nearLm ? 0.65 : (nr && nr.d > nr.road.width / 2 + 3 && nr.d < nr.road.width / 2 + 10 ? 0.5 : inCityCell(x, z) ? 0.03 : 0.1);
       } else if (type === 'RIVER_LAKE') {
         const rn = river ? river.near(x, z) : null, dr = rn ? rn.d - rn.hw : 1e9;
         p = (dr > 10 && dr < 140 ? 0.55 : 0) + smooth(0.1, 0.45, forestMask(x, z)) * 0.6;
@@ -1902,7 +2253,7 @@ function MapGenFactory() {
         p = 0.25 + smooth(-0.2, 0.3, forestMask(x, z)) * 0.75;
       }
       if (rng() > p) continue;
-      const kind = type === 'DESERT' ? (forestMask(x, z) > 0.3 ? 'palm' : pick(rng, ['cactus', 'deadTree', 'acacia', 'cactus'])) : pick(rng, B.treeKinds);
+      const kind = type === 'DESERT' ? (oasisD(x, z) < 380 ? 'palm' : pick(rng, B.treeKinds)) : pick(rng, B.treeKinds);
       if (!treeOK(x, z, kind === 'jungle' ? 5 : 3.5)) continue;
       if (slopeAt(x, z) > 0.75) continue;
       trees.push({ x, z, kind, s: R(0.75, 1.3), rot: R(0, 6.28) });
@@ -1916,7 +2267,14 @@ function MapGenFactory() {
     const standKinds = { DESERT: ['palm'], URBAN: ['broadleaf', 'broadleaf', 'cypress'], JUNGLE: ['jungle', 'jungle', 'broadleaf'],
       HIGHLAND: ['pine'], RIVER_LAKE: ['broadleaf', 'broadleaf', 'willow'] }[type] || B.treeKinds;
     for (let tries = 0; forests.length < NSTAND && tries < 400; tries++) {
-      const cx = R(-1350, 1350) * K, cz = R(-1350, 1350) * K, r = type === 'DESERT' || type === 'URBAN' ? R(70, 100) : R(95, 150);
+      let cx = R(-1350, 1350) * K, cz = R(-1350, 1350) * K;
+      const r = type === 'DESERT' || type === 'URBAN' ? R(70, 100) : R(95, 150);
+      if (type === 'DESERT') {
+        // vườn cọ dày chỉ có ở ốc đảo: bám một phía bờ ao
+        if (!oases.length) break;
+        const O = oases[Math.floor(rng() * oases.length)], a = R(0, 6.28), dd = O.r + r * R(0.7, 1.1);
+        cx = O.x + Math.cos(a) * dd; cz = O.z + Math.sin(a) * dd;
+      }
       if (isWater(cx, cz) || !clearOfKeys(cx, cz, r + 30) || slopeAt(cx, cz) > 0.45) continue;
       if (forests.some(f => Math.hypot(f.x - cx, f.z - cz) < f.r + r + 200)) continue;
       // viền méo: bán kính theo góc = r * (1 + tổng vài điều hòa pha ngẫu nhiên)
@@ -1938,6 +2296,100 @@ function MapGenFactory() {
         f.n++;
       }
       if (f.n > 20) forests.push(f);
+    }
+
+    // 5f. CÂN BẰNG VẬT CHE HAI PHE (địa hình / vật thể ngẫu nhiên, không soi gương): đo vật che trên từng hướng tiến vào
+    // cứ điểm (hành lang ±400 từ chân cứ điểm ra 1800 về phía căn cứ) và trên mỗi nửa thung lũng, so với vùng tương ứng
+    // của phe kia (ảnh qua phép đối xứng đổi phe). Bên thiếu quá ngưỡng được bù bằng cây / đá / xác xe / bụi rậm lấy mẫu
+    // từ bên dư (không chép nhà / làng), đặt ở chỗ ngẫu nhiên trong vùng thiếu (không đặt đúng chỗ ảnh: map phải trông
+    // ngẫu nhiên, không thành cụm soi gương). Hai nửa map: chuyển bớt từ nửa dư sang nửa thiếu (tổng số vật không phình ra). Đô thị: chỉ các hướng tiến vào
+    // cứ điểm (nhà phố tính vào vật che), bù bằng xác xe cháy (không rải đá tảng giữa phố), tối đa 15 xác mỗi hướng
+    const balance = [];
+    if (SH) {
+      stage('balance');
+      const W = { tree: 1, rock: 1, wreck: 2, bush: 3, bld: 3 };
+      const all = () => [].concat(trees.map(o => ['tree', o]), rocks.filter(o => o.r >= 6).map(o => ['rock', o]),
+        props.wrecks.map(o => ['wreck', o]), bushes.map(o => ['bush', o]), buildings.map(o => ['bld', o]));
+      const inValley = (x, z) => Math.hypot(x, z) < rimFoot(x, z) - 150;
+      // vùng: in(x, z) thuộc vùng; sample() -> một điểm ngẫu nhiên trong vùng
+      const corr = (c, b) => {
+        const d = Math.hypot(b.x - c.x, b.z - c.z), ux = (b.x - c.x) / d, uz = (b.z - c.z) / d;
+        return {
+          in: (x, z) => { const f = (x - c.x) * ux + (z - c.z) * uz, r = Math.abs(-(x - c.x) * uz + (z - c.z) * ux); return f > keyR && f < 1800 && r < 400; },
+          sample: () => { const f = R(keyR + 20, 1800), r = R(-400, 400); return [c.x + ux * f - uz * r, c.z + uz * f + ux * r]; }
+        };
+      };
+      const half = sg => ({
+        in: (x, z) => sg * z > 0 && inValley(x, z),
+        sample: () => [R(-HALF, HALF) * 0.85, sg * R(0, HALF) * 0.85]
+      });
+      // cặp vùng tương ứng [tên, vùng phe Xanh, vùng phe Đỏ, chuyển bớt từ bên dư]
+      const pairs = strongholds.map(c => {
+        const [px, pz] = symP(c.x, c.z), p = strongholds.find(q => Math.hypot(q.x - px, q.z - pz) < 1) || c;
+        return ['hướng ' + c.id, corr(c, bases.blue), corr(p, bases.red), false];
+      });
+      if (type !== 'URBAN') pairs.push(['nửa map', half(1), half(-1), true]);
+      const sum = (inR, L) => L.reduce((s, [k, o]) => s + (inR(o.x, o.z) ? W[k] : 0), 0);
+      const nearTree = (x, z, r) => trees.some(t => Math.abs(t.x - x) < r + 4 && Math.abs(t.z - z) < r + 4 && Math.hypot(t.x - x, t.z - z) < r + 4);
+      // đặt bản sao vật o (loại k) tại (x, z), xoay ngẫu nhiên
+      const place = (k, o, x, z) => {
+        const rot = () => R(0, 6.28);
+        if (k === 'tree') {
+          if (!treeOK(x, z, 4) || slopeAt(x, z) > 0.75 || nearTree(x, z, 3)) return false;
+          trees.push(Object.assign({}, o, { x, z, rot: rot() }));
+        } else if (k === 'rock') {
+          if (!clearOfKeys(x, z, o.r) || !roadClear(x, z, o.r) || !freeOf(x, z, o.r) || isWater(x, z) || nearTree(x, z, o.r)) return false;
+          rocks.push(Object.assign({}, o, { x, z, rot: rot() }));
+          if (o.r > 9) occupied.push({ x, z, r: o.r });
+        } else if (k === 'wreck') {
+          if (!clearOfKeys(x, z, 30) || !freeOf(x, z, 20) || isWater(x, z) || slopeAt(x, z) > 0.35 || !roadClear(x, z, 8) || nearTree(x, z, 16)) return false;
+          props.wrecks.push(Object.assign({}, o, { x, z, angle: R(0, 6.28) }));
+          occupied.push({ x, z, r: 20 });
+        } else if (k === 'bush') {
+          if (!clearOfKeys(x, z, o.r * 0.6) || isWater(x, z) || !roadClear(x, z, o.r * 0.4) || bushes.some(b => Math.hypot(b.x - x, b.z - z) < b.r + o.r)) return false;
+          bushes.push({ x, z, r: o.r });
+        } else return false;
+        return true;
+      };
+      // cây trong khoảnh rừng rậm / quanh ốc đảo không bỏ bớt (thủng lỗ giữa rừng, ốc đảo trụi)
+      const keep = (k, o) => k === 'bld' || (k === 'tree' && (forests.some(f => Math.hypot(o.x - f.x, o.z - f.z) < f.r) || oasisD(o.x, o.z) < 450));
+      const shuffle = A => { for (let i = A.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [A[i], A[j]] = [A[j], A[i]]; } return A; };
+      const tol = v => Math.max(3, 0.12 * v);
+      for (const [name, RB, RR, move] of pairs) {
+        const L = all(), b0 = sum(RB.in, L), r0 = sum(RR.in, L);
+        let b = b0, r = r0, added = 0, removed = 0;
+        if (Math.abs(b - r) > tol(Math.max(b, r))) {
+          const blueRich = b > r, rich = blueRich ? RB : RR, poor = blueRich ? RR : RB;
+          const src = shuffle(L.filter(([k, o]) => rich.in(o.x, o.z)));
+          // nửa map: bỏ bớt bên dư về quá trung bình một chút
+          if (move) {
+            const target = (b + r) / 2 + tol((b + r) / 2) / 2, gone = new Set();
+            for (const [k, o] of src) {
+              if ((blueRich ? b : r) <= target) break;
+              if (keep(k, o)) continue;
+              gone.add(o); removed++;
+              if (blueRich) b -= W[k]; else r -= W[k];
+            }
+            const drop = A => { for (let i = A.length - 1; i >= 0; i--) if (gone.has(A[i])) A.splice(i, 1); };
+            drop(trees); drop(rocks); drop(props.wrecks); drop(bushes);
+          }
+          // bù: lần lượt lấy mẫu vật bên dư (lặp lại nguồn nếu cần), đặt chỗ ngẫu nhiên trong vùng thiếu. Nguồn là nhà (làng bên đường) hoặc hết nguồn -> vật che thay thế: đá tảng / xác xe
+          const sub = () => type !== 'URBAN' && rng() < 0.5
+            ? ['rock', { r: R(12, 22), h: 0, rot: 0, kind: type === 'HIGHLAND' ? 'granite' : type === 'DESERT' ? 'sandstone' : 'stone' }]
+            : ['wreck', { kind: pick(rng, ['tank', 'tank', 'dump', 'apc']), angle: 0, tilt: R(-0.06, 0.06), roll: R(-0.08, 0.08), turretRot: R(-1.2, 1.2), smoke: rng() < 0.65 }];
+          for (let n = 0, cap = 60 + src.length * 3; Math.abs(b - r) > tol(Math.max(b, r)) && n < cap && !(type === 'URBAN' && added >= 15); n++) {
+            let [k, o] = src.length ? src[n % src.length] : sub();
+            if (k === 'bld') [k, o] = sub();
+            if (k === 'rock' && !o.h) o = Object.assign({}, o, { h: o.r * R(0.7, 1.3) });
+            let x, z, ok = false;
+            for (let t = 0; !ok && t < 6; t++) { [x, z] = poor.sample(); ok = poor.in(x, z) && place(k, o, x, z); }
+            if (!ok) continue;
+            if (blueRich) r += W[k]; else b += W[k];
+            added++;
+          }
+        }
+        balance.push({ name, blue: b0, red: r0, blueAfter: b, redAfter: r, added, removed });
+      }
     }
 
     // 5e. ĐỒ VẬT ĐƯỜNG PHỐ (đô thị): đèn đường + cây vỉa hè dọc phố lớn, cột điện + dây dọc phố thường, xe con đỗ sát bó
@@ -2147,10 +2599,23 @@ function MapGenFactory() {
     const tod = pick(rng, ['morning', 'noon', 'afternoon', 'afternoon', 'golden']);
     const elevDeg = { morning: R(20, 32), noon: R(52, 66), afternoon: R(34, 46), golden: R(12, 19) }[tod];
     const sun = { timeOfDay: tod, elevation: elevDeg * Math.PI / 180, azimuth: R(0, Math.PI * 2) };
+    // Sa mạc: nắng xiên ~15-30° so với hướng gió (đỉnh đụn / gợn cát vuông góc gió) -> sườn đụn, gợn cát luôn có mặt sáng /
+    // mặt khuất rõ (nắng song song đỉnh gợn thì gợn gần như vô hình). Hướng nắng ngang trong (x, z) = π/2 - azimuth
+    if (type === 'DESERT') {
+      const a = Math.PI / 2 - (windA + (sun.azimuth < Math.PI ? 1 : -1) * (0.26 + 0.26 * (sun.azimuth % 1))) + (sun.azimuth % 2 < 1 ? Math.PI : 0);
+      sun.azimuth = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    }
 
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return {
       type, seed, size: SIZE, res: RES, cell: CELL, heights, surface,
+      // wind: hướng gió chính (rad, trong mặt x-z: (cos, sin)) — đụn cát sa mạc vuông góc với nó, shader gợn cát dùng chung
+      wind: windA, oases,
+      // báo cáo cân bằng vật che hai phe (5f): [{ name, blue, red, blueAfter, redAfter, added }]
+      balance,
+      // sym: phép đối xứng đổi phe ('mirror' z -> -z | 'point' (x, z) -> (-x, -z)): game.js đặt xe phe Đỏ lúc xuất trận
+      // vào đúng ảnh vị trí xe phe Xanh
+      sym: SYM,
       bases, capture: CAP, roads, river, lakes, canals, blocks: roads.urbanGrid ? roads.urbanGrid.blocks : [], bridges, bunkers, strongholds, landmarks, layout, layoutVariant, layoutLabel, layoutDesc, buildings, rocks, bushes, trees, forests, props, sun,
       genMs: Math.round(ms),
       sig: mapSig(heights, [trees, rocks, bushes, buildings, props.wrecks, props.pits, props.cars, props.lamps], roads),
@@ -2181,12 +2646,14 @@ function MapGenFactory() {
     if (dIn <= 0 || (f > 0 && Math.abs(r) < Bm.gate && L.hu - f < Bm.inset + Bm.w * 2)) return 0;
     return Bm.h * (1 - smooth(0, Bm.w, Math.abs(dIn - Bm.inset)));
   }
-  function landmarkMound(L, f, r) {
-    return Math.max(landmarkMoundCore(L, f, r), perimBerm(L, f, r));
+  // mode: chuyển cho hàm gò từng loại (moundBio: true = vách khoét đứng, 'orig' = gò chưa hạ nền, 'pit')
+  function landmarkMound(L, f, r, mode) {
+    const c = landmarkMoundCore(L, f, r, mode), b = perimBerm(L, f, r);
+    return b > 0 ? Math.max(c, b) : c;   // giữ phần âm (hố hạ nền dưới sân khoét)
   }
-  function landmarkMoundCore(L, f, r) {
+  function landmarkMoundCore(L, f, r, mode) {
     const M = { nuke: moundNuke, bio: moundBio, sam: moundSam, power: moundPower, radar: moundRadar }[L.kind];
-    return M ? M(L, f, r) : 0;
+    return M ? M(L, f, r, mode) : 0;
   }
 
   // ===== CĂN CỨ HẦM PHÓNG TÊN LỬA HẠT NHÂN (đảo / sông hồ) =====
@@ -2198,7 +2665,18 @@ function MapGenFactory() {
     L.silo = { f: -30, r: 0, hf: 100, hr: 84, h: 32, run: 76, shaft: 32, vents: [[-56, -60, 17, 11], [56, -60, 17, 11]],
       lcc: { f: -150, r: -270, hf: 60, hr: 56, h: 48, run: 30 }, berm: { h: 12, w: 11, inset: 11, gate: 52 } };   // ụ đất sát mép (0..22), chừa dải phẳng trước rào ngoài cho hàng nhím thép
   }
-  function moundNuke(L, f, r) {
+  // Lưới thô (84 đv/ô) quanh mặt tiền trung tâm điều khiển: nút lưới sau mặt tiền cao 6 m nội suy thành dốc cỏ chạy xuyên
+  // qua cửa chống nổ (đất lấp 2/3 cửa) -> hạ các nút đó xuống mức thấp nhất của gò thật trong 1 ô quanh nút (nội suy luôn
+  // nằm dưới gò thật); nắp đất lưới mịn (landmarks.js, KINDS.nuke.surface) dựng lại gò, vách cắt đứng trong thân tường
+  function nukeCoarse(L, f, r) {
+    const h = landmarkMound(L, f, r), C = L.silo.lcc, fa = C.f + C.hf - 40, fb = C.f + C.hf + 30, ra = C.r - C.hr - C.run, rb = C.r + C.hr + C.run;
+    if (f + CELL < fa || f - CELL > fb || r + CELL < ra || r - CELL > rb) return h;
+    let m = h;
+    for (let a = -CELL; a <= CELL; a += 6) for (let b = -CELL; b <= CELL; b += 6) m = Math.min(m, landmarkMound(L, f + a, r + b, 'cap'));
+    return m;
+  }
+  // mode 'cap': hình gò thật cho nắp đất lưới mịn — vách cắt mặt tiền trung tâm điều khiển nằm trong thân tường mặt tiền
+  function moundNuke(L, f, r, mode) {
     const S = L.silo, df = f - S.f, dr = r - S.r;
     const d = Math.hypot(Math.max(0, Math.abs(df) - S.hf), Math.max(0, Math.abs(dr) - S.hr));
     let h = S.h * (1 - smooth(0, S.run, d));
@@ -2207,7 +2685,7 @@ function MapGenFactory() {
     for (const [vf, vr, hf, hr] of S.vents) h *= smooth(4, 14, Math.hypot(Math.max(0, Math.abs(df - vf) - hf), Math.max(0, Math.abs(dr - vr) - hr)));
     // gò trung tâm điều khiển: cắt thẳng ở mặt tiền (dải chuyển cao độ nằm trong bề dày tường mặt tiền / tường cánh)
     const C = S.lcc, pf = f - C.f, pr = r - C.r;
-    if (pf < C.hf - 22) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
+    if (pf < C.hf - (mode === 'cap' ? 8 : 22)) h = Math.max(h, C.h * (1 - smooth(0, C.run, Math.hypot(Math.max(0, -pf - C.hf), Math.max(0, Math.abs(pr) - C.hr)))));
     return h;
   }
 
@@ -2215,15 +2693,30 @@ function MapGenFactory() {
   function detailBio(L) {
     // ụ đất phủ hầm: vòm vuông bo tròn tâm fc, bán trục af / ar, cao h (9.5 m); sân trước khoét vào ụ rộng 2 * cut,
     // vách sau sân là tường mặt tiền (mặt trong tại face), 2 bên là tường chắn đất
-    L.mound = { fc: -80, af: 150, ar: 200, h: 72, cut: 80, face: 10 };
+    // sân khoét (lòng hầm sau cửa trong + sân trước): f > pf (sau cửa áp lực trong), |r| < pr (giữa thân 2 tường chắn
+    // đất), tới pe (ngoài mũi gò); k: độ dốc mặt phẳng hạ nền quanh sân (xem moundBio)
+    L.mound = { fc: -80, af: 150, ar: 200, h: 72, cut: 80, face: 10, pf: -8, pr: 76, pe: 110, k: 2.5 };
   }
-  function moundBio(L, f, r) {
+  // exact: hình gò thật (vách khoét đứng tại mép sân) cho nắp đất lưới mịn của landmarks/bio.js
+  // Không exact (lưới cao độ 84 đv/ô): vách khoét 12 đv không dựng được trên lưới thô -> mặt đất nội suy thành dốc cỏ
+  // chạy xuyên qua cửa hầm. Thay bằng mặt phẳng dốc k quanh sân, cắt cốt 0 đúng tại mép sân (trong thân tường / sau cửa
+  // trong) và sâu dần xuống dưới sân: nội suy tuyến tính giữ nguyên mặt phẳng, chỗ gò hạn trần (min) chỉ làm đất thấp hơn
+  // -> đất không bao giờ trồi lên sân. Rãnh trũng do hạ nền quanh sân được nắp đất mịn che (bio.js), sàn xe = mặt sân.
+  // Mặt hạ nền = k * (P(f) + Q(r)): tổng 2 hàm bậc nhất (phẳng trong từng góc phần tư; nếp gấp |r| = 0 và f = pe nằm sâu
+  // dưới sân) — KHÔNG dùng min / max các mặt phẳng: hàm lồi ở góc sân, nội suy lưới bị đẩy lên trên sân
+  // mode: true = gò thật (vách khoét đứng); 'pit' = P + Q (đv, < 0 trong vùng hạ nền); khác = cao độ cho lưới thô
+  function moundBio(L, f, r, mode) {
     const M = L.mound, u = (f - M.fc) / M.af, v = r / M.ar;
     const d = Math.pow(Math.pow(Math.abs(u), 6) + Math.pow(Math.abs(v), 6), 1 / 6);
-    if (d >= 1) return 0;
-    // sân trước khoét vào ụ, lòng hầm khoét sâu ra sau mặt tiền (khe cửa hé không lộ mặt đất): dải chuyển cao độ khuất sau tường mặt tiền
-    const notch = smooth(M.face - 34, M.face - 22, f) * (1 - smooth(M.cut - 6, M.cut + 6, Math.abs(r)));
-    return M.h * (1 - smooth(0.68, 1, d)) * (1 - notch);
+    const hm = d >= 1 ? 0 : M.h * (1 - smooth(0.68, 1, d));
+    if (mode === true) return f > M.pf && f < M.pe && Math.abs(r) < M.pr ? 0 : hm;
+    // gò cũ trên lưới thô (có vết khoét sân 12 đv — lưới không dựng được, nội suy thành dốc): mặt đất gốc mà nắp đất
+    // dựng lại ở ngoài sân
+    if (mode === 'orig') return hm * (1 - smooth(M.face - 34, M.face - 22, f) * (1 - smooth(M.cut - 6, M.cut + 6, Math.abs(r))));
+    // P: sau cửa trong dương, trong sân âm, sâu nhất ở pe rồi nông dần về 0 tại 2 pe - pf (trước mũi gò)
+    const pq = (f <= M.pe ? M.pf - f : M.pf - 2 * M.pe + f) + Math.abs(r) - M.pr;
+    if (mode === 'pit') return pq;
+    return Math.min(hm, M.k * pq);
   }
 
   // ===== TRẬN ĐỊA TÊN LỬA PHÒNG KHÔNG (sa mạc) =====
@@ -2640,7 +3133,7 @@ function MapGenFactory() {
     return p;
   }
 
-  return { generate, get, has, prefetch, toPlain, hydrate, setLayout, setTestField, getLayout: () => layout, STRONGHOLD_SITES, STRONGHOLD_LAYOUT_VARIANTS, pickStrongholdVariant, PORTAL, portalHalf, LANDMARK_SITE, CAR_CATALOG, setLandmark, landmarkMound, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
+  return { generate, get, has, prefetch, toPlain, hydrate, setLayout, setTestField, getLayout: () => layout, SPAWN, STRONGHOLD_SITES, STRONGHOLD_LAYOUT_VARIANTS, pickStrongholdVariant, PORTAL, portalHalf, LANDMARK_SITE, CAR_CATALOG, setLandmark, landmarkMound, moundBio, mulberry32, makeNoise, fbm, ridged, sampleH, SIZE, HALF, RES, CELL, OUTER_EXT, CAPTURE, BIOME, randomSeed: () => (Math.random() * 4294967296) >>> 0 };
 }
 const MapGen = MapGenFactory();
 

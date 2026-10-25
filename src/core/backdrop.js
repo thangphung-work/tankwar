@@ -120,8 +120,10 @@ const Backdrop = (() => {
     for (let z = -ext; z <= ext; z += SP) for (let x = -ext; x <= ext; x += SP) {
       const px = x + (rnd() - 0.5) * SP * 0.9, pz = z + (rnd() - 0.5) * SP * 0.9, r1 = rnd(), r2 = rnd(), r3 = rnd();
       // ngoài tầm xe (xe bị giữ trong ±(nửa bản đồ - 60), lòng thung lũng kết thúc ở chân vành núi MapGen rimFoot)
-      // bìa rừng theo chân vành núi, lượn sóng
-      if (Math.hypot(px, pz) < O.rimFoot(px, pz) - 50 + 90 * nz(px * 0.0016 + 4, pz * 0.0016)) continue;
+      // bìa rừng theo chân vành núi, lượn sóng; từng đoạn dài lùi hẳn lên sườn (trảng cỏ, sườn trọc) -> bìa rừng không
+      // thành một vành tròn đều ôm quanh lòng thung lũng
+      const fb = MapGen.fbm(nz, px * 0.0004 - 7, pz * 0.0004 + 3, 2), back = 1800 * Math.max(0, Math.min(1, (fb + 0.05) / 0.3));
+      if (Math.hypot(px, pz) < O.rimFoot(px, pz) - 50 + 90 * nz(px * 0.0016 + 4, pz * 0.0016) + back) continue;
       const fm = smooth(-0.08, 0.28, MapGen.fbm(nz, px * 0.0024, pz * 0.0024, 3));
       if (r1 > Math.pow(fm, F.pow)) continue;
       const h = H(px, pz);

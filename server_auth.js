@@ -41,7 +41,9 @@ const FAR = 1500;              // xa hơn mức này: gửi nửa tần số
 const MAX_HIT = 6;             // sát thương 1 gói DAMAGE = máu thực mất -> không thể vượt máu tối đa của xe (3.5 + thưởng hòm)
 const DPS_CAP = 16;            // tổng sát thương 1 xe gây ra trong 1 s (lựu pháo / đạn chùm trúng nhiều xe cùng lúc)
 const MSG_PER_SEC = 400;       // giới hạn tin nhắn / giây / kết nối
-const F_BUSH = 1, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16;
+const F_BUSH = 1, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16, F_CANOPY = 32;
+// xe đỗ dưới tán cây còn lá (cờ F_CANOPY): drone địch chỉ thấy khi gần như ngay trên đầu (khớp TeamIntel.CANOPY_SPOT)
+const CANOPY_SPOT = 120;
 // Lưới ngụy trang đang che (xe đứng yên, chưa bắn, lưới không cháy): khớp Equipment.camoFactor / camoRadarFactor.
 // Lưới bắt lửa / cháy hết -> máy chủ quyền tắt cờ F_CAMO -> máy chủ gửi vị trí ngay theo tầm nhìn thường.
 const CAMO_SIGHT = 0.65, CAMO_RADAR = 0.6;
@@ -84,7 +86,8 @@ for (const t of m.trees) {
 const caps = m.strongholds && m.strongholds.length
   ? m.strongholds.map(c => ({ id: String(c.id), x: c.x, z: c.z, r: 235 }))
   : (m.capture || []).map((c, i) => ({ id: 'ABC'[i], x: c.x, z: c.z, r: 100 }));
-parentPort.postMessage({ dens, sig: m.sig, caps });
+// lưới độ cao gốc (dò đường ngắm qua đồi núi — khớp TeamIntel.terrainBlocked / elevK)
+parentPort.postMessage({ dens, sig: m.sig, caps, heights: m.heights, res: m.res, size: m.size }, [m.heights.buffer]);
 `;
 function forestFor(type, seed, layout) {
   const key = type + '|' + seed + '|' + layout;
@@ -93,7 +96,11 @@ function forestFor(type, seed, layout) {
     if (!Worker) return resolve(null);
     try {
       const w = new Worker(WORKER_SRC, { eval: true, workerData: { file: path.join(__dirname, 'src', 'core', 'map_gen.js'), type, seed, layout } });
-      w.once('message', (o) => { const m = new Map(); for (const k in o.dens) m.set(Number(k), o.dens[k]); m.sig = o.sig || null; m.caps = o.caps || null; resolve(m); w.terminate(); });
+      w.once('message', (o) => {
+        const m = new Map(); for (const k in o.dens) m.set(Number(k), o.dens[k]); m.sig = o.sig || null; m.caps = o.caps || null;
+        m.H = o.heights && o.res ? { h: o.heights, res: o.res, half: o.size / 2, cell: o.size / o.res } : null;
+        resolve(m); w.terminate();
+      });
       w.once('error', (e) => { console.warn('[AUTH] Không dựng được bản đồ rừng:', e.message); resolve(null); });
     } catch (e) { resolve(null); }
   });
@@ -107,6 +114,33 @@ function densityAt(dens, x, z) {
   let n = 0;
   for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) n += dens.get((i + a) * 100000 + j + b) || 0;
   return n;
+}
+// ĐỊA HÌNH CHẮN TẦM NHÌN + ĐỨNG CAO NHÌN XA (khớp TeamIntel: EYE_H / TGT_H / LOS_STEP / LOS_END / ELEV_K / ELEV_MAX, cùng
+// lưới map.heights, cùng các điểm dò). Máy chủ nới rộng hơn máy khách để luôn gửi đủ: đường ngắm cao hơn LOS_UP ở cả 2
+// đầu + ngưỡng chắn LOS_UP (chỉ coi là bị chắn khi đất cao hơn đường ngắm của máy khách >= 2 x LOS_UP), chênh cao cộng
+// thêm ELEV_SLACK khi tính tầm nhìn xa
+const EYE_H = 18, TGT_H = 18, LOS_STEP = 42, LOS_END = 40, ELEV_K = 320, ELEV_MAX = 0.35;
+const LOS_UP = 6, ELEV_SLACK = 4;
+// = MapGen.sampleH (nội suy song tuyến lưới độ cao)
+function sampleH(H, x, z) {
+  const R = H.res, N = R + 1, gx = (x + H.half) / H.cell, gz = (z + H.half) / H.cell;
+  const ix = Math.max(0, Math.min(R - 1, Math.floor(gx))), iz = Math.max(0, Math.min(R - 1, Math.floor(gz)));
+  const fx = Math.max(0, Math.min(1, gx - ix)), fz = Math.max(0, Math.min(1, gz - iz)), h = H.h;
+  const h00 = h[iz * N + ix], h10 = h[iz * N + ix + 1], h01 = h[(iz + 1) * N + ix], h11 = h[(iz + 1) * N + ix + 1];
+  return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+}
+function elevK(H, vx, vz, ex, ez) {
+  if (!H) return 1 + ELEV_MAX;
+  return 1 + Math.min(ELEV_MAX, Math.max(0, sampleH(H, vx, vz) - sampleH(H, ex, ez) + ELEV_SLACK) / ELEV_K);
+}
+function terrainBlocked(H, vx, vz, ex, ez) {
+  if (!H) return false;
+  const dx = ex - vx, dz = ez - vz, d = Math.hypot(dx, dz), ya = sampleH(H, vx, vz) + EYE_H + LOS_UP, yb = sampleH(H, ex, ez) + TGT_H + LOS_UP;
+  for (let s = LOS_END; s < d - LOS_END; s += LOS_STEP) {
+    const k = s / d;
+    if (sampleH(H, vx + dx * k, vz + dz * k) > ya + (yb - ya) * k + LOS_UP) return true;
+  }
+  return false;
 }
 function denseLength(dens, ax, az, bx, bz, limit) {
   if (!dens) return 0;
@@ -265,19 +299,23 @@ function updateVisibility(M, now) {
       // giữa bụi & lưới ngụy trang (khớp TeamIntel.seesDirect)
       const still = bush && bush.still && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08 ? bush.still : 1;
       const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = Math.min(still, camo ? CAMO_SIGHT : 1);
-      // drone trinh sát phe mình soi từ trên xuống (bụi che trinh sát / rừng rậm che như mắt thường)
+      // drone trinh sát phe mình soi từ trên xuống (bụi che trinh sát / rừng rậm che như mắt thường / tán cây che từ trên)
+      const canopy = !revealed && (s.f & F_CANOPY);
       if (drones.some(dr => {
         const d = Math.hypot(ex - dr.x, ez - dr.z);
-        return d < DRONE_SIGHT + MARGIN && !(bush && bush.spot && d > bush.spot + MARGIN) && !(inForest && d > FOREST_SPOT + MARGIN);
+        return d < DRONE_SIGHT + MARGIN && !(bush && bush.spot && d > bush.spot + MARGIN) && !(inForest && d > FOREST_SPOT + MARGIN)
+          && !(canopy && d > CANOPY_SPOT + MARGIN);
       })) { set.add(e.i); continue; }
       for (const u of mine) {
         const v = M.S[u.i], vx = v.x / 10, vz = v.z / 10, d = Math.hypot(ex - vx, ez - vz);
         if (d < CLOSE) { set.add(e.i); break; }
         if (u.type === 'SCOUT' && d < RADAR_RANGE * rk) { set.add(e.i); break; }
         if (u.rd && d < EQ_RADAR_RANGE * rk) { set.add(e.i); break; }
-        if (d > (bush && bush.spot ? Math.min(SIGHT[u.type] * sk, bush.spot) : SIGHT[u.type] * sk) + MARGIN) continue;
+        const H = M.dens && M.dens.H, ek = elevK(H, vx, vz, ex, ez);   // đứng cao nhìn xa (khớp TeamIntel.elevK, nới thêm)
+        if (d > (bush && bush.spot ? Math.min(SIGHT[u.type] * sk * ek, bush.spot) : SIGHT[u.type] * sk * ek) + MARGIN) continue;
         if (inForest && d > FOREST_SPOT + MARGIN) continue;
         if (M.dens && denseLength(M.dens, vx, vz, ex, ez, FOREST_LOS + 60) > FOREST_LOS + 60) continue;
+        if (terrainBlocked(H, vx, vz, ex, ez)) continue;   // đồi núi chắn đường ngắm (nới hơn TeamIntel.terrainBlocked)
         set.add(e.i); break;
       }
     }

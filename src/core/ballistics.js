@@ -2,6 +2,34 @@
  * Hệ thống Vật lý Đường đạn 3D Three.js - Hỗ trợ BẮN THẲNG & CẦU VỒNG
  * Hiệu ứng đạn pháo 3D rực lửa, kiểm tra va chạm địa hình 3D, tường móng ngựa và xe địch.
  */
+
+// ỐNG NÒNG PHÁO CHÍNH là mục tiêu thật: hộp thân xe (Strongholds.segUnitBox) không tính nòng, nửa ngoài nòng (thò xa khỏi
+// thân 3-4 m, chỗ dễ bị bắn cong nhất) trước đây đạn bay xuyên qua. Ống nòng = hình trụ bo đầu từ gốc nhóm nòng tới miệng
+// nòng (theo đúng hướng tháp / góc ngóc lúc này), bán kính theo cỡ ống bọc nhiệt / cụm nòng. Xe trinh sát: súng nhỏ, bỏ qua
+const BARREL_HIT_R = { ALL_ROUNDER: 1.4, ARTILLERY: 1.5, GATLING: 2.0 };
+const _bhA = typeof THREE !== 'undefined' ? new THREE.Vector3() : null, _bhB = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+// Trả về tham số t (0..1) trên đoạn đường đạn P0 -> P0 + seg nơi đạn chạm ống nòng, hoặc -1
+function segHitsBarrel(unit, px, py, pz, sx, sy, sz) {
+  const r = BARREL_HIT_R[unit.tankType], bg = unit.barrelGroup;
+  if (!r || !bg || !unit.muzzleTipLocal || !_bhA) return -1;
+  _bhA.set(0, 0, 0).applyMatrix4(bg.matrixWorld);
+  _bhB.copy(unit.muzzleTipLocal).applyMatrix4(bg.matrixWorld);
+  // khoảng cách gần nhất giữa 2 đoạn thẳng (Ericson, Real-Time Collision Detection 5.1.9)
+  const dx = _bhB.x - _bhA.x, dy = _bhB.y - _bhA.y, dz = _bhB.z - _bhA.z;
+  const rx = px - _bhA.x, ry = py - _bhA.y, rz = pz - _bhA.z;
+  const a = sx * sx + sy * sy + sz * sz, e = dx * dx + dy * dy + dz * dz, f = dx * rx + dy * ry + dz * rz;
+  if (a < 1e-8 || e < 1e-8) return -1;
+  const b = sx * dx + sy * dy + sz * dz, c = sx * rx + sy * ry + sz * rz, den = a * e - b * b;
+  let s = den > 1e-9 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0;
+  let t = (b * s + f) / e;
+  if (t < 0) { t = 0; s = Math.max(0, Math.min(1, -c / a)); }
+  else if (t > 1) { t = 1; s = Math.max(0, Math.min(1, (b - c) / a)); }
+  const qx = px + sx * s - (_bhA.x + dx * t), qy = py + sy * s - (_bhA.y + dy * t), qz = pz + sz * s - (_bhA.z + dz * t);
+  if (qx * qx + qy * qy + qz * qz > r * r) return -1;
+  // lùi lại điểm chạm mặt ống (không lấy tâm ống): đi ngược đường đạn một đoạn bằng bán kính
+  return Math.max(0, s - r / Math.sqrt(a));
+}
+
 class BallisticsSystem3D {
   constructor(scene) {
     this.scene = scene;
@@ -548,7 +576,8 @@ class BallisticsSystem3D {
   // chậm, và điểm nổ đặt ở CUỐI đoạn (phía sau vật che -> vật che không chắn sóng nổ). Lọc nhanh bằng vòng bao từng vật
   // cản -> chỉ dò dày (<= 2 đv) trên các khúc đoạn bay đi gần vật cản, rồi chia đôi tìm đúng mặt chạm.
   // Trả kết quả va chạm (type, ...) kèm x, y, z = mặt chạm và t (0..1) trên đoạn; không trúng: null
-  obstacleSegmentHit(terrain, x0, y0, z0, x1, y1, z1, skipBuildings, ceilY = Infinity) {
+  // ammo (tùy chọn): loại đạn — rào gỗ / tre để đạn động năng bay lọt qua (PropSet.wallHit); không truyền = đạn có ngòi nổ
+  obstacleSegmentHit(terrain, x0, y0, z0, x1, y1, z1, skipBuildings, ceilY = Infinity, ammo) {
     const T = terrain;
     if (!T || typeof T.checkHorseshoeCollision !== 'function') return null;
     if (y0 >= ceilY && y1 >= ceilY) return null;
@@ -565,6 +594,25 @@ class BallisticsSystem3D {
           const r = Math.hypot(sg.x1 - sg.x0, sg.z1 - sg.z0) * 0.5 + 2.7;
           this._segCircle(R, x0, y0, z0, dx, dy, dz, a, (sg.x0 + sg.x1) * 0.5, (sg.z0 + sg.z1) * 0.5, r,
             Math.min(sg.g0, sg.g1) - 2.1, Math.max(sg.g0, sg.g1) + sg.top + 0.1);
+        }
+      }
+      // XE CON DÂN SỰ (props: hitTest trả car): trước đây không có trong danh sách dò -> đạn bay xuyên xe như không khí
+      // (chỉ chạm khi xe đứng trong vòng dò của nhà / đá gần đó). Lấy xe ở các ô lưới 60 đv quanh đoạn bay (như hitTest)
+      const ST = PS && PS.street;
+      if (ST && ST.grid) {
+        for (let gi = Math.floor((mnX - 24) / 60); gi <= Math.floor((mxX + 24) / 60); gi++) {
+          for (let gj = Math.floor((mnZ - 24) / 60); gj <= Math.floor((mxZ + 24) / 60); gj++) {
+            const l = ST.grid.get(gi * 1000 + gj);
+            if (l) for (const o of l) if (o.type === 'car' && !(o.c >= 0.85)) this._segCircle(R, x0, y0, z0, dx, dy, dz, a, o.x, o.z, 23, o.y - 1.5, o.y + 30);
+          }
+        }
+      }
+      // tường rào đá / đất, rào gỗ / tre: hộp chữ nhật xoay theo trục tường (vòng bao tròn của tường dài mảnh thừa quá nhiều
+      // chỗ phải dò dày)
+      if (PS && PS.wallRuns) {
+        for (const w of PS.wallRuns) {
+          if (w.maxX < mnX || w.minX > mxX || w.maxZ < mnZ || w.minZ > mxZ) continue;
+          this._segBox(R, x0, y0, z0, dx, dy, dz, w.cx, w.cz, w.ux, w.uz, w.hl, w.ht, w.y0, w.y1);
         }
       }
       if (T.landmarkSet && T.landmarkSet.items) {
@@ -604,13 +652,13 @@ class BallisticsSystem3D {
       let tc = -1;
       for (let j = 0; j <= m; j++) {
         const t = ta + (tb - ta) * j / m;
-        let h = T.checkHorseshoeCollision(x0 + dx * t, y0 + dy * t, z0 + dz * t, skipBuildings);
+        let h = T.checkHorseshoeCollision(x0 + dx * t, y0 + dy * t, z0 + dz * t, skipBuildings, ammo);
         if (!h || !h.hit) { tc = t; continue; }
         let hi = t;
         if (tc >= 0) {
           let lo = tc;
           for (let k = 0; k < 8; k++) {
-            const md = (lo + hi) * 0.5, hm = T.checkHorseshoeCollision(x0 + dx * md, y0 + dy * md, z0 + dz * md, skipBuildings);
+            const md = (lo + hi) * 0.5, hm = T.checkHorseshoeCollision(x0 + dx * md, y0 + dy * md, z0 + dz * md, skipBuildings, ammo);
             if (hm && hm.hit) { hi = md; h = hm; } else lo = md;
           }
         }
@@ -635,6 +683,34 @@ class BallisticsSystem3D {
       if (ta > 1 || tb < 0) return;
       if (ta < 0) ta = 0;
       if (tb > 1) tb = 1;
+    }
+    const ya = y0 + dy * ta, yb = y0 + dy * tb;
+    if ((ya > yMax && yb > yMax) || (ya < yMin && yb < yMin)) return;
+    R.push(ta, tb);
+  }
+
+  // Khúc t (0..1) của đoạn bay nằm trong hộp chữ nhật xoay trên mặt bằng (tâm cx, cz; trục dọc ux, uz đơn vị; nửa dài hl,
+  // nửa dày ht) và trong dải cao [yMin, yMax] -> thêm vào R (cắt lần lượt theo trục dọc & trục ngang, kiểu Liang-Barsky)
+  _segBox(R, x0, y0, z0, dx, dy, dz, cx, cz, ux, uz, hl, ht, yMin, yMax) {
+    const px = x0 - cx, pz = z0 - cz;
+    let ta = 0, tb = 1;
+    const pa = px * ux + pz * uz, da = dx * ux + dz * uz;
+    if (Math.abs(da) < 1e-9) { if (pa > hl || pa < -hl) return; }
+    else {
+      let t0 = (-hl - pa) / da, t1 = (hl - pa) / da;
+      if (t0 > t1) { const q = t0; t0 = t1; t1 = q; }
+      if (t0 > ta) ta = t0;
+      if (t1 < tb) tb = t1;
+      if (ta > tb) return;
+    }
+    const pb = pz * ux - px * uz, db = dz * ux - dx * uz;
+    if (Math.abs(db) < 1e-9) { if (pb > ht || pb < -ht) return; }
+    else {
+      let t0 = (-ht - pb) / db, t1 = (ht - pb) / db;
+      if (t0 > t1) { const q = t0; t0 = t1; t1 = q; }
+      if (t0 > ta) ta = t0;
+      if (t1 < tb) tb = t1;
+      if (ta > tb) return;
     }
     const ya = y0 + dy * ta, yb = y0 + dy * tb;
     if ((ya > yMax && yb > yMax) || (ya < yMin && yb < yMin)) return;
@@ -773,6 +849,12 @@ class BallisticsSystem3D {
     // mũi tên lõi urani nghèo (đạn cao cấp 'ap_du'): hiệu ứng trúng riêng (mảnh tự bốc cháy) + dễ gây cháy trong khoang.
     // Trang bị của xe bắn có trên mọi máy -> máy khác tái hiện phát bắn cũng tự gắn đúng cờ
     if (ammoType === 'AP' && shooter && shooter.ammoMods && shooter.ammoMods.AP && shooter.ammoMods.AP.du) shell.du = true;
+    // đạn cháy 12.7 của xe trinh sát (cùng điều kiện hmgInc ở game.onShellImpact): bay xuyên tán cây nóng ít hơn đạn cháy 30mm
+    if (ammoType === 'INCENDIARY' && shooter && shooter.tankType === 'SCOUT') shell.hmg = true;
+    // đạn nổ-cháy-xuyên Mk211 (đạn cao cấp 'mk211') của súng 12.7 xe trinh sát; có cả SLAP thì dây đạn trộn 1:1. Theo số thứ
+    // tự viên trong loạt (_beltIdx) -> mọi máy cùng biết viên nào là Mk211
+    if (ammoType === 'SCOUT_BULLET' && shooter && shooter.tankType === 'SCOUT' && !shooter._roofShot && !(shooter.mainGun && shooter.mainGun.kind)
+      && shooter.ammoMods && shooter.ammoMods.HMG_HEIAP) shell.heiap = !shooter.ammoMods.SCOUT_BULLET || ((shooter._beltIdx || 0) % 2 === 1);
 
     // Tên lửa có điều khiển: bám mục tiêu xe trinh sát chỉ định (khóa) hoặc điểm ngắm, động cơ đẩy tới tốc độ hành trình
     if (rp.guided) {
@@ -1147,6 +1229,8 @@ class BallisticsSystem3D {
     for (let i = this.activeShells.length - 1; i >= 0; i--) {
       const s = this.activeShells[i];
       let impacted = false;
+      // sơ tốc thật của viên đạn (sau khi bên bắn / gói mạng đã đặt vận tốc): mốc tính sức xuyên còn lại (penetrateEnv)
+      if (s.pv0 === undefined) s.pv0 = Math.hypot(s.vx, s.vy, s.vz);
       // đạn liên thanh bắn nhiều viên trong một khung: viên bắn sớm hơn trong khung bay trước phần thời gian đã trễ
       // (s.lead, giây mô phỏng) -> dòng đạn giãn đều, không dồn cục ở máy chậm
       const fdt = s.lead > 0 ? frameDt + s.lead : frameDt;
@@ -1172,7 +1256,7 @@ class BallisticsSystem3D {
         s.y += s.vy * subDt;
         s.z += s.vz * subDt;
         // Đạn bay sượt / xuyên tán cây: cây rung, lá cành rụng, đạn cháy làm bén lửa
-        if (veg && s.timeAlive > 0.01) veg.passSegment(prevX, prevY, prevZ, s.x, s.y, s.z, s.ammoType, this.fx);
+        if (veg && s.timeAlive > 0.01) veg.passSegment(prevX, prevY, prevZ, s.x, s.y, s.z, s.hmg ? 'INCENDIARY_HMG' : s.aaMG ? 'MG762' : s.ammoType, this.fx);
 
         // Đạn Gatling cận chiến: Tiêu hao năng lượng và tan biến sau 0.6 giây (~480 mét)
         // Đạn súng / tên lửa bắn thẳng: hết tầm hiệu quả thì tự hủy (đạn vạch đường cháy hết, tên lửa tự nổ)
@@ -1303,7 +1387,7 @@ class BallisticsSystem3D {
           }
           // VẬT CẢN (bao cát, đá tảng, công sự móng ngựa, đống đổ nát): dò dày theo đoạn bay, điểm nổ đúng mặt chạm
           // (trước đây nổ ở cuối đoạn = phía sau vật che -> vật che không chắn được sóng nổ cho xe núp sau)
-          const wh = this.obstacleSegmentHit(terrain, prevX, prevY, prevZ, endX, endY, endZ, true, ceilY);
+          const wh = this.obstacleSegmentHit(terrain, prevX, prevY, prevZ, endX, endY, endZ, true, ceilY, s.hmg ? 'INCENDIARY_HMG' : s.ammoType);
           if (wh && wh.t < envT) { envT = wh.t; envK = 5; envH = wh; }
         }
         if (s.timeAlive > 0.02) {
@@ -1339,8 +1423,6 @@ class BallisticsSystem3D {
         if (s.timeAlive > 0.015 && allUnits) {
           let hitVehicle = null;
           let minHitDist = Infinity;
-          let absorbed = null;   // đạn lọt vào miệng khoang trúng phần xe nằm dưới mái che -> gờ hầm bê tông chặn
-          let bestT = Infinity;
           let prox = null;       // đạn HE bay sượt sát thân xe địch: ngòi cận đích kích nổ tại prox.t trên đoạn bay
 
           const segX = s.x - prevX;
@@ -1351,31 +1433,11 @@ class BallisticsSystem3D {
           for (const unit of allUnits) {
             // máy chủ không gửi vị trí / quá lâu không có gói mới: bản sao chỉ là phỏng đoán -> không tính va chạm (chống trúng "bóng ma")
             if (unit._netHidden || unit._netStale) continue;
+            if (s._penU && s._penU.indexOf(unit.id) >= 0) continue;   // xe viên đạn vừa xuyên thấu (penetrateUnit)
             // Chỉ phát nổ với xe đối phương (không kích nổ vào xe của chính mình hoặc đồng đội)
             const isEnemy = !s.shooterTeam || unit.team !== s.shooterTeam;
-            // Xe đang ở trong cứ điểm: bỏ ngòi nổ cận đích, chỉ tính khi đường đạn cắt đúng hộp thân xe;
-            // điểm chạm nằm dưới mái che -> bị chặn (không mất máu), phần thò ra ngoài -> trúng bình thường
-            const shelter = (!unit.isDead && isEnemy && unit.id !== s.shooterId && terrain.shelterOf) ? terrain.shelterOf(unit) : null;
-            if (shelter && typeof Strongholds !== 'undefined') {
-              const t = Strongholds.segUnitBox(unit, prevX, prevY, prevZ, prevX + segX, prevY + segY, prevZ + segZ, s.isDirectFire ? 2.0 : 3.0);
-              if (t >= 0 && t < bestT) {
-                const px = prevX + segX * t, py = prevY + segY * t, pz = prevZ + segZ * t;
-                bestT = t;
-                if (terrain.isProtectedPoint(px, py, pz)) {
-                  const sl = Math.sqrt(segLenSq) || 1;
-                  const ep = terrain.strongholdSet.entryPoint(shelter, { x: px, y: py, z: pz }, { x: segX / sl, y: segY / sl, z: segZ / sl });
-                  absorbed = { x: ep.x, y: ep.y, z: ep.z, unit };
-                  hitVehicle = null;
-                } else {
-                  absorbed = null;
-                  hitVehicle = unit;
-                  s.x = px; s.y = py; s.z = pz;
-                  minHitDist = 0;
-                }
-              }
-              continue;
-            }
-            if (bestT < Infinity) continue;
+            // (Xe nằm trong cứ điểm: xét như mọi xe — mái / tường / gờ bê tông đã chặn đạn bằng hình khối ở bước 1, đoạn bay đã
+            // bị cắt tại mặt bê tông. Đạn bay thẳng qua miệng hầm mở thì trúng; trước đây bị "gờ hầm" chặn dù không có gì cản)
             // Xác xe còn nằm đó là vật cản thật: chặn đạn của mọi phe (chỉ va chạm sát thân, không kích nổ tiếp cận)
             const wreck = unit.isDead && unit.dmg && unit.group && unit.group.visible;
             // xe đồng đội cũng là vật rắn: đạn bay trúng thân là nổ / xuyên (không có ngòi nổ cận đích với xe phe mình)
@@ -1394,10 +1456,11 @@ class BallisticsSystem3D {
               // thuốc nổ: phát trượt cách mép xe ~3 m vẫn bị tính như xuyên thân, độ tản mát pháo tăng gần như không còn ý nghĩa.
               // Bom con đạn chùm giữ vùng trúng cũ quanh tâm xe (số quả & sát thương mỗi quả đã cân theo đó)
               if (s.ammoType !== 'CLUSTER_SUBMUNITION' && typeof Strongholds !== 'undefined' && Strongholds.segUnitBox) {
-                const tb = Strongholds.segUnitBox(unit, prevX, prevY, prevZ, prevX + segX, prevY + segY, prevZ + segZ, 1.0);
+                let tb = Strongholds.segUnitBox(unit, prevX, prevY, prevZ, prevX + segX, prevY + segY, prevZ + segZ, 1.0), onBarrel = false;
+                if (tb < 0) { tb = segHitsBarrel(unit, prevX, prevY, prevZ, segX, segY, segZ); onBarrel = tb >= 0; }
                 if (tb >= 0) {
                   const dh = tb * Math.sqrt(segLenSq);
-                  if (dh < minHitDist) { minHitDist = dh; hitVehicle = unit; s.x = prevX + segX * tb; s.y = prevY + segY * tb; s.z = prevZ + segZ * tb; }
+                  if (dh < minHitDist) { minHitDist = dh; hitVehicle = unit; s.x = prevX + segX * tb; s.y = prevY + segY * tb; s.z = prevZ + segZ * tb; s._barrelHit = onBarrel; }
                 } else if (!wreck && !friend && BallisticsSystem3D.PROX_FUZE[s.ammoType] && !(s.isHeavyArty && s.isDirectFire)) {
                   // NGÒI CẬN ĐÍCH của đạn nổ mảnh (HE pháo tăng, lựu pháo cầu vồng, đạn chùm): bay sượt sát thân xe địch mà không
                   // chạm -> nổ ngay cạnh xe ('PROXIMITY': sát thương nổ lan theo khoảng cách tới thân xe, không phải trúng thẳng)
@@ -1437,17 +1500,12 @@ class BallisticsSystem3D {
             }
           }
 
-          if (absorbed) {
-            s.x = absorbed.x; s.y = absorbed.y; s.z = absorbed.z;
-            s.absorbedBy = absorbed.unit;
-            this.removeShellMesh(s, i);
-            if (onImpact) onImpact(s, 'WALL');
-            impacted = true;
-            break;
-          }
           if (hitVehicle) {
+            // mũi tên / 30mm xuyên thấu xe giáp mỏng / xác xe: ra phía bên kia rồi bay tiếp (penetrateUnit đã gọi onImpact)
+            const pu = this.penetrateUnit(s, hitVehicle, onImpact, subDt, Math.min(1, minHitDist / Math.max(1e-6, Math.hypot(s.vx, s.vy, s.vz) * subDt)));
+            if (pu === 'pass') continue;
             this.removeShellMesh(s, i);
-            if (onImpact) onImpact(s, 'DIRECT_HIT', hitVehicle);
+            if (onImpact && pu !== 'stop') onImpact(s, 'DIRECT_HIT', hitVehicle);
             impacted = true;
             break;
           }
@@ -1470,12 +1528,16 @@ class BallisticsSystem3D {
           impacted = true;
           break;
         }
+        // ĐẠN XUYÊN QUA VẬT MỎNG RỒI BAY TIẾP (vách tôn / ván, kính cửa, thân xe con, thân cây, bao cát; mũi tên xuyên cả tường
+        // nhà): hiệu ứng + phá vật tại điểm vào như trúng thường, vụn phụt ở lỗ ra, đạn đi tiếp từ điểm ra ở bước phụ sau
+        if ((envK === 2 || envK === 4 || envK === 5) && this.penetrateEnv(s, envK, envH, terrain, onImpact, subDt, envT)) continue;
         if (envK === 2) {
           const th = envH;
           // pháp tuyến mặt thân cây tại điểm chạm + cây bị trúng (hiệu ứng dằm gỗ & vết đạn dán đúng thân cây)
           if (th.it) {
             const nl = Math.hypot(th.x - th.it.x, th.z - th.it.z) || 1;
-            s.hitNormal = { nx: (th.x - th.it.x) / nl, ny: 0, nz: (th.z - th.it.z) / nl };
+            // khúc thân cây đổ nằm: trunkHit trả sẵn pháp tuyến mặt ống
+            s.hitNormal = th.nx !== undefined ? { nx: th.nx, ny: th.ny, nz: th.nz } : { nx: (th.x - th.it.x) / nl, ny: 0, nz: (th.z - th.it.z) / nl };
             s.hitTree = th.it;
           }
           if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
@@ -1494,6 +1556,10 @@ class BallisticsSystem3D {
         if (envK === 4 || envK === 5) {
           // nhà: vật liệu tường (bê tông / gạch mộc / đá / gỗ / tôn) -> màu bụi, mảnh vỡ của hiệu ứng trúng đạn
           if (envK === 4) { s.hitNormal = { nx: envH.nx, ny: envH.ny, nz: envH.nz }; s.hitMat = envH.B && envH.B.st ? envH.B.st.mat : undefined; }
+          // vật cản thép (xe con dân sự, cột cây xăng): hiệu ứng / màu vụn theo thép, không theo đá
+          else if (envH.car || (envH.obstacle && envH.obstacle.mat === 'metal')) s.hitMat = 'metal';
+          // tường rào: rào gỗ / tre báo kiểu BOULDER kèm vật liệu gỗ -> dăm gỗ, tiếng gỗ (tường đá / đất có kiểu riêng)
+          else if (envH.fence) s.hitMat = envH.mat;
           if (s.ammoType === 'CLUSTER') { this.clusterImpactBurst(s, i, terrain, allUnits, onImpact); impacted = true; break; }
           if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
@@ -1585,6 +1651,295 @@ class BallisticsSystem3D {
         });
       }
     }
+  }
+
+  /**
+   * ĐẠN XUYÊN QUA VẬT RỒI BAY TIẾP (over-penetration): vách tôn / ván, kính cửa sổ, thân xe con, thân cây, bao cát; đạn mũi
+   * tên xuyên cả tường nhà. Sức xuyên còn lại C = penLeft x (v / sơ tốc)^2 (1 = vừa rời nòng); mỗi lần xuyên tốn quãng vật
+   * liệu (chia cos góc chạm) / PEN_ENV. Không đủ sức, chạm quá xiên, sàn / mái, bê tông cứ điểm, đá tảng -> false (găm / nổ
+   * tại mặt chạm như cũ). Xuyên: onImpact tại điểm vào (hiệu ứng, phá nhà / cây / xe, nổ lan nhỏ — như trúng thường), vụn phụt
+   * ở lỗ ra, đạn đặt ở điểm ra rồi bay tiếp. Đạn súng mất động năng (tốc độ giảm theo căn), lõi mũi tên bị mài ngắn (tốc độ
+   * giảm ít, penLeft giảm); lệch hướng nhẹ, chao đảo -> cản tăng, xuyên giáp kém (penK, VehicleDamage). Ngẫu nhiên theo
+   * burstSeed + số lần đã xuyên; mọi quyết định chỉ dựa vào hình khối & vật liệu -> mọi máy cùng đường bay.
+   */
+  penetrateEnv(s, envK, H, terrain, onImpact, subDt, envT) {
+    if (s.gl || s.guide || s.isHeavyArty || s.kami || (s.pens || 0) >= 6) return false;
+    const key = s.aaMG ? 'MG762' : s.hmg ? 'INCENDIARY_HMG' : s.ammoType;
+    const PT = BallisticsSystem3D.PEN_ENV[key];
+    if (!PT) return false;
+    const sp = Math.hypot(s.vx, s.vy, s.vz);
+    if (sp < 1) return false;
+    const dx = s.vx / sp, dy = s.vy / sp, dz = s.vz / sp, rod = key === 'AP';
+    // mat: vật liệu · cost: phần sức xuyên (ở sơ tốc) bị tiêu · move: quãng đi thẳng trong vật tới điểm ra (+ đệm) ·
+    // face: quãng tới mặt ra · quiet: bay qua không tính (lỗ ra mũi tên đã khoét sẵn)
+    let mat = null, cost = 0, move = 0, face = 0, nIn = null, hitType = 'WALL', B = null, quiet = false;
+    if (envK === 4) {
+      B = H.B;
+      if (H.part !== 'wall' || !B || !H.m) return false;   // sàn / mái: đạn dừng như cũ
+      const cosI = Math.abs(dx * H.nx + dy * H.ny + dz * H.nz), pathW = (B.T || 2) / Math.max(0.2, cosI);
+      face = pathW; move = pathW + 0.3;
+      // Mũi tên đã xuyên vào nhà này từ ngoài: Destructibles khoét sẵn lỗ ra ở vách đối diện ngay trong phát trúng đó và sức
+      // xuyên của vách ấy đã tính lúc vào -> chạm mặt trong vách đó thì bay thẳng ra (máy chưa nhận ENV_HIT vẫn thấy vách
+      // nguyên: cùng một đường bay, không thêm hiệu ứng)
+      if (H.inside && s._penB && s._penB.indexOf(B) >= 0) quiet = true;
+      else {
+        const BS = terrain.buildingSet, wm = (B.st && B.st.mat) || 'concrete';
+        // ô cửa sổ / cửa kính mặt tiền (cửa cuốn kho thép thì không): kính mỏng, đạn nào cũng xuyên
+        const glass = !!(BS && BS.inOpening && !(H.m.kit && H.m.kit.styleKey === 'hangarDoor') && BS.inOpening(B, H.m, H.L));
+        mat = glass ? 'glass' : wm;
+        if (!PT[mat] || (!glass && cosI < (BallisticsSystem3D.PEN_RIC[key] || 0.3))) return false;   // quá xiên: sượt cày rãnh
+        cost = (glass ? 0.3 / Math.max(0.2, cosI) : pathW) / PT[mat];
+        // mũi tên từ ngoài vào: tính luôn vách bên kia (lỗ ra ở đó do Destructibles khoét cùng phát trúng)
+        if (rod && !H.inside) { if (!PT[wm]) return false; cost += pathW / PT[wm]; }
+        nIn = { x: H.nx, y: H.ny, z: H.nz };
+        hitType = 'BUILDING';
+      }
+    } else if (envK === 2) {
+      // THÂN CÂY đứng (trụ tròn) / KHÚC THÂN ĐỔ NẰM: quãng xuyên = dây cung qua thân theo hướng bay
+      const it = H.it;
+      if (!it || !PT.trunk || !(it.trunkR > 0)) return false;
+      let nx, ny, nz, len;
+      if (H.nx !== undefined) {
+        nx = H.nx; ny = H.ny; nz = H.nz;
+        len = 2 * it.trunkR * 0.7 * Math.max(0.05, -(dx * nx + dy * ny + dz * nz));
+      } else {
+        const rl = Math.hypot(H.x - it.x, H.z - it.z) || 1, h2 = Math.max(0.01, dx * dx + dz * dz);
+        nx = (H.x - it.x) / rl; ny = 0; nz = (H.z - it.z) / rl;
+        len = 2 * it.trunkR * Math.max(0.02, -(dx * nx + dz * nz)) / h2;
+      }
+      mat = 'trunk'; cost = len / PT.trunk; face = len; move = len + 0.25; nIn = { x: nx, y: ny, z: nz }; hitType = 'TREE';
+    } else {
+      // VẬT CẢN: thân xe con dân sự, bờ bao cát, cột thép / cột bê tông mảnh (trụ mái che, cột cây xăng), khối tường công sự
+      // móng ngựa / boong-ke. Đá tảng, bê tông cứ điểm dưới ụ đất, mốc địa hình, đống đổ nát: không xuyên
+      const ob = H.obstacle;
+      if (H.car) mat = 'car';
+      else if (H.type === 'SANDBAG') mat = 'sandbag';
+      else if (H.fort && H.fort.ref) mat = 'fort';
+      else if (ob && ob.radius > 0 && ((ob.mat === 'metal' && ob.radius <= 4.5) || (ob.mat === 'concrete' && ob.radius <= 3))) mat = ob.mat === 'metal' ? 'pole' : 'column';
+      const pk = mat === 'fort' || mat === 'column' ? 'concrete' : mat;
+      if (!mat || !PT[pk] || typeof terrain.checkHorseshoeCollision !== 'function') return false;
+      hitType = H.type || 'WALL';
+      if (mat === 'fort') {
+        // khối tường công sự = hộp dài len x cao x dày thick xoay theo tường: quãng xuyên = đoạn đạn đi trong hộp khối bị chạm
+        let q = null, qd = 3;
+        for (const b of H.fort.ref.blocks || []) {
+          if (!b.alive || b.ax === undefined) continue;
+          const ox = H.x - b.x, oz = H.z - b.z, al = ox * b.ax + oz * b.az, ac = oz * b.ax - ox * b.az;
+          const dd = Math.hypot(Math.max(0, Math.abs(al) - b.len / 2), Math.max(0, Math.abs(ac) - b.thick / 2), H.y < b.y0 ? b.y0 - H.y : H.y > b.y1 ? H.y - b.y1 : 0);
+          if (dd < qd) { qd = dd; q = b; }
+        }
+        if (!q) return false;   // mái hầm / phần khác của công sự: dừng như cũ
+        // tia lùi 4 đv trước điểm chạm, cắt hộp khối trong hệ khối (u dọc tường, y, w theo bề dày)
+        const ox = H.x - dx * 4 - q.x, oz = H.z - dz * 4 - q.z;
+        const P0 = [ox * q.ax + oz * q.az, H.y - dy * 4, oz * q.ax - ox * q.az], D0 = [dx * q.ax + dz * q.az, dy, dz * q.ax - dx * q.az];
+        const lo3 = [-q.len / 2, q.y0, -q.thick / 2], hi3 = [q.len / 2, q.y1, q.thick / 2];
+        let t0 = -Infinity, t1 = Infinity;
+        for (let k = 0; k < 3; k++) {
+          if (Math.abs(D0[k]) < 1e-9) { if (P0[k] < lo3[k] || P0[k] > hi3[k]) return false; continue; }
+          let a = (lo3[k] - P0[k]) / D0[k], b = (hi3[k] - P0[k]) / D0[k];
+          if (a > b) { const tq = a; a = b; b = tq; }
+          if (a > t0) t0 = a;
+          if (b < t1) t1 = b;
+        }
+        const path = t1 - Math.max(t0, 4);
+        if (!(t1 > t0) || !(path > 0)) return false;
+        cost = path / PT.concrete; face = path;
+        // vòng va chạm của công sự là trụ tròn bao khối (rộng hơn bề dày thật): đặt đạn ra hẳn ngoài vòng đó
+        move = -1;
+        for (let u = path + 0.5; u <= path + 30; u += 1) {
+          const h = terrain.checkHorseshoeCollision(H.x + dx * u, H.y + dy * u, H.z + dz * u, true);
+          if (!(h && h.hit && h.fort === H.fort)) { move = u + 0.3; break; }
+        }
+        if (move < 0) return false;   // bay dọc theo tường: vẫn trong công sự -> dừng
+      } else if (mat === 'pole' || mat === 'column') {
+        // cột tròn đứng: dây cung qua cột theo hướng bay (phần nằm ngang); bắn dọc trục cột (từ trên xuống) thì dừng
+        const h2 = dx * dx + dz * dz;
+        if (h2 < 0.04) return false;
+        const fx0 = H.x - ob.x, fz0 = H.z - ob.z, bq = (fx0 * dx + fz0 * dz) / h2, disc = bq * bq - (fx0 * fx0 + fz0 * fz0 - ob.radius * ob.radius) / h2;
+        const tOut = disc > 0 ? -bq + Math.sqrt(disc) : 0;
+        if (!(tOut > 0)) return false;
+        cost = tOut / PT[pk]; face = tOut; move = tOut + 0.3;
+      } else {
+        // xe con / bao cát: dò dọc hướng bay tới chỗ ra khỏi vật bằng hitTest của lớp vật thể (tra theo lưới ô — không duyệt
+        // cả trăm nhà như checkHorseshoeCollision)
+        const PS = terrain.propSet;
+        const test = PS && typeof PS.hitTest === 'function' ? (x, y, z) => PS.hitTest(x, y, z) : (x, y, z) => terrain.checkHorseshoeCollision(x, y, z, true);
+        const inside = (u) => {
+          const h = test(H.x + dx * u, H.y + dy * u, H.z + dz * u);
+          return !!(h && h.hit && (mat === 'car' ? h.car : h.type === 'SANDBAG'));
+        };
+        const maxL = Math.min(PT[mat], mat === 'car' ? 64 : 24);   // xa hơn thì chắc chắn không xuyên nổi
+        let lo = 0, hi = -1;
+        for (let u = 0.5; u <= maxL; u += 0.5) { if (!inside(u)) { hi = u; break; } lo = u; }
+        if (hi < 0) return false;
+        for (let k = 0; k < 6; k++) { const m = (lo + hi) * 0.5; if (inside(m)) lo = m; else hi = m; }
+        cost = hi / PT[mat]; face = hi; move = hi + 0.3;
+      }
+    }
+    let keep = 1;
+    if (!quiet) {
+      const C = (s.penLeft === undefined ? 1 : s.penLeft) * Math.min(1, Math.pow(sp / (s.pv0 || sp), 2));
+      if (cost >= C * 0.95) return false;   // hết sức: găm lại trong vật (lọt ra yếu ớt cũng coi như găm)
+      keep = 1 - cost / C;
+    }
+    const n = s.pens || 0;
+    if (!quiet) {
+      // điểm vào: hiệu ứng + phá vật y như trúng thường (vết đạn / lỗ thủng nhà, kính vỡ, dăm gỗ, thủng thân xe, cây rung...)
+      if (envK === 4) { s.hitNormal = nIn; s.hitMat = mat === 'glass' ? B.st.mat : mat; }
+      else if (envK === 2) { s.hitNormal = nIn; s.hitTree = H.it; }
+      else if (mat === 'car' || mat === 'pole') s.hitMat = 'metal';
+      if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
+      // _penPass: game.js không báo "đạn va tường và phát nổ" cho phát đang xuyên qua
+      s._penPass = true;
+      try { if (onImpact) onImpact(s, hitType); } finally { s._penPass = false; }
+      s.hitNormal = undefined; s.hitMat = undefined; s.hitTree = undefined;   // va chạm sau không mang pháp tuyến / vật liệu cũ
+      if (rod && envK === 4 && !H.inside) (s._penB || (s._penB = [])).push(B);
+      const fm = mat === 'fort' || mat === 'column' ? 'concrete' : mat;
+      this.penExitFx(H.x + dx * face, H.y + dy * face, H.z + dz * face, dx, dy, dz, fm, rod, nIn, B);
+      this.penApply(s, sp, dx, dy, dz, keep, BallisticsSystem3D.PEN_YAW[mat] || 0.75, rod);
+      if (rod && n === 0 && typeof window !== 'undefined' && window.game && window.game.player && s.shooterId === window.game.player.id && window.game.addCombatLog) {
+        const what = { TREE: 'thân cây', BUILDING: 'tường nhà' }[hitType] || { car: 'xe', sandbag: 'bờ bao cát', fort: 'tường công sự', pole: 'cột thép', column: 'cột bê tông' }[mat] || 'vật cản';
+        window.game.addCombatLog(`[[corner-down-right]] Đạn xuyên giáp xuyên qua ${what} — bay tiếp, mất ${Math.round(cost * 100)}% sức xuyên`, 'tip');
+      }
+    }
+    // phần còn lại của bước phụ (đạn tới điểm ra sớm hơn cuối bước): bù vào khung sau để đạn không trễ lại sau mỗi lần xuyên
+    this.penPlace(s, H.x + dx * move, H.y + dy * move, H.z + dz * move, subDt * (1 - envT) - move / sp);
+    return true;
+  }
+
+  // Sau mỗi lần xuyên (vật cản / xe): tốc độ & sức xuyên còn lại (keep = phần sức còn lại), lệch hướng trong nón nhỏ, chao
+  // đảo (cản tăng), xuyên giáp kém đi (penK). Đạn súng mất động năng (v giảm theo căn); lõi mũi tên mài ngắn (v giảm ít,
+  // penLeft giảm). yk: hệ số chao đảo theo vật liệu (PEN_YAW). Ngẫu nhiên tất định theo burstSeed + số lần đã xuyên
+  penApply(s, sp, dx, dy, dz, keep, yk, rod) {
+    const n = s.pens || 0;
+    const ve = rod ? 0.12 : 0.5, v = sp * Math.pow(keep, ve);
+    s.penLeft = (s.penLeft === undefined ? 1 : s.penLeft) * Math.pow(keep, 1 - 2 * ve);
+    const R = (salt) => { let h = Math.imul((s.burstSeed || 0) ^ Math.imul(n + 13, 0x9e3779b1) ^ Math.imul(salt, 0x85ebca6b), 0xc2b2ae35); h ^= h >>> 15; h = Math.imul(h, 0x27d4eb2f); h ^= h >>> 13; return (h >>> 0) / 4294967296; };
+    const th = (1 - yk) * (rod ? 5 : 20) * R(1) * Math.PI / 180, ph = R(2) * 2 * Math.PI;
+    let ux = -dz, uz = dx, ul = Math.hypot(ux, uz);
+    if (ul < 1e-4) { ux = 1; uz = 0; ul = 1; }
+    ux /= ul; uz /= ul;
+    const wx = dy * uz, wy = dz * ux - dx * uz, wz = -dy * ux;   // w = d x u (u nằm ngang)
+    const cth = Math.cos(th), sth = Math.sin(th), a = Math.cos(ph) * sth, b = Math.sin(ph) * sth;
+    s.vx = (dx * cth + ux * a + wx * b) * v; s.vy = (dy * cth + wy * b) * v; s.vz = (dz * cth + uz * a + wz * b) * v;
+    const dk = 1 + (1 - yk) * (rod ? 0.6 : 2);
+    if (s.k !== undefined) s.k *= dk;
+    s.dragMul = (s.dragMul || 1) * dk;
+    s.penK = (s.penK || 1) * keep * (rod ? Math.sqrt(yk) : yk);
+    s.pens = n + 1;
+  }
+
+  // Đặt đạn ở điểm ra rồi bay tiếp ở bước phụ sau; left = thời gian còn lại của bước phụ (bù vào khung sau qua s.lead)
+  penPlace(s, x, y, z, left) {
+    s.x = x; s.y = y; s.z = z;
+    if (left > 0) s.lead = (s.lead || 0) + left;
+    if (s.mesh) {
+      s.mesh.position.set(s.x, s.y, s.z);
+      const vm = Math.hypot(s.vx, s.vy, s.vz);
+      if (vm > 0.1) {
+        const UP = this._vUp || (this._vUp = new THREE.Vector3(0, 1, 0));
+        s.mesh.quaternion.setFromUnitVectors(UP, (this._vDir || (this._vDir = new THREE.Vector3())).set(s.vx / vm, s.vy / vm, s.vz / vm));
+      }
+    }
+  }
+
+  /**
+   * ĐẠN XUYÊN THẤU XE GIÁP MỎNG / XÁC XE: mũi tên APFSDS (và 30mm ở cự ly gần vào xe vỏ mỏng) chui qua thành vỏ, khoang, thành
+   * bên kia rồi bay tiếp — xe trinh sát, pháo tự hành, xe 6 nòng bị bắn ngang ở cự ly gần, xác các xe đó. Xe tăng chủ lực
+   * không bao giờ bị xuyên thấu. Quãng thép quy đổi = 2 thành sườn (bắn ngang) hoặc mũi + đuôi (bắn dọc) theo
+   * VehicleDamage.ARMOR_MM + phần khoang (THROUGH_INNER_MM); phải dư sức hẳn (gấp đôi) mới xuyên thấu, sát ngưỡng thì đạn nằm
+   * lại trong khoang (VehicleDamage tính xuyên một thành như cũ). Quyết định chỉ theo loại xe / xác / sức xuyên còn lại.
+   * Trả: null = không xét (nơi gọi xử lý trúng xe như cũ) · 'stop' = đã gọi onImpact, đạn dừng (nảy khỏi giáp / bị khiên
+   * chữ V làm chệch) · 'pass' = đã gọi onImpact, đạn đặt ở lỗ ra phía bên kia và bay tiếp
+   */
+  penetrateUnit(s, u, onImpact, subDt, tHit) {
+    if (s.gl || s.guide || s.isHeavyArty || s.kami || s._barrelHit || (s.pens || 0) >= 6) return null;
+    if (s.ammoType !== 'AP' && s.ammoType !== 'GATLING_BULLET') return null;
+    const VD = typeof VehicleDamage !== 'undefined' ? VehicleDamage : null, SB = typeof Strongholds !== 'undefined' && Strongholds.segUnitBox;
+    const P = VD && VD.PEN && VD.PEN[s.ammoType], A = VD && VD.ARMOR_MM && VD.ARMOR_MM[u.tankType], inner = BallisticsSystem3D.THROUGH_INNER_MM[u.tankType];
+    if (!P || P.kind !== 'KE' || !A || !inner || !SB) return null;
+    const sp = Math.hypot(s.vx, s.vy, s.vz);
+    if (sp < 1) return null;
+    const dx = s.vx / sp, dy = s.vy / sp, dz = s.vz / sp, rod = s.ammoType === 'AP';
+    const c = Math.cos(u.bodyAngle || 0), sn = Math.sin(u.bodyAngle || 0);
+    const along = Math.abs(dx * sn + dz * c) / (Math.hypot(dx, dz) || 1);
+    let mm = (along > 0.7 ? A.hullFront[0] + A.rear[0] : 2 * A.side[0]) + inner;
+    if (u.isDead) mm *= 0.7;   // xác xe đã cháy / bung: ít thiết bị trong khoang
+    const C = (s.penLeft === undefined ? 1 : s.penLeft) * Math.min(1, Math.pow(sp / (s.pv0 || sp), 2));
+    const cost = mm / P.mm;
+    if (cost * 2 > C) return null;
+    // lỗ ra: dò ngược hộp thân xe từ phía bên kia (cùng hộp đã dùng để xét trúng)
+    const fx0 = s.x + dx * 140, fy0 = s.y + dy * 140, fz0 = s.z + dz * 140;
+    const tb = SB(u, fx0, fy0, fz0, s.x, s.y, s.z, 1.0);
+    if (tb < 0) return null;
+    const ex = fx0 + (s.x - fx0) * tb, ey = fy0 + (s.y - fy0) * tb, ez = fz0 + (s.z - fz0) * tb;
+    s._ric = false;
+    if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
+    if (onImpact) onImpact(s, 'DIRECT_HIT', u);
+    if (s._ric) return 'stop';   // game.js: đạn nảy khỏi giáp nghiêng / khiên chữ V làm chệch -> không xuyên thấu
+    (s._penU || (s._penU = [])).push(u.id);
+    this.penUnitExitFx(u, ex, ey, ez, dx, dy, dz, rod);
+    const n = s.pens || 0;
+    this.penApply(s, sp, dx, dy, dz, 1 - cost / C, BallisticsSystem3D.PEN_YAW.vehicle, rod);
+    if (n === 0 && typeof window !== 'undefined' && window.game && window.game.player && s.shooterId === window.game.player.id && window.game.addCombatLog) {
+      window.game.addCombatLog(`[[corner-down-right]] ${rod ? 'Mũi tên xuyên giáp' : 'Đạn 30mm'} xuyên thấu ${u.isDead ? 'xác xe' : (u.name || 'xe')} — ra phía bên kia, bay tiếp`, 'tip');
+    }
+    const move = Math.hypot(ex - s.x, ey - s.y, ez - s.z) + 0.6;
+    this.penPlace(s, ex + dx * 0.6, ey + dy * 0.6, ez + dz * 0.6, subDt * (1 - tHit) - move / sp);
+    return 'pass';
+  }
+
+  // Lỗ ra trên vỏ phía bên kia xe bị xuyên thấu (dò tia ngược từ ngoài vào mặt vỏ) + chùm mảnh thép phụt ra theo hướng bay.
+  // Chỉ là hình — không ảnh hưởng đường bay / trạng thái đồng bộ
+  penUnitExitFx(u, x, y, z, dx, dy, dz, rod) {
+    const F = this.fx;
+    if (!F) return;
+    try {
+      const h = F.raycastUnit ? F.raycastUnit(u, { x, y, z, vx: -dx, vy: -dy, vz: -dz, ammoType: 'AP' }) : null;
+      const geo = !!(h && h.object && h.faceIndex !== undefined);
+      if (geo && F.addSurfaceMark) F.addSurfaceMark(h.point, h.normal, h.object, 'penetration', rod ? 2.6 : 1.8, { unit: u });
+      if (F.spallCone) F.spallCone(geo ? h.point.clone() : new THREE.Vector3(x, y, z), new THREE.Vector3(dx, dy, dz), rod ? 28 : 12, { spread: 0.4, speed: rod ? 1 : 0.7 });
+    } catch (e) { /* hiệu ứng phụ */ }
+  }
+
+  // Lỗ ra phía sau vật bị xuyên (x, y, z = điểm trên mặt ra, d = hướng bay): mũi tên phụt chùm mảnh nóng đỏ + vụn vật liệu
+  // (spallCone); đạn súng: dăm gỗ / vụn tôn / cát nhỏ phụt theo hướng bay, tôn / thân xe tóe tia lửa, không chớp lửa.
+  // Vách nhà bị đạn súng xuyên: vết lỗ ra trên mặt trong (mũi tên: Destructibles đã khoét thủng cả bề dày). Chỉ là hình
+  // (Math.random) — không ảnh hưởng đường bay / trạng thái đồng bộ
+  penExitFx(x, y, z, dx, dy, dz, mat, rod, nIn, B) {
+    const F = this.fx;
+    if (!F) return;
+    const dust = BallisticsSystem3D.PEN_DUST[mat] || [0.62, 0.6, 0.56];
+    try {
+      if (rod && F.spallCone) {
+        F.spallCone(new THREE.Vector3(x, y, z), new THREE.Vector3(dx, dy, dz), mat === 'glass' ? 10 : 30, { spread: 0.42, dust: mat === 'glass' ? null : dust });
+      } else {
+        const r = (lo, hi) => lo + Math.random() * (hi - lo);
+        if ((mat === 'metal' || mat === 'car' || mat === 'pole') && F.streaks) {
+          for (let i = 0; i < 4; i++) {
+            const s = r(160, 340);
+            F.streaks.add({ x, y, z, vx: (dx + r(-0.35, 0.35)) * s, vy: (dy + r(-0.2, 0.4)) * s, vz: (dz + r(-0.35, 0.35)) * s, drag: 1.4, grav: 78.5, life: r(0.12, 0.3), tail: r(0.02, 0.04) });
+          }
+        }
+        if (mat !== 'glass' && F.hardRocks) {
+          for (let i = 0; i < 4; i++) {
+            const s = r(30, 90);
+            F.hardRocks.add({ x, y, z, vx: (dx + r(-0.45, 0.45)) * s, vy: (dy + r(-0.1, 0.5)) * s, vz: (dz + r(-0.45, 0.45)) * s, size: r(0.15, 0.4), life: r(1.5, 3), c: [dust[0] * 0.8, dust[1] * 0.8, dust[2] * 0.8] });
+          }
+        }
+        if (F.smoke) {
+          for (let i = 0; i < 3; i++) {
+            const s = r(14, 40);
+            F.smoke.add({ x, y, z, vx: dx * s + r(-4, 4), vy: dy * s + r(-1, 4), vz: dz * s + r(-4, 4), size: r(0.8, 1.6), grow: 3.5, drag: 2.6, grav: 2, life: r(0.7, 1.4), alpha: mat === 'glass' ? 0.2 : 0.42, fadeIn: 0.02, c0: dust, cell: 2 });
+          }
+        }
+      }
+      if (B && nIn && !rod && mat !== 'glass') {
+        const P = new THREE.Vector3(x - dx * 0.05, y - dy * 0.05, z - dz * 0.05);
+        if (mat === 'metal' && F.wallHoles) F.wallHoles.add(P.x, P.y, P.z, -nIn.x, 0, -nIn.z, 0.45, null);
+        else if (F.addWallPit) F.addWallPit(P, new THREE.Vector3(-nIn.x, -nIn.y, -nIn.z), false, B.WM && B.WM.edge);
+      }
+    } catch (e) { /* hiệu ứng phụ */ }
   }
 
   /**
@@ -1727,7 +2082,13 @@ class BallisticsSystem3D {
       t = Math.max(0, Math.min(1, t));
       const cx = x0 + sx * t, cy = y0 + sy * t, cz = z0 + sz * t;
       const d = Math.hypot(cx - T.x, cy - T.y, cz - T.z);
-      if (d <= T.r && d < bd) { bd = d; best = { target: T, x: cx, y: cy, z: cz, d }; }
+      if (d <= T.r && d < bd) {
+        // dl: khoảng cách gần nhất của ĐƯỜNG ĐẠN (kéo dài) tới tâm — bước đạn thường kết thúc ngay khi vừa lọt vùng trúng nên
+        // d ~ sát rìa; dl mới cho biết viên đi xuyên giữa thân hay sượt cánh (đạn Mk211: drone_air HEIAP_CORE)
+        let tl = L2 > 1e-6 ? ((T.x - x0) * sx + (T.y - y0) * sy + (T.z - z0) * sz) / L2 : 0;
+        const dl = Math.hypot(x0 + sx * tl - T.x, y0 + sy * tl - T.y, z0 + sz * tl - T.z);
+        bd = d; best = { target: T, x: cx, y: cy, z: cz, d, dl: Math.min(d, dl) };
+      }
       else if (T.nearR && d <= T.nearR && this.onAirNear) {
         const seen = s._airNear || (s._airNear = new Set());
         if (!seen.has(T)) { seen.add(T); this.onAirNear(s, T, d); }
@@ -1865,7 +2226,7 @@ class BallisticsSystem3D {
       // bao cát / đá / công sự / đống đổ nát: dò dày theo đoạn bước (trước đây chỉ thử cuối bước -> lọt bao cát mỏng);
       // nhà còn đứng đã dò ở trên (skipBuildings)
       if (t > 0.06) {
-        const wh = this.obstacleSegmentHit(terrain, px0, py0, pz0, s.x, s.y, s.z, !!terrain.buildingSegmentHit, ceilY);
+        const wh = this.obstacleSegmentHit(terrain, px0, py0, pz0, s.x, s.y, s.z, !!terrain.buildingSegmentHit, ceilY, opts && opts.ammo);
         if (wh && wh.t < hT) { hT = wh.t; hX = wh.x; hY = wh.y; hZ = wh.z; hK = 'WALL'; }
       }
       const gy = terrain.getElevationAt(s.x, s.z);
@@ -2503,6 +2864,34 @@ BallisticsSystem3D.APS_MISS = 30;
 BallisticsSystem3D.APS_MIN = 30;
 BallisticsSystem3D.AIR_FLOOR = 12;
 BallisticsSystem3D.AIR_TURN_MUL = 2.2;
+// ĐẠN XUYÊN QUA VẬT RỒI BAY TIẾP (penetrateEnv): quãng vật liệu (đv, 8 đv = 1 m) đạn xuyên thủng được ở sơ tốc, chạm vuông
+// góc. Tường nhà theo WALLMAT (destructibles.js): tôn 0,7 · ván 1,4 · bê tông 2,2 · gạch mộc 3,2 · đá 3,6; kính cửa ~0,3;
+// xe con: cả quãng xuyên qua hộp thân xe (~1,8 m ngang); bờ bao cát ~5,2 (2 lớp bao); thân cây: dây cung qua thân.
+// Theo bảng bề dày che chắn thực tế (FM 5-103): 12.7 cần ~1 m gỗ sồi, ~30 cm bê tông, ~60 cm cát mới chặn được; 7.62 khoảng
+// một nửa; 30mm xuyên-cháy gấp rưỡi 12.7; APFSDS 120 ~2 m bê tông (PEN_WALL game.js), cát / đá ăn mòn lõi mạnh nhất.
+// Không có mục = loại đạn có ngòi nổ (nổ ngay mặt chạm), lựu pháo, tên lửa
+BallisticsSystem3D.PEN_ENV = {
+  SCOUT_BULLET: { metal: 14, wood: 9, glass: 60, car: 40, trunk: 6, sandbag: 4.5, adobe: 2.6, concrete: 1.6, stone: 1.2, pole: 2.4 },
+  INCENDIARY_HMG: { metal: 12, wood: 8, glass: 60, car: 36, trunk: 5, sandbag: 4, adobe: 2.2, concrete: 1.4, stone: 1.0, pole: 2 },
+  MG762: { metal: 7, wood: 4.5, glass: 40, car: 22, trunk: 2.6, sandbag: 2.4, adobe: 1.2, concrete: 0.7, stone: 0.5, pole: 1 },
+  GATLING_BULLET: { metal: 30, wood: 16, glass: 80, car: 80, trunk: 10, sandbag: 5, adobe: 3.0, concrete: 2.0, stone: 1.6, pole: 7 },
+  INCENDIARY: { metal: 26, wood: 14, glass: 80, car: 70, trunk: 8.5, sandbag: 4.4, adobe: 2.6, concrete: 1.7, stone: 1.4, pole: 6 },
+  AP: { metal: 600, wood: 320, glass: 10000, car: 900, trunk: 160, sandbag: 22, adobe: 22, concrete: 16, stone: 13, pole: 400 }
+};
+// pole: cột thép rỗng (trụ mái che cây xăng ~0,65 m, cụm cột bơm) tính theo dây cung qua cột — thành ống 2 lần ~10 mm thép;
+// cột bê tông mảnh (trụ ≤ 0,75 m) và khối tường công sự / boong-ke (1,5 m) dùng mục concrete
+// XUYÊN THẤU XE (penetrateUnit): phần khoang phải đi qua ngoài 2 thành vỏ (mm thép quy đổi: động cơ, cơ cấu, cơ số đạn,
+// kíp xe). Xe tăng chủ lực: khoang lớn + giáp sườn 90 mm -> mũi tên 650 mm không bao giờ đủ gấp đôi
+BallisticsSystem3D.THROUGH_INNER_MM = { SCOUT: 25, ARTILLERY: 30, GATLING: 120, ALL_ROUNDER: 250 };
+// cos góc chạm tường nhà dưới ngưỡng này thì đạn sượt cày rãnh, không xuyên (cùng ngưỡng ric của Destructibles BLD)
+BallisticsSystem3D.PEN_RIC = { SCOUT_BULLET: 0.4, INCENDIARY_HMG: 0.4, MG762: 0.4, GATLING_BULLET: 0.36, INCENDIARY: 0.36, AP: 0.24 };
+// Đạn chao đảo sau khi xuyên theo vật liệu (1 = bay thẳng như cũ): lệch hướng tối đa (1 - k) x 20° (mũi tên x 5°), cản tăng,
+// xuyên giáp kém đi (penK -> VehicleDamage) — kính / tôn mỏng gần như không ảnh hưởng, cát / thân cây làm đạn lộn vòng
+BallisticsSystem3D.PEN_YAW = { glass: 0.98, metal: 0.9, car: 0.8, wood: 0.8, trunk: 0.7, sandbag: 0.6, adobe: 0.7, concrete: 0.7, stone: 0.7,
+  pole: 0.85, column: 0.7, fort: 0.65, vehicle: 0.8 };
+// màu bụi / vụn phụt ra ở lỗ ra
+BallisticsSystem3D.PEN_DUST = { metal: [0.6, 0.6, 0.58], car: [0.52, 0.52, 0.5], wood: [0.55, 0.45, 0.32], trunk: [0.5, 0.4, 0.28], glass: [0.8, 0.85, 0.88],
+  sandbag: [0.72, 0.64, 0.5], adobe: [0.78, 0.68, 0.52], concrete: [0.72, 0.7, 0.66], stone: [0.7, 0.68, 0.64], pole: [0.58, 0.58, 0.56] };
 BallisticsSystem3D.fieldHalf = function (terrain, dim) {
   const v = terrain && terrain[dim];
   return v > 0 ? v / 2 : BallisticsSystem3D.FIELD_LIMIT;

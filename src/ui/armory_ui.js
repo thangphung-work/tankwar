@@ -32,7 +32,7 @@ const ArmoryUI = (() => {
   // ---------------------------------------------------------------------------
   // ẢNH TRANG BỊ: render sẵn từ mô hình 3D thật (equipment_thumbs.html) -> assets/equipment/<id>.webp
   // ---------------------------------------------------------------------------
-  const IMG_V = '6';   // đổi khi render lại ảnh (máy chủ cache ảnh)
+  const IMG_V = '7';   // đổi khi render lại ảnh (máy chủ cache ảnh)
   const imgUrl = (id) => `assets/equipment/${id}.webp?v=${IMG_V}`;
   const imgTag = (id, alt) => `<img class="eqd-img" src="${imgUrl(id)}" alt="${esc(alt || '')}" loading="lazy" decoding="async" draggable="false">`;
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)

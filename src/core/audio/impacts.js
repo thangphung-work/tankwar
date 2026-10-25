@@ -162,7 +162,11 @@ SoundEngine.mixin(class {
    *       self: có xe người chơi trong cuộc (to, gần), key: cặp va chạm (chống lặp) }
    * Lớp tiếng: (1) cú "huỵch" trầm của thân xe — xe càng nặng càng trầm & dài, (2) vỏ thép xe ngân (cao độ theo khối
    * lượng: xe trinh sát 10 tấn "keng" cao, xe tăng 60 tấn "boong" trầm), (3) tiếng vật liệu bên kia, (4) đồ trong khoang
-   * xô lệch (xe người chơi). Độ to theo log xung lực: xe tăng đâm tường ở 36 km/h ~ tối đa, 4x4 cạ ô tô nhẹ ~ khẽ
+   * xô lệch (xe người chơi).
+   * Độ to theo TỐC ĐỘ ÁP SÁT (m/s) x (khối lượng quy đổi / 40 t)^0.35 trên thang log: ngoài đời tiếng va to lên ~6 dB mỗi
+   * lần tốc độ gấp đôi, còn khối lượng chủ yếu làm tiếng trầm & dài hơn. Chạm khẽ ~0,4 m/s gần như im, xe tăng 60 t đâm
+   * tường ở ~43 km/h = tối đa (dải ~25 dB giữa cú tì nhẹ và cú húc hết tốc lực, trước đây chỉ ~9 dB).
+   * o.yield: vật nhường đường (cây gãy, rào đổ) — thân xe không bị chặn đứng nên vỏ thép ngân ít, cú dồn ngắn hơn
    */
   collideAt(pos, o) {
     if (!this.ready() || !pos) return;
@@ -171,24 +175,39 @@ SoundEngine.mixin(class {
     const d = o.self ? 0 : Math.hypot(pos.x - lx, pos.z - lz);
     if (d > 1800) return;
     const now = this.ctx.currentTime;
+    const mA = o.mA || 40, mB = o.mB === undefined ? Infinity : o.mB;
+    const mu = isFinite(mB) ? mA * mB / (mA + mB) : mA;
+    const UPM = (typeof GameTiming !== 'undefined' && GameTiming.UNITS_PER_M) || 8;
+    const vms = (o.vn !== undefined ? Math.max(0, o.vn) : (o.J || 0) / Math.max(0.1, mu)) / UPM;
+    const eff = vms * Math.pow(Math.max(0.2, mu) / 40, 0.35);
+    const k = Math.max(0.04, Math.min(1, Math.log(Math.max(1e-3, eff) / 0.4) / Math.log(30)));
+    // chống lặp theo cặp va chạm: trong 0,28 s chỉ cho cú va MẠNH HƠN hẳn cú trước (tì nhẹ rồi húc mạnh vẫn nghe được)
     this._colT = this._colT || new Map();
     const last = this._colT.get(o.key);
-    if (last !== undefined && now - last < 0.28) return;
-    this._colT.set(o.key, now);
-    if (this._colT.size > 64) for (const [k, v] of this._colT) if (now - v > 2) this._colT.delete(k);
-    const k = Math.max(0.06, Math.min(1, (Math.log10(Math.max(1, o.J)) - 1.1) / 2.5));
-    const heavy = Math.max(0, Math.min(1, ((o.mA || 40) - 8) / 55));      // 0 = xe 4x4 10 tấn, 1 = xe tăng 60+ tấn
+    if (last && now - last.t < 0.28 && k < last.k * 1.6 + 0.08) return;
+    this._colT.set(o.key, { t: now, k });
+    if (this._colT.size > 64) for (const [key, v] of this._colT) if (now - v.t > 2) this._colT.delete(key);
+    const heavy = Math.max(0, Math.min(1, (mA - 8) / 55));      // 0 = xe 4x4 10 tấn, 1 = xe tăng 60+ tấn
+    const yieldy = !!o.yield;
     const sp = this.spatial(d, pos), t = now + sp.delay, R = Math.random;
     const out = this.voice({ gain: sp.gain * (o.self ? 1.05 : 0.9) * (0.3 + 0.95 * k), lowpass: sp.lowpass, wet: Math.min(0.9, sp.wet + 0.1), pan: sp.pan });
     // (1) thân xe nặng dồn vào vật cản: "HUỴCH" — dưới 120 Hz với xe tăng, dài theo khối lượng
-    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 75 + 140 * (1 - heavy) + 70 * k, drive: 3, gain: 1.4 * k, attack: 0.002, dur: 0.16 + 0.34 * heavy + 0.2 * k });
-    this.burst(out, t + 0.004, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 45 + 25 * (1 - heavy), gain: 0.9 * k * (0.4 + heavy), attack: 0.006, dur: 0.3 + 0.3 * heavy });
-    // (2) vỏ thép xe ngân: cao độ theo khối lượng
+    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 75 + 140 * (1 - heavy) + 70 * k, drive: 3, gain: 1.4 * k, attack: 0.002, dur: (0.16 + 0.34 * heavy + 0.2 * k) * (yieldy ? 0.6 : 1) });
+    if (!yieldy) this.burst(out, t + 0.004, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 45 + 25 * (1 - heavy), gain: 0.9 * k * (0.4 + heavy), attack: 0.006, dur: 0.3 + 0.3 * heavy });
+    // (2) vỏ thép xe ngân: cao độ theo khối lượng; tì khẽ chỉ "cộp" đục, húc mạnh mới "BOONG" (gỗ / vật nhường đường: ít ngân)
     const rate = 0.68 + 0.5 * (1 - heavy) + R() * 0.08;
-    this.playCaseHit(out, t, 'hullBlast', rate, (0.35 + 0.4 * k) * (o.mat === 'tree' || o.mat === 'wood' ? 0.5 : 1), 5200);
+    this.playCaseHit(out, t, 'hullBlast', rate, (0.1 + 0.65 * k) * (o.mat === 'tree' || o.mat === 'wood' ? 0.5 : 1) * (yieldy ? 0.6 : 1), 5200);
     // (3) vật liệu bên kia
     const crackle = (f, q, gn, dur) => this.burst(out, t + 0.008, { buffer: this.crackleBuffer, filter: 'bandpass', freq: f, Q: q, gain: gn * k, attack: 0.004, dur });
     const ticks = (n, fLo, fHi, gn, spread) => { for (let i = 0; i < n; i++) this.burst(out, t + 0.02 + Math.pow(R(), 0.8) * spread, { filter: 'bandpass', freq: fLo + R() * (fHi - fLo), Q: 6, gain: gn * k * (0.4 + R() * 0.6), attack: 0.0005, dur: 0.012 + R() * 0.025 }); };
+    // (2b) o.barrel: ống nòng thép dày dài ~5 m bị nện (tháp xoay / nòng quét vào vật): "KENG" — 3 mode uốn của thanh tự do
+    // (tỉ lệ 1 : 2,76 : 5,40, lệch nhau nên nghe "kim loại" chứ không thành nốt nhạc) ngân dài, đầu nòng / giá treo lạch cạch.
+    // Vật mềm (gỗ, cây, ô tô) chặn rung nhanh hơn bê tông / thép
+    if (o.barrel) {
+      const f0 = 330 + 90 * (1 - heavy) + R() * 50, damp = o.mat === 'tree' || o.mat === 'wood' || o.mat === 'car' ? 0.55 : 1;
+      [[1, 0.5, 1.5], [2.76, 0.32, 0.95], [5.4, 0.18, 0.55]].forEach(([m, gn, dur]) => this.burst(out, t + 0.001, { filter: 'bandpass', freq: f0 * m * (1 + (R() - 0.5) * 0.02), Q: 26, drive: 1.4, gain: gn * (0.2 + 0.8 * k), attack: 0.0005, dur: dur * damp }));
+      ticks(2, 3000, 6500, 0.16, 0.18);
+    }
     switch (o.mat) {
       case 'vehicle': case 'wreck': {
         // thép đâm thép: 2 vỏ giáp ngân lệch cao độ (vật kia nặng / nhẹ), tiếng nghiến xé ngắn, bu-lông / mắt xích lạch cạch
@@ -201,8 +220,8 @@ SoundEngine.mixin(class {
       }
       case 'car': {
         // tôn ô tô móp: "rắc - oằn" tôn mỏng (cao, giòn), nhựa cản vỡ lách tách, kính vụn
-        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1300, freqEnd: 520, sweep: 0.25, Q: 2.2, drive: 2.5, gain: 0.8 * k + 0.15, attack: 0.002, dur: 0.32 });
-        this.playCaseHit(out, t + 0.004, 'sheetMetal', 1.15 + R() * 0.2, 0.5 * k + 0.1);
+        this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1300, freqEnd: 520, sweep: 0.25, Q: 2.2, drive: 2.5, gain: 0.85 * k + 0.06, attack: 0.002, dur: 0.18 + 0.2 * k });
+        this.playCaseHit(out, t + 0.004, 'sheetMetal', 1.15 + R() * 0.2, 0.55 * k + 0.04);
         crackle(2600, 0.8, 0.6, 0.25);
         ticks(5, 3500, 8000, 0.18, 0.25);
         break;
@@ -249,8 +268,58 @@ SoundEngine.mixin(class {
         ticks(6, 2800, 6500, 0.22, 0.35);
       }
     }
-    // (4) đồ đạc trong khoang xô lệch (xe người chơi)
-    if (o.self) for (let i = 0; i < 2 + Math.round(3 * k); i++) this.playCaseHit(out, t + 0.05 + R() * 0.3, 'debrisMetal', 1.1 + R() * 0.7, 0.07 + 0.06 * k);
+    // (4) đồ đạc trong khoang xô lệch (xe người chơi) — tì khẽ thì không; húc mạnh: kíp lái ù tai, tiếng máy chìm hẳn một nhịp
+    if (o.self && k > 0.15) for (let i = 0; i < 1 + Math.round(4 * k); i++) this.playCaseHit(out, t + 0.05 + R() * 0.3, 'debrisMetal', 1.1 + R() * 0.7, 0.04 + 0.09 * k);
+    if (o.self && k > 0.7 && !yieldy && this.duck) this.duck(0.3 * k, 0.7);
+  }
+
+  /**
+   * XE RƠI HẪNG ĐẬP XUỐNG ĐẤT (lao khỏi mép hố bom / vách / ụ đất): hệ treo dồn kịch "RẦM", xích / bánh đập đất, vỏ thép
+   * rung trầm, nảy nhẹ một lần; mặt đất theo vật liệu chỗ rơi (cát lún "huỵch" nghẹt + cát tung, bùn "bạch" ướt, đá / nhựa
+   * đường "cộp" đanh + sỏi văng, đất thường: đất cục bắn lạo xạo). Trước đây dùng tiếng đâm tường (gạch vỡ lạo xạo) và
+   * chỉ xe mình mới có tiếng. o = { k: 0..1 theo vận tốc chạm đất, mA, wheeled, self, key }
+   */
+  landAt(pos, o) {
+    if (!this.ready() || !pos) return;
+    const g = window.game;
+    const lx = g && g.player ? g.player.x : pos.x, lz = g && g.player ? g.player.z : pos.z;
+    const d = o.self ? 0 : Math.hypot(pos.x - lx, pos.z - lz);
+    if (d > 1500) return;
+    const now = this.ctx.currentTime;
+    this._landT = this._landT || new Map();
+    const last = this._landT.get(o.key);
+    if (last !== undefined && now - last < 0.3) return;
+    this._landT.set(o.key, now);
+    if (this._landT.size > 64) for (const [key, v] of this._landT) if (now - v > 2) this._landT.delete(key);
+    const k = Math.max(0.1, Math.min(1, o.k || 0.5));
+    const heavy = Math.max(0, Math.min(1, ((o.mA || 40) - 8) / 55));
+    const sp = this.spatial(d, pos), t = now + sp.delay, R = Math.random;
+    const out = this.voice({ gain: sp.gain * (o.self ? 1.0 : 0.85) * (0.35 + 0.85 * k), lowpass: sp.lowpass, wet: Math.min(0.9, sp.wet + 0.08), pan: sp.pan });
+    // (1) khối xe nện đất: "RẦM" trầm, xe tăng trầm & dài hơn xe bánh lốp
+    this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 70 + 120 * (1 - heavy) + 60 * k, drive: 3, gain: 1.5 * k, attack: 0.003, dur: 0.22 + 0.3 * heavy + 0.15 * k });
+    this.burst(out, t + 0.006, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 50 + 20 * (1 - heavy), gain: 0.8 * k * (0.4 + heavy), attack: 0.01, dur: 0.35 + 0.3 * heavy });
+    // (2) hệ treo dồn kịch: xích — tay đòn chạm ụ chặn "cộp" thép + dải xích quật đất lạch xạch; bánh lốp — lốp nén "bụp"
+    if (o.wheeled) {
+      this.tone(out, t, { type: 'sine', freq: 120 + 40 * (1 - heavy), freqEnd: 70, sweep: 0.09, gain: 0.45 * k, attack: 0.002, dur: 0.12 });
+      this.playCaseHit(out, t + 0.012, 'debrisMetal', 0.8 + R() * 0.2, 0.18 * k, 1600);
+    } else {
+      this.playCaseHit(out, t + 0.008, 'debrisPlateHull', 0.75 + 0.2 * (1 - heavy) + R() * 0.1, 0.4 * k, 1800);
+      for (let i = 0; i < 4; i++) this.burst(out, t + 0.01 + i * (0.018 + R() * 0.02), { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 600 + R() * 700, Q: 2.5, gain: (0.3 - i * 0.05) * k, attack: 0.0008, dur: 0.03 });
+    }
+    // (3) mặt đất chỗ rơi
+    const gm = this.groundMatAt(pos);
+    if (gm === 'sand') this.burst(out, t + 0.02, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1700, Q: 0.6, gain: 0.35 * k, attack: 0.04, dur: 0.6 });
+    else if (gm === 'mud') {
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 650, freqEnd: 380, sweep: 0.08, Q: 1.5, drive: 2, gain: 0.6 * k, attack: 0.002, dur: 0.12 });
+      for (let i = 0; i < 4; i++) this.burst(out, t + 0.15 + R() * 0.4, { buffer: this.brownNoiseBuffer, filter: 'bandpass', freq: 450 + R() * 300, Q: 3, gain: 0.15 * k, attack: 0.002, dur: 0.05 });
+    } else if (gm === 'rock' || gm === 'hard' || gm === 'asphalt') {
+      this.burst(out, t, { filter: 'bandpass', freq: 2200, Q: 1, drive: 2.5, gain: 0.45 * k, attack: 0.0005, dur: 0.035 });
+      for (let i = 0; i < 5; i++) this.burst(out, t + 0.02 + Math.pow(R(), 0.8) * 0.35, { filter: 'bandpass', freq: 2200 + R() * 3500, Q: 6, gain: 0.14 * k * (0.4 + R() * 0.6), attack: 0.0005, dur: 0.015 + R() * 0.02 });
+    } else this.burst(out, t + 0.015, { buffer: this.crackleBuffer, filter: 'lowpass', freq: 1500, gain: 0.55 * k, attack: 0.01, dur: 0.35 });
+    // (4) nảy nhẹ lại một lần, rồi đồ đạc trong khoang xô lệch (xe mình)
+    this.burst(out, t + 0.17 + R() * 0.08, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 160, gain: 0.45 * k, attack: 0.004, dur: 0.15 });
+    if (o.self && k > 0.2) for (let i = 0; i < 1 + Math.round(3 * k); i++) this.playCaseHit(out, t + 0.04 + R() * 0.3, 'debrisMetal', 1.1 + R() * 0.7, 0.04 + 0.08 * k);
+    if (o.self && k > 0.65 && this.duck) this.duck(0.25 * k, 0.6);
   }
 
   /**
@@ -277,6 +346,11 @@ SoundEngine.mixin(class {
       // thép miết thép: rít the thé dao động + lớp nghiến trầm
       this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1700 + R() * 900, freqEnd: 1300 + R() * 900, sweep: 0.2, Q: 9, drive: 2, gain: 0.5, attack: 0.03, dur: 0.24 });
       this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 260, drive: 2, gain: 0.5, attack: 0.03, dur: 0.24 });
+    } else if (o.mat === 'tree' || o.mat === 'wood') {
+      // vỏ cây / gỗ miết dọc giáp: sột soạt khô + thân gỗ kẽo kẹt trầm (không rè sạn như bê tông), cây: cành lá quệt xào xạc
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1000 + R() * 500, Q: 1.2, gain: 0.45, attack: 0.03, dur: 0.24 });
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 240 + R() * 140, Q: 7, gain: 0.35, attack: 0.05, dur: 0.24 });
+      if (o.mat === 'tree') this.burst(out, t, { filter: 'highpass', freq: 2600, gain: 0.22, attack: 0.05, dur: 0.24 });
     } else {
       // giáp cà tường bê tông / gạch / đá: rè rè sạn + vụn rơi
       this.burst(out, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 900 + o.vt * 6, Q: 0.9, gain: 0.8, attack: 0.03, dur: 0.24 });
@@ -302,7 +376,8 @@ SoundEngine.mixin(class {
     };
     // Nhà theo vật liệu tường (game.js truyền opts.mat qua playExplosionAtDistance): bê tông / đá -> tiếng bê tông "chát";
     // nhà gỗ -> tiếng gỗ "cộc / rắc"; kho tôn -> tấm tôn rung "boong" + lạch cạch; gạch mộc giữ tiếng nhà gạch vữa đục
-    if (hitType === 'BUILDING' && this._hitMat) {
+    // (xe con / cột thép báo va chạm kiểu BOULDER kèm vật liệu 'metal': cùng tiếng tôn thép)
+    if ((hitType === 'BUILDING' || hitType === 'BOULDER') && this._hitMat) {
       const m = this._hitMat;
       if (m === 'concrete' || m === 'stone') hitType = 'WALL';
       else if (m === 'wood') hitType = 'TREE';

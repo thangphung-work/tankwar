@@ -30,6 +30,12 @@
     rb.box(0.86, 0.04, 0.4, D, [0, 1.21, 0.95], [-0.05 - rnd() * 0.08, 0, (rnd() - 0.5) * 0.06]);      // nắp hộp vênh
   }
 
+  // Radome nhựa composite ngoài trời: bạc nắng, bụi bám mặt trên, vệt nước mưa chảy, loang ố tay sờ (không trắng tinh như mới)
+  function agedRadome(m) {
+    if (typeof Weathering !== 'undefined') Weathering.apply(m, 'plastic', { grime: 0, fade: 0.2, stain: 0.7, dust: 0.35, streak: 0.7, moss: 0, vary: 0, scale: 3 });
+    return m;
+  }
+
   // Gỡ món đang gắn (nếu có) rồi dựng món `id`. Mỗi hàm dựng tự đặt "phần cứng" của mình lên xe (u.jammer: máy phá sóng —
   // ew_jammer.js; u.rcwsTurret / u.rcwsGun / u.roofWeapon: trạm vũ khí xoay — drone_air.js) và trả tag hư hại của cụm
   function mountRoof(ctx, id) {
@@ -71,7 +77,8 @@
     const { M, P, D, unit } = ctx;
     const st = stationBase(seat, ctx, 0.98, false);
     const head = st, tilt = st.userData.gun;
-    const radome = new THREE.MeshStandardMaterial({ color: 0xbab8a7, roughness: 0.8, metalness: 0.0 });
+    const radome = new THREE.MeshStandardMaterial({ color: 0x5c5e51, roughness: 0.8, metalness: 0.0 });
+    agedRadome(radome);
     // số đo ~1/2 cỡ thật như mọi món trên chân đế (cả cụm phóng STATION_SCALE)
     const jt = new VehicleKit.PartBatch(ctx.yBase + 4.3);
     jt.box(1.62, 1.48, 0.24, radome, [0, 0.1, -0.17]);                   // tấm radome
@@ -82,7 +89,7 @@
     for (let k = 0; k < 4; k++) jt.box(1.05, 0.04, 0.24, D, [0, -0.24 + k * 0.21, 0.31]);   // lá tản nhiệt
     jt.cyl(0.13, 0.13, 0.12, 12, D, [0.9, 0, 0], 'x'); jt.cyl(0.13, 0.13, 0.12, 12, D, [-0.9, 0, 0], 'x');   // ổ trục ngóc
     jt.box(0.34, 0.3, 0.48, P, [1.3, -0.42, 0.02]);                      // camera ngắm nhỏ bên phải
-    jt.cyl(0.08, 0.08, 0.04, 12, M.lens, [1.3, -0.42, -0.23], 'z');
+    jt.cyl(0.08, 0.08, 0.04, 12, M.optic || M.lens, [1.3, -0.42, -0.23], 'z');
     jt.build(tilt);
     // hộp nguồn / máy phát treo sau chạc (quay theo chân đế), lá tản nhiệt hai bên, bó cáp xuống nóc
     const pb = new VehicleKit.PartBatch(ctx.yBase);
@@ -154,9 +161,9 @@
     gb.box(0.78, 0.3, 0.3, P, [x, -0.12, -0.72], [-0.6, 0, 0]);
     gb.box(0.7, 0.4, 0.05, D, [x, 0.16, -0.76]);
     gb.box(0.9, 0.06, 1.3, D, [x, 0.58, -0.25]);
-    gb.cyl(0.14, 0.14, 0.06, 14, M.lens, [x - 0.14, 0.2, -0.79], 'z');    // camera ngày
-    gb.cyl(0.12, 0.12, 0.06, 12, M.glass, [x + 0.15, 0.2, -0.79], 'z');   // ảnh nhiệt
-    gb.cyl(0.05, 0.05, 0.06, 8, M.lens, [x, 0.02, -0.79], 'z');           // đo xa laser
+    gb.cyl(0.14, 0.14, 0.06, 14, M.optic || M.lens, [x - 0.14, 0.2, -0.79], 'z');    // camera ngày
+    gb.cyl(0.12, 0.12, 0.06, 12, M.thermalWin || M.glass, [x + 0.15, 0.2, -0.79], 'z');   // ảnh nhiệt
+    gb.cyl(0.05, 0.05, 0.06, 8, M.laserWin || M.lens, [x, 0.02, -0.79], 'z');           // đo xa laser
   }
 
   // Trạm súng máy 7.62mm: vỏ súng giữa (nóc vát, mặt trước nghiêng, khe nhả vỏ đạn), nòng có ống áo + loa che lửa,
@@ -405,12 +412,15 @@
     const capGeo = new THREE.CylinderGeometry(R0 + 0.1, R0 + 0.1, 0.1, 16);
     capGeo.rotateX(Math.PI / 2);
     const capMat = M.canvasDark || D;
-    const scoreGeo = new THREE.BoxGeometry(R0 * 1.7, 0.035, 0.03);
+    // rãnh xẻ chữ thập: khe mảnh chìm cùng màu nắp, chỉ sẫm hơn chút (trước đây vạch đen đậm như chữ X vẽ lên)
+    const scoreGeo = new THREE.BoxGeometry(R0 * 1.55, 0.016, 0.02);
+    const scoreMat = capMat.clone();
+    scoreMat.color.multiplyScalar(0.62);
     unit.roofRounds = tubes.map(([tx, ty]) => {
       const m = new THREE.Mesh(capGeo, capMat);
       m.position.set(tx, ty, zF - 0.04);
       for (const a of [Math.PI / 4, -Math.PI / 4]) {
-        const sc = new THREE.Mesh(scoreGeo, D);
+        const sc = new THREE.Mesh(scoreGeo, scoreMat);
         sc.position.z = -0.055; sc.rotation.z = a;
         m.add(sc);
       }
@@ -429,7 +439,8 @@
     const { M, P, D, unit } = ctx, rnd = rndOf(ctx);
     const st = stationBase(seat, ctx, 1.3, false), tilt = st.userData.gun;
     tilt.rotation.x = -0.22;
-    const radome = new THREE.MeshStandardMaterial({ color: 0xa9a796, roughness: 0.85, metalness: 0.0 });
+    const radome = new THREE.MeshStandardMaterial({ color: 0x5a5b4f, roughness: 0.85, metalness: 0.0 });
+    agedRadome(radome);
     const tb = new VehicleKit.PartBatch(ctx.yBase + 4.3);
     tb.box(2.3, 1.25, 0.22, radome, [0, 0.35, -0.2]);                     // mảng ăng-ten
     tb.box(2.38, 0.08, 0.28, D, [0, 1.0, -0.2]); tb.box(2.38, 0.08, 0.28, D, [0, -0.3, -0.2]);

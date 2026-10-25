@@ -18,13 +18,16 @@
 const Weather = (() => {
   // Xác suất mưa & đặc trưng mưa từng chiến địa. zen / hor / fog: màu trời mây mưa; dens: mật độ sương (FogExp2);
   // puddle: lượng vũng; flood: mực nước ngập lòng hầm (đơn vị); sight: hệ số tầm phát hiện địch
-  const CHANCE = { DESERT: 0.08, URBAN: 0.3, JUNGLE: 0.5, HIGHLAND: 0.35, RIVER_LAKE: 0.4 };
+  // (dens đã giảm ~40%: sương cũ che ~63% cảnh ở 60 m -> cả bản đồ xám đặc như sương mù, mất màu; mưa thật vẫn nhìn rõ
+  //  vài trăm mét. Tầm phát hiện địch khi mưa do sight quyết định, không đổi)
+  // (giảm từ URBAN 0.3 / JUNGLE 0.5 / HIGHLAND 0.35 / RIVER_LAKE 0.4: mưa quá thường xuyên, đa số trận xám u ám)
+  const CHANCE = { DESERT: 0.08, URBAN: 0.2, JUNGLE: 0.35, HIGHLAND: 0.25, RIVER_LAKE: 0.25 };
   const KIND = {
-    DESERT: { zen: 0x6c6a66, hor: 0xa29e96, fog: 0x99958c, ground: 0x6a5840, dens: 0.0016, puddle: 0.35, flood: 1.6, sight: 0.72 },
-    URBAN: { zen: 0x5c636a, hor: 0x969ca1, fog: 0x8a9095, ground: 0x45464a, dens: 0.0019, puddle: 1.0, flood: 3.0, sight: 0.7 },
-    JUNGLE: { zen: 0x56605a, hor: 0x8e9990, fog: 0x838e86, ground: 0x3a3a2a, dens: 0.0024, puddle: 1.0, flood: 4.2, sight: 0.62 },
-    HIGHLAND: { zen: 0x5d6770, hor: 0x9aa3aa, fog: 0x8d969e, ground: 0x4c4a40, dens: 0.0023, puddle: 0.7, flood: 2.8, sight: 0.64 },
-    RIVER_LAKE: { zen: 0x5a656b, hor: 0x98a2a6, fog: 0x89949a, ground: 0x404634, dens: 0.0020, puddle: 0.9, flood: 3.6, sight: 0.68 }
+    DESERT: { zen: 0x6c6a66, hor: 0xa29e96, fog: 0x99958c, ground: 0x6a5840, dens: 0.0010, puddle: 0.35, flood: 1.6, sight: 0.72 },
+    URBAN: { zen: 0x5c636a, hor: 0x969ca1, fog: 0x8a9095, ground: 0x45464a, dens: 0.00115, puddle: 1.0, flood: 3.0, sight: 0.7 },
+    JUNGLE: { zen: 0x56605a, hor: 0x8e9990, fog: 0x838e86, ground: 0x3a3a2a, dens: 0.0015, puddle: 1.0, flood: 4.2, sight: 0.62 },
+    HIGHLAND: { zen: 0x5d6770, hor: 0x9aa3aa, fog: 0x8d969e, ground: 0x4c4a40, dens: 0.0014, puddle: 0.7, flood: 2.8, sight: 0.64 },
+    RIVER_LAKE: { zen: 0x5a656b, hor: 0x98a2a6, fog: 0x89949a, ground: 0x404634, dens: 0.0012, puddle: 0.9, flood: 3.6, sight: 0.68 }
   };
   const PREF_KEY = 'tw_weather_pref';
 
@@ -360,7 +363,7 @@ float topAt( vec2 p ) {
     const U = {
       uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uCenter: { value: new THREE.Vector3() },
       uBox: { value: new THREE.Vector3(box[0], box[1], box[0]) }, uWind: { value: new THREE.Vector3(12, 0, 5) },
-      uSpeed: { value: 76 }, uLen: { value: box[2] }, uK: { value: 0 }, uCol: { value: new THREE.Color(0.75, 0.78, 0.82) },
+      uSpeed: { value: 76 }, uLen: { value: box[2] }, uK: { value: 0 }, uCol: { value: new THREE.Color(0.45, 0.49, 0.53) },
       uDrift: { value: new THREE.Vector2() }, uFade: { value: new THREE.Vector2(3, 14) },
       uTop: { value: RT.texture }, uTopM: { value: MAPM }, uTopOn: { value: 0 }, uBlast: { value: BLAST }
     };
@@ -439,7 +442,7 @@ void main() {
     geo.instanceCount = count;
     const U = {
       uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uCenter: { value: new THREE.Vector3() }, uR: { value: 150 },
-      uK: { value: 0 }, uCol: { value: new THREE.Color(0.8, 0.83, 0.86) }, uTop: { value: RT.texture }, uTopM: { value: MAPM }
+      uK: { value: 0 }, uCol: { value: new THREE.Color(0.48, 0.51, 0.54) }, uTop: { value: RT.texture }, uTopM: { value: MAPM }
     };
     const mat = new THREE.ShaderMaterial({
       uniforms: U, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
@@ -907,7 +910,8 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
     const gyC = T.groundAtRaw ? T.groundAtRaw(Math.max(-1750, Math.min(1750, cam.x)), Math.max(-1750, Math.min(1750, cam.z))) : 0;
     const up = cam.y - gyC, colK = Math.min(1, Math.max(0, (up - 120) / 140));
     col.mesh.visible = colK > 0;
-    for (const [L, ahead, alpha] of [[near, 0.25, 0.85], [far, 0.38, 0.7], [col, 0, 0.75 * colK]]) {
+    // Vệt nước xám trong: bớt phủ trắng cảnh xa, giữ nguyên mật độ và tốc độ rơi.
+    for (const [L, ahead, alpha] of [[near, 0.25, 0.45], [far, 0.38, 0.32], [col, 0, 0.38 * colK]]) {
       const U = L.U;
       if (!L.mesh.visible) continue;
       U.uTime.value = time;
@@ -919,14 +923,14 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
       U.uDrift.value.set(driftX, driftZ);
       U.uK.value = alpha * k * (1 + flash * 1.5);
       U.uTopOn.value = WET.w;
-      if (fog) U.uCol.value.copy(fog).lerp(new THREE.Color(1, 1, 1), 0.55 + 0.35 * flash);
+      if (fog) U.uCol.value.copy(fog).lerp(new THREE.Color(1, 1, 1), 0.18 + 0.22 * flash);
     }
     {
       const U = splash.U;
       U.uTime.value = time; U.uCam.value.copy(cam);
       U.uCenter.value.set(cam.x + dir.x / hl * 40, 0, cam.z + dir.z / hl * 40);
-      U.uK.value = WET.w ? k : 0;
-      if (fog) U.uCol.value.copy(fog).lerp(new THREE.Color(1, 1, 1), 0.45);
+      U.uK.value = WET.w ? k * 0.75 : 0;
+      if (fog) U.uCol.value.copy(fog).lerp(new THREE.Color(1, 1, 1), 0.18);
     }
     WET.y = time;
     WET.z = 0.45 + 0.5 * k;

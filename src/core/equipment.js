@@ -211,6 +211,8 @@
     ahead30: { tank: 'GATLING', cat: 'ammo', adv: true, ammo: 'GATLING_ABM', name: 'Đạn 30mm nổ trên không', icon: 'drone-off', price: 4200, desc: 'Ngòi lập trình theo cự ly radar đo được: khi khóa drone, mỗi viên tự nổ ngay trước drone, phóng chùm bi vonfram hình nón — bắn drone hiệu quả hơn hẳn. Cần radar phòng không còn hoạt động; bắn xe như đạn thường.' },
     // tên lửa tấn công đỉnh (kiểu Javelin): vồng cao rồi bổ nhào trúng nóc xe — ballistics.guideMissile đọc .top
     topatk: { tank: 'SCOUT', cat: 'ammo', adv: true, ammo: 'ANTI_TANK_MISSILE', top: true, name: 'Tên lửa chống tăng tấn công đỉnh', icon: 'arrow-big-down-lines', price: 7500, desc: 'Thay tên lửa chống tăng thường bằng loại tấn công đỉnh (bắn-và-quên kiểu Javelin): ống phóng có khối ngắm nhiệt CLU — khóa xong phóng là xạ thủ thụp xuống / xe rút ngay được, đầu dò ảnh nhiệt trên tên lửa tự bám mục tiêu (mất dấu khi mục tiêu thả khói hoặc lẩn vào bụi rậm / rừng), tên lửa vồng lên cao rồi bổ nhào gần thẳng đứng xuống NÓC xe — nơi giáp mỏng nhất: xe tăng / xe 6 nòng mất 90–95% máu (có mái lồng: 80–85%), xe trinh sát / pháo tự hành hạ gọn; hệ thống đánh chặn chủ động chỉ chặn được ~30%. Bắn được qua vật cản thấp; bay lâu hơn nên địch có thời gian né / thả khói.' },
+    // ammo: khóa riêng (như ahead30) -> mua cả SLAP thì dây đạn trộn xen kẽ 1:1 SLAP / Mk211 (dây đạn trộn như ngoài đời)
+    mk211: { tank: 'SCOUT', cat: 'ammo', adv: true, ammo: 'HMG_HEIAP', heiap: true, name: 'Đạn 12.7mm nổ-cháy-xuyên Mk211', icon: 'drone-off', price: 3200, desc: 'Đạn đa năng kiểu Raufoss Mk211 thay đạn 12.7mm thường: ngòi chạm nổ ngay trên vỏ mỏng, nổ-cháy kèm lõi xuyên. Trúng drone: 1 phát vào thân là rơi, trúng cánh / cần quạt 2 phát (đạn thường 3). Xuyên được vỏ xe trinh sát / pháo tự hành thì nổ-cháy bên trong: sát thương mạnh hơn ~40%. Xuyên giáp gần ngang đạn thường (lõi các-bua vonfram), vẫn không thủng nổi giáp xe tăng / xe 6 nòng. Vẫn phải bắn trúng — không có ngòi cận đích. Mua cả đạn SLAP: dây đạn trộn xen kẽ.' },
     slap127: { tank: 'SCOUT', cat: 'ammo', adv: true, ammo: 'SCOUT_BULLET', name: 'Đạn 12.7mm SLAP', icon: 'arrow-big-right-lines', price: 2600, pen: 1.6, desc: 'Đạn 12.7mm xuyên dưới cỡ có đai nhựa: xuyên sâu gấp 1,6 lần.' },
     he_frag: { tank: 'ARTILLERY', cat: 'ammo', adv: true, ammo: 'HE', name: 'Lựu đạn mảnh định sẵn', icon: 'atom-2', price: 3500, splash: 1.15, desc: 'Vỏ đạn 155mm khía rãnh tạo mảnh đều: sát thương nổ lan +15%.' }
   };
@@ -319,7 +321,7 @@
   // Xe do máy điều khiển: 2-4 mô-đun ngẫu nhiên theo hạt giống chung (mọi máy trong phòng ra cùng kết quả),
   // cùng giới hạn ô như người chơi -> trang bị bot ngang ngửa người chơi
   function botKit(tank, rnd) {
-    const pool = Object.keys(MODULES).filter(id => compatible(id, tank) && id !== 'aps' && id !== 'kami' && MODULES[id].cat !== 'engine');   // bot không lái UAV cảm tử
+    const pool = Object.keys(MODULES).filter(id => compatible(id, tank) && id !== 'aps' && id !== 'kami' && MODULES[id].cat !== 'engine');   // UAV cảm tử chọn riêng bên dưới
     const n = 2 + Math.floor(rnd() * 3);
     const m = [];
     while (m.length < n && pool.length) {
@@ -333,7 +335,15 @@
     const top = tank === 'SCOUT' || tank === 'ARTILLERY' ? 'hybrid' : 'turbine';
     const eng = er < 0.7 ? null : er < 0.9 ? 'tdiesel' : er < 0.97 ? 'twinturbo' : top;
     if (eng && compatible(eng, tank)) m.push(eng);
-    return { m, p: [], a: Object.assign({}, BOT_AMMO[tank] || {}) };
+    // lựu pháo: ~1/3 bot mang UAV cảm tử thay UAV trinh sát (bot_drones.js tự lái: chỉ phóng khi phe đã thấy xe địch trong
+    // tầm, bay tới rồi bổ nhào) — 2 quả mỗi lần xuất kích. Còn lại: UAV trinh sát bay quan sát, chỉ điểm cho cả phe
+    const a = Object.assign({}, BOT_AMMO[tank] || {});
+    if (tank === 'ARTILLERY' && rnd() < 0.35) {
+      for (let i = m.length - 1; i >= 0; i--) if (MODULES[m[i]] && MODULES[m[i]].cat === 'uav') m.splice(i, 1);
+      m.push('kami');
+      a.KAMIKAZE = 2;
+    }
+    return { m, p: [], a };
   }
 
   // Bạc nhận được sau trận (máy chủ tính)
@@ -762,17 +772,53 @@
   // trái sau, đầu radar mảng pha quay sẽ quét trúng
   const ROOF_SPOT = { ALL_ROUNDER: { radar: [-3.0, 16.0], jam: [3.2, 16.0] }, GATLING: { radar: [-5.8, -1.6], jam: [4.6, 10.8] }, ARTILLERY: { radar: [-2.8, 12.9], jam: [-7.0, 2.0] }, SCOUT: { jam: [3.4, 12.8] } };
   const matCache = {};
-  function kitMats(team) {
+  // ngẫu nhiên theo hạt giống vẻ ngoài của xe đang dựng đồ (buildVisuals đặt) -> lồng cong / đồ chằng / gạch lệch cố định
+  let kitRnd = Math.random;
+  // Vật liệu đồ lắp thêm. Có xe (u): bộ RIÊNG của xe đó, cùng hạt giống vẻ ngoài với thân (lookSeed) -> lớp vết chiến trường
+  // (muội, xước, vệt bùn) của gạch nổ / tấm giáp liền mạch với vỏ bên dưới, không đồ nào sạch hơn xe. Không có xe (trang
+  // render ảnh trang bị): bộ dùng chung theo phe
+  function kitMats(team, u) {
     const key = team === 'RED' ? 'RED' : 'BLUE';
-    if (matCache[key]) return matCache[key];
+    if (!u && matCache[key]) return matCache[key];
     const K = window.VehicleKit;
-    const M = K ? K.createMaterials(key) : {};
+    const M = K ? K.createMaterials(key, { battle: 1, seed: u ? K.lookSeed(u) : 0x2c1b3c }) : {};
     const net = new THREE.MeshStandardMaterial({ color: key === 'BLUE' ? 0x4d5a34 : 0x9a8659, roughness: 1, metalness: 0, side: THREE.DoubleSide });
     const net2 = new THREE.MeshStandardMaterial({ color: key === 'BLUE' ? 0x36402a : 0x7d6a45, roughness: 1, metalness: 0, side: THREE.DoubleSide });
     const era = M.paint || new THREE.MeshStandardMaterial({ color: 0x5c6450, roughness: 0.8, metalness: 0.2 });
     const steel = M.dark || new THREE.MeshStandardMaterial({ color: 0x2b2c27, roughness: 0.7, metalness: 0.4 });
-    const sensor = new THREE.MeshStandardMaterial({ color: 0x2e3228, roughness: 0.5, metalness: 0.4, emissive: 0x0b1f14, emissiveIntensity: 0.4 });
-    return (matCache[key] = { era, plate: era, steel, net, net2, sensor, rubber: M.rubber || steel, metal: M.steel || steel });
+    // mặt anten mảng pha / radome: nhựa composite sơn xỉn hơi ngả màu, bụi bám, không tự phát sáng (đồ điện tử thật không
+    // phát quang — ánh xanh trước đây trông như đồ chơi)
+    const sensor = new THREE.MeshStandardMaterial({ color: key === 'BLUE' ? 0x4a5044 : 0x7a705c, roughness: 0.72, metalness: 0.08 });
+    // mắt kính đầu phát hồng ngoại máy gây nhiễu: kính lọc hồng ngọc sẫm, ánh đỏ mờ nhấp nháy (riêng từng xe — update đổi độ sáng)
+    const lamp = new THREE.MeshStandardMaterial({ color: 0x2a0b08, roughness: 0.18, metalness: 0.35, emissive: 0xff2c14, emissiveIntensity: 0.12 });
+    lamp.userData.surface = 'glass';
+    // lồng thép: thép dẹt sơn 1 màu nền (không vân ngụy trang), sơn tróc lộ lớp lót / gỉ, vệt gỉ chảy, bùn bắn ở chân
+    // lồng tháp: cùng sơn, gốc mesh là vòng tháp -> nâng độ cao (lift) để bùn bắn chỉ bám lồng thân thấp, không bám lồng tháp
+    const cageMat = (lift) => {
+      const m = new THREE.MeshStandardMaterial({ color: key === 'BLUE' ? 0x3d4130 : 0x7d6c4e, roughness: 0.82, metalness: 0.3 });
+      if (typeof Weathering !== 'undefined') Weathering.apply(m, 'paint', { grime: 0.6, grimeH: 9, streak: 0.5, dust: 0.35, fade: 0.12, stain: 0.65, rust: 0.32, chip: 0.6, moss: 0, vary: 0, scale: 2.4, lift });
+      if (M.dark && M.dark.envMap) { m.envMap = M.dark.envMap; m.envMapIntensity = 0.3; }
+      m.userData.surface = 'metal';
+      return m;
+    };
+    let tLift = 11;
+    if (u && u.turretGroup && u.chassisGroup) {
+      u.chassisGroup.updateMatrixWorld(true);
+      tLift = u.chassisGroup.worldToLocal(new THREE.Vector3().setFromMatrixPosition(u.turretGroup.matrixWorld)).y;
+    }
+    const cage = cageMat(0), cageT = cageMat(tLift);
+    if (typeof Weathering !== 'undefined') Weathering.apply(sensor, 'plastic', { grime: 0, fade: 0.55, stain: 0.6, dust: 0.65, streak: 0.55, vary: 0, scale: 2.2 });
+    const set = {
+      era, plate: era, steel, net, net2, sensor, lamp, cage, cageT, rubber: M.rubber || steel, metal: M.steel || steel,
+      // gạch nổ thay sau trận (lô khác: bạc nắng / sơn lót sẫm chưa kịp sơn lại), bạt / dây chằng đồ đạc buộc lồng
+      eraFaded: M.paintDusty || era, eraPrimer: steel, canvas: M.canvas || steel, canvasDark: M.canvasDark || steel, soot: M.soot || steel
+    };
+    if (!u) {
+      // dùng chung mọi xe cùng phe: xác cháy lấy bản riêng trước khi sém (explosion_fx _onVehicleDestroyed)
+      for (const k in set) set[k].userData.sharedKit = true;
+      matCache[key] = set;
+    }
+    return set;
   }
 
   // ---------------------------------------------------------------------------
@@ -835,8 +881,50 @@
 
   // Tấm lồng đứng. f = { axis: 'x' (mặt sườn, chạy dọc z) | 'z' (mặt mũi / đuôi, chạy ngang x), s: ±1 hướng ra ngoài,
   // a0, a1, y0, y1, extra (bề dày giáp gắn thêm phải chừa), keep(a, y, c) -> false nếu ô lọt vào vòng quay tháp }
+  // Đồ đạc kíp xe chằng ngoài lồng (kiểu xe chiến trường thật: lồng thành giá treo đồ): cuộn bạt / túi ngủ buộc 2 dây,
+  // ba lô, can nước, hòm đạn rỗng đựng đồ, túi cát vá. Mỗi tấm lồng ~1/3 khả năng có 1 món; món nào cũng có dây chằng
+  // vắt qua nan. Cùng tag tấm lồng (bị bắn thì móp / văng theo lồng)
+  function stowOnCage(b, M, X, s, pos, a0, a1, lo, hi, plane) {
+    if (a1 - a0 < 4.5 || hi - lo < 3 || kitRnd() > 0.36) return;
+    const along = (w, h, d, p, rot) => X ? b.box(d, h, w, M.canvas, p, rot) : b.box(w, h, d, M.canvas, p, rot);
+    const strap = (a, y, h, c, d) => X ? b.box(d + 0.1, h, 0.22, M.canvasDark, pos(a, y, c)) : b.box(0.22, h, d + 0.1, M.canvasDark, pos(a, y, c));
+    const kind = kitRnd(), H = hi - lo;
+    if (kind < 0.38) {
+      // cuộn bạt / túi ngủ nằm ngang trên mép trên tấm lồng, 2 dây chằng
+      const L = Math.min(a1 - a0 - 1, 4 + kitRnd() * 2.5), am = a0 + (a1 - a0) / 2 + (kitRnd() - 0.5) * (a1 - a0 - L - 1), r = 0.7 + kitRnd() * 0.25;
+      const y = hi - r * 0.6, c = plane + 0.35 + r;
+      const mat = kitRnd() < 0.5 ? M.canvas : M.canvasDark;
+      b.cyl(r, r * 0.94, L, 9, mat, pos(am, y, c), X ? 'z' : 'x', [0, 0, 0]);
+      for (const k of [-0.32, 0.32]) {
+        const ak = am + k * L;
+        X ? b.box(2 * r + 0.16, 2 * r + 0.16, 0.24, M.canvasDark, pos(ak, y, c)) : b.box(0.24, 2 * r + 0.16, 2 * r + 0.16, M.canvasDark, pos(ak, y, c));
+        strap(ak, y - r - (y - r - lo) * 0.25, (y - r - lo) * 0.5, plane + 0.12, 0.08);   // đuôi dây buộc xuống nan
+      }
+    } else if (kind < 0.62) {
+      // ba lô / túi đồ treo móc lên khung trên, hơi xệ
+      const w = 2.2 + kitRnd() * 0.6, h = Math.min(H * 0.6, 2.6 + kitRnd() * 0.6), d = 1.2 + kitRnd() * 0.4;
+      const am = a0 + 1.5 + kitRnd() * (a1 - a0 - 3), y = hi - 0.3 - h / 2, c = plane + 0.3 + d / 2, tilt = (kitRnd() - 0.5) * 0.12;
+      along(w, h, d, pos(am, y, c), X ? [tilt, 0, 0] : [0, 0, tilt]);
+      along(w * 0.92, 0.5, d * 1.08, pos(am, y + h / 2 - 0.1, c + 0.05), X ? [tilt, 0, 0] : [0, 0, tilt]);   // nắp túi
+      along(w * 0.55, h * 0.35, 0.4, pos(am, y - h * 0.15, c + d / 2 + 0.15));                              // túi ngoài
+      for (const k of [-0.3, 0.3]) strap(am + k * w, y + h / 2 + 0.3, 0.9, plane + 0.2, 0.12);
+    } else if (kind < 0.8) {
+      // can nước / nhiên liệu buộc dây vào nan
+      const am = a0 + 1.5 + kitRnd() * (a1 - a0 - 3), y = lo + Math.min(H, 4) * 0.5 + 0.2, c = plane + 0.3 + 0.75;
+      const p = pos(am, y, c);
+      b.jerrycan(p, X ? 0 : Math.PI / 2, 1.3, 3.6, 2.6, kitRnd() < 0.5 ? M.era : M.eraPrimer, M.steel);
+      strap(am, y + 0.4, 0.24, c + 0.7, 1.6);
+    } else {
+      // hòm đạn rỗng tái dùng đựng đồ, chằng dây ngang
+      const am = a0 + 1.5 + kitRnd() * (a1 - a0 - 3), y = lo + 1.4, c = plane + 0.3 + 0.8;
+      X ? b.box(1.6, 2.0, 3.0, M.eraPrimer, pos(am, y, c)) : b.box(3.0, 2.0, 1.6, M.eraPrimer, pos(am, y, c));
+      X ? b.box(1.7, 0.2, 2.2, M.steel, pos(am, y + 1.05, c)) : b.box(2.2, 0.2, 1.7, M.steel, pos(am, y + 1.05, c));   // quai xách
+      X ? b.box(1.8, 0.24, 3.2, M.canvasDark, pos(am, y + 0.2, c)) : b.box(3.2, 0.24, 1.8, M.canvasDark, pos(am, y + 0.2, c));
+    }
+  }
+
   function cageWall(b, M, cast, f) {
-    const st = M.steel, X = f.axis === 'x', s = f.s, gap = CAGE_GAP + (f.extra || 0);
+    const st = M.cage || M.steel, X = f.axis === 'x', s = f.s, gap = CAGE_GAP + (f.extra || 0);
     const pos = (a, y, c) => X ? [s * c, y, a] : [a, y, s * c];
     const box = (along, h, nrm, p) => X ? b.box(nrm, h, along, st, p) : b.box(along, h, nrm, st, p);
     const DA = 1.2, DY = 0.7, cols = [];
@@ -871,6 +959,7 @@
         const seg = run.slice(Math.floor(i * (run.length - 1) / k), Math.floor((i + 1) * (run.length - 1) / k) + 1);
         if (seg.length < 2) continue;
         const plane = panel(seg, rLo, rHi);
+        if (f.stow && !(f.doors || []).length) stowOnCage(b, M, X, s, pos, seg[0].a, seg[seg.length - 1].a, rLo, rHi, plane);
         // tấm lồng trước cửa cabin: bản lề 3 khớp ở mép trước + tay nắm mép sau -> mở cùng cửa cho kíp xe ra / vào
         const door = (f.doors || []).find(d => seg[0].a >= d.a0 - 0.1 && seg[seg.length - 1].a <= d.a1 + 0.1);
         if (door) {
@@ -893,9 +982,21 @@
         || (f.keep && !f.keep(c.a, y, plane));
       // nan dẹt (bản rộng theo pháp tuyến) cách ~1,2, mép theo đường viền thân, cắt khúc quanh chỗ khoét. Mỗi nan dựng
       // thành nhiều khúc ngắn nối nhau để bị bắn thì móp / gãy được giữa thanh (vehicle_damage.js dentCage)
+      // Lồng đã qua chiến trường (theo hạt giống vẻ ngoài của xe, dựng lại không đổi): vài nan rụng mất (mối hàn đứt), vài
+      // nan xô lệch, vài nan bị quệt cong chìa ra ở đoạn dưới — không tấm nào thẳng tăm tắp như mới xuất xưởng
       const vbar = (a, y0, y1) => {
-        const n = Math.max(1, Math.ceil((y1 - y0) / CAGE_SEG)), h = (y1 - y0) / n;
-        for (let i = 0; i < n; i++) box(0.16, h + 0.002, 0.6, pos(a, y0 + h * (i + 0.5), plane));
+        const r = kitRnd();
+        if (r < 0.035) return;
+        const lean = r < 0.12 ? (kitRnd() - 0.5) * 0.1 : 0, bend = r > 0.93 ? 0.25 + kitRnd() * 0.35 : 0;
+        const n = Math.max(1, Math.ceil((y1 - y0) / CAGE_SEG)), h = (y1 - y0) / n, ym = (y0 + y1) / 2, half = (y1 - y0) / 2;
+        for (let i = 0; i < n; i++) {
+          const y = y0 + h * (i + 0.5), k = bend ? Math.max(0, (ym - y) / half) : 0;
+          const da = (y - ym) * Math.sin(lean), dn = k * k * bend * 1.8, rb = k * bend * 0.9;
+          const p = pos(a + da, y, plane + dn);
+          if (!lean && !rb) { box(0.16, h + 0.002, 0.6, p); continue; }
+          if (X) b.box(0.6, h + 0.002, 0.16, st, p, [lean, 0, s * rb]);
+          else b.box(0.16, h + 0.002, 0.6, st, p, [-s * rb, 0, -lean]);
+        }
       };
       const tops = [];
       for (const c of seg) {
@@ -950,7 +1051,7 @@
   // ~0,2 m. Khung viền thép hộp, nan dẹt chạy ngang đều 1 đơn vị, 2 thanh dọc đỡ; chỗ nhô lên (kính ngắm, nắp, ăng-ten),
   // bệ vũ khí (holes) và vùng keep() = false thành ô vuông khoét có viền. Chân chống thẳng ở góc + giữa cạnh dài
   function cageRoof(b, M, cast, x0, x1, z0, z1, holes, keep) {
-    const st = M.steel, D = 0.5, G = [];
+    const st = M.cage || M.steel, D = 0.5, G = [];
     const nx = Math.round((x1 - x0) / D), nz = Math.round((z1 - z0) / D), all = [];
     for (let j = 0; j <= nz; j++) {
       const row = [], z = z0 + j * D;
@@ -1128,11 +1229,11 @@
     if (H.sides) for (const s of [-1, 1]) {
       hull.setTag(s < 0 ? 'cageKitL' : 'cageKitR');
       const inArch = (z, y) => (H.arch || []).some(w => Math.abs(z - w.z) < w.r && y < w.top);
-      cageWall(hull, M, castH, { axis: 'x', s, a0: zA, a1: zB, y0: H.y0, y1: H.y1, extra: extraH, doors: H.doors, keep: (a, y, c) => keepH(s * c, y, a) && !inArch(a, y) });
+      cageWall(hull, M, castH, { axis: 'x', s, a0: zA, a1: zB, y0: H.y0, y1: H.y1, extra: extraH, doors: H.doors, stow: true, keep: (a, y, c) => keepH(s * c, y, a) && !inArch(a, y) });
     }
     if (H.rear) {
       hull.setTag('cageKitB');
-      cageWall(hull, M, castH, { axis: 'z', s: 1, a0: -xW, a1: xW, y0: H.y0, y1: H.y1, keep: (a, y, c) => keepH(a, y, c) });
+      cageWall(hull, M, castH, { axis: 'z', s: 1, a0: -xW, a1: xW, y0: H.y0, y1: H.y1, stow: true, keep: (a, y, c) => keepH(a, y, c) });
     }
     if (H.front) {
       hull.setTag('cageKitF');
@@ -1150,11 +1251,16 @@
     }
     if (!plan.tur || !T || !u.turretGroup) return;
     const P = plan.tur, castT = cageCaster(u.turretGroup, skipT);
+    M = Object.assign({}, M, { cage: M.cageT || M.cage });
+    // Cụm ống phóng lựu đạn khói trên hông tháp: lồng chừa ô trống trước & phía trên miệng ống (lựu bay ra ngoài - chếch lên),
+    // không nan / thanh khung nào chắn đường bay — trước đây vách lồng chạy thẳng ngang qua miệng ống
+    const smk = smokeBoxes(u, u.turretGroup);
+    const clearSmoke = (s, a, y) => !smk.some(b => b.s === s && a > b.box.min.z - 0.9 && a < b.box.max.z + 0.9 && y > b.box.min.y - 0.8);
     const len = T.zR - T.zF, zf = T.zF + len * P.front, extraT = (has(u, 'era') ? 1.2 : 0) + (GT && has(u, 'applique') ? 1.5 : 0);
     const ry = REAL_ROOF[u.tankType] || T.h;   // lồng sườn / đuôi tháp dừng ở mép nóc, mái lồng phủ bên trên
     if (P.sides) for (const s of [-1, 1]) {
       tur.setTag(s < 0 ? 'cageKitTL' : 'cageKitTR');
-      cageWall(tur, M, castT, { axis: 'x', s, a0: zf, a1: T.zR + 3, y0: -1, y1: ry, extra: extraT });
+      cageWall(tur, M, castT, { axis: 'x', s, a0: zf, a1: T.zR + 3, y0: -1, y1: ry, extra: extraT, keep: (a, y) => clearSmoke(s, a, y) });
     }
     if (P.rear) {
       tur.setTag('cageKitTB');
@@ -1170,8 +1276,30 @@
       const spot = ROOF_SPOT[u.tankType] || {};
       if (has(u, 'radar') && spot.radar) holes.push([spot.radar[0], spot.radar[1], 2.4]);
       if (has(u, 'jammer') && spot.jam) holes.push([spot.jam[0], spot.jam[1], 2.2]);
+      for (const b of smk) holes.push([b.s * (T.hw + 1), (b.box.min.z + b.box.max.z) / 2, (b.box.max.z - b.box.min.z) / 2 + 1.2]);   // mép mái trên cụm ống khói
       cageRoof(tur, M, castT, -T.hw - 1, T.hw + 1, zf, T.zR + 2, holes);
     }
+  }
+
+  // Hộp bao cụm ống phóng lựu khói đang hiện (bộ phận smokeL / smokeR của mô hình, smokeKitL / R mua thêm) trong hệ `host`
+  // -> [{ s: bên (-1 trái / 1 phải), box }]. Ống có sẵn bị ẩn (chưa lắp trang bị khói) đã rời danh sách bộ phận nên không tính
+  function smokeBoxes(u, host) {
+    const out = [], R = u.partRegistry || {}, v = new THREE.Vector3(), K = new THREE.Matrix4();
+    host.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(host.matrixWorld).invert();
+    for (const tag of ['smokeL', 'smokeR', 'smokeKitL', 'smokeKitR']) {
+      const box = new THREE.Box3();
+      for (const e of R[tag] || []) {
+        let o = e.mesh;
+        while (o && o !== host) o = o.parent;
+        if (!o) continue;
+        K.multiplyMatrices(inv, e.mesh.matrixWorld);
+        const pa = e.mesh.geometry.attributes.position;
+        for (const [st, n] of e.ranges) for (let i = st; i < st + n; i++) box.expandByPoint(v.fromBufferAttribute(pa, i).applyMatrix4(K));
+      }
+      if (!box.isEmpty()) out.push({ s: tag.endsWith('L') ? -1 : 1, box });
+    }
+    return out;
   }
 
   // Mái lồng sàn sau (CAGE_PLAN hull.deck = 'arc', xe 6 nòng): tháp chỉ quay nửa trước nên cụm nòng không gạt qua sàn sau,
@@ -1219,7 +1347,7 @@
     if (hs.length < 20) return;
     hs.sort((a, b) => a - b);
     const yt = hs[Math.floor(hs.length * 0.98)] + 0.8;
-    const b = batch(u), st = M.steel;
+    const b = batch(u), st = M.cage || M.steel;
     b.setTag('cageKitD');
     // ô chừa trên nắp tổ lái (kíp xe chui ra / vào): nan cắt quanh ô, ô có khung viền
     const holes = hatchHoles(u, ch).filter(([hx, hz, hr]) => hz + hr > rows[rows.length - 1].z && Math.abs(hx) - hr < X);
@@ -1508,6 +1636,8 @@
     const leaf = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
     const twig = new THREE.MeshStandardMaterial({ color: ST.twig, roughness: 0.95, metalness: 0 });
     leaf.userData.surface = twig.userData.surface = 'cloth';
+    // dùng chung mọi xe: xác cháy lấy bản riêng trước khi sém (explosion_fx _onVehicleDestroyed)
+    leaf.userData.sharedKit = twig.userData.sharedKit = true;
     return (foliageCache[kind] = { leaf, twig });
   }
   // Ô atlas lá (foliageMats): [u đầu, bề rộng u]
@@ -2098,6 +2228,107 @@
     }
   }
 
+  // Một viên gạch nổ lắp tay: hộp thép (sơn theo xe) + nắp thép mỏng ép bằng 2 bu-lông chéo góc. Mặt ngoài = trục `fa`
+  // ('x' | 'y' | 'z', hệ tọa độ trước khi xoay rot) phía `fs` (±1). Lắp ngoài chiến trường: viên nào cũng lệch chút ít (xoay
+  // quanh pháp tuyến, nhô / lún), ~1/10 viên là gạch thay sau trận (lô khác bạc nắng hoặc còn sơn lót sẫm), vài viên mất
+  // 1 bu-lông nắp
+  let _tq, _tq2, _te, _tv;   // tạo lười: file này còn chạy trên máy chủ Node (không có THREE)
+  function eraTile(b, M, w, h, d, p, rot, fa, fs) {
+    if (!_tq) { _tq = new THREE.Quaternion(); _tq2 = new THREE.Quaternion(); _te = new THREE.Euler(); _tv = new THREE.Vector3(); }
+    const r = kitRnd(), mat = r < 0.045 ? M.eraPrimer : r < 0.13 ? M.eraFaded : M.era;
+    _te.set(rot ? rot[0] : 0, rot ? rot[1] : 0, rot ? rot[2] : 0, (rot && rot[3]) || 'XYZ');
+    _tq.setFromEuler(_te);
+    _tv.set(fa === 'x' ? 1 : 0, fa === 'y' ? 1 : 0, fa === 'z' ? 1 : 0);
+    _tq.multiply(_tq2.setFromAxisAngle(_tv, (kitRnd() - 0.5) * 0.08));
+    _te.setFromQuaternion(_tq, 'XYZ');
+    const R = [_te.x, _te.y, _te.z];
+    const ax = { x: 0, y: 1, z: 2 }[fa], t = [w, h, d][ax], uv = [0, 1, 2].filter(k => k !== ax);
+    const L = (n, a, c) => {
+      const o = [0, 0, 0];
+      o[ax] = fs * n; o[uv[0]] = a; o[uv[1]] = c;
+      _tv.set(o[0], o[1], o[2]).applyQuaternion(_tq);
+      return [p[0] + _tv.x, p[1] + _tv.y, p[2] + _tv.z];
+    };
+    const sz = (n, a, c) => { const o = [0, 0, 0]; o[ax] = n; o[uv[0]] = a; o[uv[1]] = c; return o; };
+    const dims = [w, h, d], A = dims[uv[0]], C = dims[uv[1]], out = (kitRnd() - 0.4) * 0.07;
+    b.box(...sz(t, A, C), mat, L(out, 0, 0), R);
+    // nắp thép mặt ngoài. Gạch ốp mặt nghiêng: chỉ dựng viền nắp (4 nẹp mảnh) — tấm nắp liền xoay nghiêng có hộp bao phình
+    // to, hệ thống hư hại (VehicleDamage.segmentsOf) sẽ tưởng là 1 viên gạch riêng
+    const ln = out + t / 2 + 0.03;
+    if (!rot) b.box(...sz(0.07, A - 0.34, C - 0.34), mat, L(ln, 0, 0), R);
+    else {
+      for (const j of [-1, 1]) b.box(...sz(0.07, A - 0.34, 0.14), mat, L(ln, 0, j * (C / 2 - 0.24)), R);
+      for (const i of [-1, 1]) b.box(...sz(0.07, 0.14, C - 0.72), mat, L(ln, i * (A / 2 - 0.24), 0), R);   // hở góc: nẹp không chung đỉnh -> không gộp thành 1 khối
+    }
+    const miss = kitRnd() < 0.18 ? (kitRnd() < 0.5 ? 0 : 1) : -1;
+    [[-1, -1], [1, 1]].forEach(([i, j], k) => {
+      if (k === miss) return;
+      b.cyl(0.11, 0.12, 0.12, 6, M.steel, L(out + t / 2 + 0.1, i * (A / 2 - 0.32), j * (C / 2 - 0.32)), fa, R);
+    });
+  }
+
+  // ---- Giáp lắp thêm xe trinh sát 4x4 (Marten, recon_marten.js): sườn cabin là 4 CÁNH CỬA (z -6.6..0.4 / 0.8..7.8, mép dưới
+  // y 9.85, ô kính y 12.65..14.55), bản lề ở mép trước (y 11 / 13.8), tay nắm ở mép sau (z1 - 1.6..z1 - 0.4, y ~12.2); sườn
+  // ngả vào trong 0.6 / 5.7 đv. Dưới cửa là tấm thoát lầy kẹp sườn, sau cửa sau là nắp bình xăng + hộp đồ -> giáp chỉ lắp
+  // ĐƯỢC LÊN TỪNG CÁNH CỬA (kiểu bộ giáp cửa của xe bọc thép bánh lốp): mỗi cửa 1 khay riêng ở nửa dưới, chừa dải bản lề phía
+  // trước + tay nắm phía sau, hở đúng khe giữa 2 cửa -> cửa vẫn mở được, khay mở theo cửa
+  const MT = { doors: [[-6.6, 0.4], [0.8, 7.8]], x0: 7.95, y0: 9.7, lean: 0.6 / 5.7, yLo: 9.95, yMid: 11.2, yHi: 12.45, hinge: 0.95, handle: 1.75, tail: 0.25, appT: 0.8 };
+  const MT_A = Math.atan(MT.lean);
+  // điểm trên mặt cửa bên s ở độ cao y, lùi ra ngoài n theo pháp tuyến (mặt cửa ngả vào trong theo độ cao)
+  const mtAt = (s, y, n, z) => [s * (MT.x0 - (y - MT.y0) * MT.lean + n * Math.cos(MT_A)), y + n * Math.sin(MT_A), z];
+  // khung tấm trên 1 cánh cửa: hình chữ L — nửa trên dừng trước tay nắm (b), nửa dưới luồn xuống dưới tay nắm tới sát mép
+  // sau cửa (e); phía trước chừa dải bản lề (a)
+  const mtSpan = ([z0, z1]) => ({ a: z0 + MT.hinge, b: z1 - MT.handle, e: z1 - MT.tail });
+  // tấm chữ L dày t (mặt cắt theo z / y quanh tâm zc / yc), đặt sát mặt cửa
+  function mtPlate(hull, mat, s, k, t, n) {
+    const zc = (k.a + k.e) / 2, yc = (MT.yLo + MT.yHi) / 2, Y = (y) => y - yc, Z = (z) => z - zc;
+    const g = VehicleKit.sideProfile([[Z(k.a), Y(MT.yHi)], [Z(k.a), Y(MT.yLo)], [Z(k.e), Y(MT.yLo)], [Z(k.e), Y(MT.yMid)], [Z(k.b), Y(MT.yMid)], [Z(k.b), Y(MT.yHi)]], t, Math.min(0.08, t * 0.3));
+    hull.add(g, mat, mtAt(s, yc, n + t / 2, zc), [0, 0, s * MT_A]);
+  }
+  function martenApplique(hull, M) {
+    const t = MT.appT;
+    for (const s of [-1, 1]) {
+      hull.setTag(s < 0 ? 'appliqueKitL' : 'appliqueKitR');
+      const rot = [0, 0, s * MT_A];
+      for (const d of MT.doors) {
+        const k = mtSpan(d);
+        mtPlate(hull, M.plate, s, k, t, 0.02);
+        // bu-lông bắt xuyên cánh cửa: hàng dưới chạy hết chữ L, hàng trên tới trước tay nắm
+        const bolt = (y, z) => hull.cyl(0.12, 0.13, 0.14, 6, M.steel, mtAt(s, y, t + 0.08, z), 'x', rot);
+        for (let i = 0; i < 5; i++) bolt(MT.yLo + 0.32, k.a + 0.35 + i * (k.e - k.a - 0.7) / 4);
+        for (let i = 0; i < 3; i++) bolt(MT.yHi - 0.32, k.a + 0.35 + i * (k.b - k.a - 0.7) / 2);
+      }
+    }
+  }
+  function martenEra(hull, M, app) {
+    const base = (app ? MT.appT : 0) + 0.02, w = 1.75, gap = 0.1, h = MT.yMid - MT.yLo - 0.17;
+    for (const s of [-1, 1]) {
+      const rot = [0, 0, s * MT_A];
+      for (const d of MT.doors) {
+        const k = mtSpan(d), yc = (MT.yLo + MT.yHi) / 2;
+        // khay giữ gạch hàn sẵn (tấm đáy chữ L, gờ chặn dưới, nẹp đứng 2 đầu + chỗ gãy chữ L, nẹp chặn trên) — không gắn
+        // tag: gạch nổ / văng hết vẫn còn khay rỗng trên cửa
+        hull.setTag(null);
+        mtPlate(hull, M.plate, s, k, 0.1, base);
+        const bar = (len, y, z, hy) => hull.box(0.62, hy, len, M.plate, mtAt(s, y, base + 0.38, z), rot);
+        bar(k.e - k.a, MT.yLo + 0.08, (k.a + k.e) / 2, 0.16);
+        bar(k.b - k.a - 0.3, MT.yHi - 0.05, (k.a + k.b) / 2, 0.1);
+        bar(k.e - k.b - 0.2, MT.yMid + 0.02, (k.b + k.e) / 2 + 0.1, 0.1);
+        hull.box(0.62, MT.yHi - MT.yLo, 0.12, M.plate, mtAt(s, yc, base + 0.38, k.a + 0.06), rot);
+        hull.box(0.62, MT.yMid - MT.yLo, 0.12, M.plate, mtAt(s, (MT.yLo + MT.yMid) / 2, base + 0.38, k.e - 0.06), rot);
+        hull.box(0.62, MT.yHi - MT.yMid, 0.12, M.plate, mtAt(s, (MT.yMid + MT.yHi) / 2, base + 0.38, k.b - 0.06), rot);
+        // gạch nổ: hàng dưới chạy hết chữ L, hàng trên ngắn hơn (dừng trước tay nắm), căn giữa trong khay
+        hull.setTag(s < 0 ? 'eraKitL' : 'eraKitR');
+        const row = (z0, z1, y) => {
+          const n = Math.floor((z1 - z0 - 0.3 + gap) / (w + gap)), m = (z1 - z0 - n * w - (n - 1) * gap) / 2;
+          for (let c = 0; c < n; c++) eraTile(hull, M, 0.5, h, w, mtAt(s, y, base + 0.35, z0 + m + w / 2 + c * (w + gap)), rot, 'x', s);
+        };
+        row(k.a, k.e, MT.yLo + 0.12 + h / 2);
+        row(k.a, k.b, MT.yMid + 0.05 + h / 2);
+      }
+    }
+  }
+
   // ---- Giáp lắp thêm xe 6 nòng (Hailstorm, fsv_hailstorm.js): bám đúng vỏ thật thay vì hộp FIT chung ----
   // Váy xích đã có sẵn 2 hàng gạch nổ (của mô hình) -> đồ mua thêm ốp dải sườn thân TRÊN váy (y 10.85..13.75, mặt vỏ
   // x ±15.2), mặt mũi đúc và tháp. Mép trên dải sườn phía trước thấp dần theo giáp mũi trên (mũi z -31.6 / y 12.2 ->
@@ -2159,7 +2390,7 @@
   }
   function gatlingEra(u, hull, tur, M) {
     const app = has(u, 'applique');
-    const tile = (b, w, h, pos, yaw) => b.box(w, h, 0.5, M.era, pos, [0, yaw, 0]);   // gạch trên mặt đứng xoay theo yaw
+    const tile = (b, w, h, pos, yaw) => eraTile(b, M, w, h, 0.5, pos, [0, yaw, 0], 'z', 1);   // gạch trên mặt đứng xoay theo yaw
     // dải sườn thân: 1-2 hàng tùy chỗ (phía trước dải thấp, chỉ đủ 1 hàng)
     for (const s of [-1, 1]) {
       hull.setTag(s < 0 ? 'eraKitL' : 'eraKitR');
@@ -2171,8 +2402,7 @@
           const rows = room >= 2.85 ? 2 : room >= 1.4 ? 1 : 0;
           for (let r = 0; r < rows; r++) {
             const h = rows === 2 ? 1.35 : Math.min(1.6, room - 0.1), y = HS.bandY0 + 0.05 + r * 1.45 + h / 2;
-            hull.box(0.5, h, 2.0, M.era, [x, y, z]);
-            hull.cyl(0.13, 0.13, 0.16, 6, M.steel, [x + s * 0.3, y, z], 'x');
+            eraTile(hull, M, 0.5, h, 2.0, [x, y, z], null, 'x', s);
           }
         }
       }
@@ -2181,8 +2411,7 @@
     hull.setTag('eraKitF');
     for (let k = 0; k < 11; k++) {
       const x = -11.25 + k * 2.25;
-      hull.box(2.0, 1.8, 0.5, M.era, [x, 10.5, -32.45], [0.12, 0, 0]);
-      hull.cyl(0.13, 0.13, 0.16, 6, M.steel, [x, 10.5, -32.75], 'z');
+      eraTile(hull, M, 2.0, 1.8, 0.5, [x, 10.5, -32.45], [0.12, 0, 0], 'z', -1);
     }
     if (!u.turretGroup) return;
     for (const s of [-1, 1]) {
@@ -2269,8 +2498,7 @@
         for (let z = k.a + 1.15; z + 1.0 <= b; z += 2.25) {
           for (const [y, h] of [[6.25, 1.85], [8.35, 1.85]]) {
             if (k.front && y < 7 && z - 1.0 < k.a + 2.4) continue;   // góc dưới trước đoạn váy dày bị cắt vát
-            hull.box(0.5, h, 2.0, M.era, [x, y, z]);
-            hull.cyl(0.13, 0.13, 0.16, 6, M.steel, [x + s * 0.3, y, z], 'x');
+            eraTile(hull, M, 0.5, h, 2.0, [x, y, z], null, 'x', s);
           }
         }
       }
@@ -2279,7 +2507,7 @@
     hull.setTag('eraKitF');
     for (const z of [-28.3, -24.5]) for (let i = 0; i < 8; i++) {
       const x = -8.05 + i * 2.3;
-      hull.box(2.1, 0.5, 3.5, M.era, [x, HB.glacisY(z) + 1.05, z], [-HB.GLACIS_A, 0, 0]);
+      eraTile(hull, M, 2.1, 0.5, 3.5, [x, HB.glacisY(z) + 1.05, z], [-HB.GLACIS_A, 0, 0], 'y', 1);
     }
     if (!u.turretGroup) return;
     for (const s of [-1, 1]) {
@@ -2308,19 +2536,13 @@
           const px = x0 + row.dup * v_up.x + eraOut * N.x;
           const py = y0 + row.dup * v_up.y + eraOut * N.y;
           const pz = z0 + row.dup * v_up.z + eraOut * N.z;
-          tur.box(row.w, row.h, thick, M.era, [px, py, pz], rot);
-          for (const dt of [-0.85, 0.85]) {
-            const bx = px + dt * (s * 8.5 / L) + (thick / 2 + 0.03) * N.x;
-            const by = py + (thick / 2 + 0.03) * N.y;
-            const bz = pz + dt * (5.8 / L) + (thick / 2 + 0.03) * N.z;
-            tur.cyl(0.09, 0.09, 0.1, 6, M.steel, [bx, by, bz], 'z', rot);
-          }
+          eraTile(tur, M, row.w, row.h, thick, [px, py, pz], rot, 'z', 1);
         }
       }
       // hông tháp: 1 hàng gạch dọc module má tháp (trên tấm composite nếu có)
       tur.setTag(s < 0 ? 'eraKitTL' : 'eraKitTR');
       const C = HB.cheek, t = HB.upTilt, nx = Math.cos(t), ny = Math.sin(t), xc = HB.upX(C.yc), out = C.out + (app ? 1.1 : 0) + 0.27;
-      for (let z = C.z0 + 1.1; z + 1.0 <= C.z1 + 0.01; z += 2.3) tur.box(0.5, 2.2, 2.05, M.era, [s * (xc + nx * out), C.yc + ny * out, z], [0, 0, s * t]);
+      for (let z = C.z0 + 1.1; z + 1.0 <= C.z1 + 0.01; z += 2.3) eraTile(tur, M, 0.5, 2.2, 2.05, [s * (xc + nx * out), C.yc + ny * out, z], [0, 0, s * t], 'x', s);
     }
   }
 
@@ -2347,9 +2569,13 @@
     };
     const A = apsSpot(u, F, T);
     host.setTag('apsKit');
+    // miệng 2 ống phóng mỗi bên (hệ tọa độ group mang cụm) -> hiệu ứng phóng đạn chặn ra đúng ống phía mối đe dọa (apsMuzzle)
+    u._apsLaunch = { host: onTur ? u.turretGroup : u.chassisGroup, pts: [] };
     for (const s of [-1, 1]) {
       apsPod(host, M, [s * A.tx, seat(s * A.tx, A.tz, 1.4, 1.6), A.tz], s);
-      apsLauncher(host, M, [s * A.lx, seat(s * A.lx, A.lz, 0.8, 1.7), A.lz], s);
+      const ly = seat(s * A.lx, A.lz, 0.8, 1.7);
+      apsLauncher(host, M, [s * A.lx, ly, A.lz], s);
+      for (const dz of [-0.75, 0.75]) u._apsLaunch.pts.push([s * (A.lx + 1.1), ly + 1.2, A.lz + dz]);
     }
   }
   // Chỗ đặt cụm radar (tx, tz) & bệ phóng (lx, lz) mỗi bên (hệ tọa độ tháp, x lấy |x|). Xe tăng: dải nóc giữa kính ngắm
@@ -2359,6 +2585,18 @@
     if (APS_SPOT[u.tankType]) return APS_SPOT[u.tankType];
     const tz = T ? T.zF + (T.zR - T.zF) * 0.55 : 0, tx = T ? T.hw - 2.2 : F.hw - 3;
     return { tx, tz, lx: tx - 3, lz: tz + 0.2 };
+  }
+  // Miệng ống phóng đạn chặn gần mối đe dọa nhất (tọa độ thế giới), null nếu xe không có / mất cụm APS
+  function apsMuzzle(u, at) {
+    const A = u && u._apsLaunch;
+    if (!A || !A.host || !A.host.parent || lost(u, 'apsKit')) return null;
+    A.host.updateMatrixWorld(true);
+    let best = null, bd = Infinity;
+    for (const p of A.pts) {
+      const w = A.host.localToWorld(new THREE.Vector3(p[0], p[1], p[2])), d = at ? w.distanceToSquared(at) : 0;
+      if (d < bd) { bd = d; best = w; }
+    }
+    return best;
   }
   // cụm radar APS (p = điểm giữa chân đế trên mặt đỡ, s = bên): đế thép trên 4 chân chống, hộp điện tử, 2 mặt anten
   // mảng pha chéo trước / chéo sau có vỏ & mái che mưa, ống luồn cáp
@@ -2426,31 +2664,33 @@
     u._eqBuilt = true;
     const F = FIT[u.tankType];
     if (!F) return;
-    const M = kitMats(u.team);
+    const M = kitMats(u.team, u);
+    kitRnd = VehicleKit.lookRng ? VehicleKit.lookRng(u, 0x4b17) : Math.random;
+    try { buildKit(u, F, M); } finally { kitRnd = Math.random; }
+  }
+  function buildKit(u, F, M) {
     const hull = batch(u), tur = batch(u);
     const T = F.tur;
     const len = F.zR - F.zF;
 
     const SC = u.tankType === 'SCOUT', AR = u.tankType === 'ARTILLERY';
-    if (has(u, 'applique') && SC) {
-      // Xe trinh sát 4x4: tấm composite ốp nửa dưới 2 cánh cửa + sườn giữa 2 hốc bánh (chừa ô kính cửa, không trùm hốc bánh)
-      for (const s of [-1, 1]) {
-        hull.setTag(s < 0 ? 'appliqueKitL' : 'appliqueKitR');
-        for (const [z0, z1] of [[-6.2, -2.3], [-2.0, 1.9], [2.2, 6.0]]) {
-          hull.box(0.9, 6.2, z1 - z0, M.plate, [s * 8.45, 9.1, (z0 + z1) / 2]);
-          hull.boltRow([s * 8.92, 11.8, z0 + 0.4], [s * 8.92, 11.8, z1 - 0.4], 3, 'x', M.steel, 0.12, s);
-          hull.boltRow([s * 8.92, 6.4, z0 + 0.4], [s * 8.92, 6.4, z1 - 0.4], 3, 'x', M.steel, 0.12, s);
-        }
-      }
-    } else if (has(u, 'applique') && AR) {
+    if (has(u, 'applique') && SC) martenApplique(hull, M);
+    else if (has(u, 'applique') && AR) {
       // Xe pháo: tấm composite ốp cửa cabin dưới ô kính (trên hốc bánh trước) + má tháp, sát vỏ thật
       for (const s of [-1, 1]) {
         hull.setTag(s < 0 ? 'appliqueKitL' : 'appliqueKitR');
-        for (const [z0, z1] of [[-33.8, -26.9], [-26.6, -19.4]]) hull.box(1.2, 2.6, z1 - z0, M.plate, [s * 11.3, 13.6, (z0 + z1) / 2]);
+        for (const [z0, z1] of [[-33.8, -26.9], [-26.6, -19.4]]) {
+          hull.box(1.2, 2.6, z1 - z0, M.plate, [s * 11.3, 13.6, (z0 + z1) / 2]);
+          for (const y of [12.75, 14.45]) hull.boltRow([s * 11.9, y, z0 + 0.5], [s * 11.9, y, z1 - 0.5], 3, 'x', M.steel, 0.13, s);
+        }
       }
       if (u.turretGroup) {
         tur.setTag('appliqueKitT');
-        for (const s of [-1, 1]) tur.box(1.4, 7.8, 7.6, M.plate, [s * 10.4, 5.1, -6.4]);
+        for (const s of [-1, 1]) {
+          tur.box(1.4, 7.8, 7.6, M.plate, [s * 10.4, 5.1, -6.4]);
+          for (const y of [1.7, 8.5]) tur.boltRow([s * 11.1, y, -9.6], [s * 11.1, y, -3.2], 4, 'x', M.steel, 0.14, s);
+          tur.boltRow([s * 11.1, 2.6, -9.6], [s * 11.1, 7.6, -9.6], 3, 'x', M.steel, 0.14, s);
+        }
       }
     } else if (has(u, 'applique') && u.tankType === 'GATLING') {
       gatlingApplique(u, hull, tur, M);
@@ -2469,16 +2709,8 @@
         for (const s of [-1, 1]) tur.box(1.6, T.h * 0.62, (T.zR - T.zF) * 0.38, M.plate, [s * (T.hw + 0.8), T.h * 0.42, T.zF + (T.zR - T.zF) * 0.22]);
       }
     }
-    if (has(u, 'era') && SC) {
-      // Xe trinh sát: gạch nổ cỡ nhỏ, mỏng ốp lên nửa dưới cửa / sườn giữa 2 hốc bánh (5 cột x 3 hàng mỗi bên)
-      const off = has(u, 'applique') ? 0.9 : 0;
-      for (const s of [-1, 1]) {
-        hull.setTag(s < 0 ? 'eraKitL' : 'eraKitR');
-        for (let c = 0; c < 5; c++) {
-          for (let r = 0; r < 3; r++) hull.box(0.6, 1.8, 2.2, M.era, [s * (8.0 + off + 0.32), 7.1 + r * 2.0, -4.9 + c * 2.45]);
-        }
-      }
-    } else if (has(u, 'era') && u.tankType === 'GATLING') {
+    if (has(u, 'era') && SC) martenEra(hull, M, has(u, 'applique'));
+    else if (has(u, 'era') && u.tankType === 'GATLING') {
       gatlingEra(u, hull, tur, M);
     } else if (has(u, 'era') && u.tankType === 'ALL_ROUNDER') {
       halberdEra(u, hull, tur, M);
@@ -2490,20 +2722,20 @@
       for (const s of [-1, 1]) {
         hull.setTag(s < 0 ? 'eraKitL' : 'eraKitR');
         for (let z = z0; z + bw <= z1; z += bw + gap) {
-          for (let r = 0; r < rows; r++) hull.box(0.9, bh, bw, M.era, [s * (F.hw + 0.55 + off), F.y0 + (bh + 0.3) * (r + 0.5), z + bw / 2]);
+          for (let r = 0; r < rows; r++) eraTile(hull, M, 0.9, bh, bw, [s * (F.hw + 0.55 + off), F.y0 + (bh + 0.3) * (r + 0.5), z + bw / 2], null, 'x', s);
         }
       }
       hull.setTag('eraKitF');
       const fw = F.hw - 3;
-      for (let x = -fw; x + bw <= fw + 0.01; x += bw + gap) hull.box(bw, 2.6, 0.9, M.era, [x + bw / 2, F.y0 + 0.6, F.zF - 0.5]);
+      for (let x = -fw; x + bw <= fw + 0.01; x += bw + gap) eraTile(hull, M, bw, 2.6, 0.9, [x + bw / 2, F.y0 + 0.6, F.zF - 0.5], null, 'z', -1);
       if (T && u.turretGroup && u.tankType !== 'ARTILLERY') {
         for (const s of [-1, 1]) {
           tur.setTag(s < 0 ? 'eraKitTL' : 'eraKitTR');
           const tz0 = T.zF + 1, tz1 = T.zF + (T.zR - T.zF) * 0.45;
-          for (let z = tz0; z + 2.8 <= tz1; z += 3.1) tur.box(0.9, T.h * 0.42, 2.8, M.era, [s * (T.hw + 0.55 + (has(u, 'applique') ? 1.7 : 0)), T.h * 0.5, z + 1.4]);
+          for (let z = tz0; z + 2.8 <= tz1; z += 3.1) eraTile(tur, M, 0.9, T.h * 0.42, 2.8, [s * (T.hw + 0.55 + (has(u, 'applique') ? 1.7 : 0)), T.h * 0.5, z + 1.4], null, 'x', s);
         }
         tur.setTag('eraKitTF');
-        for (let x = -T.hw * 0.62; x + 2.9 <= T.hw * 0.62 + 0.01; x += 3.2) tur.box(2.9, T.h * 0.36, 0.9, M.era, [x + 1.45, T.h * 0.36, T.zF - 0.5]);
+        for (let x = -T.hw * 0.62; x + 2.9 <= T.hw * 0.62 + 0.01; x += 3.2) eraTile(tur, M, 2.9, T.h * 0.36, 0.9, [x + 1.45, T.h * 0.36, T.zF - 0.5], null, 'z', -1);
       }
     }
     // Giáp lồng ôm thân xe + mái lồng chống UAV (tự đo bề mặt mô hình — xem buildCage)
@@ -2534,12 +2766,26 @@
       u._eqRadarHead = head;
     }
     if (has(u, 'jammer') && spot.jam) {
-      // Máy gây nhiễu: hộp điện tử + 3 ăng-ten phát nhiễu ngắn chĩa xiên
-      const host = T && u.turretGroup ? tur : hull, [jx, jz] = spot.jam;
+      // Máy gây nhiễu kiểu Shtora: tấm đế bắt bu-lông, hộp điện tử có cánh tản nhiệt sau lưng + ống cáp luồn xuống nóc,
+      // 2 đầu phát hồng ngoại (vỏ hộp, mắt kính hồng ngọc sẫm, mái che mưa) trên chạc chĩa ra trước lệch 2 bên,
+      // 3 ăng-ten phát nhiễu ngắn. Mắt kính nhấp nháy đỏ mờ khi làm việc (Equipment.update)
+      const host = T && u.turretGroup ? tur : hull, [jx, jz] = spot.jam, y = roofY;
       host.setTag('jammerKit');
-      host.box(2.2, 1.1, 1.6, M.sensor, [jx, roofY + 0.55, jz]);
-      host.box(2.4, 0.12, 1.8, M.steel, [jx, roofY + 1.12, jz]);
-      for (const k of [-0.7, 0, 0.7]) host.strut([jx + k, roofY + 1.1, jz], [jx + k * 1.7, roofY + 3.3, jz + 0.3], 0.08, M.steel, 5, 0.04);
+      host.box(2.8, 0.14, 2.2, M.steel, [jx, y + 0.07, jz]);
+      host.boltRow([jx - 1.2, y + 0.16, jz - 0.9], [jx + 1.2, y + 0.16, jz - 0.9], 3, 'y', M.steel, 0.1);
+      host.boltRow([jx - 1.2, y + 0.16, jz + 0.9], [jx + 1.2, y + 0.16, jz + 0.9], 3, 'y', M.steel, 0.1);
+      host.box(2.2, 1.0, 1.5, M.plate, [jx, y + 0.65, jz]);
+      for (let i = 0; i < 6; i++) host.box(0.07, 0.8, 0.32, M.steel, [jx - 0.9 + i * 0.36, y + 0.62, jz + 0.88]);   // cánh tản nhiệt
+      host.cyl(0.15, 0.15, 1.5, 6, M.rubber, [jx + 1.25, y + 0.35, jz + 0.25], 'z', [0.25, 0, 0]);                   // ống cáp
+      for (const sx of [-1, 1]) {
+        const hx = jx + sx * 0.62, hy = y + 1.75, hz = jz - 0.35, yaw = -sx * 0.22;
+        host.box(0.24, 0.62, 0.5, M.steel, [hx, y + 1.3, hz + 0.2]);                                                  // chạc đỡ
+        host.box(0.95, 0.9, 0.85, M.plate, [hx, hy, hz], [0, yaw, 0]);                                                // vỏ đầu phát
+        host.cyl(0.32, 0.36, 0.12, 12, M.lamp || M.sensor, [hx - Math.sin(yaw) * 0.46, hy - 0.02, hz - Math.cos(yaw) * 0.46], 'z', [0, yaw, 0]);
+        host.box(1.05, 0.07, 0.42, M.plate, [hx - Math.sin(yaw) * 0.55, hy + 0.48, hz - Math.cos(yaw) * 0.55], [-0.18, yaw, 0]);   // mái che
+      }
+      for (const k of [-0.7, 0, 0.7]) host.strut([jx + k * 0.6, y + 1.15, jz + 0.45], [jx + k * 1.4, y + 3.1, jz + 0.8], 0.07, M.steel, 5, 0.035);
+      u._eqJamLamp = M.lamp || null;
     }
     // giáp lồng đã dựng: đo hộp bao từng mặt lồng (trước khi gộp mesh) để lưới lá phủ ra ngoài lồng
     const cage = has(u, 'slat') && has(u, 'camo') ? { h: tagBoxes(hull, 'cageKit'), t: tagBoxes(tur, 'cageKit') } : null;
@@ -2841,9 +3087,16 @@
   function update(dt, game) {
     // ăng-ten radar dò tìm quay tròn (~2.4 s một vòng)
     if (game && game.units) for (const u of game.units) {
-      if (u.isDead) continue;
+      if (u.isDead) { if (u._eqJamLamp) u._eqJamLamp.emissiveIntensity = 0; continue; }
       if (u._eqRadarHead) u._eqRadarHead.rotation.y += dt * 2.6;
       if (u.roofRadarHead && !lost(u, 'sradar')) u.roofRadarHead.rotation.y += dt * 2.2;   // radar trên chân đế nóc tháp
+      // máy gây nhiễu: 2 mắt phát hồng ngoại chớp theo chuỗi mã (cụm chớp nhanh xen quãng nghỉ), ánh đỏ mờ; hỏng thì tắt
+      const L = u._eqJamLamp;
+      if (L) {
+        if (lost(u, 'jammerKit')) { L.emissiveIntensity = 0; u._eqJamLamp = null; continue; }
+        const t = performance.now() * 0.001 + (u.id || 0) * 0.37, burst = Math.sin(t * 1.9) > -0.2 ? 1 : 0.15;
+        L.emissiveIntensity = 0.06 + burst * Math.pow(Math.max(0, Math.sin(t * 31)), 6) * 0.9;
+      }
     }
     // lưới lá: ẩn cành / lá trên nòng khi xe ở xa; xe đang bị ẩn (sương mù chiến tranh) vẫn cho lá rơi xong
     if (game && game.units) for (const u of game.units) {
@@ -2906,7 +3159,7 @@
 
   return Object.assign(API, {
     has, equip, refit, onRespawn, paidUsed, ammoDelta, startLife,
-    armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, vshieldDeflectP, vshieldHeatMul, vshieldSplashMul, sandbagLeft, sandbagSplashMul, eraEffect, penMul, penLossMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, roofCage, apsLeft, apsEngageP, apsEngage, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul, extHitMul, extFireChance, extIgniteMul,
+    armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, vshieldDeflectP, vshieldHeatMul, vshieldSplashMul, sandbagLeft, sandbagSplashMul, eraEffect, penMul, penLossMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, roofCage, apsLeft, apsEngageP, apsEngage, apsMuzzle, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul, extHitMul, extFireChance, extIgniteMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, smokeSides, smokeMax, smokeCount, lockBlocked, SMOKE_GAP, SMOKE_LIFE, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump, apsPod, apsLauncher, radarMast, radarHead, RADAR_MAST_H,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)
     APS_CHARGES, outOfStockNote

@@ -223,6 +223,18 @@ const GroundCover = (() => {
           for (let i = Math.floor((b.x - r + half) / G); i <= Math.floor((b.x + r + half) / G); i++)
             if (i >= 0 && j >= 0 && i < n && j < n) m[j * n + i] = 1;
       }
+      // sân trước lát đá của khuôn viên cao ốc (map_gen b.yard, BuildingSet.baseDeco): không mọc cỏ dại xuyên mặt sân
+      for (const b of (T.map && T.map.buildings) || []) {
+        if (!b.yard) continue;
+        const sa = Math.sin(b.angle), ca = Math.cos(b.angle), q = b.d / 2 + b.yard.f / 2 + 6;
+        const fx = b.x - sa * q, fz = b.z - ca * q, hw = b.w / 2 + 80, hd = b.yard.f / 2, r = Math.hypot(hw, hd);
+        for (let j = Math.floor((fz - r + half) / G); j <= Math.floor((fz + r + half) / G); j++)
+          for (let i = Math.floor((fx - r + half) / G); i <= Math.floor((fx + r + half) / G); i++) {
+            if (i < 0 || j < 0 || i >= n || j >= n) continue;
+            const dx = -half + (i + 0.5) * G - fx, dz = -half + (j + 0.5) * G - fz;
+            if (Math.abs(dx * ca - dz * sa) < hw && Math.abs(dx * sa + dz * ca) < hd) m[j * n + i] = 1;
+          }
+      }
       // ruộng: không mọc cỏ dại / đá vụn trên mặt ruộng
       const fields = (T.map.props && T.map.props.fields) || [];
       for (const f of fields) {

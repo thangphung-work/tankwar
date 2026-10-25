@@ -22,6 +22,7 @@ const GfxQuality = (() => {
   // ngồi chờ và thời gian chờ cũng bị tính vào. Chỉ coi là GPU quá tải khi GPU bận LÂU HƠN hẳn thời gian CPU gửi lệnh.
   let cpuMs = 0, cpuT0 = 0;
   let overT = 0, underT = 0, holdT = 0, lastChange = 0;
+  let frameMsEma = 0;              // dự phòng khi driver không có GPU timer query
   let raiseWait = 3, raisedAt = -1e9;   // giây dư sức liên tục trước khi thử nâng độ nét (tăng dần nếu nâng hỏng)
   const deltas = [];                // khoảng cách khung (ms) gần đây -> ước lượng tần số quét màn hình
   let refreshMs = 1000 / 60;
@@ -37,14 +38,16 @@ const GfxQuality = (() => {
   /** Mức chất lượng đề xuất theo tên card: 'ultra' | 'high' | 'medium' | 'low' */
   function detectTier(r) {
     const n = gpuName(r).toLowerCase();
-    if (!n) return 'high';
+    // Trình duyệt thường che tên GPU vì quyền riêng tư. Không có thông tin thì
+    // chọn mức an toàn; người chơi vẫn có thể nâng Cao/Siêu cao trong cài đặt.
+    if (!n) return 'medium';
     if (/swiftshader|llvmpipe|software|basic render|softpipe/.test(n)) return 'low';
     if (/mali|adreno|powervr|videocore|apple gpu/.test(n)) return 'medium';            // điện thoại / máy tính bảng
     // card rời (kể cả RTX mạnh): mặc định "Cao" = vẽ đúng độ phân giải màn hình. "Siêu cao" vẽ gấp đôi (gấp 4 số điểm ảnh:
     // RTX 4070 trên bản đồ thành phố ~26 ms / khung so với ~10 ms) -> chỉ bật khi người chơi tự chọn trong cài đặt
     if (/geforce|nvidia|quadro|radeon rx|radeon pro|\barc\b|apple m\d/.test(n)) return 'high';
     if (/intel|uhd|iris|radeon\(tm\) graphics|radeon graphics|vega \d/.test(n)) return 'medium';   // card tích hợp
-    return 'high';
+    return 'medium';
   }
 
   // ---------------------------------------------------------------- cấu hình
@@ -65,6 +68,7 @@ const GfxQuality = (() => {
     dynamic = opts.dynamic !== false;
     ratio = maxRatio;   // mỗi lần đổi cài đặt: bắt đầu lại từ mức đẹp nhất
     overT = underT = 0; holdT = 3;   // vài giây đầu (biên dịch shader, nạp kết cấu) không tính
+    frameMsEma = 0;
     raiseWait = 3; raisedAt = -1e9;
     setRatio(ratio, true);
   }
@@ -125,10 +129,27 @@ const GfxQuality = (() => {
       const s = deltas.slice().sort((a, b) => a - b);
       refreshMs = Math.max(4, Math.min(refreshMs, 1000 / 60, s[Math.floor(s.length * 0.1)]));
     }
-    if (!dynamic || !ext || !gpuOk || !inMatch) return;
+    if (!dynamic || !inMatch) return;
     const dt = frameMs / 1000;
     holdT -= dt;
     const budget = refreshMs * 0.85;   // chừa chỗ cho trình duyệt ghép hình
+    // Driver thiếu EXT_disjoint_timer_query trước đây không thể tự cứu FPS. Dùng
+    // nhịp khung làm van an toàn, với ngưỡng trễ để không phản ứng vì một cú giật.
+    if (!ext || !gpuOk) {
+      frameMsEma = frameMsEma ? frameMsEma + (frameMs - frameMsEma) * 0.08 : frameMs;
+      if (frameMsEma > refreshMs * 1.35) { overT += dt; underT = 0; }
+      else if (frameMsEma < refreshMs * 0.92) { underT += dt; overT = 0; }
+      else { overT = 0; underT = 0; }
+      if (holdT > 0) return;
+      if (overT > 1 && ratio > MIN_RATIO) {
+        ratio = Math.max(MIN_RATIO, ratio - STEP);
+        setRatio(ratio); overT = 0; holdT = 2;
+      } else if (underT > 12 && ratio < maxRatio) {
+        ratio = Math.min(maxRatio, ratio + STEP);
+        setRatio(ratio); underT = 0; holdT = 4;
+      }
+      return;
+    }
     const gpuBound = gpuMs > cpuMs * 1.25 + 2;   // GPU thật sự là phần chậm (không phải đang chờ CPU)
     // Một số driver/WebGL đồng bộ hàng đợi khi GPU tụt rất sâu: thời gian JS gửi lệnh khi đó
     // cũng phình lên, khiến phép so với cpuMs kết luận nhầm là nghẽn CPU. GPU vượt ngân sách
@@ -149,7 +170,10 @@ const GfxQuality = (() => {
       if (now - raisedAt < 6000) raiseWait = Math.min(60, raiseWait * 2);
       setRatio(ratio); overT = 0; holdT = 1.5;
     } else if (underT > raiseWait && ratio < maxRatio) {
-      ratio = Math.min(maxRatio, ratio + STEP);
+      // GPU dư nhiều (vừa vào kính ngắm: khung nhìn hẹp cắt bớt phần lớn cảnh) -> nâng tới 3 nấc một lần, khỏi để hình
+      // trong kính mờ cả chục giây đúng lúc cần nhìn rõ nhất. Dư ít thì vẫn nhích từng nấc như cũ
+      const want = ratio * Math.sqrt(budget * 0.7 / Math.max(1, gpuMs));
+      ratio = Math.min(maxRatio, ratio + 3 * STEP, Math.max(ratio + STEP, Math.floor(want / STEP) * STEP));
       setRatio(ratio); underT = 0; holdT = 2.5; raisedAt = now;
     } else if (raiseWait > 3 && now - raisedAt > 20000 && underT > 10) raiseWait = 3;
   }

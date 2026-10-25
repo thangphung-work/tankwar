@@ -52,6 +52,8 @@ class TacticalMapController {
     on('tm-zoom-out', 'click', () => this.zoomAt(this.cssW / 2, this.cssH / 2, 1 / 1.4));
     on('tm-focus-me', 'click', () => this.focusPlayer());
     on('tm-fit', 'click', () => this.resetView());
+    on('tm-legend-btn', 'click', () => this.toggleLegend());
+    this.toggleLegend(this.legendPref());
 
     this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
     this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
@@ -81,11 +83,23 @@ class TacticalMapController {
       else if (e.key === 'Escape') this.toggle(false);
       else if (e.code === 'Space') { e.preventDefault(); this.game.triggerPlayerFire(); }
       else if (e.code === 'KeyF') this.focusPlayer();
+      else if (e.code === 'KeyL' && !e.repeat) this.toggleLegend();
       else if (e.code === 'Digit0' || e.code === 'Numpad0') this.resetView();
       else if (e.key === '+' || e.key === '=') this.zoomAt(this.cssW / 2, this.cssH / 2, 1.4);
       else if (e.key === '-') this.zoomAt(this.cssW / 2, this.cssH / 2, 1 / 1.4);
     });
     window.addEventListener('resize', () => { if (this.isOpen) this.resizeCanvas(); });
+  }
+
+  // Bảng chú giải ký hiệu (nút i / phím L); nhớ trạng thái bật / tắt trong trình duyệt — mặc định bật cho người mới
+  legendPref() { try { return localStorage.getItem('tm-legend') !== '0'; } catch (e) { return true; } }
+  toggleLegend(on) {
+    const el = this.$('tm-legend'), btn = this.$('tm-legend-btn');
+    if (!el) return;
+    const want = on !== undefined ? on : el.classList.contains('hidden');
+    el.classList.toggle('hidden', !want);
+    if (btn) btn.classList.toggle('on', want);
+    if (on === undefined) { try { localStorage.setItem('tm-legend', want ? '1' : '0'); } catch (e) { /* bỏ qua */ } }
   }
 
   // Xe mình gãy hết ăng-ten: mất bản đồ số (vehicle_damage breakAntennas -> dmg.mapLost)
@@ -262,7 +276,7 @@ class TacticalMapController {
   // Xe địch đang vẽ trong vòng minimap radar gần điểm (clientX, clientY); null nếu không trúng xe nào
   minimapEnemyAt(cv, clientX, clientY) {
     const g = this.game, r = cv.getBoundingClientRect();
-    const css = r.width / cv.width, V = RadarMinimap.view(g, cv);
+    const css = r.width / RadarMinimap.size(cv), V = RadarMinimap.view(g, cv);
     const mx = clientX - r.left, my = clientY - r.top;
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     let best = null, bd = coarse ? 18 : 12;
@@ -307,7 +321,7 @@ class TacticalMapController {
     if (!cv || typeof RadarMinimap === 'undefined') return null;
     const r = cv.getBoundingClientRect();
     if (!inRect(r)) return null;
-    const css = r.width / cv.width, V = RadarMinimap.view(g, cv);
+    const css = r.width / RadarMinimap.size(cv), V = RadarMinimap.view(g, cv);
     const px = (clientX - r.left) / css, py = (clientY - r.top) / css;
     if (Math.hypot(px - V.cx, py - V.cy) > V.Rpx) return null;   // góc vuông ngoài vòng radar
     const p = RadarMinimap.toWorld(g, cv, px, py);
@@ -328,7 +342,7 @@ class TacticalMapController {
     if (!cv || !g.player || g.player.isDead || !g.worldWidth || this.mapLost() || typeof RadarMinimap === 'undefined') return;
     const r = cv.getBoundingClientRect();
     if (!r.width) return;
-    const css = r.width / cv.width, p = RadarMinimap.toWorld(g, cv, (e.clientX - r.left) / css, (e.clientY - r.top) / css);
+    const css = r.width / RadarMinimap.size(cv), p = RadarMinimap.toWorld(g, cv, (e.clientX - r.left) / css, (e.clientY - r.top) / css);
     this.driveTo(p.x, p.z);
   }
 
@@ -350,7 +364,8 @@ class TacticalMapController {
     }
     ctx.restore();
     const d = Math.round(Math.hypot(A.x - p.x, A.z - p.z));
-    this.tag(ctx, `ĐANG TỚI · ${d} m`, s.x, s.y + 18, '#00e5ff');
+    this.obstacle(s.x + 5, s.y - 10, 9, 12);
+    this.tag(ctx, `ĐANG TỚI · ${d} m`, s.x, s.y + 18, '#00e5ff', false, null, s, 1);
   }
 
   // Khóa xe địch chọn trên bản đồ: cùng cơ chế với nhấp chuột vào xe trong màn hình 3D (tiếng khóa, khung khóa HUD)
@@ -432,78 +447,164 @@ class TacticalMapController {
   // ---------------------------------------------------------------------------
   // NỀN BẢN ĐỒ TÁC CHIẾN (dựng 1 lần cho mỗi bản đồ)
   // ---------------------------------------------------------------------------
-  buildBase() {
-    const T = this.game.terrain, M = T.map;
-    const N = 512, size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData;
-    const c = document.createElement('canvas'); c.width = c.height = N;
-    const g = c.getContext('2d');
+  // Nền cả bản đồ BASE_N px (mức phóng 1 trên màn hình lớn gần 1:1 điểm ảnh), nội suy bậc ba; tên công trình không in vào
+  // nền mà vẽ trực tiếp mỗi khung (drawLandmarkLabels). stepBase(): dựng dần — mỗi lần gọi chạy các chặng trong ngân sách
+  // thời gian (game.js gọi mỗi khung từ đầu trận, khỏi khựng); buildBase(): cần ngay (mở bản đồ khi chưa xong) thì chạy
+  // nốt phần còn lại. Trả về true khi nền đã sẵn
+  stepBase(budget) {
+    const T = this.game.terrain, M = T && T.map;
+    if (!M || !T.heightData) return false;
+    if (this.base && this.base.map === M) return true;
+    let J = this._baseJob;
+    if (!J || J.map !== M) {
+      const N = TacticalMapController.BASE_N, c = document.createElement('canvas'); c.width = c.height = N;
+      J = this._baseJob = { map: M, c, it: this.paintTerrain(c.getContext('2d'), -T.width / 2, -T.width / 2, T.width, N, { smooth: true, lw: N / 1400 }) };
+    }
+    if (!TacticalMapController.runFor(J.it, budget === undefined ? 3 : budget)) return false;
+    this.base = { canvas: J.c, map: M };
+    this._baseJob = null;
+    return true;
+  }
+  buildBase() { this.stepBase(Infinity); }
+
+  // Vẽ địa hình vùng vuông [x0, x0 + span] x [z0, z0 + span] (toạ độ thế giới) lên canvas N x N điểm ảnh: nền cả bản đồ,
+  // ô nét khi phóng to (drawDetail), minimap radar (radar_minimap.js) dựng vùng nhỏ quanh xe.
+  // opt.smooth: nội suy độ cao bậc ba (Catmull-Rom) thay song tuyến — lưới độ cao ~84 m/ô, phóng gần thì song tuyến lộ ô
+  // vuông gãy khúc trên đổ bóng / đồng mức. opt.lw: hệ số nét vẽ (điểm ảnh thiết bị). opt.labels: in tên công trình.
+  // Generator: việc chia thành chặng nhỏ (~0.5–2 ms, đếm theo khối lượng) — nơi gọi chạy bao nhiêu chặng tùy ngân sách
+  // thời gian của khung hình (TacticalMapController.runFor)
+  *paintTerrain(g, x0, z0, span, N, opt) {
+    const T = this.game.terrain, M = T.map, o = opt || {}, lw = o.lw || 1;
+    const size = T.width, half = size / 2, S = T.segments, NN = S + 1, H = T.heightData;
     const cell = size / S;
-    const hAt = (x, z) => {
+    const hLin = (x, z) => {
       const gx = Math.max(0, Math.min(S - 1e-4, (x + half) / cell)), gz = Math.max(0, Math.min(S - 1e-4, (z + half) / cell));
       const ix = gx | 0, iz = gz | 0, fx = gx - ix, fz = gz - iz, i = iz * NN + ix;
       return (H[i] * (1 - fx) + H[i + 1] * fx) * (1 - fz) + (H[i + NN] * (1 - fx) + H[i + NN + 1] * fx) * fz;
     };
-    let hmin = Infinity, hmax = -Infinity;
-    for (let i = 0; i < H.length; i++) { const v = H[i]; if (v < hmin) hmin = v; if (v > hmax) hmax = v; }
+    const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+    const hCub = (x, z) => {
+      const gx = Math.max(0, Math.min(S - 1e-4, (x + half) / cell)), gz = Math.max(0, Math.min(S - 1e-4, (z + half) / cell));
+      const ix = gx | 0, iz = gz | 0, fx = gx - ix, fz = gz - iz;
+      const row = (j) => {
+        const r = Math.max(0, Math.min(S, j)) * NN;
+        return cr(H[r + Math.max(0, ix - 1)], H[r + ix], H[r + ix + 1], H[r + Math.min(S, ix + 2)], fx);
+      };
+      return cr(row(iz - 1), row(iz), row(iz + 1), row(iz + 2), fz);
+    };
+    const hAt = o.smooth ? hCub : hLin, cost = o.smooth ? 4 : 1;
+    let work = 0;
+    const CH = 60000;   // khối lượng mỗi chặng (1 = một điểm ảnh tô màu / một mẫu song tuyến)
+    if (!this._hRange || this._hRange.map !== M) {   // thang màu theo độ cao lấy cả bản đồ: vùng nhỏ cùng tông với bản đồ lớn
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < H.length; i++) { const v = H[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+      this._hRange = { map: M, lo, hi };
+    }
+    const hmin = this._hRange.lo, hmax = this._hRange.hi;
     const water = !!(M.river || (M.lakes && M.lakes.length) || (M.canals && M.canals.length));
-    // 1. Đổ bóng địa hình + thang màu theo độ cao (tông trầm, ít bão hòa)
-    const img = g.createImageData(N, N), D = img.data;
-    const px = size / N;
+    const px = span / N;
+    // 1. Đổ bóng địa hình + thang màu theo độ cao (tông trầm, ít bão hòa). Độ cao tại góc điểm ảnh tính từng hàng (giữ 2
+    // hàng), tô từng dải vài hàng rồi đổ lên canvas — không cấp phát mảng cả ảnh (nền 2048 px: ~33 MB, khựng lúc cấp phát)
     const L = [-0.55, 0.62, -0.55]; const ll = Math.hypot(L[0], L[1], L[2]); L[0] /= ll; L[1] /= ll; L[2] /= ll;
     const ramp = [[38, 48, 44], [58, 70, 58], [84, 90, 72], [118, 116, 96], [150, 146, 128]];
-    const rowH = new Float32Array(N + 1), prevRow = new Float32Array(N + 1);
-    for (let x = 0; x <= N; x++) prevRow[x] = hAt(x * px - half, -half);
+    // Phóng gần (điểm ảnh nhỏ hơn ô lưới độ cao nhiều lần): lấy mẫu bậc ba thưa mỗi st điểm ảnh (~1/12 ô) theo cả hai
+    // chiều, giữa các mẫu nội suy tuyến tính — mắt không phân biệt, ô nét 512 px nhanh hơn ~10 lần
+    const st = o.smooth ? Math.max(1, Math.min(8, Math.floor(cell / 12 / px))) : 1;
+    const keyRow = (yy, out) => {
+      const wz = z0 + yy * px;
+      for (let x = 0; x <= N; x += st) out[x] = hAt(x0 + x * px, wz);
+      if (N % st) out[N] = hAt(x0 + N * px, wz);
+      if (st > 1) for (let x = 0; x < N; x += st) {
+        const x2 = Math.min(N, x + st), a = out[x], d = (out[x2] - a) / (x2 - x);
+        for (let q = 1; x + q < x2; q++) out[x + q] = a + d * q;
+      }
+      work += Math.ceil(N / st + 1) * cost;
+    };
+    let kA = new Float32Array(N + 1), kB = new Float32Array(N + 1), kyA = 0, kyB = Math.min(N, st);
+    keyRow(0, kA); keyRow(kyB, kB);
+    let prev = new Float32Array(N + 1), cur = new Float32Array(N + 1);
+    prev.set(kA);
+    const rows = Math.max(1, Math.floor(CH / (N * (cost / st + 2))));
+    const hp = 0.5 / px, L0 = L[0], L1 = L[1], L2 = L[2], RM = ramp.length - 1, hs = RM / Math.max(1, hmax - hmin);
+    let strip = null, sy = 0;
     for (let y = 0; y < N; y++) {
-      const wz = (y + 1) * px - half;
-      for (let x = 0; x <= N; x++) rowH[x] = hAt(x * px - half, wz);
+      if (!strip) { sy = y; strip = g.createImageData(N, Math.min(rows, N - y)); }
+      const yy = y + 1, D = strip.data, row = (y - sy) * N;
+      if (yy > kyB) { const t = kA; kA = kB; kB = t; kyA = kyB; kyB = Math.min(N, kyB + st); keyRow(kyB, kB); }
+      if (st === 1 || yy === kyB) cur.set(kB);
+      else { const t = (yy - kyA) / (kyB - kyA); for (let x = 0; x <= N; x++) cur[x] = kA[x] + (kB[x] - kA[x]) * t; }
       for (let x = 0; x < N; x++) {
-        const h = (prevRow[x] + prevRow[x + 1] + rowH[x] + rowH[x + 1]) * 0.25;
-        const dx = ((prevRow[x + 1] + rowH[x + 1]) - (prevRow[x] + rowH[x])) * 0.5 / px;
-        const dz = ((rowH[x] + rowH[x + 1]) - (prevRow[x] + prevRow[x + 1])) * 0.5 / px;
-        const nl = Math.hypot(dx, 1, dz);
-        const lit = Math.max(0, (-dx * L[0] + L[1] - dz * L[2]) / nl);
-        const shade = 0.52 + 0.62 * lit;
-        const t = (h - hmin) / Math.max(1, hmax - hmin) * (ramp.length - 1);
-        const i0 = Math.min(ramp.length - 2, Math.max(0, t | 0)), f = Math.min(1, Math.max(0, t - i0));
-        let r = ramp[i0][0] + (ramp[i0 + 1][0] - ramp[i0][0]) * f;
-        let gg = ramp[i0][1] + (ramp[i0 + 1][1] - ramp[i0][1]) * f;
-        let b = ramp[i0][2] + (ramp[i0 + 1][2] - ramp[i0][2]) * f;
-        if (water && h < 0.2) { r = 30; gg = 48; b = 62; }
-        const kk = (y * N + x) * 4;
-        D[kk] = Math.min(255, r * shade); D[kk + 1] = Math.min(255, gg * shade); D[kk + 2] = Math.min(255, b * shade); D[kk + 3] = 255;
-      }
-      prevRow.set(rowH);
-    }
-    g.putImageData(img, 0, 0);
-    const P = v => (v + half) / size * N, sc = N / size;
-
-    // 2. Đường đồng mức (lưới nội suy x2 -> marching squares), cách 10 m, đậm mỗi 50 m
-    const G = S * 2, GN = G + 1, gc = size / G;
-    const hg = new Float32Array(GN * GN);
-    for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) hg[j * GN + i] = hAt(i * gc - half, j * gc - half);
-    const step = 10, major = 50;
-    const minorP = new Path2D(), majorP = new Path2D();
-    const cut = (ax, az, av, bx, bz, bv, lv) => { const t = (lv - av) / (bv - av); return [ax + (bx - ax) * t, az + (bz - az) * t]; };
-    const CASES = { 1: [[3, 2]], 2: [[2, 1]], 3: [[3, 1]], 4: [[0, 1]], 5: [[3, 0], [2, 1]], 6: [[0, 2]], 7: [[3, 0]], 8: [[3, 0]], 9: [[0, 2]], 10: [[0, 1], [3, 2]], 11: [[0, 1]], 12: [[3, 1]], 13: [[2, 1]], 14: [[3, 2]] };
-    for (let lv = Math.ceil(hmin / step) * step; lv <= hmax; lv += step) {
-      if (water && lv <= 0) continue;
-      const path = lv % major === 0 ? majorP : minorP;
-      for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
-        const a = hg[j * GN + i], b = hg[j * GN + i + 1], d = hg[(j + 1) * GN + i], cc = hg[(j + 1) * GN + i + 1];
-        const idx = (a > lv ? 8 : 0) | (b > lv ? 4 : 0) | (cc > lv ? 2 : 0) | (d > lv ? 1 : 0);
-        if (idx === 0 || idx === 15) continue;
-        // cạnh: 0 trên, 1 phải, 2 dưới, 3 trái
-        const edge = q => q === 0 ? cut(i, j, a, i + 1, j, b, lv) : q === 1 ? cut(i + 1, j, b, i + 1, j + 1, cc, lv)
-          : q === 2 ? cut(i, j + 1, d, i + 1, j + 1, cc, lv) : cut(i, j, a, i, j + 1, d, lv);
-        for (const [ea, eb] of CASES[idx]) {
-          const A = edge(ea), B = edge(eb);
-          path.moveTo(A[0] * gc * sc, A[1] * gc * sc); path.lineTo(B[0] * gc * sc, B[1] * gc * sc);
+        const a = prev[x], b = prev[x + 1], d = cur[x], e = cur[x + 1];
+        const h = (a + b + d + e) * 0.25;
+        const dx = ((b + e) - (a + d)) * hp, dz = ((d + e) - (a + b)) * hp;
+        let lit = (L1 - dx * L0 - dz * L2) / Math.sqrt(dx * dx + 1 + dz * dz);   // Math.hypot chậm hơn nhiều trong V8
+        if (lit < 0) lit = 0;
+        const shade = 0.52 + 0.62 * lit, kk = (row + x) * 4;
+        let rr, gg, bb;
+        if (water && h < 0.2) { rr = 30; gg = 48; bb = 62; }
+        else {
+          let t = (h - hmin) * hs;
+          if (t < 0) t = 0; else if (t > RM) t = RM;
+          let i0 = t | 0; if (i0 > RM - 1) i0 = RM - 1;
+          const f = t - i0, c0 = ramp[i0], c1 = ramp[i0 + 1];
+          rr = c0[0] + (c1[0] - c0[0]) * f; gg = c0[1] + (c1[1] - c0[1]) * f; bb = c0[2] + (c1[2] - c0[2]) * f;
         }
+        D[kk] = rr * shade; D[kk + 1] = gg * shade; D[kk + 2] = bb * shade; D[kk + 3] = 255;   // Uint8ClampedArray tự kẹp 255
       }
+      const sw = prev; prev = cur; cur = sw;
+      if (y - sy + 1 === strip.height) { g.putImageData(strip, 0, sy); strip = null; yield; }
     }
-    g.lineCap = 'round';
-    g.strokeStyle = 'rgba(214, 200, 160, 0.16)'; g.lineWidth = 0.8; g.stroke(minorP);
-    g.strokeStyle = 'rgba(232, 214, 168, 0.34)'; g.lineWidth = 1.3; g.stroke(majorP);
+    // Từ đây vẽ theo toạ độ cả bản đồ (P: thế giới -> điểm ảnh, dùng chung cho x và z) dời gốc về góc vùng
+    const sc = N / span, P = v => (v + half) * sc;
+    g.save();
+    g.beginPath(); g.rect(0, 0, N, N); g.clip();
+    g.translate(-(x0 + half) * sc, -(z0 + half) * sc);
+
+    // 2. Đường đồng mức (marching squares), cách 10 m, đậm mỗi 50 m. Lưới: song tuyến ô/2; bậc ba mau hơn (ô/5).
+    // Mỗi ô chỉ xét các mức nằm giữa thấp nhất / cao nhất 4 góc (vành núi cao hàng trăm mét không duyệt cả trăm mức mỗi ô)
+    {
+      const gc = o.smooth ? Math.max(px, cell / 5) : cell / 2, G = Math.ceil(span / gc), GN = G + 1;
+      const hg = new Float32Array(GN * GN);
+      for (let j = 0; j < GN; j++) {
+        for (let i = 0; i < GN; i++) hg[j * GN + i] = hAt(x0 + i * gc, z0 + j * gc);
+        if ((work += GN * cost) > CH) { work = 0; yield; }
+      }
+      const step = 10, major = 50;
+      const minorP = new Path2D(), majorP = new Path2D();
+      const CASES = { 1: [[3, 2]], 2: [[2, 1]], 3: [[3, 1]], 4: [[0, 1]], 5: [[3, 0], [2, 1]], 6: [[0, 2]], 7: [[3, 0]], 8: [[3, 0]], 9: [[0, 2]], 10: [[0, 1], [3, 2]], 11: [[0, 1]], 12: [[3, 1]], 13: [[2, 1]], 14: [[3, 2]] };
+      const ox = P(x0), oz = P(z0), k = gc * sc;
+      const E = [0, 0];
+      // cạnh: 0 trên, 1 phải, 2 dưới, 3 trái -> điểm cắt (toạ độ ô) ghi vào E
+      const edge = (q, i, j, a, b, cc, d, lv) => {
+        if (q === 0) { E[0] = i + (lv - a) / (b - a); E[1] = j; }
+        else if (q === 1) { E[0] = i + 1; E[1] = j + (lv - b) / (cc - b); }
+        else if (q === 2) { E[0] = i + (lv - d) / (cc - d); E[1] = j + 1; }
+        else { E[0] = i; E[1] = j + (lv - a) / (d - a); }
+      };
+      for (let j = 0; j < G; j++) {
+        for (let i = 0; i < G; i++) {
+          const a = hg[j * GN + i], b = hg[j * GN + i + 1], d = hg[(j + 1) * GN + i], cc = hg[(j + 1) * GN + i + 1];
+          const lo = Math.min(a, b, cc, d), hi = Math.max(a, b, cc, d);
+          let lv = Math.ceil(lo / step) * step;
+          if (water && lv <= 0) lv = step;
+          for (; lv < hi; lv += step) {
+            const idx = (a > lv ? 8 : 0) | (b > lv ? 4 : 0) | (cc > lv ? 2 : 0) | (d > lv ? 1 : 0);
+            if (idx === 0 || idx === 15) continue;
+            const path = lv % major === 0 ? majorP : minorP;
+            for (const [ea, eb] of CASES[idx]) {
+              edge(ea, i, j, a, b, cc, d, lv); const ax = E[0], az = E[1];
+              edge(eb, i, j, a, b, cc, d, lv);
+              path.moveTo(ox + ax * k, oz + az * k); path.lineTo(ox + E[0] * k, oz + E[1] * k);
+            }
+          }
+        }
+        if ((work += G * 3) > CH) { work = 0; yield; }
+      }
+      g.lineCap = 'round';
+      g.strokeStyle = 'rgba(214, 200, 160, 0.16)'; g.lineWidth = 0.8 * lw; g.stroke(minorP);
+      g.strokeStyle = 'rgba(232, 214, 168, 0.34)'; g.lineWidth = 1.3 * lw; g.stroke(majorP);
+    }
+    yield;
 
     // 3. Sông hồ
     if (M.river) {
@@ -517,15 +618,22 @@ class TacticalMapController {
       g.strokeStyle = '#2a4458'; g.lineWidth = c.hw * 2 * sc; g.lineCap = 'butt';
       g.beginPath(); g.moveTo(P(c.pts[0][0]), P(c.pts[0][1])); g.lineTo(P(c.pts[1][0]), P(c.pts[1][1])); g.stroke();
     }
-    // 4. Rừng: chấm cây
-    g.fillStyle = 'rgba(24, 40, 26, 0.75)';
-    for (const t of M.trees || []) { if (t.kind === 'cactus' || t.kind === 'deadTree') continue; g.fillRect(P(t.x) - 1, P(t.z) - 1, 2.2, 2.2); }
+    // 4. Rừng: chấm cây (phóng gần: tán cây ~7 m)
+    {
+      g.fillStyle = 'rgba(24, 40, 26, 0.75)';
+      const ts = Math.max(2.2, 7 * sc), x1 = x0 + span, z1 = z0 + span, m = 10;
+      for (const t of M.trees || []) {
+        if (t.kind === 'cactus' || t.kind === 'deadTree' || t.x < x0 - m || t.x > x1 + m || t.z < z0 - m || t.z > z1 + m) continue;
+        g.fillRect(P(t.x) - ts / 2, P(t.z) - ts / 2, ts, ts);
+      }
+    }
+    yield;
     // 5. Đường: viền tối + lòng đường sáng
     g.lineCap = 'round'; g.lineJoin = 'round';
     for (const pass of [0, 1]) {
       for (const rd of M.roads || []) {
         g.strokeStyle = pass ? (rd.kind === 'asphalt' ? '#b9b4a2' : '#a89c7e') : 'rgba(10, 12, 12, 0.7)';
-        g.lineWidth = Math.max(pass ? 1.4 : 3, rd.width * sc * (pass ? 0.55 : 0.9));
+        g.lineWidth = Math.max((pass ? 1.4 : 3) * lw, rd.width * sc * (pass ? 0.55 : 0.9));
         g.beginPath(); rd.pts.forEach((p, i) => i ? g.lineTo(P(p[0]), P(p[1])) : g.moveTo(P(p[0]), P(p[1]))); g.stroke();
       }
     }
@@ -538,18 +646,86 @@ class TacticalMapController {
     for (const bd of T.buildings || []) {
       const R = bd.ref; if (!R) continue;
       g.save(); g.translate(P(R.x), P(R.z)); g.rotate(-R.angle);
-      g.fillStyle = '#20262c'; g.strokeStyle = 'rgba(200, 200, 190, 0.45)'; g.lineWidth = 0.8;
+      g.fillStyle = '#20262c'; g.strokeStyle = 'rgba(200, 200, 190, 0.45)'; g.lineWidth = 0.8 * lw;
       g.fillRect(-R.halfW * sc, -R.halfD * sc, R.halfW * 2 * sc, R.halfD * 2 * sc);
       g.strokeRect(-R.halfW * sc, -R.halfD * sc, R.halfW * 2 * sc, R.halfD * 2 * sc);
       g.restore();
     }
+    yield;
     // 7. Cứ điểm bê tông
-    if (T.propSet) T.propSet.drawOnMap(g, P, sc);
+    if (T.propSet) T.propSet.drawOnMap(g, P, sc, lw);
     if (T.strongholdSet) T.strongholdSet.drawOnMap(g, P, sc, 'tac');
-    if (T.landmarkSet) T.landmarkSet.drawOnMap(g, P, sc, true);
+    if (T.landmarkSet) T.landmarkSet.drawOnMap(g, P, sc, !!o.labels);
     // 8. Phủ tối ngoài lòng thung lũng (sườn vành núi xe không tới được) theo đúng hình dạng vùng chiến đấu
-    BattleTerrain3D.shadeOutside(g, M, P, N);
-    this.base = { canvas: c, map: M };
+    BattleTerrain3D.shadeOutside(g, M, P, size * sc, o.smooth ? 2 * lw : undefined);
+    g.restore();
+  }
+
+  // ---------------------------------------------------------------------------
+  // NỀN NÉT KHI PHÓNG TO: bản đồ chia ô vuông TILE_N px theo cấp (cấp L: 2^L x 2^L ô); chọn cấp có mật độ điểm ảnh bằng
+  // màn hình (giới hạn số ô nhìn thấy), dựng dần trong ngân sách ~4 ms/khung — ô gần giữa màn hình trước; ô chưa xong thì
+  // mượn phần tương ứng của ô cấp thấp hơn đã có, không có nữa thì thấy nền chung. Nhớ tối đa TILE_CACHE ô (bỏ ô lâu
+  // không dùng nhất)
+  // ---------------------------------------------------------------------------
+  drawDetail(ctx, o, S) {
+    const T = this.game.terrain, M = T.map, TN = TacticalMapController.TILE_N, CAP = TacticalMapController.TILE_CACHE;
+    const devPx = S * this.dpr, baseL = Math.log2(this.base.canvas.width / TN);
+    let L = Math.min(7, Math.ceil(Math.log2(devPx / TN) - 0.15));
+    if (L <= baseL) return;
+    if (!this.tiles || this.tiles.map !== M) this.tiles = { map: M, cache: new Map(), job: null, frame: 0 };
+    const TL = this.tiles, cache = TL.cache, W = this.cssW, Hh = this.cssH, frame = ++TL.frame;
+    const range = (L) => {
+      const n = 1 << L, ct = S / n;
+      return { n, ct, i0: Math.max(0, Math.floor(-o.x / ct)), i1: Math.min(n - 1, Math.floor((W - o.x) / ct)),
+        j0: Math.max(0, Math.floor(-o.y / ct)), j1: Math.min(n - 1, Math.floor((Hh - o.y) / ct)) };
+    };
+    let R = range(L);
+    while (L > baseL + 1 && (R.i1 - R.i0 + 1) * (R.j1 - R.j0 + 1) > CAP * 0.7) R = range(--L);
+    const want = [];
+    for (let j = R.j0; j <= R.j1; j++) for (let i = R.i0; i <= R.i1; i++) {
+      const x = o.x + i * R.ct, y = o.y + j * R.ct, key = L + ':' + i + ':' + j, t = cache.get(key);
+      if (t) { t.used = frame; ctx.drawImage(t.canvas, x, y, R.ct + 0.5, R.ct + 0.5); continue; }
+      // mượn ô cấp thấp hơn (vừa phóng to: ô cũ còn trong bộ nhớ)
+      for (let m = 1; L - m > baseL; m++) {
+        const p = cache.get((L - m) + ':' + (i >> m) + ':' + (j >> m));
+        if (!p) continue;
+        p.used = frame;
+        const sub = TN >> m, sx = (i & ((1 << m) - 1)) * sub, sy = (j & ((1 << m) - 1)) * sub;
+        ctx.drawImage(p.canvas, sx, sy, sub, sub, x, y, R.ct + 0.5, R.ct + 0.5);
+        break;
+      }
+      want.push({ key, i, j, L, d: Math.hypot(x + R.ct / 2 - W / 2, y + R.ct / 2 - Hh / 2) });
+    }
+    // dựng ô còn thiếu: đang dựng ô không còn cần thì bỏ, chọn ô gần giữa màn hình nhất
+    if (TL.job) { const ix = want.findIndex(w => w.key === TL.job.key); if (ix < 0) TL.job = null; else want.splice(ix, 1); }
+    const t0 = performance.now();
+    while (performance.now() - t0 < 4) {
+      if (!TL.job) {
+        if (!want.length) break;
+        want.sort((a, b) => a.d - b.d);
+        const w = want.shift(), n = 1 << w.L, span = this.worldSize / n, half = this.worldSize / 2;
+        const c = document.createElement('canvas'); c.width = c.height = TN;
+        TL.job = { key: w.key, canvas: c, it: this.paintTerrain(c.getContext('2d'), -half + w.i * span, -half + w.j * span, span, TN, { smooth: true, lw: this.dpr }) };
+      }
+      if (TacticalMapController.runFor(TL.job.it, 4 - (performance.now() - t0))) {
+        cache.set(TL.job.key, { canvas: TL.job.canvas, used: frame });
+        TL.job = null;
+      }
+    }
+    if (cache.size > CAP) {
+      const old = [...cache.entries()].filter(([, t]) => t.used !== frame).sort((a, b) => a[1].used - b[1].used);
+      for (let q = 0; q < old.length && cache.size > CAP; q++) cache.delete(old[q][0]);
+    }
+  }
+
+  // Tên công trình (sân bay, nhà máy điện...) vẽ trực tiếp theo điểm ảnh màn hình: nét ở mọi mức phóng
+  drawLandmarkLabels(ctx, o, k) {
+    const LS = this.game.terrain && this.game.terrain.landmarkSet;
+    if (!LS || !LS.drawLabels) return;
+    const half = this.worldSize / 2;
+    ctx.save(); ctx.translate(o.x, o.y);
+    LS.drawLabels(ctx, (v) => (v + half) * k, k, 12);
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
@@ -561,7 +737,8 @@ class TacticalMapController {
     if (!T || !T.map) return;
     const el = this.canvas.parentElement;
     if (el && (Math.abs(el.clientWidth - this.cssW) > 1 || Math.abs(el.clientHeight - this.cssH) > 1)) this.resizeCanvas();
-    if (!this.base || this.base.map !== T.map) this.buildBase();
+    // nền chưa dựng xong (mở bản đồ ngay đầu trận): dựng tiếp ~8 ms mỗi khung, tạm dùng ảnh mặt đất thô của địa hình
+    const baseReady = this.stepBase(8);
     if (this.measStart && this.measStart.fromPlayer && g.player) { this.measStart.x = g.player.x; this.measStart.z = g.player.z; this.updateMeasurements(false); }
     const W = this.cssW, Hh = this.cssH, k = this.k, half = this.worldSize / 2;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -569,13 +746,17 @@ class TacticalMapController {
     ctx.fillRect(0, 0, W, Hh);
     const o = this.worldToScreen(-half, -half), S = this.worldSize * k;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(this.base.canvas, o.x, o.y, S, S);
+    if (baseReady) { ctx.drawImage(this.base.canvas, o.x, o.y, S, S); this.drawDetail(ctx, o, S); }
+    else if (T.mapCanvas) ctx.drawImage(T.mapCanvas, o.x, o.y, S, S);
 
+    this._tags = []; this._obst = [];   // nhãn chờ đặt chỗ + ô ký hiệu nhãn không được đè (layoutTags)
     this.drawGrid(ctx, o, S);
+    this.drawLandmarkLabels(ctx, o, k);
     this.drawBushes(ctx, k);
     ctx.save(); ctx.translate(o.x, o.y); g.radar.renderOnTacticalMap(ctx, k); ctx.restore();
     this.drawObjectives(ctx, k);
     this.drawCrates(ctx);
+    if (typeof SupplyDepot !== 'undefined') SupplyDepot.drawOnMap(ctx, g, (x, z) => this.worldToScreen(x, z), k, { size: 7, labels: true });
     this.drawAirdrop(ctx);
     if (g.player && !g.player.isDead) this.drawRanges(ctx, k);
     this.drawIntel(ctx, k);
@@ -584,31 +765,70 @@ class TacticalMapController {
     if (g.player) this.drawPlayer(ctx);
     this.drawLock(ctx);
     this.drawTarget(ctx);
+    this.layoutTags(ctx);
     this.drawFrame(ctx, o, S, k, W, Hh);
     this.updateTip();
   }
 
-  // Lưới ô 450 m; khi phóng to thêm dấu thập giữa ô
-  drawGrid(ctx, o, S) {
-    const n = 8, cellPx = S / n;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(200, 210, 192, 0.10)'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let i = 0; i <= n; i++) {
-      ctx.moveTo(o.x + i * cellPx, o.y); ctx.lineTo(o.x + i * cellPx, o.y + S);
-      ctx.moveTo(o.x, o.y + i * cellPx); ctx.lineTo(o.x + S, o.y + i * cellPx);
-    }
-    ctx.stroke();
-    if (this.view.zoom >= 2) {
-      ctx.strokeStyle = 'rgba(200, 210, 192, 0.16)';
-      ctx.beginPath();
-      for (let i = 0; i <= n * 2; i++) for (let j = 0; j <= n * 2; j++) {
-        if (i % 2 === 0 && j % 2 === 0) continue;
-        const x = o.x + i * cellPx / 2, y = o.y + j * cellPx / 2;
-        if (x < -10 || y < -10 || x > this.cssW + 10 || y > this.cssH + 10) continue;
-        ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4);
+  // LƯỚI BÁO VỊ TRÍ: ô 1 km phủ đúng vùng chơi (lòng thung lũng trong vành núi), cột A, B, C... / hàng 1, 2, 3...; mỗi ô
+  // chia 3 x 3 ô con đánh số 1–9 theo thứ tự đọc (1 trên trái, 9 dưới phải) -> gọi vị trí kiểu "D5-7" (~330 m)
+  grid() {
+    const T = this.game.terrain, M = T && T.map;
+    if (this._grid && this._grid.map === M) return this._grid;
+    const O = M && M.outer, half = this.worldSize / 2;
+    let x0 = -half, x1 = half, z0 = -half, z1 = half;
+    if (O && O.rimFoot) {
+      x0 = z0 = Infinity; x1 = z1 = -Infinity;
+      for (let a = 0; a < 360; a += 2) {
+        const t = a * Math.PI / 180, c = Math.cos(t), sn = Math.sin(t), r = O.rimFoot(c * 2000, sn * 2000);
+        x0 = Math.min(x0, c * r); x1 = Math.max(x1, c * r); z0 = Math.min(z0, sn * r); z1 = Math.max(z1, sn * r);
       }
-      ctx.stroke();
+    }
+    const cell = 1000, cols = Math.min(26, Math.max(1, Math.ceil((x1 - x0) / cell))), rows = Math.max(1, Math.ceil((z1 - z0) / cell));
+    this._grid = { map: M, cell, cols, rows, x0: (x0 + x1) / 2 - cols * cell / 2, z0: (z0 + z1) / 2 - rows * cell / 2 };
+    return this._grid;
+  }
+  // Ô lưới của điểm (x, z): "D5-7"; null nếu ngoài lưới
+  gridRef(x, z) {
+    const G = this.grid(), fx = (x - G.x0) / G.cell, fz = (z - G.z0) / G.cell, i = Math.floor(fx), j = Math.floor(fz);
+    if (i < 0 || j < 0 || i >= G.cols || j >= G.rows) return null;
+    const si = Math.min(2, Math.floor((fx - i) * 3)), sj = Math.min(2, Math.floor((fz - j) * 3));
+    return String.fromCharCode(65 + i) + (j + 1) + '-' + (sj * 3 + si + 1);
+  }
+  drawGrid(ctx) {
+    const G = this.grid(), cp = G.cell * this.k, a = this.worldToScreen(G.x0, G.z0), W = this.cssW, Hh = this.cssH;
+    const i0 = Math.max(0, Math.floor(-a.x / cp)), i1 = Math.min(G.cols - 1, Math.floor((W - a.x) / cp));
+    const j0 = Math.max(0, Math.floor(-a.y / cp)), j1 = Math.min(G.rows - 1, Math.floor((Hh - a.y) / cp));
+    if (i1 < i0 || j1 < j0) return;
+    const L = a.x + i0 * cp, R = a.x + (i1 + 1) * cp, Tp = a.y + j0 * cp, B = a.y + (j1 + 1) * cp;
+    ctx.save();
+    // ô con: nét đứt rất mờ khi phóng đủ to
+    if (cp >= 150) {
+      ctx.strokeStyle = 'rgba(200, 210, 192, 0.09)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      for (let i = i0; i <= i1; i++) for (const q of [1, 2]) { const x = a.x + (i + q / 3) * cp; ctx.moveTo(x, Tp); ctx.lineTo(x, B); }
+      for (let j = j0; j <= j1; j++) for (const q of [1, 2]) { const y = a.y + (j + q / 3) * cp; ctx.moveTo(L, y); ctx.lineTo(R, y); }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    // ô chính
+    ctx.strokeStyle = 'rgba(200, 210, 192, 0.17)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = i0; i <= i1 + 1; i++) { const x = a.x + i * cp; ctx.moveTo(x, Tp); ctx.lineTo(x, B); }
+    for (let j = j0; j <= j1 + 1; j++) { const y = a.y + j * cp; ctx.moveTo(L, y); ctx.lineTo(R, y); }
+    ctx.stroke();
+    // tên ô ở góc trên trái mỗi ô; phóng rất to thì thêm số ô con mờ ở giữa ô con
+    if (cp >= 70) {
+      ctx.font = '600 10px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(220, 232, 240, 0.4)';
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) ctx.fillText(String.fromCharCode(65 + i) + (j + 1), a.x + i * cp + 4, a.y + j * cp + 4);
+    }
+    if (cp >= 330) {
+      ctx.font = '9px "JetBrains Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(220, 232, 240, 0.2)';
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) for (let q = 0; q < 9; q++) {
+        if (q === 0) continue;   // ô con 1 trùng tên ô
+        ctx.fillText(String(q + 1), a.x + (i + (q % 3 + 0.5) / 3) * cp, a.y + (j + ((q / 3 | 0) + 0.5) / 3) * cp);
+      }
     }
     ctx.restore();
   }
@@ -668,8 +888,9 @@ class TacticalMapController {
         ctx.beginPath(); ctx.arc(p.x, p.y, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, ob.progress)); ctx.stroke();
       }
       const label = 'OBJ ' + ob.id;
-      ctx.font = 'bold 12px Share Tech Mono, monospace';
-      const w = ctx.measureText(label).width + 14, h = 18, x = p.x - w / 2, y = Math.max(22, p.y - R - h - 6);   // không bị khuất ở mép trên khi phóng to
+      ctx.font = 'bold 12px "JetBrains Mono", monospace';
+      const w = ctx.measureText(label).width + 14, h = 18, x = p.x - w / 2, y = Math.max(52, p.y - R - h - 6);   // không chui dưới tiêu đề khi phóng to
+      this.obstacle(p.x, y + h / 2, w / 2, h / 2); this.obstacle(p.x, p.y, 8, 8);
       ctx.fillStyle = 'rgba(10, 13, 12, 0.88)'; ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       ctx.fillStyle = this.teamCol(ob.owner, 1); ctx.fillRect(x, y, 3, h);
@@ -748,6 +969,7 @@ class TacticalMapController {
     const col = friendly ? '#5fb0dc' : '#e0675c';
     const fill = friendly ? 'rgba(95, 176, 220, 0.28)' : 'rgba(224, 103, 92, 0.28)';
     const s = opts.size || 9;
+    this.obstacle(x, y, s * 1.45, s * 1.45);
     ctx.save();
     ctx.translate(x, y);
     ctx.lineWidth = 1.6; ctx.strokeStyle = col; ctx.fillStyle = fill;
@@ -787,7 +1009,7 @@ class TacticalMapController {
       }
     }
     const zoomLbl = this.view.zoom >= 1.8;
-    const code = { ALL_ROUNDER: 'TK', GATLING: 'AD', ARTILLERY: 'SPG', SCOUT: 'RCN' };
+    const code = { ALL_ROUNDER: 'TĂNG', GATLING: '6 NÒNG', ARTILLERY: 'PHÁO TH', SCOUT: 'TRINH SÁT' };
     for (const u of g.units) {
       if (u === me) continue;
       if (u.isDead) { this.ghosts.delete(u.id); continue; }
@@ -808,9 +1030,13 @@ class TacticalMapController {
         ctx.beginPath(); ctx.arc(s.x, s.y, 17 + Math.sin(now * 6) * 1.5, 0, Math.PI * 2); ctx.stroke();
       }
       if (zoomLbl) {
-        ctx.fillStyle = ally ? 'rgba(160, 225, 245, 0.9)' : 'rgba(255, 150, 150, 0.9)';
-        ctx.font = '10px Share Tech Mono, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-        ctx.fillText(code[u.tankType] || '', s.x + 15, s.y);
+        const lbl = code[u.tankType] || '';
+        ctx.font = '600 10px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillStyle = ally ? 'rgba(160, 225, 245, 0.95)' : 'rgba(255, 150, 150, 0.95)';
+        ctx.strokeText(lbl, s.x + 15, s.y); ctx.fillText(lbl, s.x + 15, s.y);
+        const lw = ctx.measureText(lbl).width;
+        this.obstacle(s.x + 15 + lw / 2, s.y, lw / 2, 6);
       }
     }
     if (g.drawDronesOnMap) g.drawDronesOnMap(ctx, (x, z) => this.worldToScreen(x, z), true);
@@ -821,7 +1047,7 @@ class TacticalMapController {
       ctx.strokeStyle = `rgba(255, 120, 100, ${0.7 * a})`; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
       ctx.beginPath(); ctx.moveTo(s.x, s.y - 11); ctx.lineTo(s.x + 11, s.y); ctx.lineTo(s.x, s.y + 11); ctx.lineTo(s.x - 11, s.y); ctx.closePath(); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = `rgba(255, 140, 120, ${0.85 * a})`; ctx.font = 'bold 11px Share Tech Mono, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = `rgba(255, 140, 120, ${0.85 * a})`; ctx.font = 'bold 11px "JetBrains Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('?', s.x, s.y + 0.5);
     }
     ctx.restore();
@@ -833,6 +1059,7 @@ class TacticalMapController {
       const pred = g.ballistics.predictTrajectoryImpact(p.x, p.y, p.z, p.azimuth, p.elevation, p.charge, g.terrain, p);
       const imp = this.worldToScreen(pred.impactX, pred.impactZ);
       const wall = pred.hitType === 'WALL';
+      this.obstacle(imp.x, imp.y, 10, 10);
       ctx.save();
       ctx.strokeStyle = wall ? 'rgba(224, 103, 92, 0.7)' : 'rgba(231, 166, 58, 0.7)'; ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(imp.x, imp.y); ctx.stroke(); ctx.setLineDash([]);
@@ -843,18 +1070,40 @@ class TacticalMapController {
       ctx.stroke();
       ctx.restore();
     }
-    this.drawSymbol(ctx, s.x, s.y, p.tankType, { friendly: true, size: 10 });
+    // XE MÌNH: cùng kiểu minimap — hình quạt hướng camera (mờ dần ra xa), mũi tên màu phe theo hướng nòng, quầng tròn
+    // nhẹ cho dễ tìm giữa đồng đội
+    this.obstacle(s.x, s.y, 16, 16);
     ctx.save();
-    ctx.strokeStyle = '#eaffff'; ctx.lineWidth = 1.5;
-    const b = 21, L = 6;
-    ctx.beginPath();
-    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      ctx.moveTo(s.x + sx * b, s.y + sy * (b - L)); ctx.lineTo(s.x + sx * b, s.y + sy * b); ctx.lineTo(s.x + sx * (b - L), s.y + sy * b);
+    if (p.isDead) {
+      ctx.strokeStyle = 'rgba(232, 241, 246, 0.75)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(s.x - 7, s.y - 7); ctx.lineTo(s.x + 7, s.y + 7); ctx.moveTo(s.x + 7, s.y - 7); ctx.lineTo(s.x - 7, s.y + 7); ctx.stroke();
+      ctx.restore();
+      return;
     }
-    ctx.stroke();
-    const br = (p.azimuth * Math.PI) / 180;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(s.x + Math.sin(br) * 14, s.y - Math.cos(br) * 14); ctx.lineTo(s.x + Math.sin(br) * 30, s.y - Math.cos(br) * 30); ctx.stroke();
+    const col = p.team === 'RED' ? '#ff5a4a' : '#22d3f0', rgb = p.team === 'RED' ? '255, 90, 74' : '34, 211, 240';
+    {
+      const yaw = g._camYaw || 0, a0 = Math.atan2(-Math.cos(yaw), -Math.sin(yaw)), Lc = 90;
+      const hf = g.camera ? Math.atan(Math.tan(g.camera.fov * Math.PI / 360) * g.camera.aspect) : 0.6;
+      const fg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, Lc);
+      fg.addColorStop(0, 'rgba(235, 250, 255, 0.3)'); fg.addColorStop(1, 'rgba(235, 250, 255, 0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.arc(s.x, s.y, Lc, a0 - hf, a0 + hf); ctx.closePath(); ctx.fill();
+      const eg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, Lc);
+      eg.addColorStop(0, 'rgba(235, 250, 255, 0.6)'); eg.addColorStop(1, 'rgba(235, 250, 255, 0)');
+      ctx.strokeStyle = eg; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + Math.cos(a0 - hf) * Lc, s.y + Math.sin(a0 - hf) * Lc);
+      ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + Math.cos(a0 + hf) * Lc, s.y + Math.sin(a0 + hf) * Lc);
+      ctx.stroke();
+    }
+    ctx.fillStyle = `rgba(${rgb}, 0.13)`; ctx.strokeStyle = `rgba(${rgb}, 0.55)`; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.translate(s.x, s.y); ctx.rotate((p.azimuth || 0) * Math.PI / 180);
+    ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(8, 8); ctx.lineTo(0, 4.5); ctx.lineTo(-8, 8); ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.strokeStyle = '#f4fdff'; ctx.lineWidth = 1.4; ctx.stroke();
     ctx.restore();
   }
 
@@ -897,7 +1146,8 @@ class TacticalMapController {
     }
     ctx.restore();
     const d = Math.round(Math.hypot(T.x - p.x, T.z - p.z));
-    this.tag(ctx, manual ? `${d} m · TAB: BÁM LẠI` : `ĐÃ KHÓA · ${d} m`, s.x, s.y - 34, col, true, 'lock');
+    this.obstacle(s.x, s.y, 21, 21);
+    this.tag(ctx, manual ? `${d} m · TAB: BÁM LẠI` : `ĐÃ KHÓA · ${d} m`, s.x, s.y - 34, col, true, 'lock', s, 3);
   }
 
   // Mục tiêu đã chọn: đường ngắm + khung góc + kết luận ngay cạnh mục tiêu
@@ -927,7 +1177,8 @@ class TacticalMapController {
     const verdict = st === 'ok' ? `${dist} m${this.flightT ? ' · ' + this.flightT.toFixed(1) + 's' : ''}${how}`
       : st === 'far' ? `${dist} m · QUÁ XA` : st === 'near' ? `${dist} m · QUÁ GẦN` : `${dist} m`;
     const icon = st === 'ok' ? 'check' : (st === 'far' || st === 'near') ? 'x' : null;
-    this.tag(ctx, verdict, e.x, e.y + 24, col, true, icon);
+    this.obstacle(e.x, e.y, 13, 13);
+    this.tag(ctx, verdict, e.x, e.y + 24, col, true, icon, e, 2);
   }
 
   // Khung: thước vạch 100 m + mã ô A–H / 1–8 trên mép, góc khung kiểu ống ngắm, thước tỉ lệ, hướng Bắc
@@ -948,12 +1199,13 @@ class TacticalMapController {
       if (y >= top + 16 && y <= H) { ctx.moveTo(left + 16, y); ctx.lineTo(left + 16 - Lx, y); }
     }
     ctx.stroke();
-    ctx.fillStyle = 'rgba(220, 235, 245, 0.85)'; ctx.font = 'bold 10px Share Tech Mono, monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (let i = 0; i < n; i++) {
-      const cx = o.x + (i + 0.5) * cellPx, cy = o.y + (i + 0.5) * cellPx;
-      if (cx > left + 16 && cx < W) ctx.fillText(String.fromCharCode(65 + i), cx, top + 7);
-      if (cy > top + 16 && cy < H) ctx.fillText(String(i + 1), left + 8, cy);
+    // mã cột / hàng của lưới báo vị trí (drawGrid) trên mép
+    {
+      const G = this.grid(), cp = G.cell * k, a = this.worldToScreen(G.x0, G.z0);
+      ctx.fillStyle = 'rgba(232, 241, 246, 0.95)'; ctx.font = 'bold 11px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (let i = 0; i < G.cols; i++) { const cx = a.x + (i + 0.5) * cp; if (cx > left + 16 && cx < W) ctx.fillText(String.fromCharCode(65 + i), cx, top + 8); }
+      for (let j = 0; j < G.rows; j++) { const cy = a.y + (j + 0.5) * cp; if (cy > top + 16 && cy < H) ctx.fillText(String(j + 1), left + 8, cy); }
     }
     ctx.strokeStyle = 'rgba(95, 176, 220, 0.7)'; ctx.lineWidth = 2;
     const m = 8, Lc = 26;
@@ -970,7 +1222,7 @@ class TacticalMapController {
     ctx.strokeStyle = '#e8f1f6'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(sx0, sy0 - 5); ctx.lineTo(sx0, sy0); ctx.lineTo(sx0 + Ls, sy0); ctx.lineTo(sx0 + Ls, sy0 - 5);
     ctx.moveTo(sx0 + Ls / 2, sy0); ctx.lineTo(sx0 + Ls / 2, sy0 - 3); ctx.stroke();
-    ctx.fillStyle = '#e8f1f6'; ctx.font = '11px Share Tech Mono, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e8f1f6'; ctx.font = '11px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(`${mm} m`, sx0 + Ls + 8, sy0 - 1);
     const nx = W - 34, ny = H - 70;
     ctx.strokeStyle = 'rgba(232, 241, 246, 0.8)'; ctx.lineWidth = 1;
@@ -979,30 +1231,100 @@ class TacticalMapController {
     ctx.beginPath(); ctx.moveTo(nx, ny - 11); ctx.lineTo(nx + 4, ny); ctx.lineTo(nx - 4, ny); ctx.closePath(); ctx.fill();
     ctx.fillStyle = 'rgba(232, 241, 246, 0.8)';
     ctx.beginPath(); ctx.moveTo(nx, ny + 11); ctx.lineTo(nx + 4, ny); ctx.lineTo(nx - 4, ny); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#e8f1f6'; ctx.font = 'bold 9px Share Tech Mono, monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#e8f1f6'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
     ctx.fillText('N', nx, ny - 21);
+    // góc dưới trái: ô lưới của xe mình (để gọi vị trí qua bộ đàm) + ô / cự ly / hướng của điểm dưới con trỏ
+    const p = this.game.player, box = (y, txt, col) => {
+      ctx.font = '600 12px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const w = ctx.measureText(txt).width + 16;
+      ctx.fillStyle = 'rgba(10, 12, 10, 0.86)'; ctx.fillRect(28, y, w, 22);
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.45; ctx.lineWidth = 1; ctx.strokeRect(28.5, y + 0.5, w - 1, 21); ctx.globalAlpha = 1;
+      ctx.fillStyle = col; ctx.fillText(txt, 36, y + 11.5);
+    };
+    if (p && !p.isDead) box(H - 74, 'XE MÌNH · Ô ' + (this.gridRef(p.x, p.z) || '—'), '#7fe3f5');
+    if (this.mouse && !this.pan) {
+      const w = this.localToWorld(this.mouse.x, this.mouse.y);
+      let txt = 'CON TRỎ · Ô ' + (this.gridRef(w.x, w.z) || '—');
+      if (p && !p.isDead) {
+        const brg = ((Math.atan2(w.x - p.x, -(w.z - p.z)) * 180 / Math.PI) % 360 + 360) % 360;
+        txt += ' · ' + Math.round(Math.hypot(w.x - p.x, w.z - p.z)) + ' m · ' + String(Math.round(brg) % 360).padStart(3, '0') + '°';
+      }
+      box(H - 46, txt, '#e8f1f6');
+    }
     ctx.restore();
   }
 
-  // Nhãn chữ có khung; icon (tùy chọn) là tên icon Tabler vẽ trước chữ
-  tag(ctx, text, x, y, color, strong, icon) {
-    ctx.save();
-    const font = (strong ? 'bold 12px' : '11px') + ' Share Tech Mono, monospace';
-    const glyph = icon && typeof UIIcons !== 'undefined' ? UIIcons.glyph(icon) : '';
-    const iconW = glyph ? (strong ? 17 : 15) : 0;
+  // Nhãn chữ có khung; icon (tùy chọn) là tên icon Tabler vẽ trước chữ. Trong lúc vẽ khung hình (render) nhãn chỉ được
+  // xếp hàng, cuối khung layoutTags đặt chỗ một lượt: không đè ký hiệu xe / mục tiêu / nhãn khác (dời quanh điểm neo, kẻ
+  // nét nối khi dời xa). anchor: điểm nhãn chỉ vào (mặc định (x, y)); pri: nhãn quan trọng hơn được chọn chỗ trước
+  tag(ctx, text, x, y, color, strong, icon, anchor, pri) {
+    const t = { text, x, y, color, strong, icon, ax: anchor ? anchor.x : x, ay: anchor ? anchor.y : y, pri: pri || 0 };
+    if (this._tags) { this._tags.push(t); return; }
+    const m = this.measureTag(ctx, t);
+    this.drawTag(ctx, t, m, Math.max(24, Math.min(this.cssW - m.w - 8, x - m.w / 2)), Math.max(52, Math.min(this.cssH - m.h - 8, y - m.h / 2)));
+  }
+  measureTag(ctx, t) {
+    const font = (t.strong ? 'bold 12px' : '11px') + ' "JetBrains Mono", monospace';
+    const glyph = t.icon && typeof UIIcons !== 'undefined' ? UIIcons.glyph(t.icon) : '';
+    const iconW = glyph ? (t.strong ? 17 : 15) : 0;
     ctx.font = font;
-    const w = ctx.measureText(text).width + 12 + iconW, h = strong ? 19 : 16;
-    const px = Math.max(24, Math.min(this.cssW - w - 8, x - w / 2)), py = Math.max(24, Math.min(this.cssH - h - 8, y - h / 2));
-    ctx.fillStyle = 'rgba(10, 13, 12, 0.88)'; ctx.fillRect(px, py, w, h);
-    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, w - 1, h - 1);
-    ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    if (glyph) {
-      ctx.font = (strong ? 13 : 12) + 'px "' + UIIcons.FONT + '"';
-      ctx.fillText(glyph, px + 5, py + h / 2 + 0.5);
-      ctx.font = font;
+    return { font, glyph, iconW, w: ctx.measureText(t.text).width + 12 + iconW, h: t.strong ? 19 : 16 };
+  }
+  drawTag(ctx, t, m, px, py) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 13, 12, 0.9)'; ctx.fillRect(px, py, m.w, m.h);
+    ctx.strokeStyle = t.color; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, m.w - 1, m.h - 1);
+    ctx.fillStyle = t.color; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    if (m.glyph) {
+      ctx.font = (t.strong ? 13 : 12) + 'px "' + UIIcons.FONT + '"';
+      ctx.fillText(m.glyph, px + 5, py + m.h / 2 + 0.5);
     }
-    ctx.fillText(text, px + 6 + iconW, py + h / 2 + 0.5);
+    ctx.font = m.font;
+    ctx.fillText(t.text, px + 6 + m.iconW, py + m.h / 2 + 0.5);
     ctx.restore();
+  }
+  // Vùng ký hiệu (tâm x, y; nửa rộng / cao) nhãn không được đè
+  obstacle(x, y, hw, hh) {
+    if (this._obst && x + hw > 0 && y + hh > 0 && x - hw < this.cssW && y - hh < this.cssH) this._obst.push({ x0: x - hw, y0: y - hh, x1: x + hw, y1: y + hh });
+  }
+  layoutTags(ctx) {
+    const tags = this._tags, placed = (this._obst || []).slice();
+    this._tags = null; this._obst = null;
+    if (!tags || !tags.length) return;
+    const W = this.cssW, Hh = this.cssH, TOP = 52;
+    const overlap = (r) => {
+      let a = 0;
+      for (const q of placed) {
+        const ix = Math.min(r.x1, q.x1) - Math.max(r.x0, q.x0), iy = Math.min(r.y1, q.y1) - Math.max(r.y0, q.y0);
+        if (ix > 0 && iy > 0) a += ix * iy;
+      }
+      return a;
+    };
+    tags.sort((a, b) => b.pri - a.pri);
+    for (const t of tags) {
+      const m = this.measureTag(ctx, t), w = m.w, h = m.h, cands = [[t.x, t.y]];
+      for (const D of [14, 28, 46, 66]) {
+        const d = D * 0.75;
+        cands.push([t.ax, t.ay - D - h / 2], [t.ax, t.ay + D + h / 2], [t.ax + D + w / 2, t.ay], [t.ax - D - w / 2, t.ay],
+          [t.ax + d + w / 2, t.ay - d - h / 2], [t.ax - d - w / 2, t.ay - d - h / 2], [t.ax + d + w / 2, t.ay + d + h / 2], [t.ax - d - w / 2, t.ay + d + h / 2]);
+      }
+      let best = null, bestA = Infinity;
+      for (const [cx, cy] of cands) {
+        const x0 = Math.max(24, Math.min(W - w - 8, cx - w / 2)), y0 = Math.max(TOP, Math.min(Hh - h - 8, cy - h / 2));
+        const r = { x0: x0 - 2, y0: y0 - 2, x1: x0 + w + 2, y1: y0 + h + 2 }, a = overlap(r);
+        if (a < bestA) { bestA = a; best = { x0, y0, r }; if (a === 0) break; }
+      }
+      placed.push(best.r);
+      // dời xa chỗ muốn: nét mảnh từ cạnh ký hiệu tới mép nhãn gần nhất
+      const nx = Math.max(best.x0, Math.min(best.x0 + w, t.ax)), ny = Math.max(best.y0, Math.min(best.y0 + h, t.ay));
+      const dl = Math.hypot(nx - t.ax, ny - t.ay);
+      if (Math.hypot(best.x0 + w / 2 - t.x, best.y0 + h / 2 - t.y) > 4 && dl > 16) {
+        const ux = (nx - t.ax) / dl, uy = (ny - t.ay) / dl;
+        ctx.save(); ctx.strokeStyle = t.color; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(t.ax + ux * 12, t.ay + uy * 12); ctx.lineTo(nx, ny); ctx.stroke(); ctx.restore();
+      }
+      this.drawTag(ctx, t, m, best.x0, best.y0);
+    }
   }
 
   // Rê chuột lên đơn vị / cứ điểm: chỉ hiện tên ngắn
@@ -1035,5 +1357,15 @@ class TacticalMapController {
     box.textContent = text;
   }
 }
+
+TacticalMapController.BASE_N = 2048;     // cạnh nền cả bản đồ (điểm ảnh)
+TacticalMapController.TILE_N = 512;      // cạnh ô nét khi phóng to
+TacticalMapController.TILE_CACHE = 48;   // số ô nhớ tối đa (~1 MB / ô)
+// Chạy generator dựng nền (paintTerrain) tới khi xong hoặc hết ngân sách ms; true = xong
+TacticalMapController.runFor = (it, budget) => {
+  const t0 = performance.now();
+  do { if (it.next().done) return true; } while (performance.now() - t0 < budget);
+  return false;
+};
 
 window.TacticalMapController = TacticalMapController;

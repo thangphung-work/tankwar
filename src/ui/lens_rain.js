@@ -23,10 +23,10 @@ const LensRain = (() => {
     c.fillStyle = g; c.beginPath(); c.arc(32, 32, 30, 0, Math.PI * 2); c.fill();
     // đốm sáng phản chiếu phía trên-trái
     g = c.createRadialGradient(23, 21, 0, 23, 21, 9);
-    g.addColorStop(0, 'rgba(255,255,255,0.7)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    g.addColorStop(0, 'rgba(210,220,230,0.38)'); g.addColorStop(1, 'rgba(210,220,230,0)');
     c.fillStyle = g; c.beginPath(); c.arc(23, 21, 9, 0, Math.PI * 2); c.fill();
     // vành sáng mảnh phía dưới (ánh trời hội tụ qua giọt)
-    c.strokeStyle = 'rgba(255,255,255,0.22)'; c.lineWidth = 2.5;
+    c.strokeStyle = 'rgba(210,220,230,0.12)'; c.lineWidth = 2.5;
     c.beginPath(); c.arc(32, 32, 22, Math.PI * 0.2, Math.PI * 0.8); c.stroke();
     return s;
   }
