@@ -18,6 +18,8 @@ const Grenade40 = (() => {
   // không phá bằng cách gỡ rời: giáp / gạch nổ (hệ phân khối riêng), bánh xe / xích (có hàm riêng), nắp
   const SKIP = /^(armor|applique|era|cage|skirt|wheel|track|hatch|hull|turret|crew|gun|barrel|engine)/i;
 
+  const penOf = (AO) => (AO && AO.armor !== undefined ? PEN_MM > AO.armor : false);
+
   function onHit(u, opts, r) {
     if (!opts || !opts.gl40 || !u || u.isDead || !r || r.intercepted) return;
     if (u.tankType !== 'ALL_ROUNDER' && u.tankType !== 'GATLING') return;
@@ -25,7 +27,8 @@ const Grenade40 = (() => {
     const hit = opts.hit, events = r.events || (r.events = []);
     if (hit && hit.ricochet) { r.mul = Math.max(r.mul, 0.02); return; }
     const key = (AO && AO.key) || 'side';
-    const pen = AO && AO.armor !== undefined ? PEN_MM > AO.armor : false;
+    const pen = penOf(AO);
+    r.pen = pen;   // vết trên vỏ (ExplosionFX.armorHitMarks): lỗ thủng chỉ khi thật sự xuyên
     r.mul = pen ? PEN_MUL : (NONPEN[key] !== undefined ? NONPEN[key] : 0.12);
     if (pen) events.push({ type: 'gl40', text: `LỰU 40MM XUYÊN ${key === 'top' ? 'NÓC' : key === 'rear' ? 'ĐUÔI' : 'SƯỜN'} (${PEN_MM} mm > ${Math.round(AO.armor)} mm) — luồng nổ lõm lọt vào trong` });
     // mảnh văng & sức nổ phá đồ gắn ngoài sát điểm nổ
@@ -65,6 +68,8 @@ const Grenade40 = (() => {
     VD.onDirectHit = function (u, opts) {
       const r = oH.apply(this, arguments);
       if (!vis) { try { onHit(u, opts, r); } catch (e) { console.error('[Grenade40]', e); } }
+      // máy khác chỉ vẽ hình: vẫn dán lỗ thủng / vết sém theo cùng luật xuyên 65 mm như máy bắn
+      else if (r && opts && opts.gl40 && !r.intercepted && !(opts.hit && opts.hit.ricochet) && u && (u.tankType === 'ALL_ROUNDER' || u.tankType === 'GATLING')) r.pen = penOf(VD.state(u).lastOutcome);
       return r;
     };
   }

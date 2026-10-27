@@ -75,6 +75,9 @@
     const roofCtx = { parent: unit.turretGroup, seat: [6.6, 5.6, 5.8], yBase: ROOF_Y + 5.6, M, P: M.paint, D: M.dark, unit, rnd };
     unit.mountRoof = (id) => { if (window.RoofMounts) RoofMounts.mount(roofCtx, id); };
 
+    // Allocate before the first rendered frame so shader compilation is part of scene setup.
+    ensureCasePool(gun, unit);
+
     let lastYaw = null;
     let scanTime = rnd() * 10;
     unit.modelAnimator = {
@@ -207,7 +210,27 @@
       hb.strut(p0, mid, 0.62, M.paintDusty, 10);
       hb.strut(mid, p1, 0.3, M.steel, 8);
       hb.box(1.2, 1.0, 1.0, D, [s * 5.0, 9.0, -30.0]);
+      // chạc chữ U + chốt ngang ở 2 đầu xi-lanh, 2 ống dầu cao áp bọc lò xo chống mài từ thân xi-lanh về giá, khớp nối nhanh
+      for (const [q, w] of [[p0, 1.3], [p1, 0.9]]) {
+        for (const dx of [-0.42, 0.42]) hb.box(0.16, 0.9, 0.9, D, [q[0] + dx, q[1], q[2]]);
+        hb.cyl(0.18, 0.18, w, 8, M.steel, q, 'x');
+      }
+      for (const dy of [0.35, -0.2]) {
+        const a = [s * (5.0 + 0.55), 8.6 + dy, -31.4], b2 = [s * (6.4), 8.2 + dy, -29.6], c2 = [s * 7.6, 6.8 + dy, -28.8];
+        hb.strut(a, b2, 0.13, D, 6);
+        hb.strut(b2, c2, 0.13, D, 6);
+        hb.cyl(0.2, 0.2, 0.35, 8, M.steel, a, 'z');
+      }
+      // chốt bản lề tay đẩy + đai ốc, mặt bích giá
+      hb.cyl(0.32, 0.32, 2.4, 10, M.steel, [s * 8.4, 3.8, -34.5], 'x');
+      for (const dx of [-1.25, 1.25]) hb.cyl(0.42, 0.42, 0.22, 6, D, [s * 8.4 + dx, 3.8, -34.5], 'x');
     }
+    // mũi xén 2 đầu lưỡi (thép mangan thay rời) + hàng bu-lông dầm đỉnh lưỡi
+    for (const s of [-1, 1]) {
+      hb.box(0.7, 2.2, 1.4, M.steelWorn || M.steel, [s * 15.6, 1.9, -36.4]);
+      for (const y of [1.4, 2.4]) hb.cyl(0.14, 0.14, 0.16, 6, D, [s * 15.6, y, -37.15], 'z');
+    }
+    for (let k = 0; k < 12; k++) hb.cyl(0.13, 0.13, 0.14, 6, D, [-14.3 + k * 2.6, 8.7, -37.0], 'z');
     hb.setTag(null);
   }
 
@@ -282,6 +305,11 @@
     const px = J() * 0.6, py = J() * 3;
     hb.cyl(0.42, 0.42, 0.05, 8, M.steel, N(px, py, -2.07), 'z', nRot);
     hb.cyl(0.2, 0.2, 0.07, 8, S, N(px, py, -2.1), 'z', nRot);
+    // tai cẩu hàn trên nắp mũi + vạch số trọng lượng in khuôn sơn trắng mờ cạnh khe nhìn
+    for (const dx of [-0.7, 0.7]) {
+      hb.box(0.24, 0.8, 0.9, P, N(dx, H / 2 + 0.3, -1.25), nRot);
+      hb.cyl(0.24, 0.24, 0.3, 10, D, N(dx, H / 2 + 0.45, -1.25), 'x', nRot);
+    }
     hb.setTag(null);
   }
 
@@ -857,9 +885,10 @@
 
     // Khối giáp bổ sung mặt trước hai bên hộp pháo
     for (const s of [-1, 1]) {
-      const pts = [[s * 3.9, -10.1], [s * 9.0, -10.1], [s * 9.0, -11.3], [s * 4.6, -12.6]];
+      const bot = [[s * 3.9, -9.85], [s * 8.6, -9.85], [s * 9.0, -11.3], [s * 4.6, -12.6]];
+      const top = [[s * 3.9, -8.70], [s * 8.6, -8.70], [s * 9.0, -11.3], [s * 4.6, -12.6]];
       tb.setTag('cheek' + (s < 0 ? 'L' : 'R'));
-      tb.add(VehicleKit.loft(pts, pts, 0.8, [5.0, 5.0, 4.6, 3.9]), P);
+      tb.add(VehicleKit.loft(bot, top, 0.8, [5.0, 5.0, 4.6, 3.9]), P);
       for (let i = 0; i < 3; i++) {
         const k = (i + 0.5) / 3;
         tb.cyl(0.18, 0.18, 0.2, 6, D, [s * (9.0 + (4.6 - 9.0) * k), 4.6 + (3.9 - 4.6) * k - 0.2, -11.3 + (-12.6 + 11.3) * k]);
@@ -1020,7 +1049,7 @@
         tb.add(new THREE.TorusGeometry(0.46, 0.15, 5, 10), M.steel, [s * 7.4, TROOF + 0.45, z], [0, Math.PI / 2, 0]);
       }
       // Mối hàn chân khối giáp bổ sung mặt trước
-      tb.weld([s * 4.0, 5.02, -10.0], [s * 8.9, 5.02, -10.0], P, 0.1);
+      tb.weld([s * 4.0, 5.02, -8.72], [s * 8.6, 5.02, -8.72], P, 0.1);
     }
     // Nóc: đường ghép ngang, nấm thông gió
     tb.seam([-7.6, TROOF + 0.02, -2.2], [7.6, TROOF + 0.02, -2.2], [0, 1, 0], D);
@@ -1118,6 +1147,15 @@
     mb.cyl(0.16, 0.2, 0.75, 8, M.dark, [0, 3.85, -4.35], 'z');
     mb.cyl(0.24, 0.24, 0.12, 8, M.rubber, [0, 3.85, -4.75], 'z');
     for (const a of [0, 2.1, 4.2]) mb.strut([Math.cos(a) * 0.95, 3.85 + Math.sin(a) * 0.95, -4.0], [0, 3.85, -4.6], 0.04, M.dark, 4);
+    // Máng xả vỏ đạn dưới đáy hộp pháo: khóa nòng rút vỏ ra ở đuôi rotor (trong hộp), vỏ rơi theo máng dẹt ôm sát đáy hộp
+    // (khe tới nóc xe chỉ ~10 cm khi hạ nòng hết cỡ phía trước) và phụt ra miệng vát chéo xuống - ra trước, ngay dưới vỏ rotor.
+    // Đặt giữa: bên phải là lưới tản nhiệt nhô cao, bên trái súng máy đồng trục
+    const chB = [[-0.8, -4.0], [0.8, -4.0], [0.8, -6.3], [-0.8, -6.3]], chT = [[-0.8, -4.0], [0.8, -4.0], [0.8, -6.95], [-0.8, -6.95]];
+    mb.add(VehicleKit.loft(chB, chT, -2.74, -2.38), M.dark);
+    for (const z of [-4.35, -5.6]) mb.box(1.74, 0.4, 0.12, M.dark, [0, -2.57, z]);                 // đai bắt máng vào đáy hộp
+    // mặt vát miệng máng hướng (0, -0.875, -0.485); xoay X -1.065 đưa trục z hộp vuông góc mặt vát
+    for (const s of [-1, 1]) mb.box(0.12, 0.7, 0.06, M.steel, [s * 0.74, -2.586, -6.64], [-1.065, 0, 0]);   // mép miệng máng mòn sáng
+    mb.box(1.36, 0.6, 0.02, M.bore, [0, -2.572, -6.632], [-1.065, 0, 0]);                         // lòng máng tối
     mb.build(pivot);
 
     const barrel = new THREE.Group();
@@ -1370,12 +1408,12 @@
     if (fx.withWind) fx.withWind(add); else add();
   }
 
-  // VỎ ĐẠN 30mm: cửa hất vỏ bên phải dưới vỏ rotor — vỏ đồng thau văng ra ngoài, rơi xuống sàn trước / nóc sườn xe, nảy
+  // VỎ ĐẠN 30mm: phụt ra miệng máng xả dưới đáy hộp pháo (chéo xuống - ra trước) — vỏ đồng thau rơi xuống sàn trước, nảy
   // leng keng, trượt ra mép rồi lăn xuống đất, nằm lại ~12 s rồi lún dần vào đất. Mỗi xe một InstancedMesh (một lượt vẽ)
   const CASE_N = 120, CASE_LIFE = 12;
   let caseGeo = null, caseMat = null;
   const _cm = new THREE.Matrix4(), _cq = new THREE.Quaternion(), _ce = new THREE.Euler(), _cs = new THREE.Vector3(), _cv = new THREE.Vector3();
-  function ejectCase(gun, u) {
+  function ensureCasePool(gun, u) {
     if (!u.scene || !gun.cluster.parent || !nearView(u, 520)) return;
     if (!gun.cases) {
       if (!caseGeo) {
@@ -1388,30 +1426,45 @@
       _cm.makeScale(0, 0, 0);
       for (let i = 0; i < CASE_N; i++) im.setMatrixAt(i, _cm);
       u.scene.add(im);
-      const C = gun.cases = { im, items: [], next: 0, last: 0, lastEject: 0 };
+      const C = gun.cases = { im, items: [], next: 0, last: 0, lastEject: 0, started: false };
       // tự cập nhật theo đồng hồ lúc vẽ (không phụ thuộc vòng cập nhật của mô hình: xe bị hạ / dựng lại mô hình vỏ đạn vẫn
       // rơi nốt rồi tự gỡ khỏi cảnh khi hết vỏ)
       im.onBeforeRender = () => {
         const now = performance.now();
         const dt = C.last ? Math.min(0.05, (now - C.last) / 1000) : 0;
         C.last = now;
-        if (!updateCases(gun, u, dt) && now - C.lastEject > 3000) {
+        if (!updateCases(gun, u, dt) && !u.group.parent && now - C.lastEject > 3000) {
           if (im.parent) im.parent.remove(im);
           im.dispose && im.dispose();
           if (gun.cases === C) gun.cases = null;
         }
       };
     }
-    const C = gun.cases, bg = gun.cluster.parent;
+    return gun.cases;
+  }
+  function ejectCase(gun, u) {
+    const C = ensureCasePool(gun, u);
+    if (!C) return;
+    // máng xả gắn trên giá pháo (barrelPivot, dựng trong buildRotaryCannon): ngóc / hạ theo nòng
+    const bg = u.barrelPivot || gun.cluster.parent;
+    C.started = true;
     C.lastEject = performance.now();
     bg.updateMatrixWorld(true);
-    const p = bg.localToWorld(_cv.set(2.0, -1.6, -8.2)).clone();
-    const right = new THREE.Vector3().setFromMatrixColumn(bg.matrixWorld, 0).normalize();
-    const fwd = new THREE.Vector3().setFromMatrixColumn(bg.matrixWorld, 2).normalize();   // +Z nhóm nòng = về phía sau
-    const R = Math.random, sp = 9 + R() * 6;
+    const R = Math.random;
+    // miệng máng rộng 1.36: vỏ ra ở chỗ nào dọc miệng cũng được
+    const p = bg.localToWorld(_cv.set((R() - 0.5) * 0.9, -2.72, -6.72)).clone();
+    // hướng phụt: giữa pháp tuyến miệng vát (0, -0.875, -0.485) và dọc lòng máng (ra trước), hệ giá pháo
+    const d = new THREE.Vector3((R() - 0.5) * 0.25, -0.62 - R() * 0.2, -0.78).normalize().transformDirection(bg.matrixWorld);
+    // Vỏ bị khóa nòng đẩy dồn ra máng nên phụt ra miệng nhanh; mỗi vỏ va thành máng một kiểu nên tốc độ lệch nhau
+    const sp = 14 + R() * 9;
+    const carryX = -Math.sin(u.bodyAngle || 0) * (u.speed || 0);
+    const carryZ = -Math.cos(u.bodyAngle || 0) * (u.speed || 0);
+    // vỏ nằm ngang trong máng (trục vỏ dọc trục X của giá pháo): rz = -π/2, ry theo hướng tháp + lệch chút
+    const yaw = Math.atan2(-d.x, -d.z) + (R() - 0.5) * 0.4;
     const it = { i: C.next, x: p.x, y: p.y, z: p.z,
-      vx: right.x * sp + fwd.x * (2 + R() * 3) + (R() - 0.5) * 2, vy: 2 + R() * 4, vz: right.z * sp + fwd.z * (2 + R() * 3) + (R() - 0.5) * 2,
-      rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - 0.5) * 30, wy: (R() - 0.5) * 20, wz: (R() - 0.5) * 30, t: 0, rest: false, dir: Math.sign(right.x * (p.x - u.x) + right.z * (p.z - u.z)) || 1 };
+      vx: carryX + d.x * sp, vy: d.y * sp, vz: carryZ + d.z * sp,
+      rx: (R() - 0.5) * 0.3, ry: yaw, rz: -Math.PI / 2 + (R() - 0.5) * 0.3,
+      wx: (R() - 0.5) * 14, wy: (R() - 0.5) * 6, wz: (R() - 0.5) * 8, t: 0, rest: false };
     C.items[C.next] = it;
     C.next = (C.next + 1) % CASE_N;
   }
@@ -1419,57 +1472,178 @@
   function caseFloor(u, x, y, z) {
     const T = typeof window !== 'undefined' && window.game && window.game.terrain;
     const ground = T && T.getElevationAt ? T.getElevationAt(x, z) : (u.y || 0);
-    // hệ unit.group (không phải chassisGroup: khung gầm được hệ treo nâng lên, hằng số nóc ROOF_Y... đo theo hệ thân xe)
-    const ch = u.group;
+    // buildHull puts the roof geometry in chassisGroup, including suspension pitch/roll.
+    const ch = u.chassisGroup || u.group;
     if (!ch) return { y: ground, deck: false };
     const l = ch.worldToLocal(_cs.set(x, y, z));
     const ax = Math.abs(l.x);
-    if (ax > HULL_HALF_W || l.z < NOSE_Z || l.z > 30) return { y: ground, deck: false };
-    const top = ax > 11 ? SPONSON_Y : (l.z < -14.5 ? NOSE_Y + (l.z - NOSE_Z) * GLACIS_SLOPE : ROOF_Y);
-    if (l.y < top - 1.5) return { y: ground, deck: false };   // đã lọt xuống dưới mép (rơi ngoài sườn)
+    if (ax > HULL_HALF_W || l.z < NOSE_Z || l.z > 29.4) return { y: ground, deck: false };
+    // The upper hull spans the full width; SPONSON_Y is the lower side, not the deck.
+    let top = l.z < -14.5 ? glacisY(l.z)
+      : l.z > 27.8 ? ROOF_Y + (l.z - 27.8) * (13.2 - ROOF_Y) / 1.6 : ROOF_Y;
+    const grille = (l.x >= 0.85 && l.x <= 13.35 && l.z >= -13.75 && l.z <= -3.25)
+      || (l.x >= -13.35 && l.x <= -3.05 && l.z >= -7.95 && l.z <= -3.25);
+    if (grille) top = Math.max(top, ROOF_Y + 0.42);
+    // The casing starts above the vehicle. Testing only its end-of-frame height made it
+    // tunnel through the deck on a long frame; the deck remains the support surface
+    // while the casing is inside its horizontal footprint.
     _cs.set(l.x, top, l.z);
     ch.localToWorld(_cs);
     return { y: _cs.y, deck: true };
+  }
+  // Vỏ nằm trên mặt đỡ không được lồng vào nhau: coi mỗi vỏ là một đoạn thẳng dày (bán kính 0.19) trên mặt phẳng XZ,
+  // đẩy cặp chồng nhau ra theo hướng điểm gần nhất -> vỏ dồn thành thảm / đống lan ra thay vì chui vào một chỗ
+  const CASE_HALF = 0.47, CASE_GAP = 0.36;
+  function closestOnSegs(a, b) {
+    // Ericson, Real-Time Collision Detection 5.1.9, bản 2D; đoạn = tâm ± trục * CASE_HALF
+    const d1x = a.ax * 2 * CASE_HALF, d1z = a.az * 2 * CASE_HALF, d2x = b.ax * 2 * CASE_HALF, d2z = b.az * 2 * CASE_HALF;
+    const p1x = a.x - a.ax * CASE_HALF, p1z = a.z - a.az * CASE_HALF, p2x = b.x - b.ax * CASE_HALF, p2z = b.z - b.az * CASE_HALF;
+    const rx = p1x - p2x, rz = p1z - p2z;
+    const A = d1x * d1x + d1z * d1z, E = d2x * d2x + d2z * d2z, F = d2x * rx + d2z * rz;
+    const c = d1x * rx + d1z * rz, bb = d1x * d2x + d1z * d2z, den = A * E - bb * bb;
+    if (A < 1e-6 || E < 1e-6) return [a.x - b.x, a.z - b.z];   // vỏ dựng đứng: coi như một chấm
+    let s = den > 1e-6 ? Math.min(1, Math.max(0, (bb * F - c * E) / den)) : 0;
+    let t = (bb * s + F) / E;
+    if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -c / A)); }
+    else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (bb - c) / A)); }
+    return [p1x + d1x * s - (p2x + d2x * t), p1z + d1z * s - (p2z + d2z * t)];
+  }
+  function separateCases(C, u) {
+    const list = [];
+    for (const it of C.items) {
+      if (!it || it.dead || !(it.rest || it.grounded)) continue;
+      _cq.setFromEuler(_ce.set(it.rx, it.ry, it.rz, 'YXZ'));
+      let ax = 2 * (_cq.x * _cq.y - _cq.w * _cq.z), az = 2 * (_cq.y * _cq.z + _cq.w * _cq.x);
+      const al = Math.hypot(ax, az);
+      if (al > 1e-4) { ax /= al; az /= al; } else { ax = 1; az = 0; }
+      // vỏ còn dựng nghiêng thì phần chiếu xuống ngắn lại
+      it.ax = ax * Math.min(1, al); it.az = az * Math.min(1, al);
+      list.push(it);
+    }
+    const ch = u.chassisGroup || u.group;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        if (Math.abs(a.y - b.y) > 0.5) continue;
+        const cx = a.x - b.x, cz = a.z - b.z;
+        if (cx * cx + cz * cz > 1.4 * 1.4) continue;
+        let [nx, nz] = closestOnSegs(a, b);
+        let d = Math.hypot(nx, nz);
+        if (d >= CASE_GAP) continue;
+        if (d < 1e-4) { const r = Math.random() * Math.PI * 2; nx = Math.cos(r); nz = Math.sin(r); d = 1; }
+        nx /= d; nz /= d;
+        const push = CASE_GAP - Math.min(d, CASE_GAP);
+        // vỏ đang nằm yên giữ chỗ, vỏ mới tới bị gạt ra; hai vỏ cùng nằm yên thì vỏ trẻ hơn nhường
+        let wa = 0.5, wb = 0.5;
+        if (a.rest && !b.rest) { wa = 0; wb = 1; }
+        else if (b.rest && !a.rest) { wa = 1; wb = 0; }
+        else if (a.rest && b.rest) { if (a.t < b.t) { wa = 1; wb = 0; } else { wa = 0; wb = 1; } }
+        a.x += nx * push * wa; a.z += nz * push * wa;
+        b.x -= nx * push * wb; b.z -= nz * push * wb;
+        // va chạm mềm: bỏ phần vận tốc đang lao vào nhau
+        const rel = (a.vx - b.vx) * nx + (a.vz - b.vz) * nz;
+        if (rel < 0) {
+          a.vx -= nx * rel * wa; a.vz -= nz * rel * wa;
+          b.vx += nx * rel * wb; b.vz += nz * rel * wb;
+        }
+        for (const [it, w] of [[a, wa], [b, wb]]) {
+          if (!w || !it.rest) continue;
+          const F = caseFloor(u, it.x, it.y, it.z);
+          it.y = F.y + 0.19; it.onDeck = F.deck; it.deckY = F.y;
+          it.deckLocal = F.deck && ch ? ch.worldToLocal(new THREE.Vector3(it.x, it.y, it.z)) : null;
+        }
+      }
+    }
   }
   // trả về còn vỏ nào đang hiện không
   function updateCases(gun, u, dt) {
     const C = gun.cases;
     if (!C) return false;
-    const G = 78, h = Math.min(dt, 0.05);
+    const G = 78, frameDt = Math.max(0, Math.min(dt, 0.15));
+    const h = 1 / 120;
+    C.accumulator = (C.accumulator || 0) + frameDt;
+    const steps = Math.floor((C.accumulator + 1e-9) / h);
+    C.accumulator = Math.max(0, C.accumulator - steps * h);
     let any = false, alive = false;
     for (const it of C.items) {
       if (!it || it.dead) continue;
-      it.t += h;
+      it.t += frameDt;
       if (it.t > CASE_LIFE) { it.dead = true; _cm.makeScale(0, 0, 0); C.im.setMatrixAt(it.i, _cm); any = true; continue; }
       alive = true;
-      if (!it.rest) {
+      if (it.rest && it.deckLocal) {
+        _cv.copy(it.deckLocal).applyMatrix4((u.chassisGroup || u.group).matrixWorld);
+        it.x = _cv.x; it.y = _cv.y; it.z = _cv.z;
+        it.deckY = caseFloor(u, it.x, it.y, it.z).y;
+      }
+      for (let step = 0; step < steps && !it.rest; step++) {
         it.vy -= G * h;
         it.x += it.vx * h; it.y += it.vy * h; it.z += it.vz * h;
         it.rx += it.wx * h; it.ry += it.wy * h; it.rz += it.wz * h;
+        _cq.setFromEuler(_ce.set(it.rx, it.ry, it.rz, 'YXZ'));
+        const axisY = 1 - 2 * (_cq.x * _cq.x + _cq.z * _cq.z);
+        const half = 0.66 * Math.abs(axisY) + 0.19 * Math.sqrt(Math.max(0, 1 - axisY * axisY));
         const F = caseFloor(u, it.x, it.y, it.z);
-        if (it.y <= F.y + 0.2) {
-          it.y = F.y + 0.2;
-          if (it.vy < -6) {
-            // nảy: mất phần lớn vận tốc đứng, quay lật; tiếng leng keng do gatling.js (dropChuteCasing) lo
-            it.vy = -it.vy * 0.28; it.vx *= 0.55; it.vz *= 0.55; it.wx *= 0.6; it.wz *= 0.6;
-          } else if (F.deck) {
-            // nằm trên nóc / sàn xe: lăn trượt ra phía mép theo hướng đã văng (xe rung khi bắn), rồi rơi khỏi mép
-            it.vy = 0;
-            const k = Math.exp(-h * 2.5);
-            it.vx *= k; it.vz *= k;
-            if (Math.hypot(it.vx, it.vz) < 2.5) { it.vx += (it.x - u.x) * 0.15 * h * 10; it.vz += (it.z - u.z) * 0.15 * h * 10; }
-            it.rz += 6 * h;
+        it.onDeck = F.deck;
+        it.deckY = F.y;
+        it.grounded = it.y <= F.y + half + 0.05;
+        if (it.y <= F.y + half) {
+          it.y = F.y + half;
+          if (it.vy < -4) {
+            // nảy: mất phần lớn vận tốc đứng, quay lật; tiếng leng keng do gatling.js (dropChuteCasing) lo.
+            // Trụ chạm đất bằng mép / đầu nên bật lệch ngẫu nhiên sang bên chứ không nảy thẳng tại chỗ
+            const impact = -it.vy, R = Math.random, a = R() * Math.PI * 2, kick = impact * (0.06 + R() * 0.16);
+            const keep = 0.6 + R() * 0.25;
+            it.vy = impact * (0.14 + R() * 0.2);
+            it.vx = it.vx * keep + Math.cos(a) * kick; it.vz = it.vz * keep + Math.sin(a) * kick;
+            it.wx = it.wx * 0.5 + (R() - 0.5) * impact * 0.8;
+            it.wy = it.wy * 0.5 + (R() - 0.5) * impact * 0.5;
+            it.wz = it.wz * 0.5 + (R() - 0.5) * impact * 0.8;
           } else {
-            // nằm trên đất: nằm nghiêng hẳn, lăn thêm chút rồi đứng yên
-            it.vy = 0; it.vx *= 0.3; it.vz *= 0.3; it.rx = Math.PI / 2; it.wx = it.wy = it.wz = 0;
-            if (Math.hypot(it.vx, it.vz) < 0.3) it.rest = true;
+            // Friction only removes energy. The old outward push made slow cases crawl
+            // forever, and its forced spin pumped them up and down on their ends.
+            // Vỏ nằm ngang: dọc trục thì trượt (ma sát lớn), vuông góc trục thì lăn (ma sát lăn nhỏ hơn nhiều)
+            it.vy = 0;
+            _cq.setFromEuler(_ce.set(it.rx, it.ry, it.rz, 'YXZ'));
+            let ax = 2 * (_cq.x * _cq.y - _cq.w * _cq.z), az = 2 * (_cq.y * _cq.z + _cq.w * _cq.x);
+            const al = Math.hypot(ax, az);
+            if (al > 1e-4) { ax /= al; az /= al; } else { ax = 1; az = 0; }
+            const vAx = it.vx * ax + it.vz * az, pX = it.vx - ax * vAx, pZ = it.vz - az * vAx;
+            const vPerp = Math.hypot(pX, pZ);
+            const slide = F.deck ? 22 : 35, roll = F.deck ? 5 : 11;
+            const kA = Math.abs(vAx) > 0 ? Math.max(0, 1 - slide * h / Math.abs(vAx)) : 0;
+            const kP = vPerp > 0 ? Math.max(0, 1 - roll * h / vPerp) : 0;
+            it.vx = ax * vAx * kA + pX * kP; it.vz = az * vAx * kA + pZ * kP;
+            const speed = Math.hypot(it.vx, it.vz);
+            const damp = Math.exp(-h * 12), settle = 1 - damp;
+            it.wx *= damp; it.wy *= damp; it.wz *= damp;
+            const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+            it.rx += wrap(Math.PI / 2 - it.rx) * settle;
+            it.rz += wrap(-it.rz) * settle;
+            _cq.setFromEuler(_ce.set(it.rx, it.ry, it.rz, 'YXZ'));
+            const ay = 1 - 2 * (_cq.x * _cq.x + _cq.z * _cq.z);
+            it.y = F.y + 0.66 * Math.abs(ay) + 0.19 * Math.sqrt(Math.max(0, 1 - ay * ay));
+            if (speed < 0.15 && Math.abs(wrap(it.rx - Math.PI / 2)) < 0.015 && Math.abs(wrap(it.rz)) < 0.015) {
+              it.rest = true; it.vx = it.vy = it.vz = it.wx = it.wy = it.wz = 0;
+              if (F.deck) it.deckLocal = (u.chassisGroup || u.group).worldToLocal(new THREE.Vector3(it.x, it.y, it.z));
+            }
           }
         }
       }
+    }
+    separateCases(C, u);
+    for (const it of C.items) {
+      if (!it || it.dead) continue;
       // ~2 s cuối: lún dần vào đất / cát rồi biến mất
-      const sink = Math.max(0, it.t - (CASE_LIFE - 2)) * 0.25;
-      _ce.set(it.rx, it.ry, it.rz);
+      const sink = it.onDeck ? 0 : Math.max(0, it.t - (CASE_LIFE - 2)) * 0.25;
+      _ce.set(it.rx, it.ry, it.rz, 'YXZ');
       _cq.setFromEuler(_ce);
+      if (it.onDeck) {
+        // Rolling changes the rim's lowest point after contact resolution.
+        const ay = 1 - 2 * (_cq.x * _cq.x + _cq.z * _cq.z);
+        const half = 0.66 * Math.abs(ay) + 0.19 * Math.sqrt(Math.max(0, 1 - ay * ay));
+        it.y = Math.max(it.y, it.deckY + half);
+      }
       _cs.set(1, 1, 1);
       _cm.compose(_cv.set(it.x, it.y - sink, it.z), _cq, _cs);
       C.im.setMatrixAt(it.i, _cm);
@@ -1496,11 +1670,16 @@
     // xe, trôi theo gió (withWind), loạt ngắn chỉ vài túm mỏng tan nhanh
     const k = Math.min(1, (gun.burst || 0) / 180);
     const R = Math.random, sp = 14 + R() * 12, g = 0.66 + R() * 0.08;
+    // người chơi đang nhìn qua kính ngắm của chính xe này: làn khói đọng ngay trước cụm nòng chỉ cách ống kính ~5 m — kính
+    // phóng đại ×3-×6 không lấy nét ở cự ly đó nên thấy một lớp mờ loãng, không phải khối khói tròn sắc mép che giữa kính
+    // (hạt khói phóng to theo kính thành đĩa xám đặc che mất drone). Nhìn từ ngoài xe vẫn thấy đủ làn khói
+    const G = typeof window !== 'undefined' && window.game, S = G && G._sight, optic = !!(S && !S.arty && S.unit === u);
+    const aK = optic ? 0.3 : 1;
     const add = () => fx.smoke.add({
       x: _sp.x + _sd.x * 2, y: _sp.y + _sd.y * 2, z: _sp.z + _sd.z * 2,
       vx: _sd.x * sp + (R() - 0.5) * 3, vy: _sd.y * sp + 1 + R() * 2, vz: _sd.z * sp + (R() - 0.5) * 3,
       size: 0.8 + R() * 0.5 + k * 1.6, grow: 3.5 + k * 3, drag: 3.2, grav: -1.2, life: 1.6 + R() * 0.8 + k * 4.5,
-      alpha: 0.15 + R() * 0.07 + k * 0.1, fadeIn: 0.03, c0: [g, g * 0.98, g * 0.95], cell: 0, floor: false
+      alpha: (0.15 + R() * 0.07 + k * 0.1) * aK, fadeIn: 0.03, c0: [g, g * 0.98, g * 0.95], cell: 0, floor: false
     });
     if (fx.withWind) fx.withWind(add); else add();
   }

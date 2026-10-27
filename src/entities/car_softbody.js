@@ -218,6 +218,22 @@ const CarSoftBody = (() => {
       for (let q = 0; q < KN; q++) { const i = B.idx[v * KN + q], w = B.wt[v * KN + q]; dx += w * (P[3 * i] - R[3 * i]); dy += w * (P[3 * i + 1] - R[3 * i + 1]); dz += w * (P[3 * i + 2] - R[3 * i + 2]); k += w * nodeK(i); }
       out[0] = dx; out[1] = dy; out[2] = dz; out[3] = k; return out;
     };
+    // Dựng lại cả lưới (civil_cars crushGeo): mỗi đỉnh gọi dispOf -> nodeK + hiệu P - R của 6 điểm khung tính đi tính lại.
+    // prepDisp tính sẵn 1 lần / lượt cho mọi điểm (khung không đổi trong lượt đó), dispOfP dùng lại — cùng phép tính, ra y hệt
+    let DP = null, DK = null;
+    const prepDisp = () => {
+      if (!DP) { DP = new Float64Array(3 * N); DK = new Float64Array(N); }
+      for (let i = 0; i < N; i++) {
+        DP[3 * i] = P[3 * i] - R[3 * i]; DP[3 * i + 1] = P[3 * i + 1] - R[3 * i + 1]; DP[3 * i + 2] = P[3 * i + 2] - R[3 * i + 2];
+        DK[i] = nodeK(i);
+      }
+    };
+    const dispOfP = (B, v, out) => {
+      let dx = 0, dy = 0, dz = 0, k = 0;
+      const I = B.idx, W = B.wt;
+      for (let q = v * KN, e = q + KN; q < e; q++) { const i = I[q], w = W[q]; dx += w * DP[3 * i]; dy += w * DP[3 * i + 1]; dz += w * DP[3 * i + 2]; k += w * DK[i]; }
+      out[0] = dx; out[1] = dy; out[2] = dz; out[3] = k; return out;
+    };
     // dời 1 điểm bất kỳ (không nhúng sẵn)
     const dispAt = (x, y, z, out = [0, 0, 0, 0]) => { const B = bind([x, y, z]); return dispOf(B, 0, out); };
     const wheelPos = w => [P[3 * wheelIds[w]], P[3 * wheelIds[w] + 1], P[3 * wheelIds[w] + 2]];
@@ -235,7 +251,7 @@ const CarSoftBody = (() => {
       awake = Math.max(awake, 0.6);
     };
     return {
-      setTank, support, step, impulse, bind, dispOf, dispAt, wheelPos, nodeK,
+      setTank, support, step, impulse, bind, dispOf, dispAt, wheelPos, nodeK, prepDisp, dispOfP,
       get maxK() { return maxK; }, get awake() { return awake > 0; },
       consumeMoved() { const m = moved; moved = false; return m; },
       tireFlat, nodes: N, links: C.length

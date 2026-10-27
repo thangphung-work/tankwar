@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 const crypto = require('crypto');
+const zlib = require('zlib');
 // Lọc tầm nhìn / kiểm tra sát thương & di chuyển trong trận (xem server_auth.js)
 const auth = require('./server_auth');
 // Tài khoản người chơi (đăng ký / đăng nhập / lưu hồ sơ) — xem server_accounts.js
@@ -26,6 +27,7 @@ const MIME_TYPES = {
   '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
   '.ogg': 'audio/ogg',
@@ -38,6 +40,31 @@ const MIME_TYPES = {
 };
 
 const ROOT_DIR = __dirname;
+
+// NÉN HTTP: JS / CSS / HTML / JSON / SVG gửi bản brotli (hoặc gzip) khi trình duyệt nhận được — gói JS phát hành ~5 MB
+// còn ~1,4 MB. Bản nén giữ trong bộ nhớ theo (tệp, ETag, kiểu nén): mỗi tệp chỉ nén 1 lần cho tới khi sửa
+const COMPRESSIBLE = /^\.(js|mjs|css|html|json|svg|txt|map)$/;
+const zCache = new Map();   // filePath|etag|enc -> Promise<Buffer>
+function pickEncoding(req) {
+  const ae = String(req.headers['accept-encoding'] || '').toLowerCase();
+  return /(^|[\s,])br\s*(;|,|$)/.test(ae) ? 'br' : /(^|[\s,])gzip\s*(;|,|$)/.test(ae) ? 'gzip' : null;
+}
+function compressed(filePath, etag, enc) {
+  const key = filePath + '|' + etag + '|' + enc;
+  let p = zCache.get(key);
+  if (!p) {
+    p = fs.promises.readFile(filePath).then(buf => new Promise((resolve, reject) => {
+      const done = (e, out) => (e ? reject(e) : resolve(out));
+      if (enc === 'br') zlib.brotliCompress(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 7, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } }, done);
+      else zlib.gzip(buf, { level: 7 }, done);
+    }));
+    // bỏ bản cũ của cùng tệp (ETag đổi = tệp đã sửa)
+    for (const k of zCache.keys()) if (k.startsWith(filePath + '|') && k !== key) zCache.delete(k);
+    zCache.set(key, p);
+    p.catch(() => zCache.delete(key));
+  }
+  return p;
+}
 
 function serveFile(req, res) {
   let reqPath;
@@ -116,6 +143,44 @@ function serveFile(req, res) {
     if (notModified) {
       res.writeHead(304, headers);
       res.end();
+      return;
+    }
+
+    // nén (tệp văn bản > 1 KB)
+    const enc = COMPRESSIBLE.test(ext) && stats.size > 1024 ? pickEncoding(req) : null;
+    if (enc) {
+      compressed(filePath, etag, enc).then(buf => {
+        headers['Content-Encoding'] = enc;
+        headers['Vary'] = 'Accept-Encoding';
+        headers['Content-Length'] = buf.length;
+        res.writeHead(200, headers);
+        res.end(req.method === 'HEAD' ? undefined : buf);
+      }, () => {
+        headers['Content-Length'] = stats.size;
+        res.writeHead(200, headers);
+        if (req.method === 'HEAD') { res.end(); return; }
+        fs.createReadStream(filePath).pipe(res);
+      });
+      return;
+    }
+
+    // tải một phần (Range): video nền / âm thanh tua, lặp, Safari / iOS chỉ phát video khi máy chủ hỗ trợ
+    headers['Accept-Ranges'] = 'bytes';
+    const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || '').trim());
+    if (range && (range[1] !== '' || range[2] !== '')) {
+      let start, end;
+      if (range[1] === '') { const n = Number(range[2]); start = Math.max(0, stats.size - n); end = stats.size - 1; }
+      else { start = Number(range[1]); end = range[2] === '' ? stats.size - 1 : Math.min(Number(range[2]), stats.size - 1); }
+      if (!(start <= end) || start >= stats.size) {
+        res.writeHead(416, { 'Content-Range': `bytes */${stats.size}`, 'Accept-Ranges': 'bytes' });
+        res.end();
+        return;
+      }
+      headers['Content-Range'] = `bytes ${start}-${end}/${stats.size}`;
+      headers['Content-Length'] = end - start + 1;
+      res.writeHead(206, headers);
+      if (req.method === 'HEAD') { res.end(); return; }
+      fs.createReadStream(filePath, { start, end }).pipe(res);
       return;
     }
 

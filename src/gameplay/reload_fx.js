@@ -12,12 +12,12 @@ const ReloadFX = (() => {
   const MAX = 40;
 
   /** mesh: vật văng (sẽ được thêm vào scene), pos / vel: Vector3-like thế giới, spin: {x,y,z} rad/s, life: giây nằm lại */
-  function toss(scene, mesh, pos, vel, spin, life = 8) {
+  function toss(scene, mesh, pos, vel, spin, life = 8, owner = null) {
     if (!scene || !mesh) return;
     if (items.length >= MAX) kill(0);
     mesh.position.set(pos.x, pos.y, pos.z);
     scene.add(mesh);
-    items.push({ mesh, vx: vel.x, vy: vel.y, vz: vel.z, sx: spin.x || 0, sy: spin.y || 0, sz: spin.z || 0, life, t: 0, half: mesh.userData.half || 0.5, rest: false });
+    items.push({ mesh, scene, owner, vx: vel.x, vy: vel.y, vz: vel.z, sx: spin.x || 0, sy: spin.y || 0, sz: spin.z || 0, life, t: 0, half: mesh.userData.half || 0.5, rest: false });
   }
 
   function kill(i) {
@@ -31,11 +31,18 @@ const ReloadFX = (() => {
   }
 
   // mặt đỡ dưới vật: nóc / sàn xe gần đó (hộp thân xe) hoặc mặt đất
-  function supportY(x, y, z, terrain, units) {
+  function supportY(x, y, z, terrain, units, previousY = y) {
     let g = terrain ? terrain.getElevationAt(x, z) : 0;
-    if (units && typeof Strongholds !== 'undefined' && Strongholds.unitBox) {
+    if (units) {
       for (const u of units) {
         if (Math.abs(u.x - x) > 40 || Math.abs(u.z - z) > 40) continue;
+        if (typeof u.reloadSupportY === 'function') {
+          const top = u.reloadSupportY(x, z);
+          // Test the start of the swept step, not just the possibly submerged endpoint.
+          if (top !== null && previousY >= top - 0.1 && top > g) g = top;
+          continue;
+        }
+        if (typeof Strongholds === 'undefined' || !Strongholds.unitBox) continue;
         const B = Strongholds.unitBox(u), c = Math.cos(u.bodyAngle || 0), s = Math.sin(u.bodyAngle || 0);
         const dx = x - u.x, dz = z - u.z, lx = dx * c - dz * s, lz = dx * s + dz * c;
         if (lx < B.minX || lx > B.maxX || lz < B.minZ || lz > B.maxZ) continue;
@@ -47,16 +54,19 @@ const ReloadFX = (() => {
     return g;
   }
 
-  function update(dt, terrain, units) {
+  function update(dt, terrain, units, scene = null) {
     if (!(dt > 0)) return;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i], m = it.mesh;
+      if (scene && it.scene !== scene) continue;
       it.t += dt;
       if (!it.rest) {
+        const previousY = m.position.y - it.half;
         it.vy -= G * dt;
         m.position.x += it.vx * dt; m.position.y += it.vy * dt; m.position.z += it.vz * dt;
         m.rotation.x += it.sx * dt; m.rotation.y += it.sy * dt; m.rotation.z += it.sz * dt;
-        const gy = supportY(m.position.x, m.position.y - it.half, m.position.z, terrain, units) + it.half;
+        const supports = it.owner && (!units || !units.includes(it.owner)) ? [...(units || []), it.owner] : units;
+        const gy = supportY(m.position.x, m.position.y - it.half, m.position.z, terrain, supports, previousY) + it.half;
         if (m.position.y <= gy) {
           m.position.y = gy;
           if (it.vy < -8) {
@@ -147,7 +157,7 @@ const ReloadFX = (() => {
     ArtilleryGame3D.prototype.update = function (dt) {
       const r = orig.apply(this, arguments);
       try {
-        update(dt, this.terrain, this.units);
+        update(dt, this.terrain, this.units, this.scene);
         watchPlayer(this, dt);
       } catch (e) { if (!this._rfxErr) { this._rfxErr = true; console.error('[ReloadFX]', e); } }
       return r;

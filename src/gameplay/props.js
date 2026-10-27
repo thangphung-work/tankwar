@@ -1097,10 +1097,48 @@ const Props = (() => {
     deadLamp: ['plastic', { fade: 0.2, stain: 0.5, space: 'world' }]
   };
 
+  // ---------------------------------------------------------------------------
+  // MỨC CHI TIẾT Ô TÔ DÂN SỰ (bản CivilCars ~300 lưới / ~10 MB mỗi xe): chỉ xe đủ lớn trên màn hình mới dựng bản chi tiết;
+  // ra xa thì hạ về bản gộp (InstancedMesh) và trả tài nguyên. Tính theo cỡ trên màn hình: nhìn qua kính ngắm phóng to
+  // (fov hẹp), xe xa trong khung ngắm vẫn được bản chi tiết. Xe đã bị tác động sau khi dựng (bắn, cán, húc, cháy, có vết
+  // đạn) giữ bản chi tiết — chỉ hạ khi vượt trần cứng (vết đạn nhỏ mất, tình trạng bẹp / kính / cháy vẫn dựng lại đúng).
+  // ---------------------------------------------------------------------------
+  const CIV_UP = 600, CIV_DOWN = 760;     // cự ly hiệu dụng (đv, đã chia độ phóng) dựng / hạ — khoảng đệm chống nhấp nháy
+  const CIV_MAX = 40, CIV_HARD = 72;      // trần xe chi tiết (ưu tiên gần) / trần cứng kể cả xe đã bị tác động
+  const CIV_FOV_REF = Math.tan(25 * Math.PI / 180);   // fov 50° = không phóng
+  const CIV_TOUCH = ['stamp', 'shoot', 'sweepBarrel', 'ram', 'breakGlass', 'ignite'];
+  const civRefs = new Map();               // tài nguyên GPU dùng chung giữa các bản chi tiết -> số xe đang giữ
+  // Chỉ hình học + texture (bộ đệm / ảnh trên GPU, không tự giải phóng khi object bị dọn rác). KHÔNG dispose vật liệu: three
+  // xoá luôn chương trình shader khi không còn vật liệu nào dùng -> xe dựng sau phải biên dịch lại 10-20 shader (đo được: 75%
+  // thời gian CPU lúc giao tranh nằm ở getProgramParameter). Vật liệu là object JS, three giữ trong WeakMap -> tự dọn
+  function civResources(root, skipFx) {
+    const out = new Set();
+    root.traverse(c => {
+      if (skipFx && c.userData && c.userData.isFxDecal) return;   // lô vết đạn: hình / vật liệu của ExplosionFX dùng chung
+      if (c.geometry) out.add(c.geometry);
+      const ms = Array.isArray(c.material) ? c.material : c.material ? [c.material] : [];
+      for (const m of ms) for (const k in m) { const v = m[k]; if (v && v.isTexture) out.add(v); }
+    });
+    return out;
+  }
+  function civRetain(res) { for (const r of res) civRefs.set(r, (civRefs.get(r) || 0) + 1); }
+  function civRelease(res) {
+    for (const r of res) {
+      const n = (civRefs.get(r) || 1) - 1;
+      if (n > 0) { civRefs.set(r, n); continue; }
+      civRefs.delete(r);
+      // tài nguyên dùng chung (khuôn thân xe, envMap) còn trong bộ đệm của CivilCars: dispose chỉ trả bộ nhớ GPU, lần dùng
+      // sau three tự nạp lại
+      if (r.dispose) r.dispose();
+    }
+  }
+
   class StreetSet {
     constructor(T, data, group) {
       this.T = T; this.group = group;
       this.grid = new Map(); this.items = [];
+      this.civil = new Set();    // ô tô đang hiện bản chi tiết CivilCars
+      this.civQ = [];            // thao tác hình lên bản chi tiết (lỗ đạn, vỡ kính, cháy, húc móp) chờ xử lý theo ngân sách / khung
       this.ims = {};          // 'hình|vật liệu' -> { im, list: [Matrix4], cols: [Color] }
       this.wires = [];
       this.moving = new Set();   // ô tô đang trượt sau cú húc
@@ -1211,7 +1249,8 @@ const Props = (() => {
     }
     upgradeToCivilCar(o) {
       if (!o || !o.civilPending || typeof CivilCars === 'undefined') return;
-      o.civilPending = false;
+      const hitNow = !!o.civWant;   // dựng vì vừa bị tác động: thao tác đang chờ sẽ tách bản gộp ngay -> khỏi gộp
+      o.civilPending = false; o.civWant = false;
       try {
         let age = 0.35, rust = 0.15, dust = 0.25;
         if (o.burnt) {
@@ -1244,7 +1283,8 @@ const Props = (() => {
           noWheel: o.noWheel,
           glass: !!o.glassBroken,
           sag: o.burnt ? 0.12 : (o.preBroken ? (o.c0 || 0) : 0),
-          crush: crushed ? o.c : 0
+          crush: crushed ? o.c : 0,
+          noMerge: hitNow
         });
         o.group = carGrp;
         carGrp.position.set(o.x, o.y, o.z);
@@ -1254,7 +1294,7 @@ const Props = (() => {
         carGrp.rotation.z = (o.roll || 0) - (o.roll0 || 0);
         this.group.add(carGrp);
 
-        // Ẩn instance trong InstancedMesh cũ bằng ma trận tỉ lệ = 0
+        // Ẩn instance trong InstancedMesh cũ bằng ma trận tỉ lệ = 0 (giữ chỗ lại: hạ về bản gộp thì hiện lại đúng chỗ đó)
         if (o.slots && o.slots.length) {
           const zeroMat = new THREE.Matrix4().makeScale(0, 0, 0);
           for (const [k, i] of o.slots) {
@@ -1264,12 +1304,156 @@ const Props = (() => {
               entry.dirty = true;
             }
           }
+          o.lodSlots = o.slots;
           o.slots = [];
         }
+        o.civRes = civResources(carGrp);
+        civRetain(o.civRes);
+        o.civTouched = false;
+        const api = carGrp.userData.crush;
+        if (api) for (const k of CIV_TOUCH) {
+          const f = api[k];
+          if (typeof f === 'function') api[k] = function () { o.civTouched = true; return f.apply(this, arguments); };
+        }
+        this.civil.add(o);
         this.flush();
       } catch (e) {
         console.warn('[props] Lỗi nâng cấp xe CivilCars:', e);
       }
+    }
+    // Camera hiện tại cho mức chi tiết: vị trí, độ phóng (fov hẹp hơn 50° = kính ngắm / ống nhòm), khung nhìn. Tính 1 lần / khung
+    civilView(camPos) {
+      const g = typeof window !== 'undefined' ? window.game : null, cam = g && g.camera;
+      const p = camPos || (cam ? cam.position : null) || (g && g.player) || null;
+      if (!p) return null;
+      const V = this._civV || (this._civV = { x: 0, z: 0, zoom: 1, fr: new THREE.Frustum(), m: new THREE.Matrix4(), s: new THREE.Sphere(), f: -1 });
+      const frame = g && g.renderer ? g.renderer.info.render.frame : 0;
+      if (V.f === frame && V.f >= 0) return V;
+      V.f = frame; V.x = p.x; V.z = p.z;
+      V.zoom = cam && cam.isPerspectiveCamera ? Math.max(1, CIV_FOV_REF / Math.tan(cam.fov * Math.PI / 360)) : 1;
+      if (V.zoom > 1.05) V.fr.setFromProjectionMatrix(V.m.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+      return V;
+    }
+    // cự ly hiệu dụng tới camera: xe nằm trong khung nhìn đang phóng to thì "gần" hơn theo độ phóng
+    civilEff(o, V) {
+      const d = Math.hypot(o.x - V.x, o.z - V.z);
+      if (V.zoom <= 1.05) return d;
+      V.s.center.set(o.x, o.y || 0, o.z); V.s.radius = 24;
+      return V.fr.intersectsSphere(V.s) ? d / V.zoom : d;
+    }
+    // xe đủ gần để đáng dựng bản chi tiết khi bị tác động (bắn / cán / húc từ xa không đẻ bản chi tiết ngoài tầm mắt:
+    // tình trạng hư hại vẫn ghi vào o.c / kính / cháy..., tới gần dựng ra đúng như vậy)
+    civilNear(o) {
+      const V = this.civilView(null);
+      return !V || this.civilEff(o, V) < CIV_DOWN;
+    }
+    // NGÂN SÁCH MỖI KHUNG: bị bắn / húc / cháy thì trạng thái (máu, bẹp, kính, cháy) và tia lửa / khói vẫn tức thì, còn phần
+    // hình trên bản chi tiết (dò tia vào từng chi tiết, khoét lỗ, móp vỏ, dán vết: ~10 ms / phát; dựng bản chi tiết 30-60 ms)
+    // xếp hàng: mỗi khung làm tới CIV_OP_MS, xe chưa có bản chi tiết thì xin dựng (ưu tiên) và giữ thao tác tới khi dựng
+    // xong -> bắn liên thanh vào phố không dồn hàng trăm ms vào một khung; mọi lỗ đạn vẫn hiện đủ, chậm vài khung
+    civRequest(o) {
+      if (o.civilPending && !o.civWant && this.civilNear(o)) o.civWant = true;
+    }
+    civOp(o, name, args) {
+      if (o.civilPending) {
+        if (!this.civilNear(o)) return;   // xa: chỉ tình trạng thô (o.c, kính, cháy...) — tới gần dựng ra đúng như vậy
+        this.civRequest(o);
+      }
+      if (this.civQ.length > 400) this.civQ.shift();   // trần an toàn: bỏ thao tác cũ nhất
+      this.civQ.push([o, name, args]);
+    }
+    runCivOps(budgetMs) {
+      const Q = this.civQ;
+      if (!Q.length) return;
+      const t0 = performance.now();
+      let i = 0, kept = 0;
+      for (; i < Q.length; i++) {
+        const op = Q[i], o = op[0];
+        if (o.civilPending) {
+          if (o.civWant && this.civilNear(o)) Q[kept++] = op;   // chờ bản chi tiết dựng xong
+          else o.civWant = false;                                // đã ra xa: bỏ, tình trạng thô vẫn giữ
+          continue;
+        }
+        const api = o.group && o.group.userData && o.group.userData.crush;
+        if (api && typeof api[op[1]] === 'function') { try { api[op[1]].apply(api, op[2]); } catch (e) { /* bỏ thao tác hỏng */ } }
+        if (performance.now() - t0 > budgetMs) { i++; break; }
+      }
+      for (; i < Q.length; i++) Q[kept++] = Q[i];
+      Q.length = kept;
+    }
+    civilTouched(o) {
+      if (o.civTouched || o.burning || o.smolder > 0 || this.moving.has(o)) return true;
+      let mark = false;
+      o.group.traverse(c => { if (!mark && c.userData && c.userData.isFxDecal) mark = true; });
+      return mark;
+    }
+    civilLod(camPos) {
+      const V = this.civilView(camPos);
+      if (!V) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      // HẠ: ~4 lần / giây duyệt xe chi tiết; xe ngoài CIV_DOWN chưa bị tác động -> bản gộp; quá trần thì hạ xe xa nhất
+      if (now - (this._civScan || 0) > 250 && this.civil.size) {
+        this._civScan = now;
+        const list = [];
+        for (const o of this.civil) list.push([this.civilEff(o, V), o]);
+        list.sort((a, b) => b[0] - a[0]);
+        let n = 0;
+        for (const [e, o] of list) {
+          if (n >= 3) break;
+          const over = this.civil.size > CIV_MAX, hard = this.civil.size > CIV_HARD;
+          if (e <= CIV_DOWN && !over) break;
+          if (e <= CIV_UP && !hard) break;
+          if (this.civilTouched(o) && !(hard && !o.burning && !this.moving.has(o))) continue;
+          this.downgradeCivilCar(o);
+          n++;
+        }
+      }
+      // DỰNG: xe gần nhất (theo cỡ trên màn hình) còn bản gộp; dựng 1 xe chi tiết mất ~30-60 ms -> giãn nhịp ~0,1 s / xe
+      // xe vừa bị tác động (civWant: bắn / húc / cháy, có thao tác chờ) dựng trước, được vượt CIV_MAX tới CIV_HARD
+      if (now - (this._lastUpgrade || 0) <= 100) return;
+      const nearby = this.near(V.x, V.z, CIV_DOWN * V.zoom);
+      let cand = null, best = Infinity;
+      for (let i = 0; i < nearby.length; i++) {
+        const o = nearby[i];
+        if (o.type !== 'car' || !o.civilPending) continue;
+        const e = this.civilEff(o, V);
+        if (o.civWant) { if (e >= CIV_DOWN) { o.civWant = false; continue; } }
+        else if (e >= CIV_UP || this.civil.size >= CIV_MAX) continue;
+        const s = o.civWant ? e - 1e6 : e;
+        if (s < best) { best = s; cand = o; }
+      }
+      if (cand && (!cand.civWant || this.civil.size < CIV_HARD)) { this._lastUpgrade = now; this.upgradeToCivilCar(cand); }
+    }
+    // Trả bản chi tiết về bản gộp: hiện lại các ô InstancedMesh (theo tình trạng hiện tại: bẹp, cháy, kính...), bỏ vết đạn
+    // còn gắn trên lưới chi tiết, trả tài nguyên GPU
+    downgradeCivilCar(o) {
+      const grp = o.group;
+      if (!grp) return;
+      const fx = typeof window !== 'undefined' && window.game && window.game.effectsManager && window.game.effectsManager.fx;
+      if (fx && fx.surfaceMarks && fx.removeSurfaceMark) {
+        for (let i = fx.surfaceMarks.length - 1; i >= 0; i--) {
+          const r = fx.surfaceMarks[i], m = r && (r.mesh || (r.batch && r.batch.im));
+          let a = m;
+          while (a && a !== grp) a = a.parent;
+          if (a === grp) fx.removeSurfaceMark(i);
+        }
+      }
+      if (grp.parent) grp.parent.remove(grp);
+      // tài nguyên riêng sinh ra sau khi dựng (lốp xẹp thay hình, kính đèn khoét lỗ tách bản riêng...): không ai khác giữ
+      const own = civResources(grp, true);
+      if (o.civRes) for (const r of o.civRes) own.delete(r);
+      for (const r of own) if (!civRefs.has(r) && r.dispose) r.dispose();
+      if (o.civRes) civRelease(o.civRes);
+      o.civRes = null; o.group = null;
+      this.civil.delete(o);
+      o.slots = o.lodSlots || [];
+      o.lodSlots = null;
+      o.civilPending = true;
+      this.refresh(o);
+      // cháy / vỡ kính trong lúc là bản chi tiết: bản gộp đổi màu theo đúng tình trạng
+      if (o.burnt) this.charCar(o, true);
+      else if (o.glassBroken) { o.glassBroken = false; this.shatter(o, true); }
+      this.flush();
     }
     // ma trận thế giới của 1 phần: chân vật (x, y, z) · đổ (quay quanh chân về hướng fall) · bẹp (sy) · hướng vật · phần
     partMatrix(o, p) {
@@ -1523,10 +1707,8 @@ const Props = (() => {
     shatter(o, silent) {
       if (o.glassBroken) return;
       // lúc dựng bản đồ (silent): chưa nạp bản chi tiết — tình trạng kính vỡ sẵn đi theo cond 'broken' khi nạp
-      if (o.civilPending && !silent) this.upgradeToCivilCar(o);
       o.glassBroken = true;
-      const api = o.group && o.group.userData && o.group.userData.crush;
-      if (api && api.breakGlass) api.breakGlass();
+      if (!silent) this.civOp(o, 'breakGlass', []);
       o.slots.forEach(([k, i, p]) => { if (p[1] === 'glass' && this.ims[k].im) { this.ims[k].im.setColorAt(i, new THREE.Color(1.9, 1.9, 1.95)); this.ims[k].cdirty = this.ims[k].dirty = true; } });
       if (!silent) sfx('glass', o.x, o.y + 8, o.z, 0.5, { h: 8 });
     }
@@ -1536,12 +1718,10 @@ const Props = (() => {
     }
     // xác cháy: sơn cháy rộp đen nâu, mâm gỉ, kính / lốp cháy rụi, thân lún xuống vành sắt
     charCar(o, init) {
-      if (o.civilPending && !init) this.upgradeToCivilCar(o);   // xác cháy sẵn lúc dựng bản đồ: nạp chi tiết dần như xe khác
+      // (xác cháy sẵn lúc dựng bản đồ: init — nạp chi tiết dần như xe khác, dựng ra đã cháy rụi)
       o.burnt = true; o.noGlass = true; o.fuel = 0;
       o.sink = Math.max(o.sink || 0, (CAR_SPEC[o.kind] || CAR_SPEC.sedan).r * 0.55);
-      if (o.group && o.group.userData && o.group.userData.crush) {
-        o.group.userData.crush.ignite(0, 4, 0);
-      }
+      if (!init) this.civOp(o, 'ignite', [0, 4, 0]);
       this.setWear(o, [0.3, 1, 1]);
       o.slots.forEach(([k, i, p]) => {
         const e = this.ims[k], m = p[1];
@@ -1555,16 +1735,14 @@ const Props = (() => {
     // đạn cháy hoặc nổ mạnh gần bình xăng. (dx, dz): hướng từ nguồn nổ tới xe -> bên bị móp
     carDamage(o, dmg, dx, dz, inc, fx, ammo, impact) {
       if (dmg <= 0) return;
-      if (o.civilPending) this.upgradeToCivilCar(o);
       const visualHit=()=>{
-        const api=o.group&&o.group.userData&&o.group.userData.crush;if(!api)return;
         const ca=Math.cos(o.angle),sa=Math.sin(o.angle);
         const px=impact?impact.x-o.x:-dx,pz=impact?impact.z-o.z:-dz;
         const lx=px*ca-pz*sa,lz=px*sa+pz*ca,dist=Math.hypot(lx,lz);
         const nx=dist>0.01?lx/dist:0,nz=dist>0.01?lz/dist:1;
         const height=impact?Math.max(2.0,impact.y-(o.y||0)):4;
         const reach=Math.max(28,dist+2);
-        api.shoot(nx*reach,height,nz*reach,-nx,0,-nz,ammo||(inc?'INCENDIARY':(dmg>50?'HE':'SCOUT_BULLET')));
+        this.civOp(o,'shoot',[nx*reach,height,nz*reach,-nx,0,-nz,ammo||(inc?'INCENDIARY':(dmg>50?'HE':'SCOUT_BULLET'))]);
       };
       if(o.burning||o.burnt){visualHit();return;}
       o.hp -= dmg;
@@ -1586,9 +1764,7 @@ const Props = (() => {
       o.burning = { t: 0, dur: 30 + 40 * o.fuel + 15 * h, boom: !['truck','dump'].includes(o.kind) && o.fuel > 0.45 ? 2.5 + 4 * h : -1, acc: 0, snd: 0 };
       o.fuel = 0;
       this.burningSet.add(o);
-      if (o.group && o.group.userData && o.group.userData.crush) {
-        o.group.userData.crush.ignite(0, 4, -8);
-      }
+      this.civOp(o, 'ignite', [0, 4, -8]);
       sfx('fuel', o.x, o.y + 6, o.z, 0.55, { h: 6 });
     }
     // bình xăng nổ: quả cầu lửa, mảnh tôn bay, sóng nóng đốt / làm móp ô tô sát bên (cháy lan)
@@ -1872,7 +2048,7 @@ const Props = (() => {
         return;
       }
       if (!p || p.d < 1e-4) return;
-      if (o.civilPending) this.upgradeToCivilCar(o);
+      this.civRequest(o);
       const first = this.firstTouch(o, u), nx = p.x / p.d, nz = p.z / p.d;   // n: từ ô tô hướng ra phía xe
       const vn = Math.max(0, -(ctx.mvx * nx + ctx.mvz * nz)) / ctx.dt;     // tốc độ áp vào ô tô
       const mU = u.mass || 40, mC = D.m, pos = { x: o.x + nx * D.hw, y: o.y + 6, z: o.z + nz * D.hw };
@@ -1985,11 +2161,8 @@ const Props = (() => {
     }
     // Bản chi tiết (CivilCars) bị húc: (lx, lz) điểm tì hệ ô tô, (mvx, mvz) hướng vật húc lao tới hệ thế giới, E năng lượng
     ramVisual(o, lx, lz, mvx, mvz, E) {
-      if (o.civilPending) this.upgradeToCivilCar(o);
-      const api = o.group && o.group.userData && o.group.userData.crush;
-      if (!api || !api.ram) return;
       const ca = Math.cos(o.angle), sa = Math.sin(o.angle);
-      api.ram(lx, lz, mvx * ca - mvz * sa, mvx * sa + mvz * ca, E);
+      this.civOp(o, 'ram', [lx, lz, mvx * ca - mvz * sa, mvx * sa + mvz * ca, E]);
     }
     // NÒNG PHÁO / THÁP PHÁO XOAY VÀO Ô TÔ — barrel_sweep.js gọi mỗi khung cho mọi xe có tháp, SAU khi đặt tư thế tháp / nòng
     // khung này (yaw0 / el0: tư thế khung trước; pa / pb: chốt nòng / đầu nòng theo hình đang hiện -> bù độ nghiêng thân xe
@@ -2041,7 +2214,7 @@ const Props = (() => {
         const hb = barrelInCar(S1, o, top);
         // vừa tì ở khung trước: giữ tiếp xúc tới sát mặt (không nhả / chạm xen kẽ từng khung -> tháp ì đều tay)
         if (!hb || hb.d < (o._bcU === unit.id && now - o._bcT < 120 ? 0.02 : 0.3)) continue;
-        if (o.civilPending) this.upgradeToCivilCar(o);
+        this.civRequest(o);
         const api = o.group && o.group.userData && o.group.userData.crush;
         // điểm chạm trên thân nòng (t) và quãng nó đi trong khung: so với cả xe khung trước (dv) / chỉ do tháp xoay, nòng nâng
         // hạ (dT, cùng vị trí thân xe)
@@ -2126,7 +2299,7 @@ const Props = (() => {
     // Trả về quãng đã dời được
     // depth: ô tô bị dồn vào ô tô khác thì đẩy dây chuyền ô tô đó (tối đa 2 xe nối tiếp) — xe nặng ủi được cả hàng xe đỗ
     moveCar(o, dx, dz, dTh, pusher, depth = 0) {
-      if (o.civilPending) this.upgradeToCivilCar(o);
+      this.civRequest(o);
       const L = Math.hypot(dx, dz);
       if (L < 1e-4 && Math.abs(dTh) < 1e-5) return 0;
       for (const f of [1, 0.5, 0.25]) {
@@ -2203,34 +2376,20 @@ const Props = (() => {
     // ô tô đang trượt sau cú húc: ma sát lốp hãm (~0,7 g), quay chậm dần; đâm vào vật khác thì dừng + móp thêm
     update(dt, fx, cam) {
       if (!dt) return;
-      // Tải dần xe mới CivilCars trong trận đấu: quét các xe ở gần camera / player và nâng cấp dần
-      if (typeof CivilCars !== 'undefined') {
-        const camPos = cam || (typeof window !== 'undefined' && window.game && window.game.camera ? window.game.camera.position : null) || (typeof window !== 'undefined' && window.game && window.game.player ? window.game.player : null);
-        if (camPos) {
-          const nearby = this.near(camPos.x, camPos.z, 600);
-          let cand = null, candD2 = Infinity;
-          for (let i = 0; i < nearby.length; i++) {
-            const item = nearby[i];
-            if (item.type === 'car' && item.civilPending) {
-              const dx = item.x - camPos.x, dz = item.z - camPos.z, d2 = dx * dx + dz * dz;
-              if (d2 < candD2) {
-                candD2 = d2;
-                cand = item;
-              }
-            }
-          }
-          // dựng 1 xe chi tiết mất ~30-60 ms: giãn nhịp ~0,1 s / xe để vào khu nhiều xe không tụt khung liên tục
-          const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-          if (cand && now - (this._lastUpgrade || 0) > 100) {
-            this._lastUpgrade = now;
-            this.upgradeToCivilCar(cand);
-          }
-        }
-      }
+      // Dựng / hạ bản chi tiết CivilCars theo cỡ xe trên màn hình (xem CIV_UP / CIV_DOWN)
+      if (typeof CivilCars !== 'undefined') { this.civilLod(cam); this.runCivOps(5); }
+      // xe chi tiết nhỏ trên màn hình (xa / ngoài khung nhìn kính ngắm) cập nhật thưa hơn — dt cộng dồn nên khung mềm, lửa,
+      // số hạt vẫn đúng theo thời gian; chỉ nhịp hiện biến dạng giảm (60 -> 30 / 15 lần/s) ở xe cao vài chục điểm ảnh.
+      // Rải lệch khung theo xe để tải chia đều
+      const LV = this.civilView(cam), frame = (this._civFrame = (this._civFrame || 0) + 1);
       for (const o of this.items) {
         if (o.type === 'car' && o.group && o.group.userData && o.group.userData.crush) {
           const api = o.group.userData.crush;
-          api.update(dt);
+          o.civDt = (o.civDt || 0) + dt;
+          const e = LV ? this.civilEff(o, LV) : 0, every = e > 450 ? 4 : e > 250 ? 2 : 1;
+          if (every > 1 && ((frame + (o.seed & 3)) % every) !== 0 && o.civDt < 0.25) continue;
+          api.update(o.civDt);
+          o.civDt = 0;
           // sự kiện của bản chi tiết (kính vỡ khi húc / nòng quét, lốp nổ): phát tiếng, rút hết để mảng không phình
           const ev = api.drain();
           if (ev.length) {
@@ -2241,6 +2400,14 @@ const Props = (() => {
             if (ev.includes('burst')) sfx('debris', o.x, o.y + 3, o.z, 0.5, { h: 3 });
           }
         }
+      }
+      // đèn lửa ô tô cháy dùng chung (civil_cars.js FIRE_LIGHTS): nhóm đèn có sẵn trong cảnh từ khung đầu -> số đèn không đổi
+      if (typeof CivilCars !== 'undefined' && CivilCars.fireLightPool) {
+        if (!this._fireLights) {
+          let root = this.group; while (root.parent) root = root.parent;
+          if (root.isScene) this._fireLights = CivilCars.fireLightPool(root);
+        }
+        CivilCars.assignFireLights(cam);
       }
       // Ô TÔ CHÁY: lửa bốc từ khoang / khoang máy, khói đen cuộn cột cao; vài giây sau nổ bình xăng; sau ~6 s sơn cháy
       // rộp thành khung đen, lốp cháy rụi; hết xăng tắt dần, còn âm ỉ khói mỏng ~40 s

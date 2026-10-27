@@ -35,21 +35,21 @@ class RadarSweepWidget {
     this.blips = new Map(); // slotId -> blip object
   }
 
-  // Toạ độ cố định theo từng slot (0..19) để không bị nhảy loạn xạ
-  // Phe Xanh (0..9) ở góc Tây/Nam, Phe Đỏ (10..19) ở góc Đông/Bắc
-  slotPosition(slot) {
-    const id = slot.id;
-    const isBlue = (slot.team === 'BLUE');
-    const baseAngle = isBlue
-      ? Math.PI * 0.75 + (id / 10) * Math.PI * 0.95
-      : -Math.PI * 0.25 + ((id - 10) / 10) * Math.PI * 0.95;
-    const dist = 14 + ((id * 7 + 11) % 27); // 14..41px
-    return {
-      baseAngle,
-      dist,
-      x: this.cx + Math.cos(baseAngle) * dist,
-      y: this.cy + Math.sin(baseAngle) * dist
-    };
+  // Vị trí ngẫu nhiên rải đều trên đĩa radar, chọn một lần khi chấm xuất hiện (không nhảy về sau).
+  // Góc + bán kính tuyến tính theo id cũ xếp các chấm thành hình xoắn ốc -> nay rút ngẫu nhiên,
+  // thử vài lần để chấm mới cách các chấm đang có >= 9px, khỏi chồng lên nhau.
+  slotPosition() {
+    let best = null, bestGap = -1;
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = 10 + Math.sqrt(Math.random()) * 32; // 10..42px, sqrt -> mật độ đều theo diện tích
+      const x = this.cx + Math.cos(a) * dist, y = this.cy + Math.sin(a) * dist;
+      let gap = Infinity;
+      for (const b of this.blips.values()) gap = Math.min(gap, Math.hypot(b.x - x, b.y - y));
+      if (gap > bestGap) { best = { dist, x, y }; bestGap = gap; }
+      if (gap >= 9) break;
+    }
+    return best;
   }
 
   // Đồng bộ 1-1 với danh sách slot người chơi thực tế
@@ -64,7 +64,7 @@ class RadarSweepWidget {
       let b = this.blips.get(slot.id);
       if (!b) {
         // Người chơi mới vào: tạo chấm mới và bừng sáng ngay
-        const pos = this.slotPosition(slot);
+        const pos = this.slotPosition();
         const col = slot.isMe
           ? { r: 245, g: 196, b: 107 } // vàng kim hổ phách cho xe của mình
           : slot.team === 'BLUE'
@@ -406,8 +406,11 @@ class MatchmakingController {
     this.searchTime = 0; // Đếm số giây tìm kiếm
     this.maxWaitTime = 2.5; // Chờ người chơi thực 2.5 giây rồi lấp máy để vào trận nhanh
     this.tickMs = 250;
-    this.state = 'IDLE'; // IDLE -> SEARCHING -> FILLING_BOTS -> COUNTDOWN -> IN_GAME
+    this.state = 'IDLE'; // IDLE -> SEARCHING -> FILLING_BOTS -> PREPARING -> COUNTDOWN -> IN_GAME
     this.countdown = 3;
+    this.introFinished = false;
+    this.localGameReady = false;
+    this.readyPeers = new Set();
 
     this.initElements();
     this.music('lobby');   // nhạc sảnh chờ (phát ngay khi người chơi chạm / bấm phím lần đầu)
@@ -447,6 +450,9 @@ class MatchmakingController {
     this.music('search');
     this.state = 'SEARCHING';
     this.searchTime = 0;
+    this.introFinished = false;
+    this.localGameReady = false;
+    this.readyPeers.clear();
     this.isHost = true;
     this.roomHops = 0;
     this.resetRoster();
@@ -480,6 +486,7 @@ class MatchmakingController {
     clearInterval(this.searchInterval);
     clearTimeout(this.discoverTimer);
     clearTimeout(this._prepareTimer);
+    clearTimeout(this._readyPollTimer);
     this._prepareTimer = null;
     this.buildingMap = false;
     if (this.net) this.net.leave();
@@ -566,19 +573,31 @@ class MatchmakingController {
     const GLYPH = '▓▒░#%&@$*/\\<>=+?0123456789ABCDEFX';
     const junk = (n) => { let s = ''; for (let i = 0; i < n; i++) s += GLYPH[Math.floor(Math.random() * GLYPH.length)]; return s; };
 
-    // 1. BẮT SÓNG: mã hiệu hiện ra từ chuỗi ký tự rác, giải mã dần từ trái sang phải
+    // 0. ĐIỆN KHẨN: còi ưu tiên, nhạc nền lùi ra sau, mã hiệu còn là ký tự rác
     const code = briefing.code || '';
+    const scramble = (n) => junk(code.length - n).replace(/./g, (c, i) => (code[n + i] === ' ' ? ' ' : c));
+    if (codeEl) codeEl.textContent = scramble(0);
     boxFlag('is-linking', true);
-    setStatus('ĐANG BẮT SÓNG KÊNH CHỈ HUY', 'link');
-    this.briefingSfx('playCommandLinkUp');
-    const LINK_MS = 950, t0 = performance.now();
+    setStatus('ĐIỆN KHẨN · ƯU TIÊN HỎA TỐC', 'flash');
+    this.briefingSfx('playCommandFlash');
+
+    // 1. BẮT SÓNG: mã hiệu hiện ra từ chuỗi ký tự rác, giải mã dần từ trái sang phải
+    const LINK_MS = 950;
+    let t0 = 0;
+    const link = () => {
+      setStatus('ĐANG BẮT SÓNG KÊNH CHỈ HUY', 'link');
+      this.briefingSfx('playCommandLinkUp');
+      t0 = performance.now();
+      decode();
+    };
     const decode = () => {
       const k = Math.min(1, (performance.now() - t0) / LINK_MS);
       const n = Math.floor(code.length * k);
-      if (codeEl) codeEl.textContent = code.slice(0, n) + junk(code.length - n).replace(/./g, (c, i) => (code[n + i] === ' ' ? ' ' : c));
+      if (codeEl) codeEl.textContent = code.slice(0, n) + scramble(n);
       if (k < 1) { later(decode, 45); return; }
       boxFlag('is-linking', false);
       setStatus('đang nhận lệnh', 'typing');
+      this.briefingSfx('startCommandChannel');
       later(typeNext, 260);
     };
 
@@ -597,7 +616,10 @@ class MatchmakingController {
       }
       const ch = text[idx++];
       typed.data = text.slice(0, idx);
-      if (ch !== ' ') this.briefingSfx('playBriefingKey', /[.,!?:;]/.test(ch) ? 1.3 : 1);
+      // hết câu: đập trục + chuông; vừa gõ xong tên cứ điểm: píng đánh dấu mục tiêu
+      if (/[.!?]/.test(ch)) this.briefingSfx('playBriefingStamp');
+      else if (/[ABC]/.test(ch) && /cứ điểm [ABC]$/i.test(text.slice(Math.max(0, idx - 10), idx)) && !/[\p{L}\d]/u.test(text[idx] || ''))this.briefingSfx('playBriefingMark');
+      else if (ch !== ' ') this.briefingSfx('playBriefingKey', /[,:;]/.test(ch) ? 1.3 : 1);
       const pause = /[.!?]/.test(ch) ? 360 : /[,:;]/.test(ch) ? 170 : ch === ' ' ? 34 : 0;
       later(typeNext, 20 + Math.random() * 22 + pause);
     };
@@ -605,20 +627,25 @@ class MatchmakingController {
     // 3. HẾT LỆNH: thả phím bộ đàm, con trỏ nháy chờ, tổ lái xác nhận
     const finish = () => {
       setStatus('HẾT · ĐÃ NHẬN LỆNH', 'done');
+      this.briefingSfx('stopCommandChannel', 0.35, false);
       this.briefingSfx('playCommandOver');
       later(() => {
         if (replyEl) replyEl.classList.remove('hidden');
-        this.briefingSfx('playRadioChirp');
+        this.briefingSfx('playCommandAck');
         run.alive = false;
       }, 650);
     };
 
-    decode();
+    later(link, 720);
   }
 
   stopBriefingTypewriter() {
     const run = this._briefRun;
-    if (run) { run.alive = false; clearTimeout(run.timer); this._briefRun = null; }
+    if (run) {
+      run.alive = false; clearTimeout(run.timer); this._briefRun = null;
+      // kênh đang mở / nhạc đang lùi -> đóng kênh, trả nhạc nền về mức thường
+      this.briefingSfx('stopCommandChannel', 0.2, true);
+    }
     const box = document.getElementById('mm-briefing-box');
     if (box) box.classList.remove('is-linking', 'is-static');
   }
@@ -632,7 +659,6 @@ class MatchmakingController {
     const tick = () => {
       const drop = Math.random() < 0.22;
       hud.style.setProperty('--mm-gx', ((Math.random() - 0.5) * (drop ? 26 : 14)).toFixed(1) + 'px');
-      hud.style.setProperty('--mm-ty', (15 + Math.random() * 70).toFixed(0) + '%');
       if (!reduce) hud.classList.add('mm-sig-glitch');
       if (drop) hud.classList.add('mm-sig-drop');
       // đang gõ lệnh thì tiếng nhiễu đã có trong kênh chỉ huy -> chỉ thêm tiếng khi mất tín hiệu
@@ -660,9 +686,10 @@ class MatchmakingController {
     const reconVideo = document.getElementById('mm-recon-video');
     if (!reconVideo) return;
     if (on) {
+      this.introFinished = false;
       const mapLower = (this.selectedMapType || 'urban').toLowerCase();
-      const primarySrc = 'assets/recon_' + mapLower + '.webm?v=20261025tour1';
-      const fallbackSrc = 'assets/recon_briefing.webm?v=20261025tour1';
+      const primarySrc = 'assets/recon_' + mapLower + '.webm?v=20261026high';
+      const fallbackSrc = 'assets/recon_briefing.webm?v=20261026high';
       if (reconVideo.src && reconVideo.src.endsWith(primarySrc) && !reconVideo.paused) return;   // đang chiếu đúng bản đồ
       const hideVideo = () => {
         reconVideo.classList.add('hidden');
@@ -673,6 +700,10 @@ class MatchmakingController {
         reconVideo.classList.remove('hidden');
         if (this.searchHudEl) this.searchHudEl.classList.add('mm-video-playing');
       };
+      reconVideo.onended = () => {
+        this.introFinished = true;
+        this.checkLocalGameReady();
+      };
       reconVideo.oncanplay = () => { reconVideo.play().catch(hideVideo); };
       reconVideo.onerror = () => {
         hideVideo();
@@ -681,6 +712,9 @@ class MatchmakingController {
           reconVideo.play().catch(hideVideo);
         } else {
           reconVideo.classList.add('hidden');
+          // A missing briefing clip must not leave the room locked forever.
+          this.introFinished = true;
+          this.checkLocalGameReady();
         }
       };
       reconVideo.src = primarySrc;
@@ -690,6 +724,7 @@ class MatchmakingController {
       reconVideo.onerror = null;
       reconVideo.oncanplay = null;
       reconVideo.onplaying = null;
+      reconVideo.onended = null;
       if (this.searchHudEl) this.searchHudEl.classList.remove('mm-video-playing');
       reconVideo.pause();
       reconVideo.classList.add('hidden');
@@ -747,7 +782,8 @@ class MatchmakingController {
     if (this.radarWidget) this.radarWidget.syncSlots(this.slots);
     if (!this.statusTextEl) return;
     let text;
-    if (this.state === 'COUNTDOWN') text = 'ĐÃ ĐỦ NGƯỜI · TRẬN ĐẤU SẮP BẮT ĐẦU';
+    if (this.state === 'COUNTDOWN') text = 'ĐÃ SẴN SÀNG · TRẬN ĐẤU SẮP BẮT ĐẦU';
+    else if (this.state === 'PREPARING') text = this.introFinished ? 'ĐANG CHỜ TOÀN ĐỘI SẴN SÀNG...' : 'ĐANG TRUYỀN NHIỆM VỤ...';
     else if (this.netPending) text = 'ĐANG KẾT NỐI...';
     else if (this.buildingMap) text = 'ĐANG DỰNG BẢN ĐỒ...';
     else text = 'ĐANG TÌM TRẬN ĐẤU...';
@@ -870,7 +906,7 @@ class MatchmakingController {
     window.netTransport = this.net;
 
     const lobbyTypes = ['DISCOVER_ROOM', 'DISCOVER_ROOM_ACK', 'ROOM_FULL', 'ROOM_UPDATE', 'MAP_CHANGE', 'MAP_REQUEST',
-      'SLOT_UPDATE', 'REQUEST_LAUNCH', 'START_COUNTDOWN', 'LAUNCH_GAME_NOW'];
+      'SLOT_UPDATE', 'REQUEST_LAUNCH', 'PREPARE_GAME', 'CLIENT_GAME_READY', 'START_COUNTDOWN', 'LAUNCH_GAME_NOW'];
     lobbyTypes.forEach(type => {
       this.net.on(type, (data, from) => this.handleChannelMessage(Object.assign({}, data || {}, { type, _from: from })));
     });
@@ -1128,8 +1164,10 @@ class MatchmakingController {
     const slot = this.slots.find(s => s.peerId === peerId);
     if (slot) {
       this.freeSlot(slot);
+      if (this.state === 'PREPARING') this.fillBotSlot(slot);
       this.renderLobby();
       this.broadcastRoomUpdate();
+      if (this.state === 'PREPARING') this.tryStartSynchronizedCountdown();
     }
   }
 
@@ -1138,6 +1176,18 @@ class MatchmakingController {
     if (this.state === 'IDLE') return;
     if (this.net.isHost && !this.isHost) {
       if (this.state === 'IN_GAME' || this.state === 'COUNTDOWN') this.isHost = true;
+      else if (this.state === 'PREPARING') {
+        this.isHost = true;
+        this.readyPeers.clear();
+        if (this.localGameReady) this.readyPeers.add(this.myPeerId);
+        this.net.send('PREPARE_GAME', {
+          slots: this.slots,
+          mapType: this.selectedMapType,
+          mapSeed: this.mapSeed >>> 0,
+          spawnSeed: this.spawnSeed
+        });
+        this.tryStartSynchronizedCountdown();
+      }
       else this.becomeHost();
     } else if (!this.net.isHost) {
       this.isHost = false;
@@ -1320,6 +1370,7 @@ class MatchmakingController {
     this.preparedMapKey = null;
     clearInterval(this.searchInterval);
     clearInterval(this.countdownTimer);
+    clearTimeout(this._readyPollTimer);
     // Rời phòng của trận cũ (đã khóa); bấm "TÌM TRẬN ĐẤU" sẽ vào phòng chờ mới
     if (this.net) this.net.leave();
     this.state = 'IDLE';
@@ -1354,7 +1405,7 @@ class MatchmakingController {
 
     // 1. Khách mới xin vào phòng
     if (msg.type === 'DISCOVER_ROOM') {
-      if (this.isHost && from && (this.state === 'COUNTDOWN' || this.state === 'IN_GAME' || this.state === 'IDLE')) {
+      if (this.isHost && from && (this.state === 'PREPARING' || this.state === 'COUNTDOWN' || this.state === 'IN_GAME' || this.state === 'IDLE')) {
         // Trận sắp bắt đầu hoặc chủ phòng đang ở sảnh: báo đầy để máy kia tự chơi hoặc sang phòng mới
         this.net.sendTo(from, 'ROOM_FULL', {});
         return;
@@ -1462,6 +1513,32 @@ class MatchmakingController {
     }
 
     // 4. Chủ phòng báo đã đủ người: mọi máy cùng đếm ngược 3 giây rồi vào trận
+    else if (msg.type === 'PREPARE_GAME') {
+      if (!this.isHost && fromHost && this.state !== 'IN_GAME' && this.state !== 'IDLE') {
+        if (Array.isArray(msg.slots)) {
+          this.slots = msg.slots;
+          this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
+        }
+        this.selectedMapType = msg.mapType || this.selectedMapType;
+        if (typeof msg.mapSeed === 'number') this.mapSeed = msg.mapSeed >>> 0;
+        if (typeof msg.spawnSeed === 'number') this.spawnSeed = msg.spawnSeed >>> 0;
+        this.state = 'PREPARING';
+        this.localGameReady = false;
+        this.prepareSelectedMap();
+        this.updateSearchHUD();
+        this.checkLocalGameReady();
+      }
+    }
+    else if (msg.type === 'CLIENT_GAME_READY') {
+      if (this.isHost && this.state === 'PREPARING' && from) {
+        const sameMap = msg.mapType === this.selectedMapType && (msg.mapSeed >>> 0) === (this.mapSeed >>> 0);
+        const isPlayer = this.slots.some(s => s.isHuman && s.peerId === from);
+        if (sameMap && isPlayer) {
+          this.readyPeers.add(from);
+          this.tryStartSynchronizedCountdown();
+        }
+      }
+    }
     else if (msg.type === 'START_COUNTDOWN' || msg.type === 'LAUNCH_GAME_NOW') {
       if (!this.isHost && fromHost && this.state !== 'IN_GAME' && this.state !== 'IDLE') {
         if (Array.isArray(msg.slots)) {
@@ -1563,7 +1640,7 @@ class MatchmakingController {
 
   // Chủ phòng / chơi đơn: đã đủ người -> khóa phòng, báo mọi máy cùng đếm ngược
   beginCountdown() {
-    if (this.state === 'COUNTDOWN' || this.state === 'IN_GAME') return;
+    if (this.state === 'PREPARING' || this.state === 'COUNTDOWN' || this.state === 'IN_GAME') return;
     clearInterval(this.searchInterval);
     // Hạt giống vị trí xuất phát ngẫu nhiên của trận này (mọi máy dùng chung -> cùng vị trí)
     this.spawnSeed = (typeof NetUtil !== 'undefined') ? NetUtil.randomSeed() : (Math.floor(Math.random() * 0x100000000) >>> 0);
@@ -1572,9 +1649,54 @@ class MatchmakingController {
     this.slots.forEach(s => { if (s.isHuman && !s.isMe && s.peerId) s.rating = this.peerRating(s.peerId, s.rating); });
     this.rebalanceHumans(this.spawnSeed);
     this.renderLobby(); // cân bằng đội hình lần cuối trước khi gửi
+    this.state = 'PREPARING';
+    this.localGameReady = false;
+    this.readyPeers.clear();
     if (this.net && this.net.isOnline && this.isHost) {
       this.net.lockRoom(true);
       this.refreshMyKit();
+      this.net.send('PREPARE_GAME', {
+        slots: this.slots,
+        mapType: this.selectedMapType,
+        mapSeed: this.mapSeed >>> 0,
+        spawnSeed: this.spawnSeed
+      });
+    }
+    this.prepareSelectedMap();
+    this.updateSearchHUD();
+    this.checkLocalGameReady();
+  }
+
+  // A client is ready only after both expensive map work and the mission intro are complete.
+  checkLocalGameReady() {
+    if (this.state !== 'PREPARING' || this.localGameReady) return;
+    const terrain = this.game && this.game.terrain;
+    const mapReady = !!(this.prepareSelectedMap() && terrain && terrain.detailsReady);
+    const warm = this.game && this.game._matchWarm;
+    const gameplayReady = !warm || warm.done === true;
+    if (!mapReady || !gameplayReady || !this.introFinished) {
+      clearTimeout(this._readyPollTimer);
+      this._readyPollTimer = setTimeout(() => this.checkLocalGameReady(), 120);
+      return;
+    }
+    this.localGameReady = true;
+    if (this.isHost) {
+      this.readyPeers.add(this.myPeerId);
+      this.tryStartSynchronizedCountdown();
+    } else if (this.net && this.net.hostId) {
+      this.net.sendTo(this.net.hostId, 'CLIENT_GAME_READY', {
+        mapType: this.selectedMapType,
+        mapSeed: this.mapSeed >>> 0
+      });
+    }
+    this.updateSearchHUD();
+  }
+
+  tryStartSynchronizedCountdown() {
+    if (!this.isHost || this.state !== 'PREPARING' || !this.localGameReady) return;
+    const humans = this.slots.filter(s => s.isHuman && s.peerId).map(s => s.peerId);
+    if (!humans.every(id => this.readyPeers.has(id))) return;
+    if (this.net && this.net.isOnline) {
       this.net.send('START_COUNTDOWN', {
         slots: this.slots,
         mapType: this.selectedMapType,
@@ -1633,6 +1755,7 @@ class MatchmakingController {
       return;
     }
     this.stopBriefingTypewriter();
+    clearTimeout(this._readyPollTimer);
     this.state = 'IN_GAME';
     clearInterval(this.searchInterval);
     clearInterval(this.countdownTimer);
@@ -1648,6 +1771,7 @@ class MatchmakingController {
     if (window.soundEngine && typeof window.soundEngine.init === 'function') {
       try { window.soundEngine.init(); } catch (e) {}
     }
+    this.stopBriefingTypewriter();   // lệnh chưa gõ xong thì thôi, không để tiếng máy điện báo lọt vào trận
     this.music('battle');
 
     // Đảm bảo liên kết với đối tượng game chính

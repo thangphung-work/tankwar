@@ -45,6 +45,14 @@ const TeamIntel = (() => {
   // Xe đỗ dưới tán cây còn lá (chưa vừa nổ súng): drone nhìn từ trên xuống chỉ thấy khi bay gần như ngay trên đầu
   // (nhìn chéo qua kẽ lá). Mắt thường dưới mặt đất nhìn ngang dưới tán: không đổi (khớp server_auth.js CANOPY_SPOT)
   const CANOPY_SPOT = 120;
+  // Xe chui vào nhà còn đứng (unit.indoor = BuildingSet.coverAt, chưa vừa nổ súng):
+  //  - trên đầu còn ô sàn / mái nguyên: drone chỉ thấy khi gần như ngay trên đầu, nhìn lọt qua ô cửa / lỗ thủng (khớp
+  //    server_auth.js ROOF_SPOT)
+  //  - tường bê tông / đá / tôn: radar mặt đất không xuyên — chỉ bắt được khi tia quét lọt qua lỗ thủng / mảng tường đã mất
+  //    (cùng phép dò đường ngắm qua nhà như mắt thường); nhà gỗ / gạch đất: sóng radar suy hao, phải vào gần một nửa
+  const ROOF_SPOT = 60;
+  const INDOOR_SOFT_RADAR = 0.5;
+  const indoorOf = t => t && t.indoor && !((t.revealTimer || 0) > 0) ? t.indoor : null;
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -99,6 +107,13 @@ const TeamIntel = (() => {
     // lộ do lưỡi ủi đang đẩy đất (game.js updateDig: bụi đất bốc cao + máy gầm) hay do vừa nổ súng
     // (trời mưa: không bụi, chỉ còn tiếng máy)
     const why = (u._digRevealT || 0) > performance.now() ? (u._digRevealWet ? 'ĐANG ỦI ĐẤT (TIẾNG MÁY)' : 'ĐANG ỦI ĐẤT (BỤI + TIẾNG MÁY)') : 'VỪA KHAI HỎA';
+    // trong nhà: mái che drone, tường che radar
+    if (u.indoor && !u.isInBush) {
+      if ((u.revealTimer || 0) > 0) return { html: `TRONG NHÀ · BỊ LỘ DO ${why} · ${u.revealTimer.toFixed(1)}S`, warn: true, cover: false };
+      const top = u.indoor.roof ? 'DRONE KHÔNG THẤY' : 'MÁI ĐÃ THỦNG — DRONE VẪN THẤY';
+      const side = u.indoor.hard ? 'RADAR BỊ TƯỜNG CHẮN (TRỪ QUA LỖ THỦNG)' : 'VÁCH MỎNG — RADAR PHẢI VÀO GẦN';
+      return { html: `TRONG NHÀ · ${top} · ${side}`, warn: !u.indoor.roof, cover: false };
+    }
     // dưới tán cây (không trong bụi): chỉ báo chữ, cover: false -> không bật lớp phủ lá núp bụi
     if (!u.isInBush) {
       if (!u.underCanopy) return null;
@@ -222,6 +237,8 @@ const TeamIntel = (() => {
     const bc = bushCover(t);
     let r = bc && bc.spot ? Math.min(DRONE_SIGHT, bc.spot) : DRONE_SIGHT;
     if (t.underCanopy && !((t.revealTimer || 0) > 0)) r = Math.min(r, CANOPY_SPOT);
+    const io = indoorOf(t);
+    if (io && io.roof) r = Math.min(r, ROOF_SPOT);
     for (const dr of list) {
       if (dr.team !== team || !game.droneIsAirborne(dr)) continue;
       if (Math.hypot(t.x - dr.x, t.z - dr.z) <= r) return true;
@@ -340,8 +357,10 @@ const TeamIntel = (() => {
       // lưới ngụy trang lá cây + đứng yên: radar chỉ bắt được ở cự ly gần hơn
       const camoK = typeof Equipment !== 'undefined' && Equipment.camoRadarFactor ? Equipment.camoRadarFactor(e) : 1;
       // núp bụi (chưa vừa nổ súng): radar chỉ bắt được ở cự ly gần hơn, tùy loại xe (BUSH_COVER)
-      const bc = bushCover(e);
-      if (d > R * camoK * (bc ? bc.radar : 1)) continue;
+      const bc = bushCover(e), io = indoorOf(e);
+      if (d > R * camoK * (bc ? bc.radar : 1) * (io && !io.hard ? INDOOR_SOFT_RADAR : 1)) continue;
+      // trong nhà tường cứng: tia radar phải lọt qua lỗ thủng / mảng tường đã mất (xe sát bên < 40 vẫn bắt)
+      if (io && io.hard && d >= 40 && buildingBlocked(u, e)) continue;
       // Tia quét vừa đi qua hướng mục tiêu (hoặc mục tiêu sát bên xe)
       let rel = bearing(u, e) - prev;
       if (rel < 0) rel += TWO_PI;

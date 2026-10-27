@@ -13,11 +13,18 @@ function domById(id) {
   else __domCache.delete(id);
   return found;
 }
+// Ghi chữ / kiểu / thuộc tính cho HUD CHỈ khi giá trị đổi: gán textContent / style dù cùng giá trị vẫn làm trình duyệt
+// đánh dấu bố cục cần tính lại -> HUD ghi ~15 chỗ mỗi khung + minimap / la bàn đọc kích thước sau đó = tính lại bố cục
+// mỗi khung. Nhớ giá trị đã ghi ngay trên phần tử
+function hudText(el, s) { if (el && el.textContent !== s) el.textContent = s; }
+// (hud_controller.js cũng ghi vài phần tử này: so cả giá trị trình duyệt trả về sau lần ghi trước -> bị ghi đè thì ghi lại)
+function hudStyle(el, k, v) { if (!el) return; const c = el.__s || (el.__s = {}); if (c[k] === v && el.style[k] === c['#' + k]) return; el.style[k] = v; c[k] = v; c['#' + k] = el.style[k]; }
+function hudClass(el, cls, on) { if (el && el.classList.contains(cls) !== !!on) el.classList.toggle(cls, !!on); }
 
 // BẢNG CÂN BẰNG: hệ số cuối theo [loại xe bắn:đạn][loại xe trúng], nhân sau khi tính giáp thật (VehicleDamage).
 // faceP < 1: nén chênh lệch giữa các mặt giáp (mul^faceP) — bắn sườn / đuôi vẫn lợi hơn nhưng không chênh vài chục lần.
 // spread: độ dao động ngẫu nhiên ± của đầu nổ. Mốc (trúng 100%, xe chưa lắp trang bị, phòng thử stronghold_lab):
-//   6 nòng 30mm: xe tăng mặt trước ~1 băng (~15 s), 6 nòng ~15 s, pháo ~8 s, trinh sát ~6 s (30mm xé xe vỏ mỏng: trước 12 / 8 s)
+//   6 nòng 30mm: xe tăng mặt trước ~1 băng (~15 s), 6 nòng ~11 s (3.0 máu), pháo ~8 s, trinh sát ~6 s (30mm xé xe vỏ mỏng: trước 12 / 8 s)
 //   trinh sát 12.7mm: đạn xuyên giáp xuyên được vỏ xe nhẹ — pháo ~7,5 s, trinh sát ~5,5 s (trước 20 / 14 s: 1 dây 100 viên
 //   ~10 s không hạ nổi xe cùng loại), xe xích gần như không xuyên
 //   tên lửa trinh sát: pháo trung bình ~1,7 quả, trinh sát ~1,3 quả, xe tăng 3 quả, 6 nòng 2 quả
@@ -57,6 +64,7 @@ function dozerRevealT(T, soil) {
 }
 const BALANCE = {
   'GATLING:GATLING_BULLET': { faceP: 0.25, k: { ALL_ROUNDER: 0.204, GATLING: 0.188, ARTILLERY: 0.119, SCOUT: 0.119 } },
+  'GATLING:GATLING_HE': { faceP: 0.25, k: { ALL_ROUNDER: 0.204, GATLING: 0.188, ARTILLERY: 0.14, SCOUT: 0.14 } },
   'GATLING:INCENDIARY': { faceP: 0.25, k: { ALL_ROUNDER: 0.204, GATLING: 0.188, ARTILLERY: 0.119, SCOUT: 0.119 } },
   'SCOUT:SCOUT_BULLET': { k: { ARTILLERY: 0.333, SCOUT: 0.364 } },
   'SCOUT:INCENDIARY': { k: { ARTILLERY: 0.333, SCOUT: 0.364 } },
@@ -100,6 +108,7 @@ class ArtilleryGame3D {
     // Không bật preserveDrawingBuffer: nó bắt GPU chép nguyên khung hình mỗi lần trình duyệt ghép hình. Chụp ảnh
     // (initCraterPreview) gọi toDataURL ngay sau render trong cùng lượt; quay video (captureStream) không cần nó
     this.renderer = new THREE.WebGLRenderer({ antialias: !(window.GameMenu && GameMenu.wantAntialias() === false), powerPreference: 'high-performance' });
+    this.renderer.debug.checkShaderErrors = false;
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
@@ -298,9 +307,11 @@ class ArtilleryGame3D {
   // Vật liệu chỉ sinh ra lúc giao tranh (vết đạn / lỗ thủng trên giáp, vỏ sóng nổ): tạo tạm mỗi loại một cái bằng
   // chính hàm của hệ hiệu ứng (đặt sâu dưới lòng đất, không bao giờ nhìn thấy), biên dịch + ghim shader rồi xoá ngay
   // -> phát trúng đầu tiên trong trận không còn khựng vì biên dịch shader
-  prewarmEffects() {
+  // async = true: biên dịch song song bằng compileShadersAsync (không chặn luồng chính), dọn vật liệu tạm khi xong;
+  // trả về Promise(số shader mới). onProgress(xong, tổng) như compileShadersAsync
+  prewarmEffects(async, onProgress) {
     const fx = this.effectsManager && this.effectsManager.fx;
-    if (!fx || !this.renderer) return;
+    if (!fx || !this.renderer) return async ? this.compileShadersAsync(onProgress) : undefined;
     const holder = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial());
     holder.position.set(0, -5000, 0);
     this.scene.add(holder);
@@ -320,20 +331,27 @@ class ArtilleryGame3D {
       // hố đạn (lõi / viền khoét lỗ, cục đất, đá) + lửa đầu nòng (bể rig dựng sẵn nằm luôn trong cảnh, ẩn tới phát bắn đầu)
       if (fx.warmMaterials) for (const m of fx.warmMaterials()) holder.add(new THREE.Mesh(holder.geometry, m));
       if (typeof SpgFXPool !== 'undefined' && SpgFXPool.flashRig) SpgFXPool.flashRig(this.scene);
-      this.renderer.compile(this.scene, this.camera);
-      this.pinShaderPrograms();
+      if (!async) {
+        this.renderer.compile(this.scene, this.camera);
+        this.pinShaderPrograms();
+      }
     } catch (e) { /* bỏ qua: chỉ là làm nóng shader */ }
-    for (const r of marks) { const i = fx.surfaceMarks.indexOf(r); if (i >= 0) fx.removeSurfaceMark(i); }
-    if (shock) shock.material.dispose();
-    if (ring) ring.material.dispose();
-    for (const w of holder.children.slice()) {
-      if (w === shock || w === ring || w.geometry !== holder.geometry) continue;
-      if (w.material.map) w.material.map.dispose();
-      w.material.dispose();
-      holder.remove(w);
-    }
-    this.scene.remove(holder);
-    holder.geometry.dispose(); holder.material.dispose();
+    const cleanup = () => {
+      for (const r of marks) { const i = fx.surfaceMarks.indexOf(r); if (i >= 0) fx.removeSurfaceMark(i); }
+      if (shock) shock.material.dispose();
+      if (ring) ring.material.dispose();
+      for (const w of holder.children.slice()) {
+        if (w === shock || w === ring || w.geometry !== holder.geometry) continue;
+        if (w.material.map) w.material.map.dispose();
+        w.material.dispose();
+        holder.remove(w);
+      }
+      this.scene.remove(holder);
+      holder.geometry.dispose(); holder.material.dispose();
+    };
+    if (!async) { cleanup(); return; }
+    // shader đã ghim trong compileShadersAsync -> huỷ vật liệu tạm không xoá chương trình
+    return this.compileShadersAsync(onProgress).then(n => { cleanup(); return n; }, err => { cleanup(); throw err; });
   }
 
   // GHIM SHADER: Three.js xoá chương trình shader ngay khi vật liệu cuối cùng dùng nó bị huỷ (dispose). Hiệu ứng tạo
@@ -348,12 +366,87 @@ class ArtilleryGame3D {
     this._pinnedPrograms = P.length;
   }
 
+  // BIÊN DỊCH SHADER SONG SONG, KHÔNG CHẶN LUỒNG CHÍNH (KHR_parallel_shader_compile). three r128 hỏi trạng thái
+  // liên kết (getProgramInfoLog) và danh sách uniform (getUniforms) ngay sau khi tạo mỗi chương trình -> trình duyệt phải
+  // chờ biên dịch xong TỪNG shader một, cả trăm shader thành ~50 s đứng hình (ANGLE D3D11). Ở đây:
+  //  1. tắt kiểm tra lỗi + thay tạm getUniforms của chương trình MỚI bằng bản rỗng -> renderer.compile chỉ gửi lệnh biên
+  //     dịch rồi trả về ngay, GPU biên dịch song song trên nhiều luồng
+  //  2. hỏi COMPLETION_STATUS_KHR (không chặn) mỗi nhịp cho tới khi xong hết; trong lúc chờ không vẽ cảnh (_shaderWarmBusy)
+  //  3. trả lại getUniforms thật, xoá currentProgram của vật liệu dính bản rỗng -> lần vẽ tới three dựng lại danh sách
+  //     uniform (chương trình đã liên kết xong nên không phải chờ)
+  // Không có phần mở rộng: rơi về renderer.compile đồng bộ như cũ. onProgress(xong, tổng). Trả về số shader mới.
+  compileShadersAsync(onProgress) {
+    const R = this.renderer, scene = this.scene, cam = this.camera;
+    if (!R || !scene || !cam) return Promise.resolve(0);
+    if (this._shaderWarmBusy) return this._shaderWarmBusy;
+    const gl = R.getContext();
+    const ext = gl.getExtension('KHR_parallel_shader_compile');
+    const P = R.info && R.info.programs;
+    if (!ext || !P || !R.properties) {
+      try { R.compile(scene, cam); } catch (e) { /* bỏ qua */ }
+      this.pinShaderPrograms();
+      return Promise.resolve(0);
+    }
+    const DONE = ext.COMPLETION_STATUS_KHR || 0x91B1;
+    const dummy = { seq: [], map: {}, setValue() {}, setOptional() {} };
+    const stubbed = [];
+    const origPush = P.push;
+    P.push = function (...ps) {
+      for (const p of ps) if (p && p.getUniforms) { stubbed.push([p, p.getUniforms]); p.getUniforms = () => dummy; }
+      return origPush.apply(this, ps);
+    };
+    const chk = R.debug.checkShaderErrors;
+    R.debug.checkShaderErrors = false;
+    try { R.compile(scene, cam); } catch (e) { console.warn('[SHADER] compile', e); }
+    finally { P.push = origPush; R.debug.checkShaderErrors = chk; }
+    const total = stubbed.length;
+    if (!total) { this.pinShaderPrograms(); return Promise.resolve(0); }
+    const t0 = performance.now();
+    const finish = () => {
+      const set = new Set();
+      for (const [p, real] of stubbed) {
+        p.getUniforms = real;
+        set.add(p);
+        if (chk && gl.getProgramParameter(p.program, gl.LINK_STATUS) === false)
+          console.error('[SHADER] lỗi liên kết', p.name, gl.getProgramInfoLog(p.program));
+      }
+      scene.traverse(o => {
+        const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+        if (!ms) return;
+        for (const m of ms) {
+          if (!m) continue;
+          const pr = R.properties.get(m);
+          // + tăng version: three r128 chỉ chọn lại chương trình khi version đổi, nếu không nó dùng thẳng currentProgram (null -> vỡ khung)
+          if (pr.currentProgram && set.has(pr.currentProgram)) { pr.currentProgram = null; m.needsUpdate = true; }
+        }
+      });
+      this.pinShaderPrograms();
+    };
+    const job = new Promise(resolve => {
+      const poll = () => {
+        let left = 0;
+        for (const [p] of stubbed) if (!gl.getProgramParameter(p.program, DONE)) left++;
+        if (onProgress) try { onProgress(total - left, total); } catch (e) { /* bỏ qua */ }
+        // quá 90 s (GPU treo / trình duyệt không báo trạng thái): thôi chờ, three tự chờ ở lần vẽ đầu như cũ
+        if (left && performance.now() - t0 < 90000) { setTimeout(poll, 50); return; }
+        try { finish(); } finally { this._shaderWarmBusy = null; resolve(total); }
+      };
+      setTimeout(poll, 30);
+    });
+    this._shaderWarmBusy = job;
+    return job;
+  }
+
   // Lượt làm nóng shader lúc vào trận có thể chạy TRƯỚC khi bản đồ dựng xong phần chi tiết dưới nền (cây, nhà, đồ vật,
   // thảm cỏ: terrain.detailsReady), còn phòng thử bỏ hẳn lượt đó cho vào nhanh -> phát bắn / phát trúng đầu tiên đứng hình
   // cả giây vì biên dịch 10+ shader (đo: khung 1,3 s). Bù lại lúc rảnh: 1 lượt khi vào trận, 1 lượt khi chi tiết dựng xong
   warmLateShaders() {
+    const isLab = !!(window.RANGE_LAB || window.STRONGHOLD_LAB || window.FREECAM_LAB || (typeof location !== 'undefined' && location.search && location.search.includes('lab=')));
     const T = this.terrain;
     if (!this.isGameStarted || !T || !this.renderer) return;
+    // Phòng thử: không compile ngay lúc vừa vào (giữ vào nhanh), nhưng VẪN làm nóng sau ~2,5 s lúc rảnh — bỏ hẳn thì
+    // shader hiệu ứng / chi tiết bản đồ biên dịch đúng lúc bắn phát đầu (đo 2026-10-26: khựng 2,5–14 s trên HIGHLAND)
+    if (isLab && Date.now() - (this.matchStartTime || 0) < 2500) return;
     const want = T.detailsReady ? 2 : 1;
     const W = this._lateWarm;
     if (W && W.T === T && (W.stage >= want || W.pending)) return;
@@ -362,9 +455,9 @@ class ArtilleryGame3D {
       job.pending = false;
       if (this._lateWarm !== job || this.terrain !== T || !this.isGameStarted) return;
       job.stage = T.detailsReady ? 2 : 1;
-      this.prewarmEffects();
-      try { this.renderer.compile(this.scene, this.camera); } catch (e) { /* bỏ qua */ }
-      this.pinShaderPrograms();
+      // biên dịch song song, không chặn luồng chính (trong lúc chờ không vẽ cảnh — thường chỉ vài khung vì shader
+      // đã có sẵn từ lượt làm nóng trước)
+      this.prewarmEffects(true).catch(e => console.warn('[SHADER] late warm', e));
     };
     if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1500 });
     else setTimeout(run, 400);
@@ -386,16 +479,20 @@ class ArtilleryGame3D {
     const t = mapType || this.currentMapType || 'DESERT';
     const s = (seed === undefined || seed === null) ? this.mapSeed : (seed >>> 0);
     this.currentMapType = t;
+    // tiếng vang theo môi trường bản đồ (phố dội tường, thung lũng vọng xa, sa mạc khô, rừng hút âm, sông hồ dội mặt nước)
+    if (window.soundEngine && window.soundEngine.setEnvironment) window.soundEngine.setEnvironment(t);
     this.mapSeed = s;
     if (this.terrain) {
+      const isLab = !!(window.RANGE_LAB || window.STRONGHOLD_LAB || window.FREECAM_LAB || (typeof location !== 'undefined' && location.search && location.search.includes('lab=')));
       const rebuilt = this.terrain.setMapType(t, s);
       if (rebuilt) {
         this.applyAtmosphereLights();
         this.changeMap(t);
-        // Biên dịch sẵn shader của bản đồ mới để khung hình đầu tiên trong trận không bị khựng
-        try { this.renderer.compile(this.scene, this.camera); } catch (e) { /* bỏ qua */ }
+        // Biên dịch sẵn shader của bản đồ mới để khung hình đầu tiên trong trận không bị khựng (phòng thử bỏ qua để vào ngay)
+        if (!isLab) {
+          try { this.renderer.compile(this.scene, this.camera); } catch (e) { /* bỏ qua */ }
+        }
       }
-      const isLab = !!(window.RANGE_LAB || window.STRONGHOLD_LAB || window.FREECAM_LAB || (typeof location !== 'undefined' && location.search && location.search.includes('lab=')));
       if (!this.isGameStarted && !isLab) this.scheduleMatchPrewarm();
     }
     return this.terrain;
@@ -416,7 +513,7 @@ class ArtilleryGame3D {
     const key = T.mapType + ':' + T.seed;
     if (this._matchWarm && this._matchWarm.key === key && this._matchWarm.T === T) return;
     if (this._matchWarm && this._matchWarm.cleanup) this._matchWarm.cleanup();
-    const job = this._matchWarm = { key, T, ms: {} };
+    const job = this._matchWarm = { key, T, ms: {}, done: false };
     const alive = () => this._matchWarm === job && !this.isGameStarted && this.terrain === T && T.built && (T.mapType + ':' + T.seed) === key;
     const types = ['ALL_ROUNDER', 'GATLING', 'ARTILLERY', 'SCOUT'];
     const dummies = [];
@@ -460,6 +557,7 @@ class ArtilleryGame3D {
       const step = steps.shift();
       if (!step) {
         cleanup();
+        job.done = true;
         const ms = Object.entries(job.ms).filter(e => e[1] >= 5).map(e => e[0] + ' ' + e[1]).join(' · ');
         console.info(`[PREWARM] Làm nóng trận ${key}: ${Math.round(performance.now() - t0)} ms — ${ms}`);
         return;
@@ -647,6 +745,7 @@ class ArtilleryGame3D {
     const myName = meSlot ? meSlot.name : 'CHỈ HUY LIÊN MINH';
 
     this._playerDeaths = 0;
+    this._playerAirdrops = 0;
     this.addCombatLog(`[[rocket]] XUẤT TRẬN THÀNH CÔNG! Chào mừng ${myName} vào chiến địa!`, 'tip');
     const layLabel = this.terrain && this.terrain.map && this.terrain.map.layoutLabel;
     const layDesc = this.terrain && this.terrain.map && this.terrain.map.layoutDesc;
@@ -1827,7 +1926,7 @@ class ArtilleryGame3D {
       if (!P || P.isDead || !M || !M.on || this._sight || this._freeLook || this.tacticalMap.isOpen) return;
       if (typeof QuickComms !== 'undefined' && QuickComms.isOpen()) return;
       if (P.tankType !== 'SCOUT' && P.tankType !== 'GATLING') return;
-      if (P.selectedAmmo === 'ANTI_TANK_MISSILE') return;
+      // xe trinh sát chọn tên lửa vẫn cho tháp quay theo chuột để ngắm đúng vùng muốn bắn
       if (this.lockedTarget && !this.lockedTarget.isDead) return;
       if (this._airAim && this._airAim.kind === 'drone') return;
       // chuột đứng yên & camera đứng yên: điểm dưới con trỏ không đổi
@@ -2123,9 +2222,9 @@ class ArtilleryGame3D {
       }
       this.cameraShake = 3;
       this.updateAmmoUI();
-      this.addCombatLog(missile.guide && missile.guide.fnf
+      this.addCombatLog(missile.guide && missile.guide.top
         ? `[[arrow-big-down-lines]] Đã phóng tên lửa tấn công đỉnh vào ${lockT.name} — BẮN & QUÊN: đầu dò ảnh nhiệt tự bám, rút xe / nạp quả mới ngay được (mất dấu nếu mục tiêu thả khói hoặc lẩn vào bụi rậm)`
-        : `[[rocket]] Đã phóng tên lửa vào ${lockT.name}! Giữ xe sống và giữ mục tiêu trong tầm nhìn tới khi trúng`, 'tip');
+        : `[[rocket]] Đã phóng tên lửa vào ${lockT.name}! Tên lửa tự bám đuổi mục tiêu đã khóa.`, 'tip');
     }
   }
 
@@ -2853,7 +2952,7 @@ class ArtilleryGame3D {
     const fixedGun = P.canElevate === false || P.tankType === 'GATLING';
     if (fixedGun) {
       // thời gian bay có lực cản (đạn 30mm chậm dần rõ: ở 1000 đv bay lâu hơn cự ly / sơ tốc ~27%)
-      const ammo = P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : 'GATLING_BULLET';
+      const ammo = P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : P.selectedAmmo === 'GATLING_HE' ? 'GATLING_HE' : 'GATLING_BULLET';
       tr.flightT = B.directFlightTime(ammo, P, Math.hypot(T.x - P.x, T.z - P.z));
     }
     // 2. Điểm đón đầu (giới hạn để mục tiêu đổi hướng không kéo nòng đi quá xa)
@@ -3099,7 +3198,8 @@ class ArtilleryGame3D {
     };
 
     const cam = this.camera;
-    const W = window.innerWidth, H = window.innerHeight;
+    const W = this._sightViewport ? this._sightViewport.width : window.innerWidth;
+    const H = this._sightViewport ? this._sightViewport.height : window.innerHeight;
     const tanHalfFov = Math.tan(((cam && cam.fov) || 45) * Math.PI / 360);
     const yOfTheta = (th) => (Math.tan(th) / tanHalfFov) * (H / 2);
     const f = (n) => n.toFixed(1);
@@ -3238,7 +3338,7 @@ class ArtilleryGame3D {
       reach = this.airRadarR ? this.airRadarR(P) : 0;
       if (!reach) { this.addCombatLog('[[radar-off]] Radar đã bị bắn hỏng — không khóa được drone, phải nhấp ngắm tay', 'alert'); return; }
     } else {
-      const ammo = P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : 'GATLING_BULLET';
+      const ammo = P.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : P.selectedAmmo === 'GATLING_HE' ? 'GATLING_HE' : 'GATLING_BULLET';
       reach = Math.round(((this.aaRound && this.aaRound(P, ammo).maxTravel) || 900) * 1.5);
     }
     let best = null, bd = reach;
@@ -3781,6 +3881,10 @@ class ArtilleryGame3D {
       this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy! Súng chuyển về đạn thường' + this.stockNote('INCENDIARY'), 'alert');
       return;
     }
+    if (ammoType === 'GATLING_HE' && (this.player.heFragAmmoCount || 0) <= 0) {
+      this.addCombatLog('[[alert-triangle]] Không còn đạn nổ mảnh ngòi cận đích — đạn mua thêm' + this.stockNote('GATLING_HE'), 'alert');
+      return;
+    }
     if (ammoType === 'ANTI_TANK_MISSILE' && (this.player.missileAmmoCount || 0) <= 0) {
       this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
@@ -3801,7 +3905,9 @@ class ArtilleryGame3D {
     } else if (ammoType === 'ANTI_TANK_MISSILE') {
       name = 'TÊN LỬA CHỐNG TĂNG DẪN HƯỚNG';
     } else if (ammoType === 'GATLING_BULLET') {
-      name = 'ĐẠN NHỎ LIÊN THANH (MƯA ĐẠN 6 NÒNG)';
+      name = 'ĐẠN 30MM LÕI HỢP KIM (MƯA ĐẠN 6 NÒNG - SẤY DỒN ĐỤC MŨI TĂNG)';
+    } else if (ammoType === 'GATLING_HE') {
+      name = 'ĐẠN 30MM NỔ TẠO MẢNH (NGÒI CẬN ĐÍCH - CHUYÊN TRỊ DRONE & QUÉT XE GIÁP MỎNG)';
     } else if (ammoType === 'SCOUT_BULLET') {
       name = 'ĐẠN NHỎ PHÁO 30MM (BẮN TỐC ĐỘ CAO)';
     }
@@ -3849,9 +3955,13 @@ class ArtilleryGame3D {
         qtyStr = `x${this.player.missileAmmoCount || 0}`;
         iconColor = '#f97316';
       } else if (type === 'GATLING_BULLET' || type === 'SCOUT_BULLET') {
-        cardName = 'ĐẠN NHỎ';
+        cardName = '30MM';
         qtyStr = '∞';
         iconColor = '#fbbf24';
+      } else if (type === 'GATLING_HE') {
+        cardName = 'NỔ MẢNH';
+        qtyStr = `x${this.player.heFragAmmoCount || 0}`;
+        iconColor = '#ff9800';
       }
 
       html += `
@@ -4114,7 +4224,7 @@ class ArtilleryGame3D {
           hit.ricochet = true; hit.vsDeflect = vsCls;
         }
         // lỗ thủng / hố lõm trên vỏ dán sau khi tính giáp (fxSys.armorHitMarks) — phát không xuyên không để lại lỗ thủng
-        const surf = fxSys.impactSurface(fxAmmo, hit, sv, { heavy: !!shell.isHeavyArty, deflect: hit.vsDeflect || null, du: !!shell.du, deferArmorMarks: true });
+        const surf = fxSys.impactSurface(fxAmmo, hit, sv, { heavy: !!shell.isHeavyArty, deflect: hit.vsDeflect || null, du: !!shell.du, gl40: !!shell.gl40, deferArmorMarks: true });
         if (surf && surf.ricochet) hit.ricochet = true;
         // ballistics penetrateUnit: đạn nảy khỏi giáp / bị khiên chữ V làm chệch thì không xuyên thấu xe
         shell._ric = !!(hit.ricochet || hit.vsDeflect);
@@ -4132,7 +4242,7 @@ class ArtilleryGame3D {
     const bn = (hitType === 'BUILDING' || hitType === 'TREE') && shell.hitNormal && shell.hitNormal.ny !== undefined ? { x: shell.hitNormal.nx, y: shell.hitNormal.ny, z: shell.hitNormal.nz } : null;
     // Nổ trên tán cây: hiệu ứng nổ trên không + cành gãy, dăm gỗ, lá vụn mưa xuống
     if (!fxDone && hitType === 'CANOPY') {
-      this.createImpactEffects(x, y, z, fxAmmo, 'AIRBURST', { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, noCrater: true });
+      this.createImpactEffects(x, y, z, fxAmmo, 'AIRBURST', { heavy: !!shell.isHeavyArty, gl40: !!shell.gl40, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, noCrater: true });
       const tr = this.terrain && this.terrain.trees;
       if (tr && tr.canopyBurstFx) tr.canopyBurstFx(x, y, z, ammoType === 'GATLING_BULLET' ? (shell.gl40 ? 0.6 : 0.3) : shell.isHeavyArty ? 1.4 : 1, fxSys);
       fxDone = true;
@@ -4140,13 +4250,13 @@ class ArtilleryGame3D {
     // Ngòi cận đích: đạn HE bay sượt sát thân xe địch, nổ trên không ngay cạnh xe (ballistics proximityBurst) — sát thương
     // nổ lan theo khoảng cách tới thân xe ở mục 6, không phải trúng thẳng
     if (!fxDone && hitType === 'PROXIMITY') {
-      this.createImpactEffects(x, y, z, fxAmmo, 'AIRBURST', { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, noCrater: true });
+      this.createImpactEffects(x, y, z, fxAmmo, 'AIRBURST', { heavy: !!shell.isHeavyArty, gl40: !!shell.gl40, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, noCrater: true });
       fxDone = true;
     }
     // đạn cháy 12.7mm (xe trinh sát): hình & tiếng như đạn 12.7 + chớp cháy nhỏ, không phải đạn cháy 30mm
     const hmgInc = ammoType === 'INCENDIARY' && (this.units.find(u => u.id === shell.shooterId) || {}).tankType === 'SCOUT';
     // đạn 12.7 nổ-cháy-xuyên Mk211: chớp nổ-cháy to hơn đạn xuyên-cháy (ngòi chạm nổ trên mặt)
-    if (!fxDone) this.createImpactEffects(x, y, z, shell.heiap ? 'HEIAP_HMG' : hmgInc ? 'INCENDIARY_HMG' : fxAmmo, hitType, { heavy: !!shell.isHeavyArty, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, tree: hitType === 'TREE' ? shell.hitTree : undefined, du: !!shell.du, mat: hitType === 'BUILDING' || hitType === 'BOULDER' ? shell.hitMat : undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
+    if (!fxDone) this.createImpactEffects(x, y, z, shell.heiap ? 'HEIAP_HMG' : hmgInc ? 'INCENDIARY_HMG' : fxAmmo, hitType, { heavy: !!shell.isHeavyArty, gl40: !!shell.gl40, dir: { x: shell.vx || 0, y: shell.vy || 0, z: shell.vz || 0 }, normal: bn || undefined, tree: hitType === 'TREE' ? shell.hitTree : undefined, du: !!shell.du, mat: hitType === 'BUILDING' || hitType === 'BOULDER' ? shell.hitMat : undefined, noCrater: remoteShell || hitType === 'TREE' || hitType === 'SANDBAG' });
     // Đường xuyên qua tường bị trúng (đv): bề dày thật của khối tường boong-ke (1,5 m) / vách bê tông thường (~0,8 m), chia
     // cos góc tới (bắn xiên phải xuyên qua quãng dài hơn). Đầu xuyên chỉ thủng ra mặt sau khi quãng đó ≤ sức xuyên
     // (APFSDS ~2 m, tên lửa chống tăng ~1,7 m, RPG-7 ~0,9 m bê tông) — RPG vào tường boong-ke 1,5 m: không phụt ra sau
@@ -4275,7 +4385,12 @@ class ArtilleryGame3D {
       // - TANK ĐA DỤNG: 1 - 2 sát thương (cân bằng)
       // Sát thương trúng thẳng đã gồm cả sức nổ tại chỗ (xe trúng thẳng không bị cộng thêm sát thương nổ lan)
       let directDamage = 1.6;
-      if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
+      if (shell.aaMG) {
+        // súng máy 7.62 trạm nóc tháp bay theo hệ đạn 12.7 (SCOUT_BULLET) nhưng chỉ ~1/5 động năng: sát thương gốc riêng
+        // (drone_air C.RCWS.dmgVehicle); độ xuyên riêng ở VehicleDamage (cờ mg762)
+        directDamage = shell.damage !== undefined ? shell.damage : 0.005;
+      } else if (ammoType === 'GATLING_BULLET' || ammoType === 'GATLING_HE' || ammoType === 'SCOUT_BULLET') {
+        // 30mm nổ mảnh (GATLING_HE) cùng cỡ đạn 30mm: chung sát thương gốc, chênh lệch theo xe ở BALANCE 'GATLING:GATLING_HE'
         directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.12 : 0.075; // 12.7mm bắn chậm hơn nhưng mỗi viên mạnh hơn; 30mm Gatling băng 450 viên nên mỗi viên nhẹ hơn
       } else if (ammoType === 'INCENDIARY') {
         directDamage = (shooter && shooter.tankType === 'SCOUT') ? 0.14 : 0.12;   // bén lửa: xem dưới (lồng thép chặn được)
@@ -4312,7 +4427,7 @@ class ArtilleryGame3D {
       const topAtk = ammoType === 'ANTI_TANK_MISSILE' && !!shell.guide && (!!shell.topMsl || (!!shell.guide.top && shell.guide.airOwner == null));
       if (typeof VehicleDamage !== 'undefined') {
         const dmgRes = VehicleDamage.onDirectHit(directTarget, {
-          hit: unitHit, ammo: ammoType, heavy: !!shell.isHeavyArty, shooter, fx: fxSys, seed: shell.burstSeed, gl40: !!shell.gl40, kami: !!shell.kami, topMsl: topAtk, du: !!shell.du, heiap: !!shell.heiap,
+          hit: unitHit, ammo: ammoType, heavy: !!shell.isHeavyArty, shooter, fx: fxSys, seed: shell.burstSeed, gl40: !!shell.gl40, kami: !!shell.kami, topMsl: topAtk, du: !!shell.du, heiap: !!shell.heiap, mg762: !!shell.aaMG,
           penK: shell.penK,   // đạn đã xuyên vật cản trước khi tới xe (ballistics penetrateEnv): xuyên giáp kém đi
           topAttack: ammoType === 'ANTI_TANK_MISSILE' && !!(shell.guide && shell.guide.dive) && (shell.vy || 0) < -0.5 * Math.hypot(shell.vx || 0, shell.vy || 0, shell.vz || 0),
           dir: new THREE.Vector3(shell.vx || 0, shell.vy || 0, shell.vz || 0)
@@ -4444,6 +4559,8 @@ class ArtilleryGame3D {
           if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET') {
             // 30mm nổ-mảnh văng mảnh nhỏ sát điểm chạm; 12.7mm không có thuốc nổ
             splashDamage = (ammoType === 'SCOUT_BULLET' || (shooter && shooter.tankType === 'SCOUT')) ? 0 : 0.015;
+          } else if (ammoType === 'GATLING_HE') {
+            splashDamage = 0.03;   // 30mm nổ mảnh (~50 g thuốc nổ, vỏ phá mảnh): gấp đôi mảnh đạn 30mm thường, vẫn chỉ sát điểm nổ
           } else if (ammoType === 'INCENDIARY') {
             splashDamage = 0.08;   // bén lửa khi nổ sát xe: xem dưới (lồng thép chặn được)
           } else if (ammoType === 'CLUSTER_SUBMUNITION') {
@@ -4590,6 +4707,51 @@ class ArtilleryGame3D {
     }
   }
 
+  /**
+   * NHÀ / MẶT NHÀ / MẢNG TƯỜNG / Ô SÀN SẬP ĐÈ XE (BuildingSet.queueCrush -> takeCrush, đúng lúc khối đổ chạm đất): mỗi vùng
+   * đổ là hộp theo trục nhà, sev = phần máu mất khi trọn thân xe nằm dưới. Phần thân xe trong vùng đo bằng 9 điểm trên hộp
+   * thân xe; cùng một cú đổ (gid) chỉ tính vùng nặng nhất, nhiều cú đổ cộng dồn (tối đa trọn máu). Nhà nhiều tầng sập trọn lên
+   * xe: hết máu; một mảng tường bê tông văng trúng: xe tăng xây xát, xe trinh sát móp nóc. Nguồn 'ZONE' -> chỉ máy chủ quyền
+   * của xe trừ máu (như crushUnderPanel)
+   */
+  crushUnderBuilding(list) {
+    const VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
+    if (!VC || !list || !list.length) return;
+    const ob = {};
+    for (const u of this.units) {
+      if (!u || u.isDead || !u.group) continue;
+      const per = {};
+      let got = false;
+      for (const z of list) {
+        const R = Math.hypot(z.hu, z.hv) + 40;
+        if (Math.abs(u.x - z.x) > R || Math.abs(u.z - z.z) > R || (u.y || 0) > z.yTop) continue;
+        VC.vehObb(u, u.x, u.z, u.bodyAngle || 0, ob);
+        let n = 0;
+        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+          const px = ob.cx + ob.ux * ob.hu * 0.8 * i - ob.uz * ob.hv * 0.8 * j, pz = ob.cz + ob.uz * ob.hu * 0.8 * i + ob.ux * ob.hv * 0.8 * j;
+          const tx = px - z.x, tz = pz - z.z, lu = tx * z.ux + tz * z.uz, lv = -tx * z.uz + tz * z.ux;
+          if (Math.abs(lu) > z.hu || Math.abs(lv) > z.hv) continue;
+          if (z.inHu && Math.abs(lu) < z.inHu && Math.abs(lv) < z.inHv) continue;
+          n++;
+        }
+        if (n < 1) continue;
+        const v = z.sev * Math.min(1, (n / 9) * 1.2);
+        if (!(per[z.gid] >= v)) { per[z.gid] = v; got = true; }
+      }
+      if (!got) continue;
+      let tot = 0;
+      for (const k in per) tot += per[k];
+      // xe nhẹ vỏ mỏng bẹp nặng hơn xe tăng 60 tấn dưới cùng khối gạch đá (xe 10 tấn: x2)
+      tot = Math.min(1, tot * Math.min(2, Math.sqrt(60 / (u.mass || 40))));
+      if (tot < 0.01) continue;
+      const res = u.takeDamage((u.maxHp || 3) * tot, null, 'ZONE');
+      if (typeof VehicleDamage !== 'undefined' && VehicleDamage.crushHull) VehicleDamage.crushHull(u, Math.min(0.8, tot * 0.9), { roof: 1.6, sag: 0.6, sides: 0.3, twist: 0.2 });
+      if (u.isPlayer && res && !res.netIgnored) this.addCombatLog(tot >= 0.3
+        ? `[[alert-triangle]] NHÀ SẬP ĐÈ LÊN XE! Bê tông, gạch đá đổ xuống nóc — còn ${Math.max(0, u.hp).toFixed(1)}/${u.maxHp} máu`
+        : `[[alert-triangle]] Gạch đá, mảng tường đổ trúng xe — còn ${Math.max(0, u.hp).toFixed(1)}/${u.maxHp} máu`, 'alert');
+    }
+  }
+
   // Đạn từ máy khác: chỉ chạy hư hại bộ phận (không trừ máu) cho xe trúng trực tiếp & xe trong vùng nổ
   // ỦI Ụ ĐẤT (xe 6 nòng còn lưỡi ủi, GIỮ phím X): hạ lưỡi ủi — đầu xe chúi xuống, lưỡi cắm vào đất.
   //  - Giữ X + chạy tới: lưỡi gom đất thành ụ ngay trước mũi xe, đẩy càng xa ụ càng cao. Đống trên lưỡi càng đầy xe càng
@@ -4694,8 +4856,9 @@ class ArtilleryGame3D {
     if (nest) {
       const a = P.bodyAngle || 0, ux = -Math.sin(a), uz = -Math.cos(a), rx = -uz, rz = ux;
       for (const sd of [-1, 1]) {
-        // bờ sườn cao ~1,5 m trên mép hào sâu ~0,5 m: thân xe khuất hẳn, chỉ tháp nhô lên (xem DIG_PIT)
-        this.digBerm(P.x + rx * sd * 24 + ux * 6, P.z + rz * sd * 24 + uz * 6, a + Math.PI / 2, { L: 30, W: 8, H: 12 }, Math.min(1, D.cut * 1.1));
+        // bờ sườn cao ~1,5 m trên mép hào sâu ~0,5 m: thân xe khuất hẳn, chỉ tháp nhô lên (xem DIG_PIT). Dày ~2,5 m chân (W 10,
+        // chân trong cách mép xích ~0,1 m), dài ~8 m trùm cả thân xe tới sát đuôi -> đạn bắn ngang sườn phải xuyên lớp đất dày
+        this.digBerm(P.x + rx * sd * 26 + ux * 4, P.z + rz * sd * 26 + uz * 4, a + Math.PI / 2, { L: 33, W: 10, H: 12 }, Math.min(1, D.cut * 1.1));
       }
     }
     const keep = !!(D.b && D.k >= 0.15);
@@ -4741,10 +4904,11 @@ class ArtilleryGame3D {
     const turn = Math.abs(dYaw) > dt * 0.15 ? Math.sign(dYaw) : 0;   // + = cua trái -> phía ngoài là bên phải (sd = +1)
     for (const sd of [-1, 1]) {
       const inner = turn && sd === -turn;
-      const base = D.k > 0.3 ? (1.4 + 2.4 * D.k) * Math.sqrt(SO.spill) * (inner ? 0.35 : 1) : 0;
-      const extra = Math.min(6, TS[sd] * 45);   // đất trượt khỏi đầu lưỡi khi cua dồn thêm vào luống bên này
+      const base = D.k > 0.3 ? (1.8 + 3 * D.k) * Math.sqrt(SO.spill) * (inner ? 0.35 : 1) : 0;
+      // đất trượt khỏi đầu lưỡi khi cua dồn thêm vào luống bên này: luống phía ngoài cua cao tới ~1,2 m, dày — che sườn
+      const extra = Math.min(9, TS[sd] * 60);
       if (base <= 0.3 && extra <= 0.3 && TS[sd] < 0.004) { delete R[sd]; continue; }
-      const W = 3 + D.k * 1.5 + extra * 0.4, off = 16.5 + W;
+      const W = 3 + D.k * 1.8 + extra * 0.5, off = 16.5 + W;
       const x = P.x + fx * 30 + rx * sd * off, z = P.z + fz * 30 + rz * sd * off;
       const p = R[sd];
       // điểm rớt trước quá xa (xe đã lùi ra / vừa bỏ đống, dải cũ đã đứt): bắt đầu dải mới tại đây
@@ -4769,9 +4933,12 @@ class ArtilleryGame3D {
     const a = U.bodyAngle || 0, o = S.off || 0;
     const x = U.x - Math.sin(a) * 44 + Math.cos(a) * o, z = U.z - Math.cos(a) * 44 - Math.sin(a) * o;
     let got = 0;
-    if (!S.b || !S.b.mesh) { S.b = this.terrain.addBerm(x, z, a); this.terrain.setBermLevel(S.b, k); }
+    // đất lan theo hướng cua: đống lệch về đầu lưỡi nào thì cánh đống bên đó dài ra, cong ôm về sau (terrain.bermAt sk).
+    // Đống lệch tối đa ~8 đv (updateDig — quá thì tràn qua đầu lưỡi) -> sk = 1
+    const sk = Math.max(-1, Math.min(1, o / 8));
+    if (!S.b || !S.b.mesh) { S.b = this.terrain.addBerm(x, z, a); S.b.sk = sk; this.terrain.setBermLevel(S.b, k); }
     else if (fwd) {
-      S.b.k = k; this.terrain.moveBerm(S.b, x, z, a);
+      S.b.k = k; S.b.sk = sk; this.terrain.moveBerm(S.b, x, z, a);
       S.cutD = (S.cutD || 0) + (S.cx !== undefined ? Math.hypot(U.x - S.cx, U.z - S.cz) : 0);
       if (S.cutD >= 8 && this.terrain.cutBerm) {
         S.cutD = 0;
@@ -4821,9 +4988,11 @@ class ArtilleryGame3D {
 
   updateDig(dt) {
     const D = this._dig, P = this.player;
-    // đầu xe chúi nhẹ khi lưỡi ủi tì đất (mượt), ngóc lại khi nâng lưỡi — lưỡi tự hạ bằng xi-lanh (animBlade)
+    // ĐẦU XE CHÚI khi lưỡi ủi cắm đất (mượt), ngóc lại khi nâng lưỡi — lưỡi tự hạ bằng xi-lanh (animBlade). Hạ lưỡi: chúi
+    // ~1,4° (mũi tụt ~8 cm); lưỡi tì đống đầy đẩy tới thì phản lực đất ghì mũi xuống thêm, tới ~3,2° (mũi tụt ~20 cm).
+    // _dozerLoad của khung trước (0,1 lưỡi trống .. 1 đống đầy nặng). Trước đây chỉ -0,012 rad (~0,7°): gần như không thấy
     if (P) {
-      const want = D && !P.isDead ? -0.012 : 0;
+      const want = D && !P.isDead ? -(0.024 + 0.032 * Math.min(1, P._dozerLoad || 0)) : 0;
       P._dozerPitch = (P._dozerPitch || 0) + (want - (P._dozerPitch || 0)) * Math.min(1, dt * 4);
       if (!D) { P._dozerLoad = 0; P._dozerTurnK = 1; }
     }
@@ -5053,7 +5222,9 @@ class ArtilleryGame3D {
     // đầu xe chúi khi lưỡi hạ (xe máy khác)
     for (const u of this.units || []) {
       if (u === this.player || (!u._dozerPitch && !R.has(u))) continue;
-      const want = R.has(u) && !u.isDead ? -0.012 : 0;
+      // như xe mình (updateDig): chúi theo đống đang đẩy (gói 'f': k, m)
+      const S = R.get(u);
+      const want = S && !u.isDead ? -(0.024 + (S.m ? 0.032 * Math.min(1, 0.25 + S.k * 0.6) : 0.003)) : 0;
       u._dozerPitch = (u._dozerPitch || 0) + (want - (u._dozerPitch || 0)) * Math.min(1, dt * 4);
       if (!want && Math.abs(u._dozerPitch) < 1e-4) u._dozerPitch = 0;
     }
@@ -5248,7 +5419,7 @@ class ArtilleryGame3D {
     // Xe còn sống: chỉ chạy phần HÌNH ẢNH (móp, tia lửa); hư hại bộ phận thật do máy có quyền tính & gửi PARTS
     if (hitType === 'DIRECT_HIT' && directTarget && !directTarget.isDead) {
       const topMsl = ammoType === 'ANTI_TANK_MISSILE' && !!shell.guide && (!!shell.topMsl || (!!shell.guide.top && shell.guide.airOwner == null));
-      const res = VehicleDamage.visualOnly(() => VehicleDamage.onDirectHit(directTarget, { hit: unitHit, ammo: ammoType, heavy, shooter, fx: fxSys, seed: shell.burstSeed, dir, gl40: !!shell.gl40, kami: !!shell.kami, topMsl, du: !!shell.du, heiap: !!shell.heiap, penK: shell.penK }));
+      const res = VehicleDamage.visualOnly(() => VehicleDamage.onDirectHit(directTarget, { hit: unitHit, ammo: ammoType, heavy, shooter, fx: fxSys, seed: shell.burstSeed, dir, gl40: !!shell.gl40, kami: !!shell.kami, topMsl, du: !!shell.du, heiap: !!shell.heiap, mg762: !!shell.aaMG, penK: shell.penK }));
       this.armorHitSound(directTarget, res, shell, unitHit, shell.x, shell.z);
       if (fxSys && fxSys.armorHitMarks && unitHit) fxSys.armorHitMarks(unitHit, res);
       return;
@@ -5420,6 +5591,9 @@ class ArtilleryGame3D {
         }
       }
 
+      // dựng sẵn mô hình mới trong lúc chờ (chia nhỏ qua nhiều khung) thay vì dựng cả cụm ngay khung xuất kích
+      if (item.timer <= ArtilleryGame3D.RESPAWN_PREP_LEAD && item.timer > 0) this.prepRespawn(item);
+
       if (item.timer <= 0) {
         // Xác xe nằm lại chiến trường suốt trận (vẫn bắn rã tiếp được), xe xuất kích lại bằng mô hình mới
         this.keepWreck(item.unit);
@@ -5447,13 +5621,66 @@ class ArtilleryGame3D {
     }
   }
 
+  // DỰNG SẴN MÔ HÌNH XE CHỜ HỒI SINH: khung đầu tách xác (xác thành vật độc lập như lúc xuất kích) + dựng thân xe mới,
+  // giữ NGOÀI CẢNH & ẩn (không vẽ, không bị bắn trúng, xe chết không cập nhật — SPG.update bỏ qua khi _respawnPrep);
+  // cây dò tia của mô hình mới dựng trước trong worker, rồi mỗi khung gắn tiếp một phần trang bị (giáp, từng mặt lồng...)
+  // trong ~RESPAWN_PREP_MS. Trước đây cả cụm (~0,5–1,1 s) dồn vào đúng khung xe xuất kích
+  prepRespawn(item) {
+    const u = item.unit;
+    if (item.prep === false || (item.prep && item.prep.done)) return;
+    if (!item.prep) {
+      if (!u || !u.isDead || typeof u.beginDetachWreck !== 'function') { item.prep = false; return; }
+      let job = null;
+      try { job = u.beginDetachWreck(); } catch (err) { console.warn('[ArtilleryGame3D] prepRespawn error:', err); }
+      if (!job) { item.prep = false; return; }
+      this.registerWreck(u, job.W);
+      const g = u.group, parent = g.parent || this.scene;
+      if (g.parent) g.parent.remove(g);
+      g.visible = false;
+      u._respawnPrep = true;
+      if (window.RaycastBVH && RaycastBVH.warm) RaycastBVH.warm(g, true);
+      item.prep = { job, group: g, parent, t0: performance.now(), done: false };
+      return;
+    }
+    const P = item.prep;
+    // chờ worker dựng xong cây dò tia cho mô hình mới (tối đa 0,6 s), để bước dựng lồng không phải tự dựng
+    if (window.RaycastBVH && RaycastBVH.ready && !RaycastBVH.ready(P.group) && performance.now() - P.t0 < 600) return;
+    const t = performance.now();
+    try {
+      do { if (P.job.step()) { P.done = true; break; } } while (performance.now() - t < ArtilleryGame3D.RESPAWN_PREP_MS);
+    } catch (err) {
+      console.warn('[ArtilleryGame3D] prepRespawn step error:', err);
+      P.done = true;
+    }
+  }
+
+  // Khung xuất kích: chạy nốt phần chưa dựng (nếu chờ ngắn), đưa mô hình mới vào cảnh
+  finishRespawnPrep(item) {
+    const P = item.prep, u = item.unit;
+    if (!P.done) {
+      try { while (!P.job.step()) { /* chạy nốt */ } } catch (err) { console.warn('[ArtilleryGame3D] prepRespawn step error:', err); }
+      P.done = true;
+    }
+    u._respawnPrep = false;
+    if (P.group === u.group && !P.group.parent && P.parent) P.parent.add(P.group);
+    item.prep = null;
+  }
+
   // Xác xe nằm lại suốt trận (cả xe của máy khác — netcode respawnProxy): mô hình bị hạ tách thành xác độc lập
   // (SPG.detachWreck) giữ nguyên móp méo / cháy sém / tháp văng và vẫn bắn rã tiếp được; xe xuất kích lại bằng mô hình mới
   keepWreck(unit) {
     if (!unit || typeof unit.detachWreck !== 'function') return null;
+    // đã tách sẵn trong lúc chờ (prepRespawn — cả xe máy khác hồi sinh qua netcode respawnProxy): chạy nốt, đưa mô hình mới vào cảnh
+    const pi = this.respawnQueue ? this.respawnQueue.find(it => it.unit === unit && it.prep) : null;
+    if (pi) { const W = pi.prep.job.W; this.finishRespawnPrep(pi); return W; }
     let W = null;
     try { W = unit.detachWreck(); } catch (err) { console.warn('[ArtilleryGame3D] keepWreck error:', err); }
     if (!W) return null;
+    return this.registerWreck(unit, W);
+  }
+
+  // Xác vừa tách (keepWreck / prepRespawn): giao hiệu ứng cháy cho xác, vật cản chắn xe, điểm khói, danh sách xác giữ lại
+  registerWreck(unit, W) {
     const fx = this.effectsManager && this.effectsManager.fx;
     if (fx && fx.handOverVehicle) fx.handOverVehicle(unit, W);
     this.wreckHulks = this.wreckHulks || [];
@@ -5522,12 +5749,13 @@ class ArtilleryGame3D {
           if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) mats.add(m);
         });
       }
-      if (this.scene) {
-        this.scene.traverse(o => {
-          if (o.geometry) geos.delete(o.geometry);
-          if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) mats.delete(m);
-        });
-      }
+      const inUse = o => {
+        if (o.geometry) geos.delete(o.geometry);
+        if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) mats.delete(m);
+      };
+      if (this.scene) this.scene.traverse(inUse);
+      // mô hình xe đang dựng sẵn chờ hồi sinh nằm ngoài cảnh (prepRespawn) — vẫn đang dùng
+      for (const it of this.respawnQueue || []) if (it.prep && it.prep.group) it.prep.group.traverse(inUse);
       geos.forEach(g => g.dispose());
       mats.forEach(m => m.dispose());
     }
@@ -7006,7 +7234,7 @@ class ArtilleryGame3D {
     if (trees && trees.setCameraView && C.treeT <= 0) { C.treeT = 0.08; trees.setCameraView(cam.position, { x: P.x, y: (P.y || 0) + 14, z: P.z }); }
 
     // Tâm vùng mặt đất nhìn rõ (cỏ 3D, bóng đổ): bám đuôi = phía trước xe; nhìn cao = quanh điểm nhìn
-    const fAhead = 380 * (1 - Z.t) + Z.ahead * Z.t;
+    const fAhead = 380 * (1 - Z.t) + (Z.ahead + 180) * Z.t;
     this._viewFocus = { x: C.px + fx * fAhead, z: C.pz + fz * fAhead };
 
     // Sương mù: góc thấp nhìn tới tận chân trời -> sương dày hơn một chút để xa mờ dần (đỡ lộ mép bản đồ, đỡ vẽ chi tiết xa)
@@ -7411,14 +7639,17 @@ class ArtilleryGame3D {
         extras.forEach(o => o.layers.set(1));
         // ngắm tự do bằng chuột: bắt đầu nhìn đúng hướng nòng đang chỉ
         S.free = true;
-        S.aimYaw = tw;
-        S.aimPitch = Math.max(-0.3, Math.min(0.35, (P.elevation || 0) * Math.PI / 180));
+        const LT = this.lockedTarget && !this.lockedTarget.isDead ? this.lockedTarget : null, AP = this._aimPoint, isMissile = P.selectedAmmo === 'ANTI_TANK_MISSILE';
+        S.aimYaw = LT ? Math.atan2(-(LT.x - P.x), -(LT.z - P.z)) : AP ? Math.atan2(-(AP.x - P.x), -(AP.z - P.z)) : (C && C.yaw !== undefined ? C.yaw : tw);
+        const _tgtPitch = LT ? Math.atan2(((LT.y || 0) + 7) - ((P.y || 0) + 18), Math.max(1, Math.hypot(LT.x - P.x, LT.z - P.z))) : AP ? Math.atan2((AP.hy !== undefined ? AP.hy : (AP.y || 0)) - ((P.y || 0) + 18), Math.max(1, Math.hypot(AP.x - P.x, AP.z - P.z))) : (C && C.freePitch !== undefined ? -C.freePitch : (P.elevation || 0) * Math.PI / 180);
+        S.aimPitch = Math.max(-0.3, Math.min(0.35, _tgtPitch));
+        S.yaw = S.vYaw = S.aimYaw; S.pitch = S.vPitch = S.aimPitch;
         S.locked = false; S.noLock = false; S.moveAcc = 0;
         this.isPointerFiring = false;
         // đang ngắm trời / khóa drone từ góc nhìn ngoài: bỏ để tháp theo chuột (tâm kính sẽ tự khóa lại drone nếu ngắm trúng)
         if (this._airAim && this.clearAirAim) this.clearAirAim();
         // vào kính là ngắm tay: xe đang khóa (kể cả tự khóa khi địch áp sát) vẫn giữ khung khóa, Tab mới cho tháp tự bám
-        if (this.lockedTarget && !this.lockedTarget.isDead && !this._manualAim) { this._manualAim = true; this._lockTrack = null; this.updateTargetLockUI(); }
+        if (this.lockedTarget && !this.lockedTarget.isDead && !this._manualAim && !isMissile) { this._manualAim = true; this._lockTrack = null; this.updateTargetLockUI(); }
       }
       const trees = this.terrain && this.terrain.trees;
       if (trees && trees.setCameraView) trees.setCameraView(null, null);   // nhìn qua kính: cây chắn là chắn thật
@@ -7731,7 +7962,8 @@ class ArtilleryGame3D {
   updateDigitalSight(P, S) {
     const D = this._milEl, cam = this.camera;
     if (!D) return;
-    const W = window.innerWidth, H = window.innerHeight;
+    const W = this._sightViewport ? this._sightViewport.width : window.innerWidth;
+    const H = this._sightViewport ? this._sightViewport.height : window.innerHeight;
     const m = (H / 2) / Math.tan(cam.fov * Math.PI / 360) / 1000;
     const missile = P.selectedAmmo === 'ANTI_TANK_MISSILE';
     const key = S.prof.kind + '|' + m.toFixed(2) + '|' + W + 'x' + H + '|' + missile;
@@ -7772,6 +8004,7 @@ class ArtilleryGame3D {
       cnt = P.gatlingMag || 0; of = '/ ' + (P.gatlingMagMax || 0);
       low = cnt <= (P.gatlingMagMax || 0) * 0.2; out = cnt <= 0;
       if (inc) extra = 'CÒN ' + (P.incendiaryAmmoCount || 0) + ' VIÊN CHÁY';
+      else if (ammo === 'GATLING_HE') extra = 'CÒN ' + (P.heFragAmmoCount || 0) + ' VIÊN NỔ MẢNH';
       if (AL) { const r = AL.left(P, 'main'); dry = out && !(r > 0); extra += (extra ? ' · ' : '') + 'CƠ SỐ +' + r; if (r <= AL.max(P, 'main') * 0.25) low = true; }
       if (T === 'SCOUT' && (P.missileAmmoCount || 0) > 0) extra += (extra ? ' · ' : '') + 'TÊN LỬA ×' + P.missileAmmoCount;
     } else {
@@ -8523,6 +8756,7 @@ class ArtilleryGame3D {
   // xe nằm ngoài màn hình (hoặc rất xa) thì tắt hẳn — kiểm tra mỗi khung hình vì camera xoay nhanh.
   updateUnitLOD(dt) {
     const cam = this.camera, cp = cam.position, v = new THREE.Vector3();
+    const gpuHot = typeof GfxQuality !== 'undefined' && (GfxQuality.gpuMs || 0) > 28;
     const setHidden = (o, h) => { if (o._lodH !== h) { o._lodH = h; o.layers.set(h ? 1 : 0); } };
     const radiusOf = (o) => {
       if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
@@ -8548,14 +8782,17 @@ class ArtilleryGame3D {
       }
       const d = u === this.player ? 0 : Math.hypot(u.x - cp.x, (u.y || 0) - cp.y, u.z - cp.z);
       L.s.center.set(u.x, (u.y || 0) + 15, u.z); L.s.radius = 80;
-      const instOff = u !== this.player && (d > 3600 * (this._lodMag || 1) || !L.fr.intersectsSphere(L.s));
+      // Distant wheels, track links and bolts are separate instanced draw calls but
+      // sub-pixel on screen. Hull and turret silhouettes remain untouched.
+      const instRange = (gpuHot ? 1450 : 3600) * (this._lodMag || 1);
+      const instOff = u !== this.player && (d > instRange || !L.fr.intersectsSphere(L.s));
       for (const o of u._lodInst) setHidden(o, instOff);
       u._lodD = d;
     }
     this._lodT = (this._lodT || 0) - dt;
     if (this._lodT > 0) return;
     this._lodT = 0.25;
-    const K = 0.0018 / (this._lodMag || 1);   // kính ngắm phóng to N lần: chi tiết xa to gấp N trên màn hình
+    const K = (gpuHot ? 0.0032 : 0.0018) / (this._lodMag || 1);   // kính ngắm phóng to N lần: chi tiết xa to gấp N trên màn hình
     // hiện lại cần to hơn ngưỡng ẩn 25% (đang zoom kính dần / xe tiến lùi quanh ngưỡng: chi tiết không nhấp nháy)
     const kOn = (o) => (o._lodH ? 1.25 : 1);
     for (const u of this.units) if (u._lodParts) for (const P of u._lodParts) setHidden(P.o, P.r < K * (u._lodD || 0) * kOn(P.o));
@@ -8603,8 +8840,8 @@ class ArtilleryGame3D {
     // (cả lựu pháo hạ nòng / nâng góc thấp: đạn rơi xiên nên vùng rơi kéo dài theo hướng bắn, công thức gần đúng vẽ thiếu)
     // Súng bắn thẳng ngắm một điểm trên mặt đất cũng vậy: đường đạn căng cắm đất rất xiên, lệch nòng lên / xuống thành lệch
     // tầm dài gấp nhiều lần lệch ngang (trước đây vẽ vòng tròn theo lệch ngang). Bắn vào thân xe: vòng tròn như cũ
-    const flatGround = ground && !R.lob && P.tankType !== 'ARTILLERY';
-    if ((R.lob || P.tankType === 'ARTILLERY' || flatGround) && this.ballistics.impactSpread) {
+    // Pháo bắn thẳng: giữ vòng tròn đều theo độ tản mát góc, không kéo dẹt khi ngắm mặt đất để dễ quan sát.
+    if ((R.lob || P.tankType === 'ARTILLERY') && this.ballistics.impactSpread) {
       const C = this._spreadCalc || (this._spreadCalc = { t: 0, E: null, mul: 1 });
       C.t -= dt;
       if (C.t <= 0) {
@@ -8614,8 +8851,6 @@ class ArtilleryGame3D {
         C.mul = sg.mul;
       }
       if (C.E) { const k = R.mul / (C.mul || 1); R.along = 2 * C.E.along * k; R.cross = 2 * C.E.cross * k; }
-      // đạn sượt gần song song mặt dốc: độ nhạy tầm rất lớn -> giới hạn để vòng không phủ nửa chiến trường
-      if (flatGround) R.along = Math.min(R.along, Math.max(60, dist * 0.5));
     }
     const want = { a: Math.max(5, R.along), c: Math.max(5, R.cross) };
     const S = this._spreadR || (this._spreadR = { a: want.a, c: want.c });
@@ -9276,9 +9511,12 @@ class ArtilleryGame3D {
           map: this.terrain.map, trees: this.terrain.trees, rv, x: unit.x, z: unit.z,
           until: now + 0.1,
           density: this.terrain.forestDensityAt ? this.terrain.forestDensityAt(unit.x, unit.z) : 0,
-          canopy: this.terrain.underCanopy ? this.terrain.underCanopy(unit.x, unit.z, rv) : false
+          canopy: this.terrain.underCanopy ? this.terrain.underCanopy(unit.x, unit.z, rv) : false,
+          indoor: this.terrain.indoorCover ? this.terrain.indoorCover(unit.x, unit.z) : null
         };
       }
+      // chui vào nhà: mái / sàn trên đầu che drone, tường bê tông / đá / tôn chặn radar (TeamIntel)
+      unit.indoor = cover.indoor;
       unit.forestDens = cover.density;
       // đỗ dưới tán cây còn lá -> drone địch soi từ trên xuống phải bay gần như ngay trên đầu mới thấy (TeamIntel.droneSees)
       unit.underCanopy = cover.canopy;
@@ -9520,11 +9758,21 @@ class ArtilleryGame3D {
     if (this.terrain && this.terrain.update) {
       const fxs = this.effectsManager && this.effectsManager.fx;
       this.terrain.update(dt, fxs);
+      // nhà / mảng tường vừa đổ chạm đất: đè xe bên dưới
+      const BS = this.terrain.buildingSet;
+      if (BS && BS.takeCrush) { const cz = BS.takeCrush(); if (cz) this.crushUnderBuilding(cz); }
       if (this.terrain.crushVegetation) {
         for (const u of this.units) {
           if (u.isDead) continue;
           // cây / rào / tường / bao cát: gãy, đổ, chặn hay bị đè theo lực xe dồn vào (mọi tốc độ, theo hộp thân xe)
-          if (this.terrain.ramObjects) this.terrain.ramObjects(u, dt, fxs);
+          // An idle vehicle creates no new ram impulse. This avoids broad-phase world
+          // queries for waiting bots while preserving exact contacts as soon as they
+          // move or remain pressed against an obstacle.
+          // quay tại chỗ (tốc độ ~0) cũng tính: sườn / đuôi xe quét đổ vách yếu, rào (BuildingSet.ram / PropSet.ram)
+          const turning = u._ramBA !== undefined && Math.abs((u.bodyAngle || 0) - u._ramBA) > 1e-4;
+          u._ramBA = u.bodyAngle || 0;
+          const movingIntoWorld = Math.abs(u.speed || 0) > 0.5 || u._bumping || turning;
+          if (movingIntoWorld && this.terrain.ramObjects) this.terrain.ramObjects(u, dt, fxs);
           const a = u.bodyAngle || 0;
           if (u.tankType === 'SCOUT' && this.terrain.brushVegetation) {
             // xe trinh sát: cây không đổ, chỉ rung & rụng lá; lá rơi đọng trên xe thành lớp ngụy trang tự nhiên (LeafCover).
@@ -9742,7 +9990,18 @@ class ArtilleryGame3D {
         if (noFire) aimState = 'blocked';
         this._aimState = aimState;
         if (!tgt && this._aimCover) this._aimCover.hit = null;
-        const col = WorldMarkers.stateColor(aimState === 'covered' ? 'blocked' : aimState, isWall);
+        // NGẮM TAY nhưng vẫn giữ khung khóa: chỉ đổi MÀU theo xe đang khóa (xanh lá = đạn sẽ trúng, vàng = lệch),
+        // không đổi _aimState -> không ảnh hưởng chặn bắn / bắn khi đã ngắm trúng
+        let showState = aimState;
+        const LTm = this.lockedTarget;
+        if (!tgt && !noFire && this._manualAim && LTm && !LTm.isDead && !isOut) {
+          const dTm = Math.hypot(LTm.x - this.player.x, LTm.z - this.player.z);
+          const missM = Math.hypot(traj.impactPoint.x - LTm.x, traj.impactPoint.z - LTm.z);
+          const hitM = (missM < Math.max(14, dTm * 0.02) && !isWall)
+            || (!isWall && this.trajPassesUnit([new THREE.Vector3(this.player.x, (this.player.y || 0) + 22, this.player.z), ...traj.points], LTm, LTm.x, LTm.z));
+          showState = hitM ? 'on' : 'slew';
+        }
+        const col = WorldMarkers.stateColor(showState === 'covered' ? 'blocked' : showState, isWall);
         WorldMarkers.setTrajectory(this.trajectoryLine, traj.points, col, this.camera, this.renderer.domElement.clientHeight);
 
         if (this.reticle3D) {
@@ -9884,7 +10143,7 @@ class ArtilleryGame3D {
       const m = Math.floor(remainingSecs / 60).toString().padStart(2, '0');
       const s = (remainingSecs % 60).toString().padStart(2, '0');
       // Trận không giới hạn thời gian (phòng thử nghiệm) -> hiện ∞ thay vì số phút khổng lồ
-      battleTimerEl.textContent = remainingSecs > 99 * 60 ? '∞' : `${m}:${s}`;
+      hudText(battleTimerEl, remainingSecs > 99 * 60 ? '∞' : `${m}:${s}`);
 
       // Hết 10 phút thi đấu: Kết thúc trận chiến và tính điểm Kills
       // Chơi mạng: chủ phòng quyết định kết thúc (tỉ số chung); chủ phòng im lặng quá 8 s sau giờ hết thì tự kết thúc
@@ -9931,7 +10190,7 @@ class ArtilleryGame3D {
         }
       }
       const fmt = v => (Math.round(Math.max(0, v) * 10) / 10).toString();
-      hpText.textContent = `${fmt(this.player.hp)} / ${fmt(this.player.maxHp)}`;
+      hudText(hpText, `${fmt(this.player.hp)} / ${fmt(this.player.maxHp)}`);
     }
 
     this.updateAmmoUI();
@@ -9946,22 +10205,22 @@ class ArtilleryGame3D {
         AP: ['BẮN XUYÊN GIÁP', '#9be3ff'], HE: ['BẮN NỔ MẠNH', '#ffd27a'], CLUSTER: ['BẮN ĐẠN CHÙM', '#a8f5c0'],
         RPG: ['PHÓNG TÊN LỬA', '#ffc08a'], INCENDIARY: ['BẮN ĐẠN CHÁY', '#ffb08a']
       }[this.player.selectedAmmo] || ['KHAI HỎA', '#ffffff'];
-      if (fireMainText.textContent !== fireLabel[0]) fireMainText.textContent = fireLabel[0];
-      fireMainText.style.color = fireLabel[1];
+      hudText(fireMainText, fireLabel[0]);
+      hudStyle(fireMainText, 'color', fireLabel[1]);
     }
 
     if (reloadBar && reloadText) {
       if (this.player.reloadTimer <= 0) {
-        reloadBar.style.width = '100%';
-        reloadText.textContent = 'SẴN SÀNG';
-        reloadText.style.color = '#5cf08a';
-        if (fireBtn) fireBtn.disabled = false;
+        hudStyle(reloadBar, 'width', '100%');
+        hudText(reloadText, 'SẴN SÀNG');
+        hudStyle(reloadText, 'color', '#5cf08a');
+        if (fireBtn && fireBtn.disabled) fireBtn.disabled = false;
       } else {
         const reloadPct = ((this.player.reloadDuration - this.player.reloadTimer) / this.player.reloadDuration) * 100;
-        reloadBar.style.width = `${reloadPct}%`;
-        reloadText.textContent = `NẠP ĐẠN ${this.player.reloadTimer.toFixed(1)}S`;
-        reloadText.style.color = '#ffb020';
-        if (fireBtn) fireBtn.disabled = true;
+        hudStyle(reloadBar, 'width', `${reloadPct}%`);
+        hudText(reloadText, `NẠP ĐẠN ${this.player.reloadTimer.toFixed(1)}S`);
+        hudStyle(reloadText, 'color', '#ffb020');
+        if (fireBtn && !fireBtn.disabled) fireBtn.disabled = true;
       }
     }
 
@@ -9970,16 +10229,16 @@ class ArtilleryGame3D {
       // đang lội nước: hiện tốc độ thật (nước cản làm xe chậm hẳn dù vẫn đạp hết ga)
       const vShow = Math.abs(this.player.speed) * ((this.player.waterDepth || 0) > 0.6 ? (this.player._groundMult || 1) : 1);
       const speedKmH = Math.round(typeof GameTiming !== 'undefined' ? GameTiming.kmh(vShow) : vShow * 0.45);
-      speedText.textContent = `${speedKmH} KM/H`;
+      hudText(speedText, `${speedKmH} KM/H`);
     }
 
     const boostTag = domById('speed-boost-tag');
     if (boostTag) {
       if (this.player.speedBoostTimer > 0) {
-        boostTag.classList.remove('hidden');
-        boostTag.textContent = `TĂNG TỐC ${Math.ceil(this.player.speedBoostTimer)}S`;
+        hudClass(boostTag, 'hidden', false);
+        hudText(boostTag, `TĂNG TỐC ${Math.ceil(this.player.speedBoostTimer)}S`);
       } else {
-        boostTag.classList.add('hidden');
+        hudClass(boostTag, 'hidden', true);
       }
     }
     // Nhiệt động cơ (ô ĐỘNG CƠ): chỉ hiện khi lắp động cơ tăng tốc được
@@ -9988,12 +10247,12 @@ class ArtilleryGame3D {
       const EG = this.player._eng, ES = this.player.engineSpec;
       if (!ES || !EG) { if (!engTag.classList.contains('hidden')) engTag.classList.add('hidden'); }
       else {
-        engTag.classList.remove('hidden');
+        hudClass(engTag, 'hidden', false);
         const pct = Math.round(EG.heat * 100);
         const txt = EG.lock ? `MÁY QUÁ NHIỆT ${pct}%` : (EG.on ? `TĂNG TỐC · NHIỆT MÁY ${pct}%` : `SHIFT TĂNG TỐC · NHIỆT ${pct}%`);
-        if (engTag.textContent !== txt) engTag.textContent = txt;
-        engTag.style.color = EG.lock ? '#ff4d4d' : pct > 75 ? '#ff8a3d' : pct > 45 ? '#ffd166' : '#5cf08a';
-        engTag.classList.toggle('hx-blink', !!EG.lock);
+        hudText(engTag, txt);
+        hudStyle(engTag, 'color', EG.lock ? '#ff4d4d' : pct > 75 ? '#ff8a3d' : pct > 45 ? '#ffd166' : '#5cf08a');
+        hudClass(engTag, 'hx-blink', !!EG.lock);
       }
     }
     this.syncEquipmentChips();
@@ -10006,32 +10265,25 @@ class ArtilleryGame3D {
 
     if (stealthBanner) {
       if (BB) {
-        stealthBanner.classList.remove('hidden');
-        stealthBanner.innerHTML = `<span class="stealth-pulse-dot ${BB.warn ? 'red' : 'green'}"></span> ${BB.html}`;
-        stealthBanner.classList.toggle('revealed', BB.warn);
+        hudClass(stealthBanner, 'hidden', false);
+        // innerHTML dựng lại cây DOM: chỉ khi nội dung đổi
+        const html = `<span class="stealth-pulse-dot ${BB.warn ? 'red' : 'green'}"></span> ${BB.html}`;
+        if (stealthBanner.__h !== html) { stealthBanner.__h = html; stealthBanner.innerHTML = html; }
+        hudClass(stealthBanner, 'revealed', BB.warn);
       } else {
-        stealthBanner.classList.add('hidden');
+        hudClass(stealthBanner, 'hidden', true);
       }
     }
 
     if (stealthOverlay) {
-      if (isPlayerInBush) {
-        stealthOverlay.classList.add('active');
-        if (isPlayerRevealed) {
-          stealthOverlay.classList.add('revealed');
-        } else {
-          stealthOverlay.classList.remove('revealed');
-        }
-      } else {
-        stealthOverlay.classList.remove('active');
-        stealthOverlay.classList.remove('revealed');
-      }
+      hudClass(stealthOverlay, 'active', isPlayerInBush);
+      hudClass(stealthOverlay, 'revealed', isPlayerInBush && isPlayerRevealed);
     }
 
     const terrainText = domById('terrain-text');
     if (terrainText) {
       const tInfo = this.terrain.getTerrainInfoAt(this.player.x, this.player.z, this.player.currentPitch);
-      terrainText.textContent = tInfo.name;
+      hudText(terrainText, tInfo.name);
     }
 
     const windValEl = domById('hud-wind-val');
@@ -10045,7 +10297,7 @@ class ArtilleryGame3D {
       else if (dir >= 202.5 && dir < 247.5) dirName = 'TÂY NAM';
       else if (dir >= 247.5 && dir < 292.5) dirName = 'TÂY';
       else if (dir >= 292.5 && dir < 337.5) dirName = 'TÂY BẮC';
-      windValEl.textContent = `${dirName} (${dir}°) // ${this.ballistics.wind.speed.toFixed(1)} M/S`;
+      hudText(windValEl, `${dirName} (${dir}°) // ${this.ballistics.wind.speed.toFixed(1)} M/S`);
     }
 
     // Cập nhật thông tin binh chủng xe tăng đang điều khiển trên HUD
@@ -10062,10 +10314,10 @@ class ArtilleryGame3D {
     // Đặt nội dung + màu cho một chip trạng thái (ẩn khi text rỗng)
     const chip = (el, text, color) => {
       if (!el) return;
-      el.classList.toggle('hidden', !text);
+      hudClass(el, 'hidden', !text);
       if (!text) return;
-      if (el.textContent !== text) el.textContent = text;
-      el.style.color = color;
+      hudText(el, text);
+      hudStyle(el, 'color', color);
     };
 
     if (tankClassText && this._hudVehType !== P.tankType) {
@@ -10306,6 +10558,8 @@ class ArtilleryGame3D {
   }
 
   render() {
+    // đang biên dịch shader song song (compileShadersAsync): vật liệu đang mang danh sách uniform rỗng -> không vẽ
+    if (this._shaderWarmBusy) return;
     // 1. Render Scene 3D Three.js (đo thời gian GPU cho độ phân giải động — GfxQuality)
     const GQ = typeof GfxQuality !== 'undefined' ? GfxQuality : null;
     if (GQ) GQ.beginFrame();
@@ -10386,13 +10640,23 @@ class ArtilleryGame3D {
     // lam mo toan bo khung hinh. Silhouette lon van duoc giu nguyen.
     const gpuHot = typeof GfxQuality !== 'undefined' && GfxQuality.ratio <= 0.61
       && (GfxQuality.gpuMs || 0) > 19;
-    const minPx = arty ? (gpuHot ? 3.0 : 1.8) : (gpuHot ? 1.7 : 1.05);
+    const drawCalls = (this.renderer.info && this.renderer.info.render && this.renderer.info.render.calls) || 0;
+    // Resolution scaling cannot fix a scene that is CPU/driver bound by thousands of
+    // individual submissions. Escalate only the sub-pixel detail threshold; large
+    // architecture, vehicles and destructible silhouettes stay in the scene.
+    const drawPressure = drawCalls > 1800 ? 2 : drawCalls > 1150 ? 1 : 0;
+    const minPx = arty
+      ? (drawPressure === 2 ? 6.0 : drawPressure === 1 ? 4.0 : gpuHot ? 3.0 : 1.8)
+      : (drawPressure === 2 ? 4.2 : drawPressure === 1 ? 2.7 : gpuHot ? 1.7 : 1.05);
     for (const e of this._detailLodList) {
       const dx = e.x - cp.x, dy = e.y - cp.y, dz = e.z - cp.z;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
       const px = e.r * focal / d;
       // ngưỡng hiện lại cao hơn ngưỡng ẩn 25%: zoom kính / xe chạy quanh mép ngưỡng không làm chi tiết nhấp nháy
-      const hide = d > 320 && (px < minPx * (e.hidden ? 1.25 : 1) || (arty && d > (gpuHot ? 1150 : 1550) && e.r < (gpuHot ? 12 : 7)));
+      const nearGuard = drawPressure === 2 ? 210 : drawPressure === 1 ? 260 : 320;
+      const farDetail = drawPressure === 2 ? 18 : drawPressure === 1 ? 12 : gpuHot ? 7 : 0;
+      const hide = d > nearGuard && (px < minPx * (e.hidden ? 1.25 : 1)
+        || (farDetail > 0 && d > (arty ? 900 : 1250) && e.r < farDetail));
       if (hide === e.hidden) continue;
       // Chỉ hoàn tác những lần ẩn do chính LOD này tạo ra; vật thể bị hệ phá huỷ ẩn
       // trong lúc đang ở gần sẽ không bị LOD tự ý làm hiện lại.
@@ -10411,6 +10675,12 @@ class ArtilleryGame3D {
     const R = this.renderer, L = this.sunLight;
     if (!R || !R.shadowMap || !L || this.gfxShadows === false) return;
     const now = performance.now();
+    const gpuHot = typeof GfxQuality !== 'undefined' && (GfxQuality.gpuMs || 0) > 28;
+    // At severe GPU load, a shadow render can contain thousands of extra draws. Keep
+    // several normal frames between shadow passes; contact AO still anchors vehicles
+    // to the ground, so this is far less visible than lowering model/texture quality.
+    this._shadowFramesSince = (this._shadowFramesSince || 0) + 1;
+    if (gpuHot && this._shadowFramesSince < 4) return;
     const camYaw = this._camYaw || 0;
     const camTurning = Math.abs(camYaw - (this._lastShadowCamYaw || 0)) > 0.004;
     this._lastShadowCamYaw = camYaw;
@@ -10418,6 +10688,7 @@ class ArtilleryGame3D {
     const interval = moving ? 33 : 66;
     if (now < (this._shadowFrameAt || 0)) return;
     this._shadowFrameAt = now + interval;
+    this._shadowFramesSince = 0;
     R.shadowMap.needsUpdate = true;
   }
 
@@ -10439,8 +10710,24 @@ class ArtilleryGame3D {
     // kính phóng N lần: vật nhỏ quanh mục tiêu to gấp N trên màn hình -> vùng đổ bóng của vật nhỏ nới theo
     const smallR = 180 * Math.max(1, this._lodMag || 1);
     const hysteresis = 90;
-    const lodList = this._detailLodList;
-    if (!lodList || !lodList.length) return;
+    const lodList = this._detailLodList || [];
+
+    // Vehicle kits contain many independent meshes. Their remote shadows are smaller
+    // than a few pixels but otherwise duplicate hundreds of draw calls per vehicle in
+    // the shadow pass. Preserve full shadows for the player and nearby combatants.
+    const vehicleShadowRange = gpuHot ? 520 : 850;
+    for (const u of this.units || []) {
+      if (!u || !u.group) continue;
+      const near = u === this.player || Math.hypot((u.x || 0) - focus.x, (u.z || 0) - focus.z) <= vehicleShadowRange;
+      if (u._shadowNear === near) continue;
+      u._shadowNear = near;
+      u.group.traverse(o => {
+        if (!o || !o.isMesh) return;
+        const ud = o.userData || (o.userData = {});
+        if (ud.vehicleShadowBase === undefined) ud.vehicleShadowBase = !!o.castShadow;
+        o.castShadow = near && ud.vehicleShadowBase;
+      });
+    }
     for (let i = 0; i < lodList.length; i++) {
       const o = lodList[i].o;
       if (!o || !o.isMesh || o.isInstancedMesh || !o.geometry) continue;
@@ -10665,6 +10952,7 @@ class ArtilleryGame3D {
     this.isGameOver = false;
     this.matchStartTime = Date.now();
     this._playerDeaths = 0;
+    this._playerAirdrops = 0;   // hòm thả dù người chơi chiếm được (thưởng Bạc cuối trận)
     if (typeof TeamIntel !== 'undefined') TeamIntel.reset();
     if (typeof QuickComms !== 'undefined') QuickComms.reset();
     if (typeof Equipment !== 'undefined' && Equipment.clearSmoke) Equipment.clearSmoke();
@@ -10741,6 +11029,9 @@ class ArtilleryGame3D {
 if (typeof DroneAir !== 'undefined') Object.assign(ArtilleryGame3D.prototype, DroneAir.methods);
 
 window.ArtilleryGame3D = ArtilleryGame3D;
+// Dựng sẵn mô hình xe chờ hồi sinh (prepRespawn): bắt đầu khi còn bấy nhiêu giây · ngân sách mỗi khung (ms)
+ArtilleryGame3D.RESPAWN_PREP_LEAD = 2.5;
+ArtilleryGame3D.RESPAWN_PREP_MS = 6;
 
 // DRONE TRINH SÁT của pháo tự hành (giây thật trong trận 10 phút):
 // flight: bay treo hết một lần sạc đầy (bay nhanh tốn pin hơn, tới 1.6 lần) · charge: sạc từ cạn tới đầy khi nằm trên xe

@@ -157,6 +157,8 @@ const BarrelSweep = (() => {
     const vb = { x: (B.x - st.b.x) / dt, y: (B.y - st.b.y) / dt, z: (B.z - st.b.z) / dt };
     st.a.copy(A); st.b.copy(B);
     knockWall(unit, T, st, A, B, vb);
+    // nòng xuyên vách gỗ / tôn / kính nhà (không chặn tháp): xé thủng đúng chỗ nòng cắt qua
+    if (T.buildingSet && T.buildingSet.barrelTear) T.buildingSet.barrelTear(A, B);
     const a = unit.bodyAngle || 0, sp = unit.speed || 0, m = unit.mass || 40, vvx = -Math.sin(a) * sp, vvz = -Math.cos(a) * sp;
     let hit = sweep(T, A, B, va, vb, m, vvx, vvz, gameFx());
     // năng lượng cú vụt tại điểm trên nòng gần thân cây (đà thân xe + tháp xoay) -> thân cây không bẻ gãy nổi thì chặn nòng

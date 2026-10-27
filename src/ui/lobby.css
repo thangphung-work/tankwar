@@ -338,6 +338,25 @@
   text-overflow: ellipsis;
 }
 
+/* Lối tắt sang trang phòng thử nghiệm (labs.html) — cuối dòng tiêu đề bảng chọn xe */
+.mm-labs-link {
+  margin-left: auto;
+  align-self: center;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--lb-dim);
+  text-decoration: none;
+  border: 1px solid var(--lb-line);
+  transition: color 0.15s, border-color 0.15s;
+}
+.mm-labs-link:hover { color: var(--lb-accent); border-color: var(--lb-accent); }
+
 /* Chọn thời tiết trận đấu (Ngẫu nhiên / Nắng / Mưa) — nằm cuối dòng tiêu đề bảng chiến địa */
 .mm-weather-seg {
   margin-left: auto;
@@ -676,6 +695,16 @@
   background: var(--lb-text);
   border-color: var(--lb-text);
 }
+
+/* Hàng nút dưới thông số xe: TRANG BỊ | SỬA CHỮA */
+.hero-btn-row { display: flex; gap: 8px; }
+.hero-btn-row .hero-3d-btn { flex: 1 1 0; min-width: 0; white-space: nowrap; }
+.hero-repair-btn.hidden { display: none; }
+.hero-repair-btn:disabled { opacity: 0.45; cursor: default; }
+.hero-repair-btn:disabled:hover { color: var(--lb-text); background: transparent; border-color: var(--lb-line-2); }
+/* có trang bị hỏng: tô màu cảnh báo (chưa sửa thì không mang ra trận) */
+.hero-repair-btn.hurt { color: var(--lb-accent); border-color: var(--lb-accent); }
+.hero-repair-btn.hurt:not(:disabled):hover { color: #0a0d0c; background: var(--lb-accent); border-color: var(--lb-accent); }
 
 /* Bốn thẻ chọn xe */
 .mm-class-cards-grid {

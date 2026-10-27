@@ -66,6 +66,23 @@
 .acc-overlay, .gm-overlay, .ti-backdrop, .tactical-map-overlay, .game-over-screen {
   animation: tc-backdrop-in 0.18s ease-out;
 }
+/* Garage có nền đặc riêng: phải mờ dần cả lớp ngoài, không thì nền hiện bật ra che mất hiệu ứng bên trong */
+.tank-inspector-overlay { animation: tc-backdrop-in 0.22s ease-out; }
+/* Màn chờ ghép trận hiện dần (sảnh .mm-container đã có lb-in khi quay lại) */
+.mm-search-hud { animation: tc-backdrop-in 0.35s ease-out; }
+
+/* ĐỔI VIEW trong garage: JS gắn lại .tc-swap mỗi lần đổi (gỡ sau khi chạy xong để lần dựng lại sau không lặp) */
+.ti-spec-panel.tc-swap > * { animation: tc-item-in 0.26s ease-out backwards; }
+.ti-spec-panel.tc-swap > :nth-child(2) { animation-delay: 40ms; }
+.ti-spec-panel.tc-swap > :nth-child(3) { animation-delay: 80ms; }
+.ti-spec-panel.tc-swap > :nth-child(4) { animation-delay: 120ms; }
+.ti-spec-panel.tc-swap > :nth-child(n+5) { animation-delay: 160ms; }
+.ti-equip-dock.tc-swap .eqd-card { animation: tc-item-in 0.24s ease-out backwards; }
+.ti-equip-dock.tc-swap .eqd-card:nth-child(2) { animation-delay: 30ms; }
+.ti-equip-dock.tc-swap .eqd-card:nth-child(3) { animation-delay: 60ms; }
+.ti-equip-dock.tc-swap .eqd-card:nth-child(4) { animation-delay: 90ms; }
+.ti-equip-dock.tc-swap .eqd-card:nth-child(5) { animation-delay: 120ms; }
+.ti-equip-dock.tc-swap .eqd-card:nth-child(n+6) { animation-delay: 150ms; }
 /* Khung bảng */
 .acc-card, .gm-card, .ti-modal, .game-over-card {
   transform-origin: 50% 0;
@@ -118,7 +135,8 @@
 @media (prefers-reduced-motion: reduce) {
   .acc-overlay, .gm-overlay, .ti-backdrop, .tactical-map-overlay, .game-over-screen,
   .acc-card, .gm-card, .ti-modal, .game-over-card, .tactical-map-overlay *, .gm-body > *, .acc-card > *,
-  .acc-card::after, .gm-card::after, .mm-class-card.active, .mm-map-card.active {
+  .acc-card::after, .gm-card::after, .mm-class-card.active, .mm-map-card.active,
+  .tank-inspector-overlay, .mm-search-hud, .ti-spec-panel.tc-swap > *, .ti-equip-dock.tc-swap .eqd-card {
     animation: none !important;
   }
 }

@@ -132,7 +132,7 @@ const RangeAir = (() => {
       const dist = u ? Math.hypot(hit.point.x - u.x, hit.point.y - (u.y || 0), hit.point.z - u.z) : 300;
       // quả lựu 40mm (bay theo hệ đạn 30mm, cờ gl40): nổ / phá tường theo cỡ quả lựu như trong trận (game.handleShellImpact fxAmmo)
       const ammoType = s.gl40 ? 'CLUSTER_SUBMUNITION' : s.ammoType;
-      this.spawnTestImpact({ x: hit.point.x, y: hit.point.y, z: hit.point.z, ammoType, dist, hit, dir: new THREE.Vector3(s.vx / sp, s.vy / sp, s.vz / sp) });
+      this.spawnTestImpact({ x: hit.point.x, y: hit.point.y, z: hit.point.z, ammoType, gl40: !!s.gl40, dist, hit, dir: new THREE.Vector3(s.vx / sp, s.vy / sp, s.vz / sp) });
     },
 
     // ---------- BẬT / TẮT BIA DRONE ----------
@@ -214,7 +214,7 @@ const RangeAir = (() => {
       if (!R || !d || d.dead) return;
       const G = this.raGame(), C = DroneAir.C;
       G.onDroneShot(s, d, h);   // tia lửa trên vỏ + tiếng đạn chạm (đúng như trong trận)
-      const dmg = s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0);
+      const dmg = G.airShotDamage ? G.airShotDamage(s, h) : (s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0));
       d.hp -= dmg; d.hits++;
       R.hits++;
       R.mark = 0.3;
@@ -385,12 +385,20 @@ const RangeAir = (() => {
       if (on && !this.raSightOK(u)) on = false;
       const overlay = document.getElementById('tank-inspector-overlay');
       if (on && !this.sight) {
+        if (this.raEnsureDom) this.raEnsureDom();
+        if (this.showTestRange) this.showTestRange();
         const p = this.raSightPose(u);
         this.sight = {
           az: wrap360(Math.atan2(p.dir.x, -p.dir.z) * R2D), el: Math.asin(Math.max(-1, Math.min(1, p.dir.y))) * R2D,
           zoom: 0, fire: false, track: null, assist: this._raAssist !== false, R: 600, rT: 0,
           rcws: !!(u.tankType === 'ALL_ROUNDER' && u.mgActive && u.rcwsGun), fov: ZOOM[0].fov, kick: 0
         };
+        if (typeof ArtilleryGame3D !== 'undefined' && u.tankType !== 'ARTILLERY') {
+          const prof = ArtilleryGame3D.prototype.sightProfile(u.tankType, u);
+          this.sight.gameProfile = prof;
+          this.sight.mag = prof.mag;
+          this.sight.fov = 2 * Math.atan(Math.tan(45 * D2R / 2) / prof.mag) * R2D;
+        }
         this.driveTo = null; this.mouseShot = null;
         if (this.autoRotate) { this.autoRotate = false; this.syncAutoRotateBtn(); }
         const G = this.raGame();
@@ -405,6 +413,7 @@ const RangeAir = (() => {
         this.toast('<i class="ti ti-crosshair"></i> <b>Kính ngắm xạ thủ</b> — di chuột ngắm, nhấp / giữ chuột trái hoặc <b>Space</b> bắn · cuộn / chuột phải: phóng đại · <b>1 2 3</b> đổi đạn · <b>4</b> vũ khí nóc · <b>Ctrl / C / Esc</b> thoát', 4800);
       } else if (!on && this.sight) {
         this.sight = null;
+        if (this._raSightUI && this._raSightUI._sightEl) this._raSightUI._sightEl.hidden = true;
         if (this.camera) { this.camera.fov = 38; this.camera.near = 1; this.camera.updateProjectionMatrix(); }
         if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
         if (overlay) overlay.classList.remove('ti-sight-on');
@@ -482,7 +491,7 @@ const RangeAir = (() => {
       S.kick = cannonJustFired ? Math.max(S.kick, 0.9) : firing ? Math.min(1, S.kick + dt * 8) : Math.max(0, S.kick - dt * 6);
       const j = S.kick * (S.rcws ? 0.0035 : u.tankType === 'SCOUT' ? 0.0025 : 0.0016) * (S.R || 600);
       if (j > 0) tgt.x += (Math.random() - 0.5) * j, tgt.y += (Math.random() - 0.5) * j, tgt.z += (Math.random() - 0.5) * j;
-      const fovT = ZOOM[S.zoom].fov;
+      const fovT = S.gameProfile ? 2 * Math.atan(Math.tan(45 * D2R / 2) / S.mag) * R2D : ZOOM[S.zoom].fov;
       S.fov += (fovT - S.fov) * Math.min(1, dt * 10);
       if (Math.abs(cam.fov - S.fov) > 0.01 || cam.near !== 0.3) { cam.fov = S.fov; cam.near = 0.3; cam.updateProjectionMatrix(); }
       cam.position.copy(p.pos);
@@ -529,6 +538,10 @@ const RangeAir = (() => {
     raZoom(step) {
       const S = this.sight;
       if (!S) return;
+      if (S.gameProfile) {
+        S.mag = Math.max(S.gameProfile.magMin, Math.min(S.gameProfile.magMax, S.mag * (step > 0 ? 1.25 : 1 / 1.25)));
+        return;
+      }
       S.zoom = (S.zoom + step + ZOOM.length) % ZOOM.length;
     },
 
@@ -583,6 +596,13 @@ const RangeAir = (() => {
 .ti-sight-on .ti-stage-foot,.ti-sight-on .ti-test-panel,.ti-sight-on .ti-range-bar{opacity:0;pointer-events:none}
 .ra-sight{position:absolute;inset:0;pointer-events:none;z-index:6;display:none;--g:#a8f5bf;--a:#ffc04d;color:var(--g);font-family:"Share Tech Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.06em;text-shadow:0 0 2px #000,0 0 5px rgba(0,0,0,.85)}
 .ti-sight-on .ra-sight{display:block}
+.ti-sight-on #ti-canvas{cursor:none!important}
+#range-gun-sight{position:absolute!important;inset:0;z-index:6;overflow:hidden}
+#range-gun-sight[hidden]{display:none!important}
+#range-gun-sight .gs-top{top:8%;font-size:11px}
+#range-gun-sight .gs-side{left:5%;font-size:11px}
+#range-gun-sight .gs-ammo{right:5%;bottom:9%}
+#range-gun-sight .gs-hint{bottom:5%;max-width:88%;white-space:normal;text-align:center;font-size:10px}
 .ra-sight .scr{position:absolute;inset:8px 10px;border-radius:22px;box-shadow:0 0 0 60px #06090a,inset 0 0 0 1px rgba(168,245,191,.22),inset 0 0 120px rgba(0,0,0,.55);background:repeating-linear-gradient(0deg,rgba(0,0,0,.06) 0 1px,transparent 1px 3px)}
 .ra-sight svg.ret{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}
 .ra-sight svg .k{stroke:var(--g);fill:none;filter:drop-shadow(0 0 1.5px #000)}
@@ -719,13 +739,13 @@ const RangeAir = (() => {
     },
 
     raHUD(dt) {
-      if (!this.rangeMode) return;
-      this.raSky(true);
+      if (!this.rangeMode && !this.sight) return;
+      if (this.rangeMode) this.raSky(true);
       const D = this.raEnsureDom();
       if (!D) return;
       const R = this._ra, S = this.sight, u = this.activeUnit, G = this._raG;
       // số liệu bắn + danh sách bia (~4 lần / giây)
-      if ((this._raStatT = (this._raStatT || 0) - dt) <= 0) {
+      if (this.rangeMode && (this._raStatT = (this._raStatT || 0) - dt) <= 0) {
         this._raStatT = 0.25;
         const r = R || { fired: 0, hits: 0, near: 0, kills: 0 };
         const pct = r.fired ? (100 * r.hits / r.fired) : 0;
@@ -766,14 +786,59 @@ const RangeAir = (() => {
           D.lockL.style.transform = `translate(${Math.round(l ? l.x : p.x)}px,${Math.round(l ? l.y : p.y)}px)`;
           const col = A.state === 'high' || A.state === 'far' ? '#ff5a4a' : A.on ? '#5cf08a' : '#ffb020';
           D.lock.style.setProperty('--ac', col);
-          const txt = 'DRONE ' + dr.P.name + ' · ' + Math.round(A.dist || 0) + ' M · ' + (A.state === 'high' ? 'QUÁ CAO' : A.state === 'far' ? 'NGOÀI TẦM SÚNG' : A.on ? 'ĐÃ NGẮM TRÚNG — GIỮ SPACE' : 'ĐANG XOAY THÁP') + (R && R.mark > 0 ? ' · TRÚNG!' : '');
+          const txt = 'DRONE ' + dr.P.name + ' · ' + Math.round(A.dist || 0) + ' M · ' + (A.state === 'high' ? 'QUÁ CAO' : A.state === 'far' ? 'NGOÀI TẦM SÚNG' : A.fcsLock === false ? 'RADAR ĐANG BÁM ' + Math.round((A.fcsP || 0) * 100) + '%' : A.on ? 'ĐÃ NGẮM TRÚNG — GIỮ SPACE' : 'ĐANG XOAY THÁP') + (R && R.mark > 0 ? ' · TRÚNG!' : '');
           if (D.lockT.textContent !== txt) D.lockT.textContent = txt;
         } else D.lock.hidden = true;
       } else if (!D.lock.hidden) D.lock.hidden = true;
       if (S) this.raSightHUD(D, dt);
     },
 
+    // Reuse the gameplay optics rather than applying the drone practice rings to every gun.
+    raGameplaySightHUD(D, dt) {
+      if (typeof ArtilleryGame3D === 'undefined') return false;
+      const u = this.activeUnit, S = this.sight;
+      if (u.tankType === 'ARTILLERY') return false;
+      let UI = this._raSightUI;
+      if (!UI) {
+        UI = this._raSightUI = Object.create(ArtilleryGame3D.prototype);
+        UI._sightEl = document.createElement('div');
+        UI._sightEl.id = 'range-gun-sight';
+        D.sight.parentElement.appendChild(UI._sightEl);
+      }
+      UI.player = u; UI.camera = this.camera; UI.ballistics = this.raBallistics();
+      UI._sightViewport = { width: D.canvas.clientWidth, height: D.canvas.clientHeight };
+      const prof = UI.sightProfile(u.tankType, u);
+      const key = u.tankType + '|' + prof.kind + '|' + u.selectedAmmo;
+      if (UI._profileKey !== key) {
+        UI._profileKey = key;
+        UI._sight = { unit: u, prof, free: true };
+        UI.buildSightOverlay(u, prof);
+        // Keep the exact gameplay styling, scoped to this viewport's independent overlay.
+        if (!document.getElementById('range-gameplay-sight-style')) {
+          const st = document.createElement('style');
+          st.id = 'range-gameplay-sight-style';
+          st.textContent = document.getElementById('gun-sight-style').textContent.replace(/#gun-sight/g, '#range-gun-sight');
+          st.textContent += '\n#range-gun-sight .gs-top{top:8%;font-size:11px}#range-gun-sight .gs-side{left:5%;font-size:11px}#range-gun-sight .gs-ammo{right:5%;bottom:9%}#range-gun-sight .gs-hint{bottom:5%;max-width:88%;white-space:normal;text-align:center;font-size:10px}';
+          document.head.appendChild(st);
+        }
+        UI._sightEl.querySelector('.gs-hint').textContent = 'Rê chuột: ngắm · Chuột trái / Space: bắn · Lăn chuột: phóng to · 1 2 3: đổi đạn · 4: vũ khí nóc · Ctrl: thoát';
+      }
+      UI._sightEl.hidden = false;
+      D.sight.style.display = 'none';
+      UI.updateDigitalSight(u, UI._sight);
+      UI.updateRangeLadder(u, UI._sight, dt, S.laser);
+      UI.updateSightAmmo(u, dt);
+      UI._sightHdgEl.textContent = String(Math.round(S.az) % 360).padStart(3, '0') + '°';
+      UI._sightMagEl.textContent = '×' + (Math.tan(45 * D2R / 2) / Math.tan(this.camera.fov * D2R / 2)).toFixed(1);
+      UI._sightRangeEl.textContent = S.laser == null ? '—' : Math.round(S.laser) + ' M';
+      UI._sightStateEl.textContent = S.track ? 'BÁM MỤC TIÊU' : 'NGẮM TAY';
+      return true;
+    },
+
     raSightHUD(D, dt) {
+      if (this.raGameplaySightHUD(D, dt)) return;
+      D.sight.style.display = '';
+      if (this._raSightUI) this._raSightUI._sightEl.hidden = true;
       const S = this.sight, u = this.activeUnit, R = this._ra, G = this.raGame(), cam = this.camera;
       const W = D.canvas.clientWidth, H = D.canvas.clientHeight, cx = D.canvas.offsetLeft + W / 2, cy = D.canvas.offsetTop + H / 2;
       const pxMil = (H / 2) / Math.tan(cam.fov * D2R / 2) * 0.001;   // 1 mil (1 m ở 1000 m) = bao nhiêu px ở độ phóng đại hiện tại

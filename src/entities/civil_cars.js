@@ -1523,7 +1523,12 @@ const GLSL_WEATHER = `
     t.needsUpdate = true;
     return t;
   }
+  let honeyTex = null;   // không tham số -> mọi xe vẽ ra giống hệt: dựng 1 lần (bị dispose thì three tự nạp lại lên GPU)
   function honeyTexture() {
+    if (honeyTex) return honeyTex;
+    return (honeyTex = honeyTextureNew());
+  }
+  function honeyTextureNew() {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
     x.fillStyle = '#fff'; x.fillRect(0, 0, 128, 128); x.globalCompositeOperation = 'destination-out';
     for (let j = 0; j < 9; j++) for (let i = 0; i < 9; i++) { const cx = i * 16 + (j % 2) * 8, cy = j * 14; x.beginPath(); for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + Math.PI / 6; x.lineTo(cx + Math.cos(a) * 6.3, cy + Math.sin(a) * 6.3); } x.fill(); }
@@ -1987,6 +1992,12 @@ const GLSL_WEATHER = `
   // vỡ kính đèn: khoét lỗ lởm chởm trên mặt kính (bỏ các tam giác trong một đốm méo quanh tâm va c), mép còn sót
   // giữ trên hốc đèn; trả về tỉ lệ diện tích đã vỡ. c = null -> tâm ngẫu nhiên trên mặt kính
   function holeLens(lens, c, frac, rnd) {
+    // kính đèn đang dùng chung với xe khác (shareGeometries): tách bản riêng trước khi khoét — không vỡ lây sang xe khác
+    if (lens.geometry.userData.shareKey !== undefined) {
+      const own = lens.geometry.clone();
+      own.userData = {};
+      lens.geometry = own;
+    }
     const g = lens.geometry, P = g.attributes.position, I = g.index;
     if (!I) return 0;
     if (!g.boundingSphere) g.computeBoundingSphere();
@@ -3096,6 +3107,212 @@ const GLSL_WEATHER = `
   // (three-mesh-bvh, có trong game): lúc dựng xe phải dò ~1500 tia lên thân ~50 nghìn tam giác để gắn đèn / gương / gạt mưa
   // / biển số sát mặt tôn — dò thường mất ~3 s mỗi xe (khựng khung khi xe chi tiết nạp dần quanh người chơi), có cây
   // bao còn vài chục ms. Cây bao dựng trên lưới gốc (sắp lại chỉ số tam giác) -> bản nhân dùng chung cây lúc còn nguyên
+  // DÙNG CHUNG HÌNH HỌC GIỮA CÁC XE: ~60% hình học một xe chi tiết (ốc, nẹp, đèn, gương, mâm... cùng kích thước) trùng
+  // y hệt nội dung với xe khác -> xe dựng sau dùng lại bản đã có (ít bộ nhớ, ít nạp GPU, cây dò tia BVH dựng 1 lần).
+  // So khớp theo nội dung (băm 64 bit toàn bộ mảng) nên hình vẽ ra không đổi. Không gộp: thân / khoang và hình học
+  // bị biến dạng tại chỗ khi cán / bắn (keep = restGeo), hạt lửa khói (Points, ghi lại mỗi khung).
+  const GEO_SHARE = new Map();
+  function hashBytes(arr, h) {
+    const n4 = arr.byteLength >> 2, v = new Uint32Array(arr.buffer, arr.byteOffset, n4);
+    let a = h[0], b = h[1];
+    for (let i = 0; i < n4; i++) { const x = v[i]; a = Math.imul(a ^ x, 16777619); b = Math.imul(b ^ x, 2246822519) ^ (b >>> 15); }
+    const tail = new Uint8Array(arr.buffer, arr.byteOffset + n4 * 4, arr.byteLength - n4 * 4);
+    for (let i = 0; i < tail.length; i++) { a = Math.imul(a ^ tail[i], 16777619); b = Math.imul(b ^ tail[i], 2246822519) ^ (b >>> 15); }
+    h[0] = a; h[1] = b;
+  }
+  function geoShareKey(geo) {
+    if (geo.morphAttributes && Object.keys(geo.morphAttributes).length) return null;
+    const h = [2166136261 | 0, 3266489917 | 0], parts = [];
+    for (const k of Object.keys(geo.attributes).sort()) {
+      const A = geo.attributes[k];
+      if (A.isInterleavedBufferAttribute || !A.array) return null;
+      hashBytes(A.array, h);
+      parts.push(k, A.itemSize, A.normalized ? 1 : 0, A.array.constructor.name, A.array.length);
+    }
+    if (geo.index) { hashBytes(geo.index.array, h); parts.push('i', geo.index.array.constructor.name, geo.index.array.length); }
+    parts.push(JSON.stringify(geo.groups), geo.drawRange.start, geo.drawRange.count);
+    return (h[0] >>> 0).toString(36) + (h[1] >>> 0).toString(36) + '|' + parts.join(',');
+  }
+  function shareGeometries(root, keep) {
+    root.traverse(o => {
+      if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || !o.geometry || keep.has(o.geometry)) return;
+      const geo = o.geometry;
+      if (geo.userData.shareKey !== undefined) return;   // đã là bản dùng chung
+      const key = geoShareKey(geo);
+      if (!key) return;
+      const have = GEO_SHARE.get(key);
+      if (have) { o.geometry = have; if (have !== geo) geo.dispose(); return; }
+      geo.userData.shareKey = key;
+      GEO_SHARE.set(key, geo);
+      // hết xe nào dùng (props.js trả tài nguyên -> dispose) hoặc bị thay (lốp xẹp): bỏ khỏi bảng
+      geo.addEventListener('dispose', function drop() { geo.removeEventListener('dispose', drop); if (GEO_SHARE.get(key) === geo) GEO_SHARE.delete(key); delete geo.userData.shareKey; });
+    });
+  }
+
+  // GỘP CHI TIẾT TĨNH KHI XE CÒN NGUYÊN: ~230-580 lưới / xe -> mỗi (vật liệu, đổ bóng) 1 lưới gộp (toạ độ nướng sẵn trong hệ
+  // khung xe, nên shader lão hoá / phong hoá tính theo vị trí ra y hệt). Lưới gốc giữ nguyên, chỉ chuyển sang lớp 1 (camera,
+  // bóng đổ, dò tia hiệu ứng chỉ thấy lớp 0 — như cách game ẩn vật theo LOD). Lần đầu xe bị tác động (bắn, cán, húc, quét
+  // nòng, vỡ kính, cháy) hoặc khung mềm tự dựng lại: bỏ bản gộp, trả lưới gốc về lớp 0 -> biến dạng / văng / ẩn từng
+  // chi tiết như cũ. Không gộp: lưới trong suốt (thứ tự vẽ), nhiều vật liệu, có onBeforeRender (thân xe cập nhật uniform
+  // cho shader lão hoá), renderOrder riêng, không cắt theo khung nhìn. (geo.groups của Box / Cylinder bỏ qua được: 1 vật
+  // liệu thì three vẽ cả lưới, không đọc groups.)
+  const _mm = new THREE.Matrix4(), _mn = new THREE.Matrix3(), _mv = new THREE.Vector3();
+  const OBR0 = THREE.Object3D.prototype.onBeforeRender;
+  function dropArray() { this.array = null; }
+  function mergeStatic(car) {
+    car.updateMatrixWorld(true);
+    const inv = _mm.copy(car.matrixWorld).invert().clone();
+    const groups = new Map(), shown = [];
+    const visit = (o, vis) => {
+      vis = vis && o.visible;
+      if (o !== car && o.isMesh) {
+        const m = o.material, geo = o.geometry;
+        const ok = vis && !o.isInstancedMesh && !o.isSkinnedMesh && m && !Array.isArray(m) && !m.transparent && geo && geo.attributes.position &&
+          geo.attributes.normal && !(geo.morphAttributes && Object.keys(geo.morphAttributes).length) &&
+          o.onBeforeRender === OBR0 && !o.renderOrder && o.frustumCulled && o.layers.mask === 1 && !o.children.length &&
+          geo.drawRange.start === 0 && geo.drawRange.count === Infinity && !Object.values(geo.attributes).some(a => a.isInterleavedBufferAttribute);
+        if (ok) {
+          const sig = Object.keys(geo.attributes).sort().map(k => k + geo.attributes[k].itemSize).join(',') + (geo.index ? '|i' : '|n');
+          const key = m.uuid + '|' + (o.castShadow ? 1 : 0) + (o.receiveShadow ? 1 : 0) + '|' + sig;
+          let G = groups.get(key);
+          if (!G) groups.set(key, G = { m, cast: o.castShadow, recv: o.receiveShadow, list: [] });
+          G.list.push(o);
+        }
+      }
+      for (const c of o.children) visit(c, vis);
+    };
+    visit(car, true);
+    const merged = [];
+    for (const G of groups.values()) {
+      if (G.list.length < 2) continue;
+      let nv = 0, ni = 0;
+      const first = G.list[0].geometry, names = Object.keys(first.attributes);
+      for (const o of G.list) { nv += o.geometry.attributes.position.count; if (o.geometry.index) ni += o.geometry.index.count; }
+      const out = new THREE.BufferGeometry();
+      const arrs = {};
+      for (const k of names) arrs[k] = new Float32Array(nv * first.attributes[k].itemSize);
+      const idx = first.index ? (nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni)) : null;
+      let vo = 0, io = 0;
+      for (const o of G.list) {
+        const geo = o.geometry, n = geo.attributes.position.count;
+        const M = _mm.multiplyMatrices(inv, o.matrixWorld);
+        _mn.getNormalMatrix(M);
+        for (const k of names) {
+          const A = geo.attributes[k], s = A.itemSize, D = arrs[k];
+          for (let i = 0; i < n; i++) {
+            if (k === 'position') { _mv.fromBufferAttribute(A, i).applyMatrix4(M); D[3 * (vo + i)] = _mv.x; D[3 * (vo + i) + 1] = _mv.y; D[3 * (vo + i) + 2] = _mv.z; }
+            else if (k === 'normal') { _mv.fromBufferAttribute(A, i).applyMatrix3(_mn).normalize(); D[3 * (vo + i)] = _mv.x; D[3 * (vo + i) + 1] = _mv.y; D[3 * (vo + i) + 2] = _mv.z; }
+            else for (let c = 0; c < s; c++) D[s * (vo + i) + c] = A.getComponent ? A.getComponent(i, c) : A.array[i * s + c];
+          }
+        }
+        if (idx) { const I = geo.index.array; for (let i = 0; i < I.length; i++) idx[io + i] = I[i] + vo; io += I.length; }
+        vo += n;
+      }
+      for (const k of names) out.setAttribute(k, new THREE.BufferAttribute(arrs[k], first.attributes[k].itemSize, first.attributes[k].normalized));
+      if (idx) out.setIndex(new THREE.BufferAttribute(idx, 1));
+      out.computeBoundingSphere(); out.computeBoundingBox();
+      // bản gộp chỉ để vẽ (không dò tia, không sửa đỉnh, bị bỏ khi tách): nạp GPU xong thì bỏ mảng phía CPU (~4 MB / xe)
+      for (const k of names) out.attributes[k].onUpload(dropArray);
+      if (idx) out.index.onUpload(dropArray);
+      const mesh = new THREE.Mesh(out, G.m);
+      mesh.castShadow = G.cast; mesh.receiveShadow = G.recv;
+      mesh.raycast = () => {};           // dò tia (đạn, hiệu ứng) vẫn đi vào lưới gốc qua crushApi sau khi tách
+      mesh.userData.civMerged = true;
+      car.add(mesh);
+      merged.push(mesh);
+      for (const o of G.list) { o.layers.set(1); shown.push(o); }
+    }
+    if (!merged.length) return null;
+    return function unmerge() {
+      for (const m of merged) { if (m.parent) m.parent.remove(m); m.geometry.dispose(); }
+      for (const o of shown) o.layers.set(0);
+      merged.length = shown.length = 0;
+    };
+  }
+
+  // ĐÈN LỬA Ô TÔ CHÁY DÙNG CHUNG: trước đây mỗi xe bắt lửa thêm 1 PointLight (không bao giờ gỡ) -> số đèn điểm trong cảnh
+  // đổi -> MỌI vật liệu có chiếu sáng đang hiện phải biên dịch lại shader (khoá shader chứa số đèn): khựng hàng giây mỗi
+  // xe cháy. Nay cảnh có sẵn FIRE_LIGHTS đèn cố định (StreetSet tạo lúc vào trận); mỗi khung các xe đang cháy gửi yêu cầu
+  // (vị trí, độ sáng như cũ), đèn gán cho các đám cháy rọi sáng nhất quanh camera (đèn tầm 32 đv ~ 4 m: đám xa không rọi
+  // tới thứ gì thấy được). Cảnh không có nhóm đèn (trang thử xe, phòng xem xe) -> xe tự tạo đèn riêng như cũ.
+  const FIRE_LIGHTS = 2;
+  const FL = { scene: null, lights: [], req: [], pool: [] };
+  function fireLightPool(scene) {
+    if (!scene || FL.scene === scene) return FL.lights;
+    for (const l of FL.lights) if (l.parent) l.parent.remove(l);
+    FL.scene = scene; FL.lights = [];
+    for (let i = 0; i < FIRE_LIGHTS; i++) { const l = new THREE.PointLight(0xff6a18, 0, 32, 2); scene.add(l); FL.lights.push(l); }
+    return FL.lights;
+  }
+  const rootOf = o => { while (o.parent) o = o.parent; return o; };
+  const _flv = new THREE.Vector3();
+  function requestFireLight(obj, x, y, z, k) {
+    if (!(k > 0.001)) return;
+    const r = FL.pool[FL.req.length] || (FL.pool[FL.req.length] = { obj: null, x: 0, y: 0, z: 0, k: 0, s: 0 });
+    obj.localToWorld(_flv.set(x, y, z));
+    r.obj = obj; r.x = _flv.x; r.y = _flv.y; r.z = _flv.z; r.k = k;
+    FL.req.push(r);
+  }
+  // gọi 1 lần / khung sau khi các xe cập nhật (props.js StreetSet.update); cam: vị trí camera
+  function assignFireLights(cam) {
+    const L = FL.lights, Q = FL.req, now = performance.now();
+    if (L.length) {
+      for (const r of Q) r.s = cam ? r.k / (1 + ((r.x - cam.x) ** 2 + (r.y - (cam.y || 0)) ** 2 + (r.z - cam.z) ** 2) / 1024) : r.k;
+      if (Q.length > L.length) Q.sort((a, b) => b.s - a.s);
+      let qi = 0;
+      for (let i = 0; i < L.length; i++) {
+        const l = L[i], U = l.userData;
+        // xe ở xa cập nhật cách khung (props.js) -> khung không có yêu cầu: giữ đèn của nó tới 0,3 s, không chớp tắt
+        if (U.obj && now - U.t < 300 && U.obj.parent && !Q.some(r => r.obj === U.obj) && Q.length - qi <= L.length - i - 1) continue;
+        const r = Q[qi++];
+        if (r) { l.position.set(r.x, r.y, r.z); l.intensity = r.k; U.obj = r.obj; U.t = now; }
+        else { l.intensity = 0; U.obj = null; }
+      }
+    }
+    for (const r of Q) r.obj = null;
+    Q.length = 0;
+  }
+
+  // computeVertexNormals của three r128 viết lại trên mảng thô (dựng lại vỏ xe chạy hàng chục lần / s mỗi xe bị bắn, bản
+  // của three qua Vector3 + fromBufferAttribute chiếm ~1/5 thời gian mô phỏng). Cùng thứ tự phép toán: mỗi mặt đọc 3 pháp
+  // tuyến (Float32) rồi mới ghi (mặt suy biến cộng 1 lần), cộng dồn làm tròn Float32 sau mỗi mặt, chuẩn hoá x * (1 / len)
+  // -> kết quả trùng từng bit
+  function vertexNormals(geo) {
+    const Pa = geo.attributes.position;
+    let Na = geo.attributes.normal;
+    if (!Na || Pa.isInterleavedBufferAttribute || Na.isInterleavedBufferAttribute || Pa.itemSize !== 3 || Na.itemSize !== 3 || !(Na.array instanceof Float32Array) || (geo.index && geo.index.isInterleavedBufferAttribute)) { geo.computeVertexNormals(); return; }
+    const P = Pa.array, N = Na.array, n = Pa.count;
+    N.fill(0, 0, 3 * Na.count);
+    if (geo.index) {
+      const I = geo.index.array, cnt = geo.index.count;
+      for (let u = 0; u < cnt; u += 3) {
+        const a = 3 * I[u], b = 3 * I[u + 1], c = 3 * I[u + 2];
+        const cx = P[c] - P[b], cy = P[c + 1] - P[b + 1], cz = P[c + 2] - P[b + 2];
+        const hx = P[a] - P[b], hy = P[a + 1] - P[b + 1], hz = P[a + 2] - P[b + 2];
+        const x = cy * hz - cz * hy, y = cz * hx - cx * hz, z = cx * hy - cy * hx;
+        const ax = N[a] + x, ay = N[a + 1] + y, az = N[a + 2] + z;
+        const bx = N[b] + x, by = N[b + 1] + y, bz = N[b + 2] + z;
+        const qx = N[c] + x, qy = N[c + 1] + y, qz = N[c + 2] + z;
+        N[a] = ax; N[a + 1] = ay; N[a + 2] = az;
+        N[b] = bx; N[b + 1] = by; N[b + 2] = bz;
+        N[c] = qx; N[c + 1] = qy; N[c + 2] = qz;
+      }
+    } else {
+      for (let t = 0; t + 2 < n; t += 3) {
+        const a = 3 * t, b = a + 3, c = a + 6;
+        const cx = P[c] - P[b], cy = P[c + 1] - P[b + 1], cz = P[c + 2] - P[b + 2];
+        const hx = P[a] - P[b], hy = P[a + 1] - P[b + 1], hz = P[a + 2] - P[b + 2];
+        const x = cy * hz - cz * hy, y = cz * hx - cx * hz, z = cx * hy - cy * hx;
+        N[a] = x; N[a + 1] = y; N[a + 2] = z; N[b] = x; N[b + 1] = y; N[b + 2] = z; N[c] = x; N[c + 1] = y; N[c + 2] = z;
+      }
+    }
+    for (let i = 0, m = 3 * Na.count; i < m; i += 3) {
+      const x = N[i], y = N[i + 1], z = N[i + 2], inv = 1 / (Math.sqrt(x * x + y * y + z * z) || 1);
+      N[i] = x * inv; N[i + 1] = y * inv; N[i + 2] = z * inv;
+    }
+    Na.needsUpdate = true;
+  }
+
   const TEMPLATES = new Map();
   function templateOf(S) {
     let t = TEMPLATES.get(S);
@@ -4213,6 +4430,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     const zC0 = S.cabin[0][0], zC1 = S.cabin[S.cabin.length - 1][0];
     const colTop = (x, z) => (z > zC0 && z < zC1 && Math.abs(x) < plan(z) ? Math.max(top(z), roof(z)) : top(z)) + 0.2;
     const GX0 = -11, GZ0 = -23, CS = 0.8, NX = 28, NZ = 58, NC = NX * NZ;
+    let gridOn = false;   // lưới vệt xích còn toàn 0 (chưa bị xích đè) -> samp luôn ra 0, wrinkle khỏi đọc
     const gCap = new Float32Array(NC).fill(1e3), gUnd = new Float32Array(NC), gPx = new Float32Array(NC), gPz = new Float32Array(NC), gAl = new Float32Array(NC), gT = new Float32Array(NC);
     // dấu chân xe tăng đặt tại (tx, tz) hướng hd (toạ độ xe con): -> [trần, dưới xích, đẩy x, đẩy z, dọc vệt] hoặc null
     // có kích thước gầm thật (dim): trần = đúng mặt đáy xích / gầm xe tăng (c0 + dốc dọc / ngang, 2 đầu xích cong lên)
@@ -4266,7 +4484,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
           gCap[k] = r[0];
           crushDirty = true;
         }
-        if (r[1] > gUnd[k]) { gUnd[k] = r[1]; gPx[k] = r[2]; gPz[k] = r[3]; gAl[k] = r[4]; }
+        if (r[1] > gUnd[k]) { gUnd[k] = r[1]; gPx[k] = r[2]; gPz[k] = r[3]; gAl[k] = r[4]; gridOn = true; }
       }
       // tải mới dồn lệch về một bên -> bênh nghiêng: bên bị đè lún xuống, bên kia nhổm lên
       if (aw > 3) {
@@ -4402,7 +4620,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     // đỉnh hiển thị: dời theo khung + nếp nhăn tôn chi tiết theo mức ép k (nhiễu xoay chéo, nhiều hướng)
     const wrinkle = (x, y, z, d, out) => {
       let k = d[3];
-      const under = samp(gUnd, x, z, 0), along = samp(gAl, x, z, 0);
+      const under = gridOn ? samp(gUnd, x, z, 0) : 0, along = gridOn ? samp(gAl, x, z, 0) : 0;
       const maxShift = 2.4;
       const dX = Math.max(-maxShift, Math.min(maxShift, d[0]));
       const dZ = Math.max(-maxShift, Math.min(maxShift, d[2]));
@@ -4606,12 +4824,15 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     const dd = [0, 0, 0, 0], qq = [0, 0, 0, 0, 0, 0];
     const crushGeo = (geo, track) => {
       const A = geo.attributes.position, R = restGeo.get(geo), C = track ? geo.attributes.aCr : null, B = bindOf(geo), cr0 = geo.userData.cr0;
+      SB.prepDisp();   // nodeK + (P - R) mỗi điểm khung tính 1 lần cho cả lưới
       for (let i = 0; i < A.count; i++) {
-        SB.dispOf(B, i, dd); wrinkle(R[3 * i], R[3 * i + 1], R[3 * i + 2], dd, qq);
+        SB.dispOfP(B, i, dd);
+        wrinkle(R[3 * i], R[3 * i + 1], R[3 * i + 2], dd, qq);
         A.setXYZ(i, qq[0], qq[1], qq[2]);
         if (C) C.setXYZ(i, qq[4], qq[5], cr0 ? Math.max(qq[3], cr0[i]) : qq[3]);   // giữ nếp gấp của vết móp cũ
       }
-      A.needsUpdate = true; if (C) C.needsUpdate = true; geo.computeVertexNormals();
+      A.needsUpdate = true; if (C) C.needsUpdate = true;
+      vertexNormals(geo);
       geo.computeBoundingSphere();
     };
     const wheels = [];
@@ -5193,9 +5414,12 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       fire.on = true; fire.t = 0; fire.ign = [x, y, z];
       fire.boom = !S.isTruck && fire.fuel > 0.4 ? 3.5 + 4 * rnd() : -1;
       // Ánh sáng lửa hắt nhẹ từ gầm / khoang máy ra mặt đường, không chiếu trực diện làm lóa kính
-      fire.light = new THREE.PointLight(0xff6a18, 0, 32, 2);
-      fire.light.position.set(0, 1.2, 4);
-      g.add(fire.light);
+      if (FL.scene && rootOf(g) === FL.scene) fire.light = 'pool';   // đèn dùng chung của cảnh (assignFireLights)
+      else {
+        fire.light = new THREE.PointLight(0xff6a18, 0, 32, 2);
+        fire.light.position.set(0, 1.2, 4);
+        g.add(fire.light);
+      }
       shatterGlass();
       events.push('ignite');
     };
@@ -5423,7 +5647,9 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       emit(160 * k, 0);
       emit(inGame ? 30 * k : 12 * k + 2, inGame ? 2 : 1);
       // Ánh sáng lửa dịu nhẹ hắt từ gầm / khoang máy, không chói gắt làm lóa kính
-      if (fire.light) fire.light.intensity = 0.85 * k * (0.8 + 0.3 * Math.sin(fire.t * 19) * Math.sin(fire.t * 6.3));
+      const fireLux = 0.85 * k * (0.8 + 0.3 * Math.sin(fire.t * 19) * Math.sin(fire.t * 6.3));
+      if (fire.light === 'pool') requestFireLight(g, 0, 1.2, 4, fireLux);
+      else if (fire.light) fire.light.intensity = fireLux;
       // Ngay khi lửa bùng lên: nhiệt độ thiêu rụi lớp bóng gương, muội than làm nhám bề mặt -> triệt tiêu vân vi mạch phản chiếu
       const burnProg = Math.min(1, fire.t / 3);
       mats.body.clearcoat = mats.cabin.clearcoat = Math.max(0, 1 - burnProg * 3) * 0.05;
@@ -5440,7 +5666,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       if (c > 0.3) mats.body.userData.uni.uTk.value.w = mats.cabin.userData.uni.uTk.value.w = 0;   // lớp sơn bong / trầy cháy cùng
       for (const m of [mats.rim, mats.lip, mats.chrome]) { if (!m.userData.c0) m.userData.c0 = m.color.clone(); m.color.copy(m.userData.c0).lerp(new THREE.Color(0x3a2a20), c); m.roughness = Math.max(m.roughness, 0.3 + 0.5 * c); }
       car.position.y = -S.r * 0.28 * Math.max(0, (c - 0.5) * 2);   // lốp cháy rụi, thân lún xuống vành
-      if (fire.t >= dur) { fire.on = false; if (fire.light) fire.light.intensity = 0; }
+      if (fire.t >= dur) { fire.on = false; if (fire.light && fire.light !== 'pool') fire.light.intensity = 0; }
     };
     // ---- VA HÚC / NÒNG PHÁO QUÉT: móp cục bộ vĩnh viễn ----
     // điểm / hướng trong hệ g (xe con) -> hệ car (thân nghiêng / lún theo bánh xẹp)
@@ -5752,9 +5978,70 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         }
       });
     }
+    shareGeometries(g, restGeo);
+    // xe nguyên (không cán sẵn: khung mềm còn đang lún dần) -> vẽ bằng bản gộp tới lần đầu bị tác động
+    const unmerge = opts.crush || opts.noMerge ? null : mergeStatic(car);
+    if (unmerge) {
+      let on = true;
+      const split = () => { if (on) { on = false; unmerge(); } };
+      for (const k of ['stamp', 'shoot', 'sweepBarrel', 'ram', 'breakGlass', 'ignite']) {
+        const f = crushApi[k];
+        crushApi[k] = function () { split(); return f.apply(this, arguments); };
+      }
+      const upd = crushApi.update;
+      crushApi.update = function (dt) {
+        const t0 = this._lastRebuildTime;
+        const r = upd.call(this, dt);
+        if (on && this._lastRebuildTime !== t0) split();   // khung mềm tự dựng lại (vẫn đang lún): lưới gốc đã đổi
+        return r;
+      };
+      g.userData.unmerge = split;
+    }
     g.userData.spec = S;
     return g;
   }
-  return { build, SPEC, envCube, truckBodyOf, lodGeometry, patchLodMaterial, _geo: { bodyGeometry, cabinGeometry } };
+  // BIÊN DỊCH TRƯỚC SHADER XE CHI TIẾT (gọi lúc tải bản đồ có ô tô, game.prewarmShaders): bản chi tiết dựng muộn trong trận
+  // nên ~50 biến thể vật liệu (mỗi loại xe x tình trạng: mới / bụi / gỉ / hỏng / cháy rụi / bị cán / đang cháy, thùng xe
+  // tải) trước đây biên dịch giữa trận — mỗi shader vật lý ~0,5-1 s trên ANGLE D3D11, đo được giao tranh trong phố đứng
+  // hình hàng chục giây. Dựng mỗi biến thể 1 xe trong CHÍNH cảnh trận (khớp số đèn, sương mù, bóng đổ), dưới lòng đất,
+  // biên dịch rồi gỡ. Hình học dùng chung (shareGeometries) giữ lại cho xe thật dùng tiếp.
+  let warmedFor = null;
+  function prewarm(scene, renderer, camera) {
+    if (!scene || !renderer || !camera) return 0;
+    fireLightPool(scene);
+    // đã làm nóng cho cảnh này với cùng bộ đèn (lượt lúc chờ ghép trận, rồi lượt lúc vào trận): bỏ qua
+    let lights = 0;
+    scene.traverse(o => { if (o.isLight) lights++; });
+    const sig = lights + '|' + renderer.shadowMap.enabled + '|' + !!scene.fog;
+    if (warmedFor && warmedFor.scene === scene && warmedFor.sig === sig) return 0;
+    warmedFor = { scene, sig };
+    const holder = new THREE.Group();
+    holder.position.set(0, -5000, 0);
+    scene.add(holder);
+    const KINDS = ['sedan', 'taxi', 'suv', 'pickup', 'hatch', 'van', 'truck', 'dump'];
+    const add = (kind, o) => { try { const c = build(kind, o); holder.add(c); return c; } catch (e) { return null; } };
+    for (const kind of KINDS) {
+      for (const cond of ['clean', 'dusty', 'rusted', 'broken', 'burnt']) add(kind, { seed: 11, cond, burnt: cond === 'burnt' });
+      add(kind, { seed: 3, cond: 'dusty', crush: 0.7 });           // bị cán bẹp: khoang 2 mặt, vệt xích
+      add(kind, { seed: 9, cond: 'dusty', glass: true, flats: [1, 0, 0, 1] });
+      const c = add(kind, { seed: 7, cond: 'clean' });              // bị bắn, vỡ kính, cháy: lỗ đạn, hạt lửa / khói, kính ám
+      const api = c && c.userData.crush;
+      if (api) {
+        try {
+          api.shoot(30, 5, 0, -1, -0.05, 0, 'HE'); api.shoot(0, 4, 30, 0, -0.05, -1, 'SCOUT_BULLET');
+          api.breakGlass(); api.ignite(0, 4, 0);
+          for (let i = 0; i < 8; i++) api.update(1 / 30);
+        } catch (e) { /* chỉ làm nóng shader */ }
+      }
+    }
+    for (const kind of ['truck', 'dump']) for (const body of Object.keys(TRUCK_BODIES)) add(kind, { seed: 5, cond: 'dusty', body });
+    const n0 = (renderer.info.programs || []).length;
+    try { renderer.compile(scene, camera); } catch (e) { /* bỏ qua */ }
+    scene.remove(holder);
+    assignFireLights(null);
+    holder.traverse(o => { if (o.geometry && o.geometry.userData.shareKey === undefined) o.geometry.dispose(); });
+    return (renderer.info.programs || []).length - n0;
+  }
+  return { build, SPEC, envCube, truckBodyOf, lodGeometry, patchLodMaterial, fireLightPool, assignFireLights, prewarm, _geo: { bodyGeometry, cabinGeometry } };
 })();
 if (typeof window !== 'undefined') window.CivilCars = CivilCars;

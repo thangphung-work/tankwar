@@ -180,7 +180,9 @@ class SupplyManager {
       }
     }
     if (unit.isPlayer) {
-      this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'tip');
+      this.game._playerAirdrops = (this.game._playerAirdrops || 0) + 1;   // thưởng Bạc cuối trận (Equipment.silverFor)
+      const bonus = typeof Equipment !== 'undefined' && Equipment.AIRDROP_SILVER ? ` · +${Equipment.AIRDROP_SILVER} BẠC CUỐI TRẬN` : '';
+      this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}${bonus}`, 'tip');
       if (window.soundEngine) (window.soundEngine.playSupplyPickup || window.soundEngine.playReloadDone).call(window.soundEngine);
       this.game.updateAmmoUI();
     } else if ((typeof TeamIntel === 'undefined' || !this.game.player || unit.team === this.game.player.team || TeamIntel.knows(this.game.player, unit))) {

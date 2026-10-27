@@ -7,7 +7,8 @@
  */
 const GroundCover = (() => {
   const CELL = 40;              // ô rải
-  const RADIUS = 720;           // bán kính quanh tâm khung nhìn (720 đơn vị ~ 90m đủ bao trọn tầm nhìn quanh xe, tối ưu FPS)
+  const RADIUS = 840;           // bán kính rải cỏ hình tròn quanh tâm nhìn (840 đơn vị ~ 105m, phủ rộng và mượt mà)
+  const FADE_DIST = 180;        // dải chuyển tiếp mờ dần ở viền ngoài (~22m) để cỏ lùn sát đất và hòa vào nền
   const TUFTS_PER_CELL = 16;
   const PEBBLES_PER_CELL = 7;
   const OG = 7;                 // hệ số rải dày trong ô thuộc căn cứ bỏ hoang (cỏ dại um tùm)
@@ -121,17 +122,24 @@ const GroundCover = (() => {
       this.group = new THREE.Group();
       this.group.name = 'groundCover';
       terrain.group.add(this.group);   // dọn theo địa hình khi đổi bản đồ
-      const maxCells = Math.ceil((2 * RADIUS / CELL) + 2) ** 2;
+      const maxCells = Math.ceil(Math.PI * (RADIUS / CELL + 1) ** 2);
+      this.uFocus = { value: new THREE.Vector2(0, 0) };
+      this.uCoverRadius = { value: RADIUS };
+      this.uFadeDist = { value: FADE_DIST };
       this.maxT = Math.round(maxCells * TUFTS_PER_CELL * Math.max(0.3, this.B.density) * 1.5) + 18000;   // + cỏ dại dày trong căn cứ
       this.maxP = maxCells * PEBBLES_PER_CELL;
       // cỏ
-      const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.32, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });   // lá mảnh: ngưỡng thấp để xa không bị mỏng mất
+      // alphaToCoverage (như lá cây): mép lá cỏ mịn theo khử răng cưa MSAA, hết nhấp nháy khi xe chạy / lia camera (tắt MSAA thì GPU bỏ qua)
+      const gm = new THREE.MeshStandardMaterial({ map: blades(), alphaTest: 0.32, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });   // lá mảnh: ngưỡng thấp để xa không bị mỏng mất
       gm.onBeforeCompile = (sh) => {
         sh.uniforms.gTime = GroundShader && GroundShader.time ? GroundShader.time : { value: 0 };
         sh.uniforms.uWindV = (typeof Weather !== 'undefined' && Weather.WINDV) || { value: new THREE.Vector4(0.8, 0.6, 1, 0) };
         sh.uniforms.uShock = { value: SHOCKS };
         sh.uniforms.uShockH = { value: SHOCK_H };
-        sh.vertexShader = 'uniform float gTime;\nuniform vec4 uWindV;\nuniform vec4 uShock[4];\nuniform float uShockH[4];\nvarying float vBY;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+        sh.uniforms.uFocus = this.uFocus;
+        sh.uniforms.uCoverRadius = this.uCoverRadius;
+        sh.uniforms.uFadeDist = this.uFadeDist;
+        sh.vertexShader = 'uniform float gTime;\nuniform vec4 uWindV;\nuniform vec4 uShock[4];\nuniform float uShockH[4];\nuniform vec2 uFocus;\nuniform float uCoverRadius;\nuniform float uFadeDist;\nvarying float vBY;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
           vBY = uv.y;
           {
             float hv = fract(sin(dot(vec2(instanceMatrix[3][0], instanceMatrix[3][2]), vec2(12.9898, 78.233))) * 43758.5453);
@@ -140,6 +148,12 @@ const GroundCover = (() => {
           {
             // lay theo gió: ngọn đung đưa, gốc đứng yên; mỗi khóm lệch pha theo vị trí
             vec3 ip = vec3(instanceMatrix[3][0], 0.0, instanceMatrix[3][2]);
+            // viền ngoài chuyển tiếp êm dịu vào nền đất: khóm cỏ thấp dần và thu nhỏ về 0 trước khi chạm tới mép rải
+            float cDist = length(ip.xz - uFocus);
+            float cFade = clamp((uCoverRadius - cDist) / max(uFadeDist, 1.0), 0.0, 1.0);
+            cFade = cFade * cFade * (3.0 - 2.0 * cFade);
+            transformed.y *= cFade;
+            transformed.xz *= mix(0.15, 1.0, cFade);
             float sw = (sin(gTime * 1.9 + ip.x * 0.045 + ip.z * 0.031) * 0.16 + sin(gTime * 3.7 + ip.x * 0.11) * 0.05) * (0.6 + 0.4 * uWindV.z);
             transformed.x += sw * uv.y;
             transformed.z += sw * 0.6 * uv.y;
@@ -176,7 +190,7 @@ const GroundCover = (() => {
           .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
             normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`);
       };
-      gm.customProgramCacheKey = () => 'grassTuft6';
+      gm.customProgramCacheKey = () => 'grassTuft7';
       this.grass = new THREE.InstancedMesh(tuftGeometry(), gm, this.maxT);
       this.grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxT * 3), 3);
       this.grass.count = 0; this.grass.frustumCulled = false; this.grass.receiveShadow = true; this.grass.castShadow = false;
@@ -186,7 +200,22 @@ const GroundCover = (() => {
       const pp = pg.attributes.position;
       for (let i = 0; i < pp.count; i++) { const y = pp.getY(i); pp.setY(i, y > 0 ? y * 0.55 : y * 0.25); }
       pg.computeVertexNormals();
-      this.peb = new THREE.InstancedMesh(pg, new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, flatShading: true }), this.maxP);
+      const pm = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, flatShading: true });
+      pm.onBeforeCompile = (sh) => {
+        sh.uniforms.uFocus = this.uFocus;
+        sh.uniforms.uCoverRadius = this.uCoverRadius;
+        sh.uniforms.uFadeDist = this.uFadeDist;
+        sh.vertexShader = 'uniform vec2 uFocus;\nuniform float uCoverRadius;\nuniform float uFadeDist;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+          {
+            vec3 ip = vec3(instanceMatrix[3][0], 0.0, instanceMatrix[3][2]);
+            float cDist = length(ip.xz - uFocus);
+            float cFade = clamp((uCoverRadius - cDist) / max(uFadeDist, 1.0), 0.0, 1.0);
+            cFade = cFade * cFade * (3.0 - 2.0 * cFade);
+            transformed *= cFade;
+          }`);
+      };
+      pm.customProgramCacheKey = () => 'pebCover2';
+      this.peb = new THREE.InstancedMesh(pg, pm, this.maxP);
       this.peb.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxP * 3), 3);
       this.peb.count = 0; this.peb.frustumCulled = false; this.peb.receiveShadow = true;
       this.group.add(this.peb);
@@ -251,6 +280,10 @@ const GroundCover = (() => {
 
     blocked(x, z) {
       const T = this.T;
+      if (T.map && T.map.testField) {
+        const tf = T.map.testField;
+        if (Math.hypot(x - tf.x, z - tf.z) < (tf.r || 1000) * 0.95) return true;
+      }
       if (!this.mask) this.buildMask();
       const M = this.mask, i = Math.floor((x + M.half) / M.G), j = Math.floor((z + M.half) / M.G);
       if (i >= 0 && j >= 0 && i < M.n && j < M.n && M.m[j * M.n + i]) return true;
@@ -462,7 +495,13 @@ const GroundCover = (() => {
     static ring() {
       if (Cover._ring) return Cover._ring;
       const r = Math.ceil(RADIUS / CELL) + 1, out = [];
-      for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) out.push([di, dj, di * di + dj * dj]);
+      const maxR2 = (RADIUS / CELL) * (RADIUS / CELL);
+      for (let dj = -r; dj <= r; dj++) {
+        for (let di = -r; di <= r; di++) {
+          const d2 = di * di + dj * dj;
+          if (d2 <= maxR2) out.push([di, dj, d2]);
+        }
+      }
       out.sort((a, b) => a[2] - b[2]);
       return (Cover._ring = out);
     }
@@ -471,13 +510,10 @@ const GroundCover = (() => {
       const gA = this.grass.instanceMatrix.array, gC = this.grass.instanceColor.array;
       const pA = this.peb.instanceMatrix.array, pC = this.peb.instanceColor.array;
       let nt = 0, np = 0;
-      const c0x = Math.floor((cx - RADIUS) / CELL), c1x = Math.floor((cx + RADIUS) / CELL);
-      const c0z = Math.floor((cz - RADIUS) / CELL), c1z = Math.floor((cz + RADIUS) / CELL);
       const ci = Math.floor(cx / CELL), cj = Math.floor(cz / CELL), t0 = performance.now();
       this.pending = false;
       for (const [di, dj] of Cover.ring()) {
         const i = ci + di, j = cj + dj;
-        if (i < c0x || i > c1x || j < c0z || j > c1z) continue;
         let c = this.cache.get(i + ',' + j);
         if (!c) {
           if (performance.now() - t0 > 4) { this.pending = true; continue; }
@@ -505,6 +541,7 @@ const GroundCover = (() => {
 
     // focus: tâm vùng camera nhìn thấy trên mặt đất
     update(focusX, focusZ) {
+      if (this.uFocus) this.uFocus.value.set(focusX, focusZ);
       const cx = Math.round(focusX / CELL), cz = Math.round(focusZ / CELL);
       if (cx === this.lastCx && cz === this.lastCz && !this.pending) return;   // pending: còn ô xa chưa rải (rebuild)
       this.lastCx = cx; this.lastCz = cz;

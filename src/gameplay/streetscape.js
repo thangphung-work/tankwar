@@ -932,15 +932,28 @@ float wds(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1
   const JUNK_CH = 600;
   const JUNK_LOD = { bag0: 1100, bag1: 1100, bag2: 1100, bag3: 1100, box: 1100, boxOpen: 1100, boxCrushed: 1100, bin: 1700, binLid: 1700, dump: 2600, can: 800 };
   // list: [{ im, x, z, R2 }] — key 'cx:cz' của ô, R: tầm nhìn thấy của loại đồ vật
+  // + CẮT THEO KHUNG NHÌN (mỗi khung): InstancedMesh của ô để frustumCulled = false (khối bao r128 sai) -> trước đây ô sau
+  // lưng camera vẫn vẽ (~600 lượt vẽ + lượt bóng). Hộp ô nới CULL_PAD mỗi phía (bóng thùng rác ngay sau lưng vẫn đổ vào
+  // khung hình), cao -1000..3000 (ô trên đồi / dốc). Tầm xa giữ nguyên
+  const CULL_PAD = 80;
   function lodCell(list, im, key, R) {
     const [cx, cz] = key.split(':').map(Number), r = R + JUNK_CH * 0.71;
-    list.push({ im, x: (cx + 0.5) * JUNK_CH, z: (cz + 0.5) * JUNK_CH, R2: r * r });
+    const box = new THREE.Box3(new THREE.Vector3(cx * JUNK_CH - CULL_PAD, -1000, cz * JUNK_CH - CULL_PAD), new THREE.Vector3((cx + 1) * JUNK_CH + CULL_PAD, 3000, (cz + 1) * JUNK_CH + CULL_PAD));
+    list.push({ im, x: (cx + 0.5) * JUNK_CH, z: (cz + 0.5) * JUNK_CH, R2: r * r, near: true, box });
   }
   function lodUpdate(list, p) {
     for (const L of list) {
       const dx = p.x - L.x, dz = p.z - L.z, dy = p.y - 20;
-      L.im.visible = dx * dx + dz * dz + dy * dy < L.R2;
+      L.near = dx * dx + dz * dz + dy * dy < L.R2;
     }
+  }
+  const _cullFr = new THREE.Frustum(), _cullM = new THREE.Matrix4();
+  function frustumOf(cam) {
+    cam.updateMatrixWorld();
+    return _cullFr.setFromProjectionMatrix(_cullM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  }
+  function viewUpdate(list, fr) {
+    for (const L of list) L.im.visible = L.near && fr.intersectsBox(L.box);
   }
 
   // ===== RÁC / THÙNG RÁC / BAO RÁC TRÊN VỈA HÈ (thành phố bỏ hoang nhiều năm). Thùng rác, container, bao rác, thùng các-tông
@@ -1099,6 +1112,16 @@ float wds(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1
 
   // Lon / chai rời trên vỉa hè: xích / bánh xe đè lên thì bẹp lép (lon nhôm, chai nhựa) hoặc vỡ vụn (chai thuỷ tinh),
   // mép xe gạt văng ra; sóng nổ hất tung, nảy, lăn rồi nằm lại. Thuộc JunkSet (parent): dùng chung mặt vỉa hè + mảnh vụn
+  // đếm phiên bản trạng thái rác / lon: tăng mỗi lần một vật được ghi lại (bị đè, hất, đang bay / lăn)
+  let JUNK_VER = 0;
+  // hộp bao các điểm mẫu trên nòng (barrel_sweep.js S.pts), tính 1 lần / lượt quét: vật ngoài hộp (nới bán kính) chắc chắn
+  // không điểm nào chạm -> bỏ qua trước vòng 24 điểm (kết quả y hệt)
+  function sweepBox(S) {
+    if (S._bb) return S._bb;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of S.pts) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z; if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y; }
+    return (S._bb = { x0, x1, z0, z1, y0, y1 });
+  }
   class CanSet {
     constructor() { this.items = []; this.cell = 32; this.grid = new Map(); this.moving = new Set(); this.dirty = new Set(); this.parent = null; }
     key(x, z) { return Math.floor(x / this.cell) * 65536 + Math.floor(z / this.cell); }
@@ -1113,6 +1136,7 @@ float wds(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1
     }
     // lon nằm: trục đứng là trục x cục bộ (quay z 90°); bẹp = ép theo phương đứng, bè ra ngang
     write(it) {
+      JUNK_VER++;
       const lying = Math.abs(it.rz) > 0.8, f = it.flat;
       if (it.gone) xf(it.x, -999, it.z, 0, 0, 0, 0, 0, 0);
       else if (lying) xf(it.x, it.y, it.z, it.rx, it.ry, it.rz, f ? 0.24 : 1, f ? 1.06 : 1, f ? 1.32 : 1);
@@ -1157,8 +1181,11 @@ float wds(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1
     }
     // nòng pháo quét sát đất (barrel_sweep.js): lon / chai bị gạt văng theo chiều quét
     barrelSweep(S) {
+      const bb = sweepBox(S);
       this.each(S.cx, S.cz, S.R + 2, it => {
         if (it.v) return;
+        const rr = it.r + S.rb;
+        if (it.x + rr < bb.x0 || it.x - rr > bb.x1 || it.z + rr < bb.z0 || it.z - rr > bb.z1 || bb.y0 > it.y + rr) return;
         for (const p of S.pts) {
           if (p.y > it.y + it.r + S.rb || Math.hypot(p.x - it.x, p.z - it.z) > it.r + S.rb) continue;
           const l = p.s || 1, h = q => hash(Math.round(it.x * 13 + it.z * 7 + p.x) + q);
@@ -1481,6 +1508,7 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
     }
     key(x, z) { return Math.floor(x / this.cell) * 65536 + Math.floor(z / this.cell); }
     write(it) {
+      JUNK_VER++;
       // dent: vỏ thép móp bẹp 1 phía (thu 1 trục ngang), squash: thùng các-tông bẹp xuống (thấp + bè ra)
       const sc = it.s, lyingBin = it.type === 'bin' && (Math.abs(it.rz) > 0.8 || Math.abs(it.rx) > 0.8);
       if (it.type === 'scrap') xf(it.x, it.y, it.z, it.rx, it.ry, it.rz, it.s, 1, it.s * 0.7);
@@ -1570,7 +1598,8 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
         if (!J) continue;
         const s = it.s || 1, lying = Math.abs(it.rz) > 0.8 || Math.abs(it.rx) > 0.8;
         const ht = (lying ? J.half * 2 : J.ht) * s * (it.flat ? 0.35 : 1), rad = (lying ? Math.max(J.half, J.ht * 0.5) : J.half) * s;
-        const base = lying && it.type === 'bin' ? it.y - 2.4 * s : it.y;
+        const base = lying && it.type === 'bin' ? it.y - 2.4 * s : it.y, rr = rad + S.rb, bb = sweepBox(S);
+        if (it.x + rr < bb.x0 || it.x - rr > bb.x1 || it.z + rr < bb.z0 || it.z - rr > bb.z1 || bb.y1 < base - 0.5 || bb.y0 > base + ht + S.rb) continue;
         for (const p of S.pts) {
           if (p.y < base - 0.5 || p.y > base + ht + S.rb || Math.hypot(p.x - it.x, p.z - it.z) > rad + S.rb) continue;
           const l = p.s || 1, dx = p.vx / l, dz = p.vz / l, h = (q) => hash(Math.round(it.x * 7 + it.z * 3 + p.x * 5) + q);
@@ -1636,6 +1665,16 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
     // trượt + móp. Hộp thân xe như va chạm ô tô (VehicleCollision.hullBox); đồ vật đang bay thì bỏ qua
     crush(unit, x, z, dt) {
       if (!unit || unit.isDead || !dt || (!this.items.length && !this.cans)) return;
+      // XE GẦN NHƯ ĐỨNG YÊN, cùng tư thế lần trước, không vật nào đổi từ lần trước: mọi nhánh hất văng cần tốc độ > 1,5;
+      // ở tốc độ thấp chỉ có đè bẹp (làm lại không đổi gì) -> bỏ qua, kết quả y hệt. Trước đây 20 xe chạy hết hàm này
+      // mỗi khung (~2-4 ms / khung ở phố)
+      const sig = unit._jkSig, vNow = Math.abs(unit.speed || 0);
+      if (sig && vNow <= 1.5 && sig.x === x && sig.z === z && sig.a === unit.bodyAngle && sig.ver === JUNK_VER) return;
+      try { this.crushIn(unit, x, z, dt); } finally {
+        unit._jkSig = { x, z, a: unit.bodyAngle, ver: JUNK_VER };
+      }
+    }
+    crushIn(unit, x, z, dt) {
       const VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
       const a = unit.bodyAngle || 0, ca = Math.cos(a), sa = Math.sin(a);
       let cx = x, cz = z, hu = 14, hv = 22;
@@ -1654,10 +1693,11 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
       let hit = null;
       for (let i = c0; i <= c1; i++) for (let j = r0; j <= r1; j++) for (const it of this.grid.get(i * 65536 + j) || []) {
         if (it.gone || it.v || it.type === 'scrap') continue;
-        if (Math.abs(it.y - this.T.groundAtRaw(it.x, it.z)) > 30) continue;   // đồ vật trên cao (không cùng tầng với xe)
         const J = JK[it.type], half = (J && J.half ? J.half : 1) * (it.s || 1);
         const tx = it.x - cx, tz = it.z - cz, lu = tx * ux + tz * uz, lv = -tx * uz + tz * ux;
         if (Math.abs(lu) > hu + half || Math.abs(lv) > hv + half) continue;
+        // (tra độ cao mặt đất sau phép thử hộp: mỗi xe mỗi khung trước đây tra cho mọi đồ vật trong các ô quanh xe)
+        if (Math.abs(it.y - this.T.groundAtRaw(it.x, it.z)) > 30) continue;   // đồ vật trên cao (không cùng tầng với xe)
         const under = Math.abs(lu) < hu - half * 0.3 && Math.abs(lv) < hv - half * 0.3;   // nằm hẳn dưới gầm / dưới xích
         const h = (q) => hash(Math.round(it.x * 7 + it.z * 3) + q);
         if (it.type.startsWith('bag')) {
@@ -1728,6 +1768,11 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
         this._lodT = 0.15;
         lodUpdate(this.lod, cam.position);
         if (this.cans && this.cans.lod) lodUpdate(this.cans.lod, cam.position);
+      }
+      if (cam) {
+        const fr = frustumOf(cam);
+        viewUpdate(this.lod, fr);
+        if (this.cans && this.cans.lod) viewUpdate(this.cans.lod, fr);
       }
       if (this.cans) this.cans.update(dt);
       if (!this.moving.size) return;

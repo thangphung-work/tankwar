@@ -52,7 +52,8 @@
     if (g.morphAttributes && g.morphAttributes.position && g.morphAttributes.position.length) return false;
     if (g.drawRange.start !== 0 || g.drawRange.count !== Infinity) return false;
     const N = triCount(g);
-    if (N < MIN_TRIS || N > MAX_TRIS) return false;
+    // bvhLarge: lưới lớn dựng sẵn lúc tải bản đồ (mặt đất ~74k tam giác — ngắm theo chuột dò tia vào nó 30 lần/s)
+    if (N < MIN_TRIS || (N > MAX_TRIS && !(mesh.userData && mesh.userData.bvhLarge))) return false;
     const gs = groupsOf(g);
     if (!gs) return false;
     if (Array.isArray(mesh.material)) {
@@ -106,7 +107,7 @@
     }
     if (!e) { e = { uses: 0 }; E.set(g, e); }
     if (!force && ++e.uses < 2) return null;
-    if (!force && triCount(g) > SYNC_MAX) { enqueue(g); return null; }
+    if (!force && triCount(g) > SYNC_MAX) { enqueue(g, true); return null; }
     try { e = build(g); nBuilt++; nTris += triCount(g); } catch (err) { e = { uses: -1e9 }; }   // không dựng được: không thử lại, dùng raycast gốc
     E.set(g, e);
     return e.bvh ? e : null;
@@ -135,43 +136,136 @@
     }
   };
 
-  // DỰNG SẴN cho mọi lưới đủ lớn trong một nhóm (xe): xếp hàng, mỗi lượt rảnh dựng tới ~6 ms
-  const queue = [];
+  // DỰNG SẴN cho mọi lưới đủ lớn trong một nhóm (xe): xếp hàng; dựng trong Web Worker (raycast_bvh_worker.js — cùng
+  // tuỳ chọn nên ra đúng cây như dựng tại chỗ, luồng chính chỉ chép mảng & ghép cây trả về). Không có worker: mỗi lượt rảnh
+  // dựng tới ~6 ms (game bận thì trình duyệt hiếm khi rảnh -> hàng đợi tắc, lưới lớn dò tia bằng raycast gốc rất lâu)
+  const queue = [], queued = new Set();
   let pumping = false;
+  const WORKER_URL = (() => { try { return new URL('raycast_bvh_worker.js', document.currentScript.src).href; } catch (e) { return null; } })();
+  const W_INFLIGHT = 2;
+  let worker = null, workerBad = !WORKER_URL || typeof Worker === 'undefined', jobId = 0;
+  const jobs = new Map(), sending = new Set();   // id -> { g, pos, count, idx, idxVer, gsig, posVer }; hình học đang gửi đi
+  function workerOf() {
+    if (worker || workerBad) return worker;
+    try {
+      worker = new Worker(WORKER_URL);
+      worker.onmessage = ev => onBuilt(ev.data);
+      worker.onerror = () => {
+        // không tải được worker: quay về dựng lúc rảnh, trả lại các lưới đang gửi đi
+        workerBad = true; worker = null;
+        for (const j of jobs.values()) enqueue(j.g, true);
+        jobs.clear(); sending.clear();
+        if (queue.length) schedule();
+      };
+    } catch (e) { workerBad = true; worker = null; }
+    return worker;
+  }
+  function send(g) {
+    const pos = g.attributes.position, V = pos.count, N = triCount(g);
+    let src;
+    if (g.index) src = g.index.array.slice(0, N * 3);
+    else { src = V > 65535 ? new Uint32Array(N * 3) : new Uint16Array(N * 3); for (let i = 0; i < N * 3; i++) src[i] = i; }
+    const P = pos.array.slice(0, V * pos.itemSize), id = ++jobId;
+    sending.add(g);
+    jobs.set(id, { g, pos, count: V, idx: g.index, idxVer: g.index ? g.index.version : 0, gsig: groupSig(g), posVer: pos.version });
+    worker.postMessage({ id, pos: P, itemSize: pos.itemSize, normalized: pos.normalized, V, src, groups: groupsOf(g) }, [P.buffer, src.buffer]);
+  }
+  function onBuilt(d) {
+    const j = jobs.get(d.id);
+    if (!j) return;
+    jobs.delete(d.id);
+    sending.delete(j.g);
+    const g = j.g, pos = g.attributes.position, cur = E.get(g);
+    // lưới đổi chỉ số / nhóm / mảng toạ độ trong lúc chờ: bỏ, lần dò sau tự xếp hàng lại
+    const ok = !d.error && !(cur && cur.bvh) && pos === j.pos && pos.count === j.count && g.index === j.idx &&
+      (!g.index || g.index.version === j.idxVer) && groupSig(g) === j.gsig;
+    if (ok) {
+      try {
+        const proxy = new THREE.BufferGeometry();
+        proxy.setAttribute('position', pos);
+        if (g.attributes.uv) proxy.setAttribute('uv', g.attributes.uv);
+        proxy.setIndex(new THREE.BufferAttribute(d.index, 1));
+        for (const gr of groupsOf(g)) proxy.addGroup(gr.start, gr.count, gr.materialIndex);
+        const bvh = MeshBVHLib.MeshBVH.deserialize({ roots: d.roots, index: d.index }, proxy, { setIndex: false });
+        // toạ độ đổi sau lúc chép (xe móp): posVer cũ -> lần dò tới refit theo toạ độ hiện tại
+        E.set(g, { bvh, proxy, map: d.map, pos, posVer: j.posVer, idx: g.index, idxVer: j.idxVer, gsig: j.gsig });
+        nBuilt++; nTris += triCount(g);
+      } catch (err) { E.set(g, { uses: -1e9 }); }
+    } else if (d.error && !(cur && cur.bvh)) E.set(g, { uses: -1e9 });
+    if (queue.length && !pumping) schedule();
+  }
   function pump(deadline) {
     const t0 = performance.now();
     let built = 0;
+    if (workerOf()) {
+      while (queue.length && jobs.size < W_INFLIGHT) {
+        const g = queue.shift();
+        queued.delete(g);
+        const e = E.get(g);
+        if ((e && e.bvh) || sending.has(g) || !eligible1(g)) continue;
+        send(g);
+      }
+      pumping = false;   // lượt tiếp theo do onBuilt gọi khi worker trả cây
+      return;
+    }
     while (queue.length) {
       // mỗi lượt dựng ít nhất 1 lưới (game bận: hết hạn chờ thì timeRemaining() = 0 -> không bao giờ dựng xong)
       const left = Math.min(deadline && deadline.timeRemaining ? deadline.timeRemaining() : 6, 6 - (performance.now() - t0));
       if (built > 0 && left <= 0) break;
       const g = queue.shift();
+      queued.delete(g);
       const e = E.get(g);
       if (!e || !e.bvh) { entryFor(g, true); built++; }
     }
     if (queue.length) schedule(); else pumping = false;
   }
+  // hình học vẫn dựng được (lưới đã bị huỷ / đổi sang dạng không hỗ trợ trong lúc chờ thì bỏ)
+  function eligible1(g) {
+    const pos = g.attributes && g.attributes.position;
+    return !!pos && !pos.isInterleavedBufferAttribute && triCount(g) >= MIN_TRIS && !!groupsOf(g);
+  }
   function schedule() {
     pumping = true;
+    if (!workerBad) { setTimeout(pump, 0); return; }
     if (typeof requestIdleCallback === 'function') requestIdleCallback(pump, { timeout: 1500 });
     else setTimeout(pump, 16);
   }
-  function enqueue(g) {
-    if (queue.includes(g)) return;
-    queue.push(g);
+  // front: lưới đang bị dò tia thật (đạn trúng, ngắm) — dựng trước các lưới chỉ xếp sẵn
+  function enqueue(g, front) {
+    if (queued.has(g)) {
+      if (front && queue[0] !== g) { queue.splice(queue.indexOf(g), 1); queue.unshift(g); }
+    } else {
+      if (sending.has(g)) return;
+      queued.add(g);
+      if (front) queue.unshift(g); else queue.push(g);
+    }
     if (!pumping) schedule();
   }
-  function warm(obj) {
+  // front: xếp lên đầu hàng (mô hình xe sắp hồi sinh — bước dựng lồng dò tia lên nó ngay sau đó)
+  function warm(obj, front) {
     if (!obj || !obj.traverse) return;
-    const seen = new Set(queue);
     obj.traverse(o => {
       if (!o.isMesh || !eligible(o)) return;
       const g = o.geometry, e = E.get(g);
-      if ((e && e.bvh) || seen.has(g)) return;
-      seen.add(g); queue.push(g);
+      if ((e && e.bvh) || sending.has(g)) return;
+      if (front) { enqueue(g, true); return; }
+      if (queued.has(g)) return;
+      queued.add(g); queue.push(g);
     });
     if (queue.length && !pumping) schedule();
   }
+  // mọi lưới dựng được cây trong obj đã có cây chưa
+  function ready(obj) {
+    let ok = true;
+    if (obj && obj.traverse) obj.traverse(o => { if (ok && o.isMesh && eligible(o)) { const e = E.get(o.geometry); if (!(e && e.bvh)) ok = false; } });
+    return ok;
+  }
 
-  window.RaycastBVH = { warm, origRaycast, stats: () => ({ queued: queue.length, built: nBuilt, tris: nTris }) };
+  // dựng cây NGAY (gọi lúc tải bản đồ, không phải giữa trận) cho lưới lớn đánh dấu userData.bvhLarge
+  function prebuild(mesh) {
+    if (!mesh || !mesh.isMesh || !eligible(mesh)) return false;
+    return !!entryFor(mesh.geometry, true);
+  }
+
+  window.RaycastBVH = { warm, ready, prebuild, origRaycast, stats: () => ({ queued: queue.length, built: nBuilt, tris: nTris }) };
 })();

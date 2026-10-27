@@ -848,6 +848,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       this.boulders = opts.boulders || null;   // danh sách vật cản của địa hình: xác xe tàn tích chắn xe & đạn
       const sun = opts.sun;
       this.shadeDir = sun && isFinite(sun.azimuth) ? [Math.sin(sun.azimuth), Math.cos(sun.azimuth)] : [0.6, 0.8];
+      this.deferWrecks = !!opts.deferWrecks;
       this.items = list.map(s => this.buildOne(s));
     }
 
@@ -2285,7 +2286,25 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const UP = new THREE.Vector3(0, 1, 0);
       // [nửa dài thân, bán kính vật cản] theo loại xe
       const FOOT = { ALL_ROUNDER: [30, 14], GATLING: [28, 13], ARTILLERY: [36, 12], SCOUT: [20, 9] };
+      // dựng lúc tải dưới nền (opts.deferWrecks): mỗi xác xe là 1 việc trong hàng chờ, terrain gọi stepWrecks() từng
+      // nhịp -> màn chờ không đứng hình cả chục giây
       (s.wrecks || []).forEach((P, i) => {
+        if (this.deferWrecks) (this._wreckQueue = this._wreckQueue || []).push(() => this.buildWreck(K, P, i, G, UP, FOOT));
+        else this.buildWreck(K, P, i, G, UP, FOOT);
+      });
+    }
+
+    // Dựng n xác xe còn chờ; true = đã dựng hết
+    stepWrecks(n = 1) {
+      const Q = this._wreckQueue;
+      while (Q && Q.length && n-- > 0) {
+        try { Q.shift()(); } catch (err) { console.warn('[STRONGHOLD] wreck error:', err); }
+      }
+      return !Q || !Q.length;
+    }
+
+    buildWreck(K, P, i, G, UP, FOOT) {
+      {
         if (!TankModelBuilder.models[P.type]) return;
         let seed = P.seed >>> 0 || 1;
         const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
@@ -2357,7 +2376,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           if (P.turret) this.boulders.push({ x: P.turret.x, z: P.turret.z, radius: 10, height: 9, wreck: true });
         }
         K.wrecks.push(W);
-      });
+      }
     }
 
     // Phát trúng ngẫu nhiên lên vỏ xác xe (từ ngoài vào, chếch xuống)
@@ -2459,6 +2478,11 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         for (const W of K.wrecks || []) {
           if (W.dressed) continue;
           if (!fx.hitUnitSurface || !fx.addSurfaceMark) { W.dressed = true; continue; }
+          // cây dò tia (BVH) của mô hình xác dựng trước lúc trình duyệt rảnh: trước đây dựng đồng bộ ngay trong việc dán
+          // vết (mỗi lưới tới ~8 ms, vượt ngân sách 4 ms / khung -> khựng đầu trận). Hàng dựng còn việc thì chờ
+          const RB = typeof window !== 'undefined' && window.RaycastBVH;
+          if (RB && !W.bvhWarm) { W.bvhWarm = true; if (W.u && W.u.group) RB.warm(W.u.group); }
+          if (RB && RB.stats().queued > 0) { busy = true; break; }
           if (!W.jobs) W.jobs = this.wreckMarkJobs(fx, W);
           const t0 = performance.now();
           while (W.jobs.length && performance.now() - t0 < 4) W.jobs.shift()();
@@ -2903,6 +2927,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       };
       const walk = (o) => {
         if (skip.has(o)) return;
+        if (!o.visible) return;
+        if (o.name === 'antennas' || (o.userData && o.userData.isAntenna)) return;
         if (o.isMesh && o.geometry && !o.userData.isFxDecal) {
           const mat = Array.isArray(o.material) ? o.material[0] : o.material;
           const fx = mat && (mat.blending === THREE.AdditiveBlending || (mat.transparent && mat.opacity < 0.2));

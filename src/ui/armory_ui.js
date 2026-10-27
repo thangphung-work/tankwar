@@ -19,7 +19,7 @@ const ArmoryUI = (() => {
   // Đạn có sẵn của từng xe (không cần nhận)
   const STOCK_AMMO = {
     ALL_ROUNDER: [['NORMAL', 'Đạn pháo 120mm thường', 'circle-dot', 'Không giới hạn'], ['AP', 'Đạn xuyên giáp', 'arrow-big-right-lines'], ['HE', 'Đạn nổ mạnh', 'flame']],
-    GATLING: [['GATLING_BULLET', 'Đạn 30mm nổ mảnh', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 30mm', 'flame']],
+    GATLING: [['GATLING_BULLET', 'Đạn 30mm thường', 'circle-dot', 'Không giới hạn'], ['GATLING_HE', 'Đạn 30mm nổ mảnh ngòi cận đích', 'drone-off'], ['INCENDIARY', 'Đạn cháy 30mm', 'flame']],
     ARTILLERY: [['NORMAL', 'Lựu đạn 155mm', 'circle-dot', 'Không giới hạn'], ['HE', 'Lựu đạn nổ mạnh 155', 'flame'], ['CLUSTER', 'Đạn chùm 155', 'atom-2'], ['KAMIKAZE', 'UAV cảm tử', 'drone-off']],
     SCOUT: [['SCOUT_BULLET', 'Đạn xuyên giáp 12.7mm', 'circle-dot', 'Không giới hạn'], ['INCENDIARY', 'Đạn cháy 12.7mm', 'flame'], ['ANTI_TANK_MISSILE', 'Tên lửa chống tăng', 'rocket']]
   };
@@ -32,7 +32,7 @@ const ArmoryUI = (() => {
   // ---------------------------------------------------------------------------
   // ẢNH TRANG BỊ: render sẵn từ mô hình 3D thật (equipment_thumbs.html) -> assets/equipment/<id>.webp
   // ---------------------------------------------------------------------------
-  const IMG_V = '7';   // đổi khi render lại ảnh (máy chủ cache ảnh)
+  const IMG_V = '16';   // đổi khi render lại ảnh (máy chủ cache ảnh)
   const imgUrl = (id) => `assets/equipment/${id}.webp?v=${IMG_V}`;
   const imgTag = (id, alt) => `<img class="eqd-img" src="${imgUrl(id)}" alt="${esc(alt || '')}" loading="lazy" decoding="async" draggable="false">`;
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)
@@ -116,7 +116,7 @@ const ArmoryUI = (() => {
     // ống khói có sẵn trên mô hình được gỡ đi
     const k = (A() && A().kitFor) ? A().kitFor(tank).kit : null;
     Eq.equip(u, k || { m: [], p: [], a: {} }, null);
-    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.missileAmmoCount = u.rpgAmmoCount = 9999;
+    u.apAmmoCount = u.heAmmoCount = u.clusterAmmoCount = u.incendiaryAmmoCount = u.heFragAmmoCount = u.missileAmmoCount = u.rpgAmmoCount = 9999;
   }
   function onTankLoaded(inspector, tank) {
     insp = inspector;
@@ -167,24 +167,9 @@ const ArmoryUI = (() => {
       h += `<button class="eqd-tab${c === cat ? ' on' : ''}" role="tab" aria-selected="${c === cat}" data-act="cat" data-item="${c}"><i class="ti ti-${K.icon}"></i><span>${K.name}</span>${badge}</button>`;
     }
     h += '</div>';
-    // số Bạc đã hiện ở góc trên màn xem xe (#ti-silver) -> ở đây chỉ nhắc cách dùng + số Bạc vừa trừ / hoàn bay lên
-    const silver = prof() ? `<i class="ti ti-coins"></i> Đạn đã mua tự mang theo mỗi lần xuất kích${flash && flash.cost ? `<span class="eqd-float${flash.cost < 0 ? ' up' : ''}">${flash.cost > 0 ? '−' : '+'}${fmt(Math.abs(flash.cost))} Bạc</span>` : ''}` : '<i class="ti ti-user"></i> Đăng nhập để mua đạn bằng Bạc';
-    const adNote = prof() && adsOn() ? ` · <i class="ti ti-player-play"></i> Quảng cáo có thưởng: còn <b>${adsLeft()}/${Eq.AD.DAILY}</b> lượt hôm nay${adsLeft() <= 0 && adsBonus() > 0 ? ` (+${adsBonus()} lượt thưởng nửa, chỉ vật tư)` : ''}` : '';
-    const MOUNT_NOTE = {
-      roof: '<i class="ti ti-keyboard"></i> Món trên nóc tháp dùng bằng phím <b>4</b> trong trận (bấm lại 4 hoặc 1–3 để về vũ khí chính) — chọn món khác là thay luôn món đang gắn',
-      front: '<i class="ti ti-shield-chevron"></i> Mũi xe: lưỡi ủi (giữ <b>X</b> đào ụ đất) hoặc khiên chữ V (giáp trước dày hơn, xe chậm hơn) — chọn món khác là thay luôn',
-      mag: '<i class="ti ti-box"></i> Hộp đạn: 2 hòm đạn 30mm hai bên tháp — hòm càng to băng càng dài nhưng thay hòm càng lâu. Chọn món khác là thay luôn',
-      weapon: '<i class="ti ti-crosshair"></i> Vũ khí chính trên vòng tháp: giữ <b>Space</b> để bắn — chọn món khác là thay luôn',
-      uav: '<i class="ti ti-drone"></i> UAV: bấm <b>Ctrl</b> trong trận để phóng (UAV cảm tử: <b>Space</b> để bổ nhào) — chọn món khác là thay luôn',
-      engine: '<i class="ti ti-engine"></i> Động cơ: máy zin không tăng tốc được; lắp động cơ mới giữ <b>Shift</b> để tăng tốc — máy nóng dần, quá nhiệt phải nhả ga. Chỉ mua bằng Bạc'
-    };
-    const note = msg || (isMount(cat) ? (MOUNT_NOTE[cat] || '') + adNote
-      : cat === 'gear' ? '<i class="ti ti-keyboard"></i> Bấm <b>G</b> để phóng khói — thử ngay ở khung xe phía trên hoặc trong <b>THAO TRƯỜNG</b>' + adNote
-      : cat === 'ammo' ? silver + adNote
-      : Eq.ALL_FREE ? '<i class="ti ti-gift"></i> Mọi trang bị đều miễn phí'
-      : `<i class="ti ti-lock"></i> Đồ nâng cao: mua bằng Bạc hoặc xem quảng cáo để mở khóa vĩnh viễn${adNote}`);
+    const note = msg || (flash && flash.cost ? `<span class="eqd-float${flash.cost < 0 ? ' up' : ''}">${flash.cost > 0 ? '−' : '+'}${fmt(Math.abs(flash.cost))} Bạc</span>` : '');
     const RA = repairAllCost(tank);
-    const fix = RA.n && !msg ? `<span class="eqd-fixall"><i class="ti ti-alert-triangle"></i> Giáp hỏng từ trận trước: thiếu <b>${RA.n}</b> khối — xe sẽ ra trận thiếu đúng chỗ đó <button class="eqp-btn" data-act="repairAll"><i class="ti ti-tool"></i> SỬA TẤT CẢ · ${fmt(RA.cost)} Bạc</button></span> ` : '';
+    const fix = RA.n && !msg ? `<span class="eqd-fixall"><i class="ti ti-alert-triangle"></i> Trang bị hỏng từ trận trước — chưa sửa thì không mang ra trận <button class="eqp-btn" data-act="repairAll"><i class="ti ti-tool"></i> SỬA TẤT CẢ · ${fmt(RA.cost)} Bạc</button></span> ` : '';
     // thông báo dài (vd tên trang bị vừa mở khóa) giữ 1 dòng, cắt "…"; rê chuột xem đủ
     const tip = msg ? ` title="${esc(msg.replace(/<[^>]+>/g, '').trim())}"` : '';
     h += `<div class="eqd-note${msg ? ' msg' : ''}"${tip}>${fix}${msg ? `<span class="eqd-note-txt">${note}</span>` : note}</div></div>`;
@@ -239,6 +224,9 @@ const ArmoryUI = (() => {
     }
     h += '</div>';
     root.innerHTML = h;
+    // Đổi nhóm / đổi xe: thẻ trượt vào lần lượt; dựng lại cùng nhóm (mua, đổi số lượng) thì không
+    if (!sameCat) { if (window.tcSwap) tcSwap(root); }
+    else if (window.tcSwapStop) tcSwapStop(root);
     flash = null;   // hiệu ứng chỉ chạy 1 lần ngay sau giao dịch
     root.dataset.cat = cat; root.dataset.tank = tank;
     if (sameCat && keepScroll) $('.eqd-strip', root).scrollLeft = keepScroll;
@@ -270,16 +258,16 @@ const ArmoryUI = (() => {
     const swap = (Eq.MOUNT_CATS || ['roof']).includes(M.cat);   // ô 1 bệ: chọn món khác là thay luôn món đang gắn
     if (equipped) { act = isDefault ? 'none' : 'unequip'; cls = ' on'; }
     else { act = 'equip'; if (full && !swap) cls = ' full'; }
-    // giáp bị phá chưa mua lại (vật tư tiêu hao): thiếu bao nhiêu khối + nút Mua lại (giá mua theo số khối)
+    // trang bị hỏng từ trận trước (bị phá dù chỉ 1 khối): chưa sửa thì KHÔNG mang ra trận + nút Sửa (giá theo số đơn vị mất)
     const CD = condOf(tank, id);
     if (CD) {
       const unitName = (Eq.ARMOR_REPAIR && Eq.ARMOR_REPAIR[id]) || 'khối', cost = CD.gone.length * (CD.unit || 0);
-      const left = Math.max(0, CD.total - CD.gone.length);
+      const left = Math.max(0, CD.total - CD.gone.length), whole = CD.total <= 1;
       return card({ img: id, name: M.name, cls: cls + ' hurt', tag: M.adv ? 'NÂNG CAO' : '',
-        line: `<span class="eqd-warn">CÒN ${left}/${CD.total} ${unitName}</span> · ${esc(SHORT[id] || '')}`,
-        extra: `<div class="eqd-qty"><button class="eqd-q add wide" data-act="repair" data-item="${id}" title="Mua lại ${CD.gone.length} ${unitName} đã bị phá (${fmt(CD.unit)} Bạc / ${unitName})"><i class="ti ti-shopping-cart"></i> Mua lại ${CD.gone.length} ${unitName} · ${fmt(cost)} Bạc</button></div>`,
+        line: `<span class="eqd-warn">HỎNG${whole ? '' : ` · CÒN ${left}/${CD.total} ${unitName}`} — KHÔNG MANG RA TRẬN</span>`,
+        extra: `<div class="eqd-qty"><button class="eqd-q add wide" data-act="repair" data-item="${id}" title="Sửa ${whole ? unitName : CD.gone.length + ' ' + unitName + ' bị phá'} (${fmt(CD.unit)} Bạc / ${unitName})"><i class="ti ti-tool"></i> Sửa${whole ? '' : ' ' + CD.gone.length + ' ' + unitName} · ${fmt(cost)} Bạc</button></div>`,
         attrs: ` role="button" tabindex="0" aria-pressed="${equipped}" data-act="${act}" data-item="${id}"`,
-        tip: `${M.name}: ${CD.gone.length}/${CD.total} ${unitName} bị phá ở trận trước — giáp là vật tư tiêu hao, chưa mua lại thì xe ra trận thiếu đúng chỗ đó. Mua lại: ${fmt(CD.unit)} Bạc / ${unitName}` });
+        tip: `${M.name}: bị phá ở trận trước${whole ? '' : ` (${CD.gone.length}/${CD.total} ${unitName})`} — chưa sửa thì xe ra trận KHÔNG có món này. Sửa: ${fmt(cost)} Bạc` });
     }
     const hint = isDefault ? 'Món mặc định khi ô nóc tháp để trống' : equipped ? 'Bấm để gỡ' : full && !swap ? 'Nhóm đã đủ ô — gỡ bớt một món trước' : swap && full ? 'Bấm để thay món đang gắn trên nóc tháp' : 'Bấm để trang bị';
     return card({ img: id, name: M.name, line: esc(SHORT[id] || M.desc), cls, tag: M.adv ? 'NÂNG CAO' : '',

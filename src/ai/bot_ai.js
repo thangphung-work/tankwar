@@ -196,7 +196,7 @@ class BotAIController {
       if (this.aa) { this.aa = null; U.isFiringGatling = false; U._aa = null; }
       return false;
     }
-    const ammo = tank ? 'MG762' : U.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : (U.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
+    const ammo = tank ? 'MG762' : U.selectedAmmo === 'INCENDIARY' ? 'INCENDIARY' : U.selectedAmmo === 'GATLING_HE' ? 'GATLING_HE' : (U.tankType === 'SCOUT' ? 'SCOUT_BULLET' : 'GATLING_BULLET');
     const elMax = G.airElMax ? G.airElMax(U) : tank && typeof DroneAir !== 'undefined' ? DroneAir.C.RCWS.elMax : 60;
     const cap = G.aaRound ? (G.aaRound(U, ammo).maxTravel || 800) : 800;
     const seeR = typeof DroneAir !== 'undefined' ? DroneAir.C.BOT_SEE_R : 1100;
@@ -217,6 +217,7 @@ class BotAIController {
       if (!best || (this.burstUnit && !this.burstUnit.isDead && Math.hypot(this.burstUnit.x - U.x, this.burstUnit.z - U.z) < 220)) return false;
       const g = () => { const u = Math.max(1e-9, Math.random()); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random()); };
       const k = this.skill, E = BotAIController.AIM_ERR;
+      U._fcs = null;   // mục tiêu mới: máy tính phòng không bám lại từ đầu
       A = this.aa = { d: best, t: -(0.5 + Math.random() * 0.8 * k), g, bAz: g() * E.az * k, bEl: g() * E.el * k, solT: 0, corrT: 0, until: 5 + Math.random() * 3 };
       if (!tank) { this.burstUnit = null; this.pendingShot = null; }   // xe tăng: pháo chính vẫn đánh mặt đất, súng trên nóc lo drone
       if (U.tankType === 'SCOUT' && U.selectedAmmo === 'ANTI_TANK_MISSILE') U.selectedAmmo = 'SCOUT_BULLET';
@@ -231,9 +232,12 @@ class BotAIController {
       this.aaScan = 0.6;
       return false;
     }
+    // máy tính phòng không như người chơi (DroneAir.fcsTrack): bám đủ thời gian mới đón đầu, vận tốc ước lượng trễ, lệch ngắm
+    const F = G.fcsTrack ? G.fcsTrack(U, d, dt) : null;
+    const fl = !F || F.locked;
     if ((A.solT -= dt) <= 0) {
       A.solT = 0.06;   // (như người chơi: tính thưa thì loạt đạn trễ sau đuôi drone bay ngang)
-      A.sol = G.airShotSolution(U, ammo, d.x, d.y + cy, d.z, d.wvx || 0, d.wvy || 0, d.wvz || 0);
+      A.sol = G.airShotSolution(U, ammo, d.x, d.y + cy, d.z, fl ? (F ? F.vx : d.wvx || 0) : 0, fl ? (F ? F.vy : d.wvy || 0) : 0, fl ? (F ? F.vz : d.wvz || 0) : 0);
     }
     // nhìn vệt đạn vạch đường: cứ ~0.6 s kéo loạt đạn về gần drone hơn
     if (A.t > 0 && (A.corrT += dt) >= 0.6) {
@@ -244,7 +248,8 @@ class BotAIController {
     }
     const S = A.sol;
     if (!S) return !tank;
-    const az = (S.az + A.bAz * 0.0573 + 360) % 360, el = Math.max(-5, Math.min(elMax, S.el + A.bEl * 0.0573));
+    const fAz = F ? F.bAz : 0, fEl = F ? F.bEl : 0;
+    const az = (S.az + (A.bAz + fAz) * 0.0573 + 360) % 360, el = Math.max(-5, Math.min(elMax, S.el + (A.bEl + fEl) * 0.0573));
     if (!tank) U.aimTo(az, el);
     if (!tank && !U.canElevate) {
       const r = az * Math.PI / 180;

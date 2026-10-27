@@ -23,7 +23,7 @@
  *   GET  /api/leaderboard                                   -> { top: [{ displayName, rankText, xp, ... }] }
  *   POST /api/profile       { displayName?, lastTank?, lastMap?, settings? } -> { profile }
  *   POST /api/password      { oldPassword, newPassword }    -> { ok }
- *   POST /api/match-result  { result, kills, deaths, damage, shots, tankType, mapType, durationSec, ammoUsed?, kdPlace? } -> { profile, gained, silver, kdPlace, kdBonus }
+ *   POST /api/match-result  { result, kills, deaths, damage, shots, tankType, mapType, durationSec, ammoUsed?, kdPlace?, airdrops? } -> { profile, gained, silver, kdPlace, kdBonus, airdrops, airdropSilver }
  *   POST /api/shop/buy      { tank, item } (mô-đun / đạn cao cấp) | { tank, ammo, n } (mua lẻ n viên; { packs } kiểu cũ vẫn nhận) -> { profile }
  *   POST /api/shop/sell     { tank, ammo, n } (trả lại n viên trong kho, hoàn đúng giá) -> { profile }
  *   POST /api/shop/use      { tank, used: { loại đạn: số viên } } (đạn mua đã bắn trong trận, trừ kho ngay) -> { profile }
@@ -31,6 +31,11 @@
  *   POST /api/ad/start      { tank, ammo } (tiếp tế vật tư) | { tank, item } (mở khóa đồ nâng cao) -> { token, sec, minSec, left }
  *   POST /api/ad/reward     { token } -> { profile, reward }: xem đủ thời lượng thì nhận thưởng
  *                           (vật tư: +AMMO_SHOP[..].ad viên vào kho, không bán lại được; đồ nâng cao: +1 tiến độ, đủ thì mở khóa)
+ *   POST /api/ad/start      { spin: true } (sau lượt miễn phí) -> /api/ad/reward -> +1 lượt quay (tối đa DAILY_SPIN.AD_SPINS / ngày)
+ *   POST /api/pay/checkout  { pack } -> { url }: tạo đơn PayPal (Orders v2), trả link trang duyệt của PayPal (gói ở Equipment.TOPUP)
+ *   POST /api/pay/verify    { session_id } (= mã đơn PayPal, ?token=...) -> { status, silver, spins, profile }: quay về, chốt đơn (capture), cộng Bạc
+ *   POST /api/pay/webhook   (PayPal gọi, kiểm chữ ký qua API) CHECKOUT.ORDER.APPROVED / PAYMENT.CAPTURE.COMPLETED -> chốt đơn, cộng Bạc (mỗi đơn đúng 1 lần)
+ *   POST /api/daily/spin    (1 lượt / ngày giờ VN) -> { profile, reward }: Bạc (nhân chuỗi ngày), gói vật tư hoặc 1 món nâng cao
  *   POST /api/shop/claim    { tank, item, token } — tên cũ của /api/ad/reward (giữ cho máy khách cũ)
  *
  * CỬA HÀNG (danh mục & giá ở src/core/equipment.js, dùng chung với trò chơi): tiền "Bạc" nhận sau mỗi trận,
@@ -47,6 +52,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const Equipment = require('./src/core/equipment.js');
+// khóa bí mật (PayPal...) trong .env cạnh máy chủ — không ghi đè biến môi trường đã đặt sẵn
+try { process.loadEnvFile(path.join(__dirname, '.env')); } catch (e) { /* không có .env */ }
 
 const DATA_DIR = process.env.ACCOUNTS_DIR ? path.resolve(process.env.ACCOUNTS_DIR) : path.join(__dirname, 'data');
 // Chỉ để test local: DEV_INFINITE_SILVER=1 (hoặc chạy server với --dev) -> mua gì cũng không trừ Bạc,
@@ -156,6 +163,18 @@ function openDb() {
       tank TEXT NOT NULL, item TEXT NOT NULL, total INTEGER NOT NULL DEFAULT 0, gone TEXT NOT NULL DEFAULT '[]',
       PRIMARY KEY (user_id, tank, item)
     ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS daily_spin (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      day TEXT NOT NULL, streak INTEGER NOT NULL DEFAULT 0, last_at INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS payments (
+      session_id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      pack TEXT NOT NULL, amount INTEGER NOT NULL, currency TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', silver INTEGER NOT NULL DEFAULT 0, spins INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL, paid_at INTEGER, mock INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS payments_user ON payments (user_id, status);
     CREATE TABLE IF NOT EXISTS purchases (
       id INTEGER PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -166,6 +185,15 @@ function openDb() {
   if (!db.prepare('PRAGMA table_info(users)').all().some(c => c.name === 'silver')) {
     db.exec(`ALTER TABLE users ADD COLUMN silver INTEGER NOT NULL DEFAULT ${Equipment.START_SILVER}`);
   }
+  // Quay thưởng thêm nhờ xem quảng cáo: ad_day / ad_n = số lượt xem trong ngày, extra = lượt quay thêm chưa dùng (hết hạn cuối ngày)
+  {
+    const cols = db.prepare('PRAGMA table_info(daily_spin)').all().map(c => c.name);
+    if (!cols.includes('ad_day')) db.exec("ALTER TABLE daily_spin ADD COLUMN ad_day TEXT NOT NULL DEFAULT ''");
+    if (!cols.includes('ad_n')) db.exec('ALTER TABLE daily_spin ADD COLUMN ad_n INTEGER NOT NULL DEFAULT 0');
+    if (!cols.includes('extra')) db.exec('ALTER TABLE daily_spin ADD COLUMN extra INTEGER NOT NULL DEFAULT 0');
+    // lượt quay tặng kèm gói nạp Bạc (không hết hạn)
+    if (!cols.includes('bought')) db.exec('ALTER TABLE daily_spin ADD COLUMN bought INTEGER NOT NULL DEFAULT 0');
+  }
   // Vật tư nhận từ quảng cáo (không bán lại được): thêm cột cho CSDL cũ
   if (!db.prepare('PRAGMA table_info(ammo_stock)').all().some(c => c.name === 'free')) {
     db.exec('ALTER TABLE ammo_stock ADD COLUMN free INTEGER NOT NULL DEFAULT 0');
@@ -174,7 +202,8 @@ function openDb() {
   Q = {
     userByName: P('SELECT * FROM users WHERE username = ?'),
     userById: P('SELECT * FROM users WHERE id = ?'),
-    insertUser: P(`INSERT INTO users (username, display_name, pass_salt, pass_hash, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?)`),
+    // silver ghi rõ: mặc định của cột là START_SILVER lúc CSDL được tạo (đổi START_SILVER về sau không đổi mặc định cột)
+    insertUser: P(`INSERT INTO users (username, display_name, pass_salt, pass_hash, created_at, last_login, silver) VALUES (?, ?, ?, ?, ?, ?, ${Equipment.START_SILVER | 0})`),
     touchLogin: P('UPDATE users SET last_login = ? WHERE id = ?'),
     setProfile: P('UPDATE users SET display_name = ?, last_tank = ?, last_map = ?, settings = ? WHERE id = ?'),
     setPassword: P('UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?'),
@@ -226,7 +255,20 @@ function openDb() {
     condOf: P('SELECT tank, item, total, gone FROM armor_cond WHERE user_id = ?'),
     condGet: P('SELECT total, gone FROM armor_cond WHERE user_id = ? AND tank = ? AND item = ?'),
     condSet: P('INSERT INTO armor_cond (user_id, tank, item, total, gone) VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id, tank, item) DO UPDATE SET total = excluded.total, gone = excluded.gone'),
-    condDel: P('DELETE FROM armor_cond WHERE user_id = ? AND tank = ? AND item = ?')
+    condDel: P('DELETE FROM armor_cond WHERE user_id = ? AND tank = ? AND item = ?'),
+    spinGet: P('SELECT day, streak, ad_day, ad_n, extra, bought FROM daily_spin WHERE user_id = ?'),
+    spinAddBought: P(`INSERT INTO daily_spin (user_id, day, streak, last_at, bought) VALUES (?1, '', 0, 0, ?2)
+                      ON CONFLICT (user_id) DO UPDATE SET bought = bought + excluded.bought`),
+    spinUseBought: P('UPDATE daily_spin SET bought = bought - 1, last_at = ?1 WHERE user_id = ?2 AND bought > 0'),
+    payGet: P('SELECT * FROM payments WHERE session_id = ?'),
+    payAdd: P('INSERT INTO payments (session_id, user_id, pack, amount, currency, created_at, mock) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    payDone: P(`UPDATE payments SET status = 'paid', silver = ?, spins = ?, paid_at = ? WHERE session_id = ? AND status = 'pending'`),
+    payCount: P(`SELECT pack, COUNT(*) AS n FROM payments WHERE user_id = ? AND status = 'paid' GROUP BY pack`),
+    payPaidPack: P(`SELECT COUNT(*) AS n FROM payments WHERE user_id = ? AND pack = ? AND status = 'paid'`),
+    spinAdAdd: P(`UPDATE daily_spin SET ad_n = CASE WHEN ad_day = ?1 THEN ad_n + 1 ELSE 1 END,
+                   extra = CASE WHEN ad_day = ?1 THEN extra + 1 ELSE 1 END, ad_day = ?1 WHERE user_id = ?2`),
+    spinUseExtra: P('UPDATE daily_spin SET extra = extra - 1, last_at = ?1 WHERE user_id = ?2 AND ad_day = ?3 AND extra > 0'),
+    spinSet: P('INSERT INTO daily_spin (user_id, day, streak, last_at) VALUES (?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET day = excluded.day, streak = excluded.streak, last_at = excluded.last_at')
   };
   migrateLegacyJson();
   refundRetiredAmmo();
@@ -444,6 +486,8 @@ function publicProfile(u) {
   return {
     silver: INFINITE_SILVER ? 999999999 : u.silver | 0, armory: { owned, stock, free, loadouts, adProgress, cond },
     ads: { left: adsLeft(u.id), daily: Equipment.AD.DAILY, bonus: adsBonusLeft(u.id), bonusMax: Equipment.AD.BONUS },
+    daily: spinStatus(u.id),
+    pay: payStatus(u.id),
     username: u.username, displayName: u.display_name, createdAt: u.created_at,
     xp: u.xp, level: li.level, rank: li.rank, tier: li.tier, rankText: `${li.rank} Cấp ${li.tier}`, xpInLevel: li.xpInLevel, xpToNext: li.xpToNext,
     lastTank: u.last_tank, lastMap: u.last_map, settings, stats, history
@@ -465,6 +509,220 @@ function adsBonusLeft(userId) {
   if (!Q) return 0;
   const r = Q.adDayGet.get(userId, adDay()), AD = Equipment.AD;
   return Math.max(0, Math.min(AD.BONUS, AD.DAILY + AD.BONUS - ((r && r.n) || 0)));
+}
+// ---- QUAY THƯỞNG HẰNG NGÀY: 1 lượt / ngày giờ VN (bảng thưởng Equipment.DAILY_SPIN). Chỉ để test local:
+// DEV_FREE_SPIN=1 (hoặc --dev) -> quay lại không giới hạn; DEV_FREE_SPIN=0 để tắt ngay cả khi --dev
+const FREE_SPIN = process.env.DEV_FREE_SPIN === '1' || (process.argv.includes('--dev') && process.env.DEV_FREE_SPIN !== '0');
+const prevDay = (day) => new Date(Date.parse(day + 'T00:00:00Z') - 86400e3).toISOString().slice(0, 10);
+function spinStatus(userId) {
+  const day = adDay(), r = Q && Q.spinGet.get(userId);
+  const next = Date.parse(day + 'T00:00:00Z') - 7 * 3600e3 + 86400e3;   // 0 giờ hôm sau (giờ VN)
+  const done = !!(r && r.day === day);
+  // chuỗi còn sống nếu hôm qua hoặc hôm nay đã quay; quay hôm nay -> chuỗi + 1
+  const alive = r && (r.day === day || r.day === prevDay(day));
+  const streak = alive ? r.streak : 0;
+  const today = !!(r && r.ad_day === day), extra = today ? r.extra : 0, adN = today ? r.ad_n : 0, bought = (r && r.bought) || 0;
+  // lượt quảng cáo đổi quay thêm: chỉ sau khi đã dùng lượt miễn phí, trong trần chung quảng cáo / ngày
+  const adLeft = done ? Math.max(0, Math.min(Equipment.DAILY_SPIN.AD_SPINS - adN, adsLeft(userId) + adsBonusLeft(userId))) : 0;
+  return { ready: !done || extra > 0 || bought > 0 || FREE_SPIN, free: !done, extra, bought, adLeft, adMax: Equipment.DAILY_SPIN.AD_SPINS,
+    streak, nextStreak: done ? streak : streak + 1, next, dev: FREE_SPIN };
+}
+// bộ đồ đang lắp của xe (đã kiểm tra)
+function loadoutOf(userId, tank) {
+  let cur = {};
+  try { cur = JSON.parse((Q.loadoutGet.get(userId, tank) || {}).data || '{}'); } catch (e) {}
+  return cleanLoadout(userId, tank, cur);
+}
+/** Lắp mô-đun vừa nhận vào ô TRỐNG của nhóm (không thay món người chơi đang gắn). Trả true nếu đã lắp */
+function installIfFree(userId, tank, id) {
+  const M = Equipment.MODULES[id];
+  if (!M) return false;   // đạn cao cấp: không chiếm ô, luôn dùng
+  const k = loadoutOf(userId, tank);
+  if (k.m.includes(id)) return true;
+  const same = k.m.filter(x => Equipment.MODULES[x] && Equipment.MODULES[x].cat === M.cat).length;
+  const cap = (Equipment.MOUNT_CATS || []).includes(M.cat) ? 1 : ((Equipment.CATS[M.cat] || {}).slots || 0);
+  if (same >= cap || k.m.length >= Equipment.SLOTS) return false;
+  k.m.push(id);
+  Q.setLoadout.run(userId, tank, JSON.stringify(cleanLoadout(userId, tank, k)));
+  return true;
+}
+function dailySpin(u) {
+  const st = spinStatus(u.id);
+  if (!st.ready) return null;
+  // thứ tự dùng lượt: miễn phí hôm nay -> lượt thêm từ quảng cáo -> (dev) không giới hạn
+  const mode = st.free ? 'free' : st.extra > 0 ? 'ad' : st.bought > 0 ? 'bought' : 'dev';
+  const now = Date.now(), streak = Math.max(1, st.nextStreak);
+  return tx(() => {
+    const owns = (tank, id) => !!Q.ownedHas.get(u.id, tank, id);
+    const room = (tank, ammo) => {
+      const A = Equipment.AMMO_SHOP[tank][ammo], have = ((Q.stockGet.get(u.id, tank, ammo) || {}).n) || 0;
+      // vật tư cần mô-đun riêng (lựu đạn khói -> ống phóng khói, UAV cảm tử -> bệ UAV cảm tử): chỉ rơi khi xe đang lắp / có sẵn
+      if (A.gear && !Equipment.builtin(tank, A.gear) && !loadoutOf(u.id, tank).m.includes(A.gear)) return 0;
+      return Math.max(0, stockCap(A) - have);
+    };
+    // QUÀ NGÀY 7: lượt miễn phí ngày cuối chu kỳ chỉ bốc ô Sử thi / Huyền thoại
+    const special = mode === 'free' && Equipment.spinCycleDay(streak) === Equipment.DAILY_SPIN.STREAK_MAX;
+    const rw = Equipment.spinRoll(Math.random, owns, room, special);
+    rw.special = special;
+    if (rw.kind === 'silver') {
+      rw.base = rw.n;
+      rw.n = Math.round(rw.n * Equipment.spinStreakMul(streak) / 10) * 10;
+      Q.addSilver.run(rw.n, u.id);
+      Q.addPurchase.run(u.id, now, '-', 'spin:silver', 1, -rw.n);
+    } else if (rw.kind === 'ammo') {
+      Q.addStockFree.run(u.id, rw.tank, rw.ammo, rw.n);
+      Q.addPurchase.run(u.id, now, rw.tank, 'spin:ammo:' + rw.ammo, rw.n, 0);
+    } else {
+      Q.addOwned.run(u.id, rw.tank, rw.id, now);
+      rw.equipped = installIfFree(u.id, rw.tank, rw.id);
+      Q.adProgDel.run(u.id, rw.tank, rw.id);
+      Q.addPurchase.run(u.id, now, rw.tank, 'spin:' + rw.id, 1, 0);
+    }
+    if (mode === 'ad') Q.spinUseExtra.run(now, u.id, adDay(now));
+    else if (mode === 'bought') Q.spinUseBought.run(now, u.id);
+    else Q.spinSet.run(u.id, adDay(now), streak, now);
+    rw.streak = streak;
+    rw.mode = mode;
+    return rw;
+  });
+}
+// ---- NẠP BẠC QUA PAYPAL (Orders API v2, chuyển hướng sang trang PayPal) ----
+// PAYPAL_CLIENT_ID + PAYPAL_CLIENT_SECRET: bật cổng nạp (đặt trong .env). PAYPAL_ENV=live -> tiền thật, còn lại sandbox.
+// PAYPAL_WEBHOOK_ID: nhận webhook tại /api/pay/webhook (khuyên dùng — cộng Bạc cả khi người chơi đóng tab trước khi quay về).
+// PUBLIC_URL (vd https://tankwar.example.com): địa chỉ quay về sau thanh toán; bỏ trống -> lấy theo Host của yêu cầu.
+// Không có khóa + chạy --dev (hoặc DEV_MOCK_PAY=1): thanh toán giả lập, bấm mua là cộng ngay (chỉ để thử giao diện).
+// Bảng payments: cột session_id giữ mã đơn PayPal (hoặc mock_...).
+const PAY = (() => {
+  const id = process.env.PAYPAL_CLIENT_ID || '', secret = process.env.PAYPAL_CLIENT_SECRET || '';
+  const key = !!(id && secret), live = /^live$/i.test(process.env.PAYPAL_ENV || '');
+  const mock = !key && (process.env.DEV_MOCK_PAY === '1' || (process.argv.includes('--dev') && process.env.DEV_MOCK_PAY !== '0'));
+  const p = {
+    id, secret, live, api: live ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',
+    webhookId: process.env.PAYPAL_WEBHOOK_ID || '', publicUrl: (process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
+    currency: String(Equipment.TOPUP.CURRENCY).toUpperCase(), mock, enabled: key || mock, token: '', tokenExp: 0
+  };
+  if (key) console.log(`[PAY] PayPal ${live ? 'THẬT (live)' : 'thử (sandbox)'}${p.webhookId ? ' + webhook' : ' (chưa có PAYPAL_WEBHOOK_ID: chỉ cộng Bạc khi người chơi quay về trang)'}`);
+  else if (mock) console.warn('[PAY] Thanh toán GIẢ LẬP (không có khóa PayPal) — chỉ dùng khi thử');
+  return p;
+})();
+async function paypalToken() {
+  if (PAY.token && Date.now() < PAY.tokenExp) return PAY.token;
+  const r = await fetch(PAY.api + '/v1/oauth2/token', {
+    method: 'POST', body: 'grant_type=client_credentials',
+    headers: { Authorization: 'Basic ' + Buffer.from(PAY.id + ':' + PAY.secret).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' }
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error(j.error_description || ('PayPal auth ' + r.status));
+  PAY.token = j.access_token;
+  PAY.tokenExp = Date.now() + Math.max(60, (Number(j.expires_in) || 600) - 300) * 1000;
+  return PAY.token;
+}
+/** Gọi API PayPal (JSON). body là chuỗi -> gửi nguyên văn */
+async function paypal(method, apiPath, body, headers) {
+  const tok = await paypalToken();
+  const r = await fetch(PAY.api + apiPath, {
+    method, body: body == null ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
+    headers: Object.assign({ Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, headers || {})
+  });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401) PAY.token = '';
+  if (!r.ok) {
+    const d = j.details && j.details[0];
+    const e = new Error(d ? `${d.issue}: ${d.description || ''}` : (j.message || ('PayPal ' + r.status)));
+    e.status = r.status; e.issue = d && d.issue;
+    throw e;
+  }
+  return j;
+}
+const firstCapture = (o) => {
+  const pu = o && o.purchase_units && o.purchase_units[0];
+  return (pu && pu.payments && pu.payments.captures && pu.payments.captures[0]) || null;
+};
+/** Chốt đơn PayPal: người chơi đã duyệt -> capture (idempotent theo PayPal-Request-Id). Trả { status, amount (xu), order } */
+async function paypalSettle(orderId) {
+  const p = '/v2/checkout/orders/' + encodeURIComponent(orderId);
+  let o = await paypal('GET', p);
+  if (o.status === 'APPROVED') {
+    try { o = await paypal('POST', p + '/capture', null, { 'PayPal-Request-Id': 'cap-' + orderId, Prefer: 'return=representation' }); }
+    catch (e) { if (e.issue !== 'ORDER_ALREADY_CAPTURED') throw e; o = await paypal('GET', p); }
+  }
+  const cap = firstCapture(o);
+  if (o.status === 'COMPLETED' && cap && cap.status === 'COMPLETED' && cap.amount && cap.amount.currency_code === PAY.currency) {
+    return { status: 'paid', amount: Math.round(Number(cap.amount.value) * 100), order: o };
+  }
+  return { status: String((cap && cap.status) || o.status || 'pending').toLowerCase(), order: o };
+}
+function payStatus(userId) {
+  const bought = {};
+  for (const r of Q.payCount.all(userId)) bought[r.pack] = Number(r.n);
+  return { enabled: PAY.enabled, mock: PAY.mock, sandbox: PAY.enabled && !PAY.mock && !PAY.live, bought };
+}
+function payDesc(userId, pack) {
+  const g = Equipment.topupGrant(pack, !Number(Q.payPaidPack.get(userId, pack.id).n));
+  return `${g.silver.toLocaleString('vi-VN')} Bạc${g.spins ? ` + ${g.spins} lượt quay thưởng` : ''}${g.x2 ? ' (x2 lần mua đầu)' : ''}`;
+}
+/** Cộng Bạc cho phiên đã thanh toán — đúng 1 lần (cột status), kiểm số tiền khớp giá gói. Trả true nếu vừa cộng */
+function fulfill(sid, amountPaid) {
+  return tx(() => {
+    const row = Q.payGet.get(sid);
+    if (!row || row.status !== 'pending') return false;
+    const pack = Equipment.topupPack(row.pack);
+    if (!pack || Number(amountPaid) !== row.amount) { console.error(`[PAY] ${sid}: số tiền ${amountPaid} không khớp gói ${row.pack} (${row.amount})`); return false; }
+    const g = Equipment.topupGrant(pack, Number(Q.payPaidPack.get(row.user_id, pack.id).n) === 0);
+    const now = Date.now();
+    Q.payDone.run(g.silver, g.spins, now, sid);
+    Q.addSilver.run(g.silver, row.user_id);
+    if (g.spins) Q.spinAddBought.run(row.user_id, g.spins);
+    Q.addPurchase.run(row.user_id, now, '-', 'topup:' + pack.id, 1, -g.silver);
+    console.log(`[PAY] user ${row.user_id} nạp ${pack.id} ($${pack.usd}${row.mock ? ', giả lập' : ''}): +${g.silver} Bạc${g.spins ? ` +${g.spins} lượt quay` : ''}${g.x2 ? ' (x2 lần đầu)' : ''}`);
+    return true;
+  });
+}
+// Webhook PayPal: kiểm chữ ký qua API verify-webhook-signature (gửi nguyên văn thân sự kiện), rồi tự hỏi lại PayPal
+// trạng thái đơn (không tin số liệu trong sự kiện) -> chốt đơn + cộng Bạc đúng 1 lần.
+async function payWebhook(req, res) {
+  if (!PAY.webhookId || PAY.mock || !PAY.enabled) return send(res, 503, { error: 'webhook off' });
+  const raw = await new Promise((ok, bad) => {
+    const chunks = []; let n = 0;
+    req.on('data', c => { n += c.length; if (n > 512 * 1024) { bad(new Error('too big')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => ok(Buffer.concat(chunks)));
+    req.on('error', bad);
+  });
+  const text = raw.toString('utf8');
+  let ev;
+  try { ev = JSON.parse(text); } catch (e) { return send(res, 400, { error: 'bad json' }); }
+  const h = (k) => String(req.headers[k] || '');
+  try {
+    const v = await paypal('POST', '/v1/notifications/verify-webhook-signature',
+      `{"auth_algo":${JSON.stringify(h('paypal-auth-algo'))},"cert_url":${JSON.stringify(h('paypal-cert-url'))},` +
+      `"transmission_id":${JSON.stringify(h('paypal-transmission-id'))},"transmission_sig":${JSON.stringify(h('paypal-transmission-sig'))},` +
+      `"transmission_time":${JSON.stringify(h('paypal-transmission-time'))},"webhook_id":${JSON.stringify(PAY.webhookId)},"webhook_event":${text}}`);
+    if (v.verification_status !== 'SUCCESS') return send(res, 400, { error: 'bad signature' });
+  } catch (e) {
+    console.error('[PAY] Kiểm chữ ký webhook lỗi:', e.message);
+    return send(res, 500, { error: 'verify failed' });   // PayPal sẽ gửi lại
+  }
+  const r = ev.resource || {};
+  const orderId = ev.event_type === 'CHECKOUT.ORDER.APPROVED' ? r.id
+    : ev.event_type === 'PAYMENT.CAPTURE.COMPLETED' ? (r.supplementary_data && r.supplementary_data.related_ids && r.supplementary_data.related_ids.order_id)
+    : null;
+  if (orderId && /^[A-Z0-9]{8,40}$/.test(orderId)) {
+    try {
+      const s = await paypalSettle(orderId);
+      if (!Q.payGet.get(orderId)) {
+        // đơn tạo từ máy chủ khác / CSDL đã khôi phục: dựng lại từ custom_id "userId:gói"
+        const pu = s.order.purchase_units && s.order.purchase_units[0];
+        const [uidS, packId] = String((pu && pu.custom_id) || '').split(':');
+        const uid = Number(uidS), pack = Equipment.topupPack(packId);
+        if (uid && pack && Q.userById.get(uid)) Q.payAdd.run(orderId, uid, pack.id, Math.round(pack.usd * 100), Equipment.TOPUP.CURRENCY, Date.now(), 0);
+      }
+      if (s.status === 'paid') fulfill(orderId, s.amount);
+    } catch (e) {
+      console.error(`[PAY] Webhook chốt đơn ${orderId} lỗi:`, e.message);
+      return send(res, 500, { error: 'settle failed' });
+    }
+  }
+  return send(res, 200, { received: true });
 }
 const online = new Map();   // userId -> { mk (mã trận), kills, deaths, damage, at }
 function noteOnline(userId, matchKey, kills, deaths, damage) {
@@ -492,8 +750,8 @@ function skillOf(userId) {
   return { lv: levelInfo(u.xp).level, w, m };
 }
 // Trang bị người chơi mang vào trận (chủ phòng gửi kèm slot, máy khách tự khai) -> lọc theo kho đồ thật trong CSDL:
-// mô-đun miễn phí hoặc đã sở hữu, đạn cao cấp đã sở hữu, đạn mua thêm không quá số còn trong kho, giáp hỏng theo
-// armor_cond (không tự "sửa" giáp bằng cách giấu). Khách: chỉ mô-đun miễn phí. Gọi 1 lần / người / lần bắt đầu trận
+// mô-đun miễn phí hoặc đã sở hữu, đạn cao cấp đã sở hữu, đạn mua thêm không quá số còn trong kho, bỏ món đang hỏng
+// theo armor_cond (chưa sửa thì không mang ra trận). Khách: chỉ mô-đun miễn phí. Gọi 1 lần / người / lần bắt đầu trận
 function verifyKit(userId, tank, kit) {
   const k = Equipment.sanitize(kit, tank);
   delete k.d;
@@ -514,9 +772,8 @@ function verifyKit(userId, tank, kit) {
     let g = []; try { g = JSON.parse(r.gone) || []; } catch (e) {}
     if (g.length) gone[r.item] = g;
   }
-  const dd = Equipment.sanitizeGone(gone, k.m);
-  if (dd) k.d = dd;
-  return k;
+  // trang bị hỏng chưa sửa: không được mang ra trận (không tự "sửa" bằng cách giấu tình trạng hỏng)
+  return Equipment.dropDamaged(k, Equipment.sanitizeGone(gone, k.m));
 }
 // Kết quả trận mạng do máy chủ xác định (server_auth.js endMatch): 'win' | 'loss' | 'draw'
 function noteResult(userId, matchKey, result) {
@@ -580,6 +837,7 @@ async function handle(req, res) {
   const url = String(req.url || '').split('?')[0];
   const ip = req.socket.remoteAddress || '?';
   try {
+    if (url === '/api/pay/webhook' && req.method === 'POST') return await payWebhook(req, res);
     if (req.method === 'GET' && url === '/api/me') {
       const a = userFromReq(req);
       return a ? send(res, 200, { profile: publicProfile(a.u) }) : send(res, 401, { error: 'Phiên đăng nhập đã hết hạn' });
@@ -761,15 +1019,91 @@ async function handle(req, res) {
     // 2) /api/ad/reward { token }: chỉ nhận khi đã qua đủ MIN_SEC kể từ lúc bắt đầu, còn lượt trong ngày
     //    (mạng quảng cáo trên web — Google H5 Games Ads... — không có xác minh phía máy chủ: giới hạn lượt / ngày,
     //     giãn cách và thời lượng tối thiểu để chặn cày thưởng bằng cách gọi API liên tục)
+    // ---- NẠP BẠC (PayPal) ----
+    if (url === '/api/pay/checkout') {
+      const pack = Equipment.topupPack(String(b.pack || ''));
+      if (!pack) return send(res, 400, { error: 'Gói nạp không hợp lệ' });
+      if (!PAY.enabled) return send(res, 503, { error: 'Cổng nạp tiền chưa được bật trên máy chủ' });
+      if (pack.once && Number(Q.payPaidPack.get(u.id, pack.id).n) > 0) return send(res, 409, { error: 'Gói này chỉ mua được 1 lần' });
+      const amount = Math.round(pack.usd * 100), now = Date.now();
+      if (PAY.mock) {
+        const sid = 'mock_' + crypto.randomBytes(12).toString('hex');
+        Q.payAdd.run(sid, u.id, pack.id, amount, Equipment.TOPUP.CURRENCY, now, 1);
+        return send(res, 200, { url: '/?pay=success&token=' + sid, mock: true });
+      }
+      const origin = PAY.publicUrl || `${req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http')}://${req.headers.host}`;
+      let order, link;
+      try {
+        // PayPal tự thêm &token=<mã đơn>&PayerID=... vào return_url
+        order = await paypal('POST', '/v2/checkout/orders', {
+          intent: 'CAPTURE',
+          purchase_units: [{
+            reference_id: pack.id,
+            custom_id: `${u.id}:${pack.id}`,
+            description: `${pack.name} — Tank War: ${payDesc(u.id, pack)}`.slice(0, 127),
+            amount: { currency_code: PAY.currency, value: (amount / 100).toFixed(2) }
+          }],
+          payment_source: { paypal: { experience_context: {
+            brand_name: 'Tank War', user_action: 'PAY_NOW', shipping_preference: 'NO_SHIPPING',
+            return_url: origin + '/?pay=success', cancel_url: origin + '/?pay=cancel'
+          } } }
+        });
+        link = (order.links || []).find(l => l.rel === 'payer-action' || l.rel === 'approve');
+        if (!order.id || !link) throw new Error('thiếu link duyệt');
+      } catch (e) {
+        console.error('[PAY] Tạo đơn PayPal lỗi:', e.message);
+        return send(res, 502, { error: 'Không mở được trang thanh toán, thử lại sau' });
+      }
+      Q.payAdd.run(order.id, u.id, pack.id, amount, Equipment.TOPUP.CURRENCY, now, 0);
+      return send(res, 200, { url: link.href });
+    }
+    // quay về từ trang PayPal: chốt đơn (capture) và cộng Bạc (phòng khi webhook chưa tới / chưa cấu hình)
+    if (url === '/api/pay/verify') {
+      const sid = String(b.session_id || b.token || '');
+      const row = /^([A-Z0-9]{8,40}|mock_[a-f0-9]{24})$/.test(sid) ? Q.payGet.get(sid) : null;
+      if (!row || row.user_id !== u.id) return send(res, 404, { error: 'Không tìm thấy giao dịch' });
+      if (row.status !== 'paid') {
+        if (row.mock) {
+          if (!PAY.mock) return send(res, 400, { error: 'Giao dịch thử không hợp lệ' });
+          fulfill(sid, row.amount);
+        } else {
+          let s;
+          try { s = await paypalSettle(sid); }
+          catch (e) {
+            console.error(`[PAY] Chốt đơn ${sid} lỗi:`, e.message);
+            if (e.issue === 'INSTRUMENT_DECLINED') return send(res, 402, { error: 'PayPal từ chối nguồn tiền — chọn thẻ / ví khác rồi thử lại' });
+            return send(res, 502, { error: 'Chưa kiểm tra được thanh toán, thử lại sau' });
+          }
+          if (s.status !== 'paid') return send(res, 202, { status: s.status, profile: publicProfile(Q.userById.get(u.id)) });
+          fulfill(sid, s.amount);
+        }
+      }
+      const done = Q.payGet.get(sid);
+      return send(res, 200, { status: done.status, pack: done.pack, silver: done.silver, spins: done.spins, profile: publicProfile(Q.userById.get(u.id)) });
+    }
+    // ---- QUAY THƯỞNG HẰNG NGÀY: { } -> { profile, reward: { kind, rar, n?, tank?, id?, ammo?, streak } } ----
+    if (url === '/api/daily/spin') {
+      const rw = dailySpin(u);
+      if (!rw) return send(res, 429, { error: 'Hôm nay bạn đã quay rồi — quay lại sau 0 giờ nhé' });
+      console.log(`[ACC] Quay thưởng ${u.username}: ${rw.kind} ${rw.id || rw.ammo || ''} ${rw.n || ''} (chuỗi ${rw.streak})`);
+      return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)), reward: rw });
+    }
     if (url === '/api/ad/start') {
-      const tank = String(b.tank || '');
-      if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
+      const tank = b.spin ? '-' : String(b.tank || '');
+      if (!b.spin && !TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
       const now = Date.now(), AD = Equipment.AD;
       if (adsLeft(u.id) + adsBonusLeft(u.id) <= 0) return send(res, 429, { error: `Hôm nay bạn đã xem đủ ${AD.DAILY + AD.BONUS} quảng cáo có thưởng — quay lại vào ngày mai` });
       const last = adLastAt.get(u.id) || 0;
       if (now - last < AD.COOLDOWN_SEC * 1000) return send(res, 429, { error: `Chờ ${Math.ceil((AD.COOLDOWN_SEC * 1000 - (now - last)) / 1000)} giây rồi xem quảng cáo tiếp` });
       let kind, key;
-      if (b.ammo !== undefined) {
+      if (b.spin) {
+        // xem quảng cáo -> +1 lượt quay thưởng
+        const st = spinStatus(u.id);
+        if (st.free) return send(res, 409, { error: 'Bạn còn lượt quay miễn phí hôm nay' });
+        if (st.extra > 0) return send(res, 409, { error: 'Bạn còn lượt quay chưa dùng' });
+        if (st.adLeft <= 0) return send(res, 429, { error: `Hôm nay đã nhận đủ ${Equipment.DAILY_SPIN.AD_SPINS} lượt quay thêm` });
+        kind = 'spin'; key = 'spin';
+      } else if (b.ammo !== undefined) {
         key = String(b.ammo);
         const A = (Equipment.AMMO_SHOP[tank] || {})[key];
         if (!A || !A.ad) return send(res, 400, { error: 'Loại vật tư không hợp lệ' });
@@ -802,6 +1136,14 @@ async function handle(req, res) {
       const reward = tx(() => {
         const used = ((Q.adDayGet.get(u.id, day) || {}).n) || 0;
         if (used >= AD.DAILY + AD.BONUS || (p.kind === 'item' && used >= AD.DAILY)) return { error: 'limit' };
+        if (p.kind === 'spin') {
+          const st = spinStatus(u.id);
+          if (st.free || st.adLeft <= 0) return { error: 'limit' };
+          Q.adDayAdd.run(u.id, day);
+          Q.spinAdAdd.run(day, u.id);
+          Q.addPurchase.run(u.id, now, '-', 'ad:spin', 1, 0);
+          return { kind: 'spin', extra: st.extra + 1 };
+        }
         Q.adDayAdd.run(u.id, day);
         if (p.kind === 'ammo') {
           const A = Equipment.AMMO_SHOP[p.tank][p.key];
@@ -844,7 +1186,10 @@ async function handle(req, res) {
       return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
     }
     if (url === '/api/match-result') {
-      const now = Date.now(), dur = clampN(b.durationSec, 0, 1800);
+      // thời lượng trận không vượt quá thời gian thật đã trôi qua kể từ lần báo kết quả trước (tài khoản mới: từ lúc tạo)
+      // -> không báo liên tục "trận 15 phút" cách nhau 40 giây để cày Bạc (trần hạ gục / sát thương tính theo thời lượng)
+      const now = Date.now(), since = (now - Math.max(u.last_result_at || 0, u.created_at || 0)) / 1000 + 5;
+      const dur = clampN(b.durationSec, 0, Math.min(1800, since));
       if (dur < 45) return send(res, 400, { error: 'Trận quá ngắn, không tính' });
       let result = ['win', 'loss', 'draw'].includes(b.result) ? b.result : 'loss';
       // giới hạn sát thực tế theo thời lượng trận (10 phút: tối đa 25 hạ gục, sát thương ~ số hạ gục x máu xe dày nhất + phần lẻ)
@@ -852,6 +1197,9 @@ async function handle(req, res) {
       let deaths = Math.round(clampN(b.deaths, 0, 60));
       let damage = Math.round(clampN(b.damage, 0, Math.min(kills * 3.5 + 25, dur * 0.12 + 8)) * 10) / 10;
       let shots = Math.round(clampN(b.shots, 0, dur * 3));
+      // hòm thả dù: 1 hòm tại 1 thời điểm (~25 s đầu trận, rồi 22 s sau mỗi lần có chủ + thời gian rơi + chạy tới, bot tranh)
+      // -> 1 người khó chiếm quá ~1 hòm / 100 s (trận 10 phút: tối đa 7)
+      const airdrops = Math.round(clampN(b.airdrops, 0, Math.floor(dur / 100) + 1));
       // vừa chơi trận mạng: không vượt quá số máy chủ đã tự đếm
       const o = online.get(u.id);
       let verified = false;
@@ -875,7 +1223,7 @@ async function handle(req, res) {
       const map = MAPS.includes(b.mapType) ? b.mapType : null;
       const gained = Math.round(40 + (result === 'win' ? 100 : result === 'draw' ? 50 : 0) + kills * 30 + damage * 8 + Math.min(dur, 900) / 15) + (kdBonus ? kdBonus.xp : 0);
       const before = levelInfo(u.xp).level;
-      const silver = Equipment.silverFor(result, kills, damage, dur) + (kdBonus ? kdBonus.silver : 0);
+      const silver = Equipment.silverFor(result, kills, damage, dur, airdrops) + (kdBonus ? kdBonus.silver : 0);
       // kiểm tra nhịp gửi + ghi 3 bảng trong cùng 1 giao dịch (đọc lại last_result_at bên trong -> không ghi trùng)
       const ok = tx(() => {
         const cur = Q.userById.get(u.id);
@@ -907,7 +1255,7 @@ async function handle(req, res) {
       });
       if (!ok) return send(res, 429, { error: 'Kết quả trận đã được ghi' });
       const p = publicProfile(Q.userById.get(u.id));
-      return send(res, 200, { profile: p, gained, silver, levelUp: p.level > before, verified, kdPlace, kdBonus });
+      return send(res, 200, { profile: p, gained, silver, levelUp: p.level > before, verified, kdPlace, kdBonus, airdrops, airdropSilver: airdrops * (Equipment.AIRDROP_SILVER || 0) });
     }
     return send(res, 404, { error: 'Không có API này' });
   } catch (e) {

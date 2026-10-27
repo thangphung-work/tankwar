@@ -134,6 +134,8 @@ async function recordMap(chromePath, port, mapName) {
     `--app=${url}`,
     '--window-size=960,540',
     '--enable-webgl',
+    '--use-angle=d3d11',
+    '--enable-gpu',
     '--enable-gpu-rasterization',
     '--ignore-gpu-blocklist',
     '--autoplay-policy=no-user-gesture-required',

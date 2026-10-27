@@ -461,9 +461,10 @@ class SPGUnit3D {
     this.tankType = options.tankType || 'ALL_ROUNDER';
 
     if (this.tankType === 'GATLING') {
-      // Xe hỏa lực yểm trợ bánh xích trên khung gầm xe tăng: trâu nhất trận (4.0 máu), bù lại 30mm yếu trước giáp dày
-      this.baseMaxHp = 4.0;
-      this.maxHp = 4.0;
+      // Xe hỏa lực yểm trợ bánh xích trên khung gầm xe tăng: 3.0 máu (dưới xe tăng chủ lực 3.2 — hỏa lực liên thanh mạnh
+      // nhất trận nên không thể trâu nhất; trước đây 4.0). Chỉ mũi thân dày, tháp vũ khí / sườn / đuôi mỏng
+      this.baseMaxHp = 3.0;
+      this.maxHp = 3.0;
       this.baseMaxSpeed = vehicleTopSpeed('GATLING', 113); // khung gầm xích như tăng chủ lực nhưng nặng nhất: 65 km/h đường tốt
       this.acceleration = this.baseMaxSpeed * 0.5;          // lực kéo lúc khởi hành; giảm dần khi xe nhanh lên (0 -> 50% ~1.2 s, 0 -> 90% ~2.6 s)
       this.turnRate = 1.7;       // rad/s tối đa khi xoay thân (~100°/s)
@@ -528,7 +529,7 @@ class SPGUnit3D {
       this.antiTankLauncherMesh = null;
     } else {
       this.tankType = 'ALL_ROUNDER';
-      this.baseMaxHp = 3.2; // Máu vừa (3.2, sau xe 6 nòng), giáp composite dày nhất ở mặt trước, sát thương mỗi phát to
+      this.baseMaxHp = 3.2; // Máu cao nhất trận (3.2, trên xe 6 nòng 3.0), giáp composite dày nhất ở mặt trước, sát thương mỗi phát to
       this.maxHp = 3.2;
       this.baseMaxSpeed = vehicleTopSpeed('ALL_ROUNDER', 122); // 70 km/h đường tốt (~45-55 việt dã)
       this.acceleration = this.baseMaxSpeed * 0.433;            // xe 60 tấn, 1500 mã lực: 0 -> 50% ~1.4 s, 0 -> 90% ~3 s
@@ -606,9 +607,10 @@ class SPGUnit3D {
       this.clusterAmmoCount = 3;// Đạn chùm nổ trên không diện rộng
       this.apAmmoCount = 2;     // Đạn xuyên phá
     } else if (this.tankType === 'GATLING') {
-      this.availableAmmos = ['GATLING_BULLET', 'INCENDIARY'];
+      this.availableAmmos = ['GATLING_BULLET', 'GATLING_HE', 'INCENDIARY'];
       this.selectedAmmo = 'GATLING_BULLET'; // Đạn nhỏ liên thanh
       this.incendiaryAmmoCount = 80;        // Đạn cháy nâng cao, số lượng hạn chế
+      this.heFragAmmoCount = 0;             // Đạn nổ mảnh ngòi cận đích: không có sẵn, mua trong kho vũ khí (Equipment.startLife nạp)
     } else if (this.tankType === 'SCOUT') {
       this.availableAmmos = ['SCOUT_BULLET', 'INCENDIARY', 'ANTI_TANK_MISSILE'];
       this.selectedAmmo = 'SCOUT_BULLET';   // Đạn nhỏ 30mm cơ bản
@@ -1641,6 +1643,8 @@ class SPGUnit3D {
       } else this._burnWet = 0;
     }
     if (this.isDead) {
+      // xác đã tách thành vật riêng, mô hình mới đang dựng sẵn ngoài cảnh chờ xuất kích (game.js prepRespawn): không làm gì
+      if (this._respawnPrep) return;
       // Cập nhật xác xe cháy bốc khói đen (hệ thống nổ mới tự lo khi đang theo dõi xe này)
       if (!this.damageFxByEngine) this.updateWreckFX(dt);
       this.updateFXParticles(dt);
@@ -2039,7 +2043,12 @@ class SPGUnit3D {
     }
 
     // KIỂM TRA VA CHẠM VẬT CẢN (TÒA NHÀ CĂN CỨ & BỜ TƯỜNG CÔNG SỰ MÓNG NGỰA)
-    const resolved = netPose ? null : terrain.resolveVehicleCollision(this.x, this.z, nextX, nextZ, 16, this);
+    // A parked vehicle has no swept volume. A push from another vehicle above changes
+    // nextX/nextZ, so real contacts still take the exact collision path.
+    const collisionMove = Math.abs(nextX - this.x) + Math.abs(nextZ - this.z);
+    const resolved = netPose ? null : collisionMove > 0.001
+      ? terrain.resolveVehicleCollision(this.x, this.z, nextX, nextZ, 16, this)
+      : { x: nextX, z: nextZ, hit: false, mat: null };
     if (resolved && resolved.hit) {
       // Húc gần như thẳng vào vật cản: xe dừng lại (vẫn quay đầu / lùi thoải mái).
       // Húc chéo: thân xe trượt dọc theo mặt tường, chỉ hao tốc độ do cọ sát
@@ -2447,8 +2456,13 @@ class SPGUnit3D {
       if (T && !this.isDead && this.barrelPivot) {
         const mp = this.barrelPivot.getWorldPosition(new THREE.Vector3());
         const dist = Math.hypot(T.x - mp.x, T.z - mp.z);
-        if (T.el !== undefined && T.el !== null) want = Math.max(-8, Math.min(60, T.el - this.barrelWorldOffset().el));   // nghiệm đường đạn (vòng / cầu vồng qua vật cản), bù thân xe nghiêng
-        else if (dist > 20) want = Math.max(-8, Math.min(22, Math.atan2(T.y - mp.y, dist) * 180 / Math.PI));
+        const gMin = (ballistics && ballistics.minElevationFor)
+          ? ballistics.minElevationFor(this)
+          : (typeof BallisticsSystem3D !== 'undefined' && BallisticsSystem3D.gatlingMinElevation
+            ? BallisticsSystem3D.gatlingMinElevation(this)
+            : (this.frontId === 'vshield' ? -1.0 : -3.2));
+        if (T.el !== undefined && T.el !== null) want = Math.max(gMin, Math.min(60, T.el - this.barrelWorldOffset().el));   // nghiệm đường đạn (vòng / cầu vồng qua vật cản), bù thân xe nghiêng
+        else if (dist > 20) want = Math.max(gMin, Math.min(22, Math.atan2(T.y - mp.y, dist) * 180 / Math.PI));
       }
       const step = 45 * dt;
       this.elevation += Math.max(-step, Math.min(step, want - this.elevation));
@@ -2458,7 +2472,12 @@ class SPGUnit3D {
     if (this.canElevate && ballistics && ballistics.maxElevationFor) this.elevation = Math.min(this.elevation, ballistics.maxLobElevationFor ? ballistics.maxLobElevationFor(this) : ballistics.maxElevationFor(this));
     // Lựu pháo trên xe tải: hạ nòng tối đa -5° ra hai bên / phía sau, vắt qua nóc cabin / khoang máy thì tự nâng vượt mọi thứ bên dưới (ballistics.js artyMinElevation)
     // Xe 6 nòng: khối mũi / khiên chữ V chắn -> cung phía trước hạn chế góc hạ nòng (ballistics.js gatlingMinElevation)
-    if ((this.tankType === 'ARTILLERY' || this.tankType === 'GATLING') && ballistics && ballistics.minElevationFor) this.elevation = Math.max(this.elevation, ballistics.minElevationFor(this));
+    const minElev = (ballistics && ballistics.minElevationFor)
+      ? ballistics.minElevationFor(this)
+      : (this.tankType === 'GATLING' && typeof BallisticsSystem3D !== 'undefined' && BallisticsSystem3D.gatlingMinElevation
+        ? BallisticsSystem3D.gatlingMinElevation(this)
+        : (this.tankType === 'GATLING' ? (this.frontId === 'vshield' ? -1.0 : -3.2) : -10));
+    if (this.tankType === 'ARTILLERY' || this.tankType === 'GATLING') this.elevation = Math.max(this.elevation, minElev);
     const elRad = (this.elevation * Math.PI) / 180;
     this.barrelPivot.rotation.x = elRad;
     // Nòng pháo không xuyên qua bê tông / ụ đất của cứ điểm: hạ nòng khi chạm trần, tháp dừng ở mép tường
@@ -3518,7 +3537,7 @@ class SPGUnit3D {
 
   applyWallBarrelBlock(terrain, yaw0, el0) {
     if (!this.turretGroup || !this.barrelPivot) return;
-    const boxes = terrain.vehicleObstacles(this.x, this.z, this);
+    const boxes = terrain.vehicleObstacles(this.x, this.z, this, true);
     this.barrelWallHit = null;   // hộp tường / nhà nòng vừa nện vào (tiếng & bụi theo vật liệu: barrel_sweep.js)
     if (!boxes || !boxes.length) return;
     const VC = VehicleCollision, yaw = this.turretGroup.rotation.y, el = this.barrelPivot.rotation.x;
@@ -4170,6 +4189,7 @@ class SPGUnit3D {
 
     let bulletType = (this.tankType === 'SCOUT') ? 'SCOUT_BULLET' : 'GATLING_BULLET';
     let isIncendiary = false;
+    let isHe = false;
 
     if (this.selectedAmmo === 'INCENDIARY') {
       if (this.incendiaryAmmoCount > 0) {
@@ -4182,14 +4202,27 @@ class SPGUnit3D {
       } else {
         this.selectedAmmo = (this.tankType === 'SCOUT') ? 'SCOUT_BULLET' : 'GATLING_BULLET';
       }
+    } else if (this.selectedAmmo === 'GATLING_HE') {
+      // vật tư mua thêm (Equipment AMMO_SHOP): hết viên thì băng tự về đạn thường như đạn cháy. Bản sao mạng (_netProxy) không
+      // mang kho đạn — máy chủ quyền đã đếm, bản sao bắn đúng loại đạn chủ quyền đang chọn
+      if (this._netProxy || (this.heFragAmmoCount || 0) > 0) {
+        bulletType = 'GATLING_HE';
+        isHe = true;
+        if (!this._netProxy && --this.heFragAmmoCount <= 0) this.selectedAmmo = 'GATLING_BULLET';
+      } else {
+        this.selectedAmmo = 'GATLING_BULLET';
+      }
     }
 
     const shell = ballistics.fireShell3D(this, this.azimuth, this.elevation, 1, bulletType);
     if (shell) {
       shell.isGatling = true;
       shell.isIncendiary = isIncendiary;
+      shell.isHe = isHe;
       if (isIncendiary) {
         shell.damage = (this.tankType === 'SCOUT') ? 0.08 : 0.095; // Đạn cháy sát thương cao hơn
+      } else if (isHe) {
+        shell.damage = 0.06; // Đạn nổ tạo mảnh phòng không
       } else {
         shell.damage = (this.tankType === 'SCOUT') ? 0.045 : 0.055;
       }
@@ -4295,7 +4328,7 @@ class SPGUnit3D {
     this.missileAmmoCount--;
     // quả cuối: chưa đổi về súng máy ngay — tên lửa bắn drone dẫn theo tia của kính ở chế độ tên lửa (đổi ô đạn = tắt tia,
     // quả đang bay mất dẫn đường). Bay xong mới đổi (updateRecon)
-    if (this.missileAmmoCount <= 0 && this.selectedAmmo === 'ANTI_TANK_MISSILE' && !(this.missileTarget && this.missileTarget.air)) this.selectedAmmo = 'SCOUT_BULLET';
+    // quả cuối: chờ quả tên lửa bay nổ xong mới đổi ô đạn (xử lý trong updateRecon)
 
     const launch = this.getLauncherWorldTransform();
     // ống phóng gắn cố định trên tháp (không ngóc theo súng): không khóa mục tiêu thì dẫn theo hướng nòng súng đang ngắm
@@ -4349,8 +4382,10 @@ class SPGUnit3D {
     // phải giữ kính trên mục tiêu (thụp sau tấm chắn), chỉ nạp quả mới khi quả này đã nổ / tự hủy / mất dẫn đường
     // (vehicle_crew cộng thêm hồi nạp khi xe chạy nhanh / xạ thủ hy sinh: lúc đang dẫn thì giữ ở mức đầy, không dồn vượt)
     const inFlight = this.missileInFlight();
+    const gObj = game || (typeof window !== 'undefined' ? window.game : null), bSys = gObj && gObj.ballistics;
+    const anyMissileFlying = !!(bSys && bSys.activeShells && bSys.activeShells.some(s => s.shooterId === this.id && s.isAntiTank && !s.exploded));
     // hết tên lửa, quả cuối đã bay xong: về súng máy
-    if (this.selectedAmmo === 'ANTI_TANK_MISSILE' && (this.missileAmmoCount || 0) <= 0 && !inFlight) {
+    if (this.selectedAmmo === 'ANTI_TANK_MISSILE' && (this.missileAmmoCount || 0) <= 0 && !anyMissileFlying) {
       this.selectedAmmo = 'SCOUT_BULLET';
       const g = game || (typeof window !== 'undefined' ? window.game : null);
       if (this.isPlayer && g && g.updateAmmoUI) g.updateAmmoUI();
@@ -4611,6 +4646,16 @@ class SPGUnit3D {
   // hạ, rồi dựng mô hình mới cho xe. Trả về xác (cùng lớp, isDead, id riêng) hoặc null nếu không tách được (respawn khi đó
   // trả mô hình cũ về nguyên vẹn như trước)
   detachWreck() {
+    const job = this.beginDetachWreck();
+    if (!job) return null;
+    while (!job.step()) { /* chạy liền một mạch */ }
+    return job.W;
+  }
+
+  // Tách xác theo từng bước (game.js prepRespawn dựng sẵn trong lúc chờ hồi sinh, mỗi khung một ít): lượt này tách xác
+  // + dựng khung mô hình mới; job.step() gắn tiếp trang bị (Equipment.refitSteps) từng phần, true = xong (đã tách riêng
+  // vật liệu dùng chung). null nếu không tách được
+  beginDetachWreck() {
     if (!this.isDead || !this.group || !this.group.parent || !this.group.visible || !this._modelKeys || typeof TankModelBuilder === 'undefined') return null;
     // tình trạng giáp lắp thêm của lần xuất kích này: ghi trước khi bộ hư hại chuyển sang xác
     if (typeof Equipment !== 'undefined' && Equipment.noteArmor && this._eq && this._eq.local) Equipment.noteArmor(this);
@@ -4662,37 +4707,49 @@ class SPGUnit3D {
     this.trimShadows();
     this.group.position.set(this.x, this.y || 0, this.z);
     this.group.rotation.y = this.bodyAngle || 0;
-    if (typeof Equipment !== 'undefined' && Equipment.refit) Equipment.refit(this);
-
-    // Vật liệu dùng chung giữa xác và mô hình mới (bộ vật liệu đệm theo phe...): xác lấy bản riêng giữ màu cháy sém,
-    // bản chung trả màu gốc — không thì xe mới ra trận đen thui theo xác
-    const fresh = new Set();
-    this.group.traverse(o => { if (o.material) for (const m of [].concat(o.material)) fresh.add(m); });
-    const swap = new Map();
-    const own = m => {
-      if (!m || !fresh.has(m)) return m;
-      let c = swap.get(m);
-      if (!c) {
-        c = m.clone();
-        // clone() không chép shader vá (sơn ngụy trang, lớp bẩn, muội / gỉ cháy theo vkChar) -> xác giữ nguyên vẻ cháy
-        c.onBeforeCompile = m.onBeforeCompile;
-        c.customProgramCacheKey = m.customProgramCacheKey;
-        c.userData = Object.assign({}, m.userData);
-        swap.set(m, c);
+    let it = typeof Equipment !== 'undefined' && Equipment.refitSteps ? Equipment.refitSteps(this) : null;
+    if (!it && typeof Equipment !== 'undefined' && Equipment.refit) Equipment.refit(this);
+    let done = false;
+    const finish = () => {
+      // Vật liệu dùng chung giữa xác và mô hình mới (bộ vật liệu đệm theo phe...): xác lấy bản riêng giữ màu cháy sém,
+      // bản chung trả màu gốc — không thì xe mới ra trận đen thui theo xác
+      const fresh = new Set();
+      this.group.traverse(o => { if (o.material) for (const m of [].concat(o.material)) fresh.add(m); });
+      const swap = new Map();
+      const own = m => {
+        if (!m || !fresh.has(m)) return m;
+        let c = swap.get(m);
+        if (!c) {
+          c = m.clone();
+          // clone() không chép shader vá (sơn ngụy trang, lớp bẩn, muội / gỉ cháy theo vkChar) -> xác giữ nguyên vẻ cháy
+          c.onBeforeCompile = m.onBeforeCompile;
+          c.customProgramCacheKey = m.customProgramCacheKey;
+          c.userData = Object.assign({}, m.userData);
+          swap.set(m, c);
+        }
+        return c;
+      };
+      for (const root of [W.group, W.turretGroup]) {
+        if (root && root.isObject3D) root.traverse(o => { if (o.material) o.material = Array.isArray(o.material) ? o.material.map(own) : own(o.material); });
       }
-      return c;
+      if (swap.size) {
+        for (const m of swap.keys()) {
+          if (m.userData && m.userData.fxOrigColor) { m.color.copy(m.userData.fxOrigColor); delete m.userData.fxOrigColor; }
+          if (m.userData) delete m.userData.vkChar;
+        }
+        if (W.fxWreck && W.fxWreck.charMats) W.fxWreck.charMats = W.fxWreck.charMats.map(m => swap.get(m) || m);
+      }
     };
-    for (const root of [W.group, W.turretGroup]) {
-      if (root && root.isObject3D) root.traverse(o => { if (o.material) o.material = Array.isArray(o.material) ? o.material.map(own) : own(o.material); });
-    }
-    if (swap.size) {
-      for (const m of swap.keys()) {
-        if (m.userData && m.userData.fxOrigColor) { m.color.copy(m.userData.fxOrigColor); delete m.userData.fxOrigColor; }
-        if (m.userData) delete m.userData.vkChar;
+    return {
+      W,
+      step: () => {
+        if (done) return true;
+        if (it) { if (!it.next().done) return false; it = null; }
+        finish();
+        done = true;
+        return true;
       }
-      if (W.fxWreck && W.fxWreck.charMats) W.fxWreck.charMats = W.fxWreck.charMats.map(m => swap.get(m) || m);
-    }
-    return W;
+    };
   }
 
   // Kẹp toạ độ trong biên bản đồ thật (trước đây kẹp cứng ±1600 của bản đồ 3600 cũ -> bot ở cứ điểm A/C x≈±2790

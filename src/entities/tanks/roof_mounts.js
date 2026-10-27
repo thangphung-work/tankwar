@@ -19,6 +19,16 @@
 
   const STATION_SCALE = 2.1;
   const rndOf = (ctx) => ctx.rnd || Math.random;
+  // đồng thau vỏ đạn (băng đạn lộ ra ngoài hộp): dùng chung mọi xe, phản chiếu trời như thép trần của xe
+  let brassMat = null;
+  const brassOf = (M) => {
+    if (!brassMat) {
+      brassMat = new THREE.MeshStandardMaterial({ color: 0xc9a050, roughness: 0.34, metalness: 0.85 });
+      const env = M && M.steel && M.steel.envMap;
+      if (env) { brassMat.envMap = env; brassMat.envMapIntensity = 0.9; }
+    }
+    return brassMat;
+  };
 
   // Dấu thời gian trên bệ: đai thép vá hàn vòng tay chạc, vệt gỉ chảy từ mâm xuống, dây buộc cáp, nắp hộp điều khiển vênh
   function stationWear(rb, ctx, arm) {
@@ -164,12 +174,19 @@
     gb.cyl(0.14, 0.14, 0.06, 14, M.optic || M.lens, [x - 0.14, 0.2, -0.79], 'z');    // camera ngày
     gb.cyl(0.12, 0.12, 0.06, 12, M.thermalWin || M.glass, [x + 0.15, 0.2, -0.79], 'z');   // ảnh nhiệt
     gb.cyl(0.05, 0.05, 0.06, 8, M.laserWin || M.lens, [x, 0.02, -0.79], 'z');           // đo xa laser
+    // loa che chói quanh 2 kính, cần gạt nước + vòi phun rửa kính trên mép cửa kính, đầu nối cáp sau lưng
+    gb.cyl(0.17, 0.17, 0.08, 14, D, [x - 0.14, 0.2, -0.82], 'z', null, true);
+    gb.cyl(0.15, 0.15, 0.08, 12, D, [x + 0.15, 0.2, -0.82], 'z', null, true);
+    gb.cyl(0.035, 0.035, 0.08, 6, D, [x + 0.3, 0.4, -0.8], 'z');
+    gb.box(0.03, 0.34, 0.02, M.rubber || D, [x + 0.28, 0.24, -0.8], [0, 0, 0.5]);
+    gb.box(0.05, 0.05, 0.08, D, [x, 0.4, -0.82]);
+    gb.cyl(0.09, 0.09, 0.12, 10, D, [x, 0.0, 0.46], 'z');
   }
 
   // Trạm súng máy 7.62mm: vỏ súng giữa (nóc vát, mặt trước nghiêng, khe nhả vỏ đạn), nòng có ống áo + loa che lửa,
   // hộp dây đạn bên trái có máng vào súng, đầu cảm biến bên phải
   function buildRoofRCWS(seat, ctx) {
-    const { P, D, unit } = ctx;
+    const { M, P, D, unit } = ctx;
     const gun = stationBase(seat, ctx);
     const gb = new VehicleKit.PartBatch(ctx.yBase + 4.3);
     gb.box(2.1, 0.22, 1.3, D, [0, -0.2, 0.0]);                  // nôi súng ôm trục ngóc
@@ -185,6 +202,20 @@
     gb.box(0.6, 0.06, 1.2, D, [-0.75, 0.45, 0.1]);
     gb.box(0.08, 0.1, 0.5, D, [-0.75, 0.52, 0.1]);
     gb.box(0.3, 0.12, 0.45, D, [-0.42, 0.33, -0.1]);
+    // ống áo nòng khoan 3 hàng lỗ tản nhiệt, tay lên đạn bên phải, máng xả vỏ đạn dưới hộp khóa nòng
+    for (let k = 0; k < 3; k++) for (let j = 0; j < 4; j++) {
+      const a = j * Math.PI / 2 + Math.PI / 4;
+      gb.cyl(0.028, 0.028, 0.02, 6, M.soot || D, [Math.cos(a) * 0.14, 0.12 + Math.sin(a) * 0.14, -1.45 - k * 0.15], 'x', [0, 0, a]);
+    }
+    gb.box(0.16, 0.06, 0.06, D, [0.42, 0.2, -0.5]);
+    gb.box(0.05, 0.12, 0.05, D, [0.5, 0.2, -0.5]);
+    gb.box(0.26, 0.16, 0.4, D, [0, -0.15, 0.35], [0.4, 0, 0]);
+    // băng đạn 7.62 mắt xích từ hộp lên khay tiếp đạn bên trái súng
+    for (let k = 0; k < 5; k++) {
+      const t = k / 4, bx = -0.62 + t * 0.3, by = 0.47 + Math.sin(t * Math.PI) * 0.1, bz = -0.18 + k * 0.03;
+      gb.cyl(0.028, 0.028, 0.22, 6, brassOf(M), [bx, by, bz - 0.03], 'z');
+      gb.box(0.07, 0.04, 0.05, D, [bx, by - 0.02, bz + 0.09]);
+    }
     stationSensor(gb, ctx, 0.8);
     gb.build(gun);
     unit.rcwsMuzzleLocal = new THREE.Vector3(0, 0.12, -4.42);
@@ -240,6 +271,14 @@
     gb.box(0.1, 0.12, 0.6, D, [-0.75 - can[0] / 2, can[1] / 2 + 0.02, 0.15]);
     gb.box(0.04, can[1] * 0.4, can[2] * 0.35, M.canvas || P, [-0.74 - can[0], 0.0, 0.25], [0, 0, 0.02]);   // nhãn lô đạn bạc màu
     gb.box(0.45, 0.2, 0.7, D, [-0.62, 0.3, 0.0], [0, 0, 0.35]); // máng cấp đạn
+    // băng lựu đạn 40mm lộ ra ở miệng máng: vỏ nhôm-đồng ngắn + đầu đạn ô-liu vạch vàng, mắt xích thép
+    for (let k = 0; k < 4; k++) {
+      const bx = -0.98 + k * 0.17, by = can[1] / 2 + 0.06 + Math.sin(k / 3 * Math.PI) * 0.08;
+      gb.cyl(0.075, 0.075, 0.14, 10, brassOf(M), [bx, by, 0.02], 'z');
+      gb.cyl(0.075, 0.05, 0.18, 10, P, [bx, by, -0.14], 'z');
+      gb.cyl(0.077, 0.077, 0.03, 10, M.canvas || P, [bx, by, -0.08], 'z');
+      gb.box(0.05, 0.05, 0.3, D, [bx + 0.085, by - 0.03, -0.02]);
+    }
     stationSensor(gb, ctx, 1.05);
     gb.build(gun);
     const muzzle = new THREE.Vector3(0, 0.12, zM - 0.05);

@@ -79,7 +79,7 @@ const GameTiming = {
   roundKey(ammo, tankType) {
     if (tankType === 'ARTILLERY' && ammo !== 'CLUSTER_SUBMUNITION') return 'ARTY';
     if (ammo === 'INCENDIARY') return tankType === 'SCOUT' ? 'SCOUT_INCENDIARY' : 'INCENDIARY';
-    if (ammo === 'GATLING_BULLET' || ammo === 'SCOUT_BULLET' || ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE') return ammo;
+    if (ammo === 'GATLING_BULLET' || ammo === 'GATLING_HE' || ammo === 'SCOUT_BULLET' || ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE') return ammo === 'GATLING_HE' ? 'GATLING_BULLET' : ammo;
     if (ammo === 'AP') return 'TANK_AP';
     if (ammo === 'HE' || ammo === 'CLUSTER') return 'TANK_HE';
     return 'TANK_NORMAL';

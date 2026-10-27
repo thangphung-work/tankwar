@@ -75,7 +75,8 @@ const Dispersion = (() => {
   const GATLING_SCALE = 10;
   // súng liên thanh bắn lên trời vào drone (xem sigma). MG trước đây 0.7 -> σ trời (15.7 mrad) còn tản hơn bắn đất (14):
   // ~15%/viên ở 500 đv đứng yên, bám drone quay tháp liên tục thêm x2 -> gần như không trúng
-  const AIR_K = 0.4, AIR_K_MG = 0.45;
+  // 6 nòng 0.5 (cân bằng 2026-10, trước đây 0.4: chụm quá, drone gần như không có cơ hội)
+  const AIR_K = 0.5, AIR_K_MG = 0.45;
   // bám bắn drone: tháp lia đều theo mục tiêu, không phải giật tháp đổi mục tiêu -> chỉ tính 35% phạt quay tháp
   const AIR_TURN_K = 0.35;
   // góc nòng (độ) từ đó đạn liên thanh tính là bắn trời (drone). Phải suy được từ hướng viên đạn: máy khác trong trận tự rải

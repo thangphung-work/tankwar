@@ -17,8 +17,8 @@
     "artillery",
     "tactical"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Thang Phung",
+  "license": "AGPL-3.0-only",
   "devDependencies": {
     "esbuild": "^0.25.10"
   }

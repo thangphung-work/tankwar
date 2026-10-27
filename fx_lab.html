@@ -57,6 +57,7 @@
       <button class="btn" data-target="WALL">Tường bê tông</button>
       <button class="btn" data-target="BUILDING">Tòa nhà 4 tầng</button>
       <button class="btn" data-target="VEHICLE">Xe bọc thép</button>
+      <button class="btn" data-target="DRONE"><i class="ti ti-drone" aria-hidden="true"></i>Drone bay</button>
       <button class="btn" data-target="BERM">Ụ đất</button>
       <button class="btn" data-target="TREES">Cây cối</button>
       <button class="btn" data-target="BUNKER">Boong-ke</button>
@@ -73,6 +74,20 @@
       <button class="btn" data-bld="office">Cao ốc kính</button>
       <button class="btn" data-bld="mudbrick">Nhà đất</button>
       <button class="btn" data-bld="hangar">Nhà kho</button>
+    </div>
+    <div class="row cfg mt2" data-for="DRONE" id="droneRow">
+      <button class="btn on" id="droneGodBtn"><i class="ti ti-shield-check" aria-hidden="true"></i>Drone bất tử: <b>BẬT</b></button>
+      <button class="btn on" id="droneFlyBtn"><i class="ti ti-rotate-clockwise-2" aria-hidden="true"></i>Lượn vòng: <b>BẬT</b></button>
+    </div>
+    <div class="lab-field cfg mt2" data-for="DRONE">
+      <span>Độ cao Drone</span>
+      <input type="range" id="droneAltS" min="15" max="65" step="1" value="32">
+      <span class="lab-val" id="droneAltVal" style="width:36px">32m</span>
+    </div>
+    <div class="lab-field cfg mt" data-for="DRONE">
+      <span>Cự ly Drone</span>
+      <input type="range" id="droneDistS" min="80" max="360" step="10" value="180">
+      <span class="lab-val" id="droneDistVal" style="width:44px">180m</span>
     </div>
     <div class="lab-sub cfg mt2" data-for="VEHICLE">Chọn xe làm bia</div>
     <div class="row cfg" data-for="VEHICLE" id="vehRow">
@@ -179,6 +194,7 @@
 <script src="src/core/audio/other_engines.js?v=20261022eco1"></script>
 <script src="src/core/audio/fire_ambience.js?v=20261022sh1"></script>
 <script src="src/core/audio/turret_drives.js?v=20261022sh1"></script>
+<script src="src/core/audio/drone_uav.js?v=20261025uav1"></script>
 <script src="src/core/audio/gatling.js?v=20261022mg1"></script>
 <script src="src/core/audio/module_weapons.js?v=20261023msl2"></script>
 <script src="src/core/audio/wading.js?v=20261020mouse1"></script>
@@ -202,6 +218,7 @@
 <script src="src/gameplay/vehicle_damage.js?v=20261023eqfix1"></script>
 <script src="src/core/equipment.js?v=20261023eqfix1"></script>
 <script src="src/gameplay/vehicle_crew.js?v=20261023crew1"></script>
+<script src="src/entities/recon_drone.js?v=20261025drone1"></script>
 <script src="src/gameplay/drone_air.js?v=20261023msl2"></script>
 <script src="src/gameplay/kamikaze_uav.js?v=20261022topatk3"></script>
 <script src="src/gameplay/camo_fire.js?v=20261020cfire11"></script>
@@ -224,7 +241,8 @@
     { key: 'RCWS', ammo: 'SCOUT_BULLET', unit: 'ALL_ROUNDER', label: 'Trạm súng máy 7.62mm', who: 'Halberd MK.3 · nóc tháp, giữ để xả', path: 'bullet', rapid: true, roof: 'rcws', kit: { m: ['rcws'] }, grp: 'acc' },
     { key: 'AGL_MBT', ammo: 'GATLING_BULLET', unit: 'ALL_ROUNDER', label: 'Súng phóng lựu 40mm', who: 'Halberd MK.3 · nóc tháp, giữ để xả', path: 'bullet', rapid: true, roof: 'agl', kit: { m: ['agl'] }, grp: 'acc' },
     { key: 'TOPMSL', ammo: 'ANTI_TANK_MISSILE', unit: 'ALL_ROUNDER', label: 'Tên lửa đột nóc', who: 'Halberd MK.3 · nóc tháp, vồng cao rồi bổ nhào', path: 'missile', roof: 'atgm', kit: { m: ['rocket'] }, grp: 'acc', dist: 760 },
-    { key: 'G30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm hỗn hợp xuyên giáp - nổ mảnh', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
+    { key: 'G30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm xuyên giáp lõi hợp kim', who: 'Hailstorm R6 · sấy dồn đục giáp', path: 'bullet', rapid: true },
+    { key: 'G30_HE', ammo: 'GATLING_HE', unit: 'GATLING', label: 'Đạn 30mm nổ tạo mảnh phòng không', who: 'Hailstorm R6 · nổ cận đích diệt drone, giữ để xả', path: 'bullet', rapid: true },
     { key: 'INC', ammo: 'INCENDIARY', unit: 'GATLING', label: 'Đạn cháy 30mm', who: 'Hailstorm R6 · giữ để xả', path: 'bullet', rapid: true },
     { key: 'APDS30', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Đạn 30mm xuyên dưới cỡ', who: 'Hailstorm R6 · đạn cao cấp, giữ để xả', path: 'bullet', rapid: true, kit: { p: ['apds30'] }, grp: 'prem' },
     { key: 'AGL_FSV', ammo: 'GATLING_BULLET', unit: 'GATLING', label: 'Súng phóng lựu 40mm', who: 'Hailstorm R6 · nóc tháp, giữ để xả', path: 'bullet', rapid: true, roof: 'agl', kit: { m: ['agl'] }, grp: 'acc' },
@@ -820,6 +838,72 @@
   let building = new Destructibles.SingleBuilding(scene, { angle: LAB_YAW, floors: 4, w: 104, d: 78, kind: 'apartment' });
 
   // Xe mục tiêu (Halberd phe đỏ quay mặt về bệ phóng)
+    // ===========================================================================
+  // MỤC TIÊU DRONE BAY
+  // ===========================================================================
+  let droneGodMode = true;
+  let droneFly = true;
+  let droneAlt = 32;
+  let droneDist = 180;
+  let droneHitCount = 0;
+  let droneHp = 1.0;
+  let droneIsDead = false;
+  let droneWobble = 0;
+  let droneFlyAngle = 0;
+
+  const targetDrone = {
+    group: (typeof ReconDrone !== 'undefined') ? ReconDrone.build('RED') : new THREE.Group()
+  };
+  targetDrone.group.visible = false;
+  targetDrone.group.position.set(0, droneAlt, 0);
+  scene.add(targetDrone.group);
+
+  function distPointToSegment(p, a, b) {
+    const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+    const apx = p.x - a.x, apy = p.y - a.y, apz = p.z - a.z;
+    const ab2 = abx * abx + aby * aby + abz * abz;
+    if (ab2 < 1e-6) return { dist: p.distanceTo(a), closest: a.clone() };
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / ab2));
+    const cx = a.x + abx * t, cy = a.y + aby * t, cz = a.z + abz * t;
+    const dx = p.x - cx, dy = p.y - cy, dz = p.z - cz;
+    return { dist: Math.sqrt(dx * dx + dy * dy + dz * dz), closest: new THREE.Vector3(cx, cy, cz) };
+  }
+
+  function updateDrone(dt) {
+    if (!targetDrone.group.visible) return;
+    if (droneFly && !droneIsDead) {
+      droneFlyAngle += dt * 0.45;
+      const rad = 25;
+      const x = Math.sin(droneFlyAngle) * rad;
+      const z = (Math.cos(droneFlyAngle) - 1) * (rad * 0.6);
+      const y = droneAlt + Math.sin(droneFlyAngle * 2.2) * 1.8;
+      targetDrone.group.position.set(x, y, z);
+      targetDrone.group.rotation.y = droneFlyAngle + Math.PI / 2;
+      targetDrone.group.rotation.z = Math.sin(droneFlyAngle) * 0.12;
+    } else if (!droneIsDead) {
+      targetDrone.group.position.set(0, droneAlt, 0);
+      targetDrone.group.rotation.set(0, Math.atan2(-LAUNCH_DIR.x, -LAUNCH_DIR.z), 0);
+    }
+    if (droneWobble > 0 && !droneIsDead) {
+      targetDrone.group.position.x += (Math.random() - 0.5) * droneWobble * 0.5;
+      targetDrone.group.position.y += (Math.random() - 0.5) * droneWobble * 0.4;
+      targetDrone.group.position.z += (Math.random() - 0.5) * droneWobble * 0.5;
+      droneWobble = Math.max(0, droneWobble - dt * 5);
+    }
+    if (droneIsDead) {
+      targetDrone.group.position.y = Math.max(0, targetDrone.group.position.y - 45 * dt);
+      targetDrone.group.rotation.x += dt * 5;
+      targetDrone.group.rotation.z += dt * 7;
+      if (targetDrone.group.position.y <= 0.6) {
+        fx.spawn(targetDrone.group.position.x, 0.6, targetDrone.group.position.z, 'CLUSTER_SUBMUNITION', 'GROUND', {});
+        playBoom(targetDrone.group.position, 'GROUND', 'CLUSTER_SUBMUNITION');
+        targetDrone.group.visible = false;
+      }
+    } else if (typeof ReconDrone !== 'undefined') {
+      ReconDrone.animate(targetDrone.group, dt, 1);
+    }
+  }
+
   let targetTank = new SPGUnit3D(scene, { tankType: 'ALL_ROUNDER', team: 'RED', isPlayer: false, x: 0, z: 0, bodyAngle: 0 });
   let targetYaw = 0;   // xoay xe mục tiêu (độ) để thử đạn trúng mũi / sườn / đuôi
   const targetBaseYaw = () => Math.atan2(-LAUNCH_DIR.x, -LAUNCH_DIR.z) + targetYaw * Math.PI / 180;
@@ -1383,6 +1467,17 @@
   function updateHpLabel() {
     const el = document.getElementById('hpLbl');
     if (!el) return;
+    if (state.target === 'DRONE') {
+      if (droneIsDead) {
+        el.innerHTML = '<span style="color:#ef4444;font-weight:700">Drone bay: ĐÃ BỊ BẮN HẠ</span> (Bấm "Dựng lại" để hồi sinh)';
+      } else if (droneGodMode) {
+        el.innerHTML = 'Drone bay: <b style="color:#10b981">BẤT TỬ ĐANG BẬT</b> • Trúng: <b style="color:#f59e0b">' + droneHitCount + '</b> phát • Cao: <b>' + droneAlt + 'm</b>';
+      } else {
+        const pct = Math.max(0, Math.round(droneHp * 100));
+        el.innerHTML = 'Drone bay: Máu <b>' + pct + '%</b> • Trúng: <b>' + droneHitCount + '</b> phát' + (pct < 40 ? ' (bốc khói)' : '');
+      }
+      return;
+    }
     if (state.target === 'WALL') {
       const pct = Math.round(100 * wall.getHealthRatio());
       el.textContent = pct === 100 ? 'Tường bê tông: 100% (Nguyên vẹn)' :
@@ -1556,7 +1651,7 @@
     if (arc) {
       for (let el = 85; el >= 20; el -= 0.5) if (f(el) >= 0) { lo = el; hi = el + 0.5; break; }
     } else {
-      for (let el = minEl; el <= 45; el += 0.25) if (f(el) >= 0) { hi = el; lo = el - 0.25; break; }
+      for (let el = minEl; el <= 85; el += 0.25) if (f(el) >= 0) { hi = el; lo = el - 0.25; break; }
     }
     let el = arc ? 45 : 0;
     if (lo !== null) {
@@ -1568,6 +1663,7 @@
   }
   // Cự ly đặt bệ phóng: chỉnh tay góc nòng -> lùi / tiến bệ phóng tới đúng điểm rơi để đạn rơi vào mục tiêu
   function launchDistance(sel, shooter) {
+    if (state.target === 'DRONE') return Math.max(80, Math.min(400, droneDist));
     const ammo = sel.ammo;
     if (state.manualElev !== null && state.manualElev !== undefined) {
       const R = rangeAt(shooter, ammo, state.manualElev, 14);
@@ -1592,6 +1688,13 @@
 
   // Điểm ngắm: tâm mục tiêu (đạn liên thanh có độ tản). Điểm nổ thật do dò tia quyết định.
   function aimPoint(rapid) {
+    if (state.target === 'DRONE') {
+      const p = targetDrone.group.position.clone();
+      if (rapid) {
+        p.add(new THREE.Vector3((Math.random() - 0.5) * 2.2, (Math.random() - 0.5) * 1.8, (Math.random() - 0.5) * 2.2));
+      }
+      return p;
+    }
     const p = state.target === 'WALL' ? new THREE.Vector3(0, 13, 0)
       : state.target === 'BUILDING' ? new THREE.Vector3(0, 22, 0)
       : state.target === 'VEHICLE' ? new THREE.Vector3(0, 9.5, 0)
@@ -1833,7 +1936,7 @@
 
   // Sát thương lên xe mục tiêu (máu tối đa của Halberd)
   // Sát thương khi XUYÊN THỦNG (đồng bộ game.js); có xuyên được không do VehicleDamage tính theo độ xuyên / giáp / góc chạm
-  const DMG = { NORMAL: 1.6, HE: 1.6, AP: 2.0, CLUSTER_SUBMUNITION: 0.5, RPG: 2.4, ANTI_TANK_MISSILE: 3.0, GATLING_BULLET: 0.1, INCENDIARY: 0.16, SCOUT_BULLET: 0.12 };
+  const DMG = { NORMAL: 1.6, HE: 1.6, AP: 2.0, CLUSTER_SUBMUNITION: 0.5, RPG: 2.4, ANTI_TANK_MISSILE: 3.0, GATLING_BULLET: 0.1, GATLING_HE: 0.12, INCENDIARY: 0.16, SCOUT_BULLET: 0.12 };
 
   // Bán kính phá hủy và năng lượng phá hủy kết cấu theo loại đạn (đạn pháo uy lực lớn)
   const STRUCT_POWER = {
@@ -1844,11 +1947,12 @@
     CLUSTER_SUBMUNITION: { radius: 12, power: 0.9 },
     RPG: { radius: 20, power: 2.2 },
     GATLING_BULLET: { radius: 3.2, power: 0.2 },
+    GATLING_HE: { radius: 6.5, power: 0.35 },
     INCENDIARY: { radius: 3.8, power: 0.24 },
     SCOUT_BULLET: { radius: 1.8, power: 0.09 }
   };
 
-  const SPLASH_R = { NORMAL: 35, HE: 50, AP: 7, CLUSTER_SUBMUNITION: 25, RPG: 38, GATLING_BULLET: 10, INCENDIARY: 14, SCOUT_BULLET: 10 };
+  const SPLASH_R = { NORMAL: 35, HE: 50, AP: 7, CLUSTER_SUBMUNITION: 25, RPG: 38, GATLING_BULLET: 10, GATLING_HE: 18, INCENDIARY: 14, SCOUT_BULLET: 10 };
   function applyHit(p, hit, vel) {
     // fa: loại đạn cho HÌNH / TIẾNG NỔ / PHÁ CẢNH VẬT (quả lựu 40mm nổ cỡ bom con, đầu nổ UAV cảm tử cỡ tên lửa — game.js
     // fxAmmo); p.ammo: loại đạn cho giáp / sát thương (VehicleDamage)
@@ -1865,7 +1969,7 @@
     }
     const onBerm = EX.berm && hit.object === EX.berm.mesh;
     // Nhà: lỗ thủng / bóc lở / muội khoét thẳng vào hình tường -> không dán vết tạm lên mặt nhà
-    const res = fx.impactSurface(fa, hit.hitType === 'BUILDING' ? Object.assign({}, hit, { object: null }) : hit, vel, { heavy: p.heavy, noCrater: onBerm, noHoles: onBerm, du: !!p.du });
+    const res = fx.impactSurface(fa, hit.hitType === 'BUILDING' ? Object.assign({}, hit, { object: null }) : hit, vel, { heavy: p.heavy, noCrater: onBerm, noHoles: onBerm, du: !!p.du, gl40: !!p.gl40 });
     playBoom(hit.point, hit.hitType, fa, p.heavy);
     // Cảnh vật quanh điểm nổ: cây cháy / đổ, boong-ke vỡ, ụ đất lõm
     if (EX.trees && EX.trees.group.visible) EX.trees.tf.damageAt(hit.point.x, hit.point.y, hit.point.z, fa, p.heavy, fx);
@@ -2049,6 +2153,77 @@
             projectiles.splice(i, 1);
             continue;
           }
+        }
+      }
+            // Kiểm tra trúng đạn / nổ cận đích với Drone bay
+      if (state.target === 'DRONE' && targetDrone.group.visible && !droneIsDead) {
+        const dSeg = distPointToSegment(targetDrone.group.position, p.prev, pos);
+        const isHE = (p.ammo === 'GATLING_HE');
+        const hitR = isHE ? 16 : 4.8;
+        if (dSeg.dist <= hitR) {
+          droneHitCount++;
+          droneWobble = isHE ? 1.4 : 1.8;
+          const burstPos = dSeg.closest;
+          if (isHE) {
+            // Nổ mảnh phòng không 30mm cận đích: chớp sáng, bông khói đen và chùm tia mảnh văng xé gió
+            fx.spawn(burstPos.x, burstPos.y, burstPos.z, 'GATLING_HE', 'AIR', { dir: vel });
+            playBoom(burstPos, 'AIRBURST', 'GATLING_HE');
+            if (window.soundEngine && soundEngine.playDroneHit) soundEngine.playDroneHit(true);
+
+            // Tia lửa và mảnh văng ghim trúng thân drone
+            if (fx.sparks) {
+              for (let sI = 0; sI < 8; sI++) {
+                const sa = Math.random() * Math.PI * 2, ssp = 25 + Math.random() * 45;
+                fx.sparks.add({
+                  x: targetDrone.group.position.x + (Math.random() - 0.5) * 1.2,
+                  y: targetDrone.group.position.y + (Math.random() - 0.5) * 0.8,
+                  z: targetDrone.group.position.z + (Math.random() - 0.5) * 1.2,
+                  vx: Math.cos(sa) * ssp, vy: 10 + Math.random() * 30, vz: Math.sin(sa) * ssp,
+                  drag: 2.2, grav: 100, life: 0.12 + Math.random() * 0.18
+                });
+              }
+            }
+
+            if (droneGodMode) {
+              logDamage([{ type: 'droneHE', text: 'NỔ MẢNH 30mm: Chùm mảnh văng trúng Drone (Cách ' + dSeg.dist.toFixed(1) + 'm • Phát thứ ' + droneHitCount + ' • BẤT TỬ)' }]);
+            } else {
+              droneHp -= 0.35;
+              logDamage([{ type: 'droneHE', text: 'NỔ MẢNH 30mm: Trúng chùm mảnh (Máu: ' + Math.max(0, Math.round(droneHp * 100)) + '%)' }]);
+            }
+          } else {
+            // Đạn xuyên giáp 30mm bắn xuyên thủng thân Drone
+            fx.spawn(burstPos.x, burstPos.y, burstPos.z, 'SCOUT_BULLET', 'DIRECT_HIT', { dir: vel });
+            playBoom(burstPos, 'DIRECT_HIT', 'SCOUT_BULLET');
+            if (window.soundEngine && soundEngine.playDroneHit) soundEngine.playDroneHit(false);
+
+            if (fx.sparks) {
+              for (let sI = 0; sI < 12; sI++) {
+                const sa = Math.random() * Math.PI * 2, ssp = 35 + Math.random() * 60;
+                fx.sparks.add({
+                  x: burstPos.x, y: burstPos.y, z: burstPos.z,
+                  vx: Math.cos(sa) * ssp, vy: 15 + Math.random() * 40, vz: Math.sin(sa) * ssp,
+                  drag: 2.4, grav: 120, life: 0.15 + Math.random() * 0.22
+                });
+              }
+            }
+
+            if (droneGodMode) {
+              logDamage([{ type: 'droneAP', text: 'XUYÊN GIÁP 30mm: Đục xuyên thân Drone (Phát thứ ' + droneHitCount + ' • BẤT TỬ)' }]);
+            } else {
+              droneHp -= 0.5;
+              logDamage([{ type: 'droneAP', text: 'XUYÊN GIÁP 30mm: Thủng thân Drone (Máu: ' + Math.max(0, Math.round(droneHp * 100)) + '%)' }]);
+            }
+          }
+          if (!droneGodMode && droneHp <= 0 && !droneIsDead) {
+            droneIsDead = true;
+            fx.spawn(targetDrone.group.position.x, targetDrone.group.position.y, targetDrone.group.position.z, 'CLUSTER_SUBMUNITION', 'AIR', {});
+            playBoom(targetDrone.group.position, 'AIRBURST', 'CLUSTER_SUBMUNITION');
+            logDamage([{ type: 'droneDead', text: 'DRONE ĐÃ BỊ BẮN HẠ!' }]);
+          }
+          updateHpLabel();
+          scene.remove(p.mesh);
+          projectiles.splice(i, 1);
+          continue;
         }
       }
       const hit = p._hitCache || collide(p.prev, pos);
@@ -2363,7 +2538,7 @@
       orbit.target.copy(LAUNCH_DIR).multiplyScalar(LD * 0.5);
       orbit.dist = LD * 1.05 + 160; orbit.pitch = 0.42; orbit.yaw = 2.2;
     } else if (name === 'impact') {
-      orbit.target.set(0, 8, 0); orbit.dist = 190; orbit.pitch = 0.32; orbit.yaw = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z) + 0.6;
+      if (state.target === 'DRONE') { orbit.target.copy(targetDrone.group.position); orbit.dist = 55; } else { orbit.target.set(0, 8, 0); orbit.dist = 190; } orbit.pitch = 0.32; orbit.yaw = Math.atan2(LAUNCH_DIR.x, LAUNCH_DIR.z) + 0.6;
     } else if (name === 'launcher') {
       orbit.target.copy(LAUNCH_DIR).multiplyScalar(state.launchD || LAUNCH_DIST[sel.path]).setY(12); orbit.dist = 130; orbit.pitch = 0.25; orbit.yaw = 1.7;
     } else {
@@ -2470,6 +2645,7 @@
     wall.group.visible = v === 'WALL';
     building.group.visible = v === 'BUILDING';
     targetTank.group.visible = v === 'VEHICLE';
+    targetDrone.group.visible = v === 'DRONE';
     // Chỉ hiện thông số cấu hình của đúng mục tiêu đang chọn
     document.querySelectorAll('.cfg').forEach(el => { el.style.display = el.dataset.for === v ? '' : 'none'; });
     showExtra(v);
@@ -2491,6 +2667,17 @@
   autoBtn.addEventListener('click', () => { initAudio(); state.auto = !state.auto; autoBtn.innerHTML = '<i class="ti ti-repeat" aria-hidden="true"></i>Bắn tự động: <b>' + (state.auto ? 'BẬT' : 'TẮT') + '</b>'; autoBtn.classList.toggle('on', state.auto); });
   document.getElementById('clearBtn').addEventListener('click', () => fx.clear());
   document.getElementById('reviveBtn').addEventListener('click', () => {
+    if (state.target === 'DRONE') {
+      droneIsDead = false;
+      droneHp = 1.0;
+      droneHitCount = 0;
+      targetDrone.group.visible = true;
+      targetDrone.group.position.set(0, droneAlt, 0);
+      targetDrone.group.rotation.set(0, 0, 0);
+      document.getElementById('dmgLog').innerHTML = '';
+      updateHpLabel();
+      return;
+    }
     targetTank.hp = targetTank.maxHp;
     targetTank.isDead = false;
     if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(targetTank);
@@ -2548,6 +2735,7 @@
       gunStatEl.style.display = t ? '' : 'none';
       if (gunStatEl.textContent !== t) gunStatEl.textContent = t;
     }
+    if (state.target === 'DRONE') updateDrone(dt);
     updateProjectiles(dt);
     missileSounds(dt);
     fx.update(dt);
@@ -2590,6 +2778,42 @@
   }
 
   selectAmmo(0);
+  
+  // Cấu hình Drone
+  const godBtn = document.getElementById('droneGodBtn');
+  if (godBtn) {
+    godBtn.addEventListener('click', () => {
+      droneGodMode = !droneGodMode;
+      godBtn.classList.toggle('on', droneGodMode);
+      godBtn.innerHTML = '<i class="ti ti-shield-check" aria-hidden="true"></i>Drone bất tử: <b>' + (droneGodMode ? 'BẬT' : 'TẮT') + '</b>';
+      updateHpLabel();
+    });
+  }
+  const flyBtn = document.getElementById('droneFlyBtn');
+  if (flyBtn) {
+    flyBtn.addEventListener('click', () => {
+      droneFly = !droneFly;
+      flyBtn.classList.toggle('on', droneFly);
+      flyBtn.innerHTML = '<i class="ti ti-rotate-clockwise-2" aria-hidden="true"></i>Lượn vòng: <b>' + (droneFly ? 'BẬT' : 'TẮT') + '</b>';
+    });
+  }
+  const altS = document.getElementById('droneAltS');
+  if (altS) {
+    altS.addEventListener('input', e => {
+      droneAlt = +e.target.value;
+      document.getElementById('droneAltVal').textContent = droneAlt + 'm';
+      updateHpLabel();
+    });
+  }
+  const distS = document.getElementById('droneDistS');
+  if (distS) {
+    distS.addEventListener('input', e => {
+      droneDist = +e.target.value;
+      document.getElementById('droneDistVal').textContent = droneDist + 'm';
+      placeLauncher();
+    });
+  }
+
   camPreset('wide');
   requestAnimationFrame(frame);
   document.querySelectorAll('#vehRow [data-veh]').forEach(b => b.addEventListener('click', () => {

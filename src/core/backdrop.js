@@ -109,6 +109,8 @@ const Backdrop = (() => {
   }
 
   function buildForest(T, O, nz, seaLvl, meshH) {
+    const isLab = (T.map && T.map.testField) || (typeof window !== 'undefined' && (window.RANGE_LAB || window.STRONGHOLD_LAB || window.FREECAM_LAB || (window.location && window.location.search && window.location.search.includes('lab='))));
+    if (isLab) return null;
     const F = FOREST[T.mapType];
     if (!F) return null;
     const rnd = MapGen.mulberry32((T.seed ^ 0x3a7f11) >>> 0);

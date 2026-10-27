@@ -21,6 +21,19 @@
 
   const cam = { x: 0, y: 600, z: 900, yaw: 0, pitch: -0.6, speed: 400, keys: {}, locked: false, goal: null };
   let g = null, speedEl = null, posEl = null;
+  // Không dựng bản đồ đồng bộ ngay trong constructor game (chặn luồng chính, màn chờ đứng im) — như ?lab=range
+  window.BOOT_MAP = null;
+
+  // MÀN CHỜ: index.html phủ sẵn #range-lab-loading ngay đầu trang (dùng chung với phòng thử đạn). Trước đây không có màn
+  // chờ, và vào trận ngay khi chi tiết bản đồ chưa dựng xong -> startMatchWithSlots dựng nốt đồng bộ: trang đứng hình
+  // hàng chục giây (trình duyệt báo "không phản hồi")
+  const loader = {
+    stage(t) { const el = document.getElementById('range-lab-stage'); if (el) el.textContent = t; },
+    done() {
+      const el = document.getElementById('range-lab-loading');
+      if (el) requestAnimationFrame(() => requestAnimationFrame(() => { el.style.transition = 'opacity .4s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }));
+    }
+  };
 
   function boot() {
     g = window.game;
@@ -29,11 +42,33 @@
     mm.selectedMapType = BIOME; mm.mapSeed = SEED; mm.state = 'IN_GAME';
     mm.preparedMapKey = BIOME + ':' + SEED;
     clearInterval(mm.searchInterval);
-    setTimeout(start, 30);
+    loader.stage('ĐANG SINH ĐỊA HÌNH NỀN…');
+    // dữ liệu bản đồ sinh trong Worker (giao diện không treo); không hỗ trợ Worker thì prepareMap tự làm đồng bộ
+    const prep = window.MapGen && MapGen.prefetch ? MapGen.prefetch(BIOME, SEED) : Promise.resolve(false);
+    prep.catch(() => false).then(() => {
+      loader.stage('ĐANG DỰNG CẢNH 3D…');
+      requestAnimationFrame(() => setTimeout(build, 20));
+    });
+  }
+
+  // dựng lưới bản đồ, rồi chờ phần chi tiết (cây, nhà, đồ vật) dựng xong dưới nền từng bước nhỏ mới vào trận
+  function build() {
+    try { g.prepareMap(BIOME, SEED); } catch (err) { console.error('[FREECAM]', err); loader.stage('LỖI: ' + (err && err.message || err)); return; }
+    const T = g.terrain;
+    const wait = () => {
+      if (T && !T.detailsReady && g.terrain === T) {
+        const left = T._pendingDetailSteps ? T._pendingDetailSteps.length : 0;
+        loader.stage('ĐANG DỰNG CẢNH 3D…' + (left ? ' (' + left + ')' : ''));
+        setTimeout(wait, 60);
+        return;
+      }
+      try { start(); } catch (err) { console.error('[FREECAM]', err); loader.stage('LỖI: ' + (err && err.message || err)); return; }
+      loader.done();
+    };
+    wait();
   }
 
   function start() {
-    g.prepareMap(BIOME, SEED);
     const ov = document.getElementById('matchmaking-overlay');
     if (ov) ov.classList.add('hidden');
     g.matchmaking.selectedTankType = 'SCOUT';

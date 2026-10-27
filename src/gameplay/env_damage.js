@@ -1348,6 +1348,12 @@ const EnvDamage = (() => {
       this.bridges.damageAt(x, y, z, A, info, fx, events);
       const SS = this.T.strongholdSet;
       if (SS) this.fragmentScars(SS, x, y, z, ammo, heavy);
+      // nổ trên vỉa hè: mặt lát bê tông rỗ / mẻ / bong mảng + muội (không khoét hố đất — Terrain.noCraterAt)
+      const ST = this.T.streetscape;
+      if (!isBullet(ammo) && info.t !== 'WALL' && ST && ST.covers && ST.covers(x, z)) {
+        const wy = ST.junk && ST.junk.rest ? ST.junk.rest(x, z) : y;
+        if (y < wy + 6) this.concreteHit(x, wy, z, 0, 0, ammo, A, true);
+      }
       if (SS && SS.covers(x, z, 8)) {
         if (info.t === 'WALL') {
           const ny = info.ny || 0;
@@ -1505,6 +1511,9 @@ const EnvDamage = (() => {
       // sàn / dốc / sân bê tông cứ điểm: vết đạn trên bê tông (sứt, rỗ), không phải lỗ đất
       const SS = T.strongholdSet;
       if (SS && SS.surfaceInfo && SS.surfaceInfo(x, z)) { this.concreteHit(x, y, z, 0, 0, ammo, ammoOf(ammo, false), true); return true; }
+      // vỉa hè: vết đạn trên mặt lát (cao hơn đất một bậc bó vỉa), không phải lỗ đất bị mặt lát che
+      const ST = T.streetscape;
+      if (ST && ST.covers && ST.covers(x, z)) { this.concreteHit(x, ST.junk && ST.junk.rest ? ST.junk.rest(x, z) : y, z, 0, 0, ammo, ammoOf(ammo, false), true); return true; }
       const e = 1.5, hx = this.surf(x + e, z) - this.surf(x - e, z), hz = this.surf(x, z + e) - this.surf(x, z - e);
       const n = new THREE.Vector3(-hx / (2 * e), 1, -hz / (2 * e)).normalize();
       const A = ammoOf(ammo, false);

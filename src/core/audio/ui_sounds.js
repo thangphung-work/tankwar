@@ -170,6 +170,52 @@
     }
 
     // chốt khóa thép "cộp" (dùng chung khi chọn xe / xuất trận)
+    // vòng quay thưởng: mỗi thẻ lướt qua kim chỉ = 1 tiếng lẫy cóc "tách" (k: 0..1 theo tốc độ, chậm dần thì to & trầm hơn)
+    playSpinTick(k = 1) {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      if (t - (this._spinTickT || 0) < 0.028) return;
+      this._spinTickT = t;
+      const out = this.uiOut(0.6, 0.02);
+      this.burst(out, t, { filter: 'bandpass', freq: 3200 - 900 * (1 - k), Q: 3, gain: 0.05 + 0.04 * (1 - k), attack: 0.0005, dur: 0.014 });
+      this.metal(out, t, { f0: 1700 - 500 * (1 - k), ratios: [1, 2.7], decay: 0.05, gain: 0.03 + 0.03 * (1 - k), click: 0.3 });
+    }
+    // bắt đầu quay: cần gạt "cạch" + luồng gió vút lên như dải thẻ bị giật đi
+    playSpinStart() {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.8, 0.08);
+      this._uiLatch(out, t, 1);
+      this.burst(out, t + 0.03, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 500, freqEnd: 2800, sweep: 0.45, Q: 1.4, gain: 0.16, attack: 0.08, dur: 0.6 });
+      this.tone(out, t + 0.03, { freq: 70, freqEnd: 140, sweep: 0.3, gain: 0.18, attack: 0.01, dur: 0.35 });
+    }
+    // đoạn cuối hồi hộp (dur giây tới lúc dừng): nốt trầm rít dần lên + trống dồn nhanh dần, tắt đúng lúc dải dừng
+    playSpinRiser(dur = 2.8) {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.7, 0.1);
+      this.tone(out, t, { type: 'sawtooth', freq: 70, freqEnd: 190, sweep: dur, gain: 0.035, attack: dur, dur: 0.12, filter: 'lowpass', filterFreq: 900 });
+      this.tone(out, t, { freq: 140, freqEnd: 380, sweep: dur, gain: 0.03, attack: dur, dur: 0.12 });
+      // trống dồn: 5 -> 22 nhịp / giây, to dần
+      for (let x = 0; x < dur - 0.05;) {
+        const k = x / dur;
+        this.burst(out, t + x, { filter: 'bandpass', freq: 1800, Q: 0.9, gain: 0.025 + 0.06 * k, attack: 0.001, dur: 0.05 });
+        this.tone(out, t + x, { freq: 120, freqEnd: 70, sweep: 0.06, gain: 0.05 + 0.1 * k, attack: 0.001, dur: 0.07 });
+        x += 1 / (5 + 17 * k * k);
+      }
+    }
+    // dừng trúng thưởng: rar 0..4 — thường: xu leng keng; hiếm trở lên: thêm hợp âm đi lên; huyền thoại: kèn đồng
+    playSpinWin(rar = 0) {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.8, 0.15);
+      this._uiLatch(out, t, 1);
+      const n = 4 + rar * 2;
+      for (let i = 0; i < n; i++) this.metal(out, t + 0.05 + i * (0.04 + Math.random() * 0.03), { f0: 2300 + Math.random() * 1600, ratios: [1, 2.62, 4.1], decay: 0.25, gain: 0.1, click: 0.15 });
+      if (rar >= 2) [523, 659, 784, 1047].slice(0, rar).forEach((f, i) => this.tone(out, t + 0.12 + i * 0.09, { type: 'triangle', freq: f, gain: 0.07, attack: 0.005, dur: 0.45 }));
+      if (rar >= 3) this._uiBrassHit(t + 0.1, 0.7 + 0.15 * (rar - 3));
+    }
+
     _uiLatch(out, t, k = 1) {
       this.metal(out, t, { f0: 420, ratios: [1, 2.76, 5.4], decay: 0.25, gain: 0.16 * k, click: 0.5 });
       this.tone(out, t, { freq: 90, freqEnd: 48, sweep: 0.12, gain: 0.4 * k, attack: 0.001, dur: 0.25 });
@@ -286,42 +332,195 @@
       this.playUiClose();
     }
 
-    // ---- KÊNH CHỈ HUY (màn tìm trận): bắt sóng, máy điện báo gõ lệnh, nhiễu chập chờn, ngắt kênh ----
-    // bắt sóng: nhiễu lạo xạo dải tiếng nói phồng lên rồi lặng dần, vài tiếng lách tách
+    // ---- KÊNH CHỈ HUY (màn tìm trận) — một bản tin hỏa tốc có đầu có đuôi:
+    //   ĐIỆN KHẨN (còi ưu tiên, nhạc nền lùi xuống) -> BẮT SÓNG (mở squelch, chuỗi mã đồng bộ mật mã, khóa kênh)
+    //   -> KÊNH MỞ (nhiễu sóng nền + trầm nền Rê căng thẳng suốt lúc gõ lệnh) -> GÕ LỆNH (máy điện báo, hết câu đập
+    //   trục + chuông, gõ tới tên cứ điểm thì "píng" đánh dấu mục tiêu) -> HẾT (đuôi squelch + bíp "over")
+    //   -> TỔ LÁI "RÕ!" (bấm phím đáp + kèn đồng / trống chốt lệnh, nhạc nền trào lên lại)
+
+    // nhạc nền lùi / trở lại (đi qua nút duck của music.js); không cần ready(): lúc tắt tiếng vẫn phải trả nhạc về 1
+    _cmdMusic(level, tc = 0.15, delay = 0) {
+      const M = this._mz;
+      if (!M || !this.ctx) return;
+      const g = M.duck.gain;
+      const t = this.ctx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(Math.max(0.0001, g.value), t);
+      g.setTargetAtTime(level, t + delay, tc);
+    }
+
+    // ĐIỆN KHẨN: cú trầm "đoàng" xa + 3 hồi còi ưu tiên cao-thấp (hồi cuối kéo dài), nhạc nền lùi hẳn ra sau
+    playCommandFlash() {
+      this._cmdMusic(0.32, 0.08);
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.85, 0.18);
+      this.tone(out, t, { freq: 58, freqEnd: 34, sweep: 0.5, gain: 0.42, attack: 0.003, dur: 0.8 });
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 240, drive: 2.4, gain: 0.45, attack: 0.002, dur: 0.25 });
+      for (let i = 0; i < 3; i++) {
+        const s = t + 0.1 + i * 0.19, last = i === 2;
+        this.tone(out, s, { type: 'square', freq: 1175, gain: 0.032, attack: 0.002, hold: 0.06, dur: 0.02, filter: 'lowpass', filterFreq: 3200 });
+        this.tone(out, s + 0.08, { type: 'square', freq: 880, gain: 0.032, attack: 0.002, hold: last ? 0.2 : 0.06, dur: last ? 0.12 : 0.02, filter: 'lowpass', filterFreq: 3200 });
+      }
+    }
+
+    // BẮT SÓNG: mở squelch "xẹt" -> chuỗi bíp dữ liệu nhảy tần (đồng bộ mật mã) -> 2 bíp đi lên = đã khóa kênh (~1 s)
     playCommandLinkUp() {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
       const out = this.uiOut(0.7, 0.05);
-      this._uiNoiseAM(out, t, { buffer: this.crackleBuffer, freq: 1700, Q: 0.9, gain: 0.07, attack: 0.05, dur: 0.95, amHz: 13, amDepth: 0.9 });
-      this.burst(out, t + 0.9, { filter: 'bandpass', freq: 2200, Q: 1.2, gain: 0.07, attack: 0.001, dur: 0.06 });
-      this.tone(out, t + 0.98, { freq: 1240, gain: 0.03, attack: 0.003, dur: 0.09 });
+      this.burst(out, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 2100, Q: 0.8, gain: 0.1, attack: 0.002, dur: 0.12 });
+      this._uiNoiseAM(out, t + 0.05, { buffer: this.crackleBuffer, freq: 1700, Q: 0.9, gain: 0.045, attack: 0.05, dur: 0.75, amHz: 13, amDepth: 0.9 });
+      const FSK = [1200, 1800, 2400, 1500];
+      for (let x = 0.12; x < 0.74; x += 0.024) {
+        this.tone(out, t + x, { type: 'square', freq: FSK[Math.floor(Math.random() * FSK.length)], gain: 0.012 + 0.008 * (x / 0.74), attack: 0.001, hold: 0.016, dur: 0.006, filter: 'lowpass', filterFreq: 3400 });
+      }
+      this.tone(out, t + 0.82, { type: 'triangle', freq: 1320, gain: 0.06, attack: 0.003, hold: 0.05, dur: 0.03 });
+      this.tone(out, t + 0.92, { type: 'triangle', freq: 1760, gain: 0.06, attack: 0.003, hold: 0.08, dur: 0.06 });
     }
-    // một phím máy điện báo: cạch kim loại khô + cộc thân máy (k: độ mạnh, phím cách / dấu câu nặng tay hơn)
+
+    // KÊNH MỞ suốt lúc gõ lệnh: nhiễu sóng nền chập chờn + trầm nền Rê-La (đúng giọng nhạc nền) phồng xẹp chậm
+    startCommandChannel() {
+      if (!this.ready() || this._cmdCh) return;
+      this._cmdMusic(0.45, 0.4);
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      const out = this.uiOut(1, 0.04);
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(1, t + 0.5);
+      g.connect(out);
+      const nodes = [];
+      // nhiễu sóng: dải tiếng nói 400..3000 Hz, rung nhẹ theo sóng mang
+      const hiss = ctx.createBufferSource();
+      hiss.buffer = this.pinkNoiseBuffer;
+      hiss.loop = true;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 1500;
+      bp.Q.value = 0.6;
+      const hg = ctx.createGain();
+      hg.gain.value = 0.014;
+      const flut = ctx.createOscillator();
+      flut.frequency.value = 5.3;
+      const fd = ctx.createGain();
+      fd.gain.value = 0.005;
+      flut.connect(fd);
+      fd.connect(hg.gain);
+      hiss.connect(bp);
+      bp.connect(hg);
+      hg.connect(g);
+      nodes.push(hiss, flut);
+      // trầm nền: Rê2 + La2 răng cưa qua lọc thấp, bộ lọc mở ra khép lại chậm như hơi thở nặng
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 280;
+      lp.Q.value = 2;
+      const sw = ctx.createOscillator();
+      sw.frequency.value = 0.14;
+      const sd = ctx.createGain();
+      sd.gain.value = 140;
+      sw.connect(sd);
+      sd.connect(lp.frequency);
+      const dg = ctx.createGain();
+      dg.gain.value = 0;
+      dg.gain.setValueAtTime(0.0001, t);
+      dg.gain.linearRampToValueAtTime(0.05, t + 2.5);
+      for (const [f, det] of [[73.42, -6], [73.42, 6], [110, 0]]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        o.detune.value = det;
+        o.connect(lp);
+        nodes.push(o);
+      }
+      lp.connect(dg);
+      dg.connect(g);
+      nodes.push(sw);
+      for (const n of nodes) n.start(t);
+      this._cmdCh = { g, nodes };
+    }
+
+    // tắt kênh (fade giây); restore = trả nhạc nền về mức thường (khi tổ lái đáp "Rõ!" thì để playCommandAck trả)
+    stopCommandChannel(fade = 0.25, restore = true) {
+      if (restore) this._cmdMusic(1, 0.5);
+      const ch = this._cmdCh;
+      if (!ch || !this.ctx) return;
+      this._cmdCh = null;
+      const t = this.ctx.currentTime;
+      ch.g.gain.cancelScheduledValues(t);
+      ch.g.gain.setValueAtTime(Math.max(0.0001, ch.g.gain.value), t);
+      ch.g.gain.linearRampToValueAtTime(0.0001, t + fade);
+      for (const n of ch.nodes) { try { n.stop(t + fade + 0.05); } catch (e) { /* đã dừng */ } }
+      setTimeout(() => { try { ch.g.disconnect(); } catch (e) { /* đã ngắt */ } }, (fade + 0.3) * 1000);
+    }
+
+    // một phím máy điện báo: cần chữ đập "cạch" kim loại khô + cộc thân máy (k: độ mạnh)
     playBriefingKey(k = 1) {
       if (!this.ready()) return;
       const now = this.ctx.currentTime;
       if (now - (this._briefKeyT || 0) < 0.03) return;
       this._briefKeyT = now;
-      const out = this.uiOut(0.5 * k, 0);
-      this.burst(out, now, { filter: 'bandpass', freq: rnd(2600, 3600), Q: 2.5, gain: 0.05, attack: 0.0004, dur: 0.012 });
-      this.tone(out, now, { freq: rnd(190, 240), freqEnd: 120, sweep: 0.03, gain: 0.035, attack: 0.001, dur: 0.035 });
+      const out = this.uiOut(0.55 * k, 0);
+      this.burst(out, now, { filter: 'bandpass', freq: rnd(2600, 3600), Q: 2.5, gain: 0.055, attack: 0.0004, dur: 0.012 });
+      this.burst(out, now + 0.008, { filter: 'bandpass', freq: rnd(1300, 1700), Q: 6, gain: 0.03, attack: 0.0005, dur: 0.02 });
+      this.tone(out, now, { freq: rnd(190, 240), freqEnd: 120, sweep: 0.03, gain: 0.04, attack: 0.001, dur: 0.035 });
     }
-    // nhiễu sóng thoáng qua (đường truyền chập chờn): k 0..1
+    // hết câu: đập mạnh tay + trục giấy quay "rẹt rẹt" + chuông nhỏ
+    playBriefingStamp() {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      this._briefKeyT = t;
+      const out = this.uiOut(0.6, 0.06);
+      this.burst(out, t, { filter: 'bandpass', freq: 2400, Q: 2, gain: 0.08, attack: 0.0004, dur: 0.018 });
+      this.tone(out, t, { freq: 150, freqEnd: 70, sweep: 0.05, gain: 0.09, attack: 0.001, dur: 0.07 });
+      for (let i = 0; i < 4; i++) this.burst(out, t + 0.07 + i * 0.026, { filter: 'bandpass', freq: 3800, Q: 4, gain: 0.025, attack: 0.0005, dur: 0.01 });
+      this.metal(out, t + 0.06, { f0: 2650, ratios: [1, 2.71], decay: 0.5, gain: 0.018, click: 0.1 });
+    }
+    // gõ tới tên cứ điểm (A / B / C): "píng" radar đánh dấu mục tiêu + vọng lại, kèm trầm khẽ
+    playBriefingMark() {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.7, 0.35);
+      this.tone(out, t, { freq: 1480, gain: 0.05, attack: 0.003, hold: 0.03, dur: 0.3 });
+      this.tone(out, t + 0.22, { freq: 1480, gain: 0.015, attack: 0.003, dur: 0.22 });
+      this.tone(out, t, { freq: 92, freqEnd: 60, sweep: 0.2, gain: 0.12, attack: 0.002, dur: 0.25 });
+    }
+    // nhiễu sóng thoáng qua (đường truyền chập chờn): k 0..1; đôi khi tiếng huýt dò sóng trượt
     playRadioGlitch(k = 1) {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
       const out = this.uiOut(0.6 * k, 0.03);
       this.burst(out, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: rnd(1200, 2600), Q: 0.8, gain: 0.08, attack: 0.002, dur: rnd(0.08, 0.22) });
-      if (Math.random() < 0.5) this.tone(out, t + 0.02, { type: 'square', freq: rnd(380, 620), gain: 0.008, attack: 0.002, dur: 0.06, filter: 'lowpass', filterFreq: 1800 });
+      const r = Math.random();
+      if (r < 0.35) this.tone(out, t + 0.02, { type: 'square', freq: rnd(380, 620), gain: 0.008, attack: 0.002, dur: 0.06, filter: 'lowpass', filterFreq: 1800 });
+      else if (r < 0.6) { const f = rnd(900, 1800); this.tone(out, t + 0.01, { freq: f, freqEnd: f * rnd(0.55, 1.6), sweep: 0.18, gain: 0.012, attack: 0.01, dur: 0.12 }); }
     }
-    // hết lệnh: thả phím bộ đàm — xẹt nhiễu ngắn + bíp kết thúc
+    // hết lệnh: thả phím bộ đàm — đuôi squelch "kssht" + bíp "over" đi xuống
     playCommandOver() {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      const out = this.uiOut(0.7, 0.05);
-      this.burst(out, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 1900, Q: 0.9, gain: 0.09, attack: 0.002, dur: 0.16 });
-      this.tone(out, t + 0.17, { freq: 1050, gain: 0.035, attack: 0.003, dur: 0.07 });
-      this.tone(out, t + 0.26, { freq: 1400, gain: 0.03, attack: 0.003, dur: 0.09 });
+      const out = this.uiOut(0.75, 0.06);
+      this.burst(out, t, { buffer: this.crackleBuffer, filter: 'bandpass', freq: 1900, Q: 0.9, gain: 0.1, attack: 0.002, dur: 0.12 });
+      this.burst(out, t + 0.04, { filter: 'highpass', freq: 2600, freqEnd: 1200, sweep: 0.3, gain: 0.07, attack: 0.004, dur: 0.32 });
+      this.tone(out, t + 0.2, { type: 'triangle', freq: 1400, gain: 0.05, attack: 0.003, hold: 0.06, dur: 0.03 });
+      this.tone(out, t + 0.3, { type: 'triangle', freq: 1050, gain: 0.05, attack: 0.003, hold: 0.1, dur: 0.06 });
+    }
+    // tổ lái đáp "RÕ!": bấm phím bộ đàm + bíp xác nhận, rồi CHỐT LỆNH — kèn đồng + trống + trầm, nhạc nền trào lên
+    playCommandAck() {
+      this._cmdMusic(1, 0.12, 0.22);
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(0.8, 0.2);
+      this.burst(out, t, { filter: 'bandpass', freq: 1900, Q: 0.8, gain: 0.09, attack: 0.001, dur: 0.06 });
+      this.tone(out, t + 0.06, { type: 'triangle', freq: 1450, gain: 0.06, attack: 0.003, hold: 0.05, dur: 0.03 });
+      this.tone(out, t + 0.15, { type: 'triangle', freq: 1935, gain: 0.06, attack: 0.003, hold: 0.07, dur: 0.05 });
+      const h = t + 0.32;
+      this._uiLatch(out, h, 1.1);
+      this.tone(out, h, { freq: 62, freqEnd: 34, sweep: 0.5, gain: 0.5, attack: 0.002, dur: 0.9 });
+      this.burst(out, h, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, drive: 2.5, gain: 0.5, attack: 0.001, dur: 0.22 });
+      this._uiBrassHit(h, 1);
     }
 
     // nhiễu có lọc + điều biên theo sóng sin (côn trùng rỉ rả, nước vỗ, nhiễu sóng vô tuyến)

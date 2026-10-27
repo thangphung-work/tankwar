@@ -126,6 +126,7 @@
           scanTime += dt;
           sensor.head.rotation.y = Math.sin(scanTime * 0.4) * 1.2;
         }
+        const sm = x => x * x * (3 - 2 * x);
         // vũ khí chính trên chân đế mô-đun: khối ngóc giật lùi rồi về, đầu đạn rocket trong ống theo số quả còn lại
         if (u.mainGun) {
           const G = u.mainGun;
@@ -159,7 +160,6 @@
         // mốc hoạt cảnh theo nhịp thật của từng bước (VehicleCrew.mgReloadPr — bảng MG_WARP), không chia đều theo thời gian
         const pr = !reloading ? 1 : typeof VehicleCrew !== 'undefined' && VehicleCrew.mgReloadPr ? VehicleCrew.mgReloadPr(u) : 1 - u.reloadTimer / u.reloadDuration;
         const seg = (a, b) => Math.max(0, Math.min(1, (pr - a) / (b - a)));
-        const sm = x => x * x * (3 - 2 * x);
         const tilt = reloading ? sm(seg(0, 0.12)) * (1 - sm(seg(0.88, 1))) : 0;
         // súng đang lắp: 12.7 (mặc định) hoặc phóng lựu cầm tay trên cùng chốt (u._mgParts — nắp / hộp đạn riêng)
         const K = u._mgParts || mg;
@@ -291,9 +291,10 @@
           K.charge.position.z = K.charge0 + K.chargeLen * cp;
           // buông tay kéo: lò xo đẩy khối khóa nòng ~10 kg phóng về đập "CHÁT" -> cả súng nảy trên chốt giá (như một phát bắn nhẹ)
           if (K.kick && (K._cp || 0) > 0.85 && cp < 0.5) {
-            const J = K._kj || (K._kj = { p: 0, vp: 0, y: 0, vy: 0 });
+            const J = K._kj || (K._kj = { p: 0, vp: 0, y: 0, vy: 0, z: 0, vz: 0 });
             J.vp -= 0.55 + Math.random() * 0.2;
             J.vy += (Math.random() - 0.5) * 0.5;
+            J.vz = (J.vz || 0) - 3.0;
           }
           K._cp = cp;
         }
@@ -323,9 +324,10 @@
             // 12.7 trên chốt giá xoay: mỗi phát cả súng nảy (nòng hất lên + lệch ngang ngẫu nhiên — lò xo tắt dần), nòng
             // giật ngắn trong hộp khóa nòng
             if (K.kick) {
-              const J = K._kj || (K._kj = { p: 0, vp: 0, y: 0, vy: 0 });
+              const J = K._kj || (K._kj = { p: 0, vp: 0, y: 0, vy: 0, z: 0, vz: 0 });
               J.vp += 0.9 + Math.random() * 0.5;
               J.vy += (Math.random() - 0.5) * 0.9;
+              J.vz = (J.vz || 0) + 14 + Math.random() * 4;
               if (K.tube) K.tube.position.z = 0.16;
             }
             if (K.smokeAt && src && typeof ReloadFX !== 'undefined' && (K._sm = (K._sm || 0) + 1) % (K.smokeEvery || 1) === 0) {
@@ -349,9 +351,11 @@
           const J = K._kj, h = Math.min(dt, 0.033), w2 = 900, c = 26;
           J.vp += (-w2 * J.p - c * J.vp) * h; J.p += J.vp * h;
           J.vy += (-w2 * J.y - c * J.vy) * h; J.y += J.vy * h;
+          J.vz = (J.vz || 0) + (-w2 * (J.z || 0) - c * (J.vz || 0)) * h; J.z = (J.z || 0) + J.vz * h;
           // đang thay hộp: hãm rung (tay đang thao tác) — trừ lúc kéo lên đạn, súng phải nảy khi khối khóa nòng đập về
-          if (u.isDead || (reloading && pr < 0.92)) { J.p *= 0.8; J.y *= 0.8; J.vp *= 0.5; J.vy *= 0.5; }
+          if (u.isDead || (reloading && pr < 0.92)) { J.p *= 0.8; J.y *= 0.8; J.z *= 0.8; J.vp *= 0.5; J.vy *= 0.5; J.vz *= 0.5; }
           K.kick.rotation.set(Math.max(-0.02, J.p), J.y, 0);
+          K.kick.position.set(0, 0, Math.max(-0.02, J.z));
           if (K.tube) K.tube.position.z *= Math.exp(-dt * 40);
         }
       }
@@ -674,6 +678,39 @@
     const wsA = Math.atan(slope);
     const nY = Math.sin(wsA), nZ = -Math.cos(wsA);           // pháp tuyến hướng ra trước-lên
     const onFace = (y, out) => [y + nY * out, CAB_FRONT + (y - CAB_BASE_Y) * slope + nZ * out];
+    // GẠT MƯA (đỗ dọc mép dưới kính): trục gạt ở góc dưới bên trái mỗi tấm, khớp tâm cung quét vẽ trên kính
+    // (getDirtyGlassTextures: gốc u 0.15, ngay dưới mép kính). Tay gạt thép dập (đoạn lòng máng gần gốc, đoạn thanh dẹt
+    // về đầu) chúi dần xuống kính, kẹp vào giữa lưỡi; lưỡi gạt kiểu khung chạc: cầu chính + 2 chạc phụ, móng kẹp ôm
+    // ray thép mỏng giữ dải cao su áp sát kính. Hệ tấm kính: gx ngang, gv dọc mặt kính lên trên, o nhô ra khỏi mặt cabin
+    const cA = Math.cos(wsA), sA = Math.sin(wsA), [Yc, Zc] = onFace(13.15, 0);
+    const gp = (gx, gv, o) => [gx, Yc + gv * cA + o * nY, Zc + gv * sA + o * nZ];
+    // hộp dài theo phương ang (trong mặt kính), tilt > 0: đầu +len nhô xa kính hơn
+    const gbox = (len, w, th, mat, gx, gv, o, ang, tilt = 0) => hb.box(len, w, th, mat, gp(gx, gv, o), [wsA, tilt, ang, 'XZY']);
+    const wiper = (cx) => {
+      const PX = cx - 2.13, PV = -1.70;                     // trục gạt (trên thanh khung dưới)
+      const BX = cx + 0.2, BV = -1.24, bA = 0.03, BL = 3.3;  // giữa lưỡi gạt, góc đỗ, dài lưỡi (~41 cm)
+      const dx = BX - PX, dv = BV - PV, aL = Math.hypot(dx, dv), aA = Math.atan2(dv, dx);
+      const o0 = 0.47, o1 = 0.37, tilt = -Math.atan2(o0 - o1, aL);
+      const onArm = (t, len, w, th) => gbox(len, w, th, D, PX + dx * t, PV + dv * t, o0 + (o1 - o0) * t, aA, tilt);
+      hb.cyl(0.18, 0.2, 0.14, 12, D, gp(PX, PV, 0.31), 'z', [wsA, 0, 0]);   // bệ trục bắt trên khung
+      gbox(0.72, 0.27, 0.15, D, PX + Math.cos(aA) * 0.2, PV + Math.sin(aA) * 0.2, 0.47, aA);   // đầu tay gạt đúc ôm trục
+      hb.cyl(0.08, 0.09, 0.08, 8, D, gp(PX, PV, 0.58), 'z', [wsA, 0, 0]);   // nắp chụp đai ốc trục
+      onArm(0.27, aL * 0.42, 0.13, 0.1);                    // đoạn lòng máng (che lò xo)
+      onArm(0.72, aL * 0.5, 0.075, 0.055);                  // đoạn thanh dẹt về đầu
+      // lưỡi gạt: điểm dọc lưỡi theo t (-BL/2..BL/2)
+      const bx = (t) => BX + Math.cos(bA) * t, bv = (t) => BV + Math.sin(bA) * t;
+      const blade = (t, len, w, th, mat, o) => gbox(len, w, th, mat, bx(t), bv(t), o, bA);
+      blade(0, 0.26, 0.15, 0.12, D, 0.33);                  // kẹp nối tay gạt ở giữa cầu
+      blade(0, BL, 0.05, 0.07, M.rubber || D, 0.165);        // dải cao su áp kính
+      blade(0, BL, 0.085, 0.025, D, 0.21);                  // ray thép mỏng giữ cao su
+      blade(0, 2.1, 0.07, 0.06, D, 0.31);                   // cầu chính
+      for (const k of [-1, 1]) {
+        blade(k * 1.05, 0.06, 0.06, 0.08, D, 0.28);         // khớp cầu chính - chạc phụ
+        blade(k * 1.05, 0.95, 0.06, 0.05, D, 0.25);         // chạc phụ
+        for (const t of [0.6, 1.5]) blade(k * t, 0.07, 0.1, 0.06, D, 0.225);   // móng kẹp ôm ray
+        blade(k * (BL / 2 - 0.02), 0.06, 0.09, 0.07, D, 0.19);   // nắp chặn đầu ray
+      }
+    };
     for (const s of [-1, 1]) {
       const [gy, gz] = onFace(13.15, 0.08);
       hb.box(6.1, 3.1, 0.1, (s < 0 ? M.glassWindL : M.glassWindR) || M.glass, [s * 3.55, gy, gz], [wsA, 0, 0]);
@@ -681,9 +718,7 @@
       hb.box(6.7, 0.32, 0.22, P, [s * 3.55, ty, tz], [wsA, 0, 0]);
       const [by, bz] = onFace(11.65, 0.14);
       hb.box(6.7, 0.32, 0.22, P, [s * 3.55, by, bz], [wsA, 0, 0]);
-      // Gạt mưa nằm trên kính, chốt ở mép trên
-      const [wy, wz] = onFace(13.4, 0.2);
-      hb.box(0.14, 2.9, 0.12, D, [s * 3.1, wy, wz], [wsA, 0, s * 0.55]);
+      wiper(s * 3.55);
     }
     const [py, pz] = onFace(13.2, 0.14);
     hb.box(0.7, 3.4, 0.24, P, [0, py, pz], [wsA, 0, 0]);
@@ -894,7 +929,7 @@
     const b = new VehicleKit.PartBatch(ROOF_Y);
     const Y = ROOF_Y, D = M.dark;
     b.setTag('stowage');
-    for (const z of [8.4, 10.9]) {
+    for (const z of [7.0, 9.5]) {
       const h = 1.5;
       b.box(2.4, h, 2.2, M.paint, [4.0, Y + h / 2, z], [0, (rnd() - 0.5) * 0.1, 0]);
       b.box(2.5, 0.2, 2.3, M.paint, [4.0, Y + h + 0.1, z]);

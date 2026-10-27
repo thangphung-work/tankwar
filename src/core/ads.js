@@ -11,7 +11,7 @@
  *
  * Google H5 Games Ads (Ad Placement API): https://developers.google.com/ad-placement
  *   adBreak({ type: 'reward', beforeReward(showAdFn), adViewed, adDismissed, adBreakDone })
- *   beforeReward chỉ được gọi khi CÓ quảng cáo sẵn sàng -> hiện hộp xác nhận, người chơi bấm mới gọi showAdFn()
+ *   beforeReward chỉ được gọi khi CÓ quảng cáo sẵn sàng -> gọi showAdFn() ngay (nút bấm của game đã là lời mời xem)
  *   (Google yêu cầu quảng cáo có thưởng chỉ phát khi người chơi chủ động bấm).
  *
  * Dùng: AdProvider.showRewarded({ name, label, sec }) -> Promise<'done' | 'skip' | 'unavailable'>
@@ -96,8 +96,11 @@ const AdProvider = (() => {
           name: o.name || 'reward',
           beforeAd: muteGame,
           afterAd: unmuteGame,
+          // Nút gọi tới đây (kho vũ khí / tiếp tế) đã ghi rõ "xem quảng cáo nhận ..." = người chơi đã chủ động chọn
+          // -> phát ngay, không hỏi lại. Cần hộp xác nhận riêng thì truyền o.confirm = true.
           beforeReward: (showAdFn) => {
             offered = true;
+            if (!o.confirm) { showAdFn(); return; }
             confirmBox(o.label).then((yes) => { if (yes) showAdFn(); else { result = 'skip'; resolve('skip'); } });
           },
           adDismissed: () => { result = 'skip'; },

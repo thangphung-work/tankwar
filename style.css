@@ -1280,6 +1280,12 @@ body, html {
 .ti-hint-toggle { display: none; }
 .ti-hint-toggle.ti-test-fire-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 14px; cursor: pointer; user-select: none; touch-action: none; color: var(--tc-accent-2); font: 700 12px var(--font-tech); letter-spacing: 1px; background: var(--tc-panel-2); border: 1px solid var(--tc-accent); clip-path: none; transition: background .12s, color .12s; }
 .ti-hint-toggle.ti-test-fire-btn:hover { background: var(--tc-accent-soft); }
+/* Nút SỬA CHỮA tất cả trang bị hỏng (cùng hàng bắn thử) */
+.ti-hint-toggle.ti-repair-all-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 12px; cursor: pointer; color: var(--tc-dim); font: 700 11px var(--font-tech); letter-spacing: 1px; background: var(--tc-panel-2); border: 1px solid var(--tc-line-2); clip-path: none; }
+.ti-hint-toggle.ti-repair-all-btn.hidden { display: none; }
+.ti-hint-toggle.ti-repair-all-btn.hurt { color: var(--tc-accent-2); border-color: var(--tc-accent); }
+.ti-hint-toggle.ti-repair-all-btn.hurt:not(:disabled):hover { color: var(--tc-bg); background: var(--tc-accent); }
+.ti-hint-toggle.ti-repair-all-btn:disabled { opacity: 0.5; cursor: default; }
 .ti-hint-toggle.ti-test-fire-btn.active { color: var(--tc-bg); background: var(--tc-accent); box-shadow: none; }
 /* Cụm bắn thử: một hàng ngang gọn, các nút cao bằng nhau (hẹp thì tự xuống dòng, vẫn dồn phải) */
 .ti-test-panel { position: absolute; top: 14px; right: 18px; z-index: 6; display: flex; flex-direction: row; flex-wrap: wrap; align-items: stretch; justify-content: flex-end; gap: 6px; max-width: calc(100% - 36px); }
@@ -1776,18 +1782,6 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
 }
 
 /* ---- giật hình / mất tín hiệu (startSignalFx trong matchmaking.js bật thoáng qua) ---- */
-.mm-sh-tear {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: var(--mm-ty, 40%);
-  height: 7px;
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0;
-  background: repeating-linear-gradient(to right, rgba(255, 255, 255, 0.5) 0 3px, rgba(0, 0, 0, 0.4) 3px 7px, rgba(255, 255, 255, 0.15) 7px 13px);
-  box-shadow: 0 9px 0 -4px rgba(255, 255, 255, 0.18), 0 -14px 0 -5px rgba(0, 0, 0, 0.35);
-}
 .mm-sh-sigwarn {
   position: absolute;
   top: 50%;
@@ -1809,7 +1803,6 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
   transform: translateX(var(--mm-gx, 6px)) skewX(-1.2deg);
   filter: saturate(0.35) sepia(0.3) contrast(1.45) brightness(0.95) hue-rotate(-12deg);
 }
-.mm-search-hud.mm-sig-glitch .mm-sh-tear { opacity: 1; }
 .mm-search-hud.mm-sig-glitch .mm-sh-noise { opacity: 1; }
 .mm-search-hud.mm-sig-drop .mm-recon-video { filter: grayscale(1) contrast(1.6) brightness(0.45); }
 .mm-search-hud.mm-sig-drop .mm-sh-sigwarn { opacity: 1; }
@@ -2181,85 +2174,104 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
 }
 @keyframes mm-fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 
-/* OPORD dã chiến: bảng lệnh giấy dầu/terminal, ít lớp blur để nhẹ hơn trên nền 3D. */
+/* LỆNH CHỈ HUY "TRẦN": không khung, chữ to đặt thẳng trên hình trinh sát; một dải tối mờ dần
+   phía sau (không viền) + bóng chữ để vẫn đọc được trên nền video sáng. */
 .mm-sh-briefing {
-  top: 132px;
-  left: 28px;
-  width: min(410px, calc(100vw - 56px));
-  gap: 9px;
-  padding: 0 14px 13px;
-  background:
-    linear-gradient(135deg, rgba(121, 137, 78, .07), transparent 42%),
-    rgba(8, 12, 10, .94);
-  border: 1px solid rgba(167, 181, 112, .42);
-  border-left: 3px solid #b8a75a;
-  box-shadow: 8px 12px 0 rgba(0, 0, 0, .22), 0 18px 44px rgba(0, 0, 0, .38);
+  top: 120px;
+  left: 44px;
+  width: min(560px, calc(100vw - 88px));
+  gap: 14px;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
   backdrop-filter: none;
-  clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 15px, 100% 100%, 0 100%);
+  clip-path: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .95), 0 0 14px rgba(0, 0, 0, .75);
 }
-.mm-sh-briefing::before { border-color: #d2bd62; }
-.mm-sh-briefing::after { border-color: rgba(210, 189, 98, .55); }
-.mm-order-classification {
-  display: flex;
-  justify-content: space-between;
-  margin: 0 -14px;
-  padding: 5px 14px 4px;
-  color: #15170f;
-  background: #b8a75a;
-  font: 900 9px/1 var(--font-mono);
-  letter-spacing: 1.4px;
+.mm-sh-briefing::before {
+  /* dải tối mờ dần sang phải thay cho khung */
+  content: '';
+  position: absolute;
+  inset: -40px -120px -40px -44px;
+  width: auto; height: auto;
+  border: 0;
+  background: radial-gradient(ellipse 70% 62% at 26% 50%, rgba(3, 5, 4, .62), rgba(3, 5, 4, .32) 55%, transparent 80%);
+  z-index: -1;
 }
-.mm-order-classification b { font: inherit; }
-.mm-briefing-top { gap: 11px; padding-bottom: 2px; }
-.mm-briefing-avatar-box { width: 45px; height: 45px; border-color: rgba(210, 189, 98, .55); }
+.mm-sh-briefing::after { display: none; }
+.mm-briefing-top { gap: 14px; padding-bottom: 0; }
+.mm-briefing-avatar-box {
+  width: 58px; height: 58px;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(210, 189, 98, .7), 0 0 0 4px rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .6);
+}
 .mm-briefing-avatar-img { filter: grayscale(1) contrast(1.22) sepia(.28); }
 .mm-briefing-kicker {
-  color: #899178;
-  font: 700 8px/1 var(--font-mono);
-  letter-spacing: 1.5px;
+  color: #c9c4a6;
+  font: 700 11px/1 var(--font-mono);
+  letter-spacing: 3px;
 }
-.mm-briefing-title { color: #e8e4cf; font-size: 14px; letter-spacing: 2.4px; }
-.mm-briefing-code { color: #d2bd62; font-size: 9px; }
-.mm-briefing-seal {
-  display: grid;
-  place-items: center;
-  width: 31px;
-  height: 31px;
-  border: 1px solid rgba(210, 189, 98, .55);
-  border-radius: 50%;
-  color: #d2bd62;
-  font: 900 10px var(--font-mono);
-  box-shadow: inset 0 0 0 3px #080c0a, inset 0 0 0 4px rgba(210, 189, 98, .25);
+.mm-briefing-title {
+  color: #f3eed6;
+  font-size: 28px;
+  line-height: 1.05;
+  letter-spacing: 4px;
 }
+.mm-briefing-code { color: #e0c766; font-size: 12px; letter-spacing: 2px; }
 .mm-order-meta {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr .75fr;
-  border-block: 1px solid rgba(167, 181, 112, .2);
-  background: rgba(159, 167, 112, .035);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  padding: 0 0 2px;
+  border: 0;
+  background: none;
 }
 .mm-order-meta span {
-  padding: 6px 7px;
-  color: #d6d8c8;
-  font: 700 9px/1.25 var(--font-mono);
-  letter-spacing: .5px;
-  border-right: 1px solid rgba(167, 181, 112, .16);
+  padding: 0;
+  border: 0;
+  color: #ece9d8;
+  font: 700 12px/1.2 var(--font-mono);
+  letter-spacing: 1px;
 }
-.mm-order-meta span:last-child { border-right: 0; }
-.mm-order-meta i { display: block; margin-bottom: 3px; color: #737b68; font-style: normal; font-size: 7px; letter-spacing: 1.1px; }
-.mm-comm-section { position: relative; padding-left: 16px; }
-.mm-comm-section::before { content: ''; position: absolute; left: 2px; top: 3px; bottom: 2px; width: 2px; background: #b8a75a; }
-.mm-comm-speaker { color: #b8a75a; font-size: 8px; letter-spacing: 1.5px; }
-.mm-sh-briefing .mm-comm-msg { color: #e0e3d3; font-size: 11.5px; line-height: 1.55; text-shadow: none; }
-.mm-comm-reply { padding: 7px 8px; border: 1px solid rgba(99, 151, 103, .24); background: rgba(70, 119, 75, .08); }
-.mm-comm-speaker.squad { color: #72a777; font-size: 8px; }
-.mm-comm-reply-text { color: #cbd9c6; }
-.mm-comm-status { color: #b8a75a; font-size: 8px; letter-spacing: 1.4px; }
-.mm-typing-dots { color: #b8a75a; }
-.mm-comm-status[data-state="link"] { color: #d2bd62; }
-.mm-comm-status[data-state="done"] { color: #72a777; }
+.mm-order-meta i { display: inline; margin: 0 7px 0 0; color: #a8a88f; font-style: normal; font-size: 10px; letter-spacing: 1.6px; }
+.mm-order-meta span:last-child { color: #e0c766; }
+.mm-briefing-body { gap: 12px; }
+.mm-comm-section { position: relative; padding-left: 18px; gap: 6px; }
+.mm-comm-section::before {
+  content: ''; position: absolute; left: 0; top: 2px; bottom: 4px; width: 3px;
+  background: linear-gradient(to bottom, #e0c766, rgba(224, 199, 102, .15));
+}
+.mm-comm-speaker { color: #e0c766; font-size: 11px; letter-spacing: 2.4px; }
+.mm-sh-briefing .mm-comm-msg {
+  color: #f6f4e8;
+  font-family: var(--font-tech), sans-serif;
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .3px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .95), 0 0 16px rgba(0, 0, 0, .8);
+}
+.mm-briefing-cursor { color: #e0c766; }
+.mm-comm-reply { padding: 0 0 0 18px; gap: 10px; border: 0; background: none; font-size: 15px; }
+.mm-comm-speaker.squad { color: #86c88b; font-size: 11px; }
+.mm-comm-reply-text { color: #d6ecd2; font-size: 16px; font-weight: 600; }
+.mm-comm-status { color: #c9b45c; font-size: 11px; letter-spacing: 2px; padding-left: 18px; }
+.mm-typing-dots { color: #e0c766; }
+.mm-comm-status[data-state="link"] { color: #e0c766; }
+.mm-comm-status[data-state="done"] { color: #86c88b; }
+/* điện khẩn: chữ đỏ nháy theo nhịp còi ưu tiên */
+.mm-comm-status[data-state="flash"], .mm-comm-status[data-state="flash"] .mm-typing-dots { color: #ff6a55; }
+.mm-comm-status[data-state="flash"] { animation: mm-flash-blink 0.19s steps(1) infinite; }
+@keyframes mm-flash-blink { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .mm-comm-status[data-state="flash"] { animation: none; } }
+/* không còn viền để nháy -> khi bắt sóng thì cả khối chập chờn */
+@keyframes mm-link-flicker { 50% { opacity: .72; } }
 @media (max-width: 600px) {
-  .mm-sh-briefing { top: 108px; left: 18px; width: calc(100vw - 36px); }
-  .mm-order-meta { grid-template-columns: 1.1fr 1fr .7fr; }
+  .mm-sh-briefing { top: 108px; left: 20px; width: calc(100vw - 40px); }
+  .mm-briefing-title { font-size: 22px; }
+  .mm-sh-briefing .mm-comm-msg { font-size: 17px; }
 }
 
 /* ==========================================================================

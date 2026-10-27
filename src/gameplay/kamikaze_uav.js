@@ -104,6 +104,16 @@ const KamiUAV = (() => {
     if (!MATS[team] && typeof VehicleKit !== 'undefined') {
       const M = VehicleKit.createMaterials(team, { battle: 0.6 });
       M.soot = M.soot || M.dark;
+      // chụp mũi nhựa trong (polycarbonate) che camera cầu: nhân bản kính quang học (r128: trong suốt không đổi chương
+      // trình shader -> không biên dịch thêm giữa trận), sáng màu hơn, bóng loáng
+      const dome = M.glass.clone();
+      dome.color.setHex(0xa8bcc6);
+      dome.emissiveIntensity = 0.05;
+      dome.roughness = 0.04;
+      dome.transparent = true;
+      dome.opacity = 0.3;
+      dome.depthWrite = false;
+      M.dome = dome;
       MATS[team] = M;
     }
     return MATS[team];
@@ -114,53 +124,120 @@ const KamiUAV = (() => {
     g.rotation.order = 'YXZ';
     if (!M) return g;
     const PB = VehicleKit.PartBatch, P = M.paint, D = M.dark;
-    // thân thon dài kiểu đạn bay lảng vảng (Switchblade 600 / Hero-120): trụ mảnh, mũi tròn có tháp camera, đuôi thu nhỏ
-    // về loa phụt. Trục cyl 'z': rTop ở phía sau (+z), rBottom phía mũi (-z)
+    // thân thon dài kiểu đạn bay lảng vảng (Switchblade 600 / Hero-120): vỏ tròn xoay liền một khối — đuôi vuốt nhỏ về loa
+    // phụt, thân trụ, vai mũi thu dần về vòng kẹp; đầu mũi là CHỤP NHỰA TRONG thuôn khí động học, bên trong là camera cầu
+    // 360° (xoay theo góc camera). Mặt cắt lathe [[r, y]]: y = -z (y dương = phía mũi)
     const b = new PB(0);
-    b.cyl(0.34, 0.34, 4.6, 16, P, [0, 0, 0.1], 'z');                  // thân
-    b.cyl(0.34, 0.24, 0.7, 16, P, [0, 0, -2.5], 'z');                 // mũi thuôn
-    b.add(new THREE.SphereGeometry(0.24, 14, 10), P, [0, 0, -2.85]);   // chóp mũi tròn
-    b.add(new THREE.SphereGeometry(0.15, 12, 8), M.glass, [0, -0.04, -3.02]);   // ô kính camera / đầu dò
-    b.cyl(0.36, 0.36, 0.06, 16, D, [0, 0, -1.9], 'z');                // mối ghép khoang đầu nổ lõm
-    b.cyl(0.36, 0.36, 0.22, 16, M.canvas || P, [0, 0, -1.6], 'z');    // vạch vàng bạc màu (đầu nổ)
-    b.cyl(0.36, 0.36, 0.06, 16, D, [0, 0, 1.2], 'z');                 // mối ghép khoang động cơ
-    b.box(0.04, 0.04, 3.8, D, [0.24, 0.24, 0.1]);                      // đường ghép vỏ
-    b.box(0.08, 0.16, 0.7, D, [0, -0.36, 0.3]);                        // ăng-ten liên lạc bụng
-    b.box(0.03, 0.4, 0.03, D, [0, -0.6, 0.55]);
-    for (const z of [-0.9, 1.9]) b.box(0.3, 0.1, 0.34, D, [0, z < 0 ? 0.36 : -0.36, z]);   // khớp bản lề cánh
-    b.cyl(0.3, 0.34, 0.5, 16, P, [0, 0, 2.65], 'z');                  // đuôi thu nhỏ
-    b.cyl(0.26, 0.2, 0.32, 14, M.soot || D, [0, 0, 3.05], 'z', null, true);   // loa phụt ám muội
-    b.box(0.05, 0.42, 0.42, P, [0, -0.5, 2.55], [0.3, 0, 0]);          // vây bụng cố định
+    b.lathe([[0, -2.92], [0.22, -2.92], [0.27, -2.75], [0.31, -2.5], [0.335, -2.2], [0.34, -1.9], [0.34, 1.75], [0.335, 2.05],
+      [0.32, 2.25], [0.305, 2.42], [0.295, 2.5], [0, 2.5]], 20, P, [0, 0, 0], 'z', 0.34);
+    // chụp mũi: nối liền đường cong vai thân, thuôn tròn về chóp (nhựa trong — nhìn xuyên thấy camera)
+    b.lathe([[0.29, 2.54], [0.285, 2.64], [0.27, 2.75], [0.245, 2.86], [0.21, 2.96], [0.16, 3.04], [0.1, 3.1], [0.045, 3.13],
+      [0, 3.14]], 24, M.dome, [0, 0, 0], 'z', 0.29);
+    b.cyl(0.3, 0.3, 0.05, 20, D, [0, 0, -2.53], 'z');   // vòng kẹp chụp mũi (bắt vít)
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI * 2 + 0.2;
+      b.cyl(0.012, 0.012, 0.02, 6, M.steel || D, [Math.sin(a) * 0.3, Math.cos(a) * 0.3, -2.53], 'y', [0, 0, -a]);
+    }
+    // khe lưng chứa đuôi đứng lúc gập
+    b.beam([0, 0.338, 1.93], [0, 0.302, 2.64], 0.05, 0.02, D);
+    // loa phụt hình chuông: vỏ thép ám nhiệt ngoài, lòng ám muội đen (nhìn từ sau thấy họng)
+    b.lathe([[0.17, -2.88], [0.19, -3.02], [0.23, -3.16], [0.26, -3.24]], 16, M.steel || D, [0, 0, 0], 'z', 0.2);
+    b.lathe([[0.25, -3.24], [0.21, -3.14], [0.17, -3.0], [0.13, -2.9], [0, -2.9]], 16, M.soot || D, [0, 0, 0], 'z', 0.2);
+    // mối ghép khoang: đầu nổ lõm (sau vai mũi) · điện tử / pin · động cơ; dải vàng bạc màu đánh dấu khoang đầu nổ
+    for (const z of [-1.95, -0.25, 1.35]) b.cyl(0.346, 0.346, 0.035, 20, D, [0, 0, z], 'z');
+    b.cyl(0.343, 0.343, 0.16, 20, M.canvas || P, [0, 0, -1.72], 'z');
+    // trong chụp: vách ngăn tối (nền cho camera nổi lên), đế gimbal và càng chữ U đỡ trục ngóc / chúc của quả cầu
+    b.cyl(0.285, 0.285, 0.02, 20, D, [0, 0, -2.53], 'z');
+    b.cyl(0.13, 0.16, 0.08, 16, M.steel || D, [0, 0, -2.58], 'z');
+    for (const sx of [-1, 1]) {
+      b.box(0.035, 0.07, 0.24, D, [sx * 0.19, 0, -2.68]);
+      b.cyl(0.03, 0.03, 0.03, 10, M.steel || D, [sx * 0.175, 0, -2.78], 'x');
+    }
+    // nắp thăm khoang pin có 4 vít, cửa nạp chương trình, ăng-ten lá liên lạc lưng (xuôi về sau), ăng-ten GPS dạng đĩa
+    b.box(0.42, 0.025, 0.8, D, [0, 0.335, -0.6]);
+    for (const dx of [-0.16, 0.16]) for (const dz of [-0.92, -0.28]) b.cyl(0.022, 0.022, 0.03, 6, M.steel || D, [dx, 0.352, dz]);
+    b.box(0.16, 0.025, 0.16, D, [0.24, 0.245, 0.9], [0, 0, -0.78]);
+    b.box(0.03, 0.3, 0.2, D, [0, 0.46, 0.75], [-0.5, 0, 0]);
+    b.cyl(0.09, 0.1, 0.03, 12, D, [0, 0.345, 0.2]);
+    // ray bản lề cánh (trên lưng: cặp trước, dưới bụng: cặp sau) + khối khớp quay
+    for (const z of [-0.9, 1.9]) {
+      const up = z < 0 ? 1 : -1;
+      b.box(0.34, 0.08, 0.4, D, [0, up * 0.36, z]);
+      b.cyl(0.05, 0.05, 0.16, 8, M.steel || D, [0, up * 0.43, z]);
+    }
+    // vây bụng cố định (hình thang xuôi), ống pitot dưới vai mũi
+    {
+      const sh = new THREE.Shape();
+      sh.moveTo(0, 0); sh.lineTo(0.62, 0); sh.lineTo(0.52, -0.36); sh.lineTo(0.3, -0.36); sh.closePath();
+      const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 1 });
+      geo.rotateY(-Math.PI / 2);   // hình (x, y) -> (z, y), độ dày theo x
+      b.add(geo, P, [0.015, -0.3, 2.15]);
+    }
+    b.cyl(0.018, 0.018, 0.34, 6, M.steel || D, [0.12, -0.2, -2.35], 'z');
     b.build(g);
-    // cánh: nhóm xoay quanh bản lề gốc; fold = góc xoay Y lúc gập dọc thân. Cánh mỏng, vuốt nhọn dần, hơi xuôi về sau
+    // CAMERA CẦU 360° trong chụp mũi: xoay ngang / ngóc chúc theo góc camera người lái đang nhìn (D.gy / D.gp; máy khác thấy
+    // quét chậm). Cửa sổ: ống kính ngày to, kính nhiệt vuông, mắt đo xa laser nhỏ
+    const BR = 0.16, ball = new THREE.Group();
+    ball.position.set(0, 0, -2.78);
+    ball.rotation.order = 'YXZ';
+    const cb = new PB(0);
+    cb.add(new THREE.SphereGeometry(BR, 28, 18), M.steel || D, [0, 0, 0]);
+    cb.cyl(BR + 0.006, BR + 0.006, 0.035, 28, D, [0, 0, 0], 'x');   // đường ghép hai nửa vỏ cầu
+    // cửa sổ trên mặt cầu tại (x, y) phía trước (-z), quay theo pháp tuyến: vành thép + kính lõm vào trong vành
+    const win = (r, x, y, mat, sq) => {
+      const at = new THREE.Vector3(x, y, -Math.sqrt(Math.max(0, BR * BR - x * x - y * y)));
+      const rot = [Math.asin(y / BR), -Math.asin(x / BR), 0];
+      const disk = (rr, d) => sq ? new THREE.BoxGeometry(rr * 2, rr * 2, d) : new THREE.CylinderGeometry(rr, rr, d, 18).rotateX(Math.PI / 2);
+      cb.add(disk(r * 1.3, 0.04), D, at.toArray(), rot);
+      cb.add(disk(r, 0.02), mat, at.clone().multiplyScalar(1.06).toArray(), rot);
+    };
+    win(0.058, -0.048, 0.02, M.glass);                          // camera ngày (ống kính zoom)
+    win(0.03, 0.066, 0.036, M.thermalWin || M.glass, true);   // camera nhiệt (cửa germani)
+    win(0.018, 0.045, -0.06, M.optic || M.glass);              // đo xa / chỉ thị laser
+    cb.build(ball);
+    g.add(ball);
+    // cánh: nhóm xoay quanh bản lề gốc; fold = góc xoay Y lúc gập dọc thân. Cánh có độ dày, vát mép, mép trước xuôi về sau,
+    // mút cánh vát chéo; gân gia cường dọc giữa cánh
     const wings = [];
     const wing = (z, y, len, root, tip, s, fold) => {
       const w = new THREE.Group();
       w.position.set(0, y, z);
-      // tấm cánh hình thang liền (đùn mỏng): gốc rộng, mút hẹp, mút xuôi về sau; mặt phẳng XZ của nhóm cánh
-      const sw = len * 0.14, sh = new THREE.Shape();
-      sh.moveTo(0, root / 2); sh.lineTo(s * len, sw + tip / 2); sh.lineTo(s * len, sw - tip / 2); sh.lineTo(0, -root / 2); sh.closePath();
-      const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: false });
-      geo.rotateX(Math.PI / 2);   // (x, y) hình -> (x, z): y dương = phía đuôi (mút xuôi về sau)
-      geo.translate(0, 0.025, 0);
+      // hình chiếu bằng (x, y hình -> x, z nhóm; y dương = phía đuôi): mép trước xuôi, mút vát chéo
+      const sw = len * 0.16, sh = new THREE.Shape();
+      sh.moveTo(0, -root / 2);
+      sh.lineTo(s * len * 0.96, sw - tip / 2);
+      sh.lineTo(s * len, sw - tip / 2 + 0.05);
+      sh.lineTo(s * len, sw + tip / 2);
+      sh.lineTo(0, root / 2);
+      sh.closePath();
+      const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.035, bevelEnabled: true, bevelThickness: 0.014, bevelSize: 0.022, bevelSegments: 2 });
+      geo.rotateX(Math.PI / 2);   // (x, y) hình -> (x, z), độ dày theo -y
+      geo.translate(0, 0.0175, 0);
       const wb = new PB(0);
       wb.add(geo, P, [0, 0, 0]);
-      wb.box(0.06, 0.06, tip, D, [s * (len - 0.03), 0, sw]);   // bịt mút cánh
+      wb.box(len * 0.82, 0.018, 0.035, D, [s * len * 0.45, 0.032, sw * 0.4]);   // gân gia cường
       wb.build(w);
       g.add(w);
       wings.push({ w, fold, s, front: z < 0 });
     };
     // cánh trước gập về sau (xoay -s·90°), cánh sau gập về trước (+s·90°); trái / phải lệch cao một chút để gập chồng nhau
     for (const s of [-1, 1]) {
-      wing(-0.9, 0.4 + (s > 0 ? 0.05 : 0), 2.8, 0.42, 0.22, s, -s * Math.PI / 2 * 0.97);
-      wing(1.9, -0.4 - (s > 0 ? 0.05 : 0), 2.1, 0.38, 0.2, s, s * Math.PI / 2 * 0.97);
+      wing(-0.9, 0.44 + (s > 0 ? 0.06 : 0), 2.8, 0.44, 0.22, s, -s * Math.PI / 2 * 0.97);
+      wing(1.9, -0.44 - (s > 0 ? 0.06 : 0), 2.1, 0.4, 0.2, s, s * Math.PI / 2 * 0.97);
     }
-    // đuôi đứng: gập nằm ngang sát thân, dựng lên khi bung (hình thang xuôi về sau)
+    // đuôi đứng kiểu thu vào khe lưng (như Tomahawk): bản lề ngang ở gốc mép trước; lúc gập xoay ngửa ra sau, nằm gọn TRONG
+    // thân (chỉ thấy khe), khi bung bật dựng lên — tấm hình thang xuôi về sau, vát mép
     const fin = new THREE.Group();
-    fin.position.set(0, 0.32, 2.35);
+    fin.position.set(0, 0.31, 1.95);
     const fb = new PB(0);
-    fb.box(0.04, 0.4, 0.55, P, [0, 0.2, 0.05]);
-    fb.box(0.04, 0.4, 0.36, P, [0, 0.58, 0.2]);
+    {
+      const sh = new THREE.Shape();
+      sh.moveTo(0, 0); sh.lineTo(0.42, 0); sh.lineTo(0.56, 0.66); sh.lineTo(0.34, 0.66); sh.closePath();
+      const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.015, bevelSegments: 1 });
+      geo.rotateY(-Math.PI / 2);   // hình (x, y) -> (z, y): x dương = phía đuôi
+      fb.add(geo, P, [0.015, 0, 0]);
+      fb.cyl(0.035, 0.035, 0.1, 8, M.steel || D, [0, 0, 0.02], 'x');   // trục bản lề
+    }
     fb.build(fin);
     g.add(fin);
     // lửa phụt đuôi: hình nón cộng sáng, giãn / chập chờn theo lực đẩy (ẩn khi động cơ chưa cháy / đã tắt)
@@ -174,13 +251,13 @@ const KamiUAV = (() => {
       fl.add(m);
       return m;
     };
-    fm(0.22, 2.2, 0xff7a20, 0.7);
-    fm(0.12, 1.2, 0xfff0b0, 0.9);
+    fm(0.2, 2.0, 0xff6a18, 0.55);
+    fm(0.1, 0.9, 0xffc870, 0.75);
     fl.visible = false;
     g.add(fl);
-    g.userData.kami = { wings, fin, flame: fl, thr: 0, trailT: 0 };
+    g.userData.kami = { wings, fin, flame: fl, ball, thr: 0, trailT: 0 };
     g.scale.setScalar(1.3);
-    animate(g, 0, 0, 0);   // dựng ra ở tư thế gập (trong ống)
+    animate(g, 0, 0, 0, 0, 0);   // dựng ra ở tư thế gập (trong ống), camera cầu nhìn thẳng mũi
     return g;
   }
   // open 0..1: cánh / đuôi bung (bật nhanh, hơi vượt rồi khóa chốt); thr 0..1: lực đẩy động cơ tên lửa (lửa đuôi)
@@ -197,12 +274,15 @@ const KamiUAV = (() => {
     return c;
   }
   const easeOutBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
-  function animate(g, dt, open, thr) {
+  // gy / gp: góc camera cầu mũi (xoay phải / ngóc lên, rad) — không truyền thì quả cầu quét chậm qua lại
+  function animate(g, dt, open, thr, gy, gp) {
     const K = g && g.userData.kami;
     if (!K) return;
+    if (gy === undefined) { const t = performance.now() / 1000; gy = Math.sin(t * 0.5) * 0.9; gp = -0.25 + Math.sin(t * 0.31) * 0.2; }
+    K.ball.rotation.set(gp || 0, -(gy || 0), 0);
     const e = open >= 1 ? 1 : open <= 0 ? 0 : easeOutBack(open);
     for (const W of K.wings) W.w.rotation.y = W.fold * (1 - e);
-    K.fin.rotation.z = Math.PI / 2 * (1 - e);
+    K.fin.rotation.x = Math.PI / 2 * (1 - e);   // gập: ngửa ra sau, chìm vào khe lưng
     K.thr = thr;
     K.flame.visible = thr > 0.02;
     if (K.flame.visible) {
@@ -985,7 +1065,7 @@ const KamiUAV = (() => {
         M.visible = true;
         M.position.set(D.x, D.y, D.z);
         M.rotation.set(pitchOf(), D.yaw, D.roll || 0);
-        animate(M, dt, open, D.thr || 0);
+        animate(M, dt, open, D.thr || 0, D.gy || 0, D.gp || 0);
       };
       const trail = () => {
         if (!(D.thr > 0.02)) return;

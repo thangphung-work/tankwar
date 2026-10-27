@@ -179,6 +179,20 @@
 
     setMusicMode(mode) {
       this._musicWant = mode;
+      // màn chào GM GAMING còn hiện (có tiếng riêng): nhạc chờ màn chào bắt đầu mờ mới vào, không chồng lên nhau
+      const sp = typeof window !== 'undefined' && window.GMSplash;
+      if (sp && !sp.gone && mode !== 'off') {
+        if (!this._musicSplashWait) {
+          this._musicSplashWait = true;
+          sp.onGone(() => {
+            this._musicSplashWait = false;
+            // trình duyệt cho tự phát tiếng (màn chào đã kêu mà chưa cần bấm): bật âm thanh game ngay, không chờ cú bấm
+            if (!this.ctx && sp.audioOk) { try { this.init(); this.resume(); } catch (e) { /* chờ cú bấm */ } }
+            if (this._musicWant) this.setMusicMode(this._musicWant);
+          });
+        }
+        return;
+      }
       const M = this.ensureMusic();
       if (!M || M.mode === mode) return;
       const prev = M.mode;

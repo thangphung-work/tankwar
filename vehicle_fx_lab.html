@@ -1359,7 +1359,7 @@
   // Khởi tạo xe ban đầu
   loadUnit(state.tankType, state.team);
   // móc cho script chụp ảnh tự động (CDP): đổi xe, đặt camera
-  window.__lab = { loadUnit, orbit, updateCamera, state, get unit() { return activeUnit; } };
+  window.__lab = { loadUnit, orbit, updateCamera, state, fx, renderer, camera, scene, setDamagePercent, get unit() { return activeUnit; } };
 
   // ===========================================================================
   // VÒNG LẶP CHÍNH MÔ PHỎNG CHIẾN XA VÀ HIỆU ỨNG HẠT

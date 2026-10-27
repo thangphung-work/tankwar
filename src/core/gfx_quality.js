@@ -28,11 +28,16 @@ const GfxQuality = (() => {
   let refreshMs = 1000 / 60;
 
   // ---------------------------------------------------------------- nhận diện card
+  // nhớ theo context: getParameter là lệnh đồng bộ với GPU — hỏi lúc GPU đang biên dịch shader phải chờ hàng giây
+  const gpuNames = new WeakMap();
   function gpuName(r) {
     try {
       const g = r.getContext();
+      if (gpuNames.has(g)) return gpuNames.get(g);
       const e = g.getExtension('WEBGL_debug_renderer_info');
-      return String(e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER) || '');
+      const n = String(e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER) || '');
+      gpuNames.set(g, n);
+      return n;
     } catch (err) { return ''; }
   }
   /** Mức chất lượng đề xuất theo tên card: 'ultra' | 'high' | 'medium' | 'low' */

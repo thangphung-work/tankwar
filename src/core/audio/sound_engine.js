@@ -120,6 +120,29 @@ function segBox(a, b, hx, hy, hz) {
 // nhánh có đường tới loa nên nhánh đó không tốn công tính
 const VOICE_SOFT = 24, VOICE_MIN = 0.004, VOICE_MAXTHR = 0.15;
 
+// HỒ SƠ TIẾNG VANG theo môi trường bản đồ (buildOutdoorImpulse). default = hồ sơ cũ (giữ nguyên số liệu)
+const REVERB_ENV = {
+  // ngoài trời chung: đuôi vang vừa, vài tiếng dội từ gò đồi / công trình
+  default: { onset: 0.025, decay: 0.62, lp0: 0.55, lpTau: 0.9, amp: 0.55, tapLen: 220, tapTau: 40,
+    taps: [[0.011, 0.5], [0.043, 0.32], [0.088, 0.24], [0.17, 0.2], [0.31, 0.16], [0.52, 0.12]] },
+  // phố: tường nhà hai bên dội qua lại dày đặc (vang "lốp bốp" sau tiếng nổ), đuôi dài hơn, sáng hơn (mặt bê tông / kính)
+  urban: { onset: 0.012, decay: 0.75, lp0: 0.7, lpTau: 1.2, amp: 0.55, tapLen: 260, tapTau: 34,
+    taps: [[0.011, 0.5], [0.028, 0.34], [0.047, 0.3], [0.071, 0.27], [0.098, 0.24], [0.13, 0.21], [0.17, 0.2], [0.22, 0.17], [0.29, 0.14], [0.38, 0.12], [0.6, 0.1]] },
+  // cao nguyên / thung lũng: tiếng vọng rời rạc từ sườn núi xa, trễ dần và trầm (đường xa hút âm cao)
+  valley: { onset: 0.03, decay: 0.7, lp0: 0.45, lpTau: 0.8, amp: 0.5, tapLen: 700, tapTau: 140,
+    taps: [[0.011, 0.45], [0.06, 0.22], [0.42, 0.3], [0.86, 0.22], [1.4, 0.14], [2.1, 0.08]] },
+  // sa mạc: đất trống, gần như không có gì dội lại -> khô, đuôi ngắn
+  desert: { onset: 0.03, decay: 0.32, lp0: 0.45, lpTau: 0.7, amp: 0.45, tapLen: 220, tapTau: 40,
+    taps: [[0.011, 0.5], [0.07, 0.12], [0.24, 0.07]] },
+  // rừng: thân cây, tán lá hấp thụ & khuếch tán -> đuôi ngắn, tối (mất âm cao), nhiều dội nhỏ dày
+  forest: { onset: 0.02, decay: 0.45, lp0: 0.3, lpTau: 0.5, amp: 0.55, tapLen: 300, tapTau: 70,
+    taps: [[0.011, 0.4], [0.026, 0.2], [0.041, 0.18], [0.063, 0.15], [0.09, 0.12], [0.13, 0.09]] },
+  // sông hồ: mặt nước phẳng dội âm rõ, sáng, đuôi vừa
+  water: { onset: 0.02, decay: 0.75, lp0: 0.62, lpTau: 1.0, amp: 0.55, tapLen: 220, tapTau: 40,
+    taps: [[0.011, 0.55], [0.05, 0.35], [0.12, 0.25], [0.3, 0.18], [0.6, 0.12]] }
+};
+const REVERB_MAP = { URBAN: 'urban', HIGHLAND: 'valley', DESERT: 'desert', JUNGLE: 'forest', RIVER_LAKE: 'water' };
+
 class SoundEngine {
   constructor() {
     this.ctx = null;
@@ -212,13 +235,12 @@ class SoundEngine {
     if (typeof window !== 'undefined' && window.requestIdleCallback) window.requestIdleCallback(prepFire, { timeout: 4000 });
     else if (typeof setTimeout !== 'undefined') setTimeout(prepFire, 1500);
 
-    // Hồi âm chiến trường ngoài trời
-    this.reverb = ctx.createConvolver();
-    this.reverb.buffer = this.buildOutdoorImpulse(3.0);
-    const reverbReturn = ctx.createGain();
+    // Hồi âm chiến trường ngoài trời (bộ vang theo môi trường bản đồ: setEnvironment)
+    const reverbReturn = this.reverbReturn = ctx.createGain();
     reverbReturn.gain.setValueAtTime(0.6, t);
-    this.reverb.connect(reverbReturn);
     reverbReturn.connect(this.masterGain);
+    this._envKey = null;
+    this.setEnvironment(this._envWanted || '');
 
     this.weaponBus = ctx.createGain();
     // Cắt siêu trầm dưới ~32 Hz (loa / tai nghe không phát được, chỉ ăn hết headroom và gây ù),
@@ -413,7 +435,9 @@ class SoundEngine {
   }
 
   // Impulse response ngoài trời: phản xạ sớm (mặt đất, địa hình gần) + đuôi vang mất dần âm cao
-  buildOutdoorImpulse(seconds) {
+  // P (hồ sơ môi trường, xem REVERB_ENV): onset / decay đuôi vang khuếch tán (s), lp0 / lpTau độ sáng đuôi (đuôi càng
+  // lâu càng trầm), amp, taps phản xạ sớm [thời điểm s, biên độ], tapLen / tapTau độ dài & độ nhoè mỗi tiếng dội (mẫu)
+  buildOutdoorImpulse(seconds, P = REVERB_ENV.default) {
     const ctx = this.ctx;
     const sr = ctx.sampleRate;
     const len = Math.floor(sr * seconds);
@@ -423,24 +447,42 @@ class SoundEngine {
       let lp = 0;
       for (let i = 0; i < len; i++) {
         const tt = i / sr;
-        // Đuôi vang khuếch tán: bắt đầu sau ~25ms, tắt dần
-        const env = tt < 0.025 ? 0 : Math.exp(-(tt - 0.025) / 0.62) * Math.min(1, (tt - 0.025) / 0.04);
+        // Đuôi vang khuếch tán: bắt đầu sau P.onset, tắt dần
+        const env = tt < P.onset ? 0 : Math.exp(-(tt - P.onset) / P.decay) * Math.min(1, (tt - P.onset) / 0.04);
         const w = Math.random() * 2 - 1;
         // Lọc thông thấp tăng dần theo thời gian: đuôi vang càng lâu càng trầm
-        const k = Math.max(0.02, 0.55 * Math.exp(-tt / 0.9));
+        const k = Math.max(0.02, P.lp0 * Math.exp(-tt / P.lpTau));
         lp += (w - lp) * k;
-        d[i] = lp * env * 0.55;
+        d[i] = lp * env * P.amp;
       }
-      // Phản xạ sớm: mặt đất (rất sớm), gò đồi, công trình, rìa thung lũng
-      const taps = [[0.011, 0.5], [0.043, 0.32], [0.088, 0.24], [0.17, 0.2], [0.31, 0.16], [0.52, 0.12]];
-      for (const [time, amp] of taps) {
+      // Phản xạ sớm: mặt đất (rất sớm), gò đồi, công trình, rìa thung lũng (theo hồ sơ môi trường)
+      for (const [time, amp] of P.taps) {
         const at = Math.floor((time + (ch ? 0.0037 : 0) + Math.random() * 0.004) * sr);
-        for (let k = 0; k < 220 && at + k < len; k++) {
-          d[at + k] += amp * Math.exp(-k / 40) * (Math.random() * 2 - 1);
+        for (let k = 0; k < P.tapLen && at + k < len; k++) {
+          d[at + k] += amp * Math.exp(-k / P.tapTau) * (Math.random() * 2 - 1);
         }
       }
     }
     return ir;
+  }
+
+  // TIẾNG VANG THEO MÔI TRƯỜNG (gọi khi đổi bản đồ): mỗi hồ sơ một ConvolverNode riêng (tạo khi cần, giữ lại). Âm mới gửi
+  // vào bộ vang của môi trường hiện tại; đuôi vang của âm cũ tự tắt trên bộ cũ -> đổi không giật
+  setEnvironment(mapType) {
+    const key = REVERB_MAP[String(mapType || '').toUpperCase()] || 'default';
+    this._envWanted = mapType;   // tên bản đồ (âm thanh khởi tạo sau khi vào bản đồ: áp lúc khởi tạo)
+    if (!this.ctx || !this.reverbReturn) return;
+    if (this._envKey === key && this.reverb) return;
+    const R = this._reverbs || (this._reverbs = {});
+    let cv = R[key];
+    if (!cv) {
+      cv = this.ctx.createConvolver();
+      cv.buffer = this.buildOutdoorImpulse(3.0, REVERB_ENV[key] || REVERB_ENV.default);
+      cv.connect(this.reverbReturn);
+      R[key] = cv;
+    }
+    this._envKey = key;
+    this.reverb = cv;
   }
 
   getShaper(drive) {

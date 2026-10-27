@@ -64,6 +64,38 @@
     unit.group.add(chassis);
 
     buildHull(chassis, M, unit, rnd, wear);
+    // Same hull profile and coordinate frame as buildHull; used by ejected reload parts.
+    const deckInv = new THREE.Matrix4(), deckRay = new THREE.Ray(), deckPoint = new THREE.Vector3();
+    const deckFaces = [
+      [-DECK_EDGE, DECK_EDGE, -31, 9.4, -21, DECK_Y],
+      [-DECK_EDGE, DECK_EDGE, -21, DECK_Y, 20.5, DECK_Y],
+      [-DECK_EDGE, DECK_EDGE, 20.5, DECK_Y, 28.4, 12.4],
+      [-DECK_EDGE, DECK_EDGE, 28.4, 12.4, 29.4, 11.4],
+      // The stub is wider than the gaps between louvers: support it on their upper envelope.
+      // Includes the raised perimeter frame, not the recessed engine deck beneath it.
+      [-12.85, -0.95, 17.85, DECK_Y + 0.42, 28.15, DECK_Y + 0.42],
+      [0.95, 12.85, 17.85, DECK_Y + 0.42, 28.15, DECK_Y + 0.42]
+    ];
+    unit.reloadSupportY = (x, z) => {
+      chassis.updateWorldMatrix(true, false);
+      deckInv.copy(chassis.matrixWorld).invert();
+      deckRay.origin.set(x, (unit.y || 0) + 200, z);
+      deckRay.direction.set(0, -1, 0);
+      deckRay.applyMatrix4(deckInv);
+      const o = deckRay.origin, d = deckRay.direction;
+      let best = null;
+      for (const [xmin, xmax, za, ya, zb, yb] of deckFaces) {
+        const a = (yb - ya) / (zb - za), b = ya - a * za;
+        const den = d.y - a * d.z;
+        if (Math.abs(den) < 1e-8) continue;
+        const t = (a * o.z + b - o.y) / den;
+        const px = o.x + d.x * t, pz = o.z + d.z * t;
+        if (t < 0 || px < xmin || px > xmax || pz < za || pz > zb) continue;
+        const p = deckRay.at(t, deckPoint).applyMatrix4(chassis.matrixWorld);
+        if (best === null || p.y > best) best = p.y;
+      }
+      return best;
+    };
     const running = buildRunningGear(chassis, M);
     unit.trackSystem = running.tracks;
     const turretParts = buildTurret(chassis, M, unit, rnd, wear);
@@ -141,7 +173,8 @@
     mat.userData.own = true;
     const m = new THREE.Mesh(STUB_GEO, mat);
     m.castShadow = true;
-    m.userData.half = 0.4;
+    // Rotating cylinder's bounding radius; 0.4 let its rim sink into the slats.
+    m.userData.half = 0.65;
     flap.updateWorldMatrix(true, false);
     const pos = new THREE.Vector3(0, 0.5, 0).applyMatrix4(flap.parent.matrixWorld);
     // tung lên rồi ra sau tháp (trục +Z của tháp trong thế giới), rơi xuống sàn động cơ / đất
@@ -150,7 +183,7 @@
     const back = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
     const sp = 12 + Math.random() * 7;
     const vel = { x: back.x * sp + (Math.random() - 0.5) * 5, y: 24 + Math.random() * 7, z: back.z * sp + (Math.random() - 0.5) * 5 };
-    ReloadFX.toss(u.scene, m, pos, vel, { x: 9 + Math.random() * 8, y: Math.random() * 4, z: (Math.random() - 0.5) * 10 }, 9);
+    ReloadFX.toss(u.scene, m, pos, vel, { x: 9 + Math.random() * 8, y: Math.random() * 4, z: (Math.random() - 0.5) * 10 }, 9, u);
     ReloadFX.puff(u, pos, { x: back.x * 0.4, y: 1, z: back.z * 0.4 }, 3);
   }
 

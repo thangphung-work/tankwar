@@ -254,6 +254,10 @@ class HUDController {
       this.addCombatLog('[[alert-triangle]] Đã hết đạn cháy! Súng chuyển về đạn thường' + this.stockNote('INCENDIARY'), 'alert');
       return;
     }
+    if (ammoType === 'GATLING_HE' && (this.game.player.heFragAmmoCount || 0) <= 0) {
+      this.addCombatLog('[[alert-triangle]] Không còn đạn nổ mảnh ngòi cận đích — đạn mua thêm' + this.stockNote('GATLING_HE'), 'alert');
+      return;
+    }
     if (ammoType === 'ANTI_TANK_MISSILE' && (this.game.player.missileAmmoCount || 0) <= 0) {
       this.addCombatLog('[[alert-triangle]] Đã hết tên lửa! Nhặt hòm tiếp tế trên map' + this.stockNote('ANTI_TANK_MISSILE'), 'alert');
       return;
@@ -277,9 +281,11 @@ class HUDController {
     } else if (ammoType === 'INCENDIARY') {
       name = 'ĐẠN CHÁY (ST 0.16 · THIÊU ĐỐT, CHÁY THỦNG BÌNH XĂNG XE NHẸ)';
     } else if (ammoType === 'ANTI_TANK_MISSILE') {
-      name = 'TÊN LỬA DẪN HƯỚNG (KHÓA XE ĐỊCH / DRONE ĐANG NHÌN THẤY RỒI BẤM SPACE · GIỮ TIA DẪN TỚI KHI TRÚNG)';
+      name = 'TÊN LỬA TỰ BÁM (KHÓA XE ĐỊCH / DRONE RỒI BẤM SPACE · ĐẠN TỰ ĐUỔI MỤC TIÊU)';
     } else if (ammoType === 'GATLING_BULLET') {
-      name = 'ĐẠN 30MM NỔ-CHÁY 6 NÒNG (TẦM ~1000M · XÉ GIÁP NHẸ, YẾU VỚI XE TĂNG)';
+      name = 'ĐẠN 30MM LÕI HỢP KIM (TẦM ~1000M · SẤY DỒN ĐỤC THỦNG MŨI TĂNG)';
+    } else if (ammoType === 'GATLING_HE') {
+      name = 'ĐẠN 30MM NỔ TẠO MẢNH (NGÒI CẬN ĐÍCH · QUÉT SẠCH DRONE BẦU TRỜI)';
     } else if (ammoType === 'SCOUT_BULLET') {
       name = 'ĐẠN XUYÊN GIÁP 12.7MM (TẦM ~700M · THỦNG LỐP, PHÁ PHỤ KIỆN NGOÀI, XUYÊN GIÁP NHẸ)';
     }
@@ -310,6 +316,7 @@ class HUDController {
         case 'INCENDIARY': return { name: 'ĐẠN CHÁY', qty: p.incendiaryAmmoCount || 0, color: '#ff6a2b' };
         case 'ANTI_TANK_MISSILE': return { name: 'TÊN LỬA', qty: p.missileAmmoCount || 0, color: '#ff8c42' };
         case 'GATLING_BULLET': return { name: '30MM', qty: belt(), color: '#ffd166' };
+        case 'GATLING_HE': return { name: 'NỔ MẢNH', qty: p.heFragAmmoCount || 0, color: '#ff9800' };
         case 'SCOUT_BULLET': return p.mainGun && p.mainGun.kind === 'agl' ? { name: 'LỰU 40MM', qty: belt(), color: '#e8b36a' }
           : p.mainGun && p.mainGun.kind === 'rocket' ? { name: 'ROCKET', qty: belt(), color: '#ff8c42' } : { name: '12.7MM', qty: belt(), color: '#ffd166' };
         default: return { name: 'THƯỜNG', qty: base, color: '#e4edf2' };

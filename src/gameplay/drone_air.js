@@ -18,8 +18,9 @@ const DroneAir = (() => {
     NEAR_R: 42,          // đạn bay qua trong bán kính này: tiếng rít qua micro drone
     CENTER_Y: 1.5,       // tâm thân drone trên gốc mô hình (đáy chân đáp) — recon_drone.js CENTER_Y
     // phần "thân drone" mất mỗi phát trúng (1 = rơi): drone nhựa / sợi carbon rất mỏng manh —
-    // 30mm 2 phát, 12.7mm 3 phát, đạn cháy 2 phát (đạn pháo không bắn được mục tiêu trên không)
-    DMG: { GATLING_BULLET: 0.5, SCOUT_BULLET: 0.34, INCENDIARY: 0.5 },
+    // 30mm thường 4 phát, 30mm nổ mảnh 3 phát (thêm ngòi cận đích), 12.7mm 3 phát, đạn cháy 4 phát (đạn pháo không bắn được
+    // mục tiêu trên không). Cân bằng 2026-10: trước đây 30mm thường 2 phát (0.5) — sấy gì cũng rơi, đạn phòng không mất ý nghĩa
+    DMG: { GATLING_BULLET: 0.25, GATLING_HE: 0.45, SCOUT_BULLET: 0.34, INCENDIARY: 0.3 },
     // đạn 12.7 nổ-cháy-xuyên Mk211 (s.heiap): ngòi chạm nổ ngay trên vỏ nhựa / sợi carbon. Viên đi qua lõi thân (pin, mạch,
     // động cơ — trong HEIAP_CORE x HIT_R quanh tâm) là rơi; trúng cánh / cần quạt ở rìa thì mất HEIAP_EDGE
     HEIAP_CORE: 0.55, HEIAP_EDGE: 0.6,
@@ -36,6 +37,14 @@ const DroneAir = (() => {
     // Nổ cận đích: trong ballistics AIR_FUZE (9 đv) = hạ chắc; mảnh còn sát thương tới fragR
     // lostT: drone khuất / vượt góc ngóc liên tục bấy nhiêu giây thì kính mất dấu (hủy khóa)
     MSL: { lockR: 1600, dropR: 2400, fragR: 26, aimTol: 1.5, lostT: 1.0 },
+    // MÁY TÍNH PHÒNG KHÔNG khi khóa drone bằng súng (fcsTrack — người chơi lẫn bot). Radar không biết ngay vận tốc thật:
+    //  lockT: giây bám từ lúc khóa tới khi có nghiệm đón đầu (trước đó súng chĩa thẳng vào drone, không đón)
+    //  velTau: hằng số thời gian ước lượng vận tốc (s) — drone đổi hướng / độ cao đột ngột thì loạt đạn trễ về hướng cũ
+    //  err: độ lệch ngắm của máy tính sau khi bám ổn định (mrad, 1σ, trôi chậm — cả loạt lệch cùng phía, không phải tản mát)
+    //  acqErr / settleT: mới khóa lệch gấp (1 + acqErr), giảm dần về err sau settleT giây bám liên tục
+    //  wanderT: nhịp đổi hướng trôi của độ lệch · noRadar: xe không có / hỏng radar phòng không: chậm & lệch gấp bấy nhiêu
+    // Cân bằng 2026-10: trước đây nghiệm dùng vận tốc thật tuyệt đối, khóa là xả trúng ngay — drone không có cách né
+    FCS: { lockT: 1.8, velTau: 0.7, err: 3.5, acqErr: 3, settleT: 2.0, wanderT: 0.35, noRadar: 1.6 },
     SEND_FLY: 0.1, SEND_IDLE: 1.0,
     INTERP: 0.15, INTERP_MAX: 0.5, EXTRAP: 0.35,   // trễ nội suy tối thiểu / tối đa (thích ứng theo khoảng gói, độ trễ mạng)
     DOCK_VIEW: 1300,     // drone đậu trên nóc xe khác chỉ vẽ khi camera trong khoảng này
@@ -354,6 +363,16 @@ const DroneAir = (() => {
     },
 
     // ---------- ĐẠN TRÚNG / BAY SƯỢT QUA DRONE ----------
+    // phần thân drone mất do một viên / một quả nổ (1 = rơi). h.frag: mảnh của đạn 30mm nổ cận đích (ballistics proxBurst30)
+    // = phần sát thương so với một phát trúng thẳng, theo khoảng cách tới điểm nổ
+    airShotDamage(s, h) {
+      if (h && h.frag !== undefined) return (C.DMG[s.ammoType] || 0) * h.frag;
+      // (h.d chỉ là khoảng cách ở cuối bước đạn vừa lọt vùng trúng ~ sát rìa; h.dl: khoảng cách gần nhất của đường đạn tới tâm)
+      const hd = h ? (h.dl !== undefined ? h.dl : h.d) : Infinity;
+      return s.heiap ? (hd < C.HIT_R * C.HEIAP_CORE ? 1 : C.HEIAP_EDGE)
+        : (s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0)) * (h && h.d > C.HIT_R ? C.FRAG_K : 1);
+    },
+
     onDroneShot(s, dr, h) {
       if (!dr) return;
       const fx = this.ballistics && this.ballistics.fx;
@@ -369,12 +388,11 @@ const DroneAir = (() => {
       const shooter = this.unitById(s.shooterId);
       const NS = this.netSync && !this.netSync.detached ? this.netSync : null;
       const auth = !s.netRemote && (!NS || (shooter && NS.owns(shooter)));
-      // (h.d chỉ là khoảng cách ở cuối bước đạn vừa lọt vùng trúng ~ sát rìa; h.dl: khoảng cách gần nhất của đường đạn tới tâm)
-      const hd = h ? (h.dl !== undefined ? h.dl : h.d) : Infinity;
-      const dmg = s.heiap ? (hd < C.HIT_R * C.HEIAP_CORE ? 1 : C.HEIAP_EDGE)
-        : (s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0)) * (h && h.d > C.HIT_R ? C.FRAG_K : 1);
-      // Mk211: chớp nổ-cháy nhỏ ngay trên thân drone
+      const dmg = this.airShotDamage(s, h);
+      // Mk211 hoặc đạn nổ tạo mảnh trúng thẳng (chưa lên cò cận đích): chớp nổ bùng mảnh trên thân drone. Mảnh của quả nổ
+      // cận đích (h.frag): chớp nổ đã vẽ ở điểm nổ (ballistics proxBurst30)
       if (s.heiap && fx && fx.spawnIncendiarySplash) { try { fx.spawnIncendiarySplash(h.x, h.y, h.z, 0.7); } catch (e) { /* hiệu ứng phụ */ } }
+      if (s.ammoType === 'GATLING_HE' && !(h && h.frag !== undefined) && fx && fx.spawn) { try { fx.spawn(h.x, h.y, h.z, 'GATLING_HE', 'AIR', {}); } catch (e) { /* hiệu ứng phụ */ } }
       if (!dmg) return;
       if (dr.key === 'own') {
         if (auth) this.damageOwnDrone(dmg, shooter);
@@ -440,7 +458,8 @@ const DroneAir = (() => {
         let dmg = 0;
         const cR = core || (s.isHeavyArty ? 48 : R * 0.35);
         if (d <= cR) {
-          dmg = Math.max(1.0, base);
+          // đầu nổ lớn (lựu 40mm trở lên) nổ sát là rơi; đạn súng 30mm chạm đất / xe sát drone chỉ sứt đúng sức của nó
+          dmg = base >= 0.5 ? Math.max(1.0, base) : base;
         } else {
           dmg = Math.round(base * (cR / d) * Math.pow(1 - d / R, 1.2) * 1000) / 1000;
         }
@@ -1539,6 +1558,7 @@ const DroneAir = (() => {
       this._aimPoint = null;
       this._lockTrack = null;
       P.fcsTarget = null;
+      P._fcs = null;   // khóa mới: máy tính phòng không bám lại từ đầu
       A.solT = 0;
       this._airAim = A;
       // xe trinh sát đang chọn tên lửa: khóa drone = kính ngắm chiếu tia dẫn (giữ ô tên lửa); ngắm trời thì về súng máy
@@ -1565,9 +1585,38 @@ const DroneAir = (() => {
       if (!this._airAim) return;
       this._airAim = null;
       const P = this.player;
-      if (P) { P.fcsTarget = null; P.aimAz = P.aimEl = undefined; P._aa = null; }
+      if (P) { P.fcsTarget = null; P.aimAz = P.aimEl = undefined; P._aa = null; P._fcs = null; }
       if (msg) this.addCombatLog(msg, 'alert');
       if (this._airLockEl) this._airLockEl.hidden = true;
+    },
+
+    /**
+     * Máy tính phòng không bám drone dr cho xe owner (gọi mỗi khung khi đang khóa): ước lượng vận tốc trễ theo C.FCS.velTau,
+     * độ lệch ngắm bAz / bEl (mrad) lớn lúc mới khóa rồi nhỏ dần. locked: đã đủ lockT -> được đón đầu theo vx/vy/vz ước lượng.
+     * Đổi mục tiêu thì bám lại từ đầu
+     */
+    fcsTrack(owner, dr, dt) {
+      const F = C.FCS;
+      let T = owner._fcs;
+      if (!T || T.dr !== dr) T = owner._fcs = { dr, t: 0, vx: 0, vy: 0, vz: 0, bAz: 0, bEl: 0, tAz: 0, tEl: 0, wT: 0 };
+      const radar = owner.tankType === 'GATLING' && !(owner.dmg && owner.dmg.lost && owner.dmg.lost.has && owner.dmg.lost.has('aaRadar'));
+      const slow = radar ? 1 : F.noRadar;
+      dt = Math.max(0, Math.min(0.1, dt || 0));
+      T.t += dt;
+      const kv = 1 - Math.exp(-dt / (F.velTau * slow));
+      T.vx += ((dr.wvx || 0) - T.vx) * kv; T.vy += ((dr.wvy || 0) - T.vy) * kv; T.vz += ((dr.wvz || 0) - T.vz) * kv;
+      if ((T.wT -= dt) <= 0) {
+        T.wT = F.wanderT;
+        const s = F.err * slow * (1 + F.acqErr * Math.max(0, 1 - T.t / (F.settleT * slow)));
+        const g = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, Math.random()))) * Math.cos(2 * Math.PI * Math.random());
+        T.tAz = g() * s; T.tEl = g() * s;
+        if (T.t <= dt) { T.bAz = T.tAz; T.bEl = T.tEl; }   // vừa khóa: lệch ngay từ đầu, không trượt dần từ 0
+      }
+      const kb = 1 - Math.exp(-dt / F.wanderT);
+      T.bAz += (T.tAz - T.bAz) * kb; T.bEl += (T.tEl - T.bEl) * kb;
+      T.locked = T.t >= F.lockT * slow;
+      T.lockP = Math.min(1, T.t / (F.lockT * slow));
+      return T;
     },
 
     /**
@@ -1650,17 +1699,21 @@ const DroneAir = (() => {
       if (A.kind === 'drone') {
         const dr = A.dr;
         if (!this.droneIsAirborne(dr) || !dr.seen) { this.clearAirAim('[[radar-2]] MẤT DẤU DRONE ĐỊCH — đã hủy khóa'); return false; }
+        // máy tính phòng không: bám đủ lockT mới đón đầu, vận tốc ước lượng trễ, độ lệch ngắm (C.FCS)
+        const F = this.fcsTrack(P, dr, dt);
+        const fvx = F.locked ? F.vx : 0, fvy = F.locked ? F.vy : 0, fvz = F.locked ? F.vz : 0;
         A.solT -= dt;
         if (A.solT <= 0 || !A.sol) {
           A.solT = 0.05;   // (0.1 s: drone bay ngang dịch ~10 đv giữa 2 lần tính -> loạt đạn trễ sau đuôi drone)
-          A.sol = this.airShotSolution(P, ammo, dr.x, dr.y + C.CENTER_Y, dr.z, dr.wvx || 0, dr.wvy || 0, dr.wvz || 0);
+          A.sol = this.airShotSolution(P, ammo, dr.x, dr.y + C.CENTER_Y, dr.z, fvx, fvy, fvz);
         }
         const S = A.sol;
         if (!S) return true;
-        az = S.az; el = S.el;
+        az = (S.az + F.bAz * 0.0573 + 360) % 360; el = S.el + F.bEl * 0.0573;   // mrad -> độ
         const cap = this.aaRound(P, ammo).maxTravel || 900;
-        A.state = el > elMax ? 'high' : (!S.reach || S.dist > cap) ? 'far' : 'track';
-        A.lead = { x: dr.x + (dr.wvx || 0) * S.t, y: dr.y + C.CENTER_Y + (dr.wvy || 0) * S.t, z: dr.z + (dr.wvz || 0) * S.t };
+        A.state = S.el > elMax ? 'high' : (!S.reach || S.dist > cap) ? 'far' : 'track';
+        A.fcsLock = F.locked; A.fcsP = F.lockP;
+        A.lead = { x: dr.x + fvx * S.t, y: dr.y + C.CENTER_Y + fvy * S.t, z: dr.z + fvz * S.t };
         A.dist = S.dist;
         if (S.dist > cap * 1.8) { this.clearAirAim('[[alert-triangle]] Drone địch đã ra quá xa tầm súng — đã hủy khóa'); return false; }
       }
@@ -1816,7 +1869,9 @@ const DroneAir = (() => {
       el._line.style.transform = 'translate(' + Math.round(sx) + 'px,' + Math.round(sy) + 'px) rotate(' + Math.atan2(ly - sy, lx - sx) + 'rad)';
       let col = A.state === 'high' || A.state === 'far' ? '#ff5a4a' : A.on ? '#5cf08a' : '#ffb020';
       let txt = 'DRONE ĐỊCH · ' + Math.round(A.dist || 0) + ' M · ' + (A.state === 'high' ? 'QUÁ CAO — LÙI XE RA XA'
-        : A.state === 'far' ? 'NGOÀI TẦM SÚNG' : A.on ? 'ĐÃ NGẮM TRÚNG' : 'ĐANG XOAY THÁP') + (this._droneHitMark > 0 ? ' · TRÚNG!' : '');
+        : A.state === 'far' ? 'NGOÀI TẦM SÚNG' : A.fcsLock === false ? 'RADAR ĐANG BÁM ' + Math.round((A.fcsP || 0) * 100) + '% — CHƯA ĐÓN ĐẦU'
+        : A.on ? 'ĐÃ NGẮM TRÚNG' : 'ĐANG XOAY THÁP') + (this._droneHitMark > 0 ? ' · TRÚNG!' : '');
+      if (A.fcsLock === false && col === '#5cf08a') col = '#ffb020';
       if (A.msl) {
         // tên lửa: xanh = đã bám / đang dẫn, vàng nhấp nháy = bộ bám đang bắt, xám = mất tia (khuất / quá cao / ngoài tầm)
         const S = this._seeker || { state: 'none', p: 0 }, guiding = this.airMissileGuiding();

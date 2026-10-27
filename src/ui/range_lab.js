@@ -62,7 +62,8 @@
     const el = document.createElement('div');
     el.id = 'range-lab-loading';
     el.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#0b0f0c;color:#d6e2c8;font:600 14px/1.4 system-ui,sans-serif;letter-spacing:.12em;transition:opacity .35s';
-    el.innerHTML = '<style>@keyframes rlspin{to{transform:rotate(360deg)}}</style>'
+    if (window.rangeLabLoaderMarkup) el.style.overflow = 'hidden';
+    el.innerHTML = window.rangeLabLoaderMarkup ? window.rangeLabLoaderMarkup('ĐANG KHỞI ĐỘNG…') : '<style>@keyframes rlspin{to{transform:rotate(360deg)}}</style>'
       + '<div style="width:46px;height:46px;border-radius:50%;border:3px solid rgba(214,226,200,.18);border-top-color:#ffb700;animation:rlspin .8s linear infinite"></div>'
       + '<div style="font-size:18px;color:#ffb700">THAO TRƯỜNG DIỄN TẬP</div><div id="range-lab-stage">ĐANG KHỞI ĐỘNG…</div>';
     (document.body || document.documentElement).appendChild(el);
@@ -123,6 +124,26 @@
     const t0 = performance.now();
     g.prepareMap(BIOME, SEED);
     console.info(`[BOOT] prepareMap: ${Math.round(performance.now() - t0)} ms`);
+    // Chờ chi tiết bản đồ dựng xong dưới nền (từng bước nhỏ, giữa các bước trình duyệt vẫn vẽ màn chờ). Vào trận ngay
+    // thì startMatchWithSlots phải dựng nốt đồng bộ -> chặn luồng chính ~17 s, spinner đứng im
+    const T = g.terrain;
+    const waitDetails = () => {
+      if (T && !T.detailsReady && g.terrain === T) {
+        const left = T._pendingDetailSteps ? T._pendingDetailSteps.length : 0;
+        loader.stage('ĐANG DỰNG CẢNH 3D…' + (left ? ' (' + left + ')' : ''));
+        setTimeout(waitDetails, 60);
+        return;
+      }
+      console.info(`[BOOT] Chi tiết bản đồ: ${Math.round(performance.now() - t0)} ms`);
+      try { enterMatch(g, mm, t0); } catch (err) {
+        console.error('[LAB] Lỗi dựng phòng thử:', err);
+        loader.stage('LỖI: ' + (err && err.message || err) + ' — xem Console (F12)');
+      }
+    };
+    waitDetails();
+  }
+
+  function enterMatch(g, mm, t0) {
     const ov = document.getElementById('matchmaking-overlay');
     if (ov) ov.classList.add('hidden');
     mm.selectedTankType = tankType;
@@ -135,9 +156,6 @@
     console.info(`[BOOT] Vào trận (startMatchWithSlots): ${Math.round(performance.now() - t0)} ms`);
     setup(g);
     console.info(`[BOOT] Dựng phòng thử xong: ${Math.round(performance.now() - t0)} ms · tổng từ lúc mở trang ${Math.round(performance.now())} ms`);
-    // khung hình đầu tiên (biên dịch shader / tải texture lên GPU dồn vào đây)
-    const tf = performance.now();
-    requestAnimationFrame(() => requestAnimationFrame(() => console.info(`[BOOT] Khung hình đầu: ${Math.round(performance.now() - tf)} ms`)));
   }
 
   function setup(g) {
@@ -181,7 +199,22 @@
     window.rangeLab = lab;
     syncUrl();
     if (lab.field === 'flat') addLog('[[square]] Đồng trống: chọn xe bia, cự ly, hướng và trang bị bia ở bảng bên phải', 'info');
-    loader.done();
+    addLog('[[flag]] Căn cứ A, B, C đã có sẵn trên bản đồ — bấm Căn cứ A/B/C để dịch chuyển tới', 'ok');
+    // Biên dịch shader của cả cảnh song song trên GPU (trước đây dồn hết vào khung hình đầu: ~50 s đứng hình)
+    const firstFrame = () => {
+      const tf = performance.now();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        console.info(`[BOOT] Khung hình đầu: ${Math.round(performance.now() - tf)} ms · tổng từ lúc mở trang ${Math.round(performance.now())} ms`);
+        loader.done();
+      }));
+    };
+    if (!g.compileShadersAsync) { firstFrame(); return; }
+    const tc = performance.now();
+    loader.stage('ĐANG BIÊN DỊCH SHADER…');
+    // cả shader hiệu ứng giao tranh (vết đạn, sóng nổ, lửa đầu nòng): không để phát bắn đầu tiên phải biên dịch
+    g.prewarmEffects(true, (done, total) => loader.stage(`ĐANG BIÊN DỊCH SHADER… ${done}/${total}`))
+      .catch(err => console.warn('[LAB] compileShadersAsync', err))
+      .then(n => { console.info(`[BOOT] Biên dịch ${n || 0} shader song song: ${Math.round(performance.now() - tc)} ms`); firstFrame(); });
   }
 
   // ---------------------------------------------------------------------------
@@ -420,6 +453,48 @@
     u._labHome = s;
     if (lab.g.setSightMode && lab.g._sight) lab.g.setSightMode(false);
     if (lab.g._cam) lab.g._cam.unit = null;   // camera bám đuôi đặt lại ngay sau lưng xe ở chỗ mới
+    if (lab.field === 'flat') spawnDummies();
+  }
+
+  function gotoStronghold(id) {
+    const g = lab.g, T = g && g.terrain, set = T && T.strongholdSet;
+    if (!set || !set.items || !set.items.length) {
+      addLog('[[alert]] Căn cứ đang được dựng trên bản đồ…', 'hit');
+      return;
+    }
+    const K = set.items.find(k => k.id === id);
+    if (!K) {
+      addLog(`[[alert]] Không tìm thấy căn cứ ${id}`, 'hit');
+      return;
+    }
+    const S = typeof Strongholds !== 'undefined' ? Strongholds.S : { END: 206 };
+    const sign = (id === 'B') ? 1 : -1;
+    const dist = (S.END || 206) + 45;
+    const tx = K.x + K.fx * sign * dist;
+    const tz = K.z + K.fz * sign * dist;
+    const dx = K.x - tx, dz = K.z - tz;
+    const bodyA = Math.atan2(-dx, -dz);
+    const az = (deg(Math.atan2(dx, -dz)) + 360) % 360;
+
+    const P = g.player;
+    if (P) {
+      if (P.isDead) P.respawn(tx, tz);
+      P.invulnerableTimer = 0;
+      place(P, tx, tz, bodyA, az);
+      P.elevation = 0;
+      if (g.setSightMode && g._sight) g.setSightMode(false);
+      if (g._cam) g._cam.unit = null;
+      addLog(`[[flag]] Đã tới trước cửa căn cứ ${id}`, 'ok');
+    }
+
+    if (lab.dummies && lab.dummies[0]) {
+      const d = lab.dummies[0];
+      const inW = set.toWorld ? set.toWorld(K, 15, 0) : { x: K.x + K.fx * 15, z: K.z + K.fz * 15 };
+      const dFace = Math.atan2(tx - inW.x, tz - inW.z);
+      const dAz = (deg(Math.atan2(inW.x - tx, inW.z - tz)) + 360) % 360;
+      if (d.isDead) revive(d);
+      place(d, inW.x, inW.z, dFace, dAz);
+    }
   }
 
   function revive(u) {
@@ -511,7 +586,7 @@
   let uiT = 0;
   // Phòng thử: đạn đặc biệt / tên lửa trừ bình thường như trong trận; loại nào bắn hết thì sau AMMO_REFILL_S giây
   // kho tự nạp đầy lại (trạm súng nóc tự thay hộp theo cơ chế riêng của nó)
-  const AMMO_KEYS = ['apAmmoCount', 'heAmmoCount', 'clusterAmmoCount', 'incendiaryAmmoCount', 'missileAmmoCount', 'specialAmmoCount'];
+  const AMMO_KEYS = ['apAmmoCount', 'heAmmoCount', 'clusterAmmoCount', 'incendiaryAmmoCount', 'heFragAmmoCount', 'missileAmmoCount', 'specialAmmoCount'];
   const AMMO_REFILL_S = 4;
   function refillAmmo(u, dt) {
     if (!u || u.isDead) return;
@@ -520,7 +595,7 @@
     for (const k of AMMO_KEYS) {
       if (u[k] === undefined) continue;
       // lần đầu: chốt mốc đầy (tối thiểu vài phát để thử mọi loại) và nạp ngay, không báo
-      if (u._labAmmoFull[k] === undefined) { u._labAmmoFull[k] = Math.max(u[k], k === 'incendiaryAmmoCount' ? 80 : 3); u[k] = u._labAmmoFull[k]; changed = true; }
+      if (u._labAmmoFull[k] === undefined) { u._labAmmoFull[k] = Math.max(u[k], k === 'incendiaryAmmoCount' || k === 'heFragAmmoCount' ? 80 : 3); u[k] = u._labAmmoFull[k]; changed = true; }
       if (u[k] > 0) { u._labAmmoWait[k] = 0; continue; }
       if (!u._labAmmoWait[k]) addLog(`[[hourglass]] Hết đạn — tự nạp lại sau ${AMMO_REFILL_S} s`, 'info');
       u._labAmmoWait[k] = (u._labAmmoWait[k] || 0) + dt;
@@ -918,6 +993,9 @@
         <div class="lbl">BÃI THỬ</div>
         <div class="row">
           <button id="rg-home"><i class="ti ti-home" aria-hidden="true"></i> Về chỗ xuất phát</button>
+          <button id="rg-sh-a" title="Tới căn cứ A"><i class="ti ti-flag" aria-hidden="true"></i> Căn cứ A</button>
+          <button id="rg-sh-b" title="Tới căn cứ B"><i class="ti ti-flag" aria-hidden="true"></i> Căn cứ B</button>
+          <button id="rg-sh-c" title="Tới căn cứ C"><i class="ti ti-flag" aria-hidden="true"></i> Căn cứ C</button>
           <button id="rg-revive"><i class="ti ti-heart-plus" aria-hidden="true"></i> Hồi sinh mục tiêu</button>
           <button id="rg-god">Bất tử</button><button id="rg-wreck">Giữ xác mục tiêu</button>
           <button id="rg-jam" title="Xe tăng bia tự phá sóng drone của bạn khi bay tới gần"><i class="ti ti-antenna-bars-5" aria-hidden="true"></i> Bia phá sóng drone</button>
@@ -954,6 +1032,9 @@
       maps.appendChild(b);
     }
     root.querySelector('#rg-home').onclick = () => { teleport(); addLog('Về chỗ xuất phát', 'info'); };
+    root.querySelector('#rg-sh-a').onclick = () => gotoStronghold('A');
+    root.querySelector('#rg-sh-b').onclick = () => gotoStronghold('B');
+    root.querySelector('#rg-sh-c').onclick = () => gotoStronghold('C');
     root.querySelector('#rg-revive').onclick = () => { for (const d of lab.dummies) revive(d); addLog('[[heart-plus]] Đã hồi sinh mục tiêu', 'ok'); };
     const fm = root.querySelector('#rg-fm');
     for (const [id, name] of FIRE_MODES) {
@@ -1052,15 +1133,8 @@
       for (const R of lab.uavs) if (R.hp > 0) { flyUAV(this, R, dt); list.push(R); }
       kamiSkyTick(this, dt, list);
     };
-    const origShot = g.onDroneShot;
-    g.onDroneShot = function (s, dr, h) {
-      origShot.call(this, s, dr, h);   // tia lửa + tiếng trúng
-      if (!dr || !dr.lab || dr.hp <= 0) return;
-      const C = DroneAir.C;
-      const dmg = (s.aaMG ? C.RCWS.dmgDrone : (C.DMG[s.ammoType] || 0)) * (h && h.d > C.HIT_R ? (C.FRAG_K || 0.5) : 1);
-      if (!dmg) return;
-      labDroneDamage(this, dr, dmg, this.unitById ? this.unitById(s.shooterId) : null);
-    };
+    // trúng đạn: drone_air.onDroneShot tính sát thương như trong trận rồi gọi R.onHit (labDroneDamage) — không trừ thêm ở
+    // đây (trước đây bọc onDroneShot trừ lần nữa: mỗi phát trúng mất gấp đôi thân)
     addLog(`[[drone]] ${UAV_N} UAV địch đang bay trên trời — nhấp vào drone để khóa, giữ Space xả đạn`, 'info');
   }
 

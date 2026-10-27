@@ -20,7 +20,7 @@ try { ({ Worker } = require('worker_threads')); } catch (e) { Worker = null; }
 
 const SIGHT = { ALL_ROUNDER: 520, GATLING: 520, ARTILLERY: 620, SCOUT: 720 };   // khớp TeamIntel
 const BASE_SPEED = { ALL_ROUNDER: 122, GATLING: 113, ARTILLERY: 122, SCOUT: 148 };   // = GameTiming.baseVehicleSpeed (70 / 65 / 70 / 85 km/h thật)
-const MAX_HP = { ALL_ROUNDER: 3.2, GATLING: 4.0, ARTILLERY: 2.2, SCOUT: 1.6 };
+const MAX_HP = { ALL_ROUNDER: 3.2, GATLING: 3.0, ARTILLERY: 2.2, SCOUT: 1.6 };
 const MAX_RANGE = { ARTILLERY: 3200 };      // tầm bắn tối đa + dư (đơn vị game)
 const DEFAULT_RANGE = 2400;   // tên lửa dẫn hướng 2000 + mục tiêu chạy; đạn tăng bay quá tầm hiệu quả 1750
 const RADAR_RANGE = 950;
@@ -41,9 +41,12 @@ const FAR = 1500;              // xa hơn mức này: gửi nửa tần số
 const MAX_HIT = 6;             // sát thương 1 gói DAMAGE = máu thực mất -> không thể vượt máu tối đa của xe (3.5 + thưởng hòm)
 const DPS_CAP = 16;            // tổng sát thương 1 xe gây ra trong 1 s (lựu pháo / đạn chùm trúng nhiều xe cùng lúc)
 const MSG_PER_SEC = 400;       // giới hạn tin nhắn / giây / kết nối
-const F_BUSH = 1, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16, F_CANOPY = 32;
+const F_BUSH = 1, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16, F_CANOPY = 32, F_ROOF = 64;
 // xe đỗ dưới tán cây còn lá (cờ F_CANOPY): drone địch chỉ thấy khi gần như ngay trên đầu (khớp TeamIntel.CANOPY_SPOT)
 const CANOPY_SPOT = 120;
+// xe trong nhà, trên đầu còn mái / sàn (cờ F_ROOF): drone chỉ thấy khi ngay trên đầu nhìn lọt qua ô cửa / lỗ thủng (khớp
+// TeamIntel.ROOF_SPOT). Radar không lọc theo nhà ở máy chủ (cần dò đường qua lỗ tường) — máy khách tự lọc
+const ROOF_SPOT = 60;
 // Lưới ngụy trang đang che (xe đứng yên, chưa bắn, lưới không cháy): khớp Equipment.camoFactor / camoRadarFactor.
 // Lưới bắt lửa / cháy hết -> máy chủ quyền tắt cờ F_CAMO -> máy chủ gửi vị trí ngay theo tầm nhìn thường.
 const CAMO_SIGHT = 0.65, CAMO_RADAR = 0.6;
@@ -300,11 +303,11 @@ function updateVisibility(M, now) {
       const still = bush && bush.still && Math.abs(s.s || 0) / 10 < (BASE_SPEED[e.type] || 122) * 0.08 ? bush.still : 1;
       const rk = (bush ? bush.radar : 1) * (camo ? CAMO_RADAR : 1), sk = Math.min(still, camo ? CAMO_SIGHT : 1);
       // drone trinh sát phe mình soi từ trên xuống (bụi che trinh sát / rừng rậm che như mắt thường / tán cây che từ trên)
-      const canopy = !revealed && (s.f & F_CANOPY);
+      const canopy = !revealed && (s.f & F_CANOPY), roofed = !revealed && (s.f & F_ROOF);
       if (drones.some(dr => {
         const d = Math.hypot(ex - dr.x, ez - dr.z);
         return d < DRONE_SIGHT + MARGIN && !(bush && bush.spot && d > bush.spot + MARGIN) && !(inForest && d > FOREST_SPOT + MARGIN)
-          && !(canopy && d > CANOPY_SPOT + MARGIN);
+          && !(canopy && d > CANOPY_SPOT + MARGIN) && !(roofed && d > ROOF_SPOT + MARGIN);
       })) { set.add(e.i); continue; }
       for (const u of mine) {
         const v = M.S[u.i], vx = v.x / 10, vz = v.z / 10, d = Math.hypot(ex - vx, ez - vz);

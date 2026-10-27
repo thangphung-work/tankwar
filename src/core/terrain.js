@@ -256,7 +256,8 @@ class BattleTerrain3D {
         if (SHL.length && typeof Strongholds !== 'undefined') {
           this.strongholdSet = new Strongholds.StrongholdSet(this.group, SHL, {
             mapType: this.mapType, groundAt: ground, sun: this.map.sun, boulders: this.boulders,
-            groundMaterial: o => this.groundLikeMaterial(o), worldSize: [this.width, this.depth], leafColors: this.leafColors()
+            groundMaterial: o => this.groundLikeMaterial(o), worldSize: [this.width, this.depth], leafColors: this.leafColors(),
+            deferWrecks: true   // xác xe quanh cứ điểm dựng từng chiếc ở bước 'stronghold_wrecks' (mỗi chiếc ~0,5-1 s)
           });
           // trời mưa: lòng hầm (sàn hạ thấp 2,5 m, chỗ trũng nhất) ngập nước (như đường dựng đồng bộ cũ)
           if (this.weather && this.weather.rain && this.strongholdSet.setFlood) this.strongholdSet.setFlood(this.weather.flood, Weather.floodMaterial(true, Strongholds.S));
@@ -265,6 +266,9 @@ class BattleTerrain3D {
           this.backdrop = Backdrop.build(this);
           if (this.backdrop) this.group.add(this.backdrop.group);
         }
+      }],
+      ['stronghold_wrecks', () => {
+        if (this.strongholdSet && this.strongholdSet.stepWrecks && !this.strongholdSet.stepWrecks(1)) return false;
       }],
       ['roads', () => {
         this.buildRoads();
@@ -518,6 +522,9 @@ class BattleTerrain3D {
     this.terrainMesh = new THREE.Mesh(geo, mat);
     this.terrainMesh.receiveShadow = true;
     this.terrainMesh.name = 'ground';
+    // cây dò tia BVH dựng sẵn ngay lúc tải bản đồ (ngắm theo chuột / dò mặt đất 30 lần/s: trước đây thử từng tam giác)
+    this.terrainMesh.userData.bvhLarge = true;
+    if (typeof window !== 'undefined' && window.RaycastBVH && RaycastBVH.prebuild) RaycastBVH.prebuild(this.terrainMesh);
     this.mesh = this.terrainMesh;
     this.group.add(this.terrainMesh);
   }
@@ -1758,13 +1765,16 @@ ${sea ? 'varying float vDep;' : ''}
   forestDensityAt(x, z) { return this.trees && this.trees.densityAt ? this.trees.densityAt(x, z) : 0; }
   // Đỗ ngay dưới tán cây còn lá: drone soi từ trên xuống khó thấy (TeamIntel.droneSees / server_auth cờ F_CANOPY)
   // rv: bán kính thân xe (đv) — xe càng to càng khó giấu trọn dưới tán
+  // Xe trong nhà còn đứng: mái / sàn che drone, tường che radar (BuildingSet.coverAt; TeamIntel.droneSees / updateRadar)
+  indoorCover(x, z) { return this.buildingSet && this.buildingSet.coverAt ? this.buildingSet.coverAt(x, z) : null; }
   underCanopy(x, z, rv) { return !!(this.trees && this.trees.canopyCover && this.trees.canopyCover(x, z, rv) >= BattleTerrain3D.CANOPY_HIDE); }
   forestLOS(ax, az, bx, bz, limit) { return this.trees && this.trees.denseLength ? this.trees.denseLength(ax, az, bx, bz, limit || 1e9, BattleTerrain3D.FOREST_DENSE) : 0; }
   // Nòng pháo (chốt nòng -> đầu nòng) cắm vào bê tông / ụ đất?
   barrelBlocked(p0, p1) { return this.strongholdSet ? this.strongholdSet.barrelBlocked(p0, p1) : false; }
   nearStronghold(x, z, pad = 40) { return this.strongholdSet ? !!this.strongholdSet.near(x, z, pad) : false; }
   // Không đào hố bom / khoét lỗ mặt đất trên ụ đất & sàn bê tông của cứ điểm
-  noCraterAt(x, z) { return (this.strongholdSet ? !!this.strongholdSet.covers(x, z, 6) : false) || !!(this.bridges.length && this.bridgeAt(x, z)); }
+  // vỉa hè: mặt lát nằm trên đất -> hố khoét vào đất bên dưới bị che (vết nổ do EnvDamage vẽ lên mặt lát)
+  noCraterAt(x, z) { return (this.strongholdSet ? !!this.strongholdSet.covers(x, z, 6) : false) || !!(this.bridges.length && this.bridgeAt(x, z)) || !!(this.streetscape && this.streetscape.covers && this.streetscape.covers(x, z)); }
 
   // Cây đổ khi xe húc
   // Có `unit`: cây / rào / tường / bao cát do ramObjects xử lý theo lực mỗi khung (mọi tốc độ) — ở đây chỉ còn bụi rậm, cỏ
@@ -1806,7 +1816,10 @@ ${sea ? 'varying float vDep;' : ''}
     const spans = this.propSet && this.propSet.ram ? this.propSet.ram(unit, ob, dt, fx) : null;
     // bồn cây / cọc chắn xe quanh chân cao ốc: xe xích nghiền, cán gập (BuildingSet.ramYard)
     if (this.buildingSet && this.buildingSet.ramYard) this.buildingSet.ramYard(unit, ob, fx);
-    if (felled || spans) this.crushHullSound(unit, -Math.sin(a) * sp0, -Math.cos(a) * sp0, felled, spans);
+    // tường / cột tầng trệt nhà: đủ lực thì xe húc đổ, chui vào nhà (BuildingSet.ram)
+    const walls = this.buildingSet && this.buildingSet.ram ? this.buildingSet.ram(unit, ob, dt, fx) : null;
+    const hitSpans = walls ? (spans || []).concat(walls) : spans;
+    if (felled || hitSpans) this.crushHullSound(unit, -Math.sin(a) * sp0, -Math.cos(a) * sp0, felled, hitSpans);
   }
 
   // Tiếng THÂN XE đập vào cây / rào lúc húc đổ (tiếng gãy đổ của chính cây / rào do Destructibles / Props phát): mũi xe
@@ -1899,14 +1912,19 @@ ${sea ? 'varying float vDep;' : ''}
       if (dx * dx + dz * dz > b.R2) continue;
       const a = dx * b.cx + dz * b.cz, f0 = dx * b.fx + dz * b.fz;   // a: dọc bờ, f: xuyên bờ
       const pile = b.kind === 'pile', sl = b.slump || 0;
-      // ĐỐNG TRƯỚC LƯỠI: mặt bằng hình lưỡi liềm — dày nhất giữa lưỡi, hai cánh mỏng dần cong ôm về sau quanh hai đầu lưỡi
-      // (đất bị mặt lưỡi cong dồn vào giữa); bờ / luống thường thẳng
-      const ua = Math.min(1, Math.abs(a) / b.L);
-      const f = pile ? f0 + b.W * 0.4 * ua * ua : f0;
+      // ĐẤT LAN THEO HƯỚNG CUA (b.sk -1..1, + = về bên phải xe — game.js pushBerm theo đống lệch dọc lưỡi): đất trượt dọc mặt
+      // lưỡi về đầu PHÍA NGOÀI cua -> cánh bên đó dài ra & cong ôm về sau quanh đầu lưỡi (che góc mũi / sườn trước bên đó),
+      // cánh phía trong ngắn lại. Đi thẳng: sk về 0, đống cân lại hai bên
+      const sk = pile ? b.sk || 0 : 0, out = sk * a > 0 ? Math.abs(sk) : 0, inn = sk * a < 0 ? Math.abs(sk) : 0;
+      const Ls = b.L * (1 + 0.42 * out - 0.12 * inn);
+      // ĐỐNG TRƯỚC LƯỠI: mặt bằng hình lưỡi liềm — dày nhất giữa lưỡi, hai cánh cong ôm về sau quanh hai đầu lưỡi (đất bị
+      // mặt lưỡi cong dồn vào giữa, tràn qua đầu lưỡi đổ dọc hai góc mũi xe); bờ / luống thường thẳng
+      const ua = Math.min(1, Math.abs(a) / Ls);
+      const f = pile ? f0 + b.W * (0.55 + 0.35 * out) * ua * ua : f0;
       // chân ụ không thẳng tắp: bề dày & chiều dài đổi chậm theo nhiễu (đất đổ không đều); ụ ngấm mưa sụt (tickBerms): thấp
-      // xuống, chân bè rộng ra
-      const W = b.W * (1 + 0.13 * Math.sin(a * 0.19 + b.seed) + 0.07 * Math.sin(a * 0.47 + b.seed * 1.7)) * (1 + 0.5 * sl);
-      const L = b.L * (1 + 0.08 * Math.sin(f0 * 0.35 + b.seed * 0.7));
+      // xuống, chân bè rộng ra. Đống trước lưỡi: mặt trước (xa xe) đổ dài & dày hơn -> lớp đất chắn đạn bắn thẳng vào mũi dày
+      const W = b.W * (1 + 0.13 * Math.sin(a * 0.19 + b.seed) + 0.07 * Math.sin(a * 0.47 + b.seed * 1.7)) * (1 + 0.5 * sl) * (pile && f >= 0 ? 1.3 : 1);
+      const L = Ls * (1 + 0.08 * Math.sin(f0 * 0.35 + b.seed * 0.7));
       // hai đầu bờ thoải dần (đất đổ ra), không cắt cụt; luống / bờ thường vuốt ngắn hơn để các đoạn luống nối liền thành dải
       const e = Math.min(1, Math.max(0, (L - Math.abs(a)) / (L * (pile ? 0.45 : 0.28))));
       if (e <= 0) continue;
@@ -2090,8 +2108,10 @@ ${sea ? 'varying float vDep;' : ''}
     const kind = opts.kind || (opts.L ? 'ridge' : 'pile');
     const b = { x, z, yaw, fx, fz, cx: -fz, cz: fx, L: opts.L || 26, W: opts.W || (kind === 'pile' ? 15 : 12), H: opts.H || 12, k: 0, R2: 0, mesh: null,
       kind, seed: (Math.abs(Math.round(x * 7 + z * 13)) % 997) * 0.37 };
-    // chừa chỗ chân ụ gồ ghề (bermAt: bề dày / chiều dài đổi theo nhiễu) & bè ra khi mưa làm sụt (tickBerms)
-    b.R2 = (b.L * 1.1 + 2) * (b.L * 1.1 + 2) + b.W * b.W * 2.1;
+    // chừa chỗ chân ụ gồ ghề (bermAt: bề dày / chiều dài đổi theo nhiễu) & bè ra khi mưa làm sụt (tickBerms); đống trước
+    // lưỡi: thêm cánh dài ra / cong về sau khi cua & mặt trước dày (bermAt sk)
+    const pileK = kind === 'pile', GA0 = b.L * (pileK ? 1.55 : 1.1) + 2, GF0 = b.W * (pileK ? 1.8 : 1.45) + 2;
+    b.R2 = GA0 * GA0 + GF0 * GF0;
     // quá 80 ụ: bỏ ụ nhỏ nhất trong số ụ cũ nhất (luống đất tràn / đống rớt khi cua) — giữ lại ổ bắn, ụ cao còn có ích
     if (this.berms.length >= 80) {
       let o = this.berms[0];
@@ -2103,7 +2123,7 @@ ${sea ? 'varying float vDep;' : ''}
     b.soil = S;
     // khối đất: lưới phủ cả chân ụ gồ ghề (lấn ra 2 đv để mép ụ vùi vào đất), đỉnh = mặt đất + độ cao ụ. Ô lưới ~1,2-1,5 đv
     // để thấy được cục đất vón trên mặt (bermAt); đống trước lưỡi dày ô hơn
-    const pile = b.kind === 'pile', GA = b.L * 1.1 + 2, GF = b.W * 1.45 + 2;
+    const pile = pileK, GA = GA0, GF = GF0;
     const geo = new THREE.PlaneGeometry(1, 1, Math.max(8, Math.min(56, Math.round(GA * 2 / (pile ? 1.3 : 1.6)))), Math.max(6, Math.min(30, Math.round(GF * 2 / (pile ? 1.2 : 1.5)))));
     const pos = geo.attributes.position, uv = geo.attributes.uv;
     b.base = new Float32Array(pos.count); b.wxz = []; b.af = new Float32Array(pos.count * 2);
@@ -2118,7 +2138,7 @@ ${sea ? 'varying float vDep;' : ''}
       // màu đất mới lật theo đất bản đồ (cát vàng ẩm ở sa mạc, đất nâu sẫm ở đồng cỏ / rừng): loang mảng ẩm sẫm / khô sáng
       // theo nhiễu; chỉ sát chân ụ mới ngả sang màu mặt đất để hòa vào nền (trước đây ngả từ 60% bề dày -> luống hẹp xanh xám)
       const n = 0.82 + 0.26 * bermNoise(wx * 0.07 + 3.1, wz * 0.07) + (Math.random() - 0.5) * 0.06;
-      const tE = Math.min(1, Math.abs(f) / (b.W * 1.15 + 2)), eE = Math.min(1, Math.abs(a) / (b.L + 2)), edge = Math.max(tE, eE);
+      const tE = Math.min(1, Math.abs(f) / (b.W * (pile && f > 0 ? 1.5 : 1.15) + 2)), eE = Math.min(1, Math.abs(a) / (b.L + 2)), edge = Math.max(tE, eE);
       const m = Math.max(0, (edge - 0.82) / 0.18);
       for (let c = 0; c < 3; c++) col[i * 3 + c] = (S.core[c] * (1 - m) + S.edge[c] * m) * n;
     }
@@ -2264,6 +2284,38 @@ ${sea ? 'varying float vDep;' : ''}
       if (y < top) deep = Math.max(deep, top - y);
     }
     return deep <= 0.5 ? 1 : Math.max(0.25, 1 - 0.75 * Math.min(1, deep / 8));
+  }
+
+  // ĐẠN BAY XUYÊN Ụ ĐẤT GIỮA HAI BƯỚC MÔ PHỎNG: đạn bắn thẳng bay ~100+ đv mỗi bước, hai đầu bước đều trên mặt đất -> trước
+  // đây lọt qua ụ dày ~3-4 m (đạn súng máy / 30mm / xuyên giáp trúng thân xe nấp sau ụ như bãi trống). Dò dày (~1,5 đv) phần
+  // đoạn bay đi qua vòng bao các ụ còn đất; trả t (0..1) của mẫu đầu tiên chìm dưới mặt đất (getElevationAt đã cộng ụ) — bên
+  // gọi chia đôi tìm đúng mặt chạm. -1: không chạm ụ nào
+  bermSegmentHit(x0, y0, z0, x1, y1, z1, off = 0) {
+    if (!this.berms || !this.berms.length) return -1;
+    const dx = x1 - x0, dz = z1 - z0, L2 = dx * dx + dz * dz;
+    if (L2 < 1e-6) return -1;
+    let lo = 2, hi = -1, top = -Infinity;
+    for (const b of this.berms) {
+      if (!b.mesh || b.k * b.H < 1.5) continue;
+      // đoạn (chiếu ngang) cắt vòng bao ụ: khoảng t vào / ra
+      const px = x0 - b.x, pz = z0 - b.z, B = px * dx + pz * dz, C = px * px + pz * pz - b.R2;
+      const disc = B * B - L2 * C;
+      if (disc <= 0) continue;
+      const s = Math.sqrt(disc), ta = (-B - s) / L2, tb = (-B + s) / L2;
+      if (tb < 0 || ta > 1) continue;
+      lo = Math.min(lo, Math.max(0, ta)); hi = Math.max(hi, Math.min(1, tb));
+      top = Math.max(top, this._elevBase(b.x, b.z) + b.H * 1.6 + 10);   // (+10: nền dốc dưới ụ)
+    }
+    if (hi < lo) return -1;
+    // cả đoạn qua vùng ụ đều cao hơn đỉnh ụ cao nhất: bỏ qua (đạn cầu vồng / bay cao)
+    if (Math.min(y0 + (y1 - y0) * lo, y0 + (y1 - y0) * hi) > top) return -1;
+    const n = Math.min(160, Math.max(2, Math.ceil((hi - lo) * Math.sqrt(L2) / 1.5)));
+    for (let i = 0; i <= n; i++) {
+      const t = lo + (hi - lo) * i / n;
+      const x = x0 + dx * t, z = z0 + dz * t, y = y0 + (y1 - y0) * t;
+      if (y - this.getElevationAt(x, z) + off <= 0) return t;
+    }
+    return -1;
   }
 
   bermShield(ex, ey, ez, ux, uy, uz) {
@@ -2507,7 +2559,8 @@ ${sea ? 'varying float vDep;' : ''}
   }
 
   // Hộp vật cản (nhà) gần xe cho VehicleCollision: tường nhà còn đứng cao hết tầng, nhà sập còn đống đổ nát thấp
-  vehicleObstacles(x, z, unit) {
+  // barrel: dò cho nòng (spg.applyWallBarrelBlock) — mọi mảng tường nhà còn đứng đều chặn, kể cả mảng thân xe sắp húc đổ
+  vehicleObstacles(x, z, unit, barrel) {
     const out = this._vcBoxes || (this._vcBoxes = []);
     out.length = 0;
     const reach = typeof VehicleCollision !== 'undefined' && unit ? VehicleCollision.reach(unit) : 60;
@@ -2518,12 +2571,10 @@ ${sea ? 'varying float vDep;' : ''}
       if (Math.abs(x - R.x) > m || Math.abs(z - R.z) > m) continue;
       // Nhà sập: không còn hộp cứng — đống đổ nát là mặt cho xích bò lên (vehicleDebris), chỉ mảng tường góc còn đứng chặn
       if (R.collapsed) { if (R.rubbleWalls) for (const w of R.rubbleWalls) out.push(w); continue; }
-      // mat: vật liệu tường (tiếng / bụi khi xe húc): concrete / stone / adobe / wood / metal
-      const box = b._vcBox || (b._vcBox = { cx: R.x, cz: R.z, ux: Math.cos(R.angle), uz: -Math.sin(R.angle), hu: R.halfW, hv: R.halfD, y0: 0, y1: 0, mat: (R.st && R.st.mat) || 'concrete' });
-      box.y0 = (R.y || 0) - 20;
-      box.y1 = (R.y || 0) + (b.height || 60);
-      out.push(box);
     }
+    // nhà còn đứng: hộp từng mảng tường / cột tầng trệt (mảng đã mất là lối vào; mảng xe đủ lực húc thì không chặn — ramObjects
+    // đánh đổ khi chạm), nhà nguyên vẹn mà xe không húc nổi: một hộp cả nhà (BuildingSet.vehicleBoxes)
+    if (this.buildingSet && this.buildingSet.vehicleBoxes) this.buildingSet.vehicleBoxes(x, z, reach + 10, unit, out, !!barrel);
     if (this.landmarkSet) this.landmarkSet.vehicleBoxes(x, z, reach + 10, out);
     // điểm tiếp tế hậu phương: xe tải + đống pallet (src/gameplay/supply_depot.js)
     if (this.depotSet) this.depotSet.vehicleBoxes(x, z, reach + 10, out);

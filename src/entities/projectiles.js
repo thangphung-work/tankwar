@@ -122,8 +122,29 @@
     GLOW = new THREE.CanvasTexture(c);
     return GLOW;
   }
-  function headGlow(group, size, color, key, y) {
-    const m = mat('spr_' + key, () => new THREE.SpriteMaterial({ map: glowTexture(), color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  // Đốm đầu vạch đường đạn súng: lõi trắng nóng gọn, quầng tắt nhanh (quầng cam rộng của glowTexture làm viên đạn trông
+  // như một đốm lửa tròn to thay vì liều vạch đường cháy ở đáy đạn)
+  let TIGHT = null;
+  function tightGlowTexture() {
+    if (TIGHT || typeof document === 'undefined') return TIGHT;
+    const n = 64, c = document.createElement('canvas');
+    c.width = c.height = n;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+    // lõi nóng vàng nhạt (không trắng tinh: cộng sáng lên nền trời thì trắng tinh thành chấm trắng, mất màu đỏ cam của
+    // chất vạch đường strontium), vành màu đậm rộng hơn để qua kính ngắm vẫn thấy rõ là đốm lửa đỏ cam
+    g.addColorStop(0, 'rgba(255,246,220,1)');
+    g.addColorStop(0.2, 'rgba(255,214,150,1)');
+    g.addColorStop(0.42, 'rgba(255,140,70,0.55)');
+    g.addColorStop(0.68, 'rgba(255,90,40,0.12)');
+    g.addColorStop(1, 'rgba(255,90,40,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, n, n);
+    TIGHT = new THREE.CanvasTexture(c);
+    return TIGHT;
+  }
+  function headGlow(group, size, color, key, y, tight = false) {
+    const m = mat('spr_' + key + (tight ? '_t' : ''), () => new THREE.SpriteMaterial({ map: tight ? tightGlowTexture() : glowTexture(), color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     const sp = new THREE.Sprite(m);
     sp.userData.sharedAsset = true;
     sp.userData.tracer = true;
@@ -139,7 +160,7 @@
     HEAVY: 0.7, CLUSTER: 0.7,                   // 155mm (lòng nòng Arbalest ~1.0)
     CLUSTER_SUBMUNITION: 0.65,
     RPG: 0.6, ANTI_TANK_MISSILE: 0.6,
-    GATLING_BULLET: 0.42, INCENDIARY: 0.42,     // 30mm (lòng nòng Hailstorm ~0.2)
+    GATLING_BULLET: 0.42, GATLING_HE: 0.42, INCENDIARY: 0.42,     // 30mm (lòng nòng Hailstorm ~0.2)
     SCOUT_BULLET: 0.4,
     GL40: 0.15                                  // lựu 40mm: thân Ø~0.31 đv (≈40mm) — vừa lòng nòng AGL (Ø0.075 x 2.1 x 2)
   };
@@ -329,17 +350,24 @@
       mesh(ring('roundband' + key, r * 1.05, L * 0.1), M.copper(), group, [0, -L * 0.3, 0]);
     }
     if (!tracer) return L;
+    // Viên đang bay: vệt dài / rộng do ballistics (faceTracer) đặt lại mỗi khung theo tốc độ & khoảng cách tới camera —
+    // số ở đây (≈ đơn vị thế giới) là cỡ vệt khi nhìn gần. Đạn bay ~3500 đv/s (≈ 58 đv mỗi khung 60 Hz): vệt ngắn hơn
+    // quãng bay một khung thì mắt thấy một đốm sáng nhảy cóc chứ không thấy đường đạn liền như lưu ảnh võng mạc thật
     if (kind === 'INCENDIARY') {
-      // Đạn cháy: liều vạch đường + chất cháy cháy mạnh -> đốm to hơn, cam rực
-      addTracer(group, 22, 0.9, 0xff4a18, 'incendiary', -L / 2);
-      addTracer(group, 10, 0.35, 0xffd8a0, 'incendiaryCore', -L / 2);
-      headGlow(group, 2.4, 0xff7a3a, 'incendiary', -L / 2);
+      addTracer(group, 22, 0.42, 0xff4a18, 'incendiary', -L / 2);
+      addTracer(group, 10, 0.17, 0xffd8a0, 'incendiaryCore', -L / 2);
+      headGlow(group, 1.0, 0xff7a3a, 'incendiary', -L / 2, true);
+    } else if (kind === 'GATLING_HE') {
+      // đạn nổ mảnh: vạch đường vàng cam (phân biệt với vệt đỏ của đạn xuyên giáp trong cùng loạt)
+      addTracer(group, 19, 0.3, 0xffb733, 'bulletHe' + key, -L / 2);
+      headGlow(group, 0.8, 0xffdb66, 'bulletHe' + key, -L / 2, true);
     } else {
-      // vạch đường đỏ cam (chất cháy strontium): vệt mảnh, đầu sáng
-      // 12.7mm: liều vạch đường nhỏ -> vệt rất mảnh (~6 cm, trước ~13 cm trông như thanh sáng đặc), lõi vàng nóng ở đầu
-      addTracer(group, scout ? 15 : 19, scout ? 0.2 : 0.55, scout ? 0xff6e38 : 0xff5a2a, 'bullet' + key, -L / 2);
-      headGlow(group, scout ? 1.1 : 1.9, scout ? 0xffa060 : 0xff8a52, 'bullet' + key, -L / 2);
+      // vạch đường đỏ cam (chất cháy strontium): vệt mảnh, đầu sáng. 30mm: liều vạch đường Ø~1,5 cm -> lõi cháy + quầng
+      // ~3 cm; 12.7mm: liều nhỏ hơn -> vệt rất mảnh
+      addTracer(group, scout ? 15 : 19, scout ? 0.16 : 0.26, scout ? 0xff6e38 : 0xff5a2a, 'bullet' + key, -L / 2);
+      headGlow(group, scout ? 0.5 : 0.75, scout ? 0xffa060 : 0xff8a52, 'bullet' + key, -L / 2, true);
     }
+    if (flight) group.userData.dynTracer = true;
     return L;
   }
 
@@ -354,7 +382,8 @@
     RPG: { name: 'Tên lửa chống tăng (HEAT)', desc: 'Đầu nổ lõm có cần kích nổ: luồng kim loại nóng chảy phụt thẳng, chớp trắng chói, khói đen đặc.' },
     ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng có điều khiển', desc: 'Đầu nổ lõm: luồng phụt nóng chảy, chớp trắng chói, khói đen đặc, tia lửa nhiều.' },
     // băng đạn hỗn hợp như pháo 30mm xe chiến đấu thật: xen kẽ đạn xuyên giáp (thủng sườn xe tăng ở gần) & đạn nổ mảnh cháy
-    GATLING_BULLET: { name: 'Đạn 30mm hỗn hợp (xuyên giáp + nổ mảnh cháy)', desc: 'Băng xen kẽ đạn xuyên giáp và đạn nổ mảnh cháy có vạch đường: thủng giáp mỏng, sườn / đuôi xe tăng ở cự ly gần; mỗi phát nổ một chớp nhỏ.' },
+    GATLING_BULLET: { name: 'Đạn 30mm xuyên giáp lõi hợp kim', desc: 'Đạn xuyên giáp động năng lõi thép hợp kim cứng có vạch đường: tập trung hỏa lực đục thủng giáp xe cơ giới, sườn và đuôi xe tăng ở cự ly gần.' },
+    GATLING_HE: { name: 'Đạn 30mm nổ tạo mảnh phòng không', desc: 'Đạn nổ tạo mảnh ngòi cận đích vô tuyến chuyên diệt drone và mục tiêu bay: tự động kích nổ khi bay gần mục tiêu tạo chùm mảnh văng phá hủy cánh quạt và khí tài.' },
     SCOUT_BULLET: { name: 'Đạn 12.7mm xuyên giáp', desc: 'Lõi thép cứng có vạch đường: thủng vỏ xe nhẹ, phá kính ngắm / thiết bị ngoài; dội ra khỏi giáp xe tăng.' },
     GL40: { name: 'Lựu 40mm nổ mảnh - nổ lõm', desc: 'Sơ tốc thấp, bay vồng thấy được bằng mắt, không vạch đường. Ngòi chạm: nổ đanh, khói xám, mảnh văng bán kính ~5 m.' },
     INCENDIARY: { name: 'Đạn cháy', desc: 'Mũi đỏ, vạch đường cam đậm: bùng lửa, văng tàn cháy, lửa bám cháy thêm một lúc.' }
@@ -372,6 +401,7 @@
         case 'ANTI_TANK_MISSILE': L = atgm(g); break;
         case 'GL40': L = grenade(g); break;
         case 'GATLING_BULLET':
+        case 'GATLING_HE':
         case 'SCOUT_BULLET':
         case 'INCENDIARY': L = smallRound(g, ammoType, opts.tracer !== false, opts.scale === undefined); break;
         case 'HE':

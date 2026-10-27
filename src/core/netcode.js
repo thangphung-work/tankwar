@@ -906,7 +906,7 @@
   const GUN_STREAM_AMMO = { GATLING_BULLET: 1, SCOUT_BULLET: 1, INCENDIARY: 1 }; // Đạn liên thanh: đồng bộ bằng cờ bắn
   const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z', WATER: 'W' };
   const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE', W: 'WATER' };
-  const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16, F_CANOPY = 32;
+  const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16, F_CANOPY = 32, F_ROOF = 64;
 
   class NetGameSync {
     static attach(game, net, slots) {
@@ -1436,6 +1436,8 @@
       if (!u.isDead && typeof Equipment !== 'undefined' && Equipment.camoHidden && Equipment.camoHidden(u)) f |= F_CAMO;
       // đỗ dưới tán cây còn lá: máy chủ thu tầm soi của drone địch (server_auth CANOPY_SPOT)
       if (!u.isDead && u.underCanopy) f |= F_CANOPY;
+      // trong nhà, trên đầu còn mái / sàn: máy chủ thu tầm soi của drone địch (server_auth ROOF_SPOT)
+      if (!u.isDead && u.indoor && u.indoor.roof) f |= F_ROOF;
       return {
         x: Math.round(u.x * 10),                         // 0.1 đơn vị
         z: Math.round(u.z * 10),

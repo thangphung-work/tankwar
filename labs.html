@@ -63,7 +63,7 @@
       <h1>PHÒNG THỬ NGHIỆM</h1>
       <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Thử từng phần của game riêng lẻ: đạn, xe, ô tô, drone, bản đồ — không cần vào trận</div>
     </div>
-    <a class="hub-home" href="index.html"><i class="ti ti-arrow-left" aria-hidden="true"></i> VỀ SẢNH</a>
+    <a class="hub-home" id="hub-home-btn" href="index.html"><i class="ti ti-arrow-left" aria-hidden="true"></i> VỀ SẢNH</a>
   </header>
 
   <section class="hub-group">
@@ -145,5 +145,33 @@
 
   <div class="hub-foot">Máy yếu: chỉ mở một phòng thử trên engine game mỗi lần — mỗi trang dựng nguyên một bản đồ trận.</div>
 </div>
+<script>
+(function() {
+  const btn = document.getElementById('hub-home-btn');
+  if (!btn) return;
+
+  const q = new URLSearchParams(window.location.search);
+  const isFrom3D = q.get('from') === '3d';
+  const tank = q.get('tank') || 'ALL_ROUNDER';
+
+  // Nếu đến từ màn hình mô hình 3D, cập nhật sẵn đích đến khi bấm vào
+  if (isFrom3D) {
+    btn.href = 'index.html?inspect=1&tank=' + encodeURIComponent(tank);
+  }
+
+  btn.addEventListener('click', function(e) {
+    // 1. Nếu mở từ thẻ duyệt trước đó (thẻ cũ vẫn đang mở sẵn mô hình 3D): đóng thẻ này để quay về ngay
+    if (window.opener && !window.opener.closed) {
+      e.preventDefault();
+      window.close();
+      // Dự phòng nếu trình duyệt chặn lệnh đóng thẻ: chuyển hướng về sảnh có mở mô hình 3D
+      setTimeout(function() {
+        window.location.href = isFrom3D ? ('index.html?inspect=1&tank=' + encodeURIComponent(tank)) : 'index.html';
+      }, 150);
+    }
+    // Còn lại: đi theo href (không dùng history.back — lùi về phòng thử trước đó thay vì về sảnh)
+  });
+})();
+</script>
 </body>
 </html>

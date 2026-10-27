@@ -122,17 +122,20 @@ const VehicleCollision = (() => {
     const bot = y + Math.max(B.minY, 0) + stepOf(unit), top = y + B.maxY;
     let best = null;
     for (const b of boxes) {
-      if (b.y1 <= bot || b.y0 >= top) continue;
+      if (b.noHull || b.y1 <= bot || b.y0 >= top) continue;   // noHull: trần tầng trệt nhà — chỉ chặn nòng
       best = keepDeeper(obbPush(cx, cz, ux, uz, hu, hv, b, _pTmp), best, _hullBest);
     }
     return best;
   }
 
   // Nòng pháo (đoạn thẳng có bề dày) chồng lên hộp nào sâu nhất -> vector đẩy (cho xe) / độ ngập
-  function barrelPush(seg, boxes) {
+  // soft: vách gỗ / tôn / kính nhà — nòng xé xuyên qua (BuildingSet.barrelTear), không chặn. noCeil: bỏ hộp noHull (trần
+  // tầng trệt nhà) — lúc dời xe (resolve) nòng chạm trần không được đẩy thân xe trượt đi; trần chỉ chặn nâng nòng (barrelDepth)
+  function barrelPush(seg, boxes, noCeil) {
     if (!seg) return null;
     let best = null;
     for (const b of boxes) {
+      if (b.soft || (noCeil && b.noHull)) continue;
       // cắt nòng theo khoảng cao của hộp (nòng nghiêng: chỉ phần nằm trong dải cao đó mới chạm)
       const lo = b.y0 - BARREL_R, hi = b.y1 + BARREL_R, dy = seg.y1 - seg.y0;
       let t0 = 0, t1 = 1;
@@ -175,7 +178,7 @@ const VehicleCollision = (() => {
       x += (x1 - x0) / n; z += (z1 - z0) / n;
       for (let it = 0; it < 4; it++) {
         let p = hullPush(unit, B, x, y, z, ang, boxes);
-        const bp = barrelPush(barrelSegment(unit, x, y, z, ang, tp.yaw, tp.el, seg), boxes);
+        const bp = barrelPush(barrelSegment(unit, x, y, z, ang, tp.yaw, tp.el, seg), boxes, true);
         if (bp && (!p || bp.d > p.d)) p = bp;
         if (!p) break;
         const k = (p.d + SKIN) / p.d;
