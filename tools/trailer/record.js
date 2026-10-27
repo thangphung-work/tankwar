@@ -157,7 +157,7 @@ class CDP {
     console.log(`[REC] preroll xong ${((Date.now() - tp) / 1000).toFixed(0)}s thật`);
     // vài khung vẽ cho shader còn thiếu biên dịch trước khi ghi
     for (let i = 0; i < 20; i++) await cdp.eval('__TW.frame()', true);
-    console.log('[REC] âm thanh bật:', await cdp.eval('Promise.resolve(__TW.startAudio()).then(() => { __TR.recFrame0 = __TW.frameN; return String(__TR.audioOn && __TR.audioOn()); })', true));
+    console.log('[REC] âm thanh bật:', await cdp.eval('Promise.resolve(__TW.startAudio()).then(() => { __TR.recFrame0 = __TW.frameN; __TR.recV0 = __TR.vf || 0; return String(__TR.audioOn && __TR.audioOn()); })', true));
     // kịch bản cảnh dàn dựng (chạy trong trang theo đồng hồ ảo)
     const SCRIPT = arg('script', '');
     if (SCRIPT) { await cdp.eval(fs.readFileSync(path.resolve(ROOT, SCRIPT), 'utf8') + '\n;1'); console.log('[REC] chạy kịch bản', SCRIPT); }
@@ -167,9 +167,18 @@ class CDP {
       '-c:v', 'libx264', '-preset', 'medium', '-crf', '15', '-pix_fmt', 'yuv420p', vid], { stdio: ['pipe', 'inherit', 'inherit'] });
     const N = Math.round(SEC * FPS);
     const tr = Date.now();
+    // trang / GPU treo (đã gặp: bộ ghép hình ngừng ra khung) -> sau 30 s dừng ghi, giữ phần đã quay
+    const within = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('TREO')), ms))]);
+    let hung = false, evCache = null;
+    let held = 0;
     for (let i = 0; i < N; i++) {
-      await cdp.eval('__TW.frame()', true);
-      const shot = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 93, optimizeForSpeed: true, captureBeyondViewport: false });
+      let shot;
+      try {
+        // khung chờ dựng cảnh sau khi cắt (cỏ, bóng, chi tiết): chạy ngầm, không ghi, không tính vào độ dài
+        while (await within(cdp.eval('__TR.step ? __TR.step() : __TW.frame().then(() => false)', true), 30000)) { if (++held > 200000) break; }
+        shot = await within(cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 93, optimizeForSpeed: true, captureBeyondViewport: false }), 30000);
+      } catch (e) { console.warn('[REC] trang treo ở khung', i, '- dừng ghi, giữ', (i / FPS).toFixed(1), 's'); hung = true; break; }
+      if (i % 300 === 0) { try { evCache = await within(cdp.eval('JSON.stringify({f0: __TR.recFrame0, v0: __TR.recV0, fps: __TW.fps, log: __TR.log})'), 10000); } catch (e) { /* bỏ qua */ } }
       const buf = Buffer.from(shot.data, 'base64');
       if (!ff.stdin.write(buf)) await new Promise(r => ff.stdin.once('drain', r));
       if (i % 150 === 0) {
@@ -179,8 +188,15 @@ class CDP {
     }
     ff.stdin.end();
     await new Promise(r => ff.on('close', r));
+    console.log('[REC] khung chờ dựng cảnh (không ghi):', held);
+    if (hung) {
+      if (evCache) fs.writeFileSync(path.join(OUT, NAME + '.events.json'), evCache);
+      fs.copyFileSync(vid, path.join(OUT, NAME + '.mp4'));
+      console.log('[REC] XONG (không tiếng, trang treo) ->', path.join(OUT, NAME + '.mp4'));
+      return;
+    }
     console.log('[REC] video xong, lấy âm thanh…');
-    const events = await cdp.eval('JSON.stringify({f0: __TR.recFrame0, fps: __TW.fps, log: __TR.log})');
+    const events = await cdp.eval('JSON.stringify({f0: __TR.recFrame0, v0: __TR.recV0, fps: __TW.fps, log: __TR.log})');
     fs.writeFileSync(path.join(OUT, NAME + '.events.json'), events);
     await cdp.eval(`__TW.finishAudio().then(b => fetch('/__save?name=${NAME}.wav', { method: 'POST', body: b })).then(r => r.ok)`, true);
     const wav = path.join(OUT, NAME + '.wav'), final = path.join(OUT, NAME + '.mp4');

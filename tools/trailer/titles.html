@@ -1,8 +1,9 @@
 <!doctype html>
 <html><head><meta charset="utf-8">
-<!-- Thẻ chữ trailer: record_titles (edit.js) mở trang này headless, chụp PNG nền trong suốt cho từng thẻ (#<json>) -->
+<!-- Thẻ chữ trailer: edit.js mở trang này headless, chụp PNG nền trong suốt cho từng thẻ (?n=..#<json>).
+     kind: slug (mật lệnh máy đánh chữ, card.k = số ký tự đang hiện) | slam (chữ đậm đập vào màn hình) | logo | cine | low -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; width: 1920px; height: 1080px; background: transparent; overflow: hidden; }
   body { font-family: 'Chakra Petch', sans-serif; color: #f2efe6; display: flex; align-items: center; justify-content: center; }
@@ -11,24 +12,60 @@
   .main { font-weight: 700; font-size: 92px; letter-spacing: .08em; line-height: 1.02; text-transform: uppercase; }
   .sub { font-weight: 500; font-size: 32px; letter-spacing: .22em; margin-top: 22px; color: #d8d3c4; padding-left: .22em; }
   .rule { width: 160px; height: 3px; background: #ffb000; margin: 26px auto 0; box-shadow: 0 0 12px rgba(255,176,0,.6); }
-  /* thẻ kết: tên game */
+
+  /* MẬT LỆNH: chữ máy đánh, góc dưới trái trong khung 2.39:1, vạch hổ phách bên trái, con trỏ khối */
+  .slug { position: absolute; left: 120px; bottom: 190px; text-align: left; font-family: 'JetBrains Mono', monospace;
+    border-left: 4px solid #ffb000; padding-left: 22px; text-shadow: 0 0 10px rgba(0,0,0,.95), 0 1px 2px #000; }
+  .slug .l { font-weight: 700; font-size: 42px; letter-spacing: .08em; color: #f4efe2; white-space: pre; min-height: 46px; }
+  .slug .l + .l { font-weight: 500; font-size: 34px; color: #ffb000; margin-top: 8px; }
+  .slug .cur { display: inline-block; width: .6em; height: 1em; background: #ffb000; vertical-align: -0.12em; margin-left: 4px; }
+
+  /* CHỮ ĐẬP: đậm, to, sát chữ, trắng — dòng nhỏ hổ phách phía trên */
+  .slam .kicker { font-size: 28px; letter-spacing: .6em; margin-bottom: 6px; }
+  .slam .main { font-weight: 700; font-size: 150px; letter-spacing: .03em; line-height: .95;
+    text-shadow: 0 0 40px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.95), 0 0 70px rgba(255,140,40,.28); }
+
+  .cine .main { font-weight: 600; font-size: 78px; letter-spacing: .32em; padding-left: .32em; }
   .logo .main { font-size: 118px; letter-spacing: .06em; }
   .logo .en { font-weight: 600; font-size: 40px; letter-spacing: .5em; color: #ffb000; margin-top: 10px; padding-left: .5em; }
-  .logo .url { font-weight: 600; font-size: 34px; letter-spacing: .3em; margin-top: 46px; color: #f2efe6; padding-left: .3em; }
+  .logo .tag { font-weight: 600; font-size: 34px; letter-spacing: .35em; margin-top: 44px; color: #f2efe6; padding-left: .35em; }
+  .logo .url { font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 28px; letter-spacing: .25em; margin-top: 14px; color: #c9c2b0; padding-left: .25em; }
   .low { position: absolute; left: 120px; bottom: 190px; text-align: left; }
   .low .main { font-size: 64px; }
   .low .rule { margin: 18px 0 0; }
 </style></head>
 <body><div id="c"></div>
 <script>
-  // #{"kind":"center|low|logo","kicker":"...","main":"...","sub":"..."}
   const d = JSON.parse(decodeURIComponent(location.hash.slice(1) || '{}'));
   const c = document.getElementById('c');
-  c.className = 'card ' + (d.kind === 'logo' ? 'logo' : d.kind === 'low' ? 'low' : '');
-  const esc = (s) => String(s || '').replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]).replace(/\n/g, '<br>');
-  c.innerHTML = (d.kicker ? `<div class="kicker">${esc(d.kicker)}</div>` : '') + `<div class="main">${esc(d.main)}</div>`
-    + (d.kind === 'logo' ? `<div class="en">${esc(d.en)}</div><div class="url">${esc(d.url)}</div>` : '')
-    + (d.sub ? `<div class="sub">${esc(d.sub)}</div>` : '') + (d.kind !== 'logo' ? '<div class="rule"></div>' : '');
-  document.fonts.ready.then(() => { document.title = 'OK'; });
+  const esc = (s) => String(s || '').replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]);
+  const kind = d.kind || 'center';
+  c.className = 'card ' + kind;
+  if (kind === 'slug') {
+    // các dòng gõ nối tiếp; k = tổng số ký tự đã gõ (bỏ trống = hiện hết, không con trỏ)
+    const lines = d.lines || [d.main || ''];
+    let rem = d.k === undefined ? 1e9 : d.k, html = '', placed = d.k === undefined;
+    lines.forEach((ln, i) => {
+      const n = Math.max(0, Math.min(ln.length, rem)); rem -= ln.length;
+      // con trỏ ở dòng đang gõ (hoặc cuối dòng chót khi đã gõ xong)
+      const cur = !placed && (n < ln.length || i === lines.length - 1);
+      if (cur) placed = true;
+      html += `<div class="l">${esc(ln.slice(0, n))}${cur ? '<span class="cur"></span>' : ''}</div>`;
+    });
+    c.innerHTML = html;
+  } else {
+    c.innerHTML = (d.kicker ? `<div class="kicker">${esc(d.kicker)}</div>` : '') + `<div class="main">${esc(d.main)}</div>`
+      + (kind === 'logo' ? `<div class="en">${esc(d.en)}</div>${d.tag ? `<div class="tag">${esc(d.tag)}</div>` : ''}<div class="url">${esc(d.url)}</div>` : '')
+      + (d.sub ? `<div class="sub">${esc(d.sub)}</div>` : '') + (kind === 'center' || kind === 'low' ? '<div class="rule"></div>' : '');
+  }
+  // chữ quá dài thì co cỡ cho vừa 1 dòng trong khung 2.39:1 (rộng tối đa ~1640 px)
+  document.fonts.ready.then(() => {
+    for (const el of c.querySelectorAll('.main')) {
+      el.style.whiteSpace = 'nowrap';
+      let fs = parseFloat(getComputedStyle(el).fontSize);
+      while (el.scrollWidth > 1640 && fs > 30) { fs -= 2; el.style.fontSize = fs + 'px'; }
+    }
+    document.title = 'OK';
+  });
 </script>
 </body></html>

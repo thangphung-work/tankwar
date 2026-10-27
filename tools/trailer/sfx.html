@@ -1,0 +1,156 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>trailer sfx</title></head><body>
+<script>
+/**
+ * ÂM THANH TRAILER TỔNG HỢP (tools/trailer/sfx.html, chạy qua sfx.js): mỗi tiếng dựng trong OfflineAudioContext -> WAV.
+ * braam (kèn đồng trầm điện ảnh), whoosh (gió lướt khi cắt cảnh), riser (âm dâng ngược trước cú nổ), thump (sub-bass
+ * "thịch" kiểu tim đập), tinnitus (ù tai), geiger (máy đếm phóng xạ, dày dần), siren (còi báo động xa trong mưa),
+ * tick (đồng hồ), static (nhiễu bộ đàm)
+ */
+const SR = 48000;
+function noiseBuf(ctx, sec) {
+  const b = ctx.createBuffer(1, Math.ceil(sec * SR), SR), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+function wav(buf) {
+  const n = buf.length, ch = buf.numberOfChannels, out = new DataView(new ArrayBuffer(44 + n * 4));
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt ');
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 2, true);
+  out.setUint32(24, SR, true); out.setUint32(28, SR * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true);
+  w(36, 'data'); out.setUint32(40, n * 4, true);
+  const L = buf.getChannelData(0), R = buf.getChannelData(ch > 1 ? 1 : 0);
+  let pk = 1e-9; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
+  const k = 0.89 / pk;   // chuẩn hoá đỉnh -1 dBFS
+  for (let i = 0, o = 44; i < n; i++, o += 4) { out.setInt16(o, L[i] * k * 32767, true); out.setInt16(o + 2, R[i] * k * 32767, true); }
+  return out.buffer;
+}
+const SOUNDS = {
+  // kèn đồng trầm: chồng sóng răng cưa lệch tông + quãng 5, bộ lọc mở ra rồi đóng, méo bão hoà, vang dài
+  braam(ctx) {
+    const t = 0, out = ctx.createGain(); out.gain.value = 0.9;
+    const sh = ctx.createWaveShaper(), curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(2.6 * x); }
+    sh.curve = curve;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 2.5;
+    lp.frequency.setValueAtTime(120, t); lp.frequency.exponentialRampToValueAtTime(1400, t + 0.35); lp.frequency.exponentialRampToValueAtTime(260, t + 3.2);
+    const env = ctx.createGain(); env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(1, t + 0.08); env.gain.setTargetAtTime(0, t + 1.2, 1.1);
+    for (const [f, dt] of [[41.2, 0], [41.2, 3], [41.2, -4], [61.7, 2], [82.4, -3], [123.5, 5]]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = dt * 2;
+      const gg = ctx.createGain(); gg.gain.value = f < 70 ? 0.35 : 0.18;
+      o.connect(gg).connect(sh); o.start(t); o.stop(t + 5);
+    }
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.value = 41.2; const sg = ctx.createGain(); sg.gain.value = 0.6; sub.connect(sg).connect(env); sub.start(t); sub.stop(t + 5);
+    sh.connect(lp).connect(env).connect(out).connect(ctx.destination);
+    return 5;
+  },
+  // gió lướt: nhiễu qua bộ lọc dải quét lên rồi xuống, pan trái -> phải
+  whoosh(ctx) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, 1.4);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(300, 0); bp.frequency.exponentialRampToValueAtTime(3500, 0.45); bp.frequency.exponentialRampToValueAtTime(400, 1.2);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(1, 0.42); g.gain.exponentialRampToValueAtTime(0.001, 1.25);
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(-0.8, 0); p.pan.linearRampToValueAtTime(0.8, 1.2);
+    s.connect(bp).connect(g).connect(p).connect(ctx.destination); s.start(0);
+    return 1.4;
+  },
+  // âm dâng: nhiễu + tông trượt lên, to dần, cắt phụt ở cuối (đặt sao cho điểm cuối trùng cú nổ)
+  riser(ctx) {
+    const L = 2.6, s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, L);
+    const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.Q.value = 3;
+    hp.frequency.setValueAtTime(200, 0); hp.frequency.exponentialRampToValueAtTime(6000, L);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, 0); g.gain.exponentialRampToValueAtTime(1, L - 0.02); g.gain.linearRampToValueAtTime(0, L);
+    s.connect(hp).connect(g).connect(ctx.destination); s.start(0);
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(80, 0); o.frequency.exponentialRampToValueAtTime(900, L);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, 0); og.gain.exponentialRampToValueAtTime(0.35, L - 0.02); og.gain.linearRampToValueAtTime(0, L);
+    o.connect(og).connect(ctx.destination); o.start(0); o.stop(L);
+    return L;
+  },
+  // sub-bass "thịch": sin trượt nhanh 120 -> 38 Hz + tiếng gõ ngắn
+  thump(ctx) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(130, 0); o.frequency.exponentialRampToValueAtTime(38, 0.18);
+    const g = ctx.createGain(); g.gain.setValueAtTime(1, 0); g.gain.exponentialRampToValueAtTime(0.001, 0.9);
+    o.connect(g).connect(ctx.destination); o.start(0); o.stop(1);
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, 0.05); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.5, 0); ng.gain.exponentialRampToValueAtTime(0.001, 0.05);
+    s.connect(lp).connect(ng).connect(ctx.destination); s.start(0);
+    return 1;
+  },
+  // nhịp tim: hai nhát thịch (lub-dub)
+  heartbeat(ctx) {
+    for (const [t, a] of [[0, 1], [0.24, 0.7]]) {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(a, t + 0.01); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.4);
+    }
+    return 0.8;
+  },
+  // ù tai: tông cao ~3,9 kHz rung nhẹ, lặng dần
+  tinnitus(ctx) {
+    const L = 3.2, o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 3900;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 5; const lg = ctx.createGain(); lg.gain.value = 12; lfo.connect(lg).connect(o.frequency);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(0.5, 0.05); g.gain.setTargetAtTime(0.12, 0.3, 0.8); g.gain.linearRampToValueAtTime(0, L);
+    o.connect(g).connect(ctx.destination); o.start(0); o.stop(L); lfo.start(0); lfo.stop(L);
+    return L;
+  },
+  // máy đếm Geiger: tiếng lách tách ngẫu nhiên dày dần
+  geiger(ctx) {
+    const L = 9, rate0 = 3, rate1 = 28;
+    let t = 0.1;
+    while (t < L) {
+      const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, 0.004);
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+      const g = ctx.createGain(); g.gain.value = 0.6 + Math.random() * 0.4;
+      s.connect(hp).connect(g).connect(ctx.destination); s.start(t);
+      const r = rate0 + (rate1 - rate0) * Math.pow(t / L, 1.6);
+      t += -Math.log(1 - Math.random()) / r;
+    }
+    return L;
+  },
+  // còi báo động phòng không ở xa: hai tông trượt lên xuống, lọc thông thấp + vang (nghe vọng trong mưa)
+  siren(ctx) {
+    const L = 9, o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(260, 0);
+    for (let k = 0; k < 3; k++) { o.frequency.linearRampToValueAtTime(620, k * 3 + 1.6); o.frequency.linearRampToValueAtTime(300, k * 3 + 3); }
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(0.5, 1.2); g.gain.setValueAtTime(0.5, L - 1.5); g.gain.linearRampToValueAtTime(0, L);
+    const cv = ctx.createConvolver(); const ir = ctx.createBuffer(2, SR * 2.5, SR);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3); }
+    cv.buffer = ir; const wet = ctx.createGain(); wet.gain.value = 0.55;
+    o.connect(lp).connect(g); g.connect(ctx.destination); g.connect(cv).connect(wet).connect(ctx.destination);
+    o.start(0); o.stop(L);
+    return L + 1;
+  },
+  // tiếng tick đồng hồ: kim loại khô ngắn
+  tick(ctx) {
+    for (const [f, a] of [[2400, 1], [4700, 0.5]]) {
+      const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
+      const g = ctx.createGain(); g.gain.setValueAtTime(a, 0); g.gain.exponentialRampToValueAtTime(0.001, 0.035);
+      o.connect(g).connect(ctx.destination); o.start(0); o.stop(0.05);
+    }
+    return 0.25;
+  },
+  // nhiễu bộ đàm (lóe sóng trước / sau câu nói)
+  static(ctx) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, 0.45);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.8;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.9, 0); g.gain.setValueAtTime(0.9, 0.3); g.gain.linearRampToValueAtTime(0, 0.45);
+    s.connect(bp).connect(g).connect(ctx.destination); s.start(0);
+    return 0.45;
+  }
+};
+window.renderSfx = async function (name) {
+  const len = 12;
+  const ctx = new OfflineAudioContext(2, SR * len, SR);
+  const dur = SOUNDS[name](ctx);
+  const full = await ctx.startRendering();
+  const n = Math.ceil(dur * SR), cut = new AudioBuffer({ numberOfChannels: 2, length: n, sampleRate: SR });
+  for (let c = 0; c < 2; c++) cut.copyToChannel(full.getChannelData(c).subarray(0, n), c);
+  const b = new Uint8Array(wav(cut));
+  let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+window.SFX_NAMES = Object.keys(SOUNDS);
+document.title = 'OK';
+</script></body></html>

@@ -109,6 +109,8 @@ class ArtilleryGame3D {
     // (initCraterPreview) gọi toDataURL ngay sau render trong cùng lượt; quay video (captureStream) không cần nó
     this.renderer = new THREE.WebGLRenderer({ antialias: !(window.GameMenu && GameMenu.wantAntialias() === false), powerPreference: 'high-performance' });
     this.renderer.debug.checkShaderErrors = false;
+    // shader lần đầu xuất hiện giữa trận biên dịch song song, không đứng hình (async_shaders.js)
+    if (window.AsyncShaders) AsyncShaders.install(this.renderer);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
@@ -261,6 +263,26 @@ class ArtilleryGame3D {
     requestAnimationFrame((t) => this.loop(t));
   }
 
+  // Đặt khung bóng đổ mặt trời quanh tâm (cx, cy, cz), nửa cạnh `half`, mặt trời lùi xa `dist`. Tâm khóa theo lưới texel
+  // TRONG KHÔNG GIAN ÁNH SÁNG (trục ngang / dọc của camera bóng đổ): khóa theo trục x / z thế giới như trước không trùng lưới
+  // texel (camera bóng đổ nghiêng theo hướng nắng) và độ cao tâm đổi liên tục -> mép bóng xe / nhà nhảy lăn tăn khi tâm dịch
+  placeSunShadow(cx, cy, cz, half, dist) {
+    const L = this.sunLight, sc = L.shadow.camera;
+    if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
+    const sd = (this.sunDir || new THREE.Vector3(-0.42, 0.82, -0.36)).clone().normalize();
+    const texel = (2 * half) / (L.shadow.mapSize.width || 2048);
+    // trục camera bóng đổ (lookAt với up = +Y): ngang = up × hướng nắng, dọc = hướng nắng × ngang
+    let rx = sd.z, rz = -sd.x;
+    const rn = Math.hypot(rx, rz) || 1; rx /= rn; rz /= rn;
+    const ux = sd.y * rz, uy = sd.z * rx - sd.x * rz, uz = -sd.y * rx;
+    const u = Math.round((cx * rx + cz * rz) / texel) * texel;
+    const v = Math.round((cx * ux + cy * uy + cz * uz) / texel) * texel;
+    const w = cx * sd.x + cy * sd.y + cz * sd.z;
+    const fx = rx * u + ux * v + sd.x * w, fy = uy * v + sd.y * w, fz = rz * u + uz * v + sd.z * w;
+    L.position.set(fx + sd.x * dist, fy + sd.y * dist, fz + sd.z * dist);
+    L.target.position.set(fx, fy, fz);
+  }
+
   setupLighting() {
     // Ánh sáng môi trường: ambient nhẹ + ánh trời bán cầu (trời xanh phía trên, đất phản xạ phía dưới)
     const ambientLight = new THREE.AmbientLight(0xfff5e4, 0.75);
@@ -357,12 +379,13 @@ class ArtilleryGame3D {
   // GHIM SHADER: Three.js xoá chương trình shader ngay khi vật liệu cuối cùng dùng nó bị huỷ (dispose). Hiệu ứng tạo
   // rồi huỷ vật liệu liên tục (vỏ sóng nổ, vết đạn / lỗ thủng trên xe, sẹo đất...) nên MỖI vụ nổ lại phải biên dịch
   // lại shader (khựng 50-150 ms). Giữ thêm 1 lượt tham chiếu cho mọi shader đã biên dịch -> dùng lại ngay, không biên
-  // dịch lại. Số shader khác nhau có hạn (~50-80), tốn rất ít bộ nhớ GPU.
+  // dịch lại. Số shader khác nhau có hạn (trận phố đầy đủ ~400, đo 2026-10-27), tốn rất ít bộ nhớ GPU.
   pinShaderPrograms() {
     const P = this.renderer && this.renderer.info && this.renderer.info.programs;
     if (!P || P.length === this._pinnedPrograms) return;   // đã ghim thì không bao giờ bị xoá -> số lượng chỉ tăng
-    // chặn trên: vật liệu nào lỡ sinh shader riêng cho từng bản thì không ghim mãi (rò bộ nhớ GPU)
-    for (const p of P) if (!p.__pinned && typeof p.usedTimes === 'number' && (this._pinnedN || 0) < 320) { p.__pinned = true; p.usedTimes++; this._pinnedN = (this._pinnedN || 0) + 1; }
+    // chặn trên: vật liệu nào lỡ sinh shader riêng cho từng bản thì không ghim mãi (rò bộ nhớ GPU). Trần cũ 320 bị chạm
+    // trong trận phố (~400 program): shader hiệu ứng nổ sinh sau đó không được ghim, biên dịch lại mỗi phát bắn
+    for (const p of P) if (!p.__pinned && typeof p.usedTimes === 'number' && (this._pinnedN || 0) < 1024) { p.__pinned = true; p.usedTimes++; this._pinnedN = (this._pinnedN || 0) + 1; }
     this._pinnedPrograms = P.length;
   }
 
@@ -527,15 +550,29 @@ class ArtilleryGame3D {
           dummies.push(u);
         }]);
       }
-      steps.push(['shader xe', () => {
-        try { this.renderer.compile(this.scene, this.camera); } catch (e) { /* bỏ qua */ }
-        this.pinShaderPrograms();
-      }]);
     }
+    // Chi tiết bản đồ (nhà, phố, đồ vật, ô tô) dựng nền muộn (terrain.detailsReady): biên dịch trước khi có thì shader của
+    // chúng dồn lại biên dịch đồng bộ lúc vào trận (đo 2026-10-27: 103 shader, đứng hình hàng chục giây) -> chờ (tối đa 60 s)
+    steps.push(['chờ chi tiết bản đồ', () => new Promise(res => {
+      const t1 = performance.now();
+      const poll = () => (T.detailsReady || !alive() || performance.now() - t1 > 60000 ? res() : setTimeout(poll, 250));
+      poll();
+    })]);
+    // ô tô dân sự chi tiết (bản đồ có phố): ~50 biến thể vật liệu vật lý nặng — trước đây biên dịch đồng bộ giữa trận khi
+    // xe ở xa được nâng chi tiết (zoom kính ngắm: đứng hình hàng chục giây). Mỗi bước dựng một loại xe mẫu dưới lòng đất
+    let civ = null;
+    if (typeof CivilCars !== 'undefined' && CivilCars.warmJobs) {
+      steps.push(['ô tô mẫu', () => { if (T.propSet && T.propSet.street) civ = CivilCars.warmJobs(this.scene, this.renderer); }]);
+      for (let i = 0; i < 9; i++) steps.push(['ô tô mẫu', () => { if (civ && civ.steps[i]) civ.steps[i](); }]);
+    }
+    // một lượt biên dịch song song cho tất cả (xe tạm, bản đồ đủ chi tiết, ô tô mẫu): compileShadersAsync không chặn luồng
+    // chính, sảnh không vẽ chiến trường nên không thấy dừng hình
+    steps.push(['shader xe + bản đồ', () => this.compileShadersAsync().then(() => { if (civ) { civ.finish(); civ = null; } }, () => { if (civ) { civ.abort(); civ = null; } })]);
     steps.push(['shader hiệu ứng', () => this.prewarmShaders()]);
     // Gỡ xe tạm: chỉ huỷ hình khối + vật liệu (shader đã ghim). Không huỷ texture: texture sơn / vết chiến trường là
     // bộ nhớ đệm dùng chung của mọi xe (vehicle_kit) — huỷ đi thì vào trận lại phải nạp lên GPU
     const cleanup = () => {
+      if (civ) { civ.abort(); civ = null; }
       for (const u of dummies.splice(0)) {
         if (u.group) {
           if (u.group.parent) u.group.parent.remove(u.group);
@@ -563,10 +600,12 @@ class ArtilleryGame3D {
         return;
       }
       const ts = performance.now();
-      try { step[1](); } catch (e) { console.warn('[PREWARM] ' + step[0], e); }
-      job.ms[step[0]] = Math.round(performance.now() - ts);
-      // nhường 1 khung hình rồi làm bước kế (trang ẩn thì rAF dừng -> dùng setTimeout)
-      setTimeout(next, 16);
+      let r = null;
+      try { r = step[1](); } catch (e) { console.warn('[PREWARM] ' + step[0], e); }
+      job.ms[step[0]] = (job.ms[step[0]] || 0) + Math.round(performance.now() - ts);
+      // nhường 1 khung hình rồi làm bước kế (trang ẩn thì rAF dừng -> dùng setTimeout); bước bất đồng bộ: chờ xong
+      if (r && typeof r.then === 'function') r.then(() => setTimeout(next, 16), () => setTimeout(next, 16));
+      else setTimeout(next, 16);
     };
     setTimeout(next, 50);
   }
@@ -7245,18 +7284,10 @@ class ArtilleryGame3D {
     }
 
     // Khung bóng đổ ôm vùng nhìn rõ phía trước xe (bóng xa hơn đã chìm trong sương). Tâm khóa theo lưới texel để bóng không rung.
-    const sd = this.sunDir || new THREE.Vector3(-0.42, 0.82, -0.36);
     const aspK = Math.max(1, cam.aspect / 1.78);
     const half = Math.ceil((1200 * (1 - Z.t) + 1600 * (C.zoom / 2.6) * Z.t) * distK * aspK / 20) * 20;
-    const sc = this.sunLight.shadow.camera;
-    if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
-    const texel = (2 * half) / (this.sunLight.shadow.mapSize.width || 2048);
     const sAhead = 450 * (1 - Z.t) + Z.ahead * Z.t;
-    const focusX = Math.round((C.px + fx * sAhead) / texel) * texel;
-    const focusZ = Math.round((C.pz + fz * sAhead) / texel) * texel;
-    const focusY = C.y;
-    this.sunLight.position.set(focusX + sd.x * 2400, focusY + sd.y * 2400, focusZ + sd.z * 2400);
-    this.sunLight.target.position.set(focusX, focusY, focusZ);
+    this.placeSunShadow(C.px + fx * sAhead, C.y, C.pz + fz * sAhead, half, 2400);
   }
 
   // =========================================================================
@@ -8470,13 +8501,7 @@ class ArtilleryGame3D {
       const fog = this.scene.fog;
       if (fog && fog.density !== undefined) { if (fog._baseD === undefined) fog._baseD = fog.density; fog.density = fog._baseD; }
       const half = Math.ceil(Math.max(500, Math.min(1000, S.h * 1.6)) / 20) * 20;
-      const sd = this.sunDir || new THREE.Vector3(-0.42, 0.82, -0.36);
-      const sc = this.sunLight.shadow.camera;
-      if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
-      const texel = (2 * half) / (this.sunLight.shadow.mapSize.width || 2048);
-      const fX = Math.round(S.cx / texel) * texel, fZ = Math.round(S.cz / texel) * texel;
-      this.sunLight.position.set(fX + sd.x * 1300, S.y + sd.y * 1300, fZ + sd.z * 1300);
-      this.sunLight.target.position.set(fX, S.y, fZ);
+      this.placeSunShadow(S.cx, S.y, S.cz, half, 1300);
       // cự ly: từ PHÁO tới điểm đã đánh dấu (chưa đánh dấu: tới tâm màn hình)
       const dc = Math.round(Math.hypot(S.cx - P.x, S.cz - P.z));
       range = A ? A.d : dc;
@@ -8642,13 +8667,7 @@ class ArtilleryGame3D {
       this._viewFocus = { x: px + fx * cD, z: pz + fz * cD };
       const fog = this.scene.fog;
       if (fog && fog.density !== undefined) { if (fog._baseD === undefined) fog._baseD = fog.density; fog.density = fog._baseD; }
-      const sd = this.sunDir || new THREE.Vector3(-0.42, 0.82, -0.36);
-      const sc = this.sunLight.shadow.camera;
-      if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
-      const texel = (2 * half) / (this.sunLight.shadow.mapSize.width || 2048);
-      const fX = Math.round((px + fx * cD) / texel) * texel, fZ = Math.round((pz + fz * cD) / texel) * texel;
-      this.sunLight.position.set(fX + sd.x * 1300, py + sd.y * 1300, fZ + sd.z * 1300);
-      this.sunLight.target.position.set(fX, py, fZ);
+      this.placeSunShadow(px + fx * cD, py, pz + fz * cD, half, 1300);
       range = (A || L) ? (A || L).d : null;
       S.rangeNote = null;
     }

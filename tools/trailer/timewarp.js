@@ -132,9 +132,12 @@
   window.webkitAudioContext = FakeAudioContext;
 
   // Một khung: âm thanh chạy tới mốc thời gian khung này rồi dừng, khi đó mới chạy khung game
-  TW.frame = function () {
+  // skipAudio: khung chạy ngầm (chờ cỏ / chi tiết dựng xong sau khi cắt cảnh, không ghi hình): đồng hồ âm thanh đứng yên
+  TW.audioSkip = 0;
+  TW.frame = function (skipAudio) {
     const ctx = TW.audio;
-    const t = (TW.audioFrame0 !== undefined ? TW.frameN + 1 - TW.audioFrame0 : 0) / FPS;
+    if (skipAudio && TW.audioStarted) { TW.audioSkip++; stepClock(); return Promise.resolve(TW.frameN); }
+    const t = (TW.audioFrame0 !== undefined ? TW.frameN + 1 - TW.audioFrame0 - TW.audioSkip : 0) / FPS;
     if (!ctx || !TW.audioStarted || t >= AUDIO_SEC - 0.05) { stepClock(); return Promise.resolve(TW.frameN); }
     // phải đợi bộ dựng âm DỪNG HẲN ở mốc trước rồi mới resume (resume lúc chưa dừng bị bỏ qua -> hai bên chờ nhau mãi)
     return TW._parked.then(() => new Promise((res) => {
@@ -160,7 +163,7 @@
   TW.finishAudio = async function () {
     const ctx = TW.audio;
     if (!ctx || !TW.audioStarted) return null;
-    const usedSec = (TW.frameN - TW.audioFrame0) / FPS;
+    const usedSec = (TW.frameN - TW.audioFrame0 - TW.audioSkip) / FPS;
     await TW._parked;
     ctx.__resume();
     const buf = await TW.audioDone;

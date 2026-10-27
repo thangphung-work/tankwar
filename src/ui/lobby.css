@@ -706,14 +706,28 @@
 .hero-repair-btn.hurt { color: var(--lb-accent); border-color: var(--lb-accent); }
 .hero-repair-btn.hurt:not(:disabled):hover { color: #0a0d0c; background: var(--lb-accent); border-color: var(--lb-accent); }
 
-/* Bốn thẻ chọn xe */
+/* Bốn thẻ chọn xe + ba thẻ sắp ra mắt: hiện 4 thẻ, cuộn ngang xem phần còn lại */
 .mm-class-cards-grid {
   flex-shrink: 0;
-  height: clamp(96px, 15vh, 132px);
+  height: calc(clamp(96px, 15vh, 132px) + 6px); /* + chỗ cho thanh cuộn */
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 30px) / 4);
   gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lb-line-2) transparent;
+  padding: 3px 0 6px; /* chừa chỗ thẻ nhấc lên khi rê chuột + thanh cuộn */
+  box-sizing: content-box;
 }
+.mm-class-cards-grid > * { scroll-snap-align: start; }
+.mm-class-cards-grid.dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
+.mm-class-cards-grid.dragging > * { cursor: grabbing; }
+.mm-class-cards-grid::-webkit-scrollbar { height: 6px; }
+.mm-class-cards-grid::-webkit-scrollbar-thumb { background: var(--lb-line-2); }
+.mm-class-cards-grid::-webkit-scrollbar-track { background: transparent; }
 
 .mm-class-card {
   position: relative;
@@ -806,6 +820,108 @@
 .mm-class-card.active .card-index,
 .mm-class-card.active .card-tank-name { color: var(--lb-accent-2); }
 .mm-class-card.active .card-info-pane { background: var(--lb-accent-soft); }
+
+/* Thẻ "sắp ra mắt": hình bóng SVG, không chọn được */
+.mm-soon-card {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: not-allowed;
+  background: var(--lb-panel-2);
+  border: 1px dashed var(--lb-line-2);
+}
+
+.mm-soon-card .card-img-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),
+    radial-gradient(ellipse at 50% 70%, rgba(231, 166, 58, 0.08), transparent 70%);
+}
+
+.soon-art { width: 88%; height: 88%; opacity: 0.55; transition: opacity 0.25s ease; }
+.mm-soon-card:hover .soon-art { opacity: 0.8; }
+.soon-art .soon-body, .soon-art .soon-blade { fill: #5d6658; }
+.soon-art .soon-glass { fill: #2a302b; }
+.soon-art .soon-line { fill: none; stroke: #2a302b; stroke-width: 1.4; }
+.soon-art .soon-rotor { fill: none; stroke: #5d6658; stroke-width: 2; }
+.soon-art .soon-wheel { fill: #3a413a; stroke: #5d6658; stroke-width: 3; }
+.soon-art .soon-gun { fill: none; stroke: #5d6658; stroke-width: 2.6; stroke-linecap: round; }
+
+.mm-soon-card .card-tank-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scale(1.06); /* che mép ảnh bị xé lệch */
+  filter: grayscale(1) contrast(0.85) brightness(0.6) url(#tv-warp-a);
+}
+.mm-soon-card:nth-child(even) .card-tank-photo {
+  filter: grayscale(1) contrast(0.85) brightness(0.6) url(#tv-warp-b);
+}
+.tv-filters { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* dải sóng sáng/tối nằm ngang, đứng yên, mỗi thẻ một vị trí */
+.mm-soon-card .card-img-frame::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 22%;
+  height: 26%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.07) 40%, rgba(255, 255, 255, 0.14) 50%, rgba(0, 0, 0, 0.18) 56%, transparent);
+}
+.mm-soon-card:nth-child(even) .card-img-frame::before { top: 55%; height: 20%; }
+.mm-soon-card:nth-child(3n) .card-img-frame::before { top: 8%; }
+
+/* hạt nhiễu + vạch quét phủ lên ảnh xám */
+.mm-soon-card .card-img-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1.6 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+  opacity: 0.55;
+  mix-blend-mode: overlay;
+}
+.mm-soon-card:hover .card-img-frame::after { opacity: 0.4; }
+
+.soon-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--lb-dim);
+  border: 1px solid var(--lb-line-2);
+  background: rgba(10, 13, 12, 0.8);
+}
+
+.mm-soon-card .card-info-pane {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  padding: 5px 9px 6px;
+  border-top: 1px dashed var(--lb-line);
+}
+.mm-soon-card .card-tank-name, .mm-soon-card .card-index { color: var(--lb-faint); }
+.mm-soon-card .card-tank-role { overflow: hidden; text-overflow: ellipsis; }
 
 /* --------------------------------------------------------------------------
    02 — CHIẾN ĐỊA (cùng chiều cao cột xe)
@@ -1069,8 +1185,8 @@
   .mm-main-title { font-size: 16px; letter-spacing: 2px; }
   .mm-campaign-subtitle { display: none; }
   .commander-info { display: none; }
-  .mm-class-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
-  .mm-class-card .card-img-frame { height: 70px; flex: none; }
+  .mm-class-cards-grid { grid-auto-columns: calc((100% - 10px) / 2); height: auto; }
+  .mm-class-card .card-img-frame, .mm-soon-card .card-img-frame { height: 70px; flex: none; }
   .hdr-subheading { display: none; }
   .mm-action-launch-btn { min-width: 0; }
 }

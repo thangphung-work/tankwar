@@ -4930,7 +4930,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
           w.g.scale.set((1 - lay) + flatScale * lay, 1, 1);
         } else {
           // Bánh xe không bị đè: đứng thẳng, bám theo khung gầm
-          w.g.position.set(px, py, pz);
+          w.g.position.set(px, py + w.y - S.r, pz);   // giữ độ hạ lốp xẹp sẵn + độ bù nghiêng thân
           w.g.rotation.set(0, 0, 0);
           w.g.scale.set(1, 1, 1);
         }
@@ -4987,6 +4987,11 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         car.add(wi); wheels.push({ g: wi, x: sx * xi, y: S.r - flat, z: az, sx, base: 0 });
       }
       if (flat) { roll += -sx * flat / (4 * S.trackHalf); pitch += flat / (4 * (az - (S.axleF + S.axleR) / 2)); sink += flat / 4; }
+    }
+    // bánh là con của thân: thân nghiêng / hạ kéo bánh xuống lần nữa -> bù ngược để đáy lốp vẫn chạm mặt đất (lift: độ bù)
+    if (roll || pitch || sink) {
+      const M = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(pitch, 0, roll)), q = new THREE.Vector3();
+      for (const w of wheels) { w.lift = -(q.set(w.x, 0, w.z).applyMatrix4(M).y - sink); w.y += w.lift; w.g.position.y = w.y; }
     }
     // --- XÁC XE BỊ PHÁ: vũng dầu máy / nước làm mát / xăng loang dưới đất, mảnh tôn / nhựa / kính / đèn văng quanh
     const flows = [], loose = [];
@@ -5406,7 +5411,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       wheels.forEach((w, wi) => {
         if (w.free || Math.hypot(w.g.position.x - p.x, w.g.position.y - p.y, w.g.position.z - p.z) > rad) return;
         const tire = w.g.children[0], flat = 0.42 * S.r; tire.geometry.dispose(); tire.geometry = tireGeometry(S, flat);
-        w.lvl = 2; w.flat = flat; w.g.position.y = S.r - flat; events.push('tire');
+        w.lvl = 2; w.flat = flat; w.g.position.y = S.r - flat + (w.lift || 0); events.push('tire');
       });
     };
     const ignite = (x, y, z) => {
@@ -6006,21 +6011,23 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
   // hình hàng chục giây. Dựng mỗi biến thể 1 xe trong CHÍNH cảnh trận (khớp số đèn, sương mù, bóng đổ), dưới lòng đất,
   // biên dịch rồi gỡ. Hình học dùng chung (shareGeometries) giữ lại cho xe thật dùng tiếp.
   let warmedFor = null;
-  function prewarm(scene, renderer, camera) {
-    if (!scene || !renderer || !camera) return 0;
+  // Các bước dựng xe mẫu (mỗi bước một loại xe, dưới lòng đất) để biên dịch shader: game.scheduleMatchPrewarm chạy từng bước
+  // lúc chờ ghép trận rồi biên dịch song song (compileShadersAsync, không chặn); prewarm() chạy liền rồi biên dịch đồng bộ.
+  // null nếu cảnh đã làm nóng với cùng bộ đèn. finish(): gỡ xe mẫu; abort(): gỡ và coi như chưa làm nóng
+  function warmJobs(scene, renderer) {
+    if (!scene || !renderer) return null;
     fireLightPool(scene);
     // đã làm nóng cho cảnh này với cùng bộ đèn (lượt lúc chờ ghép trận, rồi lượt lúc vào trận): bỏ qua
     let lights = 0;
     scene.traverse(o => { if (o.isLight) lights++; });
     const sig = lights + '|' + renderer.shadowMap.enabled + '|' + !!scene.fog;
-    if (warmedFor && warmedFor.scene === scene && warmedFor.sig === sig) return 0;
-    warmedFor = { scene, sig };
+    if (warmedFor && warmedFor.scene === scene && warmedFor.sig === sig) return null;
+    const mark = warmedFor = { scene, sig };
     const holder = new THREE.Group();
     holder.position.set(0, -5000, 0);
     scene.add(holder);
-    const KINDS = ['sedan', 'taxi', 'suv', 'pickup', 'hatch', 'van', 'truck', 'dump'];
     const add = (kind, o) => { try { const c = build(kind, o); holder.add(c); return c; } catch (e) { return null; } };
-    for (const kind of KINDS) {
+    const steps = ['sedan', 'taxi', 'suv', 'pickup', 'hatch', 'van', 'truck', 'dump'].map(kind => () => {
       for (const cond of ['clean', 'dusty', 'rusted', 'broken', 'burnt']) add(kind, { seed: 11, cond, burnt: cond === 'burnt' });
       add(kind, { seed: 3, cond: 'dusty', crush: 0.7 });           // bị cán bẹp: khoang 2 mặt, vệt xích
       add(kind, { seed: 9, cond: 'dusty', glass: true, flats: [1, 0, 0, 1] });
@@ -6033,15 +6040,29 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
           for (let i = 0; i < 8; i++) api.update(1 / 30);
         } catch (e) { /* chỉ làm nóng shader */ }
       }
-    }
-    for (const kind of ['truck', 'dump']) for (const body of Object.keys(TRUCK_BODIES)) add(kind, { seed: 5, cond: 'dusty', body });
+    });
+    steps.push(() => { for (const kind of ['truck', 'dump']) for (const body of Object.keys(TRUCK_BODIES)) add(kind, { seed: 5, cond: 'dusty', body }); });
+    let gone = false;
+    const finish = () => {
+      if (gone) return;
+      gone = true;
+      scene.remove(holder);
+      assignFireLights(null);
+      holder.traverse(o => { if (o.geometry && o.geometry.userData.shareKey === undefined) o.geometry.dispose(); });
+    };
+    const abort = () => { finish(); if (warmedFor === mark) warmedFor = null; };
+    return { holder, steps, finish, abort };
+  }
+  function prewarm(scene, renderer, camera) {
+    if (!scene || !renderer || !camera) return 0;
+    const J = warmJobs(scene, renderer);
+    if (!J) return 0;
+    for (const st of J.steps) st();
     const n0 = (renderer.info.programs || []).length;
     try { renderer.compile(scene, camera); } catch (e) { /* bỏ qua */ }
-    scene.remove(holder);
-    assignFireLights(null);
-    holder.traverse(o => { if (o.geometry && o.geometry.userData.shareKey === undefined) o.geometry.dispose(); });
+    J.finish();
     return (renderer.info.programs || []).length - n0;
   }
-  return { build, SPEC, envCube, truckBodyOf, lodGeometry, patchLodMaterial, fireLightPool, assignFireLights, prewarm, _geo: { bodyGeometry, cabinGeometry } };
+  return { build, SPEC, envCube, truckBodyOf, lodGeometry, patchLodMaterial, fireLightPool, assignFireLights, prewarm, warmJobs, _geo: { bodyGeometry, cabinGeometry } };
 })();
 if (typeof window !== 'undefined') window.CivilCars = CivilCars;

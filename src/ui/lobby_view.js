@@ -127,6 +127,55 @@
     }
   }
 
+  // Dải thẻ xe cuộn ngang bằng chuột: lăn bánh xe -> sang một thẻ (scroll-snap nuốt bước lăn nhỏ),
+  // bấm giữ kéo ngang -> cuộn theo tay; kéo quá 5px thì nuốt cú click để không đổi xe
+  function initCardScroll(cards) {
+    const step = () => {
+      const c = cards.firstElementChild;
+      return c ? c.getBoundingClientRect().width + 10 : cards.clientWidth / 4;
+    };
+    let wheelLock = 0;
+    cards.addEventListener('wheel', e => {
+      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY) || cards.scrollWidth <= cards.clientWidth) return;
+      e.preventDefault();
+      const now = performance.now();
+      if (now < wheelLock) return; // một cú lăn bắn nhiều sự kiện liền nhau -> chỉ tính một
+      wheelLock = now + 180;
+      const from = cards.scrollLeft, dx = Math.sign(e.deltaY) * step();
+      cards.scrollBy({ left: dx, behavior: 'smooth' });
+      // trình duyệt không chạy cuộn mượt (khung ẩn, giảm chuyển động...) -> nhảy thẳng
+      setTimeout(() => { if (cards.scrollLeft === from) cards.scrollLeft = from + dx; }, 400);
+    }, { passive: false });
+
+    let drag = null, swallowClick = false;
+    cards.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      drag = { x: e.clientX, left: cards.scrollLeft, moved: false };
+    });
+    window.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      if (!drag.moved && Math.abs(dx) > 5) {
+        drag.moved = true;
+        cards.classList.add('dragging');
+      }
+      if (drag.moved) cards.scrollLeft = drag.left - dx;
+    });
+    window.addEventListener('pointerup', () => {
+      if (!drag) return;
+      if (drag.moved) {
+        swallowClick = true;
+        setTimeout(() => { swallowClick = false; }, 0);
+        cards.classList.remove('dragging'); // bật lại snap -> trượt về mép thẻ gần nhất
+      }
+      drag = null;
+    });
+    cards.addEventListener('click', e => {
+      if (swallowClick) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    cards.addEventListener('dragstart', e => e.preventDefault()); // ảnh xe không bị kéo ra ngoài
+  }
+
   function init() {
     renderHero();
     fitHero();
@@ -139,7 +188,9 @@
       if (!root) return;
       new MutationObserver(fn).observe(root, { subtree: true, attributes: true, attributeFilter: ['class'] });
     };
-    watch($('.mm-class-cards-grid'), () => { renderHero(); fitHero(); });
+    const cards = $('.mm-class-cards-grid');
+    watch(cards, () => { renderHero(); fitHero(); });
+    if (cards) initCardScroll(cards);
     // giải mã sẵn ảnh lớn của cả 4 xe lúc rảnh -> lần đầu bấm đổi xe cũng hiện ngay
     const warm = () => document.querySelectorAll('.mm-class-card .card-tank-photo').forEach(p => {
       const s = p.getAttribute('src');

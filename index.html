@@ -755,7 +755,94 @@
                   <p class="card-tank-desc">Siêu nhanh, núp bụi, đánh du kích.</p>
                 </div>
               </div>
+
+              <!-- Sắp ra mắt: class riêng (không phải .mm-class-card) để các bộ chọn xe bỏ qua -->
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/helicopter.webp" alt="WYVERN AH-7" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">05</span>
+                  <h3 class="card-tank-name">WYVERN AH-7</h3>
+                  <span class="card-tank-role">Trực thăng tấn công</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/mlrs.webp" alt="TEMPEST 220" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">06</span>
+                  <h3 class="card-tank-name">TEMPEST 220</h3>
+                  <span class="card-tank-role" title="Pháo phản lực tự hành phóng loạt">Pháo phóng loạt</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/infantry.webp" alt="VANGUARD" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">07</span>
+                  <h3 class="card-tank-name">VANGUARD</h3>
+                  <span class="card-tank-role">Bộ binh</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/drone_truck.webp" alt="SWARM 6X6" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">08</span>
+                  <h3 class="card-tank-name">SWARM 6X6</h3>
+                  <span class="card-tank-role" title="Xe tải phóng máy bay không người lái cảm tử">Xe phóng drone</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/minelayer.webp" alt="BADGER ML" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">09</span>
+                  <h3 class="card-tank-name">BADGER ML</h3>
+                  <span class="card-tank-role" title="Xe bọc thép trinh sát rải mìn chống tăng">Trinh sát rải mìn</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/support_truck.webp" alt="MIST 6X6" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">10</span>
+                  <h3 class="card-tank-name">MIST 6X6</h3>
+                  <span class="card-tank-role" title="Xe tải bọc thép che khói ngụy trang, hỗ trợ nhìn xuyên khói, phá sóng và dò mìn">Hỗ trợ che chắn</span>
+                </div>
+              </div>
             </div>
+
+            <!-- Nhiễu sóng TV cho thẻ sắp ra mắt: xé ngang ảnh, đứng yên (hai mẫu cho thẻ chẵn/lẻ) -->
+            <svg class="tv-filters" width="0" height="0" aria-hidden="true" focusable="false">
+              <filter id="tv-warp-a" x="-5%" y="0" width="110%" height="100%" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.0005 0.11" numOctaves="2" seed="3"/>
+                <feColorMatrix values="1 0 0 0 0  0 0 0 0 0.5  0 0 0 0 0  0 0 0 0 1"/>
+                <feDisplacementMap in="SourceGraphic" xChannelSelector="R" yChannelSelector="G" scale="12"/>
+              </filter>
+              <filter id="tv-warp-b" x="-5%" y="0" width="110%" height="100%" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.0005 0.14" numOctaves="2" seed="19"/>
+                <feColorMatrix values="1 0 0 0 0  0 0 0 0 0.5  0 0 0 0 0  0 0 0 0 1"/>
+                <feDisplacementMap in="SourceGraphic" xChannelSelector="R" yChannelSelector="G" scale="12"/>
+              </filter>
+            </svg>
           </section>
 
           <!-- 02: CHỌN CHIẾN ĐỊA -->
@@ -1009,6 +1096,7 @@
   <script src="three.min.js?v=20261019i"></script>
   <script src="three-mesh-bvh.js?v=0.5.24"></script>
   <script src="src/core/raycast_bvh.js?v=20261027wrk2"></script>
+  <script src="src/core/async_shaders.js?v=20261027as1"></script>
   <script src="src/core/equipment.js?v=20261027eco1"></script>
   <script src="src/gameplay/camo_fire.js?v=20261021wet1"></script>
   <script src="src/gameplay/leaf_cover.js?v=20261022lf1"></script>
@@ -1074,7 +1162,7 @@
   <script src="src/entities/recon_drone.js?v=20261021mrg26"></script>
   <script src="src/entities/spg.js?v=20261027prep1"></script>
   <script src="src/entities/car_softbody.js?v=20261024sb1"></script>
-  <script src="src/entities/civil_cars.js?v=20261025tl1"></script>
+  <script src="src/entities/civil_cars.js?v=20261027warm1"></script>
 
   <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
   <script src="src/gameplay/capture_points.js?v=20261021map54"></script>
@@ -1128,7 +1216,7 @@
   <script src="src/ui/motion.js?v=20261026sw1"></script>
   <script src="src/gameplay/drone_air.js?v=20261026prox1"></script>
   <script src="src/ui/range_air.js?v=20261026prox1"></script>
-  <script src="src/game.js?v=20261027prep1"></script>
+  <script src="src/game.js?v=20261027as1"></script>
   <script src="src/gameplay/ew_jammer.js?v=20261022mod2"></script>
   <script src="src/gameplay/lock_jammer.js?v=20261022mod2"></script>
   <script src="src/gameplay/kamikaze_uav.js?v=20261026det2"></script>
