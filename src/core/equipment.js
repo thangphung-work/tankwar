@@ -243,16 +243,16 @@
   // phải xem ít nhất MIN_SEC giây (mạng quảng cáo thật có quảng cáo ngắn); khung quảng cáo mẫu dài MOCK_SEC giây.
   // Quá DAILY lượt: thêm BONUS lượt "thưởng nửa" (chỉ vật tư, được ceil(ad * BONUS_MUL)) -> xem thêm vẫn có lợi
   // nhưng giảm dần; tổng trần cứng DAILY + BONUS / ngày chặn cày thưởng bằng cách gọi API liên tục.
-  const AD = { DAILY: 20, BONUS: 20, BONUS_MUL: 0.5, MIN_SEC: 5, COOLDOWN_SEC: 45, MOCK_SEC: 15 };
+  const AD = { DAILY: 10, BONUS: 10, BONUS_MUL: 0.5, MIN_SEC: 5, COOLDOWN_SEC: 45, MOCK_SEC: 15 };
   const adAmmoN = (A, used) => used < AD.DAILY ? A.ad : Math.max(1, Math.ceil(A.ad * AD.BONUS_MUL));
 
   // QUAY THƯỞNG HẰNG NGÀY (máy chủ quay, máy khách chỉ diễn hoạt cảnh): 1 lượt / ngày (giờ VN), đổi thưởng theo bảng
-  // trọng số dưới. Quay liên tiếp nhiều ngày (streak, chu kỳ 7 ngày) -> thưởng Bạc nhân thêm 10% / ngày (ngày 7: +60%), ngày 7 có quà đặc biệt.
+  // trọng số dưới. Quay liên tiếp nhiều ngày (streak, chu kỳ 7 ngày): ngày 1-6 như nhau, ngày 7 có quà đặc biệt.
   // Đồ nâng cao: chỉ rơi món người chơi CHƯA có cho xe đó; có hết rồi -> đổi thành Bạc = nửa giá món.
   // Vật tư: vào kho phần "free" (như quà quảng cáo, không bán lại lấy Bạc), không vượt trần kho.
   // rar: độ hiếm để tô màu thẻ (0 thường · 1 khá · 2 hiếm · 3 sử thi · 4 huyền thoại)
   const DAILY_SPIN = {
-    STREAK_MAX: 7, STREAK_STEP: 0.1,
+    STREAK_MAX: 7,
     // CHU KỲ 7 NGÀY: ngày 1..6 quay tỉ lệ như nhau; lượt MIỄN PHÍ ngày 7 là QUÀ ĐẶC BIỆT — chỉ bốc trong các ô
     //   rar >= SPECIAL_RAR (Sử thi / Huyền thoại). Quay tiếp ngày 8 -> chuỗi về ngày 1 của chu kỳ mới.
     SPECIAL_RAR: 3,
@@ -343,13 +343,13 @@
     const it = left[Math.floor(rnd() * left.length)];
     return { kind: 'item', tank: it.tank, id: it.id, rar: e.rar };
   }
-  const spinStreakMul = (streak) => 1 + DAILY_SPIN.STREAK_STEP * (spinCycleDay(streak) - 1);
-  /** Số quảng cáo phải xem để mở khóa 1 món nâng cao cho 1 xe (~1 quảng cáo / 1.000 Bạc giá trị — trước 1.500: 20 lượt / ngày
-   *  ~ 25 trận Bạc, 2 ngày xem quảng cáo là mở gần hết đồ nâng cao) */
+  /** Số quảng cáo phải xem để mở khóa 1 món nâng cao cho 1 xe: ~1 quảng cáo / AD_SILVER Bạc giá trị, tối đa AD.DAILY lượt / ngày
+   *  (2026-10-27: trước 1 / 1.000 Bạc + 20 lượt / ngày -> xem quảng cáo lời gấp ~6 lần chơi trận, 2 ngày mở gần hết đồ) */
+  const AD_SILVER = 600;
   function adsToUnlock(id) {
     const it = MODULES[id] || PREMIUM[id];
     if (it && it.noAd) return 0;   // động cơ: chỉ mua bằng Bạc
-    return it ? Math.max(1, Math.round((it.price || 0) / 1000)) : 0;
+    return it ? Math.max(1, Math.round((it.price || 0) / AD_SILVER)) : 0;
   }
   // Đạn đặc chủng miễn phí mỗi lần xuất kích: KHÔNG CÒN — ngoài đạn chính (không giới hạn), mọi loại đạn khác phải
   // mua bằng Bạc (đạn đã mua tự mang theo tới mức tối đa mỗi lần xuất kích). Giữ đủ khóa để startLife đặt lại số đạn.
@@ -464,9 +464,12 @@
   // chi đạn + sửa giáp ~600–1.500) -> trận có trận không đủ đồ. Muốn dư: săn xe địch, chiếm hòm thả dù, vào top K/D,
   // hoặc xem quảng cáo (tiếp tế / mở khóa). Phần nền (tham gia, thắng, thời gian) nhỏ — tiền nằm ở thành tích.
   const AIRDROP_SILVER = 250;   // mỗi hòm thả dù chiếm được
+  const LOSS_AMMO_REFUND = 0.5; // thua: hoàn 50% tiền đạn đặc chủng (phần mua bằng Bạc) đã bắn trong trận
   function silverFor(result, kills, damage, durSec, airdrops) {
-    // 150 cơ bản + thắng 250 / hòa 100 + 180 / hạ + 25 / máu gây ra + 10 / phút trận (tối đa 15 phút) + 250 / hòm thả dù
-    return Math.round(150 + (result === 'win' ? 250 : result === 'draw' ? 100 : 0) + kills * 180 + damage * 25 + Math.min(durSec, 900) / 6
+    // 300 cơ bản + thắng 250 / hòa 100 + 150 / hạ + 35 / máu gây ra + 10 / phút trận (tối đa 15 phút) + 250 / hòm thả dù
+    // (2026-10-27: nền 150 -> 300 cho người chơi yếu đỡ lỗ; hạ 180 -> 150, sát thương 25 -> 35: góp sát thương cũng được
+    //  thưởng dù đồng đội hạ — thu hẹp chênh lệch giỏi / yếu)
+    return Math.round(300 + (result === 'win' ? 250 : result === 'draw' ? 100 : 0) + kills * 150 + damage * 35 + Math.min(durSec, 900) / 6
       + (airdrops || 0) * AIRDROP_SILVER);
   }
 
@@ -483,7 +486,7 @@
       .slice(0, 3);
   }
 
-  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, RETIRED_ITEMS, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AIRDROP_SILVER, AD, adAmmoN, DAILY_SPIN, spinItems, spinAmmo, spinRoll, spinStreakMul, spinCycleDay, spinWeights, spinOdds, TOPUP, topupPack, topupGrant, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD, ROOF_DEFAULT, SLOT_DEFAULT, MOUNT_CATS, roofOf, slotOf, ARMOR_REPAIR, dropDamaged, sanitizeGone, repairUnitPrice, noteArmor };
+  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, RETIRED_ITEMS, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AIRDROP_SILVER, LOSS_AMMO_REFUND, AD, adAmmoN, DAILY_SPIN, spinItems, spinAmmo, spinRoll, spinCycleDay, spinWeights, spinOdds, TOPUP, topupPack, topupGrant, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD, ROOF_DEFAULT, SLOT_DEFAULT, MOUNT_CATS, roofOf, slotOf, ARMOR_REPAIR, dropDamaged, sanitizeGone, repairUnitPrice, noteArmor };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================

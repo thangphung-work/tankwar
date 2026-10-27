@@ -4762,6 +4762,15 @@ class SPGUnit3D {
   // Cảnh báo đạn pháo đang lao xuống gần xe: bot lập tức cơ động né đạn
   alertIncomingShell(shellX, shellZ) {
     if (this.isDead || this.isPlayer) return;
+    // nhịp phản xạ như người: nghe tiếng rít ~0,25-0,7 s mới bẻ lái, ~15% lượt không kịp nhận ra (trước đây né tức thì,
+    // lần nào cũng né). Lời gọi lặp mỗi khung khi đạn còn rơi gần -> một lượt cảnh báo kéo dài tới 3 s
+    const now = performance.now();
+    if (!this._shellAlertAt || now - this._shellAlertAt > 3000) {
+      this._shellAlertAt = now;
+      this._shellReactAt = Math.random() < 0.15 ? Infinity : now + 250 + Math.random() * 450;
+    }
+    if (now < this._shellReactAt) return;
+    if (this.evadeTimer > 0 && this.aiState === 'evading') return;   // đang né sẵn: không đổi hướng giữa chừng
     this.evadeTimer = 2.8;
     const awayAngle = Math.atan2(this.x - shellX, this.z - shellZ) + (Math.random() - 0.5) * 0.6;
     // đang giữ cứ điểm: né vừa đủ ra khỏi tâm nổ rồi quay lại, không bỏ cứ điểm

@@ -565,8 +565,6 @@ function dailySpin(u) {
     const rw = Equipment.spinRoll(Math.random, owns, room, special);
     rw.special = special;
     if (rw.kind === 'silver') {
-      rw.base = rw.n;
-      rw.n = Math.round(rw.n * Equipment.spinStreakMul(streak) / 10) * 10;
       Q.addSilver.run(rw.n, u.id);
       Q.addPurchase.run(u.id, now, '-', 'spin:silver', 1, -rw.n);
     } else if (rw.kind === 'ammo') {
@@ -1223,7 +1221,8 @@ async function handle(req, res) {
       const map = MAPS.includes(b.mapType) ? b.mapType : null;
       const gained = Math.round(40 + (result === 'win' ? 100 : result === 'draw' ? 50 : 0) + kills * 30 + damage * 8 + Math.min(dur, 900) / 15) + (kdBonus ? kdBonus.xp : 0);
       const before = levelInfo(u.xp).level;
-      const silver = Equipment.silverFor(result, kills, damage, dur, airdrops) + (kdBonus ? kdBonus.silver : 0);
+      let silver = Equipment.silverFor(result, kills, damage, dur, airdrops) + (kdBonus ? kdBonus.silver : 0);
+      let ammoRefund = 0;
       // kiểm tra nhịp gửi + ghi 3 bảng trong cùng 1 giao dịch (đọc lại last_result_at bên trong -> không ghi trùng)
       const ok = tx(() => {
         const cur = Q.userById.get(u.id);
@@ -1231,13 +1230,22 @@ async function handle(req, res) {
         Q.addMatch.run(u.id, now, result, tank, map, kills, deaths, damage, Math.round(dur), gained);
         Q.addStats.run(u.id, tank, result === 'win' ? 1 : 0, result === 'loss' ? 1 : 0, result === 'draw' ? 1 : 0, kills, deaths, damage, shots, Math.round(dur));
         Q.addXp.run(gained, now, u.id);
-        Q.addSilver.run(silver, u.id);
-        // đạn mua thêm đã bắn trong trận: trừ kho (không âm)
+        // đạn mua thêm đã bắn trong trận: trừ kho (không âm). Thua -> hoàn LOSS_AMMO_REFUND phần đạn MUA bằng Bạc đã bắn
+        // (phần nhận miễn phí từ quảng cáo / quay thưởng trừ trước, không hoàn) -> người chơi yếu không bị lỗ dần
         const used = b.ammoUsed && typeof b.ammoUsed === 'object' ? b.ammoUsed : {};
         for (const ammo in Equipment.AMMO_SHOP[tank] || {}) {
           const n = Math.round(clampN(used[ammo], 0, 5000));
-          if (n > 0) Q.useStock.run(n, u.id, tank, ammo);
+          if (n <= 0) continue;
+          if (result === 'loss') {
+            const st = Q.stockGet.get(u.id, tank, ammo) || { n: 0, free: 0 };
+            const paid = Math.max(0, Math.min(n, st.n) - Math.min(st.free || 0, n));
+            ammoRefund += paid * Equipment.AMMO_SHOP[tank][ammo].price;
+          }
+          Q.useStock.run(n, u.id, tank, ammo);
         }
+        ammoRefund = Math.round(ammoRefund * Equipment.LOSS_AMMO_REFUND);
+        silver += ammoRefund;
+        Q.addSilver.run(silver, u.id);
         // giáp mua thêm vỡ trong trận: cộng dồn vào danh sách đơn vị thiếu (không vượt tổng số đơn vị của món)
         const ag = b.armorGone && typeof b.armorGone === 'object' ? b.armorGone : {};
         for (const item in ag) {
@@ -1255,7 +1263,7 @@ async function handle(req, res) {
       });
       if (!ok) return send(res, 429, { error: 'Kết quả trận đã được ghi' });
       const p = publicProfile(Q.userById.get(u.id));
-      return send(res, 200, { profile: p, gained, silver, levelUp: p.level > before, verified, kdPlace, kdBonus, airdrops, airdropSilver: airdrops * (Equipment.AIRDROP_SILVER || 0) });
+      return send(res, 200, { profile: p, gained, silver, ammoRefund, levelUp: p.level > before, verified, kdPlace, kdBonus, airdrops, airdropSilver: airdrops * (Equipment.AIRDROP_SILVER || 0) });
     }
     return send(res, 404, { error: 'Không có API này' });
   } catch (e) {

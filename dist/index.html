@@ -31,7 +31,7 @@
   <meta name="twitter:description" content="Game xe tăng 3D 10 đấu 10 chơi miễn phí ngay trên trình duyệt. Chiếm giữ cứ điểm A · B · C để thắng.">
   <meta name="twitter:image" content="https://tankwar.online/assets/og-share.jpg?v=1">
   <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
-  <link rel="stylesheet" href="dist/style.8072c4b6ab.css?v=8072c4b6ab">
+  <link rel="stylesheet" href="dist/style.f52a4d4857.css?v=f52a4d4857">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -156,6 +156,8 @@
     var t0 = Date.now(), MIN_MS = 2200, FADE_MS = 1400, EXPECT = 115;   // số <script src> trong trang (xấp xỉ, chỉ để chia tiến độ)
     var fill = el.querySelector('.gms-fill'), pct = el.querySelector('.gms-pct'), stage = el.querySelector('.gms-stage');
     var loaded = 0, shown = 0, target = 0, done = false, ready = false, fading = false;
+    // gone: màn chào đã bắt đầu mờ. Nhạc sảnh (music.js) chờ onGone để không đè lên tiếng màn chào
+    var api = window.GMSplash = { el: el, gone: false, audioOk: false, _cbs: [], onGone: function (cb) { if (api.gone) cb(); else api._cbs.push(cb); } };
     function set(p, txt) { target = Math.max(target, p); if (txt) stage.textContent = txt; }
     document.addEventListener('load', function (e) {
       if (e.target && e.target.tagName === 'SCRIPT') { loaded++; set(70 * Math.min(1, loaded / EXPECT)); }
@@ -185,6 +187,8 @@
       setTimeout(function () {
         el.classList.add('out');
         if (sfx) sfx.outro(FADE_MS / 1000);
+        api.gone = true;
+        api._cbs.splice(0).forEach(function (cb) { try { cb(); } catch (e) { /* bỏ qua */ } });
         setTimeout(function () { clearInterval(iv); el.remove(); if (sfx) sfx.end(); }, FADE_MS + 100);
       }, wait);
     }
@@ -310,12 +314,15 @@
       function start() {
         if (started || ended || ctx.state !== 'running') return;
         started = true;
+        api.audioOk = true;   // trình duyệt đã cho phát tiếng: music.js bật âm thanh game luôn khi màn chào mờ
         unhook();
         var now = ctx.currentTime, el0 = (Date.now() - t0) / 1000;
         base = now - el0;
         startDrone(now);
+        var lateHit = false;
         CUES.forEach(function (c) {
-          if (c[0] < el0 - 0.08) return;   // đã trôi qua lúc chưa được phép phát tiếng
+          // đã trôi qua lúc chưa được phép phát tiếng: bỏ, trừ cú đập GM (tiếng chính) thì phát bù ngay
+          if (c[0] < el0 - 0.08) { if (c[0] === 0.85 && !lateHit) { lateHit = true; c[1](now + 0.02); } return; }
           c[1](Math.max(base + c[0], now + 0.02));
         });
       }
@@ -345,14 +352,13 @@
     })();
     // lỗi khởi động / máy rất chậm: không giữ màn chào mãi (bảng lỗi / sảnh vẫn dùng được)
     setTimeout(function () { if (!done) { done = true; set(100); finish(); } }, 45000);
-    window.GMSplash = { el: el };
   })();
 </script>
 <!-- Phòng thử đạn (?lab=range): phủ màn chờ ngay từ đầu trang, trước khi HTML sảnh hiện ra & hàng chục script tải xong
      (range_lab.js nằm cuối trang, dùng lại phần tử này rồi gỡ khi cảnh đầu tiên đã vẽ) -->
 <script>
   // Nền màn chờ = ảnh sảnh của bản đồ sẽ vào (giống range_lab.js: ?map= rồi tới lựa chọn lần trước)
-  window.rangeLabLoaderMarkup = function (stageText) {
+  window.rangeLabLoaderMarkup = function (stageText, title) {
     var q = new URLSearchParams(location.search), ls = null;
     try { ls = localStorage.getItem('rg-map'); } catch (e) { /* bỏ qua */ }
     var maps = { HIGHLAND: ['highland', 'ĐỒNG CỎ'], RIVER_LAKE: ['river_lake', 'SÔNG HỒ'], JUNGLE: ['jungle', 'RỪNG'], DESERT: ['desert', 'SA MẠC'], URBAN: ['urban', 'ĐÔ THỊ'] };
@@ -374,14 +380,16 @@
       + '<div class="rl-bg"></div><div class="rl-shade"></div><div class="rl-grid"></div>'
       + '<div class="rl-card">'
       + '<div style="width:42px;height:42px;border-radius:50%;border:3px solid rgba(214,226,200,.18);border-top-color:#ffb700;animation:rlspin .8s linear infinite"></div>'
-      + '<div style="font-size:20px;color:#ffb700;text-shadow:0 0 18px rgba(255,183,0,.35)">THAO TRƯỜNG DIỄN TẬP</div>'
+      + '<div style="font-size:20px;color:#ffb700;text-shadow:0 0 18px rgba(255,183,0,.35)">' + (title || 'THAO TRƯỜNG DIỄN TẬP') + '</div>'
       + '<div style="font-size:11px;color:rgba(214,226,200,.6);letter-spacing:.3em">BẢN ĐỒ · ' + m[1] + '</div>'
       + '<div class="rl-track"><i></i></div>'
       + '<div id="range-lab-stage">' + stageText + '</div></div>';
   };
-  if (/[?&]lab=range(&|$)/.test(location.search)) {
+  // ?lab=freecam (camera bay xem bản đồ) dùng chung màn chờ
+  var labFree = /[?&]lab=freecam(&|$)/.test(location.search);
+  if (/[?&]lab=range(&|$)/.test(location.search) || labFree) {
     document.write('<div id="range-lab-loading" style="position:fixed;inset:0;z-index:99999;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0b0f0c;color:#d6e2c8;font:600 14px/1.4 system-ui,sans-serif;letter-spacing:.12em;transition:opacity .35s">'
-      + window.rangeLabLoaderMarkup('ĐANG TẢI…') + '</div>');
+      + window.rangeLabLoaderMarkup('ĐANG TẢI…', labFree ? 'CAMERA BAY TỰ DO' : null) + '</div>');
   }
 </script>
   <div id="game-container">
@@ -988,10 +996,10 @@
   </div>
 
   <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
-  <script src="dist/app1.c609d19479.js?v=c609d19479"></script>
+  <script src="dist/app1.cfe40a0a44.js?v=cfe40a0a44"></script>
   <script>
     window.ADS_CONFIG = { provider: 'auto', h5Client: 'ca-pub-1406451403469107', h5Test: true, allowMock: true };
   </script>
-  <script src="dist/app2.e7567777d4.js?v=e7567777d4"></script>
+  <script src="dist/app2.bdbcd15a31.js?v=bdbcd15a31"></script>
 </body>
 </html>

@@ -115,6 +115,7 @@
         </div>
         <div class="ds-streak"></div>
         <div class="ds-reel"><div class="ds-track"></div><span class="ds-needle"></span><span class="ds-fade l"></span><span class="ds-fade r"></span></div>
+        <div class="ds-reveal hidden"><span class="ds-rv-rays"></span><span class="ds-rv-flash"></span><div class="ds-rv-gift"></div><div class="ds-rv-card"></div><div class="ds-rv-cap"></div></div>
         <div class="ds-result"></div>
         <div class="ds-actions"><button type="button" class="ds-spin-btn"></button><button type="button" class="ds-ad-btn hidden"></button></div>
         <div class="ds-odds"></div>
@@ -136,7 +137,7 @@
     const pct = (w) => pctTxt(100 * w / tot);
     const lab = (p) => p.kind === 'silver' ? `${fmt(p.n)} Bạc` : p.kind === 'ammo' ? 'Gói vật tư' : p.kind === 'item' ? 'Trang bị nâng cao' : 'Động cơ tăng tốc';
     return `<b>Tỉ lệ${special ? ' — QUÀ NGÀY ' + D.STREAK_MAX : ''}:</b> ` + P.map((p, i) => W[i] ? `<span class="r${p.rar}">${lab(p)} ${pct(W[i])}</span>` : '').filter(Boolean).join(' · ')
-      + `<br>Chuỗi ngày: Bạc +${Math.round(D.STREAK_STEP * 100)}% mỗi ngày liên tiếp. <b>Ngày ${D.STREAK_MAX}: quà đặc biệt</b> — lượt miễn phí chắc chắn ra đồ Sử thi hoặc Huyền thoại, rồi chuỗi bắt đầu lại từ ngày 1. Đã có trang bị trúng -> đổi thành Bạc.`;
+      + `<br>Chuỗi ngày: quay ${D.STREAK_MAX} ngày liên tiếp -> <b>ngày ${D.STREAK_MAX} nhận quà lớn</b> (chắc chắn Sử thi hoặc Huyền thoại), rồi chuỗi bắt đầu lại từ ngày 1. Đã có trang bị trúng -> đổi thành Bạc.`;
   }
 
   const status = () => { const p = A() && A().profile; return p && p.daily ? p.daily : null; };
@@ -176,7 +177,7 @@
       const on = d <= have, cur = d === nextN, big = d === D.STREAK_MAX;
       h += big
         ? `<span class="ds-day big${on ? ' on' : ''}${cur ? ' cur' : ''}" title="Ngày ${d}: quà đặc biệt — chắc chắn Sử thi / Huyền thoại"><i class="ti ti-gift"></i><small>QUÀ LỚN</small></span>`
-        : `<span class="ds-day${on ? ' on' : ''}${cur ? ' cur' : ''}" title="Ngày ${d}: Bạc +${Math.round((d - 1) * D.STREAK_STEP * 100)}%"><b>${d}</b><small>+${Math.round((d - 1) * D.STREAK_STEP * 100)}%</small></span>`;
+        : `<span class="ds-day${on ? ' on' : ''}${cur ? ' cur' : ''}" title="Ngày ${d}"><b>${d}</b><small>${on ? '<i class="ti ti-check"></i>' : 'NGÀY'}</small></span>`;
     }
     box.innerHTML = h;
     $('.ds-odds', overlay).innerHTML = oddsHtml(isSpecial(st) && override == null);
@@ -197,12 +198,11 @@
     if (!logged) {
       setBtn('login', btnHtml('ĐĂNG NHẬP ĐỂ QUAY', 'Phần thưởng lưu vào tài khoản', 'login-2')).disabled = !(A() && A().online);
     } else if (st && st.ready) {
-      const mul = Math.round((Equipment.spinStreakMul(st.nextStreak) - 1) * 100);
       const what = st.free ? 'Lượt miễn phí hôm nay' : st.extra > 0 ? `Lượt thêm từ quảng cáo (còn ${st.extra})`
         : st.bought > 0 ? `Lượt tặng từ gói nạp (còn ${st.bought})` : 'Quay lại';
       const sp = isSpecial(st);
       const sub = sp ? `Quà ngày ${Equipment.DAILY_SPIN.STREAK_MAX} · chắc chắn Sử thi / Huyền thoại${st.dev ? ' · DEV' : ''}`
-        : `${what} · ngày ${cycDay(st.nextStreak)}${mul ? ` · Bạc +${mul}%` : ''}${st.dev ? ' · DEV' : ''}`;
+        : `${what} · ngày ${cycDay(st.nextStreak)}/${Equipment.DAILY_SPIN.STREAK_MAX}${st.dev ? ' · DEV' : ''}`;
       setBtn('ready' + (sp ? ' special' : ''), btnHtml(sp ? 'MỞ QUÀ NGÀY 7' : st.free ? 'QUAY THƯỞNG' : 'QUAY THÊM', sub, sp ? 'gift' : 'chevrons-right')).disabled = false;
     } else {
       setBtn('wait', btnHtml(st ? countdown(st.next) : '--:--:--', 'Lượt mới lúc 0 giờ', 'clock')).disabled = true;
@@ -271,6 +271,33 @@
     drawStreak();
     drawControls();
     fillTrack(null);
+    setReveal(isSpecial(status()));
+  }
+  // NGÀY 7: thay dải thẻ bằng hộp quà lớn (rung -> bật nắp -> lóe sáng -> thẻ thưởng cỡ lớn)
+  function setReveal(on) {
+    const rv = $('.ds-reveal', overlay);
+    reel.classList.toggle('hidden', on);
+    rv.classList.toggle('hidden', !on);
+    overlay.classList.toggle('special', on);
+    if (!on) return;
+    rv.className = 'ds-reveal';
+    $('.ds-rv-gift', rv).innerHTML = giftSvg('dsr');
+    $('.ds-rv-card', rv).innerHTML = '';
+    $('.ds-rv-cap', rv).innerHTML = `<b>QUÀ LỚN NGÀY ${Equipment.DAILY_SPIN.STREAK_MAX}</b><small>Chắc chắn Sử thi hoặc Huyền thoại</small>`;
+  }
+  async function revealSpecial(win) {
+    const rv = $('.ds-reveal', overlay);
+    setReveal(true);
+    void rv.offsetWidth;
+    const SHAKE = 2.2;
+    rv.classList.add('shake');
+    sfx('playSpinRiser', SHAKE);
+    await new Promise(ok => setTimeout(ok, SHAKE * 1000));
+    $('.ds-rv-card', rv).innerHTML = cardHtml(win, 'win');
+    $('.ds-rv-cap', rv).innerHTML = `<b class="r${win.rar | 0}">${RAR[win.rar | 0]}!</b><small>Quà lớn ngày ${Equipment.DAILY_SPIN.STREAK_MAX}</small>`;
+    rv.classList.remove('shake');
+    rv.classList.add('open', 'r' + (win.rar | 0));
+    await new Promise(ok => setTimeout(ok, 700));
   }
   function close() {
     if (spinning) return;
@@ -300,6 +327,22 @@
       return;
     }
     const win = r.reward;
+    if (win.special) {
+      setBtn('busy', btnHtml('ĐANG MỞ QUÀ…', 'Quà lớn ngày ' + Equipment.DAILY_SPIN.STREAK_MAX, 'loader-2', true));
+      await revealSpecial(win);
+    } else await runReel(win);
+    spinning = false;
+    overlay.classList.remove('spinning');
+    sfx('playSpinWin', win.rar | 0);
+    applyProfile(r.profile);
+    drawStreak(win.streak);
+    drawControls();
+    showWon(win);
+  }
+
+  // NGÀY THƯỜNG: dải thẻ trượt ngang rồi dừng đúng thẻ trúng
+  async function runReel(win) {
+    setReveal(false);
     fillTrack(win);
     void track.offsetWidth;
     const jitter = (Math.random() - 0.5) * (CARD_W - 24);
@@ -338,18 +381,14 @@
       setTimeout(fin, SPIN_MS + 1500);   // khung ẩn: không có transitionend
     });
     clearTimeout(riserT);
-    spinning = false;
-    overlay.classList.remove('spinning');
     reel.classList.remove('tense');
     reel.classList.add('done');
-    sfx('playSpinWin', win.rar | 0);
-    applyProfile(r.profile);
-    drawStreak(win.streak);
-    drawControls();
+  }
+
+  function showWon(win) {
+    const res = $('.ds-result', overlay);
     const i = info(win);
-    const extra = win.kind === 'silver' && win.base && win.n !== win.base
-      ? ` <small>(${fmt(win.base)} × chuỗi ngày ${cycDay(win.streak)})</small>`
-      : win.kind === 'item' ? (!Equipment.MODULES[win.id] ? ' <small>— đạn đã mở khóa, tự dùng mỗi trận</small>' : win.equipped ? ' <small>— đã lắp lên xe, dùng ngay trận sau</small>' : ' <small>— đã vào kho (nhóm đã đủ ô), lắp ở phòng xem xe</small>')
+    const extra = win.kind === 'item' ? (!Equipment.MODULES[win.id] ? ' <small>— đạn đã mở khóa, tự dùng mỗi trận</small>' : win.equipped ? ' <small>— đã lắp lên xe, dùng ngay trận sau</small>' : ' <small>— đã vào kho (nhóm đã đủ ô), lắp ở phòng xem xe</small>')
       : win.kind === 'ammo' ? ' <small>— đã vào kho vật tư</small>' : '';
     res.innerHTML = `<div class="ds-won r${win.rar | 0}">${win.special ? `<span class="ds-won-special"><i class="ti ti-gift"></i> QUÀ NGÀY ${Equipment.DAILY_SPIN.STREAK_MAX}</span> ` : ''}<span class="ds-won-rar">${RAR[win.rar | 0]}</span> <b>${esc(i.title)}</b>${win.kind !== 'silver' ? ` · ${esc(i.sub)}` : ''}${extra}</div>`;
     try { window.dispatchEvent(new CustomEvent('armory-changed')); } catch (e) {}
@@ -378,27 +417,28 @@
     return true;
   }
   // HỘP QUÀ (SVG tô màu): thân + nắp + ruy băng đỏ + nơ + lấp lánh
-  function giftSvg() {
+  function giftSvg(pre) {
+    pre = pre || 'dsg';
     const star = (x, y, s, d) => `<path class="ds-gs" style="animation-delay:${d}s" transform="translate(${x} ${y}) scale(${s})" d="M0,-6 C.6,-1 1,-.6 6,0 C1,.6 .6,1 0,6 C-.6,1 -1,.6 -6,0 C-1,-.6 -.6,-1 0,-6Z" fill="#ffe7a8"/>`;
     return `<svg class="ds-gift" viewBox="0 0 96 96" width="92" height="92" aria-hidden="true">
       <defs>
-        <linearGradient id="dsgBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9a840"/><stop offset="1" stop-color="#a8681a"/></linearGradient>
-        <linearGradient id="dsgLid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd27a"/><stop offset="1" stop-color="#d9952f"/></linearGradient>
-        <linearGradient id="dsgRib" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8e2a1c"/><stop offset=".45" stop-color="#d4523a"/><stop offset="1" stop-color="#8e2a1c"/></linearGradient>
-        <linearGradient id="dsgBow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2654a"/><stop offset="1" stop-color="#9c3020"/></linearGradient>
+        <linearGradient id="${pre}Body" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9a840"/><stop offset="1" stop-color="#a8681a"/></linearGradient>
+        <linearGradient id="${pre}Lid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd27a"/><stop offset="1" stop-color="#d9952f"/></linearGradient>
+        <linearGradient id="${pre}Rib" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8e2a1c"/><stop offset=".45" stop-color="#d4523a"/><stop offset="1" stop-color="#8e2a1c"/></linearGradient>
+        <linearGradient id="${pre}Bow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2654a"/><stop offset="1" stop-color="#9c3020"/></linearGradient>
       </defs>
       <ellipse cx="48" cy="88" rx="30" ry="4" fill="#000" opacity=".45"/>
       <g class="ds-gift-box">
-        <rect x="18" y="46" width="60" height="40" rx="2" fill="url(#dsgBody)"/>
+        <rect x="18" y="46" width="60" height="40" rx="2" fill="url(#${pre}Body)"/>
         <rect x="18" y="46" width="60" height="6" fill="#000" opacity=".18"/>
         <rect x="18" y="46" width="30" height="40" fill="#fff" opacity=".06"/>
-        <rect x="42" y="46" width="12" height="40" fill="url(#dsgRib)"/>
+        <rect x="42" y="46" width="12" height="40" fill="url(#${pre}Rib)"/>
         <g class="ds-gift-lid">
-          <rect x="13" y="34" width="70" height="14" rx="2.5" fill="url(#dsgLid)"/>
+          <rect x="13" y="34" width="70" height="14" rx="2.5" fill="url(#${pre}Lid)"/>
           <rect x="13" y="34" width="70" height="3" rx="1.5" fill="#fff" opacity=".4"/>
-          <rect x="41" y="34" width="14" height="14" fill="url(#dsgRib)"/>
-          <path d="M48,34 C40,18 22,16 25,27 C27,33 38,34 48,34Z" fill="url(#dsgBow)"/>
-          <path d="M48,34 C56,18 74,16 71,27 C69,33 58,34 48,34Z" fill="url(#dsgBow)"/>
+          <rect x="41" y="34" width="14" height="14" fill="url(#${pre}Rib)"/>
+          <path d="M48,34 C40,18 22,16 25,27 C27,33 38,34 48,34Z" fill="url(#${pre}Bow)"/>
+          <path d="M48,34 C56,18 74,16 71,27 C69,33 58,34 48,34Z" fill="url(#${pre}Bow)"/>
           <path d="M46,33 C40,25 31,22 30,26" stroke="#ff9a7e" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".7"/>
           <path d="M50,33 C56,25 65,22 66,26" stroke="#ff9a7e" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".7"/>
           <rect x="43.5" y="28" width="9" height="8" rx="2.5" fill="#b83c27"/>
@@ -433,7 +473,6 @@
   function showGreet(st) {
     if (!greet) buildGreet();
     const D = Equipment.DAILY_SPIN, day = cycDay(st.nextStreak), sp = isSpecial(st), left = D.STREAK_MAX - day;
-    const mul = Math.round((Equipment.spinStreakMul(st.nextStreak) - 1) * 100);
     greet.classList.toggle('special', sp);
     $('h2', greet).textContent = sp ? 'QUÀ LỚN NGÀY 7!' : 'CHÚC MỪNG CHỈ HUY!';
     $('.ds-greet-msg', greet).innerHTML = sp
@@ -442,7 +481,7 @@
     $('.ds-greet-go', greet).innerHTML = sp ? '<i class="ti ti-gift"></i> MỞ QUÀ NGAY' : '<i class="ti ti-chevrons-right"></i> QUAY NGAY';
     $('.ds-greet-streak', greet).innerHTML = sp
       ? '<i class="ti ti-flame"></i> Sau hôm nay chuỗi bắt đầu lại từ ngày 1'
-      : `<i class="ti ti-flame"></i> Chuỗi ngày <b>${day}</b>/${D.STREAK_MAX}${mul ? ` · thưởng Bạc <b>+${mul}%</b>` : ''}`
+      : `<i class="ti ti-flame"></i> Chuỗi ngày <b>${day}</b>/${D.STREAK_MAX}`
         + `<br><i class="ti ti-gift"></i> Còn <b>${left} ngày</b> nữa tới quà lớn ngày ${D.STREAK_MAX} (chắc chắn Sử thi / Huyền thoại)`;
     greet.classList.remove('hidden');
     sfx('playUiOpen');
@@ -467,5 +506,24 @@
     // hồ sơ đổi (đăng nhập / hết trận): Account gọi renderHeader -> ta chỉ cần làm mới định kỳ (1 s)
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
-  window.DailySpin = { open, refresh };
+  // xem thử modal chúc mừng (console): DailySpin.greet() — ngày thường, DailySpin.greet(true) — quà ngày 7
+  function previewGreet(special) {
+    const st = Object.assign({}, status() || { next: Date.now() + 3600e3 }, { free: true, nextStreak: special ? Equipment.DAILY_SPIN.STREAK_MAX : 2 });
+    showGreet(st);
+  }
+  // xem thử cảnh mở quà ngày 7 (không gọi máy chủ, không nhận thưởng): DailySpin.reveal() / DailySpin.reveal(4)
+  async function previewReveal(rar) {
+    if (!overlay || spinning) return;
+    const win = rar === 4 ? { kind: 'silver', n: 8000, rar: 4, special: true } : Equipment.spinRoll(Math.random, null, null, true);
+    win.special = true;
+    overlay.classList.remove('hidden');
+    $('.ds-result', overlay).innerHTML = '';
+    drawStreak();
+    spinning = true;
+    await revealSpecial(win);
+    spinning = false;
+    sfx('playSpinWin', win.rar | 0);
+    showWon(win);
+  }
+  window.DailySpin = { open, refresh, greet: previewGreet, reveal: previewReveal };
 })();

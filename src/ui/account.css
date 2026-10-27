@@ -6,6 +6,7 @@
   padding: 16px;
 }
 .acc-overlay.hidden { display: none; }
+/* hiệu ứng mở / đóng: dùng chung theme.css + motion.js (.tc-closing) — đừng thêm hiệu ứng riêng ở đây kẻo chạy 2 lần */
 .acc-card {
   position: relative; width: 100%; max-width: 360px;
   background: var(--tc-panel-2);
@@ -78,6 +79,53 @@
 .acc-dot { width: 3px; height: 3px; background: var(--tc-faint); }
 .acc-silver-sm { color: var(--tc-text); }
 .acc-silver-sm i { color: var(--tc-accent); }
+/* KHO BẠC: dải ngang giữa phần đầu & thống kê, nút NẠP BẠC nổi bật */
+.acc-body > .acc-wallet {
+  position: relative; display: flex; align-items: center; gap: 14px;
+  margin: 0 24px 18px; padding: 12px 12px 12px 14px;
+  border: 1px solid rgba(231, 166, 58, 0.35);
+  background: linear-gradient(90deg, rgba(231, 166, 58, 0.14), rgba(231, 166, 58, 0.03) 65%),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.018) 0 8px, transparent 8px 16px);
+}
+.acc-wallet::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 3px; background: var(--tc-accent); }
+.acc-wallet-ico {
+  flex-shrink: 0; width: 44px; height: 44px; display: grid; place-items: center;
+  font-size: 26px; color: var(--tc-accent);
+  background: radial-gradient(circle, rgba(231, 166, 58, 0.25), rgba(231, 166, 58, 0.04) 70%);
+  border: 1px solid rgba(231, 166, 58, 0.4);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+.acc-wallet-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.acc-wallet-lbl { font: 700 10px var(--font-mono); letter-spacing: 2px; text-transform: uppercase; color: var(--tc-faint); }
+.acc-wallet-amt { font: 12px var(--font-mono); color: var(--tc-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-wallet-amt b { font: 700 22px/1.1 var(--font-mono); color: var(--tc-accent-2); margin-right: 2px; }
+.acc-wallet-offer { font-size: 11.5px; color: #f5c46b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-wallet-offer i { font-size: 13px; vertical-align: -1px; }
+.acc-wallet-btn {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 12px 20px 12px 16px;
+  font: 700 15px var(--font-tech); letter-spacing: 1.5px;
+  color: #0a0d0c; background: linear-gradient(180deg, #f3bd5c, var(--tc-accent));
+  border: 0; cursor: pointer;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  box-shadow: 0 0 18px rgba(231, 166, 58, 0.35);
+  transition: filter 0.15s, transform 0.15s;
+}
+.acc-wallet-btn i { font-size: 18px; }
+.acc-wallet-btn::after {   /* vệt sáng quét ngang định kỳ */
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: skewX(-20deg); animation: acc-wallet-shine 3.2s ease-in-out infinite;
+}
+@keyframes acc-wallet-shine { 0%, 60% { left: -60%; } 100% { left: 130%; } }
+.acc-wallet-btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.acc-wallet-btn:active { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) { .acc-wallet-btn::after { animation: none; display: none; } }
+@media (max-width: 480px) {
+  .acc-body > .acc-wallet { flex-wrap: wrap; margin-left: 16px; margin-right: 16px; }
+  .acc-wallet-btn { width: 100%; justify-content: center; }
+}
 .acc-rank-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .acc-rank { color: var(--tc-accent-2); font-weight: 700; font-size: 14px; }
 .acc-rank i { font-size: 13px; color: var(--tc-accent); }

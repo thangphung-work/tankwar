@@ -123,12 +123,18 @@
     if (!overlay) return;
     const panel = $('#acc-panel');
     if (panel) panel.classList.add('hidden');
+    if (overlay._closing) { clearTimeout(overlay._closing); overlay._closing = 0; overlay.classList.remove('closing'); }
     overlay.classList.remove('hidden');
     sfx('playUiOpen');
     wallet();
     render(note);
   }
-  function close() { overlay.classList.add('hidden'); }
+  // đóng có hiệu ứng (topup.css .tp-overlay.closing), ~180 ms sau mới ẩn hẳn
+  function close() {
+    if (overlay.classList.contains('hidden') || overlay._closing) return;
+    overlay.classList.add('closing');
+    overlay._closing = setTimeout(() => { overlay._closing = 0; overlay.classList.remove('closing'); overlay.classList.add('hidden'); }, 180);
+  }
 
   async function buy(id, btn) {
     const acc = A();

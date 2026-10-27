@@ -1558,7 +1558,8 @@ ${sea ? 'varying float vDep;' : ''}
     if (!this.bushIM || !this.bushItems || !this.bushItems.length) return;
     let hit = false;
     const P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), M = new THREE.Matrix4();
-    const leafSfx = typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt;
+    // bind: gọi tách rời khỏi soundEngine thì `this` mất -> lỗi ném ra giữa update, bỏ dở cả khung logic
+    const leafSfx = typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt && window.soundEngine.secondaryAt.bind(window.soundEngine);
     for (const it of this.bushItems) {
       if (it.broken) continue;
       const d = Math.hypot(it.x - x, it.z - z);

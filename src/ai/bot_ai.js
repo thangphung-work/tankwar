@@ -9,6 +9,10 @@
  *   + GATLING: Tuần tra bọc lót sườn, áp sát xả 6 nòng liên thanh
  * - Cơ chế phân tán đội hình: Tự động giữ khoảng cách an toàn 50-70m với đồng đội, không chụm đầu dồn cục
  * - Cơ chế tự động lùi thoát kẹt: Nhận biết khi bị kẹt bờ tường công sự, vào số lùi bẻ lái thoát hiểm
+ * - Hiểu giáp: chọn mục tiêu & loại đạn theo mặt giáp đang chĩa về mình (HURT), đứng yên thì xoay mũi giáp về phía địch
+ * - Ló ra bắn rồi lùi về chỗ khuất gần (planPeek / findCover); không bắn mò bằng pháo bắn thẳng
+ * - Đánh giá tương quan lực lượng (assess): bị áp đảo thì lui chờ đồng đội; chia cứ điểm đều, chờ đủ người mới đánh vào
+ *   cứ điểm đông địch; dồn hỏa lực cùng đồng đội vào một xe
  */
 // Xe t vừa phóng khói đa phổ lúc bị khóa: phe team không khóa / ngắm được t cho tới khi khói tan (Equipment.lockBlocked)
 const smokeVeiled = (t, team) => typeof Equipment !== 'undefined' && !!Equipment.lockBlocked && Equipment.lockBlocked(t, team);
@@ -389,6 +393,7 @@ class BotAIController {
             this.unit.fireAntiTank(S.ballistics, S.radar);
           }
           else this.unit.fire(S.ballistics, S.radar);
+          if (this.unit.tankType === 'ARTILLERY') this._artyShots = (this._artyShots || 0) + 1;
           this.unit.isFiringGatling = S.burst;
           // liên thanh: bám mục tiêu suốt loạt; bắn xong mỗi phát / loạt -> nhìn điểm rơi chỉnh dần sai số
           this.burstUnit = S.burst && S.tu ? S.tu : null;
@@ -454,10 +459,15 @@ class BotAIController {
       return;
     }
 
+    // đánh giá tình huống (xe địch đang biết, có bị áp đảo không, mối đe dọa chính) 2 lần / giây
+    if ((this._sitT = (this._sitT || 0) - dt) <= 0 || !this._sit) { this._sitT = 0.5; this.assess(allUnits); }
+
     // ƯU TIÊN 1: Né đạn pháo khẩn cấp khi nghe tiếng rít đạn rơi
     if (this.unit.evadeTimer > 0 && this.unit.evadeTarget) {
       if (this.unit.tankType === 'ARTILLERY') {
         this.unit.isDeployed = false;
+        // trận địa đã lộ (bị bắn phản pháo): lập trận địa mới quanh chỗ né tới, không quay về chỗ cũ
+        if (this.assignedCampPos) this._campAnchor = { x: this.unit.evadeTarget.x, z: this.unit.evadeTarget.z };
         this.assignedCampPos = null;
       }
       const distEvade = Math.hypot(this.unit.evadeTarget.x - this.unit.x, this.unit.evadeTarget.z - this.unit.z);
@@ -473,12 +483,24 @@ class BotAIController {
     // Pháo tự hành chỉ huy tuyến sau: không lao lên phía trước, đứng yên hạ càng cắm đất bắn chi viện
     if (this.unit.tankType === 'ARTILLERY') {
       const isBlue = (this.unit.team === 'BLUE');
-      if (!this.assignedCampPos && typeof this.unit.spawnX === 'number') {
-        // Lập trận địa quanh chỗ xuất phát, ưu tiên sườn khuất (đồi / nhà che khỏi tầm nhìn từ phía các cứ điểm): pháo
-        // bắn cầu vồng không cần nhìn thấy mục tiêu, xe địch tiến lên cũng không thấy trận địa từ xa
+      // BẮN VÀI LOẠT THÌ ĐỔI TRẬN ĐỊA (shoot & scoot của pháo tự hành): khói / tiếng nổ đầu nòng đã để lộ vị trí trên bản
+      // đồ địch -> sau 3-5 loạt nhổ càng chạy sang chỗ khuất mới cách 150-420 (trước đây đứng một chỗ cả trận)
+      if (this.unit.isDeployed && (this._artyShots || 0) >= (this._relocN || (this._relocN = 3 + Math.floor(Math.random() * 3)))) {
+        this._artyShots = 0;
+        this._relocN = 3 + Math.floor(Math.random() * 3);
+        this._campAnchor = { x: this.unit.x, z: this.unit.z, r0: 150, r1: 420 };
+        this.assignedCampPos = null;
+      }
+      if (!this.assignedCampPos && (this._campAnchor || typeof this.unit.spawnX === 'number')) {
+        // Lập trận địa quanh chỗ xuất phát (hoặc quanh chỗ vừa rời đi khi đổi trận địa), ưu tiên sườn khuất (đồi / nhà che
+        // khỏi tầm nhìn từ phía các cứ điểm): pháo bắn cầu vồng không cần nhìn thấy mục tiêu, xe địch tiến lên cũng không
+        // thấy trận địa từ xa
+        const A = this._campAnchor;
+        const ax = A ? A.x : this.unit.spawnX, az = A ? A.z : this.unit.spawnZ;
         const obs = (capturePoints || []).map(cp => ({ x: cp.x, z: cp.z }));
-        const c = obs.length ? this.findCover(this.unit.spawnX, this.unit.spawnZ, 0, 500, obs, terrain, 18) : null;
-        this.assignedCampPos = c ? { x: c.x, z: c.z } : { x: this.unit.spawnX, z: this.unit.spawnZ };
+        const c = obs.length ? this.findCover(ax, az, A ? (A.r0 || 0) : 0, A ? (A.r1 || 350) : 500, obs, terrain, 18) : null;
+        this.assignedCampPos = c ? { x: c.x, z: c.z } : { x: ax, z: az };
+        this._campAnchor = null;
       }
       if (!this.assignedCampPos) {
         // Chọn vị trí trận địa tuyến sau phù hợp với phe
@@ -561,12 +583,16 @@ class BotAIController {
 
     // ƯU TIÊN 4b: MÁU THẤP — rút về chỗ nấp khuất tầm nhìn các xe địch đang biết (đồi / gò / nhà chắn) ~12 s: nạp đạn,
     // cắt khóa của địch, rồi đánh tiếp (xe không tự hồi máu). Mỗi lần nấp cách nhau >= 25 s, không trốn mãi
-    if (U.tankType !== 'ARTILLERY' && U.hp < U.maxHp * this.style.fortHp) {
+    // BỊ ÁP ĐẢO (assess: sức ép xe địch quanh mình vượt hẳn lực lượng phe mình ở đó) mà đã mất máu: cũng lui về chỗ nấp ~8 s
+    // chờ đồng đội kéo tới thay vì một mình lao vào. Mỗi lần cách nhau >= 18 s
+    const lowHp = U.hp < U.maxHp * this.style.fortHp;
+    const swamped = this._sit && this._sit.outnumbered && (U.hp < U.maxHp * 0.8 || this._sit.danger > this._sit.support * 2.5);
+    if (U.tankType !== 'ARTILLERY' && (lowHp || swamped || this._cover)) {
       if (!this._cover && this.clock > (this._coverCd || 0)) {
-        this._coverCd = this.clock + 25;
+        this._coverCd = this.clock + (lowHp ? 25 : 18);
         const foes = this.knownFoes(allUnits);
         const c = foes.length ? this.findCover(U.x, U.z, 120, 480, foes, terrain, 16) : null;
-        if (c) { this._cover = c; this._coverUntil = this.clock + 12; }
+        if (c) { this._cover = c; this._coverUntil = this.clock + (lowHp ? 12 : 8); this._peek = null; }
       }
       if (this._cover) {
         const C = this._cover;
@@ -675,7 +701,9 @@ class BotAIController {
           if (Math.hypot(h.x - U.x, h.z - U.z) > 18) want(h.x, h.z, false, 40);
           else want(U.x, U.z, false, 40);   // đã tới chỗ đứng: dừng lại giữ
         } else {
-          // 3. Bình thường: Phân công chiếm cứ điểm theo dòng xe
+          // 3. Bình thường: Phân công chiếm cứ điểm theo dòng xe — nhưng cứ điểm đã quá đông địch so với số xe phe mình đang
+          // tới (cpThreat / cpCommit) thì không lao vào một mình, chọn điểm khác
+          const crowded = (cp) => cp && this.cpThreat(cp) > (this.cpCommit(cp, allUnits) + 1) * 1.3 + 0.8;
           let targetCp = null;
           if (U.tankType === 'SCOUT') {
             // Xe trinh sát: Ưu tiên chiếm 2 cánh (Cứ điểm A hoặc C)
@@ -688,16 +716,26 @@ class BotAIController {
           } else if (U.tankType === 'ALL_ROUNDER') {
             // Xe tiên phong: Ưu tiên chiếm trung tâm (Cứ điểm B)
             targetCp = capturePoints.find(cp => cp.owner !== U.team && (cp.id === 'B' || Math.abs(cp.x) <= 300));
-          }
-
-          // Chưa chọn được: cứ điểm gần nhất chưa thuộc phe mình
-          if (!targetCp) {
-            let minCpDist = Infinity;
+          } else if (U.tankType === 'GATLING') {
+            // Xe 6 nòng: yểm hộ — theo cứ điểm mà nhiều xe tăng phe mình đang đánh nhất (bọc sườn cho mũi tấn công)
+            let bn = 0;
             for (const cp of capturePoints) {
-              if (cp.owner !== U.team) {
-                const d = Math.hypot(cp.x - U.x, cp.z - U.z);
-                if (d < minCpDist) { minCpDist = d; targetCp = cp; }
-              }
+              if (cp.owner === U.team) continue;
+              const n = (allUnits || []).reduce((k, a) => k + (a && a !== U && !a.isDead && a.team === U.team && a.tankType === 'ALL_ROUNDER' && a.botAI && a.botAI.objCp === cp ? 1 : 0), 0);
+              if (n > bn) { bn = n; targetCp = cp; }
+            }
+          }
+          if (crowded(targetCp)) targetCp = null;
+
+          // Chưa chọn được: cứ điểm chưa thuộc phe mình có điểm thấp nhất — gần, ít đồng đội đã tới (dàn đều lực lượng,
+          // không dồn cả đội vào một điểm), ít địch hơn số xe phe mình sẽ có mặt
+          if (!targetCp) {
+            let bs = Infinity;
+            for (const cp of capturePoints) {
+              if (cp.owner === U.team) continue;
+              const com = this.cpCommit(cp, allUnits);
+              const s = Math.hypot(cp.x - U.x, cp.z - U.z) + com * 220 + Math.max(0, this.cpThreat(cp) - (com + 1)) * 450;
+              if (s < bs) { bs = s; targetCp = cp; }
             }
           }
           // Cứ điểm phe mình đang bỏ trống (đồng hồ giữ đứng yên): xe 6 nòng / tăng chủ lực tới giữ nếu gần hơn đích tấn công;
@@ -715,17 +753,69 @@ class BotAIController {
 
           if (targetCp) {
             this.objCp = targetCp;
+            const R = targetCp.radius;
             const h = targetCp.owner === U.team ? holdAt(targetCp) : { x: targetCp.x, z: targetCp.z };
             const distToCp = Math.hypot(h.x - U.x, h.z - U.z);
-            if (distToCp > targetCp.radius * 0.65 || (targetCp.owner === U.team && distToCp > 18)) want(h.x, h.z, true, 20);
+            const enemyCp = targetCp.owner !== U.team;
+            // CHỜ ĐỒNG ĐỘI: cứ điểm địch đang đông xe mà phe mình tới chưa đủ -> dừng ở điểm tập kết ngoài 3 bán kính tới khi đủ
+            // người (tối đa ~18 s rồi vẫn đánh vào), không lần lượt từng xe lao vào cho địch bắn
+            const thr = enemyCp ? this.cpThreat(targetCp) : 0;
+            const stage = this._stage && this._stage.cp === targetCp ? this._stage : (this._stage = { cp: targetCp, t: 0, fx: null });
+            const wait = enemyCp && thr >= 1.6 && this.cpCommit(targetCp, allUnits) + 1 < thr * 0.9 && distToCp > R * 3.2 && stage.t < 18;
+            if (wait) {
+              stage.t += dt;
+              const k = R * 3 / Math.max(1, distToCp);
+              const sx = targetCp.x + (U.x - targetCp.x) * k, sz = targetCp.z + (U.z - targetCp.z) * k;
+              if (Math.hypot(sx - U.x, sz - U.z) > 40) want(sx, sz, false, 20);
+              else want(U.x, U.z, false, 20);
+            } else if (U.tankType === 'GATLING' && enemyCp && distToCp > R * 3.2 && !stage.flankDone) {
+              // XE 6 NÒNG ĐÁNH VÀO TỪ SƯỜN: vòng qua một điểm lệch ngang khỏi đường thẳng tới cứ điểm (cạnh mũi tấn công của xe
+              // tăng), tới đó mới áp vào — xả 6 nòng vào sườn giáp mỏng của xe địch đang chĩa mũi về phía xe tăng
+              if (!stage.fx) {
+                const ux = (U.x - targetCp.x) / Math.max(1, distToCp), uz = (U.z - targetCp.z) / Math.max(1, distToCp), side = Math.random() < 0.5 ? 1 : -1;
+                stage.fx = { x: targetCp.x + ux * R * 2.4 - uz * side * R * 2.6, z: targetCp.z + uz * R * 2.4 + ux * side * R * 2.6 };
+                if (!this.okSpot(stage.fx.x, stage.fx.z, terrain)) stage.flankDone = true;
+              }
+              if (!stage.flankDone && Math.hypot(stage.fx.x - U.x, stage.fx.z - U.z) > 80) want(stage.fx.x, stage.fx.z, true, 20);
+              else { stage.flankDone = true; want(h.x, h.z, true, 20); }
+            } else if (distToCp > R * 0.65 || (targetCp.owner === U.team && distToCp > 18)) want(h.x, h.z, true, 20);
           }
         }
       }
     }
 
-    // ƯU TIÊN 6: TẤN CÔNG PHẢN PHÁO BẰNG GIẢI THUẬT ĐƯỜNG ĐẠN TỰ ĐỘNG
-    if (this.unit.aiTimer <= 0 && this.unit.reloadTimer === 0) {
-      this.unit.aiTimer = ((this.unit.tankType === 'ARTILLERY') ? (2.2 + Math.random() * 1.5) : (2.6 + Math.random() * 2.2)) * this.style.fireGap;
+    // ƯU TIÊN 5d: TRINH SÁT NÚP BỤI BẮN TỈA — có xe địch đang biết trong ~1000: chui vào cụm bụi nhìn thấy xe đó, dừng hẳn
+    // (đứng yên trong bụi địch chỉ thấy khi tới gần) rồi bắn; ~25 s xét lại. Không phải lúc phải chạy phá cứ điểm gấp
+    if (U.tankType === 'SCOUT' && !(goal && goal.pri >= 40)) {
+      const foes = (this._sit && this._sit.foes) || [];
+      const B = this._bush;
+      if (B && (this.clock > B.until || !foes.length)) this._bush = null;
+      if (!this._bush && foes.length && this.clock > (this._bushCd || 0)) {
+        this._bushCd = this.clock + 6;
+        this._bush = this.findBush(foes, allUnits);
+      }
+      const b = this._bush;
+      if (b) {
+        if (!U.isInBush || Math.hypot(b.x - U.x, b.z - U.z) > b.r) want(b.x, b.z, true, 26);
+        else want(U.x, U.z, false, 26);   // đã vào bụi: đứng yên
+      }
+    }
+
+    // ƯU TIÊN 5e: LÓ RA BẮN (planPeek đặt điểm): chạy ra chỗ nhìn thấy xe địch; vừa thấy thì dừng lại bắn ngay
+    if (this._peek) {
+      const P = this._peek, f = P.u;
+      if (!f || f.isDead || this.clock > P.until || this._cover) this._peek = null;
+      else if (this.seesDirect(f)) { this._peek = null; want(U.x, U.z, false, 27); U.aiTimer = Math.min(U.aiTimer, 0.25); }
+      else want(P.x, P.z, false, 27);
+    }
+
+    // ƯU TIÊN 6: KHAI HỎA. Xe bắn thẳng ra quyết định ngay khi nạp đạn xong (chỉ một nhịp ngắn) — trước đây nghỉ cố định
+    // 2,6-4,8 s mỗi lượt bất kể thời gian nạp; lựu pháo vẫn nghỉ giữa các loạt. Đang chờ phát bắn / đang xả loạt thì không
+    // ra quyết định mới (không cắt ngang loạt đang bám mục tiêu)
+    if (this.unit.aiTimer <= 0 && this.unit.reloadTimer === 0 && !this.pendingShot && !(this.burstUnit && this.unit.isFiringGatling)) {
+      const arty = this.unit.tankType === 'ARTILLERY';
+      const gunner = this.unit.tankType === 'GATLING' || this.unit.tankType === 'SCOUT';
+      this.unit.aiTimer = (arty ? 2.2 + Math.random() * 1.5 : gunner ? 0.8 + Math.random() * 0.8 : 0.35 + Math.random() * 0.5) * this.style.fireGap;
 
       let targetX = null;
       let targetZ = null;
@@ -749,131 +839,152 @@ class BotAIController {
         if (d >= AD.min && d < closeD && this.seesDirect(u)) { closeD = d; closeFoe = u; }
       }
 
-      if (closeFoe) {
-        targetUnit = closeFoe;
-        targetX = closeFoe.x;
-        targetZ = closeFoe.z;
-      } else if (this.unit.lastAttackerPos) {
-        targetX = this.unit.lastAttackerPos.x + (Math.random() - 0.5) * 40;
-        targetZ = this.unit.lastAttackerPos.z + (Math.random() - 0.5) * 40;
-        this.unit.lastAttackerPos = null;
-      } else {
-        // (không còn radar phản pháo: phát bắn chỉ để lại dấu vị trí trên bản đồ, bot không tự bắn trả vào dấu đó)
-        if (enemyUnits.length > 0) {
-          // đang giao chiến với xe nào mà vẫn thấy thì bắn tiếp xe đó (đã chỉnh được sai số qua các phát trước)
-          const cur = this.eng && this.clock - this.eng.lastAt < 15 ? enemyUnits.find(u => u.id === this.eng.id && this.seesDirect(u)) : null;
-          const targetEnemy = cur || this.pickTarget(enemyUnits, ballistics);
-          targetUnit = targetEnemy;
-          // tự nhìn thấy: ngắm thẳng vào xe (sai số của bot tính trong aimAtUnit); chỉ biết qua đồng đội báo: vị trí phỏng chừng
-          const fuzz = this.seesDirect(targetEnemy) ? 0 : 50;
-          targetX = targetEnemy.x + (Math.random() - 0.5) * fuzz;
-          targetZ = targetEnemy.z + (Math.random() - 0.5) * fuzz;
+      // Xe tự nhìn thấy, xếp theo độ đáng bắn (rankTargets: cự ly, máu, mặt giáp đang chĩa về mình & đạn có xuyên không, xe
+      // đang ngắm mình, đồng đội đang dồn hỏa lực). Xe đầu bị chặn đường bắn -> thử xe kế tiếp (tối đa 3) thay vì bỏ cả lượt.
+      // Xe đang thấy luôn được ưu tiên hơn bắn trả mò vào chỗ đoán của kẻ vừa bắn mình
+      const seenFoes = closeFoe ? [] : enemyUnits.filter(u => this.seesDirect(u));
+      let cands = closeFoe ? [closeFoe] : [];
+      if (!closeFoe && seenFoes.length) {
+        cands = this.rankTargets(seenFoes, ballistics, allUnits);
+        // đang giao chiến với xe nào mà vẫn thấy & bắn còn ăn thì bắn tiếp xe đó (đã chỉnh được sai số qua các phát trước)
+        const cur = this.eng && this.clock - this.eng.lastAt < 15 ? seenFoes.find(u => u.id === this.eng.id) : null;
+        if (cur && this.hurtK(cur) >= 0.3) cands = [cur].concat(cands.filter(u => u !== cur));
+        cands = cands.slice(0, arty ? 1 : 3);
+      }
+      // xe bắn thẳng không phí đạn vào chỗ chắc chắn không xuyên (12.7mm vào xe tăng, 30mm vào mũi xe tăng): vừa vô ích vừa
+      // lộ vị trí (nổ súng trong bụi) — chờ xe đó quay sườn hoặc chọn xe khác
+      if (!arty) cands = cands.filter(u => this.hurtK(u) >= 0.08);
+      const list = cands.map(u => ({ u, x: u.x, z: u.z }));
+      if (!list.length) {
+        if (this.unit.lastAttackerPos) {
+          // bắn trả mò vào chỗ đoán của kẻ vừa bắn mình: chỉ lựu pháo (đạn cầu vồng); xe bắn thẳng bắn mò thì đạn cắm vào gò
+          if (arty) list.push({ u: null, x: this.unit.lastAttackerPos.x + (Math.random() - 0.5) * 40, z: this.unit.lastAttackerPos.z + (Math.random() - 0.5) * 40 });
+          this.unit.lastAttackerPos = null;
+        } else if (arty && enemyUnits.length) {
+          // xe chỉ biết qua đồng đội báo: lựu pháo bắn vào vị trí phỏng chừng
+          const t = this.pickTarget(enemyUnits, ballistics);
+          if (t) list.push({ u: t, x: t.x + (Math.random() - 0.5) * 50, z: t.z + (Math.random() - 0.5) * 50 });
         }
+        // xe bắn thẳng không tự thấy ai mà vẫn biết vị trí địch: tìm chỗ ló ra nhìn thấy xe đó rồi mới bắn
+        if (!arty && enemyUnits.length) this.planPeek(enemyUnits, ballistics);
       }
 
-      // Dưới tầm cầu vồng chỉ hạ nòng bắn thẳng được xe tự nhìn thấy (không bắn thẳng vào điểm đoán mò);
-      // sát hơn tầm bắn thẳng ngắn nhất (nòng dài hơn khoảng cách) thì không bắn
-      if (targetX !== null && this.unit.tankType === 'ARTILLERY') {
-        const d = Math.hypot(targetX - this.unit.x, targetZ - this.unit.z);
-        if ((AD && d < AD.min) || (d < lobMin && !closeFoe)) targetX = targetZ = null;
-        // ĐỊCH LỌT VÀO VÙNG NỔ CỦA CHÍNH MÌNH (đạn 155 nổ cách xe chưa tới bán kính sát thương + nửa thân xe): như người
-        // chơi bị khóa cò (game.js _selfDanger) — không bắn thẳng tự sát, nhổ càng chạy giãn cự ly ra rồi mới bắn
-        const BPs = AD && BallisticsSystem3D.blastProfile ? BallisticsSystem3D.blastProfile(this.unit.selectedAmmo || 'HE', true) : null;
-        if (targetX !== null && BPs && d < BPs.radius + 16) {
-          if (this.clock - (this.scootAt || -99) > 8) {
-            this.scootAt = this.clock;
-            const dx = (this.unit.x - targetX) / Math.max(1, d), dz = (this.unit.z - targetZ) / Math.max(1, d);
-            const run = BPs.radius + 70 - d, side = Math.random() < 0.5 ? 1 : -1;
-            this.assignedCampPos = { x: this.unit.x + dx * run - dz * side * 40, z: this.unit.z + dz * run + dx * side * 40 };
-            this.unit.isDeployed = false;
-          }
-          targetX = targetZ = null;
-        }
-        // Mục tiêu ngay trước mũi xe (điểm mù, nòng không quay qua cabin): nhổ càng, chạy ngang một đoạn ngắn
-        // để thân xe quay lệch đi rồi hạ càng bắn tiếp
-        const bear = targetX !== null ? Math.atan2(targetX - this.unit.x, -(targetZ - this.unit.z)) * 180 / Math.PI : 0;
-        if (targetX !== null && ballistics.inArtyBlind && ballistics.inArtyBlind(this.unit, bear)) {
-          if (this.clock - (this.blindMoveAt || -99) > 10) {
-            this.blindMoveAt = this.clock;
-            const dx = (targetX - this.unit.x) / Math.max(1, d), dz = (targetZ - this.unit.z) / Math.max(1, d);
-            const side = Math.random() < 0.5 ? 1 : -1;
-            this.assignedCampPos = { x: this.unit.x - dz * side * 110 - dx * 30, z: this.unit.z + dx * side * 110 - dz * 30 };
-            this.unit.isDeployed = false;
-          }
-          targetX = targetZ = null;
-        }
-      }
+      let sol = null, seenUnit = null;
+      for (const c of list) {
+        targetUnit = c.u; targetX = c.x; targetZ = c.z; seenUnit = null;
 
-      // vùng cấm bắn (khu công trình giữa 3 cứ điểm): bot không nhắm bắn vào đó
-      if (targetX !== null && terrain && terrain.landmarkSet && terrain.landmarkSet.noFireAt(targetX, targetZ, 20)) targetX = targetZ = null;
-      if (targetX !== null && targetZ !== null) {
+        // Dưới tầm cầu vồng chỉ hạ nòng bắn thẳng được xe tự nhìn thấy (không bắn thẳng vào điểm đoán mò);
+        // sát hơn tầm bắn thẳng ngắn nhất (nòng dài hơn khoảng cách) thì không bắn
+        if (arty) {
+          const d = Math.hypot(targetX - this.unit.x, targetZ - this.unit.z);
+          if ((AD && d < AD.min) || (d < lobMin && !closeFoe)) targetX = targetZ = null;
+          // ĐỊCH LỌT VÀO VÙNG NỔ CỦA CHÍNH MÌNH (đạn 155 nổ cách xe chưa tới bán kính sát thương + nửa thân xe): như người
+          // chơi bị khóa cò (game.js _selfDanger) — không bắn thẳng tự sát, nhổ càng chạy giãn cự ly ra rồi mới bắn
+          const BPs = AD && BallisticsSystem3D.blastProfile ? BallisticsSystem3D.blastProfile(this.unit.selectedAmmo || 'HE', true) : null;
+          if (targetX !== null && BPs && d < BPs.radius + 16) {
+            if (this.clock - (this.scootAt || -99) > 8) {
+              this.scootAt = this.clock;
+              const dx = (this.unit.x - targetX) / Math.max(1, d), dz = (this.unit.z - targetZ) / Math.max(1, d);
+              const run = BPs.radius + 70 - d, side = Math.random() < 0.5 ? 1 : -1;
+              this.assignedCampPos = { x: this.unit.x + dx * run - dz * side * 40, z: this.unit.z + dz * run + dx * side * 40 };
+              this.unit.isDeployed = false;
+            }
+            targetX = targetZ = null;
+          }
+          // Mục tiêu ngay trước mũi xe (điểm mù, nòng không quay qua cabin): nhổ càng, chạy ngang một đoạn ngắn
+          // để thân xe quay lệch đi rồi hạ càng bắn tiếp
+          const bear = targetX !== null ? Math.atan2(targetX - this.unit.x, -(targetZ - this.unit.z)) * 180 / Math.PI : 0;
+          if (targetX !== null && ballistics.inArtyBlind && ballistics.inArtyBlind(this.unit, bear)) {
+            if (this.clock - (this.blindMoveAt || -99) > 10) {
+              this.blindMoveAt = this.clock;
+              const dx = (targetX - this.unit.x) / Math.max(1, d), dz = (targetZ - this.unit.z) / Math.max(1, d);
+              const side = Math.random() < 0.5 ? 1 : -1;
+              this.assignedCampPos = { x: this.unit.x - dz * side * 110 - dx * 30, z: this.unit.z + dx * side * 110 - dz * 30 };
+              this.unit.isDeployed = false;
+            }
+            targetX = targetZ = null;
+          }
+        }
+
+        // vùng cấm bắn (khu công trình giữa 3 cứ điểm): bot không nhắm bắn vào đó
+        if (targetX !== null && terrain && terrain.landmarkSet && terrain.landmarkSet.noFireAt(targetX, targetZ, 20)) targetX = targetZ = null;
+        if (targetX === null) continue;
+
         this.lastBallistics = ballistics;
-        // Xe tự nhìn thấy: ngắm có đón đầu + sai số của bot (chỉnh dần qua từng phát); còn lại: bắn vào điểm phỏng chừng
-        const seenUnit = targetUnit && this.seesDirect(targetUnit) ? targetUnit : null;
-        let sol = null;
+        // Xe tự nhìn thấy: chọn loại đạn theo xe & mặt giáp, ngắm có đón đầu + sai số của bot (chỉnh dần qua từng phát);
+        // còn lại: bắn vào điểm phỏng chừng
+        seenUnit = targetUnit && this.seesDirect(targetUnit) ? targetUnit : null;
         if (seenUnit) {
+          this.pickAmmo(seenUnit);
           const a = this.aimAtUnit(seenUnit, ballistics, terrain, true);
           if (a) { sol = a.sol; targetX = a.x; targetZ = a.z; }
         }
         // xe không tự nhìn thấy (đồng đội báo vị trí phỏng chừng): lựu pháo ưu tiên cầu vồng, không bắn thẳng mù
         if (!sol) sol = ballistics.solveAimingForTarget(this.unit.x, this.unit.y, this.unit.z, targetX, targetZ, terrain, this.unit, targetUnit ? { atUnit: true, preferLob: true } : null);
-        // nghiệm báo không bắn tới (đồi / nhà chặn, quá tầm, điểm mù mũi xe pháo): không bắn — trước đây vẫn khai hỏa, đạn
-        // cắm vào gò trước mặt, lộ vị trí & phí lượt nạp
+        // nghiệm báo không bắn tới (đồi / nhà chặn, quá tầm, điểm mù mũi xe pháo): không bắn xe này — thử xe kế tiếp
         if (sol && sol.reachable === false) sol = null;
-        if (sol) {
-          // Tháp quay dần tới hướng bắn (không nhảy tức thì); bắn khi tháp đã quay xong (xem pendingShot)
-          this.applyAim(sol, targetX, targetZ, terrain);
+        if (sol) break;
+        if (arty) break;   // lựu pháo: giải quỹ đạo nặng, không thử tiếp
+      }
 
-          // Pháo tự hành: Bắt buộc dừng xe hạ càng cắm đất mới bắn
-          if (this.unit.tankType === 'ARTILLERY') {
-            this.rampSpeed(0, dt);
-            if (!this.unit.isDeployed) {
-              return;
-            }
+      if (sol && targetX !== null) {
+        // Tháp quay dần tới hướng bắn (không nhảy tức thì); bắn khi tháp đã quay xong (xem pendingShot)
+        this.applyAim(sol, targetX, targetZ, terrain);
+        this._peek = null;
+
+        // Pháo tự hành: Bắt buộc dừng xe hạ càng cắm đất mới bắn
+        if (arty) {
+          this.rampSpeed(0, dt);
+          if (!this.unit.isDeployed) {
+            return;
           }
+        }
 
-          // Xe trinh sát hoặc xe 6 nòng xả đạn súng máy cận chiến (sau khi tháp quay tới)
-          const distToTarget = Math.hypot(targetX - this.unit.x, targetZ - this.unit.z);
-          // tầm hiệu quả súng (số liệu thật x tỉ lệ game): 30mm ~1000, 12.7mm ~700
-          const gunCap = ballistics.maxTravelFor ? ballistics.maxTravelFor(this.unit.tankType === 'GATLING' ? 'GATLING_BULLET' : 'SCOUT_BULLET', this.unit) : 700;
-          const burst = (this.unit.tankType === 'SCOUT' || this.unit.tankType === 'GATLING') && distToTarget <= gunCap * 0.92;
-          this.unit.isFiringGatling = false;
-          // Tên lửa chỉ dùng khi đã có xe mục tiêu mà chính bot nhìn thấy (không bắn tên lửa vào điểm / vị trí đồng đội báo)
-          const seen = targetUnit && this.seesDirect(targetUnit);
-          const anti = this.unit.tankType === 'SCOUT' && this.unit.antiTankCooldown <= 0 && (this.unit.missileAmmoCount || 0) > 0 && seen;
-          const mt = anti ? { unit: targetUnit } : null;
-          // mục tiêu mới: nhịp phản xạ trước phát đầu; mỗi phát: giữ yên tháp một chút cho nòng hết rung rồi mới bóp cò
-          const E = seenUnit && this.eng && this.eng.id === seenUnit.id ? this.eng : null;
-          const react = E && !E.reacted ? E.react : 0;
-          if (E) E.reacted = true;
-          this.pendingShot = { t: -react, anti, burst, ballistics, radar, mt, tu: seenUnit, settle: 0.15 + Math.random() * 0.3, reaim: 0.2,
-            ax: seenUnit ? seenUnit.x : undefined, az: seenUnit ? seenUnit.z : undefined };
-          if (seen && this.unit.tankType !== 'ARTILLERY') { this.lockUnit = targetUnit; this.lockHold = 4.5; }
+        // Xe trinh sát hoặc xe 6 nòng xả đạn súng máy cận chiến (sau khi tháp quay tới)
+        const distToTarget = Math.hypot(targetX - this.unit.x, targetZ - this.unit.z);
+        // tầm hiệu quả súng (số liệu thật x tỉ lệ game): 30mm ~1000, 12.7mm ~700
+        const gunCap = ballistics.maxTravelFor ? ballistics.maxTravelFor(this.unit.tankType === 'GATLING' ? 'GATLING_BULLET' : 'SCOUT_BULLET', this.unit) : 700;
+        const burst = gunner && distToTarget <= gunCap * 0.92;
+        this.unit.isFiringGatling = false;
+        // Tên lửa chỉ dùng khi đã có xe mục tiêu mà chính bot nhìn thấy (không bắn tên lửa vào điểm / vị trí đồng đội báo)
+        const seen = !!seenUnit;
+        const anti = this.unit.tankType === 'SCOUT' && this.unit.antiTankCooldown <= 0 && (this.unit.missileAmmoCount || 0) > 0 && seen;
+        const mt = anti ? { unit: targetUnit } : null;
+        // mục tiêu mới: nhịp phản xạ trước phát đầu; mỗi phát: giữ yên tháp một chút cho nòng hết rung rồi mới bóp cò
+        const E = seenUnit && this.eng && this.eng.id === seenUnit.id ? this.eng : null;
+        const react = E && !E.reacted ? E.react : 0;
+        if (E) E.reacted = true;
+        this.pendingShot = { t: -react, anti, burst, ballistics, radar, mt, tu: seenUnit, settle: 0.15 + Math.random() * 0.3, reaim: 0.2,
+          ax: seenUnit ? seenUnit.x : undefined, az: seenUnit ? seenUnit.z : undefined };
+        if (seen && !arty) { this.lockUnit = targetUnit; this.lockHold = 4.5; }
 
-          // Pháo tự hành đứng yên bắn tiếp, các xe khác đổi vị trí sau khi bắn
-          if (this.unit.tankType !== 'ARTILLERY') {
-            const O = this.objCp;
-            const nearObj = O && Math.hypot(O.x - this.unit.x, O.z - this.unit.z) < O.radius * 1.5;
-            if (nearObj) {
-              // đang ở cứ điểm: chỉ né ngang trong vùng cờ, không bỏ cứ điểm chạy đi xa (ưu tiên chỗ khuất tầm nhìn địch)
-              const c = this.findCover(O.x, O.z, 0, O.radius * 0.45, enemyUnits, terrain, 8);
-              const a = Math.random() * Math.PI * 2, r = O.radius * (0.15 + Math.random() * 0.3);
-              this.unit.aiShootAndScootDest = c ? { x: c.x, z: c.z } : { x: O.x + Math.cos(a) * r, z: O.z + Math.sin(a) * r };
-              this.unit.aiState = 'fleeing';
-            } else if (!O) {
-              // bắn xong lùi vào chỗ khuất (sau gò / sườn dốc ngược / góc nhà) rồi mới ló ra bắn tiếp; không có thì chạy
-              // ngẫu nhiên như cũ
-              const sd = this.style.scoot, c = this.findCover(this.unit.x, this.unit.z, 120 * sd, 380 * sd, enemyUnits, terrain, 10);
-              const scootAngle = Math.random() * Math.PI * 2;
-              const scootDist = (180 + Math.random() * 200) * sd;
-              this.unit.aiShootAndScootDest = c ? { x: c.x, z: c.z } : {
-                x: this.unit.clampToMap(this.unit.x + Math.cos(scootAngle) * scootDist, 'x'),
-                z: this.unit.clampToMap(this.unit.z + Math.sin(scootAngle) * scootDist, 'z')
-              };
-              this.unit.aiState = 'fleeing';
-            }
-            // đang trên đường tới cứ điểm: cứ chạy tiếp (đang cơ động sẵn), không rẽ ngang
+        // Pháo tự hành đứng yên bắn tiếp, các xe khác đổi vị trí sau khi bắn
+        if (!arty) {
+          const O = this.objCp;
+          const nearObj = O && Math.hypot(O.x - this.unit.x, O.z - this.unit.z) < O.radius * 1.5;
+          // trinh sát núp bụi bắn tỉa: nổ súng chỉ lộ vị trí vài giây -> ở yên trong bụi, chỉ đổi chỗ khi vừa trúng đạn
+          const bushHold = this.unit.tankType === 'SCOUT' && this.unit.isInBush && !(this.unit._lastHitAt && performance.now() - this.unit._lastHitAt < 4000);
+          if (bushHold) {
+            // ở yên
+          } else if (nearObj) {
+            // đang ở cứ điểm: chỉ né ngang trong vùng cờ, không bỏ cứ điểm chạy đi xa (ưu tiên chỗ khuất tầm nhìn địch)
+            const c = this.findCover(O.x, O.z, 0, O.radius * 0.45, enemyUnits, terrain, 8);
+            const a = Math.random() * Math.PI * 2, r = O.radius * (0.15 + Math.random() * 0.3);
+            this.unit.aiShootAndScootDest = c ? { x: c.x, z: c.z } : { x: O.x + Math.cos(a) * r, z: O.z + Math.sin(a) * r };
+            this.unit.aiState = 'fleeing';
+          } else if (!O) {
+            // bắn xong lùi vào chỗ khuất GẦN (sau gò / sườn dốc ngược / góc nhà) để nạp đạn, rồi ló ra lại (planPeek) bắn
+            // tiếp; chỗ nấp xa quá thì từ đó không ló ra kịp. Không có chỗ khuất thì chạy ngẫu nhiên một đoạn như cũ
+            const sd = this.style.scoot, c = this.findCover(this.unit.x, this.unit.z, 60 * sd, 220 * sd, enemyUnits, terrain, 10);
+            const scootAngle = Math.random() * Math.PI * 2;
+            const scootDist = (120 + Math.random() * 140) * sd;
+            this.unit.aiShootAndScootDest = c ? { x: c.x, z: c.z } : {
+              x: this.unit.clampToMap(this.unit.x + Math.cos(scootAngle) * scootDist, 'x'),
+              z: this.unit.clampToMap(this.unit.z + Math.sin(scootAngle) * scootDist, 'z')
+            };
+            this.unit.aiState = 'fleeing';
           }
+          // đang trên đường tới cứ điểm: cứ chạy tiếp (đang cơ động sẵn), không rẽ ngang
         }
       }
     }
@@ -894,8 +1005,9 @@ class BotAIController {
 
     // LÁI ĐÚNG MỘT LẦN theo đích ưu tiên cao nhất; không có việc gì thì phanh dừng
     // (trước đây không gọi lệnh lái nào thì tốc độ giữ nguyên -> bot trôi tuột qua cứ điểm)
+    // Đứng yên (giữ cứ điểm / nấp / chờ bắn): xe giáp dày xoay mũi xe về phía mối đe dọa chính (tryAngleHull)
     if (goal && Math.hypot(goal.x - this.unit.x, goal.z - this.unit.z) > 1) this.driveTowards(goal.x, goal.z, dt, goal.boost, allUnits);
-    else if (!(this.unit.tankType === 'ARTILLERY' && this.unit.isDeployed)) this.unit.steer(0, 0, dt);
+    else if (!(this.unit.tankType === 'ARTILLERY' && this.unit.isDeployed) && !this.tryAngleHull(dt)) this.unit.steer(0, 0, dt);
   }
 
   /**
@@ -945,6 +1057,195 @@ class BotAIController {
     if (smokeVeiled(t, this.unit.team)) return false;   // khói đa phổ: kính ngắm / laser đo xa không khóa được
     if (typeof TeamIntel === 'undefined') return true;
     return TeamIntel.seesDirect(this.unit, t);
+  }
+
+  // Mặt giáp của xe t đang chĩa về điểm (x, z): 'front' | 'side' | 'rear' (mũi thân xe = (-sin, -cos) bodyAngle)
+  faceOf(t, x, z) {
+    const dx = x - t.x, dz = z - t.z, d = Math.hypot(dx, dz) || 1, a = t.bodyAngle || 0;
+    const c = (-Math.sin(a) * dx - Math.cos(a) * dz) / d;
+    return c > 0.64 ? 'front' : c < -0.64 ? 'rear' : 'side';
+  }
+
+  // Vũ khí bot đang dùng bắn xe (khóa bảng HURT)
+  weaponKey() {
+    const U = this.unit;
+    if (U.tankType === 'ARTILLERY') return 'arty';
+    if (U.tankType === 'SCOUT') return U.antiTankCooldown <= 0 && (U.missileAmmoCount || 0) > 0 ? 'atgm' : 'mg';
+    if (U.tankType === 'GATLING') return 'gat';
+    return U.selectedAmmo === 'AP' || (U.apAmmoCount || 0) > 0 ? 'ap' : 'tank';
+  }
+
+  // Phát bắn của bot vào xe t (mặt đang chĩa về bot) có ăn không: 0 (đạn dội) .. 1 (xuyên chắc). Bảng thô theo độ xuyên
+  // (vehicle_damage.js PEN) và giáp quy đổi từng mặt (ARMOR_MM) — đủ để bot không xả 12.7mm vào mũi xe tăng
+  hurtK(t, key) {
+    const H = BotAIController.HURT[key || this.weaponKey()];
+    const row = H && H[t.tankType];
+    if (!row) return 1;
+    return row[this.faceOf(t, this.unit.x, this.unit.z)] || 1;
+  }
+
+  // XẾP MỤC TIÊU (điểm càng thấp càng ưu tiên): cự ly (xe chỉ biết qua đồng đội báo: x2.5), xe vừa bắn mình -400, xe yếu
+  // máu tới -300, bắn không xuyên (mũi giáp dày / súng nhỏ vào xe tăng) tới +700, xe đang chĩa sườn / đuôi về mình -150,
+  // xe đang khóa / ngắm mình -250, đồng đội đang bắn cùng xe (dồn hỏa lực hạ nhanh) -120 mỗi xe (tối đa 2),
+  // ngoài tầm bắn +1000; nhân ngẫu nhiên 0.9-1.1 để các bot không đoán trước được
+  rankTargets(list, ballistics, allUnits) {
+    const U = this.unit, now = performance.now();
+    const range = ballistics && ballistics.maxRangeFor ? ballistics.maxRangeFor(U) : Infinity;
+    const key = this.weaponKey();
+    const sc = list.map(u => {
+      const d = Math.hypot(u.x - U.x, u.z - U.z);
+      let s = d * (this.seesDirect(u) ? 1 : 2.5) * (0.9 + Math.random() * 0.2);
+      if (U._lastAttacker === u && now - (U._lastAttackerAt || 0) < 12000) s -= 400;
+      s -= (1 - Math.max(0, Math.min(1, (u.hp || 0) / (u.maxHp || 1)))) * 300;
+      const hk = this.hurtK(u, key);
+      s += (1 - hk) * 700;
+      if (hk >= 0.5 && this.faceOf(u, U.x, U.z) !== 'front') s -= 150;
+      const lk = u._lockOn || (u.botAI && u.botAI.lockUnit === U ? { id: U.id } : null);
+      if (lk && lk.id === U.id) s -= 250;
+      if (hk >= 0.3) {
+        let focus = 0;
+        for (const o of allUnits || []) {
+          if (!o || o === U || o.isDead || o.team !== U.team || !o.botAI) continue;
+          const E = o.botAI.eng;
+          if (E && E.id === u.id && o.botAI.clock - E.lastAt < 6) focus++;
+        }
+        s -= Math.min(2, focus) * 120;
+      }
+      if (d > range) s += 1000;
+      return { u, s };
+    });
+    sc.sort((a, b) => a.s - b.s);
+    return sc.map(o => o.u);
+  }
+
+  // CHỌN ĐẠN theo xe & mặt giáp (như người chơi đổi đạn): xe tăng — mũi xe giáp dày: đạn mũi tên (AP), xe giáp mỏng: nổ
+  // phá (HE), còn lại đạn thường; xe 6 nòng — xe giáp mỏng: 30mm nổ mảnh, xe giáp dày: 30mm xuyên giáp
+  pickAmmo(t) {
+    const U = this.unit;
+    if (U.mainGun) return;   // vũ khí mô-đun (súng phóng lựu...) tự quản đạn
+    const soft = t.tankType === 'SCOUT' || t.tankType === 'ARTILLERY';
+    if (U.tankType === 'ALL_ROUNDER') {
+      const hard = !soft && this.faceOf(t, U.x, U.z) === 'front';
+      U.selectedAmmo = hard && (U.apAmmoCount || 0) > 0 ? 'AP' : soft && (U.heAmmoCount || 0) > 0 ? 'HE' : 'NORMAL';
+    } else if (U.tankType === 'GATLING') {
+      if (soft && (U.heFragAmmoCount || 0) > 0) U.selectedAmmo = 'GATLING_HE';
+      else if (!soft && U.selectedAmmo !== 'GATLING_BULLET') U.selectedAmmo = 'GATLING_BULLET';
+    }
+  }
+
+  // LÓ RA BẮN: xe bắn thẳng biết vị trí địch (đồng đội / radar báo) mà tự không thấy -> tìm chỗ gần trong hướng đó nhìn
+  // thấy được xe kia (đường ngắm không bị gò / nhà chặn), ít xe địch khác nhìn thấy nhất; chạy ra, thấy là bắn, bắn xong
+  // lùi về chỗ khuất (shoot & scoot). Không kéo bot đi xa khỏi cứ điểm đang giữ / đang tới
+  planPeek(foes, ballistics) {
+    if (this._peek || this.clock < (this._peekCd || 0) || this._cover || typeof TeamIntel === 'undefined' || !TeamIntel.lineBlocked) return;
+    this._peekCd = this.clock + 3;
+    const U = this.unit, terrain = window.game && window.game.terrain;
+    const range = Math.min(1500, ballistics && ballistics.maxRangeFor ? ballistics.maxRangeFor(U) : 1500);
+    let f = null, fd = range;
+    for (const u of foes) {
+      const d = Math.hypot(u.x - U.x, u.z - U.z);
+      if (d < fd && this.hurtK(u) >= 0.3) { fd = d; f = u; }
+    }
+    if (!f) return;
+    const O = this.objCp, base = Math.atan2(f.x - U.x, f.z - U.z);
+    let best = null, bs = -Infinity;
+    for (let i = 0; i < 12; i++) {
+      const a = base + (Math.random() - 0.5) * Math.PI * 1.4, r = 25 + Math.random() * 150;
+      const x = U.x + Math.sin(a) * r, z = U.z + Math.cos(a) * r;
+      if (O && Math.hypot(x - O.x, z - O.z) > O.radius * 2) continue;
+      if (!this.okSpot(x, z, terrain)) continue;
+      if (TeamIntel.lineBlocked(x, z, f.x, f.z)) continue;
+      let others = 0;
+      for (const o of foes) if (o !== f && Math.hypot(o.x - x, o.z - z) < 1400 && !TeamIntel.lineBlocked(o.x, o.z, x, z)) others++;
+      const s = -r - others * 50 + Math.random() * 8;
+      if (s > bs) { bs = s; best = { x, z }; }
+    }
+    if (best) this._peek = { x: best.x, z: best.z, u: f, until: this.clock + 10 };
+  }
+
+  // ĐÁNH GIÁ TÌNH HUỐNG (2 lần / giây): xe địch đang biết, sức ép quanh mình (xe địch trong 750, theo loại xe & máu) so
+  // với lực lượng phe mình quanh đó (trong 450, gồm cả mình) -> bị áp đảo thì rút về chỗ nấp chờ đồng đội;
+  // mối đe dọa chính để xoay mũi giáp dày về phía đó
+  assess(allUnits) {
+    const U = this.unit, W = BotAIController.THREAT_W, hpf = u => Math.max(0.15, Math.min(1, (u.hp || 0) / (u.maxHp || 1)));
+    const foes = this.knownFoes(allUnits);
+    let danger = 0, support = 0, threat = null, td = 1200;
+    for (const f of foes) {
+      const d = Math.hypot(f.x - U.x, f.z - U.z);
+      if (d < 750) danger += (W[f.tankType] || 0.7) * hpf(f);
+      if (d < td && this.seesDirect(f)) { td = d; threat = f; }
+    }
+    for (const a of allUnits || []) {
+      if (!a || a.isDead || a.team !== U.team) continue;
+      if (a === U || Math.hypot(a.x - U.x, a.z - U.z) < 450) support += (W[a.tankType] || 0.7) * hpf(a);
+    }
+    const la = U._lastAttacker;
+    if (!threat && la && !la.isDead && performance.now() - (U._lastAttackerAt || 0) < 15000) threat = la;
+    // ngưỡng áp đảo theo lối đánh: cẩn trọng rút sớm (x1.3), xông xáo lì hơn (x1.8)
+    const k = 2.1 - this.style.fortHp * 1.6;
+    this._sit = { foes, danger, support, outnumbered: danger >= 1.2 && danger > support * k + 0.3 };
+    this._threat = threat;
+  }
+
+  // Sức ép của địch quanh cứ điểm (xe địch đang biết trong 2.2 bán kính) / số xe phe mình đang tới hoặc đang ở đó
+  cpThreat(cp) {
+    const W = BotAIController.THREAT_W;
+    let s = 0;
+    for (const f of (this._sit && this._sit.foes) || []) if (Math.hypot(f.x - cp.x, f.z - cp.z) < cp.radius * 2.2) s += W[f.tankType] || 0.7;
+    return s;
+  }
+  cpCommit(cp, allUnits) {
+    const U = this.unit;
+    let n = 0;
+    for (const a of allUnits || []) {
+      if (!a || a === U || a.isDead || a.team !== U.team) continue;
+      if ((a.botAI && a.botAI.objCp === cp) || Math.hypot(a.x - cp.x, a.z - cp.z) < cp.radius * 1.5) n++;
+    }
+    return n;
+  }
+
+  // XOAY MŨI GIÁP VỀ PHÍA ĐỊCH khi đứng yên (giữ cứ điểm / nấp / chờ bắn): xe xích giáp dày (tăng, 6 nòng) quay thân cho
+  // mũi xe hướng về mối đe dọa chính, lệch ~20° (giáp nghiêng dày thêm, không phơi sườn). true = đang xoay
+  tryAngleHull(dt) {
+    const U = this.unit, T = this._threat;
+    if (!T || T.isDead || U.isWheeled || (U.tankType !== 'ALL_ROUNDER' && U.tankType !== 'GATLING')) return false;
+    const TT = U.dmg && U.dmg.trackTimer;
+    if ((TT && (TT[0] > 0 || TT[1] > 0)) || Math.abs(U.speed || 0) > (U.baseMaxSpeed || 120) * 0.25) return false;
+    if (!this._angleSide || this._angleFor !== T) { this._angleFor = T; this._angleSide = Math.random() < 0.5 ? -1 : 1; }
+    let diff = Math.atan2(-(T.x - U.x), -(T.z - U.z)) + this._angleSide * 0.35 - (U.bodyAngle || 0);
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) < 0.12) return false;
+    this.rampSpeed(0, dt);
+    const maxT = U.turnRate || 1, ms = maxT * 5 * dt, want = Math.max(-maxT, Math.min(maxT, diff * 6));
+    U.yawRate = (U.yawRate || 0) + Math.max(-ms, Math.min(ms, want - (U.yawRate || 0)));
+    const step = U.yawRate * dt;
+    U.bodyAngle = (U.bodyAngle || 0) + (Math.abs(step) > Math.abs(diff) ? diff : step);
+    return true;
+  }
+
+  // BỤI RẬM CHO XE TRINH SÁT: cụm bụi cách xe địch gần nhất 250-700 (không ai trong 260 — trong đó bụi không che được),
+  // nhìn thấy xe đó, chưa có đồng đội nào nấp; gần mình hơn tốt hơn, cự ly bắn ~450 tốt nhất
+  findBush(foes, allUnits) {
+    const U = this.unit, terrain = window.game && window.game.terrain;
+    const B = terrain && terrain.bushClusters;
+    if (!B || !B.length || !foes.length || typeof TeamIntel === 'undefined') return null;
+    let f = null, fd = 1000;
+    for (const u of foes) { const d = Math.hypot(u.x - U.x, u.z - U.z); if (d < fd) { fd = d; f = u; } }
+    if (!f) return null;
+    let best = null, bs = Infinity;
+    for (const c of B) {
+      const dm = Math.hypot(c.x - U.x, c.z - U.z);
+      if (dm > 700) continue;
+      const df = Math.hypot(c.x - f.x, c.z - f.z);
+      if (df < 250 || df > 700) continue;
+      if (foes.some(o => Math.hypot(o.x - c.x, o.z - c.z) < 260)) continue;
+      if ((allUnits || []).some(a => a && a !== U && !a.isDead && a.team === U.team && Math.hypot(a.x - c.x, a.z - c.z) < c.radius + 10)) continue;
+      if (TeamIntel.lineBlocked(c.x, c.z, f.x, f.z)) continue;
+      const s = dm + Math.abs(df - 450) * 0.5;
+      if (s < bs) { bs = s; best = c; }
+    }
+    return best ? { x: best.x, z: best.z, r: best.radius, until: this.clock + 25 } : null;
   }
 
   // Bộ bám đường (Navigator.steer) theo từng đích: trong một khung bot có thể lái lần lượt tới vài đích (hòm tiếp tế,
@@ -1028,6 +1329,20 @@ class BotAIController {
 // Xe có máy tính hỏa lực: σ ngắm ~4-5 lần độ tản của pháo, sai đón đầu ~12% (trước đây 12 mrad / 35%: như ngắm tay).
 // Sau mỗi phát: sai số còn keep (giữ lại) + một phần ngẫu nhiên mới jitter -> 2–3 phát là chỉnh gần trúng.
 BotAIController.AIM_ERR = { az: 5, el: 5, range: 0.04, lead: 0.12, keep: 0.5, jitter: 0.3 };
+
+// Phát bắn ăn được bao nhiêu (0..1) theo vũ khí của bot x loại xe mục tiêu x mặt giáp chĩa về bot. Ước lượng thô từ
+// vehicle_damage.js: độ xuyên PEN (tank = đạn thường 240mm nổ phá, ap = mũi tên 650mm, gat = 30mm 110mm, mg = 12.7mm 32mm,
+// atgm = 1300mm) so với giáp quy đổi ARMOR_MM (xe tăng mũi 500-700 · sườn 90-140 · đuôi 45; xe 6 nòng mũi thân 420 · sườn 55)
+BotAIController.HURT = {
+  tank: { ALL_ROUNDER: { front: 0.15, side: 1, rear: 1 }, GATLING: { front: 0.45, side: 1, rear: 1 } },
+  ap: { ALL_ROUNDER: { front: 0.85, side: 1, rear: 1 }, GATLING: { front: 1, side: 1, rear: 1 } },
+  gat: { ALL_ROUNDER: { front: 0.03, side: 0.55, rear: 1 }, GATLING: { front: 0.05, side: 1, rear: 1 } },
+  mg: { ALL_ROUNDER: { front: 0.02, side: 0.02, rear: 0.15 }, GATLING: { front: 0.03, side: 0.1, rear: 0.6 }, SCOUT: { front: 0.9, side: 0.95, rear: 1 } },
+  atgm: {},
+  arty: {}
+};
+// Sức ép theo loại xe (đánh giá tương quan lực lượng)
+BotAIController.THREAT_W = { ALL_ROUNDER: 1, GATLING: 0.85, SCOUT: 0.55, ARTILLERY: 0.35 };
 
 if (typeof window !== 'undefined') {
   window.BotAIController = BotAIController;

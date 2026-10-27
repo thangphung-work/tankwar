@@ -36,6 +36,13 @@
   animation: tp-in .22s ease-out;
 }
 @keyframes tp-in { from { opacity: 0; transform: translateY(10px); } }
+.tp-overlay:not(.hidden) { animation: tp-fade-in .18s ease-out; }
+.tp-overlay.closing { animation: tp-fade-out .18s ease-in forwards; pointer-events: none; }
+.tp-overlay.closing .tp-panel { animation: tp-out .18s ease-in forwards; }
+@keyframes tp-fade-in { from { opacity: 0; } }
+@keyframes tp-fade-out { to { opacity: 0; } }
+@keyframes tp-out { to { opacity: 0; transform: translateY(8px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .tp-overlay, .tp-panel { animation: none !important; } }
 .tp-close { position: absolute; top: 10px; right: 10px; }
 .tp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding-right: 40px; flex-wrap: wrap; }
 .tp-head > .ti { font-size: 34px; color: var(--tc-accent); }

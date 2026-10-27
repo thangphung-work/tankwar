@@ -122,6 +122,7 @@ const Account = (() => {
       if (e.key === 'Escape' && !panel.classList.contains('hidden')) hide(panel);
     });
   }
+  // hiệu ứng mở / đóng do theme.css + motion.js lo (theo dõi class 'hidden') — chỉ cần bật / tắt 'hidden'
   const show = (el) => el.classList.remove('hidden');
   const hide = (el) => el.classList.add('hidden');
 
@@ -194,6 +195,26 @@ const Account = (() => {
   }
 
   const fmtSilver = (n) => Math.round(n || 0).toLocaleString('vi-VN');
+  // Dải KHO BẠC trong hồ sơ: số Bạc to + nút NẠP BẠC + ưu đãi còn dùng được (gói Tân binh / x2 lần đầu)
+  function walletHtml(p) {
+    const on = !!(p.pay && p.pay.enabled);
+    let offer = '';
+    if (on && typeof Equipment !== 'undefined' && Equipment.TOPUP) {
+      const got = (p.pay.bought) || {}, packs = Equipment.TOPUP.PACKS;
+      const st = packs.find(k => k.once && !got[k.id]);
+      if (st) offer = `<i class="ti ti-gift"></i> ${esc(st.name)}: ${fmtSilver(st.silver)} Bạc${st.spins ? ` + ${st.spins} lượt quay` : ''} chỉ $${st.usd}`;
+      else if (Equipment.TOPUP.FIRST_X2 && packs.some(k => !k.once && !got[k.id])) offer = '<i class="ti ti-flame"></i> x2 Bạc lần nạp đầu mỗi gói';
+    }
+    return `<div class="acc-wallet${on ? ' can-pay' : ''}">
+        <div class="acc-wallet-ico"><i class="ti ti-coins"></i></div>
+        <div class="acc-wallet-info">
+          <span class="acc-wallet-lbl">Kho bạc</span>
+          <span class="acc-wallet-amt"><b>${fmtSilver(p.silver)}</b> Bạc</span>
+          ${offer ? `<span class="acc-wallet-offer">${offer}</span>` : ''}
+        </div>
+        ${on ? '<button type="button" class="acc-wallet-btn" data-act="topup" title="Nạp Bạc"><i class="ti ti-plus"></i><span>NẠP BẠC</span></button>' : ''}
+      </div>`;
+  }
 
   // ---------------------------------------------------------------------------
   // KHO TRANG BỊ
@@ -381,7 +402,7 @@ const Account = (() => {
           <label class="acc-name-wrap" title="Bấm để đổi tên hiển thị">
             <input class="acc-name" value="${esc(p.displayName)}" maxlength="24" spellcheck="false"><i class="ti ti-pencil"></i>
           </label>
-          <div class="acc-sub">@${esc(p.username)}<span class="acc-dot"></span><span class="acc-silver-sm"><i class="ti ti-coins"></i> ${fmtSilver(p.silver)} Bạc</span>${p.pay && p.pay.enabled ? '<button type="button" class="tp-add-btn" data-act="topup" title="Nạp Bạc"><i class="ti ti-plus"></i> NẠP</button>' : ''}</div>
+          <div class="acc-sub">@${esc(p.username)}</div>
           <div class="acc-rank-row">
             <span class="acc-rank"><i class="ti ti-star-filled"></i> ${esc(p.rankText)}</span>
             <span class="acc-lv">Cấp ${p.level || 1}</span>
@@ -390,6 +411,7 @@ const Account = (() => {
           <div class="acc-xptext"><span>${n(p.xpInLevel)} / ${n(p.xpToNext)} KN</span><span>còn ${n(p.xpToNext - p.xpInLevel)} KN lên cấp ${(p.level || 1) + 1}</span></div>
         </div>
       </div>
+      ${walletHtml(p)}
       <div class="acc-stats${empty ? ' is-empty' : ''}">
         <div><b>${n(S.matches)}</b><span>Trận</span></div>
         <div><b>${wr}<small>%</small></b><span>Tỉ lệ thắng</span></div>
@@ -511,7 +533,8 @@ const Account = (() => {
       setProfile(r.profile, false);
       armoryChanged();
       const kd = (r.kdPlace && r.kdBonus ? ` <span class="acc-kd">(có thưởng hạng ${r.kdPlace}: +${fmtSilver(r.kdBonus.silver)} Bạc)</span>` : '')
-        + (r.airdrops ? ` <span class="acc-kd">(${r.airdrops} hòm thả dù: +${fmtSilver(r.airdropSilver || 0)} Bạc)</span>` : '');
+        + (r.airdrops ? ` <span class="acc-kd">(${r.airdrops} hòm thả dù: +${fmtSilver(r.airdropSilver || 0)} Bạc)</span>` : '')
+        + (r.ammoRefund ? ` <span class="acc-kd">(hoàn 50% đạn đã bắn: +${fmtSilver(r.ammoRefund)} Bạc)</span>` : '');
       if (line) line.innerHTML = `<b>+${r.gained} kinh nghiệm</b> · <b class="silver"><i class="ti ti-coins"></i> +${fmtSilver(r.silver)} Bạc</b>${kd}${r.levelUp ? ` · <span class="up">LÊN CẤP: ${esc(r.profile.rankText)}!</span>` : ` · ${esc(r.profile.rankText)}`}`
         + (r.verified ? ' <span class="acc-verified" title="Số hạ gục / sát thương lấy theo máy chủ"><i class="ti ti-shield-check"></i> Đã đối chiếu máy chủ</span>' : '');
       renderUpkeep(line, P.tankType, r.silver);   // r.silver đã gồm thưởng hạng K/D
