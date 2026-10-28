@@ -1,0 +1,750 @@
+{
+ "base": ".",
+ "out": "trailer_v5.mp4",
+ "music": "raw/music2.wav",
+ "musicIn": 8.889,
+ "musicGain": 0.8,
+ "sfxGain": 1,
+ "musicDips": [
+  {
+   "at": 24.45,
+   "dur": 1.25,
+   "to": 0.25
+  },
+  {
+   "at": 48.794,
+   "dur": 0.8860000000000028,
+   "to": 0
+  },
+  {
+   "at": 30.067000000000004,
+   "dur": 2.3,
+   "to": 0.35
+  }
+ ],
+ "clips": [
+  {
+   "black": 0.3
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 0,
+   "dur": 3.4,
+   "fadeIn": 0.7,
+   "grade": "cold"
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 3.6,
+   "dur": 2.6,
+   "x": 0.5,
+   "grade": "cold"
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 7,
+   "dur": 1.6,
+   "x": 0.4,
+   "grade": "cold"
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 19.4,
+   "dur": 1.8889999999999993,
+   "grade": "cold"
+  },
+  {
+   "src": "final/show_urban.mp4",
+   "in": 26.4,
+   "dur": 1.8,
+   "flash": 0.15,
+   "grade": "cold"
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 24,
+   "dur": 2
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 4,
+   "dur": 2.4
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 17,
+   "dur": 1.6
+  },
+  {
+   "src": "final/pov_tank.mp4",
+   "in": 1.4,
+   "dur": 2.2
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 0.6,
+   "dur": 2
+  },
+  {
+   "src": "final/stage_hl.mp4",
+   "in": 44.8,
+   "dur": 2.2,
+   "grade": "cold"
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 8.5,
+   "dur": 1.4
+  },
+  {
+   "black": 1.2000000000000044
+  },
+  {
+   "src": "final/pov_kami.mp4",
+   "in": 22.02,
+   "dur": 0.978,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 28,
+   "dur": 1.8,
+   "flash": 0.35,
+   "ca": 0.3,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 41.6,
+   "dur": 1.6,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 47.2,
+   "dur": 2.3,
+   "grade": "bleach",
+   "sfx": 0.9,
+   "lp": 450
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 53.2,
+   "dur": 0.8,
+   "flash": 0.2,
+   "ca": 0.25,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 49.3,
+   "dur": 1.4,
+   "grade": "hot"
+  },
+  {
+   "src": "final/pov_tank.mp4",
+   "in": 6,
+   "dur": 1.2,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 40,
+   "dur": 1.3,
+   "flash": 0.15,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 20.6,
+   "dur": 1.4,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 12,
+   "dur": 1,
+   "grade": "hot"
+  },
+  {
+   "src": "final/pov_tank.mp4",
+   "in": 9,
+   "dur": 1.5,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 100.2,
+   "dur": 1.6,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 20,
+   "dur": 1.8770000000000024,
+   "grade": "hot"
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 5,
+   "dur": 0.42,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.16
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 20,
+   "dur": 0.4,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.15
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 47.8,
+   "dur": 0.34,
+   "grade": "hot",
+   "flash": 0.12,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.12
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 18,
+   "dur": 0.3,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.1
+  },
+  {
+   "src": "final/pov_kami.mp4",
+   "in": 22.6,
+   "dur": 0.28,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.1
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 1.8,
+   "dur": 0.24,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.08
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 5.5,
+   "dur": 0.2,
+   "grade": "hot",
+   "flash": 0.12,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.08
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 33.5,
+   "dur": 0.18,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.06
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 53.3,
+   "dur": 0.15,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.06
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 49.6,
+   "dur": 0.14,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.05
+  },
+  {
+   "src": "v5/battle.mp4",
+   "in": 2.5,
+   "dur": 0.13,
+   "grade": "hot",
+   "flash": 0.1,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.05
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 21,
+   "dur": 0.12,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.05
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 29,
+   "dur": 0.12,
+   "grade": "hot",
+   "flash": 0,
+   "afadeIn": 0.005,
+   "afadeOut": 0.02
+  },
+  {
+   "black": 0.05
+  },
+  {
+   "src": "v5/forest.mp4",
+   "in": 18.6,
+   "dur": 0.2,
+   "flash": 0.15,
+   "grade": "hot"
+  },
+  {
+   "black": 0.9060000000000059
+  },
+  {
+   "src": "v5/base2.mp4",
+   "in": 33.6,
+   "dur": 5.8,
+   "fadeIn": 1,
+   "fadeOut": 1.6,
+   "grade": "dark",
+   "push": 0.05,
+   "sfx": 0.5
+  }
+ ],
+ "titles": [
+  {
+   "at": 0.45,
+   "dur": 5.1,
+   "type": 24,
+   "fadeIn": 0.05,
+   "fadeOut": 0.35,
+   "card": {
+    "kind": "slug",
+    "alert": true,
+    "lines": [
+     "⚠ PHÁT HIỆN KÍCH HOẠT ĐẦU ĐẠN HẠT NHÂN",
+     "CĂN CỨ TÊN LỬA — ĐÃ RƠI VÀO TAY ĐỊCH"
+    ]
+   }
+  },
+  {
+   "at": 5.8,
+   "dur": 3,
+   "type": 26,
+   "fadeIn": 0.05,
+   "fadeOut": 0.2,
+   "card": {
+    "kind": "slug",
+    "lines": [
+     "NHIỆM VỤ: NGĂN CHẶN — BẰNG MỌI GIÁ"
+    ]
+   }
+  },
+  {
+   "at": 6,
+   "dur": 1,
+   "fadeIn": 0.1,
+   "fadeOut": 0,
+   "card": {
+    "kind": "clock",
+    "pos": "tr",
+    "lbl": "ĐẾM NGƯỢC",
+    "main": "T-00:05:00"
+   }
+  },
+  {
+   "at": 7,
+   "dur": 1,
+   "fadeIn": 0,
+   "fadeOut": 0,
+   "card": {
+    "kind": "clock",
+    "pos": "tr",
+    "lbl": "ĐẾM NGƯỢC",
+    "main": "T-00:04:59"
+   }
+  },
+  {
+   "at": 8,
+   "dur": 0.85,
+   "fadeIn": 0,
+   "fadeOut": 0.1,
+   "card": {
+    "kind": "clock",
+    "pos": "tr",
+    "lbl": "ĐẾM NGƯỢC",
+    "main": "T-00:04:58"
+   }
+  },
+  {
+   "at": 8.95,
+   "dur": 1.5,
+   "slam": 0.32,
+   "fadeIn": 0.02,
+   "fadeOut": 0.25,
+   "card": {
+    "kind": "slam",
+    "main": "Khai hỏa!"
+   }
+  },
+  {
+   "at": 19.3,
+   "dur": 1,
+   "fadeIn": 0.05,
+   "fadeOut": 0.15,
+   "card": {
+    "kind": "clock",
+    "pos": "tr",
+    "lbl": "ĐẾM NGƯỢC",
+    "main": "T-00:01:47"
+   }
+  },
+  {
+   "at": 24.55,
+   "dur": 1.1,
+   "slam": 0.25,
+   "fadeIn": 0.02,
+   "fadeOut": 0.15,
+   "card": {
+    "kind": "slam",
+    "main": "Thời gian đang cạn"
+   }
+  },
+  {
+   "at": 35.9,
+   "dur": 0.8,
+   "fadeIn": 0,
+   "fadeOut": 0.1,
+   "card": {
+    "kind": "clock",
+    "pos": "tr",
+    "lbl": "ĐẾM NGƯỢC",
+    "main": "T-00:00:30"
+   }
+  },
+  {
+   "at": 41,
+   "dur": 0.8,
+   "fadeIn": 0,
+   "fadeOut": 0.1,
+   "card": {
+    "kind": "clock",
+    "pos": "tr",
+    "lbl": "ĐẾM NGƯỢC",
+    "main": "T-00:00:10"
+   }
+  },
+  {
+   "at": 44.444,
+   "dur": 1.15,
+   "fadeIn": 0,
+   "fadeOut": 0,
+   "card": {
+    "kind": "clock",
+    "lbl": "",
+    "main": "T-00:00:03"
+   }
+  },
+  {
+   "at": 45.6,
+   "dur": 1.2,
+   "fadeIn": 0,
+   "fadeOut": 0,
+   "card": {
+    "kind": "clock",
+    "lbl": "",
+    "main": "T-00:00:02"
+   }
+  },
+  {
+   "at": 46.8,
+   "dur": 1.9739999999999966,
+   "fadeIn": 0,
+   "fadeOut": 0,
+   "card": {
+    "kind": "clock",
+    "lbl": "",
+    "main": "T-00:00:01"
+   }
+  },
+  {
+   "at": 50.1,
+   "dur": 5.3,
+   "fadeIn": 1,
+   "fadeOut": 1.4,
+   "push": 0.04,
+   "card": {
+    "kind": "logo",
+    "main": "Chiến Địa Pháo Kích 3D",
+    "en": "TACTICAL SPG COMMAND",
+    "tag": "BẠN CÓ KỊP NGĂN CHẶN?",
+    "url": "TANKWAR.ONLINE"
+   }
+  }
+ ],
+ "fx": [
+  {
+   "file": "sfx/geiger.wav",
+   "at": 0,
+   "gain": 0.45,
+   "dur": 8.8
+  },
+  {
+   "file": "sfx/siren.wav",
+   "at": 3.2,
+   "gain": 0.32,
+   "dur": 5.6
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 6,
+   "gain": 0.55
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 7,
+   "gain": 0.55
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 8,
+   "gain": 0.55
+  },
+  {
+   "file": "sfx/static.wav",
+   "at": 7.05,
+   "gain": 0.35
+  },
+  {
+   "file": "H:/tankwar/assets/sfx/radio/spotted.wav",
+   "at": 7.25,
+   "gain": 0.85
+  },
+  {
+   "file": "sfx/braam.wav",
+   "at": 8.889,
+   "gain": 0.85
+  },
+  {
+   "file": "sfx/whoosh.wav",
+   "at": 16.4,
+   "gain": 0.5
+  },
+  {
+   "file": "sfx/static.wav",
+   "at": 16.75,
+   "gain": 0.3
+  },
+  {
+   "file": "H:/tankwar/assets/sfx/radio/focus.wav",
+   "at": 16.95,
+   "gain": 0.8
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 19.3,
+   "gain": 0.55
+  },
+  {
+   "file": "sfx/static.wav",
+   "at": 23,
+   "gain": 0.3
+  },
+  {
+   "file": "H:/tankwar/assets/sfx/radio/backup.wav",
+   "at": 23.2,
+   "gain": 0.85
+  },
+  {
+   "file": "sfx/heartbeat.wav",
+   "at": 24.5,
+   "gain": 0.9
+  },
+  {
+   "file": "sfx/heartbeat.wav",
+   "at": 25.3,
+   "gain": 0.9
+  },
+  {
+   "file": "sfx/riser.wav",
+   "at": 24.067,
+   "gain": 0.55
+  },
+  {
+   "file": "sfx/braam.wav",
+   "at": 26.667,
+   "gain": 0.95
+  },
+  {
+   "file": "sfx/tinnitus.wav",
+   "at": 30.067000000000004,
+   "gain": 0.5,
+   "dur": 2.5
+  },
+  {
+   "file": "sfx/heartbeat.wav",
+   "at": 30.567000000000004,
+   "gain": 0.8
+  },
+  {
+   "file": "sfx/heartbeat.wav",
+   "at": 31.467000000000002,
+   "gain": 0.8
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 35.9,
+   "gain": 0.55
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 41,
+   "gain": 0.6
+  },
+  {
+   "file": "H:/tankwar/assets/sfx/radio/fallback.wav",
+   "at": 42.1,
+   "gain": 0.8
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 44.444,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 45.024,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 45.574,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 46.034,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 46.434,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 46.814,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 47.134,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 47.414,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 47.654,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 47.864000000000004,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 48.054,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 48.234,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/thump.wav",
+   "at": 48.403999999999996,
+   "gain": 0.75
+  },
+  {
+   "file": "sfx/riser.wav",
+   "at": 46.17399999999999,
+   "gain": 0.6
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 44.444,
+   "gain": 0.7
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 45.6,
+   "gain": 0.7
+  },
+  {
+   "file": "sfx/tick.wav",
+   "at": 46.8,
+   "gain": 0.7
+  },
+  {
+   "file": "sfx/braam.wav",
+   "at": 49.7,
+   "gain": 0.7
+  }
+ ]
+}

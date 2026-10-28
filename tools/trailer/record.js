@@ -170,7 +170,7 @@ class CDP {
     // trang / GPU treo (đã gặp: bộ ghép hình ngừng ra khung) -> sau 30 s dừng ghi, giữ phần đã quay
     const within = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('TREO')), ms))]);
     let hung = false, evCache = null;
-    let held = 0;
+    let held = 0, flat = 0;
     for (let i = 0; i < N; i++) {
       let shot;
       try {
@@ -180,6 +180,9 @@ class CDP {
       } catch (e) { console.warn('[REC] trang treo ở khung', i, '- dừng ghi, giữ', (i / FPS).toFixed(1), 's'); hung = true; break; }
       if (i % 300 === 0) { try { evCache = await within(cdp.eval('JSON.stringify({f0: __TR.recFrame0, v0: __TR.recV0, fps: __TW.fps, log: __TR.log})'), 10000); } catch (e) { /* bỏ qua */ } }
       const buf = Buffer.from(shot.data, 'base64');
+      // khung đơn sắc (màn xám / đen do camera lạc lên mây, vẽ lỗi...) nén JPEG rất nhỏ: báo sớm trong log
+      flat = buf.length < 30000 ? flat + 1 : 0;
+      if (flat === 45) console.warn('[REC] CẢNH BÁO: khung trống liên tục từ ~' + ((i - 45) / FPS).toFixed(1) + ' s');
       if (!ff.stdin.write(buf)) await new Promise(r => ff.stdin.once('drain', r));
       if (i % 150 === 0) {
         const el = (Date.now() - tr) / 1000;

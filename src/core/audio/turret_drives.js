@@ -12,38 +12,76 @@ SoundEngine.mixin(class {
     const ctx = this.ctx;
     const out = ctx.createGain();
     out.gain.value = 0;
+    // Vỏ tháp thép dày: tiếng mô-tơ / bánh răng nghe qua khối thép vang ở vài dải cộng hưởng (không phải nguồn khô trong không khí)
+    const body = [[230, 3, 5], [870, 4, 4], [1900, 5, 3]].map(([f, q, g]) => {
+      const b = ctx.createBiquadFilter();
+      b.type = 'peaking';
+      b.frequency.value = f;
+      b.Q.value = q;
+      b.gain.value = g;
+      return b;
+    });
     // cắt dưới ~110 Hz: đuôi trầm của các dải nhiễu chỉ thành tiếng "ù" trên tai nghe, không giúp nghe ra tháp quay
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 75;
     hp.Q.value = 0.6;
-    out.connect(hp);
+    out.connect(body[0]);
+    body[0].connect(body[1]);
+    body[1].connect(body[2]);
+    body[2].connect(hp);
     hp.connect(this.vehicleBus);
     // nhiễu dài riêng (bộ đệm lửa 11.7 s) — bộ đệm chung 3 s phát lặp lâu sẽ nghe ra vòng lặp
     let nb = this.pinkNoiseBuffer;
     try { nb = this.ensureFireBuffers().pink; } catch (e) { /* dùng bộ đệm chung */ }
-    // 1. Mô-tơ servo điện quay tháp: tiếng "vù-uuu" cao độ theo vòng quay mô-tơ — sin cơ bản + bậc 2 + một bậc lệch
-    //    (từ trường / răng hộp số hành tinh), lọc thấp: tròn, không chói như răng cưa
-    const parts = [[1, 'sine', 1], [2, 'sine', 0.3]].map(([r, type, g]) => {
-      const o = ctx.createOscillator();
-      o.type = type;
-      o.frequency.value = 260 * r;
-      const og = ctx.createGain();
-      og.gain.value = g;
-      o.connect(og);
-      return { o, og, r };
-    });
+    // điều biên ngẫu nhiên (không tuần hoàn): nhiễu lọc thấp -> độ lớn chao như răng mòn / tải đổi; trả bộ lọc để chỉnh nhịp chao theo tốc độ
+    const amp = (src, f, depth) => {
+      const n = ctx.createBufferSource();
+      n.buffer = nb;
+      n.loop = true;
+      n.playbackRate.value = 0.6 + Math.random() * 0.3;
+      n.start(ctx.currentTime, Math.random() * nb.duration);
+      const lf = ctx.createBiquadFilter();
+      lf.type = 'lowpass';
+      lf.frequency.value = f;
+      const d = ctx.createGain();
+      d.gain.value = depth;
+      const g = ctx.createGain();
+      g.gain.value = 1;
+      n.connect(lf);
+      lf.connect(d);
+      d.connect(g.gain);
+      src.connect(g);
+      return { g, lf };
+    };
+    // 1. Mô-tơ servo điện quay tháp: tiếng "vù-uuu" cao độ theo vòng quay mô-tơ. Sóng nhiều họa âm (bậc n yếu dần, bậc 3 / 6 nổi
+    //    như mô-tơ 3 pha) thay cho sin sạch — sin sạch nghe như còi điện tử. Lọc thấp mở theo tốc độ: chậm thì đục, nhanh thì sáng
+    const real = new Float32Array(10), imag = new Float32Array(10);
+    for (let n = 1; n < 10; n++) imag[n] = Math.pow(n, -1.4) * (n % 3 === 0 ? 1.6 : 1);
+    const mo = ctx.createOscillator();
+    mo.setPeriodicWave(ctx.createPeriodicWave(real, imag));
+    mo.frequency.value = 120;
     const wlp = ctx.createBiquadFilter();
     wlp.type = 'lowpass';
-    wlp.frequency.value = 3200;
+    wlp.frequency.value = 900;
     wlp.Q.value = 0.5;
     const wg = ctx.createGain();
     wg.gain.value = 0;
-    parts.forEach(p => p.og.connect(wlp));
+    mo.connect(wlp);
     wlp.connect(wg);
     wg.connect(out);
-    // 1b. Tiếng rít thật của mô-tơ không phải sin sạch: dải nhiễu hẹp bám bậc 2 / bậc 3 (chổi than, từ trường, bánh răng hành tinh)
-    //     -> nghe "xè-vù" cơ khí thay vì tiếng còi điện tử
+    // 1b. Tiếng rít ăn khớp của hộp số (bánh răng nhỏ chạy trên vành răng tháp): tông ở tần số ăn răng — tỉ lệ lẻ so với mô-tơ,
+    //     điều tần nhẹ theo vòng quay trục (răng không đều -> dải biên "rè") + dải nhiễu hẹp quanh đó, độ lớn chao ngẫu nhiên.
+    //     Đây là tiếng "riiii" kim loại đặc trưng của tháp quay, khác tiếng "vù" điện của mô-tơ
+    const go = ctx.createOscillator();
+    go.type = 'triangle';
+    go.frequency.value = 400;
+    const fm = ctx.createOscillator();
+    fm.frequency.value = 13;
+    const fmG = ctx.createGain();
+    fmG.gain.value = 0;
+    fm.connect(fmG);
+    fmG.connect(go.frequency);
     const ws = ctx.createBufferSource();
     ws.buffer = nb;
     ws.loop = true;
@@ -51,15 +89,23 @@ SoundEngine.mixin(class {
     wn.type = 'bandpass';
     wn.frequency.value = 520;
     wn.Q.value = 9;
+    ws.connect(wn);
+    const mesh = ctx.createGain();
+    mesh.gain.value = 0.5;
+    go.connect(mesh);
     const wng = ctx.createGain();
     wng.gain.value = 0;
-    ws.connect(wn);
     wn.connect(wng);
-    wng.connect(out);
-    // 1c. Bơm / mô-tơ thủy lực: tiếng ừ trầm có họa âm (tam giác lọc thấp), nền "nặng" của khối tháp
+    wng.connect(mesh);
+    const meshAm = amp(mesh, 18, 0.9);
+    const mg = ctx.createGain();
+    mg.gain.value = 0;
+    meshAm.g.connect(mg);
+    mg.connect(out);
+    // 1c. Rô-to mô-tơ / bơm: tiếng ừ trầm (tam giác lọc thấp) ở nửa cao độ mô-tơ, nền "nặng" của khối tháp — tắt khi đứng yên
     const ho = ctx.createOscillator();
     ho.type = 'triangle';
-    ho.frequency.value = 120;
+    ho.frequency.value = 60;
     const hlp = ctx.createBiquadFilter();
     hlp.type = 'lowpass';
     hlp.frequency.value = 520;
@@ -81,19 +127,10 @@ SoundEngine.mixin(class {
     const gg = ctx.createGain();
     gg.gain.value = 0;
     gs.connect(gf);
-    // răng bánh răng ăn khớp theo nhịp: điều biên bằng LFO răng cưa ở tần số ăn răng (tăng theo tốc độ) -> "rrrrr" lạch cạch cơ khí,
-    // không phải tiếng xè đều của nhiễu
-    const gm = ctx.createGain();
-    gm.gain.value = 0.45;
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sawtooth';
-    lfo.frequency.value = 20;
-    const lfoG = ctx.createGain();
-    lfoG.gain.value = 0.4;
-    lfo.connect(lfoG);
-    lfoG.connect(gm.gain);
-    gf.connect(gm);
-    gm.connect(gg);
+    // răng bánh răng lăn qua chỗ mòn / sạn: độ lớn chao NGẪU NHIÊN, nhịp chao nhanh dần theo tốc độ -> "rrrr" cơ khí. Điều biên
+    // răng cưa đều đặn nghe thành tiếng rung tổng hợp ("bụp bụp" như ca nô), không giống bánh răng
+    const gm = amp(gf, 20, 1.6);
+    gm.g.connect(gg);
     gg.connect(out);
     // 3. Vòng bi tháp hàng chục tấn lăn: tiếng ầm trầm-trung, nhẹ
     const rs = ctx.createBufferSource();
@@ -109,13 +146,11 @@ SoundEngine.mixin(class {
     rs.connect(rf);
     rf.connect(rg);
     rg.connect(out);
-    parts.forEach(p => p.o.start());
-    ho.start();
-    lfo.start();
+    [mo, go, fm, ho].forEach(o => o.start());
     ws.start(this.ctx.currentTime, Math.random() * nb.duration);
     gs.start(this.ctx.currentTime, Math.random() * nb.duration);
     rs.start(this.ctx.currentTime, Math.random() * nb.duration);
-    this.turretDrive = { out, parts, wlp, wg, wn, wng, ho, hg, lfo, gf, gg, rf, rg, moving: false, spin: 0, env: 0 };
+    this.turretDrive = { out, mo, wlp, wg, go, fm, fmG, wn, wng, mg, meshLf: meshAm.lf, ho, hg, gmLf: gm.lf, gf, gg, rf, rg, moving: false, spin: 0, env: 0 };
     return this.turretDrive;
   }
 
@@ -144,12 +179,13 @@ SoundEngine.mixin(class {
     const net = Math.abs(td.disp) / 0.25;
     // Tháp xe tăng: servo điện (kiểu Leopard 2A7 / K2); pháo 155: tháp rất nặng, mô-tơ chậm, ầm nhiều; pháo 6 nòng: tháp phòng không
     // quay nhanh, mô-tơ rít cao; trạm súng máy trinh sát: servo nhỏ, cao và khẽ.
-    // f0/f1: cao độ mô-tơ lúc nhích chậm / quay hết tốc; maxR = turretRates().traverse (rad/s); whine/grind/rumble: tỉ lệ 3 lớp
+    // f0/f1: cao độ mô-tơ lúc vừa nhích / quay hết tốc (nhích chậm thì mô-tơ quay chậm: "ừ" trầm, không phải tông cao đứng yên);
+    // mr: tỉ lệ tần số ăn răng / mô-tơ; maxR = turretRates().traverse (rad/s); whine/mesh/grind/rumble: tỉ lệ các lớp
     const P = {
-      ALL_ROUNDER: { f0: 330, f1: 620, hf: 105, tooth: 46, maxR: 0.96, g: 0.016, whine: 0.7, grind: 6, rumble: 2.2, gF: 750, rF: 260 },
-      ARTILLERY: { f0: 230, f1: 400, hf: 80, tooth: 30, maxR: 0.49, g: 0.023, whine: 0.5, grind: 6, rumble: 3.5, gF: 560, rF: 200 },
-      GATLING: { f0: 480, f1: 980, hf: 140, tooth: 60, maxR: 1.4, g: 0.0095, whine: 0.9, grind: 7, rumble: 2.2, gF: 950, rF: 300 },
-      SCOUT: { f0: 700, f1: 1350, hf: 180, tooth: 70, maxR: 1.75, g: 0.0068, whine: 0.9, grind: 7, rumble: 1, gF: 1400, rF: 360 }
+      ALL_ROUNDER: { f0: 110, f1: 560, mr: 3.37, tooth: 46, maxR: 0.96, g: 0.015, whine: 0.8, mesh: 0.5, grind: 6, rumble: 2.2, gF: 750, rF: 260 },
+      ARTILLERY: { f0: 75, f1: 360, mr: 3.71, tooth: 30, maxR: 0.49, g: 0.017, whine: 0.6, mesh: 0.4, grind: 6, rumble: 3.5, gF: 560, rF: 200 },
+      GATLING: { f0: 170, f1: 900, mr: 2.83, tooth: 60, maxR: 1.4, g: 0.0085, whine: 0.9, mesh: 0.6, grind: 7, rumble: 2.2, gF: 950, rF: 300 },
+      SCOUT: { f0: 260, f1: 1250, mr: 2.61, tooth: 70, maxR: 1.75, g: 0.006, whine: 0.9, mesh: 0.5, grind: 7, rumble: 1, gF: 1400, rF: 360 }
     };
     const p = P[tankType] || P.ALL_ROUNDER;
     const k = Math.min(1, td.rateS / p.maxR);
@@ -162,23 +198,32 @@ SoundEngine.mixin(class {
     td.spin += (want - td.spin) * Math.min(1, dtR * (want > td.spin ? 6 : 3.5));
     td.env += ((moving ? 1 : 0) - td.env) * Math.min(1, dtR * (moving ? 14 : 4));
     const s = td.spin;
-    // cao độ trôi rất nhẹ ngẫu nhiên (≤0,5%), không rung đều
-    const f = (p.f0 + (p.f1 - p.f0) * s) * (1 + (Math.random() - 0.5) * 0.01) * (jammed ? 0.45 : 1);
-    td.parts.forEach(q => q.o.frequency.setTargetAtTime(f * q.r, t, 0.06));
-    td.wn.frequency.setTargetAtTime(f * 2.02, t, 0.06);
-    td.wng.gain.setTargetAtTime((jammed ? 0.3 : 1) * p.whine * 9 * (0.5 + 0.5 * s), t, 0.05);
-    td.ho.frequency.setTargetAtTime(p.hf * (0.92 + 0.2 * s) * (jammed ? 0.7 : 1), t, 0.08);
-    td.hg.gain.setTargetAtTime(0.55 * (0.6 + 0.4 * s) * (1 + 0.6 * accel), t, 0.06);
-    // nhịp ăn răng: tháp chạy nhanh thì "rrr" dày hơn; kẹt vòng bi: nhịp chậm, giật
-    td.lfo.frequency.setTargetAtTime(jammed ? 7 + 4 * Math.random() : p.tooth * (0.35 + 0.65 * s), t, 0.05);
-    td.wg.gain.setTargetAtTime((jammed ? 0.1 : 1) * p.whine * (1 - 0.3 * s) * (1 + 0.8 * accel), t, 0.05);
+    // cao độ bám vòng quay mô-tơ (không thêm rung ngẫu nhiên từng khung hình: nghe thành tiếng lạo xạo theo tốc độ khung hình)
+    const f = (p.f0 + (p.f1 - p.f0) * s) * (jammed ? 0.45 : 1);
+    const fM = f * p.mr;
+    td.mo.frequency.setTargetAtTime(f, t, 0.06);
+    td.wlp.frequency.setTargetAtTime(700 + 2600 * s, t, 0.08);
+    td.wg.gain.setTargetAtTime((jammed ? 0.1 : 1) * p.whine * (0.35 + 0.65 * s) * (1 + 0.8 * accel), t, 0.05);
+    td.go.frequency.setTargetAtTime(fM, t, 0.06);
+    td.fm.frequency.setTargetAtTime(f * 0.11, t, 0.08);
+    td.fmG.gain.setTargetAtTime(fM * 0.012, t, 0.08);
+    td.wn.frequency.setTargetAtTime(fM, t, 0.06);
+    td.wng.gain.setTargetAtTime(9, t, 0.05);
+    // tiếng rít ăn răng nổi dần theo tốc độ: nhích chậm gần như chỉ còn "ừ"; kẹt vòng bi: răng nghiến, không rít đều
+    td.mg.gain.setTargetAtTime((jammed ? 0.25 : 1) * p.mesh * (0.1 + 0.9 * s * s), t, 0.06);
+    td.ho.frequency.setTargetAtTime(f * 0.5, t, 0.08);
+    td.hg.gain.setTargetAtTime(0.4 * (0.4 + 0.6 * s) * (1 + 0.6 * accel), t, 0.06);
+    // nhịp chao của răng: tháp chạy nhanh thì "rrr" dày hơn; kẹt vòng bi: chao chậm, giật
+    td.gmLf.frequency.setTargetAtTime(jammed ? 9 : p.tooth * (0.35 + 0.65 * s), t, 0.05);
+    td.meshLf.frequency.setTargetAtTime(8 + 22 * s, t, 0.08);
     td.gf.frequency.setTargetAtTime(jammed ? 420 : p.gF * (0.9 + 0.25 * s), t, 0.08);
-    td.gg.gain.setTargetAtTime((jammed ? 12 : p.grind * (0.35 + 0.65 * s)) * (0.75 + 0.5 * Math.random()), t, 0.07);
+    td.gg.gain.setTargetAtTime(jammed ? 12 : p.grind * (0.35 + 0.65 * s), t, 0.07);
     td.rf.frequency.setTargetAtTime(p.rF * (0.85 + 0.3 * s), t, 0.1);
     td.rg.gain.setTargetAtTime((jammed ? 1.6 : 1) * p.rumble * (0.3 + 0.7 * s), t, 0.1);
     // quay liên tục lâu thì tai quen, nhỏ dần
     const hab = 0.72 + 0.28 * Math.exp(-td.runT / 2.5);
-    td.out.gain.setTargetAtTime(td.env * p.g * hab * (jammed ? 1.2 : 1), t, 0.03);
+    // to theo tốc độ: ngắm chỉnh từng chút chỉ nghe khẽ, lia hết tốc mới gào — trước đây ngắm 5°/s to gần bằng quay hết tốc
+    td.out.gain.setTargetAtTime(td.env * p.g * (0.35 + 0.65 * s) * hab * (jammed ? 1.2 : 1), t, 0.03);
     // Bắt đầu quay: khe hở bánh răng ăn vào "cục" khẽ; dừng: phanh hãm "cạch" khẽ — chỉ khi đã quay một đoạn, không dồn dập
     if (moving && !td.moving) {
       td.startT = t;

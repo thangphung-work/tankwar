@@ -122,7 +122,9 @@ const VehicleCollision = (() => {
     const bot = y + Math.max(B.minY, 0) + stepOf(unit), top = y + B.maxY;
     let best = null;
     for (const b of boxes) {
-      if (b.noHull || b.y1 <= bot || b.y0 >= top) continue;   // noHull: trần tầng trệt nhà — chỉ chặn nòng
+      // noHull: trần tầng trệt nhà — chỉ chặn nòng; barrelOnly: đá / xác xe / cột (thân xe va theo hộp thân ở
+      // terrain.resolveVehicleCollision) — chỉ chặn nòng, kể cả lúc dời xe (nòng cắm vào đá thì xe khựng như nòng chạm tường)
+      if (b.noHull || b.barrelOnly || b.y1 <= bot || b.y0 >= top) continue;
       best = keepDeeper(obbPush(cx, cz, ux, uz, hu, hv, b, _pTmp), best, _hullBest);
     }
     return best;

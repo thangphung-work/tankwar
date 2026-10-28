@@ -1049,7 +1049,7 @@ class TankInspector {
 
   // Sơ tốc đạn thử (đơn vị / giây, 8 đơn vị = 1 m). Lựu pháo thu nhỏ để quỹ đạo cầu vồng rơi gọn trong bãi thử
   testShotSpeed(u, ammoType) {
-    const rapid = ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
+    const rapid = ammoType === 'GATLING_BULLET' || ammoType === 'GATLING_HE' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
     return u.tankType === 'ARTILLERY' ? 170
       : rapid ? 7200 : ammoType === 'ANTI_TANK_MISSILE' || ammoType === 'RPG' ? 2200 : 12000;
   }
@@ -1205,6 +1205,8 @@ class TankInspector {
     this.activeUnit = u;
     this.schedulePrewarm(this.isOpen ? 2000 : 300);
     this.testFiring = false;
+    this._testShotQueued = false;
+    this._rapidImpactSample = 0;
     this.camFocus = { x: 0, z: 0 };
     this._sndBody = this._sndTurret = undefined;
     this.pendingImpacts = [];
@@ -1421,6 +1423,12 @@ class TankInspector {
       if (typeof window.soundEngine.resume === 'function') window.soundEngine.resume();
     }
     this.testFiring = true;
+    // Pháo bắn từng phát: ghi nhớ lần bấm cho tới khi xe thực sự bắn được. Đặc biệt
+    // Arbalest cần khoảng 2 giây hạ càng và có thể phải quay nòng khỏi nóc cabin;
+    // trước đây người chơi nhả Space sớm thì lệnh bị mất hoàn toàn.
+    const u = this.activeUnit;
+    const rapid = u && (u.tankType === 'GATLING' || u.tankType === 'SCOUT') && u.selectedAmmo !== 'ANTI_TANK_MISSILE';
+    if (u && !rapid) this._testShotQueued = true;
     const btn = document.getElementById('ti-test-fire-btn');
     if (btn) btn.classList.add('active');
   }
@@ -1801,17 +1809,20 @@ class TankInspector {
       if (MS.t > 8 || MS.fired || (rapid && MS.fireT > 0.6)) { this.mouseShot = null; mouseFire = mouseFire && !MS.fired; }
     }
     // xe tăng đang khóa drone / bật súng máy nóc tháp [4]: Space bóp cò súng máy nóc tháp, pháo chính không bắn (như trong trận)
-    const firing = (!!this.testFiring || !!this.isPointerFiring || mouseFire || !!(RA && RA.fire)) && !(RA && RA.noMain);
+    const firing = (!!this.testFiring || !!this._testShotQueued || !!this.isPointerFiring || mouseFire || !!(RA && RA.fire)) && !(RA && RA.noMain);
     u.isFiringGatling = rapid && firing;
     if (rapid && firing) this.cameraShake = Math.max(this.cameraShake || 0, 0.6);
     // Pháo tự hành đang gác nòng trên nóc cabin (không bắn được qua cabin): bấm bắn thử thì tự quay tháp ra sau xe
-    if (this.testFiring && u.tankType === 'ARTILLERY' && u.turretInBlind && !turnL && !turnR && u.aimAz === undefined) {
+    if (firing && u.tankType === 'ARTILLERY' && u.turretInBlind && !turnL && !turnR && u.aimAz === undefined) {
       u.aimAz = ((-(Math.PI + (u.bodyAngle || 0)) * 180 / Math.PI) % 360 + 360) % 360;
     }
     if (!rapid && firing && u.reloadTimer <= 0 && (u.tankType !== 'ARTILLERY' || u.isDeployed)) {
-      u.fire(this.testBallistics, this.testRadar);
-      this.cameraShake = 3.2;   // Rung giật camera lực nổ uy lực như trong trận
-      if (MS && mouseFire) MS.fired = true;
+      const shot = u.fire(this.testBallistics, this.testRadar);
+      if (shot) {
+        this._testShotQueued = false;
+        this.cameraShake = 3.2;   // Rung giật camera lực nổ uy lực như trong trận
+        if (MS && mouseFire) MS.fired = true;
+      }
     }
 
     // Toàn bộ chuyển động, hệ treo, xích, bụi, khói xả, nạp đạn, tháp / nòng: đúng như trong trận
@@ -2072,9 +2083,17 @@ class TankInspector {
   queueTestImpact(shooter, ammoType) {
     const u = shooter || this.activeUnit;
     if (!u || !this.pendingImpacts) return;
-    const rapid = ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
+    const rapid = ammoType === 'GATLING_BULLET' || ammoType === 'GATLING_HE' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY';
+    // Hailstorm bắn khoảng 30 viên/s. Mô phỏng đầy đủ quỹ đạo + segmentHit + phá tường
+    // cho từng viên trong cửa sổ Inspector làm nghẽn main thread đúng lúc giữ Space.
+    // Chỉ thưa hiệu ứng va chạm ở đây; nhịp bắn, đạn tiêu hao, âm thanh, chớp lửa
+    // và chuyển động cụm nòng trong SPGUnit3D vẫn chạy đủ từng phát.
+    if (rapid && u.tankType === 'GATLING') {
+      this._rapidImpactSample = ((this._rapidImpactSample || 0) + 1) % 3;
+      if (this._rapidImpactSample) return;
+    }
     // Phòng ngừa tràn hàng đợi khi xả súng liên thanh ở máy cấu hình thấp
-    if (rapid && this.pendingImpacts.length > 24) return;
+    if (rapid && this.pendingImpacts.length > 12) return;
 
     let P = new THREE.Vector3(u.x, 20, u.z), D = new THREE.Vector3(-Math.sin(u.bodyAngle || 0), 0, -Math.cos(u.bodyAngle || 0));
     const m = ammoType === 'ANTI_TANK_MISSILE' && u.getLauncherWorldTransform ? u.getLauncherWorldTransform()
@@ -2301,6 +2320,8 @@ class TankInspector {
     const nameEl = overlay.querySelector('.ti-profile-name'), rankEl = overlay.querySelector('.ti-profile-rank');
     if (nameEl && srcName) nameEl.textContent = srcName.textContent;
     if (rankEl && srcRank) rankEl.textContent = srcRank.textContent;
+    const srcImg = document.querySelector('.commander-avatar-img'), imgEl = overlay.querySelector('.ti-profile img');
+    if (srcImg && imgEl && imgEl.getAttribute('src') !== srcImg.getAttribute('src')) imgEl.setAttribute('src', srcImg.getAttribute('src'));
     // Bạc góc trên
     const acc = window.Account, silverBox = overlay.querySelector('#ti-silver');
     if (silverBox) {

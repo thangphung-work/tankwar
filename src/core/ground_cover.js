@@ -115,6 +115,22 @@ const GroundCover = (() => {
     return g;
   }
 
+  let sharedTuftGeo = null;
+  function getTuftGeometry() {
+    if (sharedTuftGeo) return sharedTuftGeo;
+    return (sharedTuftGeo = tuftGeometry());
+  }
+
+  let sharedPebGeo = null;
+  function getPebGeometry() {
+    if (sharedPebGeo) return sharedPebGeo;
+    const pg = new THREE.IcosahedronGeometry(1, 0);
+    const pp = pg.attributes.position;
+    for (let i = 0; i < pp.count; i++) { const y = pp.getY(i); pp.setY(i, y > 0 ? y * 0.55 : y * 0.25); }
+    pg.computeVertexNormals();
+    return (sharedPebGeo = pg);
+  }
+
   class Cover {
     constructor(terrain) {
       this.T = terrain;
@@ -191,15 +207,12 @@ const GroundCover = (() => {
             normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`);
       };
       gm.customProgramCacheKey = () => 'grassTuft7';
-      this.grass = new THREE.InstancedMesh(tuftGeometry(), gm, this.maxT);
+      this.grass = new THREE.InstancedMesh(getTuftGeometry(), gm, this.maxT);
       this.grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxT * 3), 3);
       this.grass.count = 0; this.grass.frustumCulled = false; this.grass.receiveShadow = true; this.grass.castShadow = false;
       this.group.add(this.grass);
       // đá vụn
-      const pg = new THREE.IcosahedronGeometry(1, 0);
-      const pp = pg.attributes.position;
-      for (let i = 0; i < pp.count; i++) { const y = pp.getY(i); pp.setY(i, y > 0 ? y * 0.55 : y * 0.25); }
-      pg.computeVertexNormals();
+      const pg = getPebGeometry();
       const pm = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, flatShading: true });
       pm.onBeforeCompile = (sh) => {
         sh.uniforms.uFocus = this.uFocus;

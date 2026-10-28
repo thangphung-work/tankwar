@@ -66,6 +66,18 @@ function compressed(filePath, etag, enc) {
   return p;
 }
 
+// Thư mục không bao giờ phục vụ qua web (nhật ký, công cụ, ảnh / video nội bộ, mã máy chủ phụ thuộc); tools/ chỉ mở khi --dev
+const PRIVATE_DIRS = new Set(['data', 'logs', 'node_modules', 'deploy', 'shots', '_shots', 'trailer_out']);
+const PRIVATE_FILES = /^(server[\w.-]*\.js|package(-lock)?\.json|build\.js|.*\.(bat|ps1|sh|py|log|db|md))$/i;
+function isPrivatePath(filePath) {
+  const segs = path.relative(ROOT_DIR, filePath).split(path.sep);
+  // Windows bỏ dấu chấm / khoảng trắng cuối tên ("logs." = logs), luồng NTFS ("x::$DATA"), tên 8.3 ("TRAILE~1")
+  const norm = segs.map(s => s.toLowerCase().replace(/:.*$/, '').replace(/[. ]+$/, ''));
+  if (segs.some(s => s.startsWith('.') || s.includes('~'))) return true;   // .env, .git, .claude, .github...
+  if (PRIVATE_DIRS.has(norm[0]) || (norm[0] === 'tools' && !dev.enabled)) return true;
+  return PRIVATE_FILES.test(norm[norm.length - 1] || '');
+}
+
 function serveFile(req, res) {
   let reqPath;
   try {
@@ -87,7 +99,7 @@ function serveFile(req, res) {
   const filePath = path.normalize(path.join(ROOT_DIR, reqPath));
 
   // Bảo vệ bảo mật: Không cho phép truy cập ra ngoài thư mục dự án, không lộ dữ liệu tài khoản (data/)
-  if (!filePath.startsWith(ROOT_DIR) || filePath.toLowerCase().startsWith(accounts.DATA_DIR.toLowerCase())) {
+  if (!filePath.startsWith(ROOT_DIR) || filePath.toLowerCase().startsWith(accounts.DATA_DIR.toLowerCase()) || isPrivatePath(filePath)) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('403 Không có quyền truy cập');
     return;
@@ -424,7 +436,8 @@ function detectCountry(req, ip) {
 
 function wsJoinRoom(client, baseName, name, token, skipList, prefMap, clientCountry) {
   if (client.room) wsLeaveRoom(client);
-  client.name = typeof name === 'string' ? name.slice(0, 40) : '';
+  // tên được chèn vào HTML ở máy khác -> chỉ giữ chữ, số, khoảng trắng, _ - . # (khớp NetUtil.cleanName phía máy khách)
+  client.name = typeof name === 'string' ? name.normalize('NFC').replace(/[^\p{L}\p{N} _\-.#]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40) : '';
   if (clientCountry && typeof clientCountry === 'string' && clientCountry.length === 2) {
     client.country = clientCountry.toUpperCase();
   }
@@ -569,6 +582,12 @@ function attachWebSocket(server) {
     socket.setTimeout(0);
 
     const client = new WsClient(socket);
+    // IP thật (nhận ra 2 tab cùng máy đánh nhau để cày thưởng — server_auth initMatch). Tiêu đề proxy chỉ tin khi kết nối
+    // tới từ chính máy này (tunnel / reverse proxy chạy cục bộ); kết nối thẳng từ ngoài thì tiêu đề tự đặt được -> bỏ qua
+    const remote = String(socket.remoteAddress || '').replace(/^::ffff:/, '');
+    client.ip = remote === '127.0.0.1' || remote === '::1'
+      ? String(req.headers['cf-connecting-ip'] || getClientIp(req, socket) || remote).replace(/^::ffff:/, '')
+      : remote;
     wsClients.add(client);
     socket.on('data', (chunk) => client.onData(chunk));
     socket.on('error', () => {});
@@ -599,8 +618,21 @@ function attachWebSocket(server) {
 
 function startServer(port) {
   const server = http.createServer((req, res) => {
+    // 2 API ghi tệp của công cụ dev: chỉ khi chạy --dev và gọi từ chính máy này (không qua proxy / tunnel), giới hạn dung lượng
+    if ((req.url === '/api/save-video' || req.url === '/api/save-screenshot') && req.method === 'POST') {
+      const addr = String(req.socket.remoteAddress || '');
+      const local = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+      if (!dev.enabled || !local || req.headers['x-forwarded-for'] || req.headers['cf-connecting-ip']) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('403 Không có quyền truy cập');
+        return;
+      }
+      let size = 0;
+      req.on('data', chunk => { size += chunk.length; if (size > 512 * 1024 * 1024) req.destroy(); });
+    }
     if (req.url === '/api/save-video' && req.method === 'POST') {
       const fileName = path.basename(req.headers['x-file-name'] || 'recon_briefing.webm');
+      if (!/^[\w.-]+\.webm$/i.test(fileName)) { res.writeHead(400); res.end('chỉ nhận tệp .webm'); return; }
       const chunks = [];
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {

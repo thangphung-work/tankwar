@@ -150,8 +150,12 @@ const SpgFXPool = {
   },
 
   // 3 đèn chớp tạo sẵn cho mỗi scene, xoay vòng tái sử dụng (số đèn không đổi -> không biên dịch lại shader)
-  muzzleLight(scene) {
+  // Mỗi lần lấy đèn tăng userData.claim: nơi giữ đèn ghi lại số này, đèn đã bị nơi khác lấy thì thôi không chỉnh nữa
+  // (trước đây chủ cũ ghi đè độ sáng / tắt đèn của chủ mới). opts.life (s): đèn bận tới lúc đó.
+  // opts.low: đèn phụ (ánh lửa cháy) — chỉ lấy đèn đang rảnh, không giật đèn chớp nổ / đầu nòng
+  muzzleLight(scene, opts) {
     if (!scene) return null;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     let pool = scene.userData.muzzleLights;
     if (!pool) {
       pool = { lights: [], next: 0 };
@@ -162,8 +166,19 @@ const SpgFXPool = {
       }
       scene.userData.muzzleLights = pool;
     }
-    const l = pool.lights[pool.next];
-    pool.next = (pool.next + 1) % pool.lights.length;
+    let l = null;
+    if (opts && opts.low) {
+      for (let i = 0; i < pool.lights.length; i++) {
+        const c = pool.lights[(pool.next + i) % pool.lights.length];
+        if (!(c.userData.busyUntil > now)) { l = c; break; }
+      }
+      if (!l) return null;
+    } else {
+      l = pool.lights[pool.next];
+      pool.next = (pool.next + 1) % pool.lights.length;
+    }
+    l.userData.claim = (l.userData.claim || 0) + 1;
+    l.userData.busyUntil = now + ((opts && opts.life) || 0.15) * 1000;
     return l;
   },
 
@@ -2550,8 +2565,13 @@ class SPGUnit3D {
     const markLength = 9;
     const markWidth = 6.2;
 
+    // vệt theo mặt đất: nhựa / bê tông chỉ còn vệt cao su & bụi mờ sẫm xám (xích không cày được mặt cứng); đá sỏi vệt nhạt;
+    // bùn hằn sâu sẫm, lâu tan; cát khô vệt sáng nhanh lấp; đất thường nâu
+    const soil = terrain.dozerSoil ? terrain.dozerSoil(this.x, this.z) : 'soil';
+    const TM = { hard: [0x1c1c1d, 0.22, 8], rock: [0x3a362f, 0.3, 10], mud: [0x1f170e, 0.72, 26], slurry: [0x1f170e, 0.6, 18],
+      sand: [0x7a6448, 0.4, 9], wsand: [0x4e3e2a, 0.55, 16], soil: [0x2e271c, 0.55, 14] }[soil] || [0x2e271c, 0.55, 14];
     for (let side of [-16.8, 16.8]) {
-      const markMesh = SpgFXPool.acquire(this.scene, 'plane', 0x2e271c, 0.55);
+      const markMesh = SpgFXPool.acquire(this.scene, 'plane', TM[0], TM[1]);
       markMesh.scale.set(markWidth, 1, markLength);
       const offsetX = Math.cos(this.bodyAngle) * side;
       const offsetZ = -Math.sin(this.bodyAngle) * side;
@@ -2565,8 +2585,8 @@ class SPGUnit3D {
 
       this.trackMarks.push({
         mesh: markMesh,
-        alpha: 0.55,
-        life: 14.0 // Giữ lại 14 giây rồi mờ dần
+        alpha: TM[1],
+        life: TM[2] * TM[1] / 0.55   // (giảm alpha theo dt / life từ mức đầu -> thời gian tồn tại ~TM[2] giây)
       });
     }
 
@@ -2881,15 +2901,16 @@ class SPGUnit3D {
       light.color.setHex(0xffb066);
       light.distance = arty ? 320 : 220;
       let lt = 0;
-      const lLife = 0.12;
+      const lLife = 0.12, claim = light.userData.claim;
       light.intensity = 5.0 * k;
       this.fxParticles.push({
         update: (dt) => {
           lt += dt;
+          if (light.userData.claim !== claim) return false;   // đèn đã bị nơi khác lấy
           light.intensity = Math.max(0, 5.0 * k * (1 - lt / lLife));
           return lt < lLife;
         },
-        dispose: () => { light.intensity = 0; }
+        dispose: () => { if (light.userData.claim === claim) light.intensity = 0; }
       });
     }
 

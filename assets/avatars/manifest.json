@@ -1,0 +1,242 @@
+[
+  {
+    "id": "avatar_01_vn_m",
+    "name": "Chỉ huy Việt Nam (Nam)",
+    "role": "Chỉ huy xe tăng tác chiến",
+    "gender": "male",
+    "region": "Việt Nam",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_01_vn_m.webp",
+    "fileJpg": "assets/avatars/avatar_01_vn_m.jpg"
+  },
+  {
+    "id": "avatar_02_vn_f",
+    "name": "Nữ chiến binh Việt Nam",
+    "role": "Xạ thủ kiêm trinh sát",
+    "gender": "female",
+    "region": "Việt Nam",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_02_vn_f.webp",
+    "fileJpg": "assets/avatars/avatar_02_vn_f.jpg"
+  },
+  {
+    "id": "avatar_03_us_m",
+    "name": "Chỉ huy Bắc Mỹ (Nam)",
+    "role": "Chỉ huy thiết giáp hiện đại",
+    "gender": "male",
+    "region": "Bắc Mỹ",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_03_us_m.webp",
+    "fileJpg": "assets/avatars/avatar_03_us_m.jpg"
+  },
+  {
+    "id": "avatar_04_me_m",
+    "name": "Chiến binh Trung Đông (Nam)",
+    "role": "Chỉ huy sa trường sa mạc",
+    "gender": "male",
+    "region": "Trung Đông",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_04_me_m.webp",
+    "fileJpg": "assets/avatars/avatar_04_me_m.jpg"
+  },
+  {
+    "id": "avatar_05_ru_f",
+    "name": "Nữ chiến binh Đông Âu",
+    "role": "Chỉ huy xe tăng mùa đông",
+    "gender": "female",
+    "region": "Đông Âu",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_05_ru_f.webp",
+    "fileJpg": "assets/avatars/avatar_05_ru_f.jpg"
+  },
+  {
+    "id": "avatar_06_ea_m",
+    "name": "Sĩ quan Đông Á (Nam)",
+    "role": "Sĩ quan điều khiển tác chiến",
+    "gender": "male",
+    "region": "Đông Á",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_06_ea_m.webp",
+    "fileJpg": "assets/avatars/avatar_06_ea_m.jpg"
+  },
+  {
+    "id": "avatar_07_ru_m",
+    "name": "Chiến binh Đông Âu (Nam)",
+    "role": "Chỉ huy thiết giáp kỳ cựu",
+    "gender": "male",
+    "region": "Đông Âu",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_07_ru_m.webp",
+    "fileJpg": "assets/avatars/avatar_07_ru_m.jpg"
+  },
+  {
+    "id": "avatar_08_me_f",
+    "name": "Nữ chiến binh Trung Đông",
+    "role": "Xạ thủ kiên cường sa mạc",
+    "gender": "female",
+    "region": "Trung Đông",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_08_me_f.webp",
+    "fileJpg": "assets/avatars/avatar_08_me_f.jpg"
+  },
+  {
+    "id": "avatar_09_us_f",
+    "name": "Nữ xạ thủ Bắc Mỹ",
+    "role": "Xạ thủ xe bọc thép quả cảm",
+    "gender": "female",
+    "region": "Bắc Mỹ",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_09_us_f.webp",
+    "fileJpg": "assets/avatars/avatar_09_us_f.jpg"
+  },
+  {
+    "id": "avatar_10_ea_f",
+    "name": "Nữ chỉ huy Đông Á",
+    "role": "Sĩ quan liên lạc và điều phối",
+    "gender": "female",
+    "region": "Đông Á",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_10_ea_f.webp",
+    "fileJpg": "assets/avatars/avatar_10_ea_f.jpg"
+  },
+  {
+    "id": "avatar_11_af_m",
+    "name": "Chỉ huy Châu Phi (Nam)",
+    "role": "Chỉ huy sư đoàn thiết giáp",
+    "gender": "male",
+    "region": "Châu Phi",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_11_af_m.webp",
+    "fileJpg": "assets/avatars/avatar_11_af_m.jpg"
+  },
+  {
+    "id": "avatar_12_eu_m",
+    "name": "Sĩ quan Tây Âu (Nam)",
+    "role": "Đại úy chỉ huy tác chiến",
+    "gender": "male",
+    "region": "Tây Âu",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_12_eu_m.webp",
+    "fileJpg": "assets/avatars/avatar_12_eu_m.jpg"
+  },
+  {
+    "id": "avatar_13_lat_f",
+    "name": "Nữ chiến binh Mỹ La-tinh",
+    "role": "Xạ thủ chiến đấu cơ động",
+    "gender": "female",
+    "region": "Mỹ La-tinh",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_13_lat_f.webp",
+    "fileJpg": "assets/avatars/avatar_13_lat_f.jpg"
+  },
+  {
+    "id": "avatar_14_vet_m",
+    "name": "Cựu binh thép lão luyện (Nam)",
+    "role": "Trung tá thiết giáp kỳ cựu",
+    "gender": "male",
+    "region": "Quân khu kỳ cựu",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_14_vet_m.webp",
+    "fileJpg": "assets/avatars/avatar_14_vet_m.jpg"
+  },
+  {
+    "id": "avatar_15_eng_f",
+    "name": "Nữ kỹ sư chiến trường",
+    "role": "Kỹ thuật viên cơ giới thiết giáp",
+    "gender": "female",
+    "region": "Công binh cơ giới",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_15_eng_f.webp",
+    "fileJpg": "assets/avatars/avatar_15_eng_f.jpg"
+  },
+  {
+    "id": "avatar_16_gun_m",
+    "name": "Xạ thủ hỏa lực nặng (Nam)",
+    "role": "Xạ thủ đại liên tháp pháo",
+    "gender": "male",
+    "region": "Hỏa lực hạng nặng",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_16_gun_m.webp",
+    "fileJpg": "assets/avatars/avatar_16_gun_m.jpg"
+  },
+  {
+    "id": "avatar_17_no_m",
+    "name": "Chiến binh Bắc Âu (Nam)",
+    "role": "Chỉ huy thiết giáp vùng cực",
+    "gender": "male",
+    "region": "Bắc Âu",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_17_no_m.webp",
+    "fileJpg": "assets/avatars/avatar_17_no_m.jpg"
+  },
+  {
+    "id": "avatar_18_no_f",
+    "name": "Nữ chiến binh Bắc Âu",
+    "role": "Chỉ huy thiết giáp tuyết trắng",
+    "gender": "female",
+    "region": "Bắc Âu",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_18_no_f.webp",
+    "fileJpg": "assets/avatars/avatar_18_no_f.jpg"
+  },
+  {
+    "id": "avatar_19_de_f",
+    "name": "Nữ trinh sát sa mạc",
+    "role": "Trinh sát cơ động bão cát",
+    "gender": "female",
+    "region": "Bắc Phi",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_19_de_f.webp",
+    "fileJpg": "assets/avatars/avatar_19_de_f.jpg"
+  },
+  {
+    "id": "avatar_20_ea_m",
+    "name": "Đại úy thiết giáp Đông Á (Nam)",
+    "role": "Sĩ quan chiến thuật số",
+    "gender": "male",
+    "region": "Đông Á",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_20_ea_m.webp",
+    "fileJpg": "assets/avatars/avatar_20_ea_m.jpg"
+  },
+  {
+    "id": "avatar_21_med_f",
+    "name": "Nữ quân y thiết giáp",
+    "role": "Cứu thương cơ giới chiến trường",
+    "gender": "female",
+    "region": "Quân y tiền phương",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_21_med_f.webp",
+    "fileJpg": "assets/avatars/avatar_21_med_f.jpg"
+  },
+  {
+    "id": "avatar_22_cyb_m",
+    "name": "Trinh sát tác chiến điện tử (Nam)",
+    "role": "Chuyên viên tác chiến đêm",
+    "gender": "male",
+    "region": "Tác chiến điện tử",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_22_cyb_m.webp",
+    "fileJpg": "assets/avatars/avatar_22_cyb_m.jpg"
+  },
+  {
+    "id": "avatar_23_sa_m",
+    "name": "Đại tá thiết giáp Nam Á (Nam)",
+    "role": "Chỉ huy trung đoàn danh dự",
+    "gender": "male",
+    "region": "Nam Á",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_23_sa_m.webp",
+    "fileJpg": "assets/avatars/avatar_23_sa_m.jpg"
+  },
+  {
+    "id": "avatar_24_uav_f",
+    "name": "Nữ sĩ quan trinh sát bay",
+    "role": "Điều phối trinh sát không người lái",
+    "gender": "female",
+    "region": "Trinh sát đường không",
+    "size": "256x256",
+    "file": "assets/avatars/avatar_24_uav_f.webp",
+    "fileJpg": "assets/avatars/avatar_24_uav_f.jpg"
+  }
+]

@@ -80,6 +80,17 @@ const Navigator = (() => {
       const r = bl.radius + INF;
       mark(bl.x, bl.z, r, (x, z) => Math.hypot(x - bl.x, z - bl.z) < r);
     }
+    // Cây to xe tăng húc hết đà cũng không đổ (đại thụ rừng rậm): chặn ô có TÂM sát gốc (không nới rộng như nhà -> rừng
+    // dày vẫn còn lối len giữa các gốc). Cây nhỏ / cọ xe ủi đổ được thì bỏ qua
+    const TF = terrain.trees;
+    if (TF && TF.items && TF.ramSpec) for (const it of TF.items) {
+      if (it.fallen || it.shattered || TF.ramSpec(it).F < 1.4e6) continue;
+      const r = (it.trunkR || 2) + 10, [ci, cj] = cellOf(G, it.x, it.z);
+      for (let j = Math.max(j0, cj - 1); j <= Math.min(j1, cj + 1); j++) for (let i = Math.max(i0, ci - 1); i <= Math.min(i1, ci + 1); i++) {
+        const x = -W / 2 + (i + 0.5) * CELL, z = -D / 2 + (j + 0.5) * CELL;
+        if (Math.hypot(x - it.x, z - it.z) < r) blocked[j * nx + i] = 1;
+      }
+    }
     // Khối đặc của công trình bối cảnh (bệ phóng, tháp, bồn, xe, cột...): hộp xoay nới rộng như nhà
     for (const q of [...(terrain.landmarkSet ? terrain.landmarkSet.navBoxes() : []), ...(terrain.depotSet ? terrain.depotSet.navBoxes() : [])]) {
       const hu = q.hu + INF, hv = q.hv + INF;

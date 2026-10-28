@@ -264,8 +264,10 @@
 
   function open() {
     if (!overlay) return;
+    const wasHidden = overlay.classList.contains('hidden');
     overlay.classList.remove('hidden');
-    sfx('playUiOpen');
+    if (wasHidden) sfx('playUiOpen');
+    if (spinning) return;   // đóng giữa lúc quay rồi mở lại: dải vẫn đang chạy, không dựng lại
     $('.ds-result', overlay).innerHTML = '';
     reel.classList.remove('done');
     drawStreak();
@@ -291,7 +293,7 @@
     void rv.offsetWidth;
     const SHAKE = 2.2;
     rv.classList.add('shake');
-    sfx('playSpinRiser', SHAKE);
+    if (shown()) sfx('playSpinRiser', SHAKE);
     await new Promise(ok => setTimeout(ok, SHAKE * 1000));
     $('.ds-rv-card', rv).innerHTML = cardHtml(win, 'win');
     $('.ds-rv-cap', rv).innerHTML = `<b class="r${win.rar | 0}">${RAR[win.rar | 0]}!</b><small>Quà lớn ngày ${Equipment.DAILY_SPIN.STREAK_MAX}</small>`;
@@ -299,10 +301,13 @@
     rv.classList.add('open', 'r' + (win.rar | 0));
     await new Promise(ok => setTimeout(ok, 700));
   }
+  // đóng được cả lúc đang quay: máy chủ đã bốc thưởng, dải chạy tiếp ngầm (im tiếng) và thưởng vẫn vào tài khoản
   function close() {
-    if (spinning) return;
+    if (overlay.classList.contains('hidden')) return;
     overlay.classList.add('hidden');
+    sfx('playUiClose');
   }
+  const shown = () => overlay && !overlay.classList.contains('hidden');
 
   async function spin() {
     if (spinning) return;
@@ -333,7 +338,7 @@
     } else await runReel(win);
     spinning = false;
     overlay.classList.remove('spinning');
-    sfx('playSpinWin', win.rar | 0);
+    if (shown()) sfx('playSpinWin', win.rar | 0);
     applyProfile(r.profile);
     drawStreak(win.streak);
     drawControls();
@@ -353,7 +358,7 @@
     track.style.transform = `translate3d(${to}px,0,0)`;
     sfx('playSpinStart');
     const RISER = 2.8;
-    const riserT = setTimeout(() => { if (spinning) { sfx('playSpinRiser', RISER); reel.classList.add('tense'); } }, SPIN_MS - RISER * 1000);
+    const riserT = setTimeout(() => { if (spinning) { if (shown()) sfx('playSpinRiser', RISER); reel.classList.add('tense'); } }, SPIN_MS - RISER * 1000);
     let last = Math.floor((reel.clientWidth / 2 - from) / STEP), lastAt = performance.now();
     const tick = () => {
       if (!spinning) return;
@@ -362,7 +367,7 @@
       if (idx !== last) {
         const now = performance.now(), gap = now - lastAt;   // khoảng cách giữa 2 thẻ: dài = chậm
         last = idx; lastAt = now;
-        sfx('playSpinTick', Math.max(0, Math.min(1, 1 - gap / 400)));
+        if (shown()) sfx('playSpinTick', Math.max(0, Math.min(1, 1 - gap / 400)));
       }
       requestAnimationFrame(tick);
     };

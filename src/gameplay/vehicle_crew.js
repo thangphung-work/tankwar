@@ -29,7 +29,7 @@ const VehicleCrew = (() => {
     // thùy, mảng vừa chồng lên, nét "cành" mảnh lượn dài (kiểu MultiCam), đốm nhỏ, cuối cùng hạt vải lấm tấm.
     // Vẽ tuần hoàn qua mép ô (lặp không lộ đường nối)
     const n = 512, c = document.createElement('canvas'); c.width = c.height = n;
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', { willReadFrequently: true });   // đọc lại hạt vải (getImageData): vẽ bằng CPU
     g.fillStyle = base; g.fillRect(0, 0, n, n);
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };

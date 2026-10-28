@@ -1,660 +1,1458 @@
 /**
+
  * TÀI KHOẢN NGƯỜI CHƠI (phía máy khách)
+
  * - Cửa sổ Đăng nhập / Tạo tài khoản (tên + mật khẩu), hoặc "Chơi không cần tài khoản".
+
  * - Hồ sơ ở góc sảnh: tên hiển thị, quân hàm + thanh kinh nghiệm; bấm vào -> bảng thành tích, đổi tên, đổi mật khẩu, đăng xuất.
+
  * - Nhớ xe & bản đồ chọn lần trước; cuối trận tự gửi kết quả -> cộng kinh nghiệm, lên cấp.
+
  * - Mở bằng file:// (không có máy chủ): chạy như cũ, không có tài khoản.
+
  * - Ví Bạc + kho trang bị (mua / lắp ở phòng xem xe — tank_inspector.js); bộ trang bị gửi kèm slot khi ghép trận.
+
  */
+
 const Account = (() => {
+
   const TOKEN_KEY = 'spg_account_token';
+
   const PROFILE_KEY = 'spg_account_profile';   // bản nhớ tạm hồ sơ (chỉ để hiện ngay, máy chủ vẫn là nguồn chuẩn)
+
   const online = typeof location !== 'undefined' && (location.protocol === 'http:' || location.protocol === 'https:');
+
   const TANK_NAMES = { ALL_ROUNDER: 'HALBERD MK.3', GATLING: 'HAILSTORM R6', ARTILLERY: 'ARBALEST 155', SCOUT: 'MARTEN R4' };
+
   const MAP_NAMES = { DESERT: 'Sa mạc lửa', URBAN: 'Đô thị đổ nát', JUNGLE: 'Rừng rậm', HIGHLAND: 'Cao nguyên', RIVER_LAKE: 'Sông hồ' };
+
   let profile = null, guest = false, saveTimer = null, applying = false;
 
+
+
   const $ = (sel, root) => (root || document).querySelector(sel);
+
+  // Ảnh đại diện: danh sách lấy từ assets/avatars/manifest.json, lựa chọn lưu ở profile.settings.avatar
+
+  const DEFAULT_AVATAR = 'assets/commander_avatar.jpg';
+
+  let avatarList = null;
+
+  function loadAvatars() {
+
+    if (!avatarList) avatarList = fetch('assets/avatars/manifest.json').then(r => r.json()).catch(() => []);
+
+    return avatarList;
+
+  }
+
+  const avatarSrc = (id) => /^avatar_\d{2}_[a-z]{2,4}_[mf]$/.test(id || '') ? `assets/avatars/${id}.webp` : DEFAULT_AVATAR;
+
+  const myAvatar = () => avatarSrc(profile && profile.settings && profile.settings.avatar);
+
+  function applyAvatar() {
+
+    const src = myAvatar();
+
+    document.querySelectorAll('.commander-avatar-img, .ti-profile img, .acc-avatar img').forEach(img => {
+
+      if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+
+    });
+
+  }
+
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
   function token() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
+
   function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(PROFILE_KEY); } } catch (e) {} }
+
   function cachedProfile() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null'); } catch (e) { return null; } }
 
+
+
   async function api(path, body, keepalive) {
+
     const t = token();
+
     const r = await fetch('/api/' + path, {
+
       method: body === undefined ? 'GET' : 'POST', keepalive: !!keepalive,
+
       headers: Object.assign({ 'Content-Type': 'application/json' }, t ? { Authorization: 'Bearer ' + t } : {}),
+
       body: body === undefined ? undefined : JSON.stringify(body)
+
     });
+
     let data = {};
+
     try { data = await r.json(); } catch (e) {}
+
     if (!r.ok) { const err = new Error(data.error || ('Lỗi ' + r.status)); err.status = r.status; throw err; }
+
     return data;
+
   }
 
+
+
   // ---------------------------------------------------------------------------
+
   // GIAO DIỆN
+
   // ---------------------------------------------------------------------------
+
   function buildDom() {
+
     const auth = document.createElement('div');
+
     auth.id = 'acc-auth';
+
     auth.className = 'acc-overlay hidden';
+
     auth.innerHTML = `
+
       <form class="acc-card" autocomplete="on" novalidate>
+
         <div class="acc-tabs">
+
           <button type="button" class="acc-tab active" data-mode="login">Đăng nhập</button>
+
           <button type="button" class="acc-tab" data-mode="register">Tạo tài khoản</button>
+
         </div>
+
         <label class="acc-field"><span>Tên đăng nhập</span>
+
           <input name="username" autocomplete="username" maxlength="20" spellcheck="false" placeholder="vd: phao_thu_01"></label>
+
         <label class="acc-field"><span>Mật khẩu</span>
+
           <input name="password" type="password" autocomplete="current-password" maxlength="72" placeholder="ít nhất 6 ký tự"></label>
+
         <label class="acc-field acc-only-register"><span>Nhập lại mật khẩu</span>
+
           <input name="password2" type="password" autocomplete="new-password" maxlength="72"></label>
+
         <div class="acc-error" role="alert"></div>
+
         <button type="submit" class="acc-primary">Đăng nhập</button>
+
         <button type="button" class="acc-link" data-act="guest">Chơi không cần tài khoản</button>
+
       </form>`;
+
     document.body.appendChild(auth);
 
+
+
     const panel = document.createElement('div');
+
     panel.id = 'acc-panel';
+
     panel.className = 'acc-overlay hidden';
+
     panel.innerHTML = `<div class="acc-card acc-wide"><button type="button" class="acc-close" title="Đóng"><i class="ti ti-x"></i></button><div class="acc-body"></div></div>`;
+
     document.body.appendChild(panel);
 
+
+
     // ---- sự kiện cửa sổ đăng nhập
+
     const form = $('form', auth);
+
     form.addEventListener('keydown', (e) => e.stopPropagation());   // gõ phím không điều khiển xe
+
     let mode = 'login';
+
     const setMode = (m) => {
+
       mode = m;
+
       auth.querySelectorAll('.acc-tab').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+
       auth.classList.toggle('register', m === 'register');
+
       $('.acc-primary', auth).textContent = m === 'login' ? 'Đăng nhập' : 'Tạo tài khoản';
+
       form.password.setAttribute('autocomplete', m === 'login' ? 'current-password' : 'new-password');
+
       $('.acc-error', auth).textContent = '';
+
     };
+
     auth.querySelectorAll('.acc-tab').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
     $('[data-act="guest"]', auth).addEventListener('click', () => { guest = true; hide(auth); renderHeader(); });
+
     form.addEventListener('submit', async (e) => {
+
       e.preventDefault();
+
       const username = form.username.value.trim(), password = form.password.value;
+
       const errEl = $('.acc-error', auth);
+
       if (mode === 'register' && password !== form.password2.value) { errEl.textContent = 'Hai lần nhập mật khẩu không khớp'; return; }
+
       const btn = $('.acc-primary', auth);
+
       btn.disabled = true; errEl.textContent = '';
+
       try {
+
         const r = await api(mode === 'login' ? 'login' : 'register', { username, password });
+
         setToken(r.token);
+
         form.password.value = form.password2.value = '';
+
         guest = false;
+
         hide(auth);
+
         setProfile(r.profile, true);
+
       } catch (err) {
+
         errEl.textContent = err.message;
+
       } finally { btn.disabled = false; }
+
     });
+
+
 
     // ---- bảng hồ sơ
+
     $('.acc-close', panel).addEventListener('click', () => hide(panel));
+
     panel.addEventListener('click', (e) => { if (e.target === panel) hide(panel); });
 
+
+
     // bấm vào hồ sơ góc sảnh
+
     const prof = $('.mm-commander-profile');
+
     if (prof) {
+
       prof.style.cursor = 'pointer';
+
       prof.title = online ? 'Hồ sơ & thành tích' : 'Chơi ngoại tuyến (không có tài khoản)';
+
       prof.addEventListener('click', (e) => {
+
         if (e.target.closest('.mm-gear-btn')) return;   // bánh răng = cài đặt (game_menu.js), không phải hồ sơ
+
         if (profile) openPanel(); else if (online) show(auth);
+
       });
+
     }
+
     // nhớ xe / bản đồ vừa chọn
+
     document.addEventListener('click', (e) => {
+
       if (applying || !profile) return;
+
       const tank = e.target.closest('.mm-class-card'), map = e.target.closest('.mm-map-card');
+
       if (tank && !e.target.closest('.btn-inspect-tank-3d')) queueSave({ lastTank: tank.getAttribute('data-tank-type') });
+
       if (map) queueSave({ lastMap: map.getAttribute('data-map-type') });
+
     });
+
     document.addEventListener('keydown', (e) => {
+
       if (e.key === 'Escape' && !panel.classList.contains('hidden')) hide(panel);
+
     });
+
   }
+
   // hiệu ứng mở / đóng do theme.css + motion.js lo (theo dõi class 'hidden') — chỉ cần bật / tắt 'hidden'
+
   const show = (el) => el.classList.remove('hidden');
+
   const hide = (el) => el.classList.add('hidden');
 
+
+
   function renderHeader() {
+
     // Thẻ chỉ huy góc sảnh (2 dòng): tên + cấp | Bạc · quân hàm + kinh nghiệm | trận thắng; thanh kinh nghiệm ở viền dưới
+
     const nameEl = $('#mm-display-name'), rankEl = $('.mm-commander-profile .rank-text');
+
     const bar = $('.mm-commander-profile .acc-xpbar'), lvEl = $('#mm-level'), xpEl = $('#mm-xp-text'), meta = $('#mm-cmd-meta');
+
     const silverEl = $('.mm-commander-profile .acc-silver'), winsEl = $('#mm-stat-wins');
+
     const tiSilver = document.getElementById('ti-silver');   // ô Bạc góc trên màn xem xe (tank_inspector.js)
+
     if (tiSilver) {
+
       tiSilver.classList.toggle('off', !profile);
+
       if (profile) {
+
         const b = tiSilver.querySelector('b'), txt = fmtSilver(profile.silver);
+
         if (b.textContent !== txt) { b.textContent = txt; tiSilver.classList.remove('bump'); void tiSilver.offsetWidth; tiSilver.classList.add('bump'); }
+
       }
+
     }
+
     if (profile) {
+
       const st = profile.stats || {}, n = v => Math.round(v || 0).toLocaleString('vi-VN');
+
       if (nameEl) nameEl.textContent = profile.displayName;
+
       if (rankEl) rankEl.textContent = profile.rankText;
+
       if (lvEl) { lvEl.textContent = 'CẤP ' + (profile.level || 1); lvEl.classList.remove('hidden'); }
+
       if (xpEl) xpEl.textContent = `${n(profile.xpInLevel)} / ${n(profile.xpToNext)} KN`;
+
       if (bar) { bar.style.display = ''; bar.firstChild.style.width = Math.round(100 * profile.xpInLevel / profile.xpToNext) + '%'; bar.title = `${profile.xpInLevel} / ${profile.xpToNext} kinh nghiệm tới cấp sau`; }
+
       if (meta) meta.classList.remove('hidden');
+
       if (silverEl) UIIcons.set(silverEl, `[[coins]] ${fmtSilver(profile.silver)} Bạc`);
+
       if (winsEl) UIIcons.set(winsEl, `[[trophy]] ${n(st.wins)}/${n(st.matches)} trận`);
+
     } else {
+
       if (nameEl) nameEl.textContent = 'Chưa đăng nhập';
+
       if (rankEl) rankEl.textContent = online ? 'Bấm để đăng nhập' : 'Chơi ngoại tuyến';
+
       if (lvEl) lvEl.classList.add('hidden');
+
       if (xpEl) xpEl.textContent = '';
+
       if (bar) bar.style.display = 'none';
+
       if (meta) meta.classList.add('hidden');
+
     }
+
   }
+
+
 
   function setProfile(p, applyChoices) {
+
     const swapped = !!profile !== !!p;
+
     profile = p;
+
     try { if (p) localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (e) {}
+
     renderHeader();
+
+    applyAvatar();
+
     renderHeroRepair();
+
     // đăng nhập / đăng xuất: bộ trang bị đổi theo tài khoản
+
     if (swapped) { try { window.dispatchEvent(new CustomEvent('armory-changed')); } catch (e) {} }
+
     const mm = window.matchmakingController || (window.game && window.game.matchmaking);
+
     if (mm && !p && mm.guestName) {
+
       // đăng xuất: về lại tên khách, không giữ tên tài khoản cũ
+
       mm.myName = mm.guestName;
+
       const me = mm.slots && mm.slots.find(s => s.isMe);
+
       if (me) me.name = mm.guestName;
+
       if (mm.net) mm.net.name = mm.guestName;
+
       if (typeof mm.renderLobby === 'function') mm.renderLobby();
+
     }
+
     if (mm && p) {
+
       mm.myName = p.displayName;
+
       const me = mm.slots && mm.slots.find(s => s.isMe);
+
       if (me) me.name = p.displayName;
+
       if (mm.net) mm.net.name = p.displayName;
+
       if (applyChoices && mm.state === 'IDLE') {
+
         applying = true;
+
         try {
+
           const tc = document.querySelector(`.mm-class-card[data-tank-type="${p.lastTank}"]`);
+
           if (tc) tc.click();
+
           const mc = document.querySelector(`.mm-map-card[data-map-type="${p.lastMap}"]`);
+
           if (mc) mc.click();
+
         } finally { applying = false; }
+
       }
+
       if (typeof mm.renderLobby === 'function') mm.renderLobby();
+
     }
+
   }
+
+
 
   const fmtSilver = (n) => Math.round(n || 0).toLocaleString('vi-VN');
+
   // Dải KHO BẠC trong hồ sơ: số Bạc to + nút NẠP BẠC + ưu đãi còn dùng được (gói Tân binh / x2 lần đầu)
+
   function walletHtml(p) {
+
     const on = !!(p.pay && p.pay.enabled);
+
     let offer = '';
+
     if (on && typeof Equipment !== 'undefined' && Equipment.TOPUP) {
+
       const got = (p.pay.bought) || {}, packs = Equipment.TOPUP.PACKS;
+
       const st = packs.find(k => k.once && !got[k.id]);
+
       if (st) offer = `<i class="ti ti-gift"></i> ${esc(st.name)}: ${fmtSilver(st.silver)} Bạc${st.spins ? ` + ${st.spins} lượt quay` : ''} chỉ $${st.usd}`;
+
       else if (Equipment.TOPUP.FIRST_X2 && packs.some(k => !k.once && !got[k.id])) offer = '<i class="ti ti-flame"></i> x2 Bạc lần nạp đầu mỗi gói';
+
     }
+
     return `<div class="acc-wallet${on ? ' can-pay' : ''}">
+
         <div class="acc-wallet-ico"><i class="ti ti-coins"></i></div>
+
         <div class="acc-wallet-info">
+
           <span class="acc-wallet-lbl">Kho bạc</span>
+
           <span class="acc-wallet-amt"><b>${fmtSilver(p.silver)}</b> Bạc</span>
+
           ${offer ? `<span class="acc-wallet-offer">${offer}</span>` : ''}
+
         </div>
+
         ${on ? '<button type="button" class="acc-wallet-btn" data-act="topup" title="Nạp Bạc"><i class="ti ti-plus"></i><span>NẠP BẠC</span></button>' : ''}
+
       </div>`;
+
   }
 
+
+
   // ---------------------------------------------------------------------------
+
   // KHO TRANG BỊ
+
   // ---------------------------------------------------------------------------
+
   /** Bộ trang bị mang vào trận của xe `tank`: { kit, stock } (kit đã kiểm tra, số đạn mang thêm không quá kho) */
+
   // Chưa đăng nhập / chơi ngoại tuyến: đồ cơ bản (miễn phí) chọn lưu ngay trên máy này
+
   const GUEST_KEY = 'spg_guest_loadout';
+
   function guestLoadouts() { try { return JSON.parse(localStorage.getItem(GUEST_KEY) || '{}') || {}; } catch (e) { return {}; } }
+
   function loadoutOf(tank) {
+
     if (profile && profile.armory) return (profile.armory.loadouts && profile.armory.loadouts[tank]) || { m: [], a: {} };
+
     const g = guestLoadouts()[tank] || { m: [] };
+
     return { m: (g.m || []).filter(id => typeof Equipment !== 'undefined' && Equipment.isFree(id)), a: {} };
+
   }
+
   function kitFor(tank) {
+
     const A = profile && profile.armory;
+
     if (!A && typeof Equipment !== 'undefined') {
+
       // khách: chỉ đạn chính (đạn khác phải mua bằng tài khoản)
+
       const lo = loadoutOf(tank);
+
       return { kit: lo.m.length ? Equipment.sanitize({ m: lo.m, p: [], a: {} }, tank) : null, stock: {} };
+
     }
+
     if (!A || typeof Equipment === 'undefined') return { kit: null, stock: {} };
+
     const lo = (A.loadouts && A.loadouts[tank]) || { m: [], a: {} };
+
     const stock = Object.assign({}, (A.stock && A.stock[tank]) || {});
+
     // Đạn mua thêm: mặc định mang tối đa mỗi lần xuất kích (không quá số còn trong kho)
+
     const a = {}, shop = Equipment.AMMO_SHOP[tank] || {};
+
     for (const k in shop) {
+
       const want = (lo.a && lo.a[k] !== undefined) ? lo.a[k] : shop[k].max;
+
       const n = Math.min(want, stock[k] || 0);
+
       if (n > 0) a[k] = n;
+
     }
+
     const p = ((A.owned && A.owned[tank]) || []).filter(id => Equipment.PREMIUM[id]);
+
     // trang bị hỏng chưa sửa (máy chủ armor_cond): không mang ra trận — sửa trong kho trang bị mới lắp lại được
+
     const cond = (A.cond && A.cond[tank]) || {}, d = {};
+
     for (const it in cond) if (cond[it] && Array.isArray(cond[it].gone) && cond[it].gone.length) d[it] = cond[it].gone;
+
     const kit = Equipment.sanitize({ m: lo.m, p, a }, tank);
+
     return { kit: Equipment.dropDamaged ? Equipment.dropDamaged(kit, d) : kit, stock };
+
   }
+
   function owns(tank, id) {
+
     const o = profile && profile.armory && profile.armory.owned && profile.armory.owned[tank];
+
     return !!(o && o.indexOf(id) >= 0);
+
   }
+
   function armoryChanged() {
+
     const mm = window.matchmakingController || (window.game && window.game.matchmaking);
+
     if (mm && typeof mm.onArmoryChanged === 'function') mm.onArmoryChanged();
+
     try { window.dispatchEvent(new CustomEvent('armory-changed')); } catch (e) {}
+
   }
+
   async function buy(tank, what) {
+
     const r = await api('shop/buy', Object.assign({ tank }, what));
+
     setProfile(r.profile, false);
+
     armoryChanged();
+
     return r.profile;
+
   }
+
   // Sửa giáp hỏng: what = { item } | { all: true } -> { cost, units }
+
   async function repair(tank, what) {
+
     const r = await api('shop/repair', Object.assign({ tank }, what));
+
     setProfile(r.profile, false);
+
     armoryChanged();
+
     return r;
+
   }
+
   // NÚT SỬA CHỮA cạnh nút TRANG BỊ ở sảnh: sửa mọi món hỏng của xe đang chọn (chưa sửa thì không mang ra trận)
+
   let heroRepairBusy = false;
+
   function renderHeroRepair() {
+
     const btn = document.getElementById('mm-hero-repair-btn');
+
     if (!btn) return;
+
     btn.classList.toggle('hidden', !profile);
+
     if (!profile) return;
+
     const mm = window.matchmakingController || (window.game && window.game.matchmaking);
+
     const tank = (mm && mm.selectedTankType) || 'ALL_ROUNDER';
+
     const cond = (profile.armory && profile.armory.cond && profile.armory.cond[tank]) || {};
+
     let n = 0, cost = 0;
+
     for (const it in cond) { const c = cond[it]; if (c && c.gone && c.gone.length) { n++; cost += c.gone.length * (c.unit || 0); } }
+
     const can = n > 0 && (profile.silver | 0) >= cost;
+
     btn.classList.toggle('hurt', n > 0);
+
     btn.disabled = heroRepairBusy || !can;
+
     btn.querySelector('span').textContent = n ? `SỬA CHỮA · ${fmtSilver(cost)}` : 'SỬA CHỮA';
+
     btn.title = !n ? 'Xe nguyên vẹn — không có trang bị hỏng'
+
       : `${n} món trang bị hỏng từ trận trước — chưa sửa thì không mang ra trận. Sửa tất cả: ${fmtSilver(cost)} Bạc`
+
         + (can ? '' : ` (không đủ Bạc, đang có ${fmtSilver(profile.silver | 0)})`);
+
   }
+
   document.addEventListener('click', async (ev) => {
+
     // đổi xe ở thẻ chọn xe: vẽ lại sau khi sảnh cập nhật selectedTankType
+
     if (ev.target.closest('.mm-class-card')) { setTimeout(renderHeroRepair, 0); return; }
+
     const btn = ev.target.closest('#mm-hero-repair-btn');
+
     if (!btn || btn.disabled || !profile) return;
+
     const mm = window.matchmakingController || (window.game && window.game.matchmaking);
+
     heroRepairBusy = true; renderHeroRepair();
+
     try { await repair((mm && mm.selectedTankType) || 'ALL_ROUNDER', { all: true }); }
+
     catch (e) { btn.title = 'Không sửa được: ' + e.message; }
+
     heroRepairBusy = false; renderHeroRepair();
+
   });
+
   window.addEventListener('armory-changed', () => renderHeroRepair());
+
   // Trả lại n viên đạn mua thêm (hoàn đúng giá)
+
   async function sell(tank, ammo, n) {
+
     const r = await api('shop/sell', { tank, ammo, n });
+
     setProfile(r.profile, false);
+
     armoryChanged();
+
     return r.profile;
+
   }
+
   // QUẢNG CÁO CÓ THƯỞNG: ad/start -> phát quảng cáo (AdProvider) -> ad/reward. what = { ammo } | { item }
+
   // Trả về { status: 'done' | 'skip' | 'unavailable', reward }
+
   async function adStart(tank, what) { return api('ad/start', Object.assign({ tank }, typeof what === 'string' ? { item: what } : what)); }
+
   async function claim(tank, item, token) {
+
     const r = await api('ad/reward', { token });
+
     setProfile(r.profile, false);
+
     armoryChanged();
+
     return r.profile;
+
   }
+
   const adsLeft = () => (profile && profile.ads ? profile.ads.left : 0);
+
   const adsBonus = () => (profile && profile.ads ? profile.ads.bonus || 0 : 0);
+
   // số vật tư 1 lượt xem nhận được lúc này (hết lượt đầy đủ -> thưởng nửa)
+
   const adAmmoN = (A) => adsLeft() > 0 ? A.ad : Math.max(1, Math.ceil(A.ad * Equipment.AD.BONUS_MUL));
+
   async function watchAd(tank, what, label) {
+
     if (!profile) throw Object.assign(new Error('Đăng nhập để nhận thưởng quảng cáo'), { status: 401 });
+
     if (!window.AdProvider) return { status: 'unavailable' };
+
     const s = await adStart(tank, what);
+
     const t0 = Date.now();
+
     const st = await AdProvider.showRewarded({ name: what.spin ? 'daily_spin' : what.ammo ? 'resupply_' + what.ammo : 'unlock_' + what.item, label, sec: s.sec });
+
     if (st !== 'done') return { status: st };
+
     // máy chủ cần đủ thời lượng tối thiểu kể từ lúc bắt đầu (quảng cáo thật có thể rất ngắn)
+
     const wait = (s.minSec || 0) * 1000 - (Date.now() - t0);
+
     if (wait > 0) await new Promise(r => setTimeout(r, wait + 150));
+
     const r = await api('ad/reward', { token: s.token });
+
     setProfile(r.profile, false);
+
     armoryChanged();
+
     return { status: 'done', reward: r.reward };
+
   }
+
   const freeOf = (tank, ammo) => { const f = profile && profile.armory && profile.armory.free; return (f && f[tank] && f[tank][ammo]) || 0; };
+
   const adProgressOf = (tank, item) => { const p = profile && profile.armory && profile.armory.adProgress; return (p && p[tank] && p[tank][item]) || 0; };
+
   async function setLoadout(tank, m, a) {
+
     if (!profile) {
+
       const g = guestLoadouts();
+
       g[tank] = { m: (m || []).filter(id => Equipment.isFree(id)) };
+
       try { localStorage.setItem(GUEST_KEY, JSON.stringify(g)); } catch (e) {}
+
       armoryChanged();
+
       return null;
+
     }
+
     const r = await api('loadout', { tank, m, a });
+
     setProfile(r.profile, false);
+
     armoryChanged();
+
     return r.profile;
+
   }
+
+
 
   function queueSave(patch) {
+
     queueSave.pending = Object.assign(queueSave.pending || {}, patch);
+
     clearTimeout(saveTimer);
+
     saveTimer = setTimeout(async () => {
+
       const body = queueSave.pending; queueSave.pending = null;
+
       try { const r = await api('profile', body); profile = r.profile; } catch (e) {}
+
     }, 600);
+
   }
+
+
 
   function fmtTime(sec) {
+
     const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+
     return h ? `${h} giờ ${m} phút` : `${m} phút`;
-  }
-  function fmtAgo(t) {
-    if (!t) return '';
-    const s = Math.max(0, (Date.now() - (t < 1e12 ? t * 1000 : t)) / 1000);
-    if (s < 60) return 'vừa xong';
-    if (s < 3600) return Math.floor(s / 60) + ' phút trước';
-    if (s < 86400) return Math.floor(s / 3600) + ' giờ trước';
-    return Math.floor(s / 86400) + ' ngày trước';
-  }
-  function openPanel() {
-    const panel = $('#acc-panel'), body = $('.acc-body', panel), p = profile, S = p.stats;
-    const n = v => Math.round(v || 0).toLocaleString('vi-VN');
-    const wr = S.matches ? Math.round(100 * S.wins / S.matches) : 0;
-    const kd = S.deaths ? (S.kills / S.deaths).toFixed(2) : String(S.kills);
-    const fav = Object.entries(S.byTank || {}).sort((a, b) => b[1].matches - a[1].matches)[0];
-    const pct = Math.round(100 * p.xpInLevel / p.xpToNext);
-    const RES = { win: 'Thắng', draw: 'Hòa', loss: 'Thua' };
-    const hist = (p.history || []).slice().reverse().map(h => `
-      <li class="r-${h.result}">
-        <span class="acc-res">${RES[h.result] || 'Thua'}</span>
-        <span class="acc-h-main"><b>${esc(TANK_NAMES[h.tank] || h.tank)}</b><small>${esc(MAP_NAMES[h.map] || '—')}${h.t ? ' · ' + fmtAgo(h.t) : ''}</small></span>
-        <span class="acc-h-kd">${h.kills} hạ · ${h.deaths || 0} chết</span>
-        <span class="acc-h-xp">+${n(h.xp)} KN</span>
-      </li>`).join('');
-    const empty = !S.matches;
-    body.innerHTML = `
-      <div class="acc-kicker">Hồ sơ chỉ huy</div>
-      <div class="acc-head">
-        <div class="acc-avatar"><img src="assets/commander_avatar.jpg" alt=""></div>
-        <div class="acc-head-info">
-          <label class="acc-name-wrap" title="Bấm để đổi tên hiển thị">
-            <input class="acc-name" value="${esc(p.displayName)}" maxlength="24" spellcheck="false"><i class="ti ti-pencil"></i>
-          </label>
-          <div class="acc-sub">@${esc(p.username)}</div>
-          <div class="acc-rank-row">
-            <span class="acc-rank"><i class="ti ti-star-filled"></i> ${esc(p.rankText)}</span>
-            <span class="acc-lv">Cấp ${p.level || 1}</span>
-          </div>
-          <div class="acc-xpbar big"><i style="width:${pct}%"></i></div>
-          <div class="acc-xptext"><span>${n(p.xpInLevel)} / ${n(p.xpToNext)} KN</span><span>còn ${n(p.xpToNext - p.xpInLevel)} KN lên cấp ${(p.level || 1) + 1}</span></div>
-        </div>
-      </div>
-      ${walletHtml(p)}
-      <div class="acc-stats${empty ? ' is-empty' : ''}">
-        <div><b>${n(S.matches)}</b><span>Trận</span></div>
-        <div><b>${wr}<small>%</small></b><span>Tỉ lệ thắng</span></div>
-        <div><b>${n(S.kills)}</b><span>Hạ gục</span></div>
-      </div>
-      <dl class="acc-minor">
-        <div><dt>Hạ / chết</dt><dd>${kd}</dd></div>
-        <div><dt>Sát thương</dt><dd>${n(S.damage)}</dd></div>
-        <div><dt>Thời gian chơi</dt><dd>${fmtTime(S.playSec || 0)}</dd></div>
-        ${fav ? `<div><dt>Xe hay dùng</dt><dd>${esc(TANK_NAMES[fav[0]] || fav[0])}</dd></div>` : ''}
-      </dl>
-      <div class="acc-sec">Trận gần đây</div>
-      ${hist ? `<ul class="acc-hist">${hist}</ul>` : `<div class="acc-empty"><i class="ti ti-target"></i><div><b>Chưa có trận nào</b><span>Xuất trận để bắt đầu ghi thành tích.</span></div></div>`}
-      <form class="acc-pw-form hidden">
-        <input type="password" name="o" placeholder="Mật khẩu hiện tại" autocomplete="current-password">
-        <input type="password" name="n" placeholder="Mật khẩu mới (ít nhất 6 ký tự)" autocomplete="new-password">
-        <div class="acc-pw-row"><span class="acc-error"></span><button type="submit" class="acc-primary small">Lưu mật khẩu</button></div>
-      </form>
-      <div class="acc-foot">
-        <button type="button" class="acc-ghost" data-act="pw"><i class="ti ti-key"></i> Đổi mật khẩu</button>
-        <button type="button" class="acc-ghost danger" data-act="logout"><i class="ti ti-logout"></i> Đăng xuất</button>
-      </div>`;
-    // đổi tên hiển thị
-    const nameIn = $('.acc-name', body);
-    const commitName = async () => {
-      const v = nameIn.value.trim();
-      if (!v || v === profile.displayName) { nameIn.value = profile.displayName; return; }
-      try { const r = await api('profile', { displayName: v }); setProfile(r.profile, false); nameIn.value = r.profile.displayName; }
-      catch (e) { nameIn.value = profile.displayName; alert(e.message); }
-    };
-    nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameIn.blur(); e.stopPropagation(); });
-    nameIn.addEventListener('blur', commitName);
-    // đổi mật khẩu
-    const pf = $('.acc-pw-form', body), pwBtn = $('[data-act="pw"]', body);
-    pwBtn.addEventListener('click', () => {
-      const open = pf.classList.toggle('hidden') === false;
-      pwBtn.classList.toggle('active', open);
-      if (open) pf.o.focus();
-    });
-    pf.addEventListener('keydown', (e) => e.stopPropagation());
-    pf.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const err = $('.acc-error', pf);
-      try { await api('password', { oldPassword: pf.o.value, newPassword: pf.n.value }); err.textContent = 'Đã đổi mật khẩu'; err.classList.add('ok'); pf.o.value = pf.n.value = ''; }
-      catch (ex) { err.classList.remove('ok'); err.textContent = ex.message; }
-    });
-    $('[data-act="logout"]', body).addEventListener('click', async () => {
-      try { await api('logout', {}); } catch (e) {}
-      setToken(null); guest = false; setProfile(null, false);
-      hide(panel); show($('#acc-auth'));
-    });
-    show(panel);
+
   }
 
-  // ---------------------------------------------------------------------------
-  // KẾT QUẢ TRẬN
-  // ---------------------------------------------------------------------------
-  function hookGame(g) {
-    if (!g || g._accHooked) return;
-    g._accHooked = true;
-    const wrap = (name, resultOf) => {
-      const orig = g[name];
-      if (typeof orig !== 'function') return;
-      g[name] = function (...args) {
-        const already = this.isGameOver;
-        const out = orig.apply(this, args);
-        if (!already && this.isGameOver) reportMatch(this, resultOf.apply(this, args));
-        return out;
-      };
+  function fmtAgo(t) {
+
+    if (!t) return '';
+
+    const s = Math.max(0, (Date.now() - (t < 1e12 ? t * 1000 : t)) / 1000);
+
+    if (s < 60) return 'vừa xong';
+
+    if (s < 3600) return Math.floor(s / 60) + ' phút trước';
+
+    if (s < 86400) return Math.floor(s / 3600) + ' giờ trước';
+
+    return Math.floor(s / 86400) + ' ngày trước';
+
+  }
+
+  function openPanel() {
+
+    const panel = $('#acc-panel'), body = $('.acc-body', panel), p = profile, S = p.stats;
+
+    const n = v => Math.round(v || 0).toLocaleString('vi-VN');
+
+    const wr = S.matches ? Math.round(100 * S.wins / S.matches) : 0;
+
+    const kd = S.deaths ? (S.kills / S.deaths).toFixed(2) : String(S.kills);
+
+    const fav = Object.entries(S.byTank || {}).sort((a, b) => b[1].matches - a[1].matches)[0];
+
+    const pct = Math.round(100 * p.xpInLevel / p.xpToNext);
+
+    const RES = { win: 'Thắng', draw: 'Hòa', loss: 'Thua' };
+
+    const hist = (p.history || []).slice().reverse().map(h => `
+
+      <li class="r-${h.result}">
+
+        <span class="acc-res">${RES[h.result] || 'Thua'}</span>
+
+        <span class="acc-h-main"><b>${esc(TANK_NAMES[h.tank] || h.tank)}</b><small>${esc(MAP_NAMES[h.map] || '—')}${h.t ? ' · ' + fmtAgo(h.t) : ''}</small></span>
+
+        <span class="acc-h-kd">${h.kills} hạ · ${h.deaths || 0} chết</span>
+
+        <span class="acc-h-xp">+${n(h.xp)} KN</span>
+
+      </li>`).join('');
+
+    const empty = !S.matches;
+
+    body.innerHTML = `
+
+      <div class="acc-kicker">Hồ sơ chỉ huy</div>
+
+      <div class="acc-head">
+
+        <div class="acc-avatar-wrap">
+
+          <button type="button" class="acc-avatar" title="Bấm để đổi ảnh đại diện" aria-haspopup="true"><img src="${myAvatar()}" alt=""><i class="ti ti-camera"></i></button>
+
+          <div class="acc-avatar-pop hidden" role="dialog" aria-label="Chọn ảnh đại diện">
+
+            <div class="acc-avatar-pop-title"><span>Chọn ảnh đại diện</span><small class="acc-avatar-pop-count">24 hình mẫu</small></div>
+
+            <div class="acc-avatar-pick"></div>
+
+            <div class="acc-avatar-preview">
+
+              <span class="av-p-name">Chỉ huy chiến trường</span>
+
+              <span class="av-p-role">Bấm để chọn diện mạo tác chiến</span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div class="acc-head-info">
+
+          <label class="acc-name-wrap" title="Bấm để đổi tên hiển thị">
+
+            <input class="acc-name" value="${esc(p.displayName)}" maxlength="24" spellcheck="false"><i class="ti ti-pencil"></i>
+
+          </label>
+
+          <div class="acc-rank-row">
+
+            <span class="acc-rank"><i class="ti ti-star-filled"></i> ${esc(p.rankText)}</span>
+
+            <span class="acc-lv">Cấp ${p.level || 1}</span>
+
+          </div>
+
+          <div class="acc-xpbar big"><i style="width:${pct}%"></i></div>
+
+          <div class="acc-xptext"><span>${n(p.xpInLevel)} / ${n(p.xpToNext)} KN</span><span>còn ${n(p.xpToNext - p.xpInLevel)} KN lên cấp ${(p.level || 1) + 1}</span></div>
+
+        </div>
+
+      </div>
+
+      ${walletHtml(p)}
+
+      <div class="acc-stats${empty ? ' is-empty' : ''}">
+
+        <div><b>${n(S.matches)}</b><span>Trận</span></div>
+
+        <div><b>${wr}<small>%</small></b><span>Tỉ lệ thắng</span></div>
+
+        <div><b>${n(S.kills)}</b><span>Hạ gục</span></div>
+
+      </div>
+
+      <dl class="acc-minor">
+
+        <div><dt>Hạ / chết</dt><dd>${kd}</dd></div>
+
+        <div><dt>Sát thương</dt><dd>${n(S.damage)}</dd></div>
+
+        <div><dt>Thời gian chơi</dt><dd>${fmtTime(S.playSec || 0)}</dd></div>
+
+        ${fav ? `<div><dt>Xe hay dùng</dt><dd>${esc(TANK_NAMES[fav[0]] || fav[0])}</dd></div>` : ''}
+
+      </dl>
+
+      <div class="acc-sec">Trận gần đây</div>
+
+      ${hist ? `<ul class="acc-hist">${hist}</ul>` : `<div class="acc-empty"><i class="ti ti-target"></i><div><b>Chưa có trận nào</b><span>Xuất trận để bắt đầu ghi thành tích.</span></div></div>`}
+
+      <form class="acc-pw-form hidden">
+
+        <input type="password" name="o" placeholder="Mật khẩu hiện tại" autocomplete="current-password">
+
+        <input type="password" name="n" placeholder="Mật khẩu mới (ít nhất 6 ký tự)" autocomplete="new-password">
+
+        <div class="acc-pw-row"><span class="acc-error"></span><button type="submit" class="acc-primary small">Lưu mật khẩu</button></div>
+
+      </form>
+
+      <div class="acc-foot">
+
+        <button type="button" class="acc-ghost" data-act="pw"><i class="ti ti-key"></i> Đổi mật khẩu</button>
+
+        <button type="button" class="acc-ghost danger" data-act="logout"><i class="ti ti-logout"></i> Đăng xuất</button>
+
+      </div>`;
+
+    // đổi tên hiển thị
+
+    const nameIn = $('.acc-name', body);
+
+    const commitName = async () => {
+
+      const v = nameIn.value.trim();
+
+      if (!v || v === profile.displayName) { nameIn.value = profile.displayName; return; }
+
+      try { const r = await api('profile', { displayName: v }); setProfile(r.profile, false); nameIn.value = r.profile.displayName; }
+
+      catch (e) { nameIn.value = profile.displayName; alert(e.message); }
+
     };
+
+    nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameIn.blur(); e.stopPropagation(); });
+
+    nameIn.addEventListener('blur', commitName);
+
+    // đổi ảnh đại diện
+
+    const avBtn = $('.acc-avatar', body), pop = $('.acc-avatar-pop', body), pick = $('.acc-avatar-pick', body);
+
+    const setPop = (open) => {
+
+      pop.classList.toggle('hidden', !open); avBtn.classList.toggle('active', open);
+
+      document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', onKey, true);
+
+      if (open) { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', onKey, true); }
+
+    };
+
+    function outside(e) { if (!pop.isConnected) return setPop(false); if (!pop.contains(e.target) && !avBtn.contains(e.target)) setPop(false); }
+
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); setPop(false); } }
+
+    avBtn.addEventListener('click', async () => {
+
+      const open = pop.classList.contains('hidden');
+
+      setPop(open);
+
+      if (!open || pick.childElementCount) return;
+
+      const list = await loadAvatars(), cur = profile.settings && profile.settings.avatar;
+
+      const pName = $('.av-p-name', pop), pRole = $('.av-p-role', pop);
+
+      const updatePreview = (it) => {
+
+        if (!it) return;
+
+        if (pName) pName.textContent = it.name || 'Ảnh đại diện';
+
+        if (pRole) pRole.textContent = it.role ? `${it.role} · ${it.region || 'Quân khu'}` : 'Chiến binh chiến trường';
+
+      };
+
+      pick.innerHTML = list.map(a => `<button type="button" data-id="${esc(a.id)}" title="${esc(a.name)}${a.role ? ' · ' + esc(a.role) : ''}"${a.id === cur ? ' class="on"' : ''}><img src="${esc(a.file)}" alt="" loading="lazy"></button>`).join('');
+
+      const curItem = list.find(a => a.id === cur) || list[0];
+
+      updatePreview(curItem);
+
+      pick.querySelectorAll('button[data-id]').forEach(btn => {
+
+        btn.addEventListener('pointerenter', () => updatePreview(list.find(a => a.id === btn.dataset.id)));
+
+      });
+
+      pick.addEventListener('pointerleave', () => {
+
+        const sel = list.find(a => a.id === (profile && profile.settings && profile.settings.avatar)) || list[0];
+
+        updatePreview(sel);
+
+      });
+
+    });
+
+    pick.addEventListener('click', async (e) => {
+
+      const b = e.target.closest('button[data-id]');
+
+      if (!b) return;
+
+      const id = b.dataset.id, prev = profile;
+
+      pick.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+
+      setPop(false);
+
+      setProfile(Object.assign({}, profile, { settings: Object.assign({}, profile.settings, { avatar: id }) }), false);
+
+      try { const r = await api('profile', { avatar: id }); setProfile(r.profile, false); }
+
+      catch (ex) { setProfile(prev, false); alert(ex.message); }
+
+    });
+
+    // đổi mật khẩu
+
+    const pf = $('.acc-pw-form', body), pwBtn = $('[data-act="pw"]', body);
+
+    pwBtn.addEventListener('click', () => {
+
+      const open = pf.classList.toggle('hidden') === false;
+
+      pwBtn.classList.toggle('active', open);
+
+      if (open) pf.o.focus();
+
+    });
+
+    pf.addEventListener('keydown', (e) => e.stopPropagation());
+
+    pf.addEventListener('submit', async (e) => {
+
+      e.preventDefault();
+
+      const err = $('.acc-error', pf);
+
+      try { await api('password', { oldPassword: pf.o.value, newPassword: pf.n.value }); err.textContent = 'Đã đổi mật khẩu'; err.classList.add('ok'); pf.o.value = pf.n.value = ''; }
+
+      catch (ex) { err.classList.remove('ok'); err.textContent = ex.message; }
+
+    });
+
+    $('[data-act="logout"]', body).addEventListener('click', async () => {
+
+      try { await api('logout', {}); } catch (e) {}
+
+      setToken(null); guest = false; setProfile(null, false);
+
+      hide(panel); show($('#acc-auth'));
+
+    });
+
+    show(panel);
+
+  }
+
+
+
+  // ---------------------------------------------------------------------------
+
+  // KẾT QUẢ TRẬN
+
+  // ---------------------------------------------------------------------------
+
+  function hookGame(g) {
+
+    if (!g || g._accHooked) return;
+
+    g._accHooked = true;
+
+    const wrap = (name, resultOf) => {
+
+      const orig = g[name];
+
+      if (typeof orig !== 'function') return;
+
+      g[name] = function (...args) {
+
+        const already = this.isGameOver;
+
+        const out = orig.apply(this, args);
+
+        if (!already && this.isGameOver) reportMatch(this, resultOf.apply(this, args));
+
+        return out;
+
+      };
+
+    };
+
     // rời trận / chơi lại: báo nốt số đạn đã bắn trước khi dọn xe
+
     const origRestart = g.restartMatch;
+
     if (typeof origRestart === 'function') g.restartMatch = function (...args) { if (this.player) flushAmmo(this.player); return origRestart.apply(this, args); };
+
     addEventListener('pagehide', () => { if (g.player && g.isGameStarted) flushAmmo(g.player, true); });
+
     // trừ kho dần trong trận: cứ ~10 s báo phần vật tư mua thêm vừa dùng (lựu đạn khói, đạn đặc chủng); không dùng gì thì không gửi
+
     setInterval(() => { if (g.player && g.isGameStarted && !g.isGameOver) flushAmmo(g.player); }, 10000);
+
     wrap('finishMatchByTime', function () {
+
       const my = this.player && this.player.team === 'RED' ? 'RED' : 'BLUE';
+
       const b = this.blueKills || 0, r = this.redKills || 0;
+
       if (b === r) return 'draw';
+
       return (b > r) === (my === 'BLUE') ? 'win' : 'loss';
+
     });
+
     wrap('finishMatchByCapture', function (winningTeam) {
+
       const my = this.player && this.player.team === 'RED' ? 'red' : 'blue';
+
       return String(winningTeam).toLowerCase() === my ? 'win' : 'loss';
+
     });
+
   }
+
   // Đạn mua thêm đã bắn: trừ kho ngay khi dùng (mỗi lần hồi sinh, hết trận, rời trận, đóng trang)
+
   // keepalive: request vẫn đi tiếp khi trang đang đóng
+
   function flushAmmo(u, keepalive) {
+
     if (!profile || typeof Equipment === 'undefined' || !Equipment.ammoDelta) return Promise.resolve();
+
     if (window.strongholdLab || /[?&]lab=/.test(location.search)) return Promise.resolve();
+
     if (!u || !u._eq || !u._eq.local) return Promise.resolve();
+
     const used = Equipment.ammoDelta(u);
+
     if (!Object.keys(used).length) return Promise.resolve();
+
     return api('shop/use', { tank: u.tankType, used }, keepalive)
+
       .then(r => { setProfile(r.profile, false); armoryChanged(); })
+
       .catch(() => { Equipment.ammoDelta(u, used); });   // lỗi mạng: giữ lại, lần sau gửi tiếp
+
   }
+
+
 
   async function reportMatch(g, result) {
+
     const card = $('#game-over-modal .stats-summary');
+
     let line = $('#acc-xp-line');
+
     if (!line && card) { line = document.createElement('div'); line.id = 'acc-xp-line'; line.className = 'acc-xp-line'; ($('#kd-podium') || card).after(line); }
+
     if (window.strongholdLab || /[?&]lab=/.test(location.search)) { if (line) line.textContent = ''; return; }
+
     if (!profile) { if (line) line.textContent = online ? 'Đăng nhập để lưu thành tích & lên cấp' : ''; return; }
+
     const P = g.player || {};
+
     const durationSec = Math.min(g.matchDuration || 1800, Math.floor((Date.now() - (g.matchStartTime || Date.now())) / 1000));
+
     const mm = g.matchmaking || window.matchmakingController || {};
+
     if (line) line.textContent = 'Đang lưu kết quả…';
+
     try {
+
       await flushAmmo(P);   // trừ kho phần đạn chưa báo (đạn đã báo lúc hồi sinh không trừ lại)
+
       const ammoUsed = {};
+
       // giáp mua thêm đã vỡ trong trận (hợp mọi lần xuất kích) -> máy chủ lưu, kho đồ hiện nút Sửa
+
       const armorGone = Equipment.noteArmor ? Equipment.noteArmor(P) || {} : {};
+
       const r = await api('match-result', { armorGone,
+
         result, kills: P.kills || 0, deaths: g._playerDeaths || 0, damage: P.damageDealt || 0, shots: P.shotsFired || 0,
+
         tankType: P.tankType, mapType: mm.selectedMapType || (g.terrain && g.terrain.mapType), durationSec, ammoUsed, kdPlace: g._kdPlace || 0, airdrops: g._playerAirdrops || 0 });
+
       setProfile(r.profile, false);
+
       armoryChanged();
-      const kd = (r.kdPlace && r.kdBonus ? ` <span class="acc-kd">(có thưởng hạng ${r.kdPlace}: +${fmtSilver(r.kdBonus.silver)} Bạc)</span>` : '')
+
+      // chạm trần thưởng trận chưa đối chiếu trong ngày: bỏ các dòng thưởng chi tiết (đã bị cắt), chỉ báo trần
+
+      const kd = r.capped ? ` <span class="acc-kd">(đã chạm trần thưởng trận đánh máy hôm nay — chơi trận mạng để nhận đủ)</span>`
+
+        + (r.ammoRefund ? ` <span class="acc-kd">(hoàn 50% đạn đã bắn: +${fmtSilver(r.ammoRefund)} Bạc)</span>` : '')
+
+        : (r.kdPlace && r.kdBonus ?` <span class="acc-kd">(có thưởng hạng ${r.kdPlace}: +${fmtSilver(r.kdBonus.silver)} Bạc)</span>` : '')
+
         + (r.airdrops ? ` <span class="acc-kd">(${r.airdrops} hòm thả dù: +${fmtSilver(r.airdropSilver || 0)} Bạc)</span>` : '')
+
         + (r.ammoRefund ? ` <span class="acc-kd">(hoàn 50% đạn đã bắn: +${fmtSilver(r.ammoRefund)} Bạc)</span>` : '');
+
       if (line) line.innerHTML = `<b>+${r.gained} kinh nghiệm</b> · <b class="silver"><i class="ti ti-coins"></i> +${fmtSilver(r.silver)} Bạc</b>${kd}${r.levelUp ? ` · <span class="up">LÊN CẤP: ${esc(r.profile.rankText)}!</span>` : ` · ${esc(r.profile.rankText)}`}`
+
         + (r.verified ? ' <span class="acc-verified" title="Số hạ gục / sát thương lấy theo máy chủ"><i class="ti ti-shield-check"></i> Đã đối chiếu máy chủ</span>' : '');
+
       renderUpkeep(line, P.tankType, r.silver);   // r.silver đã gồm thưởng hạng K/D
+
       renderResupply(line, P.tankType);
+
     } catch (e) {
+
       if (line) line.textContent = e.status === 400 ? e.message : 'Không lưu được kết quả: ' + e.message;
+
     }
+
   }
+
+
 
   // BẢO DƯỠNG SAU TRẬN: giáp hỏng chưa sửa + vật tư thiếu so với 1 lần xuất kích -> một nút "NẠP ĐẠN & SỬA XE" trả hết bằng Bạc
+
   function renderUpkeep(after, tank, earned) {
+
     let box = $('#acc-upkeep');
+
     if (box) box.remove();
+
     if (!after || !profile || typeof Equipment === 'undefined') return;
+
     const plan = () => {
+
       const A = profile.armory || {}, cond = (A.cond && A.cond[tank]) || {}, stock = (A.stock && A.stock[tank]) || {};
+
       const shop = Equipment.AMMO_SHOP[tank] || {}, lo = loadoutOf(tank);
+
       let armorN = 0, armorCost = 0;   // armorN: số MÓN đang hỏng (giáp thiếu khối / đồ gắn ngoài bị phá)
+
       for (const it in cond) { const c = cond[it]; if (c && c.gone && c.gone.length) { armorN++; armorCost += c.gone.length * (c.unit || 0); } }
+
       const buys = [];
+
       let ammoCost = 0;
+
       for (const k in shop) {
+
         if (shop[k].gear && !(lo.m || []).includes(shop[k].gear)) continue;
+
         const need = Math.max(0, shop[k].max - (stock[k] || 0));
+
         if (need > 0) { buys.push({ k, n: need }); ammoCost += need * shop[k].price; }
+
       }
+
       return { armorN, armorCost, buys, ammoCost, total: armorCost + ammoCost };
+
     };
+
     box = document.createElement('div');
+
     box.id = 'acc-upkeep';
+
     box.className = 'acc-resupply acc-upkeep';
+
     let note = '';
+
     const draw = () => {
+
       const p = plan();
+
       if (!p.total) { box.innerHTML = `<span class="acc-rs-title ok"><i class="ti ti-circle-check"></i> Xe sẵn sàng: trang bị nguyên vẹn, đủ đạn 1 lần xuất kích</span>`; return; }
+
       const parts = [];
+
       if (p.armorN) parts.push(`sửa <b>${p.armorN}</b> món hỏng — chưa sửa thì không mang ra trận (${fmtSilver(p.armorCost)} Bạc)`);
+
       if (p.buys.length) parts.push(`nạp đầy ${p.buys.map(b => `${b.n} ${esc(Equipment.AMMO_SHOP[tank][b.k].name.toLowerCase())}`).join(', ')} (${fmtSilver(p.ammoCost)} Bạc)`);
+
       const can = (profile.silver | 0) >= p.total;
+
       box.innerHTML = `<span class="acc-rs-title"><i class="ti ti-tool"></i> BẢO DƯỠNG XE</span><span class="acc-rs-left">Thu trận này <b>+${fmtSilver(earned || 0)}</b> Bạc · ${parts.join(' · ')}</span>`
+
         + `<button class="eqp-btn" data-up="go"${can ? '' : ' disabled'} title="${can ? 'Sửa trang bị hỏng & mua đạn bằng Bạc' : 'Không đủ Bạc'}"><i class="ti ti-tool"></i> NẠP ĐẠN & SỬA XE ·${fmtSilver(p.total)} Bạc</button>`
+
         + (note ? `<span class="acc-rs-left">${esc(note)}</span>` : '');
+
     };
+
     draw();
+
     box.addEventListener('click', async (ev) => {
+
       const b = ev.target.closest('[data-up]');
+
       if (!b || b.disabled) return;
+
       b.disabled = true; note = '';
+
       const p = plan();
+
       try {
+
         if (p.armorN) await repair(tank, { all: true });
+
         for (const it of p.buys) for (let left = it.n; left > 0; left -= 100) await buy(tank, { ammo: it.k, n: Math.min(100, left) });   // máy chủ nhận tối đa 100 viên / lần
+
         if (window.soundEngine && window.soundEngine.playUiPurchase) window.soundEngine.playUiPurchase(false);
+
       } catch (e) { note = e.message; }
+
       draw();
+
     });
+
     after.after(box);
+
   }
+
+
 
   // TIẾP TẾ SAU TRẬN: vật tư của xe vừa chơi còn ít hơn 1 lần xuất kích -> nút xem quảng cáo nhận thêm ngay
+
   function renderResupply(after, tank) {
+
     let box = $('#acc-resupply');
+
     if (box) box.remove();
+
     if (!after || !profile || typeof Equipment === 'undefined' || !window.AdProvider || !AdProvider.available()) return;
+
     const shop = Equipment.AMMO_SHOP[tank] || {}, stock = (profile.armory && profile.armory.stock && profile.armory.stock[tank]) || {};
+
     const lo = loadoutOf(tank);
+
     const low = Object.keys(shop).filter(k => (stock[k] || 0) < shop[k].max && (!shop[k].gear || (lo.m || []).includes(shop[k].gear)));
+
     if (!low.length) return;
+
     box = document.createElement('div');
+
     box.id = 'acc-resupply';
+
     box.className = 'acc-resupply';
+
     let note = '';
+
     const draw = () => {
+
       const left = adsLeft() + adsBonus();
+
       box.innerHTML = `<span class="acc-rs-title"><i class="ti ti-package"></i> KHO SẮP CẠN</span>`
+
         + low.map(k => { const A = shop[k], have = ((profile.armory.stock[tank] || {})[k]) || 0;
+
           return `<button class="eqp-btn ad" data-rs="${k}"${left > 0 ? '' : ' disabled'} title="Xem 1 quảng cáo: +${adAmmoN(A)} ${esc(A.name.toLowerCase())}">
+
             <i class="ti ti-player-play-filled"></i> +${adAmmoN(A)} ${esc(A.name)} <small>(còn ${have})</small></button>`; }).join('')
+
         + `<span class="acc-rs-left">${note ? esc(note) : adsLeft() > 0 ? `Còn ${adsLeft()}/${Equipment.AD.DAILY} lượt quảng cáo hôm nay` : left > 0 ? `Lượt thêm (thưởng nửa): còn ${left}` : 'Hết lượt quảng cáo hôm nay'}</span>`;
+
     };
+
     draw();
+
     box.addEventListener('click', async (ev) => {
+
       const b = ev.target.closest('[data-rs]');
+
       if (!b || b.disabled) return;
+
       const k = b.dataset.rs, A = shop[k];
+
       box.querySelectorAll('button').forEach(x => { x.disabled = true; });
+
       note = '';
+
       try {
+
         const r = await watchAd(tank, { ammo: k }, `+${A.ad} ${A.name}`);
+
         if (r.status === 'done') low.splice(low.indexOf(k), 1);
+
         else if (r.status === 'unavailable') note = 'Hiện chưa có quảng cáo, thử lại sau ít phút.';
+
         else note = 'Chưa xem hết quảng cáo nên chưa nhận được.';
+
       } catch (e) { note = e.message; }
+
       if (!low.length) { box.innerHTML = '<span class="acc-rs-title ok"><i class="ti ti-circle-check"></i> Đã tiếp tế xong</span>'; return; }
+
       draw();
+
     });
+
     after.after(box);
+
   }
+
+
 
   // ---------------------------------------------------------------------------
+
   async function init() {
+
     buildDom();
+
     renderHeader();
+
     // nối vào game khi đã khởi tạo
+
     const waitGame = () => { if (window.game) hookGame(window.game); else setTimeout(waitGame, 300); };
+
     waitGame();
+
     if (!online) return;
+
     if (window.strongholdLab || /[?&]lab=/.test(location.search)) return;   // trang thử nghiệm: không hỏi đăng nhập
+
     if (token()) {
+
       // hiện ngay hồ sơ đã nhớ (không chờ mạng), rồi lấy bản mới nhất từ máy chủ
+
       const cp = cachedProfile();
+
       if (cp) setProfile(cp, true);
+
       try { const r = await api('me'); setProfile(r.profile, !cp); return; }
+
       catch (e) { if (e.status === 401) { setToken(null); setProfile(null, false); } else { renderHeader(); return; } }   // máy chủ lỗi: chơi tiếp với hồ sơ đã nhớ / như khách
+
     }
+
     show($('#acc-auth'));
+
     setTimeout(() => { const i = $('#acc-auth input[name=username]'); if (i) i.focus(); }, 50);
+
   }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
+
+
   return { get profile() { return profile; }, get online() { return online; }, applyProfile: (p) => setProfile(p, false), api, kitFor, loadoutOf, owns, buy, sell, repair, flushAmmo, adStart, claim, watchAd, adsLeft, adsBonus, adAmmoN, freeOf, adProgressOf, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
+
 })();
+
 window.Account = Account;
+

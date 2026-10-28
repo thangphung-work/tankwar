@@ -21,7 +21,7 @@
  *   POST /api/logout        (Authorization: Bearer <token>)
  *   GET  /api/me                                            -> { profile }
  *   GET  /api/leaderboard                                   -> { top: [{ displayName, rankText, xp, ... }] }
- *   POST /api/profile       { displayName?, lastTank?, lastMap?, settings? } -> { profile }
+ *   POST /api/profile       { displayName?, avatar?, lastTank?, lastMap?, settings? } -> { profile }
  *   POST /api/password      { oldPassword, newPassword }    -> { ok }
  *   POST /api/match-result  { result, kills, deaths, damage, shots, tankType, mapType, durationSec, ammoUsed?, kdPlace?, airdrops? } -> { profile, gained, silver, kdPlace, kdBonus, airdrops, airdropSilver }
  *   POST /api/shop/buy      { tank, item } (mô-đun / đạn cao cấp) | { tank, ammo, n } (mua lẻ n viên; { packs } kiểu cũ vẫn nhận) -> { profile }
@@ -194,6 +194,12 @@ function openDb() {
     // lượt quay tặng kèm gói nạp Bạc (không hết hạn)
     if (!cols.includes('bought')) db.exec('ALTER TABLE daily_spin ADD COLUMN bought INTEGER NOT NULL DEFAULT 0');
   }
+  // Trận: Bạc đã cộng + máy chủ có đối chiếu không (tính trần thưởng trận tự khai / ngày); trận cũ coi như đã đối chiếu
+  {
+    const cols = db.prepare('PRAGMA table_info(matches)').all().map(c => c.name);
+    if (!cols.includes('silver')) db.exec('ALTER TABLE matches ADD COLUMN silver INTEGER NOT NULL DEFAULT 0');
+    if (!cols.includes('verified')) db.exec('ALTER TABLE matches ADD COLUMN verified INTEGER NOT NULL DEFAULT 1');
+  }
   // Vật tư nhận từ quảng cáo (không bán lại được): thêm cột cho CSDL cũ
   if (!db.prepare('PRAGMA table_info(ammo_stock)').all().some(c => c.name === 'free')) {
     db.exec('ALTER TABLE ammo_stock ADD COLUMN free INTEGER NOT NULL DEFAULT 0');
@@ -214,7 +220,8 @@ function openDb() {
                  ON CONFLICT (user_id, tank) DO UPDATE SET matches = matches + 1, wins = wins + excluded.wins, losses = losses + excluded.losses,
                    draws = draws + excluded.draws, kills = kills + excluded.kills, deaths = deaths + excluded.deaths,
                    damage = damage + excluded.damage, shots = shots + excluded.shots, play_sec = play_sec + excluded.play_sec`),
-    addMatch: P(`INSERT INTO matches (user_id, ended_at, result, tank, map, kills, deaths, damage, duration, xp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    addMatch: P(`INSERT INTO matches (user_id, ended_at, result, tank, map, kills, deaths, damage, duration, xp, silver, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    unverifiedSince: P('SELECT COALESCE(SUM(silver), 0) AS silver, COALESCE(SUM(xp), 0) AS xp FROM matches WHERE user_id = ? AND verified = 0 AND ended_at >= ?'),
     recent: P('SELECT ended_at, result, tank, map, kills, deaths, damage, duration, xp FROM matches WHERE user_id = ? ORDER BY ended_at DESC LIMIT 10'),
     top: P('SELECT id, display_name, xp FROM users ORDER BY xp DESC LIMIT 20'),
     sessionGet: P('SELECT user_id, expires_at FROM sessions WHERE token_hash = ?'),
@@ -352,7 +359,7 @@ function migrateLegacyJson() {
       Q.setProfile.run(u.displayName || u.username, u.lastTank || 'ALL_ROUNDER', u.lastMap || 'DESERT', JSON.stringify(u.settings || {}), id);
       db.prepare('UPDATE users SET xp = ?, last_result_at = ? WHERE id = ?').run(u.xp || 0, u.lastResultAt || 0, id);
       for (const h of u.history || []) {
-        Q.addMatch.run(id, h.t || 0, h.result || 'loss', h.tank || 'ALL_ROUNDER', h.map || null, h.kills || 0, h.deaths || 0, h.damage || 0, h.dur || 0, h.xp || 0);
+        Q.addMatch.run(id, h.t || 0, h.result || 'loss', h.tank || 'ALL_ROUNDER', h.map || null, h.kills || 0, h.deaths || 0, h.damage || 0, h.dur || 0, h.xp || 0, 0, 1);
       }
       // tổng cộng dồn: phần theo từng xe lấy từ byTank, phần còn lại (trận cũ không rõ xe) dồn vào xe đầu tiên
       const S = u.stats || {}, BT = S.byTank || {};
@@ -722,14 +729,69 @@ async function payWebhook(req, res) {
   }
   return send(res, 200, { received: true });
 }
-const online = new Map();   // userId -> { mk (mã trận), kills, deaths, damage, at }
-function noteOnline(userId, matchKey, kills, deaths, damage) {
+// userId -> { mk (mã trận), kills, deaths, damage, at, vs (có đối thủ người thật), airdrops, ammo: { 'xe|đạn': { srv, rep } } }
+const online = new Map();
+function noteOnline(userId, matchKey, kills, deaths, damage, opts) {
   const now = Date.now();
   let o = online.get(userId);
-  if (!o || o.mk !== matchKey || now - o.at > 30 * 60e3) o = { mk: matchKey, kills: 0, deaths: 0, damage: 0, at: now };
+  if (!o || o.mk !== matchKey || now - o.at > 30 * 60e3) o = { mk: matchKey, kills: 0, deaths: 0, damage: 0, at: now, vs: false, airdrops: 0, ammo: {} };
   o.kills += kills; o.deaths += deaths; o.damage += damage; o.at = now;
+  if (opts && opts.vs !== undefined) o.vs = !!opts.vs;
   online.set(userId, o);
   if (online.size > 20000) online.clear();
+}
+// Hòm thả dù người chơi nhặt trong trận mạng (máy chủ trận đã đối chiếu vị trí / nhịp hòm)
+function noteAirdrop(userId, matchKey) {
+  const o = online.get(userId);
+  if (o && o.mk === matchKey) o.airdrops++;
+}
+// Trừ kho đạn mua thêm trong trận mạng theo max(số máy chủ trận đếm, số máy khách tự báo) cho từng loại:
+// máy khách không báo (sửa mã để đạn mua không bao giờ hết) vẫn bị trừ theo số phát máy chủ thấy; báo nhiều hơn thì
+// trừ theo số báo (đạn máy chủ không phân biệt được). who: 'srv' | 'rep'. Trả số đã trừ thêm theo từng loại
+// (gọi bên trong 1 giao dịch)
+function chargeAmmoIn(userId, o, tank, used, who) {
+  const out = {};
+  if (!o || !TANKS.includes(tank) || !used || typeof used !== 'object') return out;
+  for (const ammo in Equipment.AMMO_SHOP[tank] || {}) {
+    const n = Math.round(clampN(used[ammo], 0, 5000));
+    if (n <= 0) continue;
+    const c = o.ammo[tank + '|' + ammo] || (o.ammo[tank + '|' + ammo] = { srv: 0, rep: 0 });
+    const before = Math.max(c.srv, c.rep);
+    c[who] += n;
+    const add = Math.max(c.srv, c.rep) - before;
+    if (add > 0) { Q.useStock.run(add, userId, tank, ammo); out[ammo] = add; }
+  }
+  return out;
+}
+function chargeAmmo(userId, o, tank, used, who) {
+  return db ? tx(() => chargeAmmoIn(userId, o, tank, used, who)) : {};
+}
+function noteAmmo(userId, matchKey, tank, used) {
+  const o = online.get(userId);
+  if (o && o.mk === matchKey) chargeAmmo(userId, o, tank, used, 'srv');
+}
+// trận mạng đang mở sổ cho người này (máy khách báo đạn đã bắn -> đi qua chargeAmmo, không trừ thẳng 2 lần)
+const liveOnline = (userId) => { const o = online.get(userId); return o && Date.now() - o.at < 15 * 60e3 ? o : null; };
+// Giáp / đồ gắn ngoài bị phá trong trận mạng, máy chủ trận gom từ gói PARTS (máy bắn trúng gửi): hợp vào danh sách đơn vị
+// thiếu như máy khách báo (armorGone) -> máy khách giấu không báo thì vẫn phải sửa. items: mô-đun có trong bộ đồ đã kiểm tra
+const ARMOR_TAG = { era: /^eraKit/, applique: /^appliqueKit/, vshield: /^appliqueVS/, slat: /^cageKit/, aps: /^apsKit$/,
+  radar: /^radarKit$/, jammer: /^jammerKit$/, agl: /^agl$/, rocket: /^rocketPod$/, rjam: /^rjam$/ };   // = VehicleDamage.ARMOR_ITEM_TAGS
+function noteArmorGone(userId, tank, items, keys) {
+  if (!db || !TANKS.includes(tank) || !Array.isArray(items) || !keys || !keys.length) return;
+  tx(() => {
+    for (const item of items) {
+      const re = ARMOR_TAG[item];
+      if (!re || !Equipment.ARMOR_REPAIR[item] || !Equipment.compatible(item, tank)) continue;
+      const mine = (Equipment.sanitizeGone({ [item]: keys.filter(k => re.test(String(k).split('#')[0])) }, null) || {})[item] || [];
+      if (!mine.length) continue;
+      const row = Q.condGet.get(userId, tank, item);
+      let prev = []; try { prev = row ? JSON.parse(row.gone) || [] : []; } catch (e) {}
+      const all = [...new Set([...prev, ...mine])];
+      // tổng số đơn vị: lấy số máy khách đã báo trước đó; chưa có thì ước rộng (giá sửa / đơn vị = giá món / tổng)
+      const total = Math.max((row && row.total) || 0, all.length, 8);
+      Q.condSet.run(userId, tank, item, total, JSON.stringify(all.slice(0, total)));
+    }
+  });
 }
 // Hạng K/D trong trận mạng (server_auth.js tính từ số liệu đã kiểm tra): 1-3 = top 3, 0 = ngoài top
 function notePlace(userId, matchKey, place) {
@@ -898,6 +960,11 @@ async function handle(req, res) {
         const s = JSON.stringify(b.settings);
         if (s.length <= 2048) settings = s;
       }
+      // ảnh đại diện: chỉ nhận tên trong assets/avatars, lưu chung với settings
+      if (typeof b.avatar === 'string' && /^avatar_\d{2}_[a-z]{2,4}_[mf]$/.test(b.avatar)) {
+        let o = {}; try { o = JSON.parse(settings || '{}') || {}; } catch (e) {}
+        o.avatar = b.avatar; settings = JSON.stringify(o);
+      }
       Q.setProfile.run(name, tank, map, settings, u.id);
       return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
     }
@@ -1004,7 +1071,9 @@ async function handle(req, res) {
       const tank = String(b.tank || '');
       if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
       const used = b.used && typeof b.used === 'object' ? b.used : {};
-      tx(() => {
+      const o = liveOnline(u.id);
+      if (o) chargeAmmo(u.id, o, tank, used, 'rep');   // trận mạng: máy chủ trận cũng đang đếm -> trừ theo số lớn hơn
+      else tx(() => {
         for (const ammo in Equipment.AMMO_SHOP[tank] || {}) {
           const n = Math.round(clampN(used[ammo], 0, 5000));
           if (n > 0) Q.useStock.run(n, u.id, tank, ammo);
@@ -1197,14 +1266,18 @@ async function handle(req, res) {
       let shots = Math.round(clampN(b.shots, 0, dur * 3));
       // hòm thả dù: 1 hòm tại 1 thời điểm (~25 s đầu trận, rồi 22 s sau mỗi lần có chủ + thời gian rơi + chạy tới, bot tranh)
       // -> 1 người khó chiếm quá ~1 hòm / 100 s (trận 10 phút: tối đa 7)
-      const airdrops = Math.round(clampN(b.airdrops, 0, Math.floor(dur / 100) + 1));
+      let airdrops = Math.round(clampN(b.airdrops, 0, Math.floor(dur / 100) + 1));
       // vừa chơi trận mạng: không vượt quá số máy chủ đã tự đếm
       const o = online.get(u.id);
-      let verified = false;
+      let verified = false, live = null;
       // hạng K/D trong trận (1-3 = top 3): trận mạng lấy theo máy chủ xếp, trận đánh máy lấy theo máy khách báo
       let kdPlace = Math.round(clampN(b.kdPlace, 0, 3));
       if (o && now - o.at < 15 * 60e3) {
-        verified = true;
+        // không có đối thủ người thật (phòng 1 người với bot do chính máy mình chạy): số liệu đúng là máy chủ đếm, nhưng
+        // xe địch nằm trong tay người chơi -> vẫn áp trần thưởng / ngày như trận đánh máy
+        verified = !!o.vs;
+        live = o;
+        airdrops = Math.min(airdrops, o.airdrops || 0);
         kills = Math.min(kills, o.kills);
         damage = Math.min(damage, Math.round((o.damage + 0.5) * 10) / 10);
         deaths = Math.max(deaths, o.deaths);
@@ -1219,15 +1292,23 @@ async function handle(req, res) {
       const kdBonus = kdPlace ? Equipment.KD_BONUS[kdPlace - 1] : null;
       const tank = TANKS.includes(b.tankType) ? b.tankType : 'ALL_ROUNDER';
       const map = MAPS.includes(b.mapType) ? b.mapType : null;
-      const gained = Math.round(40 + (result === 'win' ? 100 : result === 'draw' ? 50 : 0) + kills * 30 + damage * 8 + Math.min(dur, 900) / 15) + (kdBonus ? kdBonus.xp : 0);
+      let gained = Math.round(40 + (result === 'win' ? 100 : result === 'draw' ? 50 : 0) + kills * 30 + damage * 8 + Math.min(dur, 900) / 15) + (kdBonus ? kdBonus.xp : 0);
       const before = levelInfo(u.xp).level;
       let silver = Equipment.silverFor(result, kills, damage, dur, airdrops) + (kdBonus ? kdBonus.silver : 0);
-      let ammoRefund = 0;
+      let ammoRefund = 0, capped = false;
       // kiểm tra nhịp gửi + ghi 3 bảng trong cùng 1 giao dịch (đọc lại last_result_at bên trong -> không ghi trùng)
       const ok = tx(() => {
         const cur = Q.userById.get(u.id);
         if (now - cur.last_result_at < 40e3) return false;
-        Q.addMatch.run(u.id, now, result, tank, map, kills, deaths, damage, Math.round(dur), gained);
+        if (!verified) {
+          // trận tự khai: trần Bạc / kinh nghiệm mỗi ngày (giờ VN, như adDay) cộng dồn các trận chưa đối chiếu
+          const dayStart = Date.parse(adDay(now) + 'T00:00:00Z') - 7 * 3600e3;
+          const used = Q.unverifiedSince.get(u.id, dayStart), CAP = Equipment.BOT_MATCH_DAILY;
+          const s = Math.max(0, Math.min(silver, CAP.silver - used.silver)), x = Math.max(0, Math.min(gained, CAP.xp - used.xp));
+          capped = s < silver || x < gained;
+          silver = s; gained = x;
+        }
+        Q.addMatch.run(u.id, now, result, tank, map, kills, deaths, damage, Math.round(dur), gained, silver, verified ? 1 : 0);
         Q.addStats.run(u.id, tank, result === 'win' ? 1 : 0, result === 'loss' ? 1 : 0, result === 'draw' ? 1 : 0, kills, deaths, damage, shots, Math.round(dur));
         Q.addXp.run(gained, now, u.id);
         // đạn mua thêm đã bắn trong trận: trừ kho (không âm). Thua -> hoàn LOSS_AMMO_REFUND phần đạn MUA bằng Bạc đã bắn
@@ -1241,8 +1322,9 @@ async function handle(req, res) {
             const paid = Math.max(0, Math.min(n, st.n) - Math.min(st.free || 0, n));
             ammoRefund += paid * Equipment.AMMO_SHOP[tank][ammo].price;
           }
-          Q.useStock.run(n, u.id, tank, ammo);
+          if (!live) Q.useStock.run(n, u.id, tank, ammo);
         }
+        if (live) chargeAmmoIn(u.id, live, tank, used, 'rep');   // trận mạng: máy chủ trận đã trừ phần nó đếm được
         ammoRefund = Math.round(ammoRefund * Equipment.LOSS_AMMO_REFUND);
         silver += ammoRefund;
         Q.addSilver.run(silver, u.id);
@@ -1263,7 +1345,7 @@ async function handle(req, res) {
       });
       if (!ok) return send(res, 429, { error: 'Kết quả trận đã được ghi' });
       const p = publicProfile(Q.userById.get(u.id));
-      return send(res, 200, { profile: p, gained, silver, ammoRefund, levelUp: p.level > before, verified, kdPlace, kdBonus, airdrops, airdropSilver: airdrops * (Equipment.AIRDROP_SILVER || 0) });
+      return send(res, 200, { profile: p, gained, silver, ammoRefund, levelUp: p.level > before, verified, capped, kdPlace, kdBonus, airdrops, airdropSilver: airdrops * (Equipment.AIRDROP_SILVER || 0) });
     }
     return send(res, 404, { error: 'Không có API này' });
   } catch (e) {
@@ -1281,4 +1363,4 @@ if (openDb()) {
   process.on('SIGINT', () => { closeDb(); process.exit(0); });
   process.on('SIGTERM', () => { closeDb(); process.exit(0); });
 }
-module.exports = { handle, DATA_DIR, levelInfo, noteOnline, notePlace, noteResult, userIdFromToken, skillOf, verifyKit };
+module.exports = { handle, DATA_DIR, levelInfo, noteOnline, notePlace, noteResult, noteAirdrop, noteAmmo, noteArmorGone, userIdFromToken, skillOf, verifyKit };

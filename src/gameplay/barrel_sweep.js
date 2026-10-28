@@ -49,10 +49,15 @@ const BarrelSweep = (() => {
   // tích hư hại (barrelWhack). Xe đang lao tới mà nòng tì vào thân cây (đổi tư thế tháp không gỡ được) thì xe bị chặn lại.
   // Eat(x, z): năng lượng cú vụt (J) tại điểm trên nòng gần (x, z) nhất (gần chốt nòng thì chậm, yếu hơn đầu nòng);
   // yaw0 / el0: tư thế tháp / nòng khung trước
-  function blockByTrees(unit, T, a, b, Eat, yaw0, el0, vx, vz) {
+  // Cột đèn / đèn giao thông / cột điện bê tông / chân nhà chờ mà cú vụt không quật gãy nổi (Pat: động lượng tại điểm nòng
+  // gần cột, cùng thang BREAK_P) chặn nòng y như thân cây to — trước đây nòng xuyên qua cột điện còn đứng
+  function blockByTrees(unit, T, a, b, Eat, yaw0, el0, vx, vz, Pat) {
     const VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
-    if (!VC || !VC.barrelDepth || !T.trees || !T.trees.barrelBoxes || !unit.turretGroup || !unit.barrelPivot || yaw0 === undefined) return false;
-    const boxes = T.trees.barrelBoxes((a.x + b.x) / 2, (a.z + b.z) / 2, Math.hypot(b.x - a.x, b.z - a.z) / 2 + 4, Eat, []);
+    if (!VC || !VC.barrelDepth || !unit.turretGroup || !unit.barrelPivot || yaw0 === undefined) return false;
+    const cx = (a.x + b.x) / 2, cz = (a.z + b.z) / 2, R = Math.hypot(b.x - a.x, b.z - a.z) / 2 + 4;
+    const boxes = T.trees && T.trees.barrelBoxes ? T.trees.barrelBoxes(cx, cz, R, Eat, []) : [];
+    const SS = T.propSet && T.propSet.street;
+    if (SS && SS.barrelBoxes && Pat) SS.barrelBoxes(cx, cz, R, Pat, boxes);
     if (!boxes.length) return false;
     const yaw = unit.turretGroup.rotation.y, el = unit.barrelPivot.rotation.x;
     const d = VC.barrelDepth(unit, yaw, el, boxes);
@@ -60,7 +65,7 @@ const BarrelSweep = (() => {
     // thân cây bị nện (hộp ngập sâu nhất)
     let best = null, bd = 0;
     for (const bx of boxes) { const dd = VC.barrelDepth(unit, yaw, el, [bx]); if (dd > bd) { bd = dd; best = bx; } }
-    if (best) {
+    if (best && best.tree) {
       const sl = Math.hypot(vx, vz), dx = sl > 1 ? vx : best.cx - a.x, dz = sl > 1 ? vz : best.cz - a.z;
       T.trees.barrelWhack(best.tree, Eat(best.cx, best.cz), best.cx, (a.y + b.y) / 2, best.cz, dx, dz, gameFx());
     }
@@ -168,7 +173,12 @@ const BarrelSweep = (() => {
       const sr = Math.hypot(va.x + (vb.x - va.x) * t - vvx, va.y + (vb.y - va.y) * t, va.z + (vb.z - va.z) * t - vvz);
       return 500 * (m * 0.6 * (sv / 8) * (sv / 8) + m * 0.1 * (sr / 8) * (sr / 8));
     };
-    if (blockByTrees(unit, T, A, B, Eat, yaw0, el0, vb.x, vb.z) && !hit) hit = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, z: (A.z + B.z) / 2, mat: 'tree', mB: 6 };
+    const Pat = (x, z) => {
+      const t = Math.max(0, Math.min(1, ((x - A.x) * ex + (z - A.z) * ez) / el2));
+      const sr = Math.hypot(va.x + (vb.x - va.x) * t - vvx, va.y + (vb.y - va.y) * t, va.z + (vb.z - va.z) * t - vvz);
+      return m * 0.6 * sv + m * 0.1 * sr;
+    };
+    if (blockByTrees(unit, T, A, B, Eat, yaw0, el0, vb.x, vb.z, Pat) && !hit) hit = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, z: (A.z + B.z) / 2, mat: 'tree', mB: 6 };
     // tiếng nòng thép nện vào vật (âm thanh vỡ / đổ của chính vật do hệ vật đó phát); mỗi xe tối đa ~4 lần / giây
     const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
     if (hit && now - st.snd > 0.25) {

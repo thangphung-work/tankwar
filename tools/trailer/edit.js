@@ -11,7 +11,8 @@
  *   "titles": [ { "at": 2, "dur": 3, "card": { "kind": "center|low|logo", "kicker": "", "main": "", "sub": "" } } ]
  * }
  * - Nối theo thứ tự: cắt cứng, hoặc x = mờ chồng với đoạn trước (dip: mờ qua đen); fadeIn / fadeOut = mờ từ / về đen;
- *   flash = chớp trắng đầu đoạn; grade = tông màu theo hồi; push = máy đẩy chậm vào khung.
+ *   flash = chớp trắng đầu đoạn; grade = tông màu theo hồi; push = máy đẩy chậm vào khung; ca = lệch màu (giây đầu);
+ *   lp = lọc thông thấp tiếng đoạn đó (Hz) — tiếng nghẹt kiểu ù tai; fx = [{ file, at, gain, dur, in, fadeIn, fo, env }] lớp âm thanh trailer (fo = mờ cuối, 0 = tắt phụt; env = [[giây, hệ số]...]).
  * - Vi-nhét, hạt phim, viền đen 2.39:1; chữ: thẻ PNG nền trong suốt dựng bằng Chrome (titles.html), push = chữ tiến lại gần.
  * - musicIn = bắt đầu nhạc từ giây; musicDips = [{ at, dur, to }] lặng nhạc (vd. ngay trước cú "ẦM").
  * - Tiếng: tiếng game của từng đoạn + nhạc; nhạc nén theo tiếng game (tiếng nổ lớn xuyên qua nhạc); chuẩn hoá -14 LUFS.
@@ -90,6 +91,8 @@ async function renderTitles(titles, dir) {
 
   // TÔNG MÀU theo hồi: cold = lạnh, ngả xám (mở đầu lặng); hot = nóng, tương phản gắt (cao trào); mặc định = teal-cam
   const GRADE = {
+    // ban ngày: sáng, ấm, giữ màu thật (bản v7 trở đi)
+    day: 'eq=contrast=1.06:saturation=1.06:gamma=1.03,colorbalance=rs=-0.01:bs=0.02:rh=0.04:gh=0.015:bh=-0.03',
     neutral: 'eq=contrast=1.10:saturation=0.92:gamma=0.97,colorbalance=rs=-0.04:gs=-0.01:bs=0.05:rh=0.05:gh=0.01:bh=-0.05',
     cold: 'eq=contrast=1.12:saturation=0.62:gamma=0.94:brightness=-0.02,colorbalance=rs=-0.06:gs=0.0:bs=0.08:rm=-0.03:bm=0.04:rh=0.0:bh=0.03',
     hot: 'eq=contrast=1.20:saturation=1.05:gamma=0.95,colorbalance=rs=-0.03:bs=0.05:rm=0.05:gm=0.0:bm=-0.04:rh=0.08:gh=0.02:bh=-0.07',
@@ -123,7 +126,7 @@ async function renderTitles(titles, dir) {
     let aIn = `${k}:a`;
     if (c.audio) { args.push('-ss', String(c.audio.in), '-t', String(c.dur), '-i', path.resolve(BASE, c.audio.src)); aIn = `${inIdx++}:a`; }
     if (c.mute && !c.audio) silence(c.dur, `a${i}`);
-    else fc.push(`[${aIn}]asetpts=PTS-STARTPTS,aresample=48000,atrim=duration=${c.dur},apad=whole_dur=${c.dur},volume=${g.toFixed(3)},afade=t=in:d=${c.afadeIn || af},afade=t=out:st=${(c.dur - (c.afadeOut || af)).toFixed(3)}:d=${c.afadeOut || af}[a${i}]`);
+    else fc.push(`[${aIn}]asetpts=PTS-STARTPTS,aresample=48000,atrim=duration=${c.dur},apad=whole_dur=${c.dur},volume=${g.toFixed(3)}${c.lp ? `,lowpass=f=${c.lp},lowpass=f=${c.lp}` : ''},afade=t=in:d=${c.afadeIn || af},afade=t=out:st=${(c.dur - (c.afadeOut || af)).toFixed(3)}:d=${c.afadeOut || af}[a${i}]`);
     segs.push({ c, dur: c.dur });
   });
 
@@ -159,7 +162,7 @@ async function renderTitles(titles, dir) {
 
   // vi-nhét, hạt phim, viền đen 2.39:1
   const bar = Math.round((H - W / 2.39) / 2);
-  let vg = `${cur}vignette=angle=PI/4.2,noise=alls=4:allf=t`;
+  let vg = `${cur}vignette=angle=PI/${E.vignette || 4.2},noise=alls=4:allf=t`;
   if (E.letterbox !== false) vg += `,drawbox=x=0:y=0:w=${W}:h=${bar}:color=black:t=fill,drawbox=x=0:y=${H - bar}:w=${W}:h=${bar}:color=black:t=fill`;
   fc.push(vg + '[vg]');
 
@@ -195,8 +198,18 @@ async function renderTitles(titles, dir) {
     const fxs = E.fx || [];
     fxs.forEach((x, n) => {
       args.push('-i', path.resolve(BASE, x.file));
-      const kk = inIdx++, ms = Math.round(x.at * 1000);
-      fc.push(`[${kk}:a]aresample=48000,aformat=channel_layouts=stereo,volume=${x.gain === undefined ? 1 : x.gain}${x.dur ? `,atrim=duration=${x.dur},afade=t=out:st=${Math.max(0, x.dur - 0.3)}:d=0.3` : ''},adelay=${ms}|${ms}[fx${n}]`);
+      const kk = inIdx++, ms = Math.round(x.at * 1000), fo = x.fo === undefined ? 0.3 : x.fo;
+      // env = [[giây, hệ số], ...] đường âm lượng nội suy tuyến tính (tính từ lúc lớp âm bắt đầu)
+      let env = '';
+      if (x.env && x.env.length) {
+        let e = String(x.env[x.env.length - 1][1]);
+        for (let j = x.env.length - 2; j >= 0; j--) {
+          const [t0, g0] = x.env[j], [t1, g1] = x.env[j + 1];
+          e = `if(lt(t,${t1}),${g0}+(${g1}-${g0})*(t-${t0})/${Math.max(1e-3, t1 - t0)},${e})`;
+        }
+        env = `,volume='${e}':eval=frame`;
+      }
+      fc.push(`[${kk}:a]aresample=48000,aformat=channel_layouts=stereo${x.in ? `,atrim=start=${x.in},asetpts=PTS-STARTPTS` : ''},volume=${x.gain === undefined ? 1 : x.gain}${env}${x.fadeIn ? `,afade=t=in:d=${x.fadeIn}` : ''}${x.dur ? `,atrim=duration=${x.dur}${fo > 0 ? `,afade=t=out:st=${Math.max(0, x.dur - fo)}:d=${fo}` : ''}` : ''},adelay=${ms}|${ms}[fx${n}]`);
     });
     if (fxs.length) fc.push(`${fxs.map((x, n) => `[fx${n}]`).join('')}amix=inputs=${fxs.length}:duration=longest:normalize=0[fxm]`);
     fc.push(`[sfxa][musd]${fxs.length ? '[fxm]' : ''}amix=inputs=${fxs.length ? 3 : 2}:duration=first:normalize=0,afade=t=in:d=0.3,afade=t=out:st=${(total - 1.4).toFixed(3)}:d=1.4,loudnorm=I=-14:TP=-1.2:LRA=11,aresample=48000[aout]`);
@@ -204,8 +217,11 @@ async function renderTitles(titles, dir) {
   const fcFile = path.join(tmp, 'graph.txt');
   fs.writeFileSync(fcFile, fc.join(';\n'));
   args.push('-filter_complex_script', fcFile, '-map', '[vout]', '-map', '[aout]', '-r', String(FPS),
-    '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
-    '-c:a', 'aac', '-b:a', '256k', '-t', total.toFixed(3), OUT);
+    // chuẩn đăng mạng xã hội (Facebook / YouTube): 1080p H.264 ~8 Mbps (trần 10 Mbps), AAC 192 kbps -> ~1 MB / giây
+    // E.quality = 'master' để xuất bản gốc chất lượng cao (crf 17, không trần bitrate)
+    ...(E.quality === 'master' ? ['-c:v', 'libx264', '-preset', 'slow', '-crf', '17'] : ['-c:v', 'libx264', '-preset', 'slow', '-crf', '21', '-maxrate', '10M', '-bufsize', '16M']),
+    '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+    '-c:a', 'aac', '-b:a', E.quality === 'master' ? '256k' : '192k', '-t', total.toFixed(3), OUT);
   console.log(`[EDIT] ${E.clips.length} đoạn, ${titles.length} thẻ chữ, dài ${total.toFixed(2)} s -> ${OUT}`);
   // mốc bắt đầu từng đoạn trên phim thành phẩm (để canh chữ / nhạc)
   console.log('[EDIT] mốc:', starts.map((s, i) => `${i}:${s.toFixed(2)}`).join(' '));

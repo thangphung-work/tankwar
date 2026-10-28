@@ -171,49 +171,84 @@
 
     // chốt khóa thép "cộp" (dùng chung khi chọn xe / xuất trận)
     // vòng quay thưởng: mỗi thẻ lướt qua kim chỉ = 1 tiếng lẫy cóc "tách" (k: 0..1 theo tốc độ, chậm dần thì to & trầm hơn)
+    // k: 1 = dải lao nhanh (tách mỏng, cao), 0 = sắp dừng (cạch dày, trầm, to) — kiểu bánh xe may mắn gõ chốt
     playSpinTick(k = 1) {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      if (t - (this._spinTickT || 0) < 0.028) return;
+      if (t - (this._spinTickT || 0) < 0.03) return;
       this._spinTickT = t;
-      const out = this.uiOut(0.6, 0.02);
-      this.burst(out, t, { filter: 'bandpass', freq: 3200 - 900 * (1 - k), Q: 3, gain: 0.05 + 0.04 * (1 - k), attack: 0.0005, dur: 0.014 });
-      this.metal(out, t, { f0: 1700 - 500 * (1 - k), ratios: [1, 2.7], decay: 0.05, gain: 0.03 + 0.03 * (1 - k), click: 0.3 });
+      const s = 1 - k;   // độ "chậm"
+      const out = this.uiOut(1, 0.05);
+      // lưỡi gà nhựa bật qua chốt: tách sắc
+      this.burst(out, t, { filter: 'bandpass', freq: 3800 - 1600 * s, Q: 2.2, gain: 0.16 + 0.14 * s, attack: 0.0005, dur: 0.02 });
+      // chốt gỗ / thép nhỏ: có cao độ, trầm dần khi chậm lại
+      this.tone(out, t, { type: 'triangle', freq: 1500 - 700 * s, freqEnd: (1500 - 700 * s) * 0.8, sweep: 0.04, gain: 0.07 + 0.08 * s, attack: 0.0008, dur: 0.05 });
+      this.metal(out, t, { f0: 1500 - 600 * s, ratios: [1, 2.7], decay: 0.06 + 0.08 * s, gain: 0.05 + 0.07 * s, click: 0.3 });
+      // thân bánh xe "cộc" — chỉ nghe rõ khi đã chậm
+      if (s > 0.35) this.tone(out, t, { freq: 160, freqEnd: 90, sweep: 0.05, gain: 0.18 * s, attack: 0.001, dur: 0.07 });
     }
-    // bắt đầu quay: cần gạt "cạch" + luồng gió vút lên như dải thẻ bị giật đi
+    // bắt đầu quay: cần gạt "cạch" + luồng gió vút lên như dải thẻ bị giật đi + nhịp trống mở màn
     playSpinStart() {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      const out = this.uiOut(0.8, 0.08);
-      this._uiLatch(out, t, 1);
-      this.burst(out, t + 0.03, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 500, freqEnd: 2800, sweep: 0.45, Q: 1.4, gain: 0.16, attack: 0.08, dur: 0.6 });
-      this.tone(out, t + 0.03, { freq: 70, freqEnd: 140, sweep: 0.3, gain: 0.18, attack: 0.01, dur: 0.35 });
+      const out = this.uiOut(1, 0.12);
+      this._uiLatch(out, t, 1.1);
+      this.burst(out, t + 0.03, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 400, freqEnd: 3600, sweep: 0.5, Q: 1.3, gain: 0.32, attack: 0.06, dur: 0.75 });
+      this.tone(out, t + 0.03, { type: 'sawtooth', freq: 60, freqEnd: 220, sweep: 0.45, gain: 0.08, attack: 0.02, dur: 0.4, filter: 'lowpass', filterFreq: 900 });
+      this.tone(out, t + 0.03, { freq: 70, freqEnd: 140, sweep: 0.3, gain: 0.3, attack: 0.01, dur: 0.4 });
+      // hai nhịp trống trầm "bùm — bùm"
+      for (const d of [0.08, 0.32]) {
+        this.tone(out, t + d, { freq: 95, freqEnd: 45, sweep: 0.18, gain: 0.45, attack: 0.002, dur: 0.3 });
+        this.burst(out, t + d, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 380, gain: 0.4, attack: 0.001, dur: 0.12 });
+      }
     }
-    // đoạn cuối hồi hộp (dur giây tới lúc dừng): nốt trầm rít dần lên + trống dồn nhanh dần, tắt đúng lúc dải dừng
+    // đoạn cuối hồi hộp (dur giây tới lúc dừng): nhịp tim dồn dập + nốt trầm rít lên + trống lăn to dần,
+    // tắt đúng lúc dải dừng (rồi playSpinWin nổ ra)
     playSpinRiser(dur = 2.8) {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      const out = this.uiOut(0.7, 0.1);
-      this.tone(out, t, { type: 'sawtooth', freq: 70, freqEnd: 190, sweep: dur, gain: 0.035, attack: dur, dur: 0.12, filter: 'lowpass', filterFreq: 900 });
-      this.tone(out, t, { freq: 140, freqEnd: 380, sweep: dur, gain: 0.03, attack: dur, dur: 0.12 });
-      // trống dồn: 5 -> 22 nhịp / giây, to dần
+      const out = this.uiOut(0.95, 0.12);
+      this.tone(out, t, { type: 'sawtooth', freq: 60, freqEnd: 220, sweep: dur, gain: 0.07, attack: dur, dur: 0.08, filter: 'lowpass', filterFreq: 1100 });
+      this.tone(out, t, { freq: 120, freqEnd: 440, sweep: dur, gain: 0.06, attack: dur, dur: 0.08 });
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 600, freqEnd: 4000, sweep: dur, Q: 1.5, gain: 0.12, attack: dur, dur: 0.06 });
+      // nhịp tim "thình-thịch": 70 -> 150 nhịp / phút
+      for (let x = 0; x < dur - 0.25;) {
+        const k = x / dur;
+        for (const [d, g] of [[0, 1], [0.13, 0.7]]) {
+          this.tone(out, t + x + d, { freq: 62, freqEnd: 40, sweep: 0.1, gain: (0.35 + 0.3 * k) * g, attack: 0.004, dur: 0.16 });
+          this.burst(out, t + x + d, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 200, gain: (0.18 + 0.15 * k) * g, attack: 0.002, dur: 0.08 });
+        }
+        x += 60 / (70 + 80 * k);
+      }
+      // trống lăn: 6 -> 26 nhịp / giây, to dần
       for (let x = 0; x < dur - 0.05;) {
         const k = x / dur;
-        this.burst(out, t + x, { filter: 'bandpass', freq: 1800, Q: 0.9, gain: 0.025 + 0.06 * k, attack: 0.001, dur: 0.05 });
-        this.tone(out, t + x, { freq: 120, freqEnd: 70, sweep: 0.06, gain: 0.05 + 0.1 * k, attack: 0.001, dur: 0.07 });
-        x += 1 / (5 + 17 * k * k);
+        this.burst(out, t + x, { filter: 'bandpass', freq: 1900, Q: 0.9, gain: 0.04 + 0.12 * k, attack: 0.001, dur: 0.05 });
+        this.tone(out, t + x, { freq: 130, freqEnd: 75, sweep: 0.06, gain: 0.06 + 0.16 * k, attack: 0.001, dur: 0.07 });
+        x += 1 / (6 + 20 * k * k);
       }
     }
-    // dừng trúng thưởng: rar 0..4 — thường: xu leng keng; hiếm trở lên: thêm hợp âm đi lên; huyền thoại: kèn đồng
+    // dừng trúng thưởng: rar 0..4 — cú "CHẮC" + xu leng keng; hiếm trở lên: hợp âm đi lên; sử thi+: kèn đồng + tiếng nổ pháo hoa
     playSpinWin(rar = 0) {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      const out = this.uiOut(0.8, 0.15);
-      this._uiLatch(out, t, 1);
-      const n = 4 + rar * 2;
-      for (let i = 0; i < n; i++) this.metal(out, t + 0.05 + i * (0.04 + Math.random() * 0.03), { f0: 2300 + Math.random() * 1600, ratios: [1, 2.62, 4.1], decay: 0.25, gain: 0.1, click: 0.15 });
-      if (rar >= 2) [523, 659, 784, 1047].slice(0, rar).forEach((f, i) => this.tone(out, t + 0.12 + i * 0.09, { type: 'triangle', freq: f, gain: 0.07, attack: 0.005, dur: 0.45 }));
-      if (rar >= 3) this._uiBrassHit(t + 0.1, 0.7 + 0.15 * (rar - 3));
+      const out = this.uiOut(1, 0.2);
+      this._uiLatch(out, t, 1.2);
+      this.tone(out, t, { freq: 80, freqEnd: 38, sweep: 0.3, gain: 0.5, attack: 0.002, dur: 0.45 });
+      const n = 5 + rar * 3;
+      for (let i = 0; i < n; i++) this.metal(out, t + 0.05 + i * (0.035 + Math.random() * 0.03), { f0: 2300 + Math.random() * 1700, ratios: [1, 2.62, 4.1], decay: 0.3, gain: 0.16, click: 0.15 });
+      // hợp âm thắng: thường 2 nốt, càng hiếm càng dài, sử thi+ kết bằng hợp âm ngân
+      const notes = [523, 659, 784, 1047, 1319].slice(0, 2 + rar);
+      notes.forEach((f, i) => {
+        this.tone(out, t + 0.1 + i * 0.085, { type: 'triangle', freq: f, gain: 0.11, attack: 0.004, dur: 0.5 });
+        this.tone(out, t + 0.1 + i * 0.085, { type: 'square', freq: f, gain: 0.025, attack: 0.004, dur: 0.25, filter: 'lowpass', filterFreq: 2500 });
+      });
+      if (rar >= 3) {
+        const h = t + 0.12 + notes.length * 0.085;
+        [523, 659, 784, 1047].forEach(f => this.tone(out, h, { type: 'sawtooth', freq: f, gain: 0.035, attack: 0.02, hold: 0.5, dur: 1.2, filter: 'lowpass', filterFreq: 2400 }));
+        for (let i = 0; i < 3 + rar; i++) this.burst(out, h + 0.1 + i * rnd(0.08, 0.18), { filter: 'highpass', freq: 3000 + rnd(0, 3000), gain: 0.08, attack: 0.002, dur: rnd(0.2, 0.5) });
+        this._uiBrassHit(t + 0.1, 0.8 + 0.2 * (rar - 3));
+      }
     }
 
     _uiLatch(out, t, k = 1) {

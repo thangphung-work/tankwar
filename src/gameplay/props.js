@@ -27,6 +27,49 @@ const Props = (() => {
     t.anisotropy = 4;
     return (TEX[key] = t);
   }
+  // BIỂN BÁO GIAO THÔNG (atlas 4 x 2, nền trong suốt cắt theo hình biển): giới hạn tốc độ, cấm đỗ, STOP, một chiều, người đi
+  // bộ, cấm vào, cấm rẽ trái, nguy hiểm. Phai màu, gỉ mép, vết đạn / vết móp
+  const roadSignTex = () => tex('roadSigns', 1024, 512, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const C = 256;
+    const ring = (cx, cy, r, fill, rim) => { g.fillStyle = rim; g.beginPath(); g.arc(cx, cy, r, 0, 6.283); g.fill(); g.fillStyle = fill; g.beginPath(); g.arc(cx, cy, r * 0.78, 0, 6.283); g.fill(); };
+    for (let k = 0; k < 8; k++) {
+      const cx = (k % 4) * C + C / 2, cy = Math.floor(k / 4) * C + C / 2;
+      g.save(); g.textAlign = 'center'; g.textBaseline = 'middle';
+      if (k === 0) { ring(cx, cy, 112, '#ece8dc', '#b8261e'); g.fillStyle = '#1a1a1a'; g.font = 'bold 96px Arial'; g.fillText('40', cx, cy + 6); }
+      else if (k === 1) { ring(cx, cy, 112, '#2a5aa8', '#b8261e'); g.strokeStyle = '#b8261e'; g.lineWidth = 22; g.beginPath(); g.moveTo(cx - 62, cy - 62); g.lineTo(cx + 62, cy + 62); g.stroke(); }
+      else if (k === 2) { g.fillStyle = '#efe9dc'; g.beginPath(); for (let i = 0; i < 8; i++) { const a = (i + 0.5) * Math.PI / 4; g.lineTo(cx + Math.cos(a) * 112, cy + Math.sin(a) * 112); } g.fill();
+        g.fillStyle = '#b52520'; g.beginPath(); for (let i = 0; i < 8; i++) { const a = (i + 0.5) * Math.PI / 4; g.lineTo(cx + Math.cos(a) * 100, cy + Math.sin(a) * 100); } g.fill();
+        g.fillStyle = '#f2ece0'; g.font = 'bold 70px Arial'; g.fillText('STOP', cx, cy + 4); }
+      else if (k === 3) { g.fillStyle = '#2a5aa8'; g.fillRect(cx - 115, cy - 60, 230, 120); g.fillStyle = '#f2ece0'; g.fillRect(cx - 80, cy - 12, 110, 24); g.beginPath(); g.moveTo(cx + 30, cy - 38); g.lineTo(cx + 90, cy); g.lineTo(cx + 30, cy + 38); g.fill(); g.font = 'bold 30px Arial'; g.fillText('ONE WAY', cx - 20, cy + 44); }
+      else if (k === 4) { g.fillStyle = '#2a5aa8'; g.fillRect(cx - 105, cy - 105, 210, 210); g.fillStyle = '#f2ece0'; g.beginPath(); g.moveTo(cx, cy - 80); g.lineTo(cx + 85, cy + 70); g.lineTo(cx - 85, cy + 70); g.fill();
+        g.fillStyle = '#1a1a1a'; g.beginPath(); g.arc(cx, cy - 20, 10, 0, 6.283); g.fill(); g.fillRect(cx - 5, cy - 8, 10, 40); g.fillRect(cx - 22, cy + 36, 44, 8); }
+      else if (k === 5) { ring(cx, cy, 112, '#b8261e', '#b8261e'); g.fillStyle = '#f2ece0'; g.fillRect(cx - 78, cy - 18, 156, 36); }
+      else if (k === 6) { ring(cx, cy, 112, '#ece8dc', '#b8261e'); g.strokeStyle = '#1a1a1a'; g.lineWidth = 18; g.beginPath(); g.moveTo(cx + 20, cy + 60); g.lineTo(cx + 20, cy - 10); g.lineTo(cx - 40, cy - 10); g.stroke();
+        g.fillStyle = '#1a1a1a'; g.beginPath(); g.moveTo(cx - 60, cy - 10); g.lineTo(cx - 30, cy - 36); g.lineTo(cx - 30, cy + 16); g.fill(); g.strokeStyle = '#b8261e'; g.lineWidth = 20; g.beginPath(); g.moveTo(cx - 70, cy - 70); g.lineTo(cx + 70, cy + 70); g.stroke(); }
+      else { g.fillStyle = '#b8261e'; g.beginPath(); g.moveTo(cx, cy - 110); g.lineTo(cx + 120, cy + 95); g.lineTo(cx - 120, cy + 95); g.fill(); g.fillStyle = '#f0d24a'; g.beginPath(); g.moveTo(cx, cy - 78); g.lineTo(cx + 92, cy + 78); g.lineTo(cx - 92, cy + 78); g.fill();
+        g.fillStyle = '#1a1a1a'; g.font = 'bold 120px Arial'; g.fillText('!', cx, cy + 22); }
+      // phai nắng, gỉ mép, vết đạn (chỉ trong vùng đã vẽ)
+      g.globalCompositeOperation = 'source-atop';
+      g.fillStyle = 'rgba(230,226,214,0.22)'; g.fillRect(cx - C / 2, cy - C / 2, C, C);
+      for (let i = 0; i < 10; i++) { g.fillStyle = `rgba(110,60,28,${0.25 + hash(k * 31 + i) * 0.35})`; g.fillRect(cx - 120 + hash(k * 7 + i) * 240, cy - 120 + hash(k * 13 + i) * 240, 3 + hash(i + k) * 8, 6 + hash(i * 3 + k) * 30); }
+      for (let i = 0; i < (k % 3 === 0 ? 3 : 1); i++) { const x = cx - 80 + hash(k * 17 + i) * 160, y = cy - 80 + hash(k * 19 + i) * 160; g.fillStyle = 'rgba(40,36,32,0.9)'; g.beginPath(); g.arc(x, y, 5, 0, 6.283); g.fill(); g.strokeStyle = 'rgba(200,196,186,0.8)'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 9, 0, 6.283); g.stroke(); }
+      g.restore();
+    }
+  });
+  // lưới thép lan can cầu vượt: mắt cáo ô vuông ~5 cm (lỗ trong suốt), khung viền; vài mảng lưới rách
+  const fbMeshTex = () => tex('fbMesh', 128, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#d8dcd8';
+    for (let i = 0; i <= w; i += 8) { g.fillRect(i - 1, 0, 2, h); g.fillRect(0, i - 1, w, 2); }
+    g.fillRect(0, 0, w, 5); g.fillRect(0, h - 5, w, 5); g.fillRect(0, 0, 5, h); g.fillRect(w - 5, 0, 5, h);
+    g.clearRect(70, 40, 26, 30);
+  });
+  // tôn sóng mái cầu: sóng sáng / tối dọc tấm, vệt gỉ chảy từ mép
+  const fbRoofTex = () => tex('fbRoof', 128, 128, (g, w, h) => {
+    for (let x = 0; x < w; x++) { const k = 0.72 + 0.28 * Math.sin(x / w * 6.283 * 12); g.fillStyle = `rgb(${200 * k | 0},${202 * k | 0},${200 * k | 0})`; g.fillRect(x, 0, 1, h); }
+    for (let i = 0; i < 22; i++) { const x = hash(i * 7.1) * w, l = 20 + hash(i * 3.3) * 80; g.fillStyle = 'rgba(110,60,30,0.35)'; g.fillRect(x, h - l, 2 + hash(i) * 3, l); }
+  });
   function speckle(g, w, h, n, cols, smin, smax, seed) {
     for (let i = 0; i < n; i++) {
       const r1 = hash(seed + i * 3), r2 = hash(seed + i * 3 + 1), r3 = hash(seed + i * 3 + 2);
@@ -454,6 +497,9 @@ const Props = (() => {
   }
 
   const WRECK_HP = { dump: 2, truck: 2, apc: 3, tank: 4 };
+  // phong hoá xác bỏ lâu ngày (gỉ loang, sơn tróc, cát bụi mặt trên, vệt chảy, bạc nắng): xác gộp & mô hình nâng cấp dùng chung
+  // -> cùng một chương trình shader
+  const WRECK_WX = { lift: 0.4, grimeH: 4, scale: 0.9, dust: 0.65, rust: 1, stain: 0.9, chip: 0.4, streak: 0.7, fade: 0.3 };
   // Xác xe ben / xe tải hậu cần cháy (dài ~8 m dọc z, đầu xe +z, chân y = 0): khung gầm võng, cabin móp trơ khung cửa
   // sổ đen hốc, thùng ben bị nhiệt làm cong vênh vách, cửa hậu bung lệch, lốp cháy trụi còn mâm sắt (xe lún thấp xuống),
   // bình dầu, ống xả. Màu đỉnh: hốc cửa sổ / gầm tối, mâm thép sáng hơn, cao su cháy còn sót đen. ~450 tam giác
@@ -548,6 +594,12 @@ const Props = (() => {
     amber: { color: 0xc08a20, emissive: 0x2a1800, roughness: 0.4, metalness: 0 },
     green: { color: 0x1f8a40, emissive: 0x0a2a12, roughness: 0.4, metalness: 0 },
     roofBlue: { color: 0x3e5f80, roughness: 0.6, metalness: 0.3 },
+    // cầu vượt bộ hành: thép sơn xanh rêu đã bạc / gỉ, bậc bê tông sẫm, lưới thép lan can (lỗ thủng theo alpha), mái tôn
+    rsign: { color: 0xffffff, roughness: 0.45, metalness: 0.2, map: roadSignTex(), alphaTest: 0.5, side: THREE.DoubleSide },
+    fbSteel: { color: 0x51685e, roughness: 0.62, metalness: 0.25 },
+    fbStep: { color: 0x6c6860, roughness: 0.95, metalness: 0 },
+    fbMesh: { color: 0x5c6e66, roughness: 0.6, metalness: 0.3, map: fbMeshTex(), alphaTest: 0.5, side: THREE.DoubleSide },
+    fbRoof: { color: 0x8a9294, roughness: 0.55, metalness: 0.35, map: fbRoofTex(), side: THREE.DoubleSide },
     panel: { color: 0x9fc0cc, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.35, depthWrite: false },
     ad: { color: 0xe8e4d4, emissive: 0x26241c, roughness: 0.5, metalness: 0, map: adTex() },
     white: { color: 0xeeeeea, roughness: 0.55, metalness: 0.1 },
@@ -604,7 +656,7 @@ const Props = (() => {
       gh: [[-3.6, 0], [-2.8, 5.4, 1.2], [5.0, 5.4, 1.6], [9.2, 0]], bp: null, doors: [[9.0, -3.4]] },
     dump: { L: 41.0, W: 15.2, belt: 10.8, clear: 2.5, r: 3.35, wb: 13.5, m: 3.2, bed: true,
       top: [[-20.5, 6.45], [-20.0, 6.45], [3.2, 6.45], [3.6, 8.8], [15.5, 8.6], [18.5, 7.5], [20.5, 5.8]],
-      gh: [[3.8, 0], [4.4, 6.0, 0.8], [13.5, 6.0, 1.2], [16.2, 0]], bp: null, doors: [[15.2, 4.8]] }
+      gh: [[3.8, 0], [4.4, 7.1, 0.8], [13.5, 7.1, 1.2], [16.2, 0]], bp: null, doors: [[15.2, 4.8]] }   // cabin cao 17,9 khớp CivilCars.SPEC.dump
   };
   CAR_SPEC.truck = CAR_SPEC.dump;
   CAR_SPEC.taxi = Object.assign({}, CAR_SPEC.sedan, { taxi: true });
@@ -924,12 +976,13 @@ const Props = (() => {
         .replace('#include <color_fragment>', `#include <color_fragment>
           vec4 wm = texture2D(wearMap, vWUv);
           float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(lum) * 0.8 + 0.1, vWear.z * 0.75);
+          // (phai / bụi nhẹ hơn trước: khớp bản chi tiết CivilCars — trước đây xe taxi vàng ở xa thành màu be, lại gần đổi màu)
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(lum) * 0.8 + 0.1, vWear.z * 0.4);
           diffuseColor.rgb *= wm.r;
           float rustK = clamp(wm.b * vWear.y * 1.7 - 0.12, 0.0, 1.0);
           float var1 = wm.r;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.19, 0.09) * (0.6 + 0.6 * var1), rustK);
-          float dustK = clamp(wm.g * vWear.x * ${glass ? '1.1' : '1.25'}, 0.0, 0.93);
+          float dustK = clamp(wm.g * vWear.x * ${glass ? '1.1' : '0.85'}, 0.0, 0.85);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.46, 0.39) * (0.85 + 0.25 * var1), dustK);
           ${glass ? 'diffuseColor.a = mix(diffuseColor.a, 1.0, dustK * 0.8);' : ''}
           float wearRough = max(rustK, dustK);`)
@@ -959,6 +1012,9 @@ const Props = (() => {
   // năng lượng (kJ) để ép bẹp hẳn 1 ô tô dưới xích (~ năng lượng biến dạng của cú đâm trực diện 50 km/h): xe con khung liền
   // thân ~150 kJ, SUV / van / bán tải khung cứng hơn, xe tải sắt-xi dầm thép chữ U gấp nhiều lần
   const CRUSH_KJ = { sedan: 150, taxi: 150, hatch: 120, suv: 220, van: 230, pickup: 260, dump: 650, truck: 650 };
+  // khiên chữ V xe 6 nòng (fsv_hailstorm.js buildVShield: mũi z -40,2, mép đuôi tấm x ±15,6 z -33,4): tấm vát lùi len đv
+  // trên nửa bề rộng; pháp tuyến ngoài tấm = n về trước + t ra bên
+  const WEDGE = { len: 6.8, n: 0.917, t: 0.4 };
   // Đoạn nòng s ({x0..z1}, bán kính ~1,3 đv, bỏ 1/4 sát chốt nằm trên nóc xe) ngập vào hộp ô tô o (mặt bằng xoay + từ mặt
   // đường tới nóc top) chỗ nào sâu nhất: { d: độ ngập, t: vị trí trên nòng, side: ngập qua sườn / đầu xe (không phải qua
   // nóc) } | null
@@ -1092,7 +1148,8 @@ const Props = (() => {
     dark: ['paint', { rust: 0.3, space: 'world' }], sigBody: ['paint', { rust: 0.3, space: 'world' }],
     concrete: ['concrete', { grimeH: 4 }],
     white: ['paint', { rust: 0.3, chip: 0.35, space: 'world' }], brand: ['paint', { rust: 0.2, fade: 0.7, space: 'world' }],
-    roofBlue: ['paint', { rust: 0.35, space: 'world' }], ad: ['paint', { rust: 0, chip: 0.2, fade: 0.8, stain: 0.7, space: 'world' }],
+    roofBlue: ['paint', { rust: 0.35, space: 'world' }], fbSteel: ['paint', { rust: 0.7, chip: 0.45, fade: 0.5, space: 'world' }],
+    fbStep: ['concrete', { grimeH: 3 }], fbRoof: ['galv', { grimeH: 2 }], ad: ['paint', { rust: 0, chip: 0.2, fade: 0.8, stain: 0.7, space: 'world' }],
     panel: ['plastic', { fade: 0, stain: 0.7, streak: 0.8, grime: 0.6, space: 'world' }],
     deadLamp: ['plastic', { fade: 0.2, stain: 0.5, space: 'world' }]
   };
@@ -1106,7 +1163,7 @@ const Props = (() => {
   const CIV_UP = 600, CIV_DOWN = 760;     // cự ly hiệu dụng (đv, đã chia độ phóng) dựng / hạ — khoảng đệm chống nhấp nháy
   const CIV_MAX = 40, CIV_HARD = 72;      // trần xe chi tiết (ưu tiên gần) / trần cứng kể cả xe đã bị tác động
   const CIV_FOV_REF = Math.tan(25 * Math.PI / 180);   // fov 50° = không phóng
-  const CIV_TOUCH = ['stamp', 'shoot', 'sweepBarrel', 'ram', 'breakGlass', 'ignite'];
+  const CIV_TOUCH = ['stamp', 'shoot', 'sweepBarrel', 'ram', 'breakGlass', 'ignite', 'fuelBlast', 'tear'];
   const civRefs = new Map();               // tài nguyên GPU dùng chung giữa các bản chi tiết -> số xe đang giữ
   // Chỉ hình học + texture (bộ đệm / ảnh trên GPU, không tự giải phóng khi object bị dọn rác). KHÔNG dispose vật liệu: three
   // xoá luôn chương trình shader khi không còn vật liệu nào dùng -> xe dựng sau phải biên dịch lại 10-20 shader (đo được: 75%
@@ -1145,7 +1202,16 @@ const Props = (() => {
       this.burningSet = new Set(); this.smolderSet = new Set();   // ô tô đang cháy / cháy xong còn âm ỉ khói
       const D = data, S = (x, z) => T.groundAtRaw(x, z);
       const add = (o, parts) => { o.parts = parts; o.seed = ((o.x * 7) ^ (o.z * 13)) | 0; this.items.push(o); this.addGrid(o); };
-      for (const l of D.lamps || []) add({ type: 'lamp', x: l.x, z: l.z, angle: l.angle }, STREET.lamp.parts);
+      // ~35% cột đèn mang thêm 1 biển báo (mặt biển quay về dòng xe tới, cao ~2,6 m, 2 đai ôm cột); vài biển bị đạn / va
+      // quẹt xoay lệch trên cột
+      const SIGN_LAMP = [0.3, -0.25].map(ry => STREET.lamp.parts.concat([P('box', 'rsign', -1.4, 22, 0, 7.2, 7.2, 0.25, 0, -Math.PI / 2 + ry, 0),
+        P('box', 'dark', -0.9, 20, 0, 0.5, 0.5, 1.6), P('box', 'dark', -0.9, 24, 0, 0.5, 0.5, 1.6)]));
+      const SIGN_LAMP0 = STREET.lamp.parts.concat([P('box', 'rsign', -1.4, 22, 0, 7.2, 7.2, 0.25, 0, -Math.PI / 2, 0),
+        P('box', 'dark', -0.9, 20, 0, 0.5, 0.5, 1.6), P('box', 'dark', -0.9, 24, 0, 0.5, 0.5, 1.6)]);
+      for (const l of D.lamps || []) {
+        const hs = hash(((l.x * 11) ^ (l.z * 5)) | 0);
+        add({ type: 'lamp', x: l.x, z: l.z, angle: l.angle }, hs < 0.28 ? SIGN_LAMP0 : hs < 0.35 ? SIGN_LAMP[hs < 0.315 ? 0 : 1] : STREET.lamp.parts);
+      }
       for (const l of D.signals || []) {
         // bỏ hoang lâu năm: cột hơi nghiêng, ~1/3 cụm đèn treo lệch
         const o = { type: 'signal', x: l.x, z: l.z, angle: l.angle }, hs = hash((l.x * 13) ^ (l.z * 7));
@@ -1191,13 +1257,32 @@ const Props = (() => {
           o.slots = o.parts.map(p => this.slot(p, o));
         }
       }
-      // dây điện: mỗi nhịp giữa 2 cột liên tiếp = 3 dây x 2 đoạn võng
+      // DÂY ĐIỆN kiểu phố châu Á: mỗi nhịp giữa 2 cột = 3 dây điện lực căng trên xà + bó 4-8 dây viễn thông / cáp quang
+      // võng thấp hơn, mỗi dây một độ võng / cỡ / độ cao (rối, không song song tăm tắp); dây cong theo dây xích 4 đoạn.
+      // Bỏ hoang: ~8% dây viễn thông đứt một đầu, rủ thõng xuống gần mặt đất. Chọn theo vị trí cột (hash), không RNG chung
+      const sag = (A, B, k, n, th, col, out) => {
+        const L = Math.hypot(B[0] - A[0], B[2] - A[2]);
+        let prev = A;
+        for (let i = 1; i <= n; i++) {
+          const t = i / n, P2 = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t - 4 * k * L * t * (1 - t), A[2] + (B[2] - A[2]) * t];
+          out.push(this.wireSlot(prev, P2, th, col)); prev = P2;
+        }
+      };
       for (const p of poles) {
         if (p.link < 0 || !poles[p.link]) continue;
-        const q = poles[p.link], span = { a: p, b: q, slots: [] };
-        for (const off of [-7, 0, 7]) {
-          const A = this.armPoint(p, off), B = this.armPoint(q, off), M = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2 - Math.hypot(B[0] - A[0], B[2] - A[2]) * 0.035, (A[2] + B[2]) / 2];
-          for (const [u, v] of [[A, M], [M, B]]) span.slots.push(this.wireSlot(u, v));
+        const q = poles[p.link], span = { a: p, b: q, slots: [] }, hs = k => hash(Math.round(p.x * 3 + p.z * 7) + k * 17.3);
+        for (const off of [-7, 0, 7]) sag(this.armPoint(p, off), this.armPoint(q, off), 0.03 + 0.012 * hs(off + 9), 4, 0.22, null, span.slots);
+        const nT = 4 + Math.floor(hs(1) * 5);
+        for (let k = 0; k < nT; k++) {
+          const off = (hs(k + 20) - 0.5) * 6, dy = -16 - 12 * hs(k + 40), th = 0.18 + 0.3 * hs(k + 60);
+          const A = this.armPoint(p, off), B = this.armPoint(q, off + (hs(k + 80) - 0.5) * 3);
+          A[1] += dy; B[1] += dy + (hs(k + 90) - 0.5) * 3;
+          const col = new THREE.Color(0.32, 0.32, 0.33).multiplyScalar(0.7 + 0.4 * hs(k + 100));
+          if (hs(k + 120) < 0.08) {
+            // dây đứt: từ cột A rủ võng tới giữa nhịp rồi buông thõng xuống
+            const M = [(A[0] + B[0]) / 2, A[1] - 12, (A[2] + B[2]) / 2], G = [M[0] + (hs(k + 130) - 0.5) * 8, this.T.groundAtRaw(M[0], M[2]) + 6 + 10 * hs(k + 140), M[2] + (hs(k + 150) - 0.5) * 8];
+            sag(A, M, 0.05, 3, th, col, span.slots); sag(M, G, 0.0, 1, th, col, span.slots);
+          } else sag(A, B, 0.045 + 0.06 * hs(k + 160), 4, th, col, span.slots);
         }
         (p.spans || (p.spans = [])).push(span); (q.spans || (q.spans = [])).push(span);
         this.wires.push(span);
@@ -1218,6 +1303,17 @@ const Props = (() => {
           geo.setAttribute('aWear', new THREE.InstancedBufferAttribute(new Float32Array(e.wear.length ? e.wear : new Array(e.list.length * 3).fill(0)), 3));
         } else {
           mat = new THREE.MeshStandardMaterial(SMAT[m]);
+          if (m === 'rsign') {
+            // mẫu biển theo vị trí cột (8 mẫu trong atlas 4 x 2)
+            mat.onBeforeCompile = (sh) => {
+              sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+                #if defined( USE_UV ) && defined( USE_INSTANCING )
+                { vec2 sp = floor(instanceMatrix[3].xz * 0.25 + 0.5); float id = floor(fract(sin(dot(sp, vec2(12.9898, 78.233))) * 43758.5453) * 8.0);
+                  vUv = (vUv + vec2(mod(id, 4.0), 1.0 - floor(id / 4.0))) / vec2(4.0, 2.0); }
+                #endif`);
+            };
+            mat.customProgramCacheKey = () => 'roadSign1';
+          }
           // cột đèn / cột điện / nhà chờ / mái che bỏ hoang: phong hoá theo vật liệu, độ cao tính từ chân vật (wxBase)
           const wx = STREET_WX[m];
           if (wx && typeof Weathering !== 'undefined' && e.base && e.base.length === e.list.length) {
@@ -1284,7 +1380,8 @@ const Props = (() => {
           glass: !!o.glassBroken,
           sag: o.burnt ? 0.12 : (o.preBroken ? (o.c0 || 0) : 0),
           crush: crushed ? o.c : 0,
-          noMerge: hitNow
+          noMerge: hitNow,
+          extFire: true   // cháy / nổ bình do bản gộp này quyết (ignite / fuelBlast gửi xuống bản chi tiết)
         });
         o.group = carGrp;
         carGrp.position.set(o.x, o.y, o.z);
@@ -1316,6 +1413,10 @@ const Props = (() => {
           if (typeof f === 'function') api[k] = function () { o.civTouched = true; return f.apply(this, arguments); };
         }
         this.civil.add(o);
+        // dựng lúc đang cháy (chưa thành xác cháy): bản chi tiết bốc lửa theo; đã bị xé toạc / đang lật: dựng đúng như vậy
+        if (o.burning && !o.burnt) this.civOp(o, 'ignite', [0, 4, -8]);
+        if (o.torn) this.civOp(o, 'tear', []);
+        this.refresh(o);
         this.flush();
       } catch (e) {
         console.warn('[props] Lỗi nâng cấp xe CivilCars:', e);
@@ -1382,7 +1483,7 @@ const Props = (() => {
       Q.length = kept;
     }
     civilTouched(o) {
-      if (o.civTouched || o.burning || o.smolder > 0 || this.moving.has(o)) return true;
+      if (o.civTouched || o.burning || o.smolder > 0 || this.moving.has(o) || o.flipR || o.lift) return true;
       let mark = false;
       o.group.traverse(c => { if (!mark && c.userData && c.userData.isFxDecal) mark = true; });
       return mark;
@@ -1403,7 +1504,9 @@ const Props = (() => {
           const over = this.civil.size > CIV_MAX, hard = this.civil.size > CIV_HARD;
           if (e <= CIV_DOWN && !over) break;
           if (e <= CIV_UP && !hard) break;
-          if (this.civilTouched(o) && !(hard && !o.burning && !this.moving.has(o))) continue;
+          // xe đã bị bắn / húc / cán giữ bản chi tiết (lỗ đạn, vết xé, móp không dựng lại được từ tình trạng thô). Vượt trần
+          // cứng mới hạ — và chỉ khi đã ra ngoài tầm chi tiết (nhỏ trên màn hình, mất vết đạn cũng không nhận ra)
+          if (this.civilTouched(o) && !(hard && !o.burning && !this.moving.has(o) && e > CIV_DOWN)) continue;
           this.downgradeCivilCar(o);
           n++;
         }
@@ -1456,10 +1559,23 @@ const Props = (() => {
       this.flush();
     }
     // ma trận thế giới của 1 phần: chân vật (x, y, z) · đổ (quay quanh chân về hướng fall) · bẹp (sy) · hướng vật · phần
+    // Ô tô bị sức nổ hất lật (o.flipR: góc lật quanh trục dọc, o.lift: đang bay): thân xoay quanh tâm hộp thân, tâm nâng tới độ
+    // cao để mép thấp nhất chạm mặt đường (ngửa: nóc chạm đất, nghiêng: sườn chạm đất) -> dời gốc xe (ox, oy) trong hệ xe
+    flipOffset(o) {
+      const S = CAR_SPEC[o.kind] || CAR_SPEC.sedan, D = CAR_DIM[o.kind] || CAR_DIM.sedan, r = o.flipR || 0;
+      const hc = Math.max(S.belt + S.gh[1][1], o.hTop || 0) * (1 - 0.6 * (o.c || 0)) / 2, sr = Math.sin(r), cr = Math.cos(r);
+      return [hc * sr, Math.abs(cr) * hc + Math.abs(sr) * D.hw - hc * cr + (o.lift || 0)];
+    }
     partMatrix(o, p) {
       if (o.type === 'car') { p = this.deformCar(o, p); if (!p) return new THREE.Matrix4().makeScale(0, 0, 0); }
       const local = M4(p[2], p[3], p[4], p[8], p[9], p[10], p[5], p[6], p[7]);
       const base = new THREE.Matrix4().makeRotationY(o.angle);
+      if (o.type === 'car' && (o.flipR || o.lift)) {
+        const [ox, oy] = this.flipOffset(o);
+        base.multiply(new THREE.Matrix4().makeTranslation(ox, oy, 0)).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(o.pitch || 0, 0, (o.roll || 0) + o.flipR)));
+        base.premultiply(new THREE.Matrix4().makeTranslation(o.x, o.y - (o.sink || 0), o.z));
+        return base.multiply(local);
+      }
       // ô tô bị cán lệch một bên / bị húc: thân nghiêng ngang (roll) / chúc (pitch) quanh chân
       if (o.roll || o.pitch) base.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(o.pitch || 0, 0, o.roll || 0)));
       if (o.squash) base.premultiply(new THREE.Matrix4().makeScale(1, o.squash, 1));
@@ -1504,15 +1620,15 @@ const Props = (() => {
       const c = Math.cos(p.angle), s = Math.sin(p.angle), y = this.T.groundAtRaw(p.x, p.z) + 1.2 + 77.5;
       return [p.x + c * off, y, p.z - s * off];   // trục x cục bộ quay theo angle: (cos a, 0, -sin a)
     }
-    wireSlot(a, b) {
+    wireSlot(a, b, th = 0.22, col = null) {
       const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz) || 1;
-      const m = new THREE.Matrix4().lookAt(new THREE.Vector3(...a), new THREE.Vector3(...b), new THREE.Vector3(0, 1, 0));
-      m.multiply(new THREE.Matrix4().makeScale(0.22, 0.22, L));
+      const m = new THREE.Matrix4().lookAt(new THREE.Vector3(...a), new THREE.Vector3(...b), Math.abs(dy) > 0.98 * L ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0));
+      m.multiply(new THREE.Matrix4().makeScale(th, th, L));
       m.setPosition((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
       const k = 'box|dark', e = this.ims[k] || (this.ims[k] = { list: [], cols: [], wear: [], base: [] });
       e.wear.push(0, 0, 0);
       e.base.push(Math.min(a[1], b[1]) - 78.7);
-      e.list.push(m); e.cols.push(new THREE.Color(0.6, 0.6, 0.6));
+      e.list.push(m); e.cols.push(col || new THREE.Color(0.6, 0.6, 0.6));
       return [k, e.list.length - 1];
     }
     addCanopy(c) {
@@ -1553,13 +1669,66 @@ const Props = (() => {
       for (const px of [-w / 4, w / 4]) { const [x, z] = W(px, 0); const b = { x, z, radius: 4, height: 12, mat: 'metal' }; this.T.boulders.push(b); o.boulders.push(b); }
     }
     addFootbridge(f) {
-      // nhịp ngang qua đại lộ (trục x cục bộ) cao 5,75 m, 2 trụ trên vỉa hè, cầu thang dốc xuống dọc vỉa hè ở 2 đầu
-      const S = f.span, y = 46, parts = [P('box', 'concrete', 0, y, 0, S + 8, 2, 20), P('box', 'metal', 0, y + 4, 9.6, S + 8, 4, 0.5), P('box', 'metal', 0, y + 4, -9.6, S + 8, 4, 0.5)];
-      const run = 60, tilt = Math.atan2(y, run), L = Math.hypot(y, run);
+      // CẦU VƯỢT BỘ HÀNH THÉP (kiểu phố châu Á): 2 dầm hộp thép sơn xanh rêu (đã bạc, gỉ) đỡ bản sàn bê tông, dầm ngang lộ
+      // dưới bụng cầu; lan can lưới thép mắt cáo giữa các cột; mái tôn sóng 2 mái trên khung cột thép; băng rôn quảng cáo
+      // treo ngoài dầm; cột tròn thép trên bệ bê tông. 2 đầu: cầu thang 2 vế bậc bê tông, thành thang thép tấm đặc, lan can
+      // lưới, chiếu nghỉ giữa trên cột
+      const S = f.span, y = 46, DW = 18, L0 = S + 10, parts = [];
+      const half = DW / 2, sd0 = ((f.x * 7) ^ (f.z * 13)) | 0, hh = k => hash(sd0 + k * 13.7);
+      // BỎ HOANG nhiều năm: mất ô lưới, cột lan can cong, tấm tôn bay mất / võng xệ, băng rôn rách treo lệch
+      parts.push(P('box', 'concrete', 0, y - 0.9, 0, L0, 1.6, DW - 1.6));                    // bản sàn
+      for (const z of [half - 0.6, -(half - 0.6)]) {
+        parts.push(P('box', 'fbSteel', 0, y - 1.6, z, L0, 4.6, 1.2));                         // dầm biên
+        parts.push(P('box', 'fbSteel', 0, y + 9, z, L0, 0.6, 0.8));                           // tay vịn
+        for (let x = -L0 / 2 + 0.5, k = 0; x <= L0 / 2; x += 8, k++) {
+          const hk = hh(k * 3 + (z > 0 ? 1 : 2));
+          parts.push(P('box', 'fbSteel', x, y + 4.8, z, 0.6, 8.4, 0.6, hk < 0.12 ? (hk - 0.06) * 3 : 0, 0, 0));   // cột lan can (vài cột cong)
+          if (x + 8 <= L0 / 2 && hk > 0.2) parts.push(P('box', 'fbMesh', x + 4, y + 4.6, z, 7.4, 7.6, 0.12, (hk - 0.6) * 0.12, 0, 0));
+          if (k % 2 === 0) parts.push(P('box', 'fbSteel', x, y + 12.5, z, 0.7, 7.6, 0.7));    // cột mái
+        }
+      }
+      for (let x = -L0 / 2 + 6; x < L0 / 2; x += 12) parts.push(P('box', 'fbSteel', x, y - 3.2, 0, 1, 1.6, DW - 1.4));   // dầm ngang
+      // mái tôn 2 mái (đỉnh giữa cầu), xà đỡ mái
+      const rt = Math.atan2(2.2, half + 1.5), rl = Math.hypot(2.2, half + 1.5);
+      for (const sz of [1, -1]) for (let x = -L0 / 2, k = 0; x < L0 / 2; x += 12, k++) {
+        const hr = hh(100 + k * 2 + (sz > 0 ? 0 : 1));
+        if (hr < 0.18) continue;                                                              // tấm tôn bay mất
+        const sag = hr < 0.32 ? (hr - 0.18) * 1.6 : 0;                                         // tấm bật đinh võng xệ
+        parts.push(P('box', 'fbRoof', x + 6.2, y + 17.4 - sag * 3, sz * (half + 1.5) / 2, 12.6, 0.3, rl + 0.4, -sz * (rt + sag), (hr - 0.5) * 0.04, (hr - 0.6) * sag));
+      }
+      parts.push(P('box', 'fbSteel', 0, y + 16.4, half - 0.6, L0, 0.7, 0.7), P('box', 'fbSteel', 0, y + 16.4, -(half - 0.6), L0, 0.7, 0.7));
+      // băng rôn quảng cáo ngoài dầm (phai màu, mỗi bên 2 tấm lệch nhau)
+      for (const sz of [1, -1]) for (const bx of [-S * 0.22, S * 0.24]) {
+        const hb = hh(200 + bx + sz);
+        if (hb < 0.25) continue;                                                              // băng rôn đã rách mất
+        const rip = hb < 0.5 ? (hb - 0.25) * 2 : 0;                                            // tuột 1 đầu: rủ chéo
+        parts.push(P('box', 'ad', sz * bx, y + 1.2 - rip * 2.5, sz * (half + 0.15 + rip * 0.3), S * 0.3 * (1 - 0.25 * rip), 5.2, 0.15, 0, 0, (sz > 0 ? 1 : -1) * rip * 0.22));
+      }
+      const fl = 26, land = 10, hH = y / 2, SW = 12, nSt = 14, run = 2 * fl + land;
       for (const sx of [1, -1]) {
-        parts.push(P('box', 'concrete', sx * (S / 2), y / 2, 0, 3, y, 3));
-        const sz = sx;   // 2 đầu cầu thang ngược chiều nhau
-        parts.push(P('box', 'concrete', sx * (S / 2), y / 2, sz * (10 + run / 2), 14, 2, L, sz * tilt, 0, 0));
+        const cx = sx * (S / 2);
+        // cột tròn thép trên bệ bê tông + xà mũ thép
+        for (const z of [half - 3, -(half - 3)]) parts.push(P('cyl', 'fbSteel', cx, (y - 3) / 2, z, 1.5, y - 3, 1.5), P('box', 'concrete', cx, 1.2, z, 5, 2.4, 5));
+        parts.push(P('box', 'fbSteel', cx, y - 4.4, 0, 3, 2.6, DW));
+        const sz = sx, z0 = sz * half;   // 2 đầu cầu thang ngược chiều nhau
+        const tilt = Math.atan2(hH, fl), Ls = Math.hypot(hH, fl);
+        const flight = (zTop, hTop) => {
+          const zc = zTop + sz * fl / 2, yc = hTop - hH / 2;
+          for (const ex of [SW / 2 + 0.4, -(SW / 2 + 0.4)]) {
+            parts.push(P('box', 'fbSteel', cx + ex, yc - 0.6, zc, 0.8, 4.4, Ls, sz * tilt, 0, 0));   // thành thang thép tấm
+            parts.push(P('box', 'fbSteel', cx + ex, yc + 8.6, zc, 0.6, 0.6, Ls, sz * tilt, 0, 0));   // tay vịn
+            if (hh(300 + ex + hTop + sx) > 0.22) parts.push(P('box', 'fbMesh', cx + ex, yc + 4.8, zc, 0.12, 6.8, Ls - 1, sz * tilt, 0, 0));
+            for (let k = 0; k <= 3; k++) parts.push(P('box', 'fbSteel', cx + ex, hTop - hH * k / 3 + 4.4, zTop + sz * fl * k / 3, 0.6, 8.6, 0.6));
+          }
+          // bậc bê tông liền khối (mỗi bậc là khối đặc tới bản thang bên dưới -> nhìn ngang thấy bậc cấp, không lơ lửng)
+          for (let i = 0; i < nSt; i++) parts.push(P('box', 'fbStep', cx, hTop - (i + 0.5) * hH / nSt - 0.7, zTop + sz * (i + 0.5) * fl / nSt, SW, hH / nSt + 1.4, fl / nSt + 0.1));
+          parts.push(P('box', 'concrete', cx, yc - 2.4, zc, SW, 1.4, Ls, sz * tilt, 0, 0));        // bản thang
+        };
+        flight(z0, y);
+        const zl = z0 + sz * (fl + land / 2);
+        parts.push(P('box', 'concrete', cx, hH - 0.8, zl, SW + 1.6, 1.6, land), P('cyl', 'fbSteel', cx, (hH - 1.6) / 2, zl, 1.2, hH - 1.6, 1.2));
+        for (const ex of [SW / 2 + 0.4, -(SW / 2 + 0.4)]) parts.push(P('box', 'fbSteel', cx + ex, hH + 8.6, zl, 0.6, 0.6, land), P('box', 'fbMesh', cx + ex, hH + 4.4, zl, 0.12, 7, land));
+        flight(z0 + sz * (fl + land), hH);
       }
       const o = { type: 'footbridge', x: f.x, z: f.z, angle: f.angle, span: S, hp: 320, hpMax: 320, boulders: [], seed: ((f.x * 7) ^ (f.z * 13)) | 0 };
       this.items.push(o); o.parts = parts; this.addGrid(o);
@@ -1633,6 +1802,11 @@ const Props = (() => {
         o.group.rotation.y = o.angle;
         o.group.rotation.x = (o.pitch || 0) - (o.pitch0 || 0);   // nghiêng sẵn do bánh: bản chi tiết tự dựng (xem upgradeToCivilCar)
         o.group.rotation.z = (o.roll || 0) - (o.roll0 || 0);
+        // lật: bản chi tiết tự xoay thân quanh tâm (nhóm ngoài giữ trên mặt đường cho lửa / khói / mảnh vụn); bị cán lúc đang lật
+        // thì ép dẹt theo trục thân đang thẳng đứng
+        const fl = !!(o.flipR || o.lift), api = fl || o._fl ? o.group.userData && o.group.userData.crush : null;
+        if (api && api.setFlip) api.setFlip(o.flipR || 0, o.lift || 0, fl ? Math.max(0.35, 1 - 0.6 * Math.max(0, (o.c || 0) - (o.cFlip || 0))) : 1);
+        o._fl = fl;   // vừa lắng về đứng bánh: gửi tư thế thẳng một lần
         return;
       }
       o.slots.forEach(([k, i, p]) => { this.ims[k].im.setMatrixAt(i, this.partMatrix(o, p)); this.ims[k].dirty = true; });
@@ -1641,6 +1815,19 @@ const Props = (() => {
     // cột đổ về hướng (dx, dz); dây điện nối vào cột đó đứt (ẩn)
     // NÒNG PHÁO QUÉT / ĐẬP (barrel_sweep.js): nòng nện vào cột đèn / đèn giao thông / cột điện / nhà chờ. Động lượng cú
     // đập (cùng thang với xe húc, BREAK_P) đủ thì cột gãy đổ / nhà chờ sụp theo chiều quét; chưa đủ chỉ nghe tiếng nện
+    // Hộp chặn nòng (VehicleCollision.barrelDepth, BarrelSweep.blockByTrees) cho cột còn đứng mà cú vụt (động lượng Pat(x, z)
+    // tại điểm nòng gần cột) không quật gãy nổi: cột điện bê tông, cột đèn / đèn giao thông với xe nhẹ hoặc tháp xoay chậm.
+    // Nhà chờ (khung nhôm kính, flat) bị nòng quét thì bẹp / vỡ chứ không chặn tháp — bỏ qua
+    barrelBoxes(cx, cz, R, Pat, out) {
+      for (const o of this.near(cx, cz, R + 16)) {
+        const S = STREET[o.type];
+        if (o.broken || !S || S.flat || o.y === undefined) continue;
+        if (!o.fixed && Pat(o.x, o.z) >= (BREAK_P[o.type] || 200)) continue;
+        const r = S.rad * 0.85;
+        out.push({ cx: o.x, cz: o.z, ux: 1, uz: 0, hu: r, hv: r, y0: o.y - 1, y1: o.y + S.h, mat: o.type === 'pole' ? 'concrete' : 'pole', pole: o });
+      }
+      return out;
+    }
     barrelSweep(S) {
       let hit = null;
       for (const o of this.near(S.cx, S.cz, S.R + 16)) {
@@ -1744,17 +1931,44 @@ const Props = (() => {
         const reach=Math.max(28,dist+2);
         this.civOp(o,'shoot',[nx*reach,height,nz*reach,-nx,0,-nz,ammo||(inc?'INCENDIARY':(dmg>50?'HE':'SCOUT_BULLET'))]);
       };
-      if(o.burning||o.burnt){visualHit();return;}
+      // xác đang cháy / đã cháy vẫn nát tiếp: tôn cháy giòn, khung mất tôi -> chịu kém xe nguyên ~30% (trước đây miễn nhiễm,
+      // chỉ hiện lỗ đạn trên bản chi tiết)
+      const dead = !!(o.burning || o.burnt);
+      if (dead) dmg *= 1.3;
+      const kill = o.hp > 0 && o.hp - dmg <= 0;
       o.hp -= dmg;
       const ca = Math.cos(o.angle), sa = Math.sin(o.angle), lx = dx * ca - dz * sa;
       this.dent(o, dmg * 60, lx >= 0 ? -1 : 1);
       if (dmg > 12) this.shatter(o);
       if (dmg > 45) o.noGlass = true;                                                // kính vỡ vụn rơi hết
       if (o.hp < o.hpMax * 0.35) o.c = Math.max(o.c, 0.12 + 0.25 * (1 - Math.max(0, o.hp) / o.hpMax));   // khung oằn, nóc lõm
+      // quá nát (máu âm): khung gãy, thân sụp dần tới ~0,8 khi hư hại dồn gấp 3 sức chịu; quá nữa thì xé toạc (tearCar)
+      if (o.hp < 0) o.c = Math.max(o.c, Math.min(0.8, 0.37 + 0.43 * -o.hp / (2 * o.hpMax)));
       visualHit();
-      const ign = o.fuel > 0 && (o.hp <= 0 || (inc && hash(o.seed + Math.round(o.hp * 3)) < 0.55) || (dmg > 35 && hash(o.seed + 17 + Math.round(dmg)) < o.fuel * 0.6));
-      if (ign) this.ignite(o);
-      else if (o.hp <= 0 && !o.wrecked) { o.wrecked = true; o.noGlass = true; this.setWear(o, [Math.min(1, o.wear[0] + 0.2), Math.min(1, o.wear[1] + 0.3), o.wear[2]]); }
+      if (!dead) {
+        // BẮT LỬA: đạn cháy / đạn nổ lớn trúng gần bình còn xăng dễ cháy; đạn thường bắn nát xe hiếm khi làm xăng bén (~20%:
+        // chập điện, rò xăng gặp tia lửa); đạn nổ mạnh phá nát xe hết xăng vẫn có thể cháy nội thất / dầu máy (~35%)
+        const h = k => hash(o.seed + k + Math.round(dmg));
+        const ign = o.fuel > 0
+          ? (inc && hash(o.seed + Math.round(o.hp * 3)) < 0.55) || (dmg > 35 && h(17) < o.fuel * 0.6) || (kill && (dmg > 35 || h(23) < 0.2))
+          : kill && dmg > 60 && h(29) < 0.35;
+        if (ign) this.ignite(o);
+        else if (o.hp <= 0 && !o.wrecked) { o.wrecked = true; o.noGlass = true; this.setWear(o, [Math.min(1, o.wear[0] + 0.2), Math.min(1, o.wear[1] + 0.3), o.wear[2]]); }
+      }
+      if (o.hp < -2 * o.hpMax && !o.torn) this.tearCar(o, fx);
+      this.refresh(o);
+    }
+    // XÉ TOẠC: hư hại dồn quá ~3 lần sức chịu (đạn pháo nổ sát / nhiều phát vào xác) — nóc & thân sập, cửa / capô / phụ kiện
+    // bung văng, lốp nổ hết, kính rụng hết; còn lại khung sắt sát đất (xe khác lăn qua, xích cán phẳng nốt)
+    tearCar(o, fx) {
+      o.torn = true; o.noGlass = true; o.glassBroken = true;
+      o.c = Math.max(o.c || 0, 0.8); o.d = 1;
+      o.flats = [true, true, true, true];
+      this.civOp(o, 'tear', []);
+      sfx('sheetMetal', o.x, o.y + 4, o.z, 1.1, { h: 4 });
+      sfx('debris', o.x, o.y + 3, o.z, 0.8, { h: 3 });
+      if (fx && fx.smoke) for (let k = 0; k < 8; k++) fx.smoke.add({ x: o.x + (Math.random() - 0.5) * 14, y: o.y + 3, z: o.z + (Math.random() - 0.5) * 20, vx: (Math.random() - 0.5) * 10, vy: 4 + Math.random() * 6, vz: (Math.random() - 0.5) * 10,
+        size: 4 + Math.random() * 3, grow: 4, drag: 1.4, grav: 1, life: 2.5, alpha: 0.45, fadeIn: 0.03, c0: [0.32, 0.3, 0.28], cell: 2 });
       this.refresh(o);
     }
     // bắt lửa: cháy ~30-70 s theo lượng xăng; bình còn nhiều xăng thì vài giây sau nổ
@@ -1768,22 +1982,29 @@ const Props = (() => {
       sfx('fuel', o.x, o.y + 6, o.z, 0.55, { h: 6 });
     }
     // bình xăng nổ: quả cầu lửa, mảnh tôn bay, sóng nóng đốt / làm móp ô tô sát bên (cháy lan)
+    // Bình xăng ô tô không nổ tung như phim: bình nhựa / thép mỏng bục vì nhiệt, xăng hoá hơi phụt thành quả cầu lửa vài
+    // mét, mảnh nhựa / tôn quanh khoang bình văng, lửa bùng lớn. Xe sát bên (~3 m) bị lửa táp: bắt cháy / rộp sơn, móp nhẹ chỉ
+    // khi đứng sát; xa hơn chỉ nóng. Bản chi tiết (nếu đang hiện) tự vẽ quả cầu lửa ở đúng chỗ bình xăng
     fuelBlast(o, fx) {
       sfx('fuel', o.x, o.y + 6, o.z, 1, { h: 8 });
-      sfx('sheetMetal', o.x, o.y + 6, o.z, 0.9, { h: 10 });
-      if (fx && fx.fire) for (let k = 0; k < 36; k++) {
+      sfx('sheetMetal', o.x, o.y + 6, o.z, 0.7, { h: 10 });
+      o.hp = Math.min(o.hp, 0); o.c = Math.max(o.c, 0.3); o.d = 1; o.noGlass = true;
+      if (o.group) this.civOp(o, 'fuelBlast', []);
+      else if (fx && fx.fire) for (let k = 0; k < 36; k++) {
         const a = Math.random() * 6.283, sp = 10 + Math.random() * 30;
         fx.fire.add({ x: o.x + Math.cos(a) * 3, y: o.y + 6, z: o.z + Math.sin(a) * 3, vx: Math.cos(a) * sp, vy: 14 + Math.random() * 30, vz: Math.sin(a) * sp,
           size: 5 + Math.random() * 7, grow: 4, drag: 2.2, grav: -6, life: 0.6 + Math.random() * 0.6, alpha: 1, fadeIn: 0.01, c0: [1, 0.78, 0.36], c1: [0.8, 0.22, 0.03], cell: 1, floor: false });
       }
       if (fx && fx.smoke) for (let k = 0; k < 16; k++) fx.smoke.add({ x: o.x + (Math.random() - 0.5) * 10, y: o.y + 10, z: o.z + (Math.random() - 0.5) * 10,
         vx: (Math.random() - 0.5) * 16, vy: 16 + Math.random() * 16, vz: (Math.random() - 0.5) * 16, size: 8 + Math.random() * 6, grow: 9, drag: 1, grav: -3, life: 4 + Math.random() * 3, alpha: 0.7, fadeIn: 0.05, c0: [0.08, 0.07, 0.06], c1: [0.25, 0.24, 0.23], cell: 0, floor: false });
-      this.carDamage(o, 999, 0, 0, false, fx);
-      o.c = Math.max(o.c, 0.3); o.d = 1;
-      for (const q of this.near(o.x, o.z, 60)) {
+      // xe bên cạnh: đo theo khoảng hở giữa 2 thân (không phải tâm - tâm). Sát (< ~3 m): lửa táp châm cháy (đạn cháy = lửa),
+      // móp nhẹ theo sức ép; 3-5 m: chỉ rộp sơn / vỡ kính vì nhiệt
+      const D0 = CAR_DIM[o.kind] || CAR_DIM.sedan;
+      for (const q of this.near(o.x, o.z, 70)) {
         if (q === o || q.type !== 'car' || q.burnt || q.burning) continue;
-        const d = Math.hypot(q.x - o.x, q.z - o.z);
-        if (d < 55) this.carDamage(q, 55 * (1 - d / 55) + 5, q.x - o.x, q.z - o.z, true, fx);
+        const Dq = CAR_DIM[q.kind] || CAR_DIM.sedan, gap = Math.max(0, Math.hypot(q.x - o.x, q.z - o.z) - D0.hw - Dq.hw - 4);
+        if (gap < 24) this.carDamage(q, 18 * (1 - gap / 24) + 3, q.x - o.x, q.z - o.z, gap < 10, fx);
+        else if (gap < 40) this.shatter(q);
       }
       this.refresh(o);
     }
@@ -1888,11 +2109,21 @@ const Props = (() => {
           if (small) { this.carDamage(o, 3 + 8 * A.power, o.x - x, o.z - z, inc, fx, ammo, {x,y,z}); continue; }
           const k = 1 - d / R;
           this.carDamage(o, A.power * 140 * k * k + 6, o.x - x, o.z - z, inc, fx, ammo, {x,y,z});
-          // sóng nổ hất ô tô trượt đi
-          if (A.power * k > 0.3 && !o.burnt) {
-            const l = Math.hypot(o.x - x, o.z - z) || 1, v = 70 * A.power * k;
-            o.vx = (o.x - x) / l * v; o.vz = (o.z - z) / l * v; o.w = (hash(o.seed + Math.round(x)) - 0.5) * 2 * A.power * k;
+          // sóng nổ hất ô tô trượt đi (xác cháy mất ~30% khối lượng: lốp, nội thất, nhựa cháy hết -> văng xa hơn)
+          const pk = A.power * k;
+          if (pk > 0.3 && (o.c || 0) < 0.7) {
+            const l = Math.hypot(o.x - x, o.z - z) || 1, v = 70 * pk * (o.burnt ? 1.3 : 1);
+            o.vx = (o.x - x) / l * v; o.vz = (o.z - z) / l * v; o.w = (hash(o.seed + Math.round(x)) - 0.5) * 2 * pk;
             this.moving.add(o);
+            // nổ sát, rất mạnh (đạn pháo / tên lửa chống tăng nổ cạnh xe): hất bổng, lật quanh trục dọc — mép phía điểm nổ bị
+            // nhấc lên trước. Nổ dưới gầm nhấc mạnh hơn nổ trên cao
+            if (pk > 0.55 && !o.lift && !o.torn) {
+              const up = Math.min(1, Math.min(1, (pk - 0.55) / 0.45) * (y < o.y + 6 ? 1.2 : 0.8) * (o.burnt ? 1.2 : 1));
+              const sx = ((o.x - x) * ca + (o.z - z) * -sa) >= 0 ? 1 : -1;   // điểm nổ ở phía -x (sx > 0) hay +x của xe
+              // nhấc 0,45-2,9 m, bay 0,5-1,5 s, lật tới ~1,2 vòng (nổ yếu hơn: nghiêng sườn / bật lại đứng bánh)
+              o.vy = 18 + 42 * up; o.wr = -sx * (1.5 + 3.5 * up) * (0.8 + 0.4 * hash(o.seed + 61));
+              o.lift = 0.01; o.cFlip = o.c || 0;
+            }
           }
         } else if (o.type === 'canopy') {
           const d = Math.hypot(o.x - x, o.z - z);
@@ -1953,8 +2184,14 @@ const Props = (() => {
       ctx.unit = unit; ctx.dt = dt; ctx.proxy = proxy; this._dt = dt;
       ctx.mvx = proxy ? -Math.sin(fa) * sp * dt : x1 - x0; ctx.mvz = proxy ? -Math.cos(fa) * sp * dt : z1 - z0;
       ctx.tracked = !unit.isWheeled;
-      // xe 6 nòng lắp lưỡi ủi (mặc định, chưa bị bắn văng): lưỡi ủi dồn ô tô bẹp về trước thay vì leo lên
-      ctx.dozer = unit.tankType === 'GATLING' && (!unit.frontId || unit.frontId === 'dozer') && (typeof VehicleDamage === 'undefined' || !VehicleDamage.hasPart || VehicleDamage.hasPart(unit, 'dozer'));
+      // mũi xe 6 nòng (xem frontShield): lưỡi ủi (mặc định) dồn ô tô thẳng về trước; khiên chữ V gạt ô tô sang hai bên. Bộ
+      // phận bị bắn văng thì mũi xe như xe xích thường (khiên V: mất tấm nào thì bên đó hết gạt)
+      const kitOn = t => typeof VehicleDamage === 'undefined' || !VehicleDamage.hasPart || VehicleDamage.hasPart(unit, t);
+      ctx.front = null; ctx.wingL = ctx.wingR = false;
+      if (unit.tankType === 'GATLING') {
+        if (!unit.frontId || unit.frontId === 'dozer') { if (kitOn('dozer')) ctx.front = 'dozer'; }
+        else if (unit.frontId === 'vshield') { ctx.wingL = kitOn('appliqueVSL'); ctx.wingR = kitOn('appliqueVSR'); if (ctx.wingL || ctx.wingR) ctx.front = 'wedge'; }
+      }
       for (const o of near) {
         if (o.type === 'car') this.carContact(o, ctx, out);   // (nòng / tháp vào ô tô: barrelCars, sau khi đặt tư thế tháp)
         else if (!o.broken && !o.fixed && STREET[o.type]) this.poleContact(o, ctx, out);
@@ -2022,7 +2259,9 @@ const Props = (() => {
     // xích / gầm xuống tới đó (vách thùng, bạt, phụ kiện cao), không chỉ khung mềm
     crushStamp(o, ctx, ub) {
       const api = o.group && o.group.userData && o.group.userData.crush;
-      if (!api) return;
+      // xe đang lật nghiêng / ngửa: thân mềm ép theo trục đứng của xe (không phải trục đứng thế giới) -> không in dấu xích;
+      // độ bẹp o.c vẫn tăng, bản chi tiết ép dẹt cả khối (refresh -> setFlip)
+      if (!api || Math.abs(o.flipR || 0) > 0.6) return;
       const u = ctx.unit, ca = Math.cos(o.angle), sa = Math.sin(o.angle), dx = ub.cx - o.x, dz = ub.cz - o.z;
       const c0 = clamp((u.y !== undefined ? u.y : u.group ? u.group.position.y : o.y) - o.y, 0, 12);
       api.stamp(dx * ca - dz * sa, dx * sa + dz * ca, (u.bodyAngle !== undefined ? u.bodyAngle : u.heading || 0) - o.angle, ctx.dt || 0.016, c0, 0, this.tankDim(u));
@@ -2036,6 +2275,93 @@ const Props = (() => {
       u._crushDim = { tc, tw, hl: thl, flat: thl - 4.5, rise: 1.6, belly: 3.4, bw: Math.max(3, tc - tw - 0.3) };
       u._crushDimG = u.group;
       return u._crushDim;
+    }
+    // Mũi xe 6 nòng tì vào ô tô ở TRƯỚC mũi (ub: hộp thân, p: obbPush, n: từ ô tô ra phía xe). Trả về hướng dời ô tô (hệ
+    // thế giới) + độ ngập theo hướng đó { dx, dz, depth } | 'gap' (ô tô nằm trong khoảng trống tam giác hai bên mũi khiên V,
+    // hộp thân chồng nhưng thép chưa chạm) | null (chạm sườn / đuôi, bộ phận đó đã mất, hoặc khiên V đang kẹt -> xích leo)
+    //  · lưỡi ủi: mặt phẳng ngang rộng hết thân xe -> ô tô bị dồn thẳng về trước
+    //  · khiên V: 2 tấm thép từ mũi (giữa, sát mép trước hộp thân) vát về sau WEDGE.len đv tới mép sườn. Ô tô bị đẩy theo pháp
+    //    tuyến tấm nó chạm (về trước + ra bên đó) nên càng bị dồn càng trượt dọc tấm ra ngoài — xe lách qua hàng xe đỗ
+    frontShield(o, ctx, ub, p, nx, nz) {
+      const fwx = ub.uz, fwz = -ub.ux;   // hướng mũi xe (-trục v của hộp thân)
+      if (ctx.front === 'dozer') {
+        const k = -(nx * fwx + nz * fwz);
+        return k > 0.6 ? { dx: fwx, dz: fwz, depth: p.d / k } : null;
+      }
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (o._wjU === ctx.unit.id && now - o._wjT < 400) return null;
+      const cb = this.carObb(o), vx = -cb.uz, vz = cb.ux, hu = ub.hu, hv = ub.hv, zone = -hv + WEDGE.len;
+      const ccu = (cb.cx - ub.cx) * ub.ux + (cb.cz - ub.cz) * ub.uz;
+      let best = 0, bs = 0, inZone = false;
+      for (let i = 0; i < 4; i++) {
+        const a = i & 1 ? 1 : -1, b = i & 2 ? 1 : -1;
+        const x = cb.cx + cb.ux * cb.hu * a + vx * cb.hv * b - ub.cx, z = cb.cz + cb.uz * cb.hu * a + vz * cb.hv * b - ub.cz;
+        const cu = x * ub.ux + z * ub.uz, cv = -x * ub.uz + z * ub.ux;
+        if (Math.abs(cu) > hu + 0.3 || cv > hv) continue;
+        if (cv > zone) { if (Math.abs(cu) < hu) return null; continue; }   // góc ô tô lấn vào sườn sau khiên: chạm thân
+        inZone = true;
+        const s = Math.sign(cu) || Math.sign(ccu) || 1, dep = WEDGE.n * (cv + hv) - WEDGE.t * s * cu;
+        if (dep > best) { best = dep; bs = s; }
+      }
+      // mũi khiên / mép đuôi tấm cắm vào sườn ô tô (không góc ô tô nào sau mặt khiên)
+      const ca = Math.cos(o.angle), sa = Math.sin(o.angle);
+      for (const [pu, pv] of [[0, -hv], [-hu, zone], [hu, zone]]) {
+        const tx = ub.cx + ub.ux * pu - ub.uz * pv - cb.cx, tz = ub.cz + ub.uz * pu + ub.ux * pv - cb.cz;
+        if (Math.abs(tx * ca - tz * sa) < cb.hu && Math.abs(tx * sa + tz * ca) < cb.hv) {
+          inZone = true;
+          if (p.d > best) { best = p.d; bs = pu ? Math.sign(pu) : Math.sign(ccu) || (hash(o.seed + 7) < 0.5 ? -1 : 1); }
+        }
+      }
+      if (!inZone) return null;
+      if (best < 0.05) return 'gap';
+      if (!(bs < 0 ? ctx.wingL : ctx.wingR)) return null;
+      return { dx: fwx * WEDGE.n + ub.ux * WEDGE.t * bs, dz: fwz * WEDGE.n + ub.uz * WEDGE.t * bs, depth: best };
+    }
+    // Lưỡi ủi / khiên V dời ô tô theo sh (frontShield). Ô tô trượt được: bị dồn / gạt đi, cú húc đầu văng trượt tiếp. Ô tô
+    // kẹt (tường, xe khác, cột không gãy): lưỡi ủi ép bẹp, co ngắn ô tô vào vật cản — tôn nhường dần nên xe ủi bò tới chậm
+    // lại; khiên V không dồn được thì đánh dấu kẹt -> các khung sau xích leo lên cán như xe xích thường
+    shieldPush(o, ctx, out, sh, first, D, mU, mC, lx, lz, rx, rz, pos) {
+      const u = ctx.unit, wedge = ctx.front === 'wedge';
+      const mEff = mC * (this.moving.has(o) ? 1 : 1.6), sc = mU / (mU + mEff), want = sh.depth * sc;
+      const Fx = sh.dx * want, Fz = sh.dz * want, I = (D.hl * D.hl + D.hw * D.hw) / 3;
+      // lưỡi ủi phẳng: ô tô lệch tâm xoay dần áp sườn vào lưỡi; tấm khiên vát trơn: xoay ít, chủ yếu trượt dọc tấm
+      const dTh = clamp((rz * Fx - rx * Fz) / I * (wedge ? 0.5 : 0.9), -0.12, 0.12);
+      const moved = this.moveCar(o, Fx, Fz, dTh, u);
+      const vAl = (ctx.mvx * sh.dx + ctx.mvz * sh.dz) / ctx.dt;   // tốc độ mặt thép lao vào ô tô theo hướng dời
+      if (!ctx.proxy) {
+        let rest = Math.max(0, sh.depth - moved), give = 0;
+        if (rest > 0.1 && !wedge) {
+          const dc = Math.min(0.9 - o.c, rest / 60);
+          if (dc > 0) {
+            o.c += dc; o.squeeze = Math.min(0.32, (o.squeeze || 0) + rest / 160);
+            if (o.c > 0.15) this.shatter(o);
+            this.refresh(o);
+            this.absorbCrush(u, dc * (CRUSH_KJ[o.kind] || 150));
+            if (Math.random() < ctx.dt * 6) sfx('metalCrush', o.x, o.y + 4, o.z, 0.55, { h: 4 });
+            give = rest * 0.5;
+          }
+        }
+        if (wedge && ctx.tracked && want > 0.05 && moved < want * 0.3) { o._wjU = u.id; o._wjT = typeof performance !== 'undefined' ? performance.now() : Date.now(); }
+        rest -= give;
+        // phản lực lên xe theo pháp tuyến mặt thép (khiên V: xe bị đẩy lệch nhẹ sang bên kia)
+        out.x -= sh.dx * rest; out.z -= sh.dz * rest;
+        u.speed *= Math.pow(Math.max(0.3, 1 - 0.35 * (rest / sh.depth) - (wedge ? 0.05 : 0.1) * (1 - sc)), ctx.dt * 60);
+      }
+      if (first && vAl > 6 && o.c < 0.35) {
+        const vk = Math.min(vAl * sc * 1.1, 110);
+        o.vx = sh.dx * vk; o.vz = sh.dz * vk; o.w = clamp(dTh / ctx.dt * 0.35, -2.5, 2.5);
+        this.moving.add(o);
+        this.dent(o, 0.5 * (mU * mC / (mU + mC)) * vAl * vAl, lx >= 0 ? 1 : -1, [lx, lz, ctx.mvx, ctx.mvz]);
+      }
+      if (!wedge && moved > 0.05 && o.c < 0.3) {
+        // ô tô bị lưỡi ủi dồn trượt: mặt tì móp dần, co ngắn chút ít (không bẹp như bị cán)
+        o.c = Math.min(0.3, o.c + moved / 220); o.squeeze = Math.min(0.12, (o.squeeze || 0) + moved / 500);
+        this.refresh(o);
+        if (Math.random() < ctx.dt * 3) sfx('metalCrush', o.x, o.y + 4, o.z, 0.4, { h: 4 });
+      }
+      if (first) impact(u, 'car', pos, Math.max(0, vAl), 0, mU, mC, true, null);
+      else if (moved / ctx.dt > 12) impact(u, 'car', pos, 0, moved / ctx.dt, mU, mC, false, null);
+      if (moved / ctx.dt > 4) sfx('carSlide', o.x, o.y + 1, o.z, clamp(moved / ctx.dt / 50, 0.3, 0.9));
     }
     carContact(o, ctx, out) {
       const D = CAR_DIM[o.kind] || CAR_DIM.sedan, u = ctx.unit, VC = VehicleCollision;
@@ -2057,11 +2383,15 @@ const Props = (() => {
       const lx = clamp(tx * ca - tz * sa, -D.hw, D.hw), lz = clamp(tx * sa + tz * ca, -D.hl, D.hl);
       const rx = lx * ca + lz * sa, rz = -lx * sa + lz * ca;
       const isTruck = o.kind === 'dump' || o.kind === 'truck';
+      // lưỡi ủi / khiên V ở mũi xe 6 nòng: ô tô còn nguyên ở trước mũi bị dồn / gạt đi thay vì bị xích leo lên
+      if (ctx.front && o.c < 0.6) {
+        const sh = this.frontShield(o, ctx, ub, p, nx, nz);
+        if (sh === 'gap') return;
+        if (sh) { this.shieldPush(o, ctx, out, sh, first, D, mU, mC, lx, lz, rx, rz, pos); return; }
+      }
       const stepMax = (typeof VehicleCollision !== 'undefined' && VehicleCollision.stepOf) ? VehicleCollision.stepOf(u) : 8.5;
       let canClimb = true;
-      if (ctx.dozer && o.c < 0.6) {
-        canClimb = false;
-      } else if (isTruck) {
+      if (isTruck) {
         const hittingFront = lz > D.hl * 0.35;
         const alreadyCrushed = (o.c || 0) >= 0.35;
         const tiltedLow = Math.abs(o.roll || 0) > 0.22;
@@ -2080,7 +2410,8 @@ const Props = (() => {
           if (o.c > 0.12) this.shatter(o);
           // SỨC CẢN: tôn / khung ô tô hấp thụ năng lượng khi bị ép bẹp -> xe xích mất đà theo phần vừa ép (xe nhẹ / chạy chậm
           // khựng rõ, xe tăng 60 t lao nhanh gần như không chậm); rung khoang lái theo từng nhịp nghiền
-          if (!ctx.proxy) this.absorbCrush(u, dc * (CRUSH_KJ[o.kind] || 150));
+          // xác cháy: thép mất tôi, tôn giòn mục -> ép bẹp tốn ~60% năng lượng xe nguyên; xác bị xé toạc chỉ còn khung ~40%
+          if (!ctx.proxy) this.absorbCrush(u, dc * (CRUSH_KJ[o.kind] || 150) * (o.torn ? 0.4 : o.burnt ? 0.6 : 1));
           if (dc > 0.03) {
             // tiếng tôn mỏng nhăn nheo + khung oằn (lốp nổ / kính vỡ do bản chi tiết báo đúng lúc, xem update)
             sfx('carCrush', o.x, o.y + 4, o.z, clamp(0.4 + dc * 3, 0.4, 1.1), { h: 4 });
@@ -2126,19 +2457,15 @@ const Props = (() => {
         }
       }
       if (first && vn > 6 && o.c < 0.35) {
-        // ô tô văng trượt tiếp sau cú húc (ma sát lốp hãm lại) + móp theo năng lượng va chạm
-        const vk = Math.min(vn * sc * 0.8, 110);
-        o.vx = -nx * vk; o.vz = -nz * vk; o.w = clamp(dTh / ctx.dt * 0.35, -2.5, 2.5);
+        // ô tô văng trượt tiếp sau cú húc (ma sát lốp hãm lại) + móp theo năng lượng va chạm. Húc chéo / quệt sườn: ma sát
+        // tôn với thân xe kéo ô tô theo phần vận tốc dọc mặt chạm (~0,3) -> ô tô bị lôi theo, xoay mạnh hơn thay vì chỉ bật ngang
+        const vk = Math.min(vn * sc * 0.8, 110), vx = ctx.mvx / ctx.dt, vz = ctx.mvz / ctx.dt, vNorm = -(vx * nx + vz * nz);
+        const tx = vx + vNorm * nx, tz = vz + vNorm * nz, tl = Math.hypot(tx, tz), tk = tl > 1 ? Math.min(0.3 * sc, 40 / tl) : 0;
+        o.vx = -nx * vk + tx * tk; o.vz = -nz * vk + tz * tk;
+        o.w = clamp(dTh / ctx.dt * 0.35 + (rz * tx - rx * tz) * tk / I * 0.6, -2.5, 2.5);
         this.moving.add(o);
         const mu = mU * mC / (mU + mC);
         this.dent(o, 0.5 * mu * vn * vn, lx >= 0 ? 1 : -1, [lx, lz, ctx.mvx, ctx.mvz]);
-      }
-      if (ctx.dozer && moved > 0.05) {
-        // lưỡi ủi dồn ô tô: bẹp dần + co ngắn theo quãng bị ủi
-        o.c = Math.min(0.9, o.c + moved / 70); o.squeeze = Math.min(0.28, o.squeeze + moved / 260);
-        if (o.c > 0.15) this.shatter(o);
-        this.refresh(o);
-        if (Math.random() < ctx.dt * 4) sfx('metalCrush', o.x, o.y + 4, o.z, 0.45, { h: 4 });
       }
       if (first) impact(u, 'car', pos, vn, 0, mU, mC, true, null);
       else if (moved / ctx.dt > 12) impact(u, 'car', pos, 0, moved / ctx.dt, mU, mC, false, null);   // đang ủi ô tô trượt: tiếng cạ / lốp miết đường
@@ -2345,6 +2672,12 @@ const Props = (() => {
         if (Math.abs(rk.x - x) > r + rad || Math.abs(rk.z - z) > r + rad) continue;
         if (circ(rk.x, rk.z, rad * 0.8)) { this._why = 'boulder'; return true; }
       }
+      // cây còn đứng: thân to chặn ô tô bị húc trượt / bị ủi (trước đây ô tô trượt xuyên thân cây); cây non, xương rồng
+      // (thân <= ~15 cm) bị ô tô quật ngang thì không đáng kể — bỏ qua
+      if (T && T.trees && T.trees.near) for (const it of T.trees.near(x, z, r + 6)) {
+        if (it.fallen || it.shattered || it.kind === 'cactus' || (T.trees.ramSpec && T.trees.ramSpec(it).d <= 0.15)) continue;
+        if (circ(it.x, it.z, it.trunkR || 1.5)) { this._why = 'tree'; return true; }
+      }
       // ô tô khác chưa bẹp, cột còn đứng
       for (const q of this.near(x, z, r + 24)) {
         if (q === o || q.fixed) continue;
@@ -2390,6 +2723,13 @@ const Props = (() => {
           if (every > 1 && ((frame + (o.seed & 3)) % every) !== 0 && o.civDt < 0.25) continue;
           api.update(o.civDt);
           o.civDt = 0;
+          // độ sập do đạn nổ / sức ép trên bản chi tiết ghi ngược về tình trạng thô: va chạm, mặt cho xích leo, chỗ đạn trúng,
+          // bản xa khi hạ chi tiết khớp với hình (trước đây hình sập tới 0,9 mà o.c chỉ ~0,37 -> xe "phồng" lại). amount là
+          // độ sập cục bộ sâu nhất -> quy ra mức bẹp cả xe ~0,6 lần. Xe đang lật: hình thân mềm không theo trục đứng, bỏ qua
+          if (!o.flipR && !o.lift && api.amount !== undefined) {
+            const am = api.amount * 0.6;
+            if (am > (o.c || 0) + 0.03) o.c = Math.min(0.9, am);
+          }
           // sự kiện của bản chi tiết (kính vỡ khi húc / nòng quét, lốp nổ): phát tiếng, rút hết để mảng không phình
           const ev = api.drain();
           if (ev.length) {
@@ -2418,6 +2758,17 @@ const Props = (() => {
         if (B.t > 6 && !o.charred) { o.charred = true; this.charCar(o); }
         if (B.t >= B.dur) { this.burningSet.delete(o); o.burning = null; o.burnt = true; o.smolder = 40; this.smolderSet.add(o); continue; }
         if ((B.snd -= dt) <= 0) { B.snd = 1.6 + Math.random(); sfx('fire', o.x, o.y + 6, o.z, 0.5, { h: 6 }); }
+        // CHÁY LAN: lửa đã trùm khoang (> 10 s) liếm sang xe đỗ sát (khe < ~1,5 m) qua lốp / sơn / nhựa — mỗi ~4 s một lần
+        // thử, xác suất theo băm (mọi máy như nhau)
+        if (o.type === 'car' && B.t > 10 && (B.sp = (B.sp === undefined ? 4 : B.sp) - dt) <= 0) {
+          B.sp = 4;
+          const D0 = CAR_DIM[o.kind] || CAR_DIM.sedan;
+          for (const q of this.near(o.x, o.z, 50)) {
+            if (q === o || q.type !== 'car' || q.burning || q.burnt) continue;
+            const Dq = CAR_DIM[q.kind] || CAR_DIM.sedan, gap = Math.hypot(q.x - o.x, q.z - o.z) - D0.hw - Dq.hw;
+            if (gap < 12 && hash(q.seed + Math.floor(B.t) * 13) < 0.3) this.ignite(q);
+          }
+        }
         if (!fx || (cam && Math.hypot(cam.x - o.x, cam.z - o.z) > 1800)) continue;
         const k = Math.min(1, B.t / 2.5) * Math.min(1, (B.dur - B.t) / 10), S = CAR_SPEC[o.kind] || CAR_SPEC.sedan;
         B.acc += dt * (14 * k);
@@ -2442,10 +2793,21 @@ const Props = (() => {
       if (!this.moving.size) { this.flush(); return; }
       for (const o of this.moving) {
         const v = Math.hypot(o.vx || 0, o.vz || 0);
-        if ((v < 3 && Math.abs(o.w || 0) < 0.12) || o.c >= 0.5) { this.moving.delete(o); o.vx = o.vz = o.w = 0; continue; }
-        const nv = Math.max(0, v - 70 * dt), k = v > 0 ? nv / v : 0;
+        // BAY / LẬT (sức nổ hất bổng, damageAt): rơi theo trọng lực, xoay quanh trục dọc; chạm đất thì lắng về tư thế nằm
+        // vững gần nhất (đứng bánh / nghiêng sườn / ngửa nóc) — landCar
+        if (o.lift) {
+          o.vy -= 78 * dt; o.lift += o.vy * dt; o.flipR = (o.flipR || 0) + (o.wr || 0) * dt;
+          if (o.lift <= 0) this.landCar(o, fx); else this.refresh(o);
+        } else if (o.settle !== undefined) {
+          o.flipR += (o.settle - o.flipR) * Math.min(1, dt * 9);
+          if (Math.abs(o.settle - o.flipR) < 0.01) { o.flipR = o.settle; o.settle = undefined; if (!o.flipR) o.cFlip = 0; }
+          this.refresh(o);
+        }
+        const busy = o.lift || o.settle !== undefined;
+        if (!busy && ((v < 3 && Math.abs(o.w || 0) < 0.12) || o.c >= 0.5)) { this.moving.delete(o); o.vx = o.vz = o.w = 0; continue; }
+        const nv = Math.max(0, v - (o.lift ? 0 : 70) * dt), k = v > 0 ? nv / v : 0;   // đang bay: không ma sát lốp
         o.vx *= k; o.vz *= k; o.w = (o.w || 0) * Math.exp(-8 * dt);   // ma sát xoay mạnh, dừng xoay nhanh chóng
-        if (v > 8) sfx('carSlide', o.x, o.y + 1, o.z, clamp(v / 60, 0.35, 1));   // lốp miết nhựa đường khi trượt
+        if (v > 8 && !o.lift) sfx('carSlide', o.x, o.y + 1, o.z, clamp(v / 60, 0.35, 1));   // lốp miết nhựa đường khi trượt
         const want = Math.hypot(o.vx * dt, o.vz * dt), got = this.moveCar(o, o.vx * dt, o.vz * dt, o.w * dt, null);
         if (want > 1e-3 && got < want * 0.9) {
           {
@@ -2455,10 +2817,31 @@ const Props = (() => {
             this.dent(o, 0.25 * D.m * v * v, 1, [hl[0], hl[1], -o.vx, -o.vz]);
           }
           sfx('sheetMetal', o.x, o.y + 4, o.z, clamp(v / 80, 0.3, 0.8), { h: 4 });
-          o.vx = o.vz = o.w = 0; this.moving.delete(o);
+          o.vx = o.vz = o.w = 0;
+          if (!busy) this.moving.delete(o);   // đang bay / đang lắng: rơi nốt tại chỗ
         }
       }
       this.flush();
+    }
+    // Ô tô bị hất bổng chạm đất: lắng về tư thế vững gần nhất theo góc lật lúc chạm (đứng bánh / nghiêng sườn / ngửa nóc).
+    // Rơi ngửa: trụ A / B gập, nóc sập (bẹp ~0,45); nghiêng: sườn móp sâu; rơi đứng bánh: nhún mạnh, giảm xóc / lốp bục.
+    // Kính vỡ hết, tiếng tôn đập đất + bụi
+    landCar(o, fx) {
+      const S = CAR_SPEC[o.kind] || CAR_SPEC.sedan, vImp = Math.abs(o.vy || 0);
+      o.lift = 0; o.vy = 0; o.wr = 0;
+      const r = Math.atan2(Math.sin(o.flipR || 0), Math.cos(o.flipR || 0)), Q = Math.PI / 2;
+      o.flipR = r; o.settle = Math.round(r / Q) * Q;
+      const roof = Math.abs(Math.abs(o.settle) - Math.PI) < 0.1, side = Math.abs(Math.abs(o.settle) - Q) < 0.1;
+      o.cFlip = o.c || 0;   // bản chi tiết ép dẹt phần bẹp phát sinh SAU lúc lật (nóc sập khi rơi ngửa, bị cán)
+      o.c = Math.max(o.c || 0, roof ? 0.45 : side ? 0.25 : 0.15 + Math.min(0.15, vImp / 400));
+      o.d = Math.min(1, (o.d || 0) + (roof ? 0.4 : 0.25));
+      if (!roof && !side) o.flats = (o.flats || [false, false, false, false]).map((f, i) => f || hash(o.seed + 70 + i) < 0.5);
+      this.shatter(o); o.noGlass = true;
+      sfx('carCrush', o.x, o.y + 3, o.z, clamp(0.6 + vImp / 120, 0.6, 1.2), { h: 3 });
+      sfx('sheetMetal', o.x, o.y + 3, o.z, 0.7, { h: 3 });
+      if (fx && fx.smoke) for (let k = 0; k < 10; k++) fx.smoke.add({ x: o.x + (Math.random() - 0.5) * S.W, y: o.y + 1, z: o.z + (Math.random() - 0.5) * S.L * 0.8, vx: (Math.random() - 0.5) * 18, vy: 2 + Math.random() * 4, vz: (Math.random() - 0.5) * 18,
+        size: 3 + Math.random() * 3, grow: 5, drag: 2, grav: 2, life: 1.8, alpha: 0.45, fadeIn: 0.02, c0: [0.56, 0.51, 0.44], cell: 2 });
+      this.refresh(o);
     }
     // Mặt đỡ cho xích / bánh (VehicleCollision.debrisHeight, kiểu ụ vòm): xe xích leo lên ô tô (cao capô, thấp dần khi
     // ô tô bẹp); ô tô đã bẹp dí thì mọi xe bò qua. Xe bánh lốp gặp ô tô còn nguyên: không có mặt đỡ (bị chặn / đẩy)
@@ -2880,10 +3263,11 @@ const Props = (() => {
       const turretMeshes = [];
 
       // chỉ gộp phần vỏ thật: bỏ khối ẩn (khối chọn 63x12x63, chùm tia...), vật liệu trong suốt / phát sáng / shader hiệu ứng
-      // (nhiệt khói xả) — gộp nhầm với vật liệu đặc thì thành mấy bức tường xoè quanh xác xe
+      // (nhiệt khói xả) — gộp nhầm với vật liệu đặc thì thành mấy bức tường xoè quanh xác xe.
+      // Bánh xe / mắt xích là InstancedMesh: trải từng bản sao ra gộp chung (bỏ đi thì thân xác treo lơ lửng trên chỗ trống)
       const shown = (c) => { for (let p = c; p; p = p.parent) if (!p.visible) return false; return true; };
       dummy.group.traverse(c => {
-        if (c.isMesh && c.geometry && !c.isInstancedMesh && shown(c) && c.material && !c.material.transparent && (c.material.isMeshStandardMaterial || c.material.isMeshLambertMaterial || c.material.isMeshPhongMaterial)) {
+        if (c.isMesh && c.geometry && shown(c) && c.material && !c.material.transparent && (c.material.isMeshStandardMaterial || c.material.isMeshLambertMaterial || c.material.isMeshPhongMaterial)) {
           let p = c.parent, inTurret = false;
           while (p && p !== dummy.group) {
             if (p === turretRoot) { inTurret = true; break; }
@@ -2903,25 +3287,42 @@ const Props = (() => {
           if (!m.geometry) continue;
           m.updateMatrixWorld(true);
           const relMat = m.matrixWorld.clone().premultiply(inv);
-          const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
-          g.applyMatrix4(relMat);
-          parts.push(g);
-          totalCount += g.attributes.position.count;
+          const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+          const n = m.isInstancedMesh ? m.count : 1, im = new THREE.Matrix4();
+          for (let i = 0; i < n; i++) {
+            if (m.isInstancedMesh) {
+              m.getMatrixAt(i, im);
+              if (Math.abs(im.determinant()) < 1e-6) continue;   // bản sao ẩn (thu về 0)
+            }
+            const g = src.clone();
+            if (!g.attributes.normal) g.computeVertexNormals();
+            g.applyMatrix4(m.isInstancedMesh ? relMat.clone().multiply(im) : relMat);
+            parts.push([g, m.material.color]);
+            totalCount += g.attributes.position.count;
+          }
         }
         if (!totalCount) return null;
         const pos = new Float32Array(totalCount * 3);
         const nrm = new Float32Array(totalCount * 3);
-        let offset = 0;
-        for (const g of parts) {
+        const col = new Float32Array(totalCount * 3);
+        // màu từng bộ phận cháy sém: sơn gốc ngả than / gỉ (mỗi bộ phận lệch một chút) -> thân, xích, bánh, nòng không
+        // cùng một mảng đen trơn
+        const CHAR = new THREE.Color(0.15, 0.135, 0.12), RUST = new THREE.Color(0.36, 0.18, 0.09), c = new THREE.Color();
+        let offset = 0, pi = 0;
+        for (const [g, mc] of parts) {
           const cnt = g.attributes.position.count;
           pos.set(g.attributes.position.array, offset * 3);
-          if (g.attributes.normal) nrm.set(g.attributes.normal.array, offset * 3);
+          // giữ pháp tuyến gốc (bóng mượt): tính lại trên lưới không chỉ số ra pháp tuyến từng mặt -> nòng / thân thành khối gãy cạnh
+          nrm.set(g.attributes.normal.array, offset * 3);
+          const h = Math.sin(++pi * 12.9898) * 43758.5453;
+          c.copy(mc || CHAR).lerp(CHAR, 0.7).lerp(RUST, 0.12 + 0.2 * (h - Math.floor(h)));
+          for (let v = offset; v < offset + cnt; v++) { col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b; }
           offset += cnt;
         }
         const res = new THREE.BufferGeometry();
         res.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         res.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-        res.computeVertexNormals();
+        res.setAttribute('color', new THREE.BufferAttribute(col, 3));
         res.computeBoundingSphere();
         return res;
       };
@@ -2956,8 +3357,10 @@ const Props = (() => {
           // trắng xám phủ mặt trên, vệt muội; mỗi xác một tông khác (phong hoá 'burnt', weathering.js)
           const k = 0.8 + hash(w.z | 0) * 0.35;
           const col = new THREE.Color(0x24211d).lerp(new THREE.Color(0x33251c), hash(w.x | 0) * 0.5).multiplyScalar(k);
-          const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.95, metalness: 0.2, vertexColors: isDump });
-          if (typeof Weathering !== 'undefined') Weathering.apply(mat, 'burnt', { lift: 0.4, grimeH: 4, scale: 0.9, dust: 0.35 });
+          // xác xe tăng / APC: màu cháy sém từng bộ phận nằm sẵn trong màu đỉnh của mẫu gộp -> vật liệu chỉ lệch tông từng xác
+          const tint = isDump ? col : new THREE.Color(1, 1, 1).lerp(new THREE.Color(1, 0.86, 0.74), hash(w.x | 0) * 0.6).multiplyScalar(k);
+          const mat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.95, metalness: 0.2, vertexColors: true });
+          if (typeof Weathering !== 'undefined') Weathering.apply(mat, 'burnt', WRECK_WX);
           // nền đất cháy xém dưới xác
           const scorch = new THREE.Mesh(new THREE.PlaneGeometry(isDump ? 44 : 50, isDump ? 80 : 90), new THREE.MeshBasicMaterial({ map: scorchTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
           scorch.rotation.set(-Math.PI / 2, 0, -w.angle + (hash(w.x * 3 | 0) - 0.5) * 0.6);
@@ -2969,7 +3372,9 @@ const Props = (() => {
           const wreckGrp = new THREE.Group(), inner = new THREE.Group();
           inner.rotation.y = Math.PI / 2;
           wreckGrp.add(inner);
+          w.mat = mat;
           const bodyMesh = new THREE.Mesh(tpl.bodyGeo, mat);
+          bodyMesh.userData.bvhLarge = true;   // mẫu gộp cả bánh / xích (> 60k tam giác): vẫn dựng cây dò tia để dán vết đạn
           bodyMesh.castShadow = true;
           bodyMesh.receiveShadow = true;
           inner.add(bodyMesh);
@@ -2978,6 +3383,7 @@ const Props = (() => {
             const turretGrp = new THREE.Group();
             turretGrp.position.copy(tpl.turretPos);
             const turretMesh = new THREE.Mesh(tpl.turretGeo, mat);
+            turretMesh.userData.bvhLarge = true;
             turretMesh.castShadow = true;
             turretMesh.receiveShadow = true;
             turretGrp.add(turretMesh);
@@ -2994,8 +3400,27 @@ const Props = (() => {
             w.turretGroup = turretGrp;
           }
 
-          wreckGrp.position.set(w.x, gy - 0.4, w.z);
-          wreckGrp.rotation.set(w.roll || 0, -w.angle, w.tilt || 0);
+          // nằm theo mặt dốc: mặt phẳng qua 4 điểm đầu / đuôi / 2 sườn thân (trước đây chỉ lấy độ cao tâm -> trên đỉnh
+          // đụn thì 2 đầu chổng lơ lửng, sườn dốc thì cắm nửa thân xuống cát)
+          // lưới 5x3 điểm phủ đúng mặt bằng thân (mô hình dài theo z cục bộ, xoay 90° -> trục x của nhóm), khớp mặt phẳng
+          // bình phương tối thiểu: y = c + gu*u + gv*v
+          if (!tpl.bodyGeo.boundingBox) tpl.bodyGeo.computeBoundingBox();
+          const bb = tpl.bodyGeo.boundingBox;
+          const ca = Math.cos(w.angle), sa = Math.sin(w.angle);
+          const hl = Math.min(36, (bb.max.z - bb.min.z) * 0.42), hw = Math.min(14, (bb.max.x - bb.min.x) * 0.38);
+          let c0 = 0, cu = 0, cv = 0, uu = 0, vv = 0;
+          for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) {
+            const u = i / 2 * hl, v = j * hw, g = G(w.x + ca * u - sa * v, w.z + sa * u + ca * v);
+            c0 += g; cu += g * u; cv += g * v; uu += u * u; vv += v * v;
+          }
+          const gu = cu / uu, gv = cv / vv;
+          const nrm = new THREE.Vector3(-(gu * ca - gv * sa), 1, -(gu * sa + gv * ca)).normalize();
+          // tâm trên gờ / đỉnh đụn: lún bụng xuống cát cho 2 đầu chạm đất (đụn cát vùi xác); tâm trong rãnh hẹp: không vùi sâu
+          const yc = Math.max(Math.min(c0 / 15, gy), gy - 8);
+          // xác bỏ lâu ngày: xích / bánh lún vào cát (chỉ mép dưới xích chạm đất trông như lơ lửng)
+          wreckGrp.position.set(w.x, yc - (isDump ? 0.4 : 1.4), w.z);
+          wreckGrp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), nrm)
+            .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(w.roll || 0, -w.angle, w.tilt || 0)));
           this.group.add(wreckGrp);
           w.group = wreckGrp;
         }
@@ -3012,8 +3437,95 @@ const Props = (() => {
         }
 
         this.wrecks.push(w);
-        if (w.smoke) this.smokers.push(w._smoker = { x: w.x, y: gy + 8, z: w.z, phase: hash(w.x | 0) * 3 });
+        // xác bỏ lâu ngày: nguội hẳn, không còn bốc khói (chỉ âm ỉ một lúc sau khi bị bắn lại — smolder)
       }
+    }
+    // xác đã nâng cấp vừa nát: mỗi khung một phát nổ nặng quanh thân cho tới nấc rã cuối
+    stepWreckBlasts() {
+      for (const w of this._blastQ) {
+        const d = VehicleDamage.state(w.u);
+        if (!(w._blastQ > 0) || (d.wreckStage || 0) >= 3) { this._blastQ.delete(w); continue; }
+        w._blastQ--;
+        const c = w.group.getWorldPosition(new THREE.Vector3()), a = hash(Math.round(w.x) + w._blastQ * 17) * TAU;
+        VehicleDamage.wreckBlastAt(w.u, c.x + Math.cos(a) * 6, c.y + 7, c.z + Math.sin(a) * 6, { power: 2, radius: 30 }, 'HE', true, w._blastFx);
+        return;
+      }
+    }
+    // Vết đạn trên xác xe (như xác tàn tích quanh cứ điểm, strongholds.js): cần hệ hiệu ứng nên dán dần lúc trận chạy,
+    // ~3 ms / khung, sau khi cây dò tia (BVH) của mẫu xác dựng xong (dò tia gốc trên mẫu ~80k tam giác làm khựng)
+    dressWrecks(fx) {
+      if (!fx.addSurfaceMark) { this._wrecksDressed = true; return; }
+      const RB = typeof window !== 'undefined' && window.RaycastBVH;
+      const t0 = performance.now();
+      for (const w of this.wrecks) {
+        if (w.dressed) continue;
+        if (!w.group || w.shattered) { w.dressed = true; continue; }
+        if (RB) {
+          if (!w.bvhWarm) { w.bvhWarm = true; RB.warm(w.group); }
+          if (!RB.ready(w.group)) return;
+        }
+        if (!w._jobs) w._jobs = this.wreckMarkJobs(fx, w);
+        while (w._jobs.length && performance.now() - t0 < 3) w._jobs.shift()();
+        if (w._jobs.length) return;
+        w._jobs = null;
+        w.dressed = true;
+      }
+      this._wrecksDressed = true;
+    }
+    wreckMarkJobs(fx, w) {
+      let seed = ((Math.round(w.x) * 73856093) ^ (Math.round(w.z) * 19349663)) >>> 0 || 1;
+      const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+      const R = (a, b) => a + rnd() * (b - a);
+      const isDump = w.kind === 'dump' || w.kind === 'truck', L = isDump ? 26 : 20;
+      const rc = new THREE.Raycaster();
+      // mô hình xác nằm dọc trục x cục bộ của nhóm (xem buildWrecks)
+      const hit = (top) => {
+        w.group.updateMatrixWorld(true);
+        for (let t = 0; t < 6; t++) {
+          const a = rnd() * Math.PI * 2;
+          const dir = top ? new THREE.Vector3(R(-0.3, 0.3), -1, R(-0.3, 0.3)).normalize() : new THREE.Vector3(Math.cos(a), R(-0.6, -0.05), Math.sin(a)).normalize();
+          const target = w.group.localToWorld(new THREE.Vector3(R(-L, L), R(4, 12), R(-7, 7)));
+          rc.set(target.addScaledVector(dir, -60), dir); rc.far = 120;
+          const h = rc.intersectObject(w.group, true).find(q => q.object.isMesh && !q.object.userData.isFxDecal && q.face);
+          if (h) return { point: h.point, normal: h.face.normal.clone().transformDirection(h.object.matrixWorld), object: h.object };
+        }
+        return null;
+      };
+      const keep = { keep: true };
+      // vết cố định, nguội hẳn (xác cháy từ lâu): tắt ánh đỏ rực của lỗ thủng
+      const add = (h, kind, size) => {
+        const rec = h ? fx.addSurfaceMark(h.point, h.normal, h.object, kind, size, keep) : null;
+        if (rec && !rec.batch) { rec.glow = 0; if (rec.mat && rec.mat.emissiveIntensity !== undefined) rec.mat.emissiveIntensity = 0; }
+        return rec;
+      };
+      const jobs = [];
+      // mỗi vết một việc: lần đầu gặp một loại vết, hệ hiệu ứng mới vẽ texture của nó (~30-70 ms) -> gộp 3 loại vào một
+      // việc thì cộng dồn thành cú khựng >100 ms
+      for (let k = 0, n = isDump ? 3 : 5 + Math.floor(rnd() * 4); k < n; k++) {
+        const s = { h: null, big: false };
+        jobs.push(() => { s.h = hit(); s.big = rnd() < 0.5; add(s.h, 'penetration', s.big ? R(3.2, 3.8) : R(2.6, 3.1)); });
+        jobs.push(() => add(s.h, 'armorCrater', s.big ? R(4.2, 4.8) : R(3.4, 4)));
+        if (rnd() < 0.65) jobs.push(() => add(s.h, 'scorch', R(5, 8)));
+      }
+      for (let k = 0, n = 9 + Math.floor(rnd() * 5); k < n; k++) {
+        const s = { h: null };
+        jobs.push(() => { s.h = hit(); add(s.h, 'armorCrater', R(3, 4.2)); });
+        if (rnd() < 0.5) jobs.push(() => add(s.h, 'scorch', R(4, 6)));
+      }
+      // rỗ đạn súng máy / mảnh văng (vết nhỏ gộp InstancedMesh: nhiều vẫn ít lượt vẽ); có loạt đạn dồn thành chùm
+      for (let k = 0, n = 45 + Math.floor(rnd() * 25); k < n; k++) jobs.push(() => add(hit(), rnd() < 0.6 ? 'steelDent' : 'heiSplash', R(1.4, 2.8)));
+      for (let k = 0, n = 2 + Math.floor(rnd() * 2); k < n; k++) jobs.push(() => {
+        const h = hit();
+        if (!h) return;
+        const t1 = new THREE.Vector3().crossVectors(h.normal, Math.abs(h.normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
+        const t2 = new THREE.Vector3().crossVectors(h.normal, t1);
+        for (let i = 0, m = 6 + Math.floor(rnd() * 6); i < m; i++) {
+          const p = h.point.clone().addScaledVector(t1, R(-4, 4)).addScaledVector(t2, R(-3, 3));
+          add({ point: p, normal: h.normal, object: h.object }, 'steelDent', R(1.2, 2.2));
+        }
+      });
+      for (let k = 0; k < 3; k++) jobs.push(() => add(hit(true), 'scorch', R(8, 13)));
+      return jobs;
     }
     wreckFoot(w) {
       const ca = Math.cos(w.angle), sa = Math.sin(w.angle), h = (w.kind === 'dump' || w.kind === 'truck') ? 11 : 12, s = 6;
@@ -3317,7 +3829,11 @@ const Props = (() => {
           const ex = b.x - c.x, ez = b.z - c.z;
           return [c.x + ddx + ex * cs - ez * sn, c.z + ddz + ex * sn + ez * cs];
         });
-        if (this.wreckBlocked(w, pts, ob, pusher)) continue;
+        if (this.wreckBlocked(w, pts, ob, pusher)) {
+          // vướng ô tô dân sự: xác xe bị ủi dồn ô tô trượt đi cùng hướng (như ô tô dồn ô tô, StreetSet.moveCar), rồi thử lại
+          const q = this._wCar;
+          if (!(q && f === 1 && this.street.moveCar(q, ddx * 0.9, ddz * 0.9, 0, pusher) > 0.05 && !this.wreckBlocked(w, pts, ob, pusher))) continue;
+        }
         this.applyWreckMove(w, ddx, ddz, th);
         const gy = w.gy || 0;
         // cày đất: thỉnh thoảng bụi đất tung dưới gầm xác xe bị ủi
@@ -3369,6 +3885,18 @@ const Props = (() => {
         const rad = rk.radius || 18;
         if (Math.abs(rk.x - ob.cx) > R + rad || Math.abs(rk.z - ob.cz) > R + rad) continue;
         if (VC.circleGap(ob, rk.x, rk.z, rad * 0.8, cq).gap < 0) return true;
+      }
+      // cây còn đứng (thân đủ to) chặn xác xe bị ủi
+      this._wCar = null;
+      if (T.trees && T.trees.near) for (const it of T.trees.near(ob.cx, ob.cz, R + 6)) {
+        if (it.fallen || it.shattered || it.kind === 'cactus' || (T.trees.ramSpec && T.trees.ramSpec(it).d <= 0.15)) continue;
+        if (VC.circleGap(ob, it.x, it.z, it.trunkR || 1.5, cq).gap < 0) return true;
+      }
+      // ô tô dân sự chưa bẹp: chặn (moveWreck thử dồn ô tô đi trước — this._wCar)
+      if (this.street) for (const q of this.street.near(ob.cx, ob.cz, R + 24)) {
+        if (q.type !== 'car' || (q.c || 0) >= 0.85) continue;
+        const pq = VC.obbPush(ob.cx, ob.cz, ob.ux, ob.uz, ob.hu, ob.hv, this.street.carObb(q, undefined, undefined, undefined, this._wcb || (this._wcb = {})), this._wq3 || (this._wq3 = {}));
+        if (pq && pq.d > 0.3) { this._wCar = q; return true; }
       }
       // xe khác (trừ xe đang ủi): xác xe không bị dồn lồng vào xe đứng cạnh
       const units = typeof window !== 'undefined' && window.game && window.game.units;
@@ -3435,7 +3963,7 @@ const Props = (() => {
       }
       if (bagHit) this.bagsBlasted(x, y, z, A, fx);
       if (this.street) this.street.damageAt(x, y, z, A, fx, ammo);
-      for (const w of this.wrecks) if (!w.shattered && Math.abs(w.x - x) < 40 + A.radius && Math.abs(w.z - z) < 40 + A.radius) this.blastWreck(w, x, y, z, A, ammo, fx);
+      for (const w of this.wrecks) if (!w.shattered && Math.abs(w.x - x) < 40 + A.radius && Math.abs(w.z - z) < 40 + A.radius) this.blastWreck(w, x, y, z, A, ammo, fx, heavy);
     }
     /**
      * Xác xe trúng đạn / nổ gần: sức phá = sức nổ giảm theo khoảng cách tới thân xác xe (+ động năng nếu trúng thẳng). Đạn
@@ -3443,7 +3971,7 @@ const Props = (() => {
      * sức chịu: nát bét — thân, tháp, xích, bánh văng tung toé nằm bẹp quanh chỗ cũ, không còn che chắn / cản xe (gỡ khỏi
      * danh sách vật cản như đá tảng vỡ). Sức chịu chỉ đổi theo chuỗi ENV_HIT (băm theo toạ độ, không RNG) -> mọi máy như nhau
      */
-    blastWreck(w, x, y, z, A, ammo, fx) {
+    blastWreck(w, x, y, z, A, ammo, fx, heavy) {
       let d = Infinity;
       for (const b of w._b) d = Math.min(d, Math.max(0, Math.hypot(x - b.x, z - b.z) - b.radius));
       const top = (w.gy || 0) + ((w.kind === 'dump' || w.kind === 'truck') ? 12 : 13), dy = y > top ? y - top : 0;
@@ -3458,8 +3986,120 @@ const Props = (() => {
       const was = w.hp / w.hp0;
       w.hp -= dmg;
       const k = w.hp / w.hp0;
+      this.smolder(w, A.power >= 0.6 ? 30 : 12);
+      // hình ảnh: mô hình xe đầy đủ đi chuỗi phá xác của VehicleDamage (móp, xé vỏ, gãy nòng, đứt xích...); máu xác (w.hp)
+      // vẫn quyết định lối chơi (ngưng chắn đạn khi nát, đồng bộ wreckState)
+      if (fx) this.queueUpgrade(w);
+      if (w.u || w._up) {
+        if (w.u) VehicleDamage.wreckBlastAt(w.u, x, y, z, A, ammo, heavy, fx);
+        else { if (w._up.blasts.length < 4) w._up.blasts.push([x, y, z, A, ammo, heavy, fx]); w._up.fx = fx; }
+        if (k <= 0) this.shatterWreck(w, x, z, fx);
+        return;
+      }
       if (k <= 0) this.shatterWreck(w, x, z, fx);
       else if (was > 0.5 && k <= 0.5) this.mangleWreck(w, x, z, fx);
+    }
+    // Xác gộp (1 lưới, nhẹ) -> mô hình xe đầy đủ lúc bị bắn lần đầu, để chuỗi phá xác chạy được trên từng bộ phận. Chỉ chiếc
+    // bị bắn mới tốn (~40 ms dựng + 1 phát dựng sẵn thay vì ~280 ms của staticWreck đầy đủ). Vật liệu: tông cháy gỉ + phong
+    // hoá giống xác gộp (không đổi màu đột ngột lúc thay); vết đạn cũ đi theo lưới gộp nên dán lại dần trên mô hình mới
+    // xác nguội bị bắn lại: âm ỉ bốc khói một lúc rồi tắt (bắn tiếp thì kéo dài)
+    smolder(w, sec) {
+      if (w._smoker) { w._smoker.ttl = Math.max(w._smoker.ttl || 0, sec); return; }
+      const c = w.group ? w.group.getWorldPosition(new THREE.Vector3()) : { x: w.x, z: w.z };
+      this.smokers.push(w._smoker = { x: c.x, y: (w.gy || 0) + 8, z: c.z, phase: hash(w.x | 0) * 3, ttl: sec, w });
+    }
+    // chia 2 khung (mỗi bước ~50-100 ms): khung 1 dựng mô hình ẩn, khung 2 (stepWreckUpgrade) dựng xác + thay vật liệu + hiện;
+    // các phát trúng trong lúc chờ dồn lại áp sau
+    queueUpgrade(w) {
+      if (w.u || w._up || w.noUpgrade || w.shattered || !w.group || !w.mat) return;
+      if (typeof TankModelBuilder === 'undefined' || typeof VehicleDamage === 'undefined' || !VehicleDamage.wreckBlastAt) return;
+      if (w.kind === 'dump' || w.kind === 'truck') { w.noUpgrade = true; return; }
+      w._up = { stage: 0, blasts: [] };
+      (this._upQ = this._upQ || new Set()).add(w);
+    }
+    stepWreckUpgrade() {
+      for (const w of this._upQ) {
+        if (w._up.stage === 0) { w._up.stage = 1; if (!this.upgradeWreck(w)) { this._upQ.delete(w); w._up = null; w.noUpgrade = true; } return; }
+        this._upQ.delete(w);
+        this.finishUpgrade(w);
+        const P = w._up; w._up = null;
+        for (const b of P.blasts) VehicleDamage.wreckBlastAt(w.u, ...b);
+        // nát trong lúc chờ (lối chơi đã tính ngay ở shatterWreck): dồn các nấc rã cuối
+        if (w.shattered) this.shatterWreck(w, w.x + 1, w.z, P.fx || null, true);
+        return;
+      }
+    }
+    upgradeWreck(w) {
+      if (w.u || w.noUpgrade || !w.group || !w.mat) return false;
+      if (typeof TankModelBuilder === 'undefined' || typeof VehicleDamage === 'undefined' || !VehicleDamage.wreckBlastAt) return;
+      // xe ben / xe tải: mô hình xác xe tải dựng riêng, không có mô hình đầy đủ
+      if (w.kind === 'dump' || w.kind === 'truck') { w.noUpgrade = true; return; }
+      const inner = w.group.children[0];
+      const u = { id: 'prop_wreck_' + Math.round(w.x) + '_' + Math.round(w.z), team: 'RED', tankType: w.kind === 'apc' ? 'GATLING' : 'ALL_ROUNDER', scene: inner };
+      try { TankModelBuilder.buildModel(u); } catch (err) { console.warn('[PROPS] wreck upgrade error:', err); return false; }
+      if (u.hpGroup && u.hpGroup.parent) u.hpGroup.parent.remove(u.hpGroup);
+      if (u.reactiveArmorMesh && u.reactiveArmorMesh.parent) u.reactiveArmorMesh.parent.remove(u.reactiveArmorMesh);
+      u.group.position.set(0, 0, 0); u.group.rotation.set(0, 0, 0);
+      if (u.barrelPivot) u.barrelPivot.rotation.x = -0.28;
+      // tháp: đúng tư thế xác gộp (còn trên thân: góc xoay; bị thổi bay: nằm cạnh thân)
+      const oldT = w.turretGroup, tg = u.turretGroup;
+      if (oldT && tg) {
+        if (oldT.position.y < 0) {
+          inner.add(tg); tg.position.copy(oldT.position); tg.rotation.copy(oldT.rotation);
+          u.fxWreck = { turret: tg };
+        } else { tg.rotation.y = oldT.rotation.y; tg.rotation.z = oldT.rotation.z; }
+      }
+      w.group.updateMatrixWorld(true);
+      const wp = u.group.getWorldPosition(new THREE.Vector3());
+      u.x = wp.x; u.y = wp.y; u.z = wp.z; u.bodyAngle = w.angle;
+      u.group.visible = false;
+      if (tg) tg.visible = false;
+      w._up.u = u;
+      return true;
+    }
+    finishUpgrade(w) {
+      const u = w._up.u, inner = w.group.children[0], tg = u.turretGroup;
+      u.group.visible = true;
+      if (tg) tg.visible = true;
+      let seed = ((Math.round(w.x) * 2654435761) ^ Math.round(w.z)) >>> 0 || 1;
+      const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+      try { VehicleDamage.staticWreck(u, { kill: 'burn', rnd, hits: 0 }); } catch (err) { console.warn('[PROPS] wreck damage error:', err); }
+      // vật liệu cháy gỉ theo màu gốc từng bộ phận, cùng cấu hình shader với xác gộp (vertexColors + phong hoá): không biên
+      // dịch shader mới giữa trận. Màu đỉnh trắng (màu nằm ở vật liệu): lưới gốc nướng sẵn hoa văn ngụy trang vào màu đỉnh
+      // -> thay bằng bản hình học nông (dùng chung toạ độ / pháp tuyến / chỉ số, riêng màu đỉnh) để không đổi lưới dùng chung
+      // của xe khác; VehicleDamage.prepMesh tự nhân bản sâu trước khi làm móp
+      const CHAR = new THREE.Color(0.15, 0.135, 0.12), RUST = new THREE.Color(0.36, 0.18, 0.09), cache = new Map();
+      const swap = (src) => {
+        if (!src || src.transparent || !(src.isMeshStandardMaterial || src.isMeshLambertMaterial || src.isMeshPhongMaterial)) return src;
+        let m = cache.get(src);
+        if (m) return m;
+        m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.2, vertexColors: true });
+        m.color.copy(src.color || CHAR).lerp(CHAR, 0.7).lerp(RUST, 0.12 + 0.2 * rnd()).multiply(w.mat.color);
+        if (typeof Weathering !== 'undefined') Weathering.apply(m, 'burnt', WRECK_WX);
+        cache.set(src, m);
+        return m;
+      };
+      u.group.traverse(o => {
+        if (!o.isMesh || !o.material || o.userData.isFxDecal) return;
+        o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
+        const g = o.geometry;
+        if (g && g.attributes.position) {
+          const g2 = new THREE.BufferGeometry();
+          if (g.index) g2.setIndex(g.index);
+          for (const k in g.attributes) if (k !== 'color') g2.setAttribute(k, g.attributes[k]);
+          for (const gr of g.groups) g2.addGroup(gr.start, gr.count, gr.materialIndex);
+          g2.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
+          g2.boundingSphere = g.boundingSphere; g2.boundingBox = g.boundingBox;
+          g2.userData = Object.assign({}, g.userData);
+          o.geometry = g2;
+        }
+        o.castShadow = o.receiveShadow = true;
+      });
+      // bỏ lưới gộp
+      for (const c of inner.children.slice()) if (c !== u.group && c !== tg) inner.remove(c);
+      w.turretGroup = tg || null;
+      w.u = u;
+      w.dressed = false; w._jobs = null; w.bvhWarm = false; this._wrecksDressed = false;
     }
     // ĐỒNG BỘ (terrain.envStateString): sức chịu còn lại từng xác xe theo bậc 1/20 ('X' = đã nát) — máy vào trận giữa chừng
     // / máy lệch trạng thái gộp theo mức hư nặng hơn
@@ -3525,13 +4165,20 @@ const Props = (() => {
       this.wreckFx(w, fx, 0.6);
     }
     // nát bét: từng bộ phận văng ra 1-5 m quanh chỗ cũ theo hướng xa điểm nổ, nằm bẹp nghiêng ngả trên đất; gỡ va chạm
-    shatterWreck(w, x, z, fx) {
+    // visualOnly: chỉ phần hình ảnh (xác vừa nâng cấp xong sau khi đã nát — lối chơi đã tính lúc nát)
+    shatterWreck(w, x, z, fx, visualOnly) {
       w.shattered = true;
       let dx = w.x - x, dz = w.z - z;
       const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
 
-      // Mô hình xe chi tiết: khung gầm bẹp dúm dó sát đất, cháy đen sì than rỉ sét, tháp pháo văng lăn lóc
-      if (w.group) {
+      // Mô hình đầy đủ (đã nâng cấp): nát theo các nấc rã xác thật — dồn thêm vài phát nổ nặng quanh thân tới nấc cuối
+      // (xích đứt, bánh văng, thân sụp, vỏ xé toạc)
+      if (w.u) {
+        const d = VehicleDamage.state(w.u);
+        // mỗi phát ~50 ms (dò tia + biến dạng lưới): chia ra từng khung (update -> stepWreckBlasts)
+        if ((d.wreckStage || 0) < 3) { w._blastQ = 9; w._blastFx = fx; (this._blastQ = this._blastQ || new Set()).add(w); }
+      } else if (w.group && !w._up) {   // đang chờ nâng cấp: hình ảnh dồn sau khi mô hình đầy đủ dựng xong
+        // Mô hình xe gộp: khung gầm bẹp dúm dó sát đất, cháy đen sì than rỉ sét, tháp pháo văng lăn lóc
         // vỏ thép bẹp dúm sụm gầm (còn ~1/2 chiều cao, bè ra), lún xuống đất, nghiêng lệch hẳn — không dẹt như tờ giấy
         w.group.scale.set(1.1, 0.55, 1.08);
         w.group.position.y -= 1.4;
@@ -3556,6 +4203,7 @@ const Props = (() => {
         }
       }
 
+      if (visualOnly) return;
       const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), e = new THREE.Euler();
       let n = 0;
       for (const [g, i] of (w._slots || [])) {
@@ -3826,14 +4474,19 @@ const Props = (() => {
     update(dt, fx, cam) {
       if (this.street) this.street.update(dt, fx, cam);   // ô tô trượt sau cú húc / đang cháy
       if (dt) this.updateWrecks(dt);                       // xác xe văng trượt sau cú húc
+      if (fx && !this._wrecksDressed) this.dressWrecks(fx);
+      if (this._upQ && this._upQ.size) this.stepWreckUpgrade();
+      else if (this._blastQ && this._blastQ.size) this.stepWreckBlasts();
       if (!fx || !fx.smoke || !this.smokers.length) return;
       this.smokeAcc += dt;
       if (this.smokeAcc < 0.22) return;
       const step = this.smokeAcc; this.smokeAcc = 0;
-      for (const s of this.smokers) {
+      for (let i = this.smokers.length - 1; i >= 0; i--) {
+        const s = this.smokers[i];
+        if (s.ttl !== undefined && (s.ttl -= step) <= 0) { this.smokers.splice(i, 1); if (s.w && s.w._smoker === s) s.w._smoker = null; continue; }
         if (cam && Math.hypot(cam.x - s.x, cam.z - s.z) > 1700) continue;
         s.phase += step;
-        const k = 0.6 + 0.4 * Math.sin(s.phase * 0.7);
+        const k = (0.6 + 0.4 * Math.sin(s.phase * 0.7)) * (s.ttl !== undefined ? Math.min(1, s.ttl / 8) : 1);   // âm ỉ tắt dần
         fx.smoke.add({ x: s.x + (Math.random() - 0.5) * 6, y: s.y, z: s.z + (Math.random() - 0.5) * 6, vx: (Math.random() - 0.5) * 3, vy: 7 + Math.random() * 5, vz: (Math.random() - 0.5) * 3,
           size: 4 + Math.random() * 3, grow: 6, drag: 0.5, grav: -2, life: 5 + Math.random() * 3, alpha: 0.32 * k, fadeIn: 0.3, c0: [0.12, 0.11, 0.1], c1: [0.36, 0.35, 0.34], cell: 0, floor: false });
       }

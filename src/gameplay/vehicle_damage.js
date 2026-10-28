@@ -226,6 +226,36 @@ const VehicleDamage = (() => {
     }
     if (bigBlast && FX.spawn) FX.spawn(p.x, p.y, p.z, 'INCENDIARY', 'DIRECT_HIT', {});
   }
+  // Diesel / JP-8 khó bắt lửa (điểm chớp cháy > 40-60 °C): đạn thường bắn thủng can / bình chỉ làm rò dầu. Bén lửa khi
+  // có đạn cháy, đầu nổ lõm / nổ phá (phun sương dầu giữa lửa nổ) hoặc mảnh thép nóng của đạn xuyên
+  const FUEL_IGNITE = { small: 0.06, cannon: 0.35, kinetic: 0.5, heat: 0.9, blast: 0.85 };
+  function fuelIgniteP(cls, ammo, heiap) {
+    const p = FUEL_IGNITE[cls] !== undefined ? FUEL_IGNITE[cls] : 0.85;
+    return ammo === 'INCENDIARY' || heiap ? Math.max(0.6, p) : p;
+  }
+  // Bốc thăm bén lửa cho can / bình tag; nhớ kết quả ~0,3 s để cùng một phát (móp rồi văng) không bốc thăm 2 lần
+  function fuelIgnites(u, tag, pIgnite) {
+    const d = state(u), now = Date.now(), m = d.fuelRoll;
+    if (m && m.tag === tag && now - m.at < 300) return m.v;
+    const v = Math.random() < pIgnite;
+    d.fuelRoll = { tag, at: now, v };
+    return v;
+  }
+  // Đạn thủng can / bình dầu mà không bén lửa: tia dầu phun thành sương nhạt, rơi xuống — không cầu lửa
+  function fuelLeakAt(p, outDir, k = 1) {
+    if (!FX || !p || !FX.smoke) return;
+    const od = outDir && outDir.lengthSq && outDir.lengthSq() > 1e-4 ? outDir.clone().normalize().negate() : new THREE.Vector3(0, 0.3, 0);
+    const n = Math.round(6 + 6 * Math.min(1.5, k));
+    for (let i = 0; i < n; i++) {
+      const sp = rand(8, 26) * (0.7 + 0.3 * Math.min(1.5, k)), g = rand(0.5, 0.62);
+      FX.smoke.add({
+        x: p.x + rand(-0.3, 0.3), y: p.y + rand(-0.2, 0.3), z: p.z + rand(-0.3, 0.3),
+        vx: od.x * sp + rand(-4, 4), vy: od.y * sp + rand(-2, 6), vz: od.z * sp + rand(-4, 4),
+        size: rand(0.5, 1.1), grow: 2.5, drag: 2.6, grav: 30, life: rand(0.5, 1.0), alpha: 0.38, fadeIn: 0.02,
+        c0: [g, g * 0.95, g * 0.8], cell: 0
+      });
+    }
+  }
   // Lựu đạn khói trong ống phóng bị bắn trúng kích nổ: phụt màn khói ngụy trang trắng xám đặc quánh kèm tàn thuốc cháy
   function smokeCanisterBurstAt(p, outDir, fullCluster) {
     if (!FX || !p) return;
@@ -1739,10 +1769,13 @@ const VehicleDamage = (() => {
     const sp = point || partWorld(u, tag);
     const inc = opts && (opts.ammo === 'INCENDIARY' || cls === 'heat' || cls === 'blast');
     if (/^(can|cans|fuelTank)/.test(tag)) {
-      fuelBurstAt(sp, Math.min(1.5, 0.65 + power * 0.5));
-      sfx('fuel', sp, 0.85);
-      if (inc || cls === 'cannon' || Math.random() < 0.55) {
+      if (fuelIgnites(u, tag, fuelIgniteP(cls, opts && opts.ammo, !!(opts && opts.heiap)))) {
+        fuelBurstAt(sp, Math.min(1.5, 0.65 + power * 0.5));
+        sfx('fuel', sp, 0.85);
         addFire(u, sp, 0.95, rand(14, 28));
+      } else {
+        fuelLeakAt(sp, dir, power);
+        sfx('snap', sp, 0.6);
       }
     } else if (/^smoke/.test(tag)) {
       smokeCanisterBurstAt(sp, Math.min(1.4, 0.6 + power * 0.5));
@@ -1928,15 +1961,17 @@ const VehicleDamage = (() => {
       const c = k * nx + i;
       if (y > h[c]) h[c] = y;
     };
+    // một cạnh tam giác (gồm cả mép trên của vách đứng): lấy mẫu dày nửa ô (trước đây mỗi tam giác tạo 4 mảng tạm để duyệt
+    // 3 cạnh — hàng chục nghìn tam giác mỗi lần dựng lại -> tốn cấp phát + dọn rác)
+    const edge = (px, py, pz, qx, qy, qz) => {
+      const L = Math.hypot(qx - px, qz - pz), ns = Math.max(1, Math.ceil(L / (HF_CELL * 0.5)));
+      for (let j = 0; j <= ns; j++) { const f = j / ns; put(px + (qx - px) * f, pz + (qz - pz) * f, py + (qy - py) * f); }
+    };
     for (const a of pts) {
       for (let t = 0; t + 8 < a.length; t += 9) {
         const ax = a[t], ay = a[t + 1], az = a[t + 2], bx = a[t + 3], by = a[t + 4], bz = a[t + 5], cx = a[t + 6], cy = a[t + 7], cz = a[t + 8];
         if (ax === bx && ay === by && az === bz && ax === cx && ay === cy && az === cz) continue;   // bộ phận đã tách (thu về 1 điểm)
-        // cạnh tam giác (gồm cả mép trên của vách đứng)
-        for (const [px, py, pz, qx, qy, qz] of [[ax, ay, az, bx, by, bz], [bx, by, bz, cx, cy, cz], [cx, cy, cz, ax, ay, az]]) {
-          const L = Math.hypot(qx - px, qz - pz), ns = Math.max(1, Math.ceil(L / (HF_CELL * 0.5)));
-          for (let j = 0; j <= ns; j++) { const f = j / ns; put(px + (qx - px) * f, pz + (qz - pz) * f, py + (qy - py) * f); }
-        }
+        edge(ax, ay, az, bx, by, bz); edge(bx, by, bz, cx, cy, cz); edge(cx, cy, cz, ax, ay, az);
         // lòng tam giác: tâm từng ô nằm trong hình chiếu xz
         const det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
         if (Math.abs(det) < 1e-6) continue;
@@ -2170,8 +2205,15 @@ const VehicleDamage = (() => {
 
     // Hiệu ứng đặc trưng theo loại mảnh phụ kiện khi bị bắn trúng dưới đất
     if (/^(can|cans|fuelTank)/.test(tag)) {
-      fuelBurstAt(p, Math.min(1.4, 0.55 + dmg * 0.6));
-      sfx('fuel', p, 0.85);
+      // can rơi dưới đất: phát nhẹ (đạn súng máy) chỉ thủng rò dầu; phát nặng mới bùng lửa
+      if (D.fuelLit || Math.random() < (dmg >= 0.6 ? 0.85 : dmg >= 0.3 ? 0.35 : 0.06)) {
+        D.fuelLit = true;
+        fuelBurstAt(p, Math.min(1.4, 0.55 + dmg * 0.6));
+        sfx('fuel', p, 0.85);
+      } else {
+        fuelLeakAt(p, kickVec, 0.6 + dmg);
+        sfx('snap', p, 0.6);
+      }
     } else if (/^smoke/.test(tag)) {
       smokeCanisterBurstAt(p, Math.min(1.3, 0.5 + dmg * 0.5));
       sfx('snap', p, 0.9);
@@ -2197,7 +2239,7 @@ const VehicleDamage = (() => {
       outDir.normalize();
       if (D.explosive && !D.detonated) {
         D.detonated = true;
-        if (/^(can|cans|fuelTank)/.test(tag)) fuelBurstAt(p, 1.5);
+        if (/^(can|cans|fuelTank)/.test(tag)) { if (D.fuelLit || dmg >= 0.3) fuelBurstAt(p, 1.5); else fuelLeakAt(p, kickVec, 1.2); }
         else if (/^smoke/.test(tag)) smokeCanisterBurstAt(p, 1.5);
         else ammoCookoffPopAt(p, true);
       }
@@ -2702,9 +2744,16 @@ const VehicleDamage = (() => {
 
     // Hiệu ứng âm thanh & cháy nổ chiến trường riêng cho từng loại phụ kiện
     if (/^(can|cans|fuelTank)/.test(tag)) {
-      sfx('fuel', sp, 1.15);
-      fuelBurstAt(sp, tag === 'fuelTank' ? 1.8 : 1.35);
-      if (sp) addFire(u, sp, tag === 'fuelTank' ? 1.35 : 1.05, tag === 'fuelTank' ? 40 : 24);
+      // theo đúng phát vừa trúng (nổ lan / xe nổ tung không có phát trúng mới -> coi như có lửa nổ, dễ bén)
+      const L = state(u).last, fresh = L && L.at && Date.now() - L.at < 300;
+      if (fuelIgnites(u, tag, fresh ? fuelIgniteP(L.cls, L.ammo, false) : 0.85)) {
+        sfx('fuel', sp, 1.15);
+        fuelBurstAt(sp, tag === 'fuelTank' ? 1.8 : 1.35);
+        if (sp) addFire(u, sp, tag === 'fuelTank' ? 1.35 : 1.05, tag === 'fuelTank' ? 40 : 24);
+      } else {
+        sfx('snap', sp, 0.9);
+        fuelLeakAt(sp, null, 1.5);
+      }
     } else if (/^smoke/.test(tag)) {
       sfx('snap', sp, 1.0);
       smokeCanisterBurstAt(sp, 1.45);
@@ -3296,6 +3345,8 @@ const VehicleDamage = (() => {
         const take = B.order.filter(slot => { ch.getMatrixAt(slot, _rm); return box.containsPoint(_rg.setFromMatrixPosition(_rm)); });
         if (!take.length) continue;
         const im = new THREE.InstancedMesh(ch.geometry, ch.material, take.length);
+        // cùng vật liệu với lô gốc (shader có USE_INSTANCING_COLOR): thiếu instanceColor thì three ném lỗi mỗi khung
+        if (ch.instanceColor) im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(take.length * 3).fill(1), 3);
         take.forEach((slot, k) => { ch.getMatrixAt(slot, _rm); im.setMatrixAt(k, _rm.premultiply(X)); });
         im.renderOrder = ch.renderOrder; im.frustumCulled = false; im.castShadow = false; im.userData.isFxDecal = true;
         m.add(im);
@@ -5053,15 +5104,77 @@ const VehicleDamage = (() => {
   // đúng các hư hại của xe bị hạ thật (phụ kiện / tấm giáp / gạch ERA mất, ăng-ten gãy, lốp xẹp / mất bánh, xích đứt,
   // kính rạn / vỡ, nắp bật, khung vặn, vỏ móp, nóc ép / phồng do nổ trong, nòng cong & gục) — không văng mảnh, không
   // tiếng, không hạt hiệu ứng. o: { kill: 'det' | 'blast' | 'burn' | 'crew', rnd: hàm ngẫu nhiên tất định 0..1 }
+  // Nổ / đạn trúng xác xe tĩnh không nằm trong danh sách xe của trận (xác tàn tích cứ điểm, xác rải bản đồ đã nâng cấp):
+  // tâm nổ sát vỏ -> trúng thẳng (dò tia tìm mặt vỏ), xa hơn -> sóng nổ lan; cả hai đi vào chuỗi phá xác (onWreckHit).
+  // A: Destructibles.ammoInfo (power, radius). Trả true nếu xác chịu tác động
+  function wreckBlastAt(u, x, y, z, A, ammo, heavy, fx) {
+    if (!u || !u.group || !u.isDead || !u.dmg) return false;
+    const d = state(u);
+    u.group.updateMatrixWorld(true);
+    if (!d.wreckLBox) d.wreckLBox = new THREE.Box3().setFromObject(u.group).applyMatrix4(u.group.matrixWorld.clone().invert());
+    const P = new THREE.Vector3(x, y, z);
+    const dist = d.wreckLBox.distanceToPoint(u.group.worldToLocal(P.clone()));
+    const R = A.power >= 0.3 ? A.radius * 0.8 + 6 : 4;
+    if (dist > R) return false;
+    if (dist < 4) {
+      const dir = d.wreckLBox.getCenter(new THREE.Vector3());
+      u.group.localToWorld(dir).sub(P);
+      if (dir.lengthSq() < 1e-6) dir.set(0, -1, 0);
+      dir.normalize();
+      const rc = new THREE.Raycaster(P.clone().addScaledVector(dir, -8), dir, 0, 40);
+      const h = rc.intersectObject(u.group, true).find(q => q.object.isMesh && q.object.visible && !q.object.userData.isFxDecal && q.face);
+      if (h) {
+        const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+        onDirectHit(u, { ammo, heavy, point: h.point, hit: { point: h.point, normal: n, object: h.object }, dir: dir.multiplyScalar(300), fx });
+        // vết tại chỗ trúng (đạn bắn vào xe sống do ExplosionFX dán; nổ qua terrain.damageAt thì không ai dán)
+        if (fx && fx.addSurfaceMark) {
+          const keep = { keep: true, unit: u }, big = A.power >= 1;
+          if (A.power >= 0.6) {
+            fx.addSurfaceMark(h.point, n, h.object, 'armorCrater', big ? 4.6 : 3.6, keep);
+            fx.addSurfaceMark(h.point, n, h.object, 'penetration', big ? 3.4 : 2.8, keep);
+          } else fx.addSurfaceMark(h.point, n, h.object, 'steelDent', 2.2, keep);
+          if (A.power >= 0.3) fx.addSurfaceMark(h.point, n, h.object, 'scorch', big ? 9 : 5.5, keep);
+        }
+        wreckShrapnel(u, A, fx);
+        return true;
+      }
+    }
+    if (A.power < 0.3) return false;
+    onSplash(u, { ammo, heavy, point: P, dist, radius: R, fx });
+    wreckShrapnel(u, A, fx, 1 - dist / R);
+    return true;
+  }
+  // mảnh văng của vụ nổ ghim rỗ khắp vỏ xác (nổ càng mạnh / càng gần càng nhiều)
+  function wreckShrapnel(u, A, fx, k = 1) {
+    if (!fx || !fx.addSurfaceMark || A.power < 0.3) return;
+    const keep = { keep: true, unit: u };
+    for (let i = 0, n = Math.round(Math.min(10, 3 + A.power * 5) * k); i < n; i++) {
+      const h = randomSurfaceHit(u);
+      if (h) fx.addSurfaceMark(h.point, h.normal, h.object, Math.random() < 0.55 ? 'steelDent' : 'heiSplash', rand(1.3, 2.6), keep);
+    }
+  }
+
   function staticWreck(u, o = {}) {
-    if (!u || !u.group) return;
+    const J = staticWreckJobs(u, o);
+    while (J.length) J.shift()();
+  }
+  // staticWreck chia thành hàng việc (dựng nền lúc tải bản đồ, strongholds.js): bước đầu (bung phụ kiện, bánh, xích, nắp)
+  // nối thêm vào chính mảng này mỗi phát lựu pháo một việc (~50 ms) rồi bước kết thúc -> không việc nào chặn luồng chính
+  // nửa giây. Người gọi lấy từ đầu mảng (shift) tới khi rỗng; cùng một rnd thì kết quả như chạy liền
+  function staticWreckJobs(u, o = {}) {
+    const jobs = [];
+    if (!u || !u.group) return jobs;
     const r = o.rnd || Math.random, R = (a, b) => a + r() * (b - a);
     const det = o.kill === 'det', blast = o.kill === 'blast';
-    const prevFX = FX, prevMute = MUTE;
-    FX = null; MUTE = true;
-    try {
+    const quiet = fn => () => {
+      const prevFX = FX, prevMute = MUTE;
+      FX = null; MUTE = true;
+      try { fn(); } finally { FX = prevFX; MUTE = prevMute; }
+    };
+    let d, ws;
+    jobs.push(quiet(() => {
       markGroups(u);
-      const d = state(u);
+      d = state(u);
       u.isDead = true;
       d.destroyedDone = true;
       d.noCrew = true;   // kíp lái đã bỏ xe / được đưa đi từ lâu: không dựng người trong cabin
@@ -5090,7 +5203,7 @@ const VehicleDamage = (() => {
       }
       for (const set of u.antennaSets || []) set.whips.forEach((w, i) => { if (!w.hidden && r() < (det ? 0.75 : 0.35)) { set.setHidden(i, true); d.hiddenAnt.push([set, i]); } });
       // bánh lốp: cháy xẹp; nổ trong thì có bánh văng mất
-      const ws = u.wheelSet;
+      ws = u.wheelSet;
       if (ws) {
         ws.positions.forEach((p, i) => {
           if (det && r() < 0.22) { d.flat[i] = true; d.gone[i] = true; ws.gone[i] = 1; }
@@ -5121,12 +5234,15 @@ const VehicleDamage = (() => {
       // đục hố móp rách vỏ, ép lõm, xé mảng vỏ, bung phụ kiện / bánh, đứt xích; đủ nhiều thì lên các nấc rã xác (vỏ móp nặng
       // -> nóc võng sườn oằn tháp lệch -> nát bét: xích đứt, bánh văng, thân sụp) và rã hẳn (bung hết phụ kiện).
       // Mảnh văng / tiếng nổ đã tắt (MUTE): bộ phận bị xé chỉ mất khỏi xe
-      const nHit = (det ? 9 : blast ? 7 : o.kill === 'burn' ? 5 : 4) + Math.floor(r() * 3);
-      for (let k = 0; k < nHit; k++) {
+      // o.hits: số phát dựng sẵn (xác xe rải bản đồ nâng cấp giữa trận dùng ít phát: mỗi phát dò tia lên cả mô hình ~50 ms)
+      const nHit = o.hits !== undefined ? o.hits : (det ? 9 : blast ? 7 : o.kill === 'burn' ? 5 : 4) + Math.floor(r() * 3);
+      for (let k = 0; k < nHit; k++) jobs.push(quiet(() => {
         const h = randomSurfaceHit(u);
         if (h) onWreckHit(u, { ammo: 'HE', heavy: true, point: h.point, hit: { point: h.point, normal: h.normal, object: h.object }, dir: h.dir.clone().multiplyScalar(300) });
-      }
-      FX = null;
+      }));
+      jobs.push(quiet(finish));
+    }));
+    const finish = () => {
       // xích: đứt cả hai bên (bánh / xích đã nát dưới đạn)
       if (u.trackSystem && u.trackSystem.breakSide) for (let sd = 0; sd < 2; sd++) if (!(u.trackSystem.broken && u.trackSystem.broken[sd]) && r() < 0.85) u.trackSystem.breakSide(sd, r() < 0.5);
       // nòng: gãy / thủng (gục hẳn) hoặc bị đập cong
@@ -5152,9 +5268,8 @@ const VehicleDamage = (() => {
       }
       // xác nằm lâu ngoài trời: xích / bánh thép gỉ dày khắp, hết vệt mài sáng (VehicleKit.dirtyMaterial)
       u.group.traverse(o => { if (o.material) for (const m of [].concat(o.material)) if (m && m.userData && m.userData.dirtAge) m.userData.dirtAge.value = 1; });
-    } finally {
-      FX = prevFX; MUTE = prevMute;
-    }
+    };
+    return jobs;
   }
 
   function stripAll(u, k) {
@@ -6269,7 +6384,7 @@ const VehicleDamage = (() => {
 
   return {
     ARMOR_ITEM_TAGS, armorUnits, applyArmorMissing, tagAtHit,
-    ARMOR, ammoClass, extinguisherSound, onDirectHit, vshieldFront, onSplash, onDestroyed, onDetonate, staticWreck, reset, handOver, update, recompute, summary, state,
+    ARMOR, ammoClass, extinguisherSound, onDirectHit, vshieldFront, onSplash, onDestroyed, onDetonate, staticWreck, staticWreckJobs, wreckBlastAt, reset, handOver, update, recompute, summary, state,
     visualOnly, digest, applyDigest, addFire, logDoused,
     detachTag, stowTag, hasPart, flatTire, burnTire, breakOutGlass, blowWheel, breakTrack, bendTag, sfx, debugAction,
     crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, hatchHoles, armorOutcome, ARMOR_MM, PEN,

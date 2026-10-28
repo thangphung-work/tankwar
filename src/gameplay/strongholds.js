@@ -141,6 +141,8 @@ const Strongholds = (() => {
     return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
   function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  // canvas vẽ xong rồi đọc lại từng điểm ảnh (getImageData): vẽ bằng CPU luôn — canvas GPU phải chờ đọc ngược ~0,2 s / ảnh
+  const RD = { willReadFrequently: true };
   function blotches(g, rnd, n, w, h, colFn, r0, r1) {
     for (let i = 0; i < n; i++) {
       const x = rnd() * w, y = rnd() * h, r = r0 + rnd() * (r1 - r0);
@@ -156,8 +158,8 @@ const Strongholds = (() => {
   function concreteMaps() {
     if (TEX.conc) return TEX.conc;
     const N = 512, rnd = rngOf(9127);
-    const c = canvas(N, N), g = c.getContext('2d');
-    const b = canvas(N, N), gb = b.getContext('2d');
+    const c = canvas(N, N), g = c.getContext('2d', RD);
+    const b = canvas(N, N), gb = b.getContext('2d', RD);
     g.fillStyle = '#9d998f'; g.fillRect(0, 0, N, N);
     gb.fillStyle = '#808080'; gb.fillRect(0, 0, N, N);
     blotches(g, rnd, 60, N, N, r => `rgba(${r() < 0.5 ? '120,116,108' : '188,184,174'},${0.12 + r() * 0.16})`, 20, 90);
@@ -217,7 +219,7 @@ const Strongholds = (() => {
   function floorMaps() {
     if (TEX.floor) return TEX.floor;
     const N = 512, rnd = rngOf(5531);
-    const c = canvas(N, N), g = c.getContext('2d');
+    const c = canvas(N, N), g = c.getContext('2d', RD);
     g.fillStyle = '#8f8b82'; g.fillRect(0, 0, N, N);
     blotches(g, rnd, 50, N, N, r => `rgba(${r() < 0.6 ? '96,92,84' : '160,156,146'},${0.12 + r() * 0.18})`, 18, 80);
     const img = g.getImageData(0, 0, N, N), d = img.data;
@@ -812,6 +814,51 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       g.setIndex(this.i);
       g.computeBoundingSphere();
       return g;
+    }
+  }
+
+  // ===========================================================================
+  // XÁC XE TÀN TÍCH: hàng việc + bể dùng lại giữa các bản đồ trong phiên chơi
+  // ===========================================================================
+  // Chạy hết một hàng việc (việc trả false = gọi lại)
+  function drainJobs(J) {
+    while (J.length) { const f = J.shift(); if (f() === false) J.unshift(f); }
+  }
+  // Thế đặt thân xác: bám theo mặt dốc tại (P.x, P.z), quay theo P.angle
+  function wreckBase(P, G, UP) {
+    const gy = G(P.x, P.z), e = 10;
+    const n = new THREE.Vector3(-(G(P.x + e, P.z) - G(P.x - e, P.z)) / (2 * e), 1, -(G(P.x, P.z + e) - G(P.x, P.z - e)) / (2 * e)).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(UP, n).multiply(new THREE.Quaternion().setFromAxisAngle(UP, P.angle));
+    return new THREE.Matrix4().compose(new THREE.Vector3(P.x, gy - 0.2, P.z), q, new THREE.Vector3(1, 1, 1));
+  }
+  // Tháp bị thổi bay: nằm lật nghiêng trên đất cạnh thân (T = P.turret do map_gen chọn)
+  function placeLooseTurret(tg, T, G) {
+    tg.position.set(T.x, 0, T.z);
+    tg.rotation.set(T.flip ? Math.PI * 0.88 : 0.22 * T.roll, T.yaw, T.flip ? 0.25 * T.roll : 0.5 * T.roll);
+    tg.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(tg);
+    if (!box.isEmpty()) tg.position.y += G(T.x, T.z) - box.min.y - 0.9;
+  }
+  // Mỗi xác tốn ~0,5 s dựng (mô hình + giả lập lựu pháo, đo 2026-10-28: 14 xác URBAN 7-13 s). Xác chưa bị bắn trong trận
+  // giữ lại khi đổi bản đồ; bản đồ sau cần xác cùng loại xe / phe / kiểu bị hạ / còn-mất tháp thì đặt lại chỗ mới.
+  // Hình dạng hư hại vốn không tất định giữa các máy (randomSurfaceHit dùng Math.random) nên dùng lại không làm lệch gì;
+  // vật cản (boulders) vẫn theo P của bản đồ mới
+  const WRECK_POOL = [];
+  const WRECK_POOL_MAX = 28;
+  const wreckKey = P => P.type + '|' + P.team + '|' + P.kill + '|' + (P.turret ? 1 : 0);
+  function takePooledWreck(P) {
+    const k = wreckKey(P), i = WRECK_POOL.findIndex(E => E.key === k);
+    return i < 0 ? null : WRECK_POOL.splice(i, 1)[0];
+  }
+  function putPooledWreck(P, E) {
+    E.key = wreckKey(P);
+    WRECK_POOL.push(E);
+    while (WRECK_POOL.length > WRECK_POOL_MAX) {
+      const old = WRECK_POOL.shift();
+      for (const root of [old.u.group, old.turret]) if (root) root.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) [].concat(o.material).forEach(m => m && m.dispose());
+      });
     }
   }
 
@@ -1679,7 +1726,10 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (K.nDown && this.cutAt(K, L.f, L.r)) continue;
         // dưới mái phẳng: thấp hơn đáy dầm trần; phần vát miệng hầm: theo mặt vát (cao dần ra cửa)
         const ch = ar < S.CH_R && af > S.HB - S.CH ? chamY(af) - 2 : S.CEIL - S.BEAM - 1;
-        return { K, y: K.G + Math.max(S.CEIL - S.BEAM - 1, ch) };
+        // top: mặt trên khối mái (lớp đất phủ; phần vát miệng hầm: đỉnh gờ mặt tiền) — điểm giữa y và top nằm trong bê tông
+        // ox, oz: hướng ra miệng hầm gần nhất (khói dồn dưới trần chảy ra cửa)
+        const sg = L.f >= 0 ? 1 : -1;
+        return { K, y: K.G + Math.max(S.CEIL - S.BEAM - 1, ch), top: K.G + (ch > S.CEIL ? S.TOP : S.CREST), ox: K.fx * sg, oz: K.fz * sg };
       }
       return null;
     }
@@ -2286,61 +2336,84 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const UP = new THREE.Vector3(0, 1, 0);
       // [nửa dài thân, bán kính vật cản] theo loại xe
       const FOOT = { ALL_ROUNDER: [30, 14], GATLING: [28, 13], ARTILLERY: [36, 12], SCOUT: [20, 9] };
-      // dựng lúc tải dưới nền (opts.deferWrecks): mỗi xác xe là 1 việc trong hàng chờ, terrain gọi stepWrecks() từng
-      // nhịp -> màn chờ không đứng hình cả chục giây
+      // dựng lúc tải dưới nền (opts.deferWrecks): mỗi xác xe là 1 hàng việc nhỏ (dựng mô hình, từng phát lựu pháo giả lập,
+      // hoàn tất), terrain gọi stepWrecks() trong ngân sách thời gian mỗi nhịp -> màn chờ không đứng hình cả chục giây
       (s.wrecks || []).forEach((P, i) => {
-        if (this.deferWrecks) (this._wreckQueue = this._wreckQueue || []).push(() => this.buildWreck(K, P, i, G, UP, FOOT));
-        else this.buildWreck(K, P, i, G, UP, FOOT);
+        const J = this.wreckJobs(K, P, i, G, UP, FOOT);
+        if (this.deferWrecks) (this._wreckQueue = this._wreckQueue || []).push(J);
+        else drainJobs(J);
       });
     }
 
-    // Dựng n xác xe còn chờ; true = đã dựng hết
-    stepWrecks(n = 1) {
-      const Q = this._wreckQueue;
-      while (Q && Q.length && n-- > 0) {
-        try { Q.shift()(); } catch (err) { console.warn('[STRONGHOLD] wreck error:', err); }
+    // Làm tiếp các việc dựng xác xe còn chờ: tối đa n việc, dừng sớm khi quá budgetMs; true = đã dựng hết
+    stepWrecks(n = 1, budgetMs = Infinity) {
+      const Q = this._wreckQueue, t0 = performance.now();
+      while (Q && Q.length && n > 0) {
+        const J = Q[0];
+        if (!J.length) { Q.shift(); continue; }
+        const f = J.shift();
+        try { if (f() === false) J.unshift(f); } catch (err) { console.warn('[STRONGHOLD] wreck error:', err); J.length = 0; }
+        n--;
+        if (performance.now() - t0 > budgetMs) break;
       }
+      while (Q && Q.length && !Q[0].length) Q.shift();
       return !Q || !Q.length;
     }
 
-    buildWreck(K, P, i, G, UP, FOOT) {
-      {
-        if (!TankModelBuilder.models[P.type]) return;
-        let seed = P.seed >>> 0 || 1;
-        const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-        const R = (a, b) => a + rnd() * (b - a);
+    // Hàng việc dựng 1 xác xe (việc trả false = gọi lại lần sau). Có xác cùng loại / phe / kiểu bị hạ còn nguyên trong bể
+    // (bản đồ trước, chưa bị bắn) thì chỉ đặt lại chỗ — khỏi dựng mô hình + giả lập lựu pháo (~0,5 s mỗi xác)
+    wreckJobs(K, P, i, G, UP, FOOT) {
+      const jobs = [];
+      if (!TankModelBuilder.models[P.type]) return jobs;
+      let seed = P.seed >>> 0 || 1;
+      const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+      const W = { u: null, P, rnd, K, ring: null, turret: null, marks: [], dressed: false };
+      jobs.push(() => {
+        // lấy từ bể lúc chạy việc (không phải lúc xếp hàng): bản đồ bị dọn trước khi tới lượt thì xác vẫn còn trong bể
+        const E = takePooledWreck(P);
+        if (E) { jobs.length = 0; this.reuseWreck(K, P, i, G, UP, FOOT, W, E); return; }
         const u = { id: 'sh_wreck_' + K.id + '_' + i, team: P.team, tankType: P.type, scene: this.wreckRoot };
-        try { TankModelBuilder.buildModel(u); } catch (err) { console.warn('[STRONGHOLD] wreck model error:', err); return; }
+        try { TankModelBuilder.buildModel(u); } catch (err) { console.warn('[STRONGHOLD] wreck model error:', err); jobs.length = 0; return; }
+        W.u = u;
         if (u.hpGroup && u.hpGroup.parent) u.hpGroup.parent.remove(u.hpGroup);
         if (u.reactiveArmorMesh && u.reactiveArmorMesh.parent) u.reactiveArmorMesh.parent.remove(u.reactiveArmorMesh);
         // thân xe bám theo mặt dốc
-        const gy = G(P.x, P.z), e = 10;
-        const n = new THREE.Vector3(-(G(P.x + e, P.z) - G(P.x - e, P.z)) / (2 * e), 1, -(G(P.x, P.z + e) - G(P.x, P.z - e)) / (2 * e)).normalize();
-        u.group.quaternion.setFromUnitVectors(UP, n).multiply(new THREE.Quaternion().setFromAxisAngle(UP, P.angle));
-        u.group.position.set(P.x, gy - 0.2, P.z);
-        u.x = P.x; u.y = gy; u.z = P.z; u.bodyAngle = P.angle;
+        const base = wreckBase(P, G, UP);
+        base.decompose(u.group.position, u.group.quaternion, u.group.scale);
+        u.x = P.x; u.y = G(P.x, P.z); u.z = P.z; u.bodyAngle = P.angle;
         u.group.updateMatrixWorld(true);
-        const W = { u, P, rnd, K, ring: null, turret: null, marks: [], dressed: false };
+        W.base = base;
         const tg = u.turretGroup;
         if (P.turret && tg) {
           // nổ kho đạn thổi bay tháp: tháp nằm lật nghiêng trên đất cạnh thân, lộ lỗ vòng tháp cháy đen
           W.ring = tg.getWorldPosition(new THREE.Vector3());
+          W.ringBase = W.ring.clone().applyMatrix4(base.clone().invert());
           tg.parent.remove(tg);
           this.wreckRoot.add(tg);
-          const T = P.turret;
-          tg.position.set(T.x, 0, T.z);
-          tg.rotation.set(T.flip ? Math.PI * 0.88 : 0.22 * T.roll, T.yaw, T.flip ? 0.25 * T.roll : 0.5 * T.roll);
-          tg.updateMatrixWorld(true);
-          const box = new THREE.Box3().setFromObject(tg);
-          if (!box.isEmpty()) tg.position.y += G(T.x, T.z) - box.min.y - 0.9;
+          placeLooseTurret(tg, P.turret, G);
           u.fxWreck = { turret: tg };   // VehicleDamage: tháp đã rời thân (không gục / dò nòng trên thân)
           W.turret = tg;
         } else if (tg) {
           tg.rotation.y += P.tRot || 0;
         }
-        if (typeof VehicleDamage !== 'undefined' && VehicleDamage.staticWreck) {
-          try { VehicleDamage.staticWreck(u, { kill: P.kill, rnd }); } catch (err) { console.warn('[STRONGHOLD] wreck damage error:', err); }
+        if (typeof VehicleDamage !== 'undefined' && (VehicleDamage.staticWreckJobs || VehicleDamage.staticWreck)) {
+          // từng phát lựu pháo giả lập là 1 việc riêng (~50 ms)
+          let sub = null;
+          try { sub = VehicleDamage.staticWreckJobs ? VehicleDamage.staticWreckJobs(u, { kill: P.kill, rnd }) : (VehicleDamage.staticWreck(u, { kill: P.kill, rnd }), null); }
+          catch (err) { console.warn('[STRONGHOLD] wreck damage error:', err); }
+          if (sub) jobs.unshift(() => {
+            if (!sub.length) return;
+            try { sub.shift()(); } catch (err) { console.warn('[STRONGHOLD] wreck damage error:', err); sub.length = 0; }
+            return sub.length ? false : undefined;
+          });
         }
+      });
+      jobs.push(() => {
+        const u = W.u;
+        if (!u) return;
+        const tg = u.turretGroup;
+        if (!P.turret && tg && tg.parent) this.seatTurret(u, tg);
+        const R = (a, b) => a + rnd() * (b - a);
         // sơn cháy sém đen muội (như ExplosionFX.applyChar của xe bị hạ thật), tắt đèn / vải phe / chớp lửa nòng
         // cháy sém sẫm nhưng không đen thui: còn lờ mờ mảng sơn, muội, gỉ và chỗ móp (cháy rụi / nổ kho đạn sém nhất)
         const ch = { det: R(0.84, 0.93), burn: R(0.86, 0.95), blast: R(0.78, 0.88), crew: R(0.72, 0.82) }[P.kill] || 0.8, f = 1 - 0.84 * ch;
@@ -2365,21 +2438,115 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         });
         charObj(u.group);
         if (W.turret) charObj(W.turret);
-        // khói bốc từ khoang máy (đuôi xe, +Z) / lỗ vòng tháp
-        const sp = W.ring ? W.ring.clone() : u.group.localToWorld(new THREE.Vector3(0, 10, 12));
-        W.sx = sp.x; W.sy = sp.y + 4; W.sz = sp.z;
-        // vật cản: 3 vòng dọc trục thân + tháp văng
-        const [half, rad] = FOOT[P.type] || FOOT.ALL_ROUNDER;
-        const ax = Math.sin(P.angle), az = Math.cos(P.angle);
-        if (this.boulders) {
-          for (const k of [-0.55, 0, 0.55]) this.boulders.push({ x: P.x + ax * half * k, z: P.z + az * half * k, radius: rad, height: 13, wreck: true });
-          if (P.turret) this.boulders.push({ x: P.turret.x, z: P.turret.z, radius: 10, height: 9, wreck: true });
-        }
-        K.wrecks.push(W);
+        // thế thân sau hư hại (lún, nghiêng) so với thế đặt ban đầu -> đặt lại y hệt ở bản đồ khác (reuseWreck)
+        u.group.updateMatrix();
+        W.off = W.base.clone().invert().multiply(u.group.matrix);
+        this.finishWreck(K, W, FOOT);
+      });
+      return jobs;
+    }
+
+    // Xác lấy từ bể: đặt thân theo dốc chỗ mới (giữ nguyên độ lún / nghiêng do hư hại), tháp văng đặt theo bản đồ mới.
+    // Vết đạn trên vỏ đã gỡ lúc cất vào bể -> updateWreckFX dán lại theo hạt giống của xác ở chỗ mới
+    reuseWreck(K, P, i, G, UP, FOOT, W, E) {
+      const u = E.u;
+      W.u = u; W.turret = E.turret; W.off = E.off; W.ringBase = E.ringBase;
+      u.id = 'sh_wreck_' + K.id + '_' + i;
+      u.scene = this.wreckRoot;
+      const base = W.base = wreckBase(P, G, UP);
+      base.clone().multiply(E.off).decompose(u.group.position, u.group.quaternion, u.group.scale);
+      this.wreckRoot.add(u.group);
+      u.x = P.x; u.y = G(P.x, P.z); u.z = P.z; u.bodyAngle = P.angle;
+      u.group.updateMatrixWorld(true);
+      W.ring = E.ringBase ? E.ringBase.clone().applyMatrix4(base) : null;
+      if (W.turret) { this.wreckRoot.add(W.turret); placeLooseTurret(W.turret, P.turret, G); }
+      this.finishWreck(K, W, FOOT);
+    }
+
+    finishWreck(K, W, FOOT) {
+      const { u, P } = W;
+      // khói bốc từ khoang máy (đuôi xe, +Z) / lỗ vòng tháp
+      const sp = W.ring ? W.ring.clone() : u.group.localToWorld(new THREE.Vector3(0, 10, 12));
+      W.sx = sp.x; W.sy = sp.y + 4; W.sz = sp.z;
+      // vật cản: 3 vòng dọc trục thân + tháp văng
+      const [half, rad] = FOOT[P.type] || FOOT.ALL_ROUNDER;
+      const ax = Math.sin(P.angle), az = Math.cos(P.angle);
+      if (this.boulders) {
+        for (const k of [-0.55, 0, 0.55]) this.boulders.push({ x: P.x + ax * half * k, z: P.z + az * half * k, radius: rad, height: 13, wreck: true });
+        if (P.turret) this.boulders.push({ x: P.turret.x, z: P.turret.z, radius: 10, height: 9, wreck: true });
       }
+      K.wrecks.push(W);
+    }
+
+    // Trước khi dọn bản đồ (terrain.clearTerrain): xác chưa bị bắn trong trận cất vào bể cho bản đồ sau. Gỡ vết đạn dán
+    // trên vỏ (bản ghi của ExplosionFX), mở khoá ma trận, tách khỏi cây cảnh -> không bị huỷ cùng bản đồ cũ
+    releaseWrecks() {
+      this._wreckQueue = null;
+      const g = typeof window !== 'undefined' ? window.game : null;
+      const fx = g && g.effectsManager && g.effectsManager.fx;
+      for (const K of this.items) for (const W of K.wrecks || []) {
+        const u = W.u;
+        if (W.thawed || !u || !u.group || !W.off) continue;
+        if (fx && fx.surfaceMarks && fx.removeSurfaceMark) {
+          for (let k = fx.surfaceMarks.length - 1; k >= 0; k--) if (fx.surfaceMarks[k].unit === u) fx.removeSurfaceMark(k);
+        }
+        for (const root of [u.group, W.turret]) {
+          if (!root) continue;
+          root.traverse(o => { o.matrixAutoUpdate = true; });
+          if (root.parent) root.parent.remove(root);
+        }
+        putPooledWreck(W.P, { u, turret: W.turret, off: W.off, ringBase: W.ringBase || null });
+        W.u = null;
+      }
+      for (const K of this.items) if (K.wrecks) K.wrecks = K.wrecks.filter(W => W.u);
     }
 
     // Phát trúng ngẫu nhiên lên vỏ xác xe (từ ngoài vào, chếch xuống)
+    // Nổ / đạn trúng xác tàn tích: chuỗi phá xác của VehicleDamage (móp, xé mảng vỏ, cong / gãy nòng, đứt xích, rã dần qua
+    // các nấc tới nát bét). Xác đã khoá ma trận (dựng xong vết đạn) thì mở lại để bộ phận bị xô / sụp hiện đúng chỗ
+    damageWrecks(x, y, z, ammo, heavy, fx) {
+      if (typeof VehicleDamage === 'undefined' || !VehicleDamage.wreckBlastAt || !Number.isFinite(y)) return;
+      const A = typeof Destructibles !== 'undefined' && Destructibles.ammoInfo ? Destructibles.ammoInfo(ammo, heavy) : { power: 1, radius: 20 };
+      const reach = 60 + A.radius;
+      for (const K of this.items) for (const W of K.wrecks || []) {
+        if (!W.u || Math.abs(W.sx - x) > reach || Math.abs(W.sz - z) > reach) continue;
+        if (!W.thawed) { W.thawed = true; W.u.group.traverse(o => { o.matrixAutoUpdate = true; }); }
+        VehicleDamage.wreckBlastAt(W.u, x, y, z, A, ammo, heavy, fx);
+      }
+    }
+
+    // Thân xác bị võng / sụp (VehicleDamage.crushHull) mà tháp giữ nguyên độ cao -> hở khe dưới tháp nhìn xuyên qua được.
+    // Dò tia từ trên xuống quanh trục tháp: đáy tháp (lần trúng tháp cuối) tới nóc thân ngay dưới; hạ tháp theo khe nhỏ nhất
+    // (tì lên chỗ nóc cao nhất)
+    seatTurret(u, tg) {
+      u.group.updateMatrixWorld(true);
+      const hull = [];
+      u.group.traverse(m => {
+        if (!m.isMesh || !m.visible || m.userData.isFxDecal) return;
+        for (let p = m; p; p = p.parent) if (p === tg) return;
+        hull.push(m);
+      });
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(tg.parent.getWorldQuaternion(new THREE.Quaternion()));
+      const c = tg.getWorldPosition(new THREE.Vector3()), down = up.clone().negate();
+      const t1 = new THREE.Vector3(1, 0, 0).applyQuaternion(tg.getWorldQuaternion(new THREE.Quaternion())), t2 = new THREE.Vector3().crossVectors(up, t1);
+      const rc = new THREE.Raycaster();
+      let gap = Infinity;
+      for (const r of [0, 4, 7]) for (let a = 0; a < (r ? 8 : 1); a++) {
+        const an = a / 8 * Math.PI * 2;
+        const o = c.clone().addScaledVector(t1, Math.cos(an) * r).addScaledVector(t2, Math.sin(an) * r).addScaledVector(up, 30);
+        rc.set(o, down); rc.far = 60;
+        const ht = rc.intersectObject(tg, true).filter(h => h.object.visible && !h.object.userData.isFxDecal);
+        if (!ht.length) continue;
+        const bot = ht[ht.length - 1].distance;
+        // lần trúng thân đầu tiên = mặt nóc (vòng bi thòng ăn vào nóc thì khe âm: tháp đã tì, không hạ)
+        const hh = rc.intersectObjects(hull, false)[0];
+        if (hh) gap = Math.min(gap, hh.distance - bot);
+      }
+      if (!(gap > 0.05 && gap < 6)) return;
+      tg.position.addScaledVector(tg.parent.worldToLocal(c.clone().addScaledVector(down, gap)).sub(tg.parent.worldToLocal(c.clone())), 1);
+      tg.updateMatrixWorld(true);
+    }
+
     wreckHit(fx, W, top) {
       const { u, rnd } = W, R = (a, b) => a + rnd() * (b - a);
       for (let t = 0; t < 6; t++) {
@@ -2415,13 +2582,13 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (rnd() < 0.65) add(h, 'scorch', R(5, 8));
       });
       // đạn nảy / nổ trên giáp không thủng
-      for (let k = 0, n = 5 + Math.floor(rnd() * 4); k < n; k++) jobs.push(() => {
+      for (let k = 0, n = 9 + Math.floor(rnd() * 5); k < n; k++) jobs.push(() => {
         const h = this.wreckHit(fx, W);
         add(h, 'armorCrater', R(3, 4.2));
         if (rnd() < 0.5) add(h, 'scorch', R(4, 6));
       });
       // rỗ đạn súng máy / mảnh văng
-      for (let k = 0, n = 28 + Math.floor(rnd() * 16); k < n; k++) jobs.push(() => add(this.wreckHit(fx, W), rnd() < 0.6 ? 'steelDent' : 'heiSplash', R(1.4, 2.6)));
+      for (let k = 0, n = 50 + Math.floor(rnd() * 25); k < n; k++) jobs.push(() => add(this.wreckHit(fx, W), rnd() < 0.6 ? 'steelDent' : 'heiSplash', R(1.4, 2.6)));
       // muội đen loang trên nóc (lửa cháy trong khoang trùm lên)
       for (let k = 0, n = P.kill === 'crew' ? 1 : 3; k < n; k++) jobs.push(() => add(this.wreckHit(fx, W, true), 'scorch', R(8, 13)));
       // xác còn cháy âm ỉ: than hồng lập lòe ở lỗ thủng
@@ -2432,7 +2599,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       // xong: xác xe đứng yên, khóa ma trận (bớt tính lại cây mô hình mỗi khung)
       jobs.push(() => {
         const freeze = root => root.traverse(o => { o.updateMatrix(); o.matrixAutoUpdate = false; });
-        freeze(u.group);
+        if (!W.thawed) freeze(u.group);   // đã bị bắn (damageWrecks): bộ phận còn xô / sụp, không khoá
         if (W.turret) freeze(W.turret);
         W.dressed = true;
       });
@@ -2619,7 +2786,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const windSpd = Math.hypot(wx, wz) || 4.0;
       const windAng = Math.atan2(wz, wx);
       const windNorm = Math.min(2.5, windSpd / 6.5);
-      const freq = 3.6 + 4.8 * windNorm;
+      // cờ lớn (~4 m) vẫy chậm: sóng vải ~0,5-1,2 lần/giây (trước 3,6 + 4,8 x gió rad/s -> phần phật như quay nhanh)
+      const freq = 2.0 + 2.2 * Math.min(1.6, windNorm);
       const waveAmp = 0.9 + 1.4 * Math.min(1.4, windNorm);
       const droop = Math.max(0.2, 2.2 * (1.15 - Math.min(1.0, windNorm * 1.1)));
 
@@ -2640,10 +2808,10 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           const x = b[i], y = b[i + 1], k = Math.min(1.0, Math.max(0.0, x / F.W));
           const kWave = Math.pow(k, 1.2);
           const w1 = Math.sin(x * 0.22 - F.t * freq + y * 0.05) * (2.2 * waveAmp) * kWave;
-          const w2 = Math.sin(x * 0.55 - F.t * (freq * 1.8) + y * 0.15) * (0.6 * waveAmp) * kWave;
-          const w3 = Math.sin(x * 0.85 - F.t * (freq * 2.4)) * (0.35 * windNorm) * kWave;
+          const w2 = Math.sin(x * 0.55 - F.t * (freq * 1.6) + y * 0.15) * (0.6 * waveAmp) * kWave;
+          const w3 = Math.sin(x * 0.85 - F.t * (freq * 2.1)) * (0.35 * windNorm) * kWave;
           a[i + 2] = w1 + w2 + w3;
-          a[i + 1] = y - kWave * kWave * droop + Math.sin(x * 0.3 - F.t * 4.0) * (0.35 * windNorm) * k;
+          a[i + 1] = y - kWave * kWave * droop + Math.sin(x * 0.3 - F.t * 2.4) * (0.35 * windNorm) * k;
           a[i] = x - Math.abs(a[i + 2]) * 0.12 * kWave;
         }
         pos.needsUpdate = true;

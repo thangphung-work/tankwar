@@ -372,6 +372,8 @@ const EnvDamage = (() => {
   }
 
   // ------------------------------------------------------------------ ĐÁ TẢNG CÓ MÁU
+  // hệ số nứt vỡ khi xe đè / ủi theo loại đá (cường độ nén: sa thạch ~50 MPa, đá vôi / đá thường ~100, granite ~200+ và dai)
+  const ROCK_CRUSH = { sandstone: 1, stone: 0.45, granite: 0.08 };
   class RockField {
     constructor(sys, items) {
       this.sys = sys; this.T = sys.T;
@@ -472,6 +474,13 @@ const EnvDamage = (() => {
       this._m.compose(this._p, it.quat, this._s);
       it.im.setMatrixAt(it.k, this._m);
       it.im.instanceMatrix.needsUpdate = true;
+      // vòng va chạm (chặn xe / đạn / nòng) co theo hình: trước đây giữ cỡ ban đầu -> quanh đá đã mẻ còn vành vô hình rộng
+      // gần gấp đôi (xe bị chặn cách đá cả mét, đạn nổ vào khoảng không). Đá thấp đi thì có thể thành đá xe trèo qua được
+      const bo = it.boulder;
+      if (bo) {
+        if (bo.r0 === undefined) { bo.r0 = bo.radius; bo.h0 = bo.height; }
+        bo.radius = bo.r0 * s; bo.height = bo.h0 * s;
+      }
       // càng nát càng sậm màu (bụi khói bám, vết nứt)
       const c = 0.55 + 0.45 * k;
       it.im.setColorAt(it.k, new THREE.Color(it.color.r * c, it.color.g * c, it.color.b * c));
@@ -479,8 +488,79 @@ const EnvDamage = (() => {
       // đá nhỏ dần / lún: vết mẻ cũ co vào theo mặt đá (không lơ lửng ngoài không khí)
       if (it.scarCells && it.scarCells.size) this.syncScars(it, s);
     }
+    // ---- XE ĐÈ / HÚC / ỦI ĐÁ TẢNG (terrain.ramObjects, mọi xe mọi khung, cả xe bản sao mạng — mọi máy cùng thấy)
+    // ob: hộp thân xe (VehicleCollision.vehObb). Đá thấp xe trèo qua (terrain.lowRock): đá nằm dưới dải xích / bánh gánh
+    // một phần trọng lượng xe -> nứt dần theo tải (xe tăng 60 t ~ x1, xe 6 nòng 65 t nhỉnh hơn, xe bánh lốp gần như không
+    // sứt — lốp cao su dàn tải). Đá cao chặn xe: cú húc đầu theo động năng xe, tì ủi liên tục theo lực kéo bám đất (lưỡi
+    // ủi dồn hết lực lên lưỡi cắt: x3,6; khiên V x2,4). Đá to (> ~1,2 m) tì ủi khó nứt hơn theo cỡ.
+    // Theo loại đá (ROCK_CRUSH): sa thạch giòn vỡ nhanh, đá vôi / đá thường chậm hơn ~2 lần, granite gần như không vỡ —
+    // xe tăng đứng ủi cả phút mới chẻ được tảng vừa, cán qua chỉ để lại vết mẻ
+    crush(unit, ob, dt, fx) {
+      if (!this.items.length || !dt || typeof VehicleCollision === 'undefined') return;
+      const VC = VehicleCollision, T = this.T, m = unit.mass || 40, tracked = !unit.isWheeled;
+      const R = Math.hypot(ob.hu, ob.hv) + 30, cg = this._cg || (this._cg = {});
+      const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
+      const a = unit.bodyAngle || 0, fwx = -Math.sin(a), fwz = -Math.cos(a);
+      let front = 0;
+      if (unit.tankType === 'GATLING' && typeof VehicleDamage !== 'undefined' && VehicleDamage.hasPart) {
+        if ((!unit.frontId || unit.frontId === 'dozer') && VehicleDamage.hasPart(unit, 'dozer')) front = 3.6;
+        else if (unit.frontId === 'vshield' && (VehicleDamage.hasPart(unit, 'appliqueVSL') || VehicleDamage.hasPart(unit, 'appliqueVSR'))) front = 2.4;
+      }
+      for (const it of this.items) {
+        const bo = it.boulder;
+        if (!it.alive || !bo || Math.abs(it.x - ob.cx) > R || Math.abs(it.z - ob.cz) > R) continue;
+        const K = ROCK_CRUSH[it.kind] || ROCK_CRUSH.stone, rad = bo.radius || it.r;
+        let dmg = 0, px, py, pz, nx = 0, ny = 1, nz = 0;
+        if (T.lowRock && T.lowRock(bo, unit)) {
+          // đá nằm dưới thân xe: dải xích / bánh ở 2 mép hộp thân (~45% bề ngang ngoài); giữa 2 dải là gầm — đá cao hơn
+          // khoảng sáng gầm (~3,4 đv) mới bị bụng xe tì
+          const tx = it.x - ob.cx, tz = it.z - ob.cz, lu = tx * ob.ux + tz * ob.uz, lv = -tx * ob.uz + tz * ob.ux;
+          if (Math.abs(lu) > ob.hu + rad * 0.5 || Math.abs(lv) > ob.hv + rad * 0.3) continue;
+          const share = Math.abs(lu) + rad * 0.6 > ob.hu * 0.55 ? 1 : (bo.height || 0) > 3.4 ? 0.5 : 0;
+          if (!share) continue;
+          dmg = K * Math.pow(m / 60, 1.5) * 1.3 * share * (tracked ? 1 : 0.3) * dt;
+          px = it.x; py = it.y + (bo.height || it.h * 0.6); pz = it.z;
+        } else {
+          VC.circleGap(ob, it.x, it.z, rad, cg);
+          if (cg.gap > 1) { if (it._rcU === unit.id) it._rcU = null; continue; }
+          const vn = VC.approach(unit, cg.nx, cg.nz);
+          if (vn <= 0.3) continue;
+          // cú húc đầu (xe chưa tì đá này trong ~0,4 s): động năng phần áp vào đá; đá chặn khiến tốc độ khung đầu đã hụt ~1/3
+          const first = !(it._rcU === unit.id && now - it._rcT < 0.4);
+          it._rcU = unit.id; it._rcT = now;
+          const blade = front && -(cg.nx * fwx + cg.nz * fwz) > 0.6 ? front : 1;
+          if (first) dmg += K * 0.5 * m * 1000 * (vn / 8) * (vn / 8) / 1e6 * (tracked ? 1 : 0.45) * (blade > 1 ? 1.4 : 1);
+          dmg += K * (VC.tractive(unit) / 4e5) * 0.25 * blade / Math.max(1, it.r / 10) * dt;
+          nx = cg.nx; ny = 0.3; nz = cg.nz;
+          px = it.x + cg.nx * rad * 0.9; py = it.y + Math.min(it.h * 0.4, 6); pz = it.z + cg.nz * rad * 0.9;
+        }
+        if (dmg > 0) this.crushHit(it, dmg, px, py, pz, nx, ny, nz, fx);
+      }
+    }
+    // Tích hư hại do xe đè / ủi: hình đá, vết mẻ, vụn văng, tiếng nứt chỉ cập nhật theo nấc (mỗi ~10% máu hoặc cú húc) —
+    // không dựng lại ma trận / vết mỗi khung khi xích bò chậm trên đá
+    crushHit(it, dmg, px, py, pz, nx, ny, nz, fx) {
+      it.hp -= dmg;
+      if (it.hp <= 0) { this.shatter(it, fx, []); return; }
+      it._cAcc = (it._cAcc || 0) + dmg;
+      if (it._cAcc < Math.max(0.05, it.maxHp * 0.1)) return;
+      const e = it._cAcc; it._cAcc = 0;
+      const l = Math.hypot(nx, ny, nz) || 1;
+      this.attachScar(it, this.sys.scars.hit('r', 4, px, py, pz, nx / l, ny / l, nz / l, 0.5, () => 'r_chip', { e0: 0.3, sizeMul: 0.7 }));
+      this.reshape(it, it.hp / it.maxHp);
+      if (this.sys.debris) this.sys.debris.burst(px, py, pz, Math.min(8, 2 + Math.round(e * 6)), Math.max(0.5, it.r * 0.05), it.col, 40 + e * 40);
+      if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt && (!this._crSnd || performance.now() - this._crSnd > 180)) {
+        this._crSnd = performance.now();
+        window.soundEngine.secondaryAt('rockSplit', { x: px, y: py, z: pz }, Math.min(0.7, 0.25 + e * 0.6), { h: 2 });
+      }
+    }
     shatter(it, fx, events) {
       it.alive = false;
+      // đống vụn thấp tại chỗ (xe đi qua xóc nhẹ — terrain.vehicleDebris)
+      if (this.T.rockRubble) {
+        const gy = this.T.groundAtRaw ? this.T.groundAtRaw(it.x, it.z) : it.y;
+        this.T.rockRubble.push({ bump: true, mat: 'rock', x: it.x, z: it.z, r: it.r * 0.85, base: gy, top: gy + Math.min(2.6, it.h * 0.18) });
+      }
       it.im.setMatrixAt(it.k, new THREE.Matrix4().makeScale(0, 0, 0));
       it.im.instanceMatrix.needsUpdate = true;
       this.sys.scars.removeNear(it.x, it.y + it.h * 0.4, it.z, it.r * 1.6 + 6);

@@ -1562,12 +1562,17 @@
 
       // Kiểm tra trần hầm ngay khi sinh hạt (khói/lửa sinh ra trong hầm không bị đặt điểm sinh vượt trần hay xuyên mái)
       if (this.roofAt) {
-        const rf = this.roofAt(p.x, p.z);
-        if (rf !== null && p.y < rf + 20) {
+        const RA = this.roofAt, rf = RA(p.x, p.z, p.y, this.bld);
+        // hạt sinh thấp hơn mặt trên mái (kể cả lọt vào giữa khối bê tông: cột lửa ~10 m / khói đỉnh cột từ xác xe
+        // trong hầm sinh cao hơn trần cả chục mét) là hạt trong hầm -> kéo xuống dưới trần; trước đây chỉ xét tới
+        // trần + 20 nên nửa trên cột lửa / khói thoát lên nóc hầm. Đạn nổ trên nóc sinh hạt từ mặt mái trở lên: không kẹp
+        const top = rf !== null && RA.top !== undefined ? RA.top : rf + 20;
+        if (rf !== null && p.y < top - 3) {
           p._inRoof = true;
           p._roofY = rf;
           p._rx = p.x;
           p._rz = p.z;
+          p._ox = RA.ox || 0; p._oz = RA.oz || 0; p._bld = this.bld;
           const maxSpawnY = rf - Math.min((p.size || 2) * 0.28, 2.0);
           if (p.y > maxSpawnY) p.y = maxSpawnY;
           if (p.vy > 0) p.vy = Math.min(p.vy, 4.0);
@@ -1639,9 +1644,9 @@
         // KIỂM TRA TRẦN HẦM (ROOF COLLISION & CONTAINMENT):
         if (rfFn) {
           if (p._inRoof === undefined) {
-            const initRY = rfFn(p.x, p.z);
+            const initRY = rfFn(p.x, p.z, p.y, this.bld);
             p._inRoof = (initRY !== null && p.y <= initRY + 3.0);
-            if (p._inRoof) { p._roofY = initRY; p._rx = p.x; p._rz = p.z; }
+            if (p._inRoof) { p._roofY = initRY; p._rx = p.x; p._rz = p.z; p._ox = rfFn.ox || 0; p._oz = rfFn.oz || 0; p._bld = this.bld; }
           }
           if (p._inRoof) {
             // Trong hầm kín: gió ngoài trời bị tường và trần bê tông chắn lại (giảm 85%)
@@ -1671,8 +1676,9 @@
         // CHẶN TRẦN HẦM CHO KHÓI TRONG HẦM:
         if (p._inRoof && rfFn) {
           const ddxR = p.x - (p._rx || 0), ddzR = p.z - (p._rz || 0);
-          if (p._roofY === undefined || ddxR * ddxR + ddzR * ddzR > 4) {
-            p._roofY = rfFn(p.x, p.z);
+          if (p._roofY === undefined || ddxR * ddxR + ddzR * ddzR > 9) {
+            p._roofY = rfFn(p.x, p.z, p.y, p._bld);
+            if (p._roofY !== null) { p._ox = rfFn.ox || 0; p._oz = rfFn.oz || 0; }
             p._rx = p.x;
             p._rz = p.z;
           }
@@ -1681,20 +1687,25 @@
             if (p.y > ceilLim) {
               p.y = ceilLim;
               if (p.vy > 0) p.vy = 0;
-              // Khói chạm trần dội ngang, cuộn lan tỏa sang hai bên theo đáy trần
+              // Khói chạm trần dội ngang thành lớp khói nóng chảy dọc đáy trần về phía cửa (ceiling jet ~1-2 m/s),
+              // vừa đi vừa loang sang hai bên; tới miệng hầm / ô cửa thì thoát ra và bốc lên theo mặt tiền
               const spd = Math.min(6, (p.grow || 2) * 1.5 + 2);
-              p.vx += (Math.random() - 0.5) * spd * dt;
-              p.vz += (Math.random() - 0.5) * spd * dt;
+              const fk = 1 - Math.exp(-1.5 * dt);
+              p.vx += (p._ox * 13 - p.vx) * fk + (Math.random() - 0.5) * spd * dt;
+              p.vz += (p._oz * 13 - p.vz) * fk + (Math.random() - 0.5) * spd * dt;
               if (p.size > 7) {
+                if (p._g0 === undefined) p._g0 = p.grow || 0;
                 p.grow = Math.min(0, p.grow || 0);
                 p.size = Math.min(p.size, 8.5);
               }
-              // Khói bị ép dẹt dưới trần hầm tiêu tán dần mượt mà, tránh chồng chất hàng trăm lớp hạt gây nghẽn GPU
-              p.t += dt * 0.45;
+              // Khói ép dẹt dưới trần tan nhanh hơn chút (tránh chồng hàng trăm lớp hạt gây nghẽn GPU) nhưng vẫn đủ
+              // sống để chảy ra tới cửa
+              p.t += dt * 0.2;
             }
           } else {
-            // Hạt đã trôi ra ngoài miệng hầm (thoát khỏi mái che)
+            // Hạt đã trôi ra ngoài miệng hầm (thoát khỏi mái che): khói nóng bốc lên, nở tiếp như ngoài trời
             p._inRoof = false;
+            if (p._g0 !== undefined) p.grow = p._g0;
           }
         }
 
@@ -2735,6 +2746,9 @@
       if (!B) {
         const cap = 64, Z = new THREE.Matrix4().makeScale(0, 0, 0);
         const im = new THREE.InstancedMesh(this._markGeo, mat, cap);
+        // PIT_MAT dùng chung với PitLayer (có instanceColor): three r132 không biên dịch lại shader khi lô thiếu instanceColor
+        // -> renderBufferDirect đọc null, ném lỗi mỗi khung (giật / mất nửa cảnh). Lô vết cũng mang bảng màu trắng
+        im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
         for (let i = 0; i < cap; i++) im.setMatrixAt(i, Z);
         im.renderOrder = 4; im.frustumCulled = false; im.castShadow = false; im.userData.isFxDecal = true;
         parent.add(im);
@@ -3077,7 +3091,12 @@
       const f = this._fxFrame || 0;
       if (f > 0 && u._fxMatF === f) return;
       u._fxMatF = f;
-      u.group.updateMatrixWorld(true);
+      // chỉ các nút mà điểm lửa / khói / kho đạn / cửa thoát / bánh cháy dùng tới (gốc xe, thân, tháp — kèm chuỗi nút cha);
+      // trước đây tính lại cả cây ~500 chi tiết của mỗi xe đang cháy / hư mỗi khung (~1,3 s / phút giao tranh)
+      u.group.updateWorldMatrix(true, false);
+      const cg = u.chassisGroup, tg = u.turretGroup;
+      if (cg && cg !== u.group) cg.updateWorldMatrix(true, false);
+      if (tg) tg.updateWorldMatrix(true, false);
     },
 
     vehicleLocalToWorld(u, local) {
@@ -3269,10 +3288,24 @@
       } else {
         // Không nổ ngay: chớp lửa trong khoang phụt ra lỗ xuyên / dầu bốc cháy ở khoang máy
         const eng = this.vehicleLocalToWorld(u, ENGINE_POINT[type] || ENGINE_POINT.ALL_ROUNDER);
-        if (K.mode === 'engine' || K.mode === 'fuel') {
-          const p = K.mode === 'fuel' && K.point ? K.point : eng;
-          this.spawnFireball(p.x, p.y + 3, p.z, K.mode === 'fuel' ? 1.0 : 0.7, PROFILES.NORMAL, 0, 0);
+        if (K.mode === 'fuel') {
+          const p = K.point || eng;
+          this.spawnFireball(p.x, p.y + 3, p.z, 1.0, PROFILES.NORMAL, 0, 0);
           if (snd) snd.playVehicleDestroyed(type, p, 'fuel');
+        } else if (K.mode === 'engine') {
+          // Trúng khoang máy diesel: không bùng cầu lửa ngay — dầu máy, nước làm mát phụt thành khói xám trắng qua lưới
+          // tản nhiệt, vài tia lửa; lửa bén dần sau vài giây (wreckFireLevels: eng tăng dần 0,35 -> 1 trong 4 s)
+          const p = eng;
+          this.spawnSparks(p.x, p.y + 2, p.z, 0.6, { sparks: 1 }, true, 0, 0);
+          for (let k = 0; k < 10; k++) {
+            const g = rand(0.55, 0.75);
+            this.smoke.add({
+              x: p.x + rand(-4, 4), y: p.y + 2 + rand(0, 2), z: p.z + rand(-4, 4), vx: rand(-10, 10), vy: rand(20, 42), vz: rand(-10, 10),
+              size: rand(4, 7), grow: 9, drag: 1.4, grav: -5, life: rand(2.5, 4), alpha: 0.6, fadeIn: 0.04,
+              c0: [g, g, g * 0.97], c1: [g * 1.05, g * 1.04, g], cell: 0, floor: false
+            });
+          }
+          if (snd) snd.playVehicleDestroyed(type, p, 'crew');
         } else {
           const p = K.point || this.ammoPoint(u);
           const out = K.dir ? K.dir.clone().normalize().negate() : new THREE.Vector3(0, 1, 0);
@@ -4320,7 +4353,9 @@
     },
 
     _updateVehicles(dt) {
-      try { this._updateVehiclesLod(dt); } finally { LOD.keep = 1; }
+      // khói / lửa xe & xác xe: xét cả trần nhà (xe chui vào nhà cháy thì khói dồn dưới sàn tầng trên, chảy ra cửa)
+      this.smoke.bld = this.fire.bld = true;
+      try { this._updateVehiclesLod(dt); } finally { LOD.keep = 1; this.smoke.bld = this.fire.bld = false; }
     },
     _updateVehiclesLod(dt) {
       for (let i = this.vehicles.length - 1; i >= 0; i--) {
@@ -4501,10 +4536,12 @@
               if (u.syncBarrelPose) u.syncBarrelPose();
             }
           }
-          // Tiếng lửa cháy rừng rực trên xác xe: nguồn âm liên tục (báo 2 lần/giây), to dần khi lửa bén, nhỏ dần khi lửa tàn, tắt sau ~45 s
+          // Tiếng lửa cháy rừng rực trên xác xe: nguồn âm liên tục (báo 2 lần/giây), to dần khi lửa bén, nhỏ dần khi lửa tàn.
+          // fireMax đã nhân mức tàn lửa (wreckBurnout) -> tiếng tắt cùng lúc với ngọn lửa nhìn thấy (trước đây tắt cứng ở 45 s
+          // trong khi lửa còn cháy tới ~135 s)
           const fireMax = Math.max(fl.ring, fl.eng);
           W.fireSnd = (W.fireSnd || 0) - dt;
-          if (W.fireSnd <= 0 && burnAge < 45 && fireMax > 0.08 && window.soundEngine) {
+          if (W.fireSnd <= 0 && fireMax > 0.08 && window.soundEngine) {
             W.fireSnd = 0.5;
             const kf = (0.5 + burn * 0.9) * Math.min(1, 0.25 + fireMax);
             const fp = fl.eng > fl.ring ? eng : ring;
@@ -4614,6 +4651,7 @@
             if (srcs.length > 2) {
               activeSrcs = srcs.slice(0).sort((a, b) => b[1] - a[1]).slice(0, 2);
             }
+            let glow = null;   // nguồn cháy mạnh nhất -> ánh lửa hắt lên xác / mặt đất
             for (const [src, lv] of activeSrcs) {
               if (lv < 0.04) continue;
               // nguồn cháy nằm dưới mặt nước (xác xe chết khi đang lội sâu): không có lửa, chỉ hơi nước bốc lên một lúc
@@ -4649,7 +4687,7 @@
                   c0: [1, 0.8, 0.4], c1: [0.9, 0.25, 0.05], cell: 3, floor: false
                 });
               }
-              if (lv > 0.15 && Math.random() < 0.18) this.addLight(src.x, src.y + 6, src.z, 0.35 * lv * burn * fireScale * rand(0.7, 1.2), 0.22);
+              if (lv > 0.15 && (!glow || lv > glow[1])) glow = [src, lv];
               if (Math.random() < 0.28 + 0.35 * lv) {
                 // khói: lửa nhỏ / âm ỉ -> xám nhạt; lửa dầu to -> đen đặc
                 const g = lv > 0.5 ? rand(0.05, 0.1) : rand(0.16, 0.3) - lv * 0.18;
@@ -4659,6 +4697,13 @@
                   c0: [g, g, g], c1: [g * 2.4, g * 2.3, g * 2.2], cell: 0, floor: false
                 });
               }
+            }
+            // Ánh lửa xác xe: nhịp đều ~0,19 s, mỗi nhịp sáng ~0,34 s (gối lên nhau) -> chập chờn liên tục như lửa thật,
+            // không nháy tắt ngẫu nhiên; chỉ dùng đèn rảnh (không giật chớp đầu nòng / nổ)
+            W.glowN = (W.glowN || 0) + 1;
+            if (glow && W.glowN % 2 === 0) {
+              const [gp, glv] = glow;
+              this.addLight(gp.x + rand(-1.5, 1.5), gp.y + 6, gp.z + rand(-1.5, 1.5), 0.35 * glv * burn * fireScale * rand(0.75, 1.15), 0.34, true, true);
             }
           }
           continue;
@@ -4709,7 +4754,7 @@
             }
             // ánh lửa chập chờn hắt lên thân xe / mặt đất xung quanh
             f.lt = (f.lt || 0) - 0.04;   // (nhịp phát 0,04 s)
-            if (f.lt <= 0) { f.lt = rand(0.12, 0.22); this.addLight(fp.x, fp.y + 3, fp.z, 0.22 * fade * rand(0.7, 1.15), 0.2); }
+            if (f.lt <= 0) { f.lt = rand(0.16, 0.24); this.addLight(fp.x, fp.y + 3, fp.z, 0.22 * fade * rand(0.7, 1.15), 0.32, true, true); }
           }
         }
 
@@ -5165,15 +5210,19 @@
         const t = this.terrainOf();
         return t && t.getElevationAt ? t.getElevationAt(x, z) : 0;
       };
-      this.roofAt = (x, z) => {
+      // Đáy trần phía trên (x, z) (null: trời trống). Kèm theo trên chính hàm: .top = mặt trên mái (hạt sinh thấp hơn là
+      // hạt trong hầm), .ox/.oz = hướng ra cửa gần nhất (khói dồn dưới trần chảy về đó). Hầm cứ điểm & boong-ke: luôn xét;
+      // nhà: chỉ khi bld (hạt của xe / xác xe — lửa cháy nhà tự lo đường khói ra cửa sổ, bụi sập nhà không được kẹp)
+      const roofAt = this.roofAt = (x, z, y, bld) => {
         const t = this.terrainOf && this.terrainOf();
         if (!t) return null;
-        const SS = t.strongholdSet;
-        if (SS && SS.roofUnder) {
-          const ru = SS.roofUnder(x, z);
-          if (ru && ru.y !== undefined) return ru.y;
-        }
-        return null;
+        const SS = t.strongholdSet, BK = t.bunkerSet, BS = t.buildingSet;
+        const ru = (SS && SS.roofUnder && SS.roofUnder(x, z)) || (BK && BK.roofOver && BK.roofOver(x, z)) ||
+          (bld && y !== undefined && BS && BS.ceilingAbove && BS.ceilingAbove(x, z, y)) || null;
+        if (!ru || ru.y === undefined) return null;
+        roofAt.top = ru.top !== undefined ? ru.top : ru.y + 20;
+        roofAt.ox = ru.ox || 0; roofAt.oz = ru.oz || 0;
+        return ru.y;
       };
       this._surfFn = (x, z) => this.surfaceAt(x, z);
       this.smoke.roofAt = this.roofAt;
@@ -5657,15 +5706,15 @@
       // đĩa lửa vàng nhạt quanh lõi chớp; đầu nổ lõm (HEAT) không có — năng lượng dồn vào luồng phụt, chớp trắng riêng (spawnHeatJet)
       if (prof.kind !== 'heat') this.fire.add({ x, y, z, vx: 0, vy: 0, vz: 0, size: 14 * s, grow: 20 * s, life: prof.micro ? 0.08 : 0.09, alpha: 0.9, fadeIn: 0.005, c0: inc ? [1, 0.96, 0.85] : [1, 0.88, 0.65], cell: 1, floor: false });
       if (!prof.micro && LOD.keep >= 0.5 && typeof SpgFXPool !== 'undefined' && SpgFXPool.muzzleLight) {
-        const l = SpgFXPool.muzzleLight(this.scene);
+        const lk = prof.lightK || 1;
+        const l = SpgFXPool.muzzleLight(this.scene, { life: lk < 1 ? 0.07 : 0.12 });
         if (l) {
           // lightK: khối thuốc nổ nhỏ (lựu 40mm) chớp yếu & ngắn hơn hẳn — độ sáng chỉ còn ~lũy thừa 1/3 khối thuốc nổ
-          const lk = prof.lightK || 1;
           l.position.set(x, y + 10 * s, z);
           l.color.setRGB(1, 0.62, 0.32);
           // chớp sáng thật chỉ chiếu sáng vài chục mét quanh tâm nổ, tắt sau ~0,1 s
           l.distance = 120 * s * Math.sqrt(lk);
-          this.lights.push({ l, t: 0, life: lk < 1 ? 0.07 : 0.12, peak: 5 * Math.sqrt(s) * lk });
+          this.lights.push({ l, claim: l.userData.claim, t: 0, life: lk < 1 ? 0.07 : 0.12, peak: 5 * Math.sqrt(s) * lk });
         }
       }
     }
@@ -6866,12 +6915,12 @@
     // Đèn thật chớp ngắn (đánh lửa động cơ, nổ)
     flashLight(x, y, z, rgb, dist, life, peak) {
       if (LOD.keep < 0.5 || typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;
-      const l = SpgFXPool.muzzleLight(this.scene);
+      const l = SpgFXPool.muzzleLight(this.scene, { life });
       if (!l) return;
       l.position.set(x, y, z);
       l.color.setRGB(rgb[0], rgb[1], rgb[2]);
       l.distance = dist;
-      this.lights.push({ l, t: 0, life, peak });
+      this.lights.push({ l, claim: l.userData.claim, t: 0, life, peak });
     }
 
     // PHÓNG NGUỘI (bệ tên lửa đột nóc nóc tháp): khí nén cao áp tống quả ra khỏi ống — luồng hơi trắng đặc phụt mạnh khỏi
@@ -7208,14 +7257,16 @@
       }
     }
 
-    addLight(x, y, z, s, life) {
+    // low: ánh lửa cháy (phụ) — chỉ dùng đèn đang rảnh, không giật đèn của chớp nổ / đầu nòng.
+    // flicker: lửa cháy chập chờn — sáng lên mềm rồi tắt mềm (không chớp gắt như nổ), các nhịp gối lên nhau
+    addLight(x, y, z, s, life, low = false, flicker = false) {
       if (LOD.keep < 0.5 || typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;   // xa / ngoài khung nhìn: bỏ đèn chớp
-      const l = SpgFXPool.muzzleLight(this.scene);
+      const l = SpgFXPool.muzzleLight(this.scene, { life, low });
       if (!l) return;
       l.position.set(x, y, z);
-      l.color.setRGB(1, 0.62, 0.32);
+      l.color.setRGB(1, flicker ? 0.55 : 0.62, flicker ? 0.24 : 0.32);
       l.distance = 300 * s;
-      this.lights.push({ l, t: 0, life, peak: 7 * Math.sqrt(s) });
+      this.lights.push({ l, claim: l.userData.claim, t: 0, life, peak: 7 * Math.sqrt(s), flicker });
     }
 
     // Rãnh cày của đạn động năng APFSDS: rãnh hào hẹp kéo dài theo hướng bay + 2 luống đất đùn cao 2 bên + ụ đất chắn cuối rãnh + khối đất đá 3D
@@ -8285,7 +8336,8 @@
       let da = custom ? (opts.bowlDepth !== undefined ? opts.bowlDepth : R * 0.45 * depth) : spec.da * (0.9 + Math.random() * 0.2);
       const kind = custom ? 'blast' : spec.kind;
       // vật liệu mặt đất: sườn đá chỉ mẻ hố nông nhỏ; nhựa đường vỡ mảng nông; cát khô sụt thành phễu rộng nông; bùn lún sâu
-      const MK = { rock: [0.55, 0.35], asphalt: [0.75, 0.5], sand: [1.1, 0.8], mud: [1.05, 1.15] }[pal && pal.mat];
+      // (bê tông / vỉa hè 'hard': cứng hơn nhựa đường — trước đây lọt bảng, khoét to sâu như đất mềm)
+      const MK = { rock: [0.55, 0.35], hard: [0.55, 0.32], asphalt: [0.75, 0.5], sand: [1.1, 0.8], mud: [1.05, 1.15] }[pal && pal.mat];
       if (MK && !custom) { ra *= MK[0]; da *= MK[1]; }
       // Nổ trên ụ đất xe ủi: đất đắp của ụ bị hất tung (ụ sứt dần, bắn liên tục một chỗ thì thủng), chưa khoét tới đất nền
       if (!opts.persistent && tc && tc.blastBerm && tc.blastBerm(x, z, ra, da, kind)) return null;
@@ -8320,7 +8372,9 @@
         x, z, fx, fz, sinT, ra, d, kind, heavy,
         A: ra * Math.sqrt(e), B: ra / Math.sqrt(e),
         shift: 0.3 * ra * Math.sqrt(e) * (1 - sinT),
-        rimH: d * (kind === 'heat' ? 0.16 : kind === 'cluster' ? 0.22 : kind === 'gouge' ? 0.4 : 0.3) * (custom && opts.persistent ? 0.6 : 1),
+        // gờ hố: mặt cứng chỉ vồng mảng vỡ thấp (nhựa / bê tông không xới thành gờ đất), cát khô sụt thấp, bùn trào cao
+        rimH: d * (kind === 'heat' ? 0.16 : kind === 'cluster' ? 0.22 : kind === 'gouge' ? 0.4 : 0.3) * (custom && opts.persistent ? 0.6 : 1)
+          * (custom ? 1 : ({ asphalt: 0.5, hard: 0.4, rock: 0.45, sand: 0.7, mud: 1.2 }[pal && pal.mat] || 1)),
         jet: kind === 'heat' ? spec.jet * (0.4 + 0.6 * sinT) : 0,
         seed: (Math.floor(Math.abs(x * 13.37 + z * 7.13)) % 997) + 1,
         frag: kind === 'blast' && !custom ? 1 : kind === 'cluster' ? 0.5 : 0,
@@ -9482,9 +9536,11 @@
 
       for (let i = this.lights.length - 1; i >= 0; i--) {
         const L = this.lights[i];
+        // đèn đã bị nơi khác lấy (bể chỉ 3 đèn): bỏ bản ghi, không đụng tới độ sáng của chủ mới
+        if (L.l.userData.claim !== L.claim) { this.lights.splice(i, 1); continue; }
         L.t += dt;
-        const k = 1 - L.t / L.life;
-        L.l.intensity = Math.max(0, L.peak * k * k);
+        const a = L.t / L.life, k = 1 - a;
+        L.l.intensity = Math.max(0, L.flicker ? L.peak * Math.sin(Math.PI * Math.min(1, a)) : L.peak * k * k);
         if (L.t >= L.life) { L.l.intensity = 0; this.lights.splice(i, 1); }
       }
 
@@ -9590,7 +9646,7 @@
       this.sabots.forEach(sb => this.scene.remove(sb.mesh));
       this.sabots.length = 0;
       this.emitters.length = 0;
-      this.lights.forEach(L => { L.l.intensity = 0; });
+      this.lights.forEach(L => { if (L.l.userData.claim === L.claim) L.l.intensity = 0; });
       this.lights.length = 0;
       while (this.craters.length) this.removeDecal(this.craters, 0);
       while (this.wallMarks.length) this.removeDecal(this.wallMarks, 0);

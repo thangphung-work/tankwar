@@ -409,12 +409,22 @@
       hb.box(1.6, 1.2, 1.0, M.paintDusty, [s * 6.5, 6.4, 29.3]);
       hb.add(new THREE.TorusGeometry(0.7, 0.2, 6, 12, Math.PI * 1.3), M.steel, [s * 6.5, 5.6, 29.9], [0, Math.PI / 2, Math.PI * 0.85]);
       // Chắn bùn cao su sau bánh sao: một tấm rách mất nửa trong, mẩu ngoài thõng xoắn; tấm kia quăn mép do bùn đá
+      // Tấm treo từ mép trên dưới giá thép đua ra sau đuôi thân (bánh sao + xích quấn tới z ~29.7 nên không lùi vào
+      // trong được); đáy hất ra sau. hang: đặt tấm sao cho tâm mép trên nằm tại top sau khi xoay rot
+      hb.box(TRACK_W + 0.8, 0.25, 1.4, D, [s * TRACK_X, 9.27, 29.6]);
       hb.setTag('flap' + (s < 0 ? 'L' : 'R'));
+      const hang = (w, h, top, rot) => {
+        const e = new THREE.Euler(rot[0], rot[1], rot[2]);
+        const c = new THREE.Vector3(0, -h / 2, 0).applyEuler(e);
+        hb.box(w, h, 0.16, M.rubber, [top[0] + c.x, top[1] + c.y, top[2] + c.z], rot);
+      };
+      hb.box(TRACK_W + 0.7, 0.4, 0.22, D, [s * TRACK_X, 9.0, 30.12]);
+      const flapTop = [s * TRACK_X, 9.15, 29.98];
       if (wear.flapTorn === s) {
-        hb.box(TRACK_W + 0.6, 1.25, 0.16, M.rubber, [s * TRACK_X, 8.78, 30.12], [0.06, 0, 0]);
-        hb.box(2.6, 1.55, 0.16, M.rubber, [s * (TRACK_X + 1.6), 7.5, 30.28], [0.24, s * 0.16, s * 0.07]);
+        hang(TRACK_W + 0.6, 1.25, flapTop, [-0.06, 0, 0]);
+        hang(2.6, 1.55, [s * (TRACK_X + 1.6), 7.95, 30.06], [-0.24, s * 0.16, s * 0.07]);
       } else {
-        hb.box(TRACK_W + 0.6, 2.4, 0.16, M.rubber, [s * TRACK_X, 8.2, 30.2], [0.13 + J() * 0.1, J() * 0.06, 0]);
+        hang(TRACK_W + 0.6, 2.4, flapTop, [-(0.08 + Math.abs(J()) * 0.12), J() * 0.06, 0]);
       }
       // Chắn bùn trước: tấm cao su treo dưới mũi xe che đầu xích (cong vênh mỗi tấm một kiểu)
       hb.setTag('flap' + (s < 0 ? 'L' : 'R') + '1');
@@ -617,8 +627,8 @@
     const ROOF = 7.0;
     const ROOF_CH = 1.0;   // mép nóc tháp vát chéo 45° (~12 cm) như tháp hàn tấm thật
 
-    // Vòng bi tháp pháo
-    tb.cyl(9.4, 9.6, 0.7, 32, D, [0, 0.35, 0]);
+    // Vòng bi tháp pháo: thòng xuống ăn vào nóc thân (nóc thấp hơn chân tháp ~0,7 -> trước đây hở khe sáng nhìn xuyên)
+    tb.cyl(9.4, 9.6, 1.5, 32, D, [0, -0.05, 0]);
 
     // Thân tháp giáp nghiêng gãy khúc (mặt cắt hình thoi dẹt): đạn bắn ngang gặp tấm nào cũng xiên góc -> dễ trượt.
     // Tấm dưới hắt mạnh vào trong (undercut ~36°) về vòng bi, gờ sống chạy ngang hông, tấm trên ngả vào trong ~21°

@@ -122,6 +122,146 @@ const SOUNDS = {
     o.start(0); o.stop(L);
     return L + 1;
   },
+  // CÒI BÁO ĐỘNG HẠT NHÂN (còi cánh quạt phòng không): hú lên ~3,5 s, giữ nốt cao rung nhẹ, trôi xuống; lặp 5 chu kỳ ~48 s.
+  // Hai buồng cánh quạt lệch quãng (~1 : 1,26) tạo hợp âm chói đặc trưng; điều biên ~28 Hz giả lá chắn cánh quạt cắt luồng
+  // khí; dội vang dài như vọng khắp thung lũng
+  nsiren(ctx) {
+    const L = 48, cyc = 9.6;
+    const bus = ctx.createGain(); bus.gain.value = 0.5;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.4;
+    const chop = ctx.createGain(); chop.gain.value = 0.82;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 28; const lg = ctx.createGain(); lg.gain.value = 0.18; lfo.connect(lg).connect(chop.gain);
+    for (const [ratio, type, amp] of [[1, 'sawtooth', 0.55], [1.26, 'square', 0.32], [2, 'sine', 0.2]]) {
+      const o = ctx.createOscillator(); o.type = type;
+      const f = o.frequency;
+      f.setValueAtTime(60 * ratio, 0);
+      for (let k = 0; k * cyc < L; k++) {
+        const t0 = k * cyc;
+        f.setValueAtTime(70 * ratio, t0);
+        f.exponentialRampToValueAtTime(560 * ratio, t0 + 3.5);
+        f.linearRampToValueAtTime(585 * ratio, t0 + 6.2);
+        f.exponentialRampToValueAtTime(90 * ratio, t0 + cyc);
+      }
+      const vib = ctx.createOscillator(); vib.frequency.value = 5.5; const vg = ctx.createGain(); vg.gain.value = 6 * ratio; vib.connect(vg).connect(f); vib.start(0); vib.stop(L);
+      const gg = ctx.createGain(); gg.gain.value = amp;
+      o.connect(gg).connect(chop); o.start(0); o.stop(L);
+    }
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, 0); env.gain.linearRampToValueAtTime(1, 2.5); env.gain.setValueAtTime(1, L - 1); env.gain.linearRampToValueAtTime(0, L);
+    chop.connect(lp).connect(env).connect(bus);
+    const cv = ctx.createConvolver(); const ir = ctx.createBuffer(2, SR * 3.5, SR);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.4) * (i < SR * 0.06 ? 0.3 : 1); }
+    cv.buffer = ir; const wet = ctx.createGain(); wet.gain.value = 0.7;
+    bus.connect(ctx.destination); bus.connect(cv).connect(wet).connect(ctx.destination);
+    lfo.start(0); lfo.stop(L);
+    return L + 2;
+  },
+  // gió đồng trống: nhiễu hồng lọc thấp, từng cơn (LFO chậm) lên xuống, hai kênh lệch nhau cho rộng
+  wind(ctx) {
+    const L = 10;
+    for (const [pan, ph] of [[-0.6, 0], [0.6, 1.7]]) {
+      const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, L);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = 0.6;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 2.2;
+      const g = ctx.createGain(), gb = ctx.createGain(); gb.gain.value = 0.18;
+      g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(0.7, 1.5);
+      for (let t = 1.5; t < L; t += 1.3) g.gain.linearRampToValueAtTime(0.45 + 0.4 * Math.abs(Math.sin(t * 0.9 + ph)), t);
+      bp.frequency.setValueAtTime(700, 0);
+      for (let t = 0.8; t < L; t += 1.1) bp.frequency.linearRampToValueAtTime(600 + 700 * Math.abs(Math.sin(t * 0.7 + ph)), t);
+      const p = ctx.createStereoPanner(); p.pan.value = pan;
+      s.connect(lp).connect(g).connect(p).connect(ctx.destination);
+      s.connect(bp).connect(gb).connect(g);
+      s.start(0);
+    }
+    return L;
+  },
+  // đạn pháo rít tới: tông cao trượt xuống (Doppler) + tiếng xé gió, to dần, tắt ngay lúc chạm (đặt điểm cuối = cú nổ)
+  incoming(ctx) {
+    const L = 1.4, o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(2300, 0); o.frequency.exponentialRampToValueAtTime(520, L);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, 0); g.gain.exponentialRampToValueAtTime(0.5, L - 0.03); g.gain.linearRampToValueAtTime(0, L);
+    o.connect(g).connect(ctx.destination); o.start(0); o.stop(L);
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, L);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 4;
+    bp.frequency.setValueAtTime(4200, 0); bp.frequency.exponentialRampToValueAtTime(900, L);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.0001, 0); ng.gain.exponentialRampToValueAtTime(0.8, L - 0.03); ng.gain.linearRampToValueAtTime(0, L);
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(-0.5, 0); p.pan.linearRampToValueAtTime(0.2, L);
+    s.connect(bp).connect(ng).connect(p).connect(ctx.destination); s.start(0);
+    return L;
+  },
+  // cú đập trailer cho dòng chữ: sub trượt xuống + lớp gõ kim loại + vang dài (đuôi tối dần)
+  impact(ctx) {
+    const L = 4;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(95, 0); o.frequency.exponentialRampToValueAtTime(32, 0.6);
+    const g = ctx.createGain(); g.gain.setValueAtTime(1, 0); g.gain.exponentialRampToValueAtTime(0.001, 2.2);
+    o.connect(g).connect(ctx.destination); o.start(0); o.stop(2.3);
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, 0.25);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(5000, 0); lp.frequency.exponentialRampToValueAtTime(300, 0.25);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.8, 0); ng.gain.exponentialRampToValueAtTime(0.001, 0.25);
+    // vang: nhiễu tắt dần qua lọc thấp, hai kênh khác nhau
+    const cv = ctx.createConvolver(), ir = ctx.createBuffer(2, SR * 3, SR);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3.5); }
+    cv.buffer = ir;
+    const wet = ctx.createGain(); wet.gain.value = 0.45;
+    s.connect(lp).connect(ng); ng.connect(ctx.destination); ng.connect(cv).connect(wet).connect(ctx.destination);
+    for (const f of [180, 271, 413]) {
+      const m = ctx.createOscillator(); m.type = 'triangle'; m.frequency.value = f;
+      const mg = ctx.createGain(); mg.gain.setValueAtTime(0.12, 0); mg.gain.exponentialRampToValueAtTime(0.001, 1.6);
+      m.connect(mg).connect(cv); m.start(0); m.stop(1.7);
+    }
+    s.start(0);
+    return L;
+  },
+  // nổ trầm xa (lớp đệm cho vụ nổ trong game): sub + ầm ầm lọc thấp kéo dài, hơi vang
+  boom(ctx) {
+    const L = 3.5;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(70, 0); o.frequency.exponentialRampToValueAtTime(28, 1.2);
+    const g = ctx.createGain(); g.gain.setValueAtTime(1, 0); g.gain.exponentialRampToValueAtTime(0.001, 2.0);
+    o.connect(g).connect(ctx.destination); o.start(0); o.stop(2.1);
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, L);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(1600, 0); lp.frequency.exponentialRampToValueAtTime(140, 1.4);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(1, 0); ng.gain.setTargetAtTime(0.25, 0.08, 0.25); ng.gain.setTargetAtTime(0, 1.0, 0.8);
+    s.connect(lp).connect(ng).connect(ctx.destination); s.start(0);
+    return L;
+  },
+  // sụt trầm: sin trượt rất chậm 80 -> 24 Hz (cú "rơi" trước / sau khoảng lặng)
+  subdrop(ctx) {
+    const L = 2.6, o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(80, 0); o.frequency.exponentialRampToValueAtTime(24, 2.2);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(1, 0.02); g.gain.setTargetAtTime(0, 1.0, 0.5);
+    o.connect(g).connect(ctx.destination); o.start(0); o.stop(L);
+    return L;
+  },
+  // công trình đổ sập: ầm trầm kéo dài + lạo xạo gạch đá (các mẩu gõ ngẫu nhiên thưa dần)
+  debris(ctx) {
+    const L = 4.5;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf(ctx, L);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(1, 0.25); g.gain.setTargetAtTime(0, 1.6, 0.9);
+    s.connect(lp).connect(g).connect(ctx.destination); s.start(0);
+    let t = 0.15;
+    while (t < L - 0.5) {
+      const c = ctx.createBufferSource(); c.buffer = noiseBuf(ctx, 0.06);
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900 + Math.random() * 2600; bp.Q.value = 3;
+      const cg = ctx.createGain(), a = 0.5 * Math.exp(-t / 1.4) * (0.4 + Math.random() * 0.6);
+      cg.gain.setValueAtTime(a, t); cg.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      const p = ctx.createStereoPanner(); p.pan.value = Math.random() * 1.6 - 0.8;
+      c.connect(bp).connect(cg).connect(p).connect(ctx.destination); c.start(t);
+      t += 0.03 + Math.random() * 0.12 * (1 + t);
+    }
+    return L;
+  },
+  // UAV cảm tử bổ nhào: động cơ rè (răng cưa + điều biến) dâng tông và to dần, tắt phụt ở điểm chạm
+  dive(ctx) {
+    const L = 2.4, o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(180, 0); o.frequency.exponentialRampToValueAtTime(620, L);
+    const am = ctx.createOscillator(); am.frequency.setValueAtTime(38, 0); am.frequency.linearRampToValueAtTime(90, L);
+    const amg = ctx.createGain(); amg.gain.value = 0.35;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, 0); g.gain.exponentialRampToValueAtTime(0.55, L - 0.03); g.gain.linearRampToValueAtTime(0, L);
+    am.connect(amg).connect(g.gain);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(900, 0); lp.frequency.exponentialRampToValueAtTime(3800, L);
+    o.connect(lp).connect(g).connect(ctx.destination); o.start(0); o.stop(L); am.start(0); am.stop(L);
+    return L;
+  },
   // tiếng tick đồng hồ: kim loại khô ngắn
   tick(ctx) {
     for (const [f, a] of [[2400, 1], [4700, 0.5]]) {
@@ -141,7 +281,7 @@ const SOUNDS = {
   }
 };
 window.renderSfx = async function (name) {
-  const len = 12;
+  const len = name === 'nsiren' ? 52 : 12;
   const ctx = new OfflineAudioContext(2, SR * len, SR);
   const dur = SOUNDS[name](ctx);
   const full = await ctx.startRendering();

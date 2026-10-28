@@ -131,7 +131,7 @@
       if (T && !T.detailsReady && g.terrain === T) {
         const left = T._pendingDetailSteps ? T._pendingDetailSteps.length : 0;
         loader.stage('ĐANG DỰNG CẢNH 3D…' + (left ? ' (' + left + ')' : ''));
-        setTimeout(waitDetails, 60);
+        setTimeout(waitDetails, 24);
         return;
       }
       console.info(`[BOOT] Chi tiết bản đồ: ${Math.round(performance.now() - t0)} ms`);

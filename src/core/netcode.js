@@ -96,7 +96,28 @@
   function lerpAngleDeg(a, b, t) { return norm360(a + wrap180(b - a) * t); }
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-  const NetUtil = { localNow, randomId, randomSeed, wrapPi, wrap180, norm360, lerpAngleRad, lerpAngleDeg, clamp };
+  // Chuỗi nhận từ máy khác (tên người chơi, danh sách ô của chủ phòng) được chèn vào innerHTML ở nhiều nơi (sảnh, HUD,
+  // bảng hạ gục) -> lọc ngay lúc nhận: chỉ giữ chữ (kể cả tiếng Việt), số, khoảng trắng, _ - . # (khớp cleanName máy chủ)
+  // => không còn ký tự HTML nào lọt vào DOM, mọi chỗ hiển thị đều an toàn
+  const NET_TANKS = ['ALL_ROUNDER', 'GATLING', 'ARTILLERY', 'SCOUT'];
+  function cleanName(s, fallback = '') {
+    const t = String(s == null ? '' : s).normalize('NFC').replace(/[^\p{L}\p{N} _\-.#]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    return t || fallback;
+  }
+  const cleanId = (s) => (s == null ? s : String(s).replace(/[^\w\-:.]/g, '').slice(0, 64));
+  function cleanSlots(list) {
+    if (!Array.isArray(list)) return [];
+    return list.filter(s => s && typeof s === 'object').slice(0, 40).map(s => Object.assign({}, s, {
+      name: cleanName(s.name, 'NEW RECRUIT'),
+      title: cleanName(s.title),
+      team: s.team === 'RED' ? 'RED' : 'BLUE',
+      tankType: NET_TANKS.includes(s.tankType) ? s.tankType : 'ALL_ROUNDER',
+      peerId: cleanId(s.peerId),
+      botId: cleanId(s.botId)
+    }));
+  }
+
+  const NetUtil = { localNow, randomId, randomSeed, wrapPi, wrap180, norm360, lerpAngleRad, lerpAngleDeg, clamp, cleanName, cleanSlots };
 
   // ==========================================
   // LỚP TRUYỀN TIN THỐNG NHẤT (WebSocket / BroadcastChannel / Offline)
@@ -394,7 +415,7 @@
           this.peers.clear();
           // k = số liệu xếp phe máy chủ đọc từ tài khoản ({ lv, w, m } | null = khách); máy chủ cũ không gửi -> undefined
           this.mySkill = d.k;
-          (d.peers || []).forEach(p => this.peers.set(p.id, { id: p.id, name: p.name, k: p.k, rtt: 0, lastSeen: localNow() }));
+          (d.peers || []).forEach(p => this.peers.set(p.id, { id: p.id, name: cleanName(p.name), k: p.k, rtt: 0, lastSeen: localNow() }));
           if (!this.clockSynced && typeof d.s === 'number') this.clockOffset = d.s - localNow();
           this.ready = true;
           this._startPing();
@@ -402,6 +423,7 @@
           return;
         }
         case '@peer_join':
+          d.name = cleanName(d.name);
           this.peers.set(d.id, { id: d.id, name: d.name, k: d.k, rtt: 0, lastSeen: localNow() });
           this._emit('$peer_join', d, d.id);
           return;
@@ -559,7 +581,7 @@
         this.peers.set(id, p);
       }
       if (d) {
-        if (typeof d.name === 'string') p.name = d.name;
+        if (typeof d.name === 'string') p.name = cleanName(d.name);
         if (typeof d.jt === 'number') p.jt = d.jt;
         if (typeof d.rtt === 'number') p.rtt = d.rtt;
         if (d.lk !== undefined) p.locked = !!d.lk;

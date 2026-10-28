@@ -120,7 +120,7 @@
       // Bê tông rừng ẩm: nền bê tông đổ khuôn + tảo đen chảy từ mép trên, rêu xanh dày dần xuống chân (ẩm mao dẫn),
       // địa y đốm xám xanh, ố nước; 1 ô = 64 đơn vị như bê tông thường (phải truyền ô texture khi dựng hộp)
       if (!MAT.bioMoss) {
-        const [t0, b0] = concPair(), N = 512, c = canvas(N, N), g = c.getContext('2d');
+        const [t0, b0] = concPair(), N = 512, c = canvas(N, N), g = c.getContext('2d', { willReadFrequently: true });   // đọc lại (getImageData)
         g.drawImage(t0.image, 0, 0, N, N);
         g.fillStyle = 'rgba(64,78,50,0.16)'; g.fillRect(0, 0, N, N);
         const wrap = (fn) => { for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) fn(ox, oy); };

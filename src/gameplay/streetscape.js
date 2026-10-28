@@ -152,12 +152,14 @@ float grN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     float lumG = dot(diffuseColor.rgb, vec3(0.333)), moss = smoothstep(0.5, 0.75, grN(gp * 0.05 + 40.0) * 0.7 + grN(gp * 0.4) * 0.3);
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.17, 0.21, 0.1), moss * (0.25 + 0.6 * (1.0 - smoothstep(0.2, 0.4, lumG))) * ${k.toFixed(2)});
     diffuseColor.rgb *= 1.0 - 0.25 * smoothstep(0.62, 0.8, grN(gp * 0.09 + 90.0)) * ${k.toFixed(2)};${paint ? `
-    diffuseColor.rgb *= 0.74 + 0.42 * (grH(floor(gp * 14.0)) * 0.6 + grH(floor(gp * 31.0) + 5.0) * 0.4);
-    float chip = smoothstep(0.56, 0.64, grN(gp * 1.6 + 31.0) * 0.55 + grN(gp * 6.5 + 2.0) * 0.3 + grH(floor(gp * 9.0)) * 0.15);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.049, 0.047) * (0.8 + 0.4 * grN(gp * 3.0)), chip * 0.92);` : ''}
+    // (sơn mòn theo mảng lớn ~0,5-1 m, mép mềm, lộ nhựa sẫm chứ không đen kịt; hạt lấm tấm nhẹ — trước đây mảng tróc nhỏ
+    // tần số cao đen đặc: vạch qua đường lốm đốm như da báo)
+    diffuseColor.rgb *= 0.88 + 0.18 * (grH(floor(gp * 9.0)) * 0.6 + grN(gp * 2.0 + 5.0) * 0.4);
+    float chip = smoothstep(0.6, 0.7, grN(gp * 0.55 + 31.0) * 0.6 + grN(gp * 2.1 + 2.0) * 0.3 + grN(gp * 7.0) * 0.1);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13, 0.128, 0.122) * (0.8 + 0.4 * grN(gp * 3.0)), chip * 0.85);` : ''}
   }`);
     };
-    m.customProgramCacheKey = () => 'grime' + k + (paint ? 'p' : '');
+    m.customProgramCacheKey = () => 'grime' + k + (paint ? 'p2' : '');
     return m;
   }
 
@@ -967,7 +969,15 @@ float wds(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1
     const OB = new Map(), oc = 24, okey = (x, z) => Math.floor(x / oc) * 65536 + Math.floor(z / oc);
     const P = M.props || {};
     for (const L of [P.lamps, P.signals, P.poles, P.busStops, P.cars, M.trees]) for (const o of L || []) { const k = okey(o.x, o.z); (OB.get(k) || OB.set(k, []).get(k)).push(o); }
-    const free = (x, z, r) => { for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const o of OB.get(okey(x + i * oc, z + j * oc)) || []) if (Math.hypot(o.x - x, o.z - z) < r + (o.kind ? 5 : 4)) return false; return true; };
+    // cầu vượt bộ hành: né 2 vế cầu thang + chiếu nghỉ (dải dọc vỉa hè ở 2 đầu) & chân trụ — trước đây thùng rác / container
+    // đặt xuyên qua cầu thang
+    const FB = (P.footbridges || []).map(f => ({ x: f.x, z: f.z, ca: Math.cos(f.angle), sa: Math.sin(f.angle), h: f.span / 2 }));
+    const underFB = (x, z, r) => FB.some(f => {
+      const dx = x - f.x, dz = z - f.z, lx = f.ca * dx - f.sa * dz, lz = f.sa * dx + f.ca * dz;
+      for (const sx of [1, -1]) if (Math.abs(lx - sx * f.h) < 9 + r && lz * sx > -14 - r && lz * sx < 76 + r) return true;
+      return false;
+    });
+    const free = (x, z, r) => { if (underFB(x, z, r)) return false; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const o of OB.get(okey(x + i * oc, z + j * oc)) || []) if (Math.hypot(o.x - x, o.z - z) < r + (o.kind ? 5 : 4)) return false; return true; };
     const mark = (x, z) => { const k = okey(x, z); (OB.get(k) || OB.set(k, []).get(k)).push({ x, z }); };
     const top = (x, z) => G(x, z) + (WH ? WH(x, z) : CURB_H) + 0.04;   // WH: độ cao vỉa hè (hạ ở dốc qua đường)
     const items = [];
@@ -1517,7 +1527,7 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
       else xf(it.x, it.y, it.z, it.rx, it.ry, it.rz, sc * (it.squash ? 1.12 : 1), sc * (it.squash || 1), sc * (it.dent || 1));
       const e = this.ims[it.ek || it.type];   // (mảnh rác văng: bể chung 'scrap')
       e.im.setMatrixAt(it.i, _m4);
-      e.dirty = true;
+      if (!e.dirty) { e.dirty = true; (this.dirtyIms || (this.dirtyIms = new Set())).add(e); }
       if (it.ai !== undefined) {
         // bóng tiếp xúc: chỉ khi vật nằm trên mặt đất (bay lên -> ẩn), dấu chân theo hướng & tư thế (thùng đổ nằm: dài ra)
         const fp = AO_FP[it.type] || [0, 0], lying = Math.abs(it.rz) > 0.8 || Math.abs(it.rx) > 0.8, sc = it.s || 1;
@@ -1617,7 +1627,7 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
           break;
         }
       }
-      for (const t in this.ims) if (this.ims[t].dirty) { this.ims[t].im.instanceMatrix.needsUpdate = true; this.ims[t].dirty = false; }
+      this.flushIms();
       if (this.aoDirty) { this.ao.instanceMatrix.needsUpdate = true; this.aoDirty = false; }
       return hit;
     }
@@ -1747,8 +1757,16 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
         if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt)
           window.soundEngine.secondaryAt(kind, { x: hit.x, y: hit.y + 2, z: hit.z }, hit.type === 'dump' ? 0.6 : 0.3, { h: 3 });
       }
-      for (const t in this.ims) if (this.ims[t].dirty) { this.ims[t].im.instanceMatrix.needsUpdate = true; this.ims[t].dirty = false; }
+      this.flushIms();
       if (this.aoDirty) { this.ao.instanceMatrix.needsUpdate = true; this.aoDirty = false; }
+    }
+    // bể instance vừa ghi (write) -> gửi lên GPU. Phố có ~1.400 bể (loại x ô); trước đây mỗi xe mỗi khung duyệt cả 1.400
+    // bể để tìm vài bể bẩn (~70 µs / xe / khung) — giờ chỉ duyệt tập bể bẩn
+    flushIms() {
+      const D = this.dirtyIms;
+      if (!D || !D.size) return;
+      for (const e of D) { e.im.instanceMatrix.needsUpdate = true; e.dirty = false; }
+      D.clear();
     }
     // hất đồ vật theo hướng (dx, dz) với tốc độ sp, nảy lên up; spin: hệ số xoay
     kick(it, dx, dz, sp, up, h, spin = 1) {
@@ -1814,7 +1832,7 @@ float bagCrinkle(vec3 p, float s) { return bagFacet(p * 9.0 + s * 13.0).x; }
         }
         this.write(it);
       }
-      for (const t in this.ims) if (this.ims[t].dirty) { this.ims[t].im.instanceMatrix.needsUpdate = true; this.ims[t].dirty = false; }
+      this.flushIms();
       if (this.aoDirty) { this.ao.instanceMatrix.needsUpdate = true; this.aoDirty = false; }
     }
   }

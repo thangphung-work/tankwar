@@ -514,7 +514,11 @@ const RangeAir = (() => {
         try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* không hỗ trợ khóa chuột: kéo để ngắm */ }
         return;
       }
-      S.fire = true;
+      // Chuột trái chỉ dùng để bắt/giữ chuột và điều khiển kính ngắm. Khai hỏa
+      // trong phòng thông tin dành riêng cho Space hoặc nút BẮN THỬ; trước đây
+      // lần click tiếp theo sau khi pointer-lock đã bật lại bị hiểu nhầm là bóp cò.
+      S.fire = false;
+      S.dragging = true;
     },
 
     raSightPointerUp() {

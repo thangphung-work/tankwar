@@ -59,7 +59,7 @@
       if (T && !T.detailsReady && g.terrain === T) {
         const left = T._pendingDetailSteps ? T._pendingDetailSteps.length : 0;
         loader.stage('ĐANG DỰNG CẢNH 3D…' + (left ? ' (' + left + ')' : ''));
-        setTimeout(wait, 60);
+        setTimeout(wait, 24);
         return;
       }
       try { start(); } catch (err) { console.error('[FREECAM]', err); loader.stage('LỖI: ' + (err && err.message || err)); return; }
@@ -101,7 +101,15 @@
       if (g._driveMarker) g._driveMarker.visible = false;
     }
     const origUpdate = g.update;
-    g.update = function (dt) { fly(dt); origUpdate.call(this, dt); followPlayer(); hideAim(); };
+    g.update = function (dt) {
+      const mapOpen = !!(g.tacticalMap && g.tacticalMap.isOpen);
+      const pEl = document.getElementById('fc-panel');
+      if (pEl) pEl.style.display = mapOpen ? 'none' : '';
+      if (!mapOpen) fly(dt);
+      origUpdate.call(this, dt);
+      followPlayer();
+      hideAim();
+    };
     const origRender = g.render;
     g.render = function () { applyCam(); hideAim(); origRender.call(this); };
     g.camera.far = Math.max(g.camera.far, 20000);
@@ -153,8 +161,30 @@
     c.position.set(cam.x, cam.y, cam.z);
     c.rotation.set(cam.pitch, cam.yaw, 0, 'YXZ');
     c.updateMatrixWorld();
+    if (g) g._camYaw = cam.yaw;
+    if (g && g.player) g.player.azimuth = -cam.yaw * 180 / Math.PI;
     if (posEl) posEl.textContent = `X ${Math.round(cam.x)} · Z ${Math.round(cam.z)} · CAO ${Math.round(cam.y - g.terrain.getElevationAt(cam.x, cam.z))} M`;
   }
+
+  // Dịch chuyển tức thời tới tọa độ thế giới (wx, wz) từ bản đồ tác chiến
+  function teleport(wx, wz) {
+    if (!g || !g.terrain) return;
+    const T = g.terrain;
+    const half = T.width ? T.width / 2 - 50 : 1e9;
+    wx = Math.max(-half, Math.min(half, wx));
+    wz = Math.max(-half, Math.min(half, wz));
+    const ground = T.getElevationAt(wx, wz);
+    const prevGround = T.getElevationAt(cam.x, cam.z);
+    const curRel = isFinite(cam.y) ? (cam.y - prevGround) : 350;
+    const wantedRel = Math.max(150, Math.min(1200, curRel));
+    cam.x = wx;
+    cam.z = wz;
+    cam.y = ground + wantedRel;
+    cam.goal = null;
+    followPlayer();
+    applyCam();
+  }
+  window.freeCamTeleport = teleport;
 
   // tia từ con trỏ chạm mặt đất (dò bước rồi chia đôi) -> đích bay: lùi lại dọc tia, cao hơn điểm chạm
   function flyTo(sx, sy) {
@@ -178,30 +208,81 @@
 
   function bindInput() {
     const canvas = g.renderer.domElement;
-    const swallow = e => { if (!e.target.closest || !e.target.closest('#fc-panel')) { e.stopImmediatePropagation(); if (e.type === 'contextmenu') e.preventDefault(); } };
+    const isUIEvent = e => {
+      if (!e.target || !e.target.closest) return false;
+      if (e.target.closest('#fc-panel')) return true;
+      if (g && g.tacticalMap && g.tacticalMap.isOpen && e.target.closest('#tactical-map-modal')) return true;
+      return false;
+    };
+
     window.addEventListener('keydown', e => {
-      if (e.target.closest && e.target.closest('#fc-panel')) return;
-      cam.keys[e.code] = true; e.stopImmediatePropagation();
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
+
+      // Phím M: bật / tắt bản đồ
+      if (e.code === 'KeyM' && !e.repeat) {
+        if (g && g.tacticalMap) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          cam.keys = {};
+          g.tacticalMap.toggle();
+          return;
+        }
+      }
+
+      // Phím Escape: đóng bản đồ nếu đang mở
+      if (e.key === 'Escape' && g && g.tacticalMap && g.tacticalMap.isOpen) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        g.tacticalMap.toggle(false);
+        return;
+      }
+
+      // Khi bản đồ tác chiến đang mở: nhường phím cho bản đồ, dừng phím bay camera
+      if (g && g.tacticalMap && g.tacticalMap.isOpen) {
+        cam.keys = {};
+        return;
+      }
+
+      if (isUIEvent(e)) return;
+      cam.keys[e.code] = true;
+      e.stopImmediatePropagation();
       if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
     }, true);
-    window.addEventListener('keyup', e => { cam.keys[e.code] = false; e.stopImmediatePropagation(); }, true);
+
+    window.addEventListener('keyup', e => {
+      cam.keys[e.code] = false;
+      if (!isUIEvent(e)) e.stopImmediatePropagation();
+    }, true);
+
     window.addEventListener('blur', () => { cam.keys = {}; });
+
+    const swallow = e => {
+      if (isUIEvent(e)) return;
+      e.stopImmediatePropagation();
+      if (e.type === 'contextmenu') e.preventDefault();
+    };
     ['click', 'contextmenu', 'pointerdown', 'pointerup'].forEach(t => window.addEventListener(t, swallow, true));
+
     // kéo chuột trái hoặc giữ chuột phải: xoay hướng nhìn · nhấp chuột trái (không kéo): bay tới chỗ đó
     let drag = null;
     window.addEventListener('mousedown', e => {
-      if (e.target.closest && e.target.closest('#fc-panel')) return;
+      if (isUIEvent(e)) return;
       e.stopImmediatePropagation();
       if (e.button === 2) { cam.looking = true; if (canvas.requestPointerLock) canvas.requestPointerLock(); }
       else if (e.button === 0) drag = { x: e.clientX, y: e.clientY, moved: false };
     }, true);
+
     window.addEventListener('mouseup', e => {
-      if (!(e.target.closest && e.target.closest('#fc-panel'))) e.stopImmediatePropagation();
+      if (isUIEvent(e)) return;
+      e.stopImmediatePropagation();
       if (e.button === 2) { cam.looking = false; if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); }
       if (e.button === 0 && drag) { if (!drag.moved) flyTo(e.clientX, e.clientY); drag = null; }
     }, true);
+
     document.addEventListener('pointerlockchange', () => { cam.locked = document.pointerLockElement === canvas; });
+
     window.addEventListener('mousemove', e => {
+      if (isUIEvent(e)) return;
       e.stopImmediatePropagation();
       if (drag && !drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true;
       if (!cam.locked && !cam.looking && !(drag && drag.moved)) return;
@@ -209,9 +290,11 @@
       cam.yaw -= e.movementX * 0.0025;
       cam.pitch = Math.max(-1.55, Math.min(1.55, cam.pitch - e.movementY * 0.0025));
     }, true);
+
     window.addEventListener('wheel', e => {
-      if (e.target.closest && e.target.closest('#fc-panel')) return;
-      e.stopImmediatePropagation(); e.preventDefault();
+      if (isUIEvent(e)) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
       if (e.altKey) {   // Alt + cuộn: đổi tốc độ bay
         cam.speed = Math.max(5, Math.min(3000, cam.speed * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
         if (speedEl) speedEl.textContent = Math.round(cam.speed) + ' M/S';
@@ -230,11 +313,24 @@
   function buildUI() {
     const root = document.createElement('div');
     root.id = 'fc-panel';
-    root.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9999;background:rgba(11,15,12,.82);color:#d6e2c8;font:600 12px/1.5 system-ui,sans-serif;letter-spacing:.06em;padding:10px 12px;border-radius:8px;max-width:calc(100vw - 24px)';
-    root.innerHTML = '<div style="color:#ffb700;margin-bottom:6px">FREE CAM · BẢN ĐỒ</div><div id="fc-maps" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>'
+    root.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9999;background:rgba(11,15,12,.86);color:#d6e2c8;font:600 12px/1.5 system-ui,sans-serif;letter-spacing:.06em;padding:10px 12px;border-radius:8px;max-width:calc(100vw - 24px);box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+    root.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
+      + '<div style="color:#ffb700;font-weight:700">FREE CAM · BẢN ĐỒ 3D</div>'
+      + '<button id="fc-toggle-map-btn" style="cursor:pointer;border:1px solid #7fe3f5;border-radius:4px;padding:3px 10px;font:inherit;font-weight:700;background:rgba(34,211,240,0.2);color:#7fe3f5;display:inline-flex;align-items:center;gap:4px;" title="Bật bản đồ để xem toàn cảnh và nhấp chuột dịch chuyển tức thời"><i class="ti ti-map" aria-hidden="true"></i> BẢN ĐỒ [M]</button>'
+      + '</div>'
+      + '<div id="fc-maps" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>'
       + '<div>Tốc độ: <span id="fc-speed"></span> · <span id="fc-pos"></span></div>'
-      + '<div style="opacity:.7;font-weight:500">Nhấp trái: bay tới đó · kéo chuột: xoay nhìn · WASD bay · Q/E xuống/lên · Shift nhanh ×4 · cuộn: zoom · Alt+cuộn: đổi tốc độ</div>';
+      + '<div style="opacity:.8;font-weight:500;font-size:11.5px;margin-top:2px">Nhấp trái: bay tới đó · <b style="color:#7fe3f5">M: Bật bản đồ (nhấp để dịch chuyển)</b> · kéo chuột: xoay nhìn · WASD: bay · Q/E: xuống/lên · Shift: nhanh · cuộn: zoom · Alt+cuộn: đổi tốc độ</div>';
     document.body.appendChild(root);
+
+    const mapBtn = root.querySelector('#fc-toggle-map-btn');
+    if (mapBtn) {
+      mapBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (g && g.tacticalMap) g.tacticalMap.toggle();
+      };
+    }
+
     const maps = root.querySelector('#fc-maps');
     for (const [id, name] of MAPS) {
       const b = document.createElement('button');

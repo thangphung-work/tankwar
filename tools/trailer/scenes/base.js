@@ -11,21 +11,25 @@
     const LS = T.landmarkSet, it = LS && LS.items && LS.items[0];
     if (!it) { S.log('skip', { why: 'no landmark' }); return; }
     const gy = it.G || S.ground(it.x, it.z), R = Math.max(220, (it.reach || 400) - 30), top = it.top || gy + 120;
-    const look = { x: it.x, y: gy + (top - gy) * 0.45, z: it.z };
+    // giếng phóng (L.silo, toạ độ cục bộ f / r của căn cứ: nhóm xoay rotation.y = -L.angle)
+    const Lm = it.L || {}, an = Lm.angle || 0, sf = Lm.silo ? Lm.silo.f : 0, sr = Lm.silo ? Lm.silo.r : 0;
+    const silo = { x: it.x + sf * Math.cos(an) - sr * Math.sin(an), z: it.z + sf * Math.sin(an) + sr * Math.cos(an) };
+    silo.y = S.ground(silo.x, silo.z);
+    const look = { x: silo.x, y: silo.y + 10, z: silo.z };
     // ---------- 1. mở đầu: hai góc
     let a = S.rnd() * Math.PI * 2;
     for (let k = 0; k < 6; k++) {   // góc có mặt đất trống phía trước máy (không vướng nhà / gò)
-      const p = { x: it.x + Math.cos(a) * (R + 240), z: it.z + Math.sin(a) * (R + 240) };
+      const p = { x: silo.x + Math.cos(a) * 360, z: silo.z + Math.sin(a) * 360 };
       if (S.obstacleTop(p.x, p.z) - S.ground(p.x, p.z) < 2) break;
       a += 1.05;
     }
-    const p0 = { x: it.x + Math.cos(a) * (R + 240), z: it.z + Math.sin(a) * (R + 240) };
-    p0.y = S.ground(p0.x, p0.z) + 10;
-    S.shot('fixed', { pos: p0, look, dur: 7, fov: 46, noDrone: true, drift: { x: -Math.cos(a) * 14, y: 26, z: -Math.sin(a) * 14 } });
+    const p0 = { x: silo.x + Math.cos(a) * 360, z: silo.z + Math.sin(a) * 360 };
+    p0.y = S.ground(p0.x, p0.z) + 14;
+    S.shot('fixed', { pos: p0, look, dur: 7, fov: 44, noDrone: true, drift: { x: -Math.cos(a) * 16, y: 14, z: -Math.sin(a) * 16 } });
     S.log('scene', { n: 1, name: 'base-crane' });
     await S.wait(7);
-    const b = a + 2.1, p1 = { x: it.x + Math.cos(b) * (R + 700), z: it.z + Math.sin(b) * (R + 700) };
-    p1.y = Math.max(S.ground(p1.x, p1.z), gy) + 45;
+    const b = a + 2.1, p1 = { x: silo.x + Math.cos(b) * 620, z: silo.z + Math.sin(b) * 620 };
+    p1.y = Math.max(S.ground(p1.x, p1.z), gy) + 28;
     S.shot('fixed', { pos: p1, look, dur: 6, fov: 20, noDrone: true, drift: { x: -Math.cos(b) * 28, y: -2, z: -Math.sin(b) * 28 } });
     S.log('scene', { n: 2, name: 'base-tele' });
     await S.wait(6);
@@ -34,11 +38,11 @@
     {
       const P = S.drive(true);
       const c = a + 0.5, dx = -Math.cos(c), dz = -Math.sin(c);   // hướng vào căn cứ
-      const start = { x: it.x - dx * (R + 650), z: it.z - dz * (R + 650) };
+      const start = { x: silo.x - dx * 760, z: silo.z - dz * 760 };
       S.teleport(P, start.x, start.z, Math.atan2(dx, -dz));
       P.azimuth = ((P.bodyAngle * 180 / Math.PI) % 360 + 360) % 360;
       const cam = { x: start.x + dx * 330 + dz * 30, z: start.z + dz * 330 - dx * 30 };
-      cam.y = S.ground(cam.x, cam.z) + 5;
+      cam.y = S.ground(cam.x, cam.z) + 13;
       S.shot('fixed', { pos: cam, look: { x: start.x, y: S.ground(start.x, start.z) + 14, z: start.z }, lookAt: P, dur: 30, fov: 24, noDrone: true });
       S.log('scene', { n: 3, name: 'advance' });
       await S.wait(0.4);
@@ -54,8 +58,8 @@
 
     // ---------- 3. pháo kích phá huỷ căn cứ
     const sh = S.units('BLUE', 'ARTILLERY')[0] || S.units('BLUE')[0];
-    const d = a + 1.0, pw = { x: it.x + Math.cos(d) * (R + 900), z: it.z + Math.sin(d) * (R + 900) };
-    pw.y = Math.max(S.ground(pw.x, pw.z), gy) + 30;
+    const d = a + 1.0, pw = { x: silo.x + Math.cos(d) * 640, z: silo.z + Math.sin(d) * 640 };
+    pw.y = Math.max(S.ground(pw.x, pw.z), gy) + 22;
     S.shot('fixed', { pos: pw, look, dur: 40, fov: 30, noDrone: true, drift: { x: -Math.sin(d) * 10, y: 0.5, z: Math.cos(d) * 10 } });
     S.log('scene', { n: 4, name: 'base-strike' });
     await S.wait(0.8);
@@ -68,8 +72,8 @@
       if (!aerialDone && it.hp < it.hp0 * 0.45) {
         // giữa chừng: chuyển sang máy drone trên cao cho lúc sụp
         aerialDone = true;
-        const e = d + 1.4, pa = { x: it.x + Math.cos(e) * (R + 320), z: it.z + Math.sin(e) * (R + 320) };
-        pa.y = gy + 330;
+        const e = d + 1.4, pa = { x: silo.x + Math.cos(e) * 420, z: silo.z + Math.sin(e) * 420 };
+        pa.y = gy + 230;
         S.shot('fixed', { pos: pa, look: { x: it.x, y: gy, z: it.z }, dur: 40, fov: 46, noDrone: true, drift: { x: Math.sin(e) * 16, y: -4, z: -Math.cos(e) * 16 } });
         S.log('stage', { what: 'aerial', hp: +(it.hp / it.hp0).toFixed(2) });
       }

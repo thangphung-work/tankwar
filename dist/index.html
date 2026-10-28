@@ -31,7 +31,7 @@
   <meta name="twitter:description" content="Game xe tăng 3D 10 đấu 10 chơi miễn phí ngay trên trình duyệt. Chiếm giữ cứ điểm A · B · C để thắng.">
   <meta name="twitter:image" content="https://tankwar.online/assets/og-share.jpg?v=1">
   <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
-  <link rel="stylesheet" href="dist/style.f52a4d4857.css?v=f52a4d4857">
+  <link rel="stylesheet" href="dist/style.181b60c253.css?v=181b60c253">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -370,7 +370,7 @@
       + '#range-lab-loading .rl-bg{position:absolute;inset:0;background:#0b0f0c url("assets/lobby_' + m[0] + '.jpg") center/cover no-repeat;filter:saturate(.75) brightness(.55);animation:rlzoom 18s ease-out forwards}'
       + '#range-lab-loading .rl-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,11,9,.55) 0%,rgba(8,11,9,.15) 40%,rgba(8,11,9,.35) 65%,rgba(8,11,9,.92) 100%);box-shadow:inset 0 0 240px 80px rgba(0,0,0,.8)}'
       + '#range-lab-loading .rl-grid{position:absolute;inset:0;opacity:.18;background-image:linear-gradient(rgba(214,226,200,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(214,226,200,.25) 1px,transparent 1px);background-size:64px 64px;-webkit-mask-image:radial-gradient(ellipse at center,#000 20%,transparent 75%);mask-image:radial-gradient(ellipse at center,#000 20%,transparent 75%)}'
-      + '#range-lab-loading .rl-card{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;padding:30px 54px 26px;background:rgba(10,14,11,.55);border:1px solid rgba(255,183,0,.28);border-radius:6px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 12px 50px rgba(0,0,0,.55)}'
+      + '#range-lab-loading .rl-card{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;padding:30px 54px 26px;background:rgba(10,14,11,.84);border:1px solid rgba(255,183,0,.28);border-radius:6px;box-shadow:0 12px 50px rgba(0,0,0,.55)}'
       + '#range-lab-loading .rl-card:before,#range-lab-loading .rl-card:after{content:"";position:absolute;width:16px;height:16px;border:2px solid #ffb700}'
       + '#range-lab-loading .rl-card:before{top:-2px;left:-2px;border-right:0;border-bottom:0}'
       + '#range-lab-loading .rl-card:after{bottom:-2px;right:-2px;border-left:0;border-top:0}'
@@ -379,7 +379,7 @@
       + '</style>'
       + '<div class="rl-bg"></div><div class="rl-shade"></div><div class="rl-grid"></div>'
       + '<div class="rl-card">'
-      + '<div style="width:42px;height:42px;border-radius:50%;border:3px solid rgba(214,226,200,.18);border-top-color:#ffb700;animation:rlspin .8s linear infinite"></div>'
+      + '<div style="width:42px;height:42px;border-radius:50%;border:3px solid rgba(214,226,200,.18);border-top-color:#ffb700;animation:rlspin .8s linear infinite;will-change:transform"></div>'
       + '<div style="font-size:20px;color:#ffb700;text-shadow:0 0 18px rgba(255,183,0,.35)">' + (title || 'THAO TRƯỜNG DIỄN TẬP') + '</div>'
       + '<div style="font-size:11px;color:rgba(214,226,200,.6);letter-spacing:.3em">BẢN ĐỒ · ' + m[1] + '</div>'
       + '<div class="rl-track"><i></i></div>'
@@ -747,7 +747,94 @@
                   <p class="card-tank-desc">Siêu nhanh, núp bụi, đánh du kích.</p>
                 </div>
               </div>
+
+              <!-- Sắp ra mắt: class riêng (không phải .mm-class-card) để các bộ chọn xe bỏ qua -->
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/helicopter.webp" alt="WYVERN AH-7" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">05</span>
+                  <h3 class="card-tank-name">WYVERN AH-7</h3>
+                  <span class="card-tank-role">Trực thăng tấn công</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/mlrs.webp" alt="TEMPEST 220" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">06</span>
+                  <h3 class="card-tank-name">TEMPEST 220</h3>
+                  <span class="card-tank-role" title="Pháo phản lực tự hành phóng loạt">Pháo phóng loạt</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/infantry.webp" alt="VANGUARD" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">07</span>
+                  <h3 class="card-tank-name">VANGUARD</h3>
+                  <span class="card-tank-role">Bộ binh</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/drone_truck.webp" alt="SWARM 6X6" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">08</span>
+                  <h3 class="card-tank-name">SWARM 6X6</h3>
+                  <span class="card-tank-role" title="Xe tải phóng máy bay không người lái cảm tử">Xe phóng drone</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/minelayer.webp" alt="BADGER ML" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">09</span>
+                  <h3 class="card-tank-name">BADGER ML</h3>
+                  <span class="card-tank-role" title="Xe bọc thép trinh sát rải mìn chống tăng">Trinh sát rải mìn</span>
+                </div>
+              </div>
+
+              <div class="mm-soon-card" aria-disabled="true" title="Sắp ra mắt">
+                <div class="card-img-frame">
+                  <img src="assets/support_truck.webp" alt="MIST 6X6" class="card-tank-photo" />
+                  <span class="soon-tag">COMING SOON</span>
+                </div>
+                <div class="card-info-pane">
+                  <span class="card-index">10</span>
+                  <h3 class="card-tank-name">MIST 6X6</h3>
+                  <span class="card-tank-role" title="Xe tải bọc thép che khói ngụy trang, hỗ trợ nhìn xuyên khói, phá sóng và dò mìn">Hỗ trợ che chắn</span>
+                </div>
+              </div>
             </div>
+
+            <!-- Nhiễu sóng TV cho thẻ sắp ra mắt: xé ngang ảnh, đứng yên (hai mẫu cho thẻ chẵn/lẻ) -->
+            <svg class="tv-filters" width="0" height="0" aria-hidden="true" focusable="false">
+              <filter id="tv-warp-a" x="-5%" y="0" width="110%" height="100%" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.0005 0.11" numOctaves="2" seed="3"/>
+                <feColorMatrix values="1 0 0 0 0  0 0 0 0 0.5  0 0 0 0 0  0 0 0 0 1"/>
+                <feDisplacementMap in="SourceGraphic" xChannelSelector="R" yChannelSelector="G" scale="12"/>
+              </filter>
+              <filter id="tv-warp-b" x="-5%" y="0" width="110%" height="100%" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.0005 0.14" numOctaves="2" seed="19"/>
+                <feColorMatrix values="1 0 0 0 0  0 0 0 0 0.5  0 0 0 0 0  0 0 0 0 1"/>
+                <feDisplacementMap in="SourceGraphic" xChannelSelector="R" yChannelSelector="G" scale="12"/>
+              </filter>
+            </svg>
           </section>
 
           <!-- 02: CHỌN CHIẾN ĐỊA -->
@@ -760,6 +847,7 @@
                 <button type="button" class="mm-wx-btn" data-wx="clear" role="radio"><i class="ti ti-sun" aria-hidden="true"></i> Nắng</button>
                 <button type="button" class="mm-wx-btn" data-wx="rain" role="radio"><i class="ti ti-cloud-storm" aria-hidden="true"></i> Mưa</button>
               </div>
+              <button type="button" class="mm-wx-btn mm-view-3d-map-btn" id="mm-view-3d-map-btn" title="Xem chiến địa này ở chế độ 3D toàn cảnh (có bản đồ dịch chuyển)"><i class="ti ti-video" aria-hidden="true"></i> Xem 3D</button>
             </div>
 
             <div class="mm-map-cards-row">
@@ -907,11 +995,11 @@
         <div id="mm-briefing-box" class="mm-sh-briefing">
           <div class="mm-briefing-top">
             <div class="mm-briefing-avatar-box">
-              <img src="assets/commander_avatar.jpg" alt="Commander" class="mm-briefing-avatar-img">
+              <img id="mm-briefing-avatar-img" src="assets/commander_avatar.jpg" alt="Commander" class="mm-briefing-avatar-img">
               <div class="mm-avatar-scanline"></div>
             </div>
             <div class="mm-briefing-top-info">
-              <span class="mm-briefing-kicker">BỘ CHỈ HUY TIỀN PHƯƠNG</span>
+              <span id="mm-briefing-kicker" class="mm-briefing-kicker">BỘ CHỈ HUY TIỀN PHƯƠNG</span>
               <span class="mm-briefing-title">LỆNH TÁC CHIẾN</span>
               <span id="mm-briefing-code" class="mm-briefing-code"></span>
             </div>
@@ -924,11 +1012,11 @@
           </div>
           <div class="mm-briefing-body">
             <div class="mm-comm-section">
-              <span class="mm-comm-speaker">01 // MỆNH LỆNH</span>
+              <span id="mm-comm-speaker" class="mm-comm-speaker">01 // MỆNH LỆNH</span>
               <div id="mm-briefing-text" class="mm-comm-msg"></div>
             </div>
             <div id="mm-briefing-reply" class="mm-comm-reply hidden">
-              <span class="mm-comm-speaker squad">STRIKER-1 // ACK</span>
+              <span id="mm-briefing-reply-speaker" class="mm-comm-speaker squad">STRIKER-1 // ACK</span>
               <span class="mm-comm-reply-text">Rõ! Nhận nhiệm vụ. Bắt đầu triển khai.</span>
             </div>
             <div id="mm-briefing-status" class="mm-comm-status">
@@ -969,13 +1057,13 @@
         <div class="ti-telemetry">
         <span>ALT <b id="ti-tele-alt">1,240M</b></span><span>SPD <b id="ti-tele-spd">219KPH</b></span><span>GRID <b id="ti-tele-grid">43-7-12</b></span>
         </div>
-        <div class="ti-command-panel">
+        <div class="ti-command-panel" id="ti-command-panel">
           <div class="ti-command-head">
-            <img src="assets/commander_avatar.jpg" alt="Chỉ huy">
-            <div><b>COMMANDER</b><small>KÊNH CHỈ HUY MÃ HÓA</small></div>
+            <img id="ti-commander-img" src="assets/commander_avatar.jpg" alt="Chỉ huy">
+            <div><b id="ti-commander-title">CHỈ HUY LIÊN ĐOÀN</b><small id="ti-commander-channel">KÊNH CHỈ HUY MÃ HÓA</small></div>
           </div>
-          <div class="ti-command-copy"><b>Chỉ huy:</b> <span id="ti-command-text"></span><i class="ti-type-cursor">█</i></div>
-          <div id="ti-command-reply" class="ti-command-reply hidden"><b>Chiến sĩ [Striker-1]:</b> <span id="ti-reply-text">Rõ! Đã khóa tọa độ mục tiêu, sẵn sàng xuất kích!</span></div>
+          <div class="ti-command-copy"><b id="ti-commander-role-label">Chỉ huy liên đoàn:</b> <span id="ti-command-text"></span><i class="ti-type-cursor">█</i></div>
+          <div id="ti-command-reply" class="ti-command-reply hidden"><b id="ti-reply-soldier-label">Chiến sĩ [Striker-1]:</b> <span id="ti-reply-text">Rõ! Đã khóa tọa độ mục tiêu, sẵn sàng xuất kích!</span></div>
           <div class="ti-command-status" id="ti-command-status">••• ĐANG NHẬP</div>
         </div>
         <div class="ti-target-frame">
@@ -996,10 +1084,10 @@
   </div>
 
   <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
-  <script src="dist/app1.cfe40a0a44.js?v=cfe40a0a44"></script>
+  <script src="dist/app1.dbfb1d0b56.js?v=dbfb1d0b56"></script>
   <script>
     window.ADS_CONFIG = { provider: 'auto', h5Client: 'ca-pub-1406451403469107', h5Test: true, allowMock: true };
   </script>
-  <script src="dist/app2.bdbcd15a31.js?v=bdbcd15a31"></script>
+  <script src="dist/app2.831a0c3025.js?v=831a0c3025"></script>
 </body>
 </html>

@@ -2494,6 +2494,7 @@ ${vkDefs}
      */
     constructor(parent, opts) {
       this.path = buildTrackPath(opts.circles);
+      this.circles = opts.circles;
       this.count = Math.max(8, Math.round(this.path.length / opts.pitch));
       this.pitch = this.path.length / this.count;
       this.sidesX = opts.sidesX;
@@ -2571,7 +2572,11 @@ ${vkDefs}
         minV = Math.min(minV, p.v); maxV = Math.max(maxV, p.v); minU = Math.min(minU, p.u); maxU = Math.max(maxU, p.u);
       }
       const sg = forward ? -1 : 1, endU = forward ? minU : maxU;
-      const vSag = minV + (maxV - minV) * 0.58;
+      // nhánh trên sụp nằm trên đỉnh bánh chịu tải: các vòng giữa (đầu / cuối là bánh dẫn hướng, bánh sao) có r đã cộng
+      // nửa dày xích -> v + r là tâm mắt xích tì đúng đỉnh bánh. Trước đây lấy 58% chiều cao vòng xích: thấp hơn đỉnh bánh
+      // ~1,8 đv -> nhánh xích đứt cắm xuyên qua bánh
+      const rw = (this.circles || []).slice(1, -1);
+      const vSag = rw.length ? Math.max(...rw.map(c => c.v + c.r)) : minV + (maxV - minV) * 0.58;
       const nearEnd = (u) => forward ? u < minU + 8 : u > maxU - 8;
       const put = (i, px, pv, pu, tu, tv, tw) => {
         // (tu, tv): hướng dọc dải xích trong mặt phẳng (u, v); trục Y (mặt bám) vuông góc, quay lên trên
@@ -2591,9 +2596,9 @@ ${vkDefs}
         samplePath(this.path, i * this.pitch + this.offsets[s], p);
         if (p.v < minV + 1.2) continue;          // nhánh dưới vẫn nằm dưới bánh
         if (nearEnd(p.u)) { drape.push(i); continue; }
-        // Nhánh trên sụp xuống đỉnh bánh chịu tải, võng nhẹ giữa các bánh, hơi lệch ra ngoài
-        const sag = Math.abs(Math.sin(p.u * 0.33)) * 0.5;
-        put(i, x + sx * 0.35 + (Math.random() - 0.5) * 0.15, vSag - sag, p.u, 1, 0, (Math.random() - 0.5) * 0.06);
+        // Nhánh trên sụp xuống đỉnh bánh chịu tải, hơi lệch ra ngoài (không võng xuống dưới đỉnh bánh: khoảng võng giữa hai
+        // bánh không biết vị trí từng bánh, võng theo hình sin cũ cắm vào bánh)
+        put(i, x + sx * 0.35 + (Math.random() - 0.5) * 0.15, vSag + Math.random() * 0.1, p.u, 1, 0, (Math.random() - 0.5) * 0.06);
       }
       // Đầu đứt: rũ từ đỉnh bánh dẫn hướng xuống đất rồi nằm duỗi một đoạn ngắn, xoắn nhẹ ra ngoài
       drape.sort((a, b) => {

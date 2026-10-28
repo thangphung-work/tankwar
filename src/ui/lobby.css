@@ -385,6 +385,19 @@
 .mm-wx-btn:hover { color: var(--lb-accent-2); }
 .mm-wx-btn.active { color: var(--lb-accent-2); background: var(--lb-accent-soft); }
 .mm-wx-btn .ti { font-size: 14px; }
+.mm-view-3d-map-btn {
+  margin-left: auto;
+  border: 1px solid var(--lb-line);
+  background: rgba(34, 211, 240, 0.08);
+  color: #7fe3f5;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+.mm-view-3d-map-btn:hover {
+  background: rgba(34, 211, 240, 0.2);
+  border-color: #7fe3f5;
+  color: #fff;
+}
 
 /* --------------------------------------------------------------------------
    01 — XE XUẤT TRẬN

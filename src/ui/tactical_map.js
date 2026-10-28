@@ -66,6 +66,12 @@ class TacticalMapController {
     }, { passive: false });
     window.addEventListener('mouseup', (e) => this.onMouseUp(e));
     this.canvas.addEventListener('dblclick', (e) => {
+      if (window.FREECAM_LAB) {
+        const w = this.screenToWorld(e.clientX, e.clientY);
+        if (typeof window.freeCamTeleport === 'function') window.freeCamTeleport(w.x, w.z);
+        this.toggle(false);
+        return;
+      }
       // nhấp đúp vào xe địch: đã khóa ở lần nhấp đầu -> chỉ đóng bản đồ, giữ khóa
       const r = this.canvas.getBoundingClientRect();
       if (this.enemyAt(e.clientX - r.left, e.clientY - r.top)) { this.toggle(false); return; }
@@ -124,7 +130,12 @@ class TacticalMapController {
       this.resizeCanvas();
       // gợi ý thao tác hiện lại vài giây mỗi lần mở bản đồ rồi tự mờ
       const hint = this.modal.querySelector('.tm-hint');
-      if (hint) { hint.style.animation = 'none'; void hint.offsetWidth; hint.style.animation = ''; }
+      if (hint) {
+        if (window.FREECAM_LAB) {
+          hint.textContent = 'NHẤP CHUỘT: Dịch chuyển tới vị trí đó · CUỘN: Thu phóng · KÉO CHUỘT: Di chuyển bản đồ · M / ESC: Đóng';
+        }
+        hint.style.animation = 'none'; void hint.offsetWidth; hint.style.animation = '';
+      }
       if (window.soundEngine) window.soundEngine.setMapMuted(true);
     } else {
       this.modal.classList.add('hidden');
@@ -196,6 +207,13 @@ class TacticalMapController {
   // CHUỘT: nhấp chọn mục tiêu (đo từ xe), Shift + kéo: đo 2 điểm, chuột phải: kéo bản đồ
   // ---------------------------------------------------------------------------
   onMouseDown(e) {
+    if (window.FREECAM_LAB) {
+      if (e.button === 0 || e.button === 1 || e.button === 2) {
+        e.preventDefault();
+        this.pan = { x: e.clientX, y: e.clientY, cx: this.view.cx, cz: this.view.cz, button: e.button, moved: false, t: performance.now() };
+        return;
+      }
+    }
     if (e.button === 1 || e.button === 2) {
       e.preventDefault();
       // chuột phải: nhấp nhả tại chỗ = lái tự động tới đó; giữ & kéo = kéo bản đồ
@@ -236,6 +254,14 @@ class TacticalMapController {
     if (this.pan) {
       const P = this.pan;
       this.pan = null;
+      if (window.FREECAM_LAB && P.button === 0 && !P.moved) {
+        const w = this.screenToWorld(P.x, P.y);
+        if (typeof window.freeCamTeleport === 'function') {
+          window.freeCamTeleport(w.x, w.z);
+          this.toggle(false);
+          return;
+        }
+      }
       if (P.button === 2 && !P.moved && e && performance.now() - P.t < 600) {
         const w = this.screenToWorld(P.x, P.y);
         this.driveTo(w.x, w.z);
@@ -758,13 +784,13 @@ class TacticalMapController {
     this.drawCrates(ctx);
     if (typeof SupplyDepot !== 'undefined') SupplyDepot.drawOnMap(ctx, g, (x, z) => this.worldToScreen(x, z), k, { size: 7, labels: true });
     this.drawAirdrop(ctx);
-    if (g.player && !g.player.isDead) this.drawRanges(ctx, k);
+    if (g.player && !g.player.isDead && !window.FREECAM_LAB) this.drawRanges(ctx, k);
     this.drawIntel(ctx, k);
     this.drawDrive(ctx);
     if (typeof QuickComms !== 'undefined') QuickComms.drawOnMap(ctx, (x, z) => this.worldToScreen(x, z));
     if (g.player) this.drawPlayer(ctx);
     this.drawLock(ctx);
-    this.drawTarget(ctx);
+    if (!window.FREECAM_LAB) this.drawTarget(ctx);
     this.layoutTags(ctx);
     this.drawFrame(ctx, o, S, k, W, Hh);
     this.updateTip();
@@ -1055,6 +1081,29 @@ class TacticalMapController {
 
   drawPlayer(ctx) {
     const g = this.game, p = g.player, s = this.worldToScreen(p.x, p.z);
+    if (window.FREECAM_LAB) {
+      this.obstacle(s.x, s.y, 18, 18);
+      ctx.save();
+      const yaw = (window.freeCam && window.freeCam.yaw !== undefined) ? window.freeCam.yaw : (g._camYaw || 0);
+      const a0 = Math.atan2(-Math.cos(yaw), -Math.sin(yaw)), Lc = 90;
+      const hf = g.camera ? Math.atan(Math.tan(g.camera.fov * Math.PI / 360) * g.camera.aspect) : 0.6;
+      const fg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, Lc);
+      fg.addColorStop(0, 'rgba(34, 211, 240, 0.35)'); fg.addColorStop(1, 'rgba(34, 211, 240, 0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.arc(s.x, s.y, Lc, a0 - hf, a0 + hf); ctx.closePath(); ctx.fill();
+
+      ctx.strokeStyle = 'rgba(34, 211, 240, 0.75)'; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + Math.cos(a0 - hf) * Lc, s.y + Math.sin(a0 - hf) * Lc);
+      ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + Math.cos(a0 + hf) * Lc, s.y + Math.sin(a0 + hf) * Lc);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffb700'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      this.tag(ctx, 'VỊ TRÍ CAMERA', s.x, s.y - 12, '#ffb700');
+      ctx.restore();
+      return;
+    }
     if (!p.isDead) {
       const pred = g.ballistics.predictTrajectoryImpact(p.x, p.y, p.z, p.azimuth, p.elevation, p.charge, g.terrain, p);
       const imp = this.worldToScreen(pred.impactX, pred.impactZ);

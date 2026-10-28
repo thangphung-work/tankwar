@@ -31,14 +31,18 @@
       if (take === 0) {
         // xe tăng tiền cảnh, giữa máy và cao ốc
         const hero = S.units('BLUE', 'ALL_ROUNDER')[0];
-        if (hero) { S.freeze(hero, true); const hx = cp.x + (B.x - cp.x) * 0.16, hz = cp.z + (B.z - cp.z) * 0.16; S.teleport(hero, hx, hz, Math.atan2(B.x - hx, -(B.z - hz)) + 0.5); }
+        if (hero) { S.freeze(hero, true); const hx = cp.x + (B.x - cp.x) * 0.3, hz = cp.z + (B.z - cp.z) * 0.3; S.teleport(hero, hx, hz, Math.atan2(B.x - hx, -(B.z - hz)) + 0.5); }
       }
       S.shot('fixed', { pos: cp, look: { x: B.x, y: take === 0 ? gy + (top - gy) * 0.35 : (gy + top) / 2, z: B.z }, dur: 30, fov: take === 0 ? 26 : 42, noDrone: true, drift: { x: 0, y: 0.6, z: 0 } });
       S.log('scene', { n: take, name: take === 0 ? 'hero-collapse' : 'tower-collapse' });
       await S.wait(0.8);
-      for (let i = 0; i < 34 && !B.collapsed; i++) {
-        const h = gy + 10 + S.rnd() * (top - gy) * 0.85;
-        S.shellAt(sh(), B.x + (S.rnd() - 0.5) * r, h, B.z + (S.rnd() - 0.5) * r, 'HE', a + Math.PI + (S.rnd() - 0.5) * 0.5, i < 18 ? 0.3 : 0.85);
+      // nhà sập khi tầng trệt mất quá nửa sức chịu (destructibles: dropFloors / collapse) -> nã gần ngang vào chân nhà, luân phiên
+      // hai mặt bên (không bắn xuyên qua xe tiền cảnh), vài phát dội nóc cho có khói lửa trên cao
+      for (let i = 0; i < 60 && !B.collapsed; i++) {
+        const side = i % 2 ? 1 : -1, high = i % 6 === 5;
+        const h = high ? gy + (top - gy) * (0.5 + 0.4 * S.rnd()) : gy + 4 + S.rnd() * 22;
+        const sx = Math.cos(a + side * Math.PI / 2), sz = Math.sin(a + side * Math.PI / 2);
+        S.shellAt(sh(), B.x + sx * B.halfW * 0.9 + (S.rnd() - 0.5) * r * 0.8, h, B.z + sz * B.halfD * 0.9 + (S.rnd() - 0.5) * r * 0.8, 'HE', a + side * Math.PI / 2, high ? 0.8 : 0.12);
         await S.wait(0.2 + S.rnd() * 0.18);
       }
       S.log('collapse', { take, collapsed: !!B.collapsed });
@@ -56,7 +60,7 @@
       const R = g.otherDrone(L);
       if (R.bot) R.bot.wait = 0.3;
       if (aa[0]) {
-        const pos = { x: aa[0].x + 60, z: aa[0].z + 35 }; pos.y = S.ground(pos.x, pos.z) + 5;
+        const pos = { x: aa[0].x + 70, z: aa[0].z + 40 }; pos.y = S.ground(pos.x, pos.z) + 16;
         S.shot('fixed', { pos, look: { x: c.x - 260, y: S.ground(c.x, c.z) + 170, z: c.z }, dur: 30, fov: 50, noDrone: true });
       }
       S.log('scene', { n: 3, name: 'aa' });

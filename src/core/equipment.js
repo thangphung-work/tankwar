@@ -465,6 +465,9 @@
   // hoặc xem quảng cáo (tiếp tế / mở khóa). Phần nền (tham gia, thắng, thời gian) nhỏ — tiền nằm ở thành tích.
   const AIRDROP_SILVER = 250;   // mỗi hòm thả dù chiếm được
   const LOSS_AMMO_REFUND = 0.5; // thua: hoàn 50% tiền đạn đặc chủng (phần mua bằng Bạc) đã bắn trong trận
+  // Trận máy chủ không đối chiếu được (đánh máy / chủ phòng rời): số liệu do máy khách tự khai -> trần Bạc + kinh nghiệm
+  // mỗi ngày (giờ VN) cộng dồn mọi trận loại này, chặn script gửi kết quả khống liên tục (~6 trận đánh máy thường / ngày)
+  const BOT_MATCH_DAILY = { silver: 8000, xp: 3000 };
   function silverFor(result, kills, damage, durSec, airdrops) {
     // 300 cơ bản + thắng 250 / hòa 100 + 150 / hạ + 35 / máu gây ra + 10 / phút trận (tối đa 15 phút) + 250 / hòm thả dù
     // (2026-10-27: nền 150 -> 300 cho người chơi yếu đỡ lỗ; hạ 180 -> 150, sát thương 25 -> 35: góp sát thương cũng được
@@ -486,7 +489,7 @@
       .slice(0, 3);
   }
 
-  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, RETIRED_ITEMS, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AIRDROP_SILVER, LOSS_AMMO_REFUND, AD, adAmmoN, DAILY_SPIN, spinItems, spinAmmo, spinRoll, spinCycleDay, spinWeights, spinOdds, TOPUP, topupPack, topupGrant, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD, ROOF_DEFAULT, SLOT_DEFAULT, MOUNT_CATS, roofOf, slotOf, ARMOR_REPAIR, dropDamaged, sanitizeGone, repairUnitPrice, noteArmor };
+  const API = { TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, RETIRED_ITEMS, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AIRDROP_SILVER, LOSS_AMMO_REFUND, BOT_MATCH_DAILY, AD, adAmmoN, DAILY_SPIN, spinItems, spinAmmo, spinRoll, spinCycleDay, spinWeights, spinOdds, TOPUP, topupPack, topupGrant, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD, ROOF_DEFAULT, SLOT_DEFAULT, MOUNT_CATS, roofOf, slotOf, ARMOR_REPAIR, dropDamaged, sanitizeGone, repairUnitPrice, noteArmor };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================
@@ -519,22 +522,39 @@
     try { setStockSmoke(u, has(u, 'smoke')); } catch (e) { console.warn('[EQ] Không ẩn được ống khói', e); }
     // hộp đạn thay cỡ hòm trên tháp -> gắn TRƯỚC giáp lắp thêm (tấm ốp / lồng tháp đo theo hòm mới)
     if (typeof u.mountMag === 'function') { try { u.mountMag(slotOf(u.kit, u.tankType, 'mag') || 'none'); } catch (e) { console.warn('[EQ] Không gắn được hộp đạn', e); } }
-    try { buildVisuals(u); } catch (e) { console.warn('[EQ] Không gắn được hình trang bị', e); }
+    // opts.deferVisuals (vào trận: 20 xe x lồng / giáp / lưới lá ~2 s dồn 1 khung): phần HÌNH để game gắn dần qua nhiều khung
+    // (visualSteps); chỉ số, đạn, món ở các ô bệ vẫn áp ngay
+    const deferVis = !!(opts && opts.deferVisuals);
+    if (deferVis) u._eqVis = true;
+    else { try { buildVisuals(u); } catch (e) { console.warn('[EQ] Không gắn được hình trang bị', e); } }
     // Ô 1 bệ (nóc tháp / mũi xe / vũ khí chính / UAV): mô hình xe dựng sẵn món mặc định, bộ đồ chọn món khác thì thay
-    // (u.mountRoof / mountFront / mountWeapon / mountUav do file mô hình xe cung cấp; 'none' = gỡ trống)
+    // (u.mountRoof / mountFront / mountWeapon / mountUav do file mô hình xe cung cấp; 'none' = gỡ trống). Hoãn hình thì
+    // món bệ cũng hoãn theo, chạy ngay sau phần hình như thứ tự gốc (giáp / lồng đo theo món bệ đang lắp lúc dựng)
+    if (!deferVis) mountSlots(u);
+    // Động cơ: thông số tăng tốc + nhiệt (spg.js engineBoost), giọng máy (vehicle_engine.js / other_engines.js)
+    u.engineId = slotOf(u.kit, u.tankType, 'engine') || 'stock';
+    u.engineSpec = (MODULES[u.engineId] && MODULES[u.engineId].boost) || null;
+    u._eng = { heat: 0, lock: false, lvl: 0 };
+    // Giáp hỏng từ trận trước chưa sửa: xe ra trận thiếu đúng các khối đó (mọi máy cùng áp theo kit.d)
+    if (!deferVis) applyGone(u);
+    startLife(u);
+  }
+  function mountSlots(u) {
     for (const c of MOUNT_CATS) {
       if (c === 'mag') continue;
       const fn = u['mount' + c[0].toUpperCase() + c.slice(1)];
       if (typeof fn !== 'function') continue;
       try { fn(slotOf(u.kit, u.tankType, c) || 'none'); } catch (e) { console.warn('[EQ] Không gắn được món ô ' + c, e); }
     }
-    // Động cơ: thông số tăng tốc + nhiệt (spg.js engineBoost), giọng máy (vehicle_engine.js / other_engines.js)
-    u.engineId = slotOf(u.kit, u.tankType, 'engine') || 'stock';
-    u.engineSpec = (MODULES[u.engineId] && MODULES[u.engineId].boost) || null;
-    u._eng = { heat: 0, lock: false, lvl: 0 };
-    // Giáp hỏng từ trận trước chưa sửa: xe ra trận thiếu đúng các khối đó (mọi máy cùng áp theo kit.d)
+  }
+  // Phần hình trang bị đã hoãn (equip deferVisuals): mỗi next() một phần, rồi món ở các ô bệ, rồi giáp thiếu từ trận trước
+  function* visualSteps(u) {
+    if (!u || !u._eqVis) return;
+    u._eqVis = false;
+    try { yield* buildVisualsSteps(u); } catch (e) { console.warn('[EQ] Không gắn được hình trang bị', e); }
+    yield;
+    mountSlots(u);
     applyGone(u);
-    startLife(u);
   }
 
   // Mô hình xe vừa dựng lại (xác cũ tách ra nằm lại chiến trường — SPG.detachWreck): gắn lại phần HÌNH của bộ trang bị
@@ -3354,7 +3374,7 @@
   }
 
   return Object.assign(API, {
-    has, equip, refit, refitSteps, onRespawn, paidUsed, ammoDelta, startLife,
+    has, equip, refit, refitSteps, visualSteps, onRespawn, paidUsed, ammoDelta, startLife,
     armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, vshieldDeflectP, vshieldHeatMul, vshieldSplashMul, sandbagLeft, sandbagSplashMul, eraEffect, penMul, penLossMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, roofCage, apsLeft, apsEngageP, apsEngage, apsMuzzle, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul, extHitMul, extFireChance, extIgniteMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, smokeSides, smokeMax, smokeCount, lockBlocked, SMOKE_GAP, SMOKE_LIFE, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump, apsPod, apsLauncher, radarMast, radarHead, RADAR_MAST_H,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)

@@ -106,6 +106,16 @@
       };
       Equipment.botKit.__tr = true;
     }
+    // ?nocamo=1: bot không mang lưới lá ngụy trang (xe lộ hình rõ trong cảnh giới thiệu)
+    if (q.get('nocamo') && typeof Equipment !== 'undefined' && Equipment.botKit && !Equipment.botKit.__nocamo) {
+      const ob = Equipment.botKit;
+      Equipment.botKit = function () {
+        const k = ob.apply(this, arguments);
+        if (k && k.m) k.m = k.m.filter(id => id !== 'camo');
+        return k;
+      };
+      Equipment.botKit.__nocamo = true;
+    }
     g.startMatchWithSlots(slots, 'cam-me');
     g._intro = null;
     document.body.classList.remove('intro-active');
@@ -126,6 +136,20 @@
     g.camera.fov = 50; g.camera.updateProjectionMatrix();
     hookEvents();
     hookDrones();
+    // một vật hỏng hình học (thiếu thuộc tính / mảng đã bỏ) làm three ném lỗi giữa lượt vẽ -> CẢ KHUNG không vẽ (màn xám).
+    // Bọc từng lệnh vẽ: vật nào lỗi thì ẩn riêng nó, ghi đường dẫn để sửa gốc trong game; khung vẫn vẽ tiếp
+    {
+      const R = g.renderer, orb = R.renderBufferDirect;
+      const pathOf = (o) => { const p = []; while (o && p.length < 7) { p.push((o.name || o.type) + (o.userData && o.userData.civMerged ? '[merged]' : '')); o = o.parent; } return p.join(' < '); };
+      R.renderBufferDirect = function (camera, scene, geometry, material, object, group) {
+        try { return orb.apply(this, arguments); } catch (e) {
+          if (object) object.visible = false;
+          const attrs = geometry ? Object.keys(geometry.attributes || {}).map(k => k + (geometry.attributes[k] ? (geometry.attributes[k].array ? '' : '(null array)') : '(null)')).join(',') : 'no geo';
+          tlog('badMesh', { path: pathOf(object), err: String(e && e.message).slice(0, 90), attrs });
+          console.error('[TRAILER] ẩn vật vẽ lỗi:', pathOf(object), attrs, e && e.message);
+        }
+      };
+    }
     // sương mù chiến tranh tính theo phe xe camera: cho xe camera biết hết -> xe địch luôn hiện, có tiếng máy
     if (typeof TeamIntel !== 'undefined' && TeamIntel.knows && !TeamIntel.knows.__tr) {
       const ok = TeamIntel.knows;
@@ -161,6 +185,9 @@
     };
     const origUpdate = g.update;
     g.update = function (dt) {
+      // xe camera đang tự lái (cảnh tiến quân, cán xe): tháp thẳng mũi xe — không để tháp ngắm theo hướng camera nhìn
+      // (camera đặt bên hông / phía trước -> nòng quay ngược ra sau, trông như xe chạy lùi)
+      if (TR.driving && !TR.pov) { this._aimPoint = null; if (this.lockedTarget) this.lockedTarget = null; this._turretHome = true; }
       origUpdate.call(this, dt);
       if (TR.pov) { hideJunk(); return; }
       try { direct(dt); } catch (e) { if (!TR._de) { TR._de = 1; console.error('[TRAILER] director', e); } }
@@ -169,7 +196,16 @@
     const origRender = g.render;
     g.render = function () {
       if (!TR.pov) { applyCam(); lensRain(); }
-      hideJunk(); origRender.call(this);
+      hideJunk();
+      // ?fog=0.5: sương mỏng hơn khi vẽ (mưa / mây / sét giữ nguyên, nhìn xa hơn); trả lại ngay sau khi vẽ để không cộng dồn
+      const fog = this.scene && this.scene.fog, fk = parseFloat(q.get('fog'));
+      const d0 = fog && fog.density !== undefined ? fog.density : null;
+      // máy ngoài: sương = mức gốc của bản đồ (fog._baseD), không theo camera bám xe của game — sau kính ngắm / màn hình
+      // drone, camera bám xe để sương cực dày (tính theo độ phóng kính) -> cả khung trắng đục
+      const base = fog && fog._baseD !== undefined ? fog._baseD : d0;
+      const want = d0 === null ? null : (TR.pov ? d0 : base) * (fk > 0 ? fk : 1);
+      if (want !== null) fog.density = want;
+      try { origRender.call(this); } finally { if (d0 !== null) fog.density = d0; }
     };
     TR.state = 'ready';
     tlog('start', { map: BIOME, seed: SEED });
@@ -325,6 +361,15 @@
     }
     const SS = g.terrain.strongholdSet;
     if (SS && SS.surfaceAt) { const s = SS.surfaceAt(x, z); if (s !== null && s > y) y = s; }
+    // khối đặc của căn cứ (nhà, chòi canh, bồn, bệ phóng — landmarks.js solids: tâm, trục u, nửa cạnh hu / hv, y0..y1)
+    const LS = g.terrain.landmarkSet;
+    if (LS && LS.items) for (const it of LS.items) {
+      if (Math.abs(x - it.x) > (it.reach || 600) || Math.abs(z - it.z) > (it.reach || 600)) continue;
+      for (const q of it.boxes || []) {
+        const dx = x - q.cx, dz = z - q.cz, a = dx * q.ux + dz * q.uz, b = -dx * q.uz + dz * q.ux;
+        if (Math.abs(a) < q.hu + 3 && Math.abs(b) < q.hv + 3 && q.y1 > y) y = q.y1;
+      }
+    }
     return y;
   }
   const inConcrete = (x, y, z) => { const SS = g.terrain.strongholdSet; try { return !!(SS && SS.concreteAt && SS.concreteAt(x, y, z, 3)); } catch (e) { return false; } };
@@ -428,7 +473,10 @@
     return null;
   }
 
-  function slowMo(scale, sec) {
+  // ?calm=1: máy quay kiểu phóng sự — không rung giả, không tự quay chậm (chỉ khoảnh khắc ù tai được chậm nhẹ: force)
+  const CALM = !!q.get('calm');
+  function slowMo(scale, sec, force) {
+    if (CALM && !force) return;
     cam.slow = Math.min(cam.slow, scale);
     cam.slowUntil = Math.max(cam.slowUntil, now() + sec * scale);
   }
@@ -443,7 +491,8 @@
     let S = cam.shot;
     const el = t - S.t0;
     // xe bị hạ ngay trong khung hình (hoặc là xe đang quay / mục tiêu của nó): quay chậm + chuyển cảnh xác xe
-    const k = cam.kills.find(k => t - k.t < 0.15 && !k.used && (k.vis || k.u === S.subject || k.u === S.target));
+    // cảnh do kịch bản đặt (S.locked): không tự cắt sang xác xe — kịch bản tự quyết
+    const k = !S.locked && cam.kills.find(k => t - k.t < 0.15 && !k.used && (k.vis || k.u === S.subject || k.u === S.target));
     if (k) {
       k.used = true;
       slowMo(0.3, 1.6);
@@ -569,7 +618,7 @@
       const sh = S.shell, u = S.subject;
       if (!sh) return null;
       const s = u ? sizeOf(u) : 50;
-      if (!sh.exploded && el < 3 && g.ballistics.activeShells.includes(sh)) {
+      if (!sh.exploded && el < (S.track || 3) && g.ballistics.activeShells.includes(sh)) {
         const v = Math.hypot(sh.vx, sh.vy, sh.vz) || 1;
         const bx = sh.vx / v, by = sh.vy / v, bz = sh.vz / v;
         S.last = { x: sh.x, y: sh.y, z: sh.z, bx, by, bz };
@@ -636,7 +685,7 @@
 
   function applyCam() {
     const c = g.camera;
-    const tr = cam.trauma * cam.trauma, t = performance.now() / 1000;
+    const tr = CALM ? 0 : cam.trauma * cam.trauma, t = performance.now() / 1000;
     const sx = (Math.sin(t * 37.1) + Math.sin(t * 23.7)) * 0.5 * tr * 3, sy = (Math.sin(t * 31.3) + Math.sin(t * 19.9)) * 0.5 * tr * 2.2;
     c.position.set(cam.pos.x + sx, cam.pos.y + sy, cam.pos.z);
     c.lookAt(cam.look.x, cam.look.y, cam.look.z);
@@ -663,6 +712,23 @@
     }
     if (el - (S.endT || 0) > 2.6) return null;
     return { pos: { x: cam.pos.x, y: cam.pos.y, z: cam.pos.z }, look: { x: P.x, y: P.y, z: P.z }, stiff: 1, lookStiff: 3, fov: 50, focus: P };
+  };
+
+  // bay song song bên sườn viên đạn pháo cầu vồng (S.shell): thấy đạn vút lên rồi rơi xuống mục tiêu, mặt đất luôn trong
+  // khung (máy sau lưng đạn chỉ thấy trời); đạn nổ -> máy dừng lại, nhìn chỗ nổ S.hold giây (sóng xung kích, khói)
+  SHOT_FN.shellside = function (S, dt, el) {
+    const sh = S.shell; if (!sh) return null;
+    if (!sh.exploded && g.ballistics.activeShells.includes(sh) && el < (S.track || 12)) {
+      const v = Math.hypot(sh.vx, sh.vz) || 1, hx = sh.vx / v, hz = sh.vz / v, sd = S.side || 1, off = S.off || 150;
+      const x = sh.x - hz * off * sd - hx * 50, z = sh.z + hx * off * sd - hz * 50;
+      S.last = { x: sh.x, y: sh.y, z: sh.z };
+      return { pos: { x, y: Math.max(sh.y - 12, obstacleTop(x, z) + 9), z }, look: { x: sh.x + hx * 40, y: sh.y, z: sh.z + hz * 40 }, stiff: S.stiff || 30, lookStiff: 30, fov: S.fov || 46, focus: sh };
+    }
+    if (!S.last) return null;
+    if (!S.hitT) { S.hitT = el; S.stop = { x: cam.pos.x, y: cam.pos.y, z: cam.pos.z }; tlog('shellhit', { n: cam.shotN }); }
+    if (el - S.hitT > (S.hold || 3)) return null;
+    const L = S.last;
+    return { pos: S.stop, look: { x: L.x, y: ground(L.x, L.z) + 12, z: L.z }, stiff: 2, lookStiff: 3, fov: S.fov || 46, focus: L };
   };
 
   // máy đặt cố định (cảnh dàn dựng): S.pos / S.look, trôi chậm theo S.drift (đơn vị/giây) cho đỡ chết hình
@@ -757,14 +823,32 @@
       return P;
     },
     keys: (o) => { for (const k in o) g.keys[k] = !!o[k]; },
+    // cho các xe (đã freeze) chạy thẳng theo (dx, dz) với tốc độ v (đv/s) trong sec giây
+    glide(list, dx, dz, v, sec) {
+      const t0 = now(), ang = Math.atan2(dx, -dz);
+      list.forEach(u => { u.bodyAngle = ang; if (u.group) u.group.rotation.y = ang; });
+      return new Promise(res => {
+        let last = t0;
+        const id = setInterval(() => {
+          const tt = now(), dt = Math.min(0.1, tt - last); last = tt;
+          for (const u of list) {
+            if (u.isDead) continue;
+            u.x += dx * v * dt; u.z += dz * v * dt; u.y = ground(u.x, u.z); u.speed = v;
+            if (u.group) u.group.position.set(u.x, u.y, u.z);
+          }
+          if (tt - t0 >= sec) { clearInterval(id); list.forEach(u => { u.speed = 0; }); res(); }
+        }, 33);
+      });
+    },
     drones: () => g._otherDrones ? [...g._otherDrones.values()] : [],
-    shot: (type, extra) => newShot(type, extra),
+    // cảnh do kịch bản đặt: KHÔNG tự bay theo đạn (đạn pháo cầu vồng kéo máy lên mây — chỉ thấy trời xám), trừ khi kịch bản ghi shellP
+    shot: (type, extra) => newShot(type, Object.assign({ shellP: 0, locked: true, noDrone: true }, extra || {})),
     slow: (scale, sec) => slowMo(scale, sec),
     // Ù TAI: tiếng chiến trường bị bóp nghẹt (bộ lọc ~900 Hz của game) trong sec giây rồi ập trở lại; kèm quay chậm
     shock(sec = 2.2) {
       const se = window.soundEngine;
       tlog('shock', { sec });
-      slowMo(0.3, sec * 0.8);
+      slowMo(CALM ? 0.6 : 0.3, sec * 0.8, true);
       if (!se || !se.ctx || !se.muffleDry) return;
       const t = se.ctx.currentTime, d = se.muffleDry.gain, w = se.muffleWet.gain;
       for (const p of [d, w]) { p.cancelScheduledValues(t); p.setValueAtTime(p.value, t); }
@@ -776,6 +860,7 @@
     // góc nhìn chủ quan (kính ngắm / màn hình UAV của xe người chơi): camera do game điều khiển
     pov(on) { TR.pov = !!on; if (on) TR.gFocus = null; else TR.holdN = Math.max(TR.holdN, 6); tlog('pov', { on: !!on }); },
     log: (what, o) => tlog('stage', Object.assign({ what }, o || {})),
+    clear: (a, b) => clearView(a, b),
     rnd, ground, obstacleTop, sizeOf, cam
   };
 

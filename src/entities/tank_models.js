@@ -59,7 +59,8 @@ class TankModelBuilder {
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
     canvas.height = 1024;
-    const ctx = canvas.getContext('2d');
+    // vẽ xong đọc lại từng điểm ảnh (hạt thép, getImageData): vẽ bằng CPU khỏi chờ đọc ngược từ GPU
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     const isBlue = team === 'BLUE';
 

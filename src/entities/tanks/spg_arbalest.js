@@ -871,7 +871,10 @@
       if (spadeOn && (!gear.spadeDown || fired)) {
         gear.spade.localToWorld(_ge.set(0, -SPADE_LEN + 1.6, 0.3));
         fx.kickDust(_ge.x, _ge.z, fired ? 0.55 : 0.8);
-        fx.digGround(_ge.x, _ge.z, right.x, right.z, 17.0, 3.6, fired ? 0.45 : 1.1);
+        // Chỉ khoét rãnh một lần khi lưỡi càng vừa chạm đất. Khoét lại ngay frame
+        // khai hỏa buộc lớp hố 3D cập nhật instance/stencil cùng lúc với chớp lửa,
+        // khói, âm thanh và viên đạn, gây khựng rõ trên GPU yếu.
+        if (!gear.spadeDown) fx.digGround(_ge.x, _ge.z, right.x, right.z, 17.0, 3.6, 1.1);
         if (fired) for (const leg of gear.jacks) { leg.localToWorld(_ge.set(0, 3.9, 0)); fx.kickDust(_ge.x, _ge.z, 0.2); }
       }
     }

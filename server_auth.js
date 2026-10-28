@@ -55,6 +55,24 @@ const FIRE_RATE = { GATLING: 40, SCOUT: 25, ALL_ROUNDER: 8, ARTILLERY: 6 };
 // Sát thương phải đến sau một phát bắn thật của chính xe đó trong khoảng (đạn pháo bay lâu + bom con rơi)
 const FIRE_WINDOW_MS = { ARTILLERY: 25000 };
 const DEFAULT_FIRE_WINDOW_MS = 12000;
+// Xe có súng liên thanh (cờ F_GATLING trong gói trạng thái = đang xả đạn): xe 6 nòng, xe trinh sát
+const STREAM_TYPES = new Set(['GATLING', 'SCOUT']);
+// Xe bắn thẳng (không phải pháo tự hành bắn theo toạ độ) chỉ gây sát thương lên xe địch phe mình đã thấy gần đây
+// (chặn "đạn ma" bắn xuyên đồi / rừng / bản đồ vào xe không ai thấy). Dung sai rộng: xe vừa khuất sau đồi, đạn nổ lan
+const UNSEEN_MS = 10000;
+// Xe bị máy chủ ghi nhận hạ gục: máy của xe đó phải báo chết (cho chút thời gian nhận gói DAMAGE), và chỉ được sống lại
+// sau thời gian phạt hồi sinh (game.respawnWaitPenalty 10 s, chừa trễ mạng)
+const DEAD_GRACE_MS = 1500, RESPAWN_MIN_MS = 8000;
+// Trinh sát báo vị trí: mục tiêu phải trong vùng radar của chính xe trinh sát
+const SPOT_RANGE = RADAR_RANGE + MARGIN * 2;
+// Drone trinh sát: tốc độ tối đa (người lái Shift 240 đv/s, bot 150) + cất cánh sát xe pháo
+const DRONE_SPEED = 400, DRONE_LAUNCH = 250;
+// Hòm tiếp tế (supply_manager.js): loại 11 hòm mặt đất theo thứ tự, vị trí gốc bản đồ 3600 (giãn theo kích thước bản đồ,
+// dời khỏi căn cứ nên chỉ so gần đúng), hòm xuất hiện lại sau 35 s; hòm thả dù rơi ~8,5 s, cách nhau >= 22 s sau khi có chủ
+const CRATES = [[0, 0, 'ALL'], [-360, 520, 'REPAIR'], [360, 520, 'AMMO'], [-360, -520, 'AMMO'], [360, -520, 'REPAIR'],
+  [-950, -400, 'SPEED'], [950, -400, 'AMMO'], [-950, 400, 'REPAIR'], [950, 400, 'SPEED'], [-650, 0, 'ALL'], [650, 0, 'ALL']];
+const CRATE_RESPAWN_MS = 30000, CRATE_NEAR = 70, CRATE_GUESS = 260, BOOST_MS = 23000;   // tăng tốc 20 s + trễ mạng
+const AIRDROP_FALL_MS = 7000, AIRDROP_NEAR = 80, AIRDROP_GAP_MS = 18000, AIRDROP_FIRST_MS = 25000, AIRDROP_STALE_MS = 55000;
 // Tin chỉ chủ phòng được gửi (đồng hồ trận, tỉ số, cờ, hòm tiếp tế, gió / bo, dấu vân tay công trình)
 const HOST_ONLY = new Set(['MATCH', 'SUPPLY', 'WORLD', 'ENVSUM', 'ENVFIX']);
 let accounts = null;
@@ -178,6 +196,9 @@ function initMatch(room, d, fromId) {
     meta: [],              // { lastT, hpAuth, deadAt, revealUntil, dmg: [[t, amount]], tick }
     spotted: { BLUE: new Map(), RED: new Map() },   // xe -> hết hạn báo cáo
     drones: new Map(),     // xe pháo -> { x, z, until } drone đang bay
+    dronePos: new Map(),   // xe pháo -> { x, z, at } vị trí drone gần nhất (giới hạn tốc độ bay, không hết hạn theo TTL)
+    crates: [],            // hòm mặt đất -> { at: lúc có chủ, x, z: chỗ hòm (học từ lần nhặt đầu) }
+    air: null,             // hòm thả dù hiện tại { x, z, at, taken, takenAt }
     vis: { BLUE: new Set(), RED: new Set() },
     sent: new Map(),       // máy nhận -> Map(xe -> trạng thái đã gửi | {hid:1})
     dirty: new Set(),      // xe có trạng thái mới chờ gửi ở nhịp tới
@@ -212,17 +233,31 @@ function initMatch(room, d, fromId) {
       if (!s) continue;
       if (r.team !== s.team || r.peer !== s.peer || r.rd !== s.rd || r.cm !== s.cm) flag(M, { id: fromId, name: '' }, `khai báo trận lệch đội hình đã kiểm tra (xe ${r.i})`);
       r.team = s.team; r.peer = s.peer; r.rd = s.rd; r.cm = s.cm;
+      if (s.a) { r.kitA = s.a; r.kitM = s.m; }
     }
+  }
+  // máy điều khiển phải đang ở trong phòng (không khai mã máy giả để biến xe bot thành "người chơi")
+  for (const r of M.roster) {
+    if (r.peer && !room.members.has(r.peer)) r.peer = null;
+    const c = r.peer ? room.members.get(r.peer) : null;
+    r.uid = c && c.userId ? c.userId : null;   // tài khoản lái xe (giữ cả khi người đó rời phòng giữa trận)
   }
   M.byIdx = new Map(M.roster.map(r => [r.i, r]));
   chainAdd(M, `M,${M.id},${M.mapType},${M.seed},${M.roster.map(r => r.team[0] + r.type[0] + (r.peer ? 'H' : 'B')).join('')}`);
   room.match = M;
   // mở sổ thành tích trận mạng cho mọi người chơi có tài khoản ngay từ đầu trận: kết quả gửi lên sau trận luôn được
   // đối chiếu với máy chủ (trước đây người không bắn trúng ai thì không có sổ -> tự báo thắng vẫn được tin)
+  // vs: phe địch có ít nhất 1 người chơi thật khác (đã đăng nhập, tài khoản khác, khác IP). Không có -> mọi xe địch là bot
+  // do máy chủ phòng chạy (có thể chính người đó) -> kết quả tính như trận đánh máy (trần thưởng / ngày)
   if (accounts && accounts.noteOnline) {
     for (const r of M.roster) {
       const c = r.peer ? room.members.get(r.peer) : null;
-      if (c && c.userId) accounts.noteOnline(c.userId, M.id, 0, 0, 0);
+      if (!c || !c.userId) continue;
+      const vs = M.roster.some(o => {
+        const oc = o.peer && o.team !== r.team ? room.members.get(o.peer) : null;
+        return !!(oc && oc.userId && oc.userId !== c.userId && (!c.ip || oc.ip !== c.ip));
+      });
+      accounts.noteOnline(c.userId, M.id, 0, 0, 0, { vs });
     }
   }
   forestFor(M.mapType, M.seed, M.layout).then(dens => {
@@ -262,6 +297,8 @@ function sendTeam(room, M, team, fromId, msg) {
   });
 }
 function meta(M, i) { return M.meta[i] || (M.meta[i] = { lastT: 0, hpAuth: null, deadAt: 0, revealUntil: 0, dmg: [], tick: 0, fires: [], lastFire: 0 }); }
+// máu tối đa (x100, như trường h) của xe: theo loại + số hộp sinh lực thả dù đã nhặt từ lần xuất kích này (+1 / hộp)
+function hpCap(r, m) { return Math.round(((MAX_HP[r.type] || 3.5) + (m.hpBonus || 0)) * 100); }
 function flag(M, client, why) {
   // đếm theo (máy, loại vi phạm) -> mỗi loại đều được ghi nhật ký lần đầu (rồi mỗi 50 lần)
   const key = client.id + '|' + why.replace(/[\d.]+/g, '#');
@@ -366,11 +403,24 @@ function onUnitSync(room, client, msg) {
     delete q.i;
     for (const k of FIELDS) if (typeof q[k] !== 'number' && k !== 'm') q[k] = 0;
     const m = meta(M, e.i);
-    const wasDead = prev ? !!(prev.f & F_DEAD) : true, dead = !!(q.f & F_DEAD);
-    // tốc độ: vượt giới hạn (kể cả tăng tốc + vật phẩm tốc độ) -> kéo lại (hồi sinh thì được dịch chuyển)
+    const wasDead = prev ? !!(prev.f & F_DEAD) : true;
+    let dead = !!(q.f & F_DEAD);
+    // máy chủ đã nhận 1 phát hạ gục xe này / xe vừa chết: chưa hết thời gian phạt mà báo còn sống -> ép cờ chết
+    // (máy khác thấy xe đã bị phá hủy, xe đó không bắn / gây sát thương được nữa)
+    if (!dead) {
+      const since = Math.max(m.killedAt || 0, wasDead ? m.deadAt || 0 : 0);
+      const settling = !wasDead && m.killedAt && now - m.killedAt < DEAD_GRACE_MS;   // máy xe đó chưa kịp nhận gói DAMAGE
+      if (since && !settling && now - since < RESPAWN_MIN_MS) {
+        q.f |= F_DEAD; dead = true;
+        if (m.zombieAt !== since) { m.zombieAt = since; flag(M, client, `xe ${e.i} bị hạ / vừa chết vẫn báo còn sống`); }
+      } else if (since && now - since >= RESPAWN_MIN_MS) m.killedAt = 0;
+    }
+    // tốc độ: vượt giới hạn -> kéo lại (hồi sinh thì được dịch chuyển). Tốc độ thật tối đa ~ chuẩn x 1,15 (đường nhựa)
+    // x 1,1 (loại bánh / xích hợp mặt đất) x 1,25 (đổ dốc) ~ 1,6; x 1,65 nữa khi đang tăng tốc nhờ hòm tiếp tế mà máy chủ
+    // đã đối chiếu (boostUntil) -> chỉ khi đó mới nới tới mức cũ. Dung sai x 1,25 + 40 đv/s cho trễ mạng / va đẩy
     if (prev && !wasDead && !dead && m.lastT) {
       const dt = Math.max(0.05, (now - m.lastT) / 1000);
-      const vmax = (BASE_SPEED[r.type] || 150) * 2.4 * 1.25 + 40;
+      const vmax = (BASE_SPEED[r.type] || 150) * (m.boostUntil > now ? 2.4 : 1.65) * 1.25 + 40;
       const dx = (q.x - prev.x) / 10, dz = (q.z - prev.z) / 10, dist = Math.hypot(dx, dz), lim = vmax * dt + 30;
       if (dist > lim) {
         q.x = Math.round(prev.x + dx / dist * lim * 10);
@@ -379,14 +429,16 @@ function onUnitSync(room, client, msg) {
       }
     }
     // máu: không cao hơn lượng máu máy chủ biết (trừ khi vừa hồi sinh)
-    if (dead && !wasDead) m.deadAt = now;
-    if (wasDead && !dead) m.hpAuth = Math.min(q.h, Math.round((MAX_HP[r.type] || 3.5) * 100));
+    if (dead && !wasDead) { m.deadAt = now; settleLife(M, r); }   // hết 1 lần xuất kích: chốt đạn mua đã bắn
+    if (wasDead && !dead) { m.hpBonus = 0; m.hpAuth = Math.min(q.h, hpCap(r, m)); }
     else if (m.hpAuth !== null && q.h > m.hpAuth + 3) q.h = m.hpAuth;
     else if (m.hpAuth === null || q.h < m.hpAuth) m.hpAuth = q.h;
     m.lastT = now;
     m.tick++;
-    // đạn liên thanh (6 nòng / súng máy) không gửi tin bắn từng viên: cờ "đang xả đạn" trong gói trạng thái = đang bắn
-    if ((q.f & F_GATLING) && !dead) { m.lastFire = now; M.lastFireBy.set(client.id, now); }
+    // đạn liên thanh (6 nòng / súng máy) không gửi tin bắn từng viên: cờ "đang xả đạn" trong gói trạng thái = đang bắn.
+    // Chỉ xe có súng liên thanh; xả đạn cũng lộ vị trí như nổ súng (không thể gây sát thương mà vẫn tàng hình)
+    if ((q.f & F_GATLING) && !STREAM_TYPES.has(r.type)) q.f &= ~F_GATLING;
+    if ((q.f & F_GATLING) && !dead) { m.lastFire = now; m.revealUntil = now + REVEAL_MS; M.lastFireBy.set(client.id, now); }
     M.S[e.i] = q;
     M.uts[e.i] = typeof d.ts === 'number' && Math.abs(d.ts - now) < 5000 ? d.ts : now;   // thời điểm mẫu theo đồng hồ chủ quyền
     touched.push(e.i);
@@ -461,6 +513,18 @@ function validDamage(room, client, d) {
     if (amount > MAX_HIT) { flag(M, client, `1 phát ${amount.toFixed(2)} máu vượt giới hạn`); return false; }
     const win = FIRE_WINDOW_MS[ar.type] || DEFAULT_FIRE_WINDOW_MS;
     if (!am.lastFire || now - am.lastFire > win) { flag(M, client, `xe ${d.a} gây sát thương mà không bắn phát nào`); return false; }
+    // xe bắn thẳng trúng xe địch mà cả phe không thấy trong UNSEEN_MS -> đạn ma (bắn xuyên đồi / rừng / ngoài tầm nhìn)
+    if (ar.type !== 'ARTILLERY' && ar.team !== vr.team && vs && !(vs.f & F_DEAD) && now - (M.seenAt[ar.team].get(d.v) || 0) > UNSEEN_MS) {
+      flag(M, client, `xe ${d.a} bắn trúng xe ${d.v} mà phe không nhìn thấy`);
+      return false;
+    }
+    // nhiều nạn nhân KHÁC NHAU cùng báo "đạn không bay tới" (ngưỡng như reportSuspects) -> ngừng nhận sát thương
+    // của máy đó lên xe người chơi thật cho tới hết trận (bot không có nhân chứng)
+    const st = ar.peer ? M.stats.get(ar.peer) : null;
+    if (st && vr.peer && witnessBad(st)) {
+      if (!st.blocked) { st.blocked = true; flag(M, client, `bị chặn sát thương lên người chơi: ${st.wit} phát "đạn ma" (${st.witBy.size} nhân chứng)`); }
+      return false;
+    }
     am.dmg = am.dmg.filter(x => now - x[0] < 1000);
     const sum = am.dmg.reduce((s, x) => s + x[1], 0);
     if (sum + amount > DPS_CAP) { flag(M, client, `xe ${d.a} gây ${(sum + amount).toFixed(1)} máu/giây`); return false; }
@@ -474,6 +538,8 @@ function validDamage(room, client, d) {
   const vm = meta(M, d.v);
   if (d.k && vm.hpAuth !== null && vm.hpAuth / 100 - amount > 0.12) { flag(M, client, `báo hạ gục xe ${d.v} khi còn ${(vm.hpAuth / 100).toFixed(2)} máu`); return false; }
   if (typeof d.h === 'number') vm.hpAuth = vm.hpAuth === null ? d.h : Math.min(vm.hpAuth, d.h);
+  // hạ gục đã kiểm tra: xe đó phải chết tới hết thời gian phạt hồi sinh (onUnitSync ép cờ chết)
+  if (d.k && M.S[d.v] && !(M.S[d.v].f & F_DEAD)) vm.killedAt = now;
   M.lastHit.set(d.v + '|' + client.id, now);
   // Thành tích tài khoản trong trận mạng: máy chủ tự đếm từ sát thương đã kiểm tra (không tin số máy khách báo)
   if (accounts && accounts.noteOnline) {
@@ -524,6 +590,11 @@ function onWitness(room, client, d) {
 // Chỉ ghi nhật ký (data/suspects.log) để người quản trị xem lại, không tự cấm (tránh cấm nhầm người chơi giỏi)
 // ---------------------------------------------------------------------------
 const SUS = { HIDDEN_MS: 3000, HIDDEN_MIN: 6, HIDDEN_RATE: 0.35, AIM_MIN_SHOTS: 25, AIM_RATE: 0.85, WIT_MIN: 4, WIT_PEOPLE: 2, WIT_RATE: 0.25 };
+// nhân chứng chéo: nhiều người bị bắn KHÁC NHAU cùng thấy "đạn ma" (1 người hoặc 1 nhóm nhỏ không đủ để vu cáo)
+function witnessBad(s) {
+  const wb = s.witBy ? s.witBy.size : 0;
+  return (s.wit || 0) >= SUS.WIT_MIN && wb >= SUS.WIT_PEOPLE && s.wit / Math.max(1, s.hits) >= SUS.WIT_RATE;
+}
 function statOf(M, client) {
   let s = M.stats.get(client.id);
   if (!s) M.stats.set(client.id, s = { name: client.name || '', userId: client.userId || null, shots: 0, shotHits: 0, hits: 0, hidden: 0, pend: new Set() });
@@ -548,9 +619,7 @@ function reportSuspects(room, M) {
     const why = [];
     if (s.hidden >= SUS.HIDDEN_MIN && s.hidden / Math.max(1, s.hits) >= SUS.HIDDEN_RATE) why.push(`trúng ${s.hidden}/${s.hits} phát vào xe không nhìn thấy`);
     if (s.shots >= SUS.AIM_MIN_SHOTS && s.shotHits / s.shots >= SUS.AIM_RATE) why.push(`pháo chính trúng ${s.shotHits}/${s.shots} phát`);
-    // nhân chứng chéo: nhiều người bị bắn KHÁC NHAU cùng thấy "đạn ma" (1 người hoặc 1 nhóm nhỏ không đủ để vu cáo)
-    const wb = s.witBy ? s.witBy.size : 0;
-    if ((s.wit || 0) >= SUS.WIT_MIN && wb >= SUS.WIT_PEOPLE && s.wit / Math.max(1, s.hits) >= SUS.WIT_RATE) why.push(`${s.wit} phát trúng mà đạn không bay tới (${wb} nhân chứng)`);
+    if (witnessBad(s)) why.push(`${s.wit} phát trúng mà đạn không bay tới (${s.witBy.size} nhân chứng)`);
     if (!why.length) continue;
     console.warn(`[AUTH] Nghi gian lận: máy ${id} (${s.name}) — ${why.join('; ')}`);
     out.push(JSON.stringify({ t: Date.now(), room: room.name, match: M.id, map: M.mapType, client: id, user: s.userId, name: s.name,
@@ -593,6 +662,7 @@ function endMatch(room, M, end) {
       if (c && c.userId) accounts.noteResult(c.userId, M.id, win === null ? 'draw' : (win === r.team ? 'win' : 'loss'));
     }
   }
+  settleAll(room, M);
   chainAdd(M, `E,${Date.now() - M.t0},${win || 'DRAW'},${M.teamKills.BLUE},${M.teamKills.RED}`);
   reportSuspects(room, M);
   // biên nhận trận cho mọi người chơi + nhật ký trận (1 dòng / trận: hạ gục, kết quả, mã chuỗi cuối)
@@ -682,10 +752,108 @@ function vetLobby(room, client, d) {
     const tank = POOL.includes(s.tankType) ? s.tankType : POOL[idx % 4];
     const kit = Equipment.sanitize(s.isHuman ? s.kit : Equipment.botKit(tank, seededRandom((seed ^ (idx * 0x9e3779b1)) >>> 0)), tank);
     const has = id => kit.m.includes(id) || Equipment.builtin(tank, id);
-    return { team: s.team, peer: s.isHuman ? s.peerId : null, rd: tank !== 'SCOUT' && has('radar') ? 1 : 0, cm: has('camo') ? 1 : 0 };
+    // người chơi: giữ đạn mua thêm (a) + mô-đun (m) đã kiểm tra theo kho -> máy chủ trừ kho đạn / ghi giáp vỡ (settleLife)
+    return { team: s.team, peer: s.isHuman ? s.peerId : null, rd: tank !== 'SCOUT' && has('radar') ? 1 : 0, cm: has('camo') ? 1 : 0,
+      a: s.isHuman ? kit.a || {} : null, m: s.isHuman ? kit.m || [] : null };
   });
   if (changed) client.sendJSON({ t: '@slots', d: { slots } });
 }
+// ---------------------------------------------------------------------------
+// HÒM TIẾP TẾ (supply_manager.js): chủ phòng báo thả dù / xe nhặt hòm. Máy chủ đối chiếu:
+//  - drop: không sớm hơn lượt thả đầu, cách lần có chủ trước >= AIRDROP_GAP_MS (hoặc hòm cũ bỏ quá lâu)
+//  - loot: có hòm đang chờ, đã rơi xong, xe còn sống ở sát chỗ hòm, mỗi hòm 1 lần
+//  - take: hòm mặt đất đã xuất hiện lại (>= CRATE_RESPAWN_MS), xe còn sống ở sát chỗ hòm (lần đầu so gần đúng với
+//    vị trí gốc giãn theo bản đồ, rồi học chỗ hòm thật)
+// Hợp lệ mới cho máu xe tăng lại (hộp hồi máu / hộp sinh lực), có trần theo máu tối đa. Hòm thả dù có chủ là người
+// chơi -> cộng vào sổ thành tích trận (thưởng Bạc cuối trận không tin số máy khách tự khai)
+// ---------------------------------------------------------------------------
+function supplyOk(room, M, client, d, now) {
+  const bad = (why) => { flag(M, client, `hòm tiếp tế: ${why}`); return false; };
+  const unitAt = (i) => {
+    const r = typeof i === 'number' ? M.byIdx.get(i) : null, s = r && M.S[i];
+    return r && s && !(s.f & F_DEAD) ? { r, x: s.x / 10, z: s.z / 10 } : null;
+  };
+  if (d.e === 'drop') {
+    if (!Number.isFinite(d.x) || !Number.isFinite(d.z)) return false;
+    const A = M.air;
+    if (now - M.t0 < AIRDROP_FIRST_MS) return bad('thả dù quá sớm');
+    if (A && (A.taken ? now - A.takenAt < AIRDROP_GAP_MS : now - A.at < AIRDROP_STALE_MS)) return bad('thả dù dồn dập');
+    M.air = { x: d.x, z: d.z, at: now, taken: false, takenAt: 0 };
+    return true;
+  }
+  if (d.e === 'loot') {
+    const A = M.air, u = unitAt(d.u);
+    if (!A || A.taken || now - A.at < AIRDROP_FALL_MS) return bad('nhặt hòm thả dù không có / chưa tiếp đất');
+    if (!u || Math.hypot(u.x - A.x, u.z - A.z) > AIRDROP_NEAR) return bad(`xe ${d.u} nhặt hòm thả dù từ xa`);
+    if (!Number.isInteger(d.r) || d.r < 0 || d.r > 4) return false;
+    A.taken = true; A.takenAt = now;
+    const m = meta(M, d.u);
+    if (d.r === 3) { m.hpBonus = (m.hpBonus || 0) + 1; m.hpAuth = hpCap(u.r, m); }   // hộp sinh lực: +1 máu tối đa, hồi đầy
+    if (LOOT_AMMO[d.r]) addCount(m.bonus || (m.bonus = {}), LOOT_AMMO[d.r]);           // đạn tặng không trừ kho
+    if (d.r === 4) m.boostUntil = now + BOOST_MS;                                        // động cơ tăng áp 20 s
+    const c = u.r.peer ? room.members.get(u.r.peer) : null;
+    if (c && c.userId && accounts && accounts.noteAirdrop) accounts.noteAirdrop(c.userId, M.id);
+    return true;
+  }
+  if (d.e === 'take') {
+    const C = Number.isInteger(d.c) ? CRATES[d.c] : null, u = unitAt(d.u);
+    if (!C) return false;
+    const st = M.crates[d.c] || (M.crates[d.c] = { at: 0, x: null, z: null });
+    if (st.at && now - st.at < CRATE_RESPAWN_MS) return bad(`hòm ${d.c} chưa xuất hiện lại`);
+    if (!u) return bad(`xe ${d.u} đã chết / không có nhặt hòm`);
+    if (st.x !== null) {
+      if (Math.hypot(u.x - st.x, u.z - st.z) > CRATE_NEAR) return bad(`xe ${d.u} nhặt hòm ${d.c} từ xa`);
+    } else {
+      const H = M.dens && M.dens.H, K = H ? H.half * 2 / 3600 : 0;
+      if (K && Math.hypot(u.x - C[0] * K, u.z - C[1] * K) > CRATE_GUESS) return bad(`xe ${d.u} nhặt hòm ${d.c} ở sai chỗ`);
+      st.x = u.x; st.z = u.z;
+    }
+    st.at = now;
+    const m = meta(M, d.u);
+    if (C[2] === 'REPAIR' || C[2] === 'ALL') m.hpAuth = hpCap(u.r, m);   // hồi đầy máu
+    if ((C[2] === 'AMMO' || C[2] === 'ALL') && CRATE_AMMO[u.r.type]) addCount(m.bonus || (m.bonus = {}), CRATE_AMMO[u.r.type]);
+    if (C[2] === 'SPEED') m.boostUntil = now + BOOST_MS;
+    return true;
+  }
+  return d.e === 'respawn';
+}
+
+// ---------------------------------------------------------------------------
+// ĐẠN MUA THÊM / GIÁP VỠ CỦA NGƯỜI CHƠI (không tin máy khách tự báo trừ kho)
+// Mỗi lần xuất kích: đạn mua đã bắn = số phát máy chủ thấy - đạn miễn phí (Equipment.BASE_AMMO) - đạn hòm tiếp tế
+// (đã đối chiếu), trần = số mang theo đã kiểm tra. Chỉ đếm loại đạn phân biệt được qua tin bắn (xe tăng bắn đạn
+// thường khi hết AP / HE; pháo tự hành bắn HE thường lẫn HE mua nên không đếm). server_accounts trừ kho theo
+// max(máy chủ đếm, máy khách báo). Giáp: hợp các khối vỡ trong gói PARTS (máy bắn trúng gửi) -> ghi lúc hết trận / rời
+// ---------------------------------------------------------------------------
+const PAID_COUNTED = { ALL_ROUNDER: ['AP', 'HE'], ARTILLERY: ['CLUSTER'], SCOUT: ['ANTI_TANK_MISSILE'] };
+const CRATE_AMMO = { ALL_ROUNDER: { AP: 2, HE: 2 }, ARTILLERY: { CLUSTER: 2 }, SCOUT: { ANTI_TANK_MISSILE: 3 } };   // = takeCrate
+const LOOT_AMMO = [{ AP: 2 }, { HE: 2 }];                                                                       // = collectAirdrop r 0 / 1
+const SINGLE_PARTS = new Set(['apsKit', 'radarKit', 'jammerKit', 'agl', 'rocketPod', 'rjam']);                 // đồ gắn ngoài 1 đơn vị
+function addCount(obj, add) { for (const k in add) obj[k] = (obj[k] || 0) + add[k]; }
+function settleLife(M, r) {
+  const m = meta(M, r.i), fired = m.fired, bonus = m.bonus || {};
+  m.fired = null; m.bonus = null;
+  if (!r.uid || !fired || !accounts || !accounts.noteAmmo) return;
+  const base = Equipment.BASE_AMMO[r.type] || {}, shop = Equipment.AMMO_SHOP[r.type] || {}, used = {};
+  for (const k in fired) {
+    let cap = r.kitA ? (r.kitA[k] || 0) : (shop[k] ? shop[k].max : 0);
+    if (k === 'ANTI_TANK_MISSILE') cap = Math.min(cap, Math.max(0, 3 - (base[k] || 0)));   // = Equipment.startLife
+    const n = Math.min(cap, fired[k] - (base[k] || 0) - (bonus[k] || 0));
+    if (n > 0) used[k] = n;
+  }
+  if (Object.keys(used).length) accounts.noteAmmo(r.uid, M.id, r.type, used);
+}
+function settleArmor(M, r) {
+  const set = M.armorGone && M.armorGone.get(r.i);
+  if (!set || !set.size || !r.uid || !r.kitM || !accounts || !accounts.noteArmorGone) return;
+  M.armorGone.delete(r.i);
+  accounts.noteArmorGone(r.uid, r.type, r.kitM, [...set]);
+}
+// hết trận / chủ phòng hủy trận / người chơi rời: chốt sổ mọi xe (của 1 máy) chưa chốt
+function settleAll(room, M, peer) {
+  for (const r of M.roster) if (r.uid && (!peer || r.peer === peer)) { settleLife(M, r); settleArmor(M, r); }
+}
+
 // = ArtilleryGame3D.seededRandom (game.js): phải giống hệt để tính ra cùng bộ trang bị bot
 function seededRandom(seed) {
   let a = seed >>> 0;
@@ -722,7 +890,7 @@ function handle(room, client, msg) {
   }
   if (msg.t === '@match_end') {
     if (client.id === room.hostId) {
-      if (room.match && !room.match.ended) reportSuspects(room, room.match);   // rời trận giữa chừng: vẫn xét số liệu đã đếm
+      if (room.match && !room.match.ended) { reportSuspects(room, room.match); settleAll(room, room.match); }   // rời trận giữa chừng: vẫn xét số liệu đã đếm
       room.match = null; room.lobbySlots = null;
     }
     return true;
@@ -747,6 +915,7 @@ function handle(room, client, msg) {
       if (fm.fires.length >= (FIRE_RATE[r.type] || 8)) { flag(M, client, `xe ${d.i} bắn quá nhanh (${fm.fires.length + 1} phát/giây)`); return true; }
       fm.fires.push(now);
       fm.lastFire = now;
+      if (r.uid && typeof d.am === 'string' && (PAID_COUNTED[r.type] || []).includes(d.am)) addCount(fm.fired || (fm.fired = {}), { [d.am]: 1 });
       noteFire(room, client, r);
       M.lastFireBy.set(client.id, now);
       fm.revealUntil = now + REVEAL_MS;
@@ -765,6 +934,13 @@ function handle(room, client, msg) {
       }
       if (!ok) { flag(M, client, `báo hỏng bộ phận xe ${d.v} khi không bắn trúng`); return true; }
       if (JSON.stringify(d.s || {}).length > 3000) return true;
+      // xe người chơi: gom khối giáp / đồ gắn ngoài đã vỡ (khóa đơn vị như VehicleDamage.armorUnits) -> settleArmor
+      if (vr.uid && d.s && typeof d.s === 'object') {
+        const set = (M.armorGone || (M.armorGone = new Map())).get(d.v) || new Set();
+        for (const k of Array.isArray(d.s.SG) ? d.s.SG : []) if (typeof k === 'string' && set.size < 400) set.add(k);
+        for (const k of Array.isArray(d.s.L) ? d.s.L : []) if (SINGLE_PARTS.has(k) && set.size < 400) set.add(k);
+        M.armorGone.set(d.v, set);
+      }
       return false;
     }
     case 'ENV_HIT': {
@@ -782,12 +958,9 @@ function handle(room, client, msg) {
       if (d.end) endMatch(room, M, d.end);
       return false;
     }
-    case 'SUPPLY': {
-      // xe nhặt hòm hồi máu: cho phép máu tăng lại (máy chủ học lại lượng máu từ gói trạng thái kế tiếp)
-      const d = msg.d || {};
-      if ((d.e === 'take' || d.e === 'loot') && typeof d.u === 'number') meta(M, d.u).hpAuth = null;
-      return false;
-    }
+    case 'SUPPLY':
+      // (HOST_ONLY) chủ phòng quyết định thả dù / ai nhặt hòm -> máy chủ đối chiếu vị trí, nhịp hòm, xe còn sống
+      return !supplyOk(room, M, client, msg.d || {}, now);
     case 'LOCK': {
       // cảnh báo bị khóa: chỉ máy điều khiển xe đang khóa được báo
       const d = msg.d || {}, r = M.byIdx.get(d.i);
@@ -810,10 +983,20 @@ function handle(room, client, msg) {
       // drone đang bay (s: 1 cất cánh / 2 bay / 3 bay về; x, z nhân 10): ghi vị trí để drone soi xe địch cho cả phe
       // (updateVisibility). Drone không bay quá xa xe (tầm tín hiệu) — xa hơn coi như không soi
       const up = d.s >= 1 && d.s <= 3 && Number.isFinite(d.x) && Number.isFinite(d.z);
-      const dx = up ? d.x / 10 : 0, dz = up ? d.z / 10 : 0;
+      let dx = up ? d.x / 10 : 0, dz = up ? d.z / 10 : 0;
       if (up && st && !(st.f & F_DEAD) && Math.hypot(dx - st.x / 10, dz - st.z / 10) <= (MAX_RANGE.ARTILLERY || 3200) + 600) {
+        // drone không dịch chuyển tức thời: vượt tốc độ bay tối đa -> kéo về; cất cánh phải sát xe pháo
+        const prev = M.dronePos.get(d.i);
+        if (prev) {
+          const lim = DRONE_SPEED * Math.max(0.05, (now - prev.at) / 1000) + 30, dist = Math.hypot(dx - prev.x, dz - prev.z);
+          if (dist > lim) { dx = prev.x + (dx - prev.x) / dist * lim; dz = prev.z + (dz - prev.z) / dist * lim; flag(M, client, `drone xe ${d.i} bay quá nhanh`); }
+        } else if (Math.hypot(dx - st.x / 10, dz - st.z / 10) > DRONE_LAUNCH) {
+          flag(M, client, `drone xe ${d.i} xuất hiện xa xe pháo`);
+          return true;
+        }
         M.drones.set(d.i, { x: dx, z: dz, until: now + DRONE_TTL_MS });
-      } else M.drones.delete(d.i);
+        M.dronePos.set(d.i, { x: dx, z: dz, at: now });
+      } else { M.drones.delete(d.i); if (!up) M.dronePos.delete(d.i); }
       return false;
     }
     case 'DRONE_HIT': {
@@ -829,7 +1012,7 @@ function handle(room, client, msg) {
       const d = msg.d || {}, r = M.byIdx.get(d.i), st = M.S[d.i];
       // trạm vũ khí / máy phá sóng trên chân đế mô-đun: xe tăng, xe 6 nòng (ô NÓC THÁP)
       if (!r || (r.type !== 'ALL_ROUNDER' && r.type !== 'GATLING') || ownerOf(room, r) !== client.id || (st && (st.f & F_DEAD))) return true;
-      if (d.f) M.lastFireBy.set(client.id, now);
+      if (d.f) { M.lastFireBy.set(client.id, now); meta(M, d.i).revealUntil = now + REVEAL_MS; }   // xả súng máy: lộ vị trí
       // máy phá sóng chống UAV đang phát (trường j): địch dò phương thấy xe trong tầm EW_DETECT (updateVisibility)
       if (d.j !== undefined) meta(M, d.i).jamUntil = d.j ? now + 1300 : 0;
       // máy phá khóa radar xe 6 nòng đang phát (trường lj): cũng lộ vị trí như trên
@@ -847,6 +1030,7 @@ function handle(room, client, msg) {
       const d = msg.d || {}, r = M.byIdx.get(d.o);
       if (!r || r.type !== 'ARTILLERY' || ownerOf(room, r) !== client.id) return true;
       M.drones.delete(d.o);   // drone rơi: thôi soi
+      M.dronePos.delete(d.o);
       return false;
     }
     case 'DIG': {
@@ -857,7 +1041,13 @@ function handle(room, client, msg) {
     }
     case 'SPOT': {
       const d = msg.d || {}, sr = M.byIdx.get(d.s), tr = M.byIdx.get(d.t);
-      if (!sr || !tr || sr.type !== 'SCOUT' || ownerOf(room, sr) !== client.id) return true;
+      if (!sr || !tr || sr.type !== 'SCOUT' || ownerOf(room, sr) !== client.id || tr.team === sr.team) return true;
+      // xe trinh sát còn sống và mục tiêu nằm trong vùng radar của chính nó (không báo khống cả bản đồ)
+      const ss = M.S[d.s], ts = M.S[d.t];
+      if (!ss || !ts || (ss.f & F_DEAD) || Math.hypot(ss.x - ts.x, ss.z - ts.z) / 10 > SPOT_RANGE) {
+        flag(M, client, `trinh sát xe ${d.s} báo vị trí xe ${d.t} ngoài vùng radar`);
+        return true;
+      }
       M.spotted[sr.team].set(d.t, now + SPOT_MS);
       sendTeam(room, M, sr.team, client.id, msg);   // phe địch không được biết mình vừa bị trinh sát phát hiện
       return true;
@@ -881,7 +1071,7 @@ function handle(room, client, msg) {
 }
 
 function onLeave(room, clientId) {
-  if (room.match) room.match.sent.delete(clientId);
+  if (room.match) { room.match.sent.delete(clientId); settleAll(room, room.match, clientId); }
 }
 
 // nhịp tính tầm nhìn (5 / giây) & nhịp gom gói gửi đi (20 / giây)

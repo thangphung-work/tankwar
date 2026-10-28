@@ -125,6 +125,7 @@
       for (const t of u._frontTags || []) { if (u.partRegistry) delete u.partRegistry[t]; if (u.partGroups) delete u.partGroups[t]; }
     }
     u._frontGroup = null; u._frontTags = []; u.frontId = id;
+    u._shBox = null; u._crushDim = null;   // hộp thân đo lại theo mũi mới (lưỡi ủi / khiên V nhô trước mũi khác nhau)
     const build = id === 'dozer' ? buildDozer : id === 'vshield' ? buildVShield : null;
     if (!build) return;
     const g = new THREE.Group();
@@ -874,7 +875,8 @@
     const P = M.paint, D = M.dark;
     const TROOF = 5.6;
 
-    tb.cyl(9.0, 9.2, 0.6, 32, D, [0, 0.3, 0]);
+    // vòng bi tháp thòng xuống ăn vào nóc thân (nóc thấp hơn chân tháp ~0,6 -> trước đây hở khe sáng nhìn xuyên)
+    tb.cyl(9.0, 9.2, 1.4, 32, D, [0, -0.1, 0]);
 
     // Thân tháp vát đa diện
     tb.add(VehicleKit.loft(
@@ -917,7 +919,7 @@
     tb.cyl(1.15, 1.15, 2.2, 16, P, [6.4, TROOF + 1.9, -7.0], 'z');
     for (const zf of [-6.4, -7.0, -7.6]) tb.cyl(1.21, 1.21, 0.10, 16, D, [6.4, TROOF + 1.9, zf], 'z'); // đai tản nhiệt thân đèn
     tb.cyl(0.95, 0.95, 0.1, 16, M.headLensR || M.lens, [6.4, TROOF + 1.9, -8.12], 'z');   // kính đèn bụi bám, thấy chóa bạc phía sau
-    tb.box(2.6, 0.2, 0.2, D, [6.4, TROOF + 3.1, -8.1]);
+    tb.grabHandle([6.4, TROOF + 2.98, -7.0], 'z', 1.4, 0.5, D, 0.1); // quai xách trên đỉnh thân đèn
     tb.strut([5.5, TROOF + 1.7, -6.6], [5.8, TROOF + 0.3, -6.2], 0.06, M.rubber, 5); // cáp điện đèn pha
     tb.setTag(null);
 
@@ -1377,8 +1379,10 @@
   const _lp = new THREE.Vector3();
   function muzzleLight(gun, u) {
     if (typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight || !u.scene || !nearView(u, 900)) return;
-    if (!gun.light || gun.sinceShot > 0.25) gun.light = SpgFXPool.muzzleLight(u.scene);
+    if (gun.light && gun.light.userData.claim !== gun.lightClaim) gun.light = null;   // đèn đã bị nơi khác lấy
+    if (!gun.light || gun.sinceShot > 0.25) { gun.light = SpgFXPool.muzzleLight(u.scene, { life: 0.25 }); gun.lightClaim = gun.light && gun.light.userData.claim; }
     if (!gun.light) return;
+    gun.light.userData.busyUntil = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 250;   // giữ suốt loạt bắn
     gun.flash.updateMatrixWorld(true);
     gun.light.position.copy(_lp.setFromMatrixPosition(gun.flash.matrixWorld));
     gun.light.color.setHex(0xffa860);
@@ -1387,6 +1391,7 @@
   }
   function updateLight(gun, dt) {
     if (!gun.light) return;
+    if (gun.light.userData.claim !== gun.lightClaim) { gun.light = null; return; }
     gun.light.intensity *= Math.exp(-dt * 40);
     if (gun.sinceShot > 0.2) { gun.light.intensity = 0; gun.light = null; }
   }

@@ -15,46 +15,47 @@ const CivilCars = (() => {
   const SPEC = {
     // sedan cỡ trung (~4,7 x 1,8 x 1,45 m, cơ sở 2,75 m, lốp 205/55R16)
     sedan: {
-      axleF: 11.6, axleR: -10.4, r: 2.55, trackHalf: 6.15, tireW: 1.65, archGap: 0.5, flare: 0.14,
+      axleF: 11.7, axleR: -10.6, r: 2.72, trackHalf: 6.25, tireW: 1.74, archGap: 0.28, flare: 0.14,
       // bề rộng nửa thân nhìn từ trên (z, nửa rộng): đầu / đuôi bo tròn góc
       plan: [[-18.8, 5.8], [-18.55, 6.55], [-17.8, 6.97], [-16, 7.12], [-13, 7.18], [0, 7.22], [12, 7.2], [14.5, 7.12], [16.5, 6.94], [17.8, 6.6], [18.45, 6.08], [18.75, 5.35]],
       // đường nóc thân dưới nhìn ngang: cốp -> mép kính (vai) -> capô -> mũi
-      top: [[-18.8, 6.6], [-18.6, 7.55], [-17.8, 8.0], [-15.5, 8.15], [-12.6, 8.12], [-8, 8.0], [0, 7.85], [6, 7.75], [7.8, 7.6], [10, 7.38], [13.5, 7.0], [16.5, 6.5], [17.9, 6.18], [18.45, 5.88], [18.75, 5.4]],
+      top: [[-18.8, 6.65], [-18.6, 7.5], [-17.8, 7.92], [-15.5, 8.08], [-12.2, 8.06], [-8, 7.98], [0, 7.9], [6.4, 7.82], [8.0, 7.72], [10.5, 7.58], [13.7, 7.3], [16.4, 6.86], [17.9, 6.42], [18.45, 6.02], [18.75, 5.55]],
       // đường đáy (chưa tính hốc bánh): cản sau, ngưỡng cửa, cản trước có môi gió
       bottom: [[-18.8, 2.9], [-17.6, 2.2], [-13.5, 1.75], [0, 1.6], [13, 1.75], [17.2, 1.95], [18.75, 2.6]],
       // khoang kính nhìn ngang: chân kính hậu -> mui -> chân kính chắn gió (2 đầu = đường vai tại chỗ đó)
-      cabin: [[-12.6, 8.12], [-11.0, 9.05], [-8.6, 10.5], [-6.2, 11.35], [-3, 11.62], [0.8, 11.6], [2.4, 11.3], [4.6, 10.05], [6.6, 8.6], [7.8, 7.6]],
-      inset: 0.28, tumble: 1.2,     // chân kính lùi vào so với vai; mui hẹp hơn chân kính mỗi bên
-      roofF: 2.1, roofR: -5.7,     // mép trên kính chắn gió / kính hậu
-      pillarA: 0.45, pillarC: 0.78, zB: -0.9, zDiv: -8.2,
-      rearDlo: [-9.8, 1.25, 8.0], // mép sau ô kính hông: đường xiên thẳng song song cột C, không bị uốn vẹo
+      cabin: [[-12.2, 8.06], [-10.8, 8.82], [-8.7, 10.1], [-6.4, 11.2], [-3.8, 11.68], [-0.8, 11.82], [1.4, 11.7], [3.2, 11.2], [5.0, 10.05], [6.7, 8.62], [8.0, 7.72]],
+      inset: 0.36, tumble: 1.28,   // khoang kính thu gọn, để lộ vai xe rõ và bớt cảm giác thân hộp
+      roofF: 1.7, roofR: -6.0,     // mui cong nhẹ, cột A/C gọn và dứt khoát hơn
+      pillarA: 0.4, pillarC: 0.7, zB: -1.0, zDiv: -8.0,
+      rearDlo: [-9.45, 1.12, 8.05], // ô kính sau thoáng hơn, giảm khối nặng ở cột C
       doors: [7.4, -0.9, -8.2], sill: 2.3, bumperF: [14.9, 4.9], bumperR: [-13.9, 5.2],
       hood: [7.6, 16.3], trunk: [-12.6, 6.5], fuel: [-12.45, 6.55, 0.62, 0.55],
       // đèn: trước (z mép sau phần ôm góc, x mép trong, cao, hạ so với mép capô), lưới (nửa rộng, hạ, cao, y hốc gió dưới),
       // hậu (z, x mép trong, cao, hạ); y biển số trước / sau
-      lamps: { front: [15.9, 2.9, 1.0, 0.25], grille: [2.45, 0.35, 0.95, 3.0], rear: [-17.0, 3.1, 1.0, 0.3] }, plates: [3.6, 5.35],
+      lamps: { front: [15.9, 2.9, 1.0, 0.25], grille: [2.45, 0.35, 0.95, 3.0], rear: [-17.0, 3.42, 1.0, 0.3] }, plates: [3.6, 5.35],   // khe nắp cốp sát mép trong đèn hậu (|x| 3,53)
       // cụm lắp vào lỗ khoét (mặt chiếu U-V, xem buildFeature)
       features: {
         // đèn pha vuốt ngược: mép ngoài ôm qua góc, mép trong thon nhọn hạ xuống chạm lưới tản nhiệt
         // (u càng âm càng vào trong, sát lưới) mắt "nhíu": đầu trong thon nhọn thấp, mép trên hếch lên dần ra góc ngoài cao;
         // 1 chóa phản xạ giữa + 1 bi projector phía ngoài, không vòng halo; DRL "lông mày" chạy sát mép trên rồi gập móc xuống ở
         // góc ngoài; xi nhan là 1 thanh hổ phách mảnh dưới đáy đầu trong
-        head: { kind: 'head', dir: [0.55, 1], pts: [[-5.75, 4.9], [-2.7, 4.98], [-2.62, 5.66], [-5.85, 5.24]], r: 0.14, zMin: 14.5, depth: 0.58, backMat: 'reflector',
+        head: { kind: 'head', dir: [0.55, 1], pts: [[-5.82, 5.12], [-2.5, 5.18], [-2.38, 5.9], [-5.9, 5.58]], r: 0.13, zMin: 14.55, depth: 0.54, backMat: 'reflector',
           halo: false,
-          proj: [[-3.4, 5.28, 0.24, 'lens'], [-4.4, 5.17, 0.17, 'bowl']],
-          drl: [[-5.72, 5.14], [-4.8, 5.3], [-3.8, 5.47], [-2.95, 5.58], [-2.74, 5.4], [-2.76, 5.1]],
-          amberStrip: [[-5.45, 4.99], [-4.8, 5.0]],
-          lensColor: (u, v) => u < -4.75 && v < 5.08 ? [1, 0.88, 0.7] : [1, 1, 1] },
-        tail: { kind: 'tail', style: 'sedanBlade', dir: [0.46, -1], pts: [[-5.72, 6.18], [-2.05, 6.28], [-1.92, 7.1], [-5.68, 7.28]], r: 0.16, zMin: -14, depth: 0.4, backMat: 'tailBack',
-          lensColor: (u, v) => v < 6.48 && u < -4.85 ? [0.92, 0.9, 0.82] : [0.76, 0.018, 0.014] },
-        grille: { kind: 'grille', sym: true, dir: [0, 1], pts: [[-2.2, 4.42], [2.2, 4.42], [2.58, 5.0], [-2.58, 5.0]], r: 0.2, zMin: 15, depth: 0.7 },
-        intake: { kind: 'intake', sym: true, dir: [0, 1], pts: [[-3.75, 2.62], [3.75, 2.62], [4.0, 2.98], [-4.0, 2.98]], r: 0.2, zMin: 15, depth: 0.5 },
-        fog: { kind: 'fog', dir: [0, 1], pts: [[4.85, 2.92], [4.9, 2.92], [4.9, 2.97], [4.85, 2.97]], r: 0.33, zMin: 15, depth: 0.35, backMat: 'reflector' }
+          proj: [[-3.18, 5.52, 0.25, 'lens'], [-4.48, 5.4, 0.18, 'bowl']],
+          drl: [[-5.74, 5.4], [-4.85, 5.55], [-3.8, 5.7], [-2.72, 5.82], [-2.52, 5.58], [-2.58, 5.28]],
+          amberStrip: [[-5.5, 5.2], [-4.78, 5.22]],
+          lensColor: (u, v) => u < -4.78 && v < 5.3 ? [1, 0.88, 0.7] : [1, 1, 1] },
+        // cụm thuôn ôm góc: mép trong (u âm, sát biển số) thấp và hẹp, mép ngoài cao vuốt sang hông (trước rộng ~3,8 đv kín đuôi)
+        tail: { kind: 'tail', style: 'sedanBlade', dir: [0.46, -1], pts: [[-4.4, 6.56], [-2.02, 6.36], [-1.92, 7.12], [-4.35, 7.0]], r: 0.14, zMin: -14, depth: 0.4, backMat: 'tailBack',
+          lensColor: (u, v) => v < 6.74 && u < -3.75 ? [0.92, 0.9, 0.82] : [0.76, 0.018, 0.014] },
+        grille: { kind: 'grille', sym: true, dir: [0, 1], pts: [[-2.55, 4.48], [2.55, 4.48], [2.88, 5.16], [-2.88, 5.16]], r: 0.17, zMin: 15.05, depth: 0.58 },
+        intake: { kind: 'intake', sym: true, dir: [0, 1], pts: [[-4.15, 2.72], [4.15, 2.72], [4.36, 3.12], [-4.36, 3.12]], r: 0.16, zMin: 15.1, depth: 0.42 },
+        fog: { kind: 'fog', dir: [0, 1], pts: [[5.0, 3.16], [5.04, 3.16], [5.04, 3.2], [5.0, 3.2]], r: 0.2, zMin: 15.05, depth: 0.24, backMat: 'reflector' }
       }, bumperTop: [4.3, 5.55], rakeF: [14.5, 3.4, 0.11], rakeR: [-14.5, 4.6, 0.07]
     },
     // SUV thể thao đa dụng việt dã (~4,85 x 1,94 x 1,75 m, cơ sở 2,9 m, lốp 265/65R18)
     suv: {
-      axleF: 12.2, axleR: -11.0, r: 3.0, trackHalf: 6.6, tireW: 2.1, archGap: 0.65, flare: 0.24,
+      axleF: 12.25, axleR: -11.05, r: 3.22, trackHalf: 6.62, tireW: 2.12, archGap: 0.38, flare: 0.2,
       // bề rộng nửa thân nhìn từ trên: thân xe vuông vức, cơ bắp
       plan: [
         [-19.4, 5.85], [-19.12, 6.65], [-18.55, 7.28], [-17.7, 7.58], [-16.0, 7.68], [-12.0, 7.74],
@@ -63,8 +64,8 @@ const CivilCars = (() => {
       // đường nóc thân dưới nhìn ngang: đuôi đứng (không cốp thụt), đường vai cao thẳng tắp, capô cao gần phẳng
       // chỉ hơi dốc về trước, mép capô bo gọn rồi gập xuống mặt đầu đứng (không rủ tròn như sedan)
       top: [
-        [-19.4, 8.65], [-19.1, 9.12], [-18.0, 9.35], [-12.0, 9.38], [-6.0, 9.32],
-        [0, 9.24], [6.0, 9.12], [8.2, 8.98], [11.0, 8.9], [14.5, 8.76], [17.2, 8.6], [18.5, 8.44], [19.05, 8.18], [19.4, 7.6]
+        [-19.4, 8.55], [-19.1, 9.02], [-18.0, 9.25], [-12.0, 9.3], [-6.0, 9.27],
+        [0, 9.2], [6.0, 9.1], [8.4, 8.98], [11.0, 8.94], [14.5, 8.86], [17.2, 8.72], [18.5, 8.52], [19.05, 8.22], [19.4, 7.64]
       ],
       // đường đáy gầm xe (khoảng sáng gầm cao 30 cm)
       bottom: [
@@ -72,13 +73,13 @@ const CivilCars = (() => {
       ],
       // khoang kính nhìn ngang: kính hậu dốc đứng, nóc xe phẳng dài kéo dài ra tận đuôi xe
       cabin: [
-        [-18.0, 9.35], [-17.1, 10.45], [-15.7, 12.05], [-13.8, 13.15], [-11.4, 13.48],
-        [-5.5, 13.58], [0, 13.56], [3.5, 13.38], [5.5, 11.95], [7.2, 10.15], [8.2, 8.98]
+        [-18.0, 9.25], [-17.0, 10.2], [-15.4, 11.7], [-13.3, 12.65], [-10.8, 13.02],
+        [-5.2, 13.16], [0, 13.12], [3.3, 12.96], [5.2, 11.72], [7.0, 10.05], [8.4, 8.98]
       ],
-      inset: 0.42, tumble: 1.28,    // kính thu vào rõ, thân dưới có vai khỏe thay vì một hộp kính dựng đứng
-      roofF: 3.35, roofR: -13.45,
-      pillarA: 0.58, pillarC: 1.05, zB: 0.35, zDiv: -7.15,
-      rearDlo: [-14.75, 0.58, 9.65],
+      inset: 0.48, tumble: 1.34,    // vai xe rõ, khoang kính gọn và bớt cảm giác thân hộp
+      roofF: 3.15, roofR: -13.1,
+      pillarA: 0.5, pillarC: 0.9, zB: 0.25, zDiv: -7.0,
+      rearDlo: [-14.35, 0.52, 9.55],
       doors: [8.0, 0.2, -7.5], sill: 2.9, bumperF: [15.8, 5.6], bumperR: [-15.5, 5.8],
       hood: [8.2, 18.75], trunk: [-18.0, 8.15], fuel: [-14.2, 7.9, 0.65, 0.58],
       lamps: {
@@ -90,12 +91,12 @@ const CivilCars = (() => {
       features: {
         head: {
           kind: 'head', dir: [0.55, 1],
-          pts: [[-6.6, 6.78], [-2.55, 6.9], [-2.45, 7.7], [-6.7, 7.62]],
-          r: 0.15, zMin: 14.7, depth: 0.64, backMat: 'reflector',
+          pts: [[-6.65, 6.92], [-2.35, 7.02], [-2.25, 7.72], [-6.72, 7.58]],
+          r: 0.13, zMin: 14.9, depth: 0.56, backMat: 'reflector',
           proj: [
-            [-5.25, 7.22, 0.26, 'lens'],
-            [-3.9, 7.26, 0.24, 'lens'],
-            [-2.9, 7.3, 0.2, 'bowl']
+            [-5.35, 7.28, 0.23, 'lens'],
+            [-3.95, 7.32, 0.22, 'lens'],
+            [-2.75, 7.34, 0.18, 'bowl']
           ],
           drl: [
             [-6.55, 7.5],
@@ -112,40 +113,56 @@ const CivilCars = (() => {
           lensColor: (u, v) => u > -2.6 ? [1, 0.8, 0.5] : [1, 1, 1]
         },
         tail: {
-          kind: 'tail', style: 'vertical', dir: [0.34, -1],
-          pts: [[-0.3, 6.48], [0.78, 6.25], [0.66, 8.88], [-0.34, 8.62]],
-          r: 0.15, zMin: -15, depth: 0.42, backMat: 'tailBack',
-          lensColor: (u, v) => v < 6.72 ? [0.84, 0.84, 0.8] : [0.72, 0.018, 0.014]
+          // cụm thuôn: cao ở góc ngoài ôm sang hông, vuốt nhọn dần về phía biển số
+          kind: 'tail', style: 'guides', dir: [0.34, -1],
+          pts: [[-2.45, 7.12], [0.64, 6.86], [0.56, 8.22], [-2.52, 8.12]],
+          r: 0.13, zMin: -15.35, depth: 0.42, backMat: 'tailBack',
+          // ô đèn lùi kính trong phía trong-dưới; dải viền dưới kính đỏ sẫm (khói) cho cụm có chiều sâu
+          lensColor: (u, v) => u < -1.42 && v < 7.6 ? [0.84, 0.84, 0.8] : v < 7.03 - 0.084 * u || v > 8.12 + 0.032 * u ? [0.4, 0.012, 0.01] : [0.72, 0.018, 0.014],
+          // chữ ký LED: chữ L lớn chạy dọc mép trên rồi bẻ xuống ở góc ngoài + chữ L nhỏ lồng bên trong
+          guides: [
+            { pts: [[-2.2, 7.98], [-0.2, 7.9], [0.18, 7.86], [0.33, 7.7], [0.36, 7.3], [0.36, 7.04]], r: 0.06, mat: 'tailBrake' },
+            { pts: [[-1.2, 7.66], [-0.32, 7.62], [-0.12, 7.54], [-0.08, 7.36], [-0.07, 7.16]], r: 0.042, mat: 'tailGuide' }
+          ],
+          // vách ngăn buồng đèn lùi / buồng đỏ (nhựa đen sau kính)
+          dividers: [[[-2.6, 7.65], [-1.38, 7.65], [-1.38, 6.95]]],
+          roundBowl: true
         },
         grille: {
           kind: 'grille', sym: true, dir: [0, 1],
-          pts: [[-2.75, 6.1], [2.75, 6.1], [2.9, 7.62], [-2.9, 7.62]],
-          r: 0.2, zMin: 15.5, depth: 0.72
+          pts: [[-3.0, 6.18], [3.0, 6.18], [3.15, 7.55], [-3.15, 7.55]],
+          r: 0.16, zMin: 15.65, depth: 0.6
         },
         intake: {
           kind: 'intake', sym: true, dir: [0, 1],
-          pts: [[-4.0, 3.48], [4.0, 3.48], [4.18, 4.08], [-4.18, 4.08]],
-          r: 0.18, zMin: 15.5, depth: 0.48
+          pts: [[-4.25, 3.58], [4.25, 3.58], [4.4, 4.1], [-4.4, 4.1]],
+          r: 0.16, zMin: 15.7, depth: 0.42
         },
         fog: {
           kind: 'fog', dir: [0, 1],
           pts: [[5.05, 3.55], [5.12, 3.55], [5.12, 3.62], [5.05, 3.62]],
-          r: 0.28, zMin: 15.5, depth: 0.34, backMat: 'reflector'
+          r: 0.2, zMin: 15.65, depth: 0.26, backMat: 'reflector'
         }
       },
-      bumperTop: [5.6, 6.5], rakeF: [16.5, 5.0, 0.035], rakeR: [-15.5, 5.6, 0.05],
+      // mép dưới cửa hậu chính là khe ráp cản sau (trước đây 2 đường riêng: đường cản cắt ngang giữa cửa hậu)
+      bumperTop: [5.6, 5.8], rakeF: [16.5, 5.0, 0.035], rakeR: [-15.5, 5.6, 0.05],
+      tgEdge: 3.6,   // khe cửa hậu chạy sát mép trong cụm đèn hậu (|x| 3,74), không xuyên qua đèn
       isSuv: true
     },
     // Xe tải thùng lửng chở hàng thương mại (~5,2 x 1,88 x 2,15 m, cầu sau bánh đôi chịu tải, lốp 195/75R16)
     dump: {
       isDump: true, isTruck: true,
-      axleF: 13.5, axleR: -10.0, r: 3.35, tireW: 2.2, trackHalf: 6.15, archGap: 0.4, flare: 0.18,
+      axleF: 13.5, axleR: -10.0, r: 3.35, tireW: 2.2, trackHalf: 6.15, archGap: 0.4, flare: 0,   // sườn cabin phẳng liền cửa (vè nhựa đen riêng)
       // Cầu sau bánh đôi chịu tải nặng (twin rear tyres)
       dualR: { tireW: 1.75, x: 6.35, gap: 0.2 },
-      plan: [[-20.8,7.3],[3.6,7.3],[7.0,7.3],[12,7.3],[17,7.3],[19.6,7.25],[20.4,6.95]],
+      // góc trước cabin bo tròn bán kính lớn (~15 cm) ôm sang hông như cabin dập thật, không vuông thành hộp
+      plan: [[-20.8,7.3],[3.6,7.3],[7.0,7.3],[12,7.3],[16.8,7.3],[18.6,7.2],[19.6,6.9],[20.15,6.35],[20.4,5.6]],
+      boxCargo: 99,   // cabin trên ốp liền thân dưới (một tấm cửa), không thụt vào tạo gờ vai như 2 khối hộp chồng (xem boxAt)
       top: [[-20.8,6.8],[3.6,10.8],[7.0,10.8],[12,10.8],[18,10.8],[20.4,10.65]],
       bottom: [[-20.8,4.2],[7.0,3.7],[17,3.7],[20.4,4.0]],
-      cabin: [[7.0,10.8],[7.12,14.8],[7.5,16.4],[8.3,16.65],[13,16.72],[17.2,16.65],[17.9,16.1],[19.9,11.5],[20.0,10.8]],
+      // cabin cao ~2,24 m như xe tải nhẹ thật (bản cũ nóc 16,72 ≈ 2,09 m: cabin lùn bè, trông như đồ chơi); nửa trên (trên
+      // đường vai 10,8) giãn ×1,2 — shader kính / khe cửa xe tải đọc toạ độ đã quy về dáng cũ (yC trong GLSL_CABIN)
+      cabin: [[7.0,10.8],[7.12,15.6],[7.5,17.52],[8.3,17.82],[13,17.9],[17.2,17.82],[17.9,17.16],[19.9,11.64],[20.0,10.8]],
       inset: 0.55, tumble: 0.45, roofR: 7.5, roofF: 17.4,
       pillarA: 0.5, pillarC: 0.8, zB: 8.0, zDiv: 7.5, rearDlo: [7.8,0,11.6],
       doors: [19.2,7.7,7.7], sill: 3.65, bumperF: [20.0,5.0], bumperR: [-20.0, 5.0],
@@ -172,7 +189,7 @@ const CivilCars = (() => {
     pillarC: 0.72, pillarA: 0.5, zB: -0.6, zDiv: -6.1,
     rearDlo: [-6.3,0.08,9.1], doors: [7.5,-0.6,-6.4],
     hood: [7.8,19.2], trunk: [-21,8.7], fuel: [-9,7.4,0.65,0.55],
-    plates: [4.4,4.7], bumperF: [17.8,5.5], bumperR: [-19,5.4],
+    plates: [4.4,4.7], bumperF: [17.8,5.5], bumperR: [-19,5.4], bumperTop: [5.6, 6.5],
     rakeF: [17.8,4.5,0.12], rakeR: [-20,5.2,0],
     lamps: { front: [18.3,3.0,1.3,0.3], grille: [3.0,0.4,1.8,3.9], rear: [-20.2,3.4,1.35,0.35] },
     features: Object.assign({}, SPEC.suv.features, {
@@ -223,34 +240,48 @@ const CivilCars = (() => {
       tail: { kind: 'tail', style: 'blade', dir: [0.46, -1], pts: [[-2.7, 6.45], [-0.75, 6.4], [-0.7, 7.6], [-2.75, 7.68]], r: 0.16, zMin: -12.5, depth: 0.4, backMat: 'tailBack',
         lensColor: (u, v) => v < 6.66 && u < -2.0 ? [0.92, 0.9, 0.82] : [0.76, 0.018, 0.014] }
     },
-    bumperTop: [4.2, 5.4], rakeF: [12.6, 3.4, 0.1], rakeR: [-13.5, 5.0, 0.04]
+    bumperTop: [4.2, 5.0], rakeF: [12.6, 3.4, 0.1], rakeR: [-13.5, 5.0, 0.04]
   };
-  // Van thùng kín chở hàng một khối (~5,05 x 1,9 x 1,98 m, cơ sở 2,95 m, lốp 215/65R16): mũi ngắn capô dốc, kính chắn
-  // gió đứng, kính chỉ ở cửa cabin, cửa lùa hông có ray trượt, cửa hậu 2 cánh có ô kính, đèn hậu dựng đứng ở 2 trụ sau
+  // Van chở hàng bán đầu bằng (~5,05 x 1,9 x 1,98 m, lốp 195R15): mũi ngắn dốc (ca-pô nhỏ), kính chắn gió nghiêng lớn,
+  // nóc phẳng dài; sườn thùng kín không kính có ô tôn dập lõm, cửa lùa hông có ray, ốp sườn dưới + cản dưới nhựa đen;
+  // đèn pha vuốt ngược ôm góc trên lưới đen hình thang; cửa hậu lật có ô kính, đèn hậu dựng đứng ở 2 trụ sau
   SPEC.van = {
-    hatchback: true, style: 3, tgEdge: 6.35, tailBulge: [0.15, 9.0], handles: [5.6, 3.4],
-    axleF: 13.4, axleR: -10.2, r: 2.75, trackHalf: 6.5, tireW: 1.75, archGap: 0.45, flare: 0.12,
-    plan: [[-20.2, 6.7], [-20.05, 7.3], [-19.5, 7.55], [-17, 7.6], [0, 7.6], [12, 7.6], [15.5, 7.52], [17.8, 7.25], [19.3, 6.75], [20.0, 6.0], [20.2, 5.2]],
-    top: [[-20.2, 7.8], [-20.08, 8.5], [-19.75, 8.8], [-17, 8.88], [0, 8.88], [10, 8.82], [12.2, 8.72], [13.6, 8.45], [15.6, 7.8], [17.6, 7.05], [19.0, 6.45], [19.8, 5.85], [20.2, 5.1]],
-    bottom: [[-20.2, 3.3], [-19.2, 2.6], [-14, 2.1], [0, 2.0], [13, 2.1], [18.6, 2.5], [20.2, 3.1]],
-    cabin: [[-19.75, 8.8], [-19.7, 10.6], [-19.6, 13.3], [-19.3, 15.2], [-18.2, 15.8], [-10, 15.92], [0, 15.92], [6.5, 15.85], [8.8, 15.5], [10.3, 13.7], [11.4, 11.4], [12.2, 8.72]],
-    inset: 0.12, tumble: 0.45, roofF: 8.9, roofR: -18.9,
-    pillarA: 0.5, pillarC: 1.3, zB: 4.6, zDiv: -5.25, rearDlo: [-12, 0, 9],
-    doors: [12.4, 4.6, -5.6], sill: 2.5, bumperF: [17.6, 4.7], bumperR: [-18.8, 4.6],
-    hood: [12.9, 19.6], trunk: [-19.8, 8.6], fuel: [-7.5, 7.4, 0.6, 0.55],
-    lamps: { front: [18.3, 3.2, 1.2, 0.3], grille: [3.0, 0.4, 1.5, 3.3], rear: [-19.4, 3.3, 1.3, 0.35] }, plates: [3.9, 5.5],
+    hatchback: true, style: 3, tgEdge: 6.35, tailBulge: [0, 9.0], handles: [7.0, -5.4],   // cửa hậu phẳng liền khối với khoang trên
+    boxCargo: 99,   // toàn thân một khối liền, khoang trên ốp phẳng sườn (xem boxAt)
+    axleF: 13.4, axleR: -10.2, r: 2.75, trackHalf: 6.5, tireW: 1.75, archGap: 0.45, flare: 0,   // sườn van phẳng
+    plan: [[-20.2, 6.7], [-20.05, 7.3], [-19.5, 7.55], [-17, 7.6], [0, 7.6], [12, 7.6], [15.2, 7.5], [17.4, 7.2], [18.7, 6.75], [19.6, 6.0], [20.0, 5.0]],
+    // mũi vát chéo: ca-pô ngắn dốc xuống, mặt trước ngả ra sau từ cản lên (rakeF) — không dựng đứng như xe tải
+    top: [[-20.2, 8.7], [-20.12, 8.84], [-19.8, 8.88], [-17, 8.88], [0, 8.88], [12, 8.88], [14.0, 8.86], [15.8, 8.68], [17.4, 8.3], [18.7, 7.75], [19.5, 7.05], [20.0, 6.0]],
+    bottom: [[-20.2, 3.3], [-19.2, 2.6], [-14, 2.1], [0, 2.0], [13, 2.1], [18.6, 2.5], [20.0, 3.1]],
+    // nóc phẳng dài, kính chắn gió nghiêng lớn (độ dốc ~0,66) từ chân kính trên ca-pô
+    cabin: [[-20.2, 8.7], [-20.17, 10.6], [-20.06, 13.3], [-19.66, 15.25], [-18.4, 15.82], [-10, 15.92], [0, 15.92], [7, 15.88], [9.3, 15.75], [10.2, 15.35], [11.2, 13.9], [12.6, 11.4], [14.0, 8.85]],
+    inset: 0.12, tumble: 0.45, roofF: 10.7, roofR: -18.9,   // mép trên kính dưới mép nóc (không tràn qua cung bo nóc)
+    pillarA: 0.5, pillarC: 1.3, zB: 6.2, zDiv: -6.4, rearDlo: [-12, 0, 9],
+    doors: [13.5, 6.2, -6.4], sill: 2.5, bumperF: [18.0, 5.4], bumperR: [-18.8, 4.6],
+    hood: [14.2, 19.0], trunk: [-19.8, 8.6], fuel: [-8.0, 7.4, 0.6, 0.55],
+    lamps: { front: [17.35, 3.25, 1.15, 0.3], grille: [3.2, 0.42, 1.65, 3.55], rear: [-19.4, 3.3, 1.3, 0.35] }, plates: [4.15, 5.5],
     features: {
-      head: shiftF(SPEC.suv.features.head, 0.3, -1.5, 0.8),
-      grille: { kind: 'grille', sym: true, dir: [0, 1], pts: [[-3.0, 4.95], [3.0, 4.95], [3.2, 6.0], [-3.2, 6.0]], r: 0.18, zMin: 16.5, depth: 0.6 },
-      intake: { kind: 'intake', sym: true, dir: [0, 1], pts: [[-3.6, 3.1], [3.6, 3.1], [3.8, 3.6], [-3.8, 3.6]], r: 0.18, zMin: 16.5, depth: 0.45 },
-      tail: { kind: 'tail', style: 'vertical', dir: [0.2, -1], pts: [[2.3, 5.2], [3.2, 5.2], [3.15, 8.6], [2.35, 8.6]], r: 0.15, zMin: -17, depth: 0.4, backMat: 'tailBack',
+      // đèn pha vuốt ngược ở 2 góc mũi (x ~3,9..6,4), mép ngoài cao hơn; 1 bi-projector, dải LED mép trên, xi nhan góc dưới
+      // ngoài. u của mặt chiếu KHÔNG phải x: điểm chiếu lệch ngang theo dir[0] x khoảng tới mặt trước -> ở z ~19 với dir 0,3:
+      // x ~ 0,96 u + 5,4 (u càng âm càng vào trong)
+      // cụm dài vuốt ngược: đầu trong thấp hẹp chạm góc trên lưới, đầu ngoài cao ôm qua góc mũi; bi-projector chính + chóa
+      // pha phụ, dải LED chữ L dọc mép trên gập xuống ở đầu ngoài, xi nhan hổ phách mảnh ở đáy đầu trong
+      // lòng đèn ốp đen khói (bezel) -> vành crôm projector + dải LED trắng nổi bật; đầu trong cách viền lưới (không đè)
+      head: { kind: 'head', dir: [0.3, 1], pts: [[-1.8, 7.36], [1.3, 6.95], [1.25, 8.2], [-1.8, 7.88]], r: 0.12, zMin: 16.0, depth: 0.55, backMat: 'reflector', halo: false,
+        proj: [[0.4, 7.58, 0.3, 'lens'], [-0.85, 7.62, 0.2, 'bowl']], drl: [[-1.6, 7.78], [-0.4, 7.94], [0.85, 8.06], [1.1, 7.75], [1.07, 7.25]], drlR: 0.07,
+        amberStrip: [[-1.5, 7.5], [-1.05, 7.45]] },
+      // lưới tản nhiệt đen hình thang dưới mép ca-pô, giữa 2 đèn
+      grille: { kind: 'grille', sym: true, dir: [0, 1], pts: [[-2.9, 6.25], [2.9, 6.25], [3.2, 7.8], [-3.2, 7.8]], r: 0.16, zMin: 16.5, depth: 0.6, mesh: true },   // hẹp hơn hốc đèn: nan không lộ qua đèn
+      intake: { kind: 'intake', sym: true, dir: [0, 1], pts: [[-4.4, 3.5], [4.4, 3.5], [4.55, 4.4], [-4.55, 4.4]], r: 0.15, zMin: 16.5, depth: 0.45 },
+      tail: { kind: 'tail', style: 'vertical', dir: [0.2, -1], pts: [[2.3, 5.2], [3.2, 5.2], [3.15, 8.25], [2.35, 8.25]], r: 0.15, zMin: -17, depth: 0.4, backMat: 'tailBack',
         lensColor: (u, v) => v < 5.85 ? [0.9, 0.55, 0.12] : [0.72, 0.018, 0.014] }
     },
-    bumperTop: [4.6, 4.4], rakeF: [17.0, 4.0, 0.06], rakeR: [-19.0, 6.0, 0.0]
+    bumperTop: [5.6, 4.6], rakeF: [16.6, 3.6, 0.07], rakeR: [-19.0, 6.0, 0.0]
   };
   // ---------------------------------------------------------------------------
   // ĐƯỜNG CONG
   // ---------------------------------------------------------------------------
+
   const crSeg = (p0, p1, p2, p3, t) => {
     const t2 = t * t, t3 = t2 * t;
     return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
@@ -325,7 +356,8 @@ const CivilCars = (() => {
   // Nửa mặt cắt (x >= 0) từ tim gầm lên tim nóc theo bề rộng w, đáy y0, nóc y1: sàn phẳng, ngưỡng cửa bo vào, sườn
   // dưới phồng ra tới chỗ rộng nhất (~ngang tâm bánh), gân vai sắc, mép nóc bo tròn, mặt capô / cốp vồng
   // samples: số điểm nội suy mỗi đoạn (4 bản chi tiết, 1 bản xa low-poly)
-  function halfSection(w, y0, y1, yBotBase, samples = 4) {
+  // box (0..1): thùng hàng van — vai thân dưới vuông, không bo tròn rộng (khoang trên ốp phẳng liền sườn)
+  function halfSection(w, y0, y1, yBotBase, samples = 4, box = 0) {
     const h = y1 - y0;
     const archLift = Math.max(0, y0 - (yBotBase != null ? yBotBase : y0));
     // archT: 0 ở thân xe bình thường, 1 ở đỉnh hốc bánh xe
@@ -356,14 +388,16 @@ const CivilCars = (() => {
       [x3, y3],
       [x4, y4],
       [w, Math.max(y0 + 0.2 * smoothArch, yMid)],
-      [w - 0.02, yShoulder],
-      [w - 0.18, y1 - 0.42],
-      [w - 0.5, y1 - 0.06],
+      [w - 0.02 * (1 - box), yShoulder + (y1 - 0.4 - yShoulder) * box],
+      [w - 0.18 + 0.17 * box, y1 - 0.42 + 0.27 * box],
+      [w - 0.5 + 0.42 * box, y1 - 0.06 + 0.05 * box],
       [w - 1.3, y1 + 0.04],
       [w * 0.45, y1 + 0.16],
       [0, y1 + 0.19]
     ], samples);
   }
+  // van: 0 ở cabin lái, 1 ở thùng hàng (sau S.boxCargo) — thùng là một khối liền, không gờ vai giữa thân dưới và khoang trên
+  const boxAt = (S, z) => S.boxCargo == null ? 0 : Math.max(0, Math.min(1, (S.boxCargo - z) / 1.2));
   // lo: bản xa low-poly (trạm dọc thân thưa, mặt cắt ít điểm) cho xe tạm trước khi nạp bản chi tiết
   function bodyGeometry(S, lo) {
     const isTruck = !!S.isTruck;
@@ -397,7 +431,7 @@ const CivilCars = (() => {
         }
       }
       y0 = Math.min(y0, y1 - 1.4);
-      let half = halfSection(w, y0, y1, yBotBase, lo ? 1 : 4);
+      let half = halfSection(w, y0, y1, yBotBase, lo ? 1 : 4, boxAt(S, z));
       if (S.isPickup && z < -7.25 && z > -20.55) {
         half = half.map(([x,y]) => {
           if (y < y1 - 0.44) return [x,y];
@@ -430,6 +464,8 @@ const CivilCars = (() => {
       const [z0r, zN, yM, k] = p[2] > 0 ? [S.rakeF[0], S.plan[S.plan.length - 1][0], S.rakeF[1], S.rakeF[2]] : [S.rakeR[0], zStart, S.rakeR[1], S.rakeR[2]];
       const t = Math.max(0, Math.min(1, (p[2] - z0r) / (zN - z0r)));
       p[2] -= Math.sign(p[2]) * t * t * k * (p[1] - yM) * (p[1] - yM);
+      // mặt nạ cabin xe tải vồng ra giữa (khớp khoang trên, cabinGeometry)
+      if (S.isDump && p[2] > 15.5) p[2] += 0.28 * Math.min(1, (p[2] - 15.5) / 3) * (1 - (Math.abs(p[0]) / 7.6) ** 2);
       // SUV: nắp cốp lồi nhẹ ở giữa và rút dần về hai góc, tránh mặt đuôi phẳng như một tấm vách.
       if (S.isSuv && !S.isPickup && p[2] < -15.4) {
         const rt = Math.max(0, Math.min(1, (-15.4 - p[2]) / 3.65));
@@ -446,9 +482,10 @@ const CivilCars = (() => {
       }
       if (!S.isSuv && !S.isTruck && !S.hatchback && p[2] < -13.6) {
         const rt = Math.max(0, Math.min(1, (-13.6 - p[2]) / 5.0));
-        const side = Math.max(0, 1 - Math.pow(Math.min(1, Math.abs(p[0]) / 7.15), 1.7));
-        const deck = Math.max(0.35, 1 - Math.abs(p[1] - 6.15) / 5.0);
-        p[2] -= 0.48 * rt * rt * side * deck;
+        // đuôi sedan cong thành cung đều từ góc này sang góc kia (nhìn từ trên), cả cản dưới cũng theo cung, không phẳng như vách
+        const side = Math.max(0, 1 - Math.pow(Math.min(1, Math.abs(p[0]) / 7.15), 2));
+        const deck = Math.max(0.65, 1 - Math.abs(p[1] - 6.15) / 6.0);
+        p[2] -= 1.35 * rt * rt * side * deck;
       }
     }
     return loftMesh(rings, refs, true);
@@ -468,19 +505,21 @@ const CivilCars = (() => {
     const tumSlope = S.tumble / (isSuv ? 4.8 : (isTruck ? 6.2 : 3.6));
 
     for (let z = z0; z <= z1 + 1e-6; z += lo ? 0.5 : 0.2) {
-      const tRear = Math.max(0.0, Math.min(1.0, (isSuv || isTruck) ? 0 : (-z - 8.5) / 3.8));
-      const tEnd = Math.max(0.0, Math.min(1.0, (isSuv || isTruck) ? 0 : (-z - 10.8) / 1.8));
-
-      // Ở đuôi sedan: chân cabin và mui hạ sâu vào trong khe rãnh nắp cốp, lặn hẳn vào trong thân xe
-      const ybDrop = 0.25 + 0.35 * tRear + 0.55 * tEnd;
+      // Đuôi sedan: chân cột C giữ nguyên bề rộng + độ cao chân kính, chạy thẳng xuống vai sau như xe thật. (Trước đây thu hẹp
+      // ~1 đv + hạ sâu để "lặn vào rãnh cốp" -> cột C bẻ gập vào trong, hở khe tối ở chân)
+      const bx = boxAt(S, z);   // thùng van: ốp phẳng sát sườn, che mép vai vuông của thân dưới
+      // cabin xe tải ốp liền thân dưới: chân khoang cắm sâu + lùi vào trong 3 mm để thân dưới che (không z-fight, không dải
+      // tối do pháp tuyến góc đáy khoang bị làm mượt)
+      const ybDrop = 0.25 + (S.isDump ? 0.7 : 0);
       const yb = top(z) - ybDrop;
-      let yr = Math.max(yb + 0.12, roof(z) - ((isSuv || isTruck) ? 0 : 0.75 * tEnd));
-      if (tEnd > 0.0) {
-        yr = yr * (1.0 - 0.9 * tEnd) + (yb + 0.15) * (0.9 * tEnd);
-      }
+      // kính hậu giữ nguyên độ dốc tới tận nắp cốp (đường roof chạm vai ở z0, nắp cốp vồng cao hơn nên tự che mép cuối).
+      // Trước đây còn bẻ gập mạnh xuống ở đoạn cuối -> gãy góc ngay trên nắp cốp, kính + khung trông vểnh lên
+      // vành cuối khép xuống chân (khoang hở 2 đầu, không nắp): đuôi sedan; đầu cabin xe tải (trước đây hở dải 10,4..11,4 ngay
+      // trên mặt nạ -> nhìn thấu vào nội thất tối thành gờ đen)
+      const yr = (!(isSuv || isTruck) && z < z0 + 0.1) || (isTruck && z > z1 - 0.1) ? yb + 0.12 : Math.max(yb + 0.12, roof(z));   // vành cuối khép xuống (không hở mép)
       const hh = Math.max(0.08, yr - yb);
       // Bề rộng chân kính: ở đoạn đuôi sedan thuôn mượt vào rãnh nước nắp cốp, không chìa ra ngoài gờ vai
-      const w0 = plan(z) - S.inset - ((isSuv || isTruck) ? 0 : 0.45 * tRear + 0.55 * tEnd);
+      const w0 = plan(z) - S.inset * (1 - bx) + (S.isDump ? -0.03 : 0.012) * bx;
       // Độ nghiêng vách kính tỷ lệ trực tiếp với chiều cao hh: giữ vách kính và cột C luôn phẳng mịn tự nhiên
       const tum = Math.min(S.tumble, hh * tumSlope);
       const w1 = Math.max(0.5, w0 - tum);
@@ -520,7 +559,8 @@ const CivilCars = (() => {
       for (let i = 0; i <= N_ROOF; i++) {
         const t = i / N_ROOF;
         const x = xRoofStart * (1 - t);
-        const roofArch = Math.sin((1 - t) * Math.PI * 0.5) * 0.07 * Math.min(1.0, hh / 2.0);
+        // nóc vồng lên ở giữa (~2 cm), 0 ở mép nối cung bo. Bản cũ sin((1-t)·π/2) cao ở mép, thấp ở giữa -> nóc võng lòng chảo
+        const s = 1 - t, roofArch = (1 - s * s) * 0.16 * Math.min(1.0, hh / 2.0);
         half.push([x, yr + roofArch]);
       }
 
@@ -528,6 +568,16 @@ const CivilCars = (() => {
       const A = arcs(half), aCorner = A[3 * SM + 2], aBase = A[SM];
       rings.push(mirrorRing(half, z));
       refs.push(mirrorRefs(half.map((p, k) => [aCorner - A[k], A[k] - aBase, 0])));
+    }
+    // cabin xe tải đầu bằng: tôn dập không phẳng tuyệt đối — mặt trước vồng ra giữa, sườn phình nhẹ giữa chiều cao
+    if (S.isDump) {
+      const yb0 = S.cabin[0][1], yt0 = Math.max(...S.cabin.map(p => p[1])), wMax = Math.max(...S.plan.map(p => p[1]));
+      for (const R of rings) for (const p of R) {
+        const ax = Math.abs(p[0]), fr = Math.max(0, Math.min(1, (p[2] - 15.5) / 3));
+        p[2] += 0.28 * fr * (1 - (ax / wMax) ** 2);
+        const ty = Math.max(0, Math.min(1, (p[1] - yb0) / (yt0 - yb0)));
+        p[0] += Math.sign(p[0]) * 0.1 * Math.sin(Math.PI * ty) * (ax / wMax) ** 3;
+      }
     }
     return loftMesh(rings, refs, false);
   }
@@ -739,8 +789,28 @@ const GLSL_WEATHER = `
       LAY(hole, vec3(0.012, 0.01, 0.008), 0.0, 1.0, 0.0)
     }
     // vệt nước mưa bẩn chảy dọc từ mép kính xuống cửa
-    float grime = age * (1.0 - up) * smoothstep(0.5, 0.74, nS) * smoothstep(yBelt - 4.0, yBelt - 0.2, y) * 0.6;
+    // (chỉ thân dưới: khoang kính có yBelt = -100 -> trước đây vệt phủ kín vách khoang / thùng van thành sọc xám đậm)
+    float grime = age * (1.0 - up) * smoothstep(0.5, 0.74, nS) * smoothstep(yBelt - 4.0, yBelt - 0.2, y) * step(-50.0, yBelt) * 0.6;
     cO = mix(cO, vec3(0.11, 0.095, 0.075), grime * paintK); rO = mix(rO, 0.75, grime); ccO *= 1.0 - 0.5 * grime;
+    // RÊU MỐC ẨM: xe phơi mưa lâu ngày — mốc đen lấm tấm thành cụm ở chỗ nước đọng / chảy qua: dải dưới chân kính (nước
+    // từ gioăng rỉ xuống), mép dưới thân / chân cửa, mặt ngang ít nắng; rêu xanh xám bám lẫn. Cụm loang không đều, có chỗ trống
+    {
+      float damp = smoothstep(0.35, 0.9, uW.y) * (0.3 + 0.35 * uW.x);   // chỉ xe đã cũ, và nhẹ thôi
+      float belt = smoothstep(yBelt - 2.2, yBelt - 0.15, y) * step(y, yBelt + 0.05) * (1.0 - up);
+      float low = smoothstep(yBot + 1.6, yBot + 0.15, y);
+      float pool = up * smoothstep(0.6, 0.85, nB) * 0.5;
+      float where = clamp(max(max(belt * (0.6 + 0.6 * nS), low), pool), 0.0, 1.0);
+      // cụm (tần số thấp) x chấm li ti (tần số cao); xa thì chấm nhoè thành lớp ngả màu nhẹ (không nhấp nháy, không ra rằn ri)
+      float cluster = smoothstep(0.45, 0.75, fbm(wp * 0.8 + 11.0));
+      float pxm = length(fwidth(vRest)), nearM = smoothstep(0.06, 0.02, pxm);
+      float speck = smoothstep(0.62, 0.8, vnoise(wp * 26.0) * 0.7 + vnoise(wp * 7.0) * 0.3);
+      float mold = clamp(damp * where * cluster * mix(0.3, speck * 1.3, nearM), 0.0, 0.7);
+      vec3 moldCol = mix(vec3(0.035, 0.04, 0.028), vec3(0.15, 0.17, 0.11), 0.3 * nF);
+      LAY(mold * paintK, moldCol, 0.0, 0.93, 0.0)
+      // ố nước: viền cặn khoáng sáng đục ở mép vũng khô trên mặt ngang
+      float stain = up * damp * aaLine(fbm(wp * 0.45 + 5.0) - 0.55, 0.035) * 0.6;
+      LAY(stain * dustK, vec3(0.5, 0.48, 0.42), 0.0, 0.8, 0.0)
+    }
     // xước sơn mảnh
     float sc = age * (1.0 - up) * aaLine(fract(dot(vRest.zy, vec2(0.93, 0.31)) * 1.3 + nF * 0.8) - 0.5, 0.03) * smoothstep(0.66, 0.7, fbm(wp * 0.45 + 9.0));
     LAY(sc * paintK, vec3(0.5, 0.5, 0.48), 0.4, 0.5, 0.0)
@@ -750,7 +820,8 @@ const GLSL_WEATHER = `
     // ---- VI CHI TIẾT KHI NHÌN GẦN: chi tiết nhỏ hơn 1 điểm ảnh tắt dần (ở xa không nhấp nháy, không tốn phép tính)
     float pxw = length(fwidth(vRest)), near1 = smoothstep(0.1, 0.03, pxw), near2 = smoothstep(0.035, 0.012, pxw);
     // tôn dập / gò / lắp ráp không phẳng tuyệt đối: gợn sóng dài làm vệt phản chiếu lượn nhẹ (xe nhựa đúc thì thẳng tắp)
-    bumpH += 0.02 * (vnoise(vRest * vec3(0.5, 0.8, 0.5) + uW.w) - 0.5);
+    // xe cũ: tôn "nhăn" rõ hơn (gò lại, va quệt nhẹ, cong vênh) — gợn dài + gợn ngắn
+    bumpH += (0.02 + 0.05 * age) * (vnoise(vRest * vec3(0.5, 0.8, 0.5) + uW.w) - 0.5) + 0.018 * age * (vnoise(vRest * 1.9 + 7.0) - 0.5);
     // lớp bóng: độ nhám loang (chỗ được lau / chỗ bụi bám / chỗ phơi nắng), xe cũ lì hơn
     ccR += paintK * (0.04 + 0.22 * age) * vnoise(wp * 1.3);
     if (near1 > 0.0) {
@@ -767,9 +838,10 @@ const GLSL_WEATHER = `
       ccR += 0.25 * wring;
       // sứt đá: mặt trước đứng của đầu xe (cản, mặt nạ, dưới đèn), mép trước capô, chân cửa sau bánh trước — vết 2-6 mm lộ
       // lót xám sẫm, xe cũ gỉ nâu
-      float frontK = smoothstep(0.45, 0.75, Nn.z) * step(uAx.x - 1.0, z) * step(y, uAx.z * 2.6);
+      // (chỉ dải thấp trên cản: mặt trước phẳng cao của van / xe đầu bằng không lấm tấm kín cả mặt)
+      float frontK = smoothstep(0.45, 0.75, Nn.z) * step(uAx.x - 1.0, z) * step(y, min(uAx.z * 2.6, uE.x + 1.0));
       float rockK = smoothstep(0.6, 0.85, abs(Nn.x)) * step(uAx.x - uAx.z - 4.5, z) * step(z, uAx.x - uAx.z) * step(y, 3.6);
-      vec2 ch = civSpot(vRest, 0.11, (0.1 + 0.3 * age) * max(frontK, rockK) + 0.004);
+      vec2 ch = civSpot(vRest, 0.11, (0.1 + 0.3 * age) * max(0.4 * frontK, rockK) + 0.004);   // mặt trước thưa hơn (không lấm tấm kín)
       float chip = near1 * paintK * (1.0 - smoothstep(0.55, 1.0, ch.x));
       LAY(chip, mix(vec3(0.3, 0.3, 0.29), vec3(0.16, 0.075, 0.035), step(0.7 - 0.45 * age, ch.y)), 0.1, 0.85, 0.0)
       ccO *= 1.0 - chip;
@@ -803,8 +875,8 @@ const GLSL_WEATHER = `
   vec3 Nn = normalize(vObjN);
   float x = vRest.x, y = vRest.y, z = vRest.z, ax = abs(x);
   vec3 cO = diffuseColor.rgb; float mO = metalness, rO = roughness, ccO = 1.0;
-  cO *= 1.0 - 0.85 * fillAA(holeD - 0.035);   // khe hở quanh cụm đèn / lưới (~4 mm)
-  float seam = 0.0, gap = 0.07, hoodEdge = vRef.x - 0.95;
+  cO *= 1.0 - 0.68 * fillAA(holeD - 0.026);   // khe hở cụm đèn: đủ sâu nhưng không thành viền mực
+  float seam = 0.0, gap = 0.032, hoodEdge = vRef.x - 0.95;
   if (abs(Nn.x) > 0.45) {
     float yIn = step(uB.x, y) * step(y, vRef.z - 0.3);
     if (uAx.w > 2.5) {
@@ -866,7 +938,17 @@ const GLSL_WEATHER = `
   float bump = step(uA.w, z) * step(y, uE.x) + step(z, uB.z) * step(y, uE.y);
   seam = max(seam, step(uA.w, z) * aaLine(y - uE.x, gap) + step(z, uB.z) * aaLine(y - uE.y, gap));
   cO *= 1.0 - 0.06 * bump; rO = mix(rO, rO + 0.08, bump);
-  cO *= 1.0 - 0.94 * seam; rO = mix(rO, 0.9, seam); ccO *= 1.0 - seam;
+  // van: vạt cản trước / cản sau nhựa đen nhám bao góc (nửa trên cản trước sơn màu thân) + ốp sườn dưới đen chạy dọc thân
+  if (uSt.x > 2.5) {
+    float bmpK = max(step(uA.w, z) * fillAA(y - (uE.x - 1.3)), step(z, uB.z) * fillAA(y - uE.y));
+    float rock = smoothstep(0.35, 0.6, abs(Nn.x)) * fillAA(y - (vRef.y + 0.85));
+    LAY(max(bmpK, rock), vec3(0.045, 0.046, 0.048), 0.0, 0.82, 0.0)
+  }
+  // Khe tôn có lòng tối hẹp và một vùng bắt sáng rất nhẹ ở mép dập. Chỉ tô đen toàn bộ
+  // tạo cảm giác đường được vẽ lên sơn, nhất là khi nhìn gần.
+  float seamLip = max(0.0, pow(clamp(seam, 0.0, 1.0), 0.42) - seam);
+  cO = mix(cO, min(vec3(1.0), cO * 1.075 + vec3(0.012)), seamLip * 0.42);
+  cO *= 1.0 - 0.56 * seam; rO = mix(rO, 0.82, seam); ccO *= 1.0 - 0.55 * seam;
   // mặt nóc thân dưới nằm trong khoang kính = taplô / tapi cửa / chắn nắng sau: nhựa tối
   float inCab = step(ax, vRef.x - uI.x) * step(uI.y, z) * step(z, uI.z) * step(0.3, Nn.y);
   LAY(inCab, vec3(0.03, 0.028, 0.026), 0.0, 0.9, 0.0)
@@ -944,6 +1026,8 @@ const GLSL_WEATHER = `
   }
   float paintK = 1.0 - featK, yBot = vRef.y, yBelt = vRef.z, dustK = 1.0;
 ` + GLSL_WEATHER + GLSL_CRUSH + `
+  // van: gân dập ngang tôn cứng trên sườn thùng hàng (sau cột B) — gờ lồi mềm bắt sáng / đổ tối theo nắng
+  if (uSt.x > 2.5 && z < uA.y - 0.3) bumpH += 0.035 * smoothstep(0.5, 0.75, abs(Nn.x)) * (1.0 - smoothstep(0.0, 0.22, abs(y - (yBelt - 1.6))));
   diffuseColor.rgb = cO;
 `;
   // Khoang kính: kính chắn gió / kính hậu / kính hông (cửa trước, cửa sau + kính tam giác sau), viền cao su đen quanh
@@ -955,9 +1039,15 @@ const GLSL_WEATHER = `
   float u = vRef.x, v = vRef.y, seam = 0.0;
   float dW = rmax(rmax(u + uA.x, uA.y - z, 0.45), 0.25 - v, 0.2);
   float dR = rmax(rmax(u + uA.z, z - uA.w, 0.45), 0.25 - v, 0.2);
-  float side = rmax(0.22 - u, 0.3 - v, 0.3);
+  float side = rmax(0.42 - u, 0.3 - v, 0.3);   // khung mui trên kính hông ~5 cm (0,22 mỏng như tấm tôn)
   float zC = uB.x + uB.y * (y - uB.z);
   float dF = rmax(side, uC.x + 0.5 - z, 0.3);
+  if (uSt.x > 2.5) {
+    // van: kính cửa trước gọn — chân kính cao hơn đường vai (tôn cửa lên ~13 cm), khung trên dày, cột A dày chừa trước
+    // kính (mép trước song song kính chắn gió lùi ~0,9); trước đây kính kéo từ vai lên sát nóc như cửa kính toàn khung
+    float wa = 10.0 - y, wb = y - 14.6, wc = z - (13.1 - 0.58 * (y - 8.85));
+    dF = max(dF, max(max(rmax(wa, wc, 0.35), rmax(wb, wc, 0.6)), max(wa, wb)));
+  }
   float dRr;
   if (uAx.w > 1.5) {
     // Xe tải cabin đơn: chỉ có cửa trước, không có ô kính cửa sau
@@ -976,17 +1066,22 @@ const GLSL_WEATHER = `
   } else {
     dRr = rmax(rmax(side, z - (uC.x - 0.5), 0.3), zC - z, 0.32);
   }
+  // cabin xe tải đầu bằng giãn nửa trên ×1,2 (SPEC.dump.cabin): quy y về dáng cũ để các mốc ô kính / khe cửa giữ tỉ lệ
+  float yC = uAx.w > 2.5 ? 10.8 + max(y - 10.8, 0.0) / 1.2 + min(y - 10.8, 0.0) : y;
   if (uAx.w > 1.5) {
     // Xe tải: Kính chắn gió trước rộng rãi vuốt lướt gió, kính hậu buồng lái và ô cửa kính hông hai bên sắc nét
-    dW = max(dW, max(10.8 - y, y - 16.7));
-    dW = max(dW, abs(x) - 6.35);
-    dR = max(dR, max(12.2 - y, y - 15.6));
+    // mép trên kính hạ thấp chừa dải trần / mui dày ~10 cm (trước kính ăn sát mép nóc: trần mỏng như tờ giấy)
+    // kính chắn gió cabin đầu bằng: to gần hết mặt trước (xe tải nhẹ thật), viền gioăng đen mảnh, dải mui trên ~10 cm
+    dW = max(dW, max(11.15 - yC, yC - 16.05));
+    dW = max(dW, abs(x) - 6.2);
+    dR = max(dR, max(12.2 - yC, yC - 15.3));
     dR = max(dR, abs(x) - 4.4);
     // Cửa sổ hông buồng lái: chân kính phẳng cao hơn đường vai cửa, mép trước nghiêng theo cột A
     if (uAx.w > 2.5) {
       // Xe ben cabin đầu bằng: kính hông chạy tới sát cột A nghiêng, chân kính trên đường vai cửa
-      dF = max(dF, max(12.1 - y, y - 15.95));
-      dF = max(dF, max(8.35 - z, z - (19.0 - 0.435 * (y - 11.5))));
+      // ô kính cửa bo tròn 4 góc (góc trên trước / sau bo lớn như cửa dập thật; trước đây max() -> góc vuông sắc)
+      float wa = 12.1 - yC, wb = yC - 15.5, wc = 8.35 - z, we = z - (19.0 - 0.435 * (yC - 11.5));
+      dF = max(dF, max(max(rmax(wa, wc, 0.35), rmax(wa, we, 0.3)), max(rmax(wb, wc, 0.7), rmax(wb, we, 0.55))));
     } else {
       // Xe tải thùng: cột sau cabin sơn màu xe dày dặn, cột A nghiêng khí động học
       float frontSlope = 18.2 - 0.65 * (y - 11.0);
@@ -997,7 +1092,7 @@ const GLSL_WEATHER = `
   float d = min(min(dW, dR), min(dF, dRr));
   float f = clamp(fwidth(d), 1e-4, 0.06);
   float glassK = 1.0 - smoothstep(-f, f, d);
-  float rub = (1.0 - smoothstep(0.045 - f, 0.045 + f, d)) * (1.0 - glassK);
+  float rub = (1.0 - smoothstep(0.085 - f, 0.085 + f, d)) * (1.0 - glassK);   // gioăng + nẹp khung kính ~1 cm
   float pil = (uAx.w > 1.5 || uSt.x > 2.5 ? 0.0 : 1.0) * (1.0 - smoothstep(-f, f, side)) * (1.0 - smoothstep(0.5 - f, 0.5 + f, abs(z - uC.x)));
   float dv = (uAx.w < 0.5 ? 1.0 : 0.0) * (1.0 - smoothstep(0.12 - f, 0.12 + f, abs(z - uC.y))) * glassK; glassK -= dv;
   // Thanh nẹp chia ô kính tam giác phụ (quarter vent window divider) đặc trưng của xe tải và xe ben
@@ -1009,33 +1104,47 @@ const GLSL_WEATHER = `
   // viền gốm đen quanh kính chắn gió / kính hậu + dải chấm nhỏ dần vào trong
   float dWR = min(dW, dR), fw = clamp(fwidth(dWR), 1e-4, 0.06);
   float frit = smoothstep(-0.12 - fw, -0.12 + fw, dWR);
-  vec2 cell = fract(vec2(x, (z + y) * 0.7071) / 0.16) - 0.5;
+  vec2 cell = fract(vec2(x, (z + y) * 0.7071) / 0.09) - 0.5;   // chấm frit ~1 cm (0,16 thành hạt cườm to dọc cột A)
   // Chấm frit chỉ thuộc kính chắn gió/kính hậu. Bản cũ chỉ lọc theo z nên tràn thành họa tiết chéo kín kính cửa trước.
-  float dotMask = step(uA.y - 1.0, z) * step(0.55, abs(Nn.z));
+  float dotMask = step(uA.y - 1.0, z) * step(0.55, abs(Nn.z)) * step(uAx.w, 1.5);   // xe tải đời cũ: không có dải chấm frit (thành răng cưa)
   float dots = fillAA(length(cell) - 0.4 * clamp((dWR + 0.26) / 0.14, 0.0, 1.0)) * step(-0.26, dWR) * dotMask;
-  float fritK = glassK * max(frit, dots) * (1.0 - step(0.3, vCr.z));   // viền gốm chỉ mất khi kính bị nghiền   // xác bị cán: kính dẹt, bỏ viền gốm (vạch đạo hàm vỡ)
+  // chỉ trên ô kính chắn gió / kính hậu: kính hông nằm ngoài vùng đó nên frit = 1 -> trước đây phủ đen đặc cả kính hông
+  float wrPane = step(dWR, min(dF, dRr));
+  float fritK = glassK * max(frit, dots) * wrPane * (1.0 - step(0.3, vCr.z));   // viền gốm chỉ mất khi kính bị nghiền   // xác bị cán: kính dẹt, bỏ viền gốm (vạch đạo hàm vỡ)
   LAY(trimK, vec3(0.015, 0.016, 0.018), 0.0, 0.6, 0.3)
-  float suvPrivacy = (uAx.w > 0.5 && uAx.w < 1.5 && uSt.x < 1.5 ? 1.0 : 0.0) * step(z, uC.x);
-  vec3 glassColor = mix(vec3(0.14, 0.16, 0.165), vec3(0.088, 0.102, 0.115), suvPrivacy * 0.75);
-  if (uAx.w > 1.5) glassColor = vec3(0.16, 0.19, 0.22);
+  // kính tối: cửa sau SUV; van: cả thùng hàng (khoang trống tối om như xe thật, không lộ vách mỏng)
+  float vanCargo = (uSt.x > 2.5 ? 1.0 : 0.0) * step(z, uC.x);
+  float suvPrivacy = max((uAx.w > 0.5 && uAx.w < 1.5 && uSt.x < 1.5 ? 1.0 : 0.0) * step(z, uC.x), vanCargo);
+  vec3 glassColor = mix(vec3(0.18, 0.205, 0.22), vec3(0.095, 0.112, 0.128), suvPrivacy * 0.55);
+  if (uAx.w > 1.5) glassColor = vec3(0.205, 0.235, 0.255);
   LAY(glassK, glassColor, 0.0, mix(0.10, 0.06, suvPrivacy), 1.0)
   LAY(fritK, vec3(0.008), 0.0, 0.3, 1.0)
   // Khe hở mép cánh cửa sau trên cột C (khớp với khe cửa thân xe ở z = -7.5) và khe cửa cabin xe tải/xe ben
-  float doorSeam = (uAx.w > 0.5 && uAx.w < 1.5 ? 1.0 : 0.0) * aaLine(z - (uC.y - 0.35), 0.024) * fillAA(0.18 - u) * (1.0 - max(trimK, glassK));
+  float doorSeam = (uAx.w > 0.5 && uAx.w < 1.5 && uSt.x < 2.5 ? 1.0 : 0.0) * aaLine(z - (uC.y - 0.35), 0.024) * fillAA(0.18 - u) * (1.0 - max(trimK, glassK));
   float truckDoorSeam = (uAx.w > 1.5 && uAx.w < 2.5 ? 1.0 : 0.0) * aaLine(z - 5.8, 0.026) * fillAA(0.18 - u) * (1.0 - max(trimK, glassK));
   float dumpDoorSeam = 0.0;
   if (uAx.w > 2.5) {
-    float rearS = aaLine(z - 7.85, 0.028) * step(10.6, y) * step(y, 16.12);
-    float topS = aaLine(y - 16.12, 0.028) * step(7.85, z) * step(z, 17.6);
-    float aZ = 19.15 - 0.36 * (y - 11.75);
-    float frontS = (y >= 11.75 ? aaLine(z - aZ, 0.028) * step(y, 16.12) : aaLine(z - 19.15, 0.028) * step(10.6, y));
-    dumpDoorSeam = max(max(rearS, topS), frontS) * (1.0 - max(trimK, glassK)) * step(0.35, abs(Nn.x));
+    // khe cửa = đường biên một hình bo góc (góc trên sau / trên trước tròn, không gấp vuông)
+    float aZ = 19.15 - 0.36 * max(yC - 11.75, 0.0);
+    float dDoor = max(rmax(7.85 - z, (yC - 15.75) * 1.2, 0.75), rmax((yC - 15.75) * 1.2, z - aZ, 0.5));
+    dumpDoorSeam = aaLine(dDoor, 0.028) * step(10.6, y) * (1.0 - max(trimK, glassK)) * step(0.35, abs(Nn.x));
   }
-  cO = mix(cO, cO * 0.15, max(max(doorSeam, truckDoorSeam), dumpDoorSeam));
+  if (uSt.x > 2.5) {
+    // van: khe cửa chạy tiếp lên khoang trên tới mép mui (trước đây khe chỉ có ở thân dưới -> cửa không ra hình cánh cửa):
+    // cửa trước = mép trước song song cột A (trước kính ~0,6), mép sau ở cột B, mép trên dưới mui; cửa lùa: 2 mép đứng + mép trên
+    float yT = 15.05, zFr = 13.7 - 0.58 * (y - 8.85);
+    float dFd = max(rmax(z - zFr, y - yT, 0.45), uC.x - z);
+    float dSl = max(rmax(z - uC.x, y - yT, 0.3), rmax(uC.y - z, y - yT, 0.3));
+    dumpDoorSeam = max(dumpDoorSeam, aaLine(min(abs(dFd), abs(dSl)), 0.045) * step(0.35, abs(Nn.x)) * (1.0 - max(trimK, glassK)));
+  }
+  float cabSeam = max(max(doorSeam, truckDoorSeam), dumpDoorSeam);
+  float cabLip = max(0.0, pow(clamp(cabSeam, 0.0, 1.0), 0.44) - cabSeam);
+  cO = mix(cO, min(vec3(1.0), cO * 1.06 + vec3(0.01)), cabLip * 0.35);
+  cO = mix(cO, cO * 0.42, cabSeam);
   rO = mix(rO, 0.92, dumpDoorSeam);
   ccO *= 1.0 - dumpDoorSeam;
   float glassOnly = glassK * (1.0 - fritK);
-  float alphaO = mix(1.0, uAx.w > 1.5 ? 0.58 : mix(0.55, 0.68, suvPrivacy), glassOnly);
+  float alphaO = mix(1.0, uAx.w > 1.5 ? 0.47 : mix(0.48, 0.62, suvPrivacy), glassOnly);
   float paintK = 1.0 - max(trimK, glassK), yBot = -100.0, yBelt = -100.0, dustK = paintK;
 ` + GLSL_WEATHER + GLSL_CRUSH + `
   // kính: màng bụi loang, đọng dày ở mép dưới
@@ -1062,6 +1171,21 @@ const GLSL_WEATHER = `
   }
   gd = clamp(gd, 0.0, 1.0);
   cO = mix(cO, vec3(0.43, 0.41, 0.37), gd * 0.42); rO = mix(rO, 0.48, gd); alphaO = mix(alphaO, 0.92, gd); ccO *= 1.0 - 0.42 * gd;
+  // van: ô tôn dập lõm hình chữ nhật bo góc trên vách thùng (cửa lùa + hông sau) — vách cứng, bắt sáng theo mép ô
+  if (uSt.x > 2.5 && z < uC.x - 0.3) {
+    float yP = 12.6, hP = 1.75;
+    float pA = sdBox2(vec2(z - (uC.x + uC.y) * 0.5, y - yP), vec2((uC.x - uC.y) * 0.5 - 0.9, hP), 0.35);
+    float pB = sdBox2(vec2(z - (uC.y - 19.0) * 0.5, y - yP), vec2((uC.y + 19.0) * 0.5 - 0.9, hP), 0.35);
+    float inP = 1.0 - smoothstep(-0.25, 0.05, min(pA, pB));
+    bumpH -= 0.07 * inP * smoothstep(0.5, 0.75, abs(Nn.x)) * (1.0 - glassK);
+  }
+  // kính lắp lõm trong gioăng: mép tôn quanh ô kính vát xuống (dập nổi pháp tuyến bắt sáng / tối theo hướng nắng), kính
+  // sát gioăng bị khung che bóng mờ -> ô kính có chiều sâu thay vì dán phẳng cùng mặt tôn
+  {
+    float fd = clamp(fwidth(d), 1e-4, 0.06);
+    bumpH -= 0.07 * (1.0 - smoothstep(0.0, 0.2, d)) * (1.0 - smoothstep(0.0, 0.1, -d));
+    cO *= 1.0 - 0.35 * glassOnly * (1.0 - smoothstep(0.0, 0.28, -d)) * smoothstep(-fd, fd, -d);
+  }
   // rạn nứt kính chắn gió: tia nứt toả từ điểm va + vòng nứt đồng tâm
   if (uE.w > 0.0 && z > uA.y) {
     vec2 cp = vec2(x, z) - uE.xy; float rr = length(cp), an = atan(cp.y, cp.x);
@@ -1108,15 +1232,15 @@ const GLSL_WEATHER = `
     }
   }
   // mặt trong khoang (nhìn xuyên kính sang cột / khung cửa / trần bên kia): ốp nhựa xám, trần nỉ
-  if (!gl_FrontFacing) { float ins = 1.0 - glassOnly; cO = mix(cO, vec3(0.13, 0.125, 0.12), ins); rO = mix(rO, 0.92, ins); mO *= 1.0 - ins; ccO *= 1.0 - ins; }
+  if (!gl_FrontFacing) { float ins = 1.0 - glassOnly; cO = mix(cO, mix(vec3(0.13, 0.125, 0.12), vec3(0.035, 0.034, 0.033), vanCargo), ins); rO = mix(rO, 0.92, ins); mO *= 1.0 - ins; ccO *= 1.0 - ins; }
   // mui / cột / gioăng luôn đặc (chỉ ô kính mới trong suốt)
   alphaO = mix(1.0, alphaO, smoothstep(0.02, 0.2, glassOnly));
   diffuseColor.rgb = cO; diffuseColor.a = alphaO;
 `;
   function carMaterial(color, env, mode, S, W) {
     const isDumpOrTruck = S.isDump || S.isTruck;
-    const baseMetal = isDumpOrTruck ? 0.45 : 0.52;
-    const baseRough = isDumpOrTruck ? 0.28 : 0.22;
+    const baseMetal = isDumpOrTruck ? 0.45 : 0.08;
+    const baseRough = isDumpOrTruck ? 0.28 : 0.3;
     const baseClearcoat = isDumpOrTruck ? 0.82 : 1.0;
     const baseClearcoatRough = isDumpOrTruck ? 0.08 : 0.04;
     const m = new THREE.MeshPhysicalMaterial({
@@ -1126,7 +1250,7 @@ const GLSL_WEATHER = `
       clearcoat: baseClearcoat,
       clearcoatRoughness: baseClearcoatRough,
       envMap: env,
-      envMapIntensity: isDumpOrTruck ? 1.15 : 1.35
+      envMapIntensity: isDumpOrTruck ? 1.15 : 1.12
     });
     if (mode === 'cabin') m.transparent = true;
     if (mode === 'cabinIn') m.side = THREE.BackSide;
@@ -1151,6 +1275,8 @@ const GLSL_WEATHER = `
         .replace('#include <color_fragment>', '#include <color_fragment>\n' + (mode === 'body' ? GLSL_BODY : GLSL_CABIN + (mode === 'cabinIn' ? '  if (glassOnly > 0.5) discard;\n  diffuseColor.a = 1.0;\n' : '')))
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = rO;')
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mO;')
+        // mặt trong khoang kín: trời chỉ lọt qua ô kính -> bớt sáng môi trường (nhìn xiên Fresnel loá trời thành vách sáng mỏng)
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n' + (mode === 'cabinIn' ? 'reflectedLight.indirectDiffuse *= 0.35; reflectedLight.indirectSpecular *= 0.12; reflectedLight.directDiffuse *= 0.4; reflectedLight.directSpecular *= 0.15;' : ''))
         .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n#ifdef CLEARCOAT\nmaterial.clearcoat *= clamp(ccO, 0.0, 1.0);\nmaterial.clearcoatRoughness = min(1.0, material.clearcoatRoughness + ccR);\n#endif')
         // tôn gợn / vỏ cam / mép sứt: dập nổi pháp tuyến cả lớp sơn lẫn lớp bóng
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = civBump(-vViewPosition, normal, bumpH);')
@@ -1308,7 +1434,9 @@ const GLSL_WEATHER = `
           }
         }
         if (drlPts.length >= 3) {
-          add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(drlPts), 48, 0.048, 7, false), M.drl);
+          // F.drlR: dải dẫn sáng LED bản to, acrylic trắng sữa hơi tự sáng (nổi trên lòng đèn tối)
+          const drlM = F.drlR ? (M.drlW || (M.drlW = new THREE.MeshStandardMaterial({ color: 0xeef1f2, roughness: 0.3, emissive: 0x262828 }))) : M.drl;
+          add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(drlPts), 48, F.drlR || 0.048, 7, false), drlM);
         }
       }
       // Nẹp viền mép hốc đèn mỏng sắc sảo
@@ -1340,7 +1468,9 @@ const GLSL_WEATHER = `
       const rot = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Zv)), up = new THREE.Vector3(0, 1, 0);
       const bowl = z => {
         const p = at(z.cu, z.cv, depth * 0.22); if (!p) return;
-        const rx = Math.max(0.1, z.hu * 0.76), ry = Math.max(0.1, z.hv * 0.76), rd = Math.min(depth * 0.72, Math.min(rx, ry) * 0.95), r = Math.min(rx, ry) * 0.3;
+        let rx = Math.max(0.1, z.hu * 0.76), ry = Math.max(0.1, z.hv * 0.76);
+        if (F.roundBowl) rx = ry = Math.min(rx, ry);   // ô dẹt mà chóa elip trải hết thì trông như cái đĩa
+        const rd = Math.min(depth * 0.72, Math.min(rx, ry) * 0.95), r = Math.min(rx, ry) * (F.roundBowl ? 0.18 : 0.3);
         const b = add(new THREE.SphereGeometry(1, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), M.chromeIn);
         b.quaternion.copy(rot); b.position.copy(p); b.scale.set(rx, rd, ry);
         add(new THREE.SphereGeometry(r, 14, 10), M.bulb).position.copy(p).addScaledVector(d, -rd * 0.5);
@@ -1357,6 +1487,20 @@ const GLSL_WEATHER = `
       } else if (F.style === 'blade') {
         // Hai thanh LED mảnh thay cho các bóng tròn lớn, hợp với mảng ốp ngang của cốp SUV.
         for (const vr of [0.36, 0.68]) guide(t => [u0 + (u1 - u0) * (0.07 + t * 0.86), v0 + (v1 - v0) * (vr + 0.045 * Math.sin(t * Math.PI))], 22, 0.055, M.tailBrake);
+      } else if (F.style === 'guides') {
+        // dải dẫn sáng theo đường gấp khúc cho sẵn (F.guides), góc bẻ bo tròn nhờ spline
+        const along = pts => t => {
+          const s = t * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(s)), f = s - i;
+          return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f];
+        };
+        for (const g of F.guides) guide(along(g.pts), g.pts.length * 8, g.r, M[g.mat] || M.tailBrake);
+      }
+      // vách ngăn giữa các buồng đèn: nhựa tối sau kính
+      if (F.dividers) for (const pl of F.dividers) {
+        const pts = [];
+        for (let i = 0; i < pl.length - 1; i++) for (let k = 0; k < 6; k++) { const t = k / 6, p = at(pl[i][0] + (pl[i + 1][0] - pl[i][0]) * t, pl[i][1] + (pl[i + 1][1] - pl[i][1]) * t, depth * 0.3); if (p) pts.push(p); }
+        const pe = at(...pl[pl.length - 1], depth * 0.3); if (pe) pts.push(pe);
+        if (pts.length > 3) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1), pts.length * 2, 0.03, 5, false), M.wall);
       }
       // KÍNH 2 lớp chung một lưới (vỡ kính / bẹp theo xe khoét, uốn cả hai): lọc màu (nhân màu chóa bạc + dải dẫn sáng phía
       // sau thành đỏ rực) rồi lớp bóng mặt ngoài (cộng phản chiếu trời, vệt nắng; màu đỉnh = bụi phủ, dày ở mép dưới)
@@ -1377,10 +1521,24 @@ const GLSL_WEATHER = `
       // nan ngang lùi vào trong + viền crôm có độ dày quanh miệng lưới (SUV: nan kép mạ crom to bản uy lực)
       const [v0, v1] = [Math.min(...outline.map(p => p[1])), Math.max(...outline.map(p => p[1]))], hw = Math.max(...outline.map(p => p[0]));
       const isSuvGrille = v0 > 5.0 && (v1 - v0) < 1.6;
-      for (let v = v0 + 0.16; v < v1 - 0.08; v += (isSuvGrille ? 0.34 : 0.24)) {
+      if (F.mesh) {
+        // lưới tổ ong đen đặt nông ngay sau miệng lưới, rộng bằng đáy miệng (nan sâu thò ngang thì lộ qua hốc đèn lùi kề bên)
+        const p = at(0, (v0 + v1) / 2, 0.14);
+        if (p) { const m = add(new THREE.PlaneGeometry(2 * Math.abs(F.pts[1][0]) + 0.2, v1 - v0 - 0.1), M.honey); m.position.copy(p); }
+        // nẹp mạ viền quanh miệng lưới + 1 thanh ngang mạ bản rộng giữa lưới (điểm nhấn mặt nạ)
+        const rimPts = outline.map(q => at(q[0], q[1], 0.02)).filter(Boolean);
+        if (rimPts.length > 6) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts, true), 72, 0.05, 6, true), M.chrome);
+        const pb = at(0, v0 + (v1 - v0) * 0.62, 0.04);
+        if (pb) { const w = 2 * (Math.abs(F.pts[1][0]) + (Math.abs(F.pts[2][0]) - Math.abs(F.pts[1][0])) * 0.62) - 0.1; add(roundBox(w, 0.2, 0.12, 0.05), M.chrome).position.copy(pb); add(roundBox(w - 0.1, 0.07, 0.13, 0.02), M.slat).position.copy(pb); }
+      }
+      for (let v = v0 + 0.16; !F.mesh && v < v1 - 0.08; v += (isSuvGrille ? 0.34 : 0.24)) {
         const p = at(0, v, 0.32);
         if (p) {
-          const sl = add(roundBox(2 * hw - 0.15, isSuvGrille ? 0.11 : 0.08, 0.28, 0.03), isSuvGrille ? M.chrome : M.slat);
+          // bề rộng nan theo đúng bề rộng miệng lưới tại độ cao v (lưới hình thang): nan dài bằng chỗ rộng nhất thì đầu nan
+          // chạy ngầm sau tôn, lộ qua hốc đèn pha kề bên thành vạch đen
+          const P = F.pts, tv = Math.max(0, Math.min(1, (v - P[0][1]) / ((P[2][1] - P[0][1]) || 1)));
+          const hv = Math.min(hw, Math.abs(P[1][0]) + (Math.abs(P[2][0]) - Math.abs(P[1][0])) * tv) - 0.05;
+          const sl = add(roundBox(2 * hv - 0.15, isSuvGrille ? 0.11 : 0.08, 0.28, 0.03), isSuvGrille ? M.chrome : M.slat);
           sl.position.copy(p);
           sl.rotation.x = -0.25;
           if (isSuvGrille) {
@@ -2506,9 +2664,10 @@ const GLSL_WEATHER = `
   // top: nóc thùng (đv) — props.js dùng làm hộp va chạm đạn; cols: bảng màu thùng (-1 = cùng màu cabin)
   const TRUCK_BODIES = {
     tipper: { top: 14.8, cols: [0x3f4a3f, 0x5b6066, 0x9a5a22, 0x2e4766, 0x7a2a22, 0x2b2d2f] },
-    drop: { top: 16.4, cols: [0xb9bdbf, 0x2f4f7a, 0x5b6066, -1, 0x3f5a3a] },
-    tarp: { top: 21.4, cols: [0x2e5f8a, 0x4f6b45, 0x6d6f63, 0x2f3a46, 0x9a5c2a] },
-    box: { top: 22.6, cols: [0xd9dbd8, 0xb7bcc0, 0x3b5f8c, 0x8a8d8f, 0xc9b996] }
+    drop: { top: 15.8, cols: [0xc6c9c8, 0x36577d, 0x62676b, -1, 0x465d42] },
+    // bạt PVC thật: xanh dương sẫm, xanh rêu, kaki, xám, cam đất — trầm, ít bão hoà (0x2e5f8a cũ dưới nắng ra xanh da trời)
+    tarp: { top: 20.8, cols: [0x22384c, 0x3b4430, 0x555044, 0x44494a, 0x60402a] },
+    box: { top: 21.35, cols: [0xe0e1dd, 0xc4c8c9, 0x46688d, 0x929697, 0xc8bea4] }
   };
   // kiểu thùng theo seed (props.js gọi cùng hàm -> bản xa / hộp va chạm khớp bản chi tiết); force: ép kiểu (phòng thử)
   function truckBodyOf(seed, kind, force) {
@@ -2547,13 +2706,20 @@ const GLSL_WEATHER = `
   // vải bạt: sợi dệt, đường may nối khổ, phai nắng loang, vệt bẩn mưa chảy, miếng vá (u dọc thân, v quanh mặt cắt; 8 đv / ô)
   function canvasTexture(rnd, age, col) {
     const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d');
-    const base = new THREE.Color(col).lerp(new THREE.Color(0x8d8a7c), age * 0.35);
+    const base = new THREE.Color(col).lerp(new THREE.Color(0x55534b), age * 0.35);   // phai về xám trầm (đích sáng cũ làm bạt bạc như giấy)
     x.fillStyle = '#' + base.getHexString(); x.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 2600; i++) { x.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'; x.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 3, 1); }
     // đường may nối khổ bạt mỗi ~1,5 m dọc thân: gờ may mờ + chỉ khâu
     for (const u of [0]) { x.fillStyle = 'rgba(0,0,0,0.13)'; x.fillRect(u, 0, 4, 256); x.fillStyle = 'rgba(255,255,255,0.07)'; x.fillRect(u + 4, 0, 2, 256); for (let v = 0; v < 256; v += 6) { x.fillStyle = 'rgba(230,225,210,0.22)'; x.fillRect(u + 1.5, v, 1, 3); } }
-    for (let i = 0; i < 18; i++) { const px = rnd() * 256, py = rnd() * 256, r = 20 + rnd() * 60, gr = x.createRadialGradient(px, py, 0, px, py, r); gr.addColorStop(0, `rgba(235,230,215,${0.06 + 0.12 * age})`); gr.addColorStop(1, 'rgba(235,230,215,0)'); x.fillStyle = gr; x.fillRect(px - r, py - r, 2 * r, 2 * r); }
+    // phai nắng: loang rộng, rất nhẹ (đốm trắng đậm cũ trông như vết sơn)
+    for (let i = 0; i < 8; i++) { const px = rnd() * 256, py = rnd() * 256, r = 50 + rnd() * 80, gr = x.createRadialGradient(px, py, 0, px, py, r); gr.addColorStop(0, `rgba(200,195,180,${0.03 + 0.06 * age})`); gr.addColorStop(1, 'rgba(235,230,215,0)'); x.fillStyle = gr; x.fillRect(px - r, py - r, 2 * r, 2 * r); }
     for (let i = 0; i < 26; i++) { const px = rnd() * 256, py = rnd() * 256; x.strokeStyle = `rgba(40,34,24,${0.08 + 0.15 * age})`; x.lineWidth = 2 + rnd() * 5; x.beginPath(); x.moveTo(px, py); x.lineTo(px + (rnd() - 0.5) * 6, py + 20 + rnd() * 60); x.stroke(); }
+    // mốc đen lấm tấm thành cụm (bạt ẩm gấp cất lâu ngày) + vệt nước khô
+    for (let i = 0; i < 3 + age * 6; i++) {
+      const px = rnd() * 256, py = rnd() * 256, rr = 8 + rnd() * 22;
+      for (let k = 0; k < 30 + rr * 2; k++) { const a = rnd() * 6.28, d = rr * Math.pow(rnd(), 0.8); x.fillStyle = `rgba(${18 + rnd() * 20},${22 + rnd() * 18},${14 + rnd() * 10},${0.08 + 0.16 * rnd() * (1 - d / rr)})`; x.beginPath(); x.arc(px + Math.cos(a) * d, py + Math.sin(a) * d, 0.6 + rnd() * 1.8, 0, 6.28); x.fill(); }
+    }
+    for (let i = 0; i < 6; i++) { const py = rnd() * 256; x.strokeStyle = `rgba(210,205,190,${0.05 + 0.06 * age})`; x.lineWidth = 1 + rnd() * 2; x.beginPath(); x.moveTo(0, py); for (let u = 0; u <= 256; u += 16) x.lineTo(u, py + (rnd() - 0.5) * 10); x.stroke(); }
     for (let i = 0; i < age * 3; i++) {
       const px = rnd() * 230, py = rnd() * 230, w = 10 + rnd() * 18, h = 8 + rnd() * 14, pc = base.clone().offsetHSL((rnd() - 0.5) * 0.03, -0.05, (rnd() - 0.5) * 0.06);
       x.fillStyle = '#' + pc.getHexString(); x.fillRect(px, py, w, h); x.strokeStyle = 'rgba(20,20,20,0.35)'; x.lineWidth = 1; x.setLineDash([2, 2]); x.strokeRect(px + 1, py + 1, w - 2, h - 2); x.setLineDash([]);
@@ -2565,7 +2731,17 @@ const GLSL_WEATHER = `
     const g = new THREE.PlaneGeometry(L, H, Math.max(8, Math.round(L / p) * 6), 1);
     g.rotateY(Math.PI / 2);
     const P = g.attributes.position;
-    for (let i = 0; i < P.count; i++) { const s = Math.sin(P.getZ(i) / p * Math.PI * 2); P.setX(i, a * Math.sign(s) * Math.min(1, Math.abs(s) * 1.6)); }
+    // sóng hình thang bo mềm (gần sin): sóng vuông cũ tạo rãnh tối sắc đều tăm tắp như rèm nhựa
+    for (let i = 0; i < P.count; i++) { const s = Math.sin(P.getZ(i) / p * Math.PI * 2); P.setX(i, a * Math.sign(s) * Math.min(1, Math.abs(s) * 1.2)); }
+    g.computeVertexNormals();
+    return g;
+  }
+  // tấm tôn sóng NGANG mặt quay +x (gân chạy dọc z, lặp theo y bước p, biên độ a): dài L (z), cao H
+  function ribbedPanel(L, H, a, p) {
+    const g = new THREE.PlaneGeometry(L, H, 1, Math.max(8, Math.round(H / p) * 6));
+    g.rotateY(Math.PI / 2);
+    const P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) { const s = Math.sin(P.getY(i) / p * Math.PI * 2); P.setX(i, a * Math.sign(s) * Math.min(1, Math.abs(s) * 1.3)); }
     g.computeVertexNormals();
     return g;
   }
@@ -2596,6 +2772,8 @@ const GLSL_WEATHER = `
           // sườn bạt hơi hóp giữa 2 dây chằng, rõ nhất ở mép dưới (dây kéo), nhạt dần lên vai
           const s = Math.sign(x), low = Math.max(0, 1 - (y - yb) / 3.5);
           x -= s * (0.07 * gSide * (0.3 + 0.7 * low) + 0.05 * nn);
+          // nếp gấp chéo toả từ điểm dây chằng (bạt bị kéo căng cục bộ) + nếp chùng đứng không đều
+          x -= s * (0.08 * (1 - gSide) * low * Math.sin((z - y * 0.8) * 2.4 + ph) + 0.045 * Math.sin(z * 1.7 + y * 0.35 + ph * 2) * (0.6 + nn));
           if (y < yb + 0.6) y -= 0.2 * (1 - gSide) * (1 - (y - yb) / 0.6);
         }
         x += 0.03 * n2; y += 0.03 * n2;
@@ -2621,7 +2799,7 @@ const GLSL_WEATHER = `
   function buildTruck(K) {
     const { S, opts, seed, age, sev, color, env, mats, plain, part, hitAt, wr, car, plateMat, TB } = K;
     const burnt = !!opts.burnt;
-    const cabPaint = new THREE.MeshPhysicalMaterial({ color: color.clone().lerp(new THREE.Color(0x9b9589), age * 0.12), roughness: 0.35 + age * 0.18, metalness: 0.5, clearcoat: burnt ? 0 : 0.6, clearcoatRoughness: 0.2, envMap: env, envMapIntensity: 1.1 });
+    const cabPaint = new THREE.MeshPhysicalMaterial({ color: color.clone().lerp(new THREE.Color(0x9b9589), age * 0.12), roughness: 0.32 + age * 0.2, metalness: 0.08, clearcoat: burnt ? 0 : 0.82, clearcoatRoughness: 0.16 + age * 0.12, envMap: env, envMapIntensity: 1.0 });
     const chassisMat = plain(new THREE.Color(0x1c1e1e).lerp(new THREE.Color(0x3a2a20), age * 0.5), 0.62, 0.45);
     const edge = plain(0x3e4442, 0.5, 0.6);
     const galv = plain(new THREE.Color(0x868b8e).lerp(new THREE.Color(0x6e665a), age * 0.5), 0.6, 0.5);   // thép mạ kẽm / nhôm xỉn
@@ -2642,18 +2820,40 @@ const GLSL_WEATHER = `
     // ===== CABIN =====
     // gạt mưa kính chắn gió (vị trí nghỉ sát chân kính)
     const onCabGlass = (gx, gy, lift = 0.025) => { const h = hitAt([gx, gy, 30], [0, 0, -1]); return h ? h.p.clone().addScaledVector(h.n, lift) : null; };
-    for (const cfg of [{ pivX: -3.8, pivY: 11.0, p0: [-5.6, 11.3], p1: [-0.6, 11.45], clipX: -3.1, clipY: 11.37 }, { pivX: 1.6, pivY: 11.0, p0: [0.6, 11.3], p1: [5.6, 11.45], clipX: 3.1, clipY: 11.37 }]) {
+    // Kính trước xe tải thật không đọc như một tấm acrylic khổng lồ: gioăng dày, trụ giữa và
+    // dải che nắng chia mảng kính thành hai ô có tỷ lệ chắc chắn hơn. Các chi tiết được dò
+    // trực tiếp lên mặt cabin để vẫn ôm đúng kính khi thân xe bị biến dạng.
+    {
+      const frame = new THREE.Group(); frame.userData.acc = 'windshieldFrame'; assembly.add(frame);
+      const glassLine = (samples, r, mat) => {
+        const pts = samples.map(([x, y]) => onCabGlass(x, y, 0.065)).filter(Boolean);
+        if (pts.length > 1) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.max(8, pts.length * 3), r, 6, false), mat, [0, 0, 0], null, frame);
+      };
+      glassLine([[0, 11.55], [0, 12.8], [0, 14.2], [0, 15.6], [0, 17.05]], 0.105, mats.black);
+      glassLine([[-5.8, 11.55], [-3, 11.48], [0, 11.45], [3, 11.48], [5.8, 11.55]], 0.09, mats.black);
+      glassLine([[-5.55, 16.75], [-2.8, 16.9], [0, 16.95], [2.8, 16.9], [5.55, 16.75]], 0.085, mats.black);
+      const sunMat = plain(burnt ? 0x181818 : 0x172127, 0.24, 0.05, { transparent: true, opacity: 0.78, depthWrite: false });
+      for (const sx of [-1, 1]) {
+        const h = onCabGlass(sx * 2.85, 16.45, 0.075);
+        if (h) box([5.25, 0.52, 0.035], sunMat, h.toArray(), 0.04, [-0.18, 0, 0], frame);
+      }
+      frame.traverse(o => { if (o.isMesh) o.castShadow = false; });
+    }
+    // nằm trên mặt kính ngay trên chân kính (y kính bắt đầu ~11,8 sau khi nâng cabin; bản cũ y 11,3 rơi xuống tôn mặt nạ)
+    for (const cfg of [{ pivX: -4.6, pivY: 11.6, p0: [-5.6, 11.8], p1: [-0.6, 12.2], clipX: -3.0, clipY: 12.0 }, { pivX: 0.9, pivY: 11.6, p0: [0.4, 11.8], p1: [5.5, 12.2], clipX: 2.9, clipY: 12.0 }]) {
       const wpr = new THREE.Group(); wpr.userData.acc = 'wiper'; assembly.add(wpr);
       const blade = [], spine = [];
       for (let i = 0; i <= 8; i++) { const t = i / 8, bx = cfg.p0[0] + (cfg.p1[0] - cfg.p0[0]) * t, by = cfg.p0[1] + (cfg.p1[1] - cfg.p0[1]) * t, a = onCabGlass(bx, by, 0.02), b = onCabGlass(bx, by, 0.05); if (a) blade.push(a); if (b) spine.push(b); }
       if (blade.length < 4) continue;
-      add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(blade), 16, 0.024, 5, false), mats.black, [0, 0, 0], null, wpr);
-      add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(spine), 16, 0.032, 6, false), mats.wiper, [0, 0, 0], null, wpr);
+      // lưỡi cao su + khung kim loại dập (đủ to để đọc ra từ xa: xe tải gạt dài ~60 cm)
+      add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(blade), 16, 0.035, 5, false), mats.black, [0, 0, 0], null, wpr);
+      add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(spine), 16, 0.055, 6, false), mats.wiper, [0, 0, 0], null, wpr);
+      for (const t of [0.25, 0.5, 0.75]) { const a = spine[Math.round(t * (spine.length - 1))]; if (a) add(new THREE.SphereGeometry(0.07, 6, 4), mats.wiper, a.toArray(), null, wpr); }
       const piv = onCabGlass(cfg.pivX, cfg.pivY, 0.045), clip = onCabGlass(cfg.clipX, cfg.clipY, 0.055);
       if (piv && clip) {
         add(new THREE.CylinderGeometry(0.12, 0.16, 0.12, 12), mats.black, piv.toArray(), [Math.PI * 0.48, 0, 0], wpr);
         blk([0.2, 0.16, 0.1], mats.black, clip.toArray(), null, wpr);
-        add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([piv, piv.clone().lerp(clip, 0.5).add(new THREE.Vector3(0, 0.02, 0.015)), clip]), 10, 0.034, 6, false), mats.wiper, [0, 0, 0], null, wpr);
+        add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([piv, piv.clone().lerp(clip, 0.5).add(new THREE.Vector3(0, 0.02, 0.015)), clip]), 10, 0.05, 6, false), mats.wiper, [0, 0, 0], null, wpr);
       }
       wpr.traverse(o => { if (o.isMesh) o.castShadow = false; });
     }
@@ -2672,23 +2872,37 @@ const GLSL_WEATHER = `
       blk([0.32, 0.22, 0.05], mats.dark, [sx * 5.65, 9.05, 20.64]); blk([0.16, 0.08, 0.06], mats.chrome, [sx * 5.65, 9.05, 20.67]);
     }
     box([0.95, 0.75, 0.07], mats.chrome, [0, 9.5, 20.66], 0.04); box([0.65, 0.45, 0.08], mats.black, [0, 9.5, 20.68], 0.03);
-    box([8.3, 2.7, 0.28], mats.black, [0, 6.95, 20.45], 0.08); blk([8.1, 2.5, 0.06], mats.dark, [0, 6.95, 20.35]);
-    [5.95, 6.6, 7.25, 7.9].forEach((gy, gi) => { box([8.15, 0.28, 0.24], mats.dark, [0, gy, 20.58], 0.04); box([8.1, 0.12, 0.26], gi === 2 ? mats.chrome : cabPaint, [0, gy, 20.66], 0.03); });
+    box([8.15, 2.7, 0.24], mats.black, [0, 7.0, 20.46], 0.1); blk([7.88, 2.46, 0.05], mats.dark, [0, 7.0, 20.35]);
+    // nan nhựa đen bản rộng chúc xuống (khe tối giữa các nan thấy két nước phía sau); 1 nẹp mạ mảnh chạy trên cùng
+    for (let gy = 5.95; gy < 8.15; gy += 0.46) box([7.68, 0.27, 0.14], mats.black, [0, gy, 20.56], 0.035, [0.22, 0, 0]);
+    blk([0.12, 2.2, 0.3], mats.black, [0, 7.0, 20.52]);
+    box([7.1, 0.08, 0.1], mats.chrome, [0, 8.2, 20.62], 0.03);
     // đèn pha vuông: hốc đen, chóa phản xạ đôi, kính khía rãnh mờ, xi nhan hổ phách ngoài
     const reflectorMat = plain(burnt ? 0x2a2622 : 0xb0b8b8, 0.18, 0.85, { envMapIntensity: 0.85 });
     const lensMat = new THREE.MeshPhysicalMaterial({ color: burnt ? 0x2a2622 : 0xc4d0cf, roughness: 0.15 + 0.3 * age, metalness: 0, transparent: true, opacity: 0.28 + 0.2 * age, clearcoat: 0.6, envMap: env, envMapIntensity: 0.5, depthWrite: false });
     for (const sx of [-1, 1]) {
-      const x = sx * 5.35, y = 6.85, z = 20.55;
-      box([2.45, 1.83, 0.24], mats.black, [x, y, z], 0.1);
-      box([2.2, 1.58, 0.1], mats.barrel, [x, y, z + 0.12], 0.065);
-      for (const dx of [-0.5, 0.45]) { add(new THREE.CylinderGeometry(0.52, 0.4, 0.16, 20), reflectorMat, [x + dx, y, z + 0.15], [Math.PI / 2, 0, 0]); add(new THREE.SphereGeometry(0.1, 8, 6), mats.chrome, [x + dx, y, z + 0.25]); }
-      box([2.18, 1.52, 0.04], lensMat, [x, y, z + 0.34], 0.07);
-      for (const dx of [-0.6, 0, 0.6]) blk([0.02, 1.35, 0.025], lensMat, [x + dx, y, z + 0.37]);
-      box([0.38, 1.55, 0.12], mats.tailAmber, [x + sx * 0.94, y, z + 0.27], 0.055);
+      // cụm đèn bám mặt nạ bo góc: lùi theo bề mặt, xoay theo độ cong ở góc (dò tia tâm + mép ngoài)
+      const x0 = sx * 4.95, y = 7.08, hc = hitAt([x0, y, 30], [0, 0, -1]), ho = hitAt([x0 + sx * 1.25, y, 30], [0, 0, -1]);
+      const zc = hc ? hc.p.z - 0.2 : 20.4, yaw = hc && ho ? sx * Math.atan2(hc.p.z - ho.p.z, 1.25) : 0;
+      const lg = new THREE.Group(); lg.position.set(x0, y, zc); lg.rotation.y = yaw; assembly.add(lg);
+      const x = 0, z = 0, yl = 0;
+      box([2.42, 1.38, 0.24], mats.black, [x, yl, z], 0.11, null, lg);
+      box([2.16, 1.13, 0.1], mats.barrel, [x, yl + 0.04, z + 0.12], 0.07, null, lg);
+      // chóa parabol lõm (bát mạ bạc mở ra trước) + bóng đèn có chụp che chói; kính khía rãnh dày (khúc xạ nhòe chóa)
+      for (const dx of [-0.49, 0.34]) {
+        const bw = add(new THREE.SphereGeometry(0.43, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), reflectorMat, [x + dx, yl + 0.06, z + 0.32], [-Math.PI / 2, 0, 0], lg);
+        bw.scale.set(1, 0.55, 1); reflectorMat.side = THREE.DoubleSide;
+        add(new THREE.SphereGeometry(0.11, 10, 8), plain(burnt ? 0x2a2622 : 0xe2e4e2, 0.25, 0.1), [x + dx, yl, z + 0.16], null, lg);
+        add(new THREE.SphereGeometry(0.09, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), mats.chrome, [x + dx, yl, z + 0.24], [Math.PI / 2, 0, 0], lg);
+      }
+      box([2.14, 1.08, 0.04], lensMat, [x, yl + 0.04, z + 0.34], 0.07, null, lg);
+      for (let k = 0; k < 11; k++) blk([0.03, 0.98, 0.03], lensMat, [x - 0.95 + k * 0.19, yl + 0.04, z + 0.37], null, lg);
+      for (const dy of [-0.25, 0.04, 0.33]) blk([2.02, 0.022, 0.03], lensMat, [x, yl + dy, z + 0.375], null, lg);
+      box([0.3, 1.04, 0.12], mats.tailAmber, [x + sx * 0.94, yl + 0.04, z + 0.27], 0.055, null, lg);
     }
     // cản trước thép (xám / đen hoặc cùng màu cabin), tấm chắn dưới, đèn sương mù tròn (một số xe), biển số, móc kéo
     const bumperMat = burnt ? chassisMat : wr() < 0.55 ? plain(new THREE.Color(0x505458).lerp(new THREE.Color(0x3c3a36), age * 0.5), 0.55, 0.35) : cabPaint;
-    const bmp = box([14.7, 1.15, 0.95], bumperMat, [0, 4.6, 20.4], 0.2); bmp.userData.acc = 'bumper';
+    const bmp = box([14.5, 1.0, 0.76], bumperMat, [0, 4.58, 20.32], 0.17); bmp.userData.acc = 'bumper';
     box([13.2, 0.32, 0.6], chassisMat, [0, 3.85, 20.15], 0.06);
     if (wr() < 0.45) for (const sx of [-1, 1]) {
       add(new THREE.CylinderGeometry(0.46, 0.46, 0.2, 18), mats.black, [sx * 3.9, 4.55, 20.82], [Math.PI / 2, 0, 0]);
@@ -2718,7 +2932,7 @@ const GLSL_WEATHER = `
       const sl = surface(18.85, 9.55, 0.035);
       if (sl) { box([0.085, 0.34, 0.68], mats.black, sl.toArray(), 0.035); box([0.095, 0.22, 0.52], mats.tailAmber, [sl.x + sx * 0.045, sl.y, sl.z], 0.035); }
       // ốp chắn mưa khói mờ trên khung kính cửa (nhiều xe tải lắp thêm)
-      if (wr() < 0.4) { const h = hitAt([sx * 12, 15.6, 12.5], [-sx, 0, 0]); if (h) box([0.08, 0.42, 8.6], plain(0x0e1216, 0.12, 0.1, { transparent: true, opacity: 0.78 }), [h.p.x + sx * 0.18, 16.0, 12.9], 0.03, [0, 0, -sx * 0.4]); }
+      if (wr() < 0.4) { const h = hitAt([sx * 12, 16.7, 12.5], [-sx, 0, 0]); if (h) box([0.08, 0.42, 8.6], plain(0x0e1216, 0.12, 0.1, { transparent: true, opacity: 0.78 }), [h.p.x + sx * 0.18, 17.1, 12.9], 0.03, [0, 0, -sx * 0.4]); }
     }
     // mái cabin: máng xối 2 mép mui, lưỡi trai che nắng trên kính (một số xe, có đèn hổ phách báo kích thước), cần ăng-ten
     const roofAt = z => { const h = hitAt([0, 40, z], [0, -1, 0]); return h ? h.p.y : 16.7; };
@@ -2733,8 +2947,8 @@ const GLSL_WEATHER = `
     // ống hút gió cao (snorkel) sau góc cabin phải: lọc gió đặt cao tránh bụi đường
     if (wr() < 0.35) {
       const sx = 1;
-      rod([sx * 6.05, 7.6, 6.42], [sx * 6.05, 17.4, 6.42], 0.34, chassisMat, null, 12);
-      add(new THREE.CylinderGeometry(0.55, 0.42, 0.7, 12), mats.black, [sx * 6.05, 17.75, 6.42]);
+      rod([sx * 6.05, 7.6, 6.42], [sx * 6.05, 18.6, 6.42], 0.34, chassisMat, null, 12);
+      add(new THREE.CylinderGeometry(0.55, 0.42, 0.7, 12), mats.black, [sx * 6.05, 18.95, 6.42]);
       rod([sx * 6.05, 9.2, 6.42], [sx * 6.05, 9.2, 7.05], 0.3, chassisMat, null, 10);
       for (const y of [10.5, 15.5]) blk([0.9, 0.18, 0.18], galv, [sx * 6.05, y, 6.6]);
     }
@@ -2747,35 +2961,58 @@ const GLSL_WEATHER = `
     // gương chiếu hậu xe tải: 2 cần ống thép từ cánh cửa đỡ gương chính chữ nhật + gương cầu lồi nhỏ bên dưới; gương soi
     // gầm trên góc trước bên phụ. Gắn thẳng vào xe (không gộp khối) để còn gãy văng khi bị húc / quét nòng
     for (const sx of [-1, 1]) {
-      const mg = new THREE.Group(); mg.position.set(sx * 7.25, 11.6, 18.3); mg.userData.acc = 'mirror'; car.add(mg);
+      // 2 chân gương dò tia lên mặt cabin: chân dưới trên cánh cửa, chân trên trên cột A (cabin thu hẹp + cột A ngả về sau
+      // nên toạ độ cố định thì chân trên lơ lửng ngoài không khí)
+      const hL = hitAt([sx * 12, 11.6, 18.3], [-sx, 0, 0]), lp = hL ? hL.p.clone() : new THREE.Vector3(sx * 7.25, 11.6, 18.3);
+      let up = null;
+      for (let z = 18.0; z > 14.5 && !up; z -= 0.25) { const h = hitAt([sx * 12, 16.2, z], [-sx, 0, 0]); if (h && Math.abs(h.p.x) > 5) up = h.p.clone(); }
+      if (!up) up = new THREE.Vector3(sx * 6.6, 16.2, 17.2);
+      const mg = new THREE.Group(); mg.position.copy(lp); mg.userData.acc = 'mirror'; car.add(mg);
+      const U = up.clone().sub(lp);   // chân trên trong hệ nhóm gương
       const P = (geo, mat, pos, rot) => part(geo, mat, pos, rot, mg);
       const bar = (a, b) => { const av = new THREE.Vector3(...a), bv = new THREE.Vector3(...b), d = bv.clone().sub(av), m = P(new THREE.CylinderGeometry(0.07, 0.07, d.length(), 6), mats.black, av.clone().add(bv).multiplyScalar(0.5).toArray()); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); };
-      // 2 cần ống gập khuỷu: chân bắt bản lề trên cánh cửa / cột A -> vươn ra ngoài -> kẹp vào khung gương
-      bar([0, 0, 0], [sx * 1.25, 0.15, 0.5]); bar([sx * 1.25, 0.15, 0.5], [sx * 2.15, 0.25, 0.8]);
-      bar([0, 3.4, -0.3], [sx * 1.25, 3.55, 0.45]); bar([sx * 1.25, 3.55, 0.45], [sx * 2.15, 3.5, 0.8]);
-      for (const y of [0, 3.4]) P(new THREE.BoxGeometry(0.22, 0.36, 0.36), mats.black, [0, y, y ? -0.3 : 0]);
-      P(roundBox(1.7, 2.6, 0.45, 0.14), mats.black, [sx * 2.15, 2.15, 0.85]);
-      const gl = P(new THREE.PlaneGeometry(1.5, 2.35), mats.mirror, [sx * 2.15, 2.15, 0.6], [0, Math.PI, 0]); gl.userData.mirrorGlass = true;
-      // gương cầu lồi góc rộng bên dưới: vỏ đen + mặt gương cong
-      P(roundBox(1.3, 1.05, 0.4, 0.12), mats.black, [sx * 2.15, 0.25, 0.85]);
-      const cv = P(new THREE.SphereGeometry(1.0, 10, 4, 0, Math.PI * 2, 0, 0.5), mats.mirror, [sx * 2.15, 0.25, 1.48], [-Math.PI / 2, 0, 0]); cv.userData.mirrorGlass = true; cv.scale.set(1.15, 1, 0.95);
+      // khung gương ống thép: chân dưới bắt trên cánh cửa, chân trên bắt ở cột A; 2 cần vươn ra ngoài nối vào 1 THANH ĐỨNG
+      // (rx, rz); củ gương chính + gương cầu lồi kẹp vào thanh đứng bằng cùm. (Bản cũ: cần trên cụt lơ lửng, củ gương trôi)
+      const rx = sx * 2.0, rz = 1.12, yT = 4.7, yB = -0.1;
+      bar([0, 0, 0], [sx * 1.1, 0.05, 0.6]); bar([sx * 1.1, 0.05, 0.6], [rx, yB, rz]);
+      const eU = [U.x + (rx - U.x) * 0.5, (U.y + yT) / 2 + 0.08, (U.z + rz) / 2];
+      bar(U.toArray(), eU); bar(eU, [rx, yT, rz]);
+      bar([rx, yB - 0.05, rz], [rx, yT + 0.05, rz]);
+      for (const [x, y, z] of [[0, 0, 0], [U.x, U.y, U.z]]) { P(roundBox(0.3, 0.55, 0.42, 0.06), mats.black, [x, y, z]); P(new THREE.CylinderGeometry(0.06, 0.06, 0.34, 6), mats.chrome, [x + sx * 0.16, y, z], [0, 0, Math.PI / 2]); }
+      for (const y of [yB, yT]) P(new THREE.SphereGeometry(0.11, 8, 6), mats.black, [rx, y, rz]);
+      const nArm = mg.children.length;   // từ đây là đầu gương (gãy mất đầu gương thì bỏ phần này)
+      // củ gương chính: vỏ nhựa bo, mặt kính lọt trong vành viền (không dán phẳng lên mặt vỏ)
+      const hy = 2.85;
+      P(roundBox(1.5, 2.3, 0.4, 0.16), mats.black, [rx, hy, 0.86]);
+      P(roundBox(1.36, 2.16, 0.06, 0.1), mats.black, [rx, hy, 0.65]);
+      const gl = P(new THREE.PlaneGeometry(1.26, 2.04), mats.mirror, [rx, hy, 0.615], [0, Math.PI, 0]); gl.userData.mirrorGlass = true;
+      for (const y of [hy - 0.85, hy + 0.85]) P(roundBox(0.32, 0.22, 0.34, 0.05), mats.black, [rx, y, rz - 0.08]);
+      // gương cầu lồi góc rộng: chén tròn kẹp dưới, mặt gương vồng
+      const cy = 0.85;
+      P(new THREE.CylinderGeometry(0.58, 0.5, 0.3, 18), mats.black, [rx, cy, 0.8], [Math.PI / 2, 0, 0]);
+      const cv = P(new THREE.SphereGeometry(0.8, 14, 6, 0, Math.PI * 2, 0, 0.62), mats.mirror, [rx, cy, 1.33], [-Math.PI / 2, 0, 0]); cv.userData.mirrorGlass = true; cv.scale.set(0.66, 0.4, 0.66);
+      P(roundBox(0.3, 0.2, 0.3, 0.05), mats.black, [rx, cy + 0.5, rz - 0.06]);
       // hư hỏng theo tình trạng: rạn / rơi mặt kính / bị quệt gập ra sau / gãy mất đầu gương
       if (!burnt && wr() < sev * 0.45) {
         const p = wr();
         if (p < 0.4) gl.material = plain(0x9aa3a6, 0.45, 0.4, { envMapIntensity: 0.6 });
         else if (p < 0.65) gl.material = mats.black;
         else if (p < 0.85) mg.rotation.y = -sx * (0.7 + 0.5 * wr());
-        else mg.children.slice(6).forEach(m => mg.remove(m));   // gãy mất đầu gương, còn cần
+        else mg.children.slice(nArm).forEach(m => mg.remove(m));   // gãy mất đầu gương, còn cần
       }
       if (burnt) { gl.material = mats.black; cv.material = mats.black; }
       mg.traverse(o => { if (o.isMesh) o.castShadow = false; });
     }
     {
-      const km = new THREE.Group(); km.position.set(6.2, 15.4, 19.7); km.userData.acc = 'mirror'; car.add(km);
-      part(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.7, 0.5, 0.6), new THREE.Vector3(1.0, 0.45, 1.4)]), 10, 0.06, 5, false), mats.black, [0, 0, 0], null, km);
-      // gương soi gầm: chén nhựa đen úp xuống, mặt gương cầu lồi nhìn xuống đầu xe
-      part(new THREE.CylinderGeometry(0.6, 0.48, 0.32, 14), mats.black, [1.0, 0.42, 1.5], [0.6, 0, 0], km);
-      const km2 = part(new THREE.SphereGeometry(0.85, 10, 4, 0, Math.PI * 2, 0, 0.6), mats.mirror, [1.0, 0.99, 1.89], [0.6 + Math.PI, 0, 0], km); km2.userData.mirrorGlass = true;
+      // chân bắt đúng vào góc cột A trên mặt cabin (trước đây đặt lơ lửng trước kính 1,5 đv: chén đen nổi giữa kính chắn gió)
+      const kh = hitAt([6.7, 16.2, 30], [0, 0, -1]), kp = kh ? kh.p.clone().addScaledVector(kh.n, 0.05) : new THREE.Vector3(6.7, 16.2, 18.3);
+      const km = new THREE.Group(); km.position.copy(kp); km.userData.acc = 'mirror'; car.add(km);
+      blk([0.3, 0.45, 0.14], mats.black, [0, 0, -0.04], null, km);
+      // cần vươn ra ngoài góc cabin rồi chúc xuống phía trước
+      part(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.75, 0.35, 0.5), new THREE.Vector3(1.15, 0.25, 1.25)]), 10, 0.06, 5, false), mats.black, [0, 0, 0], null, km);
+      // gương soi gầm: chén nhựa đen úp xuống, mặt gương cầu lồi nhìn xuống đầu xe (nhỏ hơn, ~10 cm)
+      part(new THREE.CylinderGeometry(0.45, 0.36, 0.26, 14), mats.black, [1.15, 0.05, 1.3], [0.6, 0, 0], km);
+      const km2 = part(new THREE.SphereGeometry(0.62, 10, 4, 0, Math.PI * 2, 0, 0.6), mats.mirror, [1.15, -0.32, 1.52], [0.6 + Math.PI, 0, 0], km); km2.userData.mirrorGlass = true;
       km.traverse(o => { if (o.isMesh) o.castShadow = false; });
     }
 
@@ -2834,8 +3071,13 @@ const GLSL_WEATHER = `
       for (const x of [-2.6, 2.6]) rod([x, 2.1, -16.7], [x, railY - 0.4, -16.7], 0.08, chassisMat);
     }
     // thanh chắn hông chống chui gầm: 2 thanh ngang mạ kẽm giữa 2 cầu, pát bắt vào sắt-xi
+    // thanh thép sơn đen, dán dải phản quang vàng / đen theo quy chuẩn (một số xe để thép mạ kẽm trơn)
+    const guardBlack = wr() < 0.65, guardMat = guardBlack ? chassisMat : galv, refl = plain(burnt ? 0x3a3028 : 0xe0b31a, 0.4, 0.1, { emissive: burnt ? 0 : 0x1a1200 });
     for (const sx of [-1, 1]) {
-      for (const y of [3.9, 5.95]) box([0.16, 0.44, 12.2], galv, [sx * 7.02, y, 0.1], 0.05);
+      for (const y of [3.9, 5.95]) {
+        box([0.16, 0.44, 12.2], guardMat, [sx * 7.02, y, 0.1], 0.05);
+        if (guardBlack) for (const z of [-4.2, 1.8]) blk([0.03, 0.3, 3.0], refl, [sx * 7.11, y, z]);
+      }
       for (const z of [-5.3, 0.2, 5.5]) { blk([0.14, 2.6, 0.3], galv, [sx * 6.96, 4.9, z]); rod([sx * (railX + 0.31), railY + 0.2, z], [sx * 6.9, 5.6, z], 0.1, chassisMat); }
     }
     // vè chắn bùn bánh đôi sau (nửa vòng tôn) + chắn bùn cao su treo sau bánh
@@ -2852,9 +3094,9 @@ const GLSL_WEATHER = `
     // ===== THÙNG =====
     const type = TB.type, bodyCol = TB.color < 0 ? color.clone() : new THREE.Color(TB.color);
     if (burnt) bodyCol.lerp(new THREE.Color(0x181412), 0.85);
-    const zF = 5.75, zR = -20.3, L = zF - zR, zc = (zF + zR) / 2, hw = 7.2, fY = 7.9, pH = 4.3;
-    const panelMat = plain(bodyCol.clone().lerp(new THREE.Color(0x77736a), age * 0.25), burnt ? 0.9 : 0.42 + 0.22 * age, TB.color === 0xb9bdbf ? 0.6 : 0.4, { envMapIntensity: 0.9 });
-    const railMat = plain(bodyCol.clone().multiplyScalar(0.75), 0.5, 0.45);
+    const zF = 5.45, zR = -20.0, L = zF - zR, zc = (zF + zR) / 2, hw = 7.0, fY = 7.9, pH = 3.75;
+    const panelMat = plain(bodyCol.clone().lerp(new THREE.Color(0x77736a), age * 0.25), burnt ? 0.9 : 0.48 + 0.2 * age, 0.18, { envMapIntensity: 0.72 });
+    const railMat = plain(bodyCol.clone().multiplyScalar(0.72), 0.56, 0.38);
     if (type === 'tipper') {
       // --- BEN: thùng thép tự đổ đặt trên sắt-xi phụ, ty ben thuỷ lực dưới sàn, bản lề lật ở đuôi
       const DY = 0.5, tub = new THREE.Group(); tub.position.y = DY; tub.userData.acc = 'dumpBed'; assembly.add(tub);
@@ -2981,7 +3223,7 @@ const GLSL_WEATHER = `
       const ties = []; for (let z = zR + 1.3; z < zF - 0.5; z += 2.55) ties.push(z);
       for (const z of bows) tube([[-hw, ys - 0.2, z], [-hw + 0.7, ys + 0.45, z], [0, yr - 0.12, z], [hw - 0.7, ys + 0.45, z], [hw, ys - 0.2, z]], 0.09, railMat);
       for (const sx of [-1, 1]) for (const z of [zR + 0.2, zF - 0.2]) rod([sx * hw, fY + pH, z], [sx * hw, ys - 0.2, z], 0.14, railMat);
-      const tarpMat = new THREE.MeshStandardMaterial({ map: canvasTexture(wr, age, bodyCol.getHex()), color: burnt ? 0x2a2420 : 0xffffff, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, envMap: env, envMapIntensity: 0.25 });
+      const tarpMat = new THREE.MeshStandardMaterial({ map: canvasTexture(wr, age, bodyCol.getHex()), color: burnt ? 0x2a2420 : 0xffffff, roughness: 0.72 + 0.2 * age, metalness: 0, side: THREE.DoubleSide, envMap: env, envMapIntensity: 0.45 });   // PVC hơi bóng, cũ thì mờ
       tarpMat.userData.noWear = true;
       const tGeo = tarpGeometry(zR - 0.12, zF + 0.12, hwT, yb, ys, yr, bows, ties, seed * 0.37, !rear);
       tarpMat.side = THREE.FrontSide;
@@ -3011,23 +3253,33 @@ const GLSL_WEATHER = `
     if (type === 'box') {
       // --- THÙNG KÍN: vách tôn sóng hoặc tấm phẳng có gân đứng, trụ góc nhôm định hình, viền nóc / chân, nóc tôn; cửa hậu
       // 2 cánh với 4 thanh khoá chốt đứng + tay khoá, bản lề; đèn báo kích thước góc nóc; một số xe có cửa hông, sọc sơn
-      const bTop = TB.top - 0.4, yb = 7.15, H = bTop - yb, ym = (yb + bTop) / 2, corr = wr() < 0.5;
-      const wallMat = panelMat, postMat = plain(new THREE.Color(0xb5b9bb).lerp(new THREE.Color(0x77706a), age * 0.5), 0.38, 0.65, { envMapIntensity: 0.9 });
+      const bTop = TB.top - 0.4, yb = 7.15, H = bTop - yb, ym = (yb + bTop) / 2, alu = wr() < 0.6, corr = !alu && wr() < 0.5;
+      // thùng inox / nhôm sóng NGANG (phổ biến nhất ở xe tải nhẹ): kim loại sáng phản chiếu, gân ngang dày ~6 cm
+      const aluMat = plain(new THREE.Color(0xd4d8db).lerp(new THREE.Color(0x8e8a80), age * 0.45), 0.3 + 0.25 * age, 0.85, { envMapIntensity: 1.1 });
+      const wallMat = alu ? aluMat : panelMat, postMat = plain(new THREE.Color(0xb5b9bb).lerp(new THREE.Color(0x77706a), age * 0.5), 0.38, 0.65, { envMapIntensity: 0.9 });
+      const beltMat = plain(bodyCol.clone().multiplyScalar(0.72), 0.46, 0.35, { envMapIntensity: 0.7 });
       for (const sx of [-1, 1]) {
-        if (corr) { const cg = corrugatedPanel(L - 0.4, H - 1.1, 0.09, 0.62); if (sx < 0) cg.rotateY(Math.PI); add(cg, wallMat, [sx * hw, ym + 0.05, zc]); }
+        if (alu) { const rg = ribbedPanel(L - 0.4, H - 1.1, 0.06, 0.48); if (sx < 0) rg.rotateY(Math.PI); add(rg, wallMat, [sx * hw, ym + 0.05, zc]); }
+        else if (corr) { const cg = corrugatedPanel(L - 0.4, H - 1.1, 0.09, 0.62); if (sx < 0) cg.rotateY(Math.PI); add(cg, wallMat, [sx * hw, ym + 0.05, zc]); }
         else {
           blk([0.1, H - 1.0, L - 0.3], wallMat, [sx * hw, ym, zc]);
           for (let z = zR + 3.2; z < zF - 1; z += 3.2) blk([0.14, H - 1.1, 0.22], wallMat, [sx * (hw + 0.07), ym, z]);
         }
-        box([0.32, 0.45, L + 0.1], postMat, [sx * hw, bTop - 0.22, zc], 0.05);
-        box([0.34, 0.75, L + 0.1], postMat, [sx * hw, yb + 0.35, zc], 0.05);
-        for (const z of [zF, zR]) box([0.46, H + 0.4, 0.46], postMat, [sx * hw, ym, z], 0.08);
+        // Viền nhôm mảnh, bo góc và một đường đai tối ở chân thùng giúp khối hộp bớt cảm giác
+        // "cục container" nhưng vẫn giữ đúng cấu tạo thùng xe thương mại.
+        box([0.3, 0.38, L + 0.06], postMat, [sx * hw, bTop - 0.2, zc], 0.09);
+        box([0.32, 0.62, L + 0.06], postMat, [sx * hw, yb + 0.3, zc], 0.08);
+        box([0.12, 0.42, L - 0.75], beltMat, [sx * (hw + 0.075), yb + 1.05, zc], 0.08);
+        for (const z of [zF, zR]) box([0.42, H + 0.22, 0.42], postMat, [sx * hw, ym, z], 0.12);
         blk([0.12, 0.3, 0.45], mats.tailAmber, [sx * (hw + 0.2), bTop - 0.65, zF - 0.6]);
         blk([0.12, 0.3, 0.45], mats.tailBrake, [sx * (hw + 0.2), bTop - 0.65, zR + 0.6]);
       }
       blk([2 * hw, H, 0.14], wallMat, [0, ym, zF]);
+      if (alu) { const fg = ribbedPanel(2 * hw - 0.4, H - 1.1, 0.06, 0.48); fg.rotateY(-Math.PI / 2); add(fg, wallMat, [0, ym + 0.05, zF + 0.08]); }
       if (corr) for (let x = -hw + 0.8; x < hw - 0.6; x += 1.6) blk([0.25, H - 1.0, 0.1], wallMat, [x, ym, zF + 0.1]);
-      blk([2 * hw + 0.16, 0.2, L + 0.16], plain(new THREE.Color(0xc8cacb).lerp(new THREE.Color(0x6e6a62), age * 0.6), 0.5, 0.45), [0, bTop + 0.02, zc]);
+      box([2 * hw + 0.12, 0.22, L + 0.12], plain(new THREE.Color(0xc8cacb).lerp(new THREE.Color(0x6e6a62), age * 0.6), 0.5, 0.45), [0, bTop + 0.02, zc], 0.11);
+      // Ốp đầu thùng vát nhẹ phía cabin: che khe kết cấu và nối thị giác cabin với thùng cao.
+      box([2 * hw - 0.55, 0.48, 0.34], postMat, [0, bTop - 0.32, zF + 0.06], 0.12);
       // khung cửa hậu: dầm đầu, ngưỡng dưới; 2 cánh cửa có gân, khe giữa, 4 thanh khoá chốt + tay khoá, bản lề
       box([2 * hw, 0.7, 0.4], postMat, [0, bTop - 0.35, zR], 0.05); box([2 * hw, 0.6, 0.4], postMat, [0, yb + 0.3, zR], 0.05);
       blk([0.1, H - 1.3, 0.06], mats.black, [0, ym, zR - 0.05]);
@@ -3059,11 +3311,23 @@ const GLSL_WEATHER = `
     // gió chắn trên nóc cabin hướng luồng gió lên thùng cao (một số xe mui bạt / thùng kín)
     if ((type === 'tarp' || type === 'box') && wr() < 0.4) {
       // khối chắn gió hình nêm (mặt cắt cong lồi, 2 má hông kín) đặt trên nóc cabin
-      const yr0 = roofAt(12) - 0.05, y1 = TB.top - 1.0, z0 = 16.2, z1 = 8.2, sh = new THREE.Shape();
-      sh.moveTo(z0, yr0); sh.quadraticCurveTo(z0 - 4.2, yr0 + 0.4, z1 + 0.3, y1); sh.lineTo(z1, y1 - 0.15); sh.lineTo(z1, yr0); sh.closePath();
-      const wg = new THREE.ExtrudeGeometry(sh, { depth: 12.6, bevelEnabled: true, bevelSize: 0.12, bevelThickness: 0.12, bevelSegments: 2, curveSegments: 10 });
-      wg.rotateY(-Math.PI / 2); wg.translate(6.3, 0, 0);
-      add(wg, cabPaint, [0, 0, 0]);
+      const yr0 = roofAt(12) + 0.12, y1 = Math.min(TB.top - 1.8, yr0 + 2.75);
+      const z0 = 15.35, z1 = 9.05, sh = new THREE.Shape();
+      sh.moveTo(z0, yr0 + 0.08);
+      sh.bezierCurveTo(z0 - 1.4, yr0 + 0.12, z1 + 2.2, y1 - 0.35, z1 + 0.55, y1);
+      sh.quadraticCurveTo(z1 + 0.12, y1 + 0.02, z1, y1 - 0.2);
+      sh.lineTo(z1, yr0 + 0.18);
+      sh.quadraticCurveTo((z0 + z1) * 0.5, yr0 - 0.03, z0, yr0 + 0.08);
+      sh.closePath();
+      const fairW = 11.15;
+      const wg = new THREE.ExtrudeGeometry(sh, { depth: fairW, bevelEnabled: true, bevelSize: 0.16, bevelThickness: 0.13, bevelSegments: 4, curveSegments: 20 });
+      wg.rotateY(-Math.PI / 2); wg.translate(fairW / 2, 0, 0);
+      const fair = add(wg, cabPaint, [0, 0, 0]); fair.userData.acc = 'roofFairing';
+      for (const sx of [-1, 1]) {
+        box([0.18, 0.12, 5.65], mats.black, [sx * (fairW / 2 - 0.18), yr0, 12.15], 0.055);
+        box([0.42, 0.22, 0.72], chassisMat, [sx * 4.3, yr0 - 0.08, 10.15], 0.07);
+      }
+      box([fairW - 0.7, 0.11, 0.24], mats.black, [0, y1 - 0.18, z1 - 0.03], 0.05);
     }
 
     // ===== ĐUÔI XE: cản chống chui gầm sơn phản quang đỏ - trắng, cụm đèn hậu 3 ngăn trong lồng thép, biển số + đèn soi,
@@ -3526,10 +3790,10 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     t = max(t, max(arch, rock));` : ''}
     // khe cửa / nắp capô: vạch tối mảnh (xa vẫn thấy nhịp cửa)
     float seam = 0.0;
-    if (abs(N.x) > 0.45) seam = step(${f(S.sill)}, y) * step(y, vLodRef.z - 0.3) * max(lodLine(z - ${f(S.doors[0])}, 0.08), max(lodLine(z - ${f(S.doors[1])}, 0.08), lodLine(z - ${f(S.doors[2])}, 0.08)));
-    if (N.y > 0.3) seam = max(seam, step(${f(S.hood[0])}, z) * lodLine(ax - (w - 0.95), 0.08));
+    if (abs(N.x) > 0.45) seam = step(${f(S.sill)}, y) * step(y, vLodRef.z - 0.3) * max(lodLine(z - ${f(S.doors[0])}, 0.055), max(lodLine(z - ${f(S.doors[1])}, 0.055), lodLine(z - ${f(S.doors[2])}, 0.055)));
+    if (N.y > 0.3) seam = max(seam, step(${f(S.hood[0])}, z) * lodLine(ax - (w - 0.95), 0.055));
     lodTrim = t;
-    diffuseColor.rgb *= 1.0 - 0.8 * seam * (1.0 - t);
+    diffuseColor.rgb *= 1.0 - 0.52 * seam * (1.0 - t);
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.035, 0.037, 0.04), t);
   }
 `;
@@ -3590,6 +3854,8 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     };
     // xác cháy sẵn: sơn cháy thành muội than, gỉ nâu loang trên nền đen (không phủ lớp bụi vàng như xe bỏ hoang)
     if (opts.burnt) { W.dust = 0.12; W.rust = 0.85; W.age = 0.35; }
+    // xe tải chạy hàng không bao giờ sạch như xe trưng bày: sàn tối thiểu bụi đường, sơn mờ, gỉ chân
+    else if (S.isTruck) { W.dust = Math.max(W.dust, 0.3); W.age = Math.max(W.age, 0.22); W.rust = Math.max(W.rust, 0.12); }
     // DẤU THỜI GIAN NGẪU NHIÊN: tình trạng cond (props.js abandon: clean / dusty / rusted / broken / burnt; thiếu thì suy
     // từ tuổi) quyết định mức hư sev, seed quyết định kiểu hư (chuỗi ngẫu nhiên riêng wr, không xô lệch các chi tiết khác)
     const cond = opts.cond || (opts.burnt ? 'burnt' : age < 0.3 ? 'clean' : age < 0.62 ? 'dusty' : 'rusted');
@@ -3734,17 +4000,32 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
 
         // 1. Chân đế gắn gương & cần đỡ khí động học
         let baseGeo, stalkGeo, stalkPos;
-        if (!S.isSuv) {
-          // Sedan: thanh nẹp chân gương dẹt, bám sát độ nghiêng vách kính và nối liền từ khung dưới lên khung trên
-          const yB = -0.40, yT = 0.78;
+        if (S.isPickup) {
+          // Bán tải: đế tam giác nằm phẳng theo ô kính tam giác ở chân cột A, cổ gương
+          // vươn ngang ra ngoài. Không dùng đế SUV dựng theo mặt x-y vì nhìn bên hông sẽ
+          // thành một thanh đứng tách khỏi củ gương.
           const baseShape = new THREE.Shape();
-          baseShape.moveTo(sx * 0.19, yB);
-          baseShape.lineTo(sx * 0.28, yB);
-          baseShape.lineTo(sx * -0.25, yT);
-          baseShape.lineTo(sx * -0.35, yT);
+          baseShape.moveTo(-0.48, -0.36);
+          baseShape.lineTo(0.42, -0.36);
+          baseShape.lineTo(-0.32, 0.46);
           baseShape.closePath();
-          baseGeo = new THREE.ExtrudeGeometry(baseShape, { curveSegments: 3, depth: 0.16, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 2 });
-          baseGeo.translate(0, 0, -0.08);
+          baseGeo = new THREE.ExtrudeGeometry(baseShape, { curveSegments: 4, depth: 0.1, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: 3 });
+          baseGeo.rotateY(-Math.PI / 2);
+          baseGeo.translate(sx > 0 ? 0.1 : 0, 0, 0.04);
+          baseGeo.rotateZ(sx * Math.atan(S.tumble / 4.8));
+
+          stalkGeo = roundBox(0.82, 0.18, 0.24, 0.07);
+          stalkGeo.rotateZ(sx * 0.08);
+          stalkPos = [sx * 0.47, 0.05, -0.02];
+        } else if (!S.isSuv) {
+          // Sedan: tấm tam giác chân gương ở góc trước ô kính cửa, ÁP SÁT vách kính (mặt chiếu z-y, dày theo x) và nghiêng
+          // theo độ thu vách. Bản cũ vẽ trong mặt x-y -> tấm dựng vuông góc sườn xe, chĩa ra như cái vây
+          const baseShape = new THREE.Shape();
+          baseShape.moveTo(0.42, -0.42); baseShape.lineTo(-0.5, -0.42); baseShape.lineTo(-0.5, 0.5); baseShape.lineTo(-0.12, 0.5); baseShape.closePath();
+          baseGeo = new THREE.ExtrudeGeometry(baseShape, { curveSegments: 3, depth: 0.06, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 2 });
+          baseGeo.rotateY(-Math.PI / 2);   // hình -> mặt z-y, bề dày -> -x
+          baseGeo.translate(sx > 0 ? 0.13 : -0.07, 0, 0);
+          baseGeo.rotateZ(sx * Math.atan(S.tumble / 3.6));
 
           stalkGeo = roundBox(0.16, 0.14, 0.65, 0.04);
           stalkGeo.rotateY(sx * 0.85); stalkGeo.rotateZ(sx * 0.22);
@@ -3759,8 +4040,10 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
           stalkGeo.rotateY(sx * 0.85); stalkGeo.rotateZ(sx * 0.22);
           stalkPos = [sx * 0.38, 0.12, -0.08];
         }
-        part(baseGeo, mats.paint, [0, 0, 0], null, grp);
-        part(stalkGeo, mats.paint, stalkPos, null, grp);
+        // Tam giác chân gương thuộc gioăng/cụm kính; sơn màu thân tạo mảng sáng gãy khúc ở cột A.
+        const mountMat = S.isPickup ? mats.black : S.isSuv ? mats.paint : mats.black;
+        part(baseGeo, mountMat, [0, 0, 0], null, grp);
+        part(stalkGeo, mountMat, stalkPos, null, grp);
         const nHead0 = grp.children.length;
 
         // 3. Vỏ củ gương khí động học (sơn bóng cùng màu xe)
@@ -3859,22 +4142,33 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       const cowlGrp = new THREE.Group(); cowlGrp.userData.acc = 'cowl'; car.add(cowlGrp);
       const cowlW = (plan(zBase) - S.inset) * 1.88;
       const cowlHit = hitAt([0, 20, zBase - 0.15], [0, -1, 0]);
-      if (cowlHit) {
+      const yGB0 = top(zBase);
+      if ((roof(zBase - 1) - yGB0) > 1.2) {
+        // kính dốc đứng (van): máng + gioăng nằm ngay chân kính, trên mép sau ca-pô (dò tia đứng trên kính đứng -> lên giữa kính)
+        // đầu bằng (chân kính sát mặt trước): không máng, chỉ gioăng cao su chân kính
+        const capOver = S.plan[S.plan.length - 1][0] - zBase < 1.0;
+        if (!capOver) part(roundBox(cowlW, 0.1, 0.55, 0.03), mats.black, [0, yGB0 + 0.03, zBase + 0.22], null, cowlGrp);
+        part(roundBox(cowlW * 0.98, 0.14, 0.1, 0.03), mats.dark, [0, yGB0 + 0.1, zBase - 0.02], null, cowlGrp);
+        if (!capOver) for (let gx = -cowlW * 0.38; gx <= cowlW * 0.38; gx += 0.48) part(new THREE.BoxGeometry(0.22, 0.03, 0.28), mats.dark, [gx, yGB0 + 0.085, zBase + 0.24], null, cowlGrp);
+      } else if (cowlHit) {
         // Tấm máng nhựa đen nằm chìm nhẹ giữa chân kính và mép nắp ca-pô
         part(roundBox(cowlW, 0.12, 0.65, 0.03), mats.black, [0, cowlHit.p.y - 0.02, zBase - 0.15], [-0.18, 0, 0], cowlGrp);
+        // mỗi chi tiết dò độ cao tại đúng z của nó (kính dốc đứng như van: lấy chung cowlHit thì nẹp lơ lửng trên ca-pô)
+        const yAt = (z, d) => { const h = hitAt([0, 20, z], [0, -1, 0]); return h ? h.p.y : d; };
         // Mép cao su tì chân kính chắn gió
-        part(roundBox(cowlW * 0.98, 0.08, 0.14, 0.02), mats.dark, [0, cowlHit.p.y + 0.03, zBase - 0.38], [-0.35, 0, 0], cowlGrp);
+        part(roundBox(cowlW * 0.98, 0.08, 0.14, 0.02), mats.dark, [0, yAt(zBase - 0.38, cowlHit.p.y) + 0.02, zBase - 0.38], [-0.35, 0, 0], cowlGrp);
         // Mép gập mí ca-pô trước máng nhựa
-        part(roundBox(cowlW * 0.96, 0.06, 0.12, 0.02), mats.paint, [0, cowlHit.p.y + 0.06, zBase + 0.18], [-0.05, 0, 0], cowlGrp);
+        part(roundBox(cowlW * 0.96, 0.06, 0.12, 0.02), mats.paint, [0, yAt(zBase + 0.18, cowlHit.p.y) + 0.01, zBase + 0.18], [-0.05, 0, 0], cowlGrp);
         // Các khe rãnh hút gió lấy gió ngoài điều hòa
         for (let gx = -cowlW * 0.38; gx <= cowlW * 0.38; gx += 0.48) {
           part(new THREE.BoxGeometry(0.22, 0.03, 0.28), mats.dark, [gx, cowlHit.p.y + 0.02, zBase - 0.14], [-0.18, 0, 0], cowlGrp);
         }
       }
 
-      // 2. Nẹp dập nổi gờ cột A 3D (A-Pillar Mouldings) tạo thành xe dày dặn, hốc kính thụt âm
+      // 2. (đã tắt) Nẹp cột A 3D: zRoof lấy điểm cabin áp chót (chỉ cao hơn chân kính ~0,9) chứ không phải đỉnh cột -> ống
+      // ngắn chĩa chéo từ chân gương xuống tai xe như thanh sắt cắm vào. Cột A đã vẽ trong shader khoang kính
       const aPillarGrp = new THREE.Group(); aPillarGrp.userData.acc = 'aPillar'; car.add(aPillarGrp);
-      for (const sx of [1, -1]) {
+      for (const sx of []) {
         const pBot = onGlass(sx * (plan(zBase) - S.inset - 0.05), zBase - 0.12, 0.06);
         const pMid = onGlass(sx * (plan((zBase + zRoof) * 0.5) - S.inset - 0.12), (zBase + zRoof) * 0.5, 0.07);
         const pTop = onGlass(sx * (plan(zRoof) - S.inset - 0.18), zRoof, 0.06);
@@ -3899,7 +4193,12 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         // Gạt bên phụ: vươn từ góc phải sang giữa kính chắn gió
         { pivX: 3.55, pivZOff: 0.12, xStart: 3.25, xEnd: -0.85, clipX: 1.20, zOff: 0.26 }
       ];
+      // kính dốc đứng (van): dò tia ngang từ trước, độ lệch z của cấu hình đổi thành độ cao trên mặt kính tính từ chân kính
+      // (tia thẳng đứng trên kính gần dựng đứng: lệch z nhỏ thành lệch cao lớn -> cần gạt xiên dựng, nổi khỏi kính)
+      const yGB = top(zBase), steepG = (roof(zBase - 1) - yGB) > 1.2;
+      const onGlassW = !steepG ? onGlass : (x, z, lift) => { const h = hitAt([x, yGB + 0.3 + (zBase - z) * 0.9, 40], [0, 0, -1]); return h ? h.p.clone().addScaledVector(h.n, lift) : null; };
       for (const cfg of wiperConfigs) {
+        const onGlass = onGlassW;
         const blade = [], frame = [];
         const xSpan = cfg.xEnd - cfg.xStart;
         for (let i = 0; i <= 14; i++) {
@@ -3939,7 +4238,8 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
           part(roundBox(0.24, 0.14, 0.32, 0.04), mats.wiper, hingeP.toArray(), null, wpr);
 
           // Nắp chụp chân trục motor đặt gọn gàng trong máng chân kính
-          part(new THREE.CylinderGeometry(0.18, 0.24, 0.18, 14), mats.black, [piv.x, piv.y - 0.02, piv.z], null, wpr);
+          // kính dốc đứng: trục nghiêng theo pháp tuyến kính (dựng thẳng thì lòi khỏi kính như cái cọc)
+          part(new THREE.CylinderGeometry(0.18, 0.24, 0.18, 14), mats.black, [piv.x, piv.y - 0.02, piv.z], steepG ? [Math.atan(roof(zBase - 1) - yGB), 0, 0] : null, wpr);
         }
 
         // Tắt đổ bóng cho cụm cần gạt để triệt tiêu hoàn toàn bóng đen nham nhở đè lên nắp ca-pô
@@ -4071,20 +4371,20 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         const railGrp = new THREE.Group();
         railGrp.userData.acc = 'roofRail';
         railGrp.userData.isRoof = true;
-        const rx = sx * (w1 - 0.3);
+        const rx = sx * (w1 - 0.48);
         const rPts = [];
-        rPts.push(new THREE.Vector3(rx, roof(2.5) + 0.08, 2.5));
+        rPts.push(new THREE.Vector3(rx, roof(2.5) + 0.045, 2.5));
         for (let rz = 2.2; rz >= -12.8; rz -= 0.5) {
-          rPts.push(new THREE.Vector3(rx, roof(rz) + 0.18, rz));
+          rPts.push(new THREE.Vector3(rx, roof(rz) + 0.11, rz));
         }
-        rPts.push(new THREE.Vector3(rx, roof(-13.1) + 0.08, -13.1));
-        const rTube = part(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rPts), 36, 0.105, 8, false), mats.black, [0, 0, 0], null, railGrp);
+        rPts.push(new THREE.Vector3(rx, roof(-13.1) + 0.045, -13.1));
+        const rTube = part(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rPts), 36, 0.078, 8, false), mats.black, [0, 0, 0], null, railGrp);
         rTube.scale.set(0.92, 1.0, 1.0);
         rTube.userData.acc = 'roofRail'; rTube.userData.isRoof = true;
         // Dải cao su đen nẹp bảo vệ trên lưng giá nóc
         const stripPts = [];
         for (let rz = 2.0; rz >= -12.7; rz -= 0.6) {
-          stripPts.push(new THREE.Vector3(rx, roof(rz) + 0.245, rz));
+          stripPts.push(new THREE.Vector3(rx, roof(rz) + 0.165, rz));
         }
         const rStrip = part(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(stripPts), 24, 0.025, 4, false), mats.chrome, [0, 0, 0], null, railGrp);
         rStrip.userData.acc = 'roofRail'; rStrip.userData.isRoof = true;
@@ -4184,7 +4484,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       // van: ray trượt cửa lùa (rãnh đen ngang hông sau cửa lùa tầm chân kính), bậc lên xuống cản sau,
       // giá nóc chở thang / ống của xe thợ (ngẫu nhiên)
       for (const sx of [1, -1]) {
-        const yR = top(-12) + 1.3, h = hitAt([sx * 20, yR, -12], [-sx, 0, 0]);
+        const yR = top(-12) + 0.1, h = hitAt([sx * 20, yR, -12], [-sx, 0, 0]);   // ngay dưới chân kính hông sau (không cắt ngang kính)
         if (h) { const rl = part(roundBox(0.16, 0.24, 13.0, 0.05), mats.black, [h.p.x + sx * 0.04, yR, -12.4]); rl.userData.acc = 'rail'; }
       }
       const st = part(roundBox(6.5, 0.22, 1.4, 0.06), mats.black, [0, 3.0, S.plan[0][0] - 0.2]);
@@ -4236,7 +4536,14 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         part(roundBox(9.5,0.055,0.06,0.015), mats.black, [0,5.85,rear.p.z-0.045]);
         part(roundBox(9.8,0.18,0.1,0.04), mats.paint, [0,6.35,rear.p.z-0.08]);
       }
-      part(roundBox(12.9,2.95,0.35,0.08), mats.paint, [0,7.1,-7.35], null, bed);
+      // Vách đầu thùng phải ăn sâu vào thành hông. Bản cũ rộng 12.9 trong khi nẹp hông
+      // nằm ở x=+-7 nên phần bo góc để hở một khe có thể nhìn xuyên qua.
+      part(roundBox(13.75,2.95,0.42,0.1), mats.paint, [0,7.1,-7.38], null, bed);
+      for (const sx of [-1,1]) {
+        // Trụ góc trong che kín mối nối vách đầu / thành bên và đỡ nẹp miệng thùng.
+        part(roundBox(0.48,3.2,0.62,0.12), mats.paint, [sx*6.62,7.12,-7.55], null, bed);
+        part(roundBox(0.82,0.22,0.9,0.11), mats.black, [sx*6.72,8.88,-7.62], null, bed);
+      }
       part(roundBox(12.6,0.18,0.55,0.06), mats.black, [0,8.87,-20.75], null, bed);
       part(roundBox(2.1,0.36,0.16,0.07), mats.black, [0,8,-21.22], null, bed);
       part(roundBox(13.6,0.65,1.15,0.14), mats.chrome, [0,3.5,-21]);
@@ -4362,6 +4669,14 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         continue;
       }
       (k < 0.3 ? DENT.door : k < 0.46 ? DENT.arch : k < 0.6 ? DENT.quarter : k < 0.78 ? DENT.corner : k < 0.9 ? DENT.hood : DENT.roof)(sx);
+    }
+    // móp lấm tấm nhẹ (cửa xe bên cạnh mở va, bị quệt, gò lại ẩu): xe chạy vài năm không còn tấm tôn nào phẳng lì
+    const nDing = cond === 'burnt' ? 0 : Math.round((1 + 7 * age) * (0.6 + 0.6 * wr()));
+    for (let i = 0; i < nDing; i++) {
+      const sx = wr() < 0.5 ? 1 : -1;
+      if (S.isTruck) { dentAt([sx * 20, 6 + 3.5 * wr(), 8.5 + 10 * wr()], [-sx, 0, 0], 0.5 + 0.5 * wr(), 0.05 + 0.09 * wr(), 1.2); continue; }
+      const z = zRear + 3 + (zFront - zRear - 6) * wr(), y = S.sill + 0.6 + Math.max(0.3, top(z) - S.sill - 1.2) * wr();
+      dentAt([sx * 20, y, z], [-sx, 0, 0], 0.45 + 0.5 * wr(), 0.04 + 0.09 * wr(), 1 + 0.8 * wr());
     }
     // mui võng: xe từng bị vật nặng đè (props c), tâm võng lệch về một bên
     if (opts.sag > 0.04 && !S.isTruck) {
@@ -4669,6 +4984,8 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     }
     // One weather/burn state for every opaque accessory, including the new bed and cab parts.
     const addonWear = { value: new THREE.Vector4(W.dust,W.age,W.rust,opts.burnt ? 1 : 0) };
+    const addonAx = { value: new THREE.Vector4(S.isTruck ? 1 : 0, S.axleF, S.axleR, S.r) };   // xe tải: vệt chảy + bùn bắn sau bánh
+    const addonTop = { value: TB && TB.top ? TB.top - 0.45 : 17.6 };   // mép dưới viền nóc thùng (nguồn vệt chảy)
     const weathered = new Set();
     if (S.isPickup || S.isDump || S.isTruck) car.traverse(o=>{
       if(!o.isMesh || o===body || o===cabin || o===cabIn)return;
@@ -4684,9 +5001,9 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         if(!m||!m.isMeshStandardMaterial||m.transparent||m===mats.tire||m.userData.noWear||weathered.has(m))continue;
         weathered.add(m);const before=m.onBeforeCompile,beforeKey=m.customProgramCacheKey.call(m);
         m.onBeforeCompile=sh=>{
-          before.call(m,sh);sh.uniforms.uAddonWear=addonWear;
+          before.call(m,sh);sh.uniforms.uAddonWear=addonWear;sh.uniforms.uAddonAx=addonAx;sh.uniforms.uAddonTop=addonTop;
           sh.vertexShader='attribute vec3 aWeatherRest; varying vec3 vAddonRest; varying vec3 vAddonN;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvAddonRest=aWeatherRest; vAddonN=normal;');
-          sh.fragmentShader=`varying vec3 vAddonRest; varying vec3 vAddonN; uniform vec4 uAddonWear;
+          sh.fragmentShader=`varying vec3 vAddonRest; varying vec3 vAddonN; uniform vec4 uAddonWear; uniform vec4 uAddonAx; uniform float uAddonTop;
 float awHash3(vec3 p){p=fract(p*0.3183099+vec3(0.71,0.113,0.419));p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
 float awNoise(vec3 x){
   vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);
@@ -4730,13 +5047,40 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
             float dust=dustParam*clamp(smoothstep(6.0,1.5,ap.y)*(0.4+0.6*nB)+up*0.65*smoothstep(0.35,0.75,nB),0.0,0.85);
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.34,0.30,0.23),dust*0.75);
 
+            float grime=0.0;
+            if(uAddonAx.x>0.5){
+              float vert=1.0-smoothstep(0.25,0.55,abs(an.y));
+              // vệt bẩn chảy (nước mưa kéo bụi từ dưới viền nóc xuống): THƯA, mảnh, mỗi vệt dài ngắn khác nhau, đậm ở gốc
+              // rồi nhạt dần xuống. (Bản cũ: sọc kín vách từ trên xuống dưới, trông như vân gỗ)
+              float cu=(ap.x+ap.z)*2.4+0.35*awNoise(vec3(ap.y*0.9,ap.x,ap.z));
+              float cid=floor(cu), cf=fract(cu);
+              float hA=awHash3(vec3(cid,3.1,7.7)), hB=awHash3(vec3(cid,9.3,1.9));
+              float len=1.2+6.5*hB*hB, below=uAddonTop-ap.y;
+              float lane=smoothstep(0.5,0.12,abs(cf-0.5))*step(0.8-0.25*age,hA);
+              float fall=smoothstep(-0.1,0.3,below)*(1.0-smoothstep(0.0,len,below));
+              float streak=vert*lane*fall*(0.45+0.55*awNoise(vec3(cu*3.0,ap.y*1.7,1.0)))*(0.25+0.35*age+0.2*dustParam);
+              diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(0.55,0.5,0.44),clamp(streak,0.0,0.55));
+              // dải bụi đường mờ ở chân vách (bánh hất lên khi chạy), tan đều lên trên
+              float road=vert*smoothstep(10.0,7.3,ap.y)*smoothstep(4.0,7.3,ap.y)*(0.6+0.4*nB)*(0.3+0.5*dustParam);
+              diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.4,0.36,0.29),road*0.4);
+              streak=max(streak,road);
+              // bùn bắn sau bánh: quạt hạt bùn ngay sau mỗi bánh, thấp, dày gần lốp
+              float zf=ap.z-uAddonAx.y,zr=ap.z-uAddonAx.z;
+              float behind=max(smoothstep(0.0,-1.5,zf)*smoothstep(-9.0,-3.0,zf),smoothstep(0.0,-1.5,zr)*smoothstep(-8.0,-3.0,zr));
+              float low=1.0-smoothstep(uAddonAx.w*0.6,uAddonAx.w*2.2,ap.y);
+              float spot=smoothstep(0.45,0.75,awNoise(ap*5.0)+0.35*nB);
+              float mud=clamp(behind*low*(0.4+0.6*spot)*(0.45+0.55*dustParam),0.0,0.9);
+              diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.24,0.2,0.15),mud*0.8);
+              grime=max(streak*0.5,mud);
+            }
+
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.018,0.014,0.011)*(0.8+0.4*nB),burnt);
-            float addonRough=max(max(dust,rust),burnt);`)
+            float addonRough=max(max(max(dust,rust),burnt),grime);`)
             .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,0.95,addonRough);')
             .replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\nmetalnessFactor*=1.0-0.9*addonRough;')
             .replace('#include <lights_physical_fragment>','#include <lights_physical_fragment>\n#ifdef CLEARCOAT\nmaterial.clearcoat*=1.0-addonRough;\n#endif');
         };
-        m.customProgramCacheKey=()=> 'civil_accessory_weather_v2|'+beforeKey;
+        m.customProgramCacheKey=()=> 'civil_accessory_weather_v4|'+beforeKey;
       }
     });
     // --- MÓP THẬT các vết đã lập: thân / khoang kính dời đỉnh + đánh dấu nếp gấp (shader vẽ tróc sơn, bụi kẹt trong
@@ -4954,7 +5298,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     let roll = 0, pitch = 0, sink = 0;
     const burntDrop = opts.burnt ? S.r * 0.36 : 0;
     // kiểu mâm theo dòng xe: van / taxi / xe phổ thông hay mâm thép (có hoặc không ốp), SUV / bán tải mâm đúc
-    const rimP = { van: [0.55, 0.4], taxi: [0.1, 0.75], hatch: [0.12, 0.45], sedan: [0.06, 0.28], pickup: [0.18, 0], suv: [0.06, 0] }[kind] || [0, 0];
+    const rimP = { van: [0.55, 0.4], taxi: [0.1, 0.75], hatch: [0.12, 0.45], sedan: [0, 0], pickup: [0.18, 0], suv: [0.06, 0] }[kind] || [0, 0];
     let rimStyle = 'alloy';
     { const p = wr(); if (p < rimP[0] + (cond === 'rusted' ? 0.15 : 0)) rimStyle = 'steel'; else if (p < rimP[0] + rimP[1]) rimStyle = opts.burnt ? 'steel' : 'cap'; }
     for (const az of [S.axleF, S.axleR]) for (const sx of [1, -1]) {
@@ -5202,6 +5546,12 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     let pfxOn = false;
     const pfx = () => { if (!pfxOn) { pfxOn = true; g.add(PFX.smokeP, PFX.fireP); } return PFX; };
     const fire = { on: false, t: 0, fuel: W.fuel, boom: -1, char: opts.burnt ? 1 : 0, light: null, ign: [0, 0, 0] };
+    // extFire: trong game trạng thái cháy do props.js (bản gộp) quyết — bản chi tiết không tự châm lửa khi trúng đạn, không tự
+    // hẹn giờ nổ bình (trước đây đạn nổ nào cũng tự cháy ở bản chi tiết mà game không biết; xe còn xăng nổ bình 2 lần)
+    const extFire = !!opts.extFire;
+    // LẬT XE (props.js setFlip): thân `car` xoay quanh trọng tâm (r: góc lật quanh trục dọc xe), nhấc lên lift, ép dẹt s theo
+    // trục đang thẳng đứng; nhóm g (hạt lửa / khói, mảnh vụn, vũng dầu, bóng) vẫn nằm trên mặt đường
+    const flip = { r: 0, lift: 0, s: 1, H: 0, hw: 0 };
     // vết đạn trên thân: lỗ tối viền tôn trần sáng (đạn nhỏ), lỗ xé toạc mép cháy sém (đạn lớn)
     const HOLE_TEX = [];
     const holeMat = (exit) => {
@@ -5417,7 +5767,8 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     const ignite = (x, y, z) => {
       if (fire.on || fire.char >= 1) return;
       fire.on = true; fire.t = 0; fire.ign = [x, y, z];
-      fire.boom = !S.isTruck && fire.fuel > 0.4 ? 3.5 + 4 * rnd() : -1;
+      // extFire (trong game): bản gộp props.js giữ hẹn giờ nổ bình & gọi fuelBlast — ở đây không tự nổ lần hai
+      fire.boom = !extFire && !S.isTruck && fire.fuel > 0.4 ? 3.5 + 4 * rnd() : -1;
       // Ánh sáng lửa hắt nhẹ từ gầm / khoang máy ra mặt đường, không chiếu trực diện làm lóa kính
       if (FL.scene && rootOf(g) === FL.scene) fire.light = 'pool';   // đèn dùng chung của cảnh (assignFireLights)
       else {
@@ -5597,7 +5948,8 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         SB.impulse(h.p.x - dx * 2.0, h.p.y - dy * 2.0, h.p.z - dz * 2.0, 12 + 18 * A.pw, 2000 + 4000 * A.pw);
         flattenNear(h.p, 16); // Thổi nổ các bánh xe
         if (!debrisDone) { debrisDone = true; spawnDebris(); }
-        ignite(h.p.x, h.p.y, h.p.z); // Bốc cháy dữ dội tức thì
+        // trang thử: bốc cháy tức thì; trong game (extFire) props.js quyết cháy theo xăng / loại đạn / chỗ trúng rồi gọi ignite
+        if (!extFire) ignite(h.p.x, h.p.y, h.p.z);
         const sr = 2.5 + 4.5 * A.pw;
         decal(h, sr, scorchMat(), meshesNear(h.p, sr));
         makeHoleMesh(h, A.hole * 1.6, dv, false);
@@ -5607,7 +5959,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       }
       // bắt lửa: còn xăng mới cháy; trúng bình xăng / khoang máy dễ cháy hơn, trúng kính / lốp khó hơn
       const incK = zone === 'fuel' ? 1.8 : zone === 'engine' ? 1.2 : zone === 'glass' || zone === 'wheel' ? 0.5 : 1;
-      if (A.inc && fire.fuel > 0.05 && rnd() < A.inc * incK) ignite(h.p.x, h.p.y, h.p.z);
+      if (!extFire && A.inc && fire.fuel > 0.05 && rnd() < A.inc * incK) ignite(h.p.x, h.p.y, h.p.z);
       return true;
     };
     // cháy theo thời gian: lửa bốc từ chỗ trúng lan khắp khoang (~6 s), khói đen cột cao, nổ bình xăng nếu còn nhiều xăng,
@@ -5757,6 +6109,17 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         // Chống lún xuyên lòng đất (bảo đảm sàn gầm và mũi xe luôn nằm trên mặt đất)
         const minYFloor = -Math.min(1.2, Math.max(0.2, (bot(0) || 1.6) * 0.75));
         car.position.y = Math.max(minYFloor, rawY);
+        if (flip.r || flip.lift) {
+          // lật: xoay quanh tâm hộp thân (cao H/2), tâm nâng tới đúng độ cao để mép thấp nhất chạm mặt đường ở mọi góc
+          // (nằm ngửa: nóc chạm đất; nằm nghiêng: sườn chạm đất). Ép dẹt khi bị cán: theo trục thân đang thẳng đứng
+          if (!flip.H) for (let z = S.plan[0][0]; z <= S.plan[S.plan.length - 1][0]; z += 1) { flip.H = Math.max(flip.H, top(z)); flip.hw = Math.max(flip.hw, plan(z)); }
+          const sr = Math.sin(flip.r), cr = Math.cos(flip.r), side = Math.abs(sr) > 0.7;
+          car.scale.set(side ? flip.s : 1, side ? 1 : flip.s, 1);
+          const H = flip.H * (side ? 1 : flip.s), hw = flip.hw * (side ? flip.s : 1), hc = H / 2;
+          car.rotation.z = roll + tilt.r + flip.r;
+          car.position.x = hc * sr;
+          car.position.y = Math.abs(cr) * hc + Math.abs(sr) * hw - hc * cr + flip.lift;
+        }
 
         // trần vệt xích đổi (capOn) cũng phải dựng lại dù khung không động đậy
         if ((SB.step(dt) && SB.consumeMoved()) || (capOn && crushDirty)) {
@@ -5937,6 +6300,23 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         events.push('glass');
       },
       ignite(x = 0, y = 4, z = 4) { ignite(x, y, z); },
+      // nổ / phụt bình xăng (props.js quyết thời điểm): quả cầu lửa, mảnh văng, vết cháy sém mặt đường
+      fuelBlast() { fuelBlast(); },
+      // XÉ TOẠC (props.js tearCar: nổ cực mạnh / hư hại dồn quá sức): nóc & thân ép sập, kính rụng hết, lốp nổ, cửa / capô /
+      // phụ kiện bung văng, mảnh tôn rải quanh xác
+      tear() {
+        crushMax = Math.max(crushMax, 0.8);
+        shatterGlass();
+        flattenNear(new THREE.Vector3(0, 0, 0), 1e4);
+        const yT = top(0);
+        for (const z of [8, -4, -14]) SB.impulse((rnd() - 0.5) * 4, yT + 2, z, 14, 5000);
+        if (!debrisDone) { debrisDone = true; spawnDebris(); } else events.push('burst');
+      },
+      // tư thế lật (xem flip): r góc lật (rad), lift độ nhấc khỏi mặt đường, s tỉ lệ ép dẹt
+      setFlip(r, lift = 0, s = 1) {
+        flip.r = r; flip.lift = lift; flip.s = s;
+        if (!r && !lift) { car.scale.set(1, 1, 1); car.position.x = 0; }   // về đứng bánh: update tự đặt lại góc / độ cao
+      },
       get burning() { return fire.on; },
       get amount() { return crushMax; },
       // sự kiện mới phát sinh (crunch, glass, collapse, tire, burst) -> game phát âm thanh / hạt
@@ -5945,9 +6325,10 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     g.userData.crush = crushApi;
     // cán tĩnh (opts.crush): xe tăng đã chạy thẳng qua theo opts.track
     if (opts.crush) {
-      const ca = Math.cos(trk.angle), sa = Math.sin(trk.angle);
-      for (let s = -50; s <= 50; s += 14 / 30) { crushApi.stamp(trk.offset * ca + s * sa, -trk.offset * sa + s * ca, trk.angle, 1 / 30); SB.step(1 / 30); }
-      for (let i = 0; i < 30; i++) SB.step(1 / 30);
+      // opts.warmOnly (xe mẫu làm nóng shader, warmJobs): cán thưa vài nhát — cùng vật liệu, bỏ ~240 bước khung mềm
+      const ca = Math.cos(trk.angle), sa = Math.sin(trk.angle), ds = opts.warmOnly ? 12 : 14 / 30;
+      for (let s = -50; s <= 50; s += ds) { crushApi.stamp(trk.offset * ca + s * sa, -trk.offset * sa + s * ca, trk.angle, 1 / 30); SB.step(1 / 30); }
+      for (let i = 0, n = opts.warmOnly ? 3 : 30; i < n; i++) SB.step(1 / 30);
       rebuild();
       // 2 vệt xích hằn bùn trên mặt đất trước / sau xác xe
       const tt = trackTexture();
@@ -6025,23 +6406,28 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     const mark = warmedFor = { scene, sig };
     const holder = new THREE.Group();
     holder.position.set(0, -5000, 0);
+    holder.visible = false;   // chỉ để biên dịch (renderer.compile duyệt cả vật ẩn), không bao giờ vẽ
     scene.add(holder);
     const add = (kind, o) => { try { const c = build(kind, o); holder.add(c); return c; } catch (e) { return null; } };
-    const steps = ['sedan', 'taxi', 'suv', 'pickup', 'hatch', 'van', 'truck', 'dump'].map(kind => () => {
-      for (const cond of ['clean', 'dusty', 'rusted', 'broken', 'burnt']) add(kind, { seed: 11, cond, burnt: cond === 'burnt' });
-      add(kind, { seed: 3, cond: 'dusty', crush: 0.7 });           // bị cán bẹp: khoang 2 mặt, vệt xích
-      add(kind, { seed: 9, cond: 'dusty', glass: true, flats: [1, 0, 0, 1] });
-      const c = add(kind, { seed: 7, cond: 'clean' });              // bị bắn, vỡ kính, cháy: lỗ đạn, hạt lửa / khói, kính ám
-      const api = c && c.userData.crush;
-      if (api) {
-        try {
-          api.shoot(30, 5, 0, -1, -0.05, 0, 'HE'); api.shoot(0, 4, 30, 0, -0.05, -1, 'SCOUT_BULLET');
-          api.breakGlass(); api.ignite(0, 4, 0);
-          for (let i = 0; i < 8; i++) api.update(1 / 30);
-        } catch (e) { /* chỉ làm nóng shader */ }
-      }
-    });
-    steps.push(() => { for (const kind of ['truck', 'dump']) for (const body of Object.keys(TRUCK_BODIES)) add(kind, { seed: 5, cond: 'dusty', body }); });
+    // mỗi bước một xe (~50-150 ms) -> người gọi chia nhịp được, không bước nào chặn luồng chính cả giây
+    const steps = [];
+    for (const kind of ['sedan', 'taxi', 'suv', 'pickup', 'hatch', 'van', 'truck', 'dump']) {
+      for (const cond of ['clean', 'dusty', 'rusted', 'broken', 'burnt']) steps.push(() => add(kind, { seed: 11, cond, burnt: cond === 'burnt' }));
+      steps.push(() => add(kind, { seed: 3, cond: 'dusty', crush: 0.7, warmOnly: true }));   // bị cán bẹp: khoang 2 mặt, vệt xích
+      steps.push(() => add(kind, { seed: 9, cond: 'dusty', glass: true, flats: [1, 0, 0, 1] }));
+      steps.push(() => {
+        const c = add(kind, { seed: 7, cond: 'clean' });              // bị bắn, vỡ kính, cháy: lỗ đạn, hạt lửa / khói, kính ám
+        const api = c && c.userData.crush;
+        if (api) {
+          try {
+            api.shoot(30, 5, 0, -1, -0.05, 0, 'HE'); api.shoot(0, 4, 30, 0, -0.05, -1, 'SCOUT_BULLET');
+            api.breakGlass(); api.ignite(0, 4, 0);
+            for (let i = 0; i < 8; i++) api.update(1 / 30);
+          } catch (e) { /* chỉ làm nóng shader */ }
+        }
+      });
+    }
+    for (const kind of ['truck', 'dump']) for (const body of Object.keys(TRUCK_BODIES)) steps.push(() => add(kind, { seed: 5, cond: 'dusty', body }));
     let gone = false;
     const finish = () => {
       if (gone) return;

@@ -552,6 +552,31 @@ class MatchmakingController {
     if (replyEl) replyEl.classList.add('hidden');
     if (!textEl) return;
 
+    // Nhận diện phe người chơi để cập nhật màu sắc mệnh lệnh, chức vụ và avatar chỉ huy tương ứng
+    const mySlot = this.slots && this.slots.find(s => s.isMe);
+    const isRed = mySlot && mySlot.team === 'RED';
+    if (box) {
+      box.classList.remove('team-red', 'team-blue');
+      box.classList.add(isRed ? 'team-red' : 'team-blue');
+    }
+    const avatarImg = document.getElementById('mm-briefing-avatar-img');
+    if (avatarImg) {
+      avatarImg.src = isRed ? 'assets/commander_red.webp' : 'assets/commander_blue.webp';
+      avatarImg.onerror = () => { avatarImg.src = isRed ? 'assets/commander_red.jpg' : 'assets/commander_blue.jpg'; };
+    }
+    const kickerEl = document.getElementById('mm-briefing-kicker');
+    if (kickerEl) {
+      kickerEl.textContent = isRed ? 'BỘ CHỈ HUY KHÁNG CHIẾN' : 'BỘ TƯ LỆNH LIÊN ĐOÀN';
+    }
+    const speakerEl = document.getElementById('mm-comm-speaker');
+    if (speakerEl) {
+      speakerEl.textContent = isRed ? '01 // MỆNH LỆNH KHÁNG CHIẾN' : '01 // MỆNH LỆNH LIÊN ĐOÀN';
+    }
+    const replySpeakerEl = document.getElementById('mm-briefing-reply-speaker');
+    if (replySpeakerEl) {
+      replySpeakerEl.textContent = isRed ? 'KHÁNG CHIẾN-01 // RÕ' : 'LIÊN ĐOÀN-01 // RÕ';
+    }
+
     const run = this._briefRun = { alive: true, timer: null };
     const later = (fn, ms) => { run.timer = setTimeout(() => { if (run.alive) fn(); }, ms); };
     const setStatus = (txt, st) => {
@@ -585,7 +610,7 @@ class MatchmakingController {
     const LINK_MS = 950;
     let t0 = 0;
     const link = () => {
-      setStatus('ĐANG BẮT SÓNG KÊNH CHỈ HUY', 'link');
+      setStatus(isRed ? 'ĐANG BẮT SÓNG CHỈ HUY KHÁNG CHIẾN' : 'ĐANG BẮT SÓNG CHỈ HUY LIÊN ĐOÀN', 'link');
       this.briefingSfx('playCommandLinkUp');
       t0 = performance.now();
       decode();
@@ -626,7 +651,7 @@ class MatchmakingController {
 
     // 3. HẾT LỆNH: thả phím bộ đàm, con trỏ nháy chờ, tổ lái xác nhận
     const finish = () => {
-      setStatus('HẾT · ĐÃ NHẬN LỆNH', 'done');
+      setStatus(isRed ? 'HẾT · ĐÃ NHẬN LỆNH KHÁNG CHIẾN' : 'HẾT · ĐÃ NHẬN LỆNH LIÊN ĐOÀN', 'done');
       this.briefingSfx('stopCommandChannel', 0.35, false);
       this.briefingSfx('playCommandOver');
       later(() => {
@@ -854,6 +879,15 @@ class MatchmakingController {
           this.broadcastRoomUpdate();
           this.sendMySlotUpdate();
         }
+        return;
+      }
+
+      // 3.a. Xem bản đồ 3D
+      const view3dBtn = e.target.closest('#mm-view-3d-map-btn');
+      if (view3dBtn) {
+        const mapType = this.selectedMapType || 'URBAN';
+        const seed = (this.mapSeed || 20261022) >>> 0;
+        window.location.href = `index.html?lab=freecam&map=${encodeURIComponent(mapType)}&seed=${seed}`;
         return;
       }
 
@@ -1117,8 +1151,13 @@ class MatchmakingController {
   // Máy chủ sửa cách chia phe / trang bị chủ phòng gửi (tin '@slots' do chính máy chủ phát, không có người gửi)
   onServerSlots(d, from) {
     if (from || !d || !Array.isArray(d.slots) || this.state === 'IN_GAME' || this.state === 'IDLE') return;
-    this.slots = d.slots;
+    const oldTeam = (this.slots.find(s => s.isMe) || {}).team;
+    this.slots = NetUtil.cleanSlots(d.slots);
     this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
+    const newTeam = (this.slots.find(s => s.isMe) || {}).team;
+    if (oldTeam && newTeam && oldTeam !== newTeam) {
+      this.refreshBriefingForMap();
+    }
     this.renderLobby();
   }
 
@@ -1422,7 +1461,7 @@ class MatchmakingController {
         slot.peerId = from;
         slot.isMe = false;
         slot.botId = null;   // thay chỗ bot: bỏ hồ sơ bot của ô này
-        slot.name = msg.name || 'NEW RECRUIT';
+        slot.name = NetUtil.cleanName(msg.name, 'NEW RECRUIT');
         if (msg.tankType) slot.tankType = msg.tankType;
         slot.kit = this.cleanKit(msg.kit, slot.tankType);
         slot.rating = this.peerRating(from, msg.rating);
@@ -1453,7 +1492,7 @@ class MatchmakingController {
       clearTimeout(this.discoverTimer);
       this.searchTime = msg.searchTime || this.searchTime;
       if (Array.isArray(msg.slots)) {
-        this.slots = msg.slots;
+        this.slots = NetUtil.cleanSlots(msg.slots);
         this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
       }
       this.applyMapSelection(msg.mapType, msg.mapSeed);
@@ -1469,7 +1508,7 @@ class MatchmakingController {
     else if (msg.type === 'ROOM_UPDATE') {
       if (!this.isHost && fromHost && this.state !== 'IN_GAME' && this.state !== 'IDLE') {
         if (Array.isArray(msg.slots)) {
-          this.slots = msg.slots;
+          this.slots = NetUtil.cleanSlots(msg.slots);
           this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
         }
         this.searchTime = msg.searchTime || this.searchTime;
@@ -1497,7 +1536,7 @@ class MatchmakingController {
       if (this.isHost && this.state !== 'IN_GAME') {
         const slot = this.slots.find(s => s.peerId === from);
         if (slot) {
-          if (typeof msg.name === 'string' && msg.name.trim()) slot.name = msg.name.trim().slice(0, 40);
+          if (typeof msg.name === 'string' && msg.name.trim()) slot.name = NetUtil.cleanName(msg.name, slot.name);
           if (msg.tankType) slot.tankType = msg.tankType;
           slot.kit = this.cleanKit(msg.kit, slot.tankType);
           if (msg.rating !== undefined) slot.rating = this.peerRating(from, msg.rating);
@@ -1516,7 +1555,7 @@ class MatchmakingController {
     else if (msg.type === 'PREPARE_GAME') {
       if (!this.isHost && fromHost && this.state !== 'IN_GAME' && this.state !== 'IDLE') {
         if (Array.isArray(msg.slots)) {
-          this.slots = msg.slots;
+          this.slots = NetUtil.cleanSlots(msg.slots);
           this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
         }
         this.selectedMapType = msg.mapType || this.selectedMapType;
@@ -1542,7 +1581,7 @@ class MatchmakingController {
     else if (msg.type === 'START_COUNTDOWN' || msg.type === 'LAUNCH_GAME_NOW') {
       if (!this.isHost && fromHost && this.state !== 'IN_GAME' && this.state !== 'IDLE') {
         if (Array.isArray(msg.slots)) {
-          this.slots = msg.slots;
+          this.slots = NetUtil.cleanSlots(msg.slots);
           this.slots.forEach(s => { s.isMe = (s.peerId === this.myPeerId); });
         }
         if (msg.mapType) {
