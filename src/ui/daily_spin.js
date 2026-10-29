@@ -267,7 +267,7 @@
     const wasHidden = overlay.classList.contains('hidden');
     overlay.classList.remove('hidden');
     if (wasHidden) sfx('playUiOpen');
-    if (spinning) return;   // đóng giữa lúc quay rồi mở lại: dải vẫn đang chạy, không dựng lại
+    if (spinning) { sfx('playSpinMusic', true); return; }   // đóng giữa lúc quay rồi mở lại: dải vẫn đang chạy, không dựng lại
     $('.ds-result', overlay).innerHTML = '';
     reel.classList.remove('done');
     drawStreak();
@@ -295,6 +295,7 @@
     rv.classList.add('shake');
     if (shown()) sfx('playSpinRiser', SHAKE);
     await new Promise(ok => setTimeout(ok, SHAKE * 1000));
+    if (shown()) sfx('playGiftReceived', true);   // bật nắp
     $('.ds-rv-card', rv).innerHTML = cardHtml(win, 'win');
     $('.ds-rv-cap', rv).innerHTML = `<b class="r${win.rar | 0}">${RAR[win.rar | 0]}!</b><small>Quà lớn ngày ${Equipment.DAILY_SPIN.STREAK_MAX}</small>`;
     rv.classList.remove('shake');
@@ -306,6 +307,7 @@
     if (overlay.classList.contains('hidden')) return;
     overlay.classList.add('hidden');
     sfx('playUiClose');
+    if (spinning) sfx('playSpinMusic', false);   // dải chạy ngầm, im tiếng -> trả nhạc nền
   }
   const shown = () => overlay && !overlay.classList.contains('hidden');
 
@@ -321,10 +323,12 @@
     res.innerHTML = '';
     reel.classList.remove('done');
     overlay.classList.add('spinning');
+    sfx('playSpinMusic', true);   // nhạc nền lùi ra sau suốt lúc quay
     let r;
     try { r = await acc.api('daily/spin', {}); }
     catch (e) {
       spinning = false; overlay.classList.remove('spinning');
+      sfx('playSpinMusic', false);
       res.innerHTML = `<div class="ds-err"><i class="ti ti-alert-triangle"></i> ${esc(e.message)}</div>`;
       sfx('playUiDenied');
       if (e.status === 429) acc.api('me').then(x => applyProfile(x.profile)).catch(() => {});
@@ -338,7 +342,7 @@
     } else await runReel(win);
     spinning = false;
     overlay.classList.remove('spinning');
-    if (shown()) sfx('playSpinWin', win.rar | 0);
+    if (shown()) { sfx('playSpinWin', win.rar | 0); sfx('playSpinMusic', false); }
     applyProfile(r.profile);
     drawStreak(win.streak);
     drawControls();
@@ -489,7 +493,7 @@
       : `<i class="ti ti-flame"></i> Chuỗi ngày <b>${day}</b>/${D.STREAK_MAX}`
         + `<br><i class="ti ti-gift"></i> Còn <b>${left} ngày</b> nữa tới quà lớn ngày ${D.STREAK_MAX} (chắc chắn Sử thi / Huyền thoại)`;
     greet.classList.remove('hidden');
-    sfx('playUiOpen');
+    sfx('playGiftReceived', sp);
     setTimeout(() => { const b = $('.ds-greet-go', greet); if (b && !greet.classList.contains('hidden')) b.focus(); }, 50);
   }
   function checkGreet() {
@@ -525,9 +529,11 @@
     $('.ds-result', overlay).innerHTML = '';
     drawStreak();
     spinning = true;
+    sfx('playSpinMusic', true);
     await revealSpecial(win);
     spinning = false;
     sfx('playSpinWin', win.rar | 0);
+    sfx('playSpinMusic', false);
     showWon(win);
   }
   window.DailySpin = { open, refresh, greet: previewGreet, reveal: previewReveal };

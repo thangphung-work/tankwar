@@ -4,7 +4,7 @@
  *   node tools/trailer/score.js <out.wav> [cues.json]
  *
  * cues.json (giây, theo dòng thời gian bản dựng): { "bpm": 135, "build": 8.889, "hit": 26.667, "cut": 48.76,
- *   "logo": 49.66, "end": 55.3 }
+ *   "logo": 49.66, "end": 55.3, "extra": [13.1] }
  * Rê thứ, vòng hợp âm Dm–Bb–F–C (hồi dồn) / Dm–Bb–Gm–A (cao trào, A trưởng kéo căng về Dm):
  * - Mở màn (0 -> build): nền trầm D, tiếng ngân cao run rẩy, trống taiko lẻ mỗi ô nhịp, âm ngược dâng vào build
  * - Dồn (build -> hit): ostinato móc kép dây trầm (bộ lọc mở dần), pad hợp âm, taiko dày dần, cuộn trống + âm dâng,
@@ -204,6 +204,9 @@ for (let b = nHit; b < nCutBar; b++) {
 }
 for (let b = nHit + 4; b < nCutBar - 1; b += 4) bigHit(b * BAR, 0.45);
 riser(nCut, BAR * 2, 0.55);
+
+// cú đập phụ (cues.extra: giây) — vd. UAV cảm tử nổ giữa đoạn dồn
+for (const x of C.extra || []) bigHit(x, 0.55);
 
 // 4. LOGO — cú đập cuối + hợp âm Dm ngân, vang dài
 bigHit(C.logo, 1.0);

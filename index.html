@@ -34,7 +34,7 @@
   <link rel="stylesheet" href="src/ui/theme.css?v=20261026sw1">
   <link rel="stylesheet" href="style.css?v=20261026cmd1">
   <link rel="stylesheet" href="src/ui/lobby.css?v=20261026fix1">
-  <link rel="stylesheet" href="hud.css?v=20261025ct1">
+  <link rel="stylesheet" href="hud.css?v=20261029rl1">
   <link rel="stylesheet" href="src/ui/account.css?v=20261027wal3">
   <link rel="stylesheet" href="src/ui/daily_spin.css?v=20261027box1">
   <link rel="stylesheet" href="src/ui/topup.css?v=20261027wal2">
@@ -855,7 +855,6 @@
                 <button type="button" class="mm-wx-btn" data-wx="clear" role="radio"><i class="ti ti-sun" aria-hidden="true"></i> Nắng</button>
                 <button type="button" class="mm-wx-btn" data-wx="rain" role="radio"><i class="ti ti-cloud-storm" aria-hidden="true"></i> Mưa</button>
               </div>
-              <button type="button" class="mm-wx-btn mm-view-3d-map-btn" id="mm-view-3d-map-btn" title="Xem chiến địa này ở chế độ 3D toàn cảnh (có bản đồ dịch chuyển)"><i class="ti ti-video" aria-hidden="true"></i> Xem 3D</button>
             </div>
 
             <div class="mm-map-cards-row">
@@ -1009,26 +1008,15 @@
             <div class="mm-briefing-top-info">
               <span id="mm-briefing-kicker" class="mm-briefing-kicker">BỘ CHỈ HUY TIỀN PHƯƠNG</span>
               <span class="mm-briefing-title">LỆNH TÁC CHIẾN</span>
-              <span id="mm-briefing-code" class="mm-briefing-code"></span>
             </div>
-          </div>
-          <div class="mm-order-meta" aria-hidden="true">
-            <span><i>ĐƠN VỊ</i>STRIKER-1</span>
-            <span><i>KHU VỰC</i>43-7-12</span>
-            <span><i>ROE</i>TỰ DO</span>
-            <span><i>MẬT</i>ƯU TIÊN ALPHA</span>
           </div>
           <div class="mm-briefing-body">
             <div class="mm-comm-section">
-              <span id="mm-comm-speaker" class="mm-comm-speaker">01 // MỆNH LỆNH</span>
               <div id="mm-briefing-text" class="mm-comm-msg"></div>
             </div>
             <div id="mm-briefing-reply" class="mm-comm-reply hidden">
               <span id="mm-briefing-reply-speaker" class="mm-comm-speaker squad">STRIKER-1 // ACK</span>
               <span class="mm-comm-reply-text">Rõ! Nhận nhiệm vụ. Bắt đầu triển khai.</span>
-            </div>
-            <div id="mm-briefing-status" class="mm-comm-status">
-              <span class="mm-typing-dots">•••</span> <span class="mm-comm-status-text">đang nhập</span>
             </div>
           </div>
         </div>
@@ -1098,8 +1086,8 @@
   <script src="three-mesh-bvh.js?v=0.5.24"></script>
   <script src="src/core/raycast_bvh.js?v=20261027wrk2"></script>
   <script src="src/core/async_shaders.js?v=20261027as1"></script>
-  <script src="src/core/equipment.js?v=20261028lazy2"></script>
-  <script src="src/gameplay/camo_fire.js?v=20261021wet1"></script>
+  <script src="src/core/equipment.js?v=20261029camo1"></script>
+  <script src="src/gameplay/camo_fire.js?v=20261029real1"></script>
   <script src="src/gameplay/leaf_cover.js?v=20261022lf1"></script>
 
   <!-- 1. Tầng Nền Tảng Cốt Lõi (Core Systems) -->
@@ -1130,7 +1118,7 @@
   <script src="src/gameplay/weathering.js?v=20261025wx1"></script>
   <script src="src/gameplay/destructibles.js?v=20261025tower1"></script>
   <script src="src/gameplay/props.js?v=20261025bc1"></script>
-  <script src="src/gameplay/streetscape.js?v=20261028ims1"></script>
+  <script src="src/gameplay/streetscape.js?v=20261028gr2"></script>
   <script src="src/gameplay/barrel_sweep.js?v=20261025bc1"></script>
   <script src="src/gameplay/strongholds.js?v=20261028rd1"></script>
   <script src="src/gameplay/landmarks.js?v=20261025grime2"></script>
@@ -1152,7 +1140,7 @@
 
   <!-- 2. Tầng Thực Thể & Trí Tuệ Nhân Tạo (Entities & AI) -->
   <script src="src/entities/tank_models.js?v=20261028rd1"></script>
-  <script src="src/entities/tanks/vehicle_kit.js?v=20261025bd2"></script>
+  <script src="src/entities/tanks/vehicle_kit.js?v=20261029paint2"></script>
 <script src="src/entities/tanks/roof_mounts.js?v=20261026det1"></script>
   <script src="src/entities/tanks/mbt_halberd.js?v=20261025stub5"></script>
   <script src="src/entities/tanks/fsv_hailstorm.js?v=20261026det2"></script>
@@ -1164,7 +1152,7 @@
   <script src="src/entities/recon_drone.js?v=20261021mrg26"></script>
   <script src="src/entities/spg.js?v=20261027prep1"></script>
   <script src="src/entities/car_softbody.js?v=20261024sb1"></script>
-  <script src="src/entities/civil_cars.js?v=20261028warm3"></script>
+  <script src="src/entities/civil_cars.js?v=20261028lod2"></script>
 
   <!-- 3. Tầng Cơ Chế Trận Đấu (Gameplay Systems) -->
   <script src="src/gameplay/capture_points.js?v=20261021map54"></script>
@@ -1174,8 +1162,8 @@
   <script src="src/gameplay/supply_depot.js?v=20261025dep3"></script>
   <script src="src/gameplay/explosion_fx.js?v=20261028sync1"></script>
   <script src="src/gameplay/wading_fx.js?v=20261022wetmud1"></script>
-  <script src="src/gameplay/vehicle_damage.js?v=20261028jobs1"></script>
-  <script src="src/gameplay/team_intel.js?v=20261025los2"></script>
+  <script src="src/gameplay/vehicle_damage.js?v=20261029rl1"></script>
+  <script src="src/gameplay/team_intel.js?v=20261029rl1"></script>
   <script src="src/gameplay/tire_tracks.js?v=20261022wetmud1"></script>
   <script src="src/gameplay/effects_manager.js?v=20261019i"></script>
   <script src="src/gameplay/world_markers.js?v=20261022sh1"></script>
@@ -1218,7 +1206,7 @@
   <script src="src/ui/motion.js?v=20261026sw1"></script>
   <script src="src/gameplay/drone_air.js?v=20261026prox1"></script>
   <script src="src/ui/range_air.js?v=20261027spaceonly1"></script>
-  <script src="src/game.js?v=20261028asc2"></script>
+  <script src="src/game.js?v=20261029rl1"></script>
   <script src="src/gameplay/ew_jammer.js?v=20261022mod2"></script>
   <script src="src/gameplay/lock_jammer.js?v=20261022mod2"></script>
   <script src="src/gameplay/kamikaze_uav.js?v=20261026det2"></script>

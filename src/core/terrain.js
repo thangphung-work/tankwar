@@ -1,7 +1,8 @@
 /**
  * Hệ thống Địa hình Chiến trường 3D sinh ngẫu nhiên theo seed (Three.js WebGL)
  * 5 loại chiến địa, mỗi trận một bản đồ khác (cùng seed -> giống hệt nhau trên mọi máy):
- * 1. DESERT     - Sa mạc: đụn cát lưỡi liềm ngang gió (sườn khuất dốc), núi bàn vách đá, ốc đảo ao nước + cọ, đường đất lún vệt bánh
+ * 1. DESERT     - Sa mạc: cao nguyên sa thạch một phía (núi bàn sót lại phía trước), biển cát phía đối diện, đồi đá thấp hai cánh;
+ *                 đụn cát lưỡi liềm ngang gió, wadi từ hẻm cao nguyên đổ ra bãi muối, ốc đảo ao nước + cọ, đường đất lún vệt bánh
  * 2. URBAN      - Đô thị: lưới phố không đều, nhà cao tầng / chung cư / cửa hàng / nhà đổ nát, đường nhựa ổ gà
  * 3. JUNGLE     - Rừng rậm: đồi lượn sóng, rừng dày đặc, đường bùn nhão
  * 4. HIGHLAND   - Cao nguyên: núi đá sống lưng, rừng thông, đường sỏi đèo dốc
@@ -594,10 +595,19 @@ class BattleTerrain3D {
       const el = 1.25;
       p.sunDir = new THREE.Vector3(Math.cos(el) * Math.sin(sun.azimuth), Math.sin(el), Math.cos(el) * Math.cos(sun.azimuth)).normalize();
     }
+    // màu không khí xa (×fogColor) cho cảnh nền & chân dãy núi chân trời: sa mạc nắng khô -> bụi sáng ấm (lam xám sẫm thành
+    // một vệt xám giữa biển cát và chân núi)
+    BattleTerrain3D.FAR_AIR.value.fromArray(this.mapType === 'DESERT' && !W.rain ? [0.84, 0.84, 0.88] : [0.58, 0.63, 0.71]);
+    // vành núi chân trời kín 360° (không phải map đảo): dãy núi luôn che mép cắt xa -> cảnh nền chỉ ngả màu không khí xa
+    // ~2/3 tới mặt phẳng cắt, giữ vân rừng / đồng. Hoà hẳn 100% thì từ camera cao (UAV, pháo, flycam) đồng bằng xa thành
+    // tấm lam xám phẳng lì mép trên thẳng tắp, sáng hơn cả dãy núi phía sau. Map đảo: hướng biển không có núi che -> hoà hẳn.
+    // Sa mạc: không khí xa là bụi sáng gần màu trời (không thành tấm sẫm), hoà dở thì lộ mép cắt thẳng giữa cát & trời -> hoà hẳn
+    const seaRim = this.map && this.map.outer && this.map.outer.sea;
+    BattleTerrain3D.FAR_FADE.value.set(6000, seaRim || this.mapType === 'DESERT' ? 8700 : 12000);
     this.atmosphere = p;
     this.scene.background = new THREE.Color(p.horizon);
     this.scene.fog = new THREE.FogExp2(p.fog, p.density);
-    if (typeof SkySystem !== 'undefined') this.sky = SkySystem.create(this.group, p, this.mapType, this.seed);
+    if (typeof SkySystem !== 'undefined') this.sky = SkySystem.create(this.group, p, this.mapType, this.seed, this.map && this.map.outer);
   }
 
   // ---------------------------------------------------------------------------
@@ -754,8 +764,53 @@ class BattleTerrain3D {
     const M = this.map;
     const toPx = v => (v + half) / this.width * SZ;
     const sc = SZ / this.width;
-    // Ốc đảo / thảm thực vật dưới tán cây và bụi rậm
     ctx.globalCompositeOperation = 'source-over';
+    // Sa mạc: bãi muối (vỏ muối trắng ngà, rạn đa giác) + lòng wadi (bờ cát sẫm, đáy phù sa / sỏi nhạt, lạch con bện nhau)
+    if (M.playa) {
+      const P = M.playa, cx = toPx(P.x), cz = toPx(P.z), rr = P.r * sc;
+      const pr = MapGen.mulberry32((this.seed ^ 0x5a1b7) >>> 0);
+      const gr = ctx.createRadialGradient(cx, cz, 0, cx, cz, rr * 1.35);
+      gr.addColorStop(0, 'rgba(236,228,210,0.95)'); gr.addColorStop(0.62, 'rgba(228,216,192,0.85)'); gr.addColorStop(0.85, 'rgba(206,186,150,0.45)'); gr.addColorStop(1, 'rgba(206,186,150,0)');
+      ctx.fillStyle = gr; ctx.beginPath();
+      for (let k = 0; k <= 48; k++) { const a = k / 48 * 6.2832, q = rr * (1.2 + 0.14 * Math.sin(a * 3 + P.x) + 0.08 * Math.sin(a * 7 + P.z)); k ? ctx.lineTo(cx + Math.cos(a) * q, cz + Math.sin(a) * q) : ctx.moveTo(cx + Math.cos(a) * q, cz + Math.sin(a) * q); }
+      ctx.fill();
+      // rạn đa giác của vỏ muối: các đoạn ngắn nối điểm lưới lệch ngẫu nhiên
+      ctx.strokeStyle = 'rgba(150,136,112,0.35)'; ctx.lineWidth = Math.max(1, 1.2 * sc);
+      const st = 22 * sc;
+      for (let gx = -rr; gx < rr; gx += st) for (let gz = -rr; gz < rr; gz += st) {
+        if (Math.hypot(gx, gz) > rr * 0.9) continue;
+        const ax = cx + gx + (pr() - 0.5) * st * 0.6, az = cz + gz + (pr() - 0.5) * st * 0.6;
+        ctx.beginPath(); ctx.moveTo(ax, az); ctx.lineTo(ax + st * (0.7 + pr() * 0.5), az + (pr() - 0.5) * st * 0.5);
+        ctx.moveTo(ax, az); ctx.lineTo(ax + (pr() - 0.5) * st * 0.5, az + st * (0.7 + pr() * 0.5)); ctx.stroke();
+      }
+    }
+    for (const W of M.wadis || []) {
+      const P = W.pts;
+      if (P.length < 2) continue;
+      // tuyến lệch ngang off × nửa bề rộng (pháp tuyến theo 2 điểm kề, lệch uốn theo sin -> lạch đan chéo nhau)
+      const path = (off) => {
+        ctx.beginPath();
+        P.forEach((p, i) => {
+          const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], ex = b[0] - a[0], ez = b[1] - a[1], el = Math.hypot(ex, ez) || 1;
+          const o = off * p[2] * Math.sin(i * 0.23 + off * 5);
+          const x = toPx(p[0] - ez / el * o), z = toPx(p[1] + ex / el * o);
+          i ? ctx.lineTo(x, z) : ctx.moveTo(x, z);
+        });
+      };
+      ctx.lineCap = ctx.lineJoin = 'round';
+      // bề rộng nét theo nửa bề rộng đáy ở giữa tuyến (canvas không đổi nét dọc đường): vẽ từng đoạn
+      for (const [col, kw] of [['rgba(176,140,96,0.45)', 2.6], ['rgba(196,178,148,0.8)', 1.7], ['rgba(212,198,170,0.55)', 1.0]]) {
+        ctx.strokeStyle = col;
+        for (let i = 1; i < P.length; i++) {
+          ctx.lineWidth = P[i][2] * kw * sc;
+          ctx.beginPath(); ctx.moveTo(toPx(P[i - 1][0]), toPx(P[i - 1][1])); ctx.lineTo(toPx(P[i][0]), toPx(P[i][1])); ctx.stroke();
+        }
+      }
+      // lạch con bện nhau trong lòng (sẫm, mảnh)
+      ctx.strokeStyle = 'rgba(150,122,88,0.4)'; ctx.lineWidth = Math.max(1, 4 * sc);
+      for (const off of [-0.45, 0.35]) { path(off); ctx.stroke(); }
+    }
+    // Ốc đảo / thảm thực vật dưới tán cây và bụi rậm
     const veg = { DESERT: 'rgba(92,96,48,', URBAN: 'rgba(70,98,46,', JUNGLE: 'rgba(30,52,20,', HIGHLAND: 'rgba(58,74,36,', RIVER_LAKE: 'rgba(54,84,36,' }[this.mapType];
     for (const bsh of M.bushes) {
       const gr = ctx.createRadialGradient(toPx(bsh.x), toPx(bsh.z), 0, toPx(bsh.x), toPx(bsh.z), bsh.r * sc * 1.25);
@@ -1460,6 +1515,11 @@ ${sea ? 'varying float vDep;' : ''}
   vec2 wn3 = texture2D(wNrm, mat2(-0.5, 0.866, -0.866, -0.5) * wp / 7.0 + vec2(wT * 0.035, wT * 0.027)).xy * 2.0 - 1.0;
   vec2 wg = wn0 * 0.12 + (wn1 * 0.55 + wn2 * 0.45) * 0.26 * (1.0 - wFar * 0.85) + wn3 * 0.18 * (1.0 - smoothstep(120.0, 520.0, wDist));
   wg *= 1.0 - wFar * 0.5;
+  // VỆT GIÓ: mặt sông hồ thật loang mảng lặng (gương sáng, phẳng) xen dải gợn lăn tăn (sẫm hơn, ngả màu trời cao) kéo dài
+  // theo gió, trôi chậm — thiếu nó thì nhìn xa cả mặt nước một màu phẳng như tấm nhựa
+  float wWind = smoothstep(0.38, 0.66, texture2D(wNrm, mat2(0.94, 0.342, -0.342, 0.94) * wp * vec2(1.0 / 1500.0, 1.0 / 480.0) + vec2(wT * 0.0011, 0.0)).x * 0.65
+    + texture2D(wNrm, wp / 620.0 + vec2(0.37, wT * 0.0007)).y * 0.35);
+  wg *= mix(0.4, 1.25, wWind);
   float wDrop = 0.0;${rain ? `
   if (skyWetU.x > 0.0) {
     // mưa: mặt nước lăn tăn khắp nơi + vòng sóng giọt mưa dày đặc gần máy quay, giọt vừa chạm bật đốm sáng
@@ -1482,6 +1542,8 @@ ${sea ? 'varying float vDep;' : ''}
     float ry = clamp(wR.y, 0.0, 1.0);
     vec3 envC = mix(wHor, wZen, sqrt(ry));
     envC = mix(envC, wBank * (0.8 + 0.4 * wn2.x), wBankK * (1.0 - smoothstep(0.03, 0.3, ry + wn1.y * 0.05)));
+    // vệt gió (xa rõ hơn — gần thì gợn sóng tự thể hiện): mảng lặng sáng như gương, dải gợn sẫm hơn
+    envC *= mix(1.07, 0.8, wWind * (0.35 + 0.65 * wFar));
     gl_FragColor.rgb = mix(gl_FragColor.rgb, envC, refl);
     float glint = pow(max(dot(wR, wSun), 0.0), 420.0) * 6.0 + pow(max(dot(wR, wSun), 0.0), 40.0) * 0.12;
     gl_FragColor.rgb += vec3(1.0, 0.96, 0.88) * glint * wSunK * (1.0 - wFar * 0.6);
@@ -1497,7 +1559,7 @@ ${sea ? 'varying float vDep;' : ''}
       // biển xa hòa hẳn vào sương trước khi chạm mặt phẳng cắt xa của camera (không lộ mép cắt)
       if (sea) BattleTerrain3D.applyFarFade(sh, true);
     };
-    mat.customProgramCacheKey = () => 'waterWorld4' + (sea ? ':sea' : '') + (rain ? ':rain' : '');
+    mat.customProgramCacheKey = () => 'waterWorld5' + (sea ? ':sea' : '') + (rain ? ':rain' : '');
     return { mat, U };
   }
 
@@ -2884,6 +2946,23 @@ ${sea ? 'varying float vDep;' : ''}
     // chặn thân xe (hộp xoay theo hướng xe): xe trinh sát bị mọi cây chặn, xe tăng chạy chậm bị cây to chặn
     const trees = VC && this.trees && this.trees.holds ? this.trees.near(x0 + sx / 2, z0 + sz / 2, VC.reach(unit) + mv / 2) : null;
     const tob = trees && trees.length ? (this._tob || (this._tob = {})) : null, tcg = this._tcg || (this._tcg = {});
+    // Đá / xác xe / cột trong tầm cả quãng đi (lọc một lần, không quét cả bản đồ ở từng bước con — map nhiều đá tảng
+    // thì vòng này chiếm phần lớn thời gian va chạm của 20 xe)
+    const rocks = this._vcRocks || (this._vcRocks = []);
+    rocks.length = 0;
+    {
+      const pad = (VC ? 70 : vehicleRadius) + 20, xa = Math.min(x0, x0 + sx) - pad, xb = Math.max(x0, x0 + sx) + pad;
+      const za = Math.min(z0, z0 + sz) - pad, zb = Math.max(z0, z0 + sz) + pad;
+      for (const rock of this.boulders) {
+        const rr = rock.radius || 18;
+        if (rock.x < xa - rr || rock.x > xb + rr || rock.z < za - rr || rock.z > zb + rr) continue;
+        // xác xe trên bản đồ mà xe này đủ lực ủi: props.wreckContact đã dời xác xe / giữ xe theo hộp thân xác xe
+        if (rock.wreckOf && unit && this.propSet && this.propSet.pushesWreck(rock.wreckOf, unit)) continue;
+        // đá thấp: xích / bánh trèo qua (ụ vòm trong vehicleDebris), không chặn
+        if (this.lowRock(rock, unit)) continue;
+        rocks.push(rock);
+      }
+    }
     resX = x0; resZ = z0;
     for (let s = 1; s <= n; s++) {
       const ax = resX, az = resZ;
@@ -2946,13 +3025,7 @@ ${sea ? 'varying float vDep;' : ''}
         // gốc tường gãy thấp hơn bậc leo được: xích bò qua (thành mặt đỡ trong vehicleDebris), không chặn như tường
         for (const block of fort.wallBlocks) if (block.y1 > climb) pushRound(block.x, block.z, block.radius, 'concrete');
       }
-      for (const rock of this.boulders) {
-        // xác xe trên bản đồ mà xe này đủ lực ủi: props.wreckContact đã dời xác xe / giữ xe theo hộp thân xác xe
-        if (rock.wreckOf && unit && this.propSet && this.propSet.pushesWreck(rock.wreckOf, unit)) continue;
-        // đá thấp: xích / bánh trèo qua (ụ vòm trong vehicleDebris), không chặn
-        if (this.lowRock(rock, unit)) continue;
-        pushRound(rock.x, rock.z, rock.radius || 18, rock.wreck ? 'wreck' : rock.mat || 'rock');
-      }
+      for (const rock of rocks) pushRound(rock.x, rock.z, rock.radius || 18, rock.wreck ? 'wreck' : rock.mat || 'rock');
       if (tob) {
         VC.vehObb(unit, resX, resZ, unit.bodyAngle || 0, tob);
         for (const it of trees) {
@@ -3076,8 +3149,11 @@ BattleTerrain3D.FOREST_DENSE = 10;
 BattleTerrain3D.CANOPY_HIDE = 0.6;
 
 // Cảnh nền ngoài bản đồ (Backdrop) + mặt biển xa dần hòa hẳn vào màu sương trong khoảng [x, y] (camera far = 9000).
-// Dùng chung một uniform: đổi giá trị là mọi vật liệu cảnh nền đổi theo (vd ảnh toàn cảnh khi xem cả đảo)
+// Dùng chung một uniform: đổi giá trị là mọi vật liệu cảnh nền đổi theo (vd ảnh toàn cảnh khi xem cả đảo).
+// applyAtmosphere đặt lại theo bản đồ (vành núi kín: hoà tới 12000, chỉ ~2/3 ở mặt phẳng cắt)
 BattleTerrain3D.FAR_FADE = { value: new THREE.Vector2(6000, 8700) };
+// màu không khí xa (nhân fogColor) — đặt theo chiến địa trong applyAtmosphere, dùng chung cảnh nền & dãy núi chân trời
+BattleTerrain3D.FAR_AIR = { value: new THREE.Vector3(0.58, 0.63, 0.71) };
 BattleTerrain3D.farFadeGLSL = (alpha) => `#ifdef USE_FOG
   {
     float farK = smoothstep(farFade.x, farFade.y, length(vViewPosition));
@@ -3101,7 +3177,7 @@ BattleTerrain3D.applyFarFade = (sh, alpha) => {
 // + suối nhỏ đầu nguồn. P: toạ độ thế giới -> điểm ảnh; sc: điểm ảnh / đơn vị
 BattleTerrain3D.strokeRiver = (ctx, R, P, sc) => {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  for (const line of [R.pts, R.inlet || []]) {
+  for (const line of [R.pts, R.inlet || [], ...(R.arms || [])]) {
     for (let i = 0; i < line.length - 1; i++) {
       ctx.lineWidth = 2 * (line[i][2] || R.width / 2) * sc;
       ctx.beginPath(); ctx.moveTo(P(line[i][0]), P(line[i][1])); ctx.lineTo(P(line[i + 1][0]), P(line[i + 1][1])); ctx.stroke();

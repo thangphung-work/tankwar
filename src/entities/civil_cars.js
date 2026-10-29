@@ -29,7 +29,9 @@ const CivilCars = (() => {
       pillarA: 0.4, pillarC: 0.7, zB: -1.0, zDiv: -8.0,
       rearDlo: [-9.45, 1.12, 8.05], // ô kính sau thoáng hơn, giảm khối nặng ở cột C
       doors: [7.4, -0.9, -8.2], sill: 2.3, bumperF: [14.9, 4.9], bumperR: [-13.9, 5.2],
-      hood: [7.6, 16.3], trunk: [-12.6, 6.5], fuel: [-12.45, 6.55, 0.62, 0.55],
+      // mép trước capô nằm trên mặt nóc, ngay trước chỗ mũi cong gập xuống (16,3 cũ: lùi giữa capô, nhìn trước không thấy;
+      // 18,1: tụt xuống mặt đứng của mũi sát lưới)
+      hood: [7.6, 17.3], hoodK: [0.11, 2.3], trunk: [-12.6, 6.5], fuel: [-12.45, 6.55, 0.62, 0.55],
       // đèn: trước (z mép sau phần ôm góc, x mép trong, cao, hạ so với mép capô), lưới (nửa rộng, hạ, cao, y hốc gió dưới),
       // hậu (z, x mép trong, cao, hạ); y biển số trước / sau
       lamps: { front: [15.9, 2.9, 1.0, 0.25], grille: [2.45, 0.35, 0.95, 3.0], rear: [-17.0, 3.42, 1.0, 0.3] }, plates: [3.6, 5.35],   // khe nắp cốp sát mép trong đèn hậu (|x| 3,53)
@@ -50,7 +52,7 @@ const CivilCars = (() => {
           lensColor: (u, v) => v < 6.74 && u < -3.75 ? [0.92, 0.9, 0.82] : [0.76, 0.018, 0.014] },
         grille: { kind: 'grille', sym: true, dir: [0, 1], pts: [[-2.55, 4.48], [2.55, 4.48], [2.88, 5.16], [-2.88, 5.16]], r: 0.17, zMin: 15.05, depth: 0.58 },
         intake: { kind: 'intake', sym: true, dir: [0, 1], pts: [[-4.15, 2.72], [4.15, 2.72], [4.36, 3.12], [-4.36, 3.12]], r: 0.16, zMin: 15.1, depth: 0.42 },
-        fog: { kind: 'fog', dir: [0, 1], pts: [[5.0, 3.16], [5.04, 3.16], [5.04, 3.2], [5.0, 3.2]], r: 0.2, zMin: 15.05, depth: 0.24, backMat: 'reflector' }
+        fog: { kind: 'fog', dir: [0, 1], pts: [[5.0, 3.16], [5.04, 3.16], [5.04, 3.2], [5.0, 3.2]], r: 0.36, zMin: 15.05, depth: 0.24, backMat: 'reflector' }
       }, bumperTop: [4.3, 5.55], rakeF: [14.5, 3.4, 0.11], rakeR: [-14.5, 4.6, 0.07]
     },
     // SUV thể thao đa dụng việt dã (~4,85 x 1,94 x 1,75 m, cơ sở 2,9 m, lốp 265/65R18)
@@ -91,26 +93,28 @@ const CivilCars = (() => {
       features: {
         head: {
           kind: 'head', dir: [0.55, 1],
-          pts: [[-6.65, 6.92], [-2.35, 7.02], [-2.25, 7.72], [-6.72, 7.58]],
+          // u càng âm càng vào trong: mép trong u -6 -> |x| ~3,3, chừa dải tôn ~5 cm với lưới (bản cũ u -6,7 -> |x| 2,48,
+          // chồng lên lưới tới 3,31); chi tiết trong đèn co theo tỉ lệ về mép ngoài
+          pts: [[-5.94, 6.92], [-2.35, 7.02], [-2.25, 7.72], [-6.0, 7.58]],
           r: 0.13, zMin: 14.9, depth: 0.56, backMat: 'reflector',
           proj: [
-            [-5.35, 7.28, 0.23, 'lens'],
-            [-3.95, 7.32, 0.22, 'lens'],
-            [-2.75, 7.34, 0.18, 'bowl']
+            [-4.85, 7.28, 0.23, 'lens'],
+            [-3.68, 7.32, 0.22, 'lens'],
+            [-2.67, 7.34, 0.18, 'bowl']
           ],
           drl: [
-            [-6.55, 7.5],
-            [-6.6, 6.9],
-            [-6.3, 6.84],
-            [-4.5, 6.9],
-            [-2.65, 6.96]
+            [-5.86, 7.5],
+            [-5.9, 6.9],
+            [-5.65, 6.84],
+            [-4.14, 6.9],
+            [-2.59, 6.96]
           ],
           amber: [
-            [-6.42, 7.42, 0.28],
-            [-6.28, 7.36, 0.24],
-            [-6.14, 7.30, 0.20]
+            [-5.75, 7.42, 0.28],
+            [-5.63, 7.36, 0.24],
+            [-5.51, 7.30, 0.20]
           ],
-          lensColor: (u, v) => u > -2.6 ? [1, 0.8, 0.5] : [1, 1, 1]
+          lensColor: (u, v) => u > -2.54 ? [1, 0.8, 0.5] : [1, 1, 1]
         },
         tail: {
           // cụm thuôn: cao ở góc ngoài ôm sang hông, vuốt nhọn dần về phía biển số
@@ -130,7 +134,7 @@ const CivilCars = (() => {
         },
         grille: {
           kind: 'grille', sym: true, dir: [0, 1],
-          pts: [[-3.0, 6.18], [3.0, 6.18], [3.15, 7.55], [-3.15, 7.55]],
+          pts: [[-2.7, 6.18], [2.7, 6.18], [2.85, 7.55], [-2.85, 7.55]],   // mép ~3,0: cách đèn pha (3,3) một dải tôn
           r: 0.16, zMin: 15.65, depth: 0.6
         },
         intake: {
@@ -141,7 +145,7 @@ const CivilCars = (() => {
         fog: {
           kind: 'fog', dir: [0, 1],
           pts: [[5.05, 3.55], [5.12, 3.55], [5.12, 3.62], [5.05, 3.62]],
-          r: 0.2, zMin: 15.65, depth: 0.26, backMat: 'reflector'
+          r: 0.36, zMin: 15.65, depth: 0.26, backMat: 'reflector'
         }
       },
       // mép dưới cửa hậu chính là khe ráp cản sau (trước đây 2 đường riêng: đường cản cắt ngang giữa cửa hậu)
@@ -193,11 +197,14 @@ const CivilCars = (() => {
     rakeF: [17.8,4.5,0.12], rakeR: [-20,5.2,0],
     lamps: { front: [18.3,3.0,1.3,0.3], grille: [3.0,0.4,1.8,3.9], rear: [-20.2,3.4,1.35,0.35] },
     features: Object.assign({}, SPEC.suv.features, {
+      // mũi bán tải cao ngang SUV (mép trên ~7,85): bản cũ nâng đèn +0,65 -> đỉnh hốc đèn ~8,5 ăn lên mặt capô, chỗ đó không
+      // có vỏ đèn phía sau nên nhìn xuyên được; zMin theo mũi dài hơn SUV ~1,8
       head: Object.assign({}, SPEC.suv.features.head, {
-        pts: SPEC.suv.features.head.pts.map(([u,v]) => [u,v+0.65]),
-        proj: SPEC.suv.features.head.proj.map(([u,v,r,m]) => [u,v+0.65,r,m]),
-        drl: SPEC.suv.features.head.drl.map(([u,v]) => [u,v+0.65]),
-        amber: SPEC.suv.features.head.amber.map(([u,v,r]) => [u,v+0.65,r])
+        zMin: SPEC.suv.features.head.zMin + 1.8,
+        pts: SPEC.suv.features.head.pts.map(([u,v]) => [u,v+0.02]),
+        proj: SPEC.suv.features.head.proj.map(([u,v,r,m]) => [u,v+0.02,r,m]),
+        drl: SPEC.suv.features.head.drl.map(([u,v]) => [u,v+0.02]),
+        amber: SPEC.suv.features.head.amber.map(([u,v,r]) => [u,v+0.02,r])
       }),
       grille: Object.assign({}, SPEC.suv.features.grille, {
         zMin: 18.0, pts: [[-2.8,5.65],[2.8,5.65],[3.05,7.75],[-3.05,7.75]], r: 0.16
@@ -249,9 +256,9 @@ const CivilCars = (() => {
     hatchback: true, style: 3, tgEdge: 6.35, tailBulge: [0, 9.0], handles: [7.0, -5.4],   // cửa hậu phẳng liền khối với khoang trên
     boxCargo: 99,   // toàn thân một khối liền, khoang trên ốp phẳng sườn (xem boxAt)
     axleF: 13.4, axleR: -10.2, r: 2.75, trackHalf: 6.5, tireW: 1.75, archGap: 0.45, flare: 0,   // sườn van phẳng
-    plan: [[-20.2, 6.7], [-20.05, 7.3], [-19.5, 7.55], [-17, 7.6], [0, 7.6], [12, 7.6], [15.2, 7.5], [17.4, 7.2], [18.7, 6.75], [19.6, 6.0], [20.0, 5.0]],
+    plan: [[-20.2, 6.7], [-20.05, 7.3], [-19.5, 7.55], [-17, 7.6], [0, 7.6], [12, 7.6], [15.6, 7.58], [17.4, 7.47], [18.6, 7.22], [19.4, 6.8], [19.8, 6.25], [20.0, 5.6]],
     // mũi vát chéo: ca-pô ngắn dốc xuống, mặt trước ngả ra sau từ cản lên (rakeF) — không dựng đứng như xe tải
-    top: [[-20.2, 8.7], [-20.12, 8.84], [-19.8, 8.88], [-17, 8.88], [0, 8.88], [12, 8.88], [14.0, 8.86], [15.8, 8.68], [17.4, 8.3], [18.7, 7.75], [19.5, 7.05], [20.0, 6.0]],
+    top: [[-20.2, 8.7], [-20.12, 8.84], [-19.8, 8.88], [-17, 8.88], [0, 8.88], [12, 8.88], [14.0, 8.86], [15.8, 8.7], [17.4, 8.4], [18.7, 7.95], [19.45, 7.5], [19.85, 6.9], [20.0, 6.3]],
     bottom: [[-20.2, 3.3], [-19.2, 2.6], [-14, 2.1], [0, 2.0], [13, 2.1], [18.6, 2.5], [20.0, 3.1]],
     // nóc phẳng dài, kính chắn gió nghiêng lớn (độ dốc ~0,66) từ chân kính trên ca-pô
     cabin: [[-20.2, 8.7], [-20.17, 10.6], [-20.06, 13.3], [-19.66, 15.25], [-18.4, 15.82], [-10, 15.92], [0, 15.92], [7, 15.88], [9.3, 15.75], [10.2, 15.35], [11.2, 13.9], [12.6, 11.4], [14.0, 8.85]],
@@ -261,18 +268,21 @@ const CivilCars = (() => {
     hood: [14.2, 19.0], trunk: [-19.8, 8.6], fuel: [-8.0, 7.4, 0.6, 0.55],
     lamps: { front: [17.35, 3.25, 1.15, 0.3], grille: [3.2, 0.42, 1.65, 3.55], rear: [-19.4, 3.3, 1.3, 0.35] }, plates: [4.15, 5.5],
     features: {
-      // đèn pha vuốt ngược ở 2 góc mũi (x ~3,9..6,4), mép ngoài cao hơn; 1 bi-projector, dải LED mép trên, xi nhan góc dưới
+      // đèn pha bản to ở 2 góc mũi (x ~3,3..7,2, cao ~2 đv), mép ngoài cao hơn; 1 bi-projector, dải LED mép trên, xi nhan góc dưới
       // ngoài. u của mặt chiếu KHÔNG phải x: điểm chiếu lệch ngang theo dir[0] x khoảng tới mặt trước -> ở z ~19 với dir 0,3:
       // x ~ 0,96 u + 5,4 (u càng âm càng vào trong)
       // cụm dài vuốt ngược: đầu trong thấp hẹp chạm góc trên lưới, đầu ngoài cao ôm qua góc mũi; bi-projector chính + chóa
       // pha phụ, dải LED chữ L dọc mép trên gập xuống ở đầu ngoài, xi nhan hổ phách mảnh ở đáy đầu trong
       // lòng đèn ốp đen khói (bezel) -> vành crôm projector + dải LED trắng nổi bật; đầu trong cách viền lưới (không đè)
-      head: { kind: 'head', dir: [0.3, 1], pts: [[-1.8, 7.36], [1.3, 6.95], [1.25, 8.2], [-1.8, 7.88]], r: 0.12, zMin: 16.0, depth: 0.55, backMat: 'reflector', halo: false,
-        proj: [[0.4, 7.58, 0.3, 'lens'], [-0.85, 7.62, 0.2, 'bowl']], drl: [[-1.6, 7.78], [-0.4, 7.94], [0.85, 8.06], [1.1, 7.75], [1.07, 7.25]], drlR: 0.07,
-        amberStrip: [[-1.5, 7.5], [-1.05, 7.45]] },
-      // lưới tản nhiệt đen hình thang dưới mép ca-pô, giữa 2 đèn
-      grille: { kind: 'grille', sym: true, dir: [0, 1], pts: [[-2.9, 6.25], [2.9, 6.25], [3.2, 7.8], [-3.2, 7.8]], r: 0.16, zMin: 16.5, depth: 0.6, mesh: true },   // hẹp hơn hốc đèn: nan không lộ qua đèn
-      intake: { kind: 'intake', sym: true, dir: [0, 1], pts: [[-4.4, 3.5], [4.4, 3.5], [4.55, 4.4], [-4.55, 4.4]], r: 0.15, zMin: 16.5, depth: 0.45 },
+      // cao ~17 cm (bản cũ ~24 cm, chóa Ø10 cm: to quá cỡ so với mũi xe): giữ mép trên sát capô, nâng mép dưới
+      head: { kind: 'head', dir: [0.3, 1], pts: [[-1.6, 6.75], [1.4, 6.95], [1.38, 8.1], [-1.6, 7.85]], r: 0.14, zMin: 16.0, depth: 0.6, backMat: 'reflector', halo: false,
+        proj: [[0.55, 7.47, 0.31, 'lens'], [-0.72, 7.42, 0.27, 'bowl']], drl: [[-1.42, 7.8], [-0.4, 7.9], [0.85, 7.98], [1.18, 7.75], [1.16, 7.15]], drlR: 0.065,
+        amberStrip: [[-1.38, 6.98], [-0.45, 7.04]] },
+      // lưới tản nhiệt đen hình thang dưới mép ca-pô, lấp kín khoảng giữa 2 đèn (khe ~2 cm tới mép trong đèn)
+      grille: { kind: 'grille', sym: true, dir: [0, 1], pts: [[-3.0, 6.0], [3.0, 6.0], [3.2, 7.72], [-3.2, 7.72]], r: 0.16, zMin: 16.5, depth: 0.6, mesh: true },   // hẹp hơn hốc đèn: nan không lộ qua đèn
+      // hốc gió dưới bản rộng trên vạt cản đen + đèn sương mù tròn ở 2 góc cản
+      intake: { kind: 'intake', sym: true, dir: [0, 1], pts: [[-4.5, 3.25], [4.5, 3.25], [4.7, 4.5], [-4.7, 4.5]], r: 0.15, zMin: 16.5, depth: 0.45 },
+      fog: { kind: 'fog', dir: [0, 1], pts: [[5.75, 3.85], [5.79, 3.85], [5.79, 3.89], [5.75, 3.89]], r: 0.38, zMin: 16.5, depth: 0.26, backMat: 'reflector' },
       tail: { kind: 'tail', style: 'vertical', dir: [0.2, -1], pts: [[2.3, 5.2], [3.2, 5.2], [3.15, 8.25], [2.35, 8.25]], r: 0.15, zMin: -17, depth: 0.4, backMat: 'tailBack',
         lensColor: (u, v) => v < 5.85 ? [0.9, 0.55, 0.12] : [0.72, 0.018, 0.014] }
     },
@@ -841,8 +851,10 @@ const GLSL_WEATHER = `
       // (chỉ dải thấp trên cản: mặt trước phẳng cao của van / xe đầu bằng không lấm tấm kín cả mặt)
       float frontK = smoothstep(0.45, 0.75, Nn.z) * step(uAx.x - 1.0, z) * step(y, min(uAx.z * 2.6, uE.x + 1.0));
       float rockK = smoothstep(0.6, 0.85, abs(Nn.x)) * step(uAx.x - uAx.z - 4.5, z) * step(z, uAx.x - uAx.z) * step(y, 3.6);
-      vec2 ch = civSpot(vRest, 0.11, (0.1 + 0.3 * age) * max(0.4 * frontK, rockK) + 0.004);   // mặt trước thưa hơn (không lấm tấm kín)
-      float chip = near1 * paintK * (1.0 - smoothstep(0.55, 1.0, ch.x));
+      // sứt đá thật: thưa, li ti (1-3 mm), xe mới gần như không có; trước đây mật độ cao + chấm to -> mặt trước lốm đốm như
+      // vảy mè (rõ nhất trên sơn trắng). Không còn nền "+0,004" rải khắp thân
+      vec2 ch = civSpot(vRest, 0.11, (0.015 + 0.22 * age * age) * max(0.4 * frontK, rockK));
+      float chip = near1 * paintK * (1.0 - smoothstep(0.3, 0.55, ch.x));
       LAY(chip, mix(vec3(0.3, 0.3, 0.29), vec3(0.16, 0.075, 0.035), step(0.7 - 0.45 * age, ch.y)), 0.1, 0.85, 0.0)
       ccO *= 1.0 - chip;
       bumpH -= 0.0008 * chip;
@@ -906,7 +918,10 @@ const GLSL_WEATHER = `
     }
   }
   if (Nn.y > 0.3) {
-    float hf = uC.y - (uAx.w > 0.5 && uAx.w < 1.5 ? 0.008 : 0.025) * ax * ax;   // SUV: khe capô gần thẳng ngang
+    // SPEC.hoodK = [độ cong, nửa rộng đoạn thẳng] (uE.zw): khe chạy thẳng ngang trên lưới rồi lùi theo mép trên đèn về 2
+    // góc; mặc định parabol từ tâm (SUV: gần thẳng ngang)
+    float hAx = max(ax - uE.w, 0.0);
+    float hf = uC.y - (uE.z > 0.0 ? uE.z : uAx.w > 0.5 && uAx.w < 1.5 ? 0.008 : 0.025) * hAx * hAx;
     seam = max(seam, step(uC.x, z) * step(z, hf) * aaLine(ax - hoodEdge, gap));
     seam = max(seam, step(ax, hoodEdge) * step(uC.x, z) * aaLine(z - hf, gap));
     seam = max(seam, step(z, uC.z) * aaLine(ax - hoodEdge, gap));
@@ -940,7 +955,8 @@ const GLSL_WEATHER = `
   cO *= 1.0 - 0.06 * bump; rO = mix(rO, rO + 0.08, bump);
   // van: vạt cản trước / cản sau nhựa đen nhám bao góc (nửa trên cản trước sơn màu thân) + ốp sườn dưới đen chạy dọc thân
   if (uSt.x > 2.5) {
-    float bmpK = max(step(uA.w, z) * fillAA(y - (uE.x - 1.3)), step(z, uB.z) * fillAA(y - uE.y));
+    // vạt đen cản trước lên sát dưới khe cản (dải sơn còn ~9 cm): trước đây dải sơn trắng trống cao ~16 cm giữa lưới và hốc gió
+    float bmpK = max(step(uA.w, z) * fillAA(y - (uE.x - 0.75)), step(z, uB.z) * fillAA(y - uE.y));
     float rock = smoothstep(0.35, 0.6, abs(Nn.x)) * fillAA(y - (vRef.y + 0.85));
     LAY(max(bmpK, rock), vec3(0.045, 0.046, 0.048), 0.0, 0.82, 0.0)
   }
@@ -984,7 +1000,8 @@ const GLSL_WEATHER = `
     LAY(sideChrome, vec3(0.85, 0.87, 0.90), 1.0, 0.15, 1.0)
     featK = max(featK, sideChrome);
 
-    float fSkid = step(uA.w, z) * fillAA(ax - 3.2) * fillAA(y - 4.65) * (1.0 - fillAA(y - (vRef.y + 0.15)));
+    // ốp gầm bạc chỉ dưới hốc gió (bản cũ lên tới y 4,65: biển số + hốc gió che gần hết, lòi 2 khối xám 2 bên biển số)
+    float fSkid = step(uA.w, z) * fillAA(ax - 3.2) * fillAA(y - 3.5) * (1.0 - fillAA(y - (vRef.y + 0.15)));
     float fRibs = fSkid * fillAA(abs(fract(ax * 1.5 + 0.5) - 0.5) - 0.18);
     LAY(fSkid, vec3(0.76, 0.78, 0.82), 0.85, 0.28, 0.8)
     cO = mix(cO, cO * 0.75, fRibs);
@@ -1260,7 +1277,7 @@ const GLSL_WEATHER = `
       uA: [S.pillarA, S.roofF, S.pillarC, S.roofR], uB: S.rearDlo.concat(0), uC: [S.zB, S.zDiv, 0, 0], uD: Z, uE: W.crack
     } : {
       uA: [S.doors[0], S.doors[1], S.doors[2], S.bumperF[0]], uB: [S.sill, S.bumperF[1], S.bumperR[0], S.bumperR[1]],
-      uC: [S.hood[0], S.hood[1], S.trunk[0], S.trunk[1]], uD: S.fuel, uE: [S.bumperTop[0], S.bumperTop[1], 0, 0]
+      uC: [S.hood[0], S.hood[1], S.trunk[0], S.trunk[1]], uD: S.fuel, uE: [S.bumperTop[0], S.bumperTop[1], S.hoodK ? S.hoodK[0] : 0, S.hoodK ? S.hoodK[1] : 0]
     };
     const FU = (n, F) => { const u = F ? featureUniforms(F) : [Z, Z, Z]; U[n + '0'] = u[0]; U[n + '1'] = u[1]; U[n + '2'] = u[2]; };
     const FT = S.features; FU('uH', FT.head); FU('uT', FT.tail); FU('uK', FT.grille); FU('uN', FT.intake); FU('uO', FT.fog);
@@ -1523,13 +1540,15 @@ const GLSL_WEATHER = `
       const isSuvGrille = v0 > 5.0 && (v1 - v0) < 1.6;
       if (F.mesh) {
         // lưới tổ ong đen đặt nông ngay sau miệng lưới, rộng bằng đáy miệng (nan sâu thò ngang thì lộ qua hốc đèn lùi kề bên)
-        const p = at(0, (v0 + v1) / 2, 0.14);
-        if (p) { const m = add(new THREE.PlaneGeometry(2 * Math.abs(F.pts[1][0]) + 0.2, v1 - v0 - 0.1), M.honey); m.position.copy(p); }
-        // nẹp mạ viền quanh miệng lưới + 1 thanh ngang mạ bản rộng giữa lưới (điểm nhấn mặt nạ)
+        // nghiêng theo mặt trước (van ngả ~33°): tấm dựng đứng thì mép trên chọc ra ngoài viền như cái nắp, mép dưới thụt sâu
+        const pB = at(0, v0 + 0.05, 0.14), pT = at(0, v1 - 0.05, 0.14);
+        const tilt = pB && pT ? Math.atan2(pT.z - pB.z, pT.y - pB.y) : 0;
+        if (pB && pT) { const m = add(new THREE.PlaneGeometry(2 * Math.abs(F.pts[1][0]) + 0.2, pT.distanceTo(pB)), M.honey); m.position.copy(pB).lerp(pT, 0.5); m.rotation.x = tilt; }
+        // khung nhựa đen bóng dày quanh miệng lưới (viền crôm mảnh trước đây trông như đồ chơi) + 1 thanh ngang mạ giữa lưới
         const rimPts = outline.map(q => at(q[0], q[1], 0.02)).filter(Boolean);
-        if (rimPts.length > 6) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts, true), 72, 0.05, 6, true), M.chrome);
+        if (rimPts.length > 6) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts, true), 72, 0.09, 6, true), M.slat);
         const pb = at(0, v0 + (v1 - v0) * 0.62, 0.04);
-        if (pb) { const w = 2 * (Math.abs(F.pts[1][0]) + (Math.abs(F.pts[2][0]) - Math.abs(F.pts[1][0])) * 0.62) - 0.1; add(roundBox(w, 0.2, 0.12, 0.05), M.chrome).position.copy(pb); add(roundBox(w - 0.1, 0.07, 0.13, 0.02), M.slat).position.copy(pb); }
+        if (pb) { const w = 2 * (Math.abs(F.pts[1][0]) + (Math.abs(F.pts[2][0]) - Math.abs(F.pts[1][0])) * 0.62) - 0.1; const bar = add(roundBox(w, 0.2, 0.12, 0.05), M.chrome), core = add(roundBox(w - 0.1, 0.07, 0.13, 0.02), M.slat); for (const m of [bar, core]) { m.position.copy(pb); m.rotation.x = tilt; } }
       }
       for (let v = v0 + 0.16; !F.mesh && v < v1 - 0.08; v += (isSuvGrille ? 0.34 : 0.24)) {
         const p = at(0, v, 0.32);
@@ -1563,8 +1582,9 @@ const GLSL_WEATHER = `
     } else if (F.kind === 'fog') {
       const p = at(P.cuv[0], P.cuv[1], depth * 0.22);
       if (p) {
+        // kính đèn gần phẳng (vòm bán cầu đầy trông như hòn bi)
         const lamp = add(new THREE.SphereGeometry(F.r * 0.72, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), M.fogLens);
-        lamp.position.copy(p); lamp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+        lamp.position.copy(p); lamp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d); lamp.scale.set(1, 0.32, 1);
         const ring = add(new THREE.TorusGeometry(F.r * 0.76, 0.035, 6, 28), M.chromeIn); ring.position.copy(p);
       }
     }
@@ -2691,6 +2711,16 @@ const GLSL_WEATHER = `
     STRIPE_TEX.repeat.set(0.31, 1.1); STRIPE_TEX.offset.set(0, 0.5);
     return STRIPE_TEX;
   }
+  // vân khía rãnh kính đèn (bumpMap): rãnh đứng mịn ~0,12 đv + vài gờ ngang mờ (uv hộp bo: u = x, v = y theo đv)
+  let FLUTE_TEX = null;
+  function fluteTexture() {
+    if (FLUTE_TEX) return FLUTE_TEX;
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64; const x = c.getContext('2d');
+    for (let i = 0; i < 64; i++) { const v = 128 + 110 * Math.sin(i / 16 * Math.PI * 2); x.fillStyle = `rgb(${v | 0},${v | 0},${v | 0})`; x.fillRect(i, 0, 1, 64); }
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 64, 2);
+    FLUTE_TEX = new THREE.CanvasTexture(c); FLUTE_TEX.wrapS = FLUTE_TEX.wrapT = THREE.RepeatWrapping; FLUTE_TEX.repeat.set(2.1, 2.4);
+    return FLUTE_TEX;
+  }
   // sàn gỗ thùng xe: ván dọc thùng, khe ván, mối nối, vệt dầu / đất (uv của hộp bo: u = x, v = z theo đv)
   function woodFloorTexture(rnd, age) {
     const c = document.createElement('canvas'); c.width = 256; c.height = 512; const x = c.getContext('2d');
@@ -2865,40 +2895,70 @@ const GLSL_WEATHER = `
       box([1.4, 0.06, 0.65], mats.dark, [sx * 5.3, 5.2, 20.65], 0.02);
       for (const dz of [-0.18, 0, 0.18]) blk([1.25, 0.025, 0.06], galv, [sx * 5.3, 5.24, 20.65 + dz]);
     }
-    // mặt ca-lăng: khe nắp bảo dưỡng, gân dập chữ V, khoá nắp, huy hiệu; lưới tản nhiệt 4 nan
-    blk([12.6, 0.05, 0.04], mats.dark, [0, 8.6, 20.61]);
+    // mặt ca-lăng phồng giữa (z ~20,66 ở tâm, ~20,56 ở |x| 3,8): mọi chi tiết dò mặt theo x rồi uốn lưới theo, đặt z cố
+    // định thì phần giữa chìm dưới tôn (nan lưới lòi ra thành răng cưa, khe nắp đứt khúc, huy hiệu ngập nửa)
+    const FZ = []; for (let i = 0; i <= 28; i++) { const h = hitAt([-7 + i * 0.5, 7.4, 30], [0, 0, -1]); FZ.push(h ? h.p.z : 20.5); }
+    const faceZ = x => { const t = Math.min(28, Math.max(0, (x + 7) * 2)), i = Math.min(27, t | 0); return FZ[i] + (FZ[i + 1] - FZ[i]) * (t - i); };
+    // hộp chia đoạn theo x, uốn theo mặt; pos z = độ nổi so với mặt tại cx
+    const onFace = (size, mat, cx, cy, lift, rotX = 0) => {
+      const g = new THREE.BoxGeometry(size[0], size[1], size[2], Math.max(1, Math.ceil(size[0] / 0.3)), 1, 1);
+      if (rotX) g.rotateX(rotX);
+      const P = g.attributes.position, z0 = faceZ(cx);
+      for (let i = 0; i < P.count; i++) P.setZ(i, P.getZ(i) + faceZ(cx + P.getX(i)) - z0);
+      g.computeVertexNormals();
+      return add(g, mat, [cx, cy, z0 + lift]);
+    };
+    // khe nắp bảo dưỡng, gân dập chữ V, khoá nắp, huy hiệu
+    onFace([11.2, 0.05, 0.04], mats.dark, 0, 8.6, 0.005);
     for (const sx of [-1, 1]) {
-      box([0.16, 1.85, 0.06], cabPaint, [sx * 3.75, 9.6, 20.64], 0.02, [0, 0, -sx * 0.08]);
-      blk([0.32, 0.22, 0.05], mats.dark, [sx * 5.65, 9.05, 20.64]); blk([0.16, 0.08, 0.06], mats.chrome, [sx * 5.65, 9.05, 20.67]);
+      box([0.16, 1.85, 0.06], cabPaint, [sx * 3.75, 9.6, faceZ(sx * 3.75) + 0.015], 0.02, [0, 0, -sx * 0.08]);
+      const zl = faceZ(sx * 5.65);
+      blk([0.32, 0.22, 0.05], mats.dark, [sx * 5.65, 9.05, zl + 0.01]); blk([0.16, 0.08, 0.06], mats.chrome, [sx * 5.65, 9.05, zl + 0.04]);
     }
-    box([0.95, 0.75, 0.07], mats.chrome, [0, 9.5, 20.66], 0.04); box([0.65, 0.45, 0.08], mats.black, [0, 9.5, 20.68], 0.03);
-    box([8.15, 2.7, 0.24], mats.black, [0, 7.0, 20.46], 0.1); blk([7.88, 2.46, 0.05], mats.dark, [0, 7.0, 20.35]);
-    // nan nhựa đen bản rộng chúc xuống (khe tối giữa các nan thấy két nước phía sau); 1 nẹp mạ mảnh chạy trên cùng
-    for (let gy = 5.95; gy < 8.15; gy += 0.46) box([7.68, 0.27, 0.14], mats.black, [0, gy, 20.56], 0.035, [0.22, 0, 0]);
-    blk([0.12, 2.2, 0.3], mats.black, [0, 7.0, 20.52]);
-    box([7.1, 0.08, 0.1], mats.chrome, [0, 8.2, 20.62], 0.03);
-    // đèn pha vuông: hốc đen, chóa phản xạ đôi, kính khía rãnh mờ, xi nhan hổ phách ngoài
-    const reflectorMat = plain(burnt ? 0x2a2622 : 0xb0b8b8, 0.18, 0.85, { envMapIntensity: 0.85 });
-    const lensMat = new THREE.MeshPhysicalMaterial({ color: burnt ? 0x2a2622 : 0xc4d0cf, roughness: 0.15 + 0.3 * age, metalness: 0, transparent: true, opacity: 0.28 + 0.2 * age, clearcoat: 0.6, envMap: env, envMapIntensity: 0.5, depthWrite: false });
+    box([0.95, 0.75, 0.07], mats.chrome, [0, 9.5, faceZ(0) + 0.025], 0.04); box([0.65, 0.45, 0.08], mats.black, [0, 9.5, faceZ(0) + 0.045], 0.03);
+    // lưới tản nhiệt: khung nhựa đen nổi ~4 cm bao quanh hốc, đáy hốc tối mờ (két nước), 5 nan chúc xuống + nan đứng giữa;
+    // gọn trong |x| 3,6 để không lấn vào hốc đèn pha (mép trong |x| ~3,74)
+    const GW = 7.2, GH = 2.7, GY = 7.0, FW = 0.22, FD = 0.32;
+    onFace([GW, FW, FD], mats.black, 0, GY + (GH - FW) / 2, FD / 2 - 0.02);
+    onFace([GW, FW, FD], mats.black, 0, GY - (GH - FW) / 2, FD / 2 - 0.02);
+    for (const sx of [-1, 1]) onFace([FW, GH - 2 * FW, FD], mats.black, sx * (GW - FW) / 2, GY, FD / 2 - 0.02);
+    onFace([GW - 2 * FW, GH - 2 * FW, 0.03], mats.dark, 0, GY, 0.02);
+    for (let gy = 6.05; gy < 8.0; gy += 0.36) onFace([GW - 2 * FW, 0.24, 0.07], mats.black, 0, gy, 0.17, 0.35);
+    onFace([0.14, GH - 2 * FW, 0.2], mats.black, 0, GY, 0.12);
+    onFace([GW - 0.3, 0.07, 0.06], mats.chrome, 0, GY + GH / 2 - FW / 2, FD - 0.01);
+    // đèn pha vuông kiểu xe tải nhẹ: viền nhựa đen, cả lòng hốc là chóa mạ sáng (không phải nền tối), 2 chóa parabol tròn
+    // pha / cốt, bóng nhỏ có chụp che chói; kính trong khía rãnh mịn (vân nổi trên bề mặt, không phải song nan đặc);
+    // xi nhan hổ phách là ngăn riêng có chóa + kính màu trong mờ ở phía ngoài
+    const reflectorMat = plain(burnt ? 0x2a2622 : 0xd4d9db, burnt ? 0.8 : 0.1, burnt ? 0.2 : 0.95, { envMapIntensity: 1.2, side: THREE.DoubleSide });
+    const panMat = plain(burnt ? 0x221e1a : 0xa9afb2, burnt ? 0.85 : 0.28, burnt ? 0.2 : 0.85, { envMapIntensity: 0.9 });
+    const lensMat = new THREE.MeshPhysicalMaterial({ color: burnt ? 0x2a2622 : 0xeef3f4, roughness: 0.04 + 0.3 * age, metalness: 0, transparent: true, opacity: 0.16 + 0.22 * age, clearcoat: 1, clearcoatRoughness: 0.05 + 0.2 * age, bumpMap: fluteTexture(), bumpScale: 0.6, envMap: env, envMapIntensity: 1.6, depthWrite: false });
+    const amberLens = new THREE.MeshPhysicalMaterial({ color: burnt ? 0x2a2018 : 0xff9a26, roughness: 0.08 + 0.25 * age, metalness: 0, transparent: true, opacity: burnt ? 0.8 : 0.62, clearcoat: 1, clearcoatRoughness: 0.06, bumpMap: fluteTexture(), bumpScale: 0.5, envMap: env, envMapIntensity: 1.3, depthWrite: false });
+    const bulbMat = plain(burnt ? 0x2a2622 : 0xf2f2ee, 0.35, 0.05);
     for (const sx of [-1, 1]) {
       // cụm đèn bám mặt nạ bo góc: lùi theo bề mặt, xoay theo độ cong ở góc (dò tia tâm + mép ngoài)
       const x0 = sx * 4.95, y = 7.08, hc = hitAt([x0, y, 30], [0, 0, -1]), ho = hitAt([x0 + sx * 1.25, y, 30], [0, 0, -1]);
-      const zc = hc ? hc.p.z - 0.2 : 20.4, yaw = hc && ho ? sx * Math.atan2(hc.p.z - ho.p.z, 1.25) : 0;
+      const zc = hc ? hc.p.z - 0.32 : 20.28, yaw = hc && ho ? sx * Math.atan2(hc.p.z - ho.p.z, 1.25) : 0;
       const lg = new THREE.Group(); lg.position.set(x0, y, zc); lg.rotation.y = yaw; assembly.add(lg);
-      const x = 0, z = 0, yl = 0;
-      box([2.42, 1.38, 0.24], mats.black, [x, yl, z], 0.11, null, lg);
-      box([2.16, 1.13, 0.1], mats.barrel, [x, yl + 0.04, z + 0.12], 0.07, null, lg);
-      // chóa parabol lõm (bát mạ bạc mở ra trước) + bóng đèn có chụp che chói; kính khía rãnh dày (khúc xạ nhòe chóa)
-      for (const dx of [-0.49, 0.34]) {
-        const bw = add(new THREE.SphereGeometry(0.43, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), reflectorMat, [x + dx, yl + 0.06, z + 0.32], [-Math.PI / 2, 0, 0], lg);
-        bw.scale.set(1, 0.55, 1); reflectorMat.side = THREE.DoubleSide;
-        add(new THREE.SphereGeometry(0.11, 10, 8), plain(burnt ? 0x2a2622 : 0xe2e4e2, 0.25, 0.1), [x + dx, yl, z + 0.16], null, lg);
-        add(new THREE.SphereGeometry(0.09, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), mats.chrome, [x + dx, yl, z + 0.24], [Math.PI / 2, 0, 0], lg);
+      // gốc nhóm lùi 0,32 sau mặt tôn: chóa vừa nhô khỏi tôn (thân không khoét lỗ), viền chỉ nổi ~3 cm
+      box([2.46, 1.42, 0.44], mats.black, [0, 0, 0.1], 0.12, null, lg);
+      // viền khung hở (khối đặc sẽ che mất chóa), cao tới mặt kính
+      for (const dy of [-1, 1]) box([2.46, 0.13, 0.26], mats.black, [0, dy * 0.645, 0.44], 0.05, null, lg);
+      for (const dx of [-1, 1]) box([0.13, 1.42, 0.26], mats.black, [dx * 1.165, 0, 0.44], 0.05, null, lg);
+      box([2.22, 1.18, 0.04], panMat, [0, 0, 0.33], 0.08, null, lg);
+      // vách ngăn đèn pha / xi nhan (phía ngoài, theo sx)
+      blk([0.06, 1.18, 0.2], mats.black, [sx * 0.76, 0, 0.43], null, lg);
+      for (const dx of [-0.66, 0.24]) {
+        const cx = sx * dx;
+        const bw = add(new THREE.SphereGeometry(0.46, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), reflectorMat, [cx, 0, 0.5], [-Math.PI / 2, 0, 0], lg);
+        bw.scale.set(1, 0.36, 1);
+        add(new THREE.SphereGeometry(0.065, 10, 8), bulbMat, [cx, 0, 0.44], null, lg);
+        add(new THREE.SphereGeometry(0.075, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mats.chrome, [cx, 0, 0.49], [Math.PI / 2, 0, 0], lg);
       }
-      box([2.14, 1.08, 0.04], lensMat, [x, yl + 0.04, z + 0.34], 0.07, null, lg);
-      for (let k = 0; k < 11; k++) blk([0.03, 0.98, 0.03], lensMat, [x - 0.95 + k * 0.19, yl + 0.04, z + 0.37], null, lg);
-      for (const dy of [-0.25, 0.04, 0.33]) blk([2.02, 0.022, 0.03], lensMat, [x, yl + dy, z + 0.375], null, lg);
-      box([0.3, 1.04, 0.12], mats.tailAmber, [x + sx * 0.94, yl + 0.04, z + 0.27], 0.055, null, lg);
+      // chóa xi nhan: hộp mạ nông + bóng
+      box([0.33, 1.1, 0.04], reflectorMat, [sx * 0.935, 0, 0.36], 0.05, null, lg);
+      add(new THREE.SphereGeometry(0.07, 8, 6), bulbMat, [sx * 0.935, 0, 0.42], null, lg);
+      box([1.87, 1.16, 0.05], lensMat, [-sx * 0.175, 0, 0.53], 0.05, null, lg);
+      box([0.35, 1.16, 0.05], amberLens, [sx * 0.935, 0, 0.53], 0.05, null, lg);
     }
     // cản trước thép (xám / đen hoặc cùng màu cabin), tấm chắn dưới, đèn sương mù tròn (một số xe), biển số, móc kéo
     const bumperMat = burnt ? chassisMat : wr() < 0.55 ? plain(new THREE.Color(0x505458).lerp(new THREE.Color(0x3c3a36), age * 0.5), 0.55, 0.35) : cabPaint;
@@ -3767,7 +3827,10 @@ float agF(vec3 p) { return 0.5 * agN(p) + 0.25 * agN(p * 2.03 + 1.7) + 0.125 * a
   function patchLodMaterial(mat, kind, part, dy = 0) {
     const k0 = kind === 'taxi' ? 'sedan' : kind, S = SPEC[k0];
     if (!S || S.isTruck) return mat;
-    const f = v => (+v).toFixed(4);
+    // Kích thước riêng từng loại xe là uniform (mảng vec4 uLodC), không nhúng hằng số vào mã shader: các loại xe cùng cấu
+    // trúc (cùng nhánh suv / van) dùng chung 1 chương trình (đo 2026-10-28: 10 chương trình civlod_<loại>_body / cab)
+    const LC = [];
+    const f = v => { const i = LC.length; LC.push(+v); return `uLodC[${i >> 2}].${'xyzw'[i & 3]}`; };
     const van = (S.style || 0) > 2.5, suvMode = !!(S.isSuv || S.hatchback), suvClad = suvMode && !((S.style || 0) > 1.5);
     const common = `
 float lodIn(float d) { float f = clamp(fwidth(d), 1e-4, 0.08); return 1.0 - smoothstep(-f, f, d); }
@@ -3826,14 +3889,21 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     mat.extensions = Object.assign(mat.extensions || {}, { derivatives: true });
     // khoang: mặt ngoài (nội thất tối nhìn qua kính là lớp khoang thu nhỏ riêng bên props); hai mặt làm tối sườn van trên ANGLE
     if (part === 'cab') mat.transparent = true;
+    const nC = Math.max(1, Math.ceil(LC.length / 4)), lodC = [];
+    for (let i = 0; i < nC; i++) lodC.push(new THREE.Vector4(LC[i * 4] || 0, LC[i * 4 + 1] || 0, LC[i * 4 + 2] || 0, LC[i * 4 + 3] || 0));
+    const lodSrc = 'uniform vec4 uLodC[' + nC + '];\n' + common + (part === 'cab' ? cab : body);
+    let lodHash = 5381;
+    for (let i = 0; i < lodSrc.length; i++) lodHash = (Math.imul(lodHash, 33) ^ lodSrc.charCodeAt(i)) >>> 0;
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.vertexShader = 'attribute vec3 aRef;\nvarying vec3 vLodRef; varying vec3 vLodPos; varying vec3 vLodN;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\nvLodRef = aRef; vLodPos = position + vec3(0.0, ${f(dy)}, 0.0); vLodN = normal;`);
-      sh.fragmentShader = 'varying vec3 vLodRef; varying vec3 vLodPos; varying vec3 vLodN;\n' + common + sh.fragmentShader
+      sh.uniforms.uLodC = { value: lodC };
+      sh.uniforms.uLodDy = { value: +dy };
+      sh.vertexShader = 'attribute vec3 aRef;\nuniform float uLodDy;\nvarying vec3 vLodRef; varying vec3 vLodPos; varying vec3 vLodN;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\nvLodRef = aRef; vLodPos = position + vec3(0.0, uLodDy, 0.0); vLodN = normal;`);
+      sh.fragmentShader = 'varying vec3 vLodRef; varying vec3 vLodPos; varying vec3 vLodN;\nuniform vec4 uLodC[' + nC + '];\n' + common + sh.fragmentShader
         .replace('#include <roughnessmap_fragment>', (part === 'cab' ? cab : body) + '#include <roughnessmap_fragment>')
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.82, lodTrim), 0.06, lodGlass);\nmetalnessFactor = mix(mix(metalnessFactor, 0.05, lodTrim), 0.35, lodGlass);');
     };
-    mat.customProgramCacheKey = () => 'civlod_' + k0 + '_' + part + '|' + prevKey;
+    mat.customProgramCacheKey = () => 'civlod2_' + part + '_' + lodHash.toString(36) + '|' + prevKey;
     return mat;
   }
   // DỰNG XE. opts: color, age (0 mới .. 1 bỏ hoang lâu năm), seed (mỗi xe một kiểu hư hỏng)
@@ -4664,7 +4734,8 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       if (S.isTruck) {
         // xe ben: cabin quệt góc, thành thùng thép bị gầu xúc / đá tảng va móp lõm
         if (k < 0.35) dentAt([sx * 20, 6 + 4 * wr(), 9 + 9 * wr()], [-sx, 0, 0], 1 + wr(), 0.2 + 0.35 * wr(), 1.2);
-        else if (k < 0.5) dentAt([sx * (3 + 3 * wr()), 5 + 3 * wr(), 40], [0, 0, -1], 1 + wr(), 0.25 + 0.4 * wr(), 1);
+        // mặt nạ: tấm tôn trên lưới / đèn (y 8,9 – 10,4); móp trúng lưới / cụm đèn thì chi tiết lún khác tôn, lộ sơn qua nan
+        else if (k < 0.5) dentAt([sx * (2 + 4 * wr()), 8.9 + 1.5 * wr(), 40], [0, 0, -1], 0.8 + 0.6 * wr(), 0.25 + 0.4 * wr(), 1);
         else dents.push({ x: sx * 7.4, y: 8.5 + (TB.top - 10) * wr(), z: -19 + 24 * wr(), nx: sx, ny: 0, nz: 0, r: 1.2 + 1.6 * wr(), depth: (0.22 + 0.5 * wr()) * dK, sz: 1 + wr(), ph: wr() * 6.28 });   // thành / vách thùng
         continue;
       }

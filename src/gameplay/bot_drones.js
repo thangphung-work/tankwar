@@ -100,6 +100,7 @@ const BotDrones = (() => {
         B.respawn = false;
         R.state = kami && (u.kamikazeCount || 0) <= 0 ? 'lost' : 'docked';
         R.hp = 1; B.batt = 1; B.fuel = 1; B.wait = rr(kami ? BD.kamiWait : BD.firstDelay); B.reloadT = 0;
+        B.spare = ArtilleryGame3D.DRONE.spare; B.prepT = 0;
       }
       if (kami) this.botKamiStep(R, u, dt, B);
       else this.botReconStep(R, u, dt, B);
@@ -110,7 +111,15 @@ const BotDrones = (() => {
     botReconStep(R, u, dt, B) {
       const C = ArtilleryGame3D.DRONE, T = this.terrain;
       const ground = (x, z) => (T ? T.getElevationAt(x, z) : 0);
-      if (R.state === 'lost') return;   // bị bắn hạ: chờ xe hồi sinh mới có drone mới
+      if (R.state === 'lost') {
+        // bị bắn hạ: lắp drone dự phòng (cùng luật người chơi — game.js DRONE.spare); hết thì chờ xe hồi sinh
+        if (B.spare === undefined) B.spare = C.spare;
+        if (B.spare > 0) {
+          if (!(B.prepT > 0)) B.prepT = C.sparePrep;
+          if ((B.prepT -= dt) <= 0) { B.spare--; B.prepT = 0; R.state = 'docked'; R.hp = 1; B.batt = C.spareBatt; B.wait = rr(BD.firstDelay); }
+        }
+        return;
+      }
       const pd = this.botPadWorld(u);
       if (R.state === 'docked') {
         B.batt = Math.min(1, B.batt + dt / C.charge * (u.dmg && u.dmg.lost && u.dmg.lost.has('generator') ? 0.5 : 1));

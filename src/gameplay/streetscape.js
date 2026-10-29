@@ -137,9 +137,13 @@ const Streetscape = (() => {
   // bẩn loang theo vùng rộng (toạ độ thế giới): vỉa hè / bó vỉa chỗ sạch chỗ bám bụi, phá ô texture lặp
   // paint: lớp sơn kẻ đường (vạch qua đường): hạt sơn lấm tấm, tróc mảng lộ nhựa sẫm, mép mòn
   function grime(m, k, paint) {
+    // mức bẩn k là uniform (không nhúng vào mã shader): vỉa hè / bó vỉa / rãnh / hố cây dùng chung 1 chương trình
+    const uK = { value: k };
     m.onBeforeCompile = (sh) => {
+      sh.uniforms.uGrK = uK;
       sh.vertexShader = 'varying vec3 vGrW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vGrW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = `varying vec3 vGrW;
+uniform float uGrK;
 float grH(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float grN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u);
   return mix(mix(grH(i), grH(i + vec2(1.0, 0.0)), u.x), mix(grH(i + vec2(0.0, 1.0)), grH(i + vec2(1.0, 1.0)), u.x), u.y); }
@@ -147,11 +151,11 @@ float grN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
   {
     vec2 gp = vGrW.xz;
     float gn = grN(gp * 0.018) * 0.55 + grN(gp * 0.07 + 7.0) * 0.3 + grN(gp * 0.31 + 3.0) * 0.15;
-    diffuseColor.rgb *= mix(vec3(1.0, 0.99, 0.96), vec3(0.62, 0.6, 0.55), smoothstep(0.3, 0.8, gn) * ${k.toFixed(2)});
+    diffuseColor.rgb *= mix(vec3(1.0, 0.99, 0.96), vec3(0.62, 0.6, 0.55), smoothstep(0.3, 0.8, gn) * uGrK);
     // bỏ hoang: mạch gạch (chỗ tối trên texture) mọc rêu / cỏ theo vùng; vệt nước ố đen loang
     float lumG = dot(diffuseColor.rgb, vec3(0.333)), moss = smoothstep(0.5, 0.75, grN(gp * 0.05 + 40.0) * 0.7 + grN(gp * 0.4) * 0.3);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.17, 0.21, 0.1), moss * (0.25 + 0.6 * (1.0 - smoothstep(0.2, 0.4, lumG))) * ${k.toFixed(2)});
-    diffuseColor.rgb *= 1.0 - 0.25 * smoothstep(0.62, 0.8, grN(gp * 0.09 + 90.0)) * ${k.toFixed(2)};${paint ? `
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.17, 0.21, 0.1), moss * (0.25 + 0.6 * (1.0 - smoothstep(0.2, 0.4, lumG))) * uGrK);
+    diffuseColor.rgb *= 1.0 - 0.25 * smoothstep(0.62, 0.8, grN(gp * 0.09 + 90.0)) * uGrK;${paint ? `
     // (sơn mòn theo mảng lớn ~0,5-1 m, mép mềm, lộ nhựa sẫm chứ không đen kịt; hạt lấm tấm nhẹ — trước đây mảng tróc nhỏ
     // tần số cao đen đặc: vạch qua đường lốm đốm như da báo)
     diffuseColor.rgb *= 0.88 + 0.18 * (grH(floor(gp * 9.0)) * 0.6 + grN(gp * 2.0 + 5.0) * 0.4);
@@ -159,7 +163,7 @@ float grN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13, 0.128, 0.122) * (0.8 + 0.4 * grN(gp * 3.0)), chip * 0.85);` : ''}
   }`);
     };
-    m.customProgramCacheKey = () => 'grime' + k + (paint ? 'p2' : '');
+    m.customProgramCacheKey = () => 'grime2' + (paint ? 'p' : '');
     return m;
   }
 

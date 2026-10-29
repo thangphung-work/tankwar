@@ -2238,7 +2238,7 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
 .mm-order-meta i { display: inline; margin: 0 7px 0 0; color: #a8a88f; font-style: normal; font-size: 10px; letter-spacing: 1.6px; }
 .mm-order-meta span:last-child { color: #e0c766; }
 .mm-briefing-body { gap: 12px; }
-.mm-comm-section { position: relative; padding-left: 18px; gap: 6px; }
+.mm-comm-section { position: relative; padding-left: 18px; gap: 6px; min-height: 32px; }
 .mm-comm-section::before {
   content: ''; position: absolute; left: 0; top: 2px; bottom: 4px; width: 3px;
   background: linear-gradient(to bottom, #e0c766, rgba(224, 199, 102, .15));
@@ -2355,14 +2355,12 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
 .ti-command-panel.team-blue .ti-command-reply b { color: #4ade80; }
 .ti-command-panel.team-blue .ti-command-status { color: #38bdf8; }
 
-/* Hộp Briefing Lệnh tác chiến tiền phương - Phe Đỏ */
-.mm-sh-briefing.team-red {
-  background: rgba(26, 10, 10, 0.88);
-  border-color: rgba(239, 68, 68, 0.4);
-}
+/* Lệnh tác chiến tiền phương theo phe: giữ dạng "trần" (không nền, không viền),
+   chỉ pha màu phe vào dải tối mờ phía sau và các nét nhấn. */
 .mm-sh-briefing.team-red::before {
-  border-top-color: #ef4444;
-  border-left-color: #ef4444;
+  background:
+    radial-gradient(ellipse 46% 58% at 6% 30%, rgba(239, 68, 68, .13), transparent 70%),
+    radial-gradient(ellipse 70% 62% at 26% 50%, rgba(8, 3, 3, .64), rgba(8, 3, 3, .32) 55%, transparent 80%);
 }
 .mm-sh-briefing.team-red .mm-briefing-avatar-box {
   box-shadow: 0 0 0 1px rgba(239, 68, 68, .8), 0 0 0 4px rgba(0, 0, 0, .4), 0 4px 14px rgba(239, 68, 68, .35);
@@ -2378,14 +2376,10 @@ body.mm-searching #hud-overlay, body.intro-active #hud-overlay { visibility: hid
 .mm-sh-briefing.team-red .mm-comm-status { color: #f87171; }
 .mm-sh-briefing.team-red .mm-typing-dots { color: #ef4444; }
 
-/* Hộp Briefing Lệnh tác chiến tiền phương - Phe Xanh */
-.mm-sh-briefing.team-blue {
-  background: rgba(8, 16, 26, 0.88);
-  border-color: rgba(56, 189, 248, 0.4);
-}
 .mm-sh-briefing.team-blue::before {
-  border-top-color: #38bdf8;
-  border-left-color: #38bdf8;
+  background:
+    radial-gradient(ellipse 46% 58% at 6% 30%, rgba(56, 189, 248, .12), transparent 70%),
+    radial-gradient(ellipse 70% 62% at 26% 50%, rgba(2, 5, 9, .64), rgba(2, 5, 9, .32) 55%, transparent 80%);
 }
 .mm-sh-briefing.team-blue .mm-briefing-avatar-box {
   box-shadow: 0 0 0 1px rgba(56, 189, 248, .8), 0 0 0 4px rgba(0, 0, 0, .4), 0 4px 14px rgba(56, 189, 248, .35);

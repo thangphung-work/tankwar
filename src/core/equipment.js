@@ -875,10 +875,17 @@
   // Hệ số tầm nhìn của địch tới xe này: phải vào gần hơn ~35% mới thấy / mới khóa được
   // Lá cây rơi đọng trên xe trinh sát khi húc cây (LeafCover): ngụy trang tự nhiên, yếu hơn lưới — lấy cái mạnh hơn
   const leafK = (t, k) => typeof LeafCover !== 'undefined' ? LeafCover.factor(t, k) : 1;
-  function camoFactor(t) { return Math.min(camoHidden(t) ? 0.65 : 1, leafK(t, 0.25)); }
+  function camoCover(t) { return typeof CamoFire !== 'undefined' && CamoFire.cover ? CamoFire.cover(t) : 1; }
+  function camoFactor(t) {
+    const k = camoHidden(t) ? 1 - (1 - 0.65) * camoCover(t) : 1;
+    return Math.min(k, leafK(t, 0.25));
+  }
   // Lưới ngụy trang + xe ĐỨNG YÊN (chưa vừa nổ súng): radar địch chỉ bắt được trong ~60% tầm quét
   // (lá cây & lưới tản sóng làm vết radar yếu, lẫn vào nền cây cối). Chạy là mất tác dụng.
-  function camoRadarFactor(t) { return Math.min(camoHidden(t) ? 0.6 : 1, leafK(t, 0.2)); }
+  function camoRadarFactor(t) {
+    const k = camoHidden(t) ? 1 - (1 - 0.6) * camoCover(t) : 1;
+    return Math.min(k, leafK(t, 0.2));
+  }
   function fireMul(u) { return has(u, 'fireext') ? 2.5 : 1; }
   function burnDamageMul(u) { return has(u, 'fireext') ? 0.5 : 1; }
   // Bình chữa cháy tự động phun ngay khi cảm biến thấy chớp lửa trong khoang:

@@ -58,6 +58,8 @@
 
   // Atlas 2x2: [0] khói cuộn, [1] lửa, [2] bụi xơ, [3] tia lửa / chớp
   let ATLAS = null;
+  // búp con của ô khói 0: [tâm x, tâm y, bán kính, độ đặc] trên toạ độ ô đã uốn méo
+  const SMOKE_LOBES = [[0, 0, 0.62, 1], [-0.3, -0.22, 0.42, 0.8], [0.3, -0.2, 0.4, 0.75], [-0.24, 0.26, 0.38, 0.7], [0.28, 0.24, 0.36, 0.65], [0.02, -0.4, 0.32, 0.6], [0.42, 0.02, 0.3, 0.55], [-0.44, 0, 0.3, 0.5]];
   function getAtlas() {
     if (ATLAS || typeof document === 'undefined') return ATLAS;
     const size = 512, cell = 256;
@@ -78,32 +80,26 @@
             const r = Math.hypot(u, v);
             let R = 1, G = 1, B = 1, A = 0;
             if (kind === 0) {
-              // Khói thể tích xốp mềm gồm nhiều búp khói con (cumulus lobes) lồng nhau, không bao giờ bị tròn đơn điệu
-              const r0 = r / 0.82;
-              const r1 = Math.hypot(u + 0.22, v - 0.16) / 0.58;
-              const r2 = Math.hypot(u - 0.24, v - 0.12) / 0.54;
-              const r3 = Math.hypot(u + 0.16, v + 0.22) / 0.50;
-              const r4 = Math.hypot(u - 0.18, v + 0.20) / 0.52;
-
-              const p0 = Math.max(0, 1 - r0 * r0);
-              const p1 = Math.max(0, 1 - r1 * r1);
-              const p2 = Math.max(0, 1 - r2 * r2);
-              const p3 = Math.max(0, 1 - r3 * r3);
-              const p4 = Math.max(0, 1 - r4 * r4);
-              const basePuff = p0 * p0 * 0.88 + p1 * p1 * 0.65 + p2 * p2 * 0.62 + p3 * p3 * 0.55 + p4 * p4 * 0.52;
-
-              // Nhiễu FBM cuộn xoáy thô + mịn tạo thớ khói tơi xốp
-              const nRough = fbm(u * 2.8 + 3.1, v * 2.8 + 1.2, 4, 11);
-              const nFine = fbm(u * 6.8 + 7.4, v * 6.8 + 5.1, 3, 29);
-              const density = basePuff * (0.55 + 0.45 * nRough) * (0.8 + 0.25 * nFine);
-
-              // Viền ngoài tiêu biến mềm mại hoàn toàn trước r = 0.96
-              const edgeMask = smooth(0.96, 0.45, r);
-              A = clamp01(density * 1.65 * edgeMask);
+              // Búp khói thể tích: chùm búp con lồng nhau trên toạ độ đã uốn méo ở tần số thấp -> dáng súp-lơ lồi lõm, mỗi
+              // hạt xoay ngẫu nhiên nên không búp nào giống búp nào. Độ đặc bão hoà mềm (1 - e^-d): lõi đặc dần, còn hốc
+              // loang chỗ thưa. Trước đây alpha = clamp(mật độ x 1,65) bão hoà phẳng ở ~1/4 diện tích giữa -> mỗi hạt là
+              // một đĩa đặc tròn, khói đen thành chuỗi quả bóng tròn lõi đen xếp chồng (độ đặc trung bình giữ như cũ ~0,24)
+              const wx = fbm(u * 1.5 + 11.3, v * 1.5 + 2.7, 3, 61) - 0.5, wy = fbm(u * 1.5 + 5.9, v * 1.5 + 13.1, 3, 67) - 0.5;
+              const U = u + wx * 0.55, V = v + wy * 0.55;
+              let basePuff = 0;
+              for (const L of SMOKE_LOBES) {
+                const q = Math.hypot(U - L[0], V - L[1]) / L[2];
+                if (q < 1) { const t = 1 - q * q; basePuff += t * t * L[3]; }
+              }
+              // Nhiễu cuộn khối (bình phương -> mảng đặc xen hốc thưa) + thớ mịn
+              const nRough = fbm(U * 3.4 + 4.1, V * 3.4 + 9.3, 4, 71);
+              const nFine = fbm(U * 7.5 + 1.7, V * 7.5 + 3.3, 3, 29);
+              const density = basePuff * (0.35 + 0.85 * nRough * nRough) * (0.85 + 0.3 * nFine);
+              A = (1 - Math.exp(-density * 2.6)) * smooth(1.0, 0.55, Math.hypot(U, V));
 
               // Đổ bóng thể tích 3D: hướng sáng từ trên chếch nhẹ, tạo búp sáng và hốc tối
-              const ny = v * 0.55 + (nRough - 0.5) * 0.4;
-              const nx = u * 0.45 + (nFine - 0.5) * 0.25;
+              const ny = V * 0.55 + (nRough - 0.5) * 0.4;
+              const nx = U * 0.45 + (nFine - 0.5) * 0.25;
               const lit = clamp01(0.66 - ny * 0.42 - nx * 0.22 + (nRough - 0.5) * 0.2);
               R = G = B = lit;
             } else if (kind === 1) {
@@ -1437,6 +1433,16 @@
   // ===========================================================================
   // HỆ THỐNG HẠT BILLBOARD TRÊN GPU
   // ===========================================================================
+  // Nắng cho hạt khói / bụi (dùng chung mọi lớp hạt): hướng (thế giới, từ đất lên mặt trời), độ mạnh 0..1 (mưa: yếu)
+  const PART_SUN = { dir: { value: new THREE.Vector3(0.45, 0.8, 0.4).normalize() }, k: { value: 1 } };
+  let partSunFor = null;
+  const syncPartSun = () => {
+    const G = typeof window !== 'undefined' ? window.game : null, A = G && G.terrain && G.terrain.atmosphere;
+    if (!A || A === partSunFor) return;
+    partSunFor = A;
+    if (A.sunDir) PART_SUN.dir.value.copy(A.sunDir).normalize();
+    PART_SUN.k.value = A.sunIntensity ? Math.max(0.15, Math.min(1, A.sunIntensity / 1.2)) : 1;
+  };
   const VERT = `
     attribute vec3 iPos;
     attribute float iSize;
@@ -1445,18 +1451,28 @@
     attribute float iRot;
     attribute float iCell;
     attribute vec3 iVel;
+    uniform vec3 pSun;
     varying vec2 vUv;
     varying vec3 vColor;
     varying float vAlpha;
+    // khối cầu giả của hạt: vQ toạ độ trên tấm (-1..1, đã xoay theo hạt, hệ camera), vView điểm trên tấm (hệ camera),
+    // vRad bán kính phồng về phía camera (0: tấm phẳng — vệt kéo dài), vSun hướng nắng hệ camera
+    varying vec2 vQ;
+    varying vec3 vView;
+    varying float vRad;
+    varying vec3 vSun;
     #include <fog_pars_vertex>
     void main() {
       vec4 mvPosition = modelViewMatrix * vec4(iPos, 1.0);
-      // Kéo tấm hạt dọc tia nhìn về phía camera ~1/3 cỡ hạt (vị trí & cỡ trên màn hình giữ nguyên): tấm phẳng không cắt
-      // ngang vỏ xe / mặt đất thành đường mép thẳng sắc ngay cạnh chỗ khói bốc (không có bản đồ độ sâu để làm mờ mềm thật)
+      // Kéo tấm hạt dọc tia nhìn về phía camera một chút (vị trí & cỡ trên màn hình giữ nguyên); phần còn lại do độ sâu
+      // ghi theo mặt cầu ở fragment: tấm phẳng cắt ngang vỏ xe / mặt đất thành đường mép thẳng sắc, mặt cầu cắt theo
+      // đường cong ở vùng mép đã mờ (không có bản đồ độ sâu để làm mờ mềm thật)
       float dist = -mvPosition.z;
-      float pull = min(iSize * 0.35, max(0.0, dist - 2.0));
+      float pull = min(iSize * 0.12, max(0.0, dist - 2.0));
       float kz = dist > 0.0 ? (dist - pull) / dist : 1.0;
       mvPosition.xyz *= kz;
+      vSun = normalize((viewMatrix * vec4(pSun, 0.0)).xyz);
+      vRad = iSize * 0.42 * kz;
       // Tia lửa / mảnh nóng (ô 3) bay nhanh: kéo tấm hạt dọc hướng bay trên màn hình ~1/40 s (nhòe chuyển động như mắt /
       // máy quay thấy), bề ngang thu hẹp -> vệt tia lửa thay vì đốm tròn. Hạt đứng yên (chớp sáng) giữ nguyên. Hạt ô khác
       // có p.streak (giọt / tia nước) cũng gửi vận tốc (đã nhân hệ số dài vệt) -> kéo thành vệt nước; còn lại iVel = 0
@@ -1466,11 +1482,16 @@
         vec2 d = vv.xy / vl;
         float L = vl * 0.025 * kz, W = iSize * 0.55 * kz;
         mvPosition.xy += d * (position.y * L - L * 0.35) + vec2(-d.y, d.x) * (position.x * W);
+        vQ = position.xy * 2.0;
+        vRad = 0.0;
       } else {
         float c = cos(iRot), s = sin(iRot);
         vec2 p = position.xy * iSize * kz;
         mvPosition.xy += vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+        vec2 q = position.xy * 2.0;
+        vQ = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
       }
+      vView = mvPosition.xyz;
       gl_Position = projectionMatrix * mvPosition;
       vec2 cellOff = vec2(mod(iCell, 2.0), floor(iCell / 2.0)) * 0.5;
       vUv = cellOff + (position.xy + 0.5) * 0.5;
@@ -1480,15 +1501,42 @@
     }`;
   const FRAG = `
     uniform sampler2D map;
+    uniform float pSunK;
+    uniform mat4 projectionMatrix;   // ShaderMaterial chỉ tự khai báo ở vertex shader (cần cho độ sâu mặt cầu bên dưới)
     varying vec2 vUv;
     varying vec3 vColor;
     varying float vAlpha;
+    varying vec2 vQ;
+    varying vec3 vView;
+    varying float vRad;
+    varying vec3 vSun;
     #include <fog_pars_fragment>
     void main() {
       vec4 t = texture2D(map, vUv);
       float a = t.a * vAlpha;
       if (a < 0.004) discard;
-      gl_FragColor = vec4(t.rgb * vColor, a);
+      vec3 c = t.rgb * vColor;
+      float r2 = min(dot(vQ, vQ), 1.0), h = sqrt(1.0 - r2);
+      #ifdef SMOKE_LIFT
+      // Búp khói / bụi là khối cầu xốp: mặt hứng nắng sáng hơn, mặt khuất tối hơn (độ sáng trung bình giữ như cũ — màu hạt
+      // đã chỉnh theo nền đất được nắng rọi). Trước đây chỉ có sáng tối in sẵn trong texture (luôn sáng phía trên màn
+      // hình) -> nhìn ngược nắng / nắng chếch bên cạnh khói vẫn phẳng như tấm giấy
+      vec3 sn = normalize(vec3(vQ * 0.9, h + 0.3));
+      float wrap = clamp(dot(sn, vSun) * 0.55 + 0.45, 0.0, 1.0);
+      c *= mix(1.0, mix(0.62, 1.3, wrap), pSunK);
+      // Khói tối (dầu / thuốc phóng) dưới trời sáng không đen tuyền: mặt búp khói hứng nắng & ánh trời vẫn sáng lên xám
+      // than ngả nâu, hốc giữa các búp mới tối -> thấy được khối cuộn. Hạt không chiếu sáng nên màu 0,04-0,09 nhân
+      // độ sáng ô texture ra mảng đen phẳng như hình cắt giấy. Chỉ nâng khói tối (màu sáng giữ nguyên)
+      float lum = dot(vColor, vec3(0.3, 0.59, 0.11));
+      c += vec3(0.3, 0.28, 0.255) * t.r * t.r * t.r * clamp(1.0 - lum * 2.2, 0.0, 1.0) * mix(1.0, 0.35 + 0.9 * wrap * wrap, pSunK);
+      #endif
+      gl_FragColor = vec4(c, a);
+      // độ sâu theo mặt cầu phồng về phía camera: lõi búp (đặc) nằm trước, mép (đã mờ) lùi về tâm -> chỗ khói chạm vỏ xe /
+      // mặt đất là đường cong mờ theo dáng búp, không còn vạch thẳng sắc cắt ngang (tấm phẳng xuyên sườn xe đặt chéo)
+      vec3 vp = vView;
+      vp.z += vRad * h;
+      vec4 cp = projectionMatrix * vec4(vp, 1.0);
+      gl_FragDepthEXT = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
       #include <fog_fragment>
     }`;
 
@@ -1523,12 +1571,17 @@
         uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: null } }]),
         vertexShader: VERT,
         fragmentShader: FRAG,
+        defines: additive ? {} : { SMOKE_LIFT: 1 },
+        extensions: { fragDepth: true },
         transparent: true,
         depthWrite: false,
         blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
         fog: true
       });
       mat.uniforms.map.value = getAtlas();
+      // nắng dùng chung (merge() chép uniform -> gán lại đúng object để mọi lớp hạt cùng đổi theo bản đồ)
+      mat.uniforms.pSun = PART_SUN.dir;
+      mat.uniforms.pSunK = PART_SUN.k;
       this.mesh = new THREE.Mesh(g, mat);
       this.mesh.frustumCulled = false;
       // khói / lửa / bụi vẽ SAU xạ thủ trinh sát & đồ đi qua lỗ nóc (renderOrder 12 — phải sau lòng hố lỗ nóc 10-11.3):
@@ -1613,6 +1666,7 @@
 
     // noDraw: bước con giữa khung (ExplosionFX.update chia nhỏ dt khi FPS thấp) — chỉ tính vật lý, chưa ghi bộ đệm GPU
     update(dt, groundAt, noDraw, roofAt = this.roofAt) {
+      syncPartSun();
       const P = this.parts;
       let n = 0;
       const rfFn = roofAt || this.roofAt;
@@ -2174,8 +2228,37 @@
     const a = NTILE[yi * NT + xi], b = NTILE[yi * NT + x1], c = NTILE[y1 * NT + xi], d = NTILE[y1 * NT + x1];
     return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
   };
-  let CLOD_GEO = null;
+  let CLOD_GEO = null, SOD_GEO = null;
+  // shader tảng đất dính cỏ: hàm dùng chung (khoá cache chương trình của three gồm cả mã onBeforeCompile) để bản làm nóng
+  // trong warmMaterials trùng chương trình với hố thật — tảng đầu tiên giữa trận không khựng vì biên dịch shader
+  const sodKey = () => 'craterSod';
+  function sodCompile(sh) {
+    sh.uniforms.sodGrass = { value: this.userData.sodGrass };
+    sh.uniforms.sodSoil = { value: this.userData.sodSoil };
+    sh.fragmentShader = 'uniform vec3 sodGrass;\nuniform vec3 sodSoil;\n' + sh.fragmentShader.replace('#include <color_fragment>',
+      'diffuseColor.rgb *= mix(sodSoil, sodGrass, vColor.r) * (0.75 + 0.5 * vColor.g);');
+  }
+  // Tảng đất dính cỏ (hố trên đồng cỏ): phiến dẹt méo, kênh màu r = 1 ở mặt trên (cỏ), 0 ở mặt cắt / đáy (đất, rễ)
+  function makeSodGeometry() {
+    const g = makeRockGeometry();
+    const pos = g.attributes.position, nrm = g.attributes.normal, col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      pos.setY(i, pos.getY(i) * 0.55);
+      const top = smooth(0.35, 0.7, nrm.getY(i)) * (0.75 + 0.25 * hash2(i, 5, 17));
+      col[i * 3] = col[i * 3 + 2] = top; col[i * 3 + 1] = hash2(i, 11, 23);   // g: sáng tối lốm đốm từng mặt
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    return g;
+  }
   const cnoise = (x, y, s) => tnoise(x * 0.9 + s * 7.31, y * 0.9 + s * 3.17) * 0.65 + tnoise(x * 2.1 + s * 1.7, y * 2.1 - s * 2.9) * 0.35;
+  // độ phủ lớp đất văng ngoài gờ hố (texture hố + lớp cỏ GroundCover dùng chung): ej = độ dày theo tia; nhiễu hai cỡ (mảng lớn
+  // + cục nhỏ) làm mép lớp đất vỡ thành mảng / đốm rời lấn vào cỏ, không thành đĩa tròn mép mềm
+  const ejectaAlpha = (ej, px, pz, nsc) => {
+    if (ej <= 0.02) return 0;
+    const n = (cnoise(px * 0.55 / nsc + 3, pz * 0.55 / nsc, 12) - 0.5) * 0.75 + (cnoise(px * 1.9 / nsc - 5, pz * 1.9 / nsc + 2, 19) - 0.5) * 0.55;
+    return clamp01((ej - 0.16 - n) * 3.2);
+  };
 
   const rand = (a, b) => a + Math.random() * (b - a);
   const mix = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
@@ -2186,6 +2269,145 @@
   // VẾT ĐẠN GẮN LÊN BỀ MẶT (xe, tường) THEO ĐÚNG ĐIỂM CHẠM & PHÁP TUYẾN
   // ===========================================================================
   const MARK_TEX = {};
+  // ---------------------------------------------------------------------------
+  // VẾT VỠ KÍNH CHỐNG ĐẠN NHIỀU LỚP (dùng chung: vết trúng tại chỗ + ô kính rạn đục của VehicleDamage)
+  // Ngoài đời: lõi kính nát vụn trắng mờ, mép lởm chởm; tia nứt mảnh thuôn dần, dài ngắn lệch nhau, gấp khúc & rẽ nhánh,
+  // chỉ sáng lên từng đoạn (bắt sáng theo góc); cung nứt đồng tâm ngắn nối giữa 2 tia, dày ở gần tâm; các lớp kính bên trong
+  // nứt theo mẫu riêng lệch nhẹ -> "bóng" vết mờ hơn. Kính giữa các vết vẫn trong
+  // ---------------------------------------------------------------------------
+  function glassRng(seed) {
+    let s = (seed >>> 0) || 1;
+    return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  // một vết trúng tại (x, y), bán kính R (px), k: độ nặng 0..1 (đạn súng ~0.4, đạn lớn 1)
+  function drawGlassStar(g, x, y, R, seed, k = 1) {
+    const r = glassRng(seed);
+    g.save();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    // quầng mờ đục quanh tâm (lớp keo PVB tách lớp)
+    const halo = g.createRadialGradient(x, y, 0, x, y, R * (0.18 + 0.12 * k));
+    halo.addColorStop(0, `rgba(215,224,228,${0.32 + 0.2 * k})`);
+    halo.addColorStop(1, 'rgba(215,224,228,0)');
+    g.fillStyle = halo; g.beginPath(); g.arc(x, y, R * 0.3, 0, 6.283); g.fill();
+    const crack = (x0, y0, a, len, w0, alpha, depth) => {
+      let px = x0, py = y0;
+      const n = Math.max(3, Math.round(len / (R * 0.06)));
+      const seg = len / n;
+      let lit = r() < 0.6;
+      for (let i = 0; i < n; i++) {
+        a += (r() - 0.5) * 0.32;
+        const nx = px + Math.cos(a) * seg * (0.8 + r() * 0.4), ny = py + Math.sin(a) * seg * (0.8 + r() * 0.4);
+        if (r() < 0.22) lit = !lit;   // bắt sáng từng đoạn
+        const t = i / n, al = alpha * (1 - t * 0.75) * (lit ? 1 : 0.35);
+        g.strokeStyle = `rgba(236,242,244,${al})`;
+        g.lineWidth = Math.max(0.35, w0 * (1 - t * 0.8));
+        g.beginPath(); g.moveTo(px, py); g.lineTo(nx, ny); g.stroke();
+        if (depth < 2 && i > 1 && r() < 0.12) crack(nx, ny, a + (r() < 0.5 ? -1 : 1) * (0.35 + r() * 0.5), len * (1 - t) * (0.3 + r() * 0.4), w0 * 0.6, alpha * 0.7, depth + 1);
+        px = nx; py = ny;
+      }
+      return a;
+    };
+    // tia nứt: 2 lớp (lớp ngoài sắc, lớp trong mờ lệch góc)
+    for (let ply = 0; ply < 2; ply++) {
+      const nR = Math.round((14 + r() * 14) * (0.6 + 0.4 * k)) - ply * 4;
+      const rot = ply ? r() * 0.3 : 0, ox = ply ? (r() - 0.5) * R * 0.04 : 0, oy = ply ? (r() - 0.5) * R * 0.04 : 0;
+      const angs = [];
+      for (let i = 0; i < nR; i++) angs.push((i / nR) * 6.283 + rot + (r() - 0.5) * (6.283 / nR) * 0.8);
+      for (const a of angs) {
+        const long = r() < 0.3;
+        const len = R * (long ? 0.7 + r() * 0.3 : 0.2 + r() * 0.45) * (0.55 + 0.45 * k);
+        crack(x + ox, y + oy, a, len, (ply ? 0.7 : 1.3) * (0.7 + 0.3 * k), ply ? 0.28 : 0.55 + r() * 0.35, ply ? 2 : 0);
+      }
+      // cung nứt đồng tâm giữa 2 tia kề nhau: dày ở gần tâm, thưa dần ra ngoài
+      if (!ply) {
+        const rings = 3 + Math.round(4 * k);
+        for (let q = 0; q < rings; q++) {
+          const rr = R * (0.05 + Math.pow((q + 1) / (rings + 1), 1.5) * 0.55 * (0.6 + 0.4 * k));
+          for (let i = 0; i < angs.length; i++) {
+            if (r() > 0.75 - q * 0.08) continue;
+            const a0 = angs[i], a1 = angs[(i + 1) % angs.length] + (i === angs.length - 1 ? 6.283 : 0);
+            g.strokeStyle = `rgba(232,238,240,${0.2 + r() * 0.3})`;
+            g.lineWidth = 0.5 + r() * 0.5;
+            g.beginPath();
+            const steps = 4;
+            for (let s = 0; s <= steps; s++) {
+              const aa = a0 + (a1 - a0) * (s / steps), rj = rr * (0.92 + r() * 0.16) * (1 - 0.06 * Math.sin(Math.PI * s / steps));
+              const px = x + Math.cos(aa) * rj, py = y + Math.sin(aa) * rj;
+              s ? g.lineTo(px, py) : g.moveTo(px, py);
+            }
+            g.stroke();
+          }
+        }
+      }
+    }
+    // lõi kính nát vụn: mảng trắng mờ lởm chởm + hạt vụn, lỗ tối nhỏ ở giữa (đạn lớn)
+    const core = R * (0.035 + 0.05 * k);
+    g.fillStyle = `rgba(226,233,236,${0.55 + 0.3 * k})`;
+    g.beginPath();
+    for (let i = 0; i <= 12; i++) { const a = (i / 12) * 6.283, rr = core * (0.6 + r() * 0.7); i ? g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr) : g.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    g.fill();
+    for (let i = 0; i < 40 * k + 10; i++) {
+      const a = r() * 6.283, rr = core * (0.8 + Math.pow(r(), 2) * 2.2);
+      g.fillStyle = `rgba(230,236,238,${0.25 + r() * 0.4})`;
+      g.fillRect(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 0.6 + r() * 1.2, 0.6 + r() * 1.2);
+    }
+    if (k > 0.6) { g.fillStyle = 'rgba(30,34,36,0.75)'; g.beginPath(); g.arc(x, y, core * 0.35, 0, 6.283); g.fill(); }
+    g.restore();
+  }
+  // Cả ô kính rạn đục: vết trúng thật (impacts: [[u, v, k]] theo UV ô) + vết nứt dài chạy giữa các vết / ra mép khung + lớp
+  // rạn li ti dày quanh các vết (kính đã tách lớp) + màng mờ sữa nhẹ. Vẽ ĐÈ lên ảnh kính bụi gốc (giữ cung gạt nước, bụi)
+  // ppu: số điểm ảnh / đơn vị thế giới trên ô kính -> vết vỡ có cỡ THẬT theo loại đạn (12.7 ~ 20 cm, đạn lớn ~ 40 cm), không
+  // theo tỉ lệ ô (trước: ô kính cửa nhỏ & kính chắn gió to cùng một ảnh 512 px -> nét nứt trên ô nhỏ mảnh tới mức biến mất)
+  function drawGlassCraze(g, W, H, impacts, seed, ppu) {
+    const r = glassRng(seed);
+    ppu = ppu || W / 8;
+    const P = impacts.map(([u, v, k]) => [u * W, (1 - v) * H, k]);
+    g.fillStyle = 'rgba(205,214,218,0.07)'; g.fillRect(0, 0, W, H);
+    // vết nứt dài lang thang nối các vết trúng & chạy ra khung
+    g.lineCap = 'round';
+    // (vết nứt dài của kính chống đạn gần như thẳng, gấp khúc nhẹ, ít — không lượn như sợi tóc)
+    for (let i = 0; i < 2 + P.length; i++) {
+      const s = P[i % P.length];
+      let x = s[0], y = s[1], a = r() * 6.283;
+      const t = P.length > 1 && r() < 0.6 ? P[(i + 1) % P.length] : null;
+      if (t) a = Math.atan2(t[1] - y, t[0] - x);
+      const n = 10 + Math.floor(r() * 16);
+      for (let j = 0; j < n; j++) {
+        a += (r() - 0.5) * (r() < 0.15 ? 0.6 : 0.14);
+        const nx = x + Math.cos(a) * ppu * 0.3, ny = y + Math.sin(a) * ppu * 0.3;
+        g.strokeStyle = `rgba(234,240,242,${(0.14 + r() * 0.22) * (r() < 0.25 ? 0.35 : 1)})`;
+        g.lineWidth = 0.45 + r() * 0.5;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
+        x = nx; y = ny;
+        if (x < 0 || y < 0 || x > W || y > H) break;
+      }
+    }
+    // rạn li ti quanh vết trúng (ô nhỏ đa giác)
+    for (const [x0, y0, k] of P) {
+      const RR = ppu * (1.3 + 1.5 * k);
+      for (let i = 0; i < 160 * k + 40; i++) {
+        const a = r() * 6.283, d = Math.pow(r(), 0.8) * RR;
+        const x = x0 + Math.cos(a) * d, y = y0 + Math.sin(a) * d, b = r() * 6.283, l = ppu * (0.08 + r() * 0.2) * (1 - d / RR * 0.5);
+        g.strokeStyle = `rgba(232,238,240,${(0.12 + r() * 0.25) * (1 - d / RR)})`;
+        g.lineWidth = 0.4 + r() * 0.4;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(b) * l, y + Math.sin(b) * l); g.stroke();
+      }
+    }
+    for (const [x0, y0, k] of P) drawGlassStar(g, x0, y0, ppu * (0.9 + 1.6 * k), Math.floor(r() * 1e9), k);
+  }
+  if (typeof window !== 'undefined') window.GlassCrack = { star: drawGlassStar, craze: drawGlassCraze };
+  // vết trúng tại chỗ trên kính: 3 mẫu khác nhau (trước: 1 mẫu 128 px cho mọi phát -> lặp y hệt, nhòe khi phóng to)
+  const GLASS_MARK = [];
+  function getGlassCrackTexture(v) {
+    if (GLASS_MARK[v] || typeof document === 'undefined') return GLASS_MARK[v];
+    const S = 256, cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    drawGlassStar(cv.getContext('2d'), S / 2, S / 2, S * 0.5, 9137 + v * 7919, 0.85);
+    const t = new THREE.CanvasTexture(cv);
+    t.anisotropy = 4;
+    return (GLASS_MARK[v] = t);
+  }
+
   function getMarkTexture(kind) {
     if (MARK_TEX[kind] || typeof document === 'undefined') return MARK_TEX[kind];
     const size = 128, c = size / 2;
@@ -2679,7 +2901,7 @@
         });
       } else if (kind === 'glassCrack') {
         mat = new THREE.MeshStandardMaterial({
-          map: getMarkTexture(kind), roughness: 0.2, metalness: 0.3, transparent: true, depthWrite: false,
+          map: getGlassCrackTexture(Math.floor(Math.random() * 3)), roughness: 0.25, metalness: 0.1, transparent: true, depthWrite: false,
           polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8
         });
       } else if (kind === 'armorCrater' || kind === 'metalHole' || kind === 'bulletDent') {
@@ -2750,6 +2972,9 @@
         // -> renderBufferDirect đọc null, ném lỗi mỗi khung (giật / mất nửa cảnh). Lô vết cũng mang bảng màu trắng
         im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
         for (let i = 0; i < cap; i++) im.setMatrixAt(i, Z);
+        // chỉ vẽ tới ô cao nhất đã dùng (ô trống tỉ lệ 0 vẫn tốn đỉnh): trước đây mỗi lô luôn vẽ đủ 64 bản — xác xe cứ điểm
+        // ~400 lô = 1M tam giác mỗi khung dù mỗi lô chỉ vài vết
+        im.count = 0;
         im.renderOrder = 4; im.frustumCulled = false; im.castShadow = false; im.userData.isFxDecal = true;
         parent.add(im);
         B = bs[mat.uuid] = { im, cap, free: [], next: 0, owner: new Array(cap).fill(null), order: [] };
@@ -2766,6 +2991,7 @@
       tf.updateMatrix();
       B.im.setMatrixAt(slot, tf.matrix);
       B.im.instanceMatrix.needsUpdate = true;
+      if (slot >= B.im.count) B.im.count = slot + 1;
       const rec = { batch: B, slot, mat, unit, t: 0, glow: 0 };
       B.owner[slot] = rec; B.order.push(slot);
       this.surfaceMarks.push(rec);
@@ -2875,6 +3101,13 @@
       if (!mk || !hit.object) return;
       if (hit.armorMark === mk) hit.armorMark = null;
       const ke = mk.kind === 'kinetic', o = { unit: hit.unit }, r = res || {};
+      // Kính cabin chống đạn: không có hố lõm / lỗ thép lật mép — vết vỡ mạng nhện to quanh lỗ thủng (30mm, đạn lớn);
+      // cả ô rạn đục / bung là việc của VehicleDamage (từng ô kính)
+      const om = hit.object.material;
+      if (om && om.userData && om.userData.windowGlass) {
+        this.addSurfaceMark(mk.p, mk.n, hit.object, 'glassCrack', mk.kind === 'hei' ? 3.6 : mk.kind === 'gl40' ? 3.4 : 5.0, o);
+        return;
+      }
       if (mk.kind === 'hei') {
         // 30mm nổ mảnh xuyên: xuyên -> lỗ rách lởm chởm mép thép lật; không xuyên -> hố cày nông, muội nổ, rỗ mảnh
         if (r.pen) this.addSurfaceMark(mk.p, mk.n, hit.object, 'heiHole', mk.cls === 'medium' ? 2.8 : mk.cls === 'heavy' ? 2.6 : 3.2, o);
@@ -3014,8 +3247,8 @@
             this.emitters.push({ x: p.x, z: p.z, y: p.y, t: 0, dur: rand(2.5, 4.5), acc: 0, rate: 10, size: 1.4 });
           }
           if (surface === 'glass') {
-            // Kính chống đạn: nứt mạng nhện, không thủng
-            this.addSurfaceMark(p, n, hit.object, 'glassCrack', ammoType === 'SCOUT_BULLET' ? 1.8 : 2.4, { unit: hit.unit });
+            // Kính chống đạn: 12.7 để vết mắt bò nhỏ (không thủng); 30mm nổ mảnh khoét lỗ có quầng rạn rộng
+            this.addSurfaceMark(p, n, hit.object, 'glassCrack', ammoType === 'SCOUT_BULLET' ? 1.8 : 3.2, { unit: hit.unit });
           } else if (surface === 'rubber') {
             // Lốp / đệm cao su: vết rách nhỏ (bánh quay nên không dán decal lên mặt lốp)
           } else if (surface === 'cloth') {
@@ -3157,6 +3390,13 @@
       }
       if (fresh && mode === 'ammo' && L.onTurret && type === 'ALL_ROUNDER') bustle = true;
       if (fresh && !L.splash && L.onTurret && L.pen && type === 'ARTILLERY' && mode === 'crew') mode = 'ammo';
+      // cả kíp trong cabin hy sinh (vehicle_damage cabinCrewHit): xe nguyên vẹn, kho đạn sau xe không bị chạm -> không nổ,
+      // chỉ khói tuôn từ cabin vỡ (lựu pháo 155 nổ trong cabin vẫn theo kiểu 'blast' như cũ)
+      // (máy khác chỉ có phát trúng hiển thị: nhận biết qua 2 bộ phận kíp đã mất trong bản đồng bộ)
+      const crewGone = L && (L.crewKill || (type === 'ARTILLERY' && d.lost && d.lost.has('crewDriver') && d.lost.has('crewCmdr')));
+      if (fresh && crewGone && !L.splash && !(L.cls === 'blast' && L.heavy)) {
+        return { mode: 'crew', type, instant: null, delayed: null, cookAt: Infinity, tossP: 0, tossRoll: 1, point: L.point || null, dir: L.dir || null, crewKill: true };
+      }
       // nổ gần: L.point là tâm vụ nổ (giữa không trung / hố đất) chứ không phải lỗ trên vỏ -> chớp lửa khoang phụt từ kho đạn
       const K = { mode, type, instant: null, delayed: null, cookAt: Infinity, tossP: 0, point: fresh && !L.splash ? L.point : null, dir: fresh && L.dir ? L.dir : null };
       // Bốc thăm theo hạt giống chung: phát kết liễu mang burstSeed của viên đạn (gửi kèm sự kiện bắn) -> mọi máy cùng thấy
@@ -3203,6 +3443,11 @@
           if (rng() < 0.5) { K.delayed = 'vent'; } else { K.delayed = null; K.cookAt = Infinity; K.tossP = 0; }
         }
       }
+      // NỔ HÀNG LOẠT (hiếm): không chỉ thuốc phóng cháy dữ dội mà đầu đạn nổ phá kích nổ dây chuyền -> thân toác, gạch
+      // giáp / váy xích / bánh xe văng rải vài chục mét, mảnh thép bay vèo, tháp bay cao & xa. Chỉ xe có cơ số đạn pháo
+      const massP = { ALL_ROUNDER: 0.2, ARTILLERY: 0.25 }[type] || 0;
+      K.mass = (K.instant === 'det' || K.delayed === 'det') && rng() < massP;
+      if (K.mass) K.tossP = Math.max(K.tossP || 0, 0.95);
       return K;
     },
 
@@ -3336,13 +3581,15 @@
       if (delayed && typeof VehicleDamage !== 'undefined' && VehicleDamage.onDetonate) VehicleDamage.onDetonate(u, this);
       // Xe trinh sát không có kho đạn pháo: chỉ nổ bình nhiên liệu / thùng đạn súng máy -> quả cầu lửa nhỏ hơn
       const light = type === 'SCOUT';
-      const fb = { ALL_ROUNDER: 1.6, ARTILLERY: 1.8, GATLING: 1.25, SCOUT: 0.9 }[type] || 1.4;
+      const mass = !!K.mass;
+      const fb = ({ ALL_ROUNDER: 1.6, ARTILLERY: 1.8, GATLING: 1.25, SCOUT: 0.9 }[type] || 1.4) * (mass ? 1.3 : 1);
       // Tiếng nổ thứ cấp riêng của từng loại xe (kho đạn kích nổ / liều phóng cháy phụt / bình xăng bốc cháy)
       if (window.soundEngine && window.soundEngine.playVehicleDestroyed) window.soundEngine.playVehicleDestroyed(type, ring, 'det');
       // chớp nổ trong khoang kín bị thân xe che phần lớn: nhỏ hơn hẳn đạn HE nổ ngoài trời (trước đây trắng xóa cả cảnh)
       // Kho đạn kích nổ: hàng chục quả đạn (thuốc nổ + liều phóng) ~ vài chục kg TNT quy đổi (đã trừ phần thân xe giam lại)
       // -> sóng xung kích lớn hơn hẳn một phát HE; xe trinh sát chỉ có bình nhiên liệu + thùng đạn súng máy
-      const charge = { ALL_ROUNDER: 20, ARTILLERY: 30, GATLING: 8, SCOUT: 3 }[type] || 15;
+      // nổ hàng loạt: đầu đạn nổ phá cùng kích nổ -> khối thuốc nổ quy đổi lớn gấp vài lần, thân xe không giam nổi
+      const charge = ({ ALL_ROUNDER: 20, ARTILLERY: 30, GATLING: 8, SCOUT: 3 }[type] || 15) * (mass ? 2.5 : 1);
       this.spawn(ring.x, ring.y + 4, ring.z, light ? 'NORMAL' : 'HE', 'DIRECT_HIT', { heavy: false, flashK: 0.45, charge });
       this.spawnFireball(ring.x, ring.y + 8, ring.z, fb, light ? PROFILES.NORMAL : PROFILES.HE, 0, 0);
       // Khối thuốc phóng bùng cháy: cột lửa cuộn vọt thẳng lên (khí nổ thoát qua nóc / vòng tháp), chớp sáng mạnh,
@@ -3396,16 +3643,20 @@
       }
       // nổ trong khoang kín: khí nổ thoát lên qua nóc / vòng tháp, chỉ sức ép lọt ra gầm thổi bụi (không cuốn mù cả
       // cảnh như quả đạn HE nổ ngoài trời)
-      this.spawnDust(ring.x, this.groundAt(ring.x, ring.z), ring.z, fb * 0.45, PROFILES.HE, this.palette('GROUND'), false);
-      this.launchFrags(W, ring, { ALL_ROUNDER: 12, ARTILLERY: 14, GATLING: 9, SCOUT: 6 }[type] || 10, 1, false);
+      // (nổ hàng loạt: sàn / sườn toác -> sức nổ thổi thẳng xuống đất quanh xe, bụi cát tung mạnh)
+      this.spawnDust(ring.x, this.groundAt(ring.x, ring.z), ring.z, fb * (mass ? 0.9 : 0.45), PROFILES.HE, this.palette('GROUND'), false);
+      this.launchFrags(W, ring, ({ ALL_ROUNDER: 12, ARTILLERY: 14, GATLING: 9, SCOUT: 6 }[type] || 10) * (mass ? 2 : 1), mass ? 1.3 : 1, false);
+      if (mass) this.massFragments(ring, fb);
       // xe tăng: ~40 liều thuốc phóng cháy nối nhau -> ngọn lửa phụt kéo dài 6-10 s (phim thật), không chỉ vài giây
       // pháo tự hành: vài chục module liều phóng trong khoang nạp bén lửa lần lượt -> cột lửa phụt qua nắp khoang lâu như xe tăng
-      W.torch = { ph: Math.random() * 10, t0: W.t, dur: { ALL_ROUNDER: rand(6, 10), ARTILLERY: rand(7, 11), GATLING: rand(1.5, 2.5), SCOUT: rand(1, 1.8) }[type] || 2, scale: { ALL_ROUNDER: 1, ARTILLERY: 1.15, GATLING: 0.75, SCOUT: 0.55 }[type] || 1 };
+      // nổ hàng loạt: phần lớn thuốc phóng đã cháy hết trong tích tắc -> cột lửa sau đó ngắn hơn
+      W.torch = { ph: Math.random() * 10, t0: W.t, dur: ({ ALL_ROUNDER: rand(6, 10), ARTILLERY: rand(7, 11), GATLING: rand(1.5, 2.5), SCOUT: rand(1, 1.8) }[type] || 2) * (mass ? 0.7 : 1), scale: { ALL_ROUNDER: 1, ARTILLERY: 1.15, GATLING: 0.75, SCOUT: 0.55 }[type] || 1 };
       W.char = Math.max(W.char || 0, 0.5); W.charT = Math.min(W.charT || 5, 6); W.charMax = 1;
       this.applyChar(u);
       // Tháp pháo bị hất văng theo hướng đạn nổ và quán tính (pháo tự hành nặng hơn nên bay thấp & gần hơn,
       // xe trinh sát chỉ bật trạm vũ khí nhẹ). Nổ trễ: khí nổ đẩy thẳng lên, hướng đạn ít còn ý nghĩa
-      const tossK = { ARTILLERY: 0.7, SCOUT: 0.3 }[type] || 1;
+      // nổ hàng loạt: tháp vọt ~7-16 m, rơi xa hơn chục mét (phim xác xe: tháp nằm cách thân 10-20 m)
+      const tossK = ({ ARTILLERY: 0.7, SCOUT: 0.3 }[type] || 1) * (mass ? 2.2 : 1);
       if (u.turretGroup && (K.tossRoll !== undefined ? K.tossRoll : Math.random()) < (K.tossP || 0)) this.tossTurret(u, delayed ? null : W.impactVel, delayed ? null : W.hitPoint, tossK);
       // Vài lỗ xuyên + vết cháy trên sườn xe (mảnh văng từ trong ra)
       for (let k = 0; k < 3; k++) {
@@ -3453,7 +3704,13 @@
     wreckFireLevels(u, W) {
       const K = W.K || {}, t = W.t, out = this.wreckBurnout(W);
       const ramp = (a, b) => Math.max(0, Math.min(1, (t - a) / Math.max(0.01, b - a)));
-      if (W.detonated) return { ring: Math.min(1, 0.6 + (t - W.cookStart)) * out, eng: out };
+      // sau kích nổ: khoang máy có vách ngăn chống cháy -> lửa lan qua (thùng dầu bục, dầu tràn) mất ~10-20 s, không
+      // bùng cháy ngay cùng lúc với cột lửa vòng tháp; nổ trễ sau khi khoang máy đã cháy thì giữ mức đang cháy
+      if (W.detonated) {
+        const dt0 = t - W.cookStart;
+        const pre = K.mode === 'engine' || K.mode === 'fuel' || K.mode === 'blast' || K.mode === 'burn' ? Math.min(1, 0.4 + 0.6 * W.cookStart / 4) : 0;
+        return { ring: Math.min(1, 0.6 + dt0) * out, eng: Math.max(pre, Math.min(1, Math.max(0, (dt0 - 3) / 15))) * out };
+      }
       let ring, eng;
       switch (K.mode) {
         case 'engine': eng = 0.35 + 0.65 * ramp(0, 4); ring = 0.7 * ramp(6, 10); break;     // lửa khoang máy lan dần lên
@@ -3513,61 +3770,66 @@
       const a = (W.t - V.t0) / V.dur;
       // bùng mạnh ngay (áp suất đầu cao), duy trì, lụi dần cuối; chập chờn
       let k = a < 0.08 ? 0.6 + 5 * a : a < 0.65 ? 1 : Math.max(0, 1 - (a - 0.65) / 0.35);
-      k *= 0.8 + 0.4 * Math.random();
-      for (let i = 0; i < 2; i++) {
-        const p = this.ventPoint(u, W, i);
-        // cột lửa thuốc phóng gầm thét từ miệng tấm xả áp: lõi trắng vàng đặc ở gốc, loe & đỏ dần lên cao, đỉnh ~8-10 m
-        // (hạt to, chồng lên nhau, sinh dọc thân cột -> một khối lửa liền, không phải tia lấm tấm như pháo hoa)
-        const n = Math.round(7 + 9 * k);
-        for (let j = 0; j < n; j++) {
-          const f = Math.pow(Math.random(), 1.5), h = f * 70 * k;
-          const w = 0.9 + 2.6 * f;
-          this.fire.add({
-            x: p.x + rand(-1, 1) * w, y: p.y + h, z: p.z + rand(-1, 1) * w, vx: rand(-5, 5), vy: rand(90, 140) * (0.5 + 0.5 * k), vz: rand(-5, 5),
-            size: rand(5.5, 8.5) * (0.6 + 0.4 * k) * (1 + f * 1.1), grow: 7, drag: 2, grav: -4, life: rand(0.16, 0.32), alpha: 1, fadeIn: 0.015,
-            c0: f < 0.25 ? [1, 0.8, 0.45] : [1, 0.58, 0.2], c1: f < 0.55 ? [0.9, 0.26, 0.04] : [0.45, 0.1, 0.02], cell: 1, floor: false
-          });
-        }
-        // khói đen thuốc phóng cuộn quanh nửa trên cột lửa rồi bốc thành cột
-        for (let j = 0; j < 3; j++) {
-          if (Math.random() > 0.6) continue;
-          const g = rand(0.04, 0.09);
-          this.smoke.add({
-            x: p.x + rand(-4, 4), y: p.y + 70 * k * rand(0.3, 1) + 4, z: p.z + rand(-3, 3), vx: rand(-4, 4), vy: rand(30, 45) * k + 12, vz: rand(-4, 4),
-            size: rand(8, 12), grow: 9, drag: 0.7, grav: -4, life: rand(3.5, 5.5), alpha: 0.75, fadeIn: 0.15,
-            c0: [g, g, g], c1: [g * 2.3, g * 2.2, g * 2.1], cell: 0, floor: false
-          });
-        }
-      }
+      k *= 0.9 + 0.2 * Math.random();
+      // cột lửa thuốc phóng gầm thét từ miệng tấm xả áp, đỉnh ~8-10 m: cùng dòng lửa phụt như sau kích nổ (emitJet) nhưng
+      // miệng hẹp; hai miệng lệch pha nhịp phụt -> không thành hai ống lửa giống hệt nhau đứng cạnh nhau
+      for (let i = 0; i < 2; i++) this.emitJet(this.ventPoint(u, W, i), k * 0.9, 0.9, W.t + i * 2.3 + (V.ph || (V.ph = Math.random() * 10)), true);
     },
 
     // Thuốc phóng cháy sau kích nổ: ngọn lửa cuộn dữ dội từ khoang hở — dày đặc ở gốc, loe rộng & uốn lắc theo
     // chiều cao (rối khí, gió), ngọn tối đỏ rồi hóa khói đen dầu. Hạt dồn về gốc, to và chồng lên nhau -> khối lửa liền,
     // không thành cột đốm cách quãng. k = cường độ 0..1, ph = pha lắc (thời gian)
-    emitJet(p, k, scale = 1, ph = 0) {
-      const H = 80 * k * scale;                                   // chiều cao ngọn lửa (~10 m với xe tăng — thuốc phóng phụt như mỏ hàn khổng lồ)
+    // Hạt sinh ở MIỆNG khoang rồi bị luồng khí đẩy vọt lên (không rải sẵn dọc thân cột): cột lửa là một dòng chảy thật —
+    // nhìn thấy lửa cuộn đi lên, nguội dần theo đường bay (vàng trắng -> cam -> đỏ sẫm gần như trong suốt khi cộng sáng)
+    // rồi hóa khói đen ở ngọn. Trước đây hạt sống 0,2-0,36 s đặt sẵn khắp chiều cao, alpha ~1 chồng cộng sáng -> một ống
+    // cam bão hòa đứng yên, đều tăm tắp như đèn neon. Liều phóng bắt lửa từng đợt -> ngọn lửa phụt dồn / hụt theo nhịp
+    // không đều (2-5 lần/s), thỉnh thoảng một lưỡi lửa tách khỏi cột bay lên rồi tắt trong khói.
+    // narrow: miệng xả hẹp (tấm xả áp hốc đạn) — gốc thon, lửa thẳng hơn
+    emitJet(p, k, scale = 1, ph = 0, narrow = false) {
+      const surge = Math.sin(ph * 6.7) * 0.5 + Math.sin(ph * 11.3 + 1.3) * 0.3 + Math.sin(ph * 2.9 + 0.4) * 0.4;
+      const kk = k * Math.max(0.35, 0.8 + 0.25 * surge);
+      const H = 72 * kk * scale;                                  // ngọn lửa đỉnh ~9 m với xe tăng (8 đv = 1 m)
       const swayX = Math.sin(ph * 1.7) * 0.18 + Math.sin(ph * 4.3 + 1.1) * 0.07;
       const swayZ = Math.cos(ph * 1.3 + 0.6) * 0.15 + Math.sin(ph * 3.7) * 0.06;
-      const n = Math.round((5 + 7 * k) * scale);
+      const base = (narrow ? 1.4 : 4.5) * scale;                  // bán kính miệng phụt (lỗ vòng tháp ~2 m)
+      const n = Math.round((7 + 9 * kk) * scale);
       for (let j = 0; j < n; j++) {
-        const f = Math.pow(Math.random(), 1.9);                   // phần lớn hạt ở thấp: gốc lửa đặc
-        const h = f * H;
-        const wdt = (2.2 + 4.5 * f) * scale;                      // loe ra theo chiều cao
+        // tốc độ phụt chọn sao cho hạt (lực cản + lực nổi) lên tới ~H trong đời của nó; hạt chậm ở lại thấp làm gốc dày
+        const life = rand(0.42, 0.72), sp = rand(0.55, 1.15);
+        const v0 = H * 3.6 * sp / (0.6 + life);
+        const side = rand(5, 13) * (narrow ? 0.6 : 1) * scale;
+        const hot = Math.random() < 0.4;
         this.fire.add({
-          x: p.x + rand(-1, 1) * wdt + swayX * h, y: p.y + 1 + h, z: p.z + rand(-1, 1) * wdt + swayZ * h,
-          vx: rand(-5, 5) + swayX * 40, vy: rand(28, 55) * (0.6 + 0.4 * k), vz: rand(-5, 5) + swayZ * 40,
-          size: rand(8, 13) * scale * (0.65 + 0.35 * k) * (1 + f * 0.9), grow: 4, drag: 2, grav: -10, life: rand(0.2, 0.36), alpha: 0.95, fadeIn: 0.02,
-          c0: f < 0.35 ? [1, 0.86, 0.55] : [1, 0.66, 0.28], c1: f < 0.6 ? [0.95, 0.32, 0.05] : [0.55, 0.12, 0.02], cell: 1, floor: false
+          x: p.x + rand(-1, 1) * base, y: p.y + 0.5 + rand(0, 3) * scale, z: p.z + rand(-1, 1) * base,
+          vx: rand(-1, 1) * side + swayX * v0 * 0.5, vy: v0, vz: rand(-1, 1) * side + swayZ * v0 * 0.5,
+          size: rand(4.5, 7.5) * scale * (narrow ? 0.8 : 1), grow: rand(9, 17) * scale * (narrow ? 0.75 : 1), drag: 1.4, grav: -26, life,
+          alpha: rand(0.5, 0.75), fadeIn: 0.03, fadePow: 0.9, rot: Math.random() * 6.28, rotV: rand(-3, 3),
+          // gốc lửa thuốc phóng gần trắng; nguội nhanh dọc đường bay: đỏ sẫm cộng sáng rất ít -> ngọn tự mờ vào khói
+          c0: hot ? [1, 0.9, 0.62] : [1, 0.72, 0.34], c1: [0.42, 0.08, 0.015], colorRate: rand(0.95, 1.25), cell: 1, floor: false
         });
       }
-      // khói đen dầu sinh ngay tại ngọn lửa, nối liền vào cột khói
-      for (let j = 0; j < 2; j++) {
-        if (Math.random() > 0.55 + 0.35 * k) continue;
-        const g = rand(0.04, 0.09);
+      // lưỡi lửa tách khỏi cột: một cụm vọt cao lệch sang bên rồi tắt (ngọn lửa không phải một ống liền đều)
+      if (Math.random() < 0.3 * kk) {
+        const a = Math.random() * 6.28, off = rand(0.4, 1) * base, v0 = H * rand(3.4, 4.2);
+        const lx = Math.cos(a) * rand(6, 14) * scale, lz = Math.sin(a) * rand(6, 14) * scale;
+        for (let q = 0; q < 3; q++) {
+          this.fire.add({
+            x: p.x + Math.cos(a) * off, y: p.y + 1 + q * 2.5 * scale, z: p.z + Math.sin(a) * off,
+            vx: lx + swayX * v0 * 0.5, vy: v0 * (1 - q * 0.08), vz: lz + swayZ * v0 * 0.5,
+            size: rand(4, 6) * scale, grow: 12 * scale, drag: 1.5, grav: -26, life: rand(0.5, 0.7), alpha: 0.55, fadeIn: 0.03, fadePow: 1.1,
+            c0: [1, 0.76, 0.38], c1: [0.4, 0.07, 0.01], colorRate: 1.3, cell: 1, floor: false
+          });
+        }
+      }
+      // khói đen thuốc phóng / dầu nuốt lấy nửa trên ngọn lửa và nối thành cột khói: sinh từ giữa thân lửa trở lên, dày
+      // nhất ở ngọn, cuộn phình ra hai bên
+      const ns = (Math.random() < 0.75 ? 1 : 0) + (Math.random() < 0.6 * kk ? 1 : 0);
+      for (let j = 0; j < ns; j++) {
+        const g = rand(0.035, 0.08), h = H * rand(0.8, 1.15);
         this.smoke.add({
-          x: p.x + rand(-3, 3) * scale + swayX * H, y: p.y + H * rand(0.75, 1.05) + 2, z: p.z + rand(-3, 3) * scale + swayZ * H,
-          vx: rand(-4, 4) + swayX * 30, vy: rand(26, 42) * (0.6 + 0.4 * k), vz: rand(-4, 4) + swayZ * 30,
-          size: rand(9, 13) * scale, grow: 10, drag: 0.7, grav: -4, life: rand(3.5, 5.5), alpha: 0.78, fadeIn: 0.1,
+          x: p.x + rand(-1, 1) * (base + 2 * scale) + swayX * h, y: p.y + h + 2, z: p.z + rand(-1, 1) * (base + 2 * scale) + swayZ * h,
+          vx: rand(-6, 6) + swayX * 30, vy: rand(28, 46) * (0.6 + 0.4 * kk), vz: rand(-6, 6) + swayZ * 30,
+          size: rand(12, 17) * scale, grow: 13, drag: 0.7, grav: -5, life: rand(3.5, 5.5), alpha: 0.62, fadeIn: 0.22,
           c0: [g, g, g], c1: [g * 2.3, g * 2.2, g * 2.1], cell: 0, floor: false
         });
       }
@@ -3763,6 +4025,23 @@
       }
     },
 
+    // Nổ hàng loạt: vỏ đạn / vách thép vỡ thành mảnh bay rất nhanh (hàng trăm m/s) tỏa gần như ngang -> vệt sáng vèo đi
+    // trong tích tắc, kèm cục thép nhỏ văng xa rơi rải quanh xe. Không lơ lửng: nhanh, nặng, rơi gọn
+    massFragments(p, fb = 1) {
+      if (this.streaks) {
+        for (let i = 0; i < 36; i++) {
+          const a = Math.random() * Math.PI * 2, sp = rand(250, 480), el = rand(-0.05, 0.45);
+          this.streaks.add({ x: p.x + rand(-2, 2), y: p.y + rand(1, 5), z: p.z + rand(-2, 2), vx: Math.cos(a) * sp, vy: el * sp, vz: Math.sin(a) * sp, drag: 1.2, grav: GRAV, life: rand(0.25, 0.6), tail: rand(0.03, 0.06) });
+        }
+      }
+      if (this.hardRocks) {
+        for (let i = 0; i < 14; i++) {
+          const a = Math.random() * Math.PI * 2, sp = rand(60, 150) * Math.sqrt(fb), g = rand(0.1, 0.2);
+          this.hardRocks.add({ x: p.x, y: p.y + 3, z: p.z, vx: Math.cos(a) * sp, vy: rand(50, 110), vz: Math.sin(a) * sp, size: rand(0.4, 1.0), life: rand(3, 5), c: [g, g, g * 1.05] });
+        }
+      }
+    },
+
     updateFrags(W, dt) {
       for (let i = W.frags.length - 1; i >= 0; i--) {
         const f = W.frags[i];
@@ -3776,24 +4055,26 @@
           if (f.y <= gy + 0.5) { f.y = gy + 0.5; f.ground = true; f.t = 0; }
           // đầu mảnh cháy sáng + vệt khói xám đen phía sau. Nhịp cố định 60 lần/s (không theo khung hình: màn 144 Hz
           // từng sinh gấp 2,4 lần hạt lửa, làm đầy bể lửa); khung chậm thì rải bù dọc quãng vừa bay
+          // Đầu mảnh: đốm than nóng trắng vàng NHỎ, nhòe chuyển động thành vệt (ô 3 + vận tốc) — trước đây mỗi khung nhả
+          // 3 quả cầu lửa to (ô 1) nên quỹ đạo thành chuỗi hạt cườm lửa cong vắt ngang trời, trông như pháo hoa.
+          // Mảnh nguội dần khi bay: đốm sáng nhỏ & đỏ lại, sau ~1 s gần như chỉ còn vệt khói
           f.fe = (f.fe || 0) + dt;
-          const nh = Math.min(3, Math.floor(f.fe * 60));
-          f.fe -= nh / 60;
+          const nh = Math.min(2, Math.floor(f.fe * 30));
+          f.fe -= nh / 30;
+          const hot = Math.max(0.25, 1 - f.t / 1.4);
           for (let q = 0; q < nh; q++) {
-            const b = q / nh;
-            this.fire.add({ x: f.x - f.vx * dt * b, y: f.y - f.vy * dt * b, z: f.z - f.vz * dt * b, vx: 0, vy: 2, vz: 0, size: rand(1.8, 3) * f.sz, grow: -3, life: rand(0.15, 0.3), alpha: 1, fadeIn: 0.005, c0: [1, 0.8, 0.45], c1: [0.9, 0.3, 0.05], cell: 1, floor: false });
+            this.fire.add({ x: f.x, y: f.y, z: f.z, vx: f.vx * 0.6, vy: f.vy * 0.6, vz: f.vz * 0.6, size: rand(0.9, 1.4) * f.sz * (0.6 + 0.4 * hot), grow: 0, drag: 8, life: rand(0.06, 0.1), alpha: 0.9 * hot, fadeIn: 0.005, c0: [1, 0.85 * hot + 0.4, 0.55 * hot + 0.1], c1: [1, 0.4, 0.08], cell: 3, floor: false });
           }
-          // vệt khói liền: rải các cụm khói dọc quãng vừa bay (cách nhau ~2 đơn vị), nở nhanh để không lộ thành chuỗi hạt
-          // (theo quãng đường: 1 cụm / 3,5 đơn vị — giữ ngân sách hạt khói khi nhiều mảnh cùng bay)
-          // vệt mảnh: sợi khói xơ nhỏ dày đặc (cách ~0.45 lần cỡ hạt) -> dải liền, mờ & tan nhanh; chỉ khi còn bay nhanh
+          // vệt khói mảnh: sợi khói xơ nhỏ chồng khít (cách ~0,9 lần cỡ hạt, nhạt) -> dải liền mờ & tan nhanh, không lộ
+          // thành chuỗi chấm; chỉ khi còn bay nhanh
           const step = Math.sqrt(f.vx * f.vx + f.vy * f.vy + f.vz * f.vz) * dt;
-          const gap = 2.0 * f.sz;
+          const gap = 1.1 * f.sz;
           f.acc = (f.acc || 0) + step;
-          const m = f.t < 1.3 ? Math.min(6, Math.floor(f.acc / gap)) : 0;
+          const m = f.t < 1.3 ? Math.min(8, Math.floor(f.acc / gap)) : 0;
           f.acc -= Math.floor(f.acc / gap) * gap;
           for (let q = 0; q < m; q++) {
-            const b = q / Math.max(1, m), g = rand(0.12, 0.2);
-            this.smoke.add({ x: f.x - f.vx * dt * b, y: f.y - f.vy * dt * b, z: f.z - f.vz * dt * b, vx: rand(-1.2, 1.2), vy: rand(2, 5), vz: rand(-1.2, 1.2), size: rand(2.6, 3.4) * f.sz, grow: 7, drag: 0.9, grav: -2, life: rand(0.7, 1.15), alpha: 0.3, fadeIn: 0.03, c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 2, rot: Math.random() * 6.28, floor: false });
+            const b = q / Math.max(1, m), g = rand(0.13, 0.2);
+            this.smoke.add({ x: f.x - f.vx * dt * b, y: f.y - f.vy * dt * b, z: f.z - f.vz * dt * b, vx: rand(-1.2, 1.2), vy: rand(2, 5), vz: rand(-1.2, 1.2), size: rand(1.6, 2.2) * f.sz, grow: 6, drag: 0.9, grav: -2, life: rand(0.6, 1.0), alpha: 0.2, fadeIn: 0.03, c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 2, rot: Math.random() * 6.28, floor: false });
           }
         } else {
           // rơi xuống đất: cháy âm ỉ vài giây
@@ -3802,7 +4083,8 @@
           if (Math.random() < 0.35 * k60) this.fire.add({ x: f.x + rand(-0.6, 0.6), y: f.y, z: f.z + rand(-0.6, 0.6), vx: 0, vy: rand(5, 10), vz: 0, size: rand(1.5, 2.6) * f.sz * (1 - f.t / f.gl * 0.6), grow: -2, life: rand(0.25, 0.45), alpha: 0.9, fadeIn: 0.02, c0: [1, 0.66, 0.26], c1: [0.7, 0.16, 0.02], cell: 1, floor: false });
           if (Math.random() < 0.15 * k60) {
             const g = rand(0.15, 0.25);
-            this.smoke.add({ x: f.x, y: f.y + 1, z: f.z, vx: rand(-1, 1), vy: rand(5, 9), vz: rand(-1, 1), size: rand(2.5, 4), grow: 5, drag: 0.6, grav: -3, life: rand(1.5, 2.5), alpha: 0.45, fadeIn: 0.1, c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 0, floor: false });
+            // sợi khói mảnh tan nhanh (ô 2 xơ, nhạt) — trước đây cụm khói ô 0 đặc thành chấm tròn đen rải rác trên đất
+            this.smoke.add({ x: f.x, y: f.y + 1, z: f.z, vx: rand(-1, 1), vy: rand(5, 9), vz: rand(-1, 1), size: rand(2, 3), grow: 7, drag: 0.6, grav: -3, life: rand(1.2, 2), alpha: 0.25, fadeIn: 0.15, c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 2, rot: Math.random() * 6.28, floor: false });
           }
         }
       }
@@ -4563,14 +4845,14 @@
           // thấy từ xa (khói thường của xác xe chỉ cao ~20-30 m); lực cản nhỏ nên lên cao bị gió kéo ngả hẳn. Ít hạt nên rẻ
           W.plumeT = (W.plumeT === undefined ? 0.3 : W.plumeT) - dt;
           if (W.plumeT <= 0) {
-            W.plumeT = rand(0.6, 0.9);
+            W.plumeT = rand(0.28, 0.42);   // dày, loãng -> cột liền; trước đây 0,6-0,9 s một cụm đặc: chuỗi bóng tròn rời
             const pk = fireMax * burn;
             const pp = fl.eng > fl.ring ? eng : CAB_CENTER[type] ? this.vehicleLocalToWorld(u, CAB_CENTER[type]) : ringPos;
             if (pk > 0.25 && !(u.waterY !== null && u.waterY !== undefined && pp.y < u.waterY + 0.5)) {
               const g = rand(0.05, 0.09);
               this.smoke.add({
-                x: pp.x + rand(-3, 3), y: pp.y + 28, z: pp.z + rand(-3, 3), vx: rand(-3, 3), vy: rand(22, 32), vz: rand(-3, 3),
-                size: rand(16, 22) * fireScale, grow: 9, drag: 0.22, grav: -6, life: rand(14, 20), alpha: 0.5 * Math.min(1, pk + 0.2), fadeIn: 0.6, fadePow: 1.8,
+                x: pp.x + rand(-5, 5), y: pp.y + rand(22, 32), z: pp.z + rand(-5, 5), vx: rand(-4, 4), vy: rand(20, 34), vz: rand(-4, 4),
+                size: rand(18, 25) * fireScale, grow: 11, drag: 0.22, grav: -6, life: rand(12, 17), alpha: 0.3 * Math.min(1, pk + 0.2), fadeIn: 1.0, fadePow: 1.8,
                 c0: [g, g, g], c1: [g * 2.8, g * 2.7, g * 2.6], cell: 0, floor: false
               });
             }
@@ -4579,9 +4861,12 @@
           if (W.frags && W.frags.length) this.updateFrags(W, dt);
           // Sau kích nổ: thuốc phóng còn lại cháy phụt thành cột lửa khỏi khoang (vòng tháp hở / nắp tháp)
           if (W.torch && W.t < W.torch.t0 + W.torch.dur && W.t - (W.torch.lastT || -1) >= 0.033) {
-            const a = (W.t - W.torch.t0) / W.torch.dur;
+            const te = W.t - W.torch.t0, a = te / W.torch.dur;
             W.torch.lastT = W.t;
-            this.emitJet(this.ammoPoint(u), (a < 0.6 ? 1 : 1 - (a - 0.6) / 0.4) * (0.8 + 0.4 * Math.random()), W.torch.scale, W.t + (W.torch.ph || 0));
+            // Phim nổ kho đạn thật: 1-2 s đầu khối thuốc phóng bùng một lượt -> lưỡi lửa vọt ~9 m; sau đó các liều còn lại
+            // cháy nối nhau thành "đèn khò" ổn định ~5 m qua vòng tháp, phập phồng, rồi lụi dần (trước đây giữ ~10 m suốt 60%)
+            const env = te < 1.2 ? 1 : te < 3.5 ? 1 - 0.4 * (te - 1.2) / 2.3 : 0.6;
+            this.emitJet(this.ammoPoint(u), env * (a < 0.6 ? 1 : 1 - (a - 0.6) / 0.4) * (0.92 + 0.16 * Math.random()), W.torch.scale, W.t + (W.torch.ph || 0));
           }
           // Liều phóng / đạn còn sót cháy lai rai sau cột lửa chính (xe tăng, pháo tự hành): từng đợt bùng phụt ngắn cách
           // nhau vài giây, thưa & yếu dần trong ~1 phút, thỉnh thoảng một quả nổ lẻ — không tắt phụt ngay sau vài giây
@@ -4617,15 +4902,19 @@
             const holes = VehicleDamage.hatchHoles(u);
             if (holes.length) {
               const age = W.t - (W.detonated ? W.cookStart : 0);
-              const jetDur = W.torch ? W.torch.dur + 1.5 : 0;
+              // Tháp đã văng: vòng tháp hở ~2 m xả gần hết áp & lửa -> lỗ nắp lái chỉ liếm lửa ngắn ~1 m vài giây rồi ra
+              // khói. Tháp còn: lỗ nắp là đường thoát chính -> lưỡi lửa ~2-3 m theo cột chính (vẫn thấp hơn hẳn cột chính)
+              const ringOpen = !!W.turret;
+              const jetDur = W.torch ? (ringOpen ? 2.5 : W.torch.dur + 1.5) : 0;
               for (const h of holes) {
-                if (W.detonated && age < jetDur) this.emitJet(h.p, (1 - age / jetDur) * (0.7 + 0.4 * Math.random()), 0.8, W.t * 1.3 + h.p.x);
+                if (W.detonated && age < jetDur) this.emitJet(h.p, (1 - age / jetDur) * (ringOpen ? 0.35 : 0.5), ringOpen ? 0.35 : 0.5, W.t * 1.3 + h.p.x, true);
                 else if (Math.random() < (W.detonated ? 0.5 : 0.25) * Math.max(0.15, 1 - W.t / 40)) {
                   // khói từ khoang qua lỗ nắp (kíp lái mở nắp thoát: khói xám nhạt, sau nổ: khói đen dầu)
                   const g = W.detonated ? rand(0.05, 0.1) : rand(0.18, 0.28);
                   this.smoke.add({
                     x: h.p.x + rand(-0.8, 0.8), y: h.p.y + 1.5, z: h.p.z + rand(-0.8, 0.8), vx: rand(-3, 3), vy: rand(18, 30), vz: rand(-3, 3),
-                    size: rand(3.5, 5.5), grow: 6, drag: 0.8, grav: -4, life: rand(2.5, 4), alpha: W.detonated ? 0.7 : 0.45, fadeIn: 0.12,
+                    // nở nhanh, nhạt: tuôn thành dải khói tơi chứ không thành chùm viên tròn đen nhỏ quanh nắp
+                    size: rand(4, 6), grow: 10, drag: 0.8, grav: -4, life: rand(2.5, 4), alpha: W.detonated ? 0.5 : 0.35, fadeIn: 0.2,
                     c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 0, floor: false
                   });
                 }
@@ -4667,8 +4956,9 @@
                 for (let j = 0; j < nF; j++) {
                   this.fire.add({
                     x: src.x + rand(-4, 4) * (0.4 + lv), y: src.y + rand(0, 2), z: src.z + rand(-4, 4) * (0.4 + lv), vx: rand(-4, 4), vy: rand(26, 52) * (0.5 + 0.5 * lv), vz: rand(-4, 4),
-                    size: rand(6.5, 11.5) * s0, grow: -4, drag: 1.1, grav: -14, life: rand(0.45, 0.85), alpha: 0.95, fadeIn: 0.04,
-                    c0: [1, 0.74, 0.34], c1: [0.78, 0.2, 0.03], cell: 1, floor: false
+                    // ngọn lưỡi lửa nguội về đỏ sẫm (cộng sáng rất ít) -> tự mờ vào khói, không thành đốm cam tròn đều
+                    size: rand(6.5, 11.5) * s0, grow: -4, drag: 1.1, grav: -14, life: rand(0.45, 0.85), alpha: 0.8, fadeIn: 0.04, fadePow: 1,
+                    rotV: rand(-2.5, 2.5), c0: Math.random() < 0.35 ? [1, 0.84, 0.5] : [1, 0.7, 0.32], c1: [0.45, 0.09, 0.02], colorRate: 1.2, cell: 1, floor: false
                   });
                 }
                 if (Math.random() < 0.5) {
@@ -4693,7 +4983,9 @@
                 const g = lv > 0.5 ? rand(0.05, 0.1) : rand(0.16, 0.3) - lv * 0.18;
                 this.smoke.add({
                   x: src.x + rand(-3, 3), y: src.y + 6, z: src.z + rand(-3, 3), vx: rand(-4, 4), vy: rand(18, 30) * (0.6 + 0.4 * lv), vz: rand(-4, 4),
-                  size: rand(8.5, 12.5) * (0.55 + 0.45 * lv), grow: 8, drag: 0.5, grav: -4, life: rand(3.0, 4.5), alpha: 0.5 + 0.2 * lv, fadeIn: 0.2,
+                  // sinh to, loãng, nở nhanh & hiện dần -> các cụm chồng khít thành dải khói cuộn; trước đây cụm nhỏ đặc nở
+                  // chậm tách thành từng viên tròn đen nối đuôi nhau
+                  size: rand(11, 15) * (0.55 + 0.45 * lv), grow: 11, drag: 0.5, grav: -4, life: rand(3.0, 4.5), alpha: 0.36 + 0.2 * lv, fadeIn: 0.4,
                   c0: [g, g, g], c1: [g * 2.4, g * 2.3, g * 2.2], cell: 0, floor: false
                 });
               }
@@ -4713,7 +5005,7 @@
         // Lửa dầu thật: gốc lửa xanh-trắng nóng sát lỗ, lưỡi lửa vàng cam liếm lên rồi vuốt nhọn, đứt thành ngọn rời;
         // tàn lửa bay xoắn lên theo luồng khí nóng; khói đen dầu cuộn dày ngay trên ngọn lửa; ánh lửa chập chờn hắt lên xe
         u._fireEmit = (u._fireEmit || 0) + dt;
-        if (!u.isDead && u.dmg && u.dmg.fires && u.dmg.fires.length && u._fireEmit > 0.04) {
+        if (!u.isDead && u.dmg && u.dmg.fires && u.dmg.fires.length && u._fireEmit > 0.065) {
           u._fireEmit = 0;
           for (const f of u.dmg.fires) {
             const fp = this.vehicleLocalToWorld(u, [f.x, f.y, f.z]);
@@ -4727,7 +5019,7 @@
               size: rand(2, 3.2) * fade, grow: -1, life: rand(0.18, 0.3), alpha: 1, fadeIn: 0.02, c0: [1, 0.93, 0.72], c1: [1, 0.55, 0.15], cell: 1, floor: false
             });
             // 2-3 lưỡi lửa liếm lên, bốc nhanh nhờ khí nóng (grav âm), co nhỏ dần ở ngọn
-            const nT = 2 + (Math.random() < fade ? 1 : 0);
+            const nT = 1 + (Math.random() < fade * 0.7 ? 1 : 0);
             for (let j = 0; j < nT; j++) {
               this.fire.add({
                 x: fp.x + rand(-1.6, 1.6), y: fp.y + rand(0.4, 1.4), z: fp.z + rand(-1.6, 1.6), vx: rand(-2, 2) + wx, vy: rand(16, 30) * (0.6 + 0.4 * fade), vz: rand(-2, 2) + wz,
@@ -4744,17 +5036,17 @@
               });
             }
             // khói đen dầu dày, cuộn lên ngay trên ngọn lửa rồi loang rộng, gió xe kéo ngả
-            if (Math.random() < 0.75) {
-              const g = rand(0.04, 0.09);
+            if (Math.random() < 0.42) {
+              const g = rand(0.07, 0.14);
               this.smoke.add({
-                x: fp.x + rand(-1, 1), y: fp.y + 4, z: fp.z + rand(-1, 1), vx: rand(-3, 3) + wx * 1.5, vy: rand(14, 26), vz: rand(-3, 3) + wz * 1.5,
-                size: rand(4.5, 7.5) * (0.6 + 0.4 * fade), grow: 8, drag: 0.6, grav: -3.5, life: rand(3, 5), alpha: 0.68, fadeIn: 0.12,
-                c0: [g, g, g], c1: [g * 2.6, g * 2.5, g * 2.4], cell: 0, floor: false
+                x: fp.x + rand(-1.4, 1.4), y: fp.y + 3.5, z: fp.z + rand(-1.4, 1.4), vx: rand(-5, 5) + wx * 1.5, vy: rand(12, 23), vz: rand(-5, 5) + wz * 1.5,
+                size: rand(3.5, 6.2) * (0.6 + 0.4 * fade), grow: 6, drag: 0.52, grav: -3.2, life: rand(2.5, 4.2), alpha: 0.42, fadeIn: 0.18,
+                c0: [g, g, g], c1: [g * 2.4, g * 2.3, g * 2.2], cell: 0, floor: false
               });
             }
             // ánh lửa chập chờn hắt lên thân xe / mặt đất xung quanh
             f.lt = (f.lt || 0) - 0.04;   // (nhịp phát 0,04 s)
-            if (f.lt <= 0) { f.lt = rand(0.16, 0.24); this.addLight(fp.x, fp.y + 3, fp.z, 0.22 * fade * rand(0.7, 1.15), 0.32, true, true); }
+            if (f.lt <= 0) { f.lt = rand(0.16, 0.24); this.addLight(fp.x, fp.y + 3, fp.z, 0.28 * fade * rand(0.7, 1.15), 0.34, true, true); }
           }
         }
 
@@ -4771,7 +5063,8 @@
         u._engWet = engWet;
         if (ratio < 0.6 || engDmg) {
           const severity = Math.max((0.6 - ratio) / 0.6, engDmg >= 2 ? 0.75 : engDmg ? 0.4 : 0);
-          const interval = 0.16 - severity * 0.1;
+          // Xe còn chạy chỉ xả từng cụm khói rời. Tần suất cũ quá dày khiến mức 25% trông như xác đã cháy rụi.
+          const interval = 0.24 - severity * 0.08;
           if (u.fxEmit > interval) {
             u.fxEmit = 0;
             if (engWet) {
@@ -4779,18 +5072,23 @@
               continue;
             }
             const wetK = Math.max(0, Math.min(1, (u._engDouse || 0) / 25));   // máy còn ướt: khói ngả trắng hơi nước
-            const g0 = 0.32 - severity * 0.24, g = g0 + (0.8 - g0) * wetK;
+            const g0 = 0.36 - severity * 0.19, g = g0 + (0.8 - g0) * wetK;
             this.smoke.add({
-              x: eng.x + rand(-3, 3), y: eng.y + 1, z: eng.z + rand(-3, 3), vx: rand(-3, 3), vy: rand(12, 22), vz: rand(-3, 3),
-              size: rand(4, 7) * (0.7 + severity), grow: 7, drag: 0.6, grav: -3, life: rand(2.5, 4), alpha: 0.6 - 0.15 * wetK, fadeIn: 0.15,
+              x: eng.x + rand(-3.5, 3.5), y: eng.y + 1, z: eng.z + rand(-3.5, 3.5), vx: rand(-5, 5), vy: rand(10, 19), vz: rand(-5, 5),
+              size: rand(3, 5) * (0.75 + severity * 0.55), grow: 5.5, drag: 0.52, grav: -2.7, life: rand(2.2, 3.6), alpha: 0.4 - 0.1 * wetK, fadeIn: 0.22,
               c0: [g, g, g], c1: [g * 1.8 + 0.1, g * 1.8 + 0.1, g * 1.75 + 0.1].map(v => Math.min(1, v)), cell: 0, floor: false
             });
             if (ratio < 0.3 && wetK <= 0) {
               this.fire.add({
-                x: eng.x + rand(-2.5, 2.5), y: eng.y + 0.5, z: eng.z + rand(-2.5, 2.5), vx: rand(-2, 2), vy: rand(10, 18), vz: rand(-2, 2),
-                size: rand(3, 5.5), grow: -2, life: rand(0.35, 0.6), alpha: 0.95, fadeIn: 0.04,
+                x: eng.x + rand(-2.5, 2.5), y: eng.y + 0.5, z: eng.z + rand(-2.5, 2.5), vx: rand(-2, 2), vy: rand(8, 14), vz: rand(-2, 2),
+                size: rand(2.4, 4.2), grow: -2, life: rand(0.3, 0.52), alpha: 0.92, fadeIn: 0.04,
                 c0: [1, 0.75, 0.35], c1: [0.8, 0.25, 0.05], cell: 1, floor: false
               });
+              u._engGlow = (u._engGlow || 0) - interval;
+              if (u._engGlow <= 0) {
+                u._engGlow = rand(0.18, 0.3);
+                this.addLight(eng.x + rand(-1.2, 1.2), eng.y + 3, eng.z + rand(-1.2, 1.2), 0.08 + severity * 0.05, 0.24, true, true);
+              }
             }
           }
         }
@@ -5306,6 +5604,42 @@
         });
       }
     }
+    // Mật độ cỏ bén lửa được tại (x, z) 0..1 — cùng mặt nạ với thảm cỏ / shader mặt đất (GroundCover): đất trần, sỏi,
+    // đường, sân, nền nhà, khu phố = 0
+    vegAt(x, z) {
+      const t = this.terrainOf && this.terrainOf(), GC = t && t.groundCover;
+      if (!GC || !GC.masks) return 0.5;
+      if (GC.blocked && GC.blocked(x, z)) return 0;
+      if (GC.cityAt && GC.cityAt(x, z) > 0.12) return 0;
+      return GC.masks(x, z).grass * (1 - (GC.bareAt ? GC.bareAt(x, z) : 0));
+    }
+
+    // Cỏ cháy: lưỡi lửa nhỏ, thấp, rải khắp vạt cỏ đang loang ra (không dồn một điểm thành cục cam), chập chờn ngắn;
+    // khói cỏ trắng xám loãng bị gió kéo nghiêng thành dải (không phải khói dầu đen đặc chồng thành quả cầu)
+    emitGrassFire(e, strength) {
+      const W = typeof window !== 'undefined' && window.game && window.game.ballistics && window.game.ballistics.wind;
+      const wx = W ? Math.max(-8, Math.min(8, (W.vx || 0) * 0.5)) : 0, wz = W ? Math.max(-8, Math.min(8, (W.vz || 0) * 0.5)) : 0;
+      const R = e.size * (1.2 + 1.5 * Math.min(1, e.t / e.dur));
+      while (e.acc >= 1) {
+        e.acc -= 1;
+        const a = rand(0, 6.283), r = R * Math.sqrt(Math.random()), px = e.x + Math.cos(a) * r, pz = e.z + Math.sin(a) * r, gy = this.groundAt(px, pz);
+        const h = e.size * rand(0.5, 1.1) * (0.5 + 0.5 * strength);
+        this.fire.add({
+          x: px, y: gy + h * 0.35, z: pz, vx: wx * 0.4 + rand(-1, 1), vy: rand(6, 12), vz: wz * 0.4 + rand(-1, 1),
+          size: h, grow: -h * 1.2, life: rand(0.22, 0.4), alpha: 0.85, fadeIn: 0.03, streak: 1.5,
+          c0: [1, 0.72, 0.32], c1: [0.85, 0.28, 0.05], cell: 1, floor: false
+        });
+        if (Math.random() < 0.3) {
+          const g = rand(0.62, 0.78);   // hạt khói không được chiếu nắng: ~1,3 lần màu khói cỏ thật
+          this.smoke.add({
+            x: px, y: gy + e.size * 0.8, z: pz, vx: wx + rand(-1.5, 1.5), vy: rand(5, 9), vz: wz + rand(-1.5, 1.5), ax: wx * 0.6, az: wz * 0.6,
+            size: e.size * rand(1.1, 1.6), grow: e.size * 1.4, drag: 0.5, grav: -2, life: rand(2, 3.2), alpha: 0.22, fadeIn: 0.25, fadePow: 1.1,
+            c0: [g, g * 0.98, g * 0.94], c1: [g * 1.08, g * 1.07, g * 1.04], cell: 2, floor: false
+          });
+        }
+      }
+    }
+
     surfacePalette(x, z, hitType, wmat) {
       const base = this.palette(hitType, wmat);
       const t = this.terrainOf();
@@ -5560,14 +5894,19 @@
         }
         return;
       }
-      const lingerChance = prof.linger * (pal.fire !== undefined ? pal.fire : 1);
+      // Đất trần / sân / đường / sỏi không có gì để cháy: đạn nổ chỉ chớp lửa rồi thành bụi đất. Chỉ chỗ có cỏ mới bén lửa
+      // (trước đây đất trần RIVER_LAKE ~32% phát HE để lại 3-6 cục lửa cháy 3-7 s, đội quả cầu khói đen tròn trên đầu)
+      const veg = this.vegAt(x, z);
+      const lingerChance = prof.linger * (pal.fire !== undefined ? pal.fire : 1) * veg;
       if (lingerChance > 0 && Math.random() < lingerChance) {
-        const fires = prof.micro ? 1 : Math.round(rand(2, 4) * Math.min(1.5, s));
+        // cỏ cháy: vài vạt lửa thấp, rải trên mặt cỏ quanh hố, tắt sau 1,5-3,5 s
+        const fires = prof.micro ? 1 : Math.round(rand(1, 3) * Math.min(1.5, s));
         for (let i = 0; i < fires; i++) {
+          const a = rand(0, 6.283), r = rand(3, 9) * s, fx0 = x + Math.cos(a) * r, fz0 = z + Math.sin(a) * r;
           this.emitters.push({
-            x: x + rand(-8, 8) * s, z: z + rand(-8, 8) * s, y: ground,
-            t: 0, dur: prof.micro ? rand(0.6, 1.2) : rand(3, 7), acc: 0,
-            rate: prof.micro ? 10 : 14, size: (prof.micro ? 1.6 : rand(3, 5)) * Math.max(0.6, s)
+            x: fx0, z: fz0, y: this.groundAt(fx0, fz0),
+            t: 0, dur: prof.micro ? rand(0.6, 1.2) : rand(1.5, 3.5), acc: 0,
+            rate: prof.micro ? 10 : 16, size: (prof.micro ? 1.2 : rand(1.4, 2.4)) * Math.max(0.6, Math.min(1.4, s)), grass: true
           });
         }
       }
@@ -7113,7 +7452,10 @@
       ExplosionFX.installCraterHoles(fringe, [], true);
       const clod = new THREE.MeshStandardMaterial({ color: 0x7a6650, roughness: 1, metalness: 0 });
       const rock = new THREE.MeshStandardMaterial({ color: 0x77736c, roughness: 0.95, metalness: 0, flatShading: true });
-      return [core, fringe, clod, rock];
+      const sod = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+      sod.userData.sodGrass = new THREE.Color(0.2, 0.21, 0.12); sod.userData.sodSoil = new THREE.Color(0.25, 0.2, 0.15);
+      sod.onBeforeCompile = sodCompile; sod.customProgramCacheKey = sodKey;
+      return [core, fringe, clod, rock, sod];
     }
 
     // Vệt khói / lửa đuôi đạn đang bay (hỗ trợ nội suy đoạn đường để khói tên lửa liền mạch, dày đặc và cuộn trào)
@@ -8446,8 +8788,9 @@
       const maxRa = Math.max(...blasts.map(b => b.ra));
       // ô lưới mỗi cạnh. Rãnh cày AP hẹp & sâu: lưới mịn hơn
       // hào lưỡi ủi dài: giữ ô lưới ~3 đv (nửa bề rộng hào 15 đv = 5 ô) tới tối đa 160 ô
-      const M = opts.gridN || (lastGouge && lastGouge.dig ? Math.min(160, Math.max(96, Math.ceil(S / 3))) : lastGouge ? 96 : maxRa > 8 ? 84 : maxRa > 4 ? 64 : 48);
-      const TS = opts.texSize || (maxRa > 8 ? 192 : maxRa > 4 ? 144 : 112);         // điểm ảnh texture mỗi cạnh (~1 điểm ảnh / 5-8 cm)
+      const M = opts.gridN || (lastGouge && lastGouge.dig ? Math.min(160, Math.max(96, Math.ceil(S / 3))) : lastGouge ? 96 : maxRa > 20 ? 128 : maxRa > 8 ? 92 : maxRa > 4 ? 64 : 48);
+      // hố bom lớn (cố định, dựng lúc vào trận): texture dày hơn -> nhìn gần lòng hố không nhoè như phun sơn
+      const TS = opts.texSize || (maxRa > 20 ? 384 : maxRa > 8 ? 224 : maxRa > 4 ? 144 : 112);         // điểm ảnh texture mỗi cạnh (~1 điểm ảnh / 5-12 cm)
 
       // ---- hàm đánh giá một phát nổ tại (x,z): trả về phần khoét (≤ 0) và phần đắp (≥ 0) + thông tin tô màu ----
       const evalBlast = (b, px, pz, out) => {
@@ -8523,8 +8866,11 @@
         // (hào lưỡi ủi: không có lớp đất văng phủ quanh — đất cắt ra đã thành ụ / luống riêng)
         const blanket = rho > 1 && !b.dig ? b.rimH * 0.35 * dirE * ray * Math.exp(-(rho - 1) / 1.1) : 0;
         const lump = (tnoise(px * b._ln + b.seed, pz * b._ln) - 0.5) * b.d * 0.22 * Math.exp(-(rho - 1.05) * (rho - 1.05) * 4);
+        // vành đất văng dày gồ thành ụ / mô lổn nhổn (đất cục rơi đống), không phải mặt phẳng trơn — rõ nhất ở hố to
+        const hum = b.rough && rho > 0.95 && !b.dig && b.kind !== 'gouge' ? (tnoise(px * b._hm + b.seed * 0.37, pz * b._hm - b.seed * 1.1) - 0.45)
+          * b.rimH * 0.9 * b.rough * ray * smooth(0.95, 1.15, rho) * (1 - smooth(1.5, 2.5, rho)) : 0;
         out.exc = exc;
-        out.dep = Math.max(0, rim + blanket + lump + rough);
+        out.dep = Math.max(0, rim + blanket + lump + rough + hum);
         out.rho = rho; out.ca = ca;
         // tan hẳn trước biên vùng tính (~3,9 bán kính hố phía trước): bắn xiên đất văng dồn mạnh về trước, không tắt dần thì bị
         // cắt cụt ở biên thành mảng đất mép sắc như miếng dán
@@ -8537,6 +8883,7 @@
         b._ln = 0.4 / Math.max(1, b.ra / 12);   // cục đất gồ trên gờ to theo cỡ hố (hố lớn không lởm chởm gai nhọn)
         b._hn = 32 / Math.max(4, b.ra);          // đáy gồ ghề: mảng ~1/4 bán kính hố
         b._rn = 55 / Math.max(4, b.ra);          // gờ vón cục: khối ~1/7 bán kính hố
+        b._hm = 26 / Math.max(4, b.ra);          // mô đất văng: ~1/4 bán kính hố
         if (b.rough === undefined) b.rough = 0.55;
         if (!b.gul) {
           // bảng rãnh xói theo góc (256 ô): vài khe hẹp ngẫu nhiên, mỗi khe một bề rộng / độ dài; bảng vách sụt (64 ô)
@@ -8722,6 +9069,14 @@
       const g2 = cvs.getContext('2d'), gA = cvsA.getContext('2d');
       const img = g2.createImageData(TS, TS), imgA = gA.createImageData(TS, TS);
       const sub = [P.soil[0] * 0.7 + P.dark[0] * 0.3, P.soil[1] * 0.7 + P.dark[1] * 0.3, P.soil[2] * 0.7 + P.dark[2] * 0.3];
+      // nổ trên đồng cỏ: lớp đất mặt dưới cỏ là mùn nâu sẫm, đất văng ra mang màu đó (không xám bạc như đất khô trơ -> hố thành
+      // đĩa sáng nổi bật giữa đồng cỏ sẫm). Lớp đất cái sáng hơn chỉ lộ ở vách hố (lớp phân tầng bên dưới)
+      const gcv = t && t.groundCover && t.groundCover.masks && !P.mat ? t.groundCover.masks(blasts[blasts.length - 1].x, blasts[blasts.length - 1].z) : null;
+      const grassy = gcv ? Math.min(1, Math.max(0, gcv.grass || 0) * 1.2) : 0;
+      if (grassy > 0) {
+        const HUMUS = [0.2, 0.155, 0.11];
+        for (let c = 0; c < 3; c++) sub[c] += (HUMUS[c] - sub[c]) * 0.5 * grassy;
+      }
       const soot = [0.15, 0.13, 0.11];
       const r1 = {};
       // mảng loang (đất vón, muội, tia đất văng thưa) to theo cỡ hố: hố lớn mà giữ cỡ mảng của hố nhỏ thì hoa văn lặp dày đặc
@@ -8753,7 +9108,7 @@
         const wet = (r1.H < -0.05 ? 0.8 : 1) - 0.24 * deep;
         r *= wet; g *= wet; b *= wet;
         // lớp đất văng mỏng phủ bụi mặt -> sáng hơn, ngả màu bụi ở rìa
-        const thin = r1.fresh ? 0 : clamp01(1 - r1.ej * 1.4);
+        const thin = (r1.fresh ? 0 : clamp01(1 - r1.ej * 1.4)) * (1 - 0.6 * grassy);
         r += (P.dust[0] - r) * thin * 0.12; g += (P.dust[1] - g) * thin * 0.12; b += (P.dust[2] - b) * thin * 0.12;
         // muội thuốc nổ loang lổ quanh tâm nổ, đặc nhất ở miệng lỗ luồng phụt
         const sk = clamp01(r1.scorch * (0.55 + 0.9 * cnoise(px * 0.9 / nsc + 7, pz * 0.9 / nsc, 8)) + r1.jet * 0.75);
@@ -8771,10 +9126,12 @@
           r += (P.dust[0] * 0.92 - r) * sand; g += (P.dust[1] * 0.92 - g) * sand; b += (P.dust[2] * 0.92 - b) * sand;
         }
         // cục đất vón: điểm sáng tối lấm tấm
-        const v = 1 + 0.12 * smooth(0.66, 0.78, clump) - 0.14 * (1 - smooth(0.18, 0.3, clump));
+        // cục đất nhỏ (~10-25 cm) sáng tối lổn nhổn trên vách & đất văng: mặt đất tơi vừa xới, không phải mặt bùn láng
+        const crumb = (tnoise(px * 2.3 + 17, pz * 2.3 - 9) - 0.5) * 0.3 + (tnoise(px * 5.1 - 3, pz * 5.1 + 21) - 0.5) * 0.18;
+        const v = 1 + 0.12 * smooth(0.66, 0.78, clump) - 0.14 * (1 - smooth(0.18, 0.3, clump)) + crumb * (r1.H < -0.05 || r1.ej > 0.3 ? 1 : 0.4);
         // độ trong: lòng hố & gờ đặc; đất văng thưa dần theo tia ra ngoài, mép lưới tan hẳn vào mặt đất
         // gờ đất đắp dày -> đặc (gờ nửa trong suốt để lộ mặt đất bên dưới trông như vách giấy)
-        let alpha = r1.inBowl > 0 || r1.fresh ? 1 : clamp01((r1.ej - 0.1 - (cnoise(px * 0.55 / nsc + 3, pz * 0.55 / nsc, 12) - 0.5) * 0.5) * 2.4);
+        let alpha = r1.inBowl > 0 || r1.fresh ? 1 : ejectaAlpha(r1.ej, px, pz, nsc);
         alpha = Math.max(alpha, clamp01(sk * 1.6) * 0.85, clamp01((r1.H - 0.3) / 0.3));
         // gần lỗ khoét: chỗ nào lưới hố nhô trên mặt đất phải đặc — nhìn xiên, tia nhìn qua gờ nửa trong suốt chui xuống dưới
         // gờ, gặp chỗ mặt đất đã bị khoét -> lộ trời. Xa lỗ thì đất văng vẫn loang lổ như cũ
@@ -8925,7 +9282,8 @@
 
       // ---- 4. Cục đất vón 3D lăn trong lòng hố & văng trên gờ (phía trước nhiều hơn khi bắn xiên) ----
       const clodGeo = CLOD_GEO || (CLOD_GEO = makeRockGeometry());   // dùng chung, không giải phóng theo hố
-      const clodMats = [0.8, 0.66, 0.54].map(k => new THREE.MeshStandardMaterial({
+      // (cục đất tơi sáng hơn đất cái ẩm trong lòng hố một chút — bản cũ ×0,54-0,8 thành khối đen bóng như than)
+      const clodMats = [1.05, 0.9, 0.76].map(k => new THREE.MeshStandardMaterial({
         color: new THREE.Color(sub[0] * k * 1.1, sub[1] * k * 1.1, sub[2] * k * 1.1), roughness: 1, metalness: 0
       }));
       const Hat = (px, pz) => {
@@ -8949,6 +9307,36 @@
           m.receiveShadow = true;
           group.add(m);
         }
+      }
+      // Đồng cỏ: vụ nổ xới tung lớp đất mặt thành từng tảng đất còn dính cỏ (rễ cỏ giữ đất), văng nằm ngổn ngang ngoài gờ,
+      // nhiều tảng lật ngửa — dấu hiệu nhận ra hố trên đồng cỏ (không thì vành đất văng là mặt đất nâu trơn)
+      let sodMat = null;
+      if (grassy > 0.3) {
+        const GB = t.groundCover && t.groundCover.B && t.groundCover.B.grass;
+        // (cỏ trên tảng: sẫm, lẫn đất & úa — tảng chiếu nắng sáng hơn thảm cỏ shader mặt đất, màu cỏ nguyên thì xanh lè như nhựa)
+        const gcol = GB ? [(GB[0][0] * 0.6 + GB[1][0] * 0.4) * 0.55, (GB[0][1] * 0.6 + GB[1][1] * 0.4) * 0.52, (GB[0][2] * 0.6 + GB[1][2] * 0.4) * 0.5] : [0.2, 0.21, 0.12];
+        sodMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+        const geo2 = SOD_GEO || (SOD_GEO = makeSodGeometry());
+        for (const b of blasts) {
+          if (b.kind === 'gouge' || b.dig) continue;
+          const n = Math.round((2 + b.ra * 0.5) * grassy);
+          for (let k = 0; k < n; k++) {
+            const ang = Math.random() * 6.283, rr = b.ra * (1.1 + Math.pow(Math.random(), 1.6) * 1.5);
+            const px = b.x + Math.cos(ang) * rr * (b.A / b.ra), pz = b.z + Math.sin(ang) * rr * (b.B / b.ra);
+            const sz = Math.min(b.ra * rand(0.05, 0.11), rand(1.6, 4.2));
+            const m = new THREE.Mesh(geo2, sodMat);
+            m.scale.set(sz * rand(0.8, 1.3), sz * rand(0.8, 1.1), sz * rand(0.7, 1.2));
+            const flip = Math.random() < 0.4;   // lật ngửa: mặt đất / rễ lên trên, cỏ úp xuống
+            m.position.set(px - cx, base(px, pz) + Hat(px, pz) + sz * 0.12, pz - cz);
+            m.rotation.set(rand(-0.5, 0.5) + (flip ? Math.PI : 0), rand(0, 6.28), rand(-0.5, 0.5));
+            m.castShadow = sz > 0.6;
+            m.receiveShadow = true;
+            group.add(m);
+          }
+        }
+        sodMat.userData.sodGrass = new THREE.Color(gcol[0], gcol[1], gcol[2]);
+        sodMat.userData.sodSoil = new THREE.Color(sub[0] * 1.05, sub[1] * 1.05, sub[2] * 1.05);
+        sodMat.onBeforeCompile = sodCompile; sodMat.customProgramCacheKey = sodKey;
       }
       // Hố thô: cục đất vỡ & đá lẫn trong đất lăn xuống đọng ở chân vách / đáy, đá văng nằm trên gờ
       const rockMats = (Rr > 0 && P.rock) ? [0.78, 0.6].map(k => new THREE.MeshStandardMaterial({
@@ -8975,7 +9363,7 @@
 
       this.scene.add(group);
       const rec = {
-        group, mats: [mat, matF, ...clodMats, ...rockMats], geos: [geo], texs: [tex, texA], t: 0, soilE, pal: P,
+        group, mats: [mat, matF, ...clodMats, ...rockMats, ...(sodMat ? [sodMat] : [])], geos: [geo], texs: [tex, texA], t: 0, soilE, pal: P,
         life: opts.persistent ? 1e12 : 1e9,          // hố nổ tồn tại suốt trận (cộng dồn), chỉ cũ nhất bị thay khi quá nhiều
         holeSlot: holes[0], holeSlots: holes, persistent: !!opts.persistent, blasts,
         params: { x: blasts[blasts.length - 1].x, z: blasts[blasts.length - 1].z, R: maxRa, effR: maxRa, bowlD: deepest, heavy: blasts.some(b => b.heavy) },
@@ -9516,6 +9904,7 @@
         LOD.keep = this.lodAt(e.x, e.y + 4, e.z, 20);
         const strength = 1 - Math.max(0, (e.t - e.dur * 0.6) / (e.dur * 0.4));
         e.acc += dt * e.rate * strength;
+        if (e.grass) { this.emitGrassFire(e, strength); continue; }
         while (e.acc >= 1) {
           e.acc -= 1;
           this.fire.add({
@@ -9794,6 +10183,27 @@ float holeQ(vec2 p, vec4 gh) {
   diffuseColor.a = max(diffuseColor.a, 1.0 - smoothstep(1.15, 1.45, hq));
   ${fringe ? `if (diffuseColor.a >= ${CRATER_CORE_ALPHA.toFixed(2)}) discard;` : ''}
 #include <alphatest_fragment>`));
+  };
+
+  // Một phát nổ (craters[].blasts) phủ đất tới đâu tại (px, pz) — cho lớp cỏ (GroundCover) bám đúng hình đất văng của texture
+  // hố thay vì cắt tròn: rho = khoảng cách chuẩn hoá có méo mép như lòng hố (< 1 lòng hố), cov 0..1 = độ dày đất văng phủ
+  // (cùng công thức tia đất văng & mảng loang với độ trong texture hố trong buildCraterCluster)
+  ExplosionFX.blastCover = function (b, px, pz) {
+    const bx = b.x + b.fx * b.shift, bz = b.z + b.fz * b.shift, dx = px - bx, dz = pz - bz;
+    const a = dx * b.fx + dz * b.fz, l = -dx * b.fz + dz * b.fx;
+    const an = a / (b.A * (b.dig ? 1 : a > 0 ? 1.12 : 0.88)), bn = l / b.B;
+    let rho = Math.hypot(an, bn);
+    if (rho > 4.5 || !b.wob || !b.ray) return { rho, cov: 0 };
+    const ca = rho > 1e-6 ? an / rho : 1, sa = rho > 1e-6 ? bn / rho : 0;
+    let af = (Math.atan2(sa, ca) / 6.2832 + 0.5) * 64, ai = Math.floor(af);
+    af -= ai; ai &= 63;
+    rho *= 1 + b.wob[ai] + (b.wob[ai + 1] - b.wob[ai]) * af;
+    if (b.dig || b.kind === 'gouge') return { rho, cov: 0 };
+    const shallow = 1 - (b.sinT || 0.85);
+    const dirE = 1 + shallow * (Math.max(0, 0.2 + ca) * 1.8 - 1);
+    const ray = b.ray[ai] + (b.ray[ai + 1] - b.ray[ai]) * af;
+    const ej = rho > 0.9 ? dirE * ray * Math.exp(-(rho - 1) / 1.25) * Math.min(1, (rho - 0.9) * 6) * (1 - smooth(1.8, 3.6, rho)) : 0;
+    return { rho, cov: ejectaAlpha(ej, px, pz, Math.max(1, b.ra / 12)) };
   };
 
   ExplosionFX.prototype.raycastUnit = function (unit, shell) {

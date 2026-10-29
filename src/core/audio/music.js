@@ -4,7 +4,8 @@
  *
  * setMusicMode(mode):
  *   'lobby'      sảnh chờ: chủ đề chính đi qua các đoạn mở đầu -> dồn dần -> cao trào -> lắng, lặp lại
- *   'search'     đang tìm trận: tối thiểu đoạn "dồn dần" + tiếng tích tắc móc đơn
+ *   'search'     đang tìm trận: bài riêng, chậm và căng — trầm nền Rê, nhịp tim trống trầm, "píng" sonar dội,
+ *                dây trầm dồn dần, piano nhích nửa cung La - Si giáng; không có tiếng lách cách cao để khỏi lẫn máy điện báo
  *   'countdown'  đếm ngược: cao trào + vê trống dồn + tiếng xoáy dâng lên
  *   'hangar'     màn xem xe 3D / kho trang bị: nhạc xưởng cơ khí — trầm nền tối, nhịp máy dập, tiếng kim loại va,
  *                bánh răng lách cách, xì thủy lực, chuông kim loại hát chủ đề chậm
@@ -58,8 +59,24 @@
         [4, 0, 70, 8], [4, 8, 67, 8], [5, 0, 74, 6], [5, 6, 70, 4], [5, 12, 67, 4],
         [6, 0, 69, 16], [7, 0, 73, 8], [7, 8, 76, 8]],
       order: ['idle', 'work', 'full', 'full', 'idle', 'work', 'full', 'work'], loopFrom: 4
+    },
+    // chờ ghép trận: nốt trầm Rê giữ suốt (i - i - VI/Rê - i - iv/Rê - i - II giáng - V), chậm, căng như chờ lệnh;
+    // đổi đoạn mỗi 4 ô nhịp (xem SEARCH, _mzSearchStep)
+    search: {
+      bpm: 84, gain: 0.34,
+      chords: [Dm, Dm, ch(38, [50, 53, 58], 4), Dm, ch(38, [50, 55, 58], 3), Dm, Eb, A],
+      order: ['wait', 'wait', 'tense', 'tense', 'urgent', 'tense', 'urgent', 'urgent'], loopFrom: 4
     }
   };
+  // Các đoạn nhạc chờ ghép trận. heart: trống trầm nhịp tim (bước 0 & 3); ping: sonar mỗi 2 ô nhịp; ost: dây trầm
+  // 1 = móc đơn, 2 = móc kép; creep: piano nhích nửa cung cuối mỗi 4 ô nhịp; swell: kèn đồng trầm ngân dâng
+  const SEARCH = {
+    wait: { pad: 0.55, drone: 1, padLp: 700, heart: 0.35, ping: 0.8, ost: 0, choir: 0, creep: 0.6, swell: 0, drums: 0 },
+    tense: { pad: 0.65, drone: 1, padLp: 950, heart: 0.5, ping: 0.65, ost: 1, choir: 0.25, creep: 0.8, swell: 0, drums: 0 },
+    urgent: { pad: 0.75, drone: 1, padLp: 1300, heart: 0.65, ping: 0.5, ost: 2, choir: 0.4, creep: 0.9, swell: 0.55, drums: 1 }
+  };
+  // dây trầm chờ ghép trận: độ lệch so với nốt trầm quãng tám 3; 'm' = quãng ba của hợp âm
+  const SOST = [0, 0, 0, 12, 0, 0, 7, 0, 0, 0, 0, 12, 0, 'm', 7, 0];
   // Các đoạn nhạc kho xưởng. pulse: trầm máy chạy móc đơn; press: máy dập (phách 1, nhịp 3-3-2); clank: kim loại va;
   // servo: bánh răng lách cách; bell: chuông kim loại hát chủ đề; hiss: xì thủy lực mỗi 4 ô nhịp
   const HANGAR = {
@@ -199,8 +216,15 @@
       M.mode = mode;
       const t = this.ctx.currentTime;
       const S = M.song;
-      if (mode === 'lobby' || mode === 'search' || mode === 'countdown') {
-        if (!S || S.kind !== 'lobby') this._mzStart('lobby', t + 0.1, prev === 'off' ? 2.5 : 1.2);
+      if (mode === 'search') {
+        if (!S || S.kind !== 'search') this._mzStart('search', t + 0.1, prev === 'off' ? 2.5 : 1.4);
+      } else if (mode === 'countdown' && S && S.kind === 'search') {
+        // đếm ngược từ màn chờ: giữ nguyên bài chờ (đổi sang nhạc sảnh 108 bpm chỉ 3 giây rồi cắt nghe rất giật),
+        // dồn lên đoạn gấp + "ẦM" báo đã tìm được trận + vê trống / xoáy dâng tới tiếng kèn mở trận
+        this._mzImpact(S.out, t + 0.02, 0.75);
+        this._mzCountdown(t);
+      } else if (mode === 'lobby' || mode === 'countdown') {
+        if (!S || S.kind !== 'lobby') this._mzStart('lobby', t + 0.1, prev === 'off' ? 2.5 : (mode === 'countdown' ? 0.5 : 1.2));
         if (mode === 'countdown') this._mzCountdown(t);
         // về sảnh: xe mình đã tắt máy (sau trận về sảnh có thể còn tiếng máy treo)
         if (mode === 'lobby' && prev !== 'search' && prev !== 'countdown' && prev !== 'off') this._mzSilenceVehicles();
@@ -288,7 +312,10 @@
       if (on !== M.on) { M.on = on; M.bus.gain.setTargetAtTime(on ? 1 : 0, now, 0.1); }
       if (this.dramaTick) this.dramaTick(now);
       if (!M.song || !this.musicEnabled()) { if (M.song) M.next = now + 0.05; return; }
-      const ahead = (typeof document !== 'undefined' && document.hidden) ? 1.5 : 0.6;
+      // màn chờ ghép trận: luồng chính khựng 1..3 s liền khi dựng bản đồ / biên dịch shader (logs/dev) -> lên lịch
+      // trước 0,6 s thì nhạc chờ đứt từng quãng. Bài chờ thưa nốt nên lên lịch trước 3 s; đổi chế độ vẫn tức thì
+      // vì mọi nốt đi qua S.out và _mzStop làm mờ S.out
+      const ahead = (typeof document !== 'undefined' && document.hidden) ? 1.5 : (M.song.kind === 'search' ? 3 : 0.6);
       if (M.next < now) M.next = now + 0.05;   // bị khựng (tab nền, máy bận): bắt nhịp lại, không dồn nốt
       let guard = 0;
       while (M.next < now + ahead && guard++ < 64) {
@@ -313,10 +340,9 @@
           S.sec = S.phrase < o.length ? o[S.phrase] : o[def.loopFrom + (S.phrase - def.loopFrom) % (o.length - def.loopFrom)];
         }
         let sec = S.sec;
-        if (M.mode === 'search' && (sec === 'intro' || sec === 'break')) sec = 'build';
         if (M.mode === 'countdown') sec = 'full';
         L = Object.assign({}, SEC[sec]);
-        if (M.mode === 'search' || M.mode === 'countdown') L.hat = 1;
+        if (M.mode === 'countdown') L.hat = 1;
         // vào đoạn cao trào: một tiếng "ẦM" trầm mở màn
         if (sec === 'full' && S.prevSec !== 'full') this._mzImpact(S.out, t, 0.8);
         S.prevSec = sec;
@@ -329,6 +355,16 @@
         L = Object.assign({}, HANGAR[S.sec] || HANGAR.idle);
         // vào đoạn đầy đủ: một cú máy dập lớn mở màn
         if (S.sec === 'full' && S.prevSec !== 'full') this._mzPress(S.out, t, 1.3);
+        S.prevSec = S.sec;
+      } else if (S.kind === 'search') {
+        // đổi đoạn mỗi 4 ô nhịp (nửa vòng hợp âm): chờ càng lâu càng dồn
+        if (S.bar % 4 === 0) {
+          const o = def.order, k = S.bar / 4;
+          S.sec = k < o.length ? o[k] : o[def.loopFrom + (k - def.loopFrom) % (o.length - def.loopFrom)];
+        }
+        L = Object.assign({}, SEARCH[M.mode === 'countdown' ? 'urgent' : S.sec] || SEARCH.wait);
+        // vào đoạn gấp: một tiếng "ẦM" trầm, nhỏ hơn nhạc sảnh
+        if (S.sec === 'urgent' && S.prevSec !== 'urgent') this._mzImpact(S.out, t, 0.55);
         S.prevSec = S.sec;
       } else {
         // trận đánh: mức theo độ ác liệt; chỉ hạ mức ở đầu cặp ô nhịp để không chập chờn
@@ -361,6 +397,7 @@
       const s = i % 16;
       if (s === 0) this._mzBar(S, t);
       if (S.kind === 'hangar') { this._mzHangarStep(S, s, t); return; }
+      if (S.kind === 'search') { this._mzSearchStep(S, s, t); return; }
       const L = S.L, c = S.chord, sd = M.stepDur;
       // dây chạy dồn
       if (L.ost && (L.ost === 2 || s % 2 === 0)) {
@@ -384,7 +421,6 @@
       }
       if (L.hat && s % 2 === 0) this._mzTick16(S.out, t, s % 4 === 0 ? 1 : 0.55);
       if (L.clock && (L.clock === 2 ? s % 2 === 0 : s % 4 === 0)) this._mzClock(S.out, t, s % 8 === 0 ? 1 : 0.7);
-      if (S.roll && t < S.roll.end && t >= S.roll.start) this._mzSnare(S.out, t, 0.2 + 0.8 * (t - S.roll.start) / (S.roll.end - S.roll.start));
       // chủ đề kèn đồng
       if (L.mel && S.def.melody) {
         for (const n of S.def.melody) if (n[0] === S.barIn && n[1] === s) this._mzBrass(S.out, t, n[2], n[3] * sd, L.mel, false);
@@ -419,6 +455,37 @@
       // chuông kim loại hát chủ đề
       if (L.bell) {
         for (const n of S.def.melody) if (n[0] === S.barIn && n[1] === s) this._mzBell(S.out, t, n[2], L.bell, n[3] * sd);
+      }
+    }
+
+    // một bước móc kép của nhạc chờ ghép trận (pad / drone / choir / swell đã đặt ở đầu ô nhịp trong _mzBar)
+    _mzSearchStep(S, s, t) {
+      const L = S.L, c = S.chord;
+      // nhịp tim: "thình - thịch" trống trầm ở bước 0 và 3
+      if (L.heart && (s === 0 || s === 3)) this._mzTaiko(S.out, t, L.heart * (s === 0 ? 1 : 0.65), 0.72);
+      // đoạn gấp: thêm một tiếng trống giữa ô nhịp
+      if (L.drums && s === 8) this._mzTaiko(S.out, t, 0.45 * L.drums, 0.85);
+      // dây trầm dồn (chỉ quãng tám 3 trở xuống, nhấn đầu mỗi nửa ô nhịp)
+      if (L.ost && (L.ost === 2 || s % 2 === 0)) {
+        let off = SOST[s];
+        if (off === 'm') off = c.third;
+        this._mzString(S.out, t, c.b + 12 + off, s === 0 || s === 8, L.ost === 2 ? 0.7 : 0.55);
+      }
+      // sonar dò tìm: một "píng" mỗi 2 ô nhịp
+      if (L.ping && s === 0 && S.bar % 2 === 0) this._mzSonar(S.out, t, L.ping);
+      // piano nhích nửa cung La -> Si giáng cuối mỗi 4 ô nhịp
+      if (L.creep && S.bar % 4 === 3) {
+        if (s === 8) this._mzPiano(S.out, t, 69, L.creep * 0.8);
+        else if (s === 12) this._mzPiano(S.out, t, 70, L.creep);
+      }
+    }
+
+    // sonar: sin trong vào nhanh, ngân dài, tụt cao độ rất nhẹ + tiếng dội lại nhỏ hơn sau ~0,45 s
+    _mzSonar(dest, t, lv) {
+      const f = mtof(81);
+      for (const [d, k] of [[0, 1], [0.45, 0.32]]) {
+        this.tone(dest, t + d, { freq: f, freqEnd: f * 0.985, sweep: 1.6, gain: 0.07 * lv * k, attack: 0.004, dur: 2.2 });
+        this.tone(dest, t + d, { freq: f * 2.005, gain: 0.012 * lv * k, attack: 0.003, dur: 0.6 });
       }
     }
 
@@ -491,10 +558,19 @@
     }
 
     // đếm ngược 3 giây: vê trống dồn + tiếng xoáy dâng
+    // vê trống lên lịch hết ngay tại đây (không qua _mzStep: các bước trong cửa sổ đã lên lịch trước sẽ thiếu tiếng vê),
+    // khớp lưới móc kép của bài đang chạy, giây cuối dày gấp đôi
     _mzCountdown(t) {
       const M = this._mz;
-      if (M.song) M.song.roll = { start: t, end: t + 3 };
-      this._mzRiser(M.song ? M.song.out : M.bus, t, 3);
+      const S = M.song;
+      const dest = S ? S.out : M.bus;
+      const end = t + 3, sd = M.stepDur;
+      let x = S ? M.next - Math.floor((M.next - t) / sd) * sd : t;
+      while (x < end) {
+        this._mzSnare(dest, x, 0.2 + 0.8 * (x - t) / 3);
+        x += end - x < 1 ? sd / 2 : sd;
+      }
+      this._mzRiser(dest, t, 3);
     }
 
     // =========================================================================

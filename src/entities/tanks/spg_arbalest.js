@@ -30,6 +30,9 @@
   const CAB_ROOF = 22.5;
   const TURRET_Z = 17;
   const PIVOT = { y: 11.6, z: -4.0 };       // trục quay nòng trong hệ tọa độ tháp
+  // Bộ cân bằng nòng: chốt sau R (trên gông tháp, đứng yên) và chốt trước F (tai trên giá nòng, nâng theo nòng),
+  // [y, z] so với trục nâng khi nòng nằm ngang. R lùi sau trục nâng để nòng ngóc 70° không quét vào gông
+  const EQ = { R: [4.0, 2.0], F: [3.0, -7.0] };
   const RECOIL_VISUAL = 0.3;                // giật nòng 32 đơn vị của gameplay -> hiển thị ~1.2 m
   const RECOIL_FULL = 32;                   // barrelRecoil spg.js đặt lúc bắn lựu pháo
   const SPADE_PIVOT = { y: 8.4, z: 38.2 };  // bản lề lưỡi càng ở đuôi khung gầm
@@ -123,11 +126,15 @@
       if (rel < -Math.PI) rel += Math.PI * 2;
       if (typeof BallisticsSystem3D !== 'undefined' && BallisticsSystem3D.artyMinElevation) {
         el = Math.max(el, BallisticsSystem3D.artyMinElevation(rel) * Math.PI / 180);
-      } else if (Math.abs(rel) < 0.85) el = Math.max(el, 0);
+      } else if (Math.abs(rel) < 0.85) el = Math.max(el, 0.1);   // ~5,7°: bầu hút khói vượt giá khóa nòng
       gun.pivot.rotation.x = el;
+      gun.updateEq(el);
       return el;
     };
     unit.syncBarrelPose = syncGun;
+    // Tư thế ban đầu: nòng nâng vượt giá khóa ngay khi dựng. Phòng xem xe (tank_inspector) không chạy modelAnimator ->
+    // trước đây nòng nằm ở 0°, bầu hút khói (r 1,85) cắm xuyên giá khóa nòng trên nóc cabin
+    syncGun();
 
     unit.roadWheels = [];
     unit.strobeLight = null;
@@ -270,7 +277,11 @@
         for (const dx of [-0.7, 0, 0.7]) hb.box(0.4, 0.04, 0.7, M.bore, [s * 9.6 + dx, y + 0.12, -19.3]);
       }
       hb.setTag('mirror' + (s < 0 ? 'L' : 'R'));
-      hb.beam([s * (HALF_W - 0.2), 19.5, -34.8], [s * (HALF_W + 2.0), 19.0, -35.6], 0.25, 0.25, D);
+      // Gốc cần bắt vào trụ A ở hông cabin (đế bắt bulông + 2 cần trên/dưới cắm sâu vào vách). Trước đây 1 cần duy nhất
+      // mọc từ đúng mép vát kính chắn gió (z -34,8 trùng mặt kính nghiêng) -> nhìn từ hông thấy gương lơ lửng rời xe
+      hb.box(0.16, 4.4, 1.0, D, [s * (HALF_W + 0.06), 17.8, -33.5]);
+      hb.beam([s * (HALF_W - 0.3), 19.4, -33.5], [s * (HALF_W + 2.0), 19.2, -35.5], 0.25, 0.25, D);
+      hb.beam([s * (HALF_W - 0.3), 16.2, -33.5], [s * (HALF_W + 2.0), 17.0, -35.5], 0.2, 0.2, D);
       hb.box(0.5, 3.2, 1.8, D, [s * (HALF_W + 2.2), 18.2, -35.6]);
       hb.box(0.1, 2.8, 1.5, M.mirror, [s * (HALF_W + 2.48), 18.2, -35.6], [0, 0, s * 0.05]);
       hb.setTag(null);
@@ -335,7 +346,8 @@
       hb.box(0.16, 0.42, 0.3, M.steel, [x + s * 0.2, 10.4, -17.2]);
       hb.box(0.16, 0.42, 0.3, M.steel, [x + s * 0.2, 10.4, -13.6]);
     }
-    for (const x of [-5.2, 5.2]) hb.box(0.5, 0.14, 6.0, P, [x, 17.13, -14.8]);
+    // gân dập: nằm gọn trong mặt phẳng nóc (z -17.6..-12.0, ngoài là mép vát 0.9) — trước dài 6.0 chìa qua mép vát thành tấm lơ lửng
+    for (const x of [-5.2, 5.2]) hb.box(0.5, 0.14, 5.0, P, [x, 17.13, -15.0]);   // đầu sau khuất dưới cuộn bạt
     hb.cyl(0.75, 0.75, 11.5, 12, D, [9.6, 17.2, -12.0]);
     hb.cyl(0.95, 0.95, 5.0, 12, M.steel, [9.6, 16.0, -12.0], 'y', null, true);
     // Đầu ống xả đen muội, mũ chắn mưa vênh
@@ -507,7 +519,7 @@
       hb.add(new THREE.TorusGeometry(0.42, 0.13, 5, 10), M.steel, [s * 7.6, 17.5, -14.8], [0, Math.PI / 2, 0]);
     }
     hb.seam([-8.6, 17.12, -14.8], [8.6, 17.12, -14.8], [0, 1, 0], D);
-    hb.seam([0, 17.12, -18.2], [0, 17.12, -11.4], [0, 1, 0], D);
+    hb.seam([0, 17.12, -17.6], [0, 17.12, -12.5], [0, 1, 0], D);   // trong mặt phẳng nóc, đầu sau khuất dưới cuộn bạt
 
     const meshes = hb.build(chassis, [0, 12, 0]);
     unit.hullMainMesh = meshes.get(P);
@@ -684,30 +696,117 @@
     hb.box(1.55, 0.1, 1.9, M.paintDusty, Sh(0, 0.2, 3.2), [0.06, sr, 0.04]);
     for (const z of [-2.6, 0.4]) hb.box(0.85, 0.5, 0.3, M.steel, Sh(0, 0.25, z), [0, sr, 0]);
 
-    // Cuộn bạt chằng trên nóc khoang máy: cuộn phồng xẹp không đều, thắt lại ở chỗ dây, đầu cuộn lộ lớp vải
-    // cuộn tròn, một mép bạt thõng xuống
+    // Cuộn bạt chằng trên nóc khoang máy: MỘT ống vải liền (trước ghép từ 12 khúc trụ 12 cạnh nối nhau -> trông như ống
+    // nhựa đốt khúc), phồng xẹp mềm theo chiều dài, đáy bẹp tì mặt nắp máy, thắt eo ở 3 dây chằng; 2 đầu cuộn lõm, lộ vòng
+    // xoắn lớp vải; mép bạt chưa cuộn hết là tấm vải mềm rủ qua mép vát sau nắp máy, có nếp gấp (trước: 2 hộp phẳng dày 0,06)
     hb.setTag('tarpRoll');
-    const ty = 17.1, tz = -12.9, x0 = -6.2, x1 = 6.2;
-    const cuts = [x0, -4.6, -2.4, 0.3, 2.8, 4.7, x1];
-    const straps = [-4.6, 0.3, 4.7];
-    for (let i = 0; i < cuts.length - 1; i++) {
-      const a = cuts[i], c = cuts[i + 1];
-      const ra = straps.includes(a) ? 0.84 : 0.88 + rnd() * 0.12, rc = straps.includes(c) ? 0.84 : 0.88 + rnd() * 0.12;
-      const rm = Math.max(ra, rc) + 0.02 + rnd() * 0.08;
-      const mid = (a + c) / 2, dy = rnd() * 0.08, dz = (rnd() - 0.5) * 0.18;
-      hb.cyl(rm, ra, mid - a, 12, M.canvasDark, [(a + mid) / 2, ty + 0.9 + dy, tz + dz], 'x');
-      hb.cyl(rc, rm, c - mid, 12, M.canvasDark, [(mid + c) / 2, ty + 0.9 + dy, tz + dz], 'x');
-    }
-    for (const [x, sx] of [[x0, -1], [x1, 1]]) {
-      for (const r of [0.66, 0.4]) hb.cyl(r, r, 0.12, 12, M.canvas, [x + sx * 0.02, ty + 0.9, tz], 'x');
-    }
-    hb.box(2.4, 0.06, 1.3, M.canvasDark, [1.6, ty + 0.6, tz + 1.15], [-1.25, 0.04, 0.05]);
-    hb.box(2.3, 0.06, 0.9, M.canvasDark, [1.62, ty - 0.05, tz + 1.75], [-1.5, 0.06, 0.03]);
-    for (const x of straps) {
-      hb.add(new THREE.TorusGeometry(0.88, 0.08, 4, 14), M.dark, [x, ty + 0.9, tz], [0, Math.PI / 2, 0]);
-      hb.box(0.28, 0.32, 0.36, M.steel, [x, ty + 1.6, tz - 0.55], [0.6, 0, 0]);
-    }
+    buildTarpRoll(hb, M, rnd);
     hb.setTag(null);
+  }
+
+  // Lưới chữ nhật có chỉ số, pháp tuyến mượt: f(u, v) -> [x, y, z]; mặt ngoài theo chiều (∂f/∂u × ∂f/∂v)
+  function gridGeo(nu, nv, f) {
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= nu; i++) {
+      for (let j = 0; j <= nv; j++) {
+        const p = f(i / nu, j / nv);
+        pos.push(p[0], p[1], p[2]);
+        uv.push(p[3] !== undefined ? p[3] : i / nu, p[4] !== undefined ? p[4] : j / nv);
+      }
+    }
+    const w = nv + 1;
+    for (let i = 0; i < nu; i++) {
+      for (let j = 0; j < nv; j++) {
+        const a = i * w + j, b = (i + 1) * w + j;
+        idx.push(a, b, b + 1, a, b + 1, a + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    g.userData.customUV = true;
+    return g;
+  }
+
+  // Cuộn bạt trên nóc khoang máy (nóc y 17.1, mép vát 0.9 ở cạnh sau z -12.0 -> -11.1)
+  function buildTarpRoll(hb, M, rnd) {
+    const ty = 17.1, tz = -12.9, x0 = -6.2, x1 = 6.2;
+    const straps = [-4.6, 0.3, 4.7];
+    const SQ = 0.8, WZ = 1.05;   // đáy bẹp (nửa dưới ép còn 80%), bè ngang
+    const p1 = rnd() * 6, p2 = rnd() * 6, p3 = rnd() * 6;
+    // bán kính theo chiều dài: phồng xẹp chậm + gợn nhỏ, thắt ở dây, bo tròn 2 đầu
+    const rr = (x) => {
+      let r = 0.9 + 0.05 * Math.sin(x * 1.3 + p1) + 0.025 * Math.sin(x * 3.7 + p2);
+      for (const s of straps) r *= 1 - 0.1 * Math.exp(-(((x - s) / 0.24) ** 2));
+      const e = Math.min(x - x0, x1 - x);
+      return r * (0.93 + 0.07 * Math.min(1, Math.max(0, e / 0.3)) ** 0.5);
+    };
+    const cy = (x) => ty + SQ * rr(x) - 0.03 + 0.03 * Math.sin(x * 0.9 + p3);
+    const sec = (x, r, a) => {
+      const s = Math.sin(a);
+      return [x, cy(x) + s * r * (s < 0 ? SQ : 1), tz + Math.cos(a) * r * WZ];
+    };
+    const A0 = -Math.PI / 2;   // đường nối lưới nằm ở đáy, tì sát nắp máy
+    // thân cuộn
+    hb.add(gridGeo(72, 28, (u, v) => {
+      const x = x0 + (x1 - x0) * u, a = A0 + v * Math.PI * 2;
+      const p = sec(x, rr(x), a);
+      return [p[0], p[1], p[2], u * 3.2, v * 0.9];
+    }), M.canvasDark);
+    // 2 đầu cuộn: mặt lõm vào giữa + vòng xoắn lớp vải nổi trên mặt
+    for (const [xe, sx] of [[x0, -1], [x1, 1]]) {
+      const r = rr(xe);
+      hb.add(gridGeo(6, 28, (u, v) => {
+        const a = A0 + sx * v * Math.PI * 2;   // chiều quay để mặt đầu cuộn hướng ra ngoài (±X)
+        const k = 1 - u, p = sec(xe, r * k, a);
+        return [xe - sx * 0.1 * (1 - k * k), p[1], p[2], 0.5 + Math.cos(a) * k * 0.4, 0.5 + Math.sin(a) * k * 0.4];
+      }), M.canvas);
+      const pts = [];
+      const TURN = 3.6, N = 150;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N, k = 0.1 + 0.86 * t, a = sx * t * TURN * Math.PI * 2;
+        const p = sec(xe, r * k, a);
+        pts.push(new THREE.Vector3(xe - sx * (0.1 * (1 - k * k) - 0.015), p[1], p[2]));
+      }
+      hb.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 220, 0.035, 4, false), M.canvasDark);
+    }
+    // dây chằng: đai vải bản 0.16 ôm theo eo cuộn + khóa thép phía sau-trên
+    for (const xs of straps) {
+      const r = rr(xs);
+      const rings = [[xs - 0.1, r - 0.03], [xs - 0.08, r + 0.045], [xs + 0.08, r + 0.045], [xs + 0.1, r - 0.03]];
+      hb.add(gridGeo(3, 28, (u, v) => {
+        const [x, rad] = rings[Math.round(u * 3)];
+        return sec(x, rad, A0 + v * Math.PI * 2);
+      }), M.dark);
+      const ab = 2.2, p = sec(xs, r + 0.12, ab);
+      hb.box(0.28, 0.14, 0.36, M.steel, p, [Math.PI / 2 - ab, 0, 0]);
+    }
+    // Mép bạt rủ: trải từ dưới cuộn ra mép nắp máy, gập qua mép vát rồi thõng xuống vách sau; dải xếp nếp, mép dưới
+    // so le. Tấm vải có 2 mặt (lưới thứ 2 đảo chiều) vì nhìn được cả trong lẫn ngoài
+    const xa = 0.5, xb = 2.9;
+    const path = [[tz + 0.3, ty + 0.012], [-11.99, ty + 0.025], [-11.08, 16.21]];
+    const q1 = rnd() * 6, q2 = rnd() * 6;
+    const drop = (x) => 1.05 + 0.3 * Math.sin(x * 2.3 + q2) + 0.25 * (x - xa) / (xb - xa);
+    const flapPt = (s, t) => {
+      const x = xa + (xb - xa) * t;
+      const segs = [path[0], path[1], path[2], [-11.08, 16.21 - drop(x)]];
+      const L = [];
+      let tot = 0;
+      for (let i = 1; i < segs.length; i++) { const l = Math.hypot(segs[i][0] - segs[i - 1][0], segs[i][1] - segs[i - 1][1]); L.push(l); tot += l; }
+      let d = s * tot, i = 0;
+      while (i < L.length - 1 && d > L[i]) { d -= L[i]; i++; }
+      const f = Math.min(1, d / L[i]);
+      let z = segs[i][0] + (segs[i + 1][0] - segs[i][0]) * f, y = segs[i][1] + (segs[i + 1][1] - segs[i][1]) * f;
+      // nếp gấp dọc trên phần thõng, phồng dần xuống mép dưới; mép dưới quăn ra ngoài
+      const hang = Math.max(0, 16.21 - y);
+      z += (0.05 + 0.09 * (0.5 + 0.5 * Math.sin(x * 4.6 + q1))) * Math.min(1, hang / 0.5) + 0.06 * Math.max(0, hang - drop(x) + 0.3);
+      if (i === 0) y += 0.012 * Math.sin(x * 9 + q1);   // vải nhăn nhẹ trên mặt nắp
+      return [x, y, z, t * 0.8, s * 0.9];
+    };
+    hb.add(gridGeo(24, 16, (s, t) => flapPt(s, t)), M.canvasDark);
+    hb.add(gridGeo(16, 24, (t, s) => flapPt(s, t)), M.canvasDark);
   }
 
   // ===========================================================================
@@ -1601,6 +1700,95 @@
   }
 
   // ===========================================================================
+  // BỘ CÂN BẰNG NÒNG: lò xo nén đỡ nòng nặng đầu. Đầu sau bắt chốt vào gông bắc ngang 2 má giáp tháp (đứng yên theo
+  // tháp), đầu trước bắt vào tai trên giá nòng (nâng theo nòng) -> nâng nòng thì 2 chốt xích lại gần, lò xo nén ngắn và
+  // dựng ngược lên; hạ nòng thì duỗi dài. Trong lòng lò xo là ống dẫn lồng 3 tầng trượt vào nhau. Không giật theo nòng
+  // (giật chỉ có nòng + ty xi-lanh lùi). Trả về hàm cập nhật theo góc nâng (rad)
+  // ===========================================================================
+  function buildEquilibrator(unit, M) {
+    const T = unit.turretGroup, D = M.dark, P = M.paint;
+    const ry = PIVOT.y + EQ.R[0], rz = PIVOT.z + EQ.R[1];
+
+    // Gông: 2 trụ đứng trên đỉnh má giáp (~y 12.6) + xà ngang, tai kép treo chốt đầu sau
+    const yb = new VehicleKit.PartBatch(DECK_Y);
+    const yTop = ry + 0.9, y0 = 12.6;
+    for (const s of [-1, 1]) {
+      yb.box(0.7, yTop - y0, 1.0, P, [s * 3.45, (yTop + y0) / 2, rz]);
+      yb.beam([s * 3.1, ry - 0.9, rz], [s * 2.0, ry + 0.4, rz], 0.3, 0.5, P);   // gân chéo góc trụ - xà
+    }
+    yb.box(7.6, 0.6, 1.0, P, [0, ry + 0.6, rz]);
+    for (const s of [-1, 1]) yb.box(0.14, 0.9, 0.8, D, [s * 0.32, ry + 0.1, rz]);
+    yb.cyl(0.12, 0.12, 0.9, 8, M.steel, [0, ry, rz], 'x');
+    yb.build(T);
+
+    // Phần chuyển động: gốc tại chốt sau, trục -Z hướng về chốt trước
+    const eq = new THREE.Group();
+    eq.position.set(0, ry, rz);
+    T.add(eq);
+    const eb = new VehicleKit.PartBatch(DECK_Y + ry);
+    eb.cyl(0.3, 0.3, 0.46, 10, D, [0, 0, 0], 'x');                 // mắt chốt sau
+    eb.cyl(0.2, 0.2, 0.4, 8, D, [0, 0, -0.3], 'z');
+    eb.box(1.0, 1.0, 0.3, D, [0, 0, -0.55]);                       // bát chặn sau
+    eb.cyl(0.34, 0.34, 3.0, 12, D, [0, 0, -2.1], 'z');             // ống dẫn ngoài
+    eb.build(eq);
+    const mid = new THREE.Group();
+    eq.add(mid);
+    const mb = new VehicleKit.PartBatch(DECK_Y + ry);
+    mb.cyl(0.27, 0.27, 3.0, 12, M.steel, [0, 0, 0], 'z');          // ống dẫn giữa
+    mb.build(mid);
+    const front = new THREE.Group();
+    eq.add(front);
+    const fb = new VehicleKit.PartBatch(DECK_Y + ry);
+    for (const s of [-1, 1]) fb.box(0.12, 0.7, 0.7, D, [s * 0.24, 0, 0]);   // chạc kẹp tai giá nòng
+    fb.box(0.6, 0.5, 0.3, D, [0, 0, 0.35]);
+    fb.box(1.0, 1.0, 0.3, D, [0, 0, 0.6]);                         // bát chặn trước
+    fb.cyl(0.2, 0.2, 3.0, 10, M.steel, [0, 0, 2.25], 'z');         // ty trong
+    fb.build(front);
+
+    // Lò xo xoắn: lưới riêng, mỗi lần đổi chiều dài chỉ giãn bước xoắn (dời z tâm dây), tiết diện dây giữ nguyên
+    const TURNS = 10, SEG = 240, RAD = 6, R0 = 0.44, WIRE = 0.08;
+    class Helix extends THREE.Curve {
+      getPoint(t, o = new THREE.Vector3()) {
+        const a = t * TURNS * Math.PI * 2;
+        return o.set(Math.cos(a) * R0, Math.sin(a) * R0, -t);
+      }
+    }
+    const cg = new THREE.TubeGeometry(new Helix(), SEG, WIRE, RAD, false);
+    const cp = cg.attributes.position;
+    const tc = new Float32Array(cp.count), oz = new Float32Array(cp.count);
+    for (let i = 0; i <= SEG; i++) {
+      for (let j = 0; j <= RAD; j++) {
+        const k = i * (RAD + 1) + j;
+        tc[k] = i / SEG;
+        oz[k] = cp.getZ(k) + i / SEG;
+      }
+    }
+    const coil = new THREE.Mesh(cg, D);   // sơn sẫm như ngoài thực tế, không phải thép trần
+    coil.castShadow = coil.receiveShadow = true;
+    coil.position.z = -0.7;
+    eq.add(coil);
+    let lastLen = -1;
+
+    return (el) => {
+      const c = Math.cos(el), s = Math.sin(el);
+      const fy = PIVOT.y + EQ.F[0] * c - EQ.F[1] * s;
+      const fz = PIVOT.z + EQ.F[0] * s + EQ.F[1] * c;
+      const dy = fy - ry, dz = fz - rz;
+      const L = Math.hypot(dy, dz);
+      eq.rotation.x = Math.atan2(dy, -dz);
+      front.position.z = -L;
+      mid.position.z = -L / 2;
+      const len = Math.max(0.5, L - 1.4);   // giữa 2 bát chặn
+      if (Math.abs(len - lastLen) > 0.005) {
+        lastLen = len;
+        for (let k = 0; k < cp.count; k++) cp.setZ(k, -tc[k] * len + oz[k]);
+        cp.needsUpdate = true;
+        cg.computeBoundingSphere();
+      }
+    };
+  }
+
+  // ===========================================================================
   // LỰU PHÁO 155MM L/52
   // ===========================================================================
   function buildHowitzer(unit, M) {
@@ -1630,16 +1818,9 @@
       cb.box(1.3, 1.3, 1.1, M.dark, [s * 1.15, 2.1, -1.1]);
       cb.strut([s * 1.75, 2.0, -3.0], [s * 2.2, 1.2, -1.2], 0.12, M.rubber, 6);
     }
-    // Lò xo cân bằng: ty dẫn + lò xo xoắn + 2 bát chặn
-    const coil = [];
-    for (let i = 0; i <= 13 * 10; i++) {
-      const a = (i / 10) * Math.PI * 2;
-      coil.push(new THREE.Vector3(Math.cos(a) * 0.46, Math.sin(a) * 0.46, -(i / 130) * 6.4));
-    }
-    // (lò xo sơn sẫm như ngoài thực tế, không phải thép trần)
-    cb.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(coil), 260, 0.11, 5, false), M.dark, [0, 3.25, -3.1]);
-    cb.cyl(0.2, 0.2, 7.6, 8, M.steel, [0, 3.25, -6.3], 'z');
-    for (const z of [-2.85, -9.75]) cb.box(1.2, 1.2, 0.35, M.dark, [0, 3.0, z]);
+    // Tai bắt đầu trước bộ cân bằng nòng (bộ cân bằng dựng riêng bên dưới, co giãn theo góc nâng)
+    cb.box(0.5, 0.9, 0.8, M.dark, [0, EQ.F[0] - 0.4, EQ.F[1]]);
+    cb.cyl(0.13, 0.13, 0.62, 8, M.steel, [0, EQ.F[0], EQ.F[1]], 'x');
     // Radar đo sơ tốc đầu nòng
     cb.box(1.7, 1.2, 1.8, M.dark, [0, 3.3, -11.4]);
     cb.box(1.3, 0.85, 0.1, M.glass, [0, 3.3, -12.33]);
@@ -1647,6 +1828,7 @@
     cb.cyl(1.88, 1.88, 6.0, 18, M.dark, [0, 0, 2.7], 'z', null, true);
     for (const s of [-1, 1]) cb.box(0.35, 2.4, 6.0, M.paint, [s * 1.92, 0, 2.7]);
     cb.build(pivot);
+    const updateEq = buildEquilibrator(unit, M);
 
     const barrel = new THREE.Group();
     unit.barrelGroup = barrel;
@@ -1789,7 +1971,7 @@
     gb.build(barrel);
 
     unit.muzzleTipLocal = new THREE.Vector3(0, 0, -72.2);
-    return { pivot, pivotProxy, barrel, breechWedge, primer };
+    return { pivot, pivotProxy, barrel, breechWedge, primer, updateEq };
   }
 
   TankModelBuilder.registerModel('ARTILLERY', buildArbalest);

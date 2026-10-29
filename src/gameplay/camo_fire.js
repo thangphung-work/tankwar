@@ -97,6 +97,11 @@ float cfNoise(vec2 p) {
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.026, 0.022), cfCh);
       cfFl = smoothstep(0.0, 0.3, cfCh) * (1.0 - smoothstep(0.55, 1.0, cfCh)) * (1.0 - smoothstep(0.5, 0.75, vCfP));
       cfE = cfEat > 0.0 ? (1.0 - smoothstep(0.0, 0.025, cfN - cfEat)) * (1.0 - smoothstep(0.7, 1.0, vCfP)) : 0.0;
+    } else if (vCfP > -0.45) {
+      // Nhiệt bức xạ làm lá kế bên héo, xỉn vàng trước khi mặt lửa bò tới.
+      float cfHeat = smoothstep(-0.45, -0.02, vCfP);
+      float cfL = dot(diffuseColor.rgb, vec3(0.5, 0.4, 0.1));
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(cfL) * vec3(1.18, 0.88, 0.48), cfHeat * 0.42);
     }`;
   const GLSL_FRAG_EMIT = `
     if (vCfP > 0.0) totalEmissiveRadiance += (vec3(1.0, 0.42, 0.08) * cfFl * (0.7 + 0.8 * cfNoise(vUv * 14.0 + uFT * 4.0)) + vec3(0.9, 0.22, 0.02) * cfE * 0.9) * vCfG;`;
@@ -334,6 +339,13 @@ float cfNoise(vec2 p) {
       }
       return tot && gone / tot > 0.8 ? end : Infinity;
     });
+    // Mỗi cụm cành ám than theo tiến độ cháy của chính nó, không đổi đen cả xe cùng lúc.
+    S.partChar = st.parts.map(p => {
+      const at = [];
+      for (let i = 0; i < n; i++) if (st.cells[i].part === p && S.ign[i] >= 0 && S.stop[i] > S.ign[i] + S.dur[i] * 0.3) at.push(S.ign[i] + S.dur[i] * 0.34);
+      at.sort((a, b) => a - b);
+      return at.length ? at[Math.min(at.length - 1, Math.floor(at.length * 0.35))] : Infinity;
+    });
     S.frac = consumed / Math.max(1, n);
     S.flameEnd = flameEnd;
     S.smokeEnd = flameEnd + 2.5;
@@ -366,16 +378,22 @@ float cfNoise(vec2 p) {
   }
   function windRec(u) {
     const g = window.game, W = g && g.ballistics && g.ballistics.wind;
-    if (!W || !u.group) return 0;
-    const sp = Math.hypot(W.vx || 0, W.vz || 0);
+    if (!u.group) return 0;
+    // Gió biểu kiến trên lưới = gió môi trường trừ vận tốc xe. Hệ số 0,42 quy đổi
+    // tốc độ gameplay sang luồng khí hạt; giới hạn để xe nhanh không thổi tắt FX tức thì.
+    const a0 = u.bodyAngle || 0, vs = (u.speed || 0) * 0.42;
+    let vx = (W && W.vx || 0) + Math.sin(a0) * vs;
+    let vz = (W && W.vz || 0) + Math.cos(a0) * vs;
+    let sp = Math.hypot(vx, vz);
+    if (sp > 42) { vx *= 42 / sp; vz *= 42 / sp; sp = 42; }
     if (sp < 0.5) return 0;
     // hướng gió đổi sang hệ thân xe (thân xe quay quanh trục đứng)
     const yaw = u.group.rotation ? u.group.rotation.y + ((u.chassisGroup && u.chassisGroup.rotation) ? u.chassisGroup.rotation.y : 0) : 0;
     const c = Math.cos(-yaw), s = Math.sin(-yaw);
-    const lx = W.vx * c + W.vz * s, lz = -W.vx * s + W.vz * c;
+    const lx = vx * c + vz * s, lz = -vx * s + vz * c;
     const a = Math.atan2(lx, lz);
     const sector = ((Math.round(a / (Math.PI * 2) * 16) % 16) + 16) % 16;
-    const lvl = Math.min(3, Math.round(sp / 6));
+    const lvl = Math.min(3, Math.round(sp / 9));
     return sector + 16 * lvl;
   }
 
@@ -443,6 +461,14 @@ float cfNoise(vec2 p) {
   }
   function blocks(u) { const s = status(u); return s === 'burning' || s === 'gone'; }
   function leafless(u) { return status(u) !== 'none'; }
+  // Phần che phủ còn hữu dụng cho gameplay: lửa/khói làm lộ xe ngay; sau khi tắt,
+  // lưới cháy xém chỉ hồi lại hiệu quả theo tỷ lệ lá thực sự còn.
+  function cover(u) {
+    const S = u && u.camoFire, s = status(u);
+    if (!S || s === 'none') return 1;
+    if (s === 'burning' || s === 'gone') return 0;
+    return clamp01(1 - S.frac);
+  }
 
   // Bản ghi gửi mạng: [[hạt giống, ô, gió, lúc×10], ...]
   function netState(u) {
@@ -477,7 +503,7 @@ float cfNoise(vec2 p) {
         g.attributes.aBurn.needsUpdate = true;
       }
     }
-    if (st.twigCharred) setTwigs(st, false);
+    if (st.twigCharred || st.parts.some(p => p.charred)) setTwigs(st, false);
     for (const p of st.parts) for (const m of p.twigs || []) { m.visible = !u._camoFar; m.userData.cfGone = false; }
     if (st.panel && st.panel.mesh) st.panel.mesh.visible = true;
     if (st.leaf && st.leaf.userData.sway && st.leaf.userData.sway.uFT) st.leaf.userData.sway.uFT.value = 0;
@@ -494,8 +520,18 @@ float cfNoise(vec2 p) {
         if (on && m.material === st.twig) { m.userData.cfTwig = st.twig; m.material = charTwig; }
         else if (!on && m.userData.cfTwig) { m.material = m.userData.cfTwig; delete m.userData.cfTwig; }
       }
+      p.charred = on;
     }
     st.twigCharred = on;
+  }
+  function setPartTwigs(st, p, on) {
+    if (!charTwig) charTwig = new THREE.MeshStandardMaterial({ color: 0x15120f, roughness: 1, metalness: 0 });
+    for (const m of p.twigs || []) {
+      if (on && m.material === st.twig) { m.userData.cfTwig = st.twig; m.material = charTwig; }
+      else if (!on && m.userData.cfTwig) { m.material = m.userData.cfTwig; delete m.userData.cfTwig; }
+    }
+    p.charred = on;
+    if (on) st.twigCharred = true;
   }
 
   // ---------------------------------------------------------------------------
@@ -524,7 +560,7 @@ float cfNoise(vec2 p) {
     const doProx = proxT >= 0.5;
     if (doProx) proxT = 0;
     const W = game && game.ballistics && game.ballistics.wind;
-    const wx = W ? W.vx || 0 : 0, wz = W ? W.vz || 0 : 0;
+    const baseWx = W ? W.vx || 0 : 0, baseWz = W ? W.vz || 0 : 0;
     for (const u of ctx.units) {
       const st = u && u._cfStatic;
       if (!st || !u.group) continue;
@@ -541,8 +577,12 @@ float cfNoise(vec2 p) {
         if (U && U.uFT) U.uFT.value = c;
         continue;
       }
-      if (!S.twigCharred && c >= S.twigCharAt) setTwigs(st, true);
-      if (S.partEnd) st.parts.forEach((p, k) => { if (c >= S.partEnd[k] && p.twigs && p.twigs.length && !p.twigs[0].userData.cfGone) for (const m of p.twigs) { m.visible = false; m.userData.cfGone = true; } });
+      if (S.partChar) st.parts.forEach((p, k) => { if (!p.charred && c >= S.partChar[k]) setPartTwigs(st, p, true); });
+      if (S.partEnd) st.parts.forEach((p, k) => {
+        if (c < S.partEnd[k] || !p.twigs || !p.twigs.length || p.twigs[0].userData.cfGone) return;
+        // Không dọn sạch khung lưới: giữ lại khoảng 1/3 cành/dây buộc cháy cong làm tàn tích.
+        p.twigs.forEach((m, j) => { m.visible = (j % 3) === 0; m.userData.cfGone = true; });
+      });
       if (st.panel && st.panel.mesh && st.panel.mesh.visible) {
         const pc = st.panel.cell;
         if (pc >= 0 && S.ign[pc] >= 0 && (Math.min(c, S.stop[pc]) - S.ign[pc]) / S.dur[pc] > 0.55) st.panel.mesh.visible = false;
@@ -570,7 +610,13 @@ float cfNoise(vec2 p) {
         else if (p < 1) glowing.push(i);
       }
       const vis = u.group.visible !== false && (u._lodD || 0) < 1800 && !u._camoFar;
-      if (fx && vis && (flaming.length || glowing.length)) emit(u, st, S, fx, flaming, glowing, dt, wx, wz);
+      if (fx && vis && (flaming.length || glowing.length)) {
+        const va = u.bodyAngle || 0, vs = (u.speed || 0) * 0.42;
+        let awx = baseWx + Math.sin(va) * vs, awz = baseWz + Math.cos(va) * vs;
+        const aws = Math.hypot(awx, awz);
+        if (aws > 42) { awx *= 42 / aws; awz *= 42 / aws; }
+        emit(u, st, S, fx, flaming, glowing, dt, awx, awz);
+      }
       // tiếng lá cháy lép bép
       S.sndT -= dt;
       if (S.sndT <= 0 && flaming.length) {
@@ -620,6 +666,14 @@ float cfNoise(vec2 p) {
     const h = fx.hitUnitSurface(u, o, dir, 14);
     if (!h) return;
     fx.addSurfaceMark(h.point, h.normal, h.object, 'scorch', R(6, 10), { unit: u });
+    // Vệt muội nhỏ dần theo dòng khí nóng; khi xe chạy, trục vệt nghiêng về phía sau xe.
+    const a = u.bodyAngle || 0, motion = Math.min(1, Math.abs(u.speed || 0) / Math.max(1, u.baseMaxSpeed || 120));
+    const bx = Math.sin(a) * Math.sign(u.speed || 1) * motion, bz = Math.cos(a) * Math.sign(u.speed || 1) * motion;
+    for (let j = 1; j <= 2; j++) {
+      const q = o.clone().add(new THREE.Vector3(bx * j * 2.2, j * 2.8, bz * j * 2.2));
+      const hj = fx.hitUnitSurface(u, q, dir, 16);
+      if (hj) fx.addSurfaceMark(hj.point, hj.normal, hj.object, 'scorch', R(3.5, 6.0) * (1 - j * 0.12), { unit: u });
+    }
   }
 
   // Hạt: ngọn lửa nhỏ, tàn lửa bay, lá cháy rơi, tro, khói trắng xám
@@ -639,7 +693,7 @@ float cfNoise(vec2 p) {
       cellWorld(c, _v);
       fx.fire.add({
         x: _v.x + R(-0.5, 0.5) * r, y: _v.y + R(-0.2, 0.6) * r * 0.5, z: _v.z + R(-0.5, 0.5) * r,
-        vx: R(-2, 2) + wx * 0.15, vy: R(14, 28), vz: R(-2, 2) + wz * 0.15,
+        vx: R(-2, 2) + wx * 0.42, vy: R(14, 28) / (1 + Math.hypot(wx, wz) * 0.018), vz: R(-2, 2) + wz * 0.42,
         size: R(4.0, 7.5) * (dry ? 1.2 : 1), grow: -6, drag: 1.2, grav: -16, life: R(0.35, 0.7), alpha: 0.95, fadeIn: 0.03,
         c0: [1, 0.8, 0.4], c1: [0.85, 0.24, 0.04], cell: 1, floor: false
       });
@@ -653,7 +707,7 @@ float cfNoise(vec2 p) {
       // lá tươi cháy bốc khói trắng xám dày (hơi nước + nhựa lá); lá khô khói mỏng, ngả nâu
       fx.smoke.add({
         x: _v.x + R(-1, 1), y: _v.y + R(1, 2.5), z: _v.z + R(-1, 1),
-        vx: R(-2, 2) + wx * 0.25, vy: R(9, 16), vz: R(-2, 2) + wz * 0.25, ax: wx * 0.45, az: wz * 0.45,
+        vx: R(-2, 2) + wx * 0.38, vy: R(9, 16), vz: R(-2, 2) + wz * 0.38, ax: wx * 0.72, az: wz * 0.72,
         size: R(4.5, 7.5) * (dry ? 0.8 : 1), grow: dry ? 4.5 : 6.5, drag: 0.5, grav: -2.2, life: R(3.2, 5.2), alpha: dry ? 0.42 : 0.62, fadeIn: 0.18, fadePow: 1.5,
         c0: [sm.smoke[0] * k, sm.smoke[1] * k, sm.smoke[2] * k], c1: sm.smoke1, colorRate: 1.4, cell: 0, floor: false
       });
@@ -665,7 +719,7 @@ float cfNoise(vec2 p) {
       cellWorld(c, _v);
       fx.fire.add({
         x: _v.x + R(-1.5, 1.5), y: _v.y + R(0, 1.5), z: _v.z + R(-1.5, 1.5),
-        vx: R(-4, 4), vy: R(8, 22), vz: R(-4, 4), ax: wx * 0.6, az: wz * 0.6,
+        vx: R(-4, 4) + wx * 0.2, vy: R(8, 22), vz: R(-4, 4) + wz * 0.2, ax: wx * 0.8, az: wz * 0.8,
         size: R(0.3, 0.6), grow: -0.2, drag: 1.4, grav: 8, life: R(0.7, 1.5), alpha: 0.9, fadeIn: 0.01,
         c0: [1, 0.5, 0.12], c1: [0.6, 0.1, 0.01], cell: 3, floor: false
       });
@@ -677,7 +731,7 @@ float cfNoise(vec2 p) {
       cellWorld(c, _v);
       fx.fire.add({
         x: _v.x + R(-1.5, 1.5), y: _v.y, z: _v.z + R(-1.5, 1.5),
-        vx: R(-3, 3) + wx * 0.2, vy: R(-2, 4), vz: R(-3, 3) + wz * 0.2,
+        vx: R(-3, 3) + wx * 0.38, vy: R(-2, 4), vz: R(-3, 3) + wz * 0.38,
         size: R(0.8, 1.4), grow: -0.5, drag: 1.6, grav: 26, life: R(0.7, 1.3), alpha: 0.95, fadeIn: 0.02,
         c0: [1, 0.6, 0.2], c1: [0.5, 0.1, 0.02], cell: 3, floor: true
       });
@@ -689,7 +743,7 @@ float cfNoise(vec2 p) {
       cellWorld(c, _v);
       fx.smoke.add({
         x: _v.x + R(-1.5, 1.5), y: _v.y + R(0, 1), z: _v.z + R(-1.5, 1.5),
-        vx: R(-3, 3), vy: R(5, 12), vz: R(-3, 3), ax: wx * 0.6, az: wz * 0.6,
+        vx: R(-3, 3) + wx * 0.25, vy: R(5, 12), vz: R(-3, 3) + wz * 0.25, ax: wx * 0.85, az: wz * 0.85,
         size: R(0.5, 0.95), grow: 0, drag: 1.4, grav: 5, life: R(1.6, 2.8), alpha: 0.9, fadeIn: 0.05,
         c0: [0.07, 0.065, 0.06], c1: [0.16, 0.15, 0.14], cell: 3, floor: true
       });
@@ -796,6 +850,6 @@ float cfNoise(vec2 p) {
     if (ignite(u, pt, { maxD: 40, log: true })) queue(u, game);
   }
 
-  const CamoFire = { prepare, patchShader, onHit, ignite, update, status, blocks, leafless, netState, applyNet, reset, SPEC, P_HIT };
+  const CamoFire = { prepare, patchShader, onHit, ignite, update, status, blocks, leafless, cover, netState, applyNet, reset, SPEC, P_HIT };
   if (typeof window !== 'undefined') window.CamoFire = CamoFire;
 })();

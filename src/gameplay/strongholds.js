@@ -2486,6 +2486,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const fx = g && g.effectsManager && g.effectsManager.fx;
       for (const K of this.items) for (const W of K.wrecks || []) {
         const u = W.u;
+        this.showWreckMarks(W);
         if (W.thawed || !u || !u.group || !W.off) continue;
         if (fx && fx.surfaceMarks && fx.removeSurfaceMark) {
           for (let k = fx.surfaceMarks.length - 1; k >= 0; k--) if (fx.surfaceMarks[k].unit === u) fx.removeSurfaceMark(k);
@@ -2634,9 +2635,36 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       return false;
     }
 
+    // Vết đạn dán trên xác xe ở xa camera: mỗi vết 1-8 đv còn vài điểm ảnh mà ~20 lô vết / xác (mỗi lô 1 lượt vẽ) -> cả
+    // cứ điểm ~400 lượt vẽ mỗi khung. Xa quá FAR thì ẩn (than hồng phát sáng giữ lại), lại gần hiện lại đúng
+    // những vết đã ẩn
+    wreckMarkLOD(cam) {
+      const FAR = 950, H = 80;
+      for (const K of this.items) for (const W of K.wrecks || []) {
+        if (!W.dressed || !W.u || !W.u.group) continue;
+        const d = Math.hypot(cam.position.x - W.sx, cam.position.y - W.sy, cam.position.z - W.sz);
+        const far = W.mHid ? d > FAR - H : d > FAR + H;
+        if (far === !!W.mHid) continue;
+        if (far) {
+          const L = W.mHid = [];
+          for (const root of [W.u.group, W.turret]) if (root) root.traverse(o => {
+            if (!o.visible || !o.userData.isFxDecal || !o.isMesh) return;
+            if (o.material && o.material.emissiveIntensity > 0) return;
+            o.visible = false; L.push(o);
+          });
+        } else this.showWreckMarks(W);
+      }
+    }
+    showWreckMarks(W) {
+      if (!W.mHid) return;
+      for (const o of W.mHid) o.visible = true;
+      W.mHid = null;
+    }
+
     updateWreckFX(dt) {
       const fx = (window.game && window.game.effectsManager && window.game.effectsManager.fx) || null;
       if (!fx) return;
+      if (window.game.camera) this.wreckMarkLOD(window.game.camera);
       // dựng dần tàn tích cần hệ hiệu ứng (tránh giật hình lúc vào trận): vết đạn trong ngân sách ~4 ms / khung, hố bom
       // mỗi khung một hố
       this._battleChk = (this._battleChk || 0) - dt;

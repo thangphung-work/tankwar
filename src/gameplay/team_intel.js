@@ -88,7 +88,7 @@ const TeamIntel = (() => {
     // Mất kính ngắm / kính chỉ huy: tầm quan sát giảm
     if (u.dmg && u.dmg.lost) {
       if (u.dmg.lost.has('opticGunner')) r *= 0.85;
-      if (u.dmg.lost.has('opticCdr')) r *= 0.85;
+      if (u.dmg.lost.has('opticCdr')) r *= 0.6;   // vỡ kính tiềm vọng chỉ huy: mất quan sát xa
     }
     // trời mưa: màn mưa + sương mù dày -> phải tới gần hơn mới nhận ra xe địch (thời tiết theo hạt giống bản đồ,
     // mọi máy cùng hệ số; máy chủ lọc theo tầm nhìn nắng — rộng hơn, không bao giờ giấu bớt thứ máy khách cần)

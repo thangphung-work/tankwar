@@ -178,7 +178,7 @@
       if (t - (this._spinTickT || 0) < 0.03) return;
       this._spinTickT = t;
       const s = 1 - k;   // độ "chậm"
-      const out = this.uiOut(1, 0.05);
+      const out = this.uiOut(1.5, 0.05);
       // lưỡi gà nhựa bật qua chốt: tách sắc
       this.burst(out, t, { filter: 'bandpass', freq: 3800 - 1600 * s, Q: 2.2, gain: 0.16 + 0.14 * s, attack: 0.0005, dur: 0.02 });
       // chốt gỗ / thép nhỏ: có cao độ, trầm dần khi chậm lại
@@ -191,7 +191,7 @@
     playSpinStart() {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      const out = this.uiOut(1, 0.12);
+      const out = this.uiOut(1.4, 0.12);
       this._uiLatch(out, t, 1.1);
       this.burst(out, t + 0.03, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 400, freqEnd: 3600, sweep: 0.5, Q: 1.3, gain: 0.32, attack: 0.06, dur: 0.75 });
       this.tone(out, t + 0.03, { type: 'sawtooth', freq: 60, freqEnd: 220, sweep: 0.45, gain: 0.08, attack: 0.02, dur: 0.4, filter: 'lowpass', filterFreq: 900 });
@@ -207,7 +207,7 @@
     playSpinRiser(dur = 2.8) {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      const out = this.uiOut(0.95, 0.12);
+      const out = this.uiOut(1.45, 0.12);
       this.tone(out, t, { type: 'sawtooth', freq: 60, freqEnd: 220, sweep: dur, gain: 0.07, attack: dur, dur: 0.08, filter: 'lowpass', filterFreq: 1100 });
       this.tone(out, t, { freq: 120, freqEnd: 440, sweep: dur, gain: 0.06, attack: dur, dur: 0.08 });
       this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 600, freqEnd: 4000, sweep: dur, Q: 1.5, gain: 0.12, attack: dur, dur: 0.06 });
@@ -232,7 +232,8 @@
     playSpinWin(rar = 0) {
       if (!this.ready()) return;
       const t = this.ctx.currentTime;
-      const out = this.uiOut(1, 0.2);
+      const out = this.uiOut(1.4, 0.2);
+      this._uiSparkle(out, t + 0.12, 0.7 + 0.15 * rar);
       this._uiLatch(out, t, 1.2);
       this.tone(out, t, { freq: 80, freqEnd: 38, sweep: 0.3, gain: 0.5, attack: 0.002, dur: 0.45 });
       const n = 5 + rar * 3;
@@ -247,8 +248,46 @@
         const h = t + 0.12 + notes.length * 0.085;
         [523, 659, 784, 1047].forEach(f => this.tone(out, h, { type: 'sawtooth', freq: f, gain: 0.035, attack: 0.02, hold: 0.5, dur: 1.2, filter: 'lowpass', filterFreq: 2400 }));
         for (let i = 0; i < 3 + rar; i++) this.burst(out, h + 0.1 + i * rnd(0.08, 0.18), { filter: 'highpass', freq: 3000 + rnd(0, 3000), gain: 0.08, attack: 0.002, dur: rnd(0.2, 0.5) });
-        this._uiBrassHit(t + 0.1, 0.8 + 0.2 * (rar - 3));
+        this._uiBrassHit(t + 0.1, 0.8 + 0.2 * (rar - 3), true);
       }
+    }
+
+    // quay thưởng: nhạc nền lùi hẳn ra sau để tiếng dải thẻ / trống dồn nổi lên; trúng xong nhạc trào lại sau tiếng thắng
+    playSpinMusic(on) {
+      if (on) this._cmdMusic(0.2, 0.3);
+      else this._cmdMusic(1, 0.7, 1.4);
+    }
+
+    // NHẬN QUÀ (modal chúc mừng có lượt quay / bật nắp hộp quà ngày 7): "bụp" mở hộp + gió vút lên
+    // + hộp nhạc lấp lánh đi lên + hợp âm ấm; big: hộp quà lớn — thêm trống chốt + kèn đồng
+    playGiftReceived(big = false) {
+      if (!this.ready()) return;
+      const t = this.ctx.currentTime;
+      const out = this.uiOut(big ? 1.4 : 1.1, 0.22);
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 520, drive: 1.8, gain: 0.4, attack: 0.001, dur: 0.08 });
+      this.tone(out, t, { freq: 180, freqEnd: 70, sweep: 0.1, gain: 0.3, attack: 0.001, dur: 0.14 });
+      this.burst(out, t + 0.02, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 700, freqEnd: 5200, sweep: 0.35, Q: 1.1, gain: 0.16, attack: 0.04, dur: 0.4 });
+      this._uiSparkle(out, t + 0.06, big ? 1.2 : 1);
+      const h = t + 0.5;
+      for (const f of [523, 659, 784, 1047]) {
+        this.tone(out, h, { type: 'triangle', freq: f, gain: 0.07, attack: 0.01, hold: 0.25, dur: 0.9 });
+        this.tone(out, h, { type: 'square', freq: f, gain: 0.012, attack: 0.01, dur: 0.4, filter: 'lowpass', filterFreq: 2400 });
+      }
+      if (big) {
+        this.tone(out, t, { freq: 80, freqEnd: 38, sweep: 0.3, gain: 0.45, attack: 0.002, dur: 0.45 });
+        this._uiBrassHit(h, 0.9, true);
+      } else this._uiBrassHit(h, 0.5);
+    }
+
+    // hộp nhạc lấp lánh: chuỗi chuông cao đi lên (rải nhanh) + vài tia "tinh" cao
+    _uiSparkle(out, t, k = 1) {
+      const notes = [1568, 1976, 2349, 2637, 3136, 3951];
+      notes.forEach((f, i) => {
+        const s = t + i * 0.055;
+        this.tone(out, s, { freq: f, gain: 0.045 * k, attack: 0.001, dur: 0.45 });
+        this.metal(out, s, { f0: f, ratios: [1, 2.76], decay: 0.35, gain: 0.03 * k, click: 0.05 });
+      });
+      for (let i = 0; i < 5; i++) this.tone(out, t + 0.1 + i * rnd(0.05, 0.12), { freq: rnd(4200, 6800), gain: 0.018 * k, attack: 0.001, dur: rnd(0.12, 0.3) });
     }
 
     _uiLatch(out, t, k = 1) {
@@ -369,7 +408,7 @@
 
     // ---- KÊNH CHỈ HUY (màn tìm trận) — một bản tin hỏa tốc có đầu có đuôi:
     //   ĐIỆN KHẨN (còi ưu tiên, nhạc nền lùi xuống) -> BẮT SÓNG (mở squelch, chuỗi mã đồng bộ mật mã, khóa kênh)
-    //   -> KÊNH MỞ (nhiễu sóng nền + trầm nền Rê căng thẳng suốt lúc gõ lệnh) -> GÕ LỆNH (máy điện báo, hết câu đập
+    //   -> KÊNH MỞ (nhiễu sóng nền suốt lúc gõ lệnh, nhạc chờ lùi xuống) -> GÕ LỆNH (máy điện báo, hết câu đập
     //   trục + chuông, gõ tới tên cứ điểm thì "píng" đánh dấu mục tiêu) -> HẾT (đuôi squelch + bíp "over")
     //   -> TỔ LÁI "RÕ!" (bấm phím đáp + kèn đồng / trống chốt lệnh, nhạc nền trào lên lại)
 
@@ -414,7 +453,7 @@
       this.tone(out, t + 0.92, { type: 'triangle', freq: 1760, gain: 0.06, attack: 0.003, hold: 0.08, dur: 0.06 });
     }
 
-    // KÊNH MỞ suốt lúc gõ lệnh: nhiễu sóng nền chập chờn + trầm nền Rê-La (đúng giọng nhạc nền) phồng xẹp chậm
+    // KÊNH MỞ suốt lúc gõ lệnh: nhiễu sóng nền chập chờn
     startCommandChannel() {
       if (!this.ready() || this._cmdCh) return;
       this._cmdMusic(0.45, 0.4);
@@ -447,32 +486,8 @@
       bp.connect(hg);
       hg.connect(g);
       nodes.push(hiss, flut);
-      // trầm nền: Rê2 + La2 răng cưa qua lọc thấp, bộ lọc mở ra khép lại chậm như hơi thở nặng
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 280;
-      lp.Q.value = 2;
-      const sw = ctx.createOscillator();
-      sw.frequency.value = 0.14;
-      const sd = ctx.createGain();
-      sd.gain.value = 140;
-      sw.connect(sd);
-      sd.connect(lp.frequency);
-      const dg = ctx.createGain();
-      dg.gain.value = 0;
-      dg.gain.setValueAtTime(0.0001, t);
-      dg.gain.linearRampToValueAtTime(0.05, t + 2.5);
-      for (const [f, det] of [[73.42, -6], [73.42, 6], [110, 0]]) {
-        const o = ctx.createOscillator();
-        o.type = 'sawtooth';
-        o.frequency.value = f;
-        o.detune.value = det;
-        o.connect(lp);
-        nodes.push(o);
-      }
-      lp.connect(dg);
-      dg.connect(g);
-      nodes.push(sw);
+      // không thêm trầm nền riêng: nhạc chờ ghép trận (music.js 'search') đã có trầm nền Rê theo hợp âm;
+      // một nốt Rê giữ cố định ở đây cạ nửa cung với ô nhịp Mi giáng của bài -> ù đục
       for (const n of nodes) n.start(t);
       this._cmdCh = { g, nodes };
     }
@@ -593,12 +608,13 @@
     }
 
     // kèn đồng chớp đúng giọng nhạc nền (chỉ khi nhạc đang bật): chọn là thấy "hào hùng"
-    _uiBrassHit(t, k) {
+    // noDuck: đi thẳng vào âm lượng nhạc người chơi, không bị nút lùi nhạc (lúc quay thưởng) nuốt mất
+    _uiBrassHit(t, k, noDuck = false) {
       const M = this._mz;
       if (!M || !this._mzBrass || !this.musicEnabled || !this.musicEnabled()) return;
       const o = this.ctx.createGain();
       o.gain.value = 0.5 * k;
-      o.connect(M.bus);
+      o.connect(noDuck ? M.user : M.bus);
       setTimeout(() => { try { o.disconnect(); } catch (e) { /* đã ngắt */ } }, 4000);
       for (const m of [38, 45, 50]) this._mzBrass(o, t, m, 0.45, 0.9, false, 0.012);
       if (this._mzTaiko) this._mzTaiko(o, t, 0.8 * k, 1);

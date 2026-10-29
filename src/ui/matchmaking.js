@@ -444,9 +444,8 @@ class MatchmakingController {
     if (window.soundEngine && typeof window.soundEngine.init === 'function') {
       try { window.soundEngine.init(); } catch (e) {}
     }
-    if (window.soundEngine && window.soundEngine.playRadioChirp) {
-      try { window.soundEngine.playRadioChirp(); } catch (e) {}
-    }
+    // không phát tiếng bộ đàm ở đây: cú "CHẮC" của nút (playUiDeploy) + còi điện khẩn của bản tin đã đủ,
+    // chồng thêm thì ba lớp tiếng trầm / xẹt dồn vào cùng một khoảnh khắc thành một cục ù
     this.music('search');
     this.state = 'SEARCHING';
     this.searchTime = 0;
@@ -457,7 +456,8 @@ class MatchmakingController {
     this.roomHops = 0;
     this.resetRoster();
     this.setSearchView(true);
-    this.startBriefingTypewriter(this.selectedMapType);
+    // còi điện khẩn chờ cú "CHẮC" của nút tìm trận tắt hẳn (~0,7 s) rồi mới vang, không đè lên nhau
+    this.startBriefingTypewriter(this.selectedMapType, 700);
 
     // Chưa dựng bản đồ ở đây: vào được phòng có sẵn thì dựng bản đồ của chủ phòng (DISCOVER_ROOM_ACK),
     // không có phòng / mất mạng thì máy này làm chủ phòng và dựng bản đồ mình đã chọn (becomeHost)
@@ -538,7 +538,8 @@ class MatchmakingController {
 
   // LỆNH TỪ CHỈ HUY qua bộ đàm thời chiến: bắt sóng (mã hiệu giải mã dần) -> máy điện báo gõ từng chữ, ngập ngừng ở
   // dấu câu, thỉnh thoảng nhiễu sóng chen ký tự rác rồi tự sửa -> thả phím bộ đàm, tổ lái đáp "Rõ!"
-  startBriefingTypewriter(mapType) {
+  // delayMs: chờ trước khi bắt đầu (còi điện khẩn) — dùng khi vừa có tiếng nút bấm lớn
+  startBriefingTypewriter(mapType, delayMs = 0) {
     this.stopBriefingTypewriter();
     const list = (typeof MISSION_BRIEFINGS !== 'undefined' && MISSION_BRIEFINGS[mapType]) || (typeof MISSION_BRIEFINGS !== 'undefined' && MISSION_BRIEFINGS.DESERT) || [];
     if (!list.length) return;
@@ -567,10 +568,6 @@ class MatchmakingController {
     const kickerEl = document.getElementById('mm-briefing-kicker');
     if (kickerEl) {
       kickerEl.textContent = isRed ? 'BỘ CHỈ HUY KHÁNG CHIẾN' : 'BỘ TƯ LỆNH LIÊN ĐOÀN';
-    }
-    const speakerEl = document.getElementById('mm-comm-speaker');
-    if (speakerEl) {
-      speakerEl.textContent = isRed ? '01 // MỆNH LỆNH KHÁNG CHIẾN' : '01 // MỆNH LỆNH LIÊN ĐOÀN';
     }
     const replySpeakerEl = document.getElementById('mm-briefing-reply-speaker');
     if (replySpeakerEl) {
@@ -604,7 +601,10 @@ class MatchmakingController {
     if (codeEl) codeEl.textContent = scramble(0);
     boxFlag('is-linking', true);
     setStatus('ĐIỆN KHẨN · ƯU TIÊN HỎA TỐC', 'flash');
-    this.briefingSfx('playCommandFlash');
+    const flash = () => {
+      this.briefingSfx('playCommandFlash');
+      later(link, 720);
+    };
 
     // 1. BẮT SÓNG: mã hiệu hiện ra từ chuỗi ký tự rác, giải mã dần từ trái sang phải
     const LINK_MS = 950;
@@ -661,7 +661,7 @@ class MatchmakingController {
       }, 650);
     };
 
-    later(link, 720);
+    if (delayMs > 0) later(flash, delayMs); else flash();
   }
 
   stopBriefingTypewriter() {
@@ -709,9 +709,21 @@ class MatchmakingController {
     }[this.selectedMapType] || 'assets/lobby_urban.jpg';
     document.documentElement.style.setProperty('--briefing-bg', `url("${briefingBg}")`);
     const reconVideo = document.getElementById('mm-recon-video');
+    clearTimeout(this._introCap);
     if (!reconVideo) return;
     if (on) {
       this.introFinished = false;
+      // Phim trinh sát là CỔNG vào trận (checkLocalGameReady chờ introFinished) nhưng chỉ có onended / lỗi tải mới mở cổng:
+      // trình duyệt chặn tự phát (Edge "Chặn"), play() bị từ chối, trình phát khựng vì luồng chính bận dựng bản đồ /
+      // biên dịch shader (đo 2026-10-28 trên Edge: phim 45 s chạy hết ở giây 75) -> kẹt "ĐANG TRUYỀN NHIỆM VỤ" mãi.
+      // Mở cổng muộn nhất sau INTRO_MAX_MS tính theo đồng hồ thật, dù phim ở đâu
+      const finishIntro = () => {
+        clearTimeout(this._introCap);
+        if (this.introFinished) return;
+        this.introFinished = true;
+        this.checkLocalGameReady();
+      };
+      this._introCap = setTimeout(finishIntro, 48000);
       const mapLower = (this.selectedMapType || 'urban').toLowerCase();
       const primarySrc = 'assets/recon_' + mapLower + '.webm?v=20261026high';
       const fallbackSrc = 'assets/recon_briefing.webm?v=20261026high';
@@ -725,25 +737,23 @@ class MatchmakingController {
         reconVideo.classList.remove('hidden');
         if (this.searchHudEl) this.searchHudEl.classList.add('mm-video-playing');
       };
-      reconVideo.onended = () => {
-        this.introFinished = true;
-        this.checkLocalGameReady();
-      };
-      reconVideo.oncanplay = () => { reconVideo.play().catch(hideVideo); };
+      reconVideo.onended = finishIntro;
+      // bị từ chối phát (không phải bị ngắt vì đổi nguồn / tạm dừng): phim sẽ không chạy -> không bắt người chơi chờ
+      const playFail = (e) => { hideVideo(); if (!e || e.name !== 'AbortError') finishIntro(); };
+      reconVideo.oncanplay = () => { reconVideo.play().catch(playFail); };
       reconVideo.onerror = () => {
         hideVideo();
         if (reconVideo.src && !reconVideo.src.endsWith(fallbackSrc)) {
           reconVideo.src = fallbackSrc;
-          reconVideo.play().catch(hideVideo);
+          reconVideo.play().catch(playFail);
         } else {
           reconVideo.classList.add('hidden');
           // A missing briefing clip must not leave the room locked forever.
-          this.introFinished = true;
-          this.checkLocalGameReady();
+          finishIntro();
         }
       };
       reconVideo.src = primarySrc;
-      reconVideo.play().catch(hideVideo);
+      reconVideo.play().catch(playFail);
     } else {
       // gỡ onerror trước: bỏ nguồn cũng là một lỗi tải -> trước đây lại nhảy sang bản chung, video chạy ngầm trong trận
       reconVideo.onerror = null;
@@ -879,15 +889,6 @@ class MatchmakingController {
           this.broadcastRoomUpdate();
           this.sendMySlotUpdate();
         }
-        return;
-      }
-
-      // 3.a. Xem bản đồ 3D
-      const view3dBtn = e.target.closest('#mm-view-3d-map-btn');
-      if (view3dBtn) {
-        const mapType = this.selectedMapType || 'URBAN';
-        const seed = (this.mapSeed || 20261022) >>> 0;
-        window.location.href = `index.html?lab=freecam&map=${encodeURIComponent(mapType)}&seed=${seed}`;
         return;
       }
 

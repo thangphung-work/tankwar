@@ -13,14 +13,14 @@ const SkySystem = (() => {
 		// càng xa lớp không khí phủ lên đồi càng sẫm ngả lam (khớp cảnh nền & chân dãy núi chân trời): đồi 3-6 km lam xám
 		// chứ không trắng sữa nổi hơn cả dãy núi phía sau
 		float fogAerial = 1.0 - smoothstep( 0.0003, 0.0007, fogDensity );
-		vec3 fogAir = mix( vec3( 0.86, 0.9, 0.96 ), vec3( 0.36, 0.42, 0.5 ), smoothstep( 1200.0, 4500.0, fogDepth ) );
+		vec3 fogAir = mix( vec3( 0.86, 0.9, 0.96 ), vec3( 0.58, 0.63, 0.71 ), smoothstep( 1200.0, 4500.0, fogDepth ) );
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor * mix( vec3( 1.0 ), fogAir, fogAerial ), fogFactor * ( 1.0 - 0.45 * fogAerial ) );
 	#else
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
 	#endif`);
   }
   // mapType, seed (tuỳ chọn): dựng thêm dãy núi chân trời theo chiến địa (RANGES), dáng núi theo seed bản đồ
-  function create(parent, atm, mapType, seed) {
+  function create(parent, atm, mapType, seed, outer) {
     const geo = new THREE.SphereGeometry(5200, 48, 24);
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
@@ -116,7 +116,7 @@ const SkySystem = (() => {
     mesh.frustumCulled = false;
     mesh.onBeforeRender = (r, sc) => { mat.uniforms.uFogD.value = sc.fog && sc.fog.density !== undefined ? sc.fog.density : 0; };
     parent.add(mesh);
-    const ring = mapType && RANGES[mapType] ? mountainRing(RANGES[mapType], mat.uniforms, seed || 1) : null;
+    const ring = mapType && RANGES[mapType] ? mountainRing(RANGES[mapType], mat.uniforms, seed || 1, outer) : null;
     if (ring) mesh.add(ring);
     return { mesh, atm, ring };
   }
@@ -130,14 +130,18 @@ const SkySystem = (() => {
     RIVER_LAKE: { amp: 600, soft: 0, tree: 0.82, snow: 0.7, snowK: 1, rock: [0.3, 0.3, 0.3], forest: [0.06, 0.13, 0.04], haze: 0.18 },
     JUNGLE: { amp: 580, soft: 0.05, tree: 0.92, snow: 0.84, snowK: 0.85, rock: [0.3, 0.31, 0.29], forest: [0.05, 0.13, 0.04], haze: 0.24 },
     URBAN: { amp: 520, soft: 0, tree: 0.82, snow: 0.7, snowK: 1, rock: [0.3, 0.3, 0.3], forest: [0.06, 0.13, 0.05], haze: 0.22 },
-    DESERT: { amp: 540, soft: 0, tree: -1, snow: 9, rock: [0.64, 0.48, 0.34], forest: [0.3, 0.27, 0.18], haze: 0.32 }
+    DESERT: { amp: 540, soft: 0, tree: -1, snow: 9, rock: [0.64, 0.5, 0.36], forest: [0.3, 0.27, 0.18], haze: 0.32, strata: 1 }
   };
   // Dải địa hình hình vành khuyên quanh camera: núi sống lưng uốn méo, sườn bất đối xứng, mỏm đá. Tính sẵn lúc dựng (1 lần /
   // bản đồ): bóng núi đổ lên núi theo hướng nắng (dò tia trên lưới độ cao), độ lồi lõm (sống núi / khe). Shader: rừng phủ
   // sườn (hạt tán cây), đồng cỏ núi trên bìa rừng, đá lộ ở sống núi & vách dốc, đá vụn ở lòng khe, tuyết đọng trong khe
   // thành vệt; sương xa ngả màu trời. Vẽ từ vòng xa vào vòng gần (vẽ đè kiểu hoạ sĩ, không cần bộ đệm sâu)
-  function mountainRing(cfg, su, seed) {
+  function mountainRing(cfg, su, seed, outer) {
     if (typeof MapGen === 'undefined') return null;
+    // map đảo (outer.spineA): dãy núi chân trời chỉ ở một cung sau dãy sống lưng của đảo (đất liền / đảo lớn phía xa), các
+    // hướng khác chân trời là biển — vòng núi 360° quanh một hòn đảo là vô lý (như đảo nằm giữa miệng núi lửa)
+    // sa mạc (outer.arcA): núi xa chỉ sau cao nguyên, phía biển cát / đồi thấp chân trời là cồn cát
+    const arcA = !outer ? null : outer.sea && typeof outer.spineA === 'number' ? outer.spineA : typeof outer.arcA === 'number' ? outer.arcA : null;
     const R0 = 3000, R1 = 5000, N = 1200, NR = 64, TAU = Math.PI * 2;
     const on = MapGen.makeNoise(MapGen.mulberry32(((seed ^ 0x51f3a9) >>> 0) || 1));
     const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -228,8 +232,23 @@ const SkySystem = (() => {
       const h = Math.max(h0, pyr(t * L + pw, r + pv) * rad * (0.85 + 0.3 * mass));
       // gồ ghề trên mặt (bước sóng ~450 / ~170 đv): mặt núi vênh, sống phụ & rãnh nhỏ; mạnh dần lên cao (đỉnh đá
       // lởm chởm, không trơn láng như nón)
-      const crag = MapGen.ridged(on, wx * 0.0022 + 3.3, wz * 0.0022 - 8.1, 2) + 0.45 * MapGen.ridged(on, wx * 0.0058 - 2.2, wz * 0.0058 + 5.5, 2);
-      return h + cfg.amp * rad * 0.04 * crag * smooth(0.15, 0.7, h / cfg.amp);
+      // + tầng ~85 đv (lưới ~21-31 đv/ô vẫn dựng được): mỏm đá nhọn, đường đỉnh răng cưa thay cho nét viền mượt
+      const crag = MapGen.ridged(on, wx * 0.0022 + 3.3, wz * 0.0022 - 8.1, 2) + 0.55 * MapGen.ridged(on, wx * 0.0058 - 2.2, wz * 0.0058 + 5.5, 2)
+        + 0.3 * MapGen.ridged(on, wx * 0.012 + 6.4, wz * 0.012 - 1.9, 2);
+      const up = smooth(0.15, 0.7, h / cfg.amp);
+      let hr = h + cfg.amp * rad * 0.075 * crag * up;
+      // BẬC VÁCH: mặt đá trên cao gãy thành từng bậc (vách dựng + gờ thoải), cao mỗi bậc ~55-75 đv, mép bậc uốn theo nhiễu
+      // (không thành vạch đồng mức thẳng tắp) -> sườn cứng cáp gãy khúc thay vì một mặt nghiêng trơn
+      const st = 64 + 12 * MapGen.fbm(on, wx * 0.002 - 4.4, wz * 0.002 + 1.1, 2), sw = hr + 40 * MapGen.fbm(on, wx * 0.003 + 8.8, wz * 0.003 - 3.6, 2);
+      const sq = sw / st, sf = sq - Math.floor(sq);
+      hr += ((Math.floor(sq) + smooth(0.6, 1, sf)) * st - sw) * 0.4 * up * smooth(0.2, 0.6, MapGen.fbm(on, wx * 0.0011 + 2.2, wz * 0.0011, 2) + 0.5);
+      if (arcA === null) return hr;
+      // cung núi: rộng ~±75° quanh hướng sống lưng, mép cung hạ dần xuống dưới chân trời (dãy núi chìm dần vào biển)
+      let da = Math.abs(Math.atan2(z, x) - arcA - 0.2 * MapGen.fbm(on, x * 0.0004, z * 0.0004 + 3, 2)) % TAU;
+      da = Math.min(da, TAU - da);
+      // ngoài cung: dìm hẳn xuống (~15° dưới tầm mắt) -> biển / cảnh nền thật vẽ đè lên; chỉ hạ về 0 thì chân vòng núi
+      // thành dải sẫm lơ lửng ngang tầm mắt khi camera lên cao (pháo binh, drone)
+      return hr * (1 - smooth(0.85, 1.45, da)) - 900 * smooth(1.0, 1.6, da);
     };
     const NV = N * (NR + 1), pos = new Float32Array(NV * 3), hh = new Float32Array(NV), rr = new Float32Array(NV);
     // vòng k = 0 xa nhất (R1) -> k = NR gần nhất (R0); góc lặp vòng (i = N trùng i = 0)
@@ -275,7 +294,10 @@ const SkySystem = (() => {
         if ((!dk && !di) || kk < 0 || kk > NR) continue;
         s += hh[kk * N + ((i + di) % N + N) % N]; n++;
       }
-      aux[v * 4] = h0 / cfg.amp; aux[v * 4 + 1] = (rr[v] - R0) / (R1 - R0);
+      // độ cao BIỂU KIẾN (theo góc nhìn, quy về bán kính giữa dải): dãy núi giả ở xa ~25 km nên độ cao thật của núi tỉ lệ
+      // với góc nhìn, không phải h lưới — hàng gần (R0) trông cao hơn đỉnh xa (R1) cùng h. Tuyết / bìa rừng / sương theo h
+      // thô thì sống núi gần cao vút không tuyết mà đỉnh thấp hơn phía sau lại trắng xoá (đường tuyết lệch nhau)
+      aux[v * 4] = h0 * ((R0 + R1) / 2 / rr[v]) / cfg.amp; aux[v * 4 + 1] = (rr[v] - R0) / (R1 - R0);
       aux[v * 4 + 2] = 1 - Math.min(1, occ); aux[v * 4 + 3] = Math.max(-1, Math.min(1, (h0 - s / n) / (cfg.amp * 0.06)));
     }
     const idx = new Uint32Array(NR * N * 6);
@@ -296,19 +318,21 @@ const SkySystem = (() => {
       uniforms: {
         fogC: su.fogC, horizon: su.horizon, zenith: su.zenith, sunDir: su.sunDir, sunColor: su.sunColor, overcast: su.overcast,
         rockC: { value: f3(cfg.rock) }, forestC: { value: f3(cfg.forest) },
-        uFogD: { value: 0 }, snowH: { value: cfg.snow }, snowK: { value: cfg.snowK || 1 }, treeH: { value: cfg.tree }, hazeB: { value: cfg.haze }
+        uFogD: { value: 0 }, uHor: { value: 0 }, snowH: { value: cfg.snow }, snowK: { value: cfg.snowK || 1 }, treeH: { value: cfg.tree }, hazeB: { value: cfg.haze },
+        strataK: { value: cfg.strata || 0 }, farAir: typeof BattleTerrain3D !== 'undefined' ? BattleTerrain3D.FAR_AIR : { value: f3([0.58, 0.63, 0.71]) }
       },
       vertexShader: `
         attribute vec4 aM;
-        varying vec3 vN, vP; varying vec4 vM;
+        varying vec3 vN, vP, vRel; varying vec4 vM;
         void main() {
           vN = normal; vP = position; vM = aM;
+          vRel = (modelMatrix * vec4(position, 1.0)).xyz - cameraPosition;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: `
-        uniform vec3 fogC, horizon, zenith, sunDir, sunColor, rockC, forestC;
-        uniform float overcast, snowH, snowK, treeH, hazeB, uFogD;
-        varying vec3 vN, vP; varying vec4 vM;
+        uniform vec3 fogC, horizon, zenith, sunDir, sunColor, rockC, forestC, farAir;
+        uniform float overcast, snowH, snowK, treeH, hazeB, uFogD, uHor, strataK;
+        varying vec3 vN, vP, vRel; varying vec4 vM;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) {
           vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
@@ -344,10 +368,12 @@ const SkySystem = (() => {
           float pxw = max(fwidth(vP.x), fwidth(vP.z)) + fwidth(vP.y);
           // nhiễu "nếp gãy" (|n - 0.5|): gradient đổi dấu đột ngột -> gờ sắc cạnh & khe gãy góc thay cho u lồi mượt; 6 tầng
           // tới cỡ vài đv -> mặt đá sần sùi khi soi ống kính
-          vec3 gsum = vec3(0.0); float rough = 0.0, fq = 0.03, am = 1.0;
-          for (int o = 0; o < 6; o++) {
+          // (tầng thô ~33-11 đv bỏ: nhiễu giá trị đẳng hướng ở cỡ đó thành các u tròn phủ kín sườn như bọt xà phòng —
+          // hình khối lớn của sườn do RÃNH XÓI bên dưới đảm nhận)
+          vec3 gsum = vec3(0.0); float rough = 0.0, fq = 0.19, am = 0.5;
+          for (int o = 0; o < 4; o++) {
             float fade = 1.0 - smoothstep(0.25, 0.7, pxw * fq);
-            vec4 nd = noised(vP * fq + float(o) * 17.3);
+            vec4 nd = noised(vec3(vP.x, vP.y * 0.4, vP.z) * fq + float(o) * 17.3);   // kéo dài theo chiều đứng: thớ nứt dọc, không hạt tròn
             float sg = nd.x > 0.5 ? 1.0 : -1.0;
             gsum += sg * nd.yzw * am * fade; rough += (abs(nd.x - 0.5) - 0.25) * am * fade;
             fq *= 2.11; am *= 0.6;
@@ -356,7 +382,7 @@ const SkySystem = (() => {
           // GÓC CẠNH: vùng đá lấy một phần pháp tuyến phẳng của từng mặt tam giác -> mặt vách phẳng gãy góc như đá thật
           vec3 nf = normalize(cross(dFdx(vP), dFdy(vP)));
           if (nf.y < 0.0) nf = -nf;
-          n0 = normalize(mix(n0, nf, 0.5 * rockK));
+          n0 = normalize(mix(n0, nf, 0.75 * rockK));
           // KHE NỨT (2 cỡ ~140 m / ~45 m, ô kéo dài theo chiều đứng của vách): nét sẫm mảnh trên mặt đá, chỉ là màu —
           // không bẻ pháp tuyến (mặt núi lớn giữ phẳng, sáng / tối cả mảng); nét tối thiểu ~1,5 điểm ảnh, tắt khi ô nhỏ hơn điểm ảnh
           float crack = 0.0;
@@ -367,22 +393,55 @@ const SkySystem = (() => {
             float f1 = 1.0 - smoothstep(0.08, 0.3, pxw / 140.0 * 6.0), f2 = 1.0 - smoothstep(0.08, 0.3, pxw / 45.0 * 6.0);
             crack = max((1.0 - smoothstep(0.0, w1, v1.x)) * f1, (1.0 - smoothstep(0.0, w2, v2.x)) * 0.7 * f2) * rockK;
           }
-          vec3 n = normalize(n0 - (gsum - dot(gsum, n0) * n0) * mix(0.3, 0.38, rockK));
+          // RÃNH XÓI / SỐNG ĐÁ chạy thẳng xuống dốc (núi thật: nước xẻ sườn thành khe chữ V xen sống đá sắc, không có u gò
+          // tròn). Mặt cắt ngang sườn = sóng tam giác (đỉnh sống & đáy khe gãy góc), 3 cỡ ~240 / 86 / 31 đv; khe uốn lượn,
+          // bề rộng lệch, chỗ sâu chỗ nông dọc sườn (khe mở ra rồi tắt). Toạ độ ngang sườn theo pháp tuyến mượt: mặt chóp lớn
+          // phẳng nên khe song song thẳng hàng xuống chân, qua sống núi thì đổi hướng theo mặt bên kia
+          // Hướng ngang sườn KHÔNG lấy thẳng từ pháp tuyến (toạ độ thế giới ~4000 đv: pháp tuyến lệch chút xíu là pha khe nhảy
+          // cả chục chu kỳ -> vân xoáy như vân tay): 4 hướng cố định, trộn theo độ khớp với hướng dốc (kiểu chiếu 3 phía)
+          vec2 dn = n0.xz; float dnl = length(dn); dn = dnl > 1e-3 ? dn / dnl : vec2(1.0, 0.0);
+          float gK = smoothstep(0.08, 0.3, dnl), gH = 0.0, gAm = 0.0, gWs = 0.0; vec3 gT = vec3(0.0);
+          for (int d = 0; d < 4; d++) {
+            float an = float(d) * 0.7853982;
+            vec2 dd = vec2(cos(an), sin(an));
+            float wd = pow(abs(dot(dn, dd)), 10.0);
+            if (wd < 0.02) continue;
+            vec2 tq = vec2(-dd.y, dd.x);
+            float acr = dot(vP.xz, tq), hD = 0.0, dD = 0.0, aD = 0.0, gW = 240.0, gA = 0.8;
+            for (int o = 0; o < 3; o++) {
+              float fw = 1.0 - smoothstep(0.12, 0.35, pxw / gW);
+              float uu = acr / gW + (noise(vec2(acr / gW * 0.35 + float(o + d * 3) * 7.1, vP.y / (gW * 2.2))) - 0.5) * 1.3;
+              float dep = smoothstep(0.28, 0.62, noise(vec2(floor(uu) * 1.37 + float(o + d * 3) * 3.3, vP.y / (gW * 3.5))));
+              float f = fract(uu) - 0.5, k = gA * dep * fw;
+              hD += (0.25 - abs(f)) * 4.0 * k; aD += k;
+              dD += -clamp(f / max(0.03, pxw / gW * 1.5), -1.0, 1.0) * k;
+              gW *= 0.36; gA *= 0.65;
+            }
+            // tiếp tuyến ngang sườn chiếu lên mặt (khớp dấu với hướng dốc thật)
+            vec3 t3 = vec3(tq.x, 0.0, tq.y);
+            gT += (t3 - dot(t3, n0) * n0) * dD * wd; gH += hD * wd; gAm += aD * wd; gWs += wd;
+          }
+          gH = gWs > 0.0 ? gH / gWs * gK : 0.0;
+          gT = gWs > 0.0 ? gT / gWs * gK : vec3(0.0);
+          gAm = gWs > 0.0 ? gAm / gWs : 0.0;
+          float gC = gAm > 0.0 ? gH / gAm : 0.0;   // +1 sống đá, -1 lòng khe
+          n0 = normalize(n0 - gT * mix(0.55, 1.0, rockK));
+          vec3 n = normalize(n0 - (gsum - dot(gsum, n0) * n0) * mix(0.14, 0.2, rockK));
           float h = vM.x, far = vM.y, lit0 = vM.z, cv = vM.w, slope = 1.0 - n0.y;
           // chi tiết nhỏ mờ dần khi nhỏ hơn cỡ điểm ảnh (không lấm tấm răng cưa khi ở xa / lia camera)
           float px = max(fwidth(vP.x), fwidth(vP.z));
           float dF = 1.0 - smoothstep(4.0, 12.0, px), dM = 1.0 - smoothstep(14.0, 40.0, px);
           float n1 = noise(vP.xz * 0.011), n2 = noise(vP.xz * 0.045 + 3.7);
-          float rill = clamp(0.5 + rough * 0.9, 0.0, 1.0);   // gờ sáng / hốc tối theo nổi khối
+          float rill = clamp(0.5 + rough * 0.9 + gC * 0.3, 0.0, 1.0);   // gờ sáng / hốc tối theo nổi khối (sống đá sáng, lòng khe tối)
           // RỪNG: sườn thoải dưới bìa rừng, lấn lên theo khe (giữ ẩm), lùi khỏi sống núi; bìa rừng lởm chởm
           // bìa rừng không chạy ngang theo độ cao: lên cao theo khe ẩm, tụt xuống trên sống / mỏm, lượn mạnh theo nhiễu
-          float tl = treeH + (n1 - 0.5) * 0.35 + (noise(vP.xz * 0.004 + 7.0) - 0.5) * 0.3 - cv * 0.3;
+          float tl = treeH + (n1 - 0.5) * 0.35 + (noise(vP.xz * 0.004 + 7.0) - 0.5) * 0.3 - cv * 0.3 - gC * 0.07;   // rừng leo theo lòng khe, tụt trên sống đá
           float fo = treeH > 0.0 ? (1.0 - smoothstep(tl - 0.015, tl + 0.015, h)) * (1.0 - smoothstep(0.66, 0.86, slope + max(cv, 0.0) * 0.35 + (n2 - 0.5) * 0.2)) : 0.0;
           // hạt tán cây: đốm sáng (ngọn cây đón nắng) / tối (kẽ cây) cỡ vài điểm ảnh
           float crown = mix(0.5, noise(vP.xz * 0.16) * 0.65 + noise(vP.xz * 0.37 + 1.3) * 0.35, dF);
           vec3 cFor = forestC * (0.7 + 0.6 * crown) * (0.85 + 0.3 * n1);
           // đồng cỏ núi cao: sườn thoải ngay trên bìa rừng
-          float al = treeH > 0.0 ? (1.0 - fo) * (1.0 - smoothstep(0.4, 0.6, slope)) * (1.0 - smoothstep(tl + 0.05, tl + 0.22, h + (n2 - 0.5) * 0.2 + max(cv, 0.0) * 0.2)) : 0.0;
+          float al = treeH > 0.0 ? (1.0 - fo) * (1.0 - smoothstep(0.4, 0.6, slope)) * (1.0 - smoothstep(tl + 0.05, tl + 0.22, h + (n2 - 0.5) * 0.2 + max(cv, 0.0) * 0.2 + gC * 0.09)) : 0.0;
           // đồng cỏ núi: xanh vàng chanh tươi (tương phản mạnh với rừng lá kim sẫm), lốm đốm đá / cỏ úa
           vec3 cAlp = mix(vec3(0.15, 0.27, 0.07), vec3(0.24, 0.3, 0.14), smoothstep(0.5, 0.85, n2));
           // ĐÁ: sáng tối theo vệt xói, sống núi đá sạch sáng hơn; lòng khe / chân vách: đá vụn xám nhạt
@@ -393,16 +452,23 @@ const SkySystem = (() => {
           // (không vẽ đường nứt: đường đồng mức của nhiễu thành nét nguệch ngoạc. Khe nứt = hốc tối của nổi khối gãy góc ở trên)
           cRock *= 1.0 - 0.4 * crack;
           // mặt đá không đều màu: mảng đá ấm / lạnh, vệt sẫm phong hoá, hạt lấm tấm nhỏ
-          float pt = noised(vP * 0.012 + 5.5).x, pt2 = noised(vP * 0.05 + 1.9).x;
+          // (mảng màu kéo dài theo chiều đứng thành vệt phong hoá / vệt nước chảy trên vách, không thành đốm tròn)
+          vec3 pq = vec3(vP.x, vP.y * 0.3, vP.z);
+          float pt = noised(pq * 0.012 + 5.5).x, pt2 = noised(pq * 0.05 + 1.9).x;
           cRock *= mix(vec3(0.78, 0.8, 0.86), vec3(1.15, 1.08, 0.98), pt) * (0.75 + 0.5 * pt2);
           cRock *= 0.85 + 0.3 * noised(vP * 0.4).x * (1.0 - smoothstep(1.5, 4.0, pxw));
-          // rêu / cỏ bám gờ đá chỗ bớt dốc -> sườn đá vẫn loang xanh
-          cRock = mix(cRock, cAlp * 0.75, (1.0 - smoothstep(0.42, 0.68, slope)) * smoothstep(0.35, 0.65, n2) * 0.7);
+          // ĐÁ NÚI SA MẠC: vàng nâu như vành núi gần (GroundShader), vân tầng ngang nhạt lượn theo nhiễu, lên cao nhạt dần
+          float stB = sin(h * 46.0 + n1 * 3.0 + (n2 - 0.5) * 1.5) * 0.5 + 0.5;
+          float stUp = smoothstep(0.42, 0.8, h + (n1 - 0.5) * 0.25);
+          cRock = mix(cRock, cRock * vec3(1.1, 1.14, 1.2), strataK * clamp(smoothstep(0.55, 0.85, stB) * 0.4 + stUp * 0.5, 0.0, 1.0));
+          // rêu / cỏ bám gờ đá chỗ bớt dốc -> sườn đá vẫn loang xanh (sa mạc: không có, sườn thoải là đá vụn khô)
+          // (rêu cỏ mọc theo lòng khe giữ ẩm -> thành dải xanh chạy dọc sườn, sống đá trơ)
+          cRock = mix(cRock, cAlp * 0.75, (1.0 - smoothstep(0.42, 0.68, slope)) * smoothstep(0.35, 0.65, n2 * 0.5 + 0.25 - gC * 0.45) * 0.7 * (1.0 - strataK));
           vec3 col = mix(cRock, cAlp, al);
           col = mix(col, cFor, fo);
           // TUYẾT: trên đường tuyết đọng chỗ thoải & trong khe thành vệt chảy dọc sườn; vách dốc trơ đá
           float sl = snowH + (n1 - 0.5) * 0.12;
-          float sn = smoothstep(sl - 0.03, sl + 0.04, h + max(0.0, -cv) * 0.2 - slope * 0.25 + (rill - 0.5) * 0.12 * slope);
+          float sn = smoothstep(sl - 0.03, sl + 0.04, h + max(0.0, -cv) * 0.2 - slope * 0.25 + (rill - 0.5) * 0.12 * slope - gC * 0.08 * slope);   // tuyết đọng lòng khe thành vệt, sống đá lộ
           sn *= 1.0 - smoothstep(0.55, 0.75, (1.0 - n.y) - max(0.0, -cv) * 0.3 - crack * 0.5);   // tuyết chỉ bám mặt đá hướng lên & lấp khe nứt -> loang lổ
           // (snowK < 1: vệt băng mỏng loang trên đỉnh, đá sẫm lộ qua)
           // băng trắng ngả lam nhẹ; khe nứt vẫn lộ đá sẫm qua lớp băng
@@ -411,11 +477,14 @@ const SkySystem = (() => {
           float ndl = max(dot(n, normalize(sunDir)), 0.0) * lit0 * (1.0 - overcast * 0.75);
           // tương phản mạnh như ảnh thật: mặt nắng sáng ấm, mặt khuất / bóng núi xanh lam sẫm
           vec3 amb = mix(zenith * 0.3, zenith * 0.42, 0.5 + 0.5 * n.y) * vec3(0.85, 0.95, 1.15) * (0.75 + 0.25 * clamp(cv + 0.5, 0.0, 1.0));
-          col *= sunColor * ndl * 1.7 + amb;
+          // (nắng ×1.7 + màu lá nguyên độ bão hoà: núi cách vài km xanh rực như cỏ dưới chân, trông như tự phát sáng)
+          col *= sunColor * ndl * 1.5 + amb;
+          // không khí dày vài km ăn bớt độ bão hoà trước khi phủ sương: lá ngả xám lục, đá sa mạc giữ sắc vàng hơn
+          col = mix(col, vec3(dot(col, vec3(0.3, 0.55, 0.15))), 0.22 * (1.0 - 0.6 * strataK));
           // PHỐI CẢNH KHÔNG KHÍ: xa nhạt ngả màu trời; thung lũng thấp chìm sương; trời âm u: núi tan vào mây
           // Núi ở ~25 km phải mờ HƠN cảnh nền thật ở 3-6 km (cảnh nền hoà vào màu sương fogC): chân núi chìm đúng màu sương
           // với độ đậm như dải đồi xa, lên cao không khí loãng -> đỉnh rõ dần; dải xa của vành mờ thêm
-          float hz = mix(0.92, hazeB + 0.08, pow(smoothstep(0.02, 0.6, h), 0.8)) + 0.22 * far;
+          float hz = mix(0.92, hazeB + 0.2, pow(smoothstep(0.02, 0.6, h), 0.8)) + 0.22 * far;
           // không bao giờ rõ hơn cảnh nền thật phía trước: tối thiểu bằng sương của game (FogExp2) ở ~4 km, lên cao không
           // khí loãng nên đỉnh tính như gần hơn
           float fd = uFogD * 3000.0 * (1.0 - 0.45 * smoothstep(0.0, 0.9, h));
@@ -426,9 +495,17 @@ const SkySystem = (() => {
           hz = max(hz, fogK);
           // chân núi chìm vào cùng màu không khí xa sẫm ngả lam như đồi cảnh nền (backdrop.js HAZE_GLSL), đỉnh ngả màu sương sáng
           // (trời âm u: đỉnh không ngả màu sương sáng — dưới mây, cả dãy núi là khối xám lam sẫm hơn bầu trời, đều từ chân lên đỉnh)
-          vec3 hzC = mix(fogC * vec3(0.36, 0.42, 0.5), fogC * mix(1.0, 0.58, overcast), smoothstep(0.25, 0.85, h) * (1.0 - 0.6 * overcast));
+          vec3 hzC = mix(fogC * farAir, fogC * mix(1.0, 0.58, overcast), smoothstep(0.25, 0.85, h) * (1.0 - 0.6 * overcast));
           // sương mù dày (fog của game đặc): núi tan hẳn vào đúng màu sương như cảnh vật gần hơn (không lộ bóng núi sẫm sau màn sương)
           hzC = mix(hzC, fogC, smoothstep(0.55, 0.95, fogK));
+          // LỚP MÙ SÁT CHÂN TRỜI: camera càng cao, chân dãy núi càng tụt sâu dưới mép đất xa (cảnh nền ở mặt phẳng cắt xa đã
+          // hoà hẳn màu không khí xa) -> ngay trên mép đất lộ ra sườn giữa núi xanh đậm ít sương: dải đất xa thành tấm lam xám
+          // phẳng sáng hơn cả núi phía sau, mép trên thẳng tắp. Sương theo góc nhìn trên mép đất: sát mép đúng màu dải đất xa,
+          // núi nhô dần lên khỏi lớp mù như ảnh chụp từ trên cao
+          float aE = vRel.y / max(1.0, length(vRel.xz)) - uHor;
+          float lowH = 1.0 - smoothstep(0.0, 0.026, aE);
+          hzC = mix(hzC, fogC * farAir, lowH * (1.0 - smoothstep(0.55, 0.95, fogK)));
+          hz = max(hz, lowH * 0.97);
           col = mix(col, hzC, clamp(hz, 0.0, fogK > 0.95 ? 1.0 : 0.97));
           gl_FragColor = vec4(col, 1.0);
         }`
@@ -441,7 +518,11 @@ const SkySystem = (() => {
     // núi ở xa ~25 km: camera lên cao thì chân trời núi hạ xuống chút ít (thị sai dọc theo khoảng cách ảo)
     m.onBeforeRender = (r, sc, cam) => {
       mat.uniforms.uFogD.value = sc.fog && sc.fog.density !== undefined ? sc.fog.density : 0;
-      m.position.y = -cam.position.y * (R1 / 25000);
+      // góc mép đất xa dưới tầm mắt (đất / cảnh nền chỉ vẽ tới mặt phẳng cắt xa) — lớp mù sát chân trời bám theo
+      mat.uniforms.uHor.value = -Math.max(0, cam.position.y) / (cam.far || 9000);
+      // (khoảng cách ảo không xa hơn mặt phẳng cắt xa: cảnh nền / biển thật chỉ vẽ tới đó -> chân trời thật tụt theo góc
+      // độ cao camera / far; tính như 25 km thì từ camera pháo binh / drone chân núi lơ lửng trên đường chân trời biển)
+      m.position.y = -cam.position.y * (R1 / Math.min(25000, cam.far || 25000));
       m.updateMatrix();
       if (m.parent) m.matrixWorld.multiplyMatrices(m.parent.matrixWorld, m.matrix);
     };
@@ -531,14 +612,55 @@ float skyCloudShade( vec3 viewPos ) {
     // mọi loại vật liệu có chiếu sáng từng điểm ảnh mang uniform này (cùng một object CLOUD)
     for (const k of ['standard', 'physical', 'phong', 'toon']) if (THREE.ShaderLib[k]) THREE.ShaderLib[k].uniforms.skyCloudU = { value: CLOUD };
   }
+  /**
+   * BÓNG NẮNG 2 TẦNG: khung bóng mặt trời phủ ±1200+ quanh vùng nhìn -> 1 texel ~1,2 đơn vị (xe dài ~48) + normalBias 0,8:
+   * bóng tháp pháo xuống sàn xe, khối ERA, nắp, ống khói... bị xoá sạch, xe trông phẳng như đồ chơi. Game thêm đèn hướng
+   * thứ 2 (cường độ 0, chỉ để có bản đồ bóng) phủ khung hẹp quanh xe mình; cảnh có ĐÚNG 2 đèn hướng đổ bóng thì đèn 0 lấy
+   * bóng tầng gần (nét) trong khung đó, ra gần mép khung pha dần về bóng tầng xa. Phòng xem xe chỉ 1 đèn đổ bóng -> như cũ
+   */
+  function installNearShadow() {
+    const C = THREE.ShaderChunk;
+    if (C.shadowmap_pars_fragment.indexOf('skySunShadow') >= 0) return;
+    const LF = 'directLight.color *= all( bvec2( directLight.visible, receiveShadow ) ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
+    const SM = 'shadow *= receiveShadow ? getShadow( directionalShadowMap[ i ], directionalLight.shadowMapSize, directionalLight.shadowBias, directionalLight.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
+    if (C.lights_fragment_begin.indexOf(LF) < 0 || C.shadowmask_pars_fragment.indexOf(SM) < 0) return;
+    C.shadowmap_pars_fragment += `
+#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS == 2
+float skySunShadow() {
+	vec4 nc = vDirectionalShadowCoord[ 1 ];
+	float e = max( abs( nc.x - 0.5 ), abs( nc.y - 0.5 ) );
+	float k = ( 1.0 - smoothstep( 0.36, 0.47, e ) ) * step( nc.z, 1.0 );
+	float n = k > 0.0 ? getShadow( directionalShadowMap[ 1 ], directionalLightShadows[ 1 ].shadowMapSize, directionalLightShadows[ 1 ].shadowBias, directionalLightShadows[ 1 ].shadowRadius, nc ) : 1.0;
+	if ( k >= 1.0 ) return n;
+	float f = getShadow( directionalShadowMap[ 0 ], directionalLightShadows[ 0 ].shadowMapSize, directionalLightShadows[ 0 ].shadowBias, directionalLightShadows[ 0 ].shadowRadius, vDirectionalShadowCoord[ 0 ] );
+	return mix( f, n, k );
+}
+#endif
+`;
+    // đèn 1 (cường độ 0) không cần đọc bóng; đèn 0 lấy bóng 2 tầng
+    C.lights_fragment_begin = C.lights_fragment_begin.replace(LF, `#if NUM_DIR_LIGHT_SHADOWS == 2
+		#if UNROLLED_LOOP_INDEX == 0
+		directLight.color *= all( bvec2( directLight.visible, receiveShadow ) ) ? skySunShadow() : 1.0;
+		#endif
+		#else
+		${LF}
+		#endif`);
+    C.shadowmask_pars_fragment = C.shadowmask_pars_fragment.replace(SM, `#if NUM_DIR_LIGHT_SHADOWS == 2
+		#if UNROLLED_LOOP_INDEX == 0
+		shadow *= receiveShadow ? skySunShadow() : 1.0;
+		#endif
+		#else
+		${SM}
+		#endif`);
+  }
   function tickClouds(dt) { CLOUD.x += dt; }
   // độ đậm bóng mây theo chiến địa (sa mạc nắng gắt ít mây; rừng / sông hồ nhiều mây hơn); 0 = tắt
   function setClouds(strength, coverage) { CLOUD.y = strength; if (coverage !== undefined) CLOUD.w = coverage; }
   function cloudStrength() { return CLOUD.y; }
 
-  return { create, applyLights, installToneCurve, installCloudShadows, tickClouds, setClouds, cloudStrength };
+  return { create, applyLights, installToneCurve, installCloudShadows, installNearShadow, tickClouds, setClouds, cloudStrength };
 })();
 
 // vá chunk chiếu sáng ngay khi tải (trước khi bất kỳ shader nào được biên dịch: sảnh, phòng xem xe, trận)
-if (typeof THREE !== 'undefined') SkySystem.installCloudShadows();
+if (typeof THREE !== 'undefined') { SkySystem.installCloudShadows(); SkySystem.installNearShadow(); }
 if (typeof window !== 'undefined') window.SkySystem = SkySystem;

@@ -719,12 +719,13 @@ const Props = (() => {
     if (key === 'c:tire') {
       // lốp: mặt gai phẳng, vai bo, thành lốp phồng (bán kính 1 = mép ngoài, trục quay Y, bề ngang 1)
       const pr = [[0.6, -0.5], [0.8, -0.53], [0.93, -0.48], [0.99, -0.36], [1.0, -0.2], [1.0, 0.2], [0.99, 0.36], [0.93, 0.48], [0.8, 0.53], [0.6, 0.5]];
-      g = new THREE.LatheGeometry(pr.map(p => new THREE.Vector2(p[0], p[1])), 26);
+      // 16 múi (cũ 26: 468 tg x ~2000 bánh của mọi xe đại diện vẽ cả bản đồ mỗi khung — xe gần đã thay bằng CivilCars chi tiết)
+      g = new THREE.LatheGeometry(pr.map(p => new THREE.Vector2(p[0], p[1])), 16);
     } else if (key === 'c:rim') {
       // mâm hợp kim 5 chấu (mặt ngoài +Y): vành môi, lòng vành, 5 chấu, moay-ơ
       const parts = [];
-      const lip = new THREE.LatheGeometry([[0.5, 0.36], [0.6, 0.42], [0.62, 0.47], [0.55, 0.49]].map(p => new THREE.Vector2(p[0], p[1])), 26);
-      parts.push([lip, null], [new THREE.CylinderGeometry(0.58, 0.58, 0.82, 22, 1, true), null]);
+      const lip = new THREE.LatheGeometry([[0.5, 0.36], [0.6, 0.42], [0.62, 0.47], [0.55, 0.49]].map(p => new THREE.Vector2(p[0], p[1])), 16);
+      parts.push([lip, null], [new THREE.CylinderGeometry(0.58, 0.58, 0.82, 16, 1, true), null]);
       for (let k = 0; k < 5; k++) {
         const a = k / 5 * Math.PI * 2;
         parts.push([new THREE.BoxGeometry(0.1, 0.09, 0.44), M4(Math.sin(a) * 0.3, 0.44, Math.cos(a) * 0.3, 0, a, 0)]);
@@ -1326,7 +1327,8 @@ const Props = (() => {
         const im = new THREE.InstancedMesh(geo, mat, e.list.length);
         im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(e.list.length * 3).fill(1), 3);
         e.list.forEach((mx, i) => { im.setMatrixAt(i, mx); im.setColorAt(i, e.cols[i]); });
-        im.castShadow = m !== 'panel' && m !== 'glow' && m !== 'shadow' && m !== 'glass'; im.receiveShadow = m !== 'shadow'; im.frustumCulled = false;
+        // mâm nằm lọt trong lốp: bóng của nó bị bóng lốp / thân che hết -> không vẽ vào bản đồ bóng (~2000 mâm mỗi lượt)
+        im.castShadow = m !== 'panel' && m !== 'glow' && m !== 'shadow' && m !== 'glass' && m !== 'rim'; im.receiveShadow = m !== 'shadow'; im.frustumCulled = false;
         im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
         im.name = 'street_' + k;
         this.group.add(im); e.im = im;

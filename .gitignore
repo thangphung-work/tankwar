@@ -4,4 +4,13 @@ node_modules/
 dist/
 logs/
 .env
-trailer_out/*.mp4
+
+# Ảnh chụp thử / headless render
+shots/
+_shots/
+
+# Sản phẩm dựng trailer (edl, cues, mk, wav, mp4)
+trailer_out/
+
+# File tạm
+_ui_test_tmp.html

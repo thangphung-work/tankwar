@@ -14,7 +14,7 @@ const GfxQuality = (() => {
   const STEP = 0.125;
 
   let renderer = null, gl = null, ext = null;
-  let maxRatio = 1, ratio = 1, dynamic = true;
+  let maxRatio = 1, ratio = 1, dynamic = true, minRatio = MIN_RATIO;
   const queries = [];               // truy vấn đang chờ kết quả
   let active = null;
   let gpuMs = 0, gpuOk = false;     // EMA thời gian GPU / khung
@@ -41,18 +41,39 @@ const GfxQuality = (() => {
     } catch (err) { return ''; }
   }
   /** Mức chất lượng đề xuất theo tên card: 'ultra' | 'high' | 'medium' | 'low' */
-  function detectTier(r) {
-    const n = gpuName(r).toLowerCase();
+  function tierFromName(name) {
+    const n = String(name || '').toLowerCase();
     // Trình duyệt thường che tên GPU vì quyền riêng tư. Không có thông tin thì
     // chọn mức an toàn; người chơi vẫn có thể nâng Cao/Siêu cao trong cài đặt.
     if (!n) return 'medium';
     if (/swiftshader|llvmpipe|software|basic render|softpipe/.test(n)) return 'low';
     if (/mali|adreno|powervr|videocore|apple gpu/.test(n)) return 'medium';            // điện thoại / máy tính bảng
+    // card rời đời cũ / dòng phổ thông của laptop (MX, GT, GTX 9xx, GTX 1050 trở xuống, RX 4xx-5xx nhỏ): sức ngang card
+    // tích hợp đời mới -> "Vừa"
+    if (/geforce (mx|gt )|gtx (6|7|8|9)\d\d|gtx 10[1-5]0|quadro (k|m|p[1-6]\d\d\b|t[456]\d\d\b)|radeon (r[5-9] |hd )|radeon rx (4[1-6]|5[1-5])0|radeon (530|540|550|610|620|625|630)\b/.test(n)) return 'medium';
     // card rời (kể cả RTX mạnh): mặc định "Cao" = vẽ đúng độ phân giải màn hình. "Siêu cao" vẽ gấp đôi (gấp 4 số điểm ảnh:
     // RTX 4070 trên bản đồ thành phố ~26 ms / khung so với ~10 ms) -> chỉ bật khi người chơi tự chọn trong cài đặt
-    if (/geforce|nvidia|quadro|radeon rx|radeon pro|\barc\b|apple m\d/.test(n)) return 'high';
-    if (/intel|uhd|iris|radeon\(tm\) graphics|radeon graphics|vega \d/.test(n)) return 'medium';   // card tích hợp
+    // Intel Arc rời có số mẫu (A380, A770, B580); "Arc Graphics" không số của Core Ultra là card tích hợp
+    if (/geforce|nvidia|quadro|radeon rx|radeon pro|\barc\(tm\) [ab]\d{3}|\barc [ab]\d{3}|apple m\d+ (pro|max|ultra)/.test(n)) return 'high';
+    // card tích hợp đời mới (Iris Xe, Arc tích hợp, Radeon 680M/780M, Apple M thường): "Vừa"
+    if (/iris|\barc\b|radeon\(tm\) graphics|radeon graphics|radeon \d{3}m|vega \d|apple m\d/.test(n)) return 'medium';
+    // Intel HD / UHD (laptop văn phòng phổ thông): "Thấp" — tắt bóng đổ, cỏ, khử răng cưa để đủ mượt
+    if (/intel|uhd|hd graphics/.test(n)) return 'low';
     return 'medium';
+  }
+  function detectTier(r) { return tierFromName(gpuName(r)); }
+  // Dò card khi renderer chính CHƯA tạo (khử răng cưa phải chọn lúc tạo context): context tạm, xong trả ngay
+  function probeTier() {
+    try {
+      const c = document.createElement('canvas');
+      const g = c.getContext('webgl2') || c.getContext('webgl');
+      if (!g) return 'low';
+      const e = g.getExtension('WEBGL_debug_renderer_info');
+      const n = String(e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER) || '');
+      const lose = g.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      return tierFromName(n);
+    } catch (err) { return 'medium'; }
   }
 
   // ---------------------------------------------------------------- cấu hình
@@ -60,7 +81,8 @@ const GfxQuality = (() => {
     const px = Math.max(1, window.innerWidth * window.innerHeight);
     return Math.min(want, Math.sqrt(MAX_PIXELS / px));
   }
-  /** maxScale: tỉ lệ điểm ảnh tối đa của mức chất lượng; ssaa: cho phép vẽ cao hơn tỉ lệ màn hình (siêu lấy mẫu) */
+  /** maxScale: tỉ lệ điểm ảnh tối đa của mức chất lượng; ssaa: cho phép vẽ cao hơn tỉ lệ màn hình (siêu lấy mẫu);
+   *  minScale: độ nét thấp nhất khi quá tải (mức Thấp cho xuống sâu hơn: máy yếu cần mượt hơn cần nét) */
   function configure(r, opts) {
     renderer = r;
     if (!gl) {
@@ -69,7 +91,8 @@ const GfxQuality = (() => {
     }
     const dpr = window.devicePixelRatio || 1;
     maxRatio = screenRatioCap(opts.ssaa ? Math.max(dpr, opts.maxScale) : Math.min(dpr, opts.maxScale));
-    maxRatio = Math.max(MIN_RATIO, Math.round(maxRatio / STEP) * STEP);
+    minRatio = Math.min(MIN_RATIO, opts.minScale || MIN_RATIO);
+    maxRatio = Math.max(minRatio, Math.round(maxRatio / STEP) * STEP);
     dynamic = opts.dynamic !== false;
     ratio = maxRatio;   // mỗi lần đổi cài đặt: bắt đầu lại từ mức đẹp nhất
     overT = underT = 0; holdT = 3;   // vài giây đầu (biên dịch shader, nạp kết cấu) không tính
@@ -88,7 +111,7 @@ const GfxQuality = (() => {
   window.addEventListener('resize', () => {
     if (!renderer) return;
     const cap = screenRatioCap(maxRatio);
-    if (ratio > cap) { ratio = Math.max(MIN_RATIO, Math.floor(cap / STEP) * STEP); setRatio(ratio); }
+    if (ratio > cap) { ratio = Math.max(minRatio, Math.floor(cap / STEP) * STEP); setRatio(ratio); }
   });
 
   // ---------------------------------------------------------------- đo GPU
@@ -146,8 +169,8 @@ const GfxQuality = (() => {
       else if (frameMsEma < refreshMs * 0.92) { underT += dt; overT = 0; }
       else { overT = 0; underT = 0; }
       if (holdT > 0) return;
-      if (overT > 1 && ratio > MIN_RATIO) {
-        ratio = Math.max(MIN_RATIO, ratio - STEP);
+      if (overT > 1 && ratio > minRatio) {
+        ratio = Math.max(minRatio, ratio - STEP);
         setRatio(ratio); overT = 0; holdT = 2;
       } else if (underT > 12 && ratio < maxRatio) {
         ratio = Math.min(maxRatio, ratio + STEP);
@@ -167,10 +190,10 @@ const GfxQuality = (() => {
     else { overT = 0; underT = 0; }
     const now = performance.now();
     if (holdT > 0) return;
-    if (overT > 0.6 && ratio > MIN_RATIO) {
+    if (overT > 0.6 && ratio > minRatio) {
       // chi phí vẽ ~ số điểm ảnh ~ ratio²: hạ theo mức quá tải, 1-2 nấc mỗi lần (không tụt một mạch vì một cú giật)
       const want = ratio * Math.sqrt(budget * 0.9 / gpuMs);
-      ratio = Math.max(MIN_RATIO, ratio - 2 * STEP, Math.min(ratio - STEP, Math.floor(want / STEP) * STEP));
+      ratio = Math.max(minRatio, ratio - 2 * STEP, Math.min(ratio - STEP, Math.floor(want / STEP) * STEP));
       // vừa nâng lên đã quá tải -> lần sau chờ lâu hơn mới thử nâng (tránh nhấp nháy độ nét)
       if (now - raisedAt < 6000) raiseWait = Math.min(60, raiseWait * 2);
       setRatio(ratio); overT = 0; holdT = 1.5;
@@ -184,7 +207,7 @@ const GfxQuality = (() => {
   }
 
   return {
-    detectTier, gpuName, configure, beginFrame, endFrame, update,
+    detectTier, tierFromName, probeTier, gpuName, configure, beginFrame, endFrame, update,
     get gpuMs() { return gpuOk ? gpuMs : null; },
     get ratio() { return ratio; },
     get maxRatio() { return maxRatio; },

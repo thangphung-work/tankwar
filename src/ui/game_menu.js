@@ -21,12 +21,15 @@ const GameMenu = (() => {
   // ÁP DỤNG CÀI ĐẶT
   // ---------------------------------------------------------------------------
   // dpr: tỉ lệ điểm ảnh tối đa; ssaa: được vẽ cao hơn độ phân giải màn hình rồi thu nhỏ (siêu lấy mẫu, cạnh mịn);
-  // shadowMap: cỡ bản đồ bóng đổ; aniso: lọc dị hướng cho mặt đất / tường nhìn nghiêng (0 = giữ như lúc tạo)
+  // minDpr: độ nét thấp nhất khi tự giữ mượt hạ xuống; shadowMap: cỡ bản đồ bóng đổ; aniso: lọc dị hướng cho mặt đất /
+  // tường nhìn nghiêng (0 = giữ như lúc tạo); detail: hệ số ngưỡng cỡ-trên-màn-hình để bỏ vẽ chi tiết nhỏ ở xa (game.js
+  // updateDetailLOD — lớn hơn = bỏ sớm hơn, bớt lượt vẽ cho máy yếu); shadowDist: hệ số tầm vật thể còn đổ bóng
+  // Thấp = laptop văn phòng (Intel UHD): ưu tiên mượt. Cao = card rời: bóng 4096 sắc nét, lọc dị hướng — chân thực
   const GFX = {
-    low: { dpr: 0.85, shadows: false, grass: false, soft: false, shadowMap: 2048, aniso: 0 },
-    medium: { dpr: 1, shadows: true, grass: true, soft: false, shadowMap: 2048, aniso: 0 },
-    high: { dpr: 1.5, shadows: true, grass: true, soft: true, shadowMap: 2048, aniso: 0 },
-    ultra: { dpr: 2, ssaa: true, shadows: true, grass: true, soft: true, shadowMap: 4096, aniso: 16 }
+    low: { dpr: 0.85, minDpr: 0.5, shadows: false, grass: false, soft: false, shadowMap: 2048, aniso: 0, detail: 1.7, shadowDist: 1 },
+    medium: { dpr: 1, shadows: true, grass: true, soft: false, shadowMap: 2048, aniso: 0, detail: 1.25, shadowDist: 0.85 },
+    high: { dpr: 1.5, shadows: true, grass: true, soft: true, shadowMap: 4096, aniso: 8, detail: 1, shadowDist: 1 },
+    ultra: { dpr: 2, ssaa: true, shadows: true, grass: true, soft: true, shadowMap: 4096, aniso: 16, detail: 0.75, shadowDist: 1.15 }
   };
   function applyAudio() {
     const se = window.soundEngine;
@@ -41,7 +44,7 @@ const GameMenu = (() => {
       if (!S.gfxUser) S.gfx = suggested;
     }
     const P = GFX[S.gfx] || GFX.high;
-    if (typeof GfxQuality !== 'undefined') GfxQuality.configure(g.renderer, { maxScale: P.dpr, ssaa: !!P.ssaa, dynamic: S.smooth !== false });
+    if (typeof GfxQuality !== 'undefined') GfxQuality.configure(g.renderer, { maxScale: P.dpr, minScale: P.minDpr, ssaa: !!P.ssaa, dynamic: S.smooth !== false });
     else {
       const dpr = Math.min(window.devicePixelRatio || 1, P.dpr);
       if (Math.abs(g.renderer.getPixelRatio() - dpr) > 0.01) {
@@ -52,6 +55,10 @@ const GameMenu = (() => {
     g.gfxShadows = P.shadows;
     g.gfxTier = S.gfx;   // mật độ hạt mưa theo mức đồ họa (Weather)
     g.gfxGrass = P.grass;
+    g.gfxDetail = P.detail;
+    g.gfxShadowDist = P.shadowDist;
+    // cây: cự ly đổi bản xa, tầm vẽ cây tầng dưới tán, lá xuyên sáng theo mức đồ họa (Destructibles.TreeField)
+    if (g.terrain && g.terrain.trees && g.terrain.trees.setQuality) g.terrain.trees.setQuality(S.gfx);
     let rebuild = false;
     const type = P.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     if (g.renderer.shadowMap.type !== type) { g.renderer.shadowMap.type = type; rebuild = true; }
@@ -87,8 +94,15 @@ const GameMenu = (() => {
     });
   }
   function apply() { applyAudio(); applyGraphics(); }
-  // game.js đọc khi tạo renderer (khử răng cưa chỉ đổi được khi tải lại trang)
-  function wantAntialias() { return S.aa !== false; }
+  // game.js đọc khi tạo renderer (khử răng cưa chỉ đổi được khi tải lại trang). Người chơi chưa tự bật / tắt: theo mức đồ
+  // họa — mức Thấp tắt (MSAA trên card tích hợp ăn ~15-25% thời gian vẽ). Renderer chính chưa có -> dò card bằng context tạm
+  let probed = null;
+  function wantAntialias() {
+    if (S.aa === false) return false;
+    if (S.aaUser) return true;
+    const tier = S.gfxUser ? S.gfx : (probed || (probed = typeof GfxQuality !== 'undefined' && GfxQuality.probeTier ? GfxQuality.probeTier() : 'medium'));
+    return tier !== 'low';
+  }
 
   // ---------------------------------------------------------------------------
   // GIAO DIỆN
@@ -149,10 +163,10 @@ const GameMenu = (() => {
         <div class="gm-field"><span><i class="ti ti-music"></i> Nhạc nền</span><input type="range" name="music" min="0" max="100" value="${Math.round(S.music * 100)}"><b data-out="music">${Math.round(S.music * 100)}%</b></div>
         <div class="gm-field"><span><i class="ti ti-engine"></i> Tiếng động cơ xe</span><input type="range" name="engine" min="0" max="100" value="${Math.round(S.engine * 100)}"><b data-out="engine">${Math.round(S.engine * 100)}%</b></div>
         <div class="gm-sub">Chất lượng hình ảnh</div>
-        <div class="gm-segs">${q('low', 'Thấp', 'Máy yếu: tắt bóng đổ & cỏ')}${q('medium', 'Vừa', 'Bóng đổ thường')}${q('high', 'Cao', 'Bóng đổ mềm, nét hơn')}${q('ultra', 'Siêu cao', 'Card rời: nét nhất, bóng chi tiết')}</div>
+        <div class="gm-segs">${q('low', 'Thấp', 'Laptop phổ thông: tắt bóng đổ, cỏ, khử răng cưa')}${q('medium', 'Vừa', 'Card tích hợp đời mới: bóng đổ thường')}${q('high', 'Cao', 'Card rời: bóng mềm sắc nét, chân thực')}${q('ultra', 'Siêu cao', 'Card mạnh: vẽ gấp đôi độ nét, mịn nhất')}</div>
         ${suggested ? `<p class="gm-note"><i class="ti ti-star-filled"></i> Hợp với máy này</p>` : ''}
         <label class="gm-check"><input type="checkbox" data-act="smooth" ${S.smooth !== false ? 'checked' : ''}> Tự giữ mượt <small>(máy vẽ không kịp thì tạm giảm độ nét một chút)</small></label>
-        <label class="gm-check"><input type="checkbox" data-act="aa" ${S.aa !== false ? 'checked' : ''}> Khử răng cưa cạnh hình <small>(áp dụng sau khi tải lại trang)</small></label>
+        <label class="gm-check"><input type="checkbox" data-act="aa" ${wantAntialias() ? 'checked' : ''}> Khử răng cưa cạnh hình <small>(áp dụng sau khi tải lại trang)</small></label>
         <div class="gm-row"><button class="gm-btn" data-act="${inMatch() ? 'pause' : 'close'}"><i class="ti ti-arrow-left"></i> ${inMatch() ? 'Quay lại' : 'Xong'}</button><button class="gm-btn" data-act="controls"><i class="ti ti-keyboard"></i> Phím điều khiển</button></div>`;
     } else if (view === 'controls') {
       body.innerHTML = `<h3 class="gm-title"><i class="ti ti-keyboard"></i> PHÍM ĐIỀU KHIỂN</h3>${controlsTable()}
@@ -218,7 +232,7 @@ const GameMenu = (() => {
     else if (act === 'leave-yes') { close(); leaveMatch(); }
     else if (act === 'gfx') { S.gfx = b.dataset.v; S.gfxUser = true; save(); applyGraphics(); render(); }
     else if (act === 'smooth') { S.smooth = !!b.checked; save(); applyGraphics(); }
-    else if (act === 'aa') { S.aa = !!b.checked; save(); }
+    else if (act === 'aa') { S.aa = !!b.checked; S.aaUser = true; save(); }
     else if (act === 'notice') {
       const N = render.notice || {}, btn = (N.buttons || [])[Number(b.dataset.i)];
       close();

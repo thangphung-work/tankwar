@@ -41,12 +41,14 @@
 .hx-map:hover { box-shadow: 0 0 0 1px rgba(190, 196, 184, 0.5), 0 6px 18px rgba(0, 0, 0, 0.42); }
 /* Xe gãy hết ăng-ten: mất bản đồ số — màn nhiễu, chữ MẤT TÍN HIỆU */
 .hx-map.map-lost { cursor: not-allowed; }
-.hx-map.map-lost canvas { visibility: hidden; }
-.hx-map.map-lost::after {
+.hx-map.map-lost canvas, .hx-map.radar-lost canvas { visibility: hidden; }
+.hx-map.map-lost::after, .hx-map.radar-lost::after {
   content: 'MẤT TÍN HIỆU'; position: absolute; inset: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   font: 700 12px/1 var(--font-tech); letter-spacing: 2px; color: rgba(255, 90, 70, 0.85);
   background: repeating-linear-gradient(0deg, rgba(200, 210, 192, 0.07) 0 1px, transparent 1px 3px), rgba(10, 12, 11, 0.85);
 }
+/* Radar bị bắn hỏng: minimap tắt, bản đồ chiến thuật (M) vẫn mở */
+.hx-map.radar-lost::after { content: 'MẤT RADAR'; }
 
 .hx-map-key {
   position: absolute;
@@ -72,7 +74,7 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   pointer-events: none;
 }
-.hx-map-range:empty, .hx-map.map-lost .hx-map-range { display: none; }
+.hx-map-range:empty, .hx-map.map-lost .hx-map-range, .hx-map.radar-lost .hx-map-range { display: none; }
 
 /* phím mở bản đồ lớn: huy hiệu tròn nằm trên viền, góc 4h30 */
 .hx-map-key {

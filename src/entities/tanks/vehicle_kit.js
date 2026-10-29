@@ -118,6 +118,9 @@ const VehicleKit = (() => {
     const grain = makeFbm(64, 2, scheme.seed + 41);
     const chips = makeFbm(32, 3, scheme.seed + 53);
     const blot = makeFbm(8, 3, scheme.seed + 61);
+    // Hai dải nhiễu riêng cho phai màu diện rộng và tia sơn quanh mép nạ.
+    const fade = makeFbm(2, 3, scheme.seed + 73);
+    const overspray = makeFbm(48, 2, scheme.seed + 79);
     const rnd = mulberry32(scheme.seed + 97);
 
     const base = hexToRgb(scheme.base);
@@ -135,8 +138,11 @@ const VehicleKit = (() => {
         const b = camoB(nx - w, ny + w);
 
         // Viền mảng phun sơn: mép mềm ~1-2 cm (bụi sơn phun), không cắt sắc như decal
-        const ka = smooth01(scheme.patchA.threshold - 0.008, scheme.patchA.threshold + 0.008, a);
-        const kb = smooth01(scheme.patchB.threshold - 0.007, scheme.patchB.threshold + 0.007, b);
+        // Phá nhẹ đường biên bằng hạt overspray: vẫn rõ mảng sơn nhưng không còn
+        // cảm giác decal cắt vi tính dán lên bề mặt.
+        const edge = (overspray(nx, ny) - 0.5) * 0.018;
+        const ka = smooth01(scheme.patchA.threshold - 0.015, scheme.patchA.threshold + 0.015, a + edge);
+        const kb = smooth01(scheme.patchB.threshold - 0.013, scheme.patchB.threshold + 0.013, b - edge * 0.8);
         for (let k = 0; k < 3; k++) {
           const v = base[k] + (pa[k] - base[k]) * ka;
           col[k] = v + (pb[k] - v) * kb;
@@ -146,13 +152,16 @@ const VehicleKit = (() => {
         const fine = grain(nx, ny);
         const bl = blot(nx, ny);
         // Sơn phai không đều (nắng, rửa xe) + hạt sơn mịn
-        let shade = 0.9 + g * 0.18 + (fine - 0.5) * 0.08 + (bl - 0.5) * 0.07;
+        // Phai nắng / rửa xe theo mảng rộng; giảm hạt vi mô để sơn không giống nhựa nhám.
+        const sun = fade(nx, ny);
+        let shade = 0.88 + g * 0.13 + sun * 0.10 + (fine - 0.5) * 0.035 + (bl - 0.5) * 0.055;
         // Vết tróc sơn nhỏ thành cụm (va quệt cành cây, đá văng) -> lộ lớp lót
         const ch = chips(nx, ny);
         const chip = smooth01(0.74, 0.79, ch * (0.75 + g * 0.5));
         // Chấm bùn khô lác đác
         const speck = rnd();
-        const dirt = speck < 0.003 ? 0.4 : 0;
+        // Chấm bẩn nằm trong cụm grime, không rắc muối-tiêu ngẫu nhiên từng pixel.
+        const dirt = speck < 0.0012 && g > 0.55 ? 0.28 : 0;
 
         const i = (y * size + x) * 4;
         for (let k = 0; k < 3; k++) {
@@ -165,12 +174,12 @@ const VehicleKit = (() => {
         cImg.data[i + 3] = 255;
 
         // Sơn mờ quân sự: nhám cao, chỗ bạc màu nhám hơn, chỗ tróc (thép) bóng hơn
-        const rough = Math.max(0, Math.min(255, (0.74 + g * 0.16 + (fine - 0.5) * 0.12 - chip * 0.25) * 255));
+        const rough = Math.max(0, Math.min(255, (0.78 + g * 0.10 + (fine - 0.5) * 0.045 - chip * 0.20) * 255));
         rImg.data[i] = rImg.data[i + 1] = rImg.data[i + 2] = rough;
         rImg.data[i + 3] = 255;
 
         // Bề mặt thép đúc sần sùi + mép lõm của vết tróc
-        const bump = 128 + (fine - 0.5) * 110 + (g - 0.5) * 40 - chip * 26;
+        const bump = 128 + (fine - 0.5) * 42 + (g - 0.5) * 16 - chip * 18;
         bImg.data[i] = bImg.data[i + 1] = bImg.data[i + 2] = Math.max(0, Math.min(255, bump));
         bImg.data[i + 3] = 255;
       }
@@ -537,9 +546,12 @@ const VehicleKit = (() => {
     return { get value() { const d = envMapDust(), s = d ? d.c : fallback; return c.setRGB(s[0], s[1], s[2]); } };
   }
 
-  function patchPaintMaterial(m, dust, weather, battle = null) {
+  function patchPaintMaterial(m, dust, weather, battle = null, variant = null) {
     if (!weather) return;
     const dustU = dustUniform(dust);
+    // xy: dịch pha UV riêng của từng xe; z: mức bạc sơn rất nhẹ. Dùng uniform để
+    // nhiều ngoại hình không sinh thêm biến thể shader / draw call.
+    const paintVar = { value: variant || new THREE.Vector3(0, 0, 0) };
     if (battle) m.defines = Object.assign(m.defines || {}, { VK_BATTLE: '' });
     m.userData.vkPaint = true;
     // function thường (không phải arrow): three gọi material.onBeforeCompile(...) nên this = đúng vật liệu đang biên dịch —
@@ -550,6 +562,7 @@ const VehicleKit = (() => {
       sh.uniforms.vkDust = dustU;
       sh.uniforms.vkEnv = ENV_U;
       sh.uniforms.vkChar = { get value() { return (mat && mat.userData && mat.userData.vkChar) || 0; } };
+      sh.uniforms.vkPaintVar = paintVar;
       if (battle) {
         sh.uniforms.vkBattleA = { value: battle.tex.a };
         sh.uniforms.vkBattleB = { value: battle.tex.b };
@@ -557,7 +570,8 @@ const VehicleKit = (() => {
         sh.uniforms.vkBattleOff = { value: battle.offset };
       }
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec4 edgeD;\nvarying vec4 vEdgeD;')
+        .replace('#include <common>', '#include <common>\nattribute vec4 edgeD;\nvarying vec4 vEdgeD;\nuniform vec3 vkPaintVar;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_UV\n  vUv += vkPaintVar.xy;\n#endif')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdgeD = edgeD;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
@@ -565,6 +579,7 @@ const VehicleKit = (() => {
           uniform vec3 vkDust;
           uniform vec2 vkEnv;
           uniform float vkChar;
+          uniform vec3 vkPaintVar;
           varying vec4 vEdgeD;
           #ifdef VK_BATTLE
             uniform sampler2D vkBattleA, vkBattleB;
@@ -585,6 +600,11 @@ const VehicleKit = (() => {
           vec3 vkW = texture2D(vkWeather, vkUv * 2.3).rgb;
           vec3 vkTint = diffuse;
           vec3 vkCol = diffuseColor.rgb;
+          // Xe cùng đơn vị không bạc màu y hệt nhau: hạ sắc độ và ngả xám nắng rất nhẹ,
+          // vẫn giữ nguyên nhận diện phe và không lấn át lớp battle damage.
+          float vkPaintLum = dot(vkCol, vec3(0.299, 0.587, 0.114));
+          vec3 vkFadedPaint = vec3(vkPaintLum * 1.06, vkPaintLum * 1.035, vkPaintLum * 0.98);
+          vkCol = mix(vkCol, vkFadedPaint, vkPaintVar.z);
           // Vệt bẩn chảy dọc lác đác trên mặt đứng (chỉ vài vệt sẫm, không phủ đều)
           vkCol *= 1.0 - smoothstep(0.62, 0.86, vkW.g) * 0.16 * (1.0 - vkUp) + smoothstep(0.3, 0.12, vkW.g) * 0.05 * (1.0 - vkUp);
           // Mép cạnh sắc: sơn mòn sáng lên, chỗ mòn sâu lộ thép sẫm
@@ -661,6 +681,7 @@ const VehicleKit = (() => {
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, mix(1.0, 0.45, vkWet), vkDustK);
           roughnessFactor = mix(roughnessFactor, 0.5, vkWear * 0.5);
+          roughnessFactor = mix(roughnessFactor, 1.0, vkPaintVar.z * 0.22);
           #ifdef VK_BATTLE
             roughnessFactor = mix(roughnessFactor, 0.55, vkPit * 0.7);
             roughnessFactor = mix(roughnessFactor, 0.3, vkOil * 0.8);
@@ -695,10 +716,13 @@ const VehicleKit = (() => {
     const age = { value: 0 };
     m.userData.dirtAge = age;
     const rustK = opts.rust || 0, pol = opts.polish;
-    const def = { VK_DIRT_K: strength.toFixed(3), VK_RUST_K: rustK.toFixed(3) };
+    // hệ số bẩn / gỉ / bán kính mài là uniform (không phải define): mỗi bộ số trước đây sinh 1 chương trình shader riêng
+    // (đo 2026-10-28: ~26 biến thể vkDirt, mỗi cái ~0,5-0,8 s biên dịch lần đầu); define chỉ còn các cờ bật / tắt nhánh
+    const vkK = { value: new THREE.Vector3(strength, rustK, typeof pol === 'number' ? pol : 0) };
+    const def = {};
     if (opts.inner) def.VK_DIRT_IN = '';
     if (pol === 'track') def.VK_POL_TRACK = '';
-    else if (typeof pol === 'number') def.VK_POL_R = pol.toFixed(3);
+    else if (typeof pol === 'number') def.VK_POL_RAD = '';
     m.defines = Object.assign({}, m.defines || {}, def);
     // khai báo dự phòng ngay trong shader: vật liệu bị clone / mượn onBeforeCompile (MeshStandardMaterial.copy của r128 đặt lại
     // defines = { STANDARD }) mất VK_* -> trước đây lỗi biên dịch "VK_DIRT_K undeclared identifier"
@@ -709,6 +733,7 @@ const VehicleKit = (() => {
       sh.uniforms.vkRustMap = RUST_U;
       sh.uniforms.vkAge = age;
       sh.uniforms.vkBase = { value: base };
+      sh.uniforms.vkK = vkK;
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vDirtP, vDirtN;\nvarying float vDirtI;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -722,7 +747,7 @@ const VehicleKit = (() => {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
 ${vkDefs}
-          uniform vec3 vkDust, vkBase;
+          uniform vec3 vkDust, vkBase, vkK;   // vkK: x = mức bẩn, y = mức gỉ, z = bán kính mặt mài sáng
           uniform vec2 vkEnv;
           uniform float vkRustMap, vkAge;
           varying vec3 vDirtP, vDirtN;
@@ -738,7 +763,7 @@ ${vkDefs}
           vec3 vkNl = normalize(vDirtN);
           // màng bụi gần đều (bộ phận chạy luôn phủ đất), dày mỏng loang chậm; mảng vón dày rải rác
           float vkN = vkN3(vkP * 0.9) * 0.65 + vkN3(vkP * 2.6) * 0.35;
-          float vkAmt = VK_DIRT_K * vkEnv.x;
+          float vkAmt = vkK.x * vkEnv.x;
           float vkDirt = clamp(vkAmt * (0.45 + 0.6 * (vkN - 0.5)), 0.0, 0.85);
           #ifdef VK_DIRT_IN
             vkDirt = max(vkDirt, smoothstep(0.05, -0.5, vDirtP.y) * vkAmt * (0.7 + 0.3 * vkN));
@@ -750,7 +775,7 @@ ${vkDefs}
           float vkCh = dot(diffuse / max(vkBase, vec3(0.004)), vec3(0.3333));
           // GỈ: loang theo nhiễu riêng (mắt nọ gỉ nhiều mắt kia ít), nâu sẫm ở lõi tới cam ở mép mảng; mưa ướt sẫm thêm
           float vkRn = vkN3(vkP * 1.9 + 11.3) * 0.6 + vkN3(vkP * 5.7 + 2.9) * 0.4;
-          float vkRust = clamp(VK_RUST_K * max(vkRustMap + 0.25 * vkWet, vkAge * 1.2) * (0.3 + 1.2 * (vkRn - 0.4)), 0.0, 0.92);
+          float vkRust = clamp(vkK.y * max(vkRustMap + 0.25 * vkWet, vkAge * 1.2) * (0.3 + 1.2 * (vkRn - 0.4)), 0.0, 0.92);
           vec3 vkRc = mix(vec3(0.19, 0.105, 0.06), vec3(0.42, 0.21, 0.09), smoothstep(0.35, 0.8, vkRn)) * mix(1.0, 0.72, vkWet);
           // MÀI SÁNG: mặt cọ xát liên tục — thép mới sáng, không gỉ, không bám đất
           float vkPol = 0.0;
@@ -760,9 +785,9 @@ ${vkDefs}
             vkPol = max(vkPol, step(vkNl.y, -0.7) * step(vDirtP.y, -0.2) * smoothstep(0.55, 0.7, vkAx) * (1.0 - smoothstep(2.4, 2.55, vkAx)) * 0.75);   // đường lăn bánh
             vkPol = max(vkPol, step(0.7, vkNl.y) * step(0.3, vDirtP.y) * step(vDirtP.y, 0.4) * 0.45);   // mép guốc phía đất
           #endif
-          #ifdef VK_POL_R
+          #ifdef VK_POL_RAD
             float vkRad = length(vDirtP.yz);
-            vkPol = max(vkPol, smoothstep(VK_POL_R - 0.05, VK_POL_R + 0.12, vkRad) * mix(0.35, 0.95, 1.0 - abs(vkNl.x)));
+            vkPol = max(vkPol, smoothstep(vkK.z - 0.05, vkK.z + 0.12, vkRad) * mix(0.35, 0.95, 1.0 - abs(vkNl.x)));
           #endif
           vkPol *= (1.0 - vkAge) * (0.75 + 0.25 * vkN) * (1.0 - 0.5 * vkWet * vkDirt);
           vkRust *= 1.0 - vkPol;
@@ -781,7 +806,7 @@ ${vkDefs}
           metalnessFactor = mix(metalnessFactor, 0.85, vkPol);
           metalnessFactor *= 1.0 - vkDirt;`);
     };
-    m.customProgramCacheKey = () => 'vkDirt' + strength + (opts.inner ? 'i' : '') + '|' + rustK + '|' + (pol || '');
+    m.customProgramCacheKey = () => 'vkDirt2' + (opts.inner ? 'i' : '') + (pol === 'track' ? 't' : typeof pol === 'number' ? 'r' : '');
     return m;
   }
 
@@ -1132,6 +1157,10 @@ ${vkDefs}
     const paint = getPaintTextures(isBlue ? 'WOODLAND' : 'DESERT');
     const grimeTex = getGrimeTexture();
     const weather = getWeatherTexture();
+    const look = mulberry32(opts.seed != null ? (opts.seed ^ 0x27d4eb2d) : (Math.random() * 1e9) | 0);
+    // Mỗi xe nhận một đoạn khác của texture tuần hoàn và mức phai sơn nhỏ. Ba kênh map,
+    // roughness và bump cùng địch trong shader nên chi tiết bề mặt không bị trượt lệch nhau.
+    const paintVariant = new THREE.Vector3(look(), look(), 0.025 + look() * 0.075);
     const battleTex = opts.battle ? getBattleTextures() : null;
     const battle = battleTex ? {
       tex: battleTex,
@@ -1145,14 +1174,14 @@ ${vkDefs}
         map: paint ? paint.map : null,
         roughnessMap: paint ? paint.roughnessMap : null,
         bumpMap: paint ? paint.bumpMap : null,
-        bumpScale: 0.035,
+        bumpScale: 0.018,
         roughness: 1.0,
         metalness: 0.05,
         vertexColors: true
       });
       m.userData.boxUV = true;
       m.userData.baseColor = tint;
-      if (paint) patchPaintMaterial(m, paint.dust, weather, battle);
+      if (paint) patchPaintMaterial(m, paint.dust, weather, battle, paintVariant);
       return m;
     };
 
@@ -1922,10 +1951,15 @@ ${vkDefs}
       const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
       const flip = ((uy * vz - uz * vy) * want[0] + (uz * vx - ux * vz) * want[1] + (ux * vy - uy * vx) * want[2]) < 0;
       const vs = flip ? [a, c, b] : [a, b, c], cs = flip ? [ca, cc, cb] : [ca, cb, cc];
+      // góc quanh trục lốp, KHÔNG để nhảy -π/+π trong cùng 1 tam giác: tam giác vắt qua đường nối (θ = π) trước đây có
+      // u chạy từ +π·r đến -π·r -> cả texture bị nén vào 1 khe mảnh = đường kẻ đen chạy ngang hông / gai lốp
+      const ang0 = Math.atan2(-vs[0][2], vs[0][0]);
       for (let q = 0; q < 3; q++) {
         pos.push(...vs[q]);
         const r = Math.hypot(vs[q][0], vs[q][2]);
-        uvs.push(Math.atan2(-vs[q][2], vs[q][0]) * r * k, vs[q][1] * k);
+        let ang = Math.atan2(-vs[q][2], vs[q][0]);
+        if (ang - ang0 > Math.PI) ang -= Math.PI * 2; else if (ang0 - ang > Math.PI) ang += Math.PI * 2;
+        uvs.push(ang * r * k, vs[q][1] * k);
         cols.push(cs[q], cs[q], cs[q]);
       }
     };

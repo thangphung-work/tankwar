@@ -1153,7 +1153,9 @@ const DroneAir = (() => {
         if (SE && SE.playDroneLost) SE.playDroneLost();
         if (SE && SE.updateDrone) SE.updateDrone(false);
         const by = !attacker ? 'ĐỊCH' : attacker === P ? 'CHÍNH ĐẠN CỦA BẠN' : attacker.team === P.team ? `${attacker.name} (ĐỒNG ĐỘI BẮN NHẦM)` : attacker.name;
-        this.addCombatLog(`[[alert-triangle]] DRONE TRINH SÁT ĐÃ BỊ ${by} BẮN HẠ — mất mắt ngắm cầu vồng, chỉ còn bắn thẳng tự vệ. Hồi sinh để nhận drone mới`, 'alert');
+        const spare = (D.spare || 0) > 0 && P.uavKind !== 'kami';
+        this.addCombatLog(`[[alert-triangle]] DRONE TRINH SÁT ĐÃ BỊ ${by} BẮN HẠ — mất mắt ngắm cầu vồng, chỉ còn bắn thẳng tự vệ. ` +
+          (spare ? 'Kíp xe đang lắp drone dự phòng' : 'Hết drone dự phòng — hồi sinh để nhận drone mới'), 'alert');
         const S = this._sight;
         if (S && S.arty) S.dying = { t: 0, x: D.x, y: D.y, z: D.z, yaw: D.yaw || 0 };
         // mất mắt: bỏ điểm ngắm / mục tiêu ở ngoài tầm bắn thẳng
@@ -1179,7 +1181,9 @@ const DroneAir = (() => {
       const t = nowS();
       if (t - (this._blindLogAt || 0) > 1.5) {
         this._blindLogAt = t;
-        this.addCombatLog(`[[eye-off]] MẤT DRONE — không còn mắt ngắm cầu vồng. Chỉ bắn thẳng được địch trong ${AD.max}M; hồi sinh để có drone mới`, 'alert');
+        const D = this._drone;
+        this.addCombatLog(`[[eye-off]] MẤT DRONE — không còn mắt ngắm cầu vồng. Chỉ bắn thẳng được địch trong ${AD.max}M; ` +
+          (D.prepT > 0 ? `drone dự phòng sẵn sàng sau ~${Math.ceil(D.prepT)} giây` : 'hồi sinh để có drone mới'), 'alert');
       }
       return true;
     },

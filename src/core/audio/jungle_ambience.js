@@ -67,7 +67,9 @@
       if (t >= W.nextEvent) {
         const k = Math.pow(calm, 2.5) * (1 - 0.75 * W.rain);
         if (Math.random() < k) this.wildEvent(t + rnd(0, 0.3));
-        W.nextEvent = t + (-Math.log(1 - Math.random() * 0.98)) * 1.6 + 0.15;
+        // đồ họa "Thấp" (máy yếu): thưa tiếng hơn -> ít nút âm thanh chạy cùng lúc
+        const lowK = window.game && window.game.gfxTier === 'low' ? 1.7 : 1;
+        W.nextEvent = t + ((-Math.log(1 - Math.random() * 0.98)) * 1.6 + 0.15) * lowK;
       }
     }
 
