@@ -12,6 +12,13 @@ const Props = (() => {
   const TAU = Math.PI * 2;
   // băm tất định theo số nguyên -> [0, 1)
   const hash = (n) => { let h = (n | 0) * 374761393 + 668265263; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  // VIỆC NẶNG GIỮA TRẬN (30-100 ms mỗi việc: dựng ô tô chi tiết, dựng xác nâng cấp, từng phát nổ rã xác): mọi hàng chờ
+  // dùng chung 1 nhịp — cách nhau >= HEAVY_GAP ms tính từ lúc việc trước XONG -> không chồng 2 việc trong 1 khung, không
+  // nối 9 khung 50 ms liền nhau thành ~0,5 s đứng hình (log [hitch] 'rào / bao cát / xác xe' 30-64 ms dồn dập)
+  const HEAVY_GAP = 150;
+  let heavyAt = -Infinity;
+  const heavyReady = () => performance.now() - heavyAt >= HEAVY_GAP;
+  const heavyDone = () => { heavyAt = performance.now(); };
   const sfx = (kind, x, y, z, k, o) => { if (typeof window !== 'undefined' && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt(kind, { x, y, z }, k || 1, o || null); };
 
   // ---------------------------------------------------------------------------
@@ -1515,7 +1522,7 @@ const Props = (() => {
       }
       // DỰNG: xe gần nhất (theo cỡ trên màn hình) còn bản gộp; dựng 1 xe chi tiết mất ~30-60 ms -> giãn nhịp ~0,1 s / xe
       // xe vừa bị tác động (civWant: bắn / húc / cháy, có thao tác chờ) dựng trước, được vượt CIV_MAX tới CIV_HARD
-      if (now - (this._lastUpgrade || 0) <= 100) return;
+      if (now - (this._lastUpgrade || 0) <= 100 || !heavyReady()) return;
       const nearby = this.near(V.x, V.z, CIV_DOWN * V.zoom);
       let cand = null, best = Infinity;
       for (let i = 0; i < nearby.length; i++) {
@@ -1527,7 +1534,7 @@ const Props = (() => {
         const s = o.civWant ? e - 1e6 : e;
         if (s < best) { best = s; cand = o; }
       }
-      if (cand && (!cand.civWant || this.civil.size < CIV_HARD)) { this._lastUpgrade = now; this.upgradeToCivilCar(cand); }
+      if (cand && (!cand.civWant || this.civil.size < CIV_HARD)) { this._lastUpgrade = now; this.upgradeToCivilCar(cand); heavyDone(); }
     }
     // Trả bản chi tiết về bản gộp: hiện lại các ô InstancedMesh (theo tình trạng hiện tại: bẹp, cháy, kính...), bỏ vết đạn
     // còn gắn trên lưới chi tiết, trả tài nguyên GPU
@@ -4477,8 +4484,9 @@ const Props = (() => {
       if (this.street) this.street.update(dt, fx, cam);   // ô tô trượt sau cú húc / đang cháy
       if (dt) this.updateWrecks(dt);                       // xác xe văng trượt sau cú húc
       if (fx && !this._wrecksDressed) this.dressWrecks(fx);
-      if (this._upQ && this._upQ.size) this.stepWreckUpgrade();
-      else if (this._blastQ && this._blastQ.size) this.stepWreckBlasts();
+      if (!heavyReady()) { /* chờ nhịp việc nặng (HEAVY_GAP) */ }
+      else if (this._upQ && this._upQ.size) { this.stepWreckUpgrade(); heavyDone(); }
+      else if (this._blastQ && this._blastQ.size) { this.stepWreckBlasts(); heavyDone(); }
       if (!fx || !fx.smoke || !this.smokers.length) return;
       this.smokeAcc += dt;
       if (this.smokeAcc < 0.22) return;
