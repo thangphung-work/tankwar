@@ -1149,6 +1149,38 @@ const Props = (() => {
     box: () => new THREE.BoxGeometry(1, 1, 1), cyl: () => new THREE.CylinderGeometry(1, 1, 1, 10),
     lampPole: () => new THREE.CylinderGeometry(0.52, 0.95, 1, 14), lampArm: lampArmGeo, lampHead: lampHeadGeo, lampLens: lampLensGeo
   };
+  // chia lô đồ vật đường phố theo ô (StreetSet): cạnh ô (đv) và tổng tam giác tối thiểu của lô để đáng chia — như
+  // BLD_FREEZE_* của nhà (ô quá nhỏ / lô quá nhỏ thì thêm lượt vẽ tốn CPU hơn phần GPU tiết kiệm được). Đo URBAN
+  // 2026-10-29: 60k / ô 1400 -> 590 mesh, nhìn ngang thành phố thêm 300-400 lượt vẽ; 300k / ô 2800 -> 82 mesh, góc phố
+  // 10,4 -> 8,1M tg mà nhìn rộng chỉ thêm ~55 lượt vẽ
+  const STREET_CELL = 2800, STREET_SPLIT_TRIS = 300000;
+  const triCount = g => (g.index ? g.index.count : g.attributes.position.count) / 3;
+  // khối bao 1 ô: tâm hộp bao các gốc instance, bán kính tới gốc xa nhất + bán kính hình học x tỉ lệ lớn nhất
+  // (instance đang ẩn — ma trận 0, xe đã nâng lên bản chi tiết — không tính)
+  function cellSphere(A, n, local) {
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let j = 0; j < n; j++) {
+      const o = j * 16;
+      if (!A[o] && !A[o + 5] && !A[o + 10] && !A[o + 1] && !A[o + 4]) continue;
+      x0 = Math.min(x0, A[o + 12]); x1 = Math.max(x1, A[o + 12]); y0 = Math.min(y0, A[o + 13]); y1 = Math.max(y1, A[o + 13]); z0 = Math.min(z0, A[o + 14]); z1 = Math.max(z1, A[o + 14]);
+    }
+    if (x0 > x1) return new THREE.Sphere(new THREE.Vector3(), 0);
+    const c = new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), lr = local.radius + local.center.length();
+    let r = 0;
+    for (let j = 0; j < n; j++) {
+      const o = j * 16;
+      const s = Math.sqrt(Math.max(A[o] * A[o] + A[o + 1] * A[o + 1] + A[o + 2] * A[o + 2], A[o + 4] * A[o + 4] + A[o + 5] * A[o + 5] + A[o + 6] * A[o + 6], A[o + 8] * A[o + 8] + A[o + 9] * A[o + 9] + A[o + 10] * A[o + 10]));
+      if (!s) continue;
+      r = Math.max(r, Math.hypot(A[o + 12] - c.x, A[o + 13] - c.y, A[o + 14] - c.z) + lr * s);
+    }
+    return new THREE.Sphere(c, r);
+  }
+  // tia dò trúng từng instance của ô: thử khối bao hình học gốc theo ma trận từng instance (khối bao ô là toạ độ thế giới)
+  function cellRaycast(rc, out) {
+    const g = this.geometry, s = g.boundingSphere;
+    g.boundingSphere = this.userData.localSphere;
+    try { THREE.InstancedMesh.prototype.raycast.call(this, rc, out); } finally { g.boundingSphere = s; }
+  }
   // phong hoá đồ vật đường phố theo vật liệu (weathering.js): thép mạ kẽm xỉn + gỉ chân cột, sơn bạc màu tróc lộ lót,
   // bê tông ố vệt mưa + rêu chân, kính nhà chờ bám bụi vệt nước, bảng quảng cáo phai nắng
   const STREET_WX = {
@@ -1295,11 +1327,48 @@ const Props = (() => {
         (p.spans || (p.spans = [])).push(span); (q.spans || (q.spans = [])).push(span);
         this.wires.push(span);
       }
+      // CHIA THEO Ô (như BuildingSet.freezeStatic): mỗi lô 'hình|vật liệu' trước đây là 1 InstancedMesh tắt kiểm tra khuất
+      // trải cả thành phố -> ô tô / cột đèn / biển báo của mọi khu phố vẽ mỗi khung + lượt bóng (URBAN ~6-7 triệu tg).
+      // Lô lớn tách thành 'hình|vật liệu#ô', mỗi ô 1 mesh có khối bao riêng; ô chung thuộc tính hình học + vật liệu với lô
+      // gốc, chỉ thuộc tính theo instance (aWear, wxBase) riêng. Chỉ số trong o.slots / span.slots đánh lại 1 lần ở đây
+      const srcGeo = {}, srcMat = {}, remap = {};
+      for (const k of Object.keys(this.ims)) {
+        const e = this.ims[k], g = k.split('|')[0];
+        const geo = srcGeo[k] = g.startsWith('c:') ? carGeo(g).clone() : UNIT[g]();
+        if (e.list.length * triCount(geo) < STREET_SPLIT_TRIS) continue;
+        const cells = new Map(), map = new Array(e.list.length);
+        e.list.forEach((mx, i) => {
+          const c = Math.floor(mx.elements[12] / STREET_CELL) * 65536 + Math.floor(mx.elements[14] / STREET_CELL);
+          let s = cells.get(c);
+          if (!s) cells.set(c, s = { list: [], cols: [], wear: [], base: [], src: k });
+          map[i] = [k + '#' + c, s.list.length];
+          s.list.push(mx); s.cols.push(e.cols[i]); s.base.push(e.base[i]);
+          s.wear.push(e.wear[i * 3] || 0, e.wear[i * 3 + 1] || 0, e.wear[i * 3 + 2] || 0);
+        });
+        if (cells.size < 2) continue;
+        delete this.ims[k];
+        for (const [c, s] of cells) this.ims[k + '#' + c] = s;
+        remap[k] = map;
+      }
+      const reslot = s => { const M = remap[s[0]]; if (M) { const [nk, ni] = M[s[1]]; s[0] = nk; s[1] = ni; } };
+      for (const o of this.items) if (o.slots) o.slots.forEach(reslot);
+      for (const sp of this.wires) sp.slots.forEach(reslot);
       for (const k in this.ims) {
-        const e = this.ims[k], [g, m] = k.split('|');
-        const geo = g.startsWith('c:') ? carGeo(g).clone() : UNIT[g]();
-        let mat;
-        if (m === 'shadow') mat = new THREE.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        const e = this.ims[k], src = e.src || k, [g, m] = src.split('|');
+        let geo = srcGeo[src];
+        if (e.src) {
+          // ô của lô đã chia: hình học nông dùng chung bộ đệm đỉnh / chỉ số với lô gốc
+          const b = geo;
+          geo = new THREE.BufferGeometry();
+          for (const a in b.attributes) geo.setAttribute(a, b.attributes[a]);
+          if (b.index) geo.setIndex(b.index);
+          for (const gr of b.groups) geo.addGroup(gr.start, gr.count, gr.materialIndex);
+        }
+        let mat = srcMat[src];
+        if (mat) {
+          if (mat.userData.streetWear) geo.setAttribute('aWear', new THREE.InstancedBufferAttribute(new Float32Array(e.wear), 3));
+          if (mat.userData.streetWx) geo.setAttribute('wxBase', new THREE.InstancedBufferAttribute(new Float32Array(e.base), 1));
+        } else if (m === 'shadow') mat = new THREE.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
         else if (m === 'paint' || m === 'glass' || m === 'rim') {
           const kind = g.startsWith('c:') ? g.slice(2).split('_')[0] : '', part = g.startsWith('c:') ? g.slice(2).split('_')[1] : '';
           const key = m === 'glass' ? 'glass:' + kind : part === 'body' ? 'body:' + kind : part === 'ghp' ? 'cab:' + kind : 'box';
@@ -1309,6 +1378,7 @@ const Props = (() => {
             CivilCars.patchLodMaterial(mat, kind, part === 'lodcab' ? 'cab' : 'body', part === 'lodcab' ? (CAR_DIM[kind] || CAR_DIM.sedan).belt : 0);
           // thuộc tính dấu thời gian từng xe (bụi, gỉ, phai)
           geo.setAttribute('aWear', new THREE.InstancedBufferAttribute(new Float32Array(e.wear.length ? e.wear : new Array(e.list.length * 3).fill(0)), 3));
+          mat.userData.streetWear = true;
         } else {
           mat = new THREE.MeshStandardMaterial(SMAT[m]);
           if (m === 'rsign') {
@@ -1327,8 +1397,10 @@ const Props = (() => {
           if (wx && typeof Weathering !== 'undefined' && e.base && e.base.length === e.list.length) {
             Weathering.apply(mat, wx[0], Object.assign({ baseAttr: true }, wx[1]));
             geo.setAttribute('wxBase', new THREE.InstancedBufferAttribute(new Float32Array(e.base), 1));
+            mat.userData.streetWx = true;
           }
         }
+        srcMat[src] = mat;
         const env = typeof VehicleKit !== 'undefined' && VehicleKit.getEnvCube ? VehicleKit.getEnvCube() : null;
         if (env && (m === 'paint' || m === 'glass' || m === 'rim' || m === 'glow' || m === 'red' || m === 'lampLens' || m === 'metal' || m === 'sigPole')) { mat.envMap = env; mat.envMapIntensity = m === 'paint' ? 0.75 : m === 'glass' ? 1.2 : m === 'metal' || m === 'sigPole' ? 0.6 : 0.9; }
         const im = new THREE.InstancedMesh(geo, mat, e.list.length);
@@ -1336,6 +1408,16 @@ const Props = (() => {
         e.list.forEach((mx, i) => { im.setMatrixAt(i, mx); im.setColorAt(i, e.cols[i]); });
         // mâm nằm lọt trong lốp: bóng của nó bị bóng lốp / thân che hết -> không vẽ vào bản đồ bóng (~2000 mâm mỗi lượt)
         im.castShadow = m !== 'panel' && m !== 'glow' && m !== 'shadow' && m !== 'glass' && m !== 'rim'; im.receiveShadow = m !== 'shadow'; im.frustumCulled = false;
+        if (e.src) {
+          // ô của lô đã chia: kiểm tra khuất theo khối bao các instance trong ô (tính lại ở flush khi xe bị dời / nghiêng)
+          const b = srcGeo[src];
+          if (!b.boundingSphere) b.computeBoundingSphere();
+          im.userData.localSphere = b.boundingSphere;
+          geo.boundingSphere = cellSphere(im.instanceMatrix.array, e.list.length, b.boundingSphere);
+          im.frustumCulled = true;
+          im.raycast = cellRaycast;
+          e.cell = true;
+        }
         im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
         im.name = 'street_' + k;
         this.group.add(im); e.im = im;
@@ -1820,7 +1902,14 @@ const Props = (() => {
       }
       o.slots.forEach(([k, i, p]) => { this.ims[k].im.setMatrixAt(i, this.partMatrix(o, p)); this.ims[k].dirty = true; });
     }
-    flush() { for (const k in this.ims) { const e = this.ims[k]; if (e.dirty && e.im) { e.im.instanceMatrix.needsUpdate = true; if (e.cdirty) e.im.instanceColor.needsUpdate = true; e.dirty = e.cdirty = false; } } }
+    flush() {
+      for (const k in this.ims) {
+        const e = this.ims[k];
+        if (!e.dirty || !e.im) continue;
+        e.im.instanceMatrix.needsUpdate = true; if (e.cdirty) e.im.instanceColor.needsUpdate = true; e.dirty = e.cdirty = false;
+        if (e.cell) e.im.geometry.boundingSphere = cellSphere(e.im.instanceMatrix.array, e.im.count, e.im.userData.localSphere);
+      }
+    }
     // cột đổ về hướng (dx, dz); dây điện nối vào cột đó đứt (ẩn)
     // NÒNG PHÁO QUÉT / ĐẬP (barrel_sweep.js): nòng nện vào cột đèn / đèn giao thông / cột điện / nhà chờ. Động lượng cú
     // đập (cùng thang với xe húc, BREAK_P) đủ thì cột gãy đổ / nhà chờ sụp theo chiều quét; chưa đủ chỉ nghe tiếng nện
