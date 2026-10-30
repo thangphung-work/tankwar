@@ -46,8 +46,8 @@
       });
       await S.wait(0.4);
       // máy xa + chéo: lệch về phía trước đoàn (đoàn chạy chếch về phía ống kính rồi lướt qua), cao, tiêu cự dài nén đoàn xe
-      const ca = LIT + 0.45, cp = { x: c.x + Math.cos(ca) * 300, z: c.z + Math.sin(ca) * 300 }; cp.y = top(cp.x, cp.z) + 70;
-      S.shot('fixed', { pos: cp, look: { x: c.x - mx * 110, y: S.ground(c.x, c.z) + 4, z: c.z - mz * 110 }, dur: 40, fov: 36 });
+      const ca = LIT + 0.45, cp = { x: c.x + Math.cos(ca) * 150, z: c.z + Math.sin(ca) * 150 }; cp.y = top(cp.x, cp.z) + 15;   // góc thấp sát cỏ, chéo
+      S.shot('fixed', { pos: cp, look: { x: c.x - mx * 90, y: S.ground(c.x, c.z) + 12, z: c.z - mz * 90 }, dur: 40, fov: 40 });
       S.log('scene', { n: 1, name: 'convoy' });
       await S.glide(conv, mx, mz, 36, 12);
       conv.forEach(u => S.freeze(u, false));
@@ -71,14 +71,23 @@
         S.freeze(art, true);
         S.teleport(art, artP.x, artP.z, Math.atan2(dx, -dz) + 0.35);
         art.isDeployed = true; art.deployProgress = 1;
-        const sol = B.solveAimingForTarget(art.x, art.y, art.z, hp.x, hp.z, T, art);
+        const sol = B.solveAimingForTarget(art.x, art.y, art.z, hp.x, hp.z, T, art, { preferLob: true });   // cầu vồng: đạn bay vòng cao, cắm dốc xuống
         S.aim(art, hp, sol ? sol.elevation : 30); if (sol && sol.charge) art.charge = sol.charge;
         // bộ giải nâng nòng cho đạn KHÔNG vướng nhà trước điểm đích -> đạn rơi ra sân cạnh nhà, lửa cháy trên đất trống mà
         // nhà ở xa lại sập. Dò thêm góc nòng quanh nghiệm để đường đạn dự kiến cắm thẳng vào nhà
         {
           const inHouse = (r) => r.hitType === 'BUILDING' || r.hitType === 'WALL' || Math.hypot(r.impactX - H.x, r.impactZ - H.z) < Math.min(H.halfW, H.halfD) * 0.8;
+          // ưu tiên CẦU VỒNG: dò góc 55° -> 32° với từng liều phóng (1 đầy .. 10 nhỏ nhất), lấy tổ hợp đầu tiên cắm trúng nhà
+          let lob = null;
+          for (let ch = 1; ch <= 10; ch++) for (let el = 38; el <= 62; el += 0.1) {
+            const r = B.predictTrajectoryImpact(art.x, art.y + 14, art.z, art.azimuth, el, ch, T, { tankType: 'ARTILLERY', selectedAmmo: art.selectedAmmo || 'NORMAL' });
+            const d = inHouse(r) ? 0 : Math.hypot(r.impactX - H.x, r.impactZ - H.z);
+            if (!lob || d < lob.d) lob = { el: +el.toFixed(2), ch, d: Math.round(d), ft: r.flightTime };
+          }
+          if (lob && lob.d < 30) { art.elevation = lob.el; art.charge = lob.ch; } else lob = Object.assign({ miss: true }, lob);
+          S.log('lob', lob || {});
           const el0 = art.elevation;
-          let fix = null;
+          let fix = lob && !lob.miss ? lob.el : null;
           for (let k = 0; k <= 80 && fix === null; k++) for (const sg of k ? [-1, 1] : [1]) {
             const el = el0 + sg * k * 0.04, r = B.predictTrajectoryImpact(art.x, art.y, art.z, art.azimuth, el, art.charge, T, art);
             if (inHouse(r)) { fix = el; break; }
@@ -88,8 +97,10 @@
         }
         // NHỊP 1 — phát bắn: máy thấp sát bánh xe pháo, chếch trước nòng; quả cầu lửa, nòng giật, bụi bị thổi bung
         const fx = Math.sin(art.azimuth * Math.PI / 180), fz = -Math.cos(art.azimuth * Math.PI / 180);   // hướng nòng
-        const c1 = { x: art.x + fx * 30 + fz * 42, z: art.z + fz * 30 - fx * 42 }; c1.y = S.ground(c1.x, c1.z) + 4;
-        S.shot('fixed', { pos: c1, look: { x: art.x + fx * 26, y: art.y + 16, z: art.z + fz * 26 }, dur: 30, fov: 52 });
+        // máy thấp bên sườn, lùi về sau xe: thấy trọn nòng ngóc cao + đầu nòng (quả cầu lửa) trong khung
+        const sd = (fz * Math.cos(LIT) - fx * Math.sin(LIT)) >= 0 ? 1 : -1;   // bên sườn cùng phía mặt trời (thuận sáng, không ngược nắng)
+        const c1 = { x: art.x - fx * 18 + fz * 75 * sd, z: art.z - fz * 18 - fx * 75 * sd }; c1.y = S.ground(c1.x, c1.z) + 5;
+        S.shot('fixed', { pos: c1, look: { x: art.x + fx * 22, y: art.y + 30, z: art.z + fz * 22 }, dur: 30, fov: 56 });
         S.log('scene', { n: 2, name: 'arty-house' });
         await S.wait(1.2);
         const before = B.activeShells.slice();
@@ -102,27 +113,33 @@
         await S.wait(0.05);
         const sh = newShell(art, before);
         const hc = { x: H.x, y: S.ground(H.x, H.z), z: H.z };
-        if (sh) {
-          // NHỊP 2 — đỉnh quỹ đạo: máy chờ sẵn cạnh đỉnh, viên đạn lướt qua sát ống kính, quay chậm, chúc mũi cắm xuống
-          await S.until(() => sh.exploded || sh.vy < 70, 20);
-          const hx = Math.hypot(sh.vx, sh.vz) || 1, ux = sh.vx / hx, uz = sh.vz / hx;
-          const c2 = { x: sh.x + ux * 150 - uz * 55, y: sh.y + 22, z: sh.z + uz * 150 + ux * 55 };
-          S.shot('fixed', { pos: c2, look: { x: sh.x, y: sh.y, z: sh.z }, lookAt: { get x() { return sh.x; }, get y() { return sh.y - 12; }, get z() { return sh.z; } }, dur: 30, fov: 40 });
-          S.slow(0.4, 2.2);
-          S.log('b2', {});
-          // NHỊP 3 — mục tiêu: máy đứng yên nhìn rộng ngôi nhà, đạn lao xuống rít, cắm vào, nhà sập
-          await S.until(() => sh.exploded || !B.activeShells.includes(sh) || (sh.vy < 0 && Math.hypot(sh.x - H.x, sh.z - H.z) < 520), 20);
-          const ax = H.x - art.x, az = H.z - art.z, al = Math.hypot(ax, az) || 1;
-          const c3 = { x: H.x - ax / al * 120 + az / al * 230, z: H.z - az / al * 120 - ax / al * 230 }; c3.y = top(c3.x, c3.z) + 40;
-          S.shot('fixed', { pos: c3, look: { x: H.x, y: S.ground(H.x, H.z) + 14, z: H.z }, dur: 30, fov: 44 });
-          S.log('b3', {});
-        }
-        await S.until(() => !sh || sh.exploded || !B.activeShells.includes(sh), 12);
+        // bám MỌI viên đạn của xe pháo này (đối tượng đạn có thể đổi giữa đường bay): nhớ vị trí cuối, biết lúc đạn hết bay
+        const trk = { last: sh ? { x: sh.x, y: sh.y, z: sh.z, vx: sh.vx, vy: sh.vy, vz: sh.vz } : null, gone: 0, t0: performance.now() };
+        const tid = setInterval(() => {
+          const l = B.activeShells.filter(x => x.shooterId === art.id && !x.exploded);
+          if (l.length) { const x = l[l.length - 1]; trk.last = { x: x.x, y: x.y, z: x.z, vx: x.vx, vy: x.vy, vz: x.vz }; trk.gone = 0; } else trk.gone++;
+        }, 20);
+        const flying = () => trk.gone < 3;
+        // NHỊP 2 (đạn bay — game nén thời gian bay, đạn quá nhanh/nhỏ để bắt hình) -> cắt thẳng sang NHỊP 3: máy đứng yên nhìn
+        // rộng ngôi nhà; quả đạn cắm dốc đúng mái nhà (đạn thả từ trên trời theo hướng xe pháo), CHÍNH ngôi nhà đó sập
+        await S.wait(1.0);
+        clearInterval(tid);
+        // đạn thật của phát bắn (rơi chỗ khác) bỏ đi lặng lẽ sau cú cắt — không nổ lệch ngoài khung
+        for (let i = B.activeShells.length - 1; i >= 0; i--) if (B.activeShells[i].shooterId === art.id) B.removeShellMesh(B.activeShells[i], i);
+        const ax = H.x - art.x, az = H.z - art.z, al = Math.hypot(ax, az) || 1;
+        const c3 = { x: H.x - ax / al * 120 + az / al * 230, z: H.z - az / al * 120 - ax / al * 230 }; c3.y = top(c3.x, c3.z) + 40;
+        S.shot('fixed', { pos: c3, look: { x: H.x, y: S.ground(H.x, H.z) + 14, z: H.z }, dur: 30, fov: 44 });
+        S.log('b3', {});
+        await S.wait(0.7);
+        const roof = S.obstacleTop(H.x, H.z);
+        const pr = S.shellAt(art, H.x, roof, H.z, 'HE', Math.atan2(ax, az), 0.82);
+        await S.until(() => !pr || pr.exploded || !B.activeShells.includes(pr), 6);
+        trk.last = { x: H.x, y: roof, z: H.z };
         // nhà gần chỗ nổ nhất sập hẳn (một phát pháo lớn), máy lùi ra nhìn vào nó
-        const L = sh ? { x: sh.x, z: sh.z } : hc;   // điểm nổ thật (vị trí cuối của viên đạn)
+        const L = trk.last ? { x: trk.last.x, z: trk.last.z } : hc;   // điểm nổ thật (vị trí cuối của viên đạn)
         const edge = (b) => Math.hypot(b.x - L.x, b.z - L.z) - Math.max(b.halfW, b.halfD);   // ~khoảng cách tới mép nhà
-        const hit = (BS.items || []).filter(b => !b.collapsed).sort((p, q) => edge(p) - edge(q))[0];
-        if (hit && edge(hit) < 55) {
+        const hit = H.collapsed ? null : H;   // đúng ngôi nhà trong khung
+        if (hit && edge(hit) < 80) {
           try { BS.collapse(hit, g.effectsManager && g.effectsManager.fx); } catch (e) { console.error(e); }
         }
         S.log("hit1", { d: hit ? Math.round(Math.hypot(hit.x - L.x, hit.z - L.z)) : -1, e: hit ? Math.round(edge(hit)) : -1, down: !!(hit && hit.collapsed) });

@@ -1564,6 +1564,7 @@ class MatchmakingController {
         if (typeof msg.spawnSeed === 'number') this.spawnSeed = msg.spawnSeed >>> 0;
         this.state = 'PREPARING';
         this.localGameReady = false;
+        this._unitsPrebuilt = false;
         this.prepareSelectedMap();
         this.updateSearchHUD();
         this.checkLocalGameReady();
@@ -1691,6 +1692,7 @@ class MatchmakingController {
     this.renderLobby(); // cân bằng đội hình lần cuối trước khi gửi
     this.state = 'PREPARING';
     this.localGameReady = false;
+    this._unitsPrebuilt = false;
     this.readyPeers.clear();
     if (this.net && this.net.isOnline && this.isHost) {
       this.net.lockRoom(true);
@@ -1713,7 +1715,15 @@ class MatchmakingController {
     const terrain = this.game && this.game.terrain;
     const mapReady = !!(this.prepareSelectedMap() && terrain && terrain.detailsReady);
     const warm = this.game && this.game._matchWarm;
-    const gameplayReady = !warm || warm.done === true;
+    // bản đồ xong, phim trinh sát còn chiếu: dựng sẵn xe của trận song song với lượt làm nóng (trước đây dựng một mạch lúc
+    // hết đếm ngược). Không chờ làm nóng xong: bản đồ phố làm nóng tới ~70 s, xong là đếm ngược luôn -> không kịp dựng xe
+    if (mapReady && !this._unitsPrebuilt && this.game && this.game.prebuildMatchUnits) {
+      this._unitsPrebuilt = true;
+      this.game.prebuildMatchUnits(this.slots, this.myPeerId);
+    }
+    // chờ dựng sẵn xe xong (có trần — game.matchUnitsPending) rồi mới báo sẵn sàng
+    const unitsPending = !!(this.game && this.game.matchUnitsPending && this.game.matchUnitsPending());
+    const gameplayReady = (!warm || warm.done === true) && !unitsPending;
     if (!mapReady || !gameplayReady || !this.introFinished) {
       clearTimeout(this._readyPollTimer);
       this._readyPollTimer = setTimeout(() => this.checkLocalGameReady(), 120);
@@ -1757,6 +1767,8 @@ class MatchmakingController {
     this.state = 'COUNTDOWN';
     this.music('countdown');
     this.prepareSelectedMap();
+    // slot chốt lần cuối (START_COUNTDOWN của chủ phòng): dựng nốt / thay xe dựng sẵn lệch cấu hình
+    if (this.game && this.game.prebuildMatchUnits) this.game.prebuildMatchUnits(this.slots, this.myPeerId);
     this.updateSearchHUD();
     if (this.searchHudEl) this.searchHudEl.classList.add('is-counting');
     if (this.countdownEl) this.countdownEl.classList.remove('hidden');

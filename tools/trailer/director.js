@@ -513,6 +513,14 @@
 
   function direct(dt) {
     dt = Math.min(dt || 1 / 30, 0.1);
+    // tháp pháo xoay MƯỢT về hướng đích (ST.slew): ~70°/s phương vị, ~30°/s góc nâng — không nhảy cóc mỗi lần đổi mục tiêu
+    if (TR.slewing && TR.slewing.size) for (const u of TR.slewing) {
+      const G = u._slew; if (!G || u.isDead) { TR.slewing.delete(u); continue; }
+      let d = ((G.az - u.azimuth + 540) % 360) - 180; const st = 70 * dt;
+      u.azimuth = (u.azimuth + Math.max(-st, Math.min(st, d)) + 360) % 360;
+      const de = G.el - u.elevation; u.elevation += Math.max(-30 * dt, Math.min(30 * dt, de));
+      G.ok = Math.abs(d) < 3 && Math.abs(de) < 2;
+    }
     TR.frame = window.__TW ? __TW.frameN : 0;
     trackMotion(dt);
     for (const [k, v] of heat) heat.set(k, v * Math.exp(-dt / 6));
@@ -873,6 +881,13 @@
       if (!on && u.botAI.__upd) { u.botAI.update = u.botAI.__upd; u.botAI.__upd = null; }
       u.speed = 0;
     },
+    // xoay tháp MƯỢT về điểm p (mỗi khung một chút); ST.slewReady(u): đã quay tới, bắn được
+    slew(u, p, el = 2) {
+      if (!u) return;
+      u._slew = { az: ((ST.face(u, p) * 180 / Math.PI) % 360 + 360) % 360, el, ok: false };
+      (TR.slewing || (TR.slewing = new Set())).add(u);
+    },
+    slewReady: (u) => !!(u && u._slew && u._slew.ok),
     // xoay tháp về điểm p, góc nâng el (độ)
     aim(u, p, el = 2) {
       u.azimuth = ((ST.face(u, p) * 180 / Math.PI) % 360 + 360) % 360;

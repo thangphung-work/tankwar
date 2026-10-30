@@ -447,8 +447,10 @@ class ArtilleryGame3D {
     // chương trình ĐÃ CÓ nhưng GPU còn đang biên dịch (lượt vẽ trước bỏ qua nhờ async_shaders — vd. vật liệu trang bị của
     // bot lần đầu xuất hiện đầu trận): renderer.compile gọi getUniforms -> hỏi ACTIVE_UNIFORMS -> chờ biên dịch xong. Đo
     // 2026-10-29: prewarmShaders ngay sau khi vào trận đứng 3-4 s ở đây. Thay tạm bằng bản rỗng như chương trình mới
+    // (chương trình đã biết là xong thì không hỏi lại: mỗi lần hỏi là một lượt chờ đồng bộ sang tiến trình GPU)
     for (const p of P) {
-      if (!p || !p.program || !p.getUniforms || gl.getProgramParameter(p.program, DONE)) continue;
+      if (!p || !p.program || !p.getUniforms || p.__compiled) continue;
+      if (gl.getProgramParameter(p.program, DONE)) { p.__compiled = true; continue; }
       stubbed.push([p, p.getUniforms]); p.getUniforms = () => dummy;
     }
     const origPush = P.push;
@@ -497,7 +499,10 @@ class ArtilleryGame3D {
         // đổi bản đồ giữa lượt (prepareMap biên dịch song song ngay ở sảnh): vật liệu bản đồ cũ bị huỷ -> three xoá
         // chương trình (p.program = undefined). Bỏ qua chúng; lỗi bất kỳ cũng kết thúc lượt, không để _shaderWarmBusy kẹt
         try {
-          for (const [p] of stubbed) if (p.program && !gl.getProgramParameter(p.program, DONE)) left++;
+          for (const [p] of stubbed) {
+            if (!p.program || p.__compiled) continue;
+            if (gl.getProgramParameter(p.program, DONE)) p.__compiled = true; else left++;
+          }
         } catch (e) { console.warn('[SHADER] poll', e); left = 0; }
         if (onProgress) try { onProgress(total - left, total); } catch (e) { /* bỏ qua */ }
         // quá 90 s (GPU treo / trình duyệt không báo trạng thái): thôi chờ, three tự chờ ở lần vẽ đầu như cũ
@@ -521,6 +526,11 @@ class ArtilleryGame3D {
     // Phòng thử: không compile ngay lúc vừa vào (giữ vào nhanh), nhưng VẪN làm nóng sau ~2,5 s lúc rảnh — bỏ hẳn thì
     // shader hiệu ứng / chi tiết bản đồ biên dịch đúng lúc bắn phát đầu (đo 2026-10-26: khựng 2,5–14 s trên HIGHLAND)
     if (isLab && Date.now() - (this.matchStartTime || 0) < 2500) return;
+    // trận thường đã làm nóng ở sảnh trên đúng bản đồ này, chi tiết bản đồ dựng xong từ trước: shader cảnh + hiệu ứng đã
+    // có và ghim -> bỏ lượt quét cả cảnh (renderer.compile ~0,2 s + GPU bận biên dịch vài shader vật chưa hiện: khựng
+    // ~0,5 s ở giây thứ 5-6 trận, đo 2026-10-30). Vật mới hiện giữa trận đã có async_shaders lo
+    const W0 = this._matchWarm;
+    if (!isLab && W0 && W0.done && W0.T === T && W0.detailsAtWarm) return;
     const want = T.detailsReady ? 2 : 1;
     const W = this._lateWarm;
     if (W && W.T === T && (W.stage >= want || W.pending)) return;
@@ -597,13 +607,32 @@ class ArtilleryGame3D {
     const steps = [];
     steps.push(['nav', () => { if (typeof Navigator !== 'undefined' && Navigator.warm) Navigator.warm(T); }]);
     if (typeof SPGUnit3D !== 'undefined') {
-      for (const team of ['BLUE', 'RED']) for (const tankType of types) {
+      // Xe tạm mang trang bị lắp ngoài (lồng, giáp, lưới lá ngụy trang...): vật liệu của chúng chỉ sinh khi gắn hình trang
+      // bị đầu trận (pumpKitJobs) -> trước đây biên dịch giữa trận (đo 2026-10-30: shader lưới lá 0,6 s trên GPU). Mỗi
+      // phe lắp một nửa số món của mỗi ô (xen kẽ) để hai xe tạm cùng loại phủ được nhiều món nhất
+      const EQ = typeof Equipment !== 'undefined' && Equipment.MODULES && Equipment.equip ? Equipment : null;
+      const warmKit = (tankType, half) => {
+        const byCat = {};
+        for (const id of Object.keys(EQ.MODULES)) {
+          if (!EQ.compatible(id, tankType) || EQ.MODULES[id].cat === 'engine') continue;
+          (byCat[EQ.MODULES[id].cat] = byCat[EQ.MODULES[id].cat] || []).push(id);
+        }
+        const m = [];
+        for (const c in byCat) {
+          const ids = byCat[c], n = Math.max(1, (EQ.CATS[c] && EQ.CATS[c].slots) || 1);
+          const pick = ids.filter((id, i) => i % 2 === half);
+          m.push(...(pick.length ? pick : ids).slice(0, n));
+        }
+        return { m, p: [], a: {} };
+      };
+      types.forEach(tankType => ['BLUE', 'RED'].forEach((team, half) => {
         steps.push(['xe ' + tankType + '/' + team, () => {
           const u = new SPGUnit3D(this.scene, { name: 'PREWARM', isPlayer: false, team, tankType, x: 0, z: 0, bodyAngle: 0 });
           if (u.group) u.group.visible = false;   // compile duyệt cả vật thể ẩn
           dummies.push(u);
+          if (EQ) try { EQ.equip(u, warmKit(tankType, half)); } catch (e) { console.warn('[PREWARM] trang bị xe tạm', e); }
         }]);
-      }
+      }));
     }
     // Chi tiết bản đồ (nhà, phố, đồ vật, ô tô) dựng nền muộn (terrain.detailsReady): biên dịch trước khi có thì shader của
     // chúng dồn lại biên dịch đồng bộ lúc vào trận (đo 2026-10-27: 103 shader, đứng hình hàng chục giây) -> chờ (tối đa 60 s)
@@ -662,6 +691,7 @@ class ArtilleryGame3D {
       if (!step) {
         cleanup();
         job.done = true;
+        job.detailsAtWarm = !!T.detailsReady;   // lượt biên dịch đã gồm cả chi tiết bản đồ (warmLateShaders bỏ qua được)
         const ms = Object.entries(job.ms).filter(e => e[1] >= 5).map(e => e[0] + ' ' + e[1]).join(' · ');
         console.info(`[PREWARM] Làm nóng trận ${key}: ${Math.round(performance.now() - t0)} ms — ${ms}`);
         return;
@@ -838,7 +868,11 @@ class ArtilleryGame3D {
     const labMode = !!(window.RANGE_LAB || window.STRONGHOLD_LAB || window.FREECAM_LAB || (typeof location !== 'undefined' && location.search && location.search.includes('lab=')));
     if (!labMode) {
       if (window.GameMenu && GameMenu.applyGraphics) GameMenu.applyGraphics();
-      setTimeout(() => { if (this.isGameStarted) this.prewarmShaders(); }, 60);
+      // Làm nóng trận ở sảnh đã xong cho đúng bản đồ này (shader xe + bản đồ + hiệu ứng đã ghim): bỏ lượt quét lại cả cảnh
+      // ngay sau khung đầu — GPU còn đang nạp lưới / texture của khung đầu nên mỗi lệnh hỏi trạng thái shader phải chờ
+      // (đo 2026-10-30: 0,3-2,2 s đứng hình). Shader mới của trận (vệt xích, thanh máu...) để warmLateShaders lúc rảnh
+      const W = this._matchWarm;
+      if (!(W && W.done && W.T === this.terrain)) setTimeout(() => { if (this.isGameStarted) this.prewarmShaders(); }, 60);
     }
     else if (window.GameMenu && GameMenu.applyGraphics) GameMenu.applyGraphics();
     // [NET] Gắn đồng bộ mạng: xe từ xa nội suy, bot do chủ phòng điều khiển, bắn bù trễ, sát thương có chủ quyền
@@ -1397,7 +1431,56 @@ class ArtilleryGame3D {
     this.units = [];
     this.player = null;
     this._kitJobs = [];
+    // xe dựng sẵn lúc chờ phim trinh sát (prebuildMatchUnits): dùng lại chiếc khớp đúng cấu hình, còn lại dựng mới
+    const pre = this.takePrebuiltUnits();
 
+    this.matchUnitPlan(slots, myPeerId).forEach(e => {
+      const { slot, isMe, opts } = e;
+      const bucket = pre.get(e.sig);
+      const P = bucket && bucket.pop();
+      const unit = P ? P.unit : new SPGUnit3D(this.scene, opts);
+      if (unit.group) unit.group.visible = true;
+      unit.spawnX = opts.x;
+      unit.spawnZ = opts.z;
+      // Hồ sơ bot (tên / biệt hiệu / tay nghề / lối đánh) theo mã chủ phòng gán vào slot -> mọi máy giống nhau
+      const prof = !slot.isHuman && typeof BotProfiles !== 'undefined' ? BotProfiles.byId(slot.botId) : null;
+      if (prof) {
+        unit.botProfile = prof;
+        unit.callsign = prof.callsign;
+        if (unit.botAI) unit.botAI.applyProfile(prof);
+      }
+      // xe dựng sẵn đã lắp trang bị (thường gắn xong cả phần hình); phần hình còn dở gắn tiếp qua các khung đầu trận
+      let pending, it = null;
+      if (P && P.equipped) { pending = !P.visDone; it = P.it || null; }
+      else pending = this.equipPlanUnit(unit, e);
+      if (pending) this._kitJobs.push({ unit, group: unit.group, it });
+
+      if (isMe) {
+        this.player = unit;
+      }
+      this.units.push(unit);
+    });
+    for (const list of pre.values()) this.dropPrebuiltUnits(list.map(p => p.unit));
+
+    // Fallback: nếu chưa có player thì gán xe đầu tiên
+    if (!this.player && this.units.length > 0) {
+      this.player = this.units[0];
+      this.player.isPlayer = true;
+      this.player.isRemotePlayer = false;
+    }
+    this.balanceBotSkill(slots);
+
+    this.updateTeamScoreUI();
+    this.updateAliveCount();
+    this.syncHUDControls();
+    this.updateAmmoUI();
+    this.initSupplyCrates();
+    this.initCapturePoints();
+  }
+
+  // Cấu hình từng xe của trận theo danh sách slot: vị trí xuất phát + tham số SPGUnit3D + chữ ký so khớp xe dựng sẵn.
+  // Chỉ phụ thuộc slot, hạt giống vị trí và bản đồ -> tính lúc chờ (prebuildMatchUnits) và lúc vào trận ra cùng kết quả
+  matchUnitPlan(slots, myPeerId) {
     // Vị trí xuất phát CHIA PHE ĐỐI XỨNG: phe Xanh xuất phát ngẫu nhiên trong khu xuất kích nửa của mình (z > 0), xe
     // phe Đỏ thứ k đứng đúng ảnh đối xứng (map.sym) của xe phe Xanh thứ k -> hai phe cùng một thế xuất phát so với các
     // cứ điểm. Hạt giống chung của trận (chủ phòng gửi kèm lệnh xuất trận) -> mọi máy tính ra cùng một bộ vị trí.
@@ -1420,7 +1503,7 @@ class ArtilleryGame3D {
       if (k < byTeam.RED.length) spawns[byTeam.RED[k]] = { x: rx, z: rz, bodyAngle: this.spawnFacing(rx, rz, rng) };
     }
 
-    slots.forEach((slot, idx) => {
+    return slots.map((slot, idx) => {
       const team = teamOf(slot, idx);
       const sp = spawns[idx];
       const cfg = { x: sp.x, z: sp.z, bodyAngle: sp.bodyAngle, azimuth: ArtilleryGame3D.headingDeg(sp.bodyAngle), elevation: 0, team };
@@ -1437,7 +1520,7 @@ class ArtilleryGame3D {
         assignedTankType = pool[idx % 4];
       }
 
-      const unit = new SPGUnit3D(this.scene, {
+      const opts = {
         name: slot.name || `UNIT #${idx + 1}`,
         isPlayer: isMe,
         isRemotePlayer: isRemote,
@@ -1450,49 +1533,219 @@ class ArtilleryGame3D {
         azimuth: cfg.azimuth,
         elevation: cfg.elevation,
         charge: 2
-      });
-      unit.spawnX = cfg.x;
-      unit.spawnZ = cfg.z;
-      // Hồ sơ bot (tên / biệt hiệu / tay nghề / lối đánh) theo mã chủ phòng gán vào slot -> mọi máy giống nhau
-      const prof = !slot.isHuman && typeof BotProfiles !== 'undefined' ? BotProfiles.byId(slot.botId) : null;
-      if (prof) {
-        unit.botProfile = prof;
-        unit.callsign = prof.callsign;
-        if (unit.botAI) unit.botAI.applyProfile(prof);
-      }
+      };
       // Trang bị mua thêm: xe của mình lấy từ tài khoản (kho đạn thật), người chơi khác gửi kèm slot,
       // xe do máy điều khiển nhận bộ ngẫu nhiên theo hạt giống chung (mọi máy giống nhau)
+      let kit = null, eqOpts = null;
       if (typeof Equipment !== 'undefined') {
-        let kit = null, eqOpts = null;
         if (isMe && window.Account && Account.kitFor) { const k = Account.kitFor(assignedTankType); kit = k.kit; eqOpts = { local: true, stock: k.stock }; }
         else if (slot.isHuman) kit = slot.kit || null;
         else kit = Equipment.botKit(assignedTankType, ArtilleryGame3D.seededRandom((seed ^ (idx * 0x9e3779b1)) >>> 0));
-        // phần hình trang bị (lồng, giáp, lưới lá: ~2 s cho 20 xe) gắn dần qua các khung đầu trận — pumpKitJobs
-        const lazy = !!Equipment.visualSteps;
-        Equipment.equip(unit, kit, lazy ? Object.assign({}, eqOpts, { deferVisuals: true }) : eqOpts);
-        if (lazy && unit._eqVis) this._kitJobs.push({ unit, group: unit.group, it: null });
       }
-
-      if (isMe) {
-        this.player = unit;
-      }
-      this.units.push(unit);
+      return { slot, idx, isMe, isRemote, opts, kit, eqOpts, sig: JSON.stringify([opts, kit, eqOpts]) };
     });
+  }
 
-    // Fallback: nếu chưa có player thì gán xe đầu tiên
-    if (!this.player && this.units.length > 0) {
-      this.player = this.units[0];
-      this.player.isPlayer = true;
-      this.player.isRemotePlayer = false;
+  // Lắp trang bị cho xe theo cấu hình trận (matchUnitPlan). Phần hình (lồng, giáp, lưới lá: ~2 s cho 20 xe) để gắn dần
+  // (Equipment.visualSteps): trả về true nếu còn phần hình chờ gắn
+  equipPlanUnit(unit, e) {
+    if (typeof Equipment === 'undefined') return false;
+    const lazy = !!Equipment.visualSteps;
+    Equipment.equip(unit, e.kit, lazy ? Object.assign({}, e.eqOpts, { deferVisuals: true }) : e.eqOpts);
+    return !!(lazy && unit._eqVis);
+  }
+
+  // DỰNG SẴN XE CỦA TRẬN lúc chờ (PREPARING: đã chốt slot + hạt giống vị trí, đang chiếu phim trinh sát): trước đây
+  // startMatchWithSlots dựng cả 20 xe một mạch ngay khi hết đếm ngược (đo 2026-10-30: ~2-2,4 s đứng hình đầu trận).
+  // Mỗi nhịp dựng 1 xe (ẩn, đã đứng đúng chỗ xuất phát); vào trận initEntitiesWithSlots nhận lại chiếc trùng chữ ký
+  // cấu hình, chiếc nào lệch (slot đổi phút chót, đổi xe) thì dựng mới như cũ. Gọi lại nhiều lần được: chỉ dựng phần thiếu
+  prebuildMatchUnits(slots, myPeerId) {
+    const T = this.terrain;
+    if (this.isGameStarted || !T || !T.built || !T.detailsReady || !Array.isArray(slots) || !slots.length || typeof SPGUnit3D === 'undefined') return;
+    let plan;
+    try { plan = this.matchUnitPlan(slots, myPeerId); } catch (e) { console.warn('[PREBUILD] matchUnitPlan', e); return; }
+    // khoá theo bản đồ: đối tượng terrain được dùng lại khi đổi bản đồ (setMapType dựng lại tại chỗ)
+    const key = T.mapType + ':' + T.seed;
+    let P = this._preUnits;
+    if (P && (P.T !== T || P.key !== key)) { this.dropPrebuiltUnits(P.list.map(e => e.unit)); P = null; }
+    if (!P) P = this._preUnits = { T, key, list: [], busy: false };
+    // bỏ xe dựng thừa (slot đổi / cấu hình khác) để không giữ mô hình vô ích
+    const want = new Map();
+    for (const e of plan) want.set(e.sig, (want.get(e.sig) || 0) + 1);
+    const have = new Map();
+    P.list = P.list.filter(e => {
+      const n = (have.get(e.sig) || 0) + 1;
+      if (n > (want.get(e.sig) || 0)) { this.dropPrebuiltUnits([e.unit]); return false; }
+      have.set(e.sig, n);
+      return true;
+    });
+    const todo = plan.filter(e => {
+      const n = have.get(e.sig) || 0;
+      if (n > 0) { have.set(e.sig, n - 1); return false; }
+      return true;
+    });
+    P.todo = todo;
+    if (!P.busy && !todo.length) this.warmGpuUploads();
+    if (P.busy || !todo.length) return;
+    P.busy = true;
+    const t0 = P.t0 = performance.now();
+    let ms = 0;
+    // mỗi nhịp: gắn tiếp phần hình trang bị của xe đang dở (~30 ms), hết thì dựng + lắp trang bị xe kế tiếp
+    const step = () => {
+      if (this._preUnits !== P || this.isGameStarted || this.terrain !== T || T.mapType + ':' + T.seed !== key) { P.busy = false; return; }
+      const ts = performance.now();
+      const cur = P.list.find(x => x.equipped && !x.visDone);
+      if (cur) {
+        if (!cur.it) cur.it = Equipment.visualSteps(cur.unit);
+        try {
+          while (performance.now() - ts < 30) if (cur.it.next().done) { cur.visDone = true; cur.it = null; break; }
+        } catch (err) { console.warn('[PREBUILD] gắn trang bị', err); cur.visDone = true; cur.it = null; }
+      } else {
+        const e = P.todo.shift();
+        if (!e) {
+          P.busy = false;
+          console.info(`[PREBUILD] Dựng sẵn ${P.list.length} xe (cả trang bị): ${ms} ms trong ${Math.round(performance.now() - t0)} ms`);
+          this.warmGpuUploads();
+          return;
+        }
+        try {
+          const unit = new SPGUnit3D(this.scene, e.opts);
+          if (unit.group) unit.group.visible = false;
+          const x = { sig: e.sig, unit, equipped: false, visDone: false, it: null };
+          P.list.push(x);
+          try { x.visDone = !this.equipPlanUnit(unit, e); x.equipped = true; } catch (err) { console.warn('[PREBUILD] lắp trang bị', err); }
+        } catch (err) { console.warn('[PREBUILD] SPGUnit3D', err); }
+      }
+      ms += Math.round(performance.now() - ts);
+      setTimeout(step, 16);
+    };
+    setTimeout(step, 16);
+  }
+
+  // Ghép trận chờ dựng sẵn xe xong mới báo sẵn sàng; trần 8 s (máy yếu): quá thì vào trận, phần thiếu dựng lúc vào như cũ
+  matchUnitsPending() {
+    const P = this._preUnits;
+    return !!(P && P.busy && performance.now() - (P.t0 || 0) < 8000);
+  }
+
+  // NẠP SẴN LÊN GPU lúc chờ: sảnh bị phim trinh sát che nên không vẽ chiến trường -> khung đầu trận phải nạp một lúc mọi
+  // lưới / texture chưa từng vẽ (đo 2026-10-30 RIVER_LAKE: ~237 MB trong giây đầu — xác xe quanh cứ điểm 165 MB, 20 xe
+  // ~70 MB, đồ phố 18 MB) -> khung 0,8-1,9 s. Ở đây vẽ dần từng phần (~24 MB / nhịp) vào đích vẽ 1x1 điểm ảnh: lưới chỉ
+  // tạm bật layer riêng + tắt cull nên ngoài phần đó không vẽ gì; đèn cũng bật layer đó để khoá shader y như khung trận
+  // (đích vẽ mang cùng mã hoá màu với màn hình -> cùng chương trình shader). Không vẽ bóng đổ. Xe dựng sẵn đang ẩn: tạm hiện
+  warmGpuUploads() {
+    const R = this.renderer, T = this.terrain, scene = this.scene;
+    if (!R || !scene || !this.camera || !T || !T.detailsReady || this.isGameStarted || typeof THREE === 'undefined') return;
+    // gọi lại được (xe dựng sẵn đổi lúc đếm ngược): lưới đã nạp mang cờ __gpuWarm nên lượt sau chỉ nạp phần mới
+    const key = T.mapType + ':' + T.seed;
+    if (this._gpuWarm && this._gpuWarm.T === T && this._gpuWarm.key === key && this._gpuWarm.running) return;
+    // chờ làm nóng trận (shader còn đang biên dịch thì lượt vẽ bỏ qua vật đó -> không nạp texture) và dựng sẵn xe xong
+    const W = this._matchWarm, PU = this._preUnits;
+    if ((W && W.key === key && !W.done) || (PU && PU.key === key && PU.busy)) {
+      clearTimeout(this._gpuWarmWait);
+      this._gpuWarmWait = setTimeout(() => this.warmGpuUploads(), 250);
+      return;
     }
-    this.balanceBotSkill(slots);
+    const job = this._gpuWarm = { T, key, running: true };
+    const LAYER = 30, BUDGET = 24 * 1048576, MAXN = 400;
+    const baseBefore = THREE.Object3D.prototype.onBeforeRender;
+    const sizeOf = o => {
+      const g = o.geometry;
+      let b = g.index ? g.index.array.byteLength : 0;
+      for (const k in g.attributes) { const a = g.attributes[k], arr = a.array || (a.data && a.data.array); if (arr) b += arr.byteLength; }
+      if (o.isInstancedMesh && o.instanceMatrix) b += o.instanceMatrix.array.byteLength;
+      return b;
+    };
+    const pre = () => (this._preUnits && this._preUnits.T === T && this._preUnits.key === key ? this._preUnits.list.map(e => e.unit.group).filter(Boolean) : []);
+    // gom lưới cần nạp: chuỗi cha hiện (xe dựng sẵn coi như hiện), bỏ vật có onBeforeRender riêng (mặt nước phản chiếu...)
+    const list = [], seenGeo = new Set(), preG = new Set(pre());
+    const walk = (o, vis) => {
+      if (!(vis = vis && (o.visible || preG.has(o)))) return;
+      if ((o.isMesh || o.isLine || o.isPoints) && !o.isSprite && o.geometry && o.material && o.onBeforeRender === baseBefore
+        && !o.geometry.__gpuWarm && !seenGeo.has(o.geometry)) { seenGeo.add(o.geometry); list.push(o); }
+      for (const c of o.children) walk(c, vis);
+    };
+    walk(scene, true);
+    if (!list.length) { job.running = false; return; }
+    const lights = [];
+    scene.traverse(o => { if (o.isLight) lights.push(o); });
+    const rt = new THREE.WebGLRenderTarget(1, 1);
+    rt.texture.encoding = R.outputEncoding;
+    const cam = new this.camera.constructor().copy(this.camera, false);   // không sao con của camera (tai nghe âm thanh)
+    cam.layers.set(LAYER);
+    const t0 = performance.now();
+    let ms = 0, MB = 0;
+    const step = () => {
+      if (this._gpuWarm !== job || this.isGameStarted || this.terrain !== T || T.mapType + ':' + T.seed !== key || !list.length) {
+        job.running = false;
+        rt.dispose();
+        if (this._gpuWarm === job) console.info(`[PREBUILD] Nạp sẵn GPU ${Math.round(MB)} MB: ${ms} ms trong ${Math.round(performance.now() - t0)} ms`);
+        return;
+      }
+      const ts = performance.now();
+      const chunk = [];
+      let b = 0;
+      while (list.length && chunk.length < MAXN && (b < BUDGET || !chunk.length)) {
+        const o = list.shift();
+        if (!o.parent || o.geometry.__gpuWarm) continue;
+        b += sizeOf(o);
+        chunk.push(o);
+      }
+      const cull = chunk.map(o => o.frustumCulled);
+      const groups = pre();
+      for (const o of chunk) { o.layers.enable(LAYER); o.frustumCulled = false; }
+      for (const L of lights) L.layers.enable(LAYER);
+      for (const gr of groups) gr.visible = true;
+      const prevRT = R.getRenderTarget(), SM = R.shadowMap, au = SM.autoUpdate, nu = SM.needsUpdate;
+      SM.autoUpdate = false; SM.needsUpdate = false;
+      try {
+        R.setRenderTarget(rt);
+        R.render(scene, cam);
+      } catch (e) { console.warn('[PREBUILD] nạp sẵn GPU', e); }
+      finally {
+        R.setRenderTarget(prevRT);
+        SM.autoUpdate = au; SM.needsUpdate = nu;
+        chunk.forEach((o, i) => { o.layers.disable(LAYER); o.frustumCulled = cull[i]; o.geometry.__gpuWarm = true; });
+        for (const L of lights) L.layers.disable(LAYER);
+        for (const gr of groups) gr.visible = false;
+      }
+      MB += b / 1048576;
+      ms += Math.round(performance.now() - ts);
+      setTimeout(step, 16);
+    };
+    setTimeout(step, 16);
+  }
 
-    this.updateTeamScoreUI();
-    this.updateAliveCount();
-    this.syncHUDControls();
-    this.updateAmmoUI();
-    this.initSupplyCrates();
-    this.initCapturePoints();
+  // Lấy toàn bộ xe dựng sẵn (Map chữ ký -> danh sách xe) cho initEntitiesWithSlots; bản đồ đã đổi thì huỷ hết
+  takePrebuiltUnits() {
+    const P = this._preUnits, out = new Map();
+    this._preUnits = null;
+    if (!P) return out;
+    const T = this.terrain;
+    if (P.T !== T || !T || P.key !== T.mapType + ':' + T.seed) { this.dropPrebuiltUnits(P.list.map(e => e.unit)); return out; }
+    for (const e of P.list) {
+      if (!out.has(e.sig)) out.set(e.sig, []);
+      out.get(e.sig).push(e);
+    }
+    return out;
+  }
+
+  // Gỡ xe dựng sẵn không dùng tới: như gỡ xe tạm làm nóng trận — chỉ huỷ hình khối + vật liệu, giữ texture (sơn / vết
+  // chiến trường là bộ nhớ đệm dùng chung của mọi xe, huỷ đi thì xe trong trận phải nạp lại lên GPU)
+  dropPrebuiltUnits(list) {
+    for (const u of list || []) {
+      if (u.group) {
+        if (u.group.parent) u.group.parent.remove(u.group);
+        u.group.traverse(o => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+        });
+      }
+      for (const m of u.trackMarks || []) {
+        if (m && m.mesh && typeof SpgFXPool !== 'undefined' && SpgFXPool.release) SpgFXPool.release(m.mesh);
+        else if (m && m.mesh && m.mesh.parent) m.mesh.parent.remove(m.mesh);
+      }
+    }
   }
 
   // Bộ sinh số ngẫu nhiên theo hạt giống (mulberry32): cùng hạt giống -> cùng dãy số trên mọi máy
@@ -8997,6 +9250,26 @@ class ArtilleryGame3D {
       const instOff = u !== this.player && (d > instRange || !L.fr.intersectsSphere(L.s));
       for (const o of u._lodInst) setHidden(o, instOff);
       u._lodD = d;
+    }
+    // Xác xe tàn tích quanh cứ điểm không nằm trong this.units: bánh / mắt xích / lô vết đạn của chúng cũng là InstancedMesh
+    // tắt frustumCulled -> trước đây vẽ (cả lượt bóng) mọi khung dù xác ở sau lưng camera. Cắt theo cả xác như xe sống;
+    // danh sách lưới gom lại mỗi 0,25 s (vết đạn / mảnh vỏ mới dán lúc bị bắn), lưới rời khỏi xác thì trả về layer 0
+    const SH = this.terrain && this.terrain.strongholdSet;
+    const lodRefresh = (this._lodT || 0) - dt <= 0;
+    if (SH && SH.items) {
+      const instRange = (gpuHot ? 1450 : 3600) * (this._lodMag || 1);
+      for (const K of SH.items) for (const W of K.wrecks || []) {
+        if (!W.u || !W.u.group) continue;
+        if (!W._lodInst || lodRefresh) {
+          const now = [];
+          for (const root of [W.u.group, W.turret]) if (root) root.traverse(o => { if (o.isInstancedMesh && !o.frustumCulled) now.push(o); });
+          if (W._lodInst) for (const o of W._lodInst) if (!now.includes(o)) setHidden(o, false);
+          W._lodInst = now;
+        }
+        L.s.center.set(W.sx, W.sy, W.sz); L.s.radius = 80;   // thân + tháp văng (cách thân tới 52, map_gen)
+        const off = Math.hypot(W.sx - cp.x, W.sy - cp.y, W.sz - cp.z) > instRange || !L.fr.intersectsSphere(L.s);
+        for (const o of W._lodInst) setHidden(o, off);
+      }
     }
     this._lodT = (this._lodT || 0) - dt;
     if (this._lodT > 0) return;

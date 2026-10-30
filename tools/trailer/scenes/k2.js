@@ -17,12 +17,15 @@
   const noSmoke = () => { for (const u of g.units) u.smokeLeft = 0; };
   const ease = (k) => k * k * (3 - 2 * k);
   const lerp = (a, b, k) => a + (b - a) * k;
+  // tháp xoay MƯỢT (S.slew), giữ mục tiêu tới khi nó bị hạ, chỉ bắn khi nòng đã quay tới — không nhảy cóc
   const shoot = (u, v) => {
-    if (!u || u.isDead || !v || v.isDead) return;
+    if (!u || u.isDead) return;
+    if (u._tg && !u._tg.isDead) v = u._tg; else u._tg = v;
+    if (!v || v.isDead) return;
     const sol = B.solveAimingForTarget(u.x, u.y, u.z, v.x, v.z, T, u, { atUnit: true });
-    S.aim(u, { x: v.x, y: v.y + 8, z: v.z }, sol ? sol.elevation : 1);
+    S.slew(u, { x: v.x, y: v.y + 8, z: v.z }, sol ? sol.elevation : 1);
     if (sol && sol.charge) u.charge = sol.charge;
-    u.reloadTimer = 0; S.fire(u);
+    if (S.slewReady(u)) { u.reloadTimer = 0; S.fire(u); }
   };
   const kinds = ['ALL_ROUNDER', 'GATLING', 'SCOUT'];
   const used = new Set();
@@ -56,8 +59,8 @@
       await S.wait(0.3);
       // quỹ đạo: vòng cung quanh mục tiêu phía thuận nắng (bán kính 720 -> 480, cao 260 -> 210), lượn nghiêng vào tâm
       const C = { x: M.x, z: M.z }, G0 = M.y;   // lượn quanh TÂM trận đánh, nhìn bao quát cả hai phe
-      const a0 = LIT - Math.PI / 2 - 0.45, a1 = LIT - Math.PI / 2 + 0.3, TC = 3.6, TL = 1.1, TD = 1.5;   // phía sau tuyến Xanh: nhìn ngang qua chiến tuyến, xe không chồng lên nhau
-      let lockPos = null, lockLook = null;
+      const a0 = LIT - Math.PI / 2 - 0.45, a1 = LIT - Math.PI / 2 + 0.3, TC = 3.6, TL = 1.1, TD = 1.9;   // phía sau tuyến Xanh: nhìn ngang qua chiến tuyến, xe không chồng lên nhau
+      let lockPos = null, lockLook = null, lockDive = null;
       const orbit = (k) => { const a = lerp(a0, a1, k), r = lerp(720, 580, k); return { a, x: C.x + Math.cos(a) * r, z: C.z + Math.sin(a) * r, y: G0 + lerp(310, 270, k) }; };
       let tP = null;   // đồng hồ chung với kịch bản (đồng hồ cảnh của máy có thể chậm hơn)
       const fn = () => {
@@ -74,12 +77,13 @@
           return { pos: lockPos, look, fov: 50, roll: 0 };   // không nghiêng khung, không zoom
         }
         // bổ nhào: lao thẳng, nhanh dần, dừng cách xe ~22 đv (cắt sang vụ nổ) — không chui vào thân xe / cỏ
-        // khoảng cách giảm sao cho kích thước xe trong khung tăng ĐỀU (1/d tuyến tính) — không đứng im rồi vụt tới
-        const k = Math.min(1, (el - TC - TL) / TD);
-        const dx = Tg.x - lockPos.x, dy = Tg.y + 6 - lockPos.y, dz = Tg.z - lockPos.z, D = Math.hypot(dx, dy, dz), Dend = 110;
-        const d = 1 / (1 / D + k * (1 / Dend - 1 / D)), f = 1 - d / D;
-        const pos = { x: lockPos.x + dx * f, y: lockPos.y + dy * f, z: lockPos.z + dz * f };
-        return { pos, look: { x: Tg.x, y: Tg.y + 4, z: Tg.z }, fov: 50, roll: 0, minClear: 4 };
+        // LƯỢN XUỐNG (không lao thẳng — lao thẳng nhìn như zoom): vòng quanh mục tiêu thêm ~40° vừa hạ độ cao, tầm gần dần
+        const k = Math.min(1, (el - TC - TL) / TD), e = ease(k);
+        const a0L = Math.atan2(lockPos.z - Tg.z, lockPos.x - Tg.x), r0 = Math.hypot(lockPos.x - Tg.x, lockPos.z - Tg.z), h0 = lockPos.y - Tg.y;
+        const a = a0L + 0.7 * e, r = lerp(r0, 150, Math.pow(e, 0.85)), h = lerp(h0, 42, Math.pow(e, 1.15));
+        const pos = { x: Tg.x + Math.cos(a) * r, y: Tg.y + h, z: Tg.z + Math.sin(a) * r };
+        lockDive = pos;
+        return { pos, look: { x: Tg.x, y: Tg.y + 4, z: Tg.z }, fov: 50, roll: -0.12 * Math.sin(Math.PI * k), minClear: 4 };
       };
       S.shot('path', { fn, dur: 30 });
       S.log('scene', { n: 1, name: 'kami-pov' });
@@ -94,7 +98,7 @@
         const p = new THREE.Vector3(u.x, u.y + 9, u.z);
         const off = { x: (S.rnd() - 0.5) * 70, y: (S.rnd() - 0.3) * 40, z: (S.rnd() - 0.5) * 70 };
         const d = new THREE.Vector3(lockPos.x + off.x - p.x, lockPos.y + off.y - p.y, lockPos.z + off.z - p.z).normalize();
-        S.aim(u, { x: lockPos.x, y: u.y, z: lockPos.z }, 20);
+        S.slew(u, { x: lockPos.x, y: u.y, z: lockPos.z }, 20);
         u._launchOverride = { position: p, direction: d }; B._remoteShot = true;
         try { B.fireShell3D(u, 0, 0, 1, 'GATLING_BULLET'); } catch (e) {} finally { u._launchOverride = null; B._remoteShot = false; }
       };
@@ -106,12 +110,12 @@
       await S.until(() => now() - tP >= TC + TL * 0.5, 10); flakOn = false;
       await S.until(() => now() - tP >= TC + TL + TD, 10);
       S.log('impact', {});
-      S.ammoKill(Tg, bl[0], { x: Tg.x - lockPos.x, y: Tg.y - lockPos.y, z: Tg.z - lockPos.z });
+      S.ammoKill(Tg, bl[0], { x: Tg.x - (lockDive || lockPos).x, y: -20, z: Tg.z - (lockDive || lockPos).z });
       S.shellAt(bl[0], Tg.x, Tg.y + 4, Tg.z, 'HE', Math.atan2(Tg.x - lockPos.x, Tg.z - lockPos.z), 0.95);
       await S.wait(0.35);
       // máy ngoài: nhìn xác xe nổ, tháp bật bay
       // máy ngoài CÙNG PHÍA hướng UAV lao tới (nối mạch, không đảo trục): lùi theo đường bay, lệch nhẹ sang bên
-      const ax = lockPos.x - Tg.x, az = lockPos.z - Tg.z, al = Math.hypot(ax, az) || 1;
+      const LP = lockDive || lockPos, ax = LP.x - Tg.x, az = LP.z - Tg.z, al = Math.hypot(ax, az) || 1;
       const cp = { x: Tg.x + ax / al * 165 - az / al * 45, z: Tg.z + az / al * 165 + ax / al * 45 }; cp.y = top(cp.x, cp.z) + 48;
       S.shot('fixed', { pos: cp, look: { x: Tg.x, y: Tg.y + 14, z: Tg.z }, dur: 30, fov: 46 });
       S.log('scene', { n: 2, name: 'kami-after' });

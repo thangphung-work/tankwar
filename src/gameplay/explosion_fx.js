@@ -4143,8 +4143,8 @@
       // Vận tốc ngang 22-42 đv/s (~3-5 m/s): tháp rơi cách thân xe vài mét
       const latSpeed = rand(22, 42) * tossK;
       const worldVx = blastDirX * latSpeed + (Math.random() - 0.5) * 8;
-      // tung lên: xe tăng ~4-9 m (8 đơn vị = 1 m, g = 78,5 đv/s²), cụm pháo nặng / trạm vũ khí nhẹ thấp hơn
-      const worldVy = rand(70, 105) * (0.7 + 0.3 * tossK);
+      // tung lên: xe tăng ~3-7 m (8 đơn vị = 1 m, g = 78,5 đv/s²), cụm pháo nặng / trạm vũ khí nhẹ thấp hơn
+      const worldVy = rand(62, 92) * (0.7 + 0.3 * tossK);
       const worldVz = blastDirZ * latSpeed + (Math.random() - 0.5) * 8;
 
       // Chuyển vector vận tốc thế giới sang hệ local của xe (u.group)
@@ -4166,7 +4166,9 @@
 
       const T = u.fxWreck.turret = {
         v: localV,
-        w: new THREE.Vector3(rand(-3.2, 3.2), rand(-4.0, 4.0), rand(-3.2, 3.2)),
+        // lộn nhào: mỗi trục chúc / lăn tối thiểu ~1,6 rad/s (bốc đều ±3,2 hay ra gần 0 -> tháp bay lên nằm ngang lơ lửng
+        // như tấm ván, trông giả); trục quay đứng (xoáy) nhẹ hơn
+        w: new THREE.Vector3((Math.random() < 0.5 ? -1 : 1) * rand(1.6, 3.6), rand(-2.5, 2.5), (Math.random() < 0.5 ? -1 : 1) * rand(1.6, 3.6)),
         landed: false,
         scenario: scenario,
         box: this.turretBodyBox(u, t),
@@ -5427,6 +5429,16 @@
   // và dừng ngay khi khối kế tiếp nằm xa hơn điểm trúng đã có: xe hàng trăm chi tiết (đa số < 256 tam giác, không có cây
   // BVH -> dò từng tam giác) chỉ phải dò vài chi tiết đầu tia thay vì mọi chi tiết tia đi xuyên qua
   const _nhPool = [], _nhC = [], _nhHits = [], _nhS = new THREE.Sphere(), _nhV = new THREE.Vector3();
+  // Tia dò điểm đạn chạm xe: xét MỌI layer. Layer chỉ là chuyện vẽ — chi tiết nhỏ / bánh / xích của xe xa hoặc ngoài khung
+  // nhìn (game.updateUnitLOD, ngưỡng còn hạ khi GPU nóng) và cả xe mình lúc nhìn qua kính bị chuyển sang layer 1 cho camera
+  // khỏi vẽ. Tia mặc định (layer 0) bỏ qua chúng -> trước đây đạn xuyên qua bánh / xích xe xa, còn phát trúng xe đang ngắm
+  // kính bị tính "trúng sườn giữa xe" (không nảy, không lồng / khiên, không phân biệt tháp / thân). Bộ phận đã mất thật
+  // vẫn bị loại nhờ .visible = false
+  function hitRay() {
+    const rc = new THREE.Raycaster();
+    rc.layers.enableAll();
+    return rc;
+  }
   function nearestHit(rc, roots, bad) {
     const ro = rc.ray.origin, rd = rc.ray.direction, far = rc.far, C = _nhC;
     let n = 0;
@@ -6052,7 +6064,7 @@
           l.position.set(x, y + 10 * s, z);
           l.color.setRGB(1, 0.62, 0.32);
           // chớp sáng thật chỉ chiếu sáng vài chục mét quanh tâm nổ, tắt sau ~0,1 s
-          l.distance = 120 * s * Math.sqrt(lk);
+          l.distance = this.lightReach(x, y + 10 * s, z, 120 * s * Math.sqrt(lk)) || 0.001;   // xét cứ điểm (không rọi xuyên hầm)
           this.lights.push({ l, claim: l.userData.claim, t: 0, life: lk < 1 ? 0.07 : 0.12, peak: 5 * Math.sqrt(s) * lk });
         }
       }
@@ -7134,7 +7146,7 @@
 
     // Dò tia từ điểm A theo hướng dir vào mô hình xe, bỏ qua thanh máu / hiệu ứng / vết đạn
     hitUnitSurface(u, origin, dir, far) {
-      const rc = this._rc2 || (this._rc2 = new THREE.Raycaster());
+      const rc = this._rc2 || (this._rc2 = hitRay());
       rc.set(origin, dir);
       rc.far = far;
       u.group.updateMatrixWorld(true);
@@ -7157,7 +7169,7 @@
 
     // Dò tia lên MỘT bộ phận (không đệ quy) — rẻ hơn hẳn hitUnitSurface
     hitPartSurface(o, origin, dir, far) {
-      const rc = this._rc2 || (this._rc2 = new THREE.Raycaster());
+      const rc = this._rc2 || (this._rc2 = hitRay());
       rc.set(origin, dir);
       rc.far = far;
       const h = rc.intersectObject(o, false)[0];
@@ -7258,7 +7270,7 @@
       if (!l) return;
       l.position.set(x, y, z);
       l.color.setRGB(rgb[0], rgb[1], rgb[2]);
-      l.distance = dist;
+      l.distance = this.lightReach(x, y, z, dist) || 0.001;
       this.lights.push({ l, claim: l.userData.claim, t: 0, life, peak });
     }
 
@@ -7601,13 +7613,25 @@
 
     // low: ánh lửa cháy (phụ) — chỉ dùng đèn đang rảnh, không giật đèn của chớp nổ / đầu nòng.
     // flicker: lửa cháy chập chờn — sáng lên mềm rồi tắt mềm (không chớp gắt như nổ), các nhịp gối lên nhau
+    // Tầm rọi của đèn chớp tại (x, y, z) có xét cứ điểm: đèn điểm không có bóng -> nổ trên nóc hầm rọi xuyên mái bê tông,
+    // nổ sát bên ụ / trước cửa rọi xuyên tường: cả lòng hầm chớp sáng cam. Trên nóc: bỏ đèn (0); sát khối hầm: chỉ rọi gần.
+    // Nổ trong lòng hầm vẫn rọi đủ. Quả cầu lửa / khói / mảnh không đổi
+    lightReach(x, y, z, d) {
+      const tr = this.terrainOf && this.terrainOf(), SS = tr && tr.strongholdSet;
+      if (!SS || !SS.roofUnder) return d;
+      const R = SS.roofUnder(x, z);
+      if (R) return y > R.y ? 0 : d;
+      return SS.near && SS.near(x, z, 60) ? Math.min(d, 45) : d;
+    }
     addLight(x, y, z, s, life, low = false, flicker = false) {
       if (LOD.keep < 0.5 || typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;   // xa / ngoài khung nhìn: bỏ đèn chớp
+      const reach = this.lightReach(x, y, z, 300 * s);
+      if (reach <= 0) return;
       const l = SpgFXPool.muzzleLight(this.scene, { life, low });
       if (!l) return;
       l.position.set(x, y, z);
       l.color.setRGB(1, flicker ? 0.55 : 0.62, flicker ? 0.24 : 0.32);
-      l.distance = 300 * s;
+      l.distance = reach;
       this.lights.push({ l, claim: l.userData.claim, t: 0, life, peak: 7 * Math.sqrt(s), flicker });
     }
 
@@ -10212,7 +10236,7 @@ float holeQ(vec2 p, vec4 gh) {
     if (v.lengthSq() < 1e-6) v.set(0, -1, 0);
     v.normalize();
     const origin = new THREE.Vector3(shell.x, shell.y, shell.z).addScaledVector(v, -45);
-    const rc = this._rc || (this._rc = new THREE.Raycaster());
+    const rc = this._rc || (this._rc = hitRay());
     rc.set(origin, v);
     rc.far = 140;
     unit.group.updateMatrixWorld(true);

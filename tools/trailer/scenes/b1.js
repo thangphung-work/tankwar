@@ -17,12 +17,15 @@
   const noSmoke = () => { for (const u of g.units) u.smokeLeft = 0; };
   const ease = (k) => k * k * (3 - 2 * k);
   const lerp = (a, b, k) => a + (b - a) * k;
+  // tháp xoay MƯỢT (S.slew), giữ mục tiêu tới khi nó bị hạ, chỉ bắn khi nòng đã quay tới — không nhảy cóc
   const shoot = (u, v) => {
-    if (!u || u.isDead || !v || v.isDead) return;
+    if (!u || u.isDead) return;
+    if (u._tg && !u._tg.isDead) v = u._tg; else u._tg = v;
+    if (!v || v.isDead) return;
     const sol = B.solveAimingForTarget(u.x, u.y, u.z, v.x, v.z, T, u, { atUnit: true });
-    S.aim(u, { x: v.x, y: v.y + 8, z: v.z }, sol ? sol.elevation : 1);
+    S.slew(u, { x: v.x, y: v.y + 8, z: v.z }, sol ? sol.elevation : 1);
     if (sol && sol.charge) u.charge = sol.charge;
-    u.reloadTimer = 0; S.fire(u);
+    if (S.slewReady(u)) { u.reloadTimer = 0; S.fire(u); }
   };
   const kinds = ['ALL_ROUNDER', 'GATLING', 'SCOUT'];
   try {
@@ -75,8 +78,13 @@
     }, 33);
     const killShot = async (u, v, ammo, tag) => {
       if (!u || u.isDead || !v || v.isDead) return;
+      u._tg = v;
+      const sol = B.solveAimingForTarget(u.x, u.y, u.z, v.x, v.z, T, u, { atUnit: true });
+      S.slew(u, { x: v.x, y: v.y + 8, z: v.z }, sol ? sol.elevation : 1);
+      if (sol && sol.charge) u.charge = sol.charge;
+      await S.until(() => S.slewReady(u) || u.isDead || v.isDead, 1.6);
       const before = B.activeShells.slice();
-      shoot(u, v);
+      u.reloadTimer = 0; S.fire(u);
       await S.wait(0.05);
       const sh = B.activeShells.find(x => x.shooterId === u.id && !before.includes(x));
       await S.until(() => !sh || sh.exploded || !B.activeShells.includes(sh), 3);

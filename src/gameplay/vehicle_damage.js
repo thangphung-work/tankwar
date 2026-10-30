@@ -2917,7 +2917,9 @@ const VehicleDamage = (() => {
   }
 
   // Tấm vỏ nằm sau lồng thép theo hướng bay của đạn (bỏ qua nan lồng & vết đạn dán): giáp tính theo tấm này
+  // xét mọi layer: layer chỉ dùng để ẩn chi tiết khi vẽ (xem hitRay trong explosion_fx.js), không được làm tia đạn hụt
   const _rcCage = typeof THREE !== 'undefined' ? new THREE.Raycaster() : null;
+  if (_rcCage) _rcCage.layers.enableAll();
   // ma trận pháp tuyến (nghịch đảo chuyển vị): đúng cả khi mesh co giãn không đều (transformDirection làm lệch pháp tuyến)
   const _nmCage = typeof THREE !== 'undefined' ? new THREE.Matrix3() : null;
   function plateBehindCage(u, hit, dir) {
@@ -3327,6 +3329,7 @@ const VehicleDamage = (() => {
   const _rp = new THREE.Vector3(), _rn = new THREE.Vector3(), _rg = new THREE.Vector3(), _rs = new THREE.Vector3();
   const _rq = new THREE.Quaternion(), _rq2 = new THREE.Quaternion(), _rm = new THREE.Matrix4(), _rInv = new THREE.Matrix4();
   const _rRay = new THREE.Raycaster(), _rZ = new THREE.Vector3(0, 0, 1), _rHit = new THREE.Vector3(), _rHn = new THREE.Vector3();
+  _rRay.layers.enableAll();
   const DECAL_REACH = 2;   // tầm dò mặt thép quanh vết (đơn vị, cả phía ngoài lẫn phía trong vỏ)
 
   // Mặt thép gần nhất dưới điểm p theo pháp tuyến n (hệ mesh). Trả điểm chạm + pháp tuyến mặt (hệ mesh) vào _rHit/_rHn
@@ -5169,6 +5172,7 @@ const VehicleDamage = (() => {
       if (dir.lengthSq() < 1e-6) dir.set(0, -1, 0);
       dir.normalize();
       const rc = new THREE.Raycaster(P.clone().addScaledVector(dir, -8), dir, 0, 40);
+      rc.layers.enableAll();
       const h = rc.intersectObject(u.group, true).find(q => q.object.isMesh && q.object.visible && !q.object.userData.isFxDecal && q.face);
       if (h) {
         const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
@@ -5758,7 +5762,8 @@ const VehicleDamage = (() => {
   }
   // Toạ độ ảnh (uv) của điểm trúng trên mặt ô kính: dò tia ngắn vào đúng lưới ô
   function paneUV(p, point, dir, k) {
-    const rc = paneUV.rc || (paneUV.rc = new THREE.Raycaster());
+    if (!paneUV.rc) { paneUV.rc = new THREE.Raycaster(); paneUV.rc.layers.enableAll(); }
+    const rc = paneUV.rc;
     rc.set(point.clone().addScaledVector(dir, -2), dir);
     rc.far = 4;
     p.mesh.updateMatrixWorld(true);
@@ -5777,7 +5782,8 @@ const VehicleDamage = (() => {
   function rayThroughOpenPane(u, point, dir) {
     const d = u.dmg;
     if (!d || !d.glassOut || !d.panes) return false;
-    const rc = rayThroughOpenPane.rc || (rayThroughOpenPane.rc = new THREE.Raycaster());
+    if (!rayThroughOpenPane.rc) { rayThroughOpenPane.rc = new THREE.Raycaster(); rayThroughOpenPane.rc.layers.enableAll(); }
+    const rc = rayThroughOpenPane.rc;
     rc.set(point.clone().addScaledVector(dir, -90), dir);
     rc.far = 92;
     for (const p of d.panes) if (p.out && rc.intersectObject(p.mesh, false).length) return true;

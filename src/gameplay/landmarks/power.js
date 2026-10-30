@@ -67,7 +67,7 @@
     PM.vvIn = S({ map: blanketTex(api), color: 0xffffff, roughness: 0.8, metalness: 0.25 }); api.metalize(PM.vvIn);
     // tấm chắn nhiệt mạ bạc: rất bóng, sáng, ám bụi nhẹ (điểm sáng duy nhất trong lòng lò toàn thép xám)
     PM.tsh = G(0.1, { color: 0xd4d8da, roughness: 0.22, metalness: 0.9 }); PM.tsh.side = THREE.DoubleSide;
-    PM.roof = S({ map: roofTex(api), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    PM.roof = S({ map: roofTex(api), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     PM.rbar = G(3, { color: 0x45403b, roughness: 0.72, metalness: 0.5 });   // dầm thép mái gãy: thép sẫm gỉ loang (không nâu phẳng như ván gỗ)
     PM.pgreen = G(1, { color: 0x56694f, roughness: 0.7, metalness: 0.3 });   // ống nước làm mát sơn xanh lá phai
     PM.rubble = S({ map: api.detailTex('gravel'), color: 0x8e887d, roughness: 1 });
@@ -336,7 +336,9 @@
       const roofGrime = (f, y, r, w, d) => {
         const g = new THREE.PlaneGeometry(w, d), uv = g.attributes.uv, o = H(f * 0.13 + r * 0.07);
         for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 210 + o, uv.getY(i) * d / 170 + o * 1.7);
-        K.add(M.roof, g, M4(f, y + 0.12, r, -Math.PI / 2, 0, 0));
+        // cao 0,35 (~4 cm) trên mặt mái: 0,12 thì nhìn xa (máy bay ngang, ống kính dài) độ sâu không tách nổi -> lớp ố / rêu
+        // nhấp nháy giành chỗ với mặt mái
+        K.add(M.roof, g, M4(f, y + 0.35, r, -Math.PI / 2, 0, 0));
       };
       // vệt mưa chảy từ mép mái / gờ xuống mặt tường: dải dán sát mặt (top: mép trên, h: độ dài vệt), lệch pha từng mặt
       const streaks = (F, top, h, keys) => {
