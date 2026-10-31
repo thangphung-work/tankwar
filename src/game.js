@@ -745,14 +745,41 @@ class ArtilleryGame3D {
     };
     const next = () => {
       if (!alive()) { end(); return; }
+      // Người chơi đang thao tác ở sảnh: tạm dừng nhường trọn luồng chính, lùi lại chờ buông tay
+      if (this.isLobbyUserActive && this.isLobbyUserActive(2000)) {
+        setTimeout(next, 1200);
+        return;
+      }
+      // Phòng xem xe 3D đang bận dựng / nạp GPU hoặc đang mở: nhường để không nghẽn card đồ họa
+      if (window.tankInspector && (window.tankInspector.isOpen || window.tankInspector._spareCompile)) {
+        setTimeout(next, 1000);
+        return;
+      }
       const step = steps.shift();
       if (!step) return;
       let r = null;
       try { r = step(); } catch (e) { console.warn('[PREWARM] sảnh', e); }
-      if (r && typeof r.then === 'function') r.then(end, () => end());
-      else setTimeout(next, 30);
+      if (r && typeof r.then === 'function') {
+        r.then(end, () => end());
+      } else {
+        // Giãn cách nhịp giữa các xe để trình duyệt vẽ khung hình và nhận sự kiện mượt mà
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(() => setTimeout(next, 40), { timeout: 1500 });
+        } else {
+          setTimeout(next, 100);
+        }
+      }
     };
-    setTimeout(next, 30);
+    // Khởi động khi rảnh (chờ người chơi buông tay)
+    const startWarm = () => {
+      if (!alive()) return;
+      if (this.isLobbyUserActive && this.isLobbyUserActive(2000)) {
+        setTimeout(startWarm, 1500);
+      } else {
+        next();
+      }
+    };
+    setTimeout(startWarm, 100);
   }
 
   /**
@@ -786,10 +813,20 @@ class ArtilleryGame3D {
     };
     return new Promise(res => {
       const next = () => {
+        if (!roots.length || this.isGameStarted) { rt.dispose(); res(); return; }
+        // Người chơi đang thao tác ở sảnh: lùi lại nhường luồng hoàn toàn, không vẽ lúc người chơi đang click/rê chuột
+        if (this.isLobbyUserActive && this.isLobbyUserActive(1800)) {
+          setTimeout(next, 1000);
+          return;
+        }
         const root = roots.shift();
-        if (!root || this.isGameStarted) { rt.dispose(); res(); return; }
-        if (root.parent === scene && !root.isLight) drawOne(root);
-        setTimeout(next, 16);
+        if (root && root.parent === scene && !root.isLight) drawOne(root);
+        // Nhường luồng giữa các lần vẽ (tối thiểu 60-80ms) để giao diện sảnh duy trì 60fps mượt mà
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(() => setTimeout(next, 40), { timeout: 1000 });
+        } else {
+          setTimeout(next, 80);
+        }
       };
       next();
     });
@@ -2128,7 +2165,21 @@ class ArtilleryGame3D {
     }
   }
 
+  // Kiểm tra người chơi có đang thao tác ở sảnh hay không (để nhường hoàn toàn luồng chính)
+  isLobbyUserActive(timeout = 1800) {
+    if (this.isGameStarted) return false;
+    return (performance.now() - (this._lobbyUserActive || 0)) < timeout;
+  }
+
   initInput() {
+    // Theo dõi thao tác người chơi ở sảnh: nhường luồng tối đa khi người chơi đang tương tác
+    this._lobbyUserActive = performance.now();
+    const markLobbyActive = () => { if (!this.isGameStarted) this._lobbyUserActive = performance.now(); };
+    if (typeof window !== 'undefined') {
+      ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'].forEach(ev =>
+        window.addEventListener(ev, markLobbyActive, { capture: true, passive: true })
+      );
+    }
     window.addEventListener('keydown', (e) => {
       // Phòng xem xe 3D đang mở: Space dùng để bắn thử, không bắn trong trận
       if (e.code === 'Space' && window.tankInspector && window.tankInspector.isOpen) return;
@@ -11725,7 +11776,7 @@ function startArtilleryGameInstance() {
       console.info(`[BOOT] Khởi tạo game (gồm dựng bản đồ): ${Math.round(performance.now() - t0)} ms`);
       // sảnh (không phải phòng thử): để giao diện sảnh hiện xong rồi biên dịch sẵn shader xe + hiệu ứng dưới nền
       // (?nowarm: tắt — đo đối chứng)
-      if (!/[?&](lab=|nowarm)/.test(location.search)) setTimeout(() => window.game && window.game.scheduleLobbyPrewarm(), 1500);
+      if (!/[?&](lab=|nowarm)/.test(location.search)) setTimeout(() => window.game && window.game.scheduleLobbyPrewarm(), 3500);
     } catch (err) {
       console.error('Lỗi khi khởi động ArtilleryGame3D:', err);
       const st = document.getElementById('range-lab-stage');

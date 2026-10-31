@@ -22,8 +22,6 @@ const AdProvider = (() => {
   const C = Object.assign({ provider: 'auto', h5Client: '', h5Test: false, allowMock: true }, window.ADS_CONFIG || {});
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const useH5 = () => !!C.h5Client && (C.provider === 'h5' || C.provider === 'auto');
-  // Khung mẫu chỉ dùng khi CHƯA gắn mạng quảng cáo thật (đã gắn mà không có quảng cáo / bị chặn -> báo "chưa có quảng cáo",
-  // không phát khung mẫu, tránh nhận thưởng miễn phí bằng trình chặn quảng cáo)
   const useMock = () => C.provider === 'mock' || (C.provider === 'auto' && !C.h5Client && C.allowMock !== false);
   let busy = false;
 
@@ -46,22 +44,39 @@ const AdProvider = (() => {
     if (h5Loading) return h5Loading;
     h5Loading = new Promise((resolve) => {
       window.adsbygoogle = window.adsbygoogle || [];
-      window.adBreak = window.adConfig = function (o) { window.adsbygoogle.push(o); };
-      // index.html đã nạp adsbygoogle.js trong <head> (AdSense): dùng lại, không nạp lần hai
-      if (document.querySelector('script[src*="adsbygoogle.js"]')) {
+      window.adBreak = window.adBreak || function (o) { window.adsbygoogle.push(o); };
+      window.adConfig = window.adConfig || function (o) { window.adsbygoogle.push(o); };
+
+      const existing = document.querySelector('script[src*="adsbygoogle.js"]');
+      if (existing) {
         try { window.adConfig({ preloadAdBreaks: 'on', sound: 'on' }); } catch (e) { /* bỏ qua */ }
-        return resolve(true);
+        if (window.adsbygoogle && window.adsbygoogle.loaded) return resolve(true);
+
+        let done = false;
+        const finish = (ok) => { if (done) return; done = true; resolve(ok); };
+        existing.addEventListener('load', () => {
+          try { window.adConfig({ preloadAdBreaks: 'on', sound: 'on' }); } catch (e) {}
+          finish(true);
+        }, { once: true });
+        existing.addEventListener('error', () => finish(false), { once: true });
+        // Thời gian chờ tối đa 4 giây để tệp mã tải về
+        setTimeout(() => finish(!!(window.adsbygoogle && window.adsbygoogle.loaded)), 4000);
+        return;
       }
+
       const s = document.createElement('script');
       s.async = true;
       s.crossOrigin = 'anonymous';
       s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(C.h5Client);
       if (C.h5Test) s.setAttribute('data-adbreak-test', 'on');
+      let done = false;
+      const finish = (ok) => { if (done) return; done = true; resolve(ok); };
       s.onload = () => {
         try { window.adConfig({ preloadAdBreaks: 'on', sound: 'on' }); } catch (e) { /* bỏ qua */ }
-        resolve(true);
+        finish(true);
       };
-      s.onerror = () => resolve(false);   // trình chặn quảng cáo / mất mạng
+      s.onerror = () => finish(false);
+      setTimeout(() => finish(false), 5000);
       document.head.appendChild(s);
     });
     return h5Loading;
@@ -87,32 +102,91 @@ const AdProvider = (() => {
 
   async function showH5(o) {
     const ok = await loadH5();
-    if (!ok) return 'unavailable';
+    if (!ok && !(window.adsbygoogle && window.adsbygoogle.loaded)) {
+      console.warn('[ADS] Tệp mã Google Ads không thể nạp hoặc bị chặn.');
+      return 'unavailable';
+    }
     return new Promise((resolve) => {
-      let result = null, offered = false;
+      let result = null, offered = false, settled = false;
+      let adTimer = null;
+
+      const finish = (status) => {
+        if (settled) return;
+        settled = true;
+        if (adTimer) clearTimeout(adTimer);
+        unmuteGame();
+        resolve(status);
+      };
+
+      // Hẹn giờ bảo vệ: 7 giây không có phản hồi từ Google thì kết thúc để tránh quay hoài
+      adTimer = setTimeout(() => {
+        console.warn('[ADS] Quá thời gian chờ phản hồi từ Google (7 giây)');
+        finish('unavailable');
+      }, 7000);
+
       try {
         window.adBreak({
           type: 'reward',
           name: o.name || 'reward',
-          beforeAd: muteGame,
-          afterAd: unmuteGame,
+          beforeAd: () => {
+            muteGame();
+            // Đang phát video thật: kéo dài thời gian tối đa để người chơi xem hết
+            if (adTimer) clearTimeout(adTimer);
+            adTimer = setTimeout(() => {
+              console.warn('[ADS] Quá thời gian tối đa phát video quảng cáo (90 giây)');
+              finish(result || 'unavailable');
+            }, 90000);
+          },
+          afterAd: () => {
+            unmuteGame();
+          },
           // Nút gọi tới đây (kho vũ khí / tiếp tế) đã ghi rõ "xem quảng cáo nhận ..." = người chơi đã chủ động chọn
           // -> phát ngay, không hỏi lại. Cần hộp xác nhận riêng thì truyền o.confirm = true.
           beforeReward: (showAdFn) => {
             offered = true;
-            if (!o.confirm) { showAdFn(); return; }
-            confirmBox(o.label).then((yes) => { if (yes) showAdFn(); else { result = 'skip'; resolve('skip'); } });
+            if (adTimer) clearTimeout(adTimer);
+            adTimer = setTimeout(() => {
+              console.warn('[ADS] Quá thời gian chờ sau khi sẵn sàng phát (60 giây)');
+              finish(result || 'unavailable');
+            }, 60000);
+
+            if (!o.confirm) {
+              showAdFn();
+              return;
+            }
+            confirmBox(o.label).then((yes) => {
+              if (yes) {
+                showAdFn();
+              } else {
+                result = 'skip';
+                finish('skip');
+              }
+            });
           },
-          adDismissed: () => { result = 'skip'; },
-          adViewed: () => { result = 'done'; },
+          adDismissed: () => {
+            result = 'skip';
+          },
+          adViewed: () => {
+            result = 'done';
+          },
           adBreakDone: (info) => {
-            unmuteGame();
-            if (result) resolve(result);
-            else if (!offered) resolve('unavailable');   // không có quảng cáo (notReady / frequencyCapped / ...)
-            else if (info && info.breakStatus === 'viewed') resolve('done');
+            console.log('[ADS] Kết quả từ Google adBreakDone:', info && info.breakStatus);
+            if (result) {
+              finish(result);
+            } else if (info && info.breakStatus === 'viewed') {
+              finish('done');
+            } else if (info && info.breakStatus === 'dismissed') {
+              finish('skip');
+            } else {
+              // Bất kỳ trường hợp nào khác (notReady, error, timeout, noAdPreloaded, other)
+              finish('unavailable');
+            }
           }
         });
-      } catch (e) { resolve('unavailable'); }
+      } catch (e) {
+        console.warn('[ADS] Ngoại lệ khi gọi adBreak:', e);
+        finish('unavailable');
+      }
     });
   }
 
@@ -150,10 +224,44 @@ const AdProvider = (() => {
     if (busy) return 'unavailable';
     busy = true;
     try {
-      if (useH5()) return await showH5(o);
+      if (useH5()) {
+        const r = await showH5(o);
+        if (r === 'done' || r === 'skip') return r;
+        // Nếu Google không có quảng cáo hoặc bị lỗi/chặn mà cấu hình cho phép khung mẫu thì dự phòng
+        if (C.allowMock) {
+          console.warn('[ADS] Quảng cáo Google không sẵn sàng, tự động chuyển sang khung mẫu dự phòng');
+          return await showMock(o);
+        }
+        return 'unavailable';
+      }
       if (useMock()) return await showMock(o);
       return 'unavailable';
     } finally { busy = false; }
+  }
+
+  // Kiểm tra trạng thái hiện tại của hệ thống quảng cáo
+  function checkStatus() {
+    const script = document.querySelector('script[src*="adsbygoogle.js"]');
+    const isLoaded = !!(window.adsbygoogle && window.adsbygoogle.loaded);
+    const info = {
+      h5Client: C.h5Client || '(trống)',
+      h5Test: !!C.h5Test,
+      allowMock: !!C.allowMock,
+      scriptInDom: !!script,
+      sdkLoaded: isLoaded,
+      adBreakFunctionReady: typeof window.adBreak === 'function'
+    };
+    console.table(info);
+    return info;
+  }
+
+  // Thử gọi quảng cáo trực tiếp để kiểm tra phản hồi
+  async function test() {
+    console.log('[ADS TEST] Bắt đầu gọi thử quảng cáo...');
+    checkStatus();
+    const res = await showRewarded({ name: 'test_ad', label: 'Thử nghiệm', sec: 5 });
+    console.log('[ADS TEST] Kết quả kiểm tra:', res);
+    return res;
   }
 
   // Có thể phát quảng cáo không (để ẩn nút khi đã tắt quảng cáo)
@@ -163,6 +271,6 @@ const AdProvider = (() => {
   // Giao diện cũ: show({ onDone, onFail })
   function show(o) { showRewarded(o).then(r => (r === 'done' ? o.onDone && o.onDone() : o.onFail && o.onFail())); }
 
-  return { showRewarded, show, available, config: C };
+  return { showRewarded, show, available, config: C, checkStatus, test };
 })();
 window.AdProvider = AdProvider;

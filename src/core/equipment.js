@@ -20,7 +20,7 @@
   // Không giới hạn ô (lắp được mọi món cùng lúc): tắt -> mỗi nhóm GIÁP / PHỤ KIỆN chỉ 2 ô, phải chọn món hợp lối chơi
   // (lắp được hết thì không còn đánh đổi, ai cũng lắp đủ mọi món). Vẫn miễn phí khi ALL_FREE.
   const UNLIMITED_SLOTS = false;
-  const START_SILVER = 4000;   // đủ mua ngay 1 món nâng cao đầu tiên (rẻ nhất mỗi xe 2.600–3.400)
+  const START_SILVER = 0;   // vào game chỉ có trang bị cơ bản miễn phí, muốn mở khóa đồ nâng cao / đạn cao cấp phải cày
 
   // ---------------------------------------------------------------------------
   // DANH MỤC

@@ -231,6 +231,7 @@ class TankInspector {
       const mm = window.matchmakingController;
       if (mm && mm.state && mm.state !== 'IDLE') { this.schedulePrewarm(3000); return; }
       if (performance.now() - this._lobbyActive < 1500) { this.schedulePrewarm(1500); return; }
+      if (window.game && window.game._lobbyWarm && !window.game._lobbyWarm.done) { this.schedulePrewarm(2000); return; }
     }
     try {
       this.initThreeScene();
