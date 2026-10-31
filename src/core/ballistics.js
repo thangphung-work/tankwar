@@ -2609,15 +2609,28 @@ class BallisticsSystem3D {
     // BỘ ĐỆM ĐƯỜNG NGẮM (Aim Cache): Tiết kiệm 90% chi phí tích phân Euler cho 20 xe
     if (!this._aimCache) this._aimCache = new Map();
     const cacheNow = performance.now();
+    const isBotShooter = !!(shooterObj && !shooterObj.isPlayer);
     const targetY0 = terrain && terrain.getElevationAt ? terrain.getElevationAt(targetX, targetZ) : 0;
-    const distKey = Math.round(dist / 3.5);
+    const distStep = isBotShooter ? 5.5 : 3.5;
+    const distKey = Math.round(dist / distStep);
     const dyKey = Math.round((targetY0 - shooterY) / 2);
     const tType = shooterObj ? shooterObj.tankType : 'ALL';
     const tAmmo = shooterObj ? shooterObj.selectedAmmo : 'NORMAL';
     const cacheKey = `${tType}:${tAmmo}:${distKey}:${dyKey}:${opts && opts.preferLob ? 1 : 0}`;
     const cached = this._aimCache.get(cacheKey);
-    if (cached && (cacheNow - cached.t < 350)) {
+    const ttl = isBotShooter ? 650 : 350;
+    if (cached && (cacheNow - cached.t < ttl)) {
       return Object.assign({}, cached.res, { azimuth: baseAz });
+    }
+    if (isBotShooter) {
+      if (cacheNow - (this._botSolveFrameT || 0) > 12) {
+        this._botSolveFrameT = cacheNow;
+        this._botSolveCount = 0;
+      }
+      if ((this._botSolveCount || 0) >= 2 && shooterObj._lastAimRes) {
+        return Object.assign({}, shooterObj._lastAimRes, { azimuth: baseAz });
+      }
+      this._botSolveCount = (this._botSolveCount || 0) + 1;
     }
     const ux = dist > 0 ? dx / dist : 0, uz = dist > 0 ? dz / dist : -1;
 
@@ -2766,7 +2779,15 @@ class BallisticsSystem3D {
         impactX: best.impactX, impactZ: best.impactZ
       };
     };
-    if (!arty) return this.aimCenterMass(solveFor(1), shooterY, dist, targetX, targetZ, terrain, shooterObj, probe, opts);
+    if (!arty) {
+      const sol = this.aimCenterMass(solveFor(1), shooterY, dist, targetX, targetZ, terrain, shooterObj, probe, opts);
+      if (sol && this._aimCache) {
+        if (this._aimCache.size > 250) this._aimCache.clear();
+        this._aimCache.set(cacheKey, { t: cacheNow, res: Object.assign({}, sol) });
+      }
+      if (shooterObj && sol) shooterObj._lastAimRes = sol;
+      return sol;
+    }
     // Lựu pháo: chọn quỹ đạo. Tự động: địch gần (dưới tầm cầu vồng ngắn nhất) -> hạ nòng bắn thẳng, xa -> cầu vồng;
     // bắn thẳng bị đồi / nhà chặn mà vẫn đủ xa cho cầu vồng thì chuyển sang cầu vồng (và ngược lại).
     const mode = (opts && opts.artyMode) || (shooterObj && shooterObj.artyFireMode) || 'auto';

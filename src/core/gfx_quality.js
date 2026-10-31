@@ -10,7 +10,7 @@
  */
 const GfxQuality = (() => {
   const MAX_PIXELS = 3840 * 2160;   // trần số điểm ảnh vẽ (màn 4K không scale -> không vẽ 8K)
-  const MIN_RATIO = 0.6;            // độ phân giải thấp nhất khi GPU quá tải (tỉ lệ so với điểm ảnh CSS)
+  const MIN_RATIO = 0.78;           // độ phân giải thấp nhất khi GPU quá tải (giữ hình sắc nét sau khi đã cắt hình học thừa)
   const STEP = 0.125;
 
   let renderer = null, gl = null, ext = null;

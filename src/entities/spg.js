@@ -389,7 +389,17 @@ function spgImpact(unit, mat, pos, vn, vt, mA, mB, first, other) {
     if (S && S.collideAt) S.collideAt(pos, { J, vn, mA, mB, mat, self, key });
     // rung camera theo xung lực (xe tăng 60 tấn đâm tường ở 36 km/h rung mạnh; xe 4x4 cạ ô tô gần như không)
     const g = typeof window !== 'undefined' && window.game;
-    if (self && g) g.cameraShake = Math.max(g.cameraShake || 0, Math.min(9, Math.sqrt(J) / 7));
+    if (self && g) {
+      g.cameraShake = Math.max(g.cameraShake || 0, Math.min(9, Math.sqrt(J) / 7));
+      if (g.pushCamera) {
+        const pUnit = (unit && unit.isPlayer) ? unit : (other && other.isPlayer) ? other : null;
+        if (pUnit && pos) {
+          const dx = pUnit.x - pos.x, dz = pUnit.z - pos.z, d = Math.hypot(dx, dz) || 1;
+          const p = Math.min(18, Math.sqrt(J) * 0.35);
+          g.pushCamera(dx / d * p, Math.min(8, p * 0.4), dz / d * p);
+        }
+      }
+    }
     // bụi tường / đất tung ở chỗ va, tia lửa thép - thép
     const fx = spgFx();
     if (fx && fx.smoke && J > 300) {
@@ -2169,7 +2179,10 @@ class SPGUnit3D {
           const S = window.soundEngine;
           if (S && S.landAt) S.landAt({ x: this.x, y: this.y, z: this.z }, { k, mA: this.mass || 40, wheeled: wheeledDrive, self: !!this.isPlayer, key: this.id });
           else if (this.isPlayer && S && S.playCollision) S.playCollision(0.4 + 0.6 * k, 'obstacle');
-          if (this.isPlayer && window.game) window.game.cameraShake = Math.max(window.game.cameraShake || 0, 4 + 10 * k);
+          if (this.isPlayer && window.game) {
+            window.game.cameraShake = Math.max(window.game.cameraShake || 0, 4 + 10 * k);
+            if (window.game.pushCamera) window.game.pushCamera(0, -Math.min(20, 6 + 18 * k), 0);
+          }
         }
       }
     } else {
@@ -2250,7 +2263,19 @@ class SPGUnit3D {
 
     // Hoạt ảnh riêng của model (xích từng mắt, bánh lăn theo từng bên...)
     if (this.modelAnimator) {
-      this.modelAnimator.update(dt, this);
+      if (!this.isPlayer && (this.isHiddenFromPlayer || (this.group && !this.group.visible))) {
+        this._animDtAcc = 0;
+      } else if (!this.isPlayer && typeof SpgFXPool !== 'undefined' && !SpgFXPool.isNearView(this.x, this.z, 380)) {
+        this._animDtAcc = (this._animDtAcc || 0) + dt;
+        this._animSkip = ((this._animSkip || 0) + 1) & 1;
+        if (this._animSkip === 0) {
+          this.modelAnimator.update(this._animDtAcc, this);
+          this._animDtAcc = 0;
+        }
+      } else {
+        this.modelAnimator.update(dt + (this._animDtAcc || 0), this);
+        this._animDtAcc = 0;
+      }
     }
 
     // Dồn trọng tâm: tăng tốc ngóc mũi, phanh chúi mũi, vào cua nghiêng ra ngoài (xe bánh lốp nghiêng nhiều hơn xe xích)
@@ -2498,9 +2523,10 @@ class SPGUnit3D {
     // Nòng pháo không xuyên qua bê tông / ụ đất của cứ điểm: hạ nòng khi chạm trần, tháp dừng ở mép tường
     if (terrain && terrain.barrelBlocked && terrain.nearStronghold && terrain.nearStronghold(this.x, this.z)) this.applyBarrelClearance(terrain);
     // Nòng pháo không xoay / nâng hạ xuyên qua tường bê tông, nhà: chạm mặt tường là tháp dừng lại
-    if (terrain && terrain.vehicleObstacles && typeof VehicleCollision !== 'undefined' && !this._netProxy && !this.isDead) this.applyWallBarrelBlock(terrain, prevTurretYaw, prevBarrelEl);
+    const barrelMoved = Math.abs(this.speed || 0) > 0.1 || Math.abs((this._turretYaw || 0) - prevTurretYaw) > 1e-4 || Math.abs(elRad - prevBarrelEl) > 1e-4;
+    if (barrelMoved && terrain && terrain.vehicleObstacles && typeof VehicleCollision !== 'undefined' && !this._netProxy && !this.isDead) this.applyWallBarrelBlock(terrain, prevTurretYaw, prevBarrelEl);
     // Nòng quét / đập vào cảnh vật: rào đổ, thùng rác văng, cột đèn gãy, bao cát rơi, cây non gãy (gameplay/barrel_sweep.js)
-    if (terrain && typeof BarrelSweep !== 'undefined') BarrelSweep.update(this, terrain, dt, prevTurretYaw, prevBarrelEl);
+    if (barrelMoved && terrain && typeof BarrelSweep !== 'undefined') BarrelSweep.update(this, terrain, dt, prevTurretYaw, prevBarrelEl);
 
     // 15. CẬP NHẬT THANH MÁU 3D (BILLBOARD CHUẨN: LUÔN HƯỚNG VỀ CAMERA, KHÔNG XOAY THEO THÂN XE HAY THÁP PHÁO)
     const hpU = this.hpBarMesh && this.hpBarMesh.material && this.hpBarMesh.material.uniforms;

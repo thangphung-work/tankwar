@@ -3464,9 +3464,7 @@ const VehicleDamage = (() => {
           const guess = new THREE.Vector3();
           if (!move(_rg, guess)) continue;
           const sc = _rs.clone();
-          if (!surfaceUnder(mesh, guess, n)) { dropDecal(u, mesh, ch, slot, B); continue; }
-          _rq2.setFromUnitVectors(n, _rHn).multiply(_rq);
-          ch.setMatrixAt(slot, _rm.compose(_rHit.addScaledVector(_rHn, lift), _rq2, sc));
+          ch.setMatrixAt(slot, _rm.compose(guess.addScaledVector(n, lift), _rq, sc));
           dirty = true;
         }
         if (dirty) ch.instanceMatrix.needsUpdate = true;
@@ -3569,6 +3567,18 @@ const VehicleDamage = (() => {
   // Hố móp sâu tại điểm trúng: tấm thép bị đẩy lõm vào trong theo hướng đạn, có nếp nhăn
   function crumpleAt(u, worldPoint, worldDir, R, depth) {
     if (!u || !u.group || !worldPoint || depth <= 0.01) return false;
+    if (!MUTE && typeof performance !== 'undefined') {
+      const now = performance.now();
+      if (now - (u._lastCrumpleAt || 0) < 40) {
+        u._pendCrumpleDepth = Math.min(2.5, (u._pendCrumpleDepth || 0) + depth * 0.65);
+        return false;
+      }
+      u._lastCrumpleAt = now;
+      if (u._pendCrumpleDepth) {
+        depth += u._pendCrumpleDepth;
+        u._pendCrumpleDepth = 0;
+      }
+    }
     const d = state(u);
     // giáp dày móp nông & hẹp hơn tôn mỏng (đạn nổ trên giáp chủ lực chỉ để lại vết lõm vài cm)
     const S = softness(u);

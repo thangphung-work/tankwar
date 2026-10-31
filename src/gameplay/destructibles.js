@@ -3028,9 +3028,14 @@ const Destructibles = (() => {
   // Chỗ gãy lấy từ attribute instance 'brk' (độ cao gãy theo đơn vị cục bộ của cây, 0 = chưa gãy / bật cả gốc)
   // Tán lá cũng cắt theo chỗ gãy (thẻ lá cắt theo tâm thẻ): 'leaf' tán khúc ngọn | 'leafStump' phần tán dưới chỗ gãy ở lại trên gốc cụt
   const isLeaf = mode => mode === 'leaf' || mode === 'leafStump';
-  function brkCut(fs, mode) {
-    return 'varying float vBrk;\nvarying float vLY;\n' + fs.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' +
-      (mode === 'stump' || mode === 'leafStump' ? '  if (vLY > vBrk) discard;' : '  if (vBrk > 0.0 && vLY < vBrk) discard;'));
+  // Phần gốc cụt / khúc ngọn chỉ khác nhau ở điều kiện cắt -> chọn bằng uniform uStumpCut (đặt riêng từng vật liệu), cùng một
+  // chương trình shader: bớt 1 shader thân (~1,5 s biên dịch trên ANGLE D3D11) + 1 shader tán + 2 shader bóng lúc vào trận
+  const isStump = mode => mode === 'stump' || mode === 'leafStump';
+  const cutKey = mode => (mode === 'stump' ? 'trunk' : mode === 'leafStump' ? 'leaf' : mode);
+  function brkCut(sh, fs, mode) {
+    sh.uniforms.uStumpCut = { value: isStump(mode) ? 1 : 0 };
+    return 'varying float vBrk;\nvarying float vLY;\nuniform float uStumpCut;\n' + fs.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' +
+      '  if (uStumpCut > 0.5 ? vLY > vBrk : (vBrk > 0.0 && vLY < vBrk)) discard;');
   }
   // Cháy: attribute instance 'burn' — tán lá: tiến độ cháy 0..1 (lá cháy loang dần theo nhiễu, mép cháy đỏ rực rồi đen);
   // thân / gốc cụt: độ rực than hồng 0..1 trong các vết nứt vỏ (đang cháy / âm ỉ sau khi cháy)
@@ -3119,11 +3124,11 @@ const Destructibles = (() => {
       if (isLeaf(mode)) fs = fs.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize(vNormal); geometryNormal = normal;')
         .replace('#include <color_fragment>', '#include <color_fragment>\n  if (!gl_FrontFacing) diffuseColor.rgb *= 0.72;');
       if (isLeaf(mode)) sh.uniforms.uLeafTr = LEAF_TR;
-      sh.fragmentShader = brkCut('varying vec3 vTint;\n' + (isLeaf(mode) ? 'uniform float uLeafTr;\n' : '') + BURN_DECL + fs, mode);
+      sh.fragmentShader = brkCut(sh, 'varying vec3 vTint;\n' + (isLeaf(mode) ? 'uniform float uLeafTr;\n' : '') + BURN_DECL + fs, mode);
     };
     const img = mat.map && mat.map.image, texW = (img && img.width) || 256, texH = (img && img.height) || 256;
     if (isLeaf(mode)) mat.extensions = { derivatives: true };
-    mat.customProgramCacheKey = () => 'tree_' + mode + (isLeaf(mode) ? '_' + texW + 'x' + texH : '');
+    mat.customProgramCacheKey = () => 'tree_' + cutKey(mode) + (isLeaf(mode) ? '_' + texW + 'x' + texH : '');
     return mat;
   }
   // Độ trong của thẻ lá (alphaTest 0.4 + alphaToCoverage):
@@ -3165,9 +3170,9 @@ const Destructibles = (() => {
       sh.vertexShader = treeVS(sh.vertexShader, mode, false);
       let fs = sh.fragmentShader;
       if (isLeaf(mode)) fs = fs.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n  if (vBurn > 0.0 && leafBurnD(vLP, vUv, vBurn) < 0.0) discard;');
-      sh.fragmentShader = brkCut(BURN_DECL + fs, mode);
+      sh.fragmentShader = brkCut(sh, BURN_DECL + fs, mode);
     };
-    m.customProgramCacheKey = () => 'treeD_' + mode;
+    m.customProgramCacheKey = () => 'treeD_' + cutKey(mode);
     return m;
   }
   // Hồ sơ thân chính theo độ cao (bước 2 đv cục bộ): tâm thân (x,z) & bán kính -> đặt đúng gốc cụt / vết gãy trên thân cong

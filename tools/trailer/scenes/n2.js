@@ -95,14 +95,18 @@
           if (fix !== null) art.elevation = fix;
           S.log('aimfix', { el0: +el0.toFixed(2), el: fix === null ? null : +fix.toFixed(2) });
         }
-        // NHỊP 1 — phát bắn: máy thấp sát bánh xe pháo, chếch trước nòng; quả cầu lửa, nòng giật, bụi bị thổi bung
-        const fx = Math.sin(art.azimuth * Math.PI / 180), fz = -Math.cos(art.azimuth * Math.PI / 180);   // hướng nòng
-        // máy thấp bên sườn, lùi về sau xe: thấy trọn nòng ngóc cao + đầu nòng (quả cầu lửa) trong khung
-        const sd = (fz * Math.cos(LIT) - fx * Math.sin(LIT)) >= 0 ? 1 : -1;   // bên sườn cùng phía mặt trời (thuận sáng, không ngược nắng)
-        const c1 = { x: art.x - fx * 18 + fz * 75 * sd, z: art.z - fz * 18 - fx * 75 * sd }; c1.y = S.ground(c1.x, c1.z) + 5;
-        S.shot('fixed', { pos: c1, look: { x: art.x + fx * 22, y: art.y + 30, z: art.z + fz * 22 }, dur: 30, fov: 56 });
+        // NHỊP 1 — NẠP ĐẠN + BẮN, nhìn từ trên nóc tháp (sau, chếch bên thuận nắng): nắp khoang trượt mở, cầu trục gắp đạn rồi
+        // liều phóng lên máng, máng xoay theo nòng, xích tống vào buồng (nòng cao hơn 40° thì hạ về nạp rồi nâng lại) -> khai hỏa
+        const TG = art.turretGroup; TG.updateMatrixWorld(true);
+        const ex = new THREE.Vector3(1, 0, 0).transformDirection(TG.matrixWorld);
+        const sd = (ex.x * Math.cos(LIT) + ex.z * Math.sin(LIT)) >= 0 ? 1 : -1;
+        const c1 = TG.localToWorld(new THREE.Vector3(7 * sd, 9.6 + 27, 19)), l1 = TG.localToWorld(new THREE.Vector3(0, 9.6 + 1, 6.5));   // gần như ngay trên khoang nạp, nhìn xuống
+        S.shot('fixed', { pos: c1, look: l1, dur: 30, fov: 50 });
         S.log('scene', { n: 2, name: 'arty-house' });
-        await S.wait(1.2);
+        await S.wait(0.3);
+        art.reloadTimer = art.reloadDuration || 3; S.log('load', { d: art.reloadDuration });
+        await S.until(() => (art.reloadTimer || 0) <= 0.02, 12);
+        await S.wait(0.25);
         const before = B.activeShells.slice();
         // phát này không tản mát (đạn rơi đúng nhà như kịch bản)
         const DP = window.Dispersion, op = DP && DP.perturb;

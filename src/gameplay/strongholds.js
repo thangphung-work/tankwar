@@ -2583,13 +2583,13 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (rnd() < 0.65) add(h, 'scorch', R(5, 8));
       });
       // đạn nảy / nổ trên giáp không thủng
-      for (let k = 0, n = 9 + Math.floor(rnd() * 5); k < n; k++) jobs.push(() => {
+      for (let k = 0, n = 5 + Math.floor(rnd() * 3); k < n; k++) jobs.push(() => {
         const h = this.wreckHit(fx, W);
         add(h, 'armorCrater', R(3, 4.2));
         if (rnd() < 0.5) add(h, 'scorch', R(4, 6));
       });
       // rỗ đạn súng máy / mảnh văng
-      for (let k = 0, n = 50 + Math.floor(rnd() * 25); k < n; k++) jobs.push(() => add(this.wreckHit(fx, W), rnd() < 0.6 ? 'steelDent' : 'heiSplash', R(1.4, 2.6)));
+      for (let k = 0, n = 18 + Math.floor(rnd() * 8); k < n; k++) jobs.push(() => add(this.wreckHit(fx, W), rnd() < 0.6 ? 'steelDent' : 'heiSplash', R(1.5, 2.7)));
       // muội đen loang trên nóc (lửa cháy trong khoang trùm lên)
       for (let k = 0, n = P.kill === 'crew' ? 1 : 3; k < n; k++) jobs.push(() => add(this.wreckHit(fx, W, true), 'scorch', R(8, 13)));
       // xác còn cháy âm ỉ: than hồng lập lòe ở lỗ thủng
@@ -2639,10 +2639,20 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     // cứ điểm ~400 lượt vẽ mỗi khung. Xa quá FAR thì ẩn (than hồng phát sáng giữ lại), lại gần hiện lại đúng
     // những vết đã ẩn
     wreckMarkLOD(cam) {
-      const FAR = 950, H = 80;
+      const FAR = 520, H = 60, SH_FAR = 680;
       for (const K of this.items) for (const W of K.wrecks || []) {
-        if (!W.dressed || !W.u || !W.u.group) continue;
+        if (!W.u || !W.u.group) continue;
         const d = Math.hypot(cam.position.x - W.sx, cam.position.y - W.sy, cam.position.z - W.sz);
+        const shFar = W._shHid ? d > SH_FAR - H : d > SH_FAR + H;
+        if (shFar !== !!W._shHid) {
+          W._shHid = shFar;
+          for (const root of [W.u.group, W.turret]) if (root) root.traverse(o => {
+            if (!o.isMesh || o.userData.isFxDecal) return;
+            if (o.userData._wCast === undefined) o.userData._wCast = !!o.castShadow;
+            o.castShadow = !shFar && o.userData._wCast;
+          });
+        }
+        if (!W.dressed) continue;
         const far = W.mHid ? d > FAR - H : d > FAR + H;
         if (far === !!W.mHid) continue;
         if (far) {

@@ -7376,20 +7376,21 @@
           this.streaks.add({ x: tip.x, y: tip.y, z: tip.z, vx: (d.x + j.x) * sp, vy: (d.y + j.y) * sp, vz: (d.z + j.z) * sp,
             life: rand(0.05, 0.16), drag: 2.5, grav: 60, tail: 0.012 });
         }
-        // (4) khói thuốc phóng: phụt mạnh về trước, khựng lại, nở bung thành đám mây xám nâu lơ lửng trôi theo gió
-        const nC = Math.round(20 * k);
+        // (4) khói thuốc phóng: phụt mạnh về trước, khựng lại, nở bung thành đám mây xám nâu mỏng rồi tan nhanh (thuốc phóng
+        // ít khói: 1-2 s là loãng — trước đây 20 hạt đặc sống 4 s, to ngang mây khói đạn nổ, che kín tầm nhìn sau mỗi phát)
+        const nC = Math.round(12 * k);
         for (let i = 0; i < nC; i++) {
           const j = ring(Math.random() * 6.283, rand(0, 0.35)), sp = rand(60, 280) * k, g = rand(0.56, 0.72);
           p = at(rand(2, 9) * k);
           this.smoke.add({ x: p.x, y: p.y, z: p.z, vx: (d.x + j.x) * sp, vy: (d.y + j.y) * sp + rand(2, 8), vz: (d.z + j.z) * sp,
-            size: rand(6, 11) * k, grow: rand(14, 24) * k, drag: rand(3.2, 4.6), grav: -2, life: rand(2.4, 4.4), alpha: rand(0.5, 0.66), fadeIn: 0.015, fadePow: 1.2,
+            size: rand(5, 9) * k, grow: rand(8, 13) * k, drag: rand(3.2, 4.6), grav: -2, life: rand(1.5, 2.6), alpha: rand(0.3, 0.42), fadeIn: 0.015, fadePow: 1.6,
             c0: [g, g * 0.96, g * 0.9], c1: [g * 1.12, g * 1.1, g * 1.06], cell: 0 });
         }
         // muội đen sẫm sát miệng nòng
         for (let i = 0; i < 4; i++) {
           const sp = rand(15, 60) * k;
           this.smoke.add({ x: tip.x, y: tip.y, z: tip.z, vx: d.x * sp, vy: d.y * sp + rand(1, 4), vz: d.z * sp,
-            size: rand(2.5, 4) * k, grow: rand(8, 12) * k, drag: 3, grav: -2, life: rand(1.2, 2), alpha: 0.5, fadeIn: 0.01,
+            size: rand(2.5, 4) * k, grow: rand(8, 12) * k, drag: 3, grav: -2, life: rand(1, 1.6), alpha: 0.35, fadeIn: 0.01,
             c0: [0.3, 0.28, 0.26], c1: [0.55, 0.53, 0.5], cell: 0, floor: false });
         }
         // vòng khói xoáy: khí phụt ra cuộn thành vành quanh miệng nòng, nở ra vuông góc với nòng
@@ -7399,7 +7400,7 @@
           p = at(rand(1, 4) * k);
           this.smoke.add({ x: p.x + r.x * 1.5 * k, y: p.y + r.y * 1.5 * k, z: p.z + r.z * 1.5 * k,
             vx: r.x * sp + d.x * rand(12, 30) * k, vy: r.y * sp + d.y * rand(12, 30) * k + 1.5, vz: r.z * sp + d.z * rand(12, 30) * k,
-            size: rand(2.5, 4) * k, grow: rand(8, 12) * k, drag: 4.5, grav: -1.5, life: rand(1.3, 2.3), alpha: 0.42, fadeIn: 0.01,
+            size: rand(2.5, 4) * k, grow: rand(7, 10) * k, drag: 4.5, grav: -1.5, life: rand(0.9, 1.6), alpha: 0.28, fadeIn: 0.01,
             c0: [g, g * 0.98, g * 0.95], cell: 0, floor: false });
         }
         // loa hãm lùi (lựu pháo): khí thuốc phóng hắt ngang hai bên — lửa ngắn + 2 luồng khói phản lực rất mạnh
@@ -7417,7 +7418,7 @@
               const sp = rand(60, 210), g = rand(0.58, 0.72);
               this.smoke.add({ x: bp.x + sd.x * s * 2.4, y: bp.y + sd.y * s * 2.4, z: bp.z + sd.z * s * 2.4,
                 vx: jd.x * sp + rand(-8, 8), vy: jd.y * sp + rand(2, 7), vz: jd.z * sp + rand(-8, 8),
-                size: rand(4, 7), grow: rand(14, 20), drag: rand(3.5, 4.5), grav: -2, life: rand(2.2, 3.6), alpha: 0.5, fadeIn: 0.015,
+                size: rand(4, 7), grow: rand(10, 15), drag: rand(3.5, 4.5), grav: -2, life: rand(1.6, 2.6), alpha: 0.36, fadeIn: 0.015,
                 c0: [g, g * 0.96, g * 0.9], c1: [g * 1.1, g * 1.08, g * 1.04], cell: 0 });
             }
           }
@@ -7445,7 +7446,7 @@
             const px = cx + Math.cos(a) * rg, pz = cz + Math.sin(a) * rg;
             const dist = Math.hypot(px - tip.x, h, pz - tip.z), sp = rand(70, 190) * k * (0.5 + 0.5 * dk);
             this.smoke.add({ x: px, y: this.groundAt(px, pz) + 0.8, z: pz, vx: rx * sp, vy: rand(3, 12), vz: rz * sp,
-              size: rand(3.5, 7) * k, grow: rand(10, 18) * k, drag: 4.8, grav: -0.5, life: rand(1.6, 3.2) * P.linger, alpha: rand(0.35, 0.55) * Math.min(1, dk),
+              size: rand(3.5, 7) * k, grow: rand(8, 14) * k, drag: 4.8, grav: -0.5, life: rand(1.3, 2.4) * P.linger, alpha: rand(0.26, 0.4) * Math.min(1, dk),
               fadeIn: 0.02, c0: P.dust, cell: 2, delay: it ? this.shocks.timeAt(it, dist) : dist / 600 });
           }
         }

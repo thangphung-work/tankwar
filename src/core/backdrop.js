@@ -93,9 +93,9 @@ const Backdrop = (() => {
       // gốc toạ độ khóm: mặt đất ở y ≈ -0.3 (buildForest đặt tâm cao h + 0.3·cỡ)
       const R = MapGen.mulberry32(0x7c31);
       lobes = [[0.04, 0.5, -0.03, 0.42]];
-      for (let i = 0; i < 24; i++) {
+      for (let i = 0; i < 13; i++) {
         const u = R() * 1.7 - 0.7, a = R() * 6.283, s = Math.sqrt(1 - u * u), rad = 0.5 + 0.28 * R();
-        lobes.push([Math.cos(a) * s * rad, 0.5 + u * rad * 0.62, Math.sin(a) * s * rad, 0.17 + 0.15 * R()]);
+        lobes.push([Math.cos(a) * s * rad, 0.5 + u * rad * 0.62, Math.sin(a) * s * rad, 0.21 + 0.17 * R()]);
       }
       // thân + 2 cành chạc: lăng trụ 5 cạnh sẫm từ dưới đất lên lõi tán
       const prism = (x0, y0, z0, x1, y1, z1, r0, r1) => {
@@ -467,7 +467,7 @@ float fNoise(vec3 x) {
     // xa hơn bản đơn giản (búp 20 mặt / chóp nón) — đổi theo camera mỗi khung (forest.userData.lod, gọi từ game.render).
     // Bản trước chia gần / xa theo cự ly tới MÉP bản đồ: rừng dồn dày sát mép (JUNGLE ~33 nghìn khóm trong 600 đv) nên từ
     // giữa bản đồ nhìn sang mép bên kia (> 8 km) vẫn vẽ bản 720 tg / khóm — đo 2026-10-29: rừng nền JUNGLE 13 triệu tg / khung
-    const CELL = 2000, BD_NEAR = 1400, BD_ZOOM = 900, BD_HYST = 150, cells = [];
+    const CELL = 2000, BD_NEAR = 950, BD_ZOOM = 780, BD_HYST = 120, cells = [];
     const geoOf = (src, sphere) => {
       const g = new THREE.BufferGeometry();
       for (const a in src.attributes) g.setAttribute(a, src.attributes[a]);

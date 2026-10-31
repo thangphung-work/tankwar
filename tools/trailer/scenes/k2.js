@@ -57,33 +57,50 @@
       // mục tiêu: xe tăng Đỏ gần giữa tuyến
       const Tg = rl.filter(u => u.tankType === 'ALL_ROUNDER').sort((a, b) => Math.hypot(a.x - M.x, a.z - M.z) - Math.hypot(b.x - M.x, b.z - M.z))[0] || rl[0];
       await S.wait(0.3);
-      // quỹ đạo: vòng cung quanh mục tiêu phía thuận nắng (bán kính 720 -> 480, cao 260 -> 210), lượn nghiêng vào tâm
-      const C = { x: M.x, z: M.z }, G0 = M.y;   // lượn quanh TÂM trận đánh, nhìn bao quát cả hai phe
-      const a0 = LIT - Math.PI / 2 - 0.45, a1 = LIT - Math.PI / 2 + 0.3, TC = 3.6, TL = 1.1, TD = 1.9;   // phía sau tuyến Xanh: nhìn ngang qua chiến tuyến, xe không chồng lên nhau
-      let lockPos = null, lockLook = null, lockDive = null;
-      const orbit = (k) => { const a = lerp(a0, a1, k), r = lerp(720, 580, k); return { a, x: C.x + Math.cos(a) * r, z: C.z + Math.sin(a) * r, y: G0 + lerp(310, 270, k) }; };
-      let tP = null;   // đồng hồ chung với kịch bản (đồng hồ cảnh của máy có thể chậm hơn)
+      // UAV CẢM TỬ NHÌN TỪ NGOÀI (v21): mô hình UAV thật bay theo quỹ đạo — lượn vòng trên chiến trường, nghiêng cánh khi rẽ,
+      // rồi lượn xuống tăng tốc cắm vào xe tăng Đỏ. Máy bám sau-trên UAV (thấy cả UAV lẫn trận bên dưới, không có cảm giác
+      // zoom như góc nhìn từ mũi UAV); chạm nổ thì máy dừng bám, lùi dần ra cho thấy vụ nổ
+      const C = { x: M.x, z: M.z }, G0 = M.y;
+      const a0 = LIT - Math.PI / 2 - 0.45, a1 = LIT - Math.PI / 2 + 0.3, TC = 3.6, TL = 1.1, TD = 1.9;
+      let lockPos = null, lockDive = null, dronePos = null, prev = null, lastT = null, prevYaw = null, roll = 0, hold = null, lastCam = null;
+      const orbit = (k) => { const a = lerp(a0, a1, k), r = lerp(700, 600, k); return { a, x: C.x + Math.cos(a) * r, z: C.z + Math.sin(a) * r, y: G0 + lerp(230, 210, k) }; };
+      const Dm = typeof KamiUAV !== 'undefined' ? KamiUAV.build('BLUE') : null;
+      if (Dm) { Dm.rotation.order = 'YXZ'; g.scene.add(Dm); }
+      const dronePath = (el) => {
+        if (el < TC + TL) { const o = orbit(Math.min(1, el / (TC + TL))); return { x: o.x, y: o.y, z: o.z }; }
+        const k = Math.min(1, (el - TC - TL) / TD), e = Math.pow(k, 1.5);   // lượn xuống, nhanh dần
+        const a0L = Math.atan2(lockPos.z - Tg.z, lockPos.x - Tg.x), r0 = Math.hypot(lockPos.x - Tg.x, lockPos.z - Tg.z), h0 = lockPos.y - Tg.y;
+        const a = a0L + 0.55 * Math.sin(Math.PI / 2 * k), r = r0 * (1 - e), h = lerp(h0, 6, Math.pow(k, 1.25));
+        return { x: Tg.x + Math.cos(a) * r, y: Tg.y + h, z: Tg.z + Math.sin(a) * r };
+      };
+      let tP = null;
       const fn = () => {
         if (tP === null) tP = now();
-        const el = now() - tP;
-        if (el < TC + TL) {
-          const k = Math.min(1, el / (TC + TL)), o = orbit(k * 0.98 + 0.02 * Math.min(1, el / TC));
-          // nhìn tới trước theo tiếp tuyến + chúc xuống bao quát chiến trường; khi khoá: nhìn dần vào mục tiêu
-          const tx = -Math.sin(o.a), tz = Math.cos(o.a);
-          const ahead = { x: C.x, y: G0, z: C.z };   // tâm trận luôn giữa khung
-          const lk = el < TC ? 0 : ease(Math.min(1, (el - TC) / (TL * 0.7)));
-          const look = { x: lerp(ahead.x, Tg.x, lk), y: lerp(ahead.y, Tg.y + 3, lk), z: lerp(ahead.z, Tg.z, lk) };
-          lockPos = { x: o.x, y: o.y, z: o.z }; lockLook = look;
-          return { pos: lockPos, look, fov: 50, roll: 0 };   // không nghiêng khung, không zoom
+        const tt = now(), el = tt - tP, dt = lastT === null ? 1 / 30 : Math.max(1e-3, tt - lastT); lastT = tt;
+        if (hold) return hold;
+        if (el >= TC + TL + TD && lastCam) {
+          // chạm nổ: máy thôi bám, lùi ra xa + cao lên (êm) nhìn vào vụ nổ
+          const vx = lastCam.x - Tg.x, vz = lastCam.z - Tg.z, vl = Math.hypot(vx, vz) || 1;
+          hold = { pos: { x: Tg.x + vx / vl * 170, y: Tg.y + 70, z: Tg.z + vz / vl * 170 }, look: { x: Tg.x, y: Tg.y + 16, z: Tg.z }, fov: 52, stiff: 2.2, lookStiff: 4, roll: 0 };
+          if (Dm) Dm.visible = false;
+          return hold;
         }
-        // bổ nhào: lao thẳng, nhanh dần, dừng cách xe ~22 đv (cắt sang vụ nổ) — không chui vào thân xe / cỏ
-        // LƯỢN XUỐNG (không lao thẳng — lao thẳng nhìn như zoom): vòng quanh mục tiêu thêm ~40° vừa hạ độ cao, tầm gần dần
-        const k = Math.min(1, (el - TC - TL) / TD), e = ease(k);
-        const a0L = Math.atan2(lockPos.z - Tg.z, lockPos.x - Tg.x), r0 = Math.hypot(lockPos.x - Tg.x, lockPos.z - Tg.z), h0 = lockPos.y - Tg.y;
-        const a = a0L + 0.7 * e, r = lerp(r0, 150, Math.pow(e, 0.85)), h = lerp(h0, 42, Math.pow(e, 1.15));
-        const pos = { x: Tg.x + Math.cos(a) * r, y: Tg.y + h, z: Tg.z + Math.sin(a) * r };
-        lockDive = pos;
-        return { pos, look: { x: Tg.x, y: Tg.y + 4, z: Tg.z }, fov: 50, roll: -0.12 * Math.sin(Math.PI * k), minClear: 4 };
+        const P = dronePath(el); if (el < TC + TL) lockPos = P; else lockDive = P;
+        dronePos = P;
+        const v = prev ? { x: (P.x - prev.x) / dt, y: (P.y - prev.y) / dt, z: (P.z - prev.z) / dt } : { x: -Math.sin(a0), y: 0, z: Math.cos(a0) };
+        prev = P;
+        const hv = Math.hypot(v.x, v.z) || 1, sp = Math.hypot(v.x, v.y, v.z) || 1, dx = v.x / sp, dy = v.y / sp, dz = v.z / sp;
+        const yaw = Math.atan2(-v.x, -v.z);
+        if (prevYaw !== null) { const w = Math.atan2(Math.sin(yaw - prevYaw), Math.cos(yaw - prevYaw)) / dt; roll += (Math.max(-0.7, Math.min(0.7, w * 0.9)) - roll) * Math.min(1, dt * 4); }
+        prevYaw = yaw;
+        if (Dm) { Dm.position.set(P.x, P.y, P.z); Dm.rotation.set(Math.atan2(v.y, hv), yaw, roll); try { KamiUAV.animate(Dm, dt, 1, 1); } catch (e) {} }
+        // máy sau-trên UAV; lúc lượn nhìn tới trước chếch xuống chiến trường, lúc bổ nhào nhìn dần vào mục tiêu
+        const cam = { x: P.x - dx * 28 - dz * 7, y: P.y - dy * 28 + 8, z: P.z - dz * 28 + dx * 7 };   // bám sát: UAV đủ lớn trong khung
+        const dv = el < TC + TL ? 0 : ease(Math.min(1, (el - TC - TL) / (TD * 0.5)));
+        const ahead = { x: P.x + dx * 160, y: P.y - 70, z: P.z + dz * 160 };
+        const look = { x: lerp(ahead.x, Tg.x, dv), y: lerp(ahead.y, Tg.y + 4, dv), z: lerp(ahead.z, Tg.z, dv) };
+        lastCam = cam;
+        return { pos: cam, look, fov: 52, stiff: 20, lookStiff: 10, roll: 0, minClear: 4 };
       };
       S.shot('path', { fn, dur: 30 });
       S.log('scene', { n: 1, name: 'kami-pov' });
@@ -94,11 +111,11 @@
       // ngóc 20° nên phát ra bằng _launchOverride như pháo kích); đạn bay sượt quanh ống kính, không trúng
       const aa = rl.filter(u => u !== Tg).sort((p, q) => (q.tankType === 'GATLING') - (p.tankType === 'GATLING')).slice(0, 2);
       const flak = (u) => {
-        if (!u || u.isDead || !lockPos) return;
+        if (!u || u.isDead || !dronePos) return;
         const p = new THREE.Vector3(u.x, u.y + 9, u.z);
         const off = { x: (S.rnd() - 0.5) * 70, y: (S.rnd() - 0.3) * 40, z: (S.rnd() - 0.5) * 70 };
-        const d = new THREE.Vector3(lockPos.x + off.x - p.x, lockPos.y + off.y - p.y, lockPos.z + off.z - p.z).normalize();
-        S.slew(u, { x: lockPos.x, y: u.y, z: lockPos.z }, 20);
+        const d = new THREE.Vector3(dronePos.x + off.x - p.x, dronePos.y + off.y - p.y, dronePos.z + off.z - p.z).normalize();
+        S.slew(u, { x: dronePos.x, y: u.y, z: dronePos.z }, 20);
         u._launchOverride = { position: p, direction: d }; B._remoteShot = true;
         try { B.fireShell3D(u, 0, 0, 1, 'GATLING_BULLET'); } catch (e) {} finally { u._launchOverride = null; B._remoteShot = false; }
       };
@@ -113,11 +130,6 @@
       S.ammoKill(Tg, bl[0], { x: Tg.x - (lockDive || lockPos).x, y: -20, z: Tg.z - (lockDive || lockPos).z });
       S.shellAt(bl[0], Tg.x, Tg.y + 4, Tg.z, 'HE', Math.atan2(Tg.x - lockPos.x, Tg.z - lockPos.z), 0.95);
       await S.wait(0.35);
-      // máy ngoài: nhìn xác xe nổ, tháp bật bay
-      // máy ngoài CÙNG PHÍA hướng UAV lao tới (nối mạch, không đảo trục): lùi theo đường bay, lệch nhẹ sang bên
-      const LP = lockDive || lockPos, ax = LP.x - Tg.x, az = LP.z - Tg.z, al = Math.hypot(ax, az) || 1;
-      const cp = { x: Tg.x + ax / al * 165 - az / al * 45, z: Tg.z + az / al * 165 + ax / al * 45 }; cp.y = top(cp.x, cp.z) + 48;
-      S.shot('fixed', { pos: cp, look: { x: Tg.x, y: Tg.y + 14, z: Tg.z }, dur: 30, fov: 46 });
       S.log('scene', { n: 2, name: 'kami-after' });
       await S.wait(3.5);
       firing = false;
@@ -136,9 +148,9 @@
       const head = Math.atan2(-K.fx * sg, K.fz * sg);
       // tiến công tự nhiên: 5 xe xuất phát rải rác hình quạt trên bãi trước hầm, mỗi xe một đường cong riêng (tốc độ, lúc
       // khởi hành lệch nhau), dồn dần về dốc rồi lần lượt chui vào hầm; điểm dừng: 3 xe trong hầm, 1 ở miệng, 1 trên dốc
-      const endF = [-50, -5, 40, 88, 140], laneR = [-8, 8, -8, 8, 0];
+      const endF = [-90, -20, 50, 120, 190], laneR = [0, 0, 0, 0, 0];   // cách nhau ~70: không chen nhau trong lòng hầm (va chạm đẩy xe giật)
       const startFR = [[HB + 260, -40], [HB + 320, 140], [HB + 300, -170], [HB + 370, 60], [HB + 400, -110]];
-      const V0 = [56, 52, 54, 50, 48], DELAY = [0, 0.25, 0.1, 0.5, 0.75];
+      const V0 = [54, 52, 52, 50, 50], DELAY = [0, 0.55, 1.05, 1.5, 1.95];
       // đường đi: Bezier bậc 2 từ điểm xuất phát -> đầu dốc (lệch làn) qua điểm điều khiển kéo về trục, rồi thẳng vào hầm
       const paths = team.map((u, i) => {
         const P0 = W(startFR[i][0], startFR[i][1]), P2 = W(HB + 165, laneR[i]), C1 = W((startFR[i][0] + HB + 165) / 2 - 20, startFR[i][1] * 0.15 + laneR[i]);
@@ -218,7 +230,8 @@
             const q = along(P, P.s);
             let dh = q.h - (u.bodyAngle || 0); dh = Math.atan2(Math.sin(dh), Math.cos(dh));
             u.bodyAngle = (u.bodyAngle || 0) + dh * Math.min(1, dt * 4);
-            u.x = q.x; u.z = q.z; u.y = S.ground(u.x, u.z); u.speed = v;
+            const SS2 = T.strongholdSet, fl = SS2 && SS2.vehicleFloorAt ? SS2.vehicleFloorAt(q.x, q.z, u.y) : null;
+            u.x = q.x; u.z = q.z; u.y = (fl !== null && fl !== undefined) ? fl : S.ground(u.x, u.z); u.speed = v;   // sàn hầm thật, không nhảy lên mặt ụ
             if (u.group) { u.group.position.set(u.x, u.y, u.z); u.group.rotation.y = u.bodyAngle; }
           });
           if (!moving || el > 12) { clearInterval(id); team.forEach(u => { u.speed = 0; }); res(); }

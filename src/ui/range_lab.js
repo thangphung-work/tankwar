@@ -103,12 +103,12 @@
     mm.selectedMapType = BIOME; mm.mapSeed = SEED; mm.state = 'IN_GAME';
     mm.preparedMapKey = BIOME + ':' + SEED;
     clearInterval(mm.searchInterval);
-    loader.stage('ĐANG SINH ĐỊA HÌNH NỀN…');
+    loader.stage('ĐANG CHUẨN BỊ ĐỊA HÌNH…');
     // MapGen chạy trong Worker để animation loading và giao diện không bị treo. Nếu trình
     // duyệt không hỗ trợ Worker, prepareMap bên dưới tự rơi về đường đồng bộ cũ.
     const prep = window.MapGen && MapGen.prefetch ? MapGen.prefetch(BIOME, SEED) : Promise.resolve(false);
     prep.catch(() => false).then(() => {
-      loader.stage('ĐANG DỰNG CẢNH 3D…');
+      loader.stage('ĐANG DỰNG CHIẾN TRƯỜNG…');
       requestAnimationFrame(() => setTimeout(() => start(g, mm), 20));
     });
   }
@@ -123,6 +123,8 @@
   function startInner(g, mm) {
     const t0 = performance.now();
     g.prepareMap(BIOME, SEED);
+    // xác xe quanh 3 cứ điểm (~100 việc, ~9 s) không chặn lúc vào phòng thử: dựng dần trong tick (stepLazyWrecks)
+    if (g.terrain) g.terrain.lazyWrecks = true;
     console.info(`[BOOT] prepareMap: ${Math.round(performance.now() - t0)} ms`);
     // Chờ chi tiết bản đồ dựng xong dưới nền (từng bước nhỏ, giữa các bước trình duyệt vẫn vẽ màn chờ). Vào trận ngay
     // thì startMatchWithSlots phải dựng nốt đồng bộ -> chặn luồng chính ~17 s, spinner đứng im
@@ -130,7 +132,7 @@
     const waitDetails = () => {
       if (T && !T.detailsReady && g.terrain === T) {
         const left = T._pendingDetailSteps ? T._pendingDetailSteps.length : 0;
-        loader.stage('ĐANG DỰNG CẢNH 3D…' + (left ? ' (' + left + ')' : ''));
+        loader.stage('ĐANG DỰNG CHIẾN TRƯỜNG…');
         setTimeout(waitDetails, 24);
         return;
       }
@@ -195,11 +197,11 @@
     buildUI();
     hookHits(g);
     spawnUAVs(g);
-    addLog('Ctrl: kính ngắm như trong trận · Tab: khóa mục tiêu · Space / chuột trái: bắn · M: bản đồ', 'info');
+    // (không nhồi hướng dẫn dài vào log lúc mới vào)
     window.rangeLab = lab;
     syncUrl();
-    if (lab.field === 'flat') addLog('[[square]] Đồng trống: chọn xe bia, cự ly, hướng và trang bị bia ở bảng bên phải', 'info');
-    addLog('[[flag]] Căn cứ A, B, C đã có sẵn trên bản đồ — bấm Căn cứ A/B/C để dịch chuyển tới', 'ok');
+    // (đã có trên giao diện bảng phải)
+    // (đã có nút Căn cứ A/B/C trên bảng)
     // Biên dịch shader của cả cảnh song song trên GPU (trước đây dồn hết vào khung hình đầu: ~50 s đứng hình)
     const firstFrame = () => {
       const tf = performance.now();
@@ -210,9 +212,13 @@
     };
     if (!g.compileShadersAsync) { firstFrame(); return; }
     const tc = performance.now();
-    loader.stage('ĐANG BIÊN DỊCH SHADER…');
+    loader.stage('ĐANG HOÀN TẤT…');
     // cả shader hiệu ứng giao tranh (vết đạn, sóng nổ, lửa đầu nòng): không để phát bắn đầu tiên phải biên dịch
-    g.prewarmEffects(true, (done, total) => loader.stage(`ĐANG BIÊN DỊCH SHADER… ${done}/${total}`))
+    g.prewarmEffects(
+      true,
+      (done, total) => loader.stage(total > 0 ? `ĐANG HOÀN TẤT… ${Math.min(99, Math.round(done / total * 100))}%` : 'ĐANG HOÀN TẤT…'),
+      () => (g.drawWarm && g.scene ? g.drawWarm(g.scene.children.slice()) : Promise.resolve())
+    )
       .catch(err => console.warn('[LAB] compileShadersAsync', err))
       .then(n => { console.info(`[BOOT] Biên dịch ${n || 0} shader song song: ${Math.round(performance.now() - tc)} ms`); firstFrame(); });
   }
@@ -467,6 +473,7 @@
       addLog(`[[alert]] Không tìm thấy căn cứ ${id}`, 'hit');
       return;
     }
+    stepLazyWrecks(0, true);
     const S = typeof Strongholds !== 'undefined' ? Strongholds.S : { END: 206 };
     const sign = (id === 'B') ? 1 : -1;
     const dist = (S.END || 206) + 45;
@@ -611,8 +618,19 @@
     if (changed) { const g = lab.g; try { g.updateAmmoUI(); } catch (e) { /* bỏ qua */ } }
   }
 
+  // Xác xe cứ điểm dựng sau khi vào phòng thử: mỗi việc 40-140 ms -> 1 việc / 0,2 s (khựng nhẹ rải rác thay vì ~9 s chờ).
+  // now: dựng nốt hết ngay (trước khi dịch chuyển tới căn cứ)
+  function stepLazyWrecks(dt, now) {
+    const set = lab.g.terrain && lab.g.terrain.strongholdSet;
+    if (!set || !set._wreckQueue || !set._wreckQueue.length) return;
+    if (!now && (lab._wreckT = (lab._wreckT || 0) - dt) > 0) return;
+    lab._wreckT = 0.2;
+    if (set.stepWrecks(now ? Infinity : 1) && typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(lab.g.terrain);
+  }
+
   function tick(dt) {
     const g = lab.g, p = g.player;
+    stepLazyWrecks(dt, false);
     refillAmmo(p, dt);
     if (lab.rangeProps) lab.rangeProps.update(dt, g.effectsManager && g.effectsManager.fx, g.camera);
     if (lab.fireMode !== 'off') fireBackTick(dt);
@@ -799,16 +817,17 @@
           if (!direct && !(lost > 0.001)) return;
           const who = u === g.player ? 'XE BẠN' : u.name;
           const nm = shell.kami ? 'UAV cảm tử' : shell.gl40 ? 'lựu 40mm' : (AMMO_NAME[shell.ammoType] || shell.ammoType);
-          let txt = `${who} ← ${nm}`;
-          if (direct && L && L.at >= t0 && L.intercepted) txt += ': HỆ THỐNG ĐÁNH CHẶN (APS) BẮN HẠ trước khi chạm xe';
+          let txt = `${who} trúng ${nm}`;
+          if (direct && L && L.at >= t0 && L.intercepted) txt += ': Hệ thống phòng thủ bắn hạ đạn';
           else if (direct && L && L.at >= t0) {
             txt += `: ${FACE[L.face] || L.face}${L.onTurret ? ' tháp' : ''}`;
-            if (L.armorMm !== undefined) txt += ` · giáp ${L.armorMm}mm / xuyên ${L.penMm}mm · ${L.pen ? 'XUYÊN' : 'không xuyên'}`;
-            if (L.mul !== undefined) txt += ` · hệ số ${(+L.mul).toFixed(2)}`;
+            if (L.pen !== undefined) txt += ` · ${L.pen ? 'Xuyên giáp' : 'Không xuyên'}`;
+            // (bỏ hệ số nội bộ)
             const ev = (L.events || []).map(e => e.text).filter(Boolean).slice(0, 2);
             if (ev.length) txt += ` · ${ev.join(' · ')}`;
           } else if (!direct) txt += ' (nổ gần)';
-          txt += ` · −${Math.max(0, lost).toFixed(2)} máu`;
+          const pct = Math.max(0, Math.round((lost / (u.maxHp || 1)) * 100));
+          if (pct > 0) txt += ` · −${pct}% máu`;
           lab.hits.unshift(txt);
           lab.hits.length = Math.min(lab.hits.length, 5);
           renderHits();
@@ -1135,7 +1154,7 @@
     };
     // trúng đạn: drone_air.onDroneShot tính sát thương như trong trận rồi gọi R.onHit (labDroneDamage) — không trừ thêm ở
     // đây (trước đây bọc onDroneShot trừ lần nữa: mỗi phát trúng mất gấp đôi thân)
-    addLog(`[[drone]] ${UAV_N} UAV địch đang bay trên trời — nhấp vào drone để khóa, giữ Space xả đạn`, 'info');
+    // (không nhồi log UAV lúc khởi tạo)
   }
 
   // drone bia trúng đạn / sóng nổ: trừ thân, hết thì hạ — drone 4 cánh rơi cháy, UAV cảm tử nổ nhỏ trên trời

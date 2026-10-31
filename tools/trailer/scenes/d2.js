@@ -15,7 +15,10 @@
       S.freeze(a, true); S.freeze(b, true); b.hp = b.maxHp * 40;   // xe Đỏ nguyên vẹn (không cháy sẵn) tới lúc trúng đạn
       // xe Đỏ chạy ngang tầm nhìn (đổi hướng nhẹ), tháp xe Xanh bám theo, ngắm đón đầu rồi khai hỏa khi xe đang chạy
       const bh0 = b.bodyAngle || 0;
-      S.shot('shoulder', { subject: a, target: b, dur: 30, shellP: 0, side: 1, keepTg: true });
+      // máy ĐỨNG YÊN sau-chếch phải xe Xanh (máy qua vai bám xe -> lúc bắn / trúng khung xê dịch, trông như nhảy góc)
+      const ddx = b.x - a.x, ddz = b.z - a.z, dl = Math.hypot(ddx, ddz) || 1, ux = ddx / dl, uz = ddz / dl;
+      const cp = { x: a.x - ux * 36 - uz * 62, z: a.z - uz * 36 + ux * 62 }; cp.y = S.ground(cp.x, cp.z) + 32;   // cao + lệch bên: xe Xanh không che xe Đỏ
+      S.shot('fixed', { pos: cp, look: { x: a.x + ux * dl * 0.72, y: b.y + 4, z: a.z + uz * dl * 0.72 }, dur: 30, fov: 34 });
       S.log('scene', { n: 1, name: 'duel' });
       const t0 = performance.now() / 1000; let lastT = t0, alive = true, coast = 0;
       const mv = setInterval(() => {

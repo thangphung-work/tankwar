@@ -3385,7 +3385,16 @@ const Props = (() => {
           if (!m.geometry) continue;
           m.updateMatrixWorld(true);
           const relMat = m.matrixWorld.clone().premultiply(inv);
-          const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+          let src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+          if (m.isInstancedMesh && m.count > 20) {
+            if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+            const bb = m.geometry.boundingBox;
+            const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
+            if (Math.max(sx, sy, sz) < 0.55) continue;   // đinh tán / chi tiết siêu nhỏ dưới 0.5 đv trên xác cháy tĩnh
+            const bg = new THREE.BoxGeometry(Math.max(0.12, sx), Math.max(0.12, sy), Math.max(0.12, sz)).toNonIndexed();
+            bg.translate((bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, (bb.min.z + bb.max.z) * 0.5);
+            src = bg;
+          }
           const n = m.isInstancedMesh ? m.count : 1, im = new THREE.Matrix4();
           for (let i = 0; i < n; i++) {
             if (m.isInstancedMesh) {
@@ -3605,13 +3614,13 @@ const Props = (() => {
         jobs.push(() => add(s.h, 'armorCrater', s.big ? R(4.2, 4.8) : R(3.4, 4)));
         if (rnd() < 0.65) jobs.push(() => add(s.h, 'scorch', R(5, 8)));
       }
-      for (let k = 0, n = 9 + Math.floor(rnd() * 5); k < n; k++) {
+      for (let k = 0, n = 5 + Math.floor(rnd() * 3); k < n; k++) {
         const s = { h: null };
         jobs.push(() => { s.h = hit(); add(s.h, 'armorCrater', R(3, 4.2)); });
         if (rnd() < 0.5) jobs.push(() => add(s.h, 'scorch', R(4, 6)));
       }
       // rỗ đạn súng máy / mảnh văng (vết nhỏ gộp InstancedMesh: nhiều vẫn ít lượt vẽ); có loạt đạn dồn thành chùm
-      for (let k = 0, n = 45 + Math.floor(rnd() * 25); k < n; k++) jobs.push(() => add(hit(), rnd() < 0.6 ? 'steelDent' : 'heiSplash', R(1.4, 2.8)));
+      for (let k = 0, n = 18 + Math.floor(rnd() * 8); k < n; k++) jobs.push(() => add(hit(), rnd() < 0.6 ? 'steelDent' : 'heiSplash', R(1.5, 2.9)));
       for (let k = 0, n = 2 + Math.floor(rnd() * 2); k < n; k++) jobs.push(() => {
         const h = hit();
         if (!h) return;

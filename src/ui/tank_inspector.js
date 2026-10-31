@@ -223,6 +223,7 @@ class TankInspector {
   // Làm 1 việc dựng sẵn còn thiếu mỗi lượt (mỗi việc tốn vài trăm ms -> rải ra lúc rảnh, không dồn một lúc)
   pumpSpares() {
     if (typeof SPGUnit3D === 'undefined' || this.inLiveMatch()) return;   // giữa trận: không dựng (khựng khung hình trận)
+    if (this._spareCompile) { this.schedulePrewarm(300); return; }      // lượt biên dịch song song trước chưa xong
     // đang mở phòng mà người xem vừa thao tác: chờ họ ngừng tay rồi mới dựng (tránh giật lúc xoay / lái)
     if (this.isOpen && performance.now() - this._lastActive < 1500) { this.schedulePrewarm(1500); return; }
     // phòng đang đóng: người chơi đang thao tác ở sảnh, hoặc đang tìm trận / dựng bản đồ -> hoãn
@@ -259,18 +260,35 @@ class TankInspector {
         this.spares[key] = { unit: u, sig: this.kitSig(task.type) };
         obj = u.group;
       }
-      if (obj) {
-        this.updateCameraPosition();
-        this.renderer.compile(this.scene, this.camera);
-        if (!this.isOpen) {
-          const cur = this.activeUnit && this.activeUnit.group;
-          if (cur) cur.visible = false;
-          obj.visible = true;
-          this.renderer.render(this.scene, this.camera);
-          if (cur) cur.visible = true;
-        }
+      if (!obj) { this.schedulePrewarm(this.isOpen ? 1200 : 300); return; }
+      this.updateCameraPosition();
+      obj.visible = false;
+      const upload = () => {
+        if (this.isOpen || !obj.parent) return;
+        const cur = this.activeUnit && this.activeUnit.group;
+        if (cur) cur.visible = false;
+        obj.visible = true;
+        this.renderer.render(this.scene, this.camera);
+        if (cur) cur.visible = true;
         obj.visible = false;
+      };
+      // biên dịch song song trên GPU (compileShadersAsync của game, áp cho renderer phòng xem): renderer.compile đồng bộ
+      // ở đây từng chặn luồng chính 5-8 s mỗi lượt lúc shader còn lạnh (đo 2026-10-30: sảnh đơ ~16 s sau khi tải trang)
+      const G = window.game;
+      if (this.renderer.__asyncShaders && G && G.compileShadersAsync) {
+        const I = this;
+        const ctx = this._compileCtx || (this._compileCtx = {
+          get renderer() { return I.renderer; }, get scene() { return I.scene; }, get camera() { return I.camera; }, pinShaderPrograms() {}
+        });
+        this._spareCompile = G.compileShadersAsync.call(ctx).catch(e => console.warn('[Phòng xem xe] biên dịch', e)).then(() => {
+          this._spareCompile = null;
+          try { upload(); } catch (e) { console.warn('[Phòng xem xe] nạp GPU', e); }
+          this.schedulePrewarm(this.isOpen ? 1200 : 300);
+        });
+        return;
       }
+      this.renderer.compile(this.scene, this.camera);
+      upload();
       this.schedulePrewarm(this.isOpen ? 1200 : 300);
     } catch (e) {
       console.warn('[Phòng xem xe] Dựng sẵn lỗi', e);
@@ -504,6 +522,9 @@ class TankInspector {
     });
     this.renderer.setPixelRatio(this.viewPixelRatio());
     this.renderer.setSize(width, height);
+    // shader chưa biên dịch xong: lượt vẽ bỏ qua vật đó vài khung thay vì chặn luồng chính chờ GPU (async_shaders.js);
+    // điều kiện để pumpSpares biên dịch song song (compileSpares) mà phòng vẫn vẽ tiếp được
+    if (window.AsyncShaders) AsyncShaders.install(this.renderer);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // Cùng chuẩn màu với renderer trong trận: output Linear, màu hex / texture canvas dùng thẳng.

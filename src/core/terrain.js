@@ -371,6 +371,8 @@ class BattleTerrain3D {
       }],
       ['stronghold_wrecks', () => {
         // việc nhỏ (~50 ms: 1 mô hình / 1 phát lựu pháo giả lập) gom trong ~40 ms mỗi nhịp
+        // lazyWrecks (phòng thử tầm bắn): không chờ ở đây — hàng việc còn nguyên, bên gọi tự rải stepWrecks sau khi vào trận
+        if (this.lazyWrecks) return;
         if (this.strongholdSet && this.strongholdSet.stepWrecks && !this.strongholdSet.stepWrecks(Infinity, 40)) return false;
       }],
       ['roads', () => {

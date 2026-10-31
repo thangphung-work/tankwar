@@ -58,7 +58,7 @@
     const wait = () => {
       if (T && !T.detailsReady && g.terrain === T) {
         const left = T._pendingDetailSteps ? T._pendingDetailSteps.length : 0;
-        loader.stage('ĐANG DỰNG CẢNH 3D…' + (left ? ' (' + left + ')' : ''));
+        loader.stage('ĐANG DỰNG CHIẾN TRƯỜNG…');
         setTimeout(wait, 24);
         return;
       }
