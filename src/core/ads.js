@@ -220,14 +220,77 @@ const AdProvider = (() => {
     });
   }
 
+  // ---------- Kiểm tra trình chặn quảng cáo ----------
+  async function isAdblockActive() {
+    if (window.adsbygoogle && window.adsbygoogle.loaded) return false;
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 2000);
+      await fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', {
+        method: 'HEAD',
+        mode: 'no-cors',
+        cache: 'no-store',
+        signal: ctrl.signal
+      });
+      clearTimeout(tid);
+      return false;
+    } catch (e) {
+      // Trình chặn quảng cáo sẽ lập tức chặn kết nối tới máy chủ Google Ads
+      return true;
+    }
+  }
+
+  // Hộp thoại yêu cầu tắt chặn quảng cáo
+  function showAdblockModal() {
+    return new Promise((resolve) => {
+      const el = document.createElement('div');
+      el.className = 'eqp-ad';
+      const host = window.location.hostname || 'trang này';
+      el.innerHTML = `<div class="eqp-ad-box">
+        <div class="eqp-ad-top" style="color: #f87171;">
+          <span><i class="ti ti-shield-x"></i> PHÁT HIỆN TRÌNH CHẶN QUẢNG CÁO</span>
+          <button class="eqp-btn" data-act="close" style="padding: 2px 8px; font-size: 13px;">✕</button>
+        </div>
+        <div class="eqp-ad-stage" style="height: auto; padding: 26px 20px; text-align: center; gap: 8px;">
+          <i class="ti ti-ad-off" style="font-size: 48px; color: #f87171; margin-bottom: 4px;"></i>
+          <p style="font-size: 16px; font-weight: 700; color: var(--tc-text); margin: 0;">VUI LÒNG TẮT TIỆN ÍCH CHẶN QUẢNG CÁO</p>
+          <div style="font-size: 13px; color: var(--tc-dim); line-height: 1.6; max-width: 440px; margin-top: 6px;">
+            Trình duyệt của bạn đang bật tiện ích chặn quảng cáo nên không thể phát video nhận thưởng. Vui lòng tắt tiện ích trên <b>${esc(host)}</b> rồi tải lại trang để nhận vật tư tiếp tế hoặc lượt quay.
+          </div>
+        </div>
+        <div class="eqp-ad-actions" style="border-top: 1px solid var(--tc-line); padding: 12px 16px;">
+          <button class="eqp-btn" data-act="close">ĐỂ SAU</button>
+          <button class="eqp-btn ad" data-act="reload"><i class="ti ti-refresh"></i> ĐÃ TẮT, TẢI LẠI TRANG</button>
+        </div>
+      </div>`;
+      document.body.appendChild(el);
+      el.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-act]');
+        if (!b) return;
+        const act = b.dataset.act;
+        el.remove();
+        if (act === 'reload') window.location.reload();
+        resolve(act);
+      });
+    });
+  }
+
   async function showRewarded(o = {}) {
     if (busy) return 'unavailable';
     busy = true;
     try {
       if (useH5()) {
+        // Kiểm tra xem trình duyệt có bật tiện ích chặn quảng cáo hay không
+        const blocked = await isAdblockActive();
+        if (blocked) {
+          console.warn('[ADS] Phát hiện tiện ích chặn quảng cáo đang bật');
+          await showAdblockModal();
+          return 'unavailable';
+        }
+
         const r = await showH5(o);
         if (r === 'done' || r === 'skip') return r;
-        // Nếu Google không có quảng cáo hoặc bị lỗi/chặn mà cấu hình cho phép khung mẫu thì dự phòng
+        // Nếu Google không có quảng cáo hoặc bị lỗi mà cấu hình cho phép khung mẫu thì dự phòng
         if (C.allowMock) {
           console.warn('[ADS] Quảng cáo Google không sẵn sàng, tự động chuyển sang khung mẫu dự phòng');
           return await showMock(o);
@@ -240,15 +303,17 @@ const AdProvider = (() => {
   }
 
   // Kiểm tra trạng thái hiện tại của hệ thống quảng cáo
-  function checkStatus() {
+  async function checkStatus() {
     const script = document.querySelector('script[src*="adsbygoogle.js"]');
     const isLoaded = !!(window.adsbygoogle && window.adsbygoogle.loaded);
+    const isBlocked = await isAdblockActive();
     const info = {
       h5Client: C.h5Client || '(trống)',
       h5Test: !!C.h5Test,
       allowMock: !!C.allowMock,
       scriptInDom: !!script,
       sdkLoaded: isLoaded,
+      adblockActive: isBlocked,
       adBreakFunctionReady: typeof window.adBreak === 'function'
     };
     console.table(info);
@@ -258,7 +323,7 @@ const AdProvider = (() => {
   // Thử gọi quảng cáo trực tiếp để kiểm tra phản hồi
   async function test() {
     console.log('[ADS TEST] Bắt đầu gọi thử quảng cáo...');
-    checkStatus();
+    await checkStatus();
     const res = await showRewarded({ name: 'test_ad', label: 'Thử nghiệm', sec: 5 });
     console.log('[ADS TEST] Kết quả kiểm tra:', res);
     return res;
@@ -271,6 +336,6 @@ const AdProvider = (() => {
   // Giao diện cũ: show({ onDone, onFail })
   function show(o) { showRewarded(o).then(r => (r === 'done' ? o.onDone && o.onDone() : o.onFail && o.onFail())); }
 
-  return { showRewarded, show, available, config: C, checkStatus, test };
+  return { showRewarded, show, available, config: C, checkStatus, test, isAdblockActive, showAdblockModal };
 })();
 window.AdProvider = AdProvider;
