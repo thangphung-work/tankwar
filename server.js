@@ -36,7 +36,8 @@ const MIME_TYPES = {
   '.mp4': 'video/mp4',
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
-  '.ttf': 'font/ttf'
+  '.ttf': 'font/ttf',
+  '.txt': 'text/plain; charset=utf-8'
 };
 
 const ROOT_DIR = __dirname;
