@@ -2494,7 +2494,7 @@ class SPGUnit3D {
       let want = 0;
       const T = this.fcsTarget;
       if (T && !this.isDead && this.barrelPivot) {
-        const mp = this.barrelPivot.getWorldPosition(new THREE.Vector3());
+        const mp = this.barrelPivot.getWorldPosition(SPGUnit3D._mpTmp || (SPGUnit3D._mpTmp = new THREE.Vector3()));
         const dist = Math.hypot(T.x - mp.x, T.z - mp.z);
         const gMin = (ballistics && ballistics.minElevationFor)
           ? ballistics.minElevationFor(this)
@@ -2556,9 +2556,10 @@ class SPGUnit3D {
       }
     } else {
       if (activeCam) {
-        const billboardQuat = new THREE.Quaternion().copy(this.group.quaternion).invert().multiply(activeCam.quaternion);
-        if (this.hpBgMesh) this.hpBgMesh.quaternion.copy(billboardQuat);
-        if (this.hpBarMesh) this.hpBarMesh.quaternion.copy(billboardQuat);
+        const bQ = SPGUnit3D._bbQ || (SPGUnit3D._bbQ = new THREE.Quaternion());
+        bQ.copy(this.group.quaternion).invert().multiply(activeCam.quaternion);
+        if (this.hpBgMesh) this.hpBgMesh.quaternion.copy(bQ);
+        if (this.hpBarMesh) this.hpBarMesh.quaternion.copy(bQ);
       }
     }
 

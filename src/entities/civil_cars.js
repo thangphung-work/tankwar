@@ -2450,6 +2450,8 @@ const GLSL_WEATHER = `
     const g = new THREE.Group(), r = S.r, w = S.tireW, R = r * 0.62;
     const add = (geo, mat, x, rot) => { const m = new THREE.Mesh(geo, mat); m.position.x = x; if (rot) m.rotation.set(...rot); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
     add(tireGeometry(S, flat), mats.tire, 0);
+    // tấm che bụi phanh bịt mặt trong lòng vành: nhìn từ gầm xe không xuyên qua mâm ra ngoài
+    add(new THREE.CircleGeometry(R * 0.975, 36), mats.barrel, -sx * (0.05 + w * 0.4), [0, -sx * Math.PI / 2, 0]);
     if (!S.isTruck && (rs === 'steel' || rs === 'cap')) {
       add(new THREE.CylinderGeometry(R * 0.98, R * 0.98, w * 0.85, 36, 1, true), mats.barrel, -sx * 0.05, [0, 0, Math.PI / 2]);
       add(new THREE.TorusGeometry(R * 0.985, 0.05, 8, 48), mats.steelRim, sx * 0.6, [0, Math.PI / 2, 0]);
@@ -2494,7 +2496,7 @@ const GLSL_WEATHER = `
       add(new THREE.TorusGeometry(R * 0.985, 0.055, 8, 48), mats.lip, sx * 0.66, [0, Math.PI / 2, 0]);
       // Mặt đĩa mâm thép dập sâu lòng vào trong
       const dishGeo = new THREE.CylinderGeometry(R * 0.94, R * 0.45, 0.35, 32, 1, true);
-      add(dishGeo, mats.rim, sx * 0.44, [0, 0, sx * Math.PI / 2]);
+      add(dishGeo, mats.rim, sx * 0.44, [0, 0, sx * Math.PI / 2]).material.side = THREE.DoubleSide;
       // 8 lỗ dập thoát nhiệt và giảm trọng lượng quanh đĩa mâm
       for (let i = 0; i < 8; i++) {
         const a = i * Math.PI * 2 / 8;
@@ -2818,6 +2820,8 @@ const GLSL_WEATHER = `
       pos.push(0, cy, z); uv.push(0, cy / 8);
       for (const [x, y] of R0) { pos.push(x, y, z); uv.push(x / 8, y / 8); }
       for (let i = 0; i < n - 1; i++) { if (outward > 0) idx.push(base, base + 2 + i, base + 1 + i); else idx.push(base, base + 1 + i, base + 2 + i); }
+      // tam giác khép mép dưới (2 chân bạt): thiếu nó thì vách bạt thủng một mảng tam giác thấy sàn thùng
+      if (outward > 0) idx.push(base, base + 1, base + n); else idx.push(base, base + n, base + 1);
     };
     cap(ring[NZ], zB, 1);
     if (closedRear) cap(ring[0], zA, -1);
@@ -2826,7 +2830,7 @@ const GLSL_WEATHER = `
     g.setIndex(idx); g.computeVertexNormals();
     return g;
   }
-  function buildTruck(K) {
+  function* buildTruck(K) {
     const { S, opts, seed, age, sev, color, env, mats, plain, part, hitAt, wr, car, plateMat, TB } = K;
     const burnt = !!opts.burnt;
     const cabPaint = new THREE.MeshPhysicalMaterial({ color: color.clone().lerp(new THREE.Color(0x9b9589), age * 0.12), roughness: 0.32 + age * 0.2, metalness: 0.08, clearcoat: burnt ? 0 : 0.82, clearcoatRoughness: 0.16 + age * 0.12, envMap: env, envMapIntensity: 1.0 });
@@ -2929,6 +2933,7 @@ const GLSL_WEATHER = `
     // đèn pha vuông kiểu xe tải nhẹ: viền nhựa đen, cả lòng hốc là chóa mạ sáng (không phải nền tối), 2 chóa parabol tròn
     // pha / cốt, bóng nhỏ có chụp che chói; kính trong khía rãnh mịn (vân nổi trên bề mặt, không phải song nan đặc);
     // xi nhan hổ phách là ngăn riêng có chóa + kính màu trong mờ ở phía ngoài
+    yield;
     const reflectorMat = plain(burnt ? 0x2a2622 : 0xd4d9db, burnt ? 0.8 : 0.1, burnt ? 0.2 : 0.95, { envMapIntensity: 1.2, side: THREE.DoubleSide });
     const panMat = plain(burnt ? 0x221e1a : 0xa9afb2, burnt ? 0.85 : 0.28, burnt ? 0.2 : 0.85, { envMapIntensity: 0.9 });
     const lensMat = new THREE.MeshPhysicalMaterial({ color: burnt ? 0x2a2622 : 0xeef3f4, roughness: 0.04 + 0.3 * age, metalness: 0, transparent: true, opacity: 0.16 + 0.22 * age, clearcoat: 1, clearcoatRoughness: 0.05 + 0.2 * age, bumpMap: fluteTexture(), bumpScale: 0.6, envMap: env, envMapIntensity: 1.6, depthWrite: false });
@@ -2961,6 +2966,7 @@ const GLSL_WEATHER = `
       box([0.35, 1.16, 0.05], amberLens, [sx * 0.935, 0, 0.53], 0.05, null, lg);
     }
     // cản trước thép (xám / đen hoặc cùng màu cabin), tấm chắn dưới, đèn sương mù tròn (một số xe), biển số, móc kéo
+    yield;
     const bumperMat = burnt ? chassisMat : wr() < 0.55 ? plain(new THREE.Color(0x505458).lerp(new THREE.Color(0x3c3a36), age * 0.5), 0.55, 0.35) : cabPaint;
     const bmp = box([14.5, 1.0, 0.76], bumperMat, [0, 4.58, 20.32], 0.17); bmp.userData.acc = 'bumper';
     box([13.2, 0.32, 0.6], chassisMat, [0, 3.85, 20.15], 0.06);
@@ -2995,6 +3001,7 @@ const GLSL_WEATHER = `
       if (wr() < 0.4) { const h = hitAt([sx * 12, 16.7, 12.5], [-sx, 0, 0]); if (h) box([0.08, 0.42, 8.6], plain(0x0e1216, 0.12, 0.1, { transparent: true, opacity: 0.78 }), [h.p.x + sx * 0.18, 17.1, 12.9], 0.03, [0, 0, -sx * 0.4]); }
     }
     // mái cabin: máng xối 2 mép mui, lưỡi trai che nắng trên kính (một số xe, có đèn hổ phách báo kích thước), cần ăng-ten
+    yield;
     const roofAt = z => { const h = hitAt([0, 40, z], [0, -1, 0]); return h ? h.p.y : 16.7; };
     for (const sx of [-1, 1]) { const hh = hitAt([sx * 6.2, 40, 12], [0, -1, 0]); if (hh) blk([0.14, 0.14, 9.6], chassisMat, [sx * 6.25, hh.p.y + 0.02, 12.6]); }
     const visor = wr() < 0.45 && !burnt, yR = roofAt(17.0);
@@ -3013,6 +3020,7 @@ const GLSL_WEATHER = `
       for (const y of [10.5, 15.5]) blk([0.9, 0.18, 0.18], galv, [sx * 6.05, y, 6.6]);
     }
     // động cơ / hộp số / két nước dưới sàn cabin (thấy qua gầm, hốc bánh)
+    yield;
     const castIron = plain(0x242628, 0.7, 0.4);
     box([4.6, 2.6, 6.4], castIron, [0, 4.6, 14.2], 0.25); box([3.4, 0.9, 4.0], castIron, [0, 3.1, 14.6], 0.2);
     box([2.6, 2.0, 5.2], castIron, [0, 4.5, 8.6], 0.3);
@@ -3077,6 +3085,7 @@ const GLSL_WEATHER = `
     }
 
     // ===== SẮT-XI & GẦM =====
+    yield;
     for (const sx of [-1, 1]) box([0.62, 1.1, 39.5], chassisMat, [sx * railX, railY, -0.5], 0.05);
     for (const z of [17.5, 9.5, 2, -6, -13.5, -19.8]) blk([2 * railX - 0.6, 0.8, 0.5], chassisMat, [0, railY, z]);
     // cầu trước dầm chữ I hạ thấp giữa, cam quay 2 đầu, nhíp lá, giảm chấn, đòn kéo lái
@@ -3132,6 +3141,7 @@ const GLSL_WEATHER = `
     }
     // thanh chắn hông chống chui gầm: 2 thanh ngang mạ kẽm giữa 2 cầu, pát bắt vào sắt-xi
     // thanh thép sơn đen, dán dải phản quang vàng / đen theo quy chuẩn (một số xe để thép mạ kẽm trơn)
+    yield;
     const guardBlack = wr() < 0.65, guardMat = guardBlack ? chassisMat : galv, refl = plain(burnt ? 0x3a3028 : 0xe0b31a, 0.4, 0.1, { emissive: burnt ? 0 : 0x1a1200 });
     for (const sx of [-1, 1]) {
       for (const y of [3.9, 5.95]) {
@@ -3152,6 +3162,7 @@ const GLSL_WEATHER = `
     }
 
     // ===== THÙNG =====
+    yield;
     const type = TB.type, bodyCol = TB.color < 0 ? color.clone() : new THREE.Color(TB.color);
     if (burnt) bodyCol.lerp(new THREE.Color(0x181412), 0.85);
     const zF = 5.45, zR = -20.0, L = zF - zR, zc = (zF + zR) / 2, hw = 7.0, fY = 7.9, pH = 3.75;
@@ -3231,6 +3242,7 @@ const GLSL_WEATHER = `
       // móc chằng dây dưới dầm biên
       for (const sx of [-1, 1]) for (let z = zR + 1.3; z < zF - 0.5; z += 2.55) add(new THREE.TorusGeometry(0.2, 0.05, 4, 8, Math.PI), galv, [sx * (hw + 0.06), 7.12, z], [0, Math.PI / 2, Math.PI]);
     }
+    yield;
     if (type === 'drop' || type === 'tarp') {
       // --- BỬNG LỬNG: mỗi bên 2 cánh bửng tôn dập 3 gân ngang, mép trên / dưới, 3 bản lề dưới, khoá cài + tay gạt ở 2
       // đầu cánh, cột chống 3 vị trí; bửng sau; vách đầu thấp + giá chắn ống thép (thùng lửng) hoặc vách đầu (mui bạt)
@@ -3276,6 +3288,7 @@ const GLSL_WEATHER = `
         }
       }
     }
+    yield;
     if (type === 'tarp') {
       // --- MUI BẠT: vòm khung ống thép, bạt phủ chằng dây xuống móc dưới dầm biên; bạt hậu cuộn lên hoặc buông kín
       const ys = 19.55, yr = 21.0, hwT = hw + 0.17, yb = fY + pH - 1.1, rear = wr() < 0.55;
@@ -3310,6 +3323,7 @@ const GLSL_WEATHER = `
         for (const y of [yb + 1.5, yb + 4, yb + 6.5]) blk([0.7, 0.08, 0.05], rope, [0, y, zR - 0.18]);
       }
     }
+    yield;
     if (type === 'box') {
       // --- THÙNG KÍN: vách tôn sóng hoặc tấm phẳng có gân đứng, trụ góc nhôm định hình, viền nóc / chân, nóc tôn; cửa hậu
       // 2 cánh với 4 thanh khoá chốt đứng + tay khoá, bản lề; đèn báo kích thước góc nóc; một số xe có cửa hông, sọc sơn
@@ -3369,6 +3383,7 @@ const GLSL_WEATHER = `
       }
     }
     // gió chắn trên nóc cabin hướng luồng gió lên thùng cao (một số xe mui bạt / thùng kín)
+    yield;
     if ((type === 'tarp' || type === 'box') && wr() < 0.4) {
       // khối chắn gió hình nêm (mặt cắt cong lồi, 2 má hông kín) đặt trên nóc cabin
       const yr0 = roofAt(12) + 0.12, y1 = Math.min(TB.top - 1.8, yr0 + 2.75);
@@ -3392,6 +3407,7 @@ const GLSL_WEATHER = `
 
     // ===== ĐUÔI XE: cản chống chui gầm sơn phản quang đỏ - trắng, cụm đèn hậu 3 ngăn trong lồng thép, biển số + đèn soi,
     // chốt kéo rơ-moóc (một số xe)
+    yield;
     const stripe = plain(0xffffff, 0.45, 0.1, { map: stripeTexture(), color: burnt ? 0x3a3028 : 0xffffff });
     box([14.0, 0.9, 0.55], stripe, [0, 3.35, -20.75], 0.06);
     for (const sx of [-1, 1]) { blk([0.5, 2.0, 0.5], chassisMat, [sx * railX, 4.1, -20.5]); rod([sx * railX, 4.9, -18.8], [sx * railX, 3.6, -20.5], 0.12, chassisMat); }
@@ -3484,6 +3500,11 @@ const GLSL_WEATHER = `
   const OBR0 = THREE.Object3D.prototype.onBeforeRender;
   function dropArray() { this.array = null; }
   function mergeStatic(car) {
+    const it = mergeStaticGen(car);
+    for (;;) { const r = it.next(); if (r.done) return r.value; }
+  }
+  // từng nhóm vật liệu một bước (buildJob rải khung): xe tải ~30 nhóm, gộp liền một mạch 10-40 ms
+  function* mergeStaticGen(car) {
     car.updateMatrixWorld(true);
     const inv = _mm.copy(car.matrixWorld).invert().clone();
     const groups = new Map(), shown = [];
@@ -3545,6 +3566,7 @@ const GLSL_WEATHER = `
       car.add(mesh);
       merged.push(mesh);
       for (const o of G.list) { o.layers.set(1); shown.push(o); }
+      yield;
     }
     if (!merged.length) return null;
     return function unmerge() {
@@ -3908,7 +3930,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
   }
   // DỰNG XE. opts: color, age (0 mới .. 1 bỏ hoang lâu năm), seed (mỗi xe một kiểu hư hỏng)
   // ---------------------------------------------------------------------------
-  function build(kind = 'sedan', opts = {}) {
+  function* buildGen(kind = 'sedan', opts = {}) {
     const S = SPEC[kind] || SPEC.sedan, age = opts.burnt ? 1.0 : (opts.age !== undefined ? opts.age : 0.6), seed = opts.seed || 1, rnd = mulberry(seed * 9301 + 49297);
     let color = new THREE.Color(opts.color !== undefined ? opts.color : (kind === 'taxi' ? 0xe8b820 : 0x7a1512));
     if (opts.burnt) {
@@ -3966,7 +3988,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       tire: plain(opts.burnt ? new THREE.Color(0x1a1715) : new THREE.Color(0xffffff).lerp(new THREE.Color(0xb8a890), age * 0.4), 0.86, 0.02, Object.assign({ envMapIntensity: opts.burnt ? 0.05 : 0.3 }, (() => { const T = tireTextures(age, Math.floor(seed) % 4 + (S.isSuv ? 2 : 0)); return { map: T.map, bumpMap: T.bump, bumpScale: 0.45 }; })())),
       rim: plain(rimCol.clone().multiplyScalar(0.78), opts.burnt ? 0.88 : (0.24 + 0.2 * age), opts.burnt ? 0.4 : 0.82, { envMapIntensity: opts.burnt ? 0.15 : 1.15 }),
       lip: plain(new THREE.Color(opts.burnt ? 0x1f1b18 : 0xb8bdc1).lerp(new THREE.Color(0x77736c), age * 0.4), opts.burnt ? 0.85 : 0.32, opts.burnt ? 0.3 : 0.78, { envMapIntensity: opts.burnt ? 0.15 : 0.95 }),
-      barrel: plain(opts.burnt ? 0x121212 : 0x181a1d, 0.42, 0.82),
+      barrel: plain(opts.burnt ? 0x121212 : 0x181a1d, 0.42, 0.82, { side: THREE.DoubleSide }),   // ống vành hở 2 đầu: nhìn từ gầm phải thấy lòng ống
       cap: plain(opts.burnt ? 0x181513 : 0x15171a, 0.18, 0.88, { envMapIntensity: 1.3 }),
       disc: plain(opts.burnt ? new THREE.Color(0x4a362a) : new THREE.Color(0xffffff), opts.burnt ? 0.88 : 0.45, opts.burnt ? 0.4 : 0.6, { map: discTexture(age, SPORT_DISC), envMapIntensity: opts.burnt ? 0.15 : 0.8 }),
       // cùm phanh: phần lớn gang đúc xám đen gỉ, ít xe sơn đỏ (bản thể thao)
@@ -4006,6 +4028,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     const endFastCast = () => { if (!fastCast) return; delete bodyGeo.boundsTree; delete cabGeo.boundsTree; delete body.raycast; delete cabin.raycast; };
     // mặt trong khoang: cột, khung cửa, trần (đặc) — nhìn xuyên kính thấy thành xe bên kia
     const cabIn = new THREE.Mesh(cabGeo, mats.cabinIn); cabIn.receiveShadow = true; car.add(cabIn);
+    yield;
     const top = curve(S.top), plan = curve(S.plan), roof = curve(S.cabin), bot = curve(S.bottom);
     // dò mặt thân xe bằng tia (gắn chi tiết sát bề mặt) — trước khi móp
     const rc = new THREE.Raycaster(); rc.firstHitOnly = true;
@@ -4013,6 +4036,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     const part = (geo, mat, pos, rot, parent) => { const m = new THREE.Mesh(geo, mat); m.position.set(...pos); if (rot) m.rotation.set(...rot); m.castShadow = true; m.receiveShadow = true; (parent || car).add(m); return m; };
 
     // --- NỘI THẤT nhìn qua kính: 2 ghế trước có tựa đầu, băng ghế sau, taplô, vô-lăng, gương chiếu hậu trong
+    yield;
     const belt = top(0), nIn0 = car.children.length;
     if (S.isTruck) {
       // Nội thất buồng lái xe tải: 2 ghế ngồi bản lớn, taplô to cao, vô lăng dốc 45 độ bên lái (x < 0)
@@ -4056,6 +4080,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     car.children.slice(nIn0).forEach(m => m.userData.inner = true);
 
     // --- GƯƠNG HẬU KHÍ ĐỘNG HỌC (chỉ cho Sedan và SUV, xe tải có cụm gương đôi xe tải chuyên dụng)
+    yield;
     if (!S.isTruck) {
       for (const sx of [1, -1]) {
         // gương đặt ngay sau chân cột A (theo chân kính chắn gió); van: gương to
@@ -4193,6 +4218,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       }
     }
     // --- TAY NẮM CỬA (cùng màu sơn, lõm tối phía sau)
+    yield;
     for (const sx of [1, -1]) {
       const zDoorHandles = S.isTruck ? [] : S.handles || (S.isPickup ? [0.7,-5.3] : [0.7,-7.2]);
       for (const zH of zDoorHandles) {
@@ -4317,6 +4343,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       }
     }
     // --- BIỂN SỐ trước / sau (gom vào plateGrp để mặt và đế luôn đi liền nhau)
+    yield;
     const ps = Math.abs(Math.floor(seed)) % 1000003 || 1;   // seed âm (props băm từ toạ độ) -> biển số ra ký tự rác
     const txt = String.fromCharCode(65 + (ps * 7) % 26) + ((ps * 37) % 90 + 10) + '-' + String(1000 + (ps * 7919) % 9000);
     const plateTex = plateTexture(txt, age, rnd), plateMat = plain(opts.burnt ? 0x3a322c : 0xffffff, opts.burnt ? 0.95 : 0.5, 0.1, { map: plateTex, envMapIntensity: 0.4 });
@@ -4362,6 +4389,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         }
       }
     }
+    yield;
     if (kind === 'taxi') {
       const taxiGrp = new THREE.Group();
       taxiGrp.userData.isRoof = true;
@@ -4420,6 +4448,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       car.add(taxiGrp);
     }
     // --- PHỤ KIỆN RIÊNG CHO SUV (Giá nóc khí động học, cánh gió đuôi thể thao, ăng-ten vây cá mập, bậc bước chân việt dã, gạt mưa sau)
+    yield;
     if (S.isSuv && !S.isPickup) {
       const w0 = plan(0) - S.inset, w1 = w0 - S.tumble;
       // Chi tiết nắp cốp: thanh nẹp nắp cốp đen mờ tinh tế tích hợp tay mở cốp và camera lùi kín đáo
@@ -4571,6 +4600,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       }
     }
     // --- PHỤ KIỆN RIÊNG CHO XE TẢI THÙNG LỬNG (Dropside Bed, Heavy Bumper, Cab Guard, Cab Steps, Tow Mirrors, Cargo)
+    yield;
     if (S.isPickup) {
       const bed = new THREE.Group(); bed.userData.acc = 'pickupBed'; car.add(bed);
       part(roundBox(12.9,0.22,12.5,0.06), mats.truckBedFloor, [0,5.35,-13.8], null, bed);
@@ -4629,7 +4659,9 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
       if (wr() < 0.35) part(roundBox(0.72, 1.55, 1.2, 0.12), plain(wr() < 0.5 ? 0x2f4a2b : 0x7c1a12, 0.55, 0.3), [5.5 - wr(), yF + 0.78, -19.4 + wr() * 1.5], [0, (wr() - 0.5) * 0.6, 0], bed);
     }
     // --- CỤM ĐÈN / LƯỚI lắp vào lỗ khoét
-    if (S.isTruck) buildTruck({ S, opts, seed, age, cond, sev, color, env, mats, plain, part, hitAt, wr, car, g, plateMat, TB });
+    yield;
+    if (S.isTruck) yield* buildTruck({ S, opts, seed, age, cond, sev, color, env, mats, plain, part, hitAt, wr, car, g, plateMat, TB });
+    yield;
     const feat = new THREE.Group(); car.add(feat);
     const M = {
       wall: plain(0x0e1013, 0.35, 0.1, { side: THREE.DoubleSide }),
@@ -4667,9 +4699,11 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         const fg = new THREE.Group(); fg.userData.lamp = F.kind; fg.userData.side = sx; feat.add(fg);
         buildFeature(F, sx, body, M, age, fg);
         if (F.kind === 'head' || F.kind === 'tail') lamps.push(fg);
+        yield;
       }
     }
     // --- LÒNG HỐC BÁNH KÍN & SÀN GẦM XE: vòm nhựa ôm sát mép vỏ ngoài, vách ngăn đứng bịt kín bên trong, sàn gầm che kín bụng xe
+    yield;
     const wInner = Math.max(3.6, S.trackHalf - 1.95);
     const wellMat = plain(0x0a0b0d, 0.96, 0.02, { side: THREE.DoubleSide });
     // xe tải: sắt-xi hở (không sàn gầm kín), cầu sau bánh đôi nằm ngoài thân cabin (không lòng hốc bánh sau)
@@ -4707,6 +4741,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     // --- HƯ HỎNG SẴN THEO THỜI GIAN: xe đỗ lâu / dính chiến sự không lành lặn như xe mới ra lò. Lập danh sách lúc thân
     // còn nguyên (dò mặt tôn nhanh bằng cây bao), móp thật ở bước sau (khi các khối gắn thân đã quy về toạ độ xe):
     // vết móp lẻ tẻ (vết quệt dọc cửa, vè, góc cản, capô / nóc bị vật rơi), cản xệ một góc, mui võng, đèn vỡ, kính hông vỡ
+    yield;
     const dents = [], sags = [];
     const zFront = S.plan[S.plan.length - 1][0], zRear = S.isTruck ? S.cabin[0][0] : S.plan[0][0], dK = 0.55 + 0.6 * sev;
     const dentAt = (o, d, r, depth, sz) => {
@@ -4805,6 +4840,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
         if ((cond === 'broken' && wr() < 0.55) || (opts.sag > 0.04)) u.uE.value.set((wr() - 0.5) * 5, S.roofF + (S.cabin[S.cabin.length - 1][0] - S.roofF) * (0.3 + 0.5 * wr()), 3 + wr() * 4, 1);   // kính chắn gió rạn
       }
     }
+    yield;
     endFastCast();
     // --- BỊ XE TĂNG CÁN — ĐỘNG. Lưới "bản đồ lún" dưới thân xe (ô 0,8 đv): mỗi lần xích đè (stamp) ghi trần chiều cao
     // tôn bị ép tới, độ phủ dưới xích, hướng đẩy bè ngang, toạ độ dọc vệt (in mắt xích), và thời gian đã chịu tải.
@@ -4999,6 +5035,7 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
     // trần hiệu dụng: tôn hạ dần theo thời gian chịu tải (sập), cap thấp nhất đã từng bị đè
     // khối máy / cầu xe / sàn khung cứng không ép dẹt hết: đống tôn nhăn chồng lên còn cao ~40-60 cm
     // ---- THÂN MỀM XPBD (car_softbody.js): khung thô bị xích đè, tôn tự gập / cột tự gãy theo lực ----
+    yield;
     const SB = CarSoftBody.create(S, top, roof, plan, [S.cabin[0][0], S.cabin[S.cabin.length - 1][0]]);
     const tmp4 = [0, 0, 0, 0];
     // trần hiệu dụng tại (x, z): mặt nóc nghỉ H dời theo khung
@@ -5048,12 +5085,14 @@ float lodRmax(float a, float b, float r) { vec2 q = vec2(a, b) + r; return lengt
             for(let i=0;i<P.count&&lv.size<64;i++) lv.add(Math.round((ax?P.getZ(i):P.getX(i))*2));
             if(lv.size<ext/2.2) { const t=tessellate(m.geometry,2.0); m.geometry.dispose(); m.geometry=t; }
           }
+          yield;
         }
         root.traverse(o=>{if(o.isGroup){o.position.set(0,0,0);o.quaternion.identity();o.scale.set(1,1,1);}});
       }
       car.updateMatrixWorld(true);
     }
     // One weather/burn state for every opaque accessory, including the new bed and cab parts.
+    yield;
     const addonWear = { value: new THREE.Vector4(W.dust,W.age,W.rust,opts.burnt ? 1 : 0) };
     const addonAx = { value: new THREE.Vector4(S.isTruck ? 1 : 0, S.axleF, S.axleR, S.r) };   // xe tải: vệt chảy + bùn bắn sau bánh
     const addonTop = { value: TB && TB.top ? TB.top - 0.45 : 17.6 };   // mép dưới viền nóc thùng (nguồn vệt chảy)
@@ -5157,6 +5196,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     // --- MÓP THẬT các vết đã lập: thân / khoang kính dời đỉnh + đánh dấu nếp gấp (shader vẽ tróc sơn, bụi kẹt trong
     // nếp); chi tiết gắn thân dựng sẵn toạ độ xe (khối thùng, đèn, hốc bánh) móp theo, chi tiết đặt theo vị trí dời cả khối.
     // Làm trước khi chụp trạng thái nghỉ -> vết móp cũ còn nguyên khi xe bị cán / húc tiếp
+    yield;
     if (dents.length || sags.length) {
       const o4 = [0, 0, 0, 0];
       const wearDisp = (x, y, z, out) => {
@@ -5225,6 +5265,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         m.position.set(c.x + (wr() - 0.5) * 3, 0.06, c.z + Math.sign(c.z) * (1 + 2 * wr())); m.rotation.y = wr() * 6.3; g.add(m);
       }
     }
+    yield;
     const restGeo = new Map(), restObj = [], binds = new Map();
     const keepGeo = geo => { if (!restGeo.has(geo)) restGeo.set(geo, geo.attributes.position.array.slice()); };
     keepGeo(bodyGeo); keepGeo(cabGeo);
@@ -5250,6 +5291,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       vertexNormals(geo);
       geo.computeBoundingSphere();
     };
+    yield;
     const wheels = [];
     const rebuild = () => {
       crushDirty = false;
@@ -5366,6 +5408,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     // opts.flats [4]: lốp xẹp theo thứ tự bánh của props.js (0 trái trước, 1 phải trước, 2 trái sau, 3 phải sau; trái = -x);
     // opts.noWheel: bánh bị tháo mất — trục kê gạch, hoặc rơi hẳn xuống đĩa phanh (bánh nằm lăn lóc bên cạnh);
     // xe cháy: lốp cháy rụi, thân hạ xuống vành sắt
+    yield;
     let roll = 0, pitch = 0, sink = 0;
     const burntDrop = opts.burnt ? S.r * 0.36 : 0;
     // kiểu mâm theo dòng xe: van / taxi / xe phổ thông hay mâm thép (có hoặc không ốp), SUV / bán tải mâm đúc
@@ -5409,6 +5452,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       for (const w of wheels) { w.lift = -(q.set(w.x, 0, w.z).applyMatrix4(M).y - sink); w.y += w.lift; w.g.position.y = w.y; }
     }
     // --- XÁC XE BỊ PHÁ: vũng dầu máy / nước làm mát / xăng loang dưới đất, mảnh tôn / nhựa / kính / đèn văng quanh
+    yield;
     const flows = [], loose = [];
     // tấm tôn rời: mặt sơn + mặt trong tôn lót sẫm (có độ dày), vồng nhẹ, mép gập xuống, gốc toạ độ ở mép bản lề (z = 0)
     const innerMat = plain(0x2a2826, 0.8, 0.4, { side: THREE.DoubleSide });
@@ -5524,6 +5568,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     // Hạt lửa / khói tự quản (trang thử không có hệ hạt của game; trong game thay bằng fx.fire / fx.smoke)
     // loại hạt: 0 lửa, 1 khói đen dầu / cao su, 2 tia lửa, 3 hơi nước két làm mát, 4 khói thuốc nổ, 7 bụi (màu theo tham số),
     // 5 mảnh vụn rắn (sơn, kính, cao su — màu theo tham số), 6 chớp nổ
+    yield;
     const PFX = (() => {
       const MAXN = 1600, pos = new Float32Array(MAXN * 3), col = new Float32Array(MAXN * 3), base = new Float32Array(MAXN * 3), siz = new Float32Array(MAXN), rot = new Float32Array(MAXN);
       const life = new Float32Array(MAXN), age0 = new Float32Array(MAXN), vel = new Float32Array(MAXN * 3), kind = new Uint8Array(MAXN), grow = new Float32Array(MAXN), spin = new Float32Array(MAXN);
@@ -6393,6 +6438,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       // sự kiện mới phát sinh (crunch, glass, collapse, tire, burst) -> game phát âm thanh / hạt
       drain() { return events.splice(0); }
     };
+    yield;
     g.userData.crush = crushApi;
     // cán tĩnh (opts.crush): xe tăng đã chạy thẳng qua theo opts.track
     if (opts.crush) {
@@ -6409,6 +6455,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         g.add(m);
       }
     }
+    yield;
     car.rotation.set(pitch, 0, roll); car.position.y = -sink;
     cShadow = contactShadow(S); g.add(cShadow);
     // lão hoá phụ kiện theo loại vật liệu (vật liệu xe tải đã có lớp phong hoá riêng: weathered)
@@ -6435,9 +6482,11 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         }
       });
     }
+    yield;
     shareGeometries(g, restGeo);
     // xe nguyên (không cán sẵn: khung mềm còn đang lún dần) -> vẽ bằng bản gộp tới lần đầu bị tác động
-    const unmerge = opts.crush || opts.noMerge ? null : mergeStatic(car);
+    yield;
+    const unmerge = opts.crush || opts.noMerge ? null : yield* mergeStaticGen(car);
     if (unmerge) {
       let on = true;
       const split = () => { if (on) { on = false; unmerge(); } };
@@ -6456,6 +6505,36 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     }
     g.userData.spec = S;
     return g;
+  }
+  // Dựng liền một mạch (lab, xe mẫu làm nóng, xe cần ngay)
+  function build(kind, opts) {
+    const it = buildGen(kind, opts);
+    for (;;) { const r = it.next(); if (r.done) return r.value; }
+  }
+  // Dựng rải nhiều khung (props.js nâng xe lên bản chi tiết, dựng sẵn lúc chờ trận): mỗi lần step(ms) chạy tiếp các bước
+  // dựng tới khi hết ngân sách thời gian; trả nhóm xe khi xong, null khi còn dở. Kết quả trùng khớp build().
+  function buildJob(kind, opts) {
+    const it = buildGen(kind, opts);
+    let out = null, done = false;
+    const stat = { n: 0, max: 0, at: -1 };   // số bước đã chạy, bước lâu nhất (đo / dò khựng)
+    return {
+      stat,
+      get done() { return done; },
+      get result() { return out; },
+      step(budgetMs = 4) {
+        if (done) return out;
+        const t0 = performance.now();
+        let t = t0;
+        do {
+          const r = it.next(), t1 = performance.now();
+          if (t1 - t > stat.max) { stat.max = t1 - t; stat.at = stat.n; }
+          stat.n++; t = t1;
+          if (r.done) { done = true; out = r.value; return out; }
+        } while (t - t0 < budgetMs);
+        return null;
+      },
+      finish() { while (!done) this.step(1e9); return out; }
+    };
   }
   // BIÊN DỊCH TRƯỚC SHADER XE CHI TIẾT (gọi lúc tải bản đồ có ô tô, game.prewarmShaders): bản chi tiết dựng muộn trong trận
   // nên ~50 biến thể vật liệu (mỗi loại xe x tình trạng: mới / bụi / gỉ / hỏng / cháy rụi / bị cán / đang cháy, thùng xe
@@ -6520,6 +6599,6 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     J.finish();
     return (renderer.info.programs || []).length - n0;
   }
-  return { build, SPEC, envCube, truckBodyOf, lodGeometry, patchLodMaterial, fireLightPool, assignFireLights, prewarm, warmJobs, _geo: { bodyGeometry, cabinGeometry } };
+  return { build, buildJob, SPEC, envCube, truckBodyOf, lodGeometry, patchLodMaterial, fireLightPool, assignFireLights, prewarm, warmJobs, _geo: { bodyGeometry, cabinGeometry } };
 })();
 if (typeof window !== 'undefined') window.CivilCars = CivilCars;

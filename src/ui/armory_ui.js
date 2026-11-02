@@ -185,7 +185,9 @@ const ArmoryUI = (() => {
         const gearName = S && S.gear && Eq.MODULES[S.gear] ? Eq.MODULES[S.gear].name : '';
         if (!S) { h += card({ img, name, line: 'Đạn chính · không giới hạn', cls: ' on std', tip: `${name}: đạn chính, mang theo không giới hạn` }); continue; }
         const have = stock[k] || 0, free = A() && A().freeOf ? A().freeOf(tank, k) : 0, paid = Math.max(0, have - free);
-        const carry = Math.min(have, S.max), bump = flash && flash.k === k ? ' bump' : '';
+        const uSlots = (k === 'KAMIKAZE') ? (Eq.uavSlotsOf ? Eq.uavSlotsOf(P || lo, tank) : 0) : S.max;
+        const curMax = (k === 'KAMIKAZE') ? uSlots : S.max;
+        const carry = Math.min(have, curMax), bump = flash && flash.k === k ? ' bump' : '';
         const needGear = S.gear && !lo.m.includes(S.gear) && !(Eq.builtin && Eq.builtin(tank, S.gear));
         const full = have >= S.max * 10;
         const adBtn = adsOn() ? `
@@ -216,10 +218,24 @@ const ArmoryUI = (() => {
         }
       }
     } else {
-      for (const id in Eq.MODULES) {
-        const M = Eq.MODULES[id];
-        if (M.cat !== cat || !Eq.compatible(id, tank)) continue;
-        h += itemCard(tank, id, M, lo, full);
+      if (cat === 'uav') {
+        const slotIds = ['uav_slot_1', 'uav_slot_2', 'uav_slot_3', 'uav_slot_4'];
+        h += '<div class="eqd-sep"><span>MỞ KHÓA Ô CHỨA</span></div>';
+        for (const id of slotIds) {
+          if (Eq.MODULES[id]) h += itemCard(tank, id, Eq.MODULES[id], lo, full);
+        }
+        h += '<div class="eqd-sep"><span>TRANG BỊ UAV</span></div>';
+        for (const id in Eq.MODULES) {
+          if (Eq.MODULES[id].cat === 'uav' && !slotIds.includes(id) && Eq.compatible(id, tank)) {
+            h += itemCard(tank, id, Eq.MODULES[id], lo, full);
+          }
+        }
+      } else {
+        for (const id in Eq.MODULES) {
+          const M = Eq.MODULES[id];
+          if (M.cat !== cat || !Eq.compatible(id, tank)) continue;
+          h += itemCard(tank, id, M, lo, full);
+        }
       }
     }
     h += '</div>';
@@ -244,8 +260,44 @@ const ArmoryUI = (() => {
   // Thẻ giáp / phụ kiện: bấm cả thẻ để trang bị / gỡ (đồ khóa: xem quảng cáo nhận)
   function itemCard(tank, id, M, lo, full) {
     const Eq = E();
+    const isUavSlot = id.startsWith('uav_slot_');
+    const uSlots = (Eq.uavSlotsOf ? Eq.uavSlotsOf(prof() || lo, tank) : 0);
+
+    // Xử lý riêng cho các thẻ mở khóa ô chứa UAV
+    if (isUavSlot) {
+      const slotNum = M.slotNum || parseInt(id.replace('uav_slot_', ''), 10);
+      const got = owns(tank, id);
+      if (got) {
+        return card({ img: 'drone', name: M.name, line: `<span class="eqd-stock">Đã mở khóa</span> · Ô chứa số ${slotNum}`,
+          cls: ' on std', tag: 'Ô CHỨA', tip: `${M.name}: Đã mở khóa ô chứa này cho xe pháo. Sức chứa hiện tại: ${uSlots}/4 ô.` });
+      }
+      // Kiểm tra xem ô trước đã mở khóa chưa (phải mở ô 1 mới mở ô 2)
+      const prevOwned = slotNum === 1 || owns(tank, 'uav_slot_' + (slotNum - 1));
+      let ctl = '';
+      if (!prof()) {
+        ctl = '<div class="eqd-qty"><button class="eqd-q wide" data-act="login"><i class="ti ti-login"></i> Đăng nhập để mở khóa</button></div>';
+      } else if (!prevOwned) {
+        ctl = `<div class="eqd-qty"><button class="eqd-q wide" disabled title="Cần mở khóa Ô chứa số ${slotNum - 1} trước"><i class="ti ti-lock"></i> Cần mở Ô ${slotNum - 1} trước</button></div>`;
+      } else {
+        ctl = unlockCtl(tank, id, M);
+      }
+      return card({ img: 'drone', name: M.name, line: prevOwned ? esc(M.desc.split(/[.:]/)[0]) : `<span class="eqd-warn">Chưa mở khóa Ô ${slotNum - 1}</span>`,
+        cls: ' locked', lock: true, tag: `Ô ${slotNum}/4`, extra: ctl,
+        tip: `${M.name} — ${M.desc}\nGiá mở khóa: ${fmt(M.price)} Bạc${adsOn() && Eq.adsToUnlock(id) ? ` hoặc xem ${Eq.adsToUnlock(id)} quảng cáo` : ''}` });
+    }
+
+    // Đối với trang bị UAV (Recon hoặc Kami): kiểm tra xem đã mở khóa ô chứa nào chưa
+    if (M.cat === 'uav') {
+      if (uSlots <= 0) {
+        const ctl = '<div class="eqd-qty"><button class="eqd-q wide" disabled title="Chưa có ô chứa UAV nào trên xe — hãy mở khóa Ô chứa số 1 trước"><i class="ti ti-lock"></i> Cần mở khóa ô chứa</button></div>';
+        return card({ img: id, name: M.name, line: '<span class="eqd-warn">Chưa có ô chứa UAV trên xe</span>',
+          cls: ' locked', lock: true, tag: 'UAV', extra: ctl,
+          tip: `${M.name}: Xe chưa có ô chứa UAV nào. Hãy mở khóa Ô chứa số 1 ở phía trước để trang bị!` });
+      }
+    }
+
     const locked = !Eq.isFree(id) && !owns(tank, id);
-    // ô nóc tháp để trống = đang mang món mặc định
+    // ô nóc tháp / uav để trống = đang mang món mặc định
     const isDefault = (Eq.MOUNT_CATS || ['roof']).includes(M.cat) && !lo.m.includes(id) && Eq.slotOf && Eq.slotOf(lo, tank, M.cat) === id;
     const equipped = lo.m.includes(id) || isDefault;
     if (locked) {

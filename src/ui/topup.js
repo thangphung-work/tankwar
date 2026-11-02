@@ -1,9 +1,10 @@
 /**
- * NẠP BẠC (tiền thật qua PayPal)
+ * NẠP BẠC (quét mã ngân hàng nội địa qua PayOS hoặc thanh toán quốc tế qua PayPal)
  * - Nút "+ NẠP" cạnh số Bạc (thẻ chỉ huy góc sảnh + bảng hồ sơ) -> cửa sổ chọn gói (Equipment.TOPUP).
- * - Bấm giá: máy chủ tạo đơn PayPal (POST /api/pay/checkout) -> chuyển sang trang duyệt thanh toán của PayPal.
- * - Quay về ?pay=success&token=<mã đơn>: máy chủ chốt đơn (POST /api/pay/verify) -> cộng Bạc, hiện thông báo; ?pay=cancel: báo đã hủy.
- * Máy chủ mới là nơi cộng Bạc (webhook PayPal / chốt đơn), máy khách chỉ hiển thị.
+ * - Tự động chọn phương thức phù hợp theo quốc gia của người chơi (Việt Nam: quét mã ngân hàng; Quốc tế: PayPal / thẻ).
+ * - Người chơi có thể tự do bấm chọn đổi phương thức thanh toán bất cứ lúc nào.
+ * - Bấm mua: máy chủ tạo đơn (POST /api/pay/checkout) -> chuyển sang trang thanh toán.
+ * - Quay về ?pay=success&...: máy chủ chốt đơn (POST /api/pay/verify) -> cộng Bạc, hiện thông báo; ?pay=cancel: báo đã hủy.
  */
 (() => {
   if (typeof document === 'undefined' || typeof Equipment === 'undefined' || !Equipment.TOPUP) return;
@@ -16,9 +17,31 @@
   const T = Equipment.TOPUP;
   const BASE_RATE = T.PACKS.filter(p => !p.once).reduce((m, p) => Math.min(m, Equipment.topupGrant(p, false).silver / p.usd), Infinity);
 
+  // Tự động nhận diện quốc gia mặc định của người chơi
+  function detectDefaultMethod() {
+    try {
+      const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || '').toLowerCase();
+      const lang = ((navigator.languages && navigator.languages[0]) || navigator.language || '').toLowerCase();
+      if (tz.includes('ho_chi_minh') || tz.includes('saigon') || lang.startsWith('vi')) {
+        return 'payos';
+      }
+    } catch (e) {}
+    return 'paypal';
+  }
+
+  let selectedMethod = detectDefaultMethod();
   let overlay, busy = false;
   const prof = () => A() && A().profile;
   const bought = (id) => { const p = prof(); return (p && p.pay && p.pay.bought && p.pay.bought[id]) || 0; };
+
+  // Giá hiển thị theo phương thức đang chọn
+  function priceStr(p) {
+    if (selectedMethod === 'payos') {
+      const v = p.vnd || Math.round(p.usd * 25000);
+      return fmt(v) + ' đ';
+    }
+    return usd(p.usd);
+  }
 
   // quy Bạc ra món trong game cho dễ hình dung
   const ADV = (() => {
@@ -38,6 +61,7 @@
     const first = !bought(p.id), g = Equipment.topupGrant(p, first), base = Equipment.topupGrant(p, false);
     const rate = g.silver / p.usd, bonusPct = Math.round((base.silver / p.usd / BASE_RATE - 1) * 100);
     const cls = ['tp-card', p.tag === 'PHỔ BIẾN NHẤT' ? 'hot' : '', p.tag === 'LỜI NHẤT' ? 'best' : ''].filter(Boolean).join(' ');
+    const rateLabel = selectedMethod === 'payos' ? `${fmt(Math.round(rate / 25))} Bạc / 1.000 đ` : `${fmt(rate)} Bạc / $`;
     return `<div class="${cls}" data-pack="${p.id}">
       ${p.tag ? `<span class="tp-tag">${esc(p.tag)}</span>` : ''}
       <div class="tp-ico"><i class="ti ti-${p.icon}"></i></div>
@@ -49,36 +73,64 @@
         ${g.spins ? `<span class="spins"><i class="ti ti-rotate-clockwise-2"></i> +${g.spins} lượt quay thưởng</span>` : ''}
       </div>
       <div class="tp-worth">${esc(worth(g.silver))}</div>
-      <div class="tp-rate"><i style="width:${Math.min(100, Math.round(rate / 2700 * 100))}%"></i><span>${fmt(rate)} Bạc / $</span></div>
-      <button type="button" class="tp-buy" data-buy="${p.id}">${usd(p.usd)}</button>
+      <div class="tp-rate"><i style="width:${Math.min(100, Math.round(rate / 2700 * 100))}%"></i><span>${rateLabel}</span></div>
+      <button type="button" class="tp-buy" data-buy="${p.id}">${priceStr(p)}</button>
     </div>`;
   }
 
   function starterHtml(p) {
     const g = Equipment.topupGrant(p, true);
-    const value = (g.silver + g.spins * 900) / BASE_RATE;   // ~900 Bạc / lượt quay (giá trị kỳ vọng)
+    const valueUsd = (g.silver + g.spins * 900) / BASE_RATE;
+    const valueStr = selectedMethod === 'payos' ? `${fmt(Math.round(valueUsd * 25000))} đ` : usd(valueUsd);
     return `<div class="tp-starter" data-pack="${p.id}">
       <span class="tp-tag">${esc(p.tag || 'CHỈ 1 LẦN')}</span>
       <div class="tp-ico"><i class="ti ti-${p.icon}"></i></div>
       <div class="tp-st-txt">
         <b>${esc(p.name)}</b>
         <span><i class="ti ti-coins"></i> ${fmt(g.silver)} Bạc · <i class="ti ti-rotate-clockwise-2"></i> ${g.spins} lượt quay thưởng</span>
-        <small>Giá trị ~${usd(value)} — gấp ${Math.round(value / p.usd)} lần giá, mỗi tài khoản chỉ mua được 1 lần</small>
+        <small>Giá trị ~${valueStr} — gấp ${Math.round(valueUsd / p.usd)} lần giá, mỗi tài khoản chỉ mua được 1 lần</small>
       </div>
-      <button type="button" class="tp-buy" data-buy="${p.id}">${usd(p.usd)}</button>
+      <button type="button" class="tp-buy" data-buy="${p.id}">${priceStr(p)}</button>
+    </div>`;
+  }
+
+  function methodsHtml() {
+    return `<div class="tp-methods" role="tablist" aria-label="Phương thức thanh toán">
+      <button type="button" class="tp-method ${selectedMethod === 'payos' ? 'active' : ''}" data-method="payos">
+        <i class="ti ti-qrcode"></i>
+        <div class="tp-method-info">
+          <b>Quét mã ngân hàng</b>
+          <small>Chuyển khoản nội địa</small>
+        </div>
+      </button>
+      <button type="button" class="tp-method ${selectedMethod === 'paypal' ? 'active' : ''}" data-method="paypal">
+        <i class="ti ti-brand-paypal"></i>
+        <div class="tp-method-info">
+          <b>Thanh toán quốc tế</b>
+          <small>PayPal &amp; thẻ quốc tế</small>
+        </div>
+      </button>
     </div>`;
   }
 
   function render(note) {
     const p = prof(), packs = T.PACKS.filter(x => !x.once), st = T.PACKS.find(x => x.once && !bought(x.id));
+    const isMock = p && p.pay && p.pay.mock;
+    const isSandbox = p && p.pay && p.pay.sandbox;
+
+    const footInfo = selectedMethod === 'payos'
+      ? `<span><i class="ti ti-qrcode"></i> Quét mã ngân hàng an toàn qua <b>PayOS</b> — mở ứng dụng ngân hàng quét mã chuyển khoản nhanh, không cần thẻ quốc tế.</span>`
+      : `<span><i class="ti ti-lock"></i> Thanh toán an toàn qua <b>PayPal</b> — tài khoản PayPal hoặc thẻ quốc tế. Trò chơi không lưu thông tin thẻ.</span>`;
+
     $('.tp-body', overlay).innerHTML = `
       ${p ? '' : '<div class="tp-note warn"><i class="ti ti-user"></i> Đăng nhập để nạp Bạc vào tài khoản</div>'}
       ${note ? `<div class="tp-note ${note.ok ? 'ok' : 'warn'}">${note.html}</div>` : ''}
+      ${methodsHtml()}
       ${st ? starterHtml(st) : ''}
       <div class="tp-grid">${packs.map(cardHtml).join('')}</div>
       <div class="tp-foot">
-        <span><i class="ti ti-lock"></i> Thanh toán an toàn qua <b>PayPal</b> — tài khoản PayPal hoặc thẻ Visa / Mastercard. Trò chơi không lưu thông tin thẻ.</span>
-        <span>Bạc cộng ngay khi thanh toán xong. Bạc là tiền trong trò chơi, không đổi lại thành tiền thật.${p && p.pay && p.pay.mock ? ' <b class="mock">CHẾ ĐỘ THỬ: thanh toán giả lập, không trừ tiền.</b>' : ''}${p && p.pay && p.pay.sandbox ? ' <b class="mock">CHẾ ĐỘ THỬ: PayPal Sandbox, không trừ tiền thật.</b>' : ''}</span>
+        ${footInfo}
+        <span>Bạc cộng ngay khi thanh toán xong. Bạc là tiền trong trò chơi, không đổi lại thành tiền thật.${isMock ? ' <b class="mock">CHẾ ĐỘ THỬ: thanh toán giả lập, không trừ tiền.</b>' : ''}${isSandbox ? ' <b class="mock">CHẾ ĐỘ THỬ: PayPal Sandbox, không trừ tiền thật.</b>' : ''}</span>
       </div>`;
     overlay.querySelectorAll('[data-buy]').forEach(b => { b.disabled = !p || busy; });
   }
@@ -98,8 +150,21 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     overlay.addEventListener('keydown', (e) => e.stopPropagation());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close(); });
-    overlay.addEventListener('click', (e) => { const b = e.target.closest('[data-buy]'); if (b && !b.disabled) buy(b.dataset.buy, b); });
-    // nút "+ NẠP": bảng hồ sơ (account.js vẽ) + thẻ chỉ huy góc sảnh
+
+    // chuyển đổi phương thức thanh toán
+    overlay.addEventListener('click', (e) => {
+      const mBtn = e.target.closest('[data-method]');
+      if (mBtn && mBtn.dataset.method && mBtn.dataset.method !== selectedMethod) {
+        selectedMethod = mBtn.dataset.method;
+        sfx('playUiOpen');
+        render();
+        return;
+      }
+      const b = e.target.closest('[data-buy]');
+      if (b && !b.disabled) buy(b.dataset.buy, b);
+    });
+
+    // nút "+ NẠP": bảng hồ sơ + thẻ chỉ huy góc sảnh
     document.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act="topup"]');
       if (!b) return;
@@ -115,10 +180,12 @@
       if (silver) silver.after(b); else meta.appendChild(b);
     }
   }
+
   function wallet() {
     const p = prof(), w = $('.tp-wallet', overlay);
     w.innerHTML = p ? `<i class="ti ti-wallet"></i> ${fmt(p.silver)} Bạc` : '';
   }
+
   function open(note) {
     if (!overlay) return;
     const panel = $('#acc-panel');
@@ -129,7 +196,7 @@
     wallet();
     render(note);
   }
-  // đóng có hiệu ứng (topup.css .tp-overlay.closing), ~180 ms sau mới ẩn hẳn
+
   function close() {
     if (overlay.classList.contains('hidden') || overlay._closing) return;
     overlay.classList.add('closing');
@@ -143,8 +210,8 @@
     overlay.querySelectorAll('[data-buy]').forEach(b => { b.disabled = true; });
     btn.innerHTML = '<i class="ti ti-loader-2 tp-spin"></i>';
     try {
-      const r = await acc.api('pay/checkout', { pack: id });
-      location.href = r.url;   // sang trang thanh toán PayPal (giả lập: quay về ngay với ?pay=success)
+      const r = await acc.api('pay/checkout', { pack: id, method: selectedMethod });
+      location.href = r.url;
     } catch (e) {
       busy = false;
       sfx('playUiDenied');
@@ -152,22 +219,24 @@
     }
   }
 
-  // quay về từ PayPal (?pay=success&token=<mã đơn>&PayerID=...)
+  // quay về từ cổng thanh toán (?pay=success&... hoặc ?pay=cancel)
   async function handleReturn() {
     const q = new URLSearchParams(location.search), st = q.get('pay');
     if (!st) return;
-    const sid = q.get('token') || q.get('session_id');
-    ['pay', 'session_id', 'token', 'PayerID'].forEach(k => q.delete(k));
+    const sid = q.get('token') || q.get('session_id') || q.get('orderCode');
+    const orderCode = q.get('orderCode');
+    ['pay', 'session_id', 'token', 'orderCode', 'gateway', 'PayerID'].forEach(k => q.delete(k));
     history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
     if (st === 'cancel') { open({ ok: false, html: '<i class="ti ti-circle-x"></i> Đã hủy thanh toán — chưa trừ tiền.' }); return; }
     if (st !== 'success' || !sid) return;
-    // chờ đăng nhập xong (Account tự lấy hồ sơ khi tải trang)
+
+    // chờ đăng nhập xong
     for (let i = 0; i < 40 && !(A() && A().profile); i++) await new Promise(r => setTimeout(r, 250));
     const acc = A();
     if (!acc || !acc.profile) return;
     for (let tries = 0; tries < 6; tries++) {
       try {
-        const r = await acc.api('pay/verify', { session_id: sid });
+        const r = await acc.api('pay/verify', { session_id: sid, orderCode });
         if (r.profile) acc.applyProfile(r.profile);
         if (r.status === 'paid') {
           const pack = Equipment.topupPack(r.pack);
@@ -179,15 +248,14 @@
       } catch (e) {
         if (e.status === 404 || e.status === 402) { open({ ok: false, html: `<i class="ti ti-alert-triangle"></i> ${esc(e.message)}` }); return; }
       }
-      await new Promise(r => setTimeout(r, 2000));   // thanh toán đang xử lý (vd ví điện tử chậm)
+      await new Promise(r => setTimeout(r, 2000));
     }
-    open({ ok: false, html: '<i class="ti ti-clock"></i> Thanh toán đang được xử lý — Bạc sẽ tự cộng khi PayPal xác nhận (tải lại trang sau ít phút).' });
+    open({ ok: false, html: '<i class="ti ti-clock"></i> Thanh toán đang được xử lý — Bạc sẽ tự cộng khi hệ thống xác nhận (tải lại trang sau ít phút).' });
   }
 
   function init() {
     build();
     handleReturn();
-    // ẩn nút mini khi chưa đăng nhập / máy chủ chưa bật nạp
     setInterval(() => {
       const p = prof(), on = !!(p && p.pay && p.pay.enabled);
       document.querySelectorAll('.tp-add-mini').forEach(b => { b.hidden = !on; });

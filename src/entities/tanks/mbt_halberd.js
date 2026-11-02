@@ -40,7 +40,7 @@
   const glacisY = (z) => 9.4 + (z + 31) * GLACIS_SLOPE;
 
   // Mặt cắt hông tháp (giáp nghiêng gãy khúc): chân -> gờ sống -> mép nóc
-  const TUR_BASE = 0.6, TUR_RIDGE = 3.2, TUR_ROOF = 7.0, TUR_ROOF_CH = 1.0;
+  const TUR_BASE = 0.75, TUR_RIDGE = 3.2, TUR_ROOF = 7.0, TUR_ROOF_CH = 1.0;
   const TUR_RIDGE_X = 11.6;   // nửa bề ngang tại gờ sống (rộng nhất)
   const TUR_UNDER = 1.9;      // tấm dưới hắt vào trong
   const TUR_LEAN = 1.1;       // tấm trên ngả vào trong
@@ -224,6 +224,32 @@
       b.strut(pts[i], pts[i + 1], r, mat, seg);
       if (i > 0) b.add(new THREE.SphereGeometry(r, seg, 4), mat, pts[i]);
     }
+  }
+
+  // Lưới chữ nhật có chỉ số, pháp tuyến mượt: f(u, v) -> [x, y, z, uUV, vUV]
+  function gridGeo(nu, nv, f) {
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= nu; i++) {
+      for (let j = 0; j <= nv; j++) {
+        const p = f(i / nu, j / nv);
+        pos.push(p[0], p[1], p[2]);
+        uv.push(p[3] !== undefined ? p[3] : i / nu, p[4] !== undefined ? p[4] : j / nv);
+      }
+    }
+    const w = nv + 1;
+    for (let i = 0; i < nu; i++) {
+      for (let j = 0; j < nv; j++) {
+        const a = i * w + j, b = (i + 1) * w + j;
+        idx.push(a, b, b + 1, a, b + 1, a + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    g.userData.customUV = true;
+    return g;
   }
 
   // ===========================================================================
@@ -627,8 +653,10 @@
     const ROOF = 7.0;
     const ROOF_CH = 1.0;   // mép nóc tháp vát chéo 45° (~12 cm) như tháp hàn tấm thật
 
-    // Vòng bi tháp pháo: thòng xuống ăn vào nóc thân (nóc thấp hơn chân tháp ~0,7 -> trước đây hở khe sáng nhìn xuyên)
-    tb.cyl(9.4, 9.6, 1.5, 32, D, [0, -0.05, 0]);
+    // Vành cổ tháp pháo: cơ cấu xoay tròn nhiều tầng tách biệt rõ ràng giữa tháp pháo và thân xe
+    tb.cyl(9.65, 9.85, 0.65, 36, P, [0, 0.32, 0]);
+    tb.cyl(9.25, 9.25, 1.1, 36, D, [0, 0.55, 0]);
+    tb.cyl(9.4, 9.6, 0.8, 32, D, [0, -0.05, 0]);
 
     // Thân tháp giáp nghiêng gãy khúc (mặt cắt hình thoi dẹt): đạn bắn ngang gặp tấm nào cũng xiên góc -> dễ trượt.
     // Tấm dưới hắt mạnh vào trong (undercut ~36°) về vòng bi, gờ sống chạy ngang hông, tấm trên ngả vào trong ~21°
@@ -654,9 +682,11 @@
       const W = [[s * 3.1, -11.4], [s * 11.6, -11.4], [s * 11.6, -14.0], [s * 3.1, -19.8]];
       const SLOPE = 0.11;
       const yTop = (z) => ROOF + Math.min(0, z + 11.4) * SLOPE;
+      const yBaseW = (z) => 0.85 + Math.max(0, -11.4 - z) * 0.13;
       const topPts = VehicleKit.insetPolygon(W, [0, TUR_LEAN, 2.4, 0]);
+      const basePts = VehicleKit.insetPolygon(W, [0, TUR_UNDER, 0.25, 0]);
       tb.add(VehicleKit.loftRings([
-        { pts: VehicleKit.insetPolygon(W, [0, TUR_UNDER, 0.25, 0]), y: TUR_BASE },
+        { pts: basePts, y: basePts.map(([, z]) => yBaseW(z)) },
         { pts: W, y: TUR_RIDGE },
         { pts: topPts, y: topPts.map(([, z]) => yTop(z)) }
       ], 0.25), P);
@@ -805,27 +835,56 @@
       tb.setTag(null);
     }
 
-    // Thùng đồ hai bên hông hộc đạn: gân dập, bản lề nắp, khóa gài. Một thùng nắp đóng không kín (vênh hé lên,
-    // lòi mép bạt ra ngoài); thùng kia móp một góc
+    // Thùng đồ hai bên hông tháp pháo: ôm sát và nghiêng theo vách giáp tháp pháo (TUR_UP_TILT & vát đuôi 0.12 rad)
+    // Mặt trong áp sát vỏ giáp (chỉ chừa khe kỹ thuật nhỏ cho tai gá bắt bu-lông), không còn bè ra ngoài.
     for (const s of [-1, 1]) {
       tb.setTag('bin' + (s < 0 ? 'L' : 'R'));
-      tb.box(1.8, 3.8, 7.0, P, [s * 11.3, 3.6, 12.4], [0, s * 0.06, 0]);
-      tb.box(1.9, 0.08, 7.1, D, [s * 11.32, 4.9, 12.4], [0, s * 0.06, 0]);
-      for (const z of [11.5, 13.3]) tb.box(0.1, 2.9, 0.3, P, [s * 12.24, 3.3, z], [0, s * 0.06, 0]);
-      tb.hinge([s * 10.45, 5.55, 12.4], 'z', 6.6, D, 0.14, 4);
+      const rotY = -s * 0.12;
+      const rotZ = s * TUR_UP_TILT;
+      const binRot = [0, rotY, rotZ, 'ZYX'];
+      const cx = s * 11.56, cy = 4.29, cz = 12.4;
+      const F = frameAt([cx, cy, cz], binRot);
+
+      // Thân thùng đồ và gờ viền miệng thùng
+      tb.box(1.45, 3.4, 6.8, P, [cx, cy, cz], binRot);
+      tb.box(1.52, 0.08, 6.88, D, F(0, 1.71, 0), binRot);
+
+      // Gân dập nổi trên mặt ngoài thùng (ở dz = -1.2 và +1.2)
+      for (const dz of [-1.2, 1.2]) {
+        tb.box(0.08, 2.6, 0.28, P, F(s * 0.74, -0.2, dz), binRot);
+      }
+
+      // Bản lề nắp thùng ở mép trên trong
+      const hingePos = F(-s * 0.725, 1.70, 0);
+      tb.hinge(hingePos, 'z', 6.4, D, 0.12, 4);
+
       if (wear.binOpen === s) {
-        const lr = [0, s * 0.06, s * 0.22];
-        const F = frameAt([s * 10.45, 5.5, 12.4], lr);
-        tb.box(1.9, 0.12, 7.1, P, F(s * 0.9, 0.06, 0), lr);
-        tb.box(0.06, 0.9, 3.8, M.canvasDark, [s * 12.27, 5.15, 12.1], [0.05, s * 0.06, s * 0.1]);   // mép bạt lòi ra khe nắp
-        tb.box(0.15, 0.7, 0.5, M.steel, [s * 12.4, 4.85, 14.6], [0, 0, s * 0.5]);                     // khóa gài bung, chỉa ra
+        // Nắp mở hé vênh lên: xoay quanh trục bản lề
+        const lr = [0, rotY, rotZ + s * 0.22, 'ZYX'];
+        const FLid = frameAt(hingePos, lr);
+        tb.box(1.52, 0.12, 6.88, P, FLid(s * 0.725, 0.06, 0), lr);
+        // Mép bạt lòi ra khe nắp
+        tb.box(0.06, 0.8, 3.6, M.canvasDark, F(s * 0.75, 1.35, -0.3), [0.05, rotY, rotZ + s * 0.1, 'ZYX']);
+        // Khóa gài bung chỉa ra ở phía sau
+        tb.box(0.12, 0.6, 0.4, M.steel, F(s * 0.82, 1.05, 1.9), [0, rotY, rotZ + s * 0.4, 'ZYX']);
       } else {
-        tb.box(1.9, 0.12, 7.1, P, [s * 11.32, 5.56, 12.4], [0, s * 0.06, 0]);
+        // Nắp đóng phẳng trên miệng thùng
+        tb.box(1.52, 0.10, 6.88, P, F(0, 1.75, 0), binRot);
       }
-      for (const z of [10.2, 14.6]) {
-        if (wear.binOpen === s && z > 12) continue;
-        tb.box(0.15, 0.7, 0.5, M.steel, [s * 12.25, 4.5, z]);
+
+      // Khóa gài thép mặt ngoài thùng (ở dz = -1.9 và +1.9)
+      for (const dz of [-1.9, 1.9]) {
+        if (wear.binOpen === s && dz > 0) continue;
+        tb.box(0.12, 0.6, 0.4, M.steel, F(s * 0.76, 0.75, dz), binRot);
       }
+
+      // Tai gá dập thép chữ U bắt đáy thùng trực tiếp vào vách giáp tháp pháo
+      for (const dz of [-2.0, 2.0]) {
+        tb.box(0.32, 0.16, 0.36, M.steel, F(-s * 0.60, -1.72, dz), binRot);
+        tb.box(0.08, 0.42, 0.42, D, F(-s * 0.74, -1.72, dz), binRot);
+        tb.cyl(0.06, 0.06, 0.12, 6, M.steel, F(-s * 0.78, -1.72, dz), 'x', binRot);
+      }
+
       tb.setTag(null);
     }
 
@@ -876,10 +935,64 @@
     // thùng gỗ đạn chồng lệch bên phải
     tb.box(2.4, 1.3, 1.9, M.wood, [5.2, by1 - 0.25, 18.6], [0.04, -0.18, 0.06]);
     tb.box(2.45, 0.06, 1.95, M.dark, [5.2, by1 - 0.25, 18.6], [0.04, -0.18, 0.06]);
-    // bạt vắt qua lan can sau, rủ xuống mặt ngoài giỏ (2 lớp gấp nếp)
-    tb.box(3.6, 0.08, 1.0, M.canvasDark, [0.9, by1 + 0.16, 20.25], [0.12, 0.03, 0]);
-    tb.box(3.4, 2.4, 0.08, M.canvasDark, [0.95, by1 - 1.15, 20.85], [-0.08, 0.04, 0.03]);
-    tb.box(1.6, 1.4, 0.08, M.canvasDark, [-0.2, by1 - 2.6, 20.95], [-0.18, 0.1, -0.12]);
+    // bạt vắt qua lan can sau, rủ xuống mặt ngoài giỏ (lưới vải mềm ôm thanh lan can, nếp rủ tự nhiên)
+    const pFlap1 = rnd() * 6.2, pFlap2 = rnd() * 6.2;
+    const xA = -0.85, xB = 2.75;
+    const mainFlapPt = (u, v) => {
+      const x0 = xA + (xB - xA) * u;
+      const fold = Math.sin(u * Math.PI * 4.6 + pFlap1) * 0.08 + Math.sin(u * Math.PI * 9.8 + pFlap2) * 0.035;
+      const xSag = -Math.cos(u * Math.PI * 4.6 + pFlap1) * 0.025;
+
+      let x = x0, y, z;
+      if (v <= 0.26) {
+        // Trong giỏ tựa lên đồ và tiến lên thanh lan can trên
+        const t = v / 0.26;
+        y = 5.06 + (5.31 - 5.06) * t + 0.02 * Math.sin(u * 5.0 + pFlap1);
+        z = 19.65 + (20.48 - 19.65) * t;
+        z += fold * 0.2;
+        y += fold * 0.12;
+      } else if (v <= 0.44) {
+        // Vòng cong ôm qua đỉnh thanh lan can sau (y = 5.2, z = 20.6)
+        const t = (v - 0.26) / (0.44 - 0.26);
+        const ang = (1 - t) * (Math.PI * 0.5) - t * 0.12;
+        y = 5.20 + 0.16 * Math.sin(ang + 0.48);
+        z = 20.60 + 0.16 * Math.cos(ang + 0.48) * 1.1;
+        z += fold * 0.3;
+      } else {
+        // Buông thõng xuống mặt ngoài giỏ theo trọng lực
+        const t = (v - 0.44) / (1 - 0.44);
+        const yBot = by1 - 2.5 - 0.3 * Math.sin(u * Math.PI * 2.2 + pFlap1) - 0.12 * Math.cos(u * Math.PI * 4.5);
+        y = 5.20 * (1 - t) + yBot * t;
+        const bump = 0.04 * Math.sin(t * Math.PI);
+        z = 20.76 + 0.06 * t + bump;
+        const foldAmp = 0.3 + 0.7 * t;
+        z += fold * foldAmp;
+        x += xSag * foldAmp;
+        if (t > 0.65) {
+          const curl = (t - 0.65) / 0.35;
+          z += 0.035 * (curl * curl) * (1 + 0.3 * Math.sin(u * 6.0));
+        }
+      }
+      return [x, y, z, u * 1.2, v * 1.5];
+    };
+    tb.add(gridGeo(30, 24, (u, v) => mainFlapPt(u, v)), M.canvasDark);
+    tb.add(gridGeo(24, 30, (v, u) => mainFlapPt(u, v)), M.canvasDark);
+
+    // Vạt phụ rủ sâu hơn ở góc dưới bên trái (lớp bạt thứ 2 gấp nếp)
+    const x2A = -1.05, x2B = 0.65;
+    const subFlapPt = (u, v) => {
+      const x0 = x2A + (x2B - x2A) * u;
+      const fold2 = Math.sin(u * Math.PI * 3.8 + pFlap2) * 0.06 + Math.cos(u * Math.PI * 7.5) * 0.025;
+      const yBot2 = by1 - 3.35 - 0.22 * Math.sin(u * Math.PI * 2.5 + 0.7);
+      const yTop2 = by1 - 1.65;
+      const y = yTop2 * (1 - v) + yBot2 * v;
+      let z = 20.80 + 0.08 * v + fold2 * (0.4 + 0.6 * v);
+      z += 0.03 * (v * v);
+      const x = x0 - Math.cos(u * Math.PI * 3.8 + pFlap2) * 0.02 * v;
+      return [x, y, z, u * 0.8, v * 0.9];
+    };
+    tb.add(gridGeo(18, 16, (u, v) => subFlapPt(u, v)), M.canvasDark);
+    tb.add(gridGeo(16, 18, (v, u) => subFlapPt(u, v)), M.canvasDark);
     // can nước thứ 2 treo ngoài lan can sau, quai móc vào thanh giỏ
     tb.jerrycan([-3.6, by0 + 1.4, 19.9], Math.PI / 2, 1.2, 2.8, 2.0, P, D);
     tb.jerrycan([6.2, by0 + 1.7, 21.35], Math.PI / 2 + 0.08, 1.2, 2.8, 2.0, M.paintDusty, D);
@@ -915,13 +1028,23 @@
 
     tb.build(turret);
 
-    // Số hiệu chiến thuật kẻ stencil trên thùng đồ hai bên
+    // Số hiệu chiến thuật kẻ stencil trên thùng đồ hai bên (nghiêng phẳng theo mặt ngoài thùng)
     const tacNumber = `${1 + Math.floor(rnd() * 3)}${1 + Math.floor(rnd() * 4)}${1 + Math.floor(rnd() * 9)}`;
     for (const s of [-1, 1]) {
-      const decal = VehicleKit.createStencilDecal(tacNumber, 4.4, 1.7, undefined, true, (rnd() * 1e9) | 0);
+      const decal = VehicleKit.createStencilDecal(tacNumber, 3.8, 1.5, undefined, true, (rnd() * 1e9) | 0);
       if (decal) {
-        decal.position.set(s * 12.27, 3.4, 12.4);
-        decal.rotation.y = s * Math.PI / 2 + s * 0.06;
+        const rotY = -s * 0.12, rotZ = s * TUR_UP_TILT;
+        const binRot = [0, rotY, rotZ, 'ZYX'];
+        const cx = s * 11.56, cy = 4.29, cz = 12.4;
+        const F = frameAt([cx, cy, cz], binRot);
+        const pos = F(s * 0.745, -0.1, 0);
+        decal.position.set(pos[0], pos[1], pos[2]);
+        const mBin = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(binRot[0], binRot[1], binRot[2], binRot[3]));
+        decal.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+          new THREE.Vector3(0, 0, -s).applyMatrix4(mBin),
+          new THREE.Vector3(0, 1, 0).applyMatrix4(mBin),
+          new THREE.Vector3(s, 0, 0).applyMatrix4(mBin)
+        ));
         turret.add(decal);
       }
     }
@@ -968,9 +1091,9 @@
     unit.barrelPivot = pivot;
     unit.turretGroup.add(pivot);
 
-    // Tấm chắn pháo (mantlet) + súng máy đồng trục
+    // Tấm chắn gốc pháo và súng máy đồng trục
     const mb = new VehicleKit.PartBatch(DECK_Y + 3.9);
-    const mPts = [[-3.25, 1.5], [3.25, 1.5], [3.25, -2.8], [2.4, -4.3], [-2.4, -4.3], [-3.25, -2.8]];
+    const mPts = [[-3.25, 1.5], [3.25, 1.5], [3.25, -1.5], [2.1, -2.4], [-2.1, -2.4], [-3.25, -1.5]];
     mb.add(VehicleKit.loft(mPts, mPts, -2.7, 2.5, 0.45), M.paint);
     mb.cyl(1.75, 1.75, 1.2, 18, M.paint, [0, 0, -4.9], 'z');
     // Bạt che khe nòng (chống bụi lọt vào khe tấm chắn), nếp gấp vải

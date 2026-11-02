@@ -259,7 +259,10 @@ const GroundCover = (() => {
         sh.uniforms.uFocus = this.uFocus;
         sh.uniforms.uCoverRadius = this.uCoverRadius;
         sh.uniforms.uFadeDist = this.uFadeDist;
-        sh.vertexShader = 'uniform float gTime;\nuniform vec4 uWindV;\nuniform vec4 uShock[4];\nuniform float uShockH[4];\nuniform vec2 uFocus;\nuniform float uCoverRadius;\nuniform float uFadeDist;\nattribute float aSk;\nvarying float vBY;\nvarying float vSk;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+        // kính ngắm phóng N lần: các bậc "xa camera" (thưa / toả rộng / bỏ vòng lá) theo cự ly BIỂU KIẾN = thật / N — trước đây
+        // soi khóm cỏ cách 870 qua kính vẫn bị toả rộng 1,4 lần như nhìn mắt thường -> lá cỏ to bè, xoè quái dị
+        sh.uniforms.uLodMag = GroundShader && GroundShader.lodMag ? GroundShader.lodMag : { value: 1 };
+        sh.vertexShader = 'uniform float gTime;\nuniform vec4 uWindV;\nuniform vec4 uShock[4];\nuniform float uShockH[4];\nuniform vec2 uFocus;\nuniform float uCoverRadius;\nuniform float uFadeDist;\nuniform float uLodMag;\nattribute float aSk;\nvarying float vBY;\nvarying float vSk;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
           vBY = uv.y; vSk = aSk;
           {
             float hv = fract(sin(dot(vec2(instanceMatrix[3][0], instanceMatrix[3][2]), vec2(12.9898, 78.233))) * 43758.5453);
@@ -275,15 +278,16 @@ const GroundCover = (() => {
             // viền ngoài: khóm THƯA dần (bỏ bớt theo hạt ngẫu nhiên mỗi khóm), khóm còn lại chỉ lùn bớt — trước đây cả loạt teo
             // nhỏ đều thành chấm li ti; ra xa camera cũng bớt ~40% khóm (bù bằng toả rộng bên dưới), shader đất vẽ tiếp thành vệt
             float hk = fract(sin(dot(ip.xz, vec2(41.37, 17.91))) * 23421.631);
-            float cFarT = smoothstep(350.0, 900.0, length((modelMatrix * vec4(ip.x, 0.0, ip.z, 1.0)).xz - cameraPosition.xz));
+            float cCam = length((modelMatrix * vec4(ip.x, 0.0, ip.z, 1.0)).xz - cameraPosition.xz) / max(uLodMag, 1.0);
+            float cFarT = smoothstep(350.0, 900.0, cCam);
             transformed *= step(hk, cFade * 1.1 - 0.4 * cFarT);
             transformed.y *= mix(0.55, 1.0, cFade);
             // xa camera: khóm toả rộng, thấp hơn -> các khóm liền thành mảng cỏ, không lấm tấm từng chấm
-            float cFar = smoothstep(250.0, 750.0, length((modelMatrix * vec4(ip.x, 0.0, ip.z, 1.0)).xz - cameraPosition.xz));
+            float cFar = smoothstep(250.0, 750.0, cCam);
             transformed.xz *= 1.0 + 0.4 * cFar;
             transformed.y *= 1.0 - 0.2 * cFar;
             // vòng lá xòe sát đất: chỉ thấy rõ ở gần (xa hơn ~40 m nhỏ dưới vài điểm ảnh) -> thu về 0, đỡ tô điểm ảnh
-            transformed *= 1.0 - aSk * smoothstep(220.0, 320.0, length((modelMatrix * vec4(ip.x, 0.0, ip.z, 1.0)).xz - cameraPosition.xz));
+            transformed *= 1.0 - aSk * smoothstep(220.0, 320.0, cCam);
             float sw = (sin(gTime * 1.9 + ip.x * 0.045 + ip.z * 0.031) * 0.16 + sin(gTime * 3.7 + ip.x * 0.11) * 0.05) * (0.6 + 0.4 * uWindV.z);
             transformed.x += sw * uv.y;
             transformed.z += sw * 0.6 * uv.y;
@@ -295,17 +299,17 @@ const GroundCover = (() => {
           }`);
         // ánh sáng: lá cỏ 2 mặt -> mặt sau bị lật pháp tuyến xuống dưới thành lá tối sẫm xen lá sáng chói. Cho mọi lá nhận
         // sáng như mặt đất (pháp tuyến hướng lên), gốc khóm tối dần (lá che nhau), ngọn sáng
-        sh.fragmentShader = 'varying float vBY;\nvarying float vSk;\n' + sh.fragmentShader
+        sh.fragmentShader = 'uniform float uLodMag;\nvarying float vBY;\nvarying float vSk;\n' + sh.fragmentShader
           .replace('#include <map_fragment>', `#include <map_fragment>
             // chân tấm lá lởm chởm (cột lá cụt chân cao thấp khác nhau): hết đường cắt ngang thẳng tắp nơi tấm lá cắm xuống đất
             if (vSk < 0.5 && vBY < 0.11 * fract(sin(floor(vUv.x * 180.0) * 91.7) * 4375.85)) discard;
             // ở xa (ngoài vùng thảm cỏ): gốc bớt tối, cả khóm sáng lên -> không thành chấm sẫm lấm tấm trên nền đất sáng
-            float gFar = smoothstep(220.0, 700.0, length(vViewPosition)), gS = smoothstep(0.0, 0.9, vBY);
+            float gFar = smoothstep(220.0, 700.0, length(vViewPosition) / max(uLodMag, 1.0)), gS = smoothstep(0.0, 0.9, vBY);
             diffuseColor.rgb *= mix(mix(0.38, 1.04, gS), mix(0.85, 1.12, gS), gFar);`)
           .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
             normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`);
       };
-      gm.customProgramCacheKey = () => 'grassTuft8';
+      gm.customProgramCacheKey = () => 'grassTuft9';
       this.grass = new THREE.InstancedMesh(getTuftGeometry(), gm, this.maxT);
       this.grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxT * 3), 3);
       this.grass.count = 0; this.grass.frustumCulled = false; this.grass.receiveShadow = true; this.grass.castShadow = false;
@@ -464,6 +468,7 @@ const GroundCover = (() => {
       if (T.map.roadAt && T.map.roadAt(x, z)) return true;
       if (T.streetscape && T.streetscape.covers(x, z)) return true;   // vỉa hè đô thị (cao hơn mặt đất 15 cm)
       if (T.strongholdSet && T.strongholdSet.covers(x, z, 4)) return true;
+      if (this.wreckAt(x, z)) return true;
       if (T.landmarkSet && T.landmarkSet.covers(x, z, 4) && !(T.landmarkSet.overgrowth && T.landmarkSet.overgrowth(x, z))) return true;
       if (T.bridges.length && T.bridgeAt(x, z)) return true;
       // nền ụ đất xe ủi (đất đã bị lưỡi ủi cạo, kể cả chỗ ụ bị nổ khoét thủng)
@@ -473,6 +478,30 @@ const GroundCover = (() => {
         if (Math.abs(dx * b.cx + dz * b.cz) < b.L && Math.abs(dx * b.fx + dz * b.fz) < b.W) return true;
       }
       return false;
+    }
+
+    // Gầm xác xe (vòng vật cản wreck: true của xác cứ điểm / xác rải bản đồ): cỏ cao không mọc xuyên sàn / thân xác nhô
+    // lên qua lỗ thủng (2026-11-02). Vòng đặt dọc trục thân, bán kính rộng hơn thân -> chỉ lấy 80% để quanh xác vẫn có cỏ
+    wreckAt(x, z) {
+      const W = this._wg;
+      if (!W) return false;
+      const i = Math.floor((x - W.x0) / W.G), j = Math.floor((z - W.z0) / W.G);
+      if (i < 0 || j < 0 || i >= W.n || j >= W.n) return false;
+      const L = W.cells[j * W.n + i];
+      if (L) for (const b of L) { const dx = x - b.x, dz = z - b.z, r = b.radius * 0.8; if (dx * dx + dz * dz < r * r) return true; }
+      return false;
+    }
+    buildWreckGrid() {
+      const T = this.T, G = 32, n = Math.ceil(T.width / G) + 2, x0 = -T.width / 2 - G, z0 = x0, cells = new Array(n * n);
+      let any = false;
+      for (const b of T.boulders || []) {
+        if (!b.wreck) continue;
+        any = true;
+        for (let j = Math.floor((b.z - b.radius - z0) / G); j <= Math.floor((b.z + b.radius - z0) / G); j++)
+          for (let i = Math.floor((b.x - b.radius - x0) / G); i <= Math.floor((b.x + b.radius - x0) / G); i++)
+            if (i >= 0 && j >= 0 && i < n && j < n) (cells[j * n + i] = cells[j * n + i] || []).push(b);
+      }
+      this._wg = any ? { G, n, x0, z0, cells } : null;
     }
 
     // Hố nổ chạm ô (x0..x1, z0..z1): các phát nổ (ExplosionFX craters[].blasts) để xét cỏ trong / quanh hố
@@ -884,6 +913,25 @@ const GroundCover = (() => {
         if (d > 1) { const a = Math.max(Math.min(d * 0.5, 160), d - (RADIUS - CARPET_R - 2 * CELL)) / d; tx = camX + dx * a; tz = camZ + dz * a; }
       }
       this.uCarpet.value.x = tx; this.uCarpet.value.y = tz;
+      // xác xe dựng sau (xác cứ điểm dựng dần trong phòng thử, xác rải bản đồ): dựng lại lưới gầm xác, rải lại cỏ đã đệm
+      const nB = this.T.boulders ? this.T.boulders.length : 0;
+      if (nB !== this._bN) {
+        const B = this.T.boulders, first = this._bN === undefined, from = this._bN || 0;
+        this._bN = nB;
+        this.buildWreckGrid();
+        // chỉ bỏ đệm các ô chạm xác mới (xác dựng dần từng chiếc). Vật cản bị phá giữa trận (danh sách ngắn đi): giữ nguyên đệm
+        // cỏ — xoá cả đệm mỗi lần phá thì rải lại cả vùng liên tục, cỏ nháy
+        let dirty = first;
+        if (this.cache && first) this.cache.clear();
+        else if (this.cache) for (let k = from; k < nB; k++) {
+          const b = B[k];
+          if (!b || !b.wreck) continue;
+          dirty = true;
+          for (let j = Math.floor((b.z - b.radius) / CELL); j <= Math.floor((b.z + b.radius) / CELL); j++)
+            for (let i = Math.floor((b.x - b.radius) / CELL); i <= Math.floor((b.x + b.radius) / CELL); i++) this.cache.delete(i + ',' + j);
+        }
+        if (dirty) this.lastCx = null;
+      }
       const cx = Math.round(focusX / CELL), cz = Math.round(focusZ / CELL);
       const cMoved = !this.carpetC || Math.hypot(tx - this.carpetC.x, tz - this.carpetC.z) > CELL;
       if (cx === this.lastCx && cz === this.lastCz && !this.pending && !cMoved) return;   // pending: còn ô xa chưa rải (rebuild)

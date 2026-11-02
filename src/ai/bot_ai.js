@@ -96,6 +96,9 @@ class BotAIController {
       let s = d * (this.seesDirect(u) ? 1 : 2.5) * (0.85 + Math.random() * 0.3);
       if (U._lastAttacker === u && now - (U._lastAttackerAt || 0) < 12000) s -= 400;
       s -= (1 - Math.max(0, Math.min(1, (u.hp || 0) / (u.maxHp || 1)))) * 300;
+      // Xe đang mang lưới ngụy trang ẩn nấp: khó phát hiện/tán xạ radar -> bot ưu tiên nhắm vào mục tiêu lộ hơn
+      const camo = typeof Equipment !== 'undefined' && Equipment.camoHidden && Equipment.camoHidden(u);
+      if (camo) s += 600;
       if (d > range) s += 1000;
       if (s < bs) { bs = s; best = u; }
     }
@@ -312,7 +315,10 @@ class BotAIController {
     const left = S ? S.mag : R.mag;
     const d = T ? Math.hypot(T.x - U.x, T.z - U.z) : 0;
     const guiding = !!(U.missileInFlight && U.missileInFlight());
-    const ok = !U.isDead && G && G.fireRoofMissile && T && !T.isDead && (left > 0 || guiding) && d <= R.maxR && (d >= R.minR || guiding)
+    const camo = typeof Equipment !== 'undefined' && Equipment.camoHidden && Equipment.camoHidden(T);
+    const camoRadarK = (camo && typeof Equipment !== 'undefined' && Equipment.camoRadarFactor) ? Equipment.camoRadarFactor(T) : 1;
+    const maxLockR = R.maxR * camoRadarK;
+    const ok = !U.isDead && G && G.fireRoofMissile && T && !T.isDead && (left > 0 || guiding) && d <= maxLockR && (d >= R.minR || guiding)
       && (guiding || T.hp > (T.maxHp || 3) * 0.5)
       && this.seesDirect(T) && !(U.dmg && U.dmg.lost && U.dmg.lost.has(U._roofTag || 'rocketPod'));
     if (!ok) { if (this.roofT) { this.roofT = null; U._aa = null; } return; }
@@ -322,7 +328,8 @@ class BotAIController {
     if (!this.lockUnit) U._lockOn = { id: T.id, m: 2, at: Date.now() };
     if (guiding || left <= 0) return;
     const jam = typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(T, 'jammer');
-    st.lock += dt / (jam ? R.lockT * 2 : R.lockT);
+    const lockSpeedMul = (jam ? 2 : 1) * (camo ? 1.8 : 1);
+    st.lock += dt / (R.lockT * lockSpeedMul);
     if (st.lock < 1) return;
     const md = G.aaMuzzle(U).direction;   // bệ chưa chĩa về mục tiêu: chờ quay xong mới phóng
     if (Math.abs(((Math.atan2(md.x, -md.z) - Math.atan2(T.x - U.x, -(T.z - U.z))) * 180 / Math.PI + 540) % 360 - 180) > 20) return;

@@ -77,7 +77,7 @@
   })();
 
   const lab = { g: null, dummies: [], home: null, village: null, field: FIELD, spots: [], dummyType: FIELD === 'flat' ? 'ALL_ROUNDER' : null,
-    dummyKit: { m: [], p: [], a: {} }, dist: q.get('ew') === '1' ? 1300 : 400, face: 0, god: true, fireBack: false, fireMode: 'off', keepWreck: false, dummyJam: false, log: [], hits: [], kit: null, kamis: [], kamiOn: true, kamiSky: [], kamiT: 2, kamiKills: 0 };
+    dummyKit: { m: [], p: [], a: {} }, dist: q.get('ew') === '1' ? 1300 : 400, face: 0, god: true, fireBack: false, fireMode: 'off', keepWreck: false, dummyJam: false, log: [], hits: [], kit: null, kamis: [], kamiOn: true, kamiSky: [], kamiT: 2, kamiKills: 0, infantry: null };
   // Vũ khí bia bắn trả: [mã, tên]
   const FIRE_MODES = [['off', 'Tắt'], ['ap', 'Pháo AP'], ['heat', 'Pháo nổ lõm'], ['rpg', 'RPG'], ['atgm', 'Tên lửa'], ['top', 'Tên lửa đỉnh'],
     ['mg', 'Súng 12.7'], ['agl', 'Lựu 40mm'], ['kami', 'UAV cảm tử']];
@@ -191,6 +191,7 @@
     preparePlayer(g.player);
     // phòng thử: xe nguyên vẹn (không mang giáp hỏng chưa sửa của tài khoản)
     if (g.player.kit && g.player.kit.d) { delete g.player.kit.d; if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(g.player); }
+    initInfantry(g);
     placeAll();
     const origUpdate = g.update;
     g.update = function (dt) { origUpdate.call(this, dt); tick(dt); };
@@ -213,14 +214,22 @@
     if (!g.compileShadersAsync) { firstFrame(); return; }
     const tc = performance.now();
     loader.stage('ĐANG HOÀN TẤT…');
-    // cả shader hiệu ứng giao tranh (vết đạn, sóng nổ, lửa đầu nòng): không để phát bắn đầu tiên phải biên dịch
-    g.prewarmEffects(
-      true,
-      (done, total) => loader.stage(total > 0 ? `ĐANG HOÀN TẤT… ${Math.min(99, Math.round(done / total * 100))}%` : 'ĐANG HOÀN TẤT…'),
-      () => (g.drawWarm && g.scene ? g.drawWarm(g.scene.children.slice()) : Promise.resolve())
-    )
-      .catch(err => console.warn('[LAB] compileShadersAsync', err))
-      .then(n => { console.info(`[BOOT] Biên dịch ${n || 0} shader song song: ${Math.round(performance.now() - tc)} ms`); firstFrame(); });
+    // cả shader hiệu ứng giao tranh (vết đạn, sóng nổ, lửa đầu nòng) + nạp sẵn GPU, kể cả bậc LOD chỉ hiện khi soi kính.
+    // (trước đây lượt vẽ làm nóng drawWarm: đã vào trận nên nó thoát ngay, không nạp gì)
+    // xác xe cứ điểm dựng nốt dưới màn chờ (trước đây dựng dần lúc đã vào: lưới + shader mới giữa lúc bắn, khung 1-1,5 s;
+    // đo 2026-11-02), từng việc một để màn chờ vẫn chạy
+    const finishWrecks = () => new Promise(res => {
+      const step = () => {
+        const set = g.terrain && g.terrain.strongholdSet;
+        if (!set || !set._wreckQueue || !set._wreckQueue.length) { res(); return; }
+        if (set.stepWrecks(1) && typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(g.terrain);
+        setTimeout(step, 0);
+      };
+      step();
+    });
+    finishWrecks().then(() => g.labWarmUp(t => loader.stage(t)))
+      .catch(err => console.warn('[LAB] labWarmUp', err))
+      .then(() => { console.info(`[BOOT] Biên dịch shader + nạp GPU: ${Math.round(performance.now() - tc)} ms`); firstFrame(); });
   }
 
   // ---------------------------------------------------------------------------
@@ -329,6 +338,384 @@
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // ĐƠN VỊ BỘ BINH TRÊN TRƯỜNG BẮN (SoldierEngine)
+  // ---------------------------------------------------------------------------
+  function initInfantry(g) {
+    if (typeof SoldierModel === 'undefined' || typeof SoldierEngine === 'undefined') return;
+    if (SoldierModel.setBiome) SoldierModel.setBiome(BIOME);
+
+    lab.infantry = {
+      world: null,
+      enabled: true,
+      fireBack: false,
+      stance: 'guard',     // 'guard' | 'patrol' | 'kneel' | 'idle'
+      squads: [],
+      soldiers: [],
+      kills: 0,
+      shots: [],
+      _patrolT: 0
+    };
+
+    lab.infantry._shellGeo = new THREE.SphereGeometry(0.35, 8, 6);
+    lab.infantry._shellMat = new THREE.MeshBasicMaterial({ color: 0x222220 });
+
+    lab.infantry.world = new SoldierEngine.World(g.scene, g.terrain, {
+      vehicles: () => (g.units || []).filter(u => !u.isDead),
+      onFire: (soldier, enemy, aim) => onInfantryFire(soldier, enemy, aim)
+    });
+  }
+
+  function clearInfantry() {
+    const inf = lab.infantry;
+    if (!inf) return;
+    for (const s of inf.soldiers) {
+      if (s.dispose) s.dispose();
+      else if (s.root && s.root.parent) s.root.parent.remove(s.root);
+    }
+    inf.soldiers = [];
+    inf.squads = [];
+    if (inf.world) {
+      inf.world.soldiers = [];
+      inf.world.squads = [];
+    }
+    for (const sh of inf.shots) {
+      if (sh.m && sh.m.parent) sh.m.parent.remove(sh.m);
+    }
+    inf.shots = [];
+  }
+
+  function spawnInfantry() {
+    const inf = lab.infantry, g = lab.g;
+    if (!inf || !inf.world || !lab.home) return;
+    clearInfantry();
+    if (!inf.enabled) { renderStatus(); return; }
+
+    const W = inf.world;
+    const h = lab.home;
+    const isFlat = lab.field === 'flat';
+
+    if (isFlat && lab.fieldDir) {
+      const dir = lab.fieldDir;
+      const side = { x: -dir.z, z: dir.x };
+
+      // TUYẾN 1: Tổ cận duyên (cự ly ~150m, lệch trái 18m) - 4 chiến sĩ
+      const d1 = 150;
+      const c1x = h.x + dir.x * d1 + side.x * -18;
+      const c1z = h.z + dir.z * d1 + side.z * -18;
+      const head1 = Math.atan2(h.x - c1x, h.z - c1z);
+
+      const list1 = [];
+      const offsets1 = [[-5, 0], [5, 0], [-10, 6], [10, 6]];
+      offsets1.forEach(([ox, oz], idx) => {
+        const sx = c1x + side.x * ox + dir.x * oz;
+        const sz = c1z + side.z * ox + dir.z * oz;
+        const weapon = idx % 2 === 0 ? 'rifle' : 'gl';
+        const s = W.spawn({ team: 'RED', x: sx, z: sz, heading: head1, weapon, guard: inf.fireBack });
+        s._labHome = { x: sx, z: sz, heading: head1, weapon };
+        list1.push(s);
+        inf.soldiers.push(s);
+      });
+      const sq1 = W.squad(list1, 'wedge');
+      inf.squads.push(sq1);
+
+      // TUYẾN 2: Tổ phòng thủ cự ly mục tiêu chính (quanh xe bia cự ly lab.dist) - 4 chiến sĩ
+      const d2 = lab.dist;
+      const c2x = h.x + dir.x * d2;
+      const c2z = h.z + dir.z * d2;
+      const head2 = Math.atan2(h.x - c2x, h.z - c2z);
+
+      const list2 = [];
+      const offsets2 = [[-16, -4], [16, -4], [-10, 10], [10, 10]];
+      offsets2.forEach(([ox, oz], idx) => {
+        const sx = c2x + side.x * ox + dir.x * oz;
+        const sz = c2z + side.z * ox + dir.z * oz;
+        const weapon = idx % 2 === 1 ? 'rifle' : 'gl';
+        const s = W.spawn({ team: 'RED', x: sx, z: sz, heading: head2, weapon, guard: inf.fireBack });
+        s._labHome = { x: sx, z: sz, heading: head2, weapon };
+        list2.push(s);
+        inf.soldiers.push(s);
+      });
+      const sq2 = W.squad(list2, 'line');
+      inf.squads.push(sq2);
+    } else {
+      // Chế độ Làng: 3 tổ bộ binh bố trí các chốt chiến thuật
+      const V = lab.village || findVillage();
+      const spots = [
+        { x: V.x - 70, z: V.z + 50, n: 4 },
+        { x: V.x + 90, z: V.z - 60, n: 4 },
+        { x: V.x + 15, z: V.z + 100, n: 4 }
+      ];
+      spots.forEach((sp) => {
+        const list = [];
+        const toHome = Math.atan2(h.x - sp.x, h.z - sp.z);
+        for (let i = 0; i < sp.n; i++) {
+          const sx = sp.x + (i % 2 === 0 ? -1 : 1) * (i + 1) * 8;
+          const sz = sp.z + Math.floor(i / 2) * 10;
+          const weapon = i % 2 === 0 ? 'rifle' : 'gl';
+          const s = W.spawn({ team: 'RED', x: sx, z: sz, heading: toHome, weapon, guard: inf.fireBack });
+          s._labHome = { x: sx, z: sz, heading: toHome, weapon };
+          list.push(s);
+          inf.soldiers.push(s);
+        }
+        const sq = W.squad(list, 'wedge');
+        inf.squads.push(sq);
+      });
+    }
+
+    applyInfantryStance(inf.stance);
+    renderStatus();
+  }
+
+  function applyInfantryStance(mode) {
+    const inf = lab.infantry;
+    if (!inf) return;
+    inf.stance = mode;
+    for (const sq of inf.squads) {
+      if (mode === 'kneel') {
+        sq.cmdStance('kneel');
+        sq.cmdGuard(inf.fireBack);
+      } else if (mode === 'guard') {
+        sq.cmdStance('stand');
+        sq.cmdGuard(inf.fireBack);
+      } else if (mode === 'idle') {
+        sq.cmdStance('stand');
+        sq.cmdGuard(false);
+        for (const m of sq.members) { m.disengage(false); m.stop(); }
+      } else if (mode === 'patrol') {
+        sq.cmdStance('stand');
+        sq.cmdGuard(inf.fireBack);
+      }
+    }
+  }
+
+  function reviveInfantry() {
+    const inf = lab.infantry;
+    if (!inf || !inf.world) return;
+    for (const s of inf.soldiers) {
+      if (s._labHome) s.revive(s._labHome.x, s._labHome.z, s._labHome.heading);
+      else s.revive();
+    }
+    applyInfantryStance(inf.stance);
+    renderStatus();
+  }
+
+  function addInfantrySquad() {
+    const inf = lab.infantry, g = lab.g, p = g && g.player;
+    if (!inf || !inf.world || !p) return;
+    if (!inf.enabled) {
+      inf.enabled = true;
+      spawnInfantry();
+      addLog('[[users]] Đã kích hoạt đơn vị bộ binh trường bắn', 'ok');
+      return;
+    }
+    const W = inf.world;
+    const fx = -Math.sin(p.bodyAngle), fz = -Math.cos(p.bodyAngle);
+    const sx = p.x + fx * 90, sz = p.z + fz * 90;
+    const head = Math.atan2(p.x - sx, p.z - sz);
+    const list = [];
+    for (let i = 0; i < 4; i++) {
+      const ox = (i % 2 === 0 ? -1 : 1) * (i + 1) * 8;
+      const oz = Math.floor(i / 2) * 10;
+      const s = W.spawn({ team: 'RED', x: sx + ox, z: sz + oz, heading: head, weapon: i % 2 === 0 ? 'rifle' : 'gl', guard: inf.fireBack });
+      s._labHome = { x: sx + ox, z: sz + oz, heading: head };
+      list.push(s);
+      inf.soldiers.push(s);
+    }
+    const sq = W.squad(list, 'wedge');
+    inf.squads.push(sq);
+    applyInfantryStance(inf.stance);
+    renderStatus();
+    addLog(`[[user-plus]] Thả thêm 1 tổ bộ binh (4 chiến sĩ) · Tổng ${inf.soldiers.length} lính`, 'ok');
+  }
+
+  function onInfantryFire(soldier, enemy, aim) {
+    const inf = lab.infantry, g = lab.g;
+    if (!inf || !inf.fireBack || !g) return;
+    const p = g.player;
+    if (!p || p.isDead) return;
+
+    if (soldier.weapon === 'gl') {
+      const p0 = new THREE.Vector3(soldier.x, soldier.y + 11, soldier.z);
+      const targetY = (p.y || 0) + 4;
+      const p1 = new THREE.Vector3(aim.x, targetY, aim.z);
+      const dist = p0.distanceTo(p1);
+      const T = Math.max(0.4, dist / 420);
+      const gAccel = 65;
+
+      const m = new THREE.Mesh(inf._shellGeo, inf._shellMat);
+      g.scene.add(m);
+      inf.shots.push({ p0, p1, T, t: 0, arc: gAccel * T * T / 8, m, team: soldier.team });
+
+      if (window.soundEngine && window.soundEngine.playGrenadeLauncher) {
+        window.soundEngine.playGrenadeLauncher(Math.max(1, dist), { x: soldier.x, z: soldier.z });
+      }
+    } else {
+      if (window.soundEngine && window.soundEngine.playScoutBullet) {
+        window.soundEngine.playScoutBullet(Math.hypot(soldier.x - p.x, soldier.z - p.z), { x: soldier.x, z: soldier.z });
+      }
+      if (g.effectsManager && g.effectsManager.fx && g.effectsManager.fx.createSparkImpact) {
+        const hitP = new THREE.Vector3(p.x + (Math.random() - 0.5) * 8, (p.y || 0) + 4 + Math.random() * 6, p.z + (Math.random() - 0.5) * 8);
+        g.effectsManager.fx.createSparkImpact(hitP, new THREE.Vector3(0, 1, 0));
+      }
+    }
+  }
+
+  function updateInfantryShots(dt) {
+    const inf = lab.infantry, g = lab.g, p = g && g.player;
+    if (!inf) return;
+    const T_terrain = g.terrain;
+
+    for (let i = inf.shots.length - 1; i >= 0; i--) {
+      const sh = inf.shots[i];
+      sh.t += dt;
+      const f = Math.min(1, sh.t / sh.T);
+      sh.m.position.lerpVectors(sh.p0, sh.p1, f);
+      sh.m.position.y += sh.arc * 4 * f * (1 - f);
+
+      const curPos = sh.m.position;
+      const groundH = T_terrain ? T_terrain.getElevationAt(curPos.x, curPos.z) : 0;
+
+      if (p && !p.isDead && curPos.distanceTo(new THREE.Vector3(p.x, (p.y || 0) + 8, p.z)) < 35) {
+        if (g.apsVsKami && g.apsVsKami({ x: curPos.x, y: curPos.y, z: curPos.z, vx: 0, vy: 0, vz: 0 }, { team: 'RED' }, dt)) {
+          addLog('[[shield-bolt]] Hệ thống phòng vệ đã bắn hạ lựu 40mm của bộ binh!', 'hit');
+          if (sh.m.parent) sh.m.parent.remove(sh.m);
+          inf.shots.splice(i, 1);
+          continue;
+        }
+      }
+
+      if (f >= 1 || curPos.y <= groundH + 0.3) {
+        const boomY = Math.max(curPos.y, groundH + 0.5);
+        if (g.handleShellImpact) {
+          g.handleShellImpact({
+            x: curPos.x, y: boomY, z: curPos.z,
+            ammoType: 'GATLING_BULLET',
+            gl40: true,
+            roofDirect: 0.25,
+            roofSplash: 0.45,
+            roofBlast: { radius: 24, core: 6 },
+            team: 'RED'
+          }, 'GROUND', null);
+        }
+        if (sh.m.parent) sh.m.parent.remove(sh.m);
+        inf.shots.splice(i, 1);
+      }
+    }
+  }
+
+  function updateInfantry(dt) {
+    const inf = lab.infantry, g = lab.g;
+    if (!inf || !inf.world || !inf.enabled) return;
+    inf.world.update(dt, g.camera);
+    updateInfantryShots(dt);
+    checkDirectBulletHits(dt);
+
+    if (inf.stance === 'patrol') {
+      inf._patrolT = (inf._patrolT || 0) + dt;
+      if (inf._patrolT > 6.5) {
+        inf._patrolT = 0;
+        for (const sq of inf.squads) {
+          const L = sq.leader;
+          if (!L || !L.alive || L.enemy) continue;
+          const home = L._labHome || { x: L.x, z: L.z };
+          const ang = Math.random() * Math.PI * 2;
+          const r = 20 + Math.random() * 32;
+          sq.moveTo(home.x + Math.cos(ang) * r, home.z + Math.sin(ang) * r, 'patrol');
+        }
+      }
+    }
+  }
+
+  function damageInfantryFromBlast(shell) {
+    const inf = lab.infantry;
+    if (!inf || !inf.world || !inf.soldiers.length) return;
+    const ammo = shell.ammoType || 'NORMAL';
+    let R = 55;
+    if (ammo === 'HE') R = 140;
+    else if (ammo === 'CLUSTER' || ammo === 'CLUSTER_SUBMUNITION') R = 85;
+    else if (ammo === 'NORMAL' || ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE') R = 55;
+    else if (ammo === 'INCENDIARY') R = 28;
+    else if (ammo === 'GATLING_BULLET' || ammo === 'SCOUT_BULLET') R = shell.gl40 ? 26 : 10;
+    else if (ammo === 'AP') R = 12;
+
+    const core = R * 0.35;
+    let killedCount = 0;
+
+    for (const s of inf.soldiers) {
+      if (!s.alive) continue;
+      const dx = s.x - shell.x, dz = s.z - shell.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > R) continue;
+      if (Math.abs(s.y - shell.y) > 28) continue;
+
+      const kneelMul = s.intent.stance === 'kneel' ? 0.65 : 1.0;
+      let dmg = 0;
+      if (dist <= core) {
+        dmg = 220;
+      } else {
+        const falloff = 1 - (dist - core) / (R - core);
+        dmg = Math.round(falloff * 130 * kneelMul);
+      }
+      const dead = s.damage(dmg, ammo);
+      if (dead) {
+        killedCount++;
+        inf.kills++;
+      }
+    }
+
+    if (killedCount > 0) {
+      const nm = shell.gl40 ? 'lựu 40mm' : (AMMO_NAME[ammo] || ammo);
+      addLog(`[[target-arrow]] Tiêu diệt ${killedCount} bộ binh địch bằng ${nm}`, 'hit');
+      lab.hits.unshift(`Tiêu diệt ${killedCount} bộ binh địch · ${nm}`);
+      lab.hits.length = Math.min(lab.hits.length, 5);
+      renderHits();
+      renderStatus();
+    }
+  }
+
+  function checkDirectBulletHits(dt) {
+    const inf = lab.infantry, g = lab.g;
+    if (!inf || !inf.soldiers.length || !g || !g.ballistics) return;
+    const shells = g.ballistics.activeShells;
+    if (!shells || !shells.length) return;
+
+    for (let i = shells.length - 1; i >= 0; i--) {
+      const sh = shells[i];
+      if (!sh || sh.shooter !== g.player || sh.dead) continue;
+
+      for (const s of inf.soldiers) {
+        if (!s.alive) continue;
+        const dx = sh.x - s.x, dz = sh.z - s.z;
+        const dH = Math.hypot(dx, dz);
+        const yTop = s.y + 14 * (s.k || 1);
+        if (dH < 3.2 && sh.y >= s.y - 1 && sh.y <= yTop) {
+          let dmg = 65;
+          if (sh.ammoType === 'GATLING_BULLET') dmg = 120;
+          else if (sh.ammoType === 'AP') dmg = 250;
+          else if (sh.ammoType === 'HE' || sh.ammoType === 'NORMAL') dmg = 300;
+
+          const dead = s.damage(dmg, sh.ammoType);
+          sh.dead = true;
+          sh.life = 0;
+          if (g.handleShellImpact) {
+            g.handleShellImpact(sh, 'DIRECT_HIT', null);
+          }
+          if (dead) {
+            inf.kills++;
+            const nm = AMMO_NAME[sh.ammoType] || sh.ammoType;
+            addLog(`[[target-arrow]] Bắn hạ bộ binh địch bằng ${nm} (${Math.round(Math.hypot(s.x - g.player.x, s.z - g.player.z) / 8)} m)`, 'hit');
+            lab.hits.unshift(`Bắn hạ bộ binh địch · ${nm}`);
+            lab.hits.length = Math.min(lab.hits.length, 5);
+            renderHits();
+            renderStatus();
+          }
+          break;
+        }
+      }
+    }
+  }
+
   function placeAll() {
     const g = lab.g, F = lab.field === 'flat' && g.terrain.map && g.terrain.map.testField;
     if (lab.field === 'flat' && !F) { lab.field = 'village'; lab.dummyType = null; }
@@ -342,6 +729,7 @@
       teleport();
       spawnDummies();
       decorateRangeBattlefield(g);
+      spawnInfantry();
       return;
     }
     const V = lab.village = findVillage();
@@ -401,6 +789,7 @@
       mkDummy(`MỤC TIÊU ${i + 1} · ${typeName(type)}`, { x: p.x, z: p.z, a, az: ((deg(-a) % 360) + 360) % 360 }, type);
     });
     if (g.updateAliveCount) g.updateAliveCount();
+    spawnInfantry();
     renderStatus();
   }
 
@@ -576,6 +965,7 @@
       if (P) place(P, P.x, P.z, P.bodyAngle, P.azimuth);
       for (const d of lab.dummies) revive(d);
       decorateRangeBattlefield(g);
+      spawnInfantry();
       if (g._cam) g._cam.unit = null;
       addLog('[[check]] Đã dựng lại bản đồ', 'ok');
     }, 60);
@@ -635,6 +1025,7 @@
     if (lab.rangeProps) lab.rangeProps.update(dt, g.effectsManager && g.effectsManager.fx, g.camera);
     if (lab.fireMode !== 'off') fireBackTick(dt);
     updateKamis(dt);
+    updateInfantry(dt);
     for (const d of lab.dummies) {
       if (d.isDead) continue;
       d.speed = 0;
@@ -810,6 +1201,7 @@
       const watch = [g.player, ...lab.dummies].filter(u => u && !u.isDead);
       const hp0 = watch.map(u => u.hp), t0 = Date.now();
       const r = orig.call(this, shell, ht, tgt);
+      damageInfantryFromBlast(shell);
       try {
         watch.forEach((u, i) => {
           const lost = hp0[i] - u.hp, L = u.dmg && u.dmg.last;
@@ -1022,6 +1414,13 @@
           <button id="rg-repair"><i class="ti ti-tool" aria-hidden="true"></i> Sửa xe</button>
           <button id="rg-rebuild" class="go"><i class="ti ti-refresh" aria-hidden="true"></i> Dựng lại bản đồ</button>
         </div>
+        <div class="lbl">ĐƠN VỊ BỘ BINH</div>
+        <div class="row" id="rg-inf-ctrls">
+          <button id="rg-inf-toggle" class="on" title="Bật hoặc tắt đơn vị bộ binh trên trường bắn"><i class="ti ti-users" aria-hidden="true"></i> Bộ binh: BẬT</button>
+          <button id="rg-inf-stance" title="Tư thế tác chiến: Canh gác / Quỳ / Đi tuần / Đứng yên"><i class="ti ti-shield" aria-hidden="true"></i> Canh gác</button>
+          <button id="rg-inf-fire" title="Bộ binh bắn trả xe bạn bằng súng phóng lựu 40mm"><i class="ti ti-crosshair" aria-hidden="true"></i> Bắn trả: TẮT</button>
+          <button id="rg-inf-add" title="Thả thêm 1 tổ bộ binh dã chiến"><i class="ti ti-user-plus" aria-hidden="true"></i> Thêm tổ lính</button>
+        </div>
         <div class="lbl">BIA BẮN TRẢ XE BẠN</div><div class="row" id="rg-fm"></div>
         <details id="rg-kitbox" open><summary class="lbl">TRANG BỊ THỬ <span style="font-weight:400">(miễn phí, không lưu) ▾</span></summary>
           <div class="row"><button id="rg-kit-reset"><i class="ti ti-user" aria-hidden="true"></i> Về bộ đồ tài khoản</button></div>
@@ -1054,7 +1453,11 @@
     root.querySelector('#rg-sh-a').onclick = () => gotoStronghold('A');
     root.querySelector('#rg-sh-b').onclick = () => gotoStronghold('B');
     root.querySelector('#rg-sh-c').onclick = () => gotoStronghold('C');
-    root.querySelector('#rg-revive').onclick = () => { for (const d of lab.dummies) revive(d); addLog('[[heart-plus]] Đã hồi sinh mục tiêu', 'ok'); };
+    root.querySelector('#rg-revive').onclick = () => {
+      for (const d of lab.dummies) revive(d);
+      reviveInfantry();
+      addLog('[[heart-plus]] Đã hồi sinh mục tiêu và bộ binh', 'ok');
+    };
     const fm = root.querySelector('#rg-fm');
     for (const [id, name] of FIRE_MODES) {
       const b = document.createElement('button'); b.dataset.fm = id; b.textContent = name;
@@ -1122,6 +1525,34 @@
       addLog(lab.kamiOn ? '[[rocket]] UAV cảm tử bay ngẫu nhiên: BẬT — liên tục có chiếc mới bay vào' : '[[rocket]] UAV cảm tử bay ngẫu nhiên: TẮT', 'info');
     };
     root.querySelector('#rg-rebuild').onclick = rebuildMap;
+    root.querySelector('#rg-inf-toggle').onclick = () => {
+      if (!lab.infantry) return;
+      lab.infantry.enabled = !lab.infantry.enabled;
+      spawnInfantry();
+      renderUI();
+      renderStatus();
+      addLog(lab.infantry.enabled ? '[[users]] Đơn vị bộ binh trường bắn: BẬT' : '[[users-minus]] Đơn vị bộ binh trường bắn: TẮT', 'info');
+    };
+    root.querySelector('#rg-inf-stance').onclick = () => {
+      if (!lab.infantry) return;
+      const modes = ['guard', 'kneel', 'patrol', 'idle'];
+      const cur = modes.indexOf(lab.infantry.stance);
+      const next = modes[(cur + 1) % modes.length];
+      applyInfantryStance(next);
+      renderUI();
+      const STANCE_NAMES = { guard: 'Canh gác', kneel: 'Quỳ phòng thủ', patrol: 'Đi tuần', idle: 'Đứng yên' };
+      addLog(`[[shield]] Bộ binh chuyển sang: ${STANCE_NAMES[next] || next}`, 'info');
+    };
+    root.querySelector('#rg-inf-fire').onclick = () => {
+      if (!lab.infantry) return;
+      lab.infantry.fireBack = !lab.infantry.fireBack;
+      applyInfantryStance(lab.infantry.stance);
+      renderUI();
+      addLog(lab.infantry.fireBack ? '[[crosshair]] Bộ binh bắn trả: BẬT — lính sẽ dùng lựu 40mm tấn công xe bạn' : '[[shield]] Bộ binh bắn trả: TẮT', 'info');
+    };
+    root.querySelector('#rg-inf-add').onclick = () => {
+      addInfantrySquad();
+    };
     renderUI();
     renderStatus();
   }
@@ -1291,12 +1722,37 @@
     root.querySelector('#rg-wreck').classList.toggle('on', lab.keepWreck);
     root.querySelector('#rg-jam').classList.toggle('on', lab.dummyJam);
     root.querySelector('#rg-kamisky').classList.toggle('on', lab.kamiOn);
+    if (lab.infantry) {
+      const bToggle = root.querySelector('#rg-inf-toggle');
+      if (bToggle) {
+        bToggle.classList.toggle('on', lab.infantry.enabled);
+        bToggle.innerHTML = `<i class="ti ti-users" aria-hidden="true"></i> Bộ binh: ${lab.infantry.enabled ? 'BẬT' : 'TẮT'}`;
+      }
+      const bStance = root.querySelector('#rg-inf-stance');
+      if (bStance) {
+        const STANCE_NAMES = { guard: 'Canh gác', kneel: 'Quỳ phòng thủ', patrol: 'Đi tuần', idle: 'Đứng yên' };
+        bStance.innerHTML = `<i class="ti ti-shield" aria-hidden="true"></i> ${STANCE_NAMES[lab.infantry.stance] || 'Canh gác'}`;
+        bStance.classList.toggle('on', lab.infantry.stance !== 'idle');
+      }
+      const bFire = root.querySelector('#rg-inf-fire');
+      if (bFire) {
+        bFire.classList.toggle('on', lab.infantry.fireBack);
+        bFire.innerHTML = `<i class="ti ti-crosshair" aria-hidden="true"></i> Bắn trả: ${lab.infantry.fireBack ? 'BẬT' : 'TẮT'}`;
+      }
+    }
   }
 
   function renderStatus() {
     const el = root && root.querySelector('#rg-tg'), p = lab.g && lab.g.player;
     if (!el || !p) return;
-    const html = lab.dummies.map(d => `<span class="${d.isDead ? 'dead' : ''}">${d.name}${d.isDead ? ' · ĐÃ HẠ' : ''}</span><span>${Math.round(Math.hypot(d.x - p.x, d.z - p.z))} M · ${Math.round(Math.max(0, d.hp) / (d.maxHp || 1) * 100)}%</span>`).join('');
+    const dummyHtml = lab.dummies.map(d => `<span class="${d.isDead ? 'dead' : ''}">${d.name}${d.isDead ? ' · ĐÃ HẠ' : ''}</span><span>${Math.round(Math.hypot(d.x - p.x, d.z - p.z))} M · ${Math.round(Math.max(0, d.hp) / (d.maxHp || 1) * 100)}%</span>`).join('');
+    let infHtml = '';
+    if (lab.infantry && lab.infantry.enabled && lab.infantry.soldiers.length) {
+      const alive = lab.infantry.soldiers.filter(s => s.alive).length;
+      const total = lab.infantry.soldiers.length;
+      infHtml = `<span class="${alive === 0 ? 'dead' : ''}">BỘ BINH ĐỊCH${alive === 0 ? ' · ĐÃ QUÉT SẠCH' : ''}</span><span>${alive}/${total} CHIẾN SĨ</span>`;
+    }
+    const html = dummyHtml + infHtml;
     if (el._h !== html) { el._h = html; el.innerHTML = html; }
   }
 

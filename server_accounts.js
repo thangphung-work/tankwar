@@ -597,6 +597,75 @@ function dailySpin(u) {
 // PUBLIC_URL (vd https://tankwar.example.com): địa chỉ quay về sau thanh toán; bỏ trống -> lấy theo Host của yêu cầu.
 // Không có khóa + chạy --dev (hoặc DEV_MOCK_PAY=1): thanh toán giả lập, bấm mua là cộng ngay (chỉ để thử giao diện).
 // Bảng payments: cột session_id giữ mã đơn PayPal (hoặc mock_...).
+
+// ---- NẠP BẠC QUA PAYOS (Quét mã ngân hàng VietQR nội địa) ----
+// PAYOS_CLIENT_ID + PAYOS_API_KEY + PAYOS_CHECKSUM_KEY: cấu hình trong .env
+const PAYOS = (() => {
+  const clientId = process.env.PAYOS_CLIENT_ID || '';
+  const apiKey = process.env.PAYOS_API_KEY || '';
+  const checksumKey = process.env.PAYOS_CHECKSUM_KEY || '';
+  const key = !!(clientId && apiKey && checksumKey);
+  const mock = !key && (process.env.DEV_MOCK_PAY === '1' || (process.argv.includes('--dev') && process.env.DEV_MOCK_PAY !== '0'));
+  const p = {
+    clientId, apiKey, checksumKey,
+    api: 'https://api-merchant.payos.vn',
+    mock, enabled: key || mock
+  };
+  if (key) console.log('[PAYOS] Cổng thanh toán quét mã ngân hàng PayOS đã sẵn sàng');
+  else if (mock) console.warn('[PAYOS] Thanh toán PayOS GIẢ LẬP (chưa có khóa) — chỉ dùng khi thử');
+  return p;
+})();
+
+function payosSign(data) {
+  const sortedKeys = Object.keys(data).sort();
+  const queryStr = sortedKeys.map(k => k + '=' + data[k]).join('&');
+  return crypto.createHmac('sha256', PAYOS.checksumKey).update(queryStr).digest('hex');
+}
+
+async function payosCreatePayment(orderCode, amount, description, returnUrl, cancelUrl) {
+  const payload = {
+    orderCode: Number(orderCode),
+    amount: Math.round(Number(amount)),
+    description: String(description).slice(0, 25),
+    cancelUrl,
+    returnUrl
+  };
+  payload.signature = payosSign(payload);
+  const r = await fetch(PAYOS.api + '/v2/payment-requests', {
+    method: 'POST',
+    headers: {
+      'x-client-id': PAYOS.clientId,
+      'x-api-key': PAYOS.apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.code !== '00') {
+    throw new Error(j.desc || ('PayOS lỗi (' + r.status + ')'));
+  }
+  return j.data;
+}
+
+async function payosSettle(orderCode) {
+  const r = await fetch(PAYOS.api + '/v2/payment-requests/' + encodeURIComponent(orderCode), {
+    headers: {
+      'x-client-id': PAYOS.clientId,
+      'x-api-key': PAYOS.apiKey
+    }
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.code !== '00' || !j.data) {
+    throw new Error(j.desc || ('PayOS tra cứu lỗi (' + r.status + ')'));
+  }
+  const d = j.data;
+  return {
+    status: d.status === 'PAID' ? 'paid' : String(d.status || 'pending').toLowerCase(),
+    amount: Number(d.amount) || 0,
+    data: d
+  };
+}
+
 const PAY = (() => {
   const id = process.env.PAYPAL_CLIENT_ID || '', secret = process.env.PAYPAL_CLIENT_SECRET || '';
   const key = !!(id && secret), live = /^live$/i.test(process.env.PAYPAL_ENV || '');
@@ -660,7 +729,13 @@ async function paypalSettle(orderId) {
 function payStatus(userId) {
   const bought = {};
   for (const r of Q.payCount.all(userId)) bought[r.pack] = Number(r.n);
-  return { enabled: PAY.enabled, mock: PAY.mock, sandbox: PAY.enabled && !PAY.mock && !PAY.live, bought };
+  return {
+    enabled: PAY.enabled || PAYOS.enabled,
+    paypal: { enabled: PAY.enabled, mock: PAY.mock, sandbox: PAY.enabled && !PAY.mock && !PAY.live },
+    payos: { enabled: PAYOS.enabled, mock: PAYOS.mock },
+    mock: (PAY.enabled ? PAY.mock : true) && (PAYOS.enabled ? PAYOS.mock : true),
+    bought
+  };
 }
 function payDesc(userId, pack) {
   const g = Equipment.topupGrant(pack, !Number(Q.payPaidPack.get(userId, pack.id).n));
@@ -686,7 +761,6 @@ function fulfill(sid, amountPaid) {
 // Webhook PayPal: kiểm chữ ký qua API verify-webhook-signature (gửi nguyên văn thân sự kiện), rồi tự hỏi lại PayPal
 // trạng thái đơn (không tin số liệu trong sự kiện) -> chốt đơn + cộng Bạc đúng 1 lần.
 async function payWebhook(req, res) {
-  if (!PAY.webhookId || PAY.mock || !PAY.enabled) return send(res, 503, { error: 'webhook off' });
   const raw = await new Promise((ok, bad) => {
     const chunks = []; let n = 0;
     req.on('data', c => { n += c.length; if (n > 512 * 1024) { bad(new Error('too big')); req.destroy(); } else chunks.push(c); });
@@ -696,6 +770,23 @@ async function payWebhook(req, res) {
   const text = raw.toString('utf8');
   let ev;
   try { ev = JSON.parse(text); } catch (e) { return send(res, 400, { error: 'bad json' }); }
+
+  // PayOS Webhook
+  if (ev && ev.data && ev.data.orderCode) {
+    const orderCode = ev.data.orderCode;
+    const sid = 'pos_' + orderCode;
+    try {
+      const s = await payosSettle(orderCode);
+      if (s.status === 'paid') fulfill(sid, s.amount);
+    } catch (e) {
+      console.error('[PAYOS] Webhook kiểm tra đơn ' + orderCode + ' lỗi:', e.message);
+      return send(res, 500, { error: 'settle failed' });
+    }
+    return send(res, 200, { success: true });
+  }
+
+  // PayPal Webhook
+  if (!PAY.webhookId || PAY.mock || !PAY.enabled) return send(res, 503, { error: 'webhook off' });
   const h = (k) => String(req.headers[k] || '');
   try {
     const v = await paypal('POST', '/v1/notifications/verify-webhook-signature',
@@ -897,7 +988,7 @@ async function handle(req, res) {
   const url = String(req.url || '').split('?')[0];
   const ip = req.socket.remoteAddress || '?';
   try {
-    if (url === '/api/pay/webhook' && req.method === 'POST') return await payWebhook(req, res);
+    if ((url === '/api/pay/webhook' || url === '/api/pay/webhook/payos') && req.method === 'POST') return await payWebhook(req, res);
     if (req.method === 'GET' && url === '/api/me') {
       const a = userFromReq(req);
       return a ? send(res, 200, { profile: publicProfile(a.u) }) : send(res, 401, { error: 'Phiên đăng nhập đã hết hạn' });
@@ -1090,24 +1181,50 @@ async function handle(req, res) {
     if (url === '/api/pay/checkout') {
       const pack = Equipment.topupPack(String(b.pack || ''));
       if (!pack) return send(res, 400, { error: 'Gói nạp không hợp lệ' });
-      if (!PAY.enabled) return send(res, 503, { error: 'Cổng nạp tiền chưa được bật trên máy chủ' });
+      if (!PAY.enabled && !PAYOS.enabled) return send(res, 503, { error: 'Cổng nạp tiền chưa được bật trên máy chủ' });
       if (pack.once && Number(Q.payPaidPack.get(u.id, pack.id).n) > 0) return send(res, 409, { error: 'Gói này chỉ mua được 1 lần' });
-      const amount = Math.round(pack.usd * 100), now = Date.now();
+      const method = String(b.method || (PAYOS.enabled ? 'payos' : 'paypal')).toLowerCase();
+      const origin = PAY.publicUrl || (req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http')) + '://' + req.headers.host;
+      const now = Date.now();
+
+      if (method === 'payos') {
+        if (!PAYOS.enabled) return send(res, 503, { error: 'Cổng quét mã ngân hàng chưa sẵn sàng' });
+        const amount = pack.vnd || Math.round(pack.usd * 25000);
+        const orderCode = Number(String(now).slice(-9) + Math.floor(Math.random() * 900 + 100));
+        const sid = 'pos_' + orderCode;
+        if (PAYOS.mock) {
+          Q.payAdd.run(sid, u.id, pack.id, amount, 'vnd', now, 1);
+          return send(res, 200, { url: '/?pay=success&gateway=payos&orderCode=' + orderCode, mock: true });
+        }
+        try {
+          const retUrl = origin + '/?pay=success&gateway=payos&orderCode=' + orderCode;
+          const canUrl = origin + '/?pay=cancel&gateway=payos&orderCode=' + orderCode;
+          const desc = ('Nap ' + pack.id + ' ' + u.id).slice(0, 25);
+          const payData = await payosCreatePayment(orderCode, amount, desc, retUrl, canUrl);
+          Q.payAdd.run(sid, u.id, pack.id, amount, 'vnd', now, 0);
+          return send(res, 200, { url: payData.checkoutUrl });
+        } catch (e) {
+          console.error('[PAYOS] Tạo đơn chuyển khoản lỗi:', e.message);
+          return send(res, 502, { error: 'Không tạo được liên kết quét mã chuyển khoản, thử lại sau' });
+        }
+      }
+
+      // PayPal
+      if (!PAY.enabled) return send(res, 503, { error: 'Cổng thanh toán quốc tế chưa sẵn sàng' });
+      const amount = Math.round(pack.usd * 100);
       if (PAY.mock) {
         const sid = 'mock_' + crypto.randomBytes(12).toString('hex');
         Q.payAdd.run(sid, u.id, pack.id, amount, Equipment.TOPUP.CURRENCY, now, 1);
         return send(res, 200, { url: '/?pay=success&token=' + sid, mock: true });
       }
-      const origin = PAY.publicUrl || `${req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http')}://${req.headers.host}`;
       let order, link;
       try {
-        // PayPal tự thêm &token=<mã đơn>&PayerID=... vào return_url
         order = await paypal('POST', '/v2/checkout/orders', {
           intent: 'CAPTURE',
           purchase_units: [{
             reference_id: pack.id,
-            custom_id: `${u.id}:${pack.id}`,
-            description: `${pack.name} — Tank War: ${payDesc(u.id, pack)}`.slice(0, 127),
+            custom_id: u.id + ':' + pack.id,
+            description: (pack.name + ' — Tank War: ' + payDesc(u.id, pack)).slice(0, 127),
             amount: { currency_code: PAY.currency, value: (amount / 100).toFixed(2) }
           }],
           payment_source: { paypal: { experience_context: {

@@ -191,18 +191,22 @@ const WorldMarkers = (() => {
           float r = length(p);
           float d = 1e3, fillD = 1e3, extra = 0.0;
           if (uKind < 0.5) {
-            // ĐIỂM RƠI ĐẠN: Thiết kế tối giản, tinh tế, sạch mắt
+            // ĐIỂM RƠI ĐẠN (kiểu kính ngắm tác chiến): vòng ngoài 4 cung hở (xoay chậm), 4 vạch chuẩn xuyên qua khe cung
+            // có nấc cự ly, vạch chéo ngắn ngoài vòng, tâm hở + chấm. Bị chắn: chữ X chéo thay cho vạch chuẩn
             vec2 a = abs(p);
-            float gap = 0.07;
-            if (min(a.x, a.y) > gap) {
-              d = abs(r - 0.50);
-            }
-            // 4 vạch chữ thập thanh mảnh chĩa vào tâm (để hở tâm để nhìn rõ mục tiêu)
             vec2 f = a; if (f.x > f.y) f = f.yx;
-            d = min(d, sdSeg(f, vec2(0.0, 0.18), vec2(0.0, 0.65)));
-
-            // Chấm định vị tâm quang học nhỏ gọn, sắc nét
-            fillD = r - 0.025;
+            vec2 q = abs(rot(p, uTime * 0.35)); if (q.x > q.y) q = q.yx;
+            if (atan(q.x, q.y) > 0.34) d = abs(r - 0.58);
+            vec2 dg = vec2(0.7071);
+            d = min(d, sdSeg(a, dg * 0.66, dg * 0.80));
+            if (uState < 0.5) {
+              d = min(d, sdSeg(f, vec2(0.0, 0.24), vec2(0.0, 0.90)));
+              d = min(d, sdSeg(f, vec2(0.0, 0.42), vec2(0.07, 0.42)));
+              d = min(d, sdSeg(f, vec2(0.0, 0.74), vec2(0.045, 0.74)));
+            } else {
+              d = min(d, sdSeg(a, dg * 0.10, dg * 0.50));
+            }
+            fillD = r - 0.03;
           } else if (uKind < 1.5) {
             // ĐIỂM ĐẾN: ô vuông vát góc + 4 chevron chụm vào tâm (nhịp nhẹ), thoi nhỏ ở giữa
             vec2 a = abs(p);
@@ -219,15 +223,18 @@ const WorldMarkers = (() => {
             float rw = max(uThick * 0.8, pw * 0.7);
             extra = (1.0 - smoothstep(rw - pw * 0.5, rw + pw * 0.5, abs(r - rr))) * (1.0 - uPop) * 0.9;
           } else {
-            // ĐIỂM CHỈ ĐỊNH MỤC TIÊU:
-            // 4 góc ngoặc vuông [  ] định vị thanh gọn
+            // ĐIỂM CHỈ ĐỊNH MỤC TIÊU (tháp còn đang xoay tới): 4 góc ngoặc vát chéo, 4 chevron chụm vào tâm (nhịp),
+            // chữ thập nhỏ hở tâm + chấm
             vec2 a = abs(p);
-            float B = 0.48, L = 0.14, c = 0.04;
+            float B = 0.54, L = 0.20, c = 0.07;
             float dL = min(sdSeg(a, vec2(B - L, B), vec2(B - c, B)), sdSeg(a, vec2(B - c, B), vec2(B, B - c)));
             dL = min(dL, sdSeg(a, vec2(B, B - c), vec2(B, B - L)));
             d = dL;
-            // Chấm định vị tâm nhỏ
-            fillD = r - 0.024;
+            vec2 f = a; if (f.x > f.y) f = f.yx;
+            float y0 = 0.30 + 0.06 * (0.5 + 0.5 * cos(uTime * 4.2));
+            d = min(d, sdSeg(f, vec2(0.0, y0), vec2(0.09, y0 + 0.09)));
+            d = min(d, sdSeg(f, vec2(0.0, 0.06), vec2(0.0, 0.15)));
+            fillD = r - 0.02;
           }
           float core, halo;
           ink(d, fillD, uThick, pw, core, halo);
@@ -266,8 +273,14 @@ const WorldMarkers = (() => {
       const hz0 = terrain.getElevationAt(x, z - e), hz1 = terrain.getElevationAt(x, z + e);
       if (gy === undefined || gy === null) gy = terrain.getElevationAt(x, z);
       _n.set(hx0 - hx1, 2 * e, hz0 - hz1).normalize();
-      // dốc quá gắt (vách / tường): giữ nằm ngang cho khỏi dựng đứng
-      if (_n.y < 0.55) _n.set(0, 1, 0);
+      // dốc gắt (vách, mặt ụ): lấy mẫu sát điểm (dấu to vắt qua bậc thềm cho pháp tuyến trung bình sai) rồi áp dấu lên
+      // đúng mặt dựng đó — trước đây ép nằm ngang, dấu lơ lửng giữa vách
+      if (_n.y < 0.55) {
+        const s = 2.5;
+        _n.set(terrain.getElevationAt(x - s, z) - terrain.getElevationAt(x + s, z), 2 * s,
+          terrain.getElevationAt(x, z - s) - terrain.getElevationAt(x, z + s)).normalize();
+        if (_n.y < 0.95) { placeOnSurface(mesh, x, gy || 0, z, _n.x, _n.y, _n.z, radius * 0.8); return; }
+      }
       _q.setFromUnitVectors(_up, _n);
     } else _q.identity();
     _qy.setFromAxisAngle(_up, yaw || 0);

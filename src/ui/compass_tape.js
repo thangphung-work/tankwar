@@ -13,7 +13,10 @@ const CompassTape = (() => {
   const DIRS = ['B', 'ĐB', 'Đ', 'ĐN', 'N', 'TN', 'T', 'TB'];
   const MONO = '"JetBrains Mono", "Share Tech Mono", monospace', TECH = '"Chakra Petch", sans-serif';
   const C = { amber: '#e7a63a', blue: '#5fb0dc', red: '#e0675c', ink: 'rgba(223,228,217,', threat: '255,77,61' };
-  let cv = null, ctx = null;
+  let cv = null, ctx = null, cachedW = 0;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', () => { cachedW = 0; });
+  }
 
   const norm = (d) => ((d % 360) + 540) % 360 - 180;   // lệch góc về [-180, 180)
   const bearing = (P, x, z) => Math.atan2(x - P.x, -(z - P.z)) * 180 / Math.PI;
@@ -22,7 +25,10 @@ const CompassTape = (() => {
   function fit() {
     if (!cv) { cv = document.getElementById('hx-compass-canvas'); ctx = cv && cv.getContext('2d'); }
     if (!cv || !cv.offsetParent) return 0;   // HUD đang ẩn
-    const W = Math.round(cv.clientWidth), dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+    if (!cachedW) cachedW = Math.round(cv.clientWidth);
+    const W = cachedW;
+    if (!W) return 0;
+    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
     const pw = Math.round(W * dpr), ph = Math.round(H * dpr);
     if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);

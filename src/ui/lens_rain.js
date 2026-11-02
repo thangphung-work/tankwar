@@ -56,10 +56,20 @@ const LensRain = (() => {
     if (drops.length > MAX) drops.shift();
   }
 
+  let _lensLastResize = 0;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', () => { _lensLastResize = performance.now(); });
+  }
+
   function update(dt, host, o) {
     if (!ensure(host)) return;
     // độ phân giải nửa màn hình là đủ (giọt nhòe, không cần nét)
-    const w = Math.max(2, Math.round(host.clientWidth / 2)), h = Math.max(2, Math.round(host.clientHeight / 2));
+    if (!host._cachedW || !host._cachedH || host._lastResize !== _lensLastResize) {
+      host._cachedW = host.clientWidth || 960;
+      host._cachedH = host.clientHeight || 540;
+      host._lastResize = _lensLastResize;
+    }
+    const w = Math.max(2, Math.round(host._cachedW / 2)), h = Math.max(2, Math.round(host._cachedH / 2));
     if (w !== W || h !== H) { W = cv.width = w; H = cv.height = h; drops = []; }
     const rain = o && !o.cover ? o.rain || 0 : 0, flow = (o && o.flow) || 0;
     // tốc độ đập giọt: mưa nặng hạt ~8 giọt / s; bay nhanh hứng nhiều hơn

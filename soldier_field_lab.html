@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phòng Thử Tổ Bộ Binh Trên Địa Hình</title>
+<link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
+<link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+<link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261024nav1">
+<style>
+  #view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; z-index: 1; }
+  .lab-panel { z-index: 10; }
+  .lab-keys { z-index: 10; }
+  #stats { white-space: pre-line; font: 11.5px/1.6 var(--font-mono); color: var(--tc-accent-2); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .grid2 .btn, .grid3 .btn { font-size: 12.5px; padding: 6px 8px; text-align: center; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 20; color: #e2e8f0; font: 14px var(--font-mono); background: #0f172a; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="loading">Đang dựng địa hình…</div>
+<aside class="lab-panel" id="panel">
+  <header class="lab-head">
+    <div class="lab-brand">
+      <i class="ti ti-users-group lab-emblem" aria-hidden="true"></i>
+      <div>
+        <h1>TỔ BỘ BINH</h1>
+        <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> SoldierEngine trên địa hình thật · bấm đất để ra lệnh</div>
+      </div>
+    </div>
+    <nav class="lab-nav">
+      <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả</a>
+      <a href="soldier_lab.html"><i class="ti ti-user-shield" aria-hidden="true"></i> Binh sĩ</a>
+      <a class="on" href="soldier_field_lab.html"><i class="ti ti-users-group" aria-hidden="true"></i> Tổ bộ binh</a>
+    </nav>
+  </header>
+  <div class="lab-scroll">
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">01</span><h2>Dáng di chuyển</h2></div>
+      <div class="grid3">
+        <button class="btn gait on" data-gait="walk">Đi bộ</button>
+        <button class="btn gait" data-gait="patrol">Đi tuần</button>
+        <button class="btn gait" data-gait="run">Chạy</button>
+      </div>
+    </section>
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">02</span><h2>Đội hình</h2></div>
+      <div class="grid3">
+        <button class="btn form on" data-form="wedge">Mũi tên</button>
+        <button class="btn form" data-form="column">Hàng dọc</button>
+        <button class="btn form" data-form="line">Hàng ngang</button>
+      </div>
+    </section>
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">03</span><h2>Lệnh</h2></div>
+      <div class="grid2">
+        <button class="btn" id="btnStop">Dừng lại</button>
+        <button class="btn" id="btnAim">Cảnh giới hướng trước</button>
+        <button class="btn" id="btnKneel">Quỳ / Đứng</button>
+        <button class="btn" id="btnMore">Thêm 8 lính</button>
+      </div>
+    </section>
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">04</span><h2>Canh gác &amp; chọn lính</h2></div>
+      <div class="grid2">
+        <button class="btn" id="btnGuard">Canh gác: TẮT</button>
+        <button class="btn" id="btnEnemy">Thả tổ địch</button>
+        <button class="btn" id="btnHold">Giữ chỗ (người chọn)</button>
+        <button class="btn" id="btnRejoin">Về đội hình</button>
+      </div>
+      <div class="lab-box" style="margin-top:6px"><div id="selInfo" style="font:12px var(--font-mono)">Đang chọn: cả tổ</div></div>
+    </section>
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">04</span><h2>Hiệu năng</h2></div>
+      <div class="lab-box"><div id="stats"></div></div>
+    </section>
+  </div>
+</aside>
+<div class="lab-keys">
+  <span><kbd>Bấm trái lên đất</kbd> người đang chọn đi tới</span>
+  <span><kbd>0</kbd> cả tổ · <kbd>1</kbd>-<kbd>8</kbd> từng người (<kbd>Shift</kbd> chọn thêm)</span>
+  <span><kbd>G</kbd> canh gác · <kbd>H</kbd> giữ chỗ · <kbd>J</kbd> về đội hình · <kbd>K</kbd> quỳ/đứng</span>
+  <span><kbd>Kéo chuột phải</kbd> xoay</span>
+  <span><kbd>Cuộn</kbd> gần / xa</span>
+</div>
+
+<script src="three.min.js"></script>
+<script src="three-mesh-bvh.js"></script>
+<script src="src/core/sky.js"></script>
+<script src="src/core/weather.js"></script>
+<script src="src/core/map_gen.js"></script>
+<script src="src/core/ground_shader.js"></script>
+<script src="src/gameplay/destructibles.js"></script>
+<script src="src/gameplay/props.js"></script>
+<script src="src/gameplay/streetscape.js"></script>
+<script src="src/gameplay/strongholds.js"></script>
+<script src="src/gameplay/landmarks.js"></script>
+<script src="src/gameplay/landmarks/bio.js"></script>
+<script src="src/gameplay/landmarks/sam.js"></script>
+<script src="src/gameplay/landmarks/power.js"></script>
+<script src="src/gameplay/landmarks/radar.js"></script>
+<script src="src/core/backdrop.js"></script>
+<script src="src/core/terrain.js"></script>
+<script src="src/core/vehicle_collision.js"></script>
+<script src="src/ai/navigator.js"></script>
+<script src="src/entities/soldier_model.js?v=20261102hand30"></script>
+<script src="src/gameplay/soldier_engine.js?v=20261102lod1"></script>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  const MAP = (q.get('map') || 'URBAN').toUpperCase();
+  const SEED = (parseInt(q.get('seed'), 10) || 7) >>> 0;
+  window.TankModelBuilder = undefined;   // không dựng xe đỗ trong căn cứ
+
+  const canvas = document.getElementById('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  if (SkySystem.installToneCurve) SkySystem.installToneCurve(renderer, 1.1);
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(50, 1, 0.5, 20000);
+
+  // ánh sáng như game (SkySystem.applyLights theo khí quyển bản đồ); bóng nắng chỉ khung hẹp quanh tổ lính
+  const amb = new THREE.AmbientLight(0xfff5e4, 0.08); scene.add(amb);
+  const hemi = new THREE.HemisphereLight(0xcfe0f5, 0x8a7458, 0.6); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff7e8, 1.3);
+  sun.castShadow = true;
+  sun.shadow.mapSize.width = sun.shadow.mapSize.height = 2048;
+  Object.assign(sun.shadow.camera, { near: 10, far: 900, left: -160, right: 160, top: 160, bottom: -160 });
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.4;
+  scene.add(sun); scene.add(sun.target);
+
+  const terrain = new BattleTerrain3D(scene, MapGen.SIZE, MapGen.SIZE, MAP, SEED);
+  if (terrain.atmosphere) {
+    SkySystem.applyLights(scene, sun, hemi, amb, terrain.atmosphere);
+    scene.background = new THREE.Color(terrain.atmosphere.horizon || 0xc4c6c4);
+    scene.fog = new THREE.Fog(terrain.atmosphere.fog || 0xb9bcbc, 600, 7000);
+  }
+  const sunDir = (terrain.atmosphere && terrain.atmosphere.sunDir) || new THREE.Vector3(-0.5, 0.75, -0.4).normalize();
+
+  // ĐẠN LỰU 40 MM (bản phòng thử): bay cầu vồng ~76 m/s, nổ chớp sáng + sát thương theo bán kính (game thật dùng Grenade40)
+  const shots = [], flashes = [];
+  const shellGeo = new THREE.SphereGeometry(0.35, 8, 6), shellMat = new THREE.MeshBasicMaterial({ color: 0x2a2a22 });
+  const flashGeo = new THREE.SphereGeometry(1, 12, 8);
+  function fireGrenade(s, t, aim) {
+    const p0 = new THREE.Vector3(s.x + s.forwardX * 5, s.y + 12, s.z + s.forwardZ * 5), p1 = new THREE.Vector3(aim.x, aim.y - 4, aim.z);
+    const d = p0.distanceTo(p1), T = d / 608, g = 78;
+    const m = new THREE.Mesh(shellGeo, shellMat); scene.add(m);
+    shots.push({ p0, p1, T, t: 0, arc: g * T * T / 8, m, team: s.team });
+  }
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function boom(p, team) {
+    const f = new THREE.Mesh(flashGeo, new THREE.MeshBasicMaterial({ color: 0xffc46a, transparent: true, opacity: 0.9, depthWrite: false }));
+    f.position.copy(p); scene.add(f); flashes.push({ m: f, t: 0 });
+    // mảnh văng HEDP: chết chắc trong ~2 m, bị thương tới ~6 m; nằm / quỳ ít trúng hơn
+    for (const o of world.soldiers) {
+      if (!o.alive || o.team === team) continue;
+      const r = Math.hypot(o.x - p.x, o.z - p.z) / 8;
+      if (r > 6) continue;
+      const k = o.intent.stance === 'kneel' ? 0.65 : 1;
+      if (r < 1.5) o.damage(110 * k, 'FRAG');
+      else if (Math.random() < 0.85 * k * (1 - (r - 1.5) / 4.5)) o.damage(rnd(25, 70) * k, 'FRAG');   // mảnh văng: trúng hay không là xác suất
+    }
+  }
+  function stepShots(dt) {
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const S = shots[i]; S.t += dt;
+      const f = Math.min(1, S.t / S.T);
+      S.m.position.lerpVectors(S.p0, S.p1, f); S.m.position.y += S.arc * 4 * f * (1 - f);
+      const gnd = terrain.getElevationAt(S.m.position.x, S.m.position.z);
+      if (f >= 1 || (f > 0.1 && S.m.position.y < gnd)) { if (S.m.position.y < gnd) S.m.position.y = gnd + 0.5; boom(S.m.position.clone(), S.team); scene.remove(S.m); shots.splice(i, 1); }
+    }
+    for (let i = flashes.length - 1; i >= 0; i--) {
+      const F = flashes[i]; F.t += dt;
+      F.m.scale.setScalar(4 + F.t * 60); F.m.material.opacity = Math.max(0, 0.9 - F.t * 3);
+      if (F.t > 0.3) { scene.remove(F.m); flashes.splice(i, 1); }
+    }
+  }
+  if (SoldierModel.setBiome) SoldierModel.setBiome(MAP);   // quân phục theo chiến trường
+  const world = new SoldierEngine.World(scene, terrain, { vehicles: () => [], onFire: (s, t, aim) => fireGrenade(s, t, aim) });
+
+  // vòng chọn dưới chân người đang được chọn
+  const ringGeo = new THREE.RingGeometry(3.2, 4.0, 24); ringGeo.rotateX(-Math.PI / 2);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x38e07a, transparent: true, opacity: 0.85, depthWrite: false });
+  const rings = [];
+  function drawRings() {
+    const sel = squad ? [...squad.selected] : [];
+    while (rings.length < sel.length) { const r = new THREE.Mesh(ringGeo, ringMat); scene.add(r); rings.push(r); }
+    rings.forEach((r, i) => { const m = sel[i]; r.visible = !!m; if (m) r.position.set(m.x, m.y + 0.3, m.z); });
+    const el = document.getElementById('selInfo');
+    if (el && squad) el.textContent = 'Đang chọn: ' + (squad.allSelected ? 'cả tổ' : sel.map(m => '#' + (squad.members.indexOf(m) + 1)).join(' ')) + ' · còn sống ' + squad.alive().length + '/' + squad.members.length
+      + ' · canh gác ' + squad.members.filter(m => m.guard).length;
+  }
+  function selectKey(i, add) {
+    if (!squad) return;
+    if (i < 0) squad.select('all');
+    else if (add) { const cur = [...squad.selected].map(m => squad.members.indexOf(m)); squad.select(cur.includes(i) ? cur.filter(k => k !== i) : cur.concat(i)); }
+    else squad.select(i);
+  }
+  function setGuardBtn() { const on = squad && [...squad.selected].some(m => m.guard); const b = document.getElementById('btnGuard'); b.textContent = 'Canh gác: ' + (on ? 'BẬT' : 'TẮT'); b.className = on ? 'btn on' : 'btn'; }
+  addEventListener('keydown', e => {
+    if (!squad) return;
+    if (/^Digit[0-8]$/.test(e.code)) { const n = +e.code.slice(5); selectKey(n === 0 ? -1 : n - 1, e.shiftKey); setGuardBtn(); }
+    else if (e.code === 'KeyG') { const on = ![...squad.selected].some(m => m.guard); squad.cmdGuard(on); setGuardBtn(); }
+    else if (e.code === 'KeyH') squad.cmdHold();
+    else if (e.code === 'KeyJ') squad.cmdRejoin();
+    else if (e.code === 'KeyK') squad.cmdStance([...squad.selected].some(m => m.intent.stance === 'kneel') ? 'stand' : 'kneel');
+  });
+  function spawnEnemies(n = 5, dist = 900) {
+    const L = squad.leader, a = L.heading + (Math.random() - 0.5) * 0.8;
+    const p = findSpot(L.x - Math.sin(a) * dist, L.z - Math.cos(a) * dist), list = [];
+    for (let i = 0; i < n; i++) list.push(world.spawn({ team: 'RED', x: p.x + (i % 3) * 40, z: p.z + Math.floor(i / 3) * 40, heading: a + Math.PI, guard: true }));
+    const q = world.squad(list, 'line');
+    return q;
+  }
+  let squad = null, gait = 'walk';
+  const view = { yaw: 0.8, pitch: 0.42, dist: 150, tx: 0, ty: 0, tz: 0 };
+
+  // chỗ thả tổ: đất khô, thoải, không sát nhà, gần tâm bản đồ (dò xoắn ốc)
+  function findSpot(cx, cz) {
+    const B = terrain.buildings || [];
+    const SH = [].concat((terrain.map && terrain.map.strongholds) || [], (terrain.map && terrain.map.landmarks) || []);
+    for (let r = 0; r < 3000; r += 40) {
+      for (let k = 0; k < Math.max(1, r / 20); k++) {
+        const a = k / Math.max(1, r / 20) * Math.PI * 2, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+        if (world.waterDepth(x, z) > 0) continue;
+        const h = terrain.getElevationAt(x, z), s = Math.abs(terrain.getElevationAt(x + 12, z) - h) + Math.abs(terrain.getElevationAt(x, z + 12) - h);
+        if (s > 3) continue;
+        if (B.some(b => Math.hypot(b.x - x, b.z - z) < (b.radius || 30) + 40)) continue;
+        // tránh cứ điểm / căn cứ (tường bê tông không nằm trong danh sách nhà) và mọi vật cản: thử va chạm thật tại chỗ
+        if (SH.some(o => Math.hypot(o.x - x, o.z - z) < (o.r || o.radius || 420))) continue;
+        const rc = terrain.resolveVehicleCollision(x, z, x + 0.01, z, 40, null);
+        if (rc.hit) continue;
+        return { x, z };
+      }
+    }
+    return { x: cx, z: cz };
+  }
+
+  function spawnSquad(n, at) {
+    const p = at || findSpot(+(q.get('sx') || 1200), +(q.get('sz') || 900)), members = [];
+    for (let i = 0; i < n; i++) members.push(world.spawn({ team: i % 2 && q.get('mix') ? 'RED' : 'BLUE', x: p.x + (i % 3) * 36, z: p.z + Math.floor(i / 3) * 36, heading: 0 }));
+    const sq = world.squad(members, 'wedge');
+    return sq;
+  }
+
+  // bấm lên đất: dò tia từ camera theo bước tới khi chạm mặt đất
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+  function pickGround(cx, cy) {
+    mouse.set(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1);
+    ray.setFromCamera(mouse, cam);
+    const o = ray.ray.origin, d = ray.ray.direction;
+    let prev = 0;
+    for (let t = 2; t < 6000; t += 4) {
+      const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
+      if (y < terrain.getElevationAt(x, z)) return { x, z };
+      prev = t;
+    }
+    return null;
+  }
+  let drag = null;
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button === 0 && squad) { const p = pickGround(e.clientX, e.clientY); if (p) squad.cmdMove(p.x, p.z, gait); }
+    else drag = { x: e.clientX, y: e.clientY };
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    view.yaw += (e.clientX - drag.x) * 0.006; view.pitch = Math.max(0.08, Math.min(1.4, view.pitch + (e.clientY - drag.y) * 0.004));
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  addEventListener('pointerup', () => { drag = null; });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); view.dist = Math.max(20, Math.min(1500, view.dist * (e.deltaY > 0 ? 1.1 : 1 / 1.1))); }, { passive: false });
+
+  document.querySelectorAll('.gait').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.gait').forEach(x => x.classList.remove('on')); b.classList.add('on'); gait = b.dataset.gait;
+    if (squad && squad.leader.intent.target) squad.moveTo(squad.leader.intent.target.x, squad.leader.intent.target.z, gait);
+  });
+  document.querySelectorAll('.form').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.form').forEach(x => x.classList.remove('on')); b.classList.add('on'); if (squad) squad.setFormation(b.dataset.form);
+  });
+  document.getElementById('btnGuard').onclick = () => { const on = ![...squad.selected].some(m => m.guard); squad.cmdGuard(on); setGuardBtn(); };
+  document.getElementById('btnEnemy').onclick = () => spawnEnemies(5, 900);
+  document.getElementById('btnHold').onclick = () => squad.cmdHold();
+  document.getElementById('btnRejoin').onclick = () => squad.cmdRejoin();
+  document.getElementById('btnStop').onclick = () => squad && squad.stop();
+  document.getElementById('btnAim').onclick = () => {
+    if (!squad) return;
+    const L = squad.leader;
+    for (const m of squad.members) m.aimAt(m.x + L.forwardX * 400, m.y + 12, m.z + L.forwardZ * 400);
+  };
+  document.getElementById('btnKneel').onclick = () => { if (squad) for (const m of squad.members) m.setStance(m.intent.stance === 'kneel' ? 'stand' : 'kneel'); };
+  document.getElementById('btnMore').onclick = () => { if (squad) { const L = squad.leader; const s = spawnSquad(8, { x: L.x + 60, z: L.z + 60 }); s.moveTo(L.x, L.z, gait); } };
+
+  function resize() { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); }
+  addEventListener('resize', resize); resize();
+
+  function placeCamera() {
+    if (squad) {
+      // tâm nhìn: trung bình vị trí cả tổ (mượt)
+      let x = 0, y = 0, z = 0; for (const m of squad.members) { x += m.x; y += m.y; z += m.z; }
+      const n = squad.members.length; x /= n; y /= n; z /= n;
+      view.tx += (x - view.tx) * 0.1; view.ty += (y + 8 - view.ty) * 0.1; view.tz += (z - view.tz) * 0.1;
+    }
+    const cp = Math.cos(view.pitch);
+    cam.position.set(view.tx + Math.sin(view.yaw) * cp * view.dist, view.ty + Math.sin(view.pitch) * view.dist, view.tz + Math.cos(view.yaw) * cp * view.dist);
+    const g = terrain.getElevationAt(cam.position.x, cam.position.z) + 3;
+    if (cam.position.y < g) cam.position.y = g;
+    cam.lookAt(view.tx, view.ty, view.tz);
+    sun.position.set(view.tx + sunDir.x * 500, view.ty + sunDir.y * 500, view.tz + sunDir.z * 500);
+    sun.target.position.set(view.tx, view.ty, view.tz);
+  }
+
+  const statsEl = document.getElementById('stats');
+  let last = performance.now(), fps = 60, stT = 0, simMs = 0;
+  function frame(dt) {
+    const t0 = performance.now();
+    stepShots(dt);
+    world.update(dt, cam);
+    drawRings();
+    simMs += (performance.now() - t0 - simMs) * 0.1;
+    placeCamera();
+    renderer.render(scene, cam);
+  }
+  function loop(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    fps += (1 / Math.max(1e-3, dt) - fps) * 0.05;
+    if (ready && !window.FL.paused) frame(dt);
+    if ((stT -= dt) <= 0 && ready) {
+      stT = 0.4;
+      const L = squad && squad.leader;
+      statsEl.textContent = `Bản đồ: ${MAP} · hạt ${SEED}\nSố lính: ${world.soldiers.length}\nLượt vẽ: ${renderer.info.render.calls} · tam giác: ${(renderer.info.render.triangles / 1000).toFixed(0)}k\nMô phỏng lính: ${simMs.toFixed(2)} ms/khung\nKhung hình: ${Math.round(fps)} FPS`
+        + (L ? `\nNgười dẫn: ${L.motion} ${(L.speed / 8).toFixed(2)} m/s` : '');
+    }
+    requestAnimationFrame(loop);
+  }
+  let ready = false;
+  function waitDetails() {
+    if (!terrain.detailsReady) { setTimeout(waitDetails, 200); return; }
+    squad = spawnSquad(parseInt(q.get('n'), 10) || 6);
+    const L = squad.leader; view.tx = L.x; view.ty = L.y; view.tz = L.z;
+    document.getElementById('loading').remove();
+    ready = true;
+    document.title = 'READY';
+  }
+  waitDetails();
+  requestAnimationFrame(loop);
+
+  // Móc điều khiển cho chụp headless: FL.go(x, z, gait), FL.sim(giây) chạy 60 khung/giây, FL.shot(view) -> dataURL
+  window.FL = {
+    world, terrain, renderer, scene, cam, view, paused: false,
+    get squad() { return squad; },
+    findSpot, spawnSquad,
+    go(x, z, g) { gait = g || gait; squad.cmdMove(x, z, gait); },
+    spawnEnemies, selectKey,
+    sim(sec) { const t0 = performance.now(); for (let i = 0; i < sec * 60; i++) frame(1 / 60); return performance.now() - t0; },
+    shot(o = {}) { Object.assign(view, o); placeCamera(); renderer.render(scene, cam); return renderer.domElement.toDataURL('image/jpeg', 0.88); }
+  };
+})();
+</script>
+</body>
+</html>

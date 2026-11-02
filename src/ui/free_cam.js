@@ -18,6 +18,30 @@
   let BIOME = (q.get('map') || 'HIGHLAND').toUpperCase();
   if (!MAPS.some(m => m[0] === BIOME)) BIOME = 'HIGHLAND';
   const SEED = (parseInt(q.get('seed'), 10) || 20261022) >>> 0;
+  // ĐIỀU KHIỂN CẢNH (thử bản đồ): thời tiết & giờ trong ngày bình thường do seed quyết định (mọi máy giống nhau). Ở đây ép
+  // qua tham số URL, áp lúc dựng bản đồ (bầu trời, sương, đất ướt, bóng núi nướng sẵn đều tính lúc dựng -> đổi = tải lại)
+  const WEATHERS = [['', 'Theo seed'], ['clear', 'Quang'], ['rain', 'Mưa'], ['storm', 'Giông']];
+  const TIMES = [['', 'Theo seed'], ['morning', 'Sáng'], ['noon', 'Trưa'], ['afternoon', 'Chiều'], ['golden', 'Hoàng hôn']];
+  const WX = WEATHERS.some(w => w[0] && w[0] === q.get('weather')) ? q.get('weather') : '';
+  const TOD = TIMES.some(t => t[0] && t[0] === q.get('time')) ? q.get('time') : '';
+  const SUN_EL = { morning: 26, noon: 60, afternoon: 40, golden: 15 };   // độ, giữa khoảng MapGen sinh cho từng giờ
+  function applySceneOverrides() {
+    if (WX && typeof Weather !== 'undefined' && !Weather.__fcForMap) {
+      const base = Weather.__fcForMap = Weather.forMap;
+      Weather.forMap = (type, seed) => {
+        if (WX === 'clear') return { rain: false, intensity: 0 };
+        // lấy bảng màu mưa của bản đồ từ một seed có mưa (forMap chỉ trả bảng đó khi gieo trúng mưa)
+        let r = base(type, seed);
+        for (let s = 1; !r.rain && s < 5000; s++) r = base(type, s);
+        return Object.assign({}, r, WX === 'storm' ? { intensity: 1, storm: 1 } : { intensity: 0.85, storm: 0.55 });
+      };
+    }
+    if (TOD && window.MapGen && MapGen.get) {
+      const M = MapGen.get(BIOME, SEED);
+      if (M && M.sun) { M.sun.timeOfDay = TOD; M.sun.elevation = SUN_EL[TOD] * Math.PI / 180; }
+    }
+  }
+  const reloadWith = (k, v) => { const u = new URL(location.href); if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); location.href = u.toString(); };
 
   const cam = { x: 0, y: 600, z: 900, yaw: 0, pitch: -0.6, speed: 400, keys: {}, locked: false, goal: null };
   let g = null, speedEl = null, posEl = null;
@@ -53,7 +77,7 @@
 
   // dựng lưới bản đồ, rồi chờ phần chi tiết (cây, nhà, đồ vật) dựng xong dưới nền từng bước nhỏ mới vào trận
   function build() {
-    try { g.prepareMap(BIOME, SEED); } catch (err) { console.error('[FREECAM]', err); loader.stage('LỖI: ' + (err && err.message || err)); return; }
+    try { applySceneOverrides(); g.prepareMap(BIOME, SEED); } catch (err) { console.error('[FREECAM]', err); loader.stage('LỖI: ' + (err && err.message || err)); return; }
     const T = g.terrain;
     const wait = () => {
       if (T && !T.detailsReady && g.terrain === T) {
@@ -63,7 +87,9 @@
         return;
       }
       try { start(); } catch (err) { console.error('[FREECAM]', err); loader.stage('LỖI: ' + (err && err.message || err)); return; }
-      loader.done();
+      // shader + nạp sẵn GPU cả bản đồ (kể cả bậc LOD gần đang ẩn) dưới màn chờ: bay tới đâu cũng không khựng nạp lưới
+      if (g.labWarmUp) g.labWarmUp(t => loader.stage(t)).then(() => loader.done());
+      else loader.done();
     };
     wait();
   }
@@ -319,6 +345,9 @@
       + '<button id="fc-toggle-map-btn" style="cursor:pointer;border:1px solid #7fe3f5;border-radius:4px;padding:3px 10px;font:inherit;font-weight:700;background:rgba(34,211,240,0.2);color:#7fe3f5;display:inline-flex;align-items:center;gap:4px;" title="Bật bản đồ để xem toàn cảnh và nhấp chuột dịch chuyển tức thời"><i class="ti ti-map" aria-hidden="true"></i> BẢN ĐỒ [M]</button>'
       + '</div>'
       + '<div id="fc-maps" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>'
+      + '<div id="fc-wx" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:4px"><span style="min-width:62px;opacity:.8">Thời tiết</span></div>'
+      + '<div id="fc-tod" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:4px"><span style="min-width:62px;opacity:.8">Giờ</span></div>'
+      + '<div id="fc-seed" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:6px"><span style="min-width:62px;opacity:.8">Seed</span></div>'
       + '<div>Tốc độ: <span id="fc-speed"></span> · <span id="fc-pos"></span></div>'
       + '<div style="opacity:.8;font-weight:500;font-size:11.5px;margin-top:2px">Nhấp trái: bay tới đó · <b style="color:#7fe3f5">M: Bật bản đồ (nhấp để dịch chuyển)</b> · kéo chuột: xoay nhìn · WASD: bay · Q/E: xuống/lên · Shift: nhanh · cuộn: zoom · Alt+cuộn: đổi tốc độ</div>';
     document.body.appendChild(root);
@@ -339,6 +368,25 @@
       b.onclick = () => { if (id === BIOME) return; const u = new URL(location.href); u.searchParams.set('map', id); location.href = u.toString(); };
       maps.appendChild(b);
     }
+    // thời tiết / giờ / seed: dựng lại bản đồ (tải lại trang với tham số mới)
+    const chip = (box, label, on, fn) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = 'cursor:pointer;border:1px solid #4a5a44;border-radius:4px;padding:2px 7px;font:inherit;' + (on ? 'background:#7fe3f5;color:#111' : 'background:#1b231c;color:#d6e2c8');
+      b.onclick = e => { e.stopPropagation(); if (!on) fn(); };
+      box.appendChild(b);
+    };
+    // nhãn "Theo seed": thời tiết gốc của seed (không phải bản đang ép)
+    const T = g.terrain, W = typeof Weather !== 'undefined' ? (Weather.__fcForMap || Weather.forMap)(BIOME, SEED) : null;
+    const tod = T && T.map && T.map.sun ? T.map.sun.timeOfDay : '';
+    const wxBox = root.querySelector('#fc-wx'), todBox = root.querySelector('#fc-tod'), seedBox = root.querySelector('#fc-seed');
+    for (const [id, name] of WEATHERS) chip(wxBox, name + (!id ? ` (${W && W.rain ? (W.storm > 0.8 ? 'giông' : 'mưa') : 'quang'})` : ''), id === WX, () => reloadWith('weather', id));
+    for (const [id, name] of TIMES) chip(todBox, name + (!id && !TOD ? ` (${(TIMES.find(t => t[0] === tod) || ['', tod])[1].toLowerCase()})` : ''), id === TOD, () => reloadWith('time', id));
+    const sv = document.createElement('span');
+    sv.textContent = SEED;
+    sv.style.cssText = 'font-variant-numeric:tabular-nums;margin-right:4px';
+    seedBox.appendChild(sv);
+    chip(seedBox, 'Seed khác', false, () => reloadWith('seed', String((Math.random() * 4294967296) >>> 0)));
     speedEl = root.querySelector('#fc-speed'); posEl = root.querySelector('#fc-pos');
     speedEl.textContent = Math.round(cam.speed) + ' M/S';
   }

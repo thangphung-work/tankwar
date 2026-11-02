@@ -500,6 +500,15 @@ const TireTracks = (() => {
       if (!brk) L.writePoint(px, pz, mx, mz, y0, y1, vc, str, sf.c, t, sg, width, slip, depth, hold);
       L.last = { x, z, v: vc, dx: mx, dz: mz, zero: brk, a, sg };
     });
+    const cam = typeof window !== 'undefined' && window.game && window.game.camera;
+    const isNear = !cam || u.isPlayer || Math.hypot(u.x - cam.position.x, u.z - cam.position.z) < 650;
+    for (let i = 0; i < u._tt.length; i++) {
+      const L = u._tt[i];
+      if (L.mesh && L.mesh.visible !== isNear) {
+        L.mesh.visible = isNear;
+        if (L.water && wet) L.water.visible = isNear;
+      }
+    }
     for (const L of u._tt) L.flush();
   }
 

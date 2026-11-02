@@ -52,6 +52,20 @@
   // ---------------------------------------------------------------------------
   // KHỞI ĐỘNG: chờ game dựng xong -> dựng bản đồ cứ điểm -> vào trận thử nghiệm
   // ---------------------------------------------------------------------------
+  // Màn chờ (dùng chung giao diện với phòng thử đạn): trước đây vào thẳng trận khi bản đồ, xác xe cứ điểm, shader còn
+  // dựng dở -> mọi thứ dồn vào lúc đang chơi (đo 2026-11-02: khung 1,6-10 s ở renderer.render lúc đầu, bật kính, bắn)
+  const loader = (() => {
+    const el = document.createElement('div');
+    el.id = 'range-lab-loading';
+    el.style.cssText = 'position:fixed;inset:0;z-index:99999;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0b0f0c;color:#d6e2c8;font:600 14px/1.4 system-ui,sans-serif;letter-spacing:.12em;transition:opacity .35s';
+    el.innerHTML = window.rangeLabLoaderMarkup ? window.rangeLabLoaderMarkup('ĐANG KHỞI ĐỘNG…', 'CỨ ĐIỂM') : '<div id="range-lab-stage">ĐANG KHỞI ĐỘNG…</div>';
+    (document.body || document.documentElement).appendChild(el);
+    return {
+      stage(t) { const s = document.getElementById('range-lab-stage'); if (s) s.textContent = t; },
+      done() { requestAnimationFrame(() => requestAnimationFrame(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); })); }
+    };
+  })();
+
   function boot() {
     const g = window.game;
     if (!g || !g.terrain || !g.matchmaking || typeof Strongholds === 'undefined') { setTimeout(boot, 60); return; }
@@ -59,7 +73,28 @@
     mm.selectedMapType = BIOME; mm.mapSeed = SEED; mm.state = 'IN_GAME';
     mm.preparedMapKey = BIOME + ':' + SEED;
     clearInterval(mm.searchInterval);
-    g.prepareMap(BIOME, SEED);
+    loader.stage('ĐANG CHUẨN BỊ ĐỊA HÌNH…');
+    // MapGen chạy trong Worker (màn chờ không treo); không có Worker thì prepareMap tự làm đồng bộ
+    const prep = window.MapGen && MapGen.prefetch ? MapGen.prefetch(BIOME, SEED) : Promise.resolve(false);
+    prep.catch(() => false).then(() => {
+      loader.stage('ĐANG DỰNG CHIẾN TRƯỜNG…');
+      requestAnimationFrame(() => setTimeout(() => start(g, mm), 20));
+    });
+  }
+
+  function start(g, mm) {
+    try { g.prepareMap(BIOME, SEED); } catch (err) { console.error('[SH LAB]', err); loader.stage('LỖI: ' + (err && err.message || err)); return; }
+    // chi tiết bản đồ (gồm xác xe quanh 3 cứ điểm) dựng từng bước dưới màn chờ; vào trận sớm thì startMatchWithSlots dựng
+    // nốt đồng bộ / phần còn lại chạy giữa lúc chơi
+    const T = g.terrain;
+    const waitDetails = () => {
+      if (T && !T.detailsReady && g.terrain === T) { setTimeout(waitDetails, 24); return; }
+      try { enterMatch(g, mm); } catch (err) { console.error('[SH LAB]', err); loader.stage('LỖI: ' + (err && err.message || err)); }
+    };
+    waitDetails();
+  }
+
+  function enterMatch(g, mm) {
     const ov = document.getElementById('matchmaking-overlay');
     if (ov) ov.classList.add('hidden');
     mm.selectedTankType = tankType;
@@ -69,6 +104,13 @@
     if (introHud) introHud.classList.add('hidden');
     document.body.classList.remove('intro-active');
     setup(g);
+    warmUp(g);
+  }
+
+  // Sau màn chờ: shader cả cảnh + hiệu ứng bắn, nạp sẵn GPU kể cả bậc LOD chỉ hiện khi soi kính (game.labWarmUp)
+  function warmUp(g) {
+    if (!g.labWarmUp) { loader.done(); return; }
+    g.labWarmUp(t => loader.stage(t)).then(() => loader.done());
   }
 
   function setup(g) {

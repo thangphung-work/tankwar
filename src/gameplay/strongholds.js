@@ -521,7 +521,8 @@ bool shInCut(vec3 wp) {
     const floor = kind === 'floor';
     const sd = opts.shadeDir || [0.6, 0.8];
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uSand = { value: new THREE.Vector3(...G.c) };
+      // sàn / sân phễu: bụi cát sẫm hơn cùng tỉ lệ với màu bê tông sàn (floorMat.color), không thì chỗ cát lấn vẫn trắng loá
+      sh.uniforms.uSand = { value: new THREE.Vector3(...G.c).multiplyScalar(floor ? 0.8 : 1) };
       sh.uniforms.uSandK = { value: G.k };
       sh.uniforms.uShDim = { value: new THREE.Vector4(S.HB, S.CEIL, S.END, S.WI) };
       sh.uniforms.uMoss = { value: new THREE.Vector3(...G.moss) };
@@ -670,6 +671,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       }
       // NẮP HẦM: đất trôi từ ụ lên mép tấm, mạch co giãn & vết nứt sẫm có cỏ dại, vệt vũng nước khô, rêu ở mép
       if (pad > 0.5) {
+        // mặt ngửa nắng chiếu thẳng: cùng tông với sàn dốc (floorMat 0.78), trước đây ~186/255 trắng loá từ trên cao
+        diffuseColor.rgb *= 0.8;
         vec2 lp = vShLP.xz;
         float e = min(uPad.x - abs(lp.x), uPad.y - abs(lp.y));
         float edge = 1.0 - smoothstep(0.0, 16.0 + 26.0 * n2, e);
@@ -850,6 +853,93 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     const k = wreckKey(P), i = WRECK_POOL.findIndex(E => E.key === k);
     return i < 0 ? null : WRECK_POOL.splice(i, 1)[0];
   }
+  // LƯỚI ĐẠI DIỆN XÁC XE Ở XA: mỗi xác 120-220k tam giác, 36-180 lưới (đo 2026-11-02; 14 xác ~320 lượt vẽ, FPS 45 -> 53 nếu
+  // tắt). Gộp cả xác thành 1 lưới bằng gom đỉnh theo ô (ô cỡ < 2 điểm ảnh ở cự ly đổi bản), màu theo vật liệu. Mô hình thật vẫn
+  // nguyên dưới nhóm bị ẩn: dò tia (bỏ qua cờ visible của cha) và chuỗi phá xác chạy trên nó như thường
+  const WRECK_PROXY_D = 480, WRECK_PROXY_H = 40, WRECK_PROXY_CELL = 0.9;
+  let WRECK_PROXY_MAT = null;
+  function bakeWreckProxy(roots, parent) {
+    if (!WRECK_PROXY_MAT) WRECK_PROXY_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+    parent.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+    const c = new THREE.Vector3().setFromMatrixPosition(roots[0].matrixWorld).applyMatrix4(inv);
+    const cells = new Map(), sum = [], index = [], v = new THREE.Vector3(), M = new THREE.Matrix4(), IM = new THREE.Matrix4(), C = WRECK_PROXY_CELL;
+    const rgb = m => {
+      if (!m || !m.color) return [0.05, 0.05, 0.05];
+      if (m.userData && m.userData.surface === 'glass') return [0.12, 0.125, 0.13];
+      // texture bồ hóng / gỉ làm vỏ thật tối hơn màu vật liệu nhiều; không có nó bản đại diện sáng và ngả xám xanh
+      return [m.color.r * 0.36, m.color.g * 0.335, m.color.b * 0.31];
+    };
+    const cellOf = (pa, i, col) => {
+      v.fromBufferAttribute(pa, i).applyMatrix4(M);
+      const x = v.x - c.x, y = v.y - c.y, z = v.z - c.z;
+      const k = ((Math.round(x / C) + 4096) * 8192 + Math.round(y / C) + 4096) * 8192 + Math.round(z / C) + 4096;
+      let n = cells.get(k);
+      if (n === undefined) { n = sum.length / 7; cells.set(k, n); sum.push(0, 0, 0, 0, 0, 0, 0); }
+      const b = n * 7;
+      sum[b] += x; sum[b + 1] += y; sum[b + 2] += z; sum[b + 3] += col[0]; sum[b + 4] += col[1]; sum[b + 5] += col[2]; sum[b + 6]++;
+      return n;
+    };
+    const addMesh = (o) => {
+      const G = o.geometry, pa = G.attributes.position, ia = G.index;
+      const mats = Array.isArray(o.material) ? o.material : [o.material], cols = mats.map(rgb);
+      const nTri = (ia ? ia.count : pa.count) / 3 | 0, groups = Array.isArray(o.material) ? G.groups : null;
+      let gi = 0;
+      for (let t = 0; t < nTri; t++) {
+        let col = cols[0];
+        if (groups && groups.length) {
+          while (gi < groups.length - 1 && t * 3 >= groups[gi].start + groups[gi].count) gi++;
+          col = cols[groups[gi].materialIndex || 0] || col;
+        }
+        const i0 = ia ? ia.getX(t * 3) : t * 3, i1 = ia ? ia.getX(t * 3 + 1) : t * 3 + 1, i2 = ia ? ia.getX(t * 3 + 2) : t * 3 + 2;
+        const a = cellOf(pa, i0, col), b = cellOf(pa, i1, col), d = cellOf(pa, i2, col);
+        if (a !== b && b !== d && a !== d) index.push(a, b, d);
+      }
+    };
+    const walk = (o) => {
+      if (o.isMesh && o.visible && o.geometry && o.geometry.attributes.position && !o.userData.isFxDecal) {
+        const m0 = Array.isArray(o.material) ? o.material[0] : o.material;
+        // (lưới Basic đen đặc vẫn gộp: lòng khoang, nòng... bỏ đi thì sàn xác thủng nhìn xuyên xuống đất)
+        if (m0 && !m0.stencilWrite && !(m0.isMeshBasicMaterial && m0.transparent) && m0.blending !== THREE.AdditiveBlending) {
+          if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+          if (o.isInstancedMesh) {
+            for (let i = 0; i < o.count; i++) {
+              o.getMatrixAt(i, IM);
+              M.multiplyMatrices(inv, o.matrixWorld).multiply(IM);
+              addMesh(o);
+            }
+          } else if (o.geometry.boundingSphere.radius * o.matrixWorld.getMaxScaleOnAxis() >= 0.8) {
+            M.multiplyMatrices(inv, o.matrixWorld);
+            addMesh(o);
+          }
+        }
+      }
+      for (const k of o.children) if (k.visible) walk(k);
+    };
+    for (const r of roots) { r.updateMatrixWorld(true); walk(r); }
+    if (!index.length) return null;
+    const n = sum.length / 7, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const b = i * 7, w = sum[b + 6];
+      pos[i * 3] = sum[b] / w; pos[i * 3 + 1] = sum[b + 1] / w; pos[i * 3 + 2] = sum[b + 2] / w;
+      col[i * 3] = sum[b + 3] / w; col[i * 3 + 1] = sum[b + 4] / w; col[i * 3 + 2] = sum[b + 5] / w;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(index);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, WRECK_PROXY_MAT);
+    mesh.position.copy(c);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.visible = false;
+    mesh.raycast = () => {};
+    mesh.userData.wreckProxy = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
   function putPooledWreck(P, E) {
     E.key = wreckKey(P);
     WRECK_POOL.push(E);
@@ -1885,7 +1975,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
 
       const conc = concreteMaps();
       const concMat = new THREE.MeshStandardMaterial({ map: conc.map, bumpMap: conc.bump, bumpScale: 0.6, roughness: 0.93, metalness: 0.0, vertexColors: true });
-      const floorMat = new THREE.MeshStandardMaterial({ map: floorMaps(), roughness: 0.9, metalness: 0.0, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      // màu 0.78: nhìn từ trên cao sàn dốc + sân phễu nắng chiếu thẳng sáng gần gấp đôi mặt đường / vỉa hè (~175 so với ~100) -> trắng loá
+      const floorMat = new THREE.MeshStandardMaterial({ map: floorMaps(), color: 0xc7c7c7, roughness: 0.9, metalness: 0.0, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
       const SC = 64;   // 1 ô texture bê tông = 64 đơn vị
 
       // ---- Bê tông. C: tường bên + tường cánh (luôn đặc); Rf: mái, mặt tiền, dầm trần, nắp hầm (mờ đi khi nhìn xuyên vào hầm)
@@ -2476,6 +2567,21 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         if (P.turret) this.boulders.push({ x: P.turret.x, z: P.turret.z, radius: 10, height: 9, wreck: true });
       }
       K.wrecks.push(W);
+      this.rebakeWreckProxy(W);
+    }
+    rebakeWreckProxy(W) {
+      this.setWreckProxy(W, false);
+      if (W.proxy) { if (W.proxy.parent) W.proxy.parent.remove(W.proxy); W.proxy.geometry.dispose(); W.proxy = null; }
+      if (W.u && W.u.group && this.wreckRoot) W.proxy = bakeWreckProxy(W.turret ? [W.u.group, W.turret] : [W.u.group], this.wreckRoot);
+      W.proxyStale = 0;
+    }
+    setWreckProxy(W, on) {
+      on = !!(on && W.proxy);
+      if (on === !!W.pOn) return;
+      W.pOn = on;
+      if (W.proxy) W.proxy.visible = on;
+      if (W.u && W.u.group) W.u.group.visible = !on;
+      if (W.turret) W.turret.visible = !on;
     }
 
     // Trước khi dọn bản đồ (terrain.clearTerrain): xác chưa bị bắn trong trận cất vào bể cho bản đồ sau. Gỡ vết đạn dán
@@ -2487,6 +2593,8 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       for (const K of this.items) for (const W of K.wrecks || []) {
         const u = W.u;
         this.showWreckMarks(W);
+        this.setWreckProxy(W, false);
+        if (W.proxy) { if (W.proxy.parent) W.proxy.parent.remove(W.proxy); W.proxy.geometry.dispose(); W.proxy = null; }
         if (W.thawed || !u || !u.group || !W.off) continue;
         if (fx && fx.surfaceMarks && fx.removeSurfaceMark) {
           for (let k = fx.surfaceMarks.length - 1; k >= 0; k--) if (fx.surfaceMarks[k].unit === u) fx.removeSurfaceMark(k);
@@ -2508,11 +2616,27 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     damageWrecks(x, y, z, ammo, heavy, fx) {
       if (typeof VehicleDamage === 'undefined' || !VehicleDamage.wreckBlastAt || !Number.isFinite(y)) return;
       const A = typeof Destructibles !== 'undefined' && Destructibles.ammoInfo ? Destructibles.ammoInfo(ammo, heavy) : { power: 1, radius: 20 };
-      const reach = 60 + A.radius;
+      const reach = 60 + A.radius, q = this._wreckHitQ || (this._wreckHitQ = []);
       for (const K of this.items) for (const W of K.wrecks || []) {
         if (!W.u || Math.abs(W.sx - x) > reach || Math.abs(W.sz - z) > reach) continue;
+        q.push({ W, x, y, z, A, ammo, heavy, fx });
+      }
+      while (q.length > 8) q.shift();   // súng nhanh xả liên tục: bỏ phát cũ, không để hàng dài trễ mãi
+    }
+    // Mỗi phát vào xác 40-160 ms (biến dạng lưới, dò tia, vết đạn; đo 2026-11-02): không làm ngay trong khung phát nổ (đã tốn
+    // hố đạn + hiệu ứng) mà xếp hàng, dùng chung nhịp việc nặng với xác rải bản đồ (Props.heavyReady) — mỗi lượt 1 phát có tác dụng
+    stepWreckHits() {
+      const q = this._wreckHitQ;
+      if (!q || !q.length || (typeof Props !== 'undefined' && !Props.heavyReady())) return;
+      while (q.length) {
+        const H = q.shift(), W = H.W;
+        if (!W.u) continue;
         if (!W.thawed) { W.thawed = true; W.u.group.traverse(o => { o.matrixAutoUpdate = true; }); }
-        VehicleDamage.wreckBlastAt(W.u, x, y, z, A, ammo, heavy, fx);
+        this.setWreckProxy(W, false);   // mảnh vỡ / biến dạng hiện trên mô hình thật; lưới đại diện cũ không còn đúng
+        if (!VehicleDamage.wreckBlastAt(W.u, H.x, H.y, H.z, H.A, H.ammo, H.heavy, H.fx)) continue;
+        W.proxyStale = performance.now();
+        if (typeof Props !== 'undefined') Props.heavyDone();
+        return;
       }
     }
 
@@ -2640,10 +2764,25 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     // những vết đã ẩn
     wreckMarkLOD(cam) {
       const FAR = 520, H = 60, SH_FAR = 680;
+      // kính ngắm phóng to N lần: xác xa to gấp N trên màn hình
+      const mag = (window.game && window.game._lodMag) || 1;
+      let rebaked = false;
       for (const K of this.items) for (const W of K.wrecks || []) {
         if (!W.u || !W.u.group) continue;
         const d = Math.hypot(cam.position.x - W.sx, cam.position.y - W.sy, cam.position.z - W.sz);
+        const de = d / mag;
+        // vừa bị bắn: giữ mô hình thật; đã nguội và ở xa thì nướng lại lưới đại diện (mỗi nhịp việc nặng 1 xác)
+        if (W.proxyStale) {
+          if (!rebaked && de > WRECK_PROXY_D && performance.now() - W.proxyStale > 1500 && !(this._wreckHitQ && this._wreckHitQ.length) && (typeof Props === 'undefined' || Props.heavyReady())) {
+            rebaked = true;
+            this.rebakeWreckProxy(W);
+            if (typeof Props !== 'undefined') Props.heavyDone();
+          }
+        } else if (W.proxy) {
+          this.setWreckProxy(W, W.pOn ? de > WRECK_PROXY_D - WRECK_PROXY_H : de > WRECK_PROXY_D + WRECK_PROXY_H);
+        }
         const shFar = W._shHid ? d > SH_FAR - H : d > SH_FAR + H;
+        if (W.proxy) W.proxy.castShadow = !shFar;
         if (shFar !== !!W._shHid) {
           W._shHid = shFar;
           for (const root of [W.u.group, W.turret]) if (root) root.traverse(o => {
@@ -2814,6 +2953,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         this.setFlagHeight(K, F.h);
       }
       this.waveFlags(dt);
+      this.stepWreckHits();
       this.updateWreckFX(dt);
     }
     waveFlags(dt) {
@@ -2869,7 +3009,9 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
       const soilMul = this.mapType === 'DESERT' ? [0.98, 0.93, 0.86] : this.mapType === 'URBAN' ? [1.02, 0.88, 0.74] : [1.1, 0.86, 0.66];
       const pos = new Float32Array(nf * nr * 3), uv = new Float32Array(nf * nr * 2), col = new Float32Array(nf * nr * 3);
       const keep = new Uint8Array(nf * nr);
-      const hAt = (f, r) => { const h = moundH(f, r); return h === null ? -1.2 : h; };
+      // ngoài ụ: lưới chìm dưới mặt đất thật (đồi dốc xuống phía sân phễu: cốt -1,2 cố định nổi lên trên tấm sân bám đất
+      // thành dải cỏ ngang ngay sau mép cuối sân)
+      const hAt = (f, r) => { const h = moundH(f, r); return h === null ? Math.min(-1.2, this.groundLocal(K, f, r) - 1.2) : h; };
       for (let j = 0; j < nr; j++) for (let i = 0; i < nf; i++) {
         const f = -F + i * st, r = -R + j * st, k = j * nf + i;
         const af = Math.abs(f), ar = Math.abs(r);
@@ -3209,6 +3351,31 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           const k = j * N + i;
           if (heights[k] > lim) heights[k] = lim;
         }
+      }
+      // Hạ theo từng đỉnh chưa đủ: ô lưới 84 đv dài gần bằng cả mặt dốc (104 đv) -> tam giác nối 1 đỉnh trên sàn phẳng lòng
+      // hầm với 1 đỉnh giữa dốc có dây cung nằm CAO hơn chỗ gãy lõm ở chân dốc (tới ~3,6 đv) -> mặt đất phủ cỏ lòi lên thành
+      // vệt xanh trên dốc bê tông. Dò từng tam giác (cùng cách chia ô của PlaneGeometry: a-b-d, b-c-d), điểm nào nằm trên lòng
+      // kênh mà cao hơn mặt sàn - 0,3 đv thì hạ cả 3 đỉnh đúng phần thiếu (giữ nguyên chỗ đã đủ thấp, không đào rãnh thừa)
+      const SM = 8;
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false;
+        for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) {
+          const a = j * N + i, b = (j + 1) * N + i, c = (j + 1) * N + i + 1, d = j * N + i + 1;
+          for (const [p, q, t] of [[a, b, d], [b, c, d]]) {
+            let need = 0;
+            for (let u = 0; u <= SM; u++) for (let v = 0; v <= SM - u; v++) {
+              const wp = u / SM, wq = v / SM, wt = 1 - wp - wq;
+              const x = -half + ((p % N) * wp + (q % N) * wq + (t % N) * wt) * cell;
+              const z = -half + (((p / N) | 0) * wp + ((q / N) | 0) * wq + ((t / N) | 0) * wt) * cell;
+              const dx = x - s.x, dz = z - s.z, af = Math.abs(dx * fx + dz * fz), ar = Math.abs(dx * rx + dz * rz);
+              if (af > S.END || ar >= cutHalf(af)) continue;
+              const over = heights[p] * wp + heights[q] * wq + heights[t] * wt - (s.G + floorY(af) - 0.3);
+              if (over > need) need = over;
+            }
+            if (need > 0.001) { heights[p] -= need; heights[q] -= need; heights[t] -= need; moved = true; }
+          }
+        }
+        if (!moved) break;
       }
     }
   }

@@ -489,8 +489,8 @@
         for (let i = 0, t = 0; i < P.length; i += 9, t++) {
           const tri = [[P[i], P[i + 1], P[i + 2]], [P[i + 3], P[i + 4], P[i + 5]], [P[i + 6], P[i + 7], P[i + 8]]];
           if (tri.every(q => q[1] <= cut + 0.01)) continue;
-          const ym = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
-          if (o.miss && ym > 0.05 * R && hash(o.seed * 131 + t * 7) < o.miss) continue;
+
+
           for (const q of tri) if (q[1] < cut) { const k = Rc / Math.max(1e-6, Math.hypot(q[0], q[2])); q[0] *= k; q[2] *= k; q[1] = cut; }
           const nn = tri.map(q => { const l = Math.hypot(q[0], q[1], q[2]); return [q[0] / l, q[1] / l, q[2] / l]; });
           const v = hash(o.seed * 17 + t * 3 + 1), tn = 0.94 + hash(t * 5 + o.seed) * 0.06;
@@ -504,7 +504,7 @@
           tri3(domeMat(), C, NM, tri, nn, [[0, 0], [1, 0], [0.5, 1]], cols);
         }
         g.dispose();
-        K.add('void', new THREE.SphereGeometry(R * 0.965, 28, 14, 0, TAU, 0, Math.acos(cosC)), M4(o.f, cy, o.r));
+
         K.cyl('steelGray', o.f, cy + R - 0.6, o.r, 0.4, 0.5, 5, 6);
         K.add('lampRed', new THREE.SphereGeometry(1.1, 8, 6), M4(o.f, cy + R + 5, o.r));
         if (!o.mini) {

@@ -782,7 +782,7 @@ ${vkDefs}
           #ifdef VK_POL_TRACK
             float vkAx = abs(vDirtP.x);
             vkPol = max(vkPol, step(0.7, abs(vkNl.x)) * (1.0 - smoothstep(0.26, 0.32, vkAx)) * step(vDirtP.y, -0.3) * 0.9);   // răng dẫn hướng
-            vkPol = max(vkPol, step(vkNl.y, -0.7) * step(vDirtP.y, -0.2) * smoothstep(0.55, 0.7, vkAx) * (1.0 - smoothstep(2.4, 2.55, vkAx)) * 0.75);   // đường lăn bánh
+            vkPol = max(vkPol, step(vkNl.y, -0.7) * step(vDirtP.y, -0.2) * smoothstep(0.7, 0.95, vkAx) * (1.0 - smoothstep(2.15, 2.4, vkAx)) * 0.45);   // đường lăn bánh
             vkPol = max(vkPol, step(0.7, vkNl.y) * step(0.3, vDirtP.y) * step(vDirtP.y, 0.4) * 0.45);   // mép guốc phía đất
           #endif
           #ifdef VK_POL_RAD
@@ -792,18 +792,18 @@ ${vkDefs}
           vkPol *= (1.0 - vkAge) * (0.75 + 0.25 * vkN) * (1.0 - 0.5 * vkWet * vkDirt);
           vkRust *= 1.0 - vkPol;
           diffuseColor.rgb = mix(diffuseColor.rgb, vkRc * vkCh, vkRust);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.49, 0.46) * vkCh, vkPol);
-          vkDirt *= 1.0 - 0.85 * vkPol;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.28, 0.27, 0.25) * vkCh, vkPol);
+          vkDirt *= 1.0 - 0.55 * vkPol;
           // đất lèn chặt trong kẽ / bám màng dầu mỡ sẫm hơn bụi bay phủ thân xe; ướt -> bùn sẫm
           vec3 vkDc = mix(vkDust * (0.55 + 0.25 * vkN), vkDust * vec3(0.55, 0.49, 0.43) * (0.8 + 0.3 * vkN), vkWet);
           diffuseColor.rgb = mix(diffuseColor.rgb, vkDc * vkCh, vkDirt);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, 0.92, vkRust);
-          roughnessFactor = mix(roughnessFactor, 0.28, vkPol);
+          roughnessFactor = mix(roughnessFactor, 0.56, vkPol);
           roughnessFactor = mix(roughnessFactor, mix(1.0, 0.3, vkWet), vkDirt);`)
         .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
           metalnessFactor = mix(metalnessFactor, 0.1, vkRust);
-          metalnessFactor = mix(metalnessFactor, 0.85, vkPol);
+          metalnessFactor = mix(metalnessFactor, 0.52, vkPol);
           metalnessFactor *= 1.0 - vkDirt;`);
     };
     m.customProgramCacheKey = () => 'vkDirt2' + (opts.inner ? 'i' : '') + (pol === 'track' ? 't' : typeof pol === 'number' ? 'r' : '');
@@ -1731,9 +1731,12 @@ ${vkDefs}
       const ax = dir === 'x' ? len / 2 : 0, az = dir === 'x' ? 0 : len / 2;
       const p0 = [p[0] - ax, p[1], p[2] - az], p1 = [p[0] + ax, p[1], p[2] + az];
       const q0 = [p0[0], p0[1] + up, p0[2]], q1 = [p1[0], p1[1] + up, p1[2]];
-      this.strut(p0, q0, r, mat, 6);
-      this.strut(p1, q1, r, mat, 6);
-      this.strut(q0, q1, r, mat, 6);
+      const seg = 10;
+      this.strut(p0, q0, r, mat, seg);
+      this.strut(p1, q1, r, mat, seg);
+      this.strut(q0, q1, r, mat, seg);
+      this.add(new THREE.SphereGeometry(r * 1.02, seg, 8), mat, q0);
+      this.add(new THREE.SphereGeometry(r * 1.02, seg, 8), mat, q1);
       return this;
     }
 
@@ -1779,45 +1782,69 @@ ${vkDefs}
 
     // Can nhiên liệu 20 L kiểu NATO: thân hai nửa dập ghép có gờ mép hàn giữa, mặt hông dập gân chữ X
     // kèm ô vuông trung tâm, vai vát, tay xách 3 quai, cổ rót nghiêng kèm nắp cam-lock có chốt gài.
-    // pos = tâm can; bề dày t theo trục X cục bộ, cao h, rộng d; rotY quay quanh trục đứng.
-    jerrycan(pos, rotY, t, h, d, mat, dark) {
-      const c = Math.cos(rotY), sn = Math.sin(rotY);
-      const P = (lx, ly, lz) => [pos[0] + lx * c + lz * sn, pos[1] + ly, pos[2] - lx * sn + lz * c];
+    // pos = tâm can; bề dày t theo trục X cục bộ, cao h, rộng d; rotInput: góc quay (number quanh Y hoặc Euler/Array 3 chiều).
+    jerrycan(pos, rotInput, t, h, d, mat, dark) {
+      const qBase = new THREE.Quaternion();
+      if (typeof rotInput === 'number') {
+        qBase.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotInput);
+      } else if (Array.isArray(rotInput)) {
+        qBase.setFromEuler(new THREE.Euler(rotInput[0] || 0, rotInput[1] || 0, rotInput[2] || 0, rotInput[3] || 'XYZ'));
+      } else if (rotInput && rotInput.isEuler) {
+        qBase.setFromEuler(rotInput);
+      }
+      const pCenter = new THREE.Vector3(pos[0], pos[1], pos[2]);
+      const P = (lx, ly, lz) => {
+        const v = new THREE.Vector3(lx, ly, lz).applyQuaternion(qBase).add(pCenter);
+        return [v.x, v.y, v.z];
+      };
+      const combineRot = (localEuler) => {
+        if (!localEuler || (localEuler[0] === 0 && localEuler[1] === 0 && localEuler[2] === 0)) {
+          const e = new THREE.Euler().setFromQuaternion(qBase, 'ZYX');
+          return [e.x, e.y, e.z, 'ZYX'];
+        }
+        const qLocal = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(localEuler[0] || 0, localEuler[1] || 0, localEuler[2] || 0, localEuler[3] || 'XYZ')
+        );
+        const qTotal = qBase.clone().multiply(qLocal);
+        const eTotal = new THREE.Euler().setFromQuaternion(qTotal, 'ZYX');
+        return [eTotal.x, eTotal.y, eTotal.z, 'ZYX'];
+      };
+      const rBase = combineRot([0, 0, 0]);
       const dk = dark || mat;
       // Thân chính + vai vát + đế dập gờ chịu lực
-      this.box(t, h * 0.86, d, mat, P(0, -h * 0.05, 0), [0, rotY, 0]);
-      this.box(t * 0.88, h * 0.09, d * 0.93, mat, P(0, h * 0.41, 0), [0, rotY, 0]);
-      this.box(t * 0.96, h * 0.05, d * 0.96, dk, P(0, -h * 0.48, 0), [0, rotY, 0]);
+      this.box(t, h * 0.86, d, mat, P(0, -h * 0.05, 0), rBase);
+      this.box(t * 0.88, h * 0.09, d * 0.93, mat, P(0, h * 0.41, 0), rBase);
+      this.box(t * 0.96, h * 0.05, d * 0.96, dk, P(0, -h * 0.48, 0), rBase);
       // Gờ mép hàn dập ghép hai nửa vỏ thép chạy dọc giữa mặt trước, mặt sau và đáy
-      this.box(0.05, h * 0.88, d + 0.07, dk, P(0, -h * 0.05, 0), [0, rotY, 0]);
+      this.box(0.05, h * 0.88, d + 0.07, dk, P(0, -h * 0.05, 0), rBase);
       // Gân chữ X dập nổi + ô vuông tâm + khung gờ viền hai mặt bên
       const ang = Math.atan2(d * 0.68, h * 0.64), L = Math.hypot(h * 0.64, d * 0.68);
       for (const sx of [-1, 1]) {
         const xFace = sx * (t / 2 + 0.024);
         for (const k of [-1, 1]) {
-          this.box(0.07, L, Math.max(0.11, d * 0.058), mat, P(xFace, -h * 0.05, 0), [k * ang, rotY, 0, 'YXZ']);
+          this.box(0.07, L, Math.max(0.11, d * 0.058), mat, P(xFace, -h * 0.05, 0), combineRot([k * ang, 0, 0, 'YXZ']));
         }
         // Ô vuông dập nổi ở giao điểm chữ X (đặc trưng can quân sự 20L)
-        this.box(0.08, h * 0.16, d * 0.18, mat, P(xFace + sx * 0.008, -h * 0.05, 0), [0, rotY, 0]);
+        this.box(0.08, h * 0.16, d * 0.18, mat, P(xFace + sx * 0.008, -h * 0.05, 0), rBase);
         // Gờ viền ngang trên/dưới và dọc trước/sau quanh mặt hông
-        this.box(0.06, h * 0.065, d * 0.86, mat, P(xFace, h * 0.30, 0), [0, rotY, 0]);
-        this.box(0.06, h * 0.065, d * 0.86, mat, P(xFace, -h * 0.40, 0), [0, rotY, 0]);
-        this.box(0.055, h * 0.66, d * 0.06, mat, P(xFace, -h * 0.05, d * 0.40), [0, rotY, 0]);
-        this.box(0.055, h * 0.66, d * 0.06, mat, P(xFace, -h * 0.05, -d * 0.40), [0, rotY, 0]);
+        this.box(0.06, h * 0.065, d * 0.86, mat, P(xFace, h * 0.30, 0), rBase);
+        this.box(0.06, h * 0.065, d * 0.86, mat, P(xFace, -h * 0.40, 0), rBase);
+        this.box(0.055, h * 0.66, d * 0.06, mat, P(xFace, -h * 0.05, d * 0.40), rBase);
+        this.box(0.055, h * 0.66, d * 0.06, mat, P(xFace, -h * 0.05, -d * 0.40), rBase);
       }
       // Cụm tay xách 3 ống thép tròn (cầm tay thật hơn thanh hộp đặc) + vách chân quai
       const hy = h * 0.45 + 0.04;
       for (const sx of [-0.34, 0, 0.34]) {
-        this.cyl(0.055, 0.055, d * 0.56, 6, mat, P(sx * t, hy + h * 0.08, -d * 0.13), 'z', [0, rotY, 0]);
+        this.cyl(0.055, 0.055, d * 0.56, 6, mat, P(sx * t, hy + h * 0.08, -d * 0.13), 'z', rBase);
       }
       for (const kz of [-0.40, -0.13, 0.14]) {
-        this.box(t * 0.78, h * 0.08, 0.09, mat, P(0, hy + h * 0.035, kz * d), [0, rotY, 0]);
+        this.box(t * 0.78, h * 0.08, 0.09, mat, P(0, hy + h * 0.035, kz * d), rBase);
       }
       // Cổ vòi rót + nắp bật cam-lock + tai gài & chốt khóa
-      this.cyl(t * 0.21, t * 0.24, h * 0.08, 8, dk, P(0, hy + h * 0.02, d * 0.34));
-      this.box(t * 0.44, 0.06, d * 0.16, mat, P(0, hy + h * 0.068, d * 0.34), [0, rotY, 0]);
-      this.box(t * 0.26, 0.08, d * 0.18, dk, P(0, hy + h * 0.085, d * 0.29), [-0.22, rotY, 0, 'YXZ']);
-      this.cyl(0.04, 0.04, t * 0.52, 6, dk, P(0, hy + h * 0.055, d * 0.41), 'x', [0, rotY, 0]);
+      this.cyl(t * 0.21, t * 0.24, h * 0.08, 8, dk, P(0, hy + h * 0.02, d * 0.34), 'y', rBase);
+      this.box(t * 0.44, 0.06, d * 0.16, mat, P(0, hy + h * 0.068, d * 0.34), rBase);
+      this.box(t * 0.26, 0.08, d * 0.18, dk, P(0, hy + h * 0.085, d * 0.29), combineRot([-0.22, 0, 0, 'YXZ']));
+      this.cyl(0.04, 0.04, t * 0.52, 6, dk, P(0, hy + h * 0.055, d * 0.41), 'x', rBase);
       return this;
     }
 
@@ -2945,6 +2972,7 @@ ${vkDefs}
   // Bộ phận rời là cả một group (đầu kính quét, trạm vũ khí, ống phóng...) có thể bị bắn bay
   function registerPartGroup(unit, name, obj) {
     if (!unit || !obj) return;
+    obj.userData.partGroupTag = name;
     (unit.partGroups || (unit.partGroups = {}))[name] = obj;
   }
 

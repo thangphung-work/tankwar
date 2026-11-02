@@ -823,8 +823,12 @@ class BallisticsSystem3D {
       let range = 0;
       const T = !stream && !rp.guided && this.terrainProvider ? this.terrainProvider() : null;
       if (T) {
-        const r = this.simulateShot(startX, startY, startZ, vx, vy, vz, rp, isDirectFire, T);
-        range = Math.hypot(r.x - startX, r.z - startZ);
+        if (shooter && shooter.isPlayer && typeof window !== 'undefined' && window.game && window.game._lastTraj && window.game._lastTraj.d > 0) {
+          range = window.game._lastTraj.d;
+        } else {
+          const r = this.simulateShot(startX, startY, startZ, vx, vy, vz, rp, isDirectFire, T);
+          range = Math.hypot(r.x - startX, r.z - startZ);
+        }
       }
       const p = Dispersion.perturb(shooter, ammoType, elevation, vx, vy, vz, stream, range);
       vx = p.vx; vy = p.vy; vz = p.vz;
@@ -3140,12 +3144,12 @@ BallisticsSystem3D.GATLING_REAR_BLIND = 65 * Math.PI / 180;
 // (bỏ qua ăng-ten roi: mảnh, cong được)
 BallisticsSystem3D.ARTY_BARREL = {
   pivot: { y: 24.0, z: 17, off: 4.0 },   // trục nâng nòng: cao 24.0, tháp ở z 17, trục nòng lệch -4 về phía nòng
-  margin: 0.2,
+  margin: 0.05,
   // bán kính nòng theo khoảng cách từ trục nâng: giá nòng, thân, bầu hút khói (phình to nhất), thân trước, hãm lùi
   radius: d => d < 10.7 ? 2.3 : d < 31.2 ? 1.46 : d < 36.4 ? 1.85 : d < 66 ? 1.25 : 1.95,
   obstacles: [
     [-10.6, 10.6, -33.5, -19.5, 22.5],    // nóc cabin
-    [-3.7, 3.7, -22.2, -21.0, 25.4],      // giá khóa nòng hành quân
+    [-3.7, 3.7, -22.2, -21.0, 25.25],     // giá khóa nòng hành quân
     [2.4, 9.8, -30.0, -22.8, 25.7],       // đế sạc + drone trinh sát đậu (ReconDrone.DOCK x 6.1, z -26.4)
     [-6.6, -2.6, -29.0, -24.7, 23.0],     // cửa nóc + đèn quay
     [7.1, 8.1, -32.0, -31.0, 23.2],       // chân ăng-ten nóc cabin
@@ -3171,7 +3175,7 @@ BallisticsSystem3D.artyMinElevation = function (rel) {
       const x = px - d * ce * s, z = pz - d * ce * c, bottom = B.pivot.y + d * se - B.radius(d) / ce;
       for (const o of B.obstacles) {
         const rr = B.radius(d);
-        if (x > o[0] - rr && x < o[1] + rr && z > o[2] - rr && z < o[3] + rr && bottom < o[4] + B.margin) return false;
+        if (x > o[0] - rr && x < o[1] + rr && z >= o[2] && z <= o[3] && bottom < o[4] + B.margin) return false;
       }
     }
     return true;

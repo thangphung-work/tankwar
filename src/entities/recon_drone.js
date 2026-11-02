@@ -15,6 +15,8 @@ const ReconDrone = (() => {
   const DOCK = { x: 6.1, y: 22.5, z: -26.4, w: 4.8, d: 5.4, floor: 0.42 };
   // bãi đáp (đáy càng đáp khi đậu) = mặt thanh tiếp điểm sạc
   const PAD = { x: DOCK.x, y: DOCK.y + DOCK.floor, z: DOCK.z };
+  const PAD_L = { x: -DOCK.x, y: DOCK.y + DOCK.floor, z: DOCK.z };
+  const PAD_R = { x: DOCK.x, y: DOCK.y + DOCK.floor, z: DOCK.z };
   const CENTER_Y = 1.5;   // tâm thân drone trên gốc mô hình
 
   // ---------- dựng hình: gộp phần tĩnh theo vật liệu (ít lượt vẽ); hình khối dựng 1 lần, mọi drone dùng chung ----------
@@ -474,6 +476,9 @@ const ReconDrone = (() => {
     return TPL;
   }
 
+  // Tỉ lệ thu nhỏ drone trinh sát vừa vặn với kích thước nóc cabin và tay cầm binh sĩ
+  const DRONE_SCALE = 0.72;
+
   function build(team) {
     const T = template(), M = T.M;
     const g = new THREE.Group();
@@ -507,6 +512,7 @@ const ReconDrone = (() => {
     led.position.set(0, 1.15, 2.33);
     g.add(led);
     g.userData = { rotors, disc, discMat, led, navF, navR, rpm: 0, t: 0 };
+    g.scale.setScalar(DRONE_SCALE);
     return g;
   }
 
@@ -566,7 +572,7 @@ const ReconDrone = (() => {
     return DOCK_TPL;
   }
 
-  function buildDock() {
+  function buildDock(side = 1) {
     const T = dockTemplate(), W = DOCK.w, F = DOCK.floor;
     const g = new THREE.Group();
     g.name = 'droneDock';
@@ -586,8 +592,10 @@ const ReconDrone = (() => {
     lamp.userData.shared = true;
     lamp.position.set(W / 2 + 0.93, 0.5, 0.05);
     g.add(lamp);
-    g.position.set(DOCK.x, DOCK.y, DOCK.z);
-    g.userData = { clamps, lamp, open: 0, t: 0 };
+    const posX = side < 0 ? -DOCK.x : DOCK.x;
+    g.position.set(posX, DOCK.y, DOCK.z);
+    g.userData = { clamps, lamp, open: 0, t: 0, side: side < 0 ? -1 : 1 };
+    g.scale.set(DRONE_SCALE, 1, DRONE_SCALE);
     return g;
   }
 
@@ -746,7 +754,7 @@ const ReconDrone = (() => {
     if (f.userData) f.userData.parts = null;   // animateFlame gọi nhầm sau khi hủy: bỏ qua
   }
 
-  return { PAD, DOCK, CENTER_Y, build, animate, buildDock, animateDock, buildDebris, buildFlame, animateFlame, disposeFlame };
+  return { PAD, PAD_L, PAD_R, DOCK, CENTER_Y, build, animate, buildDock, animateDock, buildDebris, buildFlame, animateFlame, disposeFlame };
 })();
 
 if (typeof window !== 'undefined') window.ReconDrone = ReconDrone;

@@ -40,11 +40,20 @@ const RadarMinimap = (() => {
   }
 
   // Bộ đệm canvas khớp kích thước hiển thị x devicePixelRatio (chữ, nét không nhòe trên màn hình độ phân giải cao)
+  let _mmLastResize = 0;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', () => { _mmLastResize = performance.now(); });
+  }
+
   function fitCanvas(cv) {
-    const css = Math.round(cv.clientWidth || cv._mmL || cv.width);
+    if (!cv._mmL || cv._lastResize !== _mmLastResize) {
+      cv._mmL = Math.round(cv.clientWidth || cv.width || 200);
+      cv._lastResize = _mmLastResize;
+    }
+    const css = cv._mmL;
     const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
     const px = Math.round(css * dpr);
-    if (cv._mmL !== css || cv.width !== px) { cv._mmL = css; cv.width = cv.height = px; }
+    if (cv.width !== px) { cv.width = cv.height = px; }
     return px / css;
   }
 
@@ -132,9 +141,17 @@ const RadarMinimap = (() => {
     }
     // phủ tối nhẹ ở giữa, đậm dần ra mép (nổi khối, chấm chỉ hướng trên mép dễ đọc)
     {
-      const vg = ctx.createRadialGradient(cx, cy, Rpx * 0.35, cx, cy, Rpx);
-      vg.addColorStop(0, 'rgba(6,9,7,0.12)'); vg.addColorStop(0.75, 'rgba(6,9,7,0.28)'); vg.addColorStop(1, 'rgba(6,9,7,0.62)');
-      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+      if (!cv._cachedVg || cv._cachedVgRpx !== Rpx || cv._cachedVgCx !== cx || cv._cachedVgCy !== cy) {
+        const vg = ctx.createRadialGradient(cx, cy, Rpx * 0.35, cx, cy, Rpx);
+        vg.addColorStop(0, 'rgba(6,9,7,0.12)');
+        vg.addColorStop(0.75, 'rgba(6,9,7,0.28)');
+        vg.addColorStop(1, 'rgba(6,9,7,0.62)');
+        cv._cachedVg = vg;
+        cv._cachedVgRpx = Rpx;
+        cv._cachedVgCx = cx;
+        cv._cachedVgCy = cy;
+      }
+      ctx.fillStyle = cv._cachedVg; ctx.fillRect(0, 0, W, H);
     }
     // vòng cự ly nửa bán kính + chữ thập mảnh
     ctx.strokeStyle = C.ink + '0.13)'; ctx.lineWidth = 0.75;

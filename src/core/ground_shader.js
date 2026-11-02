@@ -47,13 +47,14 @@ const GroundShader = (() => {
       if (!u || !u.group || u.group.visible === false || u.airborne) continue;
       const d = cam ? Math.hypot(u.x - cam.x, u.z - cam.z) : 0;
       if (d > 1600) continue;
-      if (groundAt && (u.y || 0) - groundAt(u.x, u.z) > 14) continue;   // đang bay / rơi: không đè bóng xuống đất
-      _vehTmp.push([d, u]);
+      if (groundAt && (u.y || 0) - groundAt(u.x, u.z) > 14) continue;   // đang bay hoặc rơi: không đè bóng xuống đất
+      u._camDist = d;
+      _vehTmp.push(u);
     }
-    _vehTmp.sort((a, b) => a[0] - b[0]);
+    _vehTmp.sort((a, b) => a._camDist - b._camDist);
     const n = Math.min(VEH_N, _vehTmp.length);
     for (let i = 0; i < n; i++) {
-      const u = _vehTmp[i][1], sz = VEH_SIZE[u.tankType] || VEH_SIZE.ALL_ROUNDER, a = u.bodyAngle || 0;
+      const u = _vehTmp[i], sz = VEH_SIZE[u.tankType] || VEH_SIZE.ALL_ROUNDER, a = u.bodyAngle || 0;
       uVehA.value[i].set(u.x, u.z, Math.cos(a), -Math.sin(a));
       uVehB.value[i].set(sz[0], sz[1], 3, u.isDead ? 6 : 7.5);
     }

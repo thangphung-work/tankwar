@@ -55,9 +55,14 @@ SoundEngine.mixin(class {
       if (V[i].id == null && t - V[i].freeAt > 6) { this.releaseOtherEngineVoice(V[i]); V.splice(i, 1); }
     }
     // Bên gọi ngừng cập nhật (hết trận, về sảnh, tab bị ẩn): tự tắt sau ~2 s thay vì kêu mãi ở mức cuối
-    if (typeof setTimeout === 'function') {
-      clearTimeout(this._oeIdle);
-      this._oeIdle = setTimeout(() => this.stopOtherEngines(), 2000);
+    this._oeLastTime = t;
+    if (typeof setTimeout === 'function' && !this._oeIdle) {
+      this._oeIdle = setTimeout(() => {
+        this._oeIdle = null;
+        if (!this.ctx || this.ctx.currentTime - (this._oeLastTime || 0) >= 1.9) {
+          this.stopOtherEngines();
+        }
+      }, 2000);
     }
   }
 

@@ -3808,6 +3808,9 @@ function MapGenFactory() {
       const onRoad = (x, z, cls) => { const nr = nearestRoad(x, z, 10); return nr && nr.road.cls === cls; };
       const along = (ln, sp, phase, fn) => { for (let s = -EXT + phase; s < EXT; s += sp) fn(s); };
       const lampAt = [];
+      // quảng trường quanh hầm + đường vào cửa hầm (cùng vùng đã cắt phố, xem nearSH): góc ô phố sát đó vẫn mang hạng phố cũ
+      // -> trước đây cắm đèn giao thông / đèn đường / cột điện ngay trong lòng hầm, trên ụ đất
+      const shZone = (x, z) => SH && (portalBlocked(x, z, 0) || strongholds.some(c => Math.hypot(x - c.x, z - c.z) < 360));
       for (const ln of lines) {
         const cls = ln.L.cls;
         if (cls === 'canal') continue;
@@ -3819,7 +3822,7 @@ function MapGenFactory() {
             if (nearX(ln, s, 14) || !onRoad(...ln.P(s), cls)) return;
             for (const side of [1, -1]) {
               const [x, z] = p0(s, side, C.cw / 2 + 6);
-              if (!onWalk(x, z)) continue;
+              if (!onWalk(x, z) || shZone(x, z)) continue;
               props.lamps.push({ x, z, angle: Math.atan2(-ln.nx * side, -ln.nz * side), double: false });
               lampAt.push([x, z]);
             }
@@ -3839,7 +3842,7 @@ function MapGenFactory() {
           along(ln, R(250, 290), R(0, 250), s => {
             if (nearX(ln, s, 10) || !onRoad(...ln.P(s), cls)) return;
             const [x, z] = p0(s, side, C.cw / 2 + C.walk - 3);
-            if (!onWalk(x, z)) { prev = -1; return; }
+            if (!onWalk(x, z) || shZone(x, z)) { prev = -1; return; }
             props.poles.push({ x, z, angle: ln.ang, link: s - prevS < 330 ? prev : -1 });
             prev = props.poles.length - 1; prevS = s;
           });
@@ -3902,7 +3905,7 @@ function MapGenFactory() {
           along(ln, R(560, 700), R(0, 300), s => {
             if (nearX(ln, s, 70) || !onRoad(...ln.P(s), cls)) return;
             const side = rng() < 0.5 ? 1 : -1, [x, z] = p0(s, side, C.cw / 2 + C.walk * 0.55);
-            if (onWalk(x, z) && !lampAt.some(q => Math.hypot(q[0] - x, q[1] - z) < 40)) props.busStops.push({ x, z, angle: Math.atan2(ln.nx * side, ln.nz * side) });
+            if (onWalk(x, z) && !shZone(x, z) && !lampAt.some(q => Math.hypot(q[0] - x, q[1] - z) < 40)) props.busStops.push({ x, z, angle: Math.atan2(ln.nx * side, ln.nz * side) });
           });
         }
         // VẠCH QUA ĐƯỜNG + VẠCH DỪNG ở mỗi nhánh của ngã tư có phố chính / đại lộ
@@ -3929,7 +3932,7 @@ function MapGenFactory() {
           for (; next <= dist + Ls; next += R(180, 230)) {
             const t = next - dist, x = a[0] + tx * t - tz * side * off, z = a[1] + tz * t + tx * side * off;
             const nr = nearestRoad(x, z, 40);
-            if (onWalk(x, z) || (nr && nr.road !== rd && nr.d < nr.road.width / 2 + 4) || !clearOfKeys(x, z, 0) || !portalClear(x, z, 6)) { prev = -1; continue; }
+            if (onWalk(x, z) || (nr && nr.road !== rd && nr.d < nr.road.width / 2 + 4) || !clearOfKeys(x, z, 0) || !portalClear(x, z, 6) || shZone(x, z)) { prev = -1; continue; }
             props.poles.push({ x, z, angle: Math.atan2(tx, tz), link: prev });
             prev = props.poles.length - 1;
           }
@@ -3964,7 +3967,7 @@ function MapGenFactory() {
         let bx = ax + dx, bz = az + dz;
         const bl = Math.hypot(bx, bz) || 1; bx /= bl; bz /= bl;
         const off = rc / Math.sin(th / 2) - rc + 10, sx = p[0] + bx * off, sz = p[1] + bz * off;
-        if (!onWalk(sx, sz)) continue;
+        if (!onWalk(sx, sz) || shZone(sx, sz)) continue;
         props.signals.push({ x: sx, z: sz, angle: Math.atan2(nx, nz) });
       }
       // CẦU VƯỢT BỘ HÀNH: tối đa 3 cái, giữa các đoạn đại lộ dài, 2 đầu cầu thang đặt trên vỉa hè

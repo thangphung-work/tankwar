@@ -535,44 +535,23 @@
   // Ống phóng UAV cảm tử (kiểu Switchblade) NẰM CỐ ĐỊNH trên nóc cabin, không bệ xoay: tấm đế mặt bích bắt bu-lông
   // (cùng kiểu mặt bích chân đế mô-đun), 2 yên thép ôm 2 ống composite ngóc ~7° về phía trước, bình khí nén cao áp + van
   // điện từ + ống dẫn khí vào đáy ống (khí nén đẩy UAV ra khỏi ống, UAV tự nổ máy bay tiếp), hộp điều khiển phóng, cáp.
+  // Bố trí 2 giàn đối xứng 2 bên Trái – Phải qua nòng pháo (mỗi bên 2 ống = tổng cộng 4 ống phóng).
   // Nắp nhựa đầu ống (rack.caps) bật văng khi phóng, có quả mới nạp thì lắp nắp mới. Vết dùng: muội quanh miệng ống đã
   // phóng, băng dính bạc quấn đai, sơn tróc chỗ yên đỡ, một con bu-lông đế thiếu
   function buildKamiLauncher(seat, ctx) {
     const { M, P, D, unit } = ctx, rnd = rndOf(ctx);
-    const st = new THREE.Group();
-    st.scale.setScalar(STATION_SCALE);
-    seat.add(st);
-    const bb = new VehicleKit.PartBatch(ctx.yBase);
-    bb.box(2.7, 0.16, 4.6, D, [0, 0.08, -0.1]);                          // tấm đế mặt bích
-    const gone = Math.floor(rnd() * 12);
-    for (let i = 0; i < 12; i++) {
-      if (i === gone) continue;
-      const x = (i % 2 ? 1 : -1) * 1.2, z = -2.15 + Math.floor(i / 2) * 0.82;
-      bb.cyl(0.07, 0.07, 0.1, 6, M.steel || D, [x, 0.21, z]);
+    const slots = (ctx.slots !== undefined) ? ctx.slots : ((unit && unit.uavSlots !== undefined) ? unit.uavSlots : 4);
+    if (slots <= 0) {
+      unit.kamiRack = null;
+      return null;
     }
-    for (const z of [-1.5, 1.1]) {                                        // 2 yên thép ôm ống
-      bb.box(2.5, 0.42, 0.34, P, [0, 0.37, z]);
-      for (const s of [-1, 1]) bb.box(0.16, 0.7, 0.34, P, [s * 1.18, 0.62, z]);
-      bb.box(0.6, 0.05, 0.36, M.paintDusty || P, [(rnd() - 0.5) * 1.4, 0.6, z]);   // sơn tróc chỗ yên mài vào ống
-    }
-    // bình khí nén cao áp + van + ống dẫn khí vào đáy 2 ống
-    bb.cyl(0.26, 0.26, 1.7, 12, M.steel || D, [1.62, 0.42, 0.4], 'z');
-    bb.cyl(0.26, 0.2, 0.2, 12, M.steel || D, [1.62, 0.42, -0.55], 'z');
-    bb.box(0.24, 0.24, 0.22, D, [1.62, 0.42, -0.75]);
-    bb.strut([1.62, 0.42, 1.3], [1.0, 0.95, 2.2], 0.06, M.rubber || D, 6);
-    bb.strut([1.0, 0.95, 2.2], [-0.55, 1.05, 2.25], 0.06, M.rubber || D, 6);
-    bb.box(0.7, 0.45, 0.5, P, [-1.55, 0.38, 1.25]);                       // hộp điều khiển phóng + cáp
-    bb.box(0.72, 0.05, 0.52, D, [-1.55, 0.62, 1.25], [0, 0, (rnd() - 0.5) * 0.1]);
-    bb.strut([-1.55, 0.4, 0.98], [-1.2, 0.2, 0.2], 0.05, M.canvasDark || D, 6);
-    bb.box(0.05, 0.4, 0.14, M.soot || D, [1.36, 0.25, -1.9]);             // vệt gỉ chảy
-    bb.build(st);
+
     const tilt = new THREE.Group();
-    tilt.position.set(0, 1.0, -0.1);
+    tilt.position.set(0, 1.0 * STATION_SCALE, -0.1 * STATION_SCALE);
     tilt.rotation.x = 0.12;   // ngóc ~7°: khí nén đẩy UAV ra hơi chếch lên, rồi UAV tự nổ máy
-    st.add(tilt);
-    const kb = new VehicleKit.PartBatch(ctx.yBase + 2.1);
-    const tubes = [], caps = [];
-    // lòng ống: trụ hở lật mặt vào trong (nhìn từ miệng thấy thành trong + đáy, không thấy xuyên ra ngoài)
+    seat.add(tilt);
+
+    // Lòng ống chung (trụ hở lật mặt vào trong)
     const bore = new THREE.CylinderGeometry(0.4, 0.4, 4.2, 16, 1, true).toNonIndexed();
     {
       const p = bore.attributes.position, n = bore.attributes.normal;
@@ -587,29 +566,97 @@
       bore.rotateX(-Math.PI / 2);
     }
     const lip = new THREE.RingGeometry(0.4, 0.47, 16).rotateY(Math.PI);   // mặt trước vành miệng (quay về -z)
-    for (const x of [-0.55, 0.55]) {
-      kb.cyl(0.44, 0.44, 4.4, 16, P, [x, 0, -0.1], 'z', null, true);      // ống composite (hở hai đầu)
-      for (const z of [-1.8, -0.2, 1.4]) kb.cyl(0.48, 0.48, 0.14, 16, D, [x, 0, z], 'z');   // đai ống
-      kb.cyl(0.47, 0.47, 0.2, 16, D, [x, 0, 2.2], 'z');                   // đáy ống (cửa khí nén)
-      kb.cyl(0.47, 0.44, 0.16, 16, D, [x, 0, -2.3], 'z', null, true);     // vành miệng ống (rỗng)
-      kb.add(lip, D, [x, 0, -2.38]);
-      kb.add(bore, x > 0 ? (M.soot || D) : D, [x, 0, -0.28]);            // lòng ống (ống phải ám muội — đã phóng nhiều lần)
-      kb.cyl(0.4, 0.4, 0.04, 16, M.soot || D, [x, 0, 1.8], 'z');          // đáy lòng ống (mặt piston khí nén)
-      kb.box(0.5, 0.05, 0.16, M.steel || D, [x, 0.46, -0.2 + (rnd() - 0.5) * 0.4]);   // băng dính bạc quấn đai
-      tubes.push([x, 0, -2.45]);
-      // nắp nhựa đầu ống: nhóm riêng, bật văng khi phóng (kamikaze_uav.js)
-      const cap = new THREE.Group();
-      cap.position.set(x, 0, -2.42);
-      const cb = new VehicleKit.PartBatch(ctx.yBase + 2.1);
-      cb.cyl(0.42, 0.42, 0.06, 16, M.canvasDark || D, [0, 0, 0], 'z');
-      cb.box(0.5, 0.05, 0.02, M.canvas || P, [0, 0.12, -0.04]);
-      cb.build(cap);
-      tilt.add(cap);
-      caps.push(cap);
+
+    const rawTubes = [], rawCaps = [];
+
+    // Danh sách các ống cần dựng tùy theo số slot (tối đa 4 slot):
+    // 1 slot: [phải-ngoài]
+    // 2 slot: [phải-ngoài, trái-ngoài]
+    // 3 slot: [phải-ngoài, trái-ngoài, phải-trong]
+    // 4 slot: [phải-ngoài, trái-ngoài, phải-trong, trái-trong]
+    const neededPods = [];
+    if (slots >= 1) neededPods.push({ side: 1, isOuter: true, lx: 0.55 });
+    if (slots >= 2) neededPods.push({ side: -1, isOuter: true, lx: -0.55 });
+    if (slots >= 3) neededPods.push({ side: 1, isOuter: false, lx: -0.55 });
+    if (slots >= 4) neededPods.push({ side: -1, isOuter: false, lx: 0.55 });
+
+    // Xác định các bên cần dựng bệ:
+    const activeSides = Array.from(new Set(neededPods.map(p => p.side)));
+
+    for (const side of activeSides) {
+      const podBase = new THREE.Group();
+      podBase.position.set(side * 6.1, 0, 0);
+      podBase.scale.setScalar(STATION_SCALE);
+      seat.add(podBase);
+
+      const podTilt = new THREE.Group();
+      podTilt.position.set(side * 6.1, 0, 0);
+      podTilt.scale.setScalar(STATION_SCALE);
+      tilt.add(podTilt);
+
+      const bb = new VehicleKit.PartBatch(ctx.yBase);
+      bb.box(2.7, 0.16, 4.6, D, [0, 0.08, -0.1]);                          // tấm đế mặt bích
+      const gone = Math.floor(rnd() * 12);
+      for (let i = 0; i < 12; i++) {
+        if (i === gone) continue;
+        const x = (i % 2 ? 1 : -1) * 1.2, z = -2.15 + Math.floor(i / 2) * 0.82;
+        bb.cyl(0.07, 0.07, 0.1, 6, M.steel || D, [x, 0.21, z]);
+      }
+      for (const z of [-1.5, 1.1]) {                                        // 2 yên thép ôm ống
+        bb.box(2.5, 0.42, 0.34, P, [0, 0.37, z]);
+        for (const s of [-1, 1]) bb.box(0.16, 0.7, 0.34, P, [s * 1.18, 0.62, z]);
+        bb.box(0.6, 0.05, 0.36, M.paintDusty || P, [(rnd() - 0.5) * 1.4, 0.6, z]);   // sơn tróc chỗ yên mài vào ống
+      }
+      // Bình khí nén cao áp + van + ống dẫn khí quay ra mép ngoài xe (side * x)
+      bb.cyl(0.26, 0.26, 1.7, 12, M.steel || D, [side * 1.62, 0.42, 0.4], 'z');
+      bb.cyl(0.26, 0.2, 0.2, 12, M.steel || D, [side * 1.62, 0.42, -0.55], 'z');
+      bb.box(0.24, 0.24, 0.22, D, [side * 1.62, 0.42, -0.75]);
+      bb.strut([side * 1.62, 0.42, 1.3], [side * 1.0, 0.95, 2.2], 0.06, M.rubber || D, 6);
+      bb.strut([side * 1.0, 0.95, 2.2], [side * -0.55, 1.05, 2.25], 0.06, M.rubber || D, 6);
+      // Hộp điều khiển phóng + cáp quay vào mép trong gần nòng pháo (-side * x)
+      bb.box(0.7, 0.45, 0.5, P, [-side * 1.55, 0.38, 1.25]);
+      bb.box(0.72, 0.05, 0.52, D, [-side * 1.55, 0.62, 1.25], [0, 0, (rnd() - 0.5) * 0.1]);
+      bb.strut([-side * 1.55, 0.4, 0.98], [-side * 1.2, 0.2, 0.2], 0.05, M.canvasDark || D, 6);
+      bb.box(0.05, 0.4, 0.14, M.soot || D, [side * 1.36, 0.25, -1.9]);     // vệt gỉ chảy
+      bb.build(podBase);
+
+      const kb = new VehicleKit.PartBatch(ctx.yBase + 2.1);
+      const sidePods = neededPods.filter(p => p.side === side);
+
+      for (const pod of sidePods) {
+        const lx = pod.lx;
+        kb.cyl(0.44, 0.44, 4.4, 16, P, [lx, 0, -0.1], 'z', null, true);      // ống composite (hở hai đầu)
+        for (const z of [-1.8, -0.2, 1.4]) kb.cyl(0.48, 0.48, 0.14, 16, D, [lx, 0, z], 'z');   // đai ống
+        kb.cyl(0.47, 0.47, 0.2, 16, D, [lx, 0, 2.2], 'z');                   // đáy ống (cửa khí nén)
+        kb.cyl(0.47, 0.44, 0.16, 16, D, [lx, 0, -2.3], 'z', null, true);     // vành miệng ống (rỗng)
+        kb.add(lip, D, [lx, 0, -2.38]);
+        kb.add(bore, pod.isOuter ? (M.soot || D) : D, [lx, 0, -0.28]);        // lòng ống
+        kb.cyl(0.4, 0.4, 0.04, 16, M.soot || D, [lx, 0, 1.8], 'z');          // đáy lòng ống (mặt piston khí nén)
+        kb.box(0.5, 0.05, 0.16, M.steel || D, [lx, 0.46, -0.2 + (rnd() - 0.5) * 0.4]);   // băng dính bạc quấn đai
+
+        // Tọa độ miệng ống trong hệ quy chiếu của tilt
+        const tPos = new THREE.Vector3(side * 6.1 + lx * STATION_SCALE, 0, -2.45 * STATION_SCALE);
+
+        // nắp nhựa đầu ống
+        const cap = new THREE.Group();
+        cap.position.set(lx, 0, -2.42);
+        const cb = new VehicleKit.PartBatch(ctx.yBase + 2.1);
+        cb.cyl(0.42, 0.42, 0.06, 16, M.canvasDark || D, [0, 0, 0], 'z');
+        cb.box(0.5, 0.05, 0.02, M.canvas || P, [0, 0.12, -0.04]);
+        cb.build(cap);
+        podTilt.add(cap);
+
+        rawTubes.push({ tPos, side, isOuter: pod.isOuter });
+        rawCaps.push({ cap, side, isOuter: pod.isOuter });
+      }
+      kb.box(0.04, 0.3, 1.0, M.canvas || P, [-side * 1.0, 0.1, 0.4], [0, 0, (rnd() - 0.5) * 0.1]);   // nhãn cảnh báo
+      kb.build(podTilt);
     }
-    kb.box(0.04, 0.3, 1.0, M.canvas || P, [-1.0, 0.1, 0.4], [0, 0, (rnd() - 0.5) * 0.1]);   // nhãn cảnh báo bạc màu
-    kb.build(tilt);
-    unit.kamiRack = { group: seat, tilt, tubes: tubes.map(p => new THREE.Vector3(p[0], p[1], p[2])), caps };
+
+    const tubes = rawTubes.map(t => t.tPos);
+    const caps = rawCaps.map(c => c.cap);
+
+    unit.kamiRack = { group: seat, tilt, tubes, caps, curTube: 0 };
     return 'kamiRack';
   }
 

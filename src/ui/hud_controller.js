@@ -57,10 +57,18 @@ class HUDController {
     if (redKdEl) redKdEl.textContent = `${rKills}/${rDeaths}`;
 
     if (this.game.units) {
-      const blueUnits = this.game.units.filter(u => u.team === 'BLUE');
-      const redUnits = this.game.units.filter(u => u.team === 'RED');
-      const blueAlive = blueUnits.filter(u => !u.isDead).length;
-      const redAlive = redUnits.filter(u => !u.isDead).length;
+      const blueUnits = [], redUnits = [];
+      let blueAlive = 0, redAlive = 0;
+      for (let i = 0; i < this.game.units.length; i++) {
+        const u = this.game.units[i];
+        if (u.team === 'BLUE') {
+          blueUnits.push(u);
+          if (!u.isDead) blueAlive++;
+        } else if (u.team === 'RED') {
+          redUnits.push(u);
+          if (!u.isDead) redAlive++;
+        }
+      }
 
       if (blueUnitsEl) blueUnitsEl.textContent = blueAlive.toString();
       if (redUnitsEl) redUnitsEl.textContent = redAlive.toString();

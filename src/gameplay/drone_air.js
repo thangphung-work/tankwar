@@ -224,17 +224,30 @@ const DroneAir = (() => {
 
     // ĐẾ SẠC DRONE trên nóc cabin mọi xe pháo: kẹp càng nhả khi drone cất cánh / sắp đáp, đèn trạng thái
     // (xanh lá: sẵn sàng, vàng nhấp nháy: đang sạc, xanh dương: drone đang bay, đỏ: mất drone)
+    // ĐẾ SẠC 2 DRONE 2 BÊN NÓC CABIN (phải và trái đối xứng)
     updateDroneDocks(dt) {
       if (typeof ReconDrone === 'undefined' || !ReconDrone.buildDock) return;
       const P = this.player, cam = this.camera;
       for (const u of this.units) {
         if (u.tankType !== 'ARTILLERY' || !u.chassisGroup) continue;
-        if (!u._droneDock || u._droneDock.parent !== u.chassisGroup) { u._droneDock = ReconDrone.buildDock(); u.chassisGroup.add(u._droneDock); }
-        // UAV cảm tử: phóng từ ống trên chân đế mô-đun, không có đế sạc drone trinh sát
-        u._droneDock.visible = u.uavKind !== 'kami';
-        if (u.uavKind === 'kami') continue;
+        // Bệ sạc bên phải
+        if (!u._droneDock || u._droneDock.parent !== u.chassisGroup) {
+          u._droneDock = ReconDrone.buildDock(1);
+          u.chassisGroup.add(u._droneDock);
+        }
+        // Bệ sạc bên trái (đối xứng)
+        if (!u._droneDockL || u._droneDockL.parent !== u.chassisGroup) {
+          u._droneDockL = ReconDrone.buildDock(-1);
+          u.chassisGroup.add(u._droneDockL);
+        }
+        const uSlots = (typeof Equipment !== 'undefined' && Equipment.uavSlotsOf) ? Equipment.uavSlotsOf(u.kit || u, u.tankType) : 0;
+        const show = u.uavKind === 'recon' && uSlots > 0;
+        u._droneDock.visible = show && uSlots >= 1;
+        u._droneDockL.visible = show && uSlots >= 2;
+        if (!show) continue;
         if (u.isDead || !u.group || !u.group.visible) continue;
         if (cam && u !== P && Math.hypot(cam.position.x - u.x, cam.position.z - u.z) > C.DOCK_VIEW) continue;
+
         const dr = u === P ? this.droneState() : this.otherDrone(u);
         let open = false, status = 'ready';
         if (dr.state === 'lost') status = 'empty';
@@ -245,6 +258,28 @@ const DroneAir = (() => {
           open = dr.state === 'launching' || (Math.hypot(dr.x - pd.x, dr.z - pd.z) < 140 && dr.y - pd.y < 220);
         }
         ReconDrone.animateDock(u._droneDock, dt, open, status);
+
+        // Bệ sạc thứ 2 (bên trái) chứa chiếc drone dự phòng
+        const spareCount = dr.spare !== undefined ? dr.spare : 1;
+        const spareStatus = spareCount > 0 ? 'ready' : 'empty';
+        ReconDrone.animateDock(u._droneDockL, dt, false, spareStatus);
+
+        // Hiển thị chiếc drone thứ 2 trên bệ sạc bên trái
+        if (spareCount > 0) {
+          if (!u._spareDroneModel) {
+            u._spareDroneModel = ReconDrone.build(u.team);
+            u.chassisGroup.add(u._spareDroneModel);
+          }
+          const sm = u._spareDroneModel;
+          if (sm.parent !== u.chassisGroup) u.chassisGroup.add(sm);
+          const padL = ReconDrone.PAD_L || { x: -ReconDrone.PAD.x, y: ReconDrone.PAD.y, z: ReconDrone.PAD.z };
+          sm.position.set(padL.x, padL.y, padL.z);
+          sm.rotation.set(0, 0, 0);
+          sm.visible = true;
+          ReconDrone.animate(sm, dt, 0);
+        } else if (u._spareDroneModel) {
+          u._spareDroneModel.visible = false;
+        }
       }
     },
 
@@ -1155,7 +1190,7 @@ const DroneAir = (() => {
         const by = !attacker ? 'ĐỊCH' : attacker === P ? 'CHÍNH ĐẠN CỦA BẠN' : attacker.team === P.team ? `${attacker.name} (ĐỒNG ĐỘI BẮN NHẦM)` : attacker.name;
         const spare = (D.spare || 0) > 0 && P.uavKind !== 'kami';
         this.addCombatLog(`[[alert-triangle]] DRONE TRINH SÁT ĐÃ BỊ ${by} BẮN HẠ — mất mắt ngắm cầu vồng, chỉ còn bắn thẳng tự vệ. ` +
-          (spare ? 'Kíp xe đang lắp drone dự phòng' : 'Hết drone dự phòng — hồi sinh để nhận drone mới'), 'alert');
+          (spare ? 'Đang kích hoạt drone dự phòng bên trái cabin' : 'Hết drone dự phòng — hồi sinh để nhận drone mới'), 'alert');
         const S = this._sight;
         if (S && S.arty) S.dying = { t: 0, x: D.x, y: D.y, z: D.z, yaw: D.yaw || 0 };
         // mất mắt: bỏ điểm ngắm / mục tiêu ở ngoài tầm bắn thẳng

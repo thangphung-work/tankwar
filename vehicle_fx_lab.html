@@ -11,6 +11,85 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  .eq-group-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--tc-accent, #e7a63a);
+    margin: 8px 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .eq-group-title:first-child { margin-top: 0; }
+  .eq-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .eq-grid-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+  .eq-btn {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 6px 7px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.25;
+    text-align: left;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: #e2e8f0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .eq-btn:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.28);
+    color: #fff;
+  }
+  .eq-btn.on {
+    background: var(--tc-accent-soft, rgba(231, 166, 58, 0.16));
+    border-color: var(--tc-accent, #e7a63a);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(231, 166, 58, 0.25);
+  }
+  .eq-btn i {
+    font-size: 14px;
+    flex-shrink: 0;
+    color: #94a3b8;
+  }
+  .eq-btn.on i {
+    color: var(--tc-accent-2, #f5c46b);
+  }
+  .eq-btn-full {
+    grid-column: 1 / -1;
+  }
+  .eq-badge {
+    margin-left: auto;
+    font-size: 9.5px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #94a3b8;
+  }
+  .eq-btn.on .eq-badge {
+    background: rgba(231, 166, 58, 0.25);
+    color: var(--tc-accent-2, #f5c46b);
+  }
+  #keyDigHint {
+    color: var(--tc-accent, #e7a63a);
+  }
+</style>
+
 </head>
 <body>
 <canvas id="view"></canvas>
@@ -65,8 +144,20 @@
     </div>
   </section>
 
+
+  <section class="lab-sec" id="secEquipment">
+    <div class="lab-sec-h"><span class="lab-num">02</span><h2>Tùy chỉnh trang bị xe</h2></div>
+    <div class="row" style="margin-bottom:6px">
+      <button class="btn btn-alt" id="btnFullKit" style="flex:1"><i class="ti ti-shield-check" aria-hidden="true"></i>Trang bị tối tân</button>
+      <button class="btn" id="btnStockKit" style="flex:1"><i class="ti ti-rotate" aria-hidden="true"></i>Nguyên bản (Zin)</button>
+    </div>
+    <div id="equipBox">
+      <!-- Nội dung trang bị render động theo từng loại xe -->
+    </div>
+  </section>
+
   <section class="lab-sec">
-    <div class="lab-sec-h"><span class="lab-num">02</span><h2>Hỏa lực &amp; đầu nòng</h2></div>
+    <div class="lab-sec-h"><span class="lab-num">03</span><h2>Hỏa lực &amp; đầu nòng</h2></div>
     <button class="btn btn-fire" id="fireBtn"><i class="ti ti-flame" aria-hidden="true"></i>KHAI HỎA <small>Space · giữ để xả liên thanh</small></button>
     <div class="grid2 mt">
       <button class="btn" id="smokeBtn"><i class="ti ti-cloud" aria-hidden="true"></i>Xì khói nòng pháo</button>
@@ -77,7 +168,7 @@
   </section>
 
   <section class="lab-sec">
-    <div class="lab-sec-h"><span class="lab-num">03</span><h2>Nòng pháo &amp; bánh lái</h2></div>
+    <div class="lab-sec-h"><span class="lab-num">04</span><h2>Nòng pháo &amp; bánh lái</h2></div>
     <div class="lab-box">
       <div class="lab-readout"><span>Góc nâng nòng <b id="elevValLbl">0.0°</b></span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div>
       <input type="range" id="elevSlider" min="-5" max="65" value="0" step="1" style="width:100%">
@@ -101,7 +192,7 @@
   </section>
 
   <section class="lab-sec">
-    <div class="lab-sec-h"><span class="lab-num">04</span><h2>Cơ động &amp; khói bụi</h2></div>
+    <div class="lab-sec-h"><span class="lab-num">05</span><h2>Cơ động &amp; khói bụi</h2></div>
     <div class="grid2">
       <button class="btn" id="exhaustBtn"><i class="ti ti-wind" aria-hidden="true"></i>Khói đen ống xả</button>
       <button class="btn" id="driveBtn"><i class="ti ti-steering-wheel" aria-hidden="true"></i>Lăn bánh: <b>TẮT</b></button>
@@ -111,14 +202,14 @@
   </section>
 
   <section class="lab-sec">
-    <div class="lab-sec-h"><span class="lab-num">05</span><h2>Cơ chế riêng của xe</h2></div>
+    <div class="lab-sec-h"><span class="lab-num">06</span><h2>Cơ chế riêng của xe</h2></div>
     <div class="lab-box" id="tankSpecialBox">
       <!-- Cập nhật tự động theo loại xe được chọn -->
     </div>
   </section>
 
   <section class="lab-sec">
-    <div class="lab-sec-h"><span class="lab-num">06</span><h2>Thân xe &amp; hư hại</h2></div>
+    <div class="lab-sec-h"><span class="lab-num">07</span><h2>Thân xe &amp; hư hại</h2></div>
     <div class="row" id="damageRow">
       <button class="btn on" data-hp="100">100%</button>
       <button class="btn" data-hp="60">60% · Bốc khói</button>
@@ -136,10 +227,10 @@
   </section>
 
   <section class="lab-sec">
-    <div class="lab-sec-h"><span class="lab-num">07</span><h2>Góc nhìn &amp; ánh sáng</h2></div>
+    <div class="lab-sec-h"><span class="lab-num">08</span><h2>Góc nhìn &amp; ánh sáng</h2></div>
     <div class="row" id="camRow">
-      <button class="btn on" data-cam="muzzle">Cận đầu nòng</button>
-      <button class="btn" data-cam="orbit">Toàn cảnh</button>
+      <button class="btn" data-cam="muzzle">Cận đầu nòng</button>
+      <button class="btn on" data-cam="orbit">Toàn cảnh</button>
       <button class="btn" data-cam="suspension">Cận bánh xe</button>
       <button class="btn" data-cam="exhaust">Cận đuôi xe</button>
     </div>
@@ -150,7 +241,7 @@
   </section>
 
   <section class="lab-sec">
-    <div class="lab-sec-h"><span class="lab-num">08</span><h2>Tốc độ thời gian</h2></div>
+    <div class="lab-sec-h"><span class="lab-num">09</span><h2>Tốc độ thời gian</h2></div>
     <div class="row" id="speedRow">
       <button class="btn on" data-speed="1">1x</button>
       <button class="btn" data-speed="0.5">0.5x</button>
@@ -204,8 +295,9 @@
 <script src="src/entities/tanks/vehicle_kit.js?v=20261022mud1"></script>
 <script src="src/entities/tanks/roof_mounts.js?v=20261023msl1"></script>
 <script src="src/entities/tanks/mbt_halberd.js?v=20261022mod2"></script>
-<script src="src/entities/tanks/fsv_hailstorm.js?v=20261022eco1"></script>
-<script src="src/entities/tanks/spg_arbalest.js?v=20261022mod2"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261101smoke1"></script>
+<script src="src/entities/recon_drone.js"></script>
+<script src="src/entities/tanks/spg_arbalest.js?v=20261102dronecrew3"></script>
 <script src="src/entities/tanks/recon_marten.js?v=20261022pit1"></script>
 <script src="src/entities/projectiles.js?v=20261023msl2"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261022wetmud1"></script>
@@ -213,6 +305,9 @@
 <script src="src/gameplay/explosion_fx.js?v=20261023msl2"></script>
 <script src="src/gameplay/wading_fx.js?v=20261022wetmud1"></script>
 <script src="src/gameplay/vehicle_damage.js?v=20261023eqfix1"></script>
+<script src="src/entities/soldier_model.js?v=1793600321054"></script>
+<script src="src/gameplay/vehicle_crew.js?v=20261101dronecrew1"></script>
+<script src="src/gameplay/reload_fx.js?v=20261025stub4"></script>
 <script src="src/core/equipment.js?v=20261029camo1"></script>
 <script src="src/gameplay/camo_fire.js?v=20261029real1"></script>
 
@@ -431,7 +526,7 @@
     tankType: 'ARTILLERY',
     team: 'BLUE',
     speed: 1,
-    cam: 'muzzle',
+    cam: 'orbit',
     firing: false,
     autoFire: false,
     driving: false,
@@ -460,7 +555,527 @@
   let activeUnit = null;
   const unitCache = {};
 
+
+  // ===========================================================================
+  // HỆ THỐNG TÙY CHỈNH TRANG BỊ XE (EQUIPMENT LAB)
+  // ===========================================================================
+  const labKits = {
+    ALL_ROUNDER: {
+      m: ['era', 'slat', 'applique', 'rcws', 'camo', 'aps', 'radar', 'jammer', 'turbine'],
+      p: ['ap_du', 'heat_tandem']
+    },
+    GATLING: {
+      m: ['era', 'slat', 'applique', 'dozer', 'mag300', 'smoke', 'camo', 'aps', 'radar', 'jammer', 'turbine'],
+      p: ['apds30', 'ahead30']
+    },
+    SCOUT: {
+      m: ['era', 'applique', 'hmg', 'smoke', 'camo', 'jammer', 'hybrid'],
+      p: ['topatk', 'mk211']
+    },
+    ARTILLERY: {
+      m: ['slat', 'applique', 'recon', 'radar', 'jammer', 'hybrid'],
+      p: ['he_frag']
+    }
+  };
+
+  const VEHICLE_EQUIP_DEFS = {
+    ALL_ROUNDER: {
+      armor: [
+        { id: 'era', name: 'Giáp phản ứng nổ ERA', icon: 'bolt' },
+        { id: 'slat', name: 'Giáp lồng chống RPG', icon: 'grid-dots' },
+        { id: 'applique', name: 'Tấm giáp composite tăng cường', icon: 'shield' }
+      ],
+      mounts: [
+        {
+          cat: 'roof',
+          name: 'Nóc tháp pháo',
+          items: [
+            { id: 'ewjam', name: 'Máy phá sóng UAV', icon: 'drone-off' },
+            { id: 'rcws', name: 'Trạm súng máy 7.62mm', icon: 'crosshair' },
+            { id: 'agl', name: 'Súng phóng lựu 40mm', icon: 'bomb' },
+            { id: 'rocket', name: 'Bệ tên lửa đột nóc Javelin', icon: 'arrow-big-down-lines' }
+          ]
+        },
+        {
+          cat: 'engine',
+          name: 'Động cơ',
+          items: [
+            { id: 'stock', name: 'Zin nguyên bản', icon: 'engine' },
+            { id: 'tdiesel', name: 'Diesel tăng áp', icon: 'engine' },
+            { id: 'twinturbo', name: 'Tăng áp kép', icon: 'engine' },
+            { id: 'turbine', name: 'Tuabin khí 1500HP', icon: 'engine' }
+          ]
+        }
+      ],
+      gear: [
+        { id: 'camo', name: 'Lưới ngụy trang lá cây', icon: 'leaf' },
+        { id: 'aps', name: 'Hệ thống đánh chặn APS', icon: 'shield-bolt' },
+        { id: 'radar', name: 'Radar dò tìm quét xoay', icon: 'radar-2' },
+        { id: 'jammer', name: 'Đèn gây nhiễu Shtora', icon: 'antenna-bars-off' }
+      ],
+      ammo: [
+        { id: 'ap_du', name: 'Đạn xuyên Urani nghèo (DU)', icon: 'arrow-big-right-lines' },
+        { id: 'heat_tandem', name: 'Đạn nổ lõm 2 tầng Tandem', icon: 'flame' }
+      ]
+    },
+    GATLING: {
+      armor: [
+        { id: 'era', name: 'Gạch giáp ERA', icon: 'bolt' },
+        { id: 'slat', name: 'Giáp lồng chống RPG', icon: 'grid-dots' },
+        { id: 'applique', name: 'Tấm giáp composite tăng cường', icon: 'shield' }
+      ],
+      mounts: [
+        {
+          cat: 'front',
+          name: 'Mũi xe',
+          items: [
+            { id: 'dozer', name: 'Lưỡi ủi thủy lực (Ủi ụ đất)', icon: 'shovel' },
+            { id: 'vshield', name: 'Khiên giáp chữ V + Bao cát', icon: 'shield-chevron' }
+          ]
+        },
+        {
+          cat: 'mag',
+          name: 'Hộp đạn 30mm',
+          items: [
+            { id: 'mag300', name: 'Hòm 300 viên tiêu chuẩn', icon: 'box' },
+            { id: 'mag450', name: 'Hòm 450 viên cỡ vừa', icon: 'box' },
+            { id: 'mag650', name: 'Hòm 650 viên cỡ đại', icon: 'box' }
+          ]
+        },
+        {
+          cat: 'roof',
+          name: 'Nóc tháp pháo',
+          items: [
+            { id: 'none', name: 'Không gắn vũ khí nóc', icon: 'x' },
+            { id: 'agl', name: 'Súng phóng lựu 40mm', icon: 'bomb' },
+            { id: 'rjam', name: 'Máy phá khóa radar', icon: 'radar-off' }
+          ]
+        },
+        {
+          cat: 'engine',
+          name: 'Động cơ',
+          items: [
+            { id: 'stock', name: 'Zin nguyên bản', icon: 'engine' },
+            { id: 'tdiesel', name: 'Diesel tăng áp', icon: 'engine' },
+            { id: 'twinturbo', name: 'Tăng áp kép', icon: 'engine' },
+            { id: 'turbine', name: 'Tuabin khí 1500HP', icon: 'engine' }
+          ]
+        }
+      ],
+      gear: [
+        { id: 'camo', name: 'Lưới ngụy trang lá cây', icon: 'leaf' },
+        { id: 'smoke', name: 'Cụm ống phóng lựu khói', icon: 'cloud' },
+        { id: 'aps', name: 'Hệ thống đánh chặn APS', icon: 'shield-bolt' },
+        { id: 'radar', name: 'Radar dò tìm quét xoay', icon: 'radar-2' },
+        { id: 'jammer', name: 'Đèn gây nhiễu quang - điện tử', icon: 'antenna-bars-off' }
+      ],
+      ammo: [
+        { id: 'apds30', name: 'Đạn 30mm xuyên dưới cỡ APDS', icon: 'arrow-big-right-lines' },
+        { id: 'ahead30', name: 'Đạn 30mm nổ chụp AHEAD', icon: 'drone-off' }
+      ]
+    },
+    SCOUT: {
+      armor: [
+        { id: 'era', name: 'Gạch giáp ERA', icon: 'bolt' },
+        { id: 'applique', name: 'Tấm giáp tăng cường má xe & cửa', icon: 'shield' }
+      ],
+      mounts: [
+        {
+          cat: 'weapon',
+          name: 'Vũ khí chính vòng tháp',
+          items: [
+            { id: 'hmg', name: 'Súng máy 12.7mm + Khiên OGPK', icon: 'crosshair' },
+            { id: 'sagl', name: 'Súng phóng lựu 40mm HV', icon: 'bomb' },
+            { id: 'srocket', name: 'Giàn rocket 8 ống', icon: 'rocket' }
+          ]
+        },
+        {
+          cat: 'engine',
+          name: 'Động cơ',
+          items: [
+            { id: 'stock', name: 'Zin nguyên bản', icon: 'engine' },
+            { id: 'tdiesel', name: 'Diesel tăng áp', icon: 'engine' },
+            { id: 'twinturbo', name: 'Tăng áp kép', icon: 'engine' },
+            { id: 'hybrid', name: 'Diesel-điện Hybrid', icon: 'engine' }
+          ]
+        }
+      ],
+      gear: [
+        { id: 'camo', name: 'Lưới ngụy trang lá cây', icon: 'leaf' },
+        { id: 'smoke', name: 'Cụm ống phóng lựu khói', icon: 'cloud' },
+        { id: 'jammer', name: 'Đèn gây nhiễu quang - điện tử', icon: 'antenna-bars-off' }
+      ],
+      ammo: [
+        { id: 'topatk', name: 'Tên lửa đột nóc Javelin', icon: 'arrow-big-down-lines' },
+        { id: 'mk211', name: 'Đạn Mk211 nổ-cháy-xuyên', icon: 'drone-off' },
+        { id: 'slap127', name: 'Đạn SLAP 12.7mm xuyên thép', icon: 'arrow-big-right-lines' }
+      ]
+    },
+    ARTILLERY: {
+      armor: [
+        { id: 'slat', name: 'Giáp lồng chống RPG + Mái che nóc', icon: 'grid-dots' },
+        { id: 'applique', name: 'Tấm giáp composite cabin & tháp', icon: 'shield' }
+      ],
+      mounts: [
+        {
+          cat: 'uav',
+          name: 'UAV trên nóc cabin',
+          items: [
+            { id: 'recon', name: 'UAV trinh sát chỉ điểm', icon: 'drone' },
+            { id: 'kami', name: 'UAV cảm tử bổ nhào', icon: 'drone-off' }
+          ]
+        },
+        {
+          cat: 'engine',
+          name: 'Động cơ',
+          items: [
+            { id: 'stock', name: 'Zin nguyên bản', icon: 'engine' },
+            { id: 'tdiesel', name: 'Diesel tăng áp', icon: 'engine' },
+            { id: 'twinturbo', name: 'Tăng áp kép', icon: 'engine' },
+            { id: 'hybrid', name: 'Diesel-điện Hybrid', icon: 'engine' }
+          ]
+        }
+      ],
+      gear: [
+        { id: 'radar', name: 'Radar dò tìm quét xoay', icon: 'radar-2' },
+        { id: 'jammer', name: 'Đèn gây nhiễu quang - điện tử', icon: 'antenna-bars-off' }
+      ],
+      ammo: [
+        { id: 'he_frag', name: 'Đạn 155mm nổ mảnh định sẵn', icon: 'atom-2' }
+      ]
+    }
+  };
+
+  function reloadActiveUnit() {
+    const type = state.tankType;
+    const team = state.team;
+    const key = `${type}_${team}`;
+    if (unitCache[key]) {
+      scene.remove(unitCache[key].group);
+      if (typeof unitCache[key].dispose === 'function') unitCache[key].dispose();
+      delete unitCache[key];
+    }
+    loadUnit(type, team);
+  }
+
+  function toggleEquip(cat, id) {
+    const type = state.tankType;
+    const kit = labKits[type];
+    if (!kit) return;
+
+    if (cat === 'ammo') {
+      const idx = kit.p.indexOf(id);
+      if (idx >= 0) kit.p.splice(idx, 1);
+      else kit.p.push(id);
+    } else if (cat === 'armor' || cat === 'gear') {
+      const idx = kit.m.indexOf(id);
+      if (idx >= 0) kit.m.splice(idx, 1);
+      else kit.m.push(id);
+    } else {
+      // Nhóm bệ gắn & động cơ (chọn 1 trong nhóm)
+      const def = VEHICLE_EQUIP_DEFS[type];
+      const mountGroup = def && def.mounts.find(m => m.cat === cat);
+      if (mountGroup) {
+        const itemIds = mountGroup.items.map(it => it.id);
+        kit.m = kit.m.filter(mId => !itemIds.includes(mId));
+        if (id !== 'none') kit.m.push(id);
+      }
+    }
+
+    reloadActiveUnit();
+    renderEquipUI();
+  }
+
+  function renderEquipUI() {
+    const box = document.getElementById('equipBox');
+    if (!box) return;
+    const type = state.tankType;
+    const def = VEHICLE_EQUIP_DEFS[type];
+    if (!def) { box.innerHTML = ''; return; }
+    const kit = labKits[type] || { m: [], p: [] };
+
+    let html = '';
+
+    // 1. Giáp bảo vệ
+    if (def.armor && def.armor.length) {
+      html += `<div class="eq-group-title"><i class="ti ti-shield-half-filled" aria-hidden="true"></i>Giáp bảo vệ</div><div class="eq-grid">`;
+      def.armor.forEach(it => {
+        const on = kit.m.includes(it.id);
+        html += `<button class="eq-btn ${on ? 'on' : ''}" data-cat="armor" data-id="${it.id}">
+          <i class="ti ti-${it.icon}" aria-hidden="true"></i>${it.name}
+          <span class="eq-badge">${on ? 'BẬT' : 'TẮT'}</span>
+        </button>`;
+      });
+      html += `</div>`;
+    }
+
+    // 2. Bệ gắn & Động cơ
+    if (def.mounts && def.mounts.length) {
+      def.mounts.forEach(group => {
+        html += `<div class="eq-group-title"><i class="ti ti-tool" aria-hidden="true"></i>${group.name}</div><div class="eq-grid ${group.items.length >= 3 ? 'eq-grid-3' : ''}">`;
+        group.items.forEach(it => {
+          let on = false;
+          if (it.id === 'none') {
+            on = !group.items.some(other => other.id !== 'none' && kit.m.includes(other.id));
+          } else {
+            on = kit.m.includes(it.id);
+          }
+          html += `<button class="eq-btn ${on ? 'on' : ''}" data-cat="${group.cat}" data-id="${it.id}">
+            <i class="ti ti-${it.icon}" aria-hidden="true"></i>${it.name}
+          </button>`;
+        });
+        html += `</div>`;
+      });
+    }
+
+    // 3. Phụ kiện tác chiến
+    if (def.gear && def.gear.length) {
+      html += `<div class="eq-group-title"><i class="ti ti-cpu" aria-hidden="true"></i>Phụ kiện tác chiến</div><div class="eq-grid">`;
+      def.gear.forEach(it => {
+        const on = kit.m.includes(it.id);
+        html += `<button class="eq-btn ${on ? 'on' : ''}" data-cat="gear" data-id="${it.id}">
+          <i class="ti ti-${it.icon}" aria-hidden="true"></i>${it.name}
+          <span class="eq-badge">${on ? 'BẬT' : 'TẮT'}</span>
+        </button>`;
+      });
+      html += `</div>`;
+    }
+
+    // 4. Đạn cao cấp
+    if (def.ammo && def.ammo.length) {
+      html += `<div class="eq-group-title"><i class="ti ti-rocket" aria-hidden="true"></i>Đạn cao cấp</div><div class="eq-grid">`;
+      def.ammo.forEach(it => {
+        const on = kit.p.includes(it.id);
+        html += `<button class="eq-btn ${on ? 'on' : ''}" data-cat="ammo" data-id="${it.id}">
+          <i class="ti ti-${it.icon}" aria-hidden="true"></i>${it.name}
+          <span class="eq-badge">${on ? 'BẬT' : 'TẮT'}</span>
+        </button>`;
+      });
+      html += `</div>`;
+    }
+
+    box.innerHTML = html;
+  }
+
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.eq-btn');
+    if (btn && btn.dataset.cat && btn.dataset.id) {
+      initAudio();
+      toggleEquip(btn.dataset.cat, btn.dataset.id);
+    }
+  });
+
+  document.getElementById('btnFullKit')?.addEventListener('click', () => {
+    initAudio();
+    const type = state.tankType;
+    const def = VEHICLE_EQUIP_DEFS[type];
+    if (!def) return;
+    const kit = labKits[type];
+    kit.m = [];
+    kit.p = [];
+    if (def.armor) def.armor.forEach(it => kit.m.push(it.id));
+    if (def.gear) def.gear.forEach(it => kit.m.push(it.id));
+    if (def.ammo) def.ammo.forEach(it => kit.p.push(it.id));
+    if (def.mounts) {
+      def.mounts.forEach(group => {
+        // Chọn món cao cấp nhất trong nhóm
+        const last = group.items[group.items.length - 1];
+        if (last && last.id !== 'none') kit.m.push(last.id);
+      });
+    }
+    reloadActiveUnit();
+    renderEquipUI();
+  });
+
+  document.getElementById('btnStockKit')?.addEventListener('click', () => {
+    initAudio();
+    const type = state.tankType;
+    const kit = labKits[type];
+    kit.m = [];
+    kit.p = [];
+    // Món mặc định theo xe:
+    if (type === 'ALL_ROUNDER') kit.m.push('ewjam', 'stock');
+    else if (type === 'GATLING') kit.m.push('dozer', 'mag300', 'stock');
+    else if (type === 'SCOUT') kit.m.push('hmg', 'stock');
+    else if (type === 'ARTILLERY') kit.m.push('recon', 'stock');
+    reloadActiveUnit();
+    renderEquipUI();
+  });
+
+  // ===========================================================================
+  // HỆ THỐNG ĐÀO Ụ ĐẤT CHIẾN THUẬT (LAB BERM SYSTEM)
+  // ===========================================================================
+  const LabBermSystem = {
+    active: false,
+    berms: [],
+    crater: null,
+
+    createBermMesh(x, z, yaw, opts = {}) {
+      const L = opts.L || 26;
+      const W = opts.W || 14;
+      const H = opts.H || 12;
+      const isPile = opts.kind === 'pile';
+
+      const segX = Math.min(48, Math.max(18, Math.round(L * 1.4)));
+      const segY = Math.min(26, Math.max(12, Math.round(W * 1.4)));
+      const geo = new THREE.PlaneGeometry(L * 2 + 4, W * 2 + 4, segX, segY);
+      const pos = geo.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+
+      const isField = state.theme === 'field';
+      const baseColor = new THREE.Color(isField ? 0xa2855a : 0x766d62);
+
+      for (let i = 0; i < pos.count; i++) {
+        const u = pos.getX(i);
+        const v = pos.getY(i);
+
+        const uNorm = Math.min(1, Math.abs(u) / L);
+        const uFall = 1 - uNorm * uNorm;
+
+        let vFactor = 0;
+        if (isPile) {
+          if (v < 0) {
+            vFactor = Math.max(0, 1 - Math.abs(v) / (W * 0.45));
+          } else {
+            vFactor = Math.max(0, 1 - v / (W * 1.15));
+          }
+        } else {
+          const vNorm = Math.min(1, Math.abs(v) / W);
+          vFactor = Math.max(0, 1 - vNorm * vNorm);
+        }
+
+        const noise = (Math.sin(u * 0.38) * Math.cos(v * 0.48) * 0.55 + Math.sin(u * 0.95 + v * 0.75) * 0.35);
+        const h = Math.max(0, H * uFall * vFactor + (uFall * vFactor > 0.04 ? noise * 1.15 : 0));
+        pos.setZ(i, h);
+
+        const shade = 0.82 + Math.min(0.28, (h / H) * 0.3) + (Math.random() - 0.5) * 0.06;
+        colors[i * 3] = baseColor.r * shade;
+        colors[i * 3 + 1] = baseColor.g * shade;
+        colors[i * 3 + 2] = baseColor.b * shade;
+      }
+
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.96,
+        metalness: 0.04,
+        flatShading: false
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.rotation.z = -yaw;
+      mesh.position.set(x, 0.08, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      scene.add(mesh);
+      return mesh;
+    },
+
+    dig() {
+      if (this.active) return;
+      const u = activeUnit;
+      if (!u) return;
+
+      const front = (u.kit && u.kit.m && u.kit.m.find(id => id === 'dozer' || id === 'vshield')) || 'dozer';
+      if (front === 'vshield') {
+        if (typeof partLog === 'function') {
+          partLog(['Không thể đào ụ: Xe đang lắp khiên chữ V mũi nhọn, không có lưỡi ủi thủy lực! Hãy chọn Lưỡi ủi ở panel trang bị bên trái.']);
+        }
+        return;
+      }
+
+      this.active = true;
+
+      // 1. Ụ đất chính phía trước mũi xe (pile)
+      const mainPile = this.createBermMesh(0, -38, 0, { kind: 'pile', L: 28, W: 16, H: 13.5 });
+      this.berms.push(mainPile);
+
+      // 2. Hai bờ đất sườn ôm dọc thân xe (ridge) tạo thành ổ chữ U
+      const leftRidge = this.createBermMesh(-24, -4, Math.PI / 2, { kind: 'ridge', L: 34, W: 10, H: 12 });
+      const rightRidge = this.createBermMesh(24, -4, -Math.PI / 2, { kind: 'ridge', L: 34, W: 10, H: 12 });
+      this.berms.push(leftRidge, rightRidge);
+
+      // 3. Hào khoét sâu dưới gầm xe
+      if (fx && fx.addCrater) {
+        const pal = fx.palette ? fx.palette('GROUND') : null;
+        this.crater = fx.addCrater(0, -6, 26, pal, 1, { x: 0, y: -1, z: -1 }, 'NORMAL', {
+          persistent: true,
+          dig: { deep: 64, ramp: 56, lo: 0.12 },
+          bowlDepth: 4.2,
+          elong: 2.1,
+          rough: 0.25
+        });
+      }
+
+      // Thân xe lún sâu vào lòng hào và đầu hơi chúi
+      u.group.position.y = -2.2;
+      u.group.rotation.x = -0.045;
+
+      // Bụi cát phụt ra từ chân lưỡi ủi
+      if (typeof SpgFXPool !== 'undefined') {
+        for (let i = 0; i < 18; i++) {
+          const bx = (Math.random() - 0.5) * 32;
+          const bz = -30 + (Math.random() - 0.5) * 10;
+          const dm = SpgFXPool.acquire(scene, 'sphere', 0xbaa47e, 0.38);
+          dm.position.set(bx, 0.8, bz);
+          u.fxParticles.push({
+            mesh: dm,
+            base: 1.8 + Math.random() * 1.5,
+            vx: (Math.random() - 0.5) * 14,
+            vy: 2.5 + Math.random() * 4,
+            vz: (Math.random() - 0.5) * 12,
+            scale: 1.0,
+            alpha: 0.45,
+            growSpeed: 4.5,
+            life: 1.2
+          });
+        }
+      }
+
+      if (typeof partLog === 'function') {
+        partLog([
+          'Hạ lưỡi ủi thủy lực — ủi đất đắp thành công sự chữ U hoàn chỉnh.',
+          'Mũi xe và hai sườn được che chắn kín sau ụ đất cao 1.6m; thân xe lún 0.5m trong lòng hào.',
+          'Chỉ có cụm 6 nòng 30mm nhô trên đỉnh ụ, góc bắn thẳng và bao quát.'
+        ]);
+      }
+      updateSpecialUI();
+    },
+
+    clear() {
+      for (const b of this.berms) {
+        scene.remove(b);
+        if (b.geometry) b.geometry.dispose();
+        if (b.material) b.material.dispose();
+      }
+      this.berms.length = 0;
+
+      if (this.crater && fx && fx.craters) {
+        const idx = fx.craters.indexOf(this.crater);
+        if (idx >= 0 && fx.removeDecal) {
+          fx.removeDecal(fx.craters, idx, true);
+        }
+        this.crater = null;
+      }
+
+      if (activeUnit) {
+        activeUnit.group.position.y = 0;
+        activeUnit.group.rotation.x = 0;
+      }
+      this.active = false;
+      if (typeof partLog === 'function') {
+        partLog(['Đã dọn sạch công sự ụ đất và san phẳng hào xe ủi. Xe trở lại mặt đất nguyên bản.']);
+      }
+      updateSpecialUI();
+    }
+  };
+
   function loadUnit(type, team) {
+    if (typeof LabBermSystem !== 'undefined' && LabBermSystem.active) LabBermSystem.clear();
     const key = `${type}_${team}`;
     if (activeUnit) {
       if (typeof VehicleDamage !== 'undefined') VehicleDamage.reset(activeUnit);
@@ -493,7 +1108,8 @@
       // ?camo=DESERT|URBAN|JUNGLE|HIGHLAND|RIVER_LAKE : ép kiểu lưới ngụy trang theo bản đồ (mặc định theo phe)
       const camoQ = new URLSearchParams(location.search).get('camo');
       if (camoQ) u._foliageKind = camoQ;
-      if (kitQ && typeof Equipment !== 'undefined') Equipment.equip(u, { m: kitQ.split(',') }, { local: true });
+      const userKit = labKits[type] || { m: [], p: [] };
+      if (typeof Equipment !== 'undefined') Equipment.equip(u, { m: [...userKit.m], p: [...userKit.p] }, { local: true });
       if (u.hpBgMesh) u.hpBgMesh.visible = false;
       if (u.hpBarMesh) u.hpBarMesh.visible = false;
       if (u.reactiveArmorMesh) u.reactiveArmorMesh.visible = false;
@@ -521,6 +1137,7 @@
     updateHUD();
     updateSpecialUI();
     applyCamPreset(state.cam);
+    renderEquipUI();
   }
 
   // ===========================================================================
@@ -607,12 +1224,16 @@
   // ===========================================================================
   // CÁC HÀNH ĐỘNG KÍCH HOẠT HIỆU ỨNG XE
   // ===========================================================================
+  let burstTimer = 0;
+
   function triggerFire() {
     const u = activeUnit;
     if (!u) return;
     initAudio();
 
-    if (u.tankType === 'GATLING') {
+    if (u.tankType === 'GATLING' || u.tankType === 'SCOUT') {
+      u.spinUpTime = u.spinRequired || 0.2;
+      burstTimer = Math.max(burstTimer, u.tankType === 'SCOUT' ? 0.45 : 0.35);
       u.updateGatling(0.05, true, stubBallistics, stubRadar);
       return;
     }
@@ -646,39 +1267,8 @@
   }
 
   // ===========================================================================
-  // HỆ THỐNG VỎ ĐẠN 30MM & TÊN LỬA CHO HIỆU ỨNG ĐẶC TRƯNG RIÊNG
+  // HỆ THỐNG TÊN LỬA CHO HIỆU ỨNG ĐẶC TRƯNG RIÊNG
   // ===========================================================================
-  const shellCasings = [];
-  const casingGeo = new THREE.CylinderGeometry(0.3, 0.35, 1.25, 8);
-  const casingMat = new THREE.MeshStandardMaterial({ color: 0xd6a438, metalness: 0.88, roughness: 0.25 });
-
-  function spawn30mmCasings(count = 14) {
-    const u = activeUnit;
-    if (!u) return;
-    const p = new THREE.Vector3(7.2, 13.5, -4.5);
-    u.chassisGroup ? u.chassisGroup.localToWorld(p) : u.group.localToWorld(p);
-    for (let i = 0; i < count; i++) {
-      setTimeout(() => {
-        if (!activeUnit) return;
-        const mesh = new THREE.Mesh(casingGeo, casingMat);
-        mesh.position.copy(p).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4));
-        mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-        mesh.castShadow = true;
-        scene.add(mesh);
-        shellCasings.push({
-          mesh,
-          vx: 8 + Math.random() * 6,
-          vy: 3.5 + Math.random() * 3.5,
-          vz: -2 + Math.random() * 5,
-          rx: (Math.random() - 0.5) * 22,
-          ry: (Math.random() - 0.5) * 22,
-          life: 6.5,
-          bounces: 0
-        });
-      }, i * 40);
-    }
-  }
-
   const activeRockets = [];
   function triggerScoutATGM() {
     const u = activeUnit;
@@ -733,6 +1323,9 @@
       t: 0,
       life: 2.2
     });
+
+    u.antiTankCooldownMax = 11.0;
+    u.antiTankCooldown = 11.0;
   }
 
   function triggerSabotShot() {
@@ -825,6 +1418,82 @@
     updateSpecialUI();
   }
 
+  // Đồng bộ 2 đế sạc và 2 chiếc drone ở 2 bên nóc cabin xe pháo trong phòng thử
+  let labDroneSpinT = 0;
+  function syncLabDrone(dt) {
+    const u = activeUnit;
+    if (!u || u.tankType !== 'ARTILLERY' || !u.chassisGroup || typeof ReconDrone === 'undefined' || !ReconDrone.buildDock) return;
+    const ch = u.chassisGroup;
+    const uSlots = (typeof Equipment !== 'undefined' && Equipment.uavSlotsOf) ? Equipment.uavSlotsOf(u.kit || u, u.tankType) : (u.uavSlots !== undefined ? u.uavSlots : 4);
+    const kami = u.uavKind === 'kami' && uSlots > 0;
+    const recon = u.uavKind === 'recon' && uSlots > 0;
+
+    // Bệ sạc 1 (bên phải nóc cabin)
+    if (!u._droneDock || u._droneDock.parent !== ch) {
+      u._droneDock = ReconDrone.buildDock(1);
+      ch.add(u._droneDock);
+    }
+    // Bệ sạc 2 (bên trái nóc cabin - đối xứng)
+    if (!u._droneDockL || u._droneDockL.parent !== ch) {
+      u._droneDockL = ReconDrone.buildDock(-1);
+      ch.add(u._droneDockL);
+    }
+    u._droneDock.visible = recon && uSlots >= 1;
+    u._droneDockL.visible = recon && uSlots >= 2;
+    if (!recon) {
+      if (u._viewDrone) u._viewDrone.visible = false;
+      if (u._viewDroneL) u._viewDroneL.visible = false;
+      return;
+    }
+
+    // Chiếc drone bên phải
+    if (!u._viewDrone) {
+      u._viewDrone = ReconDrone.build(u.team || 'BLUE');
+    }
+    if (u._viewDrone.parent !== ch) {
+      ch.add(u._viewDrone);
+      u._viewDrone.rotation.set(0, 0, 0);
+      const padR = ReconDrone.PAD_R || { x: 6.1, y: ReconDrone.PAD.y, z: ReconDrone.PAD.z };
+      u._viewDrone.position.set(padR.x, padR.y, padR.z);
+    }
+
+    // Chiếc drone bên trái
+    if (!u._viewDroneL) {
+      u._viewDroneL = ReconDrone.build(u.team || 'BLUE');
+    }
+    if (u._viewDroneL.parent !== ch) {
+      ch.add(u._viewDroneL);
+      u._viewDroneL.rotation.set(0, 0, 0);
+      const padL = ReconDrone.PAD_L || { x: -6.1, y: ReconDrone.PAD.y, z: ReconDrone.PAD.z };
+      u._viewDroneL.position.set(padL.x, padL.y, padL.z);
+    }
+
+    u._viewDrone.visible = true;
+    u._viewDroneL.visible = true;
+
+    if (labDroneSpinT > 0) labDroneSpinT = Math.max(0, labDroneSpinT - dt);
+    const rpm = labDroneSpinT > 0 ? 0.95 : 0;
+
+    ReconDrone.animateDock(u._droneDock, dt, false, 'ready');
+    ReconDrone.animateDock(u._droneDockL, dt, false, 'ready');
+    ReconDrone.animate(u._viewDrone, dt, rpm);
+    ReconDrone.animate(u._viewDroneL, dt, rpm);
+  }
+
+  function triggerDroneSpinTest() {
+    labDroneSpinT = 3.5;
+    partLog(['Khởi động kiểm tra cánh quạt cặp drone trinh sát ở 2 bên nóc cabin']);
+  }
+
+  function triggerArtyTurretTurn() {
+    const u = activeUnit;
+    if (!u || !u.turretGroup) return;
+    const cur = u.turretGroup.rotation.y;
+    const target = Math.abs(cur) < 0.1 ? Math.PI : 0;
+    u.turretGroup.rotation.y = target;
+    partLog([target > 0.1 ? 'Quay tháp pháo 180° ra sau xe — kiểm tra khoảng cách sàn xe' : 'Trả tháp pháo về hướng mũi xe']);
+  }
+
   // Bộ phận có thể phá của từng loại xe (đúng cấu tạo thật của mẫu xe)
   const PART_ACTIONS = {
     ALL_ROUNDER: [
@@ -861,6 +1530,8 @@
       ['tire', '<i class="ti ti-wheel" aria-hidden="true"></i>Thủng xẹp lốp'],
       ['wheel', '<i class="ti ti-bomb" aria-hidden="true"></i>Văng bánh (nổ mạnh)'],
       ['glass', '<i class="ti ti-window" aria-hidden="true"></i>Vỡ kính cabin'],
+      ['gunner', '<i class="ti ti-user-x" aria-hidden="true"></i>Xạ thủ hy sinh và người dự bị lên thay'],
+      ['atgmReload', '<i class="ti ti-rotate" aria-hidden="true"></i>Nạp tên lửa chống tăng qua cửa nóc'],
       ['sensor', '<i class="ti ti-antenna" aria-hidden="true"></i>Hỏng cụm radar / cảm biến'],
       ['atgm', '<i class="ti ti-rocket" aria-hidden="true"></i>Phá nổ ống phóng tên lửa'],
       ['can', '<i class="ti ti-gas-station" aria-hidden="true"></i>Bắn nổ can nhiên liệu 20L (cháy)'],
@@ -936,13 +1607,19 @@
           <button class="btn" id="specArtyBrakeSmokeBtn"><i class="ti ti-cloud" aria-hidden="true"></i>Xì khói ngang loa 2 tầng</button>
           <button class="btn" id="specArtyArcElevBtn"><i class="ti ti-angle" aria-hidden="true"></i>Nâng góc cầu vồng 55°</button>
         </div>
+        <div class="grid2" style="margin-top:4px">
+          <button class="btn" id="specArtySpareDroneBtn"><i class="ti ti-drone" aria-hidden="true"></i>Quay cánh 2 drone</button>
+          <button class="btn" id="specArtyTurretTurnBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Quay tháp pháo 180°</button>
+        </div>
         <small class="lab-box-note">
-          Loa hãm lùi xả 2 luồng phản lực khói lửa ngang ngả sau 16°, 2 chân chống thủy lực và lưỡi càng thép hộp cắm sâu xuống đất.
+          Loa hãm lùi xả 2 luồng phản lực khói lửa ngang ngả sau 16°, 2 chân chống thủy lực và lưỡi càng thép hộp cắm sâu xuống đất. Cặp drone trinh sát gắn đối xứng 2 bên nóc cabin (trái & phải).
         </small>
       `;
       document.getElementById('specArtyDeployBtn').onclick = () => { initAudio(); triggerDeployToggle(); };
       document.getElementById('specArtyBrakeSmokeBtn').onclick = () => { initAudio(); triggerArtyBrakeSmoke(); };
       document.getElementById('specArtyArcElevBtn').onclick = () => { initAudio(); setElevation(55); };
+      document.getElementById('specArtySpareDroneBtn').onclick = () => { initAudio(); triggerDroneSpinTest(); };
+      document.getElementById('specArtyTurretTurnBtn').onclick = () => { initAudio(); triggerArtyTurretTurn(); };
     } else if (type === 'ALL_ROUNDER') {
       box.innerHTML = `
         <div class="lab-box-title"><i class="ti ti-tank" aria-hidden="true"></i>XE TĂNG CHỦ LỰC HALBERD MK.3</div>
@@ -953,8 +1630,9 @@
           <button class="btn" id="specMbtEvacSmokeBtn"><i class="ti ti-cloud" aria-hidden="true"></i>Xì khói bầu hút nòng trơn</button>
           <button class="btn" id="specMbtRcwsSpinBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Xoay trạm súng máy nóc</button>
         </div>
+        <button class="btn" id="specMbtEjectStubBtn" style="margin-top:4px;width:100%"><i class="ti ti-cylinder" aria-hidden="true"></i>Hất đế liều phóng (Nóc đuôi tháp)</button>
         <small class="lab-box-note">
-          Pháo nòng trơn L/55 có bầu hút gom khí thuốc, đạn xuyên giáp APFSDS bung tách 3 mảnh guốc ốp nhôm bay sang hai bên.
+          Pháo nòng trơn L/55 dùng đạn liều tự cháy; sau mỗi phát cửa nhỏ nóc đuôi tháp bật mở hất đế liều phóng kim loại ra sau.
         </small>
       `;
       document.getElementById('specMbtSabotBtn').onclick = () => { initAudio(); triggerSabotShot(); };
@@ -963,9 +1641,23 @@
         initAudio();
         if (activeUnit && activeUnit.rcwsTurret) activeUnit.rcwsTurret.rotation.y += 0.8;
       };
+      document.getElementById('specMbtEjectStubBtn').onclick = () => {
+        initAudio();
+        if (activeUnit) {
+          activeUnit.reloadTimer = activeUnit.reloadDuration || 2.5;
+        }
+      };
     } else if (type === 'GATLING') {
+      const front = (activeUnit && activeUnit.kit && activeUnit.kit.m && activeUnit.kit.m.find(id => id === 'dozer' || id === 'vshield')) || 'dozer';
+      const hasDozer = front === 'dozer';
       box.innerHTML = `
         <div class="lab-box-title"><i class="ti ti-bolt" aria-hidden="true"></i>XE CHI VIỆN HAILSTORM R6 (6 NÒNG XOAY)</div>
+        <div class="row" style="margin-bottom:6px">
+          <button class="btn ${LabBermSystem.active ? 'on' : 'btn-alt'}" id="specGatlingDigBtn" style="flex:1;padding:8px" ${!hasDozer ? 'disabled style="opacity:0.6"' : ''}>
+            <i class="ti ti-shovel" aria-hidden="true"></i>${LabBermSystem.active ? 'Đang núp trong ổ chữ U (Bấm để dọn)' : 'Ủi ụ đất che thân (Ổ chữ U)'}
+          </button>
+          ${LabBermSystem.active ? '<button class="btn btn-danger" id="specGatlingClearBermBtn" style="padding:8px 12px" title="Dọn sạch công sự & hào"><i class="ti ti-trash" aria-hidden="true"></i></button>' : ''}
+        </div>
         <button class="btn btn-alt" id="specGatlingBurstBtn" style="margin-bottom:4px;padding:8px">
           <i class="ti ti-bolt" aria-hidden="true"></i>Xả liên thanh cụm 6 nòng (Mưa vỏ đạn)
         </button>
@@ -974,17 +1666,33 @@
           <button class="btn" id="specGatlingOverheatBtn"><i class="ti ti-flame" aria-hidden="true"></i>Nung đỏ rực 6 nòng</button>
         </div>
         <small class="lab-box-note">
-          Cụm 6 nòng quay 38 rad/s, nòng pháo đỏ rực nhiệt độ cao, mưa vỏ đạn 30mm văng rào rào từ cửa hông nảy tanh tách trên sàn.
+          ${!hasDozer ?
+            '<span style="color:#f87171">Xe đang gắn khiên giáp chữ V (không có lưỡi ủi) — hãy chọn Lưỡi ủi ở panel trang bị bên trái để đào ụ đất.</span>' :
+            (LabBermSystem.active ?
+              'Xe đang lún trong hào sâu ~0.5m, mũi và hai sườn được che chắn kín sau công sự ụ đất chữ U cao 1.6m. Chỉ cụm 6 nòng 30mm nhô lên tác chiến.' :
+              'Cụm 6 nòng quay 38 rad/s, nòng đỏ rực nhiệt độ cao. Bấm nút hoặc nhấn phím [X] để hạ lưỡi ủi đào hào và đắp bờ đất che thân.')
+          }
         </small>
       `;
+      document.getElementById('specGatlingDigBtn').onclick = () => {
+        initAudio();
+        if (LabBermSystem.active) LabBermSystem.clear();
+        else LabBermSystem.dig();
+      };
+      if (document.getElementById('specGatlingClearBermBtn')) {
+        document.getElementById('specGatlingClearBermBtn').onclick = () => {
+          initAudio();
+          LabBermSystem.clear();
+        };
+      }
       document.getElementById('specGatlingBurstBtn').onclick = () => {
         initAudio();
         if (activeUnit) {
-          activeUnit.spinUpTime = 2.0;
+          activeUnit.spinUpTime = activeUnit.spinRequired || 0.45;
           activeUnit.isSpinning = true;
           activeUnit.gatlingHeat = Math.min(1.0, (activeUnit.gatlingHeat || 0) + 0.35);
-          activeUnit.updateGatling(0.12, true, stubBallistics, stubRadar);
-          spawn30mmCasings(16);
+          burstTimer = 0.65;
+          activeUnit.updateGatling(0.05, true, stubBallistics, stubRadar);
         }
       };
       document.getElementById('specGatlingSpinBtn').onclick = () => {
@@ -997,26 +1705,45 @@
       };
     } else if (type === 'SCOUT') {
       box.innerHTML = `
-        <div class="lab-box-title"><i class="ti ti-radar-2" aria-hidden="true"></i>XE TRINH SÁT MARTEN R4 (4x4 & TÊN LỬA)</div>
+        <div class="lab-box-title"><i class="ti ti-radar-2" aria-hidden="true"></i>XE TRINH SÁT MARTEN R4</div>
         <button class="btn btn-alt" id="specScoutAtgmBtn" style="margin-bottom:4px;padding:8px">
-          <i class="ti ti-rocket" aria-hidden="true"></i>Phóng tên lửa chống tăng ATGM (Lửa phản lực)
+          <i class="ti ti-rocket" aria-hidden="true"></i>Phóng tên lửa chống tăng
         </button>
         <div class="grid2">
+          <button class="btn" id="specScoutAtgmReloadBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Nạp tên lửa chống tăng</button>
+          <button class="btn" id="specScoutGunnerDownBtn"><i class="ti ti-user-x" aria-hidden="true"></i>Xạ thủ hy sinh và người lên thay</button>
           <button class="btn" id="specScoutMgBurstBtn"><i class="ti ti-crosshair" aria-hidden="true"></i>Xả súng máy hạng nặng</button>
           <button class="btn" id="specScoutRadarSpinBtn"><i class="ti ti-radar" aria-hidden="true"></i>Quay quét radar trinh sát</button>
-          <button class="btn" id="specScoutReloadBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Nạp đạn súng máy (thay hộp 100 viên)</button>
+          <button class="btn" id="specScoutReloadBtn"><i class="ti ti-rotate" aria-hidden="true"></i>Nạp đạn súng máy</button>
         </div>
         <small class="lab-box-note">
-          Khung gầm 4x4 cơ động cao, bệ tên lửa chống tăng ATGM có luồng lửa phản lực phụt đuôi, súng máy 12.7mm và đĩa radar trinh sát.
+          Xe bánh lốp cơ động cao, bệ tên lửa chống tăng nạp đạn thủ công qua cửa nóc, súng máy với kíp xạ thủ chiến đấu và người dự bị lên thay khi hy sinh.
         </small>
       `;
       document.getElementById('specScoutAtgmBtn').onclick = () => { initAudio(); triggerScoutATGM(); };
+      document.getElementById('specScoutAtgmReloadBtn').onclick = () => {
+        initAudio();
+        const u = activeUnit;
+        if (!u) return;
+        u.antiTankCooldownMax = 11.0;
+        u.antiTankCooldown = 11.0;
+        if (typeof partLog === 'function') {
+          partLog(['Nạp tên lửa chống tăng: mở nắp đuôi, rút vỏ rỗng và lấy đạn mới qua cửa nóc']);
+        }
+      };
+      document.getElementById('specScoutGunnerDownBtn').onclick = () => {
+        initAudio();
+        const u = activeUnit;
+        if (!u || typeof VehicleDamage === 'undefined') return;
+        const ev = VehicleDamage.debugAction(u, 'gunner', fx) || [];
+        if (typeof partLog === 'function') partLog(ev.map(e => e.text));
+      };
       document.getElementById('specScoutMgBurstBtn').onclick = () => {
         initAudio();
         if (activeUnit) {
-          activeUnit.gatlingShotFlash = 1.0;
-          activeUnit.updateGatling(0.08, true, stubBallistics, stubRadar);
-          spawn30mmCasings(4);
+          activeUnit.spinUpTime = activeUnit.spinRequired || 0.2;
+          burstTimer = 0.65;
+          activeUnit.updateGatling(0.05, true, stubBallistics, stubRadar);
         }
       };
       document.getElementById('specScoutReloadBtn').onclick = () => {
@@ -1321,6 +2048,12 @@
       const presets = ['muzzle', 'orbit', 'suspension', 'exhaust'];
       const next = presets[(presets.indexOf(state.cam) + 1) % presets.length];
       document.querySelector(`#camRow [data-cam="${next}"]`).click();
+    } else if (e.code === 'KeyX') {
+      if (state.tankType === 'GATLING') {
+        initAudio();
+        if (LabBermSystem.active) LabBermSystem.clear();
+        else LabBermSystem.dig();
+      }
     } else if (e.code === 'KeyR') {
       repairVehicle();
     } else if (/^Digit[1-4]$/.test(e.code)) {
@@ -1359,7 +2092,7 @@
   // Khởi tạo xe ban đầu
   loadUnit(state.tankType, state.team);
   // móc cho script chụp ảnh tự động (CDP): đổi xe, đặt camera
-  window.__lab = { loadUnit, orbit, updateCamera, state, fx, renderer, camera, scene, setDamagePercent, get unit() { return activeUnit; } };
+  window.__lab = { loadUnit, orbit, updateCamera, state, fx, renderer, camera, scene, setDamagePercent, labKits, reloadActiveUnit, toggleEquip, get unit() { return activeUnit; } };
 
   // ===========================================================================
   // VÒNG LẶP CHÍNH MÔ PHỎNG CHIẾN XA VÀ HIỆU ỨNG HẠT
@@ -1402,20 +2135,25 @@
       }
 
       // 3. Xử lý bắn tự động hoặc giữ nút bắn
+      if (burstTimer > 0) burstTimer = Math.max(0, burstTimer - dt);
       if (state.autoFire) {
         autoTimer += dt;
-        const fireInterval = (u.tankType === 'GATLING') ? 0.08 : (u.tankType === 'ARTILLERY' ? 2.8 : 1.8);
+        const fireInterval = (u.tankType === 'GATLING' || u.tankType === 'SCOUT') ? 0.08 : (u.tankType === 'ARTILLERY' ? 2.8 : 1.8);
         if (autoTimer >= fireInterval) {
           autoTimer = 0;
           triggerFire();
         }
       }
-      if (state.firing && u.tankType === 'GATLING') {
-        u.updateGatling(dt, true, stubBallistics, stubRadar);
+      if (u.tankType === 'GATLING' || u.tankType === 'SCOUT') {
+        const hold = state.firing || burstTimer > 0;
+        if (hold || u.spinUpTime > 0 || u.gatlingAudioFiring || u.gatlingGlow > 0) {
+          u.updateGatling(dt, hold, stubBallistics, stubRadar);
+        }
       }
 
       // 4. Giảm nạp đạn & hồi phục giật nòng
       if (u.reloadTimer > 0) u.reloadTimer = Math.max(0, u.reloadTimer - dt);
+      if (u.antiTankCooldown > 0) u.antiTankCooldown = Math.max(0, u.antiTankCooldown - dt);
       if (u.barrelRecoil > 0 && u.barrelGroup) {
         u.barrelRecoil = Math.max(0, u.barrelRecoil - dt * 38);
         u.barrelGroup.position.z = u.barrelRecoil;
@@ -1479,42 +2217,15 @@
       }
 
       // 7. Cập nhật hoạt ảnh mô hình và các hạt hiệu ứng
+      syncLabDrone(dt);
       if (u.modelAnimator) u.modelAnimator.update(dt, u);
+      if (typeof Equipment !== 'undefined' && Equipment.update) Equipment.update(dt, { units: [u], effectsManager: { fx } });
+      if (typeof ReloadFX !== 'undefined') ReloadFX.update(dt, null, [u], scene);
       if (typeof u.updateFXParticles === 'function') u.updateFXParticles(dt);
       updateHUD();
     }
 
-    // 8. Cập nhật vật lý các vỏ đạn 30mm nảy sàn
-    for (let i = shellCasings.length - 1; i >= 0; i--) {
-      const c = shellCasings[i];
-      c.life -= dt;
-      c.vy -= 180 * dt;
-      c.mesh.position.x += c.vx * dt;
-      c.mesh.position.y += c.vy * dt;
-      c.mesh.position.z += c.vz * dt;
-      c.mesh.rotation.x += c.rx * dt;
-      c.mesh.rotation.y += c.ry * dt;
-      if (c.mesh.position.y <= 0.18) {
-        c.mesh.position.y = 0.18;
-        c.vy = -c.vy * 0.42;
-        c.vx *= 0.65;
-        c.vz *= 0.65;
-        c.rx *= 0.45;
-        c.ry *= 0.45;
-        c.bounces++;
-        if (Math.abs(c.vy) < 4) c.vy = 0;
-      }
-      if (c.life <= 0.8) {
-        c.mesh.scale.setScalar(Math.max(0.01, c.life / 0.8));
-      }
-      if (c.life <= 0) {
-        scene.remove(c.mesh);
-        c.mesh.geometry.dispose();
-        shellCasings.splice(i, 1);
-      }
-    }
-
-    // 9. Cập nhật đường bay tên lửa chống tăng ATGM
+    // 8. Cập nhật đường bay tên lửa chống tăng ATGM
     for (let i = activeRockets.length - 1; i >= 0; i--) {
       const r = activeRockets[i];
       r.t += dt;

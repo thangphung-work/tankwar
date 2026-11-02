@@ -24,6 +24,16 @@ class TankInspector {
     this.keys = {};                      // phím lái thử đang giữ (W A S D, Shift, Q E, Z X)
     this.camFocus = { x: 0, z: 0 };      // tâm camera: bám theo xe khi lái thử
 
+    // Quản lý ghi hình quay video marketing & chụp ảnh 3D
+    this.isRecording = false;
+    this.recorder = null;
+    this._recChunks = [];
+    this._recShouldSave = true;
+    this._recordConfig = null;
+    this._recordElapsed = 0;
+    this._recordDuration = 8;
+    this._preRecordState = null;
+
     // Dữ liệu thông số & đặc điểm thiết kế của 4 dòng xe
     this.tankSpecs = {
       ALL_ROUNDER: {
@@ -458,6 +468,74 @@ class TankInspector {
   buildRedesignedMarkup() {
     return `
       <div class="ti-backdrop"></div>
+      <!-- HUD hiển thị trong lúc đang quay phim Marketing -->
+      <div id="ti-recording-hud" class="ti-recording-hud hidden">
+        <div class="ti-rec-pulse">
+          <span class="ti-rec-dot"></span>
+          <span class="ti-rec-badge">REC</span>
+        </div>
+        <div class="ti-rec-info">
+          <span class="ti-rec-mode-name" id="ti-rec-mode-name">QUAY 360° SHOWCASE</span>
+          <span class="ti-rec-time" id="ti-rec-time">00:00 / 00:08</span>
+        </div>
+        <div class="ti-rec-bar" id="ti-rec-bar-box">
+          <div class="ti-rec-bar-fill" id="ti-rec-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div class="ti-rec-actions">
+          <button id="ti-rec-stop-btn" class="ti-rec-act-stop" title="Dừng và lưu video [Phím R]"><i class="ti ti-player-stop" aria-hidden="true"></i> DỪNG & LƯU</button>
+          <button id="ti-rec-cancel-btn" class="ti-rec-act-cancel" title="Hủy bỏ không lưu [ESC]"><i class="ti ti-x" aria-hidden="true"></i> HỦY</button>
+        </div>
+      </div>
+
+      <!-- Hộp thoại cấu hình quay phim Marketing -->
+      <div id="ti-record-modal" class="ti-record-modal hidden">
+        <div class="ti-rec-box">
+          <div class="ti-rec-box-head">
+            <div class="ti-rec-box-title"><i class="ti ti-video" aria-hidden="true"></i> CÔNG CỤ QUAY PHIM MARKETING</div>
+            <button id="ti-record-modal-close" class="ti-rec-box-close" title="Đóng [ESC]"><i class="ti ti-x" aria-hidden="true"></i></button>
+          </div>
+          <div class="ti-rec-box-body">
+            <div class="ti-rec-sec">
+              <div class="ti-rec-sec-title">CHỌN PHONG CÁCH QUAY</div>
+              <div class="ti-rec-mode-grid">
+                <div class="ti-rec-card active" data-mode="360" id="ti-rmc-360">
+                  <div class="ti-rec-card-top"><i class="ti ti-360" aria-hidden="true"></i><b>XOAY 360° TỰ ĐỘNG</b></div>
+                  <p>Camera tự xoay mượt mà 1 vòng quanh xe, chuẩn góc quay điện ảnh giới thiệu khí tài.</p>
+                </div>
+                <div class="ti-rec-card" data-mode="free" id="ti-rmc-free">
+                  <div class="ti-rec-card-top"><i class="ti ti-player-play" aria-hidden="true"></i><b>TỰ DO TƯƠNG TÁC</b></div>
+                  <p>Tự do phóng to thu nhỏ, lái thử xe, xoay tháp pháo, bắn thử các loại đạn và nhả khói.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="ti-rec-sec" id="ti-rec-dur-sec">
+              <div class="ti-rec-sec-title">THỜI LƯỢNG QUAY 360°</div>
+              <div class="ti-rec-btn-group">
+                <button type="button" class="ti-rec-dur-btn active" data-dur="8">8 GIÂY (Shorts/TikTok)</button>
+                <button type="button" class="ti-rec-dur-btn" data-dur="12">12 GIÂY (Tiêu chuẩn)</button>
+                <button type="button" class="ti-rec-dur-btn" data-dur="16">16 GIÂY (Chậm rãi)</button>
+              </div>
+            </div>
+
+            <div class="ti-rec-sec">
+              <div class="ti-rec-sec-title">TÙY CHỌN HÌNH ẢNH</div>
+              <label class="ti-rec-check-row">
+                <input type="checkbox" id="ti-rec-clean-check" checked>
+                <span><b>Khung hình sạch:</b> Tự động ẩn toàn bộ nút bấm & bảng số liệu (video chỉ có xe)</span>
+              </label>
+              <label class="ti-rec-check-row">
+                <input type="checkbox" id="ti-rec-fps60-check" checked>
+                <span><b>Tốc độ 60 FPS:</b> Chuyển động mượt mà sắc nét phục vụ dựng video chuyên nghiệp</span>
+              </label>
+            </div>
+          </div>
+          <div class="ti-rec-box-foot">
+            <button id="ti-record-start-btn" class="ti-rec-start-btn"><i class="ti ti-player-record" aria-hidden="true"></i> BẮT ĐẦU GHI HÌNH [R]</button>
+          </div>
+        </div>
+      </div>
+
       <div class="ti-modal">
         <header class="ti-header">
           <button id="ti-close-btn" class="ti-close-btn" title="Quay lại [ESC]"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
@@ -472,10 +550,11 @@ class TankInspector {
             <div class="ti-stage">
               <canvas id="ti-canvas"></canvas>
               <div class="ti-stage-foot">
-                <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc (cần động cơ)</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>Ctrl</kbd> ngắm</span><span><kbd>G</kbd> thả khói</span><span><i class="ti ti-mouse" aria-hidden="true"></i> nhấp trái ngắm · nhấp phải lái tới · kéo xoay · cuộn zoom</span><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
+                <div class="ti-clean-exit-hint" id="ti-clean-exit-hint" title="Bấm vào đây hoặc phím C để hiện lại giao diện"><i class="ti ti-eye" aria-hidden="true"></i> HIỆN LẠI GIAO DIỆN [PHÍM C]</div>
+                <div class="ti-controls-hint"><span><kbd>W A S D</kbd> lái</span><span><kbd>Shift</kbd> tăng tốc</span><span><kbd>Q E</kbd> xoay tháp</span><span><kbd>Z X</kbd> nâng hạ nòng</span><span><kbd>Space</kbd> bắn</span><span><kbd>Ctrl</kbd> ngắm</span><span><kbd>G</kbd> thả khói</span><span><kbd>C</kbd> xem sạch</span><span><kbd>R</kbd> quay marketing</span><span><kbd>P</kbd> chụp ảnh</span><span><i class="ti ti-mouse" aria-hidden="true"></i> kéo xoay · cuộn zoom</span><button id="ti-clean-toggle" class="ti-hint-toggle" title="Ẩn/Hiện toàn bộ thanh giao diện [Phím C]"><i class="ti ti-eye" aria-hidden="true"></i> TOÀN CẢNH</button><button id="ti-autorotate-toggle" class="ti-hint-toggle active">TỰ XOAY</button></div>
               </div>
               <div class="ti-toast" id="ti-toast" role="status"></div>
-              <div class="ti-test-panel"><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><button id="ti-repair-all-btn" class="ti-hint-toggle ti-repair-all-btn hidden" disabled title="Xe nguyên vẹn"><i class="ti ti-tool" aria-hidden="true"></i> <span>SỬA CHỮA</span></button><button id="ti-range-real-btn" class="ti-hint-toggle ti-range-enter" style="background:rgba(255,183,0,0.12);border-color:#ffb700;color:#ffb700" title="Chiến trường lớn 2km: có làng mạc, xe bia AI bắn trả, đo độ dày giáp chi tiết"><i class="ti ti-map-2" aria-hidden="true"></i> THAO TRƯỜNG ↗</button><a class="ti-lab-link ti-lab-detail" id="ti-link-fx-lab" href="fx_lab.html?from=3d" target="_blank" rel="noopener" title="Trang riêng: quỹ đạo, tốc độ chậm, bắn vào tường / tòa nhà / xe bia / boong-ke"><i class="ti ti-flask" aria-hidden="true"></i> THỬ ĐẠN CHI TIẾT ↗</a></div>
+              <div class="ti-test-panel"><button id="ti-record-btn" class="ti-hint-toggle ti-record-btn" title="Quay video màn hình làm tư liệu marketing [Phím R]"><i class="ti ti-video" aria-hidden="true"></i> QUAY MARKETING</button><button id="ti-screenshot-btn" class="ti-hint-toggle ti-screenshot-btn" title="Chụp ảnh độ nét cao làm ảnh bìa / poster [Phím P]"><i class="ti ti-camera" aria-hidden="true"></i> CHỤP ẢNH</button><button id="ti-test-fire-btn" class="ti-hint-toggle ti-test-fire-btn" title="Giữ để xả đạn liên thanh / bấm để khai hỏa pháo"><i class="ti ti-flame" aria-hidden="true"></i> BẮN THỬ [SPACE]</button><div class="ti-ammo-test" id="ti-ammo-test"></div><button id="ti-repair-all-btn" class="ti-hint-toggle ti-repair-all-btn hidden" disabled title="Xe nguyên vẹn"><i class="ti ti-tool" aria-hidden="true"></i> <span>SỬA CHỮA</span></button><button id="ti-range-real-btn" class="ti-hint-toggle ti-range-enter" style="background:rgba(255,183,0,0.12);border-color:#ffb700;color:#ffb700" title="Chiến trường lớn 2km: có làng mạc, xe bia AI bắn trả, đo độ dày giáp chi tiết"><i class="ti ti-map-2" aria-hidden="true"></i> THAO TRƯỜNG ↗</button><a class="ti-lab-link ti-lab-detail" id="ti-link-fx-lab" href="fx_lab.html?from=3d" target="_blank" rel="noopener" title="Trang riêng: quỹ đạo, tốc độ chậm, bắn vào tường / tòa nhà / xe bia / boong-ke"><i class="ti ti-flask" aria-hidden="true"></i> THỬ ĐẠN CHI TIẾT ↗</a></div>
             </div>
             <div class="ti-equip-dock" id="ti-equip-dock" aria-label="Chọn trang bị"></div>
           </section>
@@ -1247,20 +1326,40 @@ class TankInspector {
     const u = this.activeUnit;
     if (!u || u.tankType !== 'ARTILLERY' || !u.chassisGroup || typeof ReconDrone === 'undefined' || !ReconDrone.buildDock) return;
     const ch = u.chassisGroup;
-    if (!u._droneDock || u._droneDock.parent !== ch) { u._droneDock = ReconDrone.buildDock(); ch.add(u._droneDock); }
-    // UAV cảm tử (ô UAV): ống phóng trên chân đế mô-đun thay đế sạc + drone trinh sát
-    const kami = u.uavKind === 'kami';
-    u._droneDock.visible = !kami;
-    if (u._viewDrone) u._viewDrone.visible = !kami;
-    if (kami) return;
+    // 2 bệ sạc 2 bên nắp cabin (phải và trái đối xứng)
+    if (!u._droneDock || u._droneDock.parent !== ch) { u._droneDock = ReconDrone.buildDock(1); ch.add(u._droneDock); }
+    if (!u._droneDockL || u._droneDockL.parent !== ch) { u._droneDockL = ReconDrone.buildDock(-1); ch.add(u._droneDockL); }
+
+    const uSlots = (typeof Equipment !== 'undefined' && Equipment.uavSlotsOf) ? Equipment.uavSlotsOf(u.kit || u, u.tankType) : 0;
+    const kami = u.uavKind === 'kami' && uSlots > 0;
+    const recon = u.uavKind === 'recon' && uSlots > 0;
+    u._droneDock.visible = recon && uSlots >= 1;
+    u._droneDockL.visible = recon && uSlots >= 2;
+    if (u._viewDrone) u._viewDrone.visible = recon && uSlots >= 1;
+    if (u._viewDroneL) u._viewDroneL.visible = recon && uSlots >= 2;
+    if (!recon) return;
+
+    // Drone 1 bên phải
     if (!u._viewDrone) u._viewDrone = ReconDrone.build(u.team);
     if (u._viewDrone.parent !== ch) {
       ch.add(u._viewDrone);
       u._viewDrone.rotation.set(0, 0, 0);
       u._viewDrone.position.set(ReconDrone.PAD.x, ReconDrone.PAD.y, ReconDrone.PAD.z);
     }
+
+    // Drone 2 bên trái
+    if (!u._viewDroneL) u._viewDroneL = ReconDrone.build(u.team);
+    if (u._viewDroneL.parent !== ch) {
+      ch.add(u._viewDroneL);
+      u._viewDroneL.rotation.set(0, 0, 0);
+      const padL = ReconDrone.PAD_L || { x: -ReconDrone.PAD.x, y: ReconDrone.PAD.y, z: ReconDrone.PAD.z };
+      u._viewDroneL.position.set(padL.x, padL.y, padL.z);
+    }
+
     ReconDrone.animateDock(u._droneDock, dt, false, 'ready');
+    ReconDrone.animateDock(u._droneDockL, dt, false, 'ready');
     ReconDrone.animate(u._viewDrone, dt, 0);
+    ReconDrone.animate(u._viewDroneL, dt, 0);
   }
 
   // Cập nhật nội dung bảng thông số kỹ thuật
@@ -1400,17 +1499,31 @@ class TankInspector {
     // Chỉ đứng ngắm (camera tự xoay chậm, xe đứng yên, không khói / đạn): vẽ ~30 khung / giây thay vì 60 — đỡ nóng máy.
     // Bãi thử / kính ngắm / đang thao tác / xe còn chạy / hiệu ứng còn bay: vẽ đủ khung
     const u0 = this.activeUnit;
-    const busy = this.rangeMode || this.sight || this.isMouseDown || this.testFiring || this.driveTo || this.mouseShot ||
+    const busy = this.isRecording || this.rangeMode || this.sight || this.isMouseDown || this.testFiring || this.driveTo || this.mouseShot ||
       nowMs - this._lastActive < 1500 || (this.pendingImpacts && this.pendingImpacts.length) ||
       Object.values(this.keys || {}).some(Boolean) || (u0 && Math.abs(u0.speed || 0) > 0.05);
     if (busy) this._busyUntil = nowMs + 2500;   // còn khói / giật nòng / xe trôi chậm dần sau khi ngừng tay
-    if (nowMs > (this._busyUntil || 0) && this.lastFrameMs && nowMs - this.lastFrameMs < 30) return;
+    if (!this.isRecording && nowMs > (this._busyUntil || 0) && this.lastFrameMs && nowMs - this.lastFrameMs < 30) return;
     const dt = Math.min(0.05, Math.max(0, (nowMs - (this.lastFrameMs || nowMs)) / 1000));
     this.lastFrameMs = nowMs;
 
     // Lái thử / bắn thử: chạy đúng logic xe trong trận (spg.js)
     if (this.activeUnit) this.simulateTestFire(this.activeUnit, dt);
     this.syncViewDrone(dt);
+
+    // Xử lý tiến trình quay phim Marketing
+    if (this.isRecording && this._recordConfig) {
+      this._recordElapsed += dt;
+      if (this._recordConfig.mode === '360') {
+        this.cameraYaw += (Math.PI * 2 / this._recordDuration) * dt;
+        this.updateRecordingProgress(this._recordElapsed, this._recordDuration);
+        if (this._recordElapsed >= this._recordDuration) {
+          this.stopRecording(true);
+        }
+      } else {
+        this.updateRecordingProgress(this._recordElapsed, 0);
+      }
+    }
 
     // Camera bám theo xe (mượt) + tự xoay rất chậm (~100 giây một vòng) khi không kéo chuột
     const u = this.activeUnit;
@@ -2387,8 +2500,13 @@ class TankInspector {
 
   // Đóng giao diện
   close() {
+    if (this.isRecording) {
+      this.stopRecording(true);
+    }
+    this.closeRecordModal();
     const overlay = document.getElementById('tank-inspector-overlay');
     if (overlay) {
+      overlay.classList.remove('ti-clean-mode');
       overlay.classList.add('hidden');
     }
     this.exitRangeMode({ closing: true });
@@ -2411,6 +2529,231 @@ class TankInspector {
       if (!this.isOpen && se && typeof se.setMusicMode === 'function') se.setMusicMode(this._musicBefore || 'lobby');
     }, 150);
     this.schedulePrewarm(800);   // dựng bù xe dựng sẵn còn thiếu cho lần mở sau
+  }
+
+  // =========================================================================
+  // CÔNG CỤ QUAY PHIM MARKETING & CHỤP ẢNH TƯ LIỆU CHO PHÒNG XEM XE 3D
+  // =========================================================================
+
+  openRecordModal() {
+    const modal = document.getElementById('ti-record-modal');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  closeRecordModal() {
+    const modal = document.getElementById('ti-record-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  toggleCleanView() {
+    const overlay = document.getElementById('tank-inspector-overlay');
+    if (!overlay) return;
+    const isClean = overlay.classList.toggle('ti-clean-mode');
+    const btn = document.getElementById('ti-clean-toggle');
+    if (btn) btn.classList.toggle('active', isClean);
+    if (this._fit) this._fit();
+    this.toast(isClean ? '<i class="ti ti-eye-off"></i> Đã bật chế độ xem sạch (Toàn màn hình, không nút)' : '<i class="ti ti-eye"></i> Đã hiện lại giao diện đầy đủ', 2200);
+  }
+
+  startRecording(opts = {}) {
+    const canvas = document.getElementById('ti-canvas');
+    if (!canvas || !this.renderer || !this.scene || !this.camera) return;
+
+    if (typeof MediaRecorder === 'undefined' || typeof canvas.captureStream !== 'function') {
+      this.toast('<i class="ti ti-alert-triangle"></i> Trình duyệt không hỗ trợ MediaRecorder quay màn hình canvas trực tiếp', 3500);
+      return;
+    }
+
+    const mode = opts.mode || '360';
+    const duration = Math.max(3, parseFloat(opts.duration) || 8);
+    const fps = opts.fps === 30 ? 30 : 60;
+    const cleanView = opts.cleanView !== false;
+
+    // Chọn định dạng video hỗ trợ tốt nhất
+    let mimeType = 'video/webm; codecs=vp9';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      if (MediaRecorder.isTypeSupported('video/mp4; codecs=avc1')) mimeType = 'video/mp4; codecs=avc1';
+      else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
+      else if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) mimeType = 'video/webm; codecs=vp8';
+      else mimeType = 'video/webm';
+    }
+
+    try {
+      const stream = canvas.captureStream(fps);
+      const recorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+        videoBitsPerSecond: 14000000 // 14 Mbps cho chất lượng video quảng cáo sắc nét
+      });
+
+      this._recChunks = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) this._recChunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        if (this._recShouldSave && this._recChunks.length > 0) {
+          const blob = new Blob(this._recChunks, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const tankName = (this.currentTankType || 'tank').toLowerCase();
+          const d = new Date();
+          const pad = (n) => String(n).padStart(2, '0');
+          const timeStr = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+          a.download = `tankwar_${tankName}_${mode}_${timeStr}.${ext}`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 2000);
+          this.toast('<i class="ti ti-check"></i> Đã xuất và tải video marketing về máy!', 3200);
+        }
+        this._recChunks = [];
+      };
+
+      this.recorder = recorder;
+      this.isRecording = true;
+      this._recShouldSave = true;
+      this._recordConfig = { mode, duration, fps, cleanView };
+      this._recordElapsed = 0;
+      this._recordDuration = duration;
+
+      this._preRecordState = {
+        autoRotate: this.autoRotate,
+        cameraYaw: this.cameraYaw,
+        cameraPitch: this.cameraPitch,
+        cameraDistance: this.cameraDistance,
+        cleanViewApplied: cleanView
+      };
+
+      if (cleanView) {
+        const overlay = document.getElementById('tank-inspector-overlay');
+        if (overlay) overlay.classList.add('ti-clean-mode');
+        if (this._fit) this._fit();
+      }
+
+      if (mode === '360') {
+        this.autoRotate = false;
+        this.syncAutoRotateBtn();
+      }
+
+      recorder.start(250);
+      this.showRecordingHUD(true, mode, duration);
+      this.closeRecordModal();
+      this.toast(`<i class="ti ti-video"></i> Bắt đầu ghi hình ${mode === '360' ? '360° tự động' : 'tự do'}...`, 2200);
+    } catch (err) {
+      console.error('Lỗi khi bắt đầu quay phim:', err);
+      this.toast('<i class="ti ti-alert-triangle"></i> Lỗi khởi tạo MediaRecorder: ' + (err.message || 'Không thể quay'), 3500);
+      this.isRecording = false;
+    }
+  }
+
+  stopRecording(save = true) {
+    if (!this.isRecording || !this.recorder) return;
+    this._recShouldSave = save;
+    try {
+      if (this.recorder.state !== 'inactive') this.recorder.stop();
+    } catch (e) {
+      console.error(e);
+    }
+
+    this.isRecording = false;
+    this.showRecordingHUD(false);
+
+    if (this._preRecordState && this._preRecordState.cleanViewApplied) {
+      const overlay = document.getElementById('tank-inspector-overlay');
+      if (overlay) overlay.classList.remove('ti-clean-mode');
+      if (this._fit) this._fit();
+    }
+
+    if (this._preRecordState && this._recordConfig && this._recordConfig.mode === '360') {
+      this.autoRotate = this._preRecordState.autoRotate;
+      this.syncAutoRotateBtn();
+    }
+
+    if (!save) {
+      this.toast('<i class="ti ti-x"></i> Đã hủy đoạn video vừa quay', 2000);
+    }
+  }
+
+  cancelRecording() {
+    this.stopRecording(false);
+  }
+
+  showRecordingHUD(show, mode, duration) {
+    const hud = document.getElementById('ti-recording-hud');
+    if (!hud) return;
+    if (show) {
+      hud.classList.remove('hidden');
+      const modeName = document.getElementById('ti-rec-mode-name');
+      const barBox = document.getElementById('ti-rec-bar-box');
+      const barFill = document.getElementById('ti-rec-bar-fill');
+      if (modeName) {
+        modeName.textContent = mode === '360' ? 'QUAY 360° SHOWCASE' : 'QUAY TỰ DO TƯƠNG TÁC';
+      }
+      if (barBox) {
+        barBox.style.display = mode === '360' ? 'block' : 'none';
+      }
+      if (barFill) barFill.style.width = '0%';
+      this.updateRecordingProgress(0, mode === '360' ? duration : 0);
+    } else {
+      hud.classList.add('hidden');
+    }
+  }
+
+  updateRecordingProgress(elapsed, total) {
+    const timeEl = document.getElementById('ti-rec-time');
+    const barFill = document.getElementById('ti-rec-bar-fill');
+    if (timeEl) {
+      const min = Math.floor(elapsed / 60);
+      const sec = Math.floor(elapsed % 60);
+      const timeStr = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+      if (total > 0) {
+        const totMin = Math.floor(total / 60);
+        const totSec = Math.floor(total % 60);
+        timeEl.textContent = `${timeStr} / ${String(totMin).padStart(2, '0')}:${String(totSec).padStart(2, '0')}`;
+      } else {
+        timeEl.textContent = timeStr;
+      }
+    }
+    if (barFill && total > 0) {
+      const pct = Math.min(100, (elapsed / total) * 100);
+      barFill.style.width = pct.toFixed(1) + '%';
+    }
+  }
+
+  takeScreenshot() {
+    const canvas = document.getElementById('ti-canvas');
+    if (!canvas || !this.renderer || !this.scene || !this.camera) return;
+
+    // Render 1 frame trực tiếp để drawing buffer có đầy đủ dữ liệu
+    this.renderer.render(this.scene, this.camera);
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        this.toast('<i class="ti ti-alert-triangle"></i> Không thể tạo ảnh chụp', 2400);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      const tankName = (this.currentTankType || 'tank').toLowerCase();
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const timeStr = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+      a.download = `tankwar_${tankName}_screenshot_${timeStr}.png`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 2000);
+      this.toast('<i class="ti ti-check"></i> Đã chụp và tải ảnh xe độ nét cao về máy!', 2600);
+    }, 'image/png');
   }
 
   // Gắn sự kiện click và phím tắt
@@ -2550,6 +2893,83 @@ class TankInspector {
     const repairBtn = document.getElementById('ti-repair-all-btn');
     if (repairBtn) repairBtn.addEventListener('click', () => { repairBtn.blur(); this.repairAll(); });
     window.addEventListener('armory-changed', () => { if (this.isOpen) this.renderRepairAll(); });
+    // Sự kiện Công cụ quay phim Marketing & Chụp ảnh
+    const recBtn = document.getElementById('ti-record-btn');
+    if (recBtn) recBtn.addEventListener('click', () => { recBtn.blur(); this.openRecordModal(); });
+
+    const shotBtn = document.getElementById('ti-screenshot-btn');
+    if (shotBtn) shotBtn.addEventListener('click', () => { shotBtn.blur(); this.takeScreenshot(); });
+
+    const cleanToggle = document.getElementById('ti-clean-toggle');
+    if (cleanToggle) cleanToggle.addEventListener('click', () => { cleanToggle.blur(); this.toggleCleanView(); });
+
+    const cleanExit = document.getElementById('ti-clean-exit-hint');
+    if (cleanExit) cleanExit.addEventListener('click', () => this.toggleCleanView());
+
+    const recModalClose = document.getElementById('ti-record-modal-close');
+    if (recModalClose) recModalClose.addEventListener('click', () => this.closeRecordModal());
+
+    const recModal = document.getElementById('ti-record-modal');
+    if (recModal) {
+      recModal.addEventListener('click', (e) => {
+        if (e.target === recModal) this.closeRecordModal();
+      });
+    }
+
+    // Chọn kiểu quay: 360 hoặc tự do
+    let curRecMode = '360';
+    const card360 = document.getElementById('ti-rmc-360');
+    const cardFree = document.getElementById('ti-rmc-free');
+    const durSec = document.getElementById('ti-rec-dur-sec');
+
+    if (card360 && cardFree) {
+      card360.addEventListener('click', () => {
+        curRecMode = '360';
+        card360.classList.add('active');
+        cardFree.classList.remove('active');
+        if (durSec) durSec.style.display = 'block';
+      });
+      cardFree.addEventListener('click', () => {
+        curRecMode = 'free';
+        cardFree.classList.add('active');
+        card360.classList.remove('active');
+        if (durSec) durSec.style.display = 'none';
+      });
+    }
+
+    // Chọn thời lượng quay 360
+    let curRecDur = 8;
+    const durBtns = document.querySelectorAll('.ti-rec-dur-btn');
+    durBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        durBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        curRecDur = parseFloat(btn.getAttribute('data-dur')) || 8;
+      });
+    });
+
+    // Nút Bắt đầu ghi hình
+    const startRecBtn = document.getElementById('ti-record-start-btn');
+    if (startRecBtn) {
+      startRecBtn.addEventListener('click', () => {
+        const cleanCheck = document.getElementById('ti-rec-clean-check');
+        const fpsCheck = document.getElementById('ti-rec-fps60-check');
+        this.startRecording({
+          mode: curRecMode,
+          duration: curRecDur,
+          fps: (fpsCheck && !fpsCheck.checked) ? 30 : 60,
+          cleanView: cleanCheck ? cleanCheck.checked : true
+        });
+      });
+    }
+
+    // Nút Dừng & Hủy trên HUD
+    const stopRecBtn = document.getElementById('ti-rec-stop-btn');
+    if (stopRecBtn) stopRecBtn.addEventListener('click', () => this.stopRecording(true));
+
+    const cancelRecBtn = document.getElementById('ti-rec-cancel-btn');
+    if (cancelRecBtn) cancelRecBtn.addEventListener('click', () => this.cancelRecording());
+
     const rIn = document.getElementById('ti-range-enter'), rOut = document.getElementById('ti-range-exit');
     const rReal = document.getElementById('ti-range-real-btn');
     // Phòng thử đạn tức thì (ProvingGround): mở ngay trong 0.1s không cần tải lại trang
@@ -2687,9 +3107,32 @@ class TankInspector {
     // Phím tắt bàn phím: ESC hoặc phím I để mở/đóng
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.isOpen) {
-        if (this.sight) this.setSight(false);
+        if (this.isRecording) this.cancelRecording();
+        else if (document.getElementById('ti-record-modal') && !document.getElementById('ti-record-modal').classList.contains('hidden')) this.closeRecordModal();
+        else if (document.getElementById('tank-inspector-overlay') && document.getElementById('tank-inspector-overlay').classList.contains('ti-clean-mode')) this.toggleCleanView();
+        else if (this.sight) this.setSight(false);
         else if (this.rangeMode) this.exitRangeMode();
         else this.close();
+      } else if (this.isOpen && !e.repeat && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        if (e.code === 'KeyR' && !this.rangeMode) {
+          e.preventDefault();
+          if (this.isRecording) this.stopRecording(true);
+          else {
+            const m = document.getElementById('ti-record-modal');
+            if (m && !m.classList.contains('hidden')) {
+              const startBtn = document.getElementById('ti-record-start-btn');
+              if (startBtn) startBtn.click();
+            } else {
+              this.openRecordModal();
+            }
+          }
+        } else if (e.code === 'KeyP') {
+          e.preventDefault();
+          this.takeScreenshot();
+        } else if (e.code === 'KeyC') {
+          e.preventDefault();
+          this.toggleCleanView();
+        }
       } else if (e.code === 'KeyI' && !e.repeat && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
         if (this.isOpen) {
           this.close();

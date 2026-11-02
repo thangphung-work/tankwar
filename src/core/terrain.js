@@ -2158,12 +2158,38 @@ ${sea ? 'varying float vDep;' : ''}
       const dx = x - b.x, dz = z - b.z;
       if (dx * dx + dz * dz > b.R2) continue;
       const a = dx * b.cx + dz * b.cz, f0 = dx * b.fx + dz * b.fz;   // a: dọc bờ, f: xuyên bờ
-      const pile = b.kind === 'pile', sl = b.slump || 0;
+      const pile = b.kind === 'pile', flank = b.kind === 'flank', sl = b.slump || 0;
       // ĐẤT LAN THEO HƯỚNG CUA (b.sk -1..1, + = về bên phải xe — game.js pushBerm theo đống lệch dọc lưỡi): đất trượt dọc mặt
       // lưỡi về đầu PHÍA NGOÀI cua -> cánh bên đó dài ra & cong ôm về sau quanh đầu lưỡi (che góc mũi / sườn trước bên đó),
       // cánh phía trong ngắn lại. Đi thẳng: sk về 0, đống cân lại hai bên
       const sk = pile ? b.sk || 0 : 0, out = sk * a > 0 ? Math.abs(sk) : 0, inn = sk * a < 0 ? Math.abs(sk) : 0;
       const Ls = b.L * (1 + 0.42 * out - 0.12 * inn);
+
+      // BỜ SƯỜN Ổ BẮN CHỮ U (flank): trục a dọc theo thân xe (a > 0 về trước mũi, a < 0 về đuôi xe).
+      // Vai trước dày và cao nhất nối khít với ụ trước, thuôn dốc thoải dần về phía đuôi xe
+      if (flank) {
+        const t = Math.max(0, Math.min(1, (a + b.L) / (2 * b.L)));   // 1 ở đầu trước, 0 ở đuôi xe
+        const slopeH = 0.32 + 0.68 * Math.pow(t, 0.7);               // trước cao 100%, đuôi thuôn còn ~32%
+        const Wf = b.W * (0.68 + 0.52 * t) * (1 + 0.5 * sl) * (1 + 0.12 * Math.sin(a * 0.18 + b.seed));
+        // đầu trước nối liền ụ mũi (không vuốt cụt), đầu sau dốc thoải tiếp đất
+        const eFront = a > 0 ? Math.min(1, Math.max(0, (b.L - a) / (b.L * 0.14))) : 1;
+        const eRear = a < 0 ? Math.min(1, Math.max(0, (b.L + a) / (b.L * 0.32))) : 1;
+        const ef = Math.min(eFront, eRear);
+        if (ef <= 0) continue;
+        const tf = Math.abs(f0) / Wf;
+        if (tf >= 1) continue;
+        const sf = 1 - tf;
+        const profFlank = Math.pow(sf * sf * (3 - 2 * sf), 0.75);
+        let big = 0.9 + 0.09 * Math.sin(a * 0.23 + f0 * 0.17 + b.seed) + 0.07 * Math.sin(a * 0.11 - f0 * 0.41 + b.seed * 2.3)
+          + 0.08 * (bermNoise(a * 0.09 + b.seed, f0 * 0.13) - 0.5);
+        big *= 1 + 0.35 * (bermNoise(a * 0.3 + b.seed * 3.1, f0 * 0.2) - 0.5);
+        let v = b.H * b.k * (1 - sl) * (ef * ef * (3 - 2 * ef)) * slopeH * profFlank * big;
+        if (v > 0.6) v += (bermNoise(x * 0.42, z * 0.42) - 0.5) * 1.1 * Math.min(1, v / 5) + (bermNoise(x * 1.1 + 7.3, z * 1.1) - 0.5) * 0.45;
+        if (b.dents && v > 0) v = Math.max(0, v - this.bermDent(b, a, f0));
+        if (v > h) h = v;
+        continue;
+      }
+
       // ĐỐNG TRƯỚC LƯỠI: mặt bằng hình lưỡi liềm — dày nhất giữa lưỡi, hai cánh cong ôm về sau quanh hai đầu lưỡi (đất bị
       // mặt lưỡi cong dồn vào giữa, tràn qua đầu lưỡi đổ dọc hai góc mũi xe); bờ / luống thường thẳng
       const ua = Math.min(1, Math.abs(a) / Ls);
@@ -2197,6 +2223,16 @@ ${sea ? 'varying float vDep;' : ''}
       // luống / bờ thường: sống luống cao thấp lổn nhổn dọc chiều dài (đất rơi từng đợt) — không đều như khúc ống
       if (!pile) big *= 1 + 0.45 * (bermNoise(a * 0.33 + b.seed * 3.1, f0 * 0.18) - 0.5);
       let v = b.H * b.k * (1 - sl) * (e * e * (3 - 2 * e)) * prof * big;
+
+      // RÃNH HẠ NÒNG SÚNG Ở CHÍNH GIỮA Ụ TRƯỚC (|a| < 7.5): đất hai bên vai vẫn cao đắp kín che thân và tháp,
+      // nhưng ở chính giữa nòng súng (nơi nòng chĩa thẳng) bờ đất được khoét võng hình chữ U sâu xuống ~38%
+      // để nòng pháo vươn qua tự do, bắn thẳng được và không bị đất trùm/đè nòng
+      if (pile && Math.abs(a) < 7.5) {
+        const na = Math.abs(a) / 7.5;
+        const gunNotch = 0.62 + 0.38 * (na * na * (3 - 2 * na));
+        v *= gunNotch;
+      }
+
       if (v > 0.6) v += (bermNoise(x * 0.42, z * 0.42) - 0.5) * 1.1 * Math.min(1, v / 5) + (bermNoise(x * 1.1 + 7.3, z * 1.1) - 0.5) * 0.45;
       if (b.dents && v > 0) v = Math.max(0, v - this.bermDent(b, a, f0));
       if (v > h) h = v;
@@ -2357,8 +2393,10 @@ ${sea ? 'varying float vDep;' : ''}
       kind, seed: (Math.abs(Math.round(x * 7 + z * 13)) % 997) * 0.37 };
     // chừa chỗ chân ụ gồ ghề (bermAt: bề dày / chiều dài đổi theo nhiễu) & bè ra khi mưa làm sụt (tickBerms); đống trước
     // lưỡi: thêm cánh dài ra / cong về sau khi cua & mặt trước dày (bermAt sk)
-    const pileK = kind === 'pile', GA0 = b.L * (pileK ? 1.55 : 1.1) + 2, GF0 = b.W * (pileK ? 1.8 : 1.45) + 2;
+    const pileK = kind === 'pile', flankK = kind === 'flank';
+    const GA0 = b.L * (pileK ? 1.55 : 1.15) + 2, GF0 = b.W * (pileK ? 1.8 : flankK ? 1.55 : 1.45) + 2;
     b.R2 = GA0 * GA0 + GF0 * GF0;
+    b.GA = GA0; b.GF = GF0;
     // quá 80 ụ: bỏ ụ nhỏ nhất trong số ụ cũ nhất (luống đất tràn / đống rớt khi cua) — giữ lại ổ bắn, ụ cao còn có ích
     if (this.berms.length >= 80) {
       let o = this.berms[0];
@@ -2482,15 +2520,24 @@ ${sea ? 'varying float vDep;' : ''}
     b.k = Math.max(0, Math.min(1, k));
     if (!b.mesh) return;
     const pos = b.mesh.geometry.attributes.position, col = b.mesh.geometry.attributes.color;
-    // đỉnh chỉ tính ụ này; lún 0,4 đv vào đất để không hở mép. Đất trên đỉnh ụ (đã lộ gió, khô) sáng hơn chân ụ —
+    // đỉnh chỉ tính ụ này; lún vào đất để không hở mép. Đất trên đỉnh ụ (đã lộ gió, khô) sáng hơn chân ụ —
     // trời mưa thì cả ụ sũng nước như nhau
     const dry = b.soil && b.soil.wet ? 0.03 : 0.16;
+    const GA = b.GA || (b.L * 1.3), GF = b.GF || (b.W * 1.5);
     for (let i = 0; i < pos.count; i++) {
       const [wx, wz] = b.wxz[i];
+      const a = b.af[i * 2], f = b.af[i * 2 + 1];
       const hh = this.bermAt(wx, wz, b);
-      const cut = b.dents ? this.bermDent(b, b.af[i * 2], b.af[i * 2 + 1]) : 0;
+      const cut = b.dents ? this.bermDent(b, a, f) : 0;
+
+      // Độ dìm sâu tăng dần khi ra sát mép lưới PlaneGeometry để chìm hẳn 4 cạnh chữ nhật xuống dưới đất nền,
+      // đường chân gò đất sẽ cắt mặt đất tự nhiên uốn lượn mềm mại, không bao giờ lộ mép cắt phẳng thẳng tắp
+      const edgeDist = Math.max(Math.abs(a) / GA, Math.abs(f) / GF);
+      const edgeSink = 0.4 + 2.8 * Math.pow(Math.max(0, (edgeDist - 0.5) / 0.5), 2);
+      const effSink = hh > 0.8 ? 0.4 : 0.4 + (edgeSink - 0.4) * Math.max(0, 1 - hh / 0.8);
+
       // chỗ ụ bị nổ khoét sạch: đỉnh lưới chìm hẳn xuống dưới đất (không thành tấm nắp đậy lên hố nổ ở đất nền)
-      pos.setXYZ(i, wx, b.base[i] + hh - (hh <= 0.05 && cut > 0.5 ? 3 : 0.4), wz);
+      pos.setXYZ(i, wx, b.base[i] + hh - (hh <= 0.05 && cut > 0.5 ? 3 : effSink), wz);
       let lit = 1 - dry / 2 + dry * Math.min(1, hh / Math.max(1, b.H));
       // lòng vết khoét: đất ẩm phía trong lộ ra + muội thuốc nổ -> sẫm hơn
       if (cut > 0) lit *= 1 - 0.38 * Math.min(1, cut / 5);

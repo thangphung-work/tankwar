@@ -28,7 +28,7 @@
 <script src="src/entities/projectiles.js?v=20261023msl2"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261021lamp2"></script>
 <script src="src/entities/tanks/roof_mounts.js?v=20261026det1"></script>
-<script src="src/entities/tanks/fsv_hailstorm.js?v=20261026det2"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261101smoke1"></script>
 <script src="src/entities/recon_drone.js"></script>
 <script src="src/gameplay/kamikaze_uav.js?v=20261026det2"></script>
 <script>
@@ -861,7 +861,7 @@
     const RM = VehicleKit.createMaterials('BLUE', { battle: 1 });
     RM.soot = RM.soot || RM.dark;
     for (const id of RoofMounts.ids()) ITEMS.push({ id, build: () => RoofMounts.build(id, RM), kind: 'module', rotY: -1.4 });   // nhìn chéo trước - phải: kính ngắm, nòng, băng đạn
-    // ô MŨI XE xe 6 nòng (fsv_hailstorm.js): lưỡi ủi / khiên chữ V
+    // ô MŨI XE xe 6 nòng (fsv_hailstorm.js?v=20261101smoke1): lưỡi ủi / khiên chữ V
     if (window.HailstormFront) for (const id of ['dozer', 'vshield']) ITEMS.push({ id, build: () => HailstormFront.build(id, RM), kind: 'module', rotY: Math.PI });
     // ô HỘP ĐẠN xe 6 nòng: hòm đạn bên phải tháp + máng tiếp đạn theo cỡ băng
     // cùng khung hình (fixR) cho cả 3 cỡ -> nhìn ảnh thấy ngay hòm to / nhỏ

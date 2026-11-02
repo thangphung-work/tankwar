@@ -299,7 +299,9 @@ const KamiUAV = (() => {
       const R = P.kamiRack;
       if (!R || !R.tilt) return { pos: new THREE.Vector3(P.x, (P.y || 0) + 30, P.z), dir: new THREE.Vector3(0, 0.5, -1).normalize() };
       R.tilt.updateWorldMatrix(true, false);
-      const pos = R.tubes[0].clone().applyMatrix4(R.tilt.matrixWorld);
+      const tubeIdx = (R.curTube || 0) % (R.tubes && R.tubes.length ? R.tubes.length : 1);
+      const tube = (R.tubes && R.tubes[tubeIdx]) || (R.tubes && R.tubes[0]) || new THREE.Vector3(0, 0, 0);
+      const pos = tube.clone().applyMatrix4(R.tilt.matrixWorld);
       const dir = new THREE.Vector3(0, 0, -1).transformDirection(R.tilt.matrixWorld);
       return { pos, dir };
     },
@@ -971,8 +973,10 @@ const KamiUAV = (() => {
     kamiEjectFx(P, T) {
       const R = P.kamiRack;
       // nắp nhựa đầu ống văng ra: đĩa xoay lộn, rơi xuống nóc xe / đất rồi nằm lại vài giây
-      if (R && R.caps && R.caps[0] && R.caps[0].visible) {
-        R.caps[0].visible = false;
+      const capIdx = (R && R.curTube !== undefined) ? R.curTube % (R.caps ? R.caps.length : 1) : 0;
+      const targetCap = (R && R.caps && R.caps[capIdx]) || (R && R.caps && R.caps[0]);
+      if (targetCap && targetCap.visible) {
+        targetCap.visible = false;
         const M = mats(P.team);
         const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.88, 0.88, 0.14, 14), (M && (M.canvasDark || M.dark)) || new THREE.MeshStandardMaterial({ color: 0x333333 }));
         cap.position.copy(T.pos);
@@ -980,6 +984,9 @@ const KamiUAV = (() => {
         const L = this._kamiBits || (this._kamiBits = []);
         L.push({ m: cap, vx: T.dir.x * 60 + (Math.random() - 0.5) * 14, vy: 26 + Math.random() * 10, vz: T.dir.z * 60 + (Math.random() - 0.5) * 14,
           sx: 8 + Math.random() * 6, sz: 5 + Math.random() * 5, life: 5 });
+      }
+      if (R && R.tubes && R.tubes.length) {
+        R.curTube = ((R.curTube || 0) + 1) % R.tubes.length;
       }
       // hơi khí nén: luồng trắng đục phụt theo hướng ống ở miệng, phụt ngược ở cửa xả đáy ống
       const tubeLen = 9.2;
@@ -1090,7 +1097,7 @@ const KamiUAV = (() => {
           this.addCombatLog(`[[drone]] UAV cảm tử mới đã nạp vào ống (Ctrl để phóng, còn ${P.kamikazeCount})`, 'tip');
         }
         // ống có quả: nắp nhựa đầu ống lắp lại
-        if (R && R.caps && R.caps[0]) R.caps[0].visible = D.state === 'docked';
+        if (R && R.caps) { for (let i = 0; i < R.caps.length; i++) if (R.caps[i]) R.caps[i].visible = D.state === 'docked'; }
         const T = this.kamiTubeWorld(P);
         D.x = T.pos.x; D.y = T.pos.y; D.z = T.pos.z;
         return;
@@ -1212,7 +1219,7 @@ const KamiUAV = (() => {
         if (e.target !== canvas) return;   // đang rê trên bảng / nút HUD: camera giữ nguyên
         g.kamiGimbalAt(e.clientX / innerWidth * 2 - 1, e.clientY / innerHeight * 2 - 1);
         const want = g.kamiPickAt(e.clientX, e.clientY) ? 'pointer' : 'crosshair';
-        if (canvas.style.cursor !== want) canvas.style.cursor = want;
+        if (canvas.style.cursor !== want) { canvas.style.cursor = want; canvas.dataset.kamiCursor = '1'; }
       });
       document.addEventListener('pointerdown', (e) => {
         const g = view();
@@ -1241,7 +1248,10 @@ const KamiUAV = (() => {
         if (!canvas) return;
         const on = !!(g.kamiViewing && g.kamiViewing());
         if (on && document.pointerLockElement === canvas) document.exitPointerLock();
-        if (!on && (canvas.style.cursor === 'pointer' || canvas.style.cursor === 'crosshair')) canvas.style.cursor = '';
+        if (!on && canvas.dataset.kamiCursor) {
+          delete canvas.dataset.kamiCursor;
+          canvas.style.cursor = '';
+        }
       }, 250);
     }
     // Space trên màn hình UAV cảm tử: khóa / bỏ khóa mục tiêu

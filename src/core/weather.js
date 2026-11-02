@@ -878,6 +878,7 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
   // drone / UAV hỏi gió giật: x, z = vận tốc đẩy dạt (đv/s), g = cơn giật 0..1, turb = biên độ nhiễu loạn (đv/s)
   function gust() { return { x: GUST.x, z: GUST.z, g: GUST.g, turb: GUST.rain ? 8 + 22 * GUST.g + 8 * GUST.st : 2 + 5 * GUST.g, rain: GUST.rain }; }
   let rainSoundT = 0;
+  let _camDirTmp = null, _whiteColTmp = null;
   function update(dt, G) {
     const T = G && G.terrain, W = T && T.weather;
     tickWind(dt, G);
@@ -898,7 +899,8 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
     shelterT += dt;
     if (shelterFor !== T.map || (shelterT > 8 && performance.now() - shelterDirtyAt < 25000)) { buildShelter(G.renderer, T); shelterFor = T.map; shelterT = 0; }
     const cam = G.camera.position;
-    const dir = G.camera.getWorldDirection(new THREE.Vector3());
+    const dir = G.camera.getWorldDirection(_camDirTmp || (_camDirTmp = new THREE.Vector3()));
+    const white = _whiteColTmp || (_whiteColTmp = new THREE.Color(1, 1, 1));
     const hl = Math.hypot(dir.x, dir.z) || 1;
     const wind = G.ballistics && G.ballistics.wind;
     // gió nền + cơn giật: vệt mưa xiên hẳn theo cơn giật
@@ -923,14 +925,14 @@ float flN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2
       U.uDrift.value.set(driftX, driftZ);
       U.uK.value = alpha * k * (1 + flash * 1.5);
       U.uTopOn.value = WET.w;
-      if (fog) U.uCol.value.copy(fog).lerp(new THREE.Color(1, 1, 1), 0.18 + 0.22 * flash);
+      if (fog) U.uCol.value.copy(fog).lerp(white, 0.18 + 0.22 * flash);
     }
     {
       const U = splash.U;
       U.uTime.value = time; U.uCam.value.copy(cam);
       U.uCenter.value.set(cam.x + dir.x / hl * 40, 0, cam.z + dir.z / hl * 40);
       U.uK.value = WET.w ? k * 0.75 : 0;
-      if (fog) U.uCol.value.copy(fog).lerp(new THREE.Color(1, 1, 1), 0.18);
+      if (fog) U.uCol.value.copy(fog).lerp(white, 0.18);
     }
     WET.y = time;
     WET.z = 0.45 + 0.5 * k;

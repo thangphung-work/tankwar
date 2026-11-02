@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phòng Thử Nghiệm Binh Sĩ Chiến Thuật</title>
+<link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
+<link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
+<link rel="stylesheet" href="src/ui/theme.css?v=20261020mo1">
+<link rel="stylesheet" href="src/ui/lab.css?v=20261024nav1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  #view {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    outline: none;
+    z-index: 1;
+  }
+  .lab-panel {
+    z-index: 10;
+  }
+  .lab-keys {
+    z-index: 10;
+  }
+  #stats {
+    white-space: pre-line;
+    font: 11.5px/1.6 var(--font-mono);
+    color: var(--tc-accent-2);
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    margin: 6px 0;
+  }
+  .slider-row input[type="range"] {
+    flex: 1;
+    margin: 0 10px;
+    cursor: pointer;
+  }
+  .motion-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .motion-btn {
+    font-size: 12.5px;
+    padding: 6px 8px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<aside class="lab-panel" id="panel">
+  <header class="lab-head">
+    <div class="lab-brand">
+      <i class="ti ti-user-shield lab-emblem" aria-hidden="true"></i>
+      <div>
+        <h1>MÔ HÌNH BINH SĨ</h1>
+        <div class="lab-sub"><i class="ti ti-point-filled" aria-hidden="true"></i> Toàn thân sắc nét · mô phỏng chuyển động · bám đồ vật</div>
+      </div>
+    </div>
+    <nav class="lab-nav">
+      <a class="home" href="index.html" title="Về sảnh chờ"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+      <a href="labs.html" title="Danh sách mọi phòng thử"><i class="ti ti-layout-grid" aria-hidden="true"></i> Tất cả</a>
+      <a href="fx_lab.html"><i class="ti ti-bomb" aria-hidden="true"></i> Đạn &amp; nổ</a>
+      <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
+      <a class="on" href="soldier_lab.html"><i class="ti ti-user-shield" aria-hidden="true"></i> Binh sĩ</a>
+      <a href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
+    </nav>
+  </header>
+
+  <div class="lab-scroll">
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">01</span><h2>Mô phỏng chuyển động</h2></div>
+      <div class="motion-grid">
+        <button class="btn motion-btn on" data-motion="walk">🚶 Đi bộ</button>
+        <button class="btn motion-btn" data-motion="patrol">🪖 Đi tuần (gối chùng)</button>
+        <button class="btn motion-btn" data-motion="run">🏃 Chạy nhanh</button>
+        <button class="btn motion-btn" data-motion="aim">🎯 Đứng ngắm</button>
+        <button class="btn motion-btn" data-motion="crouch">🧎 Quỳ ngắm</button>
+        <button class="btn motion-btn" data-motion="idle">🧍 Đứng nghỉ</button>
+      </div>
+      <div class="slider-row" style="margin-top: 10px;">
+        <span>Tốc độ</span>
+        <input type="range" id="speedRange" min="0.3" max="2.0" step="0.1" value="1.0">
+        <span id="speedVal">1.0x</span>
+      </div>
+    </section>
+
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">02</span><h2>Trang phục &amp; Phe phái</h2></div>
+      <div class="row col">
+        <button class="btn" id="btnTeam">Phe: XANH (Rừng rậm)</button>
+        <button class="btn" id="btnStatus">Trạng thái: Khỏe mạnh</button>
+        <button class="btn" id="btnEnv">Môi trường: Sa mạc trưa</button>
+      </div>
+    </section>
+
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">03</span><h2>Tay bám đồ vật</h2></div>
+      <div class="row col">
+        <button class="btn" id="btnHandIK">Tay bám cán chuyển động: TẮT</button>
+      </div>
+      <div class="slider-row">
+        <span>Cao độ tay</span>
+        <input type="range" id="gripY" min="-1.5" max="2.0" step="0.05" value="0.2">
+      </div>
+      <div class="slider-row">
+        <span>Độ xa tay</span>
+        <input type="range" id="gripZ" min="-3.5" max="-1.0" step="0.05" value="-2.1">
+      </div>
+    </section>
+
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">04</span><h2>Hiệu ứng cơ thể</h2></div>
+      <div class="row col">
+        <button class="btn on" id="btnBreathe">Nhịp thở lồng ngực: BẬT</button>
+        <button class="btn on" id="btnLook">Mắt nhìn theo chuột: BẬT</button>
+        <button class="btn" id="btnHitbox">Hiện vùng va chạm: TẮT</button>
+      </div>
+    </section>
+
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">05</span><h2>Hiệu năng mô hình</h2></div>
+      <div class="lab-box"><div id="stats"></div></div>
+    </section>
+  </div>
+</aside>
+
+<div class="lab-keys">
+  <span><kbd>Kéo chuột trái</kbd> xoay 360°</span>
+  <span><kbd>Cuộn chuột</kbd> phóng to / thu nhỏ</span>
+  <span><kbd>Chuột phải</kbd> nâng hạ tầm nhìn</span>
+</div>
+
+<script src="three.min.js"></script>
+<script src="src/core/sky.js"></script>
+<script src="src/entities/soldier_model.js?v=20261102hand30"></script>
+<script>
+(() => {
+  const canvas = document.getElementById('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.LinearEncoding;   // như game: màu vật liệu chỉnh cho đầu ra tuyến tính
+
+  const scene = new THREE.Scene();
+
+  // ĐỘ CAO CHUẨN: đáy giày người lính (SoldierModel.FOOT_Y = -8.71)
+  const FLOOR_Y = SoldierModel.FOOT_Y;
+
+  // Môi trường lấy đúng thông số ánh sáng của game (terrain.applyAtmosphere + SkySystem.applyLights):
+  // nắng ~1,2-1,3, ánh trời bán cầu ~0,5-0,65 (màu trời pha trắng 32%), ambient 0,08, đường cong tông màu 1,1.
+  // Lính trong lab vì thế trông đúng như trong trận — không thêm đèn viền / đèn hắt dưới làm mặt khối phẳng như nhựa.
+  const ENV = {
+    desert: { name: 'Sa mạc trưa', zenith: 0x4a86cc, sky: 0xc9d3d6, fog: 0xd5cfbd, hemiGround: 0xb08a5a, sunK: 1.08, skyK: 0.9, soil: ['#7a6649', '#69563d', '#87714f', '#5b4a34'], tile: 6 },
+    jungle: { name: 'Rừng rậm', zenith: 0x5d8fb5, sky: 0xb9cbb6, fog: 0xa9b7a2, hemiGround: 0x4a4a32, sunK: 0.94, skyK: 1.06, soil: ['#3f3d28', '#34331f', '#4b4730', '#2b2a1b'], tile: 5 },
+    urban: { name: 'Đô thị', zenith: 0x5c7fa8, sky: 0xc4c6c4, fog: 0xb9bcbc, hemiGround: 0x6a6a64, sunK: 0.95, skyK: 0.88, soil: ['#5c5a55', '#504e4a', '#67645e', '#46443f'], tile: 8 },
+    studio: { name: 'Studio xám trung tính', zenith: 0x8a96a4, sky: 0x2a3038, fog: 0x2a3038, hemiGround: 0x4a4744, sunK: 1.0, skyK: 0.9, soil: ['#4a4b4c', '#444546', '#505152', '#3e3f40'], tile: 8, grid: true }
+  };
+  const ENV_ORDER = ['desert', 'jungle', 'urban', 'studio'];
+  let curEnv = null;   // applyEnvironment('desert') lúc khởi động -> dựng lại lính với quân phục sa mạc
+
+  if (typeof SkySystem !== 'undefined' && SkySystem.installToneCurve) SkySystem.installToneCurve(renderer, 1.1);
+  scene.background = new THREE.Color(ENV.desert.sky);
+  scene.fog = new THREE.Fog(ENV.desert.fog, 90, 420);
+  // vòm trời chuyển màu: đỉnh xanh sẫm -> chân trời nhạt (nền một màu phẳng làm cả khung bệch, không có chiều sâu)
+  const skyGeo = new THREE.SphereGeometry(380, 32, 16), skyCol = new Float32Array(skyGeo.attributes.position.count * 3);
+  skyGeo.setAttribute('color', new THREE.BufferAttribute(skyCol, 3));
+  const skyDome = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  skyDome.renderOrder = -10;
+  scene.add(skyDome);
+  function paintSky(zen, hor) {
+    const P = skyGeo.attributes.position, Z = new THREE.Color(zen), H = new THREE.Color(hor), c = new THREE.Color();
+    for (let i = 0; i < P.count; i++) {
+      const t = Math.max(0, P.getY(i) / 380);
+      c.copy(H).lerp(Z, Math.pow(t, 0.55));
+      skyCol[i * 3] = c.r; skyCol[i * 3 + 1] = c.g; skyCol[i * 3 + 2] = c.b;
+    }
+    skyGeo.attributes.color.needsUpdate = true;
+  }
+
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x806a50, 0.6);
+  scene.add(hemi);
+  const amb = new THREE.AmbientLight(0xfff5e4, 0.08);
+  scene.add(amb);
+  const sun = new THREE.DirectionalLight(0xfff6e8, 1.3);
+  sun.position.set(-27, 23, -20);      // nắng chếch ~34° từ trước-trái: khối người nổi, bóng đổ dài vừa
+  sun.castShadow = true;
+  sun.shadow.mapSize.width = sun.shadow.mapSize.height = 2048;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 120;
+  sun.shadow.camera.left = -14;
+  sun.shadow.camera.right = 14;
+  sun.shadow.camera.top = 14;
+  sun.shadow.camera.bottom = -14;
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.02;
+  scene.add(sun);
+
+  // Mặt đất có vân (cát / đất rừng / bê tông), trôi theo tốc độ bước để lính đi tại chỗ mà chân không trượt
+  function soilTex(cols) {
+    const n = 512, c = document.createElement('canvas'); c.width = c.height = n;
+    const g = c.getContext('2d');
+    let seed = 99; const rnd = () => { seed = seed * 16807 % 2147483647; return seed / 2147483647; };
+    g.fillStyle = cols[0]; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < 260; i++) {
+      const x = rnd() * n, y = rnd() * n, r = 6 + rnd() * 60, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      const col = cols[1 + (i % 3)];
+      gr.addColorStop(0, col + '88'); gr.addColorStop(1, col + '00');
+      for (const ox of [-n, 0, n]) for (const oy of [-n, 0, n]) { g.save(); g.translate(ox, oy); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); g.restore(); }
+    }
+    for (let i = 0; i < 9000; i++) { const v = rnd() < 0.5 ? 0 : 255; g.fillStyle = `rgba(${v},${v},${v},${0.04 + rnd() * 0.06})`; g.fillRect(rnd() * n, rnd() * n, 1 + rnd() * 2, 1 + rnd() * 2); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+    return t;
+  }
+  const floorMat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = FLOOR_Y - 0.01;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  // bóng tiếp xúc mờ dưới chân (vùng đất bị người che ánh trời) — chân cắm xuống đất, không lơ lửng
+  const aoTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(0.5, 'rgba(0,0,0,0.25)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+  const contact = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 5.6), new THREE.MeshBasicMaterial({ map: aoTex, transparent: true, depthWrite: false }));
+  contact.rotation.x = -Math.PI / 2; contact.position.y = FLOOR_Y + 0.015;
+  scene.add(contact);
+
+  const grid = new THREE.GridHelper(40, 40, 0x6a7686, 0x3a424c);
+  grid.position.y = FLOOR_Y + 0.01;
+  scene.add(grid);
+
+  // Camera: nhìn vào tâm cơ thể người lính (y = -0.8)
+  const cam = new THREE.PerspectiveCamera(38, 1, 0.1, 400);
+  const view = { yaw: -0.32, pitch: 0.12, dist: 21, y: -1.4 };
+
+  // Đồ vật làm cán cầm khi thử IK tay bám
+  const gripHandle = new THREE.Group();
+  const barMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.35, metalness: 0.8 });
+  const barMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6, 16), barMat);
+  barMesh.rotation.z = Math.PI / 2;
+  barMesh.castShadow = true;
+  gripHandle.add(barMesh);
+
+  const capL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), barMat);
+  capL.position.x = -0.8;
+  const capR = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), barMat);
+  capR.position.x = 0.8;
+  gripHandle.add(capL, capR);
+  scene.add(gripHandle);
+
+  // Trạng thái thử nghiệm
+  const S = {
+    motion: 'walk',
+    speed: 1.0,
+    team: 'BLUE',
+    status: 'healthy',
+    handIK: false,
+    breathe: true,
+    look: true,
+    showHitbox: false,
+    gripY: 0.2,
+    gripZ: -2.1
+  };
+
+  gripHandle.visible = S.handIK;
+
+  let figure = null;
+  const hitboxGroup = new THREE.Group();
+  scene.add(hitboxGroup);
+
+  function rebuildFigure() {
+    if (figure) {
+      if (figure._bloodPool) scene.remove(figure._bloodPool);
+      if (figure.root) scene.remove(figure.root);
+    }
+    figure = SoldierModel.buildFigure(S.team, { role: 'infantry', inHatch: false, renderOrder: 2 });
+    figure.root.position.set(0, 0, 0);
+    scene.add(figure.root);
+    applyStatus();
+    rebuildHitboxes();
+  }
+
+  let targetCamY = -1.4;
+  function applyStatus() {
+    if (!figure) return;
+    const isDead = S.status === 'dead';
+    SoldierModel.setCasualty(figure, isDead);
+    targetCamY = isDead ? FLOOR_Y + 1.8 : -1.4;
+  }
+
+  function applyEnvironment(envKey) {
+    const changed = curEnv !== envKey;
+    curEnv = envKey;
+    const cfg = ENV[envKey];
+    // quân phục theo chiến trường (như trận thật: SoldierModel.setBiome theo mapType)
+    if (SoldierModel.setBiome) { SoldierModel.setBiome({ desert: 'DESERT', jungle: 'JUNGLE', urban: 'URBAN' }[envKey] || 'HIGHLAND'); if (changed && figure) rebuildFigure(); }
+    scene.background.setHex(cfg.sky);
+    scene.fog.color.setHex(cfg.fog);
+    const zen = new THREE.Color(cfg.zenith).multiplyScalar(cfg.grid ? 0.5 : 0.9);
+    paintSky(zen, cfg.sky);
+    skyDome.visible = true;
+    // như SkySystem.applyLights: màu trời đỉnh pha trắng 32%, cường độ theo hệ số từng chiến địa
+    hemi.color.setHex(cfg.zenith).lerp(new THREE.Color(0xffffff), 0.32);
+    hemi.groundColor.set(cfg.soil[0]).multiplyScalar(0.9);   // ánh hắt từ đất mang màu đất thật
+    hemi.intensity = 0.78 * cfg.skyK * 0.78;
+    sun.intensity = 1.0 * cfg.sunK * 1.2;
+    amb.intensity = 0.08;
+    if (floorMat.map) floorMat.map.dispose();
+    floorMat.map = soilTex(cfg.soil);
+    floorMat.map.repeat.set(600 / cfg.tile, 600 / cfg.tile);
+    floorMat.needsUpdate = true;
+    grid.visible = !!cfg.grid;
+    const btn = document.getElementById('btnEnv');
+    if (btn) btn.textContent = 'Môi trường: ' + cfg.name;
+  }
+
+  function rebuildHitboxes() {
+    while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0]);
+    if (!S.showHitbox || !figure) return;
+
+    const boxes = SoldierModel.getHitboxes(figure);
+    const boxMat = new THREE.MeshBasicMaterial({ color: 0x0284c7, wireframe: true, transparent: true, opacity: 0.75 });
+
+    boxes.forEach(b => {
+      let m;
+      if (b.radius) {
+        m = new THREE.Mesh(new THREE.SphereGeometry(b.radius, 12, 8), boxMat);
+      } else {
+        m = new THREE.Mesh(new THREE.BoxGeometry(b.size.x, b.size.y, b.size.z), boxMat);
+      }
+      m.position.copy(b.center);
+      hitboxGroup.add(m);
+    });
+  }
+
+  // Tương tác chuột điều khiển Camera
+  let drag = null;
+  const mouseW = new THREE.Vector3(0, 4.8, -10);
+
+  canvas.addEventListener('pointerdown', e => {
+    drag = { x: e.clientX, y: e.clientY, b: e.button };
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      drag.x = e.clientX; drag.y = e.clientY;
+      if (drag.b === 2) {
+        view.y = Math.max(-7, Math.min(4, view.y + dy * 0.02));
+      } else {
+        view.yaw += dx * 0.008;
+        view.pitch = Math.max(-0.6, Math.min(1.2, view.pitch + dy * 0.006));
+      }
+    }
+    const nx = (e.clientX / window.innerWidth) * 2 - 1;
+    const ny = -(e.clientY / window.innerHeight) * 2 + 1;
+    mouseW.set(nx * 8, 4.8 + ny * 3.5, -10);
+  });
+  canvas.addEventListener('pointerup', () => { drag = null; });
+  canvas.addEventListener('pointercancel', () => { drag = null; });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    view.dist = Math.max(4, Math.min(32, view.dist * (e.deltaY > 0 ? 1.08 : 1 / 1.08)));
+  }, { passive: false });
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setSize(w, h);
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Nút chuyển động
+  const motionBtns = document.querySelectorAll('.motion-btn');
+  motionBtns.forEach(btn => {
+    btn.onclick = () => {
+      motionBtns.forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      S.motion = btn.dataset.motion;
+      if (S.status === 'dead') {
+        S.status = 'healthy';
+        const bs = document.getElementById('btnStatus');
+        if (bs) { bs.textContent = 'Trạng thái: Khỏe mạnh'; bs.className = 'btn'; }
+        applyStatus();
+      }
+    };
+  });
+
+  const speedRange = document.getElementById('speedRange');
+  const speedVal = document.getElementById('speedVal');
+  speedRange.oninput = () => {
+    S.speed = parseFloat(speedRange.value);
+    speedVal.textContent = S.speed.toFixed(1) + 'x';
+  };
+
+  // Nút phe phái & trạng thái
+  const btnTeam = document.getElementById('btnTeam');
+  btnTeam.onclick = () => {
+    S.team = S.team === 'BLUE' ? 'RED' : 'BLUE';
+    btnTeam.textContent = S.team === 'BLUE' ? 'Phe: XANH (Rừng rậm)' : 'Phe: ĐỎ (Sa mạc)';
+    rebuildFigure();
+  };
+
+  const btnStatus = document.getElementById('btnStatus');
+  btnStatus.onclick = () => {
+    S.status = S.status === 'healthy' ? 'dead' : 'healthy';
+    btnStatus.textContent = S.status === 'healthy' ? 'Trạng thái: Khỏe mạnh' : 'Trạng thái: Hy sinh (Thấm máu)';
+    btnStatus.className = S.status === 'healthy' ? 'btn' : 'btn btn-danger';
+    applyStatus();
+  };
+
+  const btnEnv = document.getElementById('btnEnv');
+  if (btnEnv) {
+    btnEnv.onclick = () => {
+      applyEnvironment(ENV_ORDER[(ENV_ORDER.indexOf(curEnv) + 1) % ENV_ORDER.length]);
+    };
+  }
+
+  const btnHandIK = document.getElementById('btnHandIK');
+  btnHandIK.onclick = () => {
+    S.handIK = !S.handIK;
+    btnHandIK.className = S.handIK ? 'btn on' : 'btn';
+    btnHandIK.textContent = 'Tay bám cán chuyển động: ' + (S.handIK ? 'BẬT' : 'TẮT');
+    gripHandle.visible = S.handIK;
+  };
+
+  const btnBreathe = document.getElementById('btnBreathe');
+  btnBreathe.onclick = () => {
+    S.breathe = !S.breathe;
+    btnBreathe.className = S.breathe ? 'btn on' : 'btn';
+    btnBreathe.textContent = 'Nhịp thở lồng ngực: ' + (S.breathe ? 'BẬT' : 'TẮT');
+  };
+
+  const btnLook = document.getElementById('btnLook');
+  btnLook.onclick = () => {
+    S.look = !S.look;
+    btnLook.className = S.look ? 'btn on' : 'btn';
+    btnLook.textContent = 'Mắt nhìn theo chuột: ' + (S.look ? 'BẬT' : 'TẮT');
+  };
+
+  const btnHitbox = document.getElementById('btnHitbox');
+  btnHitbox.onclick = () => {
+    S.showHitbox = !S.showHitbox;
+    btnHitbox.className = S.showHitbox ? 'btn on' : 'btn';
+    btnHitbox.textContent = 'Hiện vùng va chạm: ' + (S.showHitbox ? 'BẬT' : 'TẮT');
+    rebuildHitboxes();
+  };
+
+  const gripYInput = document.getElementById('gripY');
+  gripYInput.oninput = () => { S.gripY = parseFloat(gripYInput.value); };
+
+  const gripZInput = document.getElementById('gripZ');
+  gripZInput.oninput = () => { S.gripZ = parseFloat(gripZInput.value); };
+
+  rebuildFigure();
+  applyEnvironment('desert');
+
+  // Vòng lặp khung hình
+  const statsEl = document.getElementById('stats');
+  let lastTime = performance.now(), statTimer = 0, fps = 60;
+
+  function animate(now) {
+    const dt = Math.min(0.1, (now - lastTime) / 1000);
+    lastTime = now;
+    fps += (1 / Math.max(1e-3, dt) - fps) * 0.05;
+    step(S.fixedTime != null ? S.fixedTime : now / 1000);
+
+    // Đo hiệu năng
+    if ((statTimer -= dt) <= 0) {
+      statTimer = 0.4;
+      let calls = 0, tris = 0;
+      figure.root.traverse(o => {
+        if (!o.isMesh || !o.visible) return;
+        calls++;
+        const g = o.geometry;
+        tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+      });
+      statsEl.textContent = 'Mô hình: Binh sĩ chiến thuật\n'
+        + 'Chế độ: ' + S.motion.toUpperCase() + ' (' + S.speed.toFixed(1) + 'x)\n'
+        + 'Số lượt vẽ: ' + calls + '\n'
+        + 'Số tam giác: ' + Math.round(tris).toLocaleString() + '\n'
+        + 'Tốc độ khung hình: ' + Math.round(fps) + ' FPS';
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  // Móc cho chụp ảnh headless: LAB.shot({ motion, time, yaw, pitch, dist, y, team, status, handIK }) -> dataURL
+  window.LAB = {
+    S, view, renderer, scene, cam,
+    // chụp riêng vũ khí: LAB.gunShot('gl', yaw, pitch, dist) -> dataURL (vũ khí đặt giữa sàn, ẩn người)
+    gunShot(key, yaw = 1.57, pitch = 0.15, dist = 9) {
+      if (!this._gun || this._gunKey !== key) {
+        if (this._gun) scene.remove(this._gun);
+        const M = SoldierModel.getMaterials(S.team), tmp = [];
+        const add = (parent, geo, mat, x, y, z, rx, ry, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0); m.castShadow = m.receiveShadow = true; parent.add(m); tmp.push(m); return m; };
+        this._gun = SoldierModel.WEAPONS[key].build(M, add); this._gunKey = key;
+        this._gun.position.set(0, 3, 0); scene.add(this._gun);
+      }
+      figure.root.visible = false; this._gun.visible = true;
+      const cp = Math.cos(pitch);
+      cam.position.set(Math.sin(yaw) * cp * dist, 3 + Math.sin(pitch) * dist, -1 - Math.cos(yaw) * cp * dist);
+      cam.lookAt(0, 3, -1);
+      renderer.render(scene, cam);
+      const url = renderer.domElement.toDataURL('image/jpeg', 0.9);
+      figure.root.visible = true; this._gun.visible = false;
+      return url;
+    },
+    get figure() { return figure; },
+    shot(o = {}) {
+      if (o.team && o.team !== S.team) { S.team = o.team; rebuildFigure(); }
+      if (o.status) { S.status = o.status; applyStatus(); }
+      for (const k of ['motion', 'handIK', 'look', 'breathe', 'gripY', 'gripZ']) if (k in o) S[k] = o[k];
+      gripHandle.visible = S.handIK;
+      for (const k of ['yaw', 'pitch', 'dist', 'y', 'tx', 'tz']) if (k in o) view[k] = o[k];
+      if (o.env && o.env !== curEnv) applyEnvironment(o.env);
+      if (o.lod !== undefined) SoldierModel.setLod(figure, o.lod);
+      S.fixedTime = o.time != null ? o.time : 0;
+      if (o.seq) {
+        // chạy chuỗi trạng thái theo thời gian thật 60 khung/giây (kiểm tra pha trộn chuyển trạng thái): [[motion, giây], ...]
+        let t = 0;
+        if (figure) { figure._snap = true; S.motion = o.seq[0][0]; step(0); figure._snap = false; }
+        for (const [m, dur] of o.seq) { S.motion = m; for (let i = 0; i < dur * 60; i++) { t += 1 / 60; step(t); } }
+        S.fixedTime = t;
+      } else {
+        if (figure) figure._snap = true;
+        for (let i = 0; i < 3; i++) step(S.fixedTime);
+        if (figure) figure._snap = false;
+      }
+      return renderer.domElement.toDataURL('image/jpeg', 0.9);
+    }
+  };
+  document.title = 'READY';
+
+  let lastStepT = null, groundRun = 0;
+  function step(time) {
+    const sdt = lastStepT == null ? 0 : Math.max(0, Math.min(0.1, time - lastStepT));
+    lastStepT = time;
+    // mặt đất trôi ngược hướng đi đúng bằng tốc độ sải chân -> chân trụ đứng yên trên đất như đi thật
+    if (figure && figure.gaitSpeed && S.status === 'healthy') groundRun += figure.gaitSpeed * sdt * S.speed;
+    if (floorMat.map) floorMat.map.offset.y = groundRun / ENV[curEnv].tile;
+    grid.position.z = groundRun % 1;
+
+    // Vị trí thanh cán cầm (đung đưa)
+    const swayX = Math.sin(time * 2.2) * 0.35;
+    const swayY = Math.cos(time * 3.5) * 0.15;
+    gripHandle.position.set(swayX, S.gripY + swayY + 2.0, S.gripZ);
+    gripHandle.rotation.z = Math.sin(time * 1.8) * 0.15;
+
+    if (figure && S.status === 'healthy') {
+      figure._customArmsIK = S.handIK;
+
+      // 1. Chạy chu kỳ chuyển động cơ thể (tự động cử động cả chân và tay)
+      SoldierModel.animateMotion(figure, S.motion, time, S.speed);
+
+      // 2. Nhịp thở lồng ngực
+      if (S.breathe) {
+        SoldierModel.applyBreathing(figure, time, 1.8, 0.025);
+      }
+
+      // 3. Mắt và đầu nhìn theo chuột
+      if (S.look && !figure._headLocked) {
+        SoldierModel.lookAt(figure, mouseW);
+      }
+
+      // 4. Nếu bật công tắc tay bám cán: ghi đè tay bám vào cán
+      if (S.handIK) {
+        const leftGripW = gripHandle.localToWorld(new THREE.Vector3(-0.6, 0, 0));
+        const rightGripW = gripHandle.localToWorld(new THREE.Vector3(0.6, 0, 0));
+        const gripAxisW = new THREE.Vector3(1, 0, 0).applyQuaternion(gripHandle.quaternion);
+
+        const leftAnchor = SoldierModel.createGripAnchor({ position: leftGripW, axis: gripAxisW });
+        const rightAnchor = SoldierModel.createGripAnchor({ position: rightGripW, axis: gripAxisW });
+
+        SoldierModel.attachHandToAnchor(figure, 'left', leftAnchor);
+        SoldierModel.attachHandToAnchor(figure, 'right', rightAnchor);
+      }
+    }
+
+    // Cập nhật vị trí hộp va chạm
+    if (S.showHitbox && figure) {
+      const boxes = SoldierModel.getHitboxes(figure);
+      for (let i = 0; i < boxes.length && i < hitboxGroup.children.length; i++) {
+        hitboxGroup.children[i].position.copy(boxes[i].center);
+      }
+    }
+
+    // Cập nhật Camera nhìn chếch mặt trước, tâm đặt ở ngực/bụng (y = -0.8)
+    view.y += (targetCamY - view.y) * 0.08;
+    const cp = Math.cos(view.pitch);
+    const tx = view.tx || 0, tz = view.tz || 0;
+    cam.position.set(
+      tx + Math.sin(view.yaw) * cp * view.dist,
+      view.y + Math.sin(view.pitch) * view.dist,
+      tz - Math.cos(view.yaw) * cp * view.dist
+    );
+    cam.lookAt(tx, view.y, tz);
+
+    renderer.render(scene, cam);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
