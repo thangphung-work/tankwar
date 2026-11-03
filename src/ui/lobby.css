@@ -821,6 +821,28 @@
 .mm-class-card.active .card-tank-name { color: var(--lb-accent-2); }
 .mm-class-card.active .card-info-pane { background: var(--lb-accent-soft); }
 
+/* Xe chưa mở khóa (account.js renderVehicleLocks): ảnh tối + nhãn giá, bấm để mua bằng Bạc */
+.mm-class-card .card-img-frame { position: relative; }
+.mm-class-card.locked .card-tank-photo { filter: grayscale(1) brightness(0.45); }
+.mm-class-card.locked:hover .card-tank-photo { filter: grayscale(0.8) brightness(0.6); }
+.mm-class-card.locked .card-tank-name { color: var(--lb-dim); }
+.veh-lock {
+  position: absolute;
+  inset: auto 6px 6px auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--lb-accent-2);
+  border: 1px solid var(--lb-accent);
+  background: rgba(10, 13, 12, 0.85);
+}
+.veh-lock.cant { color: var(--lb-dim); border-color: var(--lb-line-2); }
+
 /* Thẻ "sắp ra mắt": hình bóng SVG, không chọn được */
 .mm-soon-card {
   position: relative;

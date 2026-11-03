@@ -25,12 +25,13 @@
 <script src="three.min.js?v=20261019i"></script>
 <script src="src/core/sky.js?v=20261020tone1"></script>
 <script src="src/core/equipment.js?v=20261026det2"></script>
-<script src="src/entities/projectiles.js?v=20261023msl2"></script>
+<script src="src/entities/projectiles.js?v=20261103pg7"></script>
 <script src="src/entities/tanks/vehicle_kit.js?v=20261021lamp2"></script>
 <script src="src/entities/tanks/roof_mounts.js?v=20261026det1"></script>
 <script src="src/entities/tanks/fsv_hailstorm.js?v=20261101smoke1"></script>
 <script src="src/entities/recon_drone.js"></script>
-<script src="src/gameplay/kamikaze_uav.js?v=20261026det2"></script>
+<script src="src/gameplay/kamikaze_uav.js?v=20261103ammo1"></script>
+<script src="src/entities/soldier_model.js"></script>
 <script>
 (function () {
   const OUT = 512, RS = 1024;
@@ -1130,6 +1131,28 @@
     wrap.position.set(0, 3, 0);
     wrap.add(lab);
     g.add(wrap);
+    return g;
+  } });
+
+  // Thẻ lính (tổ bộ binh): lính thật đứng nghỉ cầm súng phóng lựu
+  const soldierThumb = (id, rotY, ghillie) => ITEMS.push({ id, kind: 'module', rotY, build: () => {
+    const F = SoldierModel.buildFigure('BLUE', { role: 'infantry', weapon: 'gl', gear: { goggles: true, tags: true, pouches: true, backPanel: true, radio: true, ghillie } });
+    F._snap = true; for (let i = 0; i < 3; i++) SoldierModel.animateMotion(F, 'idle', 0, 1);
+    F.root.updateMatrixWorld(true);
+    return F.root;
+  } });
+  if (window.SoldierModel) { soldierThumb('squad', Math.PI + 0.25, false); soldierThumb('ghillie', 0.95, true); }
+  // Thẻ vũ khí riêng của lính: dựng đúng vũ khí như trên tay, nằm ngang nhìn từ hông
+  const weaponThumb = (key) => ITEMS.push({ id: 'wpn_' + key, kind: 'module', rotY: 1.57, build: () => {
+    const add = (parent, geo, mat, x, y, z, rx, ry, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0); m.castShadow = m.receiveShadow = true; parent.add(m); return m; };
+    return SoldierModel.WEAPONS[key].build(SoldierModel.getMaterials('BLUE'), add);
+  } });
+  if (window.SoldierModel) ['gl', 'rpg', 'atr'].forEach(weaponThumb);
+  // Túi y tế: đúng túi đeo trên người lính, mặt chữ thập quay ra ảnh
+  if (window.SoldierModel) ITEMS.push({ id: 'medkit', kind: 'module', rotY: 0.55, build: () => {
+    const g = new THREE.Group();
+    const add = (parent, geo, mat, x, y, z, rx, ry, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0); m.castShadow = m.receiveShadow = true; parent.add(m); return m; };
+    SoldierModel.medkitPouch(SoldierModel.getMaterials('BLUE'), add, g, 0, 0, 0, 0);
     return g;
   } });
 

@@ -66,7 +66,7 @@ const LEGACY_JSON = path.join(DATA_DIR, 'accounts.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backup');
 const SESSION_DAYS = 30;
 const MAX_BODY = 16 * 1024;
-const TANKS = ['ALL_ROUNDER', 'GATLING', 'ARTILLERY', 'SCOUT'];
+const TANKS = ['ALL_ROUNDER', 'GATLING', 'ARTILLERY', 'SCOUT', 'INFANTRY'];
 const MAPS = ['DESERT', 'URBAN', 'JUNGLE', 'HIGHLAND', 'RIVER_LAKE'];
 // Cấp bậc: mỗi quân hàm 3 cấp
 const RANKS = ['Binh nhì', 'Binh nhất', 'Hạ sĩ', 'Trung sĩ', 'Thượng sĩ', 'Thiếu úy', 'Trung úy', 'Thượng úy', 'Đại úy',
@@ -280,6 +280,7 @@ function openDb() {
   migrateLegacyJson();
   refundRetiredAmmo();
   refundRetiredItems();
+  grantPlayedVehicles();
   Q.sessionPurge.run(Date.now());
   console.log(`[ACC] SQLite ${path.basename(DB_FILE)}: ${Q.countUsers.get().n} tài khoản`);
   return true;
@@ -340,6 +341,26 @@ function refundRetiredItems() {
     }
   });
   if (users) console.log(`[ACC] Hoàn ${silver} Bạc cho ${users} món trang bị đã thôi bán`);
+}
+
+// Bắt đầu khóa xe (Equipment.VEHICLE_PRICE): tài khoản có từ trước đã chơi / mua đồ / mua đạn cho xe nào thì giữ xe đó,
+// không bắt mua lại. Chỉ 1 lần (đánh dấu ở meta) — tài khoản tạo sau đó phải tự mở khóa
+function grantPlayedVehicles() {
+  if (Q.metaGet.get('vehicles_granted')) return;
+  let n = 0;
+  tx(() => {
+    const now = Date.now();
+    const rows = db.prepare(`SELECT DISTINCT user_id, tank FROM (
+      SELECT user_id, tank FROM user_stats WHERE matches > 0
+      UNION SELECT user_id, tank FROM owned
+      UNION SELECT user_id, tank FROM ammo_stock)`).all();
+    for (const r of rows) {
+      if (!Equipment.vehiclePrice(r.tank)) continue;
+      n += Number(Q.addOwned.run(r.user_id, r.tank, Equipment.VEHICLE_ITEM, now).changes) || 0;
+    }
+    Q.metaSet.run('vehicles_granted', String(now));
+  });
+  if (n) console.log(`[ACC] Giữ ${n} xe đã chơi cho tài khoản cũ (bắt đầu khóa xe)`);
 }
 
 // Nhập dữ liệu từ bản lưu JSON cũ (accounts.json) sang SQLite — chỉ 1 lần
@@ -832,9 +853,9 @@ function noteOnline(userId, matchKey, kills, deaths, damage, opts) {
   if (online.size > 20000) online.clear();
 }
 // Hòm thả dù người chơi nhặt trong trận mạng (máy chủ trận đã đối chiếu vị trí / nhịp hòm)
-function noteAirdrop(userId, matchKey) {
+function noteAirdrop(userId, matchKey, cash) {
   const o = online.get(userId);
-  if (o && o.mk === matchKey) o.airdrops++;
+  if (o && o.mk === matchKey) { o.airdrops++; o.cash = (o.cash || 0) + (cash || 0); }   // cash: Bạc trong hòm tiền
 }
 // Trừ kho đạn mua thêm trong trận mạng theo max(số máy chủ trận đếm, số máy khách tự báo) cho từng loại:
 // máy khách không báo (sửa mã để đạn mua không bao giờ hết) vẫn bị trừ theo số phát máy chủ thấy; báo nhiều hơn thì
@@ -903,9 +924,23 @@ function skillOf(userId) {
 // Trang bị người chơi mang vào trận (chủ phòng gửi kèm slot, máy khách tự khai) -> lọc theo kho đồ thật trong CSDL:
 // mô-đun miễn phí hoặc đã sở hữu, đạn cao cấp đã sở hữu, đạn mua thêm không quá số còn trong kho, bỏ món đang hỏng
 // theo armor_cond (chưa sửa thì không mang ra trận). Khách: chỉ mô-đun miễn phí. Gọi 1 lần / người / lần bắt đầu trận
+// lính mở tuần tự: nấc trước phải có rồi (squad_1 miễn phí, ai cũng có)
+function squadStepOk(userId, tank, id) {
+  const need = Equipment.MODULES[id] && Equipment.MODULES[id].needs;
+  return !need || Equipment.isFree(need) || !!Q.ownedHas.get(userId, tank, need);
+}
+// Xe đã mở khóa chưa (Equipment.VEHICLE_PRICE): khách chỉ được xe miễn phí; tắt tài khoản (không CSDL) -> mở hết
+function vehicleOpen(userId, tank) {
+  if (!db) return true;
+  return Equipment.vehicleOpen(tank, userId ? (t, id) => !!Q.ownedHas.get(userId, t, id) : null);
+}
 function verifyKit(userId, tank, kit) {
   const k = Equipment.sanitize(kit, tank);
   delete k.d;
+  if (tank === 'INFANTRY') k.sq = db && userId ? Equipment.squadSizeOf(id => Q.ownedHas.get(userId, tank, id)) : 1;
+  // bộ ngụy trang cỏ: chỉ giữ khi tài khoản sở hữu (hoặc đang mở hết đồ)
+  if (tank === 'INFANTRY' && k.g && !Equipment.isFree('ghillie') && !(db && userId && Q.ownedHas.get(userId, tank, 'ghillie'))) delete k.g;
+  if (tank === 'INFANTRY' && k.mk && !Equipment.isFree('medkit') && !(db && userId && Q.ownedHas.get(userId, tank, 'medkit'))) delete k.mk;
   if (!db || !userId) {
     k.m = k.m.filter(id => Equipment.isFree(id));
     k.p = []; k.a = {};
@@ -1074,11 +1109,26 @@ async function handle(req, res) {
       const tank = String(b.tank || '');
       if (!TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
       const now = Date.now();
+      // MỞ KHÓA XE: mua 1 lần bằng Bạc
+      if (b.vehicle) {
+        const price = Equipment.vehiclePrice(tank);
+        if (vehicleOpen(u.id, tank)) return send(res, 409, { error: 'Bạn đã có xe này rồi' });
+        const ok = tx(() => {
+          if (Number(Q.spend.run(price, u.id, price).changes) !== 1) return false;
+          Q.addOwned.run(u.id, tank, Equipment.VEHICLE_ITEM, now);
+          Q.addPurchase.run(u.id, now, tank, Equipment.VEHICLE_ITEM, 1, price);
+          return true;
+        });
+        if (!ok) return send(res, 402, { error: 'Không đủ Bạc' });
+        return send(res, 200, { profile: publicProfile(Q.userById.get(u.id)) });
+      }
+      if (!vehicleOpen(u.id, tank)) return send(res, 403, { error: 'Phải mở khóa xe này trước' });
       if (b.item !== undefined) {
         const id = String(b.item);
         const price = Equipment.priceOf(id);
         if (!price || !Equipment.compatible(id, tank)) return send(res, 400, { error: 'Xe này không lắp được món đó' });
         if (Q.ownedHas.get(u.id, tank, id)) return send(res, 409, { error: 'Bạn đã có món này cho xe này rồi' });
+        if (!squadStepOk(u.id, tank, id)) return send(res, 400, { error: 'Phải mở khóa lính trước đó trước' });
         const ok = tx(() => {
           if (Number(Q.spend.run(price, u.id, price).changes) !== 1) return false;
           Q.addOwned.run(u.id, tank, id, now);
@@ -1275,6 +1325,7 @@ async function handle(req, res) {
     if (url === '/api/ad/start') {
       const tank = b.spin ? '-' : String(b.tank || '');
       if (!b.spin && !TANKS.includes(tank)) return send(res, 400, { error: 'Xe không hợp lệ' });
+      if (!b.spin && !vehicleOpen(u.id, tank)) return send(res, 403, { error: 'Phải mở khóa xe này trước' });
       const now = Date.now(), AD = Equipment.AD;
       if (adsLeft(u.id) + adsBonusLeft(u.id) <= 0) return send(res, 429, { error: `Hôm nay bạn đã xem đủ ${AD.DAILY + AD.BONUS} quảng cáo có thưởng — quay lại vào ngày mai` });
       const last = adLastAt.get(u.id) || 0;
@@ -1299,6 +1350,7 @@ async function handle(req, res) {
         const it = Equipment.MODULES[key] || Equipment.PREMIUM[key];
         if (!it || Equipment.isFree(key) || !Equipment.compatible(key, tank)) return send(res, 400, { error: 'Món này không cần mở khóa / xe này không lắp được' });
         if (Q.ownedHas.get(u.id, tank, key)) return send(res, 409, { error: 'Bạn đã có món này cho xe này rồi' });
+        if (!squadStepOk(u.id, tank, key)) return send(res, 400, { error: 'Phải mở khóa lính trước đó trước' });
         if (it.noAd || !Equipment.adsToUnlock(key)) return send(res, 400, { error: 'Món này chỉ mua được bằng Bạc' });
         if (adsLeft(u.id) <= 0) return send(res, 429, { error: `Hết ${AD.DAILY} lượt mở khóa hôm nay — lượt xem thêm chỉ nhận vật tư` });
         kind = 'item';
@@ -1384,6 +1436,9 @@ async function handle(req, res) {
       // hòm thả dù: 1 hòm tại 1 thời điểm (~25 s đầu trận, rồi 22 s sau mỗi lần có chủ + thời gian rơi + chạy tới, bot tranh)
       // -> 1 người khó chiếm quá ~1 hòm / 100 s (trận 10 phút: tối đa 7)
       let airdrops = Math.round(clampN(b.airdrops, 0, Math.floor(dur / 100) + 1));
+      // Bạc trong hòm tiền thả dù (Equipment.AIRDROP_CASH): không quá số hòm tiền 1 trận được có x bao lớn nhất
+      const CA = Equipment.AIRDROP_CASH, bagMax = Math.max(...CA.bags.map(x => x.n));
+      let airdropCash = Math.round(clampN(b.airdropCash, 0, Math.min(airdrops, 2 + Math.floor(dur * 1000 / CA.everyMs)) * bagMax));
       // vừa chơi trận mạng: không vượt quá số máy chủ đã tự đếm
       const o = online.get(u.id);
       let verified = false, live = null;
@@ -1395,6 +1450,7 @@ async function handle(req, res) {
         verified = !!o.vs;
         live = o;
         airdrops = Math.min(airdrops, o.airdrops || 0);
+        airdropCash = Math.min(airdropCash, o.cash || 0);
         kills = Math.min(kills, o.kills);
         damage = Math.min(damage, Math.round((o.damage + 0.5) * 10) / 10);
         deaths = Math.max(deaths, o.deaths);
@@ -1411,7 +1467,7 @@ async function handle(req, res) {
       const map = MAPS.includes(b.mapType) ? b.mapType : null;
       let gained = Math.round(40 + (result === 'win' ? 100 : result === 'draw' ? 50 : 0) + kills * 30 + damage * 8 + Math.min(dur, 900) / 15) + (kdBonus ? kdBonus.xp : 0);
       const before = levelInfo(u.xp).level;
-      let silver = Equipment.silverFor(result, kills, damage, dur, airdrops) + (kdBonus ? kdBonus.silver : 0);
+      let silver = Equipment.silverFor(result, kills, damage, dur, airdrops) + (kdBonus ? kdBonus.silver : 0) + airdropCash;
       let ammoRefund = 0, capped = false;
       // kiểm tra nhịp gửi + ghi 3 bảng trong cùng 1 giao dịch (đọc lại last_result_at bên trong -> không ghi trùng)
       const ok = tx(() => {
@@ -1462,7 +1518,7 @@ async function handle(req, res) {
       });
       if (!ok) return send(res, 429, { error: 'Kết quả trận đã được ghi' });
       const p = publicProfile(Q.userById.get(u.id));
-      return send(res, 200, { profile: p, gained, silver, ammoRefund, levelUp: p.level > before, verified, capped, kdPlace, kdBonus, airdrops, airdropSilver: airdrops * (Equipment.AIRDROP_SILVER || 0) });
+      return send(res, 200, { profile: p, gained, silver, ammoRefund, levelUp: p.level > before, verified, capped, kdPlace, kdBonus, airdrops, airdropCash, airdropSilver: airdrops * (Equipment.AIRDROP_SILVER || 0) + airdropCash });
     }
     return send(res, 404, { error: 'Không có API này' });
   } catch (e) {
@@ -1480,4 +1536,4 @@ if (openDb()) {
   process.on('SIGINT', () => { closeDb(); process.exit(0); });
   process.on('SIGTERM', () => { closeDb(); process.exit(0); });
 }
-module.exports = { handle, DATA_DIR, levelInfo, noteOnline, notePlace, noteResult, noteAirdrop, noteAmmo, noteArmorGone, userIdFromToken, skillOf, verifyKit };
+module.exports = { handle, DATA_DIR, levelInfo, noteOnline, notePlace, noteResult, noteAirdrop, noteAmmo, noteArmorGone, userIdFromToken, skillOf, verifyKit, vehicleOpen };

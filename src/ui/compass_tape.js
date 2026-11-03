@@ -135,8 +135,9 @@ const CompassTape = (() => {
     }, false);
     // hòm thả dù
     const AIR = g.airdrop && !g.airdrop.collected ? g.airdrop : null;
+    const airCol = AIR && typeof SupplyManager !== 'undefined' && SupplyManager.CARGO[AIR.kind] ? SupplyManager.CARGO[AIR.kind].col : C.amber;
     if (AIR) mark(AIR.x, AIR.z, (x, y, s) => {
-      ctx.fillStyle = C.amber; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1;
+      ctx.fillStyle = airCol; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, y - 4.5); ctx.lineTo(x + 4.5, y); ctx.lineTo(x, y + 4.5); ctx.lineTo(x - 4.5, y); ctx.closePath(); ctx.fill(); ctx.stroke();
       if (s) edgeArrow(x, y, s, C.amber);
     }, true);

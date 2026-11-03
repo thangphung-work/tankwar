@@ -9,6 +9,7 @@
  */
 const ArmoryUI = (() => {
   let insp = null, cat = 'armor', saveTimer = null, busy = false, msg = '', flash = null;   // flash: hiệu ứng số nhảy sau khi mua / trả
+  let soldier = -1;   // bộ binh: lính đang mở phần trang bị riêng (-1: đang ở thẻ TỔ LÍNH)
   const $ = (sel, root) => (root || document).querySelector(sel);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const E = () => (typeof Equipment !== 'undefined' ? Equipment : null);
@@ -32,7 +33,7 @@ const ArmoryUI = (() => {
   // ---------------------------------------------------------------------------
   // ẢNH TRANG BỊ: render sẵn từ mô hình 3D thật (equipment_thumbs.html) -> assets/equipment/<id>.webp
   // ---------------------------------------------------------------------------
-  const IMG_V = '16';   // đổi khi render lại ảnh (máy chủ cache ảnh)
+  const IMG_V = '17';   // đổi khi render lại ảnh (máy chủ cache ảnh)
   const imgUrl = (id) => `assets/equipment/${id}.webp?v=${IMG_V}`;
   const imgTag = (id, alt) => `<img class="eqd-img" src="${imgUrl(id)}" alt="${esc(alt || '')}" loading="lazy" decoding="async" draggable="false">`;
   // Tác dụng chính 1 dòng (mô tả đầy đủ xem ở tooltip khi rê chuột)
@@ -147,15 +148,18 @@ const ArmoryUI = (() => {
     // ô 1 bệ (nóc tháp / mũi xe / vũ khí chính / UAV) chỉ hiện ở xe có món cho ô đó
     const MOUNT = Eq.MOUNT_CATS || ['roof'];
     const isMount = (c) => MOUNT.includes(c);
-    const hasCat = (c) => !isMount(c) || Object.keys(Eq.MODULES).some(id => Eq.MODULES[id].cat === c && (Eq.compatible(id, tank) || (Eq.SLOT_DEFAULT && Eq.SLOT_DEFAULT[c] && Eq.SLOT_DEFAULT[c][tank] === id)));
-    if (!hasCat(cat)) cat = 'armor';
+    const hasCat = (c) => tank === 'INFANTRY' ? c === 'squad' : !isMount(c) || Object.keys(Eq.MODULES).some(id => Eq.MODULES[id].cat === c && (Eq.compatible(id, tank) || (Eq.SLOT_DEFAULT && Eq.SLOT_DEFAULT[c] && Eq.SLOT_DEFAULT[c][tank] === id)));
+    if (!hasCat(cat)) cat = tank === 'INFANTRY' ? 'squad' : 'armor';
+    const squadN = tank === 'INFANTRY' ? Math.max(1, Eq.squadSizeOf(id => owns(tank, id))) : 0;
+    if (soldier >= squadN) soldier = -1;
+    const pane = soldier >= 0 ? 'soldier' + soldier : cat;
     const inCat = (c) => lo.m.filter(id => Eq.MODULES[id] && Eq.MODULES[id].cat === c);
     // Số ô mỗi nhóm; chế độ không giới hạn ô (Equipment.UNLIMITED_SLOTS) = số món hợp với xe này
     const capOf = (c) => Eq.UNLIMITED_SLOTS ? Object.keys(Eq.MODULES).filter(id => Eq.MODULES[id].cat === c && Eq.compatible(id, tank)).length : Eq.CATS[c].slots;
     const C = Eq.CATS[cat], cap = capOf(cat), on = inCat(cat), full = cap && on.length >= cap;
     const keepScroll = ($('.eqd-strip', root) || {}).scrollLeft || 0;
     const keepBarScroll = ($('.eqd-bar', root) || {}).scrollLeft || 0;
-    const sameCat = root.dataset.cat === cat && root.dataset.tank === tank;
+    const sameCat = root.dataset.cat === pane && root.dataset.tank === tank;
 
     // Hàng trên: nhóm tab cuộn ngang · lời nhắn
     let h = '<div class="eqd-bar"><div class="eqd-tabs" role="tablist">';
@@ -164,8 +168,10 @@ const ArmoryUI = (() => {
       if (!hasCat(c)) continue;
       const hurt = c !== 'ammo' && Object.keys(Eq.MODULES).some(id => Eq.MODULES[id].cat === c && condOf(tank, id));
       const badge = (K.slots ? `<em>${inCat(c).length}/${capOf(c)}</em>` : '') + (hurt ? '<em class="eqd-hurt" title="Có giáp bị hỏng chưa sửa"><i class="ti ti-tool"></i></em>' : '');
-      h += `<button class="eqd-tab${c === cat ? ' on' : ''}" role="tab" aria-selected="${c === cat}" data-act="cat" data-item="${c}"><i class="ti ti-${K.icon}"></i><span>${K.name}</span>${badge}</button>`;
+      const onTab = c === cat && soldier < 0;
+      h += `<button class="eqd-tab${onTab ? ' on' : ''}" role="tab" aria-selected="${onTab}" data-act="cat" data-item="${c}"><i class="ti ti-${K.icon}"></i><span>${K.name}</span>${badge}</button>`;
     }
+    for (let i = 0; i < squadN; i++) h += `<button class="eqd-tab${soldier === i ? ' on' : ''}" role="tab" aria-selected="${soldier === i}" data-act="soldier" data-item="${i}"><i class="ti ti-user"></i><span>LÍNH ${i + 1}</span></button>`;
     h += '</div>';
     const note = msg || (flash && flash.cost ? `<span class="eqd-float${flash.cost < 0 ? ' up' : ''}">${flash.cost > 0 ? '−' : '+'}${fmt(Math.abs(flash.cost))} Bạc</span>` : '');
     const RA = repairAllCost(tank);
@@ -176,7 +182,8 @@ const ArmoryUI = (() => {
 
     // Hàng dưới: thẻ đồ
     h += '<div class="eqd-strip">';
-    if (cat === 'ammo') {
+    if (soldier >= 0) h += soldierCards(tank, soldier);
+    else if (cat === 'ammo') {
       const shop = Eq.AMMO_SHOP[tank] || {}, P = prof(), stock = (P && P.armory && P.armory.stock && P.armory.stock[tank]) || {};
       const loginBtn = '<div class="eqd-qty"><button class="eqd-q wide" data-act="login"><i class="ti ti-login"></i> Đăng nhập để mua</button></div>';
       const left = adsLeft() + adsBonus();
@@ -233,7 +240,7 @@ const ArmoryUI = (() => {
       } else {
         for (const id in Eq.MODULES) {
           const M = Eq.MODULES[id];
-          if (M.cat !== cat || !Eq.compatible(id, tank)) continue;
+          if (M.cat !== cat || !Eq.compatible(id, tank) || id === 'ghillie' || id === 'medkit') continue;   // đồ cỏ, bộ y tế nằm trong trang bị riêng từng lính
           h += itemCard(tank, id, M, lo, full);
         }
       }
@@ -244,7 +251,7 @@ const ArmoryUI = (() => {
     if (!sameCat) { if (window.tcSwap) tcSwap(root); }
     else if (window.tcSwapStop) tcSwapStop(root);
     flash = null;   // hiệu ứng chỉ chạy 1 lần ngay sau giao dịch
-    root.dataset.cat = cat; root.dataset.tank = tank;
+    root.dataset.cat = pane; root.dataset.tank = tank;
     if (sameCat && keepScroll) $('.eqd-strip', root).scrollLeft = keepScroll;
     if (keepBarScroll) $('.eqd-bar', root).scrollLeft = keepBarScroll;
   }
@@ -260,6 +267,7 @@ const ArmoryUI = (() => {
   // Thẻ giáp / phụ kiện: bấm cả thẻ để trang bị / gỡ (đồ khóa: xem quảng cáo nhận)
   function itemCard(tank, id, M, lo, full) {
     const Eq = E();
+    if (M.cat === 'squad') return squadCard(tank, id, M);
     const isUavSlot = id.startsWith('uav_slot_');
     const uSlots = (Eq.uavSlotsOf ? Eq.uavSlotsOf(prof() || lo, tank) : 0);
 
@@ -325,6 +333,52 @@ const ArmoryUI = (() => {
     return card({ img: id, name: M.name, line: esc(SHORT[id] || M.desc), cls, tag: M.adv ? 'NÂNG CAO' : '',
       attrs: ` role="button" tabindex="0" aria-pressed="${equipped}" data-act="${act}" data-item="${id}"`, tip: `${M.name} — ${M.desc}\n${hint}` });
   }
+  // Thẻ tổ lính: đã có thì bấm vào phần trang bị riêng của lính đó; chưa có thì mở khóa lần lượt
+  const SQUAD_WPN = {
+    gl: { name: 'Phóng lựu 40 mm', img: 'wpn_gl', line: 'Ổ quay 6 viên, bắn vòng cầu; tốt với xe nhẹ, yếu với giáp dày · 14 kg, bắn dần nhẹ đi' },
+    rpg: { name: 'RPG', img: 'wpn_rpg', line: 'Đầu nổ lõm 85 mm: đánh sườn, đuôi, nóc xe tăng · 4 quả, 17 kg, bắn dần nhẹ đi' },
+    atr: { name: 'Bắn tỉa hạng nặng', img: 'wpn_atr', line: 'Xuyên giáp, bắn xa, kính 3 nấc; nằm sấp khi bắn · 20 viên, 27 kg, không chạy được' },
+    kami: { name: 'UAV cảm tử (3 quả)', img: 'uav_kami', line: 'Lái từ máy điều khiển, lao vào nóc / sườn xe tăng · 2 quả hạ 1 xe tăng · 15 kg, mỗi ống bắn xong nhẹ 4 kg' }
+  };
+  const hasItem = (tank, id) => E().isFree(id) || owns(tank, id);
+  function squadCard(tank, id, M) {
+    const Eq = E(), n = +id.split('_')[1], got = Eq.isFree(id) || owns(tank, id);
+    if (got) {
+      const L = SoldierPlayer.loadLoadout(), w = SoldierPlayer.squadWeapons(L)[n - 1], g = hasItem(tank, 'ghillie') && SoldierPlayer.squadGhillie(L)[n - 1], mk = hasItem(tank, 'medkit') && SoldierPlayer.squadMedkit(L)[n - 1];
+      return card({ img: 'squad', name: 'Lính số ' + n, line: esc(SQUAD_WPN[w].name) + (g ? ' · Đồ cỏ' : '') + (mk ? ' · Y tế' : ''), cls: ' has', tag: n + '/' + Eq.SQUAD_MAX,
+        attrs: ` role="button" tabindex="0" data-act="soldier" data-item="${n - 1}"`, tip: `Bấm để vào trang bị riêng của lính này. Trong trận: phím ${n} để chuyển sang` });
+    }
+    const prevOwned = Eq.isFree(M.needs) || owns(tank, M.needs);
+    const ctl = !prof() ? '<div class="eqd-qty"><button class="eqd-q wide" data-act="login"><i class="ti ti-login"></i> Đăng nhập để mở khóa</button></div>'
+      : !prevOwned ? `<div class="eqd-qty"><button class="eqd-q wide" disabled><i class="ti ti-lock"></i> Cần mở lính ${n - 1} trước</button></div>` : unlockCtl(tank, id, M);
+    return card({ img: 'squad', name: M.name, line: esc(M.desc.split('.')[0]), cls: ' locked', lock: true, tag: n + '/' + Eq.SQUAD_MAX, extra: ctl, tip: `${M.name} — ${M.desc}\nGiá mở khóa: ${fmt(M.price)} Bạc` });
+  }
+  // Trang bị riêng của lính i: chọn 1 vũ khí + mặc / cởi bộ đồ cỏ + mang / bỏ bộ y tế
+  function soldierCards(tank, i) {
+    const Eq = E(), L = SoldierPlayer.loadLoadout(), w = SoldierPlayer.squadWeapons(L)[i];
+    let h = '<div class="eqd-sep"><span>VŨ KHÍ</span></div>';
+    for (const k of Eq.SQUAD_WEAPONS) {
+      const W = SQUAD_WPN[k], on = k === w;
+      h += card({ img: W.img, name: W.name, line: W.line, cls: on ? ' on' : '',
+        attrs: ` role="button" tabindex="0" aria-pressed="${on}" data-act="squadWpn" data-item="${k}"`, tip: `${W.name} — ${W.line}\n${on ? `Lính số ${i + 1} đang mang` : `Bấm để lính số ${i + 1} mang món này`}` });
+    }
+    h += '<div class="eqd-sep"><span>TRANG BỊ</span></div>';
+    const U = Eq.MEDKIT;
+    return h + soldierGearCard(tank, 'ghillie', Eq.MODULES.ghillie, i, SoldierPlayer.squadGhillie(L)[i], 'Đang mặc · bấm để cởi', 'Đang cởi · bấm để mặc')
+      + soldierGearCard(tank, 'medkit', Eq.MODULES.medkit, i, SoldierPlayer.squadMedkit(L)[i], `Đang mang · phím E hồi đầy máu, ${U.uses} lần`, 'Không mang · bấm để mang');
+  }
+  // Đồ mở khóa 1 lần cho cả tổ; đã có thì bấm thẻ để lính này dùng / bỏ (lưu cùng bộ đồ lính trên máy, gửi kèm kit g / mk)
+  function soldierGearCard(tank, id, M, i, on, lineOn, lineOff) {
+    const Eq = E();
+    if (hasItem(tank, id)) {
+      return card({ img: id, name: M.name, line: on ? lineOn : lineOff, cls: on ? ' on' : '', tag: 'NÂNG CAO',
+        attrs: ` role="button" tabindex="0" aria-pressed="${on}" data-act="${id}" data-item="${i}"`, tip: `${M.name} — ${M.desc}` });
+    }
+    const ctl = prof() ? unlockCtl(tank, id, M) : '<div class="eqd-qty"><button class="eqd-q wide" data-act="login"><i class="ti ti-login"></i> Đăng nhập để mở khóa</button></div>';
+    return card({ img: id, name: M.name, line: esc(M.desc.split('.')[0]), cls: ' locked', lock: true, tag: 'NÂNG CAO', extra: ctl,
+      tip: `${M.name} — ${M.desc}
+Mở khóa vĩnh viễn: ${fmt(M.price)} Bạc${adsOn() && Eq.adsToUnlock(id) ? ` hoặc xem ${Eq.adsToUnlock(id)} quảng cáo` : ''}` });
+  }
   // Nút mở khóa đồ nâng cao / đạn cao cấp: [Mua · giá Bạc] [▶ quảng cáo đã xem / cần]
   function unlockCtl(tank, id, M) {
     const Eq = E(), need = Eq.adsToUnlock(id), got = A() && A().adProgressOf ? A().adProgressOf(tank, id) : 0, left = adsLeft();
@@ -340,13 +394,31 @@ const ArmoryUI = (() => {
     if (!b || b.disabled || busy || !insp) return;
     const act = b.dataset.act, id = b.dataset.item, tank = insp.currentTankType, Acc = A(), Eq = E();
     if (act === 'cat') {
-      cat = id; msg = ''; render();
+      cat = id; soldier = -1; msg = ''; render();
       const tabEl = $(`[data-act="cat"][data-item="${id}"]`, $('#ti-equip-dock'));
       if (tabEl && tabEl.scrollIntoView) tabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
       return;
     }
     if (act === 'login') { if (Acc && Acc.showLogin) Acc.showLogin(); return; }
     if (!Eq || !Acc) return;
+    if (act === 'soldier') { soldier = +id; msg = ''; render(); return; }
+    if (act === 'squadWpn') {
+      if (soldier < 0) return;
+      const L = SoldierPlayer.loadLoadout(), W = SoldierPlayer.squadWeapons(L);
+      W[soldier] = id;
+      L.weapons = W; SoldierPlayer.saveLoadout(L);
+      const mm = window.matchmakingController || (window.game && window.game.matchmaking);
+      if (mm && mm.refreshMyKit) mm.refreshMyKit();
+      render(); rebuildPreview(); return;
+    }
+    if (act === 'ghillie' || act === 'medkit') {
+      const L = SoldierPlayer.loadLoadout(), G = act === 'ghillie' ? SoldierPlayer.squadGhillie(L) : SoldierPlayer.squadMedkit(L);
+      G[+id] = !G[+id];
+      L[act === 'ghillie' ? 'ghillies' : 'medkits'] = G; SoldierPlayer.saveLoadout(L);
+      const mm = window.matchmakingController || (window.game && window.game.matchmaking);
+      if (mm && mm.refreshMyKit) mm.refreshMyKit();
+      render(); rebuildPreview(); return;
+    }
     if (act === 'claim') { await adFlow(tank, { item: id }); return; }
     if (act === 'adAmmo') { await adFlow(tank, { ammo: id }); return; }
     if (act === 'buyAmmo' || act === 'buyItem' || act === 'sellAmmo') { await buyFlow(tank, act, id, Math.max(1, +b.dataset.n || 1)); return; }

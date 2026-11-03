@@ -318,7 +318,8 @@ class BotAIController {
     const camo = typeof Equipment !== 'undefined' && Equipment.camoHidden && Equipment.camoHidden(T);
     const camoRadarK = (camo && typeof Equipment !== 'undefined' && Equipment.camoRadarFactor) ? Equipment.camoRadarFactor(T) : 1;
     const maxLockR = R.maxR * camoRadarK;
-    const ok = !U.isDead && G && G.fireRoofMissile && T && !T.isDead && (left > 0 || guiding) && d <= maxLockR && (d >= R.minR || guiding)
+    // bộ binh: tên lửa đột nóc không khóa được người
+    const ok = !U.isDead && G && G.fireRoofMissile && T && !T.isDead && T.tankType !== 'INFANTRY' && (left > 0 || guiding) && d <= maxLockR && (d >= R.minR || guiding)
       && (guiding || T.hp > (T.maxHp || 3) * 0.5)
       && this.seesDirect(T) && !(U.dmg && U.dmg.lost && U.dmg.lost.has(U._roofTag || 'rocketPod'));
     if (!ok) { if (this.roofT) { this.roofT = null; U._aa = null; } return; }
@@ -419,6 +420,8 @@ class BotAIController {
       if (this.unit.isDead || L.isDead || this.lockHold <= 0 || !this.seesDirect(L)) {
         this.lockUnit = null;
         this.unit._lockOn = null;
+      } else if (L.tankType === 'INFANTRY') {
+        this.unit._lockOn = null;   // bộ binh không bị khóa: bot vẫn bám ngắm bắn, lính không nhận cảnh báo khóa
       } else {
         const m = (this.unit.tankType === 'SCOUT' && this.unit.antiTankCooldown <= 0 && (this.unit.missileAmmoCount || 0) > 0)
           || (this.roofT && this.roofT.laser && this.roofT.u === L) ? 2 : 1;   // tia laser chỉ thị tên lửa đột nóc cũng là khóa tên lửa

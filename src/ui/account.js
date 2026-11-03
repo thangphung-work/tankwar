@@ -22,7 +22,7 @@ const Account = (() => {
 
   const online = typeof location !== 'undefined' && (location.protocol === 'http:' || location.protocol === 'https:');
 
-  const TANK_NAMES = { ALL_ROUNDER: 'HALBERD MK.3', GATLING: 'HAILSTORM R6', ARTILLERY: 'ARBALEST 155', SCOUT: 'MARTEN R4' };
+  const TANK_NAMES = { ALL_ROUNDER: 'HALBERD MK.3', GATLING: 'HAILSTORM R6', ARTILLERY: 'ARBALEST 155', SCOUT: 'MARTEN R4', INFANTRY: 'VANGUARD' };
 
   const MAP_NAMES = { DESERT: 'Sa mạc lửa', URBAN: 'Đô thị đổ nát', JUNGLE: 'Rừng rậm', HIGHLAND: 'Cao nguyên', RIVER_LAKE: 'Sông hồ' };
 
@@ -262,7 +262,7 @@ const Account = (() => {
 
       const tank = e.target.closest('.mm-class-card'), map = e.target.closest('.mm-map-card');
 
-      if (tank && !e.target.closest('.btn-inspect-tank-3d')) queueSave({ lastTank: tank.getAttribute('data-tank-type') });
+      if (tank && !e.target.closest('.btn-inspect-tank-3d') && vehicleOpen(tank.getAttribute('data-tank-type'))) queueSave({ lastTank: tank.getAttribute('data-tank-type') });
 
       if (map) queueSave({ lastMap: map.getAttribute('data-map-type') });
 
@@ -364,6 +364,8 @@ const Account = (() => {
 
     renderHeroRepair();
 
+    renderVehicleLocks();
+
     // đăng nhập / đăng xuất: bộ trang bị đổi theo tài khoản
 
     if (swapped) { try { window.dispatchEvent(new CustomEvent('armory-changed')); } catch (e) {} }
@@ -404,7 +406,7 @@ const Account = (() => {
 
           const tc = document.querySelector(`.mm-class-card[data-tank-type="${p.lastTank}"]`);
 
-          if (tc) tc.click();
+          if (tc && vehicleOpen(p.lastTank)) tc.click();
 
           const mc = document.querySelector(`.mm-map-card[data-map-type="${p.lastMap}"]`);
 
@@ -543,6 +545,152 @@ const Account = (() => {
     const o = profile && profile.armory && profile.armory.owned && profile.armory.owned[tank];
 
     return !!(o && o.indexOf(id) >= 0);
+
+  }
+
+  // MỞ KHÓA XE (Equipment.VEHICLE_PRICE): mở bằng file:// / trang thử nghiệm -> mở hết; khách chỉ có xe miễn phí
+
+  function vehicleOpen(tank) {
+
+    if (!online || typeof Equipment === 'undefined' || !Equipment.vehicleOpen) return true;
+
+    if (window.strongholdLab || /[?&]lab=/.test(location.search)) return true;
+
+    return Equipment.vehicleOpen(tank, profile ? owns : null);
+
+  }
+
+  // Thẻ chọn xe ở sảnh: xe chưa mở thì tối ảnh + nhãn giá; xe đang chọn bị khóa (đăng xuất / tài khoản mới) -> về xe khởi đầu
+
+  function renderVehicleLocks() {
+
+    if (typeof Equipment === 'undefined' || !Equipment.vehiclePrice) return;
+
+    document.querySelectorAll('.mm-class-card').forEach(card => {
+
+      const t = card.getAttribute('data-tank-type'), locked = !vehicleOpen(t);
+
+      card.classList.toggle('locked', locked);
+
+      let tag = card.querySelector('.veh-lock');
+
+      if (!locked) { if (tag) { tag.remove(); card.removeAttribute('title'); } return; }
+
+      if (!tag) { tag = document.createElement('span'); tag.className = 'veh-lock'; (card.querySelector('.card-img-frame') || card).appendChild(tag); }
+
+      const price = Equipment.vehiclePrice(t);
+
+      tag.classList.toggle('cant', !!profile && (profile.silver | 0) < price);
+
+      tag.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i>${fmtSilver(price)}`;
+
+      card.title = `Chưa mở khóa — ${fmtSilver(price)} Bạc`;
+
+    });
+
+    const mm = window.matchmakingController || (window.game && window.game.matchmaking);
+
+    if (mm && typeof mm.ensureUnlockedTank === 'function') mm.ensureUnlockedTank();
+
+  }
+
+  // Bấm thẻ xe đang khóa: hộp mở khóa bằng Bạc (thiếu Bạc -> mở bảng nạp); khách -> đăng nhập trước
+
+  let unlockEl = null, unlockTank = null;
+
+  function promptUnlock(tank) {
+
+    if (!online) return;
+
+    if (!profile) {
+
+      const auth = $('#acc-auth');
+
+      show(auth);
+
+      const err = $('.acc-error', auth);
+
+      if (err) err.textContent = 'Đăng nhập để mở khóa xe này';
+
+      return;
+
+    }
+
+    if (!unlockEl) {
+
+      unlockEl = document.createElement('div');
+
+      unlockEl.className = 'acc-overlay hidden';
+
+      unlockEl.innerHTML = `<div class="acc-card acc-unlock"><button type="button" class="acc-close" title="Đóng"><i class="ti ti-x"></i></button><div class="acc-body"></div></div>`;
+
+      document.body.appendChild(unlockEl);
+
+      unlockEl.addEventListener('click', async (e) => {
+
+        if (e.target === unlockEl || e.target.closest('.acc-close') || e.target.closest('[data-act="later"]')) { hide(unlockEl); return; }
+
+        if (e.target.closest('[data-act="veh-topup"]')) { hide(unlockEl); if (window.TopUp) TopUp.open(); return; }
+
+        const btn = e.target.closest('[data-act="unlock"]');
+
+        if (!btn || btn.disabled) return;
+
+        const err = $('.acc-error', unlockEl), t = unlockTank;
+
+        btn.disabled = true; err.textContent = '';
+
+        try {
+
+          await buy(t, { vehicle: true });
+
+          const se = window.soundEngine;
+
+          if (se && se.playUiPurchase) se.playUiPurchase(false);
+
+          hide(unlockEl);
+
+          const card = document.querySelector(`.mm-class-card[data-tank-type="${t}"]`);
+
+          if (card) card.click();   // chọn luôn xe vừa mở
+
+        } catch (ex) {
+
+          err.textContent = ex.message;
+
+          if (window.soundEngine && window.soundEngine.playUiDenied) window.soundEngine.playUiDenied();
+
+        } finally { btn.disabled = false; }
+
+      });
+
+    }
+
+    unlockTank = tank;
+
+    const price = Equipment.vehiclePrice(tank), have = profile.silver | 0, enough = have >= price;
+
+    const card = document.querySelector(`.mm-class-card[data-tank-type="${tank}"]`);
+
+    const role = card ? (card.querySelector('.card-tank-role') || {}).textContent || '' : '';
+
+    $('.acc-body', unlockEl).innerHTML = `
+
+      <h3 class="acc-unlock-title"><i class="ti ti-lock-open"></i> Mở khóa ${esc(TANK_NAMES[tank] || tank)}</h3>
+
+      <p class="acc-unlock-sub">${esc(role)} — mua 1 lần, dùng mãi mãi.</p>
+
+      <div class="acc-unlock-price"><span><i class="ti ti-coins"></i> ${fmtSilver(price)} Bạc</span><small>Bạn có ${fmtSilver(have)} Bạc</small></div>
+
+      <div class="acc-error" role="alert">${enough ? '' : `Còn thiếu ${fmtSilver(price - have)} Bạc — đánh thêm trận hoặc nạp Bạc`}</div>
+
+      ${enough ? '<button type="button" class="acc-primary" data-act="unlock">Mở khóa</button>'
+
+        : '<button type="button" class="acc-primary" data-act="veh-topup">Nạp Bạc</button>'}
+
+      <button type="button" class="acc-link" data-act="later">Để sau</button>`;
+
+    show(unlockEl);
 
   }
 
@@ -1192,7 +1340,7 @@ const Account = (() => {
 
         result, kills: P.kills || 0, deaths: g._playerDeaths || 0, damage: P.damageDealt || 0, shots: P.shotsFired || 0,
 
-        tankType: P.tankType, mapType: mm.selectedMapType || (g.terrain && g.terrain.mapType), durationSec, ammoUsed, kdPlace: g._kdPlace || 0, airdrops: g._playerAirdrops || 0 });
+        tankType: P.tankType, mapType: mm.selectedMapType || (g.terrain && g.terrain.mapType), durationSec, ammoUsed, kdPlace: g._kdPlace || 0, airdrops: g._playerAirdrops || 0, airdropCash: g._playerAirdropCash || 0 });
 
       setProfile(r.profile, false);
 
@@ -1416,6 +1564,8 @@ const Account = (() => {
 
     renderHeader();
 
+    renderVehicleLocks();
+
     // nối vào game khi đã khởi tạo
 
     const waitGame = () => { if (window.game) hookGame(window.game); else setTimeout(waitGame, 300); };
@@ -1450,7 +1600,7 @@ const Account = (() => {
 
 
 
-  return { get profile() { return profile; }, get online() { return online; }, applyProfile: (p) => setProfile(p, false), api, kitFor, loadoutOf, owns, buy, sell, repair, flushAmmo, adStart, claim, watchAd, adsLeft, adsBonus, adAmmoN, freeOf, adProgressOf, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
+  return { get profile() { return profile; }, get online() { return online; }, applyProfile: (p) => setProfile(p, false), api, kitFor, loadoutOf, owns, vehicleOpen, promptUnlock, buy, sell, repair, flushAmmo, adStart, claim, watchAd, adsLeft, adsBonus, adAmmoN, freeOf, adProgressOf, setLoadout, fmtSilver, showLogin: () => show($('#acc-auth')), TANK_NAMES, MAP_NAMES };
 
 })();
 

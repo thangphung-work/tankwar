@@ -7479,6 +7479,13 @@
       return [core, fringe, clod, rock, sod];
     }
 
+    // động cơ hành trình RPG bắt lửa giữa đường: chớp lửa ngắn + cụm khói đặc ngay chỗ đánh lửa, vệt khói bắt đầu từ đây
+    rocketIgnite(x, y, z, vx, vy, vz) {
+      const v = Math.hypot(vx, vy, vz) || 1, ux = vx / v, uy = vy / v, uz = vz / v;
+      for (let i = 0; i < 4; i++) this.fire.add({ x, y, z, vx: -ux * rand(20, 70) + rand(-8, 8), vy: -uy * rand(20, 70) + rand(-8, 8), vz: -uz * rand(20, 70) + rand(-8, 8), size: rand(2.4, 4.4), grow: 5, drag: 4, grav: 0, life: rand(0.05, 0.11), alpha: 0.95, fadeIn: 0.004, c0: [1, 0.88, 0.6], c1: [1, 0.48, 0.14], cell: 1, floor: false });
+      for (let i = 0; i < 7; i++) { const g = rand(0.8, 0.92); this.smoke.add({ x: x + rand(-0.8, 0.8), y: y + rand(-0.8, 0.8), z: z + rand(-0.8, 0.8), vx: -ux * rand(4, 16) + rand(-5, 5), vy: -uy * rand(4, 16) + rand(0, 5), vz: -uz * rand(4, 16) + rand(-5, 5), size: rand(2.6, 4), grow: rand(5, 8), drag: 1.8, grav: -0.5, life: rand(1.4, 2.4), alpha: 0.5, fadeIn: 0.02, fadePow: 1.2, c0: [g, g, g], cell: 0, floor: false }); }
+    }
+
     // Vệt khói / lửa đuôi đạn đang bay (hỗ trợ nội suy đoạn đường để khói tên lửa liền mạch, dày đặc và cuộn trào)
     // info: { travel (quãng đã bay), tracer (viên vạch đường), burnedOut (RPG hết nhiên liệu), guided (tên lửa có điều khiển) }
     trail(x, y, z, ammoType, prevX, prevY, prevZ, info = {}) {

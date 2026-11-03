@@ -71,6 +71,7 @@ const KamiUAV = (() => {
     heavySplash: 0.35,   // nổ trượt cạnh xe giáp dày (ALL_ROUNDER / GATLING): đầu nổ lõm không chạm giáp chỉ phá thiết bị ngoài
     // đầu nổ lõm ~3 kg: xuyên nóc / sườn xe tăng mất ~70-80% máu (tên lửa đột nóc ~8 kg của xe tăng: 90-95%), xe nhẹ vẫn chết
     direct: 2.3, splash: 1.5, blast: { radius: 52, core: 16 },
+    infDmg: 0.72,   // UAV bộ binh mang vác (đầu nổ nhỏ): 2 quả trúng thẳng mới hạ được xe tăng (1 quả loại trên xe pháo còn ~21% máu)
     DETECT_MUL: 1.4   // radar bắt UAV cảm tử xa hơn drone thường bấy nhiêu lần
   };
   const nowS = () => performance.now() / 1000;
@@ -84,8 +85,9 @@ const KamiUAV = (() => {
     try { shell = B.fireShell3D(shooter, 0, -88, 1, 'RPG'); } finally { shooter._launchOverride = null; }
     if (!shell) return null;
     shell.vx = dir.x * 360; shell.vy = dir.y * 360; shell.vz = dir.z * 360;   // lao theo hướng bay ngay khung hình sau
-    shell.roofDirect = C.direct; shell.roofSplash = C.splash; shell.roofBlast = C.blast; shell.kami = true;
-    shell.heavyArmorSplash = C.heavySplash;
+    const dm = shooter.tankType === 'INFANTRY' ? C.infDmg : 1;
+    shell.roofDirect = C.direct * dm; shell.roofSplash = C.splash * dm; shell.roofBlast = C.blast; shell.kami = true;
+    shell.heavyArmorSplash = C.heavySplash * dm;
     if (burst) { shell._burstAt = burst; shell._burstSeen = new Set(); }
     if (shell.mesh) shell.mesh.visible = false;   // quả đạn chỉ là đầu nổ của chính UAV: không vẽ quả RPG
     return shell;
@@ -118,7 +120,9 @@ const KamiUAV = (() => {
     }
     return MATS[team];
   }
-  function build(team) {
+  const BASE_SCALE = 1.3, INF_SCALE = 0.75;   // UAV trên xe pháo / UAV bộ binh mang vác (dài ~60 cm, vừa ống SoldierModel.KAMI_L)
+  const scaleFor = (u) => (u && u.tankType === 'INFANTRY' ? INF_SCALE : BASE_SCALE);
+  function build(team, scale = BASE_SCALE) {
     const M = mats(team), g = new THREE.Group();
     g.name = 'kamiUav';
     g.rotation.order = 'YXZ';
@@ -256,7 +260,7 @@ const KamiUAV = (() => {
     fl.visible = false;
     g.add(fl);
     g.userData.kami = { wings, fin, flame: fl, ball, thr: 0, trailT: 0 };
-    g.scale.setScalar(1.3);
+    g.scale.setScalar(scale);
     animate(g, 0, 0, 0, 0, 0);   // dựng ra ở tư thế gập (trong ống), camera cầu nhìn thẳng mũi
     return g;
   }
@@ -292,10 +296,11 @@ const KamiUAV = (() => {
   }
 
   const methods = {
-    kamiOn(P) { return !!(P && P.tankType === 'ARTILLERY' && P.uavKind === 'kami'); },
+    kamiOn(P) { return !!(P && P.uavKind === 'kami' && (P.tankType === 'ARTILLERY' || P.tankType === 'INFANTRY')); },
 
     // tâm miệng ống phóng còn đạn (tọa độ thế giới) + hướng ống
     kamiTubeWorld(P) {
+      if (P.kamiTube) return P.kamiTube();   // lính bộ binh: ống đặt đất trước gối (infantry_match.js)
       const R = P.kamiRack;
       if (!R || !R.tilt) return { pos: new THREE.Vector3(P.x, (P.y || 0) + 30, P.z), dir: new THREE.Vector3(0, 0.5, -1).normalize() };
       R.tilt.updateWorldMatrix(true, false);
@@ -325,7 +330,8 @@ const KamiUAV = (() => {
       D._apsTried = null;   // quả mới: radar APS của xe địch xét lại từ đầu
       if (D.model && D.model.userData.kami) for (const W of D.model.userData.kami.wings) W.w.visible = true;   // quả mới: đủ cánh
       // UAV gập cánh nằm trong ống: trượt ra khỏi miệng ống trong vài phần trăm giây đầu
-      D.x = T.pos.x - T.dir.x * 6; D.y = T.pos.y - T.dir.y * 6; D.z = T.pos.z - T.dir.z * 6;
+      const inTube = (T.len || 9.2) * 0.65;
+      D.x = T.pos.x - T.dir.x * inTube; D.y = T.pos.y - T.dir.y * inTube; D.z = T.pos.z - T.dir.z * inTube;
       D.lx = T.pos.x; D.ly = T.pos.y; D.lz = T.pos.z;   // miệng ống: đo quãng rời ống để đánh lửa
       // khí nén đẩy ra theo hướng ống (cộng vận tốc xe đang chạy)
       const bs = P.speed || 0, ba = P.bodyAngle || 0;
@@ -989,7 +995,7 @@ const KamiUAV = (() => {
         R.curTube = ((R.curTube || 0) + 1) % R.tubes.length;
       }
       // hơi khí nén: luồng trắng đục phụt theo hướng ống ở miệng, phụt ngược ở cửa xả đáy ống
-      const tubeLen = 9.2;
+      const tubeLen = T.len || 9.2;
       const back = T.pos.clone().addScaledVector(T.dir, -tubeLen);
       for (let i = 0; i < 9; i++) this.kamiPuff(T.pos, T.dir, 18 + Math.random() * 30, 1.4 + Math.random() * 1.2, 0.9 + Math.random() * 0.5);
       for (let i = 0; i < 6; i++) this.kamiPuff(back, T.dir.clone().negate().add(new THREE.Vector3(0, 0.5, 0)).normalize(), 10 + Math.random() * 18, 1.2 + Math.random(), 0.8 + Math.random() * 0.4);
@@ -1007,7 +1013,7 @@ const KamiUAV = (() => {
     // vệt khói động cơ tên lửa đẩy: cụm khói xám nhả đều sau loa phụt (vị trí pos, hướng phụt về sau back)
     kamiTrail(holder, pos, back, dt, thr) {
       // nhả theo quãng đường bay (không theo khung hình): máy chậm vẫn ra vệt liền, không đứt quãng
-      const p = pos.clone().addScaledVector(back, 4.4);
+      const p = pos.clone().addScaledVector(back, 4.4 * (holder.model ? holder.model.scale.x / BASE_SCALE : 1));
       const L = holder.trailP;
       holder.trailP = p.clone();
       if (!L || L.distanceTo(p) > 80) return;
@@ -1060,9 +1066,9 @@ const KamiUAV = (() => {
       const P = this.player, D = this.droneState(), SE = window.soundEngine;
       const S = this._sight && this._sight.arty && !this._sight.dying ? this._sight : null;
       this.updateKamiFx(dt);
-      if (!D.model || !D.model.userData.kami) {
+      if (!D.model || !D.model.userData.kami || D.model.scale.x !== scaleFor(P)) {
         if (D.model && D.model.parent) D.model.parent.remove(D.model);
-        D.model = build(P.team);
+        D.model = build(P.team, scaleFor(P));
         this.scene.add(D.model);
       }
       const M = D.model, R = P.kamiRack;
@@ -1094,7 +1100,7 @@ const KamiUAV = (() => {
         M.visible = false;
         if (D.state === 'lost' && (D.reloadT -= dt) <= 0 && (P.kamikazeCount || 0) > 0 && !(P.dmg && P.dmg.lost && P.dmg.lost.has('kamiRack'))) {
           D.state = 'docked'; D.batt = 1; D.fuel = 1;
-          this.addCombatLog(`[[drone]] UAV cảm tử mới đã nạp vào ống (Ctrl để phóng, còn ${P.kamikazeCount})`, 'tip');
+          this.addCombatLog(P.tankType === 'INFANTRY' ? `[[drone]] Sẵn sàng phóng UAV cảm tử tiếp (còn ${P.kamikazeCount})` : `[[drone]] UAV cảm tử mới đã nạp vào ống (Ctrl để phóng, còn ${P.kamikazeCount})`, 'tip');
         }
         // ống có quả: nắp nhựa đầu ống lắp lại
         if (R && R.caps) { for (let i = 0; i < R.caps.length; i++) if (R.caps[i]) R.caps[i].visible = D.state === 'docked'; }
@@ -1262,7 +1268,7 @@ const KamiUAV = (() => {
     }
   }
 
-  return { C, build, animate, methods, fireWarhead, bankFor };
+  return { C, build, scaleFor, INF_SCALE, animate, methods, fireWarhead, bankFor };
 })();
 
 if (typeof window !== 'undefined') window.KamiUAV = KamiUAV;

@@ -1,0 +1,994 @@
+/**
+ * BỘ BINH TRONG TRẬN (tankType: INFANTRY, thẻ VANGUARD ở sảnh chờ).
+ * Mỗi lính vẫn có một SPGUnit3D làm "đơn vị" của trận: bot, trúng đạn, cứ điểm, minimap, mạng, hồi sinh dùng chung với xe.
+ * Đơn vị đó không có hình, chỉ có hộp trúng đạn cỡ người; hình + bước đi + động tác do SoldierEngine lo, vị trí chép sang đơn vị mỗi khung.
+ * Phát bắn đi qua BallisticsSystem3D như đạn của xe nên trúng xe tính bằng VehicleDamage, đồng bộ mạng như mọi phát khác.
+ */
+const InfantryMatch = (() => {
+  const TYPE = 'INFANTRY';
+  // đối thủ trong trận là xe nên chỉ mang vũ khí chống xe; cối cần màn bắn gián tiếp riêng, chưa đưa vào trận
+  const WEAPONS = ['gl', 'rpg', 'atr', 'kami'];
+  const WEAPON_NAME = { gl: 'Phóng lựu 40 mm', atr: 'Bắn tỉa hạng nặng', rpg: 'RPG', kami: 'UAV cảm tử' };
+  const KAMI_PER = 3;     // mỗi lính mang 3 UAV cảm tử (3 ống trên khung lưng), không tiếp đạn trong trận; hồi sinh mang lại đủ
+  const BOX = { minX: -3.2, maxX: 3.2, minY: 0, maxY: 14.5, minZ: -3.2, maxZ: 3.2 };   // hộp trúng đạn: 0,8 x 0,8 x 1,8 m
+  // trên xe (đo từ khớp lính, y tính từ mặt ngồi, -Z = trước mặt): ngồi thì chân thòng xuống + duỗi tới trước, ngắm thì quỳ trên sàn
+  const BOX_SIT = { minX: -3.2, maxX: 3.2, minY: -3.5, maxY: 10.4, minZ: -4.5, maxZ: 3.2 };
+  const BOX_KNEEL = { minX: -3.2, maxX: 3.2, minY: 0, maxY: 11.2, minZ: -4.6, maxZ: 3.2 };
+  const SHOT_AIM_S = 1.6;                     // lính máy khác giữ súng trên vai bấy nhiêu giây sau phát bắn
+  // luồng nổ đầu nòng pháo xe: R tầm tới (đv), inner sát nòng (mạnh nhất), base sát thương phía trước nòng (máu tối đa của lính = 1)
+  const MUZZLE_BLAST = { ALL_ROUNDER: { R: 56, inner: 14, base: 1.3 }, ARTILLERY: { R: 76, inner: 18, base: 1.6 }, GATLING: { R: 20, inner: 6, base: 0.05 } };
+  const NOT_MAIN_GUN = new Set(['SCOUT_BULLET', 'GATLING_BULLET', 'ANTI_TANK_MISSILE', 'RPG']);
+  // nòng quét trúng người (chỉ khi nòng thật sự đang chuyển động)
+  const STRIKE = { minV: 5, head: 0.35, body: 0.15, perV: 0.006, headMax: 0.8, bodyMax: 0.4, cool: 1.2, r: 1.2, bodyR: 2 };
+  // đi nhờ xe đồng minh (chỗ ngồi: vehicle_ride.js)
+  const RIDE = {
+    reach: 12,        // sát thân xe bao nhiêu đv thì lên được (~1,5 m)
+    boardV: 14,       // xe chạy nhanh hơn thì không leo lên được (đv/s, ~ tốc độ lính chạy)
+    jumpV: 45,        // xe chạy nhanh hơn thì không nhảy xuống được
+    moved: 8,         // xe phải lăn bánh rồi mới tính là "dừng xe" (lên xe đang đứng yên thì không bị thả xuống ngay)
+    still: 2,         // nhanh hơn thì chưa gọi là dừng
+    stopS: 2.5,       // xe dừng bấy nhiêu giây thì lính xuống, mỗi ghế lệch nhau một chút
+    gather: 120,      // đồng đội cách xe trong tầm này chạy theo lên cùng
+    resendS: 2
+  };
+  const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyR', 'KeyC', 'Space', 'Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4', 'KeyQ', 'KeyE', 'KeyF', 'KeyT', 'KeyG', 'KeyB', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+  const CSS = `
+    body.inf-mode #ammo-selector, body.inf-mode #fire-btn, body.inf-mode #target-lock-stat-box, body.inf-mode .hx-speed { display: none !important; }
+    #inf-hud { position: absolute; inset: 0; pointer-events: none; color: #e8ecef; font: 600 13px/1.35 system-ui, sans-serif; text-shadow: 0 1px 2px #000; }
+    #inf-cross { position: absolute; left: 50%; top: 50%; --g: 6px; }
+    #inf-cross i { position: absolute; background: #e8ecef; box-shadow: 0 0 2px #000; }
+    #inf-cross i:nth-child(1) { width: 2px; height: 8px; left: -1px; bottom: var(--g); }
+    #inf-cross i:nth-child(2) { width: 2px; height: 8px; left: -1px; top: var(--g); }
+    #inf-cross i:nth-child(3) { width: 8px; height: 2px; top: -1px; right: var(--g); }
+    #inf-cross i:nth-child(4) { width: 8px; height: 2px; top: -1px; left: var(--g); }
+    #inf-cross.lock i { background: #ffa040; }
+    #inf-cross.hit i { background: #ff5a4a; }
+    #inf-panel { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); min-width: 300px; max-width: calc(100vw - 32px); padding: 8px 14px; text-align: center; background: rgba(10, 14, 18, .62); border-radius: 6px; }
+    #inf-ammo { font-size: 18px; font-weight: 700; }
+    #inf-keys { margin-top: 2px; font-size: 11px; font-weight: 500; opacity: .8; }
+    #inf-heal { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse closest-side, transparent 58%, rgba(70, 210, 120, .42) 100%); }
+    #inf-heal.on { animation: inf-heal 1.2s ease-out; }
+    @keyframes inf-heal { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+    #inf-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); padding: 5px 12px; background: rgba(10, 14, 18, .62); border-radius: 6px; }
+  `;
+
+  // Sát thương (máu tối đa của lính = 1): bảng chung ở SoldierEngine.WOUND
+  const directDamage = (shell, ammoType) => SoldierEngine.WOUND.direct(ammoType, shell);
+  const splashDamage = (base, unit, shell) => Math.round(base * SoldierEngine.WOUND.blastMul(!!unit._infLow, shell) * 1000) / 1000;
+  const deathMode = (shell, ammoType) => SoldierEngine.WOUND.deathMode(ammoType, shell);
+
+  // Mô hình của đơn vị: chỉ khung rỗng cho các hook của SPGUnit3D; hình người nằm ở SoldierEngine
+  if (typeof TankModelBuilder !== 'undefined') {
+    TankModelBuilder.registerModel(TYPE, (b) => {
+      const u = b.unit;
+      u.chassisGroup = new THREE.Group(); u.group.add(u.chassisGroup);
+      u.turretGroup = new THREE.Group(); u.turretGroup.position.y = 11; u.chassisGroup.add(u.turretGroup);
+      u.barrelPivot = new THREE.Group(); u.turretGroup.add(u.barrelPivot);
+      u.barrelGroup = new THREE.Group(); u.barrelPivot.add(u.barrelGroup);
+      u.muzzleTipLocal = new THREE.Vector3(0, 0, -5);
+      u._shBox = BOX; u._shBoxGroup = u.group;
+      return { hullW: 3 };
+    });
+  }
+
+  // Trang bị + vũ khí của 1 lính trong trận; prebake và lúc vào trận phải ra cùng kết quả mới trúng bộ nhớ đệm hình lính
+  const gearOf = (mine, ghillie, loadout, medkit) => {
+    const gear = mine ? loadout.gear : undefined;
+    if (!ghillie && !medkit) return gear;
+    return Object.assign({}, gear, ghillie ? { ghillie: true } : null, medkit ? { medkit: true } : null);
+  };
+  const weaponOf = (infWeapon, isMe, loadout) => WEAPONS.includes(infWeapon) ? infWeapon : isMe && WEAPONS.includes(loadout.weapon) ? loadout.weapon : WEAPONS[0];
+  // Lúc chờ vào trận: dựng trước hình lính của từng kế hoạch đơn vị (lần đầu ~300 ms mỗi tổ hợp), vào trận chỉ còn lấy từ bộ nhớ đệm
+  function prebake(e, biome) {
+    if (!e.opts || e.opts.tankType !== TYPE || typeof SoldierModel === 'undefined') return;
+    const L = SoldierPlayer.loadLoadout();
+    if (biome && SoldierModel.setBiome) SoldierModel.setBiome(biome);
+    if (e.terrain && SoldierEngine.walkIndex) SoldierEngine.walkIndex(e.terrain);   // bảng mặt đi được (~150 ms): dựng lúc chờ, không phải lúc vào trận
+    const gear = gearOf(e.isMe || e.squadOf, e.opts.infGhillie, L, e.opts.infMedkit);
+    const F = SoldierModel.buildFigure(e.opts.team, { role: 'infantry', weapon: weaponOf(e.opts.infWeapon, e.isMe, L), renderOrder: 2, ...(gear ? { gear } : {}) });
+    F.root.traverse(o => { if (o.isSkinnedMesh && !o.geometry.userData.shared) o.geometry.dispose(); });
+  }
+
+  class Match {
+    constructor(game) {
+      this.game = game;
+      this.pairs = [];
+      this.me = null;
+      this.mine = [];     // lính của máy này, theo số thứ tự phím 1-4
+      this.veh = [];
+      this.locked = false; this.noLock = false;
+      this.loadout = SoldierPlayer.loadLoadout();
+      this.fov0 = game.camera.fov;
+      // đạn xuyên giáp xuyên qua lính: chết, đạn bay tiếp không nổ (ballistics)
+      if (game.ballistics) game.ballistics.onInfantryPass = (sh, u) => {
+        if (u.isDead) return;
+        u._infDeath = { mode: 'pierce', vel: { x: sh.vx || 0, z: sh.vz || 0 } };
+        const r = u.takeDamage(u.maxHp * 9, sh.shooter, 'DIRECT_HIT');
+        if (r && r.killed) game.onUnitDestroyed(u, sh.shooter);
+      };
+      // mọi phát bắn (cả bot, máy khác) đều qua fireShell3D: máy có quyền với lính tự tính luồng nổ đầu nòng cho lính của mình
+      const BL = game.ballistics;
+      if (BL) {
+        if (!BL._firedHook) {
+          const f = BL.fireShell3D;
+          BL._firedHook = true;
+          BL.fireShell3D = function (...a) { const sh = f.apply(this, a); if (this.onShellFired) this.onShellFired(sh, a[0], a[4]); return sh; };
+        }
+        BL.onShellFired = (sh, u, ammo) => this.muzzleBlast(u, ammo, sh);
+      }
+      this.world = new SoldierEngine.World(game.scene, game.terrain, { vehicles: () => this.veh, isEnemy: (a, b) => a.team !== b.team, onFire: (s, t, aim) => this.fireGuard(s, aim), onKami: (s, ev) => this.onKami(s, ev), onMedkit: s => this.onMedkit(s) });
+      this.world.fireBullet = () => {};   // đạn thật của trận đi qua fireGuard / fireLive, không dùng đạn riêng của engine
+      const biome = game.terrain && game.terrain.mapType;
+      if (biome && SoldierModel.setBiome) SoldierModel.setBiome(biome);
+      for (const u of game.units) {
+        if (u.tankType !== TYPE) continue;
+        const weapon = weaponOf(u.infWeapon, u === game.player, this.loadout);
+        const gear = gearOf(u === game.player || u.localSquad, u.infGhillie, this.loadout, u.infMedkit);   // bộ ngụy trang cỏ, bộ y tế: kit g, mk, mọi máy cùng thấy
+        const s = this.world.spawn({ team: u.team, weapon, gear, x: u.x, z: u.z, heading: u.bodyAngle, size: 1 });
+        s.intent.drive = { x: 0, z: 0, gait: 'walk', mul: 1, face: null };
+        s.bleedOwned = false;   // máu đồng bộ từ đơn vị: chảy máu trừ vào u (bleedOut), không trừ thẳng s.hp
+        const P = { u, s, shotAt: -1e9, boardV: null, rideT: 0, medLeft: u.infMedkit ? Equipment.MEDKIT.uses : 0 };
+        if (SoldierEngine.RESERVE[weapon] !== undefined) s.arms.res = SoldierEngine.RESERVE[weapon];   // RPG / bắn tỉa: hết là hết, hồi sinh mang lại đủ
+        // UAV cảm tử: dùng chung UAV của game (kamikaze_uav.js); ống phóng là ống lính đặt xuống đất
+        u.infWeapon = weapon;
+        if (weapon === 'kami') { u.uavKind = 'kami'; u.kamikazeCount = KAMI_PER; u.kamiTube = () => SoldierModel.kamiTubeWorld(s.figure); }
+        this.pairs.push(P);
+        if (u === game.player) this.me = P;
+        if (u === game.player || u.localSquad) this.mine.push(P);
+      }
+      for (const P of this.mine) if (P !== this.me) this.standGuard(P);
+      if (this.me) this.initPlayer();
+    }
+
+    initPlayer() {
+      const G = this.game;
+      this.ctl = new SoldierPlayer.Controller({
+        world: this.world, terrain: G.terrain, scene: G.scene, cam: G.camera,
+        onHud: h => this.drawHud(h),
+        fireLive: (s, muzzle, hit, dir) => this.fireLive(s, muzzle, hit, dir),
+        canKami: s => this.canKami(s),
+        aimVehicles: () => this.veh
+      });
+      this.ctl.enter(this.me.s);
+      this.buildHud();
+      this.ctl.warmSight();
+      document.body.classList.add('inf-mode');
+      const canvas = G.renderer.domElement;
+      const on =(t, ev, fn, o) => { t.addEventListener(ev, fn, o); this._off.push(() => t.removeEventListener(ev, fn, o)); };
+      this._off = [];
+      on(window, 'keydown', e => this.onKey(e, true), true);
+      on(window, 'keyup', e => this.onKey(e, false), true);
+      // cùng tầng capture nên chặn được mọi trình xử lý chuột của xe trên màn 3D (ngắm nhanh, khóa xe, zoom...)
+      on(window, 'pointerdown', e => {
+        if (e.target !== canvas || !this.usable()) return;
+        e.stopImmediatePropagation(); e.preventDefault();
+        if (!this.locked && !this.noLock) { this.lock(); return; }
+        if (e.button === 0) this.ctl.firing = true;
+        else if (e.button === 2) this.ctl.aiming = true;
+      }, true);
+      on(window, 'pointerup', e => {
+        if (e.button === 0) this.ctl.firing = false;
+        else if (e.button === 2) this.ctl.aiming = false;
+      }, true);
+      for (const ev of ['mousedown', 'mouseup', 'click', 'dblclick', 'wheel', 'contextmenu']) {
+        on(window, ev, e => {
+          if (e.target !== canvas) return;
+          e.stopImmediatePropagation();
+          if (ev === 'wheel' && this.usable() && e.deltaY) this.ctl.zoomStep(e.deltaY < 0 ? 1 : -1);
+          if (ev === 'contextmenu') e.preventDefault();
+        }, ev === 'wheel' ? { capture: true, passive: true } : true);
+      }
+      on(document, 'mousemove', e => {
+        if (!this.usable() || !(this.locked || (this.noLock && e.target === canvas))) return;
+        this.ctl.look(e.movementX || 0, e.movementY || 0);
+      });
+      on(document, 'pointerlockchange', () => {
+        this.locked = document.pointerLockElement === canvas;
+        if (!this.locked) this.releaseInput();
+      });
+      on(document, 'pointerlockerror', () => { this.noLock = true; });
+    }
+
+    lock() {
+      const canvas = this.game.renderer.domElement;
+      try {
+        const r = canvas.requestPointerLock && canvas.requestPointerLock();
+        if (r && r.catch) r.catch(() => { this.noLock = true; });
+      } catch (err) { this.noLock = true; }
+    }
+    // UAV cảm tử của lính đang điều khiển: chỉ bắt đầu phóng khi UAV trước đã xong (nổ / bị bắn hạ); UAV còn đang lượn thì mở lại màn hình
+    kamiState() { const G = this.game; return this.me && G.kamiOn && G.kamiOn(this.me.u) ? G.droneState().state : null; }
+    canKami(s) {
+      const G = this.game, st = this.kamiState();
+      if (!st || s !== this.me.s) return false;
+      if (st === 'flying' || st === 'returning') { G.setSightMode(true); return false; }
+      if (st !== 'docked') { if (G.addCombatLog) G.addCombatLog(this.me.u.kamikazeCount > 0 ? '[[hourglass]] UAV trước còn đang bay — chờ xong mới phóng tiếp' : '[[alert-triangle]] Hết UAV cảm tử', 'alert'); return false; }
+      return true;
+    }
+    onKami(s, ev) {
+      const G = this.game;
+      if (ev !== 'launch' || !this.me || s !== this.me.s || this.me.u.isDead) return;
+      if (G.launchKami) G.launchKami();
+    }
+    releaseInput() { if (this.ctl) { this.ctl.firing = false; this.ctl.aiming = false; this.ctl.keys = {}; } }
+    usable() {
+      const G = this.game;
+      return !!this.me && G.isGameStarted && !G.isGameOver && !G._sight   // màn hình UAV đang mở: phím / chuột thuộc về UAV
+        && !(window.GameMenu && GameMenu.isOpen && GameMenu.isOpen())
+        && !(G.tacticalMap && G.tacticalMap.isOpen)
+        && !(window.tankInspector && window.tankInspector.isOpen)
+        && !(typeof QuickComms !== 'undefined' && QuickComms.isOpen());
+    }
+
+    // game.js hỏi trước khi xử lý phím của xe: phím này đã thuộc về lính
+    ownsKey(e) {
+      const t = e.target;
+      return !!this.ctl && KEYS.has(e.code) && !(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) && this.usable();
+    }
+    onKey(e, down) {
+      if (!this.ownsKey(e)) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      const C = this.ctl;
+      if (e.code === 'Space') { C.firing = down; return; }
+      if (e.code === 'KeyF') { if (down && !e.repeat && this.me.s.alive) this.toggleRide(); return; }
+      if (e.code === 'KeyE') { if (down && !e.repeat && this.me.s.alive) this.useMedkit(); return; }
+      if (e.code === 'ShiftRight') { C.keys.ShiftLeft = down; return; }
+      const dig = /^(?:Digit|Numpad)([1-4])$/.exec(e.code);
+      if (dig) { if (down && !e.repeat) this.switchTo(dig[1] - 1); return; }
+      if (e.code === 'Backquote') { if (down && !e.repeat) this.callAll(); return; }
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft'].includes(e.code)) { C.keys[e.code] = down; return; }
+      if ((e.code === 'KeyR' || e.code === 'KeyC') && !e.repeat && this.me.s.alive) C.key(e.code, down);
+    }
+
+    // ----- BỘ Y TẾ -----
+    // E: bắt đầu băng bó; lượt chỉ trừ khi băng xong (onMedkit)
+    useMedkit() {
+      const M = this.me, u = M.u, log = (t) => { if (this.game.addCombatLog) this.game.addCombatLog(t, 'alert'); };
+      if (M.s._medUse) return;
+      if (!u.infMedkit) { log('[[alert-triangle]] Lính này không mang bộ y tế'); return; }
+      if (M.medLeft <= 0) { log('[[alert-triangle]] Đã hết bộ y tế'); return; }
+      if (u.hp >= u.maxHp) { log('[[alert-triangle]] Máu đang đầy'); return; }
+      if (!M.s.useMedkit()) log('[[alert-triangle]] Đứng yên, không ngắm mới dùng được bộ y tế');
+    }
+    onMedkit(s) {
+      const P = this.mine.find(q => q.s === s), G = this.game;
+      if (!P || P.u.isDead || P.medLeft <= 0) return;
+      P.medLeft--;
+      if (Equipment.MEDKIT.uses > 0) P.s.gearKg = Math.max(0, P.s.gearKg - 1.2 / Equipment.MEDKIT.uses);   // dùng bớt bộ y tế: nhẹ đi
+      if (G.netSync && G.netSync.sendMedkit) G.netSync.sendMedkit(P.u);
+      P.u.hp = Math.min(P.u.maxHp, P.u.hp + Equipment.MEDKIT.heal * P.u.maxHp);
+      s.hp = P.u.hp / P.u.maxHp * 100;
+      P.bleedAcc = 0; P.bleedT = 0;
+      if (P !== this.me) return;
+      if (G.addCombatLog) G.addCombatLog(`[[first-aid-kit]] Đã hồi đầy máu · bộ y tế còn ${P.medLeft} lần`, 'info');
+      // viền xanh chớp lên đúng lúc máu hồi
+      const H = this.$heal;
+      if (H) { H.classList.remove('on'); void H.offsetWidth; H.classList.add('on'); }
+    }
+
+    // lính không được điều khiển: đứng giữ chỗ, tự bắn địch trong tầm
+    standGuard(P) {
+      P.s.intent.drive = null;
+      P.s.setGuard(!(P.s.ride && P.s.ride.inside));   // trong khoang không bắn được
+    }
+
+    // ----- LUỒNG NỔ ĐẦU NÒNG / NÒNG QUÉT TRÚNG -----
+    // sát thương không ghi công ai (như xe cán): máy có quyền với lính là máy này, không phải máy của xe
+    hurtBy(P, dmg, why, death, shoveX, shoveZ) {
+      const u = P.u, G = this.game;
+      if (u.isDead || u.invulnerableTimer > 0) return;
+      u._infDeath = death;
+      const r = u.takeDamage(dmg * u.maxHp, null, 'BURN');
+      if (r && r.killed) { G.onUnitDestroyed(u, null, why); return; }
+      u._infDeath = null;
+      P.s._bkAmt = 1; P.s._bkHold = 0.4;   // khựng người (động tác phanh của engine)
+      if (!P.s.ride && (shoveX || shoveZ)) P.shove = { x: shoveX, z: shoveZ, t: 0.25 };
+      const now = performance.now();   // súng 6 nòng gây sát thương từng viên: không báo dồn dập
+      if (P === this.me && G.addCombatLog && now - (this._hurtLogAt || -1e9) > 2000) { this._hurtLogAt = now; G.addCombatLog('[[alert-triangle]] ' + why, 'alert'); }
+    }
+    muzzleBlast(u, ammo, sh) {
+      const B = u && sh && MUZZLE_BLAST[u.tankType];
+      if (!B || u._roofShot || (u.tankType === 'GATLING' ? ammo !== 'GATLING_BULLET' : NOT_MAIN_GUN.has(ammo))) return;
+      const v = Math.hypot(sh.vx, sh.vy, sh.vz) || 1, ux = sh.vx / v, uy = sh.vy / v, uz = sh.vz / v;
+      for (const P of this.mine) {
+        const s = P.s;
+        if (!s.alive || P.u._inVeh) continue;
+        const dx = s.x - sh.x, dy = s.y + 8 - sh.y, dz = s.z - sh.z, d = Math.hypot(dx, dy, dz);
+        if (d > B.R) continue;
+        const c = d > 0.01 ? (dx * ux + dy * uy + dz * uz) / d : 1;   // 1 = ngay trước nòng, -1 = sau nòng
+        const dirK = c > 0 ? 0.45 + 0.55 * c : 0.15 + 0.3 * (1 + c);
+        const f = d < B.inner ? 1 : Math.pow(1 - (d - B.inner) / (B.R - B.inner), 2);
+        const dmg = B.base * f * dirK * (P.u._infLow ? 0.7 : 1);
+        if (dmg < 0.005 || !this.world.lineFree(sh.x, sh.z, s.x, s.z)) continue;   // nấp sau tường / nhà thì tránh được
+        const h = Math.hypot(dx, dz) || 1, push = dmg > 0.1 ? 30 : 0;
+        this.hurtBy(P, dmg, 'Trúng luồng nổ đầu nòng ' + (u.name || 'xe'), { mode: 'blast', x: sh.x, y: sh.y, z: sh.z, power: dmg }, dx / h * push, dz / h * push);
+      }
+    }
+    // nòng từng xe: đầu nòng + hướng nòng thật (cả góc ngóc, giật), tốc độ đầu nòng so với khung trước
+    barrelNow(v, dt) {
+      const bp = v.barrelPivot, Rg = VehicleRide.barrelRig(v);
+      if (!bp || !Rg) return null;
+      const B = v._bn || (v._bn = { tip: new THREE.Vector3(), dir: new THREE.Vector3(), prev: new THREE.Vector3(), q: new THREE.Quaternion(), has: false, sp: 0, L: Rg.L, frame: -9 });
+      // bỏ qua vài khung (không có lính nào gần) thì vị trí cũ đã lỗi thời: khung này chưa tính tốc độ
+      this._frame = this._frame || 0;
+      if (this._frame - B.frame > 1) B.has = false;
+      B.frame = this._frame;
+      B.prev.copy(B.tip);
+      (v.barrelGroup || bp).updateWorldMatrix(true, false);
+      (v.barrelGroup || bp).localToWorld(B.tip.copy(v.muzzleTipLocal));
+      bp.getWorldQuaternion(B.q); B.dir.set(0, 0, -1).applyQuaternion(B.q);
+      B.sp = B.has && dt > 0 ? B.tip.distanceTo(B.prev) / dt : 0;
+      B.vx = B.has && dt > 0 ? (B.tip.x - B.prev.x) / dt : 0; B.vz = B.has && dt > 0 ? (B.tip.z - B.prev.z) / dt : 0;
+      B.has = true;
+      return B;
+    }
+    stepStrikes(dt) {
+      this._frame = (this._frame || 0) + 1;
+      for (const P of this.mine) P.strikeT = Math.max(0, (P.strikeT || 0) - dt);
+      for (const v of this.veh) {
+        if (!VehicleRide.SEATS[v.tankType] || !v.muzzleTipLocal) continue;
+        let B = null;
+        const Rg = VehicleRide.barrelRig(v);
+        if (!Rg) continue;
+        for (const P of this.mine) {
+          const s = P.s;
+          if (!s.alive || s.ride || Math.hypot(s.x - v.x, s.z - v.z) > Rg.L + 40) continue;
+          B = B || this.barrelNow(v, dt);
+          if (B.sp < STRIKE.minV || P.strikeT > 0) continue;
+          // đoạn nòng từ đầu nòng lùi về gốc, thân lính là trụ đứng
+          const tx = B.tip.x, tz = B.tip.z, ax = -B.dir.x * B.L, az = -B.dir.z * B.L, l2 = ax * ax + az * az || 1;
+          const t = Math.max(0, Math.min(1, ((s.x - tx) * ax + (s.z - tz) * az) / l2));
+          const lat = Math.hypot(tx + ax * t - s.x, tz + az * t - s.z), yb = B.tip.y - B.dir.y * B.L * t;
+          const top = s.y + (s.figure._proneK > 0.5 ? 3.5 : P.u._infLow ? 10 : 14.5) * s.k;
+          if (lat > STRIKE.bodyR + STRIKE.r || yb - STRIKE.r > top || yb + STRIKE.r < s.y) continue;
+          // điểm chạm càng xa gốc càng nhanh
+          const hitV = B.sp * (1 - t), head = yb > top - 3;
+          if (hitV < STRIKE.minV) continue;
+          const dmg = head ? Math.min(STRIKE.headMax, STRIKE.head + hitV * STRIKE.perV) : Math.min(STRIKE.bodyMax, STRIKE.body + hitV * STRIKE.perV);
+          P.strikeT = STRIKE.cool;
+          const vl = Math.hypot(B.vx, B.vz) || 1;
+          this.hurtBy(P, dmg, 'Nòng ' + (v.name || 'xe') + (head ? ' đập vào đầu' : ' quét trúng người'), { mode: 'fall' }, B.vx / vl * 34, B.vz / vl * 34);
+        }
+      }
+    }
+    stepShoves(dt) {
+      for (const P of this.mine) {
+        const S = P.shove, s = P.s;
+        if (!S) continue;
+        if ((S.t -= dt) <= 0 || !s.alive || s.ride) { P.shove = null; continue; }
+        const nx = s.x + S.x * dt, nz = s.z + S.z * dt;
+        if (this.world.canStand(nx, nz)) { s.x = nx; s.z = nz; }
+      }
+    }
+
+    // ----- ĐI NHỜ XE ĐỒNG MINH -----
+    gapTo(v, s) {
+      const VC = VehicleCollision;
+      return VC.circleGap(VC.vehObb(v, v.x, v.z, v.bodyAngle, this._ob || (this._ob = {})), s.x, s.z, 2, this._gap || (this._gap = {})).gap;
+    }
+    freeSeat(v) {
+      const S = VehicleRide.SEATS[v.tankType], R = v._riders;
+      if (!S) return -1;
+      for (let i = 0; i < S.length; i++) if (!R || !R[i]) return i;
+      return -1;
+    }
+    // xe đồng minh sát lính nhất (kể cả đang chạy / hết chỗ, để báo cho người chơi biết)
+    vehicleNear(s) {
+      let best = null, bg = RIDE.reach;
+      for (const v of this.veh) {
+        if (v.team !== s.team || !VehicleRide.SEATS[v.tankType] || Math.hypot(v.x - s.x, v.z - s.z) > 70 || Math.abs((v.y || 0) - s.y) > 24) continue;
+        const g = this.gapTo(v, s);
+        if (g < bg) { bg = g; best = v; }
+      }
+      return best;
+    }
+    canBoard(P) {
+      const F = P.s.figure;
+      return P.s.alive && !P.s.ride && F.kamiSeq == null && !F.kamiCtl && !(F._proneK > 0.05);
+    }
+    board(P, v, i) {
+      const s = P.s, S = VehicleRide.SEATS[v.tankType][i];
+      (v._riders || (v._riders = []))[i] = P;
+      s.stop(); s._orders.length = 0; s.intent.aim = null; s.intent.stance = 'stand'; s.speed = 0;
+      s.enemy = null;
+      if (S.in) s.setGuard(false);
+      const cg = v.chassisGroup || v.group, fl = this._rp || (this._rp = new THREE.Vector3());
+      cg.updateWorldMatrix(true, false);
+      cg.worldToLocal(fl.set(s.x, s.y, s.z));
+      s.ride = { v, seat: S, i, inside: !!S.in, k: 0, dir: 1, from: { x: s.x, y: s.y, z: s.z }, fromL: [fl.x, fl.y, fl.z], hu: VehicleCollision.vehObb(v, v.x, v.z, v.bodyAngle, this._ob || (this._ob = {})).hu, rel: s.heading - (v.bodyAngle || 0), armed: false, stopT: 0, frame: {} };
+      P.boardV = null; P.called = false; P.rideT = 0;
+      P.u._rideV = v;
+      if (this.mine.includes(P) && P !== this.me) this.standGuard(P);   // ngồi ngoài vẫn canh gác, tự bắn (đồng đội chạy lại lên xe đã tắt canh gác)
+      if (this.mine.includes(P) && this.game.netSync && this.game.netSync.sendRide) this.game.netSync.sendRide(P.u, v, i);
+    }
+    // vệt tối chỗ người tiếp xúc sàn xe: bóng nắng rơi sang hướng khác thì người vẫn không lơ lửng (gắn vào root, theo người cả khi quỳ xoay)
+    contactOf(P) {
+      if (P.contact) return P.contact;
+      const R = Match._contact || (Match._contact = (() => {
+        const c = document.createElement('canvas'); c.width = c.height = 64;
+        const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 3, 32, 32, 32);
+        gr.addColorStop(0, 'rgba(0,0,0,.72)'); gr.addColorStop(0.55, 'rgba(0,0,0,.42)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+        const geo = new THREE.PlaneGeometry(6.4, 5.6); geo.rotateX(-Math.PI / 2);
+        return { geo, mat: new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }) };
+      })());
+      const m = P.contact = new THREE.Mesh(R.geo, R.mat);
+      m.position.set(0, SoldierModel.FOOT_Y + 0.08, 0.7);   // lệch vào trong sàn (+z = sau lưng người ngồi quay mặt ra ngoài)
+      m.castShadow = false; m.receiveShadow = false; m.visible = false;
+      P.s.root.add(m);
+      return m;
+    }
+    // chỗ nhảy xuống: phía ghế trước, không được thì phía kia, rồi tới sau đuôi xe
+    exitPoint(s, R, force) {
+      const v = R.v, W = this.world, VC = VehicleCollision, ob = VC.vehObb(v, v.x, v.z, v.bodyAngle, this._ob || (this._ob = {}));
+      const a = v.bodyAngle || 0, ca = Math.cos(a), sa = Math.sin(a), o = R.seat.o, off = ob.hu + 7, back = ob.hv + 7;
+      const opts = [[o * off, R.seat.z], [-o * off, R.seat.z], [o * 5, back], [o * off, -R.seat.z]];
+      for (const [lx, lz] of opts) {
+        const x = v.x + lx * ca + lz * sa, z = v.z - lx * sa + lz * ca;
+        if (W.canStand(x, z) && W.lineFree(v.x, v.z, x, z)) return { x, z };
+      }
+      if (!force) return null;
+      return { x: v.x + opts[0][0] * ca + opts[0][1] * sa, z: v.z - opts[0][0] * sa + opts[0][1] * ca };
+    }
+    // bắt đầu nhảy xuống; false = quanh xe không có chỗ đứng (nước sâu, vướng nhà), ở lại trên xe
+    leave(P, force) {
+      const s = P.s, R = s.ride;
+      if (!R || R.dir < 0) return true;
+      const e = this.exitPoint(s, R, force);
+      if (!e) return false;
+      if (R.v._riders && R.v._riders[R.i] === P) R.v._riders[R.i] = null;
+      if (R.k < 1) R.abort = { x: s.x, y: s.y, z: s.z };   // đang leo dở: rơi thẳng xuống chỗ đứng
+      R.dir = -1; R.k = 1;
+      if (R.inside) R.rel = R.seat.o < 0 ? Math.PI / 2 : -Math.PI / 2;   // ra khỏi cửa là đã quay mặt ra ngoài
+      R.from = { x: e.x, y: this.world.groundAt(e.x, e.z, null), z: e.z };
+      P.u._inVeh = false;
+      if (this.mine.includes(P) && this.game.netSync && this.game.netSync.sendRide) this.game.netSync.sendRide(P.u, null, 0);
+      return true;
+    }
+    // chết trên xe / lúc đang leo: xác rơi từ đúng chỗ đang ở, mang theo đà xe, tiếp đất ngoài thân xe (Soldier.startDeath)
+    rideFall(s) {
+      const v = s.ride.v, a = v.bodyAngle || 0, sp = v.isDead ? 0 : v.speed || 0;
+      return { x: s.x, y: s.y, z: s.z, vx: -Math.sin(a) * sp, vz: -Math.cos(a) * sp, ob: VehicleCollision.vehObb(v, v.x, v.z, a, {}) };
+    }
+    // chạm đất (hoặc chết / bỏ trận): trả lính về SoldierEngine đi bộ như thường
+    endRide(P) {
+      const s = P.s, R = s.ride;
+      if (!R) return;
+      if (R.v._riders && R.v._riders[R.i] === P) R.v._riders[R.i] = null;
+      s.ride = null;
+      const u = P.u;
+      u._rideV = null; u._inVeh = false; u._shBox = BOX;
+      s.figure.seated = false; s.figure.stow = false; s.figure.climb = null; if (s.figure.grab) s.figure.grab.on = false;
+      if (P.contact) P.contact.visible = false;
+      if (!P.called) s.stop();   // lệnh di chuyển lúc còn trên xe không còn đúng
+      s.heading = (R.v.bodyAngle || 0) + R.rel;
+      if (R.dir < 0) { s.x = R.from.x; s.z = R.from.z; }
+      s.y = this.world.groundAt(s.x, s.z, null);
+      s.root.rotation.set(0, s.heading, 0);
+      s.applyTransform();
+      u.x = s.x; u.z = s.z; u.y = s.y;
+      if (this.mine.includes(P) && P !== this.me && !P.called) this.standGuard(P);
+    }
+    // xe nổ: trong khoang chết theo xe; ngoài xe bị hất xuống, mất nửa máu (phần nổ của xác xe tính riêng)
+    vehicleLost(P) {
+      const { u, s } = P, R = s.ride, inside = R.inside && R.dir > 0, mine = this.mine.includes(P), seated = R.k >= 1;
+      if (inside && mine) {
+        // giữ nguyên ghế để syncIn biết là chết trong khoang, không rơi xác ra ngoài
+        u._inVeh = false;
+        u._infDeath = { mode: 'direct' };
+        const r = u.takeDamage(u.maxHp + 1, null, 'DIRECT_HIT');
+        if (r && r.killed) { this.game.onUnitDestroyed(u, null, R.v.name || 'xe nổ'); return; }
+      }
+      this.leave(P, true);
+      if (!mine || inside) return;
+      if (seated) {
+        u._infDeath = { mode: 'blast', x: R.v.x, y: R.v.y + 8, z: R.v.z, power: 0.5 };
+        const r = u.takeDamage(u.maxHp * 0.5, null, 'BURN');
+        if (r && r.killed) this.game.onUnitDestroyed(u, null, R.v.name || 'xe nổ');
+      }
+    }
+    // F: lên xe sát bên / xuống xe (đồng đội cùng xe xuống theo, đồng đội đứng gần chạy lại lên cùng)
+    toggleRide() {
+      const G = this.game, M = this.me, R = M.s.ride, log = (t) => { if (G.addCombatLog) G.addCombatLog(t, 'alert'); };
+      if (R) {
+        if (R.dir < 0 || R.k < 1) return;
+        if (Math.abs(R.v.speed || 0) > RIDE.jumpV) { log('[[alert-triangle]] Xe chạy nhanh quá, chưa nhảy xuống được'); return; }
+        if (!this.leave(M)) { log('[[alert-triangle]] Quanh xe không có chỗ đứng'); return; }
+        for (const P of this.mine) if (P !== M && P.s.ride && P.s.ride.v === R.v) this.leave(P);
+        return;
+      }
+      const v = this.vehicleNear(M.s);
+      if (!v) return;
+      if (Math.abs(v.speed || 0) > RIDE.boardV) { log('[[alert-triangle]] Xe đang chạy, chờ xe chậm lại mới leo lên được'); return; }
+      const i = this.freeSeat(v);
+      if (i < 0) { log('[[alert-triangle]] Xe hết chỗ'); return; }
+      if (!this.canBoard(M)) return;
+      this.board(M, v, i);
+      for (const P of this.mine) {
+        if (P === M || !P.s.alive || P.s.ride || Math.hypot(P.s.x - v.x, P.s.z - v.z) > RIDE.gather) continue;
+        P.boardV = v; P.s.setGuard(false); P.s.moveTo(v.x, v.z, 'run');
+      }
+    }
+    // đồng đội đang chạy lại lên xe: tới sát thì leo, xe chạy mất / hết chỗ thì về canh gác
+    stepBoarders() {
+      for (const P of this.mine) {
+        const v = P.boardV;
+        if (!v) continue;
+        if (!P.s.alive || v.isDead || Math.abs(v.speed || 0) > RIDE.boardV || this.freeSeat(v) < 0 || P === this.me) { P.boardV = null; if (P !== this.me && P.s.alive) { P.s.stop(); this.standGuard(P); } continue; }
+        if (this.gapTo(v, P.s) < RIDE.reach && this.canBoard(P)) this.board(P, v, this.freeSeat(v));
+      }
+    }
+    stepRiders(dt) {
+      for (const P of this.pairs) {
+        const s = P.s, R = s.ride;
+        if (!R) continue;
+        const T = VehicleRide.TIME;
+        R.k = Math.max(0, Math.min(1, R.k + R.dir * dt / (R.dir > 0 ? (R.inside ? T.upIn : T.upOut) : (R.inside ? T.downIn : T.downOut))));
+        if (R.dir < 0 && R.k <= 0) { this.endRide(P); continue; }
+        if (R.dir > 0 && R.k >= 1 && R.inside) P.u._inVeh = true;
+        const v = R.v;
+        if (R.dir > 0 && v.isDead) { this.vehicleLost(P); if (!s.ride) continue; }
+        // nòng xe đang quét tới chỗ ngồi: tụt người qua mép rồi trở lại (mọi máy tự tính theo góc tháp)
+        if (R.dir > 0 && !R.inside && R.k >= 1 && v.turretGroup) {
+          const rot = v.turretGroup.rotation.y, om = dt > 0 ? Math.atan2(Math.sin(rot - (R.prot === undefined ? rot : R.prot)), Math.cos(rot - (R.prot === undefined ? rot : R.prot))) / dt : 0;
+          R.prot = rot;
+          const drop = VehicleRide.barrelDrop(v, R.seat, rot, om, v.barrelPivot ? v.barrelPivot.rotation.x : 0);
+          if (drop > 0) { R.duckD = Math.max(R.duckD && R.duck > 0 ? R.duckD : 0, drop); R.duckHold = 0.5; }
+          else R.duckHold = Math.max(0, (R.duckHold || 0) - dt);
+          R.duck = Math.max(0, Math.min(1, (R.duck || 0) + (R.duckHold > 0 ? dt * 4.5 : -dt * 2.5)));
+        }
+        if (R.dir < 0 || !this.mine.includes(P)) continue;
+        const sp = Math.abs(v.speed || 0);
+        if (sp > RIDE.moved) R.armed = true;
+        if (R.armed && sp < RIDE.still) { R.stopT += dt; if (R.stopT >= RIDE.stopS + R.i * 0.35) this.leave(P); }
+        else R.stopT = 0;
+        if ((P.rideT += dt) >= RIDE.resendS) { P.rideT = 0; if (this.game.netSync && this.game.netSync.sendRide) this.game.netSync.sendRide(P.u, v, R.i); }
+      }
+    }
+    // đặt lính theo ghế / theo đường nhảy; gọi cả sau khi các xe đã cập nhật để lính không trễ xe 1 khung
+    placeRider(P) {
+      const s = P.s, R = s.ride, v = R.v, cg = v.chassisGroup || v.group, S = R.seat;
+      const q = this._rq || (this._rq = new THREE.Quaternion()), q2 = this._rq2 || (this._rq2 = new THREE.Quaternion()), p = this._rp || (this._rp = new THREE.Vector3()), up = this._ru || (this._ru = new THREE.Vector3(0, 1, 0));
+      cg.updateWorldMatrix(true, false);
+      const f = VehicleRide.frame(R, R.frame), k = R.k, F = s.figure;
+      if (R.abort) {
+        const u = f.drop;
+        s.x = R.abort.x + (R.from.x - R.abort.x) * u; s.z = R.abort.z + (R.from.z - R.abort.z) * u; s.y = R.abort.y + (R.from.y - R.abort.y) * u * u;
+      } else {
+        p.set(f.x, f.y, f.z); cg.localToWorld(p);
+        if (f.drop != null) {
+          const u = f.drop;   // rơi: ngang đều, dọc nhanh dần
+          s.x = p.x + (R.from.x - p.x) * u; s.z = p.z + (R.from.z - p.z) * u; s.y = p.y + (R.from.y - p.y) * u * u;
+        } else { s.x = p.x; s.y = p.y; s.z = p.z; }
+      }
+      R.sit = f.sit; R.face = f.face; R.walk = f.walk;
+      // xe đang chạy: một tay bám điểm cố định trên xe (ngưỡng trễ để xe nhích nhẹ không làm tay đưa ra đưa vào)
+      if (S.g) {
+        const G = F.grab || (F.grab = { p: new THREE.Vector3(), side: 1, lean: 0, on: false }), sp = Math.abs(v.speed || 0);
+        G.frame = cg; G.p.set(S.g[0], S.g[1], S.g[2]); G.lean = S.l || 0;
+        G.side = (S.g[0] - S.x) * Math.cos(S.h) - (S.g[2] - S.z) * Math.sin(S.h) < 0 ? -1 : 1;
+        G.on = !(R.duck > 0.02) && (G.on ? sp > 3 : sp > 8);
+      }
+      if (f.k > 0 || f.handK > 0) {
+        const C = F.climb || (F.climb = { hands: [new THREE.Vector3(), new THREE.Vector3()] });
+        C.k = f.k; C.pose = f.pose; C.handK = f.handK; C.frame = cg;
+        if (f.handK > 0) { C.hands[0].copy(f.hands[0]); C.hands[1].copy(f.hands[1]); }
+      } else F.climb = null;
+      s.heading = (v.bodyAngle || 0) + R.rel;
+      s.root.position.set(s.x, s.y - SoldierModel.FOOT_Y * s.k, s.z);
+      cg.getWorldQuaternion(q); q2.setFromAxisAngle(up, R.rel);
+      s.root.quaternion.copy(q).multiply(q2);
+      P.u.x = s.x; P.u.y = s.y; P.u.z = s.z; P.u.bodyAngle = s.heading;
+      P.u._shBox = R.dir > 0 && k >= 1 ? (F.seated ? BOX_SIT : BOX_KNEEL) : BOX;
+      if (!R.inside) this.contactOf(P).visible = R.dir > 0 && k > 0.9 && !(R.duck > 0.1);
+    }
+    lateUpdate() {
+      for (const P of this.pairs) if (P.s.ride) { this.placeRider(P); P.s.root.visible = !P.s._gone && !(P.s.ride.inside && P.s.ride.k >= 1 && P.s.ride.dir > 0) && (P.u.isDead || !P.u.group || P.u.group.visible); }
+    }
+    // tin từ máy khác: lính của máy đó lên / xuống xe. Trùng ghế (hai máy leo cùng lúc): lính số nhỏ giữ ghế, lính còn lại xuống
+    onNetRide(u, v, i) {
+      const P = this.pairs.find(q => q.u === u);
+      if (!P || !P.s.alive) return;
+      const R = P.s.ride;
+      if (!v) { if (R) this.leave(P, true); return; }
+      if (R && R.v === v && R.dir > 0) return;   // gửi lại định kỳ
+      if (R) this.endRide(P);
+      if (!VehicleRide.SEATS[v.tankType] || !VehicleRide.SEATS[v.tankType][i]) return;
+      const cur = v._riders && v._riders[i];
+      if (cur && cur !== P) {
+        if (this.mine.includes(cur) && u.netId < cur.u.netId) { if (!this.leave(cur, true)) this.endRide(cur); }
+        else if (cur.u.netId < u.netId) return;
+      }
+      this.board(P, v, i);
+    }
+    rideHint(s) {
+      const R = s.ride;
+      if (R) return R.dir < 0 || R.k < 1 ? '' : R.inside ? 'Trong khoang xe · F xuống · xe dừng thì tự xuống' : 'Trên xe · bắn được · F xuống · xe dừng thì tự xuống';
+      const v = this.vehicleNear(s);
+      if (!v) return '';
+      if (Math.abs(v.speed || 0) > RIDE.boardV) return 'Xe đang chạy, chờ chậm lại mới leo lên được';
+      const S = VehicleRide.SEATS[v.tankType], T = v._riders || [];
+      let inF = 0, inN = 0, outF = 0, outN = 0;
+      S.forEach((q, j) => { if (q.in) { inN++; if (!T[j]) inF++; } else { outN++; if (!T[j]) outF++; } });
+      if (!inF && !outF) return 'Xe hết chỗ';
+      return 'F lên xe · ' + (inN ? 'trong khoang còn ' + inF + '/' + inN + ' · ' : '') + 'ngồi ngoài còn ' + outF + '/' + outN;
+    }
+    // phím 1-4: chuyển sang lính đó (mỗi lính mang đúng 1 vũ khí chọn ở kho). Lính cũ ở lại canh gác
+    switchTo(i) {
+      const P = this.mine[i], C = this.ctl;
+      if (!P || P === this.me || P.u.isDead) return;
+      const ks = this.kamiState();
+      if (ks === 'launching' || ks === 'flying' || ks === 'returning' || this.me.s.figure.kamiSeq != null) { if (this.game.addCombatLog) this.game.addCombatLog('[[drone]] Đang phóng / lái UAV cảm tử — xong mới đổi lính được', 'alert'); return; }
+      const keys = C.keys, old = this.me;
+      C.exit();
+      this.standGuard(old);
+      P.s.setGuard(false);
+      P.called = false; P.boardV = null; P.run = null;
+      this.me = P;
+      this.game.switchPlayerUnit(P.u);
+      C.enter(P.s);
+      C.keys = keys;
+      C.aimK = 0; C.rangeM = null;
+    }
+    // phím `: cả tổ về chỗ lính đang điều khiển rồi canh gác tiếp
+    callAll() {
+      const M = this.me.s;
+      this.mine.forEach((P, i) => {
+        if (P === this.me || !P.s.alive) return;
+        if (P.run) return;    // đang chạy đi lấy đạn: lấy xong tự về
+        if (M.ride) return;   // đang đi xe: đồng đội ở nguyên vị trí
+        if (P.s.ride && !this.leave(P)) return;
+        P.boardV = null;
+        const a = i / this.mine.length * Math.PI * 2;
+        P.s.setGuard(false);   // chạy về trước, tới nơi mới canh gác lại (update)
+        P.called = true;
+        P.s.moveTo(M.x + Math.cos(a) * 14, M.z + Math.sin(a) * 14, 'run', 0.1);
+      });
+    }
+    // lính canh gác tự bắn: đi cùng đường đạn của trận như phát do người chơi bắn
+    fireGuard(s, aim) {
+      const P = this.mine.find(q => q.s === s);
+      if (!P || P === this.me || P.u.isDead || !this.ctl) return;
+      this.fireLive(s, s.arms.def.muzzle ? s.muzzlePos() : s.figure.rifle.localToWorld(new THREE.Vector3(0, 0.4, -6)), { point: new THREE.Vector3(aim.x, aim.y, aim.z) }, null);
+    }
+
+    // Controller gọi khi một phát rời nòng: bắn đạn thật của trận thay cho dò tia của phòng thử
+    fireLive(s, muzzle, hit, dir) {
+      const G = this.game, u = (this.pairs.find(q => q.s === s) || this.me).u, B = G.ballistics, W = s.weapon, def = s.arms.def;
+      if (s.ride && (s.ride.inside || s.ride.k < 1 || s.ride.duck > 0.05)) return;
+      // người chơi: nòng theo đường ngắm + góc chỉnh của kính / thước ngắm, tự nâng tâm theo vạch; lính canh gác vẫn tự tính góc
+      const L = SoldierEngine.lob(muzzle, hit.point, def.ball), lobEl = dir ? this.ctl.boreFor(s, muzzle, hit.point) : L.elev;
+      const h = Math.hypot(L.vx, L.vz) || 1, c = Math.cos(lobEl) * def.ball.v;
+      const v = new THREE.Vector3(L.vx / h * c, Math.sin(lobEl) * def.ball.v, L.vz / h * c);
+      // độ tản (giật súng, đang đi) của phát bắn: lệch trên vận tốc đầu
+      if (dir) v.addScaledVector(dir.clone().sub(this.ctl._ray), def.ball.v * (W === 'rpg' ? 0.5 : 1));
+      const d = v.clone().normalize();
+      const az = (Math.atan2(d.x, -d.z) * 180 / Math.PI + 360) % 360, el = Math.asin(Math.max(-1, Math.min(1, d.y))) * 180 / Math.PI;
+      let shell = null;
+      u.azimuth = az; u.elevation = el;
+      u._launchOverride = { position: muzzle.clone(), direction: d };
+      u.revealTimer = Math.max(u.revealTimer || 0, W === 'gl' ? 2 : 3);   // chớp lửa / khói phụt sau: lộ vị trí (TeamIntel)
+      u._roofShot = true; u.roofWeapon = W === 'gl' ? 'agl' : null;
+      if (W === 'rpg') B._modelOverride = 'PG7';   // hình đạn PG-7 thay tên lửa giàn xe (đạn vẫn là 'RPG')
+      try { shell = B.fireShell3D(u, az, el, 1, W === 'gl' ? 'GATLING_BULLET' : W === 'rpg' ? 'RPG' : 'SCOUT_BULLET'); } finally { u._launchOverride = null; u._roofShot = false; u.roofWeapon = null; B._modelOverride = null; }
+      if (W === 'atr') {
+        this.ctl.muzzleFx(s, muzzle, 'atr');
+        this.world.sfx(s, 'atrShot');
+      } else if (W === 'rpg') {
+        this.ctl.muzzleFx(s, muzzle, 'rpg');
+      } else this.ctl.muzzleFx(s, muzzle, 'gl');
+      if (!shell) return;
+      shell.isGatling = W !== 'gl' && W !== 'rpg';
+      if (W === 'rpg') B.coldLaunch(shell);
+      // đạn đạo theo đúng thông số súng (không cản gió, trọng lực riêng) để nòng ngóc theo SoldierEngine.lob rơi trúng tâm ngắm
+      shell.vx = v.x; shell.vy = v.y; shell.vz = v.z;
+      shell.g = def.ball.g; shell.k = def.ball.k || 0; shell.maxTravel = def.ball.range;
+      if (def.ball.wind && !(dir && SoldierPlayer.ASSIST)) shell.windMul = def.ball.wind;   // chế độ hỗ trợ: phát của người chơi không bị gió đẩy   // đạn bắn tỉa: cản không khí + gió đẩy lệch (ballistics.integrateFlight)
+      if (W === 'gl') {
+        const R = DroneAir.C.ROOF.agl;
+        shell.gl40 = true; shell.roofDirect = R.direct; shell.roofSplash = R.splash; shell.roofBlast = R.blast;
+      } else if (W !== 'rpg') { shell.roofDirect = 0.8; shell.atr = true; }   // lõi xuyên giáp (VehicleDamage PEN.ATR20): thủng đuôi / nóc / sườn xe tăng, không thủng mặt trước
+      const sync = G.netSync, pf = sync && sync.pendingFires && sync.pendingFires.find(f => f.shell === shell);
+      if (pf) pf.v = [v.x, v.y, v.z];
+    }
+
+    // lính máy khác bắn RPG (gói mạng chỉ dựng viên đạn): tái hiện tiếng, lửa + khói, ống trống rồi nạp. Đang lái xe thì không có Controller: giữ một bộ chỉ để vẽ hiệu ứng
+    onNetShot(u, ammo) {
+      const P = this.pairs.find(q => q.u === u);
+      if (P && ammo === 'SCOUT_BULLET' && P.s.weapon === 'atr' && P.s.alive && !(P.s.arms.reload > 0)) {
+        // súng bắn tỉa: tiếng nổ, lửa hãm nòng, rồi kéo khoá như máy bắn (băng giữ đầy: máy bắn tự đếm đạn)
+        const s = P.s; s.arms.mag = s.arms.def.mag;
+        s.fireRound(); s.figure.recoil = 1; P.recoilT = 0.2;
+        const G = this.game, fx = this.ctl || this.fxCtl || (this.fxCtl = new SoldierPlayer.Controller({ world: this.world, terrain: G.terrain, scene: G.scene, cam: G.camera }));
+        fx.muzzleFx(s, s.muzzlePos(), 'atr');
+        this.world.sfx(s, 'atrShot');
+        return;
+      }
+      if (!P || ammo !== 'RPG' || P.s.weapon !== 'rpg' || !P.s.alive) return;
+      const s = P.s, A = s.arms;
+      A.res = undefined;   // lính máy khác: máy bắn tự đếm đạn, ở đây chỉ tái hiện hình nạp
+      if (A.reload > 0) { A.reload = 0; if (A.rp) A.rp.t = null; }   // phát này tới trước khi hình nạp xong: máy bắn mới là chuẩn
+      A.mag = A.def.mag;
+      s.fireRound(); s.startReload();
+      s.figure.recoil = 1; P.recoilT = 0.2;
+      const G = this.game, fx = this.ctl || this.fxCtl || (this.fxCtl = new SoldierPlayer.Controller({ world: this.world, terrain: G.terrain, scene: G.scene, cam: G.camera }));
+      fx.muzzleFx(s, s.muzzlePos(), 'rpg');
+    }
+
+    // ----- HẾT ĐẠN: TỰ ĐI LẤY ĐẠN -----
+    // Đạn dự trữ có hạn (SoldierEngine.RESERVE, băng phóng lựu). Lính máy (không phải lính đang điều khiển) bắn hết sạch -> thôi canh gác, chạy tới nguồn
+    // đạn gần nhất: hòm ĐẠN / TỔNG HỢP còn trên bản đồ (SupplyManager) hoặc điểm tiếp tế hậu phương của phe (SupplyDepot, luôn có). Hòm do chủ phòng
+    // xét ai chạm (takeCrate gọi onCrate), điểm tiếp tế đứng trong vùng ~1,5 s là nhận. Lấy xong chạy về chỗ lính đang điều khiển, canh gác tiếp.
+    // UAV cảm tử không tiếp đạn trong trận (KAMI_PER).
+    dryOut(s) { const A = s.arms; return !A.def.kami && A.mag <= 0 && !(A.reload > 0) && s.reserve === 0; }
+    // còn thiếu đạn so với lúc xuất kích (điểm tiếp tế / hòm nạp cho cả người chưa hết hẳn)
+    shortAmmo(s) {
+      const A = s.arms, cap = SoldierEngine.RESERVE[s.weapon];
+      if (A.def.kami) return false;
+      if (A.front !== undefined) { const B = s.figure.chest.userData.glBelt, side = B ? B.slots.length / 2 : 12; return A.front + A.back < 2 * side || A.mag < A.def.mag; }
+      return cap !== undefined && ((A.res !== undefined ? A.res : cap) < cap || A.mag < A.def.mag);
+    }
+    // nạp lại như lúc xuất kích. Đang dở động tác nạp / phóng thì để lượt sau
+    restock(P) {
+      const s = P.s, A = s.arms;
+      if (!s.alive || A.def.kami || A.reload > 0 || (A.rp && A.rp.t != null) || s.figure.kamiSeq != null) return false;
+      s.initArms();
+      const cap = SoldierEngine.RESERVE[s.weapon];
+      if (cap !== undefined) s.arms.res = cap;
+      s.figure.rpgEmpty = false;
+      P.restockPend = false;
+      if (P === this.me && this.game.addCombatLog) this.game.addCombatLog('[[package]] Đã nhận đạn · ' + (WEAPON_NAME[s.weapon] || s.weapon) + ' đủ cơ số', 'info');
+      return true;
+    }
+    // hòm tiếp tế bị lính chạm (SupplyManager.takeCrate, chỉ phần thưởng trên máy có quyền với lính)
+    onCrate(u, crate) {
+      const P = this.mine.find(q => q.u === u);
+      if (!P || !(crate.type === 'AMMO' || crate.type === 'ALL')) return false;
+      if (!this.restock(P)) P.restockPend = true;
+      if (P.run) this.endAmmoRun(P);
+      return true;
+    }
+    ammoSources(team) {
+      const G = this.game, out = [], SM = G.supplyManager;
+      if (SM && SM.supplyCrates) for (const c of SM.supplyCrates) if (c.active && (c.type === 'AMMO' || c.type === 'ALL')) out.push({ crate: c, x: c.x, z: c.z, name: c.name });
+      const D = typeof SupplyDepot !== 'undefined' && SupplyDepot.of(G, team);
+      // đứng phía trước xe tải / đống pallet (khối đặc), trong vùng nạp
+      if (D) out.push({ depot: D, x: D.x - Math.sin(D.rot || 0) * D.R * 0.6, z: D.z - Math.cos(D.rot || 0) * D.R * 0.6, name: 'ĐIỂM TIẾP TẾ HẬU PHƯƠNG' });
+      return out;
+    }
+    startAmmoRun(P) {
+      const s = P.s, L = this.ammoSources(s.team);
+      if (!L.length) return;
+      let best = null, bd = Infinity;
+      for (const q of L) { const d = Math.hypot(q.x - s.x, q.z - s.z) * (q.depot ? 1.15 : 1); if (d < bd) { bd = d; best = q; } }   // hòm gần thì ưu tiên hòm
+      P.run = Object.assign({ t: 0, still: 0, re: 3 }, best);
+      s.setGuard(false); P.called = false;
+      s.moveTo(best.x, best.z, 'run');
+      if (this.game.addCombatLog) this.game.addCombatLog('[[package]] Lính ' + (this.mine.indexOf(P) + 1) + ' hết đạn · chạy tới [' + best.name + '] lấy đạn (' + Math.round(bd / 8) + ' m)', 'info');
+    }
+    endAmmoRun(P) {
+      P.run = null;
+      const M = this.me && this.me.s;
+      if (!M || !M.alive || M.ride || P === this.me) { this.standGuard(P); return; }
+      const a = this.mine.indexOf(P) / this.mine.length * Math.PI * 2;
+      P.called = true;
+      P.s.moveTo(M.x + Math.cos(a) * 14, M.z + Math.sin(a) * 14, 'run', 0.3);
+    }
+    stepAmmoRuns(dt) {
+      const G = this.game;
+      for (const P of this.mine) {
+        const s = P.s;
+        if (!s.alive || P.u.isDead) { P.run = null; P.depotT = 0; continue; }
+        if (P.restockPend && this.restock(P) && P.run) this.endAmmoRun(P);
+        // điểm tiếp tế hậu phương: đứng trong vùng một lúc là nhận (cả lính đang điều khiển)
+        const D = !s.ride && typeof SupplyDepot !== 'undefined' && SupplyDepot.at(G, P.u);
+        P.depotT = D && this.shortAmmo(s) && s.speed < 2 ? (P.depotT || 0) + dt : 0;
+        if (P.depotT > 1.5 && this.restock(P)) { P.depotT = 0; if (P.run) this.endAmmoRun(P); continue; }
+        if (P === this.me) { if (P.run) { P.run = null; } continue; }
+        if (s.ride) continue;
+        const R = P.run;
+        if (!R) { if (this.dryOut(s) && !P.called) this.startAmmoRun(P); continue; }
+        R.t += dt;
+        // hòm vừa bị người khác lấy mất: chọn nguồn khác; tới nơi rồi mà đường đi bỏ dở thì đi tiếp
+        if (R.crate && !R.crate.active) { this.startAmmoRun(P); continue; }
+        if ((R.re -= dt) <= 0) { R.re = 3; if (!s.intent.target && Math.hypot(R.x - s.x, R.z - s.z) > (R.depot ? R.depot.R * 0.5 : 20)) s.moveTo(R.x, R.z, 'run'); }
+      }
+    }
+
+    markHit() { if (this.ctl) this.ctl.hitT = 0.14; }
+
+    // ----- mỗi khung, trước khi cập nhật các đơn vị -----
+    update(dt) {
+      const G = this.game;
+      this.veh.length = 0;
+      for (const u of G.units) if (u.tankType !== TYPE && !u.isDead && u.group) this.veh.push(u);
+      for (const P of this.pairs) this.syncIn(P, dt);
+      for (const P of this.mine) if (P.called && !P.s.ride && !P.s.intent.target && !P.s._orders.length) { P.called = false; this.standGuard(P); }
+      this.stepAmmoRuns(dt);
+      this.stepBoarders();
+      this.stepRiders(dt);
+      this.stepStrikes(dt);
+      this.stepShoves(dt);
+      if (this.me && this.ctl) {
+        const usable = this.usable();
+        if (!usable) this.releaseInput();
+        const MR = this.me.s.ride;
+        if (MR && (MR.inside || MR.k < 1 || MR.dir < 0 || MR.duck > 0.05)) { this.ctl.firing = false; this.ctl.aiming = false; }   // trong khoang / đang leo: không bắn
+        if ((this._hintT = (this._hintT || 0) - dt) <= 0) { this._hintT = 0.2; this._rideMsg = this.me.s.alive ? this.rideHint(this.me.s) : ''; }
+        if (this.ctl.firing && G.inNoFireZone && G.inNoFireZone()) { this.ctl.firing = false; if (G.noFireWarn) G.noFireWarn(); }
+        this.ctl.update(dt);
+        // UAV đang bay: lính quỳ tại chỗ, hai tay cầm máy điều khiển
+        const ks = this.kamiState();
+        this.me.s.figure.kamiCtl = ks === 'launching' || ks === 'flying' || ks === 'returning';
+        // tay lính làm đúng lệnh người chơi đang bấm: cần lái, ngón cái, người nghiêng theo (SoldierModel.kamiPose)
+        const sk = ks === 'flying' && G._sight && G._sight.arty && G._sight.keys;
+        this.me.s.figure.kamiIn = sk ? { turn: (sk.KeyD ? 1 : 0) - (sk.KeyA ? 1 : 0), pitch: (sk.KeyW ? 1 : 0) - (sk.KeyS ? 1 : 0), boost: !!(sk.ShiftLeft || sk.ShiftRight) } : null;
+      }
+      if (this.fxCtl && !this.ctl) this.fxCtl.stepFx(dt);
+      for (const P of this.pairs) if (P.recoilT > 0 && (P.recoilT -= dt) <= 0) P.s.figure.recoil = 0;
+      this.world.update(dt, G.camera);
+      for (const P of this.pairs) this.syncOut(P);
+      for (const P of this.mine) { if (!P.s.ride) this.runOver(P); this.bleedOut(P, dt); }
+    }
+
+    // chảy máu: máy có quyền với lính trừ máu đơn vị (nguồn 'BURN' như cháy âm ỉ: không tính là trúng đạn mới,
+    // chết thì game.sweepUnhandledDeaths ghi công kẻ bắn gần nhất)
+    bleedOut(P, dt) {
+      const { u, s } = P;
+      if (u.isDead || !s.alive || !(s.bleed > 0)) return;
+      u._bled = true;
+      // mỗi lần trừ gửi 1 gói mạng: gộp 0,5 s một lần như nhịp cháy (spg.js), không gọi theo khung
+      P.bleedAcc = (P.bleedAcc || 0) + s.bleed * dt; P.bleedT = (P.bleedT || 0) + dt;
+      if (P.bleedT < 0.5) return;
+      const r = u.takeDamage(P.bleedAcc / 100 * u.maxHp, null, 'BURN');
+      P.bleedAcc = 0; P.bleedT = 0;
+      if (r && r.killed) u._infDeath = { mode: 'fall' };
+    }
+
+    syncIn(P) {
+      const { u, s } = P;
+      if (u.isDead) {
+        if (s.alive) {
+          const inCab = s.ride && s.ride.inside && s.ride.dir > 0 && s.ride.k >= 1, info = u._infDeath || {};
+          if (s.ride && !inCab) info.rideFall = this.rideFall(s);
+          if (s.ride) { if (this.mine.includes(P) && this.game.netSync && this.game.netSync.sendRide) this.game.netSync.sendRide(u, null, 0); this.endRide(P); }
+          P.boardV = null;
+          s.kill('match', info); u._infDeath = null;
+          if (inCab) { s._gone = true; s.root.visible = false; }   // chết trong khoang: không rơi xác ra ngoài
+          if (P === this.me) this.releaseInput();
+        }
+        return;
+      }
+      if (!s.alive) {
+        s.revive(u.x, u.z, u.bodyAngle);
+        P.bleedAcc = 0; P.bleedT = 0;
+        if (s.arms.def.kami) { s.arms.mag = s.arms.def.mag; s.figure.kamiLeft = s.arms.mag; s.figure.kamiCtl = false; u.kamikazeCount = KAMI_PER; }
+        s.morDeploy = false;
+        P.medLeft = u.infMedkit ? Equipment.MEDKIT.uses : 0;
+        P.s.gearKg = P.s.gearKg0 || 0;
+        if (s.restStamina) s.restStamina();
+        if (SoldierEngine.RESERVE[s.weapon] !== undefined) { s.arms.res = SoldierEngine.RESERVE[s.weapon]; s.arms.mag = s.arms.def.mag; }
+        if (P === this.me) { s.intent.stance = 'stand'; this.ctl.yaw = u.bodyAngle; this.ctl.pitch = 0; this.ctl.aimK = 0; }
+      }
+      if (u._infDeath) s._woundFrom = u._infDeath;   // điểm nổ / hướng đạn của phát vừa trúng: chọn bên bị thương (stepWound)
+      s.hp = u.hp / u.maxHp * 100;
+      // nằm trong cỏ: thân người khuất sau ngọn cỏ (TeamIntel); xạ thủ nằm lâu đè rạp cỏ chỗ nằm và dọn một vệt trước nòng để kính không bị cỏ che
+      const pr = (s.figure._proneK || 0) > 0.9;
+      u._infProne = pr;
+      if ((P._grassT = (P._grassT || 0) - 1) <= 0) { P._grassT = 20; u._infGrass = this.world.grassAt ? this.world.grassAt(s.x, s.z) : 0; }
+      if (pr && u._infGrass > 0.05) {
+        const fx = -Math.sin(s.heading), fz = -Math.cos(s.heading), G = P._flat;
+        if (!G || Math.hypot(G.x - s.x, G.z - s.z) > 3 || Math.abs(G.h - s.heading) > 0.15) {
+          P._flat = { x: s.x, z: s.z, h: s.heading };
+          this.world.flattenGrass(s.x - fx * 2, s.z - fz * 2, fx, fz, 3.4, 9);       // thân người nằm
+          // vệt bắn trước nòng: gạt cỏ ~12 m, xa dần mở rộng theo góc nhìn kính (cỏ gần ống kính phóng đại che kín cả trường nhìn)
+          // (súng nằm lệch vai phải ~2 đv: dải đặt theo đầu nòng, không theo tâm người)
+          const m = s.arms.def.muzzle ? s.muzzlePos() : { x: s.x, z: s.z };
+          this.world.flattenGrass(m.x + fx * 18, m.z + fz * 18, fx, fz, 4.5, 24);
+          this.world.flattenGrass(m.x + fx * 72, m.z + fz * 72, fx, fz, 7.5, 32);
+        }
+      } else if (!pr) P._flat = null;
+      if (this.mine.includes(P)) { u._infLow = s.intent.stance === 'kneel' || (s.figure._proneK || 0) > 0.5; return; }
+      // lính của máy khác: đi theo vị trí mạng, xa quá (hồi sinh, mất gói) thì nhảy tới luôn
+      const D = s.intent.drive, dx = u.x - s.x, dz = u.z - s.z, d = Math.hypot(dx, dz);
+      if (s.ride) { D.x = D.z = 0; }
+      else if (d > 160) { s.x = u.x; s.z = u.z; D.x = D.z = 0; }
+      else if (d > 3) { D.x = dx / d; D.z = dz / d; D.gait = Math.abs(u.speed || 0) > 30 || d > 40 ? 'run' : 'walk'; }
+      else { D.x = D.z = 0; }
+      const firing = performance.now() - (u._infShotAt || -1e9) < SHOT_AIM_S * 1000;
+      D.face = firing ? -(u.azimuth || 0) * Math.PI / 180 : (D.x || D.z) ? null : s.heading;
+      const F = s.figure, k = F.aimBlend || 0, next = k + ((firing ? 1 : 0) - k) * 0.15;
+      F.aimBlend = next > 0.005 ? next : 0;
+      F.aimPitch = (u.elevation || 0) * Math.PI / 180 * F.aimBlend;
+    }
+
+    syncOut(P) {
+      const { u, s } = P;
+      s.root.visible = !s._gone && (u.isDead || !u.group || u.group.visible);
+      if (s.ride) this.placeRider(P);
+      if (u.isDead || !this.mine.includes(P)) return;
+      u.x = s.x; u.z = s.z; u.y = s.y; u.bodyAngle = s.heading; u.speed = s.speed;
+      if (P !== this.me) { u.azimuth = ((-s.heading * 180 / Math.PI) % 360 + 360) % 360; return; }
+      u.azimuth = ((-this.ctl.yaw * 180 / Math.PI) % 360 + 360) % 360;
+      u.elevation = this.ctl.pitch * 180 / Math.PI;
+    }
+
+    // xe đang chạy cán phải: chết ngay (không tính công cho xe: máy có quyền với lính là máy này)
+    runOver(P) {
+      const { u, s } = P, VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
+      if (u.isDead || u.invulnerableTimer > 0 || !VC || !VC.vehObb || !VC.circleGap) return;
+      for (const v of this.veh) {
+        if (Math.abs(v.speed || 0) < 12 || Math.hypot(v.x - s.x, v.z - s.z) > 50 || Math.abs((v.y || 0) - s.y) > 16) continue;
+        const g = VC.circleGap(VC.vehObb(v, v.x, v.z, v.bodyAngle, this._ob || (this._ob = {})), s.x, s.z, 2, this._gap || (this._gap = {}));
+        if (!g || g.gap >= 0) continue;
+        u._infDeath = { mode: 'crush' };
+        const r = u.takeDamage(u.maxHp + 1, null, 'DIRECT_HIT');
+        if (r && r.killed) this.game.onUnitDestroyed(u, null, v.name || 'xe cán');
+        return;
+      }
+    }
+
+    // ----- camera: game.updateChaseCamera gọi, true = đã đặt camera -----
+    placeCamera() {
+      if (!this.me || !this.ctl || this.game._sight) return false;   // màn hình UAV cảm tử: camera mũi UAV
+      this.ctl.placeCamera();
+      for (const P of this.mine) P.u._scope = P === this.me ? this.ctl.scopeCone() : null;
+      return true;
+    }
+
+    // ----- HUD -----
+    buildHud() {
+      const box = document.getElementById('hud-overlay') || document.body;
+      if (!document.getElementById('inf-css')) {
+        const st = document.createElement('style'); st.id = 'inf-css'; st.textContent = CSS; document.head.appendChild(st);
+      }
+      const el = this.hudEl = document.createElement('div');
+      el.id = 'inf-hud';
+      el.innerHTML = '<div id="inf-heal"></div><div id="inf-cross"><i></i><i></i><i></i><i></i></div><div id="inf-msg"></div>'
+        + '<div id="inf-panel"><div id="inf-ammo"></div><div id="inf-keys">W A S D đi · Shift chạy · chuột phải ngắm (Shift: nín thở, lăn chuột: kính / thước ngắm) · chuột trái bắn / phóng UAV · R nạp · C quỳ · E bộ y tế · F lên / xuống xe · 1 2 3 4 đổi lính · ` gọi cả tổ</div></div>';
+      box.appendChild(el);
+      this.$keys = el.querySelector('#inf-keys'); this.$cross = el.querySelector('#inf-cross'); this.$ammo = el.querySelector('#inf-ammo'); this.$msg = el.querySelector('#inf-msg'); this.$heal = el.querySelector('#inf-heal');
+    }
+    drawHud(h) {
+      if (!this.hudEl) return;
+      const rs = h.kami ? ' / ' + KAMI_PER + (h.kami.launching ? ' · đang phóng…' : h.kami.flying ? ' · đang lái UAV (Esc: thoát màn hình, UAV lượn chờ)' : h.kami.left > 0 ? ' · đứng yên, chuột trái: phóng' : ' · hết UAV') : h.reserve != null ? ' / ' + h.reserve : '';
+      const rg = h.range != null ? ' · ' + Math.round(h.range) + ' m' + (h.rangeOk ? (h.weapon === 'gl' && h.range < 14 ? ' (chưa đủ cự ly ngòi)' : '') : ' (quá tầm)') : '';
+      this.$ammo.textContent = (this.mine.length > 1 ? 'Lính ' + (this.mine.indexOf(this.me) + 1) + '/' + this.mine.length + ' · ' : '') + WEAPON_NAME[h.weapon] + ' · ' + h.mag + rs + (h.reloading ? ' · đang nạp…' : '') + rg + (h.load ? ' · ' + h.load + ' kg' : '') + (h.drum != null && h.aim > 0.5 ? ' · thước ngắm ' + h.drum + ' m' : '') + (h.scope ? ' · kính ' + String(h.scope.x).replace('.', ',') + '×' + (h.scope.wind ? ' · gió ngang ' + Math.abs(h.scope.wind.cross).toFixed(1).replace('.', ',') + ' m/s ' + (Math.abs(h.scope.wind.cross) < 0.3 ? '' : h.scope.wind.cross > 0 ? '→' : '←') + (Math.abs(h.scope.wind.head) >= 1 ? ' · ' + (h.scope.wind.head > 0 ? 'xuôi ' : 'ngược ') + Math.abs(h.scope.wind.head).toFixed(0) + ' m/s' : '') : '') : '') + (h.holding ? ' · nín thở' : h.winded ? ' · hụt hơi' : '') + (h.tired ? ' · kiệt sức' : h.stam != null && h.stam < 0.95 ? ' · thể lực ' + Math.round(h.stam * 100) + '%' : '') + (this.me.u.infMedkit ? ' · ' + (this.me.s._medUse ? 'đang băng bó ' + Math.min(99, Math.round((this.me.s.figure.aidT || 0) / SoldierModel.AID_SEQ.wrap * 100)) + '%' : 'y tế ' + this.me.medLeft) : '');
+      // không còn tâm ngắm giả trên màn hình: ngắm qua kính thật; dấu này chỉ loé khi đạn trúng
+      this.$keys.style.display = h.sight ? 'none' : '';
+      this.$cross.classList.toggle('hit', !!h.hit);
+      // tâm ngắm khi chưa áp mắt (khe hở theo độ tản); áp mắt rồi thì kính có tâm riêng
+      this.$cross.style.setProperty('--g', Math.round(3 + (1 - h.aim) * 6 + h.spread * 300) + 'px');
+      this.$cross.classList.toggle('lock', !!h.lock);
+      this.$cross.style.display = h.alive && !h.sight && !h.kami ? '' : 'none';
+      const msg = h.alive && !this.locked && !this.noLock && this.usable() ? 'Bấm vào màn hình để điều khiển' : this._rideMsg || '';
+      this.$msg.textContent = msg; this.$msg.style.display = msg ? '' : 'none';
+    }
+
+    dispose() {
+      if (this._off) for (const f of this._off) f();
+      this._off = null;
+      for (const P of this.pairs) if (P.s.ride) this.endRide(P);
+      if (this.game.ballistics) this.game.ballistics.onShellFired = null;
+      if (this.hudEl) this.hudEl.remove();
+      this.hudEl = null;
+      document.body.classList.remove('inf-mode');
+      if (this.ctl) this.ctl.exit();
+      for (const s of this.world.soldiers.slice()) s.dispose();
+      this.world.soldiers.length = 0;
+      const cam = this.game.camera;
+      if (cam.fov !== this.fov0) { cam.fov = this.fov0; cam.updateProjectionMatrix(); }
+      if (document.pointerLockElement === this.game.renderer.domElement && document.exitPointerLock) document.exitPointerLock();
+    }
+  }
+
+  // Gọi lúc vào trận: chỉ dựng khi trận có lính, trận toàn xe không tốn gì
+  function attach(game) {
+    if (!game.units || !game.units.some(u => u.tankType === TYPE) || typeof SoldierEngine === 'undefined' || typeof SoldierPlayer === 'undefined') return null;
+    return new Match(game);
+  }
+
+  return { TYPE, attach, prebake, directDamage, splashDamage, deathMode };
+})();
+
+if (typeof window !== 'undefined') window.InfantryMatch = InfantryMatch;

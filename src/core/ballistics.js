@@ -97,7 +97,7 @@ class BallisticsSystem3D {
    */
   createShell155Mesh(isDirectFire, ammoType = 'NORMAL', heavy = false, tracer = true) {
     if (typeof ProjectileModels !== 'undefined') {
-      return ProjectileModels.create(ammoType, { heavy, tracer });
+      return ProjectileModels.create(this._modelOverride || ammoType, { heavy, tracer });
     }
     const shellGroup = new THREE.Group();
 
@@ -892,6 +892,7 @@ class BallisticsSystem3D {
       gl: gl40
     };
     if (gl40) shell.maxTravel = 0;
+    if (shooter && shooter.infWeapon === 'atr' && ammoType === 'SCOUT_BULLET') shell.atr = true;   // súng bắn tỉa của lính: VehicleDamage PEN.ATR20 (cả bản sao trên máy khác)
     // viên bắn sớm trong khung (vòng bắn liên thanh còn dư thời gian): bay trước phần trễ đó ở lần cập nhật đầu (updateShells3D)
     if (shooter && shooter._shotLead > 0) shell.lead = Math.min(0.1, shooter._shotLead) * (this.bulletSpeedMultiplier || 1);
     // mũi tên lõi urani nghèo (đạn cao cấp 'ap_du'): hiệu ứng trúng riêng (mảnh tự bốc cháy) + dễ gây cháy trong khoang.
@@ -1209,6 +1210,13 @@ class BallisticsSystem3D {
     return best;
   }
 
+  // RPG vác vai: liều đẩy phóng đạn khỏi ống, bay trơn ~11 m rồi động cơ hành trình mới bắt lửa (bảo vệ người bắn). Trước đó chưa có lửa đuôi, chưa nhả khói.
+  // Động cơ cháy ~500 m như PG-7 (burn đv, 8 đv = 1 m) để thấy vệt khói; thông số RPG chung của xe chỉ cháy ~31 m. Không quay mũi theo gió (wc 0):
+  // góc bắn của lính tính không gió (SoldierEngine.lob), cháy dài mà còn bạt gió thì đạn lệch tâm ngắm
+  coldLaunch(s, travel = 88, burn = 4000) {
+    s.coldTo = (s.travel || 0) + travel; s.cold = true; s.burnTravel = burn; s.wc = 0;
+    if (s.mesh) s.mesh.traverse(o => { if (o.userData.tracer) o.visible = false; });
+  }
   // Một bước bay của đạn không điều khiển: gió, lực cản (k theo quãng đường), trọng lực thế giới thu nhỏ.
   // Đạn phản lực (RPG) còn cháy động cơ thì lực đẩy bù cản & phần lớn trọng lực.
   /**
@@ -1496,7 +1504,8 @@ class BallisticsSystem3D {
 
         // 2. KIỂM TRA ĐẠN NỔ KHI ĐẾN GẦN MỤC TIÊU (PROXIMITY FUZE / HITBOX COLLISION DETECTION)
         // Chỉ kích nổ nếu không có tường chắn phía trước
-        if (s.timeAlive > 0.015 && allUnits) {
+        // (đạn súng bắn tỉa 6800 đv/s: chờ 0,015 s là đã bay ~100 đv, bắn gần thì xuyên qua xe không tính trúng)
+        if (s.timeAlive > (s.atr ? 0.0005 : 0.015) && allUnits) {
           let hitVehicle = null;
           let minHitDist = Infinity;
           let prox = null;       // đạn HE bay sượt sát thân xe địch: ngòi cận đích kích nổ tại prox.t trên đoạn bay
@@ -1510,12 +1519,14 @@ class BallisticsSystem3D {
             // máy chủ không gửi vị trí / quá lâu không có gói mới: bản sao chỉ là phỏng đoán -> không tính va chạm (chống trúng "bóng ma")
             if (unit._netHidden || unit._netStale) continue;
             if (s._penU && s._penU.indexOf(unit.id) >= 0) continue;   // xe viên đạn vừa xuyên thấu (penetrateUnit)
+            // lính đi nhờ xe: trong khoang thì đạn không tới; đạn của lính không nổ ngay vào xe đang ngồi (đầu nòng sát thân xe)
+            if (unit._inVeh || (s.shooter && s.shooter._rideV === unit)) continue;
             // Chỉ phát nổ với xe đối phương (không kích nổ vào xe của chính mình hoặc đồng đội)
             const isEnemy = !s.shooterTeam || unit.team !== s.shooterTeam;
             // (Xe nằm trong cứ điểm: xét như mọi xe — mái / tường / gờ bê tông đã chặn đạn bằng hình khối ở bước 1, đoạn bay đã
             // bị cắt tại mặt bê tông. Đạn bay thẳng qua miệng hầm mở thì trúng; trước đây bị "gờ hầm" chặn dù không có gì cản)
             // Xác xe còn nằm đó là vật cản thật: chặn đạn của mọi phe (chỉ va chạm sát thân, không kích nổ tiếp cận)
-            const wreck = unit.isDead && unit.dmg && unit.group && unit.group.visible;
+            const wreck = unit.isDead && unit.tankType !== 'INFANTRY' && unit.dmg && unit.group && unit.group.visible;
             // xe đồng đội cũng là vật rắn: đạn bay trúng thân là nổ / xuyên (không có ngòi nổ cận đích với xe phe mình)
             const friend = !unit.isDead && !isEnemy && unit.id !== s.shooterId;
             if (wreck || friend || (!unit.isDead && unit.id !== s.shooterId && isEnemy)) {
@@ -1576,6 +1587,26 @@ class BallisticsSystem3D {
             }
           }
 
+          // lính ngồi ngoài xe lọt thỏm trong hộp thân xe (hộp gồm cả tháp): đạn vừa vào hộp đã tới ngay lính thì trúng lính;
+          // phải bay qua hộp xa hơn (qua tháp, từ đầu xe bên kia) thì vẫn trúng xe
+          if (hitVehicle && hitVehicle._riders && !s._barrelHit && s.ammoType !== 'CLUSTER_SUBMUNITION' && segLenSq > 0 && typeof Strongholds !== 'undefined' && Strongholds.segUnitBox) {
+            const kr = 14 / Math.sqrt(segLenSq), rx = segX * kr, ry = segY * kr, rz = segZ * kr;
+            let tr = Infinity, rider = null;
+            for (const P of hitVehicle._riders) {
+              const r = P && P.u;
+              if (!r || r.isDead || r._inVeh || r._netHidden || r._netStale || r.id === s.shooterId || (s._penU && s._penU.indexOf(r.id) >= 0)) continue;
+              const t = Strongholds.segUnitBox(r, s.x, s.y, s.z, s.x + rx, s.y + ry, s.z + rz, 1.0);
+              if (t >= 0 && t < tr) { tr = t; rider = r; }
+            }
+            if (rider) { s.x += rx * tr; s.y += ry * tr; s.z += rz * tr; hitVehicle = rider; }
+          }
+
+          // đạn xuyên giáp không có thuốc nổ: xuyên qua người rồi bay tiếp, không nổ
+          if (hitVehicle && hitVehicle.tankType === 'INFANTRY' && s.ammoType === 'AP' && this.onInfantryPass) {
+            (s._penU || (s._penU = [])).push(hitVehicle.id);
+            this.onInfantryPass(s, hitVehicle);
+            continue;
+          }
           if (hitVehicle) {
             // mũi tên / 30mm xuyên thấu xe giáp mỏng / xác xe: ra phía bên kia rồi bay tiếp (penetrateUnit đã gọi onImpact)
             const pu = this.penetrateUnit(s, hitVehicle, onImpact, subDt, Math.min(1, minHitDist / Math.max(1e-6, Math.hypot(s.vx, s.vy, s.vz) * subDt)));
@@ -1670,6 +1701,11 @@ class BallisticsSystem3D {
       if (impacted) continue;
 
       if (s.ignite && s.travel >= s.ignite) { s.ignite = 0; s.litAt = s.travel; s.mesh.visible = true; }
+      if (s.coldTo && s.travel >= s.coldTo) {
+        s.coldTo = 0; s.cold = false; s.lastTailPos = null;
+        s.mesh.traverse(o => { if (o.userData.tracer) o.visible = true; });
+        if (this.fx && this.fx.rocketIgnite) this.fx.rocketIgnite(s.x, s.y, s.z, s.vx, s.vy, s.vz);
+      }
       s.mesh.position.set(s.x, s.y, s.z);
 
       // Cập nhật hướng mũi đạn bám theo tiếp tuyến quỹ đạo bay tức thời (trục Y hướng theo vận tốc)

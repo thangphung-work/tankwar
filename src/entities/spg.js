@@ -552,6 +552,15 @@ class SPGUnit3D {
       this.antiTankCooldownMax = gameTime(11.0); // kíp thạo việc nạp lại ống phóng trên nóc ~11 s: giật vỏ rỗng, tống quả mới dứt khoát (hoạt cảnh: VehicleCrew AT)
       this.antiTankCooldown = 0;      // Đã sẵn sàng khi vào trận
       this.antiTankLauncherMesh = null;
+    } else if (this.tankType === 'INFANTRY') {
+      // Bộ binh (VANGUARD): đơn vị không có hình, hình người + di chuyển do InfantryMatch (SoldierEngine) lo
+      this.baseMaxHp = 1.0;
+      this.maxHp = 1.0;
+      this.baseMaxSpeed = 19;    // chạy 2,4 m/s (SoldierModel.GAIT_SPEED.run)
+      this.acceleration = 34;
+      this.turnRate = 3;
+      this.climbMax = 1.2;
+      this.reloadDuration = 0;   // nạp đạn theo động tác của súng (SoldierEngine)
     } else {
       this.tankType = 'ALL_ROUNDER';
       this.baseMaxHp = 3.2; // Máu cao nhất trận (3.2, trên xe 6 nòng 3.0), giáp composite dày nhất ở mặt trước, sát thương mỗi phát to
@@ -567,7 +576,7 @@ class SPGUnit3D {
     // KHỐI LƯỢNG (tấn): xe 6 nòng (thân nặng + lưỡi ủi) 65, xe tăng chủ lực 60, xe tải 6x6 mang pháo 155 32, xe trinh sát
     // 4x4 10. Dùng chia lực đẩy khi 2 xe va nhau (xe nhẹ bật ra, xe nặng gần như không suy suyển) và tính xung lực va chạm
     // (độ to tiếng va, rung, hư hại vật bị húc)
-    this.mass = { GATLING: 65, ARTILLERY: 32, SCOUT: 10 }[this.tankType] || 60;
+    this.mass = { GATLING: 65, ARTILLERY: 32, SCOUT: 10, INFANTRY: 0.1 }[this.tankType] || 60;
     this.turnRadius = this.isWheeled ? wheelTurnRadius(this.tankType) : 0;
     // Lội nước (8 đơn vị = 1 m): [sâu lội bình thường, sâu tối đa trước khi nước tràn vào khoang máy]
     // Xe tăng ~1.2 m (lội không chuẩn bị), xe hỏa lực cùng khung gầm; xe tải 6x6 ~1 m; xe 4x4 trinh sát thấp nhất ~0.8 m.
@@ -641,6 +650,9 @@ class SPGUnit3D {
       this.selectedAmmo = 'SCOUT_BULLET';   // Đạn nhỏ 30mm cơ bản
       this.incendiaryAmmoCount = 45;        // Đạn cháy nâng cao
       this.missileAmmoCount = 3;            // Tên lửa chống tăng dẫn hướng trong ống phóng trên nóc (ô đạn 3, tối đa 3 quả)
+    } else if (this.tankType === 'INFANTRY') {
+      this.availableAmmos = [];             // súng và đạn của lính ở InfantryMatch, không có ô đạn của xe
+      this.selectedAmmo = 'SCOUT_BULLET';
     } else {
       this.availableAmmos = ['NORMAL', 'AP', 'HE'];
       this.selectedAmmo = 'NORMAL';
@@ -1638,7 +1650,27 @@ class SPGUnit3D {
     this.burnTimer = Math.max(this.burnTimer || 0, duration);
   }
 
+  // Bộ binh: vị trí do InfantryMatch chép sang, ở đây chỉ còn đặt hộp trúng đạn + thanh máu + khiên bất tử lúc xuất kích
+  updateInfantry(dt) {
+    if (this.isDead) return;
+    if (this.invulnerableTimer > 0) {
+      this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
+      this.group.visible = Math.floor(Date.now() / 90) % 2 === 0;
+    } else this.group.visible = true;
+    this.group.position.set(this.x, this.y, this.z);
+    this.group.rotation.y = this.bodyAngle;
+    const hpU = this.hpBarMesh && this.hpBarMesh.material && this.hpBarMesh.material.uniforms;
+    if (hpU && hpU.uHp) { const r = Math.min(1, this.hp / this.maxHp); hpU.uHp.value = r; hpU.uGhost.value = r; }
+    if (this.hpGroup) {
+      this.hpGroup.position.y = 19;
+      this.hpGroup.visible = !this.isPlayer;
+      const cam = window.game && window.game.camera;
+      if (cam) this.hpGroup.quaternion.copy(this.group.quaternion).invert().multiply(cam.quaternion);
+    }
+  }
+
   update(dt, terrain, ballistics, radar, allUnits, airdrop = null, supplyCrates = null, capturePoints = null) {
+    if (this.tankType === 'INFANTRY') { this.updateInfantry(dt); return; }
     // Xử lý trạng thái thiêu đốt khi dính đạn cháy
     if (this.burnTimer > 0) {
       // bình chữa cháy tự động (trang bị): lửa tắt nhanh hơn, cháy ít sát thương hơn
@@ -1956,7 +1988,8 @@ class SPGUnit3D {
       near.length = 0;
       for (const other of allUnits) {
         // xác xe đã chết vẫn là khối thép nằm đó: chặn như xe sống (chỉ bỏ qua khi xác đã dọn / ẩn khỏi cảnh)
-        if (other === this || (other.isDead && (!other.group || !other.group.visible || !other.group.parent))) continue;
+        // (bộ binh không chặn xe: xe chạy qua là cán, xem InfantryMatch.runOver)
+        if (other === this || other.tankType === 'INFANTRY' || (other.isDead && (!other.group || !other.group.visible || !other.group.parent))) continue;
         // khác tầng (xe trên nóc hầm / xe trong lòng hầm bên dưới, cầu / gầm cầu): không chạm nhau
         if (Math.abs((this.y || 0) - (other.y || 0)) > 24) continue;
         if (Math.hypot(nextX - other.x, nextZ - other.z) > (VC ? rMe + VC.reach(other) : 34) + mvLen) continue;
@@ -4485,7 +4518,7 @@ class SPGUnit3D {
   }
 
   takeDamage(amount, attacker = null, source = 'SHELL') {
-    if (this.isDead || this.invulnerableTimer > 0) {
+    if (this.isDead || this.invulnerableTimer > 0 || this._inVeh) {   // _inVeh: lính ngồi trong khoang, xe nổ mới chết theo (InfantryMatch)
       return { blocked: false, killed: false, prevHp: this.hp, currentHp: this.hp };
     }
 
@@ -4540,7 +4573,8 @@ class SPGUnit3D {
       }
     }
 
-    const fxSys = (typeof ExplosionFX !== 'undefined' && ExplosionFX.forScene) ? ExplosionFX.forScene(this.scene) : null;
+    // bộ binh không có xác xe để cháy / nổ: lính tự ngã (InfantryMatch)
+    const fxSys = this.tankType !== 'INFANTRY' && typeof ExplosionFX !== 'undefined' && ExplosionFX.forScene ? ExplosionFX.forScene(this.scene) : null;
     if (fxSys && this.hp < this.maxHp) fxSys.trackVehicle(this);
     if (this.hp <= 0) {
       this.isDead = true;
@@ -4550,7 +4584,7 @@ class SPGUnit3D {
       // Nổ tung, hất văng tháp pháo theo quán tính đạn và điểm nổ thực tế (sơn cháy sém dần trong explosion_fx)
       if (fxSys) {
         fxSys.onVehicleDestroyed(this, this.lastHitDir || null, this.lastHitPoint || null);
-      } else if (this.hullMainMesh && this.hullMainMesh.material) {
+      } else if (this.tankType !== 'INFANTRY' && this.hullMainMesh && this.hullMainMesh.material) {
         // Không có hệ hiệu ứng: đổi thẳng sang màu xác xe cháy đen
         this.hullMainMesh.material.color.setHex(0x181512);
       }
@@ -4704,7 +4738,7 @@ class SPGUnit3D {
   // + dựng khung mô hình mới; job.step() gắn tiếp trang bị (Equipment.refitSteps) từng phần, true = xong (đã tách riêng
   // vật liệu dùng chung). null nếu không tách được
   beginDetachWreck() {
-    if (!this.isDead || !this.group || !this.group.parent || !this.group.visible || !this._modelKeys || typeof TankModelBuilder === 'undefined') return null;
+    if (this.tankType === 'INFANTRY' || !this.isDead || !this.group || !this.group.parent || !this.group.visible || !this._modelKeys || typeof TankModelBuilder === 'undefined') return null;
     // tình trạng giáp lắp thêm của lần xuất kích này: ghi trước khi bộ hư hại chuyển sang xác
     if (typeof Equipment !== 'undefined' && Equipment.noteArmor && this._eq && this._eq.local) Equipment.noteArmor(this);
     const W = Object.assign(Object.create(Object.getPrototypeOf(this)), this);

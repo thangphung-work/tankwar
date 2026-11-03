@@ -180,7 +180,7 @@ const DroneAir = (() => {
       const list = this._airList || (this._airList = []);
       list.length = 0;
       let own = null;
-      if (P && P.tankType === 'ARTILLERY') {
+      if (P && (P.tankType === 'ARTILLERY' || P.uavKind === 'kami')) {
         own = this.droneState();
         own.key = 'own'; own.team = P.team; own.owner = P;
         this.trackDroneVel(own, dt);
@@ -313,7 +313,7 @@ const DroneAir = (() => {
       if (typeof ReconDrone === 'undefined') return;
       const cam = this.camera, myTeam = this.player ? this.player.team : null, t = nowS();
       for (const u of this.units) {
-        if (u === this.player || u.tankType !== 'ARTILLERY') continue;
+        if (u === this.player || (u.tankType !== 'ARTILLERY' && u.uavKind !== 'kami')) continue;
         const R = this.otherDrone(u);
         R.team = u.team;
         // xe bot do máy này chạy: AI tự lái drone trinh sát / UAV cảm tử (bot_drones.js) — vị trí đặt thẳng, không nội suy gói
@@ -333,7 +333,7 @@ const DroneAir = (() => {
           // lựu pháo mang UAV cảm tử: mô hình cánh cố định (kamikaze_uav.js)
           const kami = u.uavKind === 'kami' && typeof KamiUAV !== 'undefined';
           if (R.model && !!R.model.userData.kami !== kami) { if (R.model.parent) R.model.parent.remove(R.model); R.model = null; }
-          if (!R.model) R.model = kami ? KamiUAV.build(u.team) : ReconDrone.build(u.team);
+          if (!R.model) R.model = kami ? KamiUAV.build(u.team, KamiUAV.scaleFor(u)) : ReconDrone.build(u.team);
           const m = R.model;
           if (m.parent !== this.scene) this.scene.add(m);
           m.visible = R.seen;
@@ -1428,7 +1428,7 @@ const DroneAir = (() => {
     // ---------- MẠNG ----------
     sendDroneState(dt) {
       const NS = this.netSync, P = this.player;
-      if (!NS || NS.detached || !P || P.tankType !== 'ARTILLERY' || P.netId === undefined) return;
+      if (!NS || NS.detached || !P || (P.tankType !== 'ARTILLERY' && P.uavKind !== 'kami') || P.netId === undefined) return;
       const D = this.droneState();
       const code = Math.max(0, ST.indexOf(D.state));
       const up = airborne(D.state);
@@ -1451,7 +1451,7 @@ const DroneAir = (() => {
     onNetDrone(d, from, NS) {
       if (!d) return;
       const u = NS.byNetId[d.i];
-      if (!u || u === this.player || u.tankType !== 'ARTILLERY' || NS.ownerOf(u) !== from) return;
+      if (!u || u === this.player || (u.tankType !== 'ARTILLERY' && u.uavKind !== 'kami') || NS.ownerOf(u) !== from) return;
       const R = this.otherDrone(u);
       R.net = true;
       const prev = R.state, st = ST[d.s] || 'docked';

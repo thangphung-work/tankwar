@@ -1,16 +1,44 @@
 /**
  * Module Quản Lý Hòm Tiếp Tế Chiến Thuật & Tiếp Tế Thả Dù (Supply & Airdrop System)
- * - Hòm thả dù máy bay vận tải C-130 định kỳ mỗi 60 giây rơi vào trung tâm chiến trường
- * - 6 Hòm tiếp tế rải rác mặt đất (hồi máu, đạn đặc biệt, tăng tốc độ)
- * - Mô hình 3D rực rỡ, dù lượn bạt dù quân sự, hiệu ứng khói màu định vị
+ * - Máy bay vận tải bay thẳng ngang chiến trường theo hướng ngẫu nhiên, tiếng ù từ xa, đường bay hiện trên bản đồ; bay tới
+ *   điểm thả thì mở cửa dốc, hòm văng ra đuôi rồi bung dù. Mỗi lúc chỉ 1 hòm dù trên bản đồ
+ * - 11 hòm tiếp tế cố định trên mặt đất (hồi máu, đạn, tăng tốc độ), nhặt xong xuất hiện lại
+ * - Mô hình 3D, dù bạt quân sự, hiệu ứng khói màu định vị
  */
 class SupplyManager {
   constructor(game) {
     this.game = game;
     this.airdrop = null;
-    this.airdropTimer = 35.0; // Thả dù đầu tiên sau 35s
+    this.flights = [];        // máy bay đang trên trời (chiếc vừa thả hòm vẫn bay nốt ra khỏi bản đồ)
+    this.airdropTimer = SupplyManager.firstGap();
     this.supplyCrates = [];
+    this.matchT = 0;          // thời gian trận (s) — trần số hòm tiền (Equipment.AIRDROP_CASH)
+    this.cashDrops = 0;
   }
+
+  // Hàng máy bay chở (Equipment.airdropCargo bốc lúc máy bay bay vào): màu + tên trên bản đồ, la bàn, nhật ký
+  static get CARGO() {
+    return {
+      AMMO: { name: 'ĐẠN DƯỢC', col: '#e0675c' },
+      GEAR: { name: 'TRANG BỊ', col: '#79b8e0' },
+      CASH: { name: 'TIỀN', col: '#f2c94c' }
+    };
+  }
+  static cargoLabel(k, n) {
+    const C = SupplyManager.CARGO[k];
+    return C ? (k === 'CASH' ? `${C.name} ${n} BẠC` : C.name) : 'HÒM THẢ DÙ';
+  }
+
+  // NHỊP THẢ DÙ (chống lạm phát Bạc, giữ cảm giác khan hiếm): giờ máy bay bay vào ngẫu nhiên để không canh giờ được.
+  // Chiếc đầu 30–50 s sau khi vào trận (máy chủ chặn < 25 s: AIRDROP_FIRST_MS); hòm có chủ thì chờ 35–60 s mới có
+  // chiếc kế. 1 vòng ~ chờ 47 + bay tới điểm thả 18–37 + rơi 8 + tranh hòm ~20 s ≈ 100 s -> trận 10 phút ~6 hòm cho
+  // cả 2 phe (trước: 6 s chờ, ~10 hòm). Mỗi lúc chỉ 1 hòm trên bản đồ
+  static firstGap() { return 30 + Math.random() * 20; }
+  static nextGap() { return 35 + Math.random() * 25; }
+
+  static get PLANE_SPEED() { return 420; }  // ~52 m/s theo tỉ lệ tốc độ xe trong game: máy bay vận tải bay chậm lúc thả hàng
+  static get CRATE_DRAG() { return 1.4; }   // hằng số thời gian (s): hòm mất đà ngang sau khi rời máy bay
+  static get PLANE_TAIL() { return 100; }   // cửa dốc cách giữa thân
 
   init() {
     this.initSupplyCrates();
@@ -27,19 +55,25 @@ class SupplyManager {
   onNet(d) {
     if (!d) return;
     const unitOf = (i) => (this.netSync ? this.netSync.byNetId[i] : null);
-    if (d.e === 'drop') this.spawnAirdrop(d.x, d.z);
-    else if (d.e === 'loot') { const u = unitOf(d.u); if (u) this.collectAirdrop(u, d.r); }
+    if (d.e === 'drop') this.spawnAirdrop(d.x, d.z, d.a, d.k, d.n);
+    else if (d.e === 'loot') {
+      // máy này chạy chậm hơn chủ phòng, máy bay chưa kịp thả mà hòm đã có chủ: thả ngay để không sót hòm trên bản đồ
+      for (const f of this.flights) if (!f.released) this.releaseCrate(f);
+      const u = unitOf(d.u); if (u) this.collectAirdrop(u, d.r);
+    }
     else if (d.e === 'take') { const c = this.supplyCrates[d.c], u = unitOf(d.u); if (c && u) this.takeCrate(c, u); }
     else if (d.e === 'respawn') { const c = this.supplyCrates[d.c]; if (c) this.respawnCrate(c); }
   }
 
-  spawnAirdrop(px, pz) {
+  // Chọn điểm thả + hướng bay + hàng chở, cho máy bay vào (chủ phòng chốt rồi báo đi, các máy khác bay đúng đường đó)
+  spawnAirdrop(px, pz, heading, kind, cash) {
     if (this.airdrop) {
       if (this.airdrop.mesh) this.game.scene.remove(this.airdrop.mesh);
       this.airdrop = null;
     }
 
     let dropX = px, dropZ = pz;
+    if (typeof heading !== 'number') heading = Math.random() * Math.PI * 2;
     if (typeof dropX !== 'number' || typeof dropZ !== 'number') {
       const A = this.game.battleArea();
       const r = Math.random() * (A.r * 0.65);
@@ -49,40 +83,210 @@ class SupplyManager {
       // không thả dù vào khu căn cứ vùng cấm bắn giữa 3 cứ điểm
       const LS = this.game.terrain && this.game.terrain.landmarkSet;
       if (LS && LS.outside) [dropX, dropZ] = LS.outside(dropX, dropZ, 60);
-      this.broadcast({ e: 'drop', x: Math.round(dropX * 10) / 10, z: Math.round(dropZ * 10) / 10 });
+      // hàng chở: bốc theo tỉ lệ; chạm trần hòm tiền của trận thì chỉ còn đạn / trang bị (máy chủ cũng chặn)
+      if (typeof Equipment !== 'undefined' && Equipment.airdropCargo) {
+        const CA = Equipment.AIRDROP_CASH;
+        const c = Equipment.airdropCargo(this.cashDrops >= 1 + Math.floor(this.matchT * 1000 / CA.everyMs));
+        kind = c.k; cash = c.n;
+      }
+      this.broadcast({ e: 'drop', x: Math.round(dropX * 10) / 10, z: Math.round(dropZ * 10) / 10, a: Math.round(heading * 1000) / 1000, k: kind, n: cash || 0 });
     }
-    const groundY = this.game.terrain.getElevationAt(dropX, dropZ);
+    if (kind === 'CASH') this.cashDrops++;
+    this.startFlight(dropX, dropZ, heading, kind, kind === 'CASH' ? cash : 0);
 
+    if (window.soundEngine) {
+      window.soundEngine.playRadioChirp();
+    }
+    const what = SupplyManager.CARGO[kind] ? ` CHỞ ${SupplyManager.cargoLabel(kind, cash)}` : '';
+    this.game.addCombatLog(`[[package]] MÁY BAY TIẾP TẾ${what} ĐANG BAY VÀO CHIẾN TRƯỜNG! XEM ĐƯỜNG BAY TRÊN BẢN ĐỒ!`, 'tip');
+  }
+
+  // Đường bay thẳng đi qua điểm thả, 2 đầu ở ngoài rìa bản đồ. s = quãng bay tính từ điểm thả (âm = chưa tới).
+  // Bay ở 1 độ cao không đổi: trên điểm cao nhất dọc đường bay (không xuyên núi), đủ cao so với điểm thả
+  startFlight(dropX, dropZ, heading, kind, cash) {
+    const T = this.game.terrain, ux = Math.cos(heading), uz = Math.sin(heading), Rf = this.game.worldWidth * 0.72;
+    const b = dropX * ux + dropZ * uz, disc = Math.sqrt(Math.max(0, b * b - (dropX * dropX + dropZ * dropZ - Rf * Rf)));
+    const s0 = -b - disc, s1 = -b + disc, groundY = T.getElevationAt(dropX, dropZ);
+    let top = -Infinity;
+    for (let i = 0; i <= 48; i++) {
+      const s = s0 + (s1 - s0) * i / 48;
+      top = Math.max(top, T.getElevationAt(dropX + ux * s, dropZ + uz * s));
+    }
+    const y = Math.max(groundY + 900, top + 350);
+    const P = CargoPlaneModel.build();
+    P.group.rotation.y = -heading;   // mũi máy bay hướng +x
+    P.group.position.set(dropX + ux * s0, y, dropZ + uz * s0);
+    this.game.scene.add(P.group);
+    this.flights.push({ plane: P, dropX, dropZ, ux, uz, s: s0, s0, s1, y, groundY, released: false, kind, cash,
+      sRelease: SupplyManager.PLANE_TAIL - SupplyManager.PLANE_SPEED * SupplyManager.CRATE_DRAG });
+  }
+
+  // Hòm rời cửa dốc: giữ đà máy bay rồi mất dần, dừng đúng trên điểm thả; dù bung sau khoảng 1 s
+  releaseCrate(f) {
+    f.released = true;
+    const V = SupplyManager.PLANE_SPEED, D = SupplyManager.CRATE_DRAG;
     // Túi hàng bạt kiểu A-22 trên đế gỗ + dù tròn ô liu (src/gameplay/supply_crate_model.js); đáy hòm ở y = -9
     const { group: airdropGroup, chute: parachuteGroup } = SupplyCrateModel.airdrop();
     airdropGroup.rotation.y = Math.random() * Math.PI * 2;
+    parachuteGroup.scale.setScalar(0.12);
 
     // Định vị: không dùng cột sáng; tiếp đất thì ống khói đỏ bung cạnh hòm (emitSignalSmoke)
-
-    airdropGroup.position.set(dropX, groundY + 650, dropZ);
+    const startY = f.y - 10;
+    airdropGroup.position.set(f.dropX - f.ux * V * D, startY, f.dropZ - f.uz * V * D);
     this.game.scene.add(airdropGroup);
 
     this.airdrop = {
       mesh: airdropGroup,
       parachuteGroup: parachuteGroup,
-      x: dropX,
-      z: dropZ,
-      y: groundY + 650,
-      groundY: groundY,
+      x: f.dropX,
+      z: f.dropZ,
+      ux: f.ux,
+      uz: f.uz,
+      y: startY,
+      groundY: f.groundY,
+      kind: f.kind,
+      cash: f.cash || 0,
+      fallT: 0,
       landed: false,
       collected: false,
       smokeAcc: 0,
       t: Math.random() * 10
     };
+    this.game.addCombatLog(`[[package]] MÁY BAY ĐÃ THẢ HÒM ${SupplyManager.cargoLabel(f.kind, f.cash)}! HÃY TRANH ĐOẠT NGAY!`, 'tip');
+  }
 
-    if (window.soundEngine) {
-      window.soundEngine.playRadioChirp();
+  updateFlights(dt) {
+    const V = SupplyManager.PLANE_SPEED;
+    let nearest = null, best = Infinity;
+    const me = this.game.audioListener ? this.game.audioListener() : this.game.player;
+    for (let i = this.flights.length - 1; i >= 0; i--) {
+      const f = this.flights[i], P = f.plane;
+      f.s += V * dt;
+      const x = f.dropX + f.ux * f.s, z = f.dropZ + f.uz * f.s;
+      P.group.position.set(x, f.y, z);
+      for (const p of P.props) p.rotation.x += dt * 13;
+      // cửa dốc mở trước khi tới điểm thả ~6 s, đóng lại sau khi thả ~4 s
+      const R = f.sRelease, open = Math.min(Math.max(0, (f.s - (R - V * 6)) / (V * 2.5)), Math.max(0, ((R + V * 4) - f.s) / (V * 2.5)), 1);
+      P.openRamp(open);
+      if (!f.released && f.s >= R) this.releaseCrate(f);
+      if (f.s >= f.s1) { this.removeFlight(i); continue; }
+      const d = me ? Math.hypot(x - me.x, z - me.z) : 0;
+      if (d < best) { best = d; nearest = { x, y: f.y, z, vx: f.ux * V, vz: f.uz * V, fade: Math.min(1, (f.s - f.s0) / (V * 5), (f.s1 - f.s) / (V * 5)) }; }
     }
-    this.game.addCombatLog('[[package]] MÁY BAY ĐANG THẢ DÙ HÒM TIẾP TẾ HỎA LỰC! HÃY TRANH ĐOẠT NGAY!', 'tip');
+    const SE = window.soundEngine;
+    if (SE && SE.updateCargoPlane && (nearest || this._planeSound)) SE.updateCargoPlane(nearest);
+    this._planeSound = !!nearest;
+  }
+
+  removeFlight(i) {
+    const [f] = this.flights.splice(i, 1);
+    if (f && f.plane.group.parent) f.plane.group.parent.remove(f.plane.group);
+  }
+
+  // Vẽ đường bay + máy bay lên bản đồ (hud_controller, radar_minimap, tactical_map). toScreen(x, z) -> { x, y }.
+  // Quãng còn lại nét đứt kèm mũi tên hướng bay, quãng đã bay mờ; điểm thả chỉ biết khi hòm rời máy bay
+  drawFlightsOnMap(ctx, toScreen, opts = {}) {
+    const H = this.game.worldWidth / 2, col = opts.color || '#e7a63a', sz = opts.size || 6;
+    for (const f of this.flights) {
+      // cắt đường bay theo khung bản đồ
+      let a = -Infinity, b = Infinity;
+      for (const [o, u] of [[f.dropX, f.ux], [f.dropZ, f.uz]]) {
+        if (Math.abs(u) < 1e-6) continue;
+        const p = (-H - o) / u, q = (H - o) / u;
+        a = Math.max(a, Math.min(p, q)); b = Math.min(b, Math.max(p, q));
+      }
+      if (!(a < b) || f.s > b) continue;
+      const at = s => toScreen(f.dropX + f.ux * s, f.dropZ + f.uz * s);
+      const cur = Math.max(a, Math.min(b, f.s)), pa = at(a), pc = at(cur), pb = at(b);
+      ctx.save();
+      ctx.lineWidth = opts.width || 1.4;
+      if (cur > a) {
+        ctx.strokeStyle = col; ctx.globalAlpha = 0.3;
+        ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pc.x, pc.y); ctx.stroke();
+      }
+      ctx.globalAlpha = f.released ? 0.45 : 0.9;
+      ctx.strokeStyle = col; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.moveTo(pc.x, pc.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+      ctx.setLineDash([]);
+      // mũi tên chỉ hướng bay dọc quãng còn lại
+      const e = at(f.s + 100), dl = Math.hypot(e.x - pc.x, e.y - pc.y) || 1, ex = (e.x - pc.x) / dl, ey = (e.y - pc.y) / dl;
+      for (let s = cur + 1600; s < b; s += 1600) {
+        const c = at(s), w = sz * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(c.x - ex * w - ey * w, c.y - ey * w + ex * w);
+        ctx.lineTo(c.x, c.y);
+        ctx.lineTo(c.x - ex * w + ey * w, c.y - ey * w - ex * w);
+        ctx.stroke();
+      }
+      if (f.s >= a) {
+        // dáng máy bay nhìn từ trên: thân, cánh, đuôi; viền tối cho nổi trên nền bản đồ
+        ctx.globalAlpha = 1;
+        ctx.translate(pc.x, pc.y);
+        ctx.transform(ex, ey, -ey, ex, 0, 0);
+        const shape = () => {
+          ctx.beginPath();
+          ctx.moveTo(-sz, 0); ctx.lineTo(sz * 1.1, 0);
+          ctx.moveTo(sz * 0.25, -sz * 1.1); ctx.lineTo(sz * 0.25, sz * 1.1);
+          ctx.moveTo(-sz, -sz * 0.45); ctx.lineTo(-sz, sz * 0.45);
+          ctx.stroke();
+        };
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 3.6; shape();
+        ctx.strokeStyle = '#fff2d2'; ctx.lineWidth = 1.7; shape();
+      }
+      ctx.restore();
+      // hàng đang chở: ký hiệu bám cạnh máy bay tới lúc thả (rồi chuyển sang chỗ hòm)
+      if (f.s >= a && !f.released && f.kind) this.drawCargoIcon(ctx, pc.x + sz * 1.7, pc.y - sz * 1.7, f.kind, sz * 0.85);
+    }
+  }
+
+  // Ký hiệu hàng thả dù trên bản đồ: đĩa màu theo loại (SupplyManager.CARGO) + hình đầu đạn / khiên / chữ $.
+  // label: chữ tên hàng phía trên (bản đồ lớn, minimap góc)
+  drawCargoIcon(ctx, x, y, kind, r, label) {
+    const C = SupplyManager.CARGO[kind], col = C ? C.col : '#e7a63a', ink = '#1d1a14';
+    ctx.save();
+    ctx.globalAlpha = 1; ctx.setLineDash([]);
+    ctx.fillStyle = col; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = ink; ctx.strokeStyle = ink;
+    if (kind === 'AMMO') {
+      // 2 viên đạn đứng: thân chữ nhật + đầu nhọn
+      for (const dx of [-0.32, 0.32]) {
+        const bx = x + dx * r, w = r * 0.2;
+        ctx.beginPath();
+        ctx.moveTo(bx - w, y + r * 0.55); ctx.lineTo(bx - w, y - r * 0.1);
+        ctx.quadraticCurveTo(bx - w, y - r * 0.55, bx, y - r * 0.62);
+        ctx.quadraticCurveTo(bx + w, y - r * 0.55, bx + w, y - r * 0.1);
+        ctx.lineTo(bx + w, y + r * 0.55); ctx.closePath(); ctx.fill();
+      }
+    } else if (kind === 'GEAR') {
+      // khiên
+      ctx.beginPath();
+      ctx.moveTo(x, y - r * 0.62); ctx.lineTo(x + r * 0.5, y - r * 0.42); ctx.lineTo(x + r * 0.46, y + r * 0.05);
+      ctx.quadraticCurveTo(x + r * 0.36, y + r * 0.45, x, y + r * 0.66);
+      ctx.quadraticCurveTo(x - r * 0.36, y + r * 0.45, x - r * 0.46, y + r * 0.05);
+      ctx.lineTo(x - r * 0.5, y - r * 0.42); ctx.closePath(); ctx.fill();
+    } else if (kind === 'CASH') {
+      ctx.font = `bold ${Math.round(r * 1.5)}px Chakra Petch, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('$', x, y + r * 0.08);
+    } else {
+      ctx.fillRect(x - r * 0.4, y - r * 0.4, r * 0.8, r * 0.8);
+    }
+    if (label) {
+      ctx.font = `bold ${Math.max(8, Math.round(r * 1.1))}px Chakra Petch, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText(label, x, y - r - 3);
+      ctx.fillStyle = col; ctx.fillText(label, x, y - r - 3);
+    }
+    ctx.restore();
   }
 
   updateAirdrop(dt) {
+    this.matchT += dt;
+    this.updateFlights(dt);
     if (!this.airdrop) {
+      if (this.flights.some(f => !f.released)) return;   // máy bay đang bay tới điểm thả
       if (!this.isAuthority()) return;   // máy khác chờ chủ phòng báo thả dù
       this.airdropTimer -= dt;
       if (this.airdropTimer <= 0) {
@@ -96,15 +300,21 @@ class SupplyManager {
     if (drop.collected) return;
 
     if (!drop.landed) {
-      drop.y -= 75 * dt;
-      drop.mesh.position.y = drop.y;
+      const D = SupplyManager.CRATE_DRAG, V = SupplyManager.PLANE_SPEED, ft = (drop.fallT += dt);
+      // rơi nhanh dần tới tốc độ dù ~9 m/s; đà ngang của máy bay mất dần, hòm dừng trên điểm thả
+      drop.y -= 75 * (1 - Math.exp(-ft / 1.1)) * dt;
+      const back = V * D * Math.exp(-ft / D);
+      drop.mesh.position.set(drop.x - drop.ux * back, drop.y, drop.z - drop.uz * back);
+      // dù bó gọn lúc đầu, căng phồng trong khoảng 1 s
+      const chuteK = Math.min(1, Math.max(0, (ft - 0.7) / 1.1));
+      drop.parachuteGroup.scale.setScalar(0.12 + 0.88 * chuteK * chuteK * (3 - 2 * chuteK));
       drop.t += dt;
       drop.mesh.rotation.x = Math.sin(drop.t * 0.9) * 0.05;
       drop.mesh.rotation.z = Math.sin(drop.t * 0.7 + 1.3) * 0.06;
 
       if (drop.y <= drop.groundY + 9) {
         drop.y = drop.groundY + 9;
-        drop.mesh.position.y = drop.y;
+        drop.mesh.position.set(drop.x, drop.y, drop.z);
         drop.landed = true;
         drop.mesh.remove(drop.parachuteGroup);
         drop.mesh.rotation.x = drop.mesh.rotation.z = 0;
@@ -124,7 +334,7 @@ class SupplyManager {
         drop.mesh.updateMatrixWorld(true);
         const sp = drop.mesh.localToWorld(new THREE.Vector3(cx + cx / 11 * 0.6, -9 + 0.36, cz + cz / 11 * 0.6));
         drop.smoke = { x: sp.x, y: sp.y, z: sp.z };
-        this.game.addCombatLog('[[package]] HÒM TIẾP TẾ ĐÃ TIẾP ĐẤT! TRANH ĐOẠT HỎA LỰC NGAY!', 'tip');
+        this.game.addCombatLog(`[[package]] HÒM ${SupplyManager.cargoLabel(drop.kind, drop.cash)} ĐÃ TIẾP ĐẤT! TRANH ĐOẠT NGAY!`, 'tip');
       }
     } else {
       // Đã tiếp đất: ống khói đỏ cạnh hòm xịt khói cho tới khi có xe nhặt
@@ -137,8 +347,10 @@ class SupplyManager {
         if (!unit.isDead) {
           const dx = unit.x - drop.x, dz = unit.z - drop.z;
           if (dx * dx + dz * dz < 32 * 32) {
-            // 0: Đạn Xuyên Phá (AP), 1: Đạn Nổ Mạnh (HE), 2: Giáp Phản Ứng Nổ, 3: Nâng cấp tăng máu 1 đơn vị, 4: Động cơ tăng áp tốc độ
-            const lootRoll = Math.floor(Math.random() * 5);
+            // 0: Nạp đầy mọi ô đạn, 1: Đạn Nổ Mạnh (HE, chỉ còn từ chủ phòng bản cũ), 2: Giáp Phản Ứng Nổ, 3: Nâng cấp tăng máu
+            // 1 đơn vị, 4: Động cơ tăng áp tốc độ, 5: bao tiền — theo hàng máy bay chở (đạn dược 0, trang bị 2-4, tiền 5)
+            const R = Math.random(), K = drop.kind;
+            const lootRoll = K === 'AMMO' ? 0 : K === 'GEAR' ? 2 + Math.floor(R * 3) : K === 'CASH' ? 5 : Math.floor(R * 5);
             if (unit.netId !== undefined) this.broadcast({ e: 'loot', u: unit.netId, r: lootRoll });
             this.collectAirdrop(unit, lootRoll);
             break;
@@ -154,18 +366,26 @@ class SupplyManager {
     if (!drop || drop.collected) return;
     drop.collected = true;
     this.game.scene.remove(drop.mesh);
-    const labels = ['2 VIÊN ĐẠN XUYÊN PHÁ (BẮN PHÁT CHẾT LUÔN)!', '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!', 'GIÁP PHẢN ỨNG NỔ (PHÁ HỦY 1 PHÁT RPG / ĐẠN PHÁO TRÚNG THẲNG)!',
-      'HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU VÀ HỒI ĐẦY MÁU)!', 'ĐỘNG CƠ TĂNG ÁP TỐC ĐỘ (+65% TỐC ĐỘ DI CHUYỂN TRONG 20S)!'];
-    let lootMsg = labels[lootRoll] || labels[0];
+    const labels = ['NẠP ĐẦY MỌI Ô ĐẠN!', '2 VIÊN ĐẠN NỔ MẠNH (BÁN KÍNH NỔ 120M)!', 'GIÁP PHẢN ỨNG NỔ (PHÁ HỦY 1 PHÁT RPG / ĐẠN PHÁO TRÚNG THẲNG)!',
+      'HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU VÀ HỒI ĐẦY MÁU)!', 'ĐỘNG CƠ TĂNG ÁP TỐC ĐỘ (+65% TỐC ĐỘ DI CHUYỂN TRONG 20S)!',
+      `BAO TIỀN ${drop.cash} BẠC (CỘNG CUỐI TRẬN)!`];
+    let lootMsg = labels[lootRoll] || labels[0], ammoTail = '';
     // hòm thả dù luôn kèm kiện đạn: nạp đầy cơ số đạn mang theo (AmmoLoad)
     if (this.ownsUnit(unit) && typeof AmmoLoad !== 'undefined') {
       const add = AmmoLoad.resupply(unit, 1);
-      if (add && unit.isPlayer) lootMsg += ` · NẠP ĐẦY CƠ SỐ (${add.toUpperCase()})`;
+      if (add && unit.isPlayer) ammoTail = ` · NẠP ĐẦY CƠ SỐ (${add.toUpperCase()})`;
     }
     if (this.ownsUnit(unit)) {
       if (lootRoll === 0) {
-        unit.apAmmoCount = (unit.apAmmoCount || 0) + 2;
-        if (unit.isPlayer) unit.selectedAmmo = 'AP';
+        // hòm ĐẠN DƯỢC: mọi ô đạn đặc chủng / khói về đúng số lúc xuất kích (Equipment.refillLife), lính bộ binh nạp đủ
+        // cơ số vũ khí đang mang (InfantryMatch.onCrate) — cơ số đạn thường đã nạp đầy ở trên
+        if (unit.tankType === 'INFANTRY') {
+          if (this.game.infantry && this.game.infantry.onCrate) this.game.infantry.onCrate(unit, { type: 'AMMO' });
+        } else if (typeof Equipment !== 'undefined' && Equipment.refillLife) {
+          const got = Equipment.refillLife(unit), parts = [];
+          for (const k in got) parts.push(`+${got[k]} ${k === 'SMOKE' ? 'KHÓI' : k.replace(/_/g, ' ')}`);
+          if (parts.length) lootMsg = `NẠP ĐẦY MỌI Ô ĐẠN (${parts.join(', ')})!`;
+        }
       } else if (lootRoll === 1) {
         unit.heAmmoCount = (unit.heAmmoCount || 0) + 2;
         if (unit.isPlayer) unit.selectedAmmo = 'HE';
@@ -175,12 +395,14 @@ class SupplyManager {
         unit.maxHp += 1;
         unit.hp = unit.maxHp;
         lootMsg = `HỘP SINH LỰC CHIẾN ĐẤU (TĂNG THANH MÁU LÊN ${unit.maxHp} VÀ HỒI ĐẦY MÁU)!`;
-      } else {
+      } else if (lootRoll === 4) {
         unit.speedBoostTimer = 20.0; // Tăng tốc độ di chuyển cực bốc trong 20 giây
       }
     }
+    lootMsg += ammoTail;
     if (unit.isPlayer) {
       this.game._playerAirdrops = (this.game._playerAirdrops || 0) + 1;   // thưởng Bạc cuối trận (Equipment.silverFor)
+      if (lootRoll === 5) this.game._playerAirdropCash = (this.game._playerAirdropCash || 0) + drop.cash;   // máy chủ đối chiếu (noteAirdrop)
       const bonus = typeof Equipment !== 'undefined' && Equipment.AIRDROP_SILVER ? ` · +${Equipment.AIRDROP_SILVER} BẠC CUỐI TRẬN` : '';
       this.game.addCombatLog(`[[gift]] BẠN ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}${bonus}`, 'tip');
       if (window.soundEngine) (window.soundEngine.playSupplyPickup || window.soundEngine.playReloadDone).call(window.soundEngine);
@@ -189,7 +411,7 @@ class SupplyManager {
       this.game.addCombatLog(`[[alert-triangle]] ${unit.name} ĐÃ CHIẾM ĐƯỢC HÒM TIẾP TẾ: +${lootMsg}`, 'alert');
     }
     this.airdrop = null;
-    this.airdropTimer = 22; // 22 giây sau tiếp tục thả thùng mới
+    this.airdropTimer = SupplyManager.nextGap();
   }
 
   /**
@@ -261,6 +483,10 @@ class SupplyManager {
       });
     }
     this.supplyCrates = [];
+    // trận mới: dọn máy bay trận trước
+    while (this.flights.length) this.removeFlight(this.flights.length - 1);
+    this.matchT = 0; this.cashDrops = 0;
+    this.airdropTimer = SupplyManager.firstGap();
 
     // Danh sách 11 vị trí rải rác chiến lược (bố cục gốc cho bản đồ 3600, giãn theo kích thước bản đồ)
     const K = this.game.worldWidth / 3600;
@@ -375,6 +601,10 @@ class SupplyManager {
       } else if (unit.tankType === 'GATLING') {
         if (own) unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 60;
         rewardMsg = '+60 VIÊN ĐẠN CHÁY NÂNG CAO!';
+      } else if (unit.tankType === 'INFANTRY') {
+        // lính bộ binh: nạp lại đủ cơ số vũ khí đang mang (InfantryMatch.onCrate; chỉ máy có quyền với lính)
+        if (own && this.game.infantry && this.game.infantry.onCrate) this.game.infantry.onCrate(unit, crate);
+        rewardMsg = 'NẠP ĐỦ CƠ SỐ ĐẠN CHO LÍNH!';
       } else if (unit.tankType === 'SCOUT') {
         if (own) { unit.incendiaryAmmoCount = (unit.incendiaryAmmoCount || 0) + 40; unit.missileAmmoCount = (unit.missileAmmoCount || 0) + 3; }
         rewardMsg = '+40 ĐẠN CHÁY VÀ +3 TÊN LỬA CHỐNG TĂNG!';

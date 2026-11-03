@@ -56,10 +56,30 @@
     padding: 6px 8px;
     text-align: center;
   }
+  #playHud { position: fixed; inset: 0; z-index: 9; pointer-events: none; display: none; font-family: var(--font-mono); color: #f1f5f9; }
+  #playHud.on { display: block; }
+  #cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+  #cross i { position: absolute; background: #f8fafc; box-shadow: 0 0 2px #000; }
+  #cross .h1 { width: 8px; height: 2px; top: -1px; right: var(--g, 8px); }
+  #cross .h2 { width: 8px; height: 2px; top: -1px; left: var(--g, 8px); }
+  #cross .v1 { width: 2px; height: 8px; left: -1px; bottom: var(--g, 8px); }
+  #cross .v2 { width: 2px; height: 8px; left: -1px; top: var(--g, 8px); }
+  #cross.hit i { background: #f87171; }
+  #ammo { position: absolute; right: 28px; bottom: 26px; text-align: right; font-size: 13px; text-shadow: 0 1px 2px #000; }
+  #ammo b { font-size: 34px; line-height: 1; }
+  #playMsg { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); padding: 8px 14px; font-size: 14px; background: rgba(15, 23, 42, .72); border-radius: 4px; }
+  #playKeys { position: absolute; left: 28px; bottom: 26px; font-size: 12px; line-height: 1.6; text-shadow: 0 1px 2px #000; }
+  body.playing-locked .lab-panel, body.playing .lab-keys { display: none; }
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
+<div id="playHud">
+  <div id="cross"><i class="h1"></i><i class="h2"></i><i class="v1"></i><i class="v2"></i></div>
+  <div id="ammo"><b id="magN">30</b> / <span id="capN">30</span><div id="ammoInfo"></div></div>
+  <div id="playKeys">W A S D: đi · Shift: chạy · Chuột: nhìn<br>Chuột phải: ngắm · Chuột trái: bắn<br>R: thay đạn · C: quỳ · Esc: mở bảng</div>
+  <div id="playMsg"></div>
+</div>
 <aside class="lab-panel" id="panel">
   <header class="lab-head">
     <div class="lab-brand">
@@ -80,6 +100,12 @@
   </header>
 
   <div class="lab-scroll">
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">00</span><h2>Điều khiển tự do &amp; bắn thử</h2></div>
+      <button class="btn" id="btnPlay" style="width:100%">Bắt đầu điều khiển (phím P)</button>
+      <div class="lab-sub" style="margin-top:8px">Sân bắn phẳng, bia người ở 15 / 30 / 60 / 100 / 150 m. Dùng vũ khí đang chọn ở mục Trang bị.</div>
+    </section>
+
     <section class="lab-sec">
       <div class="lab-sec-h"><span class="lab-num">01</span><h2>Mô phỏng chuyển động</h2></div>
       <div class="motion-grid">
@@ -107,7 +133,37 @@
     </section>
 
     <section class="lab-sec">
-      <div class="lab-sec-h"><span class="lab-num">03</span><h2>Tay bám đồ vật</h2></div>
+      <div class="lab-sec-h"><span class="lab-num">03</span><h2>Trang bị</h2></div>
+      <div class="motion-grid">
+        <button class="btn weapon-btn" data-weapon="rifle">Súng trường + thay băng</button>
+        <button class="btn weapon-btn on" data-weapon="atr">Bắn tỉa hạng nặng</button>
+        <button class="btn weapon-btn" data-weapon="gl">Phóng lựu + băng đạn</button>
+        <button class="btn weapon-btn" data-weapon="rpg">RPG + ba lô 3 đạn</button>
+        <button class="btn weapon-btn" data-weapon="kami">UAV cảm tử (3 ống)</button>
+      </div>
+      <div class="lab-sub" id="weaponInfo" style="margin-top: 8px;"></div>
+      <div id="kamiBox" style="display:none;margin-top:8px">
+        <div class="row col"><button class="btn" id="btnKami">Phóng UAV (phím F)</button></div>
+        <div class="lab-sub" id="kamiInfo"></div>
+      </div>
+    </section>
+
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">04</span><h2>Bẩn &amp; ướt</h2></div>
+      <div class="slider-row">
+        <span>Mực nước</span>
+        <input type="range" id="waterRange" min="0" max="9.5" step="0.1" value="0">
+        <span id="waterVal">0 cm</span>
+      </div>
+      <div class="motion-grid">
+        <button class="btn motion-btn" id="btnGrimeNew">Đồ mới tinh</button>
+        <button class="btn motion-btn" id="btnGrimeUsed">Đồ đã dùng</button>
+      </div>
+      <div class="lab-box" style="margin-top: 8px;"><div id="grimeInfo" style="font: 11px/1.55 var(--font-mono); color: var(--tc-accent-2); white-space: pre-line;"></div></div>
+    </section>
+
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">05</span><h2>Tay bám đồ vật</h2></div>
       <div class="row col">
         <button class="btn" id="btnHandIK">Tay bám cán chuyển động: TẮT</button>
       </div>
@@ -122,16 +178,16 @@
     </section>
 
     <section class="lab-sec">
-      <div class="lab-sec-h"><span class="lab-num">04</span><h2>Hiệu ứng cơ thể</h2></div>
+      <div class="lab-sec-h"><span class="lab-num">06</span><h2>Hiệu ứng cơ thể</h2></div>
       <div class="row col">
         <button class="btn on" id="btnBreathe">Nhịp thở lồng ngực: BẬT</button>
-        <button class="btn on" id="btnLook">Mắt nhìn theo chuột: BẬT</button>
+        <button class="btn" id="btnLook">Mắt nhìn theo chuột: TẮT</button>
         <button class="btn" id="btnHitbox">Hiện vùng va chạm: TẮT</button>
       </div>
     </section>
 
     <section class="lab-sec">
-      <div class="lab-sec-h"><span class="lab-num">05</span><h2>Hiệu năng mô hình</h2></div>
+      <div class="lab-sec-h"><span class="lab-num">07</span><h2>Hiệu năng mô hình</h2></div>
       <div class="lab-box"><div id="stats"></div></div>
     </section>
   </div>
@@ -145,7 +201,32 @@
 
 <script src="three.min.js"></script>
 <script src="src/core/sky.js"></script>
-<script src="src/entities/soldier_model.js?v=20261102hand30"></script>
+<script src="src/core/game_timing.js"></script>
+<script src="src/core/audio/sound_engine.js?v=20261102mor3"></script>
+<script src="src/core/audio/weapon_fire.js?v=20261102mor3"></script>
+<script src="src/core/audio/destruction.js?v=20261102mor3"></script>
+<script src="src/core/audio/impacts.js?v=20261102mor3"></script>
+<script src="src/core/audio/incoming.js?v=20261102mor3"></script>
+<script src="src/core/audio/cockpit_cues.js?v=20261102mor3"></script>
+<script src="src/core/audio/vehicle_engine.js?v=20261102mor3"></script>
+<script src="src/core/audio/vehicle_destroyed.js?v=20261102mor3"></script>
+<script src="src/core/audio/other_engines.js?v=20261102mor3"></script>
+<script src="src/core/audio/fire_ambience.js?v=20261102mor3"></script>
+<script src="src/core/audio/turret_drives.js?v=20261102mor3"></script>
+<script src="src/core/audio/drone_uav.js?v=20261102mor3"></script>
+<script src="src/core/audio/gatling.js?v=20261102mor3"></script>
+<script src="src/core/audio/module_weapons.js?v=20261102mor3"></script>
+<script src="src/core/audio/wading.js?v=20261102mor3"></script>
+<script src="src/core/audio/music.js?v=20261102mor3"></script>
+<script src="src/core/audio/battle_drama.js?v=20261102mor3"></script>
+<script src="src/core/audio/ui_sounds.js?v=20261102mor3"></script>
+<script src="src/core/audio/infantry_gl.js?v=20261103rpg4"></script>
+<script src="src/core/audio/soldier_voice.js?v=20261103step1"></script>
+<script src="src/entities/tanks/vehicle_kit.js"></script>
+<script src="src/gameplay/kamikaze_uav.js"></script>
+<script src="src/entities/soldier_model.js?v=20261103rpg8"></script>
+<script src="src/gameplay/soldier_engine.js?v=20261103walk3"></script>
+<script src="src/gameplay/soldier_player.js?v=20261103rpg4"></script>
 <script>
 (() => {
   const canvas = document.getElementById('view');
@@ -265,10 +346,12 @@
     motion: 'walk',
     speed: 1.0,
     team: 'BLUE',
+    weapon: 'atr',
     status: 'healthy',
     handIK: false,
     breathe: true,
-    look: true,
+    look: false,
+    water: 0,
     showHitbox: false,
     gripY: 0.2,
     gripZ: -2.1
@@ -285,7 +368,7 @@
       if (figure._bloodPool) scene.remove(figure._bloodPool);
       if (figure.root) scene.remove(figure.root);
     }
-    figure = SoldierModel.buildFigure(S.team, { role: 'infantry', inHatch: false, renderOrder: 2 });
+    figure = SoldierModel.buildFigure(S.team, { role: 'infantry', inHatch: false, renderOrder: 2, weapon: S.weapon, ...(S.gear ? { gear: S.gear } : {}) });
     figure.root.position.set(0, 0, 0);
     scene.add(figure.root);
     applyStatus();
@@ -350,6 +433,7 @@
   const mouseW = new THREE.Vector3(0, 4.8, -10);
 
   canvas.addEventListener('pointerdown', e => {
+    if (PLAY.on) return;
     drag = { x: e.clientX, y: e.clientY, b: e.button };
     canvas.setPointerCapture(e.pointerId);
   });
@@ -373,6 +457,7 @@
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
+    if (PLAY.on) { if (PLAY.player) PLAY.player.zoomStep(e.deltaY < 0 ? 1 : -1); return; }
     view.dist = Math.max(4, Math.min(32, view.dist * (e.deltaY > 0 ? 1.08 : 1 / 1.08)));
   }, { passive: false });
 
@@ -416,6 +501,25 @@
     btnTeam.textContent = S.team === 'BLUE' ? 'Phe: XANH (Rừng rậm)' : 'Phe: ĐỎ (Sa mạc)';
     rebuildFigure();
   };
+
+  // Trang bị: vũ khí + đồ đeo kèm (băng đạn lựu / ba lô 3 đạn RPG / bao đạn cối)
+  const WEAPON_INFO = {
+    rifle: 'Súng trường 30 viên. Thay băng: còn đạn thì cất băng cũ vào túi, hết đạn thì thả rơi rồi kéo khoá nòng.',
+    atr: 'Súng bắn tỉa hạng nặng chống tăng dài ~1,9 m, kính tầm xa, chân chống khoẻ. Di chuyển: vác trên vai. Đứng/quỳ ngắm: nằm sấp bắn trên chân chống.',
+    gl: 'Súng phóng lựu 40 mm ổ quay 6 viên + băng đạn lựu đeo chéo người.',
+    rpg: 'Ống phóng chống tăng (đạn lắp sẵn) + ba lô 3 ống, đầu đạn chìa khỏi miệng túi.',
+    kami: 'UAV cảm tử chống tăng cỡ mang vác (nhỏ hơn loại trên xe pháo): 3 ống trên khung lưng, mỗi ống dùng một lần. Phóng: quỳ, tháo ống, đặt lên chân chống, cầm máy điều khiển rồi phóng; ống rỗng bỏ lại. Bay và lao vào mục tiêu chỉ có trong trận.'
+  };
+  const weaponBtns = document.querySelectorAll('.weapon-btn');
+  function setWeapon(key) {
+    S.weapon = key;
+    weaponBtns.forEach(b => b.classList.toggle('on', b.dataset.weapon === key));
+    document.getElementById('weaponInfo').textContent = WEAPON_INFO[key] || '';
+    if (typeof kamiTubes !== 'undefined') { for (const m of kamiTubes) scene.remove(m); kamiTubes.length = 0; }
+    const kb = document.getElementById('kamiBox'); if (kb) kb.style.display = key === 'kami' ? 'block' : 'none';
+  }
+  weaponBtns.forEach(btn => { btn.onclick = () => { if (btn.dataset.weapon === S.weapon) return; setWeapon(btn.dataset.weapon); rebuildFigure(); }; });
+  setWeapon(S.weapon);
 
   const btnStatus = document.getElementById('btnStatus');
   btnStatus.onclick = () => {
@@ -462,6 +566,20 @@
     rebuildHitboxes();
   };
 
+  // Bẩn & ướt: kéo mực nước để lội, đổi tư thế nằm / quỳ / đi để bẩn dần
+  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ color: 0x3a4a44, transparent: true, opacity: 0.62, roughness: 0.2, metalness: 0.1, depthWrite: false }));
+  waterMesh.rotation.x = -Math.PI / 2; waterMesh.visible = false; waterMesh.renderOrder = 5;
+  scene.add(waterMesh);
+  function setWater(v) {
+    S.water = v;
+    waterMesh.visible = v > 0.01; waterMesh.position.y = FLOOR_Y + v;
+    document.getElementById('waterRange').value = v;
+    document.getElementById('waterVal').textContent = Math.round(v * 12.5) + ' cm';
+  }
+  document.getElementById('waterRange').oninput = (e) => setWater(parseFloat(e.target.value));
+  document.getElementById('btnGrimeNew').onclick = () => SoldierModel.resetGrime(figure, 'new');
+  document.getElementById('btnGrimeUsed').onclick = () => SoldierModel.resetGrime(figure, 'issue');
+
   const gripYInput = document.getElementById('gripY');
   gripYInput.oninput = () => { S.gripY = parseFloat(gripYInput.value); };
 
@@ -471,6 +589,207 @@
   rebuildFigure();
   applyEnvironment('desert');
 
+  // ===== UAV CẢM TỬ: trình tự phóng của model + UAV rời ống bay lên vài giây (bay / lao chỉ có trong trận) =====
+  const KAMI = { uavs: [], ctlT: 0 };
+  function kamiInfo() { const F = figure; document.getElementById('kamiInfo').textContent = 'Còn ' + (F.kamiLeft ?? 3) + ' / 3 ống trên lưng' + (F.kamiSeq != null ? ' · đang phóng…' : F.kamiCtl ? ' · đang lái UAV' : ''); }
+  // UAV rời ống: khí nén đẩy ra, bung cánh, đánh lửa, leo lên rồi bay xa
+  function kamiLaunchFx(T, team, owner = null) {
+    if (window.soundEngine && window.soundEngine.playKamiLaunch) window.soundEngine.playKamiLaunch(0, null);
+    if (typeof KamiUAV === 'undefined') return;
+    const m = KamiUAV.build(team, KamiUAV.INF_SCALE); scene.add(m);
+    KAMI.uavs.push({ m, p: T.pos.clone(), v: T.dir.clone().multiplyScalar(95), t: 0, owner });
+  }
+  function kamiFxStep(dt) {
+    for (let i = KAMI.uavs.length - 1; i >= 0; i--) {
+      const U = KAMI.uavs[i]; U.t += dt;
+      const thr = U.t > 0.35 ? Math.min(1, (U.t - 0.35) / 0.2) : 0;
+      U.v.y -= 40 * dt; if (thr) { U.v.y += (85 - U.v.y) * Math.min(1, dt * 2.5); const h = Math.hypot(U.v.x, U.v.z) || 1, n = h + (135 - h) * Math.min(1, dt * 1.6); U.v.x *= n / h; U.v.z *= n / h; }
+      U.p.addScaledVector(U.v, dt); U.m.position.copy(U.p);
+      U.m.rotation.set(Math.atan2(U.v.y, Math.hypot(U.v.x, U.v.z)), Math.atan2(-U.v.x, -U.v.z), 0);
+      KamiUAV.animate(U.m, dt, Math.min(1, U.t / 0.3), thr * 0.8);
+      if (U.t > 6) { if (U.owner) U.owner.figure.kamiCtl = false; scene.remove(U.m); KAMI.uavs.splice(i, 1); }
+    }
+  }
+  var kamiTubes = [];   // var: setWeapon chạy lúc khởi trang, trước dòng này
+  function kamiDrop(T) {
+    const geo = SoldierModel.kamiEmptyGeo();
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x3d4030, roughness: 0.74, metalness: 0.06 }));
+    m.position.copy(T.dropBase); m.quaternion.copy(T.dropQuat); m.castShadow = m.receiveShadow = true; scene.add(m); kamiTubes.push(m);
+    while (kamiTubes.length > 3) scene.remove(kamiTubes.shift());
+  }
+  function kamiFire() {
+    const F = figure; if (!F || S.weapon !== 'kami' || F.kamiSeq != null) return;
+    if (window.soundEngine) window.soundEngine.init();
+    if ((F.kamiLeft ?? 3) <= 0) { F.kamiLeft = 3; for (const m of kamiTubes) scene.remove(m); kamiTubes.length = 0; }   // hết thì phát lại 3 ống để xem tiếp
+    F.kamiCtl = false; F.kamiSeq = 0; F.kamiLeft = F.kamiLeft ?? 3;
+    S.motion = 'crouch'; document.querySelectorAll('.motion-btn').forEach(b => b.classList.toggle('on', b.dataset.motion === 'crouch'));
+  }
+  function kamiStep(dt) {
+    kamiFxStep(dt);
+    const F = figure; if (!F || S.weapon !== 'kami') return;
+    if (F.kamiCtl && (KAMI.ctlT -= dt) <= 0) F.kamiCtl = false;   // phòng thử: lái UAV vài giây rồi cất máy
+    SoldierModel.stepKamiSeq(F, dt, ev => {
+      if (ev === 'grab') F.kamiLeft = Math.max(0, (F.kamiLeft ?? 3) - 1);
+      if (ev === 'launch') { kamiLaunchFx(SoldierModel.kamiTubeWorld(F), S.team); F.kamiCtl = true; KAMI.ctlT = 6; }
+      if (ev === 'end') kamiDrop(SoldierModel.kamiTubeWorld(F));
+    });
+    kamiInfo();
+  }
+  document.getElementById('btnKami').onclick = kamiFire;
+  addEventListener('keydown', e => { if (e.repeat || PLAY.on) return; if (e.code === 'KeyF') kamiFire(); });
+
+  // ===== ĐIỀU KHIỂN TỰ DO & BẮN THỬ: dùng đúng SoldierEngine + SoldierPlayer như trận thật, chỉ thay địa hình bằng sân phẳng =====
+  const PLAY = { on: false, locked: false, world: null, player: null, s: null, targets: [], shots: [], flashes: [], saved: null, note: '' };
+  const playTerrain = { mapType: 'DESERT', getElevationAt: () => FLOOR_Y, checkHorseshoeCollision: () => ({ hit: false }), resolveVehicleCollision: (x0, z0, x, z) => ({ x, z, hit: false }) };
+  const $p = id => document.getElementById(id);
+  const TARGET_M = [15, 30, 60, 100, 150];
+  const plabel = (txt) => {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 48;
+    const g = c.getContext('2d'); g.fillStyle = 'rgba(15,23,42,.72)'; g.fillRect(0, 0, 128, 48); g.fillStyle = '#f8fafc'; g.font = 'bold 30px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 64, 25);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthWrite: false, fog: false })); sp.scale.set(3.6, 1.35, 1);
+    return sp;
+  };
+  // đạn lựu 40 mm: đạn đạo thật, chưa bay đủ cự ly kích hoạt ngòi thì không nổ (cùng luật phòng thử trên địa hình)
+  const shellGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 10), shellMat = new THREE.MeshStandardMaterial({ color: 0x5b5d45, roughness: 0.7 }), flashGeo = new THREE.SphereGeometry(1, 12, 8), _pUp = new THREE.Vector3(0, 1, 0), _pDir = new THREE.Vector3();
+  function pFireGrenade(sd, aim, muzzle, vel) {
+    const m = new THREE.Mesh(shellGeo, shellMat); m.position.copy(muzzle); scene.add(m);
+    PLAY.shots.push({ v: vel.clone(), m, team: sd.team, owner: sd, trav: 0 });
+  }
+  function pBoom(P, team) {
+    PLAY.world.sfxAt(P.x, P.z, 'blast');
+    const f = new THREE.Mesh(flashGeo, new THREE.MeshBasicMaterial({ color: 0xffc46a, transparent: true, opacity: 0.9, depthWrite: false }));
+    f.position.copy(P); scene.add(f); PLAY.flashes.push({ m: f, t: 0 });
+    for (const o of PLAY.world.soldiers) {
+      if (!o.alive || o.team === team) continue;
+      const r = Math.hypot(o.x - P.x, o.z - P.z) / 8;
+      if (r < 1.5) o.damage(110, 'FRAG'); else if (r <= 6 && Math.random() < 0.85 * (1 - (r - 1.5) / 4.5)) o.damage(25 + Math.random() * 45, 'FRAG');
+    }
+  }
+  function pStepShots(dt) {
+    const GL = SoldierEngine.GL40;
+    for (let i = PLAY.shots.length - 1; i >= 0; i--) {
+      const Sh = PLAY.shots[i], P = Sh.m.position;
+      Sh.v.y -= GL.g * dt; P.addScaledVector(Sh.v, dt); Sh.trav += Sh.v.length() * dt;
+      Sh.m.quaternion.setFromUnitVectors(_pUp, _pDir.copy(Sh.v).normalize());
+      let hit = P.y < FLOOR_Y, direct = null;
+      if (!hit) for (const o of PLAY.world.soldiers) if (o.alive && o !== Sh.owner && o.team !== Sh.team && Math.hypot(o.x - P.x, o.z - P.z) < 2.6 && P.y > o.y && P.y < o.y + 14) { hit = true; direct = o; break; }
+      if (!hit) continue;
+      if (P.y < FLOOR_Y) P.y = FLOOR_Y + 0.5;
+      if (Sh.trav >= GL.arm) pBoom(P.clone(), Sh.team);
+      else { PLAY.world.sfxAt(P.x, P.z, 'dud'); if (direct) direct.damage(35 + Math.random() * 25, 'BLUNT'); }
+      scene.remove(Sh.m); PLAY.shots.splice(i, 1);
+    }
+    for (let i = PLAY.flashes.length - 1; i >= 0; i--) {
+      const F = PLAY.flashes[i]; F.t += dt;
+      F.m.scale.setScalar(4 + F.t * 60); F.m.material.opacity = Math.max(0, 0.9 - F.t * 3);
+      if (F.t > 0.3) { scene.remove(F.m); F.m.material.dispose(); PLAY.flashes.splice(i, 1); }
+    }
+  }
+  function pEnsure() {
+    if (PLAY.world) return;
+    const world = PLAY.world = new SoldierEngine.World(scene, playTerrain, { vehicles: () => [], onKami: (sd, ev, T) => {
+      if (ev === 'launch') { kamiLaunchFx(T, sd.team, sd); sd.figure.kamiCtl = true; }
+    } });
+    world.onBulletStep = (a, b) => PLAY.player.addTracer(a, b);
+    world.onBulletHit = r => { if (r.kind === 'ground') world.sfxAt(r.point.x, r.point.z, 'dud'); };
+    PLAY.player = new SoldierPlayer.Controller({ world, terrain: playTerrain, scene, cam, fireGrenade: pFireGrenade, onHud: h => {
+      $p('magN').textContent = h.mag; $p('capN').textContent = h.reserve != null ? h.reserve : h.cap;
+      const nm = { rifle: 'Súng trường', gl: 'Phóng lựu 40 mm', atr: 'Bắn tỉa hạng nặng', kami: 'UAV cảm tử' }[h.weapon] || h.weapon;
+      $p('ammoInfo').textContent = (h.reloading ? 'Đang thay đạn… ' : h.mag <= 0 ? 'Hết đạn · R: thay đạn · ' : '') + nm + ' · hạ ' + h.kills + (h.range != null ? ' · ' + Math.round(h.range) + ' m' : '');
+      const cr = $p('cross'); cr.style.setProperty('--g', Math.round(4 + (1 - h.aim) * 8 + (h.spread || 0) * 400) + 'px'); cr.classList.toggle('hit', !!h.hit);
+      const txt = PLAY.note || (!PLAY.locked && !PLAY.headless ? 'Bấm vào màn hình để điều khiển' : ''), msg = $p('playMsg');
+      msg.textContent = txt; msg.style.display = txt ? 'block' : 'none';
+    } });
+  }
+  function startPlay() {
+    if (PLAY.on) return PLAY.s;
+    if (window.soundEngine) window.soundEngine.init();
+    pEnsure();
+    const world = PLAY.world, weapon = S.weapon === 'rpg' ? 'rifle' : S.weapon;
+    PLAY.note = S.weapon === 'rpg' ? 'Ống phóng RPG chưa có đường đạn trong bộ điều khiển: tạm dùng súng trường' : '';
+    if (PLAY.note) setTimeout(() => { PLAY.note = ''; }, 5000);
+    // sân rộng: nới sương, vòm trời, mặt đất, tầm camera, khung bóng; lưu lại để trả về khi thoát
+    PLAY.saved = { fogN: scene.fog.near, fogF: scene.fog.far, far: cam.far, fov: cam.fov, sky: skyDome.scale.x, rep: floorMat.map.repeat.x, grid: grid.visible, sb: { f: sun.shadow.camera.far, r: sun.shadow.camera.right }, sun: sun.position.clone() };
+    const K = 12;
+    scene.fog.near = 500; scene.fog.far = 4200; cam.far = 7000; skyDome.scale.setScalar(K); floor.scale.set(K, K, 1); floorMat.map.repeat.setScalar(PLAY.saved.rep * K); floorMat.map.offset.set(0, 0); grid.visible = false; gripHandle.visible = false;
+    Object.assign(sun.shadow.camera, { far: 500, left: -70, right: 70, top: 70, bottom: -70 }); sun.shadow.camera.updateProjectionMatrix();
+    cam.updateProjectionMatrix();
+    figure.root.visible = false; hitboxGroup.visible = false;
+    const enemy = S.team === 'BLUE' ? 'RED' : 'BLUE';
+    PLAY.s = world.spawn({ team: S.team, weapon, x: 0, z: 0, heading: 0, size: 1 });
+    if (weapon === 'rifle') PLAY.s.arms.res = 150;
+    PLAY.targets = TARGET_M.map((m, i) => {
+      const x = (i - 2) * 26, z = -m * 8, t = world.spawn({ team: enemy, weapon: 'rifle', x, z, heading: Math.PI, size: 1 }), lb = plabel(m + ' m');
+      t.guard = false; t.stop(); lb.position.set(x, FLOOR_Y + 17, z); scene.add(lb);
+      return { t, x, z, lb, dead: 0 };
+    });
+    PLAY.player.enter(PLAY.s); PLAY.player.kills = 0;
+    PLAY.on = true;
+    document.body.classList.add('playing'); $p('playHud').classList.add('on');
+    $p('btnPlay').textContent = 'Dừng điều khiển (phím P)'; $p('btnPlay').classList.add('on');
+    if (!PLAY.headless && canvas.requestPointerLock) canvas.requestPointerLock();
+    return PLAY.s;
+  }
+  function stopPlay() {
+    if (!PLAY.on) return;
+    PLAY.player.exit();
+    for (const o of PLAY.world.soldiers.slice()) o.dispose();
+    PLAY.world.soldiers.length = 0;
+    for (const T of PLAY.targets) { scene.remove(T.lb); T.lb.material.map.dispose(); T.lb.material.dispose(); }
+    for (const C of PLAY.world.casings) scene.remove(C.m);
+    PLAY.world.casings.length = 0;
+    for (const Sh of PLAY.shots) scene.remove(Sh.m);
+    for (const F of PLAY.flashes) scene.remove(F.m);
+    PLAY.targets = []; PLAY.shots = []; PLAY.flashes = []; PLAY.s = null; PLAY.on = false; PLAY.note = '';
+    const V0 = PLAY.saved;
+    scene.fog.near = V0.fogN; scene.fog.far = V0.fogF; cam.far = V0.far; cam.fov = V0.fov; cam.updateProjectionMatrix();
+    skyDome.scale.setScalar(V0.sky); skyDome.position.set(0, 0, 0); floor.scale.set(1, 1, 1); floor.position.x = 0; floor.position.z = 0; floorMat.map.repeat.setScalar(V0.rep); grid.visible = V0.grid; gripHandle.visible = S.handIK;
+    Object.assign(sun.shadow.camera, { far: V0.sb.f, left: -V0.sb.r, right: V0.sb.r, top: V0.sb.r, bottom: -V0.sb.r }); sun.shadow.camera.updateProjectionMatrix();
+    sun.position.copy(V0.sun); sun.target.position.set(0, 0, 0);
+    figure.root.visible = true; hitboxGroup.visible = true;
+    document.body.classList.remove('playing', 'playing-locked'); $p('playHud').classList.remove('on');
+    $p('btnPlay').textContent = 'Bắt đầu điều khiển (phím P)'; $p('btnPlay').classList.remove('on');
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+  function playFrame(dt) {
+    const P = PLAY.player, sd = PLAY.s, w = PLAY.world;
+    P.update(dt); pStepShots(dt); w.update(dt, cam);
+    kamiFxStep(dt);
+    // bia ngã thì 3 giây sau dựng lại đúng chỗ
+    for (const T of PLAY.targets) {
+      if (T.t.alive) { T.dead = 0; continue; }
+      if ((T.dead += dt) > 3) { T.t.revive(T.x, T.z, Math.PI); T.t.guard = false; T.t.stop(); }
+    }
+    P.placeCamera();
+    // đất, trời, nắng đi theo người chơi; kết cấu đất giữ nguyên chỗ trên mặt đất
+    const tile = ENV[curEnv].tile;
+    skyDome.position.set(cam.position.x, 0, cam.position.z);
+    floor.position.x = sd.x; floor.position.z = sd.z;
+    floorMat.map.offset.set(sd.x / tile, -sd.z / tile);
+    sun.position.set(sd.x + PLAY.saved.sun.x * 3, sd.y + PLAY.saved.sun.y * 3, sd.z + PLAY.saved.sun.z * 3); sun.target.position.set(sd.x, sd.y, sd.z); sun.target.updateMatrixWorld();
+    renderer.render(scene, cam);
+  }
+  $p('btnPlay').onclick = () => { if (PLAY.on) stopPlay(); else startPlay(); };
+  document.addEventListener('pointerlockchange', () => {
+    PLAY.locked = document.pointerLockElement === canvas;
+    document.body.classList.toggle('playing-locked', PLAY.locked);
+    if (!PLAY.locked && PLAY.player) { PLAY.player.firing = false; PLAY.player.aiming = false; PLAY.player.keys = {}; }
+  });
+  document.addEventListener('mousemove', e => { if (PLAY.on && PLAY.locked) PLAY.player.look(e.movementX, e.movementY); });
+  canvas.addEventListener('mousedown', e => {
+    if (!PLAY.on) return;
+    if (window.soundEngine) window.soundEngine.init();
+    if (!PLAY.locked) { if (canvas.requestPointerLock) canvas.requestPointerLock(); return; }
+    if (e.button === 0) PLAY.player.firing = true;
+    if (e.button === 2) PLAY.player.aiming = true;
+  });
+  addEventListener('mouseup', e => { if (!PLAY.player) return; if (e.button === 0) PLAY.player.firing = false; if (e.button === 2) PLAY.player.aiming = false; });
+  addEventListener('keydown', e => {
+    if (e.code === 'KeyP' && !e.repeat && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) { if (PLAY.on) stopPlay(); else startPlay(); return; }
+    if (PLAY.on && PLAY.locked) { PLAY.player.key(e.code, true); if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault(); }
+  });
+  addEventListener('keyup', e => { if (PLAY.on) PLAY.player.key(e.code, false); });
+
   // Vòng lặp khung hình
   const statsEl = document.getElementById('stats');
   let lastTime = performance.now(), statTimer = 0, fps = 60;
@@ -479,7 +798,11 @@
     const dt = Math.min(0.1, (now - lastTime) / 1000);
     lastTime = now;
     fps += (1 / Math.max(1e-3, dt) - fps) * 0.05;
-    step(S.fixedTime != null ? S.fixedTime : now / 1000);
+    if (PLAY.on) playFrame(dt);
+    else {
+      step(S.fixedTime != null ? S.fixedTime : now / 1000);
+      kamiStep(dt);
+    }
 
     // Đo hiệu năng
     if ((statTimer -= dt) <= 0) {
@@ -496,6 +819,8 @@
         + 'Số lượt vẽ: ' + calls + '\n'
         + 'Số tam giác: ' + Math.round(tris).toLocaleString() + '\n'
         + 'Tốc độ khung hình: ' + Math.round(fps) + ' FPS';
+      const G = figure.grime, pc = (v) => Math.round(v * 100) + '%';
+      if (G) document.getElementById('grimeInfo').textContent = 'Ướt: ' + pc(G.wetK) + (G.wetK > 0 ? ' (khô dần)' : '') + '\nỐng quần: ' + pc(G.low) + '  Gối: ' + pc(G.knee) + '\nBụng, đùi: ' + pc(G.front) + '  Tay: ' + pc(G.side);
     }
 
     requestAnimationFrame(animate);
@@ -503,7 +828,8 @@
 
   // Móc cho chụp ảnh headless: LAB.shot({ motion, time, yaw, pitch, dist, y, team, status, handIK }) -> dataURL
   window.LAB = {
-    S, view, renderer, scene, cam,
+    PLAY, startPlay, stopPlay, playFrame, setWeapon, rebuildFigure,
+    S, view, renderer, scene, cam, KAMI, kamiFire, kamiStep, step,
     // chụp riêng vũ khí: LAB.gunShot('gl', yaw, pitch, dist) -> dataURL (vũ khí đặt giữa sàn, ẩn người)
     gunShot(key, yaw = 1.57, pitch = 0.15, dist = 9) {
       if (!this._gun || this._gunKey !== key) {
@@ -525,6 +851,10 @@
     get figure() { return figure; },
     shot(o = {}) {
       if (o.team && o.team !== S.team) { S.team = o.team; rebuildFigure(); }
+      if (o.weapon && o.weapon !== S.weapon) { setWeapon(o.weapon); rebuildFigure(); }
+      if ('gear' in o && JSON.stringify(o.gear) !== JSON.stringify(S.gear)) { S.gear = o.gear; rebuildFigure(); }
+      if ('water' in o) setWater(o.water);
+      if (o.grime) SoldierModel.resetGrime(figure, o.grime);
       if (o.status) { S.status = o.status; applyStatus(); }
       for (const k of ['motion', 'handIK', 'look', 'breathe', 'gripY', 'gripZ']) if (k in o) S[k] = o[k];
       gripHandle.visible = S.handIK;
@@ -580,7 +910,18 @@
       }
 
       // 4. Nếu bật công tắc tay bám cán: ghi đè tay bám vào cán
+      if (figure.grime) SoldierModel.updateGrime(figure, sdt * S.speed, { depth: S.water, speed: figure.gaitSpeed * S.speed });
+
       if (S.handIK) {
+        // vật cầm có khối: thân, giáp, túi chặn lại, đẩy cả thanh ra trước người
+        for (let it = 0; it < 3; it++) {
+          gripHandle.updateMatrixWorld(true);
+          let best = null, bl = 0;
+          for (const x of [-1.1, -0.6, 0, 0.6, 1.1]) { const d = SoldierModel.bodyClear(figure, gripHandle.localToWorld(new THREE.Vector3(x, 0, 0)), 0.14), l = d.length(); if (l > bl) { bl = l; best = d; } }
+          if (!best || bl < 1e-3) break;
+          gripHandle.position.add(best);
+        }
+        gripHandle.updateMatrixWorld(true);
         const leftGripW = gripHandle.localToWorld(new THREE.Vector3(-0.6, 0, 0));
         const rightGripW = gripHandle.localToWorld(new THREE.Vector3(0.6, 0, 0));
         const gripAxisW = new THREE.Vector3(1, 0, 0).applyQuaternion(gripHandle.quaternion);

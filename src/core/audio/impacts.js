@@ -57,6 +57,55 @@ SoundEngine.mixin(class {
   // Đạn liên thanh 30mm (đầu đạn nổ mạnh) / đạn súng máy 12.7mm găm đất / giáp / tường
   // opts.thin: trúng xe vỏ mỏng (trinh sát, xe pháo bánh lốp) — đạn xuyên thủng tấm thép mỏng: "pạch" đanh + tôn rung
   // "oang" ngắn, không phải tiếng "CHÁT" của đạn vỡ trên giáp dày; không nảy
+  // ĐẠN 20 MM SÚNG BẮN TỈA CHỐNG TĂNG (lõi xuyên giáp, ~110 g, ~900 m/s, không thuốc nổ): mỗi phát là một cú đập lẻ, nặng gấp ~3 lần 12.7mm.
+  // Thép: "CHOANG" gắt — xung va + tấm giáp ngân trầm bất hoà + tia lửa xèo; vỏ mỏng thì xé thủng "phập" và mảnh lạo xạo bên trong.
+  // Đất: "PHẬP" trầm + đất đá văng rào xuống; đá / tường: "CHÁT" vỡ vụn; nước: cột nước "tõm" lớn
+  playAtrImpact(distance, hitType = 'GROUND', pos = null, opts = null) {
+    if (!this.ready()) return;
+    const sp = this.spatial(distance, pos);
+    if (sp.gain < 0.04) return;
+    const t = this.ctx.currentTime + sp.delay, v = 0.92 + Math.random() * 0.16;
+    const out = this.voice({ gain: sp.gain, lowpass: sp.lowpass, wet: Math.min(0.9, sp.wet + 0.08), pan: sp.pan });
+    const play = (kind, g, rate = 1) => {
+      const src = this.ctx.createBufferSource(); src.buffer = this.gunshotBuffer(kind); src.playbackRate.value = rate * v;
+      const gg = this.ctx.createGain(); gg.gain.value = g; src.connect(gg); gg.connect(out); src.start(t);
+    };
+    const steel = hitType === 'DIRECT_HIT', thin = steel && !!(opts && opts.thin);
+    if (steel) {
+      this.snap(out, t, 1.1, 7000, 4);
+      play('hitSteel127', 1.1, 0.78);
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1900 * v, Q: 1, drive: 3, gain: 0.7, attack: 0.0003, dur: 0.03 });
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, drive: 2.2, gain: 0.9, attack: 0.001, dur: 0.12 });
+      this.metal(out, t + 0.002, { f0: (thin ? 640 : 420) * v, ratios: [1, 2.32, 3.71, 5.9], decay: thin ? 0.18 : 0.32, gain: thin ? 0.35 : 0.5, click: 0.9 });
+      this.burst(out, t + 0.004, { filter: 'highpass', freq: 3800, gain: 0.22, attack: 0.002, dur: 0.16 });   // lõi thép mài giáp tóe lửa
+      if (thin) this.burst(out, t + 0.015, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 2600, Q: 0.8, gain: 0.3, attack: 0.004, dur: 0.24 });
+      else if (Math.random() < 0.25) this.playRicochet(out, t + 0.01, 1);
+      return;
+    }
+    if (hitType === 'WATER') {
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 500, gain: 0.5, attack: 0.002, dur: 0.12 });
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1500, freqEnd: 3400, sweep: 0.08, Q: 1.1, gain: 0.8, attack: 0.002, dur: 0.12 });
+      this.burst(out, t + 0.18, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 3200, Q: 0.8, gain: 0.45, attack: 0.04, dur: 0.45 });
+      return;
+    }
+    this._gMat = hitType === 'GROUND' || !hitType ? this.groundMatAt(pos) : null;
+    const hard = hitType === 'WALL' || hitType === 'BOULDER' || hitType === 'BUILDING' || this._gMat === 'rock' || this._gMat === 'hard' || this._gMat === 'asphalt';
+    if (hard) {
+      this.snap(out, t, 1.0, 8000, 3.5);
+      play('hitDirt', 0.6, 1.25);
+      this.burst(out, t, { filter: 'bandpass', freq: 2600 * v, Q: 0.9, drive: 2.6, gain: 0.75, attack: 0.0003, dur: 0.025 });
+      this.burst(out, t + 0.001, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 420, drive: 2, gain: 0.7, attack: 0.001, dur: 0.09 });
+    } else {
+      // găm đất: xung đục, khối đất bị khoét "phập", rồi đất cát rơi rào
+      play('hitDirt', this._gMat === 'sand' ? 0.75 : 0.95, this._gMat === 'sand' ? 0.68 : 0.8);
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 280, drive: 2.4, gain: 1.1, attack: 0.001, dur: 0.14 });
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 950 * v, Q: 0.8, drive: 1.8, gain: 0.55, attack: 0.0006, dur: 0.05 });
+      this.tone(out, t, { freq: 95 * v, freqEnd: 50, sweep: 0.08, gain: 0.3, attack: 0.001, dur: 0.1 });
+    }
+    this.burst(out, t + 0.06, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: hard ? 3200 : 2200, Q: 0.7, gain: hard ? 0.3 : 0.22, attack: 0.03, dur: hard ? 0.35 : 0.55 });
+    this.surfaceHit(out, t, hitType, 'b127', 1.4, false);
+  }
+
   playGatlingImpact(distance, hitType = 'GROUND', isIncendiary = false, pos = null, isMG = false, opts = null) {
     if (!this.ready()) return;
     const now = this.ctx.currentTime;

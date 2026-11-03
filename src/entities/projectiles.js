@@ -160,6 +160,7 @@
     HEAVY: 0.7, CLUSTER: 0.7,                   // 155mm (lòng nòng Arbalest ~1.0)
     CLUSTER_SUBMUNITION: 0.65,
     RPG: 0.6, ANTI_TANK_MISSILE: 0.6,
+    PG7: 1.0,                                   // đạn PG-7 của lính: dựng đúng cỡ thật (Ø 85 mm), khớp quả lắp trên ống phóng
     GATLING_BULLET: 0.42, GATLING_HE: 0.42, INCENDIARY: 0.42,     // 30mm (lòng nòng Hailstorm ~0.2)
     SCOUT_BULLET: 0.4,
     GL40: 0.15                                  // lựu 40mm: thân Ø~0.31 đv (≈40mm) — vừa lòng nòng AGL (Ø0.075 x 2.1 x 2)
@@ -295,6 +296,27 @@
     return L;
   }
 
+  // ĐẠN RPG VÁC VAI PG-7 (bộ binh): đúng hình quả lắp trên ống phóng của lính (soldier_model rocketHeadGeo) — đầu nổ lõm Ø 85 mm đuôi thon,
+  // mũ ngòi áp điện, cổ nối thân động cơ Ø 40 mm, 4 cánh đuôi bung ra khi rời ống + loa phụt. Không có cánh giữa / vạch vàng / cần dò như tên lửa giàn xe
+  function pg7(group) {
+    const H = [[0, 0], [0.16, 0], [0.16, 0.16], [0.16, 0.16], [0.343, 0.62], [0.343, 0.62], [0.343, 1.05], [0.343, 1.05], [0.098, 2.23]];   // côn đuôi + đoạn trụ + mũi nón thẳng; điểm lặp giữ cạnh sắc
+    const MOT = 2.0, L = MOT + 2.39, y0 = -L / 2, yh = y0 + MOT;
+    mesh(shared('pg7head', () => new THREE.LatheGeometry(H.map(q => new THREE.Vector2(q[0], q[1])), 28)), M.olive(), group, [0, yh, 0]);
+    mesh(shared('pg7fuse', () => new THREE.LatheGeometry([[0, 2.23], [0.098, 2.23], [0.098, 2.27], [0.082, 2.33], [0.05, 2.375], [0, 2.39]].map(q => new THREE.Vector2(q[0], q[1])), 16)), M.alu(), group, [0, yh, 0]);
+    mesh(shared('pg7seam', () => new THREE.CylinderGeometry(0.352, 0.352, 0.03, 28, 1, true)), M.oliveDark(), group, [0, yh + 0.64, 0]);
+    mesh(shared('pg7motor', () => new THREE.CylinderGeometry(0.16, 0.16, MOT, 16)), M.oliveDark(), group, [0, y0 + MOT / 2, 0]);
+    mesh(shared('pg7ring', () => new THREE.CylinderGeometry(0.19, 0.19, 0.08, 16)), M.oliveDark(), group, [0, yh + 0.12, 0]);
+    mesh(shared('pg7noz', () => new THREE.CylinderGeometry(0.16, 0.2, 0.18, 14, 1, true)), M.black(), group, [0, y0 + 0.05, 0]);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      // cánh gập bung xiên ra sau: lá thép mỏng dài, mép ngoài vượt Ø đầu đạn
+      mesh(shared('pg7fin', () => { const g = new THREE.BoxGeometry(0.025, 0.62, 0.3); g.translate(0, 0, 0.3); return g; }), M.alu(), group, [0, y0 + 0.42, 0], [0, a, 0]);
+    }
+    addTracer(group, 4.5, 1.6, 0xffc070, 'rocket', y0);
+    addTracer(group, 2.2, 0.9, 0xffffff, 'rocketcore', y0);
+    return L;
+  }
+
   // Tên lửa chống tăng có điều khiển (kiểu Spike / Javelin): thân tròn xoay liền mạch — mũi vòm thuôn mang đầu dò ảnh nhiệt
   // kính sẫm bóng, đuôi vát thu vào loa phụt; vạch vàng đầu nổ lõm + gờ ghép các khoang (đầu nổ / điều khiển / động cơ),
   // máng cáp dọc thân; 4 cánh giữa mỏng vuốt ngược bung ra khi rời ống, 4 cánh lái đuôi nhỏ lệch 45°, loa phụt thép
@@ -379,6 +401,7 @@
     AP: { name: 'Đạn xuyên giáp APFSDS', desc: 'Chỉ xe tăng bắn được. Lõi hợp kim vonfram: vỡ vụn tóe tia lửa cam, bụi kim loại xám, không tự cháy. Bản cao cấp lõi urani nghèo tự bốc cháy khi va chạm: chớp trắng gắt, mảnh kim loại cháy sáng văng theo hướng bay, mây bụi oxit trắng xám, xé đất thành rãnh dài.' },
     CLUSTER: { name: 'Đạn chùm 155mm', desc: 'Kích nổ trên không tầm cao: bung tỏa 32 bom con dù rơi rải thảm, gây chuỗi vụ nổ thứ cấp dồn dập khắp diện rộng.' },
     CLUSTER_SUBMUNITION: { name: 'Bom con đạn chùm', desc: 'Bom con nhỏ có dải dù định hướng: rơi từ trên trời xuống, phát nổ đanh gọn, chớp lửa và mảnh văng.' },
+    PG7: { name: 'Đạn PG-7 vác vai (HEAT)', desc: 'Đầu nổ lõm 85 mm, mũ ngòi áp điện; liều phóng đẩy khỏi ống, bay trơn ~11 m rồi động cơ mới bắt lửa, 4 cánh đuôi bung ra giữ hướng.' },
     RPG: { name: 'Tên lửa chống tăng (HEAT)', desc: 'Đầu nổ lõm có cần kích nổ: luồng kim loại nóng chảy phụt thẳng, chớp trắng chói, khói đen đặc.' },
     ANTI_TANK_MISSILE: { name: 'Tên lửa chống tăng có điều khiển', desc: 'Đầu nổ lõm: luồng phụt nóng chảy, chớp trắng chói, khói đen đặc, tia lửa nhiều.' },
     // băng đạn hỗn hợp như pháo 30mm xe chiến đấu thật: xen kẽ đạn xuyên giáp (thủng sườn xe tăng ở gần) & đạn nổ mảnh cháy
@@ -398,6 +421,7 @@
         case 'AP': L = apfsds(g); break;
         case 'CLUSTER_SUBMUNITION': L = bomblet(g); break;
         case 'RPG': L = missile(g); break;
+        case 'PG7': L = pg7(g); break;
         case 'ANTI_TANK_MISSILE': L = atgm(g); break;
         case 'GL40': L = grenade(g); break;
         case 'GATLING_BULLET':

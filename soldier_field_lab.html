@@ -16,12 +16,34 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
   .grid2 .btn, .grid3 .btn { font-size: 12.5px; padding: 6px 8px; text-align: center; }
+  #playHud { position: fixed; inset: 0; z-index: 9; pointer-events: none; display: none; font-family: var(--font-mono); color: #f1f5f9; }
+  #playHud.on { display: block; }
+  #cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+  #cross i { position: absolute; background: #f8fafc; box-shadow: 0 0 2px #000; }
+  #cross .h1 { width: 8px; height: 2px; top: -1px; right: var(--g, 8px); }
+  #cross .h2 { width: 8px; height: 2px; top: -1px; left: var(--g, 8px); }
+  #cross .v1 { width: 2px; height: 8px; left: -1px; bottom: var(--g, 8px); }
+  #cross .v2 { width: 2px; height: 8px; left: -1px; top: var(--g, 8px); }
+  #cross.hit i { background: #f87171; }
+  #ammo { position: absolute; right: 28px; bottom: 26px; text-align: right; font-size: 13px; text-shadow: 0 1px 2px #000; }
+  #ammo b { font-size: 34px; line-height: 1; }
+  #hpBox { position: absolute; left: 28px; bottom: 26px; width: 220px; font-size: 12px; text-shadow: 0 1px 2px #000; }
+  #hpBar { height: 8px; margin-top: 4px; background: rgba(15, 23, 42, .65); border: 1px solid rgba(255, 255, 255, .25); }
+  #hpFill { height: 100%; width: 100%; background: #4ade80; }
+  #playMsg { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); padding: 8px 14px; font-size: 14px; background: rgba(15, 23, 42, .72); border-radius: 4px; display: none; }
+  .tog.on { outline: 1px solid var(--tc-accent-2, #f59e0b); }
   #loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 20; color: #e2e8f0; font: 14px var(--font-mono); background: #0f172a; }
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
 <div id="loading">Đang dựng địa hình…</div>
+<div id="playHud">
+  <div id="cross"><i class="h1"></i><i class="h2"></i><i class="v1"></i><i class="v2"></i></div>
+  <div id="hpBox"><span id="hpText">Sức khoẻ 100</span><div id="hpBar"><div id="hpFill"></div></div></div>
+  <div id="ammo"><b id="magN">30</b> / <span id="capN">30</span><div id="ammoInfo">Súng trường</div></div>
+  <div id="playMsg"></div>
+</div>
 <aside class="lab-panel" id="panel">
   <header class="lab-head">
     <div class="lab-brand">
@@ -39,6 +61,39 @@
     </nav>
   </header>
   <div class="lab-scroll">
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">00</span><h2>Điều khiển chiến binh</h2></div>
+      <button class="btn" id="btnPlay" style="width:100%">Bắt đầu điều khiển</button>
+      <div class="lab-box" style="margin-top:6px;font:12px/1.6 var(--font-mono)"><kbd>W A S D</kbd> đi · <kbd>Shift</kbd> chạy · <kbd>C</kbd> quỳ<br>Giữ <kbd>chuột phải</kbd> ngắm · <kbd>chuột trái</kbd> bắn · <kbd>R</kbd> nạp đạn<br>UAV cảm tử: đứng yên, <kbd>chuột trái</kbd> phóng (mỗi người 2 quả)<br><kbd>Esc</kbd> nhả chuột để chỉnh trang bị</div>
+      <div style="font:12px var(--font-mono);margin-top:8px">Vũ khí</div>
+      <div class="grid2">
+        <button class="btn pick" data-group="weapon" data-val="rifle">Súng trường</button>
+        <button class="btn pick" data-group="weapon" data-val="gl">Phóng lựu 40 mm</button>
+        <button class="btn pick" data-group="weapon" data-val="atr">Bắn tỉa hạng nặng</button>
+        <button class="btn pick" data-group="weapon" data-val="rpg">RPG</button>
+        <button class="btn pick" data-group="weapon" data-val="kami">UAV cảm tử</button>
+      </div>
+      <div style="font:12px var(--font-mono);margin-top:8px">Phe</div>
+      <div class="grid2">
+        <button class="btn pick" data-group="team" data-val="BLUE">Xanh</button>
+        <button class="btn pick" data-group="team" data-val="RED">Đỏ</button>
+      </div>
+      <div style="font:12px var(--font-mono);margin-top:8px">Quân phục</div>
+      <div class="grid2">
+        <button class="btn pick" data-group="biome" data-val="">Theo bản đồ</button>
+        <button class="btn pick" data-group="biome" data-val="DESERT">Sa mạc</button>
+        <button class="btn pick" data-group="biome" data-val="JUNGLE">Rừng</button>
+        <button class="btn pick" data-group="biome" data-val="URBAN">Đô thị</button>
+      </div>
+      <div style="font:12px var(--font-mono);margin-top:8px">Trang bị</div>
+      <div class="grid2">
+        <button class="btn gearT" data-gear="goggles">Kính</button>
+        <button class="btn gearT" data-gear="tags">Thẻ tên</button>
+        <button class="btn gearT" data-gear="pouches">Túi đạn ngực</button>
+        <button class="btn gearT" data-gear="backPanel">Tấm lưng</button>
+        <button class="btn gearT" data-gear="radio">Bộ đàm</button>
+      </div>
+    </section>
     <section class="lab-sec">
       <div class="lab-sec-h"><span class="lab-num">01</span><h2>Dáng di chuyển</h2></div>
       <div class="grid3">
@@ -81,8 +136,9 @@
   </div>
 </aside>
 <div class="lab-keys">
+  <span><kbd>Điều khiển</kbd> xem mục 00 ở bảng trái</span>
   <span><kbd>Bấm trái lên đất</kbd> người đang chọn đi tới</span>
-  <span><kbd>0</kbd> cả tổ · <kbd>1</kbd>-<kbd>8</kbd> từng người (<kbd>Shift</kbd> chọn thêm)</span>
+  <span><kbd>`</kbd> cả tổ ·<kbd>1</kbd>-<kbd>8</kbd> từng người (<kbd>Shift</kbd> chọn thêm)</span>
   <span><kbd>G</kbd> canh gác · <kbd>H</kbd> giữ chỗ · <kbd>J</kbd> về đội hình · <kbd>K</kbd> quỳ/đứng</span>
   <span><kbd>Kéo chuột phải</kbd> xoay</span>
   <span><kbd>Cuộn</kbd> gần / xa</span>
@@ -91,7 +147,28 @@
 <script src="three.min.js"></script>
 <script src="three-mesh-bvh.js"></script>
 <script src="src/core/sky.js"></script>
+<script src="src/core/game_timing.js"></script>
+<script src="src/core/audio/sound_engine.js?v=20261102mor4"></script>
+<script src="src/core/audio/weapon_fire.js?v=20261102mor4"></script>
+<script src="src/core/audio/destruction.js?v=20261102mor4"></script>
+<script src="src/core/audio/impacts.js?v=20261102mor4"></script>
+<script src="src/core/audio/incoming.js?v=20261102mor4"></script>
+<script src="src/core/audio/cockpit_cues.js?v=20261102mor4"></script>
+<script src="src/core/audio/vehicle_engine.js?v=20261102mor4"></script>
+<script src="src/core/audio/vehicle_destroyed.js?v=20261102mor4"></script>
+<script src="src/core/audio/other_engines.js?v=20261102mor4"></script>
+<script src="src/core/audio/fire_ambience.js?v=20261102mor4"></script>
+<script src="src/core/audio/turret_drives.js?v=20261102mor4"></script>
+<script src="src/core/audio/drone_uav.js?v=20261102mor4"></script>
+<script src="src/core/audio/gatling.js?v=20261102mor4"></script>
+<script src="src/core/audio/module_weapons.js?v=20261102mor4"></script>
+<script src="src/core/audio/wading.js?v=20261102mor4"></script>
+<script src="src/core/audio/music.js?v=20261102mor4"></script>
+<script src="src/core/audio/battle_drama.js?v=20261102mor4"></script>
+<script src="src/core/audio/ui_sounds.js?v=20261102mor4"></script>
 <script src="src/core/weather.js"></script>
+<script src="src/core/audio/infantry_gl.js?v=20261103rpg4"></script>
+<script src="src/core/audio/soldier_voice.js?v=20261103step1"></script>
 <script src="src/core/map_gen.js"></script>
 <script src="src/core/ground_shader.js"></script>
 <script src="src/gameplay/destructibles.js"></script>
@@ -107,8 +184,13 @@
 <script src="src/core/terrain.js"></script>
 <script src="src/core/vehicle_collision.js"></script>
 <script src="src/ai/navigator.js"></script>
-<script src="src/entities/soldier_model.js?v=20261102hand30"></script>
-<script src="src/gameplay/soldier_engine.js?v=20261102lod1"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261103rpg4"></script>
+<script src="src/gameplay/world_markers.js"></script>
+<script src="src/entities/tanks/vehicle_kit.js"></script>
+<script src="src/gameplay/kamikaze_uav.js"></script>
+<script src="src/entities/soldier_model.js?v=20261103rpg8"></script>
+<script src="src/gameplay/soldier_engine.js?v=20261103walk3"></script>
+<script src="src/gameplay/soldier_player.js?v=20261103rpg4"></script>
 <script>
 (() => {
   const q = new URLSearchParams(location.search);
@@ -143,37 +225,54 @@
   }
   const sunDir = (terrain.atmosphere && terrain.atmosphere.sunDir) || new THREE.Vector3(-0.5, 0.75, -0.4).normalize();
 
-  // ĐẠN LỰU 40 MM (bản phòng thử): bay cầu vồng ~76 m/s, nổ chớp sáng + sát thương theo bán kính (game thật dùng Grenade40)
+  // ĐẠN LỰU 40 MM (bản phòng thử): đạn đạo thật ~76 m/s từ miệng nòng, nổ khi chạm đất / tường / người; bay chưa đủ ~14 m
+  // thì ngòi chưa kích hoạt: không nổ. Sát thương theo bán kính (game thật dùng Grenade40)
   const shots = [], flashes = [];
-  const shellGeo = new THREE.SphereGeometry(0.35, 8, 6), shellMat = new THREE.MeshBasicMaterial({ color: 0x2a2a22 });
+  const rocketGeo = new THREE.ConeGeometry(0.4, 2.8, 10), rocketMat = new THREE.MeshStandardMaterial({ color: 0x4a4f3c, roughness: 0.6 });
+  const shellGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 10), shellMat = new THREE.MeshStandardMaterial({ color: 0x5b5d45, roughness: 0.7 }), _up = new THREE.Vector3(0, 1, 0), _dirV = new THREE.Vector3();
   const flashGeo = new THREE.SphereGeometry(1, 12, 8);
-  function fireGrenade(s, t, aim) {
-    const p0 = new THREE.Vector3(s.x + s.forwardX * 5, s.y + 12, s.z + s.forwardZ * 5), p1 = new THREE.Vector3(aim.x, aim.y - 4, aim.z);
-    const d = p0.distanceTo(p1), T = d / 608, g = 78;
-    const m = new THREE.Mesh(shellGeo, shellMat); scene.add(m);
-    shots.push({ p0, p1, T, t: 0, arc: g * T * T / 8, m, team: s.team });
+  function fireGrenade(s, aim, muzzle, vel) {
+    const p = muzzle ? muzzle.clone() : s.figure.rifle.localToWorld(new THREE.Vector3(0, 0.22, -3.5));
+    const L = SoldierEngine.lob(p, aim), v = vel ? vel.clone() : new THREE.Vector3(L.vx, L.vy, L.vz);
+    const m = new THREE.Mesh(shellGeo, shellMat); m.position.copy(p); scene.add(m);
+    shots.push({ v, m, team: s.team, owner: s, trav: 0, g: SoldierEngine.GL40.g, arm: SoldierEngine.GL40.arm, kind: 'gl' });
+  }
+  // đạn RPG: thân đạn + đuôi lửa, nhả khói dọc đường bay; nổ lõm trúng đất / nhà / người
+  function fireRocket(s, muzzle, vel) {
+    const m = new THREE.Mesh(rocketGeo, rocketMat); m.position.copy(muzzle); scene.add(m);
+    shots.push({ v: vel.clone(), m, team: s.team, owner: s, trav: 0, g: SoldierEngine.RPG_B.g, arm: SoldierEngine.RPG_B.arm, kind: 'rpg', trail: 0 });
   }
   const rnd = (a, b) => a + Math.random() * (b - a);
-  function boom(p, team) {
-    const f = new THREE.Mesh(flashGeo, new THREE.MeshBasicMaterial({ color: 0xffc46a, transparent: true, opacity: 0.9, depthWrite: false }));
-    f.position.copy(p); scene.add(f); flashes.push({ m: f, t: 0 });
+  function boom(p, team, kind) {
+    world.sfxAt(p.x, p.z, 'blast');
+    // dùng hệ nổ của game (chớp lửa, bụi theo màu đất, mảnh văng, hố đạn); quả cầu phẳng cũ trông như bong bóng
+    if (kind === 'rpg') fx.spawn(p.x, p.y, p.z, 'RPG', 'GROUND', {});
+    else fx.spawn(p.x, p.y, p.z, 'CLUSTER_SUBMUNITION', 'GROUND', { gl40: true });
     // mảnh văng HEDP: chết chắc trong ~2 m, bị thương tới ~6 m; nằm / quỳ ít trúng hơn
     for (const o of world.soldiers) {
       if (!o.alive || o.team === team) continue;
-      const r = Math.hypot(o.x - p.x, o.z - p.z) / 8;
-      if (r > 6) continue;
-      const k = o.intent.stance === 'kneel' ? 0.65 : 1;
-      if (r < 1.5) o.damage(110 * k, 'FRAG');
-      else if (Math.random() < 0.85 * k * (1 - (r - 1.5) / 4.5)) o.damage(rnd(25, 70) * k, 'FRAG');   // mảnh văng: trúng hay không là xác suất
+      SoldierEngine.applyBlast(o, p.x, p.y, p.z, SoldierEngine.WOUND.GL40, 'FRAG');
     }
   }
   function stepShots(dt) {
     for (let i = shots.length - 1; i >= 0; i--) {
-      const S = shots[i]; S.t += dt;
-      const f = Math.min(1, S.t / S.T);
-      S.m.position.lerpVectors(S.p0, S.p1, f); S.m.position.y += S.arc * 4 * f * (1 - f);
-      const gnd = terrain.getElevationAt(S.m.position.x, S.m.position.z);
-      if (f >= 1 || (f > 0.1 && S.m.position.y < gnd)) { if (S.m.position.y < gnd) S.m.position.y = gnd + 0.5; boom(S.m.position.clone(), S.team); scene.remove(S.m); shots.splice(i, 1); }
+      const S = shots[i], P = S.m.position, x0 = P.x, z0 = P.z;
+      S.v.y -= S.g * dt;
+      if (S.kind === 'rpg' && !S.lit && S.trav >= 88) { S.lit = true; fx.rocketIgnite(P.x, P.y, P.z, S.v.x, S.v.y, S.v.z); }   // bay trơn ~11 m rồi động cơ mới bắt lửa
+      if (S.kind === 'rpg' && S.lit && player) for (let j = 0; j < 4; j++) { _dirV.copy(P).addScaledVector(S.v, -dt * j / 4); player.addSmoke(_dirV, new THREE.Vector3((Math.random() - 0.5) * 1.5, Math.random() * 1.5, (Math.random() - 0.5) * 1.5), 0.5, 2.6, 0.9 + Math.random() * 0.5, 0.3, 0xc9c5ba); }   // khói liền dải (đạn bay ~38 đv mỗi khung)
+      P.addScaledVector(S.v, dt);
+      S.trav += S.v.length() * dt;
+      S.m.quaternion.setFromUnitVectors(_up, _dirV.copy(S.v).normalize());
+      const gnd = terrain.getElevationAt(P.x, P.z);
+      let hit = P.y < gnd || (S.kind === 'rpg' && S.trav > 7360);   // đầu đạn RPG tự huỷ ở ~920 m
+      if (!hit && P.y < gnd + 90 && terrain.resolveVehicleCollision && terrain.resolveVehicleCollision(x0, z0, P.x, P.z, 0.5, null).hit) hit = true;
+      let direct = null;
+      if (!hit) for (const o of world.soldiers) if (o.alive && o !== S.owner && o.team !== S.team && Math.hypot(o.x - P.x, o.z - P.z) < 2.6 && P.y > o.y && P.y < o.y + 14) { hit = true; direct = o; break; }
+      if (!hit) continue;
+      if (P.y < gnd) P.y = gnd + 0.5;
+      if (S.trav >= S.arm) boom(P.clone(), S.team, S.kind);
+      else { world.sfxAt(P.x, P.z, 'dud'); if (direct) direct.damage(rnd(35, 60), 'BLUNT'); }
+      scene.remove(S.m); shots.splice(i, 1);
     }
     for (let i = flashes.length - 1; i >= 0; i--) {
       const F = flashes[i]; F.t += dt;
@@ -181,9 +280,56 @@
       if (F.t > 0.3) { scene.remove(F.m); flashes.splice(i, 1); }
     }
   }
+  // nổ đạn của lính (RPG, lựu): ExplosionFX có hố đạn và bụi theo màu đất bản đồ
+  const fx = new ExplosionFX(scene, () => terrain);
+  // UAV cảm tử: phòng thử không có trận nên UAV chỉ rời ống bay lên vài giây (bay lái / lao vào xe có trong trận)
+  const kamiUavs = [];
+  function kamiLaunchFx(T, team, owner = null) {
+    if (window.soundEngine && window.soundEngine.playKamiLaunch) window.soundEngine.playKamiLaunch(0, null);
+    if (typeof KamiUAV === 'undefined') return;
+    const m = KamiUAV.build(team, KamiUAV.INF_SCALE); scene.add(m);
+    kamiUavs.push({ m, p: T.pos.clone(), v: T.dir.clone().multiplyScalar(95), t: 0, owner });
+  }
+  function stepKamiUavs(dt) {
+    for (let i = kamiUavs.length - 1; i >= 0; i--) {
+      const U = kamiUavs[i]; U.t += dt;
+      const thr = U.t > 0.35 ? Math.min(1, (U.t - 0.35) / 0.2) : 0;
+      U.v.y -= 40 * dt; if (thr) { U.v.y += (85 - U.v.y) * Math.min(1, dt * 2.5); const h = Math.hypot(U.v.x, U.v.z) || 1, n = h + (135 - h) * Math.min(1, dt * 1.6); U.v.x *= n / h; U.v.z *= n / h; }
+      U.p.addScaledVector(U.v, dt); U.m.position.copy(U.p);
+      U.m.rotation.set(Math.atan2(U.v.y, Math.hypot(U.v.x, U.v.z)), Math.atan2(-U.v.x, -U.v.z), 0);
+      KamiUAV.animate(U.m, dt, Math.min(1, U.t / 0.3), thr * 0.8);
+      if (U.t > 8) { if (U.owner) U.owner.figure.kamiCtl = false; scene.remove(U.m); kamiUavs.splice(i, 1); }
+    }
+  }
   if (SoldierModel.setBiome) SoldierModel.setBiome(MAP);   // quân phục theo chiến trường
-  const world = new SoldierEngine.World(scene, terrain, { vehicles: () => [], onFire: (s, t, aim) => fireGrenade(s, t, aim) });
+  const world = new SoldierEngine.World(scene, terrain, { vehicles: () => [], onKami: (s, ev, T) => {
+    // lái UAV vài giây rồi cất máy điều khiển (không có trận để bay thật)
+    if (ev === 'launch') { kamiLaunchFx(T, s.team, s); s.figure.kamiCtl = true; }
+  }, onFire: (s, t, aim) => {
+    if (aim.weapon === 'atr') {
+      // đạn bay do engine tính (World.fireBullet), ở đây chỉ có lửa + khói đầu nòng
+      if (player) player.muzzleFx(s, s.muzzlePos(), 'atr');
+      return;
+    }
+    if (aim.weapon === 'rpg') {
+      const m = s.muzzlePos(), L = SoldierEngine.lob(m, aim, SoldierEngine.RPG_B);
+      if (player) player.muzzleFx(s, m, 'rpg');
+      fireRocket(s, m, new THREE.Vector3(L.vx, L.vy, L.vz));
+      return;
+    }
+    if (aim.weapon === 'rifle') {
+      // lính AI súng trường: đường đạn thẳng, trúng nếu điểm rơi đủ gần người mục tiêu
+      const m = s.figure.rifle.localToWorld(new THREE.Vector3(0, 0.22, -4.55));
+      if (player) { player.addTracer(m, new THREE.Vector3(aim.x, aim.y, aim.z)); player.muzzleFx(s, m, 'rifle'); }
+      if (t.damage && Math.hypot(aim.x - t.x, aim.z - t.z) < 2 && Math.random() < 0.08) t.damage(rnd(12, 24), 'BULLET');   // đạn lạc nhiều: cháy cả tổ vẫn còn thời gian phản ứng
+      return;
+    }
+    if (player) player.muzzleFx(s, s.figure.rifle.localToWorld(new THREE.Vector3(0, 0.22, -3.5)), 'gl');
+    fireGrenade(s, aim);
+  } });
 
+  world.onBulletStep = (a, b) => { if (player) player.addTracer(a, b); };
+  world.onBulletHit = (r) => { if (r.kind === 'ground') world.sfxAt(r.point.x, r.point.z, 'dud'); };
   // vòng chọn dưới chân người đang được chọn
   const ringGeo = new THREE.RingGeometry(3.2, 4.0, 24); ringGeo.rotateX(-Math.PI / 2);
   const ringMat = new THREE.MeshBasicMaterial({ color: 0x38e07a, transparent: true, opacity: 0.85, depthWrite: false });
@@ -204,8 +350,9 @@
   }
   function setGuardBtn() { const on = squad && [...squad.selected].some(m => m.guard); const b = document.getElementById('btnGuard'); b.textContent = 'Canh gác: ' + (on ? 'BẬT' : 'TẮT'); b.className = on ? 'btn on' : 'btn'; }
   addEventListener('keydown', e => {
-    if (!squad) return;
-    if (/^Digit[0-8]$/.test(e.code)) { const n = +e.code.slice(5); selectKey(n === 0 ? -1 : n - 1, e.shiftKey); setGuardBtn(); }
+    if (!squad || (player && player.active)) return;
+    if (e.code === 'Backquote') { selectKey(-1); setGuardBtn(); }
+    else if (/^Digit[1-8]$/.test(e.code)) { selectKey(+e.code.slice(5) - 1, e.shiftKey); setGuardBtn(); }
     else if (e.code === 'KeyG') { const on = ![...squad.selected].some(m => m.guard); squad.cmdGuard(on); setGuardBtn(); }
     else if (e.code === 'KeyH') squad.cmdHold();
     else if (e.code === 'KeyJ') squad.cmdRejoin();
@@ -266,16 +413,17 @@
   let drag = null;
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('pointerdown', e => {
+    if (player && player.active) return;
     if (e.button === 0 && squad) { const p = pickGround(e.clientX, e.clientY); if (p) squad.cmdMove(p.x, p.z, gait); }
     else drag = { x: e.clientX, y: e.clientY };
   });
   canvas.addEventListener('pointermove', e => {
-    if (!drag) return;
+    if (!drag || (player && player.active)) return;
     view.yaw += (e.clientX - drag.x) * 0.006; view.pitch = Math.max(0.08, Math.min(1.4, view.pitch + (e.clientY - drag.y) * 0.004));
     drag = { x: e.clientX, y: e.clientY };
   });
   addEventListener('pointerup', () => { drag = null; });
-  canvas.addEventListener('wheel', e => { e.preventDefault(); view.dist = Math.max(20, Math.min(1500, view.dist * (e.deltaY > 0 ? 1.1 : 1 / 1.1))); }, { passive: false });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); if (player.active) { player.zoomStep(e.deltaY < 0 ? 1 : -1); return; } view.dist = Math.max(20, Math.min(1500, view.dist * (e.deltaY > 0 ? 1.1 : 1 / 1.1))); }, { passive: false });
 
   document.querySelectorAll('.gait').forEach(b => b.onclick = () => {
     document.querySelectorAll('.gait').forEach(x => x.classList.remove('on')); b.classList.add('on'); gait = b.dataset.gait;
@@ -297,10 +445,102 @@
   document.getElementById('btnKneel').onclick = () => { if (squad) for (const m of squad.members) m.setStance(m.intent.stance === 'kneel' ? 'stand' : 'kneel'); };
   document.getElementById('btnMore').onclick = () => { if (squad) { const L = squad.leader; const s = spawnSquad(8, { x: L.x + 60, z: L.z + 60 }); s.moveTo(L.x, L.z, gait); } };
 
+  // ===== ĐIỀU KHIỂN & TRANG BỊ =====
+  const player = new SoldierPlayer.Controller({
+    fxSys: fx, fireRocket, world, terrain, scene, cam,
+    fireGrenade,
+    onHud: h => {
+      $('hpText').textContent = 'Sức khoẻ ' + Math.round(h.hp);
+      $('hpFill').style.width = h.hp + '%';
+      $('hpFill').style.background = h.hp > 50 ? '#4ade80' : h.hp > 25 ? '#fbbf24' : '#f87171';
+      $('magN').textContent = h.mag; $('capN').textContent = h.reserve != null ? h.reserve : h.cap;
+      if (h.kami) {
+        const K = h.kami;
+        $('cross').style.display = 'none';
+        $('ammoInfo').textContent = 'UAV cảm tử · ' + (K.launching ? 'đang phóng…' : K.flying ? 'đang lái UAV' : K.left > 0 ? 'chuột trái: phóng (đứng yên)' : 'hết UAV') + ' · hạ ' + h.kills;
+        const m2 = $('playMsg'), tx = !h.alive ? 'Đã trúng đạn. Nhấn Enter để hồi sinh' : (!locked && !window.FL.headless ? 'Bấm vào màn hình để điều khiển' : '');
+        m2.textContent = tx; m2.style.display = tx ? 'block' : 'none';
+        return;
+      }
+      $('ammoInfo').textContent = (h.reloading ? 'Đang nạp đạn… ' : '') + (h.weapon === 'gl' ? 'Phóng lựu 40 mm' : h.weapon === 'rpg' ? 'RPG' : h.weapon === 'atr' ? 'Bắn tỉa hạng nặng' : 'Súng trường') + ' · hạ ' + h.kills
+        + (h.range != null ? ' · ' + Math.round(h.range) + ' m' + (h.rangeOk ? (h.range < 14 ? ' (chưa đủ cự ly ngòi)' : '') : ' (quá tầm)') : '')
+        + (h.drum != null && h.aim > 0.5 ? ' · thước ngắm ' + h.drum + ' m' : '') + (h.scope ? ' · kính ' + String(h.scope.x).replace('.', ',') + '×' : '') + (h.tired ? ' · kiệt sức' : h.stam != null && h.stam < 0.95 ? ' · thể lực ' + Math.round(h.stam * 100) + '%' : '') + (h.holding ? ' · nín thở' : h.winded ? ' · hụt hơi' : '');
+      const cr = $('cross');
+      cr.classList.toggle('hit', h.hit);
+      cr.style.setProperty('--g', Math.round(3 + (1 - h.aim) * 6 + h.spread * 300) + 'px');
+      cr.style.display = !h.sight ? '' : 'none';
+      const msg = $('playMsg');
+      const txt = !h.alive ? 'Đã trúng đạn. Nhấn Enter để hồi sinh' : (!locked && !window.FL.headless ? 'Bấm vào màn hình để điều khiển' : '');
+      msg.textContent = txt; msg.style.display = txt ? 'block' : 'none';
+    }
+  });
+  const $ = id => document.getElementById(id);
+  const loadout = SoldierPlayer.loadLoadout();
+  let locked = false, savedView = null, baseFov = cam.fov;
+  function refreshLoadoutUi() {
+    document.querySelectorAll('.pick').forEach(b => b.classList.toggle('on', (loadout[b.dataset.group] || '') === b.dataset.val));
+    document.querySelectorAll('.gearT').forEach(b => b.classList.toggle('on', loadout.gear[b.dataset.gear] !== false));
+  }
+  function applyLoadout() {
+    SoldierPlayer.saveLoadout(loadout); refreshLoadoutUi();
+    if (!player.soldier) return;
+    const s = player.soldier, biome = SoldierModel.setBiome(loadout.biome || MAP);
+    s.reequip({ team: loadout.team, weapon: loadout.weapon, gear: loadout.gear });
+    SoldierModel.setBiome(MAP);
+    void biome;
+    s.intent.drive = s.intent.drive || { x: 0, z: 0, gait: 'walk', mul: 1, face: null };
+  }
+  document.querySelectorAll('.pick').forEach(b => b.onclick = () => { loadout[b.dataset.group] = b.dataset.val || null; applyLoadout(); });
+  document.querySelectorAll('.gearT').forEach(b => b.onclick = () => { loadout.gear[b.dataset.gear] = loadout.gear[b.dataset.gear] === false; applyLoadout(); });
+  refreshLoadoutUi();
+  function startPlay() {
+    const L = squad.leader, p = findSpot(L.x + 48, L.z + 48);
+    SoldierModel.setBiome(loadout.biome || MAP);
+    if (window.soundEngine) { soundEngine.init(); soundEngine.resume(); }   // tiếng phải khởi động theo thao tác của người dùng
+    const s = world.spawn({ team: loadout.team, weapon: loadout.weapon, gear: loadout.gear, x: p.x, z: p.z, heading: L.heading, size: 1 });
+    SoldierModel.setBiome(MAP);
+    player.enter(s);
+    savedView = { fov: cam.fov };
+    $('playHud').classList.add('on');
+    $('btnPlay').textContent = 'Dừng điều khiển'; $('btnPlay').classList.add('on');
+    if (!window.FL.headless && canvas.requestPointerLock) canvas.requestPointerLock();
+    return s;
+  }
+  function stopPlay() {
+    const s = player.soldier;
+    player.exit();
+    if (s) { s.dispose(); world.soldiers.splice(world.soldiers.indexOf(s), 1); }
+    cam.fov = savedView ? savedView.fov : baseFov; cam.updateProjectionMatrix();
+    $('playHud').classList.remove('on');
+    $('btnPlay').textContent = 'Bắt đầu điều khiển'; $('btnPlay').classList.remove('on');
+    if (document.exitPointerLock && document.pointerLockElement) document.exitPointerLock();
+  }
+  $('btnPlay').onclick = () => { if (player.active) stopPlay(); else if (squad) startPlay(); };
+  document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; if (!locked) { player.firing = false; player.aiming = false; player.keys = {}; } });
+  document.addEventListener('mousemove', e => { if (player.active && locked) player.look(e.movementX, e.movementY); });
+  canvas.addEventListener('mousedown', e => {
+    if (window.soundEngine) window.soundEngine.init();
+    if (!player.active) return;
+    if (!locked) { if (canvas.requestPointerLock) canvas.requestPointerLock(); return; }
+    if (e.button === 0) player.firing = true;
+    if (e.button === 2) player.aiming = true;
+  });
+  addEventListener('mouseup', e => { if (e.button === 0) player.firing = false; if (e.button === 2) player.aiming = false; });
+  addEventListener('keydown', e => { if (player.active && locked) { player.key(e.code, true); if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault(); } });
+  addEventListener('keyup', e => { if (player.active) player.key(e.code, false); });
+
   function resize() { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); }
   addEventListener('resize', resize); resize();
 
   function placeCamera() {
+    if (player.active) {
+      player.placeCamera();
+      const s = player.soldier;
+      view.tx = s.x; view.ty = s.y; view.tz = s.z;
+      sun.position.set(s.x + sunDir.x * 500, s.y + sunDir.y * 500, s.z + sunDir.z * 500);
+      sun.target.position.set(s.x, s.y, s.z);
+      return;
+    }
     if (squad) {
       // tâm nhìn: trung bình vị trí cả tổ (mượt)
       let x = 0, y = 0, z = 0; for (const m of squad.members) { x += m.x; y += m.y; z += m.z; }
@@ -320,10 +560,13 @@
   let last = performance.now(), fps = 60, stT = 0, simMs = 0;
   function frame(dt) {
     const t0 = performance.now();
+    player.update(dt);
     stepShots(dt);
     world.update(dt, cam);
     drawRings();
     simMs += (performance.now() - t0 - simMs) * 0.1;
+    stepKamiUavs(dt);
+    fx.update(dt);
     placeCamera();
     renderer.render(scene, cam);
   }
@@ -353,8 +596,9 @@
 
   // Móc điều khiển cho chụp headless: FL.go(x, z, gait), FL.sim(giây) chạy 60 khung/giây, FL.shot(view) -> dataURL
   window.FL = {
-    world, terrain, renderer, scene, cam, view, paused: false,
+    world, terrain, renderer, scene, cam, view, paused: false, fx, kamiUavs,
     get squad() { return squad; },
+    player, loadout, applyLoadout, startPlay, stopPlay, headless: false,
     findSpot, spawnSquad,
     go(x, z, g) { gait = g || gait; squad.cmdMove(x, z, gait); },
     spawnEnemies, selectKey,

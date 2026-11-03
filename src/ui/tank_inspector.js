@@ -36,6 +36,31 @@ class TankInspector {
 
     // Dữ liệu thông số & đặc điểm thiết kế của 4 dòng xe
     this.tankSpecs = {
+      INFANTRY: {
+        className: 'BỘ BINH',
+        name: 'TỔ BỘ BINH VANGUARD',
+        summary: 'Tổ tối đa 4 lính, đánh theo lối du kích: ẩn trong rừng, cỏ, nhà, phục kích xe địch bằng vũ khí chống xe rồi rút đi trước khi bị phát hiện. Đổi người bằng phím số. Không có giáp: bị lộ là khó sống.',
+        hpText: '1 MÁU · KHÔNG GIÁP',
+        hpPercent: 31,
+        speedText: 'CHẠY 2,4 M/S',
+        speedPercent: 12,
+        rofText: 'THEO VŨ KHÍ',
+        rofPercent: 40,
+        rangeText: 'THEO VŨ KHÍ',
+        rangePercent: 60,
+        features: [
+          { icon: 'users', title: 'Tối đa 4 lính', desc: 'Mở khóa thêm lính ở dải bên dưới, phím 1-4 để chuyển sang từng người.' },
+          { icon: 'crosshair', title: 'Chiến thuật du kích', desc: 'Không bị radar khóa, núp trong rừng là mất dấu. Bắn từ chỗ ẩn rồi đổi vị trí: nổ súng sẽ lộ trong vài giây.' },
+          { icon: 'leaf', title: 'Bộ ngụy trang cỏ', desc: 'Phủ tua cỏ lên người, khó bị phát hiện hơn khi nằm trong cỏ.' },
+          { icon: 'first-aid-kit', title: 'Bộ y tế', desc: 'Phím E: quỳ xuống băng bó, hồi đầy máu, 3 lần mỗi lần xuất kích.' }
+        ],
+        ammoList: [
+          { name: 'Phóng lựu 40 mm', desc: 'Ổ quay 6 viên, đạn bay cầu vồng, nổ sau khi bay đủ cự ly an toàn.' },
+          { name: 'RPG', desc: 'Đầu đạn nổ lõm chống xe, nạp lại từng quả.' },
+          { name: 'Bắn tỉa hạng nặng', desc: 'Súng chống vật liệu, bắn ở tư thế nằm.' },
+          { name: 'UAV cảm tử', desc: 'Mỗi lính mang 2 chiếc, lái lao thẳng vào mục tiêu.' }
+        ]
+      },
       ALL_ROUNDER: {
         className: 'BINH CHỦNG THIẾT GIÁP ĐA DỤNG',
         name: 'XE TĂNG CHỦ LỰC HALBERD MK.3',
@@ -797,7 +822,7 @@ class TankInspector {
       }
       const zoomSpeed = 0.08;
       this.cameraDistance += e.deltaY * zoomSpeed;
-      this.cameraDistance = Math.max(50, Math.min(400, this.cameraDistance));
+      this.cameraDistance = Math.max(this.currentTankType === 'INFANTRY' ? 16 : 50, Math.min(400, this.cameraDistance));
       this.updateCameraPosition();
     }, { passive: false });
   }
@@ -1076,6 +1101,7 @@ class TankInspector {
   }
 
   mouseAimFire(clientX, clientY) {
+    if (this.currentTankType === 'INFANTRY') return;
     const u = this.activeUnit;
     if (!u || u.isDead) return;
     if (this.raPick && this.raPick(clientX, clientY)) return;
@@ -1100,6 +1126,7 @@ class TankInspector {
 
   // Nhấp phải: lái tự động tới điểm trỏ (bấm W A S D để tự lái lại)
   mouseDriveTo(clientX, clientY) {
+    if (this.currentTankType === 'INFANTRY') return;
     const u = this.activeUnit;
     if (!u || u.isDead) return;
     const p = this.pickPoint(clientX, clientY);
@@ -1162,7 +1189,8 @@ class TankInspector {
       return;
     }
     const x = this.cameraDistance * Math.cos(this.cameraPitch) * Math.sin(this.cameraYaw);
-    const y = this.cameraDistance * Math.sin(this.cameraPitch) + 10;
+    const lookH = this.currentTankType === 'INFANTRY' ? 7 : 10;   // bộ binh: giữa người (cao ~14,5)
+    const y = this.cameraDistance * Math.sin(this.cameraPitch) + lookH;
     const z = this.cameraDistance * Math.cos(this.cameraPitch) * Math.cos(this.cameraYaw);
 
     const f = this.camFocus || { x: 0, z: 0 };
@@ -1175,7 +1203,7 @@ class TankInspector {
       const cg = this.field.groundAt(this.camera.position.x, this.camera.position.z) + 8;
       if (this.camera.position.y < cg) this.camera.position.y = cg;
     }
-    this.camera.lookAt(f.x, 10 + fy, f.z);
+    this.camera.lookAt(f.x, lookH + fy, f.z);
   }
 
   // Camera bám đuôi theo hướng tháp pháo trong PHÒNG THỬ ĐẠN — đúng công thức updateChaseCamera của trận thật (game.js)
@@ -1268,6 +1296,81 @@ class TankInspector {
     this.camFocus.z = C.pz;
   }
 
+  // BỘ BINH: đơn vị INFANTRY không có hình (trong trận hình người do SoldierEngine lo) -> dựng các lính đã mở khóa lên bệ,
+  // đúng vũ khí + bộ ngụy trang cỏ riêng từng người
+  buildSquadPreview(u) {
+    if (typeof SoldierModel === 'undefined' || typeof SoldierPlayer === 'undefined' || typeof Equipment === 'undefined') return;
+    const acc = window.Account, owns = (id) => !!(acc && acc.owns && acc.owns('INFANTRY', id));
+    const L = SoldierPlayer.loadLoadout(), W = SoldierPlayer.squadWeapons(L), G = SoldierPlayer.squadGhillie(L), n = Math.max(1, Equipment.squadSizeOf(owns));
+    const hasGhillie = Equipment.isFree('ghillie') || owns('ghillie'), hasMedkit = Equipment.isFree('medkit') || owns('medkit'), MK = SoldierPlayer.squadMedkit(L);
+    const SLOT = [[0, -3, 0], [-11, 3, 0.18], [11, 3, -0.18], [0, 9, 0]];
+    u._squadFigs = [];
+    u._squadTodo = [];
+    for (let i = 0; i < n; i++) {
+      const gear = Object.assign({}, L.gear, { ghillie: hasGhillie && G[i], medkit: hasMedkit && MK[i] });
+      u._squadTodo.push({ key: [u.team, W[i], gear.ghillie, gear.medkit].join('|'), weapon: W[i], gear, slot: SLOT[i] });
+    }
+    this.addSquadFigure(u);
+  }
+
+  // Dựng 1 lính (lính đã dựng lúc trước thì lấy lại từ kho: đổi vũ khí 1 người không dựng lại cả tổ). Còn lại rải mỗi khung một người
+  addSquadFigure(u) {
+    const J = u._squadTodo.shift(), pool = this._squadPool || (this._squadPool = {}), kept = pool[J.key];
+    const F = kept && kept.length ? kept.pop() : SoldierModel.buildFigure(u.team, { role: 'infantry', weapon: J.weapon, renderOrder: 2, gear: J.gear });
+    F._poolKey = J.key;
+    F.root.position.set(J.slot[0], -SoldierModel.FOOT_Y, J.slot[1]);
+    F.root.rotation.y = J.slot[2];
+    F._snap = true;
+    SoldierModel.animateMotion(F, 'idle', this._squadT || 0, 1);
+    F._snap = false;
+    u.group.add(F.root);
+    u._squadFigs.push(F);
+  }
+
+  stepSquadPreview(u, dt) {
+    if (!u._squadFigs) return;
+    if (u._squadTodo.length) this.addSquadFigure(u);
+    const t = this._squadT = (this._squadT || 0) + dt;
+    u._squadFigs.forEach((F, i) => {
+      SoldierModel.animateMotion(F, 'idle', t + i * 1.7, 1);
+      SoldierModel.applyBreathing(F, t + i * 1.7, 1.8, 0.025);
+    });
+  }
+
+  disposeSquadPreview(u) {
+    if (!u || !u._squadFigs) return;
+    const pool = this._squadPool || (this._squadPool = {});
+    for (const F of u._squadFigs) {
+      if (F.root.parent) F.root.parent.remove(F.root);
+      (pool[F._poolKey] || (pool[F._poolKey] = [])).push(F);
+    }
+    u._squadFigs = null;
+  }
+
+  clearSquadPool() {
+    for (const key in this._squadPool) for (const F of this._squadPool[key]) {
+      F.root.traverse(o => { if (o.isSkinnedMesh && !o.geometry.userData.shared) o.geometry.dispose(); });   // lưới mẫu dùng chung giữa các lính
+    }
+    this._squadPool = {};
+  }
+
+  // Bệ bộ binh không lái / bắn: ẩn nút + phím không dùng được, camera lại gần cỡ người; về xe thì trả lại như cũ
+  syncInfantryView(tankType) {
+    const inf = tankType === 'INFANTRY';
+    if (inf && this._tankCamDist == null) { this._tankCamDist = this.cameraDistance; this.cameraDistance = 46; }
+    else if (!inf && this._tankCamDist != null) { this.cameraDistance = this._tankCamDist; this._tankCamDist = null; }
+    for (const id of ['ti-test-fire-btn', 'ti-ammo-test', 'ti-repair-all-btn']) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = inf ? 'none' : '';
+    }
+    const rr = document.getElementById('ti-range-real-btn');
+    if (rr) rr.title = inf ? 'Mở trang thử tổ bộ binh: tự cầm lính đi, ngắm, bắn, nạp đạn' : 'Chiến trường lớn 2km: có làng mạc, xe bia AI bắn trả, đo độ dày giáp chi tiết';
+    document.querySelectorAll('#tank-inspector-overlay .ti-controls-hint > span').forEach(sp => {
+      const k = sp.querySelector('kbd');
+      sp.style.display = inf && k && !['C', 'R', 'P'].includes(k.textContent.trim()) ? 'none' : '';
+    });
+  }
+
   // Tải xe tăng 3D lên sàn bục
   loadTankModel(tankType, team = this.currentTeam) {
     if (!this.scene) return;
@@ -1280,6 +1383,7 @@ class TankInspector {
       this.clearUnitFX(this.activeUnit);
       this.clearTestImpacts();
       if (typeof TireTracks !== 'undefined') TireTracks.clear(this.activeUnit);   // vệt xích của xe cũ
+      this.disposeSquadPreview(this.activeUnit);
       this.scene.remove(this.activeUnit.group);
       this.activeUnit = null;
     }
@@ -1304,6 +1408,8 @@ class TankInspector {
       u = this.createPreviewUnit(tankType, team);
     }
     this.activeUnit = u;
+    if (tankType === 'INFANTRY') this.buildSquadPreview(u);
+    this.syncInfantryView(tankType);
     this.schedulePrewarm(this.isOpen ? 2000 : 300);
     this.testFiring = false;
     this._testShotQueued = false;
@@ -1408,13 +1514,15 @@ class TankInspector {
       ALL_ROUNDER: 'HALBERD MK.3',
       GATLING: 'HAILSTORM R6',
       ARTILLERY: 'ARBALEST 155',
-      SCOUT: 'MARTEN R4'
+      SCOUT: 'MARTEN R4',
+      INFANTRY: 'VANGUARD'
     };
     const roleLines = {
       ALL_ROUNDER: 'Giáp dày kiên cố – Cân bằng công thủ toàn diện',
       GATLING: 'Bão lửa cận chiến – Áp chế mục tiêu trong tích tắc',
       ARTILLERY: 'Hỏa lực tầm xa – Sát thương diện rộng',
-      SCOUT: 'Tốc độ vượt trội – Trinh sát và đột kích'
+      SCOUT: 'Tốc độ vượt trội – Trinh sát và đột kích',
+      INFANTRY: 'Mục tiêu nhỏ – Núp giỏi, không có giáp'
     };
 
     const classBadge = document.getElementById('ti-class-badge');
@@ -1552,6 +1660,7 @@ class TankInspector {
   // (không tạo đạn thật), để xem hiệu ứng nòng, khói, giật nòng, nóng nòng và nghe âm thanh
   // =========================================================================
   startTestFire() {
+    if (this.currentTankType === 'INFANTRY') return;
     this.showTestRange();
     if (window.soundEngine) {
       if (typeof window.soundEngine.init === 'function') window.soundEngine.init();
@@ -1637,7 +1746,7 @@ class TankInspector {
   // PHÒNG THỬ ĐẠN (trường bắn): màn riêng toàn màn hình (ẩn thông tin xe + dải trang bị), chọn địa hình, lái / bắn / thả khói
   // với đúng xe + bộ trang bị đang lắp, điều khiển & camera bám đuôi y hệt trong trận. Thoát (nút / Esc) -> về màn thông tin xe.
   enterRangeMode() {
-    if (this.rangeMode || !this.isOpen) return;
+    if (this.rangeMode || !this.isOpen || this.currentTankType === 'INFANTRY') return;
     const overlay = document.getElementById('tank-inspector-overlay');
     if (!overlay) return;
     this.rangeMode = true;
@@ -1709,6 +1818,7 @@ class TankInspector {
   }
 
   selectTestAmmo(idx) {
+    if (this.currentTankType === 'INFANTRY') return;
     const u = this.activeUnit;
     if (!u || !u.availableAmmos || !u.availableAmmos[idx]) return;
     const ammo = u.availableAmmos[idx];
@@ -1724,6 +1834,7 @@ class TankInspector {
   }
 
   toggleRoofWeapon() {
+    if (this.currentTankType === 'INFANTRY') return;
     const u = this.activeUnit;
     if (!u || u.isDead) return;
     if (u.tankType === 'ALL_ROUNDER' && u.rcwsGun) {
@@ -1832,6 +1943,7 @@ class TankInspector {
   // Phím G: phóng màn khói trước mũi xe (cần lắp "Ống phóng lựu khói"); trong phòng xem thả không giới hạn.
   // Khói thử dùng bãi khói riêng (Equipment.SmokeField) -> không lọt vào trận đang chơi nếu mở phòng xem giữa trận.
   testSmoke() {
+    if (this.currentTankType === 'INFANTRY') return;
     const u = this.activeUnit;
     if (!u || u.isDead || typeof Equipment === 'undefined') return;
     if (!Equipment.has(u, 'smoke')) {
@@ -1871,6 +1983,7 @@ class TankInspector {
   }
 
   simulateTestFire(u, dt) {
+    if (u.tankType === 'INFANTRY') { this.stepSquadPreview(u, dt); return; }
     if (!this.testBallistics) {
       const BP = typeof BallisticsSystem3D !== 'undefined' ? BallisticsSystem3D.prototype : null;
       this.testBallistics = {
@@ -2500,6 +2613,7 @@ class TankInspector {
 
   // Đóng giao diện
   close() {
+    this.clearSquadPool();
     if (this.isRecording) {
       this.stopRecording(true);
     }
@@ -2980,6 +3094,7 @@ class TankInspector {
     // Phòng thử đạn chạy trên game thật (range_lab.js): mang theo xe đang xem sang map lớn 2km
     if (rReal) rReal.addEventListener('click', () => {
       rReal.blur();
+      if (this.currentTankType === 'INFANTRY') { window.open('soldier_field_lab.html', '_blank', 'noopener'); return; }   // trường bắn lớn chưa có lính do người chơi cầm
       rReal.disabled = true;
       rReal.textContent = 'ĐANG TẢI…';
       document.body.style.cursor = 'progress';
@@ -3043,6 +3158,13 @@ class TankInspector {
     if (selectBtn) {
       selectBtn.addEventListener('click', () => {
         const selectedType = this.currentTankType;
+
+        // xe chưa mở khóa: đóng phòng xem xe, hỏi mua bằng Bạc
+        if (window.Account && Account.vehicleOpen && !Account.vehicleOpen(selectedType)) {
+          this.close();
+          Account.promptUnlock(selectedType);
+          return;
+        }
 
         // Cập nhật vào sảnh chờ Matchmaking nếu có
         if (window.matchmakingController) {

@@ -99,7 +99,7 @@
   // Chuỗi nhận từ máy khác (tên người chơi, danh sách ô của chủ phòng) được chèn vào innerHTML ở nhiều nơi (sảnh, HUD,
   // bảng hạ gục) -> lọc ngay lúc nhận: chỉ giữ chữ (kể cả tiếng Việt), số, khoảng trắng, _ - . # (khớp cleanName máy chủ)
   // => không còn ký tự HTML nào lọt vào DOM, mọi chỗ hiển thị đều an toàn
-  const NET_TANKS = ['ALL_ROUNDER', 'GATLING', 'ARTILLERY', 'SCOUT'];
+  const NET_TANKS = ['ALL_ROUNDER', 'GATLING', 'ARTILLERY', 'SCOUT', 'INFANTRY'];
   function cleanName(s, fallback = '') {
     const t = String(s == null ? '' : s).normalize('NFC').replace(/[^\p{L}\p{N} _\-.#]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
     return t || fallback;
@@ -987,6 +987,7 @@
       sub('SPOT', (d, from) => this.onSpot(d, from));
       sub('QCMD', (d, from) => this.onCommand(d, from));
       sub('SMOKE', (d, from) => this.onSmoke(d, from));
+      sub('RIDE', (d, from) => this.onRide(d, from));
       sub('DIG', (d, from) => this.onDig(d, from));
       sub('LOCK', (d, from) => this.onLock(d, from));
       sub('ENV_HIT', (d, from) => this.onEnvHit(d, from));
@@ -1020,7 +1021,7 @@
           sig: T && T.map && T.map.sig ? T.map.sig : '',   // chữ ký bản đồ: máy chủ so với bản tự sinh, báo máy sinh lệch
           roster: this.byNetId.map((u, i) => ({ i, team: u.team, type: u.tankType, peer: u === game.player ? this.net.myId : (u.peerId || null),
             rd: (typeof Equipment !== 'undefined' && Equipment.has && u.tankType !== 'SCOUT' && Equipment.has(u, 'radar')) ? 1 : 0,   // radar lắp thêm: máy chủ mở rộng tầm nhìn
-            cm: (typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'camo')) ? 1 : 0 }))   // lưới ngụy trang (cờ F_CAMO chỉ được tin khi xe có lắp)
+            cm: (typeof Equipment !== 'undefined' && Equipment.has && Equipment.has(u, 'camo')) ? 1 : 0, sc: u.infWeapon === 'atr' ? 1 : 0 }))   // lưới ngụy trang (cờ F_CAMO chỉ được tin khi xe có lắp)
         });
       } catch (e) {}
       console.log(`[NET] Đồng bộ trận đấu (${net.mode}) | máy ${net.myId} | chủ phòng ${net.hostId} | ${this.byNetId.length} xe`);
@@ -1234,7 +1235,8 @@
     noteLocalFire(shell, shooter, azimuth, elevation, chargeLevel) {
       if (!shell || shell._netQueued || shell.netRemote) return;
       if (!shooter || shooter.netId === undefined || !this.owns(shooter)) return;
-      if (GUN_STREAM_AMMO[shell.ammoType]) return; // Đạn liên thanh đồng bộ qua cờ bắn trong gói trạng thái
+      // Đạn liên thanh đồng bộ qua cờ bắn trong gói trạng thái (lính bắn từng phát, cùng loại đạn nhưng không có cờ đó)
+      if (GUN_STREAM_AMMO[shell.ammoType] && shooter.tankType !== 'INFANTRY') return;
       shell._netQueued = true;
       // Ghi lại tư thế đầu nòng ngay lúc bắn; các thuộc tính sát thương được đọc lúc xả hàng chờ (cuối khung hình)
       this.pendingFires.push({
@@ -1310,10 +1312,11 @@
           // Dự phòng: tạo viên đạn trực tiếp từ tư thế đầu nòng gửi kèm (không có hiệu ứng khai hỏa)
           const dir = (typeof THREE !== 'undefined') ? new THREE.Vector3(vx, vy, vz).normalize() : null;
           unit._launchOverride = dir ? { position: new THREE.Vector3(px, py, pz), direction: dir } : null;
+          if (ammo === 'RPG' && unit.tankType === 'INFANTRY') ballistics._modelOverride = 'PG7';   // lính máy khác: hình đạn PG-7
           try {
             shell = ballistics.fireShell3D(unit, az, el, d.ch || 1, ammo);
           } finally {
-            unit._launchOverride = null;
+            unit._launchOverride = null; ballistics._modelOverride = null;
           }
         }
       } catch (e) {
@@ -1340,6 +1343,7 @@
       shell.pv0 = Math.hypot(vx, vy, vz);
       shell.timeAlive = 0;
       shell.travel = 0;
+      if (ammo === 'RPG' && unit.tankType === 'INFANTRY') ballistics.coldLaunch(shell);
 
       // Bù trễ: đạn đã bay được (bây giờ - thời điểm bắn) trên máy của người bắn
       let lagMs = this.net.now() - (d.ts || 0);
@@ -1424,6 +1428,11 @@
       unit.azimuth = az;
       unit.elevation = el;
       unit.charge = ch;
+      if (unit.tankType === 'INFANTRY') {   // không có pháo: dựng đạn từ tư thế gửi kèm
+        unit._infShotAt = performance.now();
+        if (this.game.infantry && this.game.infantry.onNetShot) this.game.infantry.onNetShot(unit, ammo);
+        return null;
+      }
       if (ammo === 'ANTI_TANK_MISSILE') {
         if (typeof unit.fireAntiTank !== 'function') return null;
         unit.antiTankCooldown = 0;
@@ -1675,6 +1684,23 @@
       if (d.o === 'b' && (d.L > 60 || d.W > 30 || d.H > 30)) return;
       if (d.o === 'p' && (d.r > 400 || d.d > 20 || d.e > 12)) return;
       this.game.onNetDig(u, d);
+    }
+
+    // Lính lên / xuống xe đồng minh (InfantryMatch): v = netId xe, -1 = xuống; s = số ghế. Gửi lại định kỳ khi đang ngồi nên mất gói / vào muộn tự khớp
+    sendRide(unit, veh, seat) {
+      if (this.detached || !unit || unit.netId === undefined) return;
+      this.net.send('RIDE', { i: unit.netId, v: veh ? veh.netId : -1, s: seat | 0 });
+    }
+    // Lính dùng bộ y tế: báo máy chủ trước khi máu tăng, không thì gói trạng thái bị chặn ở mức máu cũ
+    sendMedkit(unit) {
+      if (this.detached || !unit || unit.netId === undefined) return;
+      this.net.send('MEDKIT', { i: unit.netId });
+    }
+    onRide(d, from) {
+      if (this.detached || !d) return;
+      const u = this.byNetId[d.i], G = this.game;
+      if (!u || this.owns(u) || this.ownerOf(u) !== from || !G.infantry) return;
+      G.infantry.onNetRide(u, d.v >= 0 ? this.byNetId[d.v] : null, d.s | 0);
     }
 
     onSmoke(d, from) {

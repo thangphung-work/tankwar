@@ -1396,6 +1396,42 @@ const VehicleCrew = (() => {
     const col = { cloth: 0x15130f, cloth2: 0x1e1b17, skin: 0x1b1411, hard: 0x101010, lens: 0x262422 }[kind];
     return (CHAR[kind] = new THREE.MeshStandardMaterial({ color: col, roughness: kind === 'lens' ? 0.45 : 1, metalness: 0 }));
   }
+  // XẠ THỦ NÓC XE: hình bộ binh mới (vải liền, vai liền thân, LOD). Trúng đạn tính trên các khối dò vô hình bám xương, vẫn đúng tư thế người mà tia khỏi duyệt lưới skinned.
+  // Khối dò visible = true (các bộ lọc tia bỏ vật ẩn) nhưng vật liệu tắt nên không có lượt vẽ. Kíp lái cabin vẫn dùng khối rời: cabinFigure đổi vật liệu từng mảnh theo stencil ô kính
+  const PROXY_MAT = typeof THREE !== 'undefined' ? new THREE.MeshLambertMaterial({ visible: false }) : null;   // không dùng Basic: hitUnitSurface coi Basic là hiệu ứng, tia bỏ qua
+  const PROXY = {}, NECK_BASE_Y = 3.46;
+  function hitProxies(F) {
+    const add = (par, key, mk, x, y, z) => {
+      const m = new THREE.Mesh(PROXY[key] || (PROXY[key] = mk()), PROXY_MAT);
+      m.position.set(x, y, z); m.castShadow = false;
+      m.userData.crewRole = 'gunner'; m.userData.crewProxy = true; m.userData.noDeform = true;
+      par.add(m); (F.proxies || (F.proxies = [])).push(m);
+    };
+    add(F.head, 'head', () => new THREE.SphereGeometry(0.95, 10, 8), 0, 0.72, 0);
+    add(F.chest, 'chest', () => new THREE.BoxGeometry(2.7, 3.5, 2), 0, 1.75, 0);
+    add(F.hips, 'hips', () => new THREE.BoxGeometry(2.7, 1.5, 2.1), 0, -1.15, 0);
+    for (const a of F.arms) {
+      add(a.up, 'up', () => new THREE.CylinderGeometry(0.52, 0.48, 2.45, 8), 0, 1.2, 0);
+      add(a.fore, 'fore', () => new THREE.CylinderGeometry(0.44, 0.34, 2.6, 8), 0, 1.3, 0);
+    }
+    for (const L of F.legs) {
+      add(L.leg, 'thigh', () => new THREE.CylinderGeometry(0.8, 0.62, 3.35, 8), 0, -1.67, 0);
+      add(L.knee, 'shin', () => new THREE.CylinderGeometry(0.58, 0.42, 3.25, 8), 0, -1.62, 0);
+    }
+  }
+  function gunnerFigure(team) {
+    if (typeof SoldierModel === 'undefined' || !SoldierModel.setCrewDead) return buildFigure(team);
+    const F = SoldierModel.buildFigure(team, { role: 'gunner', skin: true, weapon: false, renderOrder: 12 });
+    hitProxies(F);
+    return F;
+  }
+  // bậc chi tiết theo cự ly biểu kiến (soi kính gần lại), cùng ngưỡng với bộ binh
+  function crewLod(F, cam, u) {
+    if (!F || !F.lod || !cam) return;
+    const ap = Math.hypot(cam.position.x - u.x, cam.position.y - (u.y || 0), cam.position.z - u.z) * cam.fov / 55, cur = F.lod.cur;
+    const lvl = ap < 200 * (cur > 0 ? 1 : 1.12) ? 0 : ap < 640 * (cur > 1 ? 1 : 1.12) ? 1 : 2;
+    if (lvl !== cur) SoldierModel.setLod(F, lvl);
+  }
   function cabinFigure(team, parent, o) {
     const F = buildFigure(team);
     parent.add(F.root);
@@ -1448,7 +1484,7 @@ const VehicleCrew = (() => {
   // turret: vòng súng; mg: { cover, ammo, barrel } của súng 12.7mm (recon_marten buildRingMount)
   function attachScoutGunner(unit, turret, mg) {
     hook();
-    const F = buildFigure(unit.team);
+    const F = gunnerFigure(unit.team);
     // đứng trong lỗ nóc (tâm vòng = gốc turret, bán kính 3.4), hông dưới mép nóc; chỗ đứng theo vị trí súng (recon_marten
     // mg.stand): tay ôm súng có khoảng cách tự nhiên với ngực
     F.base = mg && mg.stand ? mg.stand.clone() : V(0, -0.9, 2.4);
@@ -1491,8 +1527,8 @@ const VehicleCrew = (() => {
   }
 
   const pose = (L, R, rise = 0, bend = 0, twist = 0, lz = 0) => ({ L, R, rise, bend, twist, lz });
-  // xạ thủ đứng súng cao thêm (đv, 8 đv = 1 m): vành xe ôm ngang thắt lưng, không hở bụng dài
-  const STAND_UP = -0.15;
+  // xạ thủ đứng súng cao thêm (đv, 8 đv = 1 m): tay cầm ngang vai (không ngang đầu), vành xe ôm ngang hông
+  const STAND_UP = 1.2;
 
   // Thay hộp đạn súng máy (pr 0..1 theo reloadTimer — đồng bộ với hoạt cảnh nắp / hộp trong recon_marten).
   // Khay hộp đạn nằm sát chốt súng, cách chỗ đứng ~6 đv: xạ thủ đứng lên bậc, CHỒM NGƯỜI tới (lz < 0) để tay làm việc ở tầm
@@ -1729,6 +1765,7 @@ const VehicleCrew = (() => {
   function deadTint(F, on) {
     F.deadTint = on;
     if (F.soak) for (const m of F.soak) m.visible = on;
+    if (F.lod) { SoldierModel.setCrewDead(F, on); return; }
     for (const m of F.meshes) {
       if (on) {
         if (m.material === F.M.uni) { m.userData.mat0 = m.material; m.material = F.M.dead; }
@@ -1739,7 +1776,7 @@ const VehicleCrew = (() => {
   // người dự bị: dựng lần đầu khi cần (xe bot không tốn thêm hình người tới khi xạ thủ hy sinh), đứng sau xạ thủ trong khoang
   function ensureMate(u, C) {
     if (C.mate) return C.mate;
-    const M = buildFigure(u.team);
+    const M = gunnerFigure(u.team);
     M.base = (C.gunner && C.gunner.base ? C.gunner.base : V(0, -0.9, 2.4)).clone();
     M.root.position.copy(M.base); M.root.visible = false;
     M.rise = -4.4; M.mateOn = false;
@@ -1752,6 +1789,8 @@ const VehicleCrew = (() => {
   // Chỉ hiện 2 cánh tay của hình người (người dự bị ở trong khoang dưới nóc: thân & đầu không bao giờ lộ ra ngoài — nóc thân
   // xe phía sau thấp hơn vành tháp nên để cả người thì mũ chọc xuyên nóc). armsOnly(F, false) trả lại cả người
   function armsOnly(F, on) {
+    // lưới skinned liền một khối không ẩn được từng phần: thân vốn khuất dưới nóc, chỉ đầu (mũ) cao tới mức chọc qua nên thu xương đầu
+    if (F.lod) { if (F.armsOnly !== on) { F.armsOnly = on; F.head.scale.setScalar(on ? 0.001 : 1); if (F.proxies) for (const m of F.proxies) m.visible = !on; } return; }   // người dự bị dưới nóc không đỡ đạn
     if (!F.armMesh) {
       const arm = new Set();
       for (const a of F.arms) for (const g of [a.up, a.fore, a.hand]) if (g) g.traverse(o => arm.add(o));
@@ -1883,6 +1922,7 @@ const VehicleCrew = (() => {
     // xa camera: không cần tính tư thế từng khung (giữ tư thế cũ)
     const inInspector = !!(u.inInspector || (typeof window !== 'undefined' && window.tankInspector && window.tankInspector.isOpen && window.tankInspector.activeUnit === u));
     const cam = inInspector && window.tankInspector && window.tankInspector.camera ? window.tankInspector.camera : (window.game && window.game.camera);
+    crewLod(F, cam, u); if (C.mate) crewLod(C.mate, cam, u);
     if (!inInspector && cam && Math.hypot(cam.position.x - u.x, cam.position.z - u.z) > 900) return;
 
     u.group.updateMatrixWorld(true);
@@ -1896,7 +1936,7 @@ const VehicleCrew = (() => {
       // nắm đúng 2 tay cầm chữ D sau khóa nòng (recon_marten buildRingMount)
       // neo trực tiếp vào nhóm giật của súng: tay đi cùng tay cầm khi súng hất/lệch, không cần bù tọa độ về sau
       gripL: gripNode.localToWorld(gripLAt.clone()), gripR: gripNode.localToWorld(gripRAt.clone()), gripAxis, lift: (mg && mg.lift) || 0,
-      r0: ((mg && mg.lift) || 0) - 0.15,   // tư thế đứng súng (súng nằm ngang): mốc độ cao cho các động tác thao tác súng
+      r0: ((mg && mg.lift) || 0) + STAND_UP,   // tư thế đứng súng (súng nằm ngang): mốc độ cao cho các động tác thao tác súng
       // cúi xuống lòng xe lấy đạn: trước bụng, dưới mép nóc
       hatchL: ws(T, F, -0.7, -1.2, -1.8), hatchR: ws(T, F, 0.6, -1.2, -1.7)
     };
@@ -2062,9 +2102,11 @@ const VehicleCrew = (() => {
       // Khi súng ngóc cao (đuôi chúi xuống), xạ thủ khuỵu thấp người theo; khi súng hạ nòng, xạ thủ chỉ rướn nhẹ.
       const L = c.lift, gl = T.worldToLocal(c.gripL.clone()), gy = gl.y - L;
       const ahead = c01((-(gl.z - F.base.z) - 3.55) / 1.6);   // tay cầm vượt chỗ cầm bình thường
-      const standRise = Math.max(-0.7, Math.min(0.18, (gy - 3.0) * 0.35));
-      // STAND_UP: đứng cao hơn để tay cầm ngang vai, không ngang cằm (trụ súng cao để ngóc 70° nên tay cầm cao). Đai lưng vẫn dưới gờ vành
-      tgt = pose(c.gripL, c.gripR, L + STAND_UP + standRise + (0.1 - standRise) * sm(ahead),Math.max(0, (2.6 - gy) * 0.1) + 0.35 * ahead);
+      // vai hạ theo tay cầm khi súng ngóc (tay cầm tụt ~1:1), không thì đứng cao như lúc ngang súng mà với tay xuống thẳng đuột
+      const standRise = Math.max(-2.05, Math.min(0.18, (gy - 3.4) * 1.1 + 0.14));
+      // STAND_UP: đứng cao hơn để tay cầm ngang vai, không ngang đầu (trụ súng cao để ngóc 70° nên tay cầm cao)
+      // chồm qua mép trước: giữ độ cao cũ ~L - 0.05, người đứng cao hơn thì tay không với tới tay cầm đã thấp và xa
+      tgt = pose(c.gripL, c.gripR, L + STAND_UP + standRise + (-1.25 - standRise) * sm(ahead),Math.max(0, (2.6 - gy) * 0.1) + 0.35 * ahead);
       C.loadZ = -1.1 * sm(ahead);
       C.lean = sm(ahead);
       onGrip = true;
@@ -2173,6 +2215,11 @@ const VehicleCrew = (() => {
     F.lookP += (wantPitch - F.lookP) * (1 - Math.exp(-dt * lookRate));
     // Bù đủ góc gập lưng khi đuôi súng hạ thấp: cổ ngửa thêm để mặt giữ đúng góc ngắm dọc nòng
     F.head.rotation.set(F.lookP + F.bend * 0.95 - F.leanF * 0.5, F.look, -F.roll * 0.5, 'YXZ');
+    if (F.lod) {
+      // lưới mới: đầu ngửa quanh gốc cổ (như animateMotion), quay quanh tâm đầu thì gáy hở dài khi người chồm tới
+      const hb = F._headBase || (F._headBase = F.head.position.clone()), nL = hb.y - NECK_BASE_Y, nP = Math.max(-0.8, Math.min(0.8, F.head.rotation.x));
+      F.head.position.set(hb.x, NECK_BASE_Y + nL * Math.cos(nP), hb.z + nL * Math.sin(nP));
+    }
     F.root.updateMatrixWorld(true);
     const H = F.hT || (F.hT = [tgt.L.clone(), tgt.R.clone()]);
     const kh = 1 - Math.exp(-dt * (C.fastHands ? 45 : 16));

@@ -22,6 +22,24 @@
   const UNLIMITED_SLOTS = false;
   const START_SILVER = 0;   // vào game chỉ có trang bị cơ bản miễn phí, muốn mở khóa đồ nâng cao / đạn cao cấp phải cày
 
+  // MỞ KHÓA XE (2026-11): tài khoản mới chỉ có xe trinh sát + bộ binh; xe khác mua 1 lần bằng Bạc, dùng mãi
+  // (máy chủ lưu ở bảng owned: (xe, VEHICLE_ITEM)). Tài khoản cũ đã chơi / mua đồ cho xe nào thì được giữ xe đó.
+  // GIÁ theo thu nhập người mới (silverFor, trận ~10 phút, xe trinh sát / bộ binh dùng đạn gốc miễn phí nên dư gần trọn):
+  //   yếu ~470 / trận (thua, không hạ xe), trung bình ~780 (thắng nửa, hạ 1), khá ~1.600; quay thưởng ngày ~580 / lượt.
+  //   Thứ tự: xe chủ lực TRƯỚC (xe người ta vào game để lái, dễ chơi — có sớm thì ở lại), 6 nòng sau (phòng không chuyên
+  //   dụng, hiểu trận mới thấy đáng), pháo cuối (kén người, còn phải mua ô UAV 1.500–12.000)
+  //   ALL_ROUNDER  5.000 ≈ 6–7 trận trung bình (~1 giờ), người yếu ~10 trận
+  //   GATLING      6.000 ≈ 8 trận
+  //   ARTILLERY   10.000 ≈ 13 trận
+  //   Nạp tiền (TOPUP): Tân binh $0.99 (2.000) + 3–4 trận đủ chủ lực; $4.99 lần đầu (10.500) đủ chủ lực hoặc 6 nòng;
+  //   $9.99 lần đầu (22.500) đủ cả 3 xe (21.000)
+  const VEHICLE_ITEM = 'vehicle';
+  const VEHICLE_PRICE = { SCOUT: 0, INFANTRY: 0, ALL_ROUNDER: 5000, GATLING: 6000, ARTILLERY: 10000 };
+  const STARTER_VEHICLE = 'SCOUT';
+  const vehiclePrice = (tank) => VEHICLE_PRICE[tank] | 0;
+  /** Xe đã mở chưa. owned(tank, id) -> đã sở hữu chưa (null = khách chưa có tài khoản) */
+  const vehicleOpen = (tank, owned) => ALL_FREE || !vehiclePrice(tank) || !!(owned && owned(tank, VEHICLE_ITEM));
+
   // ---------------------------------------------------------------------------
   // DANH MỤC
   // ---------------------------------------------------------------------------
@@ -127,6 +145,21 @@
       desc: 'Giàn 8 ống rocket không điều khiển đầu nổ lõm trên chân đế mô-đun thay súng máy: giữ Space phóng lần lượt (~1 quả / 0,6 s), hết giàn nạp lại ~25 s. Xuyên giáp như RPG — đủ đánh sườn / đuôi xe tăng; bay chậm, khó trúng xa. Rocket có ngòi nổ cận đích: khóa drone địch (máy tính hỏa lực tự đón đầu) rồi phóng loạt — nổ sát drone là hạ.'
     },
     // --- Ô MỞ KHÓA SỐ LƯỢNG SLOT UAV (xe pháo): mặc định 0 slot, mở khóa từng slot đắt dần (tối đa 4 slot) ---
+    // SỐ LƯỢNG LÍNH (bộ binh): mặc định 1, mở lần lượt, càng về sau càng đắt; mỗi lính là một đơn vị thật của trận
+    squad_1: { name: 'Lính số 1', icon: 'walk', cat: 'squad', price: 0, tanks: ['INFANTRY'], desc: 'Lính có sẵn, mang 1 vũ khí.' },
+    squad_2: { name: 'Mở khóa lính số 2', icon: 'walk', cat: 'squad', adv: true, price: 2000, tanks: ['INFANTRY'], needs: 'squad_1', desc: 'Thêm 1 lính vào tổ, mang 1 vũ khí, phím 2 để chuyển sang.' },
+    squad_3: { name: 'Mở khóa lính số 3', icon: 'walk', cat: 'squad', adv: true, price: 5000, tanks: ['INFANTRY'], needs: 'squad_2', desc: 'Thêm 1 lính vào tổ, mang 1 vũ khí, phím 3 để chuyển sang.' },
+    squad_4: { name: 'Mở khóa lính số 4', icon: 'walk', cat: 'squad', adv: true, price: 10000, tanks: ['INFANTRY'], needs: 'squad_3', desc: 'Thêm 1 lính vào tổ, mang 1 vũ khí, phím 4 để chuyển sang.' },
+    // BỘ NGỤY TRANG CỎ: mua 1 lần cho cả tổ, mặc / cởi riêng từng lính (kit bộ binh g = mặt nạ bit theo lính). Tác dụng ở TeamIntel.infantrySight
+    ghillie: {
+      name: 'Bộ ngụy trang cỏ', icon: 'leaf', cat: 'squad', adv: true, price: 3000, tanks: ['INFANTRY'],
+      desc: 'Lưới trùm mũ, vai, lưng, tay, đùi kết dải vải bố xé tua màu cỏ úa theo bản đồ. Mở khóa 1 lần cho cả tổ, mặc / cởi riêng từng lính. Đứng yên / nằm: địch phải tới gần hơn 55% mới nhận ra, đi chậm còn 30%, chạy gần như hết tác dụng. Trong bụi / rừng: chỉ lộ khi địch đã tới sát. Nổ súng là lộ vị trí vài giây.'
+    },
+    // BỘ Y TẾ: mở khóa 1 lần cho cả tổ, mang riêng từng lính (kit bộ binh mk = mặt nạ bit theo lính). Phím E trong trận (InfantryMatch.useMedkit), máy chủ đếm lượt (MEDKIT)
+    medkit: {
+      name: 'Bộ y tế', icon: 'first-aid-kit', cat: 'squad', adv: true, price: 1500, tanks: ['INFANTRY'],
+      desc: 'Túi cứu thương đeo ở thắt lưng sau. Phím E: đứng yên quỳ xuống tiêm thuốc và băng vết thương, ~6 s. Băng xong hồi đầy máu, cầm hẳn máu, hết khập khiễng. Mỗi lần xuất kích dùng được 3 lần; đi, ngắm hoặc bắn giữa chừng là bỏ dở, chưa mất lượt. Mở khóa 1 lần cho cả tổ, chọn mang riêng từng lính.'
+    },
     uav_slot_1: {
       name: 'Mở khóa Ô chứa UAV số 1', icon: 'drone', cat: 'uav', adv: true, price: 1500, tanks: ['ARTILLERY'], slotNum: 1,
       desc: 'Mở khóa ô chứa UAV đầu tiên trên nóc cabin, cho phép trang bị 1 máy bay trinh sát hoặc 1 ống phóng máy bay cảm tử.'
@@ -201,10 +234,11 @@
     mag: { name: 'HỘP ĐẠN', icon: 'box', slots: 1 },
     weapon: { name: 'VŨ KHÍ CHÍNH', icon: 'crosshair', slots: 1 },
     uav: { name: 'UAV', icon: 'drone', slots: 1 },
+    squad: { name: 'TỔ LÍNH', icon: 'users', slots: 0 },
     engine: { name: 'ĐỘNG CƠ', icon: 'engine', slots: 1 }
   };
   // Nhóm 1 bệ gắn (chọn món khác là thay món cũ): nóc tháp, mũi xe, hộp đạn, vũ khí chính, UAV, động cơ
-  const MOUNT_CATS = ['roof', 'front', 'mag', 'weapon', 'uav', 'engine'];
+  const MOUNT_CATS = ['roof', 'front', 'mag', 'weapon', 'uav', 'engine', 'squad'];
   const SLOTS = Object.keys(CATS).reduce((n, c) => n + CATS[c].slots, 0);   // tổng số ô các nhóm
   /** Món đang gắn ở ô 1 bệ `cat` của bộ đồ (để trống -> mặc định theo xe; xe không có ô đó -> null) */
   function slotOf(kit, tank, cat) {
@@ -345,13 +379,15 @@
     let x = rnd() * total, e = P[P.length - 1];
     for (let i = 0; i < P.length; i++) { if ((x -= W[i]) < 0) { e = P[i]; break; } }
     if (e.kind === 'silver') return { kind: 'silver', n: e.n, rar: e.rar };
+    const open = (t) => vehicleOpen(t, owns);   // chỉ rơi đồ / vật tư cho xe đã mở khóa
     if (e.kind === 'ammo') {
-      const list = spinAmmo(e.packs).map(a => Object.assign(a, { n: Math.min(a.n, room ? room(a.tank, a.ammo) : a.n) })).filter(a => a.n > 0);
+      const list = spinAmmo(e.packs).filter(a => open(a.tank)).map(a => Object.assign(a, { n: Math.min(a.n, room ? room(a.tank, a.ammo) : a.n) })).filter(a => a.n > 0);
       if (!list.length) return { kind: 'silver', n: 500, rar: 0 };
       const a = list[Math.floor(rnd() * list.length)];
       return { kind: 'ammo', tank: a.tank, ammo: a.ammo, n: a.n, rar: e.rar };
     }
-    const all = spinItems().filter(it => it.engine === (e.kind === 'engine'));
+    const all = spinItems().filter(it => it.engine === (e.kind === 'engine') && open(it.tank));
+    if (!all.length) return { kind: 'silver', n: 1500, rar: e.rar };
     const left = all.filter(it => !owns || !owns(it.tank, it.id));
     if (!left.length) {
       const it = all[Math.floor(rnd() * all.length)];
@@ -394,6 +430,14 @@
   /** Bộ trang bị hợp lệ cho xe `tank` (lọc mã lạ / không lắp được, giới hạn số ô & số đạn) */
   function sanitize(kit, tank) {
     const out = { m: [], p: [], a: {} };
+    if (tank === 'INFANTRY' && kit && typeof kit === 'object') {   // bộ binh: sq = số lính (máy chủ tính lại theo kho đồ), w = vũ khí từng lính
+      out.sq = Math.max(1, Math.min(SQUAD_MAX, Math.floor(Number(kit.sq)) || 1));
+      out.w = (Array.isArray(kit.w) ? kit.w : []).slice(0, SQUAD_MAX).map(w => SQUAD_WEAPONS.includes(w) ? w : SQUAD_WEAPONS[0]);
+      const g = Math.floor(Number(kit.g)) & ((1 << SQUAD_MAX) - 1);   // bit k = lính k + 1 mặc bộ ngụy trang cỏ (máy chủ verifyKit bỏ nếu chưa sở hữu)
+      if (g) out.g = g;
+      const mk = Math.floor(Number(kit.mk)) & ((1 << SQUAD_MAX) - 1);   // bit k = lính k + 1 mang bộ y tế (máy chủ verifyKit bỏ nếu chưa sở hữu)
+      if (mk) out.mk = mk;
+    }
     if (!kit || typeof kit !== 'object' || !TANKS.includes(tank)) return out;
     for (const id of Array.isArray(kit.m) ? kit.m : []) {
       if (out.m.length >= SLOTS) break;
@@ -480,13 +524,25 @@
   // KINH TẾ (2026-10, siết lại): chơi bình thường mà lắp đủ đồ + mang đủ đạn đặc chủng thì hơi hụt (trận ~500–1.200 Bạc,
   // chi đạn + sửa giáp ~600–1.500) -> trận có trận không đủ đồ. Muốn dư: săn xe địch, chiếm hòm thả dù, vào top K/D,
   // hoặc xem quảng cáo (tiếp tế / mở khóa). Phần nền (tham gia, thắng, thời gian) nhỏ — tiền nằm ở thành tích.
-  const AIRDROP_SILVER = 250;   // mỗi hòm thả dù chiếm được
+  const AIRDROP_SILVER = 150;   // mỗi hòm thả dù chiếm được (2026-11: 250 -> 150 cùng lúc giãn nhịp thả, xem SupplyManager.nextGap)
+  // Hàng máy bay chở (supply_manager.js), chủ phòng bốc lúc máy bay bay vào, hiện trên bản đồ ngay từ lúc đó:
+  // đạn dược 38% / trang bị 56% / tiền 6%. Bao tiền 400 (60%) / 700 (30%) / 1.200 (10%) Bạc, kỳ vọng ~570.
+  // Trận 10 phút ~6 chuyến -> ~1 hòm tiền mỗi 3 trận, cả 2 phe tranh -> hiếm, thành dịp đáng tranh; trung bình người chơi
+  // thêm ~50–100 Bạc / trận, không lấn thu nhập thành tích. everyMs: trần số hòm tiền mỗi trận = 2 + thời gian / everyMs
+  const AIRDROP_CASH = { bags: [{ n: 400, w: 60 }, { n: 700, w: 30 }, { n: 1200, w: 10 }], everyMs: 180e3 };
+  const AIRDROP_CARGO = [{ k: 'AMMO', w: 38 }, { k: 'GEAR', w: 56 }, { k: 'CASH', w: 6 }];
+  // noCash: đã chạm trần hòm tiền của trận -> bốc lại giữa đạn / trang bị
+  function airdropCargo(noCash, R = Math.random) {
+    const pick = (list) => { let r = R() * list.reduce((s, e) => s + e.w, 0); for (const e of list) if ((r -= e.w) < 0) return e; return list[0]; };
+    const k = pick(noCash ? AIRDROP_CARGO.filter(e => e.k !== 'CASH') : AIRDROP_CARGO).k;
+    return k === 'CASH' ? { k, n: pick(AIRDROP_CASH.bags).n } : { k, n: 0 };
+  }
   const LOSS_AMMO_REFUND = 0.5; // thua: hoàn 50% tiền đạn đặc chủng (phần mua bằng Bạc) đã bắn trong trận
   // Trận máy chủ không đối chiếu được (đánh máy / chủ phòng rời): số liệu do máy khách tự khai -> trần Bạc + kinh nghiệm
   // mỗi ngày (giờ VN) cộng dồn mọi trận loại này, chặn script gửi kết quả khống liên tục (~6 trận đánh máy thường / ngày)
   const BOT_MATCH_DAILY = { silver: 8000, xp: 3000 };
   function silverFor(result, kills, damage, durSec, airdrops) {
-    // 300 cơ bản + thắng 250 / hòa 100 + 150 / hạ + 35 / máu gây ra + 10 / phút trận (tối đa 15 phút) + 250 / hòm thả dù
+    // 300 cơ bản + thắng 250 / hòa 100 + 150 / hạ + 35 / máu gây ra + 10 / phút trận (tối đa 15 phút) + 150 / hòm thả dù
     // (2026-10-27: nền 150 -> 300 cho người chơi yếu đỡ lỗ; hạ 180 -> 150, sát thương 25 -> 35: góp sát thương cũng được
     //  thưởng dù đồng đội hạ — thu hẹp chênh lệch giỏi / yếu)
     return Math.round(300 + (result === 'win' ? 250 : result === 'draw' ? 100 : 0) + kills * 150 + damage * 35 + Math.min(durSec, 900) / 6
@@ -506,6 +562,14 @@
       .slice(0, 3);
   }
 
+  const SQUAD_MAX = 4, SQUAD_WEAPONS = ['gl', 'rpg', 'atr', 'kami'];
+  const MEDKIT = { uses: 3, heal: 1 };   // số lần dùng mỗi lần xuất kích, phần máu hồi mỗi lần (theo máu tối đa). Máy chủ đối chiếu cùng bảng này
+  /** Số lính được mang: mở tuần tự, thiếu một nấc thì các nấc sau không tính. owned(id) -> đã sở hữu chưa */
+  function squadSizeOf(owned) {
+    let n = 1;
+    while (n < SQUAD_MAX && owned('squad_' + (n + 1))) n++;
+    return n;
+  }
   const UAV_SLOT_IDS = ['uav_slot_1', 'uav_slot_2', 'uav_slot_3', 'uav_slot_4'];
   function uavSlotsOf(target, tank = 'ARTILLERY') {
     if (tank !== 'ARTILLERY') return 0;
@@ -533,7 +597,7 @@
     return count;
   }
 
-  const API = { UAV_SLOT_IDS, uavSlotsOf, TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, RETIRED_ITEMS, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AIRDROP_SILVER, LOSS_AMMO_REFUND, BOT_MATCH_DAILY, AD, adAmmoN, DAILY_SPIN, spinItems, spinAmmo, spinRoll, spinCycleDay, spinWeights, spinOdds, TOPUP, topupPack, topupGrant, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD, ROOF_DEFAULT, SLOT_DEFAULT, MOUNT_CATS, roofOf, slotOf, ARMOR_REPAIR, dropDamaged, sanitizeGone, repairUnitPrice, noteArmor };
+  const API = { SQUAD_MAX, SQUAD_WEAPONS, MEDKIT, squadSizeOf, UAV_SLOT_IDS, uavSlotsOf, TANKS, ALL_FREE, UNLIMITED_SLOTS, SLOTS, CATS, EQ_RADAR_RANGE, START_SILVER, VEHICLE_ITEM, VEHICLE_PRICE, STARTER_VEHICLE, vehiclePrice, vehicleOpen,MODULES, PREMIUM, AMMO_SHOP, RETIRED_AMMO, RETIRED_ITEMS, SMOKE_TUBES, BUILTIN, builtin, BASE_AMMO, BOT_AMMO, AMMO_PROP, KD_BONUS, AIRDROP_SILVER, AIRDROP_CASH, airdropCargo, LOSS_AMMO_REFUND, BOT_MATCH_DAILY, AD, adAmmoN, DAILY_SPIN, spinItems, spinAmmo, spinRoll, spinCycleDay, spinWeights, spinOdds, TOPUP, topupPack, topupGrant, adsToUnlock, compatible, isFree, catOf, priceOf, sanitize, botKit, silverFor, rankKD, ROOF_DEFAULT, SLOT_DEFAULT, MOUNT_CATS, roofOf, slotOf, ARMOR_REPAIR, dropDamaged, sanitizeGone, repairUnitPrice, noteArmor };
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return API;
 
   // ===========================================================================
@@ -641,6 +705,7 @@
   function startLife(u) {
     const E = u._eq;
     if (!E) return;
+    E.full = {};
     const base = BASE_AMMO[u.tankType] || {};
     const shop = AMMO_SHOP[u.tankType] || {};
     for (const k in base) {
@@ -659,11 +724,26 @@
         else extra = Math.min(extra, uSlots);
       }
       u[AMMO_PROP[k]] = base[k] + extra;
+      E.full[k] = u[AMMO_PROP[k]];   // số mang lúc xuất kích: hòm đạn thả dù nạp về đúng mức này (refillLife)
     }
     // lựu đạn khói nạp vào ống từ trước ra sau; đếm số ống đã bắn mỗi bên (miệng ống phóng tiếp theo)
     u._smokeTube = [0, 0];
     u._smokeAt = 0;
     u._smokeCloak = null;
+  }
+  // Hòm ĐẠN DƯỢC thả dù: nạp lại mọi ô đạn đặc chủng / lựu đạn khói về đúng số lúc xuất kích (không vượt; UAV cảm tử
+  // không tính là đạn). Phần nạp là đạn tặng: lifeUsed tự trừ, không trừ kho mua (máy chủ: bonus trong server_auth).
+  // Trả { loại: số đã nạp }
+  function refillLife(u) {
+    const E = u && u._eq, out = {};
+    if (!E || !E.full) return out;
+    for (const k in E.full) {
+      if (k === 'KAMIKAZE') continue;
+      const p = AMMO_PROP[k], add = E.full[k] - (u[p] || 0);
+      if (add > 0) { u[p] = E.full[k]; out[k] = add; }
+    }
+    if (out.SMOKE) u._smokeTube = [0, 0];   // ống phóng khói nạp lại từ đầu
+    return out;
   }
   // Số ống MỖI BÊN (mang tối đa 2 × số này quả lựu đạn khói)
   function smokeMax(u) { return (u && SMOKE_TUBES[u.tankType]) || 3; }
@@ -3541,7 +3621,7 @@
   }
 
   return Object.assign(API, {
-    has, equip, refit, refitSteps, visualSteps, onRespawn, paidUsed, ammoDelta, startLife,
+    has, equip, refit, refitSteps, visualSteps, onRespawn, paidUsed, ammoDelta, startLife, refillLife,
     armorMul, appliqueCovers, appliqueDamageMul, appliqueSplashMul, vshieldDeflectP, vshieldHeatMul, vshieldSplashMul, sandbagLeft, sandbagSplashMul, eraEffect, penMul, penLossMul, isTandem, splashMul, spallMul, slatDefeats, slatHit, slatSplash, roofCage, apsLeft, apsEngageP, apsEngage, apsMuzzle, camoHidden, camoFactor, camoRadarFactor, fireMul, burnDamageMul, extHitMul, extFireChance, extIgniteMul,
     deploySmoke, triggerSmoke, smokeBlocks, clearSmoke, SmokeField, smokeSides, smokeMax, smokeCount, lockBlocked, SMOKE_GAP, SMOKE_LIFE, update, buildVisuals, FIT,
     kitMats, foliageMats, foliageClump, apsPod, apsLauncher, radarMast, radarHead, RADAR_MAST_H,   // dùng lại ở trang render ảnh trang bị (equipment_thumbs.html)

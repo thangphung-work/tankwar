@@ -45,6 +45,16 @@
 .acc-close { position: absolute; top: 10px; right: 10px; background: none; border: 0; color: #a6ae9e; font-size: 20px; cursor: pointer; }
 .acc-close:hover { color: #fff; }
 
+/* hộp mở khóa xe (account.js promptUnlock) */
+.acc-unlock-title { margin: 0; font-size: 17px; font-weight: 900; letter-spacing: 0.5px; color: var(--tc-accent-2); }
+.acc-unlock-sub { margin: -4px 0 0; font-size: 13px; color: #a6ae9e; }
+.acc-unlock-price {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; background: rgba(9, 11, 9, 0.6); border: 1px solid rgba(120, 130, 109, 0.4);
+}
+.acc-unlock-price span { font: 900 20px var(--font-mono, monospace); color: #fff; }
+.acc-unlock-price small { font-size: 12px; color: #a6ae9e; }
+
 /* thanh kinh nghiệm dưới quân hàm ở góc sảnh */
 .acc-xpbar { height: 3px; width: 100%; min-width: 90px; margin-top: 4px; background: rgba(166, 174, 158, 0.25); border-radius: 2px; overflow: hidden; }
 .acc-xpbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--tc-accent), var(--tc-accent)); transition: width 0.6s ease; }

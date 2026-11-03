@@ -399,6 +399,11 @@ class TacticalMapController {
     const g = this.game, p = g.player;
     this.measStart = this.measEnd = null; this.measStatus = null; this.flightT = null;
     const d = Math.hypot(u.x - p.x, u.z - p.z);
+    if (g.radarLockable && !g.radarLockable(u)) {
+      g.addCombatLog('[[lock-off]] Bộ binh không khóa radar được — phải ngắm tay', 'alert');
+      this.lockFx = { id: u.id, t: performance.now(), fail: true };
+      return;
+    }
     if (d > g.lockRangeFor(p)) {
       g.addCombatLog(`[[alert-triangle]] Xe địch ở quá xa (${Math.round(d)}M), chưa khóa được`, 'alert');
       this.lockFx = { id: u.id, t: performance.now(), fail: true };
@@ -944,14 +949,18 @@ class TacticalMapController {
   }
 
   drawAirdrop(ctx) {
+    const SM = this.game.supplyManager;
+    if (SM) SM.drawFlightsOnMap(ctx, (x, z) => this.worldToScreen(x, z), { size: 8, width: 1.6 });
     const a = this.game.airdrop;
     if (!a || a.collected) return;
     const p = this.worldToScreen(a.x, a.z), t = performance.now() / 1000;
+    const C = typeof SupplyManager !== 'undefined' && SupplyManager.CARGO[a.kind];
     ctx.save();
-    ctx.strokeStyle = '#e7a63a'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(p.x, p.y, 10 + Math.sin(t * 5) * 2, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(p.x - 5, p.y + 4); ctx.lineTo(p.x, p.y - 5); ctx.lineTo(p.x + 5, p.y + 4); ctx.stroke();
+    ctx.strokeStyle = C ? C.col : '#e7a63a'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 13 + Math.sin(t * 5) * 2, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
+    // ký hiệu + tên hàng (đạn dược / trang bị / tiền + số Bạc)
+    if (SM) SM.drawCargoIcon(ctx, p.x, p.y, a.kind, 8, SupplyManager.cargoLabel(a.kind, a.cash));
   }
 
   // Vòng tầm bắn: nét mảnh + vạch chia mỗi 30°; lựu pháo có vòng tối thiểu

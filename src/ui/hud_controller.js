@@ -113,6 +113,16 @@ class HUDController {
 
   // Hình bóng xe nhìn ngang (dùng cho dải xe 2 phe và ô thông tin xe của mình)
   tankSvg(type) {
+    if (type === 'INFANTRY') {
+      return `
+          <svg class="tank-svg" viewBox="0 0 36 22" fill="currentColor">
+            <circle cx="18" cy="4" r="3" />
+            <rect x="15" y="7.5" width="6" height="7.5" rx="1.5" />
+            <rect x="15" y="15" width="2.4" height="6.5" rx="0.8" />
+            <rect x="18.6" y="15" width="2.4" height="6.5" rx="0.8" />
+            <rect x="9" y="9" width="17" height="1.6" rx="0.5" />
+          </svg>`;
+    }
     if (type === 'GATLING') {
       return `
           <svg class="tank-svg" viewBox="0 0 36 22" fill="currentColor">
@@ -908,24 +918,15 @@ class HUDController {
       });
     }
 
+    // Đường bay máy bay tiếp tế
+    if (this.game.supplyManager) this.game.supplyManager.drawFlightsOnMap(ctx, (x, z) => ({ x: (x + this.worldWidth / 2) * scale, y: (z + this.worldDepth / 2) * scale }), { size: 5, width: 1.1 });
+
     // Vẽ Hòm Tiếp Tế Thả Dù trên Minimap nếu có
     if (this.game.airdrop && !this.game.airdrop.collected) {
       const ax = (this.game.airdrop.x + this.worldWidth / 2) * scale;
       const az = (this.game.airdrop.z + this.worldDepth / 2) * scale;
-      ctx.save();
-      ctx.fillStyle = '#e7a63a';
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(ax, az, 4.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#f5c46b';
-      ctx.font = 'bold 8px Chakra Petch';
-      ctx.textAlign = 'center';
-      ctx.fillText('HÒM THẢ DÙ', ax, az - 6);
-      ctx.restore();
+      const AD = this.game.airdrop;
+      if (this.game.supplyManager) this.game.supplyManager.drawCargoIcon(ctx, ax, az, AD.kind, 5, SupplyManager.cargoLabel(AD.kind, AD.cash));
     }
 
     // Khung nhìn camera Viewport (chuẩn Art of War 3)

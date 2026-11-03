@@ -14,7 +14,7 @@
  */
 const TeamIntel = (() => {
   // Tầm nhìn trực tiếp (kính ngắm / quan sát bằng mắt) theo loại xe — 1 đơn vị game hiển thị là "1 m"
-  const SIGHT = { ALL_ROUNDER: 520, GATLING: 520, ARTILLERY: 620, SCOUT: 720 };   // xe 6 nòng: kính ngắm phòng không + radar dẫn bắn nhìn ngang xe tăng (trước 480)
+  const SIGHT = { ALL_ROUNDER: 520, GATLING: 520, ARTILLERY: 620, SCOUT: 720, INFANTRY: 520 };   // xe 6 nòng: kính ngắm phòng không + radar dẫn bắn nhìn ngang xe tăng (trước 480)
   const RADAR_RANGE = 950;                     // bán kính radar trinh sát
   const RADAR_RPS = 0.4;                       // 0.4 vòng/giây (1 vòng 2.5 s)
   const CONTACT_TTL = 1 / RADAR_RPS + 0.8;     // vết radar giữ hơn 1 vòng quét một chút
@@ -53,6 +53,36 @@ const TeamIntel = (() => {
   const ROOF_SPOT = 60;
   const INDOOR_SOFT_RADAR = 0.5;
   const indoorOf = t => t && t.indoor && !((t.revealTimer || 0) > 0) ? t.indoor : null;
+  // BỘ BINH: người nhỏ, lẩn vào cây cỏ dễ hơn xe nhiều.
+  //  - rừng: vài cây quanh là đủ che một người (xe cần rừng rậm FOREST_DENSE), hoặc đứng dưới tán: mắt thường chỉ thấy khi
+  //    tới sát (INF_FOREST_SPOT; đang chạy thì lá cành rung, thấy xa hơn chút), drone soi từ trên cũng vậy
+  //  - bụi: INF_BUSH_SPOT
+  //  - bộ ngụy trang cỏ (kit g): ngoài trống đứng yên / nằm còn 45% tầm nhìn của địch, đi chậm 70%, chạy 90%; trong rừng / bụi
+  //    tầm lộ ngắn hơn nữa
+  //  - quỳ / nằm (lính máy này): 75% tầm nhìn
+  //  - vừa nổ súng (chớp lửa, khói phụt sau RPG): lộ như thường vài giây
+  const INF_FOREST_DENS = 4, INF_FOREST_SPOT = 70, INF_FOREST_RUN = 140, INF_BUSH_SPOT = 110;
+  const INF_GHILLIE = { still: 0.45, walk: 0.7, run: 0.9, cover: 0.55 };
+  const INF_RUN = 12, INF_STILL = 1.5;      // đv/s: lính đi bộ ~8,4, chạy ~19
+  const infRevealed = t => (t.revealTimer || 0) > 0 || (t._infShotAt && performance.now() - t._infShotAt < 3000);
+  // bị che bởi cây cỏ: tầm lộ tối đa (Infinity = không che)
+  function infantryCoverSpot(t) {
+    if (infRevealed(t)) return Infinity;
+    const run = Math.abs(t.speed || 0) > INF_RUN, gk = t.infGhillie ? INF_GHILLIE.cover : 1;
+    if ((t.forestDens || 0) >= INF_FOREST_DENS || t.underCanopy) return (run ? INF_FOREST_RUN : INF_FOREST_SPOT) * gk;
+    if (t.isInBush) return (run ? INF_BUSH_SPOT * 1.6 : INF_BUSH_SPOT) * gk;
+    return Infinity;
+  }
+  // hệ số tầm nhìn của địch tới lính ngoài chỗ trống (dáng thấp, bộ ngụy trang)
+  function infantrySightK(t) {
+    if (infRevealed(t)) return 1;
+    const v = Math.abs(t.speed || 0);
+    let k = t._infLow ? 0.75 : 1;
+    // nằm sấp trong cỏ: người khuất dưới ngọn cỏ, chỉ lộ khi tới gần (cỏ dày nhất còn ~40% tầm nhìn)
+    if (t._infProne && t._infGrass > 0.15) k *= 1 - 0.6 * Math.min(1, t._infGrass);
+    if (t.infGhillie) k *= v < INF_STILL ? INF_GHILLIE.still : v <= INF_RUN ? INF_GHILLIE.walk : INF_GHILLIE.run;
+    return k;
+  }
   const LOS_TTL = 0.25;                        // kết quả kiểm tra đường ngắm giữ 0.25 s (đỡ tốn CPU khi 10v10)
   const losCache = new Map();
 
@@ -104,6 +134,7 @@ const TeamIntel = (() => {
   // Dòng báo trạng thái bụi cho xe người chơi: { html, warn, cover } | null (không ở trong bụi)
   function bushBanner(u) {
     if (!u || u.isDead) return null;
+    if (u.tankType === 'INFANTRY') return u._rideV ? null : infantryBanner(u);
     // lộ do lưỡi ủi đang đẩy đất (game.js updateDig: bụi đất bốc cao + máy gầm) hay do vừa nổ súng
     // (trời mưa: không bụi, chỉ còn tiếng máy)
     const why = (u._digRevealT || 0) > performance.now() ? (u._digRevealWet ? 'ĐANG ỦI ĐẤT (TIẾNG MÁY)' : 'ĐANG ỦI ĐẤT (BỤI + TIẾNG MÁY)') : 'VỪA KHAI HỎA';
@@ -129,6 +160,20 @@ const TeamIntel = (() => {
     return { html: 'ĐANG NÚP BỤI · ĐỊCH CHỈ THẤY XE KHI Ở GẦN', warn: false, cover: true };
   }
 
+  // Dòng trạng thái ẩn nấp của lính người chơi: rừng / bụi / bộ ngụy trang cỏ
+  function infantryBanner(u) {
+    const forest = (u.forestDens || 0) >= INF_FOREST_DENS || u.underCanopy, run = Math.abs(u.speed || 0) > INF_RUN;
+    const where = forest ? 'TRONG RỪNG' : u.isInBush ? 'TRONG BỤI' : u.infGhillie ? 'NGỤY TRANG CỎ' : null;
+    if (!where) return null;
+    if (infRevealed(u)) return { html: `${where} · BỊ LỘ DO VỪA KHAI HỎA`, warn: true, cover: false };
+    if (forest || u.isInBush) return run ? { html: `${where} · ĐANG CHẠY: CÀNH LÁ RUNG, ĐỊCH THẤY XA HƠN`, warn: true, cover: false }
+      : { html: `${where} · ĐỊCH CHỈ THẤY KHI TỚI SÁT${u.infGhillie ? ' (NGỤY TRANG CỎ)' : ''}`, warn: false, cover: false };
+    const v = Math.abs(u.speed || 0);
+    return v < INF_STILL ? { html: 'NGỤY TRANG CỎ · ĐỨNG YÊN: ĐỊCH PHẢI VÀO GẦN HƠN NỬA TẦM MỚI THẤY', warn: false, cover: false }
+      : v <= INF_RUN ? { html: 'NGỤY TRANG CỎ · ĐI CHẬM: VẪN KHÓ THẤY', warn: false, cover: false }
+      : { html: 'NGỤY TRANG CỎ · ĐANG CHẠY: GẦN NHƯ LỘ HẾT', warn: true, cover: false };
+  }
+
   // Thấy trực tiếp: trong tầm nhìn (xe núp bụi: chỉ trong BUSH_SPOT)
   function seesDirect(viewer, t) {
     const dx = t.x - viewer.x, dz = t.z - viewer.z, d = Math.sqrt(dx * dx + dz * dz);
@@ -136,6 +181,11 @@ const TeamIntel = (() => {
     // lưới ngụy trang: phải tới gần hơn mới nhận ra xe đứng yên / chạy chậm
     // đứng cao hơn mục tiêu: nhìn xa hơn (elevK)
     let r = sightRange(viewer) * elevK(viewer, t);
+    // nhìn qua ống ngắm súng bắn tỉa: xa hơn hẳn nhưng chỉ trong góc nhìn của kính (viewer._scope do InfantryMatch đặt)
+    const sc = viewer._scope;
+    if (sc && d > 1 && (dx * sc.dx + dz * sc.dz) / d >= sc.cos) r = Math.max(r, sc.r * (typeof Weather !== 'undefined' ? Weather.sightK() : 1));
+    if (t._inVeh) return false;   // ngồi trong khoang xe: không thấy người
+    if (t.tankType === 'INFANTRY' && !t._rideV) r = Math.min(r * infantrySightK(t), infantryCoverSpot(t));   // ngồi trên xe: lộ cùng xe, không còn nấp
     const bc = bushCover(t);
     if (bc && bc.spot) r = Math.min(r, bc.spot);
     // xe to đứng yên trong bụi: phải vào gần hơn (lưới / lá ngụy trang mạnh hơn thì lấy cái mạnh hơn, không cộng dồn)
@@ -231,12 +281,14 @@ const TeamIntel = (() => {
   // Drone trinh sát của phe đang bay soi thấy xe t (camera nhìn từ trên xuống, báo cho cả phe). Xe trinh sát núp bụi
   // chỉ lộ khi drone ở gần (BUSH_COVER.spot)
   function droneSees(team, t) {
-    if (!game || !game.airDroneList || !t) return false;
+    if (!game || !game.airDroneList || !t || t._inVeh) return false;
     const list = game.airDroneList();
     if (!list.length) return false;
     const bc = bushCover(t);
     let r = bc && bc.spot ? Math.min(DRONE_SIGHT, bc.spot) : DRONE_SIGHT;
     if (t.underCanopy && !((t.revealTimer || 0) > 0)) r = Math.min(r, CANOPY_SPOT);
+    // lính trong rừng / bụi: drone cũng phải bay gần như ngay trên đầu; bộ ngụy trang cỏ đứng yên khó thấy từ trên hơn
+    if (t.tankType === 'INFANTRY' && !t._rideV) r = Math.min(r * (t.infGhillie && !infRevealed(t) && Math.abs(t.speed || 0) < INF_STILL ? 0.5 : 1), infantryCoverSpot(t));
     const io = indoorOf(t);
     if (io && io.roof) r = Math.min(r, ROOF_SPOT);
     for (const dr of list) {
@@ -352,7 +404,8 @@ const TeamIntel = (() => {
     u.radarSweep = next;
     const R = radarRange(u);
     for (const e of units) {
-      if (e.isDead || e.team === u.team) continue;
+      // bộ binh: người quá nhỏ, radar mặt đất không bắt / không khóa được — chỉ thấy bằng mắt / drone
+      if (e.isDead || e.team === u.team || e.tankType === 'INFANTRY') continue;
       const d = Math.hypot(e.x - u.x, e.z - u.z);
       // lưới ngụy trang lá cây + đứng yên: radar chỉ bắt được ở cự ly gần hơn
       const camoK = typeof Equipment !== 'undefined' && Equipment.camoRadarFactor ? Equipment.camoRadarFactor(e) : 1;

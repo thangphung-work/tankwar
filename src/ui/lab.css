@@ -16,7 +16,8 @@ html, body {
   user-select: none;
 }
 
-#view { position: fixed; inset: 0; display: block; outline: none; }
+/* width/height bắt buộc: canvas là phần tử thay thế, inset không kéo giãn được — thiếu thì nó hiện theo cỡ buffer (innerWidth × DPR), lệch khi zoom trình duyệt */
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
 
 /* --------------------------------------------------------------------------
    BẢNG ĐIỀU KHIỂN

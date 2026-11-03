@@ -23,3 +23,7 @@ Ghi chú:
 - gatling_shot là MỘT phát đơn ngắn (game tự ghép thành tràng theo tốc độ bắn).
 - Khoảng cách, hướng trái/phải, hồi âm, độ trễ âm thanh vẫn được áp dụng cho file thật.
 - Mỗi lần phát, cao độ thay đổi ngẫu nhiên vài % để không bị lặp máy móc.
+
+GIỌNG LÍNH BỘ BINH (tuỳ chọn, thiếu thì game tổng hợp): khai trong manifest.json khoá vox_<loại>_<số>, nhiều file mỗi loại càng đỡ lặp.
+Loại: hit (hự ngắn khi trúng nhẹ), hitBad (gào ngắn khi trúng nặng), moan (rên), breath (thở dốc), hiss (rít răng khi tiêm / siết băng), death (nghẹn tắt).
+Ví dụ: { "vox_hit_1": "voice/hit1.ogg", "vox_hit_2": "voice/hit2.ogg", "vox_moan_1": "voice/moan1.ogg" }

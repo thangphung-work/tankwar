@@ -36,10 +36,12 @@ const VehicleDamage = (() => {
     if (opts.heiap && opts.ammo === 'SCOUT_BULLET') return 'SCOUT_HEIAP';
     //  - súng máy 7.62 trạm nóc tháp bay theo hệ đạn 12.7 (SCOUT_BULLET) nhưng là đạn 7.62: độ xuyên riêng
     if (opts.mg762 && opts.ammo === 'SCOUT_BULLET') return 'MG762';
+    //  - súng bắn tỉa chống tăng của lính (infantry_match): bay theo hệ đạn 12.7 nhưng là lõi xuyên giáp cỡ lớn
+    if (opts.atr && opts.ammo === 'SCOUT_BULLET') return 'ATR20';
     return opts.ammo;
   }
   function ammoClass(ammo) {
-    if (ammo === 'SCOUT_BULLET' || ammo === 'SCOUT_INCENDIARY' || ammo === 'MG762') return 'small';
+    if (ammo === 'SCOUT_BULLET' || ammo === 'SCOUT_INCENDIARY' || ammo === 'MG762' || ammo === 'ATR20') return 'small';
     if (ammo === 'GL40') return 'cannon';
     if (ammo === 'GATLING_BULLET' || ammo === 'GATLING_HE' || ammo === 'INCENDIARY') return 'cannon';
     if (ammo === 'AP') return 'kinetic';
@@ -3059,7 +3061,7 @@ const VehicleDamage = (() => {
     return { x: x / 3, y: y / 3 };
   }
   function dentAt(u, mesh, point, normal, R, depth, tear, hit = null) {
-    if (!mesh || !mesh.isMesh || mesh.isInstancedMesh || !normal || mesh.userData.isFxDecal) return;
+    if (!mesh || !mesh.isMesh || mesh.isInstancedMesh || !normal || mesh.userData.isFxDecal || mesh.userData.crewProxy) return;
     const d = state(u);
     d.dents = d.dents || [];
     const key = Math.round(point.x / 2.5) + ',' + Math.round(point.y / 2.5) + ',' + Math.round(point.z / 2.5) + (tear ? 't' : '');
@@ -4461,6 +4463,10 @@ const VehicleDamage = (() => {
     // 7.62mm súng máy trạm nóc tháp (dây đạn thường trộn xuyên giáp): ~1/5 động năng 12.7, thủng ~10-12 mm thép gần,
     // mất xuyên nhanh hơn 12.7. Vỏ trước / sườn xe trinh sát chặn được; nóc, đuôi, thùng xe pháo tự hành thì thủng
     MG762: { mm: 12, loss: 0.6, kind: 'KE', big: false, nonpen: 0.02 },
+    // súng bắn tỉa chống tăng của lính: lõi xuyên giáp vonfram sơ tốc cao (game hoá mạnh hơn đạn 20mm thật). Thủng đuôi /
+    // nóc xe tăng ở mọi cự ly, sườn khi gần; mặt trước chặn được. Mất xuyên chậm (đạn nặng, bắn tỉa xa) — xuyên vào khoang
+    // xe tăng mạnh hơn mảnh 12.7 (postK)
+    ATR20: { mm: 120, loss: 0.03, kind: 'KE', big: false, nonpen: 0.05, postK: { heavy: 1.6, medium: 1.3 } },   // mất ~48% xuyên ở 2 km (16000 đv)
     // lựu 40mm nổ lõm-mảnh (kiểu M430 HEDP ~50-76mm): không mất xuyên theo cự ly. Trước đây tính như đạn 30mm xuyên
     // giáp 110mm -> 16-22 quả vào sườn hạ được xe tăng; nay xe tăng chỉ sợ khi bị bắn đuôi / nóc
     GL40: { mm: 60, loss: 0, kind: 'CE', big: false }
@@ -4516,7 +4522,7 @@ const VehicleDamage = (() => {
     let pen = P.mm * (EQ && !opts.heiap ? EQ.penMul(opts.shooter, opts.ammo) : 1);
     if (P.loss && ctx.range) pen *= Math.max(0.2, 1 - P.loss * (EQ && EQ.penLossMul ? EQ.penLossMul(opts.shooter, opts.ammo) : 1) * ctx.range / 1000);
     // đạn đã xuyên qua vách nhà / thân cây / xe con... trước khi tới xe: mất sức + chao đảo (ballistics penetrateEnv)
-    if (opts.penK > 0 && opts.penK < 1) pen *= opts.penK;
+    if (opts.penK > 0) pen *= opts.penK;
     const ratio = pen / Math.max(1, armor);
     const sizeK = POSTPEN[P.big ? 'big' : 'small'][A.cls] || 1;
     let mul, penetrated = false;

@@ -877,18 +877,10 @@ class MatchmakingController {
       // 2. Thẻ chọn xe tăng (không kích hoạt nếu bấm vào nút xem 3D bên trong)
       const classCard = e.target.closest('.mm-class-card');
       if (classCard && !e.target.closest('.btn-inspect-tank-3d')) {
-        document.querySelectorAll('.mm-class-card').forEach(c => c.classList.remove('active'));
-        classCard.classList.add('active');
         const tankType = classCard.getAttribute('data-tank-type') || 'ALL_ROUNDER';
-        this.selectedTankType = tankType;
-
-        const mySlot = this.slots.find(s => s.isMe);
-        if (mySlot) {
-          mySlot.tankType = tankType;
-          this.renderLobby();
-          this.broadcastRoomUpdate();
-          this.sendMySlotUpdate();
-        }
+        // xe chưa mở khóa: hỏi mua bằng Bạc thay vì chọn
+        if (window.Account && Account.vehicleOpen && !Account.vehicleOpen(tankType)) { Account.promptUnlock(tankType); return; }
+        this.selectTankCard(classCard);
         return;
       }
 
@@ -923,7 +915,31 @@ class MatchmakingController {
     });
 
     this.updateLobbyBackground(this.selectedMapType);
+    this.ensureUnlockedTank();
     this.renderLobby();
+  }
+
+  selectTankCard(card) {
+    document.querySelectorAll('.mm-class-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+    const tankType = card.getAttribute('data-tank-type') || 'ALL_ROUNDER';
+    this.selectedTankType = tankType;
+
+    const mySlot = this.slots.find(s => s.isMe);
+    if (mySlot) {
+      mySlot.tankType = tankType;
+      this.renderLobby();
+      this.broadcastRoomUpdate();
+      this.sendMySlotUpdate();
+    }
+  }
+
+  // Xe đang chọn chưa mở khóa (khách / tài khoản mới / đăng xuất): về xe khởi đầu (Equipment.STARTER_VEHICLE)
+  ensureUnlockedTank() {
+    if (this.state !== 'IDLE' || !window.Account || !Account.vehicleOpen || Account.vehicleOpen(this.selectedTankType)) return;
+    const start = (typeof Equipment !== 'undefined' && Equipment.STARTER_VEHICLE) || 'SCOUT';
+    const card = document.querySelector(`.mm-class-card[data-tank-type="${start}"]`);
+    if (card) this.selectTankCard(card);
   }
 
   // Khởi tạo lớp truyền tin mạng (WebSocket -> BroadcastChannel -> chơi độc lập an toàn cho file://)
@@ -959,6 +975,12 @@ class MatchmakingController {
   // Bộ trang bị mua thêm của mình cho xe đang chọn (null nếu chưa đăng nhập / chưa mua gì)
   myKit(tankType) {
     if (!window.Account || !Account.kitFor) return null;
+    if ((tankType || this.selectedTankType) === 'INFANTRY' && typeof Equipment !== 'undefined' && typeof SoldierPlayer !== 'undefined') {
+      const sq = Equipment.squadSizeOf(id => Account.owns('INFANTRY', id)), L = SoldierPlayer.loadLoadout();
+      const g = Equipment.isFree('ghillie') || Account.owns('INFANTRY', 'ghillie') ? SoldierPlayer.squadGhillie(L).reduce((b, on, i) => b | (on && i < sq ? 1 << i : 0), 0) : 0;   // bộ ngụy trang cỏ: bit theo từng lính
+      const mk = Equipment.isFree('medkit') || Account.owns('INFANTRY', 'medkit') ? SoldierPlayer.squadMedkit(L).reduce((b, on, i) => b | (on && i < sq ? 1 << i : 0), 0) : 0;   // bộ y tế: bit theo từng lính
+      return Object.assign({ m: [], p: [], a: {}, sq, w: SoldierPlayer.squadWeapons(L).slice(0, sq) }, g ? { g } : {}, mk ? { mk } : {});
+    }
     return Account.kitFor(tankType || this.selectedTankType).kit;
   }
   // Ghi bộ trang bị của mình vào slot của mình (chủ phòng gửi đi cùng ROOM_UPDATE / lệnh xuất trận)
@@ -1889,6 +1911,9 @@ class MatchmakingController {
     } else if (tType === 'SCOUT') {
       tankIcon = '<i class="ti ti-radar-2" aria-hidden="true"></i>';
       tankShortName = 'Trinh sát';
+    } else if (tType === 'INFANTRY') {
+      tankIcon = '<i class="ti ti-walk" aria-hidden="true"></i>';
+      tankShortName = 'Bộ binh';
     }
 
     let statusPill = '';

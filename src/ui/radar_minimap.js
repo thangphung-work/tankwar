@@ -210,11 +210,16 @@ const RadarMinimap = (() => {
     }
     // điểm tiếp tế hậu phương 2 phe (supply_depot.js)
     if (typeof SupplyDepot !== 'undefined') SupplyDepot.drawOnMap(ctx, g, toScreen, s, { inside, size: 4.5 });
+    if (g.supplyManager) g.supplyManager.drawFlightsOnMap(ctx, toScreen, { size: 5, width: 1.1, color: C.amber });
     const AD = g.airdrop && !g.airdrop.collected ? g.airdrop : null;
     if (AD && inside(AD.x, AD.z)) {
       const c = toScreen(AD.x, AD.z);
-      ctx.fillStyle = C.amber; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(c.x, c.y, 4.5, 0, TWO_PI); ctx.fill(); ctx.stroke();
+      // ký hiệu theo hàng (đạn dược / trang bị / tiền) — SupplyManager.drawCargoIcon
+      if (g.supplyManager) g.supplyManager.drawCargoIcon(ctx, c.x, c.y, AD.kind, 5);
+      else {
+        ctx.fillStyle = C.amber; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(c.x, c.y, 4.5, 0, TWO_PI); ctx.fill(); ctx.stroke();
+      }
     }
 
     if (g.drawAutoDrivePath) g.drawAutoDrivePath(ctx, toScreen, false);

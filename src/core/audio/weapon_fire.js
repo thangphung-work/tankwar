@@ -161,6 +161,7 @@ SoundEngine.mixin(class {
   playExplosionAtDistance(distance, hitType = 'GROUND', ammoType = 'NORMAL', pos = null, opts = {}) {
     if (!this.ready()) return;
     this._hitMat = (hitType === 'BUILDING' || hitType === 'BOULDER') && opts ? opts.mat : undefined;   // vật liệu tường nhà / vật cản thép -> surfaceHit
+    if (ammoType === 'SCOUT_BULLET' && opts && opts.atr && this.playAtrImpact) { this.playAtrImpact(distance, hitType, pos, opts); return; }   // đạn 20 mm súng bắn tỉa chống tăng
     if (ammoType === 'GATLING_BULLET' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY') {
       this.playGatlingImpact(distance, hitType, ammoType === 'INCENDIARY', pos, ammoType === 'SCOUT_BULLET', opts);   // opts.thin: xe vỏ mỏng
       return;

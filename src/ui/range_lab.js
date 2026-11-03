@@ -630,34 +630,15 @@
   function damageInfantryFromBlast(shell) {
     const inf = lab.infantry;
     if (!inf || !inf.world || !inf.soldiers.length) return;
-    const ammo = shell.ammoType || 'NORMAL';
-    let R = 55;
-    if (ammo === 'HE') R = 140;
-    else if (ammo === 'CLUSTER' || ammo === 'CLUSTER_SUBMUNITION') R = 85;
-    else if (ammo === 'NORMAL' || ammo === 'RPG' || ammo === 'ANTI_TANK_MISSILE') R = 55;
-    else if (ammo === 'INCENDIARY') R = 28;
-    else if (ammo === 'GATLING_BULLET' || ammo === 'SCOUT_BULLET') R = shell.gl40 ? 26 : 10;
-    else if (ammo === 'AP') R = 12;
-
-    const core = R * 0.35;
+    const ammo = shell.ammoType || 'NORMAL', W = SoldierEngine.WOUND;
+    const BP = shell.roofBlast || BallisticsSystem3D.blastProfile(ammo, !!shell.isHeavyArty);
+    const spec = { base: W.blastBase(ammo, shell), radius: BP.radius, core: BP.core };
     let killedCount = 0;
 
     for (const s of inf.soldiers) {
       if (!s.alive) continue;
-      const dx = s.x - shell.x, dz = s.z - shell.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist > R) continue;
       if (Math.abs(s.y - shell.y) > 28) continue;
-
-      const kneelMul = s.intent.stance === 'kneel' ? 0.65 : 1.0;
-      let dmg = 0;
-      if (dist <= core) {
-        dmg = 220;
-      } else {
-        const falloff = 1 - (dist - core) / (R - core);
-        dmg = Math.round(falloff * 130 * kneelMul);
-      }
-      const dead = s.damage(dmg, ammo);
+      const dead = SoldierEngine.applyBlast(s, shell.x, shell.y, shell.z, spec, ammo);
       if (dead) {
         killedCount++;
         inf.kills++;
@@ -684,22 +665,26 @@
       const sh = shells[i];
       if (!sh || sh.shooter !== g.player || sh.dead) continue;
 
+      // quét theo đoạn bay trong khung: đạn tăng đi hơn 10 đv mỗi khung, xét điểm cuối thì bay lọt qua người
+      const x0 = sh._labX === undefined ? sh.x : sh._labX, y0 = sh._labX === undefined ? sh.y : sh._labY, z0 = sh._labX === undefined ? sh.z : sh._labZ;
+      const x1 = sh.x, y1 = sh.y, z1 = sh.z, ux = x1 - x0, uz = z1 - z0, seg2 = ux * ux + uz * uz;
+      sh._labX = x1; sh._labY = y1; sh._labZ = z1;
       for (const s of inf.soldiers) {
         if (!s.alive) continue;
-        const dx = sh.x - s.x, dz = sh.z - s.z;
-        const dH = Math.hypot(dx, dz);
+        const tt = seg2 > 1e-6 ? Math.max(0, Math.min(1, ((s.x - x0) * ux + (s.z - z0) * uz) / seg2)) : 1;
+        const cx = x0 + ux * tt, cz = z0 + uz * tt, cy = y0 + (y1 - y0) * tt;
+        const dH = Math.hypot(cx - s.x, cz - s.z);
         const yTop = s.y + 14 * (s.k || 1);
-        if (dH < 3.2 && sh.y >= s.y - 1 && sh.y <= yTop) {
-          let dmg = 65;
-          if (sh.ammoType === 'GATLING_BULLET') dmg = 120;
-          else if (sh.ammoType === 'AP') dmg = 250;
-          else if (sh.ammoType === 'HE' || sh.ammoType === 'NORMAL') dmg = 300;
-
-          const dead = s.damage(dmg, sh.ammoType);
-          sh.dead = true;
-          sh.life = 0;
-          if (g.handleShellImpact) {
-            g.handleShellImpact(sh, 'DIRECT_HIT', null);
+        if (dH < 3.2 && cy >= s.y - 1 && cy <= yTop) {
+          if (sh.ammoType !== 'AP') { sh.x = cx; sh.y = cy; sh.z = cz; }   // đạn nổ đúng chỗ trúng người
+          const W = SoldierEngine.WOUND, pass = sh.ammoType === 'AP';
+          if (pass && sh._labPass && sh._labPass.has(s)) continue;
+          const dead = s.damage(W.direct(sh.ammoType, sh) * 100, sh.ammoType, { mode: W.deathMode(sh.ammoType, sh), x: sh.x, y: sh.y, z: sh.z, vel: { x: sh.vx || 0, z: sh.vz || 0 }, power: 2 });
+          if (pass) (sh._labPass || (sh._labPass = new Set())).add(s);   // đạn xuyên giáp xuyên qua người rồi bay tiếp
+          else {
+            sh.dead = true;
+            sh.life = 0;
+            if (g.handleShellImpact) g.handleShellImpact(sh, 'DIRECT_HIT', null);
           }
           if (dead) {
             inf.kills++;
