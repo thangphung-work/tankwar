@@ -597,13 +597,17 @@ class BattleTerrain3D {
       const el = 1.25;
       p.sunDir = new THREE.Vector3(Math.cos(el) * Math.sin(sun.azimuth), Math.sin(el), Math.cos(el) * Math.cos(sun.azimuth)).normalize();
     }
-    // màu không khí xa (×fogColor) cho cảnh nền & chân dãy núi chân trời: sa mạc nắng khô -> bụi sáng ấm (lam xám sẫm thành
-    // một vệt xám giữa biển cát và chân núi)
-    BattleTerrain3D.FAR_AIR.value.fromArray(this.mapType === 'DESERT' && !W.rain ? [0.84, 0.84, 0.88] : [0.58, 0.63, 0.71]);
+    // màu không khí xa (×fogColor) cho cảnh nền & chân dãy núi chân trời: sa mạc nắng khô -> bụi cát ấm ngả be (lam xám sẫm
+    // thành một vệt xám giữa biển cát và chân núi; gần trắng 0,84 thì chỗ đất sau cao nguyên bị mặt cắt xa thành dải trắng
+    // phẳng như tuyết / nước dưới chân núi)
+    BattleTerrain3D.FAR_AIR.value.fromArray(this.mapType === 'DESERT' && !W.rain ? [0.8, 0.73, 0.64] : [0.58, 0.63, 0.71]);
     // vành núi chân trời kín 360° (không phải map đảo): dãy núi luôn che mép cắt xa -> cảnh nền chỉ ngả màu không khí xa
     // ~2/3 tới mặt phẳng cắt, giữ vân rừng / đồng. Hoà hẳn 100% thì từ camera cao (UAV, pháo, flycam) đồng bằng xa thành
     // tấm lam xám phẳng lì mép trên thẳng tắp, sáng hơn cả dãy núi phía sau. Map đảo: hướng biển không có núi che -> hoà hẳn.
     // Sa mạc: không khí xa là bụi sáng gần màu trời (không thành tấm sẫm), hoà dở thì lộ mép cắt thẳng giữa cát & trời -> hoà hẳn
+    // đất cảnh nền ở mép cắt xa: map cỏ / rừng hoà về màu sẫm hơn (chân núi xa sẫm ~0,72 lần) — 1,0 thì thành vệt lam nhạt
+    // như hồ nước giữa đồng xa và chân núi; sa mạc giữ 1 (bụi be khớp trời, sẫm đi thành dải nâu sau cao nguyên)
+    BattleTerrain3D.FAR_LAND.value = this.mapType === 'DESERT' && !W.rain ? 1.0 : 0.72;
     const seaRim = this.map && this.map.outer && this.map.outer.sea;
     BattleTerrain3D.FAR_FADE.value.set(6000, seaRim || this.mapType === 'DESERT' ? 8700 : 12000);
     this.atmosphere = p;
@@ -3203,6 +3207,8 @@ BattleTerrain3D.CANOPY_HIDE = 0.6;
 BattleTerrain3D.FAR_FADE = { value: new THREE.Vector2(6000, 8700) };
 // màu không khí xa (nhân fogColor) — đặt theo chiến địa trong applyAtmosphere, dùng chung cảnh nền & dãy núi chân trời
 BattleTerrain3D.FAR_AIR = { value: new THREE.Vector3(0.58, 0.63, 0.71) };
+// độ sáng màu cuối hoà xa của đất cảnh nền (× fogColor·FAR_AIR) — khớp chân dãy núi chân trời; đặt trong applyAtmosphere
+BattleTerrain3D.FAR_LAND = { value: 1.0 };
 BattleTerrain3D.farFadeGLSL = (alpha) => `#ifdef USE_FOG
   {
     float farK = smoothstep(farFade.x, farFade.y, length(vViewPosition));

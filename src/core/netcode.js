@@ -929,6 +929,11 @@
   const SRC_CODE = { DIRECT_HIT: 'D', SHELL: 'S', ZONE: 'Z', WATER: 'W' };
   const SRC_NAME = { D: 'DIRECT_HIT', S: 'SHELL', Z: 'ZONE', W: 'WATER' };
   const F_BUSH = 1, F_ERA = 2, F_GATLING = 4, F_DEAD = 8, F_CAMO = 16, F_CANOPY = 32, F_ROOF = 64;
+  // tư thế lính (đứng / quỳ / nằm) đi kèm góc ngẩng: e = góc x 10 + tư thế x NET_STANCE_E (góc lính trong ±90° nên không lẫn)
+  const NET_STANCE_E = 2000;
+  // vùng trúng của lính trong tin DAMAGE (máy chủ chuyển nguyên tin, không đọc trường này)
+  const ZONE_CODE = { head: 1, plate: 2, chest: 3, belly: 4, arm: 5, leg: 6 }, ZONE_NAME = ['', 'head', 'plate', 'chest', 'belly', 'arm', 'leg'];
+  const netElev = (unit, e) => { if (unit.tankType !== 'INFANTRY') return e / 10; const k = Math.round(e / NET_STANCE_E); unit._netStance = k; return (e - k * NET_STANCE_E) / 10; };
 
   class NetGameSync {
     static attach(game, net, slots) {
@@ -1142,12 +1147,13 @@
       if (victim.netId === undefined) return;
       const src = SRC_CODE[source] || 'S';
       const aid = (attacker && attacker.netId !== undefined) ? attacker.netId : -1;
+      const zc = source === 'DIRECT_HIT' && victim.tankType === 'INFANTRY' && victim._infDeath ? ZONE_CODE[victim._infDeath.zone] || 0 : 0;
       if (res.blocked || res.killed) {
         // Sự kiện quan trọng: gửi ngay (xả phần gộp trước để giữ thứ tự)
         this.flushDamage(victim.netId);
         this.net.send('DAMAGE', {
           v: victim.netId, a: aid, d: Math.round(delta * 1000), s: src,
-          h: Math.round(Math.max(0, victim.hp) * 100), b: res.blocked ? 1 : 0, k: res.killed ? 1 : 0, o: (res.killed && inImpact) ? 1 : 0
+          h: Math.round(Math.max(0, victim.hp) * 100), b: res.blocked ? 1 : 0, k: res.killed ? 1 : 0, o: (res.killed && inImpact) ? 1 : 0, ...(zc ? { z: zc } : {})
         });
         return;
       }
@@ -1157,8 +1163,9 @@
       if (p) {
         p.d += delta;
         p.h = victim.hp;
+        if (zc) p.z = zc;
       } else {
-        this.pendingDamage.set(key, { v: victim.netId, a: aid, s: src, d: delta, h: victim.hp });
+        this.pendingDamage.set(key, { v: victim.netId, a: aid, s: src, d: delta, h: victim.hp, z: zc });
       }
     }
 
@@ -1170,7 +1177,7 @@
         if (onlyVictim !== undefined && p.v !== onlyVictim) return;
         done.push(key);
         if (p.d <= 0) return;
-        this.net.send('DAMAGE', { v: p.v, a: p.a, d: Math.round(p.d * 1000), s: p.s, h: Math.round(Math.max(0, p.h) * 100) });
+        this.net.send('DAMAGE', { v: p.v, a: p.a, d: Math.round(p.d * 1000), s: p.s, h: Math.round(Math.max(0, p.h) * 100), ...(p.z ? { z: p.z } : {}) });
       });
       done.forEach(k => this.pendingDamage.delete(k));
     }
@@ -1187,6 +1194,7 @@
       const orig = victim.__netOrigTakeDamage || (global.SPGUnit3D && global.SPGUnit3D.prototype.takeDamage);
       if (!orig) return;
       const source = SRC_NAME[d.s] || 'SHELL';
+      if (d.z && victim.tankType === 'INFANTRY') victim._infDeath = Object.assign({}, victim._infDeath, { zone: ZONE_NAME[d.z] });   // lính của máy này trúng đạn máy khác: chảy máu / khập khiễng đúng vùng
       const savedInv = victim.invulnerableTimer;
       let res = null;
       this._applyingRemote = true;
@@ -1474,7 +1482,7 @@
         z: Math.round(u.z * 10),
         b: Math.round(wrapPi(u.bodyAngle || 0) * 1000),  // 0.001 rad (~0.06°)
         a: Math.round(norm360(u.azimuth || 0) * 10),     // 0.1°
-        e: Math.round((u.elevation || 0) * 10),          // 0.1°
+        e: Math.round((u.elevation || 0) * 10) + (u.tankType === 'INFANTRY' ? NET_STANCE_E * (u._infStance || 0) : 0),   // 0.1°; lính: + tư thế x 2000 (0 đứng, 1 quỳ, 2 nằm)
         s: Math.round((u.speed || 0) * 10),
         h: Math.round(Math.max(0, u.hp || 0) * 100),
         f: f,
@@ -1520,7 +1528,7 @@
         const q = Object.assign({}, base || {}, e);
         this.known[idx] = q;
         this.applyFlags(unit, q, ts);
-        this.buffers[idx].push({ t: ts, x: q.x / 10, z: q.z / 10, b: q.b / 1000, a: q.a / 10, e: q.e / 10, s: q.s / 10 });
+        this.buffers[idx].push({ t: ts, x: q.x / 10, z: q.z / 10, b: q.b / 1000, a: q.a / 10, e: netElev(unit, q.e), s: q.s / 10 });
       }
     }
 
@@ -1540,7 +1548,7 @@
         let ts = e.ts;
         if (typeof ts !== 'number' || Math.abs(now - ts) > 1500) ts = now - (this.net.latency || 0);
         this.applyFlags(unit, q, ts);
-        this.buffers[idx].push({ t: ts, x: q.x / 10, z: q.z / 10, b: q.b / 1000, a: q.a / 10, e: q.e / 10, s: q.s / 10 });
+        this.buffers[idx].push({ t: ts, x: q.x / 10, z: q.z / 10, b: q.b / 1000, a: q.a / 10, e: netElev(unit, q.e), s: q.s / 10 });
       }
     }
 

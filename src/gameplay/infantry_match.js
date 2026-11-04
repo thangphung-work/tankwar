@@ -14,6 +14,7 @@ const InfantryMatch = (() => {
   // trên xe (đo từ khớp lính, y tính từ mặt ngồi, -Z = trước mặt): ngồi thì chân thòng xuống + duỗi tới trước, ngắm thì quỳ trên sàn
   const BOX_SIT = { minX: -3.2, maxX: 3.2, minY: -3.5, maxY: 10.4, minZ: -4.5, maxZ: 3.2 };
   const BOX_KNEEL = { minX: -3.2, maxX: 3.2, minY: 0, maxY: 11.2, minZ: -4.6, maxZ: 3.2 };
+  const SHOT_AIM_PRONE_S = 7;                 // súng bắn tỉa: nằm xuống mất 1 giây, giữ nằm giữa các phát thay vì đứng dậy rồi lại nằm
   const SHOT_AIM_S = 1.6;                     // lính máy khác giữ súng trên vai bấy nhiêu giây sau phát bắn
   // luồng nổ đầu nòng pháo xe: R tầm tới (đv), inner sát nòng (mạnh nhất), base sát thương phía trước nòng (máu tối đa của lính = 1)
   const MUZZLE_BLAST = { ALL_ROUNDER: { R: 56, inner: 14, base: 1.3 }, ARTILLERY: { R: 76, inner: 18, base: 1.6 }, GATLING: { R: 20, inner: 6, base: 0.05 } };
@@ -31,7 +32,24 @@ const InfantryMatch = (() => {
     gather: 120,      // đồng đội cách xe trong tầm này chạy theo lên cùng
     resendS: 2
   };
-  const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyR', 'KeyC', 'Space', 'Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4', 'KeyQ', 'KeyE', 'KeyF', 'KeyT', 'KeyG', 'KeyB', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+  // dấu bắn trúng: màu, giây hiện, cỡ, ưu tiên (phát nhẹ không đè dấu nặng đang hiện), chữ dưới dấu
+  const MARK = {
+    splash: { c: '#d8d8cc', t: 0.16, k: 0.75, p: 0 },
+    hit: { c: '#f4f4ea', t: 0.18, k: 1, p: 1 },
+    plate: { c: '#9fc4e8', t: 0.22, k: 1, p: 1, txt: 'TRÚNG TẤM GIÁP' },
+    armor: { c: '#a8aeb4', t: 0.55, k: 0.85, p: 1, txt: 'KHÔNG XUYÊN' },
+    pen: { c: '#ffb040', t: 0.6, k: 1.15, p: 2, txt: 'XUYÊN GIÁP' },
+    head: { c: '#ff5a40', t: 0.35, k: 1.2, p: 3 },
+    kill: { c: '#ff3a28', t: 0.75, k: 1.45, p: 4, txt: 'HẠ GỤC' }
+  };
+  // chỉ báo trúng đạn: giây tắt dần, gộp cùng hướng (rad), bán kính vòng (phần chiều cao màn hình), viền đỏ khi máu dưới low
+  const HURT = { fade: 2.4, merge: 0.5, R: 0.21, n: 4, flashTau: 0.55, low: 0.5, lowOp: 0.8 };
+  // mặt cung chỉ hướng (điểm ảnh CSS): cỡ canvas, nửa chiều dài cung, khe giữa, nhịp vạch khắc; giây thu vòng lúc mới hiện
+  const ARC = { w: 250, h: 72, half: 80, gap: 13, tick: 16, inS: 0.16, inK: 0.14 };
+  // đạn sượt qua: tầm nghe (đv). Vận tốc đạn của game đã quy đổi nên không so được với tốc độ âm thanh: chọn tiếng theo loại đạn
+  const NEAR = { small: 64, big: 110 };
+  const SMALL_AMMO = new Set(['SCOUT_BULLET', 'SCOUT_INCENDIARY', 'GATLING_BULLET', 'GATLING_HE', 'INCENDIARY']), SLOW_AMMO = new Set(['RPG', 'ANTI_TANK_MISSILE']);
+  const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyR', 'KeyC', 'KeyX', 'Space', 'Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4', 'KeyQ', 'KeyE', 'KeyF', 'KeyT', 'KeyG', 'KeyB', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
   const CSS = `
     body.inf-mode #ammo-selector, body.inf-mode #fire-btn, body.inf-mode #target-lock-stat-box, body.inf-mode .hx-speed { display: none !important; }
     #inf-hud { position: absolute; inset: 0; pointer-events: none; color: #e8ecef; font: 600 13px/1.35 system-ui, sans-serif; text-shadow: 0 1px 2px #000; }
@@ -50,10 +68,26 @@ const InfantryMatch = (() => {
     #inf-heal.on { animation: inf-heal 1.2s ease-out; }
     @keyframes inf-heal { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
     #inf-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); padding: 5px 12px; background: rgba(10, 14, 18, .62); border-radius: 6px; }
+    #inf-fb { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 961; }
+    #inf-fb canvas { position: absolute; opacity: 0; }
+    #inf-fb .vig { left: 0; top: 0; width: 100%; height: 100%; }
+    #inf-fb .arc { left: 50%; top: 50%; }
+    #inf-fb .brg { position: absolute; left: 50%; top: 50%; opacity: 0; font: 600 11px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: .08em; font-variant-numeric: tabular-nums; color: #ff8a6a; text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000; white-space: nowrap; }
+    #inf-mark { position: absolute; left: 50%; top: 50%; display: none; }
+    #inf-mark i { position: absolute; left: -1.5px; top: -17px; width: 3px; height: 10px; outline: 1px solid rgba(0, 0, 0, .55); }
+    #inf-mark i:nth-child(1) { transform: rotate(45deg); transform-origin: 1.5px 17px; }
+    #inf-mark i:nth-child(2) { transform: rotate(135deg); transform-origin: 1.5px 17px; }
+    #inf-mark i:nth-child(3) { transform: rotate(225deg); transform-origin: 1.5px 17px; }
+    #inf-mark i:nth-child(4) { transform: rotate(315deg); transform-origin: 1.5px 17px; }
+    #inf-marktxt { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); display: none; font: 700 12px/1 system-ui, sans-serif; letter-spacing: .06em; text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000; white-space: nowrap; }
   `;
 
   // Sát thương (máu tối đa của lính = 1): bảng chung ở SoldierEngine.WOUND
-  const directDamage = (shell, ammoType) => SoldierEngine.WOUND.direct(ammoType, shell);
+  const directDamage = (shell, ammoType) => {
+    const d = SoldierEngine.WOUND.direct(ammoType, shell);
+    if (typeof window !== 'undefined' && window.devLog) window.devLog('hit', 'lính trúng ' + (shell._infZone || '?') + ' | đạn ' + (shell.aaMG ? '7,62' : shell.gl40 ? 'lựu 40' : ammoType) + ' | sát thương ' + d.toFixed(2));
+    return d;
+  };
   const splashDamage = (base, unit, shell) => Math.round(base * SoldierEngine.WOUND.blastMul(!!unit._infLow, shell) * 1000) / 1000;
   const deathMode = (shell, ammoType) => SoldierEngine.WOUND.deathMode(ammoType, shell);
 
@@ -86,6 +120,16 @@ const InfantryMatch = (() => {
     if (e.terrain && SoldierEngine.walkIndex) SoldierEngine.walkIndex(e.terrain);   // bảng mặt đi được (~150 ms): dựng lúc chờ, không phải lúc vào trận
     const gear = gearOf(e.isMe || e.squadOf, e.opts.infGhillie, L, e.opts.infMedkit);
     const F = SoldierModel.buildFigure(e.opts.team, { role: 'infantry', weapon: weaponOf(e.opts.infWeapon, e.isMe, L), renderOrder: 2, ...(gear ? { gear } : {}) });
+    // giữ hình lại trong nhóm (ẩn) của đơn vị dựng sẵn để game.warmGpuUploads vẽ thử một lượt: GPU dựng sẵn shader + định dạng đỉnh
+    // của mọi bậc chi tiết (vẽ lần đầu trong trận mất tới vài giây: getProgramParameter / vertexAttribPointer). Vào trận thì gỡ ra
+    if (e.unit && e.unit.group) {
+      if (F.lod) { for (const L of F.lod.levels) for (const m of L) m.visible = true; if (F.lod.caster) F.lod.caster.visible = true; }
+      if (SoldierModel.setShadow) SoldierModel.setShadow(F, true);   // lượt bóng làm nóng biên dịch luôn chương trình độ sâu có xương
+      F.root.position.set(0, -SoldierModel.FOOT_Y, 0);
+      e.unit.group.add(F.root);
+      e.unit._preFig = F;
+      return;
+    }
     F.root.traverse(o => { if (o.isSkinnedMesh && !o.geometry.userData.shared) o.geometry.dispose(); });
   }
 
@@ -120,6 +164,7 @@ const InfantryMatch = (() => {
       this.world.fireBullet = () => {};   // đạn thật của trận đi qua fireGuard / fireLive, không dùng đạn riêng của engine
       const biome = game.terrain && game.terrain.mapType;
       if (biome && SoldierModel.setBiome) SoldierModel.setBiome(biome);
+      for (const u of game.units) if (u._preFig) { const R = u._preFig.root; if (R.parent) R.parent.remove(R); u._preFig = null; }   // hình làm nóng GPU lúc chờ
       for (const u of game.units) {
         if (u.tankType !== TYPE) continue;
         const weapon = weaponOf(u.infWeapon, u === game.player, this.loadout);
@@ -237,7 +282,7 @@ const InfantryMatch = (() => {
       if (dig) { if (down && !e.repeat) this.switchTo(dig[1] - 1); return; }
       if (e.code === 'Backquote') { if (down && !e.repeat) this.callAll(); return; }
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft'].includes(e.code)) { C.keys[e.code] = down; return; }
-      if ((e.code === 'KeyR' || e.code === 'KeyC') && !e.repeat && this.me.s.alive) C.key(e.code, down);
+      if ((e.code === 'KeyR' || e.code === 'KeyC' || e.code === 'KeyX') && !e.repeat && this.me.s.alive) C.key(e.code, down);
     }
 
     // ----- BỘ Y TẾ -----
@@ -283,6 +328,8 @@ const InfantryMatch = (() => {
       u._infDeath = null;
       P.s._bkAmt = 1; P.s._bkHold = 0.4;   // khựng người (động tác phanh của engine)
       if (!P.s.ride && (shoveX || shoveZ)) P.shove = { x: shoveX, z: shoveZ, t: 0.25 };
+      // nguồn 'BURN' không tính là trúng đạn mới nên stepHurt không thấy: báo hướng ở đây
+      if (P === this.me) this.noteHurt(death && death.x != null ? { x: death.x, z: death.z } : shoveX || shoveZ ? { x: P.s.x - shoveX * 10, z: P.s.z - shoveZ * 10 } : null, dmg, !!(death && death.mode === 'blast'));
       const now = performance.now();   // súng 6 nòng gây sát thương từng viên: không báo dồn dập
       if (P === this.me && G.addCombatLog && now - (this._hurtLogAt || -1e9) > 2000) { this._hurtLogAt = now; G.addCombatLog('[[alert-triangle]] ' + why, 'alert'); }
     }
@@ -579,7 +626,7 @@ const InfantryMatch = (() => {
       cg.getWorldQuaternion(q); q2.setFromAxisAngle(up, R.rel);
       s.root.quaternion.copy(q).multiply(q2);
       P.u.x = s.x; P.u.y = s.y; P.u.z = s.z; P.u.bodyAngle = s.heading;
-      P.u._shBox = R.dir > 0 && k >= 1 ? (F.seated ? BOX_SIT : BOX_KNEEL) : BOX;
+      this.hitBox(P);
       if (!R.inside) this.contactOf(P).visible = R.dir > 0 && k > 0.9 && !(R.duck > 0.1);
     }
     lateUpdate() {
@@ -625,6 +672,7 @@ const InfantryMatch = (() => {
       P.s.setGuard(false);
       P.called = false; P.boardV = null; P.run = null;
       this.me = P;
+      P.hitSeen = P.u._lastHitAt;   // vết thương lúc chưa điều khiển lính này không báo lại
       this.game.switchPlayerUnit(P.u);
       C.enter(P.s);
       C.keys = keys;
@@ -795,13 +843,119 @@ const InfantryMatch = (() => {
       }
     }
 
-    markHit() { if (this.ctl) this.ctl.hitT = 0.14; }
+    // ----- PHẢN HỒI CHIẾN ĐẤU: đạn mình trúng, mình trúng đạn, đạn sượt qua -----
+    // kind: bảng MARK. Gọi từ game.js khi đạn của người chơi trúng địch
+    markHit(kind = 'hit') {
+      const D = MARK[kind];
+      if (!D || !this.ctl) return;
+      const M = this._mk;
+      if (!(M && M.t > 0 && MARK[M.kind].p > D.p)) this._mk = { kind, t: D.t, fresh: true };
+      const SE = window.soundEngine;
+      if (SE && SE.playHitMark) SE.playHitMark(kind);
+    }
+    // from: điểm nguồn (toạ độ thế giới) hoặc null nếu không rõ hướng; amt: phần máu vừa mất; blast: vụ nổ chứ không phải đạn thẳng (ghi cạnh số phương vị)
+    noteHurt(from, amt, blast) {
+      this._hurtK = Math.max(this._hurtK || 0, Math.min(1, 0.4 + amt * 1.2));
+      if (!from || !this.$arcs) return;
+      const M = this.me.s, ang = Math.atan2(from.x - M.x, from.z - M.z);
+      let A = this.$arcs.find(q => q.t > 0 && Math.abs(Math.atan2(Math.sin(q.ang - ang), Math.cos(q.ang - ang))) < HURT.merge);
+      if (!A) A = this.$arcs.reduce((a, b) => (b.t < a.t ? b : a));
+      A.x = from.x; A.z = from.z; A.ang = ang; A.t = HURT.fade;
+      // phương vị la bàn như thước trên cùng màn hình (bắc = -z), đọc được ngay để báo đồng đội
+      A.lb.textContent = String(Math.round(((Math.atan2(from.x - M.x, -(from.z - M.z)) * 180 / Math.PI) + 360) % 360) % 360).padStart(3, '0') + '°' + (blast ? ' · NỔ' : '');
+    }
+    // chạy trước syncIn (syncIn dùng hết u._infDeath). Trúng đạn thật có u._lastHitAt mới, cả tin DAMAGE từ máy khác; chảy máu / cháy thì không
+    stepHurt() {
+      const M = this.me;
+      if (!M) return;
+      const u = M.u, at = u._lastHitAt, amt = Math.max(0, ((M.hpSeen === undefined ? u.hp : M.hpSeen) - u.hp) / (u.maxHp || 1));
+      M.hpSeen = u.hp;
+      if (at === M.hitSeen) return;
+      M.hitSeen = at;
+      const D = u._infDeath, A = u._lastAttacker, vl = D && D.vel ? Math.hypot(D.vel.x, D.vel.z) : 0, blast = !!(D && D.mode === 'blast' && D.x != null);
+      let from = null;
+      if (blast && Math.hypot(D.x - u.x, D.z - u.z) > 6) from = { x: D.x, z: D.z };
+      else if (vl > 1) from = { x: u.x - D.vel.x / vl * 400, z: u.z - D.vel.z / vl * 400 };   // ngược hướng đạn bay
+      else if (A && A !== u && performance.now() - (u._lastAttackerAt || -1e9) < 1500) from = { x: A.x, z: A.z };
+      this.noteHurt(from, amt, blast && from && from.x === D.x);
+      const SE = window.soundEngine;
+      if (!blast && SE && SE.playSelfHit) SE.playSelfHit(D && D.zone === 'plate' ? 'plate' : 'flesh');
+    }
+    // đạn địch bay ngang người: tìm điểm gần nhất trên đoạn đạn vừa đi trong khung này. Đạn bay qua trọn một khung nên không dò theo điểm đầu mút
+    // (khung đầu thấy viên đạn: lùi theo vận tốc, viên bắn từ gần có thể đã bay qua người ngay trong khung đó)
+    stepNearMiss(dt) {
+      const M = this.me, B = this.game.ballistics, SE = window.soundEngine, cam = this.game.camera;
+      if (!M || !B || !B.activeShells || !SE || !SE.playBulletNear || M.u.isDead || M.u._inVeh) return;
+      const S = M.s, px = S.x, py = S.y + 10, pz = S.z, e = cam.matrixWorld.elements;
+      for (const sh of B.activeShells) {
+        const first = sh._nmX === undefined, ax = first ? sh.x - (sh.vx || 0) * dt : sh._nmX, ay = first ? sh.y - (sh.vy || 0) * dt : sh._nmY, az = first ? sh.z - (sh.vz || 0) * dt : sh._nmZ;
+        sh._nmX = sh.x; sh._nmY = sh.y; sh._nmZ = sh.z;
+        if (sh._nmDone || sh.shooterId === M.u.id || sh.shooterTeam === S.team || sh.isHeavyArty || sh.whistleSnd) continue;
+        const dx = sh.x - ax, dy = sh.y - ay, dz = sh.z - az, L2 = dx * dx + dy * dy + dz * dz;
+        if (L2 < 1e-4) continue;
+        const t = ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / L2;
+        if (t >= 1) { sh._nmNear = true; continue; }      // còn đang bay tới
+        if (t <= 0 && !sh._nmNear) { sh._nmDone = true; continue; }   // đã đi xa dần từ đầu: không ngang qua
+        sh._nmDone = true;
+        const k = Math.max(0, t), cx = ax + dx * k - px, cy = ay + dy * k - py, cz = az + dz * k - pz, d = Math.hypot(cx, cy, cz);
+        const slow = !!sh.gl40 || !!sh.guide || SLOW_AMMO.has(sh.ammoType), small = !slow && (!!sh.isGatling || SMALL_AMMO.has(sh.ammoType)), R = small ? NEAR.small : NEAR.big;
+        if (d > R) continue;
+        const dh = Math.hypot(cx, cz), pan = dh > 1 ? Math.max(-0.85, Math.min(0.85, (cx * e[0] + cz * e[2]) / dh)) : 0;
+        const kind = slow ? 'whoosh' : small ? 'crack' : 'shell';
+        SE.playBulletNear(kind, 1 - d / R, pan);
+      }
+    }
+    // vẽ dấu + chỉ báo: chỉ đụng DOM khi giá trị đổi đáng kể (hoạt ảnh CSS / bóng mờ làm Chrome dịch shader giữa trận, xem warmSightOverlay ở game.js)
+    drawFeedback(dt) {
+      if (!this.$fb) return;
+      const G = this.game, u = this.me.u, cam = G.camera;
+      const M = this._mk, E = this.$mark, T = this.$markTxt;
+      if (M && M.t > 0) {
+        const D = MARK[M.kind];
+        if (M.fresh) {
+          M.fresh = false;
+          E.style.display = 'block';
+          for (const i of this.$markI) i.style.background = D.c;
+          T.style.color = D.c; T.textContent = D.txt || ''; T.style.display = D.txt ? 'block' : 'none';
+        }
+        const a = M.t / D.t, pop = 1 + 0.35 * Math.max(0, a - 0.72) / 0.28;   // nở nhanh rồi về cỡ thật
+        E.style.transform = 'scale(' + (D.k * pop).toFixed(3) + ')';
+        const op = Math.min(1, a * 2.2).toFixed(2);
+        E.style.opacity = op; T.style.opacity = op;
+        M.t -= dt;
+      } else if (M) { this._mk = null; E.style.display = 'none'; T.style.display = 'none'; }
+      this._hurtK = Math.max(0, (this._hurtK || 0) * Math.exp(-dt / HURT.flashTau) - dt * 0.02);
+      const hp = u.isDead ? 1 : u.hp / (u.maxHp || 1), low = hp < HURT.low ? (HURT.low - hp) / HURT.low * HURT.lowOp : 0;
+      this._fbWarm = Math.max(0, (this._fbWarm || 0) - dt);
+      const warm = this._fbWarm > 0 ? 0.01 : 0, vo = Math.max(this._hurtK, low, warm);
+      if (Math.abs(vo - this._vigOp) > 0.008 || (vo === 0 && this._vigOp !== 0)) { this._vigOp = vo; this.$vig.style.opacity = vo.toFixed(3); }
+      const e = cam.matrixWorld.elements, H = window.innerHeight * HURT.R, fx = -e[8], fz = -e[10], rx = e[0], rz = e[2];
+      // cung đồng tâm với tâm ngắm: bán kính đổi theo cỡ cửa sổ thì vẽ lại
+      if (Math.abs(H - this._arcR) > 4) { this._arcR = H; for (const A of this.$arcs) this.drawArc(A.el); }
+      for (const A of this.$arcs) {
+        if (A.t > 0) {
+          A.t -= dt;
+          const dx = A.x - cam.position.x, dz = A.z - cam.position.z, th = Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
+          const k = Math.min(1, (HURT.fade - A.t) / ARC.inS), Rn = H * (1 + ARC.inK * (1 - k)), op = (Math.min(1, A.t / (HURT.fade * 0.45)) * (0.3 + 0.7 * k)).toFixed(2);   // thu vào vòng lúc mới hiện
+          A.el.style.transform = 'rotate(' + th.toFixed(3) + 'rad) translateY(' + (-Rn).toFixed(1) + 'px)';
+          A.el.style.opacity = op;
+          // số phương vị luôn đứng thẳng, nằm ngoài cung
+          A.lb.style.transform = 'translate(-50%, -50%) translate(' + (Math.sin(th) * (Rn + 40)).toFixed(1) + 'px, ' + (-Math.cos(th) * (Rn + 40)).toFixed(1) + 'px)';
+          A.lb.style.opacity = op;
+          A.on = true;
+        } else if (A.on || (A.warm && !warm)) { A.on = false; A.warm = false; A.el.style.opacity = '0'; A.lb.style.opacity = '0'; }
+        else if (warm && !A.warm) { A.warm = true; A.el.style.opacity = '0.01'; }
+      }
+    }
 
     // ----- mỗi khung, trước khi cập nhật các đơn vị -----
     update(dt) {
       const G = this.game;
       this.veh.length = 0;
       for (const u of G.units) if (u.tankType !== TYPE && !u.isDead && u.group) this.veh.push(u);
+      this.stepHurt();
+      this.stepNearMiss(dt);
+      this.drawFeedback(dt);
       for (const P of this.pairs) this.syncIn(P, dt);
       for (const P of this.mine) if (P.called && !P.s.ride && !P.s.intent.target && !P.s._orders.length) { P.called = false; this.standGuard(P); }
       this.stepAmmoRuns(dt);
@@ -870,7 +1024,7 @@ const InfantryMatch = (() => {
         if (SoldierEngine.RESERVE[s.weapon] !== undefined) { s.arms.res = SoldierEngine.RESERVE[s.weapon]; s.arms.mag = s.arms.def.mag; }
         if (P === this.me) { s.intent.stance = 'stand'; this.ctl.yaw = u.bodyAngle; this.ctl.pitch = 0; this.ctl.aimK = 0; }
       }
-      if (u._infDeath) s._woundFrom = u._infDeath;   // điểm nổ / hướng đạn của phát vừa trúng: chọn bên bị thương (stepWound)
+      if (u._infDeath) { s._woundFrom = u._infDeath; u._infDeath = null; }   // dùng một lần: phát sau không có vùng (nổ lan, cháy) thì không mượn vùng cũ   // điểm nổ / hướng đạn của phát vừa trúng: chọn bên bị thương (stepWound)
       s.hp = u.hp / u.maxHp * 100;
       // nằm trong cỏ: thân người khuất sau ngọn cỏ (TeamIntel); xạ thủ nằm lâu đè rạp cỏ chỗ nằm và dọn một vệt trước nòng để kính không bị cỏ che
       const pr = (s.figure._proneK || 0) > 0.9;
@@ -889,23 +1043,44 @@ const InfantryMatch = (() => {
         }
       } else if (!pr) P._flat = null;
       if (this.mine.includes(P)) { u._infLow = s.intent.stance === 'kneel' || (s.figure._proneK || 0) > 0.5; return; }
+      // tư thế lính máy khác theo mạng (quỳ / nằm): máy này bắn trúng đúng hình người đang thấy, nổ lan tính đúng người thấp
+      const ns = this.owned(u) ? null : u._netStance;
+      if (ns != null) {
+        const want = ns === 1 ? 'kneel' : ns === 2 ? 'prone' : 'stand';   // máy chủ quyền báo tư thế: quỳ / nằm (mọi súng) / đứng
+        if (s.intent.stance !== want) s.setStance(want);
+        u._infLow = ns > 0;
+      }
       // lính của máy khác: đi theo vị trí mạng, xa quá (hồi sinh, mất gói) thì nhảy tới luôn
       const D = s.intent.drive, dx = u.x - s.x, dz = u.z - s.z, d = Math.hypot(dx, dz);
       if (s.ride) { D.x = D.z = 0; }
       else if (d > 160) { s.x = u.x; s.z = u.z; D.x = D.z = 0; }
       else if (d > 3) { D.x = dx / d; D.z = dz / d; D.gait = Math.abs(u.speed || 0) > 30 || d > 40 ? 'run' : 'walk'; }
       else { D.x = D.z = 0; }
-      const firing = performance.now() - (u._infShotAt || -1e9) < SHOT_AIM_S * 1000;
+      const firing = performance.now() - (u._infShotAt || -1e9) < (s.arms.def.prone ? SHOT_AIM_PRONE_S : SHOT_AIM_S) * 1000 || (ns === 2 && s.arms.def.prone);   // máy chủ quyền báo đang nằm: nằm theo
       D.face = firing ? -(u.azimuth || 0) * Math.PI / 180 : (D.x || D.z) ? null : s.heading;
       const F = s.figure, k = F.aimBlend || 0, next = k + ((firing ? 1 : 0) - k) * 0.15;
       F.aimBlend = next > 0.005 ? next : 0;
       F.aimPitch = (u.elevation || 0) * Math.PI / 180 * F.aimBlend;
     }
 
+    // vùng trúng đạn theo hình người thật: hộp lọc của ballistics (u._shBox) ôm sát các viên thuốc của tư thế hiện tại (đứng / quỳ / nằm / ngồi xe),
+    // trong hộp thì dò từng viên (u._infHit). Máy bắn tính trúng nên mọi máy đều dựng cho mọi lính (cả lính máy khác, đã theo tư thế mạng)
+    hitBox(P) {
+      const { u, s } = P;
+      if (u.isDead || !s.alive || s._gone) return;
+      u._shBox = SoldierModel.hitAABB(s.figure, u.x, u.y || 0, u.z, u.bodyAngle || 0, 0.6, P._box || (P._box = {}));
+      u._shBoxGroup = u.group;
+      if (!u._infHit) u._infHit = (x0, y0, z0, x1, y1, z1) => { const S = P.s; return S && S.alive && !S._gone && !u.isDead ? SoldierModel.segHit(S.figure, x0, y0, z0, x1, y1, z1) : null; };
+    }
+    owned(u) { const N = this.game.netSync; return !N || N.detached || !N.owns || N.owns(u); }
+
     syncOut(P) {
       const { u, s } = P;
       s.root.visible = !s._gone && (u.isDead || !u.group || u.group.visible);
       if (s.ride) this.placeRider(P);
+      // tư thế gửi qua mạng (netcode ghép vào góc ngẩng): 0 đứng, 1 quỳ, 2 nằm
+      if (!u.isDead && this.owned(u)) u._infStance = s.intent.stance === 'prone' || (s.figure._proneK || 0) > 0.5 ? 2 : s.intent.stance === 'kneel' ? 1 : 0;
+      this.hitBox(P);
       if (u.isDead || !this.mine.includes(P)) return;
       u.x = s.x; u.z = s.z; u.y = s.y; u.bodyAngle = s.heading; u.speed = s.speed;
       if (P !== this.me) { u.azimuth = ((-s.heading * 180 / Math.PI) % 360 + 360) % 360; return; }
@@ -933,7 +1108,27 @@ const InfantryMatch = (() => {
       if (!this.me || !this.ctl || this.game._sight) return false;   // màn hình UAV cảm tử: camera mũi UAV
       this.ctl.placeCamera();
       for (const P of this.mine) P.u._scope = P === this.me ? this.ctl.scopeCone() : null;
+      this.placeViewFocus();
       return true;
+    }
+
+    // Camera lính chiếm quyền nên game bỏ qua phần bám camera của xe: khung bóng đổ đứng yên ở cỡ lớn nhất (±900, ~225 m) vẽ
+    // lại cả dãy nhà + xe đỗ cho bóng mỗi khung, tâm cỏ 3D / chọn vật đổ bóng (_viewFocus) kẹt ở chỗ cũ. Đặt lại theo tầm mắt người:
+    // nhìn thường ±360 phía trước (~45 m, bóng xa hơn chìm trong cảnh, texel ~4 cm), soi kính thì khung trượt ra theo cự ly nhìn
+    placeViewFocus() {
+      const G = this.game, cam = G.camera;
+      if (!G.placeSunShadow || !cam) return;
+      const e = cam.matrixWorld.elements;
+      let fx = -e[8], fz = -e[10];
+      const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
+      const zoom = Math.max(1, (this.fov0 || 55) / Math.max(1, cam.fov || 55));
+      const S = this._vf || (this._vf = { half: 360, d: 220 });
+      const half = Math.min(720, 360 * Math.sqrt(zoom)), d = Math.min(2400, 220 * zoom);
+      S.half += (half - S.half) * 0.15; S.d += (d - S.d) * 0.15;
+      const H = Math.ceil(S.half / 20) * 20, cx = cam.position.x + fx * S.d, cz = cam.position.z + fz * S.d;
+      const y = G.terrain && G.terrain.getElevationAt ? G.terrain.getElevationAt(cx, cz) : cam.position.y;
+      G.placeSunShadow(cx, y, cz, H, 1600);
+      G._viewFocus = { x: cx, z: cz, gx: cam.position.x + fx * Math.min(S.d, 600), gz: cam.position.z + fz * Math.min(S.d, 600) };
     }
 
     // ----- HUD -----
@@ -945,9 +1140,68 @@ const InfantryMatch = (() => {
       const el = this.hudEl = document.createElement('div');
       el.id = 'inf-hud';
       el.innerHTML = '<div id="inf-heal"></div><div id="inf-cross"><i></i><i></i><i></i><i></i></div><div id="inf-msg"></div>'
-        + '<div id="inf-panel"><div id="inf-ammo"></div><div id="inf-keys">W A S D đi · Shift chạy · chuột phải ngắm (Shift: nín thở, lăn chuột: kính / thước ngắm) · chuột trái bắn / phóng UAV · R nạp · C quỳ · E bộ y tế · F lên / xuống xe · 1 2 3 4 đổi lính · ` gọi cả tổ</div></div>';
+        + '<div id="inf-panel"><div id="inf-ammo"></div><div id="inf-keys">W A S D đi · Shift chạy · chuột phải ngắm (Shift: nín thở, lăn chuột: kính / thước ngắm) · chuột trái bắn / phóng UAV · R nạp · C quỳ · X nằm · E bộ y tế · F lên / xuống xe · 1 2 3 4 đổi lính · ` gọi cả tổ</div></div>';
       box.appendChild(el);
       this.$keys = el.querySelector('#inf-keys'); this.$cross = el.querySelector('#inf-cross'); this.$ammo = el.querySelector('#inf-ammo'); this.$msg = el.querySelector('#inf-msg'); this.$heal = el.querySelector('#inf-heal');
+      this.buildFeedback();
+    }
+    // lớp phản hồi nằm ngoài #hud-overlay (bị ẩn khi soi kính) và trên lớp kính (z-index 950). Viền đỏ, cung hướng vẽ một lần ra canvas phần mềm
+    buildFeedback() {
+      const fb = this.$fb = document.createElement('div');
+      fb.id = 'inf-fb';
+      const mk = (w, h, cls, draw) => {
+        const c = document.createElement('canvas'); c.width = w; c.height = h; c.className = cls;
+        draw(c.getContext('2d', { willReadFrequently: true }), w, h);
+        fb.appendChild(c);
+        return c;
+      };
+      this.$vig = mk(160, 90, 'vig', (x, w, h) => {
+        x.translate(w / 2, h / 2); x.scale(w / 2, h / 2);
+        const g = x.createRadialGradient(0, 0, 0.68, 0, 0, 1.25);
+        g.addColorStop(0, 'rgba(150,10,4,0)'); g.addColorStop(0.45, 'rgba(150,10,4,.7)'); g.addColorStop(1, 'rgba(90,2,0,.97)');
+        x.fillStyle = g; x.fillRect(-1, -1, 2, 2);
+      });
+      this._vigOp = 0; this._fbWarm = 1.5;
+      this.$arcs = [];
+      this._arcR = window.innerHeight * HURT.R;
+      for (let i = 0; i < HURT.n; i++) {
+        const el = document.createElement('canvas'); el.className = 'arc';
+        this.drawArc(el);
+        fb.appendChild(el);
+        const lb = document.createElement('div'); lb.className = 'brg';
+        fb.appendChild(lb);
+        this.$arcs.push({ el, lb, t: 0, x: 0, z: 0, ang: 0, on: false, warm: false });
+      }
+      const m = this.$mark = document.createElement('div'); m.id = 'inf-mark'; m.innerHTML = '<i></i><i></i><i></i><i></i>';
+      const t = this.$markTxt = document.createElement('div'); t.id = 'inf-marktxt';
+      fb.appendChild(m); fb.appendChild(t);
+      this.$markI = Array.from(m.children);
+      document.body.appendChild(fb);
+    }
+    // cung chỉ hướng kiểu thước ngắm: nét mảnh hở giữa, vạch khắc, ngoặc hai đầu, chevron kép chỉ ra ngoài. Mọi nét có viền tối mảnh để đọc được trên trời sáng
+    drawArc(c) {
+      const R = this._arcR, W = ARC.w, H = ARC.h, dpr = Math.min(2, window.devicePixelRatio || 1);
+      c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+      c.style.width = W + 'px'; c.style.height = H + 'px'; c.style.margin = (-H / 2) + 'px 0 0 ' + (-W / 2) + 'px';
+      const x = c.getContext('2d', { willReadFrequently: true }), cx = W / 2, cy = H / 2 + R, sp = ARC.half / R, gap = ARC.gap / R, up = -Math.PI / 2;
+      x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H); x.lineCap = 'butt'; x.lineJoin = 'miter';
+      const rad = (a, r0, r1) => { const s = Math.sin(a), k = Math.cos(a); x.moveTo(cx + s * r0, cy - k * r0); x.lineTo(cx + s * r1, cy - k * r1); };
+      const chev = (r, s) => { x.moveTo(cx - s, cy - r); x.lineTo(cx, cy - r - s * 0.72); x.lineTo(cx + s, cy - r); };
+      // hai lượt: viền tối rồi nét màu
+      const pass = (color, grow, alpha) => {
+        x.strokeStyle = color; x.globalAlpha = alpha;
+        x.lineWidth = 2 + grow; x.beginPath(); x.arc(cx, cy, R, up - sp, up - gap); x.moveTo(cx + Math.sin(gap) * R, cy - Math.cos(gap) * R); x.arc(cx, cy, R, up + gap, up + sp); x.stroke();
+        x.lineWidth = 2 + grow; x.beginPath(); rad(-sp, R - 9, R + 1); rad(sp, R - 9, R + 1); x.stroke();                 // ngoặc hai đầu
+        x.lineWidth = 1 + grow; x.beginPath();
+        const n = Math.floor(ARC.half / ARC.tick);
+        for (let i = -n; i <= n; i++) { const a = i * ARC.tick / R; if (Math.abs(a) > gap && Math.abs(a) < sp - 0.5 * ARC.tick / R) rad(a, R + 1, R + (i % 2 ? 4 : 7)); }   // vạch khắc
+        x.stroke();
+        x.lineWidth = 2.4 + grow; x.beginPath(); chev(R + 3, 9); x.stroke();
+        x.globalAlpha = alpha * 0.55; x.beginPath(); chev(R + 11, 9); x.stroke();
+      };
+      pass('#000', 1.6, 0.5);
+      pass('#ff6a48', 0, 1);
+      x.globalAlpha = 1;
     }
     drawHud(h) {
       if (!this.hudEl) return;
@@ -972,6 +1226,8 @@ const InfantryMatch = (() => {
       if (this.game.ballistics) this.game.ballistics.onShellFired = null;
       if (this.hudEl) this.hudEl.remove();
       this.hudEl = null;
+      if (this.$fb) this.$fb.remove();
+      this.$fb = null;
       document.body.classList.remove('inf-mode');
       if (this.ctl) this.ctl.exit();
       for (const s of this.world.soldiers.slice()) s.dispose();

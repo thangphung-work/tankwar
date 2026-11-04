@@ -221,12 +221,12 @@
 <script src="src/core/audio/battle_drama.js?v=20261102mor3"></script>
 <script src="src/core/audio/ui_sounds.js?v=20261102mor3"></script>
 <script src="src/core/audio/infantry_gl.js?v=20261103rpg4"></script>
-<script src="src/core/audio/soldier_voice.js?v=20261103step1"></script>
+<script src="src/core/audio/soldier_voice.js?v=20261104fb2"></script>
 <script src="src/entities/tanks/vehicle_kit.js"></script>
 <script src="src/gameplay/kamikaze_uav.js"></script>
-<script src="src/entities/soldier_model.js?v=20261103rpg8"></script>
-<script src="src/gameplay/soldier_engine.js?v=20261103walk3"></script>
-<script src="src/gameplay/soldier_player.js?v=20261103rpg4"></script>
+<script src="src/entities/soldier_model.js?v=20261104prone1"></script>
+<script src="src/gameplay/soldier_engine.js?v=20261104prone1"></script>
+<script src="src/gameplay/soldier_player.js?v=20261104prone1"></script>
 <script>
 (() => {
   const canvas = document.getElementById('view');
@@ -413,18 +413,25 @@
     while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0]);
     if (!S.showHitbox || !figure) return;
 
-    const boxes = SoldierModel.getHitboxes(figure);
-    const boxMat = new THREE.MeshBasicMaterial({ color: 0x0284c7, wireframe: true, transparent: true, opacity: 0.75 });
-
-    boxes.forEach(b => {
-      let m;
-      if (b.radius) {
-        m = new THREE.Mesh(new THREE.SphereGeometry(b.radius, 12, 8), boxMat);
-      } else {
-        m = new THREE.Mesh(new THREE.BoxGeometry(b.size.x, b.size.y, b.size.z), boxMat);
-      }
-      m.position.copy(b.center);
-      hitboxGroup.add(m);
+    // vùng trúng đạn bám xương (SoldierModel.hitParts): mỗi viên thuốc = ống + 2 chỏm cầu, màu theo vùng
+    const COL = { head: 0xef4444, chest: 0xf59e0b, belly: 0xeab308, arm: 0x22c55e, leg: 0x0ea5e9 };
+    for (const p of SoldierModel.hitParts(figure)) {
+      const mat = new THREE.MeshBasicMaterial({ color: COL[p.zone] || 0xffffff, wireframe: true, transparent: true, opacity: 0.7, depthTest: false });
+      const g = new THREE.Group(); g.renderOrder = 10;
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12, 1, true), mat), new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat), new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat));
+      hitboxGroup.add(g);
+    }
+    placeHitboxes();
+  }
+  const _hbD = new THREE.Vector3(), _hbUp = new THREE.Vector3(0, 1, 0);
+  function placeHitboxes() {
+    const parts = SoldierModel.hitParts(figure);
+    parts.forEach((p, i) => {
+      const g = hitboxGroup.children[i]; if (!g) return;
+      const [cyl, ca, cb] = g.children, L = p.a.distanceTo(p.b);
+      ca.position.copy(p.a); ca.scale.setScalar(p.r); cb.position.copy(p.b); cb.scale.setScalar(p.r);
+      cyl.visible = L > 1e-3; cyl.position.copy(p.a).add(p.b).multiplyScalar(0.5); cyl.scale.set(p.r, Math.max(1e-3, L), p.r);
+      if (L > 1e-3) cyl.quaternion.setFromUnitVectors(_hbUp, _hbD.subVectors(p.b, p.a).normalize());
     });
   }
 
@@ -935,12 +942,7 @@
     }
 
     // Cập nhật vị trí hộp va chạm
-    if (S.showHitbox && figure) {
-      const boxes = SoldierModel.getHitboxes(figure);
-      for (let i = 0; i < boxes.length && i < hitboxGroup.children.length; i++) {
-        hitboxGroup.children[i].position.copy(boxes[i].center);
-      }
-    }
+    if (S.showHitbox && figure) { figure.root.updateMatrixWorld(true); placeHitboxes(); }
 
     // Cập nhật Camera nhìn chếch mặt trước, tâm đặt ở ngực/bụng (y = -0.8)
     view.y += (targetCamY - view.y) * 0.08;

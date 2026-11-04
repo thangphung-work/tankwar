@@ -1745,13 +1745,24 @@ class MatchmakingController {
     }
     // chờ dựng sẵn xe xong (có trần — game.matchUnitsPending) rồi mới báo sẵn sàng
     const unitsPending = !!(this.game && this.game.matchUnitsPending && this.game.matchUnitsPending());
-    const gameplayReady = (!warm || warm.done === true) && !unitsPending;
+    let gameplayReady = (!warm || warm.done === true) && !unitsPending;
+    // GPU biên dịch xong mới đếm ngược (lần chơi đầu, trình duyệt chưa có bộ đệm shader: chờ ở màn nhận nhiệm vụ thay vì đứng hình
+    // trong trận). Trần GPU_GATE_MS kể từ lúc mọi thứ khác đã xong: máy chậm / thiếu phần mở rộng không bị kẹt
+    if (gameplayReady && mapReady && this.introFinished && this.game && this.game.gpuWarmState) {
+      this._gpuGateT = this._gpuGateT || performance.now();
+      const G = this.game.gpuWarmState();
+      if (!G.ready && performance.now() - this._gpuGateT < MatchmakingController.GPU_GATE_MS) {
+        gameplayReady = false;
+        this._gpuPending = G.pending;
+      } else if (!G.ready) console.info('[GPU] hết thời gian chờ biên dịch shader, vào trận với ' + G.pending + ' chương trình chưa xong');
+    }
     if (!mapReady || !gameplayReady || !this.introFinished) {
       clearTimeout(this._readyPollTimer);
       this._readyPollTimer = setTimeout(() => this.checkLocalGameReady(), 120);
       return;
     }
     this.localGameReady = true;
+    this._gpuGateT = 0;
     if (this.isHost) {
       this.readyPeers.add(this.myPeerId);
       this.tryStartSynchronizedCountdown();
@@ -1998,6 +2009,8 @@ class MatchmakingController {
   }
 }
 
+// trần chờ GPU biên dịch shader ở màn nhận nhiệm vụ (ms), tính từ lúc bản đồ + xe + phim đều đã xong
+MatchmakingController.GPU_GATE_MS = 25000;
 window.MatchmakingController = MatchmakingController;
 
 // Khởi tạo sảnh chờ độc lập an toàn ngay khi trang tải xong (không bị phụ thuộc tuần tự)

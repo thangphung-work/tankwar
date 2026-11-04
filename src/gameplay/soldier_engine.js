@@ -13,11 +13,12 @@ const SoldierEngine = (() => {
   const RADIUS = 2.4;                  // bán kính thân khi va chạm (~30 cm: vai + áo giáp)
   const CFG = {
     accel: 34, decel: 52,              // đv/s² (~4,2 / 6,5 m/s²): người mang trang bị không bứt / dừng tức thì
-    turnWalk: 4.5, turnRun: 3.2, turnIdle: 5.0,   // rad/s quay người
+    turnWalk: 4.5, turnRun: 3.2, turnIdle: 5.0, turnAccel: 18, turnAccelRun: 12,   // vận tốc + gia tốc góc: tránh root bật ngay lên tốc độ quay cực đại
     calmAfter: 3,                      // không giao chiến bấy nhiêu giây thì hạ súng thả lỏng
     climbMax: 1.0,                     // dốc tối đa đi được (tan góc ~45°)
     stepUp: 1.7,                       // bậc bước lên được (bó vỉa, bậc thềm ~21 cm)
     wadeMax: 9.6,                      // nước sâu tối đa lội được (~1,2 m)
+    crawl: 4.4,                        // bò khi nằm sấp (~0,55 m/s)
     arrive: 3.5,                       // bán kính coi như tới điểm
     stuckTime: 0.8,                    // tiến < 40% dự kiến trong khoảng này -> tìm đường vòng
     navCell: 6, navMargin: 160, navMaxCells: 26000,
@@ -70,9 +71,18 @@ const SoldierEngine = (() => {
   const _aimV = new THREE.Vector3();
   // BẢNG SÁT THƯƠNG BỘ BINH (một chỗ cho trận thật, phòng thử, trang thử). Đơn vị: phần máu tối đa, từ 1 trở lên là chết.
   const WOUND = {
+    // SÚNG MÁY 7,62 THEO VÙNG TRÚNG (SoldierModel.segHit -> shell._infZone), máu tối đa 1. Theo thực tế người mặc áo giáp tấm:
+    // đầu: mũ thường không chặn đạn súng trường -> chết; tấm giáp trước / sau chặn đạn thường -> bầm, khựng; thân ngoài tấm (sườn, nách, vai, cổ)
+    // -> trọng thương; bụng, hông dưới mép tấm -> nặng, chảy máu nhiều; chân / tay -> nhẹ hơn nhưng khập khiễng / run tay, chảy máu (BLEED_K)
+    // Đạn 12,7 mm trở lên, 30 mm, lựu 40 mm: tấm không đỡ, trúng đâu cũng chết (giữ như cũ)
+    MG762: { head: 1.2, plate: 0.1, chest: 0.8, belly: 0.5, leg: 0.25, arm: 0.2 },
+    // chảy máu theo vùng (nhân với máu tụt): động mạch đùi, bụng chảy nhiều; tấm giáp đỡ thì không chảy
+    BLEED_K: { plate: 0, chest: 1.5, belly: 1.8, leg: 1.8, arm: 1.2 },
+    // đạn nặng (12,7 / 14,5 mm của súng bắn tỉa chống tăng, phòng thử): tấm giáp không đỡ; trúng tay / chân là dập nát chi, mất máu cực nhanh (x dmg 3 của đạn)
+    HEAVY: { head: 1, plate: 1, chest: 1, belly: 1, leg: 0.3, arm: 0.3 },
     // trúng thẳng: người không có giáp chống đạn lớn; 12,7 mm và 30 mm trúng thân là chết
     direct(ammo, shell = {}) {
-      if (shell.aaMG) return 0.34;                                     // súng 7,62: phân vùng / giáp tính sau
+      if (shell.aaMG) { const z = WOUND.MG762[shell._infZone]; return z != null ? z : 0.34; }   // súng 7,62: theo vùng trúng (không rõ vùng: như cũ)
       if (shell.gl40) return 1.2;
       if (ammo === 'SCOUT_BULLET' || ammo === 'SCOUT_INCENDIARY') return 1.2;
       if (ammo === 'GATLING_BULLET' || ammo === 'GATLING_HE' || ammo === 'INCENDIARY') return 1.6;
@@ -129,10 +139,14 @@ const SoldierEngine = (() => {
     if (T.detailsReady === false || !T.group) return null;   // lưới chi tiết chưa dựng xong: hỏi lại lần sau
     const key = T.mapType + ':' + T.seed;
     if (T._walkIdx && T._walkIdx.key === key) return T._walkIdx;
-    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), N = new THREE.Vector3(), out = [], t0 = performance.now();
+    const t0 = performance.now(), meshes = [];
     T.group.updateMatrixWorld(true);
-    T.group.traverse(m => {
-      if (!m.isMesh || m.isInstancedMesh || !WALK_RE.test(m.name)) return;
+    T.group.traverse(m => { if (m.isMesh && !m.isInstancedMesh && WALK_RE.test(m.name)) meshes.push(m); });
+    let cap = 0;
+    for (const m of meshes) cap += Math.floor((m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3);
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), N = new THREE.Vector3(), full = new Float32Array(cap * 9);
+    let nt = 0;
+    for (const m of meshes) {
       const pos = m.geometry.attributes.position, idx = m.geometry.index, n = idx ? idx.count : pos.count, M4 = m.matrixWorld;
       for (let i = 0; i + 2 < n; i += 3) {
         A.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(M4);
@@ -141,24 +155,33 @@ const SoldierEngine = (() => {
         N.crossVectors(e1.subVectors(B, A), e2.subVectors(C, A));
         const L = N.length();
         if (L < 1e-6 || Math.abs(N.y) / L < 0.6) continue;   // chỉ mặt ngửa; thành đứng bỏ qua
-        out.push(A.x, A.y, A.z, B.x, B.y, B.z, C.x, C.y, C.z);
+        const o = nt++ * 9;
+        full[o] = A.x; full[o + 1] = A.y; full[o + 2] = A.z; full[o + 3] = B.x; full[o + 4] = B.y; full[o + 5] = B.z; full[o + 6] = C.x; full[o + 7] = C.y; full[o + 8] = C.z;
       }
-    });
-    const tri = new Float32Array(out), cells = new Map();
-    for (let o = 0; o < tri.length; o += 9) {
+    }
+    const tri = full.slice(0, nt * 9), cells = new Map();   // ô -> [đầu, cuối) trong refs
+    const eachCell = (o, fn) => {
       const x0 = Math.floor(Math.min(tri[o], tri[o + 3], tri[o + 6]) / WALK_B), x1 = Math.floor(Math.max(tri[o], tri[o + 3], tri[o + 6]) / WALK_B);
       const z0 = Math.floor(Math.min(tri[o + 2], tri[o + 5], tri[o + 8]) / WALK_B), z1 = Math.floor(Math.max(tri[o + 2], tri[o + 5], tri[o + 8]) / WALK_B);
-      for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) { const k = gx * 65536 + gz; let L = cells.get(k); if (!L) cells.set(k, L = []); L.push(o); }
-    }
-    return (T._walkIdx = { key, tri, cells, ms: Math.round(performance.now() - t0) });
+      for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) fn(gx * 65536 + gz);
+    };
+    const count = new Map();
+    let total = 0;
+    for (let o = 0; o < tri.length; o += 9) eachCell(o, k => { count.set(k, (count.get(k) || 0) + 1); total++; });
+    const refs = new Int32Array(total), fill = new Map();
+    let at = 0;
+    for (const [k, c] of count) { cells.set(k, at); fill.set(k, at); at += c; }
+    for (let o = 0; o < tri.length; o += 9) eachCell(o, k => { const p = fill.get(k); refs[p] = o; fill.set(k, p + 1); });
+    return (T._walkIdx = { key, tri, cells, ends: fill, refs, ms: Math.round(performance.now() - t0) });
   }
   // mặt đi được cao nhất tại (x, z); refY: bỏ mặt cao quá tầm bước -> người dưới gầm cầu không bị nhấc lên mặt cầu. null = không có
   function walkTop(I, x, z, refY) {
-    const L = I.cells.get(Math.floor(x / WALK_B) * 65536 + Math.floor(z / WALK_B)), t = I.tri;
-    if (!L) return null;
+    const k = Math.floor(x / WALK_B) * 65536 + Math.floor(z / WALK_B), i0 = I.cells.get(k), t = I.tri, R = I.refs;
+    if (i0 === undefined) return null;
+    const i1 = I.ends.get(k);
     let best = null;
-    for (let i = 0; i < L.length; i++) {
-      const o = L[i], cx = t[o + 6], cz = t[o + 8], ez = t[o + 5] - cz, ex = cx - t[o + 3], d = ez * (t[o] - cx) + ex * (t[o + 2] - cz);
+    for (let i = i0; i < i1; i++) {
+      const o = R[i], cx = t[o + 6], cz = t[o + 8], ez = t[o + 5] - cz, ex = cx - t[o + 3], d = ez * (t[o] - cx) + ex * (t[o + 2] - cz);
       if (d === 0) continue;
       const w1 = (ez * (x - cx) + ex * (z - cz)) / d, w2 = ((cz - t[o + 2]) * (x - cx) + (t[o] - cx) * (z - cz)) / d, w3 = 1 - w1 - w2;
       if (w1 < -1e-4 || w2 < -1e-4 || w3 < -1e-4) continue;
@@ -217,7 +240,7 @@ const SoldierEngine = (() => {
       this.heading = o.heading || 0;
       this.y = world.groundAt(this.x, this.z, null);
       this.speed = 0;                    // tốc độ thực (đv/s) theo hướng mặt
-      this.turnNow = 0;                  // tốc độ quay thực (rad/s)
+      this.turnNow = 0; this.turnSigned = 0; this._turnVel = 0;   // tốc độ quay thực (rad/s), có quán tính góc ngắn
       this.alive = true;
       this.intent = { gait: 'walk', target: null, path: null, aim: null, stance: 'stand', sector: 0, scan: false, face: null };
       this.motion = 'idle';
@@ -235,7 +258,7 @@ const SoldierEngine = (() => {
       this.hp = 100;
       // bị thương: bleed = máu mất (phần trăm/s), cầm dần theo thời gian; lame = không chạy được (0 lành .. 1 nặng).
       // bleedOwned: bộ máy tự trừ máu (phòng thử); trận thật để infantry_match trừ qua đơn vị mạng
-      this.bleed = 0; this.lame = 0; this.bleedOwned = true; this._hpPrev = 100; this._dripT = 0;
+      this.bleed = 0; this.lame = 0; this.armHurt = 0; this.bleedOwned = true; this._hpPrev = 100; this._dripT = 0;
       this.voiceK = rnd(0.88, 1.14); this._voxT = 0; this._voxHit = -1e9;   // cao độ giọng riêng; hẹn giờ tiếng rên / thở
       this.stam = 1; this.tired = false; this._grade = 0; this._pantT = 0;      // thể lực (stepStamina)
       this.squad = null;
@@ -260,7 +283,7 @@ const SoldierEngine = (() => {
     stop() { this.intent.target = null; this.intent.path = null; }
     aimAt(x, y, z) { this.intent.aim = { x, y, z }; }
     clearAim() { this.intent.aim = null; }
-    setStance(s) { this.intent.stance = s; }          // 'stand' | 'kneel'
+    setStance(s) { this.intent.stance = s; }          // 'stand' | 'kneel' | 'prone'
     faceTo(h) { this.intent.face = h; }               // hướng đứng / quỳ khi không di chuyển (rad)
     setSector(a, scan = true) { this.intent.sector = a; this.intent.scan = scan; }   // hướng canh (rad so với mặt trước, + = trái)
     get forwardX() { return -Math.sin(this.heading); }
@@ -318,7 +341,7 @@ const SoldierEngine = (() => {
       if (this.guard && !this.enemy && A.def.seq && A.reload <= 0 && A.mag <= 2) this.startReload();
       if ((this._percT -= dt) <= 0) {
         this._percT = CFG.perceive;
-        if (this.enemy && (!this.enemy.alive || !W.isEnemy(this, this.enemy))) this.enemy = null;
+        if (this.enemy && (!this.enemy.alive || !W.isEnemy(this, this.enemy))) this.disengage(true);   // địch chết: bỏ hướng ngắm (kẻo ngắm mãi vào xác), đi tiếp lệnh dở
         if (this.enemy) {
           if (W.canSee(this, this.enemy)) this._seen = 0; else this._seen += CFG.perceive;
           if (this._seen > CFG.lostAfter) this.disengage(true);
@@ -344,7 +367,7 @@ const SoldierEngine = (() => {
         if (A.mag > 0) {
           this.fireRound(); A.cd = A.def.rof * rnd(0.9, 1.25);
           // độ tản: phát đầu lệch nhiều (ước sai cự ly), các phát sau chỉnh dần theo điểm nổ
-          const e = d * (A.def.spread + A.def.first * Math.max(0, 1 - (this._shots || 0) / 3)), ea = Math.random() * Math.PI * 2, er = e * Math.sqrt(Math.random());
+          const e = d * (A.def.spread + A.def.first * Math.max(0, 1 - (this._shots || 0) / 3)) * (1 + 1.2 * (this.armHurt || 0)), ea = Math.random() * Math.PI * 2, er = e * Math.sqrt(Math.random());   // tay bị thương: bắn tản
           this._shots = (this._shots || 0) + 1;
           const aimP = { x: tx + Math.cos(ea) * er, y: ty, z: tz + Math.sin(ea) * er, dist: d, weapon: this.weapon };
           if (A.def.muzzle && !A.def.rocket) W.fireBullet({ shooter: this, from: this.muzzlePos(), to: aimP });
@@ -670,9 +693,14 @@ const SoldierEngine = (() => {
     }
     disengage(resume) {
       this.enemy = null; this._pendingEnemy = null; this.clearAim();
-      if (resume && this._resume) { const R = this._resume; this.moveTo(R.x, R.z, R.gait, this.react); }
-      else if (this._resumeStance) this.setStance(this._resumeStance);
+      const R = resume ? this._resume : null;
       this._resume = null;
+      if (this.intent.target) return;   // có lệnh mới trong lúc giao chiến: giữ lệnh mới, không quay lại lệnh cũ
+      if (R) this.order(() => {
+        if (this.enemy) this._resume = this._resume || R;   // đang phản ứng thì gặp địch khác: đánh xong mới đi tiếp
+        else if (!this.intent.target) this.moveTo(R.x, R.z, R.gait);
+      }, this.react);
+      else if (this._resumeStance) this.setStance(this._resumeStance);
     }
     // trúng đạn / mảnh / sóng nổ (game gọi): hết máu thì ngã
     damage(amount, src, info) {
@@ -690,10 +718,21 @@ const SoldierEngine = (() => {
         if (this.lame > 0 || this._medDone) SoldierModel.aidReset(F, true);   // được cứu thương đầy máu: lành
         this._medDone = false;
         this._wounds = []; F.limpSx = 0;
-        this.bleed = 0; this.lame = 0;
+        this.bleed = 0; this.lame = 0; this.armHurt = 0;
+      } else if (drop > (this.bleedOwned ? 0.5 : 3) && this._woundFrom && this._woundFrom.zone === 'plate') {
+        // tấm giáp đỡ đạn: bầm dập, khựng người, không có vết thương / không chảy máu
+        const I = this._woundFrom; this._woundFrom = null;
+        const fx = -Math.sin(this.heading), fz = -Math.cos(this.heading);
+        const front = I.x != null ? (I.x - this.x) * fx + (I.z - this.z) * fz : I.vel ? -(I.vel.x * fx + I.vel.z * fz) : 1;
+        F.flinch = 1; F.flinchDir = front >= 0 ? 1 : -1; this._plateHit = true;
+        const nowS = performance.now() / 1000;
+        if (nowS - this._voxHit > 0.5) { this._voxHit = nowS; this.world.vox(this, 'hit'); }
       } else if (drop > (this.bleedOwned ? 0.5 : 3)) {   // máu đồng bộ từ đơn vị: nhịp chảy máu tụt tối đa 1,25 mỗi 0,5 s, mạng gộp hoặc khung chậm có thể cộng vài nhịp; không tính là vết mới
-        this.bleed = Math.min(2.5, this.bleed + drop * 0.022);           // trúng 30 máu: ~0,66%/s, cầm sau ~1 phút (mất thêm ~20)
-        this.lame = Math.min(1, Math.max(this.lame, 0.35 + (100 - this.hp) / 100));
+        const Z = this._woundFrom && this._woundFrom.zone, BK = WOUND.BLEED_K[Z];
+        this.bleed = Math.min(2.5, this.bleed + drop * 0.022 * (BK != null ? BK : 1));   // trúng 30 máu: ~0,66%/s, cầm sau ~1 phút (mất thêm ~20); theo vùng (BLEED_K)
+        // chân trúng đạn: gãy xương / rách cơ đùi -> không chạy được; bụng, hông: đau gập người, đi chậm
+        this.lame = Math.min(1, Math.max(this.lame, 0.35 + (100 - this.hp) / 100, Z === 'leg' ? 0.85 : Z === 'belly' ? 0.6 : 0));
+        if (Z === 'arm') this.armHurt = 1;   // tay trúng đạn: cầm súng run (soldier_player: tâm ngắm; lính máy: độ tản)
         // nhiều mảnh trúng cùng lúc chỉ kêu một tiếng
         const nowS = performance.now() / 1000;
         if (nowS - this._voxHit > 0.5) { this._voxHit = nowS; this.world.vox(this, drop >= 25 ? 'hitBad' : 'hit'); this._voxT = rnd(3, 6); }
@@ -740,7 +779,7 @@ const SoldierEngine = (() => {
         else if (I.vel) d = -(I.vel.x * rx + I.vel.z * rz);
       }
       const side = (d || Math.random() - 0.5) < 0 ? 'L' : 'R';
-      return (zone === 'chest' ? 'arm' : 'leg') + side;
+      return (zone === 'chest' || zone === 'arm' ? 'arm' : 'leg') + side;   // vùng trúng thật (segHit): tay -> tay, chân / bụng / hông -> đùi, thân -> bắp tay (chưa có động tác băng ngực)
     }
     // bộ y tế (phím của người chơi): một lượt sơ cứu, băng xong mới hồi máu (stepAid). Đang tự băng dở thì nối vào luôn; bỏ dở thì chưa mất lượt
     useMedkit() {
@@ -768,12 +807,13 @@ const SoldierEngine = (() => {
         if (t0 < S.tie && t1 >= S.tie) this.world.vox(this, 'hiss');                            // siết nút băng
         if (t0 < S.wrap && t1 >= S.wrap && this._medUse) {                                      // bộ y tế: cầm hẳn máu, bớt khập khiễng, hồi máu (trận thật hồi vào đơn vị mạng)
           this._medUse = false;
-          this._wounds = []; this.bleed = 0; this._medDone = true;
+          this._wounds = []; this.bleed = 0; this._medDone = true; this.armHurt = 0;
           if (this.world.onMedkit) this.world.onMedkit(this);
           else this.hp = 100;
           this._hpPrev = this.hp;
         } else if (t0 < S.wrap && t1 >= S.wrap) {                                               // băng xong: còn vết khác thì giảm theo số vết, hết vết thì hết chảy
           const W = this._wounds, i = W.indexOf(F.aidSite); if (i >= 0) W.splice(i, 1);
+          if (F.aidSite && F.aidSite[0] === 'a') this.armHurt = (this.armHurt || 0) * 0.5;   // băng tay: bớt run
           this.bleed *= W.length / (W.length + 1);
         }
         for (const e of SoldierModel.AID_SFX) if (t0 < e[0] && t1 >= e[0]) this.world.sfx(this, e[1]);
@@ -795,7 +835,7 @@ const SoldierEngine = (() => {
       if (heading != null) this.heading = heading;
       this.y = this.world.groundAt(this.x, this.z, null);
       this.speed = 0;
-      this.turnNow = 0;
+      this.turnNow = 0; this.turnSigned = 0; this._turnVel = 0;
       this.enemy = null;
       this._seen = 0;
       this.initArms();
@@ -927,11 +967,19 @@ const SoldierEngine = (() => {
       } else if (I.aim) wantHeading = Math.atan2(-(I.aim.x - this.x), -(I.aim.z - this.z));
       else if (I.face != null) wantHeading = I.face;
       // 2. quay người có giới hạn; lệch nhiều thì chậm lại để xoay trước rồi mới bước tiếp
-      let turn = (wantSpeed > 14 ? CFG.turnRun : wantSpeed > 0 ? CFG.turnWalk : CFG.turnIdle) * dt;
-      const dh = angDiff(this.heading, wantHeading), applied = Math.max(-turn, Math.min(turn, dh));
+      const runTurn = wantSpeed > 14, maxTurn = runTurn ? CFG.turnRun : wantSpeed > 0 ? CFG.turnWalk : CFG.turnIdle;
+      const dh = angDiff(this.heading, wantHeading), turnAccel = runTurn ? CFG.turnAccelRun : CFG.turnAccel;
+      // Vận tốc hãm theo quãng góc còn lại: root giảm tốc trước đích thay vì tới đúng góc
+      // rồi đặt omega = 0 trong một khung.
+      const stopRate = 0.85 * Math.sqrt(2 * turnAccel * Math.abs(dh)), wantTurn = Math.sign(dh) * Math.min(maxTurn, Math.abs(dh) * 8, stopRate);
+      const turnA = turnAccel * dt, dv = wantTurn - (this._turnVel || 0);
+      this._turnVel = (this._turnVel || 0) + Math.max(-turnA, Math.min(turnA, dv));
+      let applied = this._turnVel * dt;
+      if (applied * dh < 0) applied = 0;   // đổi ý quay ngược bên: hãm vận tốc cũ trước, tuyệt đối không giật thẳng tới góc mới
+      else if (Math.abs(applied) >= Math.abs(dh)) { applied = dh; this._turnVel = 0; }
       this.heading += applied;
-      this.turnNow = Math.abs(applied) / Math.max(1e-4, dt);
-      this.turnSigned = applied / Math.max(1e-4, dt);
+      this.turnSigned = applied / Math.max(1e-4, dt);   // nghiêng cua theo góc đã quay thật, không theo omega còn đang bị hãm nội bộ
+      this.turnNow = Math.abs(this.turnSigned);
       if (mvX === null || (D && D.face == null)) wantSpeed *= Math.max(0, Math.cos(Math.min(Math.PI / 2, Math.abs(dh) * 1.3)));
       if (mvX === null) { mvX = this.forwardX; mvZ = this.forwardZ; }
       // 3. địa hình: dốc lên chậm, xuống hơi chậm, nước lội chậm
@@ -946,6 +994,8 @@ const SoldierEngine = (() => {
       if (this.figure.kamiSeq != null || this.figure.kamiCtl) wantSpeed = 0;
       // đang nằm bắn: đứng dậy xong mới đi được
       if (this.arms.def.prone && (this.figure._proneK || 0) > 0.05) wantSpeed = 0;
+      // súng khác: đang nằm xuống / đứng dậy thì đứng yên, nằm hẳn rồi thì bò
+      else if ((this.figure._proneK || 0) > 0.05) wantSpeed = this.intent.stance === 'prone' && this.figure._proneK > 0.95 ? Math.min(wantSpeed, CFG.crawl * this.k) : 0;
       const lm = this.loadMul;
       wantSpeed *= lm;
       this.figure.gaitRate = lm;   // sải chân nhanh / chậm theo tốc độ, chân khỏi trượt trên đất
@@ -1022,15 +1072,18 @@ const SoldierEngine = (() => {
       const rate = this._turnStep ? 0.85 : base ? Math.max(0.35, this.speed / (base * this.k)) : 1;
       this.animT += dt * rate;
       if (!D) this.stepGunAI(dt);
+      F_.prone = I.stance === 'prone' && !this.ride;
       // súng bắn tỉa nặng và dài: ngoài lúc ngắm / nạp thì đeo sau lưng, không vác trên vai suốt
-      if (this.arms.def.prone) { const St = F_.atrState; F_.stow = !(I.aim || (D && (F_.aimBlend || 0) > 0.02) || this._death || (St && St.t != null) || this.cycling); }
+      if (this.arms.def.prone) { const St = F_.atrState; F_.stow = !(I.aim || (D && (F_.aimBlend || 0) > 0.02) || (F_._proneK || 0) > 0.05 || this._death || (St && St.t != null) || this.cycling); }
       // không có địch một lúc: hạ súng thả lỏng (chạy thì vẫn ôm súng chéo ngực)
       else if (!this.arms.def.kami) {
         const A = this.arms, busy = I.aim || this.enemy || (D && (F_.aimBlend || 0) > 0.02) || A.reload > 0 || (F_.glState && F_.glState.k > 0) || (F_.magState && F_.magState.t != null);
         this._calmT = busy ? 0 : (this._calmT || 0) + dt;
         F_.relax = this._calmT > CFG.calmAfter && this.motion !== 'run';
+        F_.kneelRest = F_.relax && I.stance === 'kneel';   // quỳ canh mà yên ắng: hạ súng thế sẵn sàng, ngó quanh
       }
       this.stepStamina(dt);
+      this.stepGroundIK(dt);   // trước khi dựng dáng: cùng khung với độ cao gốc người mới, không trễ một khung
       {
         const F = this.figure, fat = 1 - this.stam;
         const rest = fat > 0.6 && this.speed < 0.6 && !I.aim && (F.aimBlend || 0) < 0.3 && !(this.arms.reload > 0) && I.stance !== 'kneel'
@@ -1046,10 +1099,9 @@ const SoldierEngine = (() => {
         if (I.aim && this.speed < 0.6 && this.motion !== 'aim' && this.motion !== 'crouch') SoldierModel.lookAt(this.figure, new THREE.Vector3(I.aim.x, I.aim.y, I.aim.z));
       }
       if (this.arms.def.kami) this.stepKami(dt);
-      this.stepGroundIK(dt);
       // bước chân: mỗi nửa chu kỳ sải là một lần chạm đất
       const ph = Math.floor((this.figure._ph || 0) * 2);
-      if (ph !== this._stepPh) { if (this._stepPh != null && this.speed > 1 && this.alive && !this.ride) this.world.step(this); this._stepPh = ph; }
+      if (ph !== this._stepPh) { if (this._stepPh != null && this.speed > 1 && this.alive && !this.ride && !((this.figure._proneK || 0) > 0.3)) this.world.step(this); this._stepPh = ph; }
     }
 
     stepStamina(dt) {
@@ -1087,8 +1139,12 @@ const SoldierEngine = (() => {
         for (const fz of FOOT_Z) top = Math.max(top, this.world.groundAt(m[12] + m[8] * fz, m[14] + m[10] * fz, refY));
         // cao / thấp hơn ~40 cm thì là tường / hẫng, không gập hay với chân tới được
         const off = Math.max(-3.4, Math.min(2.6, (top - this.y) / this.k));
-        // nâng nhanh, hạ chậm: chân lên bậc không kịp thì xuyên qua bậc, hạ trễ chỉ thấy lơ lửng thoáng qua
-        g[i] += (off - g[i]) * (F._snap ? 1 : off > g[i] ? Math.min(1, dt * 40) : k);
+        // Nâng trong ~45 ms và giới hạn bước sửa mỗi frame: đủ nhanh để không xuyên bậc rõ,
+        // nhưng không teleport cả hông khi đúng một mẫu gót/mũi vừa chạm mép cao.
+        const rise = 1 - Math.exp(-dt / 0.045), gain = F._snap ? 1 : off > g[i] ? rise : k;
+        let dg = (off - g[i]) * gain;
+        if (!F._snap && dg > 0) dg = Math.min(dg, Math.max(0.18, dt * 22));
+        g[i] += dg;
       });
     }
     restStamina() { this.stam = 1; this.tired = false; this._pantT = 0; }
@@ -1127,7 +1183,7 @@ const SoldierEngine = (() => {
       R.fl = (R.fl || 0) + (-ka * Math.sin(R.rel) + kl * Math.cos(R.rel) - (R.fl || 0)) * sm;
       const lean = F.seated ? 1 : 0;
       F.brake = lean * Math.max(0, Math.min(0.25, R.fa / 150)); F.surge = lean * Math.max(0, Math.min(0.6, -R.fa / 150)); F.bank = lean * Math.max(-0.6, Math.min(0.6, -R.fl / 80));
-      F.wantStop = false; F.moveV = 0; F.stopFrom = 0; F.moveDir = null; F.footLock = false; F.inPlace = false;
+      F.wantStop = false; F.moveV = 0; F.stopFrom = 0; F.moveDir = null; F.footLock = false; F.inPlace = false; F.kneelRest = false;
       this.motion = R.walk ? 'walk' : aiming ? 'crouch' : 'idle';
       this._turnStep = false;
       this.animT += dt;
@@ -1145,8 +1201,12 @@ const SoldierEngine = (() => {
       this._turnStep = s < 0.6 && I.stance !== 'kneel' && (this.turnNow > 0.9 || lag > 0.45 || (this._turnStep && lag > 0.08));
       if (this._turnStep) this.motion = I.gait === 'patrol' ? 'patrol' : 'walk';
       else if (s < 0.6) this.motion = I.stance === 'kneel' ? 'crouch' : I.aim ? 'aim' : 'idle';
-      else if (s > (G.walk + G.run) * 0.5) this.motion = 'run';
-      else this.motion = I.gait === 'patrol' ? 'patrol' : 'walk';
+      else {
+        const mid = (G.walk + G.run) * 0.5, on = mid + 0.7, off = mid - 0.7;
+        this._runMotion = this._runMotion ? s > off : s > on;   // hysteresis: tốc độ dao động quanh ngưỡng không đổi walk/run mỗi khung
+        if (this._runMotion) this.motion = 'run';
+        else this.motion = I.gait === 'patrol' ? 'patrol' : 'walk';
+      }
     }
 
     replan() {
@@ -1320,10 +1380,19 @@ const SoldierEngine = (() => {
       const SE = typeof window !== 'undefined' && window.soundEngine, C = this.camera;
       if (!SE || !SE.playSoldierStep || !C) return;
       const dx = s.x - C.position.x, dz = s.z - C.position.z, d = Math.hypot(dx, dz);
-      if (d > 200) return;
+      if (d > 320) return;
       const e = C.matrixWorld.elements, pan = d > 1 ? Math.max(-0.85, Math.min(0.85, (dx * e[0] + dz * e[2]) / d * 0.85)) : 0;
       const G = GS(), run = Math.max(0, Math.min(1, (s.speed / s.k - G.walk) / (G.run - G.walk)));
-      SE.playSoldierStep({ run, tired: 1 - s.stam, wet: this.waterDepth ? this.waterDepth(s.x, s.z) : 0, load: s.loadKg, distance: d < 30 ? 0 : d - 30, pan: d < 30 ? pan * 0.3 : pan, k: s.voiceK || 1 });
+      SE.playSoldierStep({ run, tired: 1 - s.stam, wet: this.waterDepth ? this.waterDepth(s.x, s.z) : 0, surf: this.stepSurface(s), load: s.loadKg, distance: d < 30 ? 0 : d - 30, pan: d < 30 ? pan * 0.3 : pan, k: s.voiceK || 1 });
+    }
+    // mặt đất dưới chân để chọn tiếng bước: đường / vỉa hè theo bảng mặt đi được, rồi cỏ, còn lại theo loại đất của game (dozerSoil)
+    stepSurface(s) {
+      const T = this.terrain;
+      if (!T) return 'soil';
+      if (T._walkIdx && walkTop(T._walkIdx, s.x, s.z, s.y) !== null) return 'hard';
+      if (this.grassAt(s.x, s.z) > 0.3) return 'grass';
+      const k = T.dozerSoil ? T.dozerSoil(s.x, s.z) : 'soil';
+      return k === 'wsand' ? 'sand' : k === 'slurry' ? 'mud' : k;
     }
     vox(s, kind) {
       const SE = typeof window !== 'undefined' && window.soundEngine, C = this.camera;
@@ -1376,7 +1445,7 @@ const SoldierEngine = (() => {
       const R = s.figure.rifle;
       if (!R || !R.userData.atr || this.casings.length > 36) return;
       // vỏ rỗng cổ chai, miệng hở (+y), mặt cắt đi từ dưới lên kẻo lưới lộn trái
-      const m = new THREE.Mesh(World.atrCaseGeo || (World.atrCaseGeo = new THREE.LatheGeometry([[0, -0.62], [0.15, -0.62], [0.15, -0.57], [0.125, -0.55], [0.145, -0.5], [0.145, 0.3], [0.105, 0.4], [0.105, 0.5], [0.085, 0.5], [0.085, 0.34], [0, 0.34]].map(p => new THREE.Vector2(p[0], p[1])), 14)),
+      const m = new THREE.Mesh(World.atrCaseGeo || (World.atrCaseGeo = new THREE.LatheGeometry([[0, -0.31], [0.105, -0.31], [0.105, -0.28], [0.088, -0.26], [0.088, -0.24], [0.105, -0.22], [0.1, 0.19], [0.085, 0.24], [0.085, 0.31], [0.07, 0.31], [0.07, 0.25], [0, 0.25]].map(p => new THREE.Vector2(p[0], p[1])), 14)),
         World.atrCaseMat || (World.atrCaseMat = new THREE.MeshStandardMaterial({ color: 0x8a7340, roughness: 0.38, metalness: 0.75 })));
       R.updateMatrixWorld(true);
       R.localToWorld(m.position.set(0.34, 0.46, -0.3));
@@ -1515,12 +1584,11 @@ const SoldierEngine = (() => {
       if (!res && T.resolveVehicleCollision && Math.min(a.y, b.y) < this.groundAt(b.x, b.z, null) + 90 && T.resolveVehicleCollision(a.x, a.z, b.x, b.z, 0.5, null).hit) { bestT = L; res = { kind: 'wall' }; }
       for (const o of this.soldiers) {
         if (o === blt.shooter || !o.alive || !this.isEnemy(blt.shooter, o) || Math.abs(o.x - a.x) > L + 30 || Math.abs(o.z - a.z) > L + 30) continue;
-        const F = o.figure, pts = [[ZONES[0], F.head.localToWorld(new THREE.Vector3(0, 0.72, 0))], [ZONES[1], F.chest.localToWorld(new THREE.Vector3(0, 1.9, 0))], [ZONES[2], F.hips.localToWorld(new THREE.Vector3(0, -1.15, 0))]];
-        for (const [zn, c] of pts) {
-          const r = zn[1] * o.k, ox = c.x - a.x, oy = c.y - a.y, oz = c.z - a.z, tc = ox * ux + oy * uy + oz * uz;
-          if (tc < 0 || tc > L || tc >= bestT) continue;
-          if (ox * ox + oy * oy + oz * oz - tc * tc < r * r) { bestT = tc; res = { kind: 'soldier', target: o, zone: zn }; }
-        }
+        // lọc nhanh theo khoảng cách tới đoạn đạn, rồi dò các viên thuốc bám xương (SoldierModel.segHit): đúng tư thế, có vùng tấm giáp
+        const cx = o.x - a.x, cy = o.y + 6 * o.k - a.y, cz = o.z - a.z, tq = Math.max(0, Math.min(L, cx * ux + cy * uy + cz * uz));
+        if ((cx - ux * tq) ** 2 + (cy - uy * tq) ** 2 + (cz - uz * tq) ** 2 > (14 * o.k) ** 2) continue;
+        const h = SoldierModel.segHit(o.figure, a.x, a.y, a.z, b.x, b.y, b.z);
+        if (h && h.t * L < bestT) { bestT = h.t * L; res = { kind: 'soldier', target: o, zone: [h.zone, 0, (blt.B && blt.B.dmg >= 2 ? WOUND.HEAVY : WOUND.MG762)[h.zone] * 100] }; }
       }
       for (const u of (this.vehicles ? this.vehicles() : [])) {
         if (u.team === blt.shooter.team) continue;

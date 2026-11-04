@@ -3105,13 +3105,32 @@
       // cả ô rạn đục / bung là việc của VehicleDamage (từng ô kính)
       const om = hit.object.material;
       if (om && om.userData && om.userData.windowGlass) {
-        this.addSurfaceMark(mk.p, mk.n, hit.object, 'glassCrack', mk.kind === 'hei' ? 3.6 : mk.kind === 'gl40' ? 3.4 : 5.0, o);
+        this.addSurfaceMark(mk.p, mk.n, hit.object, 'glassCrack', mk.kind === 'hei' || mk.kind === 'atr' ? 3.6 : mk.kind === 'gl40' ? 3.4 : 5.0, o);
         return;
       }
       if (mk.kind === 'hei') {
         // 30mm nổ mảnh xuyên: xuyên -> lỗ rách lởm chởm mép thép lật; không xuyên -> hố cày nông, muội nổ, rỗ mảnh
         if (r.pen) this.addSurfaceMark(mk.p, mk.n, hit.object, 'heiHole', mk.cls === 'medium' ? 2.8 : mk.cls === 'heavy' ? 2.6 : 3.2, o);
         else this.addSurfaceMark(mk.p, mk.n, hit.object, 'heiSplash', 3.4, o);
+        return;
+      }
+      if (mk.kind === 'atr') {
+        const p = mk.p, n = mk.n, d = mk.d;
+        if (r.pen) {
+          // lỗ gọn + mảnh phun theo hướng đạn vào khoang, chớp trong khoang hắt ra lỗ, khói mỏng phụt ngược
+          this.addSurfaceMark(p, n, hit.object, 'steelHole', 1.9, o);
+          this.spallCone(p.clone().addScaledVector(d, 3), d, 12, { spread: 0.38, speed: 0.8 });
+          this.addLight(p.x + d.x * 3, p.y + d.y * 3, p.z + d.z * 3, 0.45, 0.12);
+          for (let i = 0; i < 2; i++) {
+            const sp = rand(6, 14);
+            this.smoke.add({ x: p.x, y: p.y, z: p.z, vx: -d.x * sp + n.x * 4, vy: -d.y * sp + rand(2, 5), vz: -d.z * sp + n.z * 4, size: rand(1.0, 1.8), grow: 3, drag: 2, grav: -3,
+              life: rand(0.6, 1.2), alpha: 0.35, fadeIn: 0.03, c0: [0.32, 0.31, 0.3], cell: 2, delay: rand(0.02, 0.1), floor: false });
+          }
+        } else {
+          // lõi vỡ trên mặt thép: hõm tróc sơn, chùm tia nóng tóe ra ngoài theo hướng phản xạ
+          this.addSurfaceMark(p, n, hit.object, 'steelDent', r.ratio >= 0.8 ? 2.4 : 1.9, o);
+          this.spallCone(p.clone().addScaledVector(n, 0.5), d.clone().addScaledVector(n, -2 * d.dot(n)).normalize(), 16, { spread: 0.65, speed: 0.9 });
+        }
         return;
       }
       if (mk.kind === 'gl40') {
@@ -3217,7 +3236,7 @@
       if (prof.micro && (isVehicle || isWall)) {
         const sk = isVehicle ? (surface === 'glass' || surface === 'rubber' || surface === 'cloth' ? surface : 'steel')
           : hit.hitType === 'BUILDING' ? 'plaster' : hit.hitType === 'BOULDER' ? 'rock' : 'concrete';
-        this.spawnBulletSurfaceImpact(p, n, d, ammoType, sk, { pen: isVehicle && lightArmor });
+        this.spawnBulletSurfaceImpact(p, n, d, ammoType, sk, { pen: isVehicle && (lightArmor || !!opts.atr) });   // đạn 20 mm: phần tóe ngoài / phun trong vẽ sau khi tính giáp (armorHitMarks)
       } else {
         // Nổ / xuyên tại đúng điểm chạm (hiệu ứng bật ra theo pháp tuyến bề mặt)
         this.spawn(p.x, p.y, p.z, ammoType, hit.hitType, Object.assign({}, opts, { dir: { x: d.x, y: d.y, z: d.z }, normal: n, noWallMark: !!(isWall && hit.object) }));
@@ -3253,6 +3272,9 @@
             // Lốp / đệm cao su: vết rách nhỏ (bánh quay nên không dán decal lên mặt lốp)
           } else if (surface === 'cloth') {
             this.addSurfaceMark(p, n, hit.object, 'scorch', 1.6, { unit: hit.unit });
+          } else if (opts.atr && opts.deferArmorMarks) {
+            // đạn 20 mm: có thủng hay không theo đúng kết quả VehicleDamage (đuôi xe tăng thủng, mặt trước không), không theo loại xe
+            hit.armorMark = { kind: 'atr', p: p.clone(), n: n.clone(), d: d.clone(), cls: armorCls };
           } else if (ammoType !== 'SCOUT_BULLET' && opts.deferArmorMarks) {
             // 30mm: thủng (lỗ rách) hay chỉ nổ trên mặt giáp (hố cày nông + muội) theo đúng kết quả xuyên của VehicleDamage
             // (giáp sườn mỏng xe tăng vẫn thủng, mặt trước dày xe 6 nòng không thủng) — game.js dán qua armorHitMarks

@@ -16,7 +16,9 @@ const Backdrop = (() => {
     // (sương riêng dày hơn làm rừng nền thành cục xám lam như mây). Mép tầm nhìn: mờ hẳn về màu không khí xa sẫm, khớp
     // chân dãy núi chân trời phía sau (không thành dải sáng)
     float gD = length(vViewPosition);
-    vec3 gFar = fogColor * farAir;
+    // (farLand < 1: đồng cỏ / rừng — chân dãy núi chân trời phía sau sẫm hơn fogColor·farAir, đất ở mép cắt xa sáng hơn
+    // nó thành vệt lam nhạt phẳng như mặt hồ dưới chân núi)
+    vec3 gFar = fogColor * farAir * farLand;
     #ifdef FOG_EXP2
     gFar = mix(gFar, fogColor, smoothstep(0.0003, 0.0007, fogDensity));   // sương mù dày: mờ về đúng màu sương (không thành dải sẫm)
     #endif
@@ -26,7 +28,8 @@ const Backdrop = (() => {
   function hazeFog(sh) {
     sh.uniforms.farFade = BattleTerrain3D.FAR_FADE;
     sh.uniforms.farAir = BattleTerrain3D.FAR_AIR;
-    sh.fragmentShader = 'uniform vec2 farFade;\nuniform vec3 farAir;\n' +sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + HAZE_GLSL);
+    sh.uniforms.farLand = BattleTerrain3D.FAR_LAND;
+    sh.fragmentShader = 'uniform vec2 farFade;\nuniform vec3 farAir;\nuniform float farLand;\n' +sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n' + HAZE_GLSL);
   }
 
   // Toạ độ một trục: [-ext, -half) thưa dần ra xa, [-half, half] đúng theo ô lưới bản đồ, (half, ext] thưa dần

@@ -337,25 +337,47 @@ function MapGenFactory() {
     // SA MẠC — ĐỤN CÁT NGANG GIÓ: gió thổi theo +u (hướng windA). Mặt cắt dọc gió bất đối xứng như đụn thật: sườn đón gió
     // thoải (~70% bước đụn, dốc dần lên đỉnh), đỉnh sắc, sườn khuất gió dốc (~25-30°) đổ về phía xuôi gió. Sống đụn đứt thành
     // từng khúc (độ cao đổi chậm dọc sống), hai đầu khúc thấp dần và lùi về phía xuôi gió -> dáng lưỡi liềm (sừng chĩa
-    // xuôi gió). Bước đụn ~560 (~7 ô lưới 84) để lưới độ cao dựng được dáng đụn; gợn cát nhỏ do shader vẽ cùng hướng gió
-    const DUNE_L = 560, DUNE_S = 0.71;
+    // xuôi gió). Bước đụn ~1100 (~140 m, ~13 ô lưới 84), đỉnh tới ~12 m (8 đơn vị = 1 m), sườn khuất gió
+    // ~20% bước (~2,6 ô, dốc ~0,45-0,6 sau lọc): thấp / thoải hơn thì nhìn từ camera sau xe gần như phẳng, sườn khuất gió
+    // không đủ dốc để tối hẳn dưới nắng. Xe leo kém (climbMax 0,5) phải vòng lên từ sườn đón gió như xe thật. Gợn cát nhỏ
+    // do shader vẽ cùng hướng gió
+    const DUNE_L = 1100, DUNE_S = 0.8;
     function duneH(x, z) {
-      // cát bị gió quét khỏi chân cao nguyên (nền sỏi / đá trơ), dồn dần về phía biển cát xuôi gió
-      const pr = plProx(x, z);
-      const field = smooth(-0.15 - 0.3 * smooth(0, -0.7, pr), 0.35, fbm(noise, (x + ox) * 0.00055, (z + oz) * 0.00055, 3)) * (0.12 + 0.88 * smooth(0.55, -0.45, pr));
+      // cát bị gió quét khỏi chân cao nguyên (nền sỏi / đá trơ), dồn dần về phía biển cát xuôi gió: nửa phía biển cát
+      // phủ gần kín, giữa chiến trường còn dày, sát cao nguyên chỉ còn đụn lẻ trên nền sỏi
+      // (plProx trong chiến trường chỉ ~±0,36: ergF ~0,95 sát vành phía biển cát, ~0,6 giữa, ~0,15 sát cao nguyên)
+      const pr = plProx(x, z), ergF = smooth(0.65, -0.5, pr);
+      const field = smooth(-0.45, 0.1 - 0.15 * ergF, fbm(noise, (x + ox) * 0.00045, (z + oz) * 0.00045, 3)) * (0.25 + 0.75 * ergF);
       if (field <= 0) return 0;
       const wx = x + 180 * fbm(noise2, (x + ox) * 0.0007, (z + oz) * 0.0007, 3);
       const wz = z + 180 * fbm(noise2, (x - oz) * 0.0007 + 40, (z + ox) * 0.0007, 3);
-      const u = wx * cw + wz * sw, v = -wx * sw + wz * cw;
-      // độ cao khúc sống đụn: đổi chậm dọc sống (v), gần như không đổi qua bề ngang một đụn (u)
-      const seg = smooth(-0.3, 0.3, noise(u * 0.0005 + 7.7, v * 0.0021 - 3.1));
+      // gió địa phương lệch dần theo vùng (địa hình lái gió): sống đụn không song song một hướng khắp bản đồ
+      const da = 0.4 * fbm(noise2, (x + oz) * 0.00022 + 11.3, (z - ox) * 0.00022 - 7.1, 2);
+      const ca = Math.cos(da), sa = Math.sin(da), dcw = cw * ca - sw * sa, dsw = sw * ca + cw * sa;
+      const u = wx * dcw + wz * dsw, v = -wx * dsw + wz * dcw;
+      // độ cao khúc sống đụn: đổi chậm dọc sống (v), gần như không đổi qua bề ngang một đụn (u). Cát dày -> sống liền
+      // thành dải đụn ngang gió uốn lượn; cát thưa -> đứt thành đụn lưỡi liềm lẻ
+      const seg = smooth(-0.35, 0.15, noise(u * 0.0004 + 7.7, v * 0.0016 - 3.1) + 0.6 * field - 0.2);
       if (seg <= 0) return 0;
-      const amp = field * seg * (0.8 + 0.4 * fbm(noise, u * 0.0004 - 2.3, v * 0.0009 + 5.1, 2));
-      // sừng lưỡi liềm: khúc đụn thấp dần (hai đầu) thì đỉnh lùi xuôi gió; sống đụn uốn nhẹ theo chiều dọc
-      const ph = (u - 160 * (1 - seg) + 90 * noise(v * 0.0013 + 1.9, u * 0.0003)) / DUNE_L;
-      const t = ph - Math.floor(ph);
-      const y = t < DUNE_S ? Math.pow(t / DUNE_S, 1.6) : Math.pow(1 - (t - DUNE_S) / (1 - DUNE_S), 1.25);
-      return y * 50 * amp;
+      // sừng lưỡi liềm: khúc đụn thấp dần (hai đầu) thì đỉnh lùi xuôi gió; sống đụn uốn theo chiều dọc. Pha cộng nhiễu
+      // tỉ lệ lớn (đạo hàm theo u luôn < 1/DUNE_L, pha không gập): khoảng cách giữa các sống co giãn ~±40% theo vùng
+      const ph = (u - 220 * (1 - seg) + 170 * noise(v * 0.0011 + 1.9, u * 0.0003)) / DUNE_L
+        + 0.6 * fbm(noise2, u * 0.0003 - 4.4, v * 0.0005 + 8.2, 2);
+      const k = Math.floor(ph), t = ph - k;
+      // mỗi sống đụn một độ cao riêng (đổi dọc sống): sống to xen sống nhỏ, không đều như luống cày. Nhân ở chân đụn
+      // (y = 0) nên đổi theo k không làm bậc
+      // Thỉnh thoảng (~1/4 sống) một sống đụn lớn cao tới ~1,7 lần, sườn khuất gió dài ra tương ứng (dốc không quá 0,5)
+      const big = smooth(0.05, 0.4, noise(k * 0.913 + 5.1, v * 0.0006 - k * 0.37));
+      const ridge = (0.45 + 0.75 * smooth(-0.45, 0.45, noise(k * 1.731 + 0.37, v * 0.0009 + k * 0.61))) * (1 + 0.7 * big);
+      const amp = field * seg * ridge * (0.8 + 0.4 * fbm(noise, u * 0.0004 - 2.3, v * 0.0009 + 5.1, 2));
+      const S = DUNE_S - 0.12 * big;
+      const y = t < S ? Math.pow(t / S, 1.6) : Math.pow(1 - (t - S) / (1 - S), 1.25);
+      return y * 100 * amp;
+    }
+    function duneGrid() {
+      const g = new Uint8Array(N * N);
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) g[j * N + i] = Math.min(255, Math.round(duneH(i * CELL - HALF, j * CELL - HALF)));
+      return g;
     }
     // SA MẠC — NÚI BÀN: thềm sa thạch đỉnh bằng, vách cao ~14 m (sau lọc chống răng cưa, trên lưới 84 thành vách dốc
     // ~0,8-1: xe nhẹ không leo thẳng lên), chân vách có sườn đá đổ (talus). Vài đoạn vách sạt thành dốc thoải = lối lên
@@ -4075,6 +4097,8 @@ function MapGenFactory() {
       type, seed, size: SIZE, res: RES, cell: CELL, heights, surface,
       // wind: hướng gió chính (rad, trong mặt x-z: (cos, sin)) — đụn cát sa mạc vuông góc với nó, shader gợn cát dùng chung
       wind: windA, oases,
+      // sa mạc: độ cao đụn cát (đơn vị, lưới như heights) — thảm cỏ / bụi không mọc trên thân đụn cát động
+      dune: type === 'DESERT' ? duneGrid() : null,
       // sa mạc: lòng suối cạn [{ pts: [[x, z, nửa bề rộng đáy], ...] }] từ hẻm cao nguyên -> bãi muối { x, z, r, level }
       wadis, playa,
       // báo cáo cân bằng vật che hai phe (5f): [{ name, blue, red, blueAfter, redAfter, added }]

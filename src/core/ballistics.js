@@ -1543,11 +1543,13 @@ class BallisticsSystem3D {
               // thuốc nổ: phát trượt cách mép xe ~3 m vẫn bị tính như xuyên thân, độ tản mát pháo tăng gần như không còn ý nghĩa.
               // Bom con đạn chùm giữ vùng trúng cũ quanh tâm xe (số quả & sát thương mỗi quả đã cân theo đó)
               if (s.ammoType !== 'CLUSTER_SUBMUNITION' && typeof Strongholds !== 'undefined' && Strongholds.segUnitBox) {
-                let tb = Strongholds.segUnitBox(unit, prevX, prevY, prevZ, prevX + segX, prevY + segY, prevZ + segZ, 1.0), onBarrel = false;
-                if (tb < 0) { tb = segHitsBarrel(unit, prevX, prevY, prevZ, segX, segY, segZ); onBarrel = tb >= 0; }
+                let tb = Strongholds.segUnitBox(unit, prevX, prevY, prevZ, prevX + segX, prevY + segY, prevZ + segZ, 1.0), onBarrel = false, infZone = null;
+                if (tb < 0 && !unit._infHit) { tb = segHitsBarrel(unit, prevX, prevY, prevZ, segX, segY, segZ); onBarrel = tb >= 0; }
+                // lính: hộp chỉ để lọc, trúng hay không do các viên thuốc bám xương (khe giữa tay và thân, người nằm thấp đều đúng hình)
+                if (tb >= 0 && unit._infHit && !wreck) { const ih = unit._infHit(prevX, prevY, prevZ, prevX + segX, prevY + segY, prevZ + segZ); if (ih) { tb = ih.t; infZone = ih.zone; } else tb = -1; }
                 if (tb >= 0) {
                   const dh = tb * Math.sqrt(segLenSq);
-                  if (dh < minHitDist) { minHitDist = dh; hitVehicle = unit; s.x = prevX + segX * tb; s.y = prevY + segY * tb; s.z = prevZ + segZ * tb; s._barrelHit = onBarrel; }
+                  if (dh < minHitDist) { minHitDist = dh; hitVehicle = unit; s.x = prevX + segX * tb; s.y = prevY + segY * tb; s.z = prevZ + segZ * tb; s._barrelHit = onBarrel; s._infZone = infZone; }
                 } else if (!wreck && !friend && BallisticsSystem3D.PROX_FUZE[s.ammoType] && !(s.isHeavyArty && s.isDirectFire)) {
                   // NGÒI CẬN ĐÍCH của đạn nổ mảnh (HE pháo tăng, lựu pháo cầu vồng, đạn chùm): bay sượt sát thân xe địch mà không
                   // chạm -> nổ ngay cạnh xe ('PROXIMITY': sát thương nổ lan theo khoảng cách tới thân xe, không phải trúng thẳng)
@@ -1591,14 +1593,15 @@ class BallisticsSystem3D {
           // phải bay qua hộp xa hơn (qua tháp, từ đầu xe bên kia) thì vẫn trúng xe
           if (hitVehicle && hitVehicle._riders && !s._barrelHit && s.ammoType !== 'CLUSTER_SUBMUNITION' && segLenSq > 0 && typeof Strongholds !== 'undefined' && Strongholds.segUnitBox) {
             const kr = 14 / Math.sqrt(segLenSq), rx = segX * kr, ry = segY * kr, rz = segZ * kr;
-            let tr = Infinity, rider = null;
+            let tr = Infinity, rider = null, rZone = null;
             for (const P of hitVehicle._riders) {
               const r = P && P.u;
               if (!r || r.isDead || r._inVeh || r._netHidden || r._netStale || r.id === s.shooterId || (s._penU && s._penU.indexOf(r.id) >= 0)) continue;
-              const t = Strongholds.segUnitBox(r, s.x, s.y, s.z, s.x + rx, s.y + ry, s.z + rz, 1.0);
-              if (t >= 0 && t < tr) { tr = t; rider = r; }
+              let t = Strongholds.segUnitBox(r, s.x, s.y, s.z, s.x + rx, s.y + ry, s.z + rz, 1.0), z = null;
+              if (t >= 0 && r._infHit) { const ih = r._infHit(s.x, s.y, s.z, s.x + rx, s.y + ry, s.z + rz); t = ih ? ih.t : -1; z = ih && ih.zone; }
+              if (t >= 0 && t < tr) { tr = t; rider = r; rZone = z; }
             }
-            if (rider) { s.x += rx * tr; s.y += ry * tr; s.z += rz * tr; hitVehicle = rider; }
+            if (rider) { s.x += rx * tr; s.y += ry * tr; s.z += rz * tr; hitVehicle = rider; s._infZone = rZone; }
           }
 
           // đạn xuyên giáp không có thuốc nổ: xuyên qua người rồi bay tiếp, không nổ

@@ -60,11 +60,36 @@ SoundEngine.mixin(class {
   // ĐẠN 20 MM SÚNG BẮN TỈA CHỐNG TĂNG (lõi xuyên giáp, ~110 g, ~900 m/s, không thuốc nổ): mỗi phát là một cú đập lẻ, nặng gấp ~3 lần 12.7mm.
   // Thép: "CHOANG" gắt — xung va + tấm giáp ngân trầm bất hoà + tia lửa xèo; vỏ mỏng thì xé thủng "phập" và mảnh lạo xạo bên trong.
   // Đất: "PHẬP" trầm + đất đá văng rào xuống; đá / tường: "CHÁT" vỡ vụn; nước: cột nước "tõm" lớn
+  // trễ tiếng theo âm tốc thật ở tỉ lệ bộ binh (8 đv = 1 m), như playGL. soundDelay chung dùng 343 đv/s và trần 4 s: bắn xa trên ~200 m là mọi tiếng trúng đều tới sau đúng 4 s
+  atrDelay(distance) { return Math.max(0, distance || 0) / (343 * 8); }
+
+  // lớp tiếng SAU KHI tính giáp của phát 20 mm (đứng ngoài xe nghe): o = { pen, thin }.
+  // Xuyên: thép bị xé "RẮC" tụt tần, lõi + mảnh giáp phun vào khoang rào rào, khoang dội đục. Không xuyên: khối thép dày ngân "KOONG" + rung trầm, vảy sơn tróc lả tả
+  playAtrOutcome(distance, pos = null, o = {}) {
+    if (!this.ready()) return;
+    const sp = this.spatial(distance, pos);
+    if (sp.gain < 0.04) return;
+    const t = this.ctx.currentTime + this.atrDelay(distance) + 0.003, v = 0.92 + Math.random() * 0.16;
+    const out = this.voice({ gain: sp.gain * 0.8, lowpass: sp.lowpass, wet: Math.min(0.9, sp.wet + 0.05), pan: sp.pan });
+    if (o.pen) {
+      this.snap(out, t, 0.7, 9000, 5);
+      this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 3000 * v, freqEnd: 1200, sweep: 0.16, Q: 1.6, drive: 3, gain: 3.2, attack: 0.001, dur: 0.2 });
+      this.burst(out, t + 0.012, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 3400, Q: 0.7, gain: 3.0, attack: 0.006, dur: o.thin ? 0.35 : 0.55 });
+      this.burst(out, t + 0.008, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: o.thin ? 420 : 300, drive: 1.6, gain: 0.35, attack: 0.006, dur: 0.18 });
+      if (o.thin) this.playCaseHit(out, t, 'sheetMetal', 0.85 + Math.random() * 0.25, 0.5);
+      for (let i = 0; i < 3; i++) this.playCaseHit(out, t + 0.05 + Math.random() * 0.4, 'debrisLink', 1.1 + Math.random() * 0.8, 0.14);
+    } else {
+      this.metal(out, t, { f0: (o.thin ? 620 : 390) * v, ratios: [1, 1.93, 2.87, 4.1], decay: o.thin ? 0.3 : 0.75, gain: 3.2, click: 0.5 });
+      this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 210, drive: 2, gain: 1.2, attack: 0.002, dur: 0.28 });
+      this.burst(out, t + 0.02, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 2600, Q: 0.8, gain: 0.22, attack: 0.006, dur: 0.2 });
+    }
+  }
+
   playAtrImpact(distance, hitType = 'GROUND', pos = null, opts = null) {
     if (!this.ready()) return;
     const sp = this.spatial(distance, pos);
     if (sp.gain < 0.04) return;
-    const t = this.ctx.currentTime + sp.delay, v = 0.92 + Math.random() * 0.16;
+    const t = this.ctx.currentTime + this.atrDelay(distance), v = 0.92 + Math.random() * 0.16;
     const out = this.voice({ gain: sp.gain, lowpass: sp.lowpass, wet: Math.min(0.9, sp.wet + 0.08), pan: sp.pan });
     const play = (kind, g, rate = 1) => {
       const src = this.ctx.createBufferSource(); src.buffer = this.gunshotBuffer(kind); src.playbackRate.value = rate * v;
@@ -76,10 +101,8 @@ SoundEngine.mixin(class {
       play('hitSteel127', 1.1, 0.78);
       this.burst(out, t, { buffer: this.pinkNoiseBuffer, filter: 'bandpass', freq: 1900 * v, Q: 1, drive: 3, gain: 0.7, attack: 0.0003, dur: 0.03 });
       this.burst(out, t, { buffer: this.brownNoiseBuffer, filter: 'lowpass', freq: 320, drive: 2.2, gain: 0.9, attack: 0.001, dur: 0.12 });
-      this.metal(out, t + 0.002, { f0: (thin ? 640 : 420) * v, ratios: [1, 2.32, 3.71, 5.9], decay: thin ? 0.18 : 0.32, gain: thin ? 0.35 : 0.5, click: 0.9 });
+      this.metal(out, t + 0.002, { f0: (thin ? 640 : 420) * v, ratios: [1, 2.32, 3.71, 5.9], decay: thin ? 0.12 : 0.14, gain: thin ? 0.22 : 0.2, click: 0.9 });   // chỉ cú gõ: phần ngân / xé do playAtrOutcome theo kết quả xuyên
       this.burst(out, t + 0.004, { filter: 'highpass', freq: 3800, gain: 0.22, attack: 0.002, dur: 0.16 });   // lõi thép mài giáp tóe lửa
-      if (thin) this.burst(out, t + 0.015, { buffer: this.crackleBuffer || this.noiseBuffer, filter: 'bandpass', freq: 2600, Q: 0.8, gain: 0.3, attack: 0.004, dur: 0.24 });
-      else if (Math.random() < 0.25) this.playRicochet(out, t + 0.01, 1);
       return;
     }
     if (hitType === 'WATER') {
@@ -557,14 +580,14 @@ SoundEngine.mixin(class {
    *  (3) đạn súng / 30mm / mũi tên bật đi rít vút (Doppler); đạn nổ / đầu nổ lõm thì không — nó nổ lệch ra ngoài
    *      (game.js phát tiếng nổ không có lớp "BOONG" thân xe)
    */
-  playArmorGlance(distance, pos = null, cls = 'kinetic') {
+  playArmorGlance(distance, pos = null, cls = 'kinetic', opts = null) {
     if (!this.ready()) return;
     const now = this.ctx.currentTime;
     const small = cls === 'small' || cls === 'cannon';
     if (small) { if (now - (this._lastGlance || 0) < 0.05) return; this._lastGlance = now; }
     const sp = this.spatial(distance, pos);
     if (sp.gain < 0.04) return;
-    const t = now + sp.delay;
+    const t = now + (opts && opts.atr ? this.atrDelay(distance) : sp.delay);
     const big = cls === 'kinetic' || cls === 'blast' || cls === 'heat';
     const out = this.voice({ gain: sp.gain * (cls === 'small' ? 0.55 : cls === 'cannon' ? 0.5 : 0.75), lowpass: sp.lowpass, wet: Math.min(0.9, sp.wet + 0.05), pan: sp.pan });
     const f0 = (cls === 'small' ? 1900 : cls === 'cannon' ? 1350 : cls === 'kinetic' ? 820 : 620) * (0.88 + Math.random() * 0.24);

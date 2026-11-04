@@ -608,7 +608,9 @@ uniform vec4 gBldGrid;
 #endif
 // Phá lặp texture triệt để: mỗi vùng lấy ảnh với góc xoay và độ lệch ngẫu nhiên riêng (triệt tiêu hoàn toàn sọc lưới và chu kỳ)
 vec4 noTile(sampler2D samp, vec2 uv, float seed) {
-  float k = texture2D(gNoise, 0.035 * uv + seed).r;
+  // biến thể (xoay + dịch) đổi sau ~4 ô ảnh: 0,035 thì mỗi biến thể kéo dài ~28 ô — trong vùng đó ảnh đất / thảm cỏ lặp
+  // y hệt mỗi 1 ô (22-38 đv), lộ khuôn đốm xếp hàng
+  float k = texture2D(gNoise, 0.25 * uv + seed).r;
   vec2 dx = dFdx(uv), dy = dFdy(uv);
   float l = k * 7.0, f = fract(l), ia = floor(l), ib = ia + 1.0;
   float aA = fract(sin(ia * 12.9898 + seed * 7.1) * 43758.5453) * 6.28318;
@@ -787,6 +789,18 @@ float gRip(vec2 p) {
   float field = smoothstep(0.36, 0.6, zn.g * 0.65 + gN2(p, 95.0, 0.21, 1.0).r * 0.35);
   return h * (0.25 + 0.75 * field);
 }
+// Mặt cát nhấp nhô tầng vừa (đv): ụ cát thoải ~60-140 đv + sóng cát lớn (megaripple, hạt thô đọng đỉnh) ngang gió bước
+// ~12-16 đv, hơi kéo dài ngang gió (gấp 3 / biên độ lớn thì thành vệt chổi quét). Ở tầm camera sau xe gợn gió 2 đv đã nhỏ hơn điểm ảnh (tắt) -> đây là chi tiết mắt thấy
+// trên mặt cát. gN2 không lặp (một mẫu gNoise thì cứ mỗi chu kỳ in lại y hệt -> vân nhàu lặp đều); tầng nhỏ hơn cỡ điểm
+// ảnh fw tắt dần
+float gSandU(vec2 p, float fw) {
+  vec2 d = vec2(cos(gWindA), sin(gWindA));
+  vec2 q = vec2(dot(p, d), dot(p, vec2(-d.y, d.x)) / 2.0);
+  float h = (gN2(p, 140.0, 0.23, 0.0).g - 0.5) * 2.4;
+  h += (gN2(p, 55.0, 0.61, 0.0).r - 0.5) * 1.2 * (1.0 - smoothstep(5.0, 12.0, fw));
+  h += (gN2(q, 15.0, 0.47, 0.0).b - 0.5) * 0.3 * (1.0 - smoothstep(1.5, 4.0, fw)) * smoothstep(0.3, 0.6, gN2(p, 300.0, 0.71, 0.0).g);
+  return h;
+}
 ` : ''}${urban ? `// ---- NỀN PHỐ: lát ngẫu nhiên theo ô (mỗi ô ~23 m lấy một mảnh ảnh lệch + xoay bất kỳ, biên ô uốn lượn, giữ độ tương phản)
 vec2 gH2(vec2 p) { p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
 vec3 gStoch(sampler2D t, vec2 wp, float cellM, float texM) {
@@ -910,8 +924,9 @@ float gTuftH(vec2 p) {
   }` : desert ? `// cát: màu trung bình + hạt mịn 2 tỉ lệ (độ tương phản thấp), sắc cát đổi rất nhẹ theo mảng trăm mét
   vec3 sMean = texture2D(gGrain, vec2(0.5), 12.0).rgb;
   vec3 cBase = sMean + (noTile(gGrain, wr1 / 7.0, 0.41).rgb - sMean) + (noTile(gGrain, wr2 / 37.0 + 0.2, 0.63).rgb - sMean) * 0.5;
-  cBase *= mix(vec3(1.035, 1.0, 0.95), vec3(0.965, 0.985, 1.03), smoothstep(0.3, 0.7, texture2D(gNoise, wr3 / 900.0 + 0.4).r));
-  cBase *= 0.94 + 0.12 * texture2D(gNoise, wr1 / 170.0 + 0.2).g;   // mảng cát sáng (mới bồi) / sẫm (hạt thô đọng) vài chục mét
+  // (gN2: 2 mẫu lệch tỉ lệ + xoay — 1 mẫu gNoise tuần hoàn thì mảng sáng / sẫm lặp y hệt mỗi 170 / 900 đv, lộ khuôn)
+  cBase *= mix(vec3(1.035, 1.0, 0.95), vec3(0.965, 0.985, 1.03), smoothstep(0.3, 0.7, gN2(wr3, 900.0, 0.4, 0.0).r));
+  cBase *= 0.94 + 0.12 * gN2(wr1, 170.0, 0.2, 0.0).g;   // mảng cát sáng (mới bồi) / sẫm (hạt thô đọng) vài chục mét
   // gợn cát: đỉnh gợn hạt thô sáng hơn chút, rãnh gợn đọng hạt mịn sẫm hơn (phần chính là bóng / nắng ở pháp tuyến)
   gRipP0 = wp; gRipH0 = vGW.y; gRipHG = -nrm.xz / max(nrm.y, 0.35);
   float gRip0 = gRip(wp);
@@ -919,8 +934,10 @@ float gTuftH(vec2 p) {
   {
     // vệt cát dài xuôi gió (cát bay đọng thành dải sáng / sẫm dài vài chục mét) — chi tiết còn đọc được khi gợn đã mờ ở xa
     vec2 dW = vec2(cos(gWindA), sin(gWindA));
-    float st = texture2D(gNoise, vec2(dot(wp, dW) / 700.0, dot(wp, vec2(-dW.y, dW.x)) / 60.0) + 0.71).b;
-    cBase *= 0.95 + 0.1 * smoothstep(0.3, 0.7, st);
+    // (toạ độ kéo giãn dọc gió rồi lấy gN2 không lặp: 1 mẫu gNoise thì ngang gió cứ 60 đv lặp lại -> sọc song song đều)
+    float st = gN2(vec2(dot(wp, dW) * (60.0 / 700.0), dot(wp, vec2(-dW.y, dW.x))), 60.0, 0.71, 0.0).b;
+    // chỉ từng vùng có vệt (mảng ~0,5 km), không phủ đều khắp mặt cát như vải nhung kẻ
+    cBase *= 1.0 + (0.05 * smoothstep(0.3, 0.7, st) - 0.025) * smoothstep(0.35, 0.65, gN2(wr2, 520.0, 0.33, 0.0).g);
   }` : `// cỏ: hạt mịn ít tương phản 2 tỉ lệ; khóm cỏ nổi khối (kẽ khóm lộ đất sẫm); vạt đất trụi nhỏ lấm tấm
   vec3 gMean = texture2D(gGrain, vec2(0.5), 12.0).rgb;
   vec3 cBase = gMean + (noTile(gGrain, wr1 / 9.0, 0.41).rgb - gMean) + (noTile(gGrain, wr2 / 43.0 + 0.2, 0.63).rgb - gMean) * 0.6;
@@ -1198,7 +1215,8 @@ float gTuftH(vec2 p) {
     float stHN = vGW.y + (texture2D(gNoise, wp * 0.00045 + 0.17).r - 0.5) * 32.0;
     float dStrata = ${opts.mapType === 'HIGHLAND' || desert ? '1.0' : '0.0'} * (cos(stHN * 0.26) * 0.24 + cos(stHN * 0.08) * 0.16) * smoothstep(0.22, 0.55, slope)
       * t3 * smoothstep(0.35, 0.65, texture2D(gNoise, wp / 140.0 + 0.27).g) * (1.0 - gMtnF);
-    vec3 nW = normalize(nrm - vec3(mx - m0, 0.0, mz - m0) * ${desert ? '0.9' : urban ? '0.25' : '1.8'} * fadeB * (1.0 - 0.92 * smoothstep(0.0, 0.6, gSand)));
+    // (cát: không — mô đất 9-26 đv một mẫu nhiễu tuần hoàn thành đốm da báo / vân nhàu lặp; cát dùng gSandU bên dưới)
+    vec3 nW = normalize(nrm - vec3(mx - m0, 0.0, mz - m0) * ${desert ? '0.0' : urban ? '0.25' : '1.8'} * fadeB * (1.0 - 0.92 * smoothstep(0.0, 0.6, gSand)));
     {
       // khóm cỏ (cao ~0.55 đơn vị) và sỏi / cục đất (~0.25) nổi khối: bước sai phân >= cỡ 1 điểm ảnh trên mặt đất
       float e = max(0.35, max(fwidth(wp.x), fwidth(wp.y)));
@@ -1210,12 +1228,16 @@ float gTuftH(vec2 p) {
       }
       // MÔ ĐẤT NHẤP NHÔ ở xa (ô ~90 m, lưới địa hình không có): sườn đồi bắt sáng / tối lượn sóng nhẹ, không phẳng như nỉ
       {
-        float fH = smoothstep(300.0, 900.0, length(vViewPosition)) * (1.0 - t3);
+        // (sa mạc: không — một mẫu nhiễu tuần hoàn 90 đv lát kín mặt cát thành vân nhàu lặp đều, nhìn từ trên cao lộ khuôn;
+        // sườn cát xa đã có đụn của lưới địa hình bắt sáng)
+        float fH = ${desert ? '0.0' : 'smoothstep(300.0, 900.0, length(vViewPosition)) * (1.0 - t3)'};
         if (fH > 0.0) {
           float eh = max(6.0, e * 2.0);
-          float h0 = texture2D(gNoise, wr2 / 90.0 + 0.41).g;
-          float hx = texture2D(gNoise, (wr2 + mat2(0.423, -0.906, 0.906, 0.423) * vec2(eh, 0.0)) / 90.0 + 0.41).g;
-          float hz = texture2D(gNoise, (wr2 + mat2(0.423, -0.906, 0.906, 0.423) * vec2(0.0, eh)) / 90.0 + 0.41).g;
+          // (gNMb 3 mẫu lệch tỉ lệ + mip thô bias 2: 1 mẫu gNoise thì cứ mỗi 90 đv lặp y hệt, tầng mịn của ảnh nhiễu thì phủ
+          // vân nhàu li ti đều khắp đồng cỏ nhìn từ trên cao)
+          float h0 = gNMb(wr2, 90.0, 0.41, 2.0).g;
+          float hx = gNMb(wr2 + mat2(0.423, -0.906, 0.906, 0.423) * vec2(eh, 0.0), 90.0, 0.41, 2.0).g;
+          float hz = gNMb(wr2 + mat2(0.423, -0.906, 0.906, 0.423) * vec2(0.0, eh), 90.0, 0.41, 2.0).g;
           nW = normalize(nW - vec3(hx - h0, 0.0, hz - h0) * (6.0 / eh) * fH);
         }
       }
@@ -1230,12 +1252,21 @@ float gTuftH(vec2 p) {
       nW = normalize(nW - vec3(bx - b0, 0.0, bz - b0) / e * 0.7 * kM);
       col *= mix(1.0, 1.06 + 0.02 * b0, kM * 0.7);   // hốc / kẽ đá tối hơn
     }` : ''}
+    ${desert ? `// mặt cát nhấp nhô tầng vừa (gSandU); sườn khuất gió cát trượt mịn hơn
+    {
+      float fw = max(fwidth(wp.x), fwidth(wp.y)), ec = max(1.5, fw * 1.5);
+      float s0 = gSandU(wp, fw), sx = gSandU(wp + vec2(ec, 0.0), fw), sz = gSandU(wp + vec2(0.0, ec), fw);
+      float kS = (1.0 - max(t2, t3)) * (1.0 - 0.6 * smoothstep(0.1, 0.24, dot(nrm.xz, vec2(cos(gWindA), sin(gWindA)))));
+      nW = normalize(nW - vec3(sx - s0, 0.0, sz - s0) / ec * kS);
+    }` : ''}
     ${desert ? `// gợn cát nổi khối: cao ~0.3 đơn vị (~4 cm), sườn đón gió ~8°, sườn khuất ~18°; chỉ trên lớp cát nền,
     // nhạt dần trên sườn cồn dốc (cát trượt phẳng) và nơi lộ đất / đá
     {
       // bước sai phân không nhỏ hơn cỡ 1 điểm ảnh trên mặt đất: ở xa là đạo hàm đã làm mượt, không lấy mẫu thưa
       float e = max(0.45, max(fwidth(wp.x), fwidth(wp.y))), rx = gRip(wp + vec2(e, 0.0)), rz = gRip(wp + vec2(0.0, e));
       float k = 0.2 / e * (1.0 - smoothstep(0.18, 0.4, slope)) * (1.0 - max(t2, t3));
+      // sườn khuất gió của đụn (mặt quay xuôi gió): cát đổ trượt thành mặt phẳng mịn, gió không dựng gợn
+      k *= 1.0 - 0.85 * smoothstep(0.1, 0.24, dot(nrm.xz, vec2(cos(gWindA), sin(gWindA))));
       nW = normalize(nW - vec3(rx - gRip0, 0.0, rz - gRip0) * k);
     }` : ''}
 ${rain ? `    if (gRainW > 0.0) {

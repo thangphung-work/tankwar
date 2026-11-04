@@ -1127,12 +1127,13 @@ const Destructibles = (() => {
   // Mái hai dốc thật trong khối đơn vị (khớp cách đặt cũ: sống mái dọc trục X, chân mái y = 0 ở z = ±0,433, đỉnh y = 0,75):
   // tấm mái có bề dày (thấy mép tấm mái / diềm mái), mái chìa khỏi tường, bờ nóc úp, 2 đầu hồi là TƯỜNG (nhóm vật liệu 1).
   // Mái chia thành từng ô theo khoang nhà (đạn đục thủng từng ô): g0 / g1 = có tường hồi ở đầu -X / +X, xG = vị trí tường hồi
-  function gableRoofGeo(g0 = true, g1 = true, xG = 0.455) {
+  // far: bản vẽ khi ở xa (BuildingSet.updateFarLOD) — cùng dáng + cùng thuộc tính shader, lưới thưa (~1300 -> ~100 tam giác)
+  function gableRoofGeo(g0 = true, g1 = true, xG = 0.455, far = false) {
     const b = geoBuilder(), V = b.V;
     const zE = 0.433, yR = 0.75, th = 0.035, slopeN = (s) => new THREE.Vector3(0, zE, s * yR).normalize();
     // tấm mái chia lưới (NU dọc sống mái x NV từ chân lên nóc) để shader làm võng / gợn (roofSag) — mép, diềm, bờ nóc chia
     // cùng nhịp nên không hở khe
-    const NU = 8, NV = 8;
+    const NU = far ? 2 : 8, NV = far ? 2 : 8;
     const L = (p, q, t) => p.clone().lerp(q, t), Lu = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
     const grid = (a, bb, c, d, n, ua, ub, uc, ud, nu, nv) => {
       for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
@@ -1156,7 +1157,7 @@ const Destructibles = (() => {
     // Viền mái ngói không kẻ thước: hàng ngói diềm (nhô khỏi mép tấm mái), hàng ngói mép đầu hồi, bờ nóc úp từng viên.
     // Vị trí đỉnh ở đây chỉ là dáng danh nghĩa (để lật mặt / bao cầu); vị trí thật do edgeVert (vertex shader) tính theo mét
     // thật + toạ độ thế giới: viên lệch cao thấp, sứt góc, cụm viên rơi mất lộ mép tấm mái. aEdge = (loại, t, lớp, v)
-    const NE = 32, NVG = 20;
+    const NE = far ? 4 : 32, NVG = far ? 2 : 20;
     for (const s of [-1, 1]) {
       const n = slopeN(s), lip = new THREE.Vector3(0, -0.4, s).normalize();
       for (let i = 0; i < NE; i++) {
@@ -2251,9 +2252,9 @@ const Destructibles = (() => {
         m.frustumCulled = true;
         // tia dò trúng từng instance: thử khối bao hình học gốc theo ma trận từng instance (như cullBySphere của cây)
         m.raycast = function (rc, out) {
-          const s = g.boundingSphere;
-          g.boundingSphere = local;
-          try { THREE.InstancedMesh.prototype.raycast.call(this, rc, out); } finally { g.boundingSphere = s; }
+          const s = g.boundingSphere, cur = this.geometry;
+          g.boundingSphere = local; this.geometry = g;
+          try { THREE.InstancedMesh.prototype.raycast.call(this, rc, out); } finally { g.boundingSphere = s; this.geometry = cur; }
         };
         M.parent.add(m);
         chunks.push(m);
@@ -2262,6 +2263,22 @@ const Destructibles = (() => {
       M.count = 0;
       M.visible = false;
       return true;
+    }
+    // BẢN XA cho các mảnh đã đóng băng: hình đơn giản (cùng bộ thuộc tính position / normal / uv, cùng ảnh) thay hình chi tiết
+    // khi ô ở xa (BuildingSet.updateFarLOD). Mỗi mảnh 1 hình nông riêng: khối bao của mảnh, bộ đệm đỉnh dùng chung
+    setFar(farGeo) {
+      if (!this.fz || this.fzFar) return;
+      const near = this.mesh.geometry;
+      for (const k in near.attributes) if (!farGeo.attributes[k]) return;   // thiếu thuộc tính shader cần -> bỏ
+      this.fzFar = this.fz.c.map(m => {
+        const g = new THREE.BufferGeometry();
+        for (const k in near.attributes) g.setAttribute(k, farGeo.attributes[k]);
+        if (farGeo.index) g.setIndex(farGeo.index);
+        for (const gr of farGeo.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+        g.boundingSphere = m.geometry.boundingSphere;
+        g.userData = m.geometry.userData;
+        return { m, near: m.geometry, far: g, isFar: false };
+      });
     }
   }
   // khối bao mảnh theo ô: tâm hộp bao các gốc instance, bán kính tới gốc xa nhất + bán kính hình học x tỉ lệ lớn nhất
@@ -6164,6 +6181,9 @@ const Destructibles = (() => {
   // đóng băng bể nhà theo ô (BuildingSet.freezeStatic): cạnh ô (đv) và tổng tam giác tối thiểu của bể để đáng chia
   // (mỗi ô thêm 1 lượt vẽ khi ở trong tầm: ô quá nhỏ / bể quá nhỏ thì tốn CPU gửi lệnh hơn phần GPU tiết kiệm được)
   const BLD_FREEZE_CELL = 1400, BLD_FREEZE_TRIS = 60000;
+  // cự ly biểu kiến (đv, mép ô) từ đó mảng tường vẽ bản hộp; 2000 = 250 m
+  const BLD_FAR_D = 2000;
+  let BLD_FAR_BOX = null;
   class BuildingSet {
     constructor(parent, list, groundAt, opts = {}) {
       this.group = new THREE.Group();
@@ -6408,7 +6428,38 @@ const Destructibles = (() => {
       }
       let n = 0;
       for (const p of new Set(pools)) if (p && p.mesh.count * tri(p.mesh.geometry) >= BLD_FREEZE_TRIS && p.freeze(BLD_FREEZE_CELL)) n++;
+      // mảng tường nổi khối (cửa lõm, bậu, ô văng: 34-116 tam giác) ở xa -> khối hộp 12 tam giác cùng ảnh mặt tường: cửa sổ
+      // vẫn hiện theo ảnh, chỉ mất độ lõm (ngoài ~250 m chỉ còn 1-2 điểm ảnh). Nhìn ngang phố URBAN: ~2 triệu tam giác / khung
+      const farBox = BLD_FAR_BOX || (BLD_FAR_BOX = new THREE.BoxGeometry(1, 1, 1));
+      this.farPools = [];
+      for (const k in this.panelKits) {
+        const p = this.panelKits[k].pools.box;
+        if (p && p.fz && tri(p.mesh.geometry) > 12) { p.setFar(farBox); if (p.fzFar) this.farPools.push(p); }
+      }
+      // mái dốc: ~1300 tam giác / ô mái, ngoài ~250 m không còn thấy từng viên ngói
+      const ROOF_FAR = { full: [true, true, 0.455], n: [true, false, 0.365], mid: [false, false, 0.455], p: [false, true, 0.365] };
+      const roofFar = {};
+      for (const gk in this.roofPoolsBy) for (const k in this.roofPoolsBy[gk]) {
+        const p = this.roofPoolsBy[gk][k], A = ROOF_FAR[k];
+        if (!p || !p.fz || !A) continue;
+        p.setFar(roofFar[k] || (roofFar[k] = gableRoofGeo(A[0], A[1], A[2], true)));
+        if (p.fzFar) this.farPools.push(p);
+      }
       return n;
+    }
+    // đổi bản gần / xa từng mảnh theo cự ly BIỂU KIẾN (soi kính phóng to thì giữ chi tiết xa hơn, như rừng cây updateLOD)
+    updateFarLOD(camera) {
+      if (!camera || !this.farPools || !this.farPools.length) return;
+      const p = camera.position, zk = camera.fov ? Math.tan(camera.fov * Math.PI / 360) / Math.tan(22.5 * Math.PI / 180) : 1;
+      for (const P of this.farPools) for (const E of P.fzFar) {
+        const S = E.near.boundingSphere;
+        if (!S) continue;
+        const d = Math.max(0, Math.hypot(S.center.x - p.x, S.center.y - p.y, S.center.z - p.z) - S.radius * 0.7) * zk;
+        const far = E.isFar ? d > BLD_FAR_D - 200 : d > BLD_FAR_D + 200;
+        if (far === E.isFar) continue;
+        E.isFar = far;
+        E.m.geometry = far ? E.far : E.near;
+      }
     }
 
     // Mức phong hoá theo kiểu mặt tường: tường tô bong vữa lộ gạch / bê tông, đất mộc tróc lớp trát, đá & gỗ chỉ rêu ố,

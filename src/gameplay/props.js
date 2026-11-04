@@ -1153,7 +1153,15 @@ const Props = (() => {
   // BLD_FREEZE_* của nhà (ô quá nhỏ / lô quá nhỏ thì thêm lượt vẽ tốn CPU hơn phần GPU tiết kiệm được). Đo URBAN
   // 2026-10-29: 60k / ô 1400 -> 590 mesh, nhìn ngang thành phố thêm 300-400 lượt vẽ; 300k / ô 2800 -> 82 mesh, góc phố
   // 10,4 -> 8,1M tg mà nhìn rộng chỉ thêm ~55 lượt vẽ
-  const STREET_CELL = 2800, STREET_SPLIT_TRIS = 300000;
+  // 2026-11-04: 300k -> 100k để cả lô ô tô bản gộp / đồ vật vừa cũng chia ô (trước đây mỗi lô xe con vẽ cả thành phố ở mọi
+  // khung + lượt bóng, ~0,5 triệu tam giác / lô); ô xa quá tầm của loại vật thì ẩn hẳn (StreetSet.updateFarCull)
+  const STREET_CELL = 2800, STREET_SPLIT_TRIS = 100000;
+  // tầm vẽ (đv, cự ly BIỂU KIẾN tới mép ô — soi kính phóng to thì thấy xa hơn): ô tô ~550 m, cột đèn / cột tín hiệu ~650 m,
+  // đồ nhỏ (hộp, thùng, biển) ~400 m. Ngoài tầm đó vật cao 1-2 m chỉ còn 1-3 điểm ảnh trong sương phố
+  const STREET_FAR = { car: 4400, pole: 5200, small: 3200 };
+  // hàng rào / tường thấp / bờ rào cây: ô 1400 (175 m), tầm vẽ ~600 m biểu kiến tới mép ô
+  const FENCE_CELL = 1400, FENCE_FAR = 4800;
+  const streetFarOf = k => k.startsWith('c:') ? STREET_FAR.car : /^lamp|sigPole|pole/i.test(k) ? STREET_FAR.pole : STREET_FAR.small;
   const triCount = g => (g.index ? g.index.count : g.attributes.position.count) / 3;
   // khối bao 1 ô: tâm hộp bao các gốc instance, bán kính tới gốc xa nhất + bán kính hình học x tỉ lệ lớn nhất
   // (instance đang ẩn — ma trận 0, xe đã nâng lên bản chi tiết — không tính)
@@ -1417,6 +1425,7 @@ const Props = (() => {
           im.frustumCulled = true;
           im.raycast = cellRaycast;
           e.cell = true;
+          (this.farCells || (this.farCells = [])).push({ im, R: streetFarOf(src), far: false });
         }
         im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
         im.name = 'street_' + k;
@@ -1563,6 +1572,20 @@ const Props = (() => {
         this.flush();
       } catch (e) {
         console.warn('[props] Lỗi nâng cấp xe CivilCars:', e);
+      }
+    }
+    // ẩn ô đồ vật đường phố ở xa quá tầm của loại đó (cự ly biểu kiến tới mép khối bao ô). Ô bị ẩn không vẽ cả lượt bóng
+    updateFarCull(camera) {
+      if (!camera || !this.farCells) return;
+      const p = camera.position, zk = camera.fov ? Math.tan(camera.fov * Math.PI / 360) / Math.tan(22.5 * Math.PI / 180) : 1;
+      for (const C of this.farCells) {
+        const S = C.im.geometry.boundingSphere;
+        if (!S) continue;
+        const d = Math.max(0, Math.hypot(S.center.x - p.x, S.center.y - p.y, S.center.z - p.z) - S.radius) * zk;
+        const far = C.far ? d > C.R - 200 : d > C.R + 200;
+        if (far === C.far) continue;
+        C.far = far;
+        C.im.visible = !far;
       }
     }
     // Camera hiện tại cho mức chi tiết: vị trí, độ phóng (fov hẹp hơn 50° = kính ngắm / ống nhòm), khung nhìn. Tính 1 lần / khung
@@ -3103,6 +3126,21 @@ const Props = (() => {
       return out;
     }
 
+    // ô hàng rào / tường ở xa quá tầm: ẩn (cùng cách StreetSet.updateFarCull), rồi tới đồ vật đường phố
+    updateFarCull(camera) {
+      if (this.street && this.street.updateFarCull) this.street.updateFarCull(camera);
+      if (!camera || !this.farCells) return;
+      const p = camera.position, zk = camera.fov ? Math.tan(camera.fov * Math.PI / 360) / Math.tan(22.5 * Math.PI / 180) : 1;
+      for (const C of this.farCells) {
+        const S = C.im.geometry.boundingSphere;
+        const d = Math.max(0, Math.hypot(S.center.x - p.x, S.center.y - p.y, S.center.z - p.z) - S.radius) * zk;
+        const far = C.far ? d > C.R - 200 : d > C.R + 200;
+        if (far === C.far) continue;
+        C.far = far;
+        C.im.visible = !far;
+      }
+    }
+
     // ---- HÀNG RÀO / TƯỜNG / BỜ RÀO CÂY
     buildFences(list, G) {
       const byKind = {};
@@ -3119,7 +3157,10 @@ const Props = (() => {
           // mỗi nhịp lấy 1 trong FENCE_VARIANTS mẫu (băm theo vị trí) -> 1 InstancedMesh / (loại, mẫu)
           const seed = idx * 131 + k, v = Math.floor(hash(seed * 7 + 77) * FENCE_VARIANTS);
           const s = { ax, az, bx, bz, kind: f.kind, v, seed, x: (ax + bx) / 2, z: (az + bz) / 2 };
-          (byKind[f.kind + '|' + v] || (byKind[f.kind + '|' + v] = [])).push(s);
+          // chia theo ô FENCE_CELL: mỗi (loại, mẫu, ô) một InstancedMesh có khối bao riêng -> ô ngoài khung nhìn / ngoài khung bóng
+          // không vẽ (trước đây mỗi loại 1 mesh tắt kiểm tra khuất trải cả bản đồ, URBAN ~2 triệu tam giác mỗi lượt + lượt bóng)
+          const ck = Math.floor(s.x / FENCE_CELL) + ':' + Math.floor(s.z / FENCE_CELL);
+          (byKind[f.kind + '|' + v + '|' + ck] || (byKind[f.kind + '|' + v + '|' + ck] = [])).push(s);
           if (run) run.spans.push(s);
         }
         if (run) this.wallRuns.push(run);
@@ -3139,8 +3180,22 @@ const Props = (() => {
       })());
       for (const key in byKind) {
         const arr = byKind[key], kind = arr[0].kind, F = FENCE[kind] || FENCE.wood;
-        const im = new THREE.InstancedMesh(fenceGeo(kind, arr[0].v), fenceMat(kind), arr.length);
-        im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
+        // hình nông riêng từng ô (bộ đệm đỉnh dùng chung) để khối bao là của ô, không phải của 1 nhịp
+        const g0 = fenceGeo(kind, arr[0].v), geo = new THREE.BufferGeometry();
+        for (const a in g0.attributes) geo.setAttribute(a, g0.attributes[a]);
+        if (g0.index) geo.setIndex(g0.index);
+        for (const gr of g0.groups) geo.addGroup(gr.start, gr.count, gr.materialIndex);
+        if (!g0.boundingSphere) g0.computeBoundingSphere();
+        let cx = 0, cz = 0;
+        for (const sp of arr) { cx += sp.x; cz += sp.z; }
+        cx /= arr.length; cz /= arr.length;
+        let r = 0, cy = 0;
+        for (const sp of arr) { r = Math.max(r, Math.hypot(sp.x - cx, sp.z - cz) + Math.hypot(sp.bx - sp.ax, sp.bz - sp.az) / 2); cy += G(sp.x, sp.z); }
+        geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy / arr.length, cz), r + g0.boundingSphere.radius * 2 + 40);
+        const im = new THREE.InstancedMesh(geo, fenceMat(kind), arr.length);
+        im.castShadow = true; im.receiveShadow = true; im.frustumCulled = true;
+        im.userData.localSphere = g0.boundingSphere; im.raycast = cellRaycast;   // tia dò từng nhịp theo khối bao của nhịp
+        (this.farCells || (this.farCells = [])).push({ im, R: FENCE_FAR, far: false });
         im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(arr.length * 3).fill(1), 3);
         arr.forEach((s, i) => {
           s.im = im; s.i = i; s.F = F; s.broken = false;

@@ -9,7 +9,8 @@ const SoldierPlayer = (() => {
   const CAM = {
     free: { dist: 26, right: 5, up: 14.6, fov: 50 },
     aim: { dist: 11, right: 3.6, up: 13.4, fov: 30 },
-    prone: { dist: 11, right: 2.4, up: 6.2, fov: 30 }     // đang nằm xuống, chưa áp mắt vào kính: camera thấp
+    prone: { dist: 11, right: 2.4, up: 6.2, fov: 30 },    // đang nằm xuống, chưa áp mắt vào kính: camera thấp
+    proneTP: { dist: 19, up: 4.5 }                         // nằm sấp với súng khác, camera sau lưng: hạ ngang tầm người nằm như lúc đứng ngang tầm vai
   };
   // KÍNH TỪNG SÚNG. eye: mắt trong hệ súng, nằm trên trục quang. Kính quang: fovs = trường nhìn thật của kính, x = độ phóng đại.
   // Chấm đỏ 1x: fov gần mắt thường. drum: thước ngắm phóng lựu [gần, xa, nấc] (m): con lăn đặt cự ly, nòng ngóc theo, đường ngắm vẫn ở mục tiêu.
@@ -28,7 +29,7 @@ const SoldierPlayer = (() => {
   const ZERO = 1600;             // cự ly chỉnh kính mặc định (đv) khi đạn không khai báo zero
   const STADIA_H = 2.4;          // vạch ước cự ly: chiều cao xe tăng (m) lọt vừa khung ở cự ly ghi cạnh vạch
   const GL_RELOAD_CAM = { az: 2.3, dist: 12, up: 3.4 };   // lúc nạp súng ổ quay: góc so với hướng lính (pi = sau lưng), cách súng, cao hơn súng
-  const PITCH = [-0.7, 0.7];     // giới hạn ngẩng / cúi (rad)
+  const PITCH = [-1.05, 0.95];   // giới hạn ngẩng / cúi (rad): ~60° cúi nhìn chân dốc, ~54° ngẩng tìm UAV / tầng cao
   const MUZZLE = { rifle: V(0, 0.22, -4.55), gl: V(0, 0.22, -3.5) };
   // ----- ảnh và lưới dùng chung cho hiệu ứng súng -----
   let FXR = null;
@@ -538,6 +539,8 @@ const SoldierPlayer = (() => {
       if (moving) A *= 3;
       A *= this.holding ? 0.2 + 0.5 * fat : this._winded ? 2 : 1;
       A *= 1 + 2.2 * fat * fat;   // thở dốc: tâm ngắm nhấp nhô mạnh
+      A *= 1 + 1.5 * (s.armHurt || 0);   // tay trúng đạn: run tay
+      if (s._plateHit) { s._plateHit = false; this.shake = Math.max(this.shake || 0, 0.55); }   // tấm giáp đỡ đạn: khựng người
       if (ASSIST) A *= 0.25;      // hỗ trợ: chỉ còn nhịp thở nhẹ cho kính có hồn, không phải nín thở mới bắn trúng
       this._swayA += ((inSight ? A : 0) - this._swayA) * Math.min(1, dt * 3);
       const t = this._swayT, a = this._swayA;
@@ -564,6 +567,8 @@ const SoldierPlayer = (() => {
       if (!down) return;
       if (code === 'KeyR') this.reload();
       if (code === 'KeyC' && this.soldier) this.soldier.setStance(this.soldier.intent.stance === 'kneel' ? 'stand' : 'kneel');
+      // X: nằm sấp / đứng dậy. UAV cảm tử phải quỳ đặt ống phóng, không nằm được; đi nhờ xe thì không nằm
+      if (code === 'KeyX' && this.soldier && !this.soldier.arms.def.kami && !this.soldier.ride) this.soldier.setStance(this.soldier.intent.stance === 'prone' ? 'stand' : 'prone');
       if (code === 'Enter' && this.soldier && !this.soldier.alive) this.soldier.revive();
     }
     reload() {
@@ -595,6 +600,8 @@ const SoldierPlayer = (() => {
       const combat = wantAim || (this.firing && !reloading && !kami);
       const run = K.ShiftLeft && !combat && !reloading && fw > 0;
       if (moving && s.intent.stance === 'kneel') s.setStance('stand');
+      // đang nằm: bấm chạy là bật dậy chạy; súng bắn tỉa không bò được (đứng dậy rồi mới đi)
+      if (s.intent.stance === 'prone' && ((run && !this.holding) || (moving && A.def.prone && !wantAim))) s.setStance('stand');
       const D = s.intent.drive;
       const pinned = A.def.prone && wantAim;   // đang ngắm súng bắn tỉa là nằm tại chỗ
       D.x = moving && !pinned ? mx : 0; D.z = moving && !pinned ? mz : 0;
@@ -647,7 +654,8 @@ const SoldierPlayer = (() => {
     // ----- camera, sau world.update -----
     placeCamera() {
       const s = this.soldier; if (!s) return;
-      const cam = this.cam, a = this.aimK, f = CAM.free, g = s.arms.def.prone ? CAM.prone : CAM.aim;
+      const pK = s.arms.def.prone ? s.figure._proneK || 0 : 0;   // súng bắn tỉa: camera hạ thấp theo người đang nằm xuống, không về trước người
+      const cam = this.cam, a = s.arms.def.prone ? pK * pK * (3 - 2 * pK) : this.aimK, f = CAM.free, g = s.arms.def.prone ? CAM.prone : CAM.aim;
       // ống UAV cảm tử dựng sau ba lô che giữa khung: dời camera sang phải
       const tubeOff = s.arms.def.kami && (s.figure.kamiLeft === undefined ? s.arms.mag : s.figure.kamiLeft) > 0 ? 1 : 0;
       // đi nhờ xe: lùi camera ra cho thấy xe (ngồi trong khoang lùi xa hơn)
@@ -658,8 +666,11 @@ const SoldierPlayer = (() => {
       if (!rlNow) this._glOff = false;
       this._glK = (this._glK || 0) + ((rlNow && s.speed < 1.5 && !this._glOff ? 1 : 0) - (this._glK || 0)) * 0.05;
       const glK = this._glK * (1 - a), kickE = (s.arms.def.seq || s.arms.ar) && this.kick > 0 ? SoldierModel.recoilEnv(this.kick) : 0;
-      const dist = f.dist + (g.dist - f.dist) * a + this.camExtra + 0.22 * kickE, right = f.right + (g.right - f.right) * a + 6 * tubeOff, up = (f.up + (g.up - f.up) * a + 3 * tubeOff) * s.k;
-      const kneel = s.intent.stance === 'kneel' ? -3.6 : 0;
+      const dist0 = f.dist + (g.dist - f.dist) * a + this.camExtra + 0.22 * kickE, right = f.right + (g.right - f.right) * a + 6 * tubeOff, up = (f.up + (g.up - f.up) * a + 3 * tubeOff) * s.k;
+      // nằm sấp với súng khác: camera hạ thấp, lùi sát theo người (súng bắn tỉa đã dùng CAM.prone ở trên)
+      const gpK = s.arms.def.prone ? 0 : s.figure._proneK || 0, gpE = gpK * gpK * (3 - 2 * gpK);
+      const kneel = (s.intent.stance === 'kneel' ? -3.6 : 0) - (up - CAM.proneTP.up * s.k) * gpE;
+      const dist = dist0 - (dist0 - CAM.proneTP.dist) * gpE;
       const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw), cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
       const px = s.x + cy * right, py = s.y + up + kneel, pz = s.z - sy * right;
       // kéo camera lại gần khi vướng nhà / đất

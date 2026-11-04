@@ -417,7 +417,16 @@ const GroundCover = (() => {
         const D = GroundShader.desertMtn(T, x, z, slope);
         wDirt = Math.max(wDirt, D.fan * 0.92); wRock = Math.max(wRock, D.rock);
       }
-      return { h, grass: (1 - wDirt) * (1 - wFine) * (1 - wRock), rough: 0.18 + wDirt * 0.55 + wFine * 0.6 + wRock * 0.9 };
+      let sand = 0;
+      const DG = T.mapType === 'DESERT' && T.map && T.map.dune;
+      if (DG) {
+        // thân đụn cát động: cát trơ, cỏ / bụi chỉ còn ở lòng trũng giữa các đụn
+        const M = T.map, N = M.res + 1, gx = Math.max(0, Math.min(M.res - 1e-3, (x + M.size / 2) / M.cell)), gz = Math.max(0, Math.min(M.res - 1e-3, (z + M.size / 2) / M.cell));
+        const ix = gx | 0, iz = gz | 0, fx = gx - ix, fz = gz - iz, k = iz * N + ix;
+        const d = (DG[k] * (1 - fx) + DG[k + 1] * fx) * (1 - fz) + (DG[k + N] * (1 - fx) + DG[k + N + 1] * fx) * fz;
+        sand = smooth(6, 26, d);
+      }
+      return { h, grass: (1 - wDirt) * (1 - wFine) * (1 - wRock) * (1 - sand), rough: (0.18 + wDirt * 0.55 + wFine * 0.6 + wRock * 0.9) * (1 - 0.8 * sand) };
     }
 
     // Lưới đánh dấu chỗ có nhà (dựng 1 lần) -> kiểm tra chặn O(1)

@@ -172,7 +172,7 @@ function serveFile(req, res) {
         headers['Content-Length'] = stats.size;
         res.writeHead(200, headers);
         if (req.method === 'HEAD') { res.end(); return; }
-        fs.createReadStream(filePath).pipe(res);
+        pipeFile(fs.createReadStream(filePath), res);
       });
       return;
     }
@@ -193,7 +193,7 @@ function serveFile(req, res) {
       headers['Content-Length'] = end - start + 1;
       res.writeHead(206, headers);
       if (req.method === 'HEAD') { res.end(); return; }
-      fs.createReadStream(filePath, { start, end }).pipe(res);
+      pipeFile(fs.createReadStream(filePath, { start, end }), res);
       return;
     }
 
@@ -201,9 +201,15 @@ function serveFile(req, res) {
     res.writeHead(200, headers);
     if (req.method === 'HEAD') { res.end(); return; }
 
-    const readStream = fs.createReadStream(filePath);
-    readStream.pipe(res);
+    pipeFile(fs.createReadStream(filePath), res);
   });
+}
+
+// Tệp bị xoá / đổi giữa lúc stat và lúc đọc (npm run build xoá dist/ khi trình duyệt đang tải): luồng đọc báo lỗi.
+// Không bắt thì lỗi không ai nhận làm sập cả máy chủ -> chỉ đóng kết nối đó
+function pipeFile(stream, res) {
+  stream.on('error', () => { if (!res.headersSent) res.writeHead(404); res.destroy(); });
+  stream.pipe(res);
 }
 
 // ======================================================

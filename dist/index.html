@@ -31,7 +31,7 @@
   <meta name="twitter:description" content="Game xe tăng 3D 10 đấu 10 chơi miễn phí ngay trên trình duyệt. Chiếm giữ cứ điểm A · B · C để thắng.">
   <meta name="twitter:image" content="https://tankwar.online/assets/og-share.jpg?v=1">
   <link rel="stylesheet" href="assets/vendor/tabler-icons/tabler-icons.min.css?v=3.19.0">
-  <link rel="stylesheet" href="dist/style.f9ad52dedd.css?v=f9ad52dedd">
+  <link rel="stylesheet" href="dist/style.f3b5dc9c49.css?v=f3b5dc9c49">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -578,6 +578,7 @@
             <li><svg viewBox="-12 -12 24 24" aria-hidden="true"><circle r="9" fill="none" stroke="rgba(140,210,120,.6)"/><path d="M-6,6 L6,-6 M-9,2 L2,-9 M-2,9 L9,-2" stroke="rgba(120,190,110,.55)"/></svg><span>Bụi rậm · nấp được</span></li>
             <li><svg viewBox="-12 -12 24 24" aria-hidden="true"><path d="M-4,0 H4 M0,-4 V4" stroke="rgba(231,166,58,.8)" stroke-width="1.6"/></svg><span>Hòm tiếp tế</span></li>
             <li><svg viewBox="-12 -12 24 24" aria-hidden="true"><circle r="9" fill="none" stroke="#e7a63a" stroke-width="1.4"/><path d="M-5,4 L0,-5 L5,4" fill="none" stroke="#e7a63a" stroke-width="1.4"/></svg><span>Hòm thả dù</span></li>
+            <li><svg viewBox="-12 -12 24 24" aria-hidden="true"><path d="M-11,0 H11" stroke="#e7a63a" stroke-width="1.4" stroke-dasharray="3 2.5"/><path d="M-6,0 H7 M2,-6 V6 M-6,-2.6 V2.6" fill="none" stroke="#fff2d2" stroke-width="1.7" stroke-linecap="round"/></svg><span>Máy bay tiếp tế · đường bay</span></li>
             <li><svg viewBox="-12 -12 24 24" aria-hidden="true"><path d="M-5,-5 L5,5 M5,-5 L-5,5" stroke="rgba(40,30,25,.95)" stroke-width="2.4"/><path d="M-5,-5 L5,5 M5,-5 L-5,5" stroke="rgba(150,130,110,.6)" stroke-width="0.8"/></svg><span>Xác xe cũ · vật cản</span></li>
             </ul>
             <div class="tm-legend-sub">GỌI VỊ TRÍ</div>
@@ -711,10 +712,20 @@
             </div>
 
             <div class="mm-class-cards-grid">
+              <div class="mm-class-card" data-tank-type="INFANTRY" data-role="BỘ BINH" data-armor="1" data-fire="2" data-range="3" data-speed="1">
+                <div class="card-img-frame"><img src="assets/infantry.webp" alt="VANGUARD" class="card-tank-photo" /></div>
+                <div class="card-info-pane">
+                  <span class="card-index">01</span>
+                  <h3 class="card-tank-name">VANGUARD</h3>
+                  <span class="card-tank-role">Bộ binh</span>
+                  <p class="card-tank-desc">Tối đa 4 lính, đánh du kích.</p>
+                </div>
+              </div>
+
               <div class="mm-class-card active" data-tank-type="ALL_ROUNDER" data-role="XE CHỦ LỰC" data-armor="5" data-fire="4" data-range="3" data-speed="3">
                 <div class="card-img-frame"><img src="assets/tank_allrounder.webp" alt="HALBERD MK.3" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
-                  <span class="card-index">01</span>
+                  <span class="card-index">02</span>
                   <h3 class="card-tank-name">HALBERD MK.3</h3>
                   <span class="card-tank-role">Chủ lực</span>
                   <p class="card-tank-desc">Giáp dày kiên cố, cân bằng công và thủ.</p>
@@ -724,7 +735,7 @@
               <div class="mm-class-card" data-tank-type="GATLING" data-role="YỂM TRỢ HỎA LỰC" data-armor="3" data-fire="5" data-range="2" data-speed="3">
                 <div class="card-img-frame"><img src="assets/tank_gatling.webp" alt="HAILSTORM R6" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
-                  <span class="card-index">02</span>
+                  <span class="card-index">03</span>
                   <h3 class="card-tank-name">HAILSTORM R6</h3>
                   <span class="card-tank-role">Yểm trợ hỏa lực</span>
                   <p class="card-tank-desc">Pháo 30mm phòng không, càn quét tầm gần.</p>
@@ -734,7 +745,7 @@
               <div class="mm-class-card" data-tank-type="ARTILLERY" data-role="PHÁO TẦM XA" data-armor="2" data-fire="5" data-range="5" data-speed="2">
                 <div class="card-img-frame"><img src="assets/tank_artillery.webp" alt="ARBALEST 155" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
-                  <span class="card-index">03</span>
+                  <span class="card-index">04</span>
                   <h3 class="card-tank-name">ARBALEST 155</h3>
                   <span class="card-tank-role">Pháo tầm xa</span>
                   <p class="card-tank-desc">Drone trinh sát, bắn xa, hỏa lực nặng.</p>
@@ -744,7 +755,7 @@
               <div class="mm-class-card" data-tank-type="SCOUT" data-role="TRINH SÁT" data-armor="2" data-fire="3" data-range="3" data-speed="5">
                 <div class="card-img-frame"><img src="assets/tank_scout.webp" alt="MARTEN R4" class="card-tank-photo" /></div>
                 <div class="card-info-pane">
-                  <span class="card-index">04</span>
+                  <span class="card-index">05</span>
                   <h3 class="card-tank-name">MARTEN R4</h3>
                   <span class="card-tank-role">Trinh sát</span>
                   <p class="card-tank-desc">Siêu nhanh, núp bụi, đánh du kích.</p>
@@ -758,7 +769,7 @@
                   <span class="soon-tag">COMING SOON</span>
                 </div>
                 <div class="card-info-pane">
-                  <span class="card-index">05</span>
+                  <span class="card-index">06</span>
                   <h3 class="card-tank-name">WYVERN AH-7</h3>
                   <span class="card-tank-role">Trực thăng tấn công</span>
                 </div>
@@ -770,19 +781,9 @@
                   <span class="soon-tag">COMING SOON</span>
                 </div>
                 <div class="card-info-pane">
-                  <span class="card-index">06</span>
+                  <span class="card-index">07</span>
                   <h3 class="card-tank-name">TEMPEST 220</h3>
                   <span class="card-tank-role" title="Pháo phản lực tự hành phóng loạt">Pháo phóng loạt</span>
-                </div>
-              </div>
-
-              <div class="mm-class-card" data-tank-type="INFANTRY" data-role="BỘ BINH" data-armor="1" data-fire="2" data-range="3" data-speed="1">
-                <div class="card-img-frame"><img src="assets/infantry.webp" alt="VANGUARD" class="card-tank-photo" /></div>
-                <div class="card-info-pane">
-                  <span class="card-index">07</span>
-                  <h3 class="card-tank-name">VANGUARD</h3>
-                  <span class="card-tank-role">Bộ binh</span>
-                  <p class="card-tank-desc">Mục tiêu nhỏ, núp giỏi, không có giáp.</p>
                 </div>
               </div>
 
@@ -1073,10 +1074,10 @@
   </div>
 
   <!-- Nạp Thư Viện Đồ Họa Three.js 3D -->
-  <script src="dist/app1.57ef7a2839.js?v=57ef7a2839"></script>
+  <script src="dist/app1.10c12eefad.js?v=10c12eefad"></script>
   <script>
     window.ADS_CONFIG = { provider: 'auto', h5Client: 'ca-pub-6469343665568386', h5Test: false, allowMock: true };
   </script>
-  <script src="dist/app2.09e75a2019.js?v=09e75a2019"></script>
+  <script src="dist/app2.02aa7c44a7.js?v=02aa7c44a7"></script>
 </body>
 </html>
