@@ -3054,14 +3054,19 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     base *= mix(1.0, 0.84 + 0.2 * big, K * age);                                                                  // ố sẫm chung
     float stain = smoothstep(0.48, 0.7, big * 0.7 + mid * 0.3) * (0.5 * age + 0.5 * zone);
     base = mix(base, mix(base * 0.66, vSoil * 1.25, 0.35), stain * K * 0.6);                                      // vết bẩn lớn, vẫn thấy vân rằn bên dưới
-    float mudA = max(zone * smoothstep(0.44, 0.66, mid * 0.82 + fine * 0.18 + zone * 0.1), sole);                 // thành mảng rời, giữa các mảng còn thấy rằn ri
+    float mudA = zone * smoothstep(0.44, 0.66, mid * 0.82 + fine * 0.18 + zone * 0.1);                            // thành mảng rời, giữa các mảng còn thấy rằn ri
     base = mix(base, mix(vSoil * 1.25, vSoil * 0.85, fine), mudA * K * 0.74);
     float spl = smoothstep(0.76, 0.82, wN(q * 22.0 + big * 3.0)) * clamp(low * 1.4 + front * 0.6 + forearm * 0.5, 0.0, 1.0);
     base = mix(base, vSoil * 0.7, spl * K * 0.85);                                                                // đất bắn tung
+    // GIÀY: thân giày + gấu quần phủ bụi đất từ mũi lên cổ giày; đế là đất nén sẫm lốm đốm, gai cao su lộ ra chỗ mòn (màu đất sáng đều thì đế ngửa lên nắng trông như đế be của giày mới)
+    float bootA = (1.0 - smoothstep(-8.1, -6.9, q.y + (big - 0.5) * 0.9)) * clamp(vG1.x * 1.3, 0.0, 1.0);
+    base = mix(base, mix(wearDust, vSoil * 1.1, smoothstep(0.35, 0.65, mid)), bootA * K * (0.3 + 0.45 * smoothstep(0.38, 0.62, mid * 0.7 + fine * 0.3)));
+    base = mix(base, mix(vSoil * 0.5, mix(vSoil * 0.72, wearDust * 0.7, 0.28), smoothstep(0.25, 0.8, mid * 0.75 + fine * 0.25)), sole * K * 0.9);   // hơi ngả màu bụi từng map; tương phản thấp, vệt to: chênh nhiều hoặc theo nhiễu mịn thì thành hoa văn rằn ri số
+    base = mix(base, diffuseColor.rgb * 0.8, sole * K * smoothstep(0.6, 0.78, mid) * 0.7);
     float dustA = clamp(up * smoothstep(0.4, 0.7, mid) * 0.36, 0.0, 0.5) * (1.0 - clamp(low * 1.3, 0.0, 1.0));
     base = mix(base, wearDust, dustA * K);                                                                        // bụi khô đọng mặt trên
     diffuseColor.rgb = base;
-    float caked = clamp(mudA + spl + dustA, 0.0, 1.0) * K;
+    float caked = clamp(mudA + spl + dustA + sole + bootA * 0.5, 0.0, 1.0) * K;
     roughnessFactor = mix(roughnessFactor, 1.0, caked);
     metalnessFactor *= 1.0 - caked * 0.85;
   }
