@@ -76,6 +76,17 @@
     };
   })();
 
+  const terrainStage = {
+    ground_prep: 'ĐANG CHUẨN BỊ MẶT ĐẤT…', ground_mesh: 'ĐANG DỰNG MẶT ĐẤT…',
+    landmarks_water: 'ĐANG DỰNG SÔNG VÀ CÔNG TRÌNH…', strongholds_backdrop: 'ĐANG DỰNG CỨ ĐIỂM…',
+    stronghold_wrecks: 'ĐANG DỰNG XÁC XE…', roads: 'ĐANG DỰNG ĐƯỜNG…', streetscape: 'ĐANG DỰNG PHỐ…',
+    rocks: 'ĐANG DỰNG ĐÁ…', bridges: 'ĐANG DỰNG CẦU…', bushes: 'ĐANG DỰNG BỤI CÂY…',
+    bunkers_trees: 'ĐANG DỰNG CÂY VÀ BOONG-KE…', buildings: 'ĐANG CHUẨN BỊ NHÀ…',
+    building_instances: 'ĐANG DỰNG NHÀ…', props: 'ĐANG DỰNG VẬT THỂ…', craters: 'ĐANG CHUẨN BỊ HỐ ĐẠN…',
+    ground_cover: 'ĐANG DỰNG THẢM THỰC VẬT…', finish: 'ĐANG HOÀN TẤT CHIẾN TRƯỜNG…'
+  };
+  window.onRangeTerrainStep = name => loader.stage(terrainStage[name] || 'ĐANG DỰNG CHIẾN TRƯỜNG…');
+
   const lab = { g: null, dummies: [], home: null, village: null, field: FIELD, spots: [], dummyType: FIELD === 'flat' ? 'ALL_ROUNDER' : null,
     dummyKit: { m: [], p: [], a: {} }, dist: q.get('ew') === '1' ? 1300 : 400, face: 0, god: true, fireBack: false, fireMode: 'off', keepWreck: false, dummyJam: false, log: [], hits: [], kit: null, kamis: [], kamiOn: true, kamiSky: [], kamiT: 2, kamiKills: 0, infantry: null };
   // Vũ khí bia bắn trả: [mã, tên]
@@ -104,10 +115,25 @@
     mm.preparedMapKey = BIOME + ':' + SEED;
     clearInterval(mm.searchInterval);
     loader.stage('ĐANG CHUẨN BỊ ĐỊA HÌNH…');
-    // MapGen chạy trong Worker để animation loading và giao diện không bị treo. Nếu trình
-    // duyệt không hỗ trợ Worker, prepareMap bên dưới tự rơi về đường đồng bộ cũ.
+    // MapGen chạy trong Worker; không để prepareMap gọi MapGen.get() đồng bộ khi worker lỗi.
     const prep = window.MapGen && MapGen.prefetch ? MapGen.prefetch(BIOME, SEED) : Promise.resolve(false);
-    prep.catch(() => false).then(() => {
+    prep.catch(() => false).then(ok => {
+      // MapGen.get() sinh toàn bộ bản đồ đồng bộ nếu cache trống. Không gọi nó ở đây:
+      // khi Worker bị CSP/trình duyệt chặn, luồng chính sẽ đứng hàng chục giây và
+      // spinner lẫn mọi thao tác UI đều đóng băng.
+      if (!ok || !window.MapGen || !MapGen.has || !MapGen.has(BIOME, SEED)) {
+        console.error('[LAB] Không dựng được dữ liệu bản đồ trong Worker; bỏ qua nhánh sinh đồng bộ để giữ UI phản hồi.');
+        loader.stage('KHÔNG TẠO ĐƯỢC BẢN ĐỒ — tải lại trang hoặc thử trình duyệt khác');
+        const overlay = document.getElementById('range-lab-loading');
+        if (overlay && !overlay.querySelector('[data-range-lab-retry]')) {
+          const actions = document.createElement('div');
+          actions.style.cssText = 'display:flex;gap:10px;margin-top:8px;pointer-events:auto';
+          actions.innerHTML = '<a data-range-lab-retry href="labs.html" style="padding:8px 12px;color:#d6e2c8;border:1px solid #58604f;text-decoration:none">VỀ DANH SÁCH PHÒNG THỬ</a><button type="button" style="padding:8px 12px;color:#d6e2c8;border:1px solid #58604f;background:transparent;cursor:pointer">TẢI LẠI</button>';
+          actions.querySelector('button').addEventListener('click', () => location.reload());
+          overlay.appendChild(actions);
+        }
+        return;
+      }
       loader.stage('ĐANG DỰNG CHIẾN TRƯỜNG…');
       requestAnimationFrame(() => setTimeout(() => start(g, mm), 20));
     });
@@ -132,7 +158,8 @@
     const waitDetails = () => {
       if (T && !T.detailsReady && g.terrain === T) {
         const left = T._pendingDetailSteps ? T._pendingDetailSteps.length : 0;
-        loader.stage('ĐANG DỰNG CHIẾN TRƯỜNG…');
+        const stepName = T._pendingDetailSteps && T._pendingDetailSteps[0] && T._pendingDetailSteps[0][0];
+        loader.stage(terrainStage[stepName] || 'ĐANG DỰNG CHIẾN TRƯỜNG…');
         setTimeout(waitDetails, 24);
         return;
       }
@@ -339,7 +366,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // ĐƠN VỊ BỘ BINH TRÊN TRƯỜNG BẮN (SoldierEngine)
+  // ĐƠN VỊ THỬ NGHIỆM TRÊN TRƯỜNG BẮN (SoldierEngine)
   // ---------------------------------------------------------------------------
   function initInfantry(g) {
     if (typeof SoldierModel === 'undefined' || typeof SoldierEngine === 'undefined') return;
@@ -1375,6 +1402,13 @@
       </nav>
       <div class="rg-body">
         <div class="lbl">XE CỦA BẠN</div><div class="row" id="rg-types"></div>
+        <div class="lbl">ĐƠN VỊ THỬ NGHIỆM</div>
+        <div class="row" id="rg-inf-ctrls">
+          <button id="rg-inf-toggle" class="on" title="Bật hoặc tắt đơn vị bộ binh trên trường bắn"><i class="ti ti-users" aria-hidden="true"></i> Bộ binh: BẬT</button>
+          <button id="rg-inf-stance" title="Tư thế tác chiến: Canh gác / Quỳ / Đi tuần / Đứng yên"><i class="ti ti-shield" aria-hidden="true"></i> Canh gác</button>
+          <button id="rg-inf-fire" title="Bộ binh bắn trả xe bạn bằng súng phóng lựu 40mm"><i class="ti ti-crosshair" aria-hidden="true"></i> Bắn trả: TẮT</button>
+          <button id="rg-inf-add" title="Thả thêm 1 tổ bộ binh dã chiến"><i class="ti ti-user-plus" aria-hidden="true"></i> Thêm tổ lính</button>
+        </div>
         <div class="lbl">BẢN ĐỒ</div><div class="row" id="rg-maps"></div>
         <div class="lbl">THỜI TIẾT</div><div class="row" id="rg-wx"></div>
         <div class="lbl">BỐ TRÍ</div><div class="row" id="rg-field"></div>
@@ -1398,13 +1432,6 @@
           <button id="rg-kamisky" title="UAV cảm tử địch bay lượn ngẫu nhiên trên trời, liên tục có chiếc mới bay vào — thử bắn hạ"><i class="ti ti-rocket" aria-hidden="true"></i> UAV cảm tử bay</button>
           <button id="rg-repair"><i class="ti ti-tool" aria-hidden="true"></i> Sửa xe</button>
           <button id="rg-rebuild" class="go"><i class="ti ti-refresh" aria-hidden="true"></i> Dựng lại bản đồ</button>
-        </div>
-        <div class="lbl">ĐƠN VỊ BỘ BINH</div>
-        <div class="row" id="rg-inf-ctrls">
-          <button id="rg-inf-toggle" class="on" title="Bật hoặc tắt đơn vị bộ binh trên trường bắn"><i class="ti ti-users" aria-hidden="true"></i> Bộ binh: BẬT</button>
-          <button id="rg-inf-stance" title="Tư thế tác chiến: Canh gác / Quỳ / Đi tuần / Đứng yên"><i class="ti ti-shield" aria-hidden="true"></i> Canh gác</button>
-          <button id="rg-inf-fire" title="Bộ binh bắn trả xe bạn bằng súng phóng lựu 40mm"><i class="ti ti-crosshair" aria-hidden="true"></i> Bắn trả: TẮT</button>
-          <button id="rg-inf-add" title="Thả thêm 1 tổ bộ binh dã chiến"><i class="ti ti-user-plus" aria-hidden="true"></i> Thêm tổ lính</button>
         </div>
         <div class="lbl">BIA BẮN TRẢ XE BẠN</div><div class="row" id="rg-fm"></div>
         <details id="rg-kitbox" open><summary class="lbl">TRANG BỊ THỬ <span style="font-weight:400">(miễn phí, không lưu) ▾</span></summary>

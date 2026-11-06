@@ -9509,8 +9509,8 @@ class ArtilleryGame3D {
       // tâm kính = điểm cần trúng: tháp / nòng tự quay, tự nâng hạ (máy tính hỏa lực tính góc bắn) tới điểm tia nhìn chạm
       if (S.free && !tracking && !airTrack) {
         S.probeT = (S.probeT || 0) - dt;
-        if (S.probeT <= 0 || (!this._airAim && (!this._aimPoint || !this._aimPoint.free))) {
-          S.probeT = P.tankType === 'SCOUT' ? 0 : 0.033;   // trinh sát: súng bám tâm từng khung hình (không giật bậc 30 Hz)
+        if (S.probeT <= 0) {
+          S.probeT = 0.05; // Probe terrain and blockers at 20 Hz; camera input remains per-frame.
           // tia dò theo TÂM NGẮM (có thể lệch khỏi giữa màn hình — vùng ngắm), không theo hướng nhìn của kính
           const ac = Math.cos(S.aimPitch), afx = -Math.sin(S.aimYaw) * ac, afz = -Math.cos(S.aimYaw) * ac, afy = Math.sin(S.aimPitch);
           const h = this.freeAimProbe(px, py, pz, afx, afy, afz);
@@ -9565,7 +9565,15 @@ class ArtilleryGame3D {
       range = (A || L) ? (A || L).d : null;
       S.rangeNote = null;
     }
-    if (T && T.updateBuildingView) T.updateBuildingView(cam.position, P, dt);
+    // C?t t?ng nh? ch? c?n theo k?p camera ? ~10 Hz; qu?t to?n b? danh s?ch nh? m?i khung h?nh l?m k?nh ng?m kh?ng tr?n b?n ?? ??ng c?ng tr?nh.
+    // Throttle building cutaway scans to 10 Hz while aiming.
+      S.buildingViewT = (S.buildingViewT || 0) + dt;
+      if (S.buildingViewT >= 0.1) {
+        const viewDt = S.buildingViewT;
+        S.buildingViewT = 0;
+        T.updateBuildingView(cam.position, P, viewDt);
+      }
+    }
 
     if (S.prof.kind === 'box' && S.ammo !== P.selectedAmmo) this.buildSightOverlay(P, S.prof);
     // xe tăng bấm [4] / [1]-[3] trong lúc ngắm: chuyển giữa kính pháo thủ và màn hình trạm súng máy

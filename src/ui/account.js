@@ -582,7 +582,7 @@ const Account = (() => {
 
       tag.classList.toggle('cant', !!profile && (profile.silver | 0) < price);
 
-      tag.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i>${fmtSilver(price)}`;
+      tag.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${fmtSilver(price)}</span>`;
 
       card.title = `Chưa mở khóa — ${fmtSilver(price)} Bạc`;
 

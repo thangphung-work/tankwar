@@ -841,6 +841,7 @@
   border: 1px solid var(--lb-accent);
   background: rgba(10, 13, 12, 0.85);
 }
+.veh-lock > i { font-size: 14px; line-height: 1; }
 .veh-lock.cant { color: var(--lb-dim); border-color: var(--lb-line-2); }
 
 /* Thẻ "sắp ra mắt": hình bóng SVG, không chọn được */

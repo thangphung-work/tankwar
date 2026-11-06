@@ -445,6 +445,9 @@ class BattleTerrain3D {
       if (!alive()) return;
       const step = steps[0];
       if (!step) return;
+      if (typeof window !== 'undefined' && typeof window.onRangeTerrainStep === 'function') {
+        try { window.onRangeTerrainStep(step[0], steps.length); } catch (e) { /* trạng thái tải không được cản dựng bản đồ */ }
+      }
       const t0 = performance.now();
       let done = true;
       try { done = step[1]() !== false; } catch (e) { console.warn('[MAP] ' + step[0], e); }
