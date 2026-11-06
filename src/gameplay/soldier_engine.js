@@ -714,6 +714,15 @@ const SoldierEngine = (() => {
     // vết thương mới tính theo máu tụt (trúng đạn ở phòng thử, hay máu đồng bộ từ đơn vị trận thật): chảy máu, đi khập khiễng
     stepWound(dt) {
       const F = this.figure, drop = this._hpPrev - this.hp;
+      // Small blast and fragment hits still get a brief directional body reaction;
+      // keep it visual only, with the existing damage and movement rules unchanged.
+      if (drop > 0.35 && this._woundFrom) {
+        const I = this._woundFrom, fx = -Math.sin(this.heading), fz = -Math.cos(this.heading);
+        const front = I.x != null ? (I.x - this.x) * fx + (I.z - this.z) * fz
+          : I.vel ? -(I.vel.x * fx + I.vel.z * fz) : 1;
+        F.flinch = Math.max(F.flinch || 0, Math.min(0.8, 0.28 + drop * 0.035));
+        F.flinchDir = front >= 0 ? 1 : -1;
+      }
       if (this.hp >= 100 && F.aidT == null && !F._aidK) {   // đang băng dở (bộ y tế vừa hồi đầy): làm nốt động tác, đứng dậy hẳn rồi mới lành
         if (this.lame > 0 || this._medDone) SoldierModel.aidReset(F, true);   // được cứu thương đầy máu: lành
         this._medDone = false;
@@ -721,10 +730,8 @@ const SoldierEngine = (() => {
         this.bleed = 0; this.lame = 0; this.armHurt = 0;
       } else if (drop > (this.bleedOwned ? 0.5 : 3) && this._woundFrom && this._woundFrom.zone === 'plate') {
         // tấm giáp đỡ đạn: bầm dập, khựng người, không có vết thương / không chảy máu
-        const I = this._woundFrom; this._woundFrom = null;
-        const fx = -Math.sin(this.heading), fz = -Math.cos(this.heading);
-        const front = I.x != null ? (I.x - this.x) * fx + (I.z - this.z) * fz : I.vel ? -(I.vel.x * fx + I.vel.z * fz) : 1;
-        F.flinch = 1; F.flinchDir = front >= 0 ? 1 : -1; this._plateHit = true;
+        this._woundFrom = null;
+        this._plateHit = true;
         const nowS = performance.now() / 1000;
         if (nowS - this._voxHit > 0.5) { this._voxHit = nowS; this.world.vox(this, 'hit'); }
       } else if (drop > (this.bleedOwned ? 0.5 : 3)) {   // máu đồng bộ từ đơn vị: nhịp chảy máu tụt tối đa 1,25 mỗi 0,5 s, mạng gộp hoặc khung chậm có thể cộng vài nhịp; không tính là vết mới

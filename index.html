@@ -50,6 +50,60 @@
     crossorigin="anonymous"></script>
 </head>
 <body>
+<script>
+  // Boot diagnostics stay in this browser until exported. Add ?debug=1 to show the download button.
+  (function () {
+    var KEY = 'tankwar_bootlog_v1', LIMIT = 900, enabled = /[?&]debug=1(?:&|$)/.test(location.search);
+    var rows = [];
+    function stringify(v) {
+      if (v instanceof Error) return v.stack || (v.name + ': ' + v.message);
+      if (typeof v === 'string') return v;
+      try { return JSON.stringify(v); } catch (_) { return String(v); }
+    }
+    try { rows = JSON.parse(localStorage.getItem(KEY) || '[]'); if (!Array.isArray(rows)) rows = []; } catch (_) {}
+    function add(type, detail) {
+      rows.push({ at: new Date().toISOString(), ms: Math.round(performance.now()), type: type, detail: detail });
+      if (rows.length > LIMIT) rows.splice(0, rows.length - LIMIT);
+      try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch (_) {}
+    }
+    var api = window.BootLog = {
+      mark: function (name, detail) { add('mark', name + (detail ? ' ' + detail : '')); },
+      export: function () {
+        var blob = new Blob([rows.map(function (r) { return '[' + r.at + ' +' + r.ms + 'ms] ' + r.type + ': ' + r.detail; }).join('\n') + '\n'], { type: 'text/plain' });
+        var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'tankwar-boot-' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt'; a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      }
+    };
+    add('session', location.href);
+    window.addEventListener('error', function (e) {
+      if (e.target && e.target !== window) add('resource-error', (e.target.src || e.target.href || e.target.tagName || 'resource') + ' failed');
+      else add('js-error', (e.message || 'error') + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0) + ':' + (e.colno || 0) + (e.error && e.error.stack ? '\n' + e.error.stack : ''));
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) { add('unhandled-rejection', stringify(e.reason)); });
+    ['log', 'info', 'warn', 'error'].forEach(function (level) {
+      var original = console[level];
+      console[level] = function () {
+        var args = Array.prototype.slice.call(arguments), msg = args.map(stringify).join(' ');
+        if (level === 'warn' || level === 'error' || /\[BOOT\]|\[CTOR STEP|\[PREWARM\]|khởi động thành công/i.test(msg)) add('console-' + level, msg);
+        return original.apply(console, args);
+      };
+    });
+    var last = '';
+    setInterval(function () {
+      var splash = document.getElementById('gm-splash'), stage = splash && splash.querySelector('.gms-stage'), pct = splash && splash.querySelector('.gms-pct');
+      var state = [stage && stage.textContent, pct && pct.textContent, !!(window.artilleryGame || window.game), document.readyState].join(' | ');
+      if (state !== last) { last = state; add('boot-state', state); }
+    }, 1000);
+    if (enabled) {
+      var button = document.createElement('button');
+      button.textContent = 'Tải boot log';
+      button.title = 'Tải nhật ký khởi động dạng .txt';
+      button.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:9px 12px;border:1px solid #e7a63a;border-radius:5px;background:#111a;color:#f5c46b;font:600 12px system-ui;cursor:pointer';
+      button.addEventListener('click', api.export);
+      document.body.appendChild(button);
+    }
+  })();
+</script>
 <!-- MÀN CHÀO GM GAMING: phủ ngay từ khung hình đầu (viết thẳng trong trang, không chờ script / CSS ngoài), thanh tiến độ theo
      số script đã tải -> dựng game -> sảnh vẽ xong thì mờ dần. Trang thử nghiệm (?lab=...) có màn chờ riêng nên gỡ ngay. -->
 <div id="gm-splash" aria-label="GM GAMING — đang tải">

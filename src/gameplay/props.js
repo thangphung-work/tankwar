@@ -1658,7 +1658,7 @@ const Props = (() => {
       // xe dựng sẵn lúc chờ trận (prebuildCivil): camera sảnh không phải chỗ xuất phát -> chưa vào trận thì không dựng / hạ
       if (this._civPre) { const g = typeof window !== 'undefined' && window.game; if (g && !g.isGameStarted) return; this._civPre = null; }
       // xe đang dựng dở: chạy tiếp theo ngân sách (xe vừa bị bắn / húc cần gấp hơn)
-      if (this._civJob) { this.stepCivJob(this._civJob.o.civWant ? 8 : 4); if (this._civJob) return; }
+      if (this._civJob) { this.stepCivJob(this._civJob.o.civWant ? 5 : 2.5); if (this._civJob) return; }
       const V = this.civilView(camPos);
       if (!V) return;
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -1695,7 +1695,7 @@ const Props = (() => {
         const s = o.civWant ? e - 1e6 : e;
         if (s < best) { best = s; cand = o; }
       }
-      if (cand && (!cand.civWant || this.civil.size < CIV_HARD) && this.startCivJob(cand)) this.stepCivJob(cand.civWant ? 8 : 4);
+      if (cand && (!cand.civWant || this.civil.size < CIV_HARD) && this.startCivJob(cand)) this.stepCivJob(cand.civWant ? 5 : 2.5);
     }
     // DỰNG SẴN LÚC CHỜ TRẬN (game.prebuildMatchUnits): các xe quanh chỗ xuất phát của mình mà vào trận sẽ được nâng bản chi
     // tiết (trong CIV_UP, gần trước, tối đa CIV_MAX) dựng sẵn ngay trong cảnh trận -> khung đầu trận không phải dựng ~40 xe
@@ -2920,7 +2920,9 @@ const Props = (() => {
     update(dt, fx, cam) {
       if (!dt) return;
       // Dựng / hạ bản chi tiết CivilCars theo cỡ xe trên màn hình (xem CIV_UP / CIV_DOWN)
-      if (typeof CivilCars !== 'undefined') { this.civilLod(cam); this.runCivOps(5); }
+      // Keep optional detailed civilian-car visuals from taking a large slice of
+      // one gameplay frame; collision and damage state stay on the lightweight proxy.
+      if (typeof CivilCars !== 'undefined') { this.civilLod(cam); this.runCivOps(2.5); }
       // xe chi tiết nhỏ trên màn hình (xa / ngoài khung nhìn kính ngắm) cập nhật thưa hơn — dt cộng dồn nên khung mềm, lửa,
       // số hạt vẫn đúng theo thời gian; chỉ nhịp hiện biến dạng giảm (60 -> 30 / 15 lần/s) ở xe cao vài chục điểm ảnh.
       // Rải lệch khung theo xe để tải chia đều

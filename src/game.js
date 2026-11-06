@@ -247,7 +247,7 @@ class ArtilleryGame3D {
     if (urlParams && urlParams.get('preview_crater')) this.initCraterPreview();
     console.log("[CTOR STEP 7] After preview_crater check");
     if (urlParams && (urlParams.get('autosearch') || urlParams.get('search'))) {
-      setTimeout(() => { if (this.matchmaking) this.matchmaking.startSearching(); }, 600);
+      setTimeout(() => { if (this.matchmaking) this.matchmaking.startSearch(); }, 600);
     }
 
     // Khởi tạo hoặc liên kết Phòng Trưng Bày & Chi Tiết Thiết Kế Xe Tăng 3D
@@ -9567,6 +9567,7 @@ class ArtilleryGame3D {
     }
     // C?t t?ng nh? ch? c?n theo k?p camera ? ~10 Hz; qu?t to?n b? danh s?ch nh? m?i khung h?nh l?m k?nh ng?m kh?ng tr?n b?n ?? ??ng c?ng tr?nh.
     // Throttle building cutaway scans to 10 Hz while aiming.
+    if (T && T.updateBuildingView) {
       S.buildingViewT = (S.buildingViewT || 0) + dt;
       if (S.buildingViewT >= 0.1) {
         const viewDt = S.buildingViewT;
@@ -10251,10 +10252,15 @@ class ArtilleryGame3D {
     }
     // Cây bao dò tia (raycast_bvh.js) cho lưới xe mới xuất hiện (hồi sinh, bộ phận gắn thêm): xếp hàng dựng lúc rảnh,
     // để phát trúng đầu tiên vào xe đó không phải dựng cây ngay giữa khung hình
+    // Spread fallback BVH refresh over time instead of traversing every vehicle
+    // hierarchy in one frame. Initial match warmup and respawn already prewarm groups.
     this._bvhWarmT = (this._bvhWarmT || 0) - dt;
-    if (this._bvhWarmT <= 0 && window.RaycastBVH) {
-      this._bvhWarmT = 2;
-      for (const u of this.units) if (u.group) RaycastBVH.warm(u.group);
+    if (this._bvhWarmT <= 0 && window.RaycastBVH && this.units && this.units.length) {
+      this._bvhWarmT = Math.max(0.12, 2 / this.units.length);
+      const i = (this._bvhWarmIndex || 0) % this.units.length;
+      this._bvhWarmIndex = (i + 1) % this.units.length;
+      const u = this.units[i];
+      if (u && u.group) RaycastBVH.warm(u.group);
     }
 
     // Bộ binh (cả người chơi lẫn lính của máy khác): chuyển động do SoldierEngine, chép vị trí sang đơn vị trước khi cập nhật các xe
@@ -11883,6 +11889,11 @@ class ArtilleryGame3D {
   // Minimap radar góc trên trái (src/ui/radar_minimap.js): chỉ phủ vùng xe quan sát được, cảnh báo hướng kẻ bắn
   renderAOWMinimap() {
     if (!this.miniCtx || !this.miniCanvas || !this.player) return;
+    // Minimap và phần dựng nền phục vụ nó là HUD phụ; cập nhật 30 Hz vẫn đủ
+    // bám theo xe/điểm chiếm, đồng thời giảm công việc Canvas 2D khi trận đông.
+    const now = performance.now();
+    if (now < (this._miniRenderAt || 0)) return;
+    this._miniRenderAt = now + 1000 / 30;
     // Nền bản đồ tác chiến (đổ bóng + đồng mức, cũng là nền dự phòng của minimap): dựng dần mỗi khung ~3 ms từ đầu trận
     // (dựng một lượt mất 100+ ms -> khựng), nhường khung cho minimap khi nó đang dựng nền cục bộ; trong lúc chờ dùng nền cũ
     const tm = this.tacticalMap;
@@ -12210,7 +12221,12 @@ function startArtilleryGameInstance() {
       console.info(`[BOOT] Khởi tạo game (gồm dựng bản đồ): ${Math.round(performance.now() - t0)} ms`);
       // sảnh (không phải phòng thử): để giao diện sảnh hiện xong rồi biên dịch sẵn shader xe + hiệu ứng dưới nền
       // (?nowarm: tắt — đo đối chứng)
-      if (!/[?&](lab=|nowarm)/.test(location.search)) setTimeout(() => window.game && window.game.scheduleLobbyPrewarm(), 3500);
+      // Dựng 8 xe mẫu để làm nóng sảnh có thể chặn luồng chính hàng giây mỗi xe.
+      // Trận thật có scheduleMatchPrewarm riêng trong lúc người chơi chờ ghép trận;
+      // chỉ chạy prewarm sảnh khi chủ động mở trang với ?prewarm=1.
+      if (/[?&]prewarm=1(?:&|$)/.test(location.search) && !/[?&](lab=|nowarm)/.test(location.search)) {
+        setTimeout(() => window.game && window.game.scheduleLobbyPrewarm(), 3500);
+      }
     } catch (err) {
       console.error('Lỗi khi khởi động ArtilleryGame3D:', err);
       const st = document.getElementById('range-lab-stage');

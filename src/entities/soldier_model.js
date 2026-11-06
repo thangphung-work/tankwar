@@ -7553,7 +7553,10 @@ const _gp = V(0, 0, 0);
     const A = aidAsset(), mk = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.visible = false; return m; };
     const inj = mk(A.inj, A.olive), cap = new THREE.Mesh(A.cap, A.steel), roll = mk(A.roll, A.gauze);
     cap.position.z = 0.55; inj.add(cap);
-    return (F._aid = { inj, roll, bands: {} });
+    // Stable per-figure variation keeps repeated first-aid motions from looking synchronized.
+    let seed = (F.root && F.root.id) || 1;
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return (F._aid = { inj, roll, bands: {}, style: seed / 4294967295 });
   }
   // băng của một chỗ (dựng khi cần): vòng vải + vết máu thấm ra sau khi quấn xong
   function aidBand(F, site) {
@@ -7579,6 +7582,8 @@ const _gp = V(0, 0, 0);
     const K = 1 - k, site = F.aidSite || 'legR', sx = aidSide(site), leg = site[0] === 'l';
     o.gAim *= K; o.gLow *= K; o.gPort *= K; o.gReady = o.gReady * K + k; o.elb *= K; o.gPitch *= K; o.gYaw *= K; o.gRoll *= K;
     o.tRx -= (leg ? 0.36 : 0.16) * k; o.chRx -= 0.12 * k; o.hRx -= (leg ? 0.36 : 0.26) * k; o.tRy -= sx * (leg ? 0.2 : 0.1) * k; o.hRy -= sx * (leg ? 0.3 : 0.62) * k;
+    const style = aidProps(F).style - 0.5;
+    o.tRz += style * 0.1 * k; o.hRz -= style * 0.06 * k;
   }
   // tay + súng: gọi sau hàm cầm súng của vũ khí, nên tay đang ở đúng chỗ nắm súng; dời súng thì tay đi theo. Đích là TÂM NẮM của bàn tay (ngón cong quanh trục z bàn tay)
   const _aGC = V(HAND_GC[0], HAND_GC[1], 0);
@@ -7630,7 +7635,8 @@ const _gp = V(0, 0, 0);
     const a0 = Math.PI + jabSx * 0.45, away = onJab(a0, 2.2), press = onJab(a0, 1.34), toLeg = onJab(0, 0).sub(press).normalize();
     const siteAx = V(0, 1, 0).transformDirection(bone.matrixWorld), jabAx = V(0, 1, 0).transformDirection(jabLeg.matrixWorld);
     const pD = F.chest.localToWorld(V(doer.s * 0.9, -0.6, -1.5)), pO = F.chest.localToWorld(V(other.s * 0.9, -0.6, -1.5));
-    const w = (t - S.pack) * 3.4, wrapK = kamiSeg(t, S.pack, S.pack + 0.3) * (1 - kamiSeg(t, S.wrap - 0.15, S.wrap)), tieK = kamiSeg(t, S.wrap - 0.15, S.wrap);
+    const style = P.style - 0.5;
+    const w = (t - S.pack) * (3.4 + style * 0.8) + style * 0.8, wrapK = kamiSeg(t, S.pack, S.pack + 0.3) * (1 - kamiSeg(t, S.wrap - 0.15, S.wrap)), tieK = kamiSeg(t, S.wrap - 0.15, S.wrap);
     const a1 = isLeg ? Math.PI + sx * 0.45 : sx * Math.PI / 2 + sx * 0.5, rW = isLeg ? 1.22 : 0.86, tie = onSite(a1, isLeg ? 1.16 : 0.8);
     const toInj = kamiSeg(t, S.grab, S.over) * (1 - kamiSeg(t, S.out, S.pack - 0.15));
     const tD = pD.clone().lerp(away, kamiSeg(t, S.grab, S.over)).lerp(press, kamiSeg(t, S.over, S.jab)).lerp(away, kamiSeg(t, S.out - 0.25, S.out)).lerp(pD, kamiSeg(t, S.out, S.pack - 0.15)).lerp(onSite(a1 + (isLeg ? 1.5 : 1.7) * Math.sin(w), rW), wrapK).lerp(tie, tieK);

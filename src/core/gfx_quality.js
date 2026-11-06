@@ -61,7 +61,21 @@ const GfxQuality = (() => {
     if (/intel|uhd|hd graphics/.test(n)) return 'low';
     return 'medium';
   }
-  function detectTier(r) { return tierFromName(gpuName(r)); }
+  const TIER_RANK = { low: 0, medium: 1, high: 2, ultra: 3 };
+  // CPU/RAM are only conservative caps. Actual frame timings still drive dynamic resolution.
+  // These browser hints are coarse and may be unavailable, so never use them to raise quality.
+  function deviceTierCap() {
+    const cores = typeof navigator !== 'undefined' ? (Number(navigator.hardwareConcurrency) || 0) : 0;
+    const memory = typeof navigator !== 'undefined' ? (Number(navigator.deviceMemory) || 0) : 0;
+    if ((cores > 0 && cores <= 2) || (memory > 0 && memory <= 2)) return 'low';
+    if ((cores > 0 && cores <= 4) || (memory > 0 && memory <= 4)) return 'medium';
+    return 'high';
+  }
+  function capTier(tier) {
+    const cap = deviceTierCap();
+    return (TIER_RANK[tier] ?? 1) > TIER_RANK[cap] ? cap : tier;
+  }
+  function detectTier(r) { return capTier(tierFromName(gpuName(r))); }
   // Dò card khi renderer chính CHƯA tạo (khử răng cưa phải chọn lúc tạo context): context tạm, xong trả ngay
   function probeTier() {
     try {
@@ -72,7 +86,7 @@ const GfxQuality = (() => {
       const n = String(e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER) || '');
       const lose = g.getExtension('WEBGL_lose_context');
       if (lose) lose.loseContext();
-      return tierFromName(n);
+      return capTier(tierFromName(n));
     } catch (err) { return 'medium'; }
   }
 
@@ -183,6 +197,12 @@ const GfxQuality = (() => {
     // cũng phình lên, khiến phép so với cpuMs kết luận nhầm là nghẽn CPU. GPU vượt ngân sách
     // hơn 60% là bằng chứng đủ mạnh để hạ độ nét dù renderer.submit đang bị block theo.
     const severeGpu = gpuMs > budget * 1.6;
+    // GPU còn dư nhưng khung hình vẫn lỡ nhịp: CPU/game logic đang nghẽn.
+    // Tăng pixel ratio ở tình huống này chỉ làm render nặng hơn mà không giúp CPU.
+    if (frameMs > refreshMs * 1.2 && gpuMs < budget * 0.55) {
+      overT = underT = 0;
+      return;
+    }
     // dư sức: GPU xong sớm hẳn, hoặc GPU chỉ đang chờ CPU gửi lệnh mà vẫn trong ngân sách
     const spare = gpuMs < budget * 0.55 || (!gpuBound && gpuMs < budget);
     if (gpuMs > budget && (gpuBound || severeGpu)) { overT += dt; underT = 0; }
