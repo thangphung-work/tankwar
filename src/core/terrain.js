@@ -432,6 +432,11 @@ class BattleTerrain3D {
     this._pendingDetailSteps = steps;
     this._detailAlive = alive;
     const scheduleNext = () => {
+      // Background tabs pause requestAnimationFrame; continue preparation slowly there.
+      if (typeof document !== 'undefined' && document.hidden) {
+        setTimeout(next, 120);
+        return;
+      }
       if (typeof requestAnimationFrame !== 'undefined') {
         requestAnimationFrame(() => {
           if (!alive()) return;

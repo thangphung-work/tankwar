@@ -571,8 +571,8 @@ class ArtilleryGame3D {
       // đã có sẵn từ lượt làm nóng trước)
       this.prewarmEffects(true).catch(e => console.warn('[SHADER] late warm', e));
     };
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1500 });
-    else setTimeout(run, 400);
+    if (!(typeof document !== 'undefined' && document.hidden) && typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1500 });
+    else setTimeout(run, typeof document !== 'undefined' && document.hidden ? 250 : 400);
   }
 
   // Ánh sáng khớp bầu trời & giờ trong ngày của bản đồ hiện tại (mặt trời nhìn thấy = hướng đổ bóng)
@@ -786,10 +786,10 @@ class ArtilleryGame3D {
         r.then(end, () => end());
       } else {
         // Giãn cách nhịp giữa các xe để trình duyệt vẽ khung hình và nhận sự kiện mượt mà
-        if (typeof requestIdleCallback === 'function') {
+        if (!(typeof document !== 'undefined' && document.hidden) && typeof requestIdleCallback === 'function') {
           requestIdleCallback(() => setTimeout(next, 40), { timeout: 1500 });
         } else {
-          setTimeout(next, 100);
+          setTimeout(next, typeof document !== 'undefined' && document.hidden ? 250 : 100);
         }
       }
     };
@@ -845,10 +845,10 @@ class ArtilleryGame3D {
         const root = roots.shift();
         if (root && root.parent === scene && !root.isLight) drawOne(root);
         // Nhường luồng giữa các lần vẽ (tối thiểu 60-80ms) để giao diện sảnh duy trì 60fps mượt mà
-        if (typeof requestIdleCallback === 'function') {
+        if (!(typeof document !== 'undefined' && document.hidden) && typeof requestIdleCallback === 'function') {
           requestIdleCallback(() => setTimeout(next, 40), { timeout: 1000 });
         } else {
-          setTimeout(next, 80);
+          setTimeout(next, typeof document !== 'undefined' && document.hidden ? 160 : 80);
         }
       };
       next();

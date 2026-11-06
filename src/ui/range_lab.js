@@ -135,7 +135,8 @@
         return;
       }
       loader.stage('ĐANG DỰNG CHIẾN TRƯỜNG…');
-      requestAnimationFrame(() => setTimeout(() => start(g, mm), 20));
+      const begin = () => setTimeout(() => start(g, mm), 20);
+      if (document.hidden) begin(); else requestAnimationFrame(begin);
     });
   }
 

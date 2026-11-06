@@ -69,9 +69,15 @@
     loader.stage('ĐANG SINH ĐỊA HÌNH NỀN…');
     // dữ liệu bản đồ sinh trong Worker (giao diện không treo); không hỗ trợ Worker thì prepareMap tự làm đồng bộ
     const prep = window.MapGen && MapGen.prefetch ? MapGen.prefetch(BIOME, SEED) : Promise.resolve(false);
-    prep.catch(() => false).then(() => {
+    prep.catch(() => false).then(ok => {
+      if (!ok || !window.MapGen || !MapGen.has || !MapGen.has(BIOME, SEED)) {
+        console.error('[FREECAM] Không thể tạo dữ liệu bản đồ trong Worker; dừng trước nhánh dựng đồng bộ để tránh khóa UI.');
+        loader.stage('KHÔNG TẠO ĐƯỢC BẢN ĐỒ — hãy tải lại trang hoặc thử trình duyệt khác');
+        return;
+      }
       loader.stage('ĐANG DỰNG CẢNH 3D…');
-      requestAnimationFrame(() => setTimeout(build, 20));
+      const begin = () => setTimeout(build, 20);
+      if (document.hidden) begin(); else requestAnimationFrame(begin);
     });
   }
 
