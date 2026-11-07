@@ -72,14 +72,14 @@ const RadarMinimap = (() => {
     const stale = !cur || cur.map !== T.map || Math.abs(cur.Rw - V.Rw) >= 1 || cur.k !== k || Math.hypot(P.x - cur.cx, P.z - cur.cz) > V.Rw * 0.45;
     if (local.job && (local.job.out.map !== T.map || local.job.out.k !== k || Math.abs(local.job.out.Rw - V.Rw) >= 1)) local.job = null;
     if (stale && !local.job) {
-      const span = V.Rw * 3, N = Math.min(900, Math.ceil(V.Rpx * 3 * k));
+      const span = V.Rw * 3, N = Math.min(600, Math.ceil(V.Rpx * 2.4 * k));
       const c = document.createElement('canvas'); c.width = c.height = N;
       const out = { canvas: c, cx: P.x, cz: P.z, x0: P.x - span / 2, z0: P.z - span / 2, span, N, Rw: V.Rw, k, map: T.map };
       local.job = { out, it: tm.paintTerrain(c.getContext('2d'), out.x0, out.z0, span, N, { smooth: true, lw: k }) };
     }
     if (local.job) {
       try {
-        if (TacticalMapController.runFor(local.job.it, 2.5)) { local.ready = local.job.out; local.job = null; }
+        if (TacticalMapController.runFor(local.job.it, 1.2)) { local.ready = local.job.out; local.job = null; }
       } catch (e) { local.job = null; }
     }
     return covers(local.ready) ? local.ready : null;

@@ -723,7 +723,7 @@ class MatchmakingController {
         this.introFinished = true;
         this.checkLocalGameReady();
       };
-      this._introCap = setTimeout(finishIntro, 48000);
+      this._introCap = setTimeout(finishIntro, 1800);
       const mapLower = (this.selectedMapType || 'urban').toLowerCase();
       const primarySrc = 'assets/recon_' + mapLower + '.webm?v=20261026high';
       const fallbackSrc = 'assets/recon_briefing.webm?v=20261026high';
@@ -1825,7 +1825,7 @@ class MatchmakingController {
       if (snd && snd.playCountdownTick) { try { snd.playCountdownTick(0); } catch (e) {} }
       if (this.isHost) this.sendLaunch();
       this.launchGame();
-    }, 1000);
+    }, 550);
   }
 
   // Kích hoạt trận đấu

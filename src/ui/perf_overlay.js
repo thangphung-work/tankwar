@@ -77,6 +77,8 @@
     wrap(g, 'updateHUDValues', '  · HUD');
     wrap(g, 'renderAOWMinimap', '  · Bản đồ nhỏ');
     if (g.tacticalMap) wrap(g.tacticalMap, 'update', '  · Bản đồ chiến thuật');
+    if (typeof GroundCover !== 'undefined' && GroundCover.Cover) wrap(GroundCover.Cover.prototype, 'update', '  · Thảm cỏ / bóng cỏ');
+    if (typeof SoldierEngine !== 'undefined' && SoldierEngine.World) wrap(SoldierEngine.World.prototype, 'update', '  · Bộ binh');
   }
 
   function sceneStats(g) {
@@ -262,7 +264,7 @@
 
   function recState() {
     const g = window.game;
-    const want = !!(window.devLog && g && g.renderer && g.isGameStarted && !g.isGameOver);
+    const want = !!(window.devLog && g && g.renderer && g.isGameStarted && !g.isGameOver && !g._labWarming);
     if (want === S.rec) return;
     if (want) {
       install(g);

@@ -171,6 +171,7 @@
 <script src="src/core/audio/soldier_voice.js?v=20261104fb2"></script>
 <script src="src/core/map_gen.js"></script>
 <script src="src/core/ground_shader.js"></script>
+<script src="src/core/ground_cover.js"></script>
 <script src="src/gameplay/destructibles.js"></script>
 <script src="src/gameplay/props.js"></script>
 <script src="src/gameplay/streetscape.js"></script>
@@ -568,6 +569,8 @@
     stepKamiUavs(dt);
     fx.update(dt);
     placeCamera();
+    if (typeof GroundShader !== 'undefined' && GroundShader.tick) GroundShader.tick(dt);
+    if (terrain.groundCover) terrain.groundCover.update(view.tx, view.tz, cam.position.x, cam.position.z);
     renderer.render(scene, cam);
   }
   function loop(now) {

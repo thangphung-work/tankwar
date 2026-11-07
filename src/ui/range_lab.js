@@ -173,7 +173,7 @@
     waitDetails();
   }
 
-  function enterMatch(g, mm, t0) {
+  function enterMatch(g, mm, t0) { g._labWarming = true;
     const ov = document.getElementById('matchmaking-overlay');
     if (ov) ov.classList.add('hidden');
     mm.selectedTankType = tankType;
@@ -249,15 +249,33 @@
     const finishWrecks = () => new Promise(res => {
       const step = () => {
         const set = g.terrain && g.terrain.strongholdSet;
-        if (!set || !set._wreckQueue || !set._wreckQueue.length) { res(); return; }
+        if (!set || !set._wreckQueue || !set._wreckQueue.length || (set._labWreckSamples || 0) >= 2) { res(); return; }
+        set._labWreckSamples = (set._labWreckSamples || 0) + 1;
         if (set.stepWrecks(1) && typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(g.terrain);
         setTimeout(step, 0);
       };
       step();
     });
-    finishWrecks().then(() => g.labWarmUp(t => loader.stage(t)))
-      .catch(err => console.warn('[LAB] labWarmUp', err))
-      .then(() => { console.info(`[BOOT] Biên dịch shader + nạp GPU: ${Math.round(performance.now() - tc)} ms`); firstFrame(); });
+    finishWrecks().then(() => {
+      const twu = performance.now();
+      // Làm nóng hiệu ứng bắn cốt lõi (chỉ mất ~500ms)
+      const pEffects = g.prewarmEffects ? g.prewarmEffects(true).then(() => g.pinShaderPrograms()).catch(() => {}) : Promise.resolve();
+      return pEffects.then(() => {
+        console.info('[LAB] Hiệu ứng cốt lõi đã sẵn sàng: ' + Math.round(performance.now() - twu) + ' ms');
+        // Mở cửa vào Gameplay ngay lập tức sau khi hiệu ứng sẵn sàng!
+        firstFrame();
+        // Tiếp tục nạp nền toàn bộ bộ nhớ đồ họa mà không chặn người chơi
+        if (g.warmGpuUploads) {
+          setTimeout(() => {
+            g._labWarming = false;
+            try { g.warmGpuUploads(true); } catch (e) { console.warn('[LAB] warmGpuUploads ngầm', e); }
+          }, 100);
+        }
+      });
+    }).catch(err => {
+      console.warn('[LAB] Lỗi làm nóng, vào thẳng game:', err);
+      firstFrame();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -390,7 +408,8 @@
 
     lab.infantry.world = new SoldierEngine.World(g.scene, g.terrain, {
       vehicles: () => (g.units || []).filter(u => !u.isDead),
-      onFire: (soldier, enemy, aim) => onInfantryFire(soldier, enemy, aim)
+      onFire: (soldier, enemy, aim) => onInfantryFire(soldier, enemy, aim),
+      onCrush: (soldier, vehicle) => onInfantryCrush(soldier, vehicle)
     });
   }
 
@@ -586,6 +605,17 @@
         const hitP = new THREE.Vector3(p.x + (Math.random() - 0.5) * 8, (p.y || 0) + 4 + Math.random() * 6, p.z + (Math.random() - 0.5) * 8);
         g.effectsManager.fx.createSparkImpact(hitP, new THREE.Vector3(0, 1, 0));
       }
+    }
+  }
+
+  function onInfantryCrush(soldier, vehicle) {
+    const inf = lab.infantry, g = lab.g;
+    if (!inf) return;
+    inf.kills++;
+    addLog('[[skull]] Xe tăng đã cán qua bộ binh địch!', 'hit');
+    lab.hits.unshift('Cán qua bộ binh địch');
+    if (g.effectsManager && g.effectsManager.fx && g.effectsManager.fx.createGroundDust) {
+      g.effectsManager.fx.createGroundDust(new THREE.Vector3(soldier.x, soldier.y, soldier.z), 1.2);
     }
   }
 
@@ -1026,7 +1056,7 @@
   function stepLazyWrecks(dt, now) {
     const set = lab.g.terrain && lab.g.terrain.strongholdSet;
     if (!set || !set._wreckQueue || !set._wreckQueue.length) return;
-    if (!now && (lab._wreckT = (lab._wreckT || 0) - dt) > 0) return;
+    if (!now) return;
     lab._wreckT = 0.2;
     if (set.stepWrecks(now ? Infinity : 1) && typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(lab.g.terrain);
   }
@@ -1402,14 +1432,14 @@
         <a class="on" href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
       </nav>
       <div class="rg-body">
-        <div class="lbl">XE CỦA BẠN</div><div class="row" id="rg-types"></div>
-        <div class="lbl">ĐƠN VỊ THỬ NGHIỆM</div>
+        <div class="lbl">BỘ BINH TRƯỜNG BẮN</div>
         <div class="row" id="rg-inf-ctrls">
           <button id="rg-inf-toggle" class="on" title="Bật hoặc tắt đơn vị bộ binh trên trường bắn"><i class="ti ti-users" aria-hidden="true"></i> Bộ binh: BẬT</button>
           <button id="rg-inf-stance" title="Tư thế tác chiến: Canh gác / Quỳ / Đi tuần / Đứng yên"><i class="ti ti-shield" aria-hidden="true"></i> Canh gác</button>
           <button id="rg-inf-fire" title="Bộ binh bắn trả xe bạn bằng súng phóng lựu 40mm"><i class="ti ti-crosshair" aria-hidden="true"></i> Bắn trả: TẮT</button>
           <button id="rg-inf-add" title="Thả thêm 1 tổ bộ binh dã chiến"><i class="ti ti-user-plus" aria-hidden="true"></i> Thêm tổ lính</button>
         </div>
+        <div class="lbl">XE CỦA BẠN</div><div class="row" id="rg-types"></div>
         <div class="lbl">BẢN ĐỒ</div><div class="row" id="rg-maps"></div>
         <div class="lbl">THỜI TIẾT</div><div class="row" id="rg-wx"></div>
         <div class="lbl">BỐ TRÍ</div><div class="row" id="rg-field"></div>

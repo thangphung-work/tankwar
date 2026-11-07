@@ -49,7 +49,7 @@ const InfantryMatch = (() => {
   // đạn sượt qua: tầm nghe (đv). Vận tốc đạn của game đã quy đổi nên không so được với tốc độ âm thanh: chọn tiếng theo loại đạn
   const NEAR = { small: 64, big: 110 };
   const SMALL_AMMO = new Set(['SCOUT_BULLET', 'SCOUT_INCENDIARY', 'GATLING_BULLET', 'GATLING_HE', 'INCENDIARY']), SLOW_AMMO = new Set(['RPG', 'ANTI_TANK_MISSILE']);
-  const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyR', 'KeyC', 'KeyX', 'Space', 'Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4', 'KeyQ', 'KeyE', 'KeyF', 'KeyT', 'KeyG', 'KeyB', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+  const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyR', 'KeyC', 'KeyX', 'Space', 'Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4', 'KeyQ', 'KeyE', 'KeyF', 'KeyT', 'KeyG', 'KeyB', 'Tab', 'AltLeft', 'AltRight', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
   const CSS = `
     body.inf-mode #ammo-selector, body.inf-mode #fire-btn, body.inf-mode #target-lock-stat-box, body.inf-mode .hx-speed { display: none !important; }
     #inf-hud { position: absolute; inset: 0; pointer-events: none; color: #e8ecef; font: 600 13px/1.35 system-ui, sans-serif; text-shadow: 0 1px 2px #000; }
@@ -61,13 +61,51 @@ const InfantryMatch = (() => {
     #inf-cross i:nth-child(4) { width: 8px; height: 2px; top: -1px; left: var(--g); }
     #inf-cross.lock i { background: #ffa040; }
     #inf-cross.hit i { background: #ff5a4a; }
-    #inf-panel { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); min-width: 300px; max-width: calc(100vw - 32px); padding: 8px 14px; text-align: center; background: rgba(10, 14, 18, .62); border-radius: 6px; }
-    #inf-ammo { font-size: 18px; font-weight: 700; }
-    #inf-keys { margin-top: 2px; font-size: 11px; font-weight: 500; opacity: .8; }
+
+    /* Thanh tiến trình nạp đạn / băng bó giữa màn hình */
+    #inf-action { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); width: 240px; text-align: center; background: rgba(10, 14, 18, .75); padding: 7px 12px; border-radius: 6px; border: 1px solid rgba(255, 160, 64, .3); box-shadow: 0 4px 14px rgba(0,0,0,.6); }
+    #inf-action-lbl { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #ffa040; margin-bottom: 5px; text-transform: uppercase; }
+    #inf-action-track { width: 100%; height: 6px; background: rgba(255,255,255,.15); border-radius: 3px; overflow: hidden; }
+    #inf-action-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #ff8a30, #ffb040); transition: width .06s linear; }
+
+    /* Huy hiệu trạng thái phụ (Đổi vai, nhìn tự do, nín thở) */
+    #inf-badges { position: absolute; left: 50%; bottom: 154px; transform: translateX(-50%); display: flex; gap: 8px; }
+    #inf-badges span { padding: 3px 9px; font-size: 11px; font-weight: 700; letter-spacing: .05em; background: rgba(12, 16, 20, .72); border: 1px solid rgba(255,255,255,.18); border-radius: 4px; }
+    #inf-badge-shoulder { color: #8cd4ff; border-color: rgba(140, 212, 255, .35) !important; }
+    #inf-badge-freelook { color: #ffd166; border-color: rgba(255, 209, 102, .4) !important; }
+    #inf-badge-breath { color: #ff6b6b; border-color: rgba(255, 107, 107, .4) !important; }
+
+    /* Bảng tiểu đội 4 lính góc trái dưới (kiểu PUBG) */
+    #inf-squad { position: absolute; left: 24px; bottom: 28px; display: flex; flex-direction: column; gap: 6px; }
+    .inf-sq-slot { display: flex; align-items: center; gap: 8px; width: 220px; padding: 5px 9px; background: rgba(12, 16, 20, .68); border-radius: 4px; border: 1px solid rgba(255,255,255,.12); transition: all .15s ease; }
+    .inf-sq-slot.active { background: rgba(28, 22, 12, .88); border-color: #ffa040; box-shadow: 0 0 10px rgba(255, 160, 64, .35); }
+    .inf-sq-slot.dead { opacity: .45; filter: grayscale(1); }
+    .inf-sq-num { font-size: 12px; font-weight: 800; color: #ffa040; width: 14px; text-align: center; }
+    .inf-sq-info { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .inf-sq-name { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .inf-sq-hp { width: 100%; height: 4px; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; }
+    .inf-sq-hp-fill { height: 100%; background: #4cd964; transition: width .15s ease; }
+    .inf-sq-ammo { font-size: 11px; font-weight: 700; color: #d0d8e0; margin-left: auto; }
+
+    /* Thanh Máu & Thể lực chính giữa dưới màn hình */
+    #inf-center-status { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(10, 14, 18, .78); padding: 9px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,.15); box-shadow: 0 6px 20px rgba(0,0,0,.6); min-width: 380px; }
+    #inf-posture-icon { padding: 4px 10px; font-size: 12px; font-weight: 800; letter-spacing: .06em; background: rgba(255, 160, 64, .2); color: #ffa040; border: 1px solid rgba(255, 160, 64, .45); border-radius: 4px; }
+    #inf-bars { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+    #inf-hp-track { position: relative; width: 100%; height: 16px; background: rgba(255,255,255,.12); border-radius: 4px; overflow: hidden; border: 1px solid rgba(0,0,0,.4); }
+    #inf-hp-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #34c759, #30d158); transition: width .15s ease, background .2s; }
+    #inf-hp-fill.med { background: linear-gradient(90deg, #ff9f0a, #ffb340); }
+    #inf-hp-fill.low { background: linear-gradient(90deg, #ff3b30, #ff453a); }
+    #inf-hp-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-shadow: 0 1px 3px #000; }
+    #inf-stam-track { width: 100%; height: 5px; background: rgba(255,255,255,.12); border-radius: 3px; overflow: hidden; }
+    #inf-stam-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #ff9f0a, #ffd60a); transition: width .1s ease; }
+
+    #inf-panel { position: absolute; right: 24px; bottom: 28px; min-width: 260px; max-width: 440px; padding: 10px 16px; text-align: right; background: rgba(10, 14, 18, .75); border-radius: 8px; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+    #inf-ammo { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: .02em; }
+    #inf-keys { margin-top: 4px; font-size: 11px; font-weight: 500; opacity: .78; line-height: 1.45; }
     #inf-heal { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse closest-side, transparent 58%, rgba(70, 210, 120, .42) 100%); }
     #inf-heal.on { animation: inf-heal 1.2s ease-out; }
     @keyframes inf-heal { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
-    #inf-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); padding: 5px 12px; background: rgba(10, 14, 18, .62); border-radius: 6px; }
+    #inf-msg { position: absolute; left: 50%; top: 64%; transform: translateX(-50%); padding: 6px 14px; font-size: 13px; font-weight: 700; background: rgba(10, 14, 18, .75); border: 1px solid rgba(255, 160, 64, .4); border-radius: 6px; }
     #inf-fb { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 961; }
     #inf-fb canvas { position: absolute; opacity: 0; }
     #inf-fb .vig { left: 0; top: 0; width: 100%; height: 100%; }
@@ -160,7 +198,7 @@ const InfantryMatch = (() => {
         }
         BL.onShellFired = (sh, u, ammo) => this.muzzleBlast(u, ammo, sh);
       }
-      this.world = new SoldierEngine.World(game.scene, game.terrain, { vehicles: () => this.veh, isEnemy: (a, b) => a.team !== b.team, onFire: (s, t, aim) => this.fireGuard(s, aim), onKami: (s, ev) => this.onKami(s, ev), onMedkit: s => this.onMedkit(s) });
+      this.world = new SoldierEngine.World(game.scene, game.terrain, { vehicles: () => this.veh, isEnemy: (a, b) => a.team !== b.team, onFire: (s, t, aim) => this.fireGuard(s, aim), onKami: (s, ev) => this.onKami(s, ev), onMedkit: s => this.onMedkit(s), onCrush: (s, v) => this.onSoldierCrushed(s, v) });
       this.world.fireBullet = () => {};   // đạn thật của trận đi qua fireGuard / fireLive, không dùng đạn riêng của engine
       const biome = game.terrain && game.terrain.mapType;
       if (biome && SoldierModel.setBiome) SoldierModel.setBiome(biome);
@@ -209,11 +247,11 @@ const InfantryMatch = (() => {
         e.stopImmediatePropagation(); e.preventDefault();
         if (!this.locked && !this.noLock) { this.lock(); return; }
         if (e.button === 0) this.ctl.firing = true;
-        else if (e.button === 2) this.ctl.aiming = true;
+        else if (e.button === 2) this.ctl.setAim(true);
       }, true);
       on(window, 'pointerup', e => {
         if (e.button === 0) this.ctl.firing = false;
-        else if (e.button === 2) this.ctl.aiming = false;
+        else if (e.button === 2) this.ctl.setAim(false);
       }, true);
       for (const ev of ['mousedown', 'mouseup', 'click', 'dblclick', 'wheel', 'contextmenu']) {
         on(window, ev, e => {
@@ -281,7 +319,7 @@ const InfantryMatch = (() => {
       const dig = /^(?:Digit|Numpad)([1-4])$/.exec(e.code);
       if (dig) { if (down && !e.repeat) this.switchTo(dig[1] - 1); return; }
       if (e.code === 'Backquote') { if (down && !e.repeat) this.callAll(); return; }
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft'].includes(e.code)) { C.keys[e.code] = down; return; }
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'AltLeft', 'AltRight', 'KeyQ'].includes(e.code)) { C.key(e.code, down); return; }
       if ((e.code === 'KeyR' || e.code === 'KeyC' || e.code === 'KeyX') && !e.repeat && this.me.s.alive) C.key(e.code, down);
     }
 
@@ -879,7 +917,12 @@ const InfantryMatch = (() => {
       else if (A && A !== u && performance.now() - (u._lastAttackerAt || -1e9) < 1500) from = { x: A.x, z: A.z };
       this.noteHurt(from, amt, blast && from && from.x === D.x);
       const SE = window.soundEngine;
-      if (!blast && SE && SE.playSelfHit) SE.playSelfHit(D && D.zone === 'plate' ? 'plate' : 'flesh');
+      if (blast) {
+        if (SE && SE.shellShock) SE.shellShock(Math.min(1.0, 0.5 + amt * 0.9));
+        if (this.ctl) this.ctl.shake = Math.max(this.ctl.shake || 0, Math.min(1.6, 0.85 + amt * 1.2));
+      } else if (SE && SE.playSelfHit) {
+        SE.playSelfHit(D && D.zone === 'plate' ? 'plate' : 'flesh');
+      }
     }
     // đạn địch bay ngang người: tìm điểm gần nhất trên đoạn đạn vừa đi trong khung này. Đạn bay qua trọn một khung nên không dò theo điểm đầu mút
     // (khung đầu thấy viên đạn: lùi theo vận tốc, viên bắn từ gần có thể đã bay qua người ngay trong khung đó)
@@ -925,10 +968,27 @@ const InfantryMatch = (() => {
         M.t -= dt;
       } else if (M) { this._mk = null; E.style.display = 'none'; T.style.display = 'none'; }
       this._hurtK = Math.max(0, (this._hurtK || 0) * Math.exp(-dt / HURT.flashTau) - dt * 0.02);
-      const hp = u.isDead ? 1 : u.hp / (u.maxHp || 1), low = hp < HURT.low ? (HURT.low - hp) / HURT.low * HURT.lowOp : 0;
+      const hp = u.isDead ? 1 : u.hp / (u.maxHp || 1);
+      let low = 0;
+      if (hp < HURT.low) {
+        const danger = (HURT.low - hp) / HURT.low;
+        // Nhịp tim đập dồn dập khi nguy kịch (máu càng thấp nhịp tim đập càng nhanh)
+        const heartRate = 8.0 + danger * 6.0;
+        const heartBeat = Math.pow(Math.max(0, Math.sin(performance.now() * 0.001 * heartRate)), 3.0);
+        low = danger * HURT.lowOp * (0.62 + 0.48 * heartBeat);
+      }
       this._fbWarm = Math.max(0, (this._fbWarm || 0) - dt);
       const warm = this._fbWarm > 0 ? 0.01 : 0, vo = Math.max(this._hurtK, low, warm);
-      if (Math.abs(vo - this._vigOp) > 0.008 || (vo === 0 && this._vigOp !== 0)) { this._vigOp = vo; this.$vig.style.opacity = vo.toFixed(3); }
+      if (Math.abs(vo - this._vigOp) > 0.008 || (vo === 0 && this._vigOp !== 0)) {
+        this._vigOp = vo;
+        this.$vig.style.opacity = vo.toFixed(3);
+        if (low > 0.15) {
+          const sc = (1.0 + 0.035 * (low / HURT.lowOp)).toFixed(3);
+          this.$vig.style.transform = 'scale(' + sc + ')';
+        } else if (this.$vig.style.transform) {
+          this.$vig.style.transform = '';
+        }
+      }
       const e = cam.matrixWorld.elements, H = window.innerHeight * HURT.R, fx = -e[8], fz = -e[10], rx = e[0], rz = e[2];
       // cung đồng tâm với tâm ngắm: bán kính đổi theo cỡ cửa sổ thì vẽ lại
       if (Math.abs(H - this._arcR) > 4) { this._arcR = H; for (const A of this.$arcs) this.drawArc(A.el); }
@@ -1088,17 +1148,28 @@ const InfantryMatch = (() => {
       u.elevation = this.ctl.pitch * 180 / Math.PI;
     }
 
+    onSoldierCrushed(s, v) {
+      const P = this.pairs.find(p => p.s === s);
+      if (!P) return;
+      const { u } = P;
+      if (u && !u.isDead) {
+        u._infDeath = { mode: 'crush' };
+        const r = u.takeDamage(u.maxHp + 1, v, 'DIRECT_HIT');
+        if (r && r.killed) this.game.onUnitDestroyed(u, v, v.name || 'xe cán');
+      }
+    }
+
     // xe đang chạy cán phải: chết ngay (không tính công cho xe: máy có quyền với lính là máy này)
     runOver(P) {
       const { u, s } = P, VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
       if (u.isDead || u.invulnerableTimer > 0 || !VC || !VC.vehObb || !VC.circleGap) return;
       for (const v of this.veh) {
-        if (Math.abs(v.speed || 0) < 12 || Math.hypot(v.x - s.x, v.z - s.z) > 50 || Math.abs((v.y || 0) - s.y) > 16) continue;
+        if (Math.abs(v.speed || 0) < 1.5 || Math.hypot(v.x - s.x, v.z - s.z) > 50 || Math.abs((v.y || 0) - s.y) > 16) continue;
         const g = VC.circleGap(VC.vehObb(v, v.x, v.z, v.bodyAngle, this._ob || (this._ob = {})), s.x, s.z, 2, this._gap || (this._gap = {}));
         if (!g || g.gap >= 0) continue;
         u._infDeath = { mode: 'crush' };
-        const r = u.takeDamage(u.maxHp + 1, null, 'DIRECT_HIT');
-        if (r && r.killed) this.game.onUnitDestroyed(u, null, v.name || 'xe cán');
+        const r = u.takeDamage(u.maxHp + 1, v, 'DIRECT_HIT');
+        if (r && r.killed) this.game.onUnitDestroyed(u, v, v.name || 'xe cán');
         return;
       }
     }
@@ -1140,9 +1211,17 @@ const InfantryMatch = (() => {
       const el = this.hudEl = document.createElement('div');
       el.id = 'inf-hud';
       el.innerHTML = '<div id="inf-heal"></div><div id="inf-cross"><i></i><i></i><i></i><i></i></div><div id="inf-msg"></div>'
-        + '<div id="inf-panel"><div id="inf-ammo"></div><div id="inf-keys">W A S D đi · Shift chạy · chuột phải ngắm (Shift: nín thở, lăn chuột: kính / thước ngắm) · chuột trái bắn / phóng UAV · R nạp · C quỳ · X nằm · E bộ y tế · F lên / xuống xe · 1 2 3 4 đổi lính · ` gọi cả tổ</div></div>';
+        + '<div id="inf-action" style="display:none"><div id="inf-action-lbl">ĐANG NẠP ĐẠN...</div><div id="inf-action-track"><div id="inf-action-fill"></div></div></div>'
+        + '<div id="inf-badges"><span id="inf-badge-shoulder">VAI PHẢI [Q]</span><span id="inf-badge-freelook" style="display:none">NHÌN TỰ DO [Alt]</span><span id="inf-badge-breath" style="display:none">NÍN THỞ</span></div>'
+        + '<div id="inf-squad"></div>'
+        + '<div id="inf-center-status"><div id="inf-posture-icon">ĐỨNG</div><div id="inf-bars"><div id="inf-hp-track"><div id="inf-hp-fill"></div><span id="inf-hp-text">100 / 100</span></div><div id="inf-stam-track"><div id="inf-stam-fill"></div></div></div></div>'
+        + '<div id="inf-panel"><div id="inf-ammo"></div><div id="inf-keys">W A S D đi · Shift chạy · Chuột phải ngắm (nhấp bật/tắt, giữ thả) · Q đổi vai · Alt nhìn tự do · Chuột trái bắn · R nạp · C quỳ · X nằm · E băng bó · F lên/xuống xe · 1 2 3 4 đổi lính · \` gọi cả tổ</div></div>';
       box.appendChild(el);
       this.$keys = el.querySelector('#inf-keys'); this.$cross = el.querySelector('#inf-cross'); this.$ammo = el.querySelector('#inf-ammo'); this.$msg = el.querySelector('#inf-msg'); this.$heal = el.querySelector('#inf-heal');
+      this.$action = el.querySelector('#inf-action'); this.$actionLbl = el.querySelector('#inf-action-lbl'); this.$actionFill = el.querySelector('#inf-action-fill');
+      this.$badgeShoulder = el.querySelector('#inf-badge-shoulder'); this.$badgeFreelook = el.querySelector('#inf-badge-freelook'); this.$badgeBreath = el.querySelector('#inf-badge-breath');
+      this.$squad = el.querySelector('#inf-squad');
+      this.$posture = el.querySelector('#inf-posture-icon'); this.$hpFill = el.querySelector('#inf-hp-fill'); this.$hpText = el.querySelector('#inf-hp-text'); this.$stamFill = el.querySelector('#inf-stam-fill');
       this.buildFeedback();
     }
     // lớp phản hồi nằm ngoài #hud-overlay (bị ẩn khi soi kính) và trên lớp kính (z-index 950). Viền đỏ, cung hướng vẽ một lần ra canvas phần mềm
@@ -1205,13 +1284,66 @@ const InfantryMatch = (() => {
     }
     drawHud(h) {
       if (!this.hudEl) return;
-      const rs = h.kami ? ' / ' + KAMI_PER + (h.kami.launching ? ' · đang phóng…' : h.kami.flying ? ' · đang lái UAV (Esc: thoát màn hình, UAV lượn chờ)' : h.kami.left > 0 ? ' · đứng yên, chuột trái: phóng' : ' · hết UAV') : h.reserve != null ? ' / ' + h.reserve : '';
-      const rg = h.range != null ? ' · ' + Math.round(h.range) + ' m' + (h.rangeOk ? (h.weapon === 'gl' && h.range < 14 ? ' (chưa đủ cự ly ngòi)' : '') : ' (quá tầm)') : '';
-      this.$ammo.textContent = (this.mine.length > 1 ? 'Lính ' + (this.mine.indexOf(this.me) + 1) + '/' + this.mine.length + ' · ' : '') + WEAPON_NAME[h.weapon] + ' · ' + h.mag + rs + (h.reloading ? ' · đang nạp…' : '') + rg + (h.load ? ' · ' + h.load + ' kg' : '') + (h.drum != null && h.aim > 0.5 ? ' · thước ngắm ' + h.drum + ' m' : '') + (h.scope ? ' · kính ' + String(h.scope.x).replace('.', ',') + '×' + (h.scope.wind ? ' · gió ngang ' + Math.abs(h.scope.wind.cross).toFixed(1).replace('.', ',') + ' m/s ' + (Math.abs(h.scope.wind.cross) < 0.3 ? '' : h.scope.wind.cross > 0 ? '→' : '←') + (Math.abs(h.scope.wind.head) >= 1 ? ' · ' + (h.scope.wind.head > 0 ? 'xuôi ' : 'ngược ') + Math.abs(h.scope.wind.head).toFixed(0) + ' m/s' : '') : '') : '') + (h.holding ? ' · nín thở' : h.winded ? ' · hụt hơi' : '') + (h.tired ? ' · kiệt sức' : h.stam != null && h.stam < 0.95 ? ' · thể lực ' + Math.round(h.stam * 100) + '%' : '') + (this.me.u.infMedkit ? ' · ' + (this.me.s._medUse ? 'đang băng bó ' + Math.min(99, Math.round((this.me.s.figure.aidT || 0) / SoldierModel.AID_SEQ.wrap * 100)) + '%' : 'y tế ' + this.me.medLeft) : '');
-      // không còn tâm ngắm giả trên màn hình: ngắm qua kính thật; dấu này chỉ loé khi đạn trúng
+      const rs = h.kami ? ' / ' + KAMI_PER + (h.kami.launching ? ' · đang phóng…' : h.kami.flying ? ' · đang lái UAV' : h.kami.left > 0 ? ' · chuột trái: phóng' : ' · hết UAV') : h.reserve != null ? ' / ' + h.reserve : '';
+      const rg = h.range != null ? ' · ' + Math.round(h.range) + ' m' + (h.rangeOk ? (h.weapon === 'gl' && h.range < 14 ? ' (chưa đủ cự ly)' : '') : ' (quá tầm)') : '';
+      this.$ammo.textContent = WEAPON_NAME[h.weapon] + ' · ' + h.mag + rs + rg + (h.drum != null && h.aim > 0.5 ? ' · thước ngắm ' + h.drum + ' m' : '') + (h.scope ? ' · ' + String(h.scope.x).replace('.', ',') + '×' : '');
+
+      // Cập nhật Thanh Tiến trình Hành động (Action Bar)
+      const isMed = this.me && this.me.s && this.me.s._medUse;
+      if (isMed) {
+        this.$action.style.display = 'block';
+        const pct = Math.min(100, Math.round((this.me.s.figure.aidT || 0) / SoldierModel.AID_SEQ.wrap * 100));
+        this.$actionLbl.textContent = 'ĐANG BĂNG BÓ ' + pct + '%';
+        this.$actionFill.style.width = pct + '%';
+      } else if (h.reloading) {
+        this.$action.style.display = 'block';
+        const pct = Math.min(100, Math.round((h.reloadProgress || 0) * 100));
+        this.$actionLbl.textContent = 'ĐANG NẠP ĐẠN ' + pct + '%';
+        this.$actionFill.style.width = pct + '%';
+      } else {
+        this.$action.style.display = 'none';
+      }
+
+      // Cập nhật Huy hiệu trạng thái phụ (Đổi vai, nhìn tự do, nín thở)
+      this.$badgeShoulder.textContent = h.shoulder === -1 ? 'VAI TRÁI [Q]' : 'VAI PHẢI [Q]';
+      this.$badgeFreelook.style.display = h.freeLook ? '' : 'none';
+      this.$badgeBreath.style.display = (h.holding || h.winded) ? '' : 'none';
+      if (h.holding || h.winded) {
+        this.$badgeBreath.textContent = h.holding ? 'NÍN THỞ' : 'HỤT HƠI';
+        this.$badgeBreath.style.color = h.winded ? '#ff453a' : '#ffd166';
+      }
+
+      // Cập nhật Cụm Máu & Thể lực chính giữa
+      const hpVal = Math.max(0, Math.round(h.hp || 0));
+      this.$hpFill.style.width = Math.min(100, hpVal) + '%';
+      this.$hpFill.className = hpVal > 50 ? '' : hpVal > 25 ? 'med' : 'low';
+      this.$hpText.textContent = hpVal + ' / 100 HP';
+      const stamPct = Math.max(0, Math.min(100, Math.round((h.stam != null ? h.stam : 1) * 100)));
+      this.$stamFill.style.width = stamPct + '%';
+      this.$posture.textContent = h.stance === 'prone' ? 'NẰM' : h.stance === 'kneel' ? 'QUỲ' : 'ĐỨNG';
+
+      // Cập nhật Bảng Tiểu đội 4 lính
+      if (this.mine && this.mine.length > 0) {
+        let sqHtml = '';
+        for (let i = 0; i < this.mine.length; i++) {
+          const P = this.mine[i];
+          const isAct = P === this.me;
+          const isDead = P.u.isDead;
+          const hp = isDead ? 0 : Math.max(0, Math.round((P.u.hp / (P.u.maxHp || 1)) * 100));
+          const wShort = WEAPON_NAME[P.s.weapon] || P.s.weapon;
+          const ammoStr = isDead ? 'HY SINH' : P.s.arms.mag + (P.s.reserve != null ? '/' + P.s.reserve : '');
+          sqHtml += `<div class="inf-sq-slot ${isAct ? 'active' : ''} ${isDead ? 'dead' : ''}">`
+            + `<span class="inf-sq-num">${i + 1}</span>`
+            + `<div class="inf-sq-info"><div class="inf-sq-name">${wShort}</div><div class="inf-sq-hp"><div class="inf-sq-hp-fill" style="width:${hp}%;background:${hp>50?'#4cd964':hp>25?'#ff9f0a':'#ff3b30'}"></div></div></div>`
+            + `<span class="inf-sq-ammo">${ammoStr}</span>`
+            + `</div>`;
+        }
+        if (this.$squad.innerHTML !== sqHtml) this.$squad.innerHTML = sqHtml;
+      }
+
+      // Dấu tâm ngắm
       this.$keys.style.display = h.sight ? 'none' : '';
       this.$cross.classList.toggle('hit', !!h.hit);
-      // tâm ngắm khi chưa áp mắt (khe hở theo độ tản); áp mắt rồi thì kính có tâm riêng
       this.$cross.style.setProperty('--g', Math.round(3 + (1 - h.aim) * 6 + h.spread * 300) + 'px');
       this.$cross.classList.toggle('lock', !!h.lock);
       this.$cross.style.display = h.alive && !h.sight && !h.kami ? '' : 'none';

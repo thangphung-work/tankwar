@@ -3124,8 +3124,8 @@ const VehicleDamage = (() => {
   // Lưới thân xe vốn ít đỉnh (tấm phẳng lớn) -> lần đầu biến dạng sẽ chia nhỏ tam giác để thép "uốn" được.
   // Lưu hình học gốc để hồi sinh trả nguyên trạng.
   // ---------------------------------------------------------------------------
-  const TESS_EDGE = 2.6;          // cạnh tam giác dài hơn mức này thì chia đôi (đơn vị game)
-  const TESS_MAX_TRIS = 26000;    // trần số tam giác mỗi mesh sau khi chia
+  const TESS_EDGE = 3.4;          // cạnh tam giác dài hơn mức này thì chia đôi (đơn vị game)
+  const TESS_MAX_TRIS = 14000;    // trần số tam giác mỗi mesh sau khi chia
   const _dv = new THREE.Vector3(), _dp = new THREE.Vector3(), _dn = new THREE.Vector3();
   const _ea = new THREE.Vector3(), _eb = new THREE.Vector3(), _ec = new THREE.Vector3();
 
@@ -3956,13 +3956,13 @@ const VehicleDamage = (() => {
       i = j + 1;
     }
     pos.needsUpdate = true;
-    delete g.userData.ring;   // vòng nối đỉnh trùng dựng lại theo lưới mới
+    /* giữ g.userData.ring vì smoothMovedNormals tự bỏ qua tam giác suy biến */
     g.computeBoundingSphere();
     g.boundingBox = null;
   }
 
   // Chia mịn lưới (đã chuẩn bị riêng cho xe) chỉ trong cầu (c, r) hệ lưới; giữ pháp tuyến gốc n0 (nhận biết cạnh gấp)
-  const REFINE_ADD = 1500, REFINE_CAP = 42000;   // tam giác thêm tối đa mỗi lần chia / trần cả lưới (lõm vỏ, dò tia, đổ bóng đều duyệt cả lưới)
+  const REFINE_ADD = 800, REFINE_CAP = 22000;   // tam giác thêm tối đa mỗi lần chia / trần cả lưới (lõm vỏ, dò tia, đổ bóng đều duyệt cả lưới)
   function refineNear(mesh, c, r, edge) {
     // trần riêng: lưới thân đã chạm trần chia chung vẫn chia mịn được chỗ xé, nhưng mỗi lần chỉ thêm ít
     const g = mesh.geometry;

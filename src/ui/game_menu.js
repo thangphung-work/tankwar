@@ -8,7 +8,7 @@
  */
 const GameMenu = (() => {
   const KEY = 'spg_settings', SEEN_KEY = 'spg_seen_controls';
-  const DEF = { vol: 0.8, music: 0.6, engine: 0.8, gfx: 'high', aa: true, smooth: true };
+  const DEF = { vol: 0.8, music: 0.6, engine: 0.8, aimSens: 0.4, gfx: 'high', aa: true, smooth: true };
   let S = Object.assign({}, DEF);
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   // gfxUser: người chơi đã tự chọn mức đồ họa. Chưa chọn -> mức theo card đồ họa của máy (xem GfxQuality.detectTier)
@@ -127,6 +127,11 @@ const GameMenu = (() => {
         const out = root.querySelector(`[data-out="${el.name}"]`);
         if (out) out.textContent = el.value + '%';
         applyAudio(); save();
+      } else if (el.name === 'aimSens') {
+        S.aimSens = Number(el.value) / 100;
+        const out = root.querySelector(`[data-out="aimSens"]`);
+        if (out) out.textContent = el.value + '%';
+        save();
       }
     });
     root.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
@@ -162,6 +167,7 @@ const GameMenu = (() => {
         <div class="gm-field"><span><i class="ti ti-volume"></i> Âm lượng tổng</span><input type="range" name="vol" min="0" max="100" value="${Math.round(S.vol * 100)}"><b data-out="vol">${Math.round(S.vol * 100)}%</b></div>
         <div class="gm-field"><span><i class="ti ti-music"></i> Nhạc nền</span><input type="range" name="music" min="0" max="100" value="${Math.round(S.music * 100)}"><b data-out="music">${Math.round(S.music * 100)}%</b></div>
         <div class="gm-field"><span><i class="ti ti-engine"></i> Tiếng động cơ xe</span><input type="range" name="engine" min="0" max="100" value="${Math.round(S.engine * 100)}"><b data-out="engine">${Math.round(S.engine * 100)}%</b></div>
+        <div class="gm-field"><span><i class="ti ti-target"></i> Độ nhạy chuột ngắm</span><input type="range" name="aimSens" min="10" max="150" value="${Math.round((S.aimSens !== undefined ? S.aimSens : 0.4) * 100)}"><b data-out="aimSens">${Math.round((S.aimSens !== undefined ? S.aimSens : 0.4) * 100)}%</b></div>
         <div class="gm-sub">Chất lượng hình ảnh</div>
         <div class="gm-segs">${q('low', 'Thấp', 'Laptop phổ thông: tắt bóng đổ, cỏ, khử răng cưa')}${q('medium', 'Vừa', 'Card tích hợp đời mới: bóng đổ thường')}${q('high', 'Cao', 'Card rời: bóng mềm sắc nét, chân thực')}${q('ultra', 'Siêu cao', 'Card mạnh: vẽ gấp đôi độ nét, mịn nhất')}</div>
         ${suggested ? `<p class="gm-note"><i class="ti ti-star-filled"></i> Hợp với máy này</p>` : ''}

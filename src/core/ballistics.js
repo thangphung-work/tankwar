@@ -266,7 +266,7 @@ class BallisticsSystem3D {
     let rx = -dz, rz = dx;
     const rl = Math.hypot(rx, rz) || 1; rx /= rl; rz /= rl;
     const ux = -rz * dy, uy = rz * dx - rx * dz, uz = rx * dy;
-    const imp = (vx, vy, vz) => this.simulateShot(L.x, L.y, L.z, vx, vy, vz, rp, direct, terrain);
+    const imp = (vx, vy, vz) => this.simulateShot(L.x, L.y, L.z, vx, vy, vz, rp, direct, terrain, { fast: true });
     const b = imp(L.vx, L.vy, L.vz);
     if (b.hitType === 'OUT') return null;
     let hx = b.x - L.x, hz = b.z - L.z;
@@ -304,7 +304,7 @@ class BallisticsSystem3D {
       const vx = burst.vx * carry + (r1x * c + r2x * sn) * eject;
       const vy = burst.vy * carry + r2y * sn * eject - 6;
       const vz = burst.vz * carry + (r1z * c + r2z * sn) * eject;
-      const r = this.simulateShot(burst.x, burst.y - 2, burst.z, vx, vy, vz, rp, false, terrain);
+      const r = this.simulateShot(burst.x, burst.y - 2, burst.z, vx, vy, vz, rp, false, terrain, { fast: true });
       pts.push(r);
     }
     let mx = 0, mz = 0;
@@ -614,6 +614,17 @@ class BallisticsSystem3D {
         for (const w of PS.wallRuns) {
           if (w.maxX < mnX || w.minX > mxX || w.maxZ < mnZ || w.minZ > mxZ) continue;
           this._segBox(R, x0, y0, z0, dx, dy, dz, w.cx, w.cz, w.ux, w.uz, w.hl, w.ht, w.y0, w.y1);
+        }
+      }
+      // Điểm tiếp tế hậu phương: xe tải và đống pallet hòm đạn (khối đặc)
+      if (T.depotSet && T.depotSet.list) {
+        for (const d of T.depotSet.list) {
+          if (d.x + d.R < mnX || d.x - d.R > mxX || d.z + d.R < mnZ || d.z - d.R > mxZ) continue;
+          if (d.boxes) {
+            for (const q of d.boxes) {
+              this._segBox(R, x0, y0, z0, dx, dy, dz, q.cx, q.cz, q.ux, q.uz, q.hu, q.hv, q.y0, q.y1);
+            }
+          }
         }
       }
       // công trình / nhà / pháo đài / đá: lấy ứng viên từ lưới ô (_obsGrid) thay vì duyệt cả bản đồ mỗi bước mô phỏng; mỗi
@@ -1666,10 +1677,12 @@ class BallisticsSystem3D {
         if (envK === 4 || envK === 5) {
           // nhà: vật liệu tường (bê tông / gạch mộc / đá / gỗ / tôn) -> màu bụi, mảnh vỡ của hiệu ứng trúng đạn
           if (envK === 4) { s.hitNormal = { nx: envH.nx, ny: envH.ny, nz: envH.nz }; s.hitMat = envH.B && envH.B.st ? envH.B.st.mat : undefined; }
-          // vật cản thép (xe con dân sự, cột cây xăng): hiệu ứng / màu vụn theo thép, không theo đá
-          else if (envH.car || (envH.obstacle && envH.obstacle.mat === 'metal')) s.hitMat = 'metal';
+          // vật cản thép (xe con dân sự, cột cây xăng, xe tải tiếp tế): hiệu ứng / màu vụn theo thép, không theo đá
+          else if (envH.car || (envH.obstacle && envH.obstacle.mat === 'metal') || (envH.depot && envH.mat === 'metal')) s.hitMat = 'metal';
+          else if (envH.mat) s.hitMat = envH.mat;
           // tường rào: rào gỗ / tre báo kiểu BOULDER kèm vật liệu gỗ -> dăm gỗ, tiếng gỗ (tường đá / đất có kiểu riêng)
           else if (envH.fence) s.hitMat = envH.mat;
+          if (envH.normal && !s.hitNormal) s.hitNormal = envH.normal;
           if (s.ammoType === 'CLUSTER') { this.clusterImpactBurst(s, i, terrain, allUnits, onImpact); impacted = true; break; }
           if (s.mesh) s.mesh.position.set(s.x, s.y, s.z);
           this.removeShellMesh(s, i);
@@ -2424,18 +2437,19 @@ class BallisticsSystem3D {
       let hT = 2, hX = 0, hY = 0, hZ = 0, hK = null;
       // Bê tông / ụ đất cứ điểm: quét theo cả đoạn bay như đạn thật (bước mô phỏng ~50 đv lọt qua mái dày 26 đv; bắn từ
       // trong hầm thì đạn đã vượt qua mái trước mốc 0,06 s) -> dự đoán & máy tính hỏa lực biết nòng có bắn lọt ra miệng hầm
-      if (t > 0.004 && terrain.strongholdSegmentHit) {
+      const fast = !!(opts && opts.fast);
+      if (!fast && t > 0.004 && terrain.strongholdSegmentHit) {
         const sh = terrain.strongholdSegmentHit(px0, py0, pz0, s.x, s.y, s.z);
         if (sh) { hT = Math.max(0, ((sh.x - px0) * ex + (sh.y - py0) * ey + (sh.z - pz0) * ez) / eL2); hX = sh.x; hY = sh.y; hZ = sh.z; hK = sh.type === 'WALL' ? 'WALL' : 'GROUND'; }
       }
       // THÂN CÂY chặn đạn như đạn thật (tán cây nổ trên tán theo xác suất từng phát: không dự đoán)
-      if (t > 0.01 && veg && veg.trunkHit) {
+      if (!fast && t > 0.01 && veg && veg.trunkHit) {
         const th = veg.trunkHit(px0, py0, pz0, s.x, s.y, s.z);
         if (th && th.t < hT) { hT = th.t; hX = th.x; hY = th.y; hZ = th.z; hK = 'WALL'; }
       }
       // NHÀ: dò theo cả đoạn bay như đạn thật (trước đây chỉ thử điểm cuối mỗi bước ~30-50 đv -> lọt qua nhà mỏng: bộ giải
       // tưởng đường bắn thẳng thông, lựu pháo không chuyển sang cầu vồng, đường đạn dự kiến vẽ xuyên qua nhà)
-      if (t > 0.015 && terrain.buildingSegmentHit) {
+      if (!fast && t > 0.015 && terrain.buildingSegmentHit) {
         const bh = terrain.buildingSegmentHit(px0, py0, pz0, s.x, s.y, s.z);
         if (bh) {
           const tb = Math.max(0, ((bh.x - px0) * ex + (bh.y - py0) * ey + (bh.z - pz0) * ez) / eL2);
@@ -2444,7 +2458,7 @@ class BallisticsSystem3D {
       }
       // bao cát / đá / công sự / đống đổ nát: dò dày theo đoạn bước (trước đây chỉ thử cuối bước -> lọt bao cát mỏng);
       // nhà còn đứng đã dò ở trên (skipBuildings)
-      if (t > 0.06) {
+      if (!fast && t > 0.06) {
         const wh = this.obstacleSegmentHit(terrain, px0, py0, pz0, s.x, s.y, s.z, !!terrain.buildingSegmentHit, ceilY, opts && opts.ammo);
         if (wh && wh.t < hT) { hT = wh.t; hX = wh.x; hY = wh.y; hZ = wh.z; hK = 'WALL'; }
       }
@@ -3076,9 +3090,9 @@ BallisticsSystem3D.blastProfile = function (ammoType, heavy) {
   // vỏ mỏng, phá xích / bánh xe tăng), mảnh còn đủ sức găm thủng vỏ mỏng / phá thiết bị ngoài tới ~25 m. Trước đây 17 m / 4 m
   // — bù cho độ tản thật (dispersion ARTY_LOB): lựu pháo diệt xe bằng mảnh văng chứ hiếm khi trúng thẳng
   else if (ammoType === 'HE') radius = heavy ? 200 : 75;      // pháo HE nổ lan tương xứng uy lực
-  else if (ammoType === 'AP') radius = 9;                     // đạn xuyên động năng không thuốc nổ: chỉ mảnh vỡ sát điểm chạm
+  else if (ammoType === 'AP') radius = 18;                    // đạn xuyên động năng: chấn động đất đá và mảnh vụn sát điểm chạm
   else if (heavy) radius = 200;
-  const core = (heavy && ammoType !== 'AP') ? 48 : ammoType === 'HE' ? 20 : ammoType === 'NORMAL' || ammoType === 'CLUSTER' ? 16 : radius * 0.35;
+  const core = (heavy && ammoType !== 'AP') ? 48 : ammoType === 'HE' ? 20 : ammoType === 'AP' ? 7 : ammoType === 'NORMAL' || ammoType === 'CLUSTER' ? 16 : radius * 0.35;
   return { radius, core };
 };
 

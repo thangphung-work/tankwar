@@ -17,6 +17,10 @@
   // Chế độ mở hết: mọi trang bị dùng được ngay. TẮT (false): đồ cơ bản miễn phí; đồ NÂNG CAO (adv) phải mở khóa cho
   // từng xe — mua bằng Bạc hoặc xem đủ số quảng cáo (adsToUnlock) -> tạo cảm giác khan hiếm, có mục tiêu để cày.
   const ALL_FREE = false;
+  // Mở tạm các xe trả phí khi thử bản local; không áp dụng lên trang bị tác chiến.
+  const DEV_UNLOCK_VEHICLES = typeof window !== 'undefined'
+    && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    && new URLSearchParams(window.location.search).get('unlockVehicles') === '1';
   // Không giới hạn ô (lắp được mọi món cùng lúc): tắt -> mỗi nhóm GIÁP / PHỤ KIỆN chỉ 2 ô, phải chọn món hợp lối chơi
   // (lắp được hết thì không còn đánh đổi, ai cũng lắp đủ mọi món). Vẫn miễn phí khi ALL_FREE.
   const UNLIMITED_SLOTS = false;
@@ -38,7 +42,7 @@
   const STARTER_VEHICLE = 'SCOUT';
   const vehiclePrice = (tank) => VEHICLE_PRICE[tank] | 0;
   /** Xe đã mở chưa. owned(tank, id) -> đã sở hữu chưa (null = khách chưa có tài khoản) */
-  const vehicleOpen = (tank, owned) => ALL_FREE || !vehiclePrice(tank) || !!(owned && owned(tank, VEHICLE_ITEM));
+  const vehicleOpen = (tank, owned) => ALL_FREE || DEV_UNLOCK_VEHICLES || !vehiclePrice(tank) || !!(owned && owned(tank, VEHICLE_ITEM));
 
   // ---------------------------------------------------------------------------
   // DANH MỤC

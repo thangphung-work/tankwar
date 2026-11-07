@@ -6242,7 +6242,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
           const now = performance.now();
           if (!this._lastRebuildTime || now - this._lastRebuildTime > 25) {
             this._lastRebuildTime = now;
-            rebuild();
+            rebuild(); SB.consumeMoved(); crushDirty = false;
           }
         }
         fireUpdate(dt);
@@ -6368,7 +6368,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
           if (effSpeed > 10) events.push('crunch');
         }
 
-        rebuild();
+        rebuild(); SB.consumeMoved(); crushDirty = false;
         return true;
       },
       // Xe khác húc / đâm / ủi vào: (lx, lz) điểm tì trên mặt bằng thân (hệ xe con, như props.js tính), (dx, dz) hướng
@@ -6405,7 +6405,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
         spray(5, 2 + 5 * kk, h.p, h.no, 0.8, 4, 12, 0.12, 0.3, 1, 1.6, 0, [0.06, 0.06, 0.065]);
         spray(7, 1 + 2 * kk, h.p, h.no, 0.4, 1, 3, 0.6, 1.0, 0.6, 1.1, 1.6, [0.55, 0.52, 0.47]);
         events.push('crunch'); if (glass) events.push('glass');
-        rebuild();
+        rebuild(); SB.consumeMoved(); crushDirty = false;
         return true;
       },
       // vỡ kính khi khung bị ép / đè mạnh: kính chắn gió rạn khắp, kính hông cường lực vỡ rụng phần lớn
@@ -6443,10 +6443,10 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     // cán tĩnh (opts.crush): xe tăng đã chạy thẳng qua theo opts.track
     if (opts.crush) {
       // opts.warmOnly (xe mẫu làm nóng shader, warmJobs): cán thưa vài nhát — cùng vật liệu, bỏ ~240 bước khung mềm
-      const ca = Math.cos(trk.angle), sa = Math.sin(trk.angle), ds = opts.warmOnly ? 12 : 14 / 30;
-      for (let s = -50; s <= 50; s += ds) { crushApi.stamp(trk.offset * ca + s * sa, -trk.offset * sa + s * ca, trk.angle, 1 / 30); SB.step(1 / 30); }
+      const ca = Math.cos(trk.angle), sa = Math.sin(trk.angle), ds = opts.warmOnly ? 12 : 2.5;
+      for (let s = -50, k = 0; s <= 50; s += ds, k++) { crushApi.stamp(trk.offset * ca + s * sa, -trk.offset * sa + s * ca, trk.angle, 1 / 30); SB.step(1 / 30); if (!opts.warmOnly && (k & 7) === 7) yield; }
       for (let i = 0, n = opts.warmOnly ? 3 : 30; i < n; i++) SB.step(1 / 30);
-      rebuild();
+      rebuild(); SB.consumeMoved(); crushDirty = false;
       // 2 vệt xích hằn bùn trên mặt đất trước / sau xác xe
       const tt = trackTexture();
       for (const sd of [1, -1]) {
@@ -6486,10 +6486,10 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
     shareGeometries(g, restGeo);
     // xe nguyên (không cán sẵn: khung mềm còn đang lún dần) -> vẽ bằng bản gộp tới lần đầu bị tác động
     yield;
-    const unmerge = opts.crush || opts.noMerge ? null : yield* mergeStaticGen(car);
-    if (unmerge) {
-      let on = true;
-      const split = () => { if (on) { on = false; unmerge(); } };
+    let unmerge = opts.noMerge ? null : yield* mergeStaticGen(car);
+    if (unmerge || !opts.noMerge) {
+      let touchT = 0;
+      const split = () => { touchT = typeof performance !== 'undefined' ? performance.now() : Date.now(); if (unmerge) { const u = unmerge; unmerge = null; u(); } };
       for (const k of ['stamp', 'shoot', 'sweepBarrel', 'ram', 'breakGlass', 'ignite']) {
         const f = crushApi[k];
         crushApi[k] = function () { split(); return f.apply(this, arguments); };
@@ -6498,7 +6498,7 @@ float awFbm(vec3 p){return 0.5*awNoise(p)+0.25*awNoise(p*2.03+1.7)+0.125*awNoise
       crushApi.update = function (dt) {
         const t0 = this._lastRebuildTime;
         const r = upd.call(this, dt);
-        if (on && this._lastRebuildTime !== t0) split();   // khung mềm tự dựng lại (vẫn đang lún): lưới gốc đã đổi
+        if (this._lastRebuildTime !== t0) split(); else if (!unmerge && !fire.on && touchT && (typeof performance !== 'undefined' ? performance.now() : Date.now()) - touchT > 2200) unmerge = mergeStatic(car);
         return r;
       };
       g.userData.unmerge = split;

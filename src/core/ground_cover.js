@@ -15,7 +15,7 @@ const GroundCover = (() => {
   const CARPET_R = 340, CARPET_FADE = 200, CARPET_STEP = 5;   // thảm cỏ ngắn: bán kính quanh tâm thảm, dải mờ viền, lưới rải
   // bản đồ bóng khóm cỏ cho shader mặt đất: 640² điểm phủ 1280 đơn vị (2 đv/điểm — khóm chỉ rộng 5-9 đv; 4 đv/điểm thì bóng
   // nhoè thành vầng mờ, đất sát gốc không sẫm -> khóm như đặt lên mặt đất)
-  const COV_N = 640, COV_SIZE = 1280;
+  const COV_N = 320, COV_SIZE = 1280;
 
   const BIOME = {
     HIGHLAND: { grass: [[0.36, 0.41, 0.23], [0.53, 0.5, 0.33]], density: 1.0, pebble: [0.44, 0.42, 0.39], pebbleK: 1.0, tuftH: [5, 9], carpet: [1.6, 2.8] },
@@ -466,10 +466,6 @@ const GroundCover = (() => {
 
     blocked(x, z) {
       const T = this.T;
-      if (T.map && T.map.testField) {
-        const tf = T.map.testField;
-        if (Math.hypot(x - tf.x, z - tf.z) < (tf.r || 1000) * 0.95) return true;
-      }
       if (!this.mask) this.buildMask();
       const M = this.mask, i = Math.floor((x + M.half) / M.G), j = Math.floor((z + M.half) / M.G);
       if (i >= 0 && j >= 0 && i < M.n && j < M.n && M.m[j * M.n + i]) return true;
@@ -593,7 +589,9 @@ const GroundCover = (() => {
             const inside = inBase && !!LS.noFireAt(x, z, 0), og = inside ? LS.overgrowth(x, z) : null, mg = og ? 0.85 : M.grass;
             if (inside ? (!og || r1 > og.k / 2.6) : (r1 > mg * 1.15 * dens / (inBase ? OG : 1) || this.blocked(x, z))) continue;
             if (!inside && this.bareAt(x, z) > 0.55 + hash2(x, z) * 0.45) continue;   // vạt đất trơ: chỉ lác đác khóm ở mép
-            let hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : 1), wid = hgt * (0.7 + r3 * 0.5) * (og ? 1.25 : 1);
+            const tf = this.T.map && this.T.map.testField;
+            const inTF = !!(tf && Math.hypot(x - tf.x, z - tf.z) < (tf.r || 1000) * 0.95);
+            let hgt = (B.tuftH[0] + r2 * (B.tuftH[1] - B.tuftH[0])) * size * (t === 0 ? 1.1 : 0.8 + r3 * 0.3) * (og ? og.h : inTF ? 0.72 : 1), wid = hgt * (0.7 + r3 * 0.5) * (og ? 1.25 : 1);
             const r4 = rnd(), r5 = rnd();
             // hố nổ: lòng hố & gờ đất đắp không còn cỏ; ngoài gờ đất văng vùi khóm cỏ thành từng mảng theo tia đất — chỗ đất dày
             // vùi hẳn, chỗ mỏng khóm cỏ thấp hẳn đi (vùi nửa thân), rạp, lấm đất. Lửa nổ chỉ chớp qua: sém nhẹ sát gờ, không
@@ -883,18 +881,24 @@ const GroundCover = (() => {
         const o = n * 16, dx = A[o + 12] - cx, dz = A[o + 14] - cz;
         const edge = half - 12 - Math.max(Math.abs(dx), Math.abs(dz));   // mép bản đồ về 0 (ngoài bản đồ: không bóng)
         if (edge <= 0) continue;
-        const sx = Math.hypot(A[o], A[o + 1], A[o + 2]), sy = Math.hypot(A[o + 4], A[o + 5], A[o + 6]);
-        // vệt gọn quanh gốc, đậm dồn vào giữa (cạnh khóm sẫm rõ, nhạt nhanh ra ngoài): vệt rộng đều thì cả cụm khóm hoà
-        // thành một mảng bão hoà, đất sát gốc không khác gì bãi trống
-        const r = (0.48 * sx + 1.5) * k, w = Math.min(1, 0.3 + sy / 12) * Math.min(1, edge / 60);
+        const sx2 = A[o] * A[o] + A[o + 1] * A[o + 1] + A[o + 2] * A[o + 2], sy2 = A[o + 4] * A[o + 4] + A[o + 5] * A[o + 5] + A[o + 6] * A[o + 6];
+        if (sy2 < 6.25) continue;
+        const sx = Math.sqrt(sx2), sy = Math.sqrt(sy2);
+        const r = (0.48 * sx + 1.5) * k, r2 = r * r, w = Math.min(1, 0.3 + sy / 12) * Math.min(1, edge / 60);
         const u = (dx + half) * k - 0.5, v = (dz + half) * k - 0.5;
-        for (let j = Math.max(0, Math.ceil(v - r)); j <= Math.min(N - 1, Math.floor(v + r)); j++)
-          for (let i = Math.max(0, Math.ceil(u - r)); i <= Math.min(N - 1, Math.floor(u + r)); i++) {
-            const q = Math.hypot(i - u, j - v) / r;
-            if (q >= 1) continue;
-            const s = w * (1 - q) * (1 - q) * (1 + q), p = j * N + i;
+        const j0 = Math.max(0, Math.ceil(v - r)), j1 = Math.min(N - 1, Math.floor(v + r));
+        const i0 = Math.max(0, Math.ceil(u - r)), i1 = Math.min(N - 1, Math.floor(u + r));
+        for (let j = j0; j <= j1; j++) {
+          const dj = j - v, dj2 = dj * dj;
+          const pRow = j * N;
+          for (let i = i0; i <= i1; i++) {
+            const di = i - u, d2 = di * di + dj2;
+            if (d2 >= r2) continue;
+            const q = Math.sqrt(d2) / r;
+            const s = w * (1 - q) * (1 - q) * (1 + q), p = pRow + i;
             d[p] = d[p] + s - d[p] * s;
           }
+        }
       }
       const img = this.covTex.image.data;
       for (let p = 0; p < N * N; p++) img[p] = d[p] * 255;
@@ -918,8 +922,13 @@ const GroundCover = (() => {
       let tx = focusX, tz = focusZ;
       if (camX !== undefined) {
         const dx = focusX - camX, dz = focusZ - camZ, d = Math.hypot(dx, dz);
-        // (tâm nhìn rất xa camera, vd kính ngắm: tâm thảm không ra khỏi vòng ô rải quanh tâm nhìn)
-        if (d > 1) { const a = Math.max(Math.min(d * 0.5, 160), d - (RADIUS - CARPET_R - 2 * CELL)) / d; tx = camX + dx * a; tz = camZ + dz * a; }
+        const mag = typeof GroundShader !== 'undefined' && GroundShader.lodMag ? GroundShader.lodMag.value : 1;
+        // Khi ngắm qua kính phóng đại, đặt tâm thảm cỏ ngắn sát điểm tâm ngắm để mặt cỏ quanh mục tiêu luôn dày;
+        // khi nhìn thường mới kéo tâm thảm về phía trước mũi camera.
+        if (d > 1) {
+          const a = mag > 1.25 ? Math.max(0, d - Math.min(d * 0.25, 110)) / d : Math.max(Math.min(d * 0.5, 160), d - (RADIUS - CARPET_R - 2 * CELL)) / d;
+          tx = camX + dx * a; tz = camZ + dz * a;
+        }
       }
       this.uCarpet.value.x = tx; this.uCarpet.value.y = tz;
       // xác xe dựng sau (xác cứ điểm dựng dần trong phòng thử, xác rải bản đồ): dựng lại lưới gầm xác, rải lại cỏ đã đệm

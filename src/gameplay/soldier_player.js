@@ -282,6 +282,12 @@ const SoldierPlayer = (() => {
       this.active = false; this.soldier = null;
       this.yaw = 0; this.pitch = 0; this.aimK = 0;
       this.keys = {}; this.aiming = false; this.firing = false;
+      this.aimToggle = false; this._rmbDownTime = 0;
+      this.shoulderSide = 1;                 // 1: vai phải (mặc định), -1: vai trái (phím Q đổi vai)
+      this.freeLook = false;                 // Alt: nhìn tự do 360 độ không đổi hướng chạy
+      this.freeYaw = 0; this.freePitch = 0;
+      this._shotTimer = 0;                   // đệm nhấp chuột trái nhạy, không mất đạn
+      this._camDistLerp = null;              // làm mượt camera tránh giật khi va chạm vật cản
       this.kick = 0; this.spreadNow = 0; this.kills = 0; this.hitT = 0;
       this.fx = []; this.wisps = [];
       this._tracerMat = new THREE.LineBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: 0.85 });
@@ -302,8 +308,9 @@ const SoldierPlayer = (() => {
       this.soldier = soldier; this.active = true;
       this.yaw = soldier.heading; this.pitch = 0;
       this._elevTo = 0; this.elev = 0; this.zoom = 0; this.sightK = 0; this.recP = 0; this.breath = 1; this._winded = false;
+      this.aimToggle = false; this.freeLook = false; this.freeYaw = 0; this.freePitch = 0; this._shotTimer = 0; this._camDistLerp = null;
       if (this._hidden) { this._hidden.visible = true; this._hidden = null; }
-      soldier.guard = false; soldier.stop(); soldier.intent.drive = { x: 0, z: 0, gait: 'walk', mul: 1, face: null };
+      soldier.guard = false; soldier.stop(); soldier.intent.drive = { x: 0, z: 0, gait: 'walk', mul: 1, face: null, player: true };
     }
     exit() {
       this.scopeFar(false); this.scopeNear(0);
@@ -314,14 +321,35 @@ const SoldierPlayer = (() => {
       if (this._lockEl) { this._lockEl.el.remove(); this._lockEl = null; }
       this.lock = null; this._elevAs = null; this._aimPt = null;
       this.sightK = 0;
-      this.active = false; this.soldier = null; this.keys = {}; this.aiming = false; this.firing = false;
+      this.active = false; this.soldier = null; this.keys = {}; this.aiming = false; this.aimToggle = false; this.firing = false;
+      this.freeLook = false; this.freeYaw = 0; this.freePitch = 0; this._shotTimer = 0;
+    }
+
+    // chuột phải thông minh: nhấp nhanh (<0.25s) là bật/tắt ngắm (toggle), giữ lâu là giữ ngắm (hold)
+    setAim(down) {
+      if (down) {
+        this._rmbDownTime = performance.now();
+        this.aiming = true;
+      } else {
+        const dur = performance.now() - (this._rmbDownTime || 0);
+        this.aiming = false;
+        if (dur < 260) this.aimToggle = !this.aimToggle;
+        else this.aimToggle = false;
+      }
     }
 
     // ----- nhập liệu (trang gọi từ chuột / bàn phím; thử headless gọi trực tiếp) -----
     look(dx, dy) {
       // qua kính: chuột quay đúng theo độ phóng đại (cùng một cú rê, vật trên màn hình dời bằng nhau ở mọi nấc)
-      const S = this.sight(), k = 0.0022 * (S && this.sightK > 0.5 ? Math.tan(this.sightFov(S) * Math.PI / 360) / Math.tan(CAM.free.fov * Math.PI / 360) : this.aiming ? 0.6 : 1);
-      this.yaw -= dx * k; this.pitch = clamp(this.pitch - dy * k, PITCH[0], PITCH[1]);
+      const S = this.sight(), isAim = this.aiming || this.aimToggle;
+      const k = 0.0022 * (S && this.sightK > 0.5 ? Math.tan(this.sightFov(S) * Math.PI / 360) / Math.tan(CAM.free.fov * Math.PI / 360) : isAim ? 0.6 : 1);
+      if (this.freeLook) {
+        this.freeYaw -= dx * k;
+        this.freePitch = clamp(this.freePitch - dy * k, PITCH[0] - this.pitch, PITCH[1] - this.pitch);
+      } else {
+        this.yaw -= dx * k;
+        this.pitch = clamp(this.pitch - dy * k, PITCH[0], PITCH[1]);
+      }
       if (Math.abs(dx) + Math.abs(dy) > 2) this._glOff = true;   // đang nạp mà rê chuột: người chơi muốn nhìn chỗ khác, trả camera về
     }
     sight() { return this.soldier ? SIGHTS[this.soldier.weapon] || null : null; }
@@ -564,7 +592,13 @@ const SoldierPlayer = (() => {
     }
     key(code, down) {
       this.keys[code] = down;
+      if (code === 'AltLeft' || code === 'AltRight') {
+        this.freeLook = down;
+        if (down) { this.freeYaw = 0; this.freePitch = 0; }
+        return;
+      }
       if (!down) return;
+      if (code === 'KeyQ') this.shoulderSide = (this.shoulderSide || 1) * -1;
       if (code === 'KeyR') this.reload();
       if (code === 'KeyC' && this.soldier) this.soldier.setStance(this.soldier.intent.stance === 'kneel' ? 'stand' : 'kneel');
       // X: nằm sấp / đứng dậy. UAV cảm tử phải quỳ đặt ống phóng, không nằm được; đi nhờ xe thì không nằm
@@ -575,6 +609,7 @@ const SoldierPlayer = (() => {
       const s = this.soldier; if (!s || !s.alive) return;
       this._dry = false;
       s.startReload();
+      if (s.arms.reload > 0) s.arms._reloadMax = s.arms.reload;
     }
 
     // ----- mỗi khung, trước world.update -----
@@ -583,6 +618,12 @@ const SoldierPlayer = (() => {
       const F = s.figure, K = this.keys, A = s.arms;
       this.hitT = Math.max(0, this.hitT - dt);
       this.stepFx(dt);
+      if (!this.freeLook) {
+        this.freeYaw += (0 - this.freeYaw) * Math.min(1, dt * 14);
+        this.freePitch += (0 - this.freePitch) * Math.min(1, dt * 14);
+        if (Math.abs(this.freeYaw) < 1e-4) this.freeYaw = 0;
+        if (Math.abs(this.freePitch) < 1e-4) this.freePitch = 0;
+      }
       if (!s.alive) { this.sightK = 0; this.hud(); return; }
       const fw = K.KeyW ? 1 : K.KeyS ? -1 : 0, st = K.KeyD ? 1 : K.KeyA ? -1 : 0;
       const kami = !!A.def.kami, moving = !!(fw || st) && !(kami && (F.kamiSeq != null || F.kamiCtl));   // đang phóng / lái UAV: quỳ tại chỗ
@@ -592,26 +633,42 @@ const SoldierPlayer = (() => {
       // RPG vừa bắn: còn giữ ống trên vai một nhịp (RPG_RELOAD.lower) nên chưa tính là đang nạp, vẫn nhìn kính theo đạn bay
       const rpHold = A.rp && A.rp.t != null && A.rp.t < SoldierModel.RPG_RELOAD.lower[0];
       const reloading = A.reload > 0 && !rpHold, proneNow = (s.figure._proneK || 0) > 0.5;
+      const effectiveAim = this.aiming || this.aimToggle;
       // súng bắn tỉa: đang nằm thì thay băng ngay trên chân chống, không đứng dậy
-      const wantAim = !kami && (A.ar && reloading ? this.aiming || proneNow : this.aiming && !reloading);
-      // bóp cò lúc đang nạp không kéo súng lên vai: chỉ báo dừng nạp sớm, nhét xong viên đang cầm thì khép khung
+      const wantAim = !kami && (A.ar && reloading ? effectiveAim || proneNow : effectiveAim && !reloading);
+      // bóp cò nhấp nhanh không mất đạn: giữ bộ đệm phát bắn 0.35s
       const pull = this.firing && !this._trigPrev; this._trigPrev = this.firing;
+      if (pull) {
+        this._shotTimer = 0.35;
+        this._shot = true;
+        if (this.aimK < 0.6) this.aimK = Math.max(this.aimK, 0.45);
+      }
       if (pull && reloading && A.def.seq) s.interruptReload();
-      const combat = wantAim || (this.firing && !reloading && !kami);
-      const run = K.ShiftLeft && !combat && !reloading && fw > 0;
-      if (moving && s.intent.stance === 'kneel') s.setStance('stand');
-      // đang nằm: bấm chạy là bật dậy chạy; súng bắn tỉa không bò được (đứng dậy rồi mới đi)
-      if (s.intent.stance === 'prone' && ((run && !this.holding) || (moving && A.def.prone && !wantAim))) s.setStance('stand');
+      if (this._shotTimer > 0) {
+        this._shotTimer -= dt;
+        this._shot = true;
+      } else if (!this.firing) this._shot = false;
+
+      const combat = wantAim || (this.firing && !reloading && !kami) || this._shotTimer > 0;
+      const run = (K.ShiftLeft || K.ShiftRight) && !combat && !reloading && fw > 0;
+      if (run) this.aimToggle = false;   // chạy nước rút thì thoát ngắm
+      const isKneel = s.intent.stance === 'kneel';
+      // quỳ di chuyển: đi khom thấp cảnh giới, chỉ đứng dậy khi bấm chạy nước rút Shift
+      if (moving && isKneel && run) s.setStance('stand');
+      // đang nằm: bấm chạy là bật dậy chạy; nhả ngắm súng bắn tỉa vẫn nằm nguyên
+      if (s.intent.stance === 'prone' && run && !this.holding) s.setStance('stand');
       const D = s.intent.drive;
       const pinned = A.def.prone && wantAim;   // đang ngắm súng bắn tỉa là nằm tại chỗ
       D.x = moving && !pinned ? mx : 0; D.z = moving && !pinned ? mz : 0;
-      D.gait = run ? 'run' : 'walk'; D.mul = wantAim ? 0.7 : fw < 0 ? 0.75 : 1;
+      D.gait = run && !isKneel ? 'run' : isKneel ? 'patrol' : 'walk';
+      D.mul = (isKneel ? 0.72 : 1) * (wantAim ? 0.7 : fw < 0 ? 0.75 : 1);
+      D.player = true;
       // khi ngắm / bắn thân luôn quay theo hướng nhìn (đi ngang, đi lùi); còn lại quay theo hướng đi, đứng yên thì giữ hướng
       D.face = combat ? this.yaw : moving ? null : s.heading;
       this.aimK += ((combat ? 1 : 0) - this.aimK) * Math.min(1, dt * 11);
       F.aimBlend = this.aimK > 0.005 ? this.aimK : 0;
       // áp mắt vào kính khi giữ chuột phải và súng đã lên vai (súng bắn tỉa: đã nằm hẳn); đang nạp, đi nhờ xe thì rời kính
-      const S = SIGHTS[s.weapon], wantSight = !!S && this.aiming && !reloading && !s.ride && this.aimK > 0.55 && (!A.def.prone || (F._proneK || 0) > 0.95);
+      const S = SIGHTS[s.weapon], wantSight = !!S && effectiveAim && !reloading && !s.ride && this.aimK > 0.55 && (!A.def.prone || (F._proneK || 0) > 0.95);
       const skTo = wantSight ? 1 : 0, skStep = dt * (wantSight ? 7 : 11);
       this.sightK = Math.abs(skTo - this.sightK) <= skStep ? skTo : this.sightK + Math.sign(skTo - this.sightK) * skStep;
       this.stepSway(dt, s, this.sightK > 0.5);
@@ -639,20 +696,28 @@ const SoldierPlayer = (() => {
       // UAV cảm tử: mỗi lần bấm phóng một quả (đứng yên mới phóng được); trận / phòng thử phóng UAV thật ở sự kiện 'launch'
       if (kami) { const pull2 = this.firing && !this._firePrev; this._firePrev = this.firing; if (pull2 && !(this.canKami && !this.canKami(s))) s.startKami(); }
       else if (A.def.semi) {
-        // cò đơn: mỗi lần bóp một phát; phát đang chờ súng lên vai vẫn nổ nếu còn giữ cò
-        if (pull) this._shot = true; else if (!this.firing) this._shot = false;
-        if (this._shot && this.tryFire(pull)) this._shot = false;
-      } else if (this.firing) this.tryFire();
+        // cò đơn: mỗi lần bóp một phát; phát đang chờ súng lên vai vẫn nổ nếu còn giữ cò hoặc còn thời gian đệm
+        if (this._shot && this.tryFire(pull || this._shotTimer > 0)) {
+          this._shot = false;
+          this._shotTimer = 0;
+        }
+      } else if (this.firing || this._shotTimer > 0) {
+        if (this.tryFire(pull)) {
+          if (!this.firing) this._shotTimer = 0;
+        }
+      }
       this.hud();
     }
     hud() {
       const s = this.soldier; if (!s || !this.onHud) return;
-      this.onHud({ load: Math.round(s.loadKg), hp: Math.max(0, s.hp), alive: s.alive, mag: s.arms.mag, cap: s.arms.def.mag, reserve: s.reserve, reloading: s.arms.reload > 0, range: (ASSIST ? s.arms.def.ball : s.weapon === 'gl') && this.aimK > 0.5 ? this.rangeM : null, lock: !!this.lock, drum: s.weapon === 'gl' ? this.drum : null, sight: this.sightK > 0.5, holding: this.holding, winded: this._winded, stam: s.stam, tired: s.tired, scope: this.scoped() ? { x: SIGHTS[s.weapon].x[Math.min(this.zoom, SIGHTS[s.weapon].x.length - 1)], wind: this.windRel() } : null, rangeOk: this.rangeOk, aim: this.aimK, weapon: s.weapon, stance: s.intent.stance, hit: this.hitT > 0, kills: this.kills, motion: s.motion, spread: this.spreadNow,
+      const reloadMax = s.arms._reloadMax || (s.arms.def.seq ? 2.8 : 2.2);
+      const reloadProgress = s.arms.reload > 0 ? Math.max(0, Math.min(1, 1 - s.arms.reload / reloadMax)) : 0;
+      this.onHud({ load: Math.round(s.loadKg), hp: Math.max(0, s.hp), alive: s.alive, mag: s.arms.mag, cap: s.arms.def.mag, reserve: s.reserve, reloading: s.arms.reload > 0, reloadProgress, range: (ASSIST ? s.arms.def.ball : s.weapon === 'gl') && this.aimK > 0.5 ? this.rangeM : null, lock: !!this.lock, drum: s.weapon === 'gl' ? this.drum : null, sight: this.sightK > 0.5, holding: this.holding, winded: this._winded, stam: s.stam, tired: s.tired, scope: this.scoped() ? { x: SIGHTS[s.weapon].x[Math.min(this.zoom, SIGHTS[s.weapon].x.length - 1)], wind: this.windRel() } : null, rangeOk: this.rangeOk, aim: this.aimK, weapon: s.weapon, stance: s.intent.stance, hit: this.hitT > 0, kills: this.kills, motion: s.motion, spread: this.spreadNow, shoulder: this.shoulderSide || 1, freeLook: this.freeLook,
         kami: s.arms.def.kami ? { left: s.arms.mag, launching: s.figure.kamiSeq != null, flying: !!s.figure.kamiCtl } : null });
     }
 
     // ----- camera, sau world.update -----
-    placeCamera() {
+    placeCamera(dt = 0.016) {
       const s = this.soldier; if (!s) return;
       const pK = s.arms.def.prone ? s.figure._proneK || 0 : 0;   // súng bắn tỉa: camera hạ thấp theo người đang nằm xuống, không về trước người
       const cam = this.cam, a = s.arms.def.prone ? pK * pK * (3 - 2 * pK) : this.aimK, f = CAM.free, g = s.arms.def.prone ? CAM.prone : CAM.aim;
@@ -666,22 +731,30 @@ const SoldierPlayer = (() => {
       if (!rlNow) this._glOff = false;
       this._glK = (this._glK || 0) + ((rlNow && s.speed < 1.5 && !this._glOff ? 1 : 0) - (this._glK || 0)) * 0.05;
       const glK = this._glK * (1 - a), kickE = (s.arms.def.seq || s.arms.ar) && this.kick > 0 ? SoldierModel.recoilEnv(this.kick) : 0;
-      const dist0 = f.dist + (g.dist - f.dist) * a + this.camExtra + 0.22 * kickE, right = f.right + (g.right - f.right) * a + 6 * tubeOff, up = (f.up + (g.up - f.up) * a + 3 * tubeOff) * s.k;
+      const side = this.shoulderSide || 1;
+      const dist0 = f.dist + (g.dist - f.dist) * a + this.camExtra + 0.22 * kickE;
+      const right = (f.right + (g.right - f.right) * a) * side + 6 * tubeOff;
+      const up = (f.up + (g.up - f.up) * a + 3 * tubeOff) * s.k;
       // nằm sấp với súng khác: camera hạ thấp, lùi sát theo người (súng bắn tỉa đã dùng CAM.prone ở trên)
       const gpK = s.arms.def.prone ? 0 : s.figure._proneK || 0, gpE = gpK * gpK * (3 - 2 * gpK);
       const kneel = (s.intent.stance === 'kneel' ? -3.6 : 0) - (up - CAM.proneTP.up * s.k) * gpE;
       const dist = dist0 - (dist0 - CAM.proneTP.dist) * gpE;
-      const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw), cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
-      const px = s.x + cy * right, py = s.y + up + kneel, pz = s.z - sy * right;
-      // kéo camera lại gần khi vướng nhà / đất
+      const effYaw = this.yaw + (this.freeLook || Math.abs(this.freeYaw) > 1e-3 ? this.freeYaw : 0);
+      const effPitch = clamp(this.pitch + (this.freeLook || Math.abs(this.freePitch) > 1e-3 ? this.freePitch : 0), PITCH[0], PITCH[1]);
+      const sy = Math.sin(effYaw), cy = Math.cos(effYaw), cp = Math.cos(effPitch), sp = Math.sin(effPitch);
+      const px = s.x + Math.cos(this.yaw) * right, py = s.y + up + kneel, pz = s.z - Math.sin(this.yaw) * right;
+      // kéo camera lại gần khi vướng nhà / đất, dùng lerp mượt mà không bị giật nấc
       let d = dist;
       const T = this.terrain;
-      for (let t = 0.2; t <= 1; t += 0.2) {
+      for (let t = 0.15; t <= 1; t += 0.15) {
         const x = px + sy * cp * dist * t, z = pz + cy * cp * dist * t, y = py - sp * dist * t;
         const hitWall = T.resolveVehicleCollision && T.resolveVehicleCollision(px, pz, x, z, 1.5, null).hit;
-        if (hitWall || y < T.getElevationAt(x, z) + 1.5) { d = Math.max(3, dist * (t - 0.2)); break; }
+        if (hitWall || y < T.getElevationAt(x, z) + 1.2) { d = Math.max(3, dist * (t - 0.12)); break; }
       }
-      cam.position.set(px + sy * cp * d, py - sp * d, pz + cy * cp * d);
+      if (this._camDistLerp == null) this._camDistLerp = d;
+      else this._camDistLerp += (d - this._camDistLerp) * Math.min(1, (dt || 0.016) * 18);
+      const useD = this._camDistLerp;
+      cam.position.set(px + sy * cp * useD, py - sp * useD, pz + cy * cp * useD);
       // áp mắt: camera về đúng chỗ mắt sau kính (theo súng thật), hướng là đường ngắm; thân mình ẩn đi vì mắt nằm trong đầu
       const S = SIGHTS[s.weapon], sk = S ? this.sightK : 0, ks = sk * sk * (3 - 2 * sk);
       if (sk > 0) {

@@ -1208,8 +1208,8 @@ const Props = (() => {
   // (fov hẹp), xe xa trong khung ngắm vẫn được bản chi tiết. Xe đã bị tác động sau khi dựng (bắn, cán, húc, cháy, có vết
   // đạn) giữ bản chi tiết — chỉ hạ khi vượt trần cứng (vết đạn nhỏ mất, tình trạng bẹp / kính / cháy vẫn dựng lại đúng).
   // ---------------------------------------------------------------------------
-  const CIV_UP = 600, CIV_DOWN = 760;     // cự ly hiệu dụng (đv, đã chia độ phóng) dựng / hạ — khoảng đệm chống nhấp nháy
-  const CIV_MAX = 40, CIV_HARD = 72;      // trần xe chi tiết (ưu tiên gần) / trần cứng kể cả xe đã bị tác động
+  const CIV_UP = 480, CIV_DOWN = 620;     // cự ly hiệu dụng (đv, đã chia độ phóng) dựng / hạ — khoảng đệm chống nhấp nháy
+  const CIV_MAX = 18, CIV_HARD = 26;      // trần xe chi tiết (ưu tiên gần) / trần cứng kể cả xe đã bị tác động
   const CIV_FOV_REF = Math.tan(25 * Math.PI / 180);   // fov 50° = không phóng
   const CIV_TOUCH = ['stamp', 'shoot', 'sweepBarrel', 'ram', 'breakGlass', 'ignite', 'fuelBlast', 'tear'];
   const civRefs = new Map();               // tài nguyên GPU dùng chung giữa các bản chi tiết -> số xe đang giữ
@@ -1520,7 +1520,7 @@ const Props = (() => {
       // tình trạng thô đổi giữa chừng (bị cán thêm, cháy, vỡ kính...): bỏ bản vừa dựng, nhịp sau dựng lại đúng tình trạng mới
       if (this.civBuildArgs(J.o).sig !== J.sig) { this.discardCivGroup(grp); return false; }
       J.o.civilPending = false; J.o.civWant = false;
-      try { this.attachCivilCar(J.o, grp); } catch (e) { console.warn('[props] Lỗi nâng cấp xe CivilCars:', e); }
+      try { this.attachCivilCar(J.o, grp); heavyDone(); } catch (e) { console.warn('[props] Lỗi nâng cấp xe CivilCars:', e); }
       return true;
     }
     dropCivJob() {
@@ -1658,7 +1658,7 @@ const Props = (() => {
       // xe dựng sẵn lúc chờ trận (prebuildCivil): camera sảnh không phải chỗ xuất phát -> chưa vào trận thì không dựng / hạ
       if (this._civPre) { const g = typeof window !== 'undefined' && window.game; if (g && !g.isGameStarted) return; this._civPre = null; }
       // xe đang dựng dở: chạy tiếp theo ngân sách (xe vừa bị bắn / húc cần gấp hơn)
-      if (this._civJob) { this.stepCivJob(this._civJob.o.civWant ? 5 : 2.5); if (this._civJob) return; }
+      if (this._civJob) { this.stepCivJob(this._civJob.o.civWant ? 3.5 : 1.5); if (this._civJob) return; }
       const V = this.civilView(camPos);
       if (!V) return;
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -1676,7 +1676,7 @@ const Props = (() => {
           if (e <= CIV_UP && !hard) break;
           // xe đã bị bắn / húc / cán giữ bản chi tiết (lỗ đạn, vết xé, móp không dựng lại được từ tình trạng thô). Vượt trần
           // cứng mới hạ — và chỉ khi đã ra ngoài tầm chi tiết (nhỏ trên màn hình, mất vết đạn cũng không nhận ra)
-          if (this.civilTouched(o) && !(hard && !o.burning && !this.moving.has(o) && e > CIV_DOWN)) continue;
+          if (this.civilTouched(o) && !((hard || e > CIV_DOWN * 1.15) && !o.burning && !this.moving.has(o) && e > CIV_DOWN)) continue;
           this.downgradeCivilCar(o);
           n++;
         }
@@ -1695,7 +1695,7 @@ const Props = (() => {
         const s = o.civWant ? e - 1e6 : e;
         if (s < best) { best = s; cand = o; }
       }
-      if (cand && (!cand.civWant || this.civil.size < CIV_HARD) && this.startCivJob(cand)) this.stepCivJob(cand.civWant ? 5 : 2.5);
+      if (cand && (!cand.civWant || this.civil.size < CIV_HARD) && this.startCivJob(cand)) this.stepCivJob(cand.civWant ? 3.5 : 1.5);
     }
     // DỰNG SẴN LÚC CHỜ TRẬN (game.prebuildMatchUnits): các xe quanh chỗ xuất phát của mình mà vào trận sẽ được nâng bản chi
     // tiết (trong CIV_UP, gần trước, tối đa CIV_MAX) dựng sẵn ngay trong cảnh trận -> khung đầu trận không phải dựng ~40 xe
@@ -2224,9 +2224,9 @@ const Props = (() => {
     if (ax && typeof ax === 'object' && ay && typeof ay === 'object') {
       const a = ax, b = ay; ax = a.x; ay = a.y; az = a.z; bx = b.x; by = b.y; bz = b.z;
     }
-      let bestT = 1.0, hitObj = null, hitNorm = null;
+      let bestT = 1.0, hitObj = null, hitNorm = null, mx = (ax + bx) * 0.5, mz = (az + bz) * 0.5, rx = Math.abs(bx - ax) * 0.5 + 32, rz = Math.abs(bz - az) * 0.5 + 32;
       for (const o of this.items) {
-        if (o.type !== 'car' || o.c >= 0.85) continue;
+        if (o.type !== 'car' || o.c >= 0.85 || Math.abs(o.x - mx) > rx || Math.abs(o.z - mz) > rz) continue;
         const D = CAR_DIM[o.kind] || CAR_DIM.sedan;
         const ca = Math.cos(o.angle), sa = Math.sin(o.angle);
         const topH = Math.max(D.belt + 6, o.hTop || 0) * (1 - 0.5 * (o.c || 0));   // hTop: thùng xe tải cao (mui bạt / thùng kín)
@@ -2928,7 +2928,7 @@ const Props = (() => {
       // Rải lệch khung theo xe để tải chia đều
       const LV = this.civilView(cam), frame = (this._civFrame = (this._civFrame || 0) + 1);
       for (const o of this.items) {
-        if (o.type === 'car' && o.group && o.group.userData && o.group.userData.crush) {
+        if (o.type === 'car' && (o.civTouched || o.burning || o.smolder > 0) && o.group && o.group.userData && o.group.userData.crush) {
           const api = o.group.userData.crush;
           o.civDt = (o.civDt || 0) + dt;
           const e = LV ? this.civilEff(o, LV) : 0, every = e > 450 ? 4 : e > 250 ? 2 : 1;
@@ -3718,7 +3718,7 @@ const Props = (() => {
           if (!RB.ready(w.group)) return;
         }
         if (!w._jobs) w._jobs = this.wreckMarkJobs(fx, w);
-        while (w._jobs.length && performance.now() - t0 < 3) w._jobs.shift()();
+        while (w._jobs.length && performance.now() - t0 < 1.2) w._jobs.shift()();
         if (w._jobs.length) return;
         w._jobs = null;
         w.dressed = true;
@@ -3744,7 +3744,7 @@ const Props = (() => {
         }
         return null;
       };
-      const keep = { keep: true };
+      const keep = { keep: true, noFit: true };
       // vết cố định, nguội hẳn (xác cháy từ lâu): tắt ánh đỏ rực của lỗ thủng
       const add = (h, kind, size) => {
         const rec = h ? fx.addSurfaceMark(h.point, h.normal, h.object, kind, size, keep) : null;

@@ -100,19 +100,25 @@ const SoldierEngine = (() => {
     // sức nổ gốc sát điểm nổ (cùng số với bảng nổ lan của game.js, nhân sẵn blastMul khi không quỳ)
     blastBase(ammo, shell = {}) {
       if (shell.gl40) return 2.25;
-      if (shell.isHeavyArty) return 3.3;
-      const t = { HE: 2.4, RPG: 1.95, ANTI_TANK_MISSILE: 1.95, CLUSTER_SUBMUNITION: 0.195, AP: 0.225, INCENDIARY: 0.12, GATLING_HE: 0.045, GATLING_BULLET: 0.0225, SCOUT_BULLET: 0 };
-      return ammo in t ? t[ammo] : 1.5;
+      if (shell.isHeavyArty) return 4.0;
+      const t = { HE: 3.0, RPG: 2.4, ANTI_TANK_MISSILE: 2.6, CLUSTER_SUBMUNITION: 0.35, AP: 1.5, INCENDIARY: 0.25, GATLING_HE: 0.08, GATLING_BULLET: 0.03, SCOUT_BULLET: 0 };
+      return ammo in t ? t[ammo] : 2.2;
     },
     falloff(dist, core, radius) { return dist >= radius ? 0 : Math.min(1, core / Math.max(1, dist)) * (1 - Math.pow(dist / radius, 3)); },
     GL40: { base: 2.25, radius: 26, core: 6 }
   };
   // Nổ lan vào một lính: spec { base, radius, core }. Trả true nếu chết
   function applyBlast(o, x, y, z, spec, src) {
-    const dist = Math.hypot(o.x - x, (o.y + 8) - y, o.z - z);
+    const topY = o.y + 14 * (o.k || 1);
+    const dy = y < o.y ? o.y - y : y > topY ? y - topY : 0;
+    const dist = Math.hypot(o.x - x, dy, o.z - z);
     if (!o.alive || dist >= spec.radius) return false;
     const low = o.intent.stance === 'kneel' || (o.figure._proneK || 0) > 0.5;
-    const f = spec.base * WOUND.falloff(dist, spec.core, spec.radius) * (low ? 0.65 : 1);
+    // Vùng lõi nguy hiểm (sát tâm nổ dưới 2m / spec.core): sóng xung kích và mảnh nổ cực mạnh, quỳ không giảm sát thương
+    const inDeadlyZone = dist <= Math.max(spec.core, 16);
+    const lowMul = inDeadlyZone ? 1.0 : (low ? 0.65 : 1);
+    let f = spec.base * WOUND.falloff(dist, spec.core, spec.radius) * lowMul;
+    if (inDeadlyZone && spec.base >= 1.0) f = Math.max(f, 2.5);
     return o.damage(f * 100, src || 'FRAG', { mode: 'blast', x, y, z, power: f });
   }
   const ZONES = [['head', 0.95, 100], ['chest', 1.75, 45], ['hips', 1.6, 30]];
@@ -295,6 +301,7 @@ const SoldierEngine = (() => {
       if ('gear' in o) this.gear = o.gear;
       const weapon = o.weapon || this.weapon;
       if (this.figure._bloodPool && this.figure._bloodPool.parent) this.figure._bloodPool.parent.remove(this.figure._bloodPool);
+      if (this.figure._deadShadow && this.figure._deadShadow.parent) this.figure._deadShadow.parent.remove(this.figure._deadShadow);
       this._death = null; this._gone = false;
       this.world.scene.remove(this.root);
       this.root.traverse(c => { if (c.isSkinnedMesh && !c.geometry.userData.shared) c.geometry.dispose(); });
@@ -330,6 +337,7 @@ const SoldierEngine = (() => {
     // phát hiện địch (quét thưa) -> sau thời gian phản xạ: dừng, quỳ (xa) / đứng (gần), quay & ngắm, bắn theo nhịp vũ khí,
     // hết đạn thì nạp; mất dấu > lostAfter giây thì quay lại lệnh đang làm dở. Cả tổ được báo vị trí địch ngay.
     combat(dt) {
+      if (this._stunT > 0) { this._stunT -= dt; return; }
       const W = this.world, A = this.arms;
       A.cd -= dt;
       if (A.def.seq) this.stepReload(dt);
@@ -720,8 +728,46 @@ const SoldierEngine = (() => {
         const I = this._woundFrom, fx = -Math.sin(this.heading), fz = -Math.cos(this.heading);
         const front = I.x != null ? (I.x - this.x) * fx + (I.z - this.z) * fz
           : I.vel ? -(I.vel.x * fx + I.vel.z * fz) : 1;
-        F.flinch = Math.max(F.flinch || 0, Math.min(0.8, 0.28 + drop * 0.035));
+        F.flinch = Math.max(F.flinch || 0, Math.min(1.0, 0.35 + drop * 0.04));
         F.flinchDir = front >= 0 ? 1 : -1;
+        if (I.mode === 'blast' && (I.power || 0) > 0.25 && I.x != null && I.z != null) {
+          // Sóng xung kích hất văng người lính lùi ra xa tâm nổ:
+          const dx = this.x - I.x, dz = this.z - I.z, d = Math.hypot(dx, dz) || 1;
+          const p = Math.min(3.0, I.power || 1);
+          const push = Math.min(24, Math.max(7, (8 + p * 8.5) * Math.max(0.35, 1 - d / 50)));
+          const nx = this.x + (dx / d) * push, nz = this.z + (dz / d) * push;
+          const safe = this.world.collide ? this.world.collide(this, this.x, this.z, nx, nz) : { x: nx, z: nz };
+          this.x = safe.x; this.z = safe.z;
+          this.y = this.world.groundAt(this.x, this.z, null);
+          this.speed = 0;
+          this.stop();
+          this._orders.length = 0;
+          this.applyTransform();
+
+          // Quật ngã xuống quỳ, giảm thăng bằng và choáng váng
+          this.setStance('kneel');
+          this.lame = Math.min(1, Math.max(this.lame, 0.85));
+          this.clearAim();
+          F.aimBlend = 0;
+          this.enemy = null;
+          this._pendingEnemy = null;
+          this._stunT = 3.5; // Choáng trong 3.5s để ưu tiên sơ cứu
+
+          const SE = typeof window !== 'undefined' && window.soundEngine;
+          const isMe = typeof window !== 'undefined' && window.game && window.game.infantry && window.game.infantry.me && window.game.infantry.me.s === this;
+          if (isMe) {
+            if (SE && SE.shellShock) SE.shellShock(Math.min(1.0, 0.5 + p * 0.3));
+            if (window.game.infantry.ctl) window.game.infantry.ctl.shake = Math.max(window.game.infantry.ctl.shake || 0, 1.35);
+          }
+
+          // Đảm bảo có vết thương và tự động băng bó sau cú hất văng
+          const site = this.woundSite() || 'legR';
+          SoldierModel.markWound(F, site);
+          if (!this._wounds) this._wounds = [];
+          if (!this._wounds.includes(site)) this._wounds.push(site);
+          if (site[0] === 'l') F.limpSx = site === 'legL' ? -1 : 1;
+          this._aidWait = 1.5;
+        }
       }
       if (this.hp >= 100 && F.aidT == null && !F._aidK) {   // đang băng dở (bộ y tế vừa hồi đầy): làm nốt động tác, đứng dậy hẳn rồi mới lành
         if (this.lame > 0 || this._medDone) SoldierModel.aidReset(F, true);   // được cứu thương đầy máu: lành
@@ -974,11 +1020,12 @@ const SoldierEngine = (() => {
       } else if (I.aim) wantHeading = Math.atan2(-(I.aim.x - this.x), -(I.aim.z - this.z));
       else if (I.face != null) wantHeading = I.face;
       // 2. quay người có giới hạn; lệch nhiều thì chậm lại để xoay trước rồi mới bước tiếp
-      const runTurn = wantSpeed > 14, maxTurn = runTurn ? CFG.turnRun : wantSpeed > 0 ? CFG.turnWalk : CFG.turnIdle;
-      const dh = angDiff(this.heading, wantHeading), turnAccel = runTurn ? CFG.turnAccelRun : CFG.turnAccel;
+      const isPlayer = !!(D && D.player);
+      const runTurn = wantSpeed > 14, maxTurn = isPlayer ? 24 : (runTurn ? CFG.turnRun : wantSpeed > 0 ? CFG.turnWalk : CFG.turnIdle);
+      const dh = angDiff(this.heading, wantHeading), turnAccel = isPlayer ? 95 : (runTurn ? CFG.turnAccelRun : CFG.turnAccel);
       // Vận tốc hãm theo quãng góc còn lại: root giảm tốc trước đích thay vì tới đúng góc
       // rồi đặt omega = 0 trong một khung.
-      const stopRate = 0.85 * Math.sqrt(2 * turnAccel * Math.abs(dh)), wantTurn = Math.sign(dh) * Math.min(maxTurn, Math.abs(dh) * 8, stopRate);
+      const stopRate = 0.85 * Math.sqrt(2 * turnAccel * Math.abs(dh)), wantTurn = Math.sign(dh) * Math.min(maxTurn, Math.abs(dh) * (isPlayer ? 16 : 8), stopRate);
       const turnA = turnAccel * dt, dv = wantTurn - (this._turnVel || 0);
       this._turnVel = (this._turnVel || 0) + Math.max(-turnA, Math.min(turnA, dv));
       let applied = this._turnVel * dt;
@@ -987,7 +1034,8 @@ const SoldierEngine = (() => {
       this.heading += applied;
       this.turnSigned = applied / Math.max(1e-4, dt);   // nghiêng cua theo góc đã quay thật, không theo omega còn đang bị hãm nội bộ
       this.turnNow = Math.abs(this.turnSigned);
-      if (mvX === null || (D && D.face == null)) wantSpeed *= Math.max(0, Math.cos(Math.min(Math.PI / 2, Math.abs(dh) * 1.3)));
+      if (!isPlayer && (mvX === null || (D && D.face == null))) wantSpeed *= Math.max(0, Math.cos(Math.min(Math.PI / 2, Math.abs(dh) * 1.3)));
+      else if (isPlayer && D && D.face == null && Math.abs(dh) > 2.2) wantSpeed *= 0.88;
       if (mvX === null) { mvX = this.forwardX; mvZ = this.forwardZ; }
       // 3. địa hình: dốc lên chậm, xuống hơi chậm, nước lội chậm
       if (wantSpeed > 0) {
@@ -1138,12 +1186,18 @@ const SoldierEngine = (() => {
       const F = this.figure, C = this.world.camera;
       const near = this.alive && !this.ride && (!F.lod || F.lod.cur === 0) && (!C || Math.hypot(this.x - C.position.x, this.z - C.position.z) < 480);
       if (!near) { F.groundIK = null; return; }
-      const g = F.groundIK || (F.groundIK = [0, 0]), k = Math.min(1, dt * 14);
+      const g = F.groundIK || (F.groundIK = [0, 0]), k = Math.min(1, dt * 14), kneel = ((F._mw && F._mw.crouch) || 0) > 0.3;
       F.legs.forEach((L, i) => {
-        // dò gót, bàn, mũi giày (hệ cổ chân, mũi về -z): phần nào của bàn chân nằm trên bậc thì chân đặt theo phần đó, không xuyên qua
-        const m = L.ankle.matrixWorld.elements, refY = this.y + 4 * this.k;
+        const refY = this.y + 4 * this.k;
         let top = -Infinity;
-        for (const fz of FOOT_Z) top = Math.max(top, this.world.groundAt(m[12] + m[8] * fz, m[14] + m[10] * fz, refY));
+        if (kneel && i === 1) {
+          const km = L.knee.matrixWorld.elements;
+          top = this.world.groundAt(km[12], km[14], refY);
+        } else {
+          // dò gót, bàn, mũi giày (hệ cổ chân, mũi về -z): phần nào của bàn chân nằm trên bậc thì chân đặt theo phần đó, không xuyên qua
+          const m = L.ankle.matrixWorld.elements;
+          for (const fz of FOOT_Z) top = Math.max(top, this.world.groundAt(m[12] + m[8] * fz, m[14] + m[10] * fz, refY));
+        }
         // cao / thấp hơn ~40 cm thì là tường / hẫng, không gập hay với chân tới được
         const off = Math.max(-3.4, Math.min(2.6, (top - this.y) / this.k));
         // Nâng trong ~45 ms và giới hạn bước sửa mỗi frame: đủ nhanh để không xuyên bậc rõ,
@@ -1211,8 +1265,8 @@ const SoldierEngine = (() => {
       else {
         const mid = (G.walk + G.run) * 0.5, on = mid + 0.7, off = mid - 0.7;
         this._runMotion = this._runMotion ? s > off : s > on;   // hysteresis: tốc độ dao động quanh ngưỡng không đổi walk/run mỗi khung
-        if (this._runMotion) this.motion = 'run';
-        else this.motion = I.gait === 'patrol' ? 'patrol' : 'walk';
+        if (this._runMotion && I.stance !== 'kneel') this.motion = 'run';
+        else this.motion = I.stance === 'kneel' || I.gait === 'patrol' ? 'patrol' : 'walk';
       }
     }
 
@@ -1356,6 +1410,7 @@ const SoldierEngine = (() => {
       this.onFire = o.onFire || null;
       this.onKami = o.onKami || null;
       this.onMedkit = o.onMedkit || null;   // bộ y tế băng xong: trận thật hồi máu qua đơn vị; không có thì lính tự hồi
+      this.onCrush = o.onCrush || null;    // xe cơ giới cán qua bộ binh
       this._kamiTubes = [];
       // phe đối địch (mặc định: khác team); game có thể thay bằng luật riêng
       this.isEnemy = o.isEnemy || ((a, b) => a.team !== b.team);
@@ -1826,8 +1881,58 @@ const SoldierEngine = (() => {
         if (s._death) s.stepDeath(dt);
         s.update(dt, (this.frame + s.id) % every === 0);
       }
+      this.stepVehicleCrush(dt);
       this.separate();
       for (const s of this.soldiers) s.applyTransform();
+    }
+
+    // Va chạm giữa xe cơ giới và bộ binh: xe cán chết lính khi chạy, hoặc đẩy dạt lính ra mép thân xe (không đi xuyên qua lính)
+    stepVehicleCrush(dt) {
+      const VC = typeof VehicleCollision !== 'undefined' ? VehicleCollision : null;
+      const vehs = this.vehicles ? this.vehicles() : [];
+      if (!vehs || !vehs.length) return;
+      for (const s of this.soldiers) {
+        if (!s.alive || s.ride) continue;
+        for (const v of vehs) {
+          if (!v || (v.isDead && !v.group)) continue;
+          const dx = s.x - v.x, dz = s.z - v.z;
+          if (dx * dx + dz * dz > 45 * 45) continue;
+          if (Math.abs((v.y || 0) - s.y) > 22) continue;
+
+          let gap = 0, nx = 0, nz = 0;
+          if (VC && VC.vehObb && VC.circleGap) {
+            const ob = VC.vehObb(v, v.x, v.z, v.bodyAngle || 0, this._ob || (this._ob = {}));
+            const g = VC.circleGap(ob, s.x, s.z, RADIUS, this._gap || (this._gap = {}));
+            if (g && g.gap < 0) {
+              gap = g.gap; nx = g.nx; nz = g.nz;
+            }
+          } else {
+            const m = 14 + RADIUS, d = Math.hypot(dx, dz);
+            if (d < m && d > 1e-4) {
+              gap = d - m; nx = dx / d; nz = dz / d;
+            }
+          }
+
+          if (gap < 0) {
+            const sp = Math.abs(v.speed || 0);
+            // Xe đang chạy (tốc độ >= 1.5) hoặc lún sâu vào giữa gầm xe:
+            if (sp >= 1.5 || gap < -2.2) {
+              s.kill('crush', { mode: 'crush' });
+              if (this.onCrush) this.onCrush(s, v);
+              const SE = typeof window !== 'undefined' && window.soundEngine;
+              if (SE && SE.collideAt) {
+                SE.collideAt({ x: s.x, y: s.y, z: s.z }, { vn: Math.max(3, sp), mA: 45000, mB: 85, mat: 'metal_ground', yield: true });
+              }
+              break;
+            } else {
+              // Xe di chuyển cực chậm hoặc dừng đỗ: đẩy lính dạt ra mép ngoài vỏ xe, không để xe đi xuyên qua
+              s.x -= nx * gap;
+              s.z -= nz * gap;
+              s.applyTransform();
+            }
+          }
+        }
+      }
     }
   }
 

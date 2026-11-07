@@ -2697,31 +2697,27 @@ class ArtilleryGame3D {
       const C = this._cam;
       const S = this._sight;
       const P = this.player;
-      // xe trinh sát: kéo camera sát vào tận vòng súng xem kíp xe (xạ thủ đứng ở lỗ nóc) — xe khác giữ giới hạn cũ
-      const zMin = P && P.tankType === 'SCOUT' ? 0.13 : 0.6;
-      // Con lăn nối liền camera ngoài với kính ngắm (kiểu game xe tăng): kéo sát hết cỡ mà còn lăn vào -> áp mắt vào kính
-      // ngắm / kính kíp lái; trong kính lăn ra quá độ phóng nhỏ nhất -> về camera bám đuôi ở cự ly gần nhất. Mỗi lần đổi chờ
-      // ~0,3 s (con lăn trơn / bàn di chuột còn trôi quán tính không bật vào bật ra liên tục)
+      const zFixed = this.camDefaultZoom(P);
       const now = performance.now(), settled = now - (this._wheelSightT || 0) > 300;
       if (S) {
         if (S.arty) S.hT = Math.max(120, Math.min(700, S.hT * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));   // độ cao bay của drone so với mặt đất
         else if (e.deltaY > 0 && settled && (this.opticLost(P) || S.magT <= S.prof.magMin + 1e-6)) {
           this.setSightMode(false);
-          if (C) C.zoomT = C.zoom = zMin;
+          if (C) C.zoomT = C.zoom = zFixed;
           this._wheelSightT = now;
         } else S.magT = this.opticLost(P) ? this.sightBackupMag(S.prof) : Math.max(S.prof.magMin, Math.min(S.prof.magMax, S.magT * (e.deltaY > 0 ? 1 / 1.25 : 1.25)));
         return;
       }
-      // (pháo tự hành: "kính" là drone trinh sát — vẫn bấm C để cất cánh, con lăn không tự phóng drone)
-      if (e.deltaY < 0 && settled && C.zoomT <= zMin + 1e-6 && P && !P.isDead && !this.isGameOver && P.tankType !== 'ARTILLERY' &&
+      // Ở ngoài xe: lăn chuột tới trước (e.deltaY < 0) -> vào kính ngắm
+      if (e.deltaY < 0 && settled && P && !P.isDead && !this.isGameOver && P.tankType !== 'ARTILLERY' &&
         !(window.GameMenu && GameMenu.isOpen && GameMenu.isOpen()) && !(window.tankInspector && window.tankInspector.isOpen)) {
         if (this.tacticalMap && this.tacticalMap.isOpen) this.tacticalMap.toggle(false);
-        // chuột chưa khóa (trình duyệt không cho khóa chuột từ con lăn): nhấp trái đầu tiên trong kính sẽ khóa
         this.setSightMode(true);
         this._wheelSightT = now;
         return;
       }
-      C.zoomT = Math.max(zMin, Math.min(this.camZoomMax(P), C.zoomT * (e.deltaY > 0 ? 1.12 : 1 / 1.12)));
+      // Cố định 1 nấc bám đuôi chuẩn, bỏ hiệu ứng zoom out khỏi xe
+      C.zoomT = C.zoom = zFixed;
     }, { passive: false });
     this.renderer.domElement.addEventListener('pointermove', (e) => {
       if (!this._freeLook || !this._cam || this._sight) return;
@@ -7486,11 +7482,7 @@ class ArtilleryGame3D {
   // 1,45 x camDistK (cũ 1,7 — cần thấy vùng rộng để ước điểm rơi — ngắm thật xa dùng drone / bản đồ M)
   // Vỡ kính tiềm vọng chỉ huy: khóa ở mức gần nhất (0,6) — kíp lái chỉ còn khe nhìn quanh thân xe
   camZoomMax(P) {
-    if (this.periscopeLost(P)) return 0.6;
-    if (!P) return 1.2;
-    if (P.tankType === 'ARTILLERY') return 1.45;
-    if (P.tankType === 'SCOUT') return 1.2;
-    return 1.2;
+    return this.camDefaultZoom(P);
   }
   // Hệ số khoảng cách camera theo xe: pháo tự hành bắn xa -> camera lùi xa hơn ~1,5 lần ở mọi mức zoom (thấy vùng rộng hơn)
   camDistK(P) { return P && P.tankType === 'ARTILLERY' && !this.periscopeLost(P) ? 1.25 : 1; }
@@ -7644,19 +7636,8 @@ class ArtilleryGame3D {
   toggleHighView() {
     const C = this._cam;
     if (!C || !this.player) return;
-    if (this.periscopeLost(this.player)) {
-      this.addCombatLog('[[eye-off]] Kính tiềm vọng đã vỡ — không quan sát xa được, camera chỉ còn sát xe', 'alert');
-      return;
-    }
-    const zMax = this.camZoomMax(this.player);
-    if (C.zoomT >= zMax - 0.05) {
-      C.zoomT = Math.min(C.chaseZoom || this.camDefaultZoom(this.player), zMax * 0.7);
-      this.addCombatLog('[[video]] Góc nhìn bám đuôi', 'tip');
-    } else {
-      C.chaseZoom = C.zoomT;
-      C.zoomT = zMax;
-      this.addCombatLog('[[eye]] Góc nhìn cao — lăn chuột để về bám đuôi, M mở bản đồ để ngắm thật xa', 'tip');
-    }
+    C.zoomT = C.zoom = this.camDefaultZoom(this.player);
+    this.addCombatLog('[[video]] Camera cố định ở góc nhìn bám đuôi', 'tip');
   }
 
   // Đỉnh vật cản dưới điểm (x, z): mặt đất + mái nhà còn đứng (camera không được chui vào)
@@ -8564,7 +8545,7 @@ class ArtilleryGame3D {
       this._lodMag = 1;
       for (const u of this.units) if (u.hpGroup) u.hpGroup.scale.setScalar(1);
       cam.fov = 45; cam.updateProjectionMatrix();
-      if (this._cam) { this._cam.yaw = S.arty ? this._cam.yaw : S.yaw; this._cam.R = 0; }
+      if (this._cam) { this._cam.yaw = S.arty ? this._cam.yaw : S.yaw; this._cam.R = 0; this._cam.zoomT = this._cam.zoom = this.camDefaultZoom(P); }
       if (this._sightEl) this._sightEl.classList.add('hidden');
       if (S.arty) {
         this.renderer.domElement.style.filter = '';
@@ -9551,7 +9532,7 @@ class ArtilleryGame3D {
       const cD = Math.max(Math.min((S.shN + S.shF) / 2, S.shN - 60 + half), Math.min(S.shA, 3000) + 80 - half);
       // cỏ 3D (bán kính rải 840) bám quanh điểm ngắm, lệch về phía camera một chút: tâm khung bóng ở trên có thể cách điểm
       // ngắm tới ~640 (ngắm 2400 -> tâm 1760) -> điểm đang phóng to nằm đúng dải viền cỏ thưa / lùn dần, quanh mục tiêu trơ trụi
-      const gD = Math.max(cD, Math.min(S.shA, 3000) - 250);
+      const gD = Math.min(Math.max(180, aimD * 0.35), 460);
       this._viewFocus = { x: px + fx * cD, z: pz + fz * cD, gx: px + fx * gD, gz: pz + fz * gD };
       const fog = this.scene.fog;
       if (fog && fog.density !== undefined) { if (fog._baseD === undefined) fog._baseD = fog.density; fog.density = fog._baseD; }

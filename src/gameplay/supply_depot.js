@@ -201,6 +201,15 @@ const SupplyDepot = (() => {
         return out;
       },
       navBoxes() { const o = []; for (const d of list) o.push(...d.boxes); return o; },
+      segmentHit(ax, ay, az, bx, by, bz) {
+        const seg = typeof Landmarks !== 'undefined' && Landmarks.segBox;
+        if (!seg) return null;
+        for (const d of list) {
+          if (Math.max(ax, bx) < d.x - d.R || Math.min(ax, bx) > d.x + d.R || Math.max(az, bz) < d.z - d.R || Math.min(az, bz) > d.z + d.R) continue;
+          for (const q of d.boxes) if (seg(ax, ay, az, bx, by, bz, q) >= 0) return d;
+        }
+        return null;
+      },
       hitTest(x, y, z) {
         for (const d of list) {
           if (Math.abs(x - d.x) > d.R || Math.abs(z - d.z) > d.R) continue;
@@ -210,10 +219,10 @@ const SupplyDepot = (() => {
             if (u > q.hu || u < -q.hu || v > q.hv || v < -q.hv) continue;
             const du = q.hu - Math.abs(u), dv = q.hv - Math.abs(v), dy = q.y1 - y;
             let normal;
-            if (dy < du && dy < dv) normal = { x: 0, y: 1, z: 0 };
-            else if (du < dv) { const sg = Math.sign(u) || 1; normal = { x: q.ux * sg, y: 0, z: q.uz * sg }; }
-            else { const sg = Math.sign(v) || 1; normal = { x: -q.uz * sg, y: 0, z: q.ux * sg }; }
-            return { hit: true, type: 'WALL', depot: d, normal, x, y, z };
+            if (dy < du && dy < dv) normal = { x: 0, y: 1, z: 0, nx: 0, ny: 1, nz: 0 };
+            else if (du < dv) { const sg = Math.sign(u) || 1; normal = { x: q.ux * sg, y: 0, z: q.uz * sg, nx: q.ux * sg, ny: 0, nz: q.uz * sg }; }
+            else { const sg = Math.sign(v) || 1; normal = { x: -q.uz * sg, y: 0, z: q.ux * sg, nx: -q.uz * sg, ny: 0, nz: q.ux * sg }; }
+            return { hit: true, type: 'WALL', depot: d, box: q, mat: q.mat || 'metal', normal, x, y, z };
           }
         }
         return null;

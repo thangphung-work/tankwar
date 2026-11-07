@@ -265,45 +265,55 @@ const GroundShader = (() => {
   function grassGrainTex(base, alt, soil, seed, altAmt = 0.45) {
     const c = canvas(), g = c.getContext('2d', RD), rnd = rngOf(seed);
     const img = g.createImageData(N, N), d = img.data;
-    const lumN = octaves(rnd, [[4, 0.3], [16, 0.3], [64, 0.25], [256, 0.15]]), hueN = octaves(rnd, [[8, 0.5], [32, 0.35], [128, 0.15]]);
+    const lumN = octaves(rnd, [[4, 0.22], [16, 0.26], [64, 0.28], [256, 0.24]]), hueN = octaves(rnd, [[8, 0.45], [32, 0.35], [128, 0.2]]);
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const m = Math.max(0, Math.min(1, 0.5 + hueN(x, y) * 1.6)) * altAmt, f = 1 + lumN(x, y) * 0.26 + (rnd() - 0.5) * 0.06;
+      const m = Math.max(0, Math.min(1, 0.5 + hueN(x, y) * 1.5)) * altAmt, f = 1 + lumN(x, y) * 0.22 + (rnd() - 0.5) * 0.08;
       const k = (y * N + x) * 4;
       for (let ch = 0; ch < 3; ch++) d[k + ch] = (base[ch] + (alt[ch] - base[ch]) * m) * f;
       d[k + 3] = 255;
     }
     g.putImageData(img, 0, 0);
-    for (let i = 0; i < 3400; i++) { g.fillStyle = rgb(soil, 0.55 + rnd() * 0.3, 0.45 + rnd() * 0.35); g.fillRect(rnd() * N, rnd() * N, 1, 1); }
-    for (let i = 0; i < 2200; i++) { g.fillStyle = rgb(alt, 1.05 + rnd() * 0.15, 0.4 + rnd() * 0.3); g.fillRect(rnd() * N, rnd() * N, 1, rnd() < 0.5 ? 1 : 2); }
+    for (let i = 0; i < 4200; i++) { g.fillStyle = rgb(soil, 0.62 + rnd() * 0.3, 0.4 + rnd() * 0.35); g.fillRect(rnd() * N, rnd() * N, 1, 1); }
+    for (let i = 0; i < 3200; i++) { g.fillStyle = rgb(alt, 1.06 + rnd() * 0.16, 0.45 + rnd() * 0.35); g.fillRect(rnd() * N, rnd() * N, 1, rnd() < 0.6 ? 1 : 2); }
     return c;
   }
-  // Thảm lá cỏ nhìn từ trên xuống (chi tiết gần, ô lặp ~0,5-1,4 m): kẽ đất / gốc cỏ sẫm, lá cỏ chồng nhiều lớp — lớp dưới
-  // khuất sáng, lớp trên đón nắng; mật độ lá theo cụm (khóm dày / kẽ thưa) -> mặt đất có cấu trúc lá thật thay vì nhiễu mịn
-  // như nỉ. Vẽ thẳng vào bộ đệm điểm ảnh (nhanh hơn ~40 nghìn nét canvas). Shader chỉ dùng tỉ lệ so với màu trung bình
+  // Thảm lá cỏ nhìn từ trên xuống (chi tiết gần, ô lặp ~1-2,5 m): kẽ đất / cỏ rơm khô ở dưới, lá cỏ chồng nhiều lớp — lớp dưới
+  // khuất sáng, lớp trên đón nắng; mật độ lá theo cụm (khóm dày / kẽ thưa) -> mặt đất có cấu trúc sợi lá thật thay vì nhiễu mịn
+  // như nỉ. Kênh alpha lưu độ cao vi mô của ngọn cỏ (0 = kẽ đất thấp, 1 = ngọn lá nhô cao) để shader dịch chiều sâu khi nhìn nghiêng
   function turfTex(base, alt, soil, seed) {
     const c = canvas(), g = c.getContext('2d', RD), rnd = rngOf(seed);
-    const buf = new Float32Array(N * N * 3), dens = octaves(rnd, [[8, 0.6], [32, 0.4]]);
-    // (tương phản vừa phải: lá sáng nhất / kẽ đất ~1,6 lần. Trước đây ~3 lần + lá vàng khô -> nhân lên mặt đất thành mạng
-    // vân vàng chanh trên nền hốc sẫm như vải rằn ri, nhìn là biết ảnh vẽ)
-    for (let i = 0; i < N * N; i++) { const k = 0.58 + rnd() * 0.08; buf[i * 3] = soil[0] * k; buf[i * 3 + 1] = soil[1] * k; buf[i * 3 + 2] = soil[2] * k; }
-    const LAYERS = [[0.66, 12000], [0.76, 13000], [0.86, 11000], [0.95, 8000], [1.03, 3500]];
-    for (const [bright, n] of LAYERS) {
+    const buf = new Float32Array(N * N * 3), hBuf = new Float32Array(N * N), dens = octaves(rnd, [[12, 0.55], [48, 0.45]]);
+    // nền kẽ đất + lá rơm mục dưới gốc cỏ (ấm tự nhiên, không đen xỉn)
+    for (let i = 0; i < N * N; i++) {
+      const k = 0.64 + rnd() * 0.1;
+      buf[i * 3] = (soil[0] * 0.82 + alt[0] * 0.18) * k;
+      buf[i * 3 + 1] = (soil[1] * 0.82 + alt[1] * 0.18) * k;
+      buf[i * 3 + 2] = (soil[2] * 0.82 + alt[2] * 0.18) * k;
+      hBuf[i] = 0.08 * rnd();
+    }
+    const LAYERS = [[0.72, 14000, 0.25], [0.82, 16000, 0.45], [0.92, 14000, 0.68], [1.02, 10000, 0.88], [1.12, 5500, 1.0]];
+    for (const [bright, n, hLv] of LAYERS) {
       for (let b = 0; b < n; b++) {
         const x0 = rnd() * N, y0 = rnd() * N;
-        if (rnd() > 0.55 + 0.45 * Math.max(0, Math.min(1, 0.5 + dens(x0, y0) * 1.4))) continue;   // kẽ giữa các khóm thưa lá
-        const a = rnd() * 6.2832, L = 4 + rnd() * 8, cv = (rnd() - 0.5) * 0.12;   // lá hơi cong
-        const dead = rnd() < 0.05, dry = dead ? 1 : rnd() < 0.1 ? 0.3 + rnd() * 0.35 : rnd() * 0.12;
-        const col = dead ? [soil[0] * 1.3, soil[1] * 1.25, soil[2] * 1.15] : [base[0] + (alt[0] - base[0]) * dry, base[1] + (alt[1] - base[1]) * dry, base[2] + (alt[2] - base[2]) * dry];
-        const k0 = bright * (0.88 + rnd() * 0.24), w = rnd() < 0.3 ? 1 : 0.6;
+        const dn = Math.max(0, Math.min(1, 0.5 + dens(x0, y0) * 1.45));
+        if (rnd() > 0.48 + 0.52 * dn) continue;   // kẽ giữa các khóm thưa lá
+        const a = rnd() * 6.2832, L = 3.5 + rnd() * 6.5, cv = (rnd() - 0.5) * 0.14;   // lá mảnh, hơi cong
+        const dead = rnd() < 0.08, dry = dead ? 0.92 : rnd() < 0.18 ? 0.35 + rnd() * 0.45 : rnd() * 0.18;
+        const col = dead ? [alt[0] * 1.08, alt[1] * 0.98, alt[2] * 0.82] : [base[0] + (alt[0] - base[0]) * dry, base[1] + (alt[1] - base[1]) * dry, base[2] + (alt[2] - base[2]) * dry];
+        const k0 = bright * (0.9 + rnd() * 0.2), w = rnd() < 0.35 ? 0.95 : 0.65;
         for (let s = 0; s <= L; s++) {
-          const t = s / L, k = k0 * (0.85 + 0.25 * t), aa = a + cv * s, px = ((Math.round(x0 + Math.cos(aa) * s) % N) + N) % N, py = ((Math.round(y0 + Math.sin(aa) * s) % N) + N) % N;
-          const o = (py * N + px) * 3, al = w * (1 - 0.5 * t);   // lá thon nhọn: ngọn mảnh, phủ mờ hơn gốc
+          const t = s / L, k = k0 * (0.82 + 0.28 * t), aa = a + cv * s, px = ((Math.round(x0 + Math.cos(aa) * s) % N) + N) % N, py = ((Math.round(y0 + Math.sin(aa) * s) % N) + N) % N;
+          const idx = py * N + px, o = idx * 3, al = w * (1 - 0.45 * t);   // lá thon nhọn: ngọn mảnh, cao hơn gốc
           buf[o] += (col[0] * k - buf[o]) * al; buf[o + 1] += (col[1] * k - buf[o + 1]) * al; buf[o + 2] += (col[2] * k - buf[o + 2]) * al;
+          hBuf[idx] = Math.max(hBuf[idx], hLv * (0.4 + 0.6 * t));
         }
       }
     }
     const img = g.createImageData(N, N), d = img.data;
-    for (let i = 0; i < N * N; i++) { d[i * 4] = buf[i * 3]; d[i * 4 + 1] = buf[i * 3 + 1]; d[i * 4 + 2] = buf[i * 3 + 2]; d[i * 4 + 3] = 255; }
+    for (let i = 0; i < N * N; i++) {
+      d[i * 4] = buf[i * 3]; d[i * 4 + 1] = buf[i * 3 + 1]; d[i * 4 + 2] = buf[i * 3 + 2];
+      d[i * 4 + 3] = Math.max(0, Math.min(255, Math.round(hBuf[i] * 255)));
+    }
     g.putImageData(img, 0, 0);
     return c;
   }
@@ -624,10 +634,10 @@ vec4 noTile(sampler2D samp, vec2 uv, float seed) {
   float dd = dot(ca.rgb - cb.rgb, vec3(1.0));
   return mix(ca, cb, smoothstep(0.25, 0.75, f - 0.08 * dd));
 }
-// loang lổ mô đất cỡ vừa (dùng cả cho màu lẫn độ lồi lõm)
+// loang lổ mô đất cỡ vừa (dùng cả cho màu lẫn độ lồi lõm: 3-12 m thoải tự nhiên, tránh u cục lổn nhổn 20-40 cm như nệm mút)
 float gMotF(vec2 p) {
   vec2 a = mat2(0.94, 0.342, -0.342, 0.94) * p, b = mat2(0.866, -0.5, 0.5, 0.866) * p;
-  return noTile(gNoise, a / 26.0 + 0.13, 0.31).g * 0.6 + noTile(gNoise, b / 9.0 + 0.71, 0.77).r * 0.4;
+  return noTile(gNoise, a / 96.0 + 0.13, 0.31).g * 0.6 + noTile(gNoise, b / 38.0 + 0.71, 0.77).r * 0.4;
 }
 // Nhiễu loang KHÔNG LẶP cho mảng màu tầng lớn: gNoise là ảnh 256 px tuần hoàn (tầng thô nhất chỉ 4 ô) -> lấy 1 mẫu ở tỉ
 // lệ s thì cứ mỗi s đơn vị lặp y hệt: đồng cỏ thành bàn cờ đốm vàng / xanh to đều tăm tắp, đều như in. Cộng 3 mẫu lệch tỉ
@@ -862,12 +872,13 @@ vec3 gUrbanDetail(vec2 wp, vec3 col) {
 }
 ` : ''}${desert || urban ? '' : `uniform sampler2D gGrain, gTurf;
 uniform vec3 gTurfMean, gDirtMean;
-// Mặt thảm cỏ: ụ khóm cỏ uốn lượn tự nhiên + gợn lăn tăn xoay góc lệch, không còn sọc song song
+// Mặt thảm cỏ: khóm cỏ nhỏ đan sợi tự nhiên + gợn ngọn lá mịn đa hướng, không phồng cục tròn như nhựa
 float gTuftH(vec2 p) {
-  vec2 pW = p + (texture2D(gNoise, p / 17.0 + 0.35).rg - 0.5) * 1.5;
-  float b = gBumps(pW, 2.3, 0.72) * (0.55 + 0.75 * texture2D(gNoise, pW / 3.9 + 0.5).r);
+  vec2 pW = p + (texture2D(gNoise, p / 14.0 + 0.35).rg - 0.5) * 1.1;
+  float b = gBumps(pW, 1.15, 0.78) * (0.45 + 0.55 * texture2D(gNoise, pW / 4.2 + 0.5).r);
   vec2 pFine = mat2(0.707, -0.707, 0.707, 0.707) * pW;
-  float fine = (texture2D(gNoise, pFine / 2.3 + 0.2).g - 0.5) * 0.32;
+  vec2 pBlade = mat2(0.94, -0.342, 0.342, 0.94) * p;
+  float fine = (texture2D(gNoise, pFine / 1.6 + 0.2).g - 0.5) * 0.26 + (texture2D(gNoise, pBlade / 0.75 + 0.61).b - 0.5) * 0.18;
   return b + fine;
 }
 `}` + sh.fragmentShader
@@ -938,26 +949,37 @@ float gTuftH(vec2 p) {
     float st = gN2(vec2(dot(wp, dW) * (60.0 / 700.0), dot(wp, vec2(-dW.y, dW.x))), 60.0, 0.71, 0.0).b;
     // chỉ từng vùng có vệt (mảng ~0,5 km), không phủ đều khắp mặt cát như vải nhung kẻ
     cBase *= 1.0 + (0.05 * smoothstep(0.3, 0.7, st) - 0.025) * smoothstep(0.35, 0.65, gN2(wr2, 520.0, 0.33, 0.0).g);
-  }` : `// cỏ: hạt mịn ít tương phản 2 tỉ lệ; khóm cỏ nổi khối (kẽ khóm lộ đất sẫm); vạt đất trụi nhỏ lấm tấm
+  }` : `// cỏ: hạt mịn ít tương phản 2 tỉ lệ; khóm cỏ nổi khối (kẽ khóm lộ đất ấm & cỏ khô); vạt đất trụi nhỏ lấm tấm
   vec3 gMean = texture2D(gGrain, vec2(0.5), 12.0).rgb;
-  vec3 cBase = gMean + (noTile(gGrain, wr1 / 9.0, 0.41).rgb - gMean) + (noTile(gGrain, wr2 / 43.0 + 0.2, 0.63).rgb - gMean) * 0.6;
+  vec3 cBase = gMean + (noTile(gGrain, wr1 / 7.5, 0.41).rgb - gMean) + (noTile(gGrain, wr2 / 32.0 + 0.2, 0.63).rgb - gMean) * 0.55;
   gTuft0 = gTuftH(wp);
-  cBase = mix(cSoil * ${opts.mapType === 'JUNGLE' ? '0.8' : '0.9'}, cBase, 0.86 + 0.14 * smoothstep(-0.1, 0.35, gTuft0));
-  cBase *= 1.0 + 0.05 * clamp(gTuft0, 0.0, 1.0) * vec3(1.0, 1.0, 0.85);
-  wBare = smoothstep(0.6, 0.8, gNM(wr1, 13.0, 0.37).r * 0.65 + texture2D(gNoise, wr2 / 4.5 + 0.1).g * 0.35) * ${opts.mapType === 'JUNGLE' ? '0.85' : '0.5'};
+  cBase = mix(cSoil * ${opts.mapType === 'JUNGLE' ? '0.82' : '0.92'} * vec3(1.04, 0.98, 0.86), cBase, 0.84 + 0.16 * smoothstep(-0.12, 0.32, gTuft0));
+  cBase *= 1.0 + 0.06 * clamp(gTuft0, 0.0, 1.0) * vec3(1.06, 1.04, 0.86);
+  wBare = smoothstep(0.62, 0.82, gNM(wr1, 16.0, 0.37).r * 0.65 + texture2D(gNoise, wr2 / 5.5 + 0.1).g * 0.35) * ${opts.mapType === 'JUNGLE' ? '0.8' : '0.45'};
   cBase = mix(cBase, cSoil, wBare);
-  // THẢM LÁ CỎ: lá cỏ chồng lớp & kẽ gốc sẫm (2 tỉ lệ, xoay lệch, phá lặp); tỉ lệ so với màu trung bình nên giữ nguyên mọi
-  // mảng màu tầng lớn bên dưới, ở xa mip tự trung bình hoá về 1 (không nhấp nháy)
+  // THẢM LÁ CỎ ĐA TẦNG & ĐỘ NỔI NGỌN CỎ KHI NHÌN XIÊN:
+  // Lấy mẫu ở đúng kích thước lá cỏ ngoài đời (1,2 m & 2,8 m mỗi ô 512px -> lá cỏ mảnh 1-2 cm thay vì phóng to nhoè 20 cm).
+  // Khi nhìn góc thấp ngang mặt đất (ống ngắm / lính quỳ bắn), dịch chuyển lớp lấy mẫu thứ 2 dọc tia nhìn theo kênh độ cao .a
+  // để ngọn cỏ cao che lấp rãnh tối phía sau, phá vỡ hoàn toàn các vệt sọc ngang bệt phẳng.
   {
-    vec3 tD = (noTile(gTurf, wr3 / 38.0, 0.17).rgb * 0.62 + noTile(gTurf, wr1 / 71.0 + 0.3, 0.83).rgb * 0.38) / max(gTurfMean, vec3(0.02));
-    // chủ yếu lấy sáng / tối (bóng giữa các lá), sắc lá chỉ pha nhẹ: tỉ lệ màu đủ 3 kênh nhuộm lá vàng chanh / kẽ tím nâu
-    // lên mọi mảng màu tầng lớn -> đồng cỏ loang hoa văn
-    tD = mix(vec3(lum(tD)), tD, 0.35);
-    // ngoài vùng cỏ 3D (xa ~250+): vân thảm lá cùng một cỡ đốm (~38 đv) lát kín cả cánh đồng -> nhìn từ trên cao / ống
-    // kính dài thành hoa văn lặp đều như vải. Ở xa nhạt dần, để các mảng màu tầng lớn (khô / tươi, đất trống) dẫn dắt
-    float tK = 1.3 * mix(1.0, 0.3, smoothstep(220.0, 800.0, G_VDIST));
-    gTurfD = clamp(1.0 + (tD - 1.0) * tK, 0.35, 1.8);
+    vec3 vDir = normalize(vGW - cameraPosition);
+    float graz = smoothstep(0.05, 0.85, 1.0 - abs(vDir.y)) * (1.0 - smoothstep(260.0, 1050.0, G_VDIST));
+    vec4 tf0 = noTile(gTurf, wr3 / 9.5, 0.17) * 0.6 + noTile(gTurf, wr1 / 22.0 + 0.3, 0.83) * 0.4;
+    vec2 pSh = wp - vDir.xz * (0.28 * graz * (0.35 + tf0.a));
+    vec2 wr3S = mat2(0.94, 0.342, -0.342, 0.94) * pSh, wr1S = mat2(0.866, -0.5, 0.5, 0.866) * pSh;
+    vec4 tf1 = noTile(gTurf, wr3S / 9.5, 0.17) * 0.6 + noTile(gTurf, wr1S / 22.0 + 0.3, 0.83) * 0.4;
+    // Khi nhìn xiên, ưu tiên lấy các ngọn cỏ nhô cao (tf1.a > tf0.a) che khuất kẽ đất sẫm bên dưới
+    float tipSel = clamp((tf1.a - tf0.a) * 2.6 + 0.5 * graz, 0.0, 1.0) * graz;
+    vec4 tf = mix(tf0, max(tf0, tf1), tipSel);
+    vec3 tD = tf.rgb / max(gTurfMean, vec3(0.02));
+    tD = mix(vec3(lum(tD)), tD, 0.42);
+    // Kẽ gốc thấp ngả màu rơm khô / đất ấm thay vì đen xỉn; ngọn cỏ cao bắt nắng ấm
+    float bladeH = clamp((tf.a - 0.45) * 2.2, -1.0, 1.0);
+    tD *= mix(vec3(1.04, 0.96, 0.84), vec3(1.06, 1.05, 0.88), smoothstep(-0.6, 0.7, bladeH));
+    float tK = 1.22 * mix(1.0, 0.32, smoothstep(380.0, 1400.0, G_VDIST));
+    gTurfD = clamp(1.0 + (tD - 1.0) * tK, 0.42, 1.72);
     cBase *= mix(vec3(1.0), gTurfD, 1.0 - 0.75 * wBare);
+    gTuft0 += bladeH * 0.28 * (1.0 - smoothstep(280.0, 950.0, G_VDIST));
   }`}
   ${desert || urban ? '' : `// cỏ khô / cỏ xanh xen kẽ theo mảng lớn (đồng cỏ thật không đều màu)
   // vùng khô / tươi do tầng lớn (~1 km, gNM 1100) quyết định -> mảng to nhỏ không đều; tầng ~260 chỉ làm mép vùng lượn
@@ -1060,9 +1082,9 @@ float gTuftH(vec2 p) {
   // (mip thô + ngưỡng rộng: mép vùng mềm, to nhỏ không đều; trước đây ngưỡng hẹp trên nhiễu đủ 4 tầng -> lấm tấm đều khắp đồng)
   float pv = smoothstep(0.3, 0.7, gNMb(wr3, 420.0, 0.27, 3.0).g * 0.75 + nz.r * 0.25);
   col *= mix(vec3(0.84, 0.93, 0.8), vec3(1.09, 1.0, 0.84), pv);`}
-  // loang lổ cỡ vừa (khóm cỏ / vạt đất 2-6 m) — chi tiết còn đọc được từ camera trên cao
+  // loang lổ cỡ vừa (mô đất thoải 4-12 m) — chuyển sắc êm, không tạo đốm đen trắng lổn nhổn ở gần
   float mot = gMotF(wp);
-  col *= ${desert ? '0.95 + 0.1 * mot' : urban ? '0.95 + 0.1 * mot' : '0.88 + 0.24 * mot'};   // cát / bê tông: chỉ loang rất nhẹ
+  col *= ${desert ? '0.95 + 0.1 * mot' : urban ? '0.95 + 0.1 * mot' : '0.94 + 0.12 * mot'};   // cát / bê tông / cỏ: loang êm tự nhiên
   ${desert || urban ? '' : `// đồng cỏ thật nhìn từ xa ngả xanh ô-liu dịu, không xanh chói như sân golf (bản đồ sáng nắng dễ bị chói màu nhất)
   col = mix(vec3(lum(col)), col, ${opts.mapType === 'RIVER_LAKE' ? '0.74' : opts.mapType === 'JUNGLE' ? '0.88' : '0.92'});`}
   ${urban ? `// đồi quanh thành phố (vành núi + cảnh nền ngoài bản đồ) phủ cỏ: chuyển dần theo đường vuông bo góc lượn sóng
@@ -1145,23 +1167,21 @@ float gTuftH(vec2 p) {
     col *= mix(vec3(1.0), vec3(0.74, 0.7, 0.62), gMud);
   }`}
   ${desert ? '' : `{
-    // ĐỒNG CỎ XA (không thêm hình học): khóm cỏ 3D thưa dần / hết ở xa -> shader vẽ tiếp chúng thành vệt màu
+    // ĐỒNG CỎ XA (không thêm hình học): tính theo G_VDIST để khi bật kính ngắm phóng đại vẫn giữ nguyên chi tiết lá cỏ gần
     float gGr = (1.0 - t1) * (1.0 - t2) * (1.0 - t3) * (1.0 - gPud) * (1.0 - gBareP)${urban ? ' * gOutE' : ''};
-    float gDv = length(vViewPosition), gFarK = smoothstep(200.0, 900.0, gDv) * gGr;
-    // cụm khóm: cùng nhiễu mật độ cụm GroundCover dùng rải khóm cỏ 3D (thang 170, kênh b) -> chỗ khóm dày ở gần, ra xa vẫn
-    // là mảng sẫm đúng chỗ đó; trong cụm loang lổ 2-5 m như bóng các khóm (mip tự trung bình hoá ở rất xa, không nhấp nháy)
-    float gCl = smoothstep(0.3, 0.66, texture2D(gNoise, vGW.xz / 170.0 + vec2(0.37, 0.11)).b);
-    float gTf = smoothstep(0.45, 0.75, texture2D(gNoise, wr1 / 4.1 + 0.33).g * 0.6 + texture2D(gNoise, wr2 / 1.7 + 0.71).r * 0.4);
-    col *= mix(vec3(1.0), vec3(0.7, 0.78, 0.6), gTf * (0.3 + 0.7 * gCl) * gFarK);
-    col *= 1.0 - 0.08 * gCl * gFarK;
-    // ánh cỏ khi nhìn xiên: thấy thân & ngọn lá phản chiếu trời -> sáng bạc, ngả vàng nhạt (đồi xa có chiều sâu, không phẳng như nỉ)
+    float gDv = length(vViewPosition), gFarK = smoothstep(420.0, 1300.0, G_VDIST) * gGr;
+    // cụm khóm: cùng nhiễu mật độ cụm GroundCover dùng rải khóm cỏ 3D (thang 170, kênh b);
+    // dùng vân khóm mịn không lặp thay cho đốm Perlin 1,7-4,1 đv để khi nhìn xiên không bị bệt thành vạch sọc ngang
+    float gCl = smoothstep(0.3, 0.68, texture2D(gNoise, vGW.xz / 170.0 + vec2(0.37, 0.11)).b);
+    float gTf = smoothstep(0.42, 0.76, gNM(wr1, 18.0, 0.33).g * 0.55 + gNM(wr2, 7.5, 0.71).r * 0.45);
+    col *= mix(vec3(1.0), vec3(0.82, 0.86, 0.74), gTf * (0.22 + 0.55 * gCl) * gFarK);
+    col *= 1.0 - 0.05 * gCl * gFarK;
+    // ánh cỏ khi nhìn xiên: thấy thân & ngọn lá bắt nắng ấm vàng dịu -> mặt cỏ có lớp tơi xốp thay vì bệt xanh tối
     float gNdv = clamp(dot(normalize(cameraPosition - vGW), nrm), 0.0, 1.0);
-    float gSh = pow(1.0 - gNdv, 3.0) * smoothstep(120.0, 600.0, gDv) * gGr;
-    // (nhẹ & không cộng trắng: đồi xa giữ màu xanh no, không bạc phếch)
-    col = mix(col, col * vec3(1.08, 1.08, 0.96), gSh * 0.35);
-    // đồng cỏ xa: mắt thấy tán lá & bóng giữa các ngọn cỏ hơn là đất / lá khô -> sẫm hơn nền gần (đồi không nhạt nhoà).
-    // Sẫm gần đều 3 kênh: hệ số cũ (0.86, 0.97, 0.74) giữ kênh lục, cắt đỏ / lam -> càng xa cỏ càng xanh chanh rực như nỉ
-    col *= mix(vec3(1.0), vec3(0.8, 0.85, 0.76), smoothstep(400.0, 2200.0, gDv) * gGr);
+    float gSh = pow(1.0 - gNdv, 2.6) * smoothstep(60.0, 480.0, gDv) * gGr;
+    col = mix(col, col * vec3(1.12, 1.09, 0.93), gSh * 0.42);
+    // đồng cỏ xa: dịu nhẹ về tông xanh xám tự nhiên ở tầm rất xa
+    col *= mix(vec3(1.0), vec3(0.84, 0.88, 0.8), smoothstep(550.0, 2400.0, G_VDIST) * gGr);
     // MẢNG SẮC CỎ LỚN (đồng cỏ thật không một màu): bãi cỏ khô ngả vàng rơm / cỏ tươi xanh lam / cỏ ô liu, loang 60-400 m;
     // sườn đón nắng gắt khô hơn, sườn khuất (hướng bắc) ẩm xanh sẫm
     {
@@ -1199,16 +1219,16 @@ float gTuftH(vec2 p) {
   gCov *= clamp(1.0 + 0.6 * (1.0 - lum(gTurfD)), 0.55, 1.0);
   col *= mix(vec3(1.0), vec3(0.52, 0.6, 0.44), gCov);
   // dưới thảm cỏ ngắn: kẽ giữa các đám lá là gốc cỏ khuất sáng (cùng mức mờ viền với thảm -> không lộ ranh giới vùng thảm)
-  // (ngoài vùng thảm còn 85%: đồng cỏ xa cùng tông với thảm cỏ & khóm cỏ, không sáng bừng lên thành vạch ngang ở mép thảm)
-  float gCar = gCarpet.z > 0.0 ? mix(0.85, 1.0, smoothstep(0.0, gCarpet.w, gCarpet.z - length(vGW.xz - gCarpet.xy))) * (1.0 - t1) * (1.0 - t2) * (1.0 - t3) * (1.0 - gPud) * (1.0 - gBareP) : 0.0;
-  col *= mix(vec3(1.0), vec3(0.72, 0.77, 0.62), gCar);
+  // (ngoài vùng thảm giữ sáng tự nhiên hơn để bãi cỏ không bị tối sẫm khi nhìn xa)
+  float gCar = gCarpet.z > 0.0 ? mix(0.92, 1.0, smoothstep(0.0, gCarpet.w, gCarpet.z - length(vGW.xz - gCarpet.xy))) * (1.0 - t1) * (1.0 - t2) * (1.0 - t3) * (1.0 - gPud) * (1.0 - gBareP) : 0.0;
+  col *= mix(vec3(1.0), vec3(0.8, 0.84, 0.72), gCar);
   diffuseColor.rgb *= col;
 
 `)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   {
-    // pháp tuyến mượt + mô đất lồi lõm tính bằng hiệu số trên mặt phẳng thế giới (không phụ thuộc tam giác / điểm ảnh)
-    float m0 = gMotF(wp), mx = gMotF(wp + vec2(1.8, 0.0)), mz = gMotF(wp + vec2(0.0, 1.8));
+    // pháp tuyến mượt + mô đất thoải tự nhiên (giảm biên độ từ 1.8 xuống 0.38 để mặt cỏ bằng phẳng không bị phồng rộp như nệm cao su)
+    float m0 = gMotF(wp), mx = gMotF(wp + vec2(2.4, 0.0)), mz = gMotF(wp + vec2(0.0, 2.4));
     float fadeB = clamp(1.0 - G_VDIST / 4500.0, 0.35, 1.0);
     // Gờ đá địa tầng nổi khối: chỉ vách đá trọc (lớp đá t3) của cao nguyên / sa mạc, đứt quãng theo nhiễu. Trước đây phủ mọi
     // sườn dốc: gờ chạy đúng theo đường đồng mức -> quả đồi hình nón hằn sọc chéo song song như vân sóng
@@ -1216,12 +1236,12 @@ float gTuftH(vec2 p) {
     float dStrata = ${opts.mapType === 'HIGHLAND' || desert ? '1.0' : '0.0'} * (cos(stHN * 0.26) * 0.24 + cos(stHN * 0.08) * 0.16) * smoothstep(0.22, 0.55, slope)
       * t3 * smoothstep(0.35, 0.65, texture2D(gNoise, wp / 140.0 + 0.27).g) * (1.0 - gMtnF);
     // (cát: không — mô đất 9-26 đv một mẫu nhiễu tuần hoàn thành đốm da báo / vân nhàu lặp; cát dùng gSandU bên dưới)
-    vec3 nW = normalize(nrm - vec3(mx - m0, 0.0, mz - m0) * ${desert ? '0.0' : urban ? '0.25' : '1.8'} * fadeB * (1.0 - 0.92 * smoothstep(0.0, 0.6, gSand)));
+    vec3 nW = normalize(nrm - vec3(mx - m0, 0.0, mz - m0) * ${desert ? '0.0' : urban ? '0.25' : '0.38'} * fadeB * (1.0 - 0.92 * smoothstep(0.0, 0.6, gSand)));
     {
-      // khóm cỏ (cao ~0.55 đơn vị) và sỏi / cục đất (~0.25) nổi khối: bước sai phân >= cỡ 1 điểm ảnh trên mặt đất
-      float e = max(0.35, max(fwidth(wp.x), fwidth(wp.y)));
+      // khóm cỏ và sợi lá nổi khối sắc nét ở tầm gần-trung, tắt dần khi nhỏ hơn điểm ảnh
+      float e = max(0.22, max(fwidth(wp.x), fwidth(wp.y)));
       ${desert || urban ? '' : `float tx = gTuftH(wp + vec2(e, 0.0)), tz = gTuftH(wp + vec2(0.0, e));
-      nW = normalize(nW - vec3(tx - gTuft0, 0.0, tz - gTuft0) * (0.22 / e) * (1.0 - wBare) * (1.0 - max(t2, t3)) * (1.0 - smoothstep(0.0, 0.6, gSand)));`}
+      nW = normalize(nW - vec3(tx - gTuft0, 0.0, tz - gTuft0) * (0.16 / e) * (1.0 - wBare) * (1.0 - max(t2, t3)) * (1.0 - smoothstep(0.0, 0.6, gSand)));`}
       if (gBushK > 0.01) {
         float eb = max(1.0, e), bx = gBushH(wp + vec2(eb, 0.0), gBushK), bz = gBushH(wp + vec2(0.0, eb), gBushK);
         nW = normalize(nW + vec3(bx - gBush0, 0.0, bz - gBush0) * (4.0 / eb));
@@ -1317,7 +1337,7 @@ ${rain ? `    if (gRainW > 0.0) {
     }
   }`);
     };
-    mat.customProgramCacheKey = () => 'groundPBR21:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '') + (rain ? ':rain' : '') + (rimF ? ':rim' : '');
+    mat.customProgramCacheKey = () => 'groundPBR22:' + (opts.mapType || '') + (opts.ownNormals ? ':own' : '') + (rain ? ':rain' : '') + (rimF ? ':rim' : '');
     mat.needsUpdate = true;
     return mat;
   }

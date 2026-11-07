@@ -25,7 +25,8 @@ const MAX_HP = { ALL_ROUNDER: 3.2, GATLING: 3.0, ARTILLERY: 2.2, SCOUT: 1.6, INF
 const MAX_RANGE = { ARTILLERY: 3200 };      // tầm bắn tối đa + dư (đơn vị game)
 const DEFAULT_RANGE = 2400;   // tên lửa dẫn hướng 2000 + mục tiêu chạy; đạn tăng bay quá tầm hiệu quả 1750
 const RADAR_RANGE = 950;
-const EQ_RADAR_RANGE = 600;   // radar lắp thêm (Equipment.EQ_RADAR_RANGE)const EW_DETECT = 2400;        // dò phương xe đang phát sóng phá UAV (ew_jammer.js EWJammer.C.DETECT)
+const EQ_RADAR_RANGE = 600;   // radar lắp thêm (Equipment.EQ_RADAR_RANGE)
+const EW_DETECT = 2400;        // dò phương xe đang phát sóng phá UAV (ew_jammer.js EWJammer.C.DETECT)
 const MARGIN = 120;            // nới tầm nhìn: gửi sớm 1 chút để xe hiện ra mượt, không giật
 const CLOSE = 260;             // xe ở rất gần luôn được gửi (va chạm, bắn mò cự ly gần)
 const FOREST_DENSE = 10, FOREST_SPOT = 170, FOREST_LOS = 100, DC = 24;

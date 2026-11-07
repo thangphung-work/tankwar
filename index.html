@@ -114,7 +114,7 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       background: radial-gradient(ellipse at 50% 42%, #1a211d 0%, #0c100e 55%, #050706 100%);
       color: var(--t); font-family: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
-      transition: opacity 1.4s ease-in-out, visibility 1.4s;
+      transition: opacity .38s ease-out, visibility .38s;
     }
     #gm-splash.out { opacity: 0; visibility: hidden; }
     #gm-splash.out .gms-core { transform: scale(1.08); filter: blur(2px); }
@@ -218,7 +218,7 @@
     var el = document.getElementById('gm-splash');
     if (!el) return;
     if (/[?&]lab=/.test(location.search) || window.RANGE_LAB || window.STRONGHOLD_LAB || window.FREECAM_LAB) { el.remove(); return; }
-    var t0 = Date.now(), MIN_MS = 2200, FADE_MS = 1400, EXPECT = 115;   // số <script src> trong trang (xấp xỉ, chỉ để chia tiến độ)
+    var t0 = Date.now(), MIN_MS = 450, FADE_MS = 380, EXPECT = 115;   // số <script src> trong trang (xấp xỉ, chỉ để chia tiến độ)
     var fill = el.querySelector('.gms-fill'), pct = el.querySelector('.gms-pct'), stage = el.querySelector('.gms-stage');
     var loaded = 0, shown = 0, target = 0, done = false, ready = false, fading = false;
     // gone: màn chào đã bắt đầu mờ. Nhạc sảnh (music.js) chờ onGone để không đè lên tiếng màn chào
@@ -230,7 +230,7 @@
     document.addEventListener('DOMContentLoaded', function () { set(75, 'ĐANG DỰNG CHIẾN ĐỊA'); });
     // nhích dần tới mốc (không đứng im khi một bước nặng chặn lâu)
     var iv = setInterval(function () {
-      if (shown < target) shown += Math.max(0.6, (target - shown) * 0.25);
+      if (shown < target) shown += Math.max(2.5, (target - shown) * 0.45);
       else if (!done && shown < target + 6 && shown < 97) shown += 0.08;
       shown = Math.min(shown, 100);
       fill.style.width = shown.toFixed(1) + '%';
@@ -248,7 +248,7 @@
     function finish() { ready = true; }
     function fadeOut() {
       // giữ 100% "SẴN SÀNG" một nhịp cho mắt kịp đọc rồi mới mờ dần (FADE_MS khớp transition .out)
-      var wait = Math.max(600, MIN_MS - (Date.now() - t0));
+      var wait = Math.max(120, MIN_MS - (Date.now() - t0));
       setTimeout(function () {
         el.classList.add('out');
         if (sfx) sfx.outro(FADE_MS / 1000);
@@ -1142,7 +1142,7 @@
   <script src="three-mesh-bvh.js?v=0.5.24"></script>
   <script src="src/core/raycast_bvh.js?v=20261027wrk2"></script>
   <script src="src/core/async_shaders.js?v=20261027as1"></script>
-  <script src="src/core/equipment.js?v=20261103med2"></script>
+  <script src="src/core/equipment.js?v=20261107unlockvehicles1"></script>
   <script src="src/gameplay/camo_fire.js?v=20261029real1"></script>
   <script src="src/gameplay/leaf_cover.js?v=20261022lf1"></script>
 
@@ -1259,7 +1259,7 @@
 
   <!-- Phòng thử nghiệm cứ điểm (chỉ chạy khi mở index.html?lab=stronghold / stronghold_lab.html) -->
   <script src="src/ui/stronghold_lab.js?v=20261102warm2"></script>
-  <script src="src/ui/range_lab.js?v=20261102wnd2"></script>
+  <script src="src/ui/range_lab.js?v=20261107infantry1"></script>
   <script src="src/ui/free_cam.js?v=20261102fc8"></script>
   <script src="src/ui/recon_tour.js?v=20261025tour2"></script>
   <script src="src/ui/recon_recorder.js?v=20261024r1"></script>

@@ -310,7 +310,9 @@ const SoldierModel = (() => {
     for (const k in BIO.gear) GR[k] = tintHex(BIO.gear[k], red);
     const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.92, metalness: 0 }, o));
     // vải rằn ri (normalMap: null): lưới sợi đã in trong màu; fabricNormal có nếp gấp lớn, trải theo UV ~4 đv / ô thành vệt chéo và mảng tối loang trên đùi, mông
-    const cloth = (o) => std(Object.assign({ normalMap: fabricNormal(), normalScale: new THREE.Vector2(0.7, 0.7) }, o));
+    // Vải dã chiến và nylon balistic tán sáng rộng, không có vệt lóe kiểu nhựa mới.
+    // Pháp tuyến sợi chỉ nhấn nhẹ bề mặt; độ gồ lớn hơn làm cả áo trông như cao su.
+    const cloth = (o) => std(Object.assign({ roughness: 1, normalMap: fabricNormal(), normalScale: new THREE.Vector2(0.42, 0.42) }, o));
     const matte = (o) => { const m = std(Object.assign({ roughness: 1 }, o)); m.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directSpecular = vec3(0.0); reflectedLight.indirectSpecular = vec3(0.0);'); }; m.customProgramCacheKey = () => 'soldierMatte'; return m; };
     const camo = camoTex(tintHex(BIO.camo[0], red), BIO.camo[1].map(h => tintHex(h, red)));
     // găng cùng màu quân phục, chỉ sậm hơn: lấy màu trung bình thật của tấm rằn ri (đúng cách shader đọc ảnh) x màu vải uni, chia độ sáng ảnh găng rồi nhân k
@@ -328,9 +330,9 @@ const SoldierModel = (() => {
       // cùng vải cho chi tiết khối hộp / chỏm cầu (UV theo đơn vị dài) — để túi không lấm tấm như miếng dán
       uniC: cloth({ color: 0x8d8a7e, map: (() => { const t = camo.clone(); t.needsUpdate = true; t.repeat.set(2.2, 2.2); return t; })() }),
       uniS: cloth({ normalMap: null, color: 0xb8b4a6, map: (() => { const t = camo.clone(); t.needsUpdate = true; t.repeat.set(0.3, 0.3); return t; })() }),
-      vest: std({ color: GR.vest, roughness: 0.96, map: corduraMaps().map, normalMap: corduraMaps().nm, normalScale: new THREE.Vector2(0.9, 0.9) }),
+      vest: std({ color: GR.vest, roughness: 1, map: corduraMaps().map, normalMap: corduraMaps().nm, normalScale: new THREE.Vector2(0.58, 0.58) }),
       vestB: cloth({ color: new THREE.Color(GR.vest).multiplyScalar(0.62).getHex(), roughness: 0.95 }),
-      pouch: cloth({ normalMap: null, color: 0xc4c0b2, map: (() => { const t = camo.clone(); t.needsUpdate = true; t.repeat.set(0.3, 0.3); return t; })(), roughness: 0.9 }),
+      pouch: cloth({ normalMap: null, color: 0xc4c0b2, map: (() => { const t = camo.clone(); t.needsUpdate = true; t.repeat.set(0.3, 0.3); return t; })() }),
       grenade: std({ color: 0x343a2b, roughness: 0.82 }),
       band: std({ color: 0x8c7a3c, roughness: 0.75 }),
       smoke: std({ color: 0x45483d, roughness: 0.84 }),
@@ -347,7 +349,7 @@ const SoldierModel = (() => {
       gloveK: matte({ color: gloveColor(GLOVE_DARK * 0.8), map: gloveTex() }),
       pad: std({ color: GR.pad, roughness: 0.88, side: THREE.DoubleSide, normalMap: leatherNormal(), normalScale: new THREE.Vector2(0.3, 0.3) }),
       boot: std({ color: new THREE.Color(GR.boot).multiplyScalar(0.72).getHex(), roughness: 0.82 }),
-      lens: std({ color: 0x1a2a33, roughness: 0.15, metalness: 0.6 }),
+      lens: std({ color: 0x1a2a33, roughness: 0.15, metalness: 0.6, side: THREE.DoubleSide }),
       visor: std({ map: lensTex(), roughness: 0.06, metalness: 0.55, side: THREE.DoubleSide }),
       frame: std({ color: 0x171816, roughness: 0.76 }),
       strap: std({ color: 0x1f1e1a }),
@@ -1046,7 +1048,7 @@ const SoldierModel = (() => {
   // 27 cm cũ thì bắp to cẳng gầy như que, tay trông dài. To nhất ở cơ delta rồi thon dần về khuỷu (giữa bắp to hơn đầu vai thì thành quả trám, người dùng chê).
   // Vòng 17: vải ôm thân, vai thuôn liền xuống tay (0,545-0,55 cũ ở cơ delta + lớp đắp dày -> vai tròn như quả bóng, người dùng chê 'to đùng')
   // Vòng 21: cơ delta nổi khối, thót nhẹ ở chỗ bám (y ~1): tay áo to đều từ vai xuống thì vai thũng (người dùng chê). Đo chu vi kể cả vải: delta 40, bắp 36, cẳng 30, cổ tay 19 cm (bắp 33 thì cẳng tay gần bằng bắp tay: như Popeye)
-  const SLEEVE_PROF = [[0, -0.38], [0.18, -0.35], [0.34, -0.28], [0.43, -0.16], [0.535, 0], [0.55, 0.2], [0.535, 0.42], [0.5, 0.72], [0.475, 0.98], [0.475, 1.25], [0.49, 1.55], [0.49, 1.9], [0.48, 2.22], [0.46, 2.5], [0.475, 2.85], [0.47, 3.15], [0.44, 3.5], [0.39, 3.85], [0.33, 4.2], [0.305, 4.27], [0, 4.28]];
+  const SLEEVE_PROF = [[0, -0.38], [0.18, -0.35], [0.34, -0.28], [0.43, -0.16], [0.51, 0], [0.51, 0.2], [0.48, 0.42], [0.45, 0.72], [0.44, 0.98], [0.455, 1.25], [0.49, 1.55], [0.49, 1.9], [0.48, 2.22], [0.46, 2.5], [0.475, 2.85], [0.47, 3.15], [0.44, 3.5], [0.39, 3.85], [0.33, 4.2], [0.305, 4.27], [0, 4.28]];
   const TRICEPS = 0.06;
   const DELT_LONG = 0.018;   // 0,04: đoạn 30% trên bắp tay phình 44 cm, lồi hơn cả đầu vai
   const BACK_WEB = 0.54;   // mặt sau nách vẫn đủ giãn khi ôm súng nhưng không kéo cả vai sau thành một túi tròn
@@ -1063,7 +1065,7 @@ const SoldierModel = (() => {
     }
     return (y, back) => { let c = null; const L = T[back ? 1 : 0]; for (let k = 0; k < L.length - 1; k++) { const a = L[k], b = L[k + 1]; if ((y - a[0]) * (y - b[0]) <= 0 && a[0] !== b[0]) { const t = (y - a[0]) / (b[0] - a[0]), cc = a[1] + (b[1] - a[1]) * t; c = c == null ? cc : Math.min(c, cc); } } return c; };
   })();
-  const SHOULDER_T0 = 0.34, SHOULDER_T1 = 0.38;   // tiếp tuyến ngắn: vải ôm xương đòn/delta, không phồng thành nửa cầu giữa thân và cánh tay
+  const SHOULDER_T0 = 0.44, SHOULDER_T1 = 0.46;   // kéo dài tiếp tuyến để vai sau chuyển thoải từ lưng vào bắp tay, tránh chỏm tròn như khối ghép
   const SLEEVE_R = y => ARM_K * (1 - 0.06 * sm((y - 3.7) / 0.4)) * (1 + 0.012 * Math.exp(-Math.pow((y - 0.55) / 0.55, 2))) * (1 - 0.05 * sm((y - 2.3) / 0.4));   // thu riêng chỏm delta, giữ bắp tay/cẳng tay đủ khối; cổ tay áo ôm găng
   function sleeveGeo(chest, clav, up, fore, upS, fix, fixB, s, S, D, fromChest) {
     const Ox = V(1, s * 0.06, 0).normalize(), YE = 2.55, SEG = 36, C1 = SEG + 1, Gs = (v, k) => Math.exp(-(v / k) * (v / k));
@@ -1105,7 +1107,7 @@ const SoldierModel = (() => {
     // Vòng cũ 2,1-2,9 nằm trên sườn: đầu vai là góc thân áo đứng yên, tay giơ lên trông như ống cắm vào sườn.
     const yr0 = ph => 0.85 + BACK_WEB * sm(Math.sin(ph) / 0.7 + 0.15);
     const SH_CORNER = 0.09;   // gợi đầu vai (mỏm cùng vai); 0,008 thì vai dốc tuột, 0,17 thì thành bè vuông
-    const SH_PAD_TOP = 0.04, SH_PAD_BACK = 0.014, SH_PAD_FRONT = 0.010;   // lớp áo mỏng theo giải phẫu; độ đầy chính đến từ bề mặt delta chứ không phải đệm cầu
+    const SH_PAD_TOP = 0.04, SH_PAD_BACK = 0.009, SH_PAD_FRONT = 0.010;   // làm mỏng lớp đắp sau vai và thuôn dần về đầu vai; độ đầy chính vẫn theo cơ delta
     const YA = 0.2, NV = 24;   // đường cong dừng ở vòng rộng nhất của cơ vai (giữ nguyên độ rộng đầu vai), từ đó xuống là tay áo
     const ring = (ph) => {
       const sn = Math.sin(ph), lat = Math.pow(Math.max(0, sn) * Math.max(0, Math.cos(ph)) * 2, 1.5), y = RING_Y - RING_H * Math.cos(ph) - LAT_DROP * lat, R = lerpTab(TORSO_PROF, y) * 1.02, x = s * R * Math.cos(RING_IN * Math.abs(sn)), side = sn < 0 ? -1 : 1;
@@ -1126,7 +1128,7 @@ const SoldierModel = (() => {
           // đầu vai vuông: đắp cao dồn về phía ngoài (gần mỏm cùng vai) -> đường vai ngang rồi bẻ góc xuống tay, không dốc tròn từ cổ
           const corner = sm((v - 0.15) / 0.45) * sm((1.05 - v) / 0.32) * sm(-cph / 0.95);
           // gộp kiểu max mềm (chuẩn p = 3), không cộng thẳng: đỉnh vai + góc vuông + sau vai chồng nhau ở đường chéo sau-trên thành u phồng giữa cầu vai
-          const pTop = bump * SH_PAD_TOP * sm(-cph / 0.8) + SH_CORNER * corner, pBack = sm(v / 0.4) * (1 - 0.62 * sm((v - 0.55) / 0.45)) * SH_PAD_BACK * sm(sph / 0.6) * (0.6 + 0.4 * sm((cph + 0.6) / 0.8));   // không tắt về 0 ở chỗ nối: còn ~0,07 chảy vào cơ tam đầu
+          const pTop = bump * SH_PAD_TOP * sm(-cph / 0.8) + SH_CORNER * corner, pBack = sm(v / 0.4) * (1 - 0.78 * sm((v - 0.55) / 0.45)) * SH_PAD_BACK * sm(sph / 0.6) * (0.6 + 0.4 * sm((cph + 0.6) / 0.8));   // vai sau mỏng và vuốt dần vào đầu vai, vẫn nối liền với cơ tam đầu
           const pFront = bump * SH_PAD_FRONT * sm(-sph / 0.6) * (0.6 + 0.4 * sm((cph + 0.6) / 0.8));
           Q.addScaledVector(T.N, Math.cbrt(pTop * pTop * pTop + pBack * pBack * pBack + pFront * pFront * pFront)); }
         Q.fold = 0; row.push(Q);
@@ -1942,17 +1944,15 @@ const SoldierModel = (() => {
   // Bắn từ vai phải: mặt dưới ốp gỗ sau đặt lên đỉnh vai (pocket riêng, súng trường tì hốc vai), tay trái nắm ốp gỗ trước.
   const RPG_B = 0.86;
   const RPG_SIGHT = { x: -0.8, y: RPG_B + 0.56, z: -0.75 };   // tâm thân kính, trục quang đi qua x, y
-  const RPG_SHOULDER_Z = 1.65;   // 1,05 cũ: tay cầm sát vai 13 cm, khuỷu gập 150-160°
-  const RPG_MOTOR = 2.0;         // động cơ phía sau đầu đạn, vừa trong ba lô (cao 2,1) và trong ống
+  const RPG_SHOULDER_Z = 2.1;   // 1,65 cu: tay cam sat vai, khuyu bi gap gat 152 do; 2,1: day sung ra truoc, khuyu ha xuong tu nhien
+  const RPG_MOTOR = 2.0;         // dong co phia sau dau dan, vua trong ba lo (cao 2,1) va trong ong
   const RPG = {
-    // tay phải: tâm báng cầm thật (PISTOL_GRIP, giữa mép trước - mép sau ở nửa dưới), trục theo đúng độ nghiêng báng (đầu báng ngả về trước).
-    // Điểm cũ (0, -0,32, 0,1) nằm ở mép trước sát vành cò, trục nghiêng ngược ~28°: bàn tay đúc dáng nắm không ôm được báng, trông như xoè tay cạnh báng.
-    // tay trái: tay cầm đứng dưới ray ốp trước (RPG_FOREGRIP). Nắm thẳng ống Ø 6,4 cm thì bàn tay đúc dáng nắm cán nhỏ phải dựng đứng ôm hông ống
+    // tay phai: tam bang cam that, truc bu nghieng de co tay khong bi be ngang khi ha khuyu
     gripR: V(0, -0.62, 0.51), gripL: V(0, RPG_B - 0.72, -1.55),
-    axisR: V(0, 0.932, -0.362).normalize(), axisL: V(0, 1, 0), palmKR: 0.75,
+    axisR: V(0.1, 0.85, 0.52).normalize(), axisL: V(0, 1, 0), palmKR: 0.75,
     palmR: V(-1, 0, 0), palmL: V(1, 0, 0),
-    elbowR: V(2.6, -0.8, 1.0), elbowL: V(-2.4, -0.4, -0.4),
-    elbowReadyR: V(2.2, -1.6, 1.2), elbowReadyL: V(-2.65, -0.1, -0.2),
+    elbowR: V(2.1, -1.5, 0.8), elbowL: V(-1.8, -1.4, 0.2),
+    elbowReadyR: V(2.0, -1.8, 0.8), elbowReadyL: V(-1.8, -1.6, 0.2),
     readySlideL: 0, butt: V(0, RPG_B - 0.25, RPG_SHOULDER_Z), pocket: V(1.2, 3.66, -0.15),
     // đường ngắm riêng: mắt phải đặt sau thị kính (cách ~6 cm), đầu nhìn dọc ống và nghiêng nhẹ về phía ống áp má
     sight: { eye: V(RPG_SIGHT.x, RPG_SIGHT.y, RPG_SIGHT.z + 0.655 + 0.5), roll: -0.2 },
@@ -2134,7 +2134,8 @@ const SoldierModel = (() => {
   function ragStrips(g, add, mat, x, y, z0, z1, r, n, seed = 1) {
     for (let k = 0; k < n; k++) {
       const a = (k * 2.4 + seed) % (Math.PI * 2), z = z0 + (z1 - z0) * ((k + 0.5) / n), L = 0.35 + 0.3 * Math.abs(Math.sin(seed + k * 1.7));
-      add(g, rbox(0.1, L, 0.016), mat, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.7 - L * 0.4, z, Math.sin(k * 1.3) * 0.25, a, Math.sin(k * 2.1) * 0.22);
+      // Bố thô phải có bề dày và chồng mép; dải mỏng như giấy tạo các lỗ hở thấy xuyên qua nòng.
+      add(g, rbox(0.16, L, 0.05), mat, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.7 - L * 0.4, z, Math.sin(k * 1.3) * 0.25, a, Math.sin(k * 2.1) * 0.22);
     }
   }
   function cordLoop(g, add, mat, x, y, z, r, n = 3) {
@@ -2145,22 +2146,23 @@ const SoldierModel = (() => {
   // Lên đạn tay (khoá nòng trượt-xoay, kéo sau mỗi phát), băng 5 viên đạn lớn, nòng rất dày + đầu giảm giật 3 buồng, hộp khoá khối thép, báng giảm chấn đệm vai lớn, kính tầm xa, chân chống khoẻ.
   // Quá nặng để bắn đứng: di chuyển thì vác trên vai phải (nòng dốc lên phía sau, một tay giữ báng cầm), bắn thì NẰM SẤP trên chân chống.
   // Gốc tại báng cầm, nòng -z như súng trường.
-  const ATR_BORE = 0.36, ATR_LEG_Z = -5.2, ATR_LEG_L = 2.0, ATR_SIGHT_Y = 1.3, ATR_EYE_Z = 1.1;
+  const ATR_BORE = 0.36, ATR_LEG_Z = -5.2, ATR_LEG_L = 2.0, ATR_SIGHT_Y = 1.3, ATR_EYE_Z = 1.9;
   const ATR = {
-    gripR: V(0, -0.32, 0.1), gripL: V(0, -0.74, 2.08),   // tay trái ôm chân sau dưới báng, chỉnh độ cao như xạ thủ nằm thật (ốp tay quá xa tầm với)
-    axisR: V(0, 0.98, 0.2).normalize(), axisL: V(0, 1, 0), palmKR: 0.75,
-    palmR: V(-1, 0, 0), palmL: V(1, 0, 0),
-    elbowR: V(2.6, 0.8, -2.0), elbowL: V(-1.9, 2.4, -2.4), elbowCarry: V(2.1, -0.6, -0.8),
+    gripR: V(0, -0.55, 0.02), gripL: V(-0.46, -0.25, -0.92),   // tay phải nắm báng đứng sau cò; tay trái ôm cạnh dưới thân súng, ngay sau hộp tiếp đạn
+    axisR: V(0, 0.98, 0.2).normalize(), axisL: V(0.15, 0.28, -0.95).normalize(), palmKR: 0.75,
+    palmR: V(-1, 0, 0), palmL: V(0.2, 0.95, 0.2).normalize(),   // lòng bàn tay ngửa nghiêng đỡ dưới ốp, các ngón khép ôm nhẹ thân súng
+    sight: { eye: V(0, ATR_SIGHT_Y, ATR_EYE_Z + 0.08), roll: 0, maxShift: 0.12 },   // kéo thị kính lùi 10 cm về phía mắt; giới hạn dời đầu để khăn cổ không kéo dài
+    elbowR: V(2.6, 0.8, -2.0), elbowL: V(-2.4, -0.85, -1.8), elbowCarry: V(2.1, -0.6, -0.8),
     butt: V(0, 0.1, 2.75), pocket: V(0.99, 3.3, -0.8),                       // đệm báng tì hốc vai khi nằm bắn (x 0,77 / z -0,6 cũ: báng nằm dưới cổ, lưới cổ + cằm lún ~1,8 cm vào đuôi báng)
     // vác: báng cầm nghiêng theo súng nên cẳng tay đi chúc xuống bàn tay, khuỷu luôn cao hơn cổ tay (tay duỗi ngang / khuỳnh ra): nắm tay ngả ~26° quanh báng + gợi ý khuỷu mạnh để khuỷu thả xuống sát sườn
     kneelDir: V(0.15, 1, 0.15), kneelMagDir: V(-1, 0, 0), kneelButt: V(1.8, 0.15, -2.8), kneelBody: [-0.3, -0.12, -0.03, -0.12], kneelShL: V(0, 0, 0), kneelAt: V(0, -0.1, 2.84), gripKneelR: V(0, 1.0, -2.4), elbowKneelR: V(3.0, -0.2, -0.6), elbowKneelL: V(-2.6, 0.6, -2.6),   // quỳ thay băng (hệ gốc): súng đứng trên đế báng trước - phải, băng chĩa trái; tay phải nắm mặt trên hộp khoá (quai xách ngang vai: khuỷu gập ~60°, lưới khuỷu sụp). kneelShL 0: dời khớp vai vào thân thì lưới vai dẹt lõm
     hipPocket: V(1.4, 2.2, 1.0), hipPitch: -0.35, hipYaw: 0.8, hipRate: 2.4, elbowHipR: V(2.6, 0.9, 1.6), elbowHipL: V(-2.2, 0.0, -1.2),   // thế thay băng đứng (hệ ngực): báng kẹp nách phải, súng chéo trước ngực, nòng chúc trước - trái. Dò lưới: súng dài 1,4 m, băng cách báng ~60 cm nên chỉ thế chéo này cho tay trái với tới với khuỷu gập (vai -> băng ≤ 3,4 đv)
-    axisCarryR: V(0, 0.98, -0.25).normalize(), carryHint: 30, carryPitch: 0.55, carryYaw: 0.25, carryRoll: 0, carryShL: 0.25, carryAt: V(0, 0.04, -3.0), carryPocket: V(1.55, 3.4, -0.1),               // chỗ ốp tay tì đỉnh vai khi vác
+    axisCarryR: V(0, 0.98, -0.25).normalize(), carryHint: 30, carryPitch: 0.62, carryYaw: 0.25, carryRoll: 0, carryShL: 0.25, carryAt: V(0, 0.04, -3.0), carryPocket: V(1.55, 3.4, -0.1),               // chỗ ốp tay tì đỉnh vai khi vác; nòng nhấc nhẹ, báng tựa chắc hơn
     // vác: ốp tay tì vai phải, báng chúc xuống phía trước. Nhìn thẳng từ trước thân súng che phần lớn cánh tay phải: đánh đổi để băng đạn không chìm trong ngực
     // điểm tì = mặt dưới ốp tay (carryAt y 0,04 = đáy áo nòng) đặt trên đỉnh vai (carryPocket ~ đỉnh cầu vai 3,35). Dốc 0,55: dốc 0,7 thì hộp khoá trước vai chúc vào ngực,
     // nâng điểm tì cho khỏi lún thì súng lơ lửng cạnh mũ, chỉ tay đỡ (đo bằng đỉnh áo sát mặt súng: tools/soldier_pen)
     // hướng 0,25, lăn 0 (cũ 1,1 / 0,6): vác dọc vai phải; vắt chéo ngực thì đáy băng đạn chìm ~18 cm trong lồng ngực (quét lưới đo lún hai chiều, không có góc lăn nào cứu được thế chéo)
-    gripCarryL: V(0, 0, 0.4), axisCarryL: V(0, 0, -1), palmCarryL: V(0.5, -0.87, 0), elbowCarryL: V(-2.6, -1.6, -0.6)   // súng ~25 kg nên vác bằng hai tay: tay trái vòng qua ngực nắm ngay sau báng cầm, vai trái đưa trước carryShL (z 1,4 cũ xa quá tầm tay khi súng vác dọc vai). Đỡ đế băng thì khuỷu nâng, cẳng tay vặn ~130°
+    gripCarryL: V(0, -0.62, -2.55), carrySupportL: V(0.52, -0.28, -0.75), axisCarryL: V(0.2, 0.98, 0).normalize(), palmCarryL: V(-0.98, -0.2, 0).normalize(), elbowCarryL: V(-2.5, -0.2, -1.1)   // tay trái ôm mặt sau hộp tiếp đạn sát báng; dịch neo ra ngoài để lòng bàn tay không xuyên qua thành hộp
   };
   const ATR_CASE = [[0, -0.32], [0.105, -0.32], [0.105, -0.29], [0.088, -0.27], [0.088, -0.25], [0.105, -0.23], [0.1, 0.18], [0.085, 0.23], [0.085, 0.3], [0, 0.3]], ATR_TIP = [[0, 0.26], [0.08, 0.26], [0.08, 0.42], [0.06, 0.6], [0.03, 0.72], [0.012, 0.78], [0, 0.78]];   // đạn 20×82: vỏ đồng 7,8 cm Ø 2,6 cm + đầu đạn Ø 2 cm, dài 13,8 cm vừa lòng băng (z -0,99..-2,1). Mặt cắt đi từ dưới lên
   // vật liệu thân súng / băng đạn (dùng chung: băng rơi có thể dựng khi chưa có súng nào)
@@ -2315,7 +2317,7 @@ const SoldierModel = (() => {
     tubeZ(BR, 0.26, 0.18, BZ1 + 0.09, soot);                                 // vai nối về nòng
     add(g, new THREE.CircleGeometry(0.13, 18), rub, 0, B, -12.43, 0, Math.PI, 0);
     // ---- KÍNH NGẮM TẦM XA cỡ lớn ----
-    const SY = ATR_SIGHT_Y, SZ = -0.75;
+    const SY = ATR_SIGHT_Y, SZ = 0.05;   // lùi cả kính ngắm 8 cm về phía báng, sát mắt hơn khi áp má
     tubeZ(0.14, 0.14, 2.4, SZ, poly, SY);
     tubeZ(0.27, 0.14, 0.6, SZ - 1.45, poly, SY, 26);
     tubeZ(0.27, 0.27, 0.4, SZ - 1.95, poly, SY, 26);                           // đầu kính
@@ -2353,7 +2355,9 @@ const SoldierModel = (() => {
       add(leg, new THREE.CylinderGeometry(0.08, 0.08, L * 0.56, 12), park, 0, -L * 0.28, 0);
       add(leg, new THREE.CylinderGeometry(0.06, 0.06, L * 0.44, 12), steel, 0, -L * 0.78, 0);
       add(leg, new THREE.CylinderGeometry(0.095, 0.095, 0.1, 12), steel, 0, -L * 0.56, 0);
-      add(leg, rbox(0.3, 0.05, 0.42), rub, 0, -L, 0);                          // bàn chân rộng chống lún
+      const foot = new THREE.Group(); foot.position.y = -L; leg.add(foot);
+      add(foot, rbox(0.3, 0.05, 0.42), rub, 0, 0, 0);                         // bàn chân cao su nằm ngang, không xoay theo ống chân
+      leg.userData.foot = foot;
       leg.userData.sx = sx;
       leg.userData.fold = new THREE.Quaternion().setFromUnitVectors(V(0, -1, 0), V(sx * 0.03, 0.04, -1).normalize());
       leg.quaternion.copy(leg.userData.fold);
@@ -2366,11 +2370,11 @@ const SoldierModel = (() => {
     add(g, strapGeo(sl, 0.13, 0.03, 'atrSling3', V(1, 0, 0)), M.web2, 0, 0, 0);   // dây đeo bên trái: bên phải vướng tay cò và tay kéo khoá
     add(g, rbox(0.2, 0.09, 0.04), M.knuck, -0.41, -0.17, -1.6, 0, Math.PI / 2, 0);   // khoá chỉnh dây
     add(g, rbox(0.03, 0.1, 0.3), M.web2, -0.42, -0.22, -1.3, 0.1, 0, 0);         // đuôi dây thừa
-    // nắp lật đầu kính: vòng ôm đầu kính + bản lề trên đỉnh; nắp mở ~170°, đứng gần thẳng phía trên ống kính (đĩa mỏng lơ lửng không bản lề trông như lưỡi dao)
+    // nắp lật đầu kính: đi cùng cụm kính khi dịch về phía báng, không để nắp rời lơ lửng trước vật kính.
     {
-      const HY = ATR_SIGHT_Y + 0.305, HZ = -3.0, th = 2.95, c = Math.cos(th), s = Math.sin(th);
+      const HY = ATR_SIGHT_Y + 0.305, HZ = SZ - 2.16, th = 2.95, c = Math.cos(th), s = Math.sin(th);
       const rot = (y, z) => [HY + y * c - z * s, HZ + y * s + z * c];
-      add(g, ringGeo('atrCapCollar', 0.268, 0.305, 0.1), poly, 0, ATR_SIGHT_Y, -2.98);
+      add(g, ringGeo('atrCapCollar', 0.268, 0.305, 0.1), poly, 0, ATR_SIGHT_Y, HZ);
       add(g, rbox(0.16, 0.07, 0.1), poly, 0, HY, HZ + 0.02);                             // bản lề
       add(g, new THREE.CylinderGeometry(0.025, 0.025, 0.2, 8), steel, 0, HY + 0.02, HZ, 0, 0, Math.PI / 2);
       const [ly, lz] = rot(-0.305, -0.015), [ty, tz] = rot(-0.64, -0.015);
@@ -2379,13 +2383,15 @@ const SoldierModel = (() => {
     }
     // ---- ĐỒ DÃ CHIẾN, cái nào cũng có lý do: vải che loá đầu kính, giẻ phá dáng nòng, băng keo chỗ nắm, dây cột quai xách ----
     const F0 = fieldMats(M), SY2 = ATR_SIGHT_Y;
-    tapeWrap(g, add, M.pouch, 0, SY2, -2.52, -2.88, 0.285, 2);
-    for (const z of [-2.55, -2.85]) add(g, new THREE.CylinderGeometry(0.292, 0.292, 0.04, 18, 1, true), F0.cord, 0, SY2, z, -Math.PI / 2, 0, 0);
+    tapeWrap(g, add, M.pouch, 0, SY2, SZ - 1.77, SZ - 2.13, 0.285, 2);
+    for (const z of [SZ - 1.8, SZ - 2.1]) add(g, new THREE.CylinderGeometry(0.292, 0.292, 0.04, 18, 1, true), F0.cord, 0, SY2, z, -Math.PI / 2, 0, 0);
     tapeWrap(g, add, F0.tape, 0, SY2, -0.15, 0.15, 0.152, 3);
     tapeWrap(g, add, F0.tape, 0, ATR_BORE, 0.85, 1.25, 0.2, 4);                // quấn ống giảm giật chỗ tì má khi nóng
+    // Lớp vải nền kín dưới các dải rủ: dải rời chỉ để phá dáng, không được thành khung hở nhìn xuyên qua nòng.
+    add(g, new THREE.CylinderGeometry(0.276, 0.276, 0.6, 20, 1, true), M.pouch, 0, ATR_BORE, -9.325, -Math.PI / 2, 0, 0);
     tapeWrap(g, add, M.pouch, 0, ATR_BORE, -9.05, -9.6, 0.27, 5);              // vải quấn nòng, giẻ phá dáng
     tapeWrap(g, add, F0.cord, 0, ATR_BORE, -9.05, -9.12, 0.285, 6);
-    ragStrips(g, add, F0.jute, 0, ATR_BORE, -9.05, -9.6, 0.28, 4, 2.9);
+    ragStrips(g, add, F0.jute, 0, ATR_BORE, -9.05, -9.6, 0.28, 8, 2.9);       // dải bố dày, phủ chồng quanh đầu nòng
     for (const z of [-5.75, -6.3]) add(g, new THREE.CylinderGeometry(0.392, 0.392, 0.04, 18, 1, true), F0.cord, 0, B, z, -Math.PI / 2, 0, 0);   // dây cột bó giẻ quanh áo nòng
     ragStrips(g, add, F0.jute, 0, B, -5.8, -6.25, 0.4, 5, 1.3);
     ragStrips(g, add, M.pouch, 0, B, -5.85, -6.2, 0.41, 3, 4.1);
@@ -2600,7 +2606,7 @@ const SoldierModel = (() => {
 
 
   // Súng bắn tỉa chống tăng: BAO ĐẠN đeo hông trái, dây chéo qua vai phải; 3 băng 5 viên dự phòng đứng trong bao, lộ viên đạn 20 mm trên cùng
-  const ATR_BAG = { x: -1.72, y: -0.2, z: 0.4, w: 1.18, h: 1.3, d: 1.86 };
+  const ATR_BAG = { x: -1.86, y: -0.15, z: -0.28, w: 1.05, h: 1.25, d: 1.68 };
   const ATR_POUCH_ARC = V(-0.7, 0, -1.0);
   const ATR_POUCH_ELBOW = V(-3.7, 0.6, -1.0), ATR_REACH_MIN = 3.0, _mgK4 = V(0, 0, 0), _mgK5 = V(0, 0, 0), _mgK6 = V(0, 0, 0), _mgK1 = V(0, 0, 0), _mgK2 = V(0, 0, 0), _mgK3 = V(0, 0, 0), _mgY = V(0, 1, 0), _mgQ1 = new THREE.Quaternion(), _mgQ2 = new THREE.Quaternion(), _mgQ3 = new THREE.Quaternion(), _mgQ4 = new THREE.Quaternion(), _mgQ5 = new THREE.Quaternion(), _mgX = V(0, 0, 0), _mgC = V(0, 0, 0), _mgD = V(0, 0, 0), _mgE2 = V(0, 0, 0), _mgF = V(0, 0, 0), _mgM = new THREE.Matrix4(), _mgMB = new THREE.Matrix4(), ATR_KNEEL_POUCH = V(-1.0, -0.2, -0.8), ATR_KNEEL_BUMP = 0.5, ATR_KNEEL_LIFT = 0, _mgV2 = V(0, 0, 0);
   const ATR_KNEEL_TILT = -1.5;   // quỳ thay băng: góc xoay băng (quanh trục x súng) lúc mang tới / về bao: băng đứng, đế xuống   // gợi ý khuỷu trái lúc mang băng tới / về bao hông (hệ ngực)   // đường tay băng <-> bao hông trái phồng ra trước - trái (hệ ngực)
@@ -2609,26 +2615,37 @@ const SoldierModel = (() => {
     const mats = atrMats(M), brass = mats.brass0, tip = mats.tip0;
     add(chest, rbox(B.w, B.h, B.d), M.pouch, B.x, B.y, B.z);
     add(chest, rbox(B.w + 0.03, 0.1, B.d + 0.03), M.vestD, B.x, top - 0.05, B.z);                 // viền miệng bao
-    add(chest, rbox(0.05, 0.6, B.d - 0.12), M.vestD, B.x - B.w / 2 - 0.2, top - 0.2, B.z, 0, 0, -0.62);   // nắp bật ra ngoài, rủ xuống
-    for (const dz of [-0.58, 0.58]) {
+    add(chest, rbox(0.05, 0.6, B.d - 0.12), M.vestD, B.x - B.w / 2 - 0.15, top - 0.2, B.z, 0, 0, -0.62);   // nắp bật ra ngoài, rủ xuống
+    for (const dz of [-0.52, 0.52]) {
       add(chest, rbox(0.03, B.h - 0.08, 0.14), M.web2, B.x - B.w / 2 - 0.01, B.y, B.z + dz);      // đai dọc
       add(chest, rbox(0.05, 0.16, 0.2), M.knuck, B.x - B.w / 2 - 0.02, B.y + 0.26, B.z + dz);     // khoá đai
     }
-    add(chest, rbox(0.16, 0.56, 1.0), M.pouch, B.x - B.w / 2 - 0.08, B.y - 0.34, B.z);            // túi phụ mặt ngoài
-    add(chest, rbox(0.18, 0.1, 1.02), M.vestD, B.x - B.w / 2 - 0.08, B.y - 0.09, B.z);
-    for (const dz of [-0.6, 0, 0.6]) {
+    add(chest, rbox(0.16, 0.56, 0.95), M.pouch, B.x - B.w / 2 - 0.08, B.y - 0.34, B.z);            // túi phụ mặt ngoài
+    add(chest, rbox(0.18, 0.1, 0.98), M.vestD, B.x - B.w / 2 - 0.08, B.y - 0.09, B.z);
+    for (const dz of [-0.52, 0, 0.52]) {
       const y = top + 0.02, z = B.z + dz;
-      add(chest, rbox(1.0, 0.34, 0.44), mats.gm, B.x, y - 0.1, z);                                // thân băng đạn chìa khỏi miệng bao
+      add(chest, rbox(0.92, 0.34, 0.42), mats.gm, B.x, y - 0.1, z);                                // thân băng đạn chìa khỏi miệng bao
       for (const sz of [-1, 1]) {
-        add(chest, rbox(0.72, 0.1, 0.03), mats.gm, B.x - 0.08, y - 0.14, z + sz * 0.225);         // gân dập
-        add(chest, rbox(0.8, 0.09, 0.035), mats.steel, B.x + 0.02, y + 0.07, z + sz * 0.17, sz * 0.5, 0, 0);   // môi băng
+        add(chest, rbox(0.68, 0.1, 0.03), mats.gm, B.x - 0.08, y - 0.14, z + sz * 0.21);         // gân dập
+        add(chest, rbox(0.75, 0.09, 0.035), mats.steel, B.x + 0.02, y + 0.07, z + sz * 0.16, sz * 0.5, 0, 0);   // môi băng
       }
       add(chest, lathe('atrCase', ATR_CASE, 12), brass, B.x + 0.02, y + 0.13, z, 0, 0, Math.PI / 2).scale.set(1, 0.75, 1);   // viên trên cùng nằm dọc băng
       add(chest, lathe('atrTip', ATR_TIP, 12), tip, B.x + 0.02, y + 0.13, z, 0, 0, Math.PI / 2).scale.set(1, 0.75, 1);
     }
-    const strap = new THREE.CatmullRomCurve3([V(B.x + 0.3, top - 0.1, B.z - 0.75), V(-1.2, 0.95, -0.95), V(-0.5, 1.45, -1.32), V(0.5, 2.5, -1.22), V(0.98, 3.1, -0.95), V(1.02, 3.46, -0.1), V(0.95, 3.05, 1.08), V(0.3, 2.2, 1.38), V(-0.7, 1.35, 1.38), V(B.x + 0.3, top - 0.1, B.z + 0.75)]);
-    add(chest, strapGeo(strap, 0.34, 0.05, 'atrBagStrap', V(0, 1.8, 0.05), 120), M.web2, 0, 0, 0);
-    for (const dz of [-0.75, 0.75]) add(chest, rbox(0.1, 0.16, 0.22), M.knuck, B.x + 0.3, top - 0.05, B.z + dz);   // khoen móc dây
+    const strap = new THREE.CatmullRomCurve3([
+      V(B.x + 0.25, top - 0.1, B.z - 0.68),
+      V(-1.25, 0.95, -0.92),
+      V(-0.55, 1.45, -1.52),
+      V(0.48, 2.5, -1.45),
+      V(0.98, 3.1, -1.05),
+      V(1.02, 3.46, -0.1),
+      V(0.95, 3.05, 1.15),
+      V(0.35, 2.2, 1.58),
+      V(-0.65, 1.35, 1.55),
+      V(B.x + 0.25, top - 0.1, B.z + 0.68)
+    ]);
+    add(chest, strapGeo(strap, 0.32, 0.045, 'atrBagStrap', V(0, 1.8, 0.05), 120), M.web2, 0, 0, 0);
+    for (const dz of [-0.68, 0.68]) add(chest, rbox(0.1, 0.16, 0.22), M.knuck, B.x + 0.25, top - 0.05, B.z + dz);   // khoen móc dây
   }
   // TRẠM ĐIỀU KHIỂN TÁC CHIẾN (rộng ~41 cm, màn hình ~20 cm): vỏ polymer đúc liền, 2 báng cầm gập được dưới lưng máy, mặt trước +z (màn hình), mặt lưng -z (pin, tản nhiệt)
   const KAMI_ANT_FOLD = Math.PI / 2, KAMI_ANT_OPEN = -0.22, KAMI_STICK = { x: 1.46, y: -0.3 }, KAMI_GRIP = { x: 1.4, y: 0.02, z: -0.12, open: 0 };
@@ -2813,9 +2830,8 @@ const SoldierModel = (() => {
     const P = [];
     for (let i = 0; i < BELT_N; i++) {
       const t = i / BELT_N * 2, side = t < 1 ? 1 : -1, u = t < 1 ? t : 2 - t, a = Math.PI * (u - 0.8 * Math.sin(2 * Math.PI * u) / (2 * Math.PI)), surf = GEO['pantsSurf' + side];
-      let best = null, bd = -1;   // bản đai cứng: lấy chỗ nhô nhất trong bề cao đai, không lượn theo mông
-      for (let k = 0; k <= 6; k++) { const Q = surf(BELT_Y - 0.235 + 0.47 * k / 6, Math.PI - side * a), d = Q.x * Q.x + Q.z * Q.z; if (d > bd) { bd = d; best = Q; } }
-      P.push([best.x, best.z]);
+      const center = surf(BELT_Y, Math.PI - side * a);
+      P.push([center.x, center.z]);
     }
     const pts = P.map((q, i) => {
       const a = P[(i + BELT_N - 2) % BELT_N], b = P[(i + BELT_N - 1) % BELT_N], c = P[(i + 1) % BELT_N], d = P[(i + 2) % BELT_N];
@@ -3052,22 +3068,25 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     float lum = dot(base, vec3(0.3, 0.59, 0.11));
     base = mix(base, vec3(lum), 0.2 * K * age);                                                                   // nắng + giặt: rằn ri bạc đi
     base *= mix(1.0, 0.84 + 0.2 * big, K * age);                                                                  // ố sẫm chung
-    float stain = smoothstep(0.48, 0.7, big * 0.7 + mid * 0.3) * (0.5 * age + 0.5 * zone);
-    base = mix(base, mix(base * 0.66, vSoil * 1.25, 0.35), stain * K * 0.6);                                      // vết bẩn lớn, vẫn thấy vân rằn bên dưới
-    float mudA = zone * smoothstep(0.44, 0.66, mid * 0.82 + fine * 0.18 + zone * 0.1);                            // thành mảng rời, giữa các mảng còn thấy rằn ri
-    base = mix(base, mix(vSoil * 1.25, vSoil * 0.85, fine), mudA * K * 0.74);
-    float spl = smoothstep(0.76, 0.82, wN(q * 22.0 + big * 3.0)) * clamp(low * 1.4 + front * 0.6 + forearm * 0.5, 0.0, 1.0);
-    base = mix(base, vSoil * 0.7, spl * K * 0.85);                                                                // đất bắn tung
-    // GIÀY: thân giày + gấu quần phủ bụi đất từ mũi lên cổ giày; đế là đất nén sẫm lốm đốm, gai cao su lộ ra chỗ mòn (màu đất sáng đều thì đế ngửa lên nắng trông như đế be của giày mới)
-    float bootA = (1.0 - smoothstep(-8.1, -6.9, q.y + (big - 0.5) * 0.9)) * clamp(vG1.x * 1.3, 0.0, 1.0);
-    base = mix(base, mix(wearDust, vSoil * 1.1, smoothstep(0.35, 0.65, mid)), bootA * K * (0.3 + 0.45 * smoothstep(0.38, 0.62, mid * 0.7 + fine * 0.3)));
-    base = mix(base, mix(vSoil * 0.5, mix(vSoil * 0.72, wearDust * 0.7, 0.28), smoothstep(0.25, 0.8, mid * 0.75 + fine * 0.25)), sole * K * 0.9);   // hơi ngả màu bụi từng map; tương phản thấp, vệt to: chênh nhiều hoặc theo nhiễu mịn thì thành hoa văn rằn ri số
-    base = mix(base, diffuseColor.rgb * 0.8, sole * K * smoothstep(0.6, 0.78, mid) * 0.7);
-    float dustA = clamp(up * smoothstep(0.4, 0.7, mid) * 0.36, 0.0, 0.5) * (1.0 - clamp(low * 1.3, 0.0, 1.0));
+    // GIÀY: giữ độ tối của thân giày da và đế cao su tách biệt với ống quần; bùn bụi chỉ bám mạnh quanh gờ đế, mũi giày và gấu quần (phủ kín 80% làm giày với quần tiệp thành một khối đất sét)
+    float onBoot = smoothstep(-7.42, -7.72, q.y) * smoothstep(-8.46, -8.18, q.y);
+    float lowFabric = low * (1.0 - 0.62 * onBoot);
+    float stain = smoothstep(0.48, 0.7, big * 0.7 + mid * 0.3) * (0.42 * age + 0.5 * zone * (1.0 - 0.55 * onBoot));
+    base = mix(base, mix(base * 0.66, vSoil * 1.25, 0.35), stain * K * 0.52);                                     // vết bẩn lớn, vẫn thấy vân rằn bên dưới
+    float mudA = zone * (1.0 - 0.6 * onBoot) * smoothstep(0.46, 0.68, mid * 0.82 + fine * 0.18 + zone * 0.08);    // thành mảng rời, giữa các mảng còn thấy rằn ri
+    base = mix(base, mix(vSoil * 1.18, vSoil * 0.82, fine), mudA * K * 0.62);
+    float spl = smoothstep(0.76, 0.82, wN(q * 22.0 + big * 3.0)) * clamp(lowFabric * 1.3 + front * 0.6 + forearm * 0.5, 0.0, 1.0);
+    base = mix(base, vSoil * 0.7, spl * K * 0.75);                                                                // đất bắn tung
+    float bootToe = smoothstep(-0.75, -1.45, q.z) * smoothstep(-7.55, -8.1, q.y);
+    float bootWelt = smoothstep(-8.05, -8.38, q.y) * smoothstep(-8.62, -8.42, q.y);
+    float bootA = clamp((bootWelt * 0.75 + bootToe * 0.55 + onBoot * 0.22) * clamp(vG1.x * 1.2, 0.0, 1.0), 0.0, 1.0);
+    base = mix(base, mix(wearDust * 0.85, vSoil * 0.95, smoothstep(0.35, 0.65, mid)), bootA * K * (0.24 + 0.32 * smoothstep(0.4, 0.65, mid * 0.7 + fine * 0.3)));
+    base = mix(base, mix(vSoil * 0.38, vSoil * 0.56, smoothstep(0.25, 0.8, mid * 0.75 + fine * 0.25)), sole * K * 0.48);
+    float dustA = clamp(up * smoothstep(0.4, 0.7, mid) * 0.32, 0.0, 0.45) * (1.0 - clamp(low * 1.3, 0.0, 1.0));
     base = mix(base, wearDust, dustA * K);                                                                        // bụi khô đọng mặt trên
     diffuseColor.rgb = base;
-    float caked = clamp(mudA + spl + dustA + sole + bootA * 0.5, 0.0, 1.0) * K;
-    roughnessFactor = mix(roughnessFactor, 1.0, caked);
+    float caked = clamp(mudA + spl + dustA + sole * 0.6 + bootA * 0.4, 0.0, 1.0) * K;
+    roughnessFactor = mix(roughnessFactor, 0.96, caked);
     metalnessFactor *= 1.0 - caked * 0.85;
   }
   if (vWear < 0.9 && abs(vWear) > 0.01) {
@@ -3094,7 +3113,20 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
       sh.vertexShader = '#ifdef USE_WEAR\n' + WEAR_VERT + '\n#endif\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n#ifdef USE_WEAR\nvWearQ = vec4(position, wear); vWearN = normal;\n#if defined(USE_SKINNING) && defined(BONE_TEXTURE)\nmat4 gm = getBoneMatrix(float(boneTextureSize * boneTextureSize / 4) - 1.0);\nvG0 = gm[0]; vG1 = gm[1]; vG2 = gm[2]; vSoil = gm[3].xyz;\n#else\nvG0 = vec4(-100.0, 0.0, -100.0, 0.8); vG1 = vec4(0.5); vG2 = vec4(0.4, 0.0, 0.0, 0.0); vSoil = vec3(0.22, 0.18, 0.12);\n#endif\n#endif');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float soldierFill;\n#ifdef USE_WEAR\n' + WEAR_FRAG + '\n#endif')
         .replace('#include <normal_fragment_begin>', '#ifdef USE_WEAR\n' + WEAR_APPLY + '\n#endif\n#include <normal_fragment_begin>')
-        .replace('#include <aomap_fragment>', 'reflectedLight.indirectDiffuse *= soldierFill;\n#include <aomap_fragment>');
+        .replace('#include <aomap_fragment>', `#ifdef USE_WEAR
+{
+  float aoGround = smoothstep(-8.85, -6.9, vWearP.y);
+  float aoDown = 0.78 + 0.22 * smoothstep(-0.85, 0.35, vWearN.y);
+  float aoGroin = 1.0 - 0.22 * exp(-pow(vWearP.x / 0.44, 2.0)) * smoothstep(-4.8, -2.5, vWearP.y) * (1.0 - smoothstep(-2.0, -1.2, vWearP.y));
+  float aoNeck = 1.0 - 0.16 * exp(-pow((vWearP.y - 3.35) / 0.42, 2.0)) * smoothstep(0.2, -0.5, vWearN.y);
+  float bodyAO = clamp((0.68 + 0.32 * aoGround) * aoDown * aoGroin * aoNeck, 0.48, 1.0);
+  reflectedLight.indirectDiffuse *= soldierFill * bodyAO;
+  reflectedLight.directDiffuse *= 0.88 + 0.12 * bodyAO;
+}
+#else
+reflectedLight.indirectDiffuse *= soldierFill;
+#endif
+#include <aomap_fragment>`);
     };
     m.needsUpdate = true;
     return m;
@@ -3819,10 +3851,8 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
       const x = sd >= 0 ? cx + ro * pe(sd) : cx - ri * pe(sd);
       const eIn = 0.26 + (e - 0.26) * sm((-3.1 - y) / 1.0);
       let z = c < 0 ? cz + (zf - cz) * (sd < 0 ? Math.pow(Math.abs(c), eIn) : pe(c)) : cz + (zb - cz) * pe(c);
-      // mông: 2 múi chuông mượt (hàm căn cũ có đầu mút dốc đứng thành gờ cứng), nhô ~4 cm so với mặt sau đùi; đỉnh ngang y -1,8, phía trên thoải dần vào thắt lưng,
-      // phía dưới cong gọn vào nếp lằn; khe giữa tách 2 múi, tắt dần ra hông
-      // đỉnh mông ~88 cm, phía dưới thoải dần liền vào mặt sau đùi (nếp lằn sâu thắt đột ngột -> trông xệ, gãy khúc)
-      if (c > 0) z += sm(c / 0.55) * (0.3 * Gs(y + 1.9, y > -1.9 ? 1.25 : 0.72) * Gs(x - 0.62, 0.78) - 0.05 * Gs(x, 0.14) * Gs(y + 1.9, 0.6) - 0.01 * Gs(y + 2.48, 0.15) * Gs(x - 0.6, 0.6));
+      // mông quần chiến đấu rộng: độ nhô vừa phải, thoải mượt xuống đùi sau (không tách 2 múi tròn căng hay thắt gờ ngang dưới mông)
+      if (c > 0) z += sm(c / 0.55) * (0.17 * Gs(y + 1.9, y > -1.9 ? 1.35 : 1.12) * Gs(x - 0.54, 0.92) - 0.016 * Gs(x, 0.18) * Gs(y + 1.9, 0.65));
       // phía trước đáy quần hơi đầy (~1 cm), vải phủ mềm: mặt phẳng tuyệt đối trông như ma-nơ-canh
       if (c < 0) z -= 0.055 * Gs(x, 0.45) * Gs(y + 2.05, 0.38) * sm(-c / 0.4);   // 0,13 cũ: khối phồng, mặt dưới quay xuống thành mảng tối
       // CẤU TRÚC XƯƠNG CHẬU dưới vải: gai chậu trước nhô nhẹ ở góc bụng dưới, nếp bẹn chéo từ gai chậu xuống đáy quần, lõm hông ngay sau mấu chuyển
@@ -3868,7 +3898,7 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
         // trọng số: mặt sau (mông) theo khung chậu tới thấp hơn, mặt trước (bẹn) chuyển sang đùi sớm
         // (phần dưới mông theo đùi nhiều hơn: gập hông thì nếp lằn mông giãn, không thòng thành túi dưới đùi khi quỳ)
         const back = (c + 1) / 2, s0 = -1.32 + (-1.6 + 1.32) * back;
-        const mid = sm(ax / 0.6), below = sm((CROTCH_Y - y) / 0.3), wLeg = sm((s0 - y) / (0.45 + 0.4 * back)) * (mid + (1 - mid) * below), hK = 0.31 + 0.2 * sm(c / 0.7), wKnee = sm((kneeW.y + 0.01 + hK - y) / (2 * hK));   // dải trộn sau khoeo rộng hơn trước gối: hẹp thì co gối là mép cắt ngang sắc
+        const mid = (0.45 * back) + (1 - 0.45 * back) * sm(ax / 0.6), below = sm((CROTCH_Y - y) / 0.3), wLeg = sm((s0 - y) / (0.45 + 0.4 * back)) * (mid + (1 - mid) * below), hK = 0.31 + 0.2 * sm(c / 0.7), wKnee = sm((kneeW.y + 0.01 + hK - y) / (2 * hK));   // dải trộn sau khoeo rộng hơn trước gối: hẹp thì co gối là mép cắt ngang sắc
         if (wKnee > 0) { A.push(1); Bn.push(2); Wt.push(wKnee); }
         else { A.push(0); Bn.push(1); Wt.push(wLeg); }
     };
@@ -4396,19 +4426,19 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     const beltBone = oneCloth ? hips : torso;
     if (oneCloth) {
       // đeo đè lên cạp quần, gắn khung chậu (cũ: cao hơn cạp, gắn thân, đỉa quần thò trơ bên dưới). Mép trên gập vào áo để không hở lòng đai
-      add(hips, beltSkin('edge', [[-0.235, 0.035], [-0.235, 0.07], [0.235, 0.07], [0.235, 0.035], [0.235, -0.1]]), lowerStrap, 0, BELT_Y, 0);
-      add(hips, beltSkin('band', [[-0.21, 0.05], [-0.21, 0.07], [-0.19, 0.085], [0.19, 0.085], [0.21, 0.07], [0.21, 0.05]]), lowerWeb, 0, BELT_Y, 0);
-      for (const s of [-1, 1]) for (const a of [0.62, 1.0, 1.4, 1.8, 2.2, 2.6]) for (const dy of [-0.085, 0.085]) {   // hai hàng khe MOLLE
+      add(hips, beltSkin('edge', [[-0.145, 0.025], [-0.145, 0.05], [0.145, 0.05], [0.145, 0.025], [0.145, -0.06]]), lowerStrap, 0, BELT_Y, 0);
+      add(hips, beltSkin('band', [[-0.13, 0.04], [-0.13, 0.055], [-0.115, 0.065], [0.115, 0.065], [0.13, 0.055], [0.13, 0.04]]), lowerWeb, 0, BELT_Y, 0);
+      for (const s of [-1, 1]) for (const a of [0.62, 1.0, 1.4, 1.8, 2.2, 2.6]) for (const dy of [-0.06, 0.06]) {   // hai hàng khe MOLLE
         const b = beltAt(s * a);
         add(hips, rbox(0.2, 0.04, 0.012), lowerStrap, b.x + b.nx * 0.084, BELT_Y + dy, b.z + b.nz * 0.084, 0, Math.atan2(b.nx, b.nz), 0);
       }
       const fz = beltAt(0).z - 0.085;   // khoá: đế dây -> khung -> lưỡi, mỗi lớp nổi hơn lớp dưới (trước đây chồng cùng mặt nên nhấp nháy)
-      add(hips, rbox(0.5, 0.36, 0.03), lowerStrap, 0, BELT_Y, fz - 0.01);
-      add(hips, rbox(0.42, 0.3, 0.05), lowerKnuck, 0, BELT_Y, fz - 0.03);
-      add(hips, rbox(0.1, 0.2, 0.03), lowerWeb, 0, BELT_Y, fz - 0.06);
+      add(hips, rbox(0.42, 0.27, 0.025), lowerStrap, 0, BELT_Y, fz - 0.01);
+      add(hips, rbox(0.35, 0.22, 0.04), lowerKnuck, 0, BELT_Y, fz - 0.03);
+      add(hips, rbox(0.08, 0.15, 0.025), lowerWeb, 0, BELT_Y, fz - 0.06);
     } else {
-      add(torso, beltGeo('band', [[1.36, -0.21], [1.4, -0.21], [1.42, -0.19], [1.42, 0.19], [1.4, 0.21], [1.36, 0.21]]), lowerWeb, 0, -0.38, 0);
-      add(torso, beltGeo('edge', [[1.35, -0.235], [1.405, -0.235], [1.405, 0.235], [1.35, 0.235]]), lowerStrap, 0, -0.38, 0);
+      add(torso, beltGeo('band', [[1.36, -0.14], [1.4, -0.14], [1.42, -0.12], [1.42, 0.12], [1.4, 0.14], [1.36, 0.14]]), lowerWeb, 0, -0.38, 0);
+      add(torso, beltGeo('edge', [[1.35, -0.155], [1.405, -0.155], [1.405, 0.155], [1.35, 0.155]]), lowerStrap, 0, -0.38, 0);
       for (let k = 0; k < 14; k++) {
         const a = k / 14 * Math.PI * 2;
         if (Math.abs(Math.sin(a)) > 0.95) continue;
@@ -4419,8 +4449,8 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
       add(torso, rbox(0.45, 0.32, 0.12), lowerStrap, 0, -0.38, -1.01);
     }
     const waistR = beltPouch(0.96, oneCloth ? -0.7 : -0.32, 0.52, 0.58, 0.4, lowerPouch);
-    const waistL = beltPouch(-1.72, oneCloth ? -0.68 : -0.3, 0.46, 0.62, 0.38, lowerPouch);
-    for (const [m, w, h, d] of [[waistR, 0.52, 0.58, 0.4], [waistL, 0.46, 0.62, 0.38]]) {
+    const waistL = options.weapon === 'atr' ? null : beltPouch(-1.72, oneCloth ? -0.68 : -0.3, 0.46, 0.62, 0.38, lowerPouch);
+    for (const [m, w, h, d] of (waistL ? [[waistR, 0.52, 0.58, 0.4], [waistL, 0.46, 0.62, 0.38]] : [[waistR, 0.52, 0.58, 0.4]])) {
       const ry = m.rotation.y, out = V(Math.sin(ry), 0, Math.cos(ry)), p = m.position.clone().addScaledVector(out, d * 0.52);
       add(beltBone, rbox(w * 0.9, h * 0.24, 0.08), M.vestD, p.x, m.position.y + h * 0.3, p.z, 0, ry, 0.08);
       add(beltBone, rbox(0.09, h * 0.3, 0.03), M.vestD, p.x, m.position.y + h * 0.04, p.z, 0, ry, 0);   // quai cài nắp ngắn cùng màu túi (dải đen dài cũ trông như khe hở)
@@ -4604,9 +4634,11 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
       add(chest, new THREE.CylinderGeometry(0.06, 0.07, 0.12, 8), M.knuck, gx, 1.54 - VEST_DROP, gz);
       add(chest, new THREE.TorusGeometry(0.05, 0.013, 4, 10), M.knuck, gx + 0.07, 1.57 - VEST_DROP, gz - 0.06, 0, 0.6, 0);
     }
-    onVest(new THREE.CylinderGeometry(0.12, 0.12, 0.46, 12), M.smoke, -1.4, 1.05, 0.24, 0, 0);
-    onVest(new THREE.CylinderGeometry(0.055, 0.055, 0.1, 8), M.knuck, -1.4, 1.33, 0.24, 0, 0);
-    onVest(rbox(0.26, 0.5, 0.06), M.strap, -1.4, 1.05, 0.06);
+    if (options.weapon !== 'atr') {
+      onVest(new THREE.CylinderGeometry(0.12, 0.12, 0.46, 12), M.smoke, -1.4, 1.05, 0.24, 0, 0);
+      onVest(new THREE.CylinderGeometry(0.055, 0.055, 0.1, 8), M.knuck, -1.4, 1.33, 0.24, 0, 0);
+      onVest(rbox(0.26, 0.5, 0.06), M.strap, -1.4, 1.05, 0.06);
+    }
     gearEnd('pouches');
 
     if (!oneCloth) for (const sx of [-1, 1]) add(chest, GEO.shoulder || (GEO.shoulder = clothUV(new THREE.SphereGeometry(0.56, 20, 14))), M.uni, sx * 1.56, 2.74, 0).scale.set(1.08, 0.8, 1.18);
@@ -5051,6 +5083,7 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     });
     // bộ binh: vết trên ngực nằm dưới áo giáp, không thấy -> mỗi đùi + mỗi bắp tay có sẵn một vết thấm vải, hiện đúng chỗ bị thương (markWound)
     const woundMarks = {};
+    let contactShadow = null, trait = null;
     if (!crew && legs.length) {
       const patch = (par, site, r0, r1, h, th, len, y, sx2, sz2) => {
         const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, 12, 1, true, th - len / 2, len), M.soak);
@@ -5061,10 +5094,49 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
       };
       legs.forEach((L, i) => patch(L.leg, i ? 'legR' : 'legL', 0.815, 0.775, 1.0, Math.PI + (i ? 1 : -1) * 0.25, 1.7, -0.75, 0.97, 1.18));
       arms.forEach((A, i) => { if (A.upS) patch(A.upS, i ? 'armR' : 'armL', 0.535, 0.525, 0.8, (i ? 1 : -1) * Math.PI / 2, 1.9, 1.0, 1, 0.94); });
+      if (!GEO.contactShadow) {
+        const g = new THREE.PlaneGeometry(5.4, 5.8);
+        g.rotateX(-Math.PI / 2);
+        g.userData.shared = true;
+        GEO.contactShadow = g;
+      }
+      if (!GEO.contactShadowMat) {
+        const n = 128, c = document.createElement('canvas'); c.width = c.height = n;
+        const ctx = c.getContext('2d'), gr = ctx.createRadialGradient(n / 2, n / 2, n * 0.06, n / 2, n / 2, n * 0.48);
+        gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+        gr.addColorStop(0.45, 'rgba(255,255,255,0.52)');
+        gr.addColorStop(0.8, 'rgba(255,255,255,0.14)');
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gr; ctx.fillRect(0, 0, n, n);
+        const tex = new THREE.CanvasTexture(c);
+        GEO.contactShadowMat = new THREE.MeshBasicMaterial({
+          color: 0x050704, alphaMap: tex, transparent: true, opacity: 0.44,
+          depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1
+        });
+      }
+      contactShadow = new THREE.Mesh(GEO.contactShadow, GEO.contactShadowMat);
+      contactShadow.position.set(0, FOOT_Y + 0.028, 0.12);
+      contactShadow.renderOrder = 1;
+      contactShadow.raycast = () => {};
+      contactShadow.userData.isFxDecal = true;
+      contactShadow.userData.noMinY = true;
+      root.add(contactShadow);
+      let ts = ((GEO._traitSeq = (GEO._traitSeq || 0) + 1) * 2654435761) >>> 0;
+      const tr = () => { ts = (ts * 1664525 + 1013904223) >>> 0; return ts / 4294967296 - 0.5; };
+      trait = {
+        lean: tr() * 0.045,
+        twist: tr() * 0.07,
+        roll: tr() * 0.03,
+        headTilt: tr() * 0.08,
+        headPitch: tr() * 0.07,
+        shAsym: tr() * 0.024,
+        kneeSpread: tr() * 0.07
+      };
     }
 
     return {
       root, torso, hips, chest, head, arms, legs, meshes, M, soak, woundMarks, lod, spine: oneCloth, rifle, weapon: rifle ? weapon : null, grime: lod && lod.skeleton ? newGrime(lod.skeleton) : null,
+      _contactShadow: contactShadow, _trait: trait,
       team,
       rise: 0, bend: 0, twist: 0, roll: 0, look: 0, lookP: 0,
       t: Math.random() * 10,
@@ -5329,14 +5401,15 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     const of = Math.abs(nf) - 1.05, od = Math.abs(nd) - 1.05;
     if (of > 0) c += 12 * of * of + 2 * of;
     if (od > 0) c += 12 * od * od + 2 * od;
-    // cẳng tay vặn: ngón cái so với hướng về phía bắp tay (tư thế bắt tay = 0)
+    // cẳng tay vặn: mu bàn tay (_gX) quanh trục cẳng tay (cùng công thức với jointWatch; đo bằng ngón cái khi cầm dọc nòng súng bị suy biến)
     _gU.copy(_gS).sub(_gEl); _gU.addScaledVector(_gF, -_gU.dot(_gF));
-    _gTh.copy(_gZw).multiplyScalar(s).addScaledVector(_gF, -s * _gZw.dot(_gF));
-    const lu = _gU.length(), lt = _gTh.length();
-    if (lu > 1e-4 && lt > 1e-4) {
-      const dotUT = Math.max(-1, Math.min(1, _gU.dot(_gTh) / (lu * lt))), tw = Math.acos(dotUT) * 57.3 / JOINT.twist;
-      c += 0.6 * tw * tw;
-      if (tw > 1.06) c += 10 * (tw - 1.06) * (tw - 1.06) + 2 * (tw - 1.06);   // cẳng tay sấp / ngửa quá ~90°: khuỷu đổi chỗ (người thật xoay cả vai), không vặn cổ tay
+    const lu = _gU.length();
+    if (lu > 1e-4) {
+      _gU.multiplyScalar(1 / lu);
+      _gTh.crossVectors(_gF, _gU).multiplyScalar(s);
+      const tw = Math.abs(Math.atan2(_gX.dot(_gU), _gX.dot(_gTh))) * 57.3 / JOINT.twist;
+      c += 0.85 * tw * tw;
+      if (tw > 0.86) { const ot = tw - 0.86; c += 42 * ot * ot + 7 * ot; }   // cẳng tay sấp / ngửa quá ~80-90°: khuỷu đổi chỗ (người thật xoay cả vai), không vặn cổ tay
     }
     // bàn tay lệch khỏi phía cầm khai báo
     const nt = theta / range; c += 0.5 * nt * nt + (psi ? 0.35 * (psi / 0.6) * (psi / 0.6) : 0);
@@ -5777,11 +5850,13 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
   function groundFeet(F) {
     const g = F.groundIK;
     if (!g || F.seated || (F._proneK || 0) > 0.3 || F.isDead) return;
-    // Min trơn: khi chân thấp đổi bên, hông không đổi vận tốc đột ngột. Sai số tối đa
-    // 0,25 cm ở đúng điểm hai chân bằng nhau, nhỏ hơn độ dày đế nhưng bỏ được cú nấc.
-    const gd = g[0] - g[1], base = 0.5 * (g[0] + g[1] - Math.sqrt(gd * gd + 0.04 * 0.04));
+    // Min trơn: khi chân thấp đổi bên, hông không đổi vận tốc đột ngột. Khi đang quỳ (crouch),
+    // gốc độ cao bám theo gối phải chạm đất (g[1]) và không chạy IK nâng đùi cho chân đang quỳ.
+    const cr = c01((F._mw && F._mw.crouch) || 0);
+    const gd = g[0] - g[1], minG = 0.5 * (g[0] + g[1] - Math.sqrt(gd * gd + 0.04 * 0.04));
+    const base = minG + (g[1] - minG) * cr;
     if (Math.abs(base) > 1e-3) { F.hips.position.y += base; F.torso.position.y += base; F.root.updateMatrixWorld(true); }
-    F.legs.forEach((L, i) => legLift(F, L, g[i] - base));
+    F.legs.forEach((L, i) => legLift(F, L, (g[i] - base) * (i === 1 ? 1 - cr : 1)));
   }
   function plantFeet(F, lift = 0) {
     F.root.updateMatrixWorld(true);
@@ -5834,7 +5909,7 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     // súng bắn tỉa chống tăng: vác vai khi di chuyển, nằm sấp trên chân chống khi bắn (prone = góc đổ của hông + độ cao thân)
     atr: {
       recoil: 2.6, recoilEnv: true, painted: (M, m) => m === M.wGun || m === M.glPark || m === M.wPoly, build: buildATR, grip: ATR, poses: RIFLE_POSE, kit: atrKit, hold: holdATR, pose: atrPose, mass: 25, stance: 'aim', prone: { hipX: -1.5, y: FOOT_Y + 1.08, neck: -1.0, headX: 0.15, headLift: 0.08 }, name: 'Súng bắn tỉa hạng nặng chống tăng', ammo: 'atr',
-      fire: { tRx: 0.14, tRy: 0, tRz: 0, pRy: 0, pRz: 0, px: 0, chRx: 0.18, chRy: 0, chRz: 0, hRx: 0.85, hRy: 0, hRz: -0.1, lH: 0.02, lHz: 0.1, lHy: 0.22, lK: 0.1, lA: -0.8, lAy: 0, rH: 0.02, rHz: 0.14, rHy: -0.22, rK: 0.1, rA: -0.8, rAy: 0, shLy: 0, shLz: 0, shRy: 0, shRz: 0, lift: 0 }
+      fire: { tRx: 0.18, tRy: 0, tRz: 0, pRy: 0, pRz: 0, px: 0, chRx: 0.26, chRy: 0, chRz: 0, hRx: 0.78, hRy: 0, hRz: -0.1, lH: 0.02, lHz: 0.1, lHy: 0.22, lK: 0.1, lA: -0.8, lAy: 0, rH: 0.02, rHz: 0.14, rHy: -0.22, rK: 0.1, rA: -0.8, rAy: 0, shLy: 0, shLz: 0, shRy: 0, shRz: 0, lift: 0 }
     },
     // UAV cảm tử: không cầm vũ khí lúc đi (ống trên lưng); phóng ở thế quỳ theo trình tự riêng (hold + pose)
     kami: { build: buildKamiTube, grip: KAMI, poses: RIFLE_POSE, kit: kamiKit, hold: holdKami, keepStance: kamiStance, pose: kamiPose, noCheek: true, name: 'UAV cảm tử', ammo: 'kami' },
@@ -6128,14 +6203,20 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     _sgQ.copy(F.chest.getWorldQuaternion(_sgC)).conjugate().multiply(R.getWorldQuaternion(_sgC)).multiply(_sgR.setFromAxisAngle(SIGHT_Z, sg.roll));
     H.quaternion.slerp(_sgQ, k);
     F.chest.worldToLocal(R.localToWorld(_sgP.copy(sg.eye)));
-    H.position.lerp(_sgP.sub(_sgE.copy(SIGHT_EYE).multiply(H.scale).applyQuaternion(H.quaternion)), k);
+    _sgP.sub(_sgE.copy(SIGHT_EYE).multiply(H.scale).applyQuaternion(H.quaternion));
+    if (sg.maxShift != null) {
+      _sgE.copy(_sgP).sub(H.position);
+      const d = _sgE.length();
+      if (d > sg.maxShift) _sgP.copy(H.position).addScaledVector(_sgE, sg.maxShift / d);
+    }
+    H.position.lerp(_sgP, k);
   }
   function aimPose(o, t, kneel) {
     // thế bắn: chân trái trước, trọng tâm dồn trước; súng rung nhẹ theo nhịp thở & mạch (giữ thở)
     if (kneel) {
-      o.lH = 1.62; o.lK = 1.62; o.lA = 0.0; o.lHz = 0.18; o.lHy = 0;
-      o.rH = 0.08; o.rK = 1.81; o.rA = 0.25; o.rHz = 0.06; o.rHy = 0;   // gối sau chạm đất, mũi giày gập tì đất (thế quỳ bắn); cổ chân -81° cũ quá tầm người
-      o.pRy = -0.2; o.tRx = -0.12;
+      o.lH = 1.63; o.lK = 1.78; o.lA = 0.15; o.lHz = 0.16; o.lHy = 0;
+      o.rH = 0.42; o.rK = 2.04; o.rA = -0.76; o.rHz = 0.06; o.rHy = 0;   // bàn chân trái + gối phải + mũi giày phải cùng chạm đất, cẳng chân sau nằm dọc mặt cỏ
+      o.pRy = -0.2; o.tRx = -0.18;
     } else {
       o.lH = 0.3; o.lK = 0.3; o.lA = 0.0; o.lHz = 0.1; o.lHy = 0.15;
       o.rH = -0.2; o.rK = 0.14; o.rA = 0.06; o.rHz = 0.1; o.rHy = -0.5;
@@ -6149,13 +6230,13 @@ float wN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     o.aBend = 0.15;
   }
 
-  // QUỲ NGHỈ (F.kneelRest, engine đặt khi yên ắng): chân giữ thế quỳ, thân trên từ thế ngắm về thế sẵn sàng; k 0..1
+  // QUỲ NGHỈ (F.kneelRest, engine đặt khi yên ắng): chân giữ thế quỳ, thân trên từ thế ngắm về thế sẵn sàng tự nhiên; k 0..1
   function kneelRestPose(o, k, t) {
     const K = 1 - k, br = Math.sin(t * 1.55);
     o.gAim *= K; o.gReady += k; o.elb += k;
-    o.tRy += (-0.16 + 0.015 * wob(t, 0.19, 0.41, 0.83) - o.tRy) * k; o.tRx += (-0.1 + 0.006 * wob(t, 0.37, 0.61, 1.13) - o.tRx) * k;
-    o.chRx += (0.02 - 0.012 * br - o.chRx) * k;
-    o.hRx += (-0.02 + 0.02 * wob(t, 0.23, 0.47, 0.11) - o.hRx) * k; o.hRy += (0.16 + 0.12 * wob(t, 0.17, 0.29, 0.07) - o.hRy) * k; o.hRz *= K;
+    o.tRy += (-0.16 + 0.015 * wob(t, 0.19, 0.41, 0.83) - o.tRy) * k; o.tRx += (-0.17 + 0.006 * wob(t, 0.37, 0.61, 1.13) - o.tRx) * k;
+    o.chRx += (-0.07 - 0.012 * br - o.chRx) * k;
+    o.hRx += (0.10 + 0.02 * wob(t, 0.23, 0.47, 0.11) - o.hRx) * k; o.hRy += (0.16 + 0.12 * wob(t, 0.17, 0.29, 0.07) - o.hRy) * k; o.hRz *= K;
     o.shLy += 0.018 * br * k; o.shRy += 0.018 * br * k;
   }
 
@@ -6871,7 +6952,7 @@ const _gp = V(0, 0, 0);
   // tay phải nắm núm khoá: nắm tay ôm cần + chân núm từ phía sau-trên (lòng tay úp chếch ra trước), núm thò ngoài nắm tay; trục / lòng tay khai báo
   // trong hệ khoá nòng nên xoay theo tay khoá. Dò gripCost trên lính nằm bắn: hướng này phạt ~0,7 khi cho nhấc khuỷu (lift); úp tay thẳng từ trên xuống
   // thì cổ tay bẻ quá tầm (phạt 30-40, nhìn như cái vuốt). w: 1 ở núm, 0 về báng; trục / lòng tay đổi dần theo w để cổ tay không lật trong một khung
-  const ATR_KNOB_AXIS = V(-1, 0, 0), ATR_KNOB_PALM = V(0, -1, -1).normalize();
+  const ATR_KNOB_AXIS = V(-1, 0, 0), ATR_KNOB_PALM = V(0.25, -0.9, -0.35).normalize();
   function atrBoltGrip(F, R, rr, hand, rot, w, frozen) {
     setTrigCurl(rr, w > 0.35);
     const e = _mgE.set(0, 0, rot * ATR_BOLT_ROT);
@@ -6900,7 +6981,8 @@ const _gp = V(0, 0, 0);
     return 2;
   }
   function atrMagPlace(P, mo, tilt, show) {
-    P.mag.scale.setScalar(show ? 1 : 0.001);
+    // Hộp đạn 20 mm được làm ngắn hơn một chút để đáy không cạ đất khi súng nằm trên chân chống.
+    P.mag.scale.set(show ? 1 : 0.001, show ? 0.82 : 0.001, show ? 1 : 0.001);
     P.mag.rotation.set(tilt, 0, 0);
     _mgV.copy(ATR_MAG_BASE).applyEuler(_mgE.set(tilt, 0, 0));
     P.mag.position.copy(mo).add(ATR_MAG_BASE).sub(_mgV);
@@ -7082,9 +7164,9 @@ const _gp = V(0, 0, 0);
   const PRONE_AT = [0.3, 0.42, 0.55, 0.78, 1];
   const PRONE_KEYS = {
     th: [-0.1, -0.6, -1.2, -1.38, -1.5],
-    lH: [1.62, 1.35, 1.3, 0.4, 0.02], lK: [1.62, 2.35, 2.0, 0.7, 0.1], lA: [0, 0.3, 0.4, -0.3, -0.8], lHz: [0.18, 0.15, 0.12, 0.1, 0.1], lHy: [0, 0, 0, 0.1, 0.22],
-    rH: [0.08, 0.68, 1.22, 0.3, 0.02], rK: [1.81, 1.9, 2.0, 0.55, 0.1], rA: [0.25, 0.3, 0.4, -0.35, -0.8], rHz: [0.06, 0.08, 0.1, 0.12, 0.14], rHy: [0, 0, 0, -0.1, -0.22],
-    tRx: [-0.2, -0.3, -0.3, -0.05, 0.14], chRx: [-0.1, -0.2, -0.2, 0, 0.18], hRx: [0.1, 0.45, 0.75, 0.85, 0.85]
+    lH: [1.63, 1.35, 1.3, 0.4, 0.02], lK: [1.78, 2.35, 2.0, 0.7, 0.1], lA: [0.15, 0.3, 0.4, -0.3, -0.8], lHz: [0.18, 0.15, 0.12, 0.1, 0.1], lHy: [0, 0, 0, 0.1, 0.22],
+    rH: [0.42, 0.68, 1.22, 0.3, 0.02], rK: [2.04, 1.9, 2.0, 0.55, 0.1], rA: [-0.76, 0.3, 0.4, -0.35, -0.8], rHz: [0.06, 0.08, 0.1, 0.12, 0.14], rHy: [0, 0, 0, -0.1, -0.22],
+    tRx: [-0.2, -0.3, -0.3, -0.05, 0.18], chRx: [-0.1, -0.2, -0.2, 0, 0.26], hRx: [0.1, 0.45, 0.75, 0.85, 0.78]
   };
   function proneKey(key, k) {
     const T = PRONE_KEYS[key], A = PRONE_AT;
@@ -7238,6 +7320,12 @@ const _gp = V(0, 0, 0);
       const fw = Math.sqrt(Math.max(0.01, ATR_LEG_L * ATR_LEG_L - dy * dy - sp * sp));
       const open = _mq2.setFromUnitVectors(V(0, -1, 0), V(sp, -dy, -fw).normalize());
       leg.quaternion.copy(leg.userData.fold).slerp(open, kF);
+      if (leg.userData.foot) {
+        leg.updateMatrixWorld(true);
+        leg.getWorldQuaternion(_mq);
+        F.root.getWorldQuaternion(_mq2);
+        leg.userData.foot.quaternion.copy(_mq.invert().multiply(_mq2));
+      }
     }
     F.root.updateMatrixWorld(true);
     const rr = F.arms[1], ll = F.arms[0], frozen = F.lod && F.lod.cur > 1, ax = (v) => v.clone().transformDirection(R.matrixWorld);
@@ -7246,15 +7334,17 @@ const _gp = V(0, 0, 0);
     ll.sh.y += o.shLy; ll.sh.z += o.shLz - 0.3 * kF - G.carryShL * (1 - kF) * (1 - kHe) * (1 - kKe); rr.sh.y += o.shRy + 0.08 * kF; rr.sh.z += o.shRz;
     if (rlS && rlS.t != null) ll.sh.z -= 0.75 * kF * magSm(rlS.t, [0.1, 0.5]) * (1 - magSm(rlS.t, [rlS.T - 0.9, rlS.T - 0.4]));   // vai trái đưa tới
     if (kKe > 0) ll.sh.addScaledVector(G.kneelShL, kKe);   // quỳ thay băng: bả vai trái hạ + đưa tới (~5 cm) với xuống băng ngang thắt lưng
-    const onBipod0 = kF > 0.5, rl = atrReloadHands(F, R, parts, ll, rr, R.localToWorld(G.gripCarryL.clone().lerp(G.gripL, kF)), onBipod0 ? V(-1.9, 1.2, -1.8) : G.elbowCarryL.clone().lerp(G.elbowHipL, kHe).lerp(G.elbowKneelL, kKe));
+    const onBipod0 = kF > 0.5, rl = atrReloadHands(F, R, parts, ll, rr, R.localToWorld(G.gripCarryL.clone().lerp(G.gripL, kF)), onBipod0 ? G.elbowL : G.elbowCarryL.clone().lerp(G.elbowHipL, kHe).lerp(G.elbowKneelL, kKe));
     if (!(rl & 2)) {
       const tR = R.localToWorld(G.gripR.clone().lerp(G.gripKneelR, kKR)), aR = ax(G.axisCarryR.clone().lerp(G.axisR, kG).lerp(_kgL.set(0, 0, -1), kKR).normalize()), pR = ax(V(Math.cos(Math.PI * kG), 0, Math.sin(Math.PI * kG)).lerp(_kgA.set(0, -1, 0), kKR).normalize());
-      gripSolve(F, rr, tR, { axis: aR, palm: pR, range: 0.45, elbow: G.elbowCarry.clone().lerp(G.elbowHipR, kHe).lerp(G.elbowKneelR, kKe).lerp(G.elbowR, kF), hintK: G.carryHint + (1.1 - G.carryHint) * kG, ease: true, key: 'atr', stay: o.gAim > 0 && o.gAim < 1, frozen });   // stay: đang nằm xuống không dò lại nghiệm: súng đang xoay, đổi nghiệm giữa chừng là khuỷu lật 45° trong 1 khung   // vác ngược (nòng ra sau): lòng tay phải quay ngược so với lúc bắn (+x -> -x hệ súng). Giữ -x thì lòng tay chĩa ra ngoài, tay duỗi đơ hoặc khuỳnh khuỷu
+      gripSolve(F, rr, tR, { axis: aR, palm: pR, range: 0.45, elbow: G.elbowCarry.clone().lerp(G.elbowHipR, kHe).lerp(G.elbowKneelR, kKe).lerp(G.elbowR, kF), hintK: G.carryHint + (1.1 - G.carryHint) * kG, ease: true, key: 'atr', stay: false, frozen });
       armGuard(F, rr, tR, aR, pR);
     }
     const onBipod = kF > 0.5;
+    const carrySupportL = kF < 0.02 && kHe < 0.02 && kKe < 0.02 && !(F.atrState && F.atrState.t != null);
     if (!(rl & 1)) {
-      const tL = R.localToWorld(G.gripCarryL.clone().lerp(G.gripL, kF)), aL = ax(G.axisCarryL.clone().lerp(G.axisL, kF).normalize()), pL = ax(G.palmCarryL.clone().lerp(G.palmL, kF).normalize()), hk = F._proneHand || 0;
+      const carryGrip = R.localToWorld(G.carrySupportL.clone());
+      const tL = carrySupportL ? carryGrip : R.localToWorld(G.gripCarryL.clone().lerp(G.gripL, kF)), aL = carrySupportL ? ax(G.axisCarryL) : ax(G.axisCarryL.clone().lerp(G.axisL, kF).normalize()), pL = carrySupportL ? ax(G.palmCarryL) : ax(G.palmCarryL.clone().lerp(G.palmL, kF).normalize()), hk = F._proneHand || 0;
       // lúc đổ người xuống: tay trái rời súng chống đất trước mặt (hệ root, chốt lúc bắt đầu chống để bàn tay đứng yên trên đất), tay phải vẫn giữ súng
       if (hk > 0) {
         if (!F._phT) { const Sp = F.root.worldToLocal(F.chest.localToWorld(ll.sh.clone())); F._phT = V(Sp.x + 0.15, FOOT_Y + 0.2, Sp.z - 3.9); }
@@ -7262,7 +7352,7 @@ const _gp = V(0, 0, 0);
         aL.lerp(_mp.set(1, 0, 0).transformDirection(F.root.matrixWorld), hk).normalize();
         pL.lerp(_mp.set(0, -1, 0).transformDirection(F.root.matrixWorld), hk).normalize();
       } else F._phT = null;
-      gripSolve(F, ll, tL, { axis: aL, palm: pL, range: hk > 0.5 ? 0.3 : 1.0, elbow: G.elbowCarryL.clone().lerp(G.elbowHipL, kHe).lerp(G.elbowKneelL, kKe).lerp(G.elbowL, kF), hintK: 12 + (0.8 - 12) * kF, ease: true, key: 'atr', stay: o.gAim > 0 && o.gAim < 1, frozen });
+      gripSolve(F, ll, tL, { axis: aL, palm: pL, range: hk > 0.5 ? 0.3 : 1.0, elbow: carrySupportL ? G.elbowCarryL : G.elbowCarryL.clone().lerp(G.elbowHipL, kHe).lerp(G.elbowKneelL, kKe).lerp(G.elbowL, kF), hintK: carrySupportL ? 4 : 12 + (0.8 - 12) * kF, ease: true, key: carrySupportL ? 'atrCarrySupport' : 'atr', stay: false, frozen });
       armGuard(F, ll, tL, aL, pL);
     }   // nội suy theo kF, lòng bàn tay trái chuyển dần (palmCarryL ngửa -> palmL): đổi thẳng ở 0,5 thì khuỷu giật 30-38° trong 1 khung
   }
@@ -7512,9 +7602,9 @@ const _gp = V(0, 0, 0);
 
   // SƠ CỨU. F.aidT: giây trong một lượt (null = không; engine tiến thời gian và quyết khi nào dừng), F.aidSite: chỗ đang băng ('legL' 'legR' 'armL' 'armR').
   // Quỳ, đặt súng xuống đất, rút ống tiêm ở túi ngực chích vào đùi, rút cuộn băng quấn quanh vết thương, cầm súng lên. Băng ở lại. Chỉ là động tác: máu không hồi
-  const AID_SEQ = { gun: 0.85, free: 1.2, grab: 1.7, over: 2.3, jab: 2.45, out: 3.1, pack: 3.7, wrap: 5.9, tie: 6.2, back: 6.7, end: 7.5 };
+  const AID_SEQ = { gun: 0.85, free: 1.2, grab: 1.7, over: 2.3, jab: 2.45, out: 3.1, pack: 3.7, wrap: 5.8, tie: 6.1, reach: 6.6, lift: 7.3, back: 6.6, end: 7.9 };
   // mốc tiếng (giây, tên trong playGL)
-  const AID_SFX = [[0.55, 'cloth'], [1.45, 'aidRip'], [2.45, 'aidJab'], [3.45, 'aidPack'], [3.95, 'aidWrap'], [4.75, 'aidWrap'], [5.5, 'aidWrap'], [5.95, 'aidTie'], [7.0, 'cloth']];
+  const AID_SFX = [[0.55, 'cloth'], [1.45, 'aidRip'], [2.45, 'aidJab'], [3.45, 'aidPack'], [3.95, 'aidWrap'], [4.75, 'aidWrap'], [5.5, 'aidWrap'], [5.95, 'aidTie'], [6.6, 'cloth'], [7.3, 'cloth']];
   // mặt cắt thật đo trên lưới: giữa đùi elip ±0,74 / ±0,92 (phía trên pha xương hông nên lệch tâm); bắp tay ±0,48 / ±0,44 quanh trục xương upS
   const AID_SPOT = { leg: { y: -1.3, sx: 0.97, sz: 1.2, r0: 0.83, r1: 0.81, h: 0.5, turns: 3, amp: 0.022 }, arm: { y: 1.0, sx: 1, sz: 0.94, r0: 0.5, r1: 0.49, h: 0.42, turns: 2.5, amp: 0.016 } };
   const _bnA = V(0, 0, 0), _bnB = V(0, 0, 0);
@@ -7572,7 +7662,7 @@ const _gp = V(0, 0, 0);
   }
   // vết máu thấm vải ở đúng chỗ bị thương
   function markWound(F, site) { const m = F.woundMarks && F.woundMarks[site]; if (m) m.visible = true; }
-  // thân trên: rời thế ngắm, cúi nhìn vết thương; tư thế quỳ do animateMotion chọn
+  // thân trên: rời thế ngắm, cúi nhìn vết thương hoặc cúi nhặt súng; tư thế quỳ do animateMotion chọn
   function aidPose(F, o, dt) {
     const on = F.aidT != null, k0 = F._aidK || 0;
     let k = F._snap ? (on ? 1 : 0) : k0 + ((on ? 1 : 0) - k0) * (1 - Math.exp(-dt * (on ? 5 : 9)));   // hàm mũ: lính xa cập nhật thưa cũng không nhảy
@@ -7581,10 +7671,29 @@ const _gp = V(0, 0, 0);
     if (!k) return;
     const K = 1 - k, site = F.aidSite || 'legR', sx = aidSide(site), leg = site[0] === 'l';
     o.gAim *= K; o.gLow *= K; o.gPort *= K; o.gReady = o.gReady * K + k; o.elb *= K; o.gPitch *= K; o.gYaw *= K; o.gRoll *= K;
-    o.tRx -= (leg ? 0.36 : 0.16) * k; o.chRx -= 0.12 * k; o.hRx -= (leg ? 0.36 : 0.26) * k; o.tRy -= sx * (leg ? 0.2 : 0.1) * k; o.hRy -= sx * (leg ? 0.3 : 0.62) * k;
+
+    const S = AID_SEQ, t = on ? (F.aidT || 0) : (F._aidTL || 0);
+    // Khi đang băng bó vết thương (trước S.tie): cúi nhìn vết thương
+    const woundK = (1 - kamiSeg(t, S.tie - 0.2, S.tie + 0.3)) * k;
+    o.tRx -= (leg ? 0.36 : 0.16) * woundK;
+    o.chRx -= 0.12 * woundK;
+    o.hRx -= (leg ? 0.36 : 0.26) * woundK;
+    o.tRy -= sx * (leg ? 0.2 : 0.1) * woundK;
+    o.hRy -= sx * (leg ? 0.3 : 0.62) * woundK;
+
+    // Khi nhặt súng (từ S.tie đến S.lift): người lính xoay người và cúi nhìn xuống khẩu súng nằm bên phải dưới đất
+    const pickK = kamiSeg(t, S.tie, S.reach) * (1 - kamiSeg(t, S.reach + 0.1, S.lift + 0.3)) * k;
+    if (pickK > 0) {
+      o.tRx -= 0.28 * pickK;    // cúi người về phía trước
+      o.hRx -= 0.36 * pickK;    // gục đầu nhìn súng dưới đất
+      o.tRy += 0.26 * pickK;    // xoay thân sang bên phải (nơi súng nằm)
+      o.hRy += 0.40 * pickK;    // quay mặt nhìn đúng khẩu súng dưới đất
+    }
+
     const style = aidProps(F).style - 0.5;
     o.tRz += style * 0.1 * k; o.hRz -= style * 0.06 * k;
   }
+
   // tay + súng: gọi sau hàm cầm súng của vũ khí, nên tay đang ở đúng chỗ nắm súng; dời súng thì tay đi theo. Đích là TÂM NẮM của bàn tay (ngón cong quanh trục z bàn tay)
   const _aGC = V(HAND_GC[0], HAND_GC[1], 0);
   function aidHands(F) {
@@ -7602,7 +7711,15 @@ const _gp = V(0, 0, 0);
     F.root.updateMatrixWorld(true);
     const handP = A => A.hand.localToWorld(_aGC.clone()), handA = A => V(0, 0, A.s).transformDirection(A.hand.matrixWorld);
     const hD = handP(doer), hO = handP(other), aD = handA(doer), aO = handA(other);
-    const gunE = kamiSeg(t, 0.15, S.gun) * (1 - kamiSeg(t, S.back, S.end - 0.1)) * k, wK = kamiSeg(t, S.gun, S.free) * (1 - kamiSeg(t, S.tie, S.back)) * k;
+
+    // gunE: 1 là súng nằm dưới đất, 0 là súng ở trên ngực.
+    // Đặt súng xuống đất: từ 0.15 đến S.gun (0.85).
+    // Nhấc súng lên khỏi đất: CHỈ BẮT ĐẦU từ S.reach (6.6s) đến S.lift (7.3s), sau khi tay đã nắm chắc súng dưới đất!
+    const gunPut = kamiSeg(t, 0.15, S.gun);
+    const gunLift = kamiSeg(t, S.reach, S.lift);
+    const gunE = gunPut * (1 - gunLift) * k;
+    const wK = kamiSeg(t, S.gun, S.free) * (1 - kamiSeg(t, S.tie, S.reach)) * k;
+
     if (hasGun && gunE > 0) {
       const q0 = R.getWorldQuaternion(new THREE.Quaternion()).invert();
       R.worldToLocal(hD); R.worldToLocal(hO); aD.applyQuaternion(q0); aO.applyQuaternion(q0);
@@ -7610,11 +7727,21 @@ const _gp = V(0, 0, 0);
       const yaw = F.root.rotation.y, side = V(Math.cos(yaw), 0, -Math.sin(yaw)), fwd = V(-Math.sin(yaw), 0, -Math.cos(yaw));
       const p = F.root.localToWorld(V(2.5, FOOT_Y, -2.4));
       p.y += 0.32 * F.root.scale.y;
-      const X = V(0, 1, 0), Z = side.clone().multiplyScalar(-0.45).addScaledVector(fwd, -0.9).normalize(), Y = V().crossVectors(Z, X);
+
+      // Khi nhấc súng lên: đầu nòng súng ngóc lên trước tự nhiên theo cánh tay
+      const pitchLift = Math.sin(gunLift * Math.PI) * 0.22;
+      const X = V(0, 1, 0), Z = side.clone().multiplyScalar(-0.45).addScaledVector(fwd, -0.9 + pitchLift).normalize(), Y = V().crossVectors(Z, X);
       const qW = new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(X, Y, Z));
       F.torso.getWorldQuaternion(_kq).invert();
       R.quaternion.slerp(_kq.multiply(qW), gunE);
-      R.position.lerp(F.torso.worldToLocal(p), gunE);
+
+      // Độ cong nhấc súng lên theo hình cung tự nhiên của cánh tay
+      const liftPos = F.torso.worldToLocal(p);
+      if (gunLift > 0 && gunLift < 1) {
+        liftPos.y += Math.sin(gunLift * Math.PI) * 0.35;
+      }
+      R.position.lerp(liftPos, gunE);
+
       F.root.updateMatrixWorld(true);
       R.localToWorld(hD); R.localToWorld(hO);
       const q1 = R.getWorldQuaternion(new THREE.Quaternion());
@@ -7641,6 +7768,7 @@ const _gp = V(0, 0, 0);
     const toInj = kamiSeg(t, S.grab, S.over) * (1 - kamiSeg(t, S.out, S.pack - 0.15));
     const tD = pD.clone().lerp(away, kamiSeg(t, S.grab, S.over)).lerp(press, kamiSeg(t, S.over, S.jab)).lerp(away, kamiSeg(t, S.out - 0.25, S.out)).lerp(pD, kamiSeg(t, S.out, S.pack - 0.15)).lerp(onSite(a1 + (isLeg ? 1.5 : 1.7) * Math.sin(w), rW), wrapK).lerp(tie, tieK);
     const axD = U.clone().lerp(toLeg, toInj).lerp(siteAx, Math.max(wrapK, tieK)).normalize();
+
     // tay kia: chân bị thương thì giữ đùi, phụ quấn; tay bị thương thì đặt yên trên đùi cùng bên
     let tO, axO;
     if (isLeg) {
@@ -7651,9 +7779,18 @@ const _gp = V(0, 0, 0);
       tO = rest.localToWorld(V(sx * 0.15, -1.9, -1.15)); axO = V(1, 0, 0).transformDirection(rest.matrixWorld).multiplyScalar(sx);
     }
     const pole = s => F.chest.localToWorld(V(s * 2.4, -0.5, 3.0)).applyMatrix4(_inv(F.root));
+
+    // Trong giai đoạn nhặt súng: tay trái (other) đợi súng nhấc lên ngang người mới đón lấy, không bị cắm xuống đất
+    if (t >= S.tie && t < S.lift) {
+      const leftWaitK = 1 - kamiSeg(t, S.reach, S.lift);
+      const restLeft = F.chest.localToWorld(V(other.s * 1.2, -0.8, -0.6));
+      hO.lerp(restLeft, leftWaitK);
+    }
+
     solveArm(F, doer, hD.lerp(tD, wK), pole(doer.s), aD.lerp(axD, wK).normalize());
     solveArm(F, other, hO.lerp(tO, wK), pole(other.s), aO.lerp(axO, wK).normalize());
   }
+
   // làm nóng shader máu + đồ sơ cứu (game.prewarmEffects, huỷ vật liệu sau khi xong): lần bị thương đầu tiên giữa trận khỏi khựng
   function warmMaterials() {
     const std = o => new THREE.MeshStandardMaterial(o);
@@ -7672,7 +7809,7 @@ const _gp = V(0, 0, 0);
 
   // ---------- BẨN / ƯỚT RIÊNG TỪNG LÍNH ----------
   // Đơn vị thời gian: giây. Vào trận đồ đã cũ, bẩn vừa (GRIME_ISSUE); càng đánh càng bẩn. Ướt khô dần trong ~90 giây, vệt bùn ở mức nước cao nhất ở lại.
-  const GRIME_ISSUE = { age: 1, low: 0.78, knee: 0.72, front: 0.5, side: 0.62, seat: 0.55 };   // lính vào trận đã qua nhiều ngày ngoài chiến trường: đừng trông như đồ mới phát
+  const GRIME_ISSUE = { age: 0.85, low: 0.46, knee: 0.45, front: 0.35, side: 0.42, seat: 0.38 };   // lính vào trận đã qua chiến trường nhưng giữ độ tương phản rõ giữa giày, cổ giày và ống quần
   const GRIME_NEW = { age: 0, low: 0, knee: 0, front: 0, side: 0, seat: 0 };
   const WET_DRY_S = 90;
   function syncGrime(G) {
@@ -7870,7 +8007,7 @@ const _gp = V(0, 0, 0);
     if (!F || !F.legs) return;
     const Wd0 = WEAPONS[F.weapon] || {}, Wfire = Wd0.fire;
     if (Wd0.keepStance) type = Wd0.keepStance(F, type);
-    if (Wfire && (type === 'aim' || type === 'crouch')) type = Wd0.stance;   // cối chỉ bắn quỳ, súng bắn tỉa chống tăng chỉ bắn nằm
+    if (Wfire && type === 'aim') type = Wd0.stance;   // cối chỉ bắn quỳ, súng bắn tỉa chống tăng chỉ bắn nằm khi ngắm
     let proneWant = 0;
     if (Wd0.prone && (type === 'aim' || F.prone)) { proneWant = 1; type = 'idle'; }   // súng bắn tỉa: nằm theo trình tự (PRONE_KEYS), chân và thân xuất phát từ dáng đang đứng, không qua thế ngắm đứng
     if (F.aidT != null) { type = 'crouch'; proneWant = 0; }   // sơ cứu: quỳ, kể cả súng chỉ bắn nằm
@@ -8082,6 +8219,22 @@ const _gp = V(0, 0, 0);
     // quỳ thay băng súng bắn tỉa: cúi người tới súng dựng trước gối phải, vặn vai trái tới để tay trái với băng khuỷu gập (thẳng lưng thì băng ngoài tầm tay, tay duỗi đơ)
     const kAK = F._atrKneelE || 0;
     if (kAK > 0) { const B = ATR.kneelBody; out.tRx += B[0] * kAK; out.chRx += B[1] * kAK; out.tRy += B[2] * kAK; out.chRy += B[3] * kAK; }
+    // Cá tính dáng riêng từng người lính (khi không bật cờ _snap kiểm thử tĩnh): tránh cả tiểu đội dừng lại có dáng hệt như bản sao
+    if (F._trait && !F._snap) {
+      const tr = F._trait, pkCur = Wd0.prone ? c01(out.gAim) : gpS;
+      const tk = (1 - c01(out.gAim)) * (1 - pkCur) * (1 - (F._aidK || 0)) * (1 - rpK) * (1 - (F.climb ? F.climb.k || 0 : 0)) * (1 - Math.min(1, gw));
+      if (tk > 1e-3) {
+        out.tRx += tr.lean * tk;
+        out.tRy += tr.twist * tk;
+        out.tRz += tr.roll * tk;
+        out.hRz += tr.headTilt * tk;
+        out.hRx += tr.headPitch * tk;
+        out.shLy += tr.shAsym * tk;
+        out.shRy -= tr.shAsym * tk;
+        out.lHz = Math.max(0, out.lHz + tr.kneeSpread * tk);
+        out.rHz = Math.max(0, out.rHz - tr.kneeSpread * 0.6 * tk);
+      }
+    }
     applyPose(F, out);
     plantFeet(F, out.lift);
     groundFeet(F);
@@ -8163,6 +8316,14 @@ const _gp = V(0, 0, 0);
     }
     if (F.rifle && Wd0.grip && Wd0.grip.sight && gA > 0) headOnSight(F, Wd0.grip.sight, gA);
     F._headLocked = out.gAim > 0.5;
+    if (F._contactShadow) {
+      const cs = F._contactShadow, cr = c01(W.crouch || 0);
+      cs.visible = !F.isDead && !F.seated && !(F.climb && F.climb.k > 0.1);
+      if (cs.visible) {
+        cs.position.set(0, FOOT_Y + 0.028, 0.12 + 0.55 * cr + 0.65 * pkA);
+        cs.scale.set(1 + 0.12 * cr + 0.28 * pkA, 1, 1 + 0.36 * cr + 0.85 * pkA);
+      }
+    }
   }
 
   /**
@@ -8213,7 +8374,7 @@ const _gp = V(0, 0, 0);
     const v = V(0, 0, 0);
     let minY = Infinity;
     F.root.traverse(o => {
-      if (!o.isMesh || !o.visible || !o.geometry.attributes.position) return;
+      if (!o.isMesh || !o.visible || o.userData.noMinY || !o.geometry.attributes.position) return;
       const P = o.geometry.attributes.position;
       for (let i = 0; i < P.count; i += 3) {
         if (o.isSkinnedMesh) o.boneTransform(i, v); else v.fromBufferAttribute(P, i);
@@ -8224,16 +8385,36 @@ const _gp = V(0, 0, 0);
     return minY;
   }
 
+  let DEAD_SHADOW_T = null;
+  function deadShadowTex() {
+    if (DEAD_SHADOW_T) return DEAD_SHADOW_T;
+    const w = 128, h = 256, c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    g.save();
+    g.scale(1, h / w);
+    const grE = g.createRadialGradient(w / 2, w / 2, w * 0.06, w / 2, w / 2, w * 0.46);
+    grE.addColorStop(0, 'rgba(255,255,255,0.95)');
+    grE.addColorStop(0.35, 'rgba(255,255,255,0.68)');
+    grE.addColorStop(0.72, 'rgba(255,255,255,0.25)');
+    grE.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grE;
+    g.fillRect(0, 0, w, w);
+    g.restore();
+    return (DEAD_SHADOW_T = new THREE.CanvasTexture(c));
+  }
+
   function setCasualty(F, isDead) {
     if (!F || !F.root) return;
     if (F.isDead === !!isDead && (isDead ? F._deadPosed : true)) return;
     F.isDead = !!isDead;
     for (const s of F.soak || []) s.visible = !!isDead;
     if (F._bloodPool) F._bloodPool.visible = !!isDead;
+    if (F._contactShadow) F._contactShadow.visible = !isDead;
 
     if (!isDead) {
       // Phục hồi tư thế đứng thẳng tại chỗ cũ, nhặt lại súng; lượt animateMotion kế tiếp đặt lại các khớp
       F._deadPosed = false;
+      if (F._deadShadow) F._deadShadow.visible = false;
       const live = F._liveRoot;
       if (live) { F.root.position.copy(live.p); F.root.rotation.set(0, live.y, 0, 'YXZ'); F._liveRoot = null; }
       F.hips.rotation.set(0, 0, 0);
@@ -8247,32 +8428,70 @@ const _gp = V(0, 0, 0);
       return;
     }
 
-    // TƯ THẾ HY SINH: ngã sấp, nằm thật trên đất; tựa lên ngực (túi đạn) và đùi, mặt quay nghiêng
+    // TƯ THẾ HY SINH: nằm phẳng hoàn toàn song song mặt đất, thả lỏng toàn bộ cơ bắp, chìm nhẹ vào thảm cỏ
     F._deadPosed = true;
     F.root.updateMatrixWorld(true);
     const R = F.root, yaw = R.rotation.y;
     F._liveRoot = { p: R.position.clone(), y: yaw };
     const groundW = R.localToWorld(V(0, FOOT_Y, 0)).y, parentK = R.parent ? R.parent.getWorldScale(V(1, 1, 1)).y : 1;
-    R.rotation.set(-Math.PI / 2 + 0.2, yaw, -0.07, 'YXZ');
-    F.chest.rotation.set(0, 0, 0); F.chest.position.set(0, 0, 0);
-    F.hips.rotation.set(0, 0.08, 0.03, 'YXZ');
-    F.torso.rotation.set(-0.14, -0.1, 0.03, 'YXZ');
-    // đầu gục xuống, áp má xuống đất
-    const hb = F._headBase || (F._headBase = F.head.position.clone());
-    F.head.position.set(hb.x, hb.y - 0.3, hb.z - 0.52);
-    F.head.rotation.set(-0.32, 1.02, 0.12, 'YXZ');
 
-    // chân: đặt theo hướng đùi trong hệ hông + xoay quanh trục đùi (đặt góc Euler từng trục không kiểm soát được gối chạm đất).
-    // Đùi xoay ngoài để bàn chân ngả nghiêng trên đất (mũi giày không thể cắm xuống); gối gập góc âm theo quy ước
+    // Chọn kiểu ngã ngẫu nhiên cố định theo vị trí của lính
+    const poseSeed = Math.abs(Math.sin(R.position.x * 12.9898 + R.position.z * 78.233)) || Math.random();
+    const poseVariant = Math.floor(poseSeed * 4); // 0, 1, 2, 3
+    const jx = (poseSeed * 10 % 1 - 0.5) * 0.04;
+    const jz = (poseSeed * 100 % 1 - 0.5) * 0.04;
+
     const [Ll, Lr] = F.legs, DOWN = V(0, -1, 0);
+    // twist xoay đùi ra ngoài để má chân/mu bàn chân tì bẹp xuống cỏ; ankle duỗi xuôi theo cẳng chân (không chúc mũi giày xuống đất làm kênh cả người lên)
     const layLeg = (L, dx, dy, dz, twist, knee, ankle) => {
       L.leg.quaternion.setFromUnitVectors(DOWN, V(dx, dy, dz).normalize()).multiply(new THREE.Quaternion().setFromAxisAngle(UP, twist));
-      L.knee.rotation.set(-knee, 0, 0); L.ankle.rotation.set(-ankle, 0, 0);
+      L.knee.rotation.set(-knee, 0, 0); L.ankle.rotation.set(ankle, 0, L.sx * 0.25);
     };
-    layLeg(Ll, -0.58, -0.8, 0.0, 1.3, 0.95, 0.55);   // chân trái co, gối đưa ra ngoài
-    layLeg(Lr, 0.22, -0.96, 0.06, -1.15, 0.12, 0.9);    // chân phải duỗi xuôi
+    const hb = F._headBase || (F._headBase = F.head.position.clone());
 
-    // hạ thân xuống đất; tay gập tạm về phía lưng, súng thu nhỏ tại chỗ: đáy lúc này chỉ tính ngực / đùi, không để khuỷu tay chống cả người lên
+    if (poseVariant === 0) {
+      // 0. Sấp nghiêng má phải: thân nằm phẳng áp cỏ, chân trái co nhẹ ngang sườn, chân phải duỗi xuôi bẹp cỏ
+      R.rotation.set(-Math.PI / 2 - 0.02 + jx, yaw, -0.06 + jz, 'YXZ');
+      F.chest.rotation.set(0, 0, 0); F.chest.position.set(0, 0, 0);
+      F.hips.rotation.set(0, 0.08, 0.03, 'YXZ');
+      F.torso.rotation.set(-0.12, -0.08, 0.03, 'YXZ');
+      F.head.position.set(hb.x, hb.y - 0.28, hb.z - 0.52);
+      F.head.rotation.set(-0.25, 0.95 + jx, 0.08, 'YXZ');
+      layLeg(Ll, -0.56, -0.82, 0.0, 1.45, 0.72, 0.82);  // co sang ngang, cẳng chân bẹp trên đất
+      layLeg(Lr, 0.18, -0.98, 0.05, -1.25, 0.02, 0.88);  // duỗi thẳng sát đất, cổ chân duỗi xuôi bẹp cỏ
+    } else if (poseVariant === 1) {
+      // 1. Sấp nghiêng má trái: thân nằm phẳng áp cỏ, chân phải co nhẹ ngang sườn, chân trái duỗi xuôi bẹp cỏ
+      R.rotation.set(-Math.PI / 2 - 0.02 + jx, yaw, 0.06 + jz, 'YXZ');
+      F.chest.rotation.set(0, 0, 0); F.chest.position.set(0, 0, 0);
+      F.hips.rotation.set(0, -0.08, -0.03, 'YXZ');
+      F.torso.rotation.set(-0.12, 0.08, -0.03, 'YXZ');
+      F.head.position.set(hb.x, hb.y - 0.28, hb.z - 0.52);
+      F.head.rotation.set(-0.25, -0.95 + jx, -0.08, 'YXZ');
+      layLeg(Ll, -0.18, -0.98, 0.05, 1.25, 0.02, 0.88);   // duỗi thẳng sát đất
+      layLeg(Lr, 0.56, -0.82, 0.0, -1.45, 0.72, 0.82);  // co sang ngang, cẳng chân bẹp trên đất
+    } else if (poseVariant === 2) {
+      // 2. Ngã sấp gục người: hai chân duỗi chữ V bẹp trên mặt cỏ
+      R.rotation.set(-Math.PI / 2 - 0.03 + jx, yaw, 0.0 + jz, 'YXZ');
+      F.chest.rotation.set(0, 0, 0); F.chest.position.set(0, 0, 0);
+      F.hips.rotation.set(0, 0.02, 0, 'YXZ');
+      F.torso.rotation.set(-0.1, -0.02, 0, 'YXZ');
+      F.head.position.set(hb.x, hb.y - 0.22, hb.z - 0.45);
+      F.head.rotation.set(-0.22, 0.6 + jx, 0.04, 'YXZ');
+      layLeg(Ll, -0.26, -0.96, 0.02, 0.85, 0.02, 0.92);   // duỗi thẳng hoàn toàn sát cỏ
+      layLeg(Lr, 0.26, -0.96, 0.02, -0.85, 0.02, 0.92);    // duỗi thẳng hoàn toàn sát cỏ
+    } else {
+      // 3. Ngã sấp buông xuôi: chân duỗi tự nhiên, mu bàn chân và má chân áp sát cỏ
+      R.rotation.set(-Math.PI / 2 - 0.02 + jx, yaw, -0.04 + jz, 'YXZ');
+      F.chest.rotation.set(0, 0, 0); F.chest.position.set(0, 0, 0);
+      F.hips.rotation.set(0, -0.03, 0.02, 'YXZ');
+      F.torso.rotation.set(-0.11, 0.03, -0.02, 'YXZ');
+      F.head.position.set(hb.x, hb.y - 0.24, hb.z - 0.48);
+      F.head.rotation.set(-0.24, -0.5 + jx, -0.06, 'YXZ');
+      layLeg(Ll, -0.14, -0.99, 0.02, 0.65, 0.02, 0.88);
+      layLeg(Lr, 0.32, -0.95, 0.02, -0.85, 0.03, 0.9);
+    }
+
+    // Hạ thân phẳng xuống mặt đất, chìm nhẹ vào lớp cỏ (~1 cm) để không lơ lửng trên ngọn cỏ
     F.root.updateMatrixWorld(true);
     const toRoot = (x, y, z) => F.root.worldToLocal(F.chest.localToWorld(V(x, y, z)));
     const [al, ar] = F.arms;
@@ -8283,32 +8502,70 @@ const _gp = V(0, 0, 0);
     }
     const G = F.rifle;
     if (G) { G.position.set(0, 1, 0); G.scale.setScalar(1e-4); }
-    R.position.y += (groundW - figureMinY(F)) / parentK;
+    R.position.y += (groundW - figureMinY(F) - 0.08) / parentK;
     F.root.updateMatrixWorld(true);
 
-    // tay giải lại bằng IK để khớp vẫn liền (đặt góc trực tiếp làm cánh tay rời khỏi vai): tay phải xuôi theo thân, tay trái co lên cạnh đầu; bàn tay đặt trên đất
-    const onGround = (x, y, z) => { const p = F.chest.localToWorld(V(x, y, z)); p.y = groundW + 0.42; return p; };
-    solveArm(F, ar, onGround(2.15, -1.05, -1), toRoot(4.6, 1.1, -1.5));
-    solveArm(F, al, onGround(-1.9, 4.0, -1), toRoot(-5.2, 2.6, -1.5));
+    // Giải tay bằng IK áp sát phẳng xuống đất tùy theo tư thế (tay buông thả lỏng, không chống khuỷu)
+    const onGround = (x, y, z) => { const p = F.chest.localToWorld(V(x, y, z)); p.y = groundW + 0.12; return p; };
+    if (poseVariant === 0) {
+      solveArm(F, ar, onGround(2.15, -1.05, -1), toRoot(4.6, 1.1, -1.5));
+      solveArm(F, al, onGround(-1.9, 4.0, -1), toRoot(-5.2, 2.6, -1.5));
+    } else if (poseVariant === 1) {
+      solveArm(F, al, onGround(-2.15, -1.05, -1), toRoot(-4.6, 1.1, -1.5));
+      solveArm(F, ar, onGround(1.9, 4.0, -1), toRoot(5.2, 2.6, -1.5));
+    } else if (poseVariant === 2) {
+      // Hai tay buông xuôi sát thân trên đất
+      solveArm(F, ar, onGround(2.3, -0.6, -1.2), toRoot(4.4, 0.8, -1.5));
+      solveArm(F, al, onGround(-2.3, -0.6, -1.2), toRoot(-4.4, 0.8, -1.5));
+    } else {
+      // Một tay vươn về phía trước, một tay xuôi
+      solveArm(F, al, onGround(-2.0, 3.2, -1.2), toRoot(-4.8, 2.2, -1.5));
+      solveArm(F, ar, onGround(2.2, -1.2, -1.2), toRoot(4.5, 0.7, -1.5));
+    }
     F.root.updateMatrixWorld(true);
-    const dip = groundW - figureMinY(F);
-    if (dip > 0) { R.position.y += dip / parentK; F.root.updateMatrixWorld(true); }
+    const dip = groundW - figureMinY(F) - 0.08;
+    R.position.y += dip / parentK;
+    F.root.updateMatrixWorld(true);
 
-    // súng tuột tay, nằm nghiêng trên đất cạnh tay phải
+    // Súng văng ra đất cạnh người (ngẫu nhiên khoảng cách và góc xoay, áp phẳng mặt đất)
     if (G) {
       G.scale.setScalar(1);
-      const side = V(Math.cos(yaw), 0, -Math.sin(yaw)), fwd = V(Math.sin(yaw), 0, Math.cos(yaw));   // bên phải xác / hướng về chân
-      const dir = fwd.clone().multiplyScalar(0.55).addScaledVector(side, -0.83).normalize();       // trục súng chéo ra ngoài thân
-      const worldP = F.root.localToWorld(toRoot(0, 0, 0)).addScaledVector(side, 3.5).addScaledVector(fwd, -0.4);
-      worldP.y = groundW + 0.32;
+      const isRight = (poseVariant === 0 || poseVariant === 2);
+      const gunSideAngle = (isRight ? 1 : -1) * (0.75 + (poseSeed % 0.35));
+      const side = V(Math.cos(yaw), 0, -Math.sin(yaw)), fwd = V(Math.sin(yaw), 0, Math.cos(yaw));
+      const dir = fwd.clone().multiplyScalar(0.55).addScaledVector(side, gunSideAngle).normalize();
+      const gunDist = 2.6 + (poseSeed * 10 % 1.4);
+      const worldP = F.root.localToWorld(toRoot(0, 0, 0)).addScaledVector(side, gunDist * (isRight ? 1 : -1)).addScaledVector(fwd, -0.3);
+      worldP.y = groundW + 0.12;
       const X = V(0, 1, 0), Z = dir, Y = V().crossVectors(Z, X);
       const qW = new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(X, Y, Z));
       const qT = new THREE.Quaternion(); F.torso.getWorldQuaternion(qT);
       G.quaternion.copy(qT.invert().multiply(qW));
       G.position.copy(F.torso.worldToLocal(worldP));
-      const under = groundW - figureMinY(F);
-      if (under > 0) { worldP.y += under; G.position.copy(F.torso.worldToLocal(worldP)); }
       F.root.updateMatrixWorld(true);
+    }
+
+    // BÓNG TIẾP XÚC DƯỚI THÂN XÁC (tạo độ chìm áp sát mặt cỏ, xoá cảm giác bay trôi nổi)
+    if (R.parent) {
+      if (!F._deadShadow) {
+        const sm = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 15.0), new THREE.MeshBasicMaterial({
+          color: 0x050704, alphaMap: deadShadowTex(), transparent: true, opacity: 0.62,
+          depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1
+        }));
+        sm.rotation.set(-Math.PI / 2, 0, 0, 'YXZ');
+        sm.receiveShadow = false;
+        sm.raycast = () => {};
+        sm.userData.noMinY = true;
+        sm.userData.isFxDecal = true;
+        R.parent.add(sm);
+        F._deadShadow = sm;
+      }
+      const fwd = V(Math.sin(yaw), 0, Math.cos(yaw));
+      const sPos = R.position.clone().addScaledVector(fwd, -0.5);
+      sPos.y = groundW + 0.015;
+      F._deadShadow.position.copy(R.parent.worldToLocal(sPos));
+      F._deadShadow.rotation.y = yaw;
+      F._deadShadow.visible = true;
     }
 
     // vũng máu dưới ngực xác
@@ -8323,10 +8580,11 @@ const _gp = V(0, 0, 0);
         R.parent.add(m);
         F._bloodPool = m;
       }
-      const C = F.chest.localToWorld(V(0.9, 1.0, -1.0));
-      C.y = groundW + 0.03;
+      const C = V();
+      F.chest.getWorldPosition(C);
+      C.y = groundW + 0.025;
       F._bloodPool.position.copy(R.parent.worldToLocal(C));
-      F._bloodPool.rotation.y = yaw + 0.6;
+      F._bloodPool.rotation.y = yaw + (poseSeed ? poseSeed * 3 : 0.6);
       F._bloodPool.visible = true;
     }
   }
@@ -8447,7 +8705,7 @@ const _gp = V(0, 0, 0);
     }
   }
   function animateMotionWatched(F, type, time, speed) {
-    _jwOn = typeof window !== 'undefined' && !!(window.devLog || window.__JOINT_WATCH) && !!F; _jwF = F;
+    _jwOn = typeof window !== 'undefined' && !!window.__JOINT_WATCH && !!F; _jwF = F;
     animateMotion(F, type, time, speed);
     if (_jwOn && F.legs) jointWatch(F, type);
     _jwOn = false; _jwF = null;

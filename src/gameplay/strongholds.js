@@ -2689,7 +2689,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     // tia (mô hình xe thật nhiều chi tiết) -> xếp thành hàng việc, mỗi khung làm vài việc trong ngân sách thời gian
     wreckMarkJobs(fx, W) {
       const { u, rnd, P } = W, R = (a, b) => a + rnd() * (b - a);
-      const keep = { unit: u, keep: true };
+      const keep = { unit: u, keep: true, noFit: true };
       const cool = rec => { if (rec) { rec.glow = 0; if (rec.mat && rec.mat.emissiveIntensity !== undefined) rec.mat.emissiveIntensity = 0; W.marks.push(rec); } return rec; };
       const add = (h, kind, size) => (h ? cool(fx.addSurfaceMark(h.point, h.normal, h.object, kind, size, keep)) : null);
       const jobs = [];
@@ -2764,16 +2764,17 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     // những vết đã ẩn
     wreckMarkLOD(cam) {
       const FAR = 520, H = 60, SH_FAR = 680;
-      // kính ngắm phóng to N lần: xác xa to gấp N trên màn hình
-      const mag = (window.game && window.game._lodMag) || 1;
+      // kính ngắm phóng to: giới hạn trần để tránh xác xe ở xa đồng loạt bung toàn bộ chi tiết mesh thật
+      const inSight = !!(window.game && window.game._sight);
+      const mag = Math.min(1.8, (window.game && window.game._lodMag) || 1);
       let rebaked = false;
       for (const K of this.items) for (const W of K.wrecks || []) {
         if (!W.u || !W.u.group) continue;
         const d = Math.hypot(cam.position.x - W.sx, cam.position.y - W.sy, cam.position.z - W.sz);
         const de = d / mag;
-        // vừa bị bắn: giữ mô hình thật; đã nguội và ở xa thì nướng lại lưới đại diện (mỗi nhịp việc nặng 1 xác)
+        // vừa bị bắn: giữ mô hình thật; đã nguội và ở xa thì nướng lại lưới đại diện (không nướng lúc đang ngắm bắn)
         if (W.proxyStale) {
-          if (!rebaked && de > WRECK_PROXY_D && performance.now() - W.proxyStale > 1500 && !(this._wreckHitQ && this._wreckHitQ.length) && (typeof Props === 'undefined' || Props.heavyReady())) {
+          if (!rebaked && !inSight && de > WRECK_PROXY_D && performance.now() - W.proxyStale > 1500 && !(this._wreckHitQ && this._wreckHitQ.length) && (typeof Props === 'undefined' || Props.heavyReady())) {
             rebaked = true;
             this.rebakeWreckProxy(W);
             if (typeof Props !== 'undefined') Props.heavyDone();
@@ -2829,7 +2830,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           if (RB && RB.stats().queued > 0) { busy = true; break; }
           if (!W.jobs) W.jobs = this.wreckMarkJobs(fx, W);
           const t0 = performance.now();
-          while (W.jobs.length && performance.now() - t0 < 4) W.jobs.shift()();
+          while (W.jobs.length && performance.now() - t0 < 1.2) W.jobs.shift()();
           busy = true;
           break;
         }

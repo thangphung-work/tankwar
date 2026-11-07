@@ -258,7 +258,7 @@ class BattleTerrain3D {
     // Fast boot: mặt đất và các lớp chi tiết đều dựng bất đồng bộ theo từng nhịp nhỏ dưới nền
     // để không chặn luồng chính hay làm giật video / hoạt ảnh gõ chữ của Chỉ huy.
     this.built = true;
-    this.detailsReady = false;
+    this.detailsReady = false; if (typeof location !== 'undefined' && /[?&]lab=range(?:&|$)/.test(location.search)) this.lazyWrecks = true;
     this.buildMs = Math.round(performance.now() - t0);
     this.buildSteps = steps;
     this.buildTerrainDetailsAsync();
@@ -411,7 +411,7 @@ class BattleTerrain3D {
       }],
       ['building_instances', () => {
         if (!this.buildingSet) return;
-        if (!this.buildingSet.stepBuild(14)) return false;
+        if (!this.buildingSet.stepBuild(40)) return false;
         this.buildings = this.buildingSet.items.map(b => b.entry);
       }],
       ['props', () => { if (typeof Props !== 'undefined' && this.map.props) this.propSet = new Props.PropSet(this, this.map.props); }],
@@ -426,6 +426,7 @@ class BattleTerrain3D {
         this.renderPrecomputedMap();
         this.detailsReady = true;
         if (typeof Navigator !== 'undefined' && Navigator.invalidate) Navigator.invalidate(this);
+        if (typeof SoldierEngine !== 'undefined' && SoldierEngine.walkIndex) try { SoldierEngine.walkIndex(this); } catch (e) {}
         console.info(`[MAP] Chi tiết ${this.mapType} #${this.seed} đã dựng xong dưới nền`);
       }]
     ];
@@ -437,7 +438,7 @@ class BattleTerrain3D {
         setTimeout(next, 120);
         return;
       }
-      if (typeof requestAnimationFrame !== 'undefined') {
+      if (false && typeof requestAnimationFrame !== 'undefined') {
         requestAnimationFrame(() => {
           if (!alive()) return;
           setTimeout(next, 0);

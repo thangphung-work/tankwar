@@ -1082,11 +1082,11 @@
   //  cactusHole  đạn vào xương rồng: thịt xanh nhạt ướt, lỗ sẫm, nhựa chảy xuống
   // ===========================================================================
   const PIT_TEX = {};
-  function getPitTex(kind, variant = 0) {
+  function getPitTex(kind, variant = 0) { variant &= 1;
     const key = kind + variant;
     if (PIT_TEX[key]) return PIT_TEX[key];
     const big = /^(armorCrater|penetration|metalHole|heiSplash|heiHole)$/.test(kind);
-    const S = big ? 192 : 128, data = new Uint8Array(S * S * 4), nd = new Uint8Array(S * S * 4), H = new Float32Array(S * S);
+    const S = big ? 128 : 96, data = new Uint8Array(S * S * 4), nd = new Uint8Array(S * S * 4), H = new Float32Array(S * S);
     const sd = variant * 37 + kind.length * 11 + kind.charCodeAt(0);
     const AN = (th, R, s) => vnoise(Math.cos(th) * R + 50, Math.sin(th) * R + 50, s | 0);
     const N = (x, y, s) => vnoise(x, y, s | 0);
@@ -1277,7 +1277,7 @@
   const PIT_KINDS = { steelDent: 1, steelHole: 1, heiSplash: 1, heiHole: 1, concretePit: 1, concretePitHE: 1, woodHole: 1, cactusHole: 1 };
   const PIT_MAT = {};
   // Vật liệu dùng chung theo loại + biến thể (hàng trăm vết đạn không tạo hàng trăm vật liệu)
-  function getPitMaterial(kind, variant) {
+  function getPitMaterial(kind, variant) { variant &= 1;
     const key = kind + variant;
     if (PIT_MAT[key]) return PIT_MAT[key];
     const T = getPitTex(kind, variant);
@@ -2398,7 +2398,7 @@
   if (typeof window !== 'undefined') window.GlassCrack = { star: drawGlassStar, craze: drawGlassCraze };
   // vết trúng tại chỗ trên kính: 3 mẫu khác nhau (trước: 1 mẫu 128 px cho mọi phát -> lặp y hệt, nhòe khi phóng to)
   const GLASS_MARK = [];
-  function getGlassCrackTexture(v) {
+  function getGlassCrackTexture(v) { v &= 1;
     if (GLASS_MARK[v] || typeof document === 'undefined') return GLASS_MARK[v];
     const S = 256, cv = document.createElement('canvas');
     cv.width = cv.height = S;
@@ -2882,16 +2882,16 @@
         if (size <= 0) return null;
       }
       if (!this._markGeo) this._markGeo = new THREE.PlaneGeometry(1, 1);
-      let mat;
+      let mat; const vr = opts.variant !== undefined ? opts.variant : (Math.random() < 0.5 ? 0 : 1);
       if (PIT_KINDS[kind]) {
-        mat = getPitMaterial(kind, Math.floor(Math.random() * 3));
+        mat = getPitMaterial(kind, vr);
       } else if (kind === 'burnGlow') {
         mat = new THREE.MeshStandardMaterial({
           map: getMarkTexture('scorch'), emissive: 0xff4a0a, emissiveMap: getMarkTexture('penetrationGlow'), emissiveIntensity: 2.4,
           roughness: 0.8, metalness: 0.4, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8
         });
       } else if (kind === 'penetration' || kind === 'turretRing') {
-        const ring = kind === 'turretRing', PT = ring ? null : getPitTex('penetration', Math.floor(Math.random() * 3));
+        const ring = kind === 'turretRing', PT = ring ? null : getPitTex('penetration', vr);
         mat = new THREE.MeshStandardMaterial({
           map: ring ? getMarkTexture('turretRing') : PT.map, emissive: 0xff5a10,
           normalMap: ring ? null : PT.normal, normalScale: new THREE.Vector2(1.1, 1.1),
@@ -2901,11 +2901,11 @@
         });
       } else if (kind === 'glassCrack') {
         mat = new THREE.MeshStandardMaterial({
-          map: getGlassCrackTexture(Math.floor(Math.random() * 3)), roughness: 0.25, metalness: 0.1, transparent: true, depthWrite: false,
+          map: getGlassCrackTexture(vr), roughness: 0.25, metalness: 0.1, transparent: true, depthWrite: false,
           polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8
         });
       } else if (kind === 'armorCrater' || kind === 'metalHole' || kind === 'bulletDent') {
-        const PT = kind === 'bulletDent' ? null : getPitTex(kind, Math.floor(Math.random() * 3));
+        const PT = kind === 'bulletDent' ? null : getPitTex(kind, vr);
         mat = new THREE.MeshStandardMaterial({
           map: PT ? PT.map : getMarkTexture(kind), roughness: kind === 'bulletDent' ? 0.7 : 0.6, metalness: kind === 'bulletDent' ? 0.35 : 0.4, transparent: true, depthWrite: false,
           normalMap: PT ? PT.normal : getMarkNormal(kind), normalScale: new THREE.Vector2(kind === 'bulletDent' ? 1.2 : 1.1, kind === 'bulletDent' ? 1.2 : 1.1),
