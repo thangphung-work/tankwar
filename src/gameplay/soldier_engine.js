@@ -1116,10 +1116,10 @@ const SoldierEngine = (() => {
       // độ hãm cho động tác phanh (0..1): theo mức giảm tốc, nhân đà sẵn có (hãm từ chạy mạnh hơn từ đi bộ). Tính sau va chạm để đâm tường cũng tính;
       // cú đâm chỉ mất tốc độ trong 1 khung nên giữ tín hiệu thêm một lúc, kẻo động tác chưa kịp hiện đã hết
       const lost = v0 - this.speed, runV = GS().run * this.k, dec = dt > 0 ? lost / dt : 0;
-      if (lost > CFG.decel * dt * 1.5) { this._bkAmt = Math.min(1, (this._bkHold > 0 ? this._bkAmt : 0) + lost / runV); this._bkHold = 0.3 * this._bkAmt; }   // cộng dồn: cú đâm thường trải 2 khung
+      if (lost > CFG.decel * dt * 1.5) { this._bkAmt = Math.min(1, (this._bkHold > 0 ? this._bkAmt : 0) + lost / runV); this._bkHold = (isPlayer ? 0.1 : 0.25) * this._bkAmt; }   // cộng dồn: cú đâm thường trải 2 khung
       else this._bkHold = Math.max(0, (this._bkHold || 0) - dt);
       const F_ = this.figure, fwd = mvX * this.forwardX + mvZ * this.forwardZ;
-      F_.brake = Math.max(dec > 1 ? Math.min(1, dec / CFG.decel) * Math.min(1, v0 / runV) : 0, this._bkHold > 0 ? this._bkAmt : 0);
+      F_.brake = Math.max(dec > 1 ? Math.min(1, dec / (isPlayer ? 90 : CFG.decel)) * Math.min(1, v0 / runV) : 0, this._bkHold > 0 ? this._bkAmt : 0);
       F_.surge = this.speed > v0 + 1e-4 ? Math.min(1, (this.speed - v0) / Math.max(1e-4, dt) / CFG.accel) * Math.min(1, wantSpeed / runV) : 0;
       F_.bank = Math.max(-1, Math.min(1, this.speed * (this.turnSigned || 0) / 40));   // v.omega / 40 đv/s^2 ~ lực văng so với trọng lực
       // dữ liệu cho bước dừng: chỉ khi tiến về trước, không áp dụng lúc quỳ; moveV theo quãng đường thật (this.speed sát tường vẫn còn 0,5 dù đứng yên)

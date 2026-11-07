@@ -1776,14 +1776,14 @@ const SoldierModel = (() => {
   // Kết cấu như súng ổ quay thật: KHUNG CHỮ C ôm ổ đạn (thanh trên có ray, tấm đỡ nòng trước, thanh dưới, khối cò sau),
   // ổ đạn khía rãnh có miệng 6 buồng + nắp lò xo sau, ốp ray vuông quanh nòng (tay đỡ), báng rút có tì má, báng cầm khía ngón.
   // Cùng hệ trục với súng trường (gốc tại báng cầm, nòng -z, trục ngắm y 0.78, báng vai z 2.55) để dùng chung thế cầm.
-  const GL_VFG_Y = -0.42, GL_VFG_Z = -1.78;   // tâm tay nắm đứng dưới ốp (hệ súng, cụm trước fr), sát tấm đỡ nòng: xa hơn thì thế hạ súng tay trái duỗi thẳng
+  const GL_VFG_Y = -0.42, GL_VFG_Z = -1.68;   // tâm tay nắm đứng dưới ốp (hệ súng, cụm trước fr), sát tấm đỡ nòng: xa hơn thì thế hạ súng tay trái duỗi thẳng
   const GL = {
     gripR: V(0, -0.32, 0.1), gripL: V(0, GL_VFG_Y, GL_VFG_Z),   // tay trái nắm tay nắm đứng: ngón cái lên, lòng tay áp mặt trái tay nắm
     axisR: V(0, 0.98, 0.2).normalize(), axisL: V(0, 1, 0), palmKR: 0.75,   // cổ tay gập ~40° (trục theo đúng độ nghiêng báng cho ~80°, gần giới hạn khớp)
     palmR: V(-1, 0, 0), palmL: V(1, 0, 0),
-    elbowR: V(2.1, -0.6, 0.7), elbowL: V(-2.0, 0.2, -0.3),
-    elbowReadyR: V(1.9, -1.0, 0.7), elbowReadyL: V(-1.95, -0.2, -0.1),
-    readySlideL: 0, butt: V(0, 0.18, 2.55),   // tay nắm đứng: tay trái không trượt dọc ốp
+    elbowR: V(2.2, 0.1, 0.8), elbowL: V(-2.0, 0.2, -0.3),
+    elbowReadyR: V(2.3, 0.0, 0.7), elbowReadyL: V(-1.95, -0.2, -0.1),
+    readySlideL: 0, butt: V(0, 0.18, 2.55), pocket: V(1.08, 3.10, -0.96),   // đệm báng tì hõm vai phải ngoài áo giáp
     yawL: 0.4
   };
   // mặt cắt ổ đạn: tròn có 6 rãnh khía lõm giữa các buồng (đùn dọc trục)
@@ -5901,15 +5901,15 @@ reflectedLight.indirectDiffuse *= soldierFill;
     relax: { p: V(0.42, 1.30, -1.55), r: [-0.55, 0.16, 0.08] }
   };
 
-  // Thế cầm riêng cho súng phóng lựu 40 mm ổ quay 6 viên (ổ đạn to mập, báng ngắn, có tay nắm đứng):
-  // súng hạ thấp ngang hông/đùi, báng kẹp xuôi mạn sườn phải, nòng chúc xuống đất, tay trái nắm chắc tay nắm đứng
+  // Thế cầm riêng cho súng phóng lựu 40 mm ổ quay 6 viên (ổ đạn to mập, có tay nắm đứng):
+  // súng kẹp bên mạn sườn phải ngoài cơ thể, báng súng né sườn chạy dưới nách ra sau, nòng chúc tự nhiên, tay trái nắm chắc tay nắm đứng
   const GL_POSE = {
-    low: { p: V(0.48, 1.50, -1.50), r: [-0.48, 0.18, 0.08] },
-    ready: { p: V(0.44, 1.68, -1.55), r: [-0.36, 0.16, 0.06] },
-    port: { p: V(0.32, 1.95, -1.50), r: [-0.16, 0.25, 0.16] },
-    aim: { p: V(-0.12, 3.65, -2.85), r: [0.08, 0.42, 0.0] },
-    // Dạng nghỉ (patrol rest): súng hạ thấp ngang hông, nòng chúc 32° xuống đất, hai vai & cánh tay buông thả lỏng thoải mái
-    relax: { p: V(0.48, 1.35, -1.45), r: [-0.55, 0.18, 0.08] }
+    low: { p: V(0.96, 1.48, -1.48), r: [-0.36, 0.50, 0.06] },
+    ready: { p: V(0.96, 1.60, -1.55), r: [-0.26, 0.48, 0.06] },
+    port: { p: V(0.88, 1.88, -1.55), r: [-0.18, 0.50, 0.08] },
+    aim: { p: V(-0.08, 3.62, -2.85), r: [0.08, 0.40, 0.0] },
+    // Dạng nghỉ (patrol rest): súng hạ thấp ngang hông, báng súng xuôi theo mạn sườn phải, nòng chúc xuống đất, hai vai & cánh tay thả lỏng
+    relax: { p: V(1.02, 1.30, -1.40), r: [-0.44, 0.52, 0.06] }
   };
 
   // Bảng vũ khí bộ binh: build (dựng lưới, gốc tại tay cầm chính, nòng -z), grip (điểm nắm tay phải / trái + trục cán, hệ vũ khí),
@@ -5980,7 +5980,7 @@ reflectedLight.indirectDiffuse *= soldierFill;
     // chạy mang trang bị: đổ người, sải nặng, đạp đất mạnh; thân thấp nhất giữa pha trụ, cao nhất lúc bay
     run: {
       cycle: 0.58, speed: 38.0, duty: 0.38, hh: 6.8, bob: -0.2, clear: 2.4, fz: 1.8, aMax: 0.52, aOff: -0.06, lean: -0.5, yaw: 8, roll: 2.8, shift: 0.08, wide: -0.02, toeOut: 0.08, arm: 1.6, armBend: 1.05, gun: 'ready', spine: 0.06, spineA: -0.035,
-      twist: 13, sway: 4.5, nod: 3.4, sh: 0.2, shY: 0.13, gs: 0.2, gb: 0.15, gRoll: 7, scan: 0.1,
+      twist: 13, sway: 4.5, nod: 3.4, sh: 0.2, shY: 0.13, gs: 0.08, gb: 0.06, gRoll: 2.2, scan: 0.1,
       pitch: periodic([[0, 6], [6, 0], [22, -12], [38, -58], [52, -70], [70, -62], [88, -22], [96, 0]])
     }
   };
@@ -6116,7 +6116,7 @@ reflectedLight.indirectDiffuse *= soldierFill;
     o.gLow = G.gun === 'low' ? 1 : 0; o.gPort = G.gun === 'port' ? 1 : 0; o.gReady = G.gun === 'ready' ? 1 : 0; o.elb = o.gReady * 0.7;   // khuỷu mở ra ngoài, không kẹp sườn
     // súng nặng: trễ nhịp ~0,1 chu kỳ so với thân, lắc ngang theo bước, nòng vẫn giữ hướng và quét theo mắt
     const lag = 2 * Math.PI * (ph - 0.1);
-    if (G.gun) { o.shLz *= 0.3; o.shRz *= 0.3; }   // vai không đánh trước / sau theo bước khi hai tay ôm súng
+    if (G.gun) { o.shLz *= 0.3; o.shRz *= 0.3; o.shLy *= 0.35; o.shRy *= 0.35; }   // vai không đánh trước / sau hay nhấp mạnh theo bước khi hai tay ôm súng
     o.gx = G.gs * Math.sin(lag); o.gy = -G.gb * Math.cos(2 * lag); o.gz = 0.5 * G.gb * Math.sin(2 * lag); o.gRoll = G.gRoll * D2R * Math.sin(lag);
     o.gYaw = -0.8 * o.tRy + 0.35 * scan + 0.4 * G.gs * Math.cos(lag); o.gPitch = 0.5 * G.nod * D2R * hit(0.08);
   }
@@ -6142,7 +6142,7 @@ reflectedLight.indirectDiffuse *= soldierFill;
     }
     const v = Math.max(0, F.moveV || 0), a = F.stopA || 52, r = v * v / (2 * a);
     S.T += dt; S.lift *= Math.exp(-dt / 0.05);
-    S.hy += (S.hd - 0.9 * bk - S.hy) * (1 - Math.exp(-dt / 0.08));
+    S.hy += (S.hd - 0.2 * bk - S.hy) * (1 - Math.exp(-dt / 0.08));
     for (const f of S.feet) {
       if (f.t === null) { f.z += v * dt; f.th *= Math.exp(-dt / 0.18); f.y = -soleLow(f.th); continue; }   // hạ gót từ từ: chân đang kiễng đạp đất mà hạ nhanh thì cổ chân tụt, gối bật thẳng trong 1 khung
       f.t += dt;
@@ -6339,9 +6339,11 @@ reflectedLight.indirectDiffuse *= soldierFill;
     return a.sub(pW);
   }
   const ARM_CAP_R = 0.42;
+  const _colStartP = V(0, 0, 0), _colDeltaP = V(0, 0, 0);
   function rifleCollide(F, R, aimK = 0) {
     if (F.weapon == null && !F.rifle) return;
     F.root.updateMatrixWorld(true);
+    _colStartP.copy(R.position);
     // tay chưa giải khung này: khuỷu là của khung trước (tay bám súng nên đổi chậm)
     const caps = F._armCapsBuf || (F._armCapsBuf = F.arms.map(() => ({ a: V(0, 0, 0), d: V(0, 0, 0), L2: 1 })));
     F.arms.forEach((arm, i) => { const c = caps[i]; c.a.copy(arm.sh); F.chest.worldToLocal(arm.fore.getWorldPosition(c.d)); c.d.sub(c.a); c.L2 = Math.max(1e-4, c.d.lengthSq()); });
@@ -6353,13 +6355,18 @@ reflectedLight.indirectDiffuse *= soldierFill;
       if (it) R.updateMatrixWorld(true);   // chỉ súng đổi chỗ, khỏi cập nhật lại cả người
       let best = 0; _push.set(0, 0, 0);
       for (const [q, r] of R.userData.probes || (WEAPONS[F.weapon] && WEAPONS[F.weapon].grip.probes) || RIFLE_PROBES) {
-        // Báng súng (q.z > 0.05) nằm dọc theo mạn sườn phải hoặc hốc vai; chỉ kiểm tra va chạm ngực cho phần nòng & thân trước súng (q.z <= 0.05)
-        // tránh việc báng súng bị hiểu nhầm là đâm xuyên ngực làm đẩy cả khẩu súng văng ra xa hàng mét phía trước bụng
-        if (q.z > 0.05) continue;
         _pw.copy(q); R.localToWorld(_pw); _pc.copy(_pw); F.chest.worldToLocal(_pc);
         if (flexS) { const yy = _pc.y - SPINE_MID_Y, zz = _pc.z; _pc.y = SPINE_MID_Y + yy * flexC - zz * flexS; _pc.z = yy * flexS + zz * flexC; }
         const o = bodyPush(F, _pc, r, _tmpP.clone(), aimK);
         if (padZ != null && q.z > padZ) o.multiplyScalar(padK);   // đệm báng cố ý tì hõm vai khi ngắm: không đẩy súng khỏi vai
+        if (q.z > 0.05) {
+          // Báng súng và thân sau (q.z > 0.05) nằm bên mạn sườn phải:
+          // Nếu chạm vào thân/ngực/giáp sườn, lực đẩy né sang bên phải (+x) chứ không đẩy súng văng ra phía trước bụng (-z)
+          if (o.lengthSq() > 1e-4) {
+            const pushX = Math.max(0.04, Math.abs(o.z));
+            o.set(pushX, 0, 0);
+          }
+        }
         const L = o.length();
         if (L > best) { best = L; _push.copy(o); }
       }
@@ -6370,6 +6377,13 @@ reflectedLight.indirectDiffuse *= soldierFill;
       _pw.copy(R.parent.getWorldPosition(V(0, 0, 0))); _pc.add(_pw); R.parent.worldToLocal(_pc);
       R.position.addScaledVector(_pc, 1.0);
     }
+    _colDeltaP.copy(R.position).sub(_colStartP);
+    R.position.copy(_colStartP);
+    if (!F._colPush) F._colPush = V(0, 0, 0);
+    const dt = F._dtA || 0.016;
+    const kSmooth = F._snap ? 1 : 1 - Math.exp(-dt / 0.06);
+    F._colPush.lerp(_colDeltaP, kSmooth);
+    R.position.add(F._colPush);
     F._armCaps = null;
   }
 
@@ -8193,14 +8207,14 @@ const _gp = V(0, 0, 0);
       Hd.y += Math.max(-hMax, Math.min(hMax, (Math.max(-0.85, Math.min(0.85, Math.atan2(-lx, -lz))) - Hd.y) * a)); Hd.x += Math.max(-hMax, Math.min(hMax, (Math.max(-0.6, Math.min(0.4, Math.atan2(ly, lh))) - Hd.x) * a));
       out.hRx += (Hd.x - out.hRx) * rpB.k; out.hRy += (Hd.y - out.hRy) * rpB.k; out.hRz *= K;
     }
-    // PHANH (F.brake 0..1, engine đặt theo mức hãm tốc): thân ngả sau chống đà, gối khuỵu hấp thụ, đầu giữ nhìn trước;
-    // súng nặng có quán tính: lò xo tắt dần văng tới trước khi hãm rồi lắc về lúc đứng lại
+    // PHANH (F.brake 0..1, engine đặt theo mức hãm tốc): hơi ghìm nhẹ trọng tâm và chùng gối để giữ thăng bằng, tự nhiên như game bắn súng hiện đại
     const bT = c01(F.brake || 0), b0 = F._brk || 0;
-    const bk = F._brk = F._snap ? bT : b0 + (bT - b0) * (1 - Math.exp(-dt / (bT > b0 ? 0.06 : 0.3)));
+    const bk = F._brk = F._snap ? bT : b0 + (bT - b0) * (1 - Math.exp(-dt / (bT > b0 ? 0.08 : 0.14)));
     if (bk > 1e-3) {
       const ka = 1 - out.gAim;
-      out.tRx += 0.62 * bk * ka; out.chRx += 0.06 * bk * ka; out.hRx -= 0.45 * bk * ka;
-      for (const s of ['l', 'r']) { out[s + 'H'] += 0.24 * bk; out[s + 'K'] += 0.46 * bk; out[s + 'A'] += 0.22 * bk; }   // chân chống ra trước, gối khuỵu; giữ góc bàn chân: dA = dK - dH
+      // Chỉ ngả nhẹ ~4 độ để triệt tiêu góc chúi về phía trước của dáng chạy, giữ thân người đứng thẳng tự nhiên, không ngửa bật ra sau
+      out.tRx += 0.07 * bk * ka; out.chRx += 0.02 * bk * ka; out.hRx -= 0.04 * bk * ka;
+      for (const s of ['l', 'r']) { out[s + 'H'] += 0.05 * bk; out[s + 'K'] += 0.10 * bk; out[s + 'A'] += 0.05 * bk; }
     }
     // BỨT TỐC (F.surge 0..1): đổ người tới để đẩy trọng tâm ra trước bàn chân. VÀO CUA (F.bank -1..1, + = cua trái): nghiêng vào trong chống lực văng.
     { const kf = F._snap ? 1 : 1 - Math.exp(-dt / 0.12), ka = 1 - out.gAim;
@@ -8214,12 +8228,12 @@ const _gp = V(0, 0, 0);
     }
     let gaitW = 0; for (const m in GAITS) gaitW += W[m] || 0;
     stopPlanner(F, out, dt, bk, gaitW);
-    const gs = F._gunSpring || (F._gunSpring = { x: 0, v: 0 }), gTarget = 0.6 * bT;   // bám tín hiệu gốc: bám bk (hồi chậm) thì súng trôi về, không lắc lại
+    const gs = F._gunSpring || (F._gunSpring = { x: 0, v: 0 }), gTarget = 0.12 * bT;
     if (F._snap) { gs.x = gTarget; gs.v = 0; }
-    else for (let n = Math.ceil(dt / 0.008), h = dt / Math.max(1, n), i = 0; i < n; i++) {   // ω 13 rad/s, ζ 0,32: vượt lố rồi lắc nhẹ 1-2 nhịp
+    else for (let n = Math.ceil(dt / 0.008), h = dt / Math.max(1, n), i = 0; i < n; i++) {
       gs.v += (-169 * (gs.x - gTarget) - 8.3 * gs.v) * h; gs.x += gs.v * h;
     }
-    if (Math.abs(gs.x) > 1e-4) { const ka = 1 - out.gAim; out.gz -= gs.x * ka; out.gy -= 0.25 * gs.x * ka; out.gPitch -= 0.22 * gs.x * ka; }
+    if (Math.abs(gs.x) > 1e-4) { const ka = 1 - out.gAim; out.gz -= gs.x * 0.4 * ka; out.gy -= 0.1 * gs.x * ka; out.gPitch -= 0.08 * gs.x * ka; }
     // hướng quan sát riêng (F.lookYaw, rad, + = sang trái): vặn thân trên + đầu (súng trong hệ thân quay theo) — tổ bộ binh
     // mỗi người canh một hướng khi di chuyển; ngắm bắn thì đầu đã khoá vào kính nên chỉ vặn thân
     if (F.lookYaw) {

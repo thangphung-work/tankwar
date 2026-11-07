@@ -38,8 +38,9 @@
   //   Nạp tiền (TOPUP): Tân binh $0.99 (2.000) + 3–4 trận đủ chủ lực; $4.99 lần đầu (10.500) đủ chủ lực hoặc 6 nòng;
   //   $9.99 lần đầu (22.500) đủ cả 3 xe (21.000)
   const VEHICLE_ITEM = 'vehicle';
-  const VEHICLE_PRICE = { SCOUT: 0, INFANTRY: 0, ALL_ROUNDER: 5000, GATLING: 6000, ARTILLERY: 10000 };
-  const STARTER_VEHICLE = 'SCOUT';
+  // Tạm tắt mở khóa xe bằng Bạc (giá gốc khi bật lại: ALL_ROUNDER: 5000, GATLING: 6000, ARTILLERY: 10000)
+  const VEHICLE_PRICE = { SCOUT: 0, INFANTRY: 0, ALL_ROUNDER: 0, GATLING: 0, ARTILLERY: 0 };
+  const STARTER_VEHICLE = 'ALL_ROUNDER';
   const vehiclePrice = (tank) => VEHICLE_PRICE[tank] | 0;
   /** Xe đã mở chưa. owned(tank, id) -> đã sở hữu chưa (null = khách chưa có tài khoản) */
   const vehicleOpen = (tank, owned) => ALL_FREE || DEV_UNLOCK_VEHICLES || !vehiclePrice(tank) || !!(owned && owned(tank, VEHICLE_ITEM));

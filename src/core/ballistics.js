@@ -848,7 +848,7 @@ class BallisticsSystem3D {
     // (ammoType GATLING_BULLET + cờ gl40 do bên gọi gắn) nhưng HÌNH là quả lựu thật: không vạch đường, thấy ngay từ miệng
     // nòng, bay tới khi chạm (không tự biến mất giữa trời khi hết maxTravel như đạn vạch đường)
     const gl40 = ammoType === 'GATLING_BULLET' && !!shooter && ((shooter.mainGun && shooter.mainGun.kind === 'agl') || (!!shooter._launchOverride && shooter.roofWeapon === 'agl'));
-    if (gl40) tracer = false;
+    if (gl40) tracer = true;
     const shellMesh = this.createShell155Mesh(isDirectFire, gl40 ? 'GL40' : ammoType, !!(shooter && shooter.tankType === 'ARTILLERY'), tracer);
     // đạn súng: liều vạch đường chỉ bén cháy sau khi rời nòng ~10 m (như đạn thật) -> không có đốm lửa sát miệng nòng
     const smallArms = !gl40 && (ammoType === 'GATLING_BULLET' || ammoType === 'GATLING_HE' || ammoType === 'SCOUT_BULLET' || ammoType === 'INCENDIARY');

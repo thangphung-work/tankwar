@@ -68,32 +68,35 @@ const InfantryMatch = (() => {
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
     }
 
-    /* Tâm ngắm tiêu chuẩn */
-    #inf-cross { position: absolute; left: 50%; top: 50%; --g: 6px; }
-    #inf-cross i { position: absolute; background: var(--tc-bright, #f1f4ec); box-shadow: 0 0 2px #000; }
+    /* Tâm ngắm tiêu chuẩn hiện đại kiểu game bắn súng góc nhìn thứ 3 */
+    #inf-cross { position: absolute; left: 50%; top: 50%; --g: 6px; pointer-events: none; transition: transform 0.08s ease-out; }
+    #inf-cross i { position: absolute; background: rgba(245, 248, 240, 0.95); box-shadow: 0 0 2px rgba(0, 0, 0, 0.9); }
     #inf-cross i:nth-child(1) { width: 2px; height: 8px; left: -1px; bottom: var(--g); }
     #inf-cross i:nth-child(2) { width: 2px; height: 8px; left: -1px; top: var(--g); }
     #inf-cross i:nth-child(3) { width: 8px; height: 2px; top: -1px; right: var(--g); }
     #inf-cross i:nth-child(4) { width: 8px; height: 2px; top: -1px; left: var(--g); }
     #inf-cross .cross-dot {
       position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px;
-      background: var(--tc-bright, #f1f4ec); border-radius: 50%; box-shadow: 0 0 2px #000;
+      background: rgba(245, 248, 240, 0.95); border-radius: 50%; box-shadow: 0 0 2px #000;
     }
-    #inf-cross.lock i, #inf-cross.lock .cross-dot { background: var(--tc-accent, #e7a63a); }
-    #inf-cross.hit i, #inf-cross.hit .cross-dot { background: var(--tc-danger, #d9534a); }
+    #inf-cross.aim .cross-dot { background: #3bf07c; box-shadow: 0 0 4px #3bf07c; }
+    #inf-cross.lock i, #inf-cross.lock .cross-dot { background: var(--tc-accent, #e7a63a); box-shadow: 0 0 4px var(--tc-accent); }
+    #inf-cross.hit i, #inf-cross.hit .cross-dot { background: var(--tc-danger, #d9534a); box-shadow: 0 0 5px var(--tc-danger); }
     #inf-cross.hit .cross-dot { transform: scale(1.6); }
 
-    /* Với súng phóng lựu: vạch dưới kéo dài và có 2 vạch khấc chia độ rơi mảnh (chuẩn thước ngắm súng phóng lựu chiến thuật) */
-    #inf-cross.gl i:nth-child(1) { height: 16px; }
-    #inf-cross.gl .gl-notch-1, #inf-cross.gl .gl-notch-2 {
-      position: absolute; left: 50%; height: 1.5px; background: var(--tc-bright, #f1f4ec); box-shadow: 0 0 2px #000;
+    /* Với súng phóng lựu: thước ngắm rơi đạn đạo cầu vồng thanh mảnh, hiện đại */
+    #inf-cross.gl i:nth-child(1) { height: 24px; }
+    #inf-cross.gl .gl-notch-1, #inf-cross.gl .gl-notch-2, #inf-cross.gl .gl-notch-3 {
+      position: absolute; left: 50%; height: 1.5px; background: rgba(245, 248, 240, 0.85); box-shadow: 0 0 2px #000;
       transform: translateX(-50%);
     }
-    #inf-cross.gl .gl-notch-1 { bottom: calc(var(--g, 6px) + 5px); width: 6px; }
-    #inf-cross.gl .gl-notch-2 { bottom: calc(var(--g, 6px) + 11px); width: 4px; }
-    #inf-cross.gl.lock .gl-notch-1, #inf-cross.gl.lock .gl-notch-2 { background: var(--tc-accent, #e7a63a); }
-    #inf-cross.gl.hit .gl-notch-1, #inf-cross.gl.hit .gl-notch-2 { background: var(--tc-danger, #d9534a); }
-    #inf-cross:not(.gl) .gl-notch-1, #inf-cross:not(.gl) .gl-notch-2 { display: none !important; }
+    #inf-cross.gl .gl-notch-1 { bottom: calc(var(--g, 6px) + 6px); width: 8px; }
+    #inf-cross.gl .gl-notch-2 { bottom: calc(var(--g, 6px) + 13px); width: 6px; }
+    #inf-cross.gl .gl-notch-3 { bottom: calc(var(--g, 6px) + 20px); width: 4px; }
+    #inf-cross.gl.aim .gl-notch-1, #inf-cross.gl.aim .gl-notch-2, #inf-cross.gl.aim .gl-notch-3 { background: rgba(255, 255, 255, 0.95); }
+    #inf-cross.gl.lock .gl-notch-1, #inf-cross.gl.lock .gl-notch-2, #inf-cross.gl.lock .gl-notch-3 { background: var(--tc-accent, #e7a63a); }
+    #inf-cross.gl.hit .gl-notch-1, #inf-cross.gl.hit .gl-notch-2, #inf-cross.gl.hit .gl-notch-3 { background: var(--tc-danger, #d9534a); }
+    #inf-cross:not(.gl) .gl-notch-1, #inf-cross:not(.gl) .gl-notch-2, #inf-cross:not(.gl) .gl-notch-3 { display: none !important; }
 
     /* ==========================================================================
        THANH TÁC CHIẾN BỘ BINH CHÍNH GIỮA (CHUẨN THEO .hx-dock VÀ .hx-bar)
@@ -1523,7 +1526,7 @@ const InfantryMatch = (() => {
       }
       const el = this.hudEl = document.createElement('div');
       el.id = 'inf-hud';
-      el.innerHTML = '<div id="inf-heal"></div><div id="inf-cross"><i></i><i></i><i></i><i></i><span class="cross-dot"></span><span class="gl-notch-1"></span><span class="gl-notch-2"></span></div><div id="inf-msg"></div>'
+      el.innerHTML = '<div id="inf-heal"></div><div id="inf-cross"><i></i><i></i><i></i><i></i><span class="cross-dot"></span><span class="gl-notch-1"></span><span class="gl-notch-2"></span><span class="gl-notch-3"></span></div><div id="inf-msg"></div>'
         + '<div id="inf-squad"></div>'
         + '<div id="inf-dock">'
         + '  <div id="inf-chips">'
@@ -1714,12 +1717,14 @@ const InfantryMatch = (() => {
         if (this.$squad && this.$squad.innerHTML !== sqHtml) this.$squad.innerHTML = sqHtml;
       }
 
-      // Dấu tâm ngắm
+      // Dấu tâm ngắm chuẩn game bắn súng góc nhìn thứ 3
       if (this.$keys) this.$keys.style.display = h.sight ? 'none' : '';
       if (this.$cross) {
         this.$cross.classList.toggle('gl', h.weapon === 'gl');
+        this.$cross.classList.toggle('aim', h.aim > 0.4);
         this.$cross.classList.toggle('hit', !!h.hit);
-        this.$cross.style.setProperty('--g', Math.round(3 + (1 - h.aim) * 6 + h.spread * 300) + 'px');
+        const gap = Math.round((h.aim > 0.4 ? 2 : 5) + (1 - h.aim) * 4 + h.spread * 220);
+        this.$cross.style.setProperty('--g', gap + 'px');
         this.$cross.classList.toggle('lock', !!h.lock);
         this.$cross.style.display = h.alive && !h.sight && !h.kami ? '' : 'none';
       }

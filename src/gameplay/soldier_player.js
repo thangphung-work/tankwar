@@ -7,10 +7,10 @@ const SoldierPlayer = (() => {
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const CAM = {
-    free: { dist: 26, right: 5, up: 14.6, fov: 50 },
-    aim: { dist: 11, right: 3.6, up: 13.4, fov: 30 },
-    prone: { dist: 11, right: 2.4, up: 6.2, fov: 30 },    // đang nằm xuống, chưa áp mắt vào kính: camera thấp
-    proneTP: { dist: 19, up: 4.5 }                         // nằm sấp với súng khác, camera sau lưng: hạ ngang tầm người nằm như lúc đứng ngang tầm vai
+    free: { dist: 25, right: 5.2, up: 14.5, fov: 50 },
+    aim: { dist: 12.5, right: 3.8, up: 13.8, fov: 38 },
+    prone: { dist: 12, right: 2.5, up: 6.2, fov: 32 },    // đang nằm xuống
+    proneTP: { dist: 19, up: 4.5 }                         // nằm sấp với súng khác, camera sau lưng
   };
   // KÍNH TỪNG SÚNG. eye: mắt trong hệ súng, nằm trên trục quang. Kính quang: fovs = trường nhìn thật của kính, x = độ phóng đại.
   // Chấm đỏ 1x: fov gần mắt thường. drum: thước ngắm phóng lựu [gần, xa, nấc] (m): con lăn đặt cự ly, nòng ngóc theo, đường ngắm vẫn ở mục tiêu.
@@ -440,7 +440,6 @@ const SoldierPlayer = (() => {
         this.yaw -= dx * k;
         this.pitch = clamp(this.pitch - dy * k, PITCH[0], PITCH[1]);
       }
-      if (Math.abs(dx) + Math.abs(dy) > 2) this._glOff = true;   // đang nạp mà rê chuột: người chơi muốn nhìn chỗ khác, trả camera về
     }
     sight() { return this.soldier ? SIGHTS[this.soldier.weapon] || null : null; }
     // nhìn qua kính tầm xa: nới mặt phẳng cắt xa của camera (mặc định 9000) và mỏng sương để thấy tới 2 km; trả lại khi rời kính
@@ -812,7 +811,8 @@ const SoldierPlayer = (() => {
       const s = this.soldier; if (!s || !this.onHud) return;
       const reloadMax = s.arms._reloadMax || (s.arms.def.seq ? 2.8 : 2.2);
       const reloadProgress = s.arms.reload > 0 ? Math.max(0, Math.min(1, 1 - s.arms.reload / reloadMax)) : 0;
-      this.onHud({ load: Math.round(s.loadKg), hp: Math.max(0, s.hp), alive: s.alive, mag: s.arms.mag, cap: s.arms.def.mag, reserve: s.reserve, reloading: s.arms.reload > 0, reloadProgress, range: (ASSIST ? s.arms.def.ball : s.weapon === 'gl') && this.aimK > 0.5 ? this.rangeM : null, lock: !!this.lock, drum: s.weapon === 'gl' ? this.drum : null, sight: this.sightK > 0.5, holding: this.holding, winded: this._winded, stam: s.stam, tired: s.tired, scope: this.scoped() ? { x: SIGHTS[s.weapon].x[Math.min(this.zoom, SIGHTS[s.weapon].x.length - 1)], wind: this.windRel() } : null, rangeOk: this.rangeOk, aim: this.aimK, weapon: s.weapon, stance: s.intent.stance, hit: this.hitT > 0, kills: this.kills, motion: s.motion, spread: this.spreadNow, shoulder: this.shoulderSide || 1, freeLook: this.freeLook,
+      const isSniperScope = s.weapon === 'atr' && s.intent.stance === 'prone' && (s.figure._proneK || 0) > 0.95;
+      this.onHud({ load: Math.round(s.loadKg), hp: Math.max(0, s.hp), alive: s.alive, mag: s.arms.mag, cap: s.arms.def.mag, reserve: s.reserve, reloading: s.arms.reload > 0, reloadProgress, range: (ASSIST ? s.arms.def.ball : s.weapon === 'gl') && this.aimK > 0.5 ? this.rangeM : null, lock: !!this.lock, drum: s.weapon === 'gl' ? this.drum : null, sight: isSniperScope && this.sightK > 0.5, holding: this.holding, winded: this._winded, stam: s.stam, tired: s.tired, scope: isSniperScope && this.scoped() ? { x: SIGHTS[s.weapon].x[Math.min(this.zoom, SIGHTS[s.weapon].x.length - 1)], wind: this.windRel() } : null, rangeOk: this.rangeOk, aim: this.aimK, weapon: s.weapon, stance: s.intent.stance, hit: this.hitT > 0, kills: this.kills, motion: s.motion, spread: this.spreadNow, shoulder: this.shoulderSide || 1, freeLook: this.freeLook,
         kami: s.arms.def.kami ? { left: s.arms.mag, launching: s.figure.kamiSeq != null, flying: !!s.figure.kamiCtl } : null });
     }
 
@@ -826,11 +826,7 @@ const SoldierPlayer = (() => {
       // đi nhờ xe: lùi camera ra cho thấy xe (ngồi trong khoang lùi xa hơn)
       const R = s.ride, extra = R && R.dir > 0 ? (R.inside ? 34 : 12) * (1 - a) : 0;
       this.camExtra = (this.camExtra || 0) + (extra - (this.camExtra || 0)) * 0.08;
-      // súng ổ quay đang nạp, đứng yên: camera lượn sang bên phải - trước để thấy tay (từ sau lưng thân che hết); đi lại hoặc rê chuột thì trả về camera thường
-      const rlNow = s.arms.def.seq && s.arms.reload > 0;
-      if (!rlNow) this._glOff = false;
-      this._glK = (this._glK || 0) + ((rlNow && s.speed < 1.5 && !this._glOff ? 1 : 0) - (this._glK || 0)) * 0.05;
-      const glK = this._glK * (1 - a), kickE = (s.arms.def.seq || s.arms.ar) && this.kick > 0 ? SoldierModel.recoilEnv(this.kick) : 0;
+      const kickE = (s.arms.def.seq || s.arms.ar) && this.kick > 0 ? SoldierModel.recoilEnv(this.kick) : 0;
       const side = this.shoulderSide || 1;
       const dist0 = f.dist + (g.dist - f.dist) * a + this.camExtra + 0.22 * kickE;
       const right = (f.right + (g.right - f.right) * a) * side + 6 * tubeOff;
@@ -855,82 +851,62 @@ const SoldierPlayer = (() => {
       else this._camDistLerp += (d - this._camDistLerp) * Math.min(1, (dt || 0.016) * 18);
       const useD = this._camDistLerp;
       cam.position.set(px + sy * cp * useD, py - sp * useD, pz + cy * cp * useD);
-      // áp mắt: camera về đúng chỗ mắt sau kính (theo súng thật), hướng là đường ngắm; thân mình ẩn đi vì mắt nằm trong đầu
+      // Góc nhìn ngắm qua vai chuẩn game bắn súng góc nhìn thứ 3 (Over-the-shoulder Aim).
+      // Chỉ khi là súng bắn tỉa hạng nặng đang nằm ngắm (Scope phóng đại cao) mới vào kính ngắm toàn màn hình.
       const S = SIGHTS[s.weapon], sk = S ? this.sightK : 0, ks = sk * sk * (3 - 2 * sk);
-      if (sk > 0) {
+      const isSniperScope = !!S && !S.reflex && s.arms.def.prone && (s.figure._proneK || 0) > 0.95;
+      if (sk > 0 && isSniperScope) {
         const gun = s.figure.rifle; gun.updateWorldMatrix(true, false);
         const E = gun.localToWorld(this._eye.copy(S.eye));
         E.y = Math.max(E.y, T.getElevationAt(E.x, E.z) + 0.6);
         cam.position.lerp(E, ks);
       }
-      if (sk > 0.4) { s.root.visible = false; this._hidden = s.root; }
+      if (sk > 0.4 && isSniperScope) { s.root.visible = false; this._hidden = s.root; }
       else if (this._hidden) { this._hidden.visible = true; this._hidden = null; }
       // sóng nổ liều đẩy RPG dội vào người: camera rung nhanh, tắt dần
       if (this.shake > 0) { const e = this.shake * this.shake * 0.5, w = performance.now() * 0.05; cam.position.x += Math.sin(w * 1.13) * e; cam.position.y += Math.sin(w * 1.71 + 1) * e * 0.8; cam.position.z += Math.sin(w * 0.93 + 2) * e; }
       this.losDir(this._ray);
-      const eyeK = 1 - ks;   // cúi nhìn tay nạp, nảy camera khi bắn chỉ thuộc về camera sau vai
+      const eyeK = isSniperScope ? (1 - ks) : 1;   // nảy camera khi bắn
       const lx = cam.position.x + this._ray.x * 100, ly = cam.position.y + this._ray.y * 100 + 0.5 * kickE * eyeK, lz = cam.position.z + this._ray.z * 100;
-      const orbitK = glK * glK * (3 - 2 * glK);
-      if (orbitK > 0.001) {
-        const G = s.figure.rifle.getWorldPosition(this._org), az = s.heading + GL_RELOAD_CAM.az, ox = G.x + Math.sin(az) * GL_RELOAD_CAM.dist, oz = G.z + Math.cos(az) * GL_RELOAD_CAM.dist;
-        // vướng tường / đất thì ở lại camera thường
-        const blocked = (T.resolveVehicleCollision && T.resolveVehicleCollision(s.x, s.z, ox, oz, 1.5, null).hit) || G.y + GL_RELOAD_CAM.up < T.getElevationAt(ox, oz) + 1.5;
-        const q = blocked ? 0 : orbitK;
-        cam.position.x += (ox - cam.position.x) * q; cam.position.y += (G.y + GL_RELOAD_CAM.up - cam.position.y) * q; cam.position.z += (oz - cam.position.z) * q;
-        cam.lookAt(lx + (G.x - lx) * q, ly + (G.y - ly) * q, lz + (G.z - lz) * q);
-      } else cam.lookAt(lx, ly, lz);
-      // đang thay băng súng bắn tỉa: nới góc nhìn cho thấy động tác
-      this._rlK = (this._rlK || 0) + ((s.arms.ar && s.arms.reload > 0 ? 1 : 0) - (this._rlK || 0)) * 0.1;
-      const fov0 = f.fov + (g.fov - f.fov) * a, fov1 = fov0 + (Math.max(fov0, 42) - fov0) * this._rlK, fovS = S ? this.sightFov(S) : fov1;
-      // ống kính quang đổi trường nhìn dứt khoát ở cuối lúc áp mắt; chấm đỏ 1x thì chỉ khác chút ít
-      const fov = S && !S.reflex ? (sk > 0.8 ? fovS : fov1) : fov1 + (fovS - fov1) * ks;
+      cam.lookAt(lx, ly, lz);
+      const fov0 = f.fov + (g.fov - f.fov) * a, fov1 = fov0;
+      const fovS = (S && isSniperScope) ? this.sightFov(S) : fov1;
+      // ống kính quang đổi trường nhìn khi áp mắt; ngắm qua vai zoom mượt theo fov1
+      const fov = isSniperScope ? (sk > 0.8 ? fovS : fov1) : fov1;
       if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
       this.placeSight(S, sk, fov);
       this.drawLock();
-      this.scopeFar(S && !S.reflex && sk > 0.8 && s.arms.def.ball && s.arms.def.ball.range > 9000);
-      this.scopeNear(S && !S.reflex && sk > 0.8 ? fov : 0);
+      this.scopeFar(isSniperScope && sk > 0.8 && s.arms.def.ball && s.arms.def.ball.range > 9000);
+      this.scopeNear(isSniperScope && sk > 0.8 ? fov : 0);
     }
-    // lớp kính + thân kính chấm đỏ theo camera
+    // Giao diện kính ngắm toàn màn hình (chỉ dùng cho súng bắn tỉa hạng nặng tầm xa)
     placeSight(S, sk, fov) {
-      const s = this.soldier, cam = this.cam, on = !!S && sk > 0.05;
+      const s = this.soldier, cam = this.cam;
+      const isSniperScope = !!S && !S.reflex && s.arms.def.prone && (s.figure._proneK || 0) > 0.95;
+      const on = isSniperScope && sk > 0.05;
+      if (!isSniperScope) {
+        if (this._overlay) { this._overlay.update(null); this._periSt = null; }
+        if (this._vm) { this.scene.remove(this._vm); this._vm = null; }
+        return;
+      }
       if (!this._overlay && on && typeof document !== 'undefined') this._overlay = new SightOverlay(this.sightParent || document.body);
       if (this._overlay) {
         if (!on) { this._overlay.update(null); this._periSt = null; }
         else {
-          // mắt lệch khỏi tâm thị kính khi giật súng / đi lại: viền tối dịch đi còn vạch vẫn đúng đường ngắm (kính không thị sai)
           const H = window.innerHeight, pp = H / 2 / Math.tan(fov * Math.PI / 360), walk = s.speed > 1 ? 1 : 0;
           const ox = clamp(this.swayY * pp * 0.5 + walk * 5 * Math.sin(this._swayT * 7), -MASK_PAD, MASK_PAD), oy = clamp(this.recP * pp * 0.3 + this.swayP * pp * 0.5 + walk * 7 * Math.abs(Math.sin(this._swayT * 7)), -MASK_PAD, MASK_PAD);
           const A = s.arms, zx = S.x ? S.x[Math.min(this.zoom, S.x.length - 1)] : 1;
           const info = (A.mag + (s.reserve != null ? ' / ' + s.reserve : '')) + '\n' + String(zx).replace('.', ',') + '×' + (ASSIST && this.rangeM != null ? ' · ' + Math.round(this.rangeM) + ' m' : '') + (this.holding ? ' · nín thở' : this._winded ? ' · hụt hơi' : '');
-          const op = Math.min(1, Math.max(0, (sk - (S.reflex ? 0.6 : 0.8)) / (S.reflex ? 0.4 : 0.2)));
-          this._overlay.update({ weapon: s.weapon, fov: this.sightFov(S), op, ox: S.reflex ? 0 : ox, oy: S.reflex ? 0 : oy, info, hit: this.hitT > 0 });
-          this._periSt = !S.reflex && op > 0.5 ? { ox, oy, R: H * 0.49 } : null;
+          const op = Math.min(1, Math.max(0, (sk - 0.8) / 0.2));
+          this._overlay.update({ weapon: s.weapon, fov: this.sightFov(S), op, ox, oy, info, hit: this.hitT > 0 });
+          this._periSt = op > 0.5 ? { ox, oy, R: H * 0.49 } : null;
         }
       }
-      // đổi sang lính cầm súng khác: dựng lại thân kính đúng mẫu
-      if (S && S.reflex && this._vm && this._vm.userData.kind !== s.weapon && !this._vm.userData.warm) { this.scene.remove(this._vm); this._vm = null; }
-      if (S && S.reflex && !this._vm) { this._vm = reflexModel(s.weapon); this.scene.add(this._vm); }
-      if (this._vm && !this._vm.userData.warm) {
-        const vis = !!S && S.reflex && sk > 0.75, U = this._vm.userData;
-        this._vm.visible = vis;
-        if (vis && U.mount) {
-          // đế + ray ngóc theo góc nòng so với đường ngắm; trống quay tới số đang đặt (đuổi theo mượt như vặn tay)
-          U.mount.rotation.x = clamp(this.elev - this.losPitch(), 0, 0.45);
-          const want = ((this.drum - 50) / 25 + 2) * DRUM_STEP;   // +2 nấc: đưa số đang đặt về mặt trống quay vào mắt
-          U.drum.rotation.x += (want - U.drum.rotation.x) * 0.35;
-        }
-        if (vis) { this._vm.position.copy(cam.position); this._vm.quaternion.copy(cam.quaternion); this._vm.updateMatrixWorld(true); }
-      }
+      if (this._vm) { this.scene.remove(this._vm); this._vm = null; }
     }
     // dịch sẵn shader thân kính lúc vào trận (vẽ trong suốt vài khung) để lần ngắm đầu không khựng
     warmSight() {
-      const S = this.sight();
-      if (!S || !S.reflex || this._vm) return;
-      const vm = this._vm = reflexModel(this.soldier.weapon), mats = vm.userData.mats, ops = mats.map(m => m.opacity);
-      this.scene.add(vm);
-      vm.userData.warm = true; vm.visible = true; vm.position.copy(this.cam.position);
-      mats.forEach(m => { m.opacity = 0; });
-      setTimeout(() => { mats.forEach((m, i) => { m.opacity = ops[i]; }); vm.userData.warm = false; }, 400);
+      // Đã chuyển sang góc nhìn qua vai ngắm bắn chuẩn mực TPS, không dựng mô hình 3D ống kính thô
     }
 
     // súng phóng lựu: cự ly từ tâm ngắm tới mục tiêu để hiện trên HUD; người bắn tự vặn thước ngắm cho khớp

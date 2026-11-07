@@ -270,7 +270,7 @@
   // thì ngòi chưa kích hoạt: không nổ. Sát thương theo bán kính (game thật dùng Grenade40)
   const shots = [], flashes = [];
   const rocketGeo = new THREE.ConeGeometry(0.4, 2.8, 10), rocketMat = new THREE.MeshStandardMaterial({ color: 0x4a4f3c, roughness: 0.6 });
-  const shellGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 10), shellMat = new THREE.MeshStandardMaterial({ color: 0x5b5d45, roughness: 0.7 }), _up = new THREE.Vector3(0, 1, 0), _dirV = new THREE.Vector3();
+  const shellGeo = new THREE.CylinderGeometry(0.35, 0.32, 1.1, 12), shellMat = new THREE.MeshStandardMaterial({ color: 0xddaa33, roughness: 0.3, metalness: 0.7, emissive: 0xff6611, emissiveIntensity: 0.4 }), _up = new THREE.Vector3(0, 1, 0), _dirV = new THREE.Vector3();
   const flashGeo = new THREE.SphereGeometry(1, 12, 8);
   function fireGrenade(s, aim, muzzle, vel) {
     const p = muzzle ? muzzle.clone() : s.figure.rifle.localToWorld(new THREE.Vector3(0, 0.22, -3.5));
@@ -301,6 +301,7 @@
       S.v.y -= S.g * dt;
       if (S.kind === 'rpg' && !S.lit && S.trav >= 88) { S.lit = true; fx.rocketIgnite(P.x, P.y, P.z, S.v.x, S.v.y, S.v.z); }   // bay trơn ~11 m rồi động cơ mới bắt lửa
       if (S.kind === 'rpg' && S.lit && player) for (let j = 0; j < 4; j++) { _dirV.copy(P).addScaledVector(S.v, -dt * j / 4); player.addSmoke(_dirV, new THREE.Vector3((Math.random() - 0.5) * 1.5, Math.random() * 1.5, (Math.random() - 0.5) * 1.5), 0.5, 2.6, 0.9 + Math.random() * 0.5, 0.3, 0xc9c5ba); }   // khói liền dải (đạn bay ~38 đv mỗi khung)
+      if (S.kind === 'gl' && player) for (let j = 0; j < 3; j++) { _dirV.copy(P).addScaledVector(S.v, -dt * j / 3); player.addSmoke(_dirV, new THREE.Vector3((Math.random() - 0.5) * 0.8, Math.random() * 0.5 + 0.2, (Math.random() - 0.5) * 0.8), 0.45, 1.8, 0.8 + Math.random() * 0.4, 0.45, 0xe2ded4); }
       P.addScaledVector(S.v, dt);
       S.trav += S.v.length() * dt;
       S.m.quaternion.setFromUnitVectors(_up, _dirV.copy(S.v).normalize());

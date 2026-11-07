@@ -7619,12 +7619,31 @@
         // Đạn cháy: vệt đỏ rực trên mô hình + tàn lửa đỏ rơi rớt dọc đường bay (chỉ viên vạch đường đang cháy)
         if (info.tracer !== false && Math.random() < 0.5) this.fire.add({ x, y, z, vx: rand(-4, 4), vy: rand(-3, 3), vz: rand(-4, 4), size: rand(0.5, 0.9), grow: -0.3, drag: 2, grav: 30, life: rand(0.15, 0.35), alpha: 1, fadeIn: 0.005, c0: [1, 0.45, 0.12], c1: [0.7, 0.08, 0.02], cell: 1, floor: false });
       } else if (info.gl) {
-        // Quả lựu 40mm: không vạch đường — chỉ một vệt khí xoáy mờ rất mảnh sau đuôi (đủ để mắt bám theo đường vồng)
-        if (Math.random() < 0.55) this.smoke.add({
-          x: x + rand(-0.15, 0.15), y: y + rand(-0.15, 0.15), z: z + rand(-0.15, 0.15), vx: rand(-0.3, 0.3), vy: rand(0.1, 0.5), vz: rand(-0.3, 0.3),
-          size: rand(0.5, 0.8), grow: rand(1.6, 2.4), drag: 1.6, grav: -0.2, life: rand(0.45, 0.7),
-          alpha: 0.14, fadeIn: 0.02, fadePow: 1.3, c0: [0.78, 0.78, 0.76], cell: 0, floor: false
-        });
+        // Quả lựu 40mm: vệt khói và tia lửa vạch đường cầu vồng nối liền liên tục để xạ thủ căn chỉnh đường ngắm
+        const hasPrev = prevX !== undefined && prevY !== undefined && prevZ !== undefined;
+        const dx = hasPrev ? (x - prevX) : 0, dy = hasPrev ? (y - prevY) : 0, dz = hasPrev ? (z - prevZ) : 0;
+        const dist = Math.hypot(dx, dy, dz);
+        const steps = (hasPrev && dist > 0.1) ? Math.min(8, Math.max(1, Math.ceil(dist / 2.2))) : 1;
+        for (let i = 0; i < steps; i++) {
+          const t = steps === 1 ? 1 : (i + 0.5) / steps;
+          const px = hasPrev ? (prevX + dx * t) : x;
+          const py = hasPrev ? (prevY + dy * t) : y;
+          const pz = hasPrev ? (prevZ + dz * t) : z;
+          this.smoke.add({
+            x: px + rand(-0.15, 0.15), y: py + rand(-0.15, 0.15), z: pz + rand(-0.15, 0.15),
+            vx: rand(-0.3, 0.3), vy: rand(0.3, 0.9), vz: rand(-0.3, 0.3),
+            size: rand(1.1, 1.6), grow: rand(2.2, 3.4), drag: 1.5, grav: -0.3, life: rand(0.9, 1.4),
+            alpha: 0.55, fadeIn: 0.02, fadePow: 1.2, c0: [0.86, 0.84, 0.8], cell: 0, floor: false
+          });
+        }
+        if (Math.random() < 0.6 && this.fire) {
+          this.fire.add({
+            x: x + rand(-0.1, 0.1), y: y + rand(-0.1, 0.1), z: z + rand(-0.1, 0.1),
+            vx: rand(-1, 1), vy: rand(0, 1), vz: rand(-1, 1),
+            size: rand(0.8, 1.4), grow: 0.5, drag: 2, grav: 0, life: rand(0.08, 0.16),
+            alpha: 0.9, fadeIn: 0.01, c0: [1.0, 0.65, 0.2], cell: 1, floor: false
+          });
+        }
       } else if (ammoType === 'GATLING_BULLET' || ammoType === 'GATLING_HE' || ammoType === 'SCOUT_BULLET') {
         // Đạn nhỏ: vệt vạch đường đã có trên mô hình, không cần khói
       } else {

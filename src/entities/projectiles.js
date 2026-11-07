@@ -163,7 +163,7 @@
     PG7: 1.0,                                   // đạn PG-7 của lính: dựng đúng cỡ thật (Ø 85 mm), khớp quả lắp trên ống phóng
     GATLING_BULLET: 0.42, GATLING_HE: 0.42, INCENDIARY: 0.42,     // 30mm (lòng nòng Hailstorm ~0.2)
     SCOUT_BULLET: 0.4,
-    GL40: 0.15                                  // lựu 40mm: thân Ø~0.31 đv (≈40mm) — vừa lòng nòng AGL (Ø0.075 x 2.1 x 2)
+    GL40: 0.38                                  // lựu 40mm: kích thước hiển thị rõ ràng đường bay cầu vồng
   };
 
   // Thân đạn pháo tròn xoay: r = bán kính thân, L = dài tổng
@@ -265,6 +265,8 @@
     mesh(shared('glband', () => new THREE.CylinderGeometry(1.04, 1.04, 0.22, 18, 1, true)), M.copper(), group, [0, -0.7, 0]);
     mesh(shared('glbase', () => new THREE.CylinderGeometry(0.9, 0.9, 0.12, 18)), M.black(), group, [0, -0.95, 0]);
     mesh(shared('glstripe', () => new THREE.CylinderGeometry(1.01, 1.01, 0.12, 18, 1, true)), M.yellow(), group, [0, 0.35, 0]);
+    addTracer(group, 8.5, 0.36, 0xff8818, 'gl40', -0.95);
+    headGlow(group, 1.5, 0xffaa33, 'gl40', -0.95, true);
     return 2.9;
   }
 
