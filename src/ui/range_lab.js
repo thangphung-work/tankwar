@@ -30,7 +30,13 @@
   try { window.NetTransport = undefined; } catch (e) { /* bỏ qua */ }
 
   const MAPS = [['HIGHLAND', 'Đồng cỏ'], ['RIVER_LAKE', 'Sông hồ'], ['JUNGLE', 'Rừng'], ['DESERT', 'Sa mạc'], ['URBAN', 'Đô thị']];
-  const TYPES = [['ALL_ROUNDER', 'HALBERD MK.3'], ['GATLING', 'HAILSTORM R6'], ['ARTILLERY', 'ARBALEST 155'], ['SCOUT', 'MARTEN R4']];
+  const TYPES = [
+    ['ALL_ROUNDER', 'HALBERD MK.3'],
+    ['GATLING', 'HAILSTORM R6'],
+    ['ARTILLERY', 'ARBALEST 155'],
+    ['SCOUT', 'MARTEN R4'],
+    ['INFANTRY', 'BỘ BINH']
+  ];
   // vào từ thanh chuyển lab (không kèm ?map=): dùng lại bản đồ đã chọn lần trước
   let lsMap = null;
   try { lsMap = localStorage.getItem('rg-map'); } catch (e) { /* bỏ qua */ }
@@ -946,9 +952,9 @@
   function swapVehicle(type) {
     const g = lab.g, old = g.player;
     if (!old || old.tankType === type) return;
-    lab.kit = null;   // đổi xe: về bộ đồ tài khoản của xe đó
+    lab.kit = null;   // đổi đơn vị: về bộ đồ tài khoản của đơn vị đó
     rebuildPlayer(type);
-    addLog(`Đổi xe: ${TYPES.find(t => t[0] === type)[1]}`, 'info');
+    addLog(`Đổi đơn vị: ${TYPES.find(t => t[0] === type)[1]}`, 'info');
   }
   // Bộ đồ đang thử: lab.kit (bảng TRANG BỊ THỬ) hoặc bộ đồ tài khoản; luôn mang đủ mọi loại đạn đặc chủng
   function labKit(type) {
@@ -986,6 +992,17 @@
     g.lockedTarget = null;
     preparePlayer(u);
     teleport();
+
+    // Đồng bộ hệ thống điều khiển Bộ binh / Xe cơ giới trực tiếp trên trường bắn
+    if (g.infantry) {
+      try { g.infantry.dispose(); } catch (e) { console.warn('[LAB] infantry dispose', e); }
+      g.infantry = null;
+    }
+    if (type === 'INFANTRY' && typeof InfantryMatch !== 'undefined') {
+      g.infantry = InfantryMatch.attach(g);
+      addLog('[[user-shield]] Nhập vai Bộ binh: Dùng W A S D di chuyển, Shift chạy, C quỳ, Chuột phải ngắm, Chuột trái bắn!', 'ok');
+    }
+
     try { g.syncHUDControls(); g.updateAmmoUI(); if (g.hud && g.hud.refresh) g.hud.refresh(); } catch (e) { /* bỏ qua */ }
     syncUrl();
     renderUI();
@@ -1428,22 +1445,24 @@
         <a href="vehicle_fx_lab.html"><i class="ti ti-tank" aria-hidden="true"></i> Xe</a>
         <a href="test_car.html"><i class="ti ti-car" aria-hidden="true"></i> Ô tô</a>
         <a href="drone_lab.html"><i class="ti ti-drone" aria-hidden="true"></i> Drone</a>
+        <a href="soldier_field_lab.html" title="Phòng thử tổ bộ binh trên địa hình: điều khiển lính, bắn súng, ném lựu"><i class="ti ti-users-group" aria-hidden="true"></i> Bộ binh</a>
         <a href="index.html?lab=stronghold"><i class="ti ti-flag" aria-hidden="true"></i> Cứ điểm</a>
         <a class="on" href="index.html?lab=range"><i class="ti ti-target-arrow" aria-hidden="true"></i> Bắn thử</a>
       </nav>
       <div class="rg-body">
-        <div class="lbl">BỘ BINH TRƯỜNG BẮN</div>
+        <div class="lbl">BỘ BINH ĐỐI KHÁNG TRƯỜNG BẮN</div>
         <div class="row" id="rg-inf-ctrls">
           <button id="rg-inf-toggle" class="on" title="Bật hoặc tắt đơn vị bộ binh trên trường bắn"><i class="ti ti-users" aria-hidden="true"></i> Bộ binh: BẬT</button>
           <button id="rg-inf-stance" title="Tư thế tác chiến: Canh gác / Quỳ / Đi tuần / Đứng yên"><i class="ti ti-shield" aria-hidden="true"></i> Canh gác</button>
           <button id="rg-inf-fire" title="Bộ binh bắn trả xe bạn bằng súng phóng lựu 40mm"><i class="ti ti-crosshair" aria-hidden="true"></i> Bắn trả: TẮT</button>
           <button id="rg-inf-add" title="Thả thêm 1 tổ bộ binh dã chiến"><i class="ti ti-user-plus" aria-hidden="true"></i> Thêm tổ lính</button>
+          <button id="rg-inf-play" title="Mở phòng thử tổ bộ binh để trực tiếp điều khiển chiến binh" style="border-color:#f59e0b;color:#f59e0b"><i class="ti ti-run" aria-hidden="true"></i> Trải nghiệm bộ binh</button>
         </div>
-        <div class="lbl">XE CỦA BẠN</div><div class="row" id="rg-types"></div>
+        <div class="lbl">ĐƠN VỊ TÁC CHIẾN</div><div class="row" id="rg-types"></div>
         <div class="lbl">BẢN ĐỒ</div><div class="row" id="rg-maps"></div>
         <div class="lbl">THỜI TIẾT</div><div class="row" id="rg-wx"></div>
         <div class="lbl">BỐ TRÍ</div><div class="row" id="rg-field"></div>
-        <div class="lbl">XE BIA</div><div class="row" id="rg-dtypes"></div>
+        <div class="lbl">MỤC TIÊU BIA</div><div class="row" id="rg-dtypes"></div>
         <div id="rg-flatopts">
           <div class="lbl">CỰ LY BIA</div><div class="row" id="rg-dist"></div>
         </div>
@@ -1461,10 +1480,10 @@
           <button id="rg-god">Bất tử</button><button id="rg-wreck">Giữ xác mục tiêu</button>
           <button id="rg-jam" title="Xe tăng bia tự phá sóng drone của bạn khi bay tới gần"><i class="ti ti-antenna-bars-5" aria-hidden="true"></i> Bia phá sóng drone</button>
           <button id="rg-kamisky" title="UAV cảm tử địch bay lượn ngẫu nhiên trên trời, liên tục có chiếc mới bay vào — thử bắn hạ"><i class="ti ti-rocket" aria-hidden="true"></i> UAV cảm tử bay</button>
-          <button id="rg-repair"><i class="ti ti-tool" aria-hidden="true"></i> Sửa xe</button>
+          <button id="rg-repair"><i class="ti ti-tool" aria-hidden="true"></i> Sửa chữa đơn vị</button>
           <button id="rg-rebuild" class="go"><i class="ti ti-refresh" aria-hidden="true"></i> Dựng lại bản đồ</button>
         </div>
-        <div class="lbl">BIA BẮN TRẢ XE BẠN</div><div class="row" id="rg-fm"></div>
+        <div class="lbl">BIA BẮN TRẢ ĐƠN VỊ BẠN</div><div class="row" id="rg-fm"></div>
         <details id="rg-kitbox" open><summary class="lbl">TRANG BỊ THỬ <span style="font-weight:400">(miễn phí, không lưu) ▾</span></summary>
           <div class="row"><button id="rg-kit-reset"><i class="ti ti-user" aria-hidden="true"></i> Về bộ đồ tài khoản</button></div>
           <div id="rg-kit"></div></details>
@@ -1596,6 +1615,8 @@
     root.querySelector('#rg-inf-add').onclick = () => {
       addInfantrySquad();
     };
+    const bPlay = root.querySelector('#rg-inf-play');
+    if (bPlay) bPlay.onclick = () => { swapVehicle('INFANTRY'); };
     renderUI();
     renderStatus();
   }

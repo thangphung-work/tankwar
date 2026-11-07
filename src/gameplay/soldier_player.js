@@ -118,6 +118,96 @@ const SoldierPlayer = (() => {
       a.clearRect(0, 0, MW, MH); x.clearRect(0, 0, W, H);
       this.blur.style.display = 'none';
       if (S.reflex) {
+        if (st.weapon === 'gl') {
+          // Kính ngắm quang học chuyên dụng súng phóng lựu 40 mm (kiểu M32 MGL / M320):
+          // Vòng tròn quang học dạ quang + quầng sáng, thang chia độ rơi đạn đạo cầu vồng theo cự ly
+          const R_ring = Math.max(36, Math.round(H * 0.082));
+          const colLine = 'rgba(255, 145, 45, 0.9)', colSolid = '#ff8828';
+
+          x.save();
+          // 1. Quầng sáng và vòng tròn quang học
+          const ringGrad = x.createRadialGradient(cx, cy, R_ring - 6, cx, cy, R_ring + 6);
+          ringGrad.addColorStop(0, 'rgba(255, 110, 30, 0)');
+          ringGrad.addColorStop(0.5, 'rgba(255, 130, 40, 0.35)');
+          ringGrad.addColorStop(1, 'rgba(255, 110, 30, 0)');
+          x.fillStyle = ringGrad;
+          x.beginPath(); x.arc(cx, cy, R_ring + 6, 0, Math.PI * 2); x.fill();
+
+          x.lineWidth = 2.4; x.strokeStyle = colLine;
+          x.shadowColor = '#ff6020'; x.shadowBlur = 6;
+          x.beginPath(); x.arc(cx, cy, R_ring, 0, Math.PI * 2); x.stroke();
+
+          // 2. Hai cánh vòm mở rộng hai bên (ước lượng vùng nổ sát thương mảnh văng)
+          x.lineWidth = 1.8;
+          x.beginPath(); x.arc(cx, cy, R_ring * 1.5, -0.42, 0.42); x.stroke();
+          x.beginPath(); x.arc(cx, cy, R_ring * 1.5, Math.PI - 0.42, Math.PI + 0.42); x.stroke();
+
+          // Khía chia 4 hướng quanh vòng tròn
+          const notch = 8;
+          x.beginPath();
+          x.moveTo(cx - R_ring - notch, cy); x.lineTo(cx - R_ring + 2, cy);
+          x.moveTo(cx + R_ring - 2, cy); x.lineTo(cx + R_ring + notch, cy);
+          x.moveTo(cx, cy - R_ring - notch); x.lineTo(cx, cy - R_ring + 2);
+          x.stroke();
+
+          // 3. Dấu tâm chính giữa (mốc 50 m)
+          const rr = Math.max(2.4, pxOf(0.00065));
+          x.fillStyle = '#ff4228';
+          x.beginPath(); x.arc(cx, cy, rr, 0, Math.PI * 2); x.fill();
+          x.fillStyle = 'rgba(255, 240, 220, 0.95)';
+          x.beginPath(); x.arc(cx, cy, rr * 0.45, 0, Math.PI * 2); x.fill();
+
+          // 4. Thang chia độ rơi đạn đạo (Ballistic Drop Ladder)
+          // Đạn lựu 40 mm bay chậm (76 m/s): các vạch 100m, 150m, 200m, 250m, 300m, 400m
+          const B = SoldierEngine.GL40;
+          const el0 = 0.5 * Math.asin(Math.min(1, B.g * 400 / (B.v * B.v))); // zero ở 50 m (400 đv)
+          const dropMarks = [
+            { d: 100, w: 20, lbl: '100' },
+            { d: 150, w: 12, lbl: '' },
+            { d: 200, w: 24, lbl: '200' },
+            { d: 250, w: 14, lbl: '' },
+            { d: 300, w: 28, lbl: '300' },
+            { d: 400, w: 34, lbl: '400' }
+          ];
+
+          // Trục dọc
+          x.lineWidth = 1.2;
+          const maxEl = 0.5 * Math.asin(Math.min(1, B.g * 3200 / (B.v * B.v)));
+          const maxPy = cy + pxOf(maxEl - el0);
+          x.strokeStyle = 'rgba(255, 145, 45, 0.45)';
+          x.beginPath();
+          x.moveTo(cx, cy + rr + 3);
+          x.lineTo(cx, Math.min(H * 0.92, maxPy + 10));
+          x.stroke();
+
+          x.font = '600 11px system-ui, sans-serif';
+          x.textBaseline = 'middle';
+          x.textAlign = 'left';
+
+          for (const dm of dropMarks) {
+            const distUnit = dm.d * 8; // 8 đv = 1 m
+            const elD = 0.5 * Math.asin(Math.min(1, B.g * distUnit / (B.v * B.v)));
+            const py = cy + pxOf(elD - el0);
+            if (py >= H * 0.94) continue;
+
+            // Vạch ngang
+            x.strokeStyle = colSolid;
+            x.lineWidth = dm.lbl ? 2.0 : 1.4;
+            x.beginPath();
+            x.moveTo(cx - dm.w / 2, py);
+            x.lineTo(cx + dm.w / 2, py);
+            x.stroke();
+
+            // Nhãn cự ly
+            if (dm.lbl) {
+              x.fillStyle = 'rgba(255, 210, 150, 0.9)';
+              x.fillText(dm.lbl, cx + dm.w / 2 + 5, py);
+            }
+          }
+          x.restore();
+          return;
+        }
+
         // chấm đỏ 2 MOA chiếu vô cực nên luôn nằm trên đường ngắm: lõi sáng + quầng mờ, không vòng ngoài
         const rr = Math.max(1.6, pxOf(0.00058)), gl = x.createRadialGradient(cx, cy, 0, cx, cy, rr * 4);
         gl.addColorStop(0, 'rgba(255,70,50,.55)'); gl.addColorStop(1, 'rgba(255,40,30,0)');
@@ -592,6 +682,10 @@ const SoldierPlayer = (() => {
     }
     key(code, down) {
       this.keys[code] = down;
+      if (code === 'ControlLeft' || code === 'ControlRight') {
+        this.setAim(down);
+        return;
+      }
       if (code === 'AltLeft' || code === 'AltRight') {
         this.freeLook = down;
         if (down) { this.freeYaw = 0; this.freePitch = 0; }
@@ -649,22 +743,28 @@ const SoldierPlayer = (() => {
         this._shot = true;
       } else if (!this.firing) this._shot = false;
 
-      const combat = wantAim || (this.firing && !reloading && !kami) || this._shotTimer > 0;
-      const run = (K.ShiftLeft || K.ShiftRight) && !combat && !reloading && fw > 0;
-      if (run) this.aimToggle = false;   // chạy nước rút thì thoát ngắm
+      const inScope = effectiveAim && !reloading && !s.ride && this.aimK > 0.55;
+      const combat = inScope || (this.firing && !reloading && !kami) || this._shotTimer > 0;
+      // Bấm Shift để chạy nước rút / bứt tốc tối đa (tự động thoát ngắm để tăng tốc ngay)
+      const sprint = (K.ShiftLeft || K.ShiftRight) && !inScope && !reloading && fw > 0;
+      if (sprint) { this.aimToggle = false; this._shotTimer = 0; }   // chạy nước rút thì thoát ngắm và hủy khựng sau bắn
       const isKneel = s.intent.stance === 'kneel';
       // quỳ di chuyển: đi khom thấp cảnh giới, chỉ đứng dậy khi bấm chạy nước rút Shift
-      if (moving && isKneel && run) s.setStance('stand');
+      if (moving && isKneel && sprint) s.setStance('stand');
       // đang nằm: bấm chạy là bật dậy chạy; nhả ngắm súng bắn tỉa vẫn nằm nguyên
-      if (s.intent.stance === 'prone' && run && !this.holding) s.setStance('stand');
+      if (s.intent.stance === 'prone' && sprint && !this.holding) s.setStance('stand');
       const D = s.intent.drive;
       const pinned = A.def.prone && wantAim;   // đang ngắm súng bắn tỉa là nằm tại chỗ
       D.x = moving && !pinned ? mx : 0; D.z = moving && !pinned ? mz : 0;
-      D.gait = run && !isKneel ? 'run' : isKneel ? 'patrol' : 'walk';
-      D.mul = (isKneel ? 0.72 : 1) * (wantAim ? 0.7 : fw < 0 ? 0.75 : 1);
+      // Di chuyển mặc định là chạy nhẹ (chạy chậm chiến thuật), giữ Shift là bứt tốc nước rút, ngắm bắn là đi bộ
+      D.gait = isKneel ? 'patrol' : wantAim ? 'walk' : 'run';
+      D.sprint = sprint;
+      const playerBaseMul = sprint ? 1.45 : wantAim ? 1.15 : isKneel ? 1.35 : 0.95;
+      D.mul = playerBaseMul * (fw < 0 ? 0.85 : 1);
       D.player = true;
-      // khi ngắm / bắn thân luôn quay theo hướng nhìn (đi ngang, đi lùi); còn lại quay theo hướng đi, đứng yên thì giữ hướng
-      D.face = combat ? this.yaw : moving ? null : s.heading;
+      // Khi không bật nhìn tự do (Alt freeLook): chạy nhẹ hoặc đi bộ thì thân người luôn xoay theo tâm ngắm (this.yaw)
+      // Khi bấm Shift bứt tốc (sprint): thân người xoay theo hướng chạy để lao nhanh về phía trước
+      D.face = this.freeLook ? (moving ? null : s.heading) : sprint ? null : this.yaw;
       this.aimK += ((combat ? 1 : 0) - this.aimK) * Math.min(1, dt * 11);
       F.aimBlend = this.aimK > 0.005 ? this.aimK : 0;
       // áp mắt vào kính khi giữ chuột phải và súng đã lên vai (súng bắn tỉa: đã nằm hẳn); đang nạp, đi nhờ xe thì rời kính
@@ -853,8 +953,10 @@ const SoldierPlayer = (() => {
     tryFire(pull = true) {
       const s = this.soldier, A = s.arms;
       if (!s.alive || A.reload > 0 || A.cd > 0 || s.cycling) return false;
-      if (this.aimK < 0.6) return false;      // súng phải lên vai rồi mới nổ
-      if (A.def.prone && (s.figure._proneK || 0) < 0.95) return false;   // súng bắn tỉa: nằm xuống hẳn mới bắn
+      // Súng bắn tỉa hạng nặng chống tăng: cần nằm sấp trên chân chống mới bắn được
+      if (A.def.prone && (s.figure._proneK || 0) < 0.95) return false;
+      // Bắn từ hông (hip-fire): cho phép khai hỏa tức thì, tự động nhấc súng lên đón phản lực
+      if (this.aimK < 0.6) this.aimK = Math.max(this.aimK, 0.45);
       if (A.mag <= 0) {
         // súng ổ quay không tự nạp: bóp cò nghe "tách", bóp lần nữa mới hạ súng nạp
         if (!A.def.seq) { this.reload(); return false; }
@@ -875,6 +977,7 @@ const SoldierPlayer = (() => {
       // súng phóng lựu tính tản trên vận tốc đầu; tia chỉ đo điểm ngắm
       const hit = LK && A.def.ball ? { point: LK.lead.clone(), dist: LK.d, target: null, sky: false } : this.traceShot(cam.position, A.def.ball ? this._ray.clone() : dir, A.def.range + 200);
       this.kick = 1; this.spreadNow = Math.min(0.03, this.spreadNow + (s.weapon === 'gl' ? 0.012 : 0.005));
+      if (this.sightK < 0.6) this.shake = Math.min(0.35, (this.shake || 0) + (s.weapon === 'gl' ? 0.22 : 0.08));
       // giật súng: nòng nhích lên, lệch ngang nhẹ
       const rec = s.weapon === 'gl' ? 0.02 : s.weapon === 'atr' ? 0.007 : s.weapon === 'rpg' ? 0.024 : 0.0065;
       // phần lớn tự trở về (vai, chân chống đẩy súng lại chỗ cũ), phần nhỏ ở lại nên bắn liên tục vẫn bị bốc nòng

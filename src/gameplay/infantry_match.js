@@ -49,75 +49,387 @@ const InfantryMatch = (() => {
   // đạn sượt qua: tầm nghe (đv). Vận tốc đạn của game đã quy đổi nên không so được với tốc độ âm thanh: chọn tiếng theo loại đạn
   const NEAR = { small: 64, big: 110 };
   const SMALL_AMMO = new Set(['SCOUT_BULLET', 'SCOUT_INCENDIARY', 'GATLING_BULLET', 'GATLING_HE', 'INCENDIARY']), SLOW_AMMO = new Set(['RPG', 'ANTI_TANK_MISSILE']);
-  const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyR', 'KeyC', 'KeyX', 'Space', 'Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4', 'KeyQ', 'KeyE', 'KeyF', 'KeyT', 'KeyG', 'KeyB', 'Tab', 'AltLeft', 'AltRight', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+  const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyR', 'KeyC', 'KeyX', 'Space', 'Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4', 'KeyQ', 'KeyE', 'KeyF', 'KeyT', 'KeyG', 'KeyB', 'Tab', 'AltLeft', 'AltRight', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
   const CSS = `
-    body.inf-mode #ammo-selector, body.inf-mode #fire-btn, body.inf-mode #target-lock-stat-box, body.inf-mode .hx-speed { display: none !important; }
-    #inf-hud { position: absolute; inset: 0; pointer-events: none; color: #e8ecef; font: 600 13px/1.35 system-ui, sans-serif; text-shadow: 0 1px 2px #000; }
+    body.inf-mode .hx-dock,
+    body.inf-mode #ammo-selector,
+    body.inf-mode #fire-btn,
+    body.inf-mode #target-lock-stat-box,
+    body.inf-mode .hx-speed {
+      display: none !important;
+    }
+
+    #inf-hud {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      color: var(--tc-text, #dfe4d9);
+      font-family: var(--font-tech, 'Chakra Petch', sans-serif);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Tâm ngắm tiêu chuẩn */
     #inf-cross { position: absolute; left: 50%; top: 50%; --g: 6px; }
-    #inf-cross i { position: absolute; background: #e8ecef; box-shadow: 0 0 2px #000; }
+    #inf-cross i { position: absolute; background: var(--tc-bright, #f1f4ec); box-shadow: 0 0 2px #000; }
     #inf-cross i:nth-child(1) { width: 2px; height: 8px; left: -1px; bottom: var(--g); }
     #inf-cross i:nth-child(2) { width: 2px; height: 8px; left: -1px; top: var(--g); }
     #inf-cross i:nth-child(3) { width: 8px; height: 2px; top: -1px; right: var(--g); }
     #inf-cross i:nth-child(4) { width: 8px; height: 2px; top: -1px; left: var(--g); }
-    #inf-cross.lock i { background: #ffa040; }
-    #inf-cross.hit i { background: #ff5a4a; }
+    #inf-cross .cross-dot {
+      position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px;
+      background: var(--tc-bright, #f1f4ec); border-radius: 50%; box-shadow: 0 0 2px #000;
+    }
+    #inf-cross.lock i, #inf-cross.lock .cross-dot { background: var(--tc-accent, #e7a63a); }
+    #inf-cross.hit i, #inf-cross.hit .cross-dot { background: var(--tc-danger, #d9534a); }
+    #inf-cross.hit .cross-dot { transform: scale(1.6); }
 
-    /* Thanh tiến trình nạp đạn / băng bó giữa màn hình */
-    #inf-action { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); width: 240px; text-align: center; background: rgba(10, 14, 18, .75); padding: 7px 12px; border-radius: 6px; border: 1px solid rgba(255, 160, 64, .3); box-shadow: 0 4px 14px rgba(0,0,0,.6); }
-    #inf-action-lbl { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #ffa040; margin-bottom: 5px; text-transform: uppercase; }
-    #inf-action-track { width: 100%; height: 6px; background: rgba(255,255,255,.15); border-radius: 3px; overflow: hidden; }
-    #inf-action-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #ff8a30, #ffb040); transition: width .06s linear; }
+    /* Với súng phóng lựu: vạch dưới kéo dài và có 2 vạch khấc chia độ rơi mảnh (chuẩn thước ngắm súng phóng lựu chiến thuật) */
+    #inf-cross.gl i:nth-child(1) { height: 16px; }
+    #inf-cross.gl .gl-notch-1, #inf-cross.gl .gl-notch-2 {
+      position: absolute; left: 50%; height: 1.5px; background: var(--tc-bright, #f1f4ec); box-shadow: 0 0 2px #000;
+      transform: translateX(-50%);
+    }
+    #inf-cross.gl .gl-notch-1 { bottom: calc(var(--g, 6px) + 5px); width: 6px; }
+    #inf-cross.gl .gl-notch-2 { bottom: calc(var(--g, 6px) + 11px); width: 4px; }
+    #inf-cross.gl.lock .gl-notch-1, #inf-cross.gl.lock .gl-notch-2 { background: var(--tc-accent, #e7a63a); }
+    #inf-cross.gl.hit .gl-notch-1, #inf-cross.gl.hit .gl-notch-2 { background: var(--tc-danger, #d9534a); }
+    #inf-cross:not(.gl) .gl-notch-1, #inf-cross:not(.gl) .gl-notch-2 { display: none !important; }
 
-    /* Huy hiệu trạng thái phụ (Đổi vai, nhìn tự do, nín thở) */
-    #inf-badges { position: absolute; left: 50%; bottom: 154px; transform: translateX(-50%); display: flex; gap: 8px; }
-    #inf-badges span { padding: 3px 9px; font-size: 11px; font-weight: 700; letter-spacing: .05em; background: rgba(12, 16, 20, .72); border: 1px solid rgba(255,255,255,.18); border-radius: 4px; }
-    #inf-badge-shoulder { color: #8cd4ff; border-color: rgba(140, 212, 255, .35) !important; }
-    #inf-badge-freelook { color: #ffd166; border-color: rgba(255, 209, 102, .4) !important; }
-    #inf-badge-breath { color: #ff6b6b; border-color: rgba(255, 107, 107, .4) !important; }
+    /* ==========================================================================
+       THANH TÁC CHIẾN BỘ BINH CHÍNH GIỮA (CHUẨN THEO .hx-dock VÀ .hx-bar)
+       ========================================================================== */
+    #inf-dock {
+      position: absolute;
+      left: 50%;
+      bottom: var(--hx-gap, 14px);
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      pointer-events: auto;
+    }
 
-    /* Bảng tiểu đội 4 lính góc trái dưới (kiểu PUBG) */
-    #inf-squad { position: absolute; left: 24px; bottom: 28px; display: flex; flex-direction: column; gap: 6px; }
-    .inf-sq-slot { display: flex; align-items: center; gap: 8px; width: 220px; padding: 5px 9px; background: rgba(12, 16, 20, .68); border-radius: 4px; border: 1px solid rgba(255,255,255,.12); transition: all .15s ease; }
-    .inf-sq-slot.active { background: rgba(28, 22, 12, .88); border-color: #ffa040; box-shadow: 0 0 10px rgba(255, 160, 64, .35); }
-    .inf-sq-slot.dead { opacity: .45; filter: grayscale(1); }
-    .inf-sq-num { font-size: 12px; font-weight: 800; color: #ffa040; width: 14px; text-align: center; }
-    .inf-sq-info { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-    .inf-sq-name { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .inf-sq-hp { width: 100%; height: 4px; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; }
-    .inf-sq-hp-fill { height: 100%; background: #4cd964; transition: width .15s ease; }
-    .inf-sq-ammo { font-size: 11px; font-weight: 700; color: #d0d8e0; margin-left: auto; }
+    /* Hàng chip trạng thái phụ (phía trên thanh bar) */
+    #inf-chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 5px;
+    }
+    .inf-chip {
+      height: 18px;
+      padding: 0 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--font-mono, 'JetBrains Mono', monospace);
+      font-size: 10px;
+      white-space: nowrap;
+      color: var(--tc-dim, #8d978b);
+      border: 1px solid var(--tc-line-2, rgba(200, 210, 192, 0.26));
+      background: var(--hx-bg, rgba(10, 13, 12, 0.76));
+    }
+    .inf-chip kbd {
+      min-width: 14px;
+      height: 13px;
+      padding: 0 3px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font: 700 9px/1 var(--font-mono);
+      color: #061014;
+      background: #8fd3ff;
+      border: 0;
+      border-radius: 1px;
+    }
+    .inf-chip b {
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--tc-bright, #f1f4ec);
+    }
+    .inf-chip.active {
+      border-color: var(--tc-accent, #e7a63a);
+      color: var(--tc-accent, #e7a63a);
+    }
+    .inf-chip.active b {
+      color: var(--tc-accent-2, #f5c46b);
+    }
 
-    /* Thanh Máu & Thể lực chính giữa dưới màn hình */
-    #inf-center-status { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(10, 14, 18, .78); padding: 9px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,.15); box-shadow: 0 6px 20px rgba(0,0,0,.6); min-width: 380px; }
-    #inf-posture-icon { padding: 4px 10px; font-size: 12px; font-weight: 800; letter-spacing: .06em; background: rgba(255, 160, 64, .2); color: #ffa040; border: 1px solid rgba(255, 160, 64, .45); border-radius: 4px; }
-    #inf-bars { flex: 1; display: flex; flex-direction: column; gap: 5px; }
-    #inf-hp-track { position: relative; width: 100%; height: 16px; background: rgba(255,255,255,.12); border-radius: 4px; overflow: hidden; border: 1px solid rgba(0,0,0,.4); }
-    #inf-hp-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #34c759, #30d158); transition: width .15s ease, background .2s; }
-    #inf-hp-fill.med { background: linear-gradient(90deg, #ff9f0a, #ffb340); }
-    #inf-hp-fill.low { background: linear-gradient(90deg, #ff3b30, #ff453a); }
-    #inf-hp-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-shadow: 0 1px 3px #000; }
-    #inf-stam-track { width: 100%; height: 5px; background: rgba(255,255,255,.12); border-radius: 3px; overflow: hidden; }
-    #inf-stam-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #ff9f0a, #ffd60a); transition: width .1s ease; }
+    /* Khung tác chiến chính giữa */
+    #inf-bar {
+      display: flex;
+      align-items: stretch;
+      height: 48px;
+      background: var(--hx-bg, rgba(10, 13, 12, 0.76));
+      border: 1px solid var(--hx-line, rgba(200, 210, 192, 0.26));
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+    #inf-bar > * + * {
+      border-left: 1px solid var(--hx-line, rgba(200, 210, 192, 0.26));
+    }
 
-    #inf-panel { position: absolute; right: 24px; bottom: 28px; min-width: 260px; max-width: 440px; padding: 10px 16px; text-align: right; background: rgba(10, 14, 18, .75); border-radius: 8px; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
-    #inf-ammo { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: .02em; }
-    #inf-keys { margin-top: 4px; font-size: 11px; font-weight: 500; opacity: .78; line-height: 1.45; }
+    /* Ngăn 1: Lính, Tốc độ, Máu & Thể lực */
+    .inf-section-soldier {
+      width: 220px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+      padding: 0 10px;
+    }
+    .inf-soldier-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    #inf-soldier-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--tc-bright, #f1f4ec);
+      white-space: nowrap;
+    }
+    #inf-motion-val {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--tc-dim, #8d978b);
+      white-space: nowrap;
+    }
+    /* Thanh máu quân sự vát góc */
+    .inf-hp-row {
+      --hp-c: var(--tc-ok, #8fc46f);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .inf-hp-row.med { --hp-c: var(--tc-accent, #e7a63a); }
+    .inf-hp-row.low { --hp-c: var(--tc-danger, #d9534a); }
+    .inf-hp-ico {
+      flex: none;
+      width: 12px;
+      height: 12px;
+      color: var(--hp-c);
+      transition: color 0.3s;
+    }
+    .inf-hp-track {
+      --cut: 4px;
+      position: relative;
+      flex: 1;
+      height: 12px;
+      background: rgba(200, 210, 192, 0.32);
+      clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+    }
+    .inf-hp-track::before {
+      content: '';
+      position: absolute;
+      inset: 1px;
+      background: rgb(8, 11, 9);
+      clip-path: polygon(calc(var(--cut) - 0.5px) 0, 100% 0, 100% calc(100% - var(--cut) + 0.5px), calc(100% - var(--cut) + 0.5px) 100%, 0 100%, 0 calc(var(--cut) - 0.5px));
+    }
+    .inf-hp-fill {
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      bottom: 2px;
+      background: var(--hp-c);
+      transition: width 0.15s ease-out, background 0.25s;
+    }
+    .inf-hp-track::after {
+      content: '';
+      position: absolute;
+      inset: 2px;
+      background-image: linear-gradient(90deg, transparent calc(100% - 2px), rgb(8, 11, 9) calc(100% - 2px));
+      background-size: 10% 100%;
+    }
+    #inf-hp-num {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--tc-bright);
+      white-space: nowrap;
+    }
+    /* Vạch thể lực */
+    .inf-stam-bar {
+      height: 2.5px;
+      width: 100%;
+      background: rgba(200, 210, 192, 0.15);
+      position: relative;
+    }
+    #inf-stam-fill {
+      height: 100%;
+      background: var(--tc-accent, #e7a63a);
+      transition: width 0.1s linear;
+    }
+
+    /* Ngăn 2: Vũ khí & Đạn dược */
+    .inf-section-weapon {
+      padding: 0 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      min-width: 180px;
+    }
+    #inf-weapon-name {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      color: var(--tc-bright, #f1f4ec);
+      white-space: nowrap;
+    }
+    .inf-ammo-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      font-family: var(--font-mono);
+    }
+    #inf-ammo-count {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--tc-bright, #f1f4ec);
+    }
+    #inf-ammo-extra {
+      font-size: 10.5px;
+      color: var(--tc-accent, #e7a63a);
+      white-space: nowrap;
+    }
+
+    /* Ngăn 3: Tiến trình nạp đạn / Băng bó */
+    .inf-section-action {
+      padding: 0 12px;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+      width: 160px;
+    }
+    .inf-action-lbl {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--tc-accent, #e7a63a);
+    }
+    .inf-action-track {
+      height: 4px;
+      width: 100%;
+      background: rgba(200, 210, 192, 0.15);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .inf-action-fill {
+      height: 100%;
+      background: var(--tc-accent, #e7a63a);
+      transition: width 0.06s linear;
+    }
+
+    /* ==========================================================================
+       BẢNG TIỂU ĐỘI GÓC TRÁI DƯỚI (CHUẨN THEO BÀN TÁC CHIẾN)
+       ========================================================================== */
+    #inf-squad {
+      position: absolute;
+      left: var(--hx-gap, 14px);
+      bottom: var(--hx-gap, 14px);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      pointer-events: auto;
+    }
+    .inf-sq-slot {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      width: 190px;
+      height: 28px;
+      padding: 0 8px;
+      background: var(--hx-bg, rgba(10, 13, 12, 0.76));
+      border: 1px solid var(--hx-line, rgba(200, 210, 192, 0.26));
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      transition: all 0.12s ease;
+    }
+    .inf-sq-slot.active {
+      border-color: var(--tc-accent, #e7a63a);
+      background: rgba(28, 22, 14, 0.85);
+      box-shadow: 0 0 8px rgba(231, 166, 58, 0.25);
+    }
+    .inf-sq-slot.dead {
+      opacity: 0.45;
+      filter: grayscale(1);
+    }
+    .inf-sq-num {
+      width: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font: 700 9px/1 var(--font-mono);
+      background: rgba(200, 210, 192, 0.1);
+      color: var(--tc-accent, #e7a63a);
+      border-radius: 1px;
+    }
+    .inf-sq-slot.active .inf-sq-num {
+      background: var(--tc-accent, #e7a63a);
+      color: #061014;
+    }
+    .inf-sq-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .inf-sq-name {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--tc-bright);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .inf-sq-hp {
+      width: 100%;
+      height: 2.5px;
+      background: rgba(200, 210, 192, 0.15);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .inf-sq-hp-fill {
+      height: 100%;
+      background: var(--tc-ok, #8fc46f);
+      transition: width 0.15s ease;
+    }
+    .inf-sq-ammo {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--tc-dim, #8d978b);
+      margin-left: auto;
+    }
+
+    /* Hướng dẫn phím góc phải dưới */
+    #inf-keys {
+      position: absolute;
+      right: var(--hx-gap, 14px);
+      bottom: var(--hx-gap, 14px);
+      max-width: 380px;
+      text-align: right;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--tc-dim, #8d978b);
+      line-height: 1.4;
+      pointer-events: none;
+    }
+
     #inf-heal { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse closest-side, transparent 58%, rgba(70, 210, 120, .42) 100%); }
     #inf-heal.on { animation: inf-heal 1.2s ease-out; }
     @keyframes inf-heal { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
-    #inf-msg { position: absolute; left: 50%; top: 64%; transform: translateX(-50%); padding: 6px 14px; font-size: 13px; font-weight: 700; background: rgba(10, 14, 18, .75); border: 1px solid rgba(255, 160, 64, .4); border-radius: 6px; }
+    #inf-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); padding: 5px 12px; font-size: 12px; font-weight: 700; background: var(--hx-bg); border: 1px solid var(--tc-accent); color: var(--tc-bright); }
     #inf-fb { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 961; }
     #inf-fb canvas { position: absolute; opacity: 0; }
     #inf-fb .vig { left: 0; top: 0; width: 100%; height: 100%; }
     #inf-fb .arc { left: 50%; top: 50%; }
-    #inf-fb .brg { position: absolute; left: 50%; top: 50%; opacity: 0; font: 600 11px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: .08em; font-variant-numeric: tabular-nums; color: #ff8a6a; text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000; white-space: nowrap; }
-    #inf-mark { position: absolute; left: 50%; top: 50%; display: none; }
-    #inf-mark i { position: absolute; left: -1.5px; top: -17px; width: 3px; height: 10px; outline: 1px solid rgba(0, 0, 0, .55); }
-    #inf-mark i:nth-child(1) { transform: rotate(45deg); transform-origin: 1.5px 17px; }
-    #inf-mark i:nth-child(2) { transform: rotate(135deg); transform-origin: 1.5px 17px; }
-    #inf-mark i:nth-child(3) { transform: rotate(225deg); transform-origin: 1.5px 17px; }
-    #inf-mark i:nth-child(4) { transform: rotate(315deg); transform-origin: 1.5px 17px; }
-    #inf-marktxt { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); display: none; font: 700 12px/1 system-ui, sans-serif; letter-spacing: .06em; text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000; white-space: nowrap; }
+    #inf-fb .brg { position: absolute; left: 50%; top: 50%; opacity: 0; font: 600 11px/1 var(--font-mono); letter-spacing: .08em; color: #ff8a6a; }
   `;
 
   // Sát thương (máu tối đa của lính = 1): bảng chung ở SoldierEngine.WOUND
@@ -312,6 +624,7 @@ const InfantryMatch = (() => {
       if (!this.ownsKey(e)) return;
       e.stopImmediatePropagation(); e.preventDefault();
       const C = this.ctl;
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight') { C.setAim(down); return; }
       if (e.code === 'Space') { C.firing = down; return; }
       if (e.code === 'KeyF') { if (down && !e.repeat && this.me.s.alive) this.toggleRide(); return; }
       if (e.code === 'KeyE') { if (down && !e.repeat && this.me.s.alive) this.useMedkit(); return; }
@@ -1210,18 +1523,62 @@ const InfantryMatch = (() => {
       }
       const el = this.hudEl = document.createElement('div');
       el.id = 'inf-hud';
-      el.innerHTML = '<div id="inf-heal"></div><div id="inf-cross"><i></i><i></i><i></i><i></i></div><div id="inf-msg"></div>'
-        + '<div id="inf-action" style="display:none"><div id="inf-action-lbl">ĐANG NẠP ĐẠN...</div><div id="inf-action-track"><div id="inf-action-fill"></div></div></div>'
-        + '<div id="inf-badges"><span id="inf-badge-shoulder">VAI PHẢI [Q]</span><span id="inf-badge-freelook" style="display:none">NHÌN TỰ DO [Alt]</span><span id="inf-badge-breath" style="display:none">NÍN THỞ</span></div>'
+      el.innerHTML = '<div id="inf-heal"></div><div id="inf-cross"><i></i><i></i><i></i><i></i><span class="cross-dot"></span><span class="gl-notch-1"></span><span class="gl-notch-2"></span></div><div id="inf-msg"></div>'
         + '<div id="inf-squad"></div>'
-        + '<div id="inf-center-status"><div id="inf-posture-icon">ĐỨNG</div><div id="inf-bars"><div id="inf-hp-track"><div id="inf-hp-fill"></div><span id="inf-hp-text">100 / 100</span></div><div id="inf-stam-track"><div id="inf-stam-fill"></div></div></div></div>'
-        + '<div id="inf-panel"><div id="inf-ammo"></div><div id="inf-keys">W A S D đi · Shift chạy · Chuột phải ngắm (nhấp bật/tắt, giữ thả) · Q đổi vai · Alt nhìn tự do · Chuột trái bắn · R nạp · C quỳ · X nằm · E băng bó · F lên/xuống xe · 1 2 3 4 đổi lính · \` gọi cả tổ</div></div>';
+        + '<div id="inf-dock">'
+        + '  <div id="inf-chips">'
+        + '    <span id="inf-chip-posture" class="inf-chip"><kbd>C</kbd><b id="inf-posture-val">ĐỨNG</b></span>'
+        + '    <span id="inf-chip-shoulder" class="inf-chip"><kbd>Q</kbd><b id="inf-shoulder-val">VAI PHẢI</b></span>'
+        + '    <span id="inf-chip-freelook" class="inf-chip" style="display:none"><kbd>Alt</kbd><b>NHÌN TỰ DO</b></span>'
+        + '    <span id="inf-chip-breath" class="inf-chip" style="display:none"><kbd>Shift</kbd><b id="inf-breath-val">NÍN THỞ</b></span>'
+        + '  </div>'
+        + '  <div id="inf-bar">'
+        + '    <div class="inf-section-soldier">'
+        + '      <div class="inf-soldier-top">'
+        + '        <span id="inf-soldier-title">CHIẾN BINH #1</span>'
+        + '        <span id="inf-motion-val">ĐỨNG YÊN</span>'
+        + '      </div>'
+        + '      <div class="inf-hp-row" id="inf-hp-row">'
+        + '        <svg class="inf-hp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3"/></svg>'
+        + '        <div class="inf-hp-track"><div id="inf-hp-fill" class="inf-hp-fill"></div></div>'
+        + '        <span id="inf-hp-num">100 / 100</span>'
+        + '      </div>'
+        + '      <div class="inf-stam-bar"><div id="inf-stam-fill"></div></div>'
+        + '    </div>'
+        + '    <div class="inf-section-weapon">'
+        + '      <span id="inf-weapon-name">VŨ KHÍ</span>'
+        + '      <div class="inf-ammo-row">'
+        + '        <span id="inf-ammo-count">0 / 0</span>'
+        + '        <span id="inf-ammo-extra"></span>'
+        + '      </div>'
+        + '    </div>'
+        + '    <div class="inf-section-action" id="inf-section-action">'
+        + '      <span class="inf-action-lbl" id="inf-action-lbl">ĐANG NẠP ĐẠN...</span>'
+        + '      <div class="inf-action-track"><div class="inf-action-fill" id="inf-action-fill"></div></div>'
+        + '    </div>'
+        + '  </div>'
+        + '</div>'
+        + '<div id="inf-keys">W A S D chạy nhẹ · Shift bứt tốc · Ctrl / Chuột phải ngắm · Q đổi vai · Alt nhìn tự do · Chuột trái bắn · R nạp · C quỳ · X nằm · E băng bó · 1 2 3 4 đổi lính</div>';
       box.appendChild(el);
-      this.$keys = el.querySelector('#inf-keys'); this.$cross = el.querySelector('#inf-cross'); this.$ammo = el.querySelector('#inf-ammo'); this.$msg = el.querySelector('#inf-msg'); this.$heal = el.querySelector('#inf-heal');
-      this.$action = el.querySelector('#inf-action'); this.$actionLbl = el.querySelector('#inf-action-lbl'); this.$actionFill = el.querySelector('#inf-action-fill');
-      this.$badgeShoulder = el.querySelector('#inf-badge-shoulder'); this.$badgeFreelook = el.querySelector('#inf-badge-freelook'); this.$badgeBreath = el.querySelector('#inf-badge-breath');
+      this.$keys = el.querySelector('#inf-keys'); this.$cross = el.querySelector('#inf-cross'); this.$msg = el.querySelector('#inf-msg'); this.$heal = el.querySelector('#inf-heal');
       this.$squad = el.querySelector('#inf-squad');
-      this.$posture = el.querySelector('#inf-posture-icon'); this.$hpFill = el.querySelector('#inf-hp-fill'); this.$hpText = el.querySelector('#inf-hp-text'); this.$stamFill = el.querySelector('#inf-stam-fill');
+      this.$postureVal = el.querySelector('#inf-posture-val');
+      this.$shoulderVal = el.querySelector('#inf-shoulder-val');
+      this.$chipFreelook = el.querySelector('#inf-chip-freelook');
+      this.$chipBreath = el.querySelector('#inf-chip-breath');
+      this.$breathVal = el.querySelector('#inf-breath-val');
+      this.$soldierTitle = el.querySelector('#inf-soldier-title');
+      this.$motionVal = el.querySelector('#inf-motion-val');
+      this.$hpRow = el.querySelector('#inf-hp-row');
+      this.$hpFill = el.querySelector('#inf-hp-fill');
+      this.$hpNum = el.querySelector('#inf-hp-num');
+      this.$stamFill = el.querySelector('#inf-stam-fill');
+      this.$weaponName = el.querySelector('#inf-weapon-name');
+      this.$ammoCount = el.querySelector('#inf-ammo-count');
+      this.$ammoExtra = el.querySelector('#inf-ammo-extra');
+      this.$sectionAction = el.querySelector('#inf-section-action');
+      this.$actionLbl = el.querySelector('#inf-action-lbl');
+      this.$actionFill = el.querySelector('#inf-action-fill');
       this.buildFeedback();
     }
     // lớp phản hồi nằm ngoài #hud-overlay (bị ẩn khi soi kính) và trên lớp kính (z-index 950). Viền đỏ, cung hướng vẽ một lần ra canvas phần mềm
@@ -1286,41 +1643,57 @@ const InfantryMatch = (() => {
       if (!this.hudEl) return;
       const rs = h.kami ? ' / ' + KAMI_PER + (h.kami.launching ? ' · đang phóng…' : h.kami.flying ? ' · đang lái UAV' : h.kami.left > 0 ? ' · chuột trái: phóng' : ' · hết UAV') : h.reserve != null ? ' / ' + h.reserve : '';
       const rg = h.range != null ? ' · ' + Math.round(h.range) + ' m' + (h.rangeOk ? (h.weapon === 'gl' && h.range < 14 ? ' (chưa đủ cự ly)' : '') : ' (quá tầm)') : '';
-      this.$ammo.textContent = WEAPON_NAME[h.weapon] + ' · ' + h.mag + rs + rg + (h.drum != null && h.aim > 0.5 ? ' · thước ngắm ' + h.drum + ' m' : '') + (h.scope ? ' · ' + String(h.scope.x).replace('.', ',') + '×' : '');
+      const drumStr = (h.drum != null && h.aim > 0.5 ? ' · nấc ' + h.drum + 'm' : '') + (h.scope ? ' · ' + String(h.scope.x).replace('.', ',') + '×' : '');
+
+      // Cập nhật Khung Vũ khí & Đạn dược
+      if (this.$weaponName) this.$weaponName.textContent = WEAPON_NAME[h.weapon] || h.weapon;
+      if (this.$ammoCount) this.$ammoCount.textContent = h.mag + rs;
+      if (this.$ammoExtra) this.$ammoExtra.textContent = rg + drumStr;
 
       // Cập nhật Thanh Tiến trình Hành động (Action Bar)
       const isMed = this.me && this.me.s && this.me.s._medUse;
       if (isMed) {
-        this.$action.style.display = 'block';
+        if (this.$sectionAction) this.$sectionAction.style.display = 'flex';
         const pct = Math.min(100, Math.round((this.me.s.figure.aidT || 0) / SoldierModel.AID_SEQ.wrap * 100));
-        this.$actionLbl.textContent = 'ĐANG BĂNG BÓ ' + pct + '%';
-        this.$actionFill.style.width = pct + '%';
+        if (this.$actionLbl) this.$actionLbl.textContent = 'ĐANG BĂNG BÓ ' + pct + '%';
+        if (this.$actionFill) this.$actionFill.style.width = pct + '%';
       } else if (h.reloading) {
-        this.$action.style.display = 'block';
+        if (this.$sectionAction) this.$sectionAction.style.display = 'flex';
         const pct = Math.min(100, Math.round((h.reloadProgress || 0) * 100));
-        this.$actionLbl.textContent = 'ĐANG NẠP ĐẠN ' + pct + '%';
-        this.$actionFill.style.width = pct + '%';
+        if (this.$actionLbl) this.$actionLbl.textContent = 'ĐANG NẠP ĐẠN ' + pct + '%';
+        if (this.$actionFill) this.$actionFill.style.width = pct + '%';
       } else {
-        this.$action.style.display = 'none';
+        if (this.$sectionAction) this.$sectionAction.style.display = 'none';
       }
 
-      // Cập nhật Huy hiệu trạng thái phụ (Đổi vai, nhìn tự do, nín thở)
-      this.$badgeShoulder.textContent = h.shoulder === -1 ? 'VAI TRÁI [Q]' : 'VAI PHẢI [Q]';
-      this.$badgeFreelook.style.display = h.freeLook ? '' : 'none';
-      this.$badgeBreath.style.display = (h.holding || h.winded) ? '' : 'none';
+      // Cập nhật Hàng Chip trạng thái phụ
+      if (this.$shoulderVal) this.$shoulderVal.textContent = h.shoulder === -1 ? 'VAI TRÁI' : 'VAI PHẢI';
+      if (this.$chipFreelook) this.$chipFreelook.style.display = h.freeLook ? '' : 'none';
+      if (this.$chipBreath) this.$chipBreath.style.display = (h.holding || h.winded) ? '' : 'none';
       if (h.holding || h.winded) {
-        this.$badgeBreath.textContent = h.holding ? 'NÍN THỞ' : 'HỤT HƠI';
-        this.$badgeBreath.style.color = h.winded ? '#ff453a' : '#ffd166';
+        if (this.$breathVal) this.$breathVal.textContent = h.holding ? 'NÍN THỞ' : 'HỤT HƠI';
+        if (this.$chipBreath) this.$chipBreath.classList.toggle('active', !!h.holding);
       }
 
-      // Cập nhật Cụm Máu & Thể lực chính giữa
+      // Cập nhật Ngăn Lính & Máu & Thể lực
+      const myIdx = this.mine.indexOf(this.me);
+      if (this.$soldierTitle) this.$soldierTitle.textContent = 'CHIẾN BINH #' + (myIdx >= 0 ? myIdx + 1 : 1);
+      if (this.$motionVal) {
+        const mot = h.stance === 'prone' ? 'NẰM' : h.stance === 'kneel' ? 'QUỲ' : h.motion === 'run' ? 'CHẠY' : h.motion === 'walk' ? 'ĐI BỘ' : 'ĐỨNG YÊN';
+        this.$motionVal.textContent = mot;
+      }
+      if (this.$postureVal) this.$postureVal.textContent = h.stance === 'prone' ? 'NẰM' : h.stance === 'kneel' ? 'QUỲ' : 'ĐỨNG';
+
       const hpVal = Math.max(0, Math.round(h.hp || 0));
-      this.$hpFill.style.width = Math.min(100, hpVal) + '%';
-      this.$hpFill.className = hpVal > 50 ? '' : hpVal > 25 ? 'med' : 'low';
-      this.$hpText.textContent = hpVal + ' / 100 HP';
+      if (this.$hpFill) this.$hpFill.style.width = Math.min(100, hpVal) + '%';
+      if (this.$hpRow) {
+        this.$hpRow.classList.toggle('med', hpVal <= 50 && hpVal > 25);
+        this.$hpRow.classList.toggle('low', hpVal <= 25);
+      }
+      if (this.$hpNum) this.$hpNum.textContent = hpVal + ' / 100';
+
       const stamPct = Math.max(0, Math.min(100, Math.round((h.stam != null ? h.stam : 1) * 100)));
-      this.$stamFill.style.width = stamPct + '%';
-      this.$posture.textContent = h.stance === 'prone' ? 'NẰM' : h.stance === 'kneel' ? 'QUỲ' : 'ĐỨNG';
+      if (this.$stamFill) this.$stamFill.style.width = stamPct + '%';
 
       // Cập nhật Bảng Tiểu đội 4 lính
       if (this.mine && this.mine.length > 0) {
@@ -1334,21 +1707,24 @@ const InfantryMatch = (() => {
           const ammoStr = isDead ? 'HY SINH' : P.s.arms.mag + (P.s.reserve != null ? '/' + P.s.reserve : '');
           sqHtml += `<div class="inf-sq-slot ${isAct ? 'active' : ''} ${isDead ? 'dead' : ''}">`
             + `<span class="inf-sq-num">${i + 1}</span>`
-            + `<div class="inf-sq-info"><div class="inf-sq-name">${wShort}</div><div class="inf-sq-hp"><div class="inf-sq-hp-fill" style="width:${hp}%;background:${hp>50?'#4cd964':hp>25?'#ff9f0a':'#ff3b30'}"></div></div></div>`
+            + `<div class="inf-sq-info"><div class="inf-sq-name">${wShort}</div><div class="inf-sq-hp"><div class="inf-sq-hp-fill" style="width:${hp}%;background:${hp>50?'var(--tc-ok, #8fc46f)':hp>25?'var(--tc-accent, #e7a63a)':'var(--tc-danger, #d9534a)'}"></div></div></div>`
             + `<span class="inf-sq-ammo">${ammoStr}</span>`
             + `</div>`;
         }
-        if (this.$squad.innerHTML !== sqHtml) this.$squad.innerHTML = sqHtml;
+        if (this.$squad && this.$squad.innerHTML !== sqHtml) this.$squad.innerHTML = sqHtml;
       }
 
       // Dấu tâm ngắm
-      this.$keys.style.display = h.sight ? 'none' : '';
-      this.$cross.classList.toggle('hit', !!h.hit);
-      this.$cross.style.setProperty('--g', Math.round(3 + (1 - h.aim) * 6 + h.spread * 300) + 'px');
-      this.$cross.classList.toggle('lock', !!h.lock);
-      this.$cross.style.display = h.alive && !h.sight && !h.kami ? '' : 'none';
+      if (this.$keys) this.$keys.style.display = h.sight ? 'none' : '';
+      if (this.$cross) {
+        this.$cross.classList.toggle('gl', h.weapon === 'gl');
+        this.$cross.classList.toggle('hit', !!h.hit);
+        this.$cross.style.setProperty('--g', Math.round(3 + (1 - h.aim) * 6 + h.spread * 300) + 'px');
+        this.$cross.classList.toggle('lock', !!h.lock);
+        this.$cross.style.display = h.alive && !h.sight && !h.kami ? '' : 'none';
+      }
       const msg = h.alive && !this.locked && !this.noLock && this.usable() ? 'Bấm vào màn hình để điều khiển' : this._rideMsg || '';
-      this.$msg.textContent = msg; this.$msg.style.display = msg ? '' : 'none';
+      if (this.$msg) { this.$msg.textContent = msg; this.$msg.style.display = msg ? '' : 'none'; }
     }
 
     dispose() {

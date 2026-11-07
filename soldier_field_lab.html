@@ -25,6 +25,35 @@
   #cross .v1 { width: 2px; height: 8px; left: -1px; bottom: var(--g, 8px); }
   #cross .v2 { width: 2px; height: 8px; left: -1px; top: var(--g, 8px); }
   #cross.hit i { background: #f87171; }
+
+  /* Tâm ngắm súng phóng lựu: hai cánh vòm bán nguyệt, chấm tâm, 3 nấc rơi đạn */
+  #cross.gl { width: 32px; height: 32px; margin: -16px 0 0 -16px; }
+  #cross.gl i { display: none !important; }
+  #cross.gl .gl-wing-l, #cross.gl .gl-wing-r {
+    position: absolute; top: 2px; bottom: 2px; width: 10px;
+    border: 2px solid rgba(248, 250, 252, .88);
+    filter: drop-shadow(0 0 2px rgba(0,0,0,.9));
+    transition: transform .06s ease-out;
+  }
+  #cross.gl .gl-wing-l { left: 0; border-right: none; border-radius: 12px 0 0 12px; transform: translateX(calc(-1 * var(--g, 8px) + 2px)); }
+  #cross.gl .gl-wing-r { right: 0; border-left: none; border-radius: 0 12px 12px 0; transform: translateX(calc(var(--g, 8px) - 2px)); }
+  #cross.gl .gl-dot {
+    position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px;
+    background: #ff5038; border-radius: 50%; box-shadow: 0 0 4px #ff3b20, 0 0 2px #000;
+  }
+  #cross.gl .gl-ladder {
+    position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  #cross.gl .gl-ladder span {
+    display: block; height: 1.5px; background: rgba(248, 250, 252, .88); box-shadow: 0 0 2px #000; border-radius: 1px;
+  }
+  #cross.gl .gl-ladder span:nth-child(1) { width: 12px; }
+  #cross.gl .gl-ladder span:nth-child(2) { width: 8px; }
+  #cross.gl .gl-ladder span:nth-child(3) { width: 5px; }
+  #cross.gl.hit .gl-wing-l, #cross.gl.hit .gl-wing-r, #cross.gl.hit .gl-ladder span { border-color: #f87171; background-color: #f87171; }
+  #cross.gl.hit .gl-dot { background: #ef4444; transform: scale(1.6); }
+  #cross:not(.gl) .gl-wing-l, #cross:not(.gl) .gl-wing-r, #cross:not(.gl) .gl-dot, #cross:not(.gl) .gl-ladder { display: none !important; }
   #ammo { position: absolute; right: 28px; bottom: 26px; text-align: right; font-size: 13px; text-shadow: 0 1px 2px #000; }
   #ammo b { font-size: 34px; line-height: 1; }
   #hpBox { position: absolute; left: 28px; bottom: 26px; width: 220px; font-size: 12px; text-shadow: 0 1px 2px #000; }
@@ -39,7 +68,7 @@
 <canvas id="view"></canvas>
 <div id="loading">Đang dựng địa hình…</div>
 <div id="playHud">
-  <div id="cross"><i class="h1"></i><i class="h2"></i><i class="v1"></i><i class="v2"></i></div>
+  <div id="cross"><i class="h1"></i><i class="h2"></i><i class="v1"></i><i class="v2"></i><div class="gl-wing-l"></div><div class="gl-wing-r"></div><div class="gl-dot"></div><div class="gl-ladder"><span></span><span></span><span></span></div></div>
   <div id="hpBox"><span id="hpText">Sức khoẻ 100</span><div id="hpBar"><div id="hpFill"></div></div></div>
   <div id="ammo"><b id="magN">30</b> / <span id="capN">30</span><div id="ammoInfo">Súng trường</div></div>
   <div id="playMsg"></div>
@@ -61,6 +90,15 @@
     </nav>
   </header>
   <div class="lab-scroll">
+    <section class="lab-sec">
+      <div class="lab-sec-h"><span class="lab-num">BĐ</span><h2>Bản đồ chiến trường</h2></div>
+      <div class="grid2">
+        <button class="btn map-btn" data-map="HIGHLAND">Đồng cỏ (Mượt)</button>
+        <button class="btn map-btn" data-map="DESERT">Sa mạc</button>
+        <button class="btn map-btn" data-map="JUNGLE">Rừng</button>
+        <button class="btn map-btn" data-map="URBAN">Đô thị (Nặng)</button>
+      </div>
+    </section>
     <section class="lab-sec">
       <div class="lab-sec-h"><span class="lab-num">00</span><h2>Điều khiển chiến binh</h2></div>
       <button class="btn" id="btnPlay" style="width:100%">Bắt đầu điều khiển</button>
@@ -195,27 +233,29 @@
 <script>
 (() => {
   const q = new URLSearchParams(location.search);
-  const MAP = (q.get('map') || 'URBAN').toUpperCase();
+  const MAP = (q.get('map') || 'HIGHLAND').toUpperCase();
   const SEED = (parseInt(q.get('seed'), 10) || 7) >>> 0;
   window.TankModelBuilder = undefined;   // không dựng xe đỗ trong căn cứ
 
   const canvas = document.getElementById('view');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(Math.min(1.25, window.devicePixelRatio || 1));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
   if (SkySystem.installToneCurve) SkySystem.installToneCurve(renderer, 1.1);
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(50, 1, 0.5, 20000);
 
-  // ánh sáng như game (SkySystem.applyLights theo khí quyển bản đồ); bóng nắng chỉ khung hẹp quanh tổ lính
+  // ánh sáng như game; bóng nắng ôm gọn quanh tổ lính để tối ưu hiệu năng và độ sắc nét
   const amb = new THREE.AmbientLight(0xfff5e4, 0.08); scene.add(amb);
   const hemi = new THREE.HemisphereLight(0xcfe0f5, 0x8a7458, 0.6); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff7e8, 1.3);
   sun.castShadow = true;
-  sun.shadow.mapSize.width = sun.shadow.mapSize.height = 2048;
-  Object.assign(sun.shadow.camera, { near: 10, far: 900, left: -160, right: 160, top: 160, bottom: -160 });
-  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.4;
+  sun.shadow.mapSize.width = sun.shadow.mapSize.height = 1024;
+  Object.assign(sun.shadow.camera, { near: 10, far: 450, left: -75, right: 75, top: 75, bottom: -75 });
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.25;
   scene.add(sun); scene.add(sun.target);
 
   const terrain = new BattleTerrain3D(scene, MapGen.SIZE, MapGen.SIZE, MAP, SEED);
@@ -467,6 +507,7 @@
         + (h.range != null ? ' · ' + Math.round(h.range) + ' m' + (h.rangeOk ? (h.range < 14 ? ' (chưa đủ cự ly ngòi)' : '') : ' (quá tầm)') : '')
         + (h.drum != null && h.aim > 0.5 ? ' · thước ngắm ' + h.drum + ' m' : '') + (h.scope ? ' · kính ' + String(h.scope.x).replace('.', ',') + '×' : '') + (h.tired ? ' · kiệt sức' : h.stam != null && h.stam < 0.95 ? ' · thể lực ' + Math.round(h.stam * 100) + '%' : '') + (h.holding ? ' · nín thở' : h.winded ? ' · hụt hơi' : '');
       const cr = $('cross');
+      cr.classList.toggle('gl', h.weapon === 'gl');
       cr.classList.toggle('hit', h.hit);
       cr.style.setProperty('--g', Math.round(3 + (1 - h.aim) * 6 + h.spread * 300) + 'px');
       cr.style.display = !h.sight ? '' : 'none';
@@ -557,6 +598,17 @@
     sun.target.position.set(view.tx, view.ty, view.tz);
   }
 
+  document.querySelectorAll('.map-btn').forEach(b => {
+    b.classList.toggle('on', b.dataset.map === MAP);
+    b.onclick = () => {
+      if (b.dataset.map === MAP) return;
+      const u = new URL(location.href);
+      u.searchParams.set('map', b.dataset.map);
+      location.href = u.toString();
+    };
+  });
+
+  let lastCovCamX = -9999, lastCovCamZ = -9999, shadowTick = 0;
   const statsEl = document.getElementById('stats');
   let last = performance.now(), fps = 60, stT = 0, simMs = 0;
   function frame(dt) {
@@ -570,7 +622,15 @@
     fx.update(dt);
     placeCamera();
     if (typeof GroundShader !== 'undefined' && GroundShader.tick) GroundShader.tick(dt);
-    if (terrain.groundCover) terrain.groundCover.update(view.tx, view.tz, cam.position.x, cam.position.z);
+    if (terrain.groundCover) {
+      const dCov = Math.hypot(cam.position.x - lastCovCamX, cam.position.z - lastCovCamZ);
+      if (dCov > 2.5) {
+        lastCovCamX = cam.position.x; lastCovCamZ = cam.position.z;
+        terrain.groundCover.update(view.tx, view.tz, cam.position.x, cam.position.z);
+      }
+    }
+    shadowTick = (shadowTick + 1) % 2;
+    if (shadowTick === 0) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, cam);
   }
   function loop(now) {
