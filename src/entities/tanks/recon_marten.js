@@ -92,7 +92,7 @@
     const wheels = buildWheels(chassis, M);
     buildSuspension(chassis, M);
     buildStowage(chassis, M, rnd);
-    buildSpareWheel(chassis, M);
+    buildSpareWheel(chassis, M, unit);
     unit.wheelSet = wheels;
     const sensor = buildRoofSensor(chassis, M, unit);
     const mg = buildRingMount(chassis, M, unit);
@@ -115,6 +115,9 @@
       update(dt, u) {
         if (dt <= 0) return;
         if (u.antennaSets) for (const a of u.antennaSets) a.update(dt);
+        if (u._scoutPit) u._scoutPit.visible = !u.isDead;
+        if (u._scoutPitMask) u._scoutPitMask.visible = !u.isDead;
+        if (u._scoutPitClear) u._scoutPitClear.visible = !u.isDead;
         // kíp xe: xạ thủ (tư thế / nạp đạn thủ công / thương vong) + ống phóng tên lửa nạp kiểu TOW — vehicle_crew.js
         if (u.crew && typeof VehicleCrew !== 'undefined') VehicleCrew.animate(u, dt);
         const yaw = u.group.rotation.y;
@@ -570,10 +573,19 @@
     ], HALF_W * 2, 0.22), P);
     for (const a of AXLES) hb.box(10.6, 5.0, 9.2, D, [0, 7.6, a.z]);
     // Gầm thép + giá đỡ
-    // Giap gam thep chu V chong min bao ve toan bo day xe tu truoc toi duoi
-    hb.box(11.8, 0.9, 35.5, M.paintDusty, [0, 4.5, 0.25]);
-    hb.box(2.4, 0.6, 35.5, M.paintDusty, [-6.5, 4.9, 0.25], [0, 0, 0.28]);
-    hb.box(2.4, 0.6, 35.5, M.paintDusty, [6.5, 4.9, 0.25], [0, 0, -0.28]);
+    // Giáp gầm thép chữ V chống mìn bảo vệ đáy bụng xe giữa hai hàng bánh xe
+    // Tấm đáy giữa: nằm gọn trong lòng khoảng cách giữa hai bánh xe (x = -4.1 đến +4.1)
+    hb.box(8.2, 0.9, 34.0, M.paintDusty, [0, 4.5, 0.25]);
+    // Hai tấm vát chữ V chỉ bố trí ở khoang bụng giữa hai hốc bánh xe (z từ -6.5 đến 6.0)
+    // Tuyệt đối không kéo dài xuyên qua hốc bánh trước (z = -11.6) và hốc bánh sau (z = 11.0)
+    hb.box(2.2, 0.6, 12.4, M.paintDusty, [-4.8, 4.9, -0.3], [0, 0, 0.28]);
+    hb.box(2.2, 0.6, 12.4, M.paintDusty, [4.8, 4.9, -0.3], [0, 0, -0.28]);
+    // Hai tấm vát ngắn bảo vệ gầm mũi xe phía trước hốc bánh trước
+    hb.box(1.8, 0.6, 2.2, M.paintDusty, [-3.8, 4.9, -16.8], [0, 0, 0.28]);
+    hb.box(1.8, 0.6, 2.2, M.paintDusty, [3.8, 4.9, -16.8], [0, 0, -0.28]);
+    // Hai tấm vát ngắn bảo vệ gầm đuôi xe phía sau hốc bánh sau
+    hb.box(1.8, 0.6, 2.0, M.paintDusty, [-3.8, 4.9, 16.5], [0, 0, 0.28]);
+    hb.box(1.8, 0.6, 2.0, M.paintDusty, [3.8, 4.9, 16.5], [0, 0, -0.28]);
     // Dam can bao ve gam duoi xe va moc keo cuu ho
     hb.box(13.6, 1.4, 1.0, D, [0, 4.8, 17.8]);
     for (const s of [-1, 1]) {
@@ -619,9 +631,43 @@
       hb.box(2.4, 0.5, 4.2, P, [s * (HALF_W - 0.6), 10.0, fz - 2.6]);
       // Khối vè ngang nối nắp máy
       hb.box(HALF_W - HOOD_HALF + 0.6, 1.2, 8.6, P, [s * ((HALF_W + HOOD_HALF) / 2), 9.6, fz]);
-      // Vè sau bằng cao su
-      hb.add(new THREE.TorusGeometry(AR + 0.15, 0.3, 6, 14, Math.PI * 0.84), M.rubber,
-        [s * (HALF_W + 0.04), WHEEL_Y, AXLES[1].z], [0, Math.PI / 2, Math.PI * 0.08]);
+      // Vè chắn bùn sau liền khối dập nổi dày dặn, có vách lòng vòm ôm khít hốc bánh xe
+      const rearFender = [];
+      const rz = AXLES[1].z;
+      const aStart = -0.04, aSpan = Math.PI + 0.08;
+      for (let i = 0; i <= 10; i++) {
+        const a = aStart + aSpan * (i / 10);
+        rearFender.push([rz + (AR + 0.36) * Math.cos(a), WHEEL_Y + (AR + 0.36) * Math.sin(a)]);
+      }
+      for (let i = 10; i >= 0; i--) {
+        const a = aStart + aSpan * (i / 10);
+        rearFender.push([rz + (AR - 0.04) * Math.cos(a), WHEEL_Y + (AR - 0.04) * Math.sin(a)]);
+      }
+      // Vè mép ngoài dày 1.6 đơn vị ôm lấy viền hốc bánh
+      hb.add(VehicleKit.sideProfile(rearFender, 1.6, 0.08), P, [s * (HALF_W - 0.1), 0, 0]);
+
+      // Lòng vòm chắn bùn (fender inner liner) cong hình bán nguyệt bọc kín từ vè ngoài vào thân xe:
+      // ngăn hoàn toàn nhìn xuyên thấu qua gầm xe khi bánh xe bị bắn văng
+      const linerArch = [];
+      for (let i = 0; i <= 10; i++) {
+        const a = aStart + aSpan * (i / 10);
+        linerArch.push([rz + (AR + 0.15) * Math.cos(a), WHEEL_Y + (AR + 0.15) * Math.sin(a)]);
+      }
+      for (let i = 10; i >= 0; i--) {
+        const a = aStart + aSpan * (i / 10);
+        linerArch.push([rz + (AR - 0.08) * Math.cos(a), WHEEL_Y + (AR - 0.08) * Math.sin(a)]);
+      }
+      hb.add(VehicleKit.sideProfile(linerArch, 2.6, 0.08), D, [s * (HALF_W - 1.4), 0, 0]);
+
+      // Vách lòng hốc bánh xe trong và đĩa phanh / moay-ơ trục xe lộ ra chắc chắn khi bánh rơi
+      hb.box(2.2, 5.0, 9.4, D, [s * (HALF_W - 2.0), 7.5, AXLES[1].z]);
+      const hubRearX = s * (WHEEL_X - TIRE_W / 2 - 0.1);
+      hb.cyl(1.4, 1.4, 0.35, 16, M.steel, [hubRearX, WHEEL_Y, AXLES[1].z], 'x');
+      hb.cyl(0.85, 0.95, 0.6, 12, D, [hubRearX + s * 0.35, WHEEL_Y, AXLES[1].z], 'x');
+      for (let bi = 0; bi < 6; bi++) {
+        const ba = (bi / 6) * Math.PI * 2;
+        hb.cyl(0.12, 0.12, 0.25, 6, M.steel, [hubRearX + s * 0.45, WHEEL_Y + Math.cos(ba) * 0.95, AXLES[1].z + Math.sin(ba) * 0.95], 'x');
+      }
     }
 
     // Đèn pha trên đầu vè có khung bảo vệ + đèn xi-nhan
@@ -824,14 +870,11 @@
     for (const s of [-1, 1]) {
       hb.box(1.4, 0.9, 0.35, D, [s * 6.6, 8.6, 18.1]);
       hb.box(0.55, 0.45, 0.1, M.tailLens, [s * 6.9, 8.65, 18.3]);
-      hb.setTag('can' + (s < 0 ? 'L' : 'R'));
       const canY = 12.0, canZ = martenRearZAt(canY);
       const pCanWall = [s * 5.4, canY, canZ];
-      // Tấm lưng khay dập thép bắt bu-lông vào vách đuôi
+      // Khay đỡ can bằng thép hàn cố định trên cửa đuôi
       hb.box(2.22, 2.8, 0.08, D, frameAt(pCanWall, martenRearRot, [0, 0, 0.04]), martenRearRot);
-      // Khay đáy đỡ can
       hb.box(2.22, 0.12, 1.08, D, frameAt(pCanWall, martenRearRot, [0, -1.48, 0.58]), martenRearRot);
-      // Gờ chặn đáy
       hb.box(2.22, 0.34, 0.08, D, frameAt(pCanWall, martenRearRot, [0, -1.32, 1.08]), martenRearRot);
       for (const dy of [-0.7, 0.6]) {
         hb.box(2.3, 0.2, 0.08, D, frameAt(pCanWall, martenRearRot, [0, dy, 1.08]), martenRearRot);
@@ -839,6 +882,8 @@
         hb.box(0.08, 0.2, 1.04, D, frameAt(pCanWall, martenRearRot, [1.08, dy, 0.56]), martenRearRot);
       }
       hb.box(0.26, 0.30, 0.12, M.steel, frameAt(pCanWall, martenRearRot, [0, -0.05, 1.12]), martenRearRot); // khóa cài đai
+      // Can xăng 20L riêng biệt để có thể cháy nổ, bẹp vỡ hoặc văng mất khi trúng đạn / xe cháy
+      hb.setTag('can' + (s < 0 ? 'L' : 'R'));
       hb.jerrycan(frameAt(pCanWall, martenRearRot, [0, 0, 0.58]), [-MARTEN_REAR_TILT, Math.PI / 2, 0, 'YXZ'], 0.95, 2.9, 2.1, P, D);
       hb.setTag(null);
     }
@@ -1192,23 +1237,68 @@
     b.build(chassis);
   }
 
-  // Bánh dự phòng trên giá bắt vào cửa sau (đứng, hông ngoài quay ra sau)
-  function buildSpareWheel(chassis, M) {
+  // Bánh dự phòng trên giá bắt vào cửa sau (đứng, hông ngoài quay ra sau, gắn chắc chắn vào cửa sau)
+  function buildSpareWheel(chassis, M, unit) {
     const g = new THREE.Group();
     const H = TIRE_W / 2;
-    g.position.set(0, 12.6, 17.95 + H + 0.35);
+    // Gốc tọa độ g đặt ngay trên mặt phẳng cửa sau xe (z = 17.8), tâm bánh ở độ cao y = 12.4
+    g.position.set(0, 12.4, 17.8);
     g.rotation.set(Math.PI / 2, 0, 0);
     chassis.add(g);
+
+    const yc = 1.35 + H; // tâm bánh xe cách mặt cửa sau 2.8 đơn vị
+
+    // 1. Phần lốp cao su riêng để có thể bốc cháy, co rút và thiêu rụi trơ vành mâm khi xe cháy
+    const rubGroup = new THREE.Group();
+    g.add(rubGroup);
+    const rb = new VehicleKit.PartBatch(0);
+    for (const geo of tireGeos({ R: WHEEL_R - TIRE_LUG, H, bead: TIRE_BEAD, lugH: TIRE_LUG, seed: 29 }, M)) {
+      rb.add(geo, M.tire || M.rubber, [0, yc, 0], [0, 0.4, 0]);
+    }
+    rb.build(rubGroup);
+    if (unit) unit.spareRubber = rubGroup;
+
+    // 2. Vành thép, đĩa mâm và giá treo thép bắt chặt vào cửa sau xe
     const b = new VehicleKit.PartBatch(0);
     b.setTag('spare');
-    for (const geo of tireGeos({ R: WHEEL_R - TIRE_LUG, H, bead: TIRE_BEAD, lugH: TIRE_LUG, seed: 29 }, M)) b.add(geo, M.tire || M.rubber, [0, 0, 0], [0, 0.4, 0]);
-    b.cyl(TIRE_BEAD + 0.02, TIRE_BEAD + 0.02, H * 1.6, 28, M.rim, [0, 0, 0], 'y', null, true);
-    b.add(rimFaceGeo(TIRE_BEAD, H), M.rim, [0, 0, 0]);
-    b.cyl(0.75, 0.85, 0.5, 12, M.steel, [0, H * 0.6 + 0.2, 0]);
-    b.box(3.0, 0.22, 0.7, M.dark, [0, H * 0.6 + 0.5, 0]);
-    b.cyl(0.3, 0.3, 0.3, 6, M.steel, [0, H * 0.6 + 0.75, 0]);
-    for (const x of [-1.6, 1.6]) b.box(0.4, H * 2 + 0.6, 0.4, M.dark, [x, -0.3, 0]);
+
+    // Chân đế bản mã thép hàn gắn vào cửa sau (y = 0 trong hệ g)
+    b.box(1.4, 0.1, 1.4, M.dark, [0, 0.05, -1.8]);
+    b.box(1.2, 0.1, 1.2, M.dark, [-1.6, 0.05, 1.6]);
+    b.box(1.2, 0.1, 1.2, M.dark, [1.6, 0.05, 1.6]);
+
+    // Giá treo tam giác chữ A bằng 3 thanh thép hộp dày dặn vươn từ cửa sau ra đỡ moay-ơ bánh
+    b.beam([0, 0.1, -1.8], [0, 1.2, 0], 0.42, 0.42, M.dark);
+    b.beam([-1.6, 0.1, 1.6], [0, 1.2, 0], 0.42, 0.42, M.dark);
+    b.beam([1.6, 0.1, 1.6], [0, 1.2, 0], 0.42, 0.42, M.dark);
+
+    // Mặt bích tròn moay-ơ giá treo
+    b.cyl(1.35, 1.35, 0.28, 16, M.dark, [0, 1.2, 0], 'y');
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      b.cyl(0.12, 0.12, 0.22, 6, M.steel, [Math.cos(a) * 0.85, 1.35, Math.sin(a) * 0.85], 'y');
+    }
+
+    // Ống vành thép ngoài ôm khít trong lòng mép tanh lốp cao su
+    b.cyl(TIRE_BEAD + 0.02, TIRE_BEAD + 0.02, H * 1.8, 28, M.rim, [0, yc, 0], 'y', null, true);
+    // Mặt mâm thép dập lòng chảo hướng ra phía sau xe
+    b.add(rimFaceGeo(TIRE_BEAD, H), M.rim, [0, yc, 0]);
+    // Đáy đĩa mâm kín tâm kết nối moay-ơ (không nhìn xuyên thấu qua lỗ)
+    b.cyl(1.35, 1.35, 0.16, 20, M.rim, [0, yc + H * 0.32, 0], 'y');
+
+    // Moay-ơ tâm bánh xe nhô ra ở giữa
+    b.cyl(0.85, 0.95, 0.52, 14, M.steel, [0, yc + H * 0.6 + 0.2, 0], 'y');
+    // Thanh thép hộp kẹp ngang giữ bánh xe
+    b.box(3.2, 0.25, 0.8, M.dark, [0, yc + H * 0.6 + 0.45, 0]);
+    // Ty ren và đai ốc tai hồng bằng thép kẹp chặt bánh xe vào giá treo
+    b.strut([0, 1.2, 0], [0, yc + H * 0.6 + 0.85, 0], 0.16, M.steel, 8);
+    b.cyl(0.35, 0.35, 0.3, 6, M.steel, [0, yc + H * 0.6 + 0.72, 0], 'y');
+    for (const s of [-1, 1]) {
+      b.box(0.7, 0.1, 0.35, M.steel, [s * 0.42, yc + H * 0.6 + 0.8, 0], [0, s * 0.25, 0]);
+    }
+
     b.build(g);
+    if (unit && VehicleKit.registerPartGroup) VehicleKit.registerPartGroup(unit, 'spare', g);
   }
 
   // ===========================================================================
@@ -1320,10 +1410,9 @@
     tb.box(0.25, 0.5, 0.25, M.dark, [1.5, 0.7, HINGE_Z + 0.35]);   // cữ chặn nắp
     tb.build(turret);
 
-    // LÒNG HỐ: nóc xe là khối đặc nên phải "khoét" bằng mặt nạ độ sâu: đĩa vô hình ngay trên mặt nóc đẩy độ sâu ra xa nhất
-    // (xóa mặt nóc trong vòng lỗ), rồi vẽ ống khoang bên trong — nhìn qua lỗ thấy thành khoang, sàn, ghế treo, hộp đạn.
-    // Thứ tự vẽ: nóc / xe (0) -> mặt nạ (1) -> lòng khoang (2) -> xạ thủ & đồ thò xuống lỗ (3)
-    const holeR = HATCH_R - 0.25, DEPTH = 8.5;
+    // LÒNG HỐ: nóc xe là khối đặc nên khoét bằng mặt nạ độ sâu, chiều sâu vừa phải gọn trong cabin xe
+    // (tuyệt đối không để hốc quá sâu đâm xuyên sàn xe thò xuống giỏ đồ bên dưới)
+    const holeR = HATCH_R - 0.25, DEPTH = 3.6;
     // mặt nạ STENCIL: đĩa vô hình trên miệng lỗ đánh dấu stencil = 1 ở những điểm ảnh nhìn thấy miệng lỗ (bị súng / tấm
     // chắn che thì không) -> lòng khoang chỉ vẽ trong vùng đó, không xét độ sâu (vẽ đè lên mặt nóc như thể nóc bị khoét)
     const holeGeo = new THREE.CircleGeometry(holeR, 32);
@@ -1334,6 +1423,7 @@
     mask.rotation.x = -Math.PI / 2; mask.position.y = 0.04; mask.renderOrder = 1;
     mask.userData.isFxDecal = true;
     turret.add(mask);
+    unit._scoutPitMask = mask;
     // lượt 2: trong vùng stencil, xóa độ sâu về xa nhất (mặt nóc không còn che) -> lòng khoang & chân xạ thủ vẽ với độ
     // sâu bình thường, che khuất nhau đúng
     const clear = new THREE.Mesh(holeGeo, new THREE.ShaderMaterial({
@@ -1347,57 +1437,50 @@
     clear.rotation.x = -Math.PI / 2; clear.position.y = 0.04; clear.renderOrder = 10;
     clear.userData.isFxDecal = true;
     turret.add(clear);
+    unit._scoutPitClear = clear;
     const pit = new THREE.Group();
     pit.renderOrder = 2;
-    // thành khoang: tối dần xuống sâu (màu đỉnh theo độ sâu)
-    const wallGeo = new THREE.CylinderGeometry(holeR, holeR, DEPTH, 28, 6, true);
+    unit._scoutPit = pit;
+    // thành khoang: tối đen dần xuống sâu, không bao giờ nhận màu sơn thân xe kể cả khi cháy xác xe
+    const wallGeo = new THREE.CylinderGeometry(holeR, holeR, DEPTH, 28, 4, true);
     const wc = [], wp = wallGeo.attributes.position;
-    for (let i = 0; i < wp.count; i++) { const k = 0.3 * Math.pow((wp.getY(i) + DEPTH / 2) / DEPTH, 2.2) + 0.02; wc.push(k * 0.62, k * 0.66, k * 0.55); }
+    for (let i = 0; i < wp.count; i++) { const k = 0.15 * Math.pow((wp.getY(i) + DEPTH / 2) / DEPTH, 2.0) + 0.01; wc.push(k, k, k); }
     wallGeo.setAttribute('color', new THREE.Float32BufferAttribute(wc, 3));
-    const pitMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide });
+    const pitMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.98, side: THREE.DoubleSide });
     const wall = new THREE.Mesh(wallGeo, pitMat);
     wall.position.y = -DEPTH / 2;
     pit.add(wall);
-    const dark = new THREE.MeshStandardMaterial({ color: 0x151612, roughness: 1 });
-    const inner = new THREE.MeshStandardMaterial({ color: 0x2c2e27, roughness: 0.9 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x070807, roughness: 1 });
+    const inner = new THREE.MeshStandardMaterial({ color: 0x161814, roughness: 0.9 });
     const floor = new THREE.Mesh(new THREE.CircleGeometry(holeR, 28), dark);
     floor.rotation.x = -Math.PI / 2; floor.position.y = -DEPTH + 0.02;
     pit.add(floor);
-    // vành lót trong miệng lỗ (thép dày lộ ra) + vòng bu-lông
-    const liner = new THREE.Mesh(new THREE.CylinderGeometry(holeR + 0.01, holeR + 0.01, 0.7, 28, 1, true), new THREE.MeshStandardMaterial({ color: 0x4a4c40, roughness: 0.8, side: THREE.DoubleSide }));
-    liner.position.y = -0.3;
+    // vành lót trong miệng lỗ (thép dày dặn ôm khít miệng)
+    const liner = new THREE.Mesh(new THREE.CylinderGeometry(holeR + 0.01, holeR + 0.01, 0.45, 28, 1, true), new THREE.MeshStandardMaterial({ color: 0x22241e, roughness: 0.85, side: THREE.DoubleSide }));
+    liner.position.y = -0.22;
     pit.add(liner);
-    // ghế treo xạ thủ (đai vải căng ngang khoang), bậc đứng, hộp đạn & ống rocket dự phòng xếp đáy khoang, thùng bộ đàm
-    const pk = new VehicleKit.PartBatch(ROOF_Y - 4);
-    pk.box(holeR * 1.9, 0.12, 1.0, inner, [0, -4.6, 0.6]);
-    pk.box(0.18, 0.18, holeR * 1.9, inner, [0, -5.0, -1.2]);
-    pk.box(2.0, 0.25, 1.2, inner, [0.4, -6.3, -0.8]);
-    pk.box(1.1, 1.0, 1.5, M.paint, [-1.6, -DEPTH + 0.5, 0.6]);
-    pk.box(1.1, 1.0, 1.5, M.paint, [-1.5, -DEPTH + 1.5, 0.7], [0, 0.2, 0]);
-    pk.cyl(0.45, 0.45, 3.2, 10, M.paint, [1.4, -DEPTH + 0.5, 0.2], 'z');
-    pk.box(1.4, 1.3, 0.8, inner, [0.9, -2.4, holeR - 0.4]);
-    pk.box(0.3, 0.3, 0.06, M.lens || dark, [0.6, -2.2, holeR - 0.82]);
+    // bậc đứng và hộp đạn dự phòng xếp gọn trong lòng cabin (không đâm thủng sàn)
+    const pk = new VehicleKit.PartBatch(ROOF_Y - 2);
+    pk.box(holeR * 1.8, 0.12, 0.9, inner, [0, -2.2, 0.4]);
+    pk.box(0.16, 0.16, holeR * 1.8, inner, [0, -2.6, -0.8]);
+    pk.box(1.2, 0.6, 1.2, M.paint, [-0.8, -DEPTH + 0.35, 0.3]);
+    pk.cyl(0.35, 0.35, 1.8, 10, M.paint, [1.0, -DEPTH + 0.4, 0.1], 'z');
     pk.build(pit);
     const STENCIL = { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp, transparent: true, opacity: 1, depthWrite: true };
-    // LÒNG KHOANG TỐI: nóc che hết nắng, chỉ chút sáng lọt qua miệng lỗ -> nhìn từ trên xuống gần như đen, đồ đạc chỉ lờ mờ.
-    // Trước đây vật liệu chuẩn nhận đủ nắng (lòng khoang sáng xám như ngoài trời, sơn ngụy trang sáng màu, vật liệu mất
-    // texture hiện tím). Vật liệu không chịu sáng (Basic): thành khoang tối dần theo độ sâu (màu đỉnh), đáy gần đen, đồ
-    // đạc ~15% màu gốc; riêng vành lót miệng lỗ (ló ra ánh sáng) vẫn chịu sáng, sẫm hơn chút
-    const DIM = 0.15;
+    // LÒNG KHOANG TỐI ĐEN: nóc che hết nắng -> nhìn từ trên xuống là bóng tối đen thẫm, không bị hóa màu cam đỏ khi xác xe cháy
     const darkMat = (m, o) => {
-      if (o === liner) { const c = m.clone(); c.color.multiplyScalar(0.7); return Object.assign(c, STENCIL); }
-      if (o === wall) return new THREE.MeshBasicMaterial(Object.assign({ vertexColors: true, side: THREE.DoubleSide }, STENCIL));
-      const col = (m.color ? m.color.clone() : new THREE.Color(0x2c2e27)).multiplyScalar(o === floor ? 0.25 : DIM);
-      return new THREE.MeshBasicMaterial(Object.assign({ color: col, side: m.side }, STENCIL));
+      const col = (o === floor || o === wall) ? new THREE.Color(0x060706) : new THREE.Color(0x121411);
+      const mat = new THREE.MeshBasicMaterial(Object.assign({ color: col, side: m.side || THREE.FrontSide }, STENCIL));
+      mat.userData.noChar = true;
+      mat.userData.isFxDecal = true;
+      return mat;
     };
-    for (let i = 0; i < wc.length; i++) wc[i] *= 0.3;   // thành khoang: đỉnh ~0,1 -> đáy gần đen
-    wallGeo.attributes.color.array.set(wc);
-    // thứ tự vẽ (không xét độ sâu): thành khoang -> đáy -> đồ đạc trong khoang -> vành lót miệng lỗ
     pit.traverse(o => {
       if (!o.isMesh) return;
       o.material = darkMat(o.material, o);
       o.renderOrder = o === wall ? 11 : o === floor ? 11.1 : o === liner ? 11.3 : 11.2;
       o.castShadow = false; o.receiveShadow = false; o.userData.isFxDecal = true;
+      o.userData.noChar = true;
     });
     turret.add(pit);
 

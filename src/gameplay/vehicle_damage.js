@@ -401,7 +401,8 @@ const VehicleDamage = (() => {
       const wb = Math.max(4, (nB ? zB / nB : 0) - (nF ? zF / nF : 0));
       tiltR = -Math.atan((dR - dL) / (2 * halfX));
       tiltP = -Math.atan((dF - dB) / wb);
-      d.sink = (dL + dR) / 2 * 0.5 + (dF + dB) / 2 * 0.5;
+      const avgDrop = ((dL + dR) / 2 + (dF + dB) / 2) * 0.5;
+      d.sink = u.isDead ? avgDrop * 0.98 : avgDrop * 0.65;
     } else {
       d.sink = 0;
     }
@@ -615,11 +616,11 @@ const VehicleDamage = (() => {
     const tag = opt.tag || '';
     const flammable = opt.flammable !== undefined ? !!opt.flammable : /^(can|cans|fuelTank|generator|stowage|tarpRoll)/.test(tag);
     const explosive = opt.explosive !== undefined ? !!opt.explosive : /^(can|cans|fuelTank|ammoBoxes|atgm|rocketPod|kamiRack|agl|smoke)/.test(tag);
+    const noHull = !!opt.noHull || /^(shield|rcws|optics|sensor|launcher|atgm|smoke|hatch|hatchBay|cupola|searchlight|radarKit)/i.test(tag);
     const D = {
       u, obj, r, dims, corners, mass, mat, round: !!opt.round, invI, comL, cr, reach: Math.max(reach, 0.3), x,
       tag, hp: opt.hp || (mass > 2.2 ? 2.0 : 1.15), burning: !!opt.burning, flammable, explosive, detonated: false, fireT: 0,
-      // mảnh tách từ dưới mặt vỏ? — xét ở bước vật lý đầu (mặt đỡ dựng lại một lần dù nhiều bộ phận bung cùng lúc)
-      under: null, p0: p0.clone(),
+      noHull, under: noHull ? true : null, p0: p0.clone(),
       v, w: new THREE.Vector3(),
       t: 0, rest: false, bounces: 0, calm: 0, sndCd: 0, scrCd: 0
     };
@@ -740,7 +741,7 @@ const VehicleDamage = (() => {
   // thành 2-5 mảnh rời thực sự để mỗi mảnh văng một hướng, không bay nguyên một khối cứng
   function splitHolderIntoPieces(holder, tag) {
     if (!holder) return [holder];
-    if (/^(skirt|cheek|applique|era|spare|atgm|fuelTank|can|bin|box|tarpRoll|spareTrack|tool)$/.test(tag || '')) return [holder];
+    if (/^(skirt|cheek|applique|era|spare|atgm|fuelTank|can|bin|box|tarpRoll|spareTrack|tool|shield)$/.test(tag || '')) return [holder];
     let maxPieces = 2;
     if (/^(cans|smoke|ammoBoxes|stowage)/.test(tag || '')) maxPieces = 4;
     else if (/^(rcws|agl|rocketPod|kamiRack|generator|jammer|rjam|sradar|sensor|aaRadar)/.test(tag || '')) maxPieces = 3;
@@ -938,12 +939,13 @@ const VehicleDamage = (() => {
     const mat = debrisMatOf(tag);
 
     let baseHolder = null;
-    if (entries && entries.length) {
+    if (entries && entries.length && !grp) {
       // váy xích bung thì gạch ERA / tấm composite bắt trên nó đi theo (không treo lơ lửng giữa không trung)
       const parts = /^skirt/.test(tag) ? entries.concat(mountedSegParts(u, entries)) : entries;
       baseHolder = cutParts(u, parts, c);
       fieldChanged(u, true);
-    } else if (grp) {
+    }
+    if (grp) {
       grp.updateMatrixWorld(true);
       const copy = grp.clone(true);
       const hiddenNodes = [];
@@ -954,13 +956,46 @@ const VehicleDamage = (() => {
       grp.visible = false;
       d.hiddenGroups.push(grp);
       fieldChanged(u, true);
-      baseHolder = copy;
+      if (!baseHolder) baseHolder = copy;
+      else baseHolder.add(copy);
+    }
+    if (tag === 'radarKit' && u._eqRadarHead) {
+      u._eqRadarHead.visible = false;
+    }
+    if (tag === 'spare') {
+      if (u.spareRubber) {
+        if (baseHolder && u.spareRubber.visible) {
+          const rubCopy = u.spareRubber.clone(true);
+          u.spareRubber.updateMatrixWorld(true);
+          baseHolder.updateMatrixWorld(true);
+          const hInv = new THREE.Matrix4().copy(baseHolder.matrixWorld).invert();
+          rubCopy.applyMatrix4(hInv.multiply(u.spareRubber.matrixWorld));
+          baseHolder.add(rubCopy);
+        }
+        u.spareRubber.visible = false;
+      }
+      if (u.spareWood) u.spareWood.visible = false;
+      if (u.spareStrap) u.spareStrap.visible = false;
     }
 
     if (baseHolder) {
       // đồ dễ nổ (can xăng, hòm đạn, ống phóng) tự nổ thì vẫn toác mảnh; đồ chỉ tuột giá thì rơi nguyên khối
       const whole = o.whole && !isExplosiveAcc;
       const pieces = whole ? [baseHolder] : splitHolderIntoPieces(baseHolder, tag);
+      // Hướng ly tâm đẩy mảnh vỡ ra ngoài chu vi thân xe (không để rơi ngược lại trên nắp ca-pô / nóc xe)
+      const uPos = u.group ? u.group.position : new THREE.Vector3();
+      const outRad = wp.clone().sub(uPos);
+      outRad.y = 0;
+      if (outRad.lengthSq() < 1) outRad.set(rand(-1, 1), 0, rand(-1, 1));
+      outRad.normalize();
+      // Phụ kiện trên nóc / tháp pháo (tấm chắn xạ thủ shield, nắp khoang hatch/hatchBay, cụm vũ khí nóc): ép hướng văng chéo mạnh sang hai sườn xe rơi thẳng xuống đất
+      const isRoofAcc = /^(shield|rcws|optics|sensor|launcher|atgm|smoke|hatch|hatchBay|cupola|searchlight|radarKit)/i.test(tag || '');
+      if (isRoofAcc) {
+        const sx = outRad.x >= 0 ? 1 : -1;
+        outRad.x = sx * Math.max(0.78, Math.abs(outRad.x));
+        outRad.normalize();
+      }
+
       for (let i = 0; i < pieces.length; i++) {
         const pc = pieces[i];
         mangleDebris(pc, tag, (whole ? 0.15 : blastPow) * rand(0.7, 1.25));
@@ -968,13 +1003,15 @@ const VehicleDamage = (() => {
         const spread = whole ? 2 : pieces.length > 1 ? (isExplosiveAcc ? 28 : 16) : 6;
         const pieceImp = impulse.clone()
           .multiplyScalar(rand(0.75, 1.3))
-          .add(whole ? new THREE.Vector3(rand(-spread, spread), rand(0, 4), rand(-spread, spread))
+          .add(outRad.clone().multiplyScalar(isRoofAcc ? rand(24, 40) : rand(18, 32)))
+          .add(whole ? new THREE.Vector3(rand(-spread, spread), isRoofAcc ? rand(4, 12) : rand(0, 4), rand(-spread, spread))
             : new THREE.Vector3(rand(-spread, spread), rand(6, 22 + (isExplosiveAcc ? 14 : 0)), rand(-spread, spread)));
         spawnDebris(u, pc, pieceImp, {
           mat,
           tag,
           pop: o.pop,
           round: tag === 'spare',
+          noHull: isRoofAcc,
           burning: isBurningAcc && (i === 0 || Math.random() < 0.65)
         });
       }
@@ -1000,6 +1037,11 @@ const VehicleDamage = (() => {
     const entries = u.partRegistry && u.partRegistry[tag], grp = u.partGroups && u.partGroups[tag];
     d.lost.add(tag);
     u.group.updateMatrixWorld(true);
+    if (tag === 'spare') {
+      if (u.spareRubber) u.spareRubber.visible = false;
+      if (u.spareWood) u.spareWood.visible = false;
+      if (u.spareStrap) u.spareStrap.visible = false;
+    }
     if (entries && entries.length) cutParts(u, entries, partCenter(u, tag));
     else if (grp) { grp.visible = false; d.hiddenGroups.push(grp); }
     fieldChanged(u, true);
@@ -1108,6 +1150,8 @@ const VehicleDamage = (() => {
     const d = state(u);
     const entries = u.partRegistry[tag];
     if (!entries || d.lost.has(tag) || d.bent.has(tag)) return null;
+    // Cửa trượt khoang nạp đạn (Arbalest hatchBayL/R) trượt ngang trên ray, không có bản lề xoay -> không dùng swingHatch
+    if (/^hatchBay/i.test(tag)) return null;
     const v = new THREE.Vector3(), box = new THREE.Box3();
     let topY = -Infinity;
     for (const e of entries) for (const [st, n] of e.ranges) for (let i = st; i < st + n; i++) { v.fromBufferAttribute(e.mesh.geometry.attributes.position, i); box.expandByPoint(v); topY = Math.max(topY, v.y); }
@@ -1155,14 +1199,31 @@ const VehicleDamage = (() => {
     for (const tag of tags) {
       const c = partCenter(u, tag);
       if (!c || !c.mesh) continue;
+      const isSlideHatch = /^hatchBay/i.test(tag);
       const hole = { mesh: c.mesh, local: c.local.clone(), k: strength };
+      if (isSlideHatch) {
+        // Nắp trượt khoang đạn Arbalest: khi nổ xe / nổ kho đạn thì áp suất nổ trong khoang xé tung nắp trượt khỏi ray rơi xuống đất
+        if (strength >= 0.3) {
+          const up = new THREE.Vector3(rand(-16, 16), rand(50, 80), rand(-16, 16));
+          if (detachTag(u, tag, up, null, { whole: true })) {
+            flung++; d.hatchHoles.push(hole);
+          }
+        }
+        continue;
+      }
       if (strength >= 0.5 && Math.random() < (mass ? 0.85 : 0.45)) {
-        // giật đứt bản lề: nắp thép dày bay vọt lên, lộn vòng, rơi cách xe vài mét
-        const up = new THREE.Vector3(rand(-25, 25), rand(150, 230), rand(-25, 25));
-        if (detachTag(u, tag, up, null, { whole: true })) { flung++; d.hatchHoles.push(hole); }
+        // giật đứt bản lề: nắp thép bật tung lên cao vài mét, lộn vòng rồi rơi xuống đất / nóc xe
+        const up = new THREE.Vector3(rand(-14, 14), rand(50, 85), rand(-14, 14));
+        if (detachTag(u, tag, up, null, { whole: true })) {
+          flung++; d.hatchHoles.push(hole);
+          createHatchHoleMark(u, c, tag);
+        }
       } else {
         // quật mở toang (nổ) / mở dựng (kíp lái thoát)
-        if (swingHatch(u, tag, strength >= 0.5 ? -rand(2.0, 2.6) : -rand(1.5, 1.75))) d.hatchHoles.push(hole);
+        if (swingHatch(u, tag, strength >= 0.5 ? -rand(2.0, 2.6) : -rand(1.5, 1.75))) {
+          d.hatchHoles.push(hole);
+          createHatchHoleMark(u, c, tag);
+        }
       }
     }
     if (strength >= 0.5 && tags.length) {
@@ -1171,6 +1232,22 @@ const VehicleDamage = (() => {
       events.push({ type: 'hatch', text: flung ? 'NỔ TRONG KHOANG — NẮP THÁP BỊ THỔI BAY' : 'NỔ TRONG KHOANG — NẮP THÁP BỊ QUẬT TUNG' });
     }
   }
+  function createHatchHoleMark(u, c, tag) {
+    // Nắp trượt khoang nạp đạn (Arbalest hatchBayL/R): khoang đạn 3D đã có sẵn chi tiết, tuyệt đối không tạo vết lỗ nắp kíp lái tròn
+    if (!tag || /^hatchBay/i.test(tag)) return;
+    const fx = FX || (u && u.fx) || (typeof window !== 'undefined' && window.__lab && window.__lab.fx) || (typeof ExplosionFX !== 'undefined' && ExplosionFX.instance) || (typeof window !== 'undefined' && window.explosionFX);
+    if (fx && fx.addSurfaceMark && c && c.mesh) {
+      // Gắn vết lỗ nắp vào tháp pháo hoặc thân xe (không gắn vào nắp vì nắp đã bị quật mở vểnh ngược hoặc bay mất)
+      const onTur = isOnTurret(u, c.mesh);
+      const parent = (onTur && u.turretGroup) ? u.turretGroup : (u.chassisGroup || u.group);
+      parent.updateMatrixWorld(true);
+      const wp = c.mesh.localToWorld(c.local.clone());
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(parent.getWorldQuaternion(new THREE.Quaternion()));
+      const sz = c.size ? Math.min(2.4, Math.max(1.2, c.size * 0.45)) : 2.0;
+      fx.addSurfaceMark(wp, up, parent, 'hatchHole', sz, { unit: u });
+    }
+  }
+
   // Lỗ nắp đang hở (thế giới) để ExplosionFX phụt lửa / khói: [{ p, k }]
   function hatchHoles(u) {
     const d = u && u.dmg;
@@ -2070,7 +2147,7 @@ const VehicleDamage = (() => {
       if (!deformableMesh(u, o) || isOnGun(u, o) || !visibleIn(o, u.group)) return;
       (tg && isOnTurret(u, o) ? tur : hull).push(o);
     });
-    const H = buildField(hull, cg), T = tg && tur.length ? buildField(tur, tg) : null;
+    const H = buildField(hull, cg), T = tg && tur.length && !(u.fxWreck && u.fxWreck.turret) ? buildField(tur, tg) : null;
     d.hf = { hull: H, tur: T };
     d.hfDirty = false; d.hfAt = performance.now();
     // hộp thân (hệ chassisGroup) cho slideOffHullEdge
@@ -2112,9 +2189,8 @@ const VehicleDamage = (() => {
   }
   function debrisFloor(D, x, z) {
     const gy = groundProvider ? groundProvider(x, z) : 0;
-    // Mảnh tách ra từ dưới nóc (bánh xe, đèn, hộp đồ sườn) chưa bay cao quá nóc thì không "đậu" lên nóc:
-    // trước đây bánh văng sinh ở tâm bánh (trong hình chiếu thân) bị dịch tức thì lên nằm trên nóc xe
-    if (D.under) return gy;
+    // Mảnh tách ra từ dưới nóc hoặc phụ kiện nóc xe văng ra (noHull / under): luôn rơi xuống đất, không đậu trên vỏ xe
+    if (D.under || D.noHull) return gy;
     return Math.max(gy, hullTopAt(D.u, x, z));
   }
   // Khoảng hở thấp nhất giữa mảnh (tư thế q, vị trí pos) và mặt đỡ; âm = đang ngập
@@ -2128,12 +2204,11 @@ const VehicleDamage = (() => {
     }
     return mn;
   }
-  // Mảnh có tâm ở ngoài mép thân xác xe mà một góc gác lên nóc: trọng tâm không có chỗ tựa -> trượt khỏi mép rơi xuống đất
-  // (không nằm chênh vênh treo một góc trên nóc thân)
+  // Mảnh rơi trên nắp ca-pô / sườn dốc hoặc mép thân xe: trượt khỏi mép rơi xuống đất (không nằm chênh vênh lơ lửng trên thân)
   // Trả về vị trí nằm yên mới (bản sao)
   function slideOffHullEdge(D, q) {
     const u = D.u, pos = D.obj.position.clone();
-    if (!D.corners || !D.corners.length || hullTopAt(u, pos.x, pos.z) > -Infinity) return pos;
+    if (!D.corners || !D.corners.length) return pos;
     const d = u && u.dmg, B = d && d.hullBoxC, cg = u && u.chassisGroup;
     if (!B || !cg) return pos;
     const inv = new THREE.Matrix4().copy(cg.matrixWorld).invert();
@@ -2149,7 +2224,7 @@ const VehicleDamage = (() => {
     }
     if (push <= 0) return pos;
     const dir = new THREE.Vector3(alongX ? sg : 0, 0, alongX ? 0 : sg).transformDirection(cg.matrixWorld).setY(0).normalize();
-    return pos.addScaledVector(dir, push + 0.3);
+    return pos.addScaledVector(dir, push + 0.6);
   }
   function debrisFloorNormal(D, pos) {
     const ht = hullTopAt(D.u, pos.x, pos.z);
@@ -2172,8 +2247,8 @@ const VehicleDamage = (() => {
     const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
     q.set(qx + hh * (w.x * qw + w.y * qz - w.z * qy), qy + hh * (w.y * qw + w.z * qx - w.x * qz),
       qz + hh * (w.z * qw + w.x * qy - w.y * qx), qw + hh * (-w.x * qx - w.y * qy - w.z * qz)).normalize();
-    if (D.under === null) { const t0 = hullTopAt(D.u, D.p0.x, D.p0.z); D.under = t0 > -Infinity && D.p0.y < t0; }
-    if (D.under) {
+    if (D.under === null) { const t0 = hullTopAt(D.u, D.p0.x, D.p0.z); D.under = D.noHull || (t0 > -Infinity && D.p0.y < t0); }
+    if (D.under && !D.noHull) {
       // ra khỏi hình chiếu thân, hoặc bay cao hơn nóc -> từ đây mới được tì lên nóc xác xe
       const ht = hullTopAt(D.u, D.x.x, D.x.z);
       if (ht === -Infinity || D.x.y - D.reach * 0.5 > ht) D.under = false;
@@ -2237,6 +2312,11 @@ const VehicleDamage = (() => {
     }
     if (!hit) return null;
     D.x.y += deep * 0.9;
+    if (onHull && Math.hypot(_n.x, _n.z) > 0.15) {
+      // Trên vỏ xe: độ dốc nắp ca-pô, kính lái, sườn xe sẽ tạo lực trượt ngang dốc đẩy mảnh vỡ tuột xuống đất
+      D.v.x += _n.x * 55 * h;
+      D.v.z += _n.z * 55 * h;
+    }
     // lực cản lăn / đất lún: bánh xe lăn chậm dần, mảnh thép đang lắc thì dừng hẳn
     D.w.multiplyScalar(Math.exp(-(D.round ? 0.5 : 0.9) * h));
     return { impact, onHull, hits: hit };
@@ -2399,17 +2479,47 @@ const VehicleDamage = (() => {
           D.obj.position.lerpVectors(D.settle.p0, D.settle.p1, k);
           // đang ngả xuống: đầu mảnh dài không được quét xuyên đất
           if (D.settle.t < 1) { const c = debrisClearance(D, D.obj.quaternion, D.obj.position); if (c < 0) D.obj.position.y -= c; }
-        } else if (D.hullRest && !D.u.isDead) {
-          // mảnh nằm trên vỏ xe còn sống: xe chạy đi / xoay tháp -> mặt đỡ đổi -> mảnh lại rơi, trượt khỏi xe
+        } else if (D.hullRest) {
+          // mảnh nằm trên vỏ xe: kể cả khi xe đã chết (xác xe), độ dốc nắp ca-pô/nóc xe
+          // khiến mảnh vỡ không thể nằm lơ lửng -> trượt lăn tuột xuống đất cạnh xe
           D.chk = (D.chk || 0) - dt;
           if (D.chk <= 0) {
             D.chk = 0.1;
-            const c = debrisClearance(D, D.obj.quaternion, D.obj.position);
-            if (c > 0.35 || c < -0.35) {
-              D.rest = false; D.calm = 0; D.settle = null; D.hullRest = false; D.t = Math.min(D.t, 5);
-              D.x.copy(D.comL).applyQuaternion(D.obj.quaternion).add(D.obj.position);
-              D.v.set(0, c < 0 ? 4 : 0, 0); D.w.set(0, 0, 0);
+            const gy = groundProvider ? groundProvider(D.x.x, D.x.z) : 0;
+            const ht = hullTopAt(D.u, D.x.x, D.x.z);
+            if (ht > gy + 0.4) {
+              const uPos = D.u.group ? D.u.group.position : new THREE.Vector3();
+              const out = D.x.clone().sub(uPos);
+              out.y = 0;
+              if (out.lengthSq() < 1) out.set(rand(-1, 1), 0, rand(-1, 1));
+              out.normalize();
+              D.v.copy(out).multiplyScalar(rand(18, 28)).setY(rand(4, 9));
+              D.w.set(rand(-3, 3), rand(-3, 3), rand(-3, 3));
+              D.x.addScaledVector(out, 1.2);
+              D.rest = false;
+              D.calm = 0;
+              D.settle = null;
+              D.hullRest = false;
+            } else {
+              const c = debrisClearance(D, D.obj.quaternion, D.obj.position);
+              if (c > 0.35 || c < -0.35) {
+                D.rest = false; D.calm = 0; D.settle = null; D.hullRest = false; D.t = Math.min(D.t, 5);
+                D.x.copy(D.comL).applyQuaternion(D.obj.quaternion).add(D.obj.position);
+                D.v.set(0, c < 0 ? 4 : 0, 0); D.w.set(0, 0, 0);
+              }
             }
+          }
+        } else {
+          // Mảnh được coi là nằm trên mặt đất: kiểm tra xem có đang bị treo lơ lửng giữa không trung hay không
+          const gy = groundProvider ? groundProvider(D.obj.position.x, D.obj.position.z) : 0;
+          const reach = Math.max(1.8, (D.reach || 2.0) + 0.8);
+          if (D.obj.position.y > gy + reach + 0.8) {
+            // Đang lơ lửng vô lý trên trời: kích hoạt rơi tự do xuống đất ngay lập tức
+            D.rest = false;
+            D.calm = 0;
+            D.settle = null;
+            D.x.copy(D.comL).applyQuaternion(D.obj.quaternion).add(D.obj.position);
+            D.v.set(0, -12, 0);
           }
         }
         continue;
@@ -2441,11 +2551,42 @@ const VehicleDamage = (() => {
         sfx('debrisScrape', D.obj.position.clone(), Math.min(1.2, vh / 50) * (0.5 + 0.25 * D.mass), { mat: D.mat, hull: onHull });
         D.scrCd = 0.18;
       }
-      // Ngủ: tì vững trên ≥ 2 điểm và tốc độ chậm -> nằm yên sớm để giải phóng tính toán
-      if (touching && hits >= 2 && vLen < 3.0 && D.w.length() < 1.0) D.calm += dt * 1.4; else D.calm = 0;
-      if (D.calm > 0.2) { D.rest = true; D.hullRest = onHull || hullTopAt(D.u, D.x.x, D.x.z) > (groundProvider ? groundProvider(D.x.x, D.x.z) : 0) + 0.5; continue; }
-      if (D.t > 5) {
-        // chống kẹt (trường hợp hiếm): ép nằm xuống mặt rộng gần nhất, mượt 0.3 s
+      // Ngủ: tì vững trên ≥ 2 điểm và tốc độ chậm -> nằm yên sớm để giải phóng tính toán (trên vỏ xe dốc không được ngủ, phải trượt xuống đất)
+      const gy0 = groundProvider ? groundProvider(D.x.x, D.x.z) : 0;
+      const onSteepHull = (onHull || D.hullRest) || (hullTopAt(D.u, D.x.x, D.x.z) > gy0 + 0.4);
+      if (touching && hits >= 2 && vLen < 3.0 && D.w.length() < 1.0 && !onSteepHull) D.calm += dt * 1.4; else D.calm = 0;
+      if (D.calm > 0.2 && !onSteepHull) { D.rest = true; D.hullRest = false; continue; }
+      if (D.t > 3.0) {
+        const gy = groundProvider ? groundProvider(D.x.x, D.x.z) : 0;
+        const ht = hullTopAt(D.u, D.x.x, D.x.z);
+        if (ht > gy + 0.5) {
+          // Mảnh vẫn kẹt trên nắp ca-pô / nóc nghiêng: đẩy trượt văng ra ngoài chu vi xe rơi xuống đất
+          const uPos = D.u.group ? D.u.group.position : new THREE.Vector3();
+          const out = D.x.clone().sub(uPos);
+          out.y = 0;
+          if (out.lengthSq() < 1) out.set(rand(-1, 1), 0, rand(-1, 1));
+          out.normalize();
+          D.v.copy(out).multiplyScalar(rand(18, 28)).setY(rand(6, 12));
+          D.w.set(rand(-3, 3), rand(-3, 3), rand(-3, 3));
+          D.x.addScaledVector(out, 1.8);
+          D.t = Math.min(D.t, 1.5);
+          D.rest = false;
+          D.calm = 0;
+          continue;
+        }
+      }
+      if (D.t > 4.5) {
+        const gy = groundProvider ? groundProvider(D.x.x, D.x.z) : 0;
+        const reach = Math.max(1.8, (D.reach || 2.0) + 0.8);
+        const nearGround = D.obj.position.y <= gy + reach;
+        if (!nearGround && D.t < 12) {
+          // Vẫn đang trên không trung rơi xuống: tiếp tục rơi tự do, tuyệt đối không cho nằm yên giữa trời
+          D.v.y -= DEBRIS_G * dt;
+          D.x.y += D.v.y * dt;
+          D.obj.position.copy(D.comL).applyQuaternion(D.obj.quaternion).negate().add(D.x);
+          continue;
+        }
+        // Đã gần đất hoặc thời gian bay quá 12s: đặt nằm sát mặt đất
         D.rest = true;
         const dm = D.dims;
         const ax = (dm.x <= dm.y && dm.x <= dm.z) ? new THREE.Vector3(1, 0, 0) : (dm.z <= dm.y ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0));
@@ -2456,6 +2597,7 @@ const VehicleDamage = (() => {
         const q1 = D.round ? q0.clone() : new THREE.Quaternion().setFromUnitVectors(aw.normalize(), up).multiply(q0);
         const p0 = D.obj.position.clone(), p1 = slideOffHullEdge(D, q1);
         p1.y -= debrisClearance(D, q1, p1) + 0.05;
+        if (p1.y > gy + reach + 0.5) p1.y = gy + (dm.y ? dm.y * 0.4 : 0.2);
         D.settle = { q0, q1, p0, p1, t: 0 };
         D.hullRest = hullTopAt(D.u, p1.x, p1.z) > (groundProvider ? groundProvider(p1.x, p1.z) : 0) + 0.5;
       }
@@ -2896,7 +3038,8 @@ const VehicleDamage = (() => {
         : tag === 'spareTrack' ? `BẮN RƠI ${name} — mắt xích dự phòng văng rời, đứt xích sẽ nối lâu hơn` : `VĂNG ${name}` });
     } else if (tag === 'spare') {
       sfx('tire', sp, 1.1);
-      events.push({ type: 'acc', text: 'NỔ TUNG LỐP DỰ PHÒNG — cao su rách toác, không còn lốp để thay' });
+      if (u.spareRubber) u.spareRubber.visible = false;
+      events.push({ type: 'acc', text: 'NỔ TUNG LỐP DỰ PHÒNG — cao su cháy toác trơ vành sắt, không còn lốp để thay' });
     } else if (tag === 'meteo') {
       elecSparksAt(sp, 0.85);
       events.push({ type: 'acc', text: 'GÃY CỘT KHÍ TƯỢNG — mất số liệu gió, lựu pháo kém chụm hơn' });
@@ -3497,11 +3640,17 @@ const VehicleDamage = (() => {
   }
 
   // move(p, out): vị trí gợi ý (hệ mesh) cho vết đang ở p; false = vết không bị ảnh hưởng, giữ nguyên
-  function refitDecals(u, mesh, move) {
+  // displaceOnly = true khi lưới chỉ bị dịch chuyển trơn (deformField), không bị cắt bỏ tam giác -> dịch chuyển thẳng không cần raycast lại toàn lưới
+  function refitDecals(u, mesh, move, displaceOnly) {
     mesh.updateMatrixWorld(true);
     const batches = mesh.userData.pitBatches ? Object.values(mesh.userData.pitBatches) : [];
     for (const ch of mesh.children.slice()) {
       if (!ch.userData || !ch.userData.isFxDecal) continue;
+      if (ch.userData.isTurretWell || ch.userData.isHatchWell) {
+        const guess = new THREE.Vector3();
+        if (displaceOnly && move(ch.position, guess)) ch.position.copy(guess);
+        continue;
+      }
       const lift = ch.userData.lift !== undefined ? ch.userData.lift : 0.15;
       if (ch.isInstancedMesh) {
         const B = batches.find(b => b.im === ch);
@@ -3523,6 +3672,10 @@ const VehicleDamage = (() => {
       const n = _rZ.clone().applyQuaternion(ch.quaternion);
       const guess = new THREE.Vector3();
       if (!move(ch.position, guess)) continue;
+      if (displaceOnly) {
+        ch.position.copy(guess);
+        continue;
+      }
       if (!surfaceUnder(mesh, guess, n)) { dropDecal(u, mesh, ch); continue; }
       ch.quaternion.premultiply(_rq2.setFromUnitVectors(n, _rHn));
       ch.position.copy(_rHit).addScaledVector(_rHn, lift);
@@ -3602,13 +3755,13 @@ const VehicleDamage = (() => {
       }
       g.computeBoundingSphere();
       g.boundingBox = null;
-      // Vết đạn / vết cháy / vết lõm dán trên mesh: dò lại mặt thép mới ngay dưới vết (không lơ lửng / chìm vào vỏ)
+      // Vết đạn / vết cháy / vết lõm dán trên mesh: dịch chuyển theo đúng trường biến dạng của lưới (không cần raycast lại 10k tam giác)
       refitDecals(u, mesh, (p, out) => {
         _fp.copy(p).applyMatrix4(M);
         if (!field(_fp, _fv) || _fv.lengthSq() < 1e-8) return false;
         out.copy(_fp.add(_fv).applyMatrix4(Mi));
         return true;
-      });
+      }, true);
     }
     if (any) { u._partCenters = null; fieldChanged(u); }   // vỏ móp: mặt đỡ (hullTopAt) tính lại theo lưới mới
     return any;
@@ -3805,6 +3958,23 @@ const VehicleDamage = (() => {
     if (!ws || !ws.setBurnt || i < 0 || i >= ws.positions.length || !u.group) return;
     if (Math.abs((ws.burnt[i] || 0) - k) < 0.01) return;
     ws.setBurnt(i, k);
+    wheelRepose(u);
+    applyPose(u);
+  }
+  // Thiêu rụi toàn bộ lốp xe: khi nổ kho đạn hoặc xe cháy dữ dội, cao su cháy hết co rút lộ vành thép
+  function burnVehicleTires(u, instant = false) {
+    const ws = u && u.wheelSet;
+    if (!ws || !ws.setBurnt || !ws.positions || !u.group) return;
+    for (let i = 0; i < ws.positions.length; i++) {
+      ws.setBurnt(i, 1.0);
+    }
+    // Chân chống thủy lực xả áp khi xe cháy nổ: sụp thân xe xuống để vành thép chạm đất tự nhiên
+    if (u.deployProgress !== undefined) u.deployProgress = 0;
+    if (u._deployLift) {
+      u._deployLift = 0;
+      if (ws.positions) for (const p of ws.positions) p.y = (ws.baseY !== undefined ? ws.baseY : 5.55);
+      if (ws.update) ws.update();
+    }
     wheelRepose(u);
     applyPose(u);
   }
@@ -5161,6 +5331,53 @@ const VehicleDamage = (() => {
     return { mul, events, noFire: SL.noFire || incSplashNoFire };
   }
 
+  function blackoutVehicleLights(u) {
+    if (!u || !u.group) return;
+    const d = state(u);
+    d.lightsBlackout = true;
+    u.group.traverse(o => {
+      const m = o.isMesh && o.material;
+      if (!m) return;
+      const mats = Array.isArray(m) ? m : [m];
+      for (const mat of mats) {
+        if (!mat) continue;
+        const name = (mat.name || '').toLowerCase();
+        const isGlass = mat.userData && (mat.userData.surface === 'glass' || mat.userData.windowGlass);
+        const isLight = (mat.userData && mat.userData.isVehicleLight) || /lens|lamp|light|taillens|headlens|amberlens|led/i.test(name);
+        const hasEmissive = mat.emissive && (mat.emissiveIntensity > 0 || mat.emissive.r > 0 || mat.emissive.g > 0 || mat.emissive.b > 0);
+        if (isGlass || isLight || hasEmissive) {
+          if (mat.emissive) {
+            if (mat.userData.fxOrigEmissiveI === undefined) mat.userData.fxOrigEmissiveI = mat.emissiveIntensity;
+            mat.emissiveIntensity = 0;
+            mat.emissive.setRGB(0, 0, 0);
+          }
+          if (mat.envMapIntensity !== undefined && mat.userData.fxOrigEnvMapI === undefined) {
+            mat.userData.fxOrigEnvMapI = mat.envMapIntensity;
+            mat.envMapIntensity = 0;
+          }
+          if ((isGlass && !mat.userData.windowGlass) || isLight || hasEmissive || /led/i.test(name)) {
+            // Đèn pha / đèn hậu / xi-nhan: khi cháy xe thì ám khói đen muội than, mờ đục
+            if (!mat.userData.fxOrigColor) mat.userData.fxOrigColor = mat.color.clone();
+            mat.color.setRGB(0.045, 0.042, 0.04);
+            mat.roughness = 0.98;
+            mat.metalness = 0.02;
+            mat.userData.burntOut = true;
+            mat.needsUpdate = true;
+          }
+        }
+      }
+    });
+  }
+
+  // Thiêu rụi bánh dự phòng: dây đai vải cháy rụi lập tức (ẩn dây đai), thanh gỗ kê cháy rụi, lốp cao su cháy rụi chỉ còn trơ vành mâm xe thép và thanh kẹp sắt
+  function burnSpareWheel(u, immediate = true) {
+    if (!u) return;
+    if (u.spareStrap) u.spareStrap.visible = false;
+    if (u.spareWood) u.spareWood.visible = false;
+    if (u.spareRubber) u.spareRubber.visible = false;
+    u._spareBurnt = true;
+  }
+
   // Xe bị phá hủy. K = explosion_fx.killInfo(u): kiểu chết theo phát kết liễu.
   // Ngoài đời: xe chết vì 1 phát xuyên vào khoang kíp lái / khoang máy thì VỎ XE CÒN NGUYÊN (chỉ lỗ xuyên + cháy);
   // chỉ khi kho đạn / nhiên liệu kích nổ (K.instant === 'det', hoặc trễ -> onDetonate) thân mới phồng bung, phụ kiện bay
@@ -5171,13 +5388,29 @@ const VehicleDamage = (() => {
     if (d.destroyedDone) return;
     d.destroyedDone = true;
     updateCabinCrewToDead(u);
+    if (u.crew) {
+      if (u.crew.gunner && u.crew.gunner.root) u.crew.gunner.root.visible = false;
+      if (u.crew.mate && u.crew.mate.root) u.crew.mate.root.visible = false;
+      u.crew.off = true;
+    }
+    if (d.cabinCrewGroup) d.cabinCrewGroup.visible = false;
+    // Xe bị tiêu diệt: hai can xăng ở đuôi xe bắt lửa nổ bục và bung khỏi giá đỡ
+    if (hasPart(u, 'canL')) stowTag(u, 'canL');
+    if (hasPart(u, 'canR')) stowTag(u, 'canR');
+    if (hasPart(u, 'can')) stowTag(u, 'can');
+    if (hasPart(u, 'cans')) stowTag(u, 'cans');
+    blackoutVehicleLights(u);
+    burnSpareWheel(u, true);
     FX = fx;
     const events = [];
     // chết đuối: phát trúng cũ (nếu có) không phải nguyên nhân -> không lửa / móp / đứt xích theo phát đó
     const L = K && K.mode === 'flood' ? null : d.last;
     const det = !K || K.instant === 'det';
     const mass = det && !!(K && K.mass);   // nổ hàng loạt (explosion_fx.killInfo): thân toác, đồ văng rải xa
-    const blastKill = K && K.mode === 'blast';
+    const blastKill = K && (K.mode === 'blast' || K.mode === 'ammo' || K.mode === 'fuel' || K.mode === 'burn');
+    if (blastKill || det) {
+      burnVehicleTires(u, true);
+    }
     const center = u.group.position.clone().add(new THREE.Vector3(0, 10, 0));
     // Xác xe cháy cả ở đúng chỗ trúng phát kết liễu (vd mũi xe), không chỉ khoang máy / vòng tháp; lửa xác không tắt.
     // Đạn nổ gần (splash): L.point là tâm vụ nổ (có thể giữa không trung / hố đất cách xe vài mét) -> chiếu lên vỏ xe
@@ -5193,8 +5426,59 @@ const VehicleDamage = (() => {
       if (fp) addFire(u, fp, 1, 1e9);
     }
     // Phụ kiện: nổ (kho đạn / đạn nổ phá) mới bóc tung; cháy thì chỉ vài món lỏng lẻo rơi
-    if (det || blastKill) stripAll(u, det ? 1 : 0.6, mass);
-    breakAntennas(u, null, 0, det ? 0.7 : 0.25, new THREE.Vector3(rand(-30, 30), 40, rand(-30, 30)));
+    if (det || blastKill) {
+      stripAll(u, det ? 1 : 0.6, mass);
+      if (hasPart(u, 'radarKit')) detachTag(u, 'radarKit', new THREE.Vector3(rand(-14, 14), rand(40, 75), rand(-14, 14)));
+      if (hasPart(u, 'jammerKit')) detachTag(u, 'jammerKit', new THREE.Vector3(rand(-14, 14), rand(35, 65), rand(-14, 14)));
+      if (hasPart(u, 'apsKit')) detachTag(u, 'apsKit', new THREE.Vector3(rand(-14, 14), rand(35, 65), rand(-14, 14)));
+    }
+    // ToÃ n bá»™ Ä‘á»“ váº£i báº¡t, ba lÃ´ dÃ£ chiáº¿n, can xÄƒng trong giá» Ä‘uÃ´i thÃ¡p bá»‹ thiÃªu rá»¥i / vÄƒng máº¥t
+    if (hasPart(u, 'stowage')) {
+      if (det || blastKill || Math.random() < 0.85) detachTag(u, 'stowage', new THREE.Vector3(rand(-12, 12), rand(30, 55), rand(25, 50)), null, { pop: 0.85 });
+      else stowTag(u, 'stowage');
+    }
+    if (hasPart(u, 'ammoBoxes')) {
+      if (det || blastKill || Math.random() < 0.9) detachTag(u, 'ammoBoxes', new THREE.Vector3(rand(-45, 45), rand(40, 75), rand(-45, 45)), null, { pop: 0.85, explosive: true });
+      else stowTag(u, 'ammoBoxes');
+    }
+    if (hasPart(u, 'generator')) {
+      if (det || blastKill || Math.random() < 0.85) detachTag(u, 'generator', new THREE.Vector3(rand(-50, 50), rand(35, 70), rand(-50, 50)), null, { pop: 0.85, explosive: true });
+      else stowTag(u, 'generator');
+    }
+    for (const tag of ['tool', 'toolL', 'toolR']) {
+      if (hasPart(u, tag)) {
+        if (det || blastKill || Math.random() < 0.8) detachTag(u, tag, new THREE.Vector3(rand(-30, 30), rand(25, 50), rand(-30, 30)));
+        else stowTag(u, tag);
+      }
+    }
+    if (hasPart(u, 'tarpRoll')) stowTag(u, 'tarpRoll');
+    if (hasPart(u, 'smokeL')) {
+      if (det || blastKill || Math.random() < 0.85) detachTag(u, 'smokeL', new THREE.Vector3(-45, rand(35, 65), rand(-15, 15)));
+      else stowTag(u, 'smokeL');
+    }
+    if (hasPart(u, 'smokeR')) {
+      if (det || blastKill || Math.random() < 0.85) detachTag(u, 'smokeR', new THREE.Vector3(45, rand(35, 65), rand(-15, 15)));
+      else stowTag(u, 'smokeR');
+    }
+    for (const tag of ['binL', 'binR', 'boxR']) {
+      if (hasPart(u, tag)) {
+        if (det || blastKill || Math.random() < 0.85) detachTag(u, tag, new THREE.Vector3(tag.endsWith('L') ? -35 : 35, rand(20, 45), rand(-10, 10)));
+        else stowTag(u, tag);
+      }
+    }
+    for (const tag of ['canL', 'canR']) {
+      if (hasPart(u, tag)) {
+        if (det || blastKill || Math.random() < 0.9) detachTag(u, tag, new THREE.Vector3(tag.endsWith('L') ? -30 : 30, rand(30, 60), rand(-15, 15)), null, { explosive: true });
+        else stowTag(u, tag);
+      }
+    }
+    if (hasPart(u, 'spareTrack')) {
+      if (det || blastKill || Math.random() < 0.75) detachTag(u, 'spareTrack', new THREE.Vector3(rand(-20, 20), rand(25, 50), rand(-20, 20)));
+      else stowTag(u, 'spareTrack');
+    }
+    breakAntennas(u, null, 0, 1.0, new THREE.Vector3(rand(-30, 30), 40, rand(-30, 30)));
+    blackoutVehicleLights(u);
+    burnSpareWheel(u, true);
     // Bánh xe: chỉ văng khi đòn chí mạng là nổ mạnh / nổ lõm / xuyên sát bánh; còn lại lốp xẹp (lửa cháy lốp)
     if (u.wheelSet) {
       const strong = L && (L.cls === 'heat' || L.cls === 'kinetic' || (L.cls === 'blast' && (L.heavy || !L.splash)));
@@ -5364,7 +5648,7 @@ const VehicleDamage = (() => {
       // nắp: nổ trong / đạn nổ phá thổi bung (giật đứt bản lề hoặc quật toang); cháy / xuyên khoang: kíp lái mở nắp thoát
       if (det || blast) blowHatches(u, 1, []);
       for (const tag of hatchTags(u)) {
-        if (!d.lost.has(tag) && r() < (det || blast ? 0.6 : 0.45)) {
+        if (!d.lost.has(tag) && !/^hatchBay/i.test(tag) && r() < (det || blast ? 0.6 : 0.45)) {
           const h = swingHatch(u, tag, det ? -R(2.0, 2.6) : -R(1.5, 1.75));
           if (h) (d.hatchHoles = d.hatchHoles || []).push({ mesh: h.mesh, local: h.local.clone(), k: det ? 1 : 0.3 });
         }
@@ -5521,6 +5805,17 @@ const VehicleDamage = (() => {
     FX = fx;
     const mass = !!(u.fxWreck && u.fxWreck.K && u.fxWreck.K.mass);
     stripAll(u, 0.8, mass);
+    if (hasPart(u, 'stowage')) detachTag(u, 'stowage', new THREE.Vector3(rand(-25, 25), rand(45, 80), rand(30, 60)), null, { pop: 0.9 });
+    if (hasPart(u, 'ammoBoxes')) detachTag(u, 'ammoBoxes', new THREE.Vector3(rand(-60, 60), rand(60, 100), rand(-60, 60)), null, { explosive: true });
+    if (hasPart(u, 'generator')) detachTag(u, 'generator', new THREE.Vector3(rand(-60, 60), rand(50, 90), rand(-60, 60)), null, { explosive: true });
+    for (const tag of ['tool', 'toolL', 'toolR']) if (hasPart(u, tag)) detachTag(u, tag, new THREE.Vector3(rand(-40, 40), rand(35, 70), rand(-40, 40)));
+    for (const tag of ['smokeL', 'smokeR']) if (hasPart(u, tag)) detachTag(u, tag, new THREE.Vector3(tag.endsWith('L') ? -55 : 55, rand(40, 75), rand(-20, 20)));
+    for (const tag of ['binL', 'binR', 'boxR']) if (hasPart(u, tag)) detachTag(u, tag, new THREE.Vector3(tag.endsWith('L') ? -45 : 45, rand(30, 60), rand(-15, 15)));
+    for (const tag of ['canL', 'canR']) if (hasPart(u, tag)) detachTag(u, tag, new THREE.Vector3(tag.endsWith('L') ? -40 : 40, rand(40, 75), rand(-20, 20)), null, { explosive: true });
+    if (hasPart(u, 'spareTrack')) detachTag(u, 'spareTrack', new THREE.Vector3(rand(-30, 30), rand(30, 60), rand(-30, 30)));
+    if (hasPart(u, 'tarpRoll')) stowTag(u, 'tarpRoll');
+    burnSpareWheel(u, true);
+    burnVehicleTires(u, true);
     breakAntennas(u, null, 0, 0.7, new THREE.Vector3(rand(-30, 30), 40, rand(-30, 30)));
     breakOutGlass(u, fx);
     d.frame = (d.frame < 0 ? -1 : 1) * Math.max(Math.abs(d.frame || 0), rand(0.3, 0.5));
@@ -6533,7 +6828,45 @@ const VehicleDamage = (() => {
     if (u.wheelSet) u.wheelSet.resetDamage();
     if (u.chassisGroup) { const cg = u.chassisGroup; cg.rotation.z -= d.tiltRApplied || 0; cg.rotation.x -= d.tiltPApplied || 0; cg.position.y += d.sinkApplied || 0; }
     if (d.glassSaved) for (const g of d.glassSaved) { g.m.map = g.map; g.m.color.copy(g.color); g.m.roughness = g.rough; g.m.metalness = g.metal; if (g.em) { g.m.emissive.copy(g.em); g.m.emissiveIntensity = g.emI; } g.m.needsUpdate = true; }
+    if (d.lightsBlackout && u.group) {
+      u.group.traverse(o => {
+        const m = o.isMesh && o.material;
+        if (!m) return;
+        const mats = Array.isArray(m) ? m : [m];
+        for (const mat of mats) {
+          if (!mat || !mat.userData) continue;
+          if (mat.userData.fxOrigColor) {
+            mat.color.copy(mat.userData.fxOrigColor);
+            delete mat.userData.fxOrigColor;
+          }
+          if (mat.userData.fxOrigEmissiveI !== undefined) {
+            mat.emissiveIntensity = mat.userData.fxOrigEmissiveI;
+            delete mat.userData.fxOrigEmissiveI;
+          }
+          if (mat.userData.fxOrigEnvMapI !== undefined) {
+            mat.envMapIntensity = mat.userData.fxOrigEnvMapI;
+            delete mat.userData.fxOrigEnvMapI;
+          }
+          delete mat.userData.burntOut;
+          mat.needsUpdate = true;
+        }
+      });
+      d.lightsBlackout = false;
+    }
     if (d.gunBent) d.gunBent.obj.rotation.copy(d.gunBent.rot);
+    if (u.spareStrap) u.spareStrap.visible = true;
+    if (u.spareWood) {
+      u.spareWood.visible = true;
+      u.spareWood.traverse(o => {
+        if (o.isMesh && o.material && o.material.userData && o.material.userData.fxOrigColor) {
+          o.material.color.copy(o.material.userData.fxOrigColor);
+        }
+      });
+    }
+    if (u.spareRubber) {
+      u.spareRubber.scale.set(1, 1, 1);
+      u.spareRubber.visible = true;
+    }
     if (u.trackSystem && u.trackSystem.repairSide) { u.trackSystem.repairSide(0); u.trackSystem.repairSide(1); }
     const b = d.base;
     for (const k in b) if (b[k] !== undefined) u[k] = b[k];
@@ -6673,7 +7006,14 @@ const VehicleDamage = (() => {
       const t = pickTag(re);
       if (!t) { events.push({ type: 'none', text: 'Không còn bộ phận này để phá' }); return; }
       const wp = partWorld(u, t) || u.group.position.clone();
-      const away = wp.clone().sub(u.group.position).setY(0).normalize().multiplyScalar(60).add(new THREE.Vector3(0, 30, 0));
+      const uPos = u.group ? u.group.position : new THREE.Vector3();
+      const out = wp.clone().sub(uPos);
+      out.y = 0;
+      if (out.lengthSq() < 1) out.set(rand(-1, 1), 0, rand(-1, 1));
+      // Tách hướng văng hơi lệch ngang tránh lao thẳng dọc trục vào nắp ca-pô
+      if (Math.abs(out.x) < 0.35) out.x = Math.random() < 0.5 ? 0.65 : -0.65;
+      out.normalize();
+      const away = out.multiplyScalar(rand(60, 90)).add(new THREE.Vector3(rand(-12, 12), rand(35, 55), rand(-12, 12)));
       if (detachTag(u, t, away)) onPartLost(u, t, partKind(t), events, fx, wp);
     };
     const wheelIdx = (filter) => {
@@ -7016,6 +7356,7 @@ const VehicleDamage = (() => {
     ARMOR, ammoClass, extinguisherSound, onDirectHit, vshieldFront, onSplash, onDestroyed, onDetonate, staticWreck, staticWreckJobs, wreckBlastAt, reset, handOver, update, recompute, summary, state,
     visualOnly, digest, applyDigest, addFire, logDoused,
     detachTag, stowTag, hasPart, flatTire, burnTire, breakOutGlass, blowWheel, breakTrack, bendTag, sfx, debugAction,
+    blackoutVehicleLights, burnSpareWheel, burnVehicleTires,
     crumpleAt, crushHull, bendBarrel, guardBarrel, segmentsOf, hullTopAt, spawnChunks, hatchHoles, armorOutcome, ARMOR_MM, PEN,
     debrisObjectsOf, debrisFromHitObject, damageDebrisNear, applyDebrisDamage,
     setGroundProvider(fn) { groundProvider = fn; },

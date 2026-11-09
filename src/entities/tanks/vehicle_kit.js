@@ -1174,9 +1174,9 @@ ${vkDefs}
         map: paint ? paint.map : null,
         roughnessMap: paint ? paint.roughnessMap : null,
         bumpMap: paint ? paint.bumpMap : null,
-        bumpScale: 0.018,
-        roughness: 1.0,
-        metalness: 0.05,
+        bumpScale: 0.022,
+        roughness: 0.68,
+        metalness: 0.18,
         vertexColors: true
       });
       m.userData.boxUV = true;
@@ -1232,7 +1232,7 @@ ${vkDefs}
     // Phản chiếu bầu trời: kim loại & kính mạnh, sơn mờ chỉ chút ít (mép mòn, mặt ngửa)
     const env = getEnvCube();
     if (env) {
-      const envK = { paint: 0.3, paintDusty: 0.22, dark: 0.25, steel: 0.85, track: 0.35, rubber: 0.15, glass: 1.0, lens: 0.8, tailLens: 0.6 };
+      const envK = { paint: 0.48, paintDusty: 0.35, dark: 0.28, steel: 0.88, track: 0.38, rubber: 0.15, glass: 1.0, lens: 0.8, tailLens: 0.6 };
       for (const k in envK) {
         mats[k].envMap = env;
         mats[k].envMapIntensity = envK[k];
@@ -1325,10 +1325,22 @@ ${vkDefs}
     mats.glass.userData.surface = 'glass';
     mats.glass.userData.windowGlass = true;   // kính cửa / kính chắn gió (khác kính đèn, ống ngắm)
     mats.lens.userData.surface = 'glass';
+    mats.lens.userData.isVehicleLight = true;
     mats.tailLens.userData.surface = 'glass';
+    mats.tailLens.userData.isVehicleLight = true;
+    if (mats.headLensL) { mats.headLensL.userData.surface = 'glass'; mats.headLensL.userData.isVehicleLight = true; }
+    if (mats.headLensR) { mats.headLensR.userData.surface = 'glass'; mats.headLensR.userData.isVehicleLight = true; }
+    if (mats.amberLens) { mats.amberLens.userData.surface = 'glass'; mats.amberLens.userData.isVehicleLight = true; }
     mats.rubber.userData.surface = 'rubber';
     mats.canvas.userData.surface = 'cloth';
     mats.canvasDark.userData.surface = 'cloth';
+    mats.idPanel.userData.surface = 'cloth';
+    if (mats.wood) mats.wood.userData.surface = 'wood';
+    for (const k in mats) {
+      if (mats[k] && typeof mats[k] === 'object' && !mats[k].name) {
+        mats[k].name = k;
+      }
+    }
     return mats;
   }
 

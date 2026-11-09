@@ -52,8 +52,6 @@ class TacticalMapController {
     on('tm-zoom-out', 'click', () => this.zoomAt(this.cssW / 2, this.cssH / 2, 1 / 1.4));
     on('tm-focus-me', 'click', () => this.focusPlayer());
     on('tm-fit', 'click', () => this.resetView());
-    on('tm-legend-btn', 'click', () => this.toggleLegend());
-    this.toggleLegend(this.legendPref());
 
     this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
     this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
@@ -89,23 +87,11 @@ class TacticalMapController {
       else if (e.key === 'Escape') this.toggle(false);
       else if (e.code === 'Space') { e.preventDefault(); this.game.triggerPlayerFire(); }
       else if (e.code === 'KeyF') this.focusPlayer();
-      else if (e.code === 'KeyL' && !e.repeat) this.toggleLegend();
       else if (e.code === 'Digit0' || e.code === 'Numpad0') this.resetView();
       else if (e.key === '+' || e.key === '=') this.zoomAt(this.cssW / 2, this.cssH / 2, 1.4);
       else if (e.key === '-') this.zoomAt(this.cssW / 2, this.cssH / 2, 1 / 1.4);
     });
     window.addEventListener('resize', () => { if (this.isOpen) this.resizeCanvas(); });
-  }
-
-  // Bảng chú giải ký hiệu (nút i / phím L); nhớ trạng thái bật / tắt trong trình duyệt — mặc định bật cho người mới
-  legendPref() { try { return localStorage.getItem('tm-legend') !== '0'; } catch (e) { return true; } }
-  toggleLegend(on) {
-    const el = this.$('tm-legend'), btn = this.$('tm-legend-btn');
-    if (!el) return;
-    const want = on !== undefined ? on : el.classList.contains('hidden');
-    el.classList.toggle('hidden', !want);
-    if (btn) btn.classList.toggle('on', want);
-    if (on === undefined) { try { localStorage.setItem('tm-legend', want ? '1' : '0'); } catch (e) { /* bỏ qua */ } }
   }
 
   // Xe mình gãy hết ăng-ten: mất bản đồ số (vehicle_damage breakAntennas -> dmg.mapLost)
@@ -187,7 +173,7 @@ class TacticalMapController {
     this.clampView();
   }
   focusPlayer() {
-    const p = this.game.player;
+    const p = (this.game.player && !this.game.player.isDead) ? this.game.player : (this.game.spectateUnit || this.game.player);
     if (!p) return;
     this.view.zoom = Math.max(this.view.zoom, 2.4);
     this.view.cx = p.x; this.view.cz = p.z;
@@ -1291,24 +1277,6 @@ class TacticalMapController {
     ctx.beginPath(); ctx.moveTo(nx, ny + 11); ctx.lineTo(nx + 4, ny); ctx.lineTo(nx - 4, ny); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#e8f1f6'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
     ctx.fillText('N', nx, ny - 21);
-    // góc dưới trái: ô lưới của xe mình (để gọi vị trí qua bộ đàm) + ô / cự ly / hướng của điểm dưới con trỏ
-    const p = this.game.player, box = (y, txt, col) => {
-      ctx.font = '600 12px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      const w = ctx.measureText(txt).width + 16;
-      ctx.fillStyle = 'rgba(10, 12, 10, 0.86)'; ctx.fillRect(28, y, w, 22);
-      ctx.strokeStyle = col; ctx.globalAlpha = 0.45; ctx.lineWidth = 1; ctx.strokeRect(28.5, y + 0.5, w - 1, 21); ctx.globalAlpha = 1;
-      ctx.fillStyle = col; ctx.fillText(txt, 36, y + 11.5);
-    };
-    if (p && !p.isDead) box(H - 74, 'XE MÌNH · Ô ' + (this.gridRef(p.x, p.z) || '—'), '#7fe3f5');
-    if (this.mouse && !this.pan) {
-      const w = this.localToWorld(this.mouse.x, this.mouse.y);
-      let txt = 'CON TRỎ · Ô ' + (this.gridRef(w.x, w.z) || '—');
-      if (p && !p.isDead) {
-        const brg = ((Math.atan2(w.x - p.x, -(w.z - p.z)) * 180 / Math.PI) % 360 + 360) % 360;
-        txt += ' · ' + Math.round(Math.hypot(w.x - p.x, w.z - p.z)) + ' m · ' + String(Math.round(brg) % 360).padStart(3, '0') + '°';
-      }
-      box(H - 46, txt, '#e8f1f6');
-    }
     ctx.restore();
   }
 

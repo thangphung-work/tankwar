@@ -1471,7 +1471,7 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
     // biển: nước sâu trong hơn, ngả xanh lam - lục theo màu trời
     const bodyCol = sea ? new THREE.Color(0x1d3438).lerp(new THREE.Color(atm.zenith), 0.22) : new THREE.Color(body).lerp(new THREE.Color(atm.zenith), 0.12);
     const mat = new THREE.MeshStandardMaterial({
-      color: bodyCol, roughness: 0.18, metalness: 0.0, transparent: true, opacity: 0.9, depthWrite: false
+      color: bodyCol, roughness: 0.08, metalness: 0.02, transparent: true, opacity: 0.92, depthWrite: false
     });
     const skyRefl = new THREE.Color(atm.horizon).lerp(new THREE.Color(atm.zenith), 0.35).multiplyScalar(0.85);
     // Bản đồ độ sâu nước theo lưới địa hình (đơn vị game, -2..14): ven bờ nông trong & ngả màu bùn, có viền bọt
@@ -1518,63 +1518,109 @@ ${sea ? 'varying float vDep;' : ''}
   diffuseColor.rgb = mix(wShallow, diffuseColor.rgb, smoothstep(0.5, 7.0, wDep));
   // mép nước mờ dần theo bản đồ độ sâu (đường bờ mượt), không lộ đường cắt tam giác của lưới địa hình
   diffuseColor.a *= smoothstep(0.05, 1.3, wDep) * mix(0.55, 1.0, smoothstep(1.3, 6.0, wDep));`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-  // Mặt sóng theo toạ độ thế giới (không theo ô lưới), chỉ từ vân nhiễu tự nhiên ở 4 tỉ lệ: sóng lừng dài, gợn vừa,
-  // gợn nhỏ, lăn tăn sát máy quay — mỗi lớp xoay lệch hướng & trôi theo gió với tốc độ khác nhau, không còn sọc thẳng
+  // Mặt sóng Gerstner kết hợp khử vân lặp texture (anti-tiling) thời gian thực
   vec2 wp = vWPos.xz;
   float wDist = length(vViewPosition);
-  float wFar = smoothstep(500.0, 2600.0, wDist);
-  vec2 wn0 = texture2D(wNrm, mat2(0.94, 0.342, -0.342, 0.94) * wp / 230.0 + vec2(wT * 0.0035, wT * 0.0021)).xy * 2.0 - 1.0;
-  vec2 wn1 = texture2D(wNrm, mat2(0.866, 0.5, -0.5, 0.866) * wp / 73.0 + vec2(wT * 0.009, wT * 0.005)).xy * 2.0 - 1.0;
-  vec2 wn2 = texture2D(wNrm, mat2(0.342, -0.94, 0.94, 0.342) * wp / 23.0 - vec2(wT * 0.018, -wT * 0.011)).xy * 2.0 - 1.0;
-  // gợn lăn tăn rất nhỏ gần máy quay: vệt nắng vỡ thành lấp lánh thay vì mảng trắng loá
-  vec2 wn3 = texture2D(wNrm, mat2(-0.5, 0.866, -0.866, -0.5) * wp / 7.0 + vec2(wT * 0.035, wT * 0.027)).xy * 2.0 - 1.0;
-  vec2 wg = wn0 * 0.12 + (wn1 * 0.55 + wn2 * 0.45) * 0.26 * (1.0 - wFar * 0.85) + wn3 * 0.18 * (1.0 - smoothstep(120.0, 520.0, wDist));
-  wg *= 1.0 - wFar * 0.5;
-  // VỆT GIÓ: mặt sông hồ thật loang mảng lặng (gương sáng, phẳng) xen dải gợn lăn tăn (sẫm hơn, ngả màu trời cao) kéo dài
-  // theo gió, trôi chậm — thiếu nó thì nhìn xa cả mặt nước một màu phẳng như tấm nhựa
-  float wWind = smoothstep(0.38, 0.66, texture2D(wNrm, mat2(0.94, 0.342, -0.342, 0.94) * wp * vec2(1.0 / 1500.0, 1.0 / 480.0) + vec2(wT * 0.0011, 0.0)).x * 0.65
-    + texture2D(wNrm, wp / 620.0 + vec2(0.37, wT * 0.0007)).y * 0.35);
-  wg *= mix(0.4, 1.25, wWind);
+  float wFar = smoothstep(700.0, 3600.0, wDist);
+
+  // 1. Sóng Gerstner đa hướng: tạo chuyển động nhấp nhô nhọn đỉnh tù đáy tự nhiên, không tạo sọc thẳng
+  vec2 gGrad = vec2(0.0);
+  float gH = 0.0;
+  // Sóng 1: Sóng chính dập dềnh
+  {
+    vec2 d1 = vec2(0.848, 0.530); float k1 = 0.042; float ph1 = k1 * dot(d1, wp) - wT * 1.55;
+    gGrad += -d1 * (0.24 * cos(ph1)); gH += 0.24 * sin(ph1);
+  }
+  // Sóng 2: Sóng chéo giao thoa
+  {
+    vec2 d2 = vec2(-0.515, 0.857); float k2 = 0.078; float ph2 = k2 * dot(d2, wp) - wT * 2.10;
+    gGrad += -d2 * (0.18 * cos(ph2)); gH += 0.18 * sin(ph2);
+  }
+  // Sóng 3: Sóng gợn chuyển động nhanh
+  {
+    vec2 d3 = vec2(0.669, -0.743); float k3 = 0.145; float ph3 = k3 * dot(d3, wp) - wT * 2.85;
+    gGrad += -d3 * (0.13 * cos(ph3)) * (1.0 - wFar * 0.5); gH += 0.13 * sin(ph3);
+  }
+  // Sóng 4: Gợn sóng nhấp nhô cự ly gần
+  {
+    vec2 d4 = vec2(-0.766, -0.643); float k4 = 0.280; float ph4 = k4 * dot(d4, wp) - wT * 3.70;
+    gGrad += -d4 * (0.09 * cos(ph4)) * (1.0 - smoothstep(120.0, 950.0, wDist) * 0.8);
+  }
+
+  // 2. Khử vân lặp (Anti-tiling) cho texture vi mô: 2 ma trận xoay góc vô tỷ trôi ngược chiều nhau
+  mat2 rotA = mat2(0.883, 0.469, -0.469, 0.883);
+  mat2 rotB = mat2(0.629, -0.777, 0.777, 0.629);
+  vec2 uvA = rotA * wp / 115.0 + vec2(wT * 0.055, wT * 0.032);
+  vec2 uvB = rotB * wp / 68.0 - vec2(wT * 0.042, -wT * 0.065);
+  vec2 nA = texture2D(wNrm, uvA).xy * 2.0 - 1.0;
+  vec2 nB = texture2D(wNrm, uvB).xy * 2.0 - 1.0;
+  // Trộn mềm thay đổi pha theo không gian và thời gian để xóa sạch hoàn toàn mọi chu kỳ lặp
+  float blendAB = 0.5 + 0.5 * sin(wT * 0.35 + (wp.x * 0.007 + wp.y * 0.005));
+  vec2 microN = mix(nA, nB, blendAB);
+
+  // Lớp gợn siêu nhỏ cự ly gần
+  vec2 uvC = mat2(-0.422, 0.906, -0.906, -0.422) * wp / 22.0 + vec2(wT * 0.14, wT * 0.11);
+  vec2 nC = (texture2D(wNrm, uvC).xy * 2.0 - 1.0) * (1.0 - smoothstep(80.0, 650.0, wDist));
+
+  // Tổng hợp độ dốc bề mặt sóng
+  vec2 wg = gGrad * 0.38 + microN * 0.28 * (1.0 - wFar * 0.45) + nC * 0.18;
+
+  // 3. Vệt gió loang quy mô lớn trôi theo luồng gió tự nhiên
+  float wWind = texture2D(wNrm, wp / 880.0 + vec2(wT * 0.016, wT * 0.009)).x * 0.62
+              + texture2D(wNrm, mat2(0.707, 0.707, -0.707, 0.707) * wp / 390.0 - vec2(wT * 0.014, -wT * 0.022)).y * 0.38;
+  wWind = smoothstep(0.32, 0.72, wWind);
+  wg *= mix(0.65, 1.35, wWind);
+
   float wDrop = 0.0;${rain ? `
   if (skyWetU.x > 0.0) {
-    // mưa: mặt nước lăn tăn khắp nơi + vòng sóng giọt mưa dày đặc gần máy quay, giọt vừa chạm bật đốm sáng
-    wg += wn3 * 0.12 * skyWetU.x;
+    wg += nC * 0.22 * skyWetU.x;
     if (wDist < 520.0) {
       vec3 rr = skyRainDrops(wp, skyWetU.y, skyWetU.z);
       float rk = (1.0 - wDist / 520.0) * skyWetU.x;
       wg += rr.xy * rk * 0.8;
       wDrop = rr.z * rk;
     }
-    wg += skyBlastRip(wp).xy;   // sóng xung kích vụ nổ / luồng khí đầu nòng lan trên mặt nước
+    wg += skyBlastRip(wp).xy;
   }` : ''}
   normal = normalize((viewMatrix * vec4(normalize(vec3(-wg.x, 1.0, -wg.y)), 0.0)).xyz);`).replace('#include <tonemapping_fragment>', `
   {
     float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);
-    float refl = min(0.85, 0.02 + 0.98 * fres);
-    // tia phản xạ theo toạ độ thế giới: trời sáng dần về chân trời, sát chân trời là bóng bờ tối (nhà / cây), gợn sóng
-    // làm bóng bờ rung vỡ; vệt nắng lấp lánh trên đỉnh gợn
+    float refl = min(0.90, 0.03 + 0.97 * fres);
     vec3 wN = normalize(vec3(-wg.x, 1.0, -wg.y)), wV = normalize(vWPos - cameraPosition), wR = reflect(wV, wN);
     float ry = clamp(wR.y, 0.0, 1.0);
     vec3 envC = mix(wHor, wZen, sqrt(ry));
-    envC = mix(envC, wBank * (0.8 + 0.4 * wn2.x), wBankK * (1.0 - smoothstep(0.03, 0.3, ry + wn1.y * 0.05)));
-    // vệt gió (xa rõ hơn — gần thì gợn sóng tự thể hiện): mảng lặng sáng như gương, dải gợn sẫm hơn
-    envC *= mix(1.07, 0.8, wWind * (0.35 + 0.65 * wFar));
+    envC = mix(envC, wBank * (0.8 + 0.4 * nB.x), wBankK * (1.0 - smoothstep(0.03, 0.3, ry + nA.y * 0.05)));
+    envC *= mix(1.1, 0.78, wWind * (0.3 + 0.7 * wFar));
     gl_FragColor.rgb = mix(gl_FragColor.rgb, envC, refl);
-    float glint = pow(max(dot(wR, wSun), 0.0), 420.0) * 6.0 + pow(max(dot(wR, wSun), 0.0), 40.0) * 0.12;
-    gl_FragColor.rgb += vec3(1.0, 0.96, 0.88) * glint * wSunK * (1.0 - wFar * 0.6);
+
+    // Vệt nắng lấp lánh trên đỉnh gợn sóng (rộng và đa tầng, nhấp nháy sống động)
+    float sunDot = max(dot(wR, wSun), 0.0);
+    float glintSharp = pow(sunDot, 360.0) * 7.0;
+    float glintBroad = pow(sunDot, 48.0) * 0.45;
+    float glintGlow = pow(sunDot, 12.0) * 0.08;
+    float sparkleWave = 0.7 + 0.3 * sin(wT * 3.2 + gH * 4.0);
+    float totalGlint = (glintSharp + glintBroad + glintGlow) * sparkleWave * wSunK * (1.0 - wFar * 0.45);
+    gl_FragColor.rgb += vec3(1.0, 0.96, 0.88) * totalGlint;
+
+    // Ánh sáng lấp lánh phản chiếu từ bầu trời trên các đỉnh gợn sóng nhấp nhô
+    float skySparkle = pow(clamp(wg.y * 0.9 + gH * 0.35 + 0.35, 0.0, 1.0), 3.0) * 0.14 * (1.0 - smoothstep(100.0, 900.0, wDist));
+    gl_FragColor.rgb += wZen * skySparkle;
+
     gl_FragColor.a = mix(gl_FragColor.a, 1.0, fres * 0.6);
     gl_FragColor.rgb += wSky * wDrop * 0.25;
-    // viền bọt ven bờ: dải mỏng lăn tăn theo gợn sóng, dày mỏng không đều
-    float wf = (1.0 - smoothstep(0.35, 1.5, wDep + wn1.x * 0.45 + wn2.y * 0.25)) * smoothstep(0.1, 0.45, wDep);
-    wf *= 0.55 + 0.45 * sin(wT * 1.3 + dot(wp, vec2(0.05, 0.037)));
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, wFoam * (0.6 + 0.4 * gl_FragColor.g / max(0.05, wFoam.g)), wf * 0.55);
-    gl_FragColor.a = max(gl_FragColor.a, wf * 0.7);
+
+    // Viền bọt ven bờ thở nhịp nhàng theo nhịp sóng vỗ bờ
+    float shorePulse = sin(wT * 2.2 - wDep * 3.2);
+    float wf = (1.0 - smoothstep(0.2, 1.8, wDep + nA.x * 0.35 + shorePulse * 0.3)) * smoothstep(0.04, 0.5, wDep);
+    wf *= 0.5 + 0.5 * sin(wT * 1.8 + (wp.x + wp.y) * 0.05);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, wFoam * (0.7 + 0.3 * gl_FragColor.g / max(0.05, wFoam.g)), wf * 0.65);
+    gl_FragColor.a = max(gl_FragColor.a, wf * 0.75);
   }
   #include <tonemapping_fragment>`);
       // biển xa hòa hẳn vào sương trước khi chạm mặt phẳng cắt xa của camera (không lộ mép cắt)
       if (sea) BattleTerrain3D.applyFarFade(sh, true);
     };
-    mat.customProgramCacheKey = () => 'waterWorld5' + (sea ? ':sea' : '') + (rain ? ':rain' : '');
+    mat.customProgramCacheKey = () => 'waterWorld7' + (sea ? ':sea' : '') + (rain ? ':rain' : '');
     return { mat, U };
   }
 
@@ -1605,7 +1651,7 @@ ${sea ? 'varying float vDep;' : ''}
       deck.position.y = deckY - 2; deck.castShadow = deck.receiveShadow = true; grp.add(deck);
       const top = new THREE.Mesh(new THREE.PlaneGeometry(b.width - 6, b.length), asphalt);
       top.rotation.x = -Math.PI / 2; top.position.y = deckY + 0.05;
-      top.material.map = this.roadTexture('asphalt');
+      top.material.map = this.roadTexture(b.lanes === 4 ? 'asphalt4' : 'asphalt');
       top.receiveShadow = true; grp.add(top);
       for (const s of [-1, 1]) {
         const curb = new THREE.Mesh(new THREE.BoxGeometry(3, 1.6, b.length), conc);
@@ -1909,8 +1955,8 @@ ${sea ? 'varying float vDep;' : ''}
     if (this.landmarkSet) this.landmarkSet.update(dt, fx, this.camPos || null);
     if (this.envDamage) this.envDamage.update(dt, fx);
     if (this.streetscape && this.streetscape.junk) this.streetscape.junk.update(dt);   // thùng rác / bao rác bị sóng nổ hất văng
-    if (this.waterTime) this.waterTime.value += dt;
-    if (this.streamNrm) this.streamNrm.offset.y -= dt * 0.35;   // gợn suối trôi xuôi dòng   // sóng mặt nước trôi theo thời gian (sông hồ + biển)
+    if (this.waterTime) this.waterTime.value = performance.now() * 0.001;
+    if (this.streamNrm) this.streamNrm.offset.y -= dt * 0.35;   // gợn suối trôi xuôi dòng
   }
 
   // Sóng nổ / đạn tác động lên cây, nhà, boong-ke tại điểm nổ

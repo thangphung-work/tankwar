@@ -87,7 +87,8 @@ float cfNoise(vec2 p) {
     float cfE = 0.0, cfFl = 0.0;
     if (vCfP > 0.0) {
       float cfN = cfNoise(vUv * 30.0) * 0.6 + cfNoise(vUv * 9.0 + 3.1) * 0.4;
-      float cfEat = min(clamp((vCfP - 0.36) / 0.6, 0.0, 1.0) * 1.05, 1.0 - vCfK);   // vCfK: phần mẩu lá cháy đen còn sót
+      if (vCfP > 0.55) discard;
+      float cfEat = clamp((vCfP - 0.14) / 0.36, 0.0, 1.0) * 1.15;
       if (cfN < cfEat) discard;
       float cfS = clamp(vCfP / 0.16, 0.0, 1.0);
       float cfL = dot(diffuseColor.rgb, vec3(0.5, 0.4, 0.1));
@@ -108,7 +109,7 @@ float cfNoise(vec2 p) {
   const GLSL_FRAG_DEPTH = `
     if (vCfP > 0.0) {
       float cfN = cfNoise(vUv * 30.0) * 0.6 + cfNoise(vUv * 9.0 + 3.1) * 0.4;
-      if (cfN < min(clamp((vCfP - 0.36) / 0.6, 0.0, 1.0) * 1.05, 1.0 - vCfK)) discard;
+      if (vCfP > 0.55 || cfN < clamp((vCfP - 0.14) / 0.36, 0.0, 1.0) * 1.15) discard;
     }`;
 
   // Vá shader lá (gọi từ onBeforeCompile của vật liệu lá rung). U: uniforms của xe (có uFT)
@@ -506,6 +507,7 @@ float cfNoise(vec2 p) {
     if (st.twigCharred || st.parts.some(p => p.charred)) setTwigs(st, false);
     for (const p of st.parts) for (const m of p.twigs || []) { m.visible = !u._camoFar; m.userData.cfGone = false; }
     if (st.panel && st.panel.mesh) st.panel.mesh.visible = true;
+    if (u._camoMeshes) for (const m of u._camoMeshes) m.visible = true;
     if (st.leaf && st.leaf.userData.sway && st.leaf.userData.sway.uFT) st.leaf.userData.sway.uFT.value = 0;
   }
 
@@ -800,7 +802,8 @@ float cfNoise(vec2 p) {
     const fx = ctx.fx;
     // xác xe cháy: lưới trên xác bén lửa (mỗi máy tự diễn, không ảnh hưởng lối chơi)
     if (u.isDead) {
-      if (S && S.order.length) return;
+      if (u._camoMeshes) for (const m of u._camoMeshes) m.visible = false;
+      return;
       const Wk = u.fxWreck;
       if (!Wk || !fx || !fx.wreckFireLevels) return;
       const L = fx.wreckFireLevels(u, Wk);

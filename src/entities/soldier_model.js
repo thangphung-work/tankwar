@@ -1776,7 +1776,7 @@ const SoldierModel = (() => {
   // Kết cấu như súng ổ quay thật: KHUNG CHỮ C ôm ổ đạn (thanh trên có ray, tấm đỡ nòng trước, thanh dưới, khối cò sau),
   // ổ đạn khía rãnh có miệng 6 buồng + nắp lò xo sau, ốp ray vuông quanh nòng (tay đỡ), báng rút có tì má, báng cầm khía ngón.
   // Cùng hệ trục với súng trường (gốc tại báng cầm, nòng -z, trục ngắm y 0.78, báng vai z 2.55) để dùng chung thế cầm.
-  const GL_VFG_Y = -0.42, GL_VFG_Z = -1.68;   // tâm tay nắm đứng dưới ốp (hệ súng, cụm trước fr), sát tấm đỡ nòng: xa hơn thì thế hạ súng tay trái duỗi thẳng
+  const GL_VFG_Y = -0.38, GL_VFG_Z = -1.22;   // tâm tay nắm đứng dưới ốp (hệ súng, cụm trước fr), sát tấm đỡ nòng: xa hơn thì thế hạ súng tay trái duỗi thẳng
   const GL = {
     gripR: V(0, -0.32, 0.1), gripL: V(0, GL_VFG_Y, GL_VFG_Z),   // tay trái nắm tay nắm đứng: ngón cái lên, lòng tay áp mặt trái tay nắm
     axisR: V(0, 0.98, 0.2).normalize(), axisL: V(0, 1, 0), palmKR: 0.75,   // cổ tay gập ~40° (trục theo đúng độ nghiêng báng cho ~80°, gần giới hạn khớp)
@@ -5904,12 +5904,12 @@ reflectedLight.indirectDiffuse *= soldierFill;
   // Thế cầm riêng cho súng phóng lựu 40 mm ổ quay 6 viên (ổ đạn to mập, có tay nắm đứng):
   // súng kẹp bên mạn sườn phải ngoài cơ thể, báng súng né sườn chạy dưới nách ra sau, nòng chúc tự nhiên, tay trái nắm chắc tay nắm đứng
   const GL_POSE = {
-    low: { p: V(0.96, 1.48, -1.48), r: [-0.36, 0.50, 0.06] },
-    ready: { p: V(0.96, 1.60, -1.55), r: [-0.26, 0.48, 0.06] },
-    port: { p: V(0.88, 1.88, -1.55), r: [-0.18, 0.50, 0.08] },
-    aim: { p: V(-0.08, 3.62, -2.85), r: [0.08, 0.40, 0.0] },
+    low: { p: V(0.72, 1.62, -1.35), r: [-0.32, 0.40, 0.05] },
+    ready: { p: V(0.70, 1.74, -1.38), r: [-0.22, 0.38, 0.05] },
+    port: { p: V(0.66, 1.95, -1.40), r: [-0.16, 0.40, 0.06] },
+    aim: { p: V(-0.02, 3.48, -2.45), r: [0.06, 0.32, 0.0] },
     // Dạng nghỉ (patrol rest): súng hạ thấp ngang hông, báng súng xuôi theo mạn sườn phải, nòng chúc xuống đất, hai vai & cánh tay thả lỏng
-    relax: { p: V(1.02, 1.30, -1.40), r: [-0.44, 0.52, 0.06] }
+    relax: { p: V(0.76, 1.42, -1.25), r: [-0.40, 0.42, 0.05] }
   };
 
   // Bảng vũ khí bộ binh: build (dựng lưới, gốc tại tay cầm chính, nòng -z), grip (điểm nắm tay phải / trái + trục cán, hệ vũ khí),
@@ -6939,7 +6939,7 @@ const _gp = V(0, 0, 0);
     } else if (R.userData.rifle && F._magDirty) { const P = R.userData.rifle; P.mag.position.set(0, 0, 0); P.mag.rotation.set(0, 0, 0); P.mag.scale.setScalar(1); P.chg.position.z = 0; }
     F._magDirty = !!msS;
     R.position.x += o.gx; R.position.y += o.gy; R.position.z += o.gz;     // súng nặng trễ nhịp so với thân
-    if (!F.lod || F.lod.cur < 2) rifleCollide(F, R, o.gAim / W);   // ở xa không thấy, khỏi tốn CPU
+    if ((!F.lod || F.lod.cur === 0) && (F._isPlayer || (F.lod && F.lod.cur < 1))) rifleCollide(F, R, o.gAim / W);   // ở xa không thấy, khỏi tốn CPU
     F.root.updateMatrixWorld(true);
     const ax = (v) => v ? v.clone().transformDirection(R.matrixWorld) : null;
     const rr = F.arms[1], ll = F.arms[0], ka = (o.gAim + 0.7 * o.gReady) / W;

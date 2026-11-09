@@ -1072,7 +1072,7 @@
   // Chỗ trống trên nóc để gắn radar dò tìm / máy gây nhiễu [x, z] (tránh nắp, kính, ăng-ten, tấm nhận diện).
   // Xe 6 nòng: radar ở nóc trái giữa — nóc sau có chảo radar cảnh giới quay (bán kính ~4.2 quanh x 0.6 / z 10.5) & ăng-ten
   // trái sau, đầu radar mảng pha quay sẽ quét trúng
-  const ROOF_SPOT = { ALL_ROUNDER: { radar: [-3.0, 16.0], jam: [3.2, 16.0] }, GATLING: { radar: [-5.8, -1.6], jam: [4.6, 10.8] }, ARTILLERY: { radar: [-2.8, 12.9], jam: [-7.0, 2.0] }, SCOUT: { jam: [3.8, 12.6] } };
+  const ROOF_SPOT = { ALL_ROUNDER: { radar: [-3.0, 16.0], jam: [3.2, 16.0] }, GATLING: { radar: [-5.8, -1.6], jam: [4.6, 10.8] }, ARTILLERY: { radar: [6.4, 11.2], jam: [-7.0, 2.0] }, SCOUT: { jam: [3.8, 12.6] } };
   const matCache = {};
   // ngẫu nhiên theo hạt giống vẻ ngoài của xe đang dựng đồ (buildVisuals đặt) -> lồng cong / đồ chằng / gạch lệch cố định
   let kitRnd = Math.random;
@@ -3079,6 +3079,8 @@
     const st = M.steel, P = M.plate, S = M.sensor, TILT = -0.18;
     b.cyl(0.62, 0.7, 0.55, 14, st, [0, 0.28, 0]);                                  // khớp quay + vành trượt điện
     b.box(1.0, 0.5, 1.0, P, [0, 0.8, 0]);
+    b.cyl(0.52, 0.52, 0.95, 12, st, [0, 1.45, 0]);                                 // cổ trục nâng nối liền hộp đế với bệ xoay
+    b.box(1.3, 0.45, 1.1, st, [0, 1.95, 0]);                                       // bệ ngàm đỡ khối mảng pha
     const F = (x, y, z) => { const c = Math.cos(TILT), s = Math.sin(TILT); return [x, 2.3 + y * c - z * s, z * c + y * s]; };
     // mặt chính (trước): khung vỏ, 4x2 ô mảng pha, viền
     b.box(4.6, 2.4, 0.7, P, F(0, 0, -0.35), [TILT, 0, 0]);
@@ -3230,6 +3232,8 @@
       buildBatch(u, hb, head);
       u.turretGroup.add(head);
       u._eqRadarHead = head;
+      if (window.VehicleKit && VehicleKit.registerPartGroup) VehicleKit.registerPartGroup(u, 'radarKit', head);
+      else (u.partGroups || (u.partGroups = {})).radarKit = head;
     }
     if (has(u, 'jammer') && spot.jam) {
       // Máy gây nhiễu kiểu Shtora: tấm đế bắt bu-lông, hộp điện tử có cánh tản nhiệt sau lưng + ống cáp luồn xuống nóc,

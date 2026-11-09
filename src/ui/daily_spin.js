@@ -267,7 +267,7 @@
     const wasHidden = overlay.classList.contains('hidden');
     overlay.classList.remove('hidden');
     if (wasHidden) sfx('playUiOpen');
-    if (spinning) { sfx('playSpinMusic', true); return; }   // đóng giữa lúc quay rồi mở lại: dải vẫn đang chạy, không dựng lại
+    if (spinning) { sfx('playSpinMusic', true); sfx('setSpinAudible', true); return; }   // đóng giữa lúc quay rồi mở lại: dải vẫn đang chạy, không dựng lại
     $('.ds-result', overlay).innerHTML = '';
     reel.classList.remove('done');
     drawStreak();
@@ -293,7 +293,8 @@
     void rv.offsetWidth;
     const SHAKE = 2.2;
     rv.classList.add('shake');
-    if (shown()) sfx('playSpinRiser', SHAKE);
+    sfx('setSpinAudible', shown());
+    sfx('playSpinRiser', SHAKE);
     await new Promise(ok => setTimeout(ok, SHAKE * 1000));
     if (shown()) sfx('playGiftReceived', true);   // bật nắp
     $('.ds-rv-card', rv).innerHTML = cardHtml(win, 'win');
@@ -307,7 +308,7 @@
     if (overlay.classList.contains('hidden')) return;
     overlay.classList.add('hidden');
     sfx('playUiClose');
-    if (spinning) sfx('playSpinMusic', false);   // dải chạy ngầm, im tiếng -> trả nhạc nền
+    if (spinning) { sfx('playSpinMusic', false); sfx('setSpinAudible', false); }   // dải chạy ngầm, im tiếng (cả tiếng đã hẹn giờ) -> trả nhạc nền
   }
   const shown = () => overlay && !overlay.classList.contains('hidden');
 
@@ -349,6 +350,29 @@
     showWon(win);
   }
 
+  // đường cong trượt của dải (cubic-bezier CSS) — dùng chung cho hiệu ứng và để tính lúc từng thẻ qua kim
+  const EASE = [0.06, 0.55, 0.08, 1];
+  // thời điểm (0..1) dải đi được quãng p (0..1): giải ngược đường cong bằng chia đôi
+  function easeTimeAt(p) {
+    const [x1, y1, x2, y2] = EASE;
+    const bz = (u, a, b) => 3 * (1 - u) * (1 - u) * u * a + 3 * (1 - u) * u * u * b + u * u * u;
+    let lo = 0, hi = 1;
+    for (let n = 0; n < 30; n++) { const m = (lo + hi) / 2; if (bz(m, y1, y2) < p) lo = m; else hi = m; }
+    return bz((lo + hi) / 2, x1, x2);
+  }
+  // danh sách tiếng lẫy: { at: giây kể từ lúc bắt đầu trượt, k: 1 = lao nhanh .. 0 = sắp dừng }
+  function reelTicks(from, to) {
+    const base = reel.clientWidth / 2 - from + GAP / 2, D = from - to, list = [];
+    let prev = 0;
+    for (let j = Math.floor(base / STEP) + 1; j * STEP <= base + D; j++) {
+      const at = easeTimeAt((j * STEP - base) / D) * SPIN_MS / 1000;
+      list.push({ at, k: Math.max(0, Math.min(1, 1 - (at - prev) * 1000 / 400)) });
+      prev = at;
+    }
+    return list;
+  }
+
+
   // NGÀY THƯỜNG: dải thẻ trượt ngang rồi dừng đúng thẻ trúng
   async function runReel(win) {
     setReveal(false);
@@ -358,24 +382,14 @@
     const from = offsetFor(4, 0), to = offsetFor(WIN_AT, jitter);
     // trượt: lao nhanh rồi chậm dần (đường cong ease-out mạnh), tiếng lẫy cóc mỗi khi 1 thẻ qua kim
     // âm thanh: "vút" lúc giật dải -> lẫy cóc từng thẻ (thưa & to dần khi chậm lại) -> trống dồn ~2,8 s cuối -> tiếng trúng
-    track.style.transition = `transform ${SPIN_MS}ms cubic-bezier(0.06, 0.55, 0.08, 1)`;
+    // thời điểm từng thẻ qua kim được tính sẵn từ đường cong rồi hẹn giờ trên đồng hồ âm thanh -> nhịp đều, không trễ theo khung hình
+    track.style.transition = `transform ${SPIN_MS}ms cubic-bezier(${EASE.join(', ')})`;
     track.style.transform = `translate3d(${to}px,0,0)`;
     sfx('playSpinStart');
+    sfx('playSpinReel', reelTicks(from, to));
+    if (!shown()) sfx('setSpinAudible', false);
     const RISER = 2.8;
-    const riserT = setTimeout(() => { if (spinning) { if (shown()) sfx('playSpinRiser', RISER); reel.classList.add('tense'); } }, SPIN_MS - RISER * 1000);
-    let last = Math.floor((reel.clientWidth / 2 - from) / STEP), lastAt = performance.now();
-    const tick = () => {
-      if (!spinning) return;
-      const m = new DOMMatrixReadOnly(getComputedStyle(track).transform);
-      const idx = Math.floor((reel.clientWidth / 2 - m.m41 + GAP / 2) / STEP);
-      if (idx !== last) {
-        const now = performance.now(), gap = now - lastAt;   // khoảng cách giữa 2 thẻ: dài = chậm
-        last = idx; lastAt = now;
-        if (shown()) sfx('playSpinTick', Math.max(0, Math.min(1, 1 - gap / 400)));
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    const riserT = setTimeout(() => { if (spinning) { sfx('playSpinRiser', RISER); reel.classList.add('tense'); } }, SPIN_MS - RISER * 1000);
     await new Promise(ok => {
       let done = false;
       const fin = () => {

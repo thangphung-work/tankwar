@@ -106,6 +106,12 @@
     M.headLensR = M.headLensR || M.lens;
     M.amberLens = M.amberLens || M.tailLens;
     M.mirror = M.mirror || M.glass;
+    for (const mat of [M.lens, M.tailLens, M.headLensL, M.headLensR, M.amberLens]) {
+      if (mat) {
+        mat.userData.surface = 'glass';
+        mat.userData.isVehicleLight = true;
+      }
+    }
     // Thép trần riêng xe này: dầu mỡ bám bụi, xỉn — phản chiếu trời nhẹ thôi (bản chung soi trời quá sáng làm cần piston,
     // tay nắm, ray nạp đạn trắng bệch như nhựa)
     M.steel = M.steel.clone();
@@ -121,7 +127,7 @@
     unit.group.add(chassis);
 
     buildTruck(chassis, M, unit, rnd);
-    buildSpareWheel(chassis, M);
+    buildSpareWheel(chassis, M, unit);
     const wheels = buildWheels(chassis, M);
     unit.wheelSet = wheels;
     const deploy = buildDeployGear(chassis, M);
@@ -198,12 +204,13 @@
         wheels.roll(dl, dr);
 
         // Hạ / thu chân chống và lưỡi càng theo tiến độ gameplay (deployProgress 0..2)
-        const target = Math.max(0, Math.min(1, (u.deployProgress || 0) / 2));
-        deployVis += (target - deployVis) * Math.min(1, dt * 8);
+        // Khi xe bị tiêu diệt / cháy rụi (isDead): hệ thống thủy lực xả áp, chân chống co lại để xe tiếp đất tự nhiên
+        const target = u.isDead ? 0 : Math.max(0, Math.min(1, (u.deployProgress || 0) / 2));
+        deployVis += (target - deployVis) * Math.min(1, dt * (u.isDead ? 16 : 8));
         updateDeployGear(deploy, deployVis);
         // Thân nhấc khi chân chống ép đất: spg.js cộng _deployLift vào độ cao khung thân; bánh thõng xuống đúng chừng ấy
         // (giảm xóc duỗi ra) nên lốp vẫn chạm đất, chỉ nhả tải
-        const lift = deployLift(deployVis);
+        const lift = u.isDead ? 0 : deployLift(deployVis);
         if (Math.abs(lift - (u._deployLift || 0)) > 1e-4) {
           u._deployLift = lift;
           for (const p of wheels.positions) p.y = WHEEL_Y - lift;
@@ -623,7 +630,7 @@
   // và đai ốc, nằm trên 2 thanh gỗ kê, kẹp bằng ty ren + tai hồng giữa moay-ơ và 1 dây chằng tăng đơ.
   // Đặt hơi lệch (không thẳng tăm tắp) như được quăng lên & chằng vội ngoài thực địa.
   // ===========================================================================
-  function buildSpareWheel(chassis, M) {
+  function buildSpareWheel(chassis, M, unit) {
     const g = new THREE.Group();
     g.position.set(-4.7, DECK_Y, -4.4);
     g.rotation.set(0.016, 0.42, -0.012);
@@ -633,8 +640,15 @@
     const LUG = 0.55, R = WHEEL_R - LUG, H = TIRE_W * 0.47, BEAD = 2.55;
     const yc = 0.95 + H;
 
-    // Lốp cùng kiểu 6 bánh xe (gai chữ V đúc liền, chữ nổi hông), nằm ngửa hông ngoài lên trên
-    for (const geo of tireGeos({ R, H, bead: BEAD, lugH: LUG, seed: 23 }, M)) b.add(geo, M.tire, [0, yc, 0], [0, 0.3, 0]);
+    // 1. Nhóm lốp cao su riêng để có thể co rút, bốc cháy và thiêu rụi trơ vành sắt khi xe cháy
+    const rubGroup = new THREE.Group();
+    g.add(rubGroup);
+    const rb = new VehicleKit.PartBatch(DECK_Y);
+    for (const geo of tireGeos({ R, H, bead: BEAD, lugH: LUG, seed: 23 }, M)) {
+      rb.add(geo, M.tire, [0, yc, 0], [0, 0.3, 0]);
+    }
+    rb.build(rubGroup);
+    if (unit) unit.spareRubber = rubGroup;
 
     // Vành thép: ống vành trong lốp + mặt vành lòng chảo (lathe từ mép ngoài vào tâm)
     b.cyl(BEAD + 0.02, BEAD + 0.02, H * 1.6, 30, M.paintDusty, [0, yc, 0], 'y', null, true);
@@ -648,8 +662,15 @@
     }
     b.cyl(0.07, 0.07, 0.55, 6, M.steel, [2.15, yc + H * 0.55, 0.75], 'y', [0, 0, -0.45]);
 
-    // Kê trên 2 thanh gỗ, ty ren giữa moay-ơ + tấm kẹp + tai hồng
-    for (const x of [-2.6, 2.6]) b.box(1.0, 0.95, 9.6, M.wood, [x, 0.475, 0], [0, x > 0 ? 0.03 : -0.02, 0]);
+    // 2. Nhóm thanh gỗ kê riêng: khi cháy xe sẽ hóa than hoặc cháy rụi
+    const woodGroup = new THREE.Group();
+    g.add(woodGroup);
+    const wb = new VehicleKit.PartBatch(DECK_Y);
+    for (const x of [-2.6, 2.6]) wb.box(1.0, 0.95, 9.6, M.wood, [x, 0.475, 0], [0, x > 0 ? 0.03 : -0.02, 0]);
+    wb.build(woodGroup);
+    if (unit) unit.spareWood = woodGroup;
+
+    // Ty ren giữa moay-ơ + tấm kẹp + tai hồng
     const top = yc + H * 0.6 + 0.41;
     b.strut([0, -0.1, 0], [0, top + 0.75, 0], 0.17, M.steel, 8);
     b.box(3.4, 0.22, 0.8, M.paintDusty, [0, top + 0.11, 0], [0, 0.25, 0]);
@@ -663,14 +684,24 @@
       [0.02, -6.3], [yc - 0.5, -zo - 0.62], [yc + 0.85, -zo - 0.5], [yc + H + 0.1, -zo + 0.35], [yc + H + 0.08, -zr],
       [yc + H + 0.02, 0], [yc + H + 0.08, zr], [yc + H + 0.1, zo - 0.35], [yc + 0.85, zo + 0.5], [yc - 0.5, zo + 0.62], [0.02, 6.3]
     ];
+
+    // 3. Nhóm dây đai vải bạt riêng: ngọn lửa thiêu rụi đứt dây biến mất ngay khi xe cháy
+    const strapGroup = new THREE.Group();
+    g.add(strapGroup);
+    const sb = new VehicleKit.PartBatch(DECK_Y);
     for (let i = 0; i < path.length - 1; i++) {
-      b.beam([sx, path[i][0], path[i][1]], [sx, path[i + 1][0], path[i + 1][1]], 0.75, 0.07, M.canvasDark);
+      sb.beam([sx, path[i][0], path[i][1]], [sx, path[i + 1][0], path[i + 1][1]], 0.75, 0.07, M.canvasDark);
     }
+    sb.build(strapGroup);
+    if (unit) unit.spareStrap = strapGroup;
+
+    // Khóa tăng đơ và móc khoen giữ trên giá sắt
     b.box(0.95, 1.15, 0.5, M.steel, [sx, yc + 0.1, -zo - 0.68], [-0.08, 0, 0]);
     b.box(1.1, 0.12, 0.22, M.steel, [sx, yc + 0.72, -zo - 0.9], [0.5, 0, 0]);
     for (const z of [-6.4, 6.4]) b.add(new THREE.TorusGeometry(0.4, 0.12, 5, 10), M.steel, [sx, 0.2, z], [0, Math.PI / 2, 0]);
 
     b.build(g);
+    if (unit && VehicleKit.registerPartGroup) VehicleKit.registerPartGroup(unit, 'spare', g);
   }
 
   // Lathe quanh trục đứng, UV chiếu từ trên xuống (đơn vị thế giới) -> vân sơn / bùn liền mạch trên mặt vành, lốp nằm
@@ -752,7 +783,7 @@
     hb.setTag('ammoBoxes');
     steelCrate(hb, M, [4.3, DECK_Y, -8.6], 0.04, 2.6, 1.6, 3.6);
     steelCrate(hb, M, [4.2, DECK_Y, -4.7], -0.05, 2.6, 1.6, 3.6);
-    woodCrate(hb, M, [4.45, DECK_Y + 1.62, -6.65], 0.17 + rnd() * 0.06, 2.4, 1.25, 3.3);
+    woodCrate(hb, M, [4.25, DECK_Y + 1.54, -6.65], 0.03 + rnd() * 0.02, 2.4, 1.25, 3.3);
 
     // Máy phát điện dã chiến: lùi lên trước (z = -1.0) cách xa thùng đạn (khe hở ~45cm) và nằm ngoài bán kính quét tháp pháo
     hb.setTag('generator');
@@ -1195,7 +1226,7 @@
     // Lòng khe tối: lỗ nóc tháp cho đuôi khóa nòng chúi xuống khi nâng nòng cao
     tb.box(SW * 2 - 0.1, 0.04, BAY.z0 + 8.4, M.bore, [0, TOP + 0.04, (BAY.z0 - 8.6) / 2]);
     for (const s of [-1, 1]) tb.cyl(1.7, 1.7, 0.8, 16, D, [s * 4.9, PIVOT.y, PIVOT.z], 'x');
-    const loader = buildLoaderBay(tb, turret, M, TOP);
+    const loader = buildLoaderBay(tb, turret, M, TOP, unit);
 
     // Cửa nạp đạn sau tháp, cửa nóc, thang leo (nghiêng ôm sát vách sau tháp pháo)
     const REAR_TILT = Math.atan2(0.7, 9.2); // ~0.07594 rad: vách sau nghiêng từ z=14.5 ở đáy lên z=13.8 ở nóc
@@ -1587,7 +1618,7 @@
     charge.children.forEach((m, i) => { m.visible = i < n; });
   }
 
-  function buildLoaderBay(tb, turret, M, TOP) {
+  function buildLoaderBay(tb, turret, M, TOP, unit) {
     const P = M.paint, D = M.dark;
     const len = BAY.z1 - BAY.z0, zc = (BAY.z0 + BAY.z1) / 2;
     const yTop = TOP + BAY.h;
@@ -1646,6 +1677,7 @@
       for (const z of [-len / 2 + 0.25, len / 2 - 0.25]) hb.box(0.6, 0.25, 0.6, D, [s * (BAY.hw / 2 - 0.4), -0.25, z]);
       hb.build(g);
       turret.add(g);
+      if (unit && VehicleKit.registerPartGroup) VehicleKit.registerPartGroup(unit, 'hatchBay' + (s < 0 ? 'L' : 'R'), g);
       L.hatches.push({ g, s });
     }
 

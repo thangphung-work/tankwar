@@ -126,11 +126,11 @@ const SkySystem = (() => {
   // amp: độ cao đỉnh (đv cục bộ, dải bán kính 3000-5000); soft: tỉ lệ dáng tròn thoải; tree: bìa rừng (tỉ lệ amp, < 0: không
   // rừng); snow: đường tuyết (> 1: không tuyết); rock / forest: màu đá / tán rừng; haze: sương xa cơ bản
   const RANGES = {
-    HIGHLAND: { amp: 720, soft: 0, tree: 0.5, snow: 0.68, rock: [0.32, 0.32, 0.33], forest: [0.06, 0.12, 0.05], haze: 0.16 },
-    RIVER_LAKE: { amp: 600, soft: 0, tree: 0.82, snow: 0.7, snowK: 1, rock: [0.3, 0.3, 0.3], forest: [0.06, 0.13, 0.04], haze: 0.18 },
-    JUNGLE: { amp: 580, soft: 0.05, tree: 0.92, snow: 0.84, snowK: 0.85, rock: [0.3, 0.31, 0.29], forest: [0.05, 0.13, 0.04], haze: 0.24 },
-    URBAN: { amp: 520, soft: 0, tree: 0.82, snow: 0.7, snowK: 1, rock: [0.3, 0.3, 0.3], forest: [0.06, 0.13, 0.05], haze: 0.22 },
-    DESERT: { amp: 540, soft: 0, tree: -1, snow: 9, rock: [0.64, 0.5, 0.36], forest: [0.3, 0.27, 0.18], haze: 0.32, strata: 1 }
+    HIGHLAND: { amp: 700, soft: 0.06, tree: 0.55, snow: 0.76, snowK: 0.7, rock: [0.34, 0.35, 0.36], forest: [0.08, 0.14, 0.06], haze: 0.28 },
+    RIVER_LAKE: { amp: 540, soft: 0.12, tree: 0.85, snow: 9, rock: [0.32, 0.33, 0.31], forest: [0.07, 0.15, 0.05], haze: 0.32 },
+    JUNGLE: { amp: 520, soft: 0.15, tree: 0.95, snow: 9, rock: [0.3, 0.32, 0.29], forest: [0.05, 0.14, 0.04], haze: 0.34 },
+    URBAN: { amp: 480, soft: 0.1, tree: 0.85, snow: 9, rock: [0.32, 0.33, 0.32], forest: [0.07, 0.14, 0.05], haze: 0.32 },
+    DESERT: { amp: 540, soft: 0, tree: -1, snow: 9, rock: [0.64, 0.5, 0.36], forest: [0.3, 0.27, 0.18], haze: 0.34, strata: 1 }
   };
   // Dải địa hình hình vành khuyên quanh camera: núi sống lưng uốn méo, sườn bất đối xứng, mỏm đá. Tính sẵn lúc dựng (1 lần /
   // bản đồ): bóng núi đổ lên núi theo hướng nắng (dò tia trên lưới độ cao), độ lồi lõm (sống núi / khe). Shader: rừng phủ
@@ -138,10 +138,9 @@ const SkySystem = (() => {
   // thành vệt; sương xa ngả màu trời. Vẽ từ vòng xa vào vòng gần (vẽ đè kiểu hoạ sĩ, không cần bộ đệm sâu)
   function mountainRing(cfg, su, seed, outer) {
     if (typeof MapGen === 'undefined') return null;
-    // map đảo (outer.spineA): dãy núi chân trời chỉ ở một cung sau dãy sống lưng của đảo (đất liền / đảo lớn phía xa), các
-    // hướng khác chân trời là biển — vòng núi 360° quanh một hòn đảo là vô lý (như đảo nằm giữa miệng núi lửa)
-    // sa mạc (outer.arcA): núi xa chỉ sau cao nguyên, phía biển cát / đồi thấp chân trời là cồn cát
-    const arcA = !outer ? null : outer.sea && typeof outer.spineA === 'number' ? outer.spineA : typeof outer.arcA === 'number' ? outer.arcA : null;
+    // Dãy núi chân trời luôn xuất hiện dạng CÁNH CUNG tự nhiên (~140°-160°) ở một phía chân trời (phía sống núi cao của bản đồ),
+    // các hướng còn lại mở ra chân trời khoáng đạt — tránh việc núi bao bọc khép kín 360° vô lý như đáy miệng núi lửa.
+    const arcA = !outer ? null : typeof outer.arcA === 'number' ? outer.arcA : typeof outer.spineA === 'number' ? outer.spineA : null;
     const R0 = 3000, R1 = 5000, N = 1200, NR = 64, TAU = Math.PI * 2;
     const on = MapGen.makeNoise(MapGen.mulberry32(((seed ^ 0x51f3a9) >>> 0) || 1));
     const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -243,12 +242,11 @@ const SkySystem = (() => {
       const sq = sw / st, sf = sq - Math.floor(sq);
       hr += ((Math.floor(sq) + smooth(0.6, 1, sf)) * st - sw) * 0.4 * up * smooth(0.2, 0.6, MapGen.fbm(on, wx * 0.0011 + 2.2, wz * 0.0011, 2) + 0.5);
       if (arcA === null) return hr;
-      // cung núi: rộng ~±75° quanh hướng sống lưng, mép cung hạ dần xuống dưới chân trời (dãy núi chìm dần vào biển)
+      // Dãy núi hình cánh cung tự nhiên: trải rộng ~140° quanh hướng arcA, thoải dần sang hai bên
       let da = Math.abs(Math.atan2(z, x) - arcA - 0.2 * MapGen.fbm(on, x * 0.0004, z * 0.0004 + 3, 2)) % TAU;
       da = Math.min(da, TAU - da);
-      // ngoài cung: dìm hẳn xuống (~15° dưới tầm mắt) -> biển / cảnh nền thật vẽ đè lên; chỉ hạ về 0 thì chân vòng núi
-      // thành dải sẫm lơ lửng ngang tầm mắt khi camera lên cao (pháo binh, drone)
-      return hr * (1 - smooth(0.85, 1.45, da)) - 900 * smooth(1.0, 1.6, da);
+      const wSpan = 1.25;
+      return hr * (1 - smooth(wSpan * 0.55, wSpan, da)) - 750 * smooth(wSpan * 0.8, wSpan * 1.25, da);
     };
     const NV = N * (NR + 1), pos = new Float32Array(NV * 3), hh = new Float32Array(NV), rr = new Float32Array(NV);
     // vòng k = 0 xa nhất (R1) -> k = NR gần nhất (R0); góc lặp vòng (i = N trùng i = 0)
@@ -498,15 +496,11 @@ const SkySystem = (() => {
           vec3 hzC = mix(fogC * farAir, fogC * mix(1.0, 0.58, overcast), smoothstep(0.25, 0.85, h) * (1.0 - 0.6 * overcast));
           // sương mù dày (fog của game đặc): núi tan hẳn vào đúng màu sương như cảnh vật gần hơn (không lộ bóng núi sẫm sau màn sương)
           hzC = mix(hzC, fogC, smoothstep(0.55, 0.95, fogK));
-          // LỚP MÙ SÁT CHÂN TRỜI: camera càng cao, chân dãy núi càng tụt sâu dưới mép đất xa (cảnh nền ở mặt phẳng cắt xa đã
-          // hoà hẳn màu không khí xa) -> ngay trên mép đất lộ ra sườn giữa núi xanh đậm ít sương: dải đất xa thành tấm lam xám
-          // phẳng sáng hơn cả núi phía sau, mép trên thẳng tắp. Sương theo góc nhìn trên mép đất: sát mép đúng màu dải đất xa,
-          // núi nhô dần lên khỏi lớp mù như ảnh chụp từ trên cao
-          float aE = vRel.y / max(1.0, length(vRel.xz)) - uHor;
-          float lowH = 1.0 - smoothstep(0.0, 0.026, aE);
-          hzC = mix(hzC, fogC * farAir, lowH * (1.0 - smoothstep(0.55, 0.95, fogK)));
-          hz = max(hz, lowH * 0.97);
-          col = mix(col, hzC, clamp(hz, 0.0, fogK > 0.95 ? 1.0 : 0.97));
+          // Chân núi chìm dần vào sương mù không khí xa của mặt đất một cách mềm mại, tự nhiên
+          float footFog = 1.0 - smoothstep(0.01, 0.22, h);
+          hzC = mix(hzC, fogC * farAir, footFog * (1.0 - smoothstep(0.55, 0.95, fogK)));
+          hz = max(hz, footFog * 0.82);
+          col = mix(col, hzC, clamp(hz, 0.0, fogK > 0.95 ? 1.0 : 0.96));
           gl_FragColor = vec4(col, 1.0);
         }`
     });

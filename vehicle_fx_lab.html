@@ -121,7 +121,7 @@
     <div class="lab-sec-h"><span class="lab-num">01</span><h2>Xe chiến đấu</h2></div>
     <div class="row col" id="tankRow">
       <button class="btn on" data-tank="ARTILLERY">
-        <i class="ti ti-crosshair" aria-hidden="true"></i>Pháo tự hành Arbalest 155<span class="badge">Khói xả ngang</span>
+        <i class="ti ti-crosshair" aria-hidden="true"></i>Pháo tự hành Arbalest 155
         <small>Lựu pháo 155mm · Loa hãm lùi 2 tầng · Chân chống &amp; lưỡi càng</small>
       </button>
       <button class="btn" data-tank="ALL_ROUNDER">
@@ -160,8 +160,6 @@
     <div class="lab-sec-h"><span class="lab-num">03</span><h2>Hỏa lực &amp; đầu nòng</h2></div>
     <button class="btn btn-fire" id="fireBtn"><i class="ti ti-flame" aria-hidden="true"></i>KHAI HỎA <small>Space · giữ để xả liên thanh</small></button>
     <div class="grid2 mt">
-      <button class="btn" id="smokeBtn"><i class="ti ti-cloud" aria-hidden="true"></i>Xì khói nòng pháo</button>
-      <button class="btn" id="recoilBtn"><i class="ti ti-arrow-back-up" aria-hidden="true"></i>Giật nòng &amp; nhún xe</button>
       <button class="btn" id="barrelHotBtn"><i class="ti ti-flame" aria-hidden="true"></i>Nung đỏ nòng (R6)</button>
       <button class="btn" id="autoFireBtn"><i class="ti ti-repeat" aria-hidden="true"></i>Bắn tự động: <b>TẮT</b></button>
     </div>
@@ -220,6 +218,9 @@
       <button class="btn" id="eraBtn"><i class="ti ti-bomb" aria-hidden="true"></i>Kích nổ giáp ERA</button>
       <button class="btn" id="deployBtn"><i class="ti ti-assembly" aria-hidden="true"></i>Hạ / thu càng pháo</button>
       <button class="btn" id="repairBtn"><i class="ti ti-tool" aria-hidden="true"></i>Sửa nguyên vẹn</button>
+    </div>
+    <div class="row mt">
+      <button class="btn btn-danger" id="ammoCookoffBtn" style="width:100%; justify-content:center; background:linear-gradient(135deg, #a31d08, #de3a09); color:#fff; font-weight:700; border:none; box-shadow:0 2px 10px rgba(222, 58, 9, 0.45);"><i class="ti ti-flame" aria-hidden="true"></i>Nổ kho đạn — Thổi tung tháp pháo</button>
     </div>
     <div class="lab-label">Phá từng bộ phận</div>
     <div class="grid2 left" id="partDmgBox"></div>
@@ -292,24 +293,25 @@
 <script src="src/core/audio/ui_sounds.js?v=20261022sh1"></script>
 <script src="src/entities/tank_models.js?v=20261022sh1"></script>
 <script src="src/core/game_timing.js?v=20261023bal1"></script>
-<script src="src/entities/tanks/vehicle_kit.js?v=20261022mud1"></script>
-<script src="src/entities/tanks/roof_mounts.js?v=20261023msl1"></script>
-<script src="src/entities/tanks/mbt_halberd.js?v=20261022mod2"></script>
-<script src="src/entities/tanks/fsv_hailstorm.js?v=20261101smoke1"></script>
+<script src="src/entities/tanks/vehicle_kit.js?v=20261108burn8"></script>
+<script src="src/entities/tanks/roof_mounts.js?v=20261108burn8"></script>
+<script src="src/entities/tanks/mbt_halberd.js?v=20261108burn8"></script>
+<script src="src/entities/tanks/fsv_hailstorm.js?v=20261108burn8"></script>
 <script src="src/entities/recon_drone.js"></script>
-<script src="src/entities/tanks/spg_arbalest.js?v=20261102dronecrew3"></script>
-<script src="src/entities/tanks/recon_marten.js?v=20261022pit1"></script>
-<script src="src/entities/projectiles.js?v=20261103pg8"></script>
+<script src="src/entities/tanks/spg_arbalest.js?v=20261108burn15"></script>
+<script src="src/entities/tanks/recon_marten.js?v=20261108burn15"></script>
+<script src="src/entities/projectiles.js?v=20261108burn8"></script>
 <script src="src/gameplay/tire_tracks.js?v=20261022wetmud1"></script>
 <script src="src/entities/spg.js?v=20261023bal1"></script>
-<script src="src/gameplay/explosion_fx.js?v=20261103rpg4"></script>
+<script src="src/gameplay/explosion_fx.js?v=20261108burn15"></script>
 <script src="src/gameplay/wading_fx.js?v=20261022wetmud1"></script>
-<script src="src/gameplay/vehicle_damage.js?v=20261103crew1"></script>
+<script src="src/gameplay/vehicle_damage.js?v=20261108burn15"></script>
 <script src="src/entities/soldier_model.js?v=20261104kn44"></script>
 <script src="src/gameplay/vehicle_crew.js?v=20261103crew5"></script>
 <script src="src/gameplay/reload_fx.js?v=20261025stub4"></script>
-<script src="src/core/equipment.js?v=20261029camo1"></script>
+<script src="src/core/equipment.js?v=20261108burn8"></script>
 <script src="src/gameplay/camo_fire.js?v=20261029real1"></script>
+<script src="src/core/async_shaders.js?v=20261027as1"></script>
 
 <script>
 (function () {
@@ -318,14 +320,12 @@
   // ===========================================================================
   // KHỞI TẠO KHÔNG GIAN 3D
   // ===========================================================================
-  // ===========================================================================
-  // KHỞI TẠO KHÔNG GIAN 3D
-  // ===========================================================================
   const canvas = document.getElementById('view');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  if (window.AsyncShaders) window.AsyncShaders.install(renderer);
 
   const scene = new THREE.Scene();
   // MẶC ĐỊNH NỀN SÁNG SHOWROOM KỸ THUẬT QUÂN SỰ: Sáng rõ, tương phản sắc nét, quan sát tỉ mỉ từng chi tiết
@@ -422,6 +422,14 @@
   const underLight = new THREE.PointLight(THEME.bright.underColor, THEME.bright.underInt, 260);
   underLight.position.set(0, 0.6, 0);
   scene.add(underLight);
+
+  // Bể đèn chớp (lửa đầu nòng / chớp nổ) và dàn ngọn lửa flashRig tạo NGAY TỪ ĐẦU:
+  // Nếu không tạo trước, lúc phát bắn đầu tiên xuất hiện sẽ thêm 3 đèn điểm vào Scene,
+  // khiến Three.js phải biên dịch lại toàn bộ shader của tất cả vật liệu xe cộ gây khựng 1-2 giây!
+  if (typeof SpgFXPool !== 'undefined') {
+    if (SpgFXPool.muzzleLight) SpgFXPool.muzzleLight(scene);
+    if (SpgFXPool.flashRig) SpgFXPool.flashRig(scene);
+  }
 
   const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 20000);
 
@@ -1225,6 +1233,7 @@
   // CÁC HÀNH ĐỘNG KÍCH HOẠT HIỆU ỨNG XE
   // ===========================================================================
   let burstTimer = 0;
+  let camShakePitch = 0, camShakeYaw = 0;
 
   function triggerFire() {
     const u = activeUnit;
@@ -1245,9 +1254,9 @@
     u.fire(stubBallistics, stubRadar);
     u.isDeployed = prevDeploy;
 
-    // Rung lắc camera nhẹ tạo cảm giác uy lực phát bắn
-    orbit.pitch += (Math.random() - 0.5) * 0.015;
-    orbit.yaw += (Math.random() - 0.5) * 0.015;
+    // Rung lắc camera nhẹ tạo cảm giác uy lực phát bắn (giảm chấn mượt mà đàn hồi, không giật nhảy bậc)
+    camShakePitch += (Math.random() - 0.5) * 0.012;
+    camShakeYaw += (Math.random() - 0.5) * 0.012;
   }
 
   function triggerBarrelSmoke() {
@@ -1794,8 +1803,7 @@
     fx.restoreVehicle(u);
     u.hp = (pct / 100) * u.maxHp;
     if (pct <= 0) {
-      simulateHits(u, 3);
-      // Phát kết liễu: đạn nổ trúng sườn thân xe (bánh chỉ văng nếu ở gần điểm nổ)
+      // Phát kết liễu: đạn nổ trúng sườn thân xe (kết hợp cùng vụ nổ kho đạn onVehicleDestroyed ngay sau đó, tránh dồn 5 lần cắt lưới trong 1 frame)
       const a = Math.random() * Math.PI * 2;
       const dir = new THREE.Vector3(Math.cos(a), -0.3, Math.sin(a)).normalize();
       const origin = u.group.position.clone().add(new THREE.Vector3(0, 10, 0)).addScaledVector(dir, -80);
@@ -1805,12 +1813,111 @@
         VehicleDamage.onDirectHit(u, { hit, ammo: u.tankType === 'ALL_ROUNDER' ? 'RPG' : 'HE', dir, fx, heavy: false });
       }
       u.isDead = true;
+      if (u.crew) {
+        if (u.crew.gunner && u.crew.gunner.root) u.crew.gunner.root.visible = false;
+        if (u.crew.mate && u.crew.mate.root) u.crew.mate.root.visible = false;
+        u.crew.off = true;
+      }
+      if (u.spareStrap) u.spareStrap.visible = false;
+      if (u.spareWood) u.spareWood.visible = false;
+      if (u.spareRubber) u.spareRubber.visible = false;
+      if (typeof VehicleDamage !== 'undefined') {
+        if (VehicleDamage.hasPart(u, 'stowage')) VehicleDamage.detachTag(u, 'stowage', new THREE.Vector3((Math.random() - 0.5) * 60, 45 + Math.random() * 35, 30 + Math.random() * 30), null, { pop: 0.9 });
+        if (VehicleDamage.hasPart(u, 'canL')) VehicleDamage.stowTag(u, 'canL');
+        if (VehicleDamage.hasPart(u, 'canR')) VehicleDamage.stowTag(u, 'canR');
+        if (VehicleDamage.hasPart(u, 'ammoBoxes')) VehicleDamage.detachTag(u, 'ammoBoxes', new THREE.Vector3((Math.random() - 0.5) * 90, 40 + Math.random() * 35, (Math.random() - 0.5) * 90), null, { explosive: true });
+        if (VehicleDamage.hasPart(u, 'generator')) VehicleDamage.detachTag(u, 'generator', new THREE.Vector3((Math.random() - 0.5) * 100, 35 + Math.random() * 35, (Math.random() - 0.5) * 100), null, { explosive: true });
+        for (const t of ['tool', 'toolL', 'toolR']) if (VehicleDamage.hasPart(u, t)) VehicleDamage.detachTag(u, t, new THREE.Vector3((Math.random() - 0.5) * 60, 25 + Math.random() * 25, (Math.random() - 0.5) * 60));
+        for (const t of ['smokeL', 'smokeR']) if (VehicleDamage.hasPart(u, t)) VehicleDamage.detachTag(u, t, new THREE.Vector3(t.endsWith('L') ? -45 : 45, 35 + Math.random() * 30, (Math.random() - 0.5) * 25));
+        for (const t of ['binL', 'binR', 'boxR']) if (VehicleDamage.hasPart(u, t)) VehicleDamage.detachTag(u, t, new THREE.Vector3(t.endsWith('L') ? -35 : 35, 25 + Math.random() * 25, (Math.random() - 0.5) * 25));
+        if (VehicleDamage.hasPart(u, 'spareTrack')) VehicleDamage.detachTag(u, 'spareTrack', new THREE.Vector3((Math.random() - 0.5) * 50, 25 + Math.random() * 25, (Math.random() - 0.5) * 50));
+        if (VehicleDamage.hasPart(u, 'tarpRoll')) VehicleDamage.stowTag(u, 'tarpRoll');
+        if (VehicleDamage.breakOutGlass) VehicleDamage.breakOutGlass(u, fx);
+        if (VehicleDamage.burnSpareWheel) VehicleDamage.burnSpareWheel(u, true);
+        if (VehicleDamage.burnVehicleTires) VehicleDamage.burnVehicleTires(u, true);
+        if (VehicleDamage.blackoutVehicleLights) VehicleDamage.blackoutVehicleLights(u);
+      }
       fx.onVehicleDestroyed(u);
     } else {
       u.isDead = false;
-      if (pct < 100) simulateHits(u, Math.round((100 - pct) / 12));
+      if (pct <= 25) {
+        if (u.crew) {
+          if (u.crew.gunner && u.crew.gunner.root) u.crew.gunner.root.visible = false;
+          if (u.crew.mate && u.crew.mate.root) u.crew.mate.root.visible = false;
+          u.crew.off = true;
+        }
+        if (u.spareStrap) u.spareStrap.visible = false;
+        if (u.spareWood) u.spareWood.visible = false;
+        if (u.spareRubber) u.spareRubber.visible = false;
+        if (typeof VehicleDamage !== 'undefined') {
+          if (VehicleDamage.burnSpareWheel) VehicleDamage.burnSpareWheel(u, true);
+          if (VehicleDamage.blackoutVehicleLights) VehicleDamage.blackoutVehicleLights(u);
+        }
+      }
+      if (pct < 100) simulateHits(u, Math.min(3, Math.max(1, Math.round((100 - pct) / 25))));
     }
     fx.trackVehicle(u);
+  }
+
+  function triggerAmmoDetonation() {
+    const u = activeUnit;
+    if (!u) return;
+    initAudio();
+    fx.restoreVehicle(u);
+    u.hp = 0;
+    u.isDead = true;
+    if (u.crew) {
+      if (u.crew.gunner && u.crew.gunner.root) u.crew.gunner.root.visible = false;
+      if (u.crew.mate && u.crew.mate.root) u.crew.mate.root.visible = false;
+      u.crew.off = true;
+    }
+    if (u.spareStrap) u.spareStrap.visible = false;
+    if (u.spareWood) u.spareWood.visible = false;
+    if (u.spareRubber) u.spareRubber.visible = false;
+    if (typeof VehicleDamage !== 'undefined') {
+      if (VehicleDamage.hasPart(u, 'stowage')) VehicleDamage.detachTag(u, 'stowage', new THREE.Vector3((Math.random() - 0.5) * 60, 45 + Math.random() * 35, 30 + Math.random() * 30), null, { pop: 0.9 });
+      if (VehicleDamage.hasPart(u, 'canL')) VehicleDamage.detachTag(u, 'canL', new THREE.Vector3(-40, 45 + Math.random() * 30, (Math.random() - 0.5) * 40), null, { explosive: true });
+      if (VehicleDamage.hasPart(u, 'canR')) VehicleDamage.detachTag(u, 'canR', new THREE.Vector3(40, 45 + Math.random() * 30, (Math.random() - 0.5) * 40), null, { explosive: true });
+      if (VehicleDamage.hasPart(u, 'ammoBoxes')) VehicleDamage.detachTag(u, 'ammoBoxes', new THREE.Vector3((Math.random() - 0.5) * 120, 60 + Math.random() * 40, (Math.random() - 0.5) * 120), null, { explosive: true });
+      if (VehicleDamage.hasPart(u, 'generator')) VehicleDamage.detachTag(u, 'generator', new THREE.Vector3((Math.random() - 0.5) * 120, 50 + Math.random() * 40, (Math.random() - 0.5) * 120), null, { explosive: true });
+      for (const t of ['tool', 'toolL', 'toolR']) if (VehicleDamage.hasPart(u, t)) VehicleDamage.detachTag(u, t, new THREE.Vector3((Math.random() - 0.5) * 80, 35 + Math.random() * 35, (Math.random() - 0.5) * 80));
+      for (const t of ['smokeL', 'smokeR']) if (VehicleDamage.hasPart(u, t)) VehicleDamage.detachTag(u, t, new THREE.Vector3(t.endsWith('L') ? -50 : 50, 40 + Math.random() * 35, (Math.random() - 0.5) * 30));
+      for (const t of ['binL', 'binR', 'boxR']) if (VehicleDamage.hasPart(u, t)) VehicleDamage.detachTag(u, t, new THREE.Vector3(t.endsWith('L') ? -45 : 45, 30 + Math.random() * 30, (Math.random() - 0.5) * 30));
+      if (VehicleDamage.hasPart(u, 'spareTrack')) VehicleDamage.detachTag(u, 'spareTrack', new THREE.Vector3((Math.random() - 0.5) * 60, 30 + Math.random() * 30, (Math.random() - 0.5) * 60));
+      if (VehicleDamage.hasPart(u, 'tarpRoll')) VehicleDamage.stowTag(u, 'tarpRoll');
+      if (VehicleDamage.breakOutGlass) VehicleDamage.breakOutGlass(u, fx);
+      if (VehicleDamage.burnSpareWheel) VehicleDamage.burnSpareWheel(u, true);
+      if (VehicleDamage.burnVehicleTires) VehicleDamage.burnVehicleTires(u, true);
+      if (VehicleDamage.blackoutVehicleLights) VehicleDamage.blackoutVehicleLights(u);
+    }
+    const turPos = u.turretGroup ? u.turretGroup.getWorldPosition(new THREE.Vector3()) : u.group.position.clone().add(new THREE.Vector3(0, 14, 0));
+    const hitPoint = turPos.clone().add(new THREE.Vector3(0, 1.5, 0));
+    const impactDir = new THREE.Vector3(0.5, -0.2, 0.8).normalize();
+    const impactVel = impactDir.clone().multiplyScalar(45);
+
+    fx.onVehicleDestroyed(u, impactVel, hitPoint);
+
+    if (u.fxWreck) {
+      const W = u.fxWreck;
+      W.t = 0;
+      W.reignite = 0;
+      W.K.mode = 'ammo';
+      W.K.instant = 'det';
+      W.K.mass = true;
+      W.K.tossP = 1.0;
+      W.K.tossRoll = 0.0;
+      fx.detonateWreck(u, false);
+      if (u.turretGroup && !W.turret && u.tankType !== 'SCOUT') {
+        fx.tossTurret(u, impactVel, hitPoint, 1.45);
+      }
+    }
+    document.querySelectorAll('#damageRow .btn').forEach(x => x.classList.toggle('on', x.dataset.hp === '0'));
+    const log = document.getElementById('partDmgLog');
+    if (log) {
+      log.textContent = u.tankType === 'SCOUT'
+        ? 'KHO ĐẠN / TÊN LỬA NỔ TRONG KHOANG — THỔI TUNG CỬA KÍNH VÀ NỔ PHỤ LIÊN HOÀN TRONG XE!'
+        : 'KHO ĐẠN BỊ KÍCH NỔ — SỨC ÉP KHỔNG LỒ THỔI BAY THÁP PHÁO LÊN TRỜI!';
+    }
   }
 
   function repairVehicle() {
@@ -1863,7 +1970,16 @@
     soundEngine.init();
     soundEngine.resume();
     state.audioReady = true;
+    try {
+      if (typeof soundEngine.gunshotBuffer === 'function') {
+        soundEngine.gunshotBuffer('blast120');
+        soundEngine.gunshotBuffer('blast155');
+        soundEngine.gunshotBuffer('blast30');
+      }
+    } catch (e) {}
   }
+  window.addEventListener('pointerdown', initAudio, { once: true, passive: true });
+  window.addEventListener('keydown', initAudio, { once: true, passive: true });
 
   function setElevation(deg) {
     state.elevation = Math.max(-5, Math.min(65, deg));
@@ -1951,6 +2067,7 @@
   document.getElementById('eraBtn')?.addEventListener('click', () => { initAudio(); triggerERABlast(); });
   document.getElementById('deployBtn')?.addEventListener('click', () => { initAudio(); triggerDeployToggle(); });
   document.getElementById('repairBtn')?.addEventListener('click', () => { initAudio(); repairVehicle(); });
+  document.getElementById('ammoCookoffBtn')?.addEventListener('click', () => { initAudio(); triggerAmmoDetonation(); });
 
   const driveBtn = document.getElementById('driveBtn');
   driveBtn.addEventListener('click', () => {
@@ -2089,8 +2206,69 @@
   // Mặc định NGOÀI TRỜI giống phòng thử đạn (bấm nút nền để đổi sang nền sáng / tối kiểu phòng trưng bày)
   setEnvironmentTheme('field');
 
+  // Làm nóng sẵn shader của toàn bộ hiệu ứng khai hỏa và môi trường
+  function prewarmLabShaders() {
+    if (!renderer) return;
+    const holder = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial());
+    holder.position.set(0, 8, -30);
+    holder.visible = true;
+    holder.frustumCulled = false;
+    scene.add(holder);
+    let flashRigObj = null;
+
+    try {
+      if (typeof SpgFXPool !== 'undefined') {
+        if (SpgFXPool.muzzleLight) SpgFXPool.muzzleLight(scene);
+        if (SpgFXPool.flashRig) {
+          flashRigObj = SpgFXPool.flashRig(scene);
+          if (flashRigObj && flashRigObj.group) {
+            flashRigObj.group.visible = true;
+            flashRigObj.group.traverse(o => { o.frustumCulled = false; });
+          }
+        }
+      }
+      if (fx) {
+        if (fx.shocks) {
+          if (fx.shocks.geo && fx.shocks.mat) {
+            holder.add(new THREE.Mesh(fx.shocks.geo, fx.shocks.mat(true)));
+            holder.add(new THREE.Mesh(fx.shocks.geo, fx.shocks.mat(false)));
+          }
+          if (fx.shocks.ringGeo && fx.shocks.ringMat) {
+            holder.add(new THREE.Mesh(fx.shocks.ringGeo, fx.shocks.ringMat()));
+          }
+        }
+        if (fx.warmMaterials) {
+          for (const m of fx.warmMaterials()) {
+            holder.add(new THREE.Mesh(holder.geometry, m));
+          }
+        }
+        if (fx.fire && fx.fire.add) fx.fire.add({ x: 0, y: 8, z: -30, vx: 0, vy: 1, vz: 0, size: 1, life: 0.001, alpha: 0.001 });
+        if (fx.smoke && fx.smoke.add) fx.smoke.add({ x: 0, y: 8, z: -30, vx: 0, vy: 1, vz: 0, size: 1, life: 0.001, alpha: 0.001 });
+        if (fx.streaks && fx.streaks.add) fx.streaks.add({ x: 0, y: 8, z: -30, vx: 0, vy: 1, vz: 0, life: 0.001 });
+      }
+      for (const w of holder.children.slice()) {
+        w.frustumCulled = false;
+        if (!w.isMesh || w.geometry !== holder.geometry) continue;
+        const t = new THREE.Mesh(w.geometry, w.material);
+        t.frustumCulled = false;
+        t.receiveShadow = true;
+        t.castShadow = true;
+        holder.add(t);
+      }
+      renderer.compile(scene, camera);
+    } catch (e) {
+      console.warn('[Lab] Prewarm shader warning:', e);
+    } finally {
+      if (flashRigObj && flashRigObj.group) flashRigObj.group.visible = false;
+      scene.remove(holder);
+      holder.geometry.dispose();
+      holder.material.dispose();
+    }
+  }
+
   // Khởi tạo xe ban đầu
   loadUnit(state.tankType, state.team);
+  prewarmLabShaders();
   // móc cho script chụp ảnh tự động (CDP): đổi xe, đặt camera
   window.__lab = { loadUnit, orbit, updateCamera, state, fx, renderer, camera, scene, setDamagePercent, labKits, reloadActiveUnit, toggleEquip, get unit() { return activeUnit; } };
 
@@ -2156,7 +2334,7 @@
       if (u.antiTankCooldown > 0) u.antiTankCooldown = Math.max(0, u.antiTankCooldown - dt);
       if (u.barrelRecoil > 0 && u.barrelGroup) {
         u.barrelRecoil = Math.max(0, u.barrelRecoil - dt * 38);
-        u.barrelGroup.position.z = u.barrelRecoil;
+        if (!u.modelAnimator) u.barrelGroup.position.z = u.barrelRecoil;
       }
       if (typeof u.updateRecoilRock === 'function') u.updateRecoilRock(dt);
       if (u.chassisGroup) {
@@ -2164,7 +2342,7 @@
         if (u._chassisBaseY === undefined) u._chassisBaseY = u.chassisGroup.position.y + (d && d.sinkApplied || 0);
         u.chassisGroup.rotation.x = (u.rockPitch || 0) + (d ? d.tiltP || 0 : 0);
         u.chassisGroup.rotation.z = (u.rockRoll || 0) + (d ? d.tiltR || 0 : 0);
-        u.chassisGroup.position.y = u._chassisBaseY - (d ? d.sink || 0 : 0) - (u.rockHeave || 0);
+        u.chassisGroup.position.y = u._chassisBaseY - (d ? d.sink || 0 : 0) - (u.rockHeave || 0) + (u._deployLift || 0);
         if (d) { d.tiltPApplied = d.tiltP || 0; d.tiltRApplied = d.tiltR || 0; d.sinkApplied = d.sink || 0; }
       }
       // Nạp đạn súng máy xe trinh sát: hết thời gian nạp -> lắp xong hộp đạn mới
@@ -2255,7 +2433,14 @@
     }
 
     fx.update(dt);
-    if (typeof VehicleDamage !== 'undefined') VehicleDamage.update(dt, []);
+    if (typeof VehicleDamage !== 'undefined') VehicleDamage.update(dt, u ? [u] : [], fx);
+    if (Math.abs(camShakePitch) > 0.00005 || Math.abs(camShakeYaw) > 0.00005) {
+      orbit.pitch += camShakePitch * 0.35;
+      orbit.yaw += camShakeYaw * 0.35;
+      camShakePitch *= 0.65;
+      camShakeYaw *= 0.65;
+      updateCamera();
+    }
     renderer.render(scene, camera);
   }
 

@@ -812,7 +812,14 @@ class MatchmakingController {
     if (this.countEl) this.countEl.textContent = `${filled}/${total}`;
     if (this.progressBarEl) this.progressBarEl.style.width = `${Math.max(5, filled / total * 100)}%`;
     const t = Math.floor(this.searchTime);
-    if (this.timerEl) this.timerEl.textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    if (this.timerEl) {
+      if (this.state === 'PREPARING') {
+        const dots = ['.', '..', '...'][Math.floor(performance.now() / 400) % 3];
+        this.timerEl.textContent = 'VÀO TRẬN' + dots;
+      } else {
+        this.timerEl.textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+      }
+    }
     if (this.mapNameEl) this.mapNameEl.textContent = this.mapName(this.selectedMapType);
     if (this.radarWidget) this.radarWidget.syncSlots(this.slots);
     if (!this.statusTextEl) return;
@@ -1713,6 +1720,7 @@ class MatchmakingController {
     this.rebalanceHumans(this.spawnSeed);
     this.renderLobby(); // cân bằng đội hình lần cuối trước khi gửi
     this.state = 'PREPARING';
+    this._prepStart = performance.now();
     this.localGameReady = false;
     this._unitsPrebuilt = false;
     this.readyPeers.clear();
@@ -1771,14 +1779,34 @@ class MatchmakingController {
         mapType: this.selectedMapType,
         mapSeed: this.mapSeed >>> 0
       });
+      // Dự phòng máy chủ phòng bị trễ: tự đếm ngược vào trận sau 4.5s
+      clearTimeout(this._clientTimeout);
+      this._clientTimeout = setTimeout(() => {
+        if (this.state === 'PREPARING') this.runCountdown();
+      }, 4500);
     }
     this.updateSearchHUD();
   }
 
   tryStartSynchronizedCountdown() {
     if (!this.isHost || this.state !== 'PREPARING' || !this.localGameReady) return;
+    const prepElapsed = performance.now() - (this._prepStart || performance.now());
     const humans = this.slots.filter(s => s.isHuman && s.peerId).map(s => s.peerId);
-    if (!humans.every(id => this.readyPeers.has(id))) return;
+    const allReady = humans.every(id => this.readyPeers.has(id));
+    if (!allReady && prepElapsed < 3500) {
+      clearTimeout(this._syncFallbackTimer);
+      this._syncFallbackTimer = setTimeout(() => this.tryStartSynchronizedCountdown(), 500);
+      return;
+    }
+    // Quá 3.5s: tự động coi các slot chưa sẵn sàng thành bot để tránh kẹt cả phòng
+    if (!allReady) {
+      this.slots.forEach(s => {
+        if (s.isHuman && s.peerId && !this.readyPeers.has(s.peerId) && !s.isMe) {
+          s.isHuman = false;
+          s.isBot = true;
+        }
+      });
+    }
     if (this.net && this.net.isOnline) {
       this.net.send('START_COUNTDOWN', {
         slots: this.slots,
@@ -2010,7 +2038,7 @@ class MatchmakingController {
 }
 
 // trần chờ GPU biên dịch shader ở màn nhận nhiệm vụ (ms), tính từ lúc bản đồ + xe + phim đều đã xong
-MatchmakingController.GPU_GATE_MS = 25000;
+MatchmakingController.GPU_GATE_MS = 3500;
 window.MatchmakingController = MatchmakingController;
 
 // Khởi tạo sảnh chờ độc lập an toàn ngay khi trang tải xong (không bị phụ thuộc tuần tự)

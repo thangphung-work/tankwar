@@ -110,6 +110,8 @@
     pb.build(st);
     // đèn trạng thái mặt sau hộp nguồn (vật liệu riêng mỗi xe: ew_jammer.js đổi màu / nhấp nháy)
     const ledMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x33ff55, emissiveIntensity: 0.7, roughness: 0.4 });
+    ledMat.name = 'ledGreen';
+    ledMat.userData = { surface: 'glass', isVehicleLight: true };
     for (const x of [-0.25, 0.25]) {
       const led = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.06, 10), ledMat);
       led.rotation.x = Math.PI / 2;
@@ -522,6 +524,8 @@
     jb.box(0.6, 0.04, 0.4, M.soot || D, [0.3 + rnd() * 0.3, 0.64, 0.2]);                       // vệt cháy sém cạnh nắp
     jb.build(tilt);
     const ledMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x33ff55, emissiveIntensity: 0.7, roughness: 0.4 });
+    ledMat.name = 'ledGreen';
+    ledMat.userData = { surface: 'glass', isVehicleLight: true };
     for (const x of [-0.25, 0.25]) {
       const led = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.06, 10), ledMat);
       led.rotation.x = Math.PI / 2;

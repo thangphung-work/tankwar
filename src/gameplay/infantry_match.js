@@ -427,7 +427,7 @@ const InfantryMatch = (() => {
     #inf-heal { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse closest-side, transparent 58%, rgba(70, 210, 120, .42) 100%); }
     #inf-heal.on { animation: inf-heal 1.2s ease-out; }
     @keyframes inf-heal { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
-    #inf-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); padding: 5px 12px; font-size: 12px; font-weight: 700; background: var(--hx-bg); border: 1px solid var(--tc-accent); color: var(--tc-bright); }
+    #inf-msg { position: absolute; left: 50%; top: 76%; transform: translateX(-50%); padding: 5px 12px; font-size: 12px; font-weight: 700; background: var(--hx-bg); border: 1px solid var(--tc-accent); color: var(--tc-bright); pointer-events: none; }
     #inf-fb { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 961; }
     #inf-fb canvas { position: absolute; opacity: 0; }
     #inf-fb .vig { left: 0; top: 0; width: 100%; height: 100%; }
@@ -1728,7 +1728,7 @@ const InfantryMatch = (() => {
         this.$cross.classList.toggle('lock', !!h.lock);
         this.$cross.style.display = h.alive && !h.sight && !h.kami ? '' : 'none';
       }
-      const msg = h.alive && !this.locked && !this.noLock && this.usable() ? 'Bấm vào màn hình để điều khiển' : this._rideMsg || '';
+      const msg = h.alive && !this.locked && !this.noLock && this.usable() && (h.aim || 0) < 0.35 ? 'Bấm vào màn hình để điều khiển' : this._rideMsg || '';
       if (this.$msg) { this.$msg.textContent = msg; this.$msg.style.display = msg ? '' : 'none'; }
     }
 

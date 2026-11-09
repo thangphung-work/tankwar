@@ -1842,6 +1842,13 @@ const VehicleCrew = (() => {
   function animate(u, dt) {
     const C = u.crew;
     if (!C || !(dt > 0)) return;
+    const burningHeavy = !!(u.isDead || (u.hp !== undefined && u.hp <= 0.25 * (u.maxHp || 100)) || (u.dmg && ((u.dmg.burn && u.dmg.burn > 0) || (u.dmg.fires && u.dmg.fires.length > 0))));
+    if (C.off || u.isDead || burningHeavy) {
+      if (C.gunner && C.gunner.root) C.gunner.root.visible = false;
+      if (C.mate && C.mate.root) C.mate.root.visible = false;
+      if (u.isDead || burningHeavy) C.off = true;
+      return;
+    }
     const d = u.dmg;
     let F = C.gunner;
     C.loadShift = 0; C.loadZ = 0; C.lean = 0;
@@ -2173,8 +2180,8 @@ const VehicleCrew = (() => {
     const bodyYaw = hiding && C.hideT > 0.08 ? Math.PI : 0;
     F.yaw = (F.yaw || 0) + (bodyYaw - (F.yaw || 0)) * (1 - Math.exp(-dt * 8));
     F.root.rotation.y = F.yaw;
-    // đã chui hẳn vào xe: ẩn để không lòi qua nóc — đang kéo nắp thì giữ tới khi nắp sập hẳn (tay không biến mất giữa chừng)
-    F.root.visible = F.rise > -2.9 || (hiding && lid.rotation.x > 0.06);
+    // đã chui hẳn vào xe hoặc xe đã chết: ẩn để không lòi qua nóc
+    F.root.visible = !u.isDead && !C.off && (F.rise > -2.9 || (hiding && lid.rotation.x > 0.06));
     // Ngực theo hông có độ trễ nhỏ: người thật giữ đầu / vai ổn định khi xe lắc, không quay cả khối như tượng gắn trên trục.
     F.chestLag = (F.chestLag || 0) + ((-F.leanF * 0.32 - F.roll * 0.16) - (F.chestLag || 0)) * (1 - Math.exp(-dt * 5));
     F.torso.rotation.set(-F.bend + F.leanF, F.twist, (gDead ? deadSide * 0.18 : 0) + F.roll, 'YXZ');

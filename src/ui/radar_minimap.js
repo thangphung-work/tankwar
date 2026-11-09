@@ -34,7 +34,8 @@ const RadarMinimap = (() => {
   function size(cv) { return cv._mmL || cv.width; }
 
   function view(g, cv) {
-    const P = g.player, W = size(cv), H = W;
+    const P = (g.player && !g.player.isDead) ? g.player : (g.spectateUnit || g.player);
+    const W = size(cv), H = W;
     const cx = W / 2, cy = H / 2, Rpx = Math.min(W, H) / 2 - RIM, Rw = viewRange(P), s = Rpx / Rw;
     return { P, W, H, cx, cy, Rpx, Rw, s, toScreen: (x, z) => ({ x: cx + (x - P.x) * s, y: cy + (z - P.z) * s }) };
   }

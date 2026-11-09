@@ -836,7 +836,7 @@ const EnvDamage = (() => {
             tg.rotateX(-Math.PI / 2);
             tg.translate(0, deckY + 0.05, sm);
             { const p = tg.attributes.position, uv = tg.attributes.uv; for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / cw + 0.5, p.getZ(i) / (cw * 2)); }
-            const top = new THREE.Mesh(bend(tg), asphalt(urban ? b.lanes : 2));
+            const top = new THREE.Mesh(bend(tg), asphalt(b.lanes === 4 ? 4 : 2));
             top.receiveShadow = true; g.add(top);
             for (const sd of [-1, 1]) {
               const cwid = urban ? walk : 3, ch = urban ? 2 : 1.6;

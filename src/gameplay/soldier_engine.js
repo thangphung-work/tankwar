@@ -1040,17 +1040,23 @@ const SoldierEngine = (() => {
       else if (I.face != null) wantHeading = I.face;
       // 2. quay người có giới hạn; lệch nhiều thì chậm lại để xoay trước rồi mới bước tiếp
       const isPlayer = !!(D && D.player);
+      this.figure._isPlayer = isPlayer;
       const runTurn = wantSpeed > 14, maxTurn = isPlayer ? 24 : (runTurn ? CFG.turnRun : wantSpeed > 0 ? CFG.turnWalk : CFG.turnIdle);
-      const dh = angDiff(this.heading, wantHeading), turnAccel = isPlayer ? 95 : (runTurn ? CFG.turnAccelRun : CFG.turnAccel);
-      // Vận tốc hãm theo quãng góc còn lại: root giảm tốc trước đích thay vì tới đúng góc
-      // rồi đặt omega = 0 trong một khung.
-      const stopRate = 0.85 * Math.sqrt(2 * turnAccel * Math.abs(dh)), wantTurn = Math.sign(dh) * Math.min(maxTurn, Math.abs(dh) * (isPlayer ? 16 : 8), stopRate);
-      const turnA = turnAccel * dt, dv = wantTurn - (this._turnVel || 0);
-      this._turnVel = (this._turnVel || 0) + Math.max(-turnA, Math.min(turnA, dv));
-      let applied = this._turnVel * dt;
-      if (applied * dh < 0) applied = 0;   // đổi ý quay ngược bên: hãm vận tốc cũ trước, tuyệt đối không giật thẳng tới góc mới
-      else if (Math.abs(applied) >= Math.abs(dh)) { applied = dh; this._turnVel = 0; }
-      this.heading += applied;
+      const dh = angDiff(this.heading, wantHeading), turnAccel = isPlayer ? ((this.figure.aimBlend || 0) > 0.1 ? 260 : 140) : (runTurn ? CFG.turnAccelRun : CFG.turnAccel);
+      const isAimingPlayer = isPlayer && ((this.figure.aimBlend || 0) > 0.1 || !wantSpeed);
+      if (isAimingPlayer && Math.abs(dh) < 1.2) {
+        // Đang ngắm bắn hoặc đứng canh: thân người bám sát tâm ngắm mượt mà, không bị trễ góc
+        this.heading += dh * Math.min(1, dt * 28);
+        this._turnVel = 0;
+      } else {
+        const stopRate = 0.85 * Math.sqrt(2 * turnAccel * Math.abs(dh)), wantTurn = Math.sign(dh) * Math.min(maxTurn, Math.abs(dh) * (isPlayer ? 22 : 8), stopRate);
+        const turnA = turnAccel * dt, dv = wantTurn - (this._turnVel || 0);
+        this._turnVel = (this._turnVel || 0) + Math.max(-turnA, Math.min(turnA, dv));
+        let applied = this._turnVel * dt;
+        if (applied * dh < 0) applied = 0;
+        else if (Math.abs(applied) >= Math.abs(dh)) { applied = dh; this._turnVel = 0; }
+        this.heading += applied;
+      }
       this.turnSigned = applied / Math.max(1e-4, dt);   // nghiêng cua theo góc đã quay thật, không theo omega còn đang bị hãm nội bộ
       this.turnNow = Math.abs(this.turnSigned);
       if (!isPlayer && (mvX === null || (D && D.face == null))) wantSpeed *= Math.max(0, Math.cos(Math.min(Math.PI / 2, Math.abs(dh) * 1.3)));

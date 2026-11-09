@@ -116,10 +116,14 @@
     const P = g.player;
     if (P) {
       P.takeDamage = function () { return { blocked: false, killed: false, prevHp: this.hp, currentHp: this.hp }; };
+      P.update = function () {}; // Vô hiệu hoá vật lý và va chạm của xe tàng hình
       if (P.group) P.group.visible = false;
       cam.x = P.x; cam.z = P.z + 500;
       cam.y = g.terrain.getElevationAt(cam.x, cam.z) + 400;
       cam.yaw = 0;
+    }
+    if (window.soundEngine && window.soundEngine.updateEngine) {
+      window.soundEngine.updateEngine(0, false, 1, { dead: true });
     }
     const hud = document.getElementById('hud-overlay');
     if (hud) hud.style.display = 'none';
@@ -138,6 +142,7 @@
       const pEl = document.getElementById('fc-panel');
       if (pEl) pEl.style.display = mapOpen ? 'none' : '';
       if (!mapOpen) fly(dt);
+      if (g.terrain && g.terrain.update) g.terrain.update(dt);
       origUpdate.call(this, dt);
       followPlayer();
       hideAim();
@@ -183,7 +188,12 @@
     const T = g.terrain, half = T.width ? T.width / 2 - 50 : 1e9;
     const x = Math.max(-half, Math.min(half, cam.x)), z = Math.max(-half, Math.min(half, cam.z));
     P.x = x; P.z = z; P.speed = 0;
-    P.y = T.getElevationAt(x, z);
+    P.airborne = false;
+    P._suspY = P.y = T.getElevationAt(x, z);
+    P._vy = 0;
+    P._gPrev = P.y;
+    P._gLX = x;
+    P._gLZ = z;
     P.group.position.set(x, P.y, z);
     P.group.visible = false;
   }
@@ -240,6 +250,7 @@
 
   function bindInput() {
     const canvas = g.renderer.domElement;
+    canvas.addEventListener('wheel', e => { if (!isUIEvent(e)) { e.stopImmediatePropagation(); } }, { capture: true, passive: false });
     const isUIEvent = e => {
       if (!e.target || !e.target.closest) return false;
       if (e.target.closest('#fc-panel')) return true;

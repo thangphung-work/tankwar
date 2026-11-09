@@ -2877,7 +2877,13 @@
       if (!parent || parent.name === 'antennas' || (parent.userData && parent.userData.isAntenna)) return null;
       parent.updateMatrixWorld(true);
       // Vết phẳng phải nằm khít bề mặt: trên mặt cong / chi tiết nhỏ (nòng pháo, ống, mép giáp) thu nhỏ lại, không lơ lửng
-      if (kind !== 'turretRing' && !opts.noFit && object.isMesh && !object.isInstancedMesh && !kind.startsWith('concrete') && normal) {
+      if (kind === 'turretRing') {
+        return this.buildTurretWell(point, normal, parent, size, opts);
+      }
+      if (kind === 'hatchHole') {
+        return this.buildHatchWell(point, normal, parent, size, opts);
+      }
+      if (!opts.noFit && object.isMesh && !object.isInstancedMesh && !kind.startsWith('concrete') && normal) {
         size = this.fitMarkSize(point, normal, object, size, opts.unit && opts.unit.group);
         if (size <= 0) return null;
       }
@@ -3027,10 +3033,599 @@
         const oi = B.order.indexOf(r.slot); if (oi >= 0) B.order.splice(oi, 1);
       } else {
         if (r.mesh.parent) r.mesh.parent.remove(r.mesh);
-        if (!(r.mat.userData && r.mat.userData.shared)) r.mat.dispose();
+        if (r.dispose) r.dispose();
+        else if (r.mat && !(r.mat.userData && r.mat.userData.shared)) r.mat.dispose();
         if (!r.keep) this._meshMarks = Math.max(0, (this._meshMarks || 0) - 1);
       }
       this.surfaceMarks.splice(i, 1);
+    },
+
+    // Dựng hốc khoang chiến đấu 3D (xe tăng) hoặc bệ xoay mâm tháp pháo phẳng (xe pháo tự hành Arbalest) khi tháp pháo bị hất văng
+    buildTurretWell(point, normal, parent, size, opts = {}) {
+      const type = opts.tankType || (opts.unit && opts.unit.tankType) || 'ALL_ROUNDER';
+      const isArtillery = type === 'ARTILLERY';
+      const isScout = type === 'SCOUT';
+      const ref = 230 + ((this._wellStencilSeq = ((this._wellStencilSeq || 0) + 1) % 24));
+      const well = new THREE.Group();
+      well.userData.isFxDecal = true;
+      well.userData.isTurretWell = true;
+      well.userData.noDeform = true;
+      well.userData.lift = (isArtillery || isScout) ? 0.02 : 0.04;
+
+      const n = new THREE.Vector3(normal.x, normal.y, normal.z).normalize();
+      const qW = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+      const pq = new THREE.Quaternion();
+      parent.getWorldQuaternion(pq);
+      const ws = new THREE.Vector3();
+      parent.getWorldScale(ws);
+      well.quaternion.copy(pq.invert().multiply(qW));
+      const local = parent.worldToLocal(new THREE.Vector3(point.x, point.y, point.z).addScaledVector(n, (isArtillery || isScout) ? 0.02 : 0.04));
+      well.position.copy(local);
+      well.scale.set(1 / (ws.x || 1), 1 / (ws.y || 1), 1 / (ws.z || 1));
+
+      // Trong root: +Y hướng thẳng lên theo pháp tuyến mặt nóc/sàn, -Y đi sâu xuống bụng xe, XZ là mặt phẳng nóc/sàn
+      const root = new THREE.Group();
+      root.rotation.x = Math.PI / 2;
+      root.userData.isFxDecal = true;
+      well.add(root);
+
+      const R = size * 0.315;
+      const geos = [];
+      const mats = [];
+      const trackGeo = (g) => { geos.push(g); return g; };
+      const trackMat = (m) => { mats.push(m); return m; };
+      const tagMesh = (m, order) => {
+        m.renderOrder = order;
+        m.castShadow = false;
+        m.receiveShadow = true;
+        m.userData.isFxDecal = true;
+        m.userData.noDeform = true;
+        return m;
+      };
+
+      const rimDarkMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x1d1b19, roughness: 0.76, metalness: 0.52 }));
+      const rimSteelMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x383430, roughness: 0.62, metalness: 0.68, side: THREE.DoubleSide }));
+      const boltStubMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x5c5750, roughness: 0.5, metalness: 0.75 }));
+      const structMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x272421, roughness: 0.74, metalness: 0.52 }));
+      const gearMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x3a3632, roughness: 0.58, metalness: 0.68 }));
+      const casingMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x3d3122, roughness: 0.64, metalness: 0.62 }));
+      const emberMat = trackMat(new THREE.MeshStandardMaterial({
+        color: 0x381205,
+        emissive: new THREE.Color(0xff4a08),
+        emissiveIntensity: 3.2,
+        roughness: 0.82,
+        metalness: 0.15
+      }));
+
+      // 1. Quầng muội cháy sém loang rộng trên mặt giáp quanh miệng vòng tháp
+      const scorchMat = trackMat(new THREE.MeshStandardMaterial({
+        map: getMarkTexture('scorch'),
+        roughness: 0.9,
+        metalness: 0.15,
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -6,
+        polygonOffsetUnits: -6
+      }));
+      const scorchPlane = tagMesh(new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(size * (isArtillery ? 1.35 : 1.22), size * (isArtillery ? 1.35 : 1.22))), scorchMat), 4);
+      scorchPlane.rotation.x = -Math.PI / 2;
+      scorchPlane.position.y = 0.02;
+      root.add(scorchPlane);
+
+      let emberLight = null;
+
+      if (isScout) {
+        // =======================================================================
+        // XE TRINH SÁT BỌC THÉP NHẸ MARTEN:
+        // Không có tháp pháo lớn hay giếng khoang đạn chìm sâu. Vũ khí gắn trên nóc.
+        // Khi bệ vũ khí nóc bị thổi bay: chỉ để lại vết cháy sém phẳng và vành thép phẳng dẹt
+        // dán sát vỏ nóc xe, tuyệt đối không tạo ống trụ 3D nào nhô lên trời.
+        // =======================================================================
+        const ringGeo = trackGeo(new THREE.RingGeometry(R * 0.82, R * 1.08, 28));
+        const rimMesh = tagMesh(new THREE.Mesh(ringGeo, rimDarkMat), 44);
+        rimMesh.rotation.x = -Math.PI / 2;
+        rimMesh.position.y = 0.024;
+        root.add(rimMesh);
+
+        const innerPlate = tagMesh(new THREE.Mesh(trackGeo(new THREE.CircleGeometry(R * 0.84, 28)), rimSteelMat), 44.2);
+        innerPlate.rotation.x = -Math.PI / 2;
+        innerPlate.position.y = 0.022;
+        root.add(innerPlate);
+
+        // Vài cọc bu-lông đứt phẳng sát mặt nóc
+        const boltGeo = trackGeo(new THREE.BoxGeometry(R * 0.05, 0.05, R * 0.05));
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          const bm = tagMesh(new THREE.Mesh(boltGeo, boltStubMat), 44.5);
+          bm.position.set(Math.cos(a) * R * 0.95, 0.035, Math.sin(a) * R * 0.95);
+          root.add(bm);
+        }
+      } else if (isArtillery) {
+        // =======================================================================
+        // XE PHÁO TỰ HÀNH ARBALEST 155MM:
+        // Tháp pháo đặt trên bệ xoay mâm tròn bắt trên sàn xe tải bọc giáp bánh lốp.
+        // Khoang đạn pháo và liều phóng nằm trong tháp pháo; sàn xe tải đặc nguyên khối.
+        // Khi thổi bay tháp pháo, lộ ra bệ xoay mâm tròn cơ khí, vành răng xoay, ổ bi,
+        // các cọc bu-lông đứt gãy và than hồng âm ỉ — KHÔNG KHOÉT THỦNG SÀN XE XUỐNG ĐẤT.
+        // =======================================================================
+        // Mâm đế thép bệ xoay tháp pháo
+        const pedestalMesh = tagMesh(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(R * 1.03, R * 1.06, 0.22, 36)), rimDarkMat), 44);
+        pedestalMesh.position.y = 0.11;
+        root.add(pedestalMesh);
+
+        // Vòng rãnh con lăn / ổ bi xoay tháp pháo
+        const bearingRace = tagMesh(new THREE.Mesh(trackGeo(new THREE.TorusGeometry(R * 0.98, R * 0.038, 8, 36)), rimSteelMat), 44.5);
+        bearingRace.rotation.x = Math.PI / 2;
+        bearingRace.position.y = 0.22;
+        root.add(bearingRace);
+
+        // Vành răng truyền động cơ khí xoay tháp (28 răng vuông, vài răng bị mẻ gãy)
+        const toothGeo = trackGeo(new THREE.BoxGeometry(R * 0.048, 0.14, R * 0.065));
+        for (let i = 0; i < 28; i++) {
+          if (i === 4 || i === 18 || i === 19) continue;
+          const a = (i / 28) * Math.PI * 2;
+          const tr = R * 0.915;
+          const tm = tagMesh(new THREE.Mesh(toothGeo, gearMat), 45);
+          tm.position.set(Math.cos(a) * tr, 0.22, Math.sin(a) * tr);
+          tm.rotation.y = -a;
+          if (i === 5 || i === 20) tm.rotation.z = rand(-0.35, 0.35);
+          root.add(tm);
+        }
+
+        // Mép gờ thép bảo vệ mâm xoay hơi vênh nhẹ do nhiệt nổ, bo tròn mượt mà (không gai tam giác)
+        const lipGeo = trackGeo(new THREE.CylinderGeometry(R * 1.045, R * 1.035, 0.14, 36, 1, true));
+        const lipPos = lipGeo.attributes.position;
+        for (let i = 0; i < lipPos.count; i++) {
+          const vx = lipPos.getX(i), vy = lipPos.getY(i), vz = lipPos.getZ(i);
+          const ang = Math.atan2(vz, vx);
+          const uTop = (vy + 0.07) / 0.14;
+          if (uTop > 0.15) {
+            const wave = 0.5 + 0.5 * Math.sin(ang * 4 + 0.5);
+            lipPos.setXYZ(i, vx * (1 + uTop * 0.02 * wave), vy + uTop * 0.04 * wave, vz * (1 + uTop * 0.02 * wave));
+          }
+        }
+        lipGeo.computeVertexNormals();
+        const lipMesh = tagMesh(new THREE.Mesh(lipGeo, rimSteelMat), 45);
+        lipMesh.position.y = 0.25;
+        root.add(lipMesh);
+
+        // 24 cọc bu-lông mâm xoay bị bẻ gãy đứt ngang bắt vào dầm sàn xe tải
+        const boltGeo = trackGeo(new THREE.BoxGeometry(R * 0.032, 0.08, R * 0.032));
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * Math.PI * 2 + (i % 2) * 0.03;
+          const br = R * 1.055;
+          const bm = tagMesh(new THREE.Mesh(boltGeo, i % 3 === 0 ? rimDarkMat : boltStubMat), 45.5);
+          bm.position.set(Math.cos(a) * br, 0.24, Math.sin(a) * br);
+          bm.rotation.set(rand(-0.25, 0.25), -a, rand(-0.25, 0.25));
+          root.add(bm);
+        }
+
+        // Đĩa thép đáy mâm trung tâm che kín hoàn toàn mặt sàn xe bên dưới
+        const innerFloor = tagMesh(new THREE.Mesh(trackGeo(new THREE.CircleGeometry(R * 0.92, 32)), rimDarkMat), 45);
+        innerFloor.rotation.x = -Math.PI / 2;
+        innerFloor.position.y = 0.12;
+        root.add(innerFloor);
+
+        // Trục cổ xoay cáp điện và dẫn dầu trung tâm bị cháy xém nổ toác đầu
+        const hubMesh = tagMesh(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(R * 0.18, R * 0.22, 0.45, 14)), structMat), 46);
+        hubMesh.position.set(0, 0.32, 0);
+        root.add(hubMesh);
+
+        const hubCap = tagMesh(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(R * 0.21, R * 0.21, 0.06, 14)), casingMat), 46.5);
+        hubCap.position.set(0, 0.54, 0);
+        root.add(hubCap);
+
+        // Các đầu ống thủy lực và dây cáp đứt quăn queo
+        const pipeGeo = trackGeo(new THREE.CylinderGeometry(R * 0.016, 0.016, R * 0.35, 6));
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 + 0.4;
+          const pr = R * 0.65;
+          const pm = tagMesh(new THREE.Mesh(pipeGeo, gearMat), 46);
+          pm.position.set(Math.cos(a) * pr, 0.22, Math.sin(a) * pr);
+          pm.rotation.set(rand(0.3, 0.9), -a, rand(-0.5, 0.5));
+          root.add(pm);
+        }
+
+        // Vỏ đạn pháo 155mm và bó thuốc phóng cháy dở văng ngổn ngang trên mâm
+        const shellGeo = trackGeo(new THREE.CylinderGeometry(R * 0.048, R * 0.048, R * 0.36, 8));
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + rand(-0.15, 0.15);
+          const sr = R * rand(0.38, 0.72);
+          const sm = tagMesh(new THREE.Mesh(shellGeo, i % 3 === 0 ? emberMat : casingMat), 46);
+          sm.position.set(Math.cos(a) * sr, 0.18, Math.sin(a) * sr);
+          sm.rotation.z = Math.PI / 2 + rand(-0.25, 0.25);
+          sm.rotation.y = -a + rand(-0.6, 0.6);
+          root.add(sm);
+        }
+
+        // Mảng than hồng và thuốc phóng âm ỉ cháy đỏ rực ở tâm bệ xoay
+        const emberGeo = trackGeo(new THREE.DodecahedronGeometry(R * 0.11, 0));
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + rand(-0.3, 0.3);
+          const er = R * rand(0.2, 0.62);
+          const em = tagMesh(new THREE.Mesh(emberGeo, emberMat), 46.5);
+          em.position.set(Math.cos(a) * er, 0.14, Math.sin(a) * er);
+          em.scale.set(rand(0.9, 1.5), rand(0.35, 0.6), rand(0.8, 1.3));
+          em.rotation.y = rand(0, 6.28);
+          root.add(em);
+        }
+      } else {
+        // =======================================================================
+        // XE TĂNG CHỦ LỰC / XE CHIẾN ĐẤU CÓ GIẾNG KHOANG CHÌM:
+        // Cổng chiều sâu Stencil Portal + Depth Reset để nhìn sâu xuống khoang đáy thân xe
+        // =======================================================================
+        const wellDepth = Math.max(7.2, R * 1.38);
+
+        // Mặt bích vòng đế ngoài bo tròn phẳng phiu, loại bỏ hoàn toàn răng cưa cánh sao
+        const flangeGeo = trackGeo(new THREE.RingGeometry(R * 0.98, R * 1.09, 48));
+        const flangeMesh = tagMesh(new THREE.Mesh(flangeGeo, rimDarkMat), 44);
+        flangeMesh.rotation.x = -Math.PI / 2;
+        flangeMesh.position.y = R * 0.025;
+        root.add(flangeMesh);
+
+        // Gờ vai ổ bi nhô trên mặt nóc
+        const collarGeo = trackGeo(new THREE.CylinderGeometry(R * 1.03, R * 1.07, R * 0.05, 48, 1, true));
+        const collarMesh = tagMesh(new THREE.Mesh(collarGeo, rimDarkMat), 44);
+        collarMesh.position.y = R * 0.028;
+        root.add(collarMesh);
+
+        // Vành thép miệng hốc cong vênh mượt mà tự nhiên, mép thép biến dạng nhẹ theo nhiệt
+        const lipSegs = 48;
+        const lipH = R * 0.065;
+        const lipGeo = trackGeo(new THREE.CylinderGeometry(R * 1.008, R * 0.992, lipH, lipSegs, 2, true));
+        const lipPos = lipGeo.attributes.position;
+        for (let i = 0; i < lipPos.count; i++) {
+          const vx = lipPos.getX(i), vy = lipPos.getY(i), vz = lipPos.getZ(i);
+          const ang = Math.atan2(vz, vx);
+          const uTop = (vy + lipH * 0.5) / lipH;
+          if (uTop > 0.15) {
+            const wave = 0.5 + 0.5 * Math.sin(ang * 3 + 0.4);
+            const flare = 1 + uTop * (0.008 + 0.012 * wave);
+            const liftY = uTop * lipH * (0.1 + 0.25 * wave);
+            lipPos.setXYZ(i, vx * flare, vy + liftY, vz * flare);
+          }
+        }
+        lipGeo.computeVertexNormals();
+        const lipMesh = tagMesh(new THREE.Mesh(lipGeo, rimSteelMat), 45);
+        lipMesh.position.y = lipH * 0.38;
+        root.add(lipMesh);
+
+        // Các đầu bu-lông bị giật đứt
+        const boltGeo = trackGeo(new THREE.BoxGeometry(R * 0.032, R * 0.042, R * 0.032));
+        for (let i = 0; i < 20; i++) {
+          const a = (i / 20) * Math.PI * 2 + (i % 2) * 0.04;
+          const br = R * 1.045;
+          const bm = tagMesh(new THREE.Mesh(boltGeo, i % 3 === 0 ? rimDarkMat : boltStubMat), 45);
+          bm.position.set(Math.cos(a) * br, R * 0.038, Math.sin(a) * br);
+          bm.rotation.set(rand(-0.25, 0.25), -a, rand(-0.25, 0.25));
+          root.add(bm);
+        }
+
+        // CỔNG CHIỀU SÂU STENCIL PORTAL:
+        // Đánh dấu stencil = ref tại đúng hình tròn miệng giếng
+        const maskMat = trackMat(new THREE.MeshBasicMaterial({
+          colorWrite: false,
+          depthWrite: false,
+          depthTest: false,
+          stencilWrite: true,
+          stencilRef: ref,
+          stencilFunc: THREE.AlwaysStencilFunc,
+          stencilFail: THREE.KeepStencilOp,
+          stencilZFail: THREE.ReplaceStencilOp,
+          stencilZPass: THREE.ReplaceStencilOp
+        }));
+        const maskMesh = tagMesh(new THREE.Mesh(trackGeo(new THREE.CircleGeometry(R * 0.99, 48)), maskMat), 46);
+        maskMesh.rotation.x = -Math.PI / 2;
+        maskMesh.position.y = 0.035;
+        root.add(maskMesh);
+
+        // XÓA ĐỘ SÂU TOÀN DIỆN VỀ VÔ CỰC NGAY TẠI MIỆNG GIẾNG:
+        // Đặt ngay tại miệng giếng cùng vị trí với maskMesh (không đặt ở đáy -wellDepth để tránh lệch parallax khi nhìn xiên),
+        // dùng shader ghi gl_Position.z = gl_Position.w * 0.999999 (đẩy z về Far plane) -> 100% hình tròn miệng giếng
+        // được xóa sạch Z-buffer, lòng giếng 3D không bao giờ bị nóc xe cắt ngang nửa kín nửa hở từ bất kỳ góc nhìn camera nào.
+        const depthClearMat = trackMat(new THREE.ShaderMaterial({
+          vertexShader: `
+            void main() {
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              gl_Position.z = gl_Position.w * 0.999999;
+            }
+          `,
+          fragmentShader: `
+            void main() {
+              gl_FragColor = vec4(0.0);
+            }
+          `,
+          colorWrite: false,
+          depthWrite: true,
+          depthTest: false,
+          stencilWrite: false,
+          stencilRef: ref,
+          stencilFunc: THREE.EqualStencilFunc,
+          stencilFail: THREE.KeepStencilOp,
+          stencilZFail: THREE.KeepStencilOp,
+          stencilZPass: THREE.KeepStencilOp
+        }));
+        const depthClearMesh = tagMesh(new THREE.Mesh(trackGeo(new THREE.CircleGeometry(R * 0.99, 48)), depthClearMat), 46.5);
+        depthClearMesh.rotation.x = -Math.PI / 2;
+        depthClearMesh.position.y = 0.035;
+        root.add(depthClearMesh);
+
+        // Ánh sáng than hồng rực rỡ từ đáy giếng khoang chiến đấu hắt lên vách và cơ cấu nạp đạn
+        emberLight = new THREE.PointLight(0xff5515, 3.2, R * 3.8, 1.4);
+        emberLight.position.set(0, -wellDepth * 0.65, 0);
+        emberLight.castShadow = false;
+        root.add(emberLight);
+
+        // Hàm tạo vật liệu nội thất chỉ vẽ bên trong cổng Stencil
+        const makeIntMat = (color, optsMat = {}) => trackMat(new THREE.MeshStandardMaterial(Object.assign({
+          color,
+          roughness: 0.82,
+          metalness: 0.38,
+          side: THREE.FrontSide,
+          stencilWrite: false,
+          stencilRef: ref,
+          stencilFunc: THREE.EqualStencilFunc,
+          stencilFail: THREE.KeepStencilOp,
+          stencilZFail: THREE.KeepStencilOp,
+          stencilZPass: THREE.KeepStencilOp
+        }, optsMat)));
+
+        // Thành giếng khoang chiến đấu 3D
+        const wallGeo = trackGeo(new THREE.CylinderGeometry(R * 0.98, R * 0.94, wellDepth, 36, 6, true));
+        const wPos = wallGeo.attributes.position;
+        const wCol = new Float32Array(wPos.count * 3);
+        for (let i = 0; i < wPos.count; i++) {
+          const py = wPos.getY(i);
+          const depthFrac = clamp01((wellDepth * 0.5 - py) / wellDepth);
+          const litTop = (1 - depthFrac) * (1 - depthFrac);
+          const emberBot = Math.pow(depthFrac, 1.8);
+          wCol[i * 3] = 0.08 + 0.22 * litTop + 0.18 * emberBot;
+          wCol[i * 3 + 1] = 0.07 + 0.18 * litTop + 0.06 * emberBot;
+          wCol[i * 3 + 2] = 0.06 + 0.15 * litTop + 0.02 * emberBot;
+        }
+        wallGeo.setAttribute('color', new THREE.BufferAttribute(wCol, 3));
+        const wallMat = makeIntMat(0xffffff, { side: THREE.BackSide, vertexColors: true, roughness: 0.85, metalness: 0.3 });
+        const wallMesh = tagMesh(new THREE.Mesh(wallGeo, wallMat), 47);
+        wallMesh.position.y = -wellDepth * 0.5 + 0.02;
+        root.add(wallMesh);
+
+        // Sàn đáy khoang chiến đấu mở rộng che phủ toàn bộ đáy giếng
+        const floorMat = makeIntMat(0x12100e, { roughness: 0.92, metalness: 0.22 });
+        const floorMesh = tagMesh(new THREE.Mesh(trackGeo(new THREE.CircleGeometry(R * 1.35, 28)), floorMat), 47);
+        floorMesh.rotation.x = -Math.PI / 2;
+        floorMesh.position.y = -wellDepth + 0.04;
+        root.add(floorMesh);
+
+        // Chi tiết cơ khí: vành răng xoay tháp pháo
+        const innerRingY = -R * 0.12;
+        const shelfMesh = tagMesh(new THREE.Mesh(trackGeo(new THREE.TorusGeometry(R * 0.93, R * 0.048, 8, 28)), structMat), 48);
+        shelfMesh.rotation.x = Math.PI / 2;
+        shelfMesh.position.y = innerRingY;
+        root.add(shelfMesh);
+
+        const innerToothGeo = trackGeo(new THREE.BoxGeometry(R * 0.052, R * 0.085, R * 0.055));
+        for (let i = 0; i < 24; i++) {
+          if (i === 5 || i === 14 || i === 15) continue;
+          const a = (i / 24) * Math.PI * 2;
+          const tr = R * 0.895;
+          const tm = tagMesh(new THREE.Mesh(innerToothGeo, gearMat), 48);
+          tm.position.set(Math.cos(a) * tr, innerRingY, Math.sin(a) * tr);
+          tm.rotation.y = -a;
+          if (i === 6 || i === 16) tm.rotation.z = rand(-0.4, 0.4);
+          root.add(tm);
+        }
+
+        // Gân vách
+        const ribGeo = trackGeo(new THREE.BoxGeometry(R * 0.045, wellDepth * 0.82, R * 0.055));
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + 0.25;
+          const rr = R * 0.88;
+          const rm = tagMesh(new THREE.Mesh(ribGeo, structMat), 48);
+          rm.position.set(Math.cos(a) * rr, -wellDepth * 0.52, Math.sin(a) * rr);
+          rm.rotation.y = -a;
+          root.add(rm);
+        }
+
+        // Dầm khung sàn chữ H
+        const beamGeo = trackGeo(new THREE.BoxGeometry(R * 1.56, R * 0.075, R * 0.095));
+        for (const zOff of [-R * 0.28, R * 0.28]) {
+          const bm = tagMesh(new THREE.Mesh(beamGeo, structMat), 48);
+          bm.position.set(0, -wellDepth + R * 0.06, zOff);
+          bm.rotation.y = 0.18;
+          root.add(bm);
+        }
+
+        // Cổ góp điện trung tâm
+        const colH = wellDepth * 0.62;
+        const colMesh = tagMesh(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(R * 0.14, R * 0.19, colH, 12)), structMat), 48);
+        colMesh.position.set(R * 0.03, -wellDepth + colH * 0.5, -R * 0.02);
+        colMesh.rotation.set(rand(-0.14, 0.14), 0, rand(-0.14, 0.14));
+        root.add(colMesh);
+
+        const slipCap = tagMesh(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(R * 0.16, R * 0.16, R * 0.06, 12)), casingMat), 48);
+        slipCap.position.set(0, colH * 0.5, 0);
+        colMesh.add(slipCap);
+
+        // Vòng xoay nạp đạn tự động
+        const carouselRing = tagMesh(new THREE.Mesh(trackGeo(new THREE.TorusGeometry(R * 0.54, R * 0.055, 8, 20)), structMat), 48);
+        carouselRing.rotation.set(Math.PI / 2 + rand(-0.16, 0.16), rand(-0.2, 0.2), rand(-0.12, 0.12));
+        carouselRing.position.set(0, -wellDepth * 0.72, 0);
+        root.add(carouselRing);
+
+        // Ống phóng / vỏ đạn pháo
+        const shellGeo = trackGeo(new THREE.CylinderGeometry(R * 0.052, R * 0.052, R * 0.36, 8));
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2 + rand(-0.12, 0.12);
+          const scattered = i % 3 === 0;
+          const sr = scattered ? R * rand(0.32, 0.68) : R * 0.52;
+          const sm = tagMesh(new THREE.Mesh(shellGeo, i % 4 === 0 ? emberMat : casingMat), 48);
+          sm.position.set(
+            Math.cos(a) * sr,
+            -wellDepth + R * (scattered ? rand(0.08, 0.22) : 0.22),
+            Math.sin(a) * sr
+          );
+          sm.rotation.z = Math.PI / 2 + rand(-0.35, 0.35);
+          sm.rotation.y = -a + (scattered ? rand(-0.8, 0.8) : 0);
+          root.add(sm);
+        }
+
+        // Ống dẫn thủy lực & cáp điện
+        const pipeGeo = trackGeo(new THREE.CylinderGeometry(R * 0.018, R * 0.018, R * 0.42, 6));
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 + 0.6;
+          const pr = R * 0.78;
+          const pm = tagMesh(new THREE.Mesh(pipeGeo, gearMat), 48);
+          pm.position.set(Math.cos(a) * pr, -wellDepth * rand(0.28, 0.62), Math.sin(a) * pr);
+          pm.rotation.set(rand(0.4, 1.2), -a, rand(-0.6, 0.6));
+          root.add(pm);
+        }
+
+        // Tàn than hồng
+        const emberGeo = trackGeo(new THREE.DodecahedronGeometry(R * 0.11, 0));
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + rand(-0.3, 0.3);
+          const er = R * rand(0.22, 0.65);
+          const em = tagMesh(new THREE.Mesh(emberGeo, emberMat), 48);
+          em.position.set(Math.cos(a) * er, -wellDepth + R * 0.05, Math.sin(a) * er);
+          em.scale.set(rand(0.9, 1.6), rand(0.35, 0.6), rand(0.8, 1.4));
+          em.rotation.y = rand(0, 6.28);
+          root.add(em);
+        }
+      }
+
+      parent.add(well);
+      const rec = {
+        mesh: well,
+        mat: emberMat,
+        unit: opts.unit || null,
+        t: 0,
+        glow: 3.2,
+        decay: 14.0,
+        keep: !!opts.keep,
+        dispose() {
+          if (emberLight) {
+            if (emberLight.parent) emberLight.parent.remove(emberLight);
+            if (emberLight.dispose) emberLight.dispose();
+          }
+          for (const g of geos) g.dispose();
+          for (const m of mats) m.dispose();
+        }
+      };
+      this.surfaceMarks.push(rec);
+      if (!rec.keep) this._meshMarks = (this._meshMarks || 0) + 1;
+      if (this._meshMarks > 450) {
+        const oi = this.surfaceMarks.findIndex(r => !r.batch && !r.keep);
+        if (oi >= 0) this.removeSurfaceMark(oi);
+      }
+      this.trimSurfaceMarks();
+      return rec;
+    },
+
+    // Dựng miệng lỗ nắp kíp lái khi nắp bị thổi bay / quật mở (dạng decal dẹt phẳng dán sát vỏ nóc, tuyệt đối không dùng hình trụ 3D)
+    buildHatchWell(point, normal, parent, size, opts = {}) {
+      if (!parent) return null;
+      parent.updateMatrixWorld(true);
+      const lp = parent.worldToLocal(point.clone());
+      const n = normal ? normal.clone().normalize() : new THREE.Vector3(0, 1, 0);
+      const ln = n.clone().transformDirection(new THREE.Matrix4().copy(parent.matrixWorld).invert()).normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), ln);
+
+      const well = new THREE.Group();
+      well.position.copy(lp);
+      well.quaternion.copy(q);
+      well.userData.isFxDecal = true;
+      well.userData.isHatchWell = true;
+
+      const geos = [], mats = [];
+      const R = Math.max(0.65, Math.min(1.35, (size || 2.0) * 0.42));
+
+      // 1. Quầng khói & muội than cháy sém loang rộng phẳng quanh miệng nắp trên mặt giáp
+      const scorchMat = new THREE.MeshStandardMaterial({
+        map: getMarkTexture('scorch'),
+        roughness: 0.95,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.88,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4
+      });
+      mats.push(scorchMat);
+      const scorchGeo = new THREE.PlaneGeometry(R * 2.6, R * 2.6);
+      geos.push(scorchGeo);
+      const scorchMesh = new THREE.Mesh(scorchGeo, scorchMat);
+      scorchMesh.rotation.x = -Math.PI / 2;
+      scorchMesh.rotation.z = Math.random() * Math.PI * 2;
+      scorchMesh.position.y = 0.012;
+      scorchMesh.renderOrder = 4;
+      well.add(scorchMesh);
+
+      // 2. Vành kim loại miệng hầm kíp lái cháy xém mỏng phẳng dẹt dán sát mặt giáp (dùng RingGeometry phẳng, tuyệt đối không dùng hình trụ 3D)
+      const ringGeo = new THREE.RingGeometry(R * 0.94, R * 1.08, 24);
+      geos.push(ringGeo);
+      const rimMat = new THREE.MeshStandardMaterial({
+        color: 0x1f1e1c,
+        roughness: 0.82,
+        metalness: 0.5,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -5,
+        polygonOffsetUnits: -5
+      });
+      mats.push(rimMat);
+      const rimMesh = new THREE.Mesh(ringGeo, rimMat);
+      rimMesh.rotation.x = -Math.PI / 2;
+      rimMesh.position.y = 0.018;
+      rimMesh.renderOrder = 4.2;
+      well.add(rimMesh);
+
+      // 3. Miệng lỗ khoang kíp lái tối thẫm, có tàn than đỏ âm ỉ dán phẳng sát nóc xe
+      const holeGeo = new THREE.CircleGeometry(R * 0.95, 24);
+      geos.push(holeGeo);
+      const holeMat = new THREE.MeshStandardMaterial({
+        color: 0x080706,
+        roughness: 0.96,
+        metalness: 0.08,
+        emissive: 0x661805,
+        emissiveIntensity: 0.85,
+        side: THREE.FrontSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -6,
+        polygonOffsetUnits: -6
+      });
+      mats.push(holeMat);
+      const holeMesh = new THREE.Mesh(holeGeo, holeMat);
+      holeMesh.rotation.x = -Math.PI / 2;
+      holeMesh.position.y = 0.024;
+      holeMesh.renderOrder = 4.4;
+      well.add(holeMesh);
+
+      parent.add(well);
+      const rec = {
+        mesh: well,
+        mat: holeMat,
+        unit: opts.unit || null,
+        t: 0,
+        glow: 1.2,
+        decay: 7.5,
+        keep: !!opts.keep,
+        dispose() {
+          for (const g of geos) g.dispose();
+          for (const m of mats) m.dispose();
+        }
+      };
+      this.surfaceMarks.push(rec);
+      if (!rec.keep) this._meshMarks = (this._meshMarks || 0) + 1;
+      if (this._meshMarks > 450) {
+        const oi = this.surfaceMarks.findIndex(r => !r.batch && !r.keep);
+        if (oi >= 0) this.removeSurfaceMark(oi);
+      }
+      this.trimSurfaceMarks();
+      return rec;
     },
 
     updateSurfaceMarks(dt) {
@@ -3430,11 +4025,13 @@
       // Xác xe chỉ còn ~10 s trước khi xe hồi sinh (game.respawnWaitPenalty): mọi diễn biến trễ phải xảy ra trong ~8,5 s
       const later = (kind, a, b, tossP = 0) => { K.delayed = kind; K.cookAt = a + rng() * (b - a); K.tossP = tossP; };
       if (type === 'ALL_ROUNDER') {
-        if (mode === 'ammo') { if (bustle) K.instant = 'vent'; else { K.instant = 'det'; K.tossP = 0.85; } }
-        else if (mode === 'crew' || mode === 'fuel') { if (R < 0.3) later('det', 2.5, 7, 0.7); else if (R < 0.55) later('vent', 4, 8.5); }
-        else if (mode === 'engine') { if (R < 0.15) later('vent', 6, 9); }
-        else if (mode === 'blast') { if (R < 0.35) later('det', 0.4, 2.5, 0.6); else if (R < 0.6) later('vent', 2, 6); }
-        else if (mode === 'burn') { if (R < 0.5) later('vent', 1, 4); else if (R < 0.7) later('det', 1, 4, 0.6); }
+        // MBT Halberd: kho đạn nằm ở hộc sau tháp có tấm xả áp (blow-off panels), ngăn cách với kíp xe bằng vách chống cháy.
+        // Cháy kho đạn -> xả áp phụt cột lửa thẳng lên trời qua tấm xả áp đuôi tháp, tháp KHÔNG bị hất văng
+        if (mode === 'ammo') { K.instant = 'vent'; K.tossP = 0; }
+        else if (mode === 'crew' || mode === 'fuel') { if (R < 0.45) later('vent', 3, 7); else if (R < 0.65) later('vent', 5, 8.5); }
+        else if (mode === 'engine') { if (R < 0.35) later('vent', 4, 8); }
+        else if (mode === 'blast') { if (R < 0.6) later('vent', 1.5, 5); else later('vent', 3, 7); }
+        else if (mode === 'burn') { later('vent', 1, 4); }
       } else if (type === 'ARTILLERY') {
         // Pháo tự hành bánh lốp: đạn 155 + liều phóng trong buồng pháo sau xe, cabin & máy ở đầu xe
         if (mode === 'ammo') { K.instant = 'det'; K.tossP = 0.35; }
@@ -3477,8 +4074,8 @@
     ammoPoint(u) {
       const type = u.tankType || 'ALL_ROUNDER';
       if (u.turretGroup && !(u.fxWreck && u.fxWreck.turret) && u.turretGroup.visible) {
-        // pháo tự hành: đạn & liều phóng nằm trong khoang nạp trên nóc sau tháp (spg_arbalest BAY) -> lửa phụt qua nắp khoang
-        const off = { ARTILLERY: [0, 12.5, 7], ALL_ROUNDER: [0, 4, 7], GATLING: [0, 4, 3], SCOUT: [0, 1.5, 0] }[type] || [0, 4, 4];
+        // pháo tự hành & xe tăng chủ lực: đạn nằm trong hộc đuôi tháp có tấm xả áp (blow-off panels) trên nóc
+        const off = { ARTILLERY: [0, 12.5, 7], ALL_ROUNDER: [0, 7.2, 12.1], GATLING: [0, 4, 3], SCOUT: [0, 1.5, 0] }[type] || [0, 4, 4];
         this.syncMatrices(u);
         return u.turretGroup.localToWorld(new THREE.Vector3(off[0], off[1], off[2]));
       }
@@ -3500,6 +4097,11 @@
       if (!hitPoint && K.point) hitPoint = K.point.clone();
       // Xác xe: vỡ kính, văng / xẹp lốp, vặn méo khung, bung phụ kiện (hệ thống hư hại bộ phận)
       if (typeof VehicleDamage !== 'undefined' && VehicleDamage.onDestroyed) VehicleDamage.onDestroyed(u, this, K);
+      if (u.crew) {
+        if (u.crew.gunner && u.crew.gunner.root) u.crew.gunner.root.visible = false;
+        if (u.crew.mate && u.crew.mate.root) u.crew.mate.root.visible = false;
+        u.crew.off = true;
+      }
       const W = u.fxWreck = { t: 0, K, cookOff: rand(3.5, 6), nextBang: 0.3, turret: null, impactVel, hitPoint, cookAt: K.cookAt, char: 0, charT: 0 };
       // Vật liệu dùng chung với xe khác (bộ vật liệu trang bị theo phe, lá ngụy trang — userData.sharedKit — hoặc đang có
       // xe khác dùng): xác lấy bản riêng trước khi sém, không thì giáp / lưới / lá của cả phe đen theo xác này
@@ -3533,11 +4135,39 @@
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach(m => {
           if (!m || !m.color || m.isMeshBasicMaterial || m.blending === THREE.AdditiveBlending) return;
-          if (m.userData && m.userData.surface === 'glass') return;   // kính đã chuyển sang kính rạn vỡ (hệ hư hại tự quản màu)
+          const name = (m.name || '').toLowerCase();
+          const isLight = (m.userData && (m.userData.surface === 'glass' || m.userData.isVehicleLight)) || /lens|lamp|light|taillens|headlens|amberlens/i.test(name);
+          if (isLight) {
+            // Đèn pha / đèn hậu / gương / kính đèn: tắt điện phát quang và cho muội than cháy sém
+            if (m.emissive) {
+              if (m.userData.fxOrigEmissiveI === undefined) m.userData.fxOrigEmissiveI = m.emissiveIntensity;
+              m.emissiveIntensity = 0;
+              m.emissive.setRGB(0, 0, 0);
+            }
+            if (m.envMapIntensity !== undefined && m.userData.fxOrigEnvMapI === undefined) {
+              m.userData.fxOrigEnvMapI = m.envMapIntensity;
+              m.envMapIntensity = 0;
+            }
+            if (!m.userData.fxOrigColor) m.userData.fxOrigColor = m.color.clone();
+            // Kính đèn xe (không phải kính cửa/chắn gió): lập tức hóa muội than đen kịt
+            if (!m.userData.windowGlass) {
+              m.color.setRGB(0.045, 0.042, 0.04);
+              m.roughness = 0.98;
+              m.metalness = 0.02;
+              m.userData.burntOut = true;
+            }
+            if (!W.charMats.includes(m)) W.charMats.push(m);
+            return;
+          }
           if (!m.userData.fxOrigColor) m.userData.fxOrigColor = m.color.clone();
           if (!W.charMats.includes(m)) W.charMats.push(m);
         });
       });
+      // Gọi tắt toàn bộ đèn xe và thiêu rụi bánh dự phòng (dây đai vải đứt rụi, lốp cao su trơ vành sắt)
+      if (typeof VehicleDamage !== 'undefined') {
+        if (VehicleDamage.blackoutVehicleLights) VehicleDamage.blackoutVehicleLights(u);
+        if (VehicleDamage.burnSpareWheel) VehicleDamage.burnSpareWheel(u, K.instant === 'det' || K.mode === 'blast');
+      }
       // [mức sém ban đầu, thời hằng sém (s), mức tối đa]: nổ kho đạn -> muội đen phủ ngay; cháy trong -> sém dần
       // (muội khói + sơn phồng cháy phải đủ rõ sau 1-2 s để người chơi nhận ra xe đã bị hạ dù vỏ còn nguyên)
       const CH = { det: [0.5, 5, 1], vent: [0.25, 15, 0.7], crew: [0.22, 10, 1], fuel: [0.3, 8, 1], engine: [0.16, 14, 1], blast: [0.35, 8, 1], burn: [0.35, 8, 1], flood: [0, 1, 0.001] };
@@ -3675,13 +4305,22 @@
       W.torch = { ph: Math.random() * 10, t0: W.t, dur: ({ ALL_ROUNDER: rand(6, 10), ARTILLERY: rand(7, 11), GATLING: rand(1.5, 2.5), SCOUT: rand(1, 1.8) }[type] || 2) * (mass ? 0.7 : 1), scale: { ALL_ROUNDER: 1, ARTILLERY: 1.15, GATLING: 0.75, SCOUT: 0.55 }[type] || 1 };
       W.char = Math.max(W.char || 0, 0.5); W.charT = Math.min(W.charT || 5, 6); W.charMax = 1;
       this.applyChar(u);
+      if (light) {
+        // Xe trinh sát nổ kho đạn / bình nhiên liệu: sóng áp lực trong khoang thổi tung toàn bộ kính cửa xe
+        if (typeof VehicleDamage !== 'undefined' && VehicleDamage.breakOutGlass) {
+          VehicleDamage.breakOutGlass(u, this);
+        }
+        // Chuỗi đạn phóng lựu / rocket nổ phụ ròn rã trong khoang
+        W.scoutCookoffs = Math.floor(rand(6, 12));
+        W.nextScoutCookoff = 0.15;
+      }
       // Tháp pháo bị hất văng theo hướng đạn nổ và quán tính (pháo tự hành nặng hơn nên bay thấp & gần hơn,
       // xe trinh sát chỉ bật trạm vũ khí nhẹ). Nổ trễ: khí nổ đẩy thẳng lên, hướng đạn ít còn ý nghĩa
       // nổ hàng loạt: tháp vọt ~7-16 m, rơi xa hơn chục mét (phim xác xe: tháp nằm cách thân 10-20 m)
-      const tossK = ({ ARTILLERY: 0.7, SCOUT: 0.3 }[type] || 1) * (mass ? 2.2 : 1);
+      const tossK = ({ ARTILLERY: 0.7, SCOUT: 0.28 }[type] || 1) * (mass ? 2.2 : 1);
       if (u.turretGroup && (K.tossRoll !== undefined ? K.tossRoll : Math.random()) < (K.tossP || 0)) this.tossTurret(u, delayed ? null : W.impactVel, delayed ? null : W.hitPoint, tossK);
-      // Vài lỗ xuyên + vết cháy trên sườn xe (mảnh văng từ trong ra)
-      for (let k = 0; k < 3; k++) {
+      // Lỗ xuyên + vết cháy trên sườn xe (mảnh văng từ trong ra)
+      for (let k = 0; k < 1; k++) {
         const a = Math.random() * Math.PI * 2;
         const dir = new THREE.Vector3(Math.cos(a), -0.15, Math.sin(a));
         const from = this.vehicleLocalToWorld(u, [0, 9, 0]).addScaledVector(dir, 40);
@@ -3702,50 +4341,82 @@
       for (const m of W.charMats) {
         const o = m.userData && m.userData.fxOrigColor;
         if (!o) continue;
+        const name = (m.name || '').toLowerCase();
+        const isLight = (m.userData && (m.userData.isVehicleLight || (m.userData.surface === 'glass' && !m.userData.windowGlass))) || /lens|lamp|light|taillens|headlens|amberlens/i.test(name);
+        const isClothOrWood = (m.userData && (m.userData.surface === 'cloth' || m.userData.surface === 'wood')) || /canvas|wood|tarp|strap/i.test(name);
         if (m.userData.vkPaint) {
           // sơn có shader vá (vehicle_kit patchPaintMaterial): muội / gỉ nung / tro loang vẽ trong shader theo vkChar
           m.userData.vkChar = c;
           m.color.copy(o);
-        } else if (m.userData.surface === 'rubber') {
+        } else if (isLight) {
+          // Kính đèn xe (pha/hậu/xi-nhan): giữ nguyên trạng thái muội than đen kịt, không phục hồi lại màu kính mới
+          m.color.setRGB(0.045, 0.042, 0.04);
+          m.roughness = 0.98;
+          m.metalness = 0.02;
+          if (m.envMapIntensity) m.envMapIntensity = 0;
+          if (m.emissive) { m.emissiveIntensity = 0; m.emissive.setRGB(0, 0, 0); }
+        } else if (m.userData.surface === 'glass' && m.userData.windowGlass) {
+          // Kính chắn gió / kính cửa xe: nứt vỡ, mờ đục và bám bụi sẫm dần
+          m.color.setRGB(o.r * f + 0.08 * c, o.g * f + 0.075 * c, o.b * f + 0.07 * c);
+          m.roughness = 0.2 + 0.75 * c;
+        } else if (m.userData.surface === 'rubber' || /rubber/i.test(name)) {
           // cao su cháy: đen muội rồi thành tro xám
           const k = Math.max(0, c - 0.6) / 0.4;
           m.color.setRGB(o.r * f + (0.03 + 0.2 * k) * c, o.g * f + (0.028 + 0.19 * k) * c, o.b * f + (0.026 + 0.18 * k) * c);
+        } else if (isClothOrWood) {
+          // vải bạt / dây đai / gỗ công binh cháy: thành tro đen mờ
+          m.color.setRGB(o.r * f + 0.04 * c, o.g * f + 0.038 * c, o.b * f + 0.035 * c);
+          m.roughness = 1.0;
         } else {
-          // thép trần / bạt / nhựa: sẫm muội, cháy lâu ngả nâu gỉ nung
+          // thép trần / nhựa: sẫm muội, cháy lâu ngả nâu gỉ nung
           m.color.setRGB(o.r * f + 0.12 * c, o.g * f + 0.065 * c, o.b * f + 0.035 * c);
         }
       }
     },
 
     // Mức lửa (0..1) ở khoang tháp / nắp (ring) và khoang máy (eng) theo kiểu chết & thời gian
-    // Xác nằm lại suốt trận (game.keepWreck): lửa tàn dần sau ~75 s, tắt hẳn ở ~135 s — còn lại khói âm ỉ
+    // Trong phòng thí nghiệm: cháy dữ dội 180s (3 phút), tàn dần 90s (tổng 270s = 4.5 phút) để thoải mái quan sát
+    // Trong trận đấu: cháy dữ dội 75s, tàn dần 60s (tổng 135s) đảm bảo chiến trường bốc cháy uy nghiêm, lâu tàn
     wreckBurnout(W) {
-      return Math.max(0, Math.min(1, 1 - (W.t - (W.reignite || 0) - 75) / 60));
+      if (W.burnoutRate !== undefined) return W.burnoutRate;
+      if (W.t === undefined) return 1;
+      const isLab = typeof window !== 'undefined' && (
+        window.__lab ||
+        (W.unit && W.unit.alwaysFX) ||
+        (window.location && (window.location.pathname.includes('vehicle_fx_lab') || window.location.href.includes('vehicle_fx_lab')))
+      );
+      const fullDur = isLab ? 180 : 75;
+      const fadeDur = isLab ? 90 : 60;
+      const tRel = Math.max(0, W.t - (W.reignite || 0));
+      if (tRel <= fullDur) return 1;
+      return Math.max(0, Math.min(1, 1 - (tRel - fullDur) / fadeDur));
     },
 
     wreckFireLevels(u, W) {
       const K = W.K || {}, t = W.t, out = this.wreckBurnout(W);
       const ramp = (a, b) => Math.max(0, Math.min(1, (t - a) / Math.max(0.01, b - a)));
-      // sau kích nổ: khoang máy có vách ngăn chống cháy -> lửa lan qua (thùng dầu bục, dầu tràn) mất ~10-20 s, không
-      // bùng cháy ngay cùng lúc với cột lửa vòng tháp; nổ trễ sau khi khoang máy đã cháy thì giữ mức đang cháy
+      // Kho đạn bị kích nổ thổi bay tháp pháo:
+      // Sóng xung kích và nhiệt độ hàng ngàn độ C xé toạc vách ngăn, khoang động cơ chứa hàng trăm lít dầu diesel
+      // bùng cháy dữ dội ngay lập tức cùng với cổ tháp pháo, lửa phụt qua khe tản nhiệt đuôi xe
       if (W.detonated) {
-        const dt0 = t - W.cookStart;
-        const pre = K.mode === 'engine' || K.mode === 'fuel' || K.mode === 'blast' || K.mode === 'burn' ? Math.min(1, 0.4 + 0.6 * W.cookStart / 4) : 0;
-        return { ring: Math.min(1, 0.6 + dt0) * out, eng: Math.max(pre, Math.min(1, Math.max(0, (dt0 - 3) / 15))) * out };
+        const dt0 = Math.max(0, t - (W.cookStart || 0));
+        const ringLvl = Math.min(1, 0.9 + dt0 * 0.15);
+        const engLvl = Math.min(1, 0.8 + dt0 * 0.3);
+        return { ring: ringLvl * out, eng: engLvl * out };
       }
       let ring, eng;
       switch (K.mode) {
-        case 'engine': eng = 0.35 + 0.65 * ramp(0, 4); ring = 0.7 * ramp(6, 10); break;     // lửa khoang máy lan dần lên
-        case 'fuel': eng = 0.5 + 0.5 * ramp(0, 3); ring = ramp(1, 6); break;
-        case 'blast': case 'burn': ring = 0.5 + 0.5 * ramp(0, 2.5); eng = 0.4 + 0.6 * ramp(0, 4); break;
-        case 'ammo': ring = 0; eng = 0; break;                                                  // xả áp: khoang kíp lái kín, không cháy lan
-        case 'flood': ring = 0; eng = 0; break;                                                 // chết đuối: khoang ngập nước, không cháy
-        default: ring = 0.12 + 0.88 * ramp(0.6, 6); eng = ramp(4, 9);                          // xuyên khoang kíp lái: lửa bén dần
+        case 'engine': eng = 0.7 + 0.3 * ramp(0, 2); ring = 0.75 * ramp(2, 6); break;     // lửa khoang máy lan dần lên tháp
+        case 'fuel': eng = 0.8 + 0.2 * ramp(0, 2); ring = 0.85 * ramp(1, 4); break;
+        case 'blast': case 'burn': ring = 0.85 + 0.15 * ramp(0, 1.5); eng = 0.8 + 0.2 * ramp(0, 2); break;
+        case 'ammo': ring = 0.95 * ramp(0, 1.0); eng = 0.85 * ramp(0, 1.2); break;         // nổ kho đạn: cháy rực cả cổ tháp lẫn khoang máy
+        case 'flood': ring = 0; eng = 0; break;                                           // chết đuối: khoang ngập nước, không cháy
+        default: ring = 0.75 * ramp(0.5, 3); eng = 0.7 * ramp(1, 4); break;
       }
       if (W.vent) {
         const end = W.vent.t0 + W.vent.dur;
         if (t < end) ring = Math.min(ring, 0.15);
-        else if (K.mode === 'ammo') ring = 0.25 * Math.max(0, 1 - (t - end) / 40);             // hốc đạn cháy âm ỉ rồi tắt
+        else if (K.mode === 'ammo') ring = 0.5 * Math.max(0, 1 - (t - end) / 60);
       }
       return { ring: ring * out, eng: eng * out };
     },
@@ -3883,52 +4554,57 @@
         }
       }
       if (Math.max(fl.ring, fl.eng) > 0.06) {
+        // Tối ưu và chân thực: không cho tất cả các ô mở cùng phát đốm lửa tròn như bóng đèn;
+        // chỉ chọn ngẫu nhiên tối đa 2 ô cửa bốc lưỡi lửa vút lên trên (như cửa nóc, kính vỡ)
+        const activeCab = [];
         for (const o of cab) {
           const lv = o.eng ? fl.eng : o.cab ? cabLv : fl.ring;
-          if (lv < 0.06 || Math.random() > 0.3 + 0.7 * lv) continue;
+          if (lv > 0.08) activeCab.push({ o, lv });
+        }
+        const pickCab = activeCab.length > 2 ? [activeCab[(Math.random() * activeCab.length) | 0], activeCab[(Math.random() * activeCab.length) | 0]] : activeCab;
+        for (const item of pickCab) {
+          const { o, lv } = item;
           const s = burn * (0.45 + 0.55 * lv);
           const P = this.chassisToWorld(u, o.p), N = this.chassisDirToWorld(u, o.n);
-          const nF = 1 + (Math.random() < lv ? 1 : 0) + (o.roof && Math.random() < lv ? 1 : 0);
-          for (let j = 0; j < nF; j++) {
-            const out = rand(6, 16) * (0.6 + 0.4 * lv);
-            this.fire.add({
-              x: P.x + rand(-1.1, 1.1), y: P.y + rand(-0.8, 0.8), z: P.z + rand(-1.1, 1.1),
-              vx: N.x * out + rand(-2, 2), vy: N.y * out + rand(4, 12), vz: N.z * out + rand(-2, 2),
-              size: rand(3.2, 5.4) * s * (o.roof ? 1.3 : 1), grow: 2.5, drag: 2.4, grav: -34, life: rand(0.32, 0.58), alpha: 0.95, fadeIn: 0.03,
-              c0: [1, 0.8, 0.42], c1: [0.85, 0.24, 0.03], cell: 1, floor: false
-            });
-          }
-          // miệng ô cửa rực sáng (lửa trong cabin)
-          if (Math.random() < 0.7) {
-            this.fire.add({
-              x: P.x - N.x * 0.4, y: P.y - N.y * 0.4, z: P.z - N.z * 0.4, vx: 0, vy: 1, vz: 0,
-              size: rand(3, 4.2) * (0.6 + 0.4 * lv), grow: 0, life: rand(0.14, 0.24), alpha: 0.85, fadeIn: 0.03,
-              c0: [1, 0.62, 0.22], c1: [0.75, 0.18, 0.02], cell: 1, floor: false
-            });
-          }
-          if (Math.random() < 0.25 + 0.35 * lv) {
+          // Lưỡi lửa liếm bốc lên trên (grav âm mạnh, co nhọn lại về ngọn, chuyển động nhanh tránh tạo đốm tròn cam tĩnh)
+          const out = rand(5, 12) * (0.6 + 0.4 * lv);
+          this.fire.add({
+            x: P.x + rand(-0.6, 0.6), y: P.y + rand(-0.2, 0.4), z: P.z + rand(-0.6, 0.6),
+            vx: N.x * out + rand(-1.5, 1.5), vy: Math.abs(N.y) * out + rand(24, 46), vz: N.z * out + rand(-1.5, 1.5),
+            size: rand(3.0, 5.0) * s * (o.roof ? 1.3 : 1), grow: -4.5, drag: 1.4, grav: -32, life: rand(0.28, 0.52), alpha: 0.9, fadeIn: 0.03,
+            rotV: rand(-2, 2), c0: [1, 0.82, 0.42], c1: [0.5, 0.1, 0.02], cell: 1, floor: false
+          });
+          // Khói đen cuộn ra từ ô cửa
+          if (Math.random() < 0.35 + 0.35 * lv) {
             const g = lv > 0.45 ? rand(0.04, 0.09) : rand(0.14, 0.26) - lv * 0.15;
             this.smoke.add({
-              x: P.x + N.x * 2.5, y: P.y + 3 + N.y * 2, z: P.z + N.z * 2.5, vx: N.x * 4 + rand(-2, 2), vy: rand(14, 24) * (0.6 + 0.4 * lv), vz: N.z * 4 + rand(-2, 2),
-              size: rand(5, 8) * (0.6 + 0.4 * lv), grow: 8, drag: 0.6, grav: -5, life: rand(3.5, 5.5), alpha: 0.5 + 0.25 * lv, fadeIn: 0.12,
+              x: P.x + N.x * 2.0, y: P.y + 2.5 + N.y * 1.5, z: P.z + N.z * 2.0, vx: N.x * 3 + rand(-2, 2), vy: rand(12, 22) * (0.6 + 0.4 * lv), vz: N.z * 3 + rand(-2, 2),
+              size: rand(6, 9) * (0.6 + 0.4 * lv), grow: 8, drag: 0.6, grav: -5, life: rand(3.5, 5.5), alpha: 0.45 + 0.25 * lv, fadeIn: 0.25,
               c0: [g, g, g], c1: [g * 2.4, g * 2.3, g * 2.2], cell: 0, floor: false
             });
           }
         }
       }
-      // Lốp cao su bén lửa sau ~3 s: lửa thấp liếm quanh bánh, khói đen đặc quánh
+      // Lốp cao su bén lửa: xe nổ kho đạn cháy bốc tức thì, cháy thường bén lửa sau vài giây
       const ws = u.wheelSet;
-      const tireLv = Math.min(1, Math.max(0, (W.t - 3) / 5)) * Math.max(fl.ring, fl.eng) * burn;
-      // Lốp cháy trụi dần (xe bánh lốp): mỗi bánh bén lửa lệch nhau vài giây, cháy hết cao su sau ~30-55 s lửa to -> chỉ
+      const isDetOrBlast = !!(W.detonated || (W.K && (W.K.instant === 'det' || W.K.mode === 'blast' || W.K.mode === 'ammo')));
+      const tireLv = isDetOrBlast ? 1.0 : (Math.min(1, Math.max(0, W.t / 2.5)) * Math.max(fl.ring, fl.eng, 0.4) * burn);
+      // Lốp cháy trụi dần (xe bánh lốp): khi nổ kho đạn cháy hết trong 2-4 giây; khi cháy thường cháy hết sau 6-12 giây -> chỉ
       // còn vành thép, thân xác sụt xuống tì vành (VehicleDamage.burnTire); bánh đã trụi thôi phụt lửa cao su
       if (ws && ws.setBurnt && tireLv > 0.05 && typeof VehicleDamage !== 'undefined' && VehicleDamage.burnTire) {
-        if (!W.tireB) W.tireB = ws.positions.map((p, i) => ({ k: ws.burnt ? ws.burnt[i] : 0, rate: 1 / rand(30, 55), at: rand(0, 9) }));
+        if (!W.tireB) {
+          W.tireB = ws.positions.map((p, i) => ({
+            k: ws.burnt ? ws.burnt[i] : 0,
+            rate: isDetOrBlast ? 1 / rand(2, 4) : 1 / rand(6, 12),
+            at: isDetOrBlast ? 0 : rand(0, 1.5)
+          }));
+        }
         const step = W.t - (W.tireLastT === undefined ? W.t : W.tireLastT);
-        if (W.tireLastT === undefined || step >= 0.5) {
+        if (W.tireLastT === undefined || step >= 0.25) {
           W.tireLastT = W.t;
           W.tireB.forEach((tb, i) => {
-            if ((ws.gone && ws.gone[i]) || tb.k >= 1 || W.t - 3 < tb.at) return;
-            tb.k = Math.min(1, tb.k + step * Math.min(1, tireLv * 1.6) * tb.rate);
+            if ((ws.gone && ws.gone[i]) || tb.k >= 1 || W.t < tb.at) return;
+            tb.k = Math.min(1, tb.k + step * Math.min(1, tireLv * 2.0) * tb.rate);
             VehicleDamage.burnTire(u, i, tb.k);
           });
         }
@@ -3958,6 +4634,73 @@
               x: P.x, y: P.y + 2.5, z: P.z, vx: rand(-1.8, 1.8), vy: rand(10, 18), vz: rand(-1.8, 1.8),
               size: rand(4.2, 6.8), grow: 7, drag: 0.6, grav: -5, life: rand(3.0, 4.5), alpha: 0.7 * tireLv, fadeIn: 0.12,
               c0: [g, g, g], c1: [g * 2.4, g * 2.3, g * 2.2], cell: 0, floor: false
+            });
+          }
+        }
+      }
+
+      // Dây đai vải chằng bánh dự phòng bắt lửa bốc cháy và đứt rụi tiêu biến
+      if (u.spareStrap && (W.t > 0.05 || isDetOrBlast || fl.ring > 0.05 || fl.eng > 0.05)) {
+        u.spareStrap.visible = false;
+      }
+      if (u.spareWood && (W.t > 0.08 || isDetOrBlast || fl.ring > 0.08 || fl.eng > 0.08)) {
+        u.spareWood.visible = false;
+      }
+
+      // Lốp dự phòng (xe pháo / xe trinh sát) bắt lửa bốc cháy ngùn ngụt, cao su cháy trụi trơ khung vành thép
+      if (u.spareRubber) {
+        if (isDetOrBlast || u._spareBurnt) {
+          u.spareRubber.visible = false;
+        } else if (tireLv > 0.05 || Math.max(fl.ring, fl.eng) > 0.08 || W.t > 0.2) {
+          W.spareK = Math.min(1, (W.spareK || 0) + (1 / 60) * 1.8);
+          const sk = W.spareK;
+          const srr = Math.max(0, 1 - sk * 0.75);
+          u.spareRubber.scale.set(srr, 1 - 0.38 * sk, srr);
+          if (sk >= 0.75) u.spareRubber.visible = false;
+        }
+        if (W.spareK && W.spareK < 0.95 && Math.random() < 0.45) {
+          const spPos = u.tankType === 'ARTILLERY' ? [-4.7, 13.0, -4.4] : [0, 12.4, 19.6];
+          const spP = this.chassisToWorld(u, spPos);
+          this.fire.add({
+            x: spP.x + rand(-1.2, 1.2), y: spP.y + rand(-0.4, 0.6), z: spP.z + rand(-0.5, 0.5), vx: rand(-1, 1), vy: rand(20, 38), vz: rand(-1, 1),
+            size: rand(3.5, 5.5) * (0.6 + 0.4 * burn), grow: -4, drag: 1.4, grav: -28, life: rand(0.3, 0.55), alpha: 0.9, fadeIn: 0.03,
+            c0: [1, 0.76, 0.35], c1: [0.65, 0.15, 0.02], cell: 1, floor: false
+          });
+          this.smoke.add({
+            x: spP.x + rand(-1, 1), y: spP.y + 2, z: spP.z + rand(-1, 1), vx: rand(-1.5, 1.5), vy: rand(12, 22), vz: rand(-1.5, 1.5),
+            size: rand(5.5, 8.5), grow: 8, drag: 0.6, grav: -5, life: rand(3.0, 4.5), alpha: 0.8 * burn, fadeIn: 0.15,
+            c0: [0.03, 0.03, 0.03], c1: [0.1, 0.1, 0.1], cell: 0, floor: false
+          });
+        }
+      }
+
+      // Can xăng ở đuôi xe trinh sát bắt lửa nổ bục, nổ vỡ tung khỏi khay đỡ, để lại khay sắt rỗng cháy sém
+      if (u.tankType === 'SCOUT' && W.t > 0.8 && Math.max(fl.ring, fl.eng) > 0.06) {
+        if (!W.canBang) W.canBang = {};
+        for (const s of [-1, 1]) {
+          const canP = this.chassisToWorld(u, [s * 5.4, 12.0, 18.2]);
+          if (!W.canBang[s] && W.t > (s < 0 ? 1.6 : 3.0)) {
+            W.canBang[s] = true;
+            if (typeof VehicleDamage !== 'undefined' && VehicleDamage.stowTag) {
+              VehicleDamage.stowTag(u, s < 0 ? 'canL' : 'canR');
+            }
+            this.fire.add({
+              x: canP.x, y: canP.y + 1, z: canP.z, vx: rand(-2, 2), vy: rand(45, 75), vz: rand(-2, 2),
+              size: rand(7, 11), grow: 4, drag: 1.2, grav: -30, life: rand(0.45, 0.75), alpha: 0.95, fadeIn: 0.02,
+              c0: [1, 0.85, 0.45], c1: [0.8, 0.2, 0.02], cell: 1, floor: false
+            });
+            this.smoke.add({
+              x: canP.x, y: canP.y + 3, z: canP.z, vx: rand(-3, 3), vy: rand(20, 32), vz: rand(-3, 3),
+              size: rand(8, 12), grow: 11, drag: 0.5, grav: -4, life: rand(3.5, 5.0), alpha: 0.85, fadeIn: 0.15,
+              c0: [0.03, 0.03, 0.03], c1: [0.12, 0.12, 0.12], cell: 0, floor: false
+            });
+            if (window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('cookoffSmall', canP, 0.65);
+          }
+          if (Math.random() < 0.28 * burn) {
+            this.fire.add({
+              x: canP.x + rand(-0.7, 0.7), y: canP.y + rand(0, 1.0), z: canP.z + rand(-0.7, 0.7), vx: rand(-1, 1), vy: rand(20, 36), vz: rand(-1, 1),
+              size: rand(3.0, 5.0) * burn, grow: -4, drag: 1.2, grav: -26, life: rand(0.35, 0.55), alpha: 0.92, fadeIn: 0.03,
+              c0: [1, 0.78, 0.38], c1: [0.65, 0.16, 0.02], cell: 1, floor: false
             });
           }
         }
@@ -4029,8 +4772,8 @@
       for (let i = 0; i < 3; i++) {
         const g = rand(0.04, 0.08);
         this.smoke.add({
-          x: p.x + rand(-4, 4), y: p.y + 22 + rand(0, 8), z: p.z + rand(-4, 4), vx: rand(-5, 5), vy: rand(30, 48), vz: rand(-5, 5),
-          size: rand(11, 16), grow: 10, drag: 0.7, grav: -4, life: rand(4, 6), alpha: 0.8, fadeIn: 0.15,
+          x: p.x + rand(-4, 4), y: p.y + rand(6, 11), z: p.z + rand(-4, 4), vx: rand(-5, 5), vy: rand(24, 38), vz: rand(-5, 5),
+          size: rand(13, 18), grow: 11, drag: 0.7, grav: -4, life: rand(4, 6), alpha: 0.7, fadeIn: 0.35,
           c0: [g, g, g], c1: [g * 2.3, g * 2.2, g * 2.1], cell: 0, floor: false
         });
       }
@@ -4125,8 +4868,8 @@
       // gục / lệch ít, không chổng ngược lên trời)
       if (u.barrelPivot) {
         if (!u.barrelPivot.userData.fxBaseRot) u.barrelPivot.userData.fxBaseRot = u.barrelPivot.rotation.clone();
-        u.barrelPivot.rotation.x = rand(-0.14, 0.22);
-        u.barrelPivot.rotation.z = (Math.random() - 0.5) * 0.45;
+        u.barrelPivot.rotation.x = rand(-0.07, 0.08);
+        u.barrelPivot.rotation.z = (Math.random() - 0.5) * 0.12;
       }
 
       // Vector hướng nổ hất tháp pháo mang quán tính đạn
@@ -4188,9 +4931,9 @@
 
       const T = u.fxWreck.turret = {
         v: localV,
-        // lộn nhào: mỗi trục chúc / lăn tối thiểu ~1,6 rad/s (bốc đều ±3,2 hay ra gần 0 -> tháp bay lên nằm ngang lơ lửng
-        // như tấm ván, trông giả); trục quay đứng (xoáy) nhẹ hơn
-        w: new THREE.Vector3((Math.random() < 0.5 ? -1 : 1) * rand(1.6, 3.6), rand(-2.5, 2.5), (Math.random() < 0.5 ? -1 : 1) * rand(1.6, 3.6)),
+        // lộn nhào: tháp pháo nặng hàng chục tấn với mô men quán tính lớn -> quay lộn đầm chắc, từ tốn (~0.6-1.25 rad/s)
+        // tránh xoay tít mù như bìa carton gây cảm giác giả tạo
+        w: new THREE.Vector3((Math.random() < 0.5 ? -1 : 1) * rand(0.6, 1.25), rand(-0.7, 0.7), (Math.random() < 0.5 ? -1 : 1) * rand(0.6, 1.25)),
         landed: false,
         scenario: scenario,
         box: this.turretBodyBox(u, t),
@@ -4211,9 +4954,114 @@
         hull.updateMatrixWorld(true);
         const top = rc.intersectObject(hull, false)[0];
         const pt = top ? top.point.clone() : ring.clone().addScaledVector(up, -0.1);
-        this.addSurfaceMark(pt, up, hull, 'turretRing', { GATLING: 20, ARTILLERY: 19, SCOUT: 6 }[type] || 22, { unit: u });
-        this.emitters.push({ x: pt.x, z: pt.z, y: pt.y, t: 0, dur: rand(14, 20), acc: 0, rate: 16, size: 5 });
+        this.addSurfaceMark(pt, up, hull, 'turretRing', { GATLING: 20, ARTILLERY: 27, SCOUT: 6 }[type] || 22, { unit: u, tankType: type });
+        // không thêm nguồn phát riêng: xác xe đã có nguồn cháy tại vòng tháp (ringPos) -> tránh chuỗi viên khói trùng lặp
       }
+
+      // Cột lửa và áp suất cực mạnh phụt thẳng từ vành tháp khi kho đạn nổ tung đẩy bay tháp
+      if (this.fire && this.fire.add) {
+        for (let i = 0; i < 9; i++) {
+          this.fire.add({
+            x: ring.x + rand(-2.2, 2.2),
+            y: ring.y + 1 + rand(0, 3),
+            z: ring.z + rand(-2.2, 2.2),
+            vx: blastDirX * rand(6, 16) + rand(-8, 8),
+            vy: rand(65, 125),
+            vz: blastDirZ * rand(6, 16) + rand(-8, 8),
+            size: rand(8, 14),
+            grow: 12,
+            drag: 2.2,
+            grav: -8,
+            life: rand(0.45, 0.85),
+            alpha: 1.0,
+            fadeIn: 0.01,
+            fadePow: 1.2,
+            c0: [1, 0.9, 0.5],
+            c1: [0.9, 0.35, 0.05],
+            cell: 1,
+            floor: false
+          });
+        }
+      }
+      if (this.smoke && this.smoke.add) {
+        for (let i = 0; i < 11; i++) {
+          const g = rand(0.04, 0.09);
+          this.smoke.add({
+            x: ring.x + rand(-2.5, 2.5),
+            y: ring.y + 2 + rand(0, 4),
+            z: ring.z + rand(-2.5, 2.5),
+            vx: blastDirX * rand(4, 12) + rand(-10, 10),
+            vy: rand(45, 95),
+            vz: blastDirZ * rand(4, 12) + rand(-10, 10),
+            size: rand(7, 13),
+            grow: 14,
+            drag: 1.2,
+            grav: -5,
+            life: rand(3.5, 6.0),
+            alpha: 0.85,
+            fadeIn: 0.05,
+            fadePow: 1.5,
+            c0: [g, g, g],
+            c1: [g * 2.2, g * 2.2, g * 2.0],
+            cell: 0,
+            floor: false
+          });
+        }
+      }
+      this.spawnSparks(ring.x, ring.y + 2, ring.z, 2.0, { sparks: 2.5 }, true, 0, 0);
+      if (this.flashLight) this.flashLight(ring.x, ring.y + 3, ring.z, [1, 0.75, 0.35], 160, 0.35, 6.5);
+
+      // Khoang động cơ ở đuôi xe (chứa hàng trăm lít dầu diesel) bùng cháy dữ dội đồng thời cùng kho đạn
+      const engPt = this.vehicleLocalToWorld(u, ENGINE_POINT[type] || ENGINE_POINT.ALL_ROUNDER);
+      if (this.fire && this.fire.add) {
+        for (let i = 0; i < 8; i++) {
+          this.fire.add({
+            x: engPt.x + rand(-2.2, 2.2),
+            y: engPt.y + rand(0.5, 2.5),
+            z: engPt.z + rand(-2.2, 2.2),
+            vx: rand(-4, 4),
+            vy: rand(28, 55),
+            vz: rand(-4, 4),
+            size: rand(6.5, 11),
+            grow: -4.2,
+            drag: 1.2,
+            grav: -24,
+            life: rand(0.38, 0.72),
+            alpha: 0.95,
+            fadeIn: 0.02,
+            c0: [1, 0.82, 0.35],
+            c1: [0.65, 0.16, 0.02],
+            cell: 1,
+            floor: false
+          });
+        }
+      }
+      if (this.smoke && this.smoke.add) {
+        for (let i = 0; i < 8; i++) {
+          const ge = rand(0.04, 0.08);
+          this.smoke.add({
+            x: engPt.x + rand(-2.2, 2.2),
+            y: engPt.y + 2 + rand(0, 2),
+            z: engPt.z + rand(-2.2, 2.2),
+            vx: rand(-4, 4),
+            vy: rand(16, 32),
+            vz: rand(-4, 4),
+            size: rand(6, 9.5),
+            grow: 8.5,
+            drag: 0.75,
+            grav: -3.5,
+            life: rand(3.5, 5.5),
+            alpha: 0.8,
+            fadeIn: 0.05,
+            c0: [ge, ge, ge],
+            c1: [ge * 2.2, ge * 2.2, ge * 2.0],
+            cell: 0,
+            floor: false
+          });
+        }
+      }
+      if (this.flashLight) this.flashLight(engPt.x, engPt.y + 2, engPt.z, [1, 0.65, 0.25], 140, 0.35, 5.5);
+
       return true;
     },
 
@@ -4323,13 +5171,13 @@
       const axis = tip.clone().sub(piv);
       const L = axis.length() || 1;
       axis.divideScalar(L);
-      const nb = Math.max(4, Math.ceil(L / 2)), bins = [];
+      const nb = Math.max(4, Math.ceil(L / 4)), bins = [];
       bp.traverse(o => {
         if (!o.isMesh || o.isInstancedMesh || o.userData.isFxDecal || !o.geometry || !o.geometry.attributes.position) return;
         const mt = Array.isArray(o.material) ? o.material[0] : o.material;
         if (mt && (mt.blending === THREE.AdditiveBlending || mt.isMeshBasicMaterial)) return;
         M.multiplyMatrices(inv, o.matrixWorld);
-        const pa = o.geometry.attributes.position, step = Math.max(1, Math.floor(pa.count / 4000));
+        const pa = o.geometry.attributes.position, step = Math.max(1, Math.floor(pa.count / 3000));
         for (let i = 0; i < pa.count; i += step) {
           v.fromBufferAttribute(pa, i).applyMatrix4(M);
           const k = Math.max(0, Math.min(nb - 1, Math.floor(r.copy(v).sub(piv).dot(axis) / L * nb)));
@@ -4345,21 +5193,48 @@
       return pts.length ? { pts, muzzle: muzzle.clone() } : null;
     },
 
-    // Khoảng hở thấp nhất giữa tháp (tư thế q, vị trí pos trong hệ cha) và mặt đỡ: mặt đất, hoặc nóc thân xác xe nếu điểm
-    // nằm trên hình chiếu thân xe. Âm = đang ngập
-    turretFloorClear(tg, T, q, pos, noHull = false) {
+    // Chi tiết khoảng hở giữa tháp (tư thế q, vị trí pos trong hệ cha) và mặt đỡ: trả về cả khoảng hở chung (minClear),
+    // khoảng hở riêng của thân tháp (bodyClear), điểm chạm thấp nhất (lowestPt) và trọng tâm thân tháp (comLocal)
+    turretClearanceDetail(tg, T, q, pos, noHull = false) {
       const PW = tg.parent.matrixWorld, PI = T._pInv || (T._pInv = new THREE.Matrix4());
       PI.copy(PW).invert();
       const v = new THREE.Vector3(), w = new THREE.Vector3(), H = T.hullBox, hasH = !!(H && !H.isEmpty());
-      let mn = Infinity;
-      for (const p of T.pts) {
+      let minClear = Infinity, bodyClear = Infinity;
+      const lowestPt = new THREE.Vector3(), lowestBodyPt = new THREE.Vector3();
+
+      const com = T._com || (T._com = (T.box && !T.box.isEmpty()) ? T.box.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 3, 0));
+      const comLocal = com.clone().applyQuaternion(q).add(pos);
+      const comW = w.copy(comLocal).applyMatrix4(PW);
+      const comGy = this.groundAt(comW.x, comW.z, comW.y);
+      const bodyCount = (T.box && !T.box.isEmpty()) ? Math.min(16, T.pts.length) : Math.min(4, T.pts.length);
+
+      for (let i = 0; i < T.pts.length; i++) {
+        const p = T.pts[i];
         v.copy(p).applyQuaternion(q).add(pos);
-        w.set(v.x, 0, v.z).applyMatrix4(PW);
-        let fl = w.set(w.x, this.groundAt(w.x, w.z), w.z).applyMatrix4(PI).y;
+        w.copy(v).applyMatrix4(PW);
+        let gy = this.groundAt(w.x, w.z, w.y);
+        // Nòng pháo quẹt bờ tường bê tông cao không được nâng bổng thân tháp, nhưng trên đất phẳng/đồi cát (gy ~ comGy) thì giữ nguyên 100%
+        if (i >= bodyCount && gy > comGy + 2.2) gy = comGy + 2.2;
+        let fl = w.set(w.x, gy, w.z).applyMatrix4(PI).y;
         if (hasH && !noHull && v.x > H.min.x && v.x < H.max.x && v.z > H.min.z && v.z < H.max.z) fl = Math.max(fl, H.max.y);
-        mn = Math.min(mn, v.y - fl);
+
+        const d = v.y - fl;
+        if (d < minClear) {
+          minClear = d;
+          lowestPt.copy(v);
+        }
+        if (i < bodyCount && d < bodyClear) {
+          bodyClear = d;
+          lowestBodyPt.copy(v);
+        }
       }
-      return mn;
+      return { minClear, bodyClear, lowestPt, lowestBodyPt, comLocal, comGy, bodyCount };
+    },
+
+    // Khoảng hở thấp nhất giữa tháp (tư thế q, vị trí pos trong hệ cha) và mặt đỡ: mặt đất, hoặc nóc thân xác xe nếu điểm
+    // nằm trên hình chiếu thân xe. Âm = đang ngập
+    turretFloorClear(tg, T, q, pos, noHull = false) {
+      return this.turretClearanceDetail(tg, T, q, pos, noHull).minClear;
     },
 
     // Lưới điểm dày phủ thân tháp + dọc nòng (bước <= 3 đơn vị) để xét chồng lên thân xe: điểm thưa thì góc thân xe lọt giữa
@@ -4389,15 +5264,13 @@
 
     // Đặt tháp đã xoay: không đè thân xe, tính toán độ cao chuẩn xác để cả thân tháp VÀ nòng pháo tựa trên mặt đất
     placeLandedTurret(u, tg, T) {
-      // Điểm tựa của cả thân tháp VÀ nòng pháo (nòng dài gấp đôi thân tháp nên phải tính vào khi tránh thân xe)
-      const contactPts = this.getTurretContactPoints(u, tg, T);
+      const contactPts = T.pts || this.getTurretContactPoints(u, tg, T);
       const isLawnDart = (T.scenario === 'LAWN_DART');
 
-      // Có điểm nào (thân tháp / nòng) nằm trong hình chiếu thân xe trên mặt đất không
       const H = T.hullBox, hasH = !!(H && !H.isEmpty()), pad = 1.0;
       const hcx = hasH ? (H.min.x + H.max.x) / 2 : 0, hcz = hasH ? (H.min.z + H.max.z) / 2 : 0;
       const tmp = new THREE.Vector3();
-      const hullPts = hasH ? this.turretHullCheckPoints(u, T) : [];
+      const hullPts = hasH ? (T._hullPts || (T._hullPts = this.turretHullCheckPoints(u, T))) : [];
       const hitsHull = (q, x, z) => {
         if (!hasH) return false;
         for (const p of hullPts) {
@@ -4427,184 +5300,274 @@
         }
       }
 
-      tg.parent.updateMatrixWorld(true);
-      const parentMatrix = tg.parent.matrixWorld;
-      const parentInv = new THREE.Matrix4().copy(parentMatrix).invert();
+      // 2. Đẩy ra xa thân xe trước khi tìm thế nằm yên
+      if (hitsHull(tg.quaternion, px, pz)) {
+        const [ox, oz] = outward(px, pz);
+        for (let s = 0; s < 240 && hitsHull(tg.quaternion, px, pz); s++) { px += ox * 0.5; pz += oz * 0.5; }
+      }
+      tg.position.x = px; tg.position.z = pz;
 
-      // Tháp lật / ngả khi nằm yên có thể đưa nòng quay lại đè thân xe -> kiểm tra lại, đẩy tiếp ra ngoài
-      for (let attempt = 0; attempt < 4; attempt++) {
-        const q = tg.quaternion.clone();
-
-        // 2. Đẩy ra xa thân xe tới khi cả thân tháp lẫn nòng không chồng lên thân xe
-        if (hitsHull(q, px, pz)) {
-          const [ox, oz] = outward(px, pz);
-          for (let s = 0; s < 240 && hitsHull(q, px, pz); s++) { px += ox * 0.5; pz += oz * 0.5; }
-        }
-
-        // 3. Tính toán độ cao tiếp đất chuẩn xác: đảm bảo không có điểm nào của thân tháp hay nòng pháo bị chui xuống đất
-        let maxRequiredPosY = -Infinity;
-        for (let i = 0; i < contactPts.length; i++) {
-          const pt = contactPts[i];
-          const ptRot = pt.clone().applyQuaternion(q);
-
-          // Tọa độ thế giới của điểm tại vị trí mặt bằng (px, pz)
-          const worldPt = new THREE.Vector3(px + ptRot.x, 0, pz + ptRot.z).applyMatrix4(parentMatrix);
-          const gy = this.groundAt(worldPt.x, worldPt.z);
-
-          // Mức lún tự nhiên vào cát: thân tháp & nòng pháo lún nhẹ 0.12 đơn vị; đầu nòng cắm thì ngập nhẹ 0.8 đơn vị
-          let embed = 0.12;
-          if (isLawnDart && i >= contactPts.length - 2) {
-            embed = 0.8;
-          }
-
-          // Điểm thế giới mong muốn nằm ngay trên mặt đất (hoặc lún nhẹ embed)
-          const targetWorldPt = new THREE.Vector3(worldPt.x, gy - embed, worldPt.z);
-          // Chuyển về hệ tọa độ của tg.parent
-          const localTarget = targetWorldPt.applyMatrix4(parentInv);
-
-          // Độ cao tg.position.y cần thiết để điểm này không bị chìm xuống đất
-          const reqPosY = localTarget.y - ptRot.y;
-          if (reqPosY > maxRequiredPosY) {
-            maxRequiredPosY = reqPosY;
-          }
-        }
-
-        if (!isFinite(maxRequiredPosY)) {
-          maxRequiredPosY = 0;
-        }
-
-        tg.position.set(px, maxRequiredPosY, pz);
-        tg.updateMatrixWorld(true);
-        // lần cuối: giữ tư thế đã nằm yên, chỉ đẩy ra + đặt độ cao (không lật lại kẻo nòng quay vào thân xe)
-        if (isLawnDart || attempt === 3) break;
+      // 3. Thả tháp nằm yên theo trọng lực (cả thân tháp lẫn nòng pháo đều hạ xuống tựa vững trên mặt đất)
+      if (!isLawnDart) {
         this.settleTurret(u, tg, T, contactPts);
-        if (!hitsHull(tg.quaternion, tg.position.x, tg.position.z)) break;
         px = tg.position.x; pz = tg.position.z;
+        // Nếu sau khi lật ngả mà nòng/tháp chớm vào thân xe thì đẩy ra ngoài và cân chỉnh lại 1 lần
+        if (hitsHull(tg.quaternion, px, pz)) {
+          const [ox, oz] = outward(px, pz);
+          for (let s = 0; s < 240 && hitsHull(tg.quaternion, px, pz); s++) { px += ox * 0.5; pz += oz * 0.5; }
+          tg.position.x = px; tg.position.z = pz;
+          this.settleTurret(u, tg, T, contactPts);
+        }
+      } else {
+        // Trường hợp cắm nòng: tính độ cao chuẩn xác
+        const cd = this.turretClearanceDetail(tg, T, tg.quaternion, tg.position, true);
+        if (isFinite(cd.minClear)) tg.position.y -= cd.minClear + 0.1;
+        tg.updateMatrixWorld(true);
       }
     },
 
     // Thả tháp nằm yên theo trọng lực: lật quanh điểm / cạnh tiếp đất thấp nhất cho tới khi
-    // tựa vững trên >= 3 điểm và trọng tâm nằm trong đa giác tựa (không còn kênh / lơ lửng trên 1 điểm)
+    // cả thân tháp VÀ nòng pháo tựa vững trên mặt đất, trọng tâm nằm trong đa giác tựa (không bao giờ chổng thân lơ lửng)
     settleTurret(u, tg, T, pts) {
       const parent = tg.parent;
       parent.updateMatrixWorld(true);
-      const PW = parent.matrixWorld, PI = new THREE.Matrix4().copy(PW).invert();
+      const PW = parent.matrixWorld, PI = T._pInv || (T._pInv = new THREE.Matrix4());
+      PI.copy(PW).invert();
       const b = T.box;
       const com = (b && !b.isEmpty()) ? b.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 3, 0);
-      // nòng pháo kéo trọng tâm ra phía trước một chút
       if (u.barrelPivot) com.lerp(u.barrelPivot.position.clone().add(new THREE.Vector3(0, 0, -14)), 0.12);
-      const groundLocal = (x, z) => {
-        const w = new THREE.Vector3(x, 0, z).applyMatrix4(PW);
-        return new THREE.Vector3(w.x, this.groundAt(w.x, w.z), w.z).applyMatrix4(PI).y;
+
+      const bodyCount = (b && !b.isEmpty()) ? Math.min(16, pts.length) : Math.min(4, pts.length);
+      const wTmp = new THREE.Vector3();
+      const groundLocal = (x, z, refY, isBarrel, comGy) => {
+        wTmp.set(x, refY !== undefined ? refY : 0, z).applyMatrix4(PW);
+        let gy = this.groundAt(wTmp.x, wTmp.z, wTmp.y);
+        if (isBarrel && gy > comGy + 2.2) gy = comGy + 2.2;
+        return wTmp.set(wTmp.x, gy, wTmp.z).applyMatrix4(PI).y;
       };
+
       const q = tg.quaternion.clone(), pos = tg.position.clone();
-      const P = new Array(pts.length);
+      const P = T._settleP && T._settleP.length === pts.length
+        ? T._settleP
+        : (T._settleP = pts.map((_, idx) => ({ v: new THREE.Vector3(), d: 0, idx })));
       const tmpQ = new THREE.Quaternion();
-      // Nòng dài & nặng chĩa dốc lên trời (tháp dựng đứng trên mặt sau / mặt hông) hoặc chống xuống đất: về tĩnh học
-      // vẫn "đứng được" nhưng đà rơi + nòng nặng làm khối tháp đổ ngả về phía nòng -> nòng nằm xuống đất.
-      // Xoay tháp quanh trục ngang vuông góc nòng cho nòng gần nằm ngang rồi tìm thế nằm yên lại
+      const tmpV = new THREE.Vector3();
+      const axis = new THREE.Vector3();
+      const rVec = new THREE.Vector3();
       const muzzle = pts.length >= 2 && u.barrelPivot ? pts[pts.length - 2] : null;
+
+      // Nếu nòng đang chúc xuống hoặc ngóc lên quá ~10.5° (|bd.y|/L > 0.18), xoay sơ bộ quanh trục ngang vuông góc với nòng
+      // để hạ cả thân tháp và nòng nằm sát mặt phẳng ngang trước khi tinh chỉnh điểm tựa
       const barrelSteep = () => {
         if (!muzzle) return null;
-        const bd = muzzle.clone().sub(u.barrelPivot.position).applyQuaternion(q);
+        const bd = tmpV.copy(muzzle).sub(u.barrelPivot.position).applyQuaternion(q);
         const L = bd.length();
-        return L > 4 && Math.abs(bd.y) / L > 0.5 ? bd.divideScalar(L) : null;
+        return L > 4 && Math.abs(bd.y) / L > 0.18 ? bd.divideScalar(L).clone() : null;
       };
+
       for (let pass = 0; pass < 2; pass++) {
-      if (pass === 1) {
-        const f = barrelSteep();
-        if (!f) break;
-        const hz = Math.hypot(f.x, f.z) > 0.05 ? new THREE.Vector3(f.x, 0, f.z).normalize() : new THREE.Vector3(Math.cos(Math.random() * 6.28), 0, Math.sin(Math.random() * 6.28));
-        const axis = new THREE.Vector3().crossVectors(f, hz);
-        if (axis.lengthSq() < 1e-6) break;
-        q.premultiply(tmpQ.setFromAxisAngle(axis.normalize(), Math.acos(Math.max(-1, Math.min(1, f.dot(hz)))) - rand(0.04, 0.16)));
-        // khối tháp đổ về phía nòng: trọng tâm dịch theo
-        pos.x += hz.x * rand(3, 6); pos.z += hz.z * rand(3, 6);
-      }
-      for (let it = 0; it < 140; it++) {
-        // Vị trí các điểm & độ ngập dưới đất
-        let minD = Infinity;
-        for (let i = 0; i < pts.length; i++) {
-          const w = pts[i].clone().applyQuaternion(q).add(pos);
-          w.d = w.y - groundLocal(w.x, w.z);
-          P[i] = w;
-          if (w.d < minD) minD = w.d;
-        }
-        pos.y -= minD; for (const w of P) { w.y -= minD; w.d -= minD; }
-        const C = com.clone().applyQuaternion(q).add(pos);
-        const contacts = P.filter(w => w.d < 0.35);
-        if (contacts.length >= 3) {
-          // trọng tâm có nằm trong bao lồi các điểm tựa (mặt phẳng ngang) không
-          const hull = convexHull2D(contacts);
-          const edge = hull.length >= 3 ? outsideEdge(hull, C.x, C.z) : null;
-          if (hull.length >= 3 && !edge) break;
-          if (edge) { rotateAbout(edge[0], edge[1]); continue; }
-        }
-        if (contacts.length >= 2) {
-          // lật quanh đường nối 2 điểm tựa xa nhau nhất
-          let a = contacts[0], bb = contacts[1], best = -1;
-          for (let i = 0; i < contacts.length; i++) for (let j = i + 1; j < contacts.length; j++) {
-            const d = Math.hypot(contacts[i].x - contacts[j].x, contacts[i].z - contacts[j].z);
-            if (d > best) { best = d; a = contacts[i]; bb = contacts[j]; }
+        if (pass === 1 || (pass === 0 && barrelSteep())) {
+          const f = barrelSteep();
+          if (f) {
+            const hz = Math.hypot(f.x, f.z) > 0.05
+              ? new THREE.Vector3(f.x, 0, f.z).normalize()
+              : new THREE.Vector3(Math.cos(Math.random() * 6.28), 0, Math.sin(Math.random() * 6.28));
+            const ax = new THREE.Vector3().crossVectors(f, hz);
+            if (ax.lengthSq() > 1e-6) {
+              const targetAng = Math.acos(Math.max(-1, Math.min(1, f.dot(hz)))) - rand(0.03, 0.09);
+              q.premultiply(tmpQ.setFromAxisAngle(ax.normalize(), targetAng)).normalize();
+              if (pass === 1) {
+                pos.x += hz.x * rand(2, 4);
+                pos.z += hz.z * rand(2, 4);
+              }
+            }
+          } else if (pass === 1) {
+            break;
           }
-          // 2 điểm tựa trùng nhau (vd. miệng nòng) -> coi như tựa 1 điểm, tránh trục quay độ dài 0 làm méo quaternion
-          rotateAbout(a, best > 0.05 ? bb : null);
-        } else {
-          const c0 = contacts[0];
-          rotateAbout(c0, null);
+        }
+
+        for (let it = 0; it < 95; it++) {
+          const C0 = tmpV.copy(com).applyQuaternion(q).add(pos);
+          wTmp.copy(C0).applyMatrix4(PW);
+          const comGy = this.groundAt(wTmp.x, wTmp.z, wTmp.y);
+          let minD = Infinity;
+          for (let i = 0; i < pts.length; i++) {
+            const pw = P[i];
+            pw.v.copy(pts[i]).applyQuaternion(q).add(pos);
+            pw.d = pw.v.y - groundLocal(pw.v.x, pw.v.z, pw.v.y, i >= bodyCount, comGy);
+            if (pw.d < minD) minD = pw.d;
+          }
+          pos.y -= minD;
+          for (let i = 0; i < pts.length; i++) {
+            P[i].v.y -= minD;
+            P[i].d -= minD;
+          }
+
+          const C = tmpV.copy(com).applyQuaternion(q).add(pos);
+          const contacts = [];
+          let hasBodyContact = false;
+          for (let i = 0; i < pts.length; i++) {
+            if (P[i].d < 0.35) {
+              contacts.push(P[i].v);
+              if (i < bodyCount) hasBodyContact = true;
+            }
+          }
+
+          const step = it < 40 ? 0.055 : (it < 70 ? 0.025 : 0.01);
+
+          // Nếu chưa có bất kỳ điểm nào của THÂN THÁP chạm đất (chỉ mới chạm đầu nòng/thân nòng):
+          // Bắt buộc xoay quanh điểm chạm nòng theo trục ngang vuông góc với hướng về trọng tâm C để hạ sập thân tháp xuống đất!
+          if (!hasBodyContact) {
+            let bestPt = contacts[0], bestDist = Infinity;
+            for (let i = 0; i < contacts.length; i++) {
+              const d2 = (contacts[i].x - C.x) ** 2 + (contacts[i].z - C.z) ** 2;
+              if (d2 < bestDist) { bestDist = d2; bestPt = contacts[i]; }
+            }
+            rotateAbout(bestPt, null, step, C);
+            continue;
+          }
+
+          if (contacts.length >= 3) {
+            const hull = convexHull2D(contacts);
+            const edgeAct = hull.length >= 3 ? closestOutsideAction(hull, C.x, C.z) : null;
+            if (hull.length >= 3 && !edgeAct) break;
+            if (edgeAct) {
+              rotateAbout(edgeAct.a, edgeAct.b, step, C);
+              continue;
+            }
+          }
+          if (contacts.length >= 2) {
+            let a = contacts[0], bb = contacts[1], best = -1;
+            for (let i = 0; i < contacts.length; i++) {
+              for (let j = i + 1; j < contacts.length; j++) {
+                const d = Math.hypot(contacts[i].x - contacts[j].x, contacts[i].z - contacts[j].z);
+                if (d > best) { best = d; a = contacts[i]; bb = contacts[j]; }
+              }
+            }
+            if (best <= 0.08) {
+              rotateAbout(a, null, step, C);
+            } else {
+              const dx = bb.x - a.x, dz = bb.z - a.z, len2 = dx * dx + dz * dz;
+              const t = ((C.x - a.x) * dx + (C.z - a.z) * dz) / len2;
+              if (t <= 0.08) rotateAbout(a, null, step, C);
+              else if (t >= 0.92) rotateAbout(bb, null, step, C);
+              else rotateAbout(a, bb, step, C);
+            }
+          } else {
+            rotateAbout(contacts[0], null, step, C);
+          }
         }
       }
-      }
-      // bước lật cuối có thể ấn mép tháp xuống đất: nâng lại cho điểm thấp nhất chỉ lún nhẹ (như lúc đặt độ cao)
-      {
-        let minD = Infinity;
+
+      // Bước 2: Khi thân tháp đã chạm đất nhưng đầu nòng vẫn còn kênh trên không (barrelMinD > 0.25),
+      // nghiêng nhẹ tháp quanh điểm tựa phía trước của thân tháp để hạ đầu nòng chạm đất (cả thân tháp VÀ nòng đều tựa trên cát)
+      for (let bIt = 0; bIt < 35; bIt++) {
+        const C0 = tmpV.copy(com).applyQuaternion(q).add(pos);
+        wTmp.copy(C0).applyMatrix4(PW);
+        const comGy = this.groundAt(wTmp.x, wTmp.z, wTmp.y);
+        let minD = Infinity, barrelMinD = Infinity;
+        let lowestBarrelPt = null;
         for (let i = 0; i < pts.length; i++) {
-          const w = pts[i].clone().applyQuaternion(q).add(pos);
-          minD = Math.min(minD, w.y - groundLocal(w.x, w.z));
+          const pw = P[i];
+          pw.v.copy(pts[i]).applyQuaternion(q).add(pos);
+          pw.d = pw.v.y - groundLocal(pw.v.x, pw.v.z, pw.v.y, i >= bodyCount, comGy);
+          if (pw.d < minD) minD = pw.d;
+          if (i >= Math.max(bodyCount, pts.length - 8) && pw.d < barrelMinD) {
+            barrelMinD = pw.d;
+            lowestBarrelPt = pw.v;
+          }
         }
-        if (isFinite(minD)) pos.y -= minD + 0.12;
+        pos.y -= minD;
+        for (let i = 0; i < pts.length; i++) { P[i].v.y -= minD; P[i].d -= minD; }
+        barrelMinD -= minD;
+        if (barrelMinD <= 0.22 || !lowestBarrelPt) break;
+
+        wTmp.copy(lowestBarrelPt).applyMatrix4(PW);
+        const bGy = this.groundAt(wTmp.x, wTmp.z, wTmp.y);
+        if (bGy > comGy + 0.8) break; // không chúc nòng xuống nếu dưới đầu nòng là bờ tường cao
+
+        let pivPt = P[0].v, bestD2 = Infinity;
+        for (let i = 0; i < bodyCount; i++) {
+          if (P[i].d > 0.6) continue;
+          const d2 = (P[i].v.x - lowestBarrelPt.x) ** 2 + (P[i].v.z - lowestBarrelPt.z) ** 2;
+          if (d2 < bestD2) { bestD2 = d2; pivPt = P[i].v; }
+        }
+        const arm = Math.max(8, Math.sqrt(bestD2));
+        const bStep = Math.min(0.035, (barrelMinD / arm) * 0.85);
+        rotateAbout(pivPt, null, bStep, lowestBarrelPt);
       }
+
+      // Bước cuối: đặt điểm thấp nhất lún nhẹ 0.08 vào mặt cát để không có khe hở bóng đổ
+      {
+        const C0 = tmpV.copy(com).applyQuaternion(q).add(pos);
+        wTmp.copy(C0).applyMatrix4(PW);
+        const comGy = this.groundAt(wTmp.x, wTmp.z, wTmp.y);
+        let finalMinD = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const v = P[i].v.copy(pts[i]).applyQuaternion(q).add(pos);
+          finalMinD = Math.min(finalMinD, v.y - groundLocal(v.x, v.z, v.y, i >= bodyCount, comGy));
+        }
+        if (isFinite(finalMinD)) pos.y -= finalMinD + 0.08;
+      }
+
       tg.quaternion.copy(q);
       tg.position.copy(pos);
       tg.updateMatrixWorld(true);
 
-      function rotateAbout(a, bb) {
-        const C = com.clone().applyQuaternion(q).add(pos);
-        let axis;
+      function rotateAbout(a, bb, step, targetC) {
         if (bb) {
-          axis = new THREE.Vector3(bb.x - a.x, bb.y - a.y, bb.z - a.z).normalize();
+          axis.set(bb.x - a.x, bb.y - a.y, bb.z - a.z).normalize();
         } else {
-          const h = new THREE.Vector3(C.x - a.x, 0, C.z - a.z);
-          if (h.lengthSq() < 1e-6) h.set(1, 0, 0);
-          axis = new THREE.Vector3(0, -1, 0).cross(h).normalize().negate();
+          const hx = targetC.x - a.x, hz = targetC.z - a.z;
+          const hl = Math.hypot(hx, hz);
+          if (hl < 1e-4) axis.set(1, 0, 0);
+          else axis.set(hz / hl, 0, -hx / hl);
         }
-        // chọn chiều quay làm trọng tâm hạ xuống
-        const r = new THREE.Vector3(C.x - a.x, C.y - a.y, C.z - a.z);
-        const step = 0.05;
-        const test = r.clone().applyQuaternion(tmpQ.setFromAxisAngle(axis, step));
-        const sign = test.y < r.y ? 1 : -1;
+        rVec.set(targetC.x - a.x, targetC.y - a.y, targetC.z - a.z);
+        const testY = rVec.clone().applyQuaternion(tmpQ.setFromAxisAngle(axis, step)).y;
+        const sign = testY < rVec.y ? 1 : -1;
         tmpQ.setFromAxisAngle(axis, step * sign);
-        const piv = new THREE.Vector3(a.x, a.y, a.z);
-        pos.sub(piv).applyQuaternion(tmpQ).add(piv);
+        pos.sub(a).applyQuaternion(tmpQ).add(a);
         q.premultiply(tmpQ).normalize();
       }
       function convexHull2D(list) {
-        const pts2 = list.map(w => [w.x, w.z]).sort((m, n) => m[0] - n[0] || m[1] - n[1]);
-        const cross = (o, a2, b2) => (a2[0] - o[0]) * (b2[1] - o[1]) - (a2[1] - o[1]) * (b2[0] - o[0]);
+        const pts2 = list.map(w => ({ x: w.x, z: w.z, ref: w })).sort((m, n) => m.x - n.x || m.z - n.z);
+        const cross = (o, a2, b2) => (a2.x - o.x) * (b2.z - o.z) - (a2.z - o.z) * (b2.x - o.x);
         const lower = [], upper = [];
         for (const p2 of pts2) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p2) <= 0) lower.pop(); lower.push(p2); }
         for (let i = pts2.length - 1; i >= 0; i--) { const p2 = pts2[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p2) <= 0) upper.pop(); upper.push(p2); }
         upper.pop(); lower.pop();
-        const hull = lower.concat(upper);
-        return hull.map(h => list.find(w => w.x === h[0] && w.z === h[1]));
+        return lower.concat(upper).map(h => h.ref);
       }
-      function outsideEdge(hull, x, z) {
+      function closestOutsideAction(hull, cx, cz) {
+        let bestAct = null, bestDist2 = Infinity;
         for (let i = 0; i < hull.length; i++) {
           const a2 = hull[i], b2 = hull[(i + 1) % hull.length];
-          const cr = (b2.x - a2.x) * (z - a2.z) - (b2.z - a2.z) * (x - a2.x);
-          if (cr < -0.05) return [a2, b2];
+          const dx = b2.x - a2.x, dz = b2.z - a2.z;
+          const len = Math.hypot(dx, dz);
+          if (len < 1e-4) continue;
+          const cr = (dx * (cz - a2.z) - dz * (cx - a2.x)) / len;
+          if (cr >= -0.05) continue;
+          const len2 = len * len;
+          const t = ((cx - a2.x) * dx + (cz - a2.z) * dz) / len2;
+          let d2, act;
+          if (t <= 0.08) {
+            d2 = (cx - a2.x) ** 2 + (cz - a2.z) ** 2;
+            act = { a: a2, b: null };
+          } else if (t >= 0.92) {
+            d2 = (cx - b2.x) ** 2 + (cz - b2.z) ** 2;
+            act = { a: b2, b: null };
+          } else {
+            const px = a2.x + t * dx, pz = a2.z + t * dz;
+            d2 = (cx - px) ** 2 + (cz - pz) ** 2;
+            act = { a: a2, b: b2 };
+          }
+          if (d2 < bestDist2) {
+            bestDist2 = d2;
+            bestAct = act;
+          }
         }
-        return null;
+        return bestAct;
       }
     },
 
@@ -4620,6 +5583,18 @@
       u.fxDestroyed = false;
       u.fxWreck = null;
       u._killSource = null;
+      if (u.crew) {
+        if (u.crew.gunner && u.crew.gunner.root) u.crew.gunner.root.visible = true;
+        if (u.crew.mate && u.crew.mate.root) u.crew.mate.root.visible = true;
+        u.crew.off = false;
+      }
+      if (u.spareStrap) u.spareStrap.visible = true;
+      if (u.spareWood) u.spareWood.visible = true;
+      if (u.spareRubber) {
+        u.spareRubber.scale.set(1, 1, 1);
+        u.spareRubber.visible = true;
+      }
+      u._spareBurnt = false;
       u.group.traverse(o => {
         if (!o.isMesh) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -4627,6 +5602,19 @@
           if (m && m.userData && m.userData.fxOrigColor) {
             m.color.copy(m.userData.fxOrigColor);
             delete m.userData.fxOrigColor;
+          }
+          if (m && m.userData && m.userData.fxOrigEmissiveI !== undefined) {
+            m.emissiveIntensity = m.userData.fxOrigEmissiveI;
+            delete m.userData.fxOrigEmissiveI;
+          }
+          if (m && m.userData && m.userData.fxOrigEnvMapI !== undefined) {
+            m.envMapIntensity = m.userData.fxOrigEnvMapI;
+            delete m.userData.fxOrigEnvMapI;
+          }
+          if (m && m.userData && m.userData.burntOut) {
+            m.roughness = 0.2;
+            m.metalness = 0.1;
+            delete m.userData.burntOut;
           }
           if (m && m.userData) delete m.userData.vkChar;
         });
@@ -4702,52 +5690,169 @@
             const turretWPos = new THREE.Vector3();
             tg.getWorldPosition(turretWPos);
 
-            // Điểm thấp nhất của tháp / nòng chạm mặt đất (theo địa hình thật, hoặc nóc thân xác xe) -> chốt tư thế
-            // tiếp đất hợp lệ. Đặt đúng chỗ chạm, không để tháp đã ngập xuống dốc / còn lơ lửng
-            // vừa bật khỏi vòng bi (~0.15 s đầu) đế tháp còn quệt mép nóc thân: chưa xét va nóc thân
+            // Đuôi khói đen và lửa bám theo đáy tháp pháo trong suốt quỹ đạo bay
+            T.trailAcc = (T.trailAcc || 0) + dt;
+            if (T.trailAcc >= 0.033) {
+              T.trailAcc = 0;
+              if (this.smoke && this.smoke.add) {
+                const g = rand(0.06, 0.12);
+                this.smoke.add({
+                  x: turretWPos.x + rand(-1.2, 1.2),
+                  y: turretWPos.y + rand(-0.8, 0.8),
+                  z: turretWPos.z + rand(-1.2, 1.2),
+                  vx: rand(-4, 4),
+                  vy: rand(8, 22),
+                  vz: rand(-4, 4),
+                  size: rand(4.5, 7.5),
+                  grow: 6.5,
+                  drag: 1.1,
+                  grav: -3,
+                  life: rand(1.6, 2.8),
+                  alpha: 0.75,
+                  fadeIn: 0.04,
+                  fadePow: 1.4,
+                  c0: [g, g, g],
+                  c1: [g * 1.8, g * 1.8, g * 1.6],
+                  cell: 0,
+                  floor: false
+                });
+              }
+              if (this.fire && this.fire.add && Math.random() < 0.65) {
+                this.fire.add({
+                  x: turretWPos.x + rand(-0.8, 0.8),
+                  y: turretWPos.y + rand(-0.6, 0.6),
+                  z: turretWPos.z + rand(-0.8, 0.8),
+                  vx: rand(-3, 3),
+                  vy: rand(10, 26),
+                  vz: rand(-3, 3),
+                  size: rand(3.0, 5.0),
+                  grow: -1.2,
+                  drag: 1.5,
+                  grav: -2,
+                  life: rand(0.18, 0.38),
+                  alpha: 0.95,
+                  fadeIn: 0.01,
+                  c0: [1, 0.85, 0.4],
+                  c1: [0.85, 0.3, 0.05],
+                  cell: 1,
+                  floor: false
+                });
+              }
+              if (this.fire && this.fire.add && Math.random() < 0.35) {
+                this.fire.add({
+                  x: turretWPos.x + rand(-0.8, 0.8),
+                  y: turretWPos.y,
+                  z: turretWPos.z + rand(-0.8, 0.8),
+                  vx: rand(-12, 12),
+                  vy: rand(-4, 12),
+                  vz: rand(-12, 12),
+                  size: rand(0.9, 1.8),
+                  grow: -0.6,
+                  drag: 0.8,
+                  grav: GRAV * 0.4,
+                  life: rand(0.25, 0.55),
+                  alpha: 1,
+                  fadeIn: 0.005,
+                  c0: [1, 0.95, 0.7],
+                  c1: [1, 0.5, 0.1],
+                  cell: 3,
+                  floor: false
+                });
+              }
+            }
+
+            // Điểm thấp nhất của tháp / nòng chạm mặt đất: mô phỏng phản lực tại điểm chạm (mũi nòng / góc tháp)
+            // và cú nảy nặng đầm của khối thép hàng chục tấn trước khi trượt về tư thế nằm yên cuối cùng.
             T.age = (T.age || 0) + dt;
-            const clear = this.turretFloorClear(tg, T, tg.quaternion, tg.position, T.age < 0.15);
-            if (clear < 0 && T.v.y >= 0) {
+            // Khi đang bay trên không mà tâm tháp vẫn còn nằm trên phạm vi thân xe, đẩy nhẹ ra ngoài để tháp văng thoát khỏi thân xe tự nhiên
+            if (T.age > 0.12 && T.hullBox) {
+              const b = T.hullBox;
+              const cx = (b.min.x + b.max.x) * 0.5, cz = (b.min.z + b.max.z) * 0.5;
+              const hx = (b.max.x - b.min.x) * 0.55 + 4, hz = (b.max.z - b.min.z) * 0.55 + 4;
+              const dx = tg.position.x - cx, dz = tg.position.z - cz;
+              if (Math.abs(dx) < hx && Math.abs(dz) < hz) {
+                const len = Math.hypot(dx, dz);
+                const nx = len > 0.5 ? dx / len : Math.cos(T.age * 7);
+                const nz = len > 0.5 ? dz / len : Math.sin(T.age * 7);
+                T.v.x += nx * 42 * dt;
+                T.v.z += nz * 42 * dt;
+              }
+            }
+            const cd = this.turretClearanceDetail(tg, T, tg.quaternion, tg.position, T.age < 0.15);
+            if (cd.minClear < 0 && T.v.y >= 0) {
               // còn đang bay lên mà nòng lộn vòng đập xuống đất / nóc thân: nảy ra (đảo chiều xoay, mất bớt đà ngang)
-              tg.position.y -= clear;
+              tg.position.y -= cd.minClear;
               T.w.multiplyScalar(-0.45);
               T.v.x *= 0.7; T.v.z *= 0.7;
-            } else if (clear <= 0) {
-              tg.position.y -= clear;
-              T.landed = true;
-              const q0 = tg.quaternion.clone(), p0 = tg.position.clone();
-              this.placeLandedTurret(u, tg, T);
-              // Khối thép đập xuống móp đất đúng chỗ nằm cuối -> đặt lại để tháp tựa vào lòng hố (không lơ lửng trên hố)
-              tg.updateMatrixWorld(true);
-              const restW = tg.getWorldPosition(new THREE.Vector3());
-              if (this.addCrater && Math.hypot(restW.x - u.group.position.x, restW.z - u.group.position.z) >= 12) {
-                this.addCrater(restW.x, restW.z, 5.5, this.palette('GROUND'), 0.35, null, 'DENT');
-                this.placeLandedTurret(u, tg, T);
-              }
-              // Tư thế cuối (tựa vững >= 3 điểm) -> diễn hoạt: lăn / trượt / ngả dần về tư thế đó (lâu hơn nếu bị đẩy xa)
-              const slide = Math.hypot(tg.position.x - p0.x, tg.position.z - p0.z);
-              T.settle = { q0, p0, q1: tg.quaternion.clone(), p1: tg.position.clone(), t: 0, dur: 0.55 + Math.min(1.2, slide / 70) };
-              tg.quaternion.copy(q0); tg.position.copy(p0);
-              tg.getWorldPosition(turretWPos);
-              const landGy = this.groundAt(turretWPos.x, turretWPos.z);
-
-              if (window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('turretLand', turretWPos);
-              // Sinh sóng chấn động bụi đất và mảnh đá văng khi khối thép đập xuống
-              this.spawnDust(turretWPos.x, landGy, turretWPos.z, 1.4, PROFILES.HE, this.palette('GROUND'), false);
-              this.spawnSparks(turretWPos.x, landGy + 1, turretWPos.z, 1.2, { sparks: 1.5 }, true, 0, 0);
-
-              // Nếu cắm nòng, sinh thêm bụi đất chấn động tại điểm miệng nòng cắm xuống cát
-              if (T.scenario === 'LAWN_DART' && u.barrelPivot) {
-                const muzzleLocal = (u.muzzleTipLocal ? u.muzzleTipLocal.clone() : new THREE.Vector3(0, 0, -55));
-                if (u.barrelGroup && u.barrelGroup.parent === u.barrelPivot) {
-                  muzzleLocal.applyEuler(u.barrelGroup.rotation).add(u.barrelGroup.position);
+            } else if (cd.minClear <= 0) {
+              tg.position.y -= cd.minClear;
+              // Trường hợp 1: Mũi nòng chạm đất trước trong khi khối thân tháp pháo vẫn còn đang ở trên cao (cd.bodyClear > 0.9)
+              // -> Phản lực mặt đất tại đầu nòng giữ mũi nòng không xuyên đất, đồng thời tạo mô-men xoắn xoay gập thân tháp đập xuống đất!
+              if (cd.bodyClear > 0.9 && (T.barrelSlideT = (T.barrelSlideT || 0) + dt) < 0.45) {
+                if (!T.muzzleHitFx) {
+                  T.muzzleHitFx = true;
+                  const mW = cd.lowestPt.clone().applyMatrix4(tg.parent.matrixWorld);
+                  const mGy = this.groundAt(mW.x, mW.z);
+                  this.spawnDust(mW.x, mGy, mW.z, 0.95, PROFILES.HE, this.palette('GROUND'), false);
+                  this.spawnSparks(mW.x, mGy + 0.5, mW.z, 0.85, { sparks: 1.1 }, true, 0, 0);
                 }
-                muzzleLocal.applyEuler(u.barrelPivot.rotation).add(u.barrelPivot.position);
-                muzzleLocal.applyEuler(tg.rotation).add(tg.position);
-                const muzzleWPos = muzzleLocal.applyMatrix4(tg.parent.matrixWorld);
-                const mGy = this.groundAt(muzzleWPos.x, muzzleWPos.z);
-                this.spawnDust(muzzleWPos.x, mGy, muzzleWPos.z, 0.9, PROFILES.HE, this.palette('GROUND'), false);
-                this.spawnSparks(muzzleWPos.x, mGy + 0.5, muzzleWPos.z, 0.8, { sparks: 1.0 }, true, 0, 0);
+                const armX = cd.comLocal.x - cd.lowestPt.x, armZ = cd.comLocal.z - cd.lowestPt.z;
+                const armH = Math.hypot(armX, armZ);
+                if (armH > 0.5) {
+                  const ax = -armZ / armH, az = armX / armH;
+                  const ang = Math.min(0.28, (Math.max(18, -T.v.y) / Math.max(8, armH)) * dt * 1.45);
+                  const dq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(ax, 0, az), ang);
+                  const rel = tg.position.clone().sub(cd.lowestPt).applyQuaternion(dq);
+                  tg.position.copy(cd.lowestPt).add(rel);
+                  tg.quaternion.premultiply(dq);
+                  const cAfter = this.turretFloorClear(tg, T, tg.quaternion, tg.position, T.age < 0.15);
+                  if (cAfter < 0) tg.position.y -= cAfter;
+                }
+                T.v.y = Math.min(-12, T.v.y * 0.85);
+                T.v.x *= Math.pow(0.25, dt);
+                T.v.z *= Math.pow(0.25, dt);
+                T.w.multiplyScalar(Math.pow(0.15, dt));
+              } else {
+                // Trường hợp 2: Khối thân tháp pháo đập xuống mặt đất!
+                // Nếu rơi từ trên cao với vận tốc lớn và chưa nảy lần nào -> tạo một cú nảy đầm của khối thép hàng chục tấn
+                if (!T.bodyBounced && T.v.y < -16) {
+                  T.bodyBounced = true;
+                  tg.getWorldPosition(turretWPos);
+                  const landGy = this.groundAt(turretWPos.x, turretWPos.z);
+                  if (window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('turretLand', turretWPos);
+                  this.spawnDust(turretWPos.x, landGy, turretWPos.z, 1.4, PROFILES.HE, this.palette('GROUND'), false);
+                  this.spawnSparks(turretWPos.x, landGy + 1, turretWPos.z, 1.2, { sparks: 1.5 }, true, 0, 0);
+                  if (this.addCrater && Math.hypot(turretWPos.x - u.group.position.x, turretWPos.z - u.group.position.z) >= 12) {
+                    this.addCrater(turretWPos.x, turretWPos.z, 5.5, this.palette('GROUND'), 0.35, null, 'DENT');
+                  }
+                  // Nảy nhẹ lên rồi rơi xuống nằm yên (hệ số nảy thép trên cát ~ 0.18 - 0.22)
+                  T.v.y = Math.min(13, -T.v.y * 0.20);
+                  T.v.x *= 0.42;
+                  T.v.z *= 0.42;
+                  T.w.multiplyScalar(0.3);
+                  T.w.x += (Math.random() - 0.5) * 1.1;
+                  T.w.z += (Math.random() - 0.5) * 1.1;
+                } else {
+                  // Chốt tiếp đất hoàn toàn -> giải bài toán hạ trọng tâm để cả thân tháp và nòng pháo tựa sát mặt đất
+                  T.landed = true;
+                  const q0 = tg.quaternion.clone(), p0 = tg.position.clone();
+                  this.placeLandedTurret(u, tg, T);
+                  tg.updateMatrixWorld(true);
+                  const restW = tg.getWorldPosition(new THREE.Vector3());
+                  if (!T.bodyBounced && this.addCrater && Math.hypot(restW.x - u.group.position.x, restW.z - u.group.position.z) >= 12) {
+                    this.addCrater(restW.x, restW.z, 5.5, this.palette('GROUND'), 0.35, null, 'DENT');
+                    this.placeLandedTurret(u, tg, T);
+                  }
+                  const slide = Math.hypot(tg.position.x - p0.x, tg.position.z - p0.z);
+                  T.settle = { q0, p0, q1: tg.quaternion.clone(), p1: tg.position.clone(), t: 0, dur: 0.32 + Math.min(0.55, slide / 75) };
+                  tg.quaternion.copy(q0); tg.position.copy(p0);
+                  tg.getWorldPosition(turretWPos);
+                  const landGy = this.groundAt(turretWPos.x, turretWPos.z);
+
+                  if (!T.bodyBounced && window.soundEngine && window.soundEngine.secondaryAt) window.soundEngine.secondaryAt('turretLand', turretWPos);
+                  this.spawnDust(turretWPos.x, landGy, turretWPos.z, T.bodyBounced ? 0.85 : 1.35, PROFILES.HE, this.palette('GROUND'), false);
+                  this.spawnSparks(turretWPos.x, landGy + 0.8, turretWPos.z, T.bodyBounced ? 0.75 : 1.15, { sparks: 1.2 }, true, 0, 0);
+                }
               }
             }
           }
@@ -4872,10 +5977,10 @@
             W.plumeT = rand(0.28, 0.42);   // dày, loãng -> cột liền; trước đây 0,6-0,9 s một cụm đặc: chuỗi bóng tròn rời
             const pk = fireMax * burn;
             const pp = fl.eng > fl.ring ? eng : CAB_CENTER[type] ? this.vehicleLocalToWorld(u, CAB_CENTER[type]) : ringPos;
-            if (pk > 0.25 && !(u.waterY !== null && u.waterY !== undefined && pp.y < u.waterY + 0.5)) {
+            if (pk > 0.45 && !(u.waterY !== null && u.waterY !== undefined && pp.y < u.waterY + 0.5)) {
               const g = rand(0.05, 0.09);
               this.smoke.add({
-                x: pp.x + rand(-5, 5), y: pp.y + rand(22, 32), z: pp.z + rand(-5, 5), vx: rand(-4, 4), vy: rand(20, 34), vz: rand(-4, 4),
+                x: pp.x + rand(-5, 5), y: pp.y + rand(9, 15), z: pp.z + rand(-5, 5), vx: rand(-4, 4), vy: rand(20, 34), vz: rand(-4, 4),
                 size: rand(18, 25) * fireScale, grow: 11, drag: 0.22, grav: -6, life: rand(12, 17), alpha: 0.3 * Math.min(1, pk + 0.2), fadeIn: 1.0, fadePow: 1.8,
                 c0: [g, g, g], c1: [g * 2.8, g * 2.7, g * 2.6], cell: 0, floor: false
               });
@@ -4932,14 +6037,14 @@
               const jetDur = W.torch ? (ringOpen ? 2.5 : W.torch.dur + 1.5) : 0;
               for (const h of holes) {
                 if (W.detonated && age < jetDur) this.emitJet(h.p, (1 - age / jetDur) * (ringOpen ? 0.35 : 0.5), ringOpen ? 0.35 : 0.5, W.t * 1.3 + h.p.x, true);
-                else if (Math.random() < (W.detonated ? 0.5 : 0.25) * Math.max(0.15, 1 - W.t / 40)) {
-                  // khói từ khoang qua lỗ nắp (kíp lái mở nắp thoát: khói xám nhạt, sau nổ: khói đen dầu)
+                // Tháp đã văng: khói thoát hết qua vòng tháp hở lớn -> lỗ nắp lái không nhả viên khói lẻ nữa.
+                // Tháp còn: chỉ tuôn sợi khói xơ mềm khi đám cháy trong khoang còn mạnh
+                else if (!ringOpen && fl.ring > 0.15 && Math.random() < (W.detonated ? 0.5 : 0.3) * Math.max(0.2, 1 - W.t / 40)) {
                   const g = W.detonated ? rand(0.05, 0.1) : rand(0.18, 0.28);
                   this.smoke.add({
-                    x: h.p.x + rand(-0.8, 0.8), y: h.p.y + 1.5, z: h.p.z + rand(-0.8, 0.8), vx: rand(-3, 3), vy: rand(18, 30), vz: rand(-3, 3),
-                    // nở nhanh, nhạt: tuôn thành dải khói tơi chứ không thành chùm viên tròn đen nhỏ quanh nắp
-                    size: rand(4, 6), grow: 10, drag: 0.8, grav: -4, life: rand(2.5, 4), alpha: W.detonated ? 0.5 : 0.35, fadeIn: 0.2,
-                    c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 0, floor: false
+                    x: h.p.x + rand(-0.8, 0.8), y: h.p.y + 1, z: h.p.z + rand(-0.8, 0.8), vx: rand(-2.5, 2.5), vy: rand(9, 15), vz: rand(-2.5, 2.5),
+                    size: rand(6.5, 9.5), grow: 9, drag: 0.8, grav: -4, life: rand(2.5, 4), alpha: W.detonated ? 0.4 : 0.3, fadeIn: 0.4,
+                    rot: Math.random() * 6.28, c0: [g, g, g], c1: [g * 1.8, g * 1.75, g * 1.7], cell: 2, floor: false
                   });
                 }
               }
@@ -4950,7 +6055,7 @@
             W.motor.lastT = W.t;
             this.emitMotor(u, W);
           }
-          if (u.fxEmit > 0.095) {
+          if (u.fxEmit > 0.14) {
             u.fxEmit = 0;
             const cab = CAB_OPENINGS[type];
             // xe cabin kín: lửa khoang người đi ra qua ô cửa (emitCabFire), không đặt nguồn lửa giữa nóc;
@@ -4976,20 +6081,12 @@
                 // Lưỡi lửa: gốc to, bốc nhanh lên nhờ khí nóng (grav âm = lực nổi), vuốt nhỏ dần ở ngọn -> cao 2-5 m;
                 // nền than đỏ rực sát chỗ cháy. Lửa to (lv cao) thì liếm dày, nhiều lưỡi hơn
                 const s0 = burn * (0.35 + 0.65 * lv) * fireScale;
-                const nF = 1 + (Math.random() < lv * 0.5 ? 1 : 0);
+                const nF = lv > 0.45 ? (2 + (Math.random() < lv ? 2 : 1)) : (1 + (Math.random() < lv * 0.5 ? 1 : 0));
                 for (let j = 0; j < nF; j++) {
                   this.fire.add({
-                    x: src.x + rand(-4, 4) * (0.4 + lv), y: src.y + rand(0, 2), z: src.z + rand(-4, 4) * (0.4 + lv), vx: rand(-4, 4), vy: rand(26, 52) * (0.5 + 0.5 * lv), vz: rand(-4, 4),
-                    // ngọn lưỡi lửa nguội về đỏ sẫm (cộng sáng rất ít) -> tự mờ vào khói, không thành đốm cam tròn đều
-                    size: rand(6.5, 11.5) * s0, grow: -4, drag: 1.1, grav: -14, life: rand(0.45, 0.85), alpha: 0.8, fadeIn: 0.04, fadePow: 1,
-                    rotV: rand(-2.5, 2.5), c0: Math.random() < 0.35 ? [1, 0.84, 0.5] : [1, 0.7, 0.32], c1: [0.45, 0.09, 0.02], colorRate: 1.2, cell: 1, floor: false
-                  });
-                }
-                if (Math.random() < 0.5) {
-                  this.fire.add({
-                    x: src.x + rand(-3, 3) * lv, y: src.y + 0.5, z: src.z + rand(-3, 3) * lv, vx: rand(-2, 2), vy: rand(4, 10), vz: rand(-2, 2),
-                    size: rand(7, 10) * s0, grow: -2, life: rand(0.3, 0.5), alpha: 0.9, fadeIn: 0.03,
-                    c0: [1, 0.55, 0.18], c1: [0.6, 0.12, 0.02], cell: 1, floor: false
+                    x: src.x + rand(-3.5, 3.5) * (0.4 + lv), y: src.y + rand(0, 1.8), z: src.z + rand(-3.5, 3.5) * (0.4 + lv), vx: rand(-3.5, 3.5), vy: rand(35, 65) * (0.5 + 0.5 * lv), vz: rand(-3.5, 3.5),
+                    size: rand(6.5, 11.5) * s0, grow: -5.5, drag: 1.2, grav: -30, life: rand(0.38, 0.72), alpha: 0.88, fadeIn: 0.04, fadePow: 1,
+                    rotV: rand(-2.5, 2.5), c0: Math.random() < 0.35 ? [1, 0.86, 0.52] : [1, 0.72, 0.34], c1: [0.45, 0.09, 0.02], colorRate: 1.3, cell: 1, floor: false
                   });
                 }
               }
@@ -5002,14 +6099,14 @@
                 });
               }
               if (lv > 0.15 && (!glow || lv > glow[1])) glow = [src, lv];
-              if (Math.random() < 0.28 + 0.35 * lv) {
+              // khói phát ĐỀU mỗi nhịp (không bốc thăm) khi lửa còn đáng kể; lửa tàn thì thưa dần
+              if (lv > 0.12 || Math.random() < lv * 6) {
                 // khói: lửa nhỏ / âm ỉ -> xám nhạt; lửa dầu to -> đen đặc
                 const g = lv > 0.5 ? rand(0.05, 0.1) : rand(0.16, 0.3) - lv * 0.18;
                 this.smoke.add({
-                  x: src.x + rand(-3, 3), y: src.y + 6, z: src.z + rand(-3, 3), vx: rand(-4, 4), vy: rand(18, 30) * (0.6 + 0.4 * lv), vz: rand(-4, 4),
-                  // sinh to, loãng, nở nhanh & hiện dần -> các cụm chồng khít thành dải khói cuộn; trước đây cụm nhỏ đặc nở
-                  // chậm tách thành từng viên tròn đen nối đuôi nhau
-                  size: rand(11, 15) * (0.55 + 0.45 * lv), grow: 11, drag: 0.5, grav: -4, life: rand(3.0, 4.5), alpha: 0.36 + 0.2 * lv, fadeIn: 0.4,
+                  // sinh ngay trong lưỡi lửa, bay chậm, to -> các búp chồng khít thành cột khói liền, không thành viên rời
+                  x: src.x + rand(-3, 3), y: src.y + rand(2.5, 4.5), z: src.z + rand(-3, 3), vx: rand(-4, 4), vy: rand(11, 18) * (0.65 + 0.35 * lv), vz: rand(-4, 4),
+                  size: rand(12, 16) * (0.65 + 0.35 * lv), grow: 11, drag: 0.5, grav: -4, life: rand(3.0, 4.5), alpha: 0.3 + 0.2 * lv, fadeIn: 0.45,
                   c0: [g, g, g], c1: [g * 2.4, g * 2.3, g * 2.2], cell: 0, floor: false
                 });
               }
@@ -5037,18 +6134,13 @@
             // xe chạy: lửa và khói bị gió quạt ngả về phía sau xe
             const sp = u.speed || 0, ba = u.bodyAngle || 0;
             const wx = Math.sin(ba) * sp * 0.25, wz = Math.cos(ba) * sp * 0.25;
-            // gốc lửa nóng (nhỏ, sáng, gần như trắng) bám sát chỗ cháy
-            this.fire.add({
-              x: fp.x + rand(-0.8, 0.8), y: fp.y + 0.3, z: fp.z + rand(-0.8, 0.8), vx: wx, vy: rand(4, 8), vz: wz,
-              size: rand(2, 3.2) * fade, grow: -1, life: rand(0.18, 0.3), alpha: 1, fadeIn: 0.02, c0: [1, 0.93, 0.72], c1: [1, 0.55, 0.15], cell: 1, floor: false
-            });
-            // 2-3 lưỡi lửa liếm lên, bốc nhanh nhờ khí nóng (grav âm), co nhỏ dần ở ngọn
-            const nT = 1 + (Math.random() < fade * 0.7 ? 1 : 0);
+            // Lưỡi lửa liếm bốc nhanh lên trời theo luồng khí nóng đối lưu (co nhọn ở ngọn, chuyển động vút cao tránh tạo đốm tròn cam tĩnh)
+            const nT = 1 + (Math.random() < fade * 0.8 ? 1 : 0);
             for (let j = 0; j < nT; j++) {
               this.fire.add({
-                x: fp.x + rand(-1.6, 1.6), y: fp.y + rand(0.4, 1.4), z: fp.z + rand(-1.6, 1.6), vx: rand(-2, 2) + wx, vy: rand(16, 30) * (0.6 + 0.4 * fade), vz: rand(-2, 2) + wz,
-                size: rand(3, 5.5) * fade, grow: -3.2, drag: 1, grav: -12, life: rand(0.35, 0.65), alpha: 0.92, fadeIn: 0.03,
-                c0: [1, 0.7, 0.28], c1: [0.75, 0.16, 0.02], cell: 1, floor: false
+                x: fp.x + rand(-0.8, 0.8), y: fp.y + rand(0.2, 0.8), z: fp.z + rand(-0.8, 0.8), vx: rand(-1.5, 1.5) + wx, vy: rand(26, 48) * (0.6 + 0.4 * fade), vz: rand(-1.5, 1.5) + wz,
+                size: rand(3.0, 5.2) * fade, grow: -4.2, drag: 1.2, grav: -28, life: rand(0.28, 0.52), alpha: 0.9, fadeIn: 0.03,
+                c0: [1, 0.82, 0.42], c1: [0.65, 0.14, 0.02], cell: 1, floor: false
               });
             }
             // tàn lửa: chấm đỏ cam bay lên cao, lắc lư, tắt dần
@@ -5063,8 +6155,8 @@
             if (Math.random() < 0.42) {
               const g = rand(0.07, 0.14);
               this.smoke.add({
-                x: fp.x + rand(-1.4, 1.4), y: fp.y + 3.5, z: fp.z + rand(-1.4, 1.4), vx: rand(-5, 5) + wx * 1.5, vy: rand(12, 23), vz: rand(-5, 5) + wz * 1.5,
-                size: rand(3.5, 6.2) * (0.6 + 0.4 * fade), grow: 6, drag: 0.52, grav: -3.2, life: rand(2.5, 4.2), alpha: 0.42, fadeIn: 0.18,
+                x: fp.x + rand(-1.4, 1.4), y: fp.y + 2.5, z: fp.z + rand(-1.4, 1.4), vx: rand(-5, 5) + wx * 1.5, vy: rand(8, 14), vz: rand(-5, 5) + wz * 1.5,
+                size: rand(6, 9) * (0.6 + 0.4 * fade), grow: 7, drag: 0.52, grav: -3.2, life: rand(2.5, 4.2), alpha: 0.36, fadeIn: 0.32,
                 c0: [g, g, g], c1: [g * 2.4, g * 2.3, g * 2.2], cell: 0, floor: false
               });
             }
@@ -5098,8 +6190,8 @@
             const wetK = Math.max(0, Math.min(1, (u._engDouse || 0) / 25));   // máy còn ướt: khói ngả trắng hơi nước
             const g0 = 0.36 - severity * 0.19, g = g0 + (0.8 - g0) * wetK;
             this.smoke.add({
-              x: eng.x + rand(-3.5, 3.5), y: eng.y + 1, z: eng.z + rand(-3.5, 3.5), vx: rand(-5, 5), vy: rand(10, 19), vz: rand(-5, 5),
-              size: rand(3, 5) * (0.75 + severity * 0.55), grow: 5.5, drag: 0.52, grav: -2.7, life: rand(2.2, 3.6), alpha: 0.4 - 0.1 * wetK, fadeIn: 0.22,
+              x: eng.x + rand(-3.5, 3.5), y: eng.y + 1, z: eng.z + rand(-3.5, 3.5), vx: rand(-5, 5), vy: rand(8, 14), vz: rand(-5, 5),
+              size: rand(6, 9) * (0.75 + severity * 0.55), grow: 6.5, drag: 0.52, grav: -2.7, life: rand(2.2, 3.6), alpha: 0.32 - 0.08 * wetK, fadeIn: 0.32,
               c0: [g, g, g], c1: [g * 1.8 + 0.1, g * 1.8 + 0.1, g * 1.75 + 0.1].map(v => Math.min(1, v)), cell: 0, floor: false
             });
             if (ratio < 0.3 && wetK <= 0) {
@@ -5546,9 +6638,11 @@
       this.vehicles = [];
       this.onSound = null;
       REGISTRY.set(scene, this);
-      this.groundAt = (x, z) => {
+      this.groundAt = (x, z, refY) => {
         const t = this.terrainOf();
-        return t && t.getElevationAt ? t.getElevationAt(x, z) : 0;
+        if (!t) return 0;
+        if (t.getVehicleGroundAt) return t.getVehicleGroundAt(x, z, refY);
+        return t.getElevationAt ? t.getElevationAt(x, z) : 0;
       };
       // Đáy trần phía trên (x, z) (null: trời trống). Kèm theo trên chính hàm: .top = mặt trên mái (hạt sinh thấp hơn là
       // hạt trong hầm), .ox/.oz = hướng ra cửa gần nhất (khói dồn dưới trần chảy về đó). Hầm cứ điểm & boong-ke: luôn xét;
@@ -7681,9 +8775,18 @@
       return SS.near && SS.near(x, z, 60) ? Math.min(d, 45) : d;
     }
     addLight(x, y, z, s, life, low = false, flicker = false) {
+      if (Array.isArray(s)) {
+        // Tương thích an toàn nếu người gọi truyền mảng màu [r, g, b] vào vị trí của s
+        const rgb = s;
+        const dist = typeof life === 'number' ? life * 100 : 120;
+        const dur = typeof low === 'number' ? low : 0.35;
+        return this.flashLight(x, y, z, rgb, dist, dur, 6);
+      }
+      if (typeof s !== 'number' || isNaN(s) || s <= 0) s = 1.0;
+      if (typeof life !== 'number' || isNaN(life) || life <= 0) life = 0.3;
       if (LOD.keep < 0.5 || typeof SpgFXPool === 'undefined' || !SpgFXPool.muzzleLight) return;   // xa / ngoài khung nhìn: bỏ đèn chớp
       const reach = this.lightReach(x, y, z, 300 * s);
-      if (reach <= 0) return;
+      if (!reach || isNaN(reach) || reach <= 0) return;
       const l = SpgFXPool.muzzleLight(this.scene, { life, low });
       if (!l) return;
       l.position.set(x, y, z);
@@ -10007,8 +11110,8 @@
           if (Math.random() < 0.35) {
             const g = rand(0.1, 0.18);
             this.smoke.add({
-              x: e.x, y: e.y + e.size, z: e.z, vx: rand(-3, 3), vy: rand(10, 18), vz: rand(-3, 3),
-              size: e.size * 1.6, grow: e.size * 1.2, drag: 0.4, grav: -3, life: rand(2, 3.5), alpha: 0.45, fadeIn: 0.2,
+              x: e.x + rand(-1, 1) * e.size * 0.4, y: e.y + e.size * 0.6, z: e.z + rand(-1, 1) * e.size * 0.4, vx: rand(-3, 3), vy: rand(8, 14), vz: rand(-3, 3),
+              size: e.size * 1.9, grow: e.size * 1.2, drag: 0.4, grav: -3, life: rand(2, 3.5), alpha: 0.38, fadeIn: 0.35,
               c0: [g, g, g], c1: [g * 2, g * 2, g * 1.9], cell: 0, floor: false
             });
           }

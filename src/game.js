@@ -280,9 +280,9 @@ class ArtilleryGame3D {
     let rx = sd.z, rz = -sd.x;
     const rn = Math.hypot(rx, rz) || 1; rx /= rn; rz /= rn;
     const ux = sd.y * rz, uy = sd.z * rx - sd.x * rz, uz = -sd.y * rx;
-    const snap = !(L === this.sunNear && (!this._nearFocus || performance.now() - this._nearFocus.t >= 250));
-    const u = snap ? Math.round((cx * rx + cz * rz) / texel) * texel : (cx * rx + cz * rz);
-    const v = snap ? Math.round((cx * ux + cy * uy + cz * uz) / texel) * texel : (cx * ux + cy * uy + cz * uz);
+    // Luôn khóa tọa độ theo lưới texel của bản đồ bóng cho cả hai tầng đèn để triệt tiêu hoàn toàn rung giật mép bóng khi xe di chuyển
+    const u = Math.round((cx * rx + cz * rz) / texel) * texel;
+    const v = Math.round((cx * ux + cy * uy + cz * uz) / texel) * texel;
     // (đã tính v ở trên)
     const w = cx * sd.x + cy * sd.y + cz * sd.z;
     const fx = rx * u + ux * v + sd.x * w, fy = uy * v + sd.y * w, fz = rz * u + uz * v + sd.z * w;
@@ -2234,31 +2234,48 @@ class ArtilleryGame3D {
   pickSidedSpawn(rng, others, symT) {
     const H = this.worldWidth / 2, lim = H - 220;
     const A = this.battleArea(), zr = Math.max(150, A.r - 160);
-    const S = typeof MapGen !== 'undefined' && MapGen.SPAWN;
-    const isUrban = this.terrain && this.terrain.mapType === 'URBAN';
     const FRIEND_OK = 220;
     let best = null, bestScore = -Infinity;
-    for (let i = 0; i < 120; i++) {
-      let x, z;
-      if (isUrban || !S) {
-        const a = Math.PI * 0.5 + (rng() - 0.5) * Math.PI * 0.85, minR = Math.max(540, zr * 0.65), maxR = Math.min(lim - 80, zr * 0.95);
-        const r = minR + rng() * (maxR - minR);
-        x = A.x + Math.cos(a) * r; z = A.z + Math.sin(a) * r;
-      } else {
-        x = (rng() * 2 - 1) * S.halfX; z = S.blue.z0 + rng() * (S.blue.z1 - S.blue.z0);
-      }
+
+    // Phân bố ngẫu nhiên trên toàn bộ 2 nửa bán cầu giao tranh (Xanh z > 0, Đỏ z < 0)
+    // Tận dụng toàn bộ chiều sâu và chiều rộng của lòng chảo chiến trường
+    const minR = Math.max(450, zr * 0.22);
+    const maxR = Math.min(lim - 100, zr * 0.95);
+
+    for (let i = 0; i < 180; i++) {
+      // Quạt góc rộng bao quát toàn bộ nửa bán cầu phía Nam (Xanh z > 0)
+      const a = Math.PI * 0.5 + (rng() - 0.5) * Math.PI * 0.88;
+      const r = minR + Math.sqrt(rng()) * (maxR - minR);
+      const x = A.x + Math.cos(a) * r;
+      const z = A.z + Math.sin(a) * r;
+
       if (Math.abs(x) > lim || Math.abs(z) > lim) continue;
+      if (z < 320) continue; // Giữ khoảng cách tối thiểu với đường ranh giới giữa 2 phe (z = 0)
+
       const [mx, mz] = symT(x, z);
+      if (mz > -320) continue; // Phía Đỏ cũng phải nằm trọn ở nửa bán cầu Bắc
+
       if (!this.isSpawnGroundClear(x, z) || !this.isSpawnGroundClear(mx, mz)) continue;
+
       let dFriend = Infinity;
-      for (const u of others) { const d = Math.hypot(u.x - x, u.z - z); if (d < dFriend) dFriend = d; }
-      if (dFriend < 80) continue;
+      for (const u of others) {
+        const d = Math.hypot(u.x - x, u.z - z);
+        if (d < dFriend) dFriend = d;
+      }
+      if (dFriend < 65) continue;
+
       const score = Math.min(dFriend, FRIEND_OK) + rng() * 30;
-      if (score > bestScore) { bestScore = score; best = { x, z }; }
-      if (dFriend >= FRIEND_OK && i >= 12) break;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, z };
+      }
+      if (dFriend >= FRIEND_OK && i >= 16) break;
     }
-    // chật quá: một điểm giữa khu xuất kích, lệch ngẫu nhiên
-    if (!best) best = S && !isUrban ? { x: (rng() - 0.5) * 400, z: (S.blue.z0 + S.blue.z1) / 2 } : { x: A.x + (rng() - 0.5) * 400, z: A.z + Math.min(zr * 0.85, 880) };
+
+    if (!best) {
+      // Dự phòng an toàn ở nửa bán cầu Nam nếu địa hình quá gồ ghề
+      best = { x: A.x + (rng() - 0.5) * 450, z: A.z + Math.min(zr * 0.65, 950) };
+    }
     return { x: best.x, z: best.z, bodyAngle: this.spawnFacing(best.x, best.z, rng) };
   }
 
@@ -2359,7 +2376,12 @@ class ArtilleryGame3D {
 
       if (e.code === 'Space') {
         e.preventDefault();
-        this.triggerPlayerFire();
+        if (this.player && this.player.isDead) {
+          this.playerDeathCamTimer = 0; // Hủy thời gian chờ xem xác để chuyển ngay sang đồng đội
+          this.pickNextSpectateTarget();
+        } else {
+          this.triggerPlayerFire();
+        }
       }
 
       // Phím G: phóng 1 loạt lựu đạn khói (cần Ống phóng lựu khói + lựu đạn khói trong kho)
@@ -2692,7 +2714,7 @@ class ArtilleryGame3D {
 
     // CAMERA: con lăn chuột = gần / xa (kéo xa camera nâng dần lên cao), giữ chuột giữa + kéo = nhìn quanh xe
     this.renderer.domElement.addEventListener('wheel', (e) => {
-      if (!this.isGameStarted || !this._cam) return;
+      if (!this.isGameStarted || !this._cam || window.FREECAM_LAB) return;
       e.preventDefault();
       const C = this._cam;
       const S = this._sight;
@@ -6318,37 +6340,42 @@ class ArtilleryGame3D {
     const killerName = killer ? killer.name : cause.toUpperCase();
     const penalty = this.respawnWaitPenalty || 10.0;
 
-    // Cơ chế hồi sinh vô hạn lần - Phạt 10 giây mỗi lần hy sinh
     // Bảng hạ gục: 1 dòng ngắn; xe người chơi liên quan thì nổi bật (đỏ khi mình bị hạ, xanh khi mình hạ địch)
-    if (victim.isPlayer && killer === victim) this.addCombatLog(`[[skull]] Bạn dính mảnh văng của chính đạn mình — xuất kích lại sau ${penalty} giây`, 'defeat');
-    else if (victim.isPlayer) this.addCombatLog(`[[skull]] Bạn bị ${killer ? killer.name : cause}${teamKill ? ' (đồng đội bắn nhầm)' : ''} hạ — xuất kích lại sau ${penalty} giây`, 'defeat');
+    if (victim.isPlayer && killer === victim) this.addCombatLog(`[[skull]] Bạn đã hy sinh vì chính mảnh đạn của mình! Bấm [Cách] để đổi góc nhìn đồng đội`, 'defeat');
+    else if (victim.isPlayer) this.addCombatLog(`[[skull]] Bạn bị ${killer ? killer.name : cause}${teamKill ? ' (đồng đội bắn nhầm)' : ''} hạ! Chuyển sang theo dõi đồng đội...`, 'defeat');
     else if (killer && killer.isPlayer && teamKill) this.addCombatLog(`[[alert-triangle]] Bạn bắn nhầm hạ đồng đội ${victim.name}!`, 'alert');
     else if (killer && killer.isPlayer) this.addCombatLog(`[[target-arrow]] Bạn hạ ${victim.name}`, 'victory');
     else this.addCombatLog(`[[skull]] ${killerName} hạ ${victim.name}`, 'feed');
     if (killer && killer === this.player && !teamKill && this.infantry) this.infantry.markHit('kill');
 
-    this.respawnQueue.push({
-      unit: victim,
-      timer: penalty,
-      totalWait: penalty,
-      isBlue: isBlue
-    });
-
-    // Nếu xe người chơi bị bắn hạ: Bật banner đếm ngược 10 giây phạt hồi sinh
+    // NẾU LÀ NGƯỜI CHƠI (USER): CHẾT LÀ HẾT (PERMA-DEATH), KHÔNG CHO HỒI SINH
     if (victim.isPlayer) {
-      this._playerDeaths = (this._playerDeaths || 0) + 1;   // thống kê cuối trận (tài khoản)
+      this._playerDeaths = (this._playerDeaths || 0) + 1;
+      this.isPlayerPermanentlyDead = true;
+
+      // Giữ lại xác xe bốc cháy trên chiến trường
+      this.keepWreck(victim);
+
+      // Thoát chế độ kính ngắm nếu đang soi
+      if (this._sight) this.setSightMode(false);
+
+      // Ẩn bảng phạt hồi sinh vì không cho hồi sinh lại
       const respawnBanner = domById('player-respawn-banner');
-      const timeValEl = domById('player-respawn-time');
-      const barFillEl = domById('player-respawn-bar');
-      if (respawnBanner) {
-        respawnBanner.classList.remove('hidden');
-      }
-      if (timeValEl) {
-        timeValEl.textContent = `${penalty.toFixed(1)}S`;
-      }
-      if (barFillEl) {
-        barFillEl.style.width = '100%';
-      }
+      if (respawnBanner) respawnBanner.classList.add('hidden');
+
+      // Dành 5.0 giây lia camera lên cao chiêm ngưỡng xác xe nổ tung và bốc cháy trước khi chuyển sang đồng đội
+      this.playerDeathCamDuration = 5.0;
+      this.playerDeathCamTimer = 5.0;
+      this.spectateUnit = null;
+      this.addCombatLog('[[skull]] Xe của bạn đã bị bắn hạ! Đang quan sát hiện trường từ trên cao (Bấm [Cách] để chuyển ngay sang đồng đội)', 'defeat');
+    } else {
+      // Các xe bot vẫn vào hàng đợi xuất kích lại
+      this.respawnQueue.push({
+        unit: victim,
+        timer: penalty,
+        totalWait: penalty,
+        isBlue: isBlue
+      });
     }
   }
 
@@ -6525,7 +6552,7 @@ class ArtilleryGame3D {
     // điểm nhả khói âm ỉ
     let smokerRef = null;
     if (this.terrain && this.terrain.propSet && Array.isArray(this.terrain.propSet.smokers)) {
-      smokerRef = { x: W.x, y: (W.y || 0) + 7, z: W.z, phase: Math.random() * 3 };
+      smokerRef = { x: W.x, y: (W.y || 0) + 7, z: W.z, phase: Math.random() * 3, ttl: 25 };
       this.terrain.propSet.smokers.push(smokerRef);
     }
     this.persistentWrecks = this.persistentWrecks || [];
@@ -7951,9 +7978,61 @@ class ArtilleryGame3D {
     if (S.sigEdge !== T._sig) { T._sig = S.sigEdge; T.sig.hidden = !S.sigEdge; }
   }
 
+
+  // Chọn ngẫu nhiên một đồng đội cùng phe còn sống để theo dõi (spectate)
+  pickSpectateTeammate() {
+    if (!this.units || !this.units.length) return null;
+    const myTeam = this.player ? this.player.team : 'BLUE';
+    // Danh sách đồng đội cùng phe đang còn sống (trừ người chơi đã chết)
+    const aliveAllies = this.units.filter(u => u && !u.isDead && u !== this.player && u.team === myTeam);
+    if (aliveAllies.length > 0) {
+      const idx = Math.floor(Math.random() * aliveAllies.length);
+      return aliveAllies[idx];
+    }
+    // Nếu toàn bộ đồng đội cùng phe đã hy sinh, chuyển sang theo dõi bất kỳ xe nào còn sống
+    const aliveAny = this.units.filter(u => u && !u.isDead && u !== this.player);
+    if (aliveAny.length > 0) {
+      return aliveAny[Math.floor(Math.random() * aliveAny.length)];
+    }
+    return null;
+  }
+
+  // Chuyển sang theo dõi đồng đội tiếp theo và thông báo
+  pickNextSpectateTarget() {
+    const next = this.pickSpectateTeammate();
+    if (next) {
+      this.spectateUnit = next;
+      const allyName = next.name || 'Đồng đội';
+      this.addCombatLog(`[[eye]] Đang theo dõi ${allyName} - Bấm [Cách] để chuyển đồng đội khác`, 'tip');
+    } else {
+      this.spectateUnit = null;
+      this.addCombatLog(`[[alert-triangle]] Toàn bộ đồng đội trên chiến trường đã hy sinh!`, 'alert');
+    }
+  }
+
   updateChaseCamera(dt) {
     if (this._craterPreviewActive) return;
-    const P = this.player, cam = this.camera;
+
+    // Khi người chơi đã hy sinh:
+    // 1. Dành 5.0 giây đầu tiên lia camera lên cao chiêm ngưỡng xác xe bốc cháy
+    // 2. Hết thời gian chờ (hoặc khi bấm phím Cách), tự động chuyển sang theo dõi đồng đội còn sống
+    let activePlayer = this.player;
+    if (this.player && this.player.isDead) {
+      if (this.playerDeathCamTimer !== undefined && this.playerDeathCamTimer > 0) {
+        this.playerDeathCamTimer -= dt;
+        activePlayer = this.player;
+        if (this.playerDeathCamTimer <= 0) {
+          this.pickNextSpectateTarget();
+          activePlayer = this.spectateUnit || this.player;
+        }
+      } else {
+        if (!this.spectateUnit || this.spectateUnit.isDead) {
+          this.spectateUnit = this.pickSpectateTeammate();
+        }
+        activePlayer = this.spectateUnit || this.player;
+      }
+    }
+    const P = activePlayer, cam = this.camera;
     const C = this._cam || (this._cam = { unit: null, zoom: 1, zoomT: 1, chaseZoom: 0, yaw: 0, y: 0, px: 0, pz: 0, phi: 0, R: 0, freeYaw: 0, freePitch: 0, treeT: 0 });
     this.updateDroneBattery(dt);   // trước camera lính: lính mang UAV cảm tử cũng cần cập nhật UAV mỗi khung
     if (this.infantry && this.infantry.placeCamera()) return;
@@ -8060,6 +8139,34 @@ class ArtilleryGame3D {
     C.phi += (phi - C.phi) * (1 - Math.exp(-dt * (phi > C.phi ? 10 : 2.2)));
 
     const SH = this.cameraShakeOffset(dt);
+
+    // KHI XE NGƯỜI CHƠI BỊ BẮN HẠ: LIA CAMERA LÊN CAO NHÌN XUỐNG XÁC XE BỐC CHÁY
+    const isDeathCam = P === this.player && P.isDead && (this.playerDeathCamTimer > 0);
+    if (isDeathCam) {
+      const dur = this.playerDeathCamDuration || 5.0;
+      const progress = Math.max(0, Math.min(1, 1 - (this.playerDeathCamTimer / dur)));
+      const ease = 1 - Math.pow(1 - progress, 2); // mượt dần khi lên cao
+
+      // Quay chậm quanh xác xe
+      C.yaw = wrap(C.yaw + dt * 0.32);
+
+      // Nâng độ cao camera lên cao (từ ~25m lên ~85m) và mở rộng góc nhìn toàn cảnh
+      const liftY = 22 + ease * 68;
+      const orbitDist = 30 + ease * 45;
+      const dCamX = C.px - Math.sin(C.yaw) * orbitDist + SH.x;
+      const dCamZ = C.pz - Math.cos(C.yaw) * orbitDist + SH.z;
+      const dCamY = Math.max(pivotY + liftY, this.camObstacleTop(dCamX, dCamZ, near) + 12);
+
+      cam.position.set(dCamX, dCamY, dCamZ);
+      // Ống kính chúc thẳng xuống tâm xác xe đang bốc khói lửa
+      cam.lookAt(C.px, C.y + 3, C.pz);
+      this._camYaw = C.yaw;
+
+      // Cập nhật tâm mặt đất nhìn rõ cho bóng đổ và sương mù
+      this._viewFocus = { x: C.px, z: C.pz };
+      return;
+    }
+
     const cp = Math.cos(C.phi), sp = Math.sin(C.phi);
     const camX = C.px - fx * cp * C.R + SH.x, camZ = C.pz - fz * cp * C.R + SH.z;
     let camY = pivotY + sp * C.R + SH.y;
@@ -9661,7 +9768,7 @@ class ArtilleryGame3D {
   // xe nằm ngoài màn hình (hoặc rất xa) thì tắt hẳn — kiểm tra mỗi khung hình vì camera xoay nhanh.
   updateUnitLOD(dt) {
     const cam = this.camera, cp = cam.position;
-    const gpuHot = typeof GfxQuality !== 'undefined' && (GfxQuality.gpuMs || 0) > 28;
+    const gpuHot = typeof GfxQuality !== 'undefined' && (GfxQuality.gpuMs || 0) > 36;
     const L = this._lodTmp || (this._lodTmp = { fr: new THREE.Frustum(), m: new THREE.Matrix4(), s: new THREE.Sphere(), v: new THREE.Vector3() });
     const v = L.v;
     const setHidden = (o, h) => { if (o._lodH !== h) { o._lodH = h; o.layers.set(h ? 1 : 0); } };
@@ -10184,6 +10291,7 @@ class ArtilleryGame3D {
 
     // Khi đang ở sảnh chờ ghép trận: Xoay nhẹ góc camera toàn cảnh sa mạc làm hình nền động tuyệt đẹp
     if (!this.isGameStarted) {
+      if (this.terrain && this.terrain.update) this.terrain.update(dt);
       if (this._intro) {
         this.updateIntroCamera(dt);
         return;
@@ -10446,6 +10554,10 @@ class ArtilleryGame3D {
         while (dBody < -Math.PI) dBody += Math.PI * 2;
         if (Math.abs(dBody) > 0.5) dBody = 0;
         this._sndBodyAngle = ba;
+        if (window.FREECAM_LAB) {
+          if (window.soundEngine && window.soundEngine.updateEngine) window.soundEngine.updateEngine(0, false, 1, { dead: true });
+          return;
+        }
         const EG = this.player._eng;
         window.soundEngine.updateEngine(speedRatio, !!(EG && EG.lvl > 0.15), this.player.engineLoad || 1.0, {
           turn: dt > 0 ? dBody / dt : 0,
@@ -11789,9 +11901,9 @@ class ArtilleryGame3D {
     const P0 = this.player;
     const moving = !!(P0 && (Math.abs(P0.speed || 0) > 0.15 || (P0._rideV && Math.abs(P0._rideV.speed || 0) > 0.15) || this.keys.KeyW || this.keys.KeyS || this.keys.KeyA || this.keys.KeyD || this.keys.ArrowLeft || this.keys.ArrowRight || Math.abs((P0.bodyAngle || 0) - (this._lastShadowBA || 0)) > 1e-4 || Math.abs((P0.azimuth || 0) - (this._lastShadowAz || 0)) > 0.02)) || camTurning;
     if (P0) { this._lastShadowBA = P0.bodyAngle || 0; this._lastShadowAz = P0.azimuth || 0; }
-    const interval = moving ? 22 : 55;
-    if (now < (this._shadowFrameAt || 0)) return;
-    this._shadowFrameAt = now + interval;
+    // Khi xe hoặc camera di chuyển: cập nhật bóng đổ mỗi khung hình để bóng đi mượt mà theo thân xe, không bị trễ nhịp hay giật cục
+    if (!moving && now < (this._shadowFrameAt || 0)) return;
+    this._shadowFrameAt = now + (moving ? 0 : 100);
     this._shadowFramesSince = 0;
     // tầng bóng gần bám xe mình, hoặc điểm ngắm khi đang soi kính (vẽ cùng lượt với tầng xa)
     const P = this.player, N = this.sunNear, NF = this._nearFocus;

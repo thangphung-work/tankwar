@@ -366,14 +366,14 @@ SoundEngine.mixin(class {
         if (f1 * r > SR * 0.42) return;
         const shape = Math.abs(Math.cos(Math.PI * hitPos * (k + 1.5)));
         const a = (0.25 + shape) * (0.6 + R() * 0.6) / (1 + k * 0.15);
-        const t60 = (link ? 0.035 : brass ? 0.17 : 0.07) / (1 + k * 0.35) * v(0.3);
-        ms.push({ f: f1 * r, t60, a }, { f: f1 * r * (1.002 + R() * 0.006), t60: t60 * 0.8, a: a * (0.3 + R() * 0.5) });
+        const t60 = (link ? 0.025 : brass ? 0.052 : 0.038) / (1 + k * 0.4) * v(0.25);
+        ms.push({ f: f1 * r, t60, a }, { f: f1 * r * (1.002 + R() * 0.006), t60: t60 * 0.7, a: a * (0.3 + R() * 0.4) });
       });
       // nóc xe thép bị gõ khẽ: vài mode trầm tắt rất nhanh (cho tiếng chạm có "nền", không chỉ tiếng tinh)
-      for (let k = 0; k < 6; k++) ms.push({ f: 300 + R() * 900, t60: 0.03, a: link ? 0.12 : 0.25 });
+      for (let k = 0; k < 6; k++) ms.push({ f: 300 + R() * 900, t60: 0.02, a: link ? 0.12 : 0.25 });
       ring(x, ms, 1);
-      // tiếng "tách" của lúc chạm (dải rộng, 1-2 ms)
-      for (let i = 0; i < Math.round(0.002 * SR); i++) y[i0 + i] += (R() * 2 - 1) * 0.12 * Math.exp(-i / (0.0004 * SR));
+      // tiếng "tách" đanh của va chạm đồng thau / thép (xung kích ngắn 1 ms, dứt khoát)
+      for (let i = 0; i < Math.round(0.0018 * SR); i++) y[i0 + i] += (R() * 2 - 1) * 0.32 * Math.exp(-i / (0.00035 * SR));
     } else if (STEEL[kind]) {
       // MỘT cú va của vật bằng thép (mảnh văng, tấm giáp, tháp pháo, thân xe...), xem bảng STEEL. Bản cũ dựng từ vài sóng
       // sin / dải nhiễu hẹp có cao độ rõ -> lần chạm nào cũng kêu "tưng / boong" như gảy đàn, gõ chuông. Ngoài đời:
@@ -637,26 +637,26 @@ SoundEngine.mixin(class {
     }
     const rate = 1 + (Math.random() - 0.5) * 0.12;
     const pile = Math.min(1, this._pile / 18);
-    let tt = t, amp = 1, gap = (link ? 0.05 : 0.07) + Math.random() * 0.06;
-    const n = (link ? 1 : 3) + Math.floor(Math.random() * 3);
+    let tt = t, amp = 1, gap = (link ? 0.045 : 0.055) + Math.random() * 0.04;
+    const n = (link ? 1 : 2) + Math.floor(Math.random() * 2);
     for (let b = 0; b < n; b++) {
       this.playCaseHit(out, tt, kind, rate, amp);
-      if (pile > 0.1 && Math.random() < pile) this.playCaseHit(out, tt + 0.002 + Math.random() * 0.006, kind, rate * (1.1 + Math.random() * 0.25), amp * 0.5 * pile);
-      const e = 0.55 + Math.random() * 0.25;   // hệ số nảy (vỏ kim loại nảy tưng tưng trên thép)
+      if (pile > 0.1 && Math.random() < pile) this.playCaseHit(out, tt + 0.002 + Math.random() * 0.006, kind, rate * (1.1 + Math.random() * 0.25), amp * 0.4 * pile);
+      const e = 0.42 + Math.random() * 0.22;   // hệ số nảy tự nhiên, tắt nhanh
       tt += gap;
       gap *= e;
-      amp *= e * (0.7 + Math.random() * 0.3);
+      amp *= e * (0.6 + Math.random() * 0.25);
       if (gap < 0.012) break;
     }
-    // lăn trên nóc xe: chuỗi tiếng chạm li ti không đều, nhỏ dần
-    if (!link && Math.random() < 0.55) {
-      let rt = tt + 0.02, ra = 0.12 + Math.random() * 0.08;
+    // lăn nhẹ nếu còn động năng: chỉ 1-2 cú nhấp nhỏ, không kéo dài lách cách
+    if (!link && Math.random() < 0.28) {
+      let rt = tt + 0.02, ra = 0.08 + Math.random() * 0.06;
       const f0 = (kind === 'case127' ? 2300 : 1150) * rate;
-      const cnt = 4 + Math.floor(Math.random() * 9);
+      const cnt = 1 + Math.floor(Math.random() * 2);
       for (let i = 0; i < cnt; i++) {
-        this.metal(out, rt, { f0, ratios: [1, 2.76], decay: 0.025, gain: ra * 0.12, click: 0.3 });
-        rt += 0.025 + Math.random() * 0.05;
-        ra *= 0.85 + Math.random() * 0.12;
+        this.metal(out, rt, { f0, ratios: [1, 2.76], decay: 0.018, gain: ra * 0.08, click: 0.25 });
+        rt += 0.03 + Math.random() * 0.04;
+        ra *= 0.65;
       }
     }
   }

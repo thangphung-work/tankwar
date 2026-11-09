@@ -2697,7 +2697,7 @@ float shN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(u.group.quaternion);
         const rc = new THREE.Raycaster(W.ring.clone().addScaledVector(up, 8), up.clone().negate(), 0, 20);
         const hit = rc.intersectObject(u.hullMainMesh, false)[0];
-        cool(fx.addSurfaceMark(hit ? hit.point : W.ring.clone(), up, u.hullMainMesh, 'turretRing', { GATLING: 20, ARTILLERY: 19 }[P.type] || 22, keep));
+        cool(fx.addSurfaceMark(hit ? hit.point : W.ring.clone(), up, u.hullMainMesh, 'turretRing', { GATLING: 20, ARTILLERY: 27 }[P.type] || 22, Object.assign({}, keep, { tankType: P.type })));
       });
       const nPen = (P.kill === 'det' || P.kill === 'blast' ? 5 : 3) + Math.floor(rnd() * 3);
       for (let k = 0; k < nPen; k++) jobs.push(() => {

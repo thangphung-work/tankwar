@@ -1193,7 +1193,8 @@ float gTuftH(vec2 p) {
       col *= mix(vec3(1.0), tone, gGr * (0.55 + 0.45 * smoothstep(150.0, 800.0, gDv)));
     }
     // lùm bụi / cây nhỏ: tán sẫm, mỗi lùm một tông (bụi xanh lam, bụi ô liu, bụi ngả vàng); mép tán tơi, không viền cứng
-    gBushK = gBushD(wp, slope) * smoothstep(350.0, 900.0, gDv) * gGr;
+    // Tắt bụi lùm giả lập ở xa vì tạo các vết tròn lõm như hố bom, khi zoom vào lại biến mất
+    gBushK = 0.0;
     // RỪNG NỀN (mặt nạ từ Backdrop): nền rừng sẫm dưới đám cây + ngọn cây san sát nổi khối (cùng lớp lùm bụi, dày đặc)
     // -> đám rừng xa liền tán, sần sùi như rừng thông thật; cây 3D thưa hơn ở xa vẫn thấy cả mảng rừng
     float gFor = gForXf.z > 0.0 ? texture2D(gForMap, (vGW.xz + gForXf.x) * gForXf.y).r * gGr * smoothstep(500.0, 1300.0, gDv) : 0.0;
@@ -1202,7 +1203,7 @@ float gTuftH(vec2 p) {
       #ifdef GFOR_DBG
       col = vec3(gFor * 3.0, 0.0, 0.0);
       #endif
-      gBushK = max(gBushK, smoothstep(0.05, 0.5, gFor) * 0.95);
+      // gBushK = max(gBushK, smoothstep(0.05, 0.5, gFor) * 0.95);
     }
     if (gBushK > 0.01) {
       gBush0 = gBushH(wp, gBushK);

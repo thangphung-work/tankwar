@@ -929,15 +929,15 @@ class HUDController {
       if (this.game.supplyManager) this.game.supplyManager.drawCargoIcon(ctx, ax, az, AD.kind, 5, SupplyManager.cargoLabel(AD.kind, AD.cash));
     }
 
-    // Khung nhìn camera Viewport (chuẩn Art of War 3)
-    const px = (this.game.player.x + this.worldWidth / 2) * scale;
-    const pz = (this.game.player.z + this.worldDepth / 2) * scale;
+    const activeUnit = (this.game.player && !this.game.player.isDead) ? this.game.player : (this.game.spectateUnit || this.game.player);
+    const px = (activeUnit.x + this.worldWidth / 2) * scale;
+    const pz = (activeUnit.z + this.worldDepth / 2) * scale;
 
     // VÒNG TRÒN BÁN KÍNH TẦM BẮN & ĐIỂM RƠI DỰ KIẾN TRÊN MINIMAP
     const pred = this.currentPrediction || this.ballistics.predictTrajectoryImpact(
-      this.game.player.x, this.game.player.y, this.game.player.z,
-      this.game.player.azimuth, this.game.player.elevation, this.game.player.charge,
-      this.game.terrain, this.game.player
+      activeUnit.x, activeUnit.y, activeUnit.z,
+      activeUnit.azimuth, activeUnit.elevation, activeUnit.charge,
+      this.game.terrain, activeUnit
     );
 
     // 1. Vòng tròn bán kính tầm bắn tối đa của liều phóng hiện tại
@@ -1010,13 +1010,8 @@ class HUDController {
       ctx.fill();
     });
 
-    // Khung nhìn camera Viewport (chuẩn Art of War 3)
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(px - 18, pz - 14, 36, 28);
-
     // Hướng nòng pháo trên Minimap
-    const barrelRad = (this.game.player.azimuth * Math.PI) / 180;
+    const barrelRad = ((activeUnit.azimuth || 0) * Math.PI) / 180;
     ctx.strokeStyle = '#8fc46f';
     ctx.lineWidth = 2;
     ctx.beginPath();
