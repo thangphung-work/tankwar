@@ -3734,12 +3734,12 @@ function MapGenFactory() {
             for (let i = 2; i < rd.pts.length - 2; i += 2) {
               const p = rd.pts[i];
               const dSh = Math.hypot(p[0] - sh.x, p[1] - sh.z);
-              if (dSh > 85 && dSh < 440) {
+              if (dSh > (type === 'DESERT' ? 230 : 85) && dSh < (type === 'DESERT' ? 560 : 440)) {
                 nearRoadNodes.push({ rd, i, dSh });
               }
             }
           }
-          const nOutposts = Math.min(nearRoadNodes.length, Math.floor(R(8, 14)));
+          const nOutposts = Math.min(nearRoadNodes.length, Math.floor(type === 'DESERT' ? R(4, 7) : R(8, 14)));
           const baseKind = type === 'HIGHLAND' ? 'stone' : type === 'DESERT' ? 'mudbrick' : 'warehouse';
           let oi = 0;
           for (let oTries = 0; oi < nOutposts && oTries < 180 && nearRoadNodes.length; oTries++) {
@@ -3757,7 +3757,7 @@ function MapGenFactory() {
             if (!freeOf(hx, hz, Math.max(hw, hd) * 0.6) || isWater(hx, hz) || slopeAt(hx, hz) > 0.45) continue;
             // Nhà quay mặt thẳng ra mặt đường
             const bAng = Math.atan2(nx, nz);
-            const bKind = oi === 0 ? 'warehouse' : (rng() < 0.25 ? 'ruin' : (rng() < 0.5 ? 'farm' : baseKind));
+            const bKind = oi === 0 && type !== 'DESERT' ? 'warehouse' : (rng() < 0.25 ? 'ruin' : (rng() < 0.5 && type !== 'DESERT' ? 'farm' : baseKind));   // (sa mạc: không có nhà nông trại mái ngói đỏ)
             buildings.push({ x: hx, z: hz, w: hw, d: hd, floors: rng() < 0.3 ? 2 : 1, angle: bAng, kind: bKind });
             occupied.push({ x: hx, z: hz, r: Math.max(hw, hd) * 0.65 });
             // Chốt bao cát phòng thủ ngay bên lề đường trước mặt trạm gác
@@ -3924,6 +3924,7 @@ function MapGenFactory() {
       }
     }
     const shrubKind = k => (k === 'pine' || k === 'cypress' || k === 'jungle' || k === 'palm' ? k : 'broadleaf');
+    const underKind = type === 'DESERT' ? 'acacia' : 'broadleaf';   // cây bụi xen dưới tán (sa mạc: keo gai non, không có cây lá rộng)
     const understory = (pts, cr, kind) => {
       let cx = 0, cz = 0;
       for (const p of pts) { cx += p[0]; cz += p[1]; }
@@ -3933,7 +3934,7 @@ function MapGenFactory() {
         const a = R(0, 6.28), d = cr * R(0.6, 1.15) + R(4, 14);
         const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
         if (pts.some(p => Math.hypot(p[0] - x, p[1] - z) < 6) || !treeOK(x, z, 2.5) || slopeAt(x, z) > 0.75) continue;
-        trees.push({ x, z, kind: rng() < 0.7 ? shrubKind(kind) : 'broadleaf', s: R(0.3, 0.55), rot: R(0, 6.28) });
+        trees.push({ x, z, kind: rng() < 0.7 ? shrubKind(kind) : underKind, s: R(0.3, 0.55), rot: R(0, 6.28) });
         k++;
       }
     };
@@ -3942,7 +3943,7 @@ function MapGenFactory() {
     let attempts = 0;
     // đô thị: thêm cây phòng hộ ven căn cứ + vỉa hè; sa mạc: cọ ốc đảo đã trồng, thêm ~45 cây lẻ ngoài ốc đảo
     // (cao nguyên: rừng thông phủ sườn đồi -> gấp đôi số cây, đồi xa không trơn nhẵn như thảm nỉ)
-    const nTrees = type === 'URBAN' ? 280 : type === 'DESERT' ? trees.length + Math.round(B.trees * AREA * 0.3) : Math.round(B.trees * AREA * (type === 'HIGHLAND' ? 3.0 : 1));
+    const nTrees = type === 'URBAN' ? 280 : type === 'DESERT' ? trees.length + Math.round(B.trees * AREA * 0.9) : Math.round(B.trees * AREA * (type === 'HIGHLAND' ? 3.0 : 1));
     while (trees.length < nTrees && attempts < nTrees * 15) {
       attempts++;
       const x = R(-1750, 1750) * K, z = R(-1750, 1750) * K;
@@ -3970,14 +3971,14 @@ function MapGenFactory() {
       // LÙM CÂY: cây ngoài đồng mọc thành từng lùm (hạt rơi quanh cây mẹ), không đứng lẻ loi cách đều như cắm tay. Mỗi
       // hạt thành một lùm 3-14 cây sát nhau, phần lớn cùng loại, cây giữa lùm cao hơn; ~1/8 là cây lẻ. Đô thị (cây vỉa
       // hè / phòng hộ) và cây sa mạc giữ cây lẻ
-      const lone = type === 'URBAN' || type === 'DESERT' || rng() < 0.08;
-      const n = lone ? 1 : Math.min(nTrees - trees.length, 5 + Math.floor(Math.pow(rng(), 1.1) * 18));
-      const cr = 11 + n * 3.8, mine = [];
+      const lone = type === 'URBAN' || rng() < (type === 'DESERT' ? 0.3 : 0.08);
+      const n = lone ? 1 : type === 'DESERT' ? 2 + Math.floor(rng() * 4) : Math.min(nTrees - trees.length, 5 + Math.floor(Math.pow(rng(), 1.1) * 18));
+      const cr = (11 + n * 3.8) * (type === 'DESERT' ? 1.9 : 1), mine = [];
       for (let k = 0, t = 0; k < n && t < n * 5; t++) {
         const a = R(0, 6.28), d = k === 0 ? 0 : Math.sqrt(rng()) * cr;
         const tx = x + Math.cos(a) * d, tz = z + Math.sin(a) * d;
         const kd = k > 0 && rng() < 0.2 ? pick(rng, B.treeKinds) : kind;
-        if (mine.some(m => Math.hypot(m[0] - tx, m[1] - tz) < (kd === 'jungle' ? 9 : 7))) continue;
+        if (mine.some(m => Math.hypot(m[0] - tx, m[1] - tz) < (kd === 'jungle' ? 9 : type === 'DESERT' ? 18 : 7))) continue;
         if (!treeOK(tx, tz, kd === 'jungle' ? 5 : 3.5) || slopeAt(tx, tz) > 0.75) { if (k === 0) break; continue; }
         const core = 1 - d / (cr + 1);
         trees.push({ x: tx, z: tz, kind: kd, s: R(0.7, 1.05) + 0.3 * core, rot: R(0, 6.28) });
@@ -3986,11 +3987,28 @@ function MapGenFactory() {
       }
       // TẦNG CÂY BỤI ven lùm: cây con / bụi thấp mọc quanh rìa lùm (hạt rơi, bóng râm nửa vời) -> lùm cây liền một khối từ
       // tán xuống mặt cỏ, không phải hàng thân trơ cắm thẳng xuống bãi cỏ phẳng
-      if (!lone && mine.length >= 3) understory(mine, cr, kind);
+      if (!lone && mine.length >= 3 && type !== 'DESERT') understory(mine, cr, kind);
     }
 
     // 5b. KHOẢNH RỪNG RẬM & VỈA RỪNG DÀY: cây mọc dày đặc, phân bố ngẫu nhiên khắp bản đồ.
     // Chỗ ẩn nấp / áp sát đánh úp; viền rừng méo tự nhiên, không đè đường / nhà / cứ điểm.
+    if (type === 'DESERT' && wadis.length) {
+      for (const W of wadis) {
+        const P = W.pts;
+        for (let i = 2; i < P.length - 2; i += 3) {
+          if (rng() > 0.4) continue;
+          const a = P[i - 2], b = P[i + 2], ex = b[0] - a[0], ez = b[1] - a[1], el = Math.hypot(ex, ez) || 1;
+          const sd = rng() < 0.5 ? 1 : -1, off = P[i][2] + R(6, 38);
+          const bx = P[i][0] - ez / el * off * sd, bz = P[i][1] + ex / el * off * sd;
+          const n = 1 + Math.floor(rng() * 4);
+          for (let k = 0; k < n; k++) {
+            const x = bx + R(-26, 26), z = bz + R(-26, 26);
+            if (!treeOK(x, z, 4) || slopeAt(x, z) > 0.6 || trees.some(t => Math.abs(t.x - x) < 16 && Math.abs(t.z - z) < 16)) continue;
+            trees.push({ x, z, kind: rng() < 0.15 ? 'deadTree' : 'acacia', s: R(0.8, 1.3), rot: R(0, 6.28) });
+          }
+        }
+      }
+    }
     stage('forests');
     const forests = [];
     const NSTAND = Math.round(({ DESERT: 1, URBAN: 0, JUNGLE: 6, HIGHLAND: 65, RIVER_LAKE: 4 }[type] || 3) * AREA);
@@ -4016,9 +4034,9 @@ function MapGenFactory() {
       const stretch = R(0.72, 1.38), rot = R(0, 3.14), cr = Math.cos(rot), sr = Math.sin(rot);
       const f = { x: cx, z: cz, r: r * Math.max(stretch, 1 / stretch) * 1.2, n: 0 };
       // Bước quét dày: HIGHLAND bước 12 đơn vị để cây mọc ken dày che chắn tốt
-      const step = type === 'HIGHLAND' ? 12 : 16;
+      const step = type === 'HIGHLAND' ? 12 : type === 'DESERT' ? 20 : 16, sj = type === 'DESERT' ? 7.5 : 4.5;   // (ốc đảo: cọ mọc tự nhiên, thân cách thân ~2,5 m lệch hàng)
       for (let gx = -r * 1.6; gx <= r * 1.6; gx += step) for (let gz = -r * 1.6; gz <= r * 1.6; gz += step) {
-        const lx = gx + R(-4.5, 4.5), lz = gz + R(-4.5, 4.5);
+        const lx = gx + R(-sj, sj), lz = gz + R(-sj, sj);
         const ex = (lx * cr + lz * sr) / stretch, ez = (-lx * sr + lz * cr) * stretch;
         const dd = Math.hypot(ex, ez) / r;
         if (dd > edge(Math.atan2(ez, ex))) continue;
@@ -4032,7 +4050,7 @@ function MapGenFactory() {
         if (dd > 0.65 && rng() < 0.72) {
           const k = R(1.08, 1.42), sx = cx + lx * k + R(-4, 4), sz = cz + lz * k + R(-4, 4);
           if (treeOK(sx, sz, 2.0) && slopeAt(sx, sz) < 0.75) {
-            trees.push({ x: sx, z: sz, kind: rng() < 0.7 ? shrubKind(kind) : 'broadleaf', s: R(0.35, 0.65), rot: R(0, 6.28) });
+            trees.push({ x: sx, z: sz, kind: rng() < 0.7 ? shrubKind(kind) : underKind, s: R(0.35, 0.65), rot: R(0, 6.28) });
           }
         }
       }
@@ -4043,7 +4061,7 @@ function MapGenFactory() {
     if (SH && strongholds.length) {
       stage('strongholdGroves');
       for (const sh of strongholds) {
-        const nGroves = type === 'HIGHLAND' ? 8 : 3;
+        const nGroves = type === 'HIGHLAND' ? 8 : type === 'DESERT' ? 4 : 3;
         const ca = Math.cos(sh.angle), sa = Math.sin(sh.angle);
         for (let gi = 0, gTries = 0; gi < nGroves && gTries < 40; gTries++) {
           const sideSgn = gTries % 2 === 0 ? 1 : -1;
@@ -4059,20 +4077,28 @@ function MapGenFactory() {
           if (f < PORTAL.APP + r && ar < 90 + r) continue;
           if (forests.some(f => Math.hypot(f.x - cx, f.z - cz) < f.r + r + 25)) continue;
           const fForest = { x: cx, z: cz, r, n: 0 };
-          const step = 11;
+          // Sa mạc: VƯỜN CHÀ LÀ có người tưới (không phải rừng): cây cách nhau ~3 m, chỗ dày chỗ thưa theo mảng, có khoảng
+          // trống giữa vườn, cây non xen kẽ. Bước 11 (1,4 m) thì cả vườn thành một khối lá đặc như hàng rào cắt tỉa
+          const grove = type === 'DESERT';
+          const step = grove ? 18 : 11, jit = grove ? 7 : 4;
+          const gpx = R(0, 99), gpz = R(0, 99);
           for (let gx = -r; gx <= r; gx += step) for (let gz = -r; gz <= r; gz += step) {
-            const lx = gx + R(-4, 4), lz = gz + R(-4, 4);
+            const lx = gx + R(-jit, jit), lz = gz + R(-jit, jit);
             if (Math.hypot(lx, lz) > r) continue;
+            if (grove) {
+              const dn = fbm(noise2, (cx + lx) * 0.012 + gpx, (cz + lz) * 0.012 + gpz, 2), dd = Math.hypot(lx, lz) / r;
+              if (dn < -0.22 || (dd > 0.7 && rng() < (dd - 0.7) * 2.2)) continue;   // khoảng trống trong vườn; rìa vườn thưa dần
+            }
             const tx = cx + lx, tz = cz + lz;
             const fTree = Math.abs((tx - sh.x) * ca + (tz - sh.z) * sa);
             const arTree = Math.abs(-(tx - sh.x) * sa + (tz - sh.z) * ca);
             if (fTree < PORTAL.APP + 10 && arTree < 70) continue;
             const kind = pick(rng, standKinds);
             if (!treeOK(tx, tz, 3.2) || slopeAt(tx, tz) > 0.75) continue;
-            trees.push({ x: tx, z: tz, kind, s: R(0.85, 1.3), rot: R(0, 6.28) });
+            trees.push({ x: tx, z: tz, kind, s: grove ? R(0.7, 1.35) : R(0.85, 1.3), rot: R(0, 6.28) });
             fForest.n++;
-            if (rng() < 0.55) {
-              const sx = tx + R(-5, 5), sz = tz + R(-5, 5);
+            if (rng() < (grove ? 0.65 : 0.55)) {
+              const so = grove ? 9 : 5, sx = tx + R(-so, so), sz = tz + R(-so, so);
               if (treeOK(sx, sz, 2)) trees.push({ x: sx, z: sz, kind: shrubKind(kind), s: R(0.35, 0.60), rot: R(0, 6.28) });
             }
           }
@@ -4166,6 +4192,10 @@ function MapGenFactory() {
         const rot = () => R(0, 6.28);
         if (k === 'tree') {
           if (!treeOK(x, z, 4) || slopeAt(x, z) > 0.75 || nearTree(x, z, 3)) return false;
+          // Sa mạc: chà là chỉ sống nơi có nước ngầm (ốc đảo, vườn tưới quanh cứ điểm, lòng wadi). Chép cọ ra giữa biển cát /
+          // đồng sỏi thì thành hàng trăm cây cọ rải đều khắp sa mạc -> cây bù ngoài vùng có nước là keo gai / cây khô
+          if (type === 'DESERT' && o.kind === 'palm' && oasisD(x, z) > 450 && wadiD(x, z) > 70 && !forests.some(f => Math.hypot(x - f.x, z - f.z) < f.r + 40))
+            o = Object.assign({}, o, { kind: rng() < 0.3 ? 'deadTree' : 'acacia', s: R(0.8, 1.25) });
           trees.push(Object.assign({}, o, { x, z, rot: rot() }));
         } else if (k === 'rock') {
           if (!clearOfKeys(x, z, o.r) || !roadClear(x, z, o.r) || !freeOf(x, z, o.r) || isWater(x, z) || nearTree(x, z, o.r)) return false;
@@ -4210,6 +4240,8 @@ function MapGenFactory() {
           for (let n = 0, cap = 60 + src.length * 3; Math.abs(b - r) > tol(Math.max(b, r)) && n < cap && !(type === 'URBAN' && added >= 15); n++) {
             let [k, o] = src.length ? src[n % src.length] : sub();
             if (k === 'bld') [k, o] = sub();
+            // sa mạc: vật che tự nhiên ngoài đồng trống chủ yếu là đá tảng sa thạch, không phải cây -> gần nửa số cây bù thành đá
+            if (type === 'DESERT' && k === 'tree' && rng() < 0.45) [k, o] = ['rock', { r: R(7, 17), h: 0, rot: 0, kind: 'sandstone' }];
             if (k === 'rock' && !o.h) o = Object.assign({}, o, { h: o.r * R(0.7, 1.3) });
             let x, z, ok = false;
             for (let t = 0; !ok && t < 6; t++) { [x, z] = poor.sample(); ok = poor.in(x, z) && place(k, o, x, z); }

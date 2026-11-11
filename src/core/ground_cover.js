@@ -426,6 +426,9 @@ const GroundCover = (() => {
         const d = (DG[k] * (1 - fx) + DG[k + 1] * fx) * (1 - fz) + (DG[k + N] * (1 - fx) + DG[k + N + 1] * fx) * fz;
         sand = smooth(6, 26, d);
       }
+      // bãi muối: vỏ muối trơ, không cỏ / bụi / đá vụn (khớp vỏ muối của shader mặt đất)
+      const PL = T.mapType === 'DESERT' && T.map && T.map.playa;
+      if (PL) sand = Math.max(sand, 1 - smooth(0.8, 1.05, Math.hypot(x - PL.x, z - PL.z) / (PL.r * 1.2)));
       return { h, grass: (1 - wDirt) * (1 - wFine) * (1 - wRock) * (1 - sand), rough: (0.18 + wDirt * 0.55 + wFine * 0.6 + wRock * 0.9) * (1 - 0.8 * sand) };
     }
 

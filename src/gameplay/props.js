@@ -506,11 +506,86 @@ const Props = (() => {
   const WRECK_HP = { dump: 2, truck: 2, apc: 3, tank: 4 };
   // phong hoá xác bỏ lâu ngày (gỉ loang, sơn tróc, cát bụi mặt trên, vệt chảy, bạc nắng): xác gộp & mô hình nâng cấp dùng chung
   // -> cùng một chương trình shader
-  const WRECK_WX = { lift: 0.4, grimeH: 4, scale: 0.9, dust: 0.65, rust: 1, stain: 0.9, chip: 0.4, streak: 0.7, fade: 0.3 };
+  const WRECK_WX = { lift: 0.4, grime: 0.85, grimeH: 6, scale: 0.9, dust: 0.95, rust: 1.15, stain: 1.0, chip: 0.12, streak: 0.8, fade: 0.35 };
   // Xác xe ben / xe tải hậu cần cháy (dài ~8 m dọc z, đầu xe +z, chân y = 0): khung gầm võng, cabin móp trơ khung cửa
   // sổ đen hốc, thùng ben bị nhiệt làm cong vênh vách, cửa hậu bung lệch, lốp cháy trụi còn mâm sắt (xe lún thấp xuống),
   // bình dầu, ống xả. Màu đỉnh: hốc cửa sổ / gầm tối, mâm thép sáng hơn, cao su cháy còn sót đen. ~450 tam giác
   let TRUCK_WRECK = null;
+  // XAC XE BAY THAP: khoet lo vanh thap that tren noc than (luoi gop khong chi so: position / normal / color). Tam giac
+  // noc nam trong vong tron bi bo, tam giac cat qua mep duoc chia nho dan roi bo phan nam trong; them vanh bi thep (che mep
+  // cat), vach gieng den muoi, san khoang chien dau va vai manh gio thap / gia dan chay sot lai
+  function openTurretRing(geo, cx, cy, cz, r) {
+    const P = geo.attributes.position.array, Nn = geo.attributes.normal.array, C = geo.attributes.color.array;
+    const op = [], on = [], oc = [];
+    const V = i => [P[i * 3], P[i * 3 + 1], P[i * 3 + 2], Nn[i * 3], Nn[i * 3 + 1], Nn[i * 3 + 2], C[i * 3], C[i * 3 + 1], C[i * 3 + 2]];
+    const emit = v => { op.push(v[0], v[1], v[2]); on.push(v[3], v[4], v[5]); oc.push(v[6], v[7], v[8]); };
+    const mid = (a, b) => a.map((q, k) => (q + b[k]) / 2);
+    const dc = v => Math.hypot(v[0] - cx, v[2] - cz);
+    const rec = (a, b, c, d) => {
+      const da = dc(a), db = dc(b), dd = dc(c);
+      if (da < r && db < r && dd < r) return;
+      const mx = (a[0] + b[0] + c[0]) / 3, mz = (a[2] + b[2] + c[2]) / 3, dm = Math.hypot(mx - cx, mz - cz);
+      const rad = Math.max(Math.hypot(a[0] - mx, a[2] - mz), Math.hypot(b[0] - mx, b[2] - mz), Math.hypot(c[0] - mx, c[2] - mz));
+      if (dm - rad > r) { emit(a); emit(b); emit(c); return; }
+      if (d >= 6) { if (dm >= r) { emit(a); emit(b); emit(c); } return; }
+      const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a);
+      rec(a, ab, ca, d + 1); rec(ab, b, bc, d + 1); rec(ca, bc, c, d + 1); rec(ab, bc, ca, d + 1);
+    };
+    const n = geo.attributes.position.count;
+    for (let i = 0; i < n; i += 3) {
+      const a = V(i), b = V(i + 1), c = V(i + 2);
+      const lo = Math.min(a[1], b[1], c[1]), hi = Math.max(a[1], b[1], c[1]);
+      if (dc(a) < r && dc(b) < r && dc(c) < r && lo > cy - 9) continue;
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      const fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx, fl = Math.hypot(fx, fy, fz) || 1;
+      if (Math.abs(fy / fl) > 0.5 && lo > cy - 8.8 && hi < cy + 1.5) rec(a, b, c, 0);   // (moi tam nam trong tam sau gieng: noc, tam lot duoi noc)
+      else { emit(a); emit(b); emit(c); }
+    }
+    const tri = (p0, p1, p2, w0, w1, w2, c0, c1, c2) => {
+      const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+      const flip = (uy * vz - uz * vy) * w0[0] + (uz * vx - ux * vz) * w0[1] + (ux * vy - uy * vx) * w0[2] < 0;
+      const L = flip ? [[p0, w0, c0], [p2, w2, c2], [p1, w1, c1]] : [[p0, w0, c0], [p1, w1, c1], [p2, w2, c2]];
+      for (const [q, w, col] of L) { op.push(q[0], q[1], q[2]); on.push(w[0], w[1], w[2]); oc.push(col[0], col[1], col[2]); }
+    };
+    const SEG = 32;
+    // dai vong: (r0, y0) -> (r1, y1); want(a) = phap tuyen mong muon tai goc a
+    const strip = (r0, y0, r1, y1, want, c0, c1) => {
+      for (let k = 0; k < SEG; k++) {
+        const a0 = k / SEG * 6.2832, a1 = (k + 1) / SEG * 6.2832;
+        const q = (rr, y, a) => [cx + Math.cos(a) * rr, y, cz + Math.sin(a) * rr];
+        const j = 0.82 + 0.36 * (Math.sin(k * 12.9898) * 43758.5453 % 1 + 1) % 1;
+        const ca = c0.map(v => v * j), cb = c1.map(v => v * j);
+        tri(q(r0, y0, a0), q(r0, y0, a1), q(r1, y1, a1), want(a0), want(a1), want(a1), ca, ca, cb);
+        tri(q(r0, y0, a0), q(r1, y1, a1), q(r1, y1, a0), want(a0), want(a1), want(a0), ca, cb, cb);
+      }
+    };
+    const up = () => [0, 1, 0], out = a => [Math.cos(a), 0, Math.sin(a)], inw = a => [-Math.cos(a), 0, -Math.sin(a)];
+    const STEEL = [0.36, 0.2, 0.11], SOOT = [0.085, 0.075, 0.068], PIT = [0.035, 0.032, 0.03];
+    const rI = r - 0.9, rO = r + 0.9, yT = cy + 0.3, yF = cy - 9;
+    strip(rO, cy - 0.3, rO, yT, out, STEEL, STEEL);          // mep ngoai vanh bi
+    strip(rO, yT, rI, yT, up, STEEL, [0.24, 0.15, 0.1]);      // mat vanh bi (ranh lan go)
+    strip(rI, yT, rI - 0.25, cy - 1.2, inw, [0.2, 0.13, 0.09], SOOT);   // go trong vanh
+    strip(rI - 0.25, cy - 1.2, rI - 0.25, yF, inw, SOOT, PIT);         // vach gieng (noc than -> san khoang)
+    strip(rI - 0.25, yF, 0.01, yF, () => [0, 0.3, 0.954], PIT, [0.05, 0.044, 0.04]);     // san khoang chien dau
+    // manh chay sot lai trong khoang: gia dan, ghe, khung gio thap do nghieng
+    const box = (w, h, d, x, y, z, ry, rz, col) => {
+      const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+      g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, ry, rz)).setPosition(cx + x, y, cz + z));
+      const gp = g.attributes.position.array, gn = g.attributes.normal.array;
+      for (let i = 0; i < gp.length; i += 3) { op.push(gp[i], gp[i + 1], gp[i + 2]); on.push(gn[i], gn[i + 1], gn[i + 2]); oc.push(col[0], col[1], col[2]); }
+    };
+    box(5.2, 2.6, 2.2, -3.4, yF + 1.3, 3.1, 0.4, 0.12, [0.16, 0.1, 0.07]);
+    box(2.0, 3.4, 2.0, 3.6, yF + 1.7, -2.4, 1.1, -0.2, [0.12, 0.09, 0.07]);
+    box(6.8, 0.5, 0.7, 0.6, yF + 2.9, -0.6, 0.7, 0.34, [0.22, 0.13, 0.08]);
+    box(0.6, 4.6, 0.6, -1.2, yF + 2.2, -3.8, 0.2, 0.5, [0.2, 0.12, 0.08]);
+    box(3.0, 1.2, 4.4, 2.2, yF + 0.6, 3.6, -0.5, 0, [0.1, 0.085, 0.07]);
+    const res = new THREE.BufferGeometry();
+    res.setAttribute('position', new THREE.BufferAttribute(new Float32Array(op), 3));
+    res.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(on), 3));
+    res.setAttribute('color', new THREE.BufferAttribute(new Float32Array(oc), 3));
+    res.computeBoundingSphere(); res.computeBoundingBox();
+    return res;
+  }
   function truckWreckGeo() {
     if (TRUCK_WRECK) return TRUCK_WRECK;
     const P = [], dark = [0.16, 0.15, 0.14], rim = [0.75, 0.72, 0.68], rub = [0.22, 0.2, 0.19];
@@ -3480,6 +3555,88 @@ const Props = (() => {
       return M4(b.x, y, b.z, (hash(b.seed + 24) - 0.5) * 0.08, b.yaw, (hash(b.seed + 2) - 0.5) * 0.12, vx, (b.flat ? 0.45 : 1) * vy, (b.flat ? 1.25 : 1) * vz);
     }
 
+    mergeWreckMeshes(meshList, baseObject) {
+      baseObject.updateMatrixWorld(true);
+      const inv = baseObject.matrixWorld.clone().invert();
+      const parts = [];
+      let totalCount = 0;
+      for (const m of meshList) {
+        if (!m.geometry) continue;
+        m.updateMatrixWorld(true);
+        const relMat = m.matrixWorld.clone().premultiply(inv);
+        let src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+        if (m.isInstancedMesh && m.count > 20) {
+          if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+          const bb = m.geometry.boundingBox;
+          const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
+          if (Math.max(sx, sy, sz) < 0.55) continue;   // đinh tán / chi tiết siêu nhỏ dưới 0.5 đv trên xác cháy tĩnh
+          const bg = new THREE.BoxGeometry(Math.max(0.12, sx), Math.max(0.12, sy), Math.max(0.12, sz)).toNonIndexed();
+          bg.translate((bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, (bb.min.z + bb.max.z) * 0.5);
+          src = bg;
+        }
+        const n = m.isInstancedMesh ? m.count : 1, im = new THREE.Matrix4();
+        for (let i = 0; i < n; i++) {
+          if (m.isInstancedMesh) {
+            m.getMatrixAt(i, im);
+            if (Math.abs(im.determinant()) < 1e-6) continue;   // bản sao ẩn (thu về 0)
+          }
+          const g = src.clone();
+          if (!g.attributes.normal) g.computeVertexNormals();
+          g.applyMatrix4(m.isInstancedMesh ? relMat.clone().multiply(im) : relMat);
+          parts.push([g, m.material.color]);
+          totalCount += g.attributes.position.count;
+        }
+      }
+      if (!totalCount) return null;
+      const pos = new Float32Array(totalCount * 3);
+      const nrm = new Float32Array(totalCount * 3);
+      const col = new Float32Array(totalCount * 3);
+      // màu từng bộ phận cháy sém: sơn gốc ngả than / gỉ (mỗi bộ phận lệch một chút) -> thân, xích, bánh, nòng không
+      // cùng một mảng đen trơn
+      const CHAR = new THREE.Color(0.15, 0.135, 0.12), RUST = new THREE.Color(0.31, 0.185, 0.115), c = new THREE.Color();
+      let offset = 0, pi = 0;
+      for (const [g, mc] of parts) {
+        const cnt = g.attributes.position.count;
+        pos.set(g.attributes.position.array, offset * 3);
+        // giữ pháp tuyến gốc (bóng mượt): tính lại trên lưới không chỉ số ra pháp tuyến từng mặt -> nòng / thân thành khối gãy cạnh
+        nrm.set(g.attributes.normal.array, offset * 3);
+        const h = Math.sin(++pi * 12.9898) * 43758.5453;
+        c.copy(mc || CHAR).lerp(CHAR, 0.7).lerp(RUST, 0.25 + 0.5 * (h - Math.floor(h)));
+        for (let v = offset; v < offset + cnt; v++) { col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b; }
+        offset += cnt;
+      }
+      const res = new THREE.BufferGeometry();
+      res.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      res.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+      res.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      res.computeBoundingSphere();
+      return res;
+    }
+
+    // XAC XE TAI / XE BEN: dang xe lay tu mo hinh xe dan su chi tiet (CivilCars, ban chay rui: kinh vo, lop chay, thung meo)
+    // nuong thanh 1 luoi gop mau dinh nhu xac xe tang -> dung chung vat lieu + shader phong hoa cua xac xe (khong them
+    // chuong trinh shader, 1 luot ve, vai mau dung chung cho moi xac). Khong co CivilCars: null (dung khoi hop cu)
+    getTruckWreckTemplate(v) {
+      this._truckTpl = this._truckTpl || {};
+      if (this._truckTpl[v] !== undefined) return this._truckTpl[v];
+      let geo = null;
+      if (typeof CivilCars !== 'undefined' && CivilCars.build) {
+        try {
+          const car = CivilCars.build(v % 2 ? 'truck' : 'dump', { seed: 9173 + v * 7919, age: 1, rust: 0.95, dust: 0.85, burnt: true, cond: 'burnt', glass: true, sag: 0.12, extFire: true, noMerge: true });
+          car.position.set(0, 0, 0); car.rotation.set(0, 0, 0); car.updateMatrixWorld(true);
+          const shown = (c) => { for (let q = c; q; q = q.parent) if (!q.visible) return false; return true; };
+          const list = [];
+          car.traverse(c => {
+            if (c.isMesh && c.geometry && shown(c) && c.material && !Array.isArray(c.material) && !c.material.transparent
+              && (c.material.isMeshStandardMaterial || c.material.isMeshLambertMaterial || c.material.isMeshPhongMaterial)) list.push(c);
+          });
+          geo = this.mergeWreckMeshes(list, car);
+          if (geo) geo.computeBoundingBox();
+        } catch (e) { console.warn('[props] wreck truck template error:', e); geo = null; }
+      }
+      return (this._truckTpl[v] = geo);
+    }
+
     // Mẫu hình học gộp cho xác xe (1 lần cho mỗi loại xe, tái sử dụng cho toàn bộ xác xe trên bản đồ)
     // Giảm từ 150 mesh / xe xuống 2 mesh / xe (giảm ~7500 mesh, cứu 90% lượt vẽ và giải phóng GPU submit)
     getWreckTemplate(tankType) {
@@ -3497,7 +3654,7 @@ const Props = (() => {
       TankModelBuilder.buildModel(dummy);
       if (dummy.hpGroup && dummy.hpGroup.parent) dummy.hpGroup.parent.remove(dummy.hpGroup);
       if (dummy.reactiveArmorMesh) dummy.reactiveArmorMesh.visible = false;
-      if (dummy.barrelPivot) dummy.barrelPivot.rotation.x = -0.28;
+      if (dummy.barrelPivot) dummy.barrelPivot.rotation.x = -0.03;   // (nong chuc sau thi dam xuyen noc / chan bun khi thap xoay ngang)
 
       dummy.group.updateMatrixWorld(true);
       const turretRoot = dummy.turretGroup;
@@ -3522,69 +3679,14 @@ const Props = (() => {
         }
       });
 
-      const mergeList = (meshList, baseObject) => {
-        baseObject.updateMatrixWorld(true);
-        const inv = baseObject.matrixWorld.clone().invert();
-        const parts = [];
-        let totalCount = 0;
-        for (const m of meshList) {
-          if (!m.geometry) continue;
-          m.updateMatrixWorld(true);
-          const relMat = m.matrixWorld.clone().premultiply(inv);
-          let src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
-          if (m.isInstancedMesh && m.count > 20) {
-            if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
-            const bb = m.geometry.boundingBox;
-            const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
-            if (Math.max(sx, sy, sz) < 0.55) continue;   // đinh tán / chi tiết siêu nhỏ dưới 0.5 đv trên xác cháy tĩnh
-            const bg = new THREE.BoxGeometry(Math.max(0.12, sx), Math.max(0.12, sy), Math.max(0.12, sz)).toNonIndexed();
-            bg.translate((bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, (bb.min.z + bb.max.z) * 0.5);
-            src = bg;
-          }
-          const n = m.isInstancedMesh ? m.count : 1, im = new THREE.Matrix4();
-          for (let i = 0; i < n; i++) {
-            if (m.isInstancedMesh) {
-              m.getMatrixAt(i, im);
-              if (Math.abs(im.determinant()) < 1e-6) continue;   // bản sao ẩn (thu về 0)
-            }
-            const g = src.clone();
-            if (!g.attributes.normal) g.computeVertexNormals();
-            g.applyMatrix4(m.isInstancedMesh ? relMat.clone().multiply(im) : relMat);
-            parts.push([g, m.material.color]);
-            totalCount += g.attributes.position.count;
-          }
-        }
-        if (!totalCount) return null;
-        const pos = new Float32Array(totalCount * 3);
-        const nrm = new Float32Array(totalCount * 3);
-        const col = new Float32Array(totalCount * 3);
-        // màu từng bộ phận cháy sém: sơn gốc ngả than / gỉ (mỗi bộ phận lệch một chút) -> thân, xích, bánh, nòng không
-        // cùng một mảng đen trơn
-        const CHAR = new THREE.Color(0.15, 0.135, 0.12), RUST = new THREE.Color(0.36, 0.18, 0.09), c = new THREE.Color();
-        let offset = 0, pi = 0;
-        for (const [g, mc] of parts) {
-          const cnt = g.attributes.position.count;
-          pos.set(g.attributes.position.array, offset * 3);
-          // giữ pháp tuyến gốc (bóng mượt): tính lại trên lưới không chỉ số ra pháp tuyến từng mặt -> nòng / thân thành khối gãy cạnh
-          nrm.set(g.attributes.normal.array, offset * 3);
-          const h = Math.sin(++pi * 12.9898) * 43758.5453;
-          c.copy(mc || CHAR).lerp(CHAR, 0.7).lerp(RUST, 0.12 + 0.2 * (h - Math.floor(h)));
-          for (let v = offset; v < offset + cnt; v++) { col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b; }
-          offset += cnt;
-        }
-        const res = new THREE.BufferGeometry();
-        res.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        res.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-        res.setAttribute('color', new THREE.BufferAttribute(col, 3));
-        res.computeBoundingSphere();
-        return res;
-      };
+      const mergeList = (meshList, baseObject) => this.mergeWreckMeshes(meshList, baseObject);
 
       const bodyGeo = mergeList(bodyMeshes, dummy.group);
       const turretGeo = turretRoot && turretMeshes.length ? mergeList(turretMeshes, turretRoot) : null;
       const turretPos = turretRoot ? turretRoot.position.clone() : new THREE.Vector3(0, 0, 0);
 
-      return (this._wreckTpl[tankType] = { bodyGeo, turretGeo, turretPos });
+      const ringC = turretRoot ? turretRoot.getWorldPosition(new THREE.Vector3()).applyMatrix4(dummy.group.matrixWorld.clone().invert()) : null;
+      return (this._wreckTpl[tankType] = { bodyGeo, turretGeo, turretPos, ringC, ringR: 9.2 });
     }
 
     // ---- XÁC XE CHIẾN TRƯỜNG THỰC TẾ (mô hình gộp tối ưu hiệu năng cao, giảm 90% draw calls)
@@ -3603,7 +3705,8 @@ const Props = (() => {
         const isDump = w.kind === 'dump' || w.kind === 'truck';
         const tankType = w.kind === 'apc' ? 'GATLING' : 'ALL_ROUNDER';
         // xe ben / xe tải: xác xe tải cháy dựng riêng (trước đây mượn mô hình pháo tự hành)
-        const tpl = isDump ? { bodyGeo: truckWreckGeo(), turretGeo: null } : this.getWreckTemplate(tankType);
+        const civGeo = isDump ? this.getTruckWreckTemplate(Math.floor(hash((w.x * 5 + w.z) | 0) * 4)) : null;
+        const tpl = isDump ? { bodyGeo: civGeo || truckWreckGeo(), turretGeo: null } : this.getWreckTemplate(tankType);
 
         if (tpl && tpl.bodyGeo) {
           // thép cháy: sơn cháy trụi còn lớp lót xám than, gỉ nâu cam loang (lửa đốt mất sơn, thép gỉ rất nhanh), tro
@@ -3611,7 +3714,7 @@ const Props = (() => {
           const k = 0.8 + hash(w.z | 0) * 0.35;
           const col = new THREE.Color(0x24211d).lerp(new THREE.Color(0x33251c), hash(w.x | 0) * 0.5).multiplyScalar(k);
           // xác xe tăng / APC: màu cháy sém từng bộ phận nằm sẵn trong màu đỉnh của mẫu gộp -> vật liệu chỉ lệch tông từng xác
-          const tint = isDump ? col : new THREE.Color(1, 1, 1).lerp(new THREE.Color(1, 0.86, 0.74), hash(w.x | 0) * 0.6).multiplyScalar(k);
+          const tint = isDump && !civGeo ? col : new THREE.Color(1, 1, 1).lerp(new THREE.Color(1, 0.86, 0.74), hash(w.x | 0) * 0.6).multiplyScalar(k);
           const mat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.95, metalness: 0.2, vertexColors: true });
           if (typeof Weathering !== 'undefined') Weathering.apply(mat, 'burnt', WRECK_WX);
           // nền đất cháy xém dưới xác
@@ -3626,7 +3729,10 @@ const Props = (() => {
           inner.rotation.y = Math.PI / 2;
           wreckGrp.add(inner);
           w.mat = mat;
-          const bodyMesh = new THREE.Mesh(tpl.bodyGeo, mat);
+          const blown = !!tpl.turretGeo && (w.kind === 'tank' || w.kind === 'apc') && hash((w.x * 7) | 0) < 0.35;
+          w.blown = blown;
+          if (blown && tpl.ringC && !tpl.openGeo) tpl.openGeo = openTurretRing(tpl.bodyGeo, tpl.ringC.x, tpl.ringC.y, tpl.ringC.z, tpl.ringR);
+          const bodyMesh = new THREE.Mesh(blown && tpl.openGeo ? tpl.openGeo : tpl.bodyGeo, mat);
           bodyMesh.userData.bvhLarge = true;   // mẫu gộp cả bánh / xích (> 60k tam giác): vẫn dựng cây dò tia để dán vết đạn
           bodyMesh.castShadow = true;
           bodyMesh.receiveShadow = true;
@@ -3641,13 +3747,14 @@ const Props = (() => {
             turretMesh.receiveShadow = true;
             turretGrp.add(turretMesh);
 
-            const blown = (w.kind === 'tank' || w.kind === 'apc') && hash((w.x * 7) | 0) < 0.35;
             if (blown) {
-              turretGrp.position.set(-18 - hash(w.x | 0) * 8, -6.5, 12 * (hash(w.z | 0) < 0.5 ? 1 : -1));
-              turretGrp.rotation.set(0.35, 1.2, 2.4);
+              // thap bi no dan hat tung, roi lat ngua canh than (noc thap up xuong cat, vanh co thap ngua len troi)
+              const sd = hash(w.z | 0) < 0.5 ? 1 : -1;
+              turretGrp.position.set(sd * (40 + hash(w.x | 0) * 8), 5.6, (hash((w.x * 3) | 0) - 0.5) * 16);
+              turretGrp.rotation.set(0.1, -sd * Math.PI / 2 + (hash((w.z * 5) | 0) - 0.5) * 1.5, Math.PI + 0.08 * sd);   // nong chia ra xa than xe
             } else {
               turretGrp.rotation.y = w.turretRot || (hash(w.x | 0) - 0.5) * 2;
-              turretGrp.rotation.z = (hash(w.z | 0) - 0.5) * 0.32;
+              turretGrp.rotation.z = (hash(w.z | 0) - 0.5) * 0.05;
             }
             inner.add(turretGrp);
             w.turretGroup = turretGrp;
@@ -4266,7 +4373,8 @@ const Props = (() => {
     queueUpgrade(w) {
       if (w.u || w._up || w.noUpgrade || w.shattered || !w.group || !w.mat) return;
       if (typeof TankModelBuilder === 'undefined' || typeof VehicleDamage === 'undefined' || !VehicleDamage.wreckBlastAt) return;
-      if (w.kind === 'dump' || w.kind === 'truck') { w.noUpgrade = true; return; }
+      // (xac bay thap giu luoi gop da khoet lo vanh thap: mo hinh day du khong co lo)
+      if (w.kind === 'dump' || w.kind === 'truck' || w.blown) { w.noUpgrade = true; return; }
       w._up = { stage: 0, blasts: [] };
       (this._upQ = this._upQ || new Set()).add(w);
     }
@@ -4293,11 +4401,11 @@ const Props = (() => {
       if (u.hpGroup && u.hpGroup.parent) u.hpGroup.parent.remove(u.hpGroup);
       if (u.reactiveArmorMesh && u.reactiveArmorMesh.parent) u.reactiveArmorMesh.parent.remove(u.reactiveArmorMesh);
       u.group.position.set(0, 0, 0); u.group.rotation.set(0, 0, 0);
-      if (u.barrelPivot) u.barrelPivot.rotation.x = -0.28;
+      if (u.barrelPivot) u.barrelPivot.rotation.x = -0.03;   // (nong chuc sau thi dam xuyen noc / chan bun khi thap xoay ngang)
       // tháp: đúng tư thế xác gộp (còn trên thân: góc xoay; bị thổi bay: nằm cạnh thân)
       const oldT = w.turretGroup, tg = u.turretGroup;
       if (oldT && tg) {
-        if (oldT.position.y < 0) {
+        if (w.blown) {
           inner.add(tg); tg.position.copy(oldT.position); tg.rotation.copy(oldT.rotation);
           u.fxWreck = { turret: tg };
         } else { tg.rotation.y = oldT.rotation.y; tg.rotation.z = oldT.rotation.z; }
@@ -4321,13 +4429,13 @@ const Props = (() => {
       // dịch shader mới giữa trận. Màu đỉnh trắng (màu nằm ở vật liệu): lưới gốc nướng sẵn hoa văn ngụy trang vào màu đỉnh
       // -> thay bằng bản hình học nông (dùng chung toạ độ / pháp tuyến / chỉ số, riêng màu đỉnh) để không đổi lưới dùng chung
       // của xe khác; VehicleDamage.prepMesh tự nhân bản sâu trước khi làm móp
-      const CHAR = new THREE.Color(0.15, 0.135, 0.12), RUST = new THREE.Color(0.36, 0.18, 0.09), cache = new Map();
+      const CHAR = new THREE.Color(0.15, 0.135, 0.12), RUST = new THREE.Color(0.31, 0.185, 0.115), cache = new Map();
       const swap = (src) => {
         if (!src || src.transparent || !(src.isMeshStandardMaterial || src.isMeshLambertMaterial || src.isMeshPhongMaterial)) return src;
         let m = cache.get(src);
         if (m) return m;
         m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.2, vertexColors: true });
-        m.color.copy(src.color || CHAR).lerp(CHAR, 0.7).lerp(RUST, 0.12 + 0.2 * rnd()).multiply(w.mat.color);
+        m.color.copy(src.color || CHAR).lerp(CHAR, 0.7).lerp(RUST, 0.25 + 0.5 * rnd()).multiply(w.mat.color);
         if (typeof Weathering !== 'undefined') Weathering.apply(m, 'burnt', WRECK_WX);
         cache.set(src, m);
         return m;

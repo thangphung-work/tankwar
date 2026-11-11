@@ -343,7 +343,7 @@ const GroundShader = (() => {
     HIGHLAND: { base: () => grassTex([86, 94, 58], [138, 126, 82], 11), dirt: () => dirtTex([98, 86, 70], 12), rock: () => rockTex([102, 99, 93], [136, 136, 84], 13), fine: () => fineTex([104, 98, 86], 14, false) },
     RIVER_LAKE: { base: () => grassTex([80, 96, 50], [132, 126, 76], 21), dirt: () => dirtTex([96, 84, 64], 22), rock: () => rockTex([104, 100, 90], [104, 122, 66], 23), fine: () => fineTex([134, 125, 100], 24, true) },
     JUNGLE: { base: () => grassTex([56, 72, 38], [96, 90, 50], 31), dirt: () => dirtTex([84, 70, 52], 32), rock: () => rockTex([100, 96, 84], [80, 110, 60], 33), fine: () => fineTex([82, 72, 50], 34, false) },
-    DESERT: { base: () => fineTex([206, 172, 124], 41, true), dirt: () => dirtTex([178, 140, 98], 42), rock: () => rockTex([164, 128, 96], [190, 160, 110], 43), fine: () => grassTex([150, 140, 92], [176, 160, 110], 44) },
+    DESERT: { base: () => fineTex([206, 172, 124], 41, true), dirt: () => dirtTex([178, 140, 98], 42), rock: () => rockTex([164, 128, 96], [190, 160, 110], 43), fine: () => grassTex([166, 144, 100], [186, 164, 118], 44) },
     URBAN: { base: () => concreteTex([106, 105, 100], 51), dirt: () => dirtTex([110, 100, 84], 52), rock: () => rockTex([112, 108, 102], [90, 100, 70], 53), fine: () => grassTex([88, 98, 60], [140, 130, 84], 54) }
   };
 
@@ -580,6 +580,9 @@ const GroundShader = (() => {
     const city = urban && opts.terrain ? cityMask(opts.terrain) : null;
     // sa mạc: chân vành núi theo hướng (MapGen rimFoot) -> shader biết đâu là quạt sỏi / sườn núi đá
     const rimF = desert && opts.terrain ? rimFootTex(opts.terrain) : null;
+    // sa mạc: bãi muối cuối wadi (MapGen playa { x, z, r }) -> vỏ muối trắng ngà rạn đa giác vẽ trong shader (ảnh nền
+    // 1 điểm ảnh ~4 đv chỉ đủ đổi sắc nhẹ: nhìn từ xe / tầm mắt lính bãi muối chỉ là mảng cát nhạt)
+    const playa = desert && opts.terrain && opts.terrain.map && opts.terrain.map.playa || null;
     const RW = { DESERT: [0.35, '0.52, 0.5, 0.48', 0.72], URBAN: [0.85, '0.6, 0.6, 0.62', 0.4], JUNGLE: [1.0, '0.66, 0.7, 0.64', 0.5],
       HIGHLAND: [0.7, '0.68, 0.7, 0.68', 0.52], RIVER_LAKE: [0.9, '0.66, 0.69, 0.64', 0.5] }[opts.mapType] || [0.7, '0.68, 0.7, 0.68', 0.52];
     mat.onBeforeCompile = (sh) => {
@@ -592,6 +595,7 @@ const GroundShader = (() => {
         gLodMag: uLodMag, gSunMap: uSunMap, gSunXf: uSunXf, gShBox: uShadowBox
       });
       if (rimF) sh.uniforms.gRimF = { value: rimF };
+      if (playa) sh.uniforms.gPlaya = { value: new THREE.Vector4(playa.x, playa.z, playa.r, 1) };
       // độ che khuất quanh chân nhà (Destructibles.buildingInfo, cùng object -> cập nhật khi dựng nhà xong)
       const BI = typeof Destructibles !== 'undefined' && Destructibles.buildingInfo;
       sh.uniforms.gBldOcc = BI ? BI.uBldOcc : { value: null };
@@ -600,7 +604,7 @@ const GroundShader = (() => {
         '#include <project_vertex>',
         '#include <project_vertex>\n  vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vGN = normalize(mat3(modelMatrix) * objectNormal);'
       );
-      sh.fragmentShader = `uniform sampler2D gBase, gDirt, gRock, gFine, gNoise, gNrm, gBldOcc, gSunMap;${city ? '\nuniform sampler2D gCity;' : ''}${rimF ? '\nuniform sampler2D gRimF;' : ''}
+      sh.fragmentShader = `uniform sampler2D gBase, gDirt, gRock, gFine, gNoise, gNrm, gBldOcc, gSunMap;${city ? '\nuniform sampler2D gCity;' : ''}${rimF ? '\nuniform sampler2D gRimF;' : ''}${playa ? '\nuniform vec4 gPlaya;' : ''}
 uniform vec2 gTerr;
 uniform float gLodMag;
 uniform vec4 gSunXf, gShBox;
@@ -1085,6 +1089,35 @@ float gTuftH(vec2 p) {
   // loang lổ cỡ vừa (mô đất thoải 4-12 m) — chuyển sắc êm, không tạo đốm đen trắng lổn nhổn ở gần
   float mot = gMotF(wp);
   col *= ${desert ? '0.95 + 0.1 * mot' : urban ? '0.95 + 0.1 * mot' : '0.94 + 0.12 * mot'};   // cát / bê tông / cỏ: loang êm tự nhiên
+  ${playa ? `// BÃI MUỐI (playa): vỏ sét - muối khô trắng ngà, rạn thành ô đa giác 1-3 m (khe nứt sẫm, mép ô vểnh sáng), loang mảng
+  // sét nâu; viền méo khớp nét vẽ ảnh nền (terrain.js paintGroundOverlay), mép hoà dần vào cát
+  float gPlK = 0.0;
+  {
+    vec2 pq = vGW.xz - gPlaya.xy;
+    float pa = atan(pq.y, pq.x);
+    float pr = length(pq) / (gPlaya.z * (1.2 + 0.14 * sin(pa * 3.0 + gPlaya.x) + 0.08 * sin(pa * 7.0 + gPlaya.y)));
+    if (pr < 1.15) {
+      float pn = gN2(wr1, 150.0, 0.3, 0.0).r;
+      float pK = (1.0 - smoothstep(0.7, 1.0, pr + (pn - 0.5) * 0.3)) * (1.0 - t3);
+      vec2 pg = vGW.xz / 14.0 + (texture2D(gNoise, vGW.xz / 110.0 + 0.3).rg - 0.5) * 0.9;
+      vec2 pgi = floor(pg), pgf = fract(pg);
+      float f1 = 9.0, f2 = 9.0;
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 o = vec2(float(i), float(j)), c = pgi + o;
+        vec2 h = fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453);
+        float d = length(o + 0.15 + 0.7 * h - pgf);
+        if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+      }
+      float pe = f2 - f1, pNear = 1.0 - smoothstep(380.0, 1000.0, G_VDIST);
+      float crack = (1.0 - smoothstep(0.015, 0.075, pe)) * pNear;
+      float lip = smoothstep(0.075, 0.12, pe) * (1.0 - smoothstep(0.12, 0.3, pe)) * pNear;
+      vec3 salt = vec3(0.87, 0.8, 0.68) * (0.93 + 0.14 * pn);
+      salt = mix(salt, vec3(0.68, 0.57, 0.43), smoothstep(0.5, 0.8, gN2(wr2, 70.0, 0.5, 0.0).g) * 0.55);
+      salt *= (1.0 - 0.4 * crack) * (1.0 + 0.09 * lip) * (0.97 + 0.06 * f1);
+      col = mix(col, salt, pK * 0.92);
+      gPlK = pK;
+    }
+  }` : ''}
   ${desert || urban ? '' : `// đồng cỏ thật nhìn từ xa ngả xanh ô-liu dịu, không xanh chói như sân golf (bản đồ sáng nắng dễ bị chói màu nhất)
   col = mix(vec3(lum(col)), col, ${opts.mapType === 'RIVER_LAKE' ? '0.74' : opts.mapType === 'JUNGLE' ? '0.88' : '0.92'});`}
   ${urban ? `// đồi quanh thành phố (vành núi + cảnh nền ngoài bản đồ) phủ cỏ: chuyển dần theo đường vuông bo góc lượn sóng
@@ -1121,7 +1154,7 @@ float gTuftH(vec2 p) {
              + (texture2D(gNoise, wr2 / 7.5 + 0.61).g - 0.5) * 0.6 * (1.0 - smoothstep(0.3, 1.0, gD));
     // loang nhẹ cỡ vài chục mét (chỗ cát mịn sáng, chỗ lẫn phù sa sẫm hơn) — tương phản thấp, không thành đốm
     float sv = texture2D(gNoise, wr3 / 95.0 + 0.4).b * 0.6 + texture2D(gNoise, wr1 / 31.0 + 0.8).g * 0.4;
-    vec3 cSand = mix(vec3(0.47, 0.43, 0.35), vec3(0.55, 0.5, 0.4), smoothstep(0.25, 0.75, sv)) * (1.0 + sg * 0.06);
+    vec3 cSand = mix(${desert ? 'vec3(0.6, 0.5, 0.36), vec3(0.68, 0.57, 0.42)' : 'vec3(0.47, 0.43, 0.35), vec3(0.55, 0.5, 0.4)'}, smoothstep(0.25, 0.75, sv)) * (1.0 + sg * 0.06);   // (ốc đảo sa mạc: cát vàng ẩm, không phải cát bồi xám)
     float yW = vGW.y - (gWaterLvl - 2.3);                                                     // độ cao so với mặt nước
     cSand *= mix(vec3(0.62, 0.62, 0.64), vec3(1.0), smoothstep(-0.6, 0.15, yW));              // ngập: ướt sẫm
     cSand *= mix(0.84, 1.0, smoothstep(0.15, 1.5, yW));                                        // sát mép nước: cát ẩm
@@ -1129,7 +1162,7 @@ float gTuftH(vec2 p) {
     col = mix(col, cSand, smoothstep(0.0, 0.6, gSand));
   }
   // mép bùn ướt (đoạn bờ không có bãi cát): nâu sẫm, loang theo nhiễu nhỏ
-  if (gBank > 0.001) col = mix(col, vec3(0.2, 0.18, 0.13) * (0.8 + 0.4 * texture2D(gNoise, wr2 / 9.0 + 0.53).b), gBank * 0.75);
+  if (gBank > 0.001) col = mix(col, ${desert ? 'vec3(0.36, 0.28, 0.19)' : 'vec3(0.2, 0.18, 0.13)'} * (0.8 + 0.4 * texture2D(gNoise, wr2 / 9.0 + 0.53).b), gBank * 0.75);   // (sa mạc: cát ẩm nâu, không phải bùn đen)
   float gRainW = 0.0, gPud = 0.0;
   vec3 gDrops = vec3(0.0);${rain ? `
   if (skyWetU.x > 0.0) {
@@ -1277,7 +1310,7 @@ float gTuftH(vec2 p) {
     {
       float fw = max(fwidth(wp.x), fwidth(wp.y)), ec = max(1.5, fw * 1.5);
       float s0 = gSandU(wp, fw), sx = gSandU(wp + vec2(ec, 0.0), fw), sz = gSandU(wp + vec2(0.0, ec), fw);
-      float kS = (1.0 - max(t2, t3)) * (1.0 - 0.6 * smoothstep(0.1, 0.24, dot(nrm.xz, vec2(cos(gWindA), sin(gWindA)))));
+      float kS = (1.0 - max(t2, t3)) * (1.0 - 0.6 * smoothstep(0.1, 0.24, dot(nrm.xz, vec2(cos(gWindA), sin(gWindA)))))${playa ? ' * (1.0 - 0.8 * gPlK)' : ''};
       nW = normalize(nW - vec3(sx - s0, 0.0, sz - s0) / ec * kS);
     }` : ''}
     ${desert ? `// gợn cát nổi khối: cao ~0.3 đơn vị (~4 cm), sườn đón gió ~8°, sườn khuất ~18°; chỉ trên lớp cát nền,
@@ -1285,7 +1318,7 @@ float gTuftH(vec2 p) {
     {
       // bước sai phân không nhỏ hơn cỡ 1 điểm ảnh trên mặt đất: ở xa là đạo hàm đã làm mượt, không lấy mẫu thưa
       float e = max(0.45, max(fwidth(wp.x), fwidth(wp.y))), rx = gRip(wp + vec2(e, 0.0)), rz = gRip(wp + vec2(0.0, e));
-      float k = 0.2 / e * (1.0 - smoothstep(0.18, 0.4, slope)) * (1.0 - max(t2, t3));
+      float k = 0.2 / e * (1.0 - smoothstep(0.18, 0.4, slope)) * (1.0 - max(t2, t3))${playa ? ' * (1.0 - gPlK)' : ''};   // (vỏ muối cứng: không gợn cát)
       // sườn khuất gió của đụn (mặt quay xuôi gió): cát đổ trượt thành mặt phẳng mịn, gió không dựng gợn
       k *= 1.0 - 0.85 * smoothstep(0.1, 0.24, dot(nrm.xz, vec2(cos(gWindA), sin(gWindA))));
       nW = normalize(nW - vec3(rx - gRip0, 0.0, rz - gRip0) * k);

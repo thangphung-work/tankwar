@@ -1826,6 +1826,7 @@ class SPGUnit3D {
     const groundAt = nearCrater ? (gx, gz) => terrain.vehicleSurfaceAt(gx, gz, refY)
       : terrain.getVehicleGroundAt ? (gx, gz) => terrain.getVehicleGroundAt(gx, gz, refY) : (gx, gz) => terrain.getElevationAt(gx, gz);
     this.inCrater = nearCrater;
+    this._groundAt = groundAt;   // hệ treo từng bánh của mô hình (VehicleKit.TrackSuspension) dò mặt đất dưới bánh
     // Điểm dò mặt đất theo kích thước thân xe thật (hộp thân xe, tính 1 lần / mô hình): 4x4 ngắn hẹp nghiêng khác 6x6 dài.
     // Giới hạn trong khoảng hẹp quanh mặc định cũ ±18 / ±14 (không có mô hình thì giữ mặc định)
     let gs = this._gSamp;
@@ -3761,6 +3762,10 @@ class SPGUnit3D {
     // (boreDir, ballistics fireShell3D) và ra từ miệng nòng đã dời (tipOff) -> lệch khỏi tâm ngắm, phải tự ngắm bù.
     // Cụm 6 nòng nghiêng cả cụm (bendRot) thay vì uốn lưới: bỏ phần nghiêng đó khi tính đường ngắm
     const D = this.dmg, br = D && D.bendRot, bv = D && D.bore, bg = this.barrelGroup;
+    // góc ổn định pháo chỉ là hình ảnh (mô hình xoay ngược dao động thân, vd. mbt_halberd): thân đã về tư thế bỏ dao động
+    // ở trên nên bỏ luôn góc bù này, không thì tính 2 lần
+    const sp = this._stabPitch || 0;
+    if (sp) { bg.rotation.x -= sp; this.group.updateMatrixWorld(true); }
     const tipWorld = new THREE.Vector3().copy(this.muzzleTipLocal);
     if (D && D.tipOff) tipWorld.add(D.tipOff);
     bg.localToWorld(tipWorld);
@@ -3769,7 +3774,9 @@ class SPGUnit3D {
     const dir = sightTip.sub(bg.localToWorld(new THREE.Vector3())).normalize();
     const bore = bv ? bv.clone().transformDirection(bg.matrixWorld) : null;
     if (br) { bg.rotation.x += br.x; bg.rotation.y += br.y; if (!(C && st)) this.group.updateMatrixWorld(true); }
+    if (sp) bg.rotation.x += sp;
     if (C && st) { C.rotation.x = rx; C.rotation.z = rz; this.group.updateMatrixWorld(true); }
+    else if (sp) this.group.updateMatrixWorld(true);
 
     return bore ? { position: tipWorld, direction: dir, boreDir: bore } : { position: tipWorld, direction: dir };
   }

@@ -141,13 +141,33 @@
         const br = u.trackBroken;
         const dl = (br && br[0]) ? 0 : v * dt - dYaw * TRACK_X;
         const dr = (br && br[1]) ? 0 : v * dt + dYaw * TRACK_X;
-        if (Math.abs(dl) > 1e-5 || Math.abs(dr) > 1e-5) {
+        // Hệ treo: bánh chịu tải bám đất trong khi thân nhún / ngửa khi bắn, phanh, ôm cua; xích uốn theo đáy từng bánh
+        const sprung = running.suspension.update(dt, u, dl, dr);
+        const rolling = Math.abs(dl) > 1e-5 || Math.abs(dr) > 1e-5;
+        if (rolling) {
           running.tracks.advance([dl, dr]);
           for (const ws of running.wheelSets) ws.roll(dl, dr);
-        }
+        } else if (sprung) running.roadWheels.update();
+        if (sprung) running.tracks.flushDirty();
 
         // Giật nòng hiển thị thu nhỏ cho đúng hành trình lùi thật (~0.45 m); gameplay giữ nguyên
         if (u.barrelGroup) u.barrelGroup.position.z = (u.barrelRecoil || 0) * 0.2;
+
+        // ỔN ĐỊNH PHÁO NHÌN THẤY ĐƯỢC: thân nhún / ngửa (bắn, phanh, tăng tốc, ôm cua) nhưng nòng giữ nguyên đường ngắm —
+        // nòng xoay ngược đúng phần dao động nhất thời của thân quanh trục tai pháo (bám trễ rất nhẹ như bộ ổn định thật).
+        // Đường đạn vốn đã tính theo tư thế bỏ dao động (getMuzzleWorldTransform trừ u._stabPitch) nên chỉ là hình ảnh
+        const bg = u.barrelGroup, st = u._stabRot, ch = u.chassisGroup;
+        if (bg && ch) {
+          let want = 0;
+          if (st && !u.isDead && !(u.dmg && u.dmg.gunDead)) {
+            const ty = u.turretGroup ? u.turretGroup.rotation.y : 0;
+            want = -((ch.rotation.x - st.x) * Math.cos(ty) - (ch.rotation.z - st.z) * Math.sin(ty));
+            want = Math.max(-0.07, Math.min(0.07, want));
+          }
+          const prev = u._stabPitch || 0, now = prev + (want - prev) * Math.min(1, dt * 40);
+          bg.rotation.x += now - prev;
+          u._stabPitch = now;
+        }
 
         if (!u.isDead) {
           scanTime += dt;
@@ -428,7 +448,12 @@
     for (const s of [-1, 1]) {
       const x = s * 8.6;
       hb.box(5.2, 2.3, 0.3, M.soot, [x, 10.4, 29.55]);
-      for (let i = 0; i < 4; i++) hb.box(5.0, 0.12, 0.3, P, [x, 9.55 + i * 0.55, 29.72], [0.5, 0, 0]);
+      for (let i = 0; i < 4; i++) hb.box(5.0, 0.12, 0.3, M.heatSteel || M.dark, [x, 9.55 + i * 0.55, 29.72], [0.5, 0, 0]);
+      // khung thép quanh miệng xả + vệt muội khói hắt lên mép tấm đuôi
+      hb.box(5.5, 0.14, 0.34, D, [x, 11.62, 29.62]);
+      hb.box(5.5, 0.14, 0.34, D, [x, 9.18, 29.62]);
+      for (const e of [-1, 1]) hb.box(0.14, 2.5, 0.34, D, [x + e * 2.68, 10.4, 29.62]);
+      hb.box(4.6, 0.5, 0.05, M.soot, [x, 11.95, 29.43]);
       hb.box(1.8, 1.0, 0.5, D, [s * 13.2, 11.3, 29.6]);
       hb.box(0.7, 0.55, 0.12, M.tailLens, [s * 13.6, 11.35, 29.88]);
       hb.box(0.5, 0.4, 0.12, M.lens, [s * 12.7, 11.35, 29.88]);
@@ -558,12 +583,13 @@
     for (const s of [-1, 1]) for (const z of WHEEL_Z) roadPositions.push({ x: s * TRACK_X, y: WHEEL_Y, z });
     const roadWheels = new VehicleKit.WheelSet(chassis, (b) => {
       for (const off of [-1.55, 1.55]) {
-        b.cyl(WHEEL_R, WHEEL_R, 1.9, 22, M.rubber, [off, 0, 0], 'x');
-        b.cyl(2.35, 2.35, 2.0, 22, M.paintDusty, [off, 0, 0], 'x');
+        // 32 cạnh: ở cự ly ngắm / phòng xem xe vành lốp không còn lộ đa giác (bánh dùng chung 1 lưới instanced nên rẻ)
+        b.cyl(WHEEL_R, WHEEL_R, 1.9, 32, M.rubber, [off, 0, 0], 'x');
+        b.cyl(2.35, 2.35, 2.0, 32, M.paintDusty, [off, 0, 0], 'x');
       }
       // Mặt đĩa dập lõm + moay-ơ + bu-lông
-      b.add(new THREE.TorusGeometry(1.75, 0.2, 6, 22), M.paintDusty, [2.55, 0, 0], [0, Math.PI / 2, 0]);
-      b.cyl(0.95, 1.05, 0.5, 12, M.steel, [2.75, 0, 0], 'x');
+      b.add(new THREE.TorusGeometry(1.75, 0.2, 6, 32), M.paintDusty, [2.55, 0, 0], [0, Math.PI / 2, 0]);
+      b.cyl(0.95, 1.05, 0.5, 20, M.steel, [2.75, 0, 0], 'x');
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
         b.cyl(0.13, 0.13, 0.3, 6, M.dark, [3.0, Math.cos(a) * 0.62, Math.sin(a) * 0.62], 'x');
@@ -632,10 +658,15 @@
       ],
       sidesX: [-TRACK_X, TRACK_X],
       pitch: 1.5,
-      buildLink: (b, pitch) => VehicleKit.diehlLink(b, pitch, halfSpan, M.track, pad)
+      buildLink: (b, pitch) => VehicleKit.diehlLink(b, pitch, halfSpan, M.track, pad),
+      // hệ treo sống: nhánh dưới bám đáy cả 7 bánh đang nhún, nhánh trên võng ~4 cm giữa các con lăn đỡ
+      road: WHEEL_Z.map(z => ({ u: z, v: WHEEL_Y, r: WHEEL_R + LINK_IN })),
+      sag: { at: RETURN_ROLLER_Z, depth: 0.3 }
     });
+    // Hành trình bánh: ép lên 0.85 (đỉnh bánh chưa chạm nhánh xích trên), thõng xuống 1.6 (~20 cm)
+    const suspension = new VehicleKit.TrackSuspension({ tracks, wheels: roadWheels, wheelZ: WHEEL_Z, trackX: TRACK_X, up: 0.85, down: 1.6 });
 
-    return { tracks, wheelSets: [roadWheels, idlerWheels, sprocketWheels, returnRollers] };
+    return { tracks, suspension, roadWheels, wheelSets: [roadWheels, idlerWheels, sprocketWheels, returnRollers] };
   }
 
   // ===========================================================================
@@ -1140,7 +1171,8 @@
     // Miệng nòng (mặt cắt dọc, y = quãng tiến về phía trước từ z = -54.2): ống thép thuôn nhẹ, vát mép ngoài,
     // mặt đầu phẳng ám khói, vát mép lòng rồi lòng nòng 120 mm (r 0.48) sâu tối -> nhìn thẳng thấy lỗ thật
     const MZ = -54.2;
-    gb.lathe([[0.84, 0], [0.84, 2.4], [0.82, 3.04]], 24, M.steel, [0, 0, MZ], 'z');
+    // thép nòng nhuộm đen (phốt-phát hoá) ám muội thuốc phóng — không phải thép trắng bóng như ống inox
+    gb.lathe([[0.84, 0], [0.84, 2.4], [0.82, 3.04]], 24, M.gunmetal || M.dark, [0, 0, MZ], 'z');
     gb.lathe([[0.82, 3.04], [0.77, 3.15], [0.55, 3.15], [0.49, 3.09]], 24, M.soot, [0, 0, MZ], 'z');
     gb.lathe([[0.49, 3.08], [0.49, -0.6], [0, -0.6]], 16, M.bore, [0, 0, MZ], 'z');
     // Gương chuẩn nòng (MRS) trên ống bọc cuối: đai kẹp ôm nòng, đế yên ngựa, hộp gương có mái che;

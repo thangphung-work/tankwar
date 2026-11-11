@@ -26,6 +26,12 @@ const TERRAIN_ROAD_INFO = {
   gravel: { type: 'ROAD', speedMult: 1.05, bumpiness: 0.55, dustMult: 0.7, sinkY: 0, engineLoad: 0.95, name: 'ĐƯỜNG SỎI ĐÁ GỒ GHỀ' },
   mud: { type: 'ROAD', speedMult: 0.94, bumpiness: 0.6, dustMult: 0.15, sinkY: -0.5, engineLoad: 1.15, name: 'ĐƯỜNG BÙN NHÃO' }
 };
+// Sa mạc: các loại mặt đất riêng (BattleTerrain3D.desertSoilAt). Giữ type 'SAND' (bụi cát, vệt xích, tiếng lăn bánh theo cát)
+const DESERT_SOIL = {
+  dune: { type: 'SAND', speedMult: 0.78, bumpiness: 0.4, dustMult: 1.25, sinkY: -1.3, engineLoad: 1.3, name: 'CÁT ĐỤN MỀM (LÚN SÂU, Ì MÁY)' },
+  playa: { type: 'SAND', speedMult: 1.0, bumpiness: 0.14, dustMult: 0.75, sinkY: 0, engineLoad: 0.98, name: 'BÃI MUỐI KHÔ CỨNG (PHẲNG, TRỐNG TRẢI)' },
+  wadi: { type: 'SAND', speedMult: 0.92, bumpiness: 0.72, dustMult: 0.6, sinkY: -0.2, engineLoad: 1.08, name: 'LÒNG KHE CẠN (SỎI CUỘI)' }
+};
 const TERRAIN_BASE_INFO = {
   DESERT: { type: 'SAND', speedMult: 0.86, bumpiness: 0.5, dustMult: 1.0, sinkY: -0.8, engineLoad: 1.18, name: 'CÁT SA MẠC (LÚN, BỤI MÙ)' },
   URBAN: { type: 'URBAN_ROAD', speedMult: 1.0, bumpiness: 0.2, dustMult: 0.4, sinkY: 0, engineLoad: 0.95, name: 'SÂN BÊ TÔNG / VỈA HÈ' },
@@ -826,7 +832,7 @@ class BattleTerrain3D {
       for (const off of [-0.45, 0.35]) { path(off); ctx.stroke(); }
     }
     // Ốc đảo / thảm thực vật dưới tán cây và bụi rậm
-    const veg = { DESERT: 'rgba(92,96,48,', URBAN: 'rgba(70,98,46,', JUNGLE: 'rgba(30,52,20,', HIGHLAND: 'rgba(58,74,36,', RIVER_LAKE: 'rgba(54,84,36,' }[this.mapType];
+    const veg = { DESERT: 'rgba(116,98,62,', URBAN: 'rgba(70,98,46,', JUNGLE: 'rgba(30,52,20,', HIGHLAND: 'rgba(58,74,36,', RIVER_LAKE: 'rgba(54,84,36,' }[this.mapType];
     for (const bsh of M.bushes) {
       const gr = ctx.createRadialGradient(toPx(bsh.x), toPx(bsh.z), 0, toPx(bsh.x), toPx(bsh.z), bsh.r * sc * 1.25);
       gr.addColorStop(0, veg + '0.75)'); gr.addColorStop(0.7, veg + '0.35)'); gr.addColorStop(1, veg + '0)');
@@ -905,7 +911,10 @@ class BattleTerrain3D {
     c.width = 128 * RS; c.height = 256 * RS;
     const g = c.getContext('2d');
     g.scale(RS, RS);
-    const sp = (n, cols, s0, s1) => { for (let i = 0; i < n; i++) { g.fillStyle = cols[i % cols.length]; const s = s0 + Math.random() * (s1 - s0); g.fillRect(Math.random() * 128, Math.random() * 256, s, s); } };
+    // đốm lớn (>= 1 px hệ 128: sỏi / cục đất đường đất) vẽ hạt tròn méo — vẽ ô vuông thì nhìn từ tầm mắt lính mặt đường
+    // lổn nhổn các ô vuông thẳng hàng như ảnh vỡ điểm; đốm li ti của nhựa đường giữ ô vuông (nhỏ hơn 1 điểm ảnh màn hình)
+    const sp = (n, cols, s0, s1) => { for (let i = 0; i < n; i++) { g.fillStyle = cols[i % cols.length]; const s = s0 + Math.random() * (s1 - s0), x = Math.random() * 128, y = Math.random() * 256;
+      if (s0 >= 1) { g.beginPath(); g.ellipse(x, y, s * 0.6, s * (0.32 + Math.random() * 0.25), Math.random() * 3.14, 0, 6.2832); g.fill(); } else g.fillRect(x, y, s, s); } };
     // biến thể nhựa đô thị theo số làn (map_gen: road.lanes): asphalt4 = đại lộ 4 làn (vạch vàng đôi giữa, vạch trắng
     // đứt phân làn), asphalt0 = ngõ không kẻ vạch
     if (kind === 'asphalt4' || kind === 'asphalt0') {
@@ -1217,7 +1226,7 @@ float rdN(vec2 p) { vec2 i = floor(p), u = fract(p); u = u * u * (3.0 - 2.0 * u)
       } else if (ft < 0.7) {   // mảng đá dăm / đất nện sáng hơn, lấm tấm hạt
         float dd = length(q / vec2(1.0, 0.7)) / (1.5 + 3.0 * sz) + wob * 0.6;
         float k = 1.0 - smoothstep(0.6, 1.0, dd);
-        rdMul *= mix(1.0, 1.1 + 0.25 * (rdH(floor(rw * 4.0)) - 0.5) * (1.0 - rdFar), k);
+        rdMul *= mix(1.0, 1.1 + 0.3 * (rdN(rw * 4.0) * 0.6 + rdN(rw * 9.3 + 5.0) * 0.4 - 0.5) * (1.0 - rdFar), k);   // (nhiễu trơn: rdH(floor()) cho ô vuông 3 cm lộ rõ ở tầm mắt lính)
       } else {                 // mảng ẩm sẫm
         float dd = length(q / vec2(1.0, 0.5)) / (2.0 + 4.0 * sz) + wob * 0.5;
         rdMul *= 1.0 - 0.22 * (1.0 - smoothstep(0.2, 1.0, dd));
@@ -2882,6 +2891,34 @@ ${sea ? 'varying float vDep;' : ''}
     return { inside: false };
   }
 
+  // SA MẠC: mặt đất không phải chỗ nào cũng là một loại cát. Thân đụn cát động (cát rời mới bồi) lún sâu, chậm, bụi mù;
+  // bãi muối là vỏ sét - muối khô cứng phẳng lì (chạy nhanh, êm, nhưng trống trải); lòng khe cạn (wadi) là sỏi cuội lổn
+  // nhổn. Còn lại là đồng cát sỏi nén (TERRAIN_BASE_INFO.DESERT). null = dùng bảng mặc định
+  desertSoilAt(x, z) {
+    const M = this.map;
+    if (!M) return null;
+    const P = M.playa;
+    if (P && Math.hypot(x - P.x, z - P.z) < P.r * 1.05) return DESERT_SOIL.playa;
+    const DG = M.dune;
+    if (DG) {
+      const N = M.res + 1, gx = Math.max(0, Math.min(M.res - 1e-3, (x + M.size / 2) / M.cell)), gz = Math.max(0, Math.min(M.res - 1e-3, (z + M.size / 2) / M.cell));
+      const ix = gx | 0, iz = gz | 0, fx = gx - ix, fz = gz - iz, k = iz * N + ix;
+      const d = (DG[k] * (1 - fx) + DG[k + 1] * fx) * (1 - fz) + (DG[k + N] * (1 - fx) + DG[k + N + 1] * fx) * fz;
+      if (d > 20) return DESERT_SOIL.dune;   // thân đụn cao > ~2,5 m (khớp vùng cát trơ không cỏ của ground_cover)
+    }
+    const W = M.wadis;
+    if (W && W.length) {
+      // hộp bao từng tuyến (dựng 1 lần) -> xe ở xa khe cạn không phải duyệt điểm tuyến
+      if (!this._wadiBox) this._wadiBox = W.map(w => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const p of w.pts) { x0 = Math.min(x0, p[0] - p[2]); x1 = Math.max(x1, p[0] + p[2]); z0 = Math.min(z0, p[1] - p[2]); z1 = Math.max(z1, p[1] + p[2]); } return [x0, x1, z0, z1]; });
+      for (let i = 0; i < W.length; i++) {
+        const B = this._wadiBox[i];
+        if (x < B[0] || x > B[1] || z < B[2] || z > B[3]) continue;
+        for (const p of W[i].pts) { const dx = x - p[0], dz = z - p[1]; if (dx * dx + dz * dz < p[2] * p[2]) return DESERT_SOIL.wadi; }
+      }
+    }
+    return null;
+  }
+
   getTerrainInfoAt(x, z, forwardSlope = 0) {
     const elevation = this.getElevationAt(x, z);
     const slopeK = (base) => forwardSlope > 0.05 ? Math.max(0.18, 1.0 - forwardSlope * 2.2) * base : Math.min(1.35, 1.0 - forwardSlope * 0.8) * base;
@@ -2907,7 +2944,7 @@ ${sea ? 'varying float vDep;' : ''}
     if (slope > 0.42 || (this.mapType === 'HIGHLAND' && elevation > 80)) {
       return { type: 'MOUNTAIN', speedMult: Math.max(0.2, slopeK(0.5)), elevation, friction: 0.8, bumpiness: 1.4, dustMult: 0.8, sinkY: 0, engineLoad: forwardSlope > 0.05 ? 1.85 : 0.95, name: `SƯỜN DỐC ĐÁ (+${Math.round(elevation)}M)` };
     }
-    const base = TERRAIN_BASE_INFO[this.mapType];
+    const base = (this.mapType === 'DESERT' && this.desertSoilAt(x, z)) || TERRAIN_BASE_INFO[this.mapType];
     return { elevation, friction: 0.88, type: base.type, speedMult: slope > 0.2 ? slopeK(base.speedMult) : base.speedMult, bumpiness: base.bumpiness, dustMult: base.dustMult, sinkY: base.sinkY, engineLoad: base.engineLoad, name: base.name };
   }
 

@@ -1341,6 +1341,9 @@ ${vkDefs}
         mats[k].name = k;
       }
     }
+    // Thép nòng nhuộm đen (đầu nòng trần, khoá nòng) và thép chịu nhiệt quanh ống xả (nung nhiều lần: nâu tím, ám muội)
+    if (!mats.gunmetal) { mats.gunmetal = new THREE.MeshStandardMaterial({ color: 0x2a2a28, roughness: 0.52, metalness: 0.7 }); mats.gunmetal.userData.surface = 'metal'; }
+    if (!mats.heatSteel) { mats.heatSteel = new THREE.MeshStandardMaterial({ color: 0x33271f, roughness: 0.82, metalness: 0.45 }); mats.heatSteel.userData.surface = 'metal'; }
     return mats;
   }
 
@@ -2335,6 +2338,8 @@ ${vkDefs}
       // Mức xịt lốp từng bánh (0 = căng, 1 = xẹp hẳn) và bánh bị văng mất
       this.flat = new Float32Array(positions.length);
       this.gone = new Uint8Array(positions.length);
+      // Hành trình treo từng bánh (đơn vị thế giới, + = bánh ép lên phía thân): TrackSuspension ghi mỗi khung
+      this.lift = new Float32Array(positions.length);
       // Lốp cháy trụi (0 = còn nguyên, 1 = cao su cháy hết chỉ còn vành thép): mesh cao su (surface 'rubber') co dần về
       // mép vành rồi mất hẳn; thân xe sụt xuống theo (VehicleDamage.recompute dùng rimRadius). rimRadius: bán kính mép vành
       this.burnt = new Float32Array(positions.length);
@@ -2382,7 +2387,7 @@ ${vkDefs}
     update() {
       this._stale = false;
       for (let i = 0; i < this.positions.length; i++) {
-        const p = this.positions[i];
+        const p = this.positions[i], py = p.y + this.lift[i];
         const left = p.x < 0;
         // Bánh trái bị lật quanh Y nên chiều quay quanh trục X cục bộ đảo dấu
         this._roll.setFromAxisAngle(this._axis, left ? -this.angles[i] : this.angles[i]);
@@ -2403,15 +2408,15 @@ ${vkDefs}
           this._m.makeRotationFromQuaternion(this._q);
           this._sm.makeScale(1 + 0.04 * f, sy, 1 + 0.03 * f);
           this._m.premultiply(this._sm);
-          this._m.setPosition(p.x, p.y, p.z);
+          this._m.setPosition(p.x, py, p.z);
         } else {
-          this._p.set(p.x, p.y, p.z);
+          this._p.set(p.x, py, p.z);
           this._m.compose(this._p, this._q, this._one);
         }
         const b = this.gone[i] ? 0 : this.burnt[i];
         if (b > 0) {
           // Lốp cháy: vành / moay-ơ tròn nguyên (không bẹp theo lốp xẹp), cao su co dần về mép vành, mỏng đi rồi mất hẳn
-          this._p.set(p.x, p.y, p.z);
+          this._p.set(p.x, py, p.z);
           this._m.compose(this._p, this._q, this._one);
           const rr = 1 - b * (1 - Math.min(0.98, this.rimRadius / this.radius));
           this._bs.set(1 - 0.35 * b, rr, rr);
@@ -2459,11 +2464,11 @@ ${vkDefs}
       while (d < 0) d += Math.PI * 2;
       while (d >= Math.PI * 2) d -= Math.PI * 2;
       if (d > 1e-4 && d < Math.PI * 2 - 1e-4) {
-        segs.push({ type: 'arc', C, a0, da: d, len: C.r * d });
+        segs.push({ type: 'arc', C, a0, da: d, len: C.r * d, ci: i });
       }
       const t = tout;
       const len = Math.hypot(t.p1.u - t.p0.u, t.p1.v - t.p0.v);
-      segs.push({ type: 'line', p0: t.p0, p1: t.p1, len });
+      segs.push({ type: 'line', p0: t.p0, p1: t.p1, len, ci: i });
     }
     let total = 0;
     for (const s of segs) { s.start = total; total += s.len; }
@@ -2587,6 +2592,16 @@ ${vkDefs}
       }
       this._m = new THREE.Matrix4();
       this._smp = { u: 0, v: 0, tu: 0, tv: 0 };
+      // HỆ TREO SỐNG (tuỳ chọn): opts.road = mọi bánh chịu tải [{ u, v, r }] từ trước ra sau (r đã cộng nửa dày xích),
+      // opts.sag = { at: [u con lăn đỡ], depth } -> nhánh dưới bám đáy từng bánh đang nhún, nhánh trên võng giữa các con lăn.
+      // Mỗi bên một đường xích riêng (dyn[s]); số mắt giữ nguyên, bước xích co giãn < 1% theo chiều dài đường
+      this.road = opts.road || null;
+      this.sag = opts.sag || null;
+      this.dyn = this.sidesX.map(() => null);
+      this.lifts = this.road ? this.sidesX.map(() => new Float32Array(this.road.length)) : null;
+      this.wave = this.sidesX.map(() => ({ amp: 0, ph: 0 }));   // gợn nhánh trên khi chạy
+      this._dirty = this.sidesX.map(() => false);
+      if (this.road) for (let s = 0; s < this.sidesX.length; s++) this.dyn[s] = this.buildDynPath(s);
       for (let s = 0; s < this.sidesX.length; s++) this.layoutSide(s);
       // Xe đang bị game.updateUnitLOD ẩn (ngoài màn hình / quá xa, mesh có _lodH): advance chỉ cộng dồn quãng đường, mắt
       // xích xếp lại một lần khi mesh được vẽ lại (onBeforeRender -> lên GPU ở khung sau, trễ 1 khung không ai thấy)
@@ -2597,11 +2612,94 @@ ${vkDefs}
       for (const im of this.meshes) im.onBeforeRender = flush;
     }
 
+    // Đường xích một bên theo độ nhún hiện tại của từng bánh (lifts[s]) + độ võng / gợn nhánh trên
+    buildDynPath(s) {
+      const C = this.circles, W = this.road, L = this.lifts[s], n = W.length;
+      const c1 = { u: W[0].u, v: W[0].v + L[0], r: W[0].r }, c2 = { u: W[n - 1].u, v: W[n - 1].v + L[n - 1], r: W[n - 1].r };
+      const base = buildTrackPath([C[0], c1, c2, C[C.length - 1]]);
+      const segs = [];
+      const line = (a, b) => { const len = Math.hypot(b.u - a.u, b.v - a.v); if (len > 1e-4) segs.push({ type: 'line', p0: a, p1: b, len }); };
+      for (const sg of base.segs) {
+        if (sg.type === 'arc') { if (sg.da < Math.PI * 1.5) segs.push(sg); continue; }
+        if (sg.ci === 1) {
+          // nhánh dưới: đi qua điểm đáy từng bánh giữa
+          let prev = sg.p0;
+          for (let k = 1; k < n - 1; k++) { const q = { u: W[k].u, v: W[k].v + L[k] - W[k].r }; line(prev, q); prev = q; }
+          line(prev, sg.p1);
+        } else if (sg.ci === 3 && this.sag) {
+          // nhánh trên (bánh sao -> bánh dẫn hướng): tì lên các con lăn đỡ, võng parabol giữa hai điểm tì
+          const sup = [sg.p0.u, ...this.sag.at.filter(u => u < sg.p0.u - 1 && u > sg.p1.u + 1).sort((a, b) => b - a), sg.p1.u];
+          const vAt = (u) => sg.p0.v + (sg.p1.v - sg.p0.v) * (u - sg.p0.u) / (sg.p1.u - sg.p0.u);
+          const wv = this.wave[s], N = 5;
+          let prev = sg.p0;
+          for (let j = 0; j < sup.length - 1; j++) {
+            const a = sup[j], b = sup[j + 1], span = Math.abs(b - a), d = this.sag.depth * Math.min(1.6, (span / 11.5) * (span / 11.5));
+            for (let k = 1; k <= N; k++) {
+              const t = k / N, u = a + (b - a) * t, bell = 4 * t * (1 - t);
+              const q = k === N && j === sup.length - 2 ? sg.p1 : { u, v: vAt(u) - bell * (d + wv.amp * Math.sin(u * 0.55 + wv.ph + j * 1.9)) };
+              line(prev, q); prev = q;
+            }
+          }
+        } else segs.push(sg);
+      }
+      let total = 0;
+      for (const sg of segs) { sg.start = total; total += sg.len; }
+      return { segs, length: total };
+    }
+
+    // TrackSuspension gọi mỗi khung: ghi độ nhún bánh của một bên, đánh dấu cần xếp lại
+    setLifts(s, lifts, waveAmp = 0, wavePh = 0) {
+      if (!this.road || (this.broken && this.broken[s])) return;
+      this.lifts[s].set(lifts);
+      this.wave[s].amp = waveAmp; this.wave[s].ph = wavePh;
+      this._dirty[s] = true;
+    }
+
+    // Xếp lại những bên đã đổi độ nhún mà khung này xích không chạy (advance đã xếp thì thôi)
+    flushDirty() {
+      if (this.meshes[0] && this.meshes[0]._lodH) { for (let s = 0; s < this._dirty.length; s++) if (this._dirty[s]) this._stale[s] = true; return; }
+      for (let s = 0; s < this._dirty.length; s++) if (this._dirty[s]) this.layoutSide(s);
+    }
+
     layoutSide(sideIdx) {
       const x = this.sidesX[sideIdx];
       const base = sideIdx * this.count;
       const m = this._m;
       const p = this._smp;
+      if (this.road) {
+        if (this.broken && this.broken[sideIdx]) { this._dirty[sideIdx] = false; return; }
+        // đường động: dựng lại nếu độ nhún đổi, rồi rải mắt xích bằng con trỏ đoạn chạy tuần tự (không dò lại từ đầu mỗi mắt)
+        if (this._dirty[sideIdx] || !this.dyn[sideIdx]) { this.dyn[sideIdx] = this.buildDynPath(sideIdx); this._dirty[sideIdx] = false; }
+        const path = this.dyn[sideIdx], segs = path.segs, k = path.length / this.path.length, step = this.pitch * k;
+        let s0 = (this.offsets[sideIdx] * k) % path.length;
+        if (s0 < 0) s0 += path.length;
+        let si = 0;
+        while (si < segs.length - 1 && s0 >= segs[si].start + segs[si].len) si++;
+        for (let i = 0; i < this.count; i++) {
+          const sg = segs[si], local = s0 - sg.start;
+          if (sg.type === 'line') {
+            const t = local / sg.len;
+            p.u = sg.p0.u + (sg.p1.u - sg.p0.u) * t; p.v = sg.p0.v + (sg.p1.v - sg.p0.v) * t;
+            p.tu = (sg.p1.u - sg.p0.u) / sg.len; p.tv = (sg.p1.v - sg.p0.v) / sg.len;
+          } else {
+            const a = sg.a0 + local / sg.C.r;
+            p.tu = -Math.sin(a); p.tv = Math.cos(a);
+            p.u = sg.C.u + sg.C.r * p.tv; p.v = sg.C.v - sg.C.r * p.tu;
+          }
+          m.set(
+            1, 0, 0, x,
+            0, -p.tu, -p.tv, p.v,
+            0, p.tv, -p.tu, p.u,
+            0, 0, 0, 1
+          );
+          for (const im of this.meshes) im.setMatrixAt(base + i, m);
+          s0 += step;
+          if (s0 >= path.length) { s0 -= path.length; si = 0; }
+          while (si < segs.length - 1 && s0 >= segs[si].start + segs[si].len) si++;
+        }
+        for (const im of this.meshes) im.instanceMatrix.needsUpdate = true;
+        return;
+      }
       for (let i = 0; i < this.count; i++) {
         samplePath(this.path, i * this.pitch + this.offsets[sideIdx], p);
         // Hệ trục mắt xích: X ngang, Y hướng ra ngoài vòng xích, Z ngược chiều chạy
@@ -2678,7 +2776,15 @@ ${vkDefs}
         samplePath(this.path, a * this.pitch + this.offsets[s], p); const ua = p.u;
         samplePath(this.path, b * this.pitch + this.offsets[s], p); return (ua - p.u) * sg;
       });
-      const pts = [[endU - sg * 8, vSag], [endU - sg * 2, maxV - 0.6], [endU + sg * 2.5, minV + 0.3], [endU + sg * 60, minV]];
+      // Xích nặng ~80 kg / mét: không thể bắc xiên lơ lửng từ đỉnh bánh ra đất như một tấm ván. Đoạn đứt còn vắt trên
+      // bánh dẫn hướng / bánh sao: ôm 1/4 vòng bánh, thõng thẳng đứng trước mặt bánh rồi nằm duỗi trên đất
+      const Ce = this.circles && this.circles.length ? this.circles[forward ? 0 : this.circles.length - 1] : null;
+      let pts;
+      if (Ce) {
+        pts = [[Ce.u - sg * 8, vSag], [Ce.u - sg * 1.5, Ce.v + Ce.r]];
+        for (const t of [0.35, 0.8, 1.25, 1.57]) pts.push([Ce.u + sg * Ce.r * Math.sin(t), Ce.v + Ce.r * Math.cos(t)]);
+        pts.push([Ce.u + sg * (Ce.r + 0.1), minV + 1.6], [Ce.u + sg * (Ce.r + 0.5), minV + 0.55], [Ce.u + sg * (Ce.r + 1.7), minV + 0.05], [Ce.u + sg * 80, minV]);
+      } else pts = [[endU - sg * 8, vSag], [endU - sg * 2, maxV - 0.6], [endU + sg * 2.5, minV + 0.3], [endU + sg * 60, minV]];
       let seg = 0, t = 0;
       for (let k = 0; k < drape.length; k++) {
         let A = pts[seg], B = pts[seg + 1];
@@ -2686,7 +2792,7 @@ ${vkDefs}
         while (t > L && seg < pts.length - 2) { t -= L; seg++; A = pts[seg]; B = pts[seg + 1]; L = Math.hypot(B[0] - A[0], B[1] - A[1]); }
         const tu = (B[0] - A[0]) / L, tv = (B[1] - A[1]) / L;
         const pu = A[0] + tu * t, pv = A[1] + tv * t;
-        const out = sx * (0.35 + Math.min(1.6, k * 0.12));
+        const out = sx * (0.35 + Math.min(1.6, Math.max(0, k - 8) * 0.1));   // chỉ đoạn đã rời bánh mới xoãi ra ngoài
         put(drape[k], x + out + (Math.random() - 0.5) * 0.2, pv, pu, tu, tv, seg > 0 ? (Math.random() - 0.5) * 0.12 + sx * Math.min(0.25, 0.03 * k) : 0);
         t += this.pitch;
       }
@@ -2698,6 +2804,87 @@ ${vkDefs}
       if (!this.broken || !this.broken[s]) return;
       this.broken[s] = false;
       this.layoutSide(s);
+    }
+  }
+
+  /**
+   * HỆ TREO THANH XOẮN SỐNG cho xe xích: bánh chịu tải bám đất còn thân xe nhún / ngửa / nghiêng trên hệ treo.
+   * Trước đây cả cụm bánh - xích gắn cứng vào thân: xe ngửa khi bắn / chúi khi phanh thì dải xích xoay theo, cắm xuống
+   * đất hoặc hổng lên như đồ chơi. Giờ mỗi bánh có hành trình riêng (thân = khối được treo):
+   *  - dao động nhất thời của thân (giật khi bắn, dồn trọng tâm tăng / giảm tốc, ôm cua, rung máy, nảy khi tiếp đất)
+   *    -> bánh đi ngược lại đúng bằng quãng thân dịch tại vị trí bánh -> đáy xích nằm yên trên mặt đất
+   *  - mặt đất dưới từng bánh lệch khỏi mặt phẳng tư thế xe (u._groundAt: gờ, hố, mép dốc) -> bánh trồi / thõng theo
+   *  - gợn nhỏ cố định trên mặt đất theo quãng đường: bánh trước gặp trước, bánh sau lặp lại sau đúng khoảng cách trục
+   * opts: { tracks, wheels (WheelSet bánh chịu tải, xếp bên trái trước rồi bên phải), wheelZ, trackX, up, down }
+   */
+  class TrackSuspension {
+    constructor(o) {
+      this.tracks = o.tracks; this.wheels = o.wheels; this.wz = o.wheelZ; this.x = o.trackX;
+      this.up = o.up !== undefined ? o.up : 0.85; this.down = o.down !== undefined ? o.down : 1.6;
+      const n = this.wz.length;
+      this.n = n;
+      this.lift = [new Float32Array(n), new Float32Array(n)];
+      this.terr = [new Float32Array(n), new Float32Array(n)];
+      this.dist = [o.phase || 0, (o.phase || 0) + 37.3];
+      this._tick = 0;
+    }
+
+    update(dt, u, dl, dr) {
+      const T = this.tracks, n = this.n, ch = u.chassisGroup;
+      if (!ch || (T.meshes[0] && T.meshes[0]._lodH)) return false;
+      const st = u._stabRot, dead = !!u.isDead;
+      // dao động nhất thời của thân so với tư thế bám dốc (spg.js cập nhật sau animator -> trễ 1 khung, không thấy)
+      const tp = st ? ch.rotation.x - st.x : 0, tr = st ? ch.rotation.z - st.z : 0;
+      const h = u._chassisBaseY !== undefined ? ch.position.y - u._chassisBaseY + (u.dmg ? u.dmg.sinkApplied || 0 : 0) : 0;
+      this.dist[0] += dl; this.dist[1] += dr;
+      // mặt đất thật dưới 4 trạm bánh mỗi bên (xe người chơi mỗi khung, xe khác cách khung), các bánh giữa nội suy
+      const ga = u._groundAt, moving = Math.abs(dl) + Math.abs(dr) > 1e-4;
+      if (ga && st && !dead && !u.onDebris) {
+        if ((moving || !this._sampled) && (u.isPlayer || ((this._tick++) & 1) === 0)) {
+          this._sampled = true;
+          const a = u.group.rotation.y, ca = Math.cos(a), sa = Math.sin(a), sp = Math.sin(st.x), sr = Math.sin(st.z);
+          let mean = 0;
+          for (let s = 0; s < 2; s++) {
+            const lx = s === 0 ? -this.x : this.x, D = this.terr[s];
+            for (let k = 0; k < n; k += 2) {
+              const lz = this.wz[k];
+              D[k] = ga(u.x + lx * ca + lz * sa, u.z - lx * sa + lz * ca) - (-lz * sp + lx * sr);
+            }
+            if (!(n & 1)) { const lz = this.wz[n - 1]; D[n - 1] = ga(u.x + lx * ca + lz * sa, u.z - lx * sa + lz * ca) - (-lz * sp + lx * sr); }
+            for (let k = 1; k < n - 1; k += 2) D[k] = (D[k - 1] + D[k + 1]) / 2;
+            for (let k = 0; k < n; k++) mean += D[k];
+          }
+          mean /= 2 * n;
+          for (let s = 0; s < 2; s++) for (let k = 0; k < n; k++) this.terr[s][k] -= mean;
+        }
+      } else if (!dead) {
+        this.terr[0].fill(0); this.terr[1].fill(0);
+      }
+      // gợn đất chỉ có ngoài thực địa (spg.js đặt _bumpiness theo mặt đất); phòng xem xe / bệ phẳng: bánh nằm thẳng hàng
+      const rough = dead || u._bumpiness === undefined ? 0 : Math.min(0.42, u._bumpiness * 0.5);
+      const kf = Math.min(1, dt * 28), spd = Math.abs(u.speed || 0);
+      let changed = false;
+      for (let s = 0; s < 2; s++) {
+        const lx = s === 0 ? -this.x : this.x, L = this.lift[s], D = this.terr[s], d = this.dist[s];
+        let ch1 = false;
+        for (let k = 0; k < n; k++) {
+          const lz = this.wz[k], p = d - lz + s * 11.7;
+          const rip = rough * (Math.sin(p * 0.23) * 0.55 + Math.sin(p * 0.61 + 1.3) * 0.3 + Math.sin(p * 1.07 + 4.1) * 0.15);
+          let want = T.broken && T.broken[s] ? 0 : D[k] + lz * tp - lx * tr - h + rip;
+          want = want > this.up ? this.up : want < -this.down ? -this.down : want;
+          const nv = L[k] + (want - L[k]) * kf;
+          if (Math.abs(nv - L[k]) > 0.003) { L[k] = nv; ch1 = true; }
+        }
+        // nhánh trên rung gợn theo tốc độ (xích văng nhẹ giữa các con lăn đỡ)
+        const amp = dead ? 0 : Math.min(0.16, spd * 0.0022);
+        if (ch1 || (amp > 0.01 && moving && !(T.broken && T.broken[s]))) {
+          T.setLifts(s, L, amp, d * 0.9);
+          const W = this.wheels.lift;
+          for (let k = 0; k < n; k++) W[s * n + k] = L[k];
+          changed = true;
+        }
+      }
+      return changed;
     }
   }
 
@@ -3169,6 +3356,7 @@ ${vkDefs}
     sideProfile,
     WheelSet,
     TrackSystem,
+    TrackSuspension,
     AntennaSet,
     registerPartGroup,
     idCloth,

@@ -1044,15 +1044,17 @@ const SoldierEngine = (() => {
       const runTurn = wantSpeed > 14, maxTurn = isPlayer ? 24 : (runTurn ? CFG.turnRun : wantSpeed > 0 ? CFG.turnWalk : CFG.turnIdle);
       const dh = angDiff(this.heading, wantHeading), turnAccel = isPlayer ? ((this.figure.aimBlend || 0) > 0.1 ? 260 : 140) : (runTurn ? CFG.turnAccelRun : CFG.turnAccel);
       const isAimingPlayer = isPlayer && ((this.figure.aimBlend || 0) > 0.1 || !wantSpeed);
+      let applied = 0;   // góc đã quay thật trong khung (dùng cho nghiêng cua bên dưới — trước đây khai báo trong nhánh else nên ngoài nhánh là ReferenceError)
       if (isAimingPlayer && Math.abs(dh) < 1.2) {
         // Đang ngắm bắn hoặc đứng canh: thân người bám sát tâm ngắm mượt mà, không bị trễ góc
-        this.heading += dh * Math.min(1, dt * 28);
+        applied = dh * Math.min(1, dt * 28);
+        this.heading += applied;
         this._turnVel = 0;
       } else {
         const stopRate = 0.85 * Math.sqrt(2 * turnAccel * Math.abs(dh)), wantTurn = Math.sign(dh) * Math.min(maxTurn, Math.abs(dh) * (isPlayer ? 22 : 8), stopRate);
         const turnA = turnAccel * dt, dv = wantTurn - (this._turnVel || 0);
         this._turnVel = (this._turnVel || 0) + Math.max(-turnA, Math.min(turnA, dv));
-        let applied = this._turnVel * dt;
+        applied = this._turnVel * dt;
         if (applied * dh < 0) applied = 0;
         else if (Math.abs(applied) >= Math.abs(dh)) { applied = dh; this._turnVel = 0; }
         this.heading += applied;

@@ -2779,9 +2779,10 @@ const VehicleDamage = (() => {
   function poseBarrel(u) {
     const d = state(u), bg = u.barrelGroup || u.gatlingCluster;
     if (!bg) return;
-    if (!d.gunBent) d.gunBent = { obj: bg, rot: bg.rotation.clone() };
+    const sp = bg === u.barrelGroup ? u._stabPitch || 0 : 0;   // góc ổn định pháo đang cộng trên nòng (mô hình tự quản)
+    if (!d.gunBent) { d.gunBent = { obj: bg, rot: bg.rotation.clone() }; d.gunBent.rot.x -= sp; }
     const r = d.gunBent.rot, b = d.bendRot || { x: 0, y: 0 };
-    bg.rotation.x = r.x + b.x - (d.gunDead ? 0.11 : 0);
+    bg.rotation.x = r.x + b.x - (d.gunDead ? 0.11 : 0) + sp;
     bg.rotation.y = r.y + b.y;
   }
 
@@ -5344,7 +5345,9 @@ const VehicleDamage = (() => {
         const name = (mat.name || '').toLowerCase();
         const isGlass = mat.userData && (mat.userData.surface === 'glass' || mat.userData.windowGlass);
         const isLight = (mat.userData && mat.userData.isVehicleLight) || /lens|lamp|light|taillens|headlens|amberlens|led/i.test(name);
-        const hasEmissive = mat.emissive && (mat.emissiveIntensity > 0 || mat.emissive.r > 0 || mat.emissive.g > 0 || mat.emissive.b > 0);
+        // phát sáng thật: màu phát sáng khác đen VÀ cường độ > 0. Trước đây dùng "hoặc": vật liệu nào cũng có emissiveIntensity
+        // mặc định 1 nên cả lớp sơn, thép, vải đều bị coi là đèn và bôi đen kịt
+        const hasEmissive = mat.emissive && mat.emissiveIntensity > 0 && (mat.emissive.r > 0 || mat.emissive.g > 0 || mat.emissive.b > 0);
         if (isGlass || isLight || hasEmissive) {
           if (mat.emissive) {
             if (mat.userData.fxOrigEmissiveI === undefined) mat.userData.fxOrigEmissiveI = mat.emissiveIntensity;
